@@ -4,7 +4,7 @@ This is the verified full-video build from [Darwin PR #2](https://github.com/haj
 rebuilt on branch `fushi/mkv-lace` with `mkv-laced-audio-timestamps.patch` (BUG-3499: laced Matroska
 audio without DefaultDuration, e.g. mkvmerge Opus, lost every lace frame after the first in dump-cache)
 and `recorder-video-dts.patch` (BUG-3500: Matroska video has no DTS, so dump-cache lost every B-frame).
-Since BUG-3662 it is built from `fushi/avfoundation-ao` (fork `W1ght/libmpv-darwin-build`,
+Since BUG-3735 it is built from `fushi/avfoundation-ao` (fork `W1ght/libmpv-darwin-build`,
 upstream PR hajisensai/libmpv-darwin-build#3), which also compiles mpv's `avfoundation` audio output:
 on macOS 27 `coreaudio` fails to set the AudioUnit channel layout (-50) for every stream, and mpv's
 default AO order then falls back to `avfoundation` instead of playing without sound.

@@ -15,7 +15,7 @@ import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// BUG-3663：VN 模式有声书高亮推进时排版变化。
+/// BUG-3741：VN 模式有声书高亮推进时排版变化。
 ///
 /// 用户原始失败（Windows WebView2，七つの魔剣が支配するII，竖排 VN）：当前句换到同段
 /// 下一句时，带注音那一列的行盒窄了 6px，VN 居中把整屏平移 3px。根因是 VN 播放到哪句

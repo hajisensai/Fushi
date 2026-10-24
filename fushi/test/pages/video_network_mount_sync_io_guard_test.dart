@@ -1,9 +1,9 @@
-// BUG-3704 源码守卫：打开 / 播放视频、视频库页与合集详情页这些主 isolate 路径，会碰
+// BUG-3756 源码守卫：打开 / 播放视频、视频库页与合集详情页这些主 isolate 路径，会碰
 // 用户视频文件、视频旁 sidecar、合集 / 视频封面——这些路径常落在网络盘（rclone /
 // SMB / WinFsp 挂载）上，冷目录一次同步 stat / list 要数秒，UI 与同 isolate 的互联
 // host 端点一起冻结。行为层由 IOOverrides 假网络盘测试钉住
 // （test/media/video/video_network_mount_async_io_test.dart、
-// test/media/async_file_existence_cache_test.dart、合集卡 / 合集详情页的 BUG-3704
+// test/media/async_file_existence_cache_test.dart、合集卡 / 合集详情页的 BUG-3756
 // widget 用例）；本守卫补的是覆盖面：视频播放页体量太大、widget 测试驱动不到每条
 // 字幕恢复分支，这里按文件 / 按方法钉住「不许再写同步文件调用」。
 //
@@ -91,7 +91,7 @@ String _methodBody(String source, String signature) {
 
 void main() {
   for (final String path in _wholeFiles) {
-    test('BUG-3704：$path 不许同步文件调用', () {
+    test('BUG-3756：$path 不许同步文件调用', () {
       final String source = File(path).readAsStringSync();
       final List<String> hits = <String>[
         for (final RegExpMatch m in _syncFileApi.allMatches(source))
@@ -105,7 +105,7 @@ void main() {
   }
 
   for (final (String path, String signature) in _methods) {
-    test('BUG-3704：$path › $signature 不许同步文件调用', () {
+    test('BUG-3756：$path › $signature 不许同步文件调用', () {
       final String body = _methodBody(File(path).readAsStringSync(), signature);
       expect(
         _syncFileApi.allMatches(body).map((RegExpMatch m) => m[0]).toList(),

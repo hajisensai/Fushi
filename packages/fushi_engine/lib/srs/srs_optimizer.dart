@@ -42,7 +42,7 @@ class SrsOptimizationInput {
   final List<double> currentParams;
 
   /// 训练集：每条是一张卡到某次评分为止的历史前缀（按最后一次评分时刻排序，供时间序列切分），
-  /// 带每张卡的数字 ID。打包成 TypedData，每张卡只存一份完整历史，前缀在原生侧展开（BUG-3703）。
+  /// 带每张卡的数字 ID。打包成 TypedData，每张卡只存一份完整历史，前缀在原生侧展开（BUG-3745）。
   final SrsFsrsTrainingSet items;
 
   /// 进训练集的评分条数（门槛与基线用）。
@@ -104,7 +104,7 @@ Future<SrsOptimizationInput?> srsPrepareOptimization(
   final SrsParamSet? set = owner.paramSetFor(alg);
 
   final SrsFsrsTrainingSetBuilder builder = SrsFsrsTrainingSetBuilder();
-  // (评分时刻, 卡序号, 前缀长度)：一条复习一行，只记坐标，不复制历史前缀（BUG-3703）。
+  // (评分时刻, 卡序号, 前缀长度)：一条复习一行，只记坐标，不复制历史前缀（BUG-3745）。
   final List<(int, int, int)> rows = <(int, int, int)>[];
   int count = 0;
   final List<String> cardIds = await store.cardIdsInDecks(scope);

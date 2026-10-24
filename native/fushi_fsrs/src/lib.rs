@@ -115,7 +115,7 @@ pub struct Review {
     pub delta_t: f32,
 }
 
-/// 优化 / 评估的训练集，打包形态（`ffsrs_fit` 的输入，BUG-3703）。
+/// 优化 / 评估的训练集，打包形态（`ffsrs_fit` 的输入，BUG-3745）。
 ///
 /// 每张卡只传一份完整历史（`ratings` / `delta_days` 按 `card_offsets` 切段），外加按评分时刻排好序的
 /// 训练条目 `(item_cards[i], item_lengths[i])`：第 i 条 = 卡 `item_cards[i]` 的前 `item_lengths[i]` 次评分。

@@ -230,7 +230,7 @@ class SubtitleEmbeddedFontLoader {
 
     final Set<String> families = <String>{};
     try {
-      // async：视频可能在网络盘上，同步 stat 会冻结 UI isolate（BUG-3704）。
+      // async：视频可能在网络盘上，同步 stat 会冻结 UI isolate（BUG-3756）。
       if (!await File(videoPath).exists()) {
         _byVideoPath[videoPath] = families;
         return families;

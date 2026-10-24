@@ -621,7 +621,7 @@ void main() {
     expect(find.textContaining('Issue #60'), findsOneWidget);
   });
 
-  // BUG-3707：本批「待确认 0」时，早就躺在待确认清单里的作品（后台补刮不重问）
+  // BUG-3766：本批「待确认 0」时，早就躺在待确认清单里的作品（后台补刮不重问）
   // 必须在结果卡上说出来并给入口，不能读成「没有要你决策的」。
   testWidgets('finished report points at the pending backlog',
       (WidgetTester tester) async {

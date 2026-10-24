@@ -181,7 +181,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
   }
 
-  /// BUG-3704：「继续」视频卡的封面存在性是 async 文件探测（build 里不再同步 stat），
+  /// BUG-3756：「继续」视频卡的封面存在性是 async 文件探测（build 里不再同步 stat），
   /// 真实 IO 在 fakeAsync 下不会完成。回退链每探一个候选是一次真实 IO + 一次
   /// fakeAsync 续体（下一帧才跑），按候选个数各给一轮 runAsync + pump。
   Future<void> settleCoverProbes(WidgetTester tester, {int probes = 3}) async {
@@ -1121,7 +1121,7 @@ void main() {
       );
       await Future<void>.delayed(const Duration(milliseconds: 600));
       await tester.pump();
-      // BUG-3704：封面存在性改为 async 探测（不在 build 里同步 stat），解码前多一跳。
+      // BUG-3756：封面存在性改为 async 探测（不在 build 里同步 stat），解码前多一跳。
       await Future<void>.delayed(const Duration(milliseconds: 600));
       await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -1281,7 +1281,7 @@ void main() {
       await tester.pumpWidget(app);
       await Future<void>.delayed(const Duration(milliseconds: 600));
       await tester.pump();
-      // BUG-3704：封面存在性改为 async 探测（不在 build 里同步 stat），解码前多一跳。
+      // BUG-3756：封面存在性改为 async 探测（不在 build 里同步 stat），解码前多一跳。
       await Future<void>.delayed(const Duration(milliseconds: 600));
       await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -1348,7 +1348,7 @@ void main() {
     expect(cover.width / cover.height, closeTo(2 / 3, 0.01));
   });
 
-  testWidgets('BUG-3704：网络盘上的作品海报不在 build 里同步 stat（读有声书时首页每几秒重建）', (
+  testWidgets('BUG-3756：网络盘上的作品海报不在 build 里同步 stat（读有声书时首页每几秒重建）', (
     WidgetTester tester,
   ) async {
     useSize(tester, const Size(1280, 900));
@@ -2598,7 +2598,7 @@ typedef _ContinueItem = ({
   IconData? badgeIcon,
 });
 
-/// BUG-3704 用的「网络盘」假文件：同步 API 记账并抛错，`exists()` 记账后回 false。
+/// BUG-3756 用的「网络盘」假文件：同步 API 记账并抛错，`exists()` 记账后回 false。
 class _NetMountFile implements File {
   _NetMountFile(this.path, this.syncCalls, this.asyncProbes);
 

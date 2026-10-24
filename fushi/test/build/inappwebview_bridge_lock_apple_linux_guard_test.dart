@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Source guard for the Linux / iOS / macOS bridge lock (BUG-3705, contract in
+/// Source guard for the Linux / iOS / macOS bridge lock (BUG-3762, contract in
 /// `docs/specs/2026-10-23-dictionary-script-sandbox.md`).
 ///
 /// - Linux: vendored `packages/flutter_inappwebview_linux` (C++ + bridge JS).

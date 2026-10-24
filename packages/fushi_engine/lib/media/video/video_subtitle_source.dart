@@ -605,7 +605,7 @@ Future<EmbeddedSubtitleTrackProbeResult> probeEmbeddedSubtitleTracks(
   String videoPath,
 ) async {
   // 一次 async stat 同时拿体积与存在性：互联 host 的 streamurl / 内封字幕端点在 app
-  // 主 isolate 上调这里，视频常在网络盘上，同步 stat 会冻结全部端点与 UI（BUG-3704）。
+  // 主 isolate 上调这里，视频常在网络盘上，同步 stat 会冻结全部端点与 UI（BUG-3756）。
   final FileStat? videoStat = await _regularFileStat(videoPath);
   final int sizeBytes = videoStat?.size ?? 0;
   final Duration timeout = subtitleExtractTimeoutForBytes(sizeBytes);
@@ -817,7 +817,7 @@ Future<SubtitleSourceListing> listAllSubtitleSourcesWithDiagnostics(
   // ② 同目录、与当前视频同名前缀的外挂字幕文件。
   final String dir = p.dirname(videoPath);
   final String videoBaseNoExt = p.basenameWithoutExtension(videoPath);
-  // async 列目录：视频目录常在网络盘上（BUG-3704）。目录不存在同样落进
+  // async 列目录：视频目录常在网络盘上（BUG-3756）。目录不存在同样落进
   // FileSystemException 分支。
   try {
     final List<String> dirFiles = <String>[];
@@ -1399,7 +1399,7 @@ Future<void> _extractAllEmbeddedSubtitles(
 }
 
 /// [path] 是普通文件（跟随链接）则返回其 [FileStat]，否则 / stat 失败返回 null。
-/// async：视频常在网络盘上，同步 stat 冷目录时会冻结调用方 isolate（BUG-3704）。
+/// async：视频常在网络盘上，同步 stat 冷目录时会冻结调用方 isolate（BUG-3756）。
 Future<FileStat?> _regularFileStat(String path) async {
   try {
     final FileStat stat = await File(path).stat();
@@ -1435,7 +1435,7 @@ String embeddedSubtitleCacheKey(
 /// embedded subtitle tracks. Stat failures fall back to a path-only key.
 ///
 /// async：键要 stat 视频本体（size + mtime），视频常在网络盘上；互联 host 的内封字幕
-/// 端点在 app 主 isolate 上调这里，同步 statSync 会冻结全部端点与 UI（BUG-3704）。
+/// 端点在 app 主 isolate 上调这里，同步 statSync 会冻结全部端点与 UI（BUG-3756）。
 Future<Directory> embeddedSubtitleCacheDir(String videoPath) async =>
     embeddedSubtitleCacheDirForStat(
       videoPath,

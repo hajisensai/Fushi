@@ -20,7 +20,7 @@ void main() {
         contains('id=$kRecommendedPackGoogleDriveFileId'),
       );
       expect(kRecommendedPackGoogleDriveDirectUrl, contains('confirm=t'));
-      // BUG-3704：回退线路也必须带钉死的摘要，不能整包不校验就进备份导入。
+      // BUG-3758：回退线路也必须带钉死的摘要，不能整包不校验就进备份导入。
       expect(
           kRecommendedPackWholeFileSha256, matches(RegExp(r'^[0-9a-f]{64}$')));
       // 分享页与直下链指向同一个文件 id，换包时两处一起换。
@@ -226,7 +226,7 @@ void main() {
       );
     });
 
-    test('missing sha256 rejects the whole manifest (BUG-3704)', () {
+    test('missing sha256 rejects the whole manifest (BUG-3758)', () {
       // 没有摘要 = 下来的 9.5 GB 不受任何校验就进备份导入；判无效后回退到带
       // 钉死摘要的内置直链。
       expect(
@@ -279,7 +279,7 @@ void main() {
         ',"$kRecommendedPackDeflateManifestKey":{"url":"http://a.example/d"}',
         ',"$kRecommendedPackDeflateManifestKey":{"url":"https://a.example/d",'
             '"sha256":"zz"}',
-        // 子清单缺摘要同样不可信，退回顶层（BUG-3704）。
+        // 子清单缺摘要同样不可信，退回顶层（BUG-3758）。
         ',"$kRecommendedPackDeflateManifestKey":{"url":"https://a.example/d"}',
       ]) {
         final RecommendedPackManifest? m = parseRecommendedPackManifest(

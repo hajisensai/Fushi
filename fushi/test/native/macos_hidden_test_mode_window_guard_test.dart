@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-3703：macOS 主窗口 `visibleAtLaunch="NO"`，启动时只有
+/// BUG-3751：macOS 主窗口 `visibleAtLaunch="NO"`，启动时只有
 /// `MainFlutterWindow.hideForStartupPresentation()` 会把它 orderFront。隐藏测试模式
 /// （`FUSHI_TEST_HIDDEN`）下这一步曾被 `guard !hiddenTestMode else { return }` 整个跳过，
 /// `showStartupWindow` 在隐藏模式下也不动窗口——窗口从未入屏，Flutter 引擎不启动，
@@ -55,7 +55,7 @@ void main() {
       isNot(
         matches(RegExp(r'guard\s+!\s*hiddenTestMode\s+else\s*\{\s*return')),
       ),
-      reason: '隐藏模式整段跳过 = 窗口永不入屏、引擎不启动（BUG-3703）',
+      reason: '隐藏模式整段跳过 = 窗口永不入屏、引擎不启动（BUG-3751）',
     );
 
     final int hiddenBranch = body.indexOf('if hiddenTestMode {');

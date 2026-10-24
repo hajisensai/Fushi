@@ -84,7 +84,7 @@ void main() {
       body.contains('await File(persisted).exists()'),
       isTrue,
       reason:
-          '按路径加载前要确认文件仍在磁盘上（async：BUG-3704 网络盘上同步 stat '
+          '按路径加载前要确认文件仍在磁盘上（async：BUG-3756 网络盘上同步 stat '
           '冻结 UI isolate）',
     );
     // 该捷径必须排在同目录枚举之前。
@@ -116,7 +116,7 @@ void main() {
       isTrue,
       reason: '目录归属判定只能加在换集分支，不影响单视频恢复',
     );
-    // 捷径条件仍要确认文件在磁盘上（async，BUG-3704）。
+    // 捷径条件仍要确认文件在磁盘上（async，BUG-3756）。
     expect(body.contains('await File(persisted).exists()'), isTrue);
   });
 

@@ -249,7 +249,7 @@ Future<List<double>> extractAudioEnergyEnvelope({
   int? limitMs = kSubtitleAutoAlignProbeLimitMs,
 }) async {
   // 一次 async stat 拿存在性与体积：视频可能在网络盘上，同步 stat 会冻结 UI isolate
-  // （BUG-3704）。
+  // （BUG-3756）。
   final FileStat videoStat = await File(videoPath).stat();
   if (videoStat.type == FileSystemEntityType.notFound) {
     debugPrint('[audio-energy] input missing: $videoPath');

@@ -41,7 +41,7 @@ const String kRecommendedPackGoogleDriveDirectUrl =
 
 /// 回退直链那份整包的 sha256（小写 hex）。
 ///
-/// BUG-3704：回退线路原先**不带任何校验值**，两个清单主机都拉不到时下来的 9.5 GB
+/// BUG-3758：回退线路原先**不带任何校验值**，两个清单主机都拉不到时下来的 9.5 GB
 /// 原样进备份导入（会覆盖整库与偏好）。下载内容一律要有钉死的摘要才放行，回退
 /// 线路也不例外。值取自线上清单 `2026-10-16-r2`（其 `url` 就是这份 Drive 文件）；
 /// Drive 上原地换文件时这里必须一起改，否则回退线路会以摘要不符失败——失败是
@@ -107,7 +107,7 @@ class RecommendedPackPart {
 }
 
 /// 推荐包清单：稳定 URL 下发的当前包指针。[url] 必填；[sha256]（小写 hex）在
-/// 解析线上清单时必填（缺则整份判无效，BUG-3704），下载完成后做完整性校验；
+/// 解析线上清单时必填（缺则整份判无效，BUG-3758），下载完成后做完整性校验；
 /// [sizeBytes]（可选）用于展示，也是**开启分片并发下载的前提**（没有总长就没法
 /// 切段）。
 @immutable
@@ -247,7 +247,7 @@ RecommendedPackManifest? parseRecommendedPackManifest(String jsonText) {
 RecommendedPackManifest? _parseManifestObject(Map<String, dynamic> decoded) {
   final Object? url = decoded['url'];
   if (url is! String || !url.startsWith('https://')) return null;
-  // BUG-3704：sha256 必填。清单只有 TLS 一层信任，缺摘要等于整包内容不受任何
+  // BUG-3758：sha256 必填。清单只有 TLS 一层信任，缺摘要等于整包内容不受任何
   // 校验；整体判无效后调用方回退到带钉死摘要的内置直链。
   final String? sha256Hex = _parseSha256(decoded['sha256']);
   if (sha256Hex == null) return null;
@@ -375,7 +375,7 @@ class RecommendedPackDownloader {
     final String? sha256Hex = manifest.sha256;
     if (sha256Hex == null) {
       // parseRecommendedPackManifest 已拒掉缺摘要的清单；走到这里是调用方手搓了
-      // 一份不带摘要的清单（BUG-3704）。
+      // 一份不带摘要的清单（BUG-3758）。
       throw ArgumentError.value(manifest.url, 'manifest', 'missing sha256');
     }
     return RecommendedPackDownloader(

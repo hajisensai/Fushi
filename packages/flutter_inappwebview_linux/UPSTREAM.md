@@ -82,7 +82,7 @@
   默认归 Flutter，用户点进 WebView（`onPointerDown` 里 `requestFocus`）后才进 DOM，由宿主的
   键盘桥交回 Dart。
 
-### 原生：桥锁定（BUG-3705，安全补丁）
+### 原生：桥锁定（BUG-3762，安全补丁）
 
 契约见 `docs/specs/2026-10-23-dictionary-script-sandbox.md`「JS ↔ 原生契约：桥锁定」。上游的桥
 脚本注入所有 frame，`_bridgeSecret` 是脚本字面量（任何 frame 都读得到），`_isMainFrame` 读了不用，

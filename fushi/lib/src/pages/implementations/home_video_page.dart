@@ -344,7 +344,7 @@ class HomeVideoPage extends BaseModuleTabPage {
 class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Future<List<VideoBookRow>>? _future;
 
-  /// 本地封面 / 海报 / 附加图的「文件在不在」异步记忆表（BUG-3704）：这些路径常落在
+  /// 本地封面 / 海报 / 附加图的「文件在不在」异步记忆表（BUG-3756）：这些路径常落在
   /// 网络盘（rclone / SMB 挂载）上，build 里同步 stat 一次就能冻结 UI 与同 isolate
   /// 的互联 host 数秒。build 只读这张表，没见过的路径后台 async 探测、落定后重建；
   /// 还在探测的候选画 [kPendingCoverImage]（回退链停在它这里，不先闪成后备封面）。
@@ -1548,7 +1548,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         if (!mounted) return;
         final String? cover = row.coverPath;
         // 全部 async：回填循环跑在 UI isolate，视频 / 封面常在网络盘上，同步 stat
-        // 逐条冻结界面与同 isolate 的互联 host（BUG-3704）。
+        // 逐条冻结界面与同 isolate 的互联 host（BUG-3756）。
         if (cover != null && cover.isNotEmpty && await File(cover).exists()) {
           continue; // 已有封面。
         }
@@ -2390,7 +2390,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 必须注入 isDirectory 谓词：不传的话目录落进 unknown，视频页对「拖入文件夹」
     // 完全静默（用户报的「拖文件夹没反应」）。分类只记录事实，目录算什么由
     // decideDropIntent 按落点表面决定。
-    // 目录判定与盘根探测先 async 做完再交给纯函数分类器（BUG-3704：拖进来的常是
+    // 目录判定与盘根探测先 async 做完再交给纯函数分类器（BUG-3756：拖进来的常是
     // 网络盘上的文件 / 蓝光盘目录，同步 stat 冷目录要数秒、冻结 UI isolate）。
     // 各路径并发判（一次往返，不逐个串行等网络盘）。
     final List<bool> isDirectory = await Future.wait(<Future<bool>>[
@@ -3626,7 +3626,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 长按菜单封面块的模糊垫底图源（[MediaItemDialogFrame.coverBackdrop]）：与
   /// [_buildCover] 同一判据——文件不存在时为 null，菜单退回纯色 letterbox。
   ImageProvider? _coverBackdropFor(String? coverPath) {
-    // 存在性读异步记忆表（BUG-3704）；还在探测时不画垫底（菜单退回纯色 letterbox）。
+    // 存在性读异步记忆表（BUG-3756）；还在探测时不画垫底（菜单退回纯色 letterbox）。
     if (_coverExists.lookupOptional(coverPath) != true) return null;
     return FileImage(File(coverPath!));
   }
@@ -10269,7 +10269,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }) {
     final String? cover = book.coverPath;
     // 已知不存在 / 还在探测的封面直接占位，避免对缺失文件发起无谓的异步解码。存在性
-    // 读异步记忆表、零同步 IO（BUG-3704：封面常在网络盘上，旧实现在这里同步
+    // 读异步记忆表、零同步 IO（BUG-3756：封面常在网络盘上，旧实现在这里同步
     // existsSync，冷目录一次 stat 数秒、整页与同 isolate 的互联 host 一起冻结）。
     if (cover == null || _coverExists.lookupOptional(cover) != true) {
       return ShelfCoverPlaceholder(icon: FushiIcons.video);

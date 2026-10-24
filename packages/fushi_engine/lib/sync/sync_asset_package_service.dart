@@ -1018,7 +1018,7 @@ Directory _audioBookDir(Directory root, String id, String field) {
 ///
 /// 包来自对端，manifest 是外来数据：`../../x` 或绝对路径一旦进了 `p.join`，
 /// [_extractResourcesInIsolate] 的 `isWithin` 校验是以**已被篡改的根目录**为基准的，
-/// 挡不住（BUG-3703）。这里不改写成安全名而是直接拒：词典名同时是 DB 主键，
+/// 挡不住（BUG-3748）。这里不改写成安全名而是直接拒：词典名同时是 DB 主键，
 /// 改写会让资源目录与 DB 行对不上。
 String _requireSinglePathSegment(String value, String field) {
   if (value.isEmpty ||

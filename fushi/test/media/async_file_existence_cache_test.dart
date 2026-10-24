@@ -1,4 +1,4 @@
-// BUG-3704：封面 / 海报回退链在 build 里同步 `existsSync`，路径落在网络盘（rclone /
+// BUG-3756：封面 / 海报回退链在 build 里同步 `existsSync`，路径落在网络盘（rclone /
 // SMB 挂载）上时冷目录一次 stat 要数秒，UI isolate 与同 isolate 的互联 host 一起
 // 冻结。AsyncFileExistenceCache 是这些 build 路径的唯一判据：build 只读缓存，没见过
 // 的路径后台 async 探测、落定后通知重建。

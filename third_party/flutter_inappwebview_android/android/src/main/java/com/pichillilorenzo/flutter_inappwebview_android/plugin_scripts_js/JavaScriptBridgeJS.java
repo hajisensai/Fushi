@@ -268,7 +268,7 @@ public class JavaScriptBridgeJS {
           "      if (arguments[0] === '" + JavaScriptBridgeInterface.FUSHI_LOCK_BRIDGE_HANDLER_NAME + "') {" +
           "        return new Promise(function(resolve, reject) {" +
           "          if (!_fushiIsTopFrame || _fushiBridgeToken != null) { resolve(false); return; }" +
-          // Fushi patch (BUG-3705): the native side clears the lock in onPageStarted, which runs on
+          // Fushi patch (BUG-3762): the native side clears the lock in onPageStarted, which runs on
           // the UI thread and can land after this document's first scripts. Locking before the
           // platform-ready event (dispatched from onPageFinished, i.e. strictly later) could be
           // wiped by that late reset and leave the page believing it is locked while the bridge is

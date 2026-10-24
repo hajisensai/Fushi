@@ -224,7 +224,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       // 带 ETag + 按需校验 If-Range：client 下载续传会带上次记下的验证器，文件在
       // host 上被替换时降级 200 全量；播放器的盲 Range（seek）不带 If-Range，照常
       // 206（ifRangeRequired: false）。
-      // 全程 async stat：视频常在网络盘上，同步 stat 会冻结 host 所在 isolate（BUG-3704）。
+      // 全程 async stat：视频常在网络盘上，同步 stat 会冻结 host 所在 isolate（BUG-3756）。
       final String etag;
       try {
         etag = await videoFileEtag(file);
@@ -713,7 +713,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       ..remove('hasCover');
     // coverPath 由 host 服务出清单时已按「磁盘上真存在」解析好（见
     // [RemoteVideoInfo.coverPath]），这里不再逐条同步 stat：视频封面常在网络盘上，
-    // 清单端点逐条 existsSync 会冻结 host 所在 isolate（BUG-3704）。清单之后被删掉
+    // 清单端点逐条 existsSync 会冻结 host 所在 isolate（BUG-3756）。清单之后被删掉
     // 的封面由封面端点自己 async 判 404。
     if (video.coverPath?.isNotEmpty ?? false) {
       final String encodedId = Uri.encodeFull(video.id);
@@ -1052,7 +1052,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       return shelf.Response.notFound('Clip out of range');
     }
     final File stream = File(disc.streamPaths[index]);
-    // 蓝光目录常在网络盘上：async 判存在（BUG-3704）。
+    // 蓝光目录常在网络盘上：async 判存在（BUG-3756）。
     if (!await stream.exists()) return shelf.Response.notFound('Clip missing');
 
     final BlurayClipLease lease;

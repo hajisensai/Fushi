@@ -1445,7 +1445,7 @@ class SyncOrchestrator {
         try {
           final File file = File(v.videoPath);
           // async 判存在：视频常在网络盘上，同步 existsSync 冷目录时会冻结主 isolate
-          // （BUG-3704）。
+          // （BUG-3756）。
           if (!await file.exists()) {
             report.errors.add(
               'video "${v.title}": local file missing: ${v.videoPath}',

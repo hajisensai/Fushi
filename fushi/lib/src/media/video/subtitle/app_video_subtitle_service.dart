@@ -634,7 +634,7 @@ class AppVideoSubtitleService {
   }
 
   /// 视频文件存在性一律 async 判：视频常在网络盘（rclone / SMB）上，这条服务跑在
-  /// UI isolate，同步 stat 冷目录要数秒、整个界面一起冻结（BUG-3704）。
+  /// UI isolate，同步 stat 冷目录要数秒、整个界面一起冻结（BUG-3756）。
   Future<void> _collectEpisodes(
     VideoBookRow row,
     List<AppVideoSubtitleEpisode> out,
@@ -833,7 +833,7 @@ class AppVideoSubtitleService {
     bool anyByDuration = false;
     int unknown = 0;
     for (final AppVideoSubtitleEpisode e in target.episodes) {
-      // 视频旁的字幕在网络盘上时同步 stat 会冻结 UI isolate（BUG-3704）。
+      // 视频旁的字幕在网络盘上时同步 stat 会冻结 UI isolate（BUG-3756）。
       if (target.wholeSeason &&
           await File(_subtitlePathFor(e.videoPath)).exists()) {
         continue;

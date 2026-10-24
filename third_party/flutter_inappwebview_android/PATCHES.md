@@ -29,7 +29,7 @@ dropped unless the id is a plain integer (1-15 digits) and `handlerName` is
 non-null. The Windows fork already validates the id the same way
 (`packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview.cpp`).
 
-## JavaScript bridge lock (BUG-3705)
+## JavaScript bridge lock (BUG-3762)
 
 `addJavascriptInterface` exposes `window.flutter_inappwebview` to every frame,
 including `<iframe sandbox="allow-scripts">` frames that run dictionary-supplied

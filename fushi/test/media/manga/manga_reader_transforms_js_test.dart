@@ -199,7 +199,7 @@ assert.ok(Math.abs(sy*3001-parseFloat(first.style.height))<1e-6);
       return doc.substring(start, doc.indexOf('}', start));
     }
 
-    // 「条漫」：showPageGaps 默认开也不能留缝（BUG-3703 的满屏黑线）。
+    // 「条漫」：showPageGaps 默认开也不能留缝（BUG-3749 的满屏黑线）。
     expect(
       rule(MangaReadingMode.webtoon, showPageGaps: true),
       isNot(contains('margin-bottom')),

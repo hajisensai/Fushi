@@ -1655,7 +1655,7 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
 }) async {
   if (outputs.isEmpty) return const <int, String>{};
   // 输入是用户库里的视频（常在网络盘上）：async 判存在，互联 host 的内封字幕端点在
-  // app 主 isolate 上走到这里，同步 stat 会冻结全部端点与 UI（BUG-3704）。输出落在
+  // app 主 isolate 上走到这里，同步 stat 会冻结全部端点与 UI（BUG-3756）。输出落在
   // 系统临时目录的缓存里（本地盘），沿用同步写法。
   if (!await File(inputPath).exists()) return const <int, String>{};
   try {
@@ -1787,7 +1787,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
     );
     return null;
   }
-  // 输入常是网络盘上的视频：async 判存在（BUG-3704，互联 host 的 clipaudio 端点走这里）。
+  // 输入常是网络盘上的视频：async 判存在（BUG-3756，互联 host 的 clipaudio 端点走这里）。
   if (!_isRemoteFfmpegInput(inputPath) && !await File(inputPath).exists()) {
     _reportFfmpegEarlyReturn(
       'extractAudioSegmentViaFfmpeg',

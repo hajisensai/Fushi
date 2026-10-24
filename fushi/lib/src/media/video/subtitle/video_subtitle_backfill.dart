@@ -163,7 +163,7 @@ class VideoSubtitleBackfillService {
       );
     }
     // 全部文件判据 async：补字幕跑在 UI isolate，视频与 sidecar 常在网络盘上，同步
-    // stat / list 冷目录要数秒、冻结界面与同 isolate 的互联 host（BUG-3704）。
+    // stat / list 冷目录要数秒、冻结界面与同 isolate 的互联 host（BUG-3756）。
     final File video = File(target.videoPath);
     if (!await video.exists()) {
       return const SubtitleBackfillResult(

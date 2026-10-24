@@ -18,7 +18,7 @@
 //     image semantics.
 //   * Sasayaki cues take the same in-page path in every mode, e-ink too: live
 //     Ranges in the `fushi-sentence-audio` CSS highlight wherever the engine
-//     supports CSS Highlight (BUG-3518 / BUG-3663: the DOM is never cut while the
+//     supports CSS Highlight (BUG-3518 / BUG-3741: the DOM is never cut while the
 //     sentence is on screen), the inline `.fushi-sentence-audio-cue` wrapper only
 //     on older WebViews. hoshi swaps to a native rect overlay under e-ink
 //     (`popupHost.renderSentenceAudioHighlight`); Fushi never ported that host,
@@ -868,7 +868,7 @@ window.fushiReader = {
   sentenceAudioCueMap: new Map(),
   sentenceAudioCuesSignature: null,
   cueWrappers: new Map(),
-  // BUG-3518 / BUG-3663：支持 CSS Highlight 的引擎上当前屏的句子不包裹，登记成 live Range
+  // BUG-3518 / BUG-3741：支持 CSS Highlight 的引擎上当前屏的句子不包裹，登记成 live Range
   // （见选区脚本 window.__fushiCueRanges.availableForLiveText）。
   cueRanges: new Map(),
 $kSentenceAudioRubyGapJs
@@ -3043,7 +3043,7 @@ $sharedInitViewport
     var wrapped = new Map();
     // BUG-3518：WebKit 上切开文本节点会丢掉切口处的字距调整、整行后移；VN 又是播放到那句才包裹，
     // 排版恰好在高亮出现那一刻变动（句子被「顶开」）。那边改登记 Range，不动 DOM。
-    // BUG-3663：Blink 同样会变——包裹段落里后一句的文本节点，同段含 ruby 那一列的行盒差出 6px，
+    // BUG-3741：Blink 同样会变——包裹段落里后一句的文本节点，同段含 ruby 那一列的行盒差出 6px，
     // 整屏居中跟着平移。所以 VN 在任何支持 CSS Highlight 的引擎上都登记 Range；包裹只留给旧 WebView。
     var rangeLayer = window.__fushiCueRanges;
     if (rangeLayer && rangeLayer.availableForLiveText()) {

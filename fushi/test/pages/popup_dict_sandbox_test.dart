@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/node_runtime.dart';
 
-/// BUG-3705 / BUG-3706：恶意词典不能在查词弹窗主文档里执行脚本、调原生桥或外联。
+/// BUG-3762 / BUG-3765：恶意词典不能在查词弹窗主文档里执行脚本、调原生桥或外联。
 ///
 /// ① 行为级 —— 真 Chrome 里跑生产 `dict-media.js` + `selection.js` + `popup.js`
 ///    （`popup_dict_sandbox_harness.mjs`）：结构化内容标签白名单、HTML 释义净化、带脚本的

@@ -33,7 +33,7 @@ import io.flutter.plugin.common.MethodChannel;
 public class TtsChannelHandler {
     private static final String CHANNEL = ChannelNames.TTS;
 
-    // BUG-3663：不再要求 Activity。本 handler 既挂在主 Activity 的引擎上，也挂在
+    // BUG-3740：不再要求 Activity。本 handler 既挂在主 Activity 的引擎上，也挂在
     // `:popup` 进程的 app 外查词引擎上（[FloatingDictPluginRegistrant]，那里只有
     // applicationContext）。它对 Context 的用法只有 TextToSpeech 与 getCacheDir，
     // 主线程回帖改走 [mainHandler]。

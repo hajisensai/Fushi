@@ -72,9 +72,9 @@ void main() {
       isTrue,
       reason:
           '外挂恢复须校验文件仍在（与主字幕 _restorePersistedSubtitle 同判据）；'
-          'async 判（BUG-3704：sidecar 常在网络盘上，同步 stat 冻结 UI isolate）',
+          'async 判（BUG-3756：sidecar 常在网络盘上，同步 stat 冻结 UI isolate）',
     );
-    expect(body.contains('existsSync('), isFalse, reason: 'BUG-3704');
+    expect(body.contains('existsSync('), isFalse, reason: 'BUG-3756');
     expect(
       body.contains('SubtitleSource.embeddedPrefix'),
       isTrue,

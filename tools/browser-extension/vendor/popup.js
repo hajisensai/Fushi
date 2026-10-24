@@ -1449,7 +1449,7 @@ function setStructuredContentElementStyle(element, style) {
         if (isFlowEscapingStructuredContentStyle(property, value)) {
             continue;
         }
-        // BUG-3706：background-image 之类的 url() 会让每次查词都请求外部地址。
+        // BUG-3765：background-image 之类的 url() 会让每次查词都请求外部地址。
         if (!isSafeStructuredContentStyleValue(value)) {
             continue;
         }
@@ -1838,7 +1838,7 @@ function constructSingleGlossaryHtml(entryIndex) {
         const css = window.dictionaryStyles?.[lastDict] ?? '';
         if (css) {
             const scopedCss = constructDictCss(stripDictCssRemoteRefs(css), lastDict, `.yomitan-glossary [data-dictionary="${lastDict}"]`);
-            // BUG-3705：拼进卡片 HTML 的是字符串，词典 CSS 里的 `</style>` 会闭合标签、
+            // BUG-3762：拼进卡片 HTML 的是字符串，词典 CSS 里的 `</style>` 会闭合标签、
             // 把后面的内容当 HTML（含脚本）写进用户的 Anki 卡片。
             const formatted = scopedCss
             .replace(/<\/style/gi, '<\\/style')
@@ -1987,7 +1987,7 @@ function constructGlossaryHtml(entryIndex) {
     
     for (const [dictName, css] of Object.entries(styles)) {
         const scopedCss = constructDictCss(stripDictCssRemoteRefs(css), dictName, `.yomitan-glossary [data-dictionary="${dictName}"]`);
-        // BUG-3705：同上，`</style>` 不能闭合导出卡片里的样式标签。
+        // BUG-3762：同上，`</style>` 不能闭合导出卡片里的样式标签。
         const formatted = scopedCss
         .replace(/<\/style/gi, '<\\/style')
         .replace(/\s+/g, ' ')
@@ -3006,7 +3006,7 @@ function sanitizeHtmlTree(root) {
     });
 }
 
-// 导出卡片用：净化后的 DocumentFragment。BUG-3705：原实现 DOMParser 净化后
+// 导出卡片用：净化后的 DocumentFragment。BUG-3762：原实现 DOMParser 净化后
 // `body.innerHTML` 序列化、调用方再 `tempDiv.innerHTML = …` 解析回来——两次解析的
 // 上下文不同，mXSS 结构会在第二次解析时复活 `<img onerror>`，而 tempDiv 属于主文档，
 // 脚本照样在主文档里跑。
@@ -3035,7 +3035,7 @@ function sanitizeInlineFragment(html) {
 }
 
 /* ---------------------------------------------------------------------------
-   词典内容的安全边界（BUG-3705 / BUG-3706，设计见
+   词典内容的安全边界（BUG-3762 / BUG-3765，设计见
    docs/specs/2026-10-23-dictionary-script-sandbox.md）。
 
    词典是外来数据：结构化内容的标签名、MDX 的整段 HTML、styles.css 都由词典作者
@@ -3070,7 +3070,7 @@ function isDangerousDictUrl(value) {
 }
 
 // 外部网络引用：http(s):// 与协议相对 //。词典内容一旦能发外部请求，每次查词都会
-// 把用户查了什么词泄露出去（BUG-3706）。
+// 把用户查了什么词泄露出去（BUG-3765）。
 const DICT_REMOTE_URL_RE = /^\s*(?:https?:)?\/\//i;
 // 正则里的引号一律写成 Unicode 转义：源码守卫的词法器不认正则字面量，裸引号会被当成
 // 串的开头、把后面整段源码掩码掉。
@@ -3097,7 +3097,7 @@ function isSafeStructuredContentStyleValue(value) {
 // 主文档里不允许存在的元素：能执行脚本、能导航、能嵌入外部文档或改写文档基址的。
 // math / svg 整个命名空间不要：外来命名空间与 HTML 的解析规则交错（mglyph / mtext /
 // foreignObject 里的 <style> 是文本还是标签取决于上下文）是 mXSS 的温床，词典里也
-// 几乎用不到（BUG-3705 审查复现过 math 路径的绕过）。
+// 几乎用不到（BUG-3762 审查复现过 math 路径的绕过）。
 const DICT_HTML_BLOCKED_SELECTOR = [
     'script', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'portal',
     'base', 'meta', 'form', 'noscript', 'template', 'math', 'svg',
@@ -3199,7 +3199,7 @@ function dictHtmlHasScript(html) {
     return /<script\b/i.test(`${html}`);
 }
 
-// 主文档 CSP（BUG-3706）：外联的兜底不能只靠改字符串——CSS 转义（`\75rl(`、`@\69mport`）、
+// 主文档 CSP（BUG-3765）：外联的兜底不能只靠改字符串——CSS 转义（`\75rl(`、`@\69mport`）、
 // image-set、各种 *srcset、.mdd 里原样返回的样式表，正则永远追不完。图片 / 样式 / 字体
 // 只认本机来源；frame-src 'none' 让沙箱 iframe 的自导航在请求发出**之前**就被拦（srcdoc
 // 不是网络导航，不受影响）。
@@ -3547,7 +3547,7 @@ function appendRichTextLine(parent, line) {
         parent.appendChild(document.createTextNode(line));
         return;
     }
-    // BUG-3705：全程在 DOM 上做（净化 → 链接化 → 挂载），不再「净化成串 → innerHTML」。
+    // BUG-3762：全程在 DOM 上做（净化 → 链接化 → 挂载），不再「净化成串 → innerHTML」。
     let fragment;
     if (hasHtml) {
         fragment = sanitizeInlineFragment(line);
@@ -3650,7 +3650,7 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
         return;
     }
     
-    // BUG-3705：标签名来自词典，只认白名单（`{"tag":"script"}` 曾原样 createElement）。
+    // BUG-3762：标签名来自词典，只认白名单（`{"tag":"script"}` 曾原样 createElement）。
     const tagName = structuredContentTagName(node.tag || 'span');
     const element = document.createElement(tagName);
     element.classList.add(`gloss-sc-${tagName}`);
@@ -6176,7 +6176,7 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
             } catch {
                 if (/<[a-z][\s\S]*>/i.test(content)) {
                     const wrapper = el('div');
-                    // BUG-3705：词典 HTML 不再原样进主文档。带脚本的进沙箱 iframe，
+                    // BUG-3762：词典 HTML 不再原样进主文档。带脚本的进沙箱 iframe，
                     // 其余净化后留在这里（事件属性 / 危险 URL / 外部请求都去掉）。
                     if (dictHtmlHasScript(content)) {
                         mountDictScriptSandbox(wrapper, content, dictName);
@@ -6239,7 +6239,7 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
 
     // MDX 词典的条目 HTML 自带 <script>（NLT 的頻度条形图、OALDPEX 的配置界面和
     // 中文翻译开关）。它们只在沙箱 iframe 里跑（renderContent → mountDictScriptSandbox，
-    // BUG-3705），主文档里不执行任何词典脚本。
+    // BUG-3762），主文档里不执行任何词典脚本。
 
     return details;
 }

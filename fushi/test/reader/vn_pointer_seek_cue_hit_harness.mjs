@@ -1,4 +1,4 @@
-// BUG-3662：VN 中键「跳到点击句」的反查在真 Chrome 里的行为跑手。
+// BUG-3738：VN 中键「跳到点击句」的反查在真 Chrome 里的行为跑手。
 // 由 vn_pointer_seek_cue_hit_test.dart 执行，argv[2] = payload.json（生产 VN shell +
 // 选区脚本 + 生产 VN CSS）。
 //

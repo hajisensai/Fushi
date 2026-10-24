@@ -55,7 +55,7 @@ class DandanplayFileKey {
 /// [file] 前 [kDandanplayHashPrefixBytes] 字节的 md5。
 ///
 /// 全程 async IO：互联 host 的 danmakukey 端点对网络盘上的视频现算，同步 stat 会冻结
-/// host 所在 isolate（BUG-3704）。
+/// host 所在 isolate（BUG-3756）。
 Future<String> dandanplayFileHash(File file) async {
   final int length = await file.length();
   final int end = math.min(length, kDandanplayHashPrefixBytes);

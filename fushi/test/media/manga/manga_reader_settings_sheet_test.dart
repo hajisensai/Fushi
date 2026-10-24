@@ -287,7 +287,7 @@ void main() {
     });
   });
 
-  testWidgets('page-gap switch only shows in paged-vertical mode (BUG-3703)', (
+  testWidgets('page-gap switch only shows in paged-vertical mode (BUG-3749)', (
     WidgetTester tester,
   ) async {
     // 长条漫的间距由「条漫 / 带间距长条漫」两个模式本身决定，开关只剩纵向分页

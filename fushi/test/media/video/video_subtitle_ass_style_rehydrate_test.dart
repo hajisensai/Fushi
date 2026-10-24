@@ -149,7 +149,7 @@ void main() {
       isTrue,
       reason:
           'must reject vanished files (nothing to re-parse); async '
-          'because sidecars often live on network mounts (BUG-3704)',
+          'because sidecars often live on network mounts (BUG-3756)',
     );
 
     // _loadSingle 用助手驱动重解析分支，走 _loadExternalSubtitleCues（文本档案廉价重解析，

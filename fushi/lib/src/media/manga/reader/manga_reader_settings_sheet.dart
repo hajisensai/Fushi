@@ -987,7 +987,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
   };
 
   /// 只对某种阅读模式生效的项，在别的模式下不出现——关着还留着会让人以为它有用。
-  /// 页间距：长条漫由「条漫 / 带间距长条漫」两个模式本身决定（BUG-3703），
+  /// 页间距：长条漫由「条漫 / 带间距长条漫」两个模式本身决定（BUG-3749），
   /// 开关只剩纵向分页的翻页空隙在用。
   bool _appliesToCurrentMode(String key) => switch (key) {
     'showPageGaps' =>

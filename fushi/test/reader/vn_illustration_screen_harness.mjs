@@ -154,7 +154,7 @@ try {
     reader.highlightSentenceAudioCue('yoku', true, true, false);
     await frame();
     out.resumed = { geo: geometry(reader), detected: window.imageDetected,
-      // 当前句：支持 CSS Highlight 时是 Range（BUG-3663），否则是 wrapper。
+      // 当前句：支持 CSS Highlight 时是 Range（BUG-3741），否则是 wrapper。
       active: CSS.highlights && CSS.highlights.has('fushi-sentence-audio')
         ? Array.from(CSS.highlights.get('fushi-sentence-audio')).map((r) => r.toString()).join('')
         : Array.from(reader.screen.querySelectorAll('.fushi-sentence-audio-active'))

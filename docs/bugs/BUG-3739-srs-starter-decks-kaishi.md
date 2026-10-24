@@ -1,0 +1,12 @@
+## BUG-3739 · srs-starter-decks-kaishi
+- **报告**：2026-10-21（用户：应用内反馈 abZh1VOGZ5「新手引导缺少 Kaishi 1.5k」，并希望按学习的目标语言提供能找到的入门卡组）
+- **真实性**：✅ 真缺口。复习模块空牌组状态（`fushi/lib/src/pages/implementations/srs/srs_deck_list_page.dart` 的 `srs-empty` 卡片）只有「添加一张卡」，「导入」来源只有 Anki 迁移 / .apkg 文件 / 制卡历史；全仓没有任何预置卡组的清单或下载路径，新手要自己去找 Kaishi 再手动导入。
+- **[x] ① 已修复** — 新增入门卡组（见本 PR）：
+  - 清单是数据：`packages/fushi_engine/lib/srs/starter/srs_starter_packs.dart` 的 `kSrsStarterPackManifestJson`（名称 / 语言 / 卡数 / 牌组名 / 版本 / 来源 / 许可 / 地址 / 字节数 / sha256），`parseSrsStarterPackManifest` 严格校验（https、64 位哈希、语言码、id 唯一，任一项坏整份拒）。
+  - 分发方式：**不随包，首次使用时下载**。donkuri/Kaishi 仓库没有许可证（GitHub API `license: null`、README 无许可声明），内容派生自 Core 2k / Tango 等既有卡组，Fushi 没有再分发授权；包又有 104 MB（全量音频 + 配图）。只从作者 GitHub Release 的钉死版本下载（v2.4.3，108692963 字节，sha256 `33da6f5a…e464`，本机实下核对与 GitHub 资产摘要一致；新格式包 1501 笔记 / 1501 卡，顶层牌组「Kaishi 1.5k」）。UI 写明来源与「许可：作者未声明」。
+  - 下载：`downloadSrsStarterPack` 走 `createAppHttpClient`（应用代理），复用 `ResumableDownloader`（断点续传、字节数 + sha256 校验，不过删 `.part`），`SrsStarterDownloadCancelToken` 强关 client 取消；已下好的包按哈希复用。
+  - iOS 合规：只从清单里固定的作者发布地址下载学习卡组，与词典推荐下载同类，不是用户可配内容源 / 第三方扩展 / 通用下载器，不属于 `StoreRestrictedCapability` 任何一类，五端都提供（判断写在引擎文件库注释里）。
+  - 导入：`fushi/lib/src/srs/srs_starter_pack_controller.dart`（app 级）下完交给与「导入 .apkg」同一条后台导入队列（`startSrsBackgroundImportFromRef`，`srs_import_task.dart`），导入成功才删包。判重：同一个包下载 / 导入中再点返回 busy；当前 profile 已有未删除的同名顶层牌组时不下载。
+  - UI：`fushi/lib/src/srs/srs_starter_packs_dialog.dart`，入口是空牌组卡片的「入门卡组」按钮与「导入」来源选择；默认内容语言的包排前；错峰进场 + 按压缩放 + 进度 / 取消。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/srs_starter_packs_test.dart`（清单解析与拒收、排序、下载成功 / 哈希不符 / HTTP 失败 / 取消 / 按哈希复用）；`fushi/test/srs/srs_starter_pack_controller_test.dart`（连点与导入中不重复、已安装不下载、下载失败 / 取消不入队、导入成功删包、导入失败保留包、已安装判定）。
+- **备注**：反馈还要求「英语之类能找到的都弄一下」。本 PR 只收录 Kaishi：其它语言没找到同时满足「作者公开发布 + 地址可钉版本 + 可核哈希」的入门 apkg，常见英语 / 韩语 / 中文入门卡组多来自商业教材或 AnkiWeb（不能直链、无版本）。新增一项只改清单 JSON，前提是确认作者允许下载使用、自己实下算出字节数与 sha256。

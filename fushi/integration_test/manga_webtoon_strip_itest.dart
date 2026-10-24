@@ -1,4 +1,4 @@
-/// 条漫（webtoon）真机几何与滑动（BUG-3703）：在真 `MangaFushiPage` 的 WebView 里
+/// 条漫（webtoon）真机几何与滑动（BUG-3749）：在真 `MangaFushiPage` 的 WebView 里
 /// 读 DOM，钉住三件事——
 ///
 /// 1. 「条漫」模式页与页之间没有间距，即使 `showPageGaps` 是默认的开（此前每页

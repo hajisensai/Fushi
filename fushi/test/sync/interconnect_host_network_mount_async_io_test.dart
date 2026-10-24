@@ -1,4 +1,4 @@
-// BUG-3704：互联 host 跑在 app 主 isolate 上（服务端没有独立 isolate）。视频放在网络盘
+// BUG-3756：互联 host 跑在 app 主 isolate 上（服务端没有独立 isolate）。视频放在网络盘
 // （rclone / SMB / WinFsp 挂载）上时，任何一次同步 stat / exists / length / list 都要等
 // 挂载端逐级重列目录，单次 0.15–4.4 s，期间全部端点（含 /api/ping）与 UI 一起冻住。
 //
@@ -500,7 +500,7 @@ void main() {
     expect(
       mount.syncCalls,
       isEmpty,
-      reason: 'host 端点对网络盘路径不得有任何同步文件调用（BUG-3704）',
+      reason: 'host 端点对网络盘路径不得有任何同步文件调用（BUG-3756）',
     );
     expect(mount.asyncCalls, greaterThan(0));
   });

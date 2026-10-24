@@ -32,7 +32,7 @@ class MainFlutterWindow: NSWindow {
   // Hidden test mode owns the window position at the native layer. AppKit's
   // orderFront screen constraint, window state restoration and
   // window_manager's setBounds (Dart startup placement) all route through
-  // setFrame and each pulls the parked window back onto a screen (BUG-3703,
+  // setFrame and each pulls the parked window back onto a screen (BUG-3751,
   // measured on macOS 26). Keep whatever size they ask for, pin the origin.
   override func setFrame(_ frameRect: NSRect, display flag: Bool) {
     guard hiddenTestMode else {
@@ -74,7 +74,7 @@ class MainFlutterWindow: NSWindow {
     // in. Hidden test mode must still order it in (already parked off-screen
     // by awakeFromNib, never key/main, app is .accessory): a window that was
     // never ordered in leaves the Flutter view unattached and the engine never
-    // starts (BUG-3703). showStartupWindow is a no-op in hidden mode, so this
+    // starts (BUG-3751). showStartupWindow is a no-op in hidden mode, so this
     // is the only place that puts it on screen.
     if hiddenTestMode {
       orderFront(nil)

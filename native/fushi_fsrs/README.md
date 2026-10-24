@@ -30,7 +30,7 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 一律**小数天**。`op`：`version` / `defaults` / `validate` / `next_states` / `memory_state` /
 `memory_state_from_sm2` / `retrievability` / `next_interval`。
 
-`ffsrs_fit` 的训练集（BUG-3703）：每张卡只传一份完整历史（`ratings` / `delta_days` 按 `card_offsets`
+`ffsrs_fit` 的训练集（BUG-3745）：每张卡只传一份完整历史（`ratings` / `delta_days` 按 `card_offsets`
 切段，长 `n_cards + 1`），外加按评分时刻排好序的条目 `(item_cards[i], item_lengths[i])` = 卡
 `item_cards[i]` 的前 `item_lengths[i]` 次评分。fsrs-rs 的 API 收每条自带前缀的 `Vec<FSRSItem>`，前缀在
 Rust 里展开：过边界与 Dart 侧都是 O(总评分数)，展开后的 O(Σ 前缀长度)（每条评分 8 字节）只在本次调用

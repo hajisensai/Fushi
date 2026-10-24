@@ -6,7 +6,7 @@ import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-// BUG-3703 host 侧：同步根树列举（PROPFIND Depth: infinity）的能力公布与层数边界。
+// BUG-3743 host 侧：同步根树列举（PROPFIND Depth: infinity）的能力公布与层数边界。
 
 late String _token;
 

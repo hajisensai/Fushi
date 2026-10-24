@@ -92,7 +92,7 @@ mixin WebDavPathBackendMixin on SyncBackend, SyncFolderCache {
 }
 
 /// 把一次对同步根 [rootHref] 的树列举（PROPFIND，至少列到孙层）装配成
-/// [RemoteListingSnapshot]（BUG-3703）。
+/// [RemoteListingSnapshot]（BUG-3743）。
 ///
 /// 与逐本 [WebDavPathBackendMixin.listSyncFiles] 给出同一批 id / 名字：书文件夹名取该
 /// 文件夹条目的 `displayName`（与 [WebDavPathBackendMixin.listBooks] 同源），文件 id 是

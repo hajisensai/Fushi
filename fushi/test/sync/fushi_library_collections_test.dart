@@ -685,7 +685,7 @@ void main() {
     });
   });
 
-  // ── BUG-3703 后续：host 持久化墓碑发布戳，离线早移出、晚同步的墓碑不被判旧闻 ──
+  // ── BUG-3743 后续：host 持久化墓碑发布戳，离线早移出、晚同步的墓碑不被判旧闻 ──
   group('离线移出晚同步：基线更新的另一端不复活（host 存 publishedAt）', () {
     late FushiSyncServer server;
     late FushiDatabase hostDb;

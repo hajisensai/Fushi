@@ -54,7 +54,7 @@ function rewriteDictLinks(html, dictName) {
     });
 }
 
-/* rewriteDictLinks 的 DOM 版（BUG-3705）：在已净化的惰性 DOM（<template> 内容）上直接改写，
+/* rewriteDictLinks 的 DOM 版（BUG-3762）：在已净化的惰性 DOM（<template> 内容）上直接改写，
    调用方再 importNode 挂进文档。不能回到「改字符串 → innerHTML 再解析」：两次解析的上下文
    不同，`<math><mtext><table><mglyph><style><img onerror>` 这类结构会在第二次解析时复活脚本。
    扩展分叉与 rewriteDictLinks 同语义：__fushiDictMedia 已设时一律写无 token 的占位属性
@@ -410,7 +410,7 @@ function fushiApplyDictionaryFont(data) {
 /* ---------------------------------------------------------------------------
    词典自带脚本（MDX 的 <script>：NLT 的頻度条形图、OALDPEX 的配置界面……）。
 
-   这些脚本**只在沙箱 iframe 里跑**（popup.js 的 mountDictScriptSandbox，BUG-3705）：
+   这些脚本**只在沙箱 iframe 里跑**（popup.js 的 mountDictScriptSandbox，BUG-3762）：
    曾经在主文档里用 Function 构造器执行、window 代理回落真 window，词典脚本因此能直接
    调原生桥改写用户的 Anki 卡片。沙箱里没有桥，外链脚本的源码由父页面经下面的
    fetchDictAsset 取回再内联进 srcdoc；源码按需取并缓存，不随每次查词注入（同样是

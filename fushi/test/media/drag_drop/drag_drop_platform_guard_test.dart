@@ -85,7 +85,7 @@ void main() {
       'Future<void> _openVideoImportPrefilled(',
     );
     expect(videoDrop.contains('Offset globalPosition'), isTrue);
-    // BUG-3704：拖进来的常是网络盘上的文件 / 蓝光盘目录，同步 stat 冷目录要数秒、
+    // BUG-3756：拖进来的常是网络盘上的文件 / 蓝光盘目录，同步 stat 冷目录要数秒、
     // 冻结 UI isolate。目录判定与盘根探测先 async 做完再交给纯函数分类器。
     expect(videoDrop.contains('Sync('), isFalse,
         reason: 'video drop must not stat dropped paths synchronously');

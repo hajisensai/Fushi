@@ -1,6 +1,0 @@
-## BUG-3662 · VN 模式中键跳到点击句无反应
-- **报告**：2026-10-23（用户：Windows 录屏，七つの魔剣が支配するII，竖排 VN + 有声书，中键点句子不跳）
-- **真实性**：✅ 真 bug。中键经 `onPointerSeek`（`fushi/lib/src/pages/implementations/reader_fushi/webview.part.dart:2907`）→ `_seekToClickedSentence`（`fushi/lib/src/pages/implementations/reader_fushi_page.dart:5033`）调 `window.fushiReader.cueIdAtPoint(x, y)`；VN 模式的 `window.fushiReader` 是 VN shell 自己的对象，只有分页 / 连续 shell 定义了 `cueIdAtPoint` / `cueIdAtDomPoint`（`reader_pagination_scripts.dart:1995`），VN 整个缺这对方法，JS 恒回 `null`，Dart 静默忽略。分页 / 连续那套按 cue↔DOM 映射表反查，在 VN 上也用不了：VN 屏上是克隆，映射表只在播放到某句时才对那一句建。
-- **[x] ① 已修复** — `fushi/lib/src/reader/reader_visual_novel_scripts.dart:3343`：VN host-compat shim 补 `cueIdAtPoint` / `cueIdAtDomPoint`。点击处经 `getCaretRange` 落到文本节点，用 VN 自己的 `getMatchableOffset`（克隆 / 源节点都认）换成章内音频坐标，再按 cue 的 `start/length` 区间找所属句，回 `{type:'frag', id}`（id 即 textFragmentId，与 `cueForPointerPayload` 对上）；点在注音上按所属 ruby 的基字起点算。查词载荷的 `audioCuePayload` 在 VN 下也随之有值（与分页 / 连续同一口径）。
-- **[x] ② 已加自动化测试** — `fushi/test/reader/vn_pointer_seek_cue_hit_test.dart`（跑手 `vn_pointer_seek_cue_hit_harness.mjs`）：生产 VN shell + 生产 VN CSS 在真 Chrome 里按字形坐标点，逐字配对 ruby 的基字 / 注音、两句正文、跟随包裹之后、换屏之后都反查到所属句。变异对照：去掉 shim 后跑手报 `reader.cueIdAtPoint is not a function`。另在真 WebView2 155 里同一页面实测点「監」回 `{"type":"frag","id":"c2"}`。
-- **备注**：点空白处与分页模式一样经 `getCaretRange` 的最近字符兜底（BUG-765）落到最近的句子，未另设判据。

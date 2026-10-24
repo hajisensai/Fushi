@@ -76,7 +76,7 @@ class InterconnectGraphicSubtitleExporter {
   /// [GraphicSubtitleTrackExportUnsupported]（端点映射 415）。
   ///
   /// 文件系统一律 async IO：视频常在网络盘上，互联 host 的图形字幕端点在 app 主
-  /// isolate 上调这里，同步 statSync 会冻结全部端点与 UI（BUG-3704）。
+  /// isolate 上调这里，同步 statSync 会冻结全部端点与 UI（BUG-3756）。
   Future<GraphicSubtitleTrackExport?> export({
     required String videoPath,
     required int streamIndex,

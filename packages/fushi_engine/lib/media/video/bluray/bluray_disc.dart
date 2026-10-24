@@ -140,7 +140,7 @@ Iterable<String> blurayCollectionNameCandidates(
 /// 同时接受「盘根」与「`BDMV` 目录本身」两种指法——用户拖进来的可能是任意一种。
 ///
 /// 只走 async 文件 API：盘常放在网络盘上，同步 stat 一次就是秒级、冻结调用方所在
-/// isolate（互联 host 与 UI 同在 app 主 isolate，BUG-3704）。
+/// isolate（互联 host 与 UI 同在 app 主 isolate，BUG-3756）。
 Future<String?> blurayDiscRootForDirectory(String path) async {
   final String normalized = p.normalize(path);
   if (await _looksLikeBlurayRoot(normalized)) return normalized;

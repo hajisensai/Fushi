@@ -33,10 +33,42 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3338 条。点号进各自文件。
+> 共 3370 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3766](bugs/BUG-3766-scrape-summary-hides-pending-backlog.md) | ✅ | ✅ | scrape-summary-hides-pending-backlog |
+| [BUG-3765](bugs/BUG-3765-dictionary-content-network-egress.md) | ✅ | ✅ | dictionary-content-network-egress |
+| [BUG-3764](bugs/BUG-3764-tmdb-parent-series-year-leaks.md) | ✅ | ✅ | tmdb-parent-series-year-leaks |
+| [BUG-3763](bugs/BUG-3763-android-youtube-system-proxy.md) | ✅ | ✅ | Android 上 YouTube「用 Fushi 播放」报无法获取视频流（Dart 出站没走 Wi-Fi 系统代理） |
+| [BUG-3762](bugs/BUG-3762-dictionary-content-runs-js-with-native-bridge.md) | ✅ | ✅ | dictionary-content-runs-js-with-native-bridge |
+| [BUG-3761](bugs/BUG-3761-anidb-catalog-only-auto-matches-wrong-kind.md) | ✅ | ✅ | anidb-catalog-only-auto-matches-wrong-kind |
+| [BUG-3760](bugs/BUG-3760-srs-backup-holds-db-connection.md) | ✅ | ✅ | SRS 自动备份读快照时占着主数据库连接；备份媒体池整份复制 |
+| [BUG-3759](bugs/BUG-3759-browser-android-fullscreen-frozen.md) | ✅ | ✅ | 应用内浏览器 Android 上网页全屏冻结、退不出（YouTube 画质菜单点不开） |
+| [BUG-3758](bugs/BUG-3758-recommended-pack-fallback-unverified.md) | ✅ | ✅ | recommended-pack-fallback-unverified |
+| [BUG-3757](bugs/BUG-3757-movie-keyword-single-file-scraped-as-tv.md) | ✅ | ✅ | movie-keyword-single-file-scraped-as-tv |
+| [BUG-3756](bugs/BUG-3756-host-list-videos-sync-stat-blocks-isolate.md) | ✅ | ✅ | 网络盘上的视频让 Fushi 主 isolate 卡数秒（互联 host 列表与 UI 一起冻结） |
+| [BUG-3755](bugs/BUG-3755-srs-review-card-images-too-small.md) | ✅ | ✅ | 复习卡里的图片太小（Anki 导入卡没有任何放大手段） |
+| [BUG-3754](bugs/BUG-3754-lapis-reminder-dismiss-pruned-by-profile-switch.md) | ✅ | ✅ | lapis-reminder-dismiss-pruned-by-profile-switch |
+| [BUG-3753](bugs/BUG-3753-system-tts-engine-invisible.md) | ✅ | ✅ | system-tts-engine-invisible |
+| [BUG-3752](bugs/BUG-3752-browser-new-window-blank.md) | ✅ | ✅ | 应用内浏览器里新窗口（target=_blank / window.open）打不开 |
+| [BUG-3751](bugs/BUG-3751-macos-hidden-test-mode-engine-never-starts.md) | ✅ | ✅ | macOS 设了 FUSHI_TEST_HIDDEN 后主窗口从不入屏，Flutter 引擎不启动 |
+| [BUG-3750](bugs/BUG-3750-tts-read-along-drops-on-online-voice-hiccup.md) | ✅ | ✅ | TTS 朗读用微软 / 谷歌在线语音经常中断 |
+| [BUG-3749](bugs/BUG-3749-manga-webtoon-seam-and-scroll-jank.md) | ✅ | ✅ | manga-webtoon-seam-and-scroll-jank |
+| [BUG-3748](bugs/BUG-3748-sync-package-manifest-name-path-escape.md) | ✅ | ✅ | sync-package-manifest-name-path-escape |
+| [BUG-3747](bugs/BUG-3747-jimaku-movie-subtitle-search-429.md) | ✅ | ✅ | jimaku-movie-subtitle-search-429 |
+| [BUG-3746](bugs/BUG-3746-srs-ankiconnect-whole-library-per-request.md) | ✅ | ✅ | Fushi SRS 的 AnkiConnect 兼容层每个请求都整库处理，大库下加卡 / 查重 / 搜索秒级 |
+| [BUG-3745](bugs/BUG-3745-srs-optimizer-prefix-json-quadratic.md) | ✅ | ✅ | srs-optimizer-prefix-json-quadratic |
+| [BUG-3744](bugs/BUG-3744-cli-candidates-provider-only-filters.md) | ✅ | ✅ | cli-candidates-provider-only-filters |
+| [BUG-3743](bugs/BUG-3743-interconnect-sync-slow.md) | ✅ | ✅ | 互联同步一轮要几分钟（局域网 / 全部客户端） |
+| [BUG-3742](bugs/BUG-3742-host-mining-ignores-srs-target.md) | ✅ | ✅ | 互联主机替对端制卡仍写 Anki，不遵守 Fushi 复习挖词目标 |
+| [BUG-3741](bugs/BUG-3741-vn-audiobook-highlight-relayout.md) | ✅ | ✅ | VN 模式有声书高亮推进时排版变化 |
+| [BUG-3740](bugs/BUG-3740-local-audio-menu-one-subsource.md) | ✅ | ✅ | 「选择音频源」菜单里本地音频库（android.db）只露出一个子来源 |
+| [BUG-3739](bugs/BUG-3739-srs-starter-decks-kaishi.md) | ✅ | ✅ | srs-starter-decks-kaishi |
+| [BUG-3738](bugs/BUG-3738-vn-middle-click-seek-sentence.md) | ✅ | ✅ | VN 模式中键跳到点击句无反应 |
+| [BUG-3737](bugs/BUG-3737-lookup-audio-ignores-tts-fallback.md) | ✅ | ✅ | 查词 ♪ 不走已配置的 TTS 兜底，制卡却走 |
+| [BUG-3736](bugs/BUG-3736-lyrics-mode-ball-theme-and-frame-rate.md) | ✅ | ✅ | lyrics-mode-ball-theme-and-frame-rate |
+| [BUG-3735](bugs/BUG-3735-macos-coreaudio-no-sound.md) | ✅ | ✅ | macos-coreaudio-no-sound |
 | [BUG-3734](bugs/BUG-3734-srs-apkg-export-memory-reimport-batching.md) | ✅ | ✅ | srs-apkg-export-memory-reimport-batching |
 | [BUG-3733](bugs/BUG-3733-srs-expanded-clip-error-box-covers-video.md) | ✅ | ✅ | 复习卡片段「放大查看」被错误盒整块盖住，关闭键缺失 |
 | [BUG-3732](bugs/BUG-3732-srs-note-editor-preview-not-native-fushi-card.md) | ✅ | ✅ | 笔记编辑页实时预览与复习页不是同一张卡（Fushi 卡片退回整面 WebView，片段 / 图片画法不同） |
@@ -69,82 +101,6 @@
 | [BUG-3705](bugs/BUG-3705-srs-sentence-target-word-not-highlighted.md) | ✅ | ✅ | 例句中目标词不高亮 |
 | [BUG-3704](bugs/BUG-3704-srs-review-space-dead-after-grading.md) | ✅ | ✅ | 评分后下一张卡「显示答案」空格失灵 |
 | [BUG-3703](bugs/BUG-3703-srs-review-gif-not-synced-with-sentence.md) | ✅ | ✅ | 复习卡动图不与例句音频联动 |
-> 共 3308 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3704](bugs/BUG-3704-host-list-videos-sync-stat-blocks-isolate.md) | ✅ | ✅ | 网络盘上的视频让 Fushi 主 isolate 卡数秒（互联 host 列表与 UI 一起冻结） |
-| [BUG-3703](bugs/BUG-3703-interconnect-sync-slow.md) | ✅ | ✅ | 互联同步一轮要几分钟（局域网 / 全部客户端） |
-> 共 3311 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3707](bugs/BUG-3707-scrape-summary-hides-pending-backlog.md) | ✅ | ✅ | scrape-summary-hides-pending-backlog |
-| [BUG-3706](bugs/BUG-3706-tmdb-parent-series-year-leaks.md) | ✅ | ✅ | tmdb-parent-series-year-leaks |
-| [BUG-3705](bugs/BUG-3705-anidb-catalog-only-auto-matches-wrong-kind.md) | ✅ | ✅ | anidb-catalog-only-auto-matches-wrong-kind |
-| [BUG-3704](bugs/BUG-3704-movie-keyword-single-file-scraped-as-tv.md) | ✅ | ✅ | movie-keyword-single-file-scraped-as-tv |
-| [BUG-3703](bugs/BUG-3703-cli-candidates-provider-only-filters.md) | ✅ | ✅ | cli-candidates-provider-only-filters |
-> 共 3307 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3703](bugs/BUG-3703-srs-optimizer-prefix-json-quadratic.md) | ✅ | ✅ | srs-optimizer-prefix-json-quadratic |
-> 共 3307 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3703](bugs/BUG-3703-srs-ankiconnect-whole-library-per-request.md) | ✅ | ✅ | Fushi SRS 的 AnkiConnect 兼容层每个请求都整库处理，大库下加卡 / 查重 / 搜索秒级 |
-> 共 3307 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3703](bugs/BUG-3703-jimaku-movie-subtitle-search-429.md) | ✅ | ✅ | jimaku-movie-subtitle-search-429 |
-> 共 3310 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3706](bugs/BUG-3706-dictionary-content-network-egress.md) | ✅ | ✅ | dictionary-content-network-egress |
-| [BUG-3705](bugs/BUG-3705-dictionary-content-runs-js-with-native-bridge.md) | ✅ | ✅ | dictionary-content-runs-js-with-native-bridge |
-| [BUG-3704](bugs/BUG-3704-recommended-pack-fallback-unverified.md) | ✅ | ✅ | recommended-pack-fallback-unverified |
-| [BUG-3703](bugs/BUG-3703-sync-package-manifest-name-path-escape.md) | ✅ | ✅ | sync-package-manifest-name-path-escape |
-> 共 3307 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3703](bugs/BUG-3703-manga-webtoon-seam-and-scroll-jank.md) | ✅ | ✅ | manga-webtoon-seam-and-scroll-jank |
-> 共 3307 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3703](bugs/BUG-3703-tts-read-along-drops-on-online-voice-hiccup.md) | ✅ | ✅ | TTS 朗读用微软 / 谷歌在线语音经常中断 |
-> 共 3307 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3703](bugs/BUG-3703-macos-hidden-test-mode-engine-never-starts.md) | ✅ | ✅ | macOS 设了 FUSHI_TEST_HIDDEN 后主窗口从不入屏，Flutter 引擎不启动 |
-> 共 3309 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3705](bugs/BUG-3705-android-youtube-system-proxy.md) | ✅ | ✅ | Android 上 YouTube「用 Fushi 播放」报无法获取视频流（Dart 出站没走 Wi-Fi 系统代理） |
-| [BUG-3704](bugs/BUG-3704-browser-android-fullscreen-frozen.md) | ✅ | ✅ | 应用内浏览器 Android 上网页全屏冻结、退不出（YouTube 画质菜单点不开） |
-| [BUG-3703](bugs/BUG-3703-browser-new-window-blank.md) | ✅ | ✅ | 应用内浏览器里新窗口（target=_blank / window.open）打不开 |
-> 共 3307 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3703](bugs/BUG-3703-system-tts-engine-invisible.md) | ✅ | ✅ | system-tts-engine-invisible |
-> 共 3307 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3703](bugs/BUG-3703-lapis-reminder-dismiss-pruned-by-profile-switch.md) | ✅ | ✅ | lapis-reminder-dismiss-pruned-by-profile-switch |
-> 共 3308 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3704](bugs/BUG-3704-srs-backup-holds-db-connection.md) | ✅ | ✅ | SRS 自动备份读快照时占着主数据库连接；备份媒体池整份复制 |
-| [BUG-3703](bugs/BUG-3703-srs-review-card-images-too-small.md) | ✅ | ✅ | 复习卡里的图片太小（Anki 导入卡没有任何放大手段） |
 | [BUG-3702](bugs/BUG-3702-local-audio-dangling-after-profile-import.md) | ✅ | ✅ | 导入别的设备的配置方案后，本地发音库成了悬空引用，互联同步也修不好 |
 | [BUG-3701](bugs/BUG-3701-manga-series-volume-folders-flattened.md) | ✅ | ✅ | manga-series-volume-folders-flattened |
 | [BUG-3700](bugs/BUG-3700-moved-seeds-hidden-from-download-list.md) | ✅ | ✅ | 整理后挪到来源根的做种种子从下载页消失，总速度上传恒为 0、「做种中」恒空 |
@@ -186,58 +142,6 @@
 | [BUG-3664](bugs/BUG-3664-hyphen-compound-tap-looks-up-front-half.md) | ✅ | ✅ | hyphen-compound-tap-looks-up-front-half |
 | [BUG-3663](bugs/BUG-3663-popup-local-audio-channel-missing.md) | ✅ | ✅ | popup-local-audio-channel-missing |
 | [BUG-3662](bugs/BUG-3662-popup-dictionary-metadata-stale.md) | ✅ | ✅ | popup-dictionary-metadata-stale |
-> 共 3266 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3662](bugs/BUG-3662-macos-coreaudio-no-sound.md) | ✅ | ✅ | macos-coreaudio-no-sound |
-> 共 3286 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3682](bugs/BUG-3682-host-mining-ignores-srs-target.md) | ✅ | ✅ | 互联主机替对端制卡仍写 Anki，不遵守 Fushi 复习挖词目标 |
-| [BUG-3681](bugs/BUG-3681-srs-anki-migration-no-switch-to-srs.md) | ✅ | ✅ | 从 Anki 迁移后制卡仍走 Anki，无切换到 Fushi SRS 选项 |
-| [BUG-3680](bugs/BUG-3680-srs-editor-no-preview-visual-ai.md) | ✅ | ✅ | 编辑卡片缺预览与可视化编辑，字段名无翻译说明，编辑与模板无 AI |
-| [BUG-3679](bugs/BUG-3679-srs-deck-delete-never-purged.md) | ✅ | ✅ | 删除牌组（含连卡片删除）只写墓碑，永不物理清除 |
-| [BUG-3678](bugs/BUG-3678-srs-undo-slow-and-downgrades-fsrs7.md) | ✅ | ✅ | Ctrl+Z 撤回极慢且撤回后降级成 FSRS-7 |
-| [BUG-3677](bugs/BUG-3677-srs-rwkv-full-rescore-per-answer.md) | ✅ | ✅ | RWKV 每评一张卡全量重算分数 |
-| [BUG-3676](bugs/BUG-3676-srs-browse-loads-all-fields.md) | ✅ | ✅ | SRS 浏览把整个集合所有卡全部字段加载进内存 |
-| [BUG-3675](bugs/BUG-3675-srs-host-remote-mining-ignores-srs-target.md) | ✅ | 🚧 | 互联主机替其它设备制卡时无视「制卡目标 = Fushi 复习」 |
-| [BUG-3674](bugs/BUG-3674-srs-colpkg-import-out-of-memory.md) | ✅ | ✅ | Android 导入 .colpkg 报 Out of Memory |
-| [BUG-3673](bugs/BUG-3673-srs-interconnect-sync-not-shared.md) | ✅ | ✅ | Fushi SRS 通过互联同步不互通 |
-| [BUG-3672](bugs/BUG-3672-srs-card-fonts-need-toggle.md) | ✅ | ✅ | SRS 卡片字体需关掉再打开字体设置才生效 |
-| [BUG-3671](bugs/BUG-3671-srs-open-note-editor-no-lock-slow.md) | ✅ | ✅ | 跳转卡片无防重入锁且加载慢、编辑页无法删卡 |
-| [BUG-3670](bugs/BUG-3670-srs-popup-duplicate-open-card-buttons.md) | ✅ | ✅ | 查词弹窗「新卡」与「跳转」去同一页面 |
-| [BUG-3669](bugs/BUG-3669-srs-jump-to-card-autoplays-video.md) | ✅ | ✅ | 从查词弹窗跳转到卡片视频自动播放 |
-| [BUG-3668](bugs/BUG-3668-srs-replay-buttons-same-row-as-grades.md) | ✅ | ✅ | 复习页音频按钮与评分按钮同一行 |
-| [BUG-3667](bugs/BUG-3667-srs-card-links-not-clickable.md) | ✅ | ✅ | 卡片内超链接无法点击 |
-| [BUG-3666](bugs/BUG-3666-srs-review-extra-audio-buttons.md) | ✅ | ✅ | 只有一句例句却出 5 个音频按钮、未开自动播放全播 |
-| [BUG-3665](bugs/BUG-3665-srs-clip-and-sentence-double-audio.md) | ✅ | ✅ | 卡上视频不能放大、与例句按钮重复出声，重播导致重音 |
-| [BUG-3664](bugs/BUG-3664-srs-sentence-target-word-not-highlighted.md) | ✅ | ✅ | 例句中目标词不高亮 |
-| [BUG-3663](bugs/BUG-3663-srs-review-space-dead-after-grading.md) | ✅ | ✅ | 评分后下一张卡「显示答案」空格失灵 |
-| [BUG-3662](bugs/BUG-3662-srs-review-gif-not-synced-with-sentence.md) | ✅ | ✅ | 复习卡动图不与例句音频联动 |
-> 共 3266 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3662](bugs/BUG-3662-lyrics-mode-ball-theme-and-frame-rate.md) | ✅ | ✅ | lyrics-mode-ball-theme-and-frame-rate |
-> 共 3267 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3663](bugs/BUG-3663-local-audio-menu-one-subsource.md) | ✅ | ✅ | 「选择音频源」菜单里本地音频库（android.db）只露出一个子来源 |
-| [BUG-3662](bugs/BUG-3662-lookup-audio-ignores-tts-fallback.md) | ✅ | ✅ | 查词 ♪ 不走已配置的 TTS 兜底，制卡却走 |
-> 共 3267 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3663](bugs/BUG-3663-vn-audiobook-highlight-relayout.md) | ✅ | ✅ | VN 模式有声书高亮推进时排版变化 |
-| [BUG-3662](bugs/BUG-3662-vn-middle-click-seek-sentence.md) | ✅ | ✅ | VN 模式中键跳到点击句无反应 |
-> 共 3266 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3662](bugs/BUG-3662-srs-starter-decks-kaishi.md) | ✅ | ✅ | srs-starter-decks-kaishi |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |

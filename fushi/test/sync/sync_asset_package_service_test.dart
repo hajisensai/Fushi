@@ -274,7 +274,7 @@ void main() {
       expect(File(p.join(temp.path, 'evil.txt')).existsSync(), isFalse);
     });
 
-    // BUG-3703：manifest 的词典名直接拼进落地根目录，资源条目本身干净也能写出界。
+    // BUG-3748：manifest 的词典名直接拼进落地根目录，资源条目本身干净也能写出界。
     for (final String evilName in <String>[
       '../escaped',
       r'..\escaped',
@@ -795,7 +795,7 @@ void main() {
           reason: '大 DB STORE 往返后字节哈希必须一致');
     });
 
-    // BUG-3703：dbFileName 来自对端 manifest，`../x.db` 会让导入方把暂存目录外的
+    // BUG-3748：dbFileName 来自对端 manifest，`../x.db` 会让导入方把暂存目录外的
     // 任意文件当成音频库接管。
     test('rejects dbFileName that points outside the staging dir', () async {
       final Directory temp = await Directory.systemTemp.createTemp(

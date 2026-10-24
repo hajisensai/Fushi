@@ -862,7 +862,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
 /// 进库时刻就是 deletedAt），一经确定不刷新；否则是经同步新进库的知识，盖
 /// [publishedAtMs]（缺省当前墙钟）。不抄合并结果里的发布戳：那是**别的通道**（云文件 /
 /// 对端 host）的首发时刻，早于它进本库的时刻；本机的互联 client 若基线落在两者之间，
-/// 拿早的那个会把没见过的墓碑判成旧闻、成员复活（BUG-3703 后续）。
+/// 拿早的那个会把没见过的墓碑判成旧闻、成员复活（BUG-3743 后续）。
 Future<int> applyCollectionLocalChanges(
     FushiDatabase db, CollectionLocalChanges changes,
     {int? publishedAtMs}) async {

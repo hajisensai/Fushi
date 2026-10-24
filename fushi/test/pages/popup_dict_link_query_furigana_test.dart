@@ -69,7 +69,7 @@ void main() {
             '(it carries <rt> readings and the .ruby-reserve twin)');
 
     // 结构化内容链接：定位 onclick 里的 query 计算段。
-    // BUG-3705 起这条分支还要先过 href 的危险 scheme 判定。
+    // BUG-3762 起这条分支还要先过 href 的危险 scheme 判定。
     final int hrefIdx = js.indexOf('if (node.href && ');
     expect(hrefIdx, greaterThanOrEqualTo(0));
     final int queryIdx = js.indexOf('const query = node.href.indexOf', hrefIdx);

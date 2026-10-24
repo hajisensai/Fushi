@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/darwin_vendored_libmpv.dart';
 
-/// BUG-3662：macOS 随包 libmpv 必须同时编进 `coreaudio` 与 `avfoundation` 两个音频输出。
+/// BUG-3735：macOS 随包 libmpv 必须同时编进 `coreaudio` 与 `avfoundation` 两个音频输出。
 ///
 /// macOS 27 上 mpv 的 `ao_coreaudio` 给 AudioUnit 设输入声道布局一律失败
 /// （`unable to set the input channel layout on the audio unit (-50)`，与片源、声道
@@ -26,7 +26,7 @@ void main() {
         contains('AVFoundation AVSampleBufferAudioRenderer'),
         reason:
             '${slice.identity}: avfoundation AO missing, no fallback when '
-            'coreaudio fails to initialize (BUG-3662)',
+            'coreaudio fails to initialize (BUG-3735)',
       );
       expect(
         slice.mpv,

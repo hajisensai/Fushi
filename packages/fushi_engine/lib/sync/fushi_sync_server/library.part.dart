@@ -267,7 +267,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       ..remove('hasCover');
     // coverPath 由 host 服务出清单时已按「磁盘上真存在」解析好（见
     // [RemoteBookInfo.coverPath]），这里不再逐本同步 stat：清单端点每本书一次
-    // existsSync，封面在网络盘上时整份清单会冻结 host 所在 isolate（BUG-3704）。
+    // existsSync，封面在网络盘上时整份清单会冻结 host 所在 isolate（BUG-3756）。
     // 清单之后被删掉的封面由封面端点自己 async 判 404。
     if (book.coverPath?.isNotEmpty ?? false) {
       json['hasCover'] = true;

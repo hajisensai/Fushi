@@ -15,7 +15,7 @@ import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// BUG-3662：VN 模式中键「跳到点击句」。
+/// BUG-3738：VN 模式中键「跳到点击句」。
 ///
 /// 用户原始失败（Windows，七つの魔剣が支配するII，竖排 VN + 有声书）：中键点句子
 /// 没有任何反应。Dart `_seekToClickedSentence` 调 `fushiReader.cueIdAtPoint`，VN 的

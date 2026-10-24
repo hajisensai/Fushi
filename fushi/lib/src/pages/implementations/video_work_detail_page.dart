@@ -259,7 +259,7 @@ class _StandaloneVideoWorkDetailState
 
   /// [_images] 里本地落地文件的存在性（[_load] 里 async 探好，build 只读）。刮削把
   /// 海报 / 背景图作为 sidecar 写在视频旁边，常在网络盘上，build 里同步 stat 会冻结
-  /// UI 与同 isolate 的互联 host（BUG-3704）。
+  /// UI 与同 isolate 的互联 host（BUG-3756）。
   Set<String> _existingImagePaths = const <String>{};
   bool _loading = true;
 

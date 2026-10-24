@@ -575,7 +575,7 @@ if (!window.__fushiCueRanges) {
         var forced = window.__fushiSentenceAudioRangeMode;
         return typeof forced === 'boolean' ? forced : isWebKit();
       },
-      // BUG-3663：VN 播放到哪句才处理哪句，任何引擎上切 DOM 都发生在句子已经显示之后——Blink
+      // BUG-3741：VN 播放到哪句才处理哪句，任何引擎上切 DOM 都发生在句子已经显示之后——Blink
       // 包裹段落里后一句的文本节点会让同段含 ruby 的那一列行盒差出 6px，整屏跟着居中平移。
       // 所以 VN 只要引擎支持 CSS Highlight 就走 Range（分页 / 滚动开章即整章包裹，不受影响）。
       availableForLiveText: function() {

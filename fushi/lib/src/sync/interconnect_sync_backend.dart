@@ -654,7 +654,7 @@ class InterconnectSyncBackend extends SyncBackend
   @override
   String get davLogTag => '[fushi-client]';
 
-  /// BUG-3703：书阶段一次拿到整个同步根，不再逐本 PROPFIND（44 本书 = 44 次往返）。
+  /// BUG-3743：书阶段一次拿到整个同步根，不再逐本 PROPFIND（44 本书 = 44 次往返）。
   ///
   /// 只在 host 于 `/api/capabilities` **显式**声明树列举（`webdav.treeListingLevels`
   /// ≥ 2）时才发 `Depth: infinity`：老 host 把 infinity 当 Depth 0、只回根自身，那份
