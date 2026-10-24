@@ -28,7 +28,8 @@ Route<void> illustrationZoomRoute(BuildContext context, WidgetBuilder builder) {
   );
 }
 
-/// 一张图的缩放查看：点图关闭路由；[onLongPress]（移动端分享）由宿主决定挂不挂。
+/// 一张图的缩放查看：点图关闭路由；[onLongPress]（移动端弹图片动作面板，见
+/// image_actions_sheet.dart）由宿主决定挂不挂。
 class IllustrationZoomViewer extends StatelessWidget {
   const IllustrationZoomViewer({
     super.key,
@@ -162,11 +163,13 @@ Future<void> copyImageFileToClipboard(File file) async {
   }
 }
 
-/// Windows 右键图片的「复制图片」菜单，锚在 [globalPosition]；选中后调 [onCopy]。
+/// Windows 右键图片的菜单（「保存图片」+「复制图片」），锚在 [globalPosition]；
+/// 选中后调 [onSave] / [onCopy]。[onSave] 为 null 时不列保存项。
 Future<void> showImageCopyContextMenu(
   BuildContext context,
   Offset globalPosition, {
   required Future<void> Function() onCopy,
+  Future<void> Function()? onSave,
 }) async {
   final RenderBox overlay =
       Overlay.of(context).context.findRenderObject()! as RenderBox;
@@ -200,6 +203,20 @@ Future<void> showImageCopyContextMenu(
     constraints: const BoxConstraints(minWidth: 112.0, maxWidth: 280.0),
     menuPadding: const EdgeInsets.symmetric(vertical: 8.0),
     items: <PopupMenuEntry<String>>[
+      if (onSave != null)
+        PopupMenuItem<String>(
+          value: 'save',
+          height: kMinInteractiveDimension,
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const FushiIcon(FushiIcons.download, size: 18.0),
+              const SizedBox(width: 12.0),
+              Text(t.reader_image_save, style: const TextStyle(fontSize: 14.0)),
+            ],
+          ),
+        ),
       PopupMenuItem<String>(
         value: 'copy',
         height: kMinInteractiveDimension,
@@ -217,5 +234,7 @@ Future<void> showImageCopyContextMenu(
   );
   if (action == 'copy') {
     await onCopy();
+  } else if (action == 'save') {
+    await onSave?.call();
   }
 }

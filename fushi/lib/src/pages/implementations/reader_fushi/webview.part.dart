@@ -2838,7 +2838,7 @@ updateLive: function(patch) {
           handlerName: 'onImageLongPress',
           callback: (args) async {
             if (args.isEmpty) return;
-            await _shareReaderImage(args[0] as String);
+            await _showReaderImageActions(args[0] as String);
           },
         );
 

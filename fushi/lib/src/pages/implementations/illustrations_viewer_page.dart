@@ -14,6 +14,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart'
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show computeTocAnchorCharOffsets, tocAnchorKey;
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart';
+import 'package:fushi/src/reader/image_actions_sheet.dart';
 import 'package:fushi/src/reader/reader_collection_volumes.dart'
     show epubImageFileFor, parseVolumeBookForPeekOffUi;
 import 'package:fushi/src/reader/reader_gallery_page.dart';
@@ -99,12 +100,14 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     }
     try {
       // 结构解析（isolate）与两次 Drift 读互不依赖，并行起跑。
-      final Future<EpubBook> bookFuture =
-          parseVolumeBookForPeekOffUi(widget.extractDir);
+      final Future<EpubBook> bookFuture = parseVolumeBookForPeekOffUi(
+        widget.extractDir,
+      );
       final Future<ReaderPosition?> positionFuture = widget.bookUid.isEmpty
           ? Future<ReaderPosition?>.value(null)
-          : ReaderPositionRepository(widget.database)
-              .findByBookUid(widget.bookUid);
+          : ReaderPositionRepository(
+              widget.database,
+            ).findByBookUid(widget.bookUid);
       final Future<Set<String>> revealedFuture = widget.bookUid.isEmpty
           ? Future<Set<String>>.value(<String>{})
           : widget.database.getRevealedImageKeys(widget.bookUid);
@@ -158,7 +161,10 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     if (widget.bookUid.isEmpty) return; // 无 uid 只留内存态，不落孤儿行。
     try {
       await widget.database.markImageRevealed(
-          widget.bookUid, key, DateTime.now().millisecondsSinceEpoch);
+        widget.bookUid,
+        key,
+        DateTime.now().millisecondsSinceEpoch,
+      );
     } catch (e, stack) {
       ErrorLogService.instance.log('IllustrationsViewer.reveal', e, stack);
     }
@@ -175,8 +181,8 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
 
   File? _fileFor(EpubImageRef ref) => epubImageFileFor(widget.extractDir, ref);
 
-  /// 与阅读器正文 / 阅读器插图册同一条缩放路径；Windows 右键复制、移动端长按
-  /// 分享（TODO-093 / BUG-177 的两个入口）。
+  /// 与阅读器正文 / 阅读器插图册同一条缩放路径；Windows 右键保存 / 复制、移动端
+  /// 长按弹图片动作面板（TODO-093 / BUG-177 的两个入口）。
   void _openZoom(EpubImageRef ref) {
     final File? file = _fileFor(ref);
     if (file == null) return;
@@ -186,18 +192,24 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
         context,
         (BuildContext routeContext) => ContextMenuTrigger(
           onInvoke: isWindowsPlatform
-              ? (Offset position) => unawaited(showImageCopyContextMenu(
+              ? (Offset position) => unawaited(
+                  showImageCopyContextMenu(
                     routeContext,
                     position,
                     onCopy: () => copyImageFileToClipboard(file),
-                  ))
+                    onSave: () => runImageAction(ImageAction.save, file),
+                  ),
+                )
               : null,
+          // 长按 = 全局图片动作面板（保存 / 分享），与阅读器正文同一个。
           child: IllustrationZoomViewer(
             file: file,
             diagnosticTag: 'IllustrationsViewer.zoom',
             onLongPress: isWindowsPlatform
                 ? null
-                : () => unawaited(shareImageFile(file)),
+                : () => unawaited(
+                    showImageActionsSheet(routeContext, file: file),
+                  ),
           ),
         ),
       ),

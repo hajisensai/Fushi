@@ -3,6 +3,12 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- 长按图片「保存图片」写系统相册（gal）：Android 10 及以下要写公共 Pictures 目录
+         （Android 10 还要 application 上的 requestLegacyExternalStorage，否则直写路径被
+         分区存储拒绝；该属性在 targetSdk 30+ 的 Android 11+ 设备上无效）；11+ 走 MediaStore
+         无需此权限。 -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
@@ -33,6 +39,7 @@
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
+        android:requestLegacyExternalStorage="true"
         xmlns:tools="http://schemas.android.com/tools"
         tools:replace="android:label">
         <activity

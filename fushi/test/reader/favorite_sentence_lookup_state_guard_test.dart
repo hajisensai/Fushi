@@ -68,7 +68,7 @@ void main() {
     final int exportIdx =
         src.indexOf('Future<void> _exportAudiobookClipFromSelection()');
     expect(exportIdx, greaterThan(0));
-    final int nextMethod = src.indexOf('Future<void> _shareReaderImage(');
+    final int nextMethod = src.indexOf('Future<void> _showReaderImageActions(');
     expect(nextMethod, greaterThan(exportIdx));
     final String body = src.substring(exportIdx, nextMethod);
     expect(body.contains('_fillLookupStateFromNativeSelection'), isTrue,
