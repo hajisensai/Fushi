@@ -37,11 +37,14 @@ void main() {
     expect(immersionBody,
         contains("writeDictionaryMediaCache(payload.fields['dictionaryMedia']"),
         reason: 'mineImmersion 三条沉浸分支最终都走 repo 渲染，同样要先落缓存');
-    // 落缓存必须在 repo 创建/制卡之前（顺序守卫：缓存在前，repo 才读得到）。
-    expect(entryBody.indexOf('writeDictionaryMediaCache'),
-        lessThan(entryBody.indexOf('createAnkiRepository()')));
-    expect(immersionBody.indexOf('writeDictionaryMediaCache'),
-        lessThan(immersionBody.indexOf('createAnkiRepository()')));
+    // 落缓存必须在取 repo / 制卡之前（顺序守卫：缓存在前，repo 才读得到）。
+    // 远程制卡取的是遵守本机挖词目标的 hostMiningAnkiRepository（7d426b51c4）。
+    for (final String methodBody in <String>[entryBody, immersionBody]) {
+      final int repoAt = methodBody.indexOf('hostMiningAnkiRepository');
+      expect(repoAt, greaterThan(0),
+          reason: '远程制卡应经 hostMiningAnkiRepository 取 repo');
+      expect(methodBody.indexOf('writeDictionaryMediaCache'), lessThan(repoAt));
+    }
   });
 
   test('扩展 content.js 渲染弹窗前置 window.embedMedia = true（三镜像）', () {

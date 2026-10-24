@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptiveModalSheet;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiListItem, FushiModalSheetFrame, FushiSearchField, FushiTextField;
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
@@ -254,11 +255,12 @@ class _VideoRemoteSubtitleSearchSheetState
                 ),
               ),
               const SizedBox(width: 4),
-              IconButton(
+              FushiIconButton(
                 key: const ValueKey<String>('video-remote-subtitle-search-go'),
                 tooltip: t.video_jimaku_search,
-                onPressed: _searching ? null : () => unawaited(_run()),
-                icon: const FushiIcon(FushiIcons.search),
+                enabled: !_searching,
+                onTap: () => unawaited(_run()),
+                icon: FushiIcons.search,
               ),
             ],
           ),
