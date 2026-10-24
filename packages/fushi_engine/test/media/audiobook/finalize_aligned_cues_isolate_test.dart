@@ -1,7 +1,8 @@
 // HBK-AUDIT-009（#2323 / #2339）：有声书导入收尾的「整书重切（alignPositions FFI）+ 换正文 +
 // 能量吸附」原先在调用方（导入对话框 = UI isolate）上同步跑。现在 finalizeAlignedCues 把这一段
 // 整体交给后台 isolate。这里钉两件事：
-// 1. 结果与改动前的同步路径（同一组构件按原顺序在本 isolate 上直接调用）逐字段一致；
+// 1. 结果与改动前的同步路径逐字段一致（吸附 / 合并 / 余量迁到上游之后，同步路径的输出冻结成
+//    [_kFrozenFinalized]）；
 // 2. 计算确实经后台入口：执行计算的 isolate 是 kAlignedCueIsolateName，且调用方传入的
 //    cue 对象没被就地改动（计算发生在拷贝上）。
 @TestOn('vm')
@@ -60,6 +61,16 @@ List<AudioCue> _cues() => <AudioCue>[
     ),
 ];
 
+/// 迁移前同步路径（EpubCueMatcher → CueSentenceResegmenter → 换正文 → CueEnergySnapper.snap /
+/// refineEdges → CueFragmentMerger → CueDisplayMargins → SubtitleRematchCodec，hajisensai/fushi#2491
+/// 合入后的 develop 6397b193b0）对本文件语料的 [_describe] 输出，冻结于把吸附 / 合并 / 余量迁到
+/// 上游 fushi-subtitles 之前（当时的参照路径断言过吸附 / 修边与显示余量都真的改了时间）。
+const String _kFrozenFinalized =
+    '0|9880|11580|夢見る時がある。|fushi-cue://s=0&ns=4&ne=11|夢,見,る,時,が,あ,る|220,320,420,520,620,720,820|0:4-11@1.0\n'
+    '1|11760|13380|転入生がやってくる。|fushi-cue://s=0&ns=11&ne=20|転,入,生,が,や,っ,て,く,る|240,340,440,540,640,740,840,940,1040|0:11-20@1.0\n'
+    '2|13660|15980|その子はとても素敵な子だと思った。|fushi-cue://s=0&ns=20&ne=36|そ,の,子,わ,と,て,も,素,敵,な,子,だ,と,思,っ,た|140,260,380,500,620,740,860,980,1100,1220,1340,1460,1580,1700,1820,1940|0:20-36@0.8666666666666667\n'
+    '3/3';
+
 /// cue 与匹配结果的规范文本（逐字段）。
 String _describe(List<AudioCue> cues, MatchResult result) {
   final StringBuffer out = StringBuffer();
@@ -103,35 +114,6 @@ void main() {
   tearDown(() => job.deleteSync(recursive: true));
 
   test('后台收尾与改动前的同步路径逐字段一致，且计算在后台 isolate 的拷贝上进行', () async {
-    // 改动前的同步路径：同一组构件按原顺序在本 isolate 上直接调。
-    List<AudioCue> refCues = _cues();
-    MatchResult refResult = EpubCueMatcher.match(
-      sections: _sections,
-      cues: refCues,
-    );
-    expect(refResult.matchedCues, 2, reason: '语料应当命中，否则后面全是空壳断言');
-    final CueResegmentResult resegmented = const CueSentenceResegmenter()
-        .resegment(sections: _sections, cues: refCues, result: refResult);
-    refCues = resegmented.cues;
-    refResult = resegmented.result;
-    replaceMatchedCueTextWithBookText(
-      sections: _sections,
-      cues: refCues,
-      result: refResult,
-    );
-    final Int8List energy = readAsrEnergyTimeline(job)!;
-    const CueEnergySnapper snapper = CueEnergySnapper();
-    final int moved = snapper.snap(refCues, energy);
-    final int edges = snapper.refineEdges(refCues, energy);
-    expect(moved + edges, greaterThan(0), reason: '能量吸附必须真的改了时间，否则对拍不到它');
-    final ({List<AudioCue> cues, MatchResult result, int merged}) merged =
-        const CueFragmentMerger().merge(cues: refCues, result: refResult);
-    refCues = merged.cues;
-    refResult = merged.result;
-    final int margins = const CueDisplayMargins().apply(refCues, energy);
-    expect(margins, greaterThan(0), reason: '显示余量必须真的改了时间，否则对拍不到它');
-    SubtitleRematchCodec.applyToCues(cues: refCues, result: refResult);
-
     final List<AudioCue> input = _cues();
     final MatchResult matched = EpubCueMatcher.match(
       sections: _sections,
@@ -147,7 +129,7 @@ void main() {
           hasTokenTiming: true,
         );
 
-    expect(_describe(out.cues, out.result), _describe(refCues, refResult));
+    expect(_describe(out.cues, out.result), _kFrozenFinalized);
     expect(out.cues.length, 3, reason: '重切应当把横跨两句的 cue 切开');
     expect(debugLastAlignedCueIsolate, kAlignedCueIsolateName);
     expect(Isolate.current.debugName, isNot(kAlignedCueIsolateName));

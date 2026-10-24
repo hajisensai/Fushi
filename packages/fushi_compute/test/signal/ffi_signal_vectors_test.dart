@@ -1,8 +1,9 @@
 // ffc_signal_* 回归测试：冻结向量 test/fixtures/signal_vectors.json 由删除前的纯 Dart 实现
-// （fushi 的 subtitle_auto_align / galgame_waveform / audio_energy_probe，fushi_audio 的
-// CueEnergySnapper，2026-10-18，Windows x64）对 signal_vector_inputs.dart 生成的输入算出。
+// （fushi 的 subtitle_auto_align / galgame_waveform / audio_energy_probe，2026-10-18，Windows x64）
+// 对 signal_vector_inputs.dart 生成的输入算出。cue 能量吸附那段已随算法迁到上游 fushi-subtitles
+// （packages/asr_subtitles/test/fixtures/cue_post_vectors.json）。
 //
-// 互相关、日志解析、cue 能量吸附是纯整数 / 四则运算：逐位比对（≤ 64 个元素比 IEEE 位模式，
+// 互相关、日志解析是纯整数 / 四则运算：逐位比对（≤ 64 个元素比 IEEE 位模式，
 // 更长的比整段小端字节的 SHA-256）。
 // 例外（说明见 native/fushi_compute/src/signal.rs 文件头）：逐窗 RMS（`log`）与降采样（`pow`）
 // 调 libm。Dart VM 的 `pow` 不是 Rust 能调到的那一份（Windows 上 dart.exe 静态链接自己那版
@@ -198,118 +199,6 @@ void main() {
       env.downsample(600);
       env.downsample(59999);
       expect(env.downsample(1366), first);
-    });
-  });
-
-  group('ffcCueEnergySnap / ffcCueRefineEdges（整本 cue 一次调用）', () {
-    final Map<String, Map<String, Object?>> want = _byId(fixture['snap']);
-    Int64List pack(List<SnapCue> cues) {
-      final Int64List out = Int64List(cues.length * kFfcSnapCueStride);
-      for (int i = 0; i < cues.length; i++) {
-        final List<int>? o = cues[i].offsetsMs;
-        final bool has = o != null && o.isNotEmpty;
-        out.setAll(i * kFfcSnapCueStride, <int>[
-          cues[i].startMs,
-          cues[i].endMs,
-          cues[i].audioFileIndex,
-          has ? 1 : 0,
-          has ? o.first : 0,
-          has ? o.last : 0,
-        ]);
-      }
-      return out;
-    }
-
-    Float64List params(SnapParams p) => Float64List.fromList(<double>[
-      p.frameMs.toDouble(),
-      p.maxGapMs.toDouble(),
-      p.windowMs.toDouble(),
-      p.minValleyMs.toDouble(),
-      p.distancePenalty,
-      p.tailMs.toDouble(),
-      p.leadMs.toDouble(),
-      p.minDurationMs.toDouble(),
-      p.floorMarginDb,
-      p.minThresholdDb,
-      p.maxThresholdDb,
-      p.tokenGuardMs.toDouble(),
-      p.edgeMaxShiftMs.toDouble(),
-      p.edgeMinVoiceMs.toDouble(),
-      p.edgeLeadMs.toDouble(),
-      p.edgeTailMs.toDouble(),
-      0, // cutBiasMs：冻结向量生成时还没有这一项
-    ]);
-
-    void expectState(Int64List packed, Object? state) {
-      final List<Object?> rows = state! as List<Object?>;
-      expect(packed.length ~/ kFfcSnapCueStride, rows.length);
-      for (int i = 0; i < rows.length; i++) {
-        final List<Object?> row = rows[i]! as List<Object?>;
-        final int at = i * kFfcSnapCueStride;
-        expect(
-          <int>[packed[at], packed[at + 1]],
-          <Object?>[row[0], row[1]],
-          reason: 'cue $i start/end',
-        );
-        final List<Object?>? offsets = row[2] as List<Object?>?;
-        if (offsets != null && offsets.isNotEmpty) {
-          expect(
-            <int>[packed[at + 4], packed[at + 5]],
-            <Object?>[offsets.first, offsets.last],
-            reason: 'cue $i first/last token offset',
-          );
-        }
-      }
-    }
-
-    for (final SnapCase c in snapCases()) {
-      test(c.id, () {
-        final Map<String, Object?> w = want[c.id]!;
-        final Float64List p = params(c.params);
-
-        final Int64List both = pack(c.cues);
-        expect(ffcCueEnergySnap(both, c.energy, p), w['snapMoved']);
-        expect(ffcCueRefineEdges(both, c.energy, p), w['thenRefineEdges']);
-        expectState(both, w['snapThenRefine']);
-
-        final Int64List snapOnly = pack(c.cues);
-        expect(ffcCueEnergySnap(snapOnly, c.energy, p), w['snapOnlyMoved']);
-        expectState(snapOnly, w['snapOnly']);
-
-        final Int64List refineOnly = pack(c.cues);
-        expect(
-          ffcCueRefineEdges(refineOnly, c.energy, p),
-          w['refineOnlyEdges'],
-        );
-        expectState(refineOnly, w['refineOnly']);
-      });
-    }
-
-    test('frameMs = 0 / 门限上下限颠倒：ArgumentError', () {
-      final Float64List p = params(defaultSnapParams);
-      final Int64List cues = pack(<SnapCue>[
-        (startMs: 0, endMs: 1000, audioFileIndex: 0, offsetsMs: null),
-      ]);
-      expect(
-        () => ffcCueEnergySnap(
-          cues,
-          Int8List(10),
-          Float64List.fromList(p)..[0] = 0,
-        ),
-        throwsArgumentError,
-      );
-      expect(
-        () => ffcCueRefineEdges(
-          cues,
-          Int8List(10),
-          Float64List.fromList(p)..[9] = -10,
-        ),
-        throwsArgumentError,
-      );
-      expect(
-        () => ffcCueRefineEdges(Int64List(5), Int8List(10), p),
-        throwsArgumentError,
-      );
     });
   });
 }

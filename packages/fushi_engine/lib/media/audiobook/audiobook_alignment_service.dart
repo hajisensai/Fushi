@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
+import 'package:fushi_engine/media/audiobook/asr_cue_post_host.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
 import 'package:fushi_engine/media/audiobook/subtitle_rematch_policy.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
@@ -171,7 +172,8 @@ String preferredTranscriptExportPath(String srtPath) {
 /// 1. 有逐 token 时间 → 命中 cue 按正文句界重切（cue 列表与匹配结果一起换新）；
 /// 2. 字幕是设备端转录产物 → 命中 cue 的听写文本换成正文原文（阅读器按 cue 文本
 ///    在 DOM 里重定位，听写差会让高亮漂移；未命中的保留听写），再把句界吸到转录时
-///    写下的能量包络的真实停顿上（`CueEnergySnapper`）；
+///    写下的能量包络的真实停顿上、并回句内短碎片、留跟读显示余量
+///    （[postProcessTranscribedCues]，算法在上游 fushi-subtitles）；
 /// 3. 匹配结果编进 cue；
 /// 4. 转录产物把对齐后的 cue 另写成 [kAsrAlignedTranscriptFileName]，供「导出
 ///    SRT」优先拷——之前替换后的文本只活在 DB 里，用户导出拿到的永远是没标点的
@@ -328,10 +330,10 @@ class AlignedCueComputation {
   final int? snappedBoundaries;
   final int? refinedEdges;
 
-  /// 设备端转录产物并回相邻 cue 的句内碎片数（`CueFragmentMerger`）。
+  /// 设备端转录产物并回相邻 cue 的句内碎片数（[postProcessTranscribedCues]）。
   final int? mergedFragments;
 
-  /// 跟读显示余量动过的边数（`CueDisplayMargins`）。
+  /// 跟读显示余量动过的边数（[postProcessTranscribedCues]）。
   final int? displayMargins;
 }
 
@@ -378,26 +380,23 @@ AlignedCueComputation computeAlignedCues(AlignedCueRequest request) {
       cues: cues,
       result: result,
     );
-    // 句界吸到真实停顿上：转录时顺手写下的能量包络（旧任务没有就跳过）。
+    // 后处理（算法在上游 fushi-subtitles，见 asr_cue_post_host.dart）：句界吸到转录时顺手
+    // 写下的能量包络的真实停顿上（旧任务没有包络就只做合并）→ 句内短碎片（「何か、」
+    // 「おかしい。」）并回一条 → 按语速留跟读余量（快档贴声音，慢 / 正常档前后多留一两百毫秒）。
     final Int8List? energy = readAsrEnergyTimeline(
       Directory(p.dirname(request.subtitlePath)),
     );
-    if (energy != null) {
-      const CueEnergySnapper snapper = CueEnergySnapper();
-      moved = snapper.snap(cues, energy);
-      edges = snapper.refineEdges(cues, energy);
-    }
-    // 句内短碎片（「何か、」「おかしい。」）并回一条，免得半句一闪而过。放在吸附之后：
-    // 合并只取前条起点、后条终点，吸附过的边界原样沿用。
-    final ({List<AudioCue> cues, MatchResult result, int merged}) merged =
-        const CueFragmentMerger().merge(cues: cues, result: result);
-    cues = merged.cues;
-    result = merged.result;
-    fragments = merged.merged;
-    // 最后按语速留跟读余量：快档贴声音，慢 / 正常档前后多留一两百毫秒。
-    if (energy != null) {
-      margins = const CueDisplayMargins().apply(cues, energy);
-    }
+    final TranscribedCuePostResult post = postProcessTranscribedCues(
+      cues: cues,
+      result: result,
+      energy: energy,
+    );
+    cues = post.cues;
+    result = post.result;
+    moved = post.snappedBoundaries;
+    edges = post.refinedEdges;
+    fragments = post.mergedFragments;
+    margins = post.displayMarginEdges;
   }
   return AlignedCueComputation(
     cues: cues,

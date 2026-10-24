@@ -96,24 +96,6 @@ typedef _DownsampleDart =
       int,
       Pointer<Size>,
     );
-typedef _SnapC =
-    Int32 Function(
-      Pointer<Int8>,
-      Size,
-      Pointer<Int64>,
-      Size,
-      Pointer<Double>,
-      Pointer<Int64>,
-    );
-typedef _SnapDart =
-    int Function(
-      Pointer<Int8>,
-      int,
-      Pointer<Int64>,
-      int,
-      Pointer<Double>,
-      Pointer<Int64>,
-    );
 
 /// native/fushi_compute/src/signal.rs 的 `ffc_signal_*` 绑定（每个库实例 lookup 一次）。
 ///
@@ -134,15 +116,6 @@ final class _SignalBindings {
       ),
       downsample = lib.lookupFunction<_DownsampleC, _DownsampleDart>(
         'ffc_signal_downsample_peaks',
-      ),
-      snap = lib.lookupFunction<_SnapC, _SnapDart>(
-        'ffc_signal_cue_energy_snap',
-      ),
-      refineEdges = lib.lookupFunction<_SnapC, _SnapDart>(
-        'ffc_signal_cue_refine_edges',
-      ),
-      displayMargins = lib.lookupFunction<_SnapC, _SnapDart>(
-        'ffc_signal_cue_display_margins',
       );
 
   final _XcorrDart xcorr;
@@ -150,9 +123,6 @@ final class _SignalBindings {
   final _ParseLogDart parseLog;
   final _DbToAmpDart dbToAmp;
   final _DownsampleDart downsample;
-  final _SnapDart snap;
-  final _SnapDart refineEdges;
-  final _SnapDart displayMargins;
 
   static final Expando<_SignalBindings> _cache = Expando<_SignalBindings>();
 
@@ -354,116 +324,4 @@ final class FfcEnergyEnvelope implements Finalizable {
       return Float64List.fromList(out.asTypedList(outLen.value));
     });
   }
-}
-
-/// [ffcCueEnergySnap] / [ffcCueRefineEdges] 打包 cue 的步长：每条
-/// `[startMs, endMs, audioFileIndex, hasTokens(0/1), 首 token 偏移, 末 token 偏移]`。
-const int kFfcSnapCueStride = 6;
-
-/// cue 能量吸附参数个数；顺序 `frameMs, maxGapMs, windowMs, minValleyMs,
-/// distancePenalty, tailMs, leadMs, minDurationMs, floorMarginDb, minThresholdDb,
-/// maxThresholdDb, tokenGuardMs, edgeMaxShiftMs, edgeMinVoiceMs, edgeLeadMs, edgeTailMs,
-/// cutBiasMs`。
-const int kFfcSnapParamCount = 17;
-
-int _snapCall(
-  _SnapDart fn,
-  String what,
-  Int64List cues,
-  Int8List energy,
-  Float64List params,
-) {
-  if (cues.length % kFfcSnapCueStride != 0) {
-    throw ArgumentError.value(cues.length, 'cues', 'not a multiple of stride');
-  }
-  if (params.length != kFfcSnapParamCount) {
-    throw ArgumentError.value(params.length, 'params', 'expected 17');
-  }
-  return using((Arena arena) {
-    final Pointer<Int8> e = arena<Int8>(energy.isEmpty ? 1 : energy.length);
-    if (energy.isNotEmpty) e.asTypedList(energy.length).setAll(0, energy);
-    final Pointer<Int64> c = arena<Int64>(cues.isEmpty ? 1 : cues.length);
-    if (cues.isNotEmpty) c.asTypedList(cues.length).setAll(0, cues);
-    final Pointer<Double> p = arena<Double>(kFfcSnapParamCount);
-    p.asTypedList(kFfcSnapParamCount).setAll(0, params);
-    final Pointer<Int64> moved = arena<Int64>();
-    _check(
-      fn(e, energy.length, c, cues.length ~/ kFfcSnapCueStride, p, moved),
-      what,
-    );
-    if (cues.isNotEmpty) cues.setAll(0, c.asTypedList(cues.length));
-    return moved.value;
-  });
-}
-
-/// 有声书 cue 能量吸附（整本书一次调用）：把紧挨着的两条 cue 之间的切点吸到能量谷上。
-/// 就地改写 [cues]（见 [kFfcSnapCueStride]）的起止与首末 token 偏移，返回挪动的切点数。
-/// 参数非法（`frameMs <= 0`、门限上下限颠倒或为 NaN）抛 [ArgumentError]。
-int ffcCueEnergySnap(
-  Int64List cues,
-  Int8List energy,
-  Float64List params, {
-  FushiCompute? library,
-}) => _snapCall(
-  _SignalBindings.of(library).snap,
-  'ffc_signal_cue_energy_snap',
-  cues,
-  energy,
-  params,
-);
-
-/// 有声书 cue 起止点收回到真实有声处（整本书一次调用），约定同 [ffcCueEnergySnap]；
-/// 返回挪动的边数。
-int ffcCueRefineEdges(
-  Int64List cues,
-  Int8List energy,
-  Float64List params, {
-  FushiCompute? library,
-}) => _snapCall(
-  _SignalBindings.of(library).refineEdges,
-  'ffc_signal_cue_refine_edges',
-  cues,
-  energy,
-  params,
-);
-
-/// [ffcCueDisplayMargins] 打包 cue 的步长：每条 `[startMs, endMs, audioFileIndex, 正文字数]`。
-const int kFfcDisplayCueStride = 4;
-
-/// 显示余量参数个数；顺序 `frameMs, floorMarginDb, minThresholdDb, maxThresholdDb,
-/// minVoiceMs, slowCps, fastCps, headSlowMs, headNormalMs, headFastMs, tailSlowMs,
-/// tailNormalMs, tailFastMs, gapTailRatio, tailCapMs, glueMs, tailSafetyMs`。
-const int kFfcDisplayParamCount = 17;
-
-/// 有声书 cue 跟读显示余量（整本书一次调用）：按有声跨度的字速分档，在开口前 / 收声后
-/// 各留一段，只外扩、不压邻句。就地改写 [cues]（见 [kFfcDisplayCueStride]）的起止，
-/// 返回动过的边数。参数非法抛 [ArgumentError]。
-int ffcCueDisplayMargins(
-  Int64List cues,
-  Int8List energy,
-  Float64List params, {
-  FushiCompute? library,
-}) {
-  if (cues.length % kFfcDisplayCueStride != 0) {
-    throw ArgumentError.value(cues.length, 'cues', 'not a multiple of stride');
-  }
-  if (params.length != kFfcDisplayParamCount) {
-    throw ArgumentError.value(params.length, 'params', 'expected 17');
-  }
-  final _SnapDart fn = _SignalBindings.of(library).displayMargins;
-  return using((Arena arena) {
-    final Pointer<Int8> e = arena<Int8>(energy.isEmpty ? 1 : energy.length);
-    if (energy.isNotEmpty) e.asTypedList(energy.length).setAll(0, energy);
-    final Pointer<Int64> c = arena<Int64>(cues.isEmpty ? 1 : cues.length);
-    if (cues.isNotEmpty) c.asTypedList(cues.length).setAll(0, cues);
-    final Pointer<Double> p = arena<Double>(kFfcDisplayParamCount);
-    p.asTypedList(kFfcDisplayParamCount).setAll(0, params);
-    final Pointer<Int64> moved = arena<Int64>();
-    _check(
-      fn(e, energy.length, c, cues.length ~/ kFfcDisplayCueStride, p, moved),
-      'ffc_signal_cue_display_margins',
-    );
-    if (cues.isNotEmpty) cues.setAll(0, c.asTypedList(cues.length));
-    return moved.value;
-  });
 }

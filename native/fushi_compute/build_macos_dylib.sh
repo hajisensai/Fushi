@@ -42,8 +42,11 @@ out="$OUT_DIR/libfushi_compute.dylib"
 cp -f "$built" "$out"
 /usr/bin/strip -x "$out"
 # 产物必须真能被 dyld 加载并返回 ABI 版本：符号核对（verify_abi.sh）查不出 LINKEDIT 损坏。
+# 期望值从 src/lib.rs 的 ABI_VERSION 读（与 workflow 里的冒烟同口径），升 ABI 不必再改这里。
 if command -v python3 >/dev/null 2>&1; then
-  DYLIB_PATH="$out" python3 -c 'import ctypes, os; lib = ctypes.CDLL(os.environ["DYLIB_PATH"]); lib.ffc_abi_version.restype = ctypes.c_int32; v = lib.ffc_abi_version(); assert v == 1, v; print("dlopen ok: ffc_abi_version =", v)'
+  abi_expected="$(sed -n 's/^pub const ABI_VERSION: i32 = \([0-9][0-9]*\);.*/\1/p' "$SCRIPT_DIR/src/lib.rs")"
+  [[ -n "$abi_expected" ]] || { echo "cannot read ABI_VERSION from $SCRIPT_DIR/src/lib.rs" >&2; exit 1; }
+  DYLIB_PATH="$out" ABI_EXPECTED="$abi_expected" python3 -c 'import ctypes, os; lib = ctypes.CDLL(os.environ["DYLIB_PATH"]); lib.ffc_abi_version.restype = ctypes.c_int32; v = lib.ffc_abi_version(); assert v == int(os.environ["ABI_EXPECTED"]), v; print("dlopen ok: ffc_abi_version =", v)'
 else
   echo "note: python3 not found; skipped the dlopen smoke check"
 fi

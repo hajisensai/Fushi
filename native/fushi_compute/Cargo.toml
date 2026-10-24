@@ -39,6 +39,11 @@ sha1 = "0.10"
 sha2 = "0.10"
 # parse::epub：CSS url 正则（HTML 树构建是 parse::html5lib，package:html 的移植，无外部依赖）。
 regex = "1"
+# 有声书转录 cue 的落库后处理（能量吸附 / 修边 / 句内碎片合并 / 跟读显示余量），C ABI `fcp_*`。
+# 算法归上游 hajisensai/fushi-subtitles（native/asr_cue_post，GPL-3.0，零依赖）；编进本库后由
+# fushi_asr_subtitles 的 AsrCuePostLibrary.fromDynamicLibrary 取用，app 不多带一个原生文件。
+# rev 必须与 pubspec 里 fushi-subtitles 的七处 ref 是同一个 sha（Dart 绑定与 C ABI 同版本）。
+fushi_asr_cue_post = { git = "https://github.com/hajisensai/fushi-subtitles", rev = "232a02434f9abca36e412a4aa20c0e309f09a8c6" }
 
 [lints.rust]
 # aes_armv8 / aes_force_soft 是 aes 0.8 的 cfg；src/crypto.rs 用它们在 aarch64 丢 cfg 时 compile_error。

@@ -356,6 +356,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "fushi_asr_cue_post"
+version = "0.1.0"
+source = "git+https://github.com/hajisensai/fushi-subtitles?rev=232a02434f9abca36e412a4aa20c0e309f09a8c6#232a02434f9abca36e412a4aa20c0e309f09a8c6"
+
+[[package]]
 name = "fushi_compute"
 version = "0.1.0"
 dependencies = [
@@ -363,6 +368,7 @@ dependencies = [
  "brotli-decompressor",
  "cbc",
  "crc32fast",
+ "fushi_asr_cue_post",
  "image",
  "jpeg-encoder",
  "md4",

@@ -213,7 +213,15 @@ Rust 这边的时间大半是把 Dart 堆上的字节拷进原生内存（`Dynam
 ## 信号域
 
 `src/signal.rs`，Dart 绑定 `packages/fushi_compute/lib/src/signal/ffc_signal.dart`。每个导出函数一次处理一整批
-（整条包络 / 整段 PCM / 整本书的 cue），不逐元素跨 FFI。
+（整条包络 / 整段 PCM），不逐元素跨 FFI。
+
+有声书转录 cue 的能量吸附 / 修边 / 句内碎片合并 / 跟读显示余量（原 `ffc_signal_cue_*` 与 fushi_audio
+的 `CueEnergySnapper` / `CueFragmentMerger` / `CueDisplayMargins`）已迁到上游
+[hajisensai/fushi-subtitles](https://github.com/hajisensai/fushi-subtitles) 的 `native/asr_cue_post`：
+`Cargo.toml` 把 crate `fushi_asr_cue_post` 当 git 依赖编进本库（rev 与 pubspec 七处 ref 同一个 sha），
+`fcp_*` 随本库导出（清单 `packages/fushi_compute/lib/src/linked_crates.dart`，`verify_abi.sh` 一起核对），
+Dart 绑定是上游 `fushi_asr_subtitles` 的 `AsrCuePostProcessor`，接线在
+`packages/fushi_engine/lib/media/audiobook/asr_cue_post_host.dart`。回归向量与测试在上游。
 
 | 符号 | 调用方（之前的纯 Dart 实现已删） |
 |---|---|
@@ -221,11 +229,10 @@ Rust 这边的时间大半是把 Dart 堆上的字节拷进原生内存（`Dynam
 | `ffc_signal_pcm_rms_db(pcm, len, rate, channels, bits, is_float, window_ms, silence_db, out, cap, *out_len)` | fushi `galgame_waveform.dart` `pcmToEnergyEnvelope`（galgame 制卡波形弹窗 `initState`；纯计算，与 hook / helper 无关） |
 | `ffc_signal_parse_rms_log(utf8, len, silence_db, **out, *out_len)` | fushi `audio_energy_probe.dart`：`file=` 写出的逐帧 RMS 文件直接按字节解析（原来 `readAsStringSync` + `RegExp.allMatches`），stderr 兜底走同一函数 |
 | `ffc_signal_db_to_amplitude(db, out, n)` + `ffc_signal_downsample_peaks(amp, n, buckets, percentile, out, cap, *out_len)` | `downsampleEnergyEnvelope` 与 `FfcEnergyEnvelope`：字幕对轴波形面板 / galgame 波形弹窗缓存线性振幅，改宽度只重跑降采样，不再每次重算 6 万次 `pow` |
-| `ffc_signal_cue_energy_snap` / `ffc_signal_cue_refine_edges(energy, n, cues[6×k], k, params[16], *moved)` | fushi_audio `CueEnergySnapper.snap` / `refineEdges`（有声书转录产物切点吸附，整本一次调用；token 偏移平移在 Dart 侧写回） |
 
 一致性：回归向量 `packages/fushi_compute/test/fixtures/signal_vectors.json` 由删除前的 Dart 实现生成
 （`test/signal/signal_vector_inputs.dart` 造输入）。互相关、日志解析（含 JS 正则 `\s` 的 Unicode 空白、
-`-inf` / 超长数字 / 非法 UTF-8）、cue 吸附是整数与四则运算，**逐位一致**；`num.clamp` / `List<double>.sort`
+`-inf` / 超长数字 / 非法 UTF-8）是整数与四则运算，**逐位一致**；`num.clamp` / `List<double>.sort`
 的 NaN 与 −0.0 语义在 Rust 里照抄。逐窗 RMS 用 `sqrt` / `log`、降采样用 `pow`，走 libm：`log` 实测逐位一致，
 `pow` 不是——Dart VM 链的 CRT 与 Rust 调到的 `ucrtbase` 不是同一份（60000 个 dB 值里 dart.exe 有 11 个、
 flutter_tester 有 94 个差 1 ULP，旧实现自己在两个宿主上也不一致），所以这两类按 ULP 容差（≤ 64）比，
@@ -242,7 +249,6 @@ flutter_tester 有 94 个差 1 ULP，旧实现自己在两个宿主上也不一�
 | ffmpeg 逐帧 RMS 日志解析 | 60000 帧（5.1 MB） | 96.5 ms | 14.2 ms | 6.8× |
 | 波形降采样 | 60000 帧 → 1366 桶，一次性（含 dB → 振幅） | 1.97 ms | 1.92 ms | 1.0× |
 | 同上 | 改宽度重算（振幅已缓存） | 1.97 ms | 0.15 ms | 13.6× |
-| 有声书 cue 能量吸附 | 7 小时整本 = 1,260,000 帧、5551 条 cue，snap + refineEdges | 3415 ms | 31.3 ms | 109× |
 
 本机同时有多个会话在跑重活，绝对值有 ±30% 噪声（同一份旧实现两次运行 2645 / 3415 ms），倍数更可信。
 互相关的累加次序要与旧实现一致，不能向量化重排，只跳过 `audio[i] ≤ 0` 的项（本来就不加）；

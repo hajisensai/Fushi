@@ -80,6 +80,18 @@ void main() {
     expect(byFile, isNotEmpty,
         reason: '一个 $repo 的 ref 都没扫到——扫描面空了，这条守卫等于没跑');
 
+    // fushi_compute 把上游的 Rust crate（native/asr_cue_post，`fcp_*`）当 Cargo git 依赖编进
+    // 原生库；它的 rev 与 Dart 绑定（fushi_asr_subtitles）必须是同一个 sha，否则 C ABI 与绑定
+    // 版本错开，只在运行时 lookup / ABI 核对处炸。
+    final File cargo = File('${root.path}/native/fushi_compute/Cargo.toml');
+    final RegExpMatch? cargoRev = RegExp(
+      r'git\s*=\s*"https://github\.com/hajisensai/fushi-subtitles[^"]*"\s*,\s*rev\s*=\s*"([0-9a-f]+)"',
+    ).firstMatch(cargo.readAsStringSync());
+    expect(cargoRev, isNotNull,
+        reason: 'native/fushi_compute/Cargo.toml 里找不到 fushi-subtitles 的 git rev'
+            '——上游 crate 依赖被改写了，扫描规则要跟着改');
+    byFile['native/fushi_compute/Cargo.toml'] = <String>[cargoRev!.group(1)!];
+
     final Set<String> distinct =
         byFile.values.expand((List<String> r) => r).toSet();
     expect(
