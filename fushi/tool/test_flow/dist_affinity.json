@@ -12,10 +12,6 @@
       "platforms": ["windows"],
       "reason": "deterministic red on the macOS host only (a deleted staged card's text is still found); cause not analysed yet (Mac run 2026-10-24, reproduces alone)"
     },
-    "test/pages/storage_usage_view_test.dart": {
-      "platforms": ["windows"],
-      "reason": "storage_usage_service.dart scans extra real directories only on macOS (Platform.isMacOS branch); that real IO never completes under the widget test's fake clock, so pumpAndSettle times out (Mac run 2026-10-24)"
-    },
     "test/platform/desktop_mini_window_mode_test.dart": {
       "platforms": ["windows"],
       "reason": "30 s test timeouts on the macOS host in 2 of 3 runs (passed once alone): timing-sensitive on that slower host (Mac runs 2026-10-24)"
