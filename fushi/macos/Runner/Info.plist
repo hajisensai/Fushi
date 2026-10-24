@@ -2,8 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Websites in Fushi's built-in browser can ask to use the camera.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Fushi needs the microphone to record audio for your Anki cards.</string>
+	<string>Fushi needs the microphone to record audio for your Anki cards and for websites in the built-in browser that ask to use it.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Fushi connects to your other Fushi devices on your local network to sync your library and to stream games from your computer.</string>
 	<key>NSBonjourServices</key>
