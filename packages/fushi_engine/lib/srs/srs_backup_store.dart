@@ -15,10 +15,12 @@
 /// **本机布局**（`<备份根>/`，app 里是数据根的 documents 根下 `srs_backups/`——与 Anki 一样放在用户看得到、
 /// 卸载 / 换设备时能带走的位置；不进同步，通用备份按类别显式收文件、不会收它）：
 /// - `<profileUid>/fushi-review-<日期_时刻>-<种类>.fushisrs` + 隐藏的 `.<同名>.json`（清单副本，列表时不用解压）；
-/// - `media/<sha256>`：所有备份共享的媒体池，按内容哈希存，同一个文件只存一份；
-///   清理旧备份后，没有任何清单引用的媒体随之删除。
+/// - `media/<sha256>`：所有备份共享的媒体池，按内容哈希存，同一个文件只存一份；与媒体目录同卷时是
+///   媒体文件的硬链接（不占第二份空间；跨卷 / 文件系统不支持时退回复制）。媒体文件一律「先写临时文件
+///   再改名」，换的是新文件，不会经链接改到池里那份。清理旧备份后，没有任何清单引用的媒体随之删除。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -30,7 +32,9 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/platform/file_hard_link.dart';
 import 'package:fushi_engine/srs/srs_backup_retention.dart';
+import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_point_in_time_restore.dart';
 
@@ -539,7 +543,8 @@ class SrsBackupStore {
     return SrsBackupInfo(file: f, manifest: m, fileBytes: await f.length());
   }
 
-  /// 本机所有备份占用的磁盘空间（全部 profile 的备份文件 + 共享媒体池）。
+  /// 本机所有备份占用的磁盘空间（全部 profile 的备份文件 + 共享媒体池）。媒体池里与媒体目录硬链接的
+  /// 文件也按全尺寸计（Dart 读不到链接数），实际多占的空间比这个数小。
   Future<int> diskUsage() async {
     if (!await root.exists()) return 0;
     int total = 0;
@@ -551,9 +556,10 @@ class SrsBackupStore {
 
   /// 做一份备份。[profileName] 只用于显示。
   ///
-  /// 读快照的事务开着时，库上别的语句都要排在它后面（drift 单连接）：真实库三十万条复习
-  /// 日志要读二三十秒，复习页的查询全被挡住（BUG-3579）。[shouldStop] 每读完一页问一次，
-  /// 为 true 时抛 [SrsBackupCancelled]：事务回滚（只读，没有副作用）、暂存文件删掉。
+  /// 真实库三十万条复习日志要读二三十秒。库在文件上时在后台 isolate 的独立只读连接里读
+  /// （[SrsBackupSnapshotReader]），主连接上的复习查询与写入不排在它后面（BUG-3579 起先只是让路）。
+  /// [shouldStop] 每读完一页（后台读时约每 100 ms）问一次，为 true 时抛 [SrsBackupCancelled]：
+  /// 读事务回滚（只读，没有副作用）、暂存文件删掉。
   Future<SrsBackupInfo> create(
     SrsDbStore store, {
     required SrsBackupKind kind,
@@ -593,54 +599,52 @@ class SrsBackupStore {
       p.join(profileDir.path, '.$id.server_times.tmp'),
     );
     try {
-      // 指纹、事件、服务器时间、计数在同一个事务里读：中间插不进别的写入，四者是同一个快照。
+      // 指纹、事件、服务器时间、计数必须是同一个快照。
       late final String fingerprint;
-      int eventCount = 0;
-      late final ({int notes, int cards, int reviews}) counts;
-      await store.db.transaction(() async {
-        checkStop();
-        fingerprint = await store.changeFingerprint();
-        final IOSink ev = eventsTmp.openWrite();
+      late final ({int eventCount, SrsBackupCounts counts}) snap;
+      final String? dbPath = await store.databaseFilePath();
+      if (dbPath != null) {
+        // 库在文件上：写锁里取指纹并让后台独立只读连接拿到快照（这一刻没有进行中的 SRS 写入，
+        // 两者一致），锁一放开就把主连接还给复习页；读取全在后台 isolate，主连接不等它。
+        late final SrsBackupSnapshotReader reader;
+        await store.runExclusive(() async {
+          checkStop();
+          fingerprint = await store.changeFingerprint();
+          reader = await SrsBackupSnapshotReader.start(
+            dbPath: dbPath,
+            profileUid: profileUid,
+            eventsPath: eventsTmp.path,
+            serverTimesPath: serverTimesTmp.path,
+          );
+        });
+        final Timer poll = Timer.periodic(const Duration(milliseconds: 100), (
+          _,
+        ) {
+          if (shouldStop?.call() ?? false) reader.cancel();
+        });
         try {
-          await store.forEachCanonicalLinePage((List<String> lines) async {
-            checkStop();
-            final StringBuffer sb = StringBuffer();
-            for (final String l in lines) {
-              sb
-                ..write(l)
-                ..write('\n');
-            }
-            ev.add(utf8.encode(sb.toString()));
-            eventCount += lines.length;
-            await ev.flush();
-          });
+          snap = await reader.done;
+        } on SrsSnapshotCancelled {
+          throw const SrsBackupCancelled();
         } finally {
-          await ev.close();
+          poll.cancel();
         }
-        final IOSink st = serverTimesTmp.openWrite();
-        try {
-          st.write('{');
-          bool first = true;
-          await store.forEachServerTimePage((List<(String, int)> page) async {
-            checkStop();
-            final StringBuffer sb = StringBuffer();
-            for (final (String eventId, int s) in page) {
-              if (!first) sb.write(',');
-              first = false;
-              sb
-                ..write(jsonEncode(eventId))
-                ..write(':')
-                ..write(s);
-            }
-            st.write(sb.toString());
-            await st.flush();
-          });
-          st.write('}');
-        } finally {
-          await st.close();
-        }
-        counts = await store.backupCounts();
-      });
+      } else {
+        // 内存库（测试）开不了第二条连接：在主连接的事务里读，中间插不进别的写入。
+        await store.db.transaction(() async {
+          checkStop();
+          fingerprint = await store.changeFingerprint();
+          snap = await srsWriteSnapshotFiles(
+            store.backupSelect,
+            profileUid,
+            eventsPath: eventsTmp.path,
+            serverTimesPath: serverTimesTmp.path,
+            checkStop: checkStop,
+          );
+        });
+      }
+      final int eventCount = snap.eventCount;
+      final SrsBackupCounts counts = snap.counts;
       final List<SrsBackupMediaEntry> media = await _captureMedia();
       final SrsBackupManifest template = SrsBackupManifest(
         createdAt: createdAt,
@@ -826,6 +830,7 @@ class SrsBackupStore {
       await for (final FileSystemEntity e in mediaDir.list())
         if (e is File) e,
     ]..sort((File a, File b) => a.path.compareTo(b.path));
+    final Set<String> listed = <String>{};
     for (final File f in files) {
       final String name = p.basename(f.path);
       if (!_isBareName(name) ||
@@ -834,7 +839,10 @@ class SrsBackupStore {
         continue;
       }
       final FileStat st = await f.stat();
+      // 列出之后被删掉的（墓碑清除回收了不再被引用的媒体，见 srs_purge.dart）：不进这份备份。
+      if (st.type == FileSystemEntityType.notFound) continue;
       final String key = '$profileUid/$name';
+      listed.add(key);
       final Object? cached = index[key];
       String? sha;
       if (cached is Map &&
@@ -843,22 +851,63 @@ class SrsBackupStore {
           cached['sha256'] is String) {
         sha = cached['sha256']! as String;
       }
-      sha ??= await ffcSha256File(f.path);
-      if (cached is! Map || cached['sha256'] != sha) {
+      final String hash;
+      try {
+        hash = sha ?? await ffcSha256File(f.path);
+      } on Object {
+        if (!await f.exists()) {
+          listed.remove(key);
+          continue;
+        }
+        rethrow;
+      }
+      final bool sameEntry = cached is Map && cached['sha256'] == hash;
+      if (!sameEntry) {
         index[key] = <String, Object?>{
           'size': st.size,
           'mtime': st.modified.millisecondsSinceEpoch,
-          'sha256': sha,
+          'sha256': hash,
         };
         dirty = true;
       }
-      final File pooled = File(p.join(mediaPool.path, sha));
-      if (!await pooled.exists() || await pooled.length() != st.size) {
-        final File tmp = File('${pooled.path}.tmp');
-        await f.copy(tmp.path);
-        await tmp.rename(pooled.path);
+      // 池文件与媒体文件同卷时是硬链接（不占第二份空间）。旧版本复制进池的文件在这里换成
+      // 链接；换过的在索引里记一笔（`linked`），之后不再每次重链。
+      final File pooled = File(p.join(mediaPool.path, hash));
+      try {
+        final bool present =
+            await pooled.exists() && await pooled.length() == st.size;
+        if (!present || !(sameEntry && cached['linked'] == true)) {
+          final File tmp = File('${pooled.path}.tmp');
+          await _deleteQuietly(tmp);
+          final bool linked = tryCreateHardLink(f.path, tmp.path);
+          if (linked || !present) {
+            if (!linked) await f.copy(tmp.path);
+            await tmp.rename(pooled.path);
+          }
+          if (linked) {
+            (index[key]! as Map<String, Object?>)['linked'] = true;
+            dirty = true;
+          }
+        }
+      } on Object {
+        // 列出之后被删掉的（墓碑清除回收）：不进这份备份，索引条目由下面的过期清理丢掉。
+        if (!await f.exists()) {
+          listed.remove(key);
+          continue;
+        }
+        rethrow;
       }
-      out.add(SrsBackupMediaEntry(name: name, sha256: sha, size: st.size));
+      out.add(SrsBackupMediaEntry(name: name, sha256: hash, size: st.size));
+    }
+    // 本 profile 已不在媒体目录里的文件：哈希缓存条目一起丢掉（不然随回收的媒体只增不减）。
+    final String own = '$profileUid/';
+    final List<String> stale = <String>[
+      for (final String k in index.keys)
+        if (k.startsWith(own) && !listed.contains(k)) k,
+    ];
+    if (stale.isNotEmpty) {
+      stale.forEach(index.remove);
+      dirty = true;
     }
     if (dirty) await _writeMediaIndex(index);
     return out;
@@ -1247,8 +1296,14 @@ class SrsBackupStore {
       bool poolCorrupt = false;
       if (await pooled.exists()) {
         if (await _sha256Of(pooled) == m.sha256) {
-          await pooled.copy(tmp.path);
-          ok = await _sha256Of(tmp) == m.sha256;
+          // 同卷时硬链接回去（与入池同理）；不行再复制、复制后再核一次哈希。
+          await _deleteQuietly(tmp);
+          if (tryCreateHardLink(pooled.path, tmp.path)) {
+            ok = true;
+          } else {
+            await pooled.copy(tmp.path);
+            ok = await _sha256Of(tmp) == m.sha256;
+          }
         } else {
           poolCorrupt = true;
           await _deleteQuietly(pooled);

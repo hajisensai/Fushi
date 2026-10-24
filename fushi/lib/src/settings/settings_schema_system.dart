@@ -23,6 +23,7 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_web_adblock.dart';
+import 'package:fushi/src/settings/settings_schema_web_browser.dart';
 import 'package:fushi/src/diagnostics/video_diag_export.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/stats/study_diag_export.dart';
@@ -414,11 +415,29 @@ SettingsDestination buildSystemDestination() {
           SettingsActionItem(
             id: 'system.github_sponsors',
             title: t.options_github_sponsors,
+            // App Store 3.1.1：iOS 不放外部打赏入口（判据见 store_compliance.dart）。
+            visible: (_) =>
+                StoreRestrictedCapability.externalDonation.isAvailable,
             icon: FushiIcons.favorite,
             cli: const SettingsCliAction.tap(),
             onTap: (_) async {
               await launchUrl(
                 Uri.parse(kGitHubSponsorsUrl),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+          ),
+          SettingsActionItem(
+            id: 'system.ko_fi',
+            title: t.options_ko_fi,
+            // App Store 3.1.1：iOS 不放外部打赏入口（判据见 store_compliance.dart）。
+            visible: (_) =>
+                StoreRestrictedCapability.externalDonation.isAvailable,
+            icon: FushiIcons.favorite,
+            cli: const SettingsCliAction.tap(),
+            onTap: (_) async {
+              await launchUrl(
+                Uri.parse(kKoFiUrl),
                 mode: LaunchMode.externalApplication,
               );
             },
@@ -590,6 +609,8 @@ SettingsDestination buildSystemDestination() {
           ),
         ],
       ),
+      // app 内浏览器（标签页样式、搜索引擎、网页深色……），紧跟网络分组。
+      buildWebBrowserSection(),
       // 应用内网页浏览（InAppWebView）的广告 / 跟踪拦截，紧跟网络分组。
       buildWebAdblockSection(),
       // v101 统一更新提醒。四个域各一个开关 + 系统通知总开关。
@@ -661,6 +682,22 @@ SettingsDestination buildSystemDestination() {
                 settingsContext.refresh();
               },
             ),
+          // 媒体库在线作品自动补新集（默认开）：与上面的「番剧新集提醒」分开——
+          // 关提醒不停补集，关这里不影响订阅下载的提醒。
+          SettingsSwitchItem(
+            id: 'system.updates.video_library_auto_update',
+            title: t.updates_video_library_auto_update,
+            subtitle: t.updates_video_library_auto_update_hint,
+            icon: FushiIcons.libraryAdd,
+            defaultValue: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.videoLibraryAutoUpdate,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.prefsRepo
+                  .setVideoLibraryAutoUpdate(value);
+              settingsContext.refresh();
+            },
+          ),
           // 扩展后台自动更新（默认关）：启动时把签名未变的漫画 / 视频扩展装成
           // 仓库新版；碰过在线源的进程里推迟到下次启动。只在有 Mihon 宿主且
           // 合规允许在线源的平台出现。

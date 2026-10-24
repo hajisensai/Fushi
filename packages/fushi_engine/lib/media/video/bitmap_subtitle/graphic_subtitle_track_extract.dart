@@ -206,9 +206,22 @@ Future<bool> extractGraphicSubtitleTrack({
     return false;
   }
   final File? local = input.isRemote ? null : File(input.uri);
-  if (local != null && !local.existsSync()) {
-    onFailure?.call('input missing');
-    return false;
+  // async stat：输入是用户库里的视频，常在网络盘上；互联 host 的图形字幕端点在
+  // app 主 isolate 上调这里，同步 stat 会冻结全部端点与 UI（BUG-3756）。
+  int localLength = 0;
+  if (local != null) {
+    final FileStat stat;
+    try {
+      stat = await local.stat();
+    } on FileSystemException {
+      onFailure?.call('input missing');
+      return false;
+    }
+    if (stat.type != FileSystemEntityType.file) {
+      onFailure?.call('input missing');
+      return false;
+    }
+    localLength = stat.size;
   }
   bool cancelled = false;
   unawaited(cancel?.then((_) => cancelled = true));
@@ -239,9 +252,9 @@ Future<bool> extractGraphicSubtitleTrack({
   }
   final File out = File(outputPath);
   final File headerFile = File(bitmapSubtitleTrackHeaderPath(outputPath));
-  out.parent.createSync(recursive: true);
+  await out.parent.create(recursive: true);
   // 头文件先于载荷落盘：边抽边读的读者拿到载荷时必须已经知道怎么解它。
-  headerFile.writeAsStringSync(jsonEncode(header.toJson()), flush: true);
+  await headerFile.writeAsString(jsonEncode(header.toJson()), flush: true);
   final List<String> args = buildGraphicSubtitleExtractArgs(
     input: input,
     streamIndex: streamIndex,
@@ -259,19 +272,19 @@ Future<bool> extractGraphicSubtitleTrack({
     ),
     final FfmpegBackend plain => await plain.run(
       args,
-      graphicSubtitleExtractTimeout(local?.lengthSync() ?? 0),
+      graphicSubtitleExtractTimeout(localLength),
     ),
   };
-  if (!cancelled &&
-      result.isSuccess &&
-      out.existsSync() &&
-      out.lengthSync() > 0) {
-    return true;
+  if (!cancelled && result.isSuccess) {
+    final FileStat outStat = await out.stat();
+    if (outStat.type == FileSystemEntityType.file && outStat.size > 0) {
+      return true;
+    }
   }
   for (final File f in <File>[out, headerFile]) {
-    if (!f.existsSync()) continue;
+    if (!await f.exists()) continue;
     try {
-      f.deleteSync();
+      await f.delete();
     } on FileSystemException {
       // 空壳文件，留给临时目录清理。
     }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show PointerDeviceKind;
 
@@ -57,8 +58,7 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_dashboard_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync('fushi_dashboard_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -125,27 +125,25 @@ void main() {
   List<Override> bookStreamOverrides({
     List<MediaItem> books = const <MediaItem>[],
     Map<String, int> lastReadAt = const <String, int>{},
-  }) =>
-      <Override>[
-        fushiBooksProvider.overrideWith((ref, language) async => books),
-        bookLastReadAtProvider.overrideWith((ref) async => lastReadAt),
-        // 空表 ⇒ `lastReadByKey[epubUidByKey[bookKey] ?? bookKey]` 走 bookKey 回退，
-        // 与上面 lastReadAt 的键域（bookKey）一致。
-        epubBookUidByKeyProvider
-            .overrideWith((ref) async => <String, String>{}),
-        // 左上角头像读排行榜服务；真 provider 会连带建 ProfileViewModel，它在空测试
-        // 库上「应用默认 Profile」会把按 Profile 存的模块开关（游戏等）改写掉。
-        // 首页测试只要一个没开账户的服务（不 load、不联网）。
-        leaderboardServiceProvider.overrideWith(
-          (Ref _) => LeaderboardService(
-            database: () => db,
-            supportRoot: () async => storeDir,
-            profileId: () async => 1,
-            httpClientFactory: () async =>
-                throw StateError('no network in dashboard tests'),
-          ),
-        ),
-      ];
+  }) => <Override>[
+    fushiBooksProvider.overrideWith((ref, language) async => books),
+    bookLastReadAtProvider.overrideWith((ref) async => lastReadAt),
+    // 空表 ⇒ `lastReadByKey[epubUidByKey[bookKey] ?? bookKey]` 走 bookKey 回退，
+    // 与上面 lastReadAt 的键域（bookKey）一致。
+    epubBookUidByKeyProvider.overrideWith((ref) async => <String, String>{}),
+    // 左上角头像读排行榜服务；真 provider 会连带建 ProfileViewModel，它在空测试
+    // 库上「应用默认 Profile」会把按 Profile 存的模块开关（游戏等）改写掉。
+    // 首页测试只要一个没开账户的服务（不 load、不联网）。
+    leaderboardServiceProvider.overrideWith(
+      (Ref _) => LeaderboardService(
+        database: () => db,
+        supportRoot: () async => storeDir,
+        profileId: () async => 1,
+        httpClientFactory: () async =>
+            throw StateError('no network in dashboard tests'),
+      ),
+    ),
+  ];
 
   Widget buildApp({
     Future<void> Function(
@@ -153,27 +151,27 @@ void main() {
       VideoBookRepository repo,
       String bookUid,
       int? playlistCollectionId,
-    )? openVideoOverride,
-  }) =>
-      ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-          // 本测试聚焦布局不崩 + 视频继续/热力图/活动渲染，书侧数据用空值即可。
-          ...bookStreamOverrides(),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeDashboardPage(
-                videoRepo: VideoBookRepository(db),
-                openVideoOverride: openVideoOverride,
-              ),
-            ),
+    )?
+    openVideoOverride,
+  }) => ProviderScope(
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+      // 本测试聚焦布局不崩 + 视频继续/热力图/活动渲染，书侧数据用空值即可。
+      ...bookStreamOverrides(),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeDashboardPage(
+            videoRepo: VideoBookRepository(db),
+            openVideoOverride: openVideoOverride,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   // 有界 pump：不用 pumpAndSettle（真实 DB isolate + FutureProvider 在 fakeAsync 下
   // 不会 settle，会挂起）。三帧足够跑完 build + initState 异步载入回填。
@@ -181,6 +179,45 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 200));
+  }
+
+  /// BUG-3756：「继续」视频卡的封面存在性是 async 文件探测（build 里不再同步 stat），
+  /// 真实 IO 在 fakeAsync 下不会完成。回退链每探一个候选是一次真实 IO + 一次
+  /// fakeAsync 续体（下一帧才跑），按候选个数各给一轮 runAsync + pump。
+  Future<void> settleCoverProbes(WidgetTester tester, {int probes = 3}) async {
+    for (int i = 0; i < probes; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump();
+    }
+    // 最后一帧起了真实的封面文件读取（FileImage）：让它在真实事件循环里读完、
+    // 关掉文件句柄，否则 tearDown 删临时目录会撞「文件被占用」（Windows）。
+    // 按条件等而不是固定睡一段：读文件的续体排在 fakeAsync 里，要 runAsync 让 IO
+    // 回话、再 pump 跑续体；`readAsBytes` 先关文件再完成，缓存里没有在途图片时句柄
+    // 必然已关。机器忙（CI 四路并发）时固定 200 ms 不够。只看指向真实文件的图：
+    // 探测未决时的占位图（kPendingCoverImage）按设计永不完成，不能拿缓存总数判。
+    final ImageCache cache = PaintingBinding.instance.imageCache;
+    Future<bool> fileImagePending() async {
+      for (final Image image in tester.widgetList<Image>(find.byType(Image))) {
+        final ImageProvider<Object> provider = image.image;
+        final ImageProvider<Object> inner = provider is ResizeImage
+            ? provider.imageProvider
+            : provider;
+        if (inner is! FileImage) continue;
+        final Object key = await provider.obtainKey(ImageConfiguration.empty);
+        if (cache.statusForKey(key).pending) return true;
+      }
+      return false;
+    }
+
+    for (int i = 0; i < 200 && await fileImagePending(); i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump();
+    }
+    expect(await fileImagePending(), isFalse, reason: '封面读取没有收尾');
   }
 
   /// v92 起阅读只写 `study_segments`，`reading_statistics` 冻结为 legacy 只读投影
@@ -191,14 +228,15 @@ void main() {
     required String dateKey,
     required int charsRead,
     required int timeMs,
-  }) =>
-      db.setReadingStatistic(ReadingStatisticsCompanion.insert(
-        title: title,
-        dateKey: dateKey,
-        charactersRead: charsRead,
-        readingTimeMs: timeMs,
-        lastStatisticModified: DateTime.now().millisecondsSinceEpoch,
-      ));
+  }) => db.setReadingStatistic(
+    ReadingStatisticsCompanion.insert(
+      title: title,
+      dateKey: dateKey,
+      charactersRead: charsRead,
+      readingTimeMs: timeMs,
+      lastStatisticModified: DateTime.now().millisecondsSinceEpoch,
+    ),
+  );
 
   Future<void> seedSampleData() async {
     final DateTime now = DateTime.now();
@@ -218,12 +256,14 @@ void main() {
       durationMs: 600000,
       charsDelta: 800,
     );
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/keep-watching'),
-      title: Value('继续看的视频'),
-      videoPath: Value('/abs/keep.mp4'),
-      lastPositionMs: Value(754000),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/keep-watching'),
+        title: Value('继续看的视频'),
+        videoPath: Value('/abs/keep.mp4'),
+        lastPositionMs: Value(754000),
+      ),
+    );
   }
 
   void useSize(WidgetTester tester, Size size) {
@@ -234,40 +274,41 @@ void main() {
   }
 
   /// 书侧装配（「继续」区的书来自 provider，测试直接喂 MediaItem）。
-  Widget buildAppWithBooks(List<MediaItem> books, Map<String, int> lastReadAt) =>
-      ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-          ...bookStreamOverrides(books: books, lastReadAt: lastReadAt),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
-            ),
-          ),
+  Widget buildAppWithBooks(
+    List<MediaItem> books,
+    Map<String, int> lastReadAt,
+  ) => ProviderScope(
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+      ...bookStreamOverrides(books: books, lastReadAt: lastReadAt),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
         ),
-      );
+      ),
+    ),
+  );
 
   MediaItem readingBook(
     String key,
     String title, {
     required int position,
     String? imageUrl,
-  }) =>
-      MediaItem(
-        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(key),
-        title: title,
-        mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
-        mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
-        imageUrl: imageUrl,
-        position: position,
-        duration: 100,
-        canDelete: false,
-        canEdit: true,
-      );
+  }) => MediaItem(
+    mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(key),
+    title: title,
+    mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+    mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
+    imageUrl: imageUrl,
+    position: position,
+    duration: 100,
+    canDelete: false,
+    canEdit: true,
+  );
 
   /// 合集 Next-Up 三态的公共装配：合集「进击的巨人」+ 两集独立行 E1/E2。
   Future<int> seedCollectionTwoEpisodes({
@@ -285,48 +326,47 @@ void main() {
   // 2026-10-10 重设计：「继续」第一条是主角卡（HomeContinueHero），其余条目在
   // `home-continue-row` 横滑行里（HomeContinueCoverCard，封面下挂标题）。
   const ValueKey<String> studyCardKey = ValueKey<String>('home-study-card');
-  const ValueKey<String> continueCardKey =
-      ValueKey<String>('home-continue-card');
+  const ValueKey<String> continueCardKey = ValueKey<String>(
+    'home-continue-card',
+  );
   const ValueKey<String> recentCardKey = ValueKey<String>('home-recent-card');
   Finder hero() => find.byType(HomeContinueHero);
   Finder heroAction() =>
       find.byKey(const ValueKey<String>('home-continue-hero-action'));
   Finder rowCards() => find.descendant(
-        of: find.byKey(const ValueKey<String>('home-continue-row')),
-        matching: find.byType(HomeContinueCoverCard),
-      );
+    of: find.byKey(const ValueKey<String>('home-continue-row')),
+    matching: find.byType(HomeContinueCoverCard),
+  );
   Finder recentTiles() => find.descendant(
-        of: find.byKey(const ValueKey<String>('home-recent-list')),
-        matching: find.byType(HomeRecentTile),
-      );
+    of: find.byKey(const ValueKey<String>('home-recent-list')),
+    matching: find.byType(HomeRecentTile),
+  );
 
   /// 分区标题：限定在该分区卡内找，免得和别处同字样的文字混淆。
-  Finder sectionTitle(ValueKey<String> card, String title) => find.descendant(
-        of: find.byKey(card),
-        matching: find.text(title),
-      );
+  Finder sectionTitle(ValueKey<String> card, String title) =>
+      find.descendant(of: find.byKey(card), matching: find.text(title));
 
   /// 「继续」条目按屏上顺序：主角卡在前（角标文案 = progressLabel），横滑行
   /// 随后。替代旧版「整排封面卡」的 coverCards()/onlyCard()。
   List<_ContinueItem> continueItems(WidgetTester tester) => <_ContinueItem>[
-        for (final HomeContinueHero h in tester.widgetList<HomeContinueHero>(
-          hero(),
-        ))
-          (
-            title: h.title,
-            badgeLabel: h.progressLabel,
-            progress: h.progress,
-            badgeIcon: null,
-          ),
-        for (final HomeContinueCoverCard c
-            in tester.widgetList<HomeContinueCoverCard>(rowCards()))
-          (
-            title: c.title,
-            badgeLabel: c.badgeLabel,
-            progress: c.progress,
-            badgeIcon: c.badgeIcon,
-          ),
-      ];
+    for (final HomeContinueHero h in tester.widgetList<HomeContinueHero>(
+      hero(),
+    ))
+      (
+        title: h.title,
+        badgeLabel: h.progressLabel,
+        progress: h.progress,
+        badgeIcon: null,
+      ),
+    for (final HomeContinueCoverCard c
+        in tester.widgetList<HomeContinueCoverCard>(rowCards()))
+      (
+        title: c.title,
+        badgeLabel: c.badgeLabel,
+        progress: c.progress,
+        badgeIcon: c.badgeIcon,
+      ),
+  ];
   HomeContinueHero onlyHero(WidgetTester tester) {
     expect(rowCards(), findsNothing, reason: '只有一条时不该出横滑行');
     return tester.widget<HomeContinueHero>(hero());
@@ -335,20 +375,20 @@ void main() {
   // ── 2026-10 首页精简（用户反馈 PDF「1.首页」）→ 10-10 加回分区标题 ─────────────
 
   for (final Size size in const <Size>[Size(1280, 900), Size(420, 900)]) {
-    testWidgets(
-        '分区标题 · ${size.width.toInt()} 宽：「今日」「继续」各成一张带标题的卡，'
-        '「学习活动」标题、四类筛选、学习日历、活动仍然删除',
-        (WidgetTester tester) async {
+    testWidgets('分区标题 · ${size.width.toInt()} 宽：「今日」「继续」各成一张带标题的卡，'
+        '「学习活动」标题、四类筛选、学习日历、活动仍然删除', (WidgetTester tester) async {
       useSize(tester, size);
       await seedSampleData();
       // 只导入、没看过：竖屏单栏不出「最近添加」，双栏版式在侧栏列出（见下方
       // 双栏专项测试）。
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: const Value('recent-only'),
-        title: const Value('刚导入的视频'),
-        videoPath: const Value('/abs/recent-only.mp4'),
-        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value('recent-only'),
+          title: const Value('刚导入的视频'),
+          videoPath: const Value('/abs/recent-only.mp4'),
+          importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+        ),
+      );
       await tester.pumpWidget(buildApp());
       await pumpDashboard(tester);
 
@@ -384,8 +424,10 @@ void main() {
       final Rect continueCard = tester.getRect(find.byKey(continueCardKey));
       if (twoColumn) {
         // 双栏：左主列「继续」，右侧栏「今日」在上、「最近添加」在下。
-        expect(sectionTitle(recentCardKey, t.home_recently_added),
-            findsOneWidget);
+        expect(
+          sectionTitle(recentCardKey, t.home_recently_added),
+          findsOneWidget,
+        );
         expect(continueCard.right, lessThan(study.left));
         expect(
           tester.getTopLeft(find.byKey(recentCardKey)).dy,
@@ -424,10 +466,10 @@ void main() {
   });
 
   for (final Size size in const <Size>[Size(420, 900), Size(844, 390)]) {
-    testWidgets(
-        '版式 · ${size.width.toInt()}×${size.height.toInt()}：'
-        '${size.width > size.height ? '横屏手机走双栏' : '竖屏手机走单栏'}',
-        (WidgetTester tester) async {
+    testWidgets('版式 · ${size.width.toInt()}×${size.height.toInt()}：'
+        '${size.width > size.height ? '横屏手机走双栏' : '竖屏手机走单栏'}', (
+      WidgetTester tester,
+    ) async {
       useSize(tester, size);
       await seedSampleData();
       await tester.pumpWidget(buildApp());
@@ -453,8 +495,7 @@ void main() {
     });
   }
 
-  testWidgets(
-      '双栏「最近添加」：侧栏带标题的紧凑列表（「类型 · 相对时间」副标题、'
+  testWidgets('双栏「最近添加」：侧栏带标题的紧凑列表（「类型 · 相对时间」副标题、'
       '按导入时间倒序、与「继续」去重）；主角卡封面按主列宽放大', (WidgetTester tester) async {
     useSize(tester, const Size(1440, 900));
     final int now = DateTime.now().millisecondsSinceEpoch;
@@ -463,32 +504,38 @@ void main() {
       ('在读书', 2000),
       ('新书B', 1000),
     ]) {
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: b.$1,
-        title: b.$1,
-        epubPath: '/abs/${b.$1}.epub',
-        extractDir: '/abs/${b.$1}',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: now - b.$2,
-        localAddedAt: Value<int?>(now - b.$2),
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: b.$1,
+          title: b.$1,
+          epubPath: '/abs/${b.$1}.epub',
+          extractDir: '/abs/${b.$1}',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: now - b.$2,
+          localAddedAt: Value<int?>(now - b.$2),
+        ),
+      );
     }
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('fresh-video'),
-      title: const Value('刚导入的视频'),
-      videoPath: const Value('/abs/fresh.mp4'),
-      importedAt: Value(now - 1500),
-      localAddedAt: Value<int?>(now - 1500),
-    ));
-    await tester.pumpWidget(buildAppWithBooks(
-      <MediaItem>[
-        readingBook('新书A', '新书A', position: 0),
-        readingBook('在读书', '在读书', position: 40),
-        readingBook('新书B', '新书B', position: 0),
-      ],
-      const <String, int>{'在读书': 1},
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('fresh-video'),
+        title: const Value('刚导入的视频'),
+        videoPath: const Value('/abs/fresh.mp4'),
+        importedAt: Value(now - 1500),
+        localAddedAt: Value<int?>(now - 1500),
+      ),
+    );
+    await tester.pumpWidget(
+      buildAppWithBooks(
+        <MediaItem>[
+          readingBook('新书A', '新书A', position: 0),
+          readingBook('在读书', '在读书', position: 40),
+          readingBook('新书B', '新书B', position: 0),
+        ],
+        const <String, int>{'在读书': 1},
+      ),
+    );
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
@@ -501,16 +548,23 @@ void main() {
     // 「最近添加」：导入时间倒序、在读书已在「继续」里不重复出现、副标题是
     // 「类型 · 相对时间」；有分区标题。
     expect(sectionTitle(recentCardKey, t.home_recently_added), findsOneWidget);
-    final List<HomeRecentTile> recent =
-        tester.widgetList<HomeRecentTile>(recentTiles()).toList();
-    expect(recent.map((HomeRecentTile r) => r.title),
-        <String>['新书B', '刚导入的视频', '新书A']);
+    final List<HomeRecentTile> recent = tester
+        .widgetList<HomeRecentTile>(recentTiles())
+        .toList();
+    expect(recent.map((HomeRecentTile r) => r.title), <String>[
+      '新书B',
+      '刚导入的视频',
+      '新书A',
+    ]);
     expect(recent[0].subtitle, startsWith('${t.home_filter_read} · '));
     expect(recent[1].subtitle, startsWith('${t.home_filter_watch} · '));
     expect(recent[2].subtitle, startsWith('${t.home_filter_read} · '));
     for (final HomeRecentTile r in recent) {
-      expect(find.descendant(of: recentTiles(), matching: find.text(r.title)),
-          findsOneWidget, reason: '紧凑行把标题画在屏上：${r.title}');
+      expect(
+        find.descendant(of: recentTiles(), matching: find.text(r.title)),
+        findsOneWidget,
+        reason: '紧凑行把标题画在屏上：${r.title}',
+      );
     }
     // 在侧栏：整张卡在「继续」主列右侧。
     expect(
@@ -524,17 +578,19 @@ void main() {
     final int now = DateTime.now().millisecondsSinceEpoch;
     final List<MediaItem> books = <MediaItem>[];
     for (int i = 1; i <= 6; i++) {
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: '新书$i',
-        title: '新书$i',
-        epubPath: '/abs/$i.epub',
-        extractDir: '/abs/$i',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        // 新书6 最新。
-        importedAt: now - (10 - i) * 1000,
-        localAddedAt: Value<int?>(now - (10 - i) * 1000),
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: '新书$i',
+          title: '新书$i',
+          epubPath: '/abs/$i.epub',
+          extractDir: '/abs/$i',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          // 新书6 最新。
+          importedAt: now - (10 - i) * 1000,
+          localAddedAt: Value<int?>(now - (10 - i) * 1000),
+        ),
+      );
       books.add(readingBook('新书$i', '新书$i', position: 0));
     }
     await tester.pumpWidget(buildAppWithBooks(books, const <String, int>{}));
@@ -557,36 +613,42 @@ void main() {
     final List<MediaItem> books = <MediaItem>[];
     // 本机最近导入的四本（入库时刻 = 拥有时刻）。
     for (int i = 1; i <= 4; i++) {
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: '本地$i',
-        title: '本地$i',
-        epubPath: '/abs/local$i.epub',
-        extractDir: '/abs/local$i',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: now - (10 - i) * 1000,
-        localAddedAt: Value<int?>(now - (10 - i) * 1000),
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: '本地$i',
+          title: '本地$i',
+          epubPath: '/abs/local$i.epub',
+          extractDir: '/abs/local$i',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: now - (10 - i) * 1000,
+          localAddedAt: Value<int?>(now - (10 - i) * 1000),
+        ),
+      );
       books.add(readingBook('本地$i', '本地$i', position: 0));
     }
     // 刚从互联对端下载：importedAt 沿用对端多年前的入库时刻（BUG-3452 /
     // BUG-2463），本机拥有时刻是刚才——与生产落地路径一样经写入单点补齐。
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: '对端旧书',
-      title: '对端旧书',
-      epubPath: '/abs/peer.epub',
-      extractDir: '/abs/peer',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: yearsAgo,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: '对端旧书',
+        title: '对端旧书',
+        epubPath: '/abs/peer.epub',
+        extractDir: '/abs/peer',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: yearsAgo,
+      ),
+    );
     books.add(readingBook('对端旧书', '对端旧书', position: 0));
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('peer-video'),
-      title: Value('对端旧视频'),
-      videoPath: Value('/abs/peer.mp4'),
-      importedAt: Value(yearsAgo),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('peer-video'),
+        title: Value('对端旧视频'),
+        videoPath: Value('/abs/peer.mp4'),
+        importedAt: Value(yearsAgo),
+      ),
+    );
     await tester.pumpWidget(buildAppWithBooks(books, const <String, int>{}));
     await pumpDashboard(tester);
 
@@ -596,32 +658,39 @@ void main() {
         .map((HomeRecentTile r) => r.title)
         .toList();
     expect(titles, hasLength(4));
-    expect(titles.take(2).toSet(), <String>{'对端旧书', '对端旧视频'},
-        reason: '按 importedAt 排它们会沉到最后、被 4 条上限截掉');
+    expect(titles.take(2).toSet(), <String>{
+      '对端旧书',
+      '对端旧视频',
+    }, reason: '按 importedAt 排它们会沉到最后、被 4 条上限截掉');
     expect(titles.skip(2), <String>['本地4', '本地3']);
   });
 
-  testWidgets('「最近添加」只在双栏：竖屏单栏不出；单栏主角卡封面 150、横滑行封面 132',
-      (WidgetTester tester) async {
+  testWidgets('「最近添加」只在双栏：竖屏单栏不出；单栏主角卡封面 150、横滑行封面 132', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(412, 900));
     final int now = DateTime.now().millisecondsSinceEpoch;
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: '新书A',
-      title: '新书A',
-      epubPath: '/abs/a.epub',
-      extractDir: '/abs/a',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: now,
-    ));
-    await tester.pumpWidget(buildAppWithBooks(
-      <MediaItem>[
-        readingBook('新书A', '新书A', position: 0),
-        readingBook('在读书', '在读书', position: 40),
-        readingBook('在读书2', '在读书2', position: 20),
-      ],
-      const <String, int>{'在读书': 2, '在读书2': 1},
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: '新书A',
+        title: '新书A',
+        epubPath: '/abs/a.epub',
+        extractDir: '/abs/a',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: now,
+      ),
+    );
+    await tester.pumpWidget(
+      buildAppWithBooks(
+        <MediaItem>[
+          readingBook('新书A', '新书A', position: 0),
+          readingBook('在读书', '在读书', position: 40),
+          readingBook('在读书2', '在读书2', position: 20),
+        ],
+        const <String, int>{'在读书': 2, '在读书2': 1},
+      ),
+    );
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
@@ -632,8 +701,9 @@ void main() {
     expect(tester.widget<HomeContinueCoverCard>(rowCards()).height, 132);
   });
 
-  testWidgets('精简 · 学习头部行：今日字数 + 同一行右侧今日时长（不挂小字标签）',
-      (WidgetTester tester) async {
+  testWidgets('精简 · 学习头部行：今日字数 + 同一行右侧今日时长（不挂小字标签）', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
     // 今天读 800 字 / 10 分钟（seedSampleData）。
     await seedSampleData();
@@ -651,16 +721,14 @@ void main() {
     // 读屏仍能听到这是「今日」时长（屏上只有图标 + 数字）。
     final SemanticsHandle semantics = tester.ensureSemantics();
     await tester.pump();
-    expect(
-      find.bySemanticsLabel('${t.stat_today} · $time'),
-      findsOneWidget,
-    );
+    expect(find.bySemanticsLabel('${t.stat_today} · $time'), findsOneWidget);
     semantics.dispose();
   });
 
   for (final double width in <double>[320, 360, 420]) {
-    testWidgets('精简 · $width 宽手机：学习统计完整显示，不省略号截断、不溢出',
-        (WidgetTester tester) async {
+    testWidgets('精简 · $width 宽手机：学习统计完整显示，不省略号截断、不溢出', (
+      WidgetTester tester,
+    ) async {
       useSize(tester, Size(width, 800));
       await appModel.setReadingGoalDailyChars(30000);
       // 大数 + 长时长：最容易把一行挤爆的组合。
@@ -675,8 +743,7 @@ void main() {
       await pumpDashboard(tester);
 
       expect(tester.takeException(), isNull);
-      final String value =
-          t.stat_goal_progress(read: 123456, goal: 30000);
+      final String value = t.stat_goal_progress(read: 123456, goal: 30000);
       final String time = formatStatTime((12 * 60 + 34) * 60000);
       final Rect header = tester.getRect(find.byType(HomeStudyHeader));
       for (final String text in <String>[value, time]) {
@@ -698,72 +765,94 @@ void main() {
   }
 
   for (final double width in <double>[320, 360, 420]) {
-    testWidgets('$width 宽手机：主角卡（长标题 + 按钮）与带标题的横滑行不溢出',
-        (WidgetTester tester) async {
+    testWidgets('$width 宽手机：主角卡（长标题 + 按钮）与带标题的横滑行不溢出', (
+      WidgetTester tester,
+    ) async {
       useSize(tester, Size(width, 800));
-      await tester.pumpWidget(buildAppWithBooks(
-        <MediaItem>[
-          readingBook('长', '很长很长很长很长很长很长很长很长很长很长的书名第一卷',
-              position: 30),
-          readingBook('长2', '另一本同样很长很长很长很长很长很长的书名',
-              position: 60),
-          readingBook('短', '短', position: 10),
-        ],
-        const <String, int>{'长': 3, '长2': 2, '短': 1},
-      ));
+      await tester.pumpWidget(
+        buildAppWithBooks(
+          <MediaItem>[
+            readingBook('长', '很长很长很长很长很长很长很长很长很长很长的书名第一卷', position: 30),
+            readingBook('长2', '另一本同样很长很长很长很长很长很长的书名', position: 60),
+            readingBook('短', '短', position: 10),
+          ],
+          const <String, int>{'长': 3, '长2': 2, '短': 1},
+        ),
+      );
       await pumpDashboard(tester);
 
       expect(tester.takeException(), isNull);
       expect(heroAction(), findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('home-continue-hero-progress')),
-          findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('home-continue-hero-progress')),
+        findsOneWidget,
+      );
       expect(rowCards(), findsNWidgets(2));
       final Rect heroRect = tester.getRect(hero());
       expect(heroRect.right, lessThanOrEqualTo(width + 0.5));
-      expect(tester.getRect(heroAction()).right,
-          lessThanOrEqualTo(heroRect.right + 0.5));
+      expect(
+        tester.getRect(heroAction()).right,
+        lessThanOrEqualTo(heroRect.right + 0.5),
+      );
     });
   }
 
   testWidgets('「继续」主角卡 + 带标题的横滑行：最近读的放大成主角卡（波浪进度 + '
-      '「继续阅读」），其余卡封面下挂标题，角标 = 阅读进度',
-      (WidgetTester tester) async {
+      '「继续阅读」），其余卡封面下挂标题，角标 = 阅读进度', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     final File cover = File('${storeDir.path}/book_cover.png')
       ..writeAsBytesSync(_kOnePixelPng);
-    final MediaItem a = readingBook('书A', '有封面的书',
-        position: 30, imageUrl: Uri.file(cover.path).toString());
-    final MediaItem b = readingBook('书B', '另一本书',
-        position: 50, imageUrl: Uri.file(cover.path).toString());
-    await tester.pumpWidget(buildAppWithBooks(
-      <MediaItem>[a, b],
-      const <String, int>{'书A': 2, '书B': 1},
-    ));
+    final MediaItem a = readingBook(
+      '书A',
+      '有封面的书',
+      position: 30,
+      imageUrl: Uri.file(cover.path).toString(),
+    );
+    final MediaItem b = readingBook(
+      '书B',
+      '另一本书',
+      position: 50,
+      imageUrl: Uri.file(cover.path).toString(),
+    );
+    await tester.pumpWidget(
+      buildAppWithBooks(
+        <MediaItem>[a, b],
+        const <String, int>{'书A': 2, '书B': 1},
+      ),
+    );
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
     final List<_ContinueItem> items = continueItems(tester);
     // 最近读的是主角卡，其余进横滑行。
-    expect(items.map((_ContinueItem c) => c.title),
-        <String>['有封面的书', '另一本书']);
-    expect(items.map((_ContinueItem c) => c.badgeLabel),
-        <String?>['30%', '50%']);
+    expect(items.map((_ContinueItem c) => c.title), <String>['有封面的书', '另一本书']);
+    expect(items.map((_ContinueItem c) => c.badgeLabel), <String?>[
+      '30%',
+      '50%',
+    ]);
     expect(items.first.progress, 0.3);
     // 主角卡：标题、M3E 波浪进度条 + 进度文案、「继续阅读」主按钮。
     expect(
       tester
           .widget<Text>(
-              find.byKey(const ValueKey<String>('home-continue-hero-title')))
+            find.byKey(const ValueKey<String>('home-continue-hero-title')),
+          )
           .data,
       '有封面的书',
     );
-    expect(find.byKey(const ValueKey<String>('home-continue-hero-progress')),
-        findsOneWidget);
-    expect(find.descendant(of: hero(), matching: find.text('30%')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('home-continue-hero-progress')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: hero(), matching: find.text('30%')),
+      findsOneWidget,
+    );
     expect(
       find.descendant(
-          of: heroAction(), matching: find.text(t.book_continue_reading)),
+        of: heroAction(),
+        matching: find.text(t.book_continue_reading),
+      ),
       findsOneWidget,
     );
     // 横滑卡：封面下方画标题，右上角角标仍是进度。
@@ -774,8 +863,10 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.descendant(of: rowCards(), matching: find.text('50%')),
-        findsOneWidget);
+    expect(
+      find.descendant(of: rowCards(), matching: find.text('50%')),
+      findsOneWidget,
+    );
     final SemanticsHandle semantics = tester.ensureSemantics();
     await tester.pump();
     expect(find.bySemanticsLabel('另一本书 · 50%'), findsOneWidget);
@@ -784,21 +875,28 @@ void main() {
     expect(find.byType(CoverProgressStrip), findsOneWidget);
     expect(
       find.descendant(
-          of: rowCards(), matching: find.byType(CoverProgressStrip)),
+        of: rowCards(),
+        matching: find.byType(CoverProgressStrip),
+      ),
       findsOneWidget,
     );
   });
 
-  testWidgets('精简 · 没有封面的条目兜底显示标题（BUG-1018：用 override 书名）',
-      (WidgetTester tester) async {
+  testWidgets('精简 · 没有封面的条目兜底显示标题（BUG-1018：用 override 书名）', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
     final MediaItem book = readingBook('测试书key', '原书名', position: 50);
     await ReaderFushiSource.instance.setOverrideTitleFromMediaItem(
       item: book,
       title: '改后的书名',
     );
-    addTearDown(() => ReaderFushiSource.instance
-        .setOverrideTitleFromMediaItem(item: book, title: null));
+    addTearDown(
+      () => ReaderFushiSource.instance.setOverrideTitleFromMediaItem(
+        item: book,
+        title: null,
+      ),
+    );
     await tester.pumpWidget(
       buildAppWithBooks(<MediaItem>[book], const <String, int>{'测试书key': 1}),
     );
@@ -818,20 +916,23 @@ void main() {
     expect(find.text('原书名'), findsNothing);
   });
 
-  testWidgets('精简 · 无封面的视频：封面槽是类型图标 + 标题，不是空黑块',
-      (WidgetTester tester) async {
+  testWidgets('精简 · 无封面的视频：封面槽是类型图标 + 标题，不是空黑块', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData(); // 「继续看的视频」无 coverPath
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
 
-    final Finder fallback =
-        find.byKey(const ValueKey<String>('home-continue-cover-fallback'));
+    final Finder fallback = find.byKey(
+      const ValueKey<String>('home-continue-cover-fallback'),
+    );
     expect(
       find.descendant(
         of: fallback,
-        matching: find.byWidgetPredicate((Widget w) =>
-            w is FushiIcon && w.icon == mediaCoverFallbackIcon(MediaKind.video)),
+        matching: find.byWidgetPredicate(
+          (Widget w) =>
+              w is FushiIcon &&
+              w.icon == mediaCoverFallbackIcon(MediaKind.video),
+        ),
       ),
       findsOneWidget,
     );
@@ -841,32 +942,39 @@ void main() {
     );
   });
 
-  testWidgets('精简 · 视频也显示进度：知道总时长 → 进度条 + 百分比；不知道 → 看到的时间点',
-      (WidgetTester tester) async {
+  testWidgets('精简 · 视频也显示进度：知道总时长 → 进度条 + 百分比；不知道 → 看到的时间点', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('v-known'),
-      title: Value('知道时长的视频'),
-      videoPath: Value('/abs/known.mp4'),
-      lastPositionMs: Value(600000),
-      lastPlayedAt: Value(2),
-    ));
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('v-unknown'),
-      title: Value('不知道时长的视频'),
-      videoPath: Value('/abs/unknown.mp4'),
-      lastPositionMs: Value(754000),
-      lastPlayedAt: Value(1),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('v-known'),
+        title: Value('知道时长的视频'),
+        videoPath: Value('/abs/known.mp4'),
+        lastPositionMs: Value(600000),
+        lastPlayedAt: Value(2),
+      ),
+    );
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('v-unknown'),
+        title: Value('不知道时长的视频'),
+        videoPath: Value('/abs/unknown.mp4'),
+        lastPositionMs: Value(754000),
+        lastPlayedAt: Value(1),
+      ),
+    );
     final int now = DateTime.now().millisecondsSinceEpoch;
-    await db.upsertVideoFileSpec(VideoFileSpecsCompanion.insert(
-      filePath: '/abs/known.mp4',
-      fileSizeBytes: 1,
-      fileModifiedAt: now,
-      probedAt: now,
-      probeVersion: 1,
-      durationMs: const Value(2400000),
-    ));
+    await db.upsertVideoFileSpec(
+      VideoFileSpecsCompanion.insert(
+        filePath: '/abs/known.mp4',
+        fileSizeBytes: 1,
+        fileModifiedAt: now,
+        probedAt: now,
+        probeVersion: 1,
+        durationMs: const Value(2400000),
+      ),
+    );
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
 
@@ -939,17 +1047,18 @@ void main() {
     });
   });
 
-  testWidgets('精简 · 封面卡悬停抬升：绘制超出卡片原始边界但不被横滚行视口截平',
-      (WidgetTester tester) async {
+  testWidgets('精简 · 封面卡悬停抬升：绘制超出卡片原始边界但不被横滚行视口截平', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     // 第一本是主角卡，书B / 书C 进横滑行。
     final MediaItem a = readingBook('书A', '书A', position: 30);
     final MediaItem b = readingBook('书B', '书B', position: 50);
     final MediaItem c = readingBook('书C', '书C', position: 70);
-    await tester.pumpWidget(buildAppWithBooks(
-      <MediaItem>[a, b, c],
-      const <String, int>{'书A': 3, '书B': 2, '书C': 1},
-    ));
+    await tester.pumpWidget(
+      buildAppWithBooks(
+        <MediaItem>[a, b, c],
+        const <String, int>{'书A': 3, '书B': 2, '书C': 1},
+      ),
+    );
     await pumpDashboard(tester);
 
     // 悬停放大是 FushiHoverLift 内层的绘制变换：量卡体（ClipRRect），不量外壳；
@@ -961,11 +1070,13 @@ void main() {
       of: rowCards().last,
       matching: find.byKey(const ValueKey<String>('home-cover-title')),
     );
-    final Rect viewport =
-        tester.getRect(find.byKey(const ValueKey<String>('home-continue-row')));
+    final Rect viewport = tester.getRect(
+      find.byKey(const ValueKey<String>('home-continue-row')),
+    );
     final Rect originalRect = tester.getRect(card);
-    final TestGesture mouse =
-        await tester.createGesture(kind: PointerDeviceKind.mouse);
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
     await mouse.addPointer(location: Offset.zero);
     await mouse.moveTo(tester.getCenter(card));
     await pumpDashboard(tester);
@@ -973,34 +1084,44 @@ void main() {
     expect(liftedRect.top, lessThan(originalRect.top));
     expect(liftedRect.top, greaterThanOrEqualTo(viewport.top - 0.01));
     expect(liftedRect.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
-    expect(tester.getRect(title).bottom,
-        lessThanOrEqualTo(viewport.bottom + 0.01));
+    expect(
+      tester.getRect(title).bottom,
+      lessThanOrEqualTo(viewport.bottom + 0.01),
+    );
     await mouse.removePointer();
     await pumpDashboard(tester);
     expect(tester.getRect(card), originalRect);
   });
 
-  testWidgets('卡片比例跟着实际用到的图走：只有横版截帧的视频在横滑行是 16:9 横卡（反馈 5CTpiVJ7-v）',
-      (WidgetTester tester) async {
+  testWidgets('卡片比例跟着实际用到的图走：只有横版截帧的视频在横滑行是 16:9 横卡（反馈 5CTpiVJ7-v）', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
     final File cover = File('${storeDir.path}/landscape_cover.png')
       ..writeAsBytesSync(_kLandscapePng);
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('continue-landscape'),
-      title: const Value('在看的横版视频'),
-      videoPath: const Value('/abs/continue-landscape.mp4'),
-      coverPath: Value(cover.path),
-      lastPositionMs: const Value(60000),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('continue-landscape'),
+        title: const Value('在看的横版视频'),
+        videoPath: const Value('/abs/continue-landscape.mp4'),
+        coverPath: Value(cover.path),
+        lastPositionMs: const Value(60000),
+      ),
+    );
     // 书A 最近读 → 主角卡；横版视频与书B 进横滑行。
     final MediaItem book = readingBook('书A', '书A', position: 30);
     final MediaItem other = readingBook('书B', '书B', position: 60);
     // 卡片是数据回填后才建的、解码是真异步 I/O：两段都必须在同一个 runAsync 里。
     await tester.runAsync(() async {
-      await tester.pumpWidget(buildAppWithBooks(
-        <MediaItem>[book, other],
-        const <String, int>{'书A': 2},
-      ));
+      await tester.pumpWidget(
+        buildAppWithBooks(
+          <MediaItem>[book, other],
+          const <String, int>{'书A': 2},
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await tester.pump();
+      // BUG-3756：封面存在性改为 async 探测（不在 build 里同步 stat），解码前多一跳。
       await Future<void>.delayed(const Duration(milliseconds: 600));
       await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -1009,10 +1130,13 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    final List<HomeContinueCoverCard> cards =
-        tester.widgetList<HomeContinueCoverCard>(rowCards()).toList();
-    expect(cards.map((HomeContinueCoverCard c) => c.title),
-        unorderedEquals(<String>['在看的横版视频', '书B']));
+    final List<HomeContinueCoverCard> cards = tester
+        .widgetList<HomeContinueCoverCard>(rowCards())
+        .toList();
+    expect(
+      cards.map((HomeContinueCoverCard c) => c.title),
+      unorderedEquals(<String>['在看的横版视频', '书B']),
+    );
     final HomeContinueCoverCard video = cards.firstWhere(
       (HomeContinueCoverCard c) => c.title == '在看的横版视频',
     );
@@ -1042,16 +1166,20 @@ void main() {
       findsNothing,
     );
     // 横槽里的 16:9 截图直接 cover 铺满 = 完整显示，不再裁进竖卡。
-    final Image frame = tester.widget<Image>(find.descendant(
-      of: find.byWidgetPredicate((Widget w) =>
-          w is HomeContinueCoverCard && w.title == '在看的横版视频'),
-      matching: find.byType(Image),
-    ).first);
+    final Image frame = tester.widget<Image>(
+      find
+          .descendant(
+            of: find.byWidgetPredicate(
+              (Widget w) => w is HomeContinueCoverCard && w.title == '在看的横版视频',
+            ),
+            matching: find.byType(Image),
+          )
+          .first,
+    );
     expect(frame.fit, BoxFit.cover);
   });
 
-  testWidgets('精简 · 视频竖卡优先用作品海报（合集主封面），不用集的横版截帧',
-      (WidgetTester tester) async {
+  testWidgets('精简 · 视频竖卡优先用作品海报（合集主封面），不用集的横版截帧', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     final File poster = File('${storeDir.path}/poster.png')
       ..writeAsBytesSync(_kOnePixelPng);
@@ -1074,6 +1202,7 @@ void main() {
     await db.updateMediaCollectionCoverPath(cid, poster.path);
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
+    await settleCoverProbes(tester);
 
     expect(tester.takeException(), isNull);
     final Iterable<Image> images = tester.widgetList<Image>(
@@ -1094,8 +1223,7 @@ void main() {
 
   // 反馈 5CTpiVJ7-v：合集主封面指向的文件不在时，主角卡掉成「图标 + 名字」占位，
   // 而视频页同一部作品照样有封面——要回落到这一集 / 同合集其它集的封面。
-  testWidgets('精简 · 作品海报文件不在时回落到集封面，不画占位',
-      (WidgetTester tester) async {
+  testWidgets('精简 · 作品海报文件不在时回落到集封面，不画占位', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     final File frame = File('${storeDir.path}/frame.png')
       ..writeAsBytesSync(_kLandscapePng);
@@ -1119,6 +1247,7 @@ void main() {
     );
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
+    await settleCoverProbes(tester);
 
     expect(tester.takeException(), isNull);
     expect(
@@ -1152,6 +1281,9 @@ void main() {
       await tester.pumpWidget(app);
       await Future<void>.delayed(const Duration(milliseconds: 600));
       await tester.pump();
+      // BUG-3756：封面存在性改为 async 探测（不在 build 里同步 stat），解码前多一跳。
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 600));
       await tester.pump();
     });
@@ -1159,32 +1291,36 @@ void main() {
   }
 
   Size heroCoverSize(WidgetTester tester) => tester.getSize(
-        find.byKey(const ValueKey<String>('home-continue-hero-cover')),
-      );
+    find.byKey(const ValueKey<String>('home-continue-hero-cover')),
+  );
 
-  testWidgets('主角卡：只有横版截帧 → 16:9 横封面槽（反馈 5CTpiVJ7-v）',
-      (WidgetTester tester) async {
+  testWidgets('主角卡：只有横版截帧 → 16:9 横封面槽（反馈 5CTpiVJ7-v）', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
     final File frame = File('${storeDir.path}/hero_frame.png')
       ..writeAsBytesSync(_kLandscapePng);
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('hero-landscape'),
-      title: const Value('横版主角'),
-      videoPath: const Value('/abs/hero-landscape.mp4'),
-      coverPath: Value(frame.path),
-      lastPositionMs: const Value(60000),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('hero-landscape'),
+        title: const Value('横版主角'),
+        videoPath: const Value('/abs/hero-landscape.mp4'),
+        coverPath: Value(frame.path),
+        lastPositionMs: const Value(60000),
+      ),
+    );
     await pumpDecoded(tester, buildApp());
 
     expect(tester.takeException(), isNull);
     final Size cover = heroCoverSize(tester);
     expect(cover.width / cover.height, closeTo(16 / 9, 0.01));
-    expect(find.byKey(const ValueKey<String>('home-continue-cover-fallback')),
-        findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('home-continue-cover-fallback')),
+      findsNothing,
+    );
   });
 
-  testWidgets('主角卡：作品竖版海报 → 2:3 竖封面槽，横卡不出现',
-      (WidgetTester tester) async {
+  testWidgets('主角卡：作品竖版海报 → 2:3 竖封面槽，横卡不出现', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     final File poster = File('${storeDir.path}/hero_poster.png')
       ..writeAsBytesSync(_kOnePixelPng);
@@ -1212,6 +1348,54 @@ void main() {
     expect(cover.width / cover.height, closeTo(2 / 3, 0.01));
   });
 
+  testWidgets('BUG-3756：网络盘上的作品海报不在 build 里同步 stat（读有声书时首页每几秒重建）', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    // 作品海报落在「网络盘」：rclone / SMB 挂载目录缓存过期时一次同步 stat 要数秒，
+    // 旧实现在 build 里 existsSync，统计表每写一次首页就重建一次 → 主 isolate
+    // （含同 isolate 的互联 host 端点）一起冻结。这里任何同步文件 API 都记账。
+    final String netPoster = '${storeDir.path}/__fushi_net_mount__/poster.jpg';
+    final List<String> syncCalls = <String>[];
+    final List<String> asyncProbes = <String>[];
+    final int cid = await seedCollectionTwoEpisodes(
+      e1: const VideoBooksCompanion(
+        bookUid: Value('e1'),
+        title: Value('S01E01'),
+        videoPath: Value('/abs/e1.mp4'),
+        lastPositionMs: Value(60000),
+      ),
+      e2: const VideoBooksCompanion(
+        bookUid: Value('e2'),
+        title: Value('S01E02'),
+        videoPath: Value('/abs/e2.mp4'),
+      ),
+    );
+    await db.updateMediaCollectionCoverPath(cid, netPoster);
+
+    final Zone outer = Zone.current;
+    await IOOverrides.runZoned<Future<void>>(
+      () async {
+        await pumpDecoded(tester, buildApp());
+        // 再触发几次重建（模拟统计表高频写入后的首页重绘）。
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pump(const Duration(milliseconds: 500));
+      },
+      createFile: (String path) => path.contains('__fushi_net_mount__')
+          ? _NetMountFile(path, syncCalls, asyncProbes)
+          : outer.run(() => File(path)),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(syncCalls, isEmpty, reason: 'build 路径不得对封面做同步文件调用');
+    // 海报确实经 async 探测过（不在 → 退回占位），而且候选不变时只探一次。
+    expect(asyncProbes, <String>[netPoster]);
+    expect(
+      find.byKey(const ValueKey<String>('home-continue-cover-fallback')),
+      findsWidgets,
+    );
+  });
+
   test('homeCoverIsLandscape：真实宽高比 > 1 才是横图', () {
     expect(homeCoverIsLandscape(16 / 9), isTrue);
     expect(homeCoverIsLandscape(1.01), isTrue);
@@ -1231,11 +1415,12 @@ void main() {
   });
 
   group('dashboardVideoCoverPath', () {
-    bool existsIn(Set<String> files, String path) => files.contains(path);
+    Future<bool> existsIn(Set<String> files, String path) async =>
+        files.contains(path);
 
-    test('海报存在优先用海报', () {
+    test('海报存在优先用海报', () async {
       expect(
-        dashboardVideoCoverPath(
+        await dashboardVideoCoverPath(
           collectionCover: 'poster',
           ownCover: 'frame',
           exists: (String p) => existsIn(<String>{'poster', 'frame'}, p),
@@ -1244,9 +1429,9 @@ void main() {
       );
     });
 
-    test('海报文件不在 → 这一集封面', () {
+    test('海报文件不在 → 这一集封面', () async {
       expect(
-        dashboardVideoCoverPath(
+        await dashboardVideoCoverPath(
           collectionCover: 'poster',
           ownCover: 'frame',
           exists: (String p) => existsIn(<String>{'frame'}, p),
@@ -1255,14 +1440,14 @@ void main() {
       );
     });
 
-    test('这一集也没封面 → 借同合集其它集的第一张存在的封面，找到就停', () {
+    test('这一集也没封面 → 借同合集其它集的第一张存在的封面，找到就停', () async {
       final List<String> probed = <String>[];
       expect(
-        dashboardVideoCoverPath(
+        await dashboardVideoCoverPath(
           collectionCover: null,
           ownCover: '',
           memberCovers: <String?>[null, 'm1', 'm2', 'm3'],
-          exists: (String p) {
+          exists: (String p) async {
             probed.add(p);
             return p == 'm2' || p == 'm3';
           },
@@ -1272,60 +1457,68 @@ void main() {
       expect(probed, <String>['m1', 'm2']);
     });
 
-    test('全不存在 → null', () {
+    test('全不存在 → null', () async {
       expect(
-        dashboardVideoCoverPath(
+        await dashboardVideoCoverPath(
           collectionCover: 'a',
           ownCover: 'b',
           memberCovers: <String?>['c'],
-          exists: (String _) => false,
+          exists: (String _) async => false,
         ),
         isNull,
       );
     });
   });
 
-  testWidgets('精简 · 窄屏横滑卡上的集数角标完整显示，不被卡边裁掉；主角卡进度文案同样完整',
-      (WidgetTester tester) async {
+  testWidgets('精简 · 窄屏横滑卡上的集数角标完整显示，不被卡边裁掉；主角卡进度文案同样完整', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(320, 700));
     final int cid = await db.createMediaCollection('很长的作品名');
     for (int i = 1; i <= 12; i++) {
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value('ep$i'),
-        title: Value('E$i'),
-        videoPath: Value('/abs/ep$i.mp4'),
-        lastPositionMs: Value(i == 12 ? 60000 : 1400000),
-        completedAt: i < 12 ? Value(DateTime.now()) : const Value(null),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value('ep$i'),
+          title: Value('E$i'),
+          videoPath: Value('/abs/ep$i.mp4'),
+          lastPositionMs: Value(i == 12 ? 60000 : 1400000),
+          completedAt: i < 12 ? Value(DateTime.now()) : const Value(null),
+        ),
+      );
       await db.addToCollection(cid, MediaKind.video, 'ep$i');
     }
     // 一本刚读过的书占主角卡，把合集挤进横滑行（窄卡角标是本用例的对象）。
-    await tester.pumpWidget(buildAppWithBooks(
-      <MediaItem>[readingBook('书A', '书A', position: 30)],
-      <String, int>{'书A': DateTime.now().millisecondsSinceEpoch},
-    ));
+    await tester.pumpWidget(
+      buildAppWithBooks(
+        <MediaItem>[readingBook('书A', '书A', position: 30)],
+        <String, int>{'书A': DateTime.now().millisecondsSinceEpoch},
+      ),
+    );
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    expect(continueItems(tester).map((_ContinueItem c) => c.badgeLabel),
-        <String?>['30%', t.home_continue_episode(n: 12)]);
+    expect(
+      continueItems(tester).map((_ContinueItem c) => c.badgeLabel),
+      <String?>['30%', t.home_continue_episode(n: 12)],
+    );
     final Rect card = tester.getRect(rowCards());
-    final Rect badge = tester.getRect(find.descendant(
-      of: rowCards(),
-      matching: find.byType(CoverBadge),
-    ));
+    final Rect badge = tester.getRect(
+      find.descendant(of: rowCards(), matching: find.byType(CoverBadge)),
+    );
     expect(badge.left, greaterThanOrEqualTo(card.left));
     expect(badge.right, lessThanOrEqualTo(card.right));
     expect(find.text(t.home_continue_episode(n: 12)), findsOneWidget);
     // 主角卡进度文案在卡内完整显示。
     final Rect heroRect = tester.getRect(hero());
-    final Rect label =
-        tester.getRect(find.descendant(of: hero(), matching: find.text('30%')));
+    final Rect label = tester.getRect(
+      find.descendant(of: hero(), matching: find.text('30%')),
+    );
     expect(label.right, lessThanOrEqualTo(heroRect.right));
   });
 
-  testWidgets('点继续区视频卡直接续播（带主合集 id），不再只是切视频 tab；合集卡角标 = 集数',
-      (WidgetTester tester) async {
+  testWidgets('点继续区视频卡直接续播（带主合集 id），不再只是切视频 tab；合集卡角标 = 集数', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
     final int cid = await seedCollectionTwoEpisodes(
       e1: const VideoBooksCompanion(
@@ -1341,16 +1534,19 @@ void main() {
       ),
     );
     final List<(String, int?)> opened = <(String, int?)>[];
-    await tester.pumpWidget(buildApp(
-      openVideoOverride: (
-        BuildContext _,
-        VideoBookRepository __,
-        String bookUid,
-        int? playlistCollectionId,
-      ) async {
-        opened.add((bookUid, playlistCollectionId));
-      },
-    ));
+    await tester.pumpWidget(
+      buildApp(
+        openVideoOverride:
+            (
+              BuildContext _,
+              VideoBookRepository __,
+              String bookUid,
+              int? playlistCollectionId,
+            ) async {
+              opened.add((bookUid, playlistCollectionId));
+            },
+      ),
+    );
     await pumpDashboard(tester);
 
     final HomeTab tabBefore = homeShellTabNotifier.value;
@@ -1362,7 +1558,9 @@ void main() {
     expect(c.subtitle, '${t.home_filter_watch} · S01E01');
     expect(
       find.descendant(
-          of: heroAction(), matching: find.text(t.video_continue_watching)),
+        of: heroAction(),
+        matching: find.text(t.video_continue_watching),
+      ),
       findsOneWidget,
     );
     await tester.tap(heroAction());
@@ -1391,36 +1589,41 @@ void main() {
     DateTime? playedAt,
     String? coverPath,
   }) async {
-    await db.upsertGalgame(GalgamesCompanion(
-      id: Value(id),
-      name: Value(name),
-      exePath: Value('/abs/$id.exe'),
-      workdir: const Value('/abs'),
-      addedAt: Value(addedAt.millisecondsSinceEpoch),
-      coverPath: Value(coverPath),
-    ));
+    await db.upsertGalgame(
+      GalgamesCompanion(
+        id: Value(id),
+        name: Value(name),
+        exePath: Value('/abs/$id.exe'),
+        workdir: const Value('/abs'),
+        addedAt: Value(addedAt.millisecondsSinceEpoch),
+        coverPath: Value(coverPath),
+      ),
+    );
     if (playedAt != null) {
-      await db.insertGalgameSession(GalgameSessionsCompanion(
-        gameId: Value(id),
-        startMs: Value(playedAt.millisecondsSinceEpoch - 60000),
-        endMs: Value(playedAt.millisecondsSinceEpoch),
-        durationSeconds: const Value(60),
-        dateKey: Value(FushiTimeFormat.dayKey(playedAt)),
-      ));
+      await db.insertGalgameSession(
+        GalgameSessionsCompanion(
+          gameId: Value(id),
+          startMs: Value(playedAt.millisecondsSinceEpoch - 60000),
+          endMs: Value(playedAt.millisecondsSinceEpoch),
+          durationSeconds: const Value(60),
+          dateKey: Value(FushiTimeFormat.dayKey(playedAt)),
+        ),
+      );
     }
   }
 
-  testWidgets('BUG-1111：玩过的游戏进「继续」区（游戏无完成度，不画角标）',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1111：玩过的游戏进「继续」区（游戏无完成度，不画角标）', (WidgetTester tester) async {
     useWindowsPlatform();
     useSize(tester, const Size(1280, 900));
     final DateTime now = DateTime.now();
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('v-1'),
-      title: Value('某视频'),
-      videoPath: Value('/abs/v1.mp4'),
-      lastPositionMs: Value(5000),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('v-1'),
+        title: Value('某视频'),
+        videoPath: Value('/abs/v1.mp4'),
+        lastPositionMs: Value(5000),
+      ),
+    );
     await seedGame(
       id: 'g-1',
       name: '某游戏',
@@ -1437,14 +1640,16 @@ void main() {
       cards.map((_ContinueItem c) => c.title),
       containsAll(<String>['某游戏', '某视频']),
     );
-    final _ContinueItem game =
-        cards.singleWhere((_ContinueItem c) => c.title == '某游戏');
+    final _ContinueItem game = cards.singleWhere(
+      (_ContinueItem c) => c.title == '某游戏',
+    );
     expect(game.badgeLabel, isNull);
     expect(game.progress, isNull);
   });
 
-  testWidgets('BUG-1111：同合集的多个游戏在「继续」区收敛成一张卡（与视频侧同口径）',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1111：同合集的多个游戏在「继续」区收敛成一张卡（与视频侧同口径）', (
+    WidgetTester tester,
+  ) async {
     useWindowsPlatform();
     useSize(tester, const Size(1280, 900));
     final DateTime now = DateTime.now();
@@ -1468,14 +1673,14 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    expect(
-      continueItems(tester).map((_ContinueItem c) => c.title),
-      <String>['某系列'],
-    );
+    expect(continueItems(tester).map((_ContinueItem c) => c.title), <String>[
+      '某系列',
+    ]);
   });
 
-  testWidgets('继续区合集 Next-Up：看完 E1 后合集卡推进为 E2（角标第 2 集），点击直接打开 E2',
-      (WidgetTester tester) async {
+  testWidgets('继续区合集 Next-Up：看完 E1 后合集卡推进为 E2（角标第 2 集），点击直接打开 E2', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
     final int cid = await seedCollectionTwoEpisodes(
       e1: VideoBooksCompanion(
@@ -1493,16 +1698,19 @@ void main() {
     );
 
     final List<(String, int?)> opened = <(String, int?)>[];
-    await tester.pumpWidget(buildApp(
-      openVideoOverride: (
-        BuildContext _,
-        VideoBookRepository __,
-        String bookUid,
-        int? playlistCollectionId,
-      ) async {
-        opened.add((bookUid, playlistCollectionId));
-      },
-    ));
+    await tester.pumpWidget(
+      buildApp(
+        openVideoOverride:
+            (
+              BuildContext _,
+              VideoBookRepository __,
+              String bookUid,
+              int? playlistCollectionId,
+            ) async {
+              opened.add((bookUid, playlistCollectionId));
+            },
+      ),
+    );
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
@@ -1510,8 +1718,9 @@ void main() {
     expect(c.title, '进击的巨人');
     expect(c.progressLabel, t.home_continue_episode(n: 2));
     // 主角卡整卡可点（不只是主按钮）：点标题同样打开 Next-Up 那一集。
-    await tester
-        .tap(find.byKey(const ValueKey<String>('home-continue-hero-title')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-continue-hero-title')),
+    );
     await tester.pump();
     expect(opened, <(String, int?)>[('e2', cid)]);
   });
@@ -1528,15 +1737,17 @@ void main() {
     final int now = DateTime.now().millisecondsSinceEpoch;
     final int cid = await db.createMediaCollection(name);
     for (final String k in keys) {
-      final String uid = await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: k,
-        title: k,
-        epubPath: '/abs/$k.epub',
-        extractDir: '/abs/$k',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: now - 60000,
-      ));
+      final String uid = await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: k,
+          title: k,
+          epubPath: '/abs/$k.epub',
+          extractDir: '/abs/$k',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: now - 60000,
+        ),
+      );
       await db.addToCollection(cid, MediaKind.epub, legacyBookKey ? k : uid);
     }
     return cid;
@@ -1545,20 +1756,23 @@ void main() {
   MediaItem bookAt(String key, {required int position}) =>
       readingBook(key, key, position: position);
 
-  testWidgets('书合集续读：读完第 1 卷后「继续」推进到第 2 卷（不再整套消失）',
-      (WidgetTester tester) async {
+  testWidgets('书合集续读：读完第 1 卷后「继续」推进到第 2 卷（不再整套消失）', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
     await seedBookCollection('某轻小说', <String>['卷1', '卷2', '卷3']);
     final int now = DateTime.now().millisecondsSinceEpoch;
-    await tester.pumpWidget(buildAppWithBooks(
-      <MediaItem>[
-        // 卷 1 读到末尾（position == duration → finished），卷 2/3 没开读。
-        bookAt('卷1', position: 100),
-        bookAt('卷2', position: 0),
-        bookAt('卷3', position: 0),
-      ],
-      <String, int>{'卷1': now},
-    ));
+    await tester.pumpWidget(
+      buildAppWithBooks(
+        <MediaItem>[
+          // 卷 1 读到末尾（position == duration → finished），卷 2/3 没开读。
+          bookAt('卷1', position: 100),
+          bookAt('卷2', position: 0),
+          bookAt('卷3', position: 0),
+        ],
+        <String, int>{'卷1': now},
+      ),
+    );
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
@@ -1568,28 +1782,29 @@ void main() {
     expect(rowCards(), findsNothing);
   });
 
-  testWidgets('书合集续读：整套读完 → 不出卡；同合集两卷在读只出一张最近读的',
-      (WidgetTester tester) async {
+  testWidgets('书合集续读：整套读完 → 不出卡；同合集两卷在读只出一张最近读的', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     await seedBookCollection('读完的系列', <String>['完1', '完2']);
     await seedBookCollection('在读的系列', <String>['读1', '读2', '读3']);
     final int now = DateTime.now().millisecondsSinceEpoch;
-    await tester.pumpWidget(buildAppWithBooks(
-      <MediaItem>[
-        bookAt('完1', position: 100),
-        bookAt('完2', position: 100),
-        // 读3 是刚才读的那卷（时刻最新），读1 是更早留下的半截。
-        bookAt('读1', position: 30),
-        bookAt('读2', position: 0),
-        bookAt('读3', position: 60),
-      ],
-      <String, int>{
-        '完1': now - 9000,
-        '完2': now - 8000,
-        '读1': now - 5000,
-        '读3': now,
-      },
-    ));
+    await tester.pumpWidget(
+      buildAppWithBooks(
+        <MediaItem>[
+          bookAt('完1', position: 100),
+          bookAt('完2', position: 100),
+          // 读3 是刚才读的那卷（时刻最新），读1 是更早留下的半截。
+          bookAt('读1', position: 30),
+          bookAt('读2', position: 0),
+          bookAt('读3', position: 60),
+        ],
+        <String, int>{
+          '完1': now - 9000,
+          '完2': now - 8000,
+          '读1': now - 5000,
+          '读3': now,
+        },
+      ),
+    );
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
@@ -1599,18 +1814,17 @@ void main() {
     expect(rowCards(), findsNothing);
   });
 
-  testWidgets('书合集续读：v83 前 bookKey 键的旧成员行同样推进到下一卷',
-      (WidgetTester tester) async {
+  testWidgets('书合集续读：v83 前 bookKey 键的旧成员行同样推进到下一卷', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
-    await seedBookCollection('旧合集', <String>['旧1', '旧2'],
-        legacyBookKey: true);
-    await tester.pumpWidget(buildAppWithBooks(
-      <MediaItem>[
-        bookAt('旧1', position: 100),
-        bookAt('旧2', position: 0),
-      ],
-      <String, int>{'旧1': DateTime.now().millisecondsSinceEpoch},
-    ));
+    await seedBookCollection('旧合集', <String>['旧1', '旧2'], legacyBookKey: true);
+    await tester.pumpWidget(
+      buildAppWithBooks(
+        <MediaItem>[bookAt('旧1', position: 100), bookAt('旧2', position: 0)],
+        <String, int>{'旧1': DateTime.now().millisecondsSinceEpoch},
+      ),
+    );
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
@@ -1619,8 +1833,9 @@ void main() {
     expect(h.progressLabel, t.home_continue_volume(n: 2));
   });
 
-  testWidgets('继续区合集 Next-Up：整个合集全部看完 → 不出卡（自然滚出继续区）',
-      (WidgetTester tester) async {
+  testWidgets('继续区合集 Next-Up：整个合集全部看完 → 不出卡（自然滚出继续区）', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
     await seedCollectionTwoEpisodes(
       e1: VideoBooksCompanion(
@@ -1648,8 +1863,9 @@ void main() {
     expect(find.byType(HomeEmptyState), findsOneWidget);
   });
 
-  testWidgets('精简 · 新用户空库：不是一片空白——头部行 + 空态说明 + 去书架 / 去媒体库',
-      (WidgetTester tester) async {
+  testWidgets('精简 · 新用户空库：不是一片空白——头部行 + 空态说明 + 去书架 / 去媒体库', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(420, 900));
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
@@ -1667,10 +1883,14 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey<String>('home-empty-go-books')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('home-empty-go-video')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('home-empty-go-books')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home-empty-go-video')),
+      findsOneWidget,
+    );
     expect(find.byType(HomeContinueRowSkeleton), findsNothing);
 
     // 引导按钮切到对应 tab。
@@ -1700,32 +1920,35 @@ void main() {
     expect(hero(), findsOneWidget);
   });
 
-  testWidgets('BUG-3034 · 切回首页（页面重建）首帧直接用上一轮快照，不再挂骨架等整批',
-      (WidgetTester tester) async {
+  testWidgets('BUG-3034 · 切回首页（页面重建）首帧直接用上一轮快照，不再挂骨架等整批', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();
     final ValueNotifier<bool> showPage = ValueNotifier<bool>(true);
     addTearDown(showPage.dispose);
-    await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[
-        platformServicesProvider.overrideWithValue(platformServices),
-        ankiRepositoryProvider.overrideWithValue(ankiRepository),
-        appProvider.overrideWith((ref) => appModel),
-        ...bookStreamOverrides(),
-      ],
-      child: TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: ValueListenableBuilder<bool>(
-              valueListenable: showPage,
-              builder: (BuildContext context, bool show, Widget? _) => show
-                  ? HomeDashboardPage(videoRepo: VideoBookRepository(db))
-                  : const SizedBox.shrink(),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          platformServicesProvider.overrideWithValue(platformServices),
+          ankiRepositoryProvider.overrideWithValue(ankiRepository),
+          appProvider.overrideWith((ref) => appModel),
+          ...bookStreamOverrides(),
+        ],
+        child: TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: ValueListenableBuilder<bool>(
+                valueListenable: showPage,
+                builder: (BuildContext context, bool show, Widget? _) => show
+                    ? HomeDashboardPage(videoRepo: VideoBookRepository(db))
+                    : const SizedBox.shrink(),
+              ),
             ),
           ),
         ),
       ),
-    ));
+    );
     await pumpDashboard(tester);
     expect(hero(), findsOneWidget);
 
@@ -1743,8 +1966,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('今日目标：未设目标只显示设定入口；对话框设 1000 后进度行 = 800/1000',
-      (WidgetTester tester) async {
+  testWidgets('今日目标：未设目标只显示设定入口；对话框设 1000 后进度行 = 800/1000', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();
     await tester.pumpWidget(buildApp());
@@ -1785,8 +2009,7 @@ void main() {
   });
 
   testWidgets('设定目标弹窗（M3E 重做）：hero 图标 + 大号填充输入 + 近 7 日日均建议 chip + '
-      '连接按钮组预设（选中态随输入联动）+ 实心保存按钮',
-      (WidgetTester tester) async {
+      '连接按钮组预设（选中态随输入联动）+ 实心保存按钮', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     // 今天读了 800 字（seedSampleData）→ 近 7 日日均 = 800 ~/ 7 = 114。
     await seedSampleData();
@@ -1808,12 +2031,14 @@ void main() {
       findsOneWidget,
     );
     final Finder dailyFinder = glassUnwrap<TextField>(
-        find.byKey(const ValueKey<String>('stat-goal-daily-field')));
+      find.byKey(const ValueKey<String>('stat-goal-daily-field')),
+    );
     expect(tester.widget<TextField>(dailyFinder).decoration?.filled, isTrue);
 
     // 近 7 日日均是一颗可点的建议 chip：点一下就填进去。
-    final Finder average =
-        find.byKey(const ValueKey<String>('stat-goal-average-chip'));
+    final Finder average = find.byKey(
+      const ValueKey<String>('stat-goal-average-chip'),
+    );
     expect(
       find.descendant(
         of: average,
@@ -1826,8 +2051,9 @@ void main() {
     expect(tester.widget<TextField>(dailyFinder).controller?.text, '114');
 
     // 预设：连接按钮组，点「5000」填入且该格变成选中态。
-    final Finder presets =
-        find.byKey(const ValueKey<String>('stat-goal-presets'));
+    final Finder presets = find.byKey(
+      const ValueKey<String>('stat-goal-presets'),
+    );
     await tester.tap(find.descendant(of: presets, matching: find.text('5000')));
     await tester.pump(const Duration(milliseconds: 300));
     expect(tester.widget<TextField>(dailyFinder).controller?.text, '5000');
@@ -1857,16 +2083,19 @@ void main() {
     );
   });
 
-  testWidgets('焦点可遍历：Tab 能落到主角卡的主按钮与横滑行封面卡（主角卡本身不占停靠点）',
-      (WidgetTester tester) async {
+  testWidgets('焦点可遍历：Tab 能落到主角卡的主按钮与横滑行封面卡（主角卡本身不占停靠点）', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/second'),
-      title: Value('第二个在看的视频'),
-      videoPath: Value('/abs/second.mp4'),
-      lastPositionMs: Value(30000),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/second'),
+        title: Value('第二个在看的视频'),
+        videoPath: Value('/abs/second.mp4'),
+        lastPositionMs: Value(30000),
+      ),
+    );
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
     expect(rowCards(), findsOneWidget);
@@ -1897,21 +2126,22 @@ void main() {
     }
     expect(reachedAction, isTrue, reason: '主角卡主按钮必须是 Tab 可达的焦点停靠点');
     expect(reachedRowCard, isTrue, reason: '横滑行封面卡必须是 Tab 可达的焦点停靠点');
-    expect(focusedHeroBody, isFalse,
-        reason: '主角卡整卡与主按钮是同一动作，不能占两个 Tab 停靠点');
+    expect(focusedHeroBody, isFalse, reason: '主角卡整卡与主按钮是同一动作，不能占两个 Tab 停靠点');
   });
 
   // ── 2026-10 首页统一浮动工具栏 ────────────────────────────────────────────
 
   Finder dashboardList() => find.byWidgetPredicate(
-      (Widget w) => w is ListView && w.scrollDirection == Axis.vertical);
+    (Widget w) => w is ListView && w.scrollDirection == Axis.vertical,
+  );
   HomeFloatingToolbar toolbar(WidgetTester tester) =>
       tester.widget<HomeFloatingToolbar>(find.byType(HomeFloatingToolbar));
   HomeResumeFab resumeFab(WidgetTester tester) =>
       tester.widget<HomeResumeFab>(find.byType(HomeResumeFab));
   bool excludedFromFocus(WidgetTester tester, Finder target) => tester
       .widgetList<ExcludeFocus>(
-          find.ancestor(of: target, matching: find.byType(ExcludeFocus)))
+        find.ancestor(of: target, matching: find.byType(ExcludeFocus)),
+      )
       .any((ExcludeFocus w) => w.excluding);
 
   /// 滚动后跑完弹簧（default spatial 约 0.5 s 收敛）。
@@ -1921,19 +2151,23 @@ void main() {
     }
   }
 
-  testWidgets('浮动工具栏：左上角是头像（不再是「首页」标题胶囊），右侧更新/统计/收藏夹/排行榜/反馈',
-      (WidgetTester tester) async {
+  testWidgets('浮动工具栏：左上角是头像（不再是「首页」标题胶囊），右侧更新/统计/收藏夹/排行榜/反馈', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    final Finder avatar =
-        find.byKey(const ValueKey<String>('home-toolbar-avatar'));
+    final Finder avatar = find.byKey(
+      const ValueKey<String>('home-toolbar-avatar'),
+    );
     expect(avatar, findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('fushi_floating_top_bar_title')),
-        findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_floating_top_bar_title')),
+      findsNothing,
+    );
     final double cardTop = tester.getTopLeft(find.byType(HomeStudyHeader)).dy;
     expect(tester.getTopLeft(avatar).dy, lessThan(cardTop));
     expect(tester.getTopLeft(avatar).dx, lessThan(100));
@@ -1952,16 +2186,18 @@ void main() {
     expect(resumeFab(tester).visible, isFalse);
   });
 
-  testWidgets('浮动工具栏：收藏夹按钮是收藏夹唯一入口，按下打开 CollectionsPage',
-      (WidgetTester tester) async {
+  testWidgets('浮动工具栏：收藏夹按钮是收藏夹唯一入口，按下打开 CollectionsPage', (
+    WidgetTester tester,
+  ) async {
     // 用户 2026-10-14 定案：库页页头的收藏夹按钮全部撤掉（收藏夹不按模块隔离，
     // 每个模块各挂一个只会误导），统一从首页进——同统计中心 2026-09-01 的收敛。
     useSize(tester, const Size(1280, 900));
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
 
-    final Finder button =
-        find.byKey(const ValueKey<String>('home-toolbar-collections'));
+    final Finder button = find.byKey(
+      const ValueKey<String>('home-toolbar-collections'),
+    );
     expect(button, findsOneWidget);
     expect(find.byTooltip(t.collections), findsOneWidget);
     expect(find.byType(CollectionsPage), findsNothing);
@@ -1974,8 +2210,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('BUG-3249 头像跟随 Profile 改名与切换（不止 initState 读一次）',
-      (WidgetTester tester) async {
+  testWidgets('BUG-3249 头像跟随 Profile 改名与切换（不止 initState 读一次）', (
+    WidgetTester tester,
+  ) async {
     useSize(tester, const Size(1280, 900));
     final int alice = await db.insertProfile(
       ProfilesCompanion.insert(name: 'Alice', createdAt: 0, updatedAt: 0),
@@ -2050,15 +2287,15 @@ void main() {
 
     expect(toolbar(tester).visible, isTrue);
     final Finder stats = find.byKey(
-        const ValueKey<String>('home-toolbar-stats'),
-        skipOffstage: false);
+      const ValueKey<String>('home-toolbar-stats'),
+      skipOffstage: false,
+    );
     expect(excludedFromFocus(tester, stats), isFalse);
 
     await tester.drag(dashboardList(), const Offset(0, -150));
     await settleSpring(tester);
     expect(toolbar(tester).visible, isFalse);
-    expect(excludedFromFocus(tester, stats), isTrue,
-        reason: '退场中的栏不能还被 Tab 到');
+    expect(excludedFromFocus(tester, stats), isTrue, reason: '退场中的栏不能还被 Tab 到');
 
     await tester.drag(dashboardList(), const Offset(0, 60));
     await settleSpring(tester);
@@ -2067,7 +2304,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('HomeToolbarScrollState：只认主列表纵向滚动，带回差切换显隐', (WidgetTester tester) async {
+  testWidgets('HomeToolbarScrollState：只认主列表纵向滚动，带回差切换显隐', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const MaterialApp(home: Scaffold()));
     final BuildContext scrollContext = tester.element(find.byType(Scaffold));
     final HomeToolbarScrollState state = HomeToolbarScrollState();
@@ -2076,21 +2315,20 @@ void main() {
       required double pixels,
       required double delta,
       Axis axis = Axis.vertical,
-    }) =>
-        ScrollUpdateNotification(
-          metrics: FixedScrollMetrics(
-            minScrollExtent: 0,
-            maxScrollExtent: 5000,
-            pixels: pixels,
-            viewportDimension: 800,
-            axisDirection: axis == Axis.vertical
-                ? AxisDirection.down
-                : AxisDirection.right,
-            devicePixelRatio: 1,
-          ),
-          context: scrollContext,
-          scrollDelta: delta,
-        );
+    }) => ScrollUpdateNotification(
+      metrics: FixedScrollMetrics(
+        minScrollExtent: 0,
+        maxScrollExtent: 5000,
+        pixels: pixels,
+        viewportDimension: 800,
+        axisDirection: axis == Axis.vertical
+            ? AxisDirection.down
+            : AxisDirection.right,
+        devicePixelRatio: 1,
+      ),
+      context: scrollContext,
+      scrollDelta: delta,
+    );
 
     // 横滑行（卡片里的横向列表）：不影响。
     state.handle(update(pixels: 900, delta: 200, axis: Axis.horizontal));
@@ -2117,203 +2355,209 @@ void main() {
   //
   // 2026-08-19 Bangumi 同步临时下线（kMediaTrackingEnabled=false）：卡不再挂载，
   // 整组随功能一起停用；恢复开关时删掉 skip 原样启用。
-  group('Bangumi 同步卡（BUG-1220）',
-      skip: kMediaTrackingEnabled
-          ? false
-          : 'Bangumi 同步临时下线（kMediaTrackingEnabled=false）', () {
-    void useWideSurface(WidgetTester tester) {
-      tester.view.physicalSize = const Size(1400, 1800);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-    }
+  group(
+    'Bangumi 同步卡（BUG-1220）',
+    skip: kMediaTrackingEnabled
+        ? false
+        : 'Bangumi 同步临时下线（kMediaTrackingEnabled=false）',
+    () {
+      void useWideSurface(WidgetTester tester) {
+        tester.view.physicalSize = const Size(1400, 1800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+      }
 
-    Future<void> connect({String account = 'Alice'}) async {
-      await prefs.setPref(kBangumiAccessTokenPref, 'token');
-      await prefs.setPref(kBangumiAccountNamePref, account);
-    }
+      Future<void> connect({String account = 'Alice'}) async {
+        await prefs.setPref(kBangumiAccessTokenPref, 'token');
+        await prefs.setPref(kBangumiAccountNamePref, account);
+      }
 
-    testWidgets('未连接：明说未连接并给出连接入口', (WidgetTester tester) async {
-      useWideSurface(tester);
-      await tester.pumpWidget(buildApp());
-      await pumpDashboard(tester);
+      testWidgets('未连接：明说未连接并给出连接入口', (WidgetTester tester) async {
+        useWideSurface(tester);
+        await tester.pumpWidget(buildApp());
+        await pumpDashboard(tester);
 
-      expect(tester.takeException(), isNull);
-      expect(find.text(t.media_tracking_card_title), findsOneWidget);
-      expect(find.text(t.media_tracking_not_connected), findsOneWidget);
-      expect(
-        find.widgetWithText(FilledButton, t.media_tracking_connect),
-        findsOneWidget,
-      );
-    });
+        expect(tester.takeException(), isNull);
+        expect(find.text(t.media_tracking_card_title), findsOneWidget);
+        expect(find.text(t.media_tracking_not_connected), findsOneWidget);
+        expect(
+          find.widgetWithText(FilledButton, t.media_tracking_connect),
+          findsOneWidget,
+        );
+      });
 
-    testWidgets('已连接但没有本地历史：不再显示泛化的零关联警告', (WidgetTester tester) async {
-      useWideSurface(tester);
-      await connect();
-      await tester.pumpWidget(buildApp());
-      await pumpDashboard(tester);
+      testWidgets('已连接但没有本地历史：不再显示泛化的零关联警告', (WidgetTester tester) async {
+        useWideSurface(tester);
+        await connect();
+        await tester.pumpWidget(buildApp());
+        await pumpDashboard(tester);
 
-      expect(tester.takeException(), isNull);
-      // 账号名从偏好读回（不只是本次会话的连接结果）。
-      expect(find.text('Alice'), findsOneWidget);
-      // 从未同步必须与「同步过零待办」区分：成功即删 outbox 行，两者否则同形。
-      expect(
-          find.textContaining(t.media_tracking_never_synced), findsOneWidget);
-      expect(find.text(t.media_tracking_no_local_history), findsOneWidget);
-      expect(find.text(t.media_tracking_watched_show), findsOneWidget);
-    });
+        expect(tester.takeException(), isNull);
+        // 账号名从偏好读回（不只是本次会话的连接结果）。
+        expect(find.text('Alice'), findsOneWidget);
+        // 从未同步必须与「同步过零待办」区分：成功即删 outbox 行，两者否则同形。
+        expect(
+          find.textContaining(t.media_tracking_never_synced),
+          findsOneWidget,
+        );
+        expect(find.text(t.media_tracking_no_local_history), findsOneWidget);
+        expect(find.text(t.media_tracking_watched_show), findsOneWidget);
+      });
 
-    testWidgets('以前看完但未映射的视频会明确列为需要手动关联', (WidgetTester tester) async {
-      useWideSurface(tester);
-      await connect();
-      await db.upsertVideoBook(
-        VideoBooksCompanion.insert(
-          bookUid: 'old-video',
-          title: '以前看过的番剧',
-          videoPath: 'C:/video/old.mkv',
-          completedAt: Value<DateTime?>(DateTime.now()),
-        ),
-      );
+      testWidgets('以前看完但未映射的视频会明确列为需要手动关联', (WidgetTester tester) async {
+        useWideSurface(tester);
+        await connect();
+        await db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: 'old-video',
+            title: '以前看过的番剧',
+            videoPath: 'C:/video/old.mkv',
+            completedAt: Value<DateTime?>(DateTime.now()),
+          ),
+        );
 
-      await tester.pumpWidget(buildApp());
-      await pumpDashboard(tester);
+        await tester.pumpWidget(buildApp());
+        await pumpDashboard(tester);
 
-      expect(tester.takeException(), isNull);
-      expect(find.text('以前看过的番剧'), findsOneWidget);
-      expect(
-        find.text(
-          '${t.media_tracking_anime} · '
-          '${t.media_tracking_manual_required}',
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.text(t.media_tracking_manual_required_count(n: 1)),
-        findsOneWidget,
-      );
-    });
+        expect(tester.takeException(), isNull);
+        expect(find.text('以前看过的番剧'), findsOneWidget);
+        expect(
+          find.text(
+            '${t.media_tracking_anime} · '
+            '${t.media_tracking_manual_required}',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text(t.media_tracking_manual_required_count(n: 1)),
+          findsOneWidget,
+        );
+      });
 
-    testWidgets('已关联条目列出本地标题 + Bangumi 条目名，并给出打开入口',
-        (WidgetTester tester) async {
-      useWideSurface(tester);
-      await connect();
-      await MediaTrackingRepository(db).saveMapping(
-        mediaType: TrackingMediaType.videoCollection,
-        mediaKey: '8',
-        mediaTitle: '本地动画合集',
-        kind: TrackingKind.anime,
-        subjectId: 88,
-        subjectName: 'Remote anime',
-        progressMode: TrackingProgressMode.episode,
-        progressOffset: 1,
-      );
+      testWidgets('已关联条目列出本地标题 + Bangumi 条目名，并给出打开入口', (
+        WidgetTester tester,
+      ) async {
+        useWideSurface(tester);
+        await connect();
+        await MediaTrackingRepository(db).saveMapping(
+          mediaType: TrackingMediaType.videoCollection,
+          mediaKey: '8',
+          mediaTitle: '本地动画合集',
+          kind: TrackingKind.anime,
+          subjectId: 88,
+          subjectName: 'Remote anime',
+          progressMode: TrackingProgressMode.episode,
+          progressOffset: 1,
+        );
 
-      await tester.pumpWidget(buildApp());
-      await pumpDashboard(tester);
+        await tester.pumpWidget(buildApp());
+        await pumpDashboard(tester);
 
-      expect(tester.takeException(), isNull);
-      expect(find.text('本地动画合集'), findsOneWidget);
-      expect(find.textContaining('Remote anime'), findsOneWidget);
-      expect(find.byIcon(FushiIcons.openInNew), findsOneWidget);
-      expect(
-        find.textContaining(t.media_tracking_linked_count(n: 1)),
-        findsOneWidget,
-      );
-      expect(find.text(t.media_tracking_no_local_history), findsNothing);
-    });
+        expect(tester.takeException(), isNull);
+        expect(find.text('本地动画合集'), findsOneWidget);
+        expect(find.textContaining('Remote anime'), findsOneWidget);
+        expect(find.byIcon(FushiIcons.openInNew), findsOneWidget);
+        expect(
+          find.textContaining(t.media_tracking_linked_count(n: 1)),
+          findsOneWidget,
+        );
+        expect(find.text(t.media_tracking_no_local_history), findsNothing);
+      });
 
-    testWidgets('上报失败：退避窗口内也照说失败原因', (WidgetTester tester) async {
-      useWideSurface(tester);
-      await connect();
-      final MediaTrackingRepository repository = MediaTrackingRepository(db);
-      await repository.saveMapping(
-        mediaType: TrackingMediaType.videoCollection,
-        mediaKey: '8',
-        mediaTitle: '失败的动画',
-        kind: TrackingKind.anime,
-        subjectId: 88,
-        subjectName: 'Remote anime',
-        progressMode: TrackingProgressMode.episode,
-        progressOffset: 1,
-      );
-      await repository.enqueueProgress(
-        mediaType: TrackingMediaType.videoCollection,
-        mediaKey: '8',
-        localProgress: 1,
-        completed: false,
-      );
-      final List<PendingTrackingUpdate> due = await repository.dueUpdates();
-      await repository.markFailed(
-        due.single.outbox,
-        const BangumiApiException(statusCode: 500, message: 'boom'),
-      );
-      // 退避后发送侧已看不到这一行——展示侧仍必须说得出原因。
-      expect(await repository.dueUpdates(), isEmpty);
+      testWidgets('上报失败：退避窗口内也照说失败原因', (WidgetTester tester) async {
+        useWideSurface(tester);
+        await connect();
+        final MediaTrackingRepository repository = MediaTrackingRepository(db);
+        await repository.saveMapping(
+          mediaType: TrackingMediaType.videoCollection,
+          mediaKey: '8',
+          mediaTitle: '失败的动画',
+          kind: TrackingKind.anime,
+          subjectId: 88,
+          subjectName: 'Remote anime',
+          progressMode: TrackingProgressMode.episode,
+          progressOffset: 1,
+        );
+        await repository.enqueueProgress(
+          mediaType: TrackingMediaType.videoCollection,
+          mediaKey: '8',
+          localProgress: 1,
+          completed: false,
+        );
+        final List<PendingTrackingUpdate> due = await repository.dueUpdates();
+        await repository.markFailed(
+          due.single.outbox,
+          const BangumiApiException(statusCode: 500, message: 'boom'),
+        );
+        // 退避后发送侧已看不到这一行——展示侧仍必须说得出原因。
+        expect(await repository.dueUpdates(), isEmpty);
 
-      await tester.pumpWidget(buildApp());
-      await pumpDashboard(tester);
+        await tester.pumpWidget(buildApp());
+        await pumpDashboard(tester);
 
-      expect(tester.takeException(), isNull);
-      // 失败原因挂在条目行上，标题只出现一次（不另开「失败」段重复一遍）。
-      expect(find.text('失败的动画'), findsOneWidget);
-      expect(
-        find.textContaining('${t.media_tracking_last_error}: '),
-        findsOneWidget,
-      );
-      expect(find.textContaining('500'), findsOneWidget);
-      expect(find.byIcon(FushiIcons.syncProblem), findsOneWidget);
-      expect(
-        find.textContaining(t.media_tracking_pending_count(n: 1)),
-        findsOneWidget,
-      );
-    });
+        expect(tester.takeException(), isNull);
+        // 失败原因挂在条目行上，标题只出现一次（不另开「失败」段重复一遍）。
+        expect(find.text('失败的动画'), findsOneWidget);
+        expect(
+          find.textContaining('${t.media_tracking_last_error}: '),
+          findsOneWidget,
+        );
+        expect(find.textContaining('500'), findsOneWidget);
+        expect(find.byIcon(FushiIcons.syncProblem), findsOneWidget);
+        expect(
+          find.textContaining(t.media_tracking_pending_count(n: 1)),
+          findsOneWidget,
+        );
+      });
 
-    testWidgets('令牌被拒：给出「重新连接」提示', (WidgetTester tester) async {
-      useWideSurface(tester);
-      await connect();
-      await prefs.setPref(kMediaTrackingLastSyncUnauthorizedPref, true);
-      await prefs.setPref(
-        kMediaTrackingLastSyncAtPref,
-        DateTime.now().millisecondsSinceEpoch,
-      );
+      testWidgets('令牌被拒：给出「重新连接」提示', (WidgetTester tester) async {
+        useWideSurface(tester);
+        await connect();
+        await prefs.setPref(kMediaTrackingLastSyncUnauthorizedPref, true);
+        await prefs.setPref(
+          kMediaTrackingLastSyncAtPref,
+          DateTime.now().millisecondsSinceEpoch,
+        );
 
-      await tester.pumpWidget(buildApp());
-      await pumpDashboard(tester);
+        await tester.pumpWidget(buildApp());
+        await pumpDashboard(tester);
 
-      expect(tester.takeException(), isNull);
-      expect(find.text(t.media_tracking_unauthorized), findsOneWidget);
-    });
+        expect(tester.takeException(), isNull);
+        expect(find.text(t.media_tracking_unauthorized), findsOneWidget);
+      });
 
-    testWidgets('自动关联 miss 后显示真实重试入口并回显结果', (WidgetTester tester) async {
-      useWideSurface(tester);
-      await connect();
-      // 不存在的本地游戏会形成一次可重试 miss，且不访问真实网络。
-      await appModel.mediaTrackingService.recordGameStatus(
-        gameId: 'missing-game',
-        status: 3,
-      );
+      testWidgets('自动关联 miss 后显示真实重试入口并回显结果', (WidgetTester tester) async {
+        useWideSurface(tester);
+        await connect();
+        // 不存在的本地游戏会形成一次可重试 miss，且不访问真实网络。
+        await appModel.mediaTrackingService.recordGameStatus(
+          gameId: 'missing-game',
+          status: 3,
+        );
 
-      await tester.pumpWidget(buildApp());
-      await pumpDashboard(tester);
+        await tester.pumpWidget(buildApp());
+        await pumpDashboard(tester);
 
-      final Finder retryButton = find.widgetWithText(
-        FilledButton,
-        t.media_tracking_retry_mapping,
-      );
-      expect(retryButton, findsOneWidget);
+        final Finder retryButton = find.widgetWithText(
+          FilledButton,
+          t.media_tracking_retry_mapping,
+        );
+        expect(retryButton, findsOneWidget);
 
-      await tester.tap(retryButton);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
+        await tester.tap(retryButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
 
-      expect(
-        find.text(t.media_tracking_retry_no_match),
-        findsOneWidget,
-        reason: '重试不能被 10 分钟退避无声吞掉，匹配结果必须回显',
-      );
-      expect(tester.takeException(), isNull);
-    });
-  });
+        expect(
+          find.text(t.media_tracking_retry_no_match),
+          findsOneWidget,
+          reason: '重试不能被 10 分钟退避无声吞掉，匹配结果必须回显',
+        );
+        expect(tester.takeException(), isNull);
+      });
+    },
+  );
 }
 
 /// 16x9 横版 PNG：朝向探测（`CoverOrientationBuilder`）读的是**解码出来的固有
@@ -2353,3 +2597,25 @@ typedef _ContinueItem = ({
   double? progress,
   IconData? badgeIcon,
 });
+
+/// BUG-3756 用的「网络盘」假文件：同步 API 记账并抛错，`exists()` 记账后回 false。
+class _NetMountFile implements File {
+  _NetMountFile(this.path, this.syncCalls, this.asyncProbes);
+
+  @override
+  final String path;
+  final List<String> syncCalls;
+  final List<String> asyncProbes;
+
+  @override
+  Future<bool> exists() async {
+    asyncProbes.add(path);
+    return false;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    syncCalls.add('${invocation.memberName} $path');
+    throw StateError('unexpected File.${invocation.memberName} on $path');
+  }
+}

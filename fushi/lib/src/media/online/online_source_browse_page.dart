@@ -513,7 +513,7 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
                         ? adaptiveIndicator(context: context)
                         : FushiIconButtonControl.filledTonal(
                             key: ValueKey<String>('${prefix}_more'),
-                            size: FushiIconButtonSize.m,
+                            size: ButtonSizeVariant.medium,
                             onPressed: () => unawaited(_load(reset: false)),
                             icon: const FushiIcon(FushiIcons.add),
                           ),

@@ -17,6 +17,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 import 'package:fushi_engine/srs/apkg/anki_collection_db.dart';
 import 'package:fushi_engine/srs/apkg/srs_protobuf.dart';
+import 'package:fushi_engine/srs/apkg/srs_zip_file_reader.dart';
 
 /// 导入失败（整包不可用）。单条笔记 / 卡片的问题不抛，进导入报告。
 class SrsImportException implements Exception {
@@ -40,6 +41,9 @@ class SrsImportException implements Exception {
 
 /// zstd 解码函数（库不可用或数据非法时返回 null）。
 typedef SrsZstdDecoder = Uint8List? Function(Uint8List data);
+
+/// zstd 文件到文件解码：库不可用返回 null，成功 true，数据非法 / 读写失败 false。
+typedef SrsZstdFileDecoder = bool? Function(String inPath, String outPath);
 
 const List<int> _zstdMagic = <int>[0x28, 0xB5, 0x2F, 0xFD];
 
@@ -69,8 +73,9 @@ class SrsAnkiPackage {
     this.collectionBytes,
     this.latestFormat,
     this.mediaIndex,
-    this.fushiExt,
-  );
+    this.fushiExt, {
+    this.collectionFile,
+  });
 
   /// 本机 Anki 用户数据目录里的集合：媒体是 `collection.media` 下的平铺文件
   /// （[mediaIndex] 的条目名就是文件名本身），不压缩、没有 fushi-ext。
@@ -94,8 +99,11 @@ class SrsAnkiPackage {
   final SrsAnkiMediaEntryLoader _loadEntry;
   final SrsZstdDecoder _zstd;
 
-  /// 解压后的 SQLite 字节。
+  /// 解压后的 SQLite 字节（[open] 解内存里的包时才有；[openFile] 为空，见 [collectionFile]）。
   final Uint8List collectionBytes;
+
+  /// [openFile] 解出的集合 SQLite 文件（在调用方给的工作目录里）。
+  final File? collectionFile;
 
   /// 新格式（collection.anki21b）。
   final bool latestFormat;
@@ -157,41 +165,14 @@ class SrsAnkiPackage {
       collection = unzstd(collection, 'collection');
     }
 
-    final Map<String, String> media = <String, String>{};
     final ArchiveFile? m = find('media');
-    if (m != null) {
-      Uint8List raw = _bytesOf(m);
-      if (_isZstd(raw)) raw = unzstd(raw, 'media manifest');
-      final String text = utf8.decode(raw, allowMalformed: true).trimLeft();
-      if (text.startsWith('{')) {
-        final Object? j = jsonDecode(text);
-        if (j is Map) {
-          for (final MapEntry<Object?, Object?> e in j.entries) {
-            if (e.value is String) media[e.value! as String] = '${e.key}';
-          }
-        }
-      } else if (raw.isNotEmpty) {
-        // MediaEntries { repeated MediaEntry entries = 1; }
-        // MediaEntry { name = 1; size = 2; sha1 = 3; legacy_zip_filename = 255 }
-        final List<SrsProtoMessage> entries = SrsProtoMessage.parse(
-          raw,
-        ).messagesOf(1);
-        for (int i = 0; i < entries.length; i++) {
-          final SrsProtoMessage e = entries[i];
-          final int idx = e.optInt(255) ?? i;
-          media[e.stringOf(1)] = '$idx';
-        }
-      }
-    }
-
-    Map<String, Object?>? ext;
+    final Map<String, String> media = m == null
+        ? <String, String>{}
+        : _parseMediaManifest(_bytesOf(m), unzstd);
     final ArchiveFile? x = find(srsFushiExtEntry);
-    if (x != null) {
-      Uint8List raw = _bytesOf(x);
-      if (_isZstd(raw)) raw = unzstd(raw, srsFushiExtEntry);
-      final Object? j = jsonDecode(utf8.decode(raw));
-      if (j is Map) ext = j.cast<String, Object?>();
-    }
+    final Map<String, Object?>? ext = x == null
+        ? null
+        : _parseFushiExt(_bytesOf(x), unzstd);
     ArchiveFile? entryFile(String entry) => archive.findFile(entry);
     return SrsAnkiPackage._(
       (String entry) async {
@@ -204,6 +185,181 @@ class SrsAnkiPackage {
       media,
       ext,
     );
+  }
+
+  /// 媒体清单（旧格式 JSON `{"0": "a.mp3"}` / 新格式 protobuf MediaEntries）→ 媒体名 → 条目名。
+  static Map<String, String> _parseMediaManifest(
+    Uint8List raw,
+    Uint8List Function(Uint8List data, String what) unzstd,
+  ) {
+    final Map<String, String> media = <String, String>{};
+    if (_isZstd(raw)) raw = unzstd(raw, 'media manifest');
+    final String text = utf8.decode(raw, allowMalformed: true).trimLeft();
+    if (text.startsWith('{')) {
+      final Object? j = jsonDecode(text);
+      if (j is Map) {
+        for (final MapEntry<Object?, Object?> e in j.entries) {
+          if (e.value is String) media[e.value! as String] = '${e.key}';
+        }
+      }
+    } else if (raw.isNotEmpty) {
+      // MediaEntries { repeated MediaEntry entries = 1; }
+      // MediaEntry { name = 1; size = 2; sha1 = 3; legacy_zip_filename = 255 }
+      final List<SrsProtoMessage> entries = SrsProtoMessage.parse(
+        raw,
+      ).messagesOf(1);
+      for (int i = 0; i < entries.length; i++) {
+        final SrsProtoMessage e = entries[i];
+        final int idx = e.optInt(255) ?? i;
+        media[e.stringOf(1)] = '$idx';
+      }
+    }
+    return media;
+  }
+
+  static Map<String, Object?>? _parseFushiExt(
+    Uint8List raw,
+    Uint8List Function(Uint8List data, String what) unzstd,
+  ) {
+    if (_isZstd(raw)) raw = unzstd(raw, srsFushiExtEntry);
+    final Object? j = jsonDecode(utf8.decode(raw));
+    return j is Map ? j.cast<String, Object?>() : null;
+  }
+
+  static Uint8List Function(Uint8List data, String what) _unzstdOrThrow(
+    SrsZstdDecoder zstd,
+  ) => (Uint8List data, String what) {
+    final Uint8List? out = _tryZstd(zstd, data);
+    if (out == null) {
+      throw SrsImportException(
+        SrsImportException.needsKernel,
+        '$what is zstd-compressed (new .apkg format) and the scheduling '
+        'kernel library is unavailable',
+      );
+    }
+    return out;
+  };
+
+  /// 从文件解包，**不把整个包读进内存**（Android 上带媒体的 .colpkg 动辄上 GB，整包读入
+  /// 会 Out of Memory）。同步、纯 CPU / IO：调用方放进后台 isolate。
+  ///
+  /// - zip 只读中央目录（[srsReadZipIndex]），条目数据按偏移从文件取；
+  /// - 集合条目流式解压到 [workDir]（[srsExtractZipEntrySync]）；新格式（collection.anki21b）
+  ///   再经 [zstdFile] 文件到文件解 zstd（排程内核 `ffsrs_zstd_decompress_file`，一次 FFI
+  ///   调用流式解完；以前整段读进内存解码再写回，峰值是压缩后 + 解压后的集合大小）；
+  /// - 媒体清单 / fushi-ext 很小，一次读出；
+  /// - 媒体文件不在这里读：[mediaBytes] 按需从文件里逐个取，峰值 ≈ 单个媒体文件。
+  ///
+  /// [workDir] 由调用方建、调用方删（集合用完后 [SrsAnkiCollection.openExtracted] 关闭时删）。
+  static SrsAnkiPackage openFile(
+    String path, {
+    required SrsZstdDecoder zstd,
+    required SrsZstdFileDecoder zstdFile,
+    required String workDir,
+  }) {
+    final Map<String, SrsZipEntry> index;
+    try {
+      index = srsReadZipIndex(path);
+    } on Object catch (e) {
+      throw SrsImportException(SrsImportException.corrupt, 'not a zip: $e');
+    }
+    final Uint8List Function(Uint8List data, String what) unzstd =
+        _unzstdOrThrow(zstd);
+    final SrsZipEntry? c21b = index['collection.anki21b'];
+    final SrsZipEntry? colEntry =
+        c21b ?? index['collection.anki21'] ?? index['collection.anki2'];
+    if (colEntry == null) {
+      throw const SrsImportException(
+        SrsImportException.noCollection,
+        'no collection.anki21b / anki21 / anki2 in package',
+      );
+    }
+    final File collection = File(
+      '$workDir${Platform.pathSeparator}collection.db',
+    );
+    final Map<String, String> media;
+    final Map<String, Object?>? ext;
+    final RandomAccessFile raf = File(path).openSync();
+    try {
+      final File raw = File('$workDir${Platform.pathSeparator}collection.raw');
+      srsExtractZipEntrySync(raf, colEntry, raw);
+      if (_fileStartsWithZstd(raw)) {
+        final String what = c21b != null ? 'collection.anki21b' : 'collection';
+        final bool? ok = _tryZstdFile(zstdFile, raw.path, collection.path);
+        if (ok == null) {
+          throw SrsImportException(
+            SrsImportException.needsKernel,
+            '$what is zstd-compressed (new .apkg format) and the scheduling '
+            'kernel library is unavailable',
+          );
+        }
+        if (!ok) {
+          throw SrsImportException(
+            SrsImportException.corrupt,
+            '$what: invalid zstd data',
+          );
+        }
+        raw.deleteSync();
+      } else {
+        raw.renameSync(collection.path);
+      }
+      final SrsZipEntry? m = index['media'];
+      media = m == null
+          ? <String, String>{}
+          : _parseMediaManifest(srsReadZipEntrySync(raf, m), unzstd);
+      final SrsZipEntry? x = index[srsFushiExtEntry];
+      ext = x == null
+          ? null
+          : _parseFushiExt(srsReadZipEntrySync(raf, x), unzstd);
+    } on SrsImportException {
+      rethrow;
+    } on SrsZipFormatException catch (e) {
+      throw SrsImportException(SrsImportException.corrupt, e.message);
+    } on FileSystemException {
+      rethrow;
+    } on Object catch (e) {
+      throw SrsImportException(SrsImportException.corrupt, '$e');
+    } finally {
+      raf.closeSync();
+    }
+    return SrsAnkiPackage._(
+      (String entry) async {
+        final SrsZipEntry? e = index[entry];
+        if (e == null) return null;
+        try {
+          return await srsReadZipEntry(path, e);
+        } on SrsZipFormatException catch (err) {
+          throw SrsImportException(SrsImportException.corrupt, err.message);
+        }
+      },
+      zstd,
+      Uint8List(0),
+      c21b != null,
+      media,
+      ext,
+      collectionFile: collection,
+    );
+  }
+
+  static bool? _tryZstdFile(
+    SrsZstdFileDecoder zstd,
+    String inPath,
+    String outPath,
+  ) {
+    try {
+      return zstd(inPath, outPath);
+    } on Object {
+      return false;
+    }
+  }
+
+  static bool _fileStartsWithZstd(File f) {
+    final RandomAccessFile r = f.openSync();
+    try {
+      return _isZstd(r.readSync(4));
+    } finally {
+      r.closeSync();
+    }
   }
 
   static Uint8List? _tryZstd(SrsZstdDecoder zstd, Uint8List data) {
@@ -404,6 +560,23 @@ class SrsAnkiCollection {
       throw SrsImportException(SrsImportException.corrupt, 'sqlite: $e');
     }
     return _loaded(SrsAnkiCollection._(db, f));
+  }
+
+  /// 打开 [SrsAnkiPackage.openFile] 解到工作目录里的集合：[close] 时连同工作目录一起删
+  /// （打开失败也删）。
+  static Future<SrsAnkiCollection> openExtracted(File sqlite) async {
+    final Database db;
+    try {
+      db = openAnkiCollectionDb(sqlite.path);
+    } on Object catch (e) {
+      try {
+        await sqlite.parent.delete(recursive: true);
+      } on FileSystemException {
+        // 临时目录留给系统清理。
+      }
+      throw SrsImportException(SrsImportException.corrupt, 'sqlite: $e');
+    }
+    return _loaded(SrsAnkiCollection._(db, sqlite));
   }
 
   /// 直接只读打开一份**调用方拥有的** SQLite 文件（本机集合的快照）。

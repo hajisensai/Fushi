@@ -314,6 +314,12 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
       return;
     }
     final SrsMediaStore lockedMedia = media;
+    final AppModel app = ref.read(appProvider);
+    // 迁移完成后切卡片去向：任务可能在本页关掉之后才结束，偏好写入口在入队时就绑好。
+    final SrsCardTargetSwitch cardTargetSwitch = SrsCardTargetSwitch(
+      setMiningTarget: app.setSrsMiningTarget,
+      setMineToServer: app.setMineToServer,
+    );
     final SrsImportTask task = ref
         .read(srsImportControllerProvider)
         .enqueueJob(
@@ -327,6 +333,7 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
                 media: lockedMedia,
                 source: source,
                 settings: settings,
+                cardTargetSwitch: cardTargetSwitch,
                 onProgress: onProgress,
                 shouldStop: shouldStop,
               ),

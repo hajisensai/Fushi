@@ -19,8 +19,12 @@ import 'fake_anki_repository.dart';
 /// 这里在仓库这一层换成惰性假货，切断那两条依赖：按钮照常挂载，不发任何 I/O。
 /// 断言制卡目标菜单本身行为的用例用
 /// `test/pages/dictionary_popup_mining_target_test.dart` 的完整接线，不用这份。
-List<Override> popupMiningTargetTestOverrides() => <Override>[
-  ankiRepositoryProvider.overrideWith((Ref ref) => FakeAnkiRepository()),
+///
+/// [anki] 为 false：调用方自己覆盖了 [ankiRepositoryProvider]（断言制卡行为用的假仓库），
+/// 这里只补配置仓库，不重复覆盖。
+List<Override> popupMiningTargetTestOverrides({bool anki = true}) => <Override>[
+  if (anki)
+    ankiRepositoryProvider.overrideWith((Ref ref) => FakeAnkiRepository()),
   profileRepositoryProvider.overrideWith((Ref ref) {
     // 与生产同形：配置仓库跟着 Anki 仓库重建。
     ref.watch(ankiRepositoryProvider);

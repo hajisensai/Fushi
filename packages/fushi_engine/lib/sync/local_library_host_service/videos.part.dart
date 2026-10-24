@@ -8,8 +8,9 @@ mixin _LocalLibraryHostVideos
   /// videoBookUid → 标签名列表 的一趟映射（TODO-1165）。
   Future<Map<String, List<String>>> _tagNamesByVideoUid() async =>
       (await _db.allVideoTagAddedAtByName()).map(
-          (String key, Map<String, int> byName) =>
-              MapEntry(key, byName.keys.toList()));
+        (String key, Map<String, int> byName) =>
+            MapEntry(key, byName.keys.toList()),
+      );
 
   // ── 视频（P4-1，只读）────────────────────────────────────────────────────────
 
@@ -20,10 +21,13 @@ mixin _LocalLibraryHostVideos
   /// [hasSubtitle] 当前视频文件旁能找到外挂字幕时为 true。
   @override
   Future<List<RemoteVideoInfo>> listVideos() async {
-    // 在线视频源入库集只在装了那个扩展的本机可播（起播时向扩展取流），对端拿到
-    // 也放不了：不下发。
+    // 在线视频源入库集只在装了那个扩展的本机可播（起播时向扩展取流），媒体服务器
+    // 入库条目只在登录了那台服务器的本机可播（令牌在本机设置里）：对端拿到也放
+    // 不了，都不下发。
     final List<VideoBookRow> rows = (await _db.allVideoBooks())
-        .where((VideoBookRow row) => !isAnimeSourceVideoPath(row.videoPath))
+        .where((VideoBookRow row) =>
+            !isAnimeSourceVideoPath(row.videoPath) &&
+            !isMediaServerVideoPath(row.videoPath))
         .toList();
     // 按 importedAt 降序（null 排最后）
     rows.sort((VideoBookRow a, VideoBookRow b) {
@@ -40,7 +44,8 @@ mixin _LocalLibraryHostVideos
     final ({
       Map<String, RemoteCollectionMembership> membership,
       Map<String, MediaCollectionRow> collectionByEntry,
-    }) collections = await _primaryCollectionData();
+    })
+    collections = await _primaryCollectionData();
     final Map<String, RemoteCollectionMembership> membership =
         collections.membership;
     // 批量预取：位置 prefs / 标签 LWW 时钟 / 移除墓碑各一趟查询，sidecar 同目录只扫
@@ -48,51 +53,50 @@ mixin _LocalLibraryHostVideos
     // listSync——500 行清单一次 ≈ 2500 次 DB 往返 + 500 次目录扫描，且封面端点每张
     // 封面重跑整份清单时按 N² 放大（见 [videoCoverPath]）。
     final Map<String, String> allPrefs = await _db.getAllPrefs();
-    final Map<String, Map<String, int>> tagAddedAtByUid =
-        await _db.allVideoTagAddedAtByName();
-    final Map<String, Map<String, int>> tagTombByUid =
-        await _db.allTagTombstonesByName(MediaKind.video);
-    final Map<String, List<String>?> sidecarDirCache =
-        <String, List<String>?>{};
+    final Map<String, Map<String, int>> tagAddedAtByUid = await _db
+        .allVideoTagAddedAtByName();
+    final Map<String, Map<String, int>> tagTombByUid = await _db
+        .allTagTombstonesByName(MediaKind.video);
+    // 文件系统事实（体积 / sidecar 字幕 / 封面存在性）一律走 async IO 预取：host 跑在
+    // app 主 isolate 上，同步 stat 一个在网络盘（rclone / SMB / WinFsp 挂载）上的视频，
+    // 挂载端目录缓存过期时要逐级 PROPFIND 重列目录，单次数秒——整条主 isolate（全部
+    // 互联端点含 /api/ping、以及 UI）随之冻结。实测 99 个视频、64 个在 rclone 挂载上，
+    // 冷目录时整份清单 4–16.7 s 期间 ping 同步卡死（BUG-3756）。async stat 在 IO
+    // 线程池里等，主 isolate 照常服务别的请求；同目录只列一次（缓存的是 Future，
+    // 并发的同目录行共用一次列举）。
+    final Map<String, Future<List<String>?>> sidecarDirCache =
+        <String, Future<List<String>?>>{};
+    final List<_VideoFileFacts> fileFacts = await _mapWithConcurrency(
+      rows,
+      _kListVideosFsConcurrency,
+      (VideoBookRow row) => _videoFileFacts(row, sidecarDirCache),
+    );
     final List<RemoteVideoInfo> videos = <RemoteVideoInfo>[];
-    for (final VideoBookRow row in rows) {
-      videos.add(_videoInfoFromRow(
-        row,
-        tags: tagsByVideoUid[row.bookUid] ?? const <String>[],
-        // 合集成员键：video 条目 mediaType='video'、entryKey=bookUid（§2.3 任务5.1）。
-        collection: membership[MediaKind.video.compositeKey(row.bookUid)],
-        collectionRow: collections
-            .collectionByEntry[MediaKind.video.compositeKey(row.bookUid)],
-        prefs: allPrefs,
-        tagsAddedAt: tagAddedAtByUid[row.bookUid] ?? const <String, int>{},
-        tagTombstones: tagTombByUid[row.bookUid] ?? const <String, int>{},
-        sidecarDirCache: sidecarDirCache,
-      ));
+    for (int i = 0; i < rows.length; i++) {
+      final VideoBookRow row = rows[i];
+      videos.add(
+        _videoInfoFromRow(
+          row,
+          fileFacts: fileFacts[i],
+          tags: tagsByVideoUid[row.bookUid] ?? const <String>[],
+          // 合集成员键：video 条目 mediaType='video'、entryKey=bookUid（§2.3 任务5.1）。
+          collection: membership[MediaKind.video.compositeKey(row.bookUid)],
+          collectionRow: collections
+              .collectionByEntry[MediaKind.video.compositeKey(row.bookUid)],
+          prefs: allPrefs,
+          tagsAddedAt: tagAddedAtByUid[row.bookUid] ?? const <String, int>{},
+          tagTombstones: tagTombByUid[row.bookUid] ?? const <String, int>{},
+        ),
+      );
     }
     return videos;
   }
 
-  /// 按 [id] 单查视频封面磁盘路径（封面端点专用，一次 DB 单行查询 + stat；绝不
-  /// materialize 整份 [listVideos]——旧封面路径每张封面重跑全量清单是 O(N²) 主犯）。
-  @override
-  Future<String?> videoCoverPath(String id) async {
-    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
-    if (row == null) return null;
-    return _existingFilePath(row.coverPath);
-  }
-
-  /// 构建单条 [RemoteVideoInfo]（内部辅助，纯同步：所有 DB 数据均由 [listVideos]
-  /// 批量预取后经参数注入，仅保留文件 stat 与目录缓存内的 sidecar 匹配）。
-  RemoteVideoInfo _videoInfoFromRow(
-    VideoBookRow row, {
-    required Map<String, String> prefs,
-    required Map<String, int> tagsAddedAt,
-    required Map<String, int> tagTombstones,
-    required Map<String, List<String>?> sidecarDirCache,
-    List<String> tags = const <String>[],
-    RemoteCollectionMembership? collection,
-    MediaCollectionRow? collectionRow,
-  }) {
+  /// 预取 [row] 的文件系统事实（全部 async IO，不阻塞调用方 isolate；见 [listVideos]）。
+  Future<_VideoFileFacts> _videoFileFacts(
+    VideoBookRow row,
+    Map<String, Future<List<String>?>> sidecarDirCache,
+  ) async {
     final String videoPath = row.videoPath;
     int? sizeBytes;
     bool hasSubtitle = false;
@@ -104,27 +108,26 @@ mixin _LocalLibraryHostVideos
     // 视频体积，host 也下发不了它（[resolveVideoFile] 恒 null），sidecar 字幕同样
     // 无从服务——整段不碰文件系统，sizeBytes 留 null、hasSubtitle 为 false。
     if (videoPath.isNotEmpty && !lacksLocalMediaFile(videoPath)) {
-      final File f = File(videoPath);
-      if (f.existsSync()) {
-        try {
-          sizeBytes = f.lengthSync();
-        } catch (_) {
-          // stat 失败：保守返回 null
-        }
+      // 一次 stat 同时拿存在性与体积（旧实现 existsSync + lengthSync 两次同步调用）。
+      final FileStat? stat = await _statRegularFile(videoPath);
+      if (stat != null) {
+        sizeBytes = stat.size;
         // 只下发文件名（basename），目录结构留在 host（BUG-3613，见
         // [RemoteVideoInfo.fileName]）。
         fileName = p.basename(videoPath);
         // host 用户为这一集选定 / 下载过的外挂字幕优先（BUG-3615，与
-        // [resolveVideoSubtitle] 同一判据）；没有才找同目录 sidecar（廉价：目录
-        // listing 每目录只扫一次 + 纯字符串匹配）。
-        final String? persisted = _persistedExternalSubtitlePath(row);
+        // [resolveVideoSubtitle] 同一判据）；没有才找同目录 sidecar（目录 listing
+        // 每目录只扫一次 + 纯字符串匹配）。
+        final String? persisted = await _persistedExternalSubtitlePath(row);
         if (persisted != null) {
           hasSubtitle = true;
           subtitleFileName = p.basename(persisted);
         } else {
           final String dir = p.dirname(videoPath);
-          final List<String>? dirFiles =
-              sidecarDirCache.putIfAbsent(dir, () => _listDirFileNames(dir));
+          final List<String>? dirFiles = await sidecarDirCache.putIfAbsent(
+            dir,
+            () => _listDirFileNamesAsync(dir),
+          );
           final String? picked = dirFiles == null
               ? null
               : pickSidecar(
@@ -144,12 +147,44 @@ mixin _LocalLibraryHostVideos
         // (`fushi_sync_server.dart` `_embeddedSubtitleTracksForRequest`) 在拉流时按需
         // 探测并下发（client 唯一消费者 video_fushi_page 读的是 streamurl 响应，列表
         // 的 embeddedSubtitleTracks 零消费）。故此处保持 embeddedSubtitleTracks 为空、
-        // hasSubtitle 只反映廉价的外挂 sidecar——列表变纯 DB/stat 读，与 listBooks 对称、
-        // 毫秒返回。
+        // hasSubtitle 只反映廉价的外挂 sidecar。
       }
     }
+    return (
+      sizeBytes: sizeBytes,
+      fileName: fileName,
+      hasSubtitle: hasSubtitle,
+      subtitleFileName: subtitleFileName,
+      coverPath: await _existingFilePathAsync(row.coverPath),
+    );
+  }
 
-    final String? coverPath = _existingFilePath(row.coverPath);
+  /// 按 [id] 单查视频封面磁盘路径（封面端点专用，一次 DB 单行查询 + stat；绝不
+  /// materialize 整份 [listVideos]——旧封面路径每张封面重跑全量清单是 O(N²) 主犯）。
+  @override
+  Future<String?> videoCoverPath(String id) async {
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    if (row == null) return null;
+    return _existingFilePathAsync(row.coverPath);
+  }
+
+  /// 构建单条 [RemoteVideoInfo]（内部辅助，纯同步、零 IO：DB 数据与文件系统事实
+  /// 均由 [listVideos] 批量 / 异步预取后经参数注入）。
+  RemoteVideoInfo _videoInfoFromRow(
+    VideoBookRow row, {
+    required _VideoFileFacts fileFacts,
+    required Map<String, String> prefs,
+    required Map<String, int> tagsAddedAt,
+    required Map<String, int> tagTombstones,
+    List<String> tags = const <String>[],
+    RemoteCollectionMembership? collection,
+    MediaCollectionRow? collectionRow,
+  }) {
+    final int? sizeBytes = fileFacts.sizeBytes;
+    final bool hasSubtitle = fileFacts.hasSubtitle;
+    final String? subtitleFileName = fileFacts.subtitleFileName;
+    final String? fileName = fileFacts.fileName;
+    final String? coverPath = fileFacts.coverPath;
     // TODO-653: 把 host 端记录的播放断点带进清单条目，供 client 跨设备恢复。
     // 语义与 [getVideoPosition]\(id, episodeIndex: 0\) 完全一致：prefs 断点（本机/
     // 远端播放统一键）与旧 `VideoBooks.lastPositionMs`（时间戳 0）取较新——只是行
@@ -168,39 +203,62 @@ mixin _LocalLibraryHostVideos
 
     final VideoPlaybackSyncState playback = VideoPlaybackSyncState.merge(
       VideoPlaybackSyncState(
-        delayMs:
-            effectiveSeriesDelayMs(collectionRow?.subtitleDelayMs, row.delayMs),
+        delayMs: effectiveSeriesDelayMs(
+          collectionRow?.subtitleDelayMs,
+          row.delayMs,
+        ),
         audioTrackId: effectiveSeriesAudioTrackId(
-            collectionRow?.audioTrackId, row.audioTrackId),
+          collectionRow?.audioTrackId,
+          row.audioTrackId,
+        ),
         secondarySubtitleSource: row.secondarySubtitleSource,
         secondaryDelayMs: effectiveSeriesSecondaryDelayMs(
-            collectionRow?.secondarySubtitleDelayMs, row.secondaryDelayMs),
+          collectionRow?.secondarySubtitleDelayMs,
+          row.secondaryDelayMs,
+        ),
       ),
       VideoPlaybackSyncState(
         delayMs: PrefCodec.decode<int>(
-            prefs[videoRemoteDelayPrefKey(row.bookUid)] ?? '', 0),
+          prefs[videoRemoteDelayPrefKey(row.bookUid)] ?? '',
+          0,
+        ),
         delayAt: PrefCodec.decode<int>(
-            prefs[videoRemoteDelayAtPrefKey(row.bookUid)] ?? '', 0),
-        audioTrackId:
-            nullableStr(prefs[videoRemoteAudioTrackPrefKey(row.bookUid)]),
+          prefs[videoRemoteDelayAtPrefKey(row.bookUid)] ?? '',
+          0,
+        ),
+        audioTrackId: nullableStr(
+          prefs[videoRemoteAudioTrackPrefKey(row.bookUid)],
+        ),
         audioTrackAt: PrefCodec.decode<int>(
-            prefs[videoRemoteAudioTrackAtPrefKey(row.bookUid)] ?? '', 0),
+          prefs[videoRemoteAudioTrackAtPrefKey(row.bookUid)] ?? '',
+          0,
+        ),
         secondarySubtitleSource: nullableStr(
-            prefs[videoRemoteSecondarySubtitlePrefKey(row.bookUid)]),
+          prefs[videoRemoteSecondarySubtitlePrefKey(row.bookUid)],
+        ),
         secondarySubtitleAt: PrefCodec.decode<int>(
-            prefs[videoRemoteSecondarySubtitleAtPrefKey(row.bookUid)] ?? '', 0),
+          prefs[videoRemoteSecondarySubtitleAtPrefKey(row.bookUid)] ?? '',
+          0,
+        ),
         secondaryDelayMs: int.tryParse(
-            nullableStr(prefs[videoRemoteSecondaryDelayPrefKey(row.bookUid)]) ??
-                ''),
+          nullableStr(prefs[videoRemoteSecondaryDelayPrefKey(row.bookUid)]) ??
+              '',
+        ),
         secondaryDelayAt: PrefCodec.decode<int>(
-            prefs[videoRemoteSecondaryDelayAtPrefKey(row.bookUid)] ?? '', 0),
+          prefs[videoRemoteSecondaryDelayAtPrefKey(row.bookUid)] ?? '',
+          0,
+        ),
       ),
     );
     final ({int positionMs, int updatedAtMs}) progress = resolvePositionLww(
       localPositionMs: PrefCodec.decode<int>(
-          prefs[videoRemotePositionPrefKey(row.bookUid)] ?? '', 0),
+        prefs[videoRemotePositionPrefKey(row.bookUid)] ?? '',
+        0,
+      ),
       localUpdatedAtMs: PrefCodec.decode<int>(
-          prefs[videoRemotePositionAtPrefKey(row.bookUid)] ?? '', 0),
+        prefs[videoRemotePositionAtPrefKey(row.bookUid)] ?? '',
+        0,
+      ),
       remotePositionMs: row.lastPositionMs,
       remoteUpdatedAtMs: 0,
     );
@@ -259,18 +317,14 @@ mixin _LocalLibraryHostVideos
   /// 多集播放列表行（`playlistJson` ≥2 条）的 `subtitleSource` 只属于当前集、换集
   /// 时另有沿用规则，按集下标下发会把它错配到别的集上——这类行维持原来只看 sidecar。
   /// 值来自 host 自己的 DB（不接受外部路径），扩展名再过一道字幕白名单。
-  String? _persistedExternalSubtitlePath(VideoBookRow row) {
+  Future<String?> _persistedExternalSubtitlePath(VideoBookRow row) async {
     final String? persisted = row.subtitleSource;
     if (persisted == null || !isImportedExternalSubtitlePath(persisted)) {
       return null;
     }
     if (_parsePlaylistEntries(row.playlistJson).length > 1) return null;
     if (isNetworkOnlyVideoPath(persisted)) return null;
-    try {
-      return File(persisted).existsSync() ? persisted : null;
-    } catch (_) {
-      return null;
-    }
+    return _existingFilePathAsync(persisted);
   }
 
   /// 把 [row] 的 `playlistJson` 解析成远端剧集列表（TODO-885）。坏 JSON / 单视频
@@ -334,8 +388,9 @@ mixin _LocalLibraryHostVideos
     final String? path = await _resolveEpisodeVideoPath(id, episodeIndex);
     if (path == null || path.isEmpty) return null;
     if (lacksLocalMediaFile(path)) return null;
-    final File f = File(path);
-    return f.existsSync() ? f : null;
+    // async stat：视频常在网络盘上，同步 existsSync 会冻结 host 所在 isolate（BUG-3756）。
+    final String? existing = await _existingFilePathAsync(path);
+    return existing == null ? null : File(existing);
   }
 
   /// 弹弹play 指纹（[VideoDanmakuKeyHost]，BUG-3614）：对 [resolveVideoFile] 反查到
@@ -366,20 +421,24 @@ mixin _LocalLibraryHostVideos
     // 读同一份 `subtitleSource`。只对单视频行生效（[_persistedExternalSubtitlePath]）。
     if (episodeIndex == 0 && langCode.isEmpty) {
       final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
-      final String? persisted =
-          row == null ? null : _persistedExternalSubtitlePath(row);
+      final String? persisted = row == null
+          ? null
+          : await _persistedExternalSubtitlePath(row);
       if (persisted != null) return File(persisted);
     }
     // 只碰同目录 sidecar：网络流地址（[isNetworkOnlyVideoPath]）没有本地目录可扫；
     // 本地 `.strm` 的同目录字幕是真实文件，照常可找。
     if (isNetworkOnlyVideoPath(videoPath)) return null;
-    final String effectiveLangCode =
-        langCode.isEmpty ? _videoSubtitleLangCode : langCode;
-    final String? subPath =
-        findSidecarSubtitle(videoPath, langCode: effectiveLangCode);
+    final String effectiveLangCode = langCode.isEmpty
+        ? _videoSubtitleLangCode
+        : langCode;
+    final String? subPath = await findSidecarSubtitle(
+      videoPath,
+      langCode: effectiveLangCode,
+    );
     if (subPath == null) return null;
-    final File f = File(subPath);
-    return f.existsSync() ? f : null;
+    final String? existing = await _existingFilePathAsync(subPath);
+    return existing == null ? null : File(existing);
   }
 
   /// BUG-1004：host 端本地裁 mining 句子音频（见抽象声明）。用 [resolveVideoFile] 反查真实
@@ -400,8 +459,9 @@ mixin _LocalLibraryHostVideos
     if (endMs <= startMs) return null;
     final File? file = await resolveVideoFile(id, episodeIndex: episodeIndex);
     if (file == null) return null;
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('fushi_clip_audio');
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'fushi_clip_audio',
+    );
     final String out = p.join(tmp.path, 'clip.aac');
     final String? result = await extractAudioSegmentViaFfmpeg(
       inputPath: file.path,
@@ -416,7 +476,7 @@ mixin _LocalLibraryHostVideos
     );
     if (result == null) {
       try {
-        tmp.deleteSync(recursive: true);
+        await tmp.delete(recursive: true);
       } catch (_) {
         // best-effort：临时目录清理失败不影响返回 null（裁切已失败）。
       }
@@ -441,13 +501,18 @@ mixin _LocalLibraryHostVideos
     int episodeIndex = 0,
   }) async {
     final int prefsPos = await _db.getPrefTyped<int>(
-        videoRemotePositionEpisodePrefKey(id, episodeIndex), 0);
+      videoRemotePositionEpisodePrefKey(id, episodeIndex),
+      0,
+    );
     final int prefsAt = await _db.getPrefTyped<int>(
-        videoRemotePositionEpisodeAtPrefKey(id, episodeIndex), 0);
+      videoRemotePositionEpisodeAtPrefKey(id, episodeIndex),
+      0,
+    );
     // 旧 host 本机播放只写 VideoBooks.lastPositionMs（整书一个值，无按集语义）；只在
     // episodeIndex<=0（当前集 / 单视频）回退它，避免给某集错配整书的旧进度。
-    final VideoBookRow? row =
-        episodeIndex <= 0 ? await _db.getVideoBookByBookUid(id) : null;
+    final VideoBookRow? row = episodeIndex <= 0
+        ? await _db.getVideoBookByBookUid(id)
+        : null;
     final int rowPos = row?.lastPositionMs ?? 0;
     // BUG-996：lastPositionMs 列无时间戳，此前硬编码 remoteUpdatedAtMs:0，使 host 的真
     // 进度在跨设备 LWW 里恒输给任何带 now 戳的本地断点（client 一旦碰过就再也拉不回
@@ -478,24 +543,28 @@ mixin _LocalLibraryHostVideos
     // 同时放进一个 DB 事务（BUG-3537）：本机出站同步落地在事务里比较后写入，这里
     // 的读-比较-写也须原子，否则出站落地插在「读 current」与「写 winner」之间会被
     // 按旧 current 算出的 winner 盖掉。
-    await _runSyncStateExclusive(() => _db.transaction(() async {
-      final ({int positionMs, int updatedAtMs}) current =
-          await getVideoPosition(id, episodeIndex: episodeIndex);
-      // BUG-3367：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
-      final int nowMs = DateTime.now().millisecondsSinceEpoch;
-      final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
-        localPositionMs: current.positionMs,
-        localUpdatedAtMs:
-            trustedStoredSyncStamp(current.updatedAtMs, nowMs: nowMs),
-        remotePositionMs: positionMs < 0 ? 0 : positionMs,
-        remoteUpdatedAtMs: capFutureSyncStamp(updatedAtMs, nowMs: nowMs),
-      );
-      if (winner.updatedAtMs == current.updatedAtMs &&
-          winner.positionMs == current.positionMs) {
-        return; // host 已存更新或相等，no-op。
-      }
-      await _writeVideoPositionWinner(id, episodeIndex, winner);
-    }));
+    await _runSyncStateExclusive(
+      () => _db.transaction(() async {
+        final ({int positionMs, int updatedAtMs}) current =
+            await getVideoPosition(id, episodeIndex: episodeIndex);
+        // BUG-3367：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
+        final int nowMs = DateTime.now().millisecondsSinceEpoch;
+        final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
+          localPositionMs: current.positionMs,
+          localUpdatedAtMs: trustedStoredSyncStamp(
+            current.updatedAtMs,
+            nowMs: nowMs,
+          ),
+          remotePositionMs: positionMs < 0 ? 0 : positionMs,
+          remoteUpdatedAtMs: capFutureSyncStamp(updatedAtMs, nowMs: nowMs),
+        );
+        if (winner.updatedAtMs == current.updatedAtMs &&
+            winner.positionMs == current.positionMs) {
+          return; // host 已存更新或相等，no-op。
+        }
+        await _writeVideoPositionWinner(id, episodeIndex, winner);
+      }),
+    );
   }
 
   Future<void> _writeVideoPositionWinner(
@@ -504,10 +573,13 @@ mixin _LocalLibraryHostVideos
     ({int positionMs, int updatedAtMs}) winner,
   ) async {
     await _db.setPrefTyped<int>(
-        videoRemotePositionEpisodePrefKey(id, episodeIndex), winner.positionMs);
+      videoRemotePositionEpisodePrefKey(id, episodeIndex),
+      winner.positionMs,
+    );
     await _db.setPrefTyped<int>(
-        videoRemotePositionEpisodeAtPrefKey(id, episodeIndex),
-        winner.updatedAtMs);
+      videoRemotePositionEpisodeAtPrefKey(id, episodeIndex),
+      winner.updatedAtMs,
+    );
     // BUG-1731：prefs 键空间只被「下发清单给子端」消费，host 自己的 UI（继续观看
     // / 下一集 / 合集续播锚点）读的是 VideoBooks.lastPositionMs / lastPlayedAt。
     // 子端上报只写 prefs 会让 host 端 UI 永远看不到对端进度——胜者来自对端时镜像
@@ -517,8 +589,11 @@ mixin _LocalLibraryHostVideos
     // 视频）镜像；episodeIndex>0 是 host-playlist 单行多集形态，行级
     // lastPositionMs 无按集语义，写它会把某一集的进度错配成整行进度。
     if (episodeIndex <= 0 && await _db.getVideoBookByBookUid(id) != null) {
-      await _db.updateVideoBookPosition(id, winner.positionMs,
-          playedAt: winner.updatedAtMs);
+      await _db.updateVideoBookPosition(
+        id,
+        winner.positionMs,
+        playedAt: winner.updatedAtMs,
+      );
     }
   }
 
@@ -526,8 +601,8 @@ mixin _LocalLibraryHostVideos
   /// （`subtitleDelayMs`）解析用，与清单侧 [_primaryCollectionData] 同折叠语义
   /// （最小 collectionId 主归属）。两次轻查询（主归属映射 + 单行取合集）。
   Future<MediaCollectionRow?> _primaryVideoCollectionRow(String id) async {
-    final Map<String, int> primaryByEntry =
-        await _db.getPrimaryCollectionIdByEntry();
+    final Map<String, int> primaryByEntry = await _db
+        .getPrimaryCollectionIdByEntry();
     final int? cid = primaryByEntry[MediaKind.video.compositeKey(id)];
     if (cid == null) return null;
     return _db.getMediaCollectionById(cid);
@@ -548,31 +623,48 @@ mixin _LocalLibraryHostVideos
   @override
   Future<VideoPlaybackSyncState> getVideoPlayback(String id) async {
     final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
-    final MediaCollectionRow? col =
-        row == null ? null : await _primaryVideoCollectionRow(id);
+    final MediaCollectionRow? col = row == null
+        ? null
+        : await _primaryVideoCollectionRow(id);
     final VideoPlaybackSyncState base = VideoPlaybackSyncState(
       delayMs: effectiveSeriesDelayMs(col?.subtitleDelayMs, row?.delayMs ?? 0),
-      audioTrackId:
-          effectiveSeriesAudioTrackId(col?.audioTrackId, row?.audioTrackId),
+      audioTrackId: effectiveSeriesAudioTrackId(
+        col?.audioTrackId,
+        row?.audioTrackId,
+      ),
       secondarySubtitleSource: row?.secondarySubtitleSource,
       secondaryDelayMs: effectiveSeriesSecondaryDelayMs(
-          col?.secondarySubtitleDelayMs, row?.secondaryDelayMs),
+        col?.secondarySubtitleDelayMs,
+        row?.secondaryDelayMs,
+      ),
     );
     final VideoPlaybackSyncState stamped = VideoPlaybackSyncState(
       delayMs: await _db.getPrefTyped<int>(videoRemoteDelayPrefKey(id), 0),
       delayAt: await _db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(id), 0),
-      audioTrackId:
-          await _readNullableStringPref(videoRemoteAudioTrackPrefKey(id)),
-      audioTrackAt:
-          await _db.getPrefTyped<int>(videoRemoteAudioTrackAtPrefKey(id), 0),
+      audioTrackId: await _readNullableStringPref(
+        videoRemoteAudioTrackPrefKey(id),
+      ),
+      audioTrackAt: await _db.getPrefTyped<int>(
+        videoRemoteAudioTrackAtPrefKey(id),
+        0,
+      ),
       secondarySubtitleSource: await _readNullableStringPref(
-          videoRemoteSecondarySubtitlePrefKey(id)),
+        videoRemoteSecondarySubtitlePrefKey(id),
+      ),
       secondarySubtitleAt: await _db.getPrefTyped<int>(
-          videoRemoteSecondarySubtitleAtPrefKey(id), 0),
-      secondaryDelayMs: int.tryParse(await _db.getPrefTyped<String>(
-          videoRemoteSecondaryDelayPrefKey(id), '')),
+        videoRemoteSecondarySubtitleAtPrefKey(id),
+        0,
+      ),
+      secondaryDelayMs: int.tryParse(
+        await _db.getPrefTyped<String>(
+          videoRemoteSecondaryDelayPrefKey(id),
+          '',
+        ),
+      ),
       secondaryDelayAt: await _db.getPrefTyped<int>(
-          videoRemoteSecondaryDelayAtPrefKey(id), 0),
+        videoRemoteSecondaryDelayAtPrefKey(id),
+        0,
+      ),
     );
     return VideoPlaybackSyncState.merge(base, stamped);
   }
@@ -586,33 +678,43 @@ mixin _LocalLibraryHostVideos
   /// row/系列级列，使 host 本机播放立即跟随（只写 row 会被非 null 系列级值遮蔽）。
   @override
   Future<void> putVideoPlayback(
-      String id, VideoPlaybackSyncState incoming) async {
+    String id,
+    VideoPlaybackSyncState incoming,
+  ) async {
     if (incoming.isEmpty) return;
     if (await _db.getVideoBookByBookUid(id) == null) return;
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
     int capAt(int at) => capFutureSyncStamp(at, nowMs: nowMs);
     final VideoPlaybackSyncState capped = VideoPlaybackSyncState(
-      delayMs: incoming.delayMs
-          .clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs),
+      delayMs: incoming.delayMs.clamp(
+        -kVideoSubtitleDelayLimitMs,
+        kVideoSubtitleDelayLimitMs,
+      ),
       delayAt: capAt(incoming.delayAt),
       audioTrackId: incoming.audioTrackId,
       audioTrackAt: capAt(incoming.audioTrackAt),
       secondarySubtitleSource: incoming.secondarySubtitleSource,
       secondarySubtitleAt: capAt(incoming.secondarySubtitleAt),
-      secondaryDelayMs: incoming.secondaryDelayMs
-          ?.clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs),
+      secondaryDelayMs: incoming.secondaryDelayMs?.clamp(
+        -kVideoSubtitleDelayLimitMs,
+        kVideoSubtitleDelayLimitMs,
+      ),
       secondaryDelayAt: capAt(incoming.secondaryDelayAt),
     );
     final VideoPlaybackSyncState held = await getVideoPlayback(id);
-    final VideoPlaybackSyncState merged =
-        VideoPlaybackSyncState.merge(held, capped);
+    final VideoPlaybackSyncState merged = VideoPlaybackSyncState.merge(
+      held,
+      capped,
+    );
     if (merged == held) return; // host 已存更新或相等，no-op。
     final MediaCollectionRow? col = await _primaryVideoCollectionRow(id);
 
     if (merged.delayAt > 0 && merged.delayAt != held.delayAt) {
       await _db.setPrefTyped<int>(videoRemoteDelayPrefKey(id), merged.delayMs);
       await _db.setPrefTyped<int>(
-          videoRemoteDelayAtPrefKey(id), merged.delayAt);
+        videoRemoteDelayAtPrefKey(id),
+        merged.delayAt,
+      );
       await _db.updateVideoBookDelayMs(id, merged.delayMs);
       if (col != null) {
         await _db.updateMediaCollectionSubtitleDelayMs(col.id, merged.delayMs);
@@ -620,34 +722,52 @@ mixin _LocalLibraryHostVideos
     }
     if (merged.audioTrackAt > 0 && merged.audioTrackAt != held.audioTrackAt) {
       await _db.setPrefTyped<String>(
-          videoRemoteAudioTrackPrefKey(id), merged.audioTrackId ?? '');
+        videoRemoteAudioTrackPrefKey(id),
+        merged.audioTrackId ?? '',
+      );
       await _db.setPrefTyped<int>(
-          videoRemoteAudioTrackAtPrefKey(id), merged.audioTrackAt);
+        videoRemoteAudioTrackAtPrefKey(id),
+        merged.audioTrackAt,
+      );
       await _db.updateVideoBookAudioTrackId(id, merged.audioTrackId);
       if (col != null) {
         await _db.updateMediaCollectionAudioTrackId(
-            col.id, merged.audioTrackId);
+          col.id,
+          merged.audioTrackId,
+        );
       }
     }
     if (merged.secondarySubtitleAt > 0 &&
         merged.secondarySubtitleAt != held.secondarySubtitleAt) {
-      await _db.setPrefTyped<String>(videoRemoteSecondarySubtitlePrefKey(id),
-          merged.secondarySubtitleSource ?? '');
-      await _db.setPrefTyped<int>(videoRemoteSecondarySubtitleAtPrefKey(id),
-          merged.secondarySubtitleAt);
+      await _db.setPrefTyped<String>(
+        videoRemoteSecondarySubtitlePrefKey(id),
+        merged.secondarySubtitleSource ?? '',
+      );
+      await _db.setPrefTyped<int>(
+        videoRemoteSecondarySubtitleAtPrefKey(id),
+        merged.secondarySubtitleAt,
+      );
       await _db.updateVideoBookSecondarySubtitleSource(
-          id, merged.secondarySubtitleSource);
+        id,
+        merged.secondarySubtitleSource,
+      );
     }
     if (merged.secondaryDelayAt > 0 &&
         merged.secondaryDelayAt != held.secondaryDelayAt) {
-      await _db.setPrefTyped<String>(videoRemoteSecondaryDelayPrefKey(id),
-          merged.secondaryDelayMs?.toString() ?? '');
+      await _db.setPrefTyped<String>(
+        videoRemoteSecondaryDelayPrefKey(id),
+        merged.secondaryDelayMs?.toString() ?? '',
+      );
       await _db.setPrefTyped<int>(
-          videoRemoteSecondaryDelayAtPrefKey(id), merged.secondaryDelayAt);
+        videoRemoteSecondaryDelayAtPrefKey(id),
+        merged.secondaryDelayAt,
+      );
       await _db.updateVideoBookSecondaryDelayMs(id, merged.secondaryDelayMs);
       if (col != null) {
         await _db.updateMediaCollectionSecondarySubtitleDelayMs(
-            col.id, merged.secondaryDelayMs);
+          col.id,
+          merged.secondaryDelayMs,
+        );
       }
     }
   }
@@ -675,12 +795,12 @@ mixin _LocalLibraryHostVideos
         () => VideoCoverMutationGate.runExclusive(() async {
           final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
           if (row == null) return; // 幂等：不存在则静默跳过
-          final bool deleted =
-              await VideoBookRepository(_db).deleteVideoBookAndReclaimAssets(
-            id,
-            scope: DeleteScope.syncEverywhere,
-            compactDatabase: false,
-          );
+          final bool deleted = await VideoBookRepository(_db)
+              .deleteVideoBookAndReclaimAssets(
+                id,
+                scope: DeleteScope.syncEverywhere,
+                compactDatabase: false,
+              );
           if (!deleted) return;
           await _deleteUploadedVideoCopy(row);
         }),
@@ -698,9 +818,10 @@ mixin _LocalLibraryHostVideos
   Future<void> _deleteUploadedVideoCopy(VideoBookRow row) async {
     final Directory? root = _uploadedVideoRoot;
     if (root == null) return;
-    final Directory owned =
-        Directory(p.join(root.path, _sanitizeVideoIdForPath(row.bookUid)));
-    if (!owned.existsSync()) return;
+    final Directory owned = Directory(
+      p.join(root.path, _sanitizeVideoIdForPath(row.bookUid)),
+    );
+    if (!await owned.exists()) return;
     if (!p.isWithin(owned.path, row.videoPath)) return;
     try {
       await owned.delete(recursive: true);
@@ -731,24 +852,29 @@ mixin _LocalLibraryHostVideos
     await _runExclusive(() async {
       final String safeUid = _sanitizeVideoIdForPath(id);
       final Directory destDir = Directory(p.join(root.path, safeUid));
-      destDir.createSync(recursive: true);
+      await destDir.create(recursive: true);
       final File dest = File(
-          p.join(destDir.path, _uploadedVideoFileName(originalFileName, id)));
+        p.join(destDir.path, _uploadedVideoFileName(originalFileName, id)),
+      );
       await _moveFileInto(videoFile, dest);
-      await _db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value(id),
-        title: Value(title),
-        videoPath: Value(dest.path),
-        // 无外挂字幕上传：回退内嵌默认轨（与 client 下载无字幕分支一致）。
-        embeddedSubtitleTrack: const Value<int?>(0),
-        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-      ));
+      await _db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value(id),
+          title: Value(title),
+          videoPath: Value(dest.path),
+          // 无外挂字幕上传：回退内嵌默认轨（与 client 下载无字幕分支一致）。
+          embeddedSubtitleTrack: const Value<int?>(0),
+          importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+        ),
+      );
     });
     // 封面 best-effort，与建行解耦：抽帧走 ffmpeg 慢，失败留空占位（移动端无 ffmpeg
     // 返 null），绝不让封面失败使整个上传报错。
-    final Future<String?> Function(
-        {required String videoPath,
-        required String bookUid})? extractor = _extractVideoCover;
+    final Future<String?> Function({
+      required String videoPath,
+      required String bookUid,
+    })?
+    extractor = _extractVideoCover;
     if (extractor != null) {
       final VideoScrapeOperationLease? lease =
           VideoScrapeOperationGate.tryEnterOperation();
@@ -779,11 +905,7 @@ mixin _LocalLibraryHostVideos
           });
         } catch (error, stack) {
           // best-effort：封面失败不影响上传成功。
-          engineLog.log(
-            'sync.videoCover.backfill',
-            error,
-            stack,
-          );
+          engineLog.log('sync.videoCover.backfill', error, stack);
         } finally {
           lease.release();
         }
@@ -824,14 +946,16 @@ mixin _LocalLibraryHostVideos
     required String format,
   }) async {
     _assertSafeVideoId(id);
-    final String? suffix =
-        defaultSidecarSubtitleSuffix(format, langCode: _videoSubtitleLangCode);
+    final String? suffix = defaultSidecarSubtitleSuffix(
+      format,
+      langCode: _videoSubtitleLangCode,
+    );
     if (suffix == null) {
       throw ArgumentError.value(format, 'format', 'not a subtitle format');
     }
     await _runExclusive(() async {
       final VideoBookRow row = await _videoRowWithLocalFile(id);
-      _displaceSidecarsFor(row.videoPath, suffix);
+      await _displaceSidecarsFor(row.videoPath, suffix);
       await _placeVideoSubtitleSidecar(subtitleFile, row: row, suffix: suffix);
     });
     return suffix;
@@ -858,15 +982,19 @@ mixin _LocalLibraryHostVideos
       }
       if (which.clearsSecondary) {
         cleared['secondary'] = row.secondarySubtitleSource;
-        final String? own =
-            _ownSidecarPath(row.videoPath, row.secondarySubtitleSource);
+        final String? own = _ownSidecarPath(
+          row.videoPath,
+          row.secondarySubtitleSource,
+        );
         if (own != null) toBackUp.add(own);
       }
       final String dir = p.dirname(row.videoPath);
       final String stem = p.basenameWithoutExtension(row.videoPath);
       if (allSidecars && !isNetworkOnlyVideoPath(row.videoPath)) {
-        for (final String name
-            in listSidecarSubtitles(stem, _listDirFileNames(dir) ?? const <String>[])) {
+        for (final String name in listSidecarSubtitles(
+          stem,
+          await _listDirFileNamesAsync(dir) ?? const <String>[],
+        )) {
           toBackUp.add(p.join(dir, name));
         }
       }
@@ -874,17 +1002,19 @@ mixin _LocalLibraryHostVideos
       // 时 rename 会失败，先清 DB 就会留下「DB 说没字幕、文件还在」的半成品——
       // 播放页照样从 sidecar 发现它，用户以为清了其实没清。挪到一半失败把已挪的
       // 改回去，DB 写失败同样回滚，两侧要么都变、要么都不变。
-      final Map<String, String> backedUp = _backUpSidecars(toBackUp);
+      final Map<String, String> backedUp = await _backUpSidecars(toBackUp);
       try {
         await _db.transaction(() async {
           if (which.clearsPrimary) {
-            await _db.upsertVideoBook(VideoBooksCompanion(
-              bookUid: Value(id),
-              title: Value(row.title),
-              videoPath: Value(row.videoPath),
-              subtitleSource: const Value<String?>(null),
-              subtitleFormat: const Value<String?>(null),
-            ));
+            await _db.upsertVideoBook(
+              VideoBooksCompanion(
+                bookUid: Value(id),
+                title: Value(row.title),
+                videoPath: Value(row.videoPath),
+                subtitleSource: const Value<String?>(null),
+                subtitleFormat: const Value<String?>(null),
+              ),
+            );
             // 主字幕解析出的 cue 与它同生同灭：留着会让查词 / 句子列表继续显示旧字幕。
             await _db.replaceCuesForBook(id, const <AudioCuesCompanion>[]);
           }
@@ -893,7 +1023,7 @@ mixin _LocalLibraryHostVideos
           }
         });
       } on Object {
-        _restoreSidecars(backedUp);
+        await _restoreSidecars(backedUp);
         rethrow;
       }
       result = VideoSubtitleClearResult(
@@ -901,7 +1031,10 @@ mixin _LocalLibraryHostVideos
         backedUpFiles: backedUp,
         remainingSidecars: isNetworkOnlyVideoPath(row.videoPath)
             ? const <String>[]
-            : listSidecarSubtitles(stem, _listDirFileNames(dir) ?? const <String>[]),
+            : listSidecarSubtitles(
+                stem,
+                await _listDirFileNamesAsync(dir) ?? const <String>[],
+              ),
       );
     });
     _db.notifyVideoLibraryChanged();
@@ -911,16 +1044,18 @@ mixin _LocalLibraryHostVideos
   /// 把 [paths] 里仍存在的文件逐个改名成不覆盖旧备份的 `<原名>.fushi-bak`，返回
   /// 原路径 → 备份路径。任何一个改名失败：已改名的全部改回，抛
   /// [VideoSubtitleSidecarBusy]（端点映射 409 + 错误码），文件侧原样不变。
-  Map<String, String> _backUpSidecars(Set<String> paths) {
+  ///
+  /// 全程 async IO：字幕与视频同目录、常在网络盘上（BUG-3756）。
+  Future<Map<String, String>> _backUpSidecars(Set<String> paths) async {
     final Map<String, String> backedUp = <String, String>{};
     for (final String path in paths) {
       final File file = File(path);
-      if (!file.existsSync()) continue;
-      final String backup = _freeBackupPath(path);
+      if (!await file.exists()) continue;
+      final String backup = await _freeBackupPath(path);
       try {
-        file.renameSync(backup);
+        await file.rename(backup);
       } on FileSystemException catch (error) {
-        final List<String> notRestored = _restoreSidecars(backedUp);
+        final List<String> notRestored = await _restoreSidecars(backedUp);
         throw VideoSubtitleSidecarBusy(
           path: path,
           reason: error.osError?.message ?? error.message,
@@ -933,11 +1068,11 @@ mixin _LocalLibraryHostVideos
   }
 
   /// 把 [_backUpSidecars] 挪走的文件改回原名（回滚），返回没能改回的原路径。
-  List<String> _restoreSidecars(Map<String, String> backedUp) {
+  Future<List<String>> _restoreSidecars(Map<String, String> backedUp) async {
     final List<String> failed = <String>[];
     for (final MapEntry<String, String> entry in backedUp.entries) {
       try {
-        File(entry.value).renameSync(entry.key);
+        await File(entry.value).rename(entry.key);
       } on FileSystemException {
         failed.add(entry.key);
       }
@@ -961,30 +1096,33 @@ mixin _LocalLibraryHostVideos
 
   /// 把会压过（或同名覆盖）[suffix] 的旧 sidecar 改名成 `<原名>.fushi-bak`。
   /// 备份名已被占用说明原始文件早就备份过，眼前这份是之前某次上传的产物，直接删。
-  void _displaceSidecarsFor(String videoPath, String suffix) {
+  /// 全程 async IO：视频目录常在网络盘上（BUG-3756）。
+  Future<void> _displaceSidecarsFor(String videoPath, String suffix) async {
     final String dir = p.dirname(videoPath);
-    final String stemLower =
-        p.basenameWithoutExtension(videoPath).toLowerCase();
-    final Set<String> displaced =
-        sidecarSuffixesDisplacedBy(suffix, langCode: _videoSubtitleLangCode)
-            .map((String s) => '$stemLower$s')
-            .toSet();
-    final List<File> siblings;
+    final String stemLower = p
+        .basenameWithoutExtension(videoPath)
+        .toLowerCase();
+    final Set<String> displaced = sidecarSuffixesDisplacedBy(
+      suffix,
+      langCode: _videoSubtitleLangCode,
+    ).map((String s) => '$stemLower$s').toSet();
+    final List<File> siblings = <File>[];
     try {
-      siblings = Directory(dir)
-          .listSync(followLinks: false)
-          .whereType<File>()
-          .toList();
+      await for (final FileSystemEntity e in Directory(
+        dir,
+      ).list(followLinks: false)) {
+        if (e is File) siblings.add(e);
+      }
     } on FileSystemException {
       return;
     }
     for (final File f in siblings) {
       if (!displaced.contains(p.basename(f.path).toLowerCase())) continue;
       final File backup = File('${f.path}$kDisplacedSidecarBackupSuffix');
-      if (backup.existsSync()) {
-        f.deleteSync();
+      if (await backup.exists()) {
+        await f.delete();
       } else {
-        f.renameSync(backup.path);
+        await f.rename(backup.path);
       }
     }
   }
@@ -998,14 +1136,22 @@ mixin _LocalLibraryHostVideos
   }) async {
     final String id = row.bookUid;
     final String videoPath = row.videoPath;
-    final File dest = File(p.join(p.dirname(videoPath),
-        '${p.basenameWithoutExtension(videoPath)}$suffix'));
+    final File dest = File(
+      p.join(
+        p.dirname(videoPath),
+        '${p.basenameWithoutExtension(videoPath)}$suffix',
+      ),
+    );
     await _moveFileInto(subtitleFile, dest);
-    final String? preferred =
-        findSidecarSubtitle(videoPath, langCode: _videoSubtitleLangCode);
+    final String? preferred = await findSidecarSubtitle(
+      videoPath,
+      langCode: _videoSubtitleLangCode,
+    );
     if (preferred == null) return; // 防御：刚落位的 dest 本身就是候选。
-    final String ext =
-        p.extension(preferred).replaceFirst('.', '').toLowerCase();
+    final String ext = p
+        .extension(preferred)
+        .replaceFirst('.', '')
+        .toLowerCase();
     List<AudioCue> cues = const <AudioCue>[];
     try {
       cues = parseSubtitleCues(
@@ -1016,14 +1162,16 @@ mixin _LocalLibraryHostVideos
     } catch (_) {
       // best-effort：解析失败不挡字幕文件落位。
     }
-    await _db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: Value(id),
-      title: Value(row.title),
-      videoPath: Value(row.videoPath),
-      subtitleSource: Value<String?>(preferred),
-      subtitleFormat: Value<String?>(ext),
-      embeddedSubtitleTrack: const Value<int?>(null),
-    ));
+    await _db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: Value(id),
+        title: Value(row.title),
+        videoPath: Value(row.videoPath),
+        subtitleSource: Value<String?>(preferred),
+        subtitleFormat: Value<String?>(ext),
+        embeddedSubtitleTrack: const Value<int?>(null),
+      ),
+    );
     if (cues.isNotEmpty) {
       await _db.replaceCuesForBook(id, cues.map(AudioCue.toCompanion).toList());
     }
@@ -1044,17 +1192,63 @@ const String kDisplacedSidecarBackupSuffix = '.fushi-bak';
 // ── 本域私有的顶层 helper（原 LocalLibraryHostService 的 private static；mixin 体内看不到
 //    宿主类的 static，故提到库顶层）。
 
-/// 列出 [dir] 下的文件名（仅文件，不含子目录）；目录不存在/读取失败返回 null。
-/// [listVideos] 用它配合每次调用内的目录缓存，同目录 500 个视频只扫一次。
-List<String>? _listDirFileNames(String dir) {
-  final Directory directory = Directory(dir);
+/// [LocalLibraryHostService.listVideos] 一行视频的文件系统事实（async 预取，见
+/// `_videoFileFacts`）。
+typedef _VideoFileFacts = ({
+  int? sizeBytes,
+  String? fileName,
+  bool hasSubtitle,
+  String? subtitleFileName,
+  String? coverPath,
+});
+
+/// listVideos 文件系统预取的并发上限：网络盘冷目录时多个目录可以并行重列，又不至于
+/// 把 dart:io 的 IO 线程池占满、拖慢 app 里其它 async 文件读写。
+const int _kListVideosFsConcurrency = 8;
+
+/// 按 [concurrency] 路并发对 [items] 逐个跑 [body]，结果与输入**同序**返回。
+Future<List<R>> _mapWithConcurrency<T, R>(
+  List<T> items,
+  int concurrency,
+  Future<R> Function(T item) body,
+) async {
+  final List<R?> out = List<R?>.filled(items.length, null);
+  int next = 0;
+  Future<void> worker() async {
+    while (next < items.length) {
+      final int i = next++;
+      out[i] = await body(items[i]);
+    }
+  }
+
+  await Future.wait(<Future<void>>[
+    for (int w = 0; w < concurrency && w < items.length; w++) worker(),
+  ]);
+  return out.cast<R>();
+}
+
+/// [path] 是普通文件（跟随链接）则返回其 [FileStat]，否则 / stat 失败返回 null。
+/// async：在 IO 线程池里等，网络盘冷目录的秒级 stat 不阻塞调用方 isolate。
+Future<FileStat?> _statRegularFile(String path) async {
   try {
-    if (!directory.existsSync()) return null;
-    return directory
-        .listSync(followLinks: false)
-        .whereType<File>()
-        .map((File f) => p.basename(f.path))
-        .toList();
+    final FileStat stat = await File(path).stat();
+    return stat.type == FileSystemEntityType.file ? stat : null;
+  } on FileSystemException {
+    return null;
+  }
+}
+
+/// 列出 [dir] 下的文件名（仅文件，不含子目录）；目录不存在/读取失败返回 null。
+/// async（理由同 [_statRegularFile]）：listVideos 与清字幕路径共用，host 路径上不留同步版。
+Future<List<String>?> _listDirFileNamesAsync(String dir) async {
+  try {
+    final List<String> names = <String>[];
+    await for (final FileSystemEntity e in Directory(
+      dir,
+    ).list(followLinks: false)) {
+      if (e is File) names.add(p.basename(e.path));
+    }
+    return names;
   } on FileSystemException {
     return null;
   }
@@ -1079,9 +1273,9 @@ String? _ownSidecarPath(String videoPath, String? source) {
 
 /// `<path>.fushi-bak`；已被占用（更早的备份）时 `<path>.<n>.fushi-bak`，
 /// 绝不覆盖已有备份。
-String _freeBackupPath(String path) {
+Future<String> _freeBackupPath(String path) async {
   String candidate = '$path$kDisplacedSidecarBackupSuffix';
-  for (int n = 2; File(candidate).existsSync(); n++) {
+  for (int n = 2; await File(candidate).exists(); n++) {
     candidate = '$path.$n$kDisplacedSidecarBackupSuffix';
   }
   return candidate;

@@ -8,6 +8,7 @@ library;
 import 'dart:async';
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsTermQuery;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
@@ -47,6 +48,12 @@ class SrsAppHost implements SrsExtensionApi {
     reading: reading,
   );
 
+  /// 批量词状态（一轮可见批次一次）：回包与 [terms] 等长同序。
+  @override
+  Future<List<Map<String, Object?>?>> termStatuses(
+    List<SrsTermQuery> terms,
+  ) async => srsLookupTermStatusPayloads(await readStore(), terms);
+
   /// 点复习标记：按 noteId（缺失时由 cardId 反查）打开笔记编辑页。
   @override
   Future<bool> openCard({required String cardId, String? noteId}) async {
@@ -60,16 +67,43 @@ class SrsAppHost implements SrsExtensionApi {
   }
 }
 
-/// 在 [navigator] 上压一页笔记编辑（弹窗 / 外部工具打开卡片）。
-Future<bool> srsPushNoteEditor(NavigatorState? navigator, String noteId) async {
+/// 已压栈（含正在压）的笔记编辑页对应的笔记 id。
+///
+/// 防重入：查词弹窗的复习标记 / ↗、浏览器扩展、AnkiConnect `guiEditNote` 都经
+/// [srsPushNoteEditor] 打开编辑页，而桥调用在 push 发出后就返回（不等页面加载完），
+/// 弹窗按钮自己的 busy 守卫只挡得住同一次桥往返——连点同一个词会叠出好几页同一条
+/// 笔记的编辑页，每页各自跑一遍加载。同一条笔记的编辑页还开着时再请求打开，直接视为
+/// 已打开（回 true），不再叠页；页面出栈后摘掉登记。
+final Set<String> _srsOpenNoteEditors = <String>{};
+
+/// 测试用：清掉防重入登记（测试之间不共享进程级状态）。
+@visibleForTesting
+void debugResetSrsNoteEditorLock() => _srsOpenNoteEditors.clear();
+
+/// 在 [navigator] 上压一页笔记编辑（弹窗 / 外部工具打开卡片）。同一条笔记的编辑页
+/// 已经开着时不再叠页（见 [_srsOpenNoteEditors]）。
+///
+/// [pageBuilder] 只给测试换页面用；缺省 = [SrsNoteEditorPage]。
+Future<bool> srsPushNoteEditor(
+  NavigatorState? navigator,
+  String noteId, {
+  @visibleForTesting Widget Function(String noteId)? pageBuilder,
+}) async {
   if (navigator == null || !navigator.mounted) return false;
+  if (!_srsOpenNoteEditors.add(noteId)) return true;
+  final Widget Function(String) build =
+      pageBuilder ?? (String id) => SrsNoteEditorPage(noteId: id);
   unawaited(
-    navigator.push<void>(
-      adaptivePageRoute<void>(
-        context: navigator.context,
-        builder: (BuildContext context) => SrsNoteEditorPage(noteId: noteId),
-      ),
-    ),
+    navigator
+        .push<void>(
+          adaptivePageRoute<void>(
+            context: navigator.context,
+            builder: (BuildContext context) => build(noteId),
+          ),
+        )
+        .whenComplete(() {
+          _srsOpenNoteEditors.remove(noteId);
+        }),
   );
   return true;
 }
@@ -103,6 +137,39 @@ Future<Map<String, Object?>?> srsHandleTermStatusBridge(
   final String expression = data['expression']?.toString() ?? '';
   if (expression.trim().isEmpty) return null;
   return host.termStatus(expression, data['reading']?.toString() ?? '');
+}
+
+/// 桥参数里的词表（`[{expression, reading}, …]`）→ 查询；形状不对回 null，超过
+/// [kSrsTermStatusBatchMax] 也回 null（宿主不替 JS 把整页隐藏词条一次查完）。
+List<SrsTermQuery>? srsTermQueriesFromWire(Object? raw) {
+  if (raw is! List || raw.length > kSrsTermStatusBatchMax) return null;
+  final List<SrsTermQuery> out = <SrsTermQuery>[];
+  for (final Object? item in raw) {
+    if (item is! Map) return null;
+    final String reading = item['reading']?.toString() ?? '';
+    out.add(
+      SrsTermQuery(
+        item['expression']?.toString() ?? '',
+        reading.trim().isEmpty ? null : reading,
+      ),
+    );
+  }
+  return out;
+}
+
+/// popup.js `srsTermStatusBatch` 桥（app 内弹窗与 app 外查词窗共用）：参数
+/// `{terms: [{expression, reading}, …]}` → `{statuses: [null | {...}, …]}`（与 terms 等长
+/// 同序）。[host] 为 null 或参数不对时回 null，popup.js 据此退回逐条 `srsTermStatus`。
+Future<Map<String, Object?>?> srsHandleTermStatusBatchBridge(
+  List<dynamic> args,
+  SrsAppHost? host,
+) async {
+  if (host == null || args.isEmpty || args.first is! Map) return null;
+  final List<SrsTermQuery>? terms = srsTermQueriesFromWire(
+    (args.first as Map<dynamic, dynamic>)['terms'],
+  );
+  if (terms == null) return null;
+  return <String, Object?>{'statuses': await host.termStatuses(terms)};
 }
 
 /// popup.js `srsOpenCard` 桥：打开那张卡的笔记编辑页；模块关着 / 参数不对时回 false。

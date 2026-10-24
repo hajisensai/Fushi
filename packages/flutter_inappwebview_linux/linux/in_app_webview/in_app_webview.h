@@ -557,6 +557,10 @@ class InAppWebView {
 
   // JavaScript bridge secret for security
   std::string js_bridge_secret_;
+  // Fushi bridge lock token (docs/specs/2026-10-23-dictionary-script-sandbox.md).
+  // Empty = unlocked (legacy behaviour). Set by `_fushiLockBridge`, cleared when
+  // a new top-level document commits (OnLoadChanged).
+  std::string bridge_lock_token_;
   std::unique_ptr<InAppWebViewCreationParams> deferred_initial_load_;
   void StartInitialLoad(const InAppWebViewCreationParams& params);
 

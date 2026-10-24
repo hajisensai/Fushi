@@ -9,6 +9,10 @@
 /// 选项由「迁移设置」页（srs_anki_migration_setup_page.dart）逐项给用户选：学习进度、排程算法
 /// （RWKV / FSRS）、导入后是否把旧 Lapis 迁到 Fushi 卡片等，记在
 /// [kSrsAnkiMigrationSettingsPrefKey]；没选过时取 [kSrsAnkiMigrationOptions]。
+///
+/// 迁移成功后（默认开）把卡片去向切到 Fushi 复习（[SrsCardTargetSwitch]）：制卡目标改成复习、
+/// 关掉互联的「制卡到互联主机」（那条把卡转给主机的 **Anki**）——迁完以后新卡进本机复习，
+/// 再经互联 / 云盘的复习同步到别的设备，而不是继续往 Anki 里发。
 library;
 
 import 'dart:convert';
@@ -22,6 +26,7 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 
 import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 export 'package:fushi_engine/srs/apkg/anki_collection_snapshot.dart';
@@ -39,6 +44,7 @@ class SrsAnkiMigrationSettings {
     this.options = kSrsAnkiMigrationOptions,
     this.convertLapis = true,
     this.renameLapisDecks = true,
+    this.switchCardTarget = true,
   });
 
   final SrsAnkiImportOptions options;
@@ -52,20 +58,27 @@ class SrsAnkiMigrationSettings {
   /// （[SrsLegacyLapisMigrationOps.renameLapisDecks]）。[convertLapis] 关着时不生效。
   final bool renameLapisDecks;
 
+  /// 迁移成功后把卡片去向切到 Fushi 复习（[SrsCardTargetSwitch.apply]）。默认开：迁到复习就是
+  /// 要以后的卡都进复习、经复习同步走；关掉则制卡目标与互联制卡设置都不动。
+  final bool switchCardTarget;
+
   SrsAnkiMigrationSettings copyWith({
     SrsAnkiImportOptions? options,
     bool? convertLapis,
     bool? renameLapisDecks,
+    bool? switchCardTarget,
   }) => SrsAnkiMigrationSettings(
     options: options ?? this.options,
     convertLapis: convertLapis ?? this.convertLapis,
     renameLapisDecks: renameLapisDecks ?? this.renameLapisDecks,
+    switchCardTarget: switchCardTarget ?? this.switchCardTarget,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'options': options.toJson(),
     'convertLapis': convertLapis,
     'renameLapisDecks': renameLapisDecks,
+    'switchCardTarget': switchCardTarget,
   };
 
   /// 缺项 / 坏值回落到默认值。
@@ -74,12 +87,16 @@ class SrsAnkiMigrationSettings {
     final Object? options = json['options'];
     final Object? convert = json['convertLapis'];
     final Object? renameDecks = json['renameLapisDecks'];
+    final Object? switchTarget = json['switchCardTarget'];
     return SrsAnkiMigrationSettings(
       options: options is Map
           ? SrsAnkiImportOptions.fromJson(options.cast<String, Object?>())
           : d.options,
       convertLapis: convert is bool ? convert : d.convertLapis,
       renameLapisDecks: renameDecks is bool ? renameDecks : d.renameLapisDecks,
+      switchCardTarget: switchTarget is bool
+          ? switchTarget
+          : d.switchCardTarget,
     );
   }
 }
@@ -115,6 +132,27 @@ Future<void> writeSrsAnkiMigrationSettings(
   jsonEncode(settings.toJson()),
 );
 
+/// 迁移成功后把卡片去向切到 Fushi 复习的两个偏好写入口（生产接 AppModel 的同名 setter）。
+///
+/// - 制卡目标（`srs_mining_target`）→ [SrsMiningTarget.srs]：查词 / 阅读器 / 视频制卡写进本机复习；
+/// - 互联「制卡到互联主机」（`mine_to_server`，设置 › 同步 › 互联 › 交给已配对设备）→ 关：
+///   它把卡连同媒体转给主机、由主机的 **Anki** 落卡。迁到复习后卡片经复习同步（互联 / 云盘
+///   都走 `fushi-srs/` 目录）到别的设备，不再经主机的 Anki。
+class SrsCardTargetSwitch {
+  const SrsCardTargetSwitch({
+    required this.setMiningTarget,
+    required this.setMineToServer,
+  });
+
+  final Future<void> Function(SrsMiningTarget target) setMiningTarget;
+  final Future<void> Function(bool enabled) setMineToServer;
+
+  Future<void> apply() async {
+    await setMiningTarget(SrsMiningTarget.srs);
+    await setMineToServer(false);
+  }
+}
+
 /// 一次迁移的来源。
 sealed class SrsAnkiMigrationSource {
   const SrsAnkiMigrationSource();
@@ -141,11 +179,15 @@ final class SrsAnkiMigrationFromPackage extends SrsAnkiMigrationSource {
 ///
 /// [settings] 的 [SrsAnkiMigrationSettings.convertLapis] 开着时，导入落库后在同一个任务里把旧
 /// Lapis 迁到 Fushi 卡片（[srsConvertLegacyLapisAfterImport]），不依赖迁移页还开着。
+///
+/// [SrsAnkiMigrationSettings.switchCardTarget] 开着且给了 [cardTargetSwitch] 时，导入成功后在同一个
+/// 任务里切卡片去向（[SrsCardTargetSwitch.apply]）；导入失败 / 被叫停（抛异常）时不切。
 Future<SrsImportReport> runSrsAnkiMigration({
   required SrsDbStore store,
   required SrsMediaStore media,
   required SrsAnkiMigrationSource source,
   SrsAnkiMigrationSettings settings = const SrsAnkiMigrationSettings(),
+  SrsCardTargetSwitch? cardTargetSwitch,
   void Function(double progress)? onProgress,
   bool Function()? shouldStop,
 }) async {
@@ -163,6 +205,14 @@ Future<SrsImportReport> runSrsAnkiMigration({
       report,
       renameDecks: settings.renameLapisDecks,
     );
+  }
+  if (settings.switchCardTarget && cardTargetSwitch != null) {
+    try {
+      await cardTargetSwitch.apply();
+    } catch (e, stack) {
+      // 导入已经落库：偏好写失败不让整个迁移失败，用户可以到设置里手动改。
+      ErrorLogService.instance.log('SrsAnkiMigration.switchTarget', e, stack);
+    }
   }
   return report;
 }

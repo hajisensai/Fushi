@@ -124,6 +124,12 @@ void main() {
     final int moved = snapper.snap(refCues, energy);
     final int edges = snapper.refineEdges(refCues, energy);
     expect(moved + edges, greaterThan(0), reason: '能量吸附必须真的改了时间，否则对拍不到它');
+    final ({List<AudioCue> cues, MatchResult result, int merged}) merged =
+        const CueFragmentMerger().merge(cues: refCues, result: refResult);
+    refCues = merged.cues;
+    refResult = merged.result;
+    final int margins = const CueDisplayMargins().apply(refCues, energy);
+    expect(margins, greaterThan(0), reason: '显示余量必须真的改了时间，否则对拍不到它');
     SubtitleRematchCodec.applyToCues(cues: refCues, result: refResult);
 
     final List<AudioCue> input = _cues();

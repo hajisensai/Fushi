@@ -156,8 +156,9 @@ class SrsMemoryReplica implements SrsSyncReplica {
   }
 
   @override
-  Future<List<SrsEvent>> unpublishedEvents() async => <SrsEvent>[
-    for (final String id in _outbox) _local[id]!,
+  Future<List<SrsEvent>> unpublishedEvents({int? limit}) async => <SrsEvent>[
+    for (final String id in limit == null ? _outbox : _outbox.take(limit))
+      _local[id]!,
   ];
 
   @override
@@ -273,6 +274,26 @@ class SrsMemoryReplica implements SrsSyncReplica {
   @override
   Future<Map<String, int>> exportServerTimes() async =>
       Map<String, int>.of(store.serverTime);
+
+  @override
+  Future<List<String>> exportAllIds() async => <String>[
+    for (final SrsEvent e in store.allEvents()) e.id,
+  ];
+
+  @override
+  Future<void> exportSnapshotPages({
+    required Future<void> Function(List<String> canonicalLines) onEvents,
+    required Future<void> Function(List<(String, int)> serverTimes)
+    onServerTimes,
+  }) async {
+    await onEvents(<String>[
+      for (final SrsEvent e in store.allEvents()) e.canonical(),
+    ]);
+    await onServerTimes(<(String, int)>[
+      for (final MapEntry<String, int> e in store.serverTime.entries)
+        (e.key, e.value),
+    ]);
+  }
 
   @override
   String newIncarnationWriterId() {

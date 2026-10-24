@@ -96,7 +96,16 @@ class SrsMediaStore {
       if (exists &&
           await target.length() == bytes.length &&
           sha1.convert(await target.readAsBytes()).toString() == digest) {
-        return stored;
+        // 复用也刷新修改时间：墓碑清除的媒体回收只删宽限期以前的文件，调用方拿到名字后
+        // 才提交引用它的笔记，这段时间里文件不能被当成垃圾（srs_purge.dart「媒体回收与并发
+        // 写入的契约」）。
+        // 刷不了（只读属性等）就落到下面重写一份，新文件的修改时间自然是现在。
+        try {
+          await target.setLastModified(DateTime.now());
+          return stored;
+        } on FileSystemException {
+          // fall through
+        }
       }
       if (!_rootReady) {
         await root.create(recursive: true);

@@ -7,7 +7,7 @@ import 'package:fushi_engine/anki_sync/fushi_anki_sync_client.dart';
 /// （官方 rslib，经 `fushi-anki-sync`），再同步到 AnkiWeb 或用户自建的 Anki 同步服务器。
 ///
 /// 制卡本身（渲染 / 查重 / 写库）在 [AnkiSyncMiner]，无头服务端当落地设备时用的是
-/// 同一份；这里只负责设置（基类的 SharedPreferences）与配置界面要的查询。
+/// 同一份；这里只负责设置（基类的设置存储）与配置界面要的查询。
 /// 未同步的卡由 [AnkiSyncSession] 的日志兜底，整库下载后会重放。
 ///
 /// 实例是无状态的：进程、库、日志都在 [session] 里（全 app 一份），

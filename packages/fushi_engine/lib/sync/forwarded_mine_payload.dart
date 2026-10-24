@@ -29,6 +29,7 @@ class ForwardedMinePayload {
     this.sentenceOffset,
     this.source,
     this.sourceLink,
+    this.sourceUrl,
     this.bookTitleTag,
     this.collectionTag,
     this.charPositionTag,
@@ -54,6 +55,10 @@ class ForwardedMinePayload {
   /// `AnkiMiningSource.name`（`'book'` / `'video'` / `'game'`）；null = 不追加分类标签。
   final String? source;
   final CardSourceLink? sourceLink;
+
+  /// `AnkiMiningContext.sourceUrl`：外部网页来源（app 内浏览器制卡）。可空 = 非网页
+  /// 来源，或对端是尚未带这个键的旧版本——`{source-link}` 退回纯标题，卡照建。
+  final String? sourceUrl;
   final String? bookTitleTag;
   final String? collectionTag;
 
@@ -90,6 +95,7 @@ class ForwardedMinePayload {
         if (sentenceOffset != null) 'sentenceOffset': sentenceOffset,
         if (source != null) 'source': source,
         if (sourceLink != null) 'sourceLink': sourceLink!.toUri().toString(),
+        if (sourceUrl != null) 'sourceUrl': sourceUrl,
         if (bookTitleTag != null) 'bookTitleTag': bookTitleTag,
         if (collectionTag != null) 'collectionTag': collectionTag,
         if (charPositionTag != null) 'charPositionTag': charPositionTag,
@@ -137,6 +143,7 @@ class ForwardedMinePayload {
       sourceLink: json['sourceLink'] == null
           ? null
           : CardSourceLink.parse(json['sourceLink'] as String),
+      sourceUrl: json['sourceUrl'] as String?,
       bookTitleTag: json['bookTitleTag'] as String?,
       collectionTag: json['collectionTag'] as String?,
       charPositionTag: json['charPositionTag'] as String?,

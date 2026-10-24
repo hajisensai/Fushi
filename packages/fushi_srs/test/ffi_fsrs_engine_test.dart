@@ -34,10 +34,10 @@ String _libraryPath() {
 }
 
 /// 确定性的合成复习数据：每张卡一串评分，间隔随评分增长，含当天内（小数天）复习。
-/// 返回值是优化器要的 items：每张卡到第 k 次评分为止的历史前缀（k ≥ 2）。
-List<List<SrsFsrsReview>> _syntheticItems({required int cards, int seed = 7}) {
+/// 返回值是优化器要的训练集：每张卡到第 k 次评分为止的历史前缀（k ≥ 2）。
+SrsFsrsTrainingSet _syntheticItems({required int cards, int seed = 7}) {
   final Random rng = Random(seed);
-  final List<List<SrsFsrsReview>> items = <List<SrsFsrsReview>>[];
+  final SrsFsrsTrainingSetBuilder items = SrsFsrsTrainingSetBuilder();
   for (int c = 0; c < cards; c++) {
     final List<SrsFsrsReview> history = <SrsFsrsReview>[];
     double interval = 1;
@@ -61,19 +61,20 @@ List<List<SrsFsrsReview>> _syntheticItems({required int cards, int seed = 7}) {
         interval = interval * (rating == 2 ? 1.3 : (rating == 3 ? 2.5 : 3.5));
       }
       history.add(SrsFsrsReview(rating: rating, deltaDays: delta));
-      if (history.length >= 2) {
-        items.add(List<SrsFsrsReview>.of(history));
-      }
+    }
+    final int card = items.addCard(history);
+    for (int k = 2; k <= history.length; k++) {
+      items.addItem(card, k);
     }
   }
-  return items;
+  return items.build();
 }
 
 /// 在后台 isolate 里跑一次优化（跨 isolate 共享原生取消 / 进度通道）。
 Future<List<double>> _computeInIsolate({
   required String libraryPath,
   required SrsAlgorithm algorithm,
-  required List<List<SrsFsrsReview>> items,
+  required SrsFsrsTrainingSet items,
   required int cancelAddress,
   required int progressAddress,
 }) {
@@ -451,14 +452,14 @@ void main() {
       expect(
         () => e.computeParameters(
           algorithm: SrsAlgorithm.fsrs7,
-          items: const <List<SrsFsrsReview>>[],
+          items: SrsFsrsTrainingSetBuilder().build(),
         ),
         throwsA(isA<SrsFsrsException>()),
       );
     });
 
     test('evaluateTimeSeries / evaluate return finite metrics', () {
-      final List<List<SrsFsrsReview>> items = _syntheticItems(cards: 300);
+      final SrsFsrsTrainingSet items = _syntheticItems(cards: 300);
       for (final SrsAlgorithm a in SrsAlgorithm.values) {
         final SrsEvaluation tss = e.evaluateTimeSeries(
           algorithm: a,

@@ -282,13 +282,66 @@ bool _hasEnvProxy(Map<String, String> environment) =>
       return lower == 'https_proxy' || lower == 'http_proxy';
     });
 
-/// 按平台读 GUI 系统代理（Windows 注册表 / macOS scutil / Linux gsettings）。
-/// 其余平台返回空 map。
+/// 移动端（Android）的系统代理读取器，由宿主经平台通道装配
+/// （[installPlatformSystemProxyReader]）。
+///
+/// 纯 Dart 引擎读不到移动端的系统代理：Android 的 Wi-Fi「代理：手动」只进
+/// `ConnectivityManager` / JVM 系统属性，Dart `HttpClient` 不认它。不装这个读取器，
+/// 自动模式在 Android 上恒为 DIRECT——WebView（走系统代理）能打开 YouTube，而同一台
+/// 设备上 Dart 侧的 YouTube 解析、刮削、字幕下载一律直连超时。
+Future<Map<String, String>> Function()? _platformSystemProxyReader;
+
+/// 宿主装配移动端系统代理读取器（返回 `findProxyFromEnvironment` 用的 environment
+/// 片段：`https_proxy` / `http_proxy` / `no_proxy`）。桌面三平台有原生读取，不调用它。
+void installPlatformSystemProxyReader(
+  Future<Map<String, String>> Function()? reader,
+) {
+  _platformSystemProxyReader = reader;
+}
+
+/// 纯函数：Android `ProxyInfo`（host / port / exclusionList）→ environment 片段。
+///
+/// host 为空或 port 不在 1..65535 → 空 map（= 系统没配代理）。`exclusionList` 是
+/// 逗号分隔的主机模式（`localhost,*.lan`），换成 `no_proxy` 的后缀写法（`*.lan` →
+/// `.lan`）；本机 / 局域网目标另有 [isDirectProxyTarget] 闸门兜底。
+Map<String, String> androidSystemProxyEnvironment({
+  required String? host,
+  required int? port,
+  String? exclusionList,
+}) {
+  final String h = host?.trim() ?? '';
+  if (h.isEmpty || port == null || port <= 0 || port > 65535) {
+    return const <String, String>{};
+  }
+  final String hostPort =
+      h.contains(':') && !h.startsWith('[') ? '[$h]:$port' : '$h:$port';
+  final Map<String, String> env =
+      _buildProxyEnv(https: hostPort, http: hostPort);
+  final List<String> noProxy = <String>[
+    for (final String raw in (exclusionList ?? '').split(RegExp('[,|]')))
+      if (raw.trim().isNotEmpty)
+        raw.trim().startsWith('*.') ? raw.trim().substring(1) : raw.trim(),
+  ];
+  if (noProxy.isNotEmpty) env['no_proxy'] = noProxy.join(',');
+  return env;
+}
+
+/// 按平台读 GUI 系统代理（Windows 注册表 / macOS scutil / Linux gsettings /
+/// 移动端经 [installPlatformSystemProxyReader] 装配的平台通道）。读不到返回空 map。
 Future<Map<String, String>> resolveSystemProxyEnvironment() async {
   if (Platform.isWindows) return readWindowsSystemProxyEnvironmentSync();
   if (Platform.isMacOS) return resolveMacSystemProxyEnvironment();
   if (Platform.isLinux) return resolveLinuxSystemProxyEnvironment();
-  return const <String, String>{};
+  final Future<Map<String, String>> Function()? reader =
+      _platformSystemProxyReader;
+  if (reader == null) return const <String, String>{};
+  try {
+    return await reader();
+  } catch (e) {
+    // 约定不抛（与桌面各 resolve* 一致）：读取失败 = 不补系统代理。
+    fushiDebugPrint('[AppProxy] platform system proxy read failed: $e');
+    return const <String, String>{};
+  }
 }
 
 // ---------------------------------------------------------------------------

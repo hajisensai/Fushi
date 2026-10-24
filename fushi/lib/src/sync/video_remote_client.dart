@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
     show interconnectPersistedUrl;
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
+import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
@@ -35,7 +38,7 @@ class VideoRemoteError implements Exception {
 /// forwarding port, whose identity is the tunnel's node key), are refused
 /// before any byte is written, so a learned or manually grouped address can
 /// never downgrade the pin.
-class VideoRemoteClient {
+class VideoRemoteClient implements RemoteCoverFetcher {
   VideoRemoteClient({
     required SyncRepository repository,
     required this.peer,
@@ -158,6 +161,50 @@ class VideoRemoteClient {
   Future<bool?> supportsVideoRemote({
     Duration timeout = const Duration(seconds: 5),
   }) async {
+    final http.Response? response = await _getFromHost(
+      '/api/capabilities',
+      timeout: timeout,
+    );
+    if (response == null) return null;
+    try {
+      final Object? decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      return decoded is Map && decoded['videoRemoteControlV1'] == true;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Cover bytes behind [coverUrl], a host-relative path such as
+  /// [videoRemoteCoverPath] (the interconnect library's own cover endpoint),
+  /// fetched over the same pinned candidates as every other request.
+  @override
+  Future<Uint8List> fetchRemoteCover(String coverUrl) async {
+    final http.Response? response = await _getFromHost(
+      coverUrl,
+      timeout: const Duration(seconds: 15),
+    );
+    if (response == null) {
+      throw const VideoRemoteError(VideoRemoteError.unreachableCode);
+    }
+    return response.bodyBytes;
+  }
+
+  /// Pairing identity of the host: another host or a re-pairing (new token)
+  /// must not reuse cached covers; a changed address must. A content digest,
+  /// not `Object.hash` (seeded per process): the disk cache outlives restarts.
+  @override
+  String get coverCacheNamespace {
+    final String host = peer.hostId ?? '${peer.url}|${peer.fingerprintSha256}';
+    final Digest digest = sha256.convert(utf8.encode('$host|${peer.token}'));
+    return 'vr${digest.toString().substring(0, 16)}';
+  }
+
+  /// `GET` [path] on the first address of the selected host that answers 200
+  /// (same host, credential and pin rules as [call]). Null when none did.
+  Future<http.Response?> _getFromHost(
+    String path, {
+    required Duration timeout,
+  }) async {
     final String? fallbackToken = await _repository.getFushiClientToken();
     final List<FushiClientUrl> candidates =
         (await _repository.getFushiClientUrls()).where((FushiClientUrl u) {
@@ -170,10 +217,7 @@ class VideoRemoteClient {
               interconnectTokenFor(u, fallbackToken) == peer.token;
         }).toList();
     for (final FushiClientUrl candidate in candidates) {
-      final Uri? uri = interconnectEndpointUri(
-        candidate.url,
-        '/api/capabilities',
-      );
+      final Uri? uri = interconnectEndpointUri(candidate.url, path);
       final String? token = interconnectTokenFor(candidate, fallbackToken);
       if (uri == null || token == null) continue;
       final String? pin = candidate.fingerprintSha256;
@@ -192,9 +236,11 @@ class VideoRemoteClient {
               },
             )
             .timeout(timeout);
+        // 404 is the host's answer (e.g. no cover), not a bad address: asking
+        // its other addresses would get the same answer, each after a timeout.
+        if (response.statusCode == 404) return null;
         if (response.statusCode != 200) continue;
-        final Object? decoded = jsonDecode(utf8.decode(response.bodyBytes));
-        return decoded is Map && decoded['videoRemoteControlV1'] == true;
+        return response;
       } catch (_) {
         continue;
       } finally {
@@ -260,6 +306,11 @@ class VideoRemoteClient {
     return cues;
   }
 }
+
+/// Host-relative path of a library video's cover (the interconnect library's
+/// `GET /api/library/videos/<bookUid>/cover`).
+String videoRemoteCoverPath(String bookUid) =>
+    '/api/library/videos/${Uri.encodeFull(bookUid)}/cover';
 
 class _SubtitleChunks {
   _SubtitleChunks(this.total);

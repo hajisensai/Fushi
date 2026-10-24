@@ -35,6 +35,8 @@ class _ManualBindingRunner
     required String workTitle,
     String? workStableKey,
     required String query,
+    VideoMetadataProviderKind? provider,
+    VideoMetadataMediaKind? mediaKind,
   }) async {
     queries.add(query);
     searchedKeys.add(workStableKey);

@@ -49,6 +49,7 @@ import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
@@ -489,13 +490,18 @@ class AppTtsRenderRunner implements TtsRenderRunner {
           await gate.acquire();
           try {
             if (firstError != null || chapterCancel.isCancelled) return;
-            results[key] = await cache.obtain(
-              key,
-              (String outputPath) => voice.provider.synthesize(
-                byKey[key]!.text,
-                outputPath: outputPath,
-                cancel: chapterCancel,
+            // 在线引擎的临时失败（断连 / 超时 / 429 / 5xx）先有限次退避重试，
+            // 与朗读调度共用 ttsWithRetry；用尽仍失败才判整章失败。
+            results[key] = await ttsWithRetry(
+              () => cache.obtain(
+                key,
+                (String outputPath) => voice.provider.synthesize(
+                  byKey[key]!.text,
+                  outputPath: outputPath,
+                  cancel: chapterCancel,
+                ),
               ),
+              cancel: chapterCancel,
             );
             onSentencesDone(occurrences[key]!);
           } catch (e, stack) {

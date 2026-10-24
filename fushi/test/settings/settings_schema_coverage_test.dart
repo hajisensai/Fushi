@@ -49,6 +49,22 @@ const String _kFloatingBallSceneButtons =
     '各场景的勾选互不影响 / 勾选了但页面此刻没提供的专属按钮跳过';
 
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // app 内浏览器（系统 › 浏览器）：生效点在全屏浏览页 / 标签页 WebView，harness 设置页
+  // 没有浏览页。浏览页每次打开现读这些偏好。
+  'system/Tab style':
+      'test/pages/fushi_web_browser_shell_test.dart（桌面侧边栏 ↔ 顶部标签栏、偏好写穿）',
+  'system/Hide toolbar while scrolling':
+      'test/web_browser/web_browser_layout_test.dart（收起状态机 / 可收起判据）+ '
+      'test/pages/fushi_web_browser_shell_test.dart（往下滚收成小地址条）',
+  'system/Search engine':
+      'test/web_browser/web_browser_search_engines_test.dart（选中引擎决定搜索地址）',
+  'system/Dark mode for web pages':
+      'test/web_browser/tab_view/web_browser_tab_view_logic_test.dart（forceDark 进 WebView 设置）',
+  'system/Open desktop sites by default':
+      'test/pages/fushi_web_browser_shell_test.dart（新标签页默认桌面版）',
+  'system/Restore tabs from last time':
+      'test/web_browser/web_browser_tabs_controller_test.dart（关闭会话持久化时不读不写）+ '
+      'test/pages/fushi_web_browser_shell_test.dart（恢复上次的标签页）',
   // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
   // 没有 WebView。总开关、订阅集、白名单都是 Rust 核心（fushi_web_core）的状态，行改动经
   // WebAdblockService 转成命令，由 web_adblock_service_test（开关 / 白名单下一次请求即生效、
@@ -99,6 +115,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 启动轮照查」。
   'system/Auto-update extensions in the background':
       'test/updates/mihon_extension_update_probe_test.dart（关着不装 / 开着且空闲才装 / dueOnStart）',
+  // 媒体库在线作品自动补新集（video_library_auto_update，PR#2493）：写 prefsRepo
+  // （changed=true），生效点是后台调度器里番剧新集域的补集探针——要联网取媒体服务器
+  // / 在线源的新集，harness 观测不到。接线 updateCheckKindGate 由调度器用例咬住：
+  // 关掉它提醒开着也不跑、关提醒不停补集。
+  'system/Auto-add new episodes to the video library':
+      'test/updates/update_check_scheduler_test.dart（番剧新集域只看 '
+      'video_library_auto_update，不看提醒开关）',
   'system/Notify about app releases':
       'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
   'system/System notifications':
@@ -573,6 +596,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'floatingBall/Back': _kFloatingBallSceneButtons,
   'floatingBall/Lyrics mode': _kFloatingBallSceneButtons,
   'floatingBall/Navigation': _kFloatingBallSceneButtons,
+  'floatingBall/Bookmarks & saved sentences': _kFloatingBallSceneButtons,
   'floatingBall/Browse illustrations': _kFloatingBallSceneButtons,
   'floatingBall/Reading statistics': _kFloatingBallSceneButtons,
   'floatingBall/Pause / resume reading timer': _kFloatingBallSceneButtons,
@@ -840,6 +864,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/torrent/download_http_client_proxy_test.dart',
   'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync statistics': 'test/sync/sync_gating_test.dart',
+  // 设备级「同步浏览历史」：生效点是聚合快照按族裁剪（云 / 互联 client / host 三条路径）。
+  'syncBackup/Sync browsing history':
+      'test/sync/aggregate_web_history_share_gate_test.dart',
   'syncBackup/Upload book files': 'test/sync/sync_gating_test.dart',
   // 「上传漫画文件」（书籍和漫画分开，2026-10-21）：按格式分流的上传 / 不上传、旧名
   // `.epub` 漫画包去重都在这条专项测试里咬住。

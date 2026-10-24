@@ -87,6 +87,8 @@ Future<void> _pumpReview(
         srsMediaStoreProvider.overrideWith(
           (Ref ref) async => null as SrsMediaStore?,
         ),
+        // 本文件钉的是固定页头的让位；悬浮顶栏（默认）见 srs_review_floating_chrome_test.dart。
+        srsReviewChromeFloatingProvider.overrideWithValue(false),
         srsCardFaceBuilderProvider.overrideWithValue(
           (BuildContext context, SrsCardFace face) =>
               SrsPlainCardFace(face: face),

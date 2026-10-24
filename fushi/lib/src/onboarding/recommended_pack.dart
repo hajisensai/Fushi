@@ -39,6 +39,16 @@ const String kRecommendedPackGoogleDriveDirectUrl =
     'https://drive.usercontent.google.com/download'
     '?id=$kRecommendedPackGoogleDriveFileId&export=download&confirm=t';
 
+/// 回退直链那份整包的 sha256（小写 hex）。
+///
+/// BUG-3758：回退线路原先**不带任何校验值**，两个清单主机都拉不到时下来的 9.5 GB
+/// 原样进备份导入（会覆盖整库与偏好）。下载内容一律要有钉死的摘要才放行，回退
+/// 线路也不例外。值取自线上清单 `2026-10-16-r2`（其 `url` 就是这份 Drive 文件）；
+/// Drive 上原地换文件时这里必须一起改，否则回退线路会以摘要不符失败——失败是
+/// 有意的，好过装一份没校验过的包。
+const String kRecommendedPackWholeFileSha256 =
+    'd1b52032286d1941b07c8cb13dd180fb0377adebc09e818d4860a7a6ab7bd01a';
+
 /// 落盘用的包文件名。**刻意不带版本/日期**：换包不需要改这里，各条线路也共用
 /// 同一个名字，半截文件因此天然可跨线路续传。
 ///
@@ -96,9 +106,10 @@ class RecommendedPackPart {
   final String? sha256;
 }
 
-/// 推荐包清单：稳定 URL 下发的当前包指针。[url] 必填；[sha256]（小写 hex，可选）
-/// 提供时下载完成后做完整性校验；[sizeBytes]（可选）用于展示，也是**开启分片并发
-/// 下载的前提**（没有总长就没法切段）。
+/// 推荐包清单：稳定 URL 下发的当前包指针。[url] 必填；[sha256]（小写 hex）在
+/// 解析线上清单时必填（缺则整份判无效，BUG-3758），下载完成后做完整性校验；
+/// [sizeBytes]（可选）用于展示，也是**开启分片并发下载的前提**（没有总长就没法
+/// 切段）。
 @immutable
 class RecommendedPackManifest {
   const RecommendedPackManifest({
@@ -210,8 +221,9 @@ class RecommendedPackManifest {
 /// 所以加这个键对旧版是零影响——它们继续拿顶层的 STORE 包。
 const String kRecommendedPackDeflateManifestKey = 'deflate_pack';
 
-/// 解析清单 json（纯函数，便于单测）。结构不合法 / url 缺失或非 https 时返回
-/// null（调用方回退内置直链）——清单是优化路径，绝不因它坏掉挡住下载。
+/// 解析清单 json（纯函数，便于单测）。结构不合法 / url 缺失或非 https / sha256
+/// 缺失或不合法时返回 null（调用方回退带钉死摘要的内置直链）——清单是优化路径，
+/// 绝不因它坏掉挡住下载。
 ///
 /// 带合法的 [kRecommendedPackDeflateManifestKey] 子清单时返回它（本版本能快速
 /// 导入 deflate 包）；子清单缺失或不合法时退回顶层的 STORE 包，而不是整体失败。
@@ -235,12 +247,10 @@ RecommendedPackManifest? parseRecommendedPackManifest(String jsonText) {
 RecommendedPackManifest? _parseManifestObject(Map<String, dynamic> decoded) {
   final Object? url = decoded['url'];
   if (url is! String || !url.startsWith('https://')) return null;
+  // BUG-3758：sha256 必填。清单只有 TLS 一层信任，缺摘要等于整包内容不受任何
+  // 校验；整体判无效后调用方回退到带钉死摘要的内置直链。
   final String? sha256Hex = _parseSha256(decoded['sha256']);
-  if (decoded['sha256'] is String &&
-      (decoded['sha256'] as String).isNotEmpty &&
-      sha256Hex == null) {
-    return null;
-  }
+  if (sha256Hex == null) return null;
   final Object? sizeBytes = decoded['size_bytes'];
   final Object? version = decoded['version'];
   final Object? partSize = decoded['part_size_bytes'];
@@ -351,7 +361,7 @@ class RecommendedPackDownloader {
   RecommendedPackDownloader({
     required Directory packDir,
     this.url = kRecommendedPackWholeFileUrl,
-    this.sha256Hex,
+    required this.sha256Hex,
     this.manifest,
     this.concurrency = SegmentedDownloader.kDefaultDownloadConcurrency,
   }) : _packDir = packDir;
@@ -361,13 +371,21 @@ class RecommendedPackDownloader {
     required Directory packDir,
     required RecommendedPackManifest manifest,
     int concurrency = SegmentedDownloader.kDefaultDownloadConcurrency,
-  }) => RecommendedPackDownloader(
-    packDir: packDir,
-    url: manifest.url,
-    sha256Hex: manifest.sha256,
-    manifest: manifest,
-    concurrency: concurrency,
-  );
+  }) {
+    final String? sha256Hex = manifest.sha256;
+    if (sha256Hex == null) {
+      // parseRecommendedPackManifest 已拒掉缺摘要的清单；走到这里是调用方手搓了
+      // 一份不带摘要的清单（BUG-3758）。
+      throw ArgumentError.value(manifest.url, 'manifest', 'missing sha256');
+    }
+    return RecommendedPackDownloader(
+      packDir: packDir,
+      url: manifest.url,
+      sha256Hex: sha256Hex,
+      manifest: manifest,
+      concurrency: concurrency,
+    );
+  }
 
   final Directory _packDir;
 
@@ -375,9 +393,10 @@ class RecommendedPackDownloader {
   /// 版本变，新旧版本的完整包/半截包自然分开存放）。
   final String url;
 
-  /// 期望的 sha256（小写 hex，来自清单，可选）。提供时下载完成后流式校验，
-  /// 不符即删档报错——坏包/被截断的包不进备份导入。
-  final String? sha256Hex;
+  /// 期望的 sha256（小写 hex，必填：来自清单，回退线路用
+  /// [kRecommendedPackWholeFileSha256]）。下载完成后流式校验，不符即删档报错——
+  /// 坏包 / 被截断 / 被换掉的包不进备份导入。
+  final String sha256Hex;
 
   /// 清单（可选）。带分片信息时走分片并发；为 null 时按内置直链探测。
   final RecommendedPackManifest? manifest;
@@ -833,17 +852,15 @@ class RecommendedPackDownloader {
         '$received / $total bytes',
       );
     }
-    if (sha256Hex != null) {
-      final String digest = await ffcSha256File(_partFile.path);
-      if (digest != sha256Hex) {
-        // 坏包不留：删掉半截，下次从头下（续传一个已知坏的文件没有意义）。
-        _partFile.deleteSync();
-        _writeSingleStreamValidator(null);
-        throw Exception(
-          'recommended pack sha256 mismatch: '
-          'got $digest, expected $sha256Hex',
-        );
-      }
+    final String digest = await ffcSha256File(_partFile.path);
+    if (digest != sha256Hex) {
+      // 坏包不留：删掉半截，下次从头下（续传一个已知坏的文件没有意义）。
+      _partFile.deleteSync();
+      _writeSingleStreamValidator(null);
+      throw Exception(
+        'recommended pack sha256 mismatch: '
+        'got $digest, expected $sha256Hex',
+      );
     }
     _partFile.renameSync(packFile.path);
     _writeSingleStreamValidator(null);

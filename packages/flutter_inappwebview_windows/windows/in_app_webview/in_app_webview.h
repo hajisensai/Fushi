@@ -195,7 +195,6 @@ namespace flutter_inappwebview_plugin
       return pageFrameId_;
     }
 
-    static bool isSslError(const COREWEBVIEW2_WEB_ERROR_STATUS& webErrorStatus);
     void rememberMainFrameInjectedOk(const std::string& rawUrl);
     bool consumeMainFrameInjectedOk(const std::string& rawUrl);
   private:
@@ -243,6 +242,14 @@ namespace flutter_inappwebview_plugin
     std::shared_ptr<NavigationAction> lastNavigationAction_;
     bool isLoading_ = false;
     std::string pageFrameId_;
+    // Fushi bridge lock（docs/specs/2026-10-23-dictionary-script-sandbox.md「桥锁定」）。
+    // 顶层文档调 callHandler('_fushiLockBridge') 后原生生成的随机令牌；空 = 未锁定（旧行为）。
+    // 锁定后每条 JS→原生消息都必须带同一令牌，且 WebMessageReceived 的 Source 必须是锁定时的
+    // 顶层文档（或当前顶层 Source），否则丢弃并记 warn。顶层新文档提交（ContentLoading）清空。
+    std::string bridgeLockToken_;
+    std::wstring bridgeLockSource_;
+    void handleBridgeLockRequest(const std::wstring& source, int64_t callHandlerID);
+    bool isBridgeMessageAuthorized(const std::wstring& source, const std::string* token) const;
     // 对象存活标志：所有跨 Dart 桥异步回来的 WebResourceRequested deferral 回调都捕获它的
     // 拷贝，回调入口先解引用判断本对象是否仍存活。析构里翻成 false，使迟到回调不再触碰
     // this/channelDelegate/args，避免 use-after-free（TODO-931）。
@@ -265,6 +272,9 @@ namespace flutter_inappwebview_plugin
     EventRegistrationToken processFailedToken_ = {};
     // DOMContentLoaded 注册在 ICoreWebView2_2 接口上，析构时需重新 QueryInterface 该接口才能 remove。
     EventRegistrationToken domContentLoadedToken_ = {};
+    // DownloadStarting 注册在 ICoreWebView2_4 接口上（Runtime 过旧取不到则不注册，token 保持空），
+    // 析构时同样重新 QueryInterface 再 remove。
+    EventRegistrationToken downloadStartingToken_ = {};
     // CursorChanged 注册在 webViewCompositionController 上。
     EventRegistrationToken cursorChangedToken_ = {};
     // Fetch.requestPaused / Runtime.consoleAPICalled 注册在各自的 DevTools 事件 receiver 上；

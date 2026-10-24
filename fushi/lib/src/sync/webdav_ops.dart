@@ -407,9 +407,17 @@ class WebDavOps {
     checkStatus(response.statusCode, 'MOVE $fromPath -> $toPath');
   }
 
-  Future<List<DavEntry>> propfindChildren(String path) async {
+  Future<List<DavEntry>> propfindChildren(String path) =>
+      propfindDepth(path, '1');
+
+  /// PROPFIND [path]，`Depth` 头取 [depth]（`'0'` / `'1'` / `'infinity'`）。
+  ///
+  /// 回包里有哪些层级完全取决于服务器：很多 WebDAV 服务器拒绝或降级 `infinity`
+  /// （RFC 4918 §9.1 允许 403 `propfind-finite-depth`），老版互联 host 更是把它当
+  /// Depth 0。调用方必须先经能力协商确认服务器会完整回答，不能凭回包形状猜。
+  Future<List<DavEntry>> propfindDepth(String path, String depth) async {
     final request = await buildRequest('PROPFIND', path);
-    request.headers.set('Depth', '1');
+    request.headers.set('Depth', depth);
     request.headers.set('Content-Type', 'application/xml; charset=utf-8');
     request.add(utf8.encode(propfindBody));
     final response = await closeRequest(request);

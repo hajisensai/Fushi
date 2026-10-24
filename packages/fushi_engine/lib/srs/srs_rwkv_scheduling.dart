@@ -35,4 +35,7 @@ abstract interface class SrsRwkvScheduling {
 
   /// 本机评分已落库（[log] 是这张卡新的最后一条有效日志）。
   Future<void> onAnswered(String cardId, SrsReviewLog log);
+
+  /// 这些卡已被永久清除（srs_purge.dart）：丢掉为它们缓存的分数。
+  Future<void> onCardsPurged(List<String> cardIds);
 }

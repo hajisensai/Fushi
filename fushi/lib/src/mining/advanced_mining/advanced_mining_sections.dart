@@ -408,7 +408,7 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
     required VoidCallback? onPressed,
   }) => FushiIconButtonControl(
     tooltip: tooltip,
-    size: FushiIconButtonSize.xs,
+    size: ButtonSizeVariant.xSmall,
     onPressed: onPressed,
     icon: FushiIcon(icon, size: 18),
   );

@@ -8,6 +8,8 @@ import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:meta/meta.dart';
 
 import 'lapis_blocks.dart';
+import 'lapis_preset.dart';
+import 'note_type_default_mappings.dart';
 import 'card_source_link.dart';
 import 'mining_request_overrides.dart';
 
@@ -231,7 +233,12 @@ class AnkiSettings {
     this.ankiDesktopExecutable = '',
   });
 
-  factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
+  /// 载入时顺带修复「映射一个字段都没覆盖到选中的笔记类型」的存量设置（见
+  /// [withDefaultMappingsIfUncovered]）：已经存成空映射的用户不必重选笔记类型。
+  factory AnkiSettings.fromJson(Map<String, dynamic> json) =>
+      AnkiSettings._fromJson(json).withDefaultMappingsIfUncovered();
+
+  factory AnkiSettings._fromJson(Map<String, dynamic> json) => AnkiSettings(
     selectedDeckId: json['selectedDeckId'] as int?,
     selectedDeckName: json['selectedDeckName'] as String?,
     selectedNoteTypeId: json['selectedNoteTypeId'] as int?,
@@ -309,6 +316,7 @@ class AnkiSettings {
   final List<AnkiDeck> availableDecks;
   final List<AnkiNoteType> availableNoteTypes;
   final Map<String, String> fieldMappings;
+
   /// 当前 Profile 的自定义标签（空白分隔）。随 Profile 快照切换（`ProfileKeys`）。
   final String tags;
 
@@ -488,6 +496,21 @@ class AnkiSettings {
     if (noteType.fields.isEmpty) return true;
     final String? template = fieldMappings[noteType.fields.first];
     return template != null && template.trim().isNotEmpty;
+  }
+
+  /// 选中的笔记类型已知、但 [fieldMappings] 一个字段都没映射到它（空表，或留着别的
+  /// 笔记类型的字段名）时，换成按字段名推出的默认映射；否则原样返回。
+  ///
+  /// 这种设置下每张卡渲染出来都是空卡、必被拒收（反馈 AGLC0BuaKB：选了非 Lapis 笔记
+  /// 类型后映射被置成 `{}`，批量制卡逐条失败）。只要覆盖到一个字段就视为用户自己配过，
+  /// 不动。
+  AnkiSettings withDefaultMappingsIfUncovered() {
+    final AnkiNoteType? noteType = selectedNoteType;
+    if (noteType == null || noteType.fields.isEmpty) return this;
+    if (mappingsCoverNoteType(fieldMappings, noteType)) return this;
+    return copyWith(
+      fieldMappings: LapisPreset.applyDefaults(noteType, const {}),
+    );
   }
 
   AnkiNoteType? get selectedNoteType =>
@@ -864,6 +887,7 @@ class AnkiMiningContext {
     this.clipStartMs,
     this.clipEndMs,
     this.sourceLink,
+    this.sourceUrl,
   });
   final String sentence;
   final String? cueSentence;
@@ -927,6 +951,13 @@ class AnkiMiningContext {
   /// Portable card origin; survives media upload and backend forwarding.
   final CardSourceLink? sourceLink;
 
+  /// 卡片来源的外部网址（app 内浏览器制卡时是当前网页，已去掉 `#片段`）。
+  ///
+  /// 与 [sourceLink] 是两种来源：[sourceLink] 是书库内可回跳的定位，优先；没有库内
+  /// 定位时 `{source-link}` 渲染成指向此网址的 `<a>`（标题取 [documentTitle]），见
+  /// [AnkiHandlebarRenderer.renderSourceLink]。只认 http(s)，其它 scheme 不出链接。
+  final String? sourceUrl;
+
   /// Used when updating an existing note: its marker identity must survive a
   /// newly captured position, and legacy notes must not acquire dangling URLs.
   AnkiMiningContext withSourceLink(CardSourceLink? value) => AnkiMiningContext(
@@ -944,6 +975,7 @@ class AnkiMiningContext {
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,
     sourceLink: value,
+    sourceUrl: sourceUrl,
   );
 
   /// 渲染前把两个**本地媒体路径**换成 backend 落盘后的媒体引用
@@ -974,6 +1006,7 @@ class AnkiMiningContext {
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,
     sourceLink: sourceLink,
+    sourceUrl: sourceUrl,
   );
 }
 
@@ -1111,12 +1144,31 @@ class AnkiHandlebarRenderer {
     final String title = context.documentTitle ?? '';
     final CardSourceLink? source = context.sourceLink;
     if (source == null) {
+      final Uri? url = webSourceUrlOf(context.sourceUrl);
+      if (url != null) {
+        // 无标题时用主机名作链接文字：同 toHtml 缺省标签，不落任何自然语言。
+        final String label = title.trim().isEmpty ? url.host : title.trim();
+        return '<a href="'
+            '${const HtmlEscape(HtmlEscapeMode.attribute).convert(url.toString())}'
+            '">${const HtmlEscape(HtmlEscapeMode.element).convert(label)}</a>';
+      }
       return const HtmlEscape(HtmlEscapeMode.element).convert(title);
     }
     // 无标题时退回 toHtml 的语言中性缺省标签：这是写进用户 Anki 卡面的文本，
     // 17 种界面语言共用一份模板，不能落任何一种自然语言。
     if (title.trim().isEmpty) return source.toHtml();
     return source.toHtml(label: title);
+  }
+
+  /// [AnkiMiningContext.sourceUrl] 能否作为卡面链接：只认带主机的 http(s) 网址；
+  /// 空 / 解析失败 / `javascript:` 等其它 scheme 一律 null（不往卡面写可执行链接）。
+  static Uri? webSourceUrlOf(String? raw) {
+    final String value = raw?.trim() ?? '';
+    if (value.isEmpty) return null;
+    final Uri? url = Uri.tryParse(value);
+    if (url == null || url.host.isEmpty) return null;
+    if (url.scheme != 'http' && url.scheme != 'https') return null;
+    return url;
   }
 
   /// 把媒体片段起止（毫秒偏移）渲染成人类可读的 `HH:MM:SS - HH:MM:SS`。
@@ -1753,6 +1805,13 @@ class AnkiErrorCode {
   /// 本机找不到 `fushi-anki-sync`（这个平台 / 安装包没带它）。
   static const String syncClientUnavailable = 'ANKI_SYNC_UNAVAILABLE';
 }
+
+/// [code] 是不是「字段映射配错」一类：映射整体为空、字段名全不属于笔记类型、首字段空。
+/// 这类失败与具体词条无关，同一批里后面每一条都会一样失败，批量制卡应整批中止。
+bool isFieldMappingConfigError(String? code) =>
+    code == AnkiErrorCode.allFieldsEmpty ||
+    code == AnkiErrorCode.fieldMappingMismatch ||
+    code == AnkiErrorCode.firstFieldEmpty;
 
 sealed class AnkiFetchResult {
   const AnkiFetchResult();

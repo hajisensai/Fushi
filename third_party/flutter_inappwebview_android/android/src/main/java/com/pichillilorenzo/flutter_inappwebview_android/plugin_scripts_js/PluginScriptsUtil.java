@@ -83,7 +83,11 @@ public class PluginScriptsUtil {
   // android Workaround to hide context menu when user emit a keydown event
   public static final String CHECK_GLOBAL_KEY_DOWN_EVENT_TO_HIDE_CONTEXT_MENU_JS_SOURCE = "(function(){" +
           "  document.addEventListener('keydown', function(e) {" +
-          "    window." + JavaScriptBridgeJS.JAVASCRIPT_BRIDGE_NAME + "._hideContextMenu();" +
+          // Fushi patch (bridge lock): go through the bridge script's token-attaching wrapper so the
+          // call still works after the page locked the bridge. See PATCHES.md.
+          "    var b = window." + JavaScriptBridgeJS.JAVASCRIPT_BRIDGE_NAME + ";" +
+          "    if (b == null) { return; }" +
+          "    if (typeof b._fushiHideContextMenuCall === 'function') { b._fushiHideContextMenuCall(); } else { b._hideContextMenu(); }" +
           "  });" +
           "})();";
 }

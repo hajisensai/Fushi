@@ -72,7 +72,11 @@ class InterconnectGraphicSubtitleExporter {
       _cacheDirOverride ??
       Directory(p.join(Directory.systemTemp.path, 'fushi_graphic_sub_tracks'));
 
-  /// [GraphicSubtitleTrackExporter] 签名的入口。
+  /// [GraphicSubtitleTrackExporter] 签名的入口。解码不了的编码同步抛
+  /// [GraphicSubtitleTrackExportUnsupported]（端点映射 415）。
+  ///
+  /// 文件系统一律 async IO：视频常在网络盘上，互联 host 的图形字幕端点在 app 主
+  /// isolate 上调这里，同步 statSync 会冻结全部端点与 UI（BUG-3756）。
   Future<GraphicSubtitleTrackExport?> export({
     required String videoPath,
     required int streamIndex,
@@ -80,25 +84,35 @@ class InterconnectGraphicSubtitleExporter {
   }) {
     final BitmapSubtitleCodec? kind = bitmapSubtitleCodecOf(codec);
     if (kind == null) throw GraphicSubtitleTrackExportUnsupported(codec);
-    final FileStat stat = File(videoPath).statSync();
-    if (stat.type != FileSystemEntityType.file) {
-      return Future<GraphicSubtitleTrackExport?>.value();
-    }
+    return _export(
+      kind,
+      videoPath: videoPath,
+      streamIndex: streamIndex,
+      codec: codec,
+    );
+  }
+
+  Future<GraphicSubtitleTrackExport?> _export(
+    BitmapSubtitleCodec kind, {
+    required String videoPath,
+    required int streamIndex,
+    required String codec,
+  }) async {
+    final FileStat stat = await File(videoPath).stat();
+    if (stat.type != FileSystemEntityType.file) return null;
     final String key = graphicSubtitleExportCacheKey(
       videoPath: videoPath,
       sizeBytes: stat.size,
       modifiedMs: stat.modified.millisecondsSinceEpoch,
       streamIndex: streamIndex,
     );
-    final File payload = File(p.join(_cacheDir.path, '$key.bin'));
-    final GraphicSubtitleTrackExport? cached = _exportOf(payload, kind);
-    if (cached != null) {
-      return Future<GraphicSubtitleTrackExport?>.value(cached);
-    }
+    // 去重判据紧跟键计算之后、中间不再 await：并发同键的请求要么挂上已有的那一次，
+    // 要么由自己登记——缓存命中检查放进登记的 Future 里，绝不在两段 await 之间漏判。
     final Future<GraphicSubtitleTrackExport?>? running = _inflight[key];
     if (running != null) return running;
+    final File payload = File(p.join(_cacheDir.path, '$key.bin'));
     final Future<GraphicSubtitleTrackExport?> loading =
-        _extractInto(
+        _cachedOrExtract(
           payload,
           kind,
           videoPath: videoPath,
@@ -112,17 +126,35 @@ class InterconnectGraphicSubtitleExporter {
     return loading;
   }
 
+  Future<GraphicSubtitleTrackExport?> _cachedOrExtract(
+    File payload,
+    BitmapSubtitleCodec kind, {
+    required String videoPath,
+    required int streamIndex,
+    required String codec,
+  }) async {
+    final GraphicSubtitleTrackExport? cached = await _exportOf(payload, kind);
+    if (cached != null) return cached;
+    return _extractInto(
+      payload,
+      kind,
+      videoPath: videoPath,
+      streamIndex: streamIndex,
+      codec: codec,
+    );
+  }
+
   /// 缓存里的载荷（+ 轨头）→ 回传描述；没有 / 是空壳返回 null。
-  static GraphicSubtitleTrackExport? _exportOf(
+  static Future<GraphicSubtitleTrackExport?> _exportOf(
     File payload,
     BitmapSubtitleCodec kind,
-  ) {
-    if (!payload.existsSync() || payload.lengthSync() == 0) return null;
+  ) async {
+    if (!await _isNonEmptyFile(payload)) return null;
     final File header = File(bitmapSubtitleTrackHeaderPath(payload.path));
     return GraphicSubtitleTrackExport(
       file: payload,
       format: kind.muxer,
-      headerFile: header.existsSync() ? header : null,
+      headerFile: await header.exists() ? header : null,
     );
   }
 
@@ -135,8 +167,8 @@ class InterconnectGraphicSubtitleExporter {
     required int streamIndex,
     required String codec,
   }) async {
-    payload.parent.createSync(recursive: true);
-    final Directory work = payload.parent.createTempSync('extract_');
+    await payload.parent.create(recursive: true);
+    final Directory work = await payload.parent.createTemp('extract_');
     try {
       final String workPayload = p.join(work.path, 'track.bin');
       final bool ok = await _extract(
@@ -146,22 +178,30 @@ class InterconnectGraphicSubtitleExporter {
         codec: codec,
       );
       final File extracted = File(workPayload);
-      if (!ok || !extracted.existsSync() || extracted.lengthSync() == 0) {
-        return null;
-      }
+      if (!ok || !await _isNonEmptyFile(extracted)) return null;
       final File workHeader = File(bitmapSubtitleTrackHeaderPath(workPayload));
-      if (workHeader.existsSync()) {
-        workHeader.renameSync(bitmapSubtitleTrackHeaderPath(payload.path));
+      if (await workHeader.exists()) {
+        await workHeader.rename(bitmapSubtitleTrackHeaderPath(payload.path));
       }
-      extracted.renameSync(payload.path);
-      return _exportOf(payload, kind);
+      await extracted.rename(payload.path);
+      return await _exportOf(payload, kind);
     } finally {
       try {
-        work.deleteSync(recursive: true);
+        await work.delete(recursive: true);
       } on FileSystemException {
         // 工作目录留给系统清理临时目录。
       }
     }
+  }
+}
+
+/// [file] 是非空普通文件（旧 `existsSync() && lengthSync() > 0` 的 async 版）。
+Future<bool> _isNonEmptyFile(File file) async {
+  try {
+    final FileStat stat = await file.stat();
+    return stat.type == FileSystemEntityType.file && stat.size > 0;
+  } on FileSystemException {
+    return false;
   }
 }
 

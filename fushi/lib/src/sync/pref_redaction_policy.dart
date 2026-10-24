@@ -1,3 +1,5 @@
+import 'package:fushi/src/models/preference_keys.dart'
+    show kAnkiSettingsPrefKey;
 import 'package:fushi/src/sync/sync_repository.dart';
 
 /// 「一条 `preferences` key 能不能离开本设备」的**唯一真相源**。
@@ -104,6 +106,8 @@ abstract final class PrefRedactionPolicy {
     // 同形：朗读声音预设清单里 base64 的 Azure / Google API key 与网关 Bearer。
     // 也在 deviceLocalPrefKeys 中。
     'tts_voice_presets',
+    // 同形：AnkiSettings JSON 里的 AnkiConnect apiKey 明文。也在 deviceLocalPrefKeys 中。
+    kAnkiSettingsPrefKey,
   };
 
   /// key 是否属于「设备本地 / 凭据」，即备份、Profile 快照与 Profile 分享 JSON

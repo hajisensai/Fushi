@@ -30,6 +30,57 @@ void main() {
         containsAll(<String>['anidb', 'tmdb']));
   });
 
+  // AniDB 只有标题目录摘要（没有年份）、TMDB 补充是整部剧：剧本体的首播年等
+  // 不能填进续作季 / 剧场版（响け！2 显示 2015、剧场版显示 1979）。
+  test('parent-series supplement does not leak series-level scalars', () {
+    final VideoMetadataWork primary = VideoMetadataWork(
+      provider: VideoMetadataProviderKind.anidb,
+      kind: VideoMetadataMediaKind.tv,
+      title: 'Show 2',
+      ids: const <VideoMetadataId>[VideoMetadataId(type: 'anidb', value: '1')],
+    );
+    final VideoMetadataWork series = VideoMetadataWork(
+      provider: VideoMetadataProviderKind.tmdb,
+      kind: VideoMetadataMediaKind.tv,
+      title: 'Show',
+      year: 2015,
+      premiered: '2015-04-08',
+      endDate: '2024-06-30',
+      status: 'Ended',
+      seasonCount: 3,
+      episodeCount: 39,
+      ids: const <VideoMetadataId>[VideoMetadataId(type: 'tmdb', value: '2')],
+    );
+
+    final VideoMetadataWork part = supplementVideoMetadata(
+      primary,
+      series,
+      supplementPart: const VideoMetadataSupplementPart(
+        year: 2016,
+        premiered: '2016-10-06',
+      ),
+    );
+    expect(part.year, 2016);
+    expect(part.premiered, '2016-10-06');
+    expect(part.endDate, isNull);
+    expect(part.status, isNull);
+    expect(part.seasonCount, isNull);
+    expect(part.episodeCount, isNull);
+    expect(part.ids.map((VideoMetadataId id) => id.type), contains('tmdb'));
+
+    // 没有对应的季（剧场版挂在特典季下）：宁可空着。
+    expect(
+      supplementVideoMetadata(
+        primary,
+        series,
+        supplementPart: const VideoMetadataSupplementPart(),
+      ).year,
+      isNull,
+    );
+    // 补充就是这部作品本身：照旧补空。
+    expect(supplementVideoMetadata(primary, series).year, 2015);
+  });
+
   test('非 TMDB 主源保留展示字段并接入 TMDB 身份和季集骨架', () {
     final VideoMetadataWork primary = VideoMetadataWork(
       provider: VideoMetadataProviderKind.anidb,

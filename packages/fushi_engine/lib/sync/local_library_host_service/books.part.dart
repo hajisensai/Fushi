@@ -10,8 +10,9 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
   /// 别再全表拉 assignments 手工 join）。
   Future<Map<String, List<String>>> _tagNamesByBookKey() async =>
       (await _db.allBookTagAddedAtByName()).map(
-          (String key, Map<String, int> byName) =>
-              MapEntry(key, byName.keys.toList()));
+        (String key, Map<String, int> byName) =>
+            MapEntry(key, byName.keys.toList()),
+      );
 
   /// host 当前书库清单（从 EpubBooks 表读）。
   /// [RemoteBookInfo.hasContent] 为 true 当且仅当该书存在可导出的 EPUB 根目录。
@@ -41,10 +42,10 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // mergeRemoteBookTags 传播 host 侧的删除/改名、防复活（旧 client 忽略这些键、按
     // tags 名单只增，向后兼容）。批量一趟查（旧实现逐书 2 次查询，大库清单端点 O(N)
     // 次 DB 往返）。
-    final Map<String, Map<String, int>> tagAddedAtByKey =
-        await _db.allBookTagAddedAtByName();
-    final Map<String, Map<String, int>> tagTombByKey =
-        await _db.allTagTombstonesByName(MediaKind.epub);
+    final Map<String, Map<String, int>> tagAddedAtByKey = await _db
+        .allBookTagAddedAtByName();
+    final Map<String, Map<String, int>> tagTombByKey = await _db
+        .allTagTombstonesByName(MediaKind.epub);
     final Map<String, RemoteCollectionMembership> membership =
         await _primaryCollectionMembership();
     // BUG-1488：host 上用户改过的书名（`preferences` 的 override 覆盖层）随清单
@@ -56,12 +57,12 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // 各一趟批查；旧 client 忽略这两个 additive 字段。
     final Map<String, ({int percent, int updatedAtMs})> progressByKey =
         await _bookProgressByKey();
-    final Map<String, MangaReaderOverrideRow> readerOverridesByUid = <String,
-        MangaReaderOverrideRow>{
-      for (final MangaReaderOverrideRow row
-          in await _db.getAllMangaReaderOverrides())
-        row.bookUid: row,
-    };
+    final Map<String, MangaReaderOverrideRow> readerOverridesByUid =
+        <String, MangaReaderOverrideRow>{
+          for (final MangaReaderOverrideRow row
+              in await _db.getAllMangaReaderOverrides())
+            row.bookUid: row,
+        };
     // BUG-812：srt-backed 有声书（同 bookKey 既有 EpubBooks 又有 SrtBooks 行）加入合集
     // 时以 **`srt|<uid>`** 存进成员表（本地书架把它当 SRT 卡渲染、经 srt|uid 折叠），
     // 而非 `epub|<bookKey>`。互联 client 把这类书作为 EPUB 占位卡收下，只查 `epub|bookKey`
@@ -94,11 +95,13 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         // hasMangaContent + 漫画包通道。
         // 在线小说占位书（LNReader）不算可下载内容：对端收到的会是一本补不全的
         // 书（见 isLnReaderOnlineBookMetadata）。
-        hasContent: format == BookFormat.epub &&
+        hasContent:
+            format == BookFormat.epub &&
             !isLnReaderOnlineBookMetadata(r.sourceMetadata) &&
             resolveExtractedEpubRoot(r.extractDir) != null,
         format: format.dbValue,
-        hasMangaContent: format == BookFormat.manga &&
+        hasMangaContent:
+            format == BookFormat.manga &&
             hasExportableMangaContent(r.extractDir),
         // BUG-2474：在线书架条目（Mihon / Aidoku）根目录只有占位 manga.json，
         // hasMangaContent 恒 false，但它按章下载的页图就在 <extractDir>/chapters/
@@ -107,7 +110,8 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         // 本机运行时能按需取页的在线条目（[OnlineMangaHostReader]）章章可读，
         // 一章没下也要出现在对端——iPhone 没有在线源宿主，互联是它读这些漫画的
         // 唯一途径。
-        hasMangaChapters: format == BookFormat.manga &&
+        hasMangaChapters:
+            format == BookFormat.manga &&
             ((r.extractDir.isNotEmpty && hasAnyChapterDirSync(r.extractDir)) ||
                 _servesOnlineMangaChapters(_onlineMangaReader, r)),
         mangaReadingMode: r.mangaReadingMode,
@@ -128,11 +132,13 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         // 收敛前仍以对端 bookKey 为键，窗口期内按 bookKey 也查一把，归属不闪断。
         // srt-backed 有声书兜底：该书以 srt|uid 入合集时，epub 两键都 miss，
         // 回退查 srt|uid（BUG-812）。散卡（三键都无）= null。
-        collection: membership[MediaKind.epub.compositeKey(r.uid)] ??
+        collection:
+            membership[MediaKind.epub.compositeKey(r.uid)] ??
             membership[MediaKind.epub.compositeKey(r.bookKey)] ??
             (srtUidByBookKey[r.bookKey] != null
-                ? membership[
-                    MediaKind.srt.compositeKey(srtUidByBookKey[r.bookKey]!)]
+                ? membership[MediaKind.srt.compositeKey(
+                    srtUidByBookKey[r.bookKey]!,
+                  )]
                 : null),
         progressPercent: progressByKey[r.bookKey]?.percent ?? 0,
         progressUpdatedAtMs: progressByKey[r.bookKey]?.updatedAtMs ?? 0,
@@ -191,7 +197,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
   /// （书的 MediaItem.mediaIdentifier = `hoshi://book/<bookKey>`）；时刻取
   /// `reader_positions.updatedAt`。两趟全表读，无逐书查询。
   Future<Map<String, ({int percent, int updatedAtMs})>>
-      _bookProgressByKey() async {
+  _bookProgressByKey() async {
     // v82：reader_positions 键 = 书 uid，wire/mediaId 面貌仍是 bookKey——
     // 经 epub_books 反查（uid → bookKey）后出 wire。
     final Map<String, String> bookKeyByUid = <String, String>{
@@ -234,8 +240,9 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // 与 EPUB 包同端点、导入侧内容嗅探分流。扩展名仍 .epub（端点/tmp 命名契约
     // 不变，内容即真相）。
     if (format == BookFormat.manga) {
-      final Directory tmpDir =
-          Directory.systemTemp.createTempSync('fushi_book_export');
+      final Directory tmpDir = await Directory.systemTemp.createTemp(
+        'fushi_book_export',
+      );
       final File out = File(p.join(tmpDir.path, '${row.bookKey}.epub'));
       final bool ok = await repackageMangaBook(row.extractDir, out.path);
       if (!ok) {
@@ -250,8 +257,9 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       throw StateError('book has no exportable EPUB root: $title');
     }
 
-    final Directory tmpDir =
-        Directory.systemTemp.createTempSync('fushi_book_export');
+    final Directory tmpDir = await Directory.systemTemp.createTemp(
+      'fushi_book_export',
+    );
     // 文件名用 title 但扩展名用 .epub，保证重导入时 fileName 是合法 epub 名。
     final String safeBasename = '${row.bookKey}.epub';
     final File out = File(p.join(tmpDir.path, safeBasename));
@@ -321,18 +329,19 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       required String bookKey,
       required String title,
       required int updatedAt,
-    }) adopt = _adoptOverrideTitle ??
+    })
+    adopt =
+        _adoptOverrideTitle ??
         ({
           required String bookKey,
           required String title,
           required int updatedAt,
-        }) =>
-            adoptOverrideTitleInDb(
-              _db,
-              bookKey: bookKey,
-              title: title,
-              updatedAt: updatedAt,
-            );
+        }) => adoptOverrideTitleInDb(
+          _db,
+          bookKey: bookKey,
+          title: title,
+          updatedAt: updatedAt,
+        );
     try {
       await adopt(
         bookKey: bookKey,
@@ -341,7 +350,11 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       );
     } catch (e, stack) {
       // 书已经入库了——显示名没落上不该把整个 PUT 变成 HTTP 500。
-      engineLog.log('LocalLibraryHostService.adoptPushedDisplayTitle', e, stack);
+      engineLog.log(
+        'LocalLibraryHostService.adoptPushedDisplayTitle',
+        e,
+        stack,
+      );
     }
   }
 
@@ -362,7 +375,10 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       // DB 事务：删除 EpubBooks 行及其所有关联行（readerPositions / bookmarks /
       // srtBooks / audioCues / audiobooks）。见 HBK-AUDIT-041。
       // TODO-1195 part B：用户删书记墓碑，避免旧备份合并导入时复活。
-      final int deleted = await _db.deleteEpubBook(row.bookKey, tombstone: true);
+      final int deleted = await _db.deleteEpubBook(
+        row.bookKey,
+        tombstone: true,
+      );
       // BUG-2945：再记同步删除墓碑。上面的 tombstone 只防旧备份复活，其它设备
       // 拉 /api/tombstones 读的是 sync_deletion_tombstones——host 不写，「从所有
       // 设备删除」就只删掉了发起端与 host 两份。
@@ -373,7 +389,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       // extractDir 磁盘目录：DB 删除后再清理（与 reader_fushi_source 同顺序）。
       if (row.extractDir.isNotEmpty) {
         final Directory dir = Directory(row.extractDir);
-        if (dir.existsSync()) await dir.delete(recursive: true);
+        if (await dir.exists()) await dir.delete(recursive: true);
       }
     });
   }
@@ -431,24 +447,30 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // （BUG-3537）。这里的读-比较-写也放进同一个 DB 事务，两边才互不插队：否则
     // 出站落地正好写在本端「读 current」与「写 winner」之间时，会被这里按旧的
     // current 算出的 winner 盖掉。
-    await _runSyncStateExclusive(() => _db.transaction(() async {
-      final RemoteBookProgress current = await getBookProgress(bookKey);
-      final RemoteBookProgress winner =
-          resolveBookProgressSync(local: current, remote: incoming);
-      if (winner.sectionIndex == current.sectionIndex &&
-          winner.normCharOffset == current.normCharOffset &&
-          winner.charOffset == current.charOffset &&
-          winner.updatedAtMs == current.updatedAtMs) {
-        return; // host 已存更新或相等，no-op。
-      }
-      await _db.upsertReaderPosition(ReaderPositionsCompanion(
-        bookUid: Value(hostBook.uid),
-        sectionIndex: Value(winner.sectionIndex),
-        normCharOffset: Value(winner.normCharOffset),
-        charOffset: Value(winner.charOffset),
-        updatedAt: Value(winner.updatedAtMs),
-      ));
-    }));
+    await _runSyncStateExclusive(
+      () => _db.transaction(() async {
+        final RemoteBookProgress current = await getBookProgress(bookKey);
+        final RemoteBookProgress winner = resolveBookProgressSync(
+          local: current,
+          remote: incoming,
+        );
+        if (winner.sectionIndex == current.sectionIndex &&
+            winner.normCharOffset == current.normCharOffset &&
+            winner.charOffset == current.charOffset &&
+            winner.updatedAtMs == current.updatedAtMs) {
+          return; // host 已存更新或相等，no-op。
+        }
+        await _db.upsertReaderPosition(
+          ReaderPositionsCompanion(
+            bookUid: Value(hostBook.uid),
+            sectionIndex: Value(winner.sectionIndex),
+            normCharOffset: Value(winner.normCharOffset),
+            charOffset: Value(winner.charOffset),
+            updatedAt: Value(winner.updatedAtMs),
+          ),
+        );
+      }),
+    );
   }
 
   /// 按 [id]（downloadId：bookKey 或 title）单查书封面磁盘路径（对称
@@ -473,11 +495,9 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
 EpubBookRow? _findBookByTitleOrKey(
   List<EpubBookRow> rows,
   String titleOrBookKey,
-) =>
-    rows.cast<EpubBookRow?>().firstWhere(
-          (EpubBookRow? r) =>
-              r!.bookKey == titleOrBookKey || r.title == titleOrBookKey,
-          orElse: () => null,
-        );
+) => rows.cast<EpubBookRow?>().firstWhere(
+  (EpubBookRow? r) => r!.bookKey == titleOrBookKey || r.title == titleOrBookKey,
+  orElse: () => null,
+);
 
 final RegExp _fushiBookKeyPattern = RegExp(r'^fushi://book/(.+)$');

@@ -3,7 +3,7 @@
 ///
 /// 只读：不写任何事件、不刷新缓存。复习记录读 `srs_stat_reviews`（有效复习投影，与卡片缓存
 /// 同一次重算产出，见 `SrsDbStore._cardCacheRow`）的定长列，不再全量读复习日志逐条
-/// jsonDecode 重放历史（BUG-3703：20 万条日志时那一段占装载的一半）。
+/// jsonDecode 重放历史（BUG-3770：20 万条日志时那一段占装载的一半）。
 library;
 
 import 'dart:math' as math;
@@ -110,11 +110,18 @@ Future<SrsStatsBundle> loadSrsStats(
   final int today = dayCtx.dayIndexOf(now);
   final SrsDeckTree tree = await store.deckTree();
 
+  // 前身卡（更改笔记类型 / 旧 Lapis 迁到 Fushi 卡片后隐藏的旧卡）的复习算到继承它历史的可见卡上，
+  // 与复习时用的 [SrsDbStore.history] 同一血统：否则迁移过来的卡在牌组统计里一条复习都没有。投影按
+  // 日志自己的卡存（分类已按血统历史定），归属在读时换。
+  final Map<String, String> owners = await store.historyOwnerIndex();
   final ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
-  history = srsStatsFromProjection(
-    await loadSrsStatProjection(db, store.profileUid),
-    dayCtx,
-  );
+  history = srsStatsFromProjection(<SrsStatProjection>[
+    for (final SrsStatProjection p in await loadSrsStatProjection(
+      db,
+      store.profileUid,
+    ))
+      if (owners[p.cardId] case final String owner) p.withCard(owner) else p,
+  ], dayCtx);
 
   final List<SrsCardCacheRow> cardRows = <SrsCardCacheRow>[
     for (final SrsCardCacheRow c in await store.allCardRows())

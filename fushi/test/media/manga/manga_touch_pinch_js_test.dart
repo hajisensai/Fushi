@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -88,22 +89,23 @@ void main() {
         try {
           final File html = File('${temp.path}/test.html')
             ..writeAsStringSync(documentFor(mode, cases));
-          final ProcessResult result = await Process.run(chrome!, <String>[
+          final _ChromeRun result = await _runChrome(chrome!, <String>[
             '--headless',
             '--no-sandbox',
             '--disable-gpu',
             '--no-first-run',
             '--disable-background-networking',
+            // Chrome 自己的日志进 stderr：卡住时失败信息里看得到它停在哪一步。
+            '--enable-logging=stderr',
             '--window-size=412,860',
             '--dump-dom',
             '--user-data-dir=${temp.path}/profile',
             html.uri.toString(),
-            // 比外层 90s 短：Chrome 真卡住时先由这里抛，错误里带得上 stderr。
-          ]).timeout(const Duration(seconds: 60));
-          expect(result.exitCode, 0, reason: '${result.stderr}');
+          ]);
+          expect(result.exitCode, 0, reason: result.stderr);
           final RegExpMatch? payload = RegExp(
             r'<pre id="results">([^<]+)</pre>',
-          ).firstMatch(result.stdout as String);
+          ).firstMatch(result.stdout);
           expect(
             payload,
             isNotNull,
@@ -126,4 +128,50 @@ void main() {
       timeout: const Timeout(Duration(seconds: 90)),
     );
   }
+}
+
+/// 一次 headless Chrome 运行的结果。
+typedef _ChromeRun = ({int exitCode, String stdout, String stderr});
+
+/// 起 headless Chrome 并等它退出、输出流关闭。
+///
+/// 不用 `Process.run(...).timeout(...)`：那样超时只抛一句不带上下文的
+/// `TimeoutException`，已收到的 stdout / stderr 全丢，Chrome 进程也不会被结束
+/// （CI 上这条用例卡死时日志里什么都没有）。这里边跑边收输出，超时就结束 Chrome
+/// 并把「浏览器进程是否已退出」和已收到的 stderr 一起报出来，区分是浏览器本身
+/// 没退出，还是它退出了而继承了输出管道的子进程还开着。
+/// 比外层 90 s 的测试超时短，保证由这里先报错。
+Future<_ChromeRun> _runChrome(String executable, List<String> args) async {
+  final Process process = await Process.start(executable, args);
+  final StringBuffer out = StringBuffer();
+  final StringBuffer err = StringBuffer();
+  final Future<void> outDone = process.stdout
+      .transform(utf8.decoder)
+      .forEach(out.write);
+  final Future<void> errDone = process.stderr
+      .transform(utf8.decoder)
+      .forEach(err.write);
+  int? exitCode;
+  final Future<int> exited = process.exitCode.then((int code) {
+    exitCode = code;
+    return code;
+  });
+  try {
+    await Future.wait<void>(<Future<void>>[
+      exited,
+      outDone,
+      errDone,
+    ]).timeout(const Duration(seconds: 60));
+  } on TimeoutException {
+    process.kill(ProcessSignal.sigkill);
+    final String tail = out.length > 2000
+        ? out.toString().substring(out.length - 2000)
+        : out.toString();
+    fail(
+      'headless Chrome 60 s 内没有结束（浏览器进程'
+      '${exitCode == null ? '仍在运行' : '已退出，exit $exitCode，但输出管道未关闭'}）。\n'
+      '--- stderr ---\n$err\n--- stdout（末尾）---\n$tail',
+    );
+  }
+  return (exitCode: exitCode!, stdout: out.toString(), stderr: err.toString());
 }

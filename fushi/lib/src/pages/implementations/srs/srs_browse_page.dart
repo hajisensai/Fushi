@@ -47,6 +47,9 @@ typedef SrsChangeNoteTypeFlow =
 /// 宽屏分栏（列表 + 预览）的最小宽度。
 const double kSrsBrowseSplitMinWidth = 840;
 
+/// 一次重算的结果：列表 + 搜索错误（null = 查询合法）。
+typedef _QueryResult = ({List<SrsBrowseItem> items, String? error});
+
 /// 本页撤销栈的一步（会话级，不同步——与复习页同一约定）。
 class _UndoEntry {
   const _UndoEntry(this.revert);
@@ -163,23 +166,34 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
         : srsFieldContainsQuery(field, _query.text);
   }
 
+  /// 每次装载快照的序号：先发起、后装完的旧装载作废（不覆盖新快照）。
+  int _loadGeneration = 0;
+
   Future<void> _reload() async {
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) return;
+    final int load = ++_loadGeneration;
+    // 快照只装列表要显示的列；字段原文等搜索 / 按字段排序真用到时才分页读（见 SrsBrowseSnapshot）。
     final SrsBrowseSnapshot snap = await SrsBrowseSnapshot.load(store);
-    // 首次搜索的大头是把字段文本传进原生内核：先在后台 isolate 上编好，再同步求值。
-    await snap.prepare(_effectiveQuery);
-    if (!mounted) return;
+    final int generation = ++_queryGeneration;
+    final _QueryResult result = await _compute(snap);
+    if (!mounted || load != _loadGeneration) {
+      snap.dispose();
+      return;
+    }
     final SrsBrowseSnapshot? previous = _snapshot;
     final bool first = previous == null;
+    final bool current = generation == _queryGeneration;
     setState(() {
       _snapshot = snap;
       _canSchedule = store.canSchedule;
       _loading = false;
-      _applyQuery();
+      if (current) _apply(result);
     });
     // 旧快照的搜索语料（原生侧可能有几百 MB 字段文本）不等 GC，换下来就释放。
     previous?.dispose();
+    // 算的期间查询 / 排序 / 模式又变了：在新快照上按最新的条件重算。
+    if (!current) _requery();
     // 带着 initialCardId 打开：列表首次出现后把这一行滚进视口。
     if (first && widget.initialCardId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -190,17 +204,27 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     }
   }
 
-  /// 按当前查询 / 排序 / 模式重算列表（同步，调用方负责 setState）。
-  void _applyQuery() {
-    final SrsBrowseSnapshot? snap = _snapshot;
-    if (snap == null) return;
+  /// 按当前查询 / 排序 / 模式在 [snap] 上算列表（字段文本按需分页读进原生内核、按字段排序的值
+  /// 按需读，都是异步的）。查询不合法 / 不支持时给出原因、列表为空。
+  Future<_QueryResult> _compute(SrsBrowseSnapshot snap) async {
     try {
-      _items = snap.query(query: _effectiveQuery, sort: _sort, mode: _mode);
-      _searchError = null;
+      return (
+        items: await snap.query(
+          query: _effectiveQuery,
+          sort: _sort,
+          mode: _mode,
+        ),
+        error: null,
+      );
     } on SrsSearchUnsupported catch (e) {
-      _items = const <SrsBrowseItem>[];
-      _searchError = e.reason;
+      return (items: const <SrsBrowseItem>[], error: e.reason);
     }
+  }
+
+  /// 换上一次重算的结果（调用方负责 setState）。
+  void _apply(_QueryResult result) {
+    _items = result.items;
+    _searchError = result.error;
     final Set<String> ids = <String>{
       for (final SrsBrowseItem i in _items) _idOf(i),
     };
@@ -212,17 +236,17 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   /// 每次重算的序号：慢的旧查询算完时若已有新查询，结果作废。
   int _queryGeneration = 0;
 
-  /// 按当前查询重算：先异步备好字段文本（大集合的未限定字段搜索要编码几百 MB，分给多个 isolate），
-  /// 再同步求值。
-  void _requery() => unawaited(_prepareAndRequery());
+  /// 按当前查询 / 排序 / 模式重算。
+  void _requery() => unawaited(_runQuery());
 
-  Future<void> _prepareAndRequery() async {
-    final int generation = ++_queryGeneration;
+  Future<void> _runQuery() async {
     final SrsBrowseSnapshot? snap = _snapshot;
-    if (snap != null) await snap.prepare(_effectiveQuery);
+    if (snap == null) return;
+    final int generation = ++_queryGeneration;
+    final _QueryResult result = await _compute(snap);
     if (!mounted || generation != _queryGeneration) return;
     if (!identical(snap, _snapshot)) return;
-    setState(_applyQuery);
+    setState(() => _apply(result));
   }
 
   void _onQueryChanged(String _) {
@@ -855,10 +879,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
                       ),
                     );
                 if (picked == null || !mounted) return;
-                setState(() {
-                  _sort = picked;
-                  _applyQuery();
-                });
+                setState(() => _sort = picked);
+                _requery();
               }),
             ),
             FushiActionChip(
@@ -867,10 +889,12 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
               label: _sort.ascending
                   ? t.srs_browse_sort_ascending
                   : t.srs_browse_sort_descending,
-              onPressed: () => setState(() {
-                _sort = _sort.copyWith(ascending: !_sort.ascending);
-                _applyQuery();
-              }),
+              onPressed: () {
+                setState(
+                  () => _sort = _sort.copyWith(ascending: !_sort.ascending),
+                );
+                _requery();
+              },
             ),
             FushiActionChip(
               key: const ValueKey<String>('srs-browse-mode'),
@@ -880,14 +904,16 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
               label: _mode == SrsBrowseMode.cards
                   ? t.srs_browse_mode_cards
                   : t.srs_browse_mode_notes,
-              onPressed: () => setState(() {
-                _mode = _mode == SrsBrowseMode.cards
-                    ? SrsBrowseMode.notes
-                    : SrsBrowseMode.cards;
-                _selected.clear();
-                _currentId = null;
-                _applyQuery();
-              }),
+              onPressed: () {
+                setState(() {
+                  _mode = _mode == SrsBrowseMode.cards
+                      ? SrsBrowseMode.notes
+                      : SrsBrowseMode.cards;
+                  _selected.clear();
+                  _currentId = null;
+                });
+                _requery();
+              },
             ),
           ],
         ),

@@ -126,4 +126,49 @@ void main() {
       expect(remoteCalls, 1, reason: '不可达的互联源进入冷却，第二次列表不再请求');
     },
   );
+
+  test('a local db lists every sub-source hit as its own menu item', () async {
+    final WordAudioResolver resolver = WordAudioResolver(
+      queryLocalAudio: (_, __) async => null,
+      queryLocalAudioByDbIndex: (_, __, int dbIndex) async =>
+          const <String, dynamic>{'file': 'u1/neko.mp3', 'source': 'forvo'},
+      queryLocalAudioListByDbIndex: (_, __, int dbIndex) async =>
+          <Map<String, dynamic>>[
+            <String, dynamic>{'file': 'u1/neko.mp3', 'source': 'forvo'},
+            <String, dynamic>{'file': 'u2/neko.mp3', 'source': 'forvo'},
+            <String, dynamic>{'file': 'neko.mp3', 'source': 'nhk16'},
+            <String, dynamic>{'file': 'gone.mp3', 'source': 'jpod'},
+          ],
+      extractLocalAudio:
+          (String file, String source, {int dbIndex = 0}) async =>
+              file == 'gone.mp3' ? null : '/cache/$source-${file.hashCode}.mp3',
+    );
+    final List<AudioSourceConfig> sources = <AudioSourceConfig>[
+      AudioSourceConfig.localAudio(
+        label: 'android.db',
+        path: '/db',
+        enabled: true,
+      ),
+    ];
+
+    final List<WordAudioCandidate> list = await resolver.listConfigured(
+      expression: '猫',
+      reading: 'ねこ',
+      sources: sources,
+    );
+    final String? first = await resolver.resolveConfigured(
+      expression: '猫',
+      reading: 'ねこ',
+      sources: sources,
+    );
+
+    // 提取失败的一条（gone.mp3）不进菜单；同子来源多条带目录名区分。
+    expect(list.map((WordAudioCandidate c) => c.variant).toList(), <String>[
+      'forvo · u1',
+      'forvo · u2',
+      'nhk16',
+    ]);
+    // 首项与单击 ♪ 播的默认一致。
+    expect(list.first.ref, first);
+  });
 }

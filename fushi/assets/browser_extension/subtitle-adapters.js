@@ -447,8 +447,70 @@ function pickPrimaryCueTrack(store, videoKey, liveLang, preferredLang) {
   return candidates[0];
 }
 
+// ── 字幕轨列表次序与活动轨（扩展面板 / Side Panel / 播放器内嵌菜单 / app 内浏览器共用）──
+// 此前只活在 subtitle-panel.js 的 IIFE 闭包里，app 内浏览器的 YouTube 页内字幕够不着，只好
+// 自己另写一套排序（还复制了一份 youtube-bridge 的 trackLabel），两边选出来的轨不一样。
+// 规则只有一份，就在这里：
+//   ① 列表：已加载整轨在前、按需加载的占位轨其次、DOM 实时采样（live）垫底；同档按 store
+//      key 的语言段（= youtube-bridge trackLabel）字典序。没有任何语言偏好设置——「先取哪条」
+//      由 youtube-bridge 的 prioritizeCaptionTracks（当前音轨默认字幕轨 → 音轨同语言 → 人工轨
+//      → 其余）决定，它只急取头一条，于是「已加载」档里通常就是那一条。
+//   ② 活动轨：上次选中的轨还在就保持；没有（换视频 / 第一次）→ 列表第一条；当前是 live 而
+//      整轨到了 → 升级到列表第一条。活动轨是占位时由调用方请桥按需取（fushiRequestLazyTrack）。
+
+/**
+ * 当前视频的全部字幕轨（含占位轨），按 ① 的次序。
+ * @param {Object|null} store window.fushiEpisodeCues
+ * @param {string} videoKey
+ * @param {Object|null} lazyTracks window.fushiLazyTracks（key → true）
+ * @param {string} liveLang DOM 采样伪轨的语言段（'live'）
+ * @returns {Array<{lang:string,key:string,cues:Array,pending?:boolean}>}
+ */
+function fushiListSubtitleTracks(store, videoKey, lazyTracks, liveLang) {
+  const out = [];
+  if (!store || !videoKey) return out;
+  for (const key in store) {
+    const sep = key.indexOf('|');
+    if (sep < 0) continue;
+    if (key.slice(0, sep) !== String(videoKey)) continue;
+    const cues = store[key];
+    if (cues && cues.length) out.push({ lang: key.slice(sep + 1), key: key, cues: cues });
+    // BUG-2194：按需加载的占位轨（清单已到、cue 未取）也列出来，让用户能选中触发加载。
+    else if (lazyTracks && lazyTracks[key]) {
+      out.push({ lang: key.slice(sep + 1), key: key, cues: [], pending: true });
+    }
+  }
+  out.sort(function (a, b) {
+    const al = a.lang === liveLang ? 2 : (a.pending ? 1 : 0);
+    const bl = b.lang === liveLang ? 2 : (b.pending ? 1 : 0);
+    if (al !== bl) return al - bl;
+    return a.lang < b.lang ? -1 : (a.lang > b.lang ? 1 : 0);
+  });
+  return out;
+}
+
+/**
+ * 按 ② 定活动轨。
+ * @param {Array<{lang:string}>} tracks fushiListSubtitleTracks 的结果
+ * @param {?string} activeLang 当前活动轨的语言段（null = 还没选）
+ * @param {string} liveLang
+ * @returns {?Object} tracks 里的一项；没有轨 → null
+ */
+function fushiResolveActiveSubtitleTrack(tracks, activeLang, liveLang) {
+  if (!Array.isArray(tracks) || !tracks.length) return null;
+  let active = null;
+  for (let i = 0; i < tracks.length; i++) {
+    if (tracks[i].lang === activeLang) active = tracks[i];
+  }
+  const fullTrackArrived = activeLang === liveLang && tracks[0].lang !== liveLang;
+  if (!active || fullTrackArrived) active = tracks[0];
+  return active;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    fushiListSubtitleTracks,
+    fushiResolveActiveSubtitleTrack,
     extractNetflixCueText,
     currentVideoTimeMs,
     netflixVideoIdFromPath,

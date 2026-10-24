@@ -46,4 +46,7 @@ public final class ChannelNames {
     // 全局悬浮球：Android 系统常驻球（FloatingBallService）+ 截屏 OCR（ScreenOcrService）。
     // 契约见 docs/specs/2026-09-28-floating-ball.md，实现见 FloatingBallChannel。
     public static final String FLOATING_BALL = PREFIX + "/floating_ball";
+    // 系统代理（Wi-Fi 手动 / PAC / 全局 HTTP 代理）：Dart 出站代理自动模式读它，
+    // 实现见 SystemProxyChannel，Dart 门面 android_system_proxy.dart。
+    public static final String SYSTEM_PROXY = PREFIX + "/system_proxy";
 }

@@ -25,10 +25,14 @@
 //!   frwkv_model_load / frwkv_model_kind / frwkv_model_free /
 //!   frwkv_runtime_new / frwkv_runtime_free / frwkv_runtime_replay / frwkv_runtime_query /
 //!   frwkv_runtime_next_intervals /
+//!   frwkv_runtime_append / frwkv_runtime_unappend /
+//!   frwkv_runtime_scores_clear / frwkv_runtime_scores_lookup / frwkv_runtime_scores_update /
+//!   frwkv_runtime_scores_requery / frwkv_runtime_scores_remove /
 //!   frwkv_runtime_snapshot / frwkv_runtime_restore / frwkv_runtime_reset / frwkv_runtime_stats /
 //!   frwkv_last_error / frwkv_free_string / frwkv_free_bytes
 
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{c_char, CString};
 use std::io;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -43,7 +47,7 @@ mod rwkv;
 mod curve;
 
 pub use curve::{answer_intervals, AnswerCurve};
-pub use rwkv::small::{SmallHeads, SmallInference, SmallModel};
+pub use rwkv::small::{SmallHeads, SmallInference, SmallModel, SmallUndo};
 pub use rwkv::{
     forecast_query, predict_curve, ReviewInput, RwkvInference, RwkvModel, RwkvStats, StatePrecision,
 };
@@ -51,7 +55,25 @@ pub use rwkv::{
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。
 /// 2：加小模型（[ModelKind::Small]）、int4 精度、[FRWKV_PRECISION_DEFAULT]、`frwkv_model_kind`、
 /// `frwkv_runtime_next_intervals`。
-pub const ABI_VERSION: i32 = 2;
+/// 3：撤销日志（`frwkv_runtime_append` / `frwkv_runtime_unappend`）与常驻分数表
+/// （`frwkv_runtime_scores_clear` / `_lookup` / `_update`）。
+pub const ABI_VERSION: i32 = 3;
+
+/// 撤销日志最多留多少字节（小模型一条约 54 KB：卡 / 笔记两份紧凑状态 + 牌组 / 预设 / 全局三份
+/// f32 状态，16 MB 约 300 条）。超出时丢最早的条目；撤得比这更深的由调用方全量重建。
+pub const JOURNAL_MAX_BYTES: usize = 16 << 20;
+
+/// 分数表的一项：查询时这张卡的「版本」（调用方给，例如最后一条有效日志的 hash）、查询行、
+/// 锚点（这张卡最后一条保留评分的时刻，毫秒；没有 = -1）与 R。查询行与锚点让
+/// [RwkvRuntime::scores_requery] 不必回到调用方读历史就能把整张表按新的「此刻」重算。
+#[derive(Clone, Debug)]
+struct ScoreEntry {
+    version: u64,
+    note_key: i64,
+    query: ReviewInput,
+    anchor_ms: i64,
+    score: f32,
+}
 
 /// 搬运来源（写进 UPSTREAM.md，运行时可查）。
 pub const UPSTREAM_REPO: &str = "https://github.com/Pedrubik2000/kuma3-anki-core";
@@ -227,6 +249,14 @@ pub struct RwkvRuntime {
     pool: Option<rayon::ThreadPool>,
     /// 回放途中 panic 过：状态可能只更新了一半。
     poisoned: bool,
+    /// 撤销日志（[Self::append] 追加、[Self::unappend] 弹出）：(调用方给的标签, 被覆盖的状态)，
+    /// 最新的在末尾。别的改状态的调用（[Self::replay] / restore / reset）清空它。
+    journal: Vec<(u64, SmallUndo)>,
+    journal_bytes: usize,
+    /// 常驻分数表：卡 id → 上次查询的 R（[Self::scores_update]）。回放 / 撤回一条复习时，
+    /// 同一张卡与同一条笔记的项作废（它们的卡 / 笔记状态变了）；牌组 / 预设 / 全局状态的变化
+    /// 不作废别的项——调用方在换日、换设置、同步合并后 [Self::scores_clear] 全量刷新。
+    scores: HashMap<i64, ScoreEntry>,
 }
 
 /// [RwkvRuntime] 的错误。
@@ -238,6 +268,8 @@ pub enum RwkvError {
     Data(String),
     /// 之前一次调用 panic，状态不可信；需 reset 或 restore。
     Poisoned,
+    /// 这个模型不支持该操作（撤销日志只有小模型有）。
+    Unsupported(String),
 }
 
 impl std::fmt::Display for RwkvError {
@@ -249,6 +281,7 @@ impl std::fmt::Display for RwkvError {
                 f,
                 "runtime state is unusable after an earlier panic; reset or restore a snapshot"
             ),
+            Self::Unsupported(message) => write!(f, "unsupported: {message}"),
         }
     }
 }
@@ -292,6 +325,9 @@ impl RwkvRuntime {
             kind: model.kind(),
             pool,
             poisoned: false,
+            journal: Vec::new(),
+            journal_bytes: 0,
+            scores: HashMap::new(),
         })
     }
 
@@ -343,6 +379,8 @@ impl RwkvRuntime {
             }
             inputs.push(input);
         }
+        self.clear_journal();
+        self.invalidate_scores(inputs.iter().filter(|input| input.ease.is_some()));
         let Self {
             inference,
             pool,
@@ -526,6 +564,8 @@ impl RwkvRuntime {
     pub fn restore(&mut self, bytes: &[u8]) -> Result<(), RwkvError> {
         self.inference.restore_snapshot(bytes)?;
         self.poisoned = false;
+        self.clear_journal();
+        self.scores.clear();
         Ok(())
     }
 
@@ -533,11 +573,265 @@ impl RwkvRuntime {
     pub fn reset(&mut self) {
         self.inference.reset();
         self.poisoned = false;
+        self.clear_journal();
+        self.scores.clear();
+    }
+
+    fn clear_journal(&mut self) {
+        self.journal.clear();
+        self.journal_bytes = 0;
+    }
+
+    /// 作废这些复习的卡与笔记在分数表里的项。
+    fn invalidate_scores<'a>(&mut self, reviews: impl Iterator<Item = &'a ReviewInput>) {
+        if self.scores.is_empty() {
+            return;
+        }
+        let mut cards = HashSet::new();
+        let mut notes = HashSet::new();
+        for review in reviews {
+            cards.insert(review.card_id);
+            notes.insert(note_key(review));
+        }
+        if cards.is_empty() {
+            return;
+        }
+        self.scores
+            .retain(|card, entry| !cards.contains(card) && !notes.contains(&entry.note_key));
+    }
+
+    /// 撤销日志里有几条（测试 / 诊断）。
+    pub fn journal_len(&self) -> usize {
+        self.journal.len()
+    }
+
+    /// 按时间顺序追加已答复习，每条记一条撤销日志（标签 `tags[i]`），之后可用 [Self::unappend]
+    /// 原样撤回。状态与 [Self::replay] 同一批输入逐位相同（逐条处理；块边界不改结果）。
+    /// 只有小模型支持（大模型返回 [RwkvError::Unsupported]，调用方改用 replay）；每行必须有
+    /// 评分；校验同 [Self::replay]，整批通过才应用。
+    pub fn append(&mut self, reviews: &[ReviewInput], tags: &[u64]) -> Result<(), RwkvError> {
+        if self.poisoned {
+            return Err(RwkvError::Poisoned);
+        }
+        if tags.len() != reviews.len() {
+            return Err(RwkvError::Input("tags and reviews differ in length".into()));
+        }
+        if !matches!(self.inference, Engine::Small(_)) {
+            return Err(RwkvError::Unsupported(
+                "the undo journal needs the small model".into(),
+            ));
+        }
+        let mut last_day = self.inference.last_day_offset();
+        let mut inputs = Vec::with_capacity(reviews.len());
+        for (index, review) in reviews.iter().enumerate() {
+            let mut input = review.clone();
+            input.is_query = false;
+            if input.ease.is_none() {
+                return Err(RwkvError::Input(format!("review {index}: no rating")));
+            }
+            validate_answer(&input, last_day)
+                .map_err(|message| RwkvError::Input(format!("review {index}: {message}")))?;
+            last_day = input.day_offset;
+            inputs.push(input);
+        }
+        self.invalidate_scores(inputs.iter());
+        let Self {
+            inference,
+            pool,
+            poisoned,
+            journal,
+            journal_bytes,
+            ..
+        } = self;
+        let Engine::Small(small) = inference else {
+            unreachable!("checked above")
+        };
+        let outcome = catch_unwind(AssertUnwindSafe(|| {
+            install(pool, || -> io::Result<()> {
+                for (input, &tag) in inputs.into_iter().zip(tags) {
+                    let undo = small.append_journaled(input)?;
+                    *journal_bytes += undo.bytes();
+                    journal.push((tag, undo));
+                }
+                Ok(())
+            })
+        }));
+        match outcome {
+            Ok(result) => {
+                result?;
+                self.trim_journal();
+                Ok(())
+            }
+            Err(panic) => {
+                *poisoned = true;
+                std::panic::resume_unwind(panic)
+            }
+        }
+    }
+
+    fn trim_journal(&mut self) {
+        let mut drop = 0;
+        while drop < self.journal.len() && self.journal_bytes > JOURNAL_MAX_BYTES {
+            self.journal_bytes -= self.journal[drop].1.bytes();
+            drop += 1;
+        }
+        self.journal.drain(..drop);
+    }
+
+    /// 撤回最近一条 [Self::append]——仅当它的标签是 `tag`（返回 true）。否则（日志空、最近一条
+    /// 不是它、或之后有过 replay / restore / reset）什么都不改、返回 false，调用方全量重建。
+    /// 撤回后的状态与「从没回放过这条」逐位相同（ID 编码在之后没有新抽取时一并收回）。
+    pub fn unappend(&mut self, tag: u64) -> Result<bool, RwkvError> {
+        if self.poisoned {
+            return Err(RwkvError::Poisoned);
+        }
+        if self.journal.last().map(|(top, _)| *top) != Some(tag) {
+            return Ok(false);
+        }
+        let (_, undo) = self.journal.pop().expect("checked above");
+        self.journal_bytes -= undo.bytes();
+        let Engine::Small(small) = &mut self.inference else {
+            unreachable!("only the small model journals")
+        };
+        let (card, note) = undo.affected();
+        small.rewind(undo);
+        self.scores
+            .retain(|id, entry| *id != card && entry.note_key != note);
+        Ok(true)
+    }
+
+    /// 清空分数表（换日 / 换设置 / 同步合并后全量刷新）。
+    pub fn scores_clear(&mut self) {
+        self.scores.clear();
+    }
+
+    /// 分数表里这些卡的 R：项存在且版本一致才算命中（`Some`）。不改状态。
+    pub fn scores_lookup(&self, card_ids: &[i64], versions: &[u64]) -> Vec<Option<f32>> {
+        card_ids
+            .iter()
+            .zip(versions)
+            .map(|(id, version)| {
+                self.scores
+                    .get(id)
+                    .filter(|entry| entry.version == *version)
+                    .map(|entry| entry.score)
+            })
+            .collect()
+    }
+
+    /// 按 [Self::query] 算这些查询行的 R，记进分数表（键 = 卡 id，带 `versions[i]` 与锚点
+    /// `anchors_ms[i]`），并返回。与直接 [Self::query] 同一批行逐位相同；每行的 R 不取决于同批
+    /// 别的行（测试核对）。
+    pub fn scores_update(
+        &mut self,
+        queries: &[ReviewInput],
+        versions: &[u64],
+        anchors_ms: &[i64],
+    ) -> Result<Vec<f32>, RwkvError> {
+        if versions.len() != queries.len() || anchors_ms.len() != queries.len() {
+            return Err(RwkvError::Input(
+                "versions / anchors and queries differ in length".into(),
+            ));
+        }
+        let values = self.query(queries)?;
+        for (((query, &version), &anchor_ms), &score) in
+            queries.iter().zip(versions).zip(anchors_ms).zip(&values)
+        {
+            self.scores.insert(
+                query.card_id,
+                ScoreEntry {
+                    version,
+                    note_key: note_key(query),
+                    query: query.clone(),
+                    anchor_ms,
+                    score,
+                },
+            );
+        }
+        Ok(values)
+    }
+
+    /// 全量刷新分数表（换日 / 定时防漂移）：把每一项的查询行改成「第 `today` 个调度日、此刻
+    /// `now_ms`」再整批重查，版本不变。查询行的改法与调用方构造「此刻」行的规则一致（Dart
+    /// `srsRwkvAddNowRow`）：`day_offset = today`；有锚点的行 `elapsed_days = today - 上次评分的
+    /// 调度日`（由旧行的 `day_offset - elapsed_days` 得出）、`elapsed_seconds = (now - 锚点) / 1000`
+    /// （向零截断，下限 0）；card_type 在跨日后是 2（复习），仍在同一调度日时沿用旧值。旧行是跨日
+    /// 行、新时刻却回到了上次评分那天（时钟回拨）时，没法确定 card_type：这一项删掉，由调用方按
+    /// 历史重算。返回重查的行数。
+    pub fn scores_requery(&mut self, today: i64, now_ms: i64) -> Result<usize, RwkvError> {
+        let mut ids = Vec::with_capacity(self.scores.len());
+        let mut rows = Vec::with_capacity(self.scores.len());
+        let mut drop = Vec::new();
+        for (&id, entry) in &self.scores {
+            match requery_row(&entry.query, entry.anchor_ms, today, now_ms) {
+                Some(row) => {
+                    ids.push(id);
+                    rows.push(row);
+                }
+                None => drop.push(id),
+            }
+        }
+        for id in drop {
+            self.scores.remove(&id);
+        }
+        // 按卡 id 排序：ID 编码只在首次见到的实体上抽取，固定顺序让结果与表的内部顺序无关。
+        let mut order: Vec<usize> = (0..ids.len()).collect();
+        order.sort_unstable_by_key(|&i| ids[i]);
+        let rows: Vec<ReviewInput> = order.iter().map(|&i| rows[i].clone()).collect();
+        let values = self.query(&rows)?;
+        for (row, score) in rows.into_iter().zip(values) {
+            if let Some(entry) = self.scores.get_mut(&row.card_id) {
+                entry.query = row;
+                entry.score = score;
+            }
+        }
+        Ok(order.len())
+    }
+
+    /// 从分数表删掉这些卡的项（卡被永久清除：它不会再成为候选，留着只占内存、整表刷新时白算）。
+    /// 返回真删掉的项数。
+    pub fn scores_remove(&mut self, card_ids: &[i64]) -> usize {
+        card_ids
+            .iter()
+            .filter(|id| self.scores.remove(id).is_some())
+            .count()
+    }
+
+    /// 分数表项数（测试 / 诊断）。
+    pub fn scores_len(&self) -> usize {
+        self.scores.len()
     }
 
     pub fn stats(&self) -> RwkvStats {
         self.inference.stats()
     }
+}
+
+/// [RwkvRuntime::scores_requery] 的行变换；`None` = 定不了 card_type（见该函数）。
+fn requery_row(old: &ReviewInput, anchor_ms: i64, today: i64, now_ms: i64) -> Option<ReviewInput> {
+    let mut row = old.clone();
+    row.day_offset = Some(today);
+    if anchor_ms < 0 {
+        return Some(row);
+    }
+    let old_day = old.day_offset?;
+    let last_day = old_day - old.current_elapsed_days?.max(0);
+    row.current_elapsed_days = Some((today - last_day).clamp(0, 1 << 40));
+    row.current_elapsed_seconds = Some(((now_ms - anchor_ms) / 1000).clamp(0, 1 << 50));
+    let was_same_day = old_day == last_day;
+    if today != last_day {
+        row.card_type = Some(2);
+    } else if !was_same_day {
+        return None;
+    }
+    Some(row)
+}
+
+/// 一行所属笔记在状态里的键（没给 note_id 的行是每卡一条占位笔记，与小模型的 `stream_keys` 一致）。
+fn note_key(input: &ReviewInput) -> i64 {
+    input
+        .note_id
+        .unwrap_or(rwkv::ID_PLACEHOLDER_NOTE_BASE + input.card_id)
 }
 
 fn install<R: Send>(pool: &Option<rayon::ThreadPool>, f: impl FnOnce() -> R + Send) -> R {
@@ -603,6 +897,8 @@ pub const FRWKV_ERR_DATA: i32 = -3;
 pub const FRWKV_ERR_PANIC: i32 = -4;
 /// runtime 在之前的 panic 后不可用：调 reset 或 restore。
 pub const FRWKV_ERR_POISONED: i32 = -5;
+/// 这个模型不支持该操作（撤销日志只有小模型有）。
+pub const FRWKV_ERR_UNSUPPORTED: i32 = -6;
 
 /// [FrwkvReview::present] 的位：对应字段有值（否则视为上游的 `None`）。
 pub const FRWKV_HAS_NOTE_ID: u32 = 1 << 0;
@@ -759,6 +1055,7 @@ fn error_code(error: &RwkvError) -> i32 {
         RwkvError::Input(_) => FRWKV_ERR_INPUT,
         RwkvError::Data(_) => FRWKV_ERR_DATA,
         RwkvError::Poisoned => FRWKV_ERR_POISONED,
+        RwkvError::Unsupported(_) => FRWKV_ERR_UNSUPPORTED,
     }
 }
 
@@ -797,6 +1094,23 @@ unsafe fn slice_or_empty<'a, T>(ptr: *const T, len: usize) -> Option<&'a [T]> {
     } else {
         Some(std::slice::from_raw_parts(ptr, len))
     }
+}
+
+/// 查询行 → 输入。未知 present 位的行：给一个必然不合法的输入（无 day_offset）→ NaN。
+fn query_input(row: &FrwkvReview) -> ReviewInput {
+    row.to_input(true).unwrap_or(ReviewInput {
+        card_id: row.card_id,
+        note_id: None,
+        deck_id: None,
+        preset_id: None,
+        is_query: true,
+        ease: None,
+        duration_millis: None,
+        card_type: None,
+        day_offset: None,
+        current_elapsed_days: None,
+        current_elapsed_seconds: None,
+    })
 }
 
 #[no_mangle]
@@ -957,31 +1271,205 @@ pub unsafe extern "C" fn frwkv_runtime_query(
         if count > 0 && out_retrievability.is_null() {
             return Err(argument("null output"));
         }
-        // 未知 present 位的行：给一个必然不合法的输入（无 day_offset）→ NaN。
-        let inputs: Vec<ReviewInput> = rows
-            .iter()
-            .map(|row| {
-                row.to_input(true).unwrap_or(ReviewInput {
-                    card_id: row.card_id,
-                    note_id: None,
-                    deck_id: None,
-                    preset_id: None,
-                    is_query: true,
-                    ease: None,
-                    duration_millis: None,
-                    card_type: None,
-                    day_offset: None,
-                    current_elapsed_days: None,
-                    current_elapsed_seconds: None,
-                })
-            })
-            .collect();
+        let inputs: Vec<ReviewInput> = rows.iter().map(query_input).collect();
         let values = runtime.0.query(&inputs).map_err(rwkv_error)?;
         if count > 0 {
             std::slice::from_raw_parts_mut(out_retrievability, count).copy_from_slice(&values);
         }
         Ok(())
     })
+}
+
+/// 按时间顺序追加 `count` 条已答复习，每条记一条撤销日志（标签 `tags[i]`，例如这条日志 id 的
+/// hash），见 [RwkvRuntime::append]。状态与 [frwkv_runtime_replay] 同一批行逐位相同。
+/// 每行必须有评分；不合法 → [FRWKV_ERR_INPUT]（整批不应用）；大模型 → [FRWKV_ERR_UNSUPPORTED]。
+///
+/// # Safety
+/// `runtime` 有效；`reviews` 指向 `count` 个 [FrwkvReview]；`tags` 指向 `count` 个 u64。
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_runtime_append(
+    runtime: *mut FrwkvRuntime,
+    reviews: *const FrwkvReview,
+    tags: *const u64,
+    count: usize,
+) -> i32 {
+    guarded(|| {
+        let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
+        let rows = slice_or_empty(reviews, count).ok_or_else(|| argument("null reviews"))?;
+        let tags = slice_or_empty(tags, count).ok_or_else(|| argument("null tags"))?;
+        let inputs = rows
+            .iter()
+            .enumerate()
+            .map(|(index, row)| {
+                row.to_input(false).ok_or_else(|| {
+                    (
+                        FRWKV_ERR_INPUT,
+                        format!("invalid input: review {index}: unknown present bits"),
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        runtime.0.append(&inputs, tags).map_err(rwkv_error)
+    })
+}
+
+/// 撤回最近一条 [frwkv_runtime_append]，仅当它的标签是 `tag`：返回 1；不是（或日志已被 replay /
+/// restore / reset 清空、超出容量被丢弃）返回 0，状态不变——调用方全量重建。
+///
+/// # Safety
+/// `runtime` 有效。
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_runtime_unappend(runtime: *mut FrwkvRuntime, tag: u64) -> i32 {
+    let mut rewound = false;
+    let code = guarded(|| {
+        let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
+        rewound = runtime.0.unappend(tag).map_err(rwkv_error)?;
+        Ok(())
+    });
+    if code == FRWKV_OK {
+        i32::from(rewound)
+    } else {
+        code
+    }
+}
+
+/// 清空常驻分数表（[RwkvRuntime::scores_clear]）。
+///
+/// # Safety
+/// `runtime` 有效。
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_runtime_scores_clear(runtime: *mut FrwkvRuntime) -> i32 {
+    guarded(|| {
+        let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
+        runtime.0.scores_clear();
+        Ok(())
+    })
+}
+
+/// 在分数表里查 `count` 张卡（id 与版本）：命中的写 R 到 `out_scores[i]`、`out_found[i] = 1`；
+/// 没有或版本不同的写 NaN / 0。返回命中数（≥ 0）。不改状态。
+///
+/// # Safety
+/// `runtime` 有效；`card_ids` / `versions` 各指向 `count` 个元素；`out_scores` / `out_found`
+/// 各可写 `count` 个元素。
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_runtime_scores_lookup(
+    runtime: *const FrwkvRuntime,
+    card_ids: *const i64,
+    versions: *const u64,
+    count: usize,
+    out_scores: *mut f32,
+    out_found: *mut u8,
+) -> i32 {
+    let mut found = 0usize;
+    let code = guarded(|| {
+        let runtime = runtime.as_ref().ok_or_else(|| argument("null runtime"))?;
+        let ids = slice_or_empty(card_ids, count).ok_or_else(|| argument("null card ids"))?;
+        let versions = slice_or_empty(versions, count).ok_or_else(|| argument("null versions"))?;
+        if count > 0 && (out_scores.is_null() || out_found.is_null()) {
+            return Err(argument("null output"));
+        }
+        if count == 0 {
+            return Ok(());
+        }
+        let scores = std::slice::from_raw_parts_mut(out_scores, count);
+        let hits = std::slice::from_raw_parts_mut(out_found, count);
+        for (index, value) in runtime.0.scores_lookup(ids, versions).into_iter().enumerate() {
+            scores[index] = value.unwrap_or(f32::NAN);
+            hits[index] = u8::from(value.is_some());
+            found += usize::from(value.is_some());
+        }
+        Ok(())
+    });
+    if code == FRWKV_OK {
+        i32::try_from(found).unwrap_or(i32::MAX)
+    } else {
+        code
+    }
+}
+
+/// 按查询算 `count` 行的 R（与 [frwkv_runtime_query] 逐位相同，不合法行 NaN），写进分数表
+/// （键 = 卡 id，版本 `versions[i]`，锚点 `anchors_ms[i]` = 这张卡最后一条保留评分的时刻、
+/// 没有给 -1）并写到 `out_retrievability`。
+///
+/// # Safety
+/// `runtime` 有效；`queries` 指向 `count` 个 [FrwkvReview]；`versions` / `anchors_ms` 各指向
+/// `count` 个元素；`out_retrievability` 可写 `count` 个 f32。
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_runtime_scores_update(
+    runtime: *mut FrwkvRuntime,
+    queries: *const FrwkvReview,
+    versions: *const u64,
+    anchors_ms: *const i64,
+    count: usize,
+    out_retrievability: *mut f32,
+) -> i32 {
+    guarded(|| {
+        let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
+        let rows = slice_or_empty(queries, count).ok_or_else(|| argument("null queries"))?;
+        let versions = slice_or_empty(versions, count).ok_or_else(|| argument("null versions"))?;
+        let anchors = slice_or_empty(anchors_ms, count).ok_or_else(|| argument("null anchors"))?;
+        if count > 0 && out_retrievability.is_null() {
+            return Err(argument("null output"));
+        }
+        let inputs: Vec<ReviewInput> = rows.iter().map(query_input).collect();
+        let values = runtime
+            .0
+            .scores_update(&inputs, versions, anchors)
+            .map_err(rwkv_error)?;
+        if count > 0 {
+            std::slice::from_raw_parts_mut(out_retrievability, count).copy_from_slice(&values);
+        }
+        Ok(())
+    })
+}
+
+/// 从分数表删掉 `count` 张卡的项（[RwkvRuntime::scores_remove]）。返回删掉的项数（≥ 0）。
+///
+/// # Safety
+/// `runtime` 有效；`card_ids` 指向 `count` 个元素。
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_runtime_scores_remove(
+    runtime: *mut FrwkvRuntime,
+    card_ids: *const i64,
+    count: usize,
+) -> i32 {
+    let mut removed = 0usize;
+    let code = guarded(|| {
+        let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
+        let ids = slice_or_empty(card_ids, count).ok_or_else(|| argument("null card ids"))?;
+        removed = runtime.0.scores_remove(ids);
+        Ok(())
+    });
+    if code == FRWKV_OK {
+        i32::try_from(removed).unwrap_or(i32::MAX)
+    } else {
+        code
+    }
+}
+
+/// 全量刷新分数表（[RwkvRuntime::scores_requery]）：按第 `today` 个调度日、此刻 `now_ms` 重算
+/// 每一项。返回重查的项数（≥ 0）。
+///
+/// # Safety
+/// `runtime` 有效。
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_runtime_scores_requery(
+    runtime: *mut FrwkvRuntime,
+    today: i64,
+    now_ms: i64,
+) -> i32 {
+    let mut count = 0usize;
+    let code = guarded(|| {
+        let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
+        count = runtime.0.scores_requery(today, now_ms).map_err(rwkv_error)?;
+        Ok(())
+    });
+    if code == FRWKV_OK {
+        i32::try_from(count).unwrap_or(i32::MAX)
+    } else {
+        code
+    }
 }
 
 /// 作答时排程（[RwkvRuntime::next_intervals]）：`answer` 是这次作答的复习行（`ease` 被忽略，

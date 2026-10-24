@@ -138,9 +138,11 @@ void main() {
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: tmp);
 
     await pumpShell(tester);
-    // 从没写过偏好 = 出厂默认分页滑动（老用户升级上来同样如此）。
-    expect(styleRow().selected(settingsContext), AdaptiveNavBarStyle.pager);
-    expect(styleRow().defaultValue, AdaptiveNavBarStyle.pager);
+    // 从没写过偏好 = 出厂默认相机模式条（老用户升级上来同样如此）。
+    expect(styleRow().selected(settingsContext), AdaptiveNavBarStyle.modeStrip);
+    expect(styleRow().defaultValue, AdaptiveNavBarStyle.modeStrip);
+
+    await choose(tester, AdaptiveNavBarStyle.pager);
     expect(visible(), <String>['T0', 'T1', 'T2', 'T3', 'T4']);
     expect(onBar(t.home_nav_more), isFalse);
 
@@ -159,10 +161,17 @@ void main() {
     expect(visible(), <String>['T0', 'T1', 'T2', 'T3', 'T4']);
   });
 
-  test('没写过 / 未知值回落出厂默认分页；显式值原样读回', () {
-    expect(AdaptiveNavBarStyle.defaultStyle, AdaptiveNavBarStyle.pager);
-    expect(AdaptiveNavBarStyle.fromPref(''), AdaptiveNavBarStyle.pager);
-    expect(AdaptiveNavBarStyle.fromPref('launcher'), AdaptiveNavBarStyle.pager);
+  test('没写过 / 未知值回落出厂默认相机模式条；显式值原样读回', () {
+    expect(AdaptiveNavBarStyle.defaultStyle, AdaptiveNavBarStyle.modeStrip);
+    expect(AdaptiveNavBarStyle.fromPref(''), AdaptiveNavBarStyle.modeStrip);
+    expect(
+      AdaptiveNavBarStyle.fromPref('launcher'),
+      AdaptiveNavBarStyle.modeStrip,
+    );
+    expect(
+      AdaptiveNavBarStyle.fromPref('mode_strip'),
+      AdaptiveNavBarStyle.modeStrip,
+    );
     expect(AdaptiveNavBarStyle.fromPref('flat'), AdaptiveNavBarStyle.flat);
     expect(AdaptiveNavBarStyle.fromPref('pager'), AdaptiveNavBarStyle.pager);
   });

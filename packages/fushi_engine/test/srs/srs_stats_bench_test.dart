@@ -4,7 +4,7 @@
 //
 // 每条笔记两张卡、每卡 3 条导入 revlog + 1 条导入锚点：25000 条笔记 = 20 万条日志 / 15 万条复习。
 // phases 是旧装载路径（全量读日志 → jsonDecode → 按卡重放）各段的耗时，作对照；
-// loadSrsStats 是现在的路径（读有效复习投影 srs_stat_reviews，BUG-3703）。
+// loadSrsStats 是现在的路径（读有效复习投影 srs_stat_reviews，BUG-3770）。
 // 库开在临时文件上、走 createInBackground（与 app 同一种连接）。
 import 'dart:convert';
 import 'dart:io';

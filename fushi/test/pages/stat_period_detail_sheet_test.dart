@@ -96,7 +96,7 @@ void main() {
     expect(watchY, lessThan(gameY));
   });
 
-  testWidgets('BUG-3704：总览并进来的复习时长单独成「复习」节，排在游戏之后；不可删、不可点开', (
+  testWidgets('BUG-3771：总览并进来的复习时长单独成「复习」节，排在游戏之后；不可删、不可点开', (
     WidgetTester tester,
   ) async {
     int deletes = 0;

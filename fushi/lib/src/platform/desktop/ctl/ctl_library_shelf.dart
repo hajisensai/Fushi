@@ -31,6 +31,7 @@ import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
 import 'package:fushi/src/media/collections/collection_episode_slot.dart'
     show videoCollectionMemberVisibility;
 import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart'
     show addTagToHost, removeTagFromHost, tagsForMediaRef;
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -655,8 +656,13 @@ class LibraryCtlShelf {
       'chapter': b.sectionIndex + 1,
       'progress': (b.normCharOffset * 100 / kLibraryCtlBookmarkFractionScale)
           .round(),
+      // v125：阅读器加的书签带页首字符的章内精确偏移（改字号后仍能跳回）；
+      // 旧书签 / 本命令加的书签没有（-1，不输出）。
+      if (b.charOffset >= 0) 'charOffset': b.charOffset,
     } else
       'page': b.sectionIndex + 1,
+    // 在线漫画书签所在章的稳定键（同一本在线漫画各章的书签靠它区分）。
+    if (b.chapterKey != null) 'chapterKey': b.chapterKey,
     'createdAt': b.createdAt.millisecondsSinceEpoch,
   };
 
@@ -712,6 +718,12 @@ class LibraryCtlShelf {
       }
       if (page == null || page < 1) {
         throw const CtlFailure.badRequest('PDF / 漫画书签需要 --page（1 起计）');
+      }
+      // 在线漫画的书签按「章 + 页」记（chapterKey），本命令只收页码、点不了章：
+      // 写进去会变成「在当前打开的任意一章跳第 N 页」的错书签，所以直接拒绝。
+      if (format == BookFormat.manga &&
+          OnlineMangaLibraryEntry.tryParse(row.sourceMetadata) != null) {
+        throw const CtlFailure.rejected('在线漫画的书签请在阅读器里加（需要所在章）');
       }
       if (format == BookFormat.pdf &&
           row.chapterCount > 0 &&

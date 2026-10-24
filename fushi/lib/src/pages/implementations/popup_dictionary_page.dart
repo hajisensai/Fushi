@@ -11,9 +11,12 @@ import 'package:fushi/src/lookup/ocr_block_sentence.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
     show resolveMineSentence;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_mining_target.dart'
+    show DictionaryPopupMiningTargetButton;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
@@ -605,6 +608,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     final bool floatingSurface =
         m3e &&
         (platform == TargetPlatform.android || platform == TargetPlatform.iOS);
+    final Widget? miningTarget = _buildMiningTargetButton();
     final Widget card = FushiPopupSurface(
       color: _cardColor(tokens),
       // 独立的系统查词浮窗：Apple 下玻璃采不到窗口背后的其它 app，画不透明面板。
@@ -618,12 +622,13 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
           // 直接 [_close]（无滑出动画），不会因 X 落在可滑区里被横拖手势误判/连带播放滑动
           // 特效。横滑只裹搜索栏本体（拖它仍可滑出关闭，那是滑动这一触发行为本身的动画）。
           if (widget.showSearchBar && m3e)
-            _buildM3eSearchToolbar(tokens)
+            _buildM3eSearchToolbar(tokens, miningTarget)
           else if (widget.showSearchBar)
             Row(
               children: <Widget>[
                 _buildCloseButton(),
                 Expanded(child: _buildSwipeChrome(_buildSearchBar())),
+                if (miningTarget != null) miningTarget,
               ],
             )
           else
@@ -633,6 +638,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
             Row(
               children: <Widget>[
                 Expanded(child: _buildSwipeChrome(const SizedBox(height: 36))),
+                if (miningTarget != null) miningTarget,
                 _buildCloseButton(),
               ],
             ),
@@ -673,7 +679,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 形态，取代旧的「光秃的 × + 一枚独立搜索胶囊」。关闭钮仍在
   /// [SwipeDismissWrapper] 之外（TODO-951 症状B：点 × 直接关、不连带滑出动画），
   /// 横滑只裹搜索输入区；关闭钮套 [FushiPressScale] 带按压弹簧。
-  Widget _buildM3eSearchToolbar(FushiDesignTokens tokens) {
+  Widget _buildM3eSearchToolbar(
+    FushiDesignTokens tokens,
+    Widget? miningTarget,
+  ) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
       child: DecoratedBox(
@@ -688,6 +697,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
             children: <Widget>[
               FushiPressScale(child: _buildCloseButton()),
               Expanded(child: _buildSwipeChrome(_buildSearchBar())),
+              if (miningTarget != null) FushiPressScale(child: miningTarget),
             ],
           ),
         ),
@@ -720,6 +730,25 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       onClose: null,
       onSubmit: _onSearchSubmit,
       hintLocales: appModel.lookupImeHintLocales,
+    );
+  }
+
+  /// 用户建议 #fiwDIpFep7：应用外查词也能就地切配置 / 牌组，与 in-app 宿主同一判据（随制卡
+  /// 模块开关）。Anki 设置已迁进 Drift、热复用路径按 prefs_version 失效 Anki 派生状态
+  /// （BUG-3683），本进程（Android `:popup` / 悬浮词典引擎）与主 app 读写同一行。本窗口的
+  /// 结果恒来自本机（没有 resourceSource），不需要 in-app 那条「远端结果不显示」的排除。
+  ///
+  /// 放在搜索条 / 关闭行上（在横滑区之外，点它不会连带滑动判定），而不是层顶栏：基础层
+  /// 的层顶栏整条不画（BUG-3731）。制卡模块关着时返回 null。
+  Widget? _buildMiningTargetButton() {
+    if (!appModel.moduleVisibility.isEnabled(ModuleId.cardCreation)) {
+      return null;
+    }
+    return DictionaryPopupMiningTargetButton(
+      constraints: BoxConstraints.tightFor(
+        width: _CompactPopupCloseButton.height,
+        height: _CompactPopupCloseButton.height,
+      ),
     );
   }
 
@@ -858,6 +887,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       isSessionOnScreen: () => _popup.isEntryOnScreen(entry),
       onDuplicateCheck: checkDuplicate,
       onOverwriteTargetNoteId: findOverwriteTargetNoteId,
+      // 制卡目标切换不放层顶栏：基础层没有 header / 关闭 / 返回 / 历史，层顶栏整条不画，
+      // 按钮跟着消失（BUG-3731）。本窗口在自己的搜索条上给一颗（[_buildMiningTargetButton]），
+      // 基础层与嵌套层共用，不在子层顶栏里重复出现。
+      showMiningTargetSwitch: false,
     );
 
     // TODO-951 症状C：可见层满卡渲染（BUG-051）；隐藏层（常驻热槽 / 挂起冷层）交给共享

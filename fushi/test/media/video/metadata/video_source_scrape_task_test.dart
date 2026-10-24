@@ -512,6 +512,8 @@ class _ManualRunner
     required String workTitle,
     String? workStableKey,
     required String query,
+    VideoMetadataProviderKind? provider,
+    VideoMetadataMediaKind? mediaKind,
   }) async =>
       const <VideoSourceScrapeConfirmationCandidate>[];
 

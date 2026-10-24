@@ -2568,7 +2568,10 @@ class OnboardingHeroIllustration extends StatelessWidget {
               top: 0,
               child: accent(
                 size: 40,
-                border: FushiCookieBorder(lobes: 4, side: side),
+                border: MaterialShapeBorder(
+                  shape: MaterialShapes.cookie4Sided,
+                  side: side,
+                ),
                 color: colors.tertiaryContainer,
               ),
             ),

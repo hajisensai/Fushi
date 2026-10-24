@@ -204,7 +204,7 @@ class VideoRemoteControlCard extends StatelessWidget {
               key: ValueKey<String>(
                 'video-remote-control-${item.storageValue}',
               ),
-              size: FushiIconButtonSize.m,
+              size: ButtonSizeVariant.medium,
               tooltip: _tooltip(item),
               isSelected: _toggleState(item),
               style: videoRemotePrimaryToggleStyle(

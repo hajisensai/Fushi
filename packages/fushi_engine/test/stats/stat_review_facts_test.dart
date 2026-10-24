@@ -1,4 +1,4 @@
-// 统计中心总览读时合并 SRS 复习时长（BUG-3704）：真实库、真实 SrsDbStore 写日志。
+// 统计中心总览读时合并 SRS 复习时长（BUG-3771）：真实库、真实 SrsDbStore 写日志。
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';

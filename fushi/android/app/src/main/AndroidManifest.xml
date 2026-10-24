@@ -15,6 +15,12 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- 内置浏览器网页 getUserMedia（视频通话 / 扫码等）与配对扫码。运行时权限：
+         网页申请且站点设置允许后才弹系统框，用户自己决定（web_browser_permissions.dart）。
+         mobile_scanner 的库 manifest 本来就会合并进同一条 CAMERA，这里显式声明是为了
+         不依赖某个插件碰巧带上。required=false：不让商店过滤掉没有摄像头的设备。 -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <!-- 互联配对链接写 NFC 贴纸（普通权限，不弹运行时授权框）。required=false：
          没有 NFC 的设备照常能装，入口按 NfcAdapter 可用性自行降级。 -->
     <uses-permission android:name="android.permission.NFC"/>
@@ -374,6 +380,14 @@
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="https" />
+        </intent>
+        <!-- 系统语音（TextToSpeech）。Android 11+ 包可见性：不声明 TTS_SERVICE 查询时，
+             第三方 TTS 引擎（讯飞、MultiTTS、商店版谷歌 / 微软……）对本 app 不可见——
+             TextToSpeech 绑不上用户在系统里设的默认引擎、回落到别的引擎或直接初始化失败，
+             引擎列表也列不出来。「别的软件能用系统 TTS，Fushi 不能」就是这条缺失
+             （SystemTtsController；有源码守卫钉住）。 -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
     </queries>
 </manifest>

@@ -246,7 +246,7 @@ class _DedupPlan {
 }
 
 class AnkiConnectRepository extends BaseAnkiRepository {
-  AnkiConnectRepository({AnkiConnectService? service})
+  AnkiConnectRepository({AnkiConnectService? service, super.settingsStore})
     : _fixedService = service;
 
   final AnkiConnectService? _fixedService;

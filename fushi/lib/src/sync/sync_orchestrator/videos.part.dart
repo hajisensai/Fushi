@@ -67,13 +67,15 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
     }
     if (hostById.isEmpty) return;
 
+    final InterconnectPlaybackPositionSync sync =
+        InterconnectPlaybackPositionSync(
+          db: _db,
+          backend: backend,
+          kind: PlaybackPositionKind.video,
+        );
     await _syncPositionsLive(
       report,
-      sync: InterconnectPlaybackPositionSync(
-        db: _db,
-        backend: backend,
-        kind: PlaybackPositionKind.video,
-      ),
+      sync: sync,
       errorLabel: 'live video progress',
       localKeys: localUids,
       hostKeys: hostById.keys.toSet(),
@@ -81,6 +83,13 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
         final String? title = hostById[uid]?.title;
         return title == null || title.isEmpty ? uid : title;
       },
+      // 与 [InterconnectPlaybackPositionSync.localPosition] 同口径，读的是上面已
+      // 取来的行与偏好快照，零查询。
+      localFromSnapshot: (String uid) => sync.localPositionFromPrefs(
+        uid,
+        prefs: allPrefs,
+        rowPositionMs: rowPositionByUid[uid],
+      ),
       // host 清单条目已带 positionMs / positionUpdatedAtMs，无需逐视频 GET。
       readHost: (String uid) async {
         final RemoteVideoInfo info = hostById[uid]!;
@@ -97,102 +106,185 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
     // putRemoteVideoPlayback（旧 host 无端点 404 → 静默吞，不刷 report 噪音）；
     // host 较新字段写回本地键对（时间戳用对端的，同进度写回纪律）+ 本地有
     // VideoBooks 行时写穿行值，本机播放立即跟随。
-    String? nullableStr(String raw) => raw.isEmpty ? null : raw;
+    //
+    // 本地字段先从 sweep 开头的偏好快照取（零查询）：两端每个字段的戳都相等（既
+    // 不推也不写回）就跳过；否则照旧逐字段重读本地再判定、落地——快照只用来
+    // 跳过，从不用来写（此前每个视频每轮固定 8 次偏好查询）。
     for (final String uid in localUids) {
       final RemoteVideoInfo? info = hostById[uid];
       if (info == null) continue;
       try {
         final VideoPlaybackSyncState host = info.playback;
-        final VideoPlaybackSyncState local = VideoPlaybackSyncState(
-          delayMs: await _db.getPrefTyped<int>(videoRemoteDelayPrefKey(uid), 0),
-          delayAt:
-              await _db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(uid), 0),
-          audioTrackId: nullableStr(await _db.getPrefTyped<String>(
-              videoRemoteAudioTrackPrefKey(uid), '')),
-          audioTrackAt: await _db.getPrefTyped<int>(
-              videoRemoteAudioTrackAtPrefKey(uid), 0),
-          secondarySubtitleSource: nullableStr(await _db.getPrefTyped<String>(
-              videoRemoteSecondarySubtitlePrefKey(uid), '')),
-          secondarySubtitleAt: await _db.getPrefTyped<int>(
-              videoRemoteSecondarySubtitleAtPrefKey(uid), 0),
-          secondaryDelayMs: int.tryParse(await _db.getPrefTyped<String>(
-              videoRemoteSecondaryDelayPrefKey(uid), '')),
-          secondaryDelayAt: await _db.getPrefTyped<int>(
-              videoRemoteSecondaryDelayAtPrefKey(uid), 0),
+        if (!_videoPlaybackNeedsSync(
+          await _readVideoPlaybackState(
+            uid,
+            (String key) async => allPrefs[key],
+          ),
+          host,
+        )) {
+          continue;
+        }
+        final VideoPlaybackSyncState local = await _readVideoPlaybackState(
+          uid,
+          _db.getPref,
         );
 
         // 本地→host：只带本地严格较新的字段（at 置 0 的字段 host 端 merge 忽略）。
-        final VideoPlaybackSyncState push = VideoPlaybackSyncState(
-          delayMs: local.delayMs,
-          delayAt: local.delayAt > host.delayAt ? local.delayAt : 0,
-          audioTrackId: local.audioTrackId,
-          audioTrackAt:
-              local.audioTrackAt > host.audioTrackAt ? local.audioTrackAt : 0,
-          secondarySubtitleSource: local.secondarySubtitleSource,
-          secondarySubtitleAt:
-              local.secondarySubtitleAt > host.secondarySubtitleAt
-                  ? local.secondarySubtitleAt
-                  : 0,
-          secondaryDelayMs: local.secondaryDelayMs,
-          secondaryDelayAt: local.secondaryDelayAt > host.secondaryDelayAt
-              ? local.secondaryDelayAt
-              : 0,
-        );
+        final VideoPlaybackSyncState push = _videoPlaybackPush(local, host);
         if (!push.isEmpty) {
           try {
             await backend.putRemoteVideoPlayback(uid, push);
           } catch (e) {
             debugPrint(
-                '[SyncOrchestrator] video playback push "$uid" failed: $e');
+              '[SyncOrchestrator] video playback push "$uid" failed: $e',
+            );
           }
         }
 
         // host→本地：逐字段写回严格较新者。
         final bool hasRow = rowPositionByUid.containsKey(uid);
-        final VideoPlaybackSyncState merged =
-            VideoPlaybackSyncState.merge(local, host);
+        final VideoPlaybackSyncState merged = VideoPlaybackSyncState.merge(
+          local,
+          host,
+        );
         if (merged.delayAt != local.delayAt) {
           await _db.setPrefTyped<int>(
-              videoRemoteDelayPrefKey(uid), merged.delayMs);
+            videoRemoteDelayPrefKey(uid),
+            merged.delayMs,
+          );
           await _db.setPrefTyped<int>(
-              videoRemoteDelayAtPrefKey(uid), merged.delayAt);
+            videoRemoteDelayAtPrefKey(uid),
+            merged.delayAt,
+          );
           if (hasRow) await _db.updateVideoBookDelayMs(uid, merged.delayMs);
         }
         if (merged.audioTrackAt != local.audioTrackAt) {
           await _db.setPrefTyped<String>(
-              videoRemoteAudioTrackPrefKey(uid), merged.audioTrackId ?? '');
+            videoRemoteAudioTrackPrefKey(uid),
+            merged.audioTrackId ?? '',
+          );
           await _db.setPrefTyped<int>(
-              videoRemoteAudioTrackAtPrefKey(uid), merged.audioTrackAt);
+            videoRemoteAudioTrackAtPrefKey(uid),
+            merged.audioTrackAt,
+          );
           if (hasRow) {
             await _db.updateVideoBookAudioTrackId(uid, merged.audioTrackId);
           }
         }
         if (merged.secondarySubtitleAt != local.secondarySubtitleAt) {
           await _db.setPrefTyped<String>(
-              videoRemoteSecondarySubtitlePrefKey(uid),
-              merged.secondarySubtitleSource ?? '');
+            videoRemoteSecondarySubtitlePrefKey(uid),
+            merged.secondarySubtitleSource ?? '',
+          );
           await _db.setPrefTyped<int>(
-              videoRemoteSecondarySubtitleAtPrefKey(uid),
-              merged.secondarySubtitleAt);
+            videoRemoteSecondarySubtitleAtPrefKey(uid),
+            merged.secondarySubtitleAt,
+          );
           if (hasRow) {
             await _db.updateVideoBookSecondarySubtitleSource(
-                uid, merged.secondarySubtitleSource);
+              uid,
+              merged.secondarySubtitleSource,
+            );
           }
         }
         if (merged.secondaryDelayAt != local.secondaryDelayAt) {
-          await _db.setPrefTyped<String>(videoRemoteSecondaryDelayPrefKey(uid),
-              merged.secondaryDelayMs?.toString() ?? '');
+          await _db.setPrefTyped<String>(
+            videoRemoteSecondaryDelayPrefKey(uid),
+            merged.secondaryDelayMs?.toString() ?? '',
+          );
           await _db.setPrefTyped<int>(
-              videoRemoteSecondaryDelayAtPrefKey(uid), merged.secondaryDelayAt);
+            videoRemoteSecondaryDelayAtPrefKey(uid),
+            merged.secondaryDelayAt,
+          );
           if (hasRow) {
             await _db.updateVideoBookSecondaryDelayMs(
-                uid, merged.secondaryDelayMs);
+              uid,
+              merged.secondaryDelayMs,
+            );
           }
         }
       } catch (e) {
         report.noteError('live video playback "$uid"', e);
       }
     }
+  }
+
+  /// 读本端某视频的播放偏好（调轴 / 音轨 / 副字幕源 / 副字幕调轴 + 各自戳）。
+  ///
+  /// [readRaw] 返回偏好原始串（缺失 null）：sweep 先传偏好快照的查表做「是否
+  /// 需要同步」的判定，需要时再传 [FushiDatabase.getPref] 重读。解码与
+  /// [FushiDatabase.getPrefTyped] 同口径。
+  Future<VideoPlaybackSyncState> _readVideoPlaybackState(
+    String uid,
+    Future<String?> Function(String key) readRaw,
+  ) async {
+    Future<int> readInt(String key) async {
+      final String? raw = await readRaw(key);
+      return raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
+    }
+
+    Future<String> readString(String key) async {
+      final String? raw = await readRaw(key);
+      return raw == null ? '' : PrefCodec.decode<String>(raw, '');
+    }
+
+    String? nullableStr(String raw) => raw.isEmpty ? null : raw;
+    return VideoPlaybackSyncState(
+      delayMs: await readInt(videoRemoteDelayPrefKey(uid)),
+      delayAt: await readInt(videoRemoteDelayAtPrefKey(uid)),
+      audioTrackId: nullableStr(
+        await readString(videoRemoteAudioTrackPrefKey(uid)),
+      ),
+      audioTrackAt: await readInt(videoRemoteAudioTrackAtPrefKey(uid)),
+      secondarySubtitleSource: nullableStr(
+        await readString(videoRemoteSecondarySubtitlePrefKey(uid)),
+      ),
+      secondarySubtitleAt: await readInt(
+        videoRemoteSecondarySubtitleAtPrefKey(uid),
+      ),
+      secondaryDelayMs: int.tryParse(
+        await readString(videoRemoteSecondaryDelayPrefKey(uid)),
+      ),
+      secondaryDelayAt: await readInt(videoRemoteSecondaryDelayAtPrefKey(uid)),
+    );
+  }
+
+  /// 本地→host 要推的字段：只带本地严格较新的（at 置 0 的字段 host 端 merge 忽略）。
+  VideoPlaybackSyncState _videoPlaybackPush(
+    VideoPlaybackSyncState local,
+    VideoPlaybackSyncState host,
+  ) => VideoPlaybackSyncState(
+    delayMs: local.delayMs,
+    delayAt: local.delayAt > host.delayAt ? local.delayAt : 0,
+    audioTrackId: local.audioTrackId,
+    audioTrackAt: local.audioTrackAt > host.audioTrackAt
+        ? local.audioTrackAt
+        : 0,
+    secondarySubtitleSource: local.secondarySubtitleSource,
+    secondarySubtitleAt: local.secondarySubtitleAt > host.secondarySubtitleAt
+        ? local.secondarySubtitleAt
+        : 0,
+    secondaryDelayMs: local.secondaryDelayMs,
+    secondaryDelayAt: local.secondaryDelayAt > host.secondaryDelayAt
+        ? local.secondaryDelayAt
+        : 0,
+  );
+
+  /// 这一视频的播放偏好这一轮是否有事可做：有本地较新字段要推，或有 host 较新
+  /// 字段要写回（与下方落地分支的判据逐条对应）。
+  bool _videoPlaybackNeedsSync(
+    VideoPlaybackSyncState local,
+    VideoPlaybackSyncState host,
+  ) {
+    if (!_videoPlaybackPush(local, host).isEmpty) return true;
+    final VideoPlaybackSyncState merged = VideoPlaybackSyncState.merge(
+      local,
+      host,
+    );
+    return merged.delayAt != local.delayAt ||
+        merged.audioTrackAt != local.audioTrackAt ||
+        merged.secondarySubtitleAt != local.secondarySubtitleAt ||
+        merged.secondaryDelayAt != local.secondaryDelayAt;
   }
 
   /// 互联视频文件 live push（client→host，TODO §2.6「后续批」接线）。
@@ -235,7 +327,8 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
       final File file = File(v.videoPath);
       if (!file.existsSync()) {
         report.errors.add(
-            'live push video "${v.title}": local file missing: ${v.videoPath}');
+          'live push video "${v.title}": local file missing: ${v.videoPath}',
+        );
         continue;
       }
       final RemoteVideoInfo? host = hostByUid[v.bookUid];
@@ -248,7 +341,8 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
       // 字幕补推判据与视频同粒度：host 已有任一 sidecar 即跳过（改字幕内容/后加语言
       // 不重推，与视频同尺寸跳过一致）。
       // pushVideo==false 蕴含 host!=null（流程分析已提升，无需判空）。
-      final bool pushSubtitles = (pushVideo || !host.hasSubtitle) &&
+      final bool pushSubtitles =
+          (pushVideo || !host.hasSubtitle) &&
           _localSidecarSubtitles(v.videoPath, sidecarDirCache).isNotEmpty;
       if (!pushVideo && !pushSubtitles) continue;
       toPush.add((row: v, file: file, pushVideo: pushVideo));
@@ -261,8 +355,12 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
     bool subtitleEndpointMissing = false;
     for (final ({VideoBookRow row, File file, bool pushVideo}) item in toPush) {
       final VideoBookRow v = item.row;
-      _emit(SyncPhase.videos,
-          itemIndex: index, itemTotal: total, title: v.title);
+      _emit(
+        SyncPhase.videos,
+        itemIndex: index,
+        itemTotal: total,
+        title: v.title,
+      );
       bool videoOk = !item.pushVideo;
       if (item.pushVideo) {
         try {
@@ -270,12 +368,14 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
             v.bookUid,
             item.file,
             title: v.title,
-            onProgress: (double f, [int? b]) => _emit(SyncPhase.videos,
-                itemIndex: index,
-                itemTotal: total,
-                title: v.title,
-                fileFraction: f,
-                fileBytes: b),
+            onProgress: (double f, [int? b]) => _emit(
+              SyncPhase.videos,
+              itemIndex: index,
+              itemTotal: total,
+              title: v.title,
+              fileFraction: f,
+              fileBytes: b,
+            ),
           );
           report.videosExported++;
           videoOk = true;
@@ -293,8 +393,9 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
         );
         if (subtitleEndpointMissing) {
           report.errors.add(
-              'live push subtitles: host has no subtitle endpoint (older app '
-              'version) — update the host app to sync video subtitles');
+            'live push subtitles: host has no subtitle endpoint (older app '
+            'version) — update the host app to sync video subtitles',
+          );
         }
       }
       index++;
@@ -312,12 +413,17 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
     required Map<String, List<String>?> sidecarDirCache,
   }) async {
     final String stem = p.basenameWithoutExtension(row.videoPath);
-    for (final File sub
-        in _localSidecarSubtitles(row.videoPath, sidecarDirCache)) {
+    for (final File sub in _localSidecarSubtitles(
+      row.videoPath,
+      sidecarDirCache,
+    )) {
       final String suffix = p.basename(sub.path).substring(stem.length);
       try {
-        final bool supported = await backend
-            .putRemoteVideoSubtitle(row.bookUid, sub, suffix: suffix);
+        final bool supported = await backend.putRemoteVideoSubtitle(
+          row.bookUid,
+          sub,
+          suffix: suffix,
+        );
         if (!supported) return false;
       } catch (e) {
         report.noteError('live push subtitle "${p.basename(sub.path)}"', e);
@@ -347,8 +453,10 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
     });
     if (names == null) return const <File>[];
     return <File>[
-      for (final String name
-          in listSidecarSubtitles(p.basenameWithoutExtension(videoPath), names))
+      for (final String name in listSidecarSubtitles(
+        p.basenameWithoutExtension(videoPath),
+        names,
+      ))
         File(p.join(dir, name)),
     ];
   }

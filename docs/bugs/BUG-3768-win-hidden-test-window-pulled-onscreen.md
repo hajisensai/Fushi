@@ -1,0 +1,14 @@
+## BUG-3768 · Windows 隐藏测试模式（FUSHI_TEST_HIDDEN）的主窗口被 Dart 启动定位挪回屏内
+- **报告**：2026-10-24（内部：macOS 同类问题 BUG-3703 / PR #2501 修完后，补 Windows 一侧的实测）
+- **真实性**：✅ 真 bug，Windows 11 26200 实测复现。
+  - runner 只在建窗时把隐藏测试窗放到 `kOffscreenOrigin`（`fushi/windows/runner/win32_window.cpp` `CreateAndShow`），之后不拦挪窗；Dart 启动时 `DesktopWindowPlacement.applyInitialPlacement()`（`fushi/lib/src/startup/desktop_window_placement.dart:92`）在隐藏模式下没有豁免，`windowManager.setBounds(initialBounds)` 把窗口居中进工作区（保存过最大化还会 `maximize()`）。
+  - 证据（develop `459d2af220`，`run_windows_itest.ps1` 默认离屏模式，外部 `GetWindowRect` 轮询，按 ExecutablePath 只认本 worktree 的 `fushi.exe`）：建窗时 `rect=(-21333,-21333,…) onMonitor=False`（该次轮询器未开 DPI 感知，坐标是 1.5 倍缩放后的虚拟值），**约 2 秒后** `rect=(560,240,2000,1200) size=1440x960 visible=True onMonitor=True`，之后整场测试停在用户桌面上；Dart 侧 `windowManager.getBounds()` 同样报 `(560,240)-(2000,1200)`。
+  - `FUSHI_TEST_TOPMOST` 的取证停靠位同理会被这次 `setBounds` 覆盖（同一条路径，未单独实测）。
+- **[x] ① 已修复** — 在原生层根因处修，与 macOS 修法同构：新增纯函数 `fushi/windows/runner/test_window_origin_pin.h`（`ResolveTestWindowOriginPin` 决定钉哪个 origin：默认隐藏 = (-32000,-32000)、`FUSHI_TEST_TOPMOST` = 其 x,y、`FUSHI_TEST_ONSCREEN` 不钉；`PinWindowPosOrigin` 改写 `WINDOWPOS`），`Win32Window::WndProc` 在分发前对 `WM_WINDOWPOSCHANGING` 调用它（先于插件的 `HandleTopLevelWindowProc`，免得被消费）。只钉 origin、不钉尺寸：最大化 / 全屏 / 改尺寸类测试的客户区几何照常；`SWP_NOMOVE` 与最小化态不动。Dart 侧不改：任何挪窗（`setBounds`、`maximize`、`center`、DPI 变化、小窗模式）都走这一个口子，在 Dart 逐处豁免只会漏。`FUSHI_TEST_TOPMOST` 解析抽成 `ReadTestTopmostSpec()` 供停靠与钉位共用。
+- **[x] ② 已加自动化测试** — 原生门 `fushi/windows/runner/tests/test_window_origin_pin_test.cpp`（`fushi_windows_test_window_origin_pin_gate`，随每次 Windows runner 构建执行）；端到端 itest `fushi/integration_test/hidden_window_offscreen_pin_itest.dart`（断言启动定位后 `getBounds` 仍在屏外；`-DartDefine PROBE_MAXIMIZED=true` 预置「上次最大化 + 屏内几何」）。
+  - 复测（修复后，DPI 感知轮询，物理像素）：默认 `rect=(-32000,-32000,-29840,-30560) size=2160x1440 zoomed=False onMonitor=False`；最大化变体 `rect=(-32000,-32000,-28138,-29818) size=3862x2182 zoomed=True onMonitor=False`。两条 itest 均 `All tests passed`。
+  - 变异实测（均先提交再改、改完 `git checkout HEAD --` 还原）：M1 让 `PinWindowPosOrigin` 不改写坐标 → 原生门 `FAIL: the rewritten move lands at the pinned origin`、exit 1；M2 保留纯函数、把 `WndProc` 接线传入的 pin 换成 `std::nullopt` → 构建通过、itest 红在 `Expected: a value less than <-5000> Actual: <560.0>`，外部轮询同时看到窗口落到物理 `(840,360) 2160x1440 onMonitor=True`；还原后 itest 绿、窗口停在 `(-32000,-32000)`。
+  - 坑：只改头文件时本机增量构建没有重编依赖它的目标（测试 exe 时间戳不变），变异实测要同时 touch 引用它的 .cpp，否则「变异没变红」是假象。
+- **备注**：
+  - `-Visible`（`FUSHI_TEST_ONSCREEN`）有意不钉：BUG-1916 等取证依赖在可见模式下最大化 / 还原窗口。
+  - itest 不在 CI 跑（与其它 Windows itest 一样手动经 `run_windows_itest.ps1`）；CI 里守住这条的是原生门。

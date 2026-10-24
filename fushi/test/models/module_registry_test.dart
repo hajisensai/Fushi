@@ -366,6 +366,10 @@ void main() {
       expect(moduleOfShortcutScope(ShortcutScope.dictionaryPopup), isNull);
     });
 
+    test('app 内浏览器恒在——视频站点入口也会打开它，不只属于 web 模块', () {
+      expect(moduleOfShortcutScope(ShortcutScope.webBrowser), isNull);
+    });
+
     test('app 外系统级取词热键跟着 lookup 关——关掉模块不该还能装系统钩子', () {
       expect(
         moduleOfShortcutScope(ShortcutScope.globalExternal),

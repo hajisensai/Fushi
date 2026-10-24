@@ -169,5 +169,44 @@ void main() {
       await tester.pumpAndSettle();
       expect(tapped, isTrue);
     });
+
+    // 2026-10-23：MD3 图标按钮换成官方 M3E IconButton 后，官方标准 toggle 选中
+    // 只染 primary、不加容器；用户拍板保留选中态的 secondaryContainer 浅色底，
+    // 叠在官方按钮上。换官方实现时不得再把它丢掉。
+    testWidgets('selected MD3 icon button keeps the tonal selected container', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiIconButton(
+            icon: Icons.checklist,
+            tooltip: 'Select',
+            selected: true,
+            onTap: () {},
+          ),
+        ),
+      );
+      final IconButton button = tester.widget<IconButton>(
+        find.byType(IconButton),
+      );
+      final ColorScheme cs = Theme.of(
+        tester.element(find.byType(IconButton)),
+      ).colorScheme;
+      expect(button.isSelected, isTrue);
+      expect(
+        button.style?.backgroundColor?.resolve(<WidgetState>{
+          WidgetState.selected,
+        }),
+        cs.secondaryContainer,
+      );
+      expect(
+        button.style?.foregroundColor?.resolve(<WidgetState>{
+          WidgetState.selected,
+        }),
+        cs.onSecondaryContainer,
+      );
+      // 未选中不叠底，交回官方默认。
+      expect(button.style?.backgroundColor?.resolve(<WidgetState>{}), isNull);
+    });
   });
 }

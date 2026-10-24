@@ -631,7 +631,7 @@ $body
       }
     }
 
-    test('来源链接交给宿主；其它链接只拦导航；页内锚点放行', () async {
+    test('来源链接交给宿主；外链拦下导航后交宿主用系统浏览器打开（#16）；页内锚点放行', () async {
       await runJs(
         harness(r'''
 const p = el('p', {}, body);
@@ -640,7 +640,7 @@ const span = el('span', {}, src);
 assert.equal(fire('click', {target: span}), true);
 assert.deepEqual(calls, [['onSrsSourceLink', 'fushi://source?v=1&kind=book']]);
 assert.equal(fire('click', {target: el('a', {href: 'https://example.com/'}, p)}), true);
-assert.equal(calls.length, 1, '其它链接不交给宿主');
+assert.deepEqual(calls[1], ['onSrsCardLink', {kind: 'external', href: 'https://example.com/'}]);
 assert.equal(fire('click', {target: el('a', {href: '#top'}, p)}), false);
 assert.equal(fire('click', {target: p}), false);
 '''),

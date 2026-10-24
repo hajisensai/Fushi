@@ -38,6 +38,7 @@ part 'database_tags_sync.part.dart';
 part 'database_update_feed.part.dart';
 part 'database_manga_download.part.dart';
 part 'database_srs.part.dart';
+part 'database_web_browser.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
@@ -818,6 +819,11 @@ void _requireOneVideoMetadataOwner({
   MediaPrivacyFlags,
   LibraryOrganizeRuns,
   LibraryOrganizeChanges,
+  WebBrowserHistory,
+  WebBrowserBookmarks,
+  WebBrowserSessionTabs,
+  WebBrowserClosedTabs,
+  WebBrowserDownloads,
   SrsStatReviews,
 ])
 class FushiDatabase extends _$FushiDatabase
@@ -831,7 +837,8 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbStatistics,
         _FushiDbVideoDomain,
         _FushiDbUpdateFeed,
-        _FushiDbMangaDownload {
+        _FushiDbMangaDownload,
+        _FushiDbWebBrowser {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -852,7 +859,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 126;
+  int get schemaVersion => 129;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2415,10 +2422,67 @@ class FushiDatabase extends _$FushiDatabase
               await m.createTable(libraryOrganizeChanges);
             }
           }
+          if (from < 125) {
+            // v125（SRS 写入路径读放大）：idx_srs_field_edits_profile_register（同步冲突角标的
+            // 分组只扫索引）、idx_srs_notes_cache_type（笔记类型成员查找）、
+            // idx_srs_notes_cache_pending（待裁决笔记的部分索引），见 _ensureSrsIndexes。只加
+            // 索引、不动数据；全部 IF NOT EXISTS，幂等。表在阶梯上不存在（合成库）则跳过。
+            if (await _tableExists('srs_field_edits') &&
+                await _tableExists('srs_notes_cache')) {
+              await _ensureSrsIndexes();
+            }
+          }
           if (from < 126) {
-            // v126（v125 留给 SRS 写入路径索引那一步，PR #2464）：srs_stat_reviews——有效复习
-            // 投影（本机可重建缓存，不同步、不进备份）。存量库建空表即可：SrsDbStore 打开时
-            // 缓存修订号 < 2 会按卡片缓存整体重算一遍把它填满（与卡片缓存同一重算点）。
+            // v126：collection_member_tombstones.published_at——墓碑知识进入本库的时刻，
+            // 本机作互联 host 时作清单 publishedAt / deletedPublishedAt 输出（BUG-3743
+            // 后续：host 不存它时 GET 永远回 null，对端只能回退移出时刻判新旧，离线早移出、
+            // 晚同步的墓碑会被基线更新的对端判成旧闻、成员复活）。存量行留 NULL（回退
+            // deleted_at，与升级前行为一致）。幂等守卫同 v119。
+            if (await _tableExists('collection_member_tombstones') &&
+                !await _columnExists(
+                    'collection_member_tombstones', 'published_at')) {
+              await m.addColumn(collectionMemberTombstones,
+                  collectionMemberTombstones.publishedAt);
+            }
+          }
+          if (from < 127) {
+            // v127（阅读器书签回归）：bookmarks.char_offset——书签页首字符的章内精确
+            // 偏移（改字号后页码会变、字符不变，存量 -1 = 回退 norm_char_offset 分数）；
+            // bookmarks.chapter_key——在线漫画书签所在章的稳定键（存量 NULL）。
+            // 幂等守卫同 v119。
+            if (await _tableExists('bookmarks') &&
+                !await _columnExists('bookmarks', 'char_offset')) {
+              await m.addColumn(bookmarks, bookmarks.charOffset);
+            }
+            if (await _tableExists('bookmarks') &&
+                !await _columnExists('bookmarks', 'chapter_key')) {
+              await m.addColumn(bookmarks, bookmarks.chapterKey);
+            }
+          }
+          if (from < 128) {
+            // v128（内置浏览器完整化）：历史 / 书签（含文件夹）/ 标签页会话 / 最近关闭 /
+            // 下载记录五张新表。纯新表、不动存量数据；幂等守卫同 v119。历史与书签随备份
+            // 走、经聚合快照跨端同步，其余三张设备本地。
+            if (!await _tableExists('web_browser_history')) {
+              await m.createTable(webBrowserHistory);
+            }
+            if (!await _tableExists('web_browser_bookmarks')) {
+              await m.createTable(webBrowserBookmarks);
+            }
+            if (!await _tableExists('web_browser_session_tabs')) {
+              await m.createTable(webBrowserSessionTabs);
+            }
+            if (!await _tableExists('web_browser_closed_tabs')) {
+              await m.createTable(webBrowserClosedTabs);
+            }
+            if (!await _tableExists('web_browser_downloads')) {
+              await m.createTable(webBrowserDownloads);
+            }
+          }
+          if (from < 129) {
+            // v129：srs_stat_reviews——SRS 有效复习投影（本机可重建缓存，不同步、不进备份，
+            // BUG-3770）。存量库建空表即可：SrsDbStore 打开时缓存修订号 < 2 会按卡片缓存整体
+            // 重算一遍把它填满（与卡片缓存同一重算点）。
             if (!await _tableExists('srs_stat_reviews')) {
               await m.createTable(srsStatReviews);
             }

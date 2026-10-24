@@ -31,7 +31,12 @@ void main() {
     final String src =
         File('lib/src/pages/implementations/reader_fushi_page.dart')
             .readAsStringSync();
-    expect(src, contains('final int? charAnchor = bm.charAnchor;'),
+    // 2026-10 书签恢复：持久化书签的精确偏移（bm.charOffset）作为 charAnchor 缺省
+    // 的补位（`bm.charAnchor ?? …`），收藏句 / 制卡历史的 charAnchor 仍优先。
+    expect(
+        src,
+        matches(
+            RegExp(r'final int\? charAnchor\s*=\s*bm\.charAnchor(\s*\?\?|;)')),
         reason: '读取跳转携带的绝对字符锚');
     // 钉不变式而不是写法：起点字段后来收敛成唯一写入口 [_setOpenResumePoint]
     // （某条分支只写 progress 不决定 charOffset 会让上一条分支残留的锚把视口拽回

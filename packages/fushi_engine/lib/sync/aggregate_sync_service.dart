@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:fushi_engine/sync/aggregate_peer_snapshot_cache.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
+import 'package:fushi_engine/sync/aggregate_web_browser.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_audio/fushi_audio_core.dart'
@@ -34,6 +35,18 @@ const String _legacyAggregateAssetSuffix = '.hibikiaggregate';
 bool _isAggregateAsset(String name) =>
     name.endsWith(_aggregateAssetSuffix) ||
     name.endsWith(_legacyAggregateAssetSuffix);
+
+/// 设备级「同步浏览历史」开关的偏好键（云备份与互联两条通道共用，host 侧也认）。
+///
+/// **缺行 = 关**：v128 起浏览历史进聚合快照，若跟「共享收藏」走，已开共享收藏的
+/// 存量用户升级后第一轮同步就会零操作地把整份浏览轨迹推到云端 / 互联 host。历史的
+/// 隐私分量与收藏不是一个量级，必须由用户显式打开。设备本地键：不随备份 / Profile
+/// 快照出境（换一台设备恢复备份不得替那台设备打开历史外流）。
+const String kSyncWebHistoryPrefKey = 'sync_web_history_enabled';
+
+/// 读 [kSyncWebHistoryPrefKey]（缺行为 false）。
+Future<bool> readWebHistorySyncEnabled(FushiDatabase db) =>
+    db.getPrefTyped<bool>(kSyncWebHistoryPrefKey, false);
 
 /// Preference key holding the favorite-sentence JSON list. Mirrors
 /// `FavoriteSentenceRepository._key` and BackupMergeEngine's constant; kept in
@@ -104,12 +117,27 @@ class AggregateSyncService {
   /// （见 `SyncRunReport.remoteMutated`）：这一步历史上是无条件写的，而无条件写会让
   /// 每台设备每轮同步都在远端留下改动痕迹，于是所有对端的「无人动过」判据永远为假、
   /// 依赖它的阶段跳过全部失效，多设备之间互相触发、永不收敛。
+  ///
+  /// [shareStats]：云通道的「同步统计」（统计族 + 收藏族一把管，既有行为）。
+  /// [shareWebHistory]：设备级「同步浏览历史」（默认关）。两族都在**上下行**同时
+  /// 裁剪——只停上传会让对端历史继续折进本地，用户看到的仍是「关了还在同步」。两者
+  /// 皆 false 时整轮 no-op。
   Future<bool> sync({
     required SyncAssetStore store,
     required String deviceId,
+    bool shareStats = true,
+    bool shareWebHistory = false,
   }) async {
+    if (!shareStats && !shareWebHistory) return false;
+    AggregateSnapshot scoped(AggregateSnapshot s) => s.select(
+          stats: shareStats,
+          favorites: shareStats,
+          webHistory: shareWebHistory,
+        );
+
     // 1) Materialise local state.
-    final AggregateSnapshot localSnapshot = await materializeLocalSnapshot();
+    final AggregateSnapshot localSnapshot =
+        scoped(await materializeLocalSnapshot());
 
     // 2) Ensure the reserved namespace, list peer snapshots.
     final String ns = await store.ensureNamespace(kSyncAggregateNamespace);
@@ -140,7 +168,8 @@ class AggregateSyncService {
         // A single unreadable peer snapshot must not abort the sweep; skip it.
         continue;
       }
-      final AggregateSnapshot peer = AggregateSnapshot.fromJson(peerJson);
+      final AggregateSnapshot peer =
+          scoped(AggregateSnapshot.fromJson(peerJson));
       merged = mergeSnapshots(merged, peer);
     }
     await peerSnapshotCache?.retainOnly(
@@ -149,7 +178,9 @@ class AggregateSyncService {
     );
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
-    if (!identical(merged, localSnapshot)) {
+    //    合并结果与本地内容相等（[localDelta] 为 null）时整步跳过：mergeSnapshots
+    //    每次都返回新对象，旧的 `identical` 判据恒真，稳态每轮都要整库重写。
+    if (localDelta(merged, localSnapshot) != null) {
       await _applyMergedLocally(merged);
     }
 
@@ -251,17 +282,25 @@ class AggregateSyncService {
   /// 裁都等于开关没关。与 [filterTombstoned] 同一条理由——让不变式在每条路径上都
   /// 成立，而不是靠推理。下行同样裁剪：只停上传会让对端数据继续折进本地，用户看到
   /// 的仍是「关了还在同步」。两者皆 false 时整轮 no-op（连请求都不发）。
+  ///
+  /// [shareWebHistory] 是设备级「同步浏览历史」（默认关，见
+  /// [kSyncWebHistoryPrefKey]），与上面两个许可同律上下行一起裁。
   Future<void> syncOverClient({
     required Future<Object?> Function() fetchRemote,
     required Future<void> Function(Object json) pushMerged,
     bool shareStats = true,
     bool shareFavorites = true,
+    bool shareWebHistory = false,
   }) async {
-    if (!shareStats && !shareFavorites) return;
+    if (!shareStats && !shareFavorites && !shareWebHistory) return;
 
     // 1) Materialise local state.
     final AggregateSnapshot localSnapshot = (await materializeLocalSnapshot())
-        .select(stats: shareStats, favorites: shareFavorites);
+        .select(
+      stats: shareStats,
+      favorites: shareFavorites,
+      webHistory: shareWebHistory,
+    );
 
     // 2) Fetch the host's snapshot. null => old host without the endpoint:
     //    degrade to push-only (still share our state; skip the local fold).
@@ -280,11 +319,16 @@ class AggregateSyncService {
     // 3) Fold the host snapshot into the local one through the same pure merge
     //    the cloud channel uses (single source of truth; commutative/idempotent).
     final AggregateSnapshot remote = AggregateSnapshot.fromJson(remoteJson)
-        .select(stats: shareStats, favorites: shareFavorites);
+        .select(
+      stats: shareStats,
+      favorites: shareFavorites,
+      webHistory: shareWebHistory,
+    );
     final AggregateSnapshot merged = mergeSnapshots(localSnapshot, remote);
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
-    if (!identical(merged, localSnapshot)) {
+    //    与云通道同一判据：内容相等就不进锁、不重读本地、不写库。
+    if (localDelta(merged, localSnapshot) != null) {
       await _applyMergedLocally(merged);
     }
 
@@ -317,16 +361,124 @@ class AggregateSyncService {
         ..write(jsonEncode(key))
         ..write(':');
       if (value is List) {
-        final List<String> items = <String>[
-          for (final Object? item in value) jsonEncode(item),
-        ]..sort();
-        buffer.write(jsonEncode(items));
+        buffer.write(jsonEncode(_encodeItems(value)..sort()));
       } else {
         buffer.write(jsonEncode(value));
       }
       buffer.write(';');
     }
     return _stableHash(buffer.toString());
+  }
+
+  /// 快照一个家族逐条记录的 JSON 编码——[unorderedSnapshotFingerprint]（PUT 侧
+  /// 跳过判据）与 [localDelta]（写回侧跳过判据）共用的**唯一**比较口径。
+  static List<String> _encodeItems(List<Object?> items) =>
+      <String>[for (final Object? item in items) jsonEncode(item)];
+
+  /// 写回时有跨行副作用、只能整族下发的收藏族（墓碑会删本地收藏词行、收藏句是
+  /// pref 整表重写）：任一族有变化就四族一起按 [merged] 原样下发。
+  static const Set<String> _favoriteFamilyKeys = <String>{
+    'favoriteWords',
+    'favoriteSentences',
+    'favoriteWordTombstones',
+    'favoriteSentenceTombstones',
+  };
+
+  /// [merged]（= `mergeSnapshots(local, X)`）相对 [local] 的**写回增量**；两者内容
+  /// 相等时返回 null（调用方据此整步不写库）。
+  ///
+  /// 比较口径与 [unorderedSnapshotFingerprint] 相同：每个家族是逐条记录 JSON 编码
+  /// 的**多重集**，与列表顺序无关。某家族「相等」⇔ 两侧多重集相同 ⇔ 该家族指纹分量
+  /// 相同；所以「全部家族相等」与「两份快照指纹相等」是同一个命题，不另立规则。
+  ///
+  /// 增量的构成（为什么跳过的部分一定不需要落库）：
+  ///   - 行家族（阅读/视频统计、逐时桶、制卡计数、查词/制卡计数、学习段）：只下发
+  ///     [merged] 里**不在** [local] 多重集中的记录。被跳过的记录逐字节等于本地
+  ///     materialize 出来的那一条，而这些家族的写入原语对「与本地相等的值」都是
+  ///     no-op（覆盖写同值 / MAX 不抬升 / setLookupCount、setVideoWatchStatistic 的
+  ///     「wire ≤ 本地和」守卫 / 段按 uid 的 LWW 严格更新才写）。逐时总量的差额归因
+  ///     对未变化的总量行恒 ≤ 0（本地总量 = 本地分桶和，分桶只会被抬高）。
+  ///   - 学习段墓碑：段或碑任一有变化就整族下发（重放已有碑是 no-op，但它会顺带
+  ///     删掉同身份下更早开始的本地段——与修前每轮整库写回的效果保持一致）。
+  ///   - 收藏族：见 [_favoriteFamilyKeys]，有变化就整族下发。
+  ///
+  /// [merged] 从 [local] **删掉**的记录（仲裁压制的收藏 / 段）也会让该家族判为
+  /// 「有变化」，于是删除照常经整族下发的墓碑生效；行家族是按键 MAX，[merged] 的键
+  /// 恒 ⊇ [local]，不存在「只删不增」的情况。
+  @visibleForTesting
+  static AggregateSnapshot? localDelta(
+    AggregateSnapshot merged,
+    AggregateSnapshot local,
+  ) {
+    final Map<String, Object?> m = merged.toJson();
+    final Map<String, Object?> l = local.toJson();
+    final Map<String, List<int>> addedIndexes = <String, List<int>>{};
+    final Set<String> changed = <String>{};
+    for (final MapEntry<String, Object?> entry in m.entries) {
+      final Object? mv = entry.value;
+      if (mv is! List) continue;
+      final Object? lv = l[entry.key];
+      final List<Object?> localItems = lv is List ? lv : const <Object?>[];
+      final Map<String, int> remaining = <String, int>{};
+      for (final String e in _encodeItems(localItems)) {
+        remaining[e] = (remaining[e] ?? 0) + 1;
+      }
+      final List<String> encoded = _encodeItems(mv);
+      final List<int> added = <int>[];
+      for (int i = 0; i < encoded.length; i++) {
+        final int n = remaining[encoded[i]] ?? 0;
+        if (n > 0) {
+          remaining[encoded[i]] = n - 1;
+        } else {
+          added.add(i);
+        }
+      }
+      if (added.isNotEmpty || remaining.values.any((int n) => n > 0)) {
+        changed.add(entry.key);
+      }
+      addedIndexes[entry.key] = added;
+    }
+    if (changed.isEmpty) return null;
+
+    final bool favoritesChanged = changed.any(_favoriteFamilyKeys.contains);
+    final bool segmentsChanged = changed.contains('studySegments') ||
+        changed.contains('studySegmentTombstones');
+    // v128 浏览器历史 / 书签：与收藏同律，行或墓碑任一有变化就连墓碑整族下发
+    // （[applyWebBrowserFamilies] 先落墓碑再按墓碑过滤并入，重放同值是 no-op）。
+    // 漏掉这两族 = 合并结果里的历史 / 书签永远落不了地（delta 里恒为空）。
+    final bool webHistoryChanged = changed.contains('webHistory') ||
+        changed.contains('webHistoryTombstones');
+    final bool webBookmarksChanged = changed.contains('webBookmarks') ||
+        changed.contains('webBookmarkTombstones');
+    List<T> added<T>(String key, List<T> all) =>
+        <T>[for (final int i in addedIndexes[key]!) all[i]];
+    List<T> whole<T>(bool include, List<T> all) => include ? all : <T>[];
+    return AggregateSnapshot(
+      readingStats: added('readingStats', merged.readingStats),
+      videoStats: added('videoStats', merged.videoStats),
+      readingHourly: added('readingHourly', merged.readingHourly),
+      readingHourlyByFormat:
+          added('readingHourlyByFormat', merged.readingHourlyByFormat),
+      videoHourly: added('videoHourly', merged.videoHourly),
+      miningStats: added('miningStats', merged.miningStats),
+      lookupMiningCounters:
+          added('lookupMiningCounters', merged.lookupMiningCounters),
+      studySegments: added('studySegments', merged.studySegments),
+      studySegmentTombstones:
+          whole(segmentsChanged, merged.studySegmentTombstones),
+      favoriteWords: whole(favoritesChanged, merged.favoriteWords),
+      favoriteSentences: whole(favoritesChanged, merged.favoriteSentences),
+      favoriteWordTombstones:
+          whole(favoritesChanged, merged.favoriteWordTombstones),
+      favoriteSentenceTombstones:
+          whole(favoritesChanged, merged.favoriteSentenceTombstones),
+      webHistory: whole(webHistoryChanged, merged.webHistory),
+      webHistoryTombstones:
+          whole(webHistoryChanged, merged.webHistoryTombstones),
+      webBookmarks: whole(webBookmarksChanged, merged.webBookmarks),
+      webBookmarkTombstones:
+          whole(webBookmarksChanged, merged.webBookmarkTombstones),
+    );
   }
 
   /// 按本机删除墓碑裁剪一份**将要上行**的快照，规则与 [applySnapshotToLocal] 写回
@@ -370,13 +522,27 @@ class AggregateSyncService {
             in _tombstoneRecordsOf(t, profileNameById, aliases))
           r.key: t.deletedAt,
     };
+    // v128 浏览器历史 / 书签：按本机 `webhistory` / `webbookmark` 墓碑裁剪（与 apply 同律）。
+    final ({List<WebHistoryRecord> history, List<WebBookmarkRecord> bookmarks})
+        web = await filterWebBrowserTombstoned(
+      _db,
+      history: snapshot.webHistory,
+      bookmarks: snapshot.webBookmarks,
+    );
     if (statTombstoned.isEmpty &&
         favWordTombstoned.isEmpty &&
         favSentenceTombstoned.isEmpty &&
-        segmentTombstoned.isEmpty) {
+        segmentTombstoned.isEmpty &&
+        identical(web.history, snapshot.webHistory) &&
+        identical(web.bookmarks, snapshot.webBookmarks)) {
       return snapshot;
     }
     return AggregateSnapshot(
+      webHistory: web.history,
+      webBookmarks: web.bookmarks,
+      // 墓碑家族透传（删除才能传到对端）。
+      webHistoryTombstones: snapshot.webHistoryTombstones,
+      webBookmarkTombstones: snapshot.webBookmarkTombstones,
       studySegments: <StudySegmentRecord>[
         for (final StudySegmentRecord s in snapshot.studySegments)
           if ((segmentTombstoned[s.mediaIdentity] ?? 0) <= s.startAt) s,
@@ -477,7 +643,32 @@ class AggregateSyncService {
       tombstones: AggregateMergeService.mergeStudyTombstones(
           local.studySegmentTombstones, remote.studySegmentTombstones),
     );
+    // v128 浏览器历史（url 并集）/ 书签（uid LWW）+ 各自墓碑仲裁。
+    final ({
+      List<WebHistoryRecord> entries,
+      List<AggregateTombstoneRecord> tombstones
+    }) historyArb = arbitrateWebHistory(
+      union: mergeWebHistory(local.webHistory, remote.webHistory),
+      tombstones: webTombstoneMap(<AggregateTombstoneRecord>[
+        ...local.webHistoryTombstones,
+        ...remote.webHistoryTombstones,
+      ]),
+    );
+    final ({
+      List<WebBookmarkRecord> bookmarks,
+      List<AggregateTombstoneRecord> tombstones
+    }) bookmarksArb = arbitrateWebBookmarks(
+      union: mergeWebBookmarks(local.webBookmarks, remote.webBookmarks),
+      tombstones: webTombstoneMap(<AggregateTombstoneRecord>[
+        ...local.webBookmarkTombstones,
+        ...remote.webBookmarkTombstones,
+      ]),
+    );
     return AggregateSnapshot(
+      webHistory: historyArb.entries,
+      webBookmarks: bookmarksArb.bookmarks,
+      webHistoryTombstones: historyArb.tombstones,
+      webBookmarkTombstones: bookmarksArb.tombstones,
       studySegments: segmentsArb.segments,
       studySegmentTombstones: segmentsArb.tombstones,
       readingStats: _mergeReadingStats(local.readingStats, remote.readingStats),
@@ -891,8 +1082,18 @@ class AggregateSyncService {
     final Map<int, String> profileNameById = await _profileNameById();
     final Map<int, Set<String>> aliases =
         await _db.getStudyProfileNameAliases();
+    final ({
+      List<WebHistoryRecord> history,
+      List<WebBookmarkRecord> bookmarks,
+      List<AggregateTombstoneRecord> historyTombstones,
+      List<AggregateTombstoneRecord> bookmarkTombstones,
+    }) web = await materializeWebBrowserFamilies(_db);
 
     return AggregateSnapshot(
+      webHistory: web.history,
+      webBookmarks: web.bookmarks,
+      webHistoryTombstones: web.historyTombstones,
+      webBookmarkTombstones: web.bookmarkTombstones,
       studySegments: <StudySegmentRecord>[
         for (final StudySegmentRow s in segments)
           if (AggregateMergeService.isStudyKindSyncable(s.mediaKind))
@@ -1325,6 +1526,8 @@ class AggregateSyncService {
       );
     }
     await _writeFavoriteSentences(snapshot.favoriteSentences);
+    // v128 浏览器历史 / 书签（墓碑先落、再并入；自带墓碑过滤与幂等）。
+    await applyWebBrowserFamilies(_db, snapshot);
   }
 
   /// 第 4 步落库（BUG-2717）：在 [localApplyLock] 内**重新** materialize 本地再折叠
@@ -1354,11 +1557,17 @@ class AggregateSyncService {
   /// into what the client sent, so it must fold here), keeping the never-shrinks /
   /// idempotent invariants on the host side too. Returns nothing; local DB is the
   /// side effect.
+  ///
+  /// 只把 [localDelta]（合并结果相对本地真正变化的部分）交给
+  /// [applySnapshotToLocal]：与整份写回效果相同（理由见 [localDelta]），但稳态
+  /// 零写入、增量只写变化行。
   Future<void> foldIntoLocal(AggregateSnapshot incoming) async {
     if (incoming.isEmpty) return; // Nothing to fold: no-op (idempotent).
     final AggregateSnapshot local = await materializeLocalSnapshot();
     final AggregateSnapshot merged = mergeSnapshots(local, incoming);
-    await applySnapshotToLocal(merged);
+    final AggregateSnapshot? delta = localDelta(merged, local);
+    if (delta == null) return;
+    await applySnapshotToLocal(delta);
   }
 
   /// Reads the favorite-sentence pref blob into models, tolerating a

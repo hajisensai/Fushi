@@ -237,6 +237,7 @@ void main() {
       p.edgeMinVoiceMs.toDouble(),
       p.edgeLeadMs.toDouble(),
       p.edgeTailMs.toDouble(),
+      0, // cutBiasMs：冻结向量生成时还没有这一项
     ]);
 
     void expectState(Int64List packed, Object? state) {

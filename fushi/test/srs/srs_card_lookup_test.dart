@@ -12,6 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
@@ -26,6 +28,7 @@ import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../helpers/fake_anki_repository.dart';
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/popup_mining_target_overrides.dart';
 import '../helpers/test_platform_services.dart';
@@ -84,6 +87,7 @@ void main() {
     WidgetTester tester, {
     required bool answer,
     bool apple = false,
+    SrsCardLookupCardSource? Function()? cardSource,
   }) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -125,6 +129,7 @@ void main() {
               body: SizedBox.expand(
                 child: SrsCardLookupHost(
                   controller: lookup,
+                  cardSource: cardSource,
                   child: SrsFushiCardView(
                     face: SrsCardFace(
                       cardId: 'c1',
@@ -209,6 +214,60 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
     });
   }
+
+  group('制卡来源（cardSource）', () {
+    Future<List<AnkiMiningContext>> mineBoth(WidgetTester tester) async {
+      final Finder host = find.byType(SrsCardLookupHost);
+      final DictionaryPageMixin page =
+          tester.state(host) as DictionaryPageMixin;
+      final FakeAnkiRepository repo =
+          ProviderScope.containerOf(
+                tester.element(host),
+              ).read(ankiRepositoryProvider)
+              as FakeAnkiRepository;
+      // 假仓库的 mineEntry 记下上下文后抛 UnimplementedError（不落卡）。
+      await expectLater(
+        page.onMineEntry(<String, String>{'sentence': 's'}),
+        throwsUnimplementedError,
+      );
+      await page.onUpdateEntry(7, <String, String>{'sentence': 's'});
+      await tester.pump(const Duration(seconds: 5));
+      expect(repo.minedContexts, hasLength(2));
+      return repo.minedContexts;
+    }
+
+    testWidgets('不传：标题 / 网址都不带（复习卡面行为不变）', (WidgetTester tester) async {
+      await pumpCard(tester, answer: true);
+      for (final AnkiMiningContext c in await mineBoth(tester)) {
+        expect(c.documentTitle, isNull);
+        expect(c.sourceUrl, isNull);
+        expect(c.sourceLink, isNull);
+      }
+    });
+
+    testWidgets('传：制卡与覆写都带当前网页标题与网址；返回 null 时不带', (WidgetTester tester) async {
+      SrsCardLookupCardSource? current = (
+        title: '  ニュース  ',
+        url: Uri.parse('https://example.jp/a?b=1'),
+      );
+      await pumpCard(tester, answer: true, cardSource: () => current);
+      for (final AnkiMiningContext c in await mineBoth(tester)) {
+        expect(c.documentTitle, 'ニュース');
+        expect(c.sourceUrl, 'https://example.jp/a?b=1');
+      }
+      current = null; // 例如切到无痕标签页
+      final Finder host = find.byType(SrsCardLookupHost);
+      final FakeAnkiRepository repo =
+          ProviderScope.containerOf(
+                tester.element(host),
+              ).read(ankiRepositoryProvider)
+              as FakeAnkiRepository;
+      repo.minedContexts.clear();
+      final AnkiMiningContext c = (await mineBoth(tester)).last;
+      expect(c.documentTitle, isNull);
+      expect(c.sourceUrl, isNull);
+    });
+  });
 
   testWidgets('原生区：例句注音收起时第一下点按只显示注音（原有操作），之后点字才查词', (
     WidgetTester tester,

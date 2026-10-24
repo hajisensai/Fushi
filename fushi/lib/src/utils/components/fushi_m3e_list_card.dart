@@ -274,7 +274,8 @@ class FushiListLeadingIcon extends StatelessWidget {
   }
 }
 
-/// [shape] 对应的 [ShapeBorder]。
+/// [shape] 对应的 [ShapeBorder]。cookie / flower 取官方 M3E 形状库
+/// （[MaterialShapes]），不再自绘。
 ShapeBorder fushiLeadingShapeBorder(
   FushiLeadingShape shape, {
   BorderSide side = BorderSide.none,
@@ -285,68 +286,15 @@ ShapeBorder fushiLeadingShapeBorder(
       borderRadius: FushiM3eShape.smallRadius,
       side: side,
     ),
-    FushiLeadingShape.cookie => FushiCookieBorder(lobes: 4, side: side),
-    FushiLeadingShape.flower => FushiCookieBorder(lobes: 9, side: side),
+    FushiLeadingShape.cookie => MaterialShapeBorder(
+      shape: MaterialShapes.cookie4Sided,
+      side: side,
+    ),
+    FushiLeadingShape.flower => MaterialShapeBorder(
+      shape: MaterialShapes.cookie9Sided,
+      side: side,
+    ),
   };
-}
-
-/// M3E 形状库的「cookie」族：圆周上 [lobes] 个圆润凸瓣（4 = 四瓣 cookie，
-/// 9 = 花瓣）。半径 r(θ) = R·(1 − depth·(1 − cos(lobes·θ))/2)，瓣深 [depth]
-/// 取 M3E 形状的观感值。
-class FushiCookieBorder extends OutlinedBorder {
-  const FushiCookieBorder({required this.lobes, this.depth = 0.14, super.side});
-
-  final int lobes;
-  final double depth;
-
-  Path _path(Rect rect) {
-    final Offset c = rect.center;
-    final double r = rect.shortestSide / 2;
-    const int steps = 144;
-    final Path path = Path();
-    for (int i = 0; i <= steps; i++) {
-      final double theta = 2 * math.pi * i / steps - math.pi / 2;
-      final double k = 1 - depth * (1 - math.cos(lobes * theta)) / 2;
-      final Offset p = c + Offset(math.cos(theta), math.sin(theta)) * (r * k);
-      if (i == 0) {
-        path.moveTo(p.dx, p.dy);
-      } else {
-        path.lineTo(p.dx, p.dy);
-      }
-    }
-    return path..close();
-  }
-
-  @override
-  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
-      _path(rect.deflate(side.strokeInset));
-
-  @override
-  Path getOuterPath(Rect rect, {TextDirection? textDirection}) => _path(rect);
-
-  @override
-  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
-    if (side.style == BorderStyle.none || side.width == 0) return;
-    canvas.drawPath(_path(rect.deflate(side.strokeInset / 2)), side.toPaint());
-  }
-
-  @override
-  ShapeBorder scale(double t) =>
-      FushiCookieBorder(lobes: lobes, depth: depth, side: side.scale(t));
-
-  @override
-  FushiCookieBorder copyWith({BorderSide? side}) =>
-      FushiCookieBorder(lobes: lobes, depth: depth, side: side ?? this.side);
-
-  @override
-  bool operator ==(Object other) =>
-      other is FushiCookieBorder &&
-      other.lobes == lobes &&
-      other.depth == depth &&
-      other.side == side;
-
-  @override
-  int get hashCode => Object.hash(lobes, depth, side);
 }
 
 /// 滑动操作（[Dismissible] 的 background / secondaryBackground）的统一底：

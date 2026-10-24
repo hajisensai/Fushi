@@ -18,6 +18,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipelin
 import 'package:fushi/src/asr_host/asr_ai_hosts.dart';
 import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 
@@ -699,6 +700,97 @@ void main() {
           }) async => null,
     );
     expect(r, isFalse);
+  });
+
+  testWidgets('阶段轨：待下载高亮第一格，下完后打勾（本弹层下过，不算跳过）', (
+    WidgetTester tester,
+  ) async {
+    final _FakeService service = _FakeService(ready: false, jobsDir: tmp);
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('asr-pipeline-stage-0-active')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.widgetWithText(FilledButton, t.audiobook_transcribe_model_download),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('asr-pipeline-stage-0-done')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('asr-pipeline-stage-2-pending')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('完成态没匹配过正文：后两格空着并说明「使用字幕」后才匹配', (
+    WidgetTester tester,
+  ) async {
+    final File srt = File('${tmp.path}/old.srt')..writeAsStringSync('1\n');
+    final _FakeService service = _FakeService(
+      ready: true,
+      jobsDir: tmp,
+      existingSrt: srt.path,
+    );
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    // 模型本来就在：下载格是跳过；转录已完成。
+    expect(
+      find.byKey(const ValueKey<String>('asr-pipeline-stage-0-skipped')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('asr-pipeline-stage-2-done')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('asr-pipeline-stage-3-pending')),
+      findsOneWidget,
+    );
+    expect(_statusText(tester), contains(t.audiobook_transcribe_match_after_use));
+    expect(
+      find.byKey(const ValueKey<String>('asr-coverage-summary')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('完成态有上次匹配的覆盖情况：五格全完成，按档着色显示覆盖率', (
+    WidgetTester tester,
+  ) async {
+    final File srt = File('${tmp.path}/old.srt')..writeAsStringSync('1\n');
+    File(asrCoveragePathFor(srt.path)).writeAsStringSync(
+      '{"matchedCues":1250,"totalCues":1260,"coveredChars":990,'
+      '"spanChars":1000}',
+    );
+    final _FakeService service = _FakeService(
+      ready: true,
+      jobsDir: tmp,
+      existingSrt: srt.path,
+    );
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('asr-pipeline-stage-4-done')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('asr-coverage-tag-excellent')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(t.audiobook_transcribe_coverage_text(pct: '99.0')),
+      findsOneWidget,
+    );
+    expect(
+      _statusText(tester),
+      isNot(contains(t.audiobook_transcribe_match_after_use)),
+    );
   });
 
   testWidgets('已有完成产物：直接进入完成态，可放弃后重转', (WidgetTester tester) async {

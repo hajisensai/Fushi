@@ -1,6 +1,6 @@
 // 手写 FFI 绑定：native/fushi_fsrs/src/lib.rs 导出的 C ABI（`ffsrs_*`）。
 //
-// - ffsrs_call / ffsrs_compute_parameters 返回的 `char*` 一律由 ffsrs_free_string 释放；
+// - ffsrs_call / ffsrs_fit 返回的 `char*` 一律由 ffsrs_free_string 释放；
 // - ffsrs_zstd_decompress 返回的缓冲区由 ffsrs_free_bytes（带长度）释放。
 // 高层封装见 ffi_fsrs_engine.dart，别在业务代码里直接调这些。
 //
@@ -12,9 +12,33 @@
 import 'dart:ffi' as ffi;
 
 typedef _CallC = ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Char>);
-typedef _ComputeC =
+typedef _FitC =
     ffi.Pointer<ffi.Char> Function(
       ffi.Pointer<ffi.Char>,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Pointer<ffi.Float>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Size,
+      ffi.Pointer<ffi.Int32>,
+      ffi.Pointer<ffi.Int64>,
+    );
+typedef _FitDart =
+    ffi.Pointer<ffi.Char> Function(
+      ffi.Pointer<ffi.Char>,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Pointer<ffi.Float>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Int64>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Uint32>,
+      int,
       ffi.Pointer<ffi.Int32>,
       ffi.Pointer<ffi.Int64>,
     );
@@ -52,6 +76,13 @@ typedef _ZstdDart =
       int,
       ffi.Pointer<ffi.Size>,
     );
+typedef _ZstdFileC =
+    ffi.Int32 Function(
+      ffi.Pointer<ffi.Char> inPath,
+      ffi.Pointer<ffi.Char> outPath,
+    );
+typedef _ZstdFileDart =
+    int Function(ffi.Pointer<ffi.Char> inPath, ffi.Pointer<ffi.Char> outPath);
 typedef _FreeBytesC = ffi.Void Function(ffi.Pointer<ffi.Uint8>, ffi.Size);
 typedef _FreeBytesDart = void Function(ffi.Pointer<ffi.Uint8>, int);
 typedef _CorpusNewC =
@@ -161,9 +192,7 @@ typedef _AbiVersionDart = int Function();
 class FushiFsrsBindings {
   FushiFsrsBindings(ffi.DynamicLibrary lib)
     : ffsrs_call = lib.lookupFunction<_CallC, _CallC>('ffsrs_call'),
-      ffsrs_compute_parameters = lib.lookupFunction<_ComputeC, _ComputeC>(
-        'ffsrs_compute_parameters',
-      ),
+      ffsrs_fit = lib.lookupFunction<_FitC, _FitDart>('ffsrs_fit'),
       ffsrs_retrievability_batch = lib.lookupFunction<_BatchC, _BatchDart>(
         'ffsrs_retrievability_batch',
       ),
@@ -173,6 +202,10 @@ class FushiFsrsBindings {
       ffsrs_zstd_decompress = lib.lookupFunction<_ZstdC, _ZstdDart>(
         'ffsrs_zstd_decompress',
       ),
+      ffsrs_zstd_decompress_file = lib
+          .lookupFunction<_ZstdFileC, _ZstdFileDart>(
+            'ffsrs_zstd_decompress_file',
+          ),
       ffsrs_free_bytes = lib.lookupFunction<_FreeBytesC, _FreeBytesDart>(
         'ffsrs_free_bytes',
       ),
@@ -215,14 +248,25 @@ class FushiFsrsBindings {
   final ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Char> request)
   ffsrs_call;
 
-  /// 参数优化，阻塞到结束；[cancel] 是 int32 取消标志，[progress] 是 int64[2]
-  /// `[已处理, 总数]`，两者都可为 nullptr。
+  /// 参数优化 / 评估，阻塞到结束。[request] 是 `{"op","algorithm","params"?}` JSON，训练集是打包形态
+  /// （每张卡一份完整历史 + 按时刻排序的 `(卡序号, 前缀长度)`，见 lib.rs 的 `TrainingSet`）；
+  /// [cardIds] 可为 nullptr。[cancel] 是 int32 取消标志，[progress] 是 int64[2] `[已处理, 总数]`，
+  /// 两者都可为 nullptr，只对参数优化生效。
   final ffi.Pointer<ffi.Char> Function(
     ffi.Pointer<ffi.Char> request,
+    ffi.Pointer<ffi.Uint8> ratings,
+    ffi.Pointer<ffi.Float> deltaDays,
+    int reviewCount,
+    ffi.Pointer<ffi.Uint32> cardOffsets,
+    ffi.Pointer<ffi.Int64> cardIds,
+    int cardCount,
+    ffi.Pointer<ffi.Uint32> itemCards,
+    ffi.Pointer<ffi.Uint32> itemLengths,
+    int itemCount,
     ffi.Pointer<ffi.Int32> cancel,
     ffi.Pointer<ffi.Int64> progress,
   )
-  ffsrs_compute_parameters;
+  ffsrs_fit;
 
   /// 同一组参数下批量算可提取度：[model] 是 `{"algorithm","params"}` JSON，
   /// [s] / [d] / [elapsed] / [out] 长度均为 [n]，[sf] 可为 nullptr（取 [s]）。
@@ -247,6 +291,14 @@ class FushiFsrsBindings {
     ffi.Pointer<ffi.Size> outLen,
   )
   ffsrs_zstd_decompress;
+
+  /// zstd 文件到文件流式解码：返回 0 成功 / 1 参数非法 / 2 读写失败 / 3 数据非法 / 4 panic
+  /// （native/fushi_fsrs/src/lib.rs 的 `ZSTD_FILE_*`）。
+  final int Function(
+    ffi.Pointer<ffi.Char> inPath,
+    ffi.Pointer<ffi.Char> outPath,
+  )
+  ffsrs_zstd_decompress_file;
 
   final void Function(ffi.Pointer<ffi.Uint8> ptr, int len) ffsrs_free_bytes;
 

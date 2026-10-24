@@ -477,22 +477,31 @@ void main() {
           'StoreRestrictedCapability.onlineMangaSource.isAvailable;',
         ),
       );
+      // 浏览器的「阅读本章」是一个功能插件（WebComicFeature）：扫图执行器整条只在
+      // 合规门开时建，插件的 available 由它是否为 null 决定，浏览页不装不可用的插件。
+      final String comic = compactCode(
+        read('lib/src/web_browser/tab_view/features/web_comic_feature.dart'),
+      );
+      expect(
+        comic,
+        contains(
+          '_scanDriver=webComicReaderActionAvailable()?WebComicScanDriver():null',
+        ),
+        reason: '扫图执行器整条只在合规门开时装。',
+      );
+      expect(comic, contains('boolgetavailable=>_scanDriver!=null;'));
+      expect(comic, isNot(contains('Platform.isIOS')));
+      final String features = compactCode(
+        read('lib/src/web_browser/features/web_browser_features.dart'),
+      );
+      expect(features, contains('WebComicFeature(ref:ref)'));
+      expect(
+        features,
+        contains('.where((WebBrowserFeaturef)=>f.available)'),
+        reason: '装配点只保留 available 的插件。',
+      );
       final String browser = compactCode(
         read('lib/src/pages/implementations/fushi_web_browser_page.dart'),
-      );
-      expect(
-        browser,
-        contains(
-          'finalWebComicScanDriver?_scanDriver=webComicReaderActionAvailable()'
-          '?WebComicScanDriver():null;',
-        ),
-        reason: '扫图执行器整条只在合规门开时装；「阅读本章」按钮由它是否为 null 决定。',
-      );
-      expect(
-        browser,
-        contains(
-          'final bool canRead = _scanDriver != null'.replaceAll(' ', ''),
-        ),
       );
       expect(
         browser,
@@ -543,21 +552,24 @@ void main() {
           'StoreRestrictedCapability.onlineNovelSource.isAvailable;',
         ),
       );
-      final String browser = compactCode(
-        read('lib/src/pages/implementations/fushi_web_browser_page.dart'),
+      // 浏览器上的小说动作是功能插件（WebNovelFeature），available 即合规门。
+      final String novel = compactCode(
+        read('lib/src/web_browser/tab_view/features/web_novel_feature.dart'),
       );
       expect(
-        browser,
-        contains('finalbool_novelAvailable=webNovelReaderActionAvailable();'),
+        novel,
+        contains('_novelAvailable=webNovelReaderActionAvailable();'),
         reason: '小说动作整条只在合规门开时装。',
       );
+      expect(novel, contains('boolgetavailable=>_novelAvailable;'));
+      expect(novel, contains('if(!_novelAvailable||'));
+      expect(novel, isNot(contains('Platform.isIOS')));
       expect(
-        browser,
-        contains('if(_novelAvailable)FushiToolbarItem('),
-        reason: '工具栏上的「用 Fushi 阅读（小说）」由同一个判据决定出不出现。',
+        compactCode(
+          read('lib/src/web_browser/features/web_browser_features.dart'),
+        ),
+        contains('WebNovelFeature(ref:ref)'),
       );
-      expect(browser, contains('if(!_novelAvailable||'));
-      expect(browser, isNot(contains('Platform.isIOS')));
       final String library = compactCode(
         read('lib/src/media/novel/web/web_novel_library.dart'),
       );
@@ -839,6 +851,57 @@ void main() {
         File('../native/aidoku_runtime/src/main.rs').existsSync(),
         isFalse,
       );
+    });
+  });
+
+  group('外部打赏入口由 externalDonation 门控', () {
+    test('设置页的 GitHub Sponsors / Ko-fi 两项都委托 externalDonation', () {
+      final String schema = compactCode(
+        read('lib/src/settings/settings_schema_system.dart'),
+      );
+      for (final String id in <String>[
+        'system.github_sponsors',
+        'system.ko_fi',
+      ]) {
+        final int start = schema.indexOf("id:'$id',");
+        expect(start, greaterThanOrEqualTo(0), reason: '找不到 $id');
+        final int end = schema.indexOf('SettingsActionItem(', start);
+        final String item = schema.substring(
+          start,
+          end < 0 ? schema.length : end,
+        );
+        expect(
+          item,
+          contains(
+            'visible:(_)=>StoreRestrictedCapability.externalDonation.isAvailable,',
+          ),
+          reason: '$id 在 iOS 上会触发 App Store 3.1.1 拒审（外部打赏）。',
+        );
+      }
+    });
+
+    test('外部打赏链接常量只在设置 schema 里被引用（新入口必须过同一道门）', () {
+      final List<String> offenders = <String>[];
+      for (final FileSystemEntity e in Directory(
+        'lib',
+      ).listSync(recursive: true)) {
+        if (e is! File || !e.path.endsWith('.dart')) continue;
+        final String normalized = e.path.replaceAll(r'\', '/');
+        if (normalized.endsWith('lib/src/utils/misc/official_links.dart') ||
+            normalized.endsWith(
+              'lib/src/settings/settings_schema_system.dart',
+            )) {
+          continue;
+        }
+        final String src = e.readAsStringSync();
+        if (src.contains('kGitHubSponsorsUrl') ||
+            src.contains('kKoFiUrl') ||
+            src.contains('ko-fi.com') ||
+            src.contains('github.com/sponsors')) {
+          offenders.add(normalized);
+        }
+      }
+      expect(offenders, isEmpty);
     });
   });
 

@@ -148,41 +148,25 @@ void main() {
   });
 
   group('BUG-3280 / BUG-3346 WebKit 竖排长句扫过不消失', () {
-    // BUG-3346：iOS 模拟器实测 clone 与 slice 一样整句消失，只有把 .tx 变成
-    // inline-block（原子盒）长句才看得见。CI 没有 WebKit，这里钉住规则形态。
-    test('识别不了无前缀 slice 的引擎把 .tx 变成 inline-block', () {
+    // 根因是 WebKit 画不出折成多列的竖排行内盒上的 background-clip: text（文字透明
+    // 填充、背景又没画）。扫过改成「未读色底层 + 当前色副本窗口」后整条路径不再有
+    // 透明填充，也就不需要把 .tx 变成 inline-block 的回退。这里钉住它不回来。
+    test('扫过不用透明填充 + 背景裁切，.tx 保持行内盒', () {
       final String html = _html();
-      final int at = html.indexOf(
-        '@supports not (box-decoration-break: slice)',
-      );
-      expect(at, isNonNegative);
-      final String block = html.substring(at, html.indexOf('}\n}', at) + 3);
-      // 回退只限竖排：WebKit 上这条 @supports 恒成立；横排多行长句在 WebKit 上
-      // slice 扫过正常（实测），改成 inline-block 反而丢掉跨行接续。
-      final Map<String, String> fallbackRules = _rules(block);
-      expect(fallbackRules.keys, <String>[
-        'body.ly-sweep.ly-vertical:not(.ly-paused) '
-            '.cue.current:not(.ly-nosweep) .tx',
-      ]);
-      expect(fallbackRules.values.single, contains('display: inline-block;'));
-      // clone 在 WebKit 上照样消失，不能再作为回退出现。
-      expect(html, isNot(contains('box-decoration-break: clone')));
-      // .tx 只在竖排选择器下变 inline-block：横排扫过保持行内盒 + slice。
-      final Iterable<MapEntry<String, String>> blockTx = _rules(html).entries
-          .where(
-            (MapEntry<String, String> e) =>
-                e.key.contains('.tx') &&
-                e.value.contains('display: inline-block'),
-          );
-      expect(blockTx, isNotEmpty);
-      for (final MapEntry<String, String> e in blockTx) {
-        expect(e.key, contains('.ly-vertical'), reason: e.key);
-      }
-      // 回退规则在扫过规则之后，同特异性下后者胜。
+      expect(html, isNot(contains('background-clip: text')));
+      expect(html, isNot(contains('-webkit-text-fill-color: transparent')));
       expect(
-        at,
-        greaterThan(html.indexOf('-webkit-box-decoration-break: slice;')),
+        html,
+        isNot(contains('@supports not (box-decoration-break: slice)')),
       );
+      for (final MapEntry<String, String> e in _rules(html).entries) {
+        if (!e.key.contains('.tx')) continue;
+        expect(
+          e.value,
+          isNot(contains('display: inline-block')),
+          reason: e.key,
+        );
+      }
     });
   });
 

@@ -23,6 +23,7 @@ import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
 import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
@@ -90,6 +91,8 @@ Future<String?> importDiscoveryAudiobook({
   required AudiobookRepository audiobookRepo,
   required AlignAudiobookPlan plan,
   double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
+  AudiobookAlignmentStepCallback? onStep,
+  void Function(AudiobookTextCoverage coverage)? onCoverage,
 }) async {
   final String? bookKey = plan.contentPath.toLowerCase().endsWith('.epub')
       ? await importDiscoveryEpub(db, plan.contentPath)
@@ -104,7 +107,7 @@ Future<String?> importDiscoveryAudiobook({
       discoveryImportFileName(plan.contentPath),
     );
   }
-  await alignAndPersistAudiobook(
+  final AudiobookAlignmentResult result = await alignAndPersistAudiobook(
     db: db,
     repo: srtBookRepo,
     audiobookRepo: audiobookRepo,
@@ -113,7 +116,10 @@ Future<String?> importDiscoveryAudiobook({
     subtitlePath: plan.subtitlePath,
     audioPaths: plan.audioPaths,
     similarityThreshold: similarityThreshold,
+    onStep: onStep,
   );
+  final AudiobookTextCoverage? coverage = result.coverage;
+  if (coverage != null) onCoverage?.call(coverage);
   return bookKey;
 }
 
@@ -176,13 +182,15 @@ Future<String?> importTranscribedAudiobook({
   String? contentPath,
   String? targetBookKey,
   required String title,
+  AudiobookAlignmentStepCallback? onStep,
+  void Function(AudiobookTextCoverage coverage)? onCoverage,
 }) async {
   if (targetBookKey != null) {
     final EpubBookRow? row = await db.getEpubBook(targetBookKey);
     if (row == null) {
       throw StateError('target book is gone: $targetBookKey');
     }
-    await alignAndPersistAudiobook(
+    final AudiobookAlignmentResult result = await alignAndPersistAudiobook(
       db: db,
       repo: srtBookRepo,
       audiobookRepo: audiobookRepo,
@@ -192,7 +200,10 @@ Future<String?> importTranscribedAudiobook({
       subtitlePath: subtitlePath,
       audioPaths: audioPaths,
       similarityThreshold: kAsrSuggestedSimilarityThreshold,
+      onStep: onStep,
     );
+    final AudiobookTextCoverage? coverage = result.coverage;
+    if (coverage != null) onCoverage?.call(coverage);
     return targetBookKey;
   }
   if (contentPath != null) {
@@ -206,8 +217,12 @@ Future<String?> importTranscribedAudiobook({
         audioPaths: audioPaths,
       ),
       similarityThreshold: kAsrSuggestedSimilarityThreshold,
+      onStep: onStep,
+      onCoverage: onCoverage,
     );
   }
+  // 独立字幕书：没有正文可匹配，直接入库。
+  onStep?.call(AudiobookAlignmentStep.saving);
   return importDiscoverySubtitleAudiobook(
     db: db,
     srtBookRepo: srtBookRepo,

@@ -51,8 +51,68 @@ const Duration _kMeshPeriod = Duration(seconds: 48);
 /// mesh 重画间隔（≈30fps）。
 const int _kMeshFrameMicros = 33000;
 
-/// 所有 mesh 实例共用的相位时钟（页面与标题栏里的两份背景同相位）。
-final Stopwatch _meshClock = Stopwatch()..start();
+/// 本帧的 vsync 时刻（微秒）。同一帧里所有回调读到同一个值：页面与桌面标题栏
+/// 里的两份 mesh 背景按它取相位，同一帧必然同相位，接缝处连续。
+int _frameClockMicros() =>
+    SchedulerBinding.instance.currentSystemFrameTimeStamp.inMicroseconds;
+
+/// 按最小间隔要帧的驱动：等到 [interval] 的下一个档位（按本帧 vsync 时刻
+/// [_frameClockMicros] 对齐，多个实例落在同一帧）才 `scheduleFrameCallback`
+/// 要一帧，帧回调里跑 [onFrame] 再排下一次。
+///
+/// 为什么不用 [Ticker]：Ticker 只要在跑，每个 vsync 都要一帧；而
+/// `RendererBinding.drawFrame` 即使没有脏节点也照样 `compositeFrame` 把整棵层树
+/// 送去栅格化——120Hz 屏上就是每秒 120 次整屏重画（mesh 的整屏径向渐变、封面
+/// 投影、平台视图合成），回调里自己按 33ms 跳过更新也省不掉这些帧。这里改成真正
+/// 只在需要时要帧。后台 / 熄屏时引擎不出帧，帧回调不来，链条自然停住，恢复出帧
+/// 后接着跑，不会在后台空转定时器。
+class _ThrottledFrameDriver {
+  _ThrottledFrameDriver({required this.interval, required this.onFrame});
+
+  final Duration interval;
+  final void Function(int frameMicros) onFrame;
+
+  Timer? _timer;
+  int? _callbackId;
+  bool _active = false;
+
+  bool get isActive => _active;
+
+  void start() {
+    if (_active) return;
+    _active = true;
+    _requestFrame();
+  }
+
+  void stop() {
+    _active = false;
+    _timer?.cancel();
+    _timer = null;
+    final int? id = _callbackId;
+    if (id != null) {
+      SchedulerBinding.instance.cancelFrameCallbackWithId(id);
+      _callbackId = null;
+    }
+  }
+
+  void _requestFrame() {
+    _callbackId = SchedulerBinding.instance.scheduleFrameCallback(_handleFrame);
+  }
+
+  void _handleFrame(Duration _) {
+    _callbackId = null;
+    if (!_active) return;
+    final int now = _frameClockMicros();
+    onFrame(now);
+    if (!_active) return;
+    final int step = interval.inMicroseconds;
+    final int wait = step - now % step;
+    _timer = Timer(Duration(microseconds: wait), () {
+      _timer = null;
+      if (_active) _requestFrame();
+    });
+  }
+}
 
 /// 底板圆角：MD3 extra-large（28，与底部弹层同档）。
 const double _kPlateRadius = FushiRadii.sheetValue;
@@ -86,9 +146,13 @@ class FushiMeshBackdrop extends StatefulWidget {
   State<FushiMeshBackdrop> createState() => _FushiMeshBackdropState();
 }
 
-class _FushiMeshBackdropState extends State<FushiMeshBackdrop>
-    with SingleTickerProviderStateMixin {
-  late final Ticker _ticker = createTicker(_onTick);
+class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
+  /// 按 33ms 档位要帧（不用 Ticker：Ticker 一开就逐 vsync 出整帧，见
+  /// [_ThrottledFrameDriver]）。
+  late final _ThrottledFrameDriver _driver = _ThrottledFrameDriver(
+    interval: const Duration(microseconds: _kMeshFrameMicros),
+    onFrame: _onFrame,
+  );
 
   /// 流动相位（0–1，一周 [_kMeshPeriod]）。只驱动画家重绘，不重建。
   final ValueNotifier<double> _phase = ValueNotifier<double>(0);
@@ -107,21 +171,25 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop>
   }
 
   void _syncTicker() {
-    final bool motion = widget.animate && fushiExpressiveMotionEnabled(context);
-    if (motion && !_ticker.isActive) {
+    // TickerMode 照旧生效（被别的路由盖住时停）：driver 不是 Ticker，要自己读。
+    final bool motion =
+        widget.animate &&
+        fushiExpressiveMotionEnabled(context) &&
+        TickerMode.valuesOf(context).enabled;
+    if (motion && !_driver.isActive) {
       _lastFrame = -1;
-      _ticker.start();
-    } else if (!motion && _ticker.isActive) {
-      _ticker.stop();
+      _driver.start();
+    } else if (!motion && _driver.isActive) {
+      _driver.stop();
       _phase.value = 0;
     }
   }
 
-  void _onTick(Duration _) {
-    // 漂移极慢，30fps 足够顺；整屏渐变每帧重画是白花 GPU。相位取全局共享时钟
-    // 并量化到 33ms 一档（不取本 ticker 的 elapsed）：桌面标题栏里画的是同一张
-    // 背景的另一个实例（bleedTop），两个实例同一帧必须是同一相位，接缝处才连续。
-    final int frame = _meshClock.elapsedMicroseconds ~/ _kMeshFrameMicros;
+  void _onFrame(int frameMicros) {
+    // 漂移极慢，30fps 足够顺；整屏渐变每帧重画是白花 GPU。相位取本帧 vsync 时刻
+    // 并量化到 33ms 一档：桌面标题栏里画的是同一张背景的另一个实例（bleedTop），
+    // 两个实例同一帧必须是同一相位，接缝处才连续。
+    final int frame = frameMicros ~/ _kMeshFrameMicros;
     if (frame == _lastFrame) return;
     _lastFrame = frame;
     _phase.value =
@@ -130,7 +198,7 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop>
 
   @override
   void dispose() {
-    _ticker.dispose();
+    _driver.stop();
     _phase.dispose();
     super.dispose();
   }
@@ -278,15 +346,19 @@ const Duration _kStaticWavePoll = Duration(milliseconds: 250);
 /// 未播段是平直轨道 + 尾端停止点，中间一根竖条 thumb（拖动时变粗变高），拖动时
 /// thumb 上方冒时长气泡，松手才 [onSeek]。下方左右两端是已播 / -剩余。
 ///
-/// 播放中用 Ticker 每帧读 [FushiPlaybackClock.position]，只重建这一小块；暂停时
-/// 降到每 400ms 轮询一次（还要跟上外部跳转）。←/→ 键前后跳 5 秒。
+/// 播放中波浪按 ≈30fps 流动（[_ThrottledFrameDriver]，不是逐 vsync 的 Ticker：
+/// 波浪 2.4 秒才流过一个 40px 波长，每帧只挪零点几像素，逐 vsync 重画看不出差别，
+/// 却让整屏每秒多合成几十到上百帧），顺带读 [FushiPlaybackClock.position]；振幅
+/// 弹簧 / 拖动这些短暂过渡期才用 vsync Ticker。重画只落在自带的 RepaintBoundary
+/// 里，不连带外层卡片、封面投影一起重录。暂停时降到每 400ms 轮询一次（还要跟上
+/// 外部跳转）。←/→ 键前后跳 5 秒。
 ///
 /// [onSeek] 为 null 时只显示进度（不可拖、不可聚焦）。[animateWave] = false 时
-/// 波形静止（不逐帧流动，振幅照样随播放态弹簧收放），位置每 250ms 轮询一次——
+/// 波形静止（不流动，振幅照样随播放态弹簧收放），位置每 250ms 轮询一次——
 /// 常亮的遥控页不为一条进度条逐帧重建。
 ///
 /// 给了 [clockListenable]（位置变化的推送源）时，位置改由它的通知驱动，**不再起任何
-/// 轮询定时器**；Ticker 只负责波浪流动 / 振幅弹簧 / 拖动这些纯动画。
+/// 轮询定时器**；帧驱动只负责波浪流动 / 振幅弹簧 / 拖动这些纯动画。
 class FushiWavySeekBar extends StatefulWidget {
   const FushiWavySeekBar({
     super.key,
@@ -323,7 +395,16 @@ class FushiWavySeekBar extends StatefulWidget {
 
 class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     with TickerProviderStateMixin {
+  /// 只在过渡期（振幅弹簧 / 拖动 / thumb 弹簧）跑的逐 vsync 驱动。
   late final Ticker _ticker = createTicker(_onTick);
+
+  /// 稳态波浪流动（≈30fps）。
+  late final _ThrottledFrameDriver _flow = _ThrottledFrameDriver(
+    interval: const Duration(microseconds: _kMeshFrameMicros),
+    onFrame: _advance,
+  );
+
+  bool _tickerModeEnabled = true;
   late final FushiSpring _amp = FushiSpring(
     vsync: this,
     spring: fushiExpressiveDefaultSpatial,
@@ -331,6 +412,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
   late final FushiSpring _drag = FushiSpring(vsync: this);
   late final FocusNode _focusNode = FocusNode(debugLabel: widget.debugLabel);
   Timer? _idlePoll;
+  Duration? _idlePollInterval;
 
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
@@ -364,6 +446,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
     _syncMotion(animate: false);
   }
 
@@ -388,33 +471,47 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
   void _syncMotion({required bool animate}) {
     final bool wave = widget.isPlaying && _motion;
     _amp.animateTo(wave ? 1 : 0, animate: animate && _motion);
-    if (!widget.animateWave) {
-      // 静态波形：位置走定时轮询；Ticker 只在振幅弹簧 / 拖动期间跑。
-      _restartIdlePoll(_kStaticWavePoll);
-      if (_amp.animation.isAnimating && !_ticker.isActive) _ticker.start();
+    if (_amp.animation.isAnimating && !_ticker.isActive) _ticker.start();
+    _syncSteady();
+  }
+
+  /// 过渡期（振幅 / thumb 弹簧在动、正在拖）需要逐 vsync 重建。
+  bool get _transient =>
+      _amp.animation.isAnimating ||
+      _drag.animation.isAnimating ||
+      _dragFraction != null;
+
+  /// 过渡期之外的刷新：播放中波浪流动走 ≈30fps 驱动（顺带读位置）；否则位置按
+  /// 轮询 / 推送源刷新。过渡期 Ticker 在跑时两者都停。
+  void _syncSteady() {
+    if (_ticker.isActive) {
+      _flow.stop();
+      _stopIdlePoll();
       return;
     }
-    if (widget.isPlaying || _amp.value > 0.001) {
-      _idlePoll?.cancel();
-      _idlePoll = null;
-      if (!_ticker.isActive) _ticker.start();
-    } else {
-      _startIdlePoll();
+    final bool flowing =
+        widget.animateWave && widget.isPlaying && _motion && _tickerModeEnabled;
+    if (flowing) {
+      _stopIdlePoll();
+      _flow.start();
+      return;
     }
+    _flow.stop();
+    _startIdlePoll(
+      widget.animateWave ? const Duration(milliseconds: 400) : _kStaticWavePoll,
+    );
   }
 
-  void _startIdlePoll() {
-    if (widget.clockListenable != null) return; // 有推送源：位置不靠轮询。
-    _idlePoll ??= Timer.periodic(const Duration(milliseconds: 400), (_) {
-      if (!mounted) return;
-      if (_readClock()) setState(() {});
-    });
-  }
-
-  void _restartIdlePoll(Duration interval) {
+  void _stopIdlePoll() {
     _idlePoll?.cancel();
     _idlePoll = null;
+  }
+
+  void _startIdlePoll(Duration interval) {
     if (widget.clockListenable != null) return; // 有推送源：位置不靠轮询。
+    if (_idlePoll != null && _idlePollInterval == interval) return;
+    _idlePoll?.cancel();
+    _idlePollInterval = interval;
     _idlePoll = Timer.periodic(interval, (_) {
       if (!mounted) return;
       if (_readClock()) setState(() {});
@@ -438,29 +535,31 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     return changed;
   }
 
-  void _onTick(Duration elapsed) {
-    if (!widget.animateWave) {
-      _readClock();
-      setState(() {});
-      if (!_amp.animation.isAnimating && _dragFraction == null) {
-        _ticker.stop();
-      }
-      return;
+  void _onTick(Duration _) {
+    _advance(_frameClockMicros());
+    if (!_transient) {
+      _ticker.stop();
+      _syncSteady();
     }
-    // 一个波长约 2.4 秒流过（慢而可感）。
-    _phase = elapsed.inMicroseconds / 1e6 * (2 * math.pi / 2.4);
+  }
+
+  /// 推进一帧：波浪相位 + 读位置 + 重建这一小块。相位取本帧 vsync 时刻，跨
+  /// Ticker / 稳态驱动切换连续，不随重启归零。
+  void _advance(int frameMicros) {
+    if (!mounted) return;
+    if (widget.animateWave) {
+      // 一个波长约 2.4 秒流过（慢而可感）。
+      _phase = frameMicros / 1e6 * (2 * math.pi / 2.4);
+    }
     _readClock();
     setState(() {});
-    if (!widget.isPlaying && _amp.value <= 0.001 && _dragFraction == null) {
-      _ticker.stop();
-      _startIdlePoll();
-    }
   }
 
   @override
   void dispose() {
     widget.clockListenable?.removeListener(_onClockChanged);
     _ticker.dispose();
+    _flow.stop();
     _idlePoll?.cancel();
     _amp.dispose();
     _drag.dispose();
@@ -494,13 +593,8 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     if (_duration <= Duration.zero) return;
     setState(() => _dragFraction = fraction);
     _drag.animateTo(1, animate: _motion);
-    if (!_ticker.isActive) {
-      if (widget.animateWave) {
-        _idlePoll?.cancel();
-        _idlePoll = null;
-      }
-      _ticker.start();
-    }
+    if (!_ticker.isActive) _ticker.start();
+    _syncSteady();
   }
 
   void _endDrag({required bool commit}) {
@@ -572,19 +666,22 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
             ? width - half - usable * fraction
             : half + usable * fraction;
         final double drag = _drag.value.clamp(0.0, 1.2);
-        final Widget paint = CustomPaint(
-          size: Size(width, widget.barHeight),
-          painter: _SeekPainter(
-            fraction: fraction,
-            phase: _phase,
-            amplitude: 4 * _amp.value.clamp(0.0, 1.2),
-            strokeWidth: widget.strokeWidth,
-            activeColor: cs.primary,
-            trackColor: cs.secondaryContainer,
-            thumbWidth: 4 + 2 * drag,
-            thumbHeight: widget.barHeight * (0.6 + 0.25 * drag),
-            focused: _focused,
-            rtl: rtl,
+        // 波浪逐帧重画只落在这一层，不连带时间文字 / 外层卡片重录。
+        final Widget paint = RepaintBoundary(
+          child: CustomPaint(
+            size: Size(width, widget.barHeight),
+            painter: _SeekPainter(
+              fraction: fraction,
+              phase: _phase,
+              amplitude: 4 * _amp.value.clamp(0.0, 1.2),
+              strokeWidth: widget.strokeWidth,
+              activeColor: cs.primary,
+              trackColor: cs.secondaryContainer,
+              thumbWidth: 4 + 2 * drag,
+              thumbHeight: widget.barHeight * (0.6 + 0.25 * drag),
+              focused: _focused,
+              rtl: rtl,
+            ),
           ),
         );
         if (!seekable) return paint;
@@ -672,18 +769,22 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
           ),
       ],
     );
-    return Semantics(
-      slider: seekable,
-      value: formatFushiPlaybackTime(shown),
-      child: seekable
-          ? Focus(
-              focusNode: _focusNode,
-              onKeyEvent: _onKey,
-              onFocusChange: (bool focused) =>
-                  setState(() => _focused = focused),
-              child: column,
-            )
-          : column,
+    // 自带重绘边界：时间文字每秒一变也只重录这一小块，不连带外层播放卡
+    // （投影 / 封面）一起重画。
+    return RepaintBoundary(
+      child: Semantics(
+        slider: seekable,
+        value: formatFushiPlaybackTime(shown),
+        child: seekable
+            ? Focus(
+                focusNode: _focusNode,
+                onKeyEvent: _onKey,
+                onFocusChange: (bool focused) =>
+                    setState(() => _focused = focused),
+                child: column,
+              )
+            : column,
+      ),
     );
   }
 }
@@ -838,8 +939,8 @@ class FushiTransportGroup extends StatelessWidget {
   final VoidCallback onPrevious;
   final VoidCallback onNext;
   final double playSize;
-  final FushiIconButtonSize sideSize;
-  final FushiIconButtonWidth sideWidth;
+  final ButtonSizeVariant sideSize;
+  final IconButtonWidthVariant sideWidth;
 
   /// 后退 / 前进若干秒（负数后退）。null = 不显示 ±10 秒键。
   final ValueChanged<int>? onSeekRelative;
@@ -902,7 +1003,7 @@ Widget fushiRelativeSeekButton(
           ? '${keyPrefix}_seek_back_button'
           : '${keyPrefix}_seek_forward_button',
     ),
-    size: FushiIconButtonSize.s,
+    size: ButtonSizeVariant.small,
     tooltip: back ? '-10s' : '+10s',
     onPressed: () => seekBy(seconds),
     icon: FushiIcon(back ? FushiIcons.replay10 : FushiIcons.forward10),

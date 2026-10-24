@@ -670,6 +670,17 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   );
 });
 
+/// 互联主机**替别的设备**制卡（收转发、浏览器扩展、读写出处笔记）用的仓库：裸本机后端，
+/// 不套待发队列 / 制卡到主机（对端有自己的队列，主机再排一次会让「送没送到」不确定），
+/// 但必须遵守本机的挖词目标——主机已迁到 Fushi 复习时，替对端制的卡也落复习，
+/// 再经复习同步回到各设备；否则会继续写进主机已弃用的 Anki。
+final hostMiningAnkiRepositoryProvider = Provider<BaseAnkiRepository>(
+  (Ref ref) => _withSrsMining(
+    ref,
+    ref.watch(platformServicesProvider).createAnkiRepository(),
+  ),
+);
+
 /// 最外层套上「挖词目标 = Fushi 复习」（[SrsMiningAnkiRepository]）。
 ///
 /// **只有复习模块开着、且目标是 Fushi 复习时才包**：模块关着时链上根本没有这一层，
@@ -769,7 +780,7 @@ PendingMineStore pendingMineStoreFor(AppModel appModel) =>
 /// 卡片位置、不制卡，绑自己不会递归，但多绕一层没有意义。
 ///
 /// 这里**不**看 `autoRepositionEnabled`：开关由调度器每轮重新读。若在此处按开关
-/// 决定包不包，provider 就得 watch 它，而它存在 Anki 仓库的 SharedPreferences 里
+/// 决定包不包，provider 就得 watch 它，而它存在 Anki 仓库的设置存储（Drift `anki_settings` 行）里
 /// （不是 Riverpod 状态）watch 不到，那样改开关得重启 app 才生效。
 BaseAnkiRepository _withAutoReposition(Ref ref, BaseAnkiRepository repo) {
   final AnkiAutoRepositionWiring wiring = withAnkiAutoReposition(

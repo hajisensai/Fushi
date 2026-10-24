@@ -1,16 +1,16 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
 import 'anki_media_dedup.dart';
 import 'anki_models.dart';
+import 'anki_settings_store.dart';
 import 'anki_note_type_definition.dart';
 import 'anki_synchronized_clip_template.dart';
 import 'card_source_link.dart';
 import 'lapis_note_type.dart';
 import 'anki_note_composer.dart';
 
+export 'anki_settings_store.dart';
 export 'anki_note_composer.dart'
     show
         AudioFetchOutcome,
@@ -24,18 +24,27 @@ export 'anki_note_composer.dart'
         synchronizedVideoReplayHtml;
 
 abstract class BaseAnkiRepository with AnkiNoteComposer {
-  @protected
-  static const settingsKey = 'fushi_anki_settings';
+  /// [settingsStore] 为 null 时用进程（isolate）级装配点 [defaultSettingsStore]。
+  BaseAnkiRepository({AnkiSettingsStore? settingsStore})
+      : _settingsStore = settingsStore;
 
-  /// 存量 SharedPreferences 键（W2-7 迁移输入）：[readSettingsJson] 载入期把
-  /// 值搬到 [settingsKey] 后删除旧键。旧字面量只允许活在这一处迁移代码里。
-  static const String _legacySettingsKey = 'hoshi_anki_settings';
+  /// 进程级装配点：app 在每个 entry point（主 app / `:popup` / 悬浮词典）打开
+  /// Drift 库后换成 Drift 实现；没装配（测试、没有 Drift 库的宿主）时是
+  /// SharedPreferences 实现，行为与迁移前一致。
+  static AnkiSettingsStore defaultSettingsStore =
+      const SharedPreferencesAnkiSettingsStore();
+
+  final AnkiSettingsStore? _settingsStore;
+
+  /// 本实例实际读写的设置存储（每次取值都解析，装配点后换也立即生效）。
+  @protected
+  AnkiSettingsStore get settingsStore => _settingsStore ?? defaultSettingsStore;
 
   /// 载入期一次性迁移（W2-2）：把存量用户卡模板里的音频旧别名
   /// `{sasayaki-audio}` 就地改写为 `{sentence-audio}`（两者从来渲染同一个值，
   /// 改写零语义变化），命中即回写持久层。幂等：改写后源串不再含旧 token。
   /// 旧字面量只允许活在这一处迁移代码里——渲染器/枚举/诊断均已不再受理别名。
-  /// 清理条件：无（SharedPreferences 无版本阶梯，载入期改写即是它的迁移通道）。
+  /// 清理条件：无（设置串整份存在单个键里、无版本阶梯，载入期改写即是它的迁移通道）。
   static const String _legacySentenceAudioAlias = '{sasayaki-audio}';
 
   /// 载入期一次性迁移：存量配置里 `MiscInfo` 的映射**一字不差**还是旧出厂默认
@@ -45,7 +54,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   /// 为什么只认「等于旧默认」：这等价于「用户从没碰过这个字段」，补齐是在替他
   /// 跟进出厂默认。凡是被改过的值——清空、换成别的占位符、或自己拼过别的
   /// 组合——一律不动，不覆盖用户意图。不会修改已经导出的旧卡。
-  /// 幂等：改写后值不再等于旧默认。清理条件：无（SharedPreferences 无版本阶梯，
+  /// 幂等：改写后值不再等于旧默认。清理条件：无（设置串无版本阶梯，
   /// 载入期改写即是它的迁移通道，与上面的别名改写同构）。
   static const String _legacyMiscInfoMapping = '{document-title}';
   static const String _miscInfoMappingWithClipTime =
@@ -55,32 +64,25 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   static const String _miscInfoMappingWithLinkedTitle =
       '{source-link} {clip-timestamp}';
 
-  /// 读原始设置 JSON 的**唯一通道**：三个载入期迁移（W2-7 键搬移 + W2-2 别名改写
-  /// + MiscInfo 补片段时间窗）都收敛在这里。子类若覆写 [loadSettings]（AnkiDroid 的
+  /// 读原始设置 JSON 的**唯一通道**：载入期迁移（W2-2 别名改写 + MiscInfo 补片段
+  /// 时间窗）都收敛在这里，改写结果经 [store] 回写——换成 Drift 存储后照样生效。
+  /// （W2-7 旧 SP 键搬移属于 SP 存储自身，见 [SharedPreferencesAnkiSettingsStore]。）子类若覆写 [loadSettings]（AnkiDroid 的
   /// legacy deck 迁移）也必须经由本方法取原始串，否则迁移被绕过。返回 null = 从未存过。
   ///
   /// 顺序有意：别名改写只把 `{sasayaki-audio}` 换成 `{sentence-audio}`，不可能凭空
   /// 造出或抹掉 `{document-title}`，故两条迁移互不干扰；但必须先改写再补 MiscInfo，
   /// 否则 `replaceAll` 会作用在已重编码的串上、把后一步的结果覆盖掉。
   @protected
-  Future<String?> readSettingsJson(SharedPreferences prefs) async {
-    String? raw = prefs.getString(settingsKey);
-    if (raw == null) {
-      final String? legacy = prefs.getString(_legacySettingsKey);
-      if (legacy != null) {
-        await prefs.setString(settingsKey, legacy);
-        await prefs.remove(_legacySettingsKey);
-        raw = legacy;
-      }
-    }
+  Future<String?> readSettingsJson(AnkiSettingsStore store) async {
+    String? raw = await store.read();
     if (raw != null && raw.contains(_legacySentenceAudioAlias)) {
       raw = raw.replaceAll(_legacySentenceAudioAlias, '{sentence-audio}');
-      await prefs.setString(settingsKey, raw);
+      await store.write(raw);
     }
     if (raw != null) {
       final String? upgraded = upgradeMiscInfoMapping(raw);
       if (upgraded != null) {
-        await prefs.setString(settingsKey, upgraded);
+        await store.write(upgraded);
         raw = upgraded;
       }
     }
@@ -126,8 +128,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   }
 
   Future<AnkiSettings> loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? raw = await readSettingsJson(prefs);
+    final String? raw = await readSettingsJson(settingsStore);
     if (raw == null) return const AnkiSettings();
     try {
       return AnkiSettings.fromJson(jsonDecode(raw) as Map<String, dynamic>);
@@ -137,16 +138,8 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
     }
   }
 
-  Future<void> saveSettings(AnkiSettings settings) async {
-    final prefs = await SharedPreferences.getInstance();
-    final bool saved = await prefs.setString(
-      settingsKey,
-      jsonEncode(settings.toJson()),
-    );
-    if (!saved) {
-      throw StateError('Failed to persist Anki settings.');
-    }
-  }
+  Future<void> saveSettings(AnkiSettings settings) =>
+      settingsStore.write(jsonEncode(settings.toJson()));
 
   Future<AnkiSettings> updateSettings(
     AnkiSettings Function(AnkiSettings) transform,

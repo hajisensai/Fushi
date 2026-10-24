@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -129,7 +128,7 @@ class FushiIconButton extends StatefulWidget {
     this.isWideTapArea = false,
     this.focusId,
     this.label,
-    this.selected = false,
+    this.selected,
     this.overflowPriority = 0,
     this.alwaysVisible = false,
     this.badge = false,
@@ -152,11 +151,12 @@ class FushiIconButton extends StatefulWidget {
   /// 多选等）同样恒外露：收进菜单就看不出它开着。
   final bool alwaysVisible;
 
-  /// 切换型按钮的选中态（例如工具栏里「多选模式」开着）。MD3 = secondaryContainer
-  /// 方圆角底 + onSecondaryContainer 图标（M3 Expressive toggle icon button）；
+  /// 切换型按钮的选中态（例如工具栏里「多选模式」开着）。MD3 = 官方 M3 Expressive
+  /// toggle 图标按钮的方圆角 + 补上的 secondaryContainer 浅色底；
   /// Apple = 强调色着色的液态玻璃圆钮 + onAccent 图标（iOS 26 `.glassProminent`）。
-  /// 默认 false，存量调用点外观不变。
-  final bool selected;
+  /// 默认 null = 非切换按钮（不带 hasSelectedState 语义，外观同未选中）；
+  /// 只有传了 true/false 才是切换按钮。
+  final bool? selected;
 
   /// The icon to display within the button.
   final IconData icon;
@@ -225,16 +225,10 @@ class _FushiIconButtonState extends State<FushiIconButton>
     with TickerProviderStateMixin {
   late bool enabled;
 
-  /// M3 Expressive 按压形变：0 = 静止（圆 / 胶囊），1 = 按下（圆角 12）。
-  /// fast spatial 弹簧（刚度 1400、阻尼比 0.9），快速连点带速度续上。
+  /// 带文字药丸的 M3 Expressive 按压形变：0 = 静止（胶囊），1 = 按下（圆角
+  /// 12）。fast spatial 弹簧（刚度 1400、阻尼比 0.9），快速连点带速度续上。
+  /// 纯图标按钮的形变交给官方 M3E [IconButton]，不走这里。
   late final FushiSpring _press = FushiSpring(vsync: this);
-
-  /// 选中态形变：0 = 圆，1 = 圆角 14 的方圆形（default spatial 弹簧）。
-  late final FushiSpring _select = FushiSpring(
-    vsync: this,
-    initial: widget.selected ? 1 : 0,
-    spring: fushiExpressiveDefaultSpatial,
-  );
 
   /// Stable fallback id so an icon button is a gamepad/keyboard focus target by
   /// default (no explicit [focusId] needed). Derived from this State's identity
@@ -258,20 +252,11 @@ class _FushiIconButtonState extends State<FushiIconButton>
     if (!_busyInFlight) {
       enabled = widget.enabled;
     }
-    if (oldWidget.selected != widget.selected) {
-      // 选中态形变只在 MD3 渲染；Apple 不形变，直接跳值、不跑弹簧。
-      _select.animateTo(
-        widget.selected ? 1 : 0,
-        animate:
-            fushiExpressiveMotionEnabled(context) && !isGlassDesign(context),
-      );
-    }
   }
 
   @override
   void dispose() {
     _press.dispose();
-    _select.dispose();
     super.dispose();
   }
 
@@ -306,7 +291,6 @@ class _FushiIconButtonState extends State<FushiIconButton>
     // 弹簧即刻建好：懒初始化首访若落在 dispose，会在已停用元素上 createTicker
     // 而断言（见 FushiPressMorph 同款修复）。
     _press;
-    _select;
   }
 
   /// 交给底层 [InkWell] / [IconButton] 的点击回调。装饰性图标（[FushiIconButton.onTap]
@@ -460,106 +444,105 @@ class _FushiIconButtonState extends State<FushiIconButton>
     );
   }
 
-  /// MD3（M3 Expressive）标准图标按钮：默认 40 的圆形命中区（8 内边距 + 24
-  /// 图标）、无底、onSurfaceVariant 图标；state layer 悬停 8% / 按下 10% /
-  /// 焦点 10%。按下由圆弹到圆角 12（fast spatial 弹簧），松手弹回；选中态常驻
-  /// 圆角 14 的 secondaryContainer 方圆底（toggle icon button）。调用方给了
-  /// 非圆 [FushiIconButton.shapeBorder] 的尊重调用方、不变形；墨水屏 / 减少
-  /// 动画下静态（见 [fushiExpressiveMotionEnabled]）。
+  /// MD3（M3 Expressive）标准图标按钮 = 官方 M3E [IconButton]（主题工厂把
+  /// IconButtonThemeData.variant 设成 material3Expressive）：配色、state
+  /// layer、各状态目标形状（按下圆角 8、选中方圆角 12）由官方实现，状态间的
+  /// M3E 弹簧由 [FushiIconButtonSpring] 在官方按钮上补齐。尺寸沿用本
+  /// 组件口径——内边距（默认 [FushiSpacing.gap]）+ 图标，不另撑 40 最小尺寸与
+  /// 48 外扩命中区，存量布局不变。调用方给了非圆 [FushiIconButton.shapeBorder]
+  /// 的固定用它、不形变；减少动画下形状瞬时切换（墨水屏主题不开 Expressive）。
   Widget _buildMaterialIcon(BuildContext context, FushiDesignTokens tokens) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
     // 装在填充槽里（返回圆胶囊 / 单按钮动作胶囊）：按钮 = 可见容器，state
     // layer 与命中区撑满容器、形状取容器的，不做按压变形（容器本身不变形）。
     final FushiFillSlot? slot = FushiFillSlot.maybeOf(context);
-    final bool round = widget.shapeBorder is CircleBorder;
-    final bool morph =
-        slot == null && round && fushiExpressiveMotionEnabled(context);
-    final bool tonalSelected = widget.selected && !eink;
-    final Color iconColor = !enabled
-        ? disabledColor
-        : (widget.enabledColor ??
-              (tonalSelected ? cs.onSecondaryContainer : enabledColor));
-    final Color stateLayer = tonalSelected
-        ? cs.onSecondaryContainer
-        : cs.onSurface;
-
-    Widget buildAt(double press, double select) {
-      final ShapeBorder shape;
-      if (morph) {
-        final double pill = ((1 - select) * (1 - press)).clamp(0.0, 1.0);
-        shape = FushiMorphBorder(
-          radius: lerpDouble(14, 12, press)!,
-          startPill: pill,
-          endPill: pill,
-        );
-      } else if (slot != null) {
-        shape = slot.shape;
-      } else if (widget.selected && round) {
-        shape = const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(14)),
-        );
-      } else {
-        shape = widget.shapeBorder;
-      }
-      final Color fill =
-          widget.backgroundColor ??
-          (tonalSelected
-              ? cs.secondaryContainer.withValues(
-                  alpha: cs.secondaryContainer.a * (morph ? select : 1),
-                )
-              : Colors.transparent);
-      // 底色跟随形状画（默认圆），不再用矩形 ColoredBox 露出方角。
-      Widget glyph = Padding(
-        padding: widget.padding ?? EdgeInsets.all(tokens.spacing.gap),
-        child: FushiIcon(widget.icon, size: widget.size, color: iconColor),
-      );
-      if (slot != null) {
-        glyph = SizedBox.fromSize(
-          size: slot.extent,
-          child: Center(child: glyph),
-        );
-      }
-      Widget touchTarget = DecoratedBox(
-        decoration: ShapeDecoration(color: fill, shape: shape),
-        child: glyph,
-      );
-      if (slot == null && widget.constraints != null) {
-        touchTarget = ConstrainedBox(
-          constraints: widget.constraints!,
-          child: Center(child: touchTarget),
-        );
-      }
-      return Semantics(
-        label: widget.tooltip,
-        button: true,
-        selected: widget.selected ? true : null,
-        child: InkWell(
-          enableFeedback: enabled,
-          customBorder: shape,
-          // M3 图标按钮的 state layer：悬停 8% / 按下 10% / 焦点 10%。
-          hoverColor: stateLayer.withValues(alpha: 0.08),
-          highlightColor: stateLayer.withValues(alpha: 0.10),
-          focusColor: stateLayer.withValues(alpha: 0.10),
-          onTap: _tapHandler,
-          onTapDown: widget.onTapDown,
-          child: touchTarget,
+    final ShapeBorder custom = widget.shapeBorder;
+    final OutlinedBorder? fixedShape =
+        custom is! CircleBorder && custom is OutlinedBorder ? custom : null;
+    final Color? background = widget.backgroundColor;
+    ButtonStyle style = ButtonStyle(
+      padding: WidgetStatePropertyAll<EdgeInsetsGeometry>(
+        widget.padding ?? EdgeInsets.all(tokens.spacing.gap),
+      ),
+      minimumSize: const WidgetStatePropertyAll<Size>(Size.zero),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.standard,
+      backgroundColor: background == null
+          ? null
+          : WidgetStatePropertyAll<Color>(background),
+      shape: fixedShape == null
+          ? null
+          : WidgetStatePropertyAll<OutlinedBorder>(fixedShape),
+      animationDuration: fushiExpressiveMotionEnabled(context)
+          ? null
+          : Duration.zero,
+    );
+    if (!eink && background == null) {
+      // 选中态补浅色底（官方标准 toggle 不加容器，见
+      // [fushiSelectedTonalIconButtonStyle]）。
+      style = style.merge(
+        fushiSelectedTonalIconButtonStyle(
+          Theme.of(context).colorScheme,
+          foreground: widget.enabledColor == null,
         ),
       );
     }
-
-    if (!morph) return buildAt(0, widget.selected ? 1 : 0);
-    return _trackPress(
-      AnimatedBuilder(
-        animation: Listenable.merge(<Listenable>[
-          _press.animation,
-          _select.animation,
-        ]),
-        builder: (BuildContext context, Widget? _) => buildAt(
-          _press.value.clamp(0.0, 1.0),
-          _select.value.clamp(0.0, 1.0),
+    if (slot != null) {
+      style = fushiFillSlotButtonStyle(slot.extent, slot.shape).merge(style);
+    }
+    Widget official(WidgetStatesController? states, ButtonStyle? spring) =>
+        IconButton(
+          style: spring == null ? style : spring.merge(style),
+          statesController: states,
+          isSelected: widget.selected,
+          iconSize: widget.size,
+          // 墨水屏沿用主题 iconTheme（纯黑）；其余交给官方配色，调用方显式色优先。
+          color: widget.enabledColor ?? (eink ? enabledColor : null),
+          disabledColor: widget.disabledColor ?? (eink ? disabledColor : null),
+          onPressed: _tapHandler,
+          icon: FushiIcon(widget.icon, size: widget.size),
+        );
+    // 官方 M3E 形变是定时补间、没有 M3E 弹簧：在官方按钮上补齐（见
+    // [FushiIconButtonSpring]）。填充槽 / 固定形状 / 墨水屏不形变。
+    Widget button = slot != null || fixedShape != null || eink
+        ? official(null, null)
+        : FushiIconButtonSpring(
+            size: ButtonSizeVariant.small,
+            shapeVariant: ButtonShapeVariant.round,
+            selected: widget.selected ?? false,
+            builder:
+                (
+                  BuildContext context,
+                  WidgetStatesController states,
+                  ButtonStyle? spring,
+                ) => official(states, spring),
+          );
+    final FutureOr<void> Function(TapDownDetails)? onTapDown = widget.onTapDown;
+    if (onTapDown != null && _tapHandler != null) {
+      // 官方 IconButton 没有 onTapDown；用不进手势竞技场的 Listener 补上，
+      // 不影响按钮自身的点击判定。
+      button = Listener(
+        onPointerDown: (PointerDownEvent e) => onTapDown(
+          TapDownDetails(
+            globalPosition: e.position,
+            localPosition: e.localPosition,
+            kind: e.kind,
+          ),
         ),
-      ),
+        child: button,
+      );
+    }
+    if (slot == null && widget.constraints != null) {
+      button = ConstrainedBox(
+        constraints: widget.constraints!,
+        child: Center(child: button),
+      );
+    }
+    return Semantics(
+      label: widget.tooltip,
+      button: true,
+      selected: (widget.selected ?? false) ? true : null,
+      child: button,
     );
   }
 
@@ -733,7 +716,7 @@ class _FushiIconButtonState extends State<FushiIconButton>
   }) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
-    final bool selected = widget.selected;
+    final bool selected = widget.selected ?? false;
     final bool inGroup = FushiToolbarScope.inGlassGroupOf(context);
     final Color iconColor = !enabled
         ? (widget.disabledColor ?? apple.tertiaryLabel)

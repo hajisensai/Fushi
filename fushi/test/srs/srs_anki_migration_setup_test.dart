@@ -30,6 +30,7 @@ void main() {
       expect(d.options.useRwkv, isTrue);
       expect(d.convertLapis, isTrue);
       expect(d.renameLapisDecks, isTrue);
+      expect(d.switchCardTarget, isTrue, reason: '迁移后默认切到 Fushi 复习');
     });
 
     test('JSON 往返；缺项 / 坏值回落到默认', () {
@@ -40,6 +41,7 @@ void main() {
         ),
         convertLapis: false,
         renameLapisDecks: false,
+        switchCardTarget: false,
       );
       final SrsAnkiMigrationSettings back = SrsAnkiMigrationSettings.fromJson(
         s.toJson(),
@@ -47,13 +49,15 @@ void main() {
       expect(back.options, s.options);
       expect(back.convertLapis, isFalse);
       expect(back.renameLapisDecks, isFalse);
-      final SrsAnkiMigrationSettings broken = SrsAnkiMigrationSettings.fromJson(
-        <String, Object?>{
-          'options': 'nope',
-          'convertLapis': 3,
-          'renameLapisDecks': 'x',
-        },
-      );
+      expect(back.switchCardTarget, isFalse);
+      final SrsAnkiMigrationSettings broken =
+          SrsAnkiMigrationSettings.fromJson(<String, Object?>{
+            'options': 'nope',
+            'convertLapis': 3,
+            'renameLapisDecks': 'x',
+            'switchCardTarget': 'y',
+          });
+      expect(broken.switchCardTarget, isTrue);
       expect(broken.options, kSrsAnkiMigrationOptions);
       expect(broken.convertLapis, isTrue);
       expect(broken.renameLapisDecks, isTrue);

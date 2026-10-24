@@ -124,7 +124,7 @@ void main() {
   });
 
   group('SyncTombstoneKind（sync_deletion_tombstones.media_type）', () {
-    test('dbValue 集合守卫：5 资产 + 2 收藏集合，恰为 7 值', () {
+    test('dbValue 集合守卫：5 资产 + 2 收藏集合 + 2 浏览器，恰为 9 值', () {
       expect(
         SyncTombstoneKind.values
             .map((SyncTombstoneKind k) => k.dbValue)
@@ -140,6 +140,9 @@ void main() {
           'localaudio',
           'favoriteword',
           'favoritesentence',
+          // v125 内置浏览器历史 / 书签（只经聚合快照传播）。
+          'webhistory',
+          'webbookmark',
         },
       );
       expect(SyncTombstoneKind.book.dbValue, 'book');
@@ -149,12 +152,24 @@ void main() {
       expect(SyncTombstoneKind.localaudio.dbValue, 'localaudio');
       expect(SyncTombstoneKind.favoriteword.dbValue, 'favoriteword');
       expect(SyncTombstoneKind.favoritesentence.dbValue, 'favoritesentence');
+      expect(SyncTombstoneKind.webhistory.dbValue, 'webhistory');
+      expect(SyncTombstoneKind.webbookmark.dbValue, 'webbookmark');
+      // 只有浏览器两种走「仅聚合快照」通道，既有种类行为不变。
+      expect(
+          SyncTombstoneKind.values
+              .where((SyncTombstoneKind k) =>
+                  k.propagatesViaAggregateSnapshotOnly)
+              .toSet(),
+          <SyncTombstoneKind>{
+            SyncTombstoneKind.webhistory,
+            SyncTombstoneKind.webbookmark,
+          });
       // fushi_audio 的墓碑常量与本枚举同串（两处真相一致性钉死）。
       expect(kFavoriteSentenceTombstoneType,
           SyncTombstoneKind.favoritesentence.dbValue);
     });
 
-    test('tryParse：七个已知值命中，null/未知/它域串返 null 不抛', () {
+    test('tryParse：九个已知值命中，null/未知/它域串返 null 不抛', () {
       expect(SyncTombstoneKind.tryParse('book'), SyncTombstoneKind.book);
       expect(
           SyncTombstoneKind.tryParse('audiobook'), SyncTombstoneKind.audiobook);
@@ -166,6 +181,10 @@ void main() {
           SyncTombstoneKind.favoriteword);
       expect(SyncTombstoneKind.tryParse('favoritesentence'),
           SyncTombstoneKind.favoritesentence);
+      expect(SyncTombstoneKind.tryParse('webhistory'),
+          SyncTombstoneKind.webhistory);
+      expect(SyncTombstoneKind.tryParse('webbookmark'),
+          SyncTombstoneKind.webbookmark);
       expect(SyncTombstoneKind.tryParse(null), isNull);
       // 'epub' 是合集/书架域的串（book ≠ epub）。
       expect(SyncTombstoneKind.tryParse('epub'), isNull);

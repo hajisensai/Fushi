@@ -114,7 +114,7 @@ class ProfileRepository {
 
     final entries = <ProfileSettingsCompanion>[];
 
-    // Anki settings (SharedPreferences)
+    // Anki settings (Drift `anki_settings` row via the repository store)
     final ankiSettings = await _ankiRepo.loadSettings();
     final ankiMap = ProfileKeys.ankiSettingsToMap(ankiSettings);
     for (final entry in ankiMap.entries) {
@@ -300,7 +300,7 @@ class ProfileRepository {
       );
     });
 
-    // Anki settings (SharedPreferences)
+    // Anki settings (Drift `anki_settings` row via the repository store)
     if (ankiMap.isNotEmpty) {
       final current = await _ankiRepo.loadSettings();
       final updated = ProfileKeys.mapToAnkiSettings(ankiMap, current);

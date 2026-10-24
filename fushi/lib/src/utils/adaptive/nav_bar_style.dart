@@ -6,16 +6,42 @@ enum AdaptiveNavBarStyle {
   /// 分页滑动：胶囊里每页 5 个，在底栏上左右滑翻页；按住约 0.3 秒拖选（可拖到
   /// 边缘翻页）。查词仍是右下角固定的 FAB / 圆钮，不进分页（2026-10-17 用户
   /// 「底部左边要分页右下角是查词」）。MD3 悬浮胶囊与 Apple 胶囊都支持。
-  pager('pager');
+  pager('pager'),
+
+  // 以下五种是「放不下的入口怎么露出来」的交互原型（2026-10-23，设计稿见
+  // fushi/build/bottom_nav_design/divergent.html），只接 MD3 悬浮胶囊；
+  // Apple 胶囊遇到它们按平铺画。实现见 `nav_overflow/`。
+
+  /// 拇指转盘：末格是刻度旋钮，按住升起半圆转盘，转到顶端指针松手跳转。
+  dial('dial'),
+
+  /// 书脊：末格是一排书脊（本数 = 隐藏数），点开升起竖排书名的书架。
+  shelf('shelf'),
+
+  /// 圆柱滚筒：全部目的地贴在横放的滚筒上，横拨浏览、点击跳转。
+  drum('drum'),
+
+  /// 纸牌扇：末格是牌叠，按住上拖全部目的地扇开，滑到哪张松手打出哪张。
+  fan('fan'),
+
+  /// 相机模式条：当前项居中带名字，左右邻居渐隐延伸，横拨逐个切换。
+  modeStrip('mode_strip');
+
+  /// 是否是 `nav_overflow/` 里的交互原型之一（只 MD3 悬浮胶囊画）。
+  bool get isOverflowVariant => switch (this) {
+    flat || pager => false,
+    dial || shelf || drum || fan || modeStrip => true,
+  };
 
   const AdaptiveNavBarStyle(this.prefValue);
 
-  /// 出厂默认：分页滑动（2026-10-16 用户拍板「你改成默认分页滑动」）。
+  /// 出厂默认：相机模式条（2026-10-23 用户拍板「相机模式条作为默认样式」；
+  /// 此前 2026-10-16 起是分页滑动）。Apple 胶囊没接原型，按分页滑动画。
   ///
   /// 偏好是「缺省即默认」：从没写过 `nav_bar_style` 的安装（含升级上来的
-  /// 老用户）随之变成分页；显式选过「平铺」的已落库 `flat`，保持平铺。
+  /// 老用户）随之变成相机模式条；显式选过的已落库，保持原选择。
   /// 读取端（[fromPref]）与设置行的 `defaultValue` 一律取这里，不各写一份。
-  static const AdaptiveNavBarStyle defaultStyle = pager;
+  static const AdaptiveNavBarStyle defaultStyle = modeStrip;
 
   /// 落库的字符串（冻结，改名不改它）。
   final String prefValue;

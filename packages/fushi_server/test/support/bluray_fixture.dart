@@ -1,7 +1,8 @@
 // 字节级合成 MPLS / CLPI，给蓝光解析器的测试当输入。
 //
 // 原样复制自 `fushi/test/media/video/bluray_fixture.dart`（服务端测试 import 不到
-// app 的 test 目录）；改字节布局时两份一起改。
+// app 的 test 目录）；与 `packages/fushi_engine/test/media/video/bluray/
+// bluray_fixture.dart` 共三份，改字节布局时三份一起改。
 //
 // 手工拼字节而不是塞一份真盘文件进仓：MPLS 里没有任何可公开分发的样本，而且合成的
 // 好处是每个字段都能单独拨动——「IN 不从零起跳」「多角度」「章节落在第二段上」这些

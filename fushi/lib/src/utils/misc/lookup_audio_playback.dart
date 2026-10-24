@@ -5,17 +5,22 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show md5;
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/creator/mining_tts_fallback.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/audio_mime.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart'
     show LocalAudioUnavailableError, LocalAudioUnavailableReason;
+import 'package:fushi/src/utils/misc/system_tts.dart'
+    show resolveSystemTtsLanguageTag;
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/utils/misc/word_audio_resolver.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show normalizeDictionaryMediaPath;
+import 'package:path_provider/path_provider.dart';
 
 /// 单次本地音频库查询的**预算**上限：超过就不再等，把控制权还给 UI
 /// （自动发音不能为了一个库把查词卡住）。
@@ -30,8 +35,8 @@ import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
 /// 它是「没查出来」，不是「查出来没有」。
 const Duration kLocalAudioQueryBudget = Duration(milliseconds: 500);
 
-/// Resolves and plays the audio for [expression] / [reading] exactly like Hoshi:
-/// enabled sources only, no TTS fallback.
+/// Resolves and plays the audio for [expression] / [reading]: enabled sources,
+/// then the user-chosen TTS fallback voice (see [resolveLookupAudioUrl]).
 ///
 /// 单一真相：收口自 base_source_page._playAutoReadWord 与
 /// dictionary_page_mixin._playAutoReadWord 两份逐行相同的实现。两者唯一差异是
@@ -41,8 +46,11 @@ Future<void> playLookupAudio(
   String expression,
   String reading,
 ) async {
-  final String? url =
-      await resolveLookupAudioUrl(appModel, expression, reading);
+  final String? url = await resolveLookupAudioUrl(
+    appModel,
+    expression,
+    reading,
+  );
   if (url == null || url.isEmpty) return;
 
   // Plays remote URLs and local file paths uniformly, including Windows
@@ -53,20 +61,79 @@ Future<void> playLookupAudio(
   );
 }
 
-/// Resolves (but does not play) the configured-source audio URL/path for
-/// [expression] / [reading] — enabled sources only, no TTS fallback. Single
-/// source of truth shared by [playLookupAudio] and the global-lookup overlay's
-/// two-step bridge (resolveWordAudio -> url, then playWordAudio -> play).
+/// Resolves (but does not play) the word audio URL/path for [expression] /
+/// [reading]: enabled sources first, then — when [ttsFallback] and the user
+/// explicitly picked a fallback voice (see [lookupTtsFallbackVoiceOf]) — a TTS
+/// clip synthesized with that voice. Single source of truth shared by
+/// [playLookupAudio], auto-read, the popup / overlay `resolveWordAudio` bridge
+/// and remote-lookup audio.
+///
+/// 查词 ♪ 与制卡曾各走一套：制卡在音频源都落空后有 TTS 兜底，查词没有——同一个词
+/// 点 + 制出的卡带 TTS 发音，查词页却显示「暂无发音」。兜底现在就在这一个解析点上。
+/// 制卡链（[LocalAudioEnhancement]）自己的第 3 步就是 TTS 兜底，所以它传
+/// `ttsFallback: false`，避免一个词合成两次。
 Future<String?> resolveLookupAudioUrl(
+  AppModel appModel,
+  String expression,
+  String reading, {
+  bool ttsFallback = true,
+}) async {
+  final String? configured = await _buildLookupAudioResolver(appModel)
+      .resolveConfigured(
+        expression: expression,
+        reading: reading,
+        sources: appModel.audioSourceConfigs,
+      );
+  if (configured != null && configured.isNotEmpty) return configured;
+  if (!ttsFallback) return configured;
+  return _synthesizeLookupTtsFallback(appModel, expression, reading);
+}
+
+/// 查词 TTS 兜底：用户显式选过的兜底声音合成 [reading]（空则 [expression]，与制卡
+/// 兜底同一取词口径），返回本地文件路径。没选过 / 选了「不使用」返回 null；合成
+/// 失败（服务没起、凭据缺失……）记错误日志后返回 null，调用方照常显示「暂无发音」。
+Future<String?> _synthesizeLookupTtsFallback(
   AppModel appModel,
   String expression,
   String reading,
 ) async {
-  return _buildLookupAudioResolver(appModel).resolveConfigured(
-    expression: expression,
-    reading: reading,
-    sources: appModel.audioSourceConfigs,
+  // 兜底只认用户显式选过的声音，而那个选择存在偏好里：偏好还没装载（AppModel
+  // 尚未 initialise，或只装了数据库的轻量进程）时不知道用户选了什么，按「没选」
+  // 处理——与 [lookupTtsFallbackVoiceOf] 对空串的口径一致，不去读空的 prefsRepo。
+  if (!appModel.isPreferencesReady) return null;
+  final MiningTtsFallbackVoice? choice = lookupTtsFallbackVoiceOf(
+    appModel.prefsRepo,
   );
+  if (choice == null) return null;
+  final String text = reading.isNotEmpty ? reading : expression;
+  try {
+    final File? file = await synthesizeMiningTtsFallback(
+      text: text,
+      choice: choice,
+      // 系统语音念哪种语言（BUG-3669，判据见 [resolveSystemTtsLanguageTag]）：
+      // 查词播放不知道词条出自哪本词典，只看文字（词头 + 读音，日语汉字词的
+      // 假名在读音里）与已装词典声明的词头语言。
+      languageTag: resolveSystemTtsLanguageTag(
+        text: '$expression $reading',
+        installedDictionaryLanguages:
+            appModel.installedDictionarySourceLanguages,
+      ),
+      outputDir: Directory(
+        '${(await getTemporaryDirectory()).path}/fushi_lookup_tts',
+      ),
+      systemTts: (String text, String outputPath, String? languageTag) =>
+          TtsChannel.instance.ttsToFile(
+            text,
+            outputPath,
+            languageTag: languageTag,
+          ),
+      voices: () => miningTtsVoiceSourceOf(TtsServices.of(appModel.prefsRepo)),
+    );
+    return file?.path;
+  } on WordAudioUnavailable catch (e, stack) {
+    reportWordAudioUnavailable(e, stack, manual: false);
+    return null;
+  }
 }
 
 /// 「选择音频源」菜单的数据源：每个启用源各自解析出的全部候选（按配置顺序，
@@ -97,9 +164,10 @@ String lookupAudioSourceDisplayName(AudioSourceConfig source) {
       return source.displayLabel;
     case AudioSourceKind.remoteAudio:
       final String url = source.url ?? '';
-      final String host = Uri.tryParse(
-                  url.replaceAll('{term}', 'x').replaceAll('{reading}', 'x'))
-              ?.host ??
+      final String host =
+          Uri.tryParse(
+            url.replaceAll('{term}', 'x').replaceAll('{reading}', 'x'),
+          )?.host ??
           '';
       return host.isNotEmpty ? host : url;
   }
@@ -113,12 +181,15 @@ Future<List<Map<String, String>>> listWordAudioWebViewChoices(
   String expression,
   String reading,
 ) async {
-  final List<WordAudioCandidate> candidates =
-      await listLookupAudioCandidates(appModel, expression, reading);
+  final List<WordAudioCandidate> candidates = await listLookupAudioCandidates(
+    appModel,
+    expression,
+    reading,
+  );
   final List<String?> urls = await Future.wait(<Future<String?>>[
     for (final WordAudioCandidate c in candidates) audioRefToWebViewUrl(c.ref),
   ]);
-  return <Map<String, String>>[
+  final List<Map<String, String>> choices = <Map<String, String>>[
     for (int i = 0; i < candidates.length; i++)
       if (urls[i] != null && urls[i]!.isNotEmpty)
         <String, String>{
@@ -126,6 +197,19 @@ Future<List<Map<String, String>>> listWordAudioWebViewChoices(
           'variant': candidates[i].variant,
           'url': urls[i]!,
         },
+  ];
+  if (choices.isNotEmpty) return choices;
+  // 与单击 ♪ 同一兜底（[resolveLookupAudioUrl]）：菜单不能说「暂无发音」而单击却能播。
+  final String? ttsUrl = await audioRefToWebViewUrl(
+    await _synthesizeLookupTtsFallback(appModel, expression, reading),
+  );
+  return <Map<String, String>>[
+    if (ttsUrl != null && ttsUrl.isNotEmpty)
+      <String, String>{
+        'name': t.models_tts_fallback_voice,
+        'variant': '',
+        'url': ttsUrl,
+      },
   ];
 }
 
@@ -153,11 +237,20 @@ WordAudioResolver _buildLookupAudioResolver(AppModel appModel) {
         );
       }
     },
+    queryLocalAudioListByDbIndex: (expression, reading, dbIndex) async {
+      try {
+        return await TtsChannel.instance
+            .queryLocalAudioAll(expression, reading, dbIndex: dbIndex)
+            .timeout(kLocalAudioQueryBudget);
+      } on TimeoutException {
+        throw const LocalAudioUnavailableError(
+          reason: LocalAudioUnavailableReason.timedOut,
+        );
+      }
+    },
     extractLocalAudio: TtsChannel.instance.extractLocalAudio,
-    queryRemoteAudio: (expression, reading) => appModel.lookupRemoteAudio(
-      expression,
-      reading,
-    ),
+    queryRemoteAudio: (expression, reading) =>
+        appModel.lookupRemoteAudio(expression, reading),
   );
 }
 
@@ -187,8 +280,11 @@ Future<bool> autoReadWordUnified(
   String reading, {
   required Future<bool> Function(String url)? playInWebView,
 }) async {
-  final String? ref =
-      await resolveLookupAudioUrl(appModel, expression, reading);
+  final String? ref = await resolveLookupAudioUrl(
+    appModel,
+    expression,
+    reading,
+  );
   return playResolvedLookupAudio(
     ref,
     label: expression,
@@ -256,10 +352,8 @@ Future<bool> playWordAudioUrlNatively(String url) async {
 }
 
 /// 读一条词典媒体的字节（与弹窗 `image://` scheme 拦截器同一字节源）。
-typedef DictionaryMediaBytesLoader = Uint8List? Function(
-  String dictionary,
-  String path,
-);
+typedef DictionaryMediaBytesLoader =
+    Uint8List? Function(String dictionary, String path);
 
 Uint8List? _loadDictionaryMediaBytes(String dictionary, String path) {
   if (!FushiDicts.isInitialized) return null;
@@ -282,13 +376,18 @@ Future<String?> webViewWordAudioUrlToPlayableRef(
   int maxCacheFiles = kWordAudioCacheMaxFiles,
 }) async {
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  final (Uint8List, String)? payload =
-      _decodeWordAudioPayload(url, loadDictionaryMedia);
+  final (Uint8List, String)? payload = _decodeWordAudioPayload(
+    url,
+    loadDictionaryMedia,
+  );
   if (payload == null) return null;
   final (Uint8List bytes, String fileExt) = payload;
-  final Directory dir = cacheDir ??
-      Directory('${Directory.systemTemp.path}${Platform.pathSeparator}'
-          'fushi_word_audio');
+  final Directory dir =
+      cacheDir ??
+      Directory(
+        '${Directory.systemTemp.path}${Platform.pathSeparator}'
+        'fushi_word_audio',
+      );
   await dir.create(recursive: true);
   final String name = '${md5.convert(bytes)}.$fileExt';
   final File file = File('${dir.path}${Platform.pathSeparator}$name');
@@ -324,8 +423,9 @@ Future<String?> webViewWordAudioUrlToPlayableRef(
     final Uri? uri = Uri.tryParse(url);
     if (uri == null) return null;
     final String dictionary = uri.queryParameters['dictionary'] ?? '';
-    final String path =
-        normalizeDictionaryMediaPath(uri.queryParameters['path'] ?? '');
+    final String path = normalizeDictionaryMediaPath(
+      uri.queryParameters['path'] ?? '',
+    );
     if (dictionary.isEmpty || path.isEmpty) return null;
     final Uint8List? bytes = loadDictionaryMedia(dictionary, path);
     if (bytes == null || bytes.isEmpty) return null;
@@ -353,9 +453,7 @@ void _pruneWordAudioCache(
       continue;
     }
   }
-  aged.sort(
-    ((File, DateTime) a, (File, DateTime) b) => a.$2.compareTo(b.$2),
-  );
+  aged.sort(((File, DateTime) a, (File, DateTime) b) => a.$2.compareTo(b.$2));
   final int excess = files.length - maxFiles;
   for (final (File f, DateTime _) in aged.take(excess)) {
     try {
@@ -398,9 +496,9 @@ Future<String?> resolveWordAudioWebViewUrl(
   AppModel appModel,
   String expression,
   String reading,
-) async =>
-    audioRefToWebViewUrl(
-        await resolveLookupAudioUrl(appModel, expression, reading));
+) async => audioRefToWebViewUrl(
+  await resolveLookupAudioUrl(appModel, expression, reading),
+);
 
 /// Converts a resolved audio ref (from [resolveLookupAudioUrl] /
 /// [WordAudioResolver], i.e. a remote `http(s)://` URL **or** a local file path)
@@ -419,8 +517,9 @@ Future<String?> resolveWordAudioWebViewUrl(
 Future<String?> audioRefToWebViewUrl(String? ref) async {
   if (ref == null || ref.isEmpty) return null;
   if (ref.startsWith('http')) return ref;
-  final String path =
-      ref.startsWith('file://') ? Uri.parse(ref).toFilePath() : ref;
+  final String path = ref.startsWith('file://')
+      ? Uri.parse(ref).toFilePath()
+      : ref;
   final File file = File(path);
   if (!await file.exists()) return null;
   final Uint8List bytes = await file.readAsBytes();

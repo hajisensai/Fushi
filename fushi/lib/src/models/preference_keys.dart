@@ -22,6 +22,13 @@ library;
 /// 所以合并导入接管源库偏好时不带它（见 `BackupMergeEngine`）。
 const String kProfileFallbackIdPrefKey = 'profile_fallback_id';
 
+/// Anki 制卡设置（整份 `AnkiSettings` JSON，String）。原先存在 SharedPreferences
+/// `fushi_anki_settings`，迁进 Drift 是为了让 `:popup` 进程 / 悬浮词典与主 app
+/// 读到同一份（见 `anki_settings_drift_store.dart`）。含 AnkiConnect apiKey 明文 →
+/// 凭据 + 设备本地：不进备份 / 同步 / Profile 快照（牌组、映射等字段由
+/// `ProfileKeys.ankiSettingsToMap` 按字段随 Profile 走，与迁移前一致）。
+const String kAnkiSettingsPrefKey = 'anki_settings';
+
 /// 库页顶部页签的用户自定义顺序（反馈 ndQ5eXLcqp），后缀 = 页签栏的 orderKey
 /// （`video` / `book-library-view` / …），值是逗号分隔的页签 id（见
 /// `section_tab_order.dart`）。入口布局，与底栏模块顺序同族：设备本地，不进
@@ -64,6 +71,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'ai_web_knowledge_disabled_sites',
   // String：旧版（只有三个维基时）启用的站点 id。只读迁移用，新版不再写。
   'ai_web_knowledge_sources',
+  // String（AnkiSettings JSON）：见 [kAnkiSettingsPrefKey]。凭据 + 设备本地。
+  kAnkiSettingsPrefKey,
   'app_locale',
   'app_ui_scale',
   'asr_transcribe_language',
@@ -300,6 +309,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：漫画阅读器顶栏悬浮（不占布局、点页面中央/顶边悬停唤出）
   // 还是常驻钉在页图上方。
   'manga_chrome_floating',
+  // 漫画阅读器工具栏按钮布局 JSON（MangaControlLayout，v1 槽位表；空 = 出厂布局）。
+  'manga_control_layout',
+  // 窄窗（手机竖屏）漫画按钮布局 JSON（同形；空 = 沿用宽窗那份）。
+  'manga_control_layout_compact',
   // int（天，BUG-2450）：在线漫画封面磁盘缓存的保留天数（Mihon 封面缓存
   // MihonCoverCache.maxAge）。默认 180，范围 30..360。
   'manga_cover_cache_max_age_days',
@@ -382,8 +395,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_video_enabled',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
   'nav_bar_labels_visible',
-  // String（默认 '' = AdaptiveNavBarStyle.defaultStyle，2026-10-16 起 pager）：
-  // 手机底栏形态 flat / pager（AdaptiveNavBarStyle.prefValue）。
+  // String（默认 '' = AdaptiveNavBarStyle.defaultStyle，2026-10-23 起 mode_strip）：
+  // 手机底栏形态 flat / pager / dial / shelf / drum / fan / mode_strip
+  // （AdaptiveNavBarStyle.prefValue）。
   'nav_bar_style',
   // String：宽屏主导航 rail 手动展开 / 收起（'' 跟随窗口尺寸 / expanded /
   // collapsed）。描述本机窗口布局，不进 Profile 快照。
@@ -484,6 +498,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 非凭据、跨设备（随 Profile / 备份；字体文件路径在别的设备上不存在时回落默认字体）。
   'srs_card_appearance',
   'srs_import_anki_options',
+  // bool（默认 true）：复习页顶部旧 Lapis 迁移横幅，「不再提醒」写 false。设备本地：
+  // 不进 Profile 快照（ProfileKeys._excludedPrefKeys），否则切 Profile 会把它删掉。
+  'srs_lapis_migration_reminder',
   // String（SRS 牌组 id，'' = 默认牌组）：挖词目标 = Fushi 复习时卡落进的牌组。
   // 被删时制卡回落默认牌组。非凭据、跨设备（id 自带 profileUid）。
   'srs_mining_deck_id',
@@ -502,9 +519,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 新装 srs、老用户 anki）。设备本地（SyncRepository.installScopedPrefKeys）：不进
   // Profile 快照 / 分享、不随备份 / 推荐包出境；导入设置的恢复会清掉它，下次启动重判。
   'srs_mining_target_install_default',
+  // bool（默认 true）：复习页顶栏悬浮——不占布局、默认收起，点卡面空白 / 右键唤出、
+  // 再点收起（与小说、漫画阅读器的悬浮顶栏同一口径）；false = 固定页头常驻。非凭据、跨设备。
+  'srs_review_chrome_floating',
   // bool（默认 false）：复习页底部评分栏只留「重来 / 良好」两个按钮（对齐 AnkiDroid
   // 的 hideHardAndEasy）；键盘 2/4 仍可评「困难 / 简单」。非凭据、跨设备。
   'srs_review_hide_hard_easy',
+  // String（SrsReviewImageSize.wire：'original' | 'fit_width' | 'large'，默认
+  // 'original'）：复习卡面图片大小（牌组 CSS 限得太小 / 原图像素小时放大）。非凭据、跨设备。
+  'srs_review_image_size',
   // String（SrsReviewReplayButton.wire：'off' | 'start' | 'end'，默认 'off'）：复习页
   // 底部操作行一端放一颗重播音频键（手机刷卡时拇指在屏幕下方，够不到顶栏）。非凭据、跨设备。
   'srs_review_replay_button',
@@ -606,6 +629,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 下标。自动 = 局域网原画直传、走公网压到中档（interconnect_video_quality.dart）。
   'video_interconnect_quality_preset',
   'video_library_auto_backfill_scrape',
+  // bool（默认 true）：后台为媒体库里的在线视频作品（在线视频源 / 媒体服务器的剧）
+  // 补新集（video_library_update_probe.dart）；与「番剧新集提醒」开关分开。
+  'video_library_auto_update',
   'video_lock_window_aspect_ratio',
   // int（默认 -1 = 自动）：媒体服务器（Jellyfin/Emby）串流画质档在
   // JellyfinVideoClient.kQualityPresets 里的下标；选档 = 向服务器声明码率 / 宽度上限，
@@ -692,8 +718,32 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 点按底栏时间切换（MD3 Expressive chrome），跨设备。
   'video_time_display_remaining',
   'video_youtube_quality_height',
+  // bool（默认 true）：浏览器手机上滚动时收起工具栏（web_browser_prefs.dart，设备本地）。
+  'web_browser_collapse_toolbar_on_scroll',
+  // string（JSON 数组）：浏览器用户自定义搜索引擎（web_browser_sites.dart，设备本地）。
+  'web_browser_custom_search_engines',
+  // bool（默认 false）：浏览器新标签页默认桌面版网页（web_browser_prefs.dart，设备本地）。
+  'web_browser_desktop_mode_default',
+  // bool（默认 false）：浏览器网页深色模式（web_browser_prefs.dart，设备本地）。
+  'web_browser_force_dark',
+  // bool：浏览器整页注音开关（features/furigana，设备本地）。
+  'web_browser_furigana',
+  // bool：浏览器生词高亮开关（features/furigana，设备本地）。
+  'web_browser_known_words',
+  // bool（默认 true）：浏览器重启后恢复上次的标签页（web_browser_prefs.dart，设备本地）。
+  'web_browser_restore_tabs',
+  // string（内置引擎名 / custom:<id>，默认 google）：浏览器当前搜索引擎（设备本地）。
+  'web_browser_search_engine',
+  // bool（默认 true）：浏览器侧边栏模式下侧边栏是否展开（web_browser_prefs.dart，设备本地）。
+  'web_browser_sidebar_open',
+  // string（JSON）：浏览器按站点记住的权限决定（web_browser_site_settings.dart，设备本地）。
+  'web_browser_site_permissions',
   // string（JSON 数组，空串 = 用预置站点）：app 内浏览器的站点书签（web_browser_sites.dart）。
   'web_browser_sites',
+  // string（sidebar / topStrip，默认 sidebar）：浏览器宽窗口标签页样式（web_browser_prefs.dart，设备本地）。
+  'web_browser_tab_style',
+  // bool（默认 true）：浏览器 YouTube 页内可点字幕（features/youtube_subtitles，设备本地）。
+  'web_browser_youtube_subtitles',
   // bool（默认 true）：网页漫画章末二维码广告页剔除（判定在 native/fushi_web_core 的 comic_ad）。
   'web_comic_ad_filter',
   'yomitan_api_key',
@@ -758,6 +808,8 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 const Set<String> kCredentialPreferenceKeys = <String>{
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。
   'ai_providers',
+  // AnkiSettings JSON 里的 AnkiConnect apiKey（明文）。
+  kAnkiSettingsPrefKey,
   // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。
   'discovery_alist_sites',
   // 每条 Audiobookshelf 服务器记录里带 base64 的 access / refresh token。

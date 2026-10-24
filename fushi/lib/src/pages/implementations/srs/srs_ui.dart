@@ -322,6 +322,68 @@ Future<String?> pickSrsDeck(
   );
 }
 
+/// 牌组选择器的一项（只要 id 与全名，不带计数）。
+typedef SrsDeckChoice = ({String id, String fullName});
+
+/// 牌组选择器用的牌组清单：先序（父在前、子紧跟父），同级按手动位置再按名字——与
+/// [SrsDbStore.deckSummaries] 的顺序同一口径，但**只读牌组树**。
+///
+/// 编辑页 / 移动卡片只要名字：`deckSummaries()` 会给每个牌组数新卡 / 学习 / 到期，
+/// RWKV 牌组还要对全部复习卡跑一遍即时可提取度推理（`_instantReviews`，缓存最多 30 秒）——
+/// 查词弹窗跳到卡片打开编辑页时那一下就慢在这里。
+Future<List<SrsDeckChoice>> srsDeckChoices(SrsDbStore store) async {
+  final SrsDeckTree tree = await store.deckTree();
+  final Map<String?, List<SrsDeckView>> children =
+      <String?, List<SrsDeckView>>{};
+  for (final SrsDeckView d in tree.decks) {
+    (children[tree.parentOf(d.id)] ??= <SrsDeckView>[]).add(d);
+  }
+  final List<SrsDeckChoice> out = <SrsDeckChoice>[];
+  void visit(String? parent) {
+    final List<SrsDeckView> level = (children[parent] ?? <SrsDeckView>[])
+      ..sort(SrsDeckView.compareSiblings);
+    for (final SrsDeckView d in level) {
+      out.add((id: d.id, fullName: tree.fullName(d.id)));
+      visit(d.id);
+    }
+  }
+
+  visit(null);
+  return out;
+}
+
+/// [pickSrsDeck] 的轻量版：吃 [srsDeckChoices] 的结果（不需要计数的地方用它）。
+Future<String?> pickSrsDeckChoice(
+  BuildContext context, {
+  required List<SrsDeckChoice> decks,
+  String? selected,
+  required String title,
+}) {
+  return showFushiChoiceDialog<String>(
+    context: context,
+    title: title,
+    icon: FushiIcons.folder,
+    selected: selected,
+    options: <FushiChoiceOption<String>>[
+      for (final SrsDeckChoice d in decks)
+        FushiChoiceOption<String>(value: d.id, label: d.fullName),
+    ],
+  );
+}
+
+/// 删除一条笔记（连同全部卡片）前的确认框；确认返回 true。文案与浏览页批量删除同一套。
+/// 编辑页顶栏「删除笔记」用：确认后调 `SrsDbStore.deleteNote`（墓碑，可在浏览 / 冲突页恢复）。
+Future<bool> confirmSrsNoteDelete(BuildContext context) =>
+    showFushiConfirmDialog(
+      context: context,
+      title: t.srs_note_delete,
+      message: t.srs_browse_delete_confirm(n: 1),
+      confirmLabel: t.srs_note_delete,
+      cancelLabel: t.cancel,
+      icon: FushiIcons.delete,
+      destructive: true,
+    );
+
 /// Lapis 里最常用、放在编辑页最前面的字段（其余折进「更多字段」）。
 const List<String> kSrsLapisPrimaryFields = <String>[
   'Expression',
