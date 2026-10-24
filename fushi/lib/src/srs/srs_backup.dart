@@ -347,8 +347,7 @@ class SrsBackupController {
       if (owner != null) {
         throw SrsRestoreOtherLocalProfile(owner.read<String>('name'));
       }
-      final String deviceId = await SyncRepository(db).getOrCreateDeviceId();
-      if (!await srsCanAdoptProfileUid(srs, store.profileUid, deviceId)) {
+      if (!await srsCanAdoptProfileUid(srs, store.profileUid)) {
         throw SrsRestoreProfileMismatch(backupUid, store.profileUid);
       }
       final int profileId = await activeProfileId();

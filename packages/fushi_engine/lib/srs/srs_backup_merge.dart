@@ -279,7 +279,7 @@ Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
         (_LocalProfile p) => p.name == bp.name,
       );
       if (sameName != null &&
-          await _canAdoptUid(localSrs, sameName.uid, deviceId)) {
+          await _canAdoptUid(localSrs, sameName.uid)) {
         final String? oldUid = sameName.uid;
         if (oldUid != null && oldUid.isNotEmpty) {
           await _deleteProfileRows(localSrs.db, oldUid);
@@ -344,7 +344,7 @@ Future<List<_LocalProfile>> _localProfiles(
 ];
 
 /// 本机 profile（当前 uid [uid]）能否改用备份的 uid：没有用户笔记，且从未发布过批次。
-Future<bool> _canAdoptUid(SrsStorage srs, String? uid, String deviceId) async {
+Future<bool> _canAdoptUid(SrsStorage srs, String? uid) async {
   final SrsDatabase db = srs.db;
   if (uid == null || uid.isEmpty) return true;
   final bool hasNotes =
@@ -360,33 +360,15 @@ Future<bool> _canAdoptUid(SrsStorage srs, String? uid, String deviceId) async {
           .getSingleOrNull() !=
       null;
   if (hasNotes) return false;
-  // 没有本机同步状态 = 从没发布过（发布进度只记在 srs_local_state）。有状态时才打开副本读
-  // everPublished（发布元信息的编码归 SrsDbStore 所有，这里不重复解析）。
-  final bool hasLocalState =
-      await db
-          .customSelect(
-            'SELECT 1 FROM srs_local_state WHERE profile_uid = ?',
-            variables: <Variable<Object>>[Variable<String>(uid)],
-          )
-          .getSingleOrNull() !=
-      null;
-  if (!hasLocalState) return true;
-  final SrsDbStore store = await SrsDbStore.open(
-    db: db,
-    core: srs.core,
-    profileUid: uid,
-    deviceId: deviceId,
-  );
-  return !store.everPublished && !await store.hasUserNotes();
+  // 发布进度只记在本机状态里；只读判断，不打开副本：这个 profile 的副本此刻可能正开着（复习备份页
+  // 「从文件恢复」），另开一个会当场写本机状态 / 内置行，成了同一 profile 的第二个写者。
+  return !await SrsDbStore.everPublishedIn(db, uid);
 }
 
 /// 本机 profile（当前 uid [currentUid]）能否改用另一个 uid：没有用户笔记、也从未发布过批次（铁律 E）。
 /// 复习备份页「从文件恢复」另一台设备的备份时用：新装的设备可以直接接上那个 profile。
-Future<bool> srsCanAdoptProfileUid(
-  SrsStorage db,
-  String currentUid,
-  String deviceId,
-) => _canAdoptUid(db, currentUid, deviceId);
+Future<bool> srsCanAdoptProfileUid(SrsStorage db, String currentUid) =>
+    _canAdoptUid(db, currentUid);
 
 /// 本机 profile [profileId] 改用 [newUid]：先删掉旧 uid 下的全部 SRS 行（只可能是内置行 / 本机状态 /
 /// 缓存，内置行的 ID 由 uid 派生，换 uid 后随新 uid 重新生成）。调用方先用 [srsCanAdoptProfileUid] 检查。

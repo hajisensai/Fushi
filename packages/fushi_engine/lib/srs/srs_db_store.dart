@@ -466,6 +466,39 @@ class SrsDbStore implements SrsSyncReplica {
           .getSingleOrNull() !=
       null;
 
+  /// 本机状态 `sync` 段里的下一个批次号（以及旧版本存在本机状态里的冻结批次原字节）。
+  ///
+  /// 旧版本（不分目录记账）：冻结中、还没确认上传的批次那时存在本机状态里，且 next 还停在它的号上。
+  /// 搬进留存表（同号同字节，之后照常传到每个目录），next 越过它。
+  static (int, Uint8List?) _nextBatchNoOf(Map<String, Object?> sync) {
+    int next = (sync['next'] as int?) ?? 1;
+    final Uint8List? legacyFrozen = sync['frozen'] is String
+        ? base64Decode(sync['frozen']! as String)
+        : null;
+    final SrsBatch? frozen = legacyFrozen == null
+        ? null
+        : SrsBatch.decode(legacyFrozen);
+    if (frozen != null && frozen.no >= next) next = frozen.no + 1;
+    return (next, legacyFrozen);
+  }
+
+  /// [profileUid] 在 [db] 里是否发布过批次（同 [everPublished]），只读本机状态、不打开副本。
+  ///
+  /// 给「能不能改用别的 profile 身份」这类只读判断用：那时这个 profile 的副本可能正开着（复习备份页
+  /// 「从文件恢复」），另开一个 [SrsDbStore] 会当场写本机状态 / 内置行，成了同一 profile 的第二个写者。
+  static Future<bool> everPublishedIn(SrsDatabase db, String profileUid) async {
+    final SrsLocalStateRow? row = await (db.select(
+      db.srsLocalState,
+    )..where((t) => t.profileUid.equals(profileUid))).getSingleOrNull();
+    if (row == null) return false;
+    final Map<String, Object?> j = (jsonDecode(row.json) as Map)
+        .cast<String, Object?>();
+    final Map<String, Object?> sync =
+        (j['sync'] as Map?)?.cast<String, Object?>() ??
+        const <String, Object?>{};
+    return _nextBatchNoOf(sync).$1 > 1;
+  }
+
   /// 读本机状态；返回之前是否存过。
   Future<bool> _loadLocal() async {
     _contentRevision++;
@@ -483,16 +516,8 @@ class SrsDbStore implements SrsSyncReplica {
         (j['sync'] as Map?)?.cast<String, Object?>() ??
         const <String, Object?>{};
     final Object? dirs = sync['dirs'];
-    int next = (sync['next'] as int?) ?? 1;
-    // 旧版本（不分目录记账）：冻结中、还没确认上传的批次那时存在本机状态里，且 next 还停在它的号上。
-    // 搬进留存表（同号同字节，之后照常传到每个目录），next 越过它。
-    _legacyFrozen = sync['frozen'] is String
-        ? base64Decode(sync['frozen']! as String)
-        : null;
-    final SrsBatch? frozen = _legacyFrozen == null
-        ? null
-        : SrsBatch.decode(_legacyFrozen!);
-    if (frozen != null && frozen.no >= next) next = frozen.no + 1;
+    final (int next, Uint8List? legacyFrozen) = _nextBatchNoOf(sync);
+    _legacyFrozen = legacyFrozen;
     _sync = SrsSyncLocalState(
       writerId: writer,
       nextBatchNo: next,

@@ -285,11 +285,47 @@ void main() {
     );
   });
 
+  test('srsCanAdoptProfileUid 只读：副本正开着时不另开副本、不写任何行；发布过就不能采用', () async {
+    // 复习备份页「从文件恢复」时当前 profile 的副本正开着；判断「能不能改用备份的身份」若另开一个
+    // SrsDbStore，会当场写本机状态 / 内置行，成了同一 profile 的第二个写者。
+    final int localId = await insertProfile(local, '日语');
+    final String uid = await local.profileUidOf(localId);
+    await store(localSrs, uid, 'devA');
+    Future<List<Object?>> snapshot() async => <Object?>[
+      for (final QueryRow r in await localSrs.db
+          .customSelect(
+            'SELECT json FROM srs_local_state WHERE profile_uid = ?',
+            variables: <Variable<Object>>[Variable<String>(uid)],
+          )
+          .get())
+        r.read<String>('json'),
+      (await localSrs.db
+              .customSelect(
+                'SELECT (SELECT COUNT(*) FROM srs_entities) + '
+                '(SELECT COUNT(*) FROM srs_field_edits) + '
+                '(SELECT COUNT(*) FROM srs_event_local) AS n',
+              )
+              .getSingle())
+          .read<int>('n'),
+    ];
+    final List<Object?> before = await snapshot();
+    expect(await srsCanAdoptProfileUid(localSrs, uid), isTrue);
+    expect(await snapshot(), before);
+
+    // 发布过批次（下一个批次号 > 1）→ 不能采用。
+    await localSrs.db.customStatement(
+      "UPDATE srs_local_state SET json = json_set(json, '\$.sync.next', 3) "
+      'WHERE profile_uid = ?',
+      <Object>[uid],
+    );
+    expect(await srsCanAdoptProfileUid(localSrs, uid), isFalse);
+  });
+
   test('srsAdoptProfileUid：清掉旧 uid 的 SRS 行并改写 profiles.uid', () async {
     final int localId = await insertProfile(local, '日语');
     final String oldUid = await local.profileUidOf(localId);
     await store(localSrs, oldUid, 'devA');
-    expect(await srsCanAdoptProfileUid(localSrs, oldUid, 'devA'), isTrue);
+    expect(await srsCanAdoptProfileUid(localSrs, oldUid), isTrue);
 
     await srsAdoptProfileUid(
       local,
