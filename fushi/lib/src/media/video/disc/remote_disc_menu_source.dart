@@ -19,6 +19,7 @@ class RemoteDiscMenuSource {
     required this.share,
     required this.readFile,
     required this.title,
+    this.downloadToDevice,
   });
 
   final RemoteDiscShare share;
@@ -28,6 +29,10 @@ class RemoteDiscMenuSource {
 
   /// 会话顶栏显示的名字（远端合集名 / 盘名）。
   final String title;
+
+  /// 「下载到本机」：把这张盘整盘排进下载队列（缓冲提示的动作）。null = 这个入口
+  /// 给不出下载（提示只留「不再提示」与关闭）。
+  final Future<void> Function()? downloadToDevice;
 
   DiscShareManifest get manifest => share.manifest;
 
@@ -77,3 +82,35 @@ RemoteDiscStreamBlock? remoteDiscStreamBlockFor(DiscShareManifest manifest) =>
         manifest.layout == DiscShareLayout.directory
     ? RemoteDiscStreamBlock.dvdFolder
     : null;
+
+/// 流式原盘的「反复缓冲」判据（拍板决策：只给一条可关闭的提示，绝不强制切换）。
+///
+/// 只数**起播之后**的缓冲：开盘时的第一次缓冲是建立连接、预读索引，不说明带宽不够。
+/// [window] 内出现 [threshold] 次「播放中 → 缓冲」就该提示；一个会话至多提示一次。
+class RemoteDiscBufferingMonitor {
+  RemoteDiscBufferingMonitor({
+    this.threshold = 3,
+    this.window = const Duration(minutes: 2),
+  });
+
+  final int threshold;
+  final Duration window;
+  final List<DateTime> _stalls = <DateTime>[];
+  bool _playedOnce = false;
+  bool _buffering = false;
+  bool _suggested = false;
+
+  /// 喂一次缓冲态；返回 true = 现在该提示。
+  bool update({required bool buffering, required DateTime now}) {
+    final bool started = buffering && !_buffering;
+    if (!buffering) _playedOnce = true;
+    _buffering = buffering;
+    if (!started || !_playedOnce || _suggested) return false;
+    _stalls
+      ..add(now)
+      ..removeWhere((DateTime at) => now.difference(at) > window);
+    if (_stalls.length < threshold) return false;
+    _suggested = true;
+    return true;
+  }
+}

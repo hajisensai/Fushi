@@ -1950,6 +1950,19 @@ class PreferencesRepository extends ChangeNotifier
   /// TODO-1119 / BUG-545：用户是否已在「Windows 黑屏闪烁」运行时提示里点了「不再提示」。
   /// 默认 false = 允许提示。置 true 后播放器不再弹该运行时提示条（静态「已知问题」说明行
   /// 仍在画质设置里）。getPref 仅在该 key 从未写过时返回默认 false。
+  /// 远端原盘流式播放「反复缓冲 → 建议下载到本机」提示的「不再提示」。默认 false。
+  bool get videoDiscRemoteBufferingNoticeSuppressed =>
+      getPref(
+            'video_disc_remote_buffering_notice_suppressed',
+            defaultValue: false,
+          )
+          as bool;
+
+  Future<void> setVideoDiscRemoteBufferingNoticeSuppressed(bool value) async {
+    await setPref('video_disc_remote_buffering_notice_suppressed', value);
+    notifyListeners();
+  }
+
   bool get videoBlackFlickerNoticeSuppressed =>
       getPref('video_black_flicker_notice_suppressed', defaultValue: false)
           as bool;

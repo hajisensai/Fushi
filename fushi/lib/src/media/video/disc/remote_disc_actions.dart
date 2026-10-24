@@ -38,13 +38,16 @@ class RemoteDiscActions {
   final Future<void> Function(String videoId)? openOnHost;
 
   /// 会话用的盘源。
-  RemoteDiscMenuSource menuSource(RemoteDiscShare share, String title) =>
-      RemoteDiscMenuSource(
-        share: share,
-        title: title,
-        readFile: (String path, int maxBytes) =>
-            readFile(share, path, maxBytes),
-      );
+  RemoteDiscMenuSource menuSource(
+    RemoteDiscShare share,
+    String title, {
+    Future<void> Function()? downloadToDevice,
+  }) => RemoteDiscMenuSource(
+    share: share,
+    title: title,
+    readFile: (String path, int maxBytes) => readFile(share, path, maxBytes),
+    downloadToDevice: downloadToDevice,
+  );
 }
 
 /// 一次远端原盘探测的结果：能开就带上共享与盘源，开不了就给原因。
@@ -65,6 +68,7 @@ Future<RemoteDiscProbe> probeRemoteDiscMenu({
   required String title,
   required DiscMenuPlatform platform,
   required bool bdjComponentInstallable,
+  Future<void> Function()? downloadToDevice,
 }) async {
   final RemoteDiscShare share;
   try {
@@ -78,7 +82,11 @@ Future<RemoteDiscProbe> probeRemoteDiscMenu({
       unavailable: DiscMenuUnavailableReason.remoteUnreachable,
     );
   }
-  final RemoteDiscMenuSource source = actions.menuSource(share, title);
+  final RemoteDiscMenuSource source = actions.menuSource(
+    share,
+    title,
+    downloadToDevice: downloadToDevice,
+  );
   BlurayMenuInfo? info;
   if (!source.isDvd) {
     try {

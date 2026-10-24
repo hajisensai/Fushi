@@ -788,6 +788,8 @@ extension _VideoLayout on _VideoFushiPageState {
                         // IgnorePointer；隐藏态零尺寸）。挂在 auto-advance 之后、
                         // level HUD 之前，与其它 chrome overlay 同源。
                         _buildBlackFlickerNoticeOverlay(),
+                        // 远端原盘反复缓冲时的非强制提示（建议下载到本机）。
+                        _buildRemoteDiscBufferingNoticeOverlay(),
                         // TODO-2838：拖拽调整字幕位置模式的顶部横幅（提示 + 「完成」退出）。
                         // 非模式态零尺寸。
                         _buildSubtitleDragAdjustBanner(),

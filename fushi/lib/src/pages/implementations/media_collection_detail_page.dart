@@ -632,12 +632,25 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       title: _name,
       platform: currentDiscMenuPlatform(),
       bdjComponentInstallable: currentBdjComponentInstallable(),
+      downloadToDevice: _downloadRemoteDiscToDevice,
     );
     if (!mounted) return;
     setState(() {
       _remoteDiscSource = probe.source;
       _discUnavailable = probe.unavailable;
     });
+  }
+
+  /// 流式会话缓冲提示里的「下载到本机」：与「下载远端集」同一入口（原盘成员按盘
+  /// 整体下载，见库页 `_prepareRemoteDiscDownloads`）。
+  Future<void> _downloadRemoteDiscToDevice() async {
+    final Future<void> Function(MediaCollectionRow, List<RemoteVideoInfo>)?
+    download = widget.remote?.downloadMembers;
+    if (download == null) return;
+    await download(_collectionRow ?? widget.collection, <RemoteVideoInfo>[
+      for (final RemoteVideoInfo info in _remoteMembers)
+        if (isRemoteDiscMember(info)) info,
+    ]);
   }
 
   void _openRemoteDisc(RemoteDiscMenuSource source) {

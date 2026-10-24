@@ -417,6 +417,7 @@ part 'video_fushi/clip_export.part.dart';
 part 'video_fushi/controls_visibility.part.dart';
 part 'video_fushi/episode.part.dart';
 part 'video_fushi/flicker_notice.part.dart';
+part 'video_fushi/remote_disc_buffering.part.dart';
 part 'video_fushi/subtitle.part.dart';
 part 'video_fushi/controls_popover.part.dart';
 part 'video_fushi/volume_osd.part.dart';
@@ -2362,6 +2363,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 本会话是否已弹过一次黑闪提示（每会话最多一次；与偏好「不再提示」共同门控）。
   bool _blackFlickerNoticeShown = false;
+
+  /// 流式原盘会话的「反复缓冲 → 建议下载到本机」提示（remote_disc_buffering.part.dart）。
+  final ValueNotifier<bool> _remoteDiscBufferingNoticeNotifier =
+      ValueNotifier<bool>(false);
+  final RemoteDiscBufferingMonitor _remoteDiscBufferingMonitor =
+      RemoteDiscBufferingMonitor();
 
   /// Auto-hide timer for the page-level level HUD.
   Timer? _levelHudTimer;
@@ -5710,6 +5717,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     controller.removeListener(_onDiscNavigationChanged);
     controller.addListener(_onDiscNavigationChanged);
+    controller.removeListener(_onRemoteDiscBufferingChanged);
+    if (remoteDisc != null) {
+      controller.addListener(_onRemoteDiscBufferingChanged);
+    }
     _attachControllerChapterListener(controller);
     // 标题先推给响应式 notifier，让全屏路由顶栏（不随页面 setState 重建）也跟上（BUG-120）。
     _titleNotifier.value = title;
@@ -6235,6 +6246,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _cancelGraphicSubtitleOcr();
     _graphicSubtitleOcrJob.dispose();
     _controller?.removeListener(_onDiscNavigationChanged);
+    _controller?.removeListener(_onRemoteDiscBufferingChanged);
     _discardRemoteTimingAudio();
     _ownedAnimeClient?.dispose();
     videoDiag(VideoDiagCategory.video, VideoDiagLevel.info, 'page close');
@@ -6370,6 +6382,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _levelHudTimer?.cancel();
     _levelHudNotifier.dispose();
     _blackFlickerNoticeNotifier.dispose();
+    _remoteDiscBufferingNoticeNotifier.dispose();
     _mediaKitControlsVisible.dispose();
     _restartHideTimerSignal.dispose();
     _controlsHeldByMenu.dispose();
