@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -256,7 +257,7 @@ class WebBrowserAddressBarState extends State<WebBrowserAddressBar> {
             color: isGlassDesign(context)
                 ? appleColorsOf(context).secondaryGroupedBackground
                 : theme.colorScheme.surfaceContainer,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: FushiBorderRadius.menu,
             clipBehavior: Clip.antiAlias,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 360),

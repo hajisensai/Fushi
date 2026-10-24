@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/net/app_http_image.dart';
+
 /// 首字母色块的底色（设计图 v4 `.fav` 的 f1..f4 + 补几色），按站点稳定取色。
 const List<Color> kWebBrowserFaviconColors = <Color>[
   Color(0xFFFF0033),
@@ -62,8 +64,9 @@ class WebBrowserFavicon extends StatelessWidget {
         ? letter
         : ClipRRect(
             borderRadius: radius,
-            child: Image.network(
-              icon.toString(),
+            child: Image(
+              // 走应用代理出口，不用直连的 NetworkImage。
+              image: AppHttpImage(icon.toString()),
               key: ValueKey<String>('web-browser-favicon-$icon'),
               width: size,
               height: size,
@@ -101,15 +104,23 @@ class _LetterTile extends StatelessWidget {
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(color: color, borderRadius: radius),
     child: Center(
-      child: Text(
-        letter,
-        maxLines: 1,
-        textScaler: TextScaler.noScaling,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: size * 0.55,
-          fontWeight: FontWeight.w700,
-          height: 1,
+      // 字形高度跟方块走（约 0.55 倍边长）、不跟系统字号：
+      // FittedBox 把排版令牌的字缩放进固定比例的框，不手写字号。
+      child: SizedBox(
+        width: size * 0.9,
+        height: size * 0.55,
+        child: FittedBox(
+          child: Text(
+            letter,
+            maxLines: 1,
+            textScaler: TextScaler.noScaling,
+            style: (Theme.of(context).textTheme.labelSmall ?? const TextStyle())
+                .copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  height: 1,
+                ),
+          ),
         ),
       ),
     ),

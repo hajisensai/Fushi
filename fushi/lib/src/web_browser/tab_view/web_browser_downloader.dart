@@ -13,6 +13,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 网页触发的一次下载（`onDownloadStartRequest`、链接菜单「保存图片」）。
@@ -124,13 +125,11 @@ String? webBrowserContentDispositionFileName(String? header) {
   return value.isEmpty ? null : value;
 }
 
-/// 文件名里不能出现的字符（Windows 最严，五端统一按它清）。
-final RegExp _kUnsafeFileNameChars = RegExp(r'[<>:"/\\|?*\x00-\x1F]');
-
 /// 清成能落盘的文件名；清完是空的给 null。
 String? sanitizeWebBrowserFileName(String? name) {
   if (name == null) return null;
-  String out = name.replaceAll(_kUnsafeFileNameChars, '_').trim();
+  // 非法字符（Windows 最严，五端统一按它清）走唯一真相源。
+  String out = safeWindowsFileName(name).trim();
   // 结尾的点和空格 Windows 不认。
   out = out.replaceAll(RegExp(r'[. ]+$'), '');
   if (out.isEmpty || out == '_') return null;

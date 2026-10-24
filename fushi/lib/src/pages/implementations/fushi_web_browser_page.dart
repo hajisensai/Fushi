@@ -1606,7 +1606,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     border: Border.all(color: fg, width: 1.8),
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: FushiBorderRadius.chip,
                   ),
                   child: Text(
                     count > 99 ? '99+' : '$count',

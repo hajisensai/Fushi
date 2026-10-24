@@ -273,20 +273,23 @@ class _WebBrowserBookmarksPageState extends State<WebBrowserBookmarksPage> {
       t.web_browser_bookmarks_title,
       for (final WebBrowserBookmark f in _path) f.title,
     ];
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: <Widget>[
-          for (int i = 0; i < names.length; i++) ...<Widget>[
-            if (i > 0) const FushiIcon(FushiIcons.chevronRight, size: 18),
-            FushiTextButton(
-              key: ValueKey<String>('web_browser_bookmarks_crumb_$i'),
-              onPressed: i == names.length - 1 ? null : () => _goTo(i),
-              child: Text(names[i]),
-            ),
+    // 面包屑放不下时横向滚动；桌面鼠标按住拖也要能平移。
+    return HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: <Widget>[
+            for (int i = 0; i < names.length; i++) ...<Widget>[
+              if (i > 0) const FushiIcon(FushiIcons.chevronRight, size: 18),
+              FushiTextButton(
+                key: ValueKey<String>('web_browser_bookmarks_crumb_$i'),
+                onPressed: i == names.length - 1 ? null : () => _goTo(i),
+                child: Text(names[i]),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

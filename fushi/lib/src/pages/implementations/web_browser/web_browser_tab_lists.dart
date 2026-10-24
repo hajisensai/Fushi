@@ -7,6 +7,7 @@ import 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.d
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_routes.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -18,6 +19,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_favicon.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
+import 'package:fushi/utils.dart' show HorizontalDragScrollable;
 
 /// 侧边栏 / 顶部标签栏 / 标签页网格共用的标签操作。
 @immutable
@@ -167,21 +169,24 @@ class WebBrowserTabStrip extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
               Flexible(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: <Widget>[
-                      for (final WebBrowserTab tab in tabs)
-                        _GrowIn(
-                          key: ValueKey<String>('strip-${tab.id}'),
-                          axis: Axis.horizontal,
-                          child: SizedBox(
-                            width: width,
-                            child: _StripTab(tab: tab, callbacks: callbacks),
+                // 桌面鼠标按住左右拖也能平移标签栏（默认 dragDevices 不含鼠标）。
+                child: HorizontalDragScrollable(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: <Widget>[
+                        for (final WebBrowserTab tab in tabs)
+                          _GrowIn(
+                            key: ValueKey<String>('strip-${tab.id}'),
+                            axis: Axis.horizontal,
+                            child: SizedBox(
+                              width: width,
+                              child: _StripTab(tab: tab, callbacks: callbacks),
+                            ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -758,7 +763,7 @@ class _GridCard extends StatelessWidget {
             child: Material(
               color: card,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: FushiBorderRadius.poster,
                 side: active
                     ? BorderSide(color: accent, width: 2)
                     : BorderSide.none,
