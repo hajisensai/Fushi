@@ -573,8 +573,10 @@ class AudiobookshelfMediaProgress {
     this.progress,
     this.lastUpdateMs,
     this.episodeId,
+    this.libraryItemId,
   });
 
+  final String? libraryItemId;
   final double currentTimeSeconds;
   final double durationSeconds;
   final bool isFinished;
@@ -591,6 +593,7 @@ class AudiobookshelfMediaProgress {
       progress: _num(raw['progress'])?.toDouble(),
       lastUpdateMs: _num(raw['lastUpdate'])?.toInt(),
       episodeId: _nonEmpty(raw['episodeId']),
+      libraryItemId: _nonEmpty(raw['libraryItemId']),
     );
   }
 }

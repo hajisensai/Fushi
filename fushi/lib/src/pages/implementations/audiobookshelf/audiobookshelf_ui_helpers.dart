@@ -71,3 +71,14 @@ String audiobookshelfDescribeError(Object error) {
   }
   return '$error';
 }
+
+/// 进度的百分比文案（`37%`）；没有进度（0 或未知）返回空串。
+String audiobookshelfProgressPercent(AudiobookshelfMediaProgress progress) {
+  final double fraction =
+      progress.progress ??
+      (progress.durationSeconds > 0
+          ? progress.currentTimeSeconds / progress.durationSeconds
+          : 0);
+  final int percent = (fraction.clamp(0.0, 1.0) * 100).floor();
+  return percent <= 0 ? '' : '$percent%';
+}

@@ -1032,6 +1032,9 @@ class _StubRemote implements AudiobookRemotePlayback {
   int get trackCount => 2;
 
   @override
+  List<int> get trackDurationsMs => const <int>[];
+
+  @override
   final List<File> placeholderFiles = <File>[
     File('abs-remote/a.mp3'),
     File('abs-remote/b.mp3'),

@@ -48,6 +48,109 @@ class _AudiobookshelfItemPageState
   late Future<AudiobookshelfItemDetail> _detail = _loadDetail();
   bool _busy = false;
 
+  /// 服务器上的收听进度（条目 / 单集）；读不到就是空，页面照常用。
+  Map<String, AudiobookshelfMediaProgress> _progress =
+      <String, AudiobookshelfMediaProgress>{};
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadProgress());
+  }
+
+  Future<void> _loadProgress() async {
+    try {
+      final Map<String, AudiobookshelfMediaProgress> latest = await widget.api
+          .allMediaProgress();
+      if (mounted) setState(() => _progress = latest);
+    } catch (_) {}
+  }
+
+  AudiobookshelfMediaProgress? _progressOf(String? episodeId) =>
+      _progress[audiobookshelfProgressKey(widget.item.id, episodeId)];
+
+  /// 标记已听完 / 未听完（元素为 null = 条目本身）。单条失败不挡其余。
+  Future<void> _mark(
+    List<String?> episodeIds, {
+    required bool finished,
+  }) async {
+    Object? failure;
+    for (final String? episodeId in episodeIds) {
+      try {
+        await widget.api.setFinished(
+          widget.item.id,
+          episodeId: episodeId,
+          finished: finished,
+        );
+      } catch (e) {
+        failure = e;
+      }
+    }
+    if (!mounted) return;
+    FushiToast.show(
+      msg: failure != null
+          ? t.audiobookshelf_mark_failed(
+              reason: audiobookshelfDescribeError(failure),
+            )
+          : finished
+          ? t.audiobookshelf_marked_finished
+          : t.audiobookshelf_marked_unfinished,
+      severity: failure != null ? ToastSeverity.error : ToastSeverity.success,
+    );
+    await _loadProgress();
+  }
+
+  /// 单集菜单（长按 / 右键）：标记已听完 / 未听完，或「这一集及更早的」一起标。
+  Future<void> _showEpisodeMenu(
+    List<AudiobookshelfEpisode> episodes,
+    int index,
+  ) async {
+    final AudiobookshelfEpisode episode = episodes[index];
+    final bool finished = _progressOf(episode.id)?.isFinished ?? false;
+    final _EpisodeMark? choice = await showAppDialog<_EpisodeMark>(
+      context: context,
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
+        title: Text(episode.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            ListTile(
+              leading: FushiIcon(
+                finished ? FushiIcons.visibilityOff : FushiIcons.check,
+              ),
+              title: Text(
+                finished
+                    ? t.audiobookshelf_mark_unfinished
+                    : t.audiobookshelf_mark_finished,
+              ),
+              onTap: () => Navigator.pop(
+                dialogContext,
+                finished ? _EpisodeMark.unfinished : _EpisodeMark.finished,
+              ),
+            ),
+            if (index < episodes.length - 1)
+              ListTile(
+                leading: const FushiIcon(FushiIcons.checklist),
+                title: Text(t.audiobookshelf_mark_finished_through),
+                onTap: () => Navigator.pop(dialogContext, _EpisodeMark.through),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    await _mark(
+      choice == _EpisodeMark.through
+          ? <String?>[
+              for (final AudiobookshelfEpisode e in episodes.sublist(index))
+                e.id,
+            ]
+          : <String?>[episode.id],
+      finished: choice != _EpisodeMark.unfinished,
+    );
+  }
+
   AppModel get _appModel => ref.read(appProvider);
 
   bool get _isPodcast => widget.item.mediaType == 'podcast';
@@ -154,6 +257,8 @@ class _AudiobookshelfItemPageState
       mediaSource: mediaItem.getMediaSource(appModel: _appModel),
       item: mediaItem,
     );
+    // 听完回来：进度 / 已听完标记按服务器最新的刷新。
+    if (mounted) unawaited(_loadProgress());
   }
 
   @override
@@ -258,10 +363,25 @@ class _AudiobookshelfItemPageState
                             padding: EdgeInsets.only(
                               top: tokens.spacing.section,
                             ),
-                            child: FushiFilledButton.icon(
-                              onPressed: _busy ? null : () => _stream(detail),
-                              icon: const FushiIcon(FushiIcons.play),
-                              label: Text(t.audiobookshelf_item_stream),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: <Widget>[
+                                FushiFilledButton.icon(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => _stream(detail),
+                                  icon: const FushiIcon(FushiIcons.play),
+                                  label: Text(t.audiobookshelf_item_stream),
+                                ),
+                                SizedBox(height: tokens.spacing.gap),
+                                _BookProgressRow(
+                                  progress: _progressOf(null),
+                                  onToggle: (bool finished) => _mark(
+                                    <String?>[null],
+                                    finished: finished,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         )
@@ -295,8 +415,11 @@ class _AudiobookshelfItemPageState
                           index: index,
                           count: episodes.length,
                           episode: episode,
+                          progress: _progressOf(episode.id),
                           enabled: !_busy,
                           onTap: () => _stream(detail, episode: episode),
+                          onMenu: () =>
+                              unawaited(_showEpisodeMenu(episodes, index)),
                         ),
                       ),
                     );
@@ -368,24 +491,35 @@ class _EpisodeRow extends StatelessWidget {
     required this.index,
     required this.count,
     required this.episode,
+    required this.progress,
     required this.enabled,
     required this.onTap,
+    required this.onMenu,
   });
 
   final int index;
   final int count;
   final AudiobookshelfEpisode episode;
+  final AudiobookshelfMediaProgress? progress;
   final bool enabled;
   final VoidCallback onTap;
+  final VoidCallback onMenu;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String subtitle = audiobookshelfEpisodeSubtitle(episode);
+    final AudiobookshelfMediaProgress? p = progress;
+    final bool finished = p?.isFinished ?? false;
+    final String progressText = finished || p == null
+        ? ''
+        : audiobookshelfProgressPercent(p);
     return FushiGroupedListItem(
       index: index,
       count: count,
       onTap: enabled ? onTap : null,
+      onLongPress: onMenu,
+      onSecondaryTap: onMenu,
       child: Padding(
         padding: EdgeInsets.symmetric(
           horizontal: tokens.spacing.rowHorizontal,
@@ -402,16 +536,66 @@ class _EpisodeRow extends StatelessWidget {
                     style: tokens.type.listTitle,
                     maxLines: 2,
                   ),
-                  if (subtitle.isNotEmpty)
-                    Text(subtitle, style: tokens.type.metadata, maxLines: 1),
+                  if (subtitle.isNotEmpty || progressText.isNotEmpty)
+                    Text(
+                      <String>[
+                        if (subtitle.isNotEmpty) subtitle,
+                        if (progressText.isNotEmpty) progressText,
+                      ].join(' · '),
+                      style: tokens.type.metadata,
+                      maxLines: 1,
+                    ),
                 ],
               ),
             ),
             SizedBox(width: tokens.spacing.gap),
+            if (finished) ...<Widget>[
+              const FushiIcon(FushiIcons.check),
+              SizedBox(width: tokens.spacing.gap),
+            ],
             const FushiIcon(FushiIcons.play),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 单集菜单的选择结果。
+enum _EpisodeMark { finished, unfinished, through }
+
+/// 有声书的进度行：已听 N% / 已听完，加一个标记按钮。
+class _BookProgressRow extends StatelessWidget {
+  const _BookProgressRow({required this.progress, required this.onToggle});
+
+  final AudiobookshelfMediaProgress? progress;
+  final void Function(bool finished) onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final AudiobookshelfMediaProgress? p = progress;
+    final bool finished = p?.isFinished ?? false;
+    final String status = finished
+        ? t.audiobookshelf_marked_finished
+        : p == null
+        ? ''
+        : audiobookshelfProgressPercent(p);
+    return Row(
+      children: <Widget>[
+        Expanded(child: Text(status, style: tokens.type.metadata)),
+        FushiTextButton.icon(
+          onPressed: () => onToggle(!finished),
+          icon: FushiIcon(
+            finished ? FushiIcons.visibilityOff : FushiIcons.check,
+          ),
+          label: Text(
+            finished
+                ? t.audiobookshelf_mark_unfinished
+                : t.audiobookshelf_mark_finished,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -464,6 +464,40 @@ class AudiobookshelfApi {
     }
   }
 
+  /// 只改「已听完」标记，不动位置（服务器按现有进度补全其余字段）。
+  Future<void> setFinished(
+    String itemId, {
+    String? episodeId,
+    required bool finished,
+  }) async {
+    await _authorizedSend(
+      'PATCH',
+      uri(_progressPath(itemId, episodeId)),
+      operation: 'setFinished',
+      headers: const <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, Object>{'isFinished': finished}),
+    );
+  }
+
+  /// 当前用户全部条目 / 单集的进度（`GET /api/me` 里的 `mediaProgress`）。
+  /// 键见 [audiobookshelfProgressKey]。
+  Future<Map<String, AudiobookshelfMediaProgress>> allMediaProgress() async {
+    final Object? me = await _getJson('/api/me', operation: 'me');
+    final Object? list = me is Map<String, Object?> ? me['mediaProgress'] : null;
+    final Map<String, AudiobookshelfMediaProgress> out =
+        <String, AudiobookshelfMediaProgress>{};
+    if (list is List<Object?>) {
+      for (final Object? raw in list) {
+        final AudiobookshelfMediaProgress? p =
+            AudiobookshelfMediaProgress.parse(raw);
+        final String? id = p?.libraryItemId;
+        if (p == null || id == null) continue;
+        out[audiobookshelfProgressKey(id, p.episodeId)] = p;
+      }
+    }
+    return out;
+  }
+
   /// 「继续收听」：进行中的条目（播客带最近收听的那一集）。
   Future<List<AudiobookshelfInProgressEntry>> itemsInProgress() async =>
       AudiobookshelfInProgressEntry.parseList(
@@ -887,3 +921,7 @@ class AudiobookshelfApi {
 
   void close() => _client.close();
 }
+
+/// [AudiobookshelfApi.allMediaProgress] 的键：`<条目id>` 或 `<条目id>#<单集id>`。
+String audiobookshelfProgressKey(String itemId, String? episodeId) =>
+    episodeId == null ? itemId : '$itemId#$episodeId';

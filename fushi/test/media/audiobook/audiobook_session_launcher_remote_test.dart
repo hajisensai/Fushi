@@ -22,6 +22,9 @@ class _FakeRemote implements AudiobookRemotePlayback {
   int get trackCount => binding.tracks.length;
 
   @override
+  List<int> get trackDurationsMs => const <int>[];
+
+  @override
   late final List<File> placeholderFiles = <File>[
     for (final RemoteAudioTrack t in binding.tracks)
       File(p.join('abs-remote', '${t.ino}.mp3')),

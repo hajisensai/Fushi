@@ -54,6 +54,10 @@ abstract class AudiobookRemotePlayback {
   /// 音轨数；与会话里的 `audioFiles` 一一对应。
   int get trackCount;
 
+  /// 各音轨的真实时长（毫秒），服务器给的；未知为空。没有字幕（推不出文件时长）的
+  /// 书靠它撑起整本书的进度条与跨轨拖动。
+  List<int> get trackDurationsMs;
+
   /// 占位文件，一轨一个，**不存在于磁盘**。会话 / 控制器的接口按「音频文件列表」
   /// 编排（数量、下标），远端书没有本机文件，用这些占位撑住下标；任何真要读文件内容
   /// 的地方必须改走 [trackInput]。

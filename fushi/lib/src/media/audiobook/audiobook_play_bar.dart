@@ -238,6 +238,68 @@ class AudiobookPlayBar extends StatelessWidget {
   }
 }
 
+/// 迷你播放器底边的进度线：点一下 / 横向拖动 = 在全书时间轴上定位，松手才 seek。
+/// 命中区比线本身高（线只有 3px），拖动期间显示拖到的位置而不是播放位置。
+class _ScrubbableProgress extends StatefulWidget {
+  const _ScrubbableProgress({
+    required this.controller,
+    required this.fraction,
+    required this.child,
+  });
+
+  final AudiobookPlayerController controller;
+  final double fraction;
+  final Widget Function(double shown) child;
+
+  @override
+  State<_ScrubbableProgress> createState() => _ScrubbableProgressState();
+}
+
+class _ScrubbableProgressState extends State<_ScrubbableProgress> {
+  double? _scrub;
+
+  double _fractionAt(double dx, double width) =>
+      width <= 0 ? 0 : (dx / width).clamp(0.0, 1.0);
+
+  void _commit(double fraction) {
+    final int totalMs = widget.controller.totalDuration.inMilliseconds;
+    setState(() => _scrub = null);
+    if (totalMs <= 0) return;
+    unawaited(widget.controller.seekGlobalMs((fraction * totalMs).round()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        final double width = box.maxWidth;
+        return GestureDetector(
+          key: const ValueKey<String>('audiobook_mini_player_scrub'),
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (TapUpDetails d) =>
+              _commit(_fractionAt(d.localPosition.dx, width)),
+          onHorizontalDragStart: (DragStartDetails d) => setState(
+            () => _scrub = _fractionAt(d.localPosition.dx, width),
+          ),
+          onHorizontalDragUpdate: (DragUpdateDetails d) => setState(
+            () => _scrub = _fractionAt(d.localPosition.dx, width),
+          ),
+          onHorizontalDragEnd: (DragEndDetails _) =>
+              _commit(_scrub ?? widget.fraction),
+          onHorizontalDragCancel: () => setState(() => _scrub = null),
+          child: SizedBox(
+            height: 20,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: widget.child(_scrub ?? widget.fraction),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// Follow audio 开关按钮（磁铁图标；PR8b）。
 ///
 /// 独立于 [AudiobookPlayBar] 的 [ListenableBuilder] 订阅 —— 按钮只随
@@ -646,14 +708,18 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
               left: 24,
               right: 24,
               bottom: 2,
-              child: FushiWavyLinearProgress(
-                key: const ValueKey<String>('audiobook_mini_player_progress'),
-                value: fraction,
-                waving: c.isPlaying,
-                strokeWidth: 3,
-                color: fg,
-                trackColor: fg.withValues(alpha: 0.18),
-                stopIndicatorColor: Colors.transparent,
+              child: _ScrubbableProgress(
+                controller: c,
+                fraction: fraction,
+                child: (double shown) => FushiWavyLinearProgress(
+                  key: const ValueKey<String>('audiobook_mini_player_progress'),
+                  value: shown,
+                  waving: c.isPlaying,
+                  strokeWidth: 3,
+                  color: fg,
+                  trackColor: fg.withValues(alpha: 0.18),
+                  stopIndicatorColor: Colors.transparent,
+                ),
               ),
             ),
           ],

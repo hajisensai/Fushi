@@ -666,4 +666,45 @@ void main() {
       expect(refreshes, 1);
     });
   });
+
+  group('进度：已听完标记与全部进度', () {
+    test('setFinished 只发 isFinished，不带位置', () async {
+      late http.Request seen;
+      final AudiobookshelfApi api = _api((http.Request r) async {
+        seen = r;
+        return http.Response('OK', 200);
+      });
+      await api.setFinished('item_1', episodeId: 'ep_2', finished: true);
+      expect(seen.method, 'PATCH');
+      expect(seen.url.path, '/api/me/progress/item_1/ep_2');
+      expect(jsonDecode(seen.body), <String, Object?>{'isFinished': true});
+    });
+
+    test('allMediaProgress：按条目 / 单集建键', () async {
+      final AudiobookshelfApi api = _api(
+        (http.Request r) async => _json(<String, Object?>{
+          'mediaProgress': <Object?>[
+            <String, Object?>{
+              'libraryItemId': 'item_1',
+              'currentTime': 50.0,
+              'duration': 100.0,
+              'progress': 0.5,
+              'isFinished': false,
+            },
+            <String, Object?>{
+              'libraryItemId': 'pod_1',
+              'episodeId': 'ep_9',
+              'currentTime': 100.0,
+              'duration': 100.0,
+              'isFinished': true,
+            },
+          ],
+        }),
+      );
+      final Map<String, AudiobookshelfMediaProgress> all =
+          await api.allMediaProgress();
+      expect(all['item_1']?.progress, 0.5);
+      expect(all[audiobookshelfProgressKey('pod_1', 'ep_9')]?.isFinished, true);
+    });
+  });
 }

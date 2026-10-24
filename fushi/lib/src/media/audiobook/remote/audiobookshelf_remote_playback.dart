@@ -19,6 +19,7 @@ class AudiobookshelfRemotePlayback implements AudiobookRemotePlayback {
     required this.binding,
     Future<String> Function()? deviceId,
     void Function(String what, Object error)? onSyncError,
+    Future<void> Function(int nowMs)? onPushed,
     AudiobookshelfProgressSync? progressSync,
   }) : _api = api {
     _progress =
@@ -28,6 +29,7 @@ class AudiobookshelfRemotePlayback implements AudiobookRemotePlayback {
           binding: binding,
           deviceId: deviceId ?? () async => 'fushi',
           onError: onSyncError,
+          onPushed: onPushed,
         );
   }
 
@@ -39,6 +41,11 @@ class AudiobookshelfRemotePlayback implements AudiobookRemotePlayback {
 
   @override
   int get trackCount => tracks.length;
+
+  @override
+  List<int> get trackDurationsMs => <int>[
+    for (final RemoteAudioTrack t in tracks) t.durationMs,
+  ];
 
   /// 占位路径形如 `abs-remote/<条目>/<ino>.mp3`：相对路径、不存在，一眼能看出不是
   /// 本机文件（日志里出现时也好认）。

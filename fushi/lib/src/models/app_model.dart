@@ -7416,6 +7416,16 @@ class AppModel with ChangeNotifier {
               api: api,
               binding: binding,
               deviceId: () => SyncRepository(database).getOrCreateDeviceId(),
+              onPushed: (int nowMs) async {
+                final RemoteAudioBindingRepository bindings =
+                    RemoteAudioBindingRepository(database);
+                final RemoteAudioBinding? latest = await bindings.get(
+                  binding.srtBookUid,
+                );
+                if (latest != null) {
+                  await bindings.save(latest.copyWith(updatedAt: nowMs));
+                }
+              },
               onSyncError: (String what, Object error) => ErrorLogService
                   .instance
                   .log('AudiobookshelfProgress.$what', error, StackTrace.current),

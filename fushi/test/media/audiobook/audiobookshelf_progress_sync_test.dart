@@ -81,6 +81,10 @@ class _FakeServer {
     if (request.body.isNotEmpty) {
       body = jsonDecode(request.body) as Map<String, Object?>;
     }
+    // 读进度（GET）单独应答：这里没有「服务器进度记录」，续播退回会话给的位置。
+    if (request.method == 'GET' && request.url.path.contains('/me/progress/')) {
+      return http.Response('not found', 404);
+    }
     calls.add(_Call(request.method, request.url.path, body));
     if (request.url.path.contains('/play')) {
       if (startPlayFails) return http.Response('down', 503);
@@ -158,12 +162,12 @@ void main() {
       expect(sync.hasSession, isTrue);
     });
 
-    test('本机更靠前 → 不跳（下一次同步会把本机位置写回去）', () async {
+    test('服务器被改回更早的位置（别的设备）→ 也跳过去', () async {
       server.serverPosition = 20;
       player.fileIndex = 1;
       player.positionMs = 30000; // 绝对 130s
       await sync.attach(player.host);
-      expect(player.restores, isEmpty);
+      expect(player.restores, <(int, int)>[(0, 20000)]);
     });
 
     test('差距在阈值内 → 不跳', () async {
@@ -173,10 +177,19 @@ void main() {
       expect(player.restores, isEmpty);
     });
 
-    test('已经在播 → 不抢用户的播放，不跳', () async {
+    test('刚开书就在播 → 窗口内照样按服务器续播', () async {
       server.serverPosition = 250;
       player.playing = true;
       await sync.attach(player.host);
+      expect(player.restores, <(int, int)>[(1, 150000)]);
+    });
+
+    test('已经听了很久才查到服务器位置 → 不抢用户的播放，不跳', () async {
+      server.serverPosition = 250;
+      player.playing = true;
+      final Future<void> attaching = sync.attach(player.host);
+      clock = clock.add(const Duration(minutes: 5));
+      await attaching;
       expect(player.restores, isEmpty);
     });
 

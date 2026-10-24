@@ -1019,6 +1019,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       _audiobook = audiobook;
       _audioFiles = audioFiles;
       _remotePlayback = remotePlayback;
+      _rebuildFileDurations();
       // Follow audio / delay / speed 状态由调用方从持久层读出传入；不触发
       // persist 回调 —— 载入不是用户操作，又把同值写回 Hive 就是循环。
       followAudio.value = initialFollowAudio;
@@ -1296,7 +1297,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// [audiobookFileDurationsFromCues] 一份：持久化的全书毫秒按它编码，换字幕时
   /// 仓库层按同一口径换算进度（BUG-3197），两处口径漂开就会错位。
   void _rebuildFileDurations() {
-    _fileDurationsMs = audiobookFileDurationsFromCues(_allBookCues);
+    final List<int> fromCues = audiobookFileDurationsFromCues(_allBookCues);
+    // 流式书没有字幕时推不出文件时长：用服务器给的音轨时长，整本进度条才走得动。
+    final List<int> remote =
+        _remotePlayback?.trackDurationsMs ?? const <int>[];
+    _fileDurationsMs = fromCues.isEmpty && remote.isNotEmpty ? remote : fromCues;
     _sectionFirstCueCache.clear();
   }
 
