@@ -1,0 +1,14 @@
+format=ttml quality=syllable effects=false lang=ja title=- artist=- agents=[v1:Person:Ikura, v2000:Group:]
+L 1000-4000 agent=v1 role=Main style=-
+  S 1000-1400 Sweep "沈"
+  S 1400-1800 Sweep "む"
+  S 1800-2600 Sweep "よう"
+  S 2600-4000 Sweep "に"
+  T zh-CN "像沉没一般"
+  R "shizumu you ni"
+L 3000-4200 agent=v1 role=Background style=-
+  S 3000-4200 Sweep "(ah)"
+L 5000-7000 agent=v2000 role=Main style=-
+  S 5000-6000 Sweep "夜" ruby="よる"
+  S 6000-7000 Sweep "に "
+  S 6500-7000 Sweep "&"

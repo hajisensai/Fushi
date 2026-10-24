@@ -20,6 +20,20 @@
 | `ffm_scan_close(Scanner*)` | 关闭游标 |
 | `ffm_tags_embedded_cover(const u8* path, usize, u8** out, usize* len) -> i32` | 内嵌封面字节（没有时 len = 0） |
 
+歌词（P1，`src/lyrics/`，详见 `src/lyrics/ffi.rs`）：
+
+| 符号 | 作用 |
+|---|---|
+| `ffm_lyrics_parser_version() -> u32` | 解析器版本（`music_lyrics.timeline_version` 失效判据） |
+| `ffm_lyrics_parse(const u8*, usize, const u8* hint, usize, i64 durationMs, u8**, usize*) -> i32` | 任意格式 → 统一时间轴（线格式 `src/lyrics/wire.rs`）；失败 -3，out 为错误信息 |
+| `ffm_lyrics_embedded(const u8* path, usize, i64 durationMs, u8**, usize*) -> i32` | 内嵌 USLT / SYLT / Vorbis LYRICS / MP4 ©lyr |
+| `ffm_lyrics_merge(primary, len, secondary, len, lang, len, u8**, usize*) -> i32` | 翻译按时间配对（≤ 300 ms） |
+| `ffm_lyrics_align_ruby(timeline, len, tokens, len, u8**, usize*) -> i32` | 自动注音与音节对齐 |
+| `ffm_lyrics_export(timeline, len, format, len, u8**, usize*) -> i32` | 导出 `ttml` / `lrc` |
+
+新增符号不升 `ffm_abi_version`（扫描批次格式没变）；Dart 侧按需 lookup，缺符号抛
+`FushiMusicUnavailableError`。
+
 状态码：0 成功；-1 空指针；-2 参数非法；-3 输入格式不对；-5 根不存在；-100 panic（已接住）。
 
 ## uid
@@ -34,7 +48,8 @@
 
 ## 测试
 
-`cargo test`：单测 + `tests/scan.rs` 经 C ABI 扫 `tests/fixtures/library`，逐行比对
+`cargo test`：单测 + `tests/lyrics.rs`（每种歌词格式一个样本，`tests/fixtures/lyrics/generate.py`
+生成，经 C ABI 解析后与 `golden/` 比对；编码探测回归向量由旧 Dart `text_file_io.dart` 生成）+ `tests/scan.rs` 经 C ABI 扫 `tests/fixtures/library`，逐行比对
 `tests/fixtures/scan_golden.txt`。样本由 `tests/fixtures/generate.sh` 用统一 FFmpeg 生成并入库
 （FLAC / MP3 / ALAC / WavPack / TTA / DSF / 整轨 + Shift_JIS CUE / FLAC 内嵌 CUE）。
 
@@ -54,4 +69,5 @@ App 打包（Windows CMake 已接；Linux CMake / Android Gradle / macOS / iOS �
 ## 许可
 
 本 crate GPL-3.0-only。依赖：lofty（MIT OR Apache-2.0）、sha1（MIT OR Apache-2.0）、
-encoding_rs（(Apache-2.0 OR MIT) AND BSD-3-Clause）。
+encoding_rs（(Apache-2.0 OR MIT) AND BSD-3-Clause）、quick-xml（MIT）、
+flate2（MIT OR Apache-2.0）、data-encoding（MIT）。

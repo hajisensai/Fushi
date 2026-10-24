@@ -1,0 +1,15 @@
+#TITLE:Yoru ni Kakeru
+#ARTIST:YOASOBI
+#LANGUAGE:Japanese
+#BPM:300
+#GAP:1000
+P1
+: 0 8 60 shi
+: 8 8 62 zu
+* 16 16 64 mu
+- 40
+P2
+: 80 20 60 yo
+: 100 10 60 ~
+F 110 10 0  ru
+E
