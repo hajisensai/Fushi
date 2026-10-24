@@ -1,5 +1,6 @@
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/pages/implementations/home_nav_peek.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
@@ -237,8 +238,21 @@ final ValueNotifier<HomeTab> homeShellTabNotifier = ValueNotifier<HomeTab>(
 );
 
 /// 单个 [HomeTab] 的导航项（图标 + 标签）。顶层函数，供 HomePage 的 rail/底栏与 macOS
-/// 根侧栏共用，保证三处标签/图标一致。
-AdaptiveNavItem homeNavItemFor(HomeTab tab) {
+/// 根侧栏共用，保证三处标签/图标一致。MD3 侧栏另读 [AdaptiveNavItem.railShape]
+/// （各模块的专属形状）与 [peek]（悬停速览卡，只有 HomePage 的 rail 传）。
+AdaptiveNavItem homeNavItemFor(HomeTab tab, {AdaptiveNavPeek? peek}) {
+  final AdaptiveNavItem base = _homeNavItemBase(tab);
+  return AdaptiveNavItem(
+    icon: base.icon,
+    selectedIcon: base.selectedIcon,
+    label: base.label,
+    experimentalBadge: base.experimentalBadge,
+    railShape: homeNavRailShapeFor(tab),
+    peek: peek,
+  );
+}
+
+AdaptiveNavItem _homeNavItemBase(HomeTab tab) {
   switch (tab) {
     case HomeTab.home:
       return AdaptiveNavItem(
@@ -1750,7 +1764,17 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层
   /// [homeNavItemFor]，保证三处标签/选中图标一致。
-  AdaptiveNavItem _navItemFor(HomeTab tab) => homeNavItemFor(tab);
+  AdaptiveNavItem _navItemFor(HomeTab tab) => homeNavItemFor(
+    tab,
+    peek: homeNavPeekFor(
+      tab,
+      ref: ref,
+      appModel: appModel,
+      contextOf: () => context,
+      videoRepo: () => _videoRepository,
+      goToTab: _selectTabFromNav,
+    ),
+  );
 
   /// 可见 tab 列表对应的导航项（与 [_activeTabs] 顺序一致）。
   List<AdaptiveNavItem> _navItems(List<HomeTab> tabs) =>

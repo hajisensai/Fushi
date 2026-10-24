@@ -4843,6 +4843,8 @@
   "nav_game": "Gioco",
   "nav_home": "Home",
   "nav_lookup": "Ricerca",
+  "nav_peek_open": "Open",
+  "nav_peek_recent": "Recent",
   "nav_srs": "Ripasso",
   "nav_video": "Video",
   "nav_web": "Browser",

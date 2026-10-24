@@ -4843,6 +4843,8 @@
   "nav_game": "Oyun",
   "nav_home": "Ana sayfa",
   "nav_lookup": "Ara",
+  "nav_peek_open": "Open",
+  "nav_peek_recent": "Recent",
   "nav_srs": "Tekrar",
   "nav_video": "Video",
   "nav_web": "Browser",
