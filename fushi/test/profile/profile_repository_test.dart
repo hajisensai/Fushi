@@ -4,6 +4,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/srs/srs_providers.dart'
+    show kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -207,6 +209,24 @@ void main() {
       expect(await db.getPref('font_size'), '16'); // restored over live 99
       expect(await db.getPref('stray_key'), isNull); // pruned (not in snapshot)
       expect(await db.getPref('active_profile_id'), '7'); // excluded → kept
+    });
+
+    test('切到老 Profile 不会删掉旧 Lapis 迁移横幅的「不再提醒」', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      // 老 Profile 的快照建于用户点「不再提醒」之前。
+      final pid = await repo.createProfile('A');
+      await db.setPref('font_size', '16');
+      await repo.snapshotCurrentSettings(pid);
+
+      await db.setPref(kSrsLapisMigrationReminderPrefKey, 'false');
+      await repo.snapshotCurrentSettings(await repo.createProfile('B'));
+
+      await repo.applyProfile(pid);
+
+      expect(await db.getPref(kSrsLapisMigrationReminderPrefKey), 'false');
+      expect(await _prefKeys(db, pid),
+          isNot(contains(kSrsLapisMigrationReminderPrefKey)));
     });
 
     test(

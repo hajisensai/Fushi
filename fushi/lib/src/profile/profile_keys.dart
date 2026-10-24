@@ -18,6 +18,8 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preference_keys.dart'
     show kSectionTabOrderPrefKeyPrefix;
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/srs/srs_providers.dart'
+    show kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 
 class ProfileKeys {
@@ -78,6 +80,9 @@ class ProfileKeys {
     // Profile 切换重新弹出）。
     'p2p_download_notice_dismissed',
     'game_resource_notice_dismissed',
+    // 复习页旧 Lapis 迁移横幅的「不再提醒」：同族。进快照的话，切到这个键落地前建的
+    // 老 Profile（含媒体绑定的临时切换）会把它删掉，横幅下次启动又弹出来。
+    kSrsLapisMigrationReminderPrefKey,
     // 封面模式迁到片段默认的一次性标记：同族。进快照的话，切 Profile 会把旧值 gif
     // 带回来，下次启动迁移重跑，把用户此后自己选的 GIF 又改成片段。
     'mining_image_mode_install_default',
