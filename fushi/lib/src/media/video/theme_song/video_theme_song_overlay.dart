@@ -182,7 +182,7 @@ class VideoThemeSongOverlay extends StatelessWidget {
     final Duration fade = fushiMotionDuration(context, FushiMotion.short);
     final bool apple = isGlassDesign(context);
     final ShapeBorder shape = apple
-        ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+        ? const RoundedRectangleBorder(borderRadius: FushiM3eShape.smallRadius)
         : const StadiumBorder();
     return ExcludeFocus(
       child: ValueListenableBuilder<VideoThemeSongActive?>(
@@ -212,9 +212,8 @@ class VideoThemeSongOverlay extends StatelessWidget {
                             children: <Widget>[
                               Text(
                                 themeSongSkipLabel(span.role),
-                                style: TextStyle(
+                                style: context.fushiType.labelLarge.copyWith(
                                   color: textColor,
-                                  fontSize: 15 * uiScale,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -267,9 +266,8 @@ class VideoThemeSongOverlay extends StatelessWidget {
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
+                                  style: context.fushiType.bodySmall.copyWith(
                                     color: textColor,
-                                    fontSize: 13 * uiScale,
                                   ),
                                 ),
                               ),

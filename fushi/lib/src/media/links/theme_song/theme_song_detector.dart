@@ -242,14 +242,37 @@ class ThemeSongDetector {
       onlyBookUid: onlyBookUid,
       onlyTrackUid: onlyTrackUid,
     );
+    // 按集归并：同一集被多条连接（OP + ED、曲目 + 专辑）覆盖时只解码一次，所有候选歌
+    // 对同一份声纹比对。
+    final Map<
+      String,
+      ({ThemeSongEpisode episode, Map<String, ThemeSongSong> songs})
+    >
+    byEpisode =
+        <
+          String,
+          ({ThemeSongEpisode episode, Map<String, ThemeSongSong> songs})
+        >{};
     for (final ThemeSongPlan plan in plans) {
       for (final ThemeSongEpisode episode in plan.episodes) {
         if (onlyEpisodeIndex != null &&
             episode.episodeIndex != onlyEpisodeIndex) {
           continue;
         }
-        await _detectEpisode(plan.songs, episode, report);
+        final ({ThemeSongEpisode episode, Map<String, ThemeSongSong> songs})
+        slot = byEpisode.putIfAbsent(
+          '${episode.bookUid}\u0000${episode.episodeIndex}',
+          () => (episode: episode, songs: <String, ThemeSongSong>{}),
+        );
+        for (final ThemeSongSong s in plan.songs) {
+          slot.songs[s.trackUid] = s;
+        }
       }
+    }
+    for (final ({ThemeSongEpisode episode, Map<String, ThemeSongSong> songs})
+        slot
+        in byEpisode.values) {
+      await _detectEpisode(slot.songs.values.toList(), slot.episode, report);
     }
     return report;
   });

@@ -422,9 +422,9 @@ class _EpisodeChip extends StatelessWidget {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool apple = isGlassDesign(context);
     final ShapeBorder shape = apple
-        ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+        ? const RoundedRectangleBorder(borderRadius: FushiM3eShape.smallRadius)
         : const StadiumBorder();
-    return Tooltip(
+    return FushiTooltip(
       message: tooltip,
       child: FushiHoverLift(
         builder: (BuildContext context, bool hovering) => FushiPressScale(
