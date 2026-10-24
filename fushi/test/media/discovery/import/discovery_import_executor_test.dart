@@ -76,6 +76,29 @@ void main() {
     } catch (_) {}
   });
 
+  test('下载任务带随附字幕：音频 + 字幕一并分类成字幕书（不白跑转录）', () async {
+    final List<String> log = <String>[];
+    final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
+      importers: _recordingImporters(log),
+    );
+    final File mp3 = File('${tempDir.path}${Platform.pathSeparator}e1.mp3')
+      ..writeAsStringSync('a');
+    final File srt = File('${tempDir.path}${Platform.pathSeparator}e1.srt')
+      ..writeAsStringSync('s');
+    final DiscoveryDownloadTask task = DiscoveryDownloadTask.forTesting(
+      item: const DiscoveryResourceItem(
+        sourceId: 's',
+        title: 't',
+        id: 'i',
+        kind: DiscoveryMediaKind.audiobook,
+        payloadKind: DiscoveryPayloadKind.httpFile,
+      ),
+    )..companionPaths = <String>[srt.path];
+
+    await executor.importDownload(task, mp3);
+    expect(log.single, startsWith('subtitle-book:'));
+  });
+
   test('单文件 epub 直接走 epub 导入', () async {
     final List<String> log = <String>[];
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(

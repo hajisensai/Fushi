@@ -132,6 +132,19 @@ class _FakeAbs {
       return _json(<String, Object?>{
         'id': 'pod_1',
         'mediaType': 'podcast',
+        'libraryFiles': <Object?>[
+          for (final (String ino, String name) in <(String, String)>[
+            ('77', 'e1.mp3'),
+            ('90', 'E1.ja.srt'),
+            ('91', 'e1.epub'),
+            ('92', 'e2.srt'),
+            ('93', 'cover.jpg'),
+          ])
+            <String, Object?>{
+              'ino': ino,
+              'metadata': <String, Object?>{'filename': name, 'size': 10},
+            },
+        ],
         'media': <String, Object?>{
           'metadata': <String, Object?>{'title': 'Show'},
           'episodes': <Object?>[
@@ -326,7 +339,16 @@ void main() {
               as DiscoveryHttpPayload;
       expect(direct.url, 'https://$_host/abs/api/items/pod_1/file/77/download');
       expect(direct.headers, <String, String>{'Authorization': 'Bearer tok'});
-      expect(direct.fileName, 'e1.mp3');
+      expect(direct.fileName, 'Show - e1.mp3');
+      expect(direct.companions, hasLength(2));
+      expect(direct.companions.map((f) => f.fileName).toList(), <String>[
+        'Show - E1.ja.srt',
+        'Show - e1.epub',
+      ]);
+      expect(
+        direct.companions.first.url,
+        'https://$_host/abs/api/items/pod_1/file/90/download',
+      );
       expect(direct.sizeBytes, 1234);
 
       await expectLater(
