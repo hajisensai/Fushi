@@ -32,8 +32,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_shelf_cards_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_shelf_cards_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -82,25 +83,29 @@ void main() {
   });
 
   Future<void> seedEpub(String bookKey, String title) async {
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: title,
-      epubPath: '${pathProviderDir.path}/$bookKey.epub',
-      extractDir: pathProviderDir.path,
-      chapterCount: 1,
-      chaptersJson: '["a"]',
-      importedAt: 0,
-    ));
-    epubItems.add(MediaItem(
-      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
-      title: title,
-      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
-      position: 0,
-      duration: 1,
-      canDelete: false,
-      canEdit: true,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: title,
+        epubPath: '${pathProviderDir.path}/$bookKey.epub',
+        extractDir: pathProviderDir.path,
+        chapterCount: 1,
+        chaptersJson: '["a"]',
+        importedAt: 0,
+      ),
+    );
+    epubItems.add(
+      MediaItem(
+        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(bookKey),
+        title: title,
+        mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+        mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
+        position: 0,
+        duration: 1,
+        canDelete: false,
+        canEdit: true,
+      ),
+    );
   }
 
   /// 「Alpha」（散）/「M 系列」{Zeta 1, Zeta 2} /「Omega」（散）。名称排序下合集
@@ -123,26 +128,26 @@ void main() {
   }
 
   Widget buildApp({Set<int> selectedTags = const <int>{}}) => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-          fushiBooksProvider.overrideWith(
-            (ref, language) => Future<List<MediaItem>>.value(epubItems),
-          ),
-          srtBooksProvider.overrideWith(
-            (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
-          ),
-          selectedTagIdsProvider.overrideWith((ref) => selectedTags),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: ReaderFushiHistoryPage(
-                remoteBookClientLoader: () async => null,
-              ),
-            ),
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      fushiBooksProvider.overrideWith(
+        (ref, language) => Future<List<MediaItem>>.value(epubItems),
+      ),
+      srtBooksProvider.overrideWith(
+        (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
+      ),
+      selectedTagIdsProvider.overrideWith((ref) => selectedTags),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: ReaderFushiHistoryPage(
+            remoteBookClientLoader: () async => null,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   Future<void> pumpPage(
     WidgetTester tester, {
@@ -156,8 +161,11 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Finder epubCard(String bookKey) => find.byKey(ValueKey<String>(
-      'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}'));
+  Finder epubCard(String bookKey) => find.byKey(
+    ValueKey<String>(
+      'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}',
+    ),
+  );
   Finder collectionCard(int cid) =>
       find.byKey(ValueKey<String>('reader_shelf_collection_card_$cid'));
 
@@ -169,8 +177,7 @@ void main() {
     return pa.dx.compareTo(pb.dx);
   }
 
-  testWidgets('默认单个格子：合集是叠层格子，没有横排行（a55fc1382bb）',
-      (WidgetTester tester) async {
+  testWidgets('默认单个格子：合集是叠层格子，没有横排行（a55fc1382bb）', (WidgetTester tester) async {
     final int cid = await seedLibrary();
     await pumpPage(tester);
     expect(find.byType(CollectionShelfRow), findsNothing);
@@ -187,32 +194,49 @@ void main() {
     expect(collectionCard(cid), findsOneWidget);
   });
 
-  testWidgets('单个格子：合集与散书同一网格、同一排序（名称序夹在中间）',
-      (WidgetTester tester) async {
+  testWidgets('单个格子：合集与散书同一网格、同一排序（名称序夹在中间）', (WidgetTester tester) async {
     final int cid = await seedLibrary();
     await pumpPage(tester);
 
-    expect(find.byType(CollectionShelfRow), findsNothing,
-        reason: '格子模式不得再渲染全宽横排行');
+    expect(
+      find.byType(CollectionShelfRow),
+      findsNothing,
+      reason: '格子模式不得再渲染全宽横排行',
+    );
     expect(collectionCard(cid), findsOneWidget);
-    expect(tester.widget(collectionCard(cid)), isA<SeriesShelfCard>(),
-        reason: '合集格子是共享的叠层系列卡');
+    expect(
+      tester.widget(collectionCard(cid)),
+      isA<SeriesShelfCard>(),
+      reason: '合集格子是共享的叠层系列卡',
+    );
     // 合集成员不再单独成卡（折进格子）。
     expect(epubCard('zeta1Key'), findsNothing);
     expect(epubCard('zeta2Key'), findsNothing);
     // 名称序：Alpha < M Series < Omega——合集参与同一排序，不再固定排最前。
-    expect(readingOrder(tester, epubCard('alphaKey'), collectionCard(cid)),
-        lessThan(0));
-    expect(readingOrder(tester, collectionCard(cid), epubCard('omegaKey')),
-        lessThan(0));
-    // 角标：「2 册」+「系列」。
-    expect(find.text(t.shelf_collection_volume_count(n: 2)), findsOneWidget);
-    expect(find.text(t.shelf_collection_series_label), findsOneWidget);
+    expect(
+      readingOrder(tester, epubCard('alphaKey'), collectionCard(cid)),
+      lessThan(0),
+    );
+    expect(
+      readingOrder(tester, collectionCard(cid), epubCard('omegaKey')),
+      lessThan(0),
+    );
+    // 2026-10-25 起封面上不压角标：卷数进封面下的副行（「2 卷 · …」）。
+    expect(
+      find.descendant(
+        of: collectionCard(cid),
+        matching: find.textContaining(t.shelf_collection_volume_count(n: 2)),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(t.shelf_collection_series_label),
+      findsNothing,
+      reason: '「系列」角标已撤掉',
+    );
   });
 
-  testWidgets('排序菜单只剩排序 / 筛选，没有「合集显示」组（整行展开已移除）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('排序菜单只剩排序 / 筛选，没有「合集显示」组（整行展开已移除）', (WidgetTester tester) async {
     final int cid = await seedLibrary();
     await pumpPage(tester);
 
@@ -232,8 +256,7 @@ void main() {
     expect(collectionCard(cid), findsOneWidget);
   });
 
-  testWidgets('格子点击进合集详情；成员右键弹与书架同一个菜单（BUG-2969）',
-      (WidgetTester tester) async {
+  testWidgets('格子点击进合集详情；成员右键弹与书架同一个菜单（BUG-2969）', (WidgetTester tester) async {
     final int cid = await seedLibrary();
     await pumpPage(tester);
 
@@ -250,17 +273,27 @@ void main() {
     await right.up();
     await tester.pumpAndSettle();
 
-    expect(find.text(t.tag_label), findsOneWidget,
-        reason: '合集内成员菜单必须含「标签」（与书架书卡同一个菜单）');
+    expect(
+      find.text(t.tag_label),
+      findsOneWidget,
+      reason: '合集内成员菜单必须含「标签」（与书架书卡同一个菜单）',
+    );
     expect(find.text(t.book_rename), findsOneWidget);
-    expect(find.text(t.collection_remove_member), findsOneWidget,
-        reason: '合集语境额外补「移出合集」');
-    expect(find.text(t.collection_open), findsNothing,
-        reason: '不再是详情页自绘的「打开 / 移出」精简菜单');
+    expect(
+      find.text(t.collection_remove_member),
+      findsOneWidget,
+      reason: '合集语境额外补「移出合集」',
+    );
+    expect(
+      find.text(t.collection_open),
+      findsNothing,
+      reason: '不再是详情页自绘的「打开 / 移出」精简菜单',
+    );
   });
 
-  testWidgets('BUG-2968：书打了标签、合集没打 → 按标签筛选仍能找到这本书',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2968：书打了标签、合集没打 → 按标签筛选仍能找到这本书', (
+    WidgetTester tester,
+  ) async {
     final int cid = await seedLibrary();
     final int tagId = await db.createTag('fav', 0xFF2196F3);
     await db.addTagToBook('zeta1Key', tagId);
@@ -268,10 +301,12 @@ void main() {
     await pumpPage(tester, selectedTags: <int>{tagId});
 
     // 合集格子仍在，只算命中标签的那一本（2 册 -> 1 册）；散书全被筛掉。
-    expect(collectionCard(cid), findsOneWidget,
-        reason: '组内有成员命中标签，合集组不得被整组删掉');
-    expect(find.text(t.shelf_collection_volume_count(n: 1)), findsOneWidget,
-        reason: '格子只计命中标签的成员');
+    expect(collectionCard(cid), findsOneWidget, reason: '组内有成员命中标签，合集组不得被整组删掉');
+    expect(
+      find.textContaining(t.shelf_collection_volume_count(n: 1)),
+      findsOneWidget,
+      reason: '格子只计命中标签的成员',
+    );
     expect(epubCard('alphaKey'), findsNothing);
     expect(epubCard('omegaKey'), findsNothing);
 

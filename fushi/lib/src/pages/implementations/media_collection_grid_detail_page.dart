@@ -28,6 +28,7 @@ import 'package:fushi/src/media/collections/collection_shelf_row.dart'
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
     show kShelfBookCardAspectRatio;
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/utils.dart';
@@ -709,7 +710,11 @@ class _MediaCollectionGridDetailPageState
       if (card == null) continue;
       final String key = '${r.mediaType}|${r.entryKey}';
       final ({String title, int importedAt})? meta = _meta[key];
-      cards[key] = card;
+      // 详情页成员卡与库页同一套条目材质（2026-10-25 库页定版）。
+      final ShelfCoverMaterial? material = _coverMaterialFor(r.mediaType);
+      cards[key] = material == null
+          ? card
+          : ShelfCoverMaterialScope(material: material, child: card);
       entries.add(
         CollectionMemberEntry(
           row: r,
@@ -826,6 +831,19 @@ class _MediaCollectionGridDetailPageState
           targetWidth: targetWidth,
           spacing: spacing,
         );
+        // 游戏合集：卡盒竖长 1:1.6 + 封面下文字块，按真实行高算格子比例（书卡
+        // 比例装不下，卡片会溢出格子）；其余域沿用书架卡槽比例。
+        final bool gameDomain =
+            _rows.isNotEmpty &&
+            _rows.every(
+              (MediaCollectionItemRow r) =>
+                  r.mediaType == MediaKind.game.dbValue,
+            );
+        final double memberAspect = gameDomain
+            ? layout.cardWidth /
+                  (layout.cardWidth / kShelfGameCaseAspectRatio +
+                      ShelfCardMeta.heightFor(context))
+            : kShelfBookCardAspectRatio;
 
         final List<Widget> slivers = <Widget>[
           SliverPadding(
@@ -909,7 +927,7 @@ class _MediaCollectionGridDetailPageState
                 child: FushiReorderableGrid(
                   itemCount: arranged.length,
                   crossAxisCount: layout.columns,
-                  childAspectRatio: kShelfBookCardAspectRatio,
+                  childAspectRatio: memberAspect,
                   crossAxisSpacing: spacing,
                   mainAxisSpacing: spacing,
                   feedbackBorderRadius: FushiBorderRadius.card,
@@ -941,7 +959,7 @@ class _MediaCollectionGridDetailPageState
               sliver: SliverGrid.builder(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: layout.columns,
-                  childAspectRatio: kShelfBookCardAspectRatio,
+                  childAspectRatio: memberAspect,
                   crossAxisSpacing: spacing,
                   mainAxisSpacing: spacing,
                 ),
@@ -1384,6 +1402,22 @@ class _MediaCollectionGridDetailPageState
 }
 
 /// 网格 / 列表切换：M3E 连接式按钮组（选中段形变）/ Apple 分段控件。
+/// 成员媒体类型 → 条目材质：书 / 字幕书 = 光面书皮、视频 = 光面海报、游戏 =
+/// 透明卡盒；未知类型不套材质。
+ShelfCoverMaterial? _coverMaterialFor(String mediaType) {
+  switch (MediaKind.tryParse(mediaType)) {
+    case MediaKind.epub:
+    case MediaKind.srt:
+      return ShelfCoverMaterial.glossyBook;
+    case MediaKind.video:
+      return ShelfCoverMaterial.glossyPoster;
+    case MediaKind.game:
+      return ShelfCoverMaterial.gameCase;
+    case null:
+      return null;
+  }
+}
+
 class _ViewModeToggle extends StatelessWidget {
   const _ViewModeToggle({required this.mode, required this.onChanged});
 

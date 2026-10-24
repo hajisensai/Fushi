@@ -21,6 +21,7 @@ import 'package:fushi/src/pages/implementations/media_collection_detail_page.dar
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/utils/components/cover_badge.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -235,8 +236,9 @@ void main() {
       of: cardFinder(cid),
       matching: find.byType(Image),
     );
-    expect(images, findsOneWidget, reason: '合集卡必须渲染成员封面');
-    final Image image = tester.widget<Image>(images);
+    // 材质库页：合集是碟盒叠层（后两层 + 前层），前层最后绘制 = 最后一张。
+    expect(images, findsWidgets, reason: '合集卡必须渲染成员封面');
+    final Image image = tester.widget<Image>(images.last);
     final ImageProvider provider = image.image;
     final FileImage fileImage =
         (provider is ResizeImage ? provider.imageProvider : provider)
@@ -266,8 +268,9 @@ void main() {
 
     await pumpPage(tester);
 
+    // 叠层前层最后绘制 = 最后一张 Image。
     final Image image = tester.widget<Image>(
-      find.descendant(of: cardFinder(cid), matching: find.byType(Image)),
+      find.descendant(of: cardFinder(cid), matching: find.byType(Image)).last,
     );
     final ImageProvider provider = image.image;
     final FileImage fileImage =
@@ -297,8 +300,9 @@ void main() {
 
     await pumpPage(tester);
 
+    // 叠层前层最后绘制 = 最后一张 Image。
     final Image image = tester.widget<Image>(
-      find.descendant(of: cardFinder(cid), matching: find.byType(Image)),
+      find.descendant(of: cardFinder(cid), matching: find.byType(Image)).last,
     );
     final ImageProvider provider = image.image;
     final FileImage fileImage =
@@ -323,8 +327,9 @@ void main() {
 
     await pumpPage(tester);
 
+    // 叠层前层最后绘制 = 最后一张 Image。
     final Image image = tester.widget<Image>(
-      find.descendant(of: cardFinder(cid), matching: find.byType(Image)),
+      find.descendant(of: cardFinder(cid), matching: find.byType(Image)).last,
     );
     final ImageProvider provider = image.image;
     final FileImage fileImage =
@@ -333,9 +338,7 @@ void main() {
     expect(fileImage.file.path, memberCover.path);
   });
 
-  testWidgets('无封面 → 占位图标；集数角标 = 全部成员数；默认进度「已看完 0/N」', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('无封面 → 占位图标；封面无角标；默认副行「已看完 0/N」', (WidgetTester tester) async {
     await seedEpisode('video/ep1', '第1集');
     await seedEpisode('video/ep2', '第2集');
     final int cid = await seedCollection(<String>['video/ep1', 'video/ep2']);
@@ -348,16 +351,15 @@ void main() {
         of: cardFinder(cid),
         matching: find.byIcon(FushiIcons.video),
       ),
-      findsOneWidget,
-      reason: '全员无封面 → 占位（与散卡同款 movie 图标）',
+      findsWidgets,
+      reason: '全员无封面 → 占位（与散卡同款 movie 图标，叠层每层都是占位）',
     );
+    // 2026-10-25「全部都不用角标设计」：封面上不再有集数角标，成员数进副行
+    // （「已看完 x/N」的 N）。
     expect(
-      find.descendant(
-        of: cardFinder(cid),
-        matching: find.text(t.video_playlist_episodes(count: 2)),
-      ),
-      findsOneWidget,
-      reason: '集数角标 = 全部成员数',
+      find.descendant(of: cardFinder(cid), matching: find.byType(CoverBadge)),
+      findsNothing,
+      reason: '合集封面上不压任何角标',
     );
     expect(
       find.descendant(
@@ -383,7 +385,7 @@ void main() {
     expect(
       find.descendant(
         of: cardFinder(cid),
-        matching: find.text(t.collection_continue_progress(n: 2)),
+        matching: find.textContaining(t.collection_continue_progress(n: 2)),
       ),
       findsOneWidget,
       reason: 'ep1 看完 → 继续看候选落在第2集（continueMemberIndex 同源）',
@@ -444,7 +446,7 @@ void main() {
     expect(
       find.descendant(
         of: cardFinder(cid),
-        matching: find.text(t.collection_continue_progress(n: 1)),
+        matching: find.textContaining(t.collection_continue_progress(n: 1)),
       ),
       findsOneWidget,
       reason:
@@ -465,7 +467,7 @@ void main() {
     expect(
       find.descendant(
         of: cardFinder(cid),
-        matching: find.text(t.collection_continue_progress(n: 2)),
+        matching: find.textContaining(t.collection_continue_progress(n: 2)),
       ),
       findsOneWidget,
       reason: '锚点集已完成 → 推进到下一集（第2集），与详情页 hero 同答案',
@@ -558,8 +560,9 @@ void main() {
       lessThanOrEqualTo(2),
       reason: '结果进缓存，不随 build 重探',
     );
+    // 叠层前层最后绘制 = 最后一张 Image。
     final Image image = tester.widget<Image>(
-      find.descendant(of: cardFinder(cid), matching: find.byType(Image)),
+      find.descendant(of: cardFinder(cid), matching: find.byType(Image)).last,
     );
     final ImageProvider provider = image.image;
     final FileImage fileImage =

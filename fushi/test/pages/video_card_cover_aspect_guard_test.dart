@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 
 import '../helpers/source_guard.dart';
 import '../widgets/widget_test_helpers.dart';
@@ -72,14 +72,13 @@ void main() {
             '文字块高度浮动、把空隙灌回封面区（BUG-928 回归）',
       );
 
-      // BUG-1184 起标题改为两行（原 BUG-943 要求单行，见下方 text block 用例里
-      // 记录的权衡）：窄屏卡宽只有约 154px，单行 ellipsis 放不下一个日文剧名。
+      // 2026-10-25 库页材质定版：文字块统一为 [ShelfCardMeta]（标题一行 +
+      // 副行 + 进度条，三个库同一形态）；长标题由 ShelfTitleLine 的溢出 tooltip
+      // 与长按菜单看全名（BUG-1184 的「看不全」出口）。
       expect(
         body,
-        contains('maxLines: 2'),
-        reason:
-            '$name 标题必须 maxLines: 2——窄屏卡宽约 154px，单行放不下常见的'
-            '日文剧名（BUG-1184）',
+        contains('_videoCardMeta('),
+        reason: '$name 文字块必须走统一的 _videoCardMeta / ShelfCardMeta',
       );
     }
   });
@@ -131,17 +130,8 @@ void main() {
         buildTestApp(
           Builder(
             builder: (BuildContext context) {
-              // 与 _videoCardTextBlock 同构：两行标题 + 一行进度 + 内边距 8/6 + slack。
-              final double titleLine = textLineHeight(
-                context,
-                Theme.of(context).textTheme.bodyMedium ??
-                    const TextStyle(fontSize: 14),
-              );
-              final double metaLine = textLineHeight(
-                context,
-                FushiDesignTokens.of(context).type.metadata,
-              );
-              measured = titleLine * 2 + 8 + metaLine + 6 + kTextBlockSlack;
+              // 与 _videoCardTextBlock 同源：材质库页统一文字块。
+              measured = ShelfCardMeta.heightFor(context);
               return const SizedBox.shrink();
             },
           ),
@@ -158,10 +148,10 @@ void main() {
       );
       expect(
         measured!,
-        greaterThan(60),
+        greaterThan(40),
         reason:
-            '两行标题 + 进度行装不下 60px——低于这个值说明公式又漏了一行或行高，'
-            '大字号下会重新裁字（BUG-1184）',
+            '标题行 + 副行 + 进度条装不下 40px——低于这个值说明公式漏了一行或行高，'
+            '大字号下会裁字（BUG-1184）',
       );
     },
   );

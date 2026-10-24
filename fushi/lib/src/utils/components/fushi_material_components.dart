@@ -194,6 +194,7 @@ class FushiCard extends StatefulWidget {
     this.variant = FushiCardVariant.filled,
     this.tone = FushiCardTone.neutral,
     this.morph,
+    this.stateLayer = true,
   });
 
   /// M3 卡片三类容器（填充 / 抬升 / 描边），默认填充。调用点显式 [color] /
@@ -209,6 +210,11 @@ class FushiCard extends StatefulWidget {
   /// null = 分组列表格（[grouped]）开、独立卡片关——M3E 的形变是列表分段的
   /// 语言，独立卡片的反馈是抬升 + 按压回弹。
   final bool? morph;
+
+  /// false = 悬停 / 按下不画状态层（MD3 InkWell 透明、无水波；Apple 行不铺
+  /// 底色）。封面卡（[shelfCoverCard]）用：卡面透明，状态层会在封面后面露出
+  /// 一块底板，悬停反馈改由 FushiHoverLift 放大与材质扫光承担。
+  final bool stateLayer;
 
   final Widget child;
   final EdgeInsetsGeometry? padding;
@@ -480,9 +486,16 @@ class _FushiCardState extends State<FushiCard>
                     borderRadius: radius,
                     // 柔和状态层（悬停 8% / 按下 10% onSurface），水波
                     // 由外层 Material 裁在圆角里；墨水屏交回默认。
-                    overlayColor: eink
+                    overlayColor: !widget.stateLayer
+                        ? const WidgetStatePropertyAll<Color>(
+                            Colors.transparent,
+                          )
+                        : eink
                         ? null
                         : fushiMd3ContentStateLayer(scheme),
+                    splashFactory: widget.stateLayer
+                        ? null
+                        : NoSplash.splashFactory,
                     child: content,
                   ),
           ),
@@ -514,6 +527,7 @@ class _FushiCardState extends State<FushiCard>
         selected: widget.selected,
         // 卡片选中靠下面的强调色描边，不铺选中底。
         selectedBackground: Colors.transparent,
+        stateBackground: widget.stateLayer,
         focusable: FushiFocusRoot.maybeControllerOf(context) == null,
         borderRadius: radius,
         child: body,

@@ -18,16 +18,14 @@ void main() {
 
     expect(openSrtBook, contains('await appModel.openMedia('));
     expect(openSrtBook, contains('ref: ref'));
-    expect(
-      openSrtBook,
-      contains('mediaSource: ReaderFushiSource.instance'),
-    );
+    expect(openSrtBook, contains('mediaSource: ReaderFushiSource.instance'));
     expect(openSrtBook, contains('item: _srtBookMediaItem(book)'));
 
     expect(
       openSrtBook,
       isNot(contains('Navigator.push')),
-      reason: 'Direct pushes bypass AppModel.openMedia and leave '
+      reason:
+          'Direct pushes bypass AppModel.openMedia and leave '
           'currentMediaSource null for SRT books.',
     );
     expect(openSrtBook, isNot(contains('ReaderFushiPage(')));
@@ -39,7 +37,7 @@ void main() {
     final String srtCard = _sectionSource(
       source,
       // 块2 起签名带 selectable（多选态成员卡不单独勾选），锚点跟随。
-      'Widget _buildSrtCard(SrtBook book,',
+      'Widget _buildSrtCard(',
       '  Widget _buildSrtCover(',
     );
 

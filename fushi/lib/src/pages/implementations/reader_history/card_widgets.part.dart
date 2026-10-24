@@ -1,37 +1,6 @@
 // GENERATED-NOTE: extracted from reader_fushi_history_page.dart (TODO-587).
 part of '../reader_fushi_history_page.dart';
 
-/// 自适应标签列在给定可用高度下能放几个 chip slot。
-///
-/// 根因守卫：当 [maxHeight] 无界（== infinity，例如标签覆盖层用
-/// `Positioned(top, left)`（无 bottom/height）落进 `Stack(fit: StackFit.expand)`
-/// 时拿到 unbounded 约束），旧实现 `(maxHeight * 0.55 / chipHeight).floor()` 会在
-/// Infinity 上抛 `UnsupportedError: Infinity or NaN toInt` —— 表现为书本打 tag 后
-/// 封面卡片渲染异常（debug 红框/错误占位）。无界时返回全部标签数，渲染全部、由父
-/// 级自然裁剪，而不是吞异常或硬编码 slot。
-@visibleForTesting
-int adaptiveTagSlots({
-  required double maxHeight,
-  required int tagCount,
-  double chipHeight = 22.0,
-}) {
-  if (tagCount <= 0) return 0;
-  if (!maxHeight.isFinite) return tagCount;
-  final double usable = maxHeight * 0.55;
-  return (usable / chipHeight).floor().clamp(1, tagCount);
-}
-
-/// 书架书卡封面右上角类型徽章（有声书 / 普通书）的方框边长（逻辑像素）。
-///
-/// 历史：早期徽章夹在封面下方的 footer 文字行里、紧贴小号书名，读作一个克制的小角标。
-/// TODO-355 把徽章移到封面图上后，旧布局用 `SizedBox.square(gap*5=40) + BoxFit.scaleDown`
-/// 包住内在 22px（FushiBadge：icon 14 + padding gap 8）的徽章，徽章按 22px 满尺寸渲染。
-/// TODO-361 误把方框收到 `gap*2=16` + `BoxFit.contain`，把 22px 徽章硬缩到 16px，
-/// 反而「太小看不清」（TODO-552 用户报回归）。这里恢复书架徽章的正常大小：方框等于徽章
-/// 内在尺寸 22px，配合 `BoxFit.contain` 既不放大也不缩小，徽章按 22px 满尺寸渲染。
-/// 用顶层常量 + 测试可见，便于 widget 守卫断言渲染尺寸，防止再次漂移。
-const double kShelfCoverBadgeDimension = 22.0;
-
 /// 书架封面图按高度等比缩放、保持封面原始比例（永不变形）。
 ///
 /// TODO-480 曾把这里从 [BoxFit.fitHeight] 改成 [BoxFit.cover] 以「占满卡片、消除
@@ -42,12 +11,6 @@ const double kShelfCoverBadgeDimension = 22.0;
 /// 裁掉，封面竖向全貌完整不变形。
 BoxFit get _bookCardCoverFit => BoxFit.fitHeight;
 
-/// Stable below-cover title footer height for reader shelf cards.
-///
-/// The cover and title areas must not resize when a title wraps to two lines;
-/// this fixed footer keeps long book names from pushing the grid around.
-const double kShelfTitleFooterHeight = 40.0;
-
 /// Book / audiobook / SRT / remote shelf card slot aspect ratio (width / height).
 ///
 /// TODO-786 是 TODO-552 「封面不裁切」决策的延续，同向而非回退：TODO-552 改回
@@ -57,83 +20,15 @@ const double kShelfTitleFooterHeight = 40.0;
 /// 160/260≈0.6154，使 `fitHeight` 自然铺满卡槽、两侧残白收敛到几像素（不改 cover，
 /// 绝不触碰 TODO-552 的不裁切决策与其守卫的 cover 禁令）。
 ///
-/// 几何说明：卡槽内有绝对 40px 的标题 footer（[kShelfTitleFooterHeight]）压在封面区
-/// 下方，footer 是固定像素而非按比例，故封面区实际比例会比卡槽比例略宽（中间档
-/// 封面区 W/H ≈ 0.72），残白随档位非线性，约 5–8px/侧无法跨档归零——这是 footer
-/// 绝对像素的必然结果，不是 bug。
-const double kShelfBookCardAspectRatio = 160 / 260;
+/// 2026-10-25 库页定版：封面下的文字块换成 [ShelfCardMeta]（标题一行 + 副行一行
+/// + 进度条，约 56px，随文字缩放），封面区要保持约 1:1.42 的竖长书封比例。按
+/// 三档网格宽度（150 / 180 / 210，卡内四边各让 12px）推算：封面高 = 1.42 × 内宽，
+/// 卡槽高 = 封面高 + 文字块 + 24，卡槽比例落在 0.58–0.61，取中间档 180 / 302。
+/// 文字块是固定像素，跨档仍有一两像素残差，由 fitHeight 两侧的衬底吸收。
+const double kShelfBookCardAspectRatio = 180 / 302;
 
 /// card domain methods extracted via part-of (TODO-587); shared private scope.
 extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
-  Widget _tagChip(BookTagRow tag) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
-      padding: _cardTagChipPadding(tokens),
-      child: FushiTagChip(
-        label: tag.name,
-        color: Color(tag.colorValue),
-      ),
-    );
-  }
-
-  Widget _overflowChip(int count) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
-      padding: _cardTagChipPadding(tokens),
-      child: FushiTagChip(
-        label: '+$count',
-      ),
-    );
-  }
-
-  EdgeInsetsDirectional _cardTagChipPadding(FushiDesignTokens tokens) {
-    return EdgeInsetsDirectional.only(
-      end: tokens.spacing.gap / 2,
-      bottom: tokens.spacing.gap / 4,
-    );
-  }
-
-  Widget _adaptiveTagColumn(List<BookTagRow> tags) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final int maxSlots = adaptiveTagSlots(
-          maxHeight: constraints.maxHeight,
-          tagCount: tags.length,
-        );
-
-        if (maxSlots >= tags.length) {
-          return _uniformWidthTagColumn(
-            [for (final tag in tags) _tagChip(tag)],
-          );
-        }
-
-        // 溢出时最后一个槽恒让给「+N」合并 chip。仅 1 槽（书卡容器高恒 ≈1 槽）
-        // 时唯一槽也显示「+N」（N=全部标签数）——旧实现只显示第 1 个标签且无
-        // +N，多标签书在书架上读作「只有 1 个标签」（巡检 PR-3）。
-        final int visibleCount = maxSlots <= 1 ? 0 : maxSlots - 1;
-        final int overflow = tags.length - visibleCount;
-        return _uniformWidthTagColumn([
-          for (final tag in tags.take(visibleCount)) _tagChip(tag),
-          _overflowChip(overflow),
-        ]);
-      },
-    );
-  }
-
-  /// BUG-220(子2): 卡片左上角竖排标签原来用 `crossAxisAlignment.start`，每个 chip
-  /// 宽度等于自身文字宽度，导致一行长一行短的参差。用 `IntrinsicWidth` 把整列宽度
-  /// 收敛到最宽 chip，再用 `stretch` 让每个 chip 拉到该统一宽度（chip 内部文字仍左
-  /// 对齐），竖排整齐。不改 [FushiTagChip]，不影响别处用法。
-  Widget _uniformWidthTagColumn(List<Widget> chips) {
-    return IntrinsicWidth(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: chips,
-      ),
-    );
-  }
-
   String? _existingCoverFilePath(String? coverPath) {
     if (coverPath == null || coverPath.isEmpty) return null;
     try {
@@ -163,9 +58,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
 
   Widget _buildFileCover(String coverPath, IconData placeholderIcon) {
     return FadeInImage(
-      imageErrorBuilder: (_, __, ___) => _coverPlaceholderIcon(
-        placeholderIcon,
-      ),
+      imageErrorBuilder: (_, __, ___) => _coverPlaceholderIcon(placeholderIcon),
       placeholder: MemoryImage(kTransparentImage),
       // BUG-959: 降采样解码，避免 EPUB 原始封面(常 1600×2400)整帧撑爆 ImageCache。
       image: resizedFileImage(File(coverPath)),
@@ -201,8 +94,9 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     final bool selected =
         selectionKey != null && _selectedKeys.contains(selectionKey);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final SelectionSlot? slot =
-        selectionKey == null ? null : SelectionSlot.loose(selectionKey);
+    final SelectionSlot? slot = selectionKey == null
+        ? null
+        : SelectionSlot.loose(selectionKey);
     void handleTap() {
       if (slot == null) {
         onTap();
@@ -233,6 +127,12 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
             canRequestFocus: false,
             // 封面即卡片：状态层 / 水波与封面同圆角（[shelfCoverRadius]）。
             borderRadius: shelfCoverRadius(context),
+            // 封面卡不画状态层 / 水波（2026-10-25）：悬停 / 按下的灰底会在
+            // 封面后面露出一块底板，反馈由 FushiHoverLift 与材质扫光负责。
+            overlayColor: const WidgetStatePropertyAll<Color>(
+              Colors.transparent,
+            ),
+            splashFactory: NoSplash.splashFactory,
             onTap: handleTap,
             // 未进入选择态时，触屏与桌面长按都保留上下文菜单；只有显式进入选择态后
             // 才摘掉卡片识别器，让祖先 SelectionDragArea 接管长按扫选。
@@ -304,19 +204,29 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     return result;
   }
 
+  /// 书卡布局（2026-10-25 库页定版）：上面是封面（材质由网格外的
+  /// [ShelfCoverMaterialScope] 决定），下面是 [ShelfCardMeta] 文字块。
+  ///
+  /// 用户原话「全部都不用角标设计」：封面上**不压任何角标**——类型、对齐状态、
+  /// 远端 ☁、下载状态、标签、进度条一律进封面下的副行（[meta] + [tags]）。封面上
+  /// 只剩多选勾选圈 / 选中罩（共享 [ShelfCoverFrame] 画）和导入 / 下载中的居中
+  /// 加载遮罩（[loadingOverlay]，BUG-990 / 远端下载进行中）。
   Widget _bookCardLayout({
     required String title,
     required Widget cover,
-    Widget? tagLabels,
-    Widget? coverBadge,
-    Widget? leadingBadge,
-    Widget? metadata,
+    required _ShelfMetaSpec meta,
+    List<BookTagRow> tags = const <BookTagRow>[],
     Widget? loadingOverlay,
   }) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double overlayInset = tokens.spacing.gap * 0.75;
-    // 封面和标题 footer 分区稳定：封面内只叠加标签、类型徽章、进度条；
-    // 书名移到封面下方，避免遮住封面图，也避免长标题撑坏网格。
+    final Widget metaBlock = ShelfCardMeta(
+      title: title,
+      subtitle: _shelfMetaSubtitle(meta.status, tags),
+      leadingIcon: meta.icon,
+      tone: meta.tone,
+      progress: meta.progress,
+      completed: meta.completed,
+    );
+    final String? tooltip = meta.tooltip;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -326,55 +236,6 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
               fit: StackFit.expand,
               children: [
                 ClipRect(child: cover),
-                if (metadata != null)
-                  PositionedDirectional(
-                    start: 0,
-                    end: 0,
-                    bottom: 0,
-                    child: metadata,
-                  ),
-                if (coverBadge != null)
-                  PositionedDirectional(
-                    end: overlayInset,
-                    top: overlayInset,
-                    // 封面右上角类型徽章（TODO-284 / TODO-355 / TODO-361 / TODO-552）。
-                    // 徽章内在尺寸是 22px（FushiBadge: icon 14 + padding gap）。方框等于
-                    // 徽章内在尺寸 kShelfCoverBadgeDimension=22，配合 `BoxFit.contain` 既不
-                    // 放大也不缩小，徽章按 22px 满尺寸渲染——TODO-361 曾把方框收到 16px 把徽章
-                    // 缩得太小看不清，TODO-552 恢复正常大小。
-                    child: SizedBox.square(
-                      dimension: kShelfCoverBadgeDimension,
-                      child: FittedBox(
-                        fit: BoxFit.contain,
-                        child: coverBadge,
-                      ),
-                    ),
-                  ),
-                if (leadingBadge != null)
-                  PositionedDirectional(
-                    start: overlayInset,
-                    top: overlayInset,
-                    // 封面左上角类型徽章（TODO-655a）：远端书卡右上角被下载按钮 /
-                    // 进度徽章占用，类型徽章（有声书耳机 / 普通书本）放左上角，与
-                    // coverBadge 同尺寸渲染。本地书卡用 tagLabels 占左上角而不传
-                    // leadingBadge，二者不会共存。
-                    child: SizedBox.square(
-                      dimension: kShelfCoverBadgeDimension,
-                      child: FittedBox(
-                        fit: BoxFit.contain,
-                        child: leadingBadge,
-                      ),
-                    ),
-                  ),
-                if (tagLabels != null)
-                  PositionedDirectional(
-                    start: overlayInset,
-                    top: overlayInset,
-                    child: _bookCardTagArea(tagLabels),
-                  ),
-                // 有声书两阶段下载空窗期的加载指示（BUG-990）：EPUB 已落库、有声书还在
-                // 下，占位卡已被本地卡顶替，靠这个居中全幅覆盖层继续显示「还在下」——
-                // 不抢占已被占用的 coverBadge/leadingBadge/tagLabels 槽，叠在最上层。
                 if (loadingOverlay != null)
                   Positioned.fill(child: Center(child: loadingOverlay)),
               ],
@@ -382,104 +243,121 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
           ),
         ),
         SizedBox(
-          // BUG-1184：随文字缩放变高，否则大字号下书名第二行被裁（见 [heightFor]）。
-          height: ShelfCardFooter.heightFor(context),
-          child: ShelfCardFooter(title: title),
+          // 随文字缩放变高（BUG-1184 同一诉求：大字号下文字不被裁）。
+          height: ShelfCardMeta.heightFor(context),
+          child: KeyedSubtree(
+            key: meta.key,
+            child: tooltip == null
+                ? metaBlock
+                : FushiTooltip(message: tooltip, child: metaBlock),
+          ),
         ),
       ],
     );
   }
 
-  /// 封面即卡片（2026-10-04）：封面框是共享 [ShelfCoverFrame]（MD3 12 圆角 /
-  /// Apple 10 圆角 + 0.5px 内描边 + 柔和投影 / 墨水屏描边），不再套一张
-  /// 色块底的 FushiCard；fitHeight 两侧几像素余量落在框自带的衬底上。
+  /// 封面框是共享 [ShelfCoverFrame]：材质库页（网格外有 [ShelfCoverMaterialScope]）
+  /// 画光面书皮 + 接触阴影 + 悬停扫光；墨水屏 / 无材质时退回描边或圆角封面框。
   Widget _bookCardCoverFrame(Widget child) {
     return ShelfCoverFrame(child: child);
   }
 
-  Widget _bookCardTagArea(Widget tagLabels) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return ConstrainedBox(
-      constraints: BoxConstraints(
-        maxWidth: tokens.spacing.gap * 9,
-        maxHeight: tokens.spacing.gap * 3.5,
-      ),
-      child: ClipRect(child: tagLabels),
-    );
+  /// 副行：状态在前，用户标签接在后面（`46% · #tag1 #tag2`）。
+  String _shelfMetaSubtitle(String? status, List<BookTagRow> tags) {
+    final String tagText = tags
+        .map((BookTagRow tag) => '#${tag.name}')
+        .join(' ');
+    return <String>[
+      if (status != null && status.isNotEmpty) status,
+      if (tagText.isNotEmpty) tagText,
+    ].join(' · ');
   }
 
-  Widget _cardBadge({
-    required IconData icon,
-    required Color background,
-    required Color foreground,
-    String? tooltip,
+  /// 条目的阅读比例（0–1）：标了读完恒为 1；超过 97% 视同读完（跳过后记 / 附录）。
+  double _itemReadFraction(MediaItem item, {bool completed = false}) {
+    if (completed) return 1;
+    if (item.duration <= 0) return 0;
+    final double v = item.position / item.duration;
+    if (!v.isFinite) return 0;
+    return v > 0.97 ? 1 : v.clamp(0.0, 1.0);
+  }
+
+  /// 阅读状态文案：已读完 / 未读 / 百分比（不足 1% 记 1%，避免「0%」与「未读」混淆）。
+  String _readProgressLabel(double fraction, {bool completed = false}) {
+    if (completed || fraction >= 1) return t.shelf_filter_read_status_finished;
+    if (fraction <= 0) return t.shelf_filter_read_status_unread;
+    return '${(fraction * 100).floor().clamp(1, 99)}%';
+  }
+
+  /// 本地书卡的副行：普通书 / 漫画只写阅读状态（不标类型）；有声书写「🎧 有声书 ·
+  /// 46%」，对齐失败 / 部分对齐换错误 / 警示语气与原因。
+  _ShelfMetaSpec _localBookMeta({
+    required double fraction,
+    required bool completed,
+    bool audiobook = false,
+    HealthKind health = HealthKind.notApplicable,
   }) {
-    // 角标统一（2026-10-04）：封面角标一律是 CoverBadge（MD3 inverseSurface@0.85
-    // / Apple 磨砂黑），调用方给的 container 底色只用来读出状态——失败 / 部分
-    // 完成落在图标颜色上，不再整块铺 errorContainer / secondaryContainer 彩底。
-    // 纯图标 CoverBadge 内在尺寸 14 + 4×2 = 22，正好等于
-    // [kShelfCoverBadgeDimension]。
-    final ColorScheme cs = theme.colorScheme;
-    final Widget badge = CoverBadge(
-      icon: icon,
-      iconColor: coverBadgeStatusColor(
-        context,
-        error: background == cs.errorContainer,
-        warning: background == cs.tertiaryContainer,
-      ),
-    );
-    if (tooltip == null) return badge;
-    return FushiTooltip(message: tooltip, child: badge);
-  }
-
-  /// [completed] = 该书已被显式标记「读完」（EpubBooks.completedAt 非 null）。命中时
-  /// 进度条恒满格并用区分色（tertiary），让手动标记完成但进度停在 99%（跳过后记/附录）
-  /// 的书在书架上也一眼可辨「已读完」，而非停在一条差一点的普通进度条。
-  Widget _progressBar(MediaItem item, {bool completed = false}) {
-    double value = 0;
-    if (completed) {
-      value = 1;
-    } else if (item.duration > 0) {
-      final double v = item.position / item.duration;
-      if (v.isFinite) {
-        value = v > 0.97 ? 1 : v;
-      }
+    final String status = _readProgressLabel(fraction, completed: completed);
+    final bool done = completed || fraction >= 1;
+    if (!audiobook) {
+      return _ShelfMetaSpec(
+        status: status,
+        progress: fraction,
+        completed: done,
+      );
     }
-    final bool glass = isGlassDesign(context);
-    final FushiAppleColors apple = appleColorsOf(context);
-    // 与视频卡同一条封面进度（[CoverProgressStrip]：MD3 贴底细线 / Apple 内缩
-    // 胶囊 / 墨水屏实色）；读完换完成色——MD3 tertiary、Apple 系统绿（tertiary
-    // 在 Apple 色板里没有「完成」语义）。
-    return CoverProgressStrip(
-      value: value,
-      color: completed
-          ? (glass ? apple.success : theme.colorScheme.tertiary)
-          : null,
-    );
-  }
-
-  Widget _audiobookBadge(HealthKind kind) {
-    final ColorScheme cs = theme.colorScheme;
-    final Color bg;
-    final Color fg;
-    switch (kind) {
+    switch (health) {
       case HealthKind.failed:
-        bg = cs.errorContainer;
-        fg = cs.onErrorContainer;
+        return _ShelfMetaSpec(
+          status: t.shelf_card_meta_alignment_failed,
+          icon: Icons.error_outline,
+          tone: ShelfMetaTone.error,
+          progress: fraction,
+          completed: done,
+        );
       case HealthKind.partial:
-        bg = cs.tertiaryContainer;
-        fg = cs.onTertiaryContainer;
+        return _ShelfMetaSpec(
+          status: '${t.shelf_card_meta_alignment_partial} · $status',
+          icon: Icons.warning_amber_rounded,
+          tone: ShelfMetaTone.warning,
+          progress: fraction,
+          completed: done,
+        );
       case HealthKind.ok:
       case HealthKind.unrun:
       case HealthKind.running:
       case HealthKind.notApplicable:
-        bg = cs.secondaryContainer;
-        fg = cs.onSecondaryContainer;
+        return _ShelfMetaSpec(
+          status: '${t.section_audiobook} · $status',
+          icon: Icons.headphones_outlined,
+          progress: fraction,
+          completed: done,
+        );
     }
-    return _cardBadge(
-      icon: Icons.headphones_outlined,
-      background: bg,
-      foreground: fg,
-    );
   }
+}
+
+/// 封面下副行的内容（[_ReaderHistoryCardWidgets._bookCardLayout] 的 `meta`）。
+///
+/// [status] 是副行的状态段（标签由布局接在后面）；[progress] 为 null 时不画进度条
+/// （仍占位，同一网格行高一致）；[key] 挂在文字块上，供 widget 测试定位某一种状态
+/// （如远端「未下载」/「下载失败」）；[tooltip] 非空时整块文字悬停给出完整说明。
+class _ShelfMetaSpec {
+  const _ShelfMetaSpec({
+    this.status,
+    this.icon,
+    this.tone = ShelfMetaTone.normal,
+    this.progress,
+    this.completed = false,
+    this.key,
+    this.tooltip,
+  });
+
+  final String? status;
+  final IconData? icon;
+  final ShelfMetaTone tone;
+  final double? progress;
+  final bool completed;
+  final Key? key;
+  final String? tooltip;
 }

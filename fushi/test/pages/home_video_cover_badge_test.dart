@@ -19,22 +19,26 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/utils/components/cover_badge.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
-/// UI 巡检 PR-4：视频库卡片的三处封面角标（字幕 / 云端 / 播放列表集数）收敛到
-/// PR-0 共享 [CoverBadge]。断言三处都渲染成 CoverBadge（按 key / icon 定位），
-/// 防止回退成各自手写的黑胶囊 Container。
+/// 2026-10-25 库页材质定版（用户：「全部都不用角标设计」）：视频库卡片的封面上
+/// 不再压任何角标——原字幕 / 云端 / 播放列表集数三处 [CoverBadge] 撤掉，「远端」
+/// 与集数信息挪进封面下的副行（[ShelfCardMeta]，前导 ☁）。断言封面内零角标、
+/// 信息在副行，防止角标回潮。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_cover_badge_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_cover_badge_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -63,8 +67,9 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final Directory storeDir =
-        Directory.systemTemp.createTempSync('fushi_cover_badge_store');
+    final Directory storeDir = Directory.systemTemp.createTempSync(
+      'fushi_cover_badge_store',
+    );
     platformServices = testPlatformServices();
     ankiRepository = FakeAnkiRepository();
     appModel = AppModel(platformServices)
@@ -77,36 +82,34 @@ void main() {
   });
 
   Widget buildApp(_FakeRemoteVideoClient client) => ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                // #792 分区化后远端占位卡混排进 series 分区的混排墙，钉住该分区。
-                section: VideoLibrarySection.allVideos,
-                remoteVideoClientLoader: () async => client,
-                remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
-                    File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),
-              ),
-            ),
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            // #792 分区化后远端占位卡混排进 series 分区的混排墙，钉住该分区。
+            section: VideoLibrarySection.allVideos,
+            remoteVideoClientLoader: () async => client,
+            remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
+                File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
-  testWidgets('字幕 / 云端 / 播放列表三处角标均渲染为共享 CoverBadge',
-      (WidgetTester tester) async {
+  testWidgets('远端占位卡封面上零角标，远端 / 集数进副行', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    // 单张远端占位卡同时命中三种角标：hasSubtitle（左上字幕）+ episodes>1
-    // （左下集数）+ 云角标（右下恒在）。
+    // 单张远端占位卡同时具备旧三种角标的条件：hasSubtitle + episodes>1 + 远端。
     await tester.pumpWidget(buildApp(_FakeRemoteVideoClient()));
     await tester.pumpAndSettle();
 
@@ -115,43 +118,49 @@ void main() {
     );
     expect(card, findsOneWidget);
 
-    // 云角标：稳定 key + widget 类型是 CoverBadge。
-    final Finder cloudBadge = find.byKey(
+    expect(
+      find.descendant(of: card, matching: find.byType(CoverBadge)),
+      findsNothing,
+      reason: '封面上不再压任何角标（字幕 / 云 / 集数）',
+    );
+
+    // 「远端」标识挂在封面下的文字块上（稳定 key 沿用），前导 ☁ + 副行文案。
+    final Finder meta = find.byKey(
       const ValueKey<String>('remote_video_cloud_badge_remote_video-1'),
     );
-    expect(cloudBadge, findsOneWidget);
-    expect(tester.widget(cloudBadge), isA<CoverBadge>());
-
-    // 字幕角标：卡内 CoverBadge 携字幕图标。
+    expect(meta, findsOneWidget);
+    final ShelfCardMeta metaWidget = tester.widget<ShelfCardMeta>(meta);
+    expect(metaWidget.leadingIcon, FushiIcons.cloud);
     expect(
-      find.descendant(
-        of: card,
-        matching: find.widgetWithIcon(CoverBadge, Icons.subtitles_outlined),
-      ),
-      findsOneWidget,
-      reason: '字幕角标必须是共享 CoverBadge',
+      metaWidget.subtitle,
+      '${t.home_remote_source} · ${t.video_playlist_episodes(count: 2)}',
     );
-
-    // 播放列表集数角标：卡内 CoverBadge 携播放列表图标。
     expect(
-      find.descendant(
-        of: card,
-        matching: find.widgetWithIcon(CoverBadge, Icons.playlist_play),
-      ),
+      find.descendant(of: meta, matching: find.text(metaWidget.subtitle!)),
       findsOneWidget,
-      reason: '播放列表集数角标必须是共享 CoverBadge',
     );
   });
 
-  test('source guard: 视频库页不再手写黑胶囊角标（收敛 CoverBadge）', () {
-    final String src =
-        File('lib/src/pages/implementations/home_video_page.dart')
-            .readAsStringSync();
-    expect(src, contains('CoverBadge('), reason: '角标必须走共享 CoverBadge');
-    expect(src, isNot(contains('Colors.black.withValues(alpha: 0.62)')),
-        reason: '手写黑胶囊角标（0.62）应已被 CoverBadge 取代');
-    expect(src, isNot(contains('Colors.black.withValues(alpha: 0.55)')),
-        reason: '手写黑胶囊角标（0.55）应已被 CoverBadge 取代');
+  test('source guard: 视频库卡片封面不再画集数 / 云 / 字幕角标', () {
+    final String src = File(
+      'lib/src/pages/implementations/home_video_page.dart',
+    ).readAsStringSync();
+    expect(src, isNot(contains('_buildPlaylistBadge')), reason: '集数角标已挪进副行');
+    expect(
+      src,
+      isNot(contains('CoverBadge(icon: Icons.subtitles_outlined')),
+      reason: '字幕角标已撤',
+    );
+    expect(
+      src,
+      isNot(contains('CoverProgressStrip(')),
+      reason: '封面底边进度条已挪进副行下的进度条',
+    );
+    expect(
+      src,
+      contains('ShelfCoverMaterial.glossyPoster'),
+      reason: '视频库条目走光面海报材质',
+    );
   });
 }
 
@@ -163,18 +172,18 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
 
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => <RemoteVideoInfo>[
-        RemoteVideoInfo.fromJson(<String, Object?>{
-          'id': 'remote/video-1',
-          'title': 'Remote Episode',
-          'sizeBytes': 1024,
-          'hasSubtitle': true,
-          'coverPath': _writeTinyCover().path,
-          'episodes': <Map<String, Object?>>[
-            <String, Object?>{'index': 0, 'title': 'EP1'},
-            <String, Object?>{'index': 1, 'title': 'EP2'},
-          ],
-        }),
-      ];
+    RemoteVideoInfo.fromJson(<String, Object?>{
+      'id': 'remote/video-1',
+      'title': 'Remote Episode',
+      'sizeBytes': 1024,
+      'hasSubtitle': true,
+      'coverPath': _writeTinyCover().path,
+      'episodes': <Map<String, Object?>>[
+        <String, Object?>{'index': 0, 'title': 'EP1'},
+        <String, Object?>{'index': 1, 'title': 'EP2'},
+      ],
+    }),
+  ];
 
   File _writeTinyCover() {
     final File file = File(
@@ -188,12 +197,11 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
   Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      const RemoteVideoStreamUrls(
-        streamUrl: 'http://127.0.0.1:1/stream',
-        subtitleUrl: null,
-        subtitleFileName: null,
-      );
+  }) async => const RemoteVideoStreamUrls(
+    streamUrl: 'http://127.0.0.1:1/stream',
+    subtitleUrl: null,
+    subtitleFileName: null,
+  );
 
   @override
   Future<void> getRemoteVideoSubtitle(
@@ -217,8 +225,7 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putRemoteVideoPosition(
@@ -229,6 +236,7 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
   }) async {}
 }
 
-final List<int> _tinyPngBytes =
-    base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
-        'AAAADUlEQVR42mP8z8BQDwAFgwJ/l5YV3wAAAABJRU5ErkJggg==');
+final List<int> _tinyPngBytes = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
+  'AAAADUlEQVR42mP8z8BQDwAFgwJ/l5YV3wAAAABJRU5ErkJggg==',
+);
