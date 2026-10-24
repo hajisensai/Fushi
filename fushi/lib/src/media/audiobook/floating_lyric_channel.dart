@@ -232,6 +232,9 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
 
   static Future<bool> canDrawOverlays() => _instance.canDrawOverlaysImpl();
 
+  /// 本平台有没有原生悬浮字幕窗口（Android / Windows）。
+  static bool get supported => _instance.isSupported;
+
   static Future<bool> show({
     double fontSize = 16,
     int textColor = 0xFFFFFFFF,

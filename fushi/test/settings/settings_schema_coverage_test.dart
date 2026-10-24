@@ -79,9 +79,22 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 查词时暂停：生效点在歌词页查词回调（musicLyricsShouldPauseForLookup），harness
   // 设置页没有歌词页；判据由 music_lyrics_page_logic_test 咬住。
   // 开关值经 MusicScrapeService 的 vgmdbEnabled 读取器交给 VgmdbProvider（关 = 不发请求）。
-  'music/VGMdb lookup': 'test/media/music/metadata/music_scrape_service_test.dart',
+  'music/VGMdb lookup':
+      'test/media/music/metadata/music_scrape_service_test.dart',
   'music/Pause while looking up words':
       'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
+  // 桌面歌词 / 锁屏歌词：生效点是 MusicLyricsLive（解析当前曲目歌词、按位置推当前行到
+  // 原生悬浮窗 / 媒体会话副标题），harness 没有在播的曲目与原生窗口。开关开 = 弹窗推
+  // 双行块与已唱高亮、关 = 隐藏 / 不给副标题、两项都关 = 不解析，由
+  // music_lyrics_live_test 咬住。
+  'music/Desktop lyrics': 'test/media/music/lyrics/music_lyrics_live_test.dart',
+  'music/Lyrics on the lock screen':
+      'test/media/music/lyrics/music_lyrics_live_test.dart',
+  // 听歌计入学习（D4）：生效点是 MusicStudyTracker 起停 StudyClock、写 study_segments，
+  // harness 没有在播的曲目。开 = 在播即计、关 = 只在学习动作后的空闲窗口内计，由
+  // music_study_tracker_test 咬住。
+  'music/Count listening as study time':
+      'test/media/music/music_study_tracker_test.dart',
   // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
   // 没有 WebView。总开关、订阅集、白名单都是 Rust 核心（fushi_web_core）的状态，行改动经
   // WebAdblockService 转成命令，由 web_adblock_service_test（开关 / 白名单下一次请求即生效、

@@ -230,14 +230,13 @@ LyricTimeline
 
 - 源文件自带 ruby（TTML ruby、RhythmicaLyrics `【漢字|かんじ】`、ASS
   `{\k}漢|かん` 写法）原样保留。
-- 无注音时按**当前学习语言**的既有分词 / 读音能力自动补（日语读音、中文拼音
-  等，**不假设日语**：没有读音能力的语言不显示注音开关）。
-- 自动注音与音节时间对齐：一个汉字音节拆成多个假名时按音节内均分或按对齐结果
-  分配，算法在 Rust（输入整行，输出整行）。
+- **自动注音绝对不做（所有者 2026-10-24 拍板，D11）**：源文件没有注音就不显示
+  注音，不按任何语言能力自动补读音、不做音节对齐。P1 曾在 Rust 侧实现过对齐函数
+  （`ffm_lyrics_align_ruby`），已随该决定删除。
 
 ### 5.4 歌词来源与优先级
 
-1. 用户手动指定 / 编辑过的（`isUserEdited`，永远最高）
+1. 用户手动指定的来源（`isUserEdited` = 手动指定，永远最高；持久化列名冻结）
 2. 同目录 sidecar（同名 `.ttml` > `.ass` > `.lys/.qrc/.krc/.yrc` > `.lrc` >
    `.srt/.vtt` > `.txt`；同名 + 语言后缀 `.zh.lrc` 视为翻译）
 3. 文件内嵌
@@ -296,10 +295,12 @@ LyricTimeline
   同时后台仍保留结构化时间轴，用于查词：点画面时按当前时间取行，弹出该行文本
   的可点选浮层。
 
-### 6.4 歌词编辑（仅限轻量）
+### 6.4 歌词编辑：不做（所有者 2026-10-24 拍板，D11）
 
-不做打轴。只提供：整首 / 单行偏移、选择歌词来源、改错字、编辑翻译与注音；
-改动存 DB（`isUserEdited`），可导出为原格式或 TTML。音节时间只读。
+不做任何歌词编辑：不改错字、不编辑翻译 / 注音、不做单行偏移，也不做打轴。保留的
+只有三项时间对齐 / 来源操作：**整首偏移**、**选择歌词来源 / 恢复自动来源**、**导出
+TTML**。手动指定的来源存成 `user` 行（`isUserEdited`），原文为 TTML。P1 曾留下的
+单行偏移渲染 / 换算参数与「保存编辑后时间轴」接口已删除。
 
 ## 7. 播放引擎与音质
 
@@ -518,9 +519,9 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   `media_kind_mappings.dart` 补齐；**只有出现查词 / 制卡等学习动作或
   用户开启「听歌计入学习」时**才写 `study_segments`，避免把背景音乐全算成学习
   时长（D4）。
-- 同步：曲目身份用内容派生 uid，跨设备 / 互联共享歌词编辑、歌单、播放统计。
+- 同步：曲目身份用内容派生 uid，跨设备 / 互联共享手动指定的歌词来源、歌单、播放统计。
   墓碑 `SyncTombstoneKind` 加 music 类型。
-- 备份：歌词编辑、歌单、绑定关系进备份；封面缓存不进。
+- 备份：手动指定的歌词来源（含整首偏移）、歌单、绑定关系进备份；封面缓存不进。
 
 **P0 落地时的三处偏离（所有者 2026-10-24 认可）**：
 
@@ -593,7 +594,7 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
 | 期 | 内容 | 退出标准 |
 |---|---|---|
 | **P0 底座** | `fushi_music` Rust crate 骨架 + 扫描 / 标签 / CUE；统一 FFmpeg 能力下限扩充并五端重编；schema 125；`ModuleId.music`；曲库页 / 专辑页 / 基础播放（mpv 独立实例、gapless、ReplayGain、媒体会话） | 五端能扫库播放 FLAC/ALAC/APE/WV/DSF，CUE 拆轨无缝 |
-| **P1 歌词** | 全格式解析 → `LyricTimeline`（含回归向量）；`KaraokeLyricsView`；Apple / MD3 歌词页；LRCLIB；偏移；桌面歌词；查词制卡 | §5.1 每种格式有样本测试；逐字擦色 120 Hz 不掉帧（profile 实测） |
+| **P1 歌词** | 全格式解析 → `LyricTimeline`（含回归向量）；`KaraokeLyricsView`；Apple / MD3 歌词页；LRCLIB；整首偏移；桌面歌词；查词制卡（**不含歌词编辑与自动注音**，所有者 2026-10-24 拍板，D11） | §5.1 每种格式有样本测试；逐字擦色 120 Hz 不掉帧（profile 实测） |
 | **P2 音质** | 独占 / bit-perfect 五端；信号路径面板；R128 扫描；DSD 处理 | 每平台实测 `audio-out-params` 与源一致，面板判定与实测一致 |
 | **P3 卡拉 OK 字幕** | ASS 卡拉 OK 结构化 + 原样渲染（libass）；MV + 卡拉 OK 字幕页；UltraStar / `.kar` / CDG 显示 | 字幕组特效 ASS 样本与 mpv 单独播放逐帧一致；`\k` `\kf` `\ko` 擦色语义正确 |
 | **P4 刮削与 MV** | AcoustID / MusicBrainz / CAA / VGMdb；原曲与其它版本；MV 本地匹配 + 声纹偏移 + 在线绑定；动画 OP/ED 联动 | 抽样 200 首识别正确率报告；MV 偏移误差 ≤ 100 ms |
@@ -601,6 +602,32 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
 
 每期按本仓验证纪律：Dart 改动 `flutter analyze` 为推送门；播放 / 歌词 / 布局类
 修复要在真机或 Windows 离屏 runner 复测原始路径；Rust 侧带固定输入→输出向量。
+
+### 13.1 P1 剩余部分落地记录（2026-10-24）
+
+- **桌面歌词**：`MusicLyricsLive`（`media/music/lyrics/music_lyrics_live.dart`）复用有声书的
+  `FloatingLyricChannel`（Android 系统悬浮窗 / Windows 置顶穿透分层窗，不抢前台）。双行
+  （当前 + 下一行）；逐字推进按**音节边界**下发一次区间高亮（定时器排到下一个边界，
+  不逐帧过平台通道）——原生窗口只有区间高亮，没有逐帧渐变擦色。与有声书按媒体会话
+  归属让出 / 拿回窗口。**macOS 没有原生悬浮窗后端**（有声书同样没有），设置项只在
+  Android / Windows 显示。
+- **锁屏 / 通知**：当前行写进媒体会话的副标题（`MusicSession.mediaSessionLyricLine`），
+  设置「锁屏显示歌词」默认开。
+- **学习闭环（§12）**：歌词页制卡 = 查词那行 + 该行音频（前后扩 0.5 s）+ 封面 + `music`
+  来源链接与 `mined_sentences.position_ms / duration_ms`（L3）；AB 循环一行 / 多行走 mpv
+  原生 `ab-loop-a/b`（换曲自动关，交叉淡入下作用于出声的主实例）；学习统计
+  `MusicStudyTracker` 写 `study_segments`（`media_kind = music`），按 D4 只在学习动作后
+  的空闲窗口内或开了「听歌计入学习」时计；生词覆盖率 = 复习库里已进复习队列的词 /
+  歌词里词典命中的词（新 C ABI `fushidicts_tokenize_terms` 整首一次 FFI 取词头）。
+  曲库按难度排序需要把覆盖率落库（新列 / 新表），未做，待分配 schema 号。
+- **120 Hz 实测**（`fushi/integration_test/karaoke_lyrics_perf_itest.dart`，Windows profile、
+  Skia、160 Hz 屏、dpr 1.5、48 行 / 530 音节字级时间轴、每场景 25 s）：稳态（同进程第
+  二遍 / 换歌）超 8.33 ms 帧数为 **0**，build p99 ≈ 0.5 ms、raster p99 ≈ 1.1 ms，每帧只
+  重绘 1 个行组、播放中零重排。**进程内第一次**播歌词的头几次换行有 4–5 帧 10–18 ms，
+  `--trace-skia` 定位为 Skia/ANGLE 首次编译模糊着色器（`GrGLProgramBuilder::finalize`
+  → `driver_link_program` 11 ms），组件自身绘制 0.3 ms；三种组件内改法（统一模糊强度 /
+  painter 内 saveLayer / 像素对齐）实测都只是挪动编译时机，已撤回。根治需在组件外
+  （Impeller 预编译与 HDR 引擎补丁冲突 / 引擎持久化着色器缓存），待所有者决定。
 
 ## 14. 风险
 
@@ -626,6 +653,9 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   `2026-10-24-dvd-original-menu.md`）。
 - **D10 跨模块联动**：音乐 ↔ 视频联动保留，并推广到各模块（独立方案
   `2026-10-24-cross-media-links.md`）。
+- **D11 歌词编辑与自动注音**（所有者 2026-10-24）：**不做歌词编辑**（改字 / 翻译 /
+  注音 / 单行偏移 / 打轴），**自动注音绝对不做**；已合入的编辑保存接口、单行偏移支持与
+  Rust 注音对齐函数一并删除。保留整首偏移、选来源 / 恢复自动来源、导出 TTML（§5.3、§6.4）。
 - **D7 人声分离**：作废——卡拉 OK 只做字幕兼容，不做人声分离（范围澄清见 §0）。
 - **D8 DVD 菜单**：与 BD 原盘菜单同一套体验（§9.1）。
 - **D9 曲库统计卡**：不要。

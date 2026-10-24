@@ -396,15 +396,21 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：专辑连续曲目 / CUE 拆轨也交叉淡入（设计 §7.2）。
   'music_crossfade_continuous',
   'music_crossfade_ms',
+  // bool（默认 false）：桌面歌词（Android 悬浮窗 / Windows 置顶穿透窗，设计 §6.2）。
+  'music_desktop_lyrics',
   // int（默认 176400）：DSD → PCM 目标采样率 Hz（设计 §7.1）。
   'music_dsd_pcm_rate',
   // bool（默认 false）：独占 / bit-perfect 输出（设计 §7.4；设备本地）。
   'music_exclusive_output',
   'music_gapless',
+  // bool（默认 false）：听歌计入学习时长（决策 D4；关着时只在歌词页学习动作后计）。
+  'music_listening_counts_as_study',
   // bool（默认 true）：缺 ReplayGain 标签时后台 EBU R128 测响度写曲库（设计 §7.3）。
   'music_loudness_scan',
   // bool（默认 true）：查歌词时自动暂停（音乐 P1 歌词页）。
   'music_lyrics_lookup_pause',
+  // bool（默认 true）：锁屏 / 媒体通知副标题显示当前歌词行（设计 §6.2）。
+  'music_lyrics_media_session',
   // bool（默认 true）：本地没有歌词时去 LRCLIB 精确匹配（设计 §5.4 / D3）。
   'music_lyrics_online',
   'music_replaygain',

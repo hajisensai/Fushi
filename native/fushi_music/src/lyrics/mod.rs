@@ -24,7 +24,6 @@ pub mod markup;
 pub mod merge;
 pub mod midi;
 pub mod model;
-pub mod ruby;
 pub mod subtitle;
 pub mod syllabic;
 pub mod text;

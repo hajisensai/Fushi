@@ -238,6 +238,26 @@ int main(int argc, char** argv) {
     expect_same(lk, cache, text);
   }
 
+  // with_terms：切分与读音与 with_readings 逐位相同，另给每段首条结果的词头（词典形）。
+  {
+    const std::string text = "日本語は難しかった。食べさせられた";
+    const TokenizeOutput plain = tokenize(lk, text, 16, true, &cache);
+    const TokenizeOutput terms = tokenize(lk, text, 16, false, &cache, true);
+    if (terms.lengths != plain.lengths) fail("with_terms changed segmentation");
+    if (terms.readings != plain.readings) fail("with_terms changed readings");
+    if (terms.expressions.size() != terms.lengths.size()) fail("expressions not parallel to lengths");
+    std::vector<std::string> nonempty;
+    for (const std::string& e : terms.expressions) {
+      if (!e.empty()) nonempty.push_back(e);
+    }
+    const std::vector<std::string> want = {"日本語", "は", "難しい", "食べる"};
+    if (nonempty != want) {
+      std::string got;
+      for (const std::string& e : nonempty) got += e + "|";
+      fail("with_terms headwords: " + got);
+    }
+  }
+
   // 缓存：容量上限 + clear。
   if (cache.size() > 64) fail("cache exceeded capacity: " + std::to_string(cache.size()));
   cache.clear();

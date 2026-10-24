@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
@@ -283,6 +284,38 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setMusicLyricsLookupPause(value);
             },
+          ),
+          SettingsSwitchItem(
+            id: 'music.desktop_lyrics',
+            title: t.music_desktop_lyrics_title,
+            subtitle: t.music_desktop_lyrics_hint,
+            icon: FushiIcons.lyrics,
+            defaultValue: false,
+            // 原生悬浮字幕窗只有 Android / Windows（与有声书悬浮字幕同一个窗口）。
+            visible: (SettingsContext c) => FloatingLyricChannel.supported,
+            value: (SettingsContext c) => c.appModel.musicDesktopLyrics,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicDesktopLyrics(value),
+          ),
+          SettingsSwitchItem(
+            id: 'music.lyrics_media_session',
+            title: t.music_lyrics_media_session_title,
+            subtitle: t.music_lyrics_media_session_hint,
+            icon: FushiIcons.lyrics,
+            defaultValue: true,
+            value: (SettingsContext c) => c.appModel.musicLyricsMediaSession,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicLyricsMediaSession(value),
+          ),
+          SettingsSwitchItem(
+            id: 'music.listening_counts_as_study',
+            title: t.music_listening_study_title,
+            subtitle: t.music_listening_study_hint,
+            icon: FushiIcons.timer,
+            defaultValue: false,
+            value: (SettingsContext c) => c.appModel.musicListeningCountsAsStudy,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicListeningCountsAsStudy(value),
           ),
         ],
       ),

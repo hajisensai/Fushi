@@ -114,6 +114,19 @@ final class FfiTokenizeResult extends Struct {
   external int count;
 }
 
+/// `fushidicts_tokenize_terms` 的返回：多段文本一次切完，每段再给读音与词头（词典形）。
+/// [segmentCounts] 第 i 项 = 第 i 段文本切出几段；其余三列按段首尾相接，总长 [total]。
+final class FfiTokenizeTermsResult extends Struct {
+  external Pointer<Int32> segmentCounts;
+  external Pointer<Int32> lengths;
+  external Pointer<Pointer<Utf8>> readings;
+  external Pointer<Pointer<Utf8>> expressions;
+  @Int32()
+  external int textCount;
+  @Int32()
+  external int total;
+}
+
 final class FfiImportResult extends Struct {
   @Int32()
   external int success;
@@ -244,6 +257,21 @@ typedef _TokenizeDart = FfiTokenizeResult Function(Pointer<Void> handle,
 
 typedef _FreeTokenizeResultDart = void Function(Pointer<FfiTokenizeResult> r);
 
+typedef _TokenizeTermsNative = FfiTokenizeTermsResult Function(
+    Pointer<Void> handle,
+    Pointer<Uint8> texts,
+    Pointer<Int32> textBytes,
+    Int32 count,
+    Int32 scanLength);
+typedef _TokenizeTermsDart = FfiTokenizeTermsResult Function(
+    Pointer<Void> handle,
+    Pointer<Uint8> texts,
+    Pointer<Int32> textBytes,
+    int count,
+    int scanLength);
+typedef _FreeTokenizeTermsResultDart = void Function(
+    Pointer<FfiTokenizeTermsResult> r);
+
 typedef _MatchLengthNative = Int32 Function(
     Pointer<Void> handle, Pointer<Utf8> text, Int32 scanLength);
 typedef _MatchLengthDart = int Function(
@@ -373,6 +401,15 @@ class FushidictsFfiBindings {
   late final _TokenizeDart tokenize;
   late final _FreeTokenizeResultDart freeTokenizeResult;
   late final _MatchLengthDart matchLength;
+
+  /// 批量分词 + 读音 + 词头（音乐歌词生词覆盖率）。按需解析：只有用到它的调用方才要求
+  /// 原生库带这个符号。
+  late final _TokenizeTermsDart tokenizeTerms =
+      _lib.lookupFunction<_TokenizeTermsNative, _TokenizeTermsDart>(
+          'fushidicts_tokenize_terms');
+  late final _FreeTokenizeTermsResultDart freeTokenizeTermsResult =
+      _lib.lookupFunction<Void Function(Pointer<FfiTokenizeTermsResult>),
+          _FreeTokenizeTermsResultDart>('fushidicts_free_tokenize_terms_result');
 }
 
 // ── 已导入词典的 redirect_glossary.flag 迁移（按需解析） ──────────────

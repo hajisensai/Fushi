@@ -90,6 +90,13 @@ class MusicSession extends ChangeNotifier {
 
   bool get isActive => engine.isActive;
 
+  /// 锁屏 / 媒体通知副标题要显示的当前歌词行（设计 §6.2；null = 显示艺人）。由 AppModel
+  /// 接到 `MusicLyricsLive.mediaSessionLine`，行变化时调 [refreshMediaSession]。
+  String? Function()? mediaSessionLyricLine;
+
+  /// 当前行变了：重发媒体会话元数据。
+  void refreshMediaSession() => _publishMediaSession();
+
   void _onPlayIntent(MediaPlayIntent intent) {
     switch (intent) {
       case MediaPlayIntent.play:
@@ -242,6 +249,14 @@ class MusicSession extends ChangeNotifier {
           ? Uri.file(cover)
           : null,
     );
+    final String? line = mediaSessionLyricLine?.call();
+    if (line != null) {
+      handler.updateNotificationSubtitle(
+        title: item.title,
+        subtitle: line,
+        fallbackArtist: item.artist,
+      );
+    }
     handler.updatePlaybackState(
       playing: engine.isPlaying,
       position: engine.position,
