@@ -36,7 +36,7 @@ final RegExp _platformCheck = RegExp(r'Platform\.is(Windows|MacOS)\b');
 final RegExp _testOn = RegExp(r'''@TestOn\(\s*['"]([^'"]*)['"]''');
 final RegExp _tagsAnnotation = RegExp(r'@Tags\(([^)]*)\)');
 final RegExp _tagsNamedArg = RegExp(
-  r'''\btags:\s*(\[[^\]]*\]|'[^']*'|"[^"]*")''',
+  r'''\btags:\s*(?:const\s+)?(?:<String>\s*)?(\[[^\]]*\]|'[^']*'|"[^"]*")''',
 );
 final RegExp _quoted = RegExp(r'''['"]([A-Za-z0-9_-]+)['"]''');
 
