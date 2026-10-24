@@ -110,7 +110,7 @@ def verify_archive(path, platform):
                 # BUG-3500: "Deriving missing DTS" is the debug message of
                 # recorder-video-dts.patch (dump-cache of Matroska B-frame video).
                 markers = (b"disc-navigation-state-json", b"disc-menu-active", b"discnav",
-                           b"dvd-state", b"without DefaultDuration",
+                           b"dvd-state", b"disc-remote-access", b"without DefaultDuration",
                            b"Deriving missing DTS") if framework == "Mpv" else ()
                 slices = macho_slices(data, markers)
                 actual = {item["architecture"] for item in slices}
