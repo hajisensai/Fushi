@@ -593,9 +593,6 @@ void main([List<String> args = const <String>[]]) {
       // 用户 2026-09-22：视频卡顿 / 查词卡的分析日志。默认关闭（开关在设置 › 诊断），
       // init 只读一次偏好 + 解析日志文件位置，关着时后续全链路零开销。
       VideoDiagLog.instance.init(),
-      // TODO-1232 A3：读一次 native 持久化的渲染后端选择（关 Impeller 实验开关），
-      // 供设置项同步渲染。非 Android 静默降级为不支持。
-      RenderBackendService.instance.init(),
       // BUG-209 / TODO-398：把上次运行残留的 Windows WGC 帧捕获生命周期日志
       // 折进错误日志（仅 Windows），纳入现有上传链路，为 GraphicsCapture 延迟
       // UAF 崩溃提供可读的崩前生命周期证据。

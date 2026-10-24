@@ -65,6 +65,19 @@ const bool kSentenceContextPickerEnabled = false;
 const Duration kPopupNativeSelectLongPressDuration =
     Duration(milliseconds: 250);
 
+/// BUG-2790 根因修复（Android）：查词 WebView 是否走老式 Hybrid Composition。
+///
+/// app 外查词窗（`:popup` 进程，`popupMain`）的引擎缓存在 `FlutterEngineCache` 里、关窗
+/// 只 detach 不销毁。HC 平台视图一出现，引擎就把 raster 线程并进 platform 线程，GL 上下文
+/// 在 platform 线程上 make current；detach 时 `Rasterizer::Teardown` 先 reset surface，
+/// Impeller 的 `~GPUSurfaceGLImpeller` 不像 Skia 那样清当前上下文，上下文永远挂在 platform
+/// 线程上，下一个 Activity 挂回热引擎后每帧 `EGL_BAD_ACCESS`（flutter#174495）。
+/// Texture Layer Hybrid Composition（`useHybridComposition: false`）不合并线程，这条路径
+/// 根本不出现——热引擎里的查词 WebView 一律走它（`popupMain` 置 false）。主进程的引擎
+/// 从不 detach / 复挂，保持原有 HC 行为。之前的兼容层是 `:popup` 引擎单独关 Impeller；
+/// 全线 Impeller 后（2026-10-24 拍板，不留 Skia 回退）改为这里。
+bool dictionaryPopupWebViewUsesHybridComposition = true;
+
 /// P1-B（2026-10-20）：in-app 弹窗能否让页面经宿主资源拦截器 `fetch` 词条 JSON。
 ///
 /// 与 [kInAppPopupFontUrlSupported]（字体 URL 投递）是**同一种能力**：页面向
@@ -2512,6 +2525,9 @@ JSON.stringify((function(){
       },
       initialSettings: InAppWebViewSettings(
         transparentBackground: true,
+        // BUG-2790：热引擎（:popup）里走 TLHC，见
+        // [dictionaryPopupWebViewUsesHybridComposition]。只对 Android 有意义。
+        useHybridComposition: dictionaryPopupWebViewUsesHybridComposition,
         supportZoom: false,
         horizontalScrollBarEnabled: false,
         allowFileAccessFromFileURLs: true,

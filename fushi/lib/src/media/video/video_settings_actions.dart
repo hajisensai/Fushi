@@ -497,21 +497,6 @@ Widget buildVideoQualityEntryRow(SettingsContext context) {
   );
 }
 
-/// TODO-1232 / BUG-597：视频黑屏（有声无画）降级入口——仅当页面判定本次跑
-/// Impeller 且渲染 channel 已接线（Android）时接线。点按 → 确认弹窗 → 关
-/// Impeller 走 Skia + 重启。
-Widget buildVideoSkiaFallbackRow(SettingsContext context) {
-  final VideoQuickSettingsHost host = videoQuickSettingsHostOf(context)!;
-  return FushiListTileControl(
-    dense: true,
-    leading: const FushiIcon(FushiIcons.animation),
-    title: Text(t.video_render_skia_fix_title),
-    subtitle: Text(t.video_render_skia_fix_hint),
-    trailing: const FushiIcon(FushiIcons.restart),
-    onTap: host.onSwitchToSkiaRenderer,
-  );
-}
-
 /// TODO-1351：「音频」分类的音轨切换区。内容由视频页构建（读 controller 的
 /// audioTracks + 当前轨 + 切轨回调），空时显示占位。
 Widget buildVideoAudioTrackSection(SettingsContext context) {

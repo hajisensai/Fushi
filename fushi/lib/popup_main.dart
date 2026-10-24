@@ -10,6 +10,8 @@ import 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi/utils.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_loading_view.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
+    show dictionaryPopupWebViewUsesHybridComposition;
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -21,6 +23,9 @@ void popupMain() {
   runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      // BUG-2790：本引擎缓存复用、关窗只 detach，查词 WebView 必须走 TLHC，见
+      // [dictionaryPopupWebViewUsesHybridComposition]。
+      dictionaryPopupWebViewUsesHybridComposition = false;
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
       final platformServices = PlatformServices.forCurrentPlatform();

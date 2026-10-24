@@ -392,7 +392,6 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiChoiceOption, showFushiChoiceDialog;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/render_backend_service.dart';
 import 'package:fushi/src/platform/screen_brightness_controller.dart';
 import 'package:fushi/src/platform/sensor_housing_edge.dart';
 import 'package:fushi/src/platform/windows_ime_space_channel.dart';
@@ -11442,15 +11441,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       qualityOptionCount: _qualityOptionCount,
       qualityCurrentLabel: _qualityCurrentLabel,
       onOpenQuality: _hasQualityMenu ? _showQualityMenu : null,
-      // TODO-1232 / BUG-597：视频黑屏（有声无画）降级入口——仅当渲染 channel 已接线
-      // （Android）、本次运行确实跑 Impeller、且用户尚未选 Skia 时接线（=可能中招黑屏
-      // 的人群）；否则 null 不显示该行。点按走确认弹窗 → 关 Impeller → 重启。
-      onSwitchToSkiaRenderer:
-          (RenderBackendService.instance.isSupported &&
-              !RenderBackendService.instance.impellerDisabled &&
-              !RenderBackendService.instance.activeImpellerDisabled)
-          ? _switchToSkiaAndRestart
-          : null,
       // TODO-1351：轨切换收进设置面板对应 tab（音频轨在「音频」、字幕轨在「字幕」顶部），
       // 由页面构建内容（复用既有切轨/切源方法与数据），删掉外面浮的轨切换侧栏。
       audioTrackSection: _controller != null
@@ -11465,54 +11455,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 主题不再在视频设置里单列：主题属于全局「外观」设置，视频画面自动继承 app 主题
       // （含自定义主题），无需在此重复暴露「视频主题」。
     );
-  }
-
-  /// TODO-1232 / BUG-597：播放器设置面板「切 Skia 并重启」降级行的动作。视频「有声无画」
-  /// 黑屏根因是本机 GPU 上 Impeller 合成不了 media_kit 外部纹理（SurfaceProducer）；Android
-  /// 默认已保持 Impeller（多数机型性能优先），本动作给受影响机型一个显式降级：确认弹窗 →
-  /// 写 native pref 关 Impeller（下次启动走 Skia）→ 重启 app 使其生效。渲染后端只能在引擎
-  /// 启动那一刻定，故必须重启；不支持重启的平台降级为 toast 提示手动重开。仅在
-  /// [_buildVideoQuickSettingsSheet] 判定本次跑 Impeller + channel 已接线时才接线此动作。
-  Future<void> _switchToSkiaAndRestart() async {
-    final bool confirmed =
-        await showAppDialog<bool>(
-          context: context,
-          builder: (BuildContext ctx) => FushiAlertDialog(
-            title: Text(t.video_render_skia_fix_confirm_title),
-            content: Text(t.video_render_skia_fix_confirm_body),
-            actions: <Widget>[
-              FushiTextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text(t.dialog_cancel),
-              ),
-              FushiFilledButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: Text(t.video_render_skia_fix_confirm_action),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-    if (!confirmed) return;
-    final bool ok = await RenderBackendService.instance.setImpellerDisabled(
-      true,
-    );
-    if (!ok || !appModel.platformServices.lifecycle.supportsRestart) {
-      // pref 未写成（非 Android）或平台不支持自动重启：降级提示手动重开。
-      if (mounted) {
-        _showOsd(t.render_restart_required, severity: ToastSeverity.warning);
-      }
-      return;
-    }
-    try {
-      await appModel.platformServices.lifecycle.restartApp();
-    } catch (e) {
-      // 起新进程失败（Process.start 抛错等）→ 降级提示手动重开。
-      debugPrint('[render] switch to Skia restart failed: $e');
-      if (mounted) {
-        _showOsd(t.render_restart_required, severity: ToastSeverity.warning);
-      }
-    }
   }
 
   void _showPlayerSettings({

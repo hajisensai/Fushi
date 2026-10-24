@@ -659,6 +659,13 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
 - **D7 人声分离**：作废——卡拉 OK 只做字幕兼容，不做人声分离（范围澄清见 §0）。
 - **D8 DVD 菜单**：与 BD 原盘菜单同一套体验（§9.1）。
 - **D9 曲库统计卡**：不要。
+- **D12 渲染后端**（所有者 2026-10-24：「impeller 就该全线替换整个 app 的」）：五端全线
+  Impeller，**不保留 Skia 回退开关**。起因是逐字歌词在 Windows（当时钉 Skia）每次启动后
+  首播的头几次换行掉帧（模糊着色器首次编译约 11 ms，§13 P1 退出标准）。Windows 的合成器内
+  HDR 引擎补丁随之移植到 Impeller 路径（`ci/patches/flutter-engine/3.47.6/engine-impeller-hdr.patch`），
+  runner 钉 `ImpellerSwitch::Enabled`；Android 删除「切 Skia 并重启」开关与 `:popup` 引擎的
+  `--enable-impeller=false`（BUG-2790 改为热引擎查词 WebView 走 TLHC）。iOS / macOS / Linux
+  本来就是 Impeller。之后出现的渲染问题一律按根因在 Impeller 上修，不回退 Skia。
 
 ## 16. 设计稿
 

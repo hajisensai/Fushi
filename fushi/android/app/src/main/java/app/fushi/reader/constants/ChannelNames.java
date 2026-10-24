@@ -30,10 +30,6 @@ public final class ChannelNames {
     // 一端（CF_DIB），补齐 Android 时顺手对齐 Dart 侧 channel_constants.dart 的
     // 「两边必须同步」约定——在此之前 clipboard_image 一直不在本表里。
     public static final String CLIPBOARD_IMAGE = PREFIX + "/clipboard_image";
-    // TODO-1232 A3: render-backend toggle (persist the "disable Impeller / use
-    // Skia" experiment flag; applied at next launch via MainActivity's
-    // getFlutterShellArgs override).
-    public static final String RENDER = PREFIX + "/render";
     // 系统画中画（PiP）：视频页把 Activity 缩成系统小窗。只有 Android 有原生侧，
     // 其余平台上 Dart 门面恒答「不支持」。实现见 PictureInPictureChannelHandler。
     public static final String PICTURE_IN_PICTURE = PREFIX + "/picture_in_picture";

@@ -2303,14 +2303,6 @@ SettingsDestination buildVideoDestination() {
             video: VideoPlacement(group: VideoGroup.playback, order: 10),
             builder: buildVideoQualityEntryRow,
           ),
-          // TODO-1232 / BUG-597：「切 Skia 渲染器并重启」黑屏降级入口。
-          SettingsCustomItem(
-            id: 'video.player.skia_fallback',
-            visible: (SettingsContext c) =>
-                videoQuickSettingsHostOf(c)?.onSwitchToSkiaRenderer != null,
-            video: VideoPlacement(group: VideoGroup.playback, order: 20),
-            builder: buildVideoSkiaFallbackRow,
-          ),
           // 倍速：MD3 全长滑条（0.5–2.0，0.1 步）；拖动实时预览（下发真实播放倍速，
           // 不落盘），松手提交并持久化。
           SettingsSliderItem(
