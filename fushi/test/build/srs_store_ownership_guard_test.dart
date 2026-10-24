@@ -12,6 +12,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/source_guard.dart';
+
 /// 9 张 SRS 表（与 fushi_core `kLegacySrsTableDdl` 的键相同）。
 const List<String> _kSrsTables = <String>[
   'srs_entities',
@@ -55,18 +57,8 @@ Iterable<File> _dartFiles(Directory root) => root
     .whereType<File>()
     .where((File f) => f.path.endsWith('.dart'));
 
-/// 去掉 Rust 的行注释与块注释（文档注释 `///` `//!` 同属行注释）。字符串里出现 `//` 的情况
-/// 本仓 Rust 源码里没有路径字面量以外的用法，按行粗剥足够。
-String _stripRustComments(String src) {
-  final String noBlock = src.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
-  return noBlock
-      .split('\n')
-      .map((String line) {
-        final int i = line.indexOf('//');
-        return i < 0 ? line : line.substring(0, i);
-      })
-      .join('\n');
-}
+/// 掩掉 Rust 的注释（`//`、`///`、`//!`、`/* */` 与 Dart 同形，共用 [maskComments]）。
+String _maskRustComments(String src) => maskComments(src);
 
 void main() {
   final RegExp tableName = RegExp('\\b(${_kSrsTables.join('|')})\\b');
@@ -162,7 +154,7 @@ void main() {
     expect(rust, isNotEmpty);
     final List<String> offenders = <String>[
       for (final File f in rust)
-        if (_stripRustComments(f.readAsStringSync()).contains('fushi.db'))
+        if (_maskRustComments(f.readAsStringSync()).contains('fushi.db'))
           _rel(f),
     ];
     expect(offenders, isEmpty, reason: 'Rust 绝不打开主库：$offenders');
@@ -179,13 +171,13 @@ void main() {
       reason: '索引名不是表名',
     );
     expect(
-      _stripRustComments(
+      _maskRustComments(
         '/// opens fushi.db\nlet p = "fushi.db";',
       ).contains('fushi.db'),
       isTrue,
     );
     expect(
-      _stripRustComments(
+      _maskRustComments(
         '//! never fushi.db\n/* fushi.db */ let x = 1;',
       ).contains('fushi.db'),
       isFalse,
