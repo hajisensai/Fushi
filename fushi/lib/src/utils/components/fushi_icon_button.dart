@@ -429,7 +429,7 @@ class _FushiIconButtonState extends State<FushiIconButton>
           onPressed: _tapHandler,
         ),
       );
-      return _focusable(context, _withTooltip(button));
+      return _focusable(context, MergeSemantics(child: _withTooltip(button)));
     }
 
     if (glass) {
@@ -438,9 +438,13 @@ class _FushiIconButtonState extends State<FushiIconButton>
         _withTooltip(_buildAppleIcon(context, tokens)),
       );
     }
+    // 官方 [IconButton] 自带语义容器节点：不合并的话一个按钮拆成「外层有名字
+    // 无动作 / 内层有动作无名字」两个节点（读屏落到无名按钮上），放在输入框后缀
+    // 里随父级裁出视口时内层空矩形节点还会触发 Invisible SemanticsNodes 断言。
+    // 连同 Tooltip 一起并成一个节点，恢复换官方实现（bd8ebccd76）前的形状。
     return _focusable(
       context,
-      _withTooltip(_buildMaterialIcon(context, tokens)),
+      MergeSemantics(child: _withTooltip(_buildMaterialIcon(context, tokens))),
     );
   }
 

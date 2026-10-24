@@ -128,6 +128,16 @@ Future<_Harness> _pumpHome(
   return _Harness(appModel, prefsRepo);
 }
 
+/// 导航里的「复习」目的地。MD3 收起侧栏与出厂底栏都是纯图标（b564b53970、
+/// ac7947a558，所有者 2026-10-23 拍板）：名称只进 tooltip 与目的地格的
+/// `Semantics(label:)`，不再是可见 [Text]。这里按语义名找目的地格本身，而不是
+/// `find.text`——后者在纯图标导航里恒找不到导航项，只会撞上首页「复习」面板的标题
+/// （新用户默认开着它），让「出现」断言空转、「不出现」断言恒真。
+final Finder _srsNavEntry = find.byWidgetPredicate(
+  (Widget w) => w is Semantics && w.properties.label == t.nav_srs,
+  description: 'nav destination labelled "${t.nav_srs}"',
+);
+
 Future<void> _settle(WidgetTester tester) async {
   for (int i = 0; i < 15; i++) {
     await tester.pump(const Duration(milliseconds: 50));
@@ -236,7 +246,8 @@ void main() {
           await prefs.setOnboardingCompleted(value: true);
         },
       );
-      expect(find.text(t.nav_srs), findsNothing, reason: '老用户：不该冒出复习入口');
+      expect(_srsNavEntry, findsNothing, reason: '老用户：不该冒出复习入口');
+      expect(find.text(t.nav_srs), findsNothing, reason: '首页也不该冒出复习面板');
       // 「老用户不提醒」：判定不弹引导、不弹对话框 / 底部弹层 / 横幅，也不把引导重新
       // 标回待完成。
       expect(find.byType(OnboardingWizardPage), findsNothing);
@@ -250,7 +261,7 @@ void main() {
 
       await tester.runAsync(() => h.app.setModuleEnabled(ModuleId.srs, true));
       await _settle(tester);
-      expect(find.text(t.nav_srs), findsWidgets, reason: '打开模块后底栏 / 侧栏出现「复习」');
+      expect(_srsNavEntry, findsOneWidget, reason: '打开模块后底栏 / 侧栏出现「复习」');
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 10));
@@ -265,7 +276,7 @@ void main() {
           await prefs.setOnboardingCompleted(value: true);
         },
       );
-      expect(find.text(t.nav_srs), findsWidgets, reason: '新装默认开');
+      expect(_srsNavEntry, findsOneWidget, reason: '新装默认开');
       expect(h.app.srsMiningTarget, SrsMiningTarget.srs);
 
       await tester.pumpWidget(const SizedBox.shrink());
