@@ -47,10 +47,11 @@ class WebBrowserTab extends ChangeNotifier {
   Uri? get url => _url;
   String get title => _title;
 
-  /// 标签上显示的名字：标题，退到域名，再退到原样地址。
+  /// 标签上显示的名字：标题，退到域名，再退到原样地址。失败页盖着时标题是引擎
+  /// 自带错误页的（如 WebView2 证书拦截页的「隐私错误」），不用它、直接退到域名。
   String get displayTitle {
     final String t = _title.trim();
-    if (t.isNotEmpty) return t;
+    if (t.isNotEmpty && _error == null) return t;
     final Uri? u = _url;
     if (u == null) return '';
     return u.host.isNotEmpty ? u.host : u.toString();

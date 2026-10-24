@@ -195,7 +195,6 @@ namespace flutter_inappwebview_plugin
       return pageFrameId_;
     }
 
-    static bool isSslError(const COREWEBVIEW2_WEB_ERROR_STATUS& webErrorStatus);
     void rememberMainFrameInjectedOk(const std::string& rawUrl);
     bool consumeMainFrameInjectedOk(const std::string& rawUrl);
   private:
