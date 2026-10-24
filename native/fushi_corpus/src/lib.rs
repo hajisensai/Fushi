@@ -219,6 +219,40 @@ pub unsafe extern "C" fn fcorp_docs(
     })
 }
 
+/// 读回一份文档的原文（文档线格式，见 [Corpus::export]）。文档不存在时 `*out_len = 0`
+/// 且返回 [status::OK]（`*out` 仍需用 [fcorp_free_bytes] 释放）。
+///
+/// # Safety
+/// `key` 指向 `key_len` 字节 UTF-8；`out` / `out_len` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn fcorp_export(
+    handle: *const Corpus,
+    kind: u8,
+    key: *const u8,
+    key_len: usize,
+    part: i32,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        let Some(corpus) = corpus_arg(handle) else { return status::NULL_ARGUMENT };
+        if out.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let key = match str_arg(key, key_len) {
+            Ok(k) => k,
+            Err(code) => return code,
+        };
+        match corpus.export(kind, key, part) {
+            Ok(bytes) => {
+                hand_over_bytes(bytes.unwrap_or_default(), out, out_len);
+                status::OK
+            }
+            Err(_) => status::IO,
+        }
+    })
+}
+
 /// 统计 JSON：`{docs, sentences, terms, postings, droppedOnOpen}`。
 ///
 /// # Safety

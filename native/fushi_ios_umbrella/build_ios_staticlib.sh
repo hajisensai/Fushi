@@ -74,8 +74,10 @@ verify_archive() {
   for entry in "fp2p:6:$SCRIPT_DIR/../../packages/fushi_p2p/lib/src/ffi/fushi_p2p_bindings.dart" \
                "ffsrs:6:$SCRIPT_DIR/../../packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart" \
                "ffc:2:$SCRIPT_DIR/../../packages/fushi_compute/lib" \
-               "fwc:6:$SCRIPT_DIR/../../packages/fushi_web_core/lib/src/ffi/fushi_web_core_bindings.dart" \n               "frwkv:2:$SCRIPT_DIR/../../packages/fushi_rwkv/lib" \
-               "ffm:7:$SCRIPT_DIR/../../packages/fushi_music/lib" \n               "fcorp:11:$SCRIPT_DIR/../../packages/fushi_corpus/lib"; do
+               "fwc:6:$SCRIPT_DIR/../../packages/fushi_web_core/lib/src/ffi/fushi_web_core_bindings.dart" \
+               "frwkv:2:$SCRIPT_DIR/../../packages/fushi_rwkv/lib" \
+               "ffm:7:$SCRIPT_DIR/../../packages/fushi_music/lib" \
+               "fcorp:12:$SCRIPT_DIR/../../packages/fushi_corpus/lib"; do
     prefix="${entry%%:*}"
     rest="${entry#*:}"
     min="${rest%%:*}"

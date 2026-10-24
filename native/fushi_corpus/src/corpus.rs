@@ -495,6 +495,33 @@ impl Corpus {
         out
     }
 
+    /// 读回一份文档的原文（文档线格式，与 [wire::read_document] 对称），给「词典换了、
+    /// 词元过期」的重新归一用：游戏台词 / 播放列表各集字幕在别处没有持久副本，只能从这里
+    /// 取回原句重新分词。文档不存在返回 None。
+    pub fn export(&self, kind: u8, key: &str, part: i32) -> std::io::Result<Option<Vec<u8>>> {
+        let st = self.state.read().unwrap_or_else(|e| e.into_inner());
+        let Some(&id) = st.by_identity.get(&(kind, key.to_owned(), part)) else { return Ok(None) };
+        let Some(doc) = st.docs[id as usize].as_ref() else { return Ok(None) };
+        let mut file = File::open(&doc.path)?;
+        let mut w = Writer::default();
+        w.u8(doc.kind);
+        w.str(&doc.key);
+        w.i32(doc.part);
+        w.str(&doc.title);
+        w.str(&doc.fingerprint);
+        w.str(&doc.normalizer);
+        w.i64(doc.updated_at);
+        w.u32(doc.sentence_count);
+        for sid in doc.first_sentence..doc.first_sentence + doc.sentence_count {
+            let record = read_record(&mut file, st.sentences[sid as usize].rec_off)?;
+            w.i32(record.section);
+            w.i64(record.pos);
+            w.i64(record.len);
+            w.str(&record.text);
+        }
+        Ok(Some(w.buf))
+    }
+
     pub fn stats_json(&self) -> String {
         let st = self.state.read().unwrap_or_else(|e| e.into_inner());
         let postings: usize = st.postings.iter().map(Vec::len).sum();

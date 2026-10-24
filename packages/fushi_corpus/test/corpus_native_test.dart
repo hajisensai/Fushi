@@ -102,6 +102,19 @@ void main() {
       '食べる',
     );
 
+    final CorpusDocument? exported = index.export(
+      CorpusSourceKind.book,
+      'book-1',
+      -1,
+    );
+    expect(exported!.title, 'T:book-1');
+    expect(exported.sentences.map((CorpusSentence s) => s.text), <String>[
+      '猫が魚を食べた。',
+      '𠮷野家で食べる',
+    ]);
+    expect(exported.sentences.first.pos, 30);
+    expect(index.export(CorpusSourceKind.book, 'nope', -1), isNull);
+
     final List<CorpusDocInfo> docs = index.docs(kind: CorpusSourceKind.video);
     expect(docs.single.key, 'vid');
     expect(docs.single.part, 2);

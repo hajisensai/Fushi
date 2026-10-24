@@ -115,6 +115,10 @@ fn put_query_and_reopen() {
     );
     let json = c.query_json(&query_bytes(&["猫"], 5, 2, u32::MAX)).unwrap();
     assert!(json.contains("\"hl\":[[0,1]]"), "{json}");
+    // 读回原文：与写入的文档线格式逐字节一致（标题 / 指纹 / 句子定位与原文）。
+    let s = book_sentences();
+    assert_eq!(c.export(1, "book-a", -1).unwrap().unwrap(), doc_bytes(1, "book-a", -1, "Title", "fp1", 10, &s));
+    assert!(c.export(1, "missing", -1).unwrap().is_none());
     let _ = fs::remove_dir_all(&dir);
 }
 

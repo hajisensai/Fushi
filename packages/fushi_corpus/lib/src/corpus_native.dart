@@ -53,6 +53,26 @@ typedef _DocsDart =
       Pointer<Pointer<Uint8>>,
       Pointer<Size>,
     );
+typedef _ExportC =
+    Int32 Function(
+      Pointer<Void>,
+      Uint8,
+      Pointer<Uint8>,
+      Size,
+      Int32,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _ExportDart =
+    int Function(
+      Pointer<Void>,
+      int,
+      Pointer<Uint8>,
+      int,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
 typedef _BytesOutC =
     Int32 Function(Pointer<Void>, Pointer<Pointer<Uint8>>, Pointer<Size>);
 typedef _BytesOutDart =
@@ -102,6 +122,9 @@ final class CorpusNative {
       _removeKinds = _lib.library
           .lookupFunction<_RemoveKindsC, _RemoveKindsDart>('fcorp_remove_kinds'),
       _docs = _lib.library.lookupFunction<_DocsC, _DocsDart>('fcorp_docs'),
+      _export = _lib.library.lookupFunction<_ExportC, _ExportDart>(
+        'fcorp_export',
+      ),
       _stats = _lib.library.lookupFunction<_BytesOutC, _BytesOutDart>(
         'fcorp_stats',
       ),
@@ -115,6 +138,7 @@ final class CorpusNative {
   final _RemoveDart _remove;
   final _RemoveKindsDart _removeKinds;
   final _DocsDart _docs;
+  final _ExportDart _export;
   final _BytesOutDart _stats;
   final _QueryDart _query;
   final _SplitDart _split;
@@ -237,6 +261,35 @@ final class FushiCorpusIndex {
     ];
   }
 
+  /// 读回一份文档的原文（重新归一用：词典换了时取回原句重新分词再 [put]）。不存在返回 null。
+  CorpusDocument? export(CorpusSourceKind kind, String key, int part) {
+    final Uint8List k = utf8.encode(key);
+    return using((Arena arena) {
+      final Pointer<Pointer<Uint8>> out = arena<Pointer<Uint8>>();
+      final Pointer<Size> len = arena<Size>();
+      final int status = _native._export(
+        _handle,
+        kind.code,
+        _copy(arena, k),
+        k.length,
+        part,
+        out,
+        len,
+      );
+      if (status != FcorpStatus.ok) {
+        throw FushiCorpusException('fcorp_export', status);
+      }
+      try {
+        if (len.value == 0) return null;
+        return decodeCorpusDocument(
+          Uint8List.fromList(out.value.asTypedList(len.value)),
+        );
+      } finally {
+        _native._lib.freeBytes(out.value, len.value);
+      }
+    });
+  }
+
   CorpusStats stats() {
     final String json = _bytesOut(
       'fcorp_stats',
@@ -351,6 +404,61 @@ Uint8List encodeCorpusDocument(CorpusDocument doc) {
       ..str(s.text);
   }
   return w.takeBytes();
+}
+
+/// [encodeCorpusDocument] 的逆（`fcorp_export` 的输出）。kind 未知时抛 [FormatException]。
+CorpusDocument decodeCorpusDocument(Uint8List bytes) {
+  final ByteData data = ByteData.sublistView(bytes);
+  int at = 0;
+  int u32() {
+    final int v = data.getUint32(at, Endian.little);
+    at += 4;
+    return v;
+  }
+
+  int i32() {
+    final int v = data.getInt32(at, Endian.little);
+    at += 4;
+    return v;
+  }
+
+  int i64() {
+    final int v = data.getInt64(at, Endian.little);
+    at += 8;
+    return v;
+  }
+
+  String str() {
+    final int n = u32();
+    final String s = utf8.decode(Uint8List.sublistView(bytes, at, at + n));
+    at += n;
+    return s;
+  }
+
+  final int code = bytes[at++];
+  final CorpusSourceKind? kind = CorpusSourceKind.fromCode(code);
+  if (kind == null) throw FormatException('unknown corpus kind $code');
+  final String key = str();
+  final int part = i32();
+  final String title = str();
+  final String fingerprint = str();
+  final String normalizer = str();
+  final int updatedAt = i64();
+  final int n = u32();
+  final List<CorpusSentence> sentences = <CorpusSentence>[
+    for (int i = 0; i < n; i++)
+      CorpusSentence(section: i32(), pos: i64(), len: i64(), text: str()),
+  ];
+  return CorpusDocument(
+    kind: kind,
+    key: key,
+    part: part,
+    title: title,
+    fingerprint: fingerprint,
+    normalizer: normalizer,
+    updatedAt: updatedAt,
+    sentences: sentences,
+  );
 }
 
 Pointer<Uint8> _copy(Arena arena, Uint8List bytes) {

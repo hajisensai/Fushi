@@ -103,7 +103,7 @@ void main() {
     );
     expect(
       build,
-      contains(r'"fcorp:11:$SCRIPT_DIR/../../packages/fushi_corpus/lib"'),
+      contains(r'"fcorp:12:$SCRIPT_DIR/../../packages/fushi_corpus/lib"'),
       reason: '伞形库构建后要核对 fcorp_* 符号',
     );
     // 伞形库的持久库件名必须随 fushi_corpus 源码变：否则改了语料核心的 PR 会复用旧 .a。

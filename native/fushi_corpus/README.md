@@ -22,6 +22,7 @@ Dart 绑定在 `packages/fushi_corpus/`（纯 Dart，无 Flutter / 插件依赖�
 | `fcorp_remove(const Corpus*, u8 kind, const u8* key, usize, i32 part, u8 all_parts) -> i32` | 删一个文档（或某 key 的全部 part）；返回删除数 |
 | `fcorp_remove_kinds(const Corpus*, u32 kind_mask) -> i32` | 按种类掩码批量删（游戏台词是唯一持久副本，重建不删它）；返回删除数 |
 | `fcorp_docs(const Corpus*, i32 kind, const u8* key, usize, u8** out, usize* len) -> i32` | 列文档身份 + 指纹（Dart 据此判缺失 / 过期） |
+| `fcorp_export(const Corpus*, u8 kind, const u8* key, usize, i32 part, u8** out, usize* len) -> i32` | 读回一份文档的原文（文档线格式；不存在时 len = 0），词典换了时重新归一用 |
 | `fcorp_stats(const Corpus*, u8** out, usize* len) -> i32` | 统计 |
 | `fcorp_query(const Corpus*, const u8* query, usize, u8** out, usize* len) -> i32` | 词头查询 → 分组 top-N 例句 |
 | `fcorp_split(const u8* text, usize, u32 max_units, u8** out, usize* len) -> i32` | 一章正文切句 → 句 span 数组 |
