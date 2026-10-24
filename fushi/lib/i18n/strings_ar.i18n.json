@@ -649,7 +649,7 @@
   "anki_sync_client_username_title": "اسم المستخدم",
   "anki_tag_default_section": "الوسوم الافتراضية",
   "anki_tag_include_category": "إضافة وسم فئة المصدر",
-  "anki_tag_include_category_hint": "تحصل الكتب على \"book\" والفيديوهات على \"video\" والألعاب على \"game\"",
+  "anki_tag_include_category_hint": "تحصل الكتب على \"book\" والفيديوهات على \"video\" والألعاب على \"game\" والموسيقى على \"music\"",
   "anki_tag_include_fushi": "إضافة وسم \"fushi\"",
   "anki_tag_include_fushi_hint": "وسم كل بطاقة أنشأها Fushi",
   "anki_tags": "الوسوم",

@@ -649,7 +649,7 @@
   "anki_sync_client_username_title": "Nama pengguna",
   "anki_tag_default_section": "Tag default",
   "anki_tag_include_category": "Tambahkan tag kategori sumber",
-  "anki_tag_include_category_hint": "Buku diberi \"book\", video diberi \"video\", gim diberi \"game\"",
+  "anki_tag_include_category_hint": "Buku diberi \"book\", video diberi \"video\", gim diberi \"game\", musik diberi \"music\"",
   "anki_tag_include_fushi": "Tambahkan tag \"fushi\"",
   "anki_tag_include_fushi_hint": "Tandai setiap kartu yang dibuat oleh Fushi",
   "anki_tags": "Tag",

@@ -649,7 +649,7 @@
   "anki_sync_client_username_title": "Benutzername",
   "anki_tag_default_section": "Standard-Tags",
   "anki_tag_include_category": "Tag für Quellkategorie hinzufügen",
-  "anki_tag_include_category_hint": "Bücher erhalten „book“, Videos „video“, Spiele „game“",
+  "anki_tag_include_category_hint": "Bücher erhalten „book“, Videos „video“, Spiele „game“, Musik „music“",
   "anki_tag_include_fushi": "Tag „fushi“ hinzufügen",
   "anki_tag_include_fushi_hint": "Jede von Fushi erstellte Karte kennzeichnen",
   "anki_tags": "Tags",

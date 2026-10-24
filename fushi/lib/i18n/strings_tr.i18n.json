@@ -649,7 +649,7 @@
   "anki_sync_client_username_title": "Kullanıcı adı",
   "anki_tag_default_section": "Varsayılan etiketler",
   "anki_tag_include_category": "Kaynak kategorisi etiketi ekle",
-  "anki_tag_include_category_hint": "Kitaplara \"book\", videolara \"video\", oyunlara \"game\"",
+  "anki_tag_include_category_hint": "Kitaplara \"book\", videolara \"video\", oyunlara \"game\", müziğe \"music\"",
   "anki_tag_include_fushi": "\"fushi\" etiketi ekle",
   "anki_tag_include_fushi_hint": "Fushi ile çıkarılan her kartı işaretle",
   "anki_tags": "Etiketler",

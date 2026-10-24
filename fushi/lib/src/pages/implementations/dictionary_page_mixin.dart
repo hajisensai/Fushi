@@ -5,7 +5,7 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.da
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show kStatSourceBook, kStatSourceVideo;
+    show kStatSourceBook, kStatSourceMusic, kStatSourceVideo;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
@@ -481,15 +481,17 @@ mixin DictionaryPageMixin {
   ///
   /// Shows a Fluttertoast for each outcome and returns `true` on success.
   /// 把统计来源标识（[kStatSourceBook]/[kStatSourceVideo]）映射成 [AnkiMiningSource]，
-  /// 用于给制出的卡片追加分类标签（书籍→`book`，视频→`video`）。未知来源返回
+  /// 用于给制出的卡片追加分类标签（书籍→`book`，视频→`video`，音乐→`music`）。未知来源返回
   /// [AnkiMiningSource.book]（保守归书籍，与默认 [dictionarySourceType] 一致）。
   ///
   /// 可覆写（BUG-1137）：统计来源与制卡分类标签是两个维度——texthooker 页统计仍归
   /// 书籍桶，但制出的卡应打 `game` 分类标签，故覆写本 getter 而非动统计口径。
   @protected
-  AnkiMiningSource get miningSource => dictionarySourceType == kStatSourceVideo
-      ? AnkiMiningSource.video
-      : AnkiMiningSource.book;
+  AnkiMiningSource get miningSource => switch (dictionarySourceType) {
+    kStatSourceVideo => AnkiMiningSource.video,
+    kStatSourceMusic => AnkiMiningSource.music,
+    _ => AnkiMiningSource.book,
+  };
 
   /// 弹窗查词的数据源注入点：首查（[pushNestedPopup]）、加载更多（[loadMoreForEntry]）
   /// 与原地跳转（[navigatePopupInPlace]）三处都只走这里。默认走本机

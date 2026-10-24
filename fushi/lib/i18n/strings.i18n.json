@@ -649,7 +649,7 @@
   "anki_sync_client_username_title": "Username",
   "anki_tag_default_section": "Default tags",
   "anki_tag_include_category": "Add source category tag",
-  "anki_tag_include_category_hint": "Books get \"book\", videos get \"video\", games get \"game\"",
+  "anki_tag_include_category_hint": "Books get \"book\", videos get \"video\", games get \"game\", music gets \"music\"",
   "anki_tag_include_fushi": "Add \"fushi\" tag",
   "anki_tag_include_fushi_hint": "Mark every card mined by Fushi",
   "anki_tags": "Tags",

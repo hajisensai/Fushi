@@ -395,8 +395,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         documentTitle: item?.title,
         coverPath: cover != null && File(cover).existsSync() ? cover : null,
         sentenceAudioPath: audioPath,
-        // 与收藏夹批量制卡同口径：音乐卡归「书」分类标签（ankiMiningSourceOf）。
-        source: AnkiMiningSource.book,
+        // 音乐卡单独打 `music` 分类标签（所有者 2026-10-24），与收藏夹批量制卡
+        // 的 ankiMiningSourceOf 同口径。
+        source: AnkiMiningSource.music,
         bookTitleTag: appModel.autoAddBookNameToTags
             ? BaseAnkiRepository.sanitizeTitleTag(item?.title)
             : null,

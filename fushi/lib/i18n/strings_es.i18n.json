@@ -649,7 +649,7 @@
   "anki_sync_client_username_title": "Usuario",
   "anki_tag_default_section": "Etiquetas predeterminadas",
   "anki_tag_include_category": "Añadir etiqueta de categoría de origen",
-  "anki_tag_include_category_hint": "Los libros llevan «book», los vídeos «video» y los juegos «game»",
+  "anki_tag_include_category_hint": "Los libros llevan «book», los vídeos «video», los juegos «game» y la música «music»",
   "anki_tag_include_fushi": "Añadir la etiqueta «fushi»",
   "anki_tag_include_fushi_hint": "Marca todas las tarjetas creadas por Fushi",
   "anki_tags": "Etiquetas",

@@ -649,7 +649,7 @@
   "anki_sync_client_username_title": "Tên người dùng",
   "anki_tag_default_section": "Thẻ mặc định",
   "anki_tag_include_category": "Thêm thẻ phân loại nguồn",
-  "anki_tag_include_category_hint": "Sách gắn \"book\", video gắn \"video\", trò chơi gắn \"game\"",
+  "anki_tag_include_category_hint": "Sách gắn \"book\", video gắn \"video\", trò chơi gắn \"game\", nhạc gắn \"music\"",
   "anki_tag_include_fushi": "Thêm thẻ \"fushi\"",
   "anki_tag_include_fushi_hint": "Đánh dấu mọi thẻ được tạo bởi Fushi",
   "anki_tags": "Thẻ tag",

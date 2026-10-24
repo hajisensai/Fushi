@@ -649,7 +649,7 @@
   "anki_sync_client_username_title": "사용자 이름",
   "anki_tag_default_section": "기본 태그",
   "anki_tag_include_category": "소스 분류 태그 추가",
-  "anki_tag_include_category_hint": "책은 \"book\", 비디오는 \"video\", 게임은 \"game\"",
+  "anki_tag_include_category_hint": "책은 \"book\", 비디오는 \"video\", 게임은 \"game\", 음악은 \"music\"",
   "anki_tag_include_fushi": "\"fushi\" 태그 추가",
   "anki_tag_include_fushi_hint": "Fushi로 만든 모든 카드에 표시합니다",
   "anki_tags": "태그",

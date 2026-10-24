@@ -649,7 +649,7 @@
   "anki_sync_client_username_title": "Nom d'utilisateur",
   "anki_tag_default_section": "Étiquettes par défaut",
   "anki_tag_include_category": "Ajouter une étiquette de catégorie source",
-  "anki_tag_include_category_hint": "Les livres reçoivent « book », les vidéos « video », les jeux « game »",
+  "anki_tag_include_category_hint": "Les livres reçoivent « book », les vidéos « video », les jeux « game », la musique « music »",
   "anki_tag_include_fushi": "Ajouter l'étiquette « fushi »",
   "anki_tag_include_fushi_hint": "Marquer chaque carte créée par Fushi",
   "anki_tags": "Étiquettes",

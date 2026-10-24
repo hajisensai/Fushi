@@ -649,7 +649,7 @@
   "anki_sync_client_username_title": "ユーザー名",
   "anki_tag_default_section": "デフォルトのタグ",
   "anki_tag_include_category": "ソース分類タグを追加",
-  "anki_tag_include_category_hint": "書籍には「book」、動画には「video」、ゲームには「game」",
+  "anki_tag_include_category_hint": "書籍には「book」、動画には「video」、ゲームには「game」、音楽には「music」",
   "anki_tag_include_fushi": "「fushi」タグを追加",
   "anki_tag_include_fushi_hint": "Fushi で作成したすべてのカードに目印を付けます",
   "anki_tags": "タグ",

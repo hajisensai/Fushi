@@ -649,7 +649,7 @@
   "anki_sync_client_username_title": "Имя пользователя",
   "anki_tag_default_section": "Теги по умолчанию",
   "anki_tag_include_category": "Добавлять тег категории источника",
-  "anki_tag_include_category_hint": "Книги получают «book», видео — «video», игры — «game»",
+  "anki_tag_include_category_hint": "Книги получают «book», видео — «video», игры — «game», музыка — «music»",
   "anki_tag_include_fushi": "Добавлять тег «fushi»",
   "anki_tag_include_fushi_hint": "Помечать каждую карточку, созданную в Fushi",
   "anki_tags": "Теги",
