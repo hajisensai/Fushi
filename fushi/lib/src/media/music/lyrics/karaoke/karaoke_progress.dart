@@ -21,13 +21,16 @@ int karaokeSeekPositionForLine({
   return p < 0 ? 0 : p;
 }
 
-/// 音节擦色进度（0–1）：
-/// - [LyricFill.instant]（`\k`）：到点整字变色，0 或 1；
-/// - [LyricFill.sweep] / [LyricFill.outline]：起止之间线性。
+/// 音节擦色进度（0–1），语义对齐 libass（`ass_render.c` 的 `process_karaoke_effects`，
+/// 真 libmpv 截帧验证见 `music_karaoke_stage_real_test.dart`）：
+/// - [LyricFill.instant]（`\k`）：音节**起点**整字变色，0 或 1；
+/// - [LyricFill.outline]（`\ko`）：同样在起点瞬间切换（不是擦色），且描边起点之前不画、
+///   起点之后出现（描边由画家处理）；
+/// - [LyricFill.sweep]（`\kf` / `\K`）：起止之间线性擦色。
 double karaokeSyllableProgress(LyricSyllable s, int timeMs) {
   if (timeMs < s.startMs) return 0;
   if (timeMs >= s.endMs) return 1;
-  if (s.fill == LyricFill.instant) return 1;
+  if (s.fill != LyricFill.sweep) return 1;
   final int d = s.endMs - s.startMs;
   if (d <= 0) return 1;
   return (timeMs - s.startMs) / d;

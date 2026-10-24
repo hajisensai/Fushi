@@ -29,11 +29,15 @@ void main() {
       fill: LyricFill.outline,
     );
 
-    test('Sweep / Outline 线性，Instant 到点整字', () {
+    // 与 libass 一致（真 libmpv 截帧：music_karaoke_stage_real_test）：\kf 擦色，
+    // \k 与 \ko 都在音节起点瞬间切换。
+    test('Sweep 线性，Instant / Outline 在起点整字切换', () {
       expect(karaokeSyllableProgress(sweep, 999), 0);
       expect(karaokeSyllableProgress(sweep, 1250), closeTo(0.25, 1e-9));
       expect(karaokeSyllableProgress(sweep, 2000), 1);
-      expect(karaokeSyllableProgress(outline, 1500), closeTo(0.5, 1e-9));
+      expect(karaokeSyllableProgress(outline, 999), 0);
+      expect(karaokeSyllableProgress(outline, 1000), 1);
+      expect(karaokeSyllableProgress(outline, 1500), 1);
       expect(karaokeSyllableProgress(instant, 999), 0);
       expect(karaokeSyllableProgress(instant, 1000), 1);
       expect(karaokeSyllableProgress(instant, 1999), 1);

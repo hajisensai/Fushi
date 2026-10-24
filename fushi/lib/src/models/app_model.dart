@@ -280,6 +280,8 @@ import 'package:fushi/src/models/theme_notifier.dart'
 export 'package:fushi/src/models/theme_notifier.dart'
     show CustomThemeEntry, ThemePreset;
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
+    show MusicAssRenderPreference;
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
@@ -1617,6 +1619,11 @@ class AppModel with ChangeNotifier {
     musicLyricsLive.onSettingsChanged();
     musicSession.refreshMediaSession();
   }
+
+  MusicAssRenderPreference get musicKaraokeAssRender =>
+      MusicAssRenderPreference.fromPref(prefsRepo.musicKaraokeAssRender);
+  Future<void> setMusicKaraokeAssRender(MusicAssRenderPreference value) =>
+      prefsRepo.setMusicKaraokeAssRender(value.prefValue);
 
   bool get musicListeningCountsAsStudy =>
       prefsRepo.musicListeningCountsAsStudy;

@@ -403,6 +403,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：独占 / bit-perfect 输出（设计 §7.4；设备本地）。
   'music_exclusive_output',
   'music_gapless',
+  // String（默认 'auto'）：卡拉 OK 字幕页 ASS 歌词默认显示 auto / original / structured
+  // （音乐 P3，设计 §6.3；MusicAssRenderPreference.prefValue）。
+  'music_karaoke_ass_render',
   // bool（默认 false）：听歌计入学习时长（决策 D4；关着时只在歌词页学习动作后计）。
   'music_listening_counts_as_study',
   // bool（默认 true）：缺 ReplayGain 标签时后台 EBU R128 测响度写曲库（设计 §7.3）。
