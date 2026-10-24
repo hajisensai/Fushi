@@ -13,7 +13,8 @@
 //!   Dart 侧加载失败抛带原因的 `FushiComputeUnavailableError`。所以每个域只有这一份实现；
 //!   从 Dart 迁过来的内核要先用旧 Dart 实现冻结输入 → 输出向量做回归测试，再删 Dart。
 //! - 新增符号不升 [ABI_VERSION]（Dart 侧按域 lookup，库比绑定旧时那个域抛缺符号异常）；
-//!   改动既有符号的签名或语义才升。
+//!   改动既有符号的签名或语义、或删掉符号才升（v2：有声书 cue 吸附 / 修边 / 余量的三个
+//!   `ffc_signal_cue_*` 迁到上游 crate 后删除，改由 `fcp_*` 提供）。
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -29,8 +30,12 @@ pub mod signal;
 pub mod text;
 pub mod ts;
 
+// 上游 crate 的 `fcp_*` C 导出随本库一起导出（cdylib / staticlib / iOS 伞形库都靠这一行把它
+// 链进来；不引用就会被当成没用的依赖丢掉）。见 Cargo.toml 的说明。
+pub extern crate fushi_asr_cue_post;
+
 /// C ABI 版本。Dart 侧加载时比对，不一致抛带原因的加载异常。
-pub const ABI_VERSION: i32 = 1;
+pub const ABI_VERSION: i32 = 2;
 
 /// 各导出函数共用的返回码。
 pub mod status {
