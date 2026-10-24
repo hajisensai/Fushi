@@ -104,9 +104,11 @@ void main() {
     });
 
     test('what / when / assets / backup groups remain global', () {
-      // C1：§2 只放五个同形态开关；§3 是时机（自动 + 手动）；§4 是显式动作行。
+      // C1：§2 只放六个同形态开关；§3 是时机（自动 + 手动）；§4 是显式动作行。
       expect(idsOf(dest.sections[1]), <String>[
         'sync.statistics',
+        // 设备级「同步浏览历史」（默认关）：与统计同为 content-scope，紧随其后。
+        'sync.web_history',
         'sync.content',
         'sync.manga_content',
         'sync.audiobook_files',
@@ -161,6 +163,13 @@ void main() {
           isNull,
           reason:
               'sync.statistics is a content-scope setting, global to every backend',
+        );
+        expect(
+          byId('sync.web_history').visible,
+          isNull,
+          reason:
+              'sync.web_history gates both cloud backup and interconnect, so it '
+              'stays visible for every sync method',
         );
         for (final String id in <String>[
           'sync.content',
@@ -524,8 +533,7 @@ void main() {
           dest.sections[3].items.last.subtitle,
           t.interconnect_auto_sync_hint,
         );
-        final SettingsItem cloudAutoSync = buildSyncBackupDestination()
-            .sections
+        final SettingsItem cloudAutoSync = buildSyncBackupDestination().sections
             .expand((SettingsSection s) => s.items)
             .firstWhere((SettingsItem i) => i.id == 'sync.auto_sync');
         expect(
