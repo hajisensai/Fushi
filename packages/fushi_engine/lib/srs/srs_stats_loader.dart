@@ -3,7 +3,7 @@
 ///
 /// 只读：不写任何事件、不刷新缓存。复习记录读 srs.db 的 `srs_stat_reviews`（有效复习投影，缓存刷新时由
 /// Rust 按归属组的合并历史产出，见 `SrsDbStore._refreshStatProjection`）的定长列，不再每次装载都读全部
-/// 复习日志重放历史（BUG-3770）。
+/// 复习日志重放历史（BUG-3772）。
 library;
 
 import 'dart:math' as math;

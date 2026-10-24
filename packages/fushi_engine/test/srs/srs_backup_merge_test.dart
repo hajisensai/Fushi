@@ -292,12 +292,13 @@ void main() {
     final String uid = await local.profileUidOf(localId);
     await store(localSrs, uid, 'devA');
     Future<List<Object?>> snapshot() async => <Object?>[
-      for (final QueryRow r in await localSrs.db
-          .customSelect(
-            'SELECT json FROM srs_local_state WHERE profile_uid = ?',
-            variables: <Variable<Object>>[Variable<String>(uid)],
-          )
-          .get())
+      for (final QueryRow r
+          in await localSrs.db
+              .customSelect(
+                'SELECT json FROM srs_local_state WHERE profile_uid = ?',
+                variables: <Variable<Object>>[Variable<String>(uid)],
+              )
+              .get())
         r.read<String>('json'),
       (await localSrs.db
               .customSelect(

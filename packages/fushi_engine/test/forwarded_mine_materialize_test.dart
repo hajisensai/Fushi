@@ -19,8 +19,7 @@ void main() {
     String raw,
     AnkiMiningContext context,
   ) async {
-    final Map<String, dynamic> fields =
-        jsonDecode(raw) as Map<String, dynamic>;
+    final Map<String, dynamic> fields = jsonDecode(raw) as Map<String, dynamic>;
     whileAlive?.call(fields);
     return fields;
   }, bundledMediaOnly: bundledMediaOnly);

@@ -3,9 +3,11 @@ import 'dart:io';
 
 import 'package:drift/drift.dart'
     show BooleanExpressionOperators, driftRuntimeOptions;
+import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_backup_store.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_point_in_time_restore.dart';
 import 'package:fushi_engine/srs/srs_purge.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -357,6 +359,74 @@ void main() {
     t += 365 * kDay;
     expect((await srsPurgeExpiredTombstones(a, mediaRoot: media)).notes, 0);
     expect(File(p.join(media.path, 'cat.png')).existsSync(), isTrue);
+  });
+
+  test('④ 恢复与当场清除交错：恢复合并完备份事件时发起的清除排在恢复之后，看到的是已恢复的存活笔记', () async {
+    final SrsDbStore a = await device('a');
+    final Directory media = Directory(p.join(tmp.path, 'srs_media', kProfile))
+      ..createSync(recursive: true);
+    final SrsBackupStore bs = SrsBackupStore(
+      root: Directory(p.join(tmp.path, 'srs_backups')),
+      profileUid: kProfile,
+      mediaDir: media,
+    );
+    final String n = await addNote(a, '猫');
+    final String c = await cardOf(a, n);
+    t += 60 * 1000;
+    final SrsReviewLog l = await a.answer(c, 3);
+    t += 60 * 1000;
+    final SrsBackupInfo before = await bs.create(
+      a,
+      kind: SrsBackupKind.manual,
+      profileName: 'p',
+      nowMs: t,
+    );
+    t += 60 * 1000;
+    await a.deleteNote(n);
+    expect((await a.note(n))!.deletedAt, isNotNull);
+    expect(a.neverSynced, isTrue);
+
+    final SrsBackupArchive archive = await SrsBackupStore.read(before.file);
+    addTearDown(archive.close);
+    // 清除由「别处」发起（界面 / 维护）：在恢复的独占区与事务之外的 Zone 里调用，与真实的并发调用方
+    // 一样排队等写锁。直接在回调里调会按 Zone 认作重入、在恢复的事务里当场执行（见 runExclusive）。
+    final Zone outside = Zone.current;
+    Future<SrsPurgeReport>? purge;
+    final List<String> stages = <String>[];
+    await srsRestoreToBackup(
+      store: a,
+      backupEvents: archive.events,
+      backupServerTimes: archive.serverTimes,
+      backupId: archive.id,
+      debugOnStage: (String stage) async {
+        stages.add(stage);
+        if (stage == 'merged') {
+          purge = outside.run(() => srsPurgeNotesNow(a, <String>[n]));
+          // 让清除先跑到等锁那一步（它若能插进来，这里就会清掉还处于删除状态的笔记）。
+          await Future<void>.delayed(Duration.zero);
+        }
+      },
+    );
+    expect(stages, <String>['merged', 'fields', 'logs']);
+    expect(purge, isNotNull);
+    final SrsPurgeReport r = await purge!;
+    expect(r.notes, 0, reason: '清除排在恢复之后：笔记已恢复为存活，不是候选');
+    expect(r.cards, 0);
+
+    final SrsNoteView? alive = await a.note(n);
+    expect(alive, isNotNull);
+    expect(alive!.deletedAt, isNull);
+    expect(alive.field(expr(a)), '猫');
+    expect(alive.field(sentence(a)), '猫');
+    final SrsCardCacheRow card = (await a.cardRow(c))!;
+    expect(card.hidden, isFalse);
+    expect(card.reps, 1);
+    expect(card.lastLogId, l.id);
+    expect(
+      (await a.history(c)).all.map((SrsReviewLog x) => x.id),
+      contains(l.id),
+    );
+    expect(await logCount(a, c), greaterThanOrEqualTo(1));
   });
 
   group('⑤ 媒体回收与并发写入（HBK-AUDIT-014）', () {

@@ -3,14 +3,13 @@
 // FUSHI_SRS_STATS_BENCH=<笔记数> dart test test/srs/srs_stats_bench_test.dart
 //
 // 每条笔记两张卡、每卡 3 条导入 revlog + 1 条导入锚点：25000 条笔记 = 20 万条日志 / 15 万条复习。
-// phases 是旧装载路径（全量读日志 → jsonDecode → 按卡重放）各段的耗时，作对照；
-// loadSrsStats 是现在的路径（读有效复习投影 srs_stat_reviews，BUG-3770）。
-// 库开在临时文件上、走 createInBackground（与 app 同一种连接）。
+// phases 是旧装载路径（全量读日志 → jsonDecode）与按卡在 Rust 里算投影（`SrsCore.statProjection`）各段的
+// 耗时，作对照；loadSrsStats 是现在的路径（读有效复习投影 srs_stat_reviews，BUG-3772）。
+// 库开在临时 srs.db 上、走后台 isolate（与 app 同一种连接）。
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
@@ -19,6 +18,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_bulk_fixture.dart';
+import 'support/srs_test_storage.dart';
 import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
 
 void main() {
@@ -30,19 +30,21 @@ void main() {
     () async {
       final int notes = int.parse(n!);
       final Directory tmp = Directory.systemTemp.createTempSync('srs_stats_');
-      final FushiDatabase db = FushiDatabase.forTesting(
-        NativeDatabase.createInBackground(File('${tmp.path}/b.db')),
-      );
-      addTearDown(() async {
-        await db.close();
+      addTearDown(() {
         try {
           tmp.deleteSync(recursive: true);
         } on FileSystemException {
           // 句柄晚释放。
         }
       });
+      final TestSrs srs = await openTestSrsAt(
+        '${tmp.path}/srs.db',
+        inline: false,
+      );
+      final SrsDatabase db = srs.db;
       final SrsDbStore store = await SrsDbStore.open(
         db: db,
+        core: srs.core,
         profileUid: kBulkUid,
         deviceId: 'bench',
         engine: const FakeFsrsEngine(),
@@ -73,10 +75,26 @@ void main() {
       }
       final int decodeMs = sw.elapsedMilliseconds;
       sw.reset();
-      int reviews = 0;
-      for (final List<SrsReviewLog> l in byCard.values) {
-        reviews += srsStatsFromHistory(SrsCardHistory(l), day).reviews.length;
-      }
+      // 每张卡单独一组（基准包没有更改笔记类型）：Rust 读日志、选取、分类。
+      final (int _, List<List<Object?>> projected) = srsDecodeRows(
+        srs.core.statProjection(<List<String>>[
+          for (final String c in byCard.keys) <String>[c],
+        ]),
+      );
+      final int reviews = srsStatsFromProjection(<SrsStatProjection>[
+        for (final List<Object?> r in projected)
+          SrsStatProjection(
+            logId: r[1]! as String,
+            cardId: byCard.keys.elementAt(r[0]! as int),
+            occurredAt: r[2]! as int,
+            utcOffsetMin: r[3]! as int,
+            rating: r[4] as int?,
+            kind: SrsStatReviewKind.values[r[5]! as int],
+            durationMs: r[6]! as int,
+            prevDueDay: r[7] as int?,
+            maturityDelta: r[8]! as int,
+          ),
+      ], day).reviews.length;
       final int historyMs = sw.elapsedMilliseconds;
       sw.reset();
       final $SrsReviewLogsTable t = db.srsReviewLogs;
@@ -117,7 +135,7 @@ void main() {
       // ignore: avoid_print
       print('BENCH other: ${other.join(' ')}');
 
-      // 存量库升级（缓存修订号 1 → 2）时一次性补算投影的耗时。
+      // 存量库升级（缓存修订号 1 → 当前）时一次性补算投影的耗时。
       await db.customStatement('DELETE FROM srs_stat_reviews');
       await db.customStatement(
         "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 1)",
@@ -125,6 +143,7 @@ void main() {
       sw.reset();
       await SrsDbStore.open(
         db: db,
+        core: srs.core,
         profileUid: kBulkUid,
         deviceId: 'bench',
         engine: const FakeFsrsEngine(),

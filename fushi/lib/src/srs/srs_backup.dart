@@ -24,7 +24,6 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/storage/app_paths.dart';
-import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 复习备份根（`<documents>/srs_backups`，[AppPaths.srsBackupsDirectory]；测试覆写成临时目录）。

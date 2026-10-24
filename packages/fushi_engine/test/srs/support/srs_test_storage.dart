@@ -66,16 +66,25 @@ Future<TestSrs> openTestSrsAt(
 }
 
 /// 模拟 2026-10-23 之前的老形态：在 [legacy]（主库形态的 FushiDatabase）上用旧表定义建出 9 张
-/// srs_* 表，再把 [from]（srs.db 视图）里的行原样抄进去。
+/// srs_* 表，再把 [from]（srs.db 视图）里的行原样抄进去。只抄老表有的列：srs.db 之后加的列
+/// （schema v4 的 `srs_notes_cache.media_refs` 等）老形态里本来就没有。
 Future<void> copySrsRowsToLegacyTables(
   SrsDatabase from,
   FushiDatabase legacy,
 ) async {
   for (final MapEntry<String, String> t in kLegacySrsTableDdl.entries) {
     await legacy.customStatement(t.value);
+    final Set<String> legacyCols = <String>{
+      for (final QueryRow c
+          in await legacy.customSelect('PRAGMA table_info(${t.key})').get())
+        c.read<String>('name'),
+    };
     for (final QueryRow r
         in await from.customSelect('SELECT * FROM ${t.key}').get()) {
-      final List<String> cols = r.data.keys.toList();
+      final List<String> cols = <String>[
+        for (final String c in r.data.keys)
+          if (legacyCols.contains(c)) c,
+      ];
       await legacy.customStatement(
         'INSERT INTO ${t.key} (${cols.join(', ')}) '
         'VALUES (${List<String>.filled(cols.length, '?').join(', ')})',

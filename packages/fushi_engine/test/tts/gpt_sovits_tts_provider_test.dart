@@ -78,7 +78,10 @@ void main() {
     },
   );
 
-  Future<TtsResult> synth(TtsVoicePreset preset, {TtsCancelToken? cancel}) async {
+  Future<TtsResult> synth(
+    TtsVoicePreset preset, {
+    TtsCancelToken? cancel,
+  }) async {
     final TtsProvider provider = const GptSovitsTtsDescriptor().create(
       preset,
       host,
@@ -94,9 +97,8 @@ void main() {
     }
   }
 
-  Matcher failsWith(TtsFailureCode code) => throwsA(
-    isA<TtsFailure>().having((TtsFailure f) => f.code, 'code', code),
-  );
+  Matcher failsWith(TtsFailureCode code) =>
+      throwsA(isA<TtsFailure>().having((TtsFailure f) => f.code, 'code', code));
 
   group('ttsEndpointUri', () {
     test('normalises root, /tts, trailing slash, sub-path, query', () {

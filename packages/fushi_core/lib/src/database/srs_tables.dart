@@ -191,7 +191,7 @@ class SrsCardsCache extends Table {
 
 /// 有效复习投影（本机可重建缓存，不同步、不进备份；srs.db schema v3）。每条「有效」复习日志一行
 /// （被 undo 撤销的、被判与原生日志等价的导入日志、不认识的 kind 都不在），复习统计页与统计中心
-/// 总览直接按定长列读，不再全量读 `srs_review_logs` 逐条 jsonDecode 重放历史（BUG-3770）。
+/// 总览直接按定长列读，不再全量读 `srs_review_logs` 逐条 jsonDecode 重放历史（BUG-3772）。
 ///
 /// - 身份 = 日志 ID（[logId]）：同一条日志只有一行。
 /// - [cardId] = **归属卡**：卡自己可见就归自己；否则归它可见的后继卡（更改笔记类型 / 旧 Lapis 迁到
