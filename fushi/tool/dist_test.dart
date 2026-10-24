@@ -17,7 +17,7 @@ import 'test_flow/suite_timings.dart';
 ///   dart tool/dist_test.dart test/reader         # a subtree / files
 ///   dart tool/dist_test.dart --workers=self-mac  # a subset of workers
 ///   dart tool/dist_test.dart --status            # who is reachable
-///   dart tool/dist_test.dart --dry-run           # show the batch plan
+///   dart tool/dist_test.dart --dry-run           # show what would run where
 ///
 /// Any other `--flag` is passed to every `flutter test` (e.g.
 /// `--exclude-tags golden`). Workers: tool/dist_test/workers.local.json.
@@ -106,17 +106,10 @@ Future<void> main(List<String> args) async {
     );
     exit(64);
   }
-  // CI-measured run time plus the per-suite compile + tester start-up that
-  // one `flutter test` process pays serially (≈1.5 s per suite on the M4 Mac,
-  // where the CI table says 0.1-0.3 s): without it batches of many small
-  // suites come out far too big and slots sit idle.
-  final Map<String, int> weights = <String, int>{
-    for (final MapEntry<String, int> e in suiteShardWeights(
-      bytes,
-      readSuiteTimings(File(kSuiteTimingsPath)),
-    ).entries)
-      e.key: e.value + options.suiteOverheadMs,
-  };
+  final Map<String, int> weights = suiteShardWeights(
+    bytes,
+    readSuiteTimings(File(kSuiteTimingsPath)),
+  );
   final Map<String, Set<DistPlatform>> pins = readDistAffinity(
     File(kDistAffinityPath).readAsStringSync(),
   );
@@ -127,20 +120,18 @@ Future<void> main(List<String> args) async {
         pins[p],
       ),
   };
-  final List<DistBatch> pending = planDistBatches(
+  final List<DistUnit> units = distUnits(
     weights: weights,
     requirements: requirements,
-    targetMs: options.batchMinutes * 60000,
   );
-  final Map<int, int> estimatedMs = <int, int>{
-    for (final DistBatch b in pending) b.id: b.estimatedMs,
-  };
-  final List<DistBatch> unplaceable = <DistBatch>[
-    for (final DistBatch b in pending)
-      if (!workers.any((DistWorker w) => w.eligible(b))) b,
+  final List<DistUnit> unplaceable = <DistUnit>[
+    for (final DistUnit u in units)
+      if (!workers.any((DistWorker w) => w.eligible(u))) u,
   ];
-  pending.removeWhere(unplaceable.contains);
-  _printPlan(pending, unplaceable, weights);
+  final DistSuiteQueue queue = DistSuiteQueue(
+    units.where((DistUnit u) => !unplaceable.contains(u)),
+  );
+  _printPlan(units, unplaceable);
   if (options.dryRun) return;
 
   // ---- snapshot ----
@@ -170,8 +161,8 @@ Future<void> main(List<String> args) async {
   // ---- run ----
   final Stopwatch wall = Stopwatch()..start();
   final _Scheduler scheduler = _Scheduler(
-    pending: pending,
-    total: pending.length,
+    queue: queue,
+    workers: workers,
     flutterArgs: options.flutterArgs,
     out: out,
     runId: runId,
@@ -198,14 +189,14 @@ Future<void> main(List<String> args) async {
   final DistRunVerdict verdict = DistRunVerdict(
     results: scheduler.results,
     unplaced: <String>[
-      for (final DistBatch b in <DistBatch>[...unplaceable, ...pending])
-        for (final String f in b.files) '$f (${b.requirementLabel})',
+      for (final DistUnit u in <DistUnit>[...unplaceable, ...queue.remaining])
+        '${u.path} (${u.label})',
     ],
   );
   _writeTimings(out, scheduler.results, weights.keys.toSet());
   final String summary = renderDistSummary(
     verdict: verdict,
-    estimatedMsByBatch: estimatedMs,
+    estimatedMsByBatch: scheduler.weightByBatch,
     wall: wall.elapsed,
     snapshot: snapshot.commit,
   );
@@ -234,25 +225,34 @@ Future<void> main(List<String> args) async {
   exit(failure == null ? 0 : 1);
 }
 
-/// Pull-based queue: every worker prepares, then takes batches until nothing
-/// it can run is left and nothing in flight could come back.
+/// Pull-based and adaptive: every worker prepares, then repeatedly cuts its
+/// next batch off the shared queue, sized from its own measured speed
+/// ([distChunkBudgetMs]), until nothing it can run is left and nothing in
+/// flight could come back.
 class _Scheduler {
   _Scheduler({
-    required this.pending,
-    required this.total,
+    required this.queue,
+    required List<DistWorker> workers,
     required this.flutterArgs,
     required this.out,
     required this.runId,
     required this.snapshot,
-  });
+  }) : _speeds = <DistWorker, DistSpeed>{
+         for (final DistWorker w in workers) w: DistSpeed(),
+       };
 
-  final List<DistBatch> pending;
-  final int total;
+  final DistSuiteQueue queue;
   final List<String> flutterArgs;
   final Directory out;
   final String runId;
   final DistSnapshot snapshot;
   final List<DistBatchResult> results = <DistBatchResult>[];
+  final Map<int, int> weightByBatch = <int, int>{};
+
+  final Map<DistWorker, DistSpeed> _speeds;
+
+  /// Workers that are ready and not dropped: the ones sharing the queue.
+  final Set<DistWorker> _live = <DistWorker>{};
 
   int _inFlight = 0;
   Completer<void> _changed = Completer<void>();
@@ -262,6 +262,11 @@ class _Scheduler {
     _changed = Completer<void>();
     done.complete();
   }
+
+  double get _liveSpeedSum => _live.fold<double>(
+    0,
+    (double s, DistWorker w) => s + 1 / _speeds[w]!.factor,
+  );
 
   Future<void> drive(DistWorker worker) async {
     final IOSink prepLog = File(
@@ -283,16 +288,26 @@ class _Scheduler {
       return;
     }
     await prepLog.close();
+    _live.add(worker);
+    final DistSpeed speed = _speeds[worker]!;
 
     int infraStreak = 0;
     while (true) {
-      final DistBatch? batch = takeNextBatch(pending, worker.eligible);
+      final DistBatch? batch = queue.take(
+        eligible: worker.eligible,
+        budgetMs: distChunkBudgetMs(
+          remainingEligibleMs: queue.remainingMs(worker.eligible),
+          speed: speed,
+          liveSpeedSum: _liveSpeedSum,
+        ),
+      );
       if (batch == null) {
         if (_inFlight == 0) break;
         await _changed.future;
         continue;
       }
       _inFlight++;
+      weightByBatch[batch.id] = batch.weightMs;
       final String base = '${out.path}/batch-${batch.id}.${worker.name}';
       final IOSink errLog = File('$base.stderr.log').openWrite();
       final Stopwatch sw = Stopwatch()..start();
@@ -302,8 +317,11 @@ class _Scheduler {
           batch,
           flutterArgs: flutterArgs,
           stderrLog: errLog,
+          // Three times what this machine's own speed predicts, plus slack.
           timeout:
-              Duration(milliseconds: batch.estimatedMs * 2) +
+              Duration(
+                milliseconds: (batch.weightMs * speed.factor * 3).round(),
+              ) +
               const Duration(minutes: 10),
         );
       } on Object catch (e) {
@@ -321,11 +339,11 @@ class _Scheduler {
       _inFlight--;
 
       if (run.infraError != null && batch.attempts == 0) {
-        // One more go, on whichever worker asks next. Test failures are never
-        // retried (that would hide flaky reds); this is only for runs that
-        // did not get a fair chance.
-        batch.attempts++;
-        pending.add(batch);
+        // Back into the queue for whichever worker asks next. Test failures
+        // are never retried (that would hide flaky reds); this is only for
+        // runs that did not get a fair chance.
+        queue.giveBack(batch);
+        weightByBatch.remove(batch.id);
         stdout.writeln(
           '[${worker.name}] batch ${batch.id} requeued: '
           '${run.infraError}',
@@ -341,7 +359,12 @@ class _Scheduler {
         }
         continue;
       }
-      infraStreak = run.infraError == null ? 0 : infraStreak + 1;
+      if (run.infraError == null) {
+        infraStreak = 0;
+        speed.record(wallMs: sw.elapsedMilliseconds, weightMs: batch.weightMs);
+      } else {
+        infraStreak++;
+      }
       final DistBatchResult result = DistBatchResult(
         batchId: batch.id,
         worker: worker.name,
@@ -354,11 +377,11 @@ class _Scheduler {
       results.add(result);
       final String? failure = result.failure;
       stdout.writeln(
-        '[${results.length}/$total] ${worker.name} '
-        'batch ${batch.id} (${batch.requirementLabel}, '
-        '${batch.files.length} suites): '
-        '${result.summary.testsCompleted} tests, '
-        '${failure == null ? 'ok' : 'FAILED'} in ${sw.elapsed.inSeconds}s',
+        '[${worker.name}] batch ${batch.id} (${batch.files.length} suites: '
+        '${batch.label}): ${result.summary.testsCompleted} tests, '
+        '${failure == null ? 'ok' : 'FAILED'} in ${sw.elapsed.inSeconds}s; '
+        'speed ${speed.factor.toStringAsFixed(2)} wall/weight, '
+        '${queue.remaining.length} suites left',
       );
       _notify();
       if (infraStreak >= 2) {
@@ -369,6 +392,7 @@ class _Scheduler {
         break;
       }
     }
+    _live.remove(worker);
     await worker.finish(runId);
     _notify();
   }
@@ -380,8 +404,6 @@ class _Options {
     required this.flutterArgs,
     required this.configPath,
     required this.workers,
-    required this.batchMinutes,
-    required this.suiteOverheadMs,
     required this.outputDir,
     required this.status,
     required this.dryRun,
@@ -391,8 +413,6 @@ class _Options {
   final List<String> flutterArgs;
   final String configPath;
   final Set<String>? workers;
-  final int batchMinutes;
-  final int suiteOverheadMs;
   final String? outputDir;
   final bool status;
   final bool dryRun;
@@ -402,8 +422,6 @@ class _Options {
     final List<String> flutterArgs = <String>[];
     String configPath = 'tool/dist_test/workers.local.json';
     Set<String>? workers;
-    int batchMinutes = 4;
-    int suiteOverheadMs = 1500;
     String? outputDir;
     bool status = false;
     bool dryRun = false;
@@ -419,22 +437,6 @@ class _Options {
         workers = arg.substring('--workers='.length).split(',').toSet();
       } else if (arg.startsWith('--output-dir=')) {
         outputDir = arg.substring('--output-dir='.length);
-      } else if (arg.startsWith('--suite-overhead-ms=')) {
-        final int? v = int.tryParse(
-          arg.substring('--suite-overhead-ms='.length),
-        );
-        if (v == null || v < 0) {
-          stderr.writeln('bad --suite-overhead-ms');
-          exit(64);
-        }
-        suiteOverheadMs = v;
-      } else if (arg.startsWith('--batch-minutes=')) {
-        final int? v = int.tryParse(arg.substring('--batch-minutes='.length));
-        if (v == null || v < 1) {
-          stderr.writeln('bad --batch-minutes');
-          exit(64);
-        }
-        batchMinutes = v;
       } else if (arg.startsWith('--')) {
         flutterArgs.add(arg);
         // `--exclude-tags golden` style: take the value along.
@@ -453,8 +455,6 @@ class _Options {
       flutterArgs: flutterArgs,
       configPath: configPath,
       workers: workers,
-      batchMinutes: batchMinutes,
-      suiteOverheadMs: suiteOverheadMs,
       outputDir: outputDir,
       status: status,
       dryRun: dryRun,
@@ -492,37 +492,27 @@ Map<String, int> _discoverSuites(List<String> paths) {
   return bytes;
 }
 
-void _printPlan(
-  List<DistBatch> batches,
-  List<DistBatch> unplaceable,
-  Map<String, int> weights,
-) {
-  final Map<String, (int, int, int)> byLabel = <String, (int, int, int)>{};
-  for (final DistBatch b in batches) {
-    final (int, int, int) prev = byLabel[b.requirementLabel] ?? (0, 0, 0);
-    byLabel[b.requirementLabel] = (
-      prev.$1 + 1,
-      prev.$2 + b.files.length,
-      prev.$3 + b.estimatedMs,
-    );
+void _printPlan(List<DistUnit> units, List<DistUnit> unplaceable) {
+  final Map<String, (int, int)> byLabel = <String, (int, int)>{};
+  for (final DistUnit u in units) {
+    final (int, int) prev = byLabel[u.label] ?? (0, 0);
+    byLabel[u.label] = (prev.$1 + 1, prev.$2 + u.weightMs);
   }
-  final int totalMs = weights.values.fold<int>(0, (int s, int v) => s + v);
+  final int totalMs = units.fold<int>(0, (int s, DistUnit u) => s + u.weightMs);
   stdout.writeln(
-    '${weights.length} suites, '
-    '~${(totalMs / 60000).toStringAsFixed(1)} suite-minutes (CI-measured + per-suite overhead), '
-    '${batches.length} batches:',
+    '${units.length} suite placements, ~${(totalMs / 60000).toStringAsFixed(1)} '
+    'model minutes; batches are cut on the fly from each worker\'s speed:',
   );
   for (final String label in byLabel.keys.toList()..sort()) {
-    final (int, int, int) v = byLabel[label]!;
+    final (int, int) v = byLabel[label]!;
     stdout.writeln(
-      '  $label: ${v.$1} batches, ${v.$2} suites, '
-      '~${(v.$3 / 60000).toStringAsFixed(1)} suite-minutes',
+      '  $label: ${v.$1} suites, ~${(v.$2 / 60000).toStringAsFixed(1)} min',
     );
   }
-  for (final DistBatch b in unplaceable) {
+  if (unplaceable.isNotEmpty) {
     stdout.writeln(
-      '  NO ELIGIBLE WORKER for ${b.requirementLabel}: '
-      '${b.files.length} suites (will count as not run)',
+      '  NO ELIGIBLE WORKER: ${unplaceable.length} suites (will count as '
+      'not run)',
     );
   }
 }

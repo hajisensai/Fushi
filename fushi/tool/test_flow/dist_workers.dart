@@ -329,8 +329,8 @@ abstract class DistWorker {
 
   String get name => config.name;
 
-  bool eligible(DistBatch batch) =>
-      batch.eligibleFor(config.platform, config.capabilities);
+  bool eligible(DistUnit unit) =>
+      unit.eligibleFor(config.platform, config.capabilities);
 
   /// Gets the worker onto [snapshot] with dependencies and native libraries
   /// ready. Throws [DistWorkerError]; [log] receives the step output.

@@ -122,193 +122,195 @@ SuiteRequirement applyDistPin(
     ? scanned
     : SuiteRequirement(platforms: pin, capabilities: scanned.capabilities);
 
-/// One unit of queue work: one `flutter test` process on one worker.
-class DistBatch {
-  DistBatch({
-    required this.id,
-    required this.files,
-    required this.estimatedMs,
-    required this.platform,
-    required this.capabilities,
+/// Cost model of one suite inside a `flutter test` process, in "weight"
+/// milliseconds: its CI-measured run time plus the compile + tester start-up
+/// every suite pays one after another (the CI table leaves that out: 0.1-0.3 s
+/// there, ~1.5 s per suite measured on the M4 Mac). Only the *shape* of the
+/// cost matters; each worker's measured speed factor (wall ms per weight ms,
+/// [DistSpeed]) scales it to that machine.
+const int kDistSuiteOverheadMs = 1500;
+
+/// One suite placed once: a suite pinned to two platforms is two units.
+class DistUnit {
+  const DistUnit({
+    required this.path,
+    required this.weightMs,
+    this.platform,
+    this.capabilities = const <String>{},
   });
 
-  final int id;
-
-  /// Suite paths relative to `fushi/` (`test/...`), sorted.
-  final List<String> files;
-
-  /// Sum of the suites' CI-measured (or size-estimated) run times.
-  final int estimatedMs;
+  /// Suite path relative to `fushi/` (`test/...`).
+  final String path;
+  final int weightMs;
 
   /// Null: any platform.
   final DistPlatform? platform;
   final Set<String> capabilities;
 
-  /// Infrastructure attempts so far (ssh drop, timeout); test failures are
-  /// never retried.
-  int attempts = 0;
+  bool get pinned => platform != null || capabilities.isNotEmpty;
 
   bool eligibleFor(DistPlatform workerPlatform, Set<String> workerCaps) =>
       (platform == null || platform == workerPlatform) &&
       workerCaps.containsAll(capabilities);
 
-  String get requirementLabel {
-    final List<String> parts = <String>[
-      platform?.name ?? 'any',
-      ...(capabilities.toList()..sort()),
-    ];
-    return parts.join('+');
-  }
+  String get label => <String>[
+    platform?.name ?? 'any',
+    ...(capabilities.toList()..sort()),
+  ].join('+');
 }
 
-/// Packs [weights] (suite → ms) into batches of about [targetMs] each.
-///
-/// Suites are grouped by placement (platform × capabilities); a suite with N
-/// pinned platforms appears in N groups. Inside a group, suites are taken
-/// heaviest first and each goes onto the currently lightest of
-/// ceil(groupMs / targetMs) bins (LPT), so batches of a group come out even.
-/// Batches come out heaviest first with ids 1..N; which one a worker takes
-/// next is [takeNextBatch]'s call.
-List<DistBatch> planDistBatches({
+/// Every placement of every suite in [weights] (path → CI-measured ms).
+List<DistUnit> distUnits({
   required Map<String, int> weights,
   required Map<String, SuiteRequirement> requirements,
-  required int targetMs,
-}) {
-  final Map<String, List<String>> groups = <String, List<String>>{};
-  final Map<String, (DistPlatform?, Set<String>)> groupKeys =
-      <String, (DistPlatform?, Set<String>)>{};
-  for (final String path in weights.keys) {
-    final SuiteRequirement req = requirements[path] ?? const SuiteRequirement();
-    final List<DistPlatform?> placements = req.platforms.isEmpty
-        ? <DistPlatform?>[null]
-        : (req.platforms.toList()..sort((a, b) => a.index - b.index));
-    final List<String> caps = req.capabilities.toList()..sort();
-    for (final DistPlatform? platform in placements) {
-      final String key = '${platform?.name ?? 'any'}|${caps.join(',')}';
-      groups.putIfAbsent(key, () => <String>[]).add(path);
-      groupKeys[key] = (platform, req.capabilities);
-    }
-  }
-
-  final List<DistBatch> batches = <DistBatch>[];
-  final List<String> keys = groups.keys.toList()..sort();
-  for (final String key in keys) {
-    final List<String> paths = groups[key]!
-      ..sort((String a, String b) {
-        final int byWeight = weights[b]!.compareTo(weights[a]!);
-        return byWeight != 0 ? byWeight : a.compareTo(b);
-      });
-    final int total = paths.fold<int>(0, (int s, String p) => s + weights[p]!);
-    // The lightest [kDistTailFraction] of a big group goes into quarter-size
-    // batches, which sort to the end of the queue: when the fast worker runs
-    // dry, a slow one is then holding a small batch, not a full one (the Mac
-    // kept a whole run waiting ~10 minutes on its last full-size batch).
-    final List<String> bulk = <String>[];
-    final List<String> tail = <String>[];
-    if (total > 4 * targetMs) {
-      int acc = 0;
-      for (final String path in paths) {
-        (acc < total * (1 - kDistTailFraction) ? bulk : tail).add(path);
-        acc += weights[path]!;
-      }
-    } else {
-      bulk.addAll(paths);
-    }
-    final (DistPlatform?, Set<String>) placement = groupKeys[key]!;
-    for (final (List<String>, int) part in <(List<String>, int)>[
-      (bulk, targetMs),
-      (tail, (targetMs / 4).ceil()),
-    ]) {
-      for (final (List<String>, int) bin in _packLpt(
-        part.$1,
-        weights,
-        part.$2,
-      )) {
-        batches.add(
-          DistBatch(
-            id: 0,
-            files: bin.$1..sort(),
-            estimatedMs: bin.$2,
-            platform: placement.$1,
-            capabilities: placement.$2,
-          ),
-        );
-      }
-    }
-  }
-  batches.sort((DistBatch a, DistBatch b) {
-    final int byWeight = b.estimatedMs.compareTo(a.estimatedMs);
-    return byWeight != 0 ? byWeight : a.files.first.compareTo(b.files.first);
-  });
-  return <DistBatch>[
-    for (int i = 0; i < batches.length; i++)
-      DistBatch(
-        id: i + 1,
-        files: batches[i].files,
-        estimatedMs: batches[i].estimatedMs,
-        platform: batches[i].platform,
-        capabilities: batches[i].capabilities,
+}) => <DistUnit>[
+  for (final String path in weights.keys)
+    for (final DistPlatform? platform
+        in (requirements[path]?.platforms.isEmpty ?? true)
+            ? <DistPlatform?>[null]
+            : (requirements[path]!.platforms.toList()
+                ..sort((DistPlatform a, DistPlatform b) => a.index - b.index)))
+      DistUnit(
+        path: path,
+        weightMs: weights[path]! + kDistSuiteOverheadMs,
+        platform: platform,
+        capabilities: requirements[path]?.capabilities ?? const <String>{},
       ),
-  ];
-}
+];
 
-/// Share of a big group's work packed into the small tail batches.
-const double kDistTailFraction = 0.2;
+/// What one worker runs in one `flutter test` process.
+class DistBatch {
+  DistBatch({required this.id, required this.units});
 
-/// LPT: [paths] (heaviest first) into ceil(sum / [targetMs]) bins, each path
-/// onto the currently lightest bin. Returns (paths, load) per bin.
-List<(List<String>, int)> _packLpt(
-  List<String> paths,
-  Map<String, int> weights,
-  int targetMs,
-) {
-  if (paths.isEmpty) return const <(List<String>, int)>[];
-  final int total = paths.fold<int>(0, (int s, String p) => s + weights[p]!);
-  final int binCount = ((total / targetMs).ceil()).clamp(1, paths.length);
-  final List<List<String>> bins = List<List<String>>.generate(
-    binCount,
-    (_) => <String>[],
+  final int id;
+  final List<DistUnit> units;
+
+  /// Infrastructure attempts so far (ssh drop, timeout); test failures are
+  /// never retried.
+  int attempts = 0;
+
+  /// Suite paths, sorted.
+  late final List<String> files = <String>[
+    for (final DistUnit u in units) u.path,
+  ]..sort();
+
+  late final int weightMs = units.fold<int>(
+    0,
+    (int s, DistUnit u) => s + u.weightMs,
   );
-  final List<int> loads = List<int>.filled(binCount, 0);
-  for (final String path in paths) {
-    int target = 0;
-    for (int i = 1; i < binCount; i++) {
-      if (loads[i] < loads[target]) target = i;
+
+  /// e.g. `any:110 windows:4 any+chrome:1`.
+  String get label {
+    final Map<String, int> counts = <String, int>{};
+    for (final DistUnit u in units) {
+      counts[u.label] = (counts[u.label] ?? 0) + 1;
     }
-    bins[target].add(path);
-    loads[target] += weights[path]!;
+    return <String>[
+      for (final String k in counts.keys.toList()..sort()) '$k:${counts[k]}',
+    ].join(' ');
   }
-  return <(List<String>, int)>[
-    for (int i = 0; i < binCount; i++) (bins[i], loads[i]),
-  ];
 }
 
-/// Takes the next batch [eligible] for a worker out of [pending]: the pinned
-/// batches (those only some workers can run) before free ones, heaviest
-/// first within each, so the one Windows box is not stuck behind work any
-/// Mac could have taken.
-DistBatch? takeNextBatch(
-  List<DistBatch> pending,
-  bool Function(DistBatch batch) eligible,
-) {
-  DistBatch? best;
-  for (final DistBatch batch in pending) {
-    if (!eligible(batch)) continue;
-    if (best == null) {
-      best = batch;
-      continue;
-    }
-    final bool pinned = batch.platform != null || batch.capabilities.isNotEmpty;
-    final bool bestPinned =
-        best.platform != null || best.capabilities.isNotEmpty;
-    if (pinned != bestPinned) {
-      if (pinned) best = batch;
-      continue;
-    }
-    if (batch.estimatedMs > best.estimatedMs) best = batch;
+/// The work no batch has taken yet. Units are kept heaviest first, so big
+/// suites go out early and the end of the run is made of small ones.
+class DistSuiteQueue {
+  DistSuiteQueue(Iterable<DistUnit> units)
+    : _units = units.toList()..sort(_heaviestFirst);
+
+  final List<DistUnit> _units;
+  int _nextId = 1;
+
+  static int _heaviestFirst(DistUnit a, DistUnit b) {
+    final int byWeight = b.weightMs.compareTo(a.weightMs);
+    return byWeight != 0 ? byWeight : a.path.compareTo(b.path);
   }
-  if (best != null) pending.remove(best);
-  return best;
+
+  List<DistUnit> get remaining => List<DistUnit>.unmodifiable(_units);
+
+  bool get isEmpty => _units.isEmpty;
+
+  int remainingMs(bool Function(DistUnit unit) eligible) => _units
+      .where(eligible)
+      .fold<int>(0, (int s, DistUnit u) => s + u.weightMs);
+
+  /// Takes up to [budgetMs] of weight (always at least one unit) of what
+  /// [eligible] allows: units only some workers can run first, so a pinned
+  /// suite is not left behind work anyone could have taken; heaviest first
+  /// within each. Null when nothing is eligible.
+  DistBatch? take({
+    required bool Function(DistUnit unit) eligible,
+    required int budgetMs,
+  }) {
+    final List<DistUnit> mine = <DistUnit>[
+      for (final DistUnit u in _units)
+        if (eligible(u) && u.pinned) u,
+      for (final DistUnit u in _units)
+        if (eligible(u) && !u.pinned) u,
+    ];
+    if (mine.isEmpty) return null;
+    final List<DistUnit> taken = <DistUnit>[];
+    int used = 0;
+    for (final DistUnit u in mine) {
+      if (taken.isNotEmpty && used + u.weightMs > budgetMs) continue;
+      taken.add(u);
+      used += u.weightMs;
+      if (used >= budgetMs) break;
+    }
+    for (final DistUnit u in taken) {
+      _units.remove(u);
+    }
+    return DistBatch(id: _nextId++, units: taken);
+  }
+
+  /// Puts a batch that did not get a fair run back (another worker may take
+  /// it, split differently).
+  void giveBack(DistBatch batch) {
+    _units
+      ..addAll(batch.units)
+      ..sort(_heaviestFirst);
+  }
+}
+
+/// A worker's measured speed: wall milliseconds per weight millisecond over
+/// the batches it finished. Before the first one it is [prior].
+class DistSpeed {
+  DistSpeed({this.prior = 1.0});
+
+  final double prior;
+  int _wallMs = 0;
+  int _weightMs = 0;
+
+  bool get measured => _weightMs > 0;
+
+  double get factor => measured ? _wallMs / _weightMs : prior;
+
+  void record({required int wallMs, required int weightMs}) {
+    _wallMs += wallMs;
+    _weightMs += weightMs;
+  }
+}
+
+/// How much weight a worker takes next (guided self-scheduling): half of its
+/// share of what it can still run, its share being its speed over the summed
+/// speed of the live workers. Clamped so one batch lasts between
+/// [minWall] (a process start costs seconds) and [maxWall] (bounded loss when
+/// a machine drops out); a worker with no measurement yet takes a
+/// [probeWall] batch first.
+int distChunkBudgetMs({
+  required int remainingEligibleMs,
+  required DistSpeed speed,
+  required double liveSpeedSum,
+  Duration minWall = const Duration(seconds: 20),
+  Duration maxWall = const Duration(minutes: 4),
+  Duration probeWall = const Duration(minutes: 1),
+}) {
+  final double factor = speed.factor;
+  final double share = liveSpeedSum <= 0 ? 1 : (1 / factor) / liveSpeedSum;
+  final double wanted = remainingEligibleMs * share / 2;
+  final Duration cap = speed.measured ? maxWall : probeWall;
+  final double lo = minWall.inMilliseconds / factor;
+  final double hi = cap.inMilliseconds / factor;
+  return wanted.clamp(lo, hi < lo ? lo : hi).round();
 }
 
 /// Splits [files] into consecutive chunks of at most [maxChars] path

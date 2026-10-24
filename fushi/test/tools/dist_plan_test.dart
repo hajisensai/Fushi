@@ -146,46 +146,59 @@ void main() {
     });
   });
 
-  group('planDistBatches', () {
+  group('DistSuiteQueue', () {
     final Map<String, int> weights = <String, int>{
       for (int i = 0; i < 200; i++)
         'test/f${i.toString().padLeft(3, '0')}_test.dart': (i * 37) % 101 + 1,
     };
+    bool any(DistUnit u) => u.eligibleFor(DistPlatform.macos, <String>{});
 
-    test('free suites: union is everything, no duplicates, batches even', () {
-      final List<DistBatch> batches = planDistBatches(
-        weights: weights,
-        requirements: const <String, SuiteRequirement>{},
-        targetMs: 1000,
+    test('draining it hands out every placement exactly once', () {
+      final DistSuiteQueue queue = DistSuiteQueue(
+        distUnits(
+          weights: weights,
+          requirements: const <String, SuiteRequirement>{},
+        ),
       );
-      final List<String> all = <String>[
-        for (final DistBatch b in batches) ...b.files,
-      ];
-      expect(all.toSet(), weights.keys.toSet());
-      expect(all.length, weights.length);
-      final int total = weights.values.reduce((int a, int b) => a + b);
-      // 80 % of the work in ~1000 ms batches, the lightest 20 % in ~250 ms
-      // batches that sort to the end of the queue.
-      final List<int> loads = batches
-          .map((DistBatch b) => b.estimatedMs)
-          .toList();
-      expect(loads, orderedEquals(List<int>.of(loads)..sort((a, b) => b - a)));
-      expect(loads.first, lessThanOrEqualTo(1000 + 101));
-      expect(loads.last, lessThanOrEqualTo(250 + 101));
-      final int tailMs = batches
-          .where((DistBatch b) => b.estimatedMs <= 250 + 101)
-          .fold<int>(0, (int s, DistBatch b) => s + b.estimatedMs);
-      expect(tailMs, inInclusiveRange(total * 0.15, total * 0.3));
-      expect(
-        batches.map((DistBatch b) => b.id).toList(),
-        List<int>.generate(batches.length, (int i) => i + 1),
-      );
+      final List<String> taken = <String>[];
+      final Set<int> ids = <int>{};
+      for (
+        DistBatch? b = queue.take(eligible: any, budgetMs: 9000);
+        b != null;
+        b = queue.take(eligible: any, budgetMs: 9000)
+      ) {
+        expect(ids.add(b.id), isTrue);
+        expect(b.weightMs, lessThanOrEqualTo(9000));
+        taken.addAll(b.files);
+      }
+      expect(taken.toSet(), weights.keys.toSet());
+      expect(taken.length, weights.length);
+      expect(queue.isEmpty, isTrue);
     });
 
-    test('a suite pinned to two platforms runs once on each', () {
+    test('a batch is at least one suite and fills up to the budget', () {
+      final DistSuiteQueue queue = DistSuiteQueue(
+        distUnits(
+          weights: weights,
+          requirements: const <String, SuiteRequirement>{},
+        ),
+      );
+      final DistBatch tiny = queue.take(eligible: any, budgetMs: 1)!;
+      expect(tiny.units, hasLength(1));
+      // Heaviest first: the first suite out is the heaviest one.
+      expect(
+        tiny.units.single.weightMs,
+        weights.values.reduce((int a, int b) => a > b ? a : b) +
+            kDistSuiteOverheadMs,
+      );
+      final DistBatch big = queue.take(eligible: any, budgetMs: 20000)!;
+      expect(big.weightMs, inInclusiveRange(20000 - 1600, 20000));
+    });
+
+    test('a suite pinned to two platforms is two units; pinned go first', () {
       const String both = 'test/f000_test.dart';
       const String win = 'test/f001_test.dart';
-      final List<DistBatch> batches = planDistBatches(
+      final List<DistUnit> units = distUnits(
         weights: weights,
         requirements: <String, SuiteRequirement>{
           both: const SuiteRequirement(
@@ -196,43 +209,107 @@ void main() {
             capabilities: <String>{_chrome},
           ),
         },
-        targetMs: 1000,
       );
-      List<DistBatch> holding(String f) => <DistBatch>[
-        for (final DistBatch b in batches)
-          if (b.files.contains(f)) b,
-      ];
       expect(
-        holding(both).map((DistBatch b) => b.platform).toSet(),
-        <DistPlatform>{DistPlatform.windows, DistPlatform.macos},
+        units
+            .where((DistUnit u) => u.path == both)
+            .map((DistUnit u) => u.platform),
+        unorderedEquals(<DistPlatform>[
+          DistPlatform.windows,
+          DistPlatform.macos,
+        ]),
       );
-      expect(holding(win), hasLength(1));
-      expect(holding(win).single.platform, DistPlatform.windows);
-      expect(holding(win).single.capabilities, <String>{_chrome});
-      expect(holding('test/f002_test.dart').single.platform, isNull);
+      final DistSuiteQueue queue = DistSuiteQueue(units);
+      final DistBatch mac = queue.take(eligible: any, budgetMs: 1)!;
+      expect(mac.files, <String>[both], reason: 'pinned before free suites');
+      expect(mac.units.single.platform, DistPlatform.macos);
+      // The Windows-only chrome suite never goes to a Mac without chrome.
+      for (
+        DistBatch? b = queue.take(eligible: any, budgetMs: 100000);
+        b != null;
+        b = queue.take(eligible: any, budgetMs: 100000)
+      ) {
+        expect(b.files, isNot(contains(win)));
+      }
+      expect(
+        queue.remaining.map((DistUnit u) => u.path),
+        unorderedEquals(<String>[both, win]),
+      );
+    });
+
+    test('giveBack returns the suites for anyone, heaviest first again', () {
+      final DistSuiteQueue queue = DistSuiteQueue(
+        distUnits(
+          weights: weights,
+          requirements: const <String, SuiteRequirement>{},
+        ),
+      );
+      final DistBatch first = queue.take(eligible: any, budgetMs: 5000)!;
+      queue.giveBack(first);
+      expect(queue.remaining, hasLength(weights.length));
+      final DistBatch again = queue.take(eligible: any, budgetMs: 5000)!;
+      expect(again.files, first.files);
+      expect(again.id, isNot(first.id));
     });
   });
 
-  test('takeNextBatch: eligible only, pinned first, then heaviest', () {
-    DistBatch b(int id, int ms, {DistPlatform? platform}) => DistBatch(
-      id: id,
-      files: <String>['test/b${id}_test.dart'],
-      estimatedMs: ms,
-      platform: platform,
-      capabilities: const <String>{},
+  group('distChunkBudgetMs', () {
+    DistSpeed measured(double factor) =>
+        DistSpeed()..record(wallMs: (1000 * factor).round(), weightMs: 1000);
+
+    test('an unmeasured worker takes a probe batch of about a minute', () {
+      expect(
+        distChunkBudgetMs(
+          remainingEligibleMs: 100000000,
+          speed: DistSpeed(),
+          liveSpeedSum: 1,
+        ),
+        60000,
+      );
+    });
+
+    test('a faster worker gets a proportionally bigger share', () {
+      final DistSpeed fast = measured(0.5);
+      final DistSpeed slow = measured(2.0);
+      const double sum = 1 / 0.5 + 1 / 2.0;
+      const int remaining = 600000;
+      final int f = distChunkBudgetMs(
+        remainingEligibleMs: remaining,
+        speed: fast,
+        liveSpeedSum: sum,
+      );
+      final int s = distChunkBudgetMs(
+        remainingEligibleMs: remaining,
+        speed: slow,
+        liveSpeedSum: sum,
+      );
+      expect(f, (remaining * (2 / sum) / 2).round());
+      expect(s, (remaining * (0.5 / sum) / 2).round());
+      expect(f / s, closeTo(4, 1e-9));
+    });
+
+    test(
+      'a batch lasts between 20 s and 4 min of that worker\'s wall time',
+      () {
+        final DistSpeed speed = measured(2.0);
+        expect(
+          distChunkBudgetMs(
+            remainingEligibleMs: 1000000000,
+            speed: speed,
+            liveSpeedSum: 0.5,
+          ),
+          (240000 / 2.0).round(),
+        );
+        expect(
+          distChunkBudgetMs(
+            remainingEligibleMs: 10,
+            speed: speed,
+            liveSpeedSum: 0.5,
+          ),
+          (20000 / 2.0).round(),
+        );
+      },
     );
-    final List<DistBatch> pending = <DistBatch>[
-      b(1, 500),
-      b(2, 900),
-      b(3, 100, platform: DistPlatform.windows),
-      b(4, 50, platform: DistPlatform.macos),
-    ];
-    bool mac(DistBatch x) => x.eligibleFor(DistPlatform.macos, <String>{});
-    expect(takeNextBatch(pending, mac)!.id, 4);
-    expect(takeNextBatch(pending, mac)!.id, 2);
-    expect(takeNextBatch(pending, mac)!.id, 1);
-    expect(takeNextBatch(pending, mac), isNull);
-    expect(pending.single.id, 3);
   });
 
   test('isSafeDistTestPath', () {

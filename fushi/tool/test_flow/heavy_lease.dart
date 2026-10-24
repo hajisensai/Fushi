@@ -111,9 +111,9 @@ class HeavyLease {
     RandomAccessFile? slotLock,
     _WorktreeLock? worktreeLock,
     File? slotInfo,
-  })  : _slotLock = slotLock,
-        _worktreeLock = worktreeLock,
-        _slotInfo = slotInfo;
+  }) : _slotLock = slotLock,
+       _worktreeLock = worktreeLock,
+       _slotInfo = slotInfo;
 
   /// The slot held, or null when no lease was needed ([skipReason]).
   final int? slot;
@@ -247,8 +247,9 @@ Future<_WorktreeLock> _waitWorktreeLock(
   while (true) {
     // Held by this very process (another lane): do not even open the file --
     // POSIX would grant the lock again, and closing the probe would drop it.
-    final RandomAccessFile? f =
-        _heldWorktrees.contains(key) ? null : _tryLock(lockFile);
+    final RandomAccessFile? f = _heldWorktrees.contains(key)
+        ? null
+        : _tryLock(lockFile);
     if (f != null) {
       _heldWorktrees.add(key);
       info.writeAsStringSync(
@@ -294,8 +295,9 @@ List<int> _slotIndexes(Directory dir, int slots) {
   final RegExp name = RegExp(r'^slot-(\d+)\.lock$');
   try {
     for (final FileSystemEntity e in dir.listSync(followLinks: false)) {
-      final RegExpMatch? m =
-          name.firstMatch(e.path.replaceAll(r'\', '/').split('/').last);
+      final RegExpMatch? m = name.firstMatch(
+        e.path.replaceAll(r'\', '/').split('/').last,
+      );
       if (m != null) out.add(int.parse(m.group(1)!));
     }
   } on FileSystemException {
@@ -639,9 +641,11 @@ DynamicLibrary get _kernel32 =>
     _kernel32Lib ??= DynamicLibrary.open('kernel32.dll');
 
 MemorySnapshot? _windowsMemory() {
-  final int Function(Pointer<_MemoryStatusEx>) globalMemoryStatusEx =
-      _kernel32.lookupFunction<Int32 Function(Pointer<_MemoryStatusEx>),
-          int Function(Pointer<_MemoryStatusEx>)>('GlobalMemoryStatusEx');
+  final int Function(Pointer<_MemoryStatusEx>) globalMemoryStatusEx = _kernel32
+      .lookupFunction<
+        Int32 Function(Pointer<_MemoryStatusEx>),
+        int Function(Pointer<_MemoryStatusEx>)
+      >('GlobalMemoryStatusEx');
   final Pointer<_MemoryStatusEx> p = calloc<_MemoryStatusEx>();
   try {
     p.ref.dwLength = sizeOf<_MemoryStatusEx>();
@@ -706,22 +710,25 @@ class HeavyJob {
   }
 }
 
-final int Function(Pointer<Void>, Pointer<Utf16>) _createJob =
-    _kernel32.lookupFunction<IntPtr Function(Pointer<Void>, Pointer<Utf16>),
-        int Function(Pointer<Void>, Pointer<Utf16>)>('CreateJobObjectW');
-final int Function(int, int, Pointer<Void>, int) _setJob =
-    _kernel32.lookupFunction<
-        Int32 Function(IntPtr, Int32, Pointer<Void>, Uint32),
-        int Function(int, int, Pointer<Void>, int)>('SetInformationJobObject');
+final int Function(Pointer<Void>, Pointer<Utf16>) _createJob = _kernel32
+    .lookupFunction<
+      IntPtr Function(Pointer<Void>, Pointer<Utf16>),
+      int Function(Pointer<Void>, Pointer<Utf16>)
+    >('CreateJobObjectW');
+final int Function(int, int, Pointer<Void>, int) _setJob = _kernel32
+    .lookupFunction<
+      Int32 Function(IntPtr, Int32, Pointer<Void>, Uint32),
+      int Function(int, int, Pointer<Void>, int)
+    >('SetInformationJobObject');
 final int Function(int, int, Pointer<Void>, int, Pointer<Uint32>) _queryJob =
     _kernel32.lookupFunction<
-        Int32 Function(IntPtr, Int32, Pointer<Void>, Uint32, Pointer<Uint32>),
-        int Function(int, int, Pointer<Void>, int,
-            Pointer<Uint32>)>('QueryInformationJobObject');
+      Int32 Function(IntPtr, Int32, Pointer<Void>, Uint32, Pointer<Uint32>),
+      int Function(int, int, Pointer<Void>, int, Pointer<Uint32>)
+    >('QueryInformationJobObject');
 final int Function(int, int) _assignJob = _kernel32
     .lookupFunction<Int32 Function(IntPtr, IntPtr), int Function(int, int)>(
-  'AssignProcessToJobObject',
-);
+      'AssignProcessToJobObject',
+    );
 final int Function() _currentProcess = _kernel32
     .lookupFunction<IntPtr Function(), int Function()>('GetCurrentProcess');
 

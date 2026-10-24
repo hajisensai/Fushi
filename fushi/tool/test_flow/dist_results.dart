@@ -186,8 +186,8 @@ String renderDistSummary({
     )
     ..writeln()
     ..writeln(
-      '| worker | batches | suites | tests | busy | CI-estimate '
-      '| speed vs CI |',
+      '| worker | batches | suites | tests | busy | model weight '
+      '| wall / weight |',
     )
     ..writeln('|---|---|---|---|---|---|---|');
   final Map<String, DistWorkerStats> stats = distWorkerStats(
@@ -196,9 +196,9 @@ String renderDistSummary({
   );
   for (final String name in stats.keys.toList()..sort()) {
     final DistWorkerStats s = stats[name]!;
-    final String speed = s.busy.inMilliseconds == 0
+    final String speed = s.estimatedMs == 0
         ? '-'
-        : '${(s.estimatedMs / s.busy.inMilliseconds).toStringAsFixed(2)}x';
+        : (s.busy.inMilliseconds / s.estimatedMs).toStringAsFixed(2);
     out.writeln(
       '| $name | ${s.batches} | ${s.suites} | ${s.tests} '
       '| ${_fmt(s.busy)} | ${_fmt(Duration(milliseconds: s.estimatedMs))} '
