@@ -684,7 +684,10 @@ namespace flutter_inappwebview_plugin
               }
               channelDelegate->onLoadStop(url);
             }
-            else if (!InAppWebView::isSslError(webErrorType) && navigationAction) {
+            else if (navigationAction) {
+              // 证书错误（WebErrorStatus 1–5）也要回 onReceivedError：上游原先把它们滤掉、
+              // 留给从未实现的 ServerTrustAuth 回调，结果 Dart 侧收不到任何失败信号，
+              // 页面停在 WebView2 自带的拦截页上，app 的失败页 / 重试 / 历史判定都不跑。
               // 根治 fushi.local 假失败：拦截器已为该主框架 URL 注入 2xx 响应，
               // 内容已渲染，引擎因自定义域 DNS 解析失败误报 IsSuccess=FALSE —— 当成功。
               if (url.has_value() && consumeMainFrameInjectedOk(url.value())) {
@@ -2358,11 +2361,6 @@ namespace flutter_inappwebview_plugin
     webViewController->put_IsVisible(true);
 
     return true;
-  }
-
-  bool InAppWebView::isSslError(const COREWEBVIEW2_WEB_ERROR_STATUS& webErrorStatus)
-  {
-    return webErrorStatus >= COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_COMMON_NAME_IS_INCORRECT && webErrorStatus <= COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID;
   }
 
   namespace {

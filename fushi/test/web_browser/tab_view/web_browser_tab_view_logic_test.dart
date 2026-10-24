@@ -193,6 +193,23 @@ void main() {
       );
     });
 
+    test('失败页盖着时标签名不用引擎错误页的标题（WebView2「隐私错误」）', () {
+      final WebBrowserTab tab = WebBrowserTab(
+        id: 't',
+        url: Uri.parse('https://example.com/a'),
+      )..update(title: '隐私错误');
+      tab.setError(
+        WebBrowserLoadError(
+          url: Uri.parse('https://example.com/a'),
+          description: 'Indicates that the SSL certificate is not valid.',
+          kind: WebBrowserLoadErrorKind.certificate,
+        ),
+      );
+      expect(tab.displayTitle, 'example.com');
+      tab.setError(null);
+      expect(tab.displayTitle, '隐私错误');
+    });
+
     test('非断网错误 → 普通失败文案', () {
       final WebBrowserLoadError? e = classifyWebBrowserMainFrameError(
         url: url,

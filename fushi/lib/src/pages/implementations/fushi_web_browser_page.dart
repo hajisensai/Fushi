@@ -1447,6 +1447,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
           : null,
       onReload: reloadInside && tab?.url != null ? _reload : null,
       incognito: tab?.incognito ?? false,
+      insecure: tab?.error?.kind == WebBrowserLoadErrorKind.certificate,
       direction: direction,
     );
   }

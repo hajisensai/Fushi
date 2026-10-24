@@ -34,6 +34,7 @@ class WebBrowserAddressBar extends StatefulWidget {
     this.onToggleBookmark,
     this.onReload,
     this.incognito = false,
+    this.insecure = false,
     this.direction = WebBrowserSuggestionsDirection.down,
   });
 
@@ -53,6 +54,9 @@ class WebBrowserAddressBar extends StatefulWidget {
   /// 非 null 时尾部带刷新（手机横屏 / 竖屏底栏，v3）。
   final VoidCallback? onReload;
   final bool incognito;
+
+  /// 证书校验失败：https 也不画锁，换成警告。
+  final bool insecure;
   final WebBrowserSuggestionsDirection direction;
 
   @override
@@ -320,7 +324,7 @@ class WebBrowserAddressBarState extends State<WebBrowserAddressBar> {
         overflow: TextOverflow.ellipsis,
       );
     }
-    final bool secure = url?.scheme == 'https';
+    final bool secure = url?.scheme == 'https' && !widget.insecure;
     return Semantics(
       textField: true,
       label: t.web_browser_search_hint,
@@ -339,6 +343,8 @@ class WebBrowserAddressBarState extends State<WebBrowserAddressBar> {
                 FushiIcon(
                   url == null
                       ? FushiIcons.search
+                      : widget.insecure
+                      ? FushiIcons.warning
                       : (secure ? FushiIcons.lock : FushiIcons.info),
                   size: kFushiSearchFieldIconSize,
                   color: dim,

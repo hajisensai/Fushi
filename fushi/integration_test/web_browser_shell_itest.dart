@@ -39,6 +39,58 @@ import 'test_helpers.dart';
 
 const String _kDownloadName = 'fushi-itest-download.txt';
 
+/// 自签 HTTPS 站点（SAN=127.0.0.1）：让 WebView2 报证书错误，验证失败页接住它，
+/// 而不是停在 WebView2 自带的拦截页。证书在运行时用 openssl 现生成（不把私钥入库）；
+/// 本机找不到 openssl 时返回 null，该步记为跳过。
+Future<HttpServer?> _startSelfSignedSite() async {
+  final List<String> candidates = <String>[
+    'openssl',
+    r'C:\Program Files\Git\usr\bin\openssl.exe',
+  ];
+  final Directory dir = await Directory.systemTemp.createTemp('wb-itest-tls');
+  final String cert = '${dir.path}${Platform.pathSeparator}c.pem';
+  final String key = '${dir.path}${Platform.pathSeparator}k.pem';
+  for (final String exe in candidates) {
+    try {
+      final ProcessResult r = await Process.run(exe, <String>[
+        'req',
+        '-x509',
+        '-newkey',
+        'rsa:2048',
+        '-nodes',
+        '-keyout',
+        key,
+        '-out',
+        cert,
+        '-days',
+        '2',
+        '-subj',
+        '/CN=fushi-itest-self-signed',
+        '-addext',
+        'subjectAltName=IP:127.0.0.1',
+      ]);
+      if (r.exitCode == 0) break;
+    } on ProcessException {
+      continue;
+    }
+  }
+  if (!File(cert).existsSync() || !File(key).existsSync()) return null;
+  final SecurityContext context = SecurityContext()
+    ..useCertificateChain(cert)
+    ..usePrivateKey(key);
+  final HttpServer server = await HttpServer.bindSecure(
+    InternetAddress.loopbackIPv4,
+    0,
+    context,
+  );
+  server.listen((HttpRequest req) async {
+    req.response.headers.contentType = ContentType.html;
+    req.response.write('<!doctype html><title>insecure</title>insecure');
+    await req.response.close();
+  }, onError: (Object _) {});
+  return server;
+}
+
 /// 本地测试站点。
 Future<HttpServer> _startSite() async {
   final HttpServer server = await HttpServer.bind(
@@ -151,6 +203,7 @@ void main() {
     int shotIndex = 0;
     Size? originalSize;
     HttpServer? site;
+    HttpServer? insecure;
     String? downloadPath;
 
     await runFushiItest(
@@ -658,6 +711,29 @@ void main() {
         );
         result('连接失败页', refused, 'error=${active()?.error?.description}');
         await shot('error-network');
+        insecure = await _startSelfSignedSite();
+        if (insecure == null) {
+          log('证书错误失败页: SKIP（本机没有 openssl）');
+        } else {
+          await loadInActive('https://127.0.0.1:${insecure!.port}/');
+          final bool certError = await waitFor(
+            () =>
+                active()?.error?.kind == WebBrowserLoadErrorKind.certificate &&
+                !(active()?.loading ?? true),
+            timeout: const Duration(seconds: 15),
+          );
+          result(
+            '证书错误失败页',
+            certError,
+            'error=${active()?.error?.kind} ${active()?.error?.description}',
+          );
+          result(
+            '证书错误不用拦截页标题',
+            active()?.displayTitle == '127.0.0.1',
+            'displayTitle=${active()?.displayTitle}',
+          );
+          await shot('error-certificate');
+        }
         page().tabsController.activate(first);
         await loadInActive('$base/article');
         await waitLoaded('/article');
@@ -739,6 +815,7 @@ void main() {
         await windowManager.setSize(originalSize!);
       }
       await site?.close(force: true);
+      await insecure?.close(force: true);
       final String? path = downloadPath;
       if (path != null && path.endsWith(_kDownloadName)) {
         try {

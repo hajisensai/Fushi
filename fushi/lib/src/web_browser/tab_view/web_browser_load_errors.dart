@@ -39,8 +39,8 @@ _kKindByType = <WebResourceErrorType, WebBrowserLoadErrorKind>{
       WebBrowserLoadErrorKind.connectionFailed,
   // 超时
   WebResourceErrorType.TIMEOUT: WebBrowserLoadErrorKind.timedOut,
-  // 证书 / TLS（WebView2 的证书错误 fork 不走 onReceivedError，见原生
-  // `isSslError`；这里覆盖 Android / iOS）
+  // 证书 / TLS（Android / iOS 的类型；WebView2 的 1–5 号证书状态在平台接口里
+  // 没有对应枚举，靠下面描述文本里的 "SSL certificate" 归类）
   WebResourceErrorType.FAILED_SSL_HANDSHAKE:
       WebBrowserLoadErrorKind.certificate,
   WebResourceErrorType.SECURE_CONNECTION_FAILED:

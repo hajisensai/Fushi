@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3309 条。点号进各自文件。
+> 共 3310 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3706](bugs/BUG-3706-browser-windows-cert-error-interstitial.md) | ✅ | ✅ | Windows 浏览器证书错误停在 WebView2 自带拦截页，app 失败页不出现 |
 | [BUG-3705](bugs/BUG-3705-android-youtube-system-proxy.md) | ✅ | ✅ | Android 上 YouTube「用 Fushi 播放」报无法获取视频流（Dart 出站没走 Wi-Fi 系统代理） |
 | [BUG-3704](bugs/BUG-3704-browser-android-fullscreen-frozen.md) | ✅ | ✅ | 应用内浏览器 Android 上网页全屏冻结、退不出（YouTube 画质菜单点不开） |
 | [BUG-3703](bugs/BUG-3703-browser-new-window-blank.md) | ✅ | ✅ | 应用内浏览器里新窗口（target=_blank / window.open）打不开 |
