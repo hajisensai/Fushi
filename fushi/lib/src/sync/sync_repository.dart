@@ -1875,6 +1875,10 @@ class SyncRepository {
     'ai_feature_providers',
     // 多 key 轮换的冷却记录：按本机 key 的指纹索引，换台设备全是悬空记录。
     'ai_key_health',
+    // 音乐输出设备与独占模式描述的是这台机器的声卡 / DAC：别的设备上同名设备不存在，
+    // 独占在另一台机器上会让别的程序静默无声。
+    'music_audio_device',
+    'music_exclusive_output',
     // 漫画 OCR 大模型档位：开了就是「上传漫画页 + 按量计费」，这种同意只对点它的
     // 那台设备成立，漂过去会让另一台配了 AI 的设备静默开始上传。
     'manga_ocr_ai_mode',
