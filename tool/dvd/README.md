@@ -96,6 +96,15 @@ libdvdcss 1.6.0 原样编不过（`ioctl.c` 在没有 IOKit DVD 客户端的系�
 实际解密没有测过。** App Store 不收裸 `.dylib`，iOS 随包时要由 libmpv / FFmpegKitNext 的打包步骤
 包成 framework。
 
+**FFmpegKitNext 实编（同一台 Mac，工具链全部装在 /tmp，未动 brew）**：`build_macos.sh`
+（293 s）与 `build_ios.sh`（693 s）在 kit 补丁 0003 下都编过。macOS 布局里 `libavformat`
+链 `@rpath/libdvdnav.framework/libdvdnav` 与 `@rpath/libdvdread.framework/libdvdread`，
+`libdvd*.framework` 与 libav* 并列；`verify_ffmpeg_capabilities.py --require-staged`
+（`staged=dvdvideo`）、`smoke-test.sh`、`https_trust_smoke.sh` 全部 PASS；布局里的 ffprobe 用
+`-f dvdvideo -title 1` 读自制盘得到 6 s / 3 章，ffmpeg 抽出第 2 章一帧。iOS 的 xcframework zip
+带 `libdvd{css,read,nav}.xcframework`（ios-arm64 + ios-arm64_x86_64-simulator，含 Headers），
+`verify_mobile_outputs.py ios --require-staged` OK。
+
 ### Android（2026-10-24，Mac 上，NDK r27d 解压到 /tmp，无 sudo）
 
 `build_cross.sh` 三个 ABI（arm64-v8a / armeabi-v7a / x86_64）都编过：`DT_SONAME` 为
