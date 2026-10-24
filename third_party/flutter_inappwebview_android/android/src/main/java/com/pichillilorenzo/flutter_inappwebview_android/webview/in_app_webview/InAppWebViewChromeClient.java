@@ -144,6 +144,40 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
     return Bitmap.createBitmap(50, 50, Bitmap.Config.ARGB_8888);
   }
 
+  // Fushi: system back while a page is fullscreen must leave fullscreen.
+  // The custom view sits on top of the Flutter UI, so if the page's own exit
+  // path is unavailable (page never completed its fullscreen request, page JS
+  // swallowed the exit, ...) the user would otherwise be stuck behind it --
+  // Flutter's back handling can only run page JS, it cannot remove the view.
+  // On API 33+ (manifest enableOnBackInvokedCallback="true") back arrives as an
+  // OnBackInvokedCallback; registering at PRIORITY_OVERLAY while the custom
+  // view is shown puts it ahead of Flutter's own callback. Older APIs deliver
+  // back to Activity.onBackPressed -> Flutter, where the page exits through
+  // document.exitFullscreen().
+  @Nullable
+  private Object mFullscreenBackCallback;
+
+  private void registerFullscreenBack(@NonNull Activity activity) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || mFullscreenBackCallback != null) {
+      return;
+    }
+    android.window.OnBackInvokedCallback callback = this::onHideCustomView;
+    activity.getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+            android.window.OnBackInvokedDispatcher.PRIORITY_OVERLAY, callback);
+    mFullscreenBackCallback = callback;
+  }
+
+  private void unregisterFullscreenBack(@Nullable Activity activity) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || mFullscreenBackCallback == null) {
+      return;
+    }
+    if (activity != null) {
+      activity.getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(
+              (android.window.OnBackInvokedCallback) mFullscreenBackCallback);
+    }
+    mFullscreenBackCallback = null;
+  }
+
   @Override
   public void onHideCustomView() {
     Activity activity = getActivity();
@@ -155,6 +189,7 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
     if (decorView == null) {
       return;
     }
+    unregisterFullscreenBack(activity);
     if (this.mCustomView != null) {
       ((FrameLayout) decorView).removeView(this.mCustomView);
     }
@@ -206,6 +241,7 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
     }
     activity.getWindow().setFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
     ((FrameLayout) decorView).addView(this.mCustomView, FULLSCREEN_LAYOUT_PARAMS);
+    registerFullscreenBack(activity);
 
     if (inAppWebView != null) {
       WebViewChannelDelegate eventWebViewChannelDelegate = inAppWebView.channelDelegate;
@@ -1308,6 +1344,12 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
   }
 
   public void dispose() {
+    // Fushi: a WebView torn down while its page is fullscreen must not leave
+    // the custom view (and the back callback above) covering the app.
+    if (this.mCustomView != null) {
+      onHideCustomView();
+    }
+    unregisterFullscreenBack(getActivity());
     for (Map.Entry<DialogInterface, JsResult> dialog : dialogs.entrySet()) {
       dialog.getValue().cancel();
       dialog.getKey().dismiss();
