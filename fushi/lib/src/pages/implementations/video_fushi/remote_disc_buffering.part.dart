@@ -75,7 +75,7 @@ extension _VideoRemoteDiscBuffering on _VideoFushiPageState {
                           constraints: const BoxConstraints(maxWidth: 560),
                           child: Material(
                             color: cs.surfaceContainer,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: FushiM3eShape.cardRadius,
                             clipBehavior: Clip.antiAlias,
                             elevation: kFushiFloatingElevation,
                             child: Padding(
@@ -110,10 +110,9 @@ extension _VideoRemoteDiscBuffering on _VideoFushiPageState {
                                         onPressed:
                                             _dismissRemoteDiscBufferingNotice,
                                         iconSize: 20,
-                                        visualDensity: VisualDensity.compact,
                                         tooltip: t.dialog_close,
                                         color: cs.onSurfaceVariant,
-                                        icon: const FushiIcon(Icons.close),
+                                        icon: const FushiIcon(FushiIcons.close),
                                       ),
                                     ],
                                   ),
@@ -128,7 +127,6 @@ extension _VideoRemoteDiscBuffering on _VideoFushiPageState {
                                             _suppressRemoteDiscBufferingNotice,
                                         style: TextButton.styleFrom(
                                           foregroundColor: cs.onSurfaceVariant,
-                                          visualDensity: VisualDensity.compact,
                                         ),
                                         child: Text(
                                           t.video_disc_remote_buffering_dont_show_again,
@@ -142,10 +140,6 @@ extension _VideoRemoteDiscBuffering on _VideoFushiPageState {
                                           ),
                                           onPressed:
                                               _downloadRemoteDiscFromNotice,
-                                          style: FilledButton.styleFrom(
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                          ),
                                           child: Text(
                                             t.video_disc_remote_buffering_download,
                                           ),

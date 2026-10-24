@@ -28,6 +28,8 @@ import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart'
 import 'package:fushi_engine/media/video/disc/disc_format.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart'
     show findDvdVideoTsIfo, isDiscImagePath;
+import 'package:fushi_engine/utils/misc/safe_file_name.dart'
+    show windowsUnsafeFileNameChars;
 
 /// 清单格式版本。改字段语义就加一，client 认不得的版本按「host 太新」处理。
 const int kDiscShareManifestVersion = 1;
@@ -198,7 +200,7 @@ bool isSafeDiscShareName(String name) {
   if (name.isEmpty || name.length > 255) return false;
   if (name == '.' || name == '..') return false;
   if (name.endsWith('.') || name.endsWith(' ')) return false;
-  return !RegExp(r'[<>:"/\\|?*\x00-\x1f]').hasMatch(name);
+  return !windowsUnsafeFileNameChars.hasMatch(name);
 }
 
 /// 盘身份：盘根绝对路径（规范化后）的 SHA-1。
