@@ -44,11 +44,14 @@ import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart';
 import 'package:fushi/src/platform/mobile/android_picture_in_picture.dart';
 import 'package:fushi/src/platform/sensor_housing_edge.dart';
+import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi_core/fushi_core.dart' show ProfileRow;
 import 'package:fushi/utils.dart';
 
 /// 截屏识字送给系统 OCR 的语言。Fushi 的查词对象是日语；ML Kit / Vision 的日文
@@ -68,6 +71,9 @@ final ValueNotifier<bool> pendingCameraOcr = ValueNotifier<bool>(false);
 
 /// Android 系统球「立即同步」：Fushi 已被拉到前台，等 app 就绪后跑一轮同步。
 final ValueNotifier<bool> pendingSync = ValueNotifier<bool>(false);
+
+/// Android 系统球「切换配置」：Fushi 已被拉到前台，等 app 就绪后弹出配置选择。
+final ValueNotifier<bool> pendingProfileSwitch = ValueNotifier<bool>(false);
 
 /// 截屏 / 拍照识字报「系统 OCR 模型未就绪」：等 app 就绪后弹出模型配置（BUG-2906）。
 /// Android 截屏 OCR 在原生服务里识别，报错时原生把 Fushi 拉到前台再经通道置位。
@@ -117,6 +123,8 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   FloatingBallGlobalAction.cameraOcr.storageValue:
       t.floating_ball_action_camera_ocr,
   FloatingBallGlobalAction.sync.storageValue: t.sync_now,
+  FloatingBallGlobalAction.switchProfile.storageValue:
+      t.floating_ball_action_switch_profile,
   FloatingBallGlobalAction.feedback.storageValue: t.feedback_title,
   'open_app': t.floating_ball_action_open_app,
   'close': t.floating_ball_action_close,
@@ -147,6 +155,7 @@ IconData floatingBallGlobalActionIcon(FloatingBallGlobalAction action) =>
       FloatingBallGlobalAction.screenOcr => FushiIcons.ocr,
       FloatingBallGlobalAction.cameraOcr => FushiIcons.camera,
       FloatingBallGlobalAction.sync => FushiIcons.sync,
+      FloatingBallGlobalAction.switchProfile => FushiIcons.profiles,
       FloatingBallGlobalAction.feedback => FushiIcons.forum,
     };
 
@@ -311,6 +320,12 @@ class AppFloatingBallHost extends ConsumerStatefulWidget {
 
 class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     with WidgetsBindingObserver {
+  /// 此刻挂着的宿主。原生回调是进程级、只装一次的（[FloatingBallChannel.installHandler]），
+  /// 宿主 State 却会重建（例如新手引导结束换掉整棵树）：回调要是直接绑某个 State 的
+  /// 方法，重建后就打到已销毁的那个上（`ref` 抛 deactivated widget）。一律经这里
+  /// 转给当前那个；一个都没挂时按各回调自己的约定兜底。
+  static _AppFloatingBallHostState? _current;
+
   final FloatingBallSceneRegistry _registry =
       FloatingBallSceneRegistry.instance;
 
@@ -405,6 +420,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   @override
   void initState() {
     super.initState();
+    _current = this;
     WidgetsBinding.instance.addObserver(this);
     _lifecycle =
         WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
@@ -422,6 +438,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingOpenLookupPage.addListener(_onChanged);
     pendingCameraOcr.addListener(_onChanged);
     pendingSync.addListener(_onChanged);
+    pendingProfileSwitch.addListener(_onChanged);
     pendingSystemOcrSetup.addListener(_onChanged);
     feedbackWindowCaptureActive.addListener(_onChanged);
     // 「图标跟随主题色」开关一变，桌面系统球球面要重画。
@@ -433,17 +450,27 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       unawaited(
         FloatingBallChannel.installHandler(
           onLookup: deliverExternalLookup,
-          onScreenOcrFinished: _onScreenOcrFinished,
+          onScreenOcrFinished: () => _current?._onScreenOcrFinished(),
           onOpenLookupPage: () => pendingOpenLookupPage.value = true,
           onOpenCameraOcr: () => pendingCameraOcr.value = true,
           onOpenSync: () => pendingSync.value = true,
+          onOpenProfileSwitch: () => pendingProfileSwitch.value = true,
+          // 没有宿主时回 null：原生退回「拉起 Fushi 再选」。
+          onProfileMenu: () async => _current?._systemBallProfileMenu(),
+          onSwitchProfileTo: (int id) async =>
+              await _current?._systemBallSwitchProfileTo(id) ??
+              t.floating_ball_profile_switch_failed,
           onOpenSystemOcrSetup: () => pendingSystemOcrSetup.value = true,
-          onSystemBallClosedByUser: _onSystemBallClosedByUser,
-          onSystemBallAction: _onDesktopSystemBallAction,
-          onSystemBallPositionChanged: _onDesktopSystemBallMoved,
-          onScreenOcrTap: _onDesktopScreenOcrTap,
-          onScreenOcrDismissed: _onDesktopScreenOcrDismissed,
-          onSensorHousingEdgeChanged: _onSensorHousingEdge,
+          onSystemBallClosedByUser: () => _current?._onSystemBallClosedByUser(),
+          onSystemBallAction: (String id, Rect? anchor) =>
+              _current?._onDesktopSystemBallAction(id, anchor),
+          onSystemBallPositionChanged: (String dock, double fraction) =>
+              _current?._onDesktopSystemBallMoved(dock, fraction),
+          onScreenOcrTap: (Offset point) =>
+              _current?._onDesktopScreenOcrTap(point),
+          onScreenOcrDismissed: () => _current?._onDesktopScreenOcrDismissed(),
+          onSensorHousingEdgeChanged: (AxisDirection? edge) =>
+              _current?._onSensorHousingEdge(edge),
         ),
       );
     }
@@ -461,6 +488,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   @override
   void dispose() {
+    if (identical(_current, this)) _current = null;
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_pictureInPictureSub?.cancel());
     _registry.removeListener(_onChanged);
@@ -468,6 +496,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingOpenLookupPage.removeListener(_onChanged);
     pendingCameraOcr.removeListener(_onChanged);
     pendingSync.removeListener(_onChanged);
+    pendingProfileSwitch.removeListener(_onChanged);
     pendingSystemOcrSetup.removeListener(_onChanged);
     feedbackWindowCaptureActive.removeListener(_onChanged);
     appLogoFollowsAccent.removeListener(_onLogoTintChanged);
@@ -889,6 +918,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         // 同步的结果、冲突裁决与重新登录提示都在主窗里给：先把主窗唤到前台。
         await target.bringMainWindowToFront();
         await _manualSync();
+      case 'switch_profile':
+        // 用户正在别的程序里：在球旁弹原生配置菜单、原地切，不唤起主窗。
+        await _desktopSwitchProfile(anchor);
       case 'open_app':
         await target.bringMainWindowToFront();
     }
@@ -1094,6 +1126,16 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     });
   }
 
+  /// 系统球「切换配置」：app 就绪后弹出配置选择（配置列表要用已初始化的数据库）。
+  void _flushProfileSwitch() {
+    if (!pendingProfileSwitch.value) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!pendingProfileSwitch.value) return;
+      pendingProfileSwitch.value = false;
+      unawaited(_switchProfile());
+    });
+  }
+
   /// 系统 OCR 模型未就绪：app 就绪后弹出模型配置（查状态 / 立即下载）。
   void _flushSystemOcrSetup() {
     if (!pendingSystemOcrSetup.value) return;
@@ -1163,6 +1205,107 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       context: ctx,
       appModel: ref.read(appProvider),
     );
+  }
+
+  /// 全部配置与当前激活的那份（切换配置的三个入口共用）。
+  Future<({List<ProfileRow> profiles, int activeId})> _profileChoices() async {
+    final ProfileRepository repo = ref.read(profileRepositoryProvider);
+    return (
+      profiles: await repo.getAllProfiles(),
+      activeId: await repo.getActiveProfileId(),
+    );
+  }
+
+  /// 走设置页同一条 [ProfileViewModel.switchProfile]（每份配置各带自己的牌组 /
+  /// 笔记类型 / 字段映射等快照，切过去整套生效）。失败记日志并回 false，由入口按
+  /// 自己的界面告知用户。
+  Future<bool> _applyProfileSwitch(int profileId) async {
+    try {
+      await ref
+          .read(profileViewModelProvider.notifier)
+          .switchProfile(profileId);
+      return true;
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'floating_ball.switch_profile',
+        error,
+        stack,
+      );
+      return false;
+    }
+  }
+
+  /// 应用内球（以及主引擎不在时被拉起的 Android 系统球）的切换配置：列出全部
+  /// 配置、当前项打勾，点一项即切。点当前项或取消什么也不做。
+  Future<void> _switchProfile() async {
+    final BuildContext? ctx = _navigatorContext;
+    if (ctx == null) return;
+    final (:List<ProfileRow> profiles, :int activeId) = await _profileChoices();
+    if (!ctx.mounted || profiles.isEmpty) return;
+    final int? picked = await showFushiChoiceDialog<int>(
+      context: ctx,
+      title: t.floating_ball_action_switch_profile,
+      icon: FushiIcons.profiles,
+      selected: activeId,
+      options: <FushiChoiceOption<int>>[
+        for (final ProfileRow profile in profiles)
+          FushiChoiceOption<int>(value: profile.id, label: profile.name),
+      ],
+    );
+    if (picked == null || picked == activeId) return;
+    if (!await _applyProfileSwitch(picked)) {
+      _toast(t.floating_ball_profile_switch_failed);
+    }
+  }
+
+  /// 应用外球的配置菜单项（原生在球旁画成系统菜单，当前项打勾）。
+  Future<List<Map<String, Object?>>> _systemBallProfileMenu() async {
+    final (:List<ProfileRow> profiles, :int activeId) = await _profileChoices();
+    return <Map<String, Object?>>[
+      for (final ProfileRow profile in profiles)
+        <String, Object?>{
+          'id': profile.id,
+          'label': profile.name,
+          'checked': profile.id == activeId,
+        },
+    ];
+  }
+
+  /// Android 系统球的配置菜单里选了一项：原地切（不拉起 Fushi），回一句给原生
+  /// Toast 的话——用户在别的 App 里，看不到主窗的提示。
+  Future<String> _systemBallSwitchProfileTo(int profileId) async {
+    final (:List<ProfileRow> profiles, :int activeId) = await _profileChoices();
+    ProfileRow? target;
+    for (final ProfileRow profile in profiles) {
+      if (profile.id == profileId) target = profile;
+    }
+    if (target == null) return t.floating_ball_profile_switch_failed;
+    if (profileId != activeId && !await _applyProfileSwitch(profileId)) {
+      return t.floating_ball_profile_switch_failed;
+    }
+    return t.floating_ball_profile_switched(name: target.name);
+  }
+
+  /// 桌面应用外球的切换配置：原生在球旁弹系统菜单，选了别的配置就原地切，主窗
+  /// 不动、前台还是用户正在用的程序。
+  Future<void> _desktopSwitchProfile(Rect? anchor) async {
+    final List<Map<String, Object?>> items = await _systemBallProfileMenu();
+    if (items.isEmpty) return;
+    final int? picked = await FloatingBallChannel.showProfileMenu(
+      items: items,
+      anchor: anchor,
+    );
+    if (picked == null) return;
+    final bool alreadyActive = items.any(
+      (Map<String, Object?> item) =>
+          item['id'] == picked && item['checked'] == true,
+    );
+    if (alreadyActive) return;
+    if (!await _applyProfileSwitch(picked)) {
+      // 切失败要让人知道：把主窗叫出来给提示（成功时不打扰）。
+      await desktopSystemBallActionTarget.bringMainWindowToFront();
+      _toast(t.floating_ball_profile_switch_failed);
+    }
   }
 
   /// 反馈：截下当前页面再打开反馈中心。原生窗口快照会拍到球，截图期间球由
@@ -1357,6 +1500,12 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           label: t.sync_now,
           onPressed: () => unawaited(_manualSync()),
         ),
+        FloatingBallGlobalAction.switchProfile => ReaderHeaderAction(
+          key: const ValueKey<String>('floating_ball_action_switch_profile'),
+          icon: floatingBallGlobalActionIcon(action),
+          label: t.floating_ball_action_switch_profile,
+          onPressed: () => unawaited(_switchProfile()),
+        ),
         FloatingBallGlobalAction.feedback => ReaderHeaderAction(
           key: const ValueKey<String>('floating_ball_action_feedback'),
           icon: floatingBallGlobalActionIcon(action),
@@ -1394,6 +1543,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _flushOpenLookupPage(appModel);
     _flushCameraOcr();
     _flushSync();
+    _flushProfileSwitch();
     _flushSystemOcrSetup();
 
     final FloatingBallSceneSnapshot scene = _registry.current;

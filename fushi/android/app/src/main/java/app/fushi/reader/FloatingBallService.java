@@ -40,14 +40,19 @@ import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.ContextThemeWrapper;
 import android.view.ViewOutlineProvider;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.WindowMetrics;
 import android.view.animation.LinearInterpolator;
 import android.view.animation.PathInterpolator;
+import android.widget.ArrayAdapter;
 import android.widget.FrameLayout;
+import android.widget.ListPopupWindow;
+import android.widget.ListView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -80,7 +85,7 @@ import io.flutter.FlutterInjector;
  * 几何全部在 {@link FloatingBallGeometry}（与 Dart 同一套公式）。
  *
  * <p>按钮：Dart 下发的动作（{@code lookup} / {@code popup_lookup} / {@code clipboard} /
- * {@code screen_ocr} / {@code camera_ocr} / {@code sync}）+ 可由用户关掉的 {@code open_app}
+ * {@code screen_ocr} / {@code camera_ocr} / {@code sync} / {@code switch_profile}）+ 可由用户关掉的 {@code open_app}
  * （{@link #showOpenApp}）+ 固定的 {@code close}。
  * 图标是 Dart 下发的 Material Icons 码位（与应用内同一颗 IconData，字体取 app 自带的
  * Flutter 资源），颜色是 Dart 下发的主题色。契约见 docs/specs/2026-09-28-floating-ball.md。
@@ -123,6 +128,7 @@ public class FloatingBallService extends BaseFloatingService {
     static final String ACTION_SCREEN_OCR = "screen_ocr";
     static final String ACTION_CAMERA_OCR = "camera_ocr";
     static final String ACTION_SYNC = "sync";
+    static final String ACTION_SWITCH_PROFILE = "switch_profile";
     static final String ACTION_OPEN_APP = "open_app";
     static final String ACTION_CLOSE = "close";
 
@@ -130,7 +136,7 @@ public class FloatingBallService extends BaseFloatingService {
     private static final List<String> CONFIGURABLE_ACTIONS =
             Arrays.asList(
                     ACTION_LOOKUP, ACTION_POPUP_LOOKUP, ACTION_CLIPBOARD, ACTION_SCREEN_OCR,
-                    ACTION_CAMERA_OCR, ACTION_SYNC);
+                    ACTION_CAMERA_OCR, ACTION_SYNC, ACTION_SWITCH_PROFILE);
 
     /** 收起态点球可以直接执行的动作（Dart FloatingBallTapAction 同一组 id）。 */
     static final List<String> TAP_ACTIONS = Arrays.asList(ACTION_CLIPBOARD, ACTION_SCREEN_OCR);
@@ -1173,6 +1179,9 @@ public class FloatingBallService extends BaseFloatingService {
                 FloatingBallChannel.requestSync();
                 BackgroundActivityLauncher.bringAppToFront(this);
                 break;
+            case ACTION_SWITCH_PROFILE:
+                showProfileMenu();
+                break;
             case ACTION_OPEN_APP:
                 BackgroundActivityLauncher.bringAppToFront(this);
                 break;
@@ -1204,6 +1213,90 @@ public class FloatingBallService extends BaseFloatingService {
         stopSelf();
     }
 
+    /**
+     * 系统球「切换配置」：用户正在别的 App 里，不拉起 Fushi——向主引擎的 Dart 要配置
+     * 列表，在球旁弹原生菜单（当前项打勾），选一项就由 Dart 原地切，结果用 Toast 告知。
+     * 主引擎不在（MainActivity 已销毁）时没人能切，退回「拉起 Fushi 再在主窗里选」。
+     */
+    private void showProfileMenu() {
+        FloatingBallChannel.requestProfileMenu(
+                new FloatingBallChannel.ProfileMenuCallback() {
+                    @Override
+                    public void onItems(List<FloatingBallChannel.ProfileMenuItem> items) {
+                        if (items.isEmpty() || ballView == null || !isOverlayAdded() || isHidden()) return;
+                        popUpProfileMenu(items);
+                    }
+
+                    @Override
+                    public void onUnavailable() {
+                        FloatingBallChannel.requestSwitchProfile();
+                        BackgroundActivityLauncher.bringAppToFront(FloatingBallService.this);
+                    }
+                });
+    }
+
+    private void popUpProfileMenu(List<FloatingBallChannel.ProfileMenuItem> items) {
+        boolean night = (getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        Context themed = new ContextThemeWrapper(this, night
+                ? android.R.style.Theme_DeviceDefault
+                : android.R.style.Theme_DeviceDefault_Light);
+        List<String> names = new ArrayList<>();
+        int checked = -1;
+        for (int i = 0; i < items.size(); i++) {
+            names.add(items.get(i).label);
+            if (items.get(i).checked) checked = i;
+        }
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                themed, android.R.layout.simple_list_item_single_choice, names);
+        ListPopupWindow popup = new ListPopupWindow(themed);
+        popup.setAdapter(adapter);
+        popup.setAnchorView(ballView);
+        popup.setModal(true);
+        // 球收起时外缩一截在屏幕外，锚它的边会把菜单推出屏幕（PopupMenu 就是这样
+        // 被截掉的）：按球在屏幕上的可见部分与显示区算宽度和偏移，菜单整块留在屏内、
+        // 往屏幕中央那边展开。
+        Rect area = viewport();
+        int margin = Math.round(8 * getResources().getDisplayMetrics().density);
+        int width = Math.min(measureMenuWidth(adapter, themed), area.width() - 2 * margin);
+        popup.setContentWidth(width);
+        int[] ball = new int[2];
+        ballView.getLocationOnScreen(ball);
+        int left = dockLeft
+                ? Math.max(ball[0] + ballView.getWidth(), area.left + margin)
+                : Math.min(ball[0], area.right - margin) - width;
+        left = Math.max(area.left + margin, Math.min(left, area.right - margin - width));
+        popup.setDropDownGravity(Gravity.START);
+        popup.setHorizontalOffset(left - ball[0]);
+        final int activeIndex = checked;
+        popup.setOnItemClickListener((parent, view, position, id) -> {
+            popup.dismiss();
+            if (position == activeIndex) return;
+            FloatingBallChannel.switchProfileTo(items.get(position).id, message ->
+                    Toast.makeText(getApplicationContext(), message, Toast.LENGTH_SHORT).show());
+        });
+        popup.show();
+        ListView list = popup.getListView();
+        if (list != null && activeIndex >= 0) {
+            list.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
+            list.setItemChecked(activeIndex, true);
+        }
+    }
+
+    /** 菜单项里最宽那一行的宽度（ListPopupWindow 不像 PopupMenu 会自己量）。 */
+    private static int measureMenuWidth(ArrayAdapter<String> adapter, Context context) {
+        FrameLayout parent = new FrameLayout(context);
+        int spec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+        int max = 0;
+        View convert = null;
+        for (int i = 0; i < adapter.getCount(); i++) {
+            convert = adapter.getView(i, convert, parent);
+            convert.measure(spec, spec);
+            max = Math.max(max, convert.getMeasuredWidth());
+        }
+        return max;
+    }
+
     private String labelFor(String id) {
         String label = labels.get(id);
         if (label != null && !label.isEmpty()) return label;
@@ -1214,6 +1307,7 @@ public class FloatingBallService extends BaseFloatingService {
             case ACTION_SCREEN_OCR: return "Screen OCR";
             case ACTION_CAMERA_OCR: return "Photo lookup";
             case ACTION_SYNC: return "Sync now";
+            case ACTION_SWITCH_PROFILE: return "Switch profile";
             case ACTION_OPEN_APP: return "Open Fushi";
             case ACTION_CLOSE: return "Close";
             case LABEL_BALL: return "Floating ball";
