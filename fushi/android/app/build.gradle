@@ -234,6 +234,9 @@ android {
         // RWKV-Instant 排程推理（**硬依赖**，AGPL-3.0-or-later）：native/fushi_rwkv/build_android_so.*
         // 产出 prebuilt/android/<abi>/libfushi_rwkv.so 随包；缺任一 ABI 时 checkFushiRwkvNative 让构建失败。
         main.jniLibs.srcDirs += '../../../native/fushi_rwkv/prebuilt/android'
+        // 音乐胖核心（曲库扫描 / 标签 / CUE，**硬依赖**）：native/fushi_music/build_android_so.*
+        // 产出 prebuilt/android/<abi>/libfushi_music.so 随包；缺任一 ABI 时 checkFushiMusicNative 让构建失败。
+        main.jniLibs.srcDirs += '../../../native/fushi_music/prebuilt/android'
     }
 
     defaultConfig {
@@ -451,6 +454,27 @@ def checkFushiRwkvNative = tasks.register("checkFushiRwkvNative") {
     }
 }
 
+// 音乐胖核心 fushi_music：与 fushi_rwkv 同为硬依赖、同一判据。
+def fushiMusicAndroidDir = file('../../../native/fushi_music/prebuilt/android')
+def checkFushiMusicNative = tasks.register("checkFushiMusicNative") {
+    doLast {
+        String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+        List<String> abis = platforms.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+            .collect { fushiComputeAbiOfPlatform[it] ?: it }
+        List<String> missing = abis.findAll { abi ->
+            !new File(fushiMusicAndroidDir, "${abi}/libfushi_music.so").isFile()
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                "fushi_music is a required native dependency, but libfushi_music.so is missing for ABI(s) " +
+                "${missing.join(', ')} under ${fushiMusicAndroidDir}. Build it first: " +
+                "native/fushi_music/build_android_so.ps1 -Abis ${abis.join(',')} (Windows) or " +
+                "bash native/fushi_music/build_android_so.sh <ndk-root> ${abis.join(' ')} " +
+                "(needs Rust + cargo-ndk; see docs/agent/build.md).")
+        }
+    }
+}
+
 tasks.configureEach { task ->
     if (task.name.startsWith("compile") && task.name.endsWith("Kotlin")) {
         task.dependsOn(prepareMihonSourceApi)
@@ -459,5 +483,6 @@ tasks.configureEach { task ->
     if (task.name == "preBuild") {
         task.dependsOn(checkFushiComputeNative)
         task.dependsOn(checkFushiRwkvNative)
+        task.dependsOn(checkFushiMusicNative)
     }
 }
