@@ -12,12 +12,16 @@ final SpringDescription kNavExpressiveSpatial =
 
 /// MD3 导航的选中形状：没给 [AdaptiveNavItem.railShape] 的目的地按序号轮流取。
 /// 全是 M3E 官方 [MaterialShapes]，彼此轮廓差得够开，相邻两项不会撞形。
+///
+/// 只能挑**宽高接近 1:1** 的形状：选中形状画进正方形槽，官方 `puffy`（纵向压到
+/// 0.742）/ `oval` 这类长扁形会显得被压扁（2026-10-25 用户「怎么感觉游戏扁的」）。
+/// 守卫 `test/widgets/nav_shape_aspect_guard_test.dart`。
 final List<RoundedPolygon> kNavRailFallbackShapes = <RoundedPolygon>[
   MaterialShapes.cookie9Sided,
   MaterialShapes.clover4Leaf,
   MaterialShapes.softBurst,
   MaterialShapes.flower,
-  MaterialShapes.puffy,
+  MaterialShapes.puffyDiamond,
   MaterialShapes.sunny,
   MaterialShapes.gem,
   MaterialShapes.pentagon,

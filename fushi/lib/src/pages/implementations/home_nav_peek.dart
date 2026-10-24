@@ -33,7 +33,7 @@ RoundedPolygon homeNavRailShapeFor(HomeTab tab) => switch (tab) {
   HomeTab.browse => MaterialShapes.sunny,
   HomeTab.dictionaries => MaterialShapes.gem,
   HomeTab.srs => MaterialShapes.pentagon,
-  HomeTab.games => MaterialShapes.puffy,
+  HomeTab.games => MaterialShapes.cookie7Sided,
   HomeTab.web => MaterialShapes.flower,
   HomeTab.settings => MaterialShapes.cookie12Sided,
 };
