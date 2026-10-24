@@ -49,6 +49,7 @@ on:
       - '.github/actions/setup-fushi-compute/**'
       - '.github/actions/setup-fushi-rwkv/**'
       - '.github/actions/setup-fushi-music/**'
+      - '.github/actions/setup-fushi-corpus/**'
       - '.github/actions/fushi-web-core-linux/**'
       - '.github/actions/test-native-linux/**'
       - '.github/actions/fushidicts-linux/**'
@@ -844,6 +845,14 @@ jobs:
       run: |
         set -euo pipefail
         bash native/fushi_music/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+    # 语料胖核心 fushi_corpus（「我库里的例句」倒排索引）同为 app 硬依赖：与上一步 fushi_corpus 同一口径。
+    - name: Build fushi_corpus Android .so (cargo-ndk)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      timeout-minutes: 45
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash native/fushi_corpus/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
     # 每个 ABI 的 .so：ELF 架构对得上，且导出全部 frwkv_* 符号（src/ 声明 ∪ Dart 绑定 lookup）。
     - name: Verify fushi_rwkv Android .so
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
@@ -883,6 +892,26 @@ jobs:
             *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
           esac
           bash native/fushi_music/verify_abi.sh "$so" "$nm_bin"
+        done
+    # 语料胖核心 fushi_corpus（「我库里的例句」倒排索引）同为 app 硬依赖：与上一步 fushi_corpus 同一口径。
+    - name: Verify fushi_corpus Android .so
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+        if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+        for pair in arm64-v8a:AArch64 armeabi-v7a:ARM x86_64:X86-64; do
+          abi="${pair%%:*}"; want="${pair#*:}"
+          so="native/fushi_corpus/prebuilt/android/$abi/libfushi_corpus.so"
+          test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
+          machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+          echo "$abi: ELF machine = $machine"
+          case "$machine" in
+            *"$want"*) : ;;
+            *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
+          esac
+          bash native/fushi_corpus/verify_abi.sh "$so" "$nm_bin"
         done
 
     # TODO-fast-release: analyze/unit/package tests no longer gate this build job.
@@ -1200,6 +1229,34 @@ jobs:
               exit 1
             fi
             echo "ok: $apk lib/$abi/libfushi_music.so"
+          done
+        done
+    # 语料胖核心 fushi_corpus（「我库里的例句」倒排索引）同为 app 硬依赖：与上一步 fushi_corpus 同一口径。
+    - name: Verify fushi_corpus is packaged in every APK ABI
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      working-directory: fushi
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        apks=(build/release-artifacts/fushi-*.apk)
+        if [ "${#apks[@]}" -eq 0 ]; then
+          echo "::error title=No APK to verify::build/release-artifacts has no fushi-*.apk"
+          exit 1
+        fi
+        for apk in "${apks[@]}"; do
+          listing="$(unzip -Z1 "$apk")"
+          abis="$(printf '%s\n' "$listing" | sed -n 's#^lib/\([^/]*\)/libflutter\.so$#\1#p' | sort -u)"
+          if [ -z "$abis" ]; then
+            echo "::error title=APK has no Flutter engine::$apk has no lib/<abi>/libflutter.so"
+            exit 1
+          fi
+          for abi in $abis; do
+            if ! grep -qx "lib/$abi/libfushi_corpus.so" <<< "$listing"; then
+              echo "::error title=fushi_corpus missing from APK::$apk lib/$abi/ has no libfushi_corpus.so"
+              exit 1
+            fi
+            echo "ok: $apk lib/$abi/libfushi_corpus.so"
           done
         done
 
@@ -1697,6 +1754,7 @@ jobs:
           native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
           native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
           native/fushi_music/prebuilt/linux-x64/libfushi_music.so
+          native/fushi_corpus/prebuilt/linux-x64/libfushi_corpus.so
         if-no-files-found: error
         retention-days: 3
 
@@ -1761,6 +1819,7 @@ jobs:
       FUSHI_COMPUTE_LIB: ${{ github.workspace }}/native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
       FUSHI_RWKV_LIB: ${{ github.workspace }}/native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
       FUSHI_MUSIC_LIB: ${{ github.workspace }}/native/fushi_music/prebuilt/linux-x64/libfushi_music.so
+      FUSHI_CORPUS_LIB: ${{ github.workspace }}/native/fushi_corpus/prebuilt/linux-x64/libfushi_corpus.so
     steps:
     - uses: actions/checkout@v6
 

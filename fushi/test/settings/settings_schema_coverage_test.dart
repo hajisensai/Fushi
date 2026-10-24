@@ -662,6 +662,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
   'floatingBall/Auto-restore floating ball':
       'test/floating_ball/app_floating_ball_host_test.dart: 自动恢复含应用内 / 不自动恢复 / 桌面应用外球「应用内外」三条',
+  // 「我库里的例句」开关：生效点是弹窗注入 window.__fushiLibrarySentencesEnabled（popup.js
+  // 据此不渲染 / 不发桥）与语料喂入门（LibraryCorpusService.enabled）。
+  'lookup/Sentences from your library':
+      'test/pages/popup_settings_injection_memo_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   // 弹出查词 / 浏览器扩展弹窗的独立尺寸：生效点是有效尺寸解析（解锁前跟随
   // app 内共享值、解锁后用自身宽高），由 AppModel 接线测试咬住；窗口真尺寸要

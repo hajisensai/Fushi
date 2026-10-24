@@ -28,6 +28,9 @@ const String kProfileFallbackIdPrefKey = 'profile_fallback_id';
 /// Profile 快照（ProfileKeys._excludedPrefPrefixes）。
 const String kSectionTabOrderPrefKeyPrefix = 'section_tab_order::';
 
+/// 查词弹窗「我库里的例句」开关（bool，默认 true：全在本机、不上传，所有者 D-L2）。
+const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -288,6 +291,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：已删除的「查词时让 AI 按句意挑词条」开关（2026-10-09
   // 所有者拍板移除）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'lookup_ai_context_auto',
+  // bool（默认 true，D-L2）：查词弹窗「我库里的例句」区块（作品图谱 L4）。关掉时弹窗不渲染、
+  // 也不再往语料库喂入（索引留在本机，再开时增量补齐）。常量 [kLibrarySentencesEnabledPrefKey]。
+  'lookup_library_sentences',
   // bool（默认 false，桌面端）：查词页按「返回上一级」直接最小化主窗（一键收窗
   // 回到之前的程序），不走关弹窗 → 清查询的阶梯。
   'lookup_page_escape_minimizes_window',

@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiOpenWordOutcome, MineOutcome, MineResult, MiningRequestOverrides;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/corpus/library_sentences_bridge.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
     show ankiRepositoryChainLabel, ankiRepositoryProvider;
 import 'package:fushi/src/anki/mine_failure_notice.dart';
@@ -3210,6 +3211,31 @@ JSON.stringify((function(){
             false,
             ErrorLogService.instance,
             () => srsHandleOpenCardBridge(args, SrsAppHost.current),
+          ),
+        );
+
+        // 「我库里的例句」（popup.js createLibrarySentencesSection，作品图谱 L4）。同上：
+        // 所有挂本 WebView 的表面在这里一次接上。开关关着时注入的
+        // __fushiLibrarySentencesEnabled=false 已让 JS 不发这两根桥，这里照样秒回 null / false。
+        controller.addJavaScriptHandler(
+          handlerName: 'librarySentences',
+          callback: (args) => _guardJsBridge<Map<String, Object?>?>(
+            'DictPopupWebview.librarySentences',
+            null,
+            ErrorLogService.instance,
+            () => librarySentencesHandleBridge(
+              args,
+              ref.read(appProvider).moduleVisibility,
+            ),
+          ),
+        );
+        controller.addJavaScriptHandler(
+          handlerName: 'librarySentenceOpen',
+          callback: (args) => _guardJsBridge<bool>(
+            'DictPopupWebview.librarySentenceOpen',
+            false,
+            ErrorLogService.instance,
+            () => librarySentenceOpenHandleBridge(args),
           ),
         );
 

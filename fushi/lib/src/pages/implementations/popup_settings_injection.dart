@@ -14,6 +14,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'package:fushi/src/corpus/library_corpus_settings.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
@@ -899,6 +900,7 @@ class _PopupStaticSettingsMemo {
     required this.localeTag,
     required this.miningEnabled,
     required this.srsEnabled,
+    required this.librarySentencesEnabled,
     required this.deduplicatePitchAccents,
     required this.harmonicFrequency,
     required this.showExpressionTags,
@@ -932,6 +934,7 @@ class _PopupStaticSettingsMemo {
   final String localeTag;
   final bool miningEnabled;
   final bool srsEnabled;
+  final bool librarySentencesEnabled;
   final bool deduplicatePitchAccents;
   final bool harmonicFrequency;
   final bool showExpressionTags;
@@ -1063,6 +1066,9 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // 「复习」功能模块（[ModuleId.srs]，默认关）。关着时 popup.js 不渲染复习词状态标记、
   // 也不发 srsTermStatus 桥（零开销）；与制卡模块互不牵连（只想看复习状态也行）。
   final bool srsEnabled = appModel.moduleVisibility.isEnabled(ModuleId.srs);
+  // 「我库里的例句」（作品图谱 L4，D-L2 默认开）。false ⇒ popup.js 不渲染区块、不发
+  // librarySentences 桥。
+  final bool librarySentencesEnabled = librarySentencesEnabledOf(appModel);
 
   final String slotKey =
       '${options.globalLookup}|${options.mobileExternal}'
@@ -1087,6 +1093,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.localeTag == localeTag &&
       cached.miningEnabled == miningEnabled &&
       cached.srsEnabled == srsEnabled &&
+      cached.librarySentencesEnabled == librarySentencesEnabled &&
       cached.deduplicatePitchAccents == appModel.deduplicatePitchAccents &&
       cached.harmonicFrequency == appModel.harmonicFrequency &&
       cached.showExpressionTags == appModel.showExpressionTags &&
@@ -1208,6 +1215,9 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 复习模块开关：false ⇒ popup.js 不渲染复习词状态标记、不发 srsTermStatus 桥。
     // 浏览器扩展没有本注入通道 → undefined ⇒ 照问桥，由扩展 shim 按服务端 404 退避。
     window.__fushiSrsEnabled = $srsEnabled;
+    // 「我库里的例句」开关：false ⇒ popup.js 不渲染该区块、不发 librarySentences 桥。
+    // 浏览器扩展没有本注入通道 → undefined ⇒ 照问桥，扩展 shim 对未知桥回 null（不显示）。
+    window.__fushiLibrarySentencesEnabled = $librarySentencesEnabled;
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
     window._noResultsHint = ${jsonEncode(t.settings_search_empty_hint)};
@@ -1262,6 +1272,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     localeTag: localeTag,
     miningEnabled: miningEnabled,
     srsEnabled: srsEnabled,
+    librarySentencesEnabled: librarySentencesEnabled,
     deduplicatePitchAccents: appModel.deduplicatePitchAccents,
     harmonicFrequency: appModel.harmonicFrequency,
     showExpressionTags: appModel.showExpressionTags,

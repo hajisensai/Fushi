@@ -1,3 +1,4 @@
+import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
@@ -5643,6 +5644,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // BUG-2441：libmpv 层错误的唯一 UI 通道。此前无人订阅 `player.stream.error`，
     // 媒体打不开时页面只会黑屏 + 00:00，用户与日志两头都拿不到任何线索。
     controller.onPlaybackError = _handlePlaybackError;
+    // 「我库里的例句」：每次换上一份字幕就把这一集喂进本机语料库（内容没变时是空操作；
+    // 只认本地库里的视频，网页 / 远端条目在服务里跳过）。
+    controller.onCuesReplaced = (List<AudioCue> cues) =>
+        LibraryCorpusService.instance.feedVideoCues(
+          bookUid: _activeBookUid,
+          episodeIndex: _currentEpisode,
+          cues: cues,
+        );
     // TODO-1213：进入「正在缓冲…」阶段——网络流 controller.load 内部连接 + 缓冲最久，
     // 页级 spinner 期间显阶段文案而非裸转圈。纯 UI 状态，不改 load 时序。
     _setLoadingPhase(_VideoLoadPhase.buffering);
