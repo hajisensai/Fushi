@@ -321,14 +321,24 @@ void main() {
       find.byKey(const ValueKey<String>('person-game-roles')),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey<String>('person-songs')), findsOneWidget);
+    // 外层纵向列表是懒构建的：下面的区块要滚到才建出来。
+    final Finder page = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey<String>('person-songs')),
+      200,
+      scrollable: page,
+    );
     await tester.scrollUntilVisible(
       find.byKey(const ValueKey<String>('person-suggestion-0-yes')),
       200,
+      scrollable: page,
     );
-    await tester.tap(
-      find.byKey(const ValueKey<String>('person-suggestion-0-yes')),
+    final Finder yes = find.byKey(
+      const ValueKey<String>('person-suggestion-0-yes'),
     );
+    await tester.ensureVisible(yes);
+    await tester.pumpAndSettle();
+    await tester.tap(yes);
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 200)),
     );

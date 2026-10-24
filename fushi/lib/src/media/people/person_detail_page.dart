@@ -467,7 +467,7 @@ class _WorkRail extends StatelessWidget {
 
   static const double _cardWidth = 116;
   static const double _imageHeight = 156;
-  static const double _textHeight = 52;
+  static const double _textHeight = 72;
 
   final String title;
   final List<_WorkCardData> cards;

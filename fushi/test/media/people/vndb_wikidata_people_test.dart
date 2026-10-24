@@ -94,8 +94,9 @@ void main() {
         calls++;
         bodies.add(jsonDecode(r.body) as Map<String, Object?>);
         final Object results = calls == 1 ? <Object?>[vn] : <Object?>[];
-        return http.Response(
-          jsonEncode(<String, Object?>{'results': results}),
+        // 回复里有日文：按 UTF-8 字节给（http.Response(String) 默认 latin1 编码）。
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, Object?>{'results': results})),
           200,
         );
       }),

@@ -5,6 +5,8 @@ import 'package:fushi_engine/media/links/adaptation_progress.dart';
 
 /// 动画进度 ↔ 原作进度（作品图谱 L5 §6）：手动对应点的估算与看到第几集。
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   const AdaptationSourceUnit vol = AdaptationSourceUnit.volume;
   const List<AdaptationProgressAnchor> anchors = <AdaptationProgressAnchor>[
     AdaptationProgressAnchor(episode: 1, unit: vol, number: 1),
