@@ -963,6 +963,48 @@
       "note": "DLLs: libbluray-4.dll."
     },
     {
+      "name": "libdvdcss",
+      "version": "1.6.0",
+      "license": "GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/dvd/libdvdcss-1.6.0-COPYING"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDCSS_VERSION=1.6.0, tarball https://download.videolan.org/pub/videolan/libdvdcss/1.6.0/libdvdcss-1.6.0.tar.xz sha256 7ea556c8… (matches VideoLAN's .sha256); built by tool/dvd/build_dvd_libs.sh into the unified FFmpeg prefix; source headers: 'either version 2 of the License, or (at your option) any later version'; text = COPYING of that tarball (licenses/fushi-dvd/ in the rebuilt archive)",
+      "note": "DLL: libdvdcss-2.dll (fbddvdcss-2.dll in the bundle), linked by libdvdread (built against it, not dlopen). Ships in the vendored Windows libmpv archive (…-ffu2-dvd1.7z, tool/bluray/build_libmpv.ps1; docs/specs/2026-10-24-dvd-original-menu.md); Android / iOS / macOS artifacts with DVD are not vendored yet."
+    },
+    {
+      "name": "libdvdread",
+      "version": "7.1.1",
+      "license": "GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/dvd/libdvdread-7.1.1-COPYING"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDREAD_VERSION=7.1.1, tarball https://download.videolan.org/pub/videolan/libdvdread/7.1.1/libdvdread-7.1.1.tar.xz sha256 a0d47876… (matches VideoLAN's .sha256); meson -Dlibdvdcss=enabled; source headers: 'either version 2 of the License, or (at your option) any later version'",
+      "note": "DLL: libdvdread-8.dll (fbddvdread-8.dll in the bundle); used by libdvdnav and by FFmpeg's dvdvideo demuxer (--enable-libdvdread)."
+    },
+    {
+      "name": "libdvdnav",
+      "version": "7.0.0",
+      "license": "GPL-2.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/dvd/libdvdnav-7.0.0-COPYING"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDNAV_VERSION=7.0.0, tarball https://download.videolan.org/pub/videolan/libdvdnav/7.0.0/libdvdnav-7.0.0.tar.xz sha256 a2a18f5a… (matches VideoLAN's .sha256); source headers: 'either version 2 of the License, or (at your option) any later version'",
+      "note": "DLL: libdvdnav-4.dll (fbddvdnav-4.dll in the bundle); one copy for libmpv's dvd:// navigation (-Ddvdnav=enabled) and FFmpeg's dvdvideo demuxer (--enable-libdvdnav)."
+    },
+    {
       "name": "libcaca",
       "version": "0.99.beta20",
       "license": "WTFPL",

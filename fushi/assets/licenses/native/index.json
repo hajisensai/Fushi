@@ -28,7 +28,7 @@
     "native/galgame_hook/third_party/locale_emulator/LICENSE-LGPL.txt": "ea8af5e789cb2d4e9b10bce3874982ade163b749b6bfbdb32e2df21c4d106de1",
     "native/galgame_hook/third_party/lunahook/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "native/galgame_hook/third_party/minhook/LICENSE.txt": "2bfff5fa29fc5d1cb2745acfaad9d930e983f5c8dd97e0ec5735d9199cf8f416",
-    "native/third_party_licenses/manifest.json": "0c97280009b7bf274af95bdbbc5e00b6bf29604064785d4c0cf71dc79144e76d",
+    "native/third_party_licenses/manifest.json": "b3be79c2f5bbd9ad9a794595c1f98abeb6b2c83e3b45f089810b434d427c19de",
     "native/third_party_licenses/texts/boost-1.91.0-LICENSE_1_0.txt": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
     "native/third_party_licenses/texts/crates/DimaKudosh-difflib-6fd59b0c/LICENSE": "6725d1437fc6c77301f2ff0e7d52914cf4f9509213e1078dc77d9356dbe6eac5",
     "native/third_party_licenses/texts/crates/OpenByteDev-dlopen2-cc80e4a0/LICENSE": "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2",
@@ -62,6 +62,9 @@
     "native/third_party_licenses/texts/crates/rustls-rustls-platform-verifier-252e2516/LICENSE-MIT": "1c7cf76689c837a68ed8d704994e52a0f2940c087958f860d17f3186afbdcc0c",
     "native/third_party_licenses/texts/crates/zbraniecki-pluralrules-d0715d5b/intl_pluralrules/LICENSE-APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
     "native/third_party_licenses/texts/crates/zbraniecki-pluralrules-d0715d5b/intl_pluralrules/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+    "native/third_party_licenses/texts/dvd/libdvdcss-1.6.0-COPYING": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+    "native/third_party_licenses/texts/dvd/libdvdnav-7.0.0-COPYING": "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670",
+    "native/third_party_licenses/texts/dvd/libdvdread-7.1.1-COPYING": "d6cb0e9e560f51085556949a84af12b79a00f10ab8b66c752537faf7cd665572",
     "native/third_party_licenses/texts/ffmpeg_unified/cpu_features-0.11.0-LICENSE": "af272c1b4dd08dd61d43e001d3134119d03ca7a2b057a64f7355fdf27fbea3dd",
     "native/third_party_licenses/texts/ffmpeg_unified/ffmpeg-9.0.1-LICENSE.md": "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af",
     "native/third_party_licenses/texts/ffmpeg_unified/libiconv-1.17-COPYING.LIB": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
@@ -812,6 +815,12 @@
       "file": "197d8a73ffee0d6b.txt",
       "packages": [
         "pcre2"
+      ]
+    },
+    {
+      "file": "199b95d7900b06e1.txt",
+      "packages": [
+        "libdvdread"
       ]
     },
     {
@@ -3118,6 +3127,7 @@
       "file": "b90ed8150a6d371c.txt",
       "packages": [
         "gmp",
+        "libdvdcss",
         "nettle",
         "self_cell",
         "Zstandard (in libzstd-kmp.so)"
@@ -3475,6 +3485,7 @@
     {
       "file": "ce34cda77a9b4bf8.txt",
       "packages": [
+        "libdvdnav",
         "x264"
       ]
     },
@@ -8339,6 +8350,57 @@
       ],
       "source": "MSYS2 mingw-w64-x86_64-libdovi 3.4.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
       "note": "DLLs: libdovi.dll. Rust library; its statically linked crate dependencies are not listed separately."
+    },
+    {
+      "name": "libdvdcss",
+      "version": "1.6.0",
+      "license": "GPL-2.0-or-later",
+      "origin": [
+        "pub:media_kit_libs_windows_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "b90ed8150a6d371c.txt"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDCSS_VERSION=1.6.0, tarball https://download.videolan.org/pub/videolan/libdvdcss/1.6.0/libdvdcss-1.6.0.tar.xz sha256 7ea556c8… (matches VideoLAN's .sha256); built by tool/dvd/build_dvd_libs.sh into the unified FFmpeg prefix; source headers: 'either version 2 of the License, or (at your option) any later version'; text = COPYING of that tarball (licenses/fushi-dvd/ in the rebuilt archive)",
+      "note": "DLL: libdvdcss-2.dll (fbddvdcss-2.dll in the bundle), linked by libdvdread (built against it, not dlopen). Ships in the vendored Windows libmpv archive (…-ffu2-dvd1.7z, tool/bluray/build_libmpv.ps1; docs/specs/2026-10-24-dvd-original-menu.md); Android / iOS / macOS artifacts with DVD are not vendored yet."
+    },
+    {
+      "name": "libdvdnav",
+      "version": "7.0.0",
+      "license": "GPL-2.0-or-later",
+      "origin": [
+        "pub:media_kit_libs_windows_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "ce34cda77a9b4bf8.txt"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDNAV_VERSION=7.0.0, tarball https://download.videolan.org/pub/videolan/libdvdnav/7.0.0/libdvdnav-7.0.0.tar.xz sha256 a2a18f5a… (matches VideoLAN's .sha256); source headers: 'either version 2 of the License, or (at your option) any later version'",
+      "note": "DLL: libdvdnav-4.dll (fbddvdnav-4.dll in the bundle); one copy for libmpv's dvd:// navigation (-Ddvdnav=enabled) and FFmpeg's dvdvideo demuxer (--enable-libdvdnav)."
+    },
+    {
+      "name": "libdvdread",
+      "version": "7.1.1",
+      "license": "GPL-2.0-or-later",
+      "origin": [
+        "pub:media_kit_libs_windows_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "199b95d7900b06e1.txt"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDREAD_VERSION=7.1.1, tarball https://download.videolan.org/pub/videolan/libdvdread/7.1.1/libdvdread-7.1.1.tar.xz sha256 a0d47876… (matches VideoLAN's .sha256); meson -Dlibdvdcss=enabled; source headers: 'either version 2 of the License, or (at your option) any later version'",
+      "note": "DLL: libdvdread-8.dll (fbddvdread-8.dll in the bundle); used by libdvdnav and by FFmpeg's dvdvideo demuxer (--enable-libdvdread)."
     },
     {
       "name": "libffi",

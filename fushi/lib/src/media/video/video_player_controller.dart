@@ -40,6 +40,10 @@ import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show discRootForMemberPath;
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show dvdPlaybackUriForTitlePath, dvdTitlePath, isDvdTitlePath;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -815,6 +819,11 @@ class VideoPlayerController extends ChangeNotifier
   /// 旧媒体的异步章节读取结果；token 让旧 load 的结果可被丢弃。
   int _loadToken = 0;
   String? _discRootPath;
+
+  /// The navigation session is a DVD (libdvdnav, `dvd://menu`), not a Blu-ray.
+  /// Its selected / bound "playlist" paths then carry DVD title member paths
+  /// (`<disc>/VIDEO_TS/TITLE_nn.dvdtitle`, dvd_title_path.dart).
+  bool _discIsDvd = false;
   VideoDiscNavigationState? _discState;
   String? _selectedDiscPlaylistPath;
   String? _boundDiscPlaylistPath;
@@ -3068,11 +3077,13 @@ class VideoPlayerController extends ChangeNotifier
     }
     _resetDiscMenu();
     if (openBlurayMenu) {
+      // Blu-ray `.mpls` or DVD `TITLE_nn.dvdtitle` member: both name their disc.
       final String? root = videoFile == null
           ? null
-          : blurayDiscRootForPlaylistPath(videoFile.path);
+          : discRootForMemberPath(videoFile.path);
       if (root == null) throw const VideoDiscMenuException('invalid-disc-root');
       _discRootPath = root;
+      _discIsDvd = isDvdTitlePath(videoFile!.path);
       _miningSourceOverride = null;
       _miningAudioSourceOverride = null;
     }
@@ -3112,13 +3123,19 @@ class VideoPlayerController extends ChangeNotifier
     // menu (`bd://menu`) is read by libbluray itself; `resolve` returns its
     // `.mpls` path unchanged, so the session stays empty there.
     final AacsMediaSession aacsSession = AacsMediaSession();
+    // A DVD title is a virtual member path: libdvdnav reads the disc
+    // (`dvd://<title-1>/<disc>`), never a file at that path.
+    final String? dvdTitleUri = !openBlurayMenu && videoFile != null
+        ? dvdPlaybackUriForTitlePath(videoFile.path)
+        : null;
     final String? localPlaybackSource;
     try {
       localPlaybackSource = videoFile == null
           ? null
-          : bluray == null
-          ? await aacsSession.resolve(videoFile.path)
-          : await aacsSession.playbackSource(bluray);
+          : dvdTitleUri ??
+                (bluray == null
+                    ? await aacsSession.resolve(videoFile.path)
+                    : await aacsSession.playbackSource(bluray));
     } catch (_) {
       await aacsSession.close();
       rethrow;
@@ -3153,12 +3170,13 @@ class VideoPlayerController extends ChangeNotifier
     // 逐段改写（host 的自签 https 段降级给本地中继）。
     final String sourceUri = nativePlaybackUri(
       openBlurayMenu
-          ? 'bd://menu'
+          ? (_discIsDvd ? 'dvd://menu' : 'bd://menu')
           : remoteDiscTitle?.edlUri() ??
                 mediaUri ??
                 // EDL 串与解密回环 URL 都不是文件路径，不能再过 `mediaUriForVideoPath` 包成 file://。
                 (localPlaybackSource!.startsWith('http://') ||
-                        localPlaybackSource.startsWith('edl://')
+                        localPlaybackSource.startsWith('edl://') ||
+                        localPlaybackSource.startsWith('dvd://')
                     ? localPlaybackSource
                     : mediaUriForVideoPath(localPlaybackSource)),
     );
@@ -3304,7 +3322,11 @@ class VideoPlayerController extends ChangeNotifier
       // 「删这一集前先放句柄」放错对象。
       _mediaHandleRegistration ??= MediaHandleRegistry.instance.register(
         _releaseMediaHandles,
-        mediaPath: () => _discRootPath ?? videoPath,
+        mediaPath: () =>
+            _discRootPath ??
+            (videoPath == null
+                ? null
+                : discRootForMemberPath(videoPath!) ?? videoPath),
       );
       // BUG-739：设备切换后回补音量目标（详见 [_audioDeviceSub] 字段注释）。随 Player
       // 生命周期挂一次；换集复用同一 Player 不重挂，避免叠加订阅。

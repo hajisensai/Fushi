@@ -4,13 +4,22 @@ import 'package:media_kit/native_open_policy.dart';
 
 void main() {
   test('explicit single Blu-ray Media retains its direct request origin', () {
-    for (final String uri in <String>['bd://menu', 'bluray://menu', 'bd://1']) {
+    for (final String uri in <String>[
+      'bd://menu',
+      'bluray://menu',
+      'bd://1',
+      // DVD (stream_dvdnav.c is STREAM_ORIGIN_UNSAFE too): found by the DVD
+      // menu integration test, wrapped in an m3u mpv refused `dvd://menu`.
+      'dvd://menu',
+      'dvd://0/D:/discs/show',
+      'dvdnav://menu',
+    ]) {
       expect(nativeOpenUsesDirectLoad(Media(uri)), isTrue, reason: uri);
     }
   });
 
   test('one-entry disc Playlist never inherits single Media trust', () {
-    for (final String uri in <String>['bd://menu', 'bluray://menu']) {
+    for (final String uri in <String>['bd://menu', 'bluray://menu', 'dvd://menu']) {
       expect(nativeOpenUsesDirectLoad(Playlist(<Media>[Media(uri)])), isFalse);
     }
   });

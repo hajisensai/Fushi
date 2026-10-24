@@ -22,4 +22,9 @@ bool nativeOpenUsesDirectLoad(Playable playable) {
   return false;
 }
 
-bool _isDisc(String uri) => uri.startsWith('bd://') || uri.startsWith('bluray://');
+/// mpv's Blu-ray (`bd`, `bluray`) and DVD (`dvd`, `dvdnav`) stream drivers.
+bool _isDisc(String uri) =>
+    uri.startsWith('bd://') ||
+    uri.startsWith('bluray://') ||
+    uri.startsWith('dvd://') ||
+    uri.startsWith('dvdnav://');

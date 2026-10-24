@@ -108,11 +108,15 @@ get_filename_component(
 # programs land beside fushi.exe through runtime-files.cmake.
 # `ffu2`: same build for the recipe's Apple-only patch 0004, plus the GPL
 # source notice in licenses/ffmpeg-unified/SOURCE.txt.
-set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2.7z")
+# `discnav2-...-dvd1`: DVD menus (docs/specs/2026-10-24-dvd-original-menu.md):
+# -Ddvdnav=enabled on tool/dvd libdvdcss / libdvdread / libdvdnav (fbddvd*.dll,
+# the same copies the unified FFmpeg's dvdvideo demuxer links) and the
+# disc-navigation-state v2 snapshot (disc-type + dvd-state).
+set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1.7z")
 
 # Upstream source provenance; the committed patched archive is the build input.
 set(LIBMPV_URL "https://github.com/mpv-player/mpv/tree/36abaa32d00a7229ee206aae12dc0e97e7962dca")
-set(LIBMPV_MD5 "40cfbcb2574f6aceebc29f295f27795e")
+set(LIBMPV_MD5 "9d752775f10ff24043079057a7419eb1")
 
 # Vendored archive (committed) + build-dir extraction target (TODO-1172).
 set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")

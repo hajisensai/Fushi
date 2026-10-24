@@ -4,6 +4,10 @@ part of 'video_player_controller.dart';
 /// titles; the library only binds identity after an atomic native snapshot.
 extension VideoDiscMenuController on VideoPlayerController {
   bool get isBlurayNavigationSession => _discRootPath != null;
+
+  /// Which navigation library drives the session (meaningless outside one).
+  VideoDiscType get discType =>
+      _discIsDvd ? VideoDiscType.dvd : VideoDiscType.bluray;
   String? get discLoadStage => _discLoadStage;
 
   void _setDiscLoadStage(String stage) {
@@ -80,6 +84,7 @@ extension VideoDiscMenuController on VideoPlayerController {
     _discJavaRuntimeProbe?.cancel();
     _discJavaRuntimeProbe = null;
     _discRootPath = null;
+    _discIsDvd = false;
     _discState = null;
     _selectedDiscPlaylistPath = null;
     _boundDiscPlaylistPath = null;
@@ -123,6 +128,10 @@ extension VideoDiscMenuController on VideoPlayerController {
     // stream before setting a new device, without replacing Player or texture.
     _setDiscLoadStage('disc-stop');
     await runCheckedVideoDiscCommand(native, <String>['stop']);
+    if (_discIsDvd) {
+      await _prepareDvdMenu(player, loadToken, option);
+      return;
+    }
     _setDiscLoadStage('disc-index');
     final BlurayMenuInfo? info = await readBlurayMenuInfo(_discRootPath!);
     if (!_isCurrentLoad(player, loadToken)) return;
@@ -177,6 +186,48 @@ extension VideoDiscMenuController on VideoPlayerController {
       'bluray-device',
       _discRootPath!,
     ]);
+    await _finishDiscMenuPreparation(player, loadToken);
+  }
+
+  /// DVD: libdvdnav runs the VM itself (no index pre-read, no BD-J, no AACS;
+  /// libdvdcss decrypts CSS discs inside libdvdread). The disc always starts in
+  /// First Play / its menus, so the entry waits for an interactive menu like a
+  /// Blu-ray top menu (videoDiscMenuEntryAction).
+  Future<void> _prepareDvdMenu(
+    Player player,
+    int loadToken,
+    String option,
+  ) async {
+    final dynamic native = player.platform;
+    if (option.isEmpty) {
+      throw const VideoDiscMenuException('navigation-not-supported');
+    }
+    final String properties =
+        await native.getPropertyAsync('property-list', waitForInitialization: false) as String;
+    if (!_isCurrentLoad(player, loadToken)) return;
+    if (!properties.contains('disc-navigation-state-json')) {
+      throw const VideoDiscMenuException('navigation-state-not-supported');
+    }
+    // A runtime without libmpv's dvd:// stream (-Ddvdnav) cannot open DVD menus;
+    // report it instead of falling back to a longest-title guess.
+    final String protocols =
+        await native.getPropertyAsync('protocol-list', waitForInitialization: false) as String;
+    if (!_isCurrentLoad(player, loadToken)) return;
+    if (!protocols.split(',').contains('dvd')) {
+      throw const VideoDiscMenuException('navigation-not-supported');
+    }
+    _discInitialMenuPending = true;
+    _setDiscLoadStage('disc-properties');
+    await runCheckedVideoDiscCommand(native, <String>[
+      'set',
+      'dvd-device',
+      _discRootPath!,
+    ]);
+    await _finishDiscMenuPreparation(player, loadToken);
+  }
+
+  Future<void> _finishDiscMenuPreparation(Player player, int loadToken) async {
+    final dynamic native = player.platform;
     await runCheckedVideoDiscCommand(native, <String>['set', 'disc-menu', 'yes']);
     // Earlier regular-video loads suppress native subtitles for Flutter cues.
     // A disc VM owns its PGS selection; restore visibility before opening it.
@@ -224,6 +275,11 @@ extension VideoDiscMenuController on VideoPlayerController {
     final List<String> command = videoDiscNavigationCommand(action);
     await _sendDiscCommand(command);
   }
+
+  /// Sends a remote-control [key] through the command table of the session's
+  /// disc type ([videoDiscMenuKeyActions]).
+  Future<void> discMenuKey(VideoDiscMenuKey key) =>
+      _sendDiscCommand(videoDiscMenuKeyCommand(discType, key));
 
   /// Clicks the authored button at normalized video coordinates (select +
   /// activate in one native step). There is deliberately no hover counterpart:
@@ -351,8 +407,13 @@ extension VideoDiscMenuController on VideoPlayerController {
           return;
         }
       }
+      // Library identity of the confirmed title: BD `BDMV/PLAYLIST/<mpls>`, DVD
+      // `VIDEO_TS/TITLE_nn.dvdtitle` (same generation rules for both).
       final String? name = next.playlistFileName;
-      final String? path = name == null
+      final int? dvdTitle = next.dvdTitleNumber;
+      final String? path = dvdTitle != null
+          ? dvdTitlePath(_discRootPath!, dvdTitle)
+          : name == null
           ? null
           : p.join(_discRootPath!, 'BDMV', 'PLAYLIST', name);
       final bool changed =
@@ -588,11 +649,15 @@ extension VideoDiscMenuController on VideoPlayerController {
         _discState?.isTitle != true) {
       return;
     }
-    final BluraySource? source = await resolveBluraySource(playlistPath);
+    // DVD titles have no MPLS: chapters come from mpv's chapter-list, and
+    // extraction reads the same title through FFmpeg's dvdvideo demuxer.
+    final BluraySource? source = _discIsDvd
+        ? null
+        : await resolveBluraySource(playlistPath);
     if (!_isCurrentLoad(player, token) || generation != _discTitleGeneration) {
       return;
     }
-    if (source == null) {
+    if (!_discIsDvd && source == null) {
       throw const VideoDiscMenuException('playlist-unavailable');
     }
     final String? extractionError = await _checkDiscExtractionSource(playlistPath);
@@ -606,7 +671,7 @@ extension VideoDiscMenuController on VideoPlayerController {
     _discExtractionError = extractionError;
     _bookUid = bookUid;
     _boundDiscPlaylistPath = playlistPath;
-    _blurayChapters = source.chapters;
+    _blurayChapters = source?.chapters;
     // A bind establishes identity only; it must not send sid/aid, revive old
     // cues, or overwrite an explicit selection made while identity was loading.
     if (_cues.isEmpty) {
@@ -624,6 +689,9 @@ extension VideoDiscMenuController on VideoPlayerController {
 
   Future<String?> _checkDiscExtractionSource(String playlistPath) async {
     if (_discState?.angle != 0) return 'multi-angle-source';
+    // DVD: FFmpeg's dvdvideo demuxer opens the same title through the shared
+    // libdvdread / libdvdcss (DvdFfmpegBackend), so a bound title can be read.
+    if (_discIsDvd) return null;
     final String? root = blurayDiscRootForPlaylistPath(playlistPath);
     if (root == null) return 'extraction-source-unavailable';
     try {

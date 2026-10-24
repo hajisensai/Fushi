@@ -9,7 +9,9 @@
     "h264", "hevc", "libdav1d", "vp9", "vp8", "mpeg4", "mpeg2video",
     "aac", "ac3", "eac3", "opus", "vorbis", "flac", "mp3", "truehd", "dca",
     "ass", "ssa", "subrip", "webvtt", "mov_text", "text", "sami", "microdvd",
-    "mjpeg", "png", "webp"
+    "mjpeg", "png", "webp",
+    "alac", "ape", "wavpack", "tak", "tta", "mpc8", "dsd_lsbf", "dsd_msbf",
+    "dsd_lsbf_planar", "dsd_msbf_planar", "cdgraphics"
   ],
   "muxers": [
     "gif", "adts", "image2", "mjpeg", "mov", "mp4", "ipod", "avif", "webp",
@@ -19,7 +21,8 @@
   "demuxers": [
     "matroska", "mov", "mpegts", "hls", "dash", "concat", "ffmetadata",
     "image2", "image2pipe", "srt", "ass", "webvtt", "aac", "mp3", "flac",
-    "wav", "ogg"
+    "wav", "ogg",
+    "ape", "wv", "tak", "tta", "dsf", "iff", "aiff", "caf", "w64", "cdg", "mpc8"
   ],
   "filters": [
     "scale", "fps", "split", "palettegen", "paletteuse", "format",
@@ -30,5 +33,10 @@
   ],
   "protocols": ["file", "pipe", "http", "https", "tcp", "tls", "crypto"],
   "bsfs": ["aac_adtstoasc", "h264_mp4toannexb", "hevc_mp4toannexb"],
-  "tls_options": ["tls_pin_sha256"]
+  "tls_options": ["tls_pin_sha256"],
+  "staged": {
+    "_comment": "Capabilities a NEW build must carry before every platform's vendored artifact has been rebuilt with them. Builds check them with verify_ffmpeg_capabilities.py --require-staged (tool/bluray/build_libmpv.ps1 does); release checks of the already vendored artifacts do not. Promotion rule: an entry moves into the floor above (and is deleted here) only when the vendored artifact of EVERY platform carries it: Windows (libmpv archive, re-vendored with DVD 2026-10-24 as -dvd1), Android (AAR), iOS (xcframeworks) and macOS (ffmpeg-unified-macos.tar.gz); see tool/dvd/README.md and tool/dvd/forks/README.md. DVD: docs/specs/2026-10-24-dvd-original-menu.md (dvdvideo demuxer on the tool/dvd libraries, the same copies libmpv's dvd:// links).",
+    "demuxers": ["dvdvideo"],
+    "configure": ["--enable-libdvdnav", "--enable-libdvdread"]
+  }
 }

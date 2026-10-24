@@ -1,8 +1,7 @@
 diff --git a/options/options.h b/options/options.h
-index 26a791343..99fc7c423 100644
 --- a/options/options.h
 +++ b/options/options.h
-@@ -161,6 +161,7 @@ struct mp_osd_render_opts {
+@@ -161,6 +161,7 @@
  
  struct mp_bluray_opts {
      char *bluray_device;
@@ -11,7 +10,6 @@ index 26a791343..99fc7c423 100644
  };
  
 diff --git a/player/command.c b/player/command.c
-index da61e1c8f..e8337480b 100644
 --- a/player/command.c
 +++ b/player/command.c
 @@ -77,6 +77,7 @@
@@ -22,22 +20,71 @@ index da61e1c8f..e8337480b 100644
  #include "misc/thread_pool.h"
  #include "misc/thread_tools.h"
  
-@@ -1151,6 +1152,60 @@ static int mp_property_disc_menu_active(void *ctx, struct m_property *prop,
+@@ -1151,6 +1152,112 @@
      return m_property_bool_ro(action, arg, st.menu_active);
  }
  
-+// Fushi v1: one native snapshot, never infer MPLS from display labels.
++static const char *dvd_domain_label(enum stream_dvd_domain domain)
++{
++    switch (domain) {
++    case STREAM_DVD_DOMAIN_FP:   return "FP";
++    case STREAM_DVD_DOMAIN_VMGM: return "VMGM";
++    case STREAM_DVD_DOMAIN_VTSM: return "VTSM";
++    case STREAM_DVD_DOMAIN_VTS:  return "VTS";
++    default:                     return "unknown";
++    }
++}
++
++// The DVD branch: VM position, still state and the live button highlight
++// (rectangle in source pixels, the four select-state colours as 0xAARRGGBB).
++static void add_dvd_navigation_state(struct mpv_node *dst,
++                                     const struct stream_nav_state *st)
++{
++    struct mpv_node *dvd = node_map_add(dst, "dvd-state", MPV_FORMAT_NODE_MAP);
++    node_map_add_string(dvd, "domain", dvd_domain_label(st->dvd.domain));
++    node_map_add_int64(dvd, "vts", st->dvd.vts);
++    node_map_add_int64(dvd, "title", st->dvd.title);
++    node_map_add_int64(dvd, "part", st->dvd.part);
++    node_map_add_int64(dvd, "pgc", st->dvd.pgcn);
++    node_map_add_int64(dvd, "pg", st->dvd.pgn);
++    node_map_add_int64(dvd, "cell", st->dvd.celln);
++    node_map_add_flag(dvd, "still", st->still_active);
++    node_map_add_int64(dvd, "button", st->dvd.button);
++    node_map_add_int64(dvd, "button-count", st->dvd.num_buttons);
++    node_map_add_flag(dvd, "title-menu-allowed", st->dvd.title_menu_allowed);
++    node_map_add_flag(dvd, "root-menu-allowed", st->dvd.root_menu_allowed);
++    if (st->dvd.button > 0 && mp_rect_w(st->hl.rect) > 0 &&
++        mp_rect_h(st->hl.rect) > 0)
++    {
++        struct mpv_node *hl = node_map_add(dvd, "highlight", MPV_FORMAT_NODE_MAP);
++        node_map_add_int64(hl, "x0", st->hl.rect.x0);
++        node_map_add_int64(hl, "y0", st->hl.rect.y0);
++        node_map_add_int64(hl, "x1", st->hl.rect.x1);
++        node_map_add_int64(hl, "y1", st->hl.rect.y1);
++        struct mpv_node *palette = node_map_add(hl, "palette", MPV_FORMAT_NODE_ARRAY);
++        for (int i = 0; i < 4; i++)
++            node_array_add(palette, MPV_FORMAT_INT64)->u.int64 = st->hl.palette[i];
++    }
++}
++
++// Fushi v2: one native snapshot, never infer MPLS / DVD title from display
++// labels. v2 adds "disc-type" and the "dvd-state" branch; the Blu-ray fields
++// are unchanged from v1.
 +static int mp_property_disc_navigation_state(void *ctx, struct m_property *prop,
 +                                             int action, void *arg)
 +{
 +    MPContext *mpctx = ctx;
 +    struct stream *s = disc_nav_get_stream(mpctx);
 +    struct stream_nav_state st = {0};
-+    if (!s || stream_control(s, STREAM_CTRL_GET_NAV_STATE, &st) < 1 || !st.bluray_state)
++    if (!s || stream_control(s, STREAM_CTRL_GET_NAV_STATE, &st) < 1 ||
++        !(st.bluray_state || st.dvd_state))
 +        return M_PROPERTY_UNAVAILABLE;
 +    double position = get_current_time(mpctx);
++    // A DVD title has no playlist; its identity is domain + title + PGC.
++    bool identity = st.dvd_state || st.disc_playlist >= 0;
 +    struct m_sub_property props[] = {
-+        {"version", SUB_PROP_INT(1)},
++        {"version", SUB_PROP_INT(2)},
++        {"disc-type", SUB_PROP_STR(st.dvd_state ? "dvd" : "bluray")},
 +        {"nav-active", SUB_PROP_BOOL(st.nav_active)},
 +        {"menu-active", SUB_PROP_BOOL(st.menu_active)},
 +        {"menu-domain", SUB_PROP_BOOL(st.menu_domain)},
@@ -47,14 +94,17 @@ index da61e1c8f..e8337480b 100644
 +        {"generation", SUB_PROP_INT64(st.generation)},
 +        {"angle", SUB_PROP_INT(st.angle > 0 ? st.angle - 1 : -1)},
 +        {"position", SUB_PROP_DOUBLE(position)},
-+        {"stable", SUB_PROP_BOOL(!st.drain_pending && disc_nav_generation_ready(mpctx, st.generation) && st.disc_playlist >= 0 && position >= 0)},
++        {"stable", SUB_PROP_BOOL(!st.drain_pending && disc_nav_generation_ready(mpctx, st.generation) && identity && position >= 0)},
 +        {"bdj-detected", SUB_PROP_BOOL(st.bdj_detected)},
 +        {"bdj-handled", SUB_PROP_BOOL(st.bdj_handled)},
 +        {"src-width", SUB_PROP_INT(st.src_w)},
 +        {"src-height", SUB_PROP_INT(st.src_h)},
 +        {0}
 +    };
-+    return m_property_read_sub(props, action, arg);
++    int r = m_property_read_sub(props, action, arg);
++    if (r == M_PROPERTY_OK && action == M_PROPERTY_GET && st.dvd_state)
++        add_dvd_navigation_state(arg, &st);
++    return r;
 +}
 +
 +// media_kit's public getProperty uses MPV_FORMAT_STRING. Keep its wire
@@ -83,7 +133,7 @@ index da61e1c8f..e8337480b 100644
  static int mp_property_edition(void *ctx, struct m_property *prop,
                                 int action, void *arg)
  {
-@@ -4685,6 +4740,8 @@ static const struct m_property mp_properties_base[] = {
+@@ -4685,6 +4792,8 @@
      {"edition", mp_property_edition},
      {"current-edition", mp_property_current_edition},
      {"disc-menu-active", mp_property_disc_menu_active},
@@ -92,7 +142,7 @@ index da61e1c8f..e8337480b 100644
      {"chapters", mp_property_chapters},
      {"editions", mp_property_editions},
      {"metadata", mp_property_metadata},
-@@ -4891,7 +4948,7 @@ static const char *const *const mp_event_property_change[] = {
+@@ -4891,7 +5000,7 @@
      E(MP_EVENT_TRACKS_CHANGED, "track-list", "current-tracks"),
      E(MP_EVENT_TRACK_SWITCHED, "track-list", "current-tracks"),
      E(MPV_EVENT_IDLE, "*"),
@@ -102,10 +152,9 @@ index da61e1c8f..e8337480b 100644
        "estimated-vf-fps", "total-avsync-change", "audio-speed-correction",
        "video-speed-correction", "vo-delayed-frame-count", "mistimed-frame-count",
 diff --git a/player/core.h b/player/core.h
-index 2889d352b..cff14a9da 100644
 --- a/player/core.h
 +++ b/player/core.h
-@@ -678,6 +678,7 @@ bool update_subtitles(struct MPContext *mpctx, double video_pts);
+@@ -678,6 +678,7 @@
  struct stream;
  struct stream_nav_state;
  void disc_nav_update(struct MPContext *mpctx);
@@ -114,7 +163,6 @@ index 2889d352b..cff14a9da 100644
  void disc_nav_destroy(struct MPContext *mpctx);
  struct stream *disc_nav_get_stream(struct MPContext *mpctx);
 diff --git a/player/discnav.c b/player/discnav.c
-index 6eb885edf..8f63030d3 100644
 --- a/player/discnav.c
 +++ b/player/discnav.c
 @@ -37,6 +37,7 @@
@@ -125,7 +173,7 @@ index 6eb885edf..8f63030d3 100644
      bool overlay_visible;
  
      // Blu-ray HDMV menu staging. libbluray hands us a pre-composited BGRA IG
-@@ -50,6 +51,8 @@ struct disc_nav_state {
+@@ -50,6 +51,8 @@
      uint32_t last_overlay_change_id;
      bool overlay_change_seen;
  
@@ -134,7 +182,7 @@ index 6eb885edf..8f63030d3 100644
      bool drain_was_pending; // last poll saw a boundary awaiting resync
  
      // DVD-only: dvd_subtitle track we force-selected for the menu, and the
-@@ -95,10 +98,10 @@ void disc_nav_reset(struct MPContext *mpctx)
+@@ -95,10 +98,10 @@
      struct disc_nav_state *st = mpctx->disc_nav;
      if (!st)
          return;
@@ -147,7 +195,7 @@ index 6eb885edf..8f63030d3 100644
      mp_image_unrefp(&st->bd_image);
      *st = (struct disc_nav_state){0};
  }
-@@ -308,14 +311,28 @@ static void sync_disc_track_selection(struct MPContext *mpctx, struct stream *s,
+@@ -308,14 +311,28 @@
      st->last_track_disc_id = nav->discontinuity_id;
      st->track_sync_seen = true;
  
@@ -179,7 +227,7 @@ index 6eb885edf..8f63030d3 100644
          mpctx->opts->stream_id[0][STREAM_AUDIO] == -1)
      {
          struct track *t = find_track_by_demuxer_id(mpctx, STREAM_AUDIO,
-@@ -349,7 +366,7 @@ static void sync_disc_track_selection(struct MPContext *mpctx, struct stream *s,
+@@ -349,7 +366,7 @@
  
      if (!first && (hopped ||
                     nav->active_sub_id != st->last_sub_id ||
@@ -188,7 +236,7 @@ index 6eb885edf..8f63030d3 100644
          !nav->menu_active && !st->menu_selected_track &&
          mpctx->opts->stream_id[0][STREAM_SUB] == -1)
      {
-@@ -451,6 +468,13 @@ static void ensure_menu_sub_selection(struct MPContext *mpctx, bool menu_on)
+@@ -451,6 +468,13 @@
      }
  }
  
@@ -202,7 +250,7 @@ index 6eb885edf..8f63030d3 100644
  void disc_nav_update(struct MPContext *mpctx)
  {
      struct stream *s = disc_nav_get_stream(mpctx);
-@@ -484,9 +508,12 @@ void disc_nav_update(struct MPContext *mpctx)
+@@ -484,9 +508,12 @@
      if (!have) {
          if (st->overlay_visible) {
              osd_set_bitmaps(mpctx->osd, OSDTYPE_DISC_MENU, NULL);
@@ -216,13 +264,13 @@ index 6eb885edf..8f63030d3 100644
          st->bd_last_change_id = 0;
          st->bd_last_vo_res = (struct mp_osd_res){0};
          st->menu_selected_track = NULL;
-@@ -506,12 +533,37 @@ void disc_nav_update(struct MPContext *mpctx)
+@@ -506,12 +533,39 @@
      }
  
      check_async_discontinuity(mpctx, s, &nav);
 +    // The stream may read the next playlist before the old frame is shown.
 +    // Accept its identity only after the player's resync has restarted output.
-+    if (nav.bluray_state) {
++    if (nav.bluray_state || nav.dvd_state) {
 +        if (!st->generation_seen || st->observed_generation != nav.generation) {
 +            st->observed_generation = nav.generation;
 +            st->generation_seen = true;
@@ -233,8 +281,10 @@ index 6eb885edf..8f63030d3 100644
 +        // reliable evidence, not merely polling restart_complete=false.
 +        if (nav.drain_pending || !mpctx->restart_complete)
 +            st->generation_restarting = true;
++        // A DVD title has no playlist: its identity is domain + title + PGC.
 +        if ((!st->generation_accepted || st->generation_restarting) &&
-+            mpctx->restart_complete && !nav.drain_pending && nav.disc_playlist >= 0)
++            mpctx->restart_complete && !nav.drain_pending &&
++            (nav.dvd_state || nav.disc_playlist >= 0))
 +        {
 +            st->accepted_generation = nav.generation;
 +            st->generation_accepted = true;
@@ -249,14 +299,14 @@ index 6eb885edf..8f63030d3 100644
 -                   (is_bd || (mp_rect_w(nav.hl.rect) > 0 && mp_rect_h(nav.hl.rect) > 0));
 +    bool visible = is_bd ? nav.overlay_visible :
 +                   nav.menu_active && (mp_rect_w(nav.hl.rect) > 0 && mp_rect_h(nav.hl.rect) > 0);
-+    if (is_bd) {
++    if (is_bd || nav.dvd_state) {
 +        mp_notify_property(mpctx, "disc-navigation-state");
 +        mp_notify_property(mpctx, "disc-navigation-state-json");
 +    }
  
      if (is_bd) {
          push_bd_overlay(mpctx, s, &nav, visible);
-@@ -526,14 +578,14 @@ void disc_nav_update(struct MPContext *mpctx)
+@@ -526,14 +580,14 @@
          osd_changed(mpctx->osd);
      }
  
@@ -276,15 +326,41 @@ index 6eb885edf..8f63030d3 100644
 +    st->overlay_visible = visible;
  }
 diff --git a/stream/stream.h b/stream/stream.h
-index ca688170d..5350a0429 100644
 --- a/stream/stream.h
 +++ b/stream/stream.h
-@@ -169,6 +169,13 @@ struct mp_dvdnav_highlight {
+@@ -165,10 +165,40 @@
+     uint32_t palette[4];    // replacement colors for SPU pixel values 0..3
+ };
+ 
++// DVD-Video VM domain (libdvdnav dvdnav_is_domain_*).
++enum stream_dvd_domain {
++    STREAM_DVD_DOMAIN_UNKNOWN,
++    STREAM_DVD_DOMAIN_FP,      // First Play PGC
++    STREAM_DVD_DOMAIN_VMGM,    // Video Manager menu (title menu)
++    STREAM_DVD_DOMAIN_VTSM,    // Video Title Set menu (root/chapter/... menus)
++    STREAM_DVD_DOMAIN_VTS,     // Video Title Set title (the movie)
++};
++
++// Fushi: DVD branch of the disc-navigation-state snapshot.
++struct stream_dvd_nav_state {
++    enum stream_dvd_domain domain;
++    int vts;                 // title set number; 0 before the first VTS change
++    int title, part;         // global title / chapter; title 0 inside menus
++    int pgcn, pgn, celln;    // program chain, program and cell numbers
++    int button;              // focused button, 0 when no highlight is live
++    int num_buttons;         // buttons of the live highlight (0 = none)
++    bool title_menu_allowed; // UOP: DVD_MENU_Title (VMGM) may be called
++    bool root_menu_allowed;  // UOP: DVD_MENU_Root (VTSM) may be called
++};
++
+ // Snapshot of the stream's menu state.
  struct stream_nav_state {
      bool nav_active;         // interactive disc navigation is enabled
      bool menu_active;        // a selectable menu/highlight is currently visible
 +    bool overlay_visible;    // BD PG/IG rendering, independent of menu input
 +    bool bluray_state;       // fields below contain a Blu-ray state snapshot
++    bool dvd_state;          // menu_*/disc_title/generation + dvd: a DVD snapshot
++    struct stream_dvd_nav_state dvd;
 +    bool menu_domain;
 +    bool menu_call_allowed;
 +    bool bdj_detected, bdj_handled;
@@ -294,7 +370,6 @@ index ca688170d..5350a0429 100644
      int  src_w, src_h;       // dimensions of the coordinate space mouse uses
      struct mp_dvdnav_highlight hl; // focused button highlight (DVD only)
 diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
-index 04b25202d..d0a40da2b 100644
 --- a/stream/stream_bluray.c
 +++ b/stream/stream_bluray.c
 @@ -86,6 +86,7 @@
@@ -305,7 +380,7 @@ index 04b25202d..d0a40da2b 100644
          {"angle", OPT_INT(angle), M_RANGE(1, 999)},
          {0},
      },
-@@ -125,6 +126,10 @@ struct bluray_priv_s {
+@@ -125,6 +126,10 @@
      int current_angle;
      int current_title;
      int current_playlist;
@@ -316,7 +391,7 @@ index 04b25202d..d0a40da2b 100644
  
      // Cached map from filtered title index (0..num_titles-1) to mpls_id.
      uint32_t *title_to_playlist;
-@@ -589,6 +594,7 @@ static int bluray_stream_fill_buffer(stream_t *s, void *buf, int len)
+@@ -589,6 +594,7 @@
                  bd_free_title_info(b->title_info);
              b->title_info = ti;
              b->current_playlist = playlist;
@@ -324,7 +399,7 @@ index 04b25202d..d0a40da2b 100644
              b->current_title = title;
              if (b->hdmv_mode)
                  b->discontinuity_id++;
-@@ -603,6 +609,9 @@ static int bluray_stream_fill_buffer(stream_t *s, void *buf, int len)
+@@ -603,6 +609,9 @@
                  b->title_info = NULL;
              }
              b->current_title = title;
@@ -334,7 +409,7 @@ index 04b25202d..d0a40da2b 100644
              if (b->hdmv_mode)
                  b->discontinuity_id++;
              mp_mutex_unlock(&b->overlay_lock);
-@@ -624,6 +633,12 @@ static int bluray_stream_fill_buffer(stream_t *s, void *buf, int len)
+@@ -624,6 +633,12 @@
              mp_mutex_unlock(&b->overlay_lock);
              break;
          }
@@ -347,7 +422,7 @@ index 04b25202d..d0a40da2b 100644
          case BD_EVENT_AUDIO_STREAM:
              mp_mutex_lock(&b->overlay_lock);
              b->audio_stream_num = ev.param;
-@@ -941,7 +956,8 @@ static int bluray_stream_control(stream_t *s, int cmd, void *arg)
+@@ -941,7 +956,8 @@
          case STREAM_NAV_MENU_ROOT:
          case STREAM_NAV_MENU_TITLE:
              // BD doesn't distinguish "title menu", both map to disc root.
@@ -357,7 +432,7 @@ index 04b25202d..d0a40da2b 100644
              break;
          case STREAM_NAV_MENU_POPUP:
              key = BD_VK_POPUP;
-@@ -953,15 +969,17 @@ static int bluray_stream_control(stream_t *s, int cmd, void *arg)
+@@ -953,15 +969,17 @@
              key = BD_VK_POPUP;
              break;
          case STREAM_NAV_MOUSE_MOVE:
@@ -379,7 +454,7 @@ index 04b25202d..d0a40da2b 100644
          // If an activation just ran a button command, it may have released a
          // held still, bump discontinuity_id.
          if (stream_nav_action_activates(nav->action)) {
-@@ -1008,12 +1026,22 @@ static int bluray_stream_control(stream_t *s, int cmd, void *arg)
+@@ -1008,12 +1026,22 @@
              mp_mutex_unlock(&b->overlay_lock);
              return STREAM_OK;
          }
@@ -406,7 +481,7 @@ index 04b25202d..d0a40da2b 100644
              .still_active = b->still_active,
              .src_w = MPMAX(b->ig.disp_w, b->pg.disp_w),
              .src_h = MPMAX(b->ig.disp_h, b->pg.disp_h),
-@@ -1215,9 +1243,17 @@ static int bluray_stream_open_internal(stream_t *s)
+@@ -1215,9 +1243,17 @@
  
      /* open device */
      char *device_tmp = mp_get_user_path(NULL, s->global, device);
@@ -426,7 +501,7 @@ index 04b25202d..d0a40da2b 100644
          if (!b->probing)
              MP_ERR(s, "Couldn't open Blu-ray device: %s\n", device);
          ret = STREAM_UNSUPPORTED;
-@@ -1263,11 +1299,15 @@ static int bluray_stream_open_internal(stream_t *s)
+@@ -1263,11 +1299,15 @@
      // these should be set before any callback
      b->current_angle = -1;
      b->current_title = -1;
@@ -442,7 +517,7 @@ index 04b25202d..d0a40da2b 100644
      MP_VERBOSE(s, "First play: %i, Top menu: %i, "
                    "HDMV Titles: %i, BD-J Titles: %i, Other: %i\n",
                 info->first_play_supported, info->top_menu_supported,
-@@ -1278,11 +1318,11 @@ static int bluray_stream_open_internal(stream_t *s)
+@@ -1278,11 +1318,11 @@
  
      // BD-J menus require a usable Java VM and libbluray.jar.
      if (b->hdmv_mode && info->bdj_detected && !info->bdj_handled) {
@@ -457,3 +532,286 @@ index 04b25202d..d0a40da2b 100644
      }
  
      MP_VERBOSE(s, "bdnav: cfg_title=%d hdmv_mode=%d\n", b->cfg_title, b->hdmv_mode);
+diff --git a/stream/stream_dvdnav.c b/stream/stream_dvdnav.c
+--- a/stream/stream_dvdnav.c
++++ b/stream/stream_dvdnav.c
+@@ -96,6 +96,16 @@
+     pci_t pci;                          // Copy of the last NAV packet's PCI.
+     bool pci_valid;
+ 
++    // Fushi disc-navigation-state: the title identity (domain + title + PGC)
++    // and a generation bumped whenever it changes, so late results bound to
++    // the previous title can be discarded.
++    uint32_t generation;
++    bool identity_seen;
++    enum stream_dvd_domain id_domain;
++    int id_title, id_part, id_pgcn, id_pgn;
++    int vts;
++    int celln;
++
+     // Disc-driven audio/sub/angle state.
+     int audio_physical;                 // 0..7 from DVDNAV_AUDIO_STREAM_CHANGE
+     int sub_physical;                   // 0..31 from DVDNAV_SPU_STREAM_CHANGE
+@@ -307,6 +317,50 @@
+     }
+ }
+ 
++static enum stream_dvd_domain dvd_domain(dvdnav_t *dvdnav)
++{
++    if (dvdnav_is_domain_fp(dvdnav) == 1)
++        return STREAM_DVD_DOMAIN_FP;
++    if (dvdnav_is_domain_vmgm(dvdnav) == 1)
++        return STREAM_DVD_DOMAIN_VMGM;
++    if (dvdnav_is_domain_vtsm(dvdnav) == 1)
++        return STREAM_DVD_DOMAIN_VTSM;
++    if (dvdnav_is_domain_vts(dvdnav) == 1)
++        return STREAM_DVD_DOMAIN_VTS;
++    return STREAM_DVD_DOMAIN_UNKNOWN;
++}
++
++// Re-read the title identity from the VM. A different domain, title or PGC is
++// a new generation; a new program or cell inside the same PGC is not (chapter
++// changes within one title keep its progress, subtitles and study binding).
++// Runs with priv->lock held.
++static void refresh_title_identity(struct priv *priv)
++{
++    int32_t title = 0, part = 0, pgcn = 0, pgn = 0;
++    // FP and a VM without a loaded VTS legitimately fail; that is "no title".
++    if (dvdnav_current_title_program(priv->dvdnav, &title, &pgcn, &pgn) !=
++        DVDNAV_STATUS_OK)
++        title = pgcn = pgn = 0;
++    if (title > 0 && dvdnav_current_title_info(priv->dvdnav, &title, &part) !=
++        DVDNAV_STATUS_OK)
++        part = 0;
++    enum stream_dvd_domain domain = dvd_domain(priv->dvdnav);
++    if (!priv->identity_seen || domain != priv->id_domain ||
++        title != priv->id_title || pgcn != priv->id_pgcn)
++    {
++        priv->generation++;
++        priv->nav_change_id++;
++    } else if (part != priv->id_part || pgn != priv->id_pgn) {
++        priv->nav_change_id++;
++    }
++    priv->identity_seen = true;
++    priv->id_domain = domain;
++    priv->id_title = title;
++    priv->id_part = title > 0 ? part : 0;
++    priv->id_pgcn = pgcn;
++    priv->id_pgn = pgn;
++}
++
+ static const char *dvd_domain_name(dvdnav_t *dvdnav)
+ {
+     if (dvdnav_is_domain_fp(dvdnav) == 1)
+@@ -422,76 +476,98 @@
+ // resolve the neighbour ourselves and use dvdnav_button_select() (rather than
+ // dvdnav_{upper,lower,left,right}_button_select()) so that auto-action buttons
+ // are activated only through update_highlight(), where we can observe it.
+-static void select_neighbour_button(struct priv *priv, pci_t *pci,
++static bool select_neighbour_button(struct priv *priv, pci_t *pci,
+                                     enum stream_nav_action action)
+ {
+     int32_t cur = 0;
+     dvdnav_get_current_highlight(priv->dvdnav, &cur);
+     if (cur <= 0 || cur > pci_num_buttons(pci))
+-        return;
++        return false;
+     btni_t b;
+     memcpy(&b, &pci->hli.btnit[cur - 1], sizeof(b));
+     int target = action == STREAM_NAV_UP    ? b.up    :
+                  action == STREAM_NAV_DOWN  ? b.down  :
+                  action == STREAM_NAV_LEFT  ? b.left  :
+                  action == STREAM_NAV_RIGHT ? b.right : 0;
+-    if (target > 0)
+-        dvdnav_button_select(priv->dvdnav, pci, target);
++    if (target <= 0 || target > pci_num_buttons(pci))
++        return false;
++    return dvdnav_button_select(priv->dvdnav, pci, target) == DVDNAV_STATUS_OK;
+ }
+ 
+-static void do_nav_cmd(stream_t *stream, struct stream_nav_cmd *cmd)
++// Fushi: whether the authored user-operation mask allows a menu call.
++static bool dvd_menu_call_allowed(dvdnav_t *dvdnav, DVDMenuID_t menu)
++{
++    user_ops_t uop = dvdnav_get_restrictions(dvdnav);
++    switch (menu) {
++    case DVD_MENU_Title:
++        return !uop.title_menu_call;
++    case DVD_MENU_Part:
++        return !uop.chapter_menu_call;
++    case DVD_MENU_Escape:
++        return !uop.resume;
++    default:
++        return !uop.root_menu_call;
++    }
++}
++
++static bool call_dvd_menu(struct priv *priv, DVDMenuID_t menu)
++{
++    bool ok = dvd_menu_call_allowed(priv->dvdnav, menu) &&
++              dvdnav_menu_call(priv->dvdnav, menu) == DVDNAV_STATUS_OK;
++    update_highlight(priv);
++    return ok;
++}
++
++// Returns whether the disc consumed the command.
++static bool do_nav_cmd(stream_t *stream, struct stream_nav_cmd *cmd)
+ {
+     struct priv *priv = stream->priv;
+ 
+     switch (cmd->action) {
+     case STREAM_NAV_MENU_ROOT:
+-        dvdnav_menu_call(priv->dvdnav, DVD_MENU_Root);
+-        update_highlight(priv);
+-        return;
++        return call_dvd_menu(priv, DVD_MENU_Root);
+     case STREAM_NAV_MENU_TITLE:
+-        dvdnav_menu_call(priv->dvdnav, DVD_MENU_Title);
+-        update_highlight(priv);
+-        return;
++        return call_dvd_menu(priv, DVD_MENU_Title);
+     case STREAM_NAV_MENU_POPUP:
+-        dvdnav_menu_call(priv->dvdnav, DVD_MENU_Part);
+-        update_highlight(priv);
+-        return;
++        return call_dvd_menu(priv, DVD_MENU_Part);
+     case STREAM_NAV_PREV_MENU:
+-        dvdnav_menu_call(priv->dvdnav, DVD_MENU_Escape);
+-        update_highlight(priv);
+-        return;
++        return call_dvd_menu(priv, DVD_MENU_Escape);
+     default:
+         break;
+     }
+ 
+     if (!in_menu_domain(priv->dvdnav) || !priv->pci_valid)
+-        return;
++        return false;
+ 
+     pci_t *pci = &priv->pci;
+     if (pci->hli.hl_gi.hli_ss == 0 || pci->hli.hl_gi.btn_ns == 0)
+-        return;
++        return false;
+ 
++    bool consumed = false;
+     switch (cmd->action) {
+     case STREAM_NAV_UP:
+     case STREAM_NAV_DOWN:
+     case STREAM_NAV_LEFT:
+     case STREAM_NAV_RIGHT:
+-        select_neighbour_button(priv, pci, cmd->action);
++        consumed = select_neighbour_button(priv, pci, cmd->action);
+         break;
+     case STREAM_NAV_MOUSE_MOVE:
+-        dvdnav_mouse_select(priv->dvdnav, pci, cmd->x, cmd->y);
++        consumed = dvdnav_mouse_select(priv->dvdnav, pci, cmd->x, cmd->y) ==
++                   DVDNAV_STATUS_OK;
+         break;
+     case STREAM_NAV_MOUSE_CLICK:
+-        dvdnav_mouse_activate(priv->dvdnav, pci, cmd->x, cmd->y);
++        consumed = dvdnav_mouse_activate(priv->dvdnav, pci, cmd->x, cmd->y) ==
++                   DVDNAV_STATUS_OK;
+         break;
+     case STREAM_NAV_SELECT:
+-        dvdnav_button_activate(priv->dvdnav, pci);
++        consumed = dvdnav_button_activate(priv->dvdnav, pci) == DVDNAV_STATUS_OK;
+         break;
+     default:
+         break;
+     }
+ 
+     update_highlight(priv);
++    return consumed;
+ }
+ 
+ // Mark a source-position jump. Runs with priv->lock held.
+@@ -510,18 +586,19 @@
+            priv->discontinuity_id, priv->pending_drain);
+ }
+ 
+-static void handle_nav_cmd(stream_t *stream, struct stream_nav_cmd *cmd)
++static bool handle_nav_cmd(stream_t *stream, struct stream_nav_cmd *cmd)
+ {
+     struct priv *priv = stream->priv;
+ 
+     mp_mutex_lock(&priv->lock);
+     int prev_auto = priv->auto_actioned_button;
+-    do_nav_cmd(stream, cmd);
+-    bool activated = stream_nav_action_activates(cmd->action) ||
++    bool consumed = do_nav_cmd(stream, cmd);
++    bool activated = (consumed && stream_nav_action_activates(cmd->action)) ||
+                      priv->auto_actioned_button != prev_auto;
+     if (priv->still_active && activated)
+         bump_discontinuity(priv);
+     mp_mutex_unlock(&priv->lock);
++    return consumed;
+ }
+ 
+ /**
+@@ -671,6 +748,9 @@
+         MP_VERBOSE(s, "switched to VTS: %d (old=%d) domain=%s\n",
+                    vts_event->new_vtsN, vts_event->old_vtsN,
+                    dvd_domain_name(dvdnav));
++        // libdvdnav reports -1 while no title set is loaded (FP / VMGM).
++        priv->vts = MPMAX(vts_event->new_vtsN, 0);
++        refresh_title_identity(priv);
+         if (!priv->had_initial_vts) {
+             // dvdnav sends an initial VTS change before any data; don't
+             // cause a blocking wait for the player, because the player in
+@@ -696,6 +776,8 @@
+ 
+         if (ev->pgc_length)
+             priv->duration = ev->pgc_length;
++        priv->celln = ev->cellN;
++        refresh_title_identity(priv);
+ 
+         MP_VERBOSE(s, "cell change: cell=%d pg=%d pgc_len=%.3f "
+                    "cur_time=%.3f domain=%s\n",
+@@ -1012,8 +1094,9 @@
+         return STREAM_OK;
+     }
+     case STREAM_CTRL_NAV_CMD: {
+-        handle_nav_cmd(stream, arg);
+-        return STREAM_OK;
++        // Like the Blu-ray stream: an input the disc did not consume, or a
++        // menu call refused by the disc, is reported instead of "success".
++        return handle_nav_cmd(stream, arg) ? STREAM_OK : STREAM_ERROR;
+     }
+     case STREAM_CTRL_NAV_DRAIN_ENABLE: {
+         mp_mutex_lock(&priv->lock);
+@@ -1041,6 +1124,8 @@
+         bool no_audio = true;
+         for (int n = 0; n < 8 && no_audio; n++)
+             no_audio = dvdnav_get_audio_logical_stream(dvdnav, n) == -1;
++        bool title_menu_allowed = dvd_menu_call_allowed(dvdnav, DVD_MENU_Title);
++        bool root_menu_allowed = dvd_menu_call_allowed(dvdnav, DVD_MENU_Root);
+         mp_mutex_lock(&priv->lock);
+         if (priv->src_w <= 0 || priv->src_h <= 0)
+             refresh_video_resolution(priv);
+@@ -1060,6 +1145,26 @@
+             .sub_visible = priv->sub_visible,
+             .angle = cur_angle,
+             .num_angles = num_angles,
++            .dvd_state = true,
++            .menu_domain = priv->in_menu,
++            .menu_call_allowed = root_menu_allowed,
++            .disc_title = priv->id_title,
++            .disc_playlist = -1,
++            .generation = priv->generation,
++            .dvd = {
++                .domain = priv->id_domain,
++                .vts = priv->vts,
++                .title = priv->id_title,
++                .part = priv->id_part,
++                .pgcn = priv->id_pgcn,
++                .pgn = priv->id_pgn,
++                .celln = priv->celln,
++                .button = priv->current_button,
++                .num_buttons = priv->current_button > 0 && priv->pci_valid ?
++                               pci_num_buttons(&priv->pci) : 0,
++                .title_menu_allowed = title_menu_allowed,
++                .root_menu_allowed = root_menu_allowed,
++            },
+         };
+         mp_mutex_unlock(&priv->lock);
+         return STREAM_OK;

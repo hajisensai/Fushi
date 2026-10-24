@@ -158,7 +158,12 @@ void main() {
       expect(VideoDiscNavigationState.parse(''), isNull);
       expect(VideoDiscNavigationState.parse('[]'), isNull);
       for (final Map<String, Object> change in <Map<String, Object>>[
+        <String, Object>{'version': 3},
+        // v2 must say which navigation library produced it.
         <String, Object>{'version': 2},
+        <String, Object>{'version': 2, 'disc-type': 'hddvd'},
+        // A DVD snapshot without its dvd-state branch is not a DVD snapshot.
+        <String, Object>{'version': 2, 'disc-type': 'dvd'},
         <String, Object>{'playlist': '../secret'},
         <String, Object>{'playlist': 100000},
         <String, Object>{'generation': -1},
@@ -167,6 +172,342 @@ void main() {
       ]) {
         expect(VideoDiscNavigationState.parse(snapshot(change)), isNull);
       }
+    });
+
+    test('a v2 Blu-ray snapshot keeps every v1 meaning', () {
+      final VideoDiscNavigationState state = VideoDiscNavigationState.parse(
+        snapshot(<String, Object>{'version': 2, 'disc-type': 'bluray'}),
+      )!;
+      expect(state.discType, VideoDiscType.bluray);
+      expect(state.dvd, isNull);
+      expect(state.playlistFileName, '00042.mpls');
+      expect(state.dvdTitleNumber, isNull);
+      expect(state.allowsStudy, isTrue);
+    });
+  });
+
+  group('atomic DVD navigation identity (snapshot v2)', () {
+    Map<String, Object> dvdState([
+      Map<String, Object> changes = const <String, Object>{},
+    ]) => <String, Object>{
+      'domain': 'VTS',
+      'vts': 2,
+      'title': 4,
+      'part': 3,
+      'pgc': 1,
+      'pg': 3,
+      'cell': 5,
+      'still': false,
+      'button': 0,
+      'button-count': 0,
+      'title-menu-allowed': true,
+      'root-menu-allowed': true,
+      ...changes,
+    };
+
+    String dvd({
+      Map<String, Object> top = const <String, Object>{},
+      Map<String, Object> branch = const <String, Object>{},
+    }) => snapshot(<String, Object>{
+      'version': 2,
+      'disc-type': 'dvd',
+      'title': 4,
+      'playlist': -1,
+      'dvd-state': dvdState(branch),
+      ...top,
+    });
+
+    const Map<String, Object> menu = <String, Object>{
+      'domain': 'VMGM',
+      'vts': 0,
+      'title': 0,
+      'part': 0,
+      'pgc': 2,
+      'pg': 1,
+      'cell': 1,
+      'still': true,
+      'button': 2,
+      'button-count': 3,
+      'highlight': <String, Object>{
+        'x0': 100,
+        'y0': 320,
+        'x1': 260,
+        'y1': 352,
+        'palette': <int>[0x00000000, 0xFFFFFFFF, 0xFF1020F0, 0x80FF0000],
+      },
+    };
+
+    test('title domain binds the VM title, never a playlist', () {
+      final VideoDiscNavigationState state = VideoDiscNavigationState.parse(
+        dvd(),
+      )!;
+      expect(state.discType, VideoDiscType.dvd);
+      expect(state.dvd!.domain, VideoDvdDomain.title);
+      expect(state.dvd!.titleSet, 2);
+      expect(state.dvd!.part, 3);
+      expect(state.dvd!.programChain, 1);
+      expect(state.dvd!.cell, 5);
+      expect(state.playlist, isNull);
+      expect(state.playlistFileName, isNull);
+      expect(state.dvdTitleNumber, 4);
+      expect(state.isTitle, isTrue);
+      expect(state.allowsStudy, isTrue);
+    });
+
+    test('menus parse the live highlight but never become study titles', () {
+      final VideoDiscNavigationState state = VideoDiscNavigationState.parse(
+        dvd(
+          top: <String, Object>{
+            'title': 0,
+            'menu-active': true,
+            'menu-domain': true,
+          },
+          branch: menu,
+        ),
+      )!;
+      final VideoDvdNavigationState branch = state.dvd!;
+      expect(branch.domain, VideoDvdDomain.videoManagerMenu);
+      expect(branch.inMenu, isTrue);
+      expect(branch.still, isTrue);
+      expect(branch.button, 2);
+      expect(branch.buttonCount, 3);
+      expect(branch.highlight!.x0, 100);
+      expect(branch.highlight!.width, 160);
+      expect(branch.highlight!.height, 32);
+      expect(branch.highlight!.palette, <int>[
+        0x00000000,
+        0xFFFFFFFF,
+        0xFF1020F0,
+        0x80FF0000,
+      ]);
+      expect(state.isTitle, isFalse);
+      expect(state.dvdTitleNumber, isNull);
+      expect(state.allowsStudy, isFalse);
+      // The disc's menu shows: entering the menu is complete without a call.
+      expect(
+        videoDiscMenuEntryAction(state, requested: false),
+        VideoDiscMenuEntryAction.complete,
+      );
+    });
+
+    test('drain, instability and identity mismatches suspend the title', () {
+      for (final String raw in <String>[
+        dvd(top: <String, Object>{'stable': false}),
+        dvd(top: <String, Object>{'menu-domain': true}),
+        dvd(top: <String, Object>{'nav-active': false}),
+      ]) {
+        final VideoDiscNavigationState state = VideoDiscNavigationState.parse(
+          raw,
+        )!;
+        expect(state.allowsStudy, isFalse, reason: raw);
+      }
+    });
+
+    test('malformed DVD branches are rejected, not guessed', () {
+      for (final String raw in <String>[
+        // The top-level title must be the VM title.
+        dvd(top: <String, Object>{'title': 5}),
+        // A DVD has no MPLS playlist.
+        dvd(top: <String, Object>{'playlist': 1}),
+        dvd(branch: <String, Object>{'domain': 'BDMV'}),
+        // A title number outside the title domain (or none inside it).
+        dvd(branch: <String, Object>{'domain': 'VTSM'}),
+        dvd(
+          top: <String, Object>{'title': 0},
+          branch: <String, Object>{'title': 0},
+        ),
+        dvd(branch: <String, Object>{'title': 100}),
+        dvd(branch: <String, Object>{'still': 'yes'}),
+        // A focused button needs its rectangle and four colours, and vice versa.
+        dvd(branch: <String, Object>{'button': 1, 'button-count': 2}),
+        dvd(
+          top: <String, Object>{'title': 0},
+          branch: <String, Object>{
+            ...menu,
+            'highlight': <String, Object>{
+              'x0': 10,
+              'y0': 10,
+              'x1': 5,
+              'y1': 20,
+              'palette': <int>[0, 0, 0, 0],
+            },
+          },
+        ),
+        dvd(
+          top: <String, Object>{'title': 0},
+          branch: <String, Object>{
+            ...menu,
+            'highlight': <String, Object>{
+              'x0': 0,
+              'y0': 0,
+              'x1': 5,
+              'y1': 5,
+              'palette': <int>[0, 0, 0],
+            },
+          },
+        ),
+        dvd(
+          top: <String, Object>{'title': 0},
+          branch: <String, Object>{...menu, 'button': 0},
+        ),
+        dvd(branch: <String, Object>{'button': 4, 'button-count': 3}),
+      ]) {
+        expect(VideoDiscNavigationState.parse(raw), isNull, reason: raw);
+      }
+    });
+
+    test('parses the wire libmpv emits on the authored test disc', () {
+      // Captured from the Windows libmpv built with this patch on the disc
+      // tool/dvd/make_test_dvd.py authors (VMGM title menu, 3 buttons,
+      // opaque yellow select colour 255/224/0).
+      const String wire =
+          '{"version":2,"disc-type":"dvd","nav-active":true,'
+          '"menu-active":true,"menu-domain":true,"menu-call-allowed":true,'
+          '"title":0,"playlist":-1,"generation":1,"angle":0,'
+          '"position":0.339,"stable":true,"bdj-detected":false,'
+          '"bdj-handled":false,"src-width":720,"src-height":480,'
+          '"dvd-state":{"domain":"VMGM","vts":0,"title":0,"part":0,"pgc":0,'
+          '"pg":0,"cell":1,"still":true,"button":1,"button-count":3,'
+          '"title-menu-allowed":true,"root-menu-allowed":true,'
+          '"highlight":{"x0":80,"y0":360,"x1":240,"y1":400,'
+          '"palette":[16777215,4294958848,4294958848,16777215]}}}';
+      final VideoDiscNavigationState state = VideoDiscNavigationState.parse(
+        wire,
+      )!;
+      expect(state.discType, VideoDiscType.dvd);
+      expect(state.dvd!.domain, VideoDvdDomain.videoManagerMenu);
+      expect(state.dvd!.still, isTrue);
+      // 255/224/0 through the disc's YCbCr CLUT comes back as 255/223/0.
+      expect(state.dvd!.highlight!.palette[1], 0xFFFFDF00);
+      expect(state.allowsStudy, isFalse);
+      expect(
+        videoDiscMenuEntryAction(state, requested: false),
+        VideoDiscMenuEntryAction.complete,
+      );
+    });
+
+    test('title identity follows the PGC, not only the title number', () {
+      final VideoDiscNavigationState expected = VideoDiscNavigationState.parse(
+        dvd(),
+      )!;
+      final VideoDiscNavigationState otherPgc = VideoDiscNavigationState.parse(
+        dvd(branch: <String, Object>{'pgc': 2}),
+      )!;
+      final VideoDiscNavigationState bluray = VideoDiscNavigationState.parse(
+        snapshot(<String, Object>{'title': 4}),
+      )!;
+      expect(videoDiscTitleIdentityMatches(expected, expected), isTrue);
+      expect(videoDiscTitleIdentityMatches(expected, otherPgc), isFalse);
+      expect(videoDiscTitleIdentityMatches(expected, bluray), isFalse);
+    });
+  });
+
+  group('disc menu key table', () {
+    test('every key maps to a discnav action for both disc types', () {
+      for (final VideoDiscType type in VideoDiscType.values) {
+        for (final VideoDiscMenuKey key in VideoDiscMenuKey.values) {
+          final List<String> command = videoDiscMenuKeyCommand(type, key);
+          expect(command.first, 'discnav', reason: '$type $key');
+        }
+      }
+      expect(
+        videoDiscMenuKeyCommand(VideoDiscType.dvd, VideoDiscMenuKey.topMenu),
+        <String>['discnav', 'menu'],
+      );
+      expect(
+        videoDiscMenuKeyCommand(VideoDiscType.dvd, VideoDiscMenuKey.titleMenu),
+        <String>['discnav', 'title-menu'],
+      );
+      expect(
+        videoDiscMenuKeyCommand(VideoDiscType.dvd, VideoDiscMenuKey.back),
+        <String>['discnav', 'prev'],
+      );
+      expect(
+        videoDiscMenuKeyCommand(VideoDiscType.dvd, VideoDiscMenuKey.popupMenu),
+        <String>['discnav', 'popup'],
+      );
+    });
+
+    test('UI action strings map back to remote keys for dispatch', () {
+      for (final VideoDiscMenuKey key in VideoDiscMenuKey.values) {
+        final String action =
+            videoDiscMenuKeyActions[VideoDiscType.bluray]![key]!;
+        expect(videoDiscMenuKeyForAction(action), key, reason: action);
+      }
+      expect(videoDiscMenuKeyForAction('mouse-click'), isNull);
+      expect(videoDiscMenuKeyForAction('nonsense'), isNull);
+    });
+
+    test('remote keys stay unchecked inputs; menu calls stay checked', () {
+      for (final VideoDiscMenuKey key in <VideoDiscMenuKey>[
+        VideoDiscMenuKey.up,
+        VideoDiscMenuKey.down,
+        VideoDiscMenuKey.left,
+        VideoDiscMenuKey.right,
+        VideoDiscMenuKey.select,
+        VideoDiscMenuKey.back,
+        VideoDiscMenuKey.popupMenu,
+      ]) {
+        expect(
+          isVideoDiscInputCommand(
+            videoDiscMenuKeyCommand(VideoDiscType.dvd, key),
+          ),
+          isTrue,
+          reason: '$key',
+        );
+      }
+      for (final VideoDiscMenuKey key in <VideoDiscMenuKey>[
+        VideoDiscMenuKey.topMenu,
+        VideoDiscMenuKey.titleMenu,
+      ]) {
+        expect(
+          isVideoDiscInputCommand(
+            videoDiscMenuKeyCommand(VideoDiscType.dvd, key),
+          ),
+          isFalse,
+          reason: '$key',
+        );
+      }
+    });
+
+    test('DVD menu calls follow their own user-operation bits', () {
+      final VideoDiscNavigationState dvd = VideoDiscNavigationState.parse(
+        snapshot(<String, Object>{
+          'version': 2,
+          'disc-type': 'dvd',
+          'title': 1,
+          'playlist': -1,
+          'menu-call-allowed': true,
+          'dvd-state': <String, Object>{
+            'domain': 'VTS',
+            'vts': 1,
+            'title': 1,
+            'part': 1,
+            'pgc': 1,
+            'pg': 1,
+            'cell': 1,
+            'still': false,
+            'button': 0,
+            'button-count': 0,
+            'title-menu-allowed': false,
+            'root-menu-allowed': true,
+          },
+        }),
+      )!;
+      expect(videoDiscMenuKeyAllowed(dvd, VideoDiscMenuKey.topMenu), isTrue);
+      expect(videoDiscMenuKeyAllowed(dvd, VideoDiscMenuKey.titleMenu), isFalse);
+      expect(videoDiscMenuKeyAllowed(dvd, VideoDiscMenuKey.select), isTrue);
+      final VideoDiscNavigationState bluray = VideoDiscNavigationState.parse(
+        snapshot(<String, Object>{'menu-call-allowed': false}),
+      )!;
+      expect(
+        videoDiscMenuKeyAllowed(bluray, VideoDiscMenuKey.topMenu),
+        isFalse,
+      );
+      expect(
+        videoDiscMenuKeyAllowed(bluray, VideoDiscMenuKey.titleMenu),
+        isFalse,
+      );
     });
   });
 
