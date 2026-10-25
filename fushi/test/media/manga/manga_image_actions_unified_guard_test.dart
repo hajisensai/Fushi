@@ -62,6 +62,34 @@ void main() {
     expect(source, isNot(contains("'saved'")));
   });
 
+  test('触屏长按页图弹全局图片动作面板，作用于被按住的那一页', () {
+    final String source = read(
+      'lib/src/media/manga/reader/manga_fushi_page.dart',
+    );
+    expect(source, contains("handlerName: 'onMangaPageLongPress'"));
+    expect(
+      source,
+      contains('unawaited(_onMangaPageLongPress(args[0] as String));'),
+    );
+    final String handler = slice(
+      source,
+      'Future<void> _onMangaPageLongPress(String payloadJson)',
+      'Future<void> _runCurrentMangaPageImageAction(',
+    );
+    expect(handler, contains("decoded['page']"));
+    expect(
+      handler,
+      contains('await _mangaPageFileAt(pageIndex);'),
+      reason: '取被按住那页，不是当前页',
+    );
+    expect(handler, isNot(contains('_currentMangaPageFile')));
+    expect(handler, contains('fushiLiftHaptic(context);'));
+    expect(
+      handler,
+      contains('await showImageActionsSheet(context, file: file);'),
+    );
+  });
+
   test('「保存目录」设置不再出现在漫画阅读设置里', () {
     final Set<String> keys = <String>{
       for (final MangaReaderPreferenceDescriptor d

@@ -130,7 +130,14 @@ import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/image_actions_sheet.dart'
-    show ImageAction, imageActionLabel, imageActionsFor, runImageAction;
+    show
+        ImageAction,
+        imageActionLabel,
+        imageActionsFor,
+        runImageAction,
+        showImageActionsSheet;
+import 'package:fushi/src/utils/components/fushi_haptics.dart'
+    show fushiLiftHaptic;
 import 'package:fushi/src/utils/misc/image_file_saver.dart'
     show defaultTargetPlatformForImageSave;
 import 'package:fushi/src/startup/exit_flush_registry.dart';
@@ -6012,10 +6019,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<File?> _currentMangaPageFile() async {
     final String? known = _currentPageImagePath;
     if (known != null && await File(known).exists()) return File(known);
+    return _mangaPageFileAt(_currentPage);
+  }
+
+  /// 整卷 0-based 页码 [pageIndex]（与 JS 的 `data-page` 同一口径）对应的页图文件：
+  /// 本地卷按 manga.json 解析，在线直读章取会话缓存里已下载的那份。
+  Future<File?> _mangaPageFileAt(int pageIndex) async {
     final MokuroPayload? payload = _payload;
     final String? imagesDir = _imagesDir;
-    if (payload == null || imagesDir == null) return null;
-    final int page = _currentPage.clamp(0, payload.images.length - 1);
+    if (payload == null || imagesDir == null || payload.images.isEmpty) {
+      return null;
+    }
+    final int page = pageIndex.clamp(0, payload.images.length - 1);
     final String? path = MangaFushiPage.resolveMangaPageImage(
       payload,
       imagesDir,
@@ -6030,6 +6045,31 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 右键菜单的图片动作（保存 / 分享 / 复制）：与小说正文、插图册、缩放看图
   /// 同一份动作本体（image_actions_sheet.dart 的 [runImageAction]；保存 =
   /// 手机写系统相册、桌面另存为）。这里只负责把当前页解析成文件。
+  /// 触屏长按页图（JS `onMangaPageLongPress`，payload 带被按住那页的 `data-page`）：
+  /// 弹与小说正文 / 歌词插图同一个图片动作面板，作用于那一页而不是当前跨页。
+  Future<void> _onMangaPageLongPress(String payloadJson) async {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(payloadJson);
+    } on FormatException {
+      return;
+    }
+    if (decoded is! Map || decoded['page'] is! num || !mounted) return;
+    final int pageIndex = (decoded['page'] as num).toInt();
+    fushiLiftHaptic(context);
+    final File? file = await _mangaPageFileAt(pageIndex);
+    if (!mounted) return;
+    if (file == null || !await file.exists()) {
+      FushiToast.show(
+        msg: t.reader_image_file_unavailable,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    await showImageActionsSheet(context, file: file);
+  }
+
   Future<void> _runCurrentMangaPageImageAction(ImageAction action) async {
     final File? file = await _currentMangaPageFile();
     if (file == null || !await file.exists()) {
@@ -7568,6 +7608,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               return;
             }
             unawaited(_showReaderContextMenu(args[0] as String));
+          },
+        );
+        // 触屏长按页图：与右键菜单同一条 JS 桥，但只在触摸主触点上触发（鼠标
+        // 仍走上面的右键菜单）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onMangaPageLongPress',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || args[0] is! String) return;
+            unawaited(_onMangaPageLongPress(args[0] as String));
           },
         );
         controller.addJavaScriptHandler(
