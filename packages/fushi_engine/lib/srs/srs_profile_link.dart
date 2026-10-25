@@ -26,6 +26,8 @@ import 'package:fushi_engine/srs/srs_asset_store_directory.dart'
     show kSrsSyncNamespace;
 import 'package:fushi_engine/srs/srs_backup_merge.dart' show srsAdoptProfileUid;
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
+    show kSrsSync2Folder;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 
 /// 写入者目录里的 profile 说明文件。同步引擎只认 `batch-*` / `snapshot-*` / `cursor` / `probe`，
@@ -76,9 +78,13 @@ class SrsProfileLinkConflict extends SrsProfileLinkDecision {
   final String remoteName;
 }
 
-/// 写入者 [writerId] 是否属于设备 [deviceId]（写入者 id = `<deviceId>#<化身号>`）。
+/// 写入者 [writerId] 是否属于设备 [deviceId]（旧格式写入者 id = `<deviceId>#<化身号>`；同步 v2 的设备目录
+/// 名是 v2 设备 ID，本机的 v2 设备 ID 以 `v2:<id>` 的形式放进 [deviceId] 的同组判断，见 [srsDecideProfileLink]）。
 bool srsWriterOfDevice(String writerId, String deviceId) =>
-    writerId.startsWith('$deviceId#');
+    writerId.startsWith('$deviceId#') || writerId == deviceId;
+
+/// 同步 v2 的设备目录在 [SrsRemoteProfile.writers] 里的名字。
+String srsV2WriterName(String device) => 'v2:$device';
 
 /// 决定本机 profile 与同步目录的关联（纯函数，规则见库注释）。
 ///
@@ -91,25 +97,28 @@ SrsProfileLinkDecision srsDecideProfileLink({
   required bool localHasNotes,
   required int localProfileCount,
   required List<SrsRemoteProfile> remote,
+  String? v2Device,
 }) {
-  SrsRemoteProfile? own;
+  bool own(String w) =>
+      srsWriterOfDevice(w, deviceId) ||
+      (v2Device != null && w == srsV2WriterName(v2Device));
+  SrsRemoteProfile? mine;
   final List<SrsRemoteProfile> others = <SrsRemoteProfile>[];
   for (final SrsRemoteProfile r in remote) {
     if (r.uid == localUid) {
-      own = r;
+      mine = r;
     } else if (r.writers.isNotEmpty) {
       others.add(r);
     }
   }
   // 本机 uid 的目录里已有别的设备：已经关联上了（别人采用了我们的 uid），改 uid 会把它们甩下。
-  if (own != null &&
-      own.writers.any((String w) => !srsWriterOfDevice(w, deviceId))) {
+  if (mine != null && mine.writers.any((String w) => !own(w))) {
     return const SrsProfileLinkKeep();
   }
   // 只看「不全是本设备写的」profile：本设备旧化身留下的目录不算别人的数据。
   final List<SrsRemoteProfile> foreign = <SrsRemoteProfile>[
     for (final SrsRemoteProfile r in others)
-      if (r.writers.any((String w) => !srsWriterOfDevice(w, deviceId))) r,
+      if (r.writers.any((String w) => !own(w))) r,
   ];
   if (foreign.isEmpty) return const SrsProfileLinkKeep();
   final List<SrsRemoteProfile> byName = <SrsRemoteProfile>[
@@ -159,15 +168,35 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
     final List<String> writers = <String>[];
     final Set<String> names = <String>{};
     bool? hasNotes;
-    for (final AssetEntry w in await store.listChildren(p.id)) {
-      if (!w.isFolder) continue;
-      writers.add(w.name);
-      final Map<String, Object?>? info = await _readInfo(store, w.id, tempDir);
-      if (info == null) continue;
+    Future<void> readInfo(String folder) async {
+      final Map<String, Object?>? info = await _readInfo(
+        store,
+        folder,
+        tempDir,
+      );
+      if (info == null) return;
       final Object? name = info['name'];
       if (name is String && name.isNotEmpty) names.add(name);
       final Object? notes = info['hasNotes'];
       if (notes is bool) hasNotes = (hasNotes ?? false) || notes;
+    }
+
+    for (final AssetEntry w in await store.listChildren(p.id)) {
+      if (!w.isFolder) continue;
+      if (w.name == kSrsSync2Folder) {
+        // 同步 v2：`v2/devices/<设备>/profile.json`。
+        for (final AssetEntry d in await store.listChildren(w.id)) {
+          if (!d.isFolder || d.name != 'devices') continue;
+          for (final AssetEntry dev in await store.listChildren(d.id)) {
+            if (!dev.isFolder) continue;
+            writers.add(srsV2WriterName(dev.name));
+            await readInfo(dev.id);
+          }
+        }
+        continue;
+      }
+      writers.add(w.name);
+      await readInfo(w.id);
     }
     out.add(
       SrsRemoteProfile(
@@ -211,7 +240,7 @@ Future<Map<String, Object?>?> _readInfo(
   }
 }
 
-/// 在本机写入者目录里写（覆盖）profile 说明文件。
+/// 在本机的同步 v2 设备目录（`fushi-srs/<uid>/v2/devices/<设备>/`）里写（覆盖）profile 说明文件。
 Future<void> srsPublishProfileInfo(
   SyncAssetStore store, {
   required String profileUid,
@@ -222,7 +251,9 @@ Future<void> srsPublishProfileInfo(
 }) async {
   final String ns = await store.ensureNamespace(kSrsSyncNamespace);
   final String profile = await store.ensureFolder(ns, profileUid);
-  final String writer = await store.ensureFolder(profile, writerId);
+  final String v2 = await store.ensureFolder(profile, kSrsSync2Folder);
+  final String devices = await store.ensureFolder(v2, 'devices');
+  final String writer = await store.ensureFolder(devices, writerId);
   // 允许同名多文件的后端（Google Drive）先删旧的再写，避免读到旧的那份。
   final AssetEntry? old = await store.findAsset(writer, kSrsProfileInfoName);
   if (old != null) await store.deleteAsset(old.id);
@@ -355,6 +386,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       localHasNotes: await store.hasUserNotes(),
       localProfileCount: await _profileCount(),
       remote: await srsListRemoteProfiles(backend),
+      v2Device: store.sync2Device,
     );
     switch (decision) {
       case SrsProfileLinkKeep():
@@ -416,12 +448,14 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   ) async {
     final String name = await _nameOf(store.profileUid);
     final bool hasNotes = await store.hasUserNotes();
-    final String sig = '${store.profileUid}|${store.writerId}|$name|$hasNotes';
+    final String? device = store.sync2Device;
+    if (device == null) return;
+    final String sig = '${store.profileUid}|$device|$name|$hasNotes';
     if (_published[directoryKey] == sig) return;
     await srsPublishProfileInfo(
       backend,
       profileUid: store.profileUid,
-      writerId: store.writerId,
+      writerId: device,
       name: name,
       hasNotes: hasNotes,
     );

@@ -438,6 +438,16 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
         }
         Body::Edit(e) => project_edit(conn, profile, op, &e, now, project, t)?,
         Body::Log(l) => project_log(conn, profile, op, &l, now, project, t)?,
+        Body::TagOrder { note, tags } => {
+            let n = note.text();
+            semantics::index(conn, profile, "note", &n, &op.id, "#tag")?;
+            if semantics::is_purged(conn, profile, "note", &n)? {
+                semantics::purge_op(conn, profile, &op.id, Some(&self_device(conn, profile)?))?;
+                return Ok(());
+            }
+            semantics::tag_order(conn, profile, &n, &tags, op)?;
+            semantics::refresh_tags_row(conn, profile, &n, t)?;
+        }
         Body::TagAdd { note, tag } | Body::TagRemove { note, tag } => {
             let n = note.text();
             semantics::index(conn, profile, "note", &n, &op.id, "#tag")?;
@@ -565,9 +575,11 @@ fn project_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i6
     // 合成行替换掉旧的 `tags` 行，各设备收到同一批操作后结果相同。
     if e.kind == EntKind::Note && e.key == "tags" {
         if let Ok(Value::Array(xs)) = serde_json::from_str::<Value>(&e.value) {
-            for x in xs.iter().filter_map(Value::as_str) {
+            let tags: Vec<String> = xs.iter().filter_map(Value::as_str).map(str::to_owned).collect();
+            for x in &tags {
                 semantics::tag_add(conn, profile, &ent, x, op)?;
             }
+            semantics::tag_order(conn, profile, &ent, &tags, op)?;
         }
         semantics::refresh_tags_row(conn, profile, &ent, t)?;
         semantics::evaluate_holds(conn, profile, "note", &ent, now, t)?;
@@ -1000,6 +1012,12 @@ impl SrsCore {
                         for tag in cur.iter().filter(|x| !want.contains(x)) {
                             out.push(Body::TagRemove { note: e.entity.clone(), tag: tag.clone() });
                         }
+                        // 显示顺序跟作者这一刻的列表走（只是提示，集合本身由上面的添加 / 观察删除决定）。
+                        let mut seen = std::collections::BTreeSet::new();
+                        let order: Vec<String> = want.iter().filter(|t| seen.insert((*t).clone())).cloned().collect();
+                        if order != cur || !out.is_empty() {
+                            out.push(Body::TagOrder { note: e.entity.clone(), tags: order });
+                        }
                         out
                     }
                     _ => vec![body],
@@ -1286,7 +1304,16 @@ impl SrsCore {
                 "current": cur.to_json(),
                 "memoryBefore": mem.map(|m| json!({"s": f(m.s), "d": f(m.d), "sf": f(m.sf)})),
                 "plan": plan.iter().map(|s| s.to_json()).collect::<Vec<_>>(),
-                "params": cfg.params.iter().map(|p| f(*p)).collect::<Vec<_>>(),
+                // 实际生效的参数（牌组没定参数 = 该算法默认参数；与旧 Dart `schedulingConfig(defaultsOf:)` 同口径，
+                // 日志的 `params` 出处哈希按它算）。
+                "params": if cfg.params.is_empty() {
+                    crate::sync2::fsrs_det::Model::defaults(cfg.alg.version()).to_vec()
+                } else {
+                    cfg.params.clone()
+                }
+                .iter()
+                .map(|p| f(*p))
+                .collect::<Vec<_>>(),
                 "memoryAlgorithm": match cfg.alg {
                     crate::sync2::sched::MemAlg::Fsrs6 => "fsrs6",
                     crate::sync2::sched::MemAlg::Fsrs7 => "fsrs7",

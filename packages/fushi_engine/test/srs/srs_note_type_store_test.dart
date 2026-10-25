@@ -15,6 +15,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
+import 'support/srs_sync2_peers.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-000000000001';
 const String kProfile2 = '01928c3e-0000-7000-8000-000000000002';
@@ -29,11 +30,7 @@ void main() {
   Future<void> syncAll(List<SrsDbStore> stores) async {
     for (int round = 0; round < 3; round++) {
       for (final SrsDbStore s in stores) {
-        await SrsSyncEngine(
-          directoryKey: 'test',
-          directory: dir,
-          replica: s,
-        ).syncOnce();
+        await srsSyncOnce(s, srsLocationFor(dir));
       }
     }
   }

@@ -1,4 +1,6 @@
-/// 复习（SRS）同步的调度：什么时候、用哪个后端跑一轮 [SrsSyncEngine]。
+/// 复习（SRS）同步的调度：什么时候、用哪个后端跑一轮同步 v2（`srsSync2Round`，
+/// docs/specs/2026-10-25-srs-sync-v2-design.md）。每条已认证的同步通道就是一个存储位置（同步 + 媒体用途，
+/// 设计 §6.5 的「已登录过的网盘账号直接复用」），布局 `fushi-srs/<profileUid>/v2/`。
 ///
 /// 三个触发点，都只在复习模块开着时存在（由 `srs_app_runtime.dart` 装配）：
 /// 1. 常规同步每条通道成功后（`syncChannelPostRunHook`，与常规同步同一把互斥锁、同一个
@@ -32,12 +34,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi/utils.dart' show ErrorLogService;
-import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
-import 'package:fushi_srs/fushi_srs.dart';
 
 /// 两次「进入复习 tab」触发之间的最小间隔。
 const Duration kSrsSyncMinInterval = Duration(seconds: 60);
@@ -45,8 +47,11 @@ const Duration kSrsSyncMinInterval = Duration(seconds: 60);
 /// 可信时间与系统时钟的偏差超过它就提示一次。
 const int kSrsClockSkewWarnMs = 10 * 60 * 1000;
 
-/// [SrsSyncEngine] 报告「后端拿不到服务器时间」时的错误串（fushi_srs 的契约）。
+/// 后端拿不到服务器时间时的错误串（v2 不依赖服务器时间同步，保留给只想校时的调用方识别）。
 const String kSrsSyncServerTimeUnavailable = 'server time unavailable';
+
+/// 位置上的数据来自更新版本、本机读不了（设计 §8：停写并提示升级，不覆盖任何一方）。
+const String kSrsSyncNeedsUpgrade = 'srs sync data needs a newer app';
 
 /// 后端所指同步目录的稳定身份暂时拿不到（例如云盘账户还没认出来）：这一轮不同步它。
 const String kSrsSyncDirectoryIdentityUnavailable =
@@ -61,25 +66,31 @@ const Duration kSrsHostWriteDebounce = Duration(seconds: 3);
 
 /// 一次 SRS 同步（测试注入假实现）。[directoryKey] 是 [backend] 所指同步目录的稳定身份。
 typedef SrsSyncRunner =
-    Future<SrsSyncReport> Function(
+    Future<SrsSync2Report> Function(
       SyncAssetStore backend,
       SrsDbStore store,
       String directoryKey,
     );
 
-/// 生产实现：现有同步后端上的 SRS 目录 + 同步引擎跑一轮。
-Future<SrsSyncReport> srsDefaultSyncRunner(
+/// 生产实现：现有同步后端上的 v2 集合根（`fushi-srs/<profileUid>/v2/`）跑一轮同步 v2。[directoryKey] 就是
+/// 这个位置的稳定身份（本机按它记每个位置传到了哪）。
+Future<SrsSync2Report> srsDefaultSyncRunner(
   SyncAssetStore backend,
   SrsDbStore store,
   String directoryKey,
-) => SrsSyncEngine(
-  directory: SrsAssetStoreDirectory(
-    store: backend,
-    profileUid: store.profileUid,
-  ),
-  directoryKey: directoryKey,
-  replica: store,
-).syncOnce();
+) async {
+  final SrsSync2Report r = await srsSync2Round(
+    host: store,
+    location: SrsAssetLocationStore(
+      store: backend,
+      profileUid: store.profileUid,
+    ),
+    locationId: directoryKey,
+    nowMs: () => store.now().$1,
+  );
+  if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
+  return r;
+}
 
 /// 本机直接读写的同步目录：本机作为互联 host 时，别的设备经互联写进来的就是这块目录，
 /// 本机自己的复习数据也要在这里发布、从这里读别人的（它不是任何一条同步通道）。
@@ -252,24 +263,24 @@ class SrsSyncScheduler {
   /// 用一个已认证后端跑一轮（常规同步的通道后置步骤直接调它）。store 打不开（或调度器已卸下）
   /// 时这一轮没跑，报告带 [kSrsSyncStoreUnavailable]——「立即同步」据此如实报未同步，不算成功。
   /// [directoryKey] 缺省时按后端算（[directoryKeyOf]）。
-  Future<SrsSyncReport> syncWithBackend(
+  Future<SrsSync2Report> syncWithBackend(
     SyncAssetStore backend, {
     String? directoryKey,
   }) => _serially(() => _syncWithBackend(backend, directoryKey));
 
-  Future<SrsSyncReport> _syncWithBackend(
+  Future<SrsSync2Report> _syncWithBackend(
     SyncAssetStore backend,
     String? directoryKey,
   ) async {
-    if (_halted) return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
+    if (_halted) return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
     SrsDbStore? store = await _readStore();
     if (store == null || _halted) {
-      return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
+      return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
     }
     final String? key = directoryKey ?? await _directoryKeyOf(backend);
     if (key == null) {
-      // 同一个物理目录换了个身份就会被当成新目录（重新起步、可能全量重发）：宁可这轮不同步。
-      return SrsSyncReport()..error = kSrsSyncDirectoryIdentityUnavailable;
+      // 位置身份拿不到：上传进度按身份记，换个身份只是多传一遍（段名唯一、内容不变），但宁可这轮不同步。
+      return SrsSync2Report()..error = kSrsSyncDirectoryIdentityUnavailable;
     }
     final SrsProfileLinker? linker = _profileLinker;
     bool adopted = false;
@@ -282,13 +293,13 @@ class SrsSyncScheduler {
         lastUnlinkedProfile = unlinked;
         _noticeOnce(SrsSyncNotice.profileNotLinked);
       }
-      if (_halted) return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
+      if (_halted) return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
     }
     // 引擎在一轮开头写探针取服务器时间，整轮（上传 / 拉取 / 快照，大库能跑几十分钟）跑完才回来：
     // 校时按开跑那一刻的单调时钟算，误差只剩探针前的一次列目录，而不是整轮耗时。
     // 放在 profile 关联之后：关联可能换成另一个 store，校时落在真正跑同步的那个上。
     final int probedAtMono = store.trustedClock.monotonicNowMs();
-    final SrsSyncReport report = await _runner(backend, store, key);
+    final SrsSync2Report report = await _runner(backend, store, key);
     if (linker != null && report.error == null && !_halted) {
       try {
         await linker.publish(backend, store, key);
@@ -297,11 +308,11 @@ class SrsSyncScheduler {
         ErrorLogService.instance.log('SrsSyncScheduler.profileInfo', e, stack);
       }
     }
-    for (final String f in report.skippedFiles) {
+    for (final String f in report.errors) {
       if (_loggedSkipped.add('$key|$f')) {
         ErrorLogService.instance.log(
           'SrsSyncScheduler.skippedFile',
-          StateError('SRS sync skipped a malformed file in $key: $f'),
+          StateError('SRS sync skipped a segment in $key: $f'),
           StackTrace.current,
         );
       }
@@ -314,7 +325,7 @@ class SrsSyncScheduler {
         _noticeOnce(SrsSyncNotice.clockSkew);
       }
     }
-    if (report.error == kSrsSyncServerTimeUnavailable) {
+    if (report.error == kSrsSyncNeedsUpgrade) {
       _noticeOnce(SrsSyncNotice.backendUnsupported);
     }
     bool mediaChanged = false;
@@ -337,9 +348,9 @@ class SrsSyncScheduler {
       }
     }
     if (adopted ||
+        report.changed ||
         report.applied > 0 ||
-        report.published > 0 ||
-        report.reincarnated ||
+        report.fork ||
         mediaChanged) {
       _onDataChanged();
     }

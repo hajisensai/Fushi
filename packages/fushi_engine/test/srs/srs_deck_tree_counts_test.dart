@@ -9,6 +9,7 @@ import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
 import 'support/srs_fake_engine.dart';
+import 'support/srs_sync2_peers.dart';
 
 const String kTreeProfile = '01928c3e-0000-7000-8000-0000000000aa';
 
@@ -300,11 +301,7 @@ void main() {
       Future<void> syncAll() async {
         for (int round = 0; round < 3; round++) {
           for (final SrsDbStore s in <SrsDbStore>[a, b]) {
-            await SrsSyncEngine(
-              directoryKey: 'test',
-              directory: dir,
-              replica: s,
-            ).syncOnce();
+            await srsSyncOnce(s, srsLocationFor(dir));
           }
         }
       }

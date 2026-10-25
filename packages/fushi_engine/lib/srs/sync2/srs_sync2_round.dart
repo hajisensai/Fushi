@@ -63,6 +63,9 @@ class SrsSync2Report {
   /// 写 head 那一刻的服务端时间（校时用；后端给不出为 null）。
   int? serverTimeMs;
 
+  /// 这个位置这一轮没同步成的原因（调度器据此如实报「未同步」）；null = 成功。
+  String? error;
+
   /// 非致命错误（段损坏 / 签名不符 / 解不开……）：记日志，不打断这一轮。
   final List<String> errors = <String>[];
 }

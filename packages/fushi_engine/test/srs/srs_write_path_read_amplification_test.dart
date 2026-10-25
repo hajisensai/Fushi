@@ -13,6 +13,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
+import 'support/srs_sync2_peers.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000a1';
 
@@ -26,11 +27,7 @@ void main() {
   Future<void> syncAll(List<SrsDbStore> stores) async {
     for (int round = 0; round < 3; round++) {
       for (final SrsDbStore s in stores) {
-        await SrsSyncEngine(
-          directoryKey: 'test',
-          directory: dir,
-          replica: s,
-        ).syncOnce();
+        await srsSyncOnce(s, srsLocationFor(dir));
       }
     }
   }
@@ -241,7 +238,8 @@ void main() {
       );
       await syncAll(<SrsDbStore>[a, b]);
       expect(await a.pendingDecisionCount(), 0);
-      await a.deleteNote(note);
+      // 两边并发改同一个内容字段 = 待裁决（删除与编辑并发走冲突中心，见设计 §5.3，不算待裁决）。
+      await a.updateNote(note, fieldsById: lapis('魚1'));
       await b.updateNote(note, fieldsById: lapis('魚2'));
       final String fp = a.contentFingerprint;
       await syncAll(<SrsDbStore>[a, b]);

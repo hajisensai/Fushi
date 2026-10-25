@@ -121,6 +121,15 @@ CREATE TABLE IF NOT EXISTS sync2_tag_adds (
   logical INTEGER NOT NULL,
   PRIMARY KEY (profile_uid, note, tag, device, seq)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_tag_order (
+  profile_uid TEXT NOT NULL,
+  note TEXT NOT NULL,
+  tags TEXT NOT NULL,
+  wall INTEGER NOT NULL,
+  logical INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  PRIMARY KEY (profile_uid, note)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS sync2_held (
   profile_uid TEXT NOT NULL,
   device BLOB NOT NULL,

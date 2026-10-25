@@ -24,6 +24,7 @@ import 'apkg/apkg_test_support.dart'
     show FakeFsrsEngine, MemoryDir, openTestStore;
 import 'support/srs_bulk_fixture.dart' show importBench;
 import 'support/srs_test_storage.dart';
+import 'support/srs_sync2_peers.dart';
 
 const String _uid = '01928c3e-0000-7000-8000-00000000a682';
 
@@ -421,11 +422,7 @@ void main() {
     Future<void> syncAll(List<SrsDbStore> stores) async {
       for (int round = 0; round < 3; round++) {
         for (final SrsDbStore s in stores) {
-          await SrsSyncEngine(
-            directoryKey: 'test',
-            directory: dir,
-            replica: s,
-          ).syncOnce();
+          await srsSyncOnce(s, srsLocationFor(dir));
         }
       }
     }
@@ -557,10 +554,11 @@ void main() {
           .fold(0, (int acc, String x) => acc + int.parse(x.split(' ').last));
       final SrsCardCacheRow c = (await a.cardRow(newCard))!;
       expect(c.lastLogId, offline.id);
-      // 对端那次复习的前序状态来自 a 在旧卡上的两次（合并历史）：新卡 → 学习 → 年轻，且它让卡成熟。
+      // 对端那次复习的前序状态来自 a 在旧卡上的两次（合并历史，同步 v2 重放）：新卡 → 学习 → 成熟（a 第二次评
+      // 「简单」时按确定性 FSRS 的真实间隔已 ≥ 21 天；旧实现用替身引擎的固定间隔，这里曾是「年轻」）。
       expect(
         <String>[for (final String s in reviews) s.split(' ')[6]],
-        <String>['newCard', 'learn', 'young'],
+        <String>['newCard', 'learn', 'mature'],
       );
       expect(maturityNet(stats), 1);
       expect(

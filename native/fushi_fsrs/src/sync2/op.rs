@@ -25,6 +25,7 @@ pub const KIND_PURGE: u16 = 7;
 pub const KIND_MEDIA: u16 = 8;
 pub const KIND_DECK_ALIAS: u16 = 9;
 pub const KIND_LEGACY_UNKNOWN: u16 = 10;
+pub const KIND_TAG_ORDER: u16 = 11;
 
 /// 本版本写出的载荷格式号。
 pub const SCHEMA: u16 = 1;
@@ -281,6 +282,8 @@ pub enum Body {
     /// 标签 OR-Set（加胜）：移除只抹掉移除者见过的那些添加。
     TagAdd { note: Key, tag: String },
     TagRemove { note: Key, tag: String },
+    /// 标签的显示顺序提示（作者那一刻的整列表；HLC 大者胜）。OR-Set 本身无序，投影按它排，不在其中的按添加时刻。
+    TagOrder { note: Key, tags: Vec<String> },
     /// 时间线还原点（设计 §10.2）。
     Checkpoint { name: String, reason: String },
     /// 彻底清除某实体的内容载荷（设计 §10.5），唯一改写历史的操作。
@@ -305,6 +308,7 @@ impl Body {
             Body::Log(_) => KIND_LOG,
             Body::TagAdd { .. } => KIND_TAG_ADD,
             Body::TagRemove { .. } => KIND_TAG_REMOVE,
+            Body::TagOrder { .. } => KIND_TAG_ORDER,
             Body::Checkpoint { .. } => KIND_CHECKPOINT,
             Body::Purge { .. } => KIND_PURGE,
             Body::Media { .. } => KIND_MEDIA,
@@ -340,6 +344,13 @@ impl Body {
             Body::TagAdd { note, tag } | Body::TagRemove { note, tag } => {
                 note.write(&mut w);
                 w.str(tag);
+            }
+            Body::TagOrder { note, tags } => {
+                note.write(&mut w);
+                w.uv(tags.len() as u64);
+                for t in tags {
+                    w.str(t);
+                }
             }
             Body::Checkpoint { name, reason } => {
                 w.str(name);
@@ -389,6 +400,18 @@ impl Body {
             KIND_LOG => Body::Log(read_log(r)?),
             KIND_TAG_ADD => Body::TagAdd { note: Key::read(r)?, tag: r.str()?.to_owned() },
             KIND_TAG_REMOVE => Body::TagRemove { note: Key::read(r)?, tag: r.str()?.to_owned() },
+            KIND_TAG_ORDER => {
+                let note = Key::read(r)?;
+                let n = r.uv()?;
+                if n > 1 << 16 {
+                    return Err(DecodeError("too many tags"));
+                }
+                let mut tags = Vec::with_capacity(n as usize);
+                for _ in 0..n {
+                    tags.push(r.str()?.to_owned());
+                }
+                Body::TagOrder { note, tags }
+            }
             KIND_CHECKPOINT => Body::Checkpoint { name: r.str()?.to_owned(), reason: r.str()?.to_owned() },
             KIND_PURGE => Body::Purge { kind: EntKind::from_code(r.u8()?)?, entity: Key::read(r)? },
             KIND_MEDIA => Body::Media {
@@ -594,6 +617,7 @@ pub(crate) mod tests {
             Body::Log(LogBody { kind: "weird".into(), rtype: "odd".into(), origin: "x".into(), intent: Intent::SetDue { due_day: -3 }, ..sample_log() }),
             Body::TagAdd { note: Key::of("n"), tag: "t".into() },
             Body::TagRemove { note: Key::of("n"), tag: "t".into() },
+            Body::TagOrder { note: Key::of("n"), tags: vec!["b".into(), "a".into()] },
             Body::Checkpoint { name: "a".into(), reason: "import".into() },
             Body::Purge { kind: EntKind::Note, entity: Key::of("n") },
             Body::Media { name: "a.mp3".into(), sha256: [9; 32], size: 77 },

@@ -494,14 +494,14 @@ void main() {
           await cardOf(a, await add(a, e)),
       ];
       await a.setSuspended(cards[0], true);
-      final int before = (await a.unpublishedEvents()).length;
+      final int before = (await a.sync2Status())['ops']! as int;
       final SrsBatchOutcome out = await srsBatchSetSuspended(
         a,
         cards,
         suspended: true,
       );
       expect(out.changed, 2, reason: '已暂停的那张不再写');
-      expect((await a.unpublishedEvents()).length, before + 2);
+      expect((await a.sync2Status())['ops'], before + 2, reason: '两张卡各一条操作');
       for (final SrsCardCacheRow r in await a.cardRows(cards)) {
         expect(r.suspended, isTrue);
       }

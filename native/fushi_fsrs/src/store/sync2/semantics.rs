@@ -50,15 +50,85 @@ fn ops_of(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Result<
 
 // ---------------------------------------------------------------- 标签 OR-Set
 
+/// 笔记现在的标签：存活的添加点按标签取最早一个（HLC 序）；顺序先按最近一次顺序提示（[tag_order]），不在
+/// 提示里的按最早添加时刻。
 pub(crate) fn current_tags(conn: &Connection, profile: &str, note: &str) -> Result<Vec<String>, String> {
     let mut stmt = conn
-        .prepare_cached(
-            "SELECT tag FROM sync2_tag_adds WHERE profile_uid = ?1 AND note = ?2 \
-             GROUP BY tag ORDER BY MIN(wall), MIN(logical), MIN(device), tag",
-        )
+        .prepare_cached("SELECT tag, wall, logical, device FROM sync2_tag_adds WHERE profile_uid = ?1 AND note = ?2")
         .map_err(sql)?;
-    let rows = stmt.query_map(params![profile, note], |r| r.get::<_, String>(0)).map_err(sql)?;
-    rows.collect::<Result<_, _>>().map_err(sql)
+    let rows: Vec<(String, i64, i64, Vec<u8>)> = stmt
+        .query_map(params![profile, note], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    let mut first: std::collections::BTreeMap<String, (i64, i64, Vec<u8>)> = std::collections::BTreeMap::new();
+    for (tag, w, l, d) in rows {
+        let k = (w, l, d);
+        match first.get(&tag) {
+            Some(old) if *old <= k => {}
+            _ => {
+                first.insert(tag, k);
+            }
+        }
+    }
+    let hint: Vec<String> = conn
+        .prepare_cached("SELECT tags FROM sync2_tag_order WHERE profile_uid = ?1 AND note = ?2")
+        .map_err(sql)?
+        .query_row(params![profile, note], |r| r.get::<_, String>(0))
+        .optional()
+        .map_err(sql)?
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default();
+    let mut out: Vec<String> = hint.into_iter().filter(|t| first.contains_key(t)).collect();
+    let mut rest: Vec<(&(i64, i64, Vec<u8>), &String)> =
+        first.iter().filter(|(t, _)| !out.contains(t)).map(|(t, k)| (k, t)).collect();
+    rest.sort();
+    out.extend(rest.into_iter().map(|(_, t)| t.clone()));
+    out.dedup();
+    Ok(out)
+}
+
+/// 顺序提示：HLC 大者胜。
+pub(crate) fn tag_order(conn: &Connection, profile: &str, note: &str, tags: &[String], op: &Op) -> Result<(), String> {
+    let cur: Option<(i64, i64, Vec<u8>)> = conn
+        .prepare_cached("SELECT wall, logical, device FROM sync2_tag_order WHERE profile_uid = ?1 AND note = ?2")
+        .map_err(sql)?
+        .query_row(params![profile, note], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .optional()
+        .map_err(sql)?;
+    let me = (op.hlc.wall, i64::from(op.hlc.logical), op.id.device.0.to_vec());
+    if cur.is_some_and(|c| c >= me) {
+        return Ok(());
+    }
+    conn.prepare_cached(
+        "INSERT OR REPLACE INTO sync2_tag_order (profile_uid, note, tags, wall, logical, device) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    )
+    .map_err(sql)?
+    .execute(params![profile, note, serde_json::to_string(tags).map_err(|e| e.to_string())?, me.0, me.1, me.2])
+    .map_err(sql)?;
+    Ok(())
+}
+
+/// 这条笔记最近一次标签操作的 HLC（合成行的 `hlc`：笔记的「修改时间」按它算）。
+fn last_tag_hlc(conn: &Connection, profile: &str, note: &str) -> Result<String, String> {
+    let row: Option<(i64, i64, Vec<u8>)> = conn
+        .prepare_cached(
+            "SELECT o.wall, o.logical, o.device FROM sync2_ent_ops e JOIN sync2_ops o \
+             ON o.profile_uid = e.profile_uid AND o.device = e.device AND o.seq = e.seq \
+             WHERE e.profile_uid = ?1 AND e.kind = 'note' AND e.entity = ?2 AND e.what IN ('#tag', 'tags') \
+             ORDER BY o.wall DESC, o.logical DESC, o.device DESC LIMIT 1",
+        )
+        .map_err(sql)?
+        .query_row(params![profile, note], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .optional()
+        .map_err(sql)?;
+    Ok(match row {
+        Some((w, l, d)) => {
+            let dev = <[u8; 16]>::try_from(d).map(|a| Id(a).text()).unwrap_or_default();
+            format!("{w}:{l}:{dev}")
+        }
+        None => "0:0:sync2".to_owned(),
+    })
 }
 
 pub(crate) fn tag_add(conn: &Connection, profile: &str, note: &str, tag: &str, op: &Op) -> Result<(), String> {
@@ -104,7 +174,7 @@ pub(crate) fn refresh_tags_row(conn: &Connection, profile: &str, note: &str, t: 
     let id = crate::registers::edit_id(&writer, 1);
     let row = json!({
         "id": id, "p": profile, "k": "note", "e": note, "f": "tags", "w": writer, "s": 1,
-        "ctx": {"vv": {}}, "v": tags, "hlc": "0:0:sync2", "ts": "wall",
+        "ctx": {"vv": {}}, "v": tags, "hlc": last_tag_hlc(conn, profile, note)?, "ts": "wall",
     });
     let text = canonical(&row);
     let old: Option<String> = conn
