@@ -59,7 +59,12 @@ import 'package:fushi/src/pages/implementations/game_shared.dart'
     show GameSection, gameSectionNotifier;
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
-    show DialogDangerAction, DialogQuickAction, MediaItemDialogFrame;
+    show
+        DialogActionGroup,
+        DialogDangerAction,
+        DialogQuickAction,
+        MediaItemDialogFrame,
+        showMediaItemActions;
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show formatStatTime;
@@ -2239,7 +2244,7 @@ class _GameCard extends StatelessWidget {
   /// 快捷动作 chips + 底部危险区），替代旧手搓 SimpleDialog。菜单项与封面溢出菜单
   /// **共用** [_menuItems] 与 [_dispatchAction]，避免两份手抄。
   Future<void> _showContextMenu(BuildContext context) async {
-    await showAppDialog<void>(
+    await showMediaItemActions<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _dialogCover(dialogContext),
@@ -2252,6 +2257,7 @@ class _GameCard extends StatelessWidget {
               DialogQuickAction(
                 label: item.label,
                 icon: item.icon,
+                group: item.group,
                 onPressed: () {
                   Navigator.pop(dialogContext);
                   _dispatchAction(item.action);
@@ -2315,61 +2321,77 @@ class _GameCard extends StatelessWidget {
     (
       action: 'detail',
       label: t.game_view_detail,
+      group: DialogActionGroup.content,
       icon: FushiIcons.info,
       danger: false,
     ),
     (
       action: 'status',
       label: t.game_play_status,
+      group: DialogActionGroup.progress,
       icon: FushiIcons.flag,
       danger: false,
     ),
     (
       action: 'stats',
       label: t.media_stats_action,
+      group: DialogActionGroup.progress,
       icon: FushiIcons.statistics,
       danger: false,
     ),
     (
       action: 'rename',
       label: t.game_rename,
+      group: DialogActionGroup.organize,
       icon: FushiIcons.rename,
       danger: false,
     ),
     (
       action: 'cover',
       label: t.game_set_cover,
+      group: DialogActionGroup.organize,
       icon: FushiIcons.image,
       danger: false,
     ),
     (
       action: 'autocover',
       label: t.game_auto_cover,
+      group: DialogActionGroup.organize,
       icon: FushiIcons.imageSearch,
       danger: false,
     ),
     (
       action: 'scrape',
       label: t.game_scrape,
+      group: DialogActionGroup.organize,
       icon: FushiIcons.cloudDownload,
       danger: false,
     ),
     (
       action: 'collect',
       label: t.add_to_collection,
+      group: DialogActionGroup.organize,
       icon: FushiIcons.collection,
       danger: false,
     ),
-    (action: 'tags', label: t.tag_label, icon: FushiIcons.tag, danger: false),
+    (
+      action: 'tags',
+      label: t.tag_label,
+      group: DialogActionGroup.organize,
+      icon: FushiIcons.tag,
+      danger: false,
+    ),
     (
       action: 'privacy',
       label: t.media_privacy_action,
+      group: DialogActionGroup.organize,
       icon: FushiIcons.lock,
       danger: false,
     ),
     (
       action: 'language',
       label: t.book_language_action,
+      group: DialogActionGroup.settings,
       icon: FushiIcons.language,
       danger: false,
     ),
@@ -2384,6 +2406,7 @@ class _GameCard extends StatelessWidget {
         label:
             '${t.game_upscaling} · '
             '${MagpieUpscalingModeDialog.modeLabel(magpieUpscalingModeFromKey(game.upscalingMode))}',
+        group: DialogActionGroup.settings,
         icon: Icons.aspect_ratio_outlined,
         danger: false,
       ),
@@ -2396,6 +2419,7 @@ class _GameCard extends StatelessWidget {
         label:
             '${t.game_japanese_locale} · '
             '${GalJapaneseLocaleModeDialog.modeLabel(galJapaneseLocaleModeFromKey(game.japaneseLocaleMode))}',
+        group: DialogActionGroup.settings,
         icon: Icons.translate_outlined,
         danger: false,
       ),
@@ -2407,12 +2431,14 @@ class _GameCard extends StatelessWidget {
       (
         action: 'file_location',
         label: t.media_file_location_open,
+        group: DialogActionGroup.organize,
         icon: FushiIcons.folderOpen,
         danger: false,
       ),
     (
       action: 'remove',
       label: t.game_remove,
+      group: DialogActionGroup.organize,
       icon: FushiIcons.delete,
       danger: true,
     ),
@@ -2669,6 +2695,7 @@ class _GameCard extends StatelessWidget {
 /// 游戏卡菜单项：action 键 + 文案 + 图标 + 是否落危险区（对话框底部红字）。
 typedef _GameMenuItem = ({
   String action,
+  DialogActionGroup group,
   String label,
   IconData icon,
   bool danger,

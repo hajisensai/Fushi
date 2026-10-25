@@ -76,7 +76,7 @@ Future<void> showCollectionContextDialog({
               fit: BoxFit.contain,
               errorBuilder: (_, __, ___) => const SizedBox.shrink(),
             ));
-  await showAppDialog<void>(
+  await showMediaItemActions<void>(
     context: context,
     builder: (BuildContext dialogContext) {
       void closeThen(void Function() action) {
@@ -135,6 +135,7 @@ Future<void> showCollectionContextDialog({
           DialogListAction(
             label: t.media_stats_action,
             icon: Icons.insights_outlined,
+            group: DialogActionGroup.progress,
             onPressed: () => closeThen(
               () => _openCollectionStatistics(
                 context: context,

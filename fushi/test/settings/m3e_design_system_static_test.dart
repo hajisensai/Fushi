@@ -412,11 +412,10 @@ void main() {
       'lib/src/pages/implementations/media_item_dialog_page.dart': <String>[
         'return Dialog(',
         '=> Dialog(',
-        'SingleChildScrollView(',
         'ListTile(',
         'dense: true',
         '_QuickActionChip',
-        'OutlinedButton.icon(',
+        ' OutlinedButton.icon(',
       ],
       'lib/src/utils/misc/update_checker_ui.dart': <String>['child: Card('],
       'lib/src/sync/sync_compare_dialog.dart': <String>[
@@ -2164,77 +2163,69 @@ class AnotherPopupPart {
     expect(cardLayout, isNot(contains('left: 6,')));
   });
 
-  test(
-    'book long-press frame uses visible cover block and M3E action layout',
-    () {
-      // TODO-557 把长按对话框封面从「Stack/Positioned.fill + LinearGradient scrim
-      // 背景」（TODO-455 引入、让封面几乎不可见）改回「Column 顶部可见封面块」：
-      // ConstrainedBox 限高 + ColoredBox letterbox + 传入的封面 widget（其内部
-      // BoxFit.contain，整幅可见不裁切）。本守卫断言这一可见封面结构，并反向锁定
-      // 旧 scrim 背景结构不回归。
-      final String source = File(
-        'lib/src/pages/implementations/media_item_dialog_page.dart',
-      ).readAsStringSync();
-      final String frame = _sectionSource(
-        source,
-        'class MediaItemDialogFrame extends StatelessWidget',
-        source.length,
-      );
+  test('item action menu keeps the three-presentation M3E structure', () {
+    // 2026-10-25 重设计（用户拍板「手机 B + 桌面 D + E」）：同一份分组动作由
+    // 承载容器决定排法——抽屉 / 窄对话框是图标宫格，宽对话框是左栏身份 + 右栏
+    // 分组分段列表，桌面右键是指针处的菜单。本守卫钉住三种呈现都在、仍走共享
+    // 设计系统件，并反向锁定已被否决的结构（封面高斯模糊垫底、TODO-455 的
+    // 前景封面铺底 scrim）不回归。
+    final String source = File(
+      'lib/src/pages/implementations/media_item_dialog_page.dart',
+    ).readAsStringSync();
+    final String frame = _sectionSource(
+      source,
+      'class MediaItemDialogFrame extends StatelessWidget',
+      source.length,
+    );
 
-      // 共享 MD3 对话框框 + 可见封面卡（2026-10-04 hero 重设计：封面按自身宽高比
-      // 定尺寸，不再整宽 contain 出 letterbox；限高仍在）。
-      expect(frame, contains('FushiDialogFrame('));
-      expect(frame, contains('ConstrainedBox('));
-      expect(frame, contains('ColoredBox('));
-      expect(frame, contains('tokens.surfaces.overlay'));
-      expect(frame, contains('AspectRatio('));
-      expect(frame, contains('class _CoverAspectResolver'));
-      expect(frame, contains('screenHeight * _coverHeightFactor'));
-      // 宽框列表动作双列、窄框单列。
-      expect(frame, contains('columns = wide ? 2 : 1'));
-      // MD3 action layout（Material 3 Expressive）：快捷动作是等宽 tonal 图标文字
-      // 按钮网格，列表动作是分段分组卡，危险动作是文字按钮。
-      // BUG-2603：网格是按真实内在宽度决定列数的 _QuickActionGrid，不再是
-      // 「常量猜最小宽 + Wrap」（那套在手机宽度把标签截成「查…/导…/从…」）。
-      expect(frame, contains('_QuickActionGrid('));
-      expect(frame, isNot(contains('_quickActionMinChipWidth')));
-      expect(frame, contains('FushiFilledButton.tonalIcon('));
-      expect(frame, contains('_Md3SegmentRow('));
-      // 2026-10-04：列表 / 多余快捷 / 危险动作都是同一张分段分组网格（行列缝
-      // kSettingsSegmentGap、外角 24 内角 4），危险组 error 色、另起一组。
-      expect(frame, contains('_buildMd3SegmentGrid('));
-      expect(frame, contains('kSettingsSegmentOuterRadius'));
-      expect(frame, contains('SizedBox(height: kSettingsSegmentGap)'));
-      expect(
-        frame,
-        contains('DialogDangerAction(muted: false) => colors.error'),
-      );
-      expect(frame, contains('final bool showLaunchAction;'));
-      expect(frame, contains('showLaunchAction &&'));
-      expect(frame, contains('launchLabel != null'));
-      expect(frame, contains('onLaunch != null'));
-      expect(frame, isNot(contains('SingleChildScrollView(')));
-      expect(frame, isNot(contains('ListTile(')));
-      expect(frame, isNot(contains('OutlinedButton.icon(')));
-      // 旧 scrim 背景结构（TODO-455：**前景封面**铺底 + 渐变遮罩、封面几乎不可见）
-      // 不得回归。hero 头部（MD3）/ 整块面板（Apple）的模糊垫底与渐变只装
-      // coverBackdrop 图源（降采样后的另一份图），传入的封面 widget 只能出现在
-      // 前景封面卡里、清晰不透明。
-      expect(frame, isNot(contains('Positioned.fill(child: cover')));
-      expect(frame, contains('final ImageProvider? coverBackdrop;'));
-      expect(frame, contains('ui.ImageFilter.blur('));
-      expect(
-        RegExp(r'cover!').allMatches(frame).length,
-        1,
-        reason: '封面 widget 只画一次：在前景封面卡里',
-      );
-      expect(
-        frame,
-        matches(RegExp(r'ClipRRect\([^;]*?child: cover!,')),
-        reason: '前景封面必须在圆角封面卡（ClipRRect）里画，不是背景层',
-      );
-    },
-  );
+    // 唯一入口与三种承载。
+    expect(source, contains('Future<T?> showMediaItemActions<T>('));
+    expect(source, contains('adaptiveModalSheet<T>('));
+    expect(source, contains('showAppDialog<T>('));
+    expect(source, contains('class _MediaItemContextMenuRoute<T>'));
+    expect(source, contains('activeContextMenuAnchor'));
+    expect(frame, contains('case MediaItemActionsLayout.sheet:'));
+    expect(frame, contains('case MediaItemActionsLayout.dialog:'));
+    expect(frame, contains('case MediaItemActionsLayout.contextMenu:'));
+
+    // 对话框外框仍是共享 FushiDialogFrame；可见封面卡按宽高比定尺寸。
+    expect(frame, contains('FushiDialogFrame('));
+    expect(frame, contains('.surfaces.overlay'));
+    expect(frame, contains('class _CoverAspectResolver'));
+    // B：宫格 + 大色块；D：分组分段列表（组首尾大圆角、组内小圆角）。
+    expect(frame, contains('_ActionTile('));
+    expect(frame, contains('_HeroActionTile('));
+    expect(frame, contains('_ActionSection('));
+    expect(frame, contains('_Md3SegmentRow('));
+    expect(frame, contains('kSettingsSegmentOuterRadius'));
+    expect(frame, contains('SizedBox(height: kSettingsSegmentGap)'));
+    expect(frame, contains('FushiFilledButton.tonalIcon('));
+    // E：设置组收进子菜单。
+    expect(frame, contains('_ContextSubmenuRow('));
+    // 动效：错峰进场 + 按压缩放。
+    expect(frame, contains('FushiEntranceScope('));
+    expect(frame, contains('FushiStaggeredEntrance('));
+    expect(frame, contains('FushiPressScale('));
+
+    expect(frame, contains('final bool showLaunchAction;'));
+    expect(frame, contains('showLaunchAction &&'));
+    expect(frame, contains('launchLabel != null'));
+    expect(frame, contains('onLaunch != null'));
+    expect(frame, isNot(contains('ListTile(')));
+    // 库页定版「不要封面模糊背景」：头部不再垫同图高斯模糊。
+    expect(frame, isNot(contains('ImageFilter.blur(')));
+    expect(frame, isNot(contains('Positioned.fill(child: cover')));
+    expect(
+      RegExp(r'cover!').allMatches(frame).length,
+      1,
+      reason: '封面 widget 只画一次：在前景封面卡里',
+    );
+    expect(
+      frame,
+      matches(RegExp(r'ClipRRect\([^;]*?child: cover!,')),
+      reason: '前景封面必须在圆角封面卡（ClipRRect）里画，不是背景层',
+    );
+  });
 
   test('settings renderer rows use shared M3E row primitives', () {
     // schema 行渲染已从两个渲染器收口到共享 settings_schema_widgets.SettingsSchemaItem。

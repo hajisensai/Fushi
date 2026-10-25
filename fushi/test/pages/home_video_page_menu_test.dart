@@ -30,6 +30,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show videoRemotePositionAtPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
+    show MediaItemDialogFrame;
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
@@ -465,8 +467,10 @@ void main() {
     await tester.tap(videoCard('video/1'), buttons: kSecondaryButton);
     await tester.pumpAndSettle();
 
-    // 右键与长按同链路（都走 _showVideoMenu）：应弹出同一封面背景动作面板。
-    expect(find.byType(FushiDialogFrame), findsOneWidget);
+    // 右键与长按同链路（都走 _showVideoMenu）、同一份动作。2026-10-25 起鼠标右键
+    // 在指针处弹右键菜单（设计稿 E），不再是居中对话框。
+    expect(find.byType(MediaItemDialogFrame), findsOneWidget);
+    expect(find.byType(FushiDialogFrame), findsNothing);
     expect(find.text(t.tag_label), findsOneWidget);
     expect(find.text(t.video_rename), findsOneWidget);
     expect(find.text(t.srt_import_pick_cover), findsOneWidget);

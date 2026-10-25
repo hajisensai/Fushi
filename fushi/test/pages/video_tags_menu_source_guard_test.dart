@@ -122,7 +122,9 @@ void main() {
         isFalse,
         reason: '_showVideoMenu 不得再弹旧底部小栏',
       );
-      expect(menuBody.contains('showAppDialog'), isTrue);
+      // 2026-10-25 起条目菜单统一走 showMediaItemActions（手机抽屉 / 桌面对话框 /
+      // 右键菜单三种承载），不再直接 showAppDialog。
+      expect(menuBody.contains('showMediaItemActions'), isTrue);
       expect(
         menuBody.contains('MediaItemDialogFrame'),
         isTrue,

@@ -27,8 +27,7 @@ void main() {
   Future<(FushiDatabase, MediaCollectionRow)> buildCollection({
     bool withMembers = true,
   }) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final int id = await db.createMediaCollection('collection-a');
     if (withMembers) {
@@ -113,8 +112,10 @@ void main() {
   Future<void> tapConfirm(WidgetTester tester) async {
     // 二级勾选展开后确认框比 800x600 默认窗口高：内容区可滚动，确认键在
     // 滚动区底部，先滚到可见再点（与用户滑到底再确认同一路径）。
-    final Finder confirm =
-        find.widgetWithText(FilledButton, t.delete_collection);
+    final Finder confirm = find.widgetWithText(
+      FilledButton,
+      t.delete_collection,
+    );
     await tester.ensureVisible(confirm);
     await tester.pumpAndSettle();
     await tester.tap(confirm);
@@ -173,8 +174,9 @@ void main() {
   // 这两个决定必须分开落地。压成一行文案（旧实现「同时删除其中的视频（保留你的
   // 原始视频文件）」）等于替用户把后一个决定定死，用户没有任何入口删原件。
 
-  testWidgets('二级勾选未提供：勾主选也不出现「同时删除本地文件」，回调收到 false',
-      (WidgetTester tester) async {
+  testWidgets('二级勾选未提供：勾主选也不出现「同时删除本地文件」，回调收到 false', (
+    WidgetTester tester,
+  ) async {
     final (FushiDatabase db, MediaCollectionRow collection) =
         await buildCollection();
     final _Probe probe = await pumpAndOpen(
@@ -197,8 +199,9 @@ void main() {
     expect(probe.deleteLocalFiles, isFalse);
   });
 
-  testWidgets('「同时删除统计数据」同款纪律：主勾选之下才出现，默认不勾，勾了才回调 true',
-      (WidgetTester tester) async {
+  testWidgets('「同时删除统计数据」同款纪律：主勾选之下才出现，默认不勾，勾了才回调 true', (
+    WidgetTester tester,
+  ) async {
     final (FushiDatabase db, MediaCollectionRow collection) =
         await buildCollection();
     final _Probe probe = await pumpAndOpen(
@@ -225,8 +228,9 @@ void main() {
     expect(probe.deleteStatistics, isFalse);
   });
 
-  testWidgets('勾上「同时删除统计数据」→ 回调收到 deleteStatistics=true，且与删本地文件正交',
-      (WidgetTester tester) async {
+  testWidgets('勾上「同时删除统计数据」→ 回调收到 deleteStatistics=true，且与删本地文件正交', (
+    WidgetTester tester,
+  ) async {
     // 主勾选 + 两个二级勾选在 800x600 默认测试窗口里会溢出，点击落到被遮挡的行上。
     tester.view.physicalSize = const Size(1200, 2000);
     tester.view.devicePixelRatio = 1;
@@ -250,15 +254,12 @@ void main() {
     await tapConfirm(tester);
 
     expect(probe.deleteStatistics, isTrue);
-    expect(
-      probe.deleteLocalFiles,
-      isFalse,
-      reason: '两个二级勾选正交：删统计不代表删磁盘原件',
-    );
+    expect(probe.deleteLocalFiles, isFalse, reason: '两个二级勾选正交：删统计不代表删磁盘原件');
   });
 
-  testWidgets('二级勾选只在主勾选之下出现，勾上后回调收到 deleteLocalFiles=true',
-      (WidgetTester tester) async {
+  testWidgets('二级勾选只在主勾选之下出现，勾上后回调收到 deleteLocalFiles=true', (
+    WidgetTester tester,
+  ) async {
     final (FushiDatabase db, MediaCollectionRow collection) =
         await buildCollection();
     final _Probe probe = await pumpAndOpen(
@@ -371,14 +372,12 @@ void main() {
     expect(find.byType(Checkbox), findsNothing);
   });
 
-  // 2026-10-04：合集菜单此前没有封面块，一眼认不出是哪个合集。传入图源时与书卡
-  // 菜单同形：前景 contain 封面 + 两侧同图模糊垫底；不传则不画封面块。
-  testWidgets('coverImage：画出封面块与模糊垫底，不传则没有封面块',
-      (WidgetTester tester) async {
+  // 2026-10-04：合集菜单此前没有封面块，一眼认不出是哪个合集。传入图源时画前景
+  // contain 封面卡；不传则不画封面块。2026-10-25 重设计起不再垫同图模糊（库页
+  // 定版「不要封面模糊背景」）。
+  testWidgets('coverImage：画出封面块，不传则没有封面块，且不垫模糊', (WidgetTester tester) async {
     final (FushiDatabase db, MediaCollectionRow collection) =
         await buildCollection();
-    const ValueKey<String> backdropKey =
-        ValueKey<String>('media_item_dialog_cover_backdrop');
 
     await pumpAndOpen(
       tester,
@@ -386,7 +385,6 @@ void main() {
       collection: collection,
       injectDeleteMembers: false,
     );
-    expect(find.byKey(backdropKey), findsNothing);
     expect(find.byType(Image), findsNothing);
     Navigator.of(tester.element(find.byType(MediaItemDialogFrame))).pop();
     await tester.pumpAndSettle();
@@ -398,9 +396,9 @@ void main() {
       injectDeleteMembers: false,
       coverImage: MemoryImage(Uint8List.fromList(const <int>[0])),
     );
-    expect(find.byKey(backdropKey), findsOneWidget);
-    // 前景封面 + 垫底各一张。
-    expect(find.byType(Image), findsNWidgets(2));
+    // 只有前景封面一张。
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byType(ImageFiltered), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -425,8 +423,7 @@ void main() {
   testWidgets('一键整理「按名称」：重排落盘 sortIndex 并通知页面刷新', (WidgetTester tester) async {
     // 成员按 book-2 → book-1 的乱序加入；两本书无 epub 行 → 排序元数据按
     // (entryKey, 0) 兜底，标题即 entryKey，「按名称」应重排为 book-1 → book-2。
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final int id = await db.createMediaCollection('collection-sort');
     await db.addToCollection(id, MediaKind.epub, 'book-2');
@@ -454,8 +451,9 @@ void main() {
     expect(probe.changedCount, 1, reason: '排序落盘后必须通知页面重载合集行。');
   });
 
-  testWidgets('extraListActions：媒体特有项渲染、先关弹窗再执行、不触发 onChanged',
-      (WidgetTester tester) async {
+  testWidgets('extraListActions：媒体特有项渲染、先关弹窗再执行、不触发 onChanged', (
+    WidgetTester tester,
+  ) async {
     final (FushiDatabase db, MediaCollectionRow collection) =
         await buildCollection();
     bool ran = false;
@@ -532,7 +530,8 @@ void main() {
       expect(
         src,
         isNot(contains('repo.deleteVideoBookAndReclaimAssets(')),
-        reason: '合集删成员必须走 deleteVideoBooksWithDecision：勾了「删本地文件」时'
+        reason:
+            '合集删成员必须走 deleteVideoBooksWithDecision：勾了「删本地文件」时'
             '要先让播放器放句柄（Windows 上不放就是 errno 32，盘上文件一个没少）、'
             '把做种文件标 skip，删完再对账下载任务。裸仓库调用绕过这整条纪律。',
       );
@@ -550,7 +549,8 @@ void main() {
       expect(
         src,
         isNot(contains('onDeleteMembersMedia:')),
-        reason: '游戏合集删除只解散容器，绝不提供「连同游戏一起删」——游戏本体'
+        reason:
+            '游戏合集删除只解散容器，绝不提供「连同游戏一起删」——游戏本体'
             '是用户安装目录，从库移除走卡菜单「移除」（2026-07-28 拍板）。',
       );
       expect(src, isNot(contains('delete_collection_also_games')));
