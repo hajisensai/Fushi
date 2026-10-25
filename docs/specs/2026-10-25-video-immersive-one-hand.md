@@ -46,13 +46,12 @@
 - **默认 = 只有锁按钮，零行为变化**。老用户 / 新用户都没有沉浸布局的持久化值时，按普通布局派生锁按钮位置：普通布局里锁在 `screenLeft` / `screenRight` 就放同侧；在顶 / 底栏或隐藏就放左侧（= 现在 `_buildSideLockButton` 的位置）。**不往任何栏里预塞按钮**，普通布局也一个不动。
 - **可拖入的项**：学习类 `previousCue` / `nextCue` / `replayCue` / `favoriteSentence`，以及 `speed`、`ocrFrame`、`customAction1-4` 等 chip 可渲染项。想单手的用户自己把「上一句 / 收藏 / 下一句」拖到锁按钮同侧或另一侧。
 - **显隐与锁按钮同一套**：整层（两条侧栏）跟 `_lockButtonVisible` 走——点画面唤出、2s 淡出、桌面 hover 续命、按下续命。不常驻，沉浸态平时画面是干净的。与 3.1 叠加时点一下画面，字幕和按钮一起出来。
-- **门控**：渲染与响应的判据收成纯函数 `videoImmersiveAllowsItem(VideoImmersiveMode, VideoControlItem)`：
-  - `immersiveLock` 恒放行；
-  - 学习类四项：除 `unlockOnly` 外放行（用户亲手放进沉浸布局的显式按钮，不是画面误触）；
-  - 其余项：按原 `_immersiveAllowsFullControls`（只 `full` 放行）。
-  - 不放行的项在当前档位直接不渲染，不画一个点了没反应的按钮。
+- **门控：沉浸布局管按钮，沉浸档位管画面与按键，两者正交**（2026-10-25 所有者拍板）：
+  - 沉浸布局里的按钮在**任何** `VideoImmersiveMode` 档位下都渲染、都响应，包括 `unlockOnly`——用户亲手放进来的显式按钮不是误触；不想要就不放（默认布局只有锁按钮，`unlockOnly` 的「只能解锁」靠默认布局成立）。
+  - `VideoImmersiveMode` 只继续门控画面与输入：点字查词、双击 seek、滚轮、右键菜单、键盘 / 手柄快捷键（现有四个 getter 不变）。
+  - 因此沉浸布局按钮的点击**不走** `_immersiveAllowsFullControls`；渲染处不再按档位过滤，避免「放了按钮点不动」。
 - **持久化**：与普通布局分开存一份 slot assignment（新偏好键，进 Profile / 备份同普通布局）；只存用户改过的值，未改时始终按上面规则派生，避免普通布局里锁按钮挪了位置、沉浸布局还停在旧位置。
-- **渲染**：`_buildVideoSideActionRail` 的 `immersiveOnly` 过滤改为读沉浸布局 + `videoImmersiveAllowsItem`；`_buildSideLockButton` 退化路径并入同一渲染（锁按钮总在沉浸布局里有确定位置），删掉 `lockOnSideRail` 两条分支。视觉沿用侧栏现有按钮（纯图标、tooltip + Semantics、≥48dp、`FushiPressScale`），MD3 / Apple 两套都走现有侧栏实现。
+- **渲染**：`_buildVideoSideActionRail` 的 `immersiveOnly` 过滤改为读沉浸布局；`_buildSideLockButton` 退化路径并入同一渲染（锁按钮总在沉浸布局里有确定位置），删掉 `lockOnSideRail` 两条分支。视觉沿用侧栏现有按钮（纯图标、tooltip + Semantics、≥48dp、`FushiPressScale`），MD3 / Apple 两套都走现有侧栏实现。
 - **收藏反馈**：触感反馈 + 星标实心切换 + 现有 OSD，不唤起控制条（BUG-931）。
 
 ### 3.3 不做什么
@@ -66,19 +65,19 @@
 | 阶段 | 内容 | 主要文件 |
 |---|---|---|
 | P1 | 3.1：偏好 + 设置行 + 纯函数 + overlay 显形句柄 + `_handleVideoPointerUp` 接线 + i18n | `preferences_repository.dart`、`settings_schema_video.dart`、`video_subtitle_overlay.dart`、`video_fushi_page.dart`、`layout.part.dart` |
-| P2 | 3.2：沉浸布局模型 + 派生默认 + 持久化 + 编辑器「沉浸」页签 + 渲染并路 + 门控纯函数 | `video_control_customization.dart`、控件布局编辑器、`layout.part.dart`、`video_fushi_page.dart` |
+| P2 | 3.2：沉浸布局模型 + 派生默认 + 持久化 + 编辑器「沉浸」页签 + 渲染并路 | `video_control_customization.dart`、控件布局编辑器、`layout.part.dart`、`video_fushi_page.dart` |
 
 i18n 一律 `fushi/tool/i18n_sync.dart --add`（如 `video_setting_immersive_tap_reveal` / `_hint`、编辑器页签名）。
 
 ## 5. 测试
 
-- 纯函数单测：`videoImmersiveTapRevealsSubtitle` 全组合；`videoImmersiveAllowsItem` 四档 × 锁 / 学习 / 其它；沉浸布局默认派生（锁在左栏 / 右栏 / 顶栏 / 底栏 / 隐藏五种普通布局）。
+- 纯函数单测：`videoImmersiveTapRevealsSubtitle` 全组合；沉浸布局默认派生（锁在左栏 / 右栏 / 顶栏 / 底栏 / 隐藏五种普通布局）。
 - overlay widget 测试：显形句柄 toggle、cue 换轮遮回、`obscureRevealOnInteraction=false` 时无效、副字幕不受影响。
-- 页面 widget 测试：沉浸锁 + 隐藏遮蔽下点画面中心 → 主字幕可见且字符可点查词；开关关掉后点画面不显形；沉浸布局放了收藏 → `shortcutAndLookup` 档可点且写穿收藏表、`unlockOnly` 档不渲染。
+- 页面 widget 测试：沉浸锁 + 隐藏遮蔽下点画面中心 → 主字幕可见且字符可点查词；开关关掉后点画面不显形；沉浸布局放了收藏 → 四个档位（含 `lookupOnly` / `unlockOnly`）都可点且写穿收藏表；同时 `lookupOnly` 档点画面双击仍不 seek（档位门控画面输入不受沉浸布局影响）。
 - 编辑器测试：锁按钮拖不进隐藏托盘。
 - 集成测试按焦点驱动规则补一条：沉浸锁 → 焦点到沉浸布局里的收藏键 → Enter → 断言 DB 收藏行。
 
 ## 6. 已拍板 / 待决策
 
-- 已拍板（2026-10-25）：点画面显形做成开关、默认开；不往任何布局预塞按钮；沉浸态单独一套排列。
-- 待决策：学习类按钮在 `lookupOnly`（仅查词）档是否放行——本案默认放行，理由见 3.2。
+- 已拍板（2026-10-25）：点画面显形做成开关、默认开；不往任何布局预塞按钮；沉浸态单独一套排列；沉浸布局里的按钮在所有档位都有效，档位只管画面与按键。
+- 无待决策项。
