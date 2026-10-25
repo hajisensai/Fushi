@@ -222,7 +222,7 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
     };
     Object.assign(reader, {screen, screens: [0, 1].map(i => ({render: () => new Element('screen-' + i)})),
       currentScreenIndex: index, revealComplete: true, revealSpeed: 0, nativeSelectionActive: false,
-      clearRevealTimer() {}, clearCurrentSentenceAudioScreenTargets() {}, centerScreenInk() {},
+      clearRevealTimer() {}, clearRevealRange() {}, clearCurrentSentenceAudioScreenTargets() {}, centerScreenInk() {},
       setupReaderImages() {}, buildNodeOffsets() {}, applyCurrentScreenHighlights() {},
       refreshSentenceAudioCuePresentation() {}});
     for (const name of ['paginate', 'renderScreen', 'completeCurrentReveal']) reader[name] = fn('vn', name);

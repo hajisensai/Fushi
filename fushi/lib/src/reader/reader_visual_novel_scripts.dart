@@ -2628,6 +2628,7 @@ $sharedInitViewport
       selection.clearSelection();
     }
     this.clearRevealTimer();
+    this.clearRevealRange();
     this.currentScreenIndex = safeIndex;
     this.clearCurrentSentenceAudioScreenTargets();
     if (this.screen.replaceChildren) {
@@ -2714,21 +2715,87 @@ $sharedInitViewport
   hideCurrentScreenForReveal: function() {
     this.revealSegments = [];
     this.revealCursor = 0;
+    this.clearRevealRange();
     var walker = this.createWalker();
     var textNodes = [];
     var node;
     while (node = walker.nextNode()) {
       if (node.textContent) textNodes.push(node);
     }
-    for (var i = 0; i < textNodes.length; i++) {
-      this.prepareTextNodeForReveal(textNodes[i]);
+    if (this.revealByRangeAvailable()) {
+      this.prepareRevealRange(textNodes);
+    } else {
+      for (var i = 0; i < textNodes.length; i++) {
+        this.prepareTextNodeForReveal(textNodes[i]);
+      }
     }
     if (!this.revealSegments.length) {
+      this.clearRevealRange();
       this.revealComplete = true;
       return;
     }
     this.revealComplete = false;
     this.scheduleRevealTick();
+  },
+  // BUG-3770：逐字显现不能改屏上 DOM。旧做法把每个文本节点切成「已显现文本 + visibility:hidden
+  // 的 span」，每个 tick 在两者之间挪字；Blink 对含 ruby 的段落按不同的文本节点切分排出不同的
+  // 行盒（与 BUG-3741 同一机制，含注音那列差 6px），显现推进到注音词时整屏居中平移 3px、显现
+  // 完成拆掉 span 时又平移回来。所以支持 CSS Highlight 的引擎上，未显现部分登记成一个 live Range
+  // （从下一个要显现的字到屏末），用 ::highlight(fushi-vn-unrevealed) 画成透明，DOM 一字不动；
+  // 注音（rt）跟着同一 Range 走，基字显现完才露出。查词命中与窄条层经 window.__fushiRevealRange
+  // 认出未显现的字（见 reader_selection_scripts.dart）。不支持 CSS Highlight 的旧 WebView 仍切节点。
+  // window.__fushiVnRevealRangeMode === false 可强关，供测试跑兜底路径。
+  revealByRangeAvailable: function() {
+    if (!window.__fushiCssHighlightsSupported || typeof Highlight !== 'function') return false;
+    return window.__fushiVnRevealRangeMode !== false;
+  },
+  prepareRevealRange: function(textNodes) {
+    var ua = (window.navigator && window.navigator.userAgent) || '';
+    var webKit = ua.indexOf('AppleWebKit/') >= 0 &&
+      ua.indexOf('Chrome/') < 0 && ua.indexOf('Chromium/') < 0;
+    for (var i = 0; i < textNodes.length; i++) {
+      var node = textNodes[i];
+      if (typeof window.__fushiEnsureHighlightPaintable === 'function') {
+        window.__fushiEnsureHighlightPaintable(node);
+      }
+      // WebKit 不给直接挂在 <ruby> 下的基字文本画 ::highlight（macOS WKWebView 实测，与 BUG-3323
+      // 同类），未显现的基字会提前露出。建屏时（首帧之前，此后不再动）把它就地包进无样式行内
+      // 元素：节点身份不变，ruby 本身不移动（BUG-2806）。
+      if (webKit && node.parentNode && node.parentNode.localName === 'ruby') {
+        var wrapper = document.createElement('fushi-hl-text');
+        node.parentNode.insertBefore(wrapper, node);
+        wrapper.appendChild(node);
+      }
+      var chars = Array.from(node.textContent);
+      var offsets = [];
+      var cursor = 0;
+      for (var c = 0; c < chars.length; c++) {
+        offsets.push(cursor);
+        cursor += chars[c].length;
+      }
+      this.revealSegments.push({ node: node, chars: chars, offsets: offsets, revealed: 0 });
+    }
+    if (!this.revealSegments.length) return;
+    var content = this.screen.firstChild;
+    var range = document.createRange();
+    range.setStart(this.revealSegments[0].node, 0);
+    range.setEnd(content, content.childNodes.length);
+    window.__fushiRevealRange = range;
+    this.paintRevealRange();
+  },
+  // 只改 live Range 的端点不保证引擎重绘，每次推进都重新登记一份 Highlight。
+  paintRevealRange: function() {
+    var range = window.__fushiRevealRange;
+    if (!range) return;
+    var highlight = new Highlight(range);
+    // 压过查词 / 当前句等所有高亮的字色。
+    highlight.priority = 100;
+    CSS.highlights.set('fushi-vn-unrevealed', highlight);
+  },
+  clearRevealRange: function() {
+    if (!window.__fushiRevealRange) return;
+    window.__fushiRevealRange = null;
+    if (window.CSS && CSS.highlights) CSS.highlights.delete('fushi-vn-unrevealed');
   },
   prepareTextNodeForReveal: function(node) {
     var parent = node.parentNode;
@@ -2777,13 +2844,22 @@ $sharedInitViewport
     this.scheduleRevealTick();
   },
   revealOneCharacter: function() {
+    var range = window.__fushiRevealRange;
     for (var i = 0; i < this.revealSegments.length; i++) {
       var segment = this.revealSegments[i];
       if (segment.revealed >= segment.chars.length) continue;
       segment.revealed += 1;
+      this.revealCursor += 1;
+      if (range) {
+        var next = segment.revealed < segment.chars.length ? segment : this.revealSegments[i + 1];
+        if (next) {
+          range.setStart(next.node, next === segment ? segment.offsets[segment.revealed] : 0);
+          this.paintRevealRange();
+        }
+        return true;
+      }
       segment.visible.textContent = segment.chars.slice(0, segment.revealed).join('');
       segment.hiddenText.textContent = segment.chars.slice(segment.revealed).join('');
-      this.revealCursor += 1;
       return true;
     }
     return false;
@@ -2801,7 +2877,9 @@ $sharedInitViewport
   },
   completeCurrentReveal: function() {
     this.clearRevealTimer();
+    this.clearRevealRange();
     this.revealSegments.forEach(function(segment) {
+      if (!segment.hidden) return;
       segment.visible.textContent = segment.chars.join('');
       if (segment.hidden.parentNode) {
         segment.hidden.parentNode.removeChild(segment.hidden);
