@@ -3633,7 +3633,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 长按视频卡：打开与书架书籍一致的封面背景动作面板。播放仍由卡片点击负责。
   void _showVideoMenu(VideoBookRow book) {
-    showAppDialog<void>(
+    showMediaItemActions<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _buildCover(book),
@@ -3662,6 +3662,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           DialogQuickAction(
             label: t.video_rename,
             icon: Icons.drive_file_rename_outline,
+            group: DialogActionGroup.organize,
             onPressed: () {
               Navigator.pop(dialogContext);
               _renameVideo(book);
@@ -3670,6 +3671,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           DialogQuickAction(
             label: t.srt_import_pick_cover,
             icon: Icons.image_outlined,
+            group: DialogActionGroup.organize,
             onPressed: () {
               Navigator.pop(dialogContext);
               _pickCover(book);
@@ -3683,6 +3685,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             DialogQuickAction(
               label: t.video_cover_online_search,
               icon: Icons.image_search_outlined,
+              group: DialogActionGroup.organize,
               onPressed: () {
                 Navigator.pop(dialogContext);
                 unawaited(_pickOnlineCover(book));
@@ -3710,6 +3713,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           DialogQuickAction(
             label: t.add_to_collection,
             icon: Icons.collections_bookmark_outlined,
+            group: DialogActionGroup.organize,
             onPressed: () {
               Navigator.pop(dialogContext);
               _addToCollection(book);
@@ -3718,6 +3722,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           DialogQuickAction(
             label: t.tag_label,
             icon: Icons.sell_outlined,
+            group: DialogActionGroup.organize,
             onPressed: () {
               Navigator.pop(dialogContext);
               _editTags(book);
@@ -3728,6 +3733,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           DialogQuickAction(
             label: t.book_language_action,
             icon: Icons.translate,
+            group: DialogActionGroup.settings,
             onPressed: () {
               Navigator.pop(dialogContext);
               _pickVideoLanguage(book);
@@ -3742,6 +3748,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             DialogQuickAction(
               label: t.media_file_location_open,
               icon: Icons.folder_open_outlined,
+              group: DialogActionGroup.organize,
               onPressed: () {
                 Navigator.pop(dialogContext);
                 unawaited(_openVideoFileLocation(book));
@@ -3755,6 +3762,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             DialogQuickAction(
               label: t.video_watch_progress_clear,
               icon: Icons.restart_alt_outlined,
+              group: DialogActionGroup.progress,
               onPressed: () {
                 Navigator.pop(dialogContext);
                 unawaited(_clearWatchProgress(book));
@@ -3771,6 +3779,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           DialogListAction(
             label: t.media_stats_action,
             icon: Icons.insights_outlined,
+            group: DialogActionGroup.progress,
             onPressed: () {
               Navigator.pop(dialogContext);
               unawaited(
@@ -8221,7 +8230,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 「播放（流播）」，不下载直接看；短按卡片仍是下载入库（#4 语义不变）。
     final CloudStreamVideoClient? cloudStream = _cloudRemoteVideoClient
         ?.streamingClient();
-    showAppDialog<void>(
+    showMediaItemActions<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _buildRemoteVideoCover(video),
@@ -9084,6 +9093,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         DialogListAction(
           label: t.video_jimaku_batch_title,
           icon: Icons.subtitles_outlined,
+          group: DialogActionGroup.content,
           onPressed: () => _openCollectionSubtitles(collection),
         ),
         // 合集整体下载（#6）：只在有远端源时出现；成员全在本机时点了会明确提示
@@ -9092,6 +9102,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           DialogListAction(
             label: t.remote_collection_download_members,
             icon: Icons.cloud_download_outlined,
+            group: DialogActionGroup.content,
             onPressed: () => unawaited(_downloadRemoteCollection(collection)),
           ),
         // 互联刮削（7a / 7b）：只在互联源上出现。

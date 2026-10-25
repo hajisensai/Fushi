@@ -2937,7 +2937,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     VoidCallback? removeFromCollection,
     bool fromSeriesPage = false,
   }) async {
-    await showAppDialog(
+    await showMediaItemActions(
       context: context,
       builder: (BuildContext dialogCtx) => MediaItemDialogPage(
         item: item,
@@ -3106,6 +3106,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         DialogListAction(
           label: t.remote_book_subtitles_refresh,
           icon: FushiIcons.subtitles,
+          group: DialogActionGroup.content,
           onPressed: () => _refetchRemoteAudiobook(
               _remoteAudiobookRefetchFor(bookKey)!, bookKey,
               subtitlesOnly: true),
@@ -3113,6 +3114,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         DialogListAction(
           label: t.remote_book_audiobook_redownload,
           icon: FushiIcons.cloudSync,
+          group: DialogActionGroup.content,
           onPressed: () => _refetchRemoteAudiobook(
               _remoteAudiobookRefetchFor(bookKey)!, bookKey,
               subtitlesOnly: false),
@@ -3137,6 +3139,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       DialogListAction(
         label: t.media_stats_action,
         icon: Icons.insights_outlined,
+        group: DialogActionGroup.progress,
         onPressed: () => _openItemStatistics(item, bookKey),
       ),
       DialogListAction(
@@ -3146,6 +3149,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         icon: _completedBookKeys.contains(bookKey)
             ? Icons.check_circle
             : Icons.check_circle_outline,
+        group: DialogActionGroup.progress,
+        selected: _completedBookKeys.contains(bookKey),
         onPressed: () => _toggleBookCompleted(bookKey),
       ),
       // 误点开一本书后把它变回「没读过」：进度归零 + 取消读完 + 离开继续阅读，
@@ -3153,6 +3158,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       DialogListAction(
         label: t.library_progress_reset_action,
         icon: Icons.restart_alt_outlined,
+        group: DialogActionGroup.progress,
         onPressed: () => _resetBookReadingState(item, bookKey),
       ),
       // 统一三库页刮削入口：书卡菜单直达「在线刮削封面」（视频/游戏的刮削都在
@@ -3197,6 +3203,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       DialogListAction(
         label: t.profile_book_profile,
         icon: Icons.account_circle_outlined,
+        group: DialogActionGroup.settings,
         onPressed: () => _openBookProfilePicker(item, bookKey),
       ),
       // 内容语言：决定这本书正文用哪条字体链。导入时从 EPUB OPF 的 dc:language
@@ -3204,11 +3211,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       DialogListAction(
         label: t.book_language_action,
         icon: Icons.translate,
+        group: DialogActionGroup.settings,
         onPressed: () => _openBookLanguagePicker(bookKey),
       ),
       DialogListAction(
         label: t.book_css_editor_edit_css,
         icon: Icons.code_outlined,
+        group: DialogActionGroup.settings,
         onPressed: () => _openCssEditor(bookKey),
       ),
       // 「书 ↔ 漫画」转化。放这张卡菜单里，因为漫画库与书架本就是同一个页面
@@ -3229,6 +3238,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
               : t.book_convert_to_manga_action,
           icon:
               isManga ? Icons.menu_book_outlined : Icons.auto_stories_outlined,
+          group: DialogActionGroup.content,
           onPressed: () => _convertBookFormat(
             bookKey,
             isManga ? BookFormatTarget.book : BookFormatTarget.manga,
@@ -3268,6 +3278,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           icon: _isBackgroundListeningBook(bookKey)
               ? Icons.subtitles_off_outlined
               : Icons.subtitles_outlined,
+          group: DialogActionGroup.progress,
+          selected: _isBackgroundListeningBook(bookKey),
           onPressed: () => _toggleFloatingLyricFromShelf(bookKey),
         ),
     ];

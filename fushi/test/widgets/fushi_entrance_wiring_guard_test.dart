@@ -101,6 +101,8 @@ void main() {
       'lib/src/media/video/subtitle/video_subtitle_generate_sheet.dart',
       'lib/src/media/video/subtitle/video_subtitle_glossary_page.dart',
       'lib/src/media/video/subtitle/remote_video_subtitle_sheet.dart',
+      // 2026-10-25 条目长按 / 右键菜单重设计：抽屉宫格 / 双栏分组列表 / 右键菜单行。
+      'lib/src/pages/implementations/media_item_dialog_page.dart',
     ]) {
       final String src = read(path);
       expect(src, contains('FushiEntranceScope('), reason: path);

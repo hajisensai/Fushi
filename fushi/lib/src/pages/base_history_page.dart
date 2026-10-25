@@ -58,7 +58,7 @@ abstract class BaseHistoryPageState<T extends BaseHistoryPage>
   /// and long pressing.
   Widget buildMediaItem(MediaItem item) {
     Future<void> onLongPress() async {
-      await showAppDialog(
+      await showMediaItemActions(
         context: context,
         builder: (context) => MediaItemDialogPage(
           item: item,

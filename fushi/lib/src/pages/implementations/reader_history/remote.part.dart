@@ -449,7 +449,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   }) {
     final RemoteBookClient? client = _remoteBookClient;
     final bool canDelete = client is InterconnectSyncBackend;
-    showAppDialog<void>(
+    showMediaItemActions<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _buildRemoteBookCover(book),
@@ -1606,7 +1606,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     final String title = book.title ?? book.identity;
     final RemoteBookClient? client = _remoteBookClient;
     final bool canDelete = client is InterconnectSyncBackend;
-    showAppDialog<void>(
+    showMediaItemActions<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _coverPlaceholderIcon(Icons.headphones_outlined),

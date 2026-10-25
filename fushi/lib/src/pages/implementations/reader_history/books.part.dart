@@ -226,6 +226,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         DialogListAction(
           label: '${t.audiobook_audio_missing} · ${t.audiobook_relocate}',
           icon: Icons.find_replace_outlined,
+          group: DialogActionGroup.content,
           onPressed: () async {
             Navigator.pop(dialogContext);
             await _relocateSrtBookAudio(book);
@@ -241,6 +242,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         DialogListAction(
           label: t.remote_book_subtitles_refresh,
           icon: FushiIcons.subtitles,
+          group: DialogActionGroup.content,
           onPressed: () async {
             final RemoteAudiobookInfo remote = _remoteSrtRefetchFor(book.uid)!;
             Navigator.pop(dialogContext);
@@ -250,6 +252,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         DialogListAction(
           label: t.remote_book_audiobook_redownload,
           icon: FushiIcons.cloudSync,
+          group: DialogActionGroup.content,
           onPressed: () async {
             final RemoteAudiobookInfo remote = _remoteSrtRefetchFor(book.uid)!;
             Navigator.pop(dialogContext);
@@ -289,6 +292,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       DialogListAction(
         label: t.book_language_action,
         icon: Icons.translate,
+        group: DialogActionGroup.settings,
         onPressed: () async {
           Navigator.pop(dialogContext);
           await showContentLanguagePicker(
@@ -344,6 +348,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           icon: _completedBookKeys.contains(bookKey)
               ? Icons.check_circle
               : Icons.check_circle_outline,
+          group: DialogActionGroup.progress,
+          selected: _completedBookKeys.contains(bookKey),
           onPressed: () => _toggleBookCompleted(bookKey),
         ),
         // 与 EPUB 卡菜单对称：「重置阅读状态」。后台听书时钟对配对字幕书也可能按
@@ -351,6 +357,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         DialogListAction(
           label: t.library_progress_reset_action,
           icon: Icons.restart_alt_outlined,
+          group: DialogActionGroup.progress,
           onPressed: () =>
               _resetBookReadingState(item, bookKey, srtUid: book.uid),
         ),
@@ -369,11 +376,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         DialogListAction(
           label: t.profile_book_profile,
           icon: Icons.account_circle_outlined,
+          group: DialogActionGroup.settings,
           onPressed: () => _openBookProfilePicker(item, bookKey),
         ),
         DialogListAction(
           label: t.book_css_editor_edit_css,
           icon: Icons.code_outlined,
+          group: DialogActionGroup.settings,
           onPressed: () {
             Navigator.pop(dialogContext);
             _openCssEditor(bookKey);
@@ -393,6 +402,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
             icon: _isBackgroundListeningBook(bookKey)
                 ? Icons.subtitles_off_outlined
                 : Icons.subtitles_outlined,
+            group: DialogActionGroup.progress,
+            selected: _isBackgroundListeningBook(bookKey),
             onPressed: () => _toggleFloatingLyricFromShelf(bookKey),
           ),
       ],
@@ -422,7 +433,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
 
   Future<void> _showSrtBookDialog(SrtBook book,
       {VoidCallback? removeFromCollection}) async {
-    await showAppDialog(
+    await showMediaItemActions(
       context: context,
       builder: (ctx) => MediaItemDialogPage(
         item: _srtBookMediaItem(book),
