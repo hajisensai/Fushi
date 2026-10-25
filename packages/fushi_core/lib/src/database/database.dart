@@ -20,12 +20,18 @@ import 'collection_order.dart';
 import 'collection_organize.dart';
 import 'collection_book_identity.dart';
 import 'epub_book_meta.dart';
+import 'galgame_text_line_tables.dart';
 import 'media_kind.dart';
 import 'media_kind_mappings.dart';
+import 'media_link_kind.dart';
+import 'music_scrape_tables.dart';
+import 'music_tables.dart';
 import 'pref_codec.dart';
 import 'sync_tombstone_kind.dart';
 import 'tables.dart';
 import 'tag_host_kind.dart';
+import 'people_tables.dart';
+import 'theme_song_span_tables.dart';
 
 part 'database.g.dart';
 part 'database_infra.part.dart';
@@ -39,6 +45,12 @@ part 'database_update_feed.part.dart';
 part 'database_manga_download.part.dart';
 part 'database_srs.part.dart';
 part 'database_web_browser.part.dart';
+part 'database_media_links.part.dart';
+part 'database_galgame_text_lines.part.dart';
+part 'database_music.part.dart';
+part 'database_music_scrape.part.dart';
+part 'database_theme_song_spans.part.dart';
+part 'database_people.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
@@ -815,6 +827,25 @@ void _requireOneVideoMetadataOwner({
   WebBrowserSessionTabs,
   WebBrowserClosedTabs,
   WebBrowserDownloads,
+  MediaLinks,
+  MusicTracks,
+  MusicAlbums,
+  MusicArtists,
+  MusicTrackCredits,
+  MusicLyrics,
+  MusicVideos,
+  MusicDiscSources,
+  MusicPlaylists,
+  MusicPlaylistEntries,
+  MusicPlayEvents,
+  VideoThemeSongSpans,
+  MusicScrapeMeta,
+  MusicMetadataRawSnapshots,
+  MusicLockedFields,
+  GameVoiceCasts,
+  PersonIdentityBridges,
+  AdaptationProgressAnchors,
+  GalgameTextLines,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -828,7 +859,13 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbVideoDomain,
         _FushiDbUpdateFeed,
         _FushiDbMangaDownload,
-        _FushiDbWebBrowser {
+        _FushiDbWebBrowser,
+        _FushiDbMediaLinks,
+        _FushiDbMusic,
+        _FushiDbMusicScrape,
+        _FushiDbThemeSongSpans,
+        _FushiDbPeople,
+        _FushiDbGalgameTextLines {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -849,7 +886,71 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 128;
+  int get schemaVersion => 135;
+
+  /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
+  /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
+  /// `chapter_key`、内置浏览器五张表。正常阶梯在 `from < 128` 调；并行迁移史
+  /// 修补（user_version 129–131 却缺这些产物的库）再调一次。
+  Future<void> _ensureV125ToV128Artifacts(Migrator m) async {
+    {
+      // v125（SRS 写入路径读放大）：idx_srs_field_edits_profile_register（同步冲突角标的
+      // 分组只扫索引）、idx_srs_notes_cache_type（笔记类型成员查找）、
+      // idx_srs_notes_cache_pending（待裁决笔记的部分索引），见 _ensureSrsIndexes。只加
+      // 索引、不动数据；全部 IF NOT EXISTS，幂等。表在阶梯上不存在（合成库）则跳过。
+      if (await _tableExists('srs_field_edits') &&
+          await _tableExists('srs_notes_cache')) {
+        await _ensureSrsIndexes();
+      }
+    }
+    {
+      // v126：collection_member_tombstones.published_at——墓碑知识进入本库的时刻，
+      // 本机作互联 host 时作清单 publishedAt / deletedPublishedAt 输出（BUG-3743
+      // 后续：host 不存它时 GET 永远回 null，对端只能回退移出时刻判新旧，离线早移出、
+      // 晚同步的墓碑会被基线更新的对端判成旧闻、成员复活）。存量行留 NULL（回退
+      // deleted_at，与升级前行为一致）。幂等守卫同 v119。
+      if (await _tableExists('collection_member_tombstones') &&
+          !await _columnExists(
+              'collection_member_tombstones', 'published_at')) {
+        await m.addColumn(collectionMemberTombstones,
+            collectionMemberTombstones.publishedAt);
+      }
+    }
+    {
+      // v127（阅读器书签回归）：bookmarks.char_offset——书签页首字符的章内精确
+      // 偏移（改字号后页码会变、字符不变，存量 -1 = 回退 norm_char_offset 分数）；
+      // bookmarks.chapter_key——在线漫画书签所在章的稳定键（存量 NULL）。
+      // 幂等守卫同 v119。
+      if (await _tableExists('bookmarks') &&
+          !await _columnExists('bookmarks', 'char_offset')) {
+        await m.addColumn(bookmarks, bookmarks.charOffset);
+      }
+      if (await _tableExists('bookmarks') &&
+          !await _columnExists('bookmarks', 'chapter_key')) {
+        await m.addColumn(bookmarks, bookmarks.chapterKey);
+      }
+    }
+    {
+      // v128（内置浏览器完整化）：历史 / 书签（含文件夹）/ 标签页会话 / 最近关闭 /
+      // 下载记录五张新表。纯新表、不动存量数据；幂等守卫同 v119。历史与书签随备份
+      // 走、经聚合快照跨端同步，其余三张设备本地。
+      if (!await _tableExists('web_browser_history')) {
+        await m.createTable(webBrowserHistory);
+      }
+      if (!await _tableExists('web_browser_bookmarks')) {
+        await m.createTable(webBrowserBookmarks);
+      }
+      if (!await _tableExists('web_browser_session_tabs')) {
+        await m.createTable(webBrowserSessionTabs);
+      }
+      if (!await _tableExists('web_browser_closed_tabs')) {
+        await m.createTable(webBrowserClosedTabs);
+      }
+      if (!await _tableExists('web_browser_downloads')) {
+        await m.createTable(webBrowserDownloads);
+      }
+    }
+  }
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2404,61 +2505,129 @@ class FushiDatabase extends _$FushiDatabase
               await m.createTable(libraryOrganizeChanges);
             }
           }
-          if (from < 125) {
-            // v125（SRS 写入路径读放大）：idx_srs_field_edits_profile_register（同步冲突角标的
-            // 分组只扫索引）、idx_srs_notes_cache_type（笔记类型成员查找）、
-            // idx_srs_notes_cache_pending（待裁决笔记的部分索引），见 _ensureSrsIndexes。只加
-            // 索引、不动数据；全部 IF NOT EXISTS，幂等。表在阶梯上不存在（合成库）则跳过。
-            if (await _tableExists('srs_field_edits') &&
-                await _tableExists('srs_notes_cache')) {
-              await _ensureSrsIndexes();
-            }
-          }
-          if (from < 126) {
-            // v126：collection_member_tombstones.published_at——墓碑知识进入本库的时刻，
-            // 本机作互联 host 时作清单 publishedAt / deletedPublishedAt 输出（BUG-3743
-            // 后续：host 不存它时 GET 永远回 null，对端只能回退移出时刻判新旧，离线早移出、
-            // 晚同步的墓碑会被基线更新的对端判成旧闻、成员复活）。存量行留 NULL（回退
-            // deleted_at，与升级前行为一致）。幂等守卫同 v119。
-            if (await _tableExists('collection_member_tombstones') &&
-                !await _columnExists(
-                    'collection_member_tombstones', 'published_at')) {
-              await m.addColumn(collectionMemberTombstones,
-                  collectionMemberTombstones.publishedAt);
-            }
-          }
-          if (from < 127) {
-            // v127（阅读器书签回归）：bookmarks.char_offset——书签页首字符的章内精确
-            // 偏移（改字号后页码会变、字符不变，存量 -1 = 回退 norm_char_offset 分数）；
-            // bookmarks.chapter_key——在线漫画书签所在章的稳定键（存量 NULL）。
-            // 幂等守卫同 v119。
-            if (await _tableExists('bookmarks') &&
-                !await _columnExists('bookmarks', 'char_offset')) {
-              await m.addColumn(bookmarks, bookmarks.charOffset);
-            }
-            if (await _tableExists('bookmarks') &&
-                !await _columnExists('bookmarks', 'chapter_key')) {
-              await m.addColumn(bookmarks, bookmarks.chapterKey);
-            }
-          }
           if (from < 128) {
-            // v128（内置浏览器完整化）：历史 / 书签（含文件夹）/ 标签页会话 / 最近关闭 /
-            // 下载记录五张新表。纯新表、不动存量数据；幂等守卫同 v119。历史与书签随备份
-            // 走、经聚合快照跨端同步，其余三张设备本地。
-            if (!await _tableExists('web_browser_history')) {
-              await m.createTable(webBrowserHistory);
+            // v125–v128（SRS 索引 / 墓碑 published_at / 书签定位列 / 内置浏览器五张表），
+            // 四步全部幂等，收在 _ensureV125ToV128Artifacts。
+            await _ensureV125ToV128Artifacts(m);
+          }
+          if (from < 129) {
+            // v129（跨模块作品图谱，docs/specs/2026-10-24-cross-media-links.md）：
+            // media_links——本地条目之间的连接（手动连接 + 推断建议 + 否决墓碑），
+            // 随互联同步与备份走。幂等守卫同 v119。
+            if (!await _tableExists('media_links')) {
+              await m.createTable(mediaLinks);
             }
-            if (!await _tableExists('web_browser_bookmarks')) {
-              await m.createTable(webBrowserBookmarks);
+          }
+          if (from < 130) {
+            // v130（音乐模块 P0，docs/specs/2026-10-23-music-module-design.md §10）：
+            // 曲库目录 / 署名 / 歌词缓存 / MV 绑定 / 光盘来源 / 歌单 / 播放流十张新表。
+            // 纯建表、不动既有数据；幂等守卫同 v119。
+            for (final TableInfo<Table, Object?> table in <TableInfo<Table, Object?>>[
+              musicTracks,
+              musicAlbums,
+              musicArtists,
+              musicTrackCredits,
+              musicLyrics,
+              musicVideos,
+              musicDiscSources,
+              musicPlaylists,
+              musicPlaylistEntries,
+              musicPlayEvents,
+            ]) {
+              if (!await _tableExists(table.actualTableName)) {
+                await m.createTable(table);
+              }
             }
-            if (!await _tableExists('web_browser_session_tabs')) {
-              await m.createTable(webBrowserSessionTabs);
+            await _ensureMusicIndexes();
+          }
+          if (from < 131) {
+            // v131（作品图谱 L2，docs/specs/2026-10-24-cross-media-links.md §2）：
+            // video_theme_song_spans——OP / ED 声纹比对结果的按集缓存（设备本地、纯缓存）。
+            // 纯建表；幂等守卫同 v119。
+            if (!await _tableExists('video_theme_song_spans')) {
+              await m.createTable(videoThemeSongSpans);
             }
-            if (!await _tableExists('web_browser_closed_tabs')) {
-              await m.createTable(webBrowserClosedTabs);
+          }
+          if (from >= 129 && from < 132) {
+            // 并行迁移史修补（同 BUG-2335 / v97 的教训）：音乐 / 作品图谱分支（PR #2534）
+            // 合入前在自己的阶梯上把 v125–v131 用给了 media_links / 音乐表 / 主题曲区间 /
+            // mined_sentences 定位列等，合入 develop 时整体后移到 v129–v135。用那条分支
+            // 构建打开过的库 user_version 落在 129–131，会跳过 develop 的 v125–v128
+            // （SRS 索引、墓碑 published_at、书签列、内置浏览器五张表）。这里补跑一遍；
+            // 四步都是幂等的，对按本阶梯正常走到 129–131 的库是空操作。分支自己的表
+            // 那条库里已有，缺的（v132–v135 的产物）由下面各步的幂等守卫补齐。
+            await _ensureV125ToV128Artifacts(m);
+          }
+          if (from < 132) {
+            // v132（卡片「回到出处」，docs/specs/2026-10-24-cross-media-links.md §4）：
+            // mined_sentences 加显式定位列 position_ms / duration_ms（视频 / 音乐时间轴）
+            // 与 page_index（漫画页）。此前视频来源把 norm_char_offset / norm_char_length
+            // 复用成 cue 起点 / 时长毫秒（同一列语义随 source 变）：把 source='video' 的
+            // 旧值搬进新列，并清空旧列——旧列从此只表示字符偏移。
+            //
+            // 清空而不是保留双写：这张表只经本机写入与备份文件流转（不进在线聚合同步
+            // wire）；旧备份打开时先走本迁移再 ATTACH 合并，新备份被旧版本拒收
+            // （schemaVersion 门），所以不存在仍按旧口径读这一列的消费方。
+            // 幂等：列存在即跳过加列；搬迁只动 position_ms 仍为 NULL 的视频行。
+            if (await _tableExists('mined_sentences')) {
+              for (final GeneratedColumn<Object> column
+                  in <GeneratedColumn<Object>>[
+                minedSentences.positionMs,
+                minedSentences.durationMs,
+                minedSentences.pageIndex,
+              ]) {
+                if (!await _columnExists('mined_sentences', column.name)) {
+                  await m.addColumn(minedSentences, column);
+                }
+              }
+              await customStatement(
+                'UPDATE mined_sentences SET '
+                'position_ms = norm_char_offset, '
+                'duration_ms = norm_char_length, '
+                'norm_char_offset = NULL, norm_char_length = NULL '
+                "WHERE source = 'video' AND position_ms IS NULL "
+                'AND (norm_char_offset IS NOT NULL OR norm_char_length IS NOT NULL)',
+              );
             }
-            if (!await _tableExists('web_browser_downloads')) {
-              await m.createTable(webBrowserDownloads);
+          }
+          if (from < 133) {
+            // v133（音乐 P4 刮削，docs/specs/2026-10-23-music-module-design.md §8 / §10）：
+            // music_scrape_meta / music_metadata_raw_snapshots / music_locked_fields
+            // 三张新表（设备本地）。纯建表、不动既有数据；幂等守卫同 v119。
+            for (final TableInfo<Table, Object?> table
+                in <TableInfo<Table, Object?>>[
+              musicScrapeMeta,
+              musicMetadataRawSnapshots,
+              musicLockedFields,
+            ]) {
+              if (!await _tableExists(table.actualTableName)) {
+                await m.createTable(table);
+              }
+            }
+          }
+          if (from < 134) {
+            // v134（作品图谱 L4 跟进，docs/specs/2026-10-24-cross-media-links.md §3）：
+            // galgame_text_lines——文本钩子台词的持久副本（「我库里的例句」的游戏来源，
+            // 随备份 games 类别走）。纯建表；幂等守卫同 v119。
+            if (!await _tableExists('galgame_text_lines')) {
+              await m.createTable(galgameTextLines);
+            }
+          }
+          if (from < 135) {
+            // v135（作品图谱 L5，docs/specs/2026-10-24-cross-media-links.md §5 / §6）：
+            // game_voice_casts（游戏 VNDB 配音表缓存，设备本地）、person_identity_bridges
+            // （人物身份桥：Wikidata 桥接缓存 + 用户确认 / 否决的「同一人」）、
+            // adaptation_progress_anchors（动画集 ↔ 原作卷 / 章的手动对应点）。
+            // 纯建表；幂等守卫同 v119。
+            for (final TableInfo<Table, Object?> table
+                in <TableInfo<Table, Object?>>[
+              gameVoiceCasts,
+              personIdentityBridges,
+              adaptationProgressAnchors,
+            ]) {
+              if (!await _tableExists(table.actualTableName)) {
+                await m.createTable(table);
+              }
             }
           }
         },
@@ -2476,6 +2645,7 @@ class FushiDatabase extends _$FushiDatabase
           await _ensureIndexes();
           await _ensureProfileUidIndex();
           await _ensureSrsIndexes();
+          await _ensureMusicIndexes();
         },
         beforeOpen: (details) async {
           // Second, belt-and-suspenders downgrade guard. drift calls beforeOpen

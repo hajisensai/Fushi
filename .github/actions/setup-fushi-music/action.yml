@@ -1,0 +1,108 @@
+name: Build fushi_music for tests / app builds
+description: >-
+  Builds native/fushi_music (Rust music core: library scanning / tags / CUE splitting) for the
+  runner's own platform and exports FUSHI_MUSIC_LIB=<absolute path> to every later step of the
+  job; optionally also cross-builds the Android .so for the given ABIs (cargo-ndk), so that
+  fushi/android's checkFushiMusicNative passes.
+
+# Why: fushi_music is a HARD dependency of the app's music module (no Dart fallback). Same shape
+# as .github/actions/setup-fushi-rwkv; jobs that build the app use it right after
+# setup-fushi-rwkv with the same inputs (guard:
+# fushi/test/build/fushi_music_hard_dependency_guard_test.dart). Toolchain pin read from
+# .github/actions/native-store-names/names.sh like the other crates; no rust-cache (quota).
+inputs:
+  host:
+    description: Build the runner-platform library and export FUSHI_MUSIC_LIB ('true' / 'false').
+    required: false
+    default: 'true'
+  android-abis:
+    description: >-
+      Space-separated Android ABIs to cross-build into native/fushi_music/prebuilt/android
+      (e.g. 'arm64-v8a' or 'x86_64'); empty = none. Needs $ANDROID_NDK_LATEST_HOME.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Install pinned Rust toolchain (fushi_music)
+      id: rust
+      shell: bash
+      env:
+        ANDROID_ABIS: ${{ inputs.android-abis }}
+      run: |
+        set -euo pipefail
+        names=.github/actions/native-store-names/names.sh
+        toolchain="$(sed -n 's/^P2P_RUST=//p' "$names")"
+        cargo_ndk="$(sed -n 's/^CARGO_NDK=//p' "$names")"
+        if [ -z "$toolchain" ] || [ -z "$cargo_ndk" ]; then
+          echo "::error title=No Rust pin::$names has no P2P_RUST= / CARGO_NDK= line"
+          exit 1
+        fi
+        rustup toolchain install "$toolchain" --profile minimal
+        targets=()
+        if [ "$RUNNER_OS" = macOS ]; then targets+=(aarch64-apple-darwin); fi
+        for abi in $ANDROID_ABIS; do
+          case "$abi" in
+            arm64-v8a) targets+=(aarch64-linux-android) ;;
+            armeabi-v7a) targets+=(armv7-linux-androideabi) ;;
+            x86_64) targets+=(x86_64-linux-android) ;;
+            *) echo "::error title=Unknown ABI::$abi"; exit 1 ;;
+          esac
+        done
+        if [ "${#targets[@]}" -gt 0 ]; then rustup target add --toolchain "$toolchain" "${targets[@]}"; fi
+        # Step outputs, not GITHUB_ENV: an exported RUSTUP_TOOLCHAIN would override other
+        # crates' rust-toolchain.toml (fushi_anki_sync) in later steps of the same job.
+        echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+        echo "cargo_ndk=$cargo_ndk" >> "$GITHUB_OUTPUT"
+        rustup run "$toolchain" cargo --version
+    - name: Install cargo-ndk (fushi_music Android)
+      if: inputs.android-abis != ''
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-ndk@${{ steps.rust.outputs.cargo_ndk }}
+    - name: Build fushi_music (runner platform)
+      if: inputs.host == 'true' && runner.os != 'Windows'
+      shell: bash
+      env:
+        RUSTUP_TOOLCHAIN: ${{ steps.rust.outputs.toolchain }}
+      run: |
+        set -euo pipefail
+        case "$RUNNER_OS" in
+          Linux)
+            bash native/fushi_music/build_linux_so.sh
+            lib="$GITHUB_WORKSPACE/native/fushi_music/prebuilt/linux-x64/libfushi_music.so"
+            ;;
+          macOS)
+            bash native/fushi_music/build_macos_dylib.sh
+            lib="$GITHUB_WORKSPACE/native/fushi_music/prebuilt/macos/libfushi_music.dylib"
+            ;;
+          *) echo "::error title=Unsupported runner::$RUNNER_OS"; exit 1 ;;
+        esac
+        bash native/fushi_music/verify_abi.sh "$lib" nm
+        echo "FUSHI_MUSIC_LIB=$lib" >> "$GITHUB_ENV"
+    - name: Build fushi_music (Windows)
+      if: inputs.host == 'true' && runner.os == 'Windows'
+      shell: pwsh
+      env:
+        RUSTUP_TOOLCHAIN: ${{ steps.rust.outputs.toolchain }}
+      run: |
+        powershell -ExecutionPolicy Bypass -File native/fushi_music/build_windows_dll.ps1
+        if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_music) failed" }
+        $lib = Join-Path $env:GITHUB_WORKSPACE 'native\fushi_music\prebuilt\windows-x64\fushi_music.dll'
+        if (-not (Test-Path -LiteralPath $lib -PathType Leaf)) { throw "missing $lib" }
+        "FUSHI_MUSIC_LIB=$lib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+    - name: Build fushi_music Android .so
+      if: inputs.android-abis != ''
+      shell: bash
+      env:
+        ANDROID_ABIS: ${{ inputs.android-abis }}
+        RUSTUP_TOOLCHAIN: ${{ steps.rust.outputs.toolchain }}
+      run: |
+        set -euo pipefail
+        # shellcheck disable=SC2086 # word-split the ABI list on purpose
+        bash native/fushi_music/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" $ANDROID_ABIS
+        nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+        if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+        for abi in $ANDROID_ABIS; do
+          bash native/fushi_music/verify_abi.sh "native/fushi_music/prebuilt/android/$abi/libfushi_music.so" "$nm_bin"
+        done

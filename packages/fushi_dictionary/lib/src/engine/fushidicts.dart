@@ -631,7 +631,95 @@ class FushiDicts {
   }
 
   // ── dict loading ────────────────────────────────────────────────
+  /// 本实例按装载顺序装进来的释义词典目录。「我库里的例句」按它算词元归一口径的签名
+  /// （词典换了，旧索引里的词典形就过期了）。
+  List<String> get termDictionaryPaths =>
+      List<String>.unmodifiable(_termDictionaryPaths);
+  final List<String> _termDictionaryPaths = <String>[];
+
+  /// 借本实例的原生句柄给后台 isolate 用：[work] 拿到句柄地址与库路径覆盖，在后台里
+  /// 调 [corpusTermsBorrowed] 一类静态入口。借用协议同 [tokenizeWithReadingsInBackground]
+  /// （[borrowNativeHandle]：在本 isolate 上 retain / release，期间词典重载照常 dispose
+  /// 本实例，句柄等借用归还才销毁）。本实例已 dispose 时不跑 [work]、返回 null。
+  Future<T?> borrowForBackground<T>(
+    Future<T> Function(int address, String? libraryPath) work,
+  ) {
+    final Pointer<Void>? handle = _handle;
+    if (handle == null) return Future<T?>.value();
+    final FushidictsFfiBindings bindings = _bindings!;
+    final String? libraryPath = FushidictsFfiBindings.libraryPathOverride;
+    return borrowNativeHandle<T>(
+      ledger: _backgroundBorrows,
+      retain: () => bindings.retain(handle) == 1,
+      release: () => bindings.release(handle),
+      work: () => work(handle.address, libraryPath),
+    );
+  }
+
+  /// 一批句子的语料词元（原生 `fushidicts_corpus_terms`，一次 FFI 处理整批），返回原生
+  /// 线格式的原样字节（`N × {u32 M, M × {u32 start16, u32 len16, str 词典形}}`），交给
+  /// native/fushi_corpus 直接解析，Dart 不解码。
+  ///
+  /// 给**后台 isolate** 用：[address] / [libraryPath] 来自 [borrowForBackground]，调用期间
+  /// 借用必须未归还。随包原生库没有这个导出时抛 [UnsupportedError]；原生失败抛
+  /// [StateError]。
+  static Uint8List corpusTermsBorrowed(
+    int address,
+    String? libraryPath,
+    List<String> sentences,
+  ) {
+    FushidictsFfiBindings.libraryPathOverride = libraryPath;
+    final ({CorpusTermsDart corpusTerms, FreeBytesDart freeBytes})? fns =
+        lookupCorpusTerms();
+    if (fns == null) {
+      throw UnsupportedError(
+          'fushidicts_corpus_terms is not available in this build');
+    }
+    final List<Uint8List> encoded = <Uint8List>[
+      for (final String s in sentences) utf8.encode(s),
+    ];
+    int total = 4;
+    for (final Uint8List e in encoded) {
+      total += 4 + e.length;
+    }
+    final Pointer<Uint8> input = calloc<Uint8>(total);
+    final Pointer<Pointer<Uint8>> out = calloc<Pointer<Uint8>>();
+    final Pointer<Int32> outLen = calloc<Int32>();
+    try {
+      final Uint8List view = input.asTypedListOutOfLine(total);
+      final ByteData data = ByteData.sublistView(view);
+      data.setUint32(0, encoded.length, Endian.little);
+      int at = 4;
+      for (final Uint8List e in encoded) {
+        data.setUint32(at, e.length, Endian.little);
+        view.setRange(at + 4, at + 4 + e.length, e);
+        at += 4 + e.length;
+      }
+      final int status = fns.corpusTerms(
+        Pointer<Void>.fromAddress(address),
+        input,
+        total,
+        defaultScanLength,
+        out,
+        outLen,
+      );
+      if (status != 0) {
+        throw StateError('fushidicts_corpus_terms failed ($status)');
+      }
+      try {
+        return Uint8List.fromList(out.value.asTypedListOutOfLine(outLen.value));
+      } finally {
+        fns.freeBytes(out.value);
+      }
+    } finally {
+      calloc.free(input);
+      calloc.free(out);
+      calloc.free(outLen);
+    }
+  }
+
   void addTermDict(String path) {
+    _termDictionaryPaths.add(path);
     final p = path.toNativeUtf8(allocator: calloc);
     try {
       _bindings!.addTermDict(_handle!, p);

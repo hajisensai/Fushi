@@ -45,6 +45,17 @@ class MalRelation {
   final int malId;
 }
 
+/// MAL 上一部动画的原作条目（漫画 / 轻小说，Jikan `type == manga`）。
+class MalSourceMaterial {
+  const MalSourceMaterial({required this.malId, required this.name});
+
+  /// MAL manga id。
+  final int malId;
+
+  /// Jikan 给的条目名（MAL 默认标题，多为罗马字 / 原文）。
+  final String name;
+}
+
 /// [MalVideoMetadataProvider.fetchRelatedWorks] 的结果。
 class MalRelatedWorks {
   const MalRelatedWorks({
@@ -223,6 +234,37 @@ class MalVideoMetadataProvider
                       MalRelation(relation: kind, malId: relatedId),
       ],
     );
+  }
+
+  /// 一部作品在 MAL 上的**原作**：`anime/{id}/full` 里 `relations[].relation ==
+  /// "Adaptation"` 且 `entry.type == "manga"` 的条目（Jikan 把漫画与轻小说都归
+  /// `manga`）。与 [fetchRelatedWorks] 同一请求、同一缓存；只回 MAL id 与名字——
+  /// Jikan 的关联条目不带 ISBN，本地书只能按标题对（作品图谱推断，中等判据）。
+  /// 404 → 空。
+  Future<List<MalSourceMaterial>> fetchSourceMaterial(String malId) async {
+    final int? id = int.tryParse(malId.trim());
+    if (id == null || id <= 0) return const <MalSourceMaterial>[];
+    final Map<String, Object?> payload;
+    try {
+      payload = await _get('anime/$id/full');
+    } on VideoMetadataNetworkException catch (error) {
+      if (error.statusCode == 404) return const <MalSourceMaterial>[];
+      rethrow;
+    }
+    final Map<String, Object?>? item = metadataObject(payload['data']);
+    return <MalSourceMaterial>[
+      for (final Object? node in metadataList(item?['relations']))
+        if (metadataObject(node) case final Map<String, Object?> relation)
+          if (metadataString(relation['relation'])?.toLowerCase() ==
+              'adaptation')
+            for (final Object? entryNode in metadataList(relation['entry']))
+              if (metadataObject(entryNode)
+                  case final Map<String, Object?> entry)
+                if (metadataString(entry['type'])?.toLowerCase() == 'manga')
+                  if (metadataInt(entry['mal_id']) case final int sourceId)
+                    if (metadataString(entry['name']) case final String name)
+                      MalSourceMaterial(malId: sourceId, name: name),
+    ];
   }
 
   Future<Map<String, Object?>> _optionalCredits(

@@ -5070,6 +5070,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
       if (described.record && reviewSession == null) {
         unawaited(_recordMinedCount());
+        unawaited(
+          _recordMinedSentence(
+            fields: fields,
+            sentence: sentence,
+            title: title,
+            // 在线章的页码离开章身份没有意义（制卡历史没有章 key 列），只给本地卷记页。
+            pageIndex: sourceLink?.chapterId == null
+                ? sourceLink?.pageIndex
+                : null,
+            noteId: outcome.noteId,
+          ),
+        );
       }
       if (described.success) {
         FushiToast.showMine(msg: described.message, status: described.status);
@@ -5087,6 +5099,37 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 到这里就没人要了；与阅读器句子音频临时目录同一处理。
       final Directory? dir = cropTempDir;
       if (dir != null) unawaited(_deleteTempDir(dir));
+    }
+  }
+
+  /// 制卡历史（收藏夹「制卡」行，可跳回原页）。来源 `manga`，出处 = bookKey + 页码。
+  Future<void> _recordMinedSentence({
+    required Map<String, String> fields,
+    required String sentence,
+    required String? title,
+    required int? pageIndex,
+    required int? noteId,
+  }) async {
+    try {
+      await appModel.database.addMinedSentence(
+        source: kFavoriteSentenceSourceManga,
+        dateKey: FushiDatabase.statDateKeyOf(DateTime.now()),
+        expression: fields['expression'] ?? '',
+        reading: fields['reading'] ?? '',
+        glossary: fields['glossary'] ?? '',
+        sentence: sentence,
+        // 落库快照取 raw 标题（与阅读器同一身份红线），展示端按 bookKey 过门面。
+        documentTitle: title,
+        bookKey: widget.bookKey,
+        pageIndex: pageIndex,
+        noteId: noteId,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'MangaFushiPage.recordMinedSentence',
+        e,
+        stack,
+      );
     }
   }
 

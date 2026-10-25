@@ -1,0 +1,146 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: fushi <fushi@localhost>
+Date: Sat, 24 Oct 2026 12:00:00 +0800
+Subject: [PATCH 3/3] Fushi DVD: link the shared tool/dvd libraries when
+ FUSHI_DVD_ROOT is set
+
+One copy of libdvdcss / libdvdread / libdvdnav per app: FFmpeg links the
+same shared libraries libmpv uses (--enable-libdvdnav --enable-libdvdread,
+dvdvideo demuxer). Android packs the .so into the AAR next to libav*.so;
+Apple links dylibs whose install names are @rpath/<lib>.framework/<lib>
+(the frameworks ship beside the libav* frameworks). Without FUSHI_DVD_ROOT
+the build is unchanged.
+---
+diff --git a/android/jni/Android.mk b/android/jni/Android.mk
+--- a/android/jni/Android.mk
++++ b/android/jni/Android.mk
+@@ -100,6 +100,11 @@
+     LOCAL_LDFLAGS := $(MY_LDFLAGS)
+     LOCAL_LDLIBS := $(MY_LDLIBS)
+     LOCAL_SHARED_LIBRARIES := libavfilter libavformat libavcodec libavutil libswresample libavdevice libswscale
++    # Fushi: libavformat.so needs the DVD libraries at load time; listing them
++    # makes ndk-build copy them into the AAR next to libav*.so.
++    ifneq ($(wildcard $(MY_LOCAL_PATH)/../../prebuilt/$(MY_BUILD_DIR)/ffmpeg/lib/libdvdnav.so),)
++        LOCAL_SHARED_LIBRARIES += libdvdcss libdvdread libdvdnav
++    endif
+     LOCAL_ARM_NEON := ${MY_ARM_NEON}
+     include $(BUILD_SHARED_LIBRARY)
+ 
+diff --git a/android/jni/ffmpeg/Android.mk b/android/jni/ffmpeg/Android.mk
+--- a/android/jni/ffmpeg/Android.mk
++++ b/android/jni/ffmpeg/Android.mk
+@@ -56,3 +56,24 @@
+ LOCAL_MODULE := libswscale
+ LOCAL_SRC_FILES := libswscale.so
+ include $(PREBUILT_SHARED_LIBRARY)
++
++# Fushi: DVD libraries (scripts/android/ffmpeg.sh with FUSHI_DVD_ROOT).
++ifneq ($(wildcard $(LOCAL_PATH)/libdvdnav.so),)
++include $(CLEAR_VARS)
++LOCAL_ARM_MODE := $(MY_ARM_MODE)
++LOCAL_MODULE := libdvdcss
++LOCAL_SRC_FILES := libdvdcss.so
++include $(PREBUILT_SHARED_LIBRARY)
++
++include $(CLEAR_VARS)
++LOCAL_ARM_MODE := $(MY_ARM_MODE)
++LOCAL_MODULE := libdvdread
++LOCAL_SRC_FILES := libdvdread.so
++include $(PREBUILT_SHARED_LIBRARY)
++
++include $(CLEAR_VARS)
++LOCAL_ARM_MODE := $(MY_ARM_MODE)
++LOCAL_MODULE := libdvdnav
++LOCAL_SRC_FILES := libdvdnav.so
++include $(PREBUILT_SHARED_LIBRARY)
++endif
+diff --git a/scripts/android/ffmpeg.sh b/scripts/android/ffmpeg.sh
+--- a/scripts/android/ffmpeg.sh
++++ b/scripts/android/ffmpeg.sh
+@@ -358,6 +358,33 @@
+   CONFIGURE_POSTFIX+=" --enable-${!ffmpeg_flag_name}"
+ done
+ 
++# Fushi: DVD (tool/dvd). FUSHI_DVD_ROOT holds one prefix per target with the
++# SHARED libdvdcss / libdvdread / libdvdnav that libmpv links too, so the
++# dvdvideo demuxer and the player load one copy. Unset = upstream behaviour.
++if [[ -n "${FUSHI_DVD_ROOT}" ]]; then
++  case "${FFMPEG_KIT_BUILD_TYPE}/${ARCH}" in
++  android/arm-v7a) FUSHI_DVD_TARGET="android-armeabi-v7a" ;;
++  android/arm64-v8a) FUSHI_DVD_TARGET="android-arm64-v8a" ;;
++  android/x86-64) FUSHI_DVD_TARGET="android-x86_64" ;;
++  ios/arm64) FUSHI_DVD_TARGET="ios-arm64" ;;
++  ios/arm64-simulator) FUSHI_DVD_TARGET="ios-simulator-arm64" ;;
++  ios/x86-64) FUSHI_DVD_TARGET="ios-simulator-x86_64" ;;
++  macos/arm64) FUSHI_DVD_TARGET="macos-arm64" ;;
++  *)
++    echo -e "ERROR: no Fushi DVD target for ${FFMPEG_KIT_BUILD_TYPE}/${ARCH}\n" 1>>"${BASEDIR}"/build.log 2>&1
++    exit 1
++    ;;
++  esac
++  FUSHI_DVD_PREFIX="${FUSHI_DVD_ROOT}/${FUSHI_DVD_TARGET}"
++  if [[ ! -f "${FUSHI_DVD_PREFIX}/lib/pkgconfig/dvdnav.pc" ]]; then
++    echo -e "ERROR: ${FUSHI_DVD_PREFIX} has no dvdnav.pc (tool/dvd/platforms/build_cross.sh)\n" 1>>"${BASEDIR}"/build.log 2>&1
++    exit 1
++  fi
++  export PKG_CONFIG_LIBDIR="${PKG_CONFIG_LIBDIR}:${FUSHI_DVD_PREFIX}/lib/pkgconfig"
++  CONFIGURE_POSTFIX+=" --enable-libdvdnav --enable-libdvdread"
++  echo -e "INFO: Fushi DVD libraries from ${FUSHI_DVD_PREFIX}\n" 1>>"${BASEDIR}"/build.log 2>&1
++fi
++
+ # SET ENABLE GPL FLAG WHEN REQUESTED
+ if [ "$GPL_ENABLED" == "yes" ]; then
+   CONFIGURE_POSTFIX+=" --enable-gpl"
+@@ -524,6 +551,13 @@
+   exit 1
+ fi
+ 
++# Fushi: ship the DVD .so next to libav*.so (android/jni/ffmpeg/Android.mk
++# packs them into the AAR; libavformat.so has them as DT_NEEDED).
++if [[ -n "${FUSHI_DVD_ROOT}" ]]; then
++  cp "${FUSHI_DVD_PREFIX}"/lib/libdvdcss.so "${FUSHI_DVD_PREFIX}"/lib/libdvdread.so \
++    "${FUSHI_DVD_PREFIX}"/lib/libdvdnav.so "${FFMPEG_LIBRARY_PATH}"/lib/ 1>>"${BASEDIR}"/build.log 2>&1 || exit 1
++fi
++
+ # MANUALLY ADD REQUIRED HEADERS
+ mkdir -p "${FFMPEG_LIBRARY_PATH}"/include 1>>"${BASEDIR}"/build.log 2>&1
+ overwrite_file "${BASEDIR}"/src/ffmpeg/config.h "${FFMPEG_LIBRARY_PATH}"/include/config.h 1>>"${BASEDIR}"/build.log 2>&1
+diff --git a/scripts/apple/ffmpeg.sh b/scripts/apple/ffmpeg.sh
+--- a/scripts/apple/ffmpeg.sh
++++ b/scripts/apple/ffmpeg.sh
+@@ -512,6 +512,33 @@
+ done
+ 
+ # SET ENABLE GPL FLAG WHEN REQUESTED
++# Fushi: DVD (tool/dvd). FUSHI_DVD_ROOT holds one prefix per target with the
++# SHARED libdvdcss / libdvdread / libdvdnav that libmpv links too, so the
++# dvdvideo demuxer and the player load one copy. Unset = upstream behaviour.
++if [[ -n "${FUSHI_DVD_ROOT}" ]]; then
++  case "${FFMPEG_KIT_BUILD_TYPE}/${ARCH}" in
++  android/arm-v7a) FUSHI_DVD_TARGET="android-armeabi-v7a" ;;
++  android/arm64-v8a) FUSHI_DVD_TARGET="android-arm64-v8a" ;;
++  android/x86-64) FUSHI_DVD_TARGET="android-x86_64" ;;
++  ios/arm64) FUSHI_DVD_TARGET="ios-arm64" ;;
++  ios/arm64-simulator) FUSHI_DVD_TARGET="ios-simulator-arm64" ;;
++  ios/x86-64) FUSHI_DVD_TARGET="ios-simulator-x86_64" ;;
++  macos/arm64) FUSHI_DVD_TARGET="macos-arm64" ;;
++  *)
++    echo -e "ERROR: no Fushi DVD target for ${FFMPEG_KIT_BUILD_TYPE}/${ARCH}\n" 1>>"${BASEDIR}"/build.log 2>&1
++    exit 1
++    ;;
++  esac
++  FUSHI_DVD_PREFIX="${FUSHI_DVD_ROOT}/${FUSHI_DVD_TARGET}"
++  if [[ ! -f "${FUSHI_DVD_PREFIX}/lib/pkgconfig/dvdnav.pc" ]]; then
++    echo -e "ERROR: ${FUSHI_DVD_PREFIX} has no dvdnav.pc (tool/dvd/platforms/build_cross.sh)\n" 1>>"${BASEDIR}"/build.log 2>&1
++    exit 1
++  fi
++  export PKG_CONFIG_LIBDIR="${PKG_CONFIG_LIBDIR}:${FUSHI_DVD_PREFIX}/lib/pkgconfig"
++  CONFIGURE_POSTFIX+=" --enable-libdvdnav --enable-libdvdread"
++  echo -e "INFO: Fushi DVD libraries from ${FUSHI_DVD_PREFIX}\n" 1>>"${BASEDIR}"/build.log 2>&1
++fi
++
+ if [ "$GPL_ENABLED" == "yes" ]; then
+   CONFIGURE_POSTFIX+=" --enable-gpl"
+ fi
+-- 
+2.47.0

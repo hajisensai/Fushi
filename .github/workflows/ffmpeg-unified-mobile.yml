@@ -80,7 +80,7 @@ jobs:
         run: bash tool/ffmpeg-unified/mobile/build_android.sh "$RUNNER_TEMP/work" "$RUNNER_TEMP/out"
 
       - name: Verify outputs
-        run: python3 tool/ffmpeg-unified/mobile/verify_mobile_outputs.py android "$RUNNER_TEMP/out"
+        run: python3 tool/ffmpeg-unified/mobile/verify_mobile_outputs.py android "$RUNNER_TEMP/out" --require-staged
 
       - name: build.log tail on failure
         if: failure()
@@ -185,7 +185,7 @@ jobs:
         run: bash tool/ffmpeg-unified/mobile/build_ios.sh "$RUNNER_TEMP/work" "$RUNNER_TEMP/out"
 
       - name: Verify outputs
-        run: python3 tool/ffmpeg-unified/mobile/verify_mobile_outputs.py ios "$RUNNER_TEMP/out"
+        run: python3 tool/ffmpeg-unified/mobile/verify_mobile_outputs.py ios "$RUNNER_TEMP/out" --require-staged
 
       - name: build.log tail on failure
         if: failure()

@@ -30,6 +30,7 @@ RoundedPolygon homeNavRailShapeFor(HomeTab tab) => switch (tab) {
   HomeTab.books => MaterialShapes.cookie9Sided,
   HomeTab.manga => MaterialShapes.clover4Leaf,
   HomeTab.video => MaterialShapes.softBurst,
+  HomeTab.music => MaterialShapes.puffyDiamond,
   HomeTab.browse => MaterialShapes.sunny,
   HomeTab.dictionaries => MaterialShapes.gem,
   HomeTab.srs => MaterialShapes.pentagon,
@@ -73,6 +74,7 @@ AdaptiveNavPeek? homeNavPeekFor(
             _loadGames(appModel: appModel, open: () => goToTab(HomeTab.games)),
       );
     case HomeTab.home:
+    case HomeTab.music:
     case HomeTab.browse:
     case HomeTab.dictionaries:
     case HomeTab.srs:

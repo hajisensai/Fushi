@@ -1,0 +1,11 @@
+format=lrc quality=syllable effects=false lang=- title=- artist=- agents=[]
+L 3000-4800 agent=- role=Main style=-
+  S 3000-3300 Sweep "夜"
+  S 3300-3500 Sweep "に"
+  S 3500-3900 Sweep "駆"
+  S 3900-4200 Sweep "け"
+  S 4200-4800 Sweep "る"
+L 5000-6300 agent=- role=Main style=-
+  S 5000-5400 Sweep "君"
+  S 5400-5600 Sweep "の"
+  S 5600-6300 Sweep "声"

@@ -92,7 +92,85 @@ def unified_ffmpeg_provenance(closure, ffmpeg_prefix, ffmpeg_source, output):
     }
 
 
-def package_sources(closure, prefix, output, unified=None):
+# tool/dvd: one copy of each, linked by libmpv (dvd://) and libavformat (dvdvideo).
+DVD_LIBRARIES = ("libdvdcss-", "libdvdread-", "libdvdnav-")
+
+
+def dvd_provenance(closure, ffmpeg_prefix, output):
+    """Record the DVD libraries (tool/dvd/recipe.env) and ship their licenses.
+
+    They live in the unified FFmpeg prefix; resolving any of them from MSYS2
+    (or not at all) would mean libmpv and the dvdvideo demuxer no longer share
+    one copy, or that libdvdread lost its link to libdvdcss.
+    """
+    recipe_dir = Path(__file__).resolve().parents[1] / "dvd"
+    recipe = dict(line.split("=", 1) for line in (recipe_dir / "recipe.env").read_text().splitlines()
+                  if line and not line.startswith("#") and "=" in line)
+    files = {}
+    for stem in DVD_LIBRARIES:
+        matches = [p for p in closure if p.name.lower().startswith(stem)]
+        if len(matches) != 1 or matches[0].parent != ffmpeg_prefix / "bin":
+            raise RuntimeError(f"{stem}*.dll must resolve exactly once from the unified FFmpeg "
+                               f"prefix (tool/dvd/build_dvd_libs.sh), got {matches}")
+        files[stem.rstrip("-")] = matches[0].name
+    license_dir = output / "licenses" / "fushi-dvd"
+    license_dir.mkdir(parents=True, exist_ok=True)
+    for source in sorted((ffmpeg_prefix / "share/licenses/fushi-dvd").glob("*-COPYING")):
+        shutil.copy2(source, license_dir / source.name)
+    if len(list(license_dir.iterdir())) != len(DVD_LIBRARIES):
+        raise RuntimeError("DVD library licenses missing from the unified FFmpeg prefix")
+    return {
+        "name": "fushi-dvd",
+        "license": "GPL-2.0-or-later",
+        "versions": {name: recipe[f"{name.upper()}_VERSION"] for name in files},
+        "tarball_sha256": {name: recipe[f"{name.upper()}_SHA256"] for name in files},
+        "files": sorted(files.values()),
+    }
+
+
+# tool/cdda: libmpv's cdda:// stream (-Dcdda=enabled); paranoia -> cdda -> cdio.
+CDDA_LIBRARIES = ("libcdio_paranoia-", "libcdio_cdda-", "libcdio-")
+
+
+def cdda_provenance(closure, cdio_prefix, output):
+    """Record the audio CD libraries (tool/cdda/recipe.env) and ship their licenses.
+
+    They come from pinned MSYS2 packages unpacked into a private prefix
+    (tool/cdda/fetch_cdio_msys2.py), not from pacman, so package_sources()
+    cannot see them; resolving any of them elsewhere would ship a library the
+    recipe does not describe.
+    """
+    repo = Path(__file__).resolve().parents[2]
+    recipe = dict(line.split("=", 1) for line in (repo / "tool/cdda/recipe.env").read_text().splitlines()
+                  if line and not line.startswith("#") and "=" in line)
+    files = []
+    for stem in CDDA_LIBRARIES:
+        matches = [p for p in closure if p.name.lower().startswith(stem)]
+        if len(matches) != 1 or matches[0].parent != cdio_prefix / "bin":
+            raise RuntimeError(f"{stem}*.dll must resolve exactly once from the private libcdio "
+                               f"prefix (tool/cdda/fetch_cdio_msys2.py), got {matches}")
+        files.append(matches[0].name)
+    license_dir = output / "licenses" / "fushi-cdda"
+    license_dir.mkdir(parents=True, exist_ok=True)
+    texts = repo / "native/third_party_licenses/texts/cdda"
+    for name in ("libcdio-2.3.0-COPYING", "libcdio-paranoia-10.2+2.0.2-COPYING"):
+        shutil.copy2(texts / name, license_dir / name)
+    # GPL corresponding source: the MSYS2 source packages (upstream tarball +
+    # PKGBUILD + patches) of exactly the binary packages shipped here.
+    (license_dir / "SOURCE.txt").write_bytes("".join(
+        f"{key.lower().replace('_', '-')} {recipe[f'{key}_VERSION']}: {recipe[f'{key}_SOURCE_URL']} "
+        f"(sha256 {recipe[f'{key}_SOURCE_SHA256']})\n" for key in ("LIBCDIO", "LIBCDIO_PARANOIA")).encode("utf-8"))
+    return {
+        "name": "fushi-cdda",
+        "license": "GPL-3.0-or-later",
+        "versions": {"libcdio": recipe["LIBCDIO_VERSION"], "libcdio-paranoia": recipe["LIBCDIO_PARANOIA_VERSION"]},
+        "package_sha256": {"libcdio": recipe["LIBCDIO_SHA256"],
+                           "libcdio-paranoia": recipe["LIBCDIO_PARANOIA_SHA256"]},
+        "files": sorted(files),
+    }
+
+
+def package_sources(closure, prefix, output, private=()):
     """Record the package versions and licenses behind every imported DLL."""
     msys = prefix.parent
     wanted = {"mingw64/bin/" + path.name: path.name for path in closure if path.parent == prefix / "bin"}
@@ -120,8 +198,8 @@ def package_sources(closure, prefix, output, unified=None):
                 shutil.copy2(source, target)
     if missing := wanted.keys() - owned:
         raise RuntimeError(f"DLLs without package provenance: {sorted(missing)}")
-    if unified is not None:
-        packages.append(unified)
+    # Builds outside pacman: the unified FFmpeg, the tool/dvd and tool/cdda libraries.
+    packages.extend(private)
     (output / "msys2-packages.json").write_text(json.dumps(sorted(packages, key=lambda p: p["name"]), indent=2) + "\n")
 
 
@@ -134,13 +212,15 @@ def main():
                         help="private prefix of the unified FFmpeg (build_ffmpeg_msys2.sh)")
     parser.add_argument("--ffmpeg-source", type=Path, required=True,
                         help="patched unified FFmpeg source tree (for provenance/licenses)")
+    parser.add_argument("--cdio-prefix", type=Path, required=True,
+                        help="private libcdio prefix (tool/cdda/fetch_cdio_msys2.py)")
     parser.add_argument("--system", type=Path, default=Path("C:/Windows/System32"))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.output.exists():
         raise RuntimeError("Output must be a new directory; never mix dependency generations")
     roots = [args.build / "libmpv-2.dll"] + [args.ffmpeg_prefix / "bin" / name for name in FFMPEG_PROGRAMS]
-    closure = collect(roots, [args.ffmpeg_prefix, args.prefix], args.system)
+    closure = collect(roots, [args.ffmpeg_prefix, args.cdio_prefix, args.prefix], args.system)
     # libmpv must link the unified FFmpeg, never a stray MSYS2 copy of it.
     stray = sorted(p.name for p in closure if p.parent == args.prefix / "bin"
                    and p.name.lower().startswith(("avcodec-", "avformat-", "avutil-", "avfilter-",
@@ -161,8 +241,11 @@ def main():
     # CMake uses the explicit closure, never a glob that might include old DLLs.
     (args.output / "runtime-files.cmake").write_text(
         "set(LIBMPV_RUNTIME_NAMES\n" + "".join(f'  "{row["name"]}"\n' for row in manifest) + ")\n")
-    package_sources(closure, args.prefix, args.output,
-                    unified_ffmpeg_provenance(closure, args.ffmpeg_prefix, args.ffmpeg_source, args.output))
+    package_sources(closure, args.prefix, args.output, [
+        unified_ffmpeg_provenance(closure, args.ffmpeg_prefix, args.ffmpeg_source, args.output),
+        dvd_provenance(closure, args.ffmpeg_prefix, args.output),
+        cdda_provenance(closure, args.cdio_prefix, args.output),
+    ])
     shutil.copy2(args.source / "LICENSE.GPL", args.output / "licenses/MPV-GPL.txt")
     shutil.copy2(args.source / "LICENSE.LGPL", args.output / "licenses/MPV-LGPL.txt")
     commit = subprocess.check_output(["git", "-C", str(args.source), "rev-parse", "HEAD"], text=True).strip()
@@ -176,11 +259,15 @@ def main():
     # BUG-3499: demuxer fixes (timestamps of laced Matroska audio frames).
     # BUG-3500: the recorder behind dump-cache derives missing video DTS.
     demux_patches = ["mkv-laced-audio-timestamps.patch", "recorder-video-dts.patch"]
+    # Audio CD: cdda:// seeks keep their offset inside the CD sector.
+    stream_patches = ["cdda-seek-sector-offset.patch"]
     (args.output / "source-provenance.json").write_text(json.dumps({
         "mpv_commit": commit, "patch_sha256": sha256(patch_file),
         "render_patches": {name: sha256(path) for name, path in render_patches.items()},
         "demux_patches": {name: sha256(patches / name) for name in demux_patches},
-        "native_menu_schema": 1, "runtime_manifest": "runtime-manifest.json",
+        "stream_patches": {name: sha256(patches / name) for name in stream_patches},
+        # 2: disc-navigation-state v2 (disc-type + dvd-state branch).
+        "native_menu_schema": 2, "runtime_manifest": "runtime-manifest.json",
         "dependency_packages": "msys2-packages.json",
     }, indent=2) + "\n")
     print(json.dumps({"files": len(manifest), "bytes": sum(row["bytes"] for row in manifest)}))

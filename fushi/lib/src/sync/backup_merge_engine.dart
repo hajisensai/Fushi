@@ -209,7 +209,11 @@ class BackupMergeEngine {
       // category itself is ticked. Ticking games additionally inserts the
       // unmatched src games (extending the map) + their scrape snapshots.
       await _buildGameIdMap();
-      if (_wants('games')) await _insertMissingGalgames();
+      if (_wants('games')) {
+        await _insertMissingGalgames();
+        // v134：游戏台词跟着游戏走（唯一持久副本，「我库里的例句」由它派生）。
+        await _mergeGalgameTextLines();
+      }
       // Media collections (unified-collections Phase 5) have no dialog toggle:
       // always merge the grouping itself; orphan members are kept and folded in
       // the UI. Self-guards against missing src tables (pre-migration backups).
@@ -241,6 +245,9 @@ class BackupMergeEngine {
       await _mergeFavoriteSentencePrefs();
       await _mergeTagsAndMappings();
       await _mergeCollectionTags();
+      // v129：作品图谱连接——端点里的合集 id / 游戏 id 是 src 本地身份，要在
+      // [_mergeMediaCollections] 与 [_buildGameIdMap] 之后重映射。
+      await _mergeMediaLinks();
       // v80：media_items → media_open_history，PK 是 (media_source, media_id)
       // 双列，_insertMissing 的单键形装不下，展开写。
       await _db.customStatement(
@@ -268,6 +275,7 @@ class BackupMergeEngine {
       // BUG-1488：用户给书改的名字（override_title pref）是内容，跟着书走。
       await _mergeOverrideTitlePrefs();
       if (_wants('localAudio')) await _mergeAudioSourcePrefs();
+      if (_wants('music')) await _mergeMusicUserData();
       // 迁移专用，放在全部点名 pref 合并之后：那几处是「按内容语义合并」（可能
       // 覆盖/取较新），这里只补它们没管的 key，不能反过来盖掉它们的结果。
       if (_adoptSourcePreferences) await _adoptMissingPreferences();
@@ -359,6 +367,23 @@ class BackupMergeEngine {
       'JOIN $_gameMapTable AS m ON m.src_id = ss.game_id '
       'WHERE NOT EXISTS (SELECT 1 FROM galgame_sources AS t '
       'WHERE t.game_id = m.dst_id AND t.source = ss.source)',
+    );
+  }
+
+  /// v134 文本钩子台词 dedupe-UNION under the remapped game id. Natural key =
+  /// `(game, text)`（表上的唯一键）：同一句台词在同一游戏里只留一行，所以同一份备份合并
+  /// 两次、或两台设备都录到同一句，都不会重复；保留本机已有行的 `received_at`。src 台词
+  /// 的游戏在本机没有宿主（游戏没勾 / 被裁掉）时跳过，不留悬空 `game_id`。`id` 不搬
+  /// （本机自增）：语料分块按本机 id 重新算。自守卫旧备份（v134 之前）没有这张表。
+  Future<void> _mergeGalgameTextLines() async {
+    if (!await _srcTableExists('galgame_text_lines')) return;
+    await _db.customStatement(
+      'INSERT OR IGNORE INTO galgame_text_lines (game_id, text, received_at) '
+      'SELECT m.dst_id, s.text, MIN(s.received_at) '
+      'FROM $_srcAlias.galgame_text_lines AS s '
+      'JOIN $_gameMapTable AS m ON m.src_id = s.game_id '
+      'GROUP BY m.dst_id, s.text '
+      'ORDER BY MIN(s.received_at)',
     );
   }
 
@@ -1593,6 +1618,75 @@ class BackupMergeEngine {
     );
   }
 
+  /// v129 作品图谱连接：整行 LWW 并入（与互联同步同一内核
+  /// [FushiDatabase.mergeRemoteMediaLink]，含否决墓碑）。端点按种类重映射到本机
+  /// 身份：合集 id 经合集自然键、游戏 id 经 [_gameMapTable]；书 / 视频 / 音乐 /
+  /// 有声书键本就跨端稳定，原样保留。本机落不了地的合集 / 游戏端点跳过。
+  Future<void> _mergeMediaLinks() async {
+    if (!await _srcTableExists('media_links')) return;
+    final Map<String, String> collectionIdMap = <String, String>{};
+    if (await _srcTableExists('media_collections')) {
+      final List<QueryRow> pairs = await _db.customSelect(
+        'SELECT CAST(sc.id AS TEXT) AS src_id, MIN(tc.id) AS dst_id '
+        'FROM $_srcAlias.media_collections AS sc '
+        'JOIN media_collections AS tc '
+        'ON tc.name = sc.name AND tc.collection_type = sc.collection_type '
+        'GROUP BY sc.id',
+      ).get();
+      for (final QueryRow r in pairs) {
+        collectionIdMap[r.read<String>('src_id')] = r.read<int>('dst_id').toString();
+      }
+    }
+    final Map<String, String> gameIdMap = await _readGameIdMap();
+    String? mapKey(String kind, String key) =>
+        switch (MediaLinkKind.tryParse(kind)) {
+          MediaLinkKind.videoCollection => collectionIdMap[key],
+          MediaLinkKind.game => gameIdMap[key],
+          null => null,
+          _ => key,
+        };
+    final List<QueryRow> rows = await _db
+        .customSelect('SELECT * FROM $_srcAlias.media_links')
+        .get();
+    for (final QueryRow r in rows) {
+      final MediaLinkRelation? relation =
+          MediaLinkRelation.tryParse(r.read<String>('relation'));
+      final MediaLinkKind? fromKind =
+          MediaLinkKind.tryParse(r.read<String>('from_kind'));
+      final MediaLinkKind? toKind =
+          MediaLinkKind.tryParse(r.read<String>('to_kind'));
+      if (relation == null || fromKind == null || toKind == null) continue;
+      final String? fromKey =
+          mapKey(fromKind.dbValue, r.read<String>('from_key'));
+      final String? toKey = mapKey(toKind.dbValue, r.read<String>('to_key'));
+      if (fromKey == null || toKey == null) continue;
+      if (fromKind == toKind && fromKey == toKey) continue;
+      final MediaLinkId id = mediaLinkIdFor(
+        relation,
+        (kind: fromKind, key: fromKey),
+        (kind: toKind, key: toKey),
+      );
+      await _db.mergeRemoteMediaLink(
+        MediaLinkRow(
+          fromKind: id.fromKind,
+          fromKey: id.fromKey,
+          relation: id.relation,
+          toKind: id.toKind,
+          toKey: id.toKey,
+          role: r.readNullable<String>('role'),
+          episodeRange: r.readNullable<String>('episode_range'),
+          source: r.read<String>('source'),
+          confidence: r.readNullable<double>('confidence'),
+          isUserConfirmed: r.read<int>('is_user_confirmed') != 0,
+          reason: r.readNullable<String>('reason'),
+          createdAt: r.read<int>('created_at'),
+          updatedAt: r.read<int>('updated_at'),
+          deletedAt: r.readNullable<int>('deleted_at'),
+        ),
+      );
+    }
+  }
+
   /// Profiles UNION by name (device keeps its own profile + id on a name clash),
   /// then the three child tables with src profile_id REMAPPED to the target id
   /// resolved by profile name (necessary because Profiles.id is autoincrement --
@@ -1687,6 +1781,100 @@ class BackupMergeEngine {
 
   /// v82：书自定义 CSS LWW 合并（per {book_uid, relative_path}，updatedAt 取
   /// 较新；重置墓碑 deleted 行同样传播）。此前该表不进 merge（src 静默丢弃）。
+  /// 音乐用户数据（v130，「音乐」类别）：
+  /// - 歌单：按 `playlist_uid` LWW（`updated_at` 大者胜，含软删）；备份胜出的歌单
+  ///   整组替换条目（条目没有独立身份，顺序就是内容）。
+  /// - 歌词：按 (track_uid, source) LWW（`updated_at`）。
+  /// - MV 绑定：按 (track_uid, kind, ref) LWW（`updated_at`）。
+  /// - 播放流：按 (track_uid, started_at) 去重并集。
+  /// 曲目身份是内容派生 uid，两边同一首歌同一个 uid，无需重映射。
+  Future<void> _mergeMusicUserData() async {
+    if (await _srcTableExists('music_playlists')) {
+      await _db.customStatement(
+        'CREATE TEMP TABLE IF NOT EXISTS merge_music_pl (uid TEXT PRIMARY KEY)',
+      );
+      await _db.customStatement('DELETE FROM temp.merge_music_pl');
+      await _db.customStatement(
+        'INSERT INTO temp.merge_music_pl (uid) '
+        'SELECT s.playlist_uid FROM $_srcAlias.music_playlists AS s '
+        'WHERE NOT EXISTS (SELECT 1 FROM music_playlists AS t '
+        'WHERE t.playlist_uid = s.playlist_uid '
+        'AND t.updated_at >= s.updated_at)',
+      );
+      await _db.customStatement(
+        'INSERT INTO music_playlists '
+        '(playlist_uid, name, rules_json, created_at, updated_at, deleted_at) '
+        'SELECT s.playlist_uid, s.name, s.rules_json, s.created_at, '
+        's.updated_at, s.deleted_at FROM $_srcAlias.music_playlists AS s '
+        'WHERE s.playlist_uid IN (SELECT uid FROM temp.merge_music_pl) '
+        'ON CONFLICT (playlist_uid) DO UPDATE SET name = excluded.name, '
+        'rules_json = excluded.rules_json, updated_at = excluded.updated_at, '
+        'deleted_at = excluded.deleted_at',
+      );
+      if (await _srcTableExists('music_playlist_entries')) {
+        await _db.customStatement(
+          'DELETE FROM music_playlist_entries WHERE playlist_uid IN '
+          '(SELECT uid FROM temp.merge_music_pl)',
+        );
+        await _db.customStatement(
+          'INSERT INTO music_playlist_entries '
+          '(playlist_uid, track_uid, position, added_at) '
+          'SELECT s.playlist_uid, s.track_uid, s.position, s.added_at '
+          'FROM $_srcAlias.music_playlist_entries AS s '
+          'WHERE s.playlist_uid IN (SELECT uid FROM temp.merge_music_pl) '
+          'ORDER BY s.playlist_uid, s.position',
+        );
+      }
+      await _db.customStatement('DROP TABLE IF EXISTS temp.merge_music_pl');
+    }
+    if (await _srcTableExists('music_lyrics')) {
+      await _db.customStatement(
+        'INSERT INTO music_lyrics (track_uid, source, format, raw, '
+        'timeline_cache, timeline_version, offset_ms, timing_quality, '
+        'is_user_edited, updated_at) '
+        'SELECT s.track_uid, s.source, s.format, s.raw, s.timeline_cache, '
+        's.timeline_version, s.offset_ms, s.timing_quality, s.is_user_edited, '
+        's.updated_at FROM $_srcAlias.music_lyrics AS s '
+        'WHERE NOT EXISTS (SELECT 1 FROM music_lyrics AS t '
+        'WHERE t.track_uid = s.track_uid AND t.source = s.source '
+        'AND t.updated_at >= s.updated_at) '
+        'ON CONFLICT (track_uid, source) DO UPDATE SET '
+        'format = excluded.format, raw = excluded.raw, '
+        'timeline_cache = excluded.timeline_cache, '
+        'timeline_version = excluded.timeline_version, '
+        'offset_ms = excluded.offset_ms, '
+        'timing_quality = excluded.timing_quality, '
+        'is_user_edited = excluded.is_user_edited, '
+        'updated_at = excluded.updated_at',
+      );
+    }
+    if (await _srcTableExists('music_videos')) {
+      await _db.customStatement(
+        'INSERT INTO music_videos (track_uid, kind, ref, offset_ms, '
+        'confidence, is_user_bound, updated_at) '
+        'SELECT s.track_uid, s.kind, s.ref, s.offset_ms, s.confidence, '
+        's.is_user_bound, s.updated_at FROM $_srcAlias.music_videos AS s '
+        'WHERE NOT EXISTS (SELECT 1 FROM music_videos AS t '
+        'WHERE t.track_uid = s.track_uid AND t.kind = s.kind '
+        'AND t.ref = s.ref AND t.updated_at >= s.updated_at) '
+        'ON CONFLICT (track_uid, kind, ref) DO UPDATE SET '
+        'offset_ms = excluded.offset_ms, confidence = excluded.confidence, '
+        'is_user_bound = excluded.is_user_bound, '
+        'updated_at = excluded.updated_at',
+      );
+    }
+    if (await _srcTableExists('music_play_events')) {
+      await _db.customStatement(
+        'INSERT INTO music_play_events '
+        '(track_uid, started_at, listened_ms, completed) '
+        'SELECT s.track_uid, s.started_at, s.listened_ms, s.completed '
+        'FROM $_srcAlias.music_play_events AS s '
+        'WHERE NOT EXISTS (SELECT 1 FROM music_play_events AS t '
+        'WHERE t.track_uid = s.track_uid AND t.started_at = s.started_at)',
+      );
+    }
+  }
+
   Future<void> _mergeBookCustomCss() async {
     if (!await _srcTableExists('book_custom_css')) return;
     await _db.customStatement(
@@ -1926,6 +2114,21 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'web_browser_session_tabs',
       'web_browser_closed_tabs',
       'web_browser_downloads',
+      // v130 音乐曲库目录：本机重扫产物（绝对路径），设备本地。音乐用户数据走
+      // [BackupMergeEngine._mergeMusicUserData]。
+      'music_track_credits',
+      'music_tracks',
+      'music_albums',
+      'music_artists',
+      'music_disc_sources',
+      // v131：OP / ED 声纹比对缓存——本机文件的实测结果，必须本机重算。
+      'video_theme_song_spans',
+      // v135：游戏 VNDB 配音表缓存——本机取得的缓存，按需重取。
+      'game_voice_casts',
+      // v133：音乐刮削三表（键含本机路径派生的 track_uid），设备本地。
+      'music_scrape_meta',
+      'music_metadata_raw_snapshots',
+      'music_locked_fields',
     ]);
 
 /// 把备份 [source] 里的 SRS 数据按 `profiles.uid` 归位并入本机（铁律 E，规则见

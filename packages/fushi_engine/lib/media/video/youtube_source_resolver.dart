@@ -254,6 +254,54 @@ Future<YoutubeMetadata> resolveYoutubeMetadata(
   }
 }
 
+/// YouTube 搜索的一条结果（音乐 MV 在线绑定用，音乐方案 §8.3 第 3 条）。只是候选：
+/// 调用方按置信度筛、用户确认后才绑定。
+class YoutubeSearchHit {
+  const YoutubeSearchHit({
+    required this.videoId,
+    required this.title,
+    required this.channelName,
+    required this.channelId,
+    this.duration,
+  });
+
+  final String videoId;
+  final String title;
+  final String channelName;
+  final String channelId;
+  final Duration? duration;
+
+  String get url => 'https://www.youtube.com/watch?v=$videoId';
+}
+
+/// IO：按关键词搜 YouTube 视频（首页 ≈20 条，取前 [limit] 条）。与 [resolveYoutubeSource]
+/// 同一个出站装配（`createAppHttpIoClient`，BUG-1498），用完关闭。
+Future<List<YoutubeSearchHit>> searchYoutubeVideos(
+  String query, {
+  int limit = 10,
+  Duration timeout = const Duration(seconds: 20),
+}) async {
+  final String q = query.trim();
+  if (q.isEmpty) return const <YoutubeSearchHit>[];
+  final yt.YoutubeExplode client =
+      yt.YoutubeExplode(_createYoutubeHttpClient());
+  try {
+    final yt.VideoSearchList list = await client.search.search(q).timeout(timeout);
+    return <YoutubeSearchHit>[
+      for (final yt.Video v in list.take(limit))
+        YoutubeSearchHit(
+          videoId: v.id.value,
+          title: v.title,
+          channelName: v.author,
+          channelId: v.channelId.value,
+          duration: v.duration,
+        ),
+    ];
+  } finally {
+    client.close();
+  }
+}
+
 final HtmlUnescape _unescape = HtmlUnescape();
 
 AudioCue _cue(String bookKey, int index, String text, int startMs, int endMs) =>

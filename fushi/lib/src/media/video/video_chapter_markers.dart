@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/video_player_controller.dart';
@@ -60,9 +61,13 @@ class VideoChapterMarkers extends StatelessWidget {
     required this.controller,
     required this.color,
     this.thickness = 2.0,
+    this.extraChapters,
   });
 
   final VideoPlayerController controller;
+
+  /// 容器章节之外的刻度（作品图谱 L2 识别出的 OP / ED 段首段尾），与容器章节合并排序。
+  final ValueListenable<List<VideoChapter>>? extraChapters;
 
   /// 刻度颜色（页面传控制条强调色派生的高对比色）。
   final Color color;
@@ -72,11 +77,19 @@ class VideoChapterMarkers extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ValueListenable<List<VideoChapter>>? extra = extraChapters;
     return AnimatedBuilder(
-      animation: controller,
+      animation: extra == null
+          ? controller
+          : Listenable.merge(<Listenable>[controller, extra]),
       builder: (BuildContext _, __) {
+        final List<VideoChapter> chapters = extra == null || extra.value.isEmpty
+            ? controller.chapters
+            : (<VideoChapter>[...controller.chapters, ...extra.value]..sort(
+                (VideoChapter a, VideoChapter b) => a.start.compareTo(b.start),
+              ));
         final List<double> fractions = chapterMarkerFractions(
-          chapters: controller.chapters,
+          chapters: chapters,
           durationMs: controller.durationMs ?? 0,
         );
         if (fractions.isEmpty) return const SizedBox.shrink();

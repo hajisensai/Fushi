@@ -1,5 +1,6 @@
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
     show CollectionMemberVisibility;
+import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart'
     show
@@ -307,6 +308,7 @@ class CollectionRemoteContext {
     this.chooseTmdbOrderingOnHost,
     this.downloads,
     this.deleteLocalCopy,
+    this.discActions,
   });
 
   /// 拉对端视频清单（调用方走共享的 [RemoteLibraryCache]，TTL 内不打网络）。
@@ -355,4 +357,8 @@ class CollectionRemoteContext {
   /// 行保留，这一集退回远端集。自带确认框，返回是否真的删了。详情页只对 id 仍在
   /// 对端清单里的本机成员给这条动作（见详情页 `_peerCopyKeys`）。null = 不提供。
   final Future<bool> Function(VideoBookRow row)? deleteLocalCopy;
+
+  /// 远端原盘（第二期）：流式原盘菜单、在 host 上打开。null = 这个远端来源给不出
+  /// 原盘（云盘 / 媒体服务器），详情页按「远端资源」说明原因。
+  final RemoteDiscActions? discActions;
 }

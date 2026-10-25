@@ -41,6 +41,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
     show kMangaOcrMaxSelectableTasks;
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show kDefaultMangaOcrLocalModel, MangaOcrLocalModel;
+import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
@@ -1878,6 +1879,55 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 原盘会话自动全屏（仅桌面端，默认开）：进原盘会话时窗口切全屏，退出时恢复进入前
+  /// 的窗口状态（最大化 / 尺寸 / 位置）。
+  bool get videoDiscAutoFullscreen =>
+      getPref('video_disc_auto_fullscreen', defaultValue: true) as bool;
+
+  Future<void> setVideoDiscAutoFullscreen(bool value) async {
+    await setPref('video_disc_auto_fullscreen', value);
+    notifyListeners();
+  }
+
+  /// 原盘启动动画（默认开）：封面从卡片位置放大铺满再淡入盘菜单；减弱动态效果 /
+  /// 墨水屏下时长本就归零。
+  bool get videoDiscLaunchAnimation =>
+      getPref('video_disc_launch_animation', defaultValue: true) as bool;
+
+  /// 作品图谱 L2：进入识别出的片头 / 片尾时自动跳过（默认关：识别是推断，默认只给
+  /// 按钮，让用户自己决定）。
+  bool get videoThemeSongAutoSkip =>
+      getPref('video_theme_song_auto_skip', defaultValue: false) as bool;
+
+  Future<void> setVideoThemeSongAutoSkip(bool value) async {
+    await setPref('video_theme_song_auto_skip', value);
+    notifyListeners();
+  }
+
+  /// 作品图谱 L2：OP / ED 期间角落显示「♪ 曲名 · 在音乐库打开」（默认开）。
+  bool get videoThemeSongNowPlaying =>
+      getPref('video_theme_song_now_playing', defaultValue: true) as bool;
+
+  Future<void> setVideoThemeSongNowPlaying(bool value) async {
+    await setPref('video_theme_song_now_playing', value);
+    notifyListeners();
+  }
+
+  Future<void> setVideoDiscLaunchAnimation(bool value) async {
+    await setPref('video_disc_launch_animation', value);
+    notifyListeners();
+  }
+
+  /// 原盘默认进入菜单（默认开）：原盘作品详情页的主按钮打开原盘菜单；关掉后主按钮
+  /// 直接播放正片，菜单入口留在次按钮。
+  bool get videoDiscOpenMenuByDefault =>
+      getPref('video_disc_open_menu_by_default', defaultValue: true) as bool;
+
+  Future<void> setVideoDiscOpenMenuByDefault(bool value) async {
+    await setPref('video_disc_open_menu_by_default', value);
+    notifyListeners();
+  }
+
   /// 底部细进度条开关：控制条淡出后，在视频最下方留一条主题色细线
   /// （B 站 / YouTube 同款）。**默认关**——控制条淡出本身就是「把画面让干净」，
   /// 再留一条常亮的线等于把这个意图撤回一半；想要的人去设置里开。getPref 仅在
@@ -1932,6 +1982,19 @@ class PreferencesRepository extends ChangeNotifier
   /// TODO-1119 / BUG-545：用户是否已在「Windows 黑屏闪烁」运行时提示里点了「不再提示」。
   /// 默认 false = 允许提示。置 true 后播放器不再弹该运行时提示条（静态「已知问题」说明行
   /// 仍在画质设置里）。getPref 仅在该 key 从未写过时返回默认 false。
+  /// 远端原盘流式播放「反复缓冲 → 建议下载到本机」提示的「不再提示」。默认 false。
+  bool get videoDiscRemoteBufferingNoticeSuppressed =>
+      getPref(
+            'video_disc_remote_buffering_notice_suppressed',
+            defaultValue: false,
+          )
+          as bool;
+
+  Future<void> setVideoDiscRemoteBufferingNoticeSuppressed(bool value) async {
+    await setPref('video_disc_remote_buffering_notice_suppressed', value);
+    notifyListeners();
+  }
+
   bool get videoBlackFlickerNoticeSuppressed =>
       getPref('video_black_flicker_notice_suppressed', defaultValue: false)
           as bool;
@@ -4341,6 +4404,260 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setGalIngameLookupEnabled(bool value) async {
     await setPref('gal_hook_ingame_lookup_enabled', value);
+    notifyListeners();
+  }
+
+  /// 音乐无缝播放（mpv `gapless-audio=weak` + 预取下一首，设计 §7.2）。默认开。
+  bool get musicGapless =>
+      getPref('music_gapless', defaultValue: true) == true;
+
+  Future<void> setMusicGapless(bool value) async {
+    await setPref('music_gapless', value);
+    notifyListeners();
+  }
+
+  /// 音乐 ReplayGain（专辑顺序播 album / 其它 track，设计 §7.2）。默认开。
+  bool get musicReplayGain =>
+      getPref('music_replaygain', defaultValue: true) == true;
+
+  Future<void> setMusicReplayGain(bool value) async {
+    await setPref('music_replaygain', value);
+    notifyListeners();
+  }
+
+  /// 本地没有歌词时去 LRCLIB 精确匹配（设计 §5.4，D3 只装配 LRCLIB）。默认开。
+  bool get musicLyricsOnline =>
+      getPref('music_lyrics_online', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsOnline(bool value) async {
+    await setPref('music_lyrics_online', value);
+    notifyListeners();
+  }
+
+  /// AcoustID 应用 API key（音乐刮削 §8.1）。本仓不内置任何 key；空 = AcoustID 不可用。
+  String get musicAcoustidApiKey =>
+      (getPref('music_acoustid_api_key', defaultValue: '') as String?) ?? '';
+
+  Future<void> setMusicAcoustidApiKey(String value) async {
+    await setPref('music_acoustid_api_key', value.trim());
+    notifyListeners();
+  }
+
+  /// 图示均衡器开关（P5，可选；开且不平直时即非 bit-perfect）。默认关。
+  bool get musicEqEnabled =>
+      getPref('music_eq_enabled', defaultValue: false) == true;
+
+  Future<void> setMusicEqEnabled(bool value) async {
+    await setPref('music_eq_enabled', value);
+    notifyListeners();
+  }
+
+  /// 图示均衡器各段增益（dB，逗号分隔，与 `kMusicEqualizerBandsHz` 一一对应）；空 = 平直。
+  String get musicEqGains =>
+      (getPref('music_eq_gains', defaultValue: '') as String?) ?? '';
+
+  Future<void> setMusicEqGains(String value) async {
+    await setPref('music_eq_gains', value);
+    notifyListeners();
+  }
+
+  /// 用户自配的 OpenSubsonic 服务器清单（服务器曲库，音乐方案 §13 P5；设备本地，条目里
+  /// 带 base64 的密码 / API key）。坏条目逐条丢弃（`decodeSubsonicServerConfigs`）。
+  List<SubsonicServerConfig> get musicSubsonicServers {
+    final String raw =
+        getPref('music_subsonic_servers', defaultValue: '') as String;
+    if (raw.trim().isEmpty) return const <SubsonicServerConfig>[];
+    try {
+      return decodeSubsonicServerConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.musicSubsonicServers.decode',
+        error,
+        stack,
+      );
+      return const <SubsonicServerConfig>[];
+    }
+  }
+
+  Future<void> setMusicSubsonicServers(
+    Iterable<SubsonicServerConfig> servers,
+  ) async {
+    await setPref('music_subsonic_servers', encodeSubsonicServerConfigs(servers));
+    notifyListeners();
+  }
+
+  /// 混排进本地曲库的服务器（`MusicServerBrowser.serverId` 集合）：显式 opt-in，与视频
+  /// `jellyfin_show_in_library` 同模式。设备本地（服务器配置本身就是设备本地的）。
+  Set<String> get musicServerLibraryMix {
+    final Object? raw = getPref('music_server_library_mix', defaultValue: '');
+    if (raw is! String || raw.trim().isEmpty) return const <String>{};
+    try {
+      final Object? list = jsonDecode(raw);
+      return <String>{
+        if (list is List<Object?>)
+          for (final Object? id in list)
+            if (id is String && id.isNotEmpty) id,
+      };
+    } on FormatException {
+      return const <String>{};
+    }
+  }
+
+  Future<void> setMusicServerLibraryMix(Set<String> serverIds) async {
+    await setPref(
+      'music_server_library_mix',
+      jsonEncode((serverIds.toList()..sort())),
+    );
+    notifyListeners();
+  }
+
+  /// 服务器曲库的码率上限（kbps）：0 = 原样直出（direct play，缺省），其余请服务器转码。
+  int get musicServerMaxBitrate {
+    final Object? raw = getPref('music_server_max_bitrate', defaultValue: 0);
+    final int v = raw is num ? raw.toInt() : 0;
+    return v < 0 ? 0 : v;
+  }
+
+  Future<void> setMusicServerMaxBitrate(int kbps) async {
+    await setPref('music_server_max_bitrate', kbps < 0 ? 0 : kbps);
+    notifyListeners();
+  }
+
+  /// VGMdb 补充开关（社区镜像，无官方 API）。默认关。
+  bool get musicVgmdbEnabled =>
+      getPref('music_vgmdb_enabled', defaultValue: false) == true;
+
+  Future<void> setMusicVgmdbEnabled(bool value) async {
+    await setPref('music_vgmdb_enabled', value);
+    notifyListeners();
+  }
+
+  /// 歌词页查词时自动暂停（设计 §6.1「查词时自动暂停可配」）。默认开。
+  bool get musicLyricsLookupPause =>
+      getPref('music_lyrics_lookup_pause', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsLookupPause(bool value) async {
+    await setPref('music_lyrics_lookup_pause', value);
+    notifyListeners();
+  }
+
+  /// 桌面歌词（设计 §6.2：Android 悬浮窗 / Windows 置顶穿透窗）。默认关。
+  bool get musicDesktopLyrics =>
+      getPref('music_desktop_lyrics', defaultValue: false) == true;
+
+  Future<void> setMusicDesktopLyrics(bool value) async {
+    await setPref('music_desktop_lyrics', value);
+    notifyListeners();
+  }
+
+  /// 锁屏 / 媒体通知副标题显示当前歌词行（设计 §6.2）。默认开。
+  bool get musicLyricsMediaSession =>
+      getPref('music_lyrics_media_session', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsMediaSession(bool value) async {
+    await setPref('music_lyrics_media_session', value);
+    notifyListeners();
+  }
+
+  /// 「听歌计入学习」（决策 D4）：关着时只有歌词页上的学习动作之后才计时。默认关。
+  bool get musicListeningCountsAsStudy =>
+      getPref('music_listening_counts_as_study', defaultValue: false) == true;
+
+  Future<void> setMusicListeningCountsAsStudy(bool value) async {
+    await setPref('music_listening_counts_as_study', value);
+    notifyListeners();
+  }
+
+  /// 卡拉 OK 字幕页里 ASS 歌词的默认显示：`auto`（按特效检测）/ `original`（libass 原样）/
+  /// `structured`（逐字歌词）。默认 `auto`（音乐 P3，设计 §6.3）。
+  String get musicKaraokeAssRender =>
+      (getPref('music_karaoke_ass_render', defaultValue: 'auto') as String?) ??
+      'auto';
+
+  Future<void> setMusicKaraokeAssRender(String value) async {
+    await setPref('music_karaoke_ass_render', value);
+    notifyListeners();
+  }
+
+  /// ReplayGain 预放大（dB，-15…+15，设计 §7.3）。默认 0。
+  double get musicReplayGainPreampDb =>
+      (getPref('music_replaygain_preamp_db', defaultValue: 0.0) as num)
+          .toDouble();
+
+  Future<void> setMusicReplayGainPreampDb(double value) async {
+    await setPref('music_replaygain_preamp_db', value);
+    notifyListeners();
+  }
+
+  /// 缺 ReplayGain 标签时后台用 EBU R128 测响度写曲库（设计 §7.3，不改文件）。默认开。
+  bool get musicLoudnessScan =>
+      getPref('music_loudness_scan', defaultValue: true) == true;
+
+  Future<void> setMusicLoudnessScan(bool value) async {
+    await setPref('music_loudness_scan', value);
+    notifyListeners();
+  }
+
+  /// 独占 / bit-perfect 输出（设计 §7.4）。默认关：独占会让别的程序在播放期间没有声音。
+  bool get musicExclusiveOutput =>
+      getPref('music_exclusive_output', defaultValue: false) == true;
+
+  Future<void> setMusicExclusiveOutput(bool value) async {
+    await setPref('music_exclusive_output', value);
+    notifyListeners();
+  }
+
+  /// 音乐输出设备（mpv `audio-device` 名，`auto` = 系统默认）。
+  String get musicAudioDevice =>
+      getPref('music_audio_device', defaultValue: 'auto') as String;
+
+  Future<void> setMusicAudioDevice(String value) async {
+    await setPref('music_audio_device', value);
+    notifyListeners();
+  }
+
+  /// 音乐软件音量（0–100；100 = 不改样本，bit-perfect 的前提）。
+  double get musicVolume =>
+      (getPref('music_volume', defaultValue: 100.0) as num).toDouble();
+
+  Future<void> setMusicVolume(double value) async {
+    await setPref('music_volume', value);
+    notifyListeners();
+  }
+
+  /// 音乐播放速度（变速不变调，scaletempo2）。
+  double get musicSpeed =>
+      (getPref('music_speed', defaultValue: 1.0) as num).toDouble();
+
+  Future<void> setMusicSpeed(double value) async {
+    await setPref('music_speed', value);
+    notifyListeners();
+  }
+
+  /// DSD → PCM 目标采样率（Hz，176400 / 352800，设计 §7.1）。
+  int get musicDsdPcmRate =>
+      getPref('music_dsd_pcm_rate', defaultValue: 176400) as int;
+
+  Future<void> setMusicDsdPcmRate(int value) async {
+    await setPref('music_dsd_pcm_rate', value);
+    notifyListeners();
+  }
+
+  /// 交叉淡入时长（毫秒；0 = 关，默认关，设计 §7.2）。
+  int get musicCrossfadeMs =>
+      getPref('music_crossfade_ms', defaultValue: 0) as int;
+
+  Future<void> setMusicCrossfadeMs(int value) async {
+    await setPref('music_crossfade_ms', value);
+    notifyListeners();
+  }
+
+  /// 专辑连续曲目 / CUE 拆轨也交叉淡入（默认关：真无缝优先，设计 §7.2）。
+  bool get musicCrossfadeContinuous =>
+      getPref('music_crossfade_continuous', defaultValue: false) as bool;
+
+  Future<void> setMusicCrossfadeContinuous(bool value) async {
+    await setPref('music_crossfade_continuous', value);
     notifyListeners();
   }
 

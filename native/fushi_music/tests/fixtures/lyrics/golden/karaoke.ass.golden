@@ -1,0 +1,10 @@
+format=ass quality=syllable effects=true lang=- title=- artist=- agents=[]
+L 1000-4000 agent=- role=Main style=Kanji
+  S 1000-1400 Instant "沈" ruby="しず"
+  S 1400-1800 Sweep "む"
+  S 1800-2600 Outline "様" ruby="よう"
+  S 2600-4000 Instant "に"
+  R "shizumuyouni"
+L 5000-7000 agent=- role=Main style=Kanji
+  S 5000-6000 Instant "夜" ruby="よる"
+  S 6000-7000 Instant "に"

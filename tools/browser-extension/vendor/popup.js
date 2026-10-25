@@ -413,6 +413,116 @@ function createSrsStatusBadge(expression, reading) {
     return badge;
 }
 
+// 「我库里的例句」（作品图谱 L4）：这个词在用户自己的书 / 字幕 / 歌词 / 游戏台词里出现过的
+// 句子，按模块分组，点一条回到出处。
+//
+// 数据全在宿主：librarySentences 桥回 null（没有 / 关着 / 宿主不支持）或
+// {title, groups: [{kind, label, total, items: [{text, hl: [[start, len]], source, ref}]}]}。
+// 文案（title / label / source）由宿主本地化好再下发，本文件不带任何语言串；ref 是宿主给的
+// 不透明定位，点击时原样交回 librarySentenceOpen。
+// 开关：宿主注入 window.__fushiLibrarySentencesEnabled（设置 → 查词 →「我库里的例句」）。
+// **false 时既不渲染也不发桥调用**。浏览器扩展没有注入通道 → undefined → 照常问桥，扩展
+// shim 对未知桥回 null，区块就不出现（例句索引只在 app 本机，扩展暂不支持）。
+// 与复习标记同一套懒查：进入视口预取边距才问，同词并发共用一个请求。
+function applyLibrarySentences(section, data) {
+    section.replaceChildren();
+    const groups = data && typeof data === 'object' && Array.isArray(data.groups)
+        ? data.groups.filter((g) => g && Array.isArray(g.items) && g.items.length > 0)
+        : [];
+    if (groups.length === 0) {
+        section.classList.add('library-sentences-hidden');
+        return;
+    }
+    const bridge = window.flutter_inappwebview;
+    section.appendChild(el('div', {
+        className: 'library-sentences-title',
+        textContent: String(data.title || ''),
+    }));
+    for (const group of groups) {
+        const groupDiv = el('div', { className: 'library-sentences-group' });
+        const label = String(group.label || '');
+        if (label) {
+            groupDiv.appendChild(el('div', {
+                className: 'library-sentences-group-label',
+                textContent: label,
+            }));
+        }
+        for (const item of group.items) {
+            const text = String(item.text || '');
+            const row = el('button', {
+                className: 'library-sentence',
+                type: 'button',
+                onclick: async (event) => {
+                    event.stopPropagation();
+                    if (!bridge || typeof bridge.callHandler !== 'function') return;
+                    if (row.dataset.busy === '1') return;
+                    row.dataset.busy = '1';
+                    try {
+                        await bridge.callHandler('librarySentenceOpen', item.ref || {});
+                    } catch (e) {
+                        console.error('librarySentenceOpen failed', e);
+                    } finally {
+                        row.dataset.busy = '';
+                    }
+                },
+            });
+            const textSpan = el('span', { className: 'library-sentence-text' });
+            const spans = Array.isArray(item.hl)
+                ? item.hl
+                    .filter((h) => Array.isArray(h) && h.length === 2)
+                    .map((h) => [Number(h[0]) || 0, Number(h[1]) || 0])
+                    .sort((a, b) => a[0] - b[0])
+                : [];
+            let at = 0;
+            for (const [start, len] of spans) {
+                if (start < at || len <= 0 || start + len > text.length) continue;
+                if (start > at) textSpan.appendChild(document.createTextNode(text.slice(at, start)));
+                textSpan.appendChild(el('mark', {
+                    className: 'library-sentence-hl',
+                    textContent: text.slice(start, start + len),
+                }));
+                at = start + len;
+            }
+            if (at < text.length) textSpan.appendChild(document.createTextNode(text.slice(at)));
+            row.appendChild(textSpan);
+            const source = String(item.source || '');
+            if (source) {
+                row.appendChild(el('span', {
+                    className: 'library-sentence-source',
+                    textContent: source,
+                }));
+            }
+            groupDiv.appendChild(row);
+        }
+        section.appendChild(groupDiv);
+    }
+    section.classList.remove('library-sentences-hidden');
+    // 进场：下一帧摘掉 entering，透明度 / 位移过渡到静息（减弱动态效果时不挂 entering）。
+    if (!__fushiPopupReducedMotion()) {
+        section.classList.add('library-sentences-entering');
+        requestAnimationFrame(() => requestAnimationFrame(
+            () => section.classList.remove('library-sentences-entering')));
+    }
+}
+
+function createLibrarySentencesSection(expression, reading) {
+    if (window.__fushiLibrarySentencesEnabled === false) return null;
+    const bridge = window.flutter_inappwebview;
+    if (!bridge || typeof bridge.callHandler !== 'function') return null;
+    if (!expression) return null;
+    const section = el('div', {
+        className: 'library-sentences library-sentences-hidden',
+    });
+    scheduleEntryStateCheck(
+        section,
+        `library\u0000${mineEntryKey(expression, reading)}`,
+        () => bridge.callHandler(
+            'librarySentences', { expression: expression || '', reading: reading || '' }),
+        (data) => applyLibrarySentences(section, data),
+    );
+    return section;
+}
+
 // BUG-1833 follow-up: favorite/Anki state is decoration for each result header,
 // not a prerequisite for revealing the dictionary card. A large lookup can
 // contain dozens of entry headers; firing both bridges while synchronously
@@ -6303,6 +6413,11 @@ function buildEntryElement(entry, idx, maximumDictionaryBlocks = Infinity) {
 
     const { details, body, grouped, dictNames } = glossaryWrapper;
     entryDiv.appendChild(details);
+    // 「我库里的例句」：词条末尾（释义之后），没有命中时整块不出现。
+    const librarySentences = createLibrarySentencesSection(entry.expression, entry.reading);
+    if (librarySentences) {
+        entryDiv.appendChild(librarySentences);
+    }
     const dictionaryBlockLimit = Number.isFinite(maximumDictionaryBlocks)
         ? Math.max(0, Math.min(dictNames.length, Math.floor(maximumDictionaryBlocks)))
         : dictNames.length;

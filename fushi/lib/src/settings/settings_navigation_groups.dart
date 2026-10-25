@@ -37,6 +37,7 @@ SettingsNavigationGroupId settingsNavigationGroupFor(
   SettingsDestinationId.reading ||
   SettingsDestinationId.manga ||
   SettingsDestinationId.video ||
+  SettingsDestinationId.music ||
   SettingsDestinationId.game ||
   SettingsDestinationId.mediaTracking => SettingsNavigationGroupId.content,
   SettingsDestinationId.lookup ||

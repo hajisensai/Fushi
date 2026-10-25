@@ -2,9 +2,9 @@
   {
     "name": "fbdodec-63.dll",
     "source_name": "avcodec-63.dll",
-    "source_sha256": "95ee67122638b1ceeaf76f3c1b6875ff7a0c60ebbf17ec89cf8bdabd8b3b63dc",
-    "sha256": "9c931e199778d2b9d1b7f4a33fd595855fedfa895e5e9adfdca9e1b020bd70fb",
-    "bytes": 23438070,
+    "source_sha256": "56d65d32bc1cb0f20015c8c09022469f7295bfa2ded9021c6c048a4c3b6b1160",
+    "sha256": "60309b11952e20b60d2ca5dd423958aa4c0fd8f8616dc0b3b3dd166fcaeaee8f",
+    "bytes": 23444214,
     "rewritten_references": 38,
     "imports_and_forwarders": [
       "fbdaom.dll",
@@ -47,8 +47,8 @@
   {
     "name": "fbdevice-63.dll",
     "source_name": "avdevice-63.dll",
-    "source_sha256": "3de76aab158a3801da8a7fda2b02e82833c9a9ea29c33b2157aaaa423455baca",
-    "sha256": "8c1d98a4b0802b4362dae9a8e1fd69e0271f22db5543f205ae3364ccecc169f0",
+    "source_sha256": "24d2dcf86ac56a66c58b62348a83ed981f0e8850fa07b09622c6c0285f2371a2",
+    "sha256": "db53e5f30c88097e5f00c212fb44631a72b0387879abdd9802c1941123428a37",
     "bytes": 726094,
     "rewritten_references": 6,
     "imports_and_forwarders": [
@@ -69,9 +69,9 @@
   {
     "name": "fbdilter-12.dll",
     "source_name": "avfilter-12.dll",
-    "source_sha256": "c5c82ad64912395afbdd318e9e0a3469f6a943832822b54931bc82e1777c7758",
-    "sha256": "39639a7df9a200f20294fd72af3c9604705969213960fa0f1614b750f70e0bf3",
-    "bytes": 8302877,
+    "source_sha256": "59dbae6bff2ff5d866f49304b4616fe93396163ee80d8250e4e48246dd1aade3",
+    "sha256": "360254a74efd692b627c0dae8352da8fe60390486664aae033095b775289d4c0",
+    "bytes": 8304413,
     "rewritten_references": 21,
     "imports_and_forwarders": [
       "fbdass-9.dll",
@@ -102,14 +102,16 @@
   {
     "name": "fbdormat-63.dll",
     "source_name": "avformat-63.dll",
-    "source_sha256": "9b0d7d4b409c64212e4d13a34e1284f6e6721cb4aa29c1567df95ffe93ec541a",
-    "sha256": "5f82150b4f6ac61e86e1f7fcf4ae8be87bfa304e01d6b756d63987a3dd722aee",
-    "bytes": 3815340,
-    "rewritten_references": 18,
+    "source_sha256": "78983db5db2476ff5dfa176aaf31624036f17949501169609804009774210edd",
+    "sha256": "724a32035d42150bf1884d0a01970c72fd303048e37865e4310da22664bd673b",
+    "bytes": 3844547,
+    "rewritten_references": 20,
     "imports_and_forwarders": [
       "fbdb1.dll",
       "fbdbluray-4.dll",
       "fbdbz2-1.dll",
+      "fbddvdnav-4.dll",
+      "fbddvdread-8.dll",
       "fbdgme.dll",
       "fbdgnutls-30.dll",
       "fbdiconv-2.dll",
@@ -128,9 +130,9 @@
   {
     "name": "fbdtil-61.dll",
     "source_name": "avutil-61.dll",
-    "source_sha256": "46b3ec828b16a916bb0b74483e2b408768ecb32735dda6f58b2e79cfef925ec7",
-    "sha256": "0f47e3957301f7b678967d5b2284e7f4a2860722370664efb1acbe8913bce977",
-    "bytes": 1980272,
+    "source_sha256": "5fe77cabe6fbff9bd9bafc5ea9ce849ba8825228e922de7d41c4c06ae948d91c",
+    "sha256": "2f39165020a00ef4cd688ab4cfd3efe9d0d669f84dd1749f0ae69705bf994bf4",
+    "bytes": 1980784,
     "rewritten_references": 8,
     "imports_and_forwarders": [
       "bcrypt.dll",
@@ -259,6 +261,48 @@
     ]
   },
   {
+    "name": "fbdcdio-19.dll",
+    "source_name": "libcdio-19.dll",
+    "source_sha256": "cd99245273478caad2ba3e5869b51610e60be29c0b4c063adf511b3479fdb839",
+    "sha256": "1b26da92f1a0335e1f5edb85b3551e579a8f89511f57ace164abb08a7d8097c2",
+    "bytes": 220298,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdiconv-2.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "WINMM.dll"
+    ]
+  },
+  {
+    "name": "fbdcdio_cdda-2.dll",
+    "source_name": "libcdio_cdda-2.dll",
+    "source_sha256": "a67b5389a3943efac785eb4953a5e7377679d0a9ac54d2c427c14a4e0118c733",
+    "sha256": "16966bd845d94135c6a9a7a618fe41c46a1f41afc914862e69c5f7f9211f0d7e",
+    "bytes": 64277,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdcdio-19.dll",
+      "fbdwinpthread-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdcdio_paranoia-2.dll",
+    "source_name": "libcdio_paranoia-2.dll",
+    "source_sha256": "ea0c0a5e7101570729614514a13881f642631004d460e7c845362ab35d25eaa0",
+    "sha256": "e59c3997df33026cff55948ab13fd9488c6e8c8375a0e808762efaa90cb84ccf",
+    "bytes": 38671,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdcdio-19.dll",
+      "fbdcdio_cdda-2.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
     "name": "fbdcrypto-3-x64.dll",
     "source_name": "libcrypto-3-x64.dll",
     "source_sha256": "ad397e1391ae38100fa1043d69a3495efa73fd9c2784de0ffc3ede3df1fd092e",
@@ -331,6 +375,45 @@
       "ntdll.dll",
       "USERENV.dll",
       "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbddvdcss-2.dll",
+    "source_name": "libdvdcss-2.dll",
+    "source_sha256": "0b883259237b3cc8b37e89e4a23fe764a34890d29c28f2c5e2f448b1f0f59ed3",
+    "sha256": "a8090f2767391f7c5f6937b93380d4bca8266afe0ae3ba6289ec56515067ce3f",
+    "bytes": 508453,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "SHELL32.dll"
+    ]
+  },
+  {
+    "name": "fbddvdnav-4.dll",
+    "source_name": "libdvdnav-4.dll",
+    "source_sha256": "b4f085b86f720ea0b6dfcf235adef2f1a5ab3b3ce9e86de5389df378349b77de",
+    "sha256": "06e51466d9d55a10da9a7d7f11e68277d8b07b35b4429b989566669e70a83cab",
+    "bytes": 363677,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbddvdread-8.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbddvdread-8.dll",
+    "source_name": "libdvdread-8.dll",
+    "source_sha256": "f209d885d586bb78a1c53b09e4b77dd2bf640cc91314ad997201a08d59b76945",
+    "sha256": "8fabf19ac8b2f6cae455c4bdc5a1a548b79f362b9bf4e51dc178fc010192a746",
+    "bytes": 428403,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbddvdcss-2.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
     ]
   },
   {
@@ -744,10 +827,10 @@
   {
     "name": "libmpv-2.dll",
     "source_name": "libmpv-2.dll",
-    "source_sha256": "ae33702f05da19e76354478ebb638930b19fda73f97a4660d67e1b799ed4e54b",
-    "sha256": "3d1a8404a265edb8de7a2f56b26b87773ca0300ecf44b18c9a010622e9aa8815",
-    "bytes": 4561304,
-    "rewritten_references": 23,
+    "source_sha256": "bd48c6771041a2558ced0b24e9b83595f3bac6764cef2b2da7ad0f353c266f74",
+    "sha256": "c9c4fec34c7a15d6dfad184654fd32a0ea30320fd0a79a5b9c0ca76e90fc70c7",
+    "bytes": 4606228,
+    "rewritten_references": 27,
     "imports_and_forwarders": [
       "ADVAPI32.dll",
       "api-ms-win-core-path-l1-1-0.dll",
@@ -759,7 +842,11 @@
       "fbdbluray-4.dll",
       "fbdcaca-0.dll",
       "fbdcale-10.dll",
+      "fbdcdio-19.dll",
+      "fbdcdio_cdda-2.dll",
+      "fbdcdio_paranoia-2.dll",
       "fbdcurl-4.dll",
+      "fbddvdnav-4.dll",
       "fbdesample-7.dll",
       "fbdevice-63.dll",
       "fbdiconv-2.dll",
@@ -1474,8 +1561,8 @@
   {
     "name": "fbdesample-7.dll",
     "source_name": "swresample-7.dll",
-    "source_sha256": "f3111fcf360ed9950940736d62842ab6acbfe36f5529978509cfa4648f0e4e2d",
-    "sha256": "ea41705be572bda8584c9a5c52194acceb47ae2345c0be236ee74a5151774f01",
+    "source_sha256": "d9be4460afe32ebb7839571e579c0693463c75b13ff1d1506577b5c7c4b9c1fe",
+    "sha256": "651e8dd0678836ac905dfdaae33dcfe8bde1b0f20853dbef7f65363c0b8b0b74",
     "bytes": 323037,
     "rewritten_references": 4,
     "imports_and_forwarders": [
@@ -1488,9 +1575,9 @@
   {
     "name": "fbdcale-10.dll",
     "source_name": "swscale-10.dll",
-    "source_sha256": "e922a94b5665ca4d8009756184af886b9ad1bba9cb09c7763b3a572127d94be9",
-    "sha256": "2c56aa70ec20b983c230f2287600e4145912278eae8f65b3aac13c6d0d0f3990",
-    "bytes": 2802348,
+    "source_sha256": "6cfdfa80cfcb49590e7acb719edbdce8c81b56556f96952b3f032b0ab2c3d0ad",
+    "sha256": "c302d7f88c478567ed4a1b4868623fcd0afb9f9593dad97b6645138562dda774",
+    "bytes": 2802860,
     "rewritten_references": 5,
     "imports_and_forwarders": [
       "fbdb1.dll",
@@ -1541,8 +1628,8 @@
   {
     "name": "ffmpeg.exe",
     "source_name": "ffmpeg.exe",
-    "source_sha256": "5c5a0f4704a7c0a7fdd58befc5db461e538b027c921572ce25eb967f0970e736",
-    "sha256": "e8c59bd49cd3ee6d916b05515fac3dfce46b5ddce228db26bdfa43e309d64d74",
+    "source_sha256": "16a7d0ab40e0de95a30947642066cc8a57bf5d5a7f5608a86f614204360155cf",
+    "sha256": "192ad72150db9dc78ba75f287dedb1099ebfa9d8cd04ec640b45abd63068ca00",
     "bytes": 966377,
     "rewritten_references": 9,
     "imports_and_forwarders": [
@@ -1563,9 +1650,9 @@
   {
     "name": "ffprobe.exe",
     "source_name": "ffprobe.exe",
-    "source_sha256": "c1cff3f1a388ca8b87620127d9e44a2e430b910b03e498936b786d604057d327",
-    "sha256": "e432430bb667df553c3b79c12123a8ee9e1ce63daefc4d963587ebccd1361cc8",
-    "bytes": 503064,
+    "source_sha256": "e3dc296b4562c2778a6a63a5f2e3a922a176938376416420fc9b2b1b040cdd6e",
+    "sha256": "5a7983ceccd4e4209eb170de9db8bb86a698c6a8233eb93a4c3083bc2ea4ff21",
+    "bytes": 503576,
     "rewritten_references": 7,
     "imports_and_forwarders": [
       "fbdcale-10.dll",

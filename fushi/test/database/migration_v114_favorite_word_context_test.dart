@@ -47,7 +47,7 @@ void main() {
         isMainProcess: false,
       );
       addTearDown(migrated.close);
-      expect(migrated.schemaVersion, 128);
+      expect(migrated.schemaVersion, 135);
 
       final List<FavoriteWordRow> rows = await migrated.getAllFavoriteWords();
       expect(rows, hasLength(1));

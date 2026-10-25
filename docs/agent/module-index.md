@@ -5,7 +5,7 @@
 | 模块 | 语言 | 职责 / 接入方式 | 文档 |
 |---|---|---|---|
 | `fushi/` | Dart | Flutter 主应用：UI/阅读器/视频/导入/设置 | [fushi/CLAUDE.md](../../fushi/CLAUDE.md) |
-| `packages/fushi_core/` | Dart | DB schema（100 表）/偏好/语言配置 | [CLAUDE.md](../../packages/fushi_core/CLAUDE.md) |
+| `packages/fushi_core/` | Dart | DB schema（118 表）/偏好/语言配置 | [CLAUDE.md](../../packages/fushi_core/CLAUDE.md) |
 | `packages/fushi_dictionary/` | Dart | 词典引擎 Dart 侧/FFI 绑定/多格式导入（C++ 在 `native/fushidicts/`） | [CLAUDE.md](../../packages/fushi_dictionary/CLAUDE.md) |
 | `packages/fushi_anki/` | Dart | Anki 集成（AnkiDroid + AnkiConnect） | [CLAUDE.md](../../packages/fushi_anki/CLAUDE.md) |
 | `packages/fushi_audio/` | Dart | 字幕解析/有声书播放/音频匹配 | [CLAUDE.md](../../packages/fushi_audio/CLAUDE.md) |

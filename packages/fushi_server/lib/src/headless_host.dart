@@ -14,6 +14,7 @@ import 'dart:io';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart' show FushiDicts;
 import 'package:drift/drift.dart' show Value;
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_asr_core/asr_core.dart' as asr show AsrAudioProfile;
 import 'package:fushi_engine/epub/epub_importer.dart';
@@ -597,8 +598,7 @@ class HeadlessHost {
   Future<String?> _resolveVideoPath(String videoId) async {
     final VideoBookRow? row = await VideoBookRepository(db).getByBookUid(videoId);
     if (row == null) return null;
-    final File f = File(row.videoPath);
-    return await f.exists() ? f.path : null;
+    return await hasLocalMediaFile(row.videoPath) ? row.videoPath : null;
   }
 
   // ── 库服务 ────────────────────────────────────────────────────────────

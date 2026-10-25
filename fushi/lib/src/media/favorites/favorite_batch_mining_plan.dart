@@ -4,7 +4,7 @@ import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMiningSource;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show kStatSourceBook, kStatSourceGame, kStatSourceVideo;
+    show kStatSourceBook, kStatSourceGame, kStatSourceMusic, kStatSourceVideo;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 
 /// 收藏夹一键制卡：每一条收藏「该配什么句子媒体」的纯决策层（无 IO，可单测）。
@@ -203,24 +203,40 @@ FavoriteMiningMediaPlan planAudioFavoriteMedia({
   );
 }
 
-/// 卡片分类标签（`book` / `video` / `game`）。有声书 / 歌词都是「读书」语境，归书籍
-/// ——与阅读器 / 有声书页手动制卡打的标签一致。
+/// 卡片分类标签（`book` / `video` / `game` / `music`）。有声书 / 有声书歌词模式都是
+/// 「读书」语境，归书籍——与阅读器 / 有声书页手动制卡打的标签一致；音乐模块歌词句
+/// 单独归 `music`（所有者 2026-10-24），与歌词页手动制卡一致。
 ///
-/// 按原始 [FavoriteMiningItem.source] 字符串判：[SentenceSourceKind] 没有 game 成员
-/// （宽松解析会把 'game' 回退成 book），不能拿它区分游戏收藏。
+/// 按原始 [FavoriteMiningItem.source] 字符串判（与 [statSourceOf] 同形）。
 AnkiMiningSource ankiMiningSourceOf(FavoriteMiningItem item) =>
     switch (item.source) {
       kFavoriteSentenceSourceVideo => AnkiMiningSource.video,
       kFavoriteSentenceSourceGame => AnkiMiningSource.game,
+      kFavoriteSentenceSourceMusic => AnkiMiningSource.music,
       _ => AnkiMiningSource.book,
     };
 
-/// 制卡统计 / 制卡历史的来源桶（`mined_sentences.source` 与统计同值域）。
+/// 制卡统计的来源桶（`StatSourceKind` 值域）。
 String statSourceOf(FavoriteMiningItem item) => switch (item.source) {
   kFavoriteSentenceSourceVideo => kStatSourceVideo,
   kFavoriteSentenceSourceGame => kStatSourceGame,
+  kFavoriteSentenceSourceMusic => kStatSourceMusic,
   _ => kStatSourceBook,
 };
+
+/// 制卡历史行的 `mined_sentences.source`（`SentenceSourceKind` 值域）：出处能独立
+/// 跳回的来源（视频 / 游戏 / 漫画 / 音乐）原样保留；书内 / 有声书 / 歌词模式共享
+/// bookKey 身份、都由阅读器打开，仍记 `book`（与阅读器手动制卡同值）。
+String minedSentenceSourceOf(FavoriteMiningItem item) =>
+    switch (item.sourceKind) {
+      SentenceSourceKind.video ||
+      SentenceSourceKind.game ||
+      SentenceSourceKind.manga ||
+      SentenceSourceKind.music => item.sourceKind.dbValue,
+      SentenceSourceKind.book ||
+      SentenceSourceKind.audiobook ||
+      SentenceSourceKind.lyrics => kFavoriteSentenceSourceBook,
+    };
 
 /// popup.js 回来的 payload 是不是**这一条**的：表记必须是这一条收藏的词，或本次查词
 /// 结果里某个词条的表记。防的是渲染信号串台——上一条的渲染回执晚到、被当成这一条

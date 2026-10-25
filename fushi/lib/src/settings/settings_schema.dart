@@ -8,6 +8,7 @@ import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_downloads.dart';
 import 'package:fushi/src/settings/settings_schema_floating_ball.dart';
 import 'package:fushi/src/settings/settings_schema_game.dart';
+import 'package:fushi/src/settings/settings_schema_music.dart';
 import 'package:fushi/src/settings/settings_schema_local_services.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
@@ -93,6 +94,7 @@ List<SettingsDestination> _buildDestinations() {
     buildReadingDestination(),
     buildMangaDestination(),
     buildVideoDestination(),
+    buildMusicDestination(),
     buildGameDestination(),
     if (kMediaTrackingEnabled) buildMediaTrackingDestination(),
     buildLookupDestination(),

@@ -40,6 +40,8 @@ String backupCategoryLabel(BackupCategory category) {
       return t.backup_category_profiles;
     case BackupCategory.srs:
       return t.backup_category_srs;
+    case BackupCategory.music:
+      return t.backup_category_music;
   }
 }
 
@@ -71,6 +73,8 @@ String backupCategoryDescription(BackupCategory category) {
       return t.backup_category_profiles_desc;
     case BackupCategory.srs:
       return t.backup_category_srs_desc;
+    case BackupCategory.music:
+      return t.backup_category_music_desc;
   }
 }
 
@@ -102,6 +106,8 @@ IconData backupCategoryIcon(BackupCategory category) {
       return FushiIcons.profiles;
     case BackupCategory.srs:
       return FushiIcons.repeat;
+    case BackupCategory.music:
+      return FushiIcons.music;
   }
 }
 
@@ -126,6 +132,8 @@ const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
   // 它依赖配置档案的 uid——没同时导入设置与配置档案时走 SRS 专用合并，见
   // [BackupRestoreService.restoreBackup]。
   BackupCategory.srs,
+  // 音乐：歌单 / 歌词 / MV 绑定 / 播放流；备份里有音乐数据时才出开关。
+  BackupCategory.music,
 };
 
 /// 导出分类勾选框里要不要列出 [category]。复习（SRS）是默认关闭的模块：本机没有
@@ -134,7 +142,11 @@ const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
 bool backupCategoryShownInExport(
   BackupCategory category,
   BackupContentSummary summary,
-) => category != BackupCategory.srs || summary.has(BackupCategory.srs);
+) => switch (category) {
+  // 复习 / 音乐都是新模块：本机没有对应数据时整行不出现。
+  BackupCategory.srs || BackupCategory.music => summary.has(category),
+  _ => true,
+};
 
 /// Merge uses the same full selectable set as overwrite now.
 const Set<BackupCategory> importMergeSelectableCategories =

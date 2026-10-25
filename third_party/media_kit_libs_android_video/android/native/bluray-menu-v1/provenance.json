@@ -1,20 +1,22 @@
 {
-  "build_commit": "452510d169c847cbc5bd59ed72602ecc2eb163ce",
-  "build_branch": "fushi/unified-ffmpeg",
+  "build_commit": "faab8d9ac9d8bfd744334b54cbd06db3787f3cac",
+  "build_branch": "fushi/rdisc",
   "build_repository": "hajisensai/libmpv-android-build-fushi (mirror of hajisensai/libmpv-android-video-build)",
-  "workflow_run": "https://github.com/hajisensai/libmpv-android-build-fushi/actions/runs/39037350491",
+  "workflow_run": "https://github.com/hajisensai/libmpv-android-build-fushi/actions/runs/40085844759",
   "mpv_commit": "36abaa32d00a7229ee206aae12dc0e97e7962dca",
   "android_api_level": 24,
   "unified_ffmpeg": {
     "recipe": "hajisensai/fushi tool/ffmpeg-unified (FFmpeg 9.0.1 + Fushi patches)",
-    "note": "libmpv.so DT_NEEDs libav*.so from the app's FFmpegKitNext AAR (third_party/ffmpeg_kit_next_flutter)",
-    "lock": "# Fushi unified FFmpeg (hajisensai/fushi tool/ffmpeg-unified, FFmpeg 9.0.1):\n# per-ABI development prefixes of the FFmpegKitNext build whose lib*.so ship in\n# the app's AAR. bundle_unified.sh links libmpv against them dynamically.\n# Source run: hajisensai/fushi ffmpeg-unified-mobile.yml 39034160156.\nUNIFIED_FFMPEG_RELEASE_URL=https://github.com/hajisensai/libmpv-android-video-build/releases/download/unified-ffmpeg-9.0.1-r1\nUNIFIED_FFMPEG_SHA256_arm64_v8a=1feff002f97d575de0694ef13c0f8e46ef7d2ce43f6daa260ecd8a20e582e0ae\nUNIFIED_FFMPEG_SHA256_armeabi_v7a=39ae536b14de4a520829dd1b142cbcbdc13c037ac94bf1e1595a08187c550990\nUNIFIED_FFMPEG_SHA256_x86_64=f39626bd1aabbeb53b1cbf7982d483cf8c362fb44507194070ce35e85939f5fd\n"
+    "note": "libmpv.so DT_NEEDs libav*.so and libdvdnav.so from the app's FFmpegKitNext AAR (third_party/ffmpeg_kit_next_flutter); libdvdread / libdvdcss load through libdvdnav",
+    "lock": "# Fushi unified FFmpeg (hajisensai/fushi tool/ffmpeg-unified, FFmpeg 9.0.1):\n# per-ABI development prefixes of the FFmpegKitNext build whose lib*.so ship in\n# the app's AAR. bundle_unified.sh links libmpv against them dynamically.\n# Source run: hajisensai/fushi ffmpeg-unified-mobile.yml 40064825841 (with the shared DVD libraries).\nUNIFIED_FFMPEG_RELEASE_URL=https://github.com/hajisensai/libmpv-android-video-build/releases/download/unified-ffmpeg-9.0.1-r2\nUNIFIED_FFMPEG_SHA256_arm64_v8a=c65c491b4964dd4b16f2ebf33d96bd2ef026b225f9c1ebdf2e959d968ca92649\nUNIFIED_FFMPEG_SHA256_armeabi_v7a=dbffda505c9bfa4e56f1f1f04af68e66141cca11c73978834c91ce74ead6e7aa\nUNIFIED_FFMPEG_SHA256_x86_64=aaf0b88dacf5bf15e64fd823acde3d5444218805b09f569532371d32767bcbad\n"
   },
   "patches": {
     "patches/mpv/mpv_gl_dovi_p5.patch": "bff4b4bc5cafecf7cf622a85d5c5ebb5ba76739f64189e87e450f7086000b08b",
     "patches/mpv/mpv_lavc_set_java_vm.patch": "87401381750e7885194444f3c409d9beabd0eaf4d1e9c7004e99ec087b713ba5",
-    "patches/mpv/disc-navigation-state.patch": "c01c1daddec8523ab2c9944f6ed8cf986e8eb3ae79fe1c6060d0bc9479280a87",
+    "patches/mpv/disc-navigation-state.patch": "5edcd0de27d14793204b89754dd18c3d1b3c18e29a6edd19c594ef60c72d2b00",
     "patches/mpv/mkv-laced-audio-timestamps.patch": "fc9f987887d18892e0cc2cbf08a20a787e02fd15900c2853a7bb6bb97ab45bad",
     "patches/mpv/recorder-video-dts.patch": "353b1c4371db0955eb21ed5917a06438c30c60082a58e14de4dbc3dc451e7f83"
-  }
+  },
+  "gpl": "libmpv built with -Dgpl=true -Ddvdnav=enabled (stream_dvdnav is GPL-only): GPL-2.0-or-later",
+  "remote_disc": "rdisc1: bluray-device / dvd-device accept http(s) URLs of a paired host's disc share; read-only property disc-remote-access=1 (bundle_unified.sh requires the string)"
 }

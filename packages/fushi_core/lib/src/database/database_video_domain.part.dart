@@ -3357,6 +3357,10 @@ mixin _FushiDbVideoDomain
               (t) => t.sourceKind.equals('local') & t.bookUid.isIn(chunk),
             ))
             .go();
+        // v131：OP / ED 声纹比对缓存（无外键，见 theme_song_span_tables.dart）。
+        await (delete(
+          videoThemeSongSpans,
+        )..where((t) => t.bookUid.isIn(chunk))).go();
       }
       final List<String> filePaths = <String>{
         for (final VideoBookRow row in rows) ...videoBookFilePaths(row),

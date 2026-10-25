@@ -7,6 +7,7 @@ import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
@@ -95,6 +96,11 @@ enum BackupCategory {
   /// (`galgame_sessions`, game-kind `study_segments` / `activity_events`) are
   /// STATISTICS and follow that category, not this one. Included by default.
   games,
+
+  /// 音乐用户数据（音乐模块 §10）：歌单 + 条目、歌词缓存与编辑、MV 绑定、播放流。
+  /// 曲库目录本身（曲目 / 专辑 / 艺人 / 署名 / 光盘来源）是本机重扫出来的、装的是
+  /// 本机绝对路径，属设备本地、不随这个类别走；封面缓存同样不进备份。
+  music,
 
   /// Reading progress: where you left off in every book. Covers the
   /// `reader_positions` + `bookmarks` tables and the `audiobook_pos_*`
@@ -343,6 +349,7 @@ class BackupMeta {
     this.gameCount,
     this.progressCount,
     this.srsNoteCount,
+    this.musicCount,
   });
 
   final String appVersion;
@@ -384,6 +391,10 @@ class BackupMeta {
   /// 本备份里的 SRS 用户笔记数（kind = note 的身份记录；复习类别未勾时为 0——SRS 不随包）。与 [progressCount] 同一角色：让导入对话框
   /// 不必窥探 DB 就知道是否该给「复习」开关。老备份为 null → 导入回退 DB 窥探。
   final int? srsNoteCount;
+
+  /// 本备份 DB 里的音乐用户数据行数（[musicUserTables] 合计；类别未勾时为 0）。
+  /// 与 [srsNoteCount] 同一角色；老备份为 null → 导入回退 DB 窥探。
+  final int? musicCount;
 
   /// Absolute root of the extracted-books tree on the SOURCE device
   /// (`<appDoc>/hoshi_books`), captured so import can rebase stored book paths
@@ -448,6 +459,7 @@ class BackupMeta {
         if (gameCount != null) 'gameCount': gameCount,
         if (progressCount != null) 'progressCount': progressCount,
         if (srsNoteCount != null) 'srsNoteCount': srsNoteCount,
+        if (musicCount != null) 'musicCount': musicCount,
       };
 
   factory BackupMeta.fromJson(Map<String, dynamic> json) => BackupMeta(
@@ -474,6 +486,7 @@ class BackupMeta {
         gameCount: json['gameCount'] as int?,
         progressCount: json['progressCount'] as int?,
         srsNoteCount: json['srsNoteCount'] as int?,
+        musicCount: json['musicCount'] as int?,
       );
 
   static BackupMeta? tryParse(String source) {
@@ -640,6 +653,23 @@ const List<String> _deviceLocalTables = <String>[
   'web_browser_session_tabs',
   'web_browser_closed_tabs',
   'web_browser_downloads',
+  // v130 音乐曲库目录：可由重扫重建、装的是本机绝对路径，设备本地（不出境，覆盖
+  // 恢复后从本机 bak 回灌）。歌单 / 歌词 / MV 绑定 / 播放流是 BackupCategory.music。
+  'music_track_credits',
+  'music_tracks',
+  'music_albums',
+  'music_artists',
+  'music_disc_sources',
+  // v131：OP / ED 声纹比对的按集缓存。纯缓存、可重算；本机文件的实测结果（另一台设备
+  // 可能是另一份片源，OP 位置不同），设备本地。无外键，删除 / 回灌顺序无约束。
+  'video_theme_song_spans',
+  // v135：游戏 VNDB 配音表缓存。纯缓存、可由 VNDB 重新取得，设备本地。无外键。
+  'game_voice_casts',
+  // v133：音乐刮削三表。键是 track_uid（含本机路径）、内容可由重刮重建，与曲库目录
+  // 同属设备本地。无外键。
+  'music_scrape_meta',
+  'music_metadata_raw_snapshots',
+  'music_locked_fields',
 ];
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
@@ -666,6 +696,16 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'web_browser_session_tabs',
   'web_browser_closed_tabs',
   'web_browser_downloads',
+  'music_disc_sources',
+  'music_artists',
+  'music_albums',
+  'music_tracks',
+  'music_track_credits',
+  'video_theme_song_spans',
+  'game_voice_casts',
+  'music_scrape_meta',
+  'music_metadata_raw_snapshots',
+  'music_locked_fields',
 ];
 
 /// Content tables stripped from the exported DB copy when the `statistics`
@@ -683,6 +723,15 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
 /// v92 added `study_segments` (the ONLY study-time fact table the statistics
 /// pages read from since then) and its identity tombstones; both were missing
 /// here, so an "exclude statistics" export still leaked every study segment.
+/// 「音乐」类别的五张用户数据表（子表在前，删除顺序）。曲库目录表不在其中（设备本地）。
+const List<String> musicUserTables = <String>[
+  'music_playlist_entries',
+  'music_playlists',
+  'music_lyrics',
+  'music_videos',
+  'music_play_events',
+];
+
 const List<String> _statisticsTables = <String>[
   'reading_statistics',
   'reading_hourly_logs',
@@ -1153,6 +1202,7 @@ class BackupService {
     // 复习：用户笔记数 + 媒体文件数（预览计数 = 实际打包内容）。两者都为 0 时
     // 不进 present，导出界面不显示这一项（SRS 是默认关闭的模块）。
     final int srs = await _countSrsNotes() + (await _srsMediaFiles()).length;
+    final int music = await _countMusicRows();
     final Map<BackupCategory, int> counts = <BackupCategory, int>{
       BackupCategory.dictionary: dictionaries,
       BackupCategory.books: books,
@@ -1164,6 +1214,7 @@ class BackupService {
       BackupCategory.progress: progress,
       BackupCategory.statistics: statistics,
       BackupCategory.srs: srs,
+      BackupCategory.music: music,
     };
     return BackupContentSummary(
       counts: counts,
@@ -1250,6 +1301,15 @@ class BackupService {
   Future<int> _countSrsNotes() async {
     final SrsStorage? srs = await _srsStorage?.call();
     return srsUserNoteCount(srs?.db ?? _db);
+  }
+
+  /// 音乐用户数据行数（活库）：[musicUserTables] 合计。
+  Future<int> _countMusicRows() async {
+    int total = 0;
+    for (final String table in musicUserTables) {
+      total += await _countRows(table);
+    }
+    return total;
   }
 
   /// 用 Rust 把本机 srs.db `VACUUM INTO` 到 [path]（必须不存在），并清空快照里的 6 张设备本地表。
@@ -1608,6 +1668,9 @@ class BackupService {
       final int blobProgressCount =
           includeProgress ? await _countProgressRows() : 0;
       final int blobSrsNoteCount = includeSrs ? await _countSrsNotes() : 0;
+      // 音乐用户表的导出裁剪走 backupTableRules 的统一兜底（follows music）。
+      final int blobMusicCount =
+          wants(BackupCategory.music) ? await _countMusicRows() : 0;
 
       // Record the SOURCE-device content roots so import can rebase the stored
       // absolute paths (epubPath/extractDir/coverPath/audioRoot/...) onto the
@@ -1636,6 +1699,7 @@ class BackupService {
         gameCount: blobGameCount,
         progressCount: blobProgressCount,
         srsNoteCount: blobSrsNoteCount,
+        musicCount: blobMusicCount,
         // Record every unticked category by enum name so import knows a layer is
         // empty BY CHOICE (vs a genuinely empty DB). Only settings/profiles are
         // acted on at import; the rest is diagnostic / future-proofing.
@@ -2251,8 +2315,8 @@ class BackupService {
             sourcePathToArchiveRelative.containsKey(videoPath)) {
           continue;
         }
-        final File videoFile = File(videoPath);
-        if (!await videoFile.exists()) continue;
+        // 打包的是这个路径上的文件本身（本地 .strm 指针照打）；DVD title 是虚拟路径，没有可打包的文件。
+        if (!await videoPathFileExists(videoPath)) continue;
         final String relativePath = _videoArchiveRelativePath(
           bookUid: row.bookUid,
           sourcePath: videoPath,

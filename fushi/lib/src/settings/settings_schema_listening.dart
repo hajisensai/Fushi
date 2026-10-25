@@ -6,6 +6,7 @@ import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -180,13 +181,11 @@ List<SettingsSection> buildListeningSections() {
           title: t.show_floating_lyric,
           subtitle: t.floating_lyric_hint,
           icon: FushiIcons.subtitles,
-          // The strip is the desktop counterpart of the Android overlay
-          // (windows/runner/floating_lyric_window.cpp), so Windows must see
-          // this switch too — gating it to Android hid it from desktop users
-          // and was the "floating subtitle setting missing/permission"
-          // complaint (TODO-038). The Dart channel's isSupported already
-          // allows Android + Windows.
-          visible: (_) => Platform.isAndroid || Platform.isWindows,
+          // 有原生后端的平台都要看得到这个开关（Android overlay / Windows
+          // floating_lyric_window.cpp / macOS FushiFloatingLyric.swift）——当年只放
+          // Android 时桌面用户找不到它，被当成「功能坏了 / 要权限」（TODO-038）。
+          // 平台判据只认 channel 那一处。
+          visible: (_) => FloatingLyricChannel.supported,
           value: (SettingsContext settingsContext) =>
               settingsContext.appModel.showFloatingLyric,
           onChanged: (SettingsContext settingsContext, bool value) async {
@@ -197,8 +196,9 @@ List<SettingsSection> buildListeningSections() {
             settingsContext.refresh();
           },
         ),
-        // 同时显示句数（当前句居中，与歌词模式一致）。0 = 自动：Windows 按窗口
-        // 高度显示（拖高窗口看到更多句），Android 没有可裁的视口，自动档不提供。
+        // 同时显示句数（当前句居中，与歌词模式一致）。0 = 自动：桌面原生窗（Windows /
+        // macOS）按窗口高度显示（拖高窗口看到更多句），Android 没有可裁的视口，自动档
+        // 不提供。
         // 改值后调 resyncFloatingLyricText 即时重推文本。
         SettingsStepperItem(
           id: 'listening.floating_lyric_visible_lines',
@@ -208,14 +208,17 @@ List<SettingsSection> buildListeningSections() {
           visible: _floatingLyricOn,
           defaultValue: PreferencesRepository.floatingLyricVisibleLinesDefault
               .toDouble(),
-          min: Platform.isWindows ? 0 : 1,
+          min: floatingLyricDesktopWindowOn(Platform.operatingSystem) ? 0 : 1,
           max: PreferencesRepository.floatingLyricVisibleLinesMax.toDouble(),
           step: 1,
           value: (SettingsContext settingsContext) {
             final int lines =
                 settingsContext.appModel.floatingLyricVisibleLines;
             // Android 上自动档按 3 句渲染（见 floatingLyricVisibleSpan）。
-            return (!Platform.isWindows && lines == 0 ? 3 : lines).toDouble();
+            final bool autoAvailable = floatingLyricDesktopWindowOn(
+              Platform.operatingSystem,
+            );
+            return (!autoAvailable && lines == 0 ? 3 : lines).toDouble();
           },
           format: (double value) => value.round() == 0
               ? t.floating_lyric_visible_lines_auto
@@ -273,14 +276,15 @@ List<SettingsSection> buildListeningSections() {
       title: t.floating_lyric_appearance_section,
       collapsedByDefault: true,
       items: <SettingsItem>[
-        // 字体只有 Windows 原生窗（DirectWrite）吃；Android TextView 用系统字体。
+        // 字体只有桌面原生窗（Windows DirectWrite / macOS TextKit）吃；Android
+        // TextView 用系统字体。
         SettingsNavigationItem(
           id: 'listening.floating_lyric_font',
           title: t.floating_lyric_font,
           subtitle: t.floating_lyric_font_hint,
           icon: FushiIcons.font,
           showIcon: true,
-          visible: _floatingLyricWindowsOn,
+          visible: _floatingLyricDesktopOn,
           onTap: (SettingsContext settingsContext) async {
             await pushSettingsPage(
               settingsContext,
@@ -296,7 +300,8 @@ List<SettingsSection> buildListeningSections() {
           title: t.floating_lyric_vertical,
           subtitle: t.floating_lyric_vertical_hint,
           icon: FushiIcons.textVertical,
-          visible: _floatingLyricWindowsOn,
+          // 竖排只有 Windows 原生窗实现（macOS 后端没有竖排排版）。
+          visible: _floatingLyricVerticalOn,
           defaultValue: false,
           value: (SettingsContext c) =>
               c.appModel.prefsRepo.floatingLyricVertical,
@@ -311,7 +316,7 @@ List<SettingsSection> buildListeningSections() {
           title: t.gal_hook_text_bold,
           subtitle: t.gal_hook_text_bold_hint,
           icon: FushiIcons.bold,
-          visible: _floatingLyricWindowsOn,
+          visible: _floatingLyricDesktopOn,
           defaultValue: true,
           value: (SettingsContext c) => c.appModel.prefsRepo.floatingLyricBold,
           onChanged: (SettingsContext c, bool value) =>
@@ -325,7 +330,7 @@ List<SettingsSection> buildListeningSections() {
           title: t.gal_hook_text_line_height,
           subtitle: t.gal_hook_text_line_height_hint,
           icon: FushiIcons.lineSpacing,
-          visible: _floatingLyricWindowsOn,
+          visible: _floatingLyricDesktopOn,
           defaultValue: PreferencesRepository.floatingLyricLineHeightDefault,
           min: PreferencesRepository.floatingLyricLineHeightMin,
           max: PreferencesRepository.floatingLyricLineHeightMax,
@@ -346,7 +351,7 @@ List<SettingsSection> buildListeningSections() {
           title: t.gal_hook_text_letter_spacing,
           subtitle: t.gal_hook_text_letter_spacing_hint,
           icon: FushiIcons.spaceBar,
-          visible: _floatingLyricWindowsOn,
+          visible: _floatingLyricDesktopOn,
           defaultValue: 0,
           min: PreferencesRepository.floatingLyricLetterSpacingMin,
           max: PreferencesRepository.floatingLyricLetterSpacingMax,
@@ -366,7 +371,7 @@ List<SettingsSection> buildListeningSections() {
           id: 'listening.floating_lyric_text_alignment',
           title: t.gal_hook_text_alignment,
           icon: FushiIcons.alignJustify,
-          visible: _floatingLyricWindowsOn,
+          visible: _floatingLyricDesktopOn,
           defaultValue: 0,
           options: <SettingsSegmentOption<int>>[
             SettingsSegmentOption<int>(
@@ -391,7 +396,7 @@ List<SettingsSection> buildListeningSections() {
           title: t.gal_hook_text_padding,
           subtitle: t.gal_hook_text_padding_hint,
           icon: FushiIcons.formatShapes,
-          visible: _floatingLyricWindowsOn,
+          visible: _floatingLyricDesktopOn,
           defaultValue: PreferencesRepository.floatingLyricTextPaddingDefault
               .toDouble(),
           min: 0,
@@ -422,7 +427,7 @@ List<SettingsSection> buildListeningSections() {
           title: t.floating_lyric_current_line_color,
           icon: FushiIcons.lightbulb,
           role: FloatingLyricColorRole.current,
-          visible: _floatingLyricWindowsOn,
+          visible: _floatingLyricDesktopOn,
         ),
         _floatingLyricColorItem(
           id: 'listening.floating_lyric_color_background',
@@ -458,7 +463,7 @@ List<SettingsSection> buildListeningSections() {
           title: t.floating_lyric_context_opacity,
           subtitle: t.floating_lyric_context_opacity_hint,
           icon: FushiIcons.blurLinear,
-          visible: _floatingLyricWindowsOn,
+          visible: _floatingLyricDesktopOn,
           value: (SettingsContext c) =>
               c.appModel.prefsRepo.floatingLyricContextOpacity,
           write: (SettingsContext c, int v) =>
@@ -478,7 +483,7 @@ List<SettingsSection> buildListeningSections() {
           title: t.gal_hook_text_outline_width,
           subtitle: t.gal_hook_text_outline_width_hint,
           icon: FushiIcons.outline,
-          visible: _floatingLyricWindowsOn,
+          visible: _floatingLyricDesktopOn,
           defaultValue: 0,
           min: 0,
           max: PreferencesRepository.floatingLyricOutlineWidthMax,
@@ -499,7 +504,7 @@ List<SettingsSection> buildListeningSections() {
           title: t.gal_hook_text_outline_color,
           icon: FushiIcons.outlineColor,
           role: FloatingLyricColorRole.outline,
-          visible: _floatingLyricWindowsOn,
+          visible: _floatingLyricDesktopOn,
           enableAlpha: true,
         ),
         // TODO-708 P2: 悬浮字幕/歌词条「圆角半径」自定义（dp，0=直角）。
@@ -558,13 +563,23 @@ List<SettingsSection> buildListeningSections() {
   ];
 }
 
-/// 悬浮字幕有原生后端（Android overlay / Windows 原生窗）且已开启。
+/// 悬浮字幕有原生后端（Android overlay / Windows 原生窗 / macOS NSPanel）且已开启。
 bool _floatingLyricOn(SettingsContext c) =>
-    (Platform.isAndroid || Platform.isWindows) && c.appModel.showFloatingLyric;
+    FloatingLyricChannel.supported && c.appModel.showFloatingLyric;
 
-/// 只有 Windows 原生窗（DirectWrite，与 galgame 台词浮窗同一个窗类）吃的项。
-bool _floatingLyricWindowsOn(SettingsContext c) =>
-    Platform.isWindows && c.appModel.showFloatingLyric;
+/// 只有桌面富文本原生窗吃的项（Windows DirectWrite，与 galgame 台词浮窗同一个
+/// 窗类；macOS TextKit NSPanel）：字体 / 粗体 / 行高 / 字距 / 对齐 / 边距 / 描边 /
+/// 当前句色 / 上下文透明度。
+bool _floatingLyricDesktopOn(SettingsContext c) =>
+    FloatingLyricChannel.supported &&
+    floatingLyricDesktopWindowOn(Platform.operatingSystem) &&
+    c.appModel.showFloatingLyric;
+
+/// 竖排：只有 Windows 原生窗实现。
+bool _floatingLyricVerticalOn(SettingsContext c) =>
+    FloatingLyricChannel.supported &&
+    floatingLyricVerticalTextOn(Platform.operatingSystem) &&
+    c.appModel.showFloatingLyric;
 
 /// 写偏好 → 整份样式重推给原生窗 → 刷新设置页。
 Future<void> _commitFloatingLyricStyle(

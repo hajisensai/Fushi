@@ -304,7 +304,7 @@ void main() {
         await readBlurayDisc(root),
         await resolveBluraySource(mainPlaylist),
         await probeBlurayPlaylistFacts(mainPlaylist),
-        await blurayDiscExtras(<String>[
+        await discMemberExtras(<String>[
           mainPlaylist,
           p.join(root, 'BDMV', 'PLAYLIST', '00002.mpls'),
         ]),
@@ -334,11 +334,11 @@ void main() {
     ];
     final Map<String, String> first = await _withNetMount(
       mount,
-      () => blurayDiscExtras(paths),
+      () => discMemberExtras(paths),
     );
     final Map<String, String> second = await _withNetMount(
       mount,
-      () => blurayDiscExtras(paths),
+      () => discMemberExtras(paths),
     );
     expect(second, first);
     expect(mount.syncCalls, isEmpty);

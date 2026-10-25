@@ -381,6 +381,8 @@ void main() {
       BackupCategory.settings,
       BackupCategory.profiles,
       BackupCategory.srs,
+      // v130 音乐用户数据（歌单 / 歌词 / MV 绑定 / 播放流），同样只活在 DB 里。
+      BackupCategory.music,
     });
   });
 

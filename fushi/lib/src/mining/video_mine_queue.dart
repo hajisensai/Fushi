@@ -265,8 +265,8 @@ class VideoMineQueue {
         documentTitle: meta.historyDocumentTitle,
         bookKey: meta.historyBookKey,
         sectionIndex: meta.historySectionIndex,
-        normCharOffset: meta.historyCueStartMs,
-        normCharLength: meta.historyCueLengthMs,
+        positionMs: meta.historyCueStartMs,
+        durationMs: meta.historyCueLengthMs,
         noteId: noteId,
       );
     } catch (_) {}

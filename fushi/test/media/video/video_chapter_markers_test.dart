@@ -305,9 +305,12 @@ void main() {
       final int end = src.indexOf('Widget _buildChapterSidePanel(', start);
       expect(end, greaterThan(start));
       final String body = src.substring(start, end);
-      // 仅有章节时挂（无章节折叠成 SizedBox.shrink）。
-      expect(body.contains('if (!_hasChapters ||'), isTrue,
-          reason: '无章节时不该画刻度');
+      // 仅有章节或 OP / ED 段（作品图谱 L2）时挂，两者都没有折叠成 SizedBox.shrink。
+      expect(
+          body.contains(
+              'if ((!_hasChapters && _themeSongChapters.value.isEmpty) ||'),
+          isTrue,
+          reason: '既无章节也无 OP / ED 段时不该画刻度');
       // 竖直锚定走纯函数 videoSeekBarTrackBand（与 seek bar 同源几何）。
       expect(body.contains('videoSeekBarTrackBand('), isTrue,
           reason: '刻度竖直位置必须用 videoSeekBarTrackBand 对齐 seek bar 轨道');

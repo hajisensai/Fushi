@@ -1,3 +1,5 @@
+export 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart'
+    show lyricsPlayerIsWide;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
@@ -5,6 +7,8 @@ import 'package:flutter/widgets.dart';
 
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
+import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart'
+    show lyricsPlayerIsWide;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show FushiPlaybackClock;
 
@@ -21,11 +25,6 @@ import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
 ///     背景透出来）——它在树里的位置恒定，换布局只改矩形、不重建平台视图；
 ///  3. 控件层（封面卡 / 标题 / 读数 / 进度条 / 播放键 / 关闭键）。控件层只在
 ///     自己画了东西的地方吃指针，空白处让给下面的歌词 WebView。
-
-/// 宽屏（横屏 / 桌面窗口）才显示「左封面 + 控件、右歌词」双栏；手机竖屏或窄窗
-/// 一律单栏：全屏歌词 + 底部紧凑控件条，不显示封面（放不下）。
-bool lyricsPlayerIsWide(Size size) =>
-    size.width >= 600 && size.width >= size.height;
 
 /// 覆盖层要显示的阅读器读数快照。**只读**——数据来自阅读器的 `StudyClock`
 /// （本次会话时长 / 字数）与进度状态（全书已读 / 总字数），覆盖层不写回。

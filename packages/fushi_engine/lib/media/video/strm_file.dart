@@ -9,6 +9,8 @@
 /// 本文件只做字符串判定，不碰文件系统 / 网络，app 与服务端共用。
 library;
 
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show isDvdTitlePath;
 import 'package:fushi_engine/media/video/anime_source_video_path.dart'
     show isAnimeSourceVideoPath;
 import 'package:fushi_engine/media/video/media_server_video_path.dart'
@@ -91,12 +93,14 @@ bool isNetworkOnlyVideoPath(String? path) {
 }
 
 /// 纯函数：这一行视频在本机**没有可读的媒体字节**——网络流
-/// （[isNetworkOnlyVideoPath]）或 `.strm` 流指针（[isStrmPath]，本地那份只是一行
-/// 地址）。ED2K 哈希、抽帧、规格探测、互联上传 / 下发视频文件这类要读媒体本体的
+/// （[isNetworkOnlyVideoPath]）、`.strm` 流指针（[isStrmPath]，本地那份只是一行
+/// 地址），或 DVD title（[isDvdTitlePath]：虚拟路径，媒体要经原生 libdvdnav 按 title
+/// 读，盘上没有「这一条」的媒体文件）。ED2K 哈希、抽帧、规格探测、互联上传 / 下发视频文件这类要读媒体本体的
 /// 门用它；只需要「本地目录里找 sidecar」的门（封面 / NFO）用
 /// [isNetworkOnlyVideoPath]。
 bool lacksLocalMediaFile(String? path) =>
-    path != null && (isNetworkOnlyVideoPath(path) || isStrmPath(path));
+    path != null &&
+    (isNetworkOnlyVideoPath(path) || isStrmPath(path) || isDvdTitlePath(path));
 
 /// Apple 平台（iOS / macOS）不放行的流协议：随包 libmpv 在 Apple 上的 TLS 走
 /// Mbed TLS，https 由应用内中继终结 TLS 规避了握手段错误，但 rtsps / rtmps / rtmpe
