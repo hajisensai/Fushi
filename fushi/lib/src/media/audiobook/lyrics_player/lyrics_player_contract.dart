@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
 
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show FushiPlaybackClock;
@@ -115,10 +116,28 @@ class LyricsPlayerData {
     required this.lyricsMasked,
     required this.clock,
     this.chapterLabel,
-    this.sleepTimerMinutes,
+    this.statsTimerPaused = false,
     this.illustrations,
     this.sidesMirrored = false,
-  });
+    LyricsControlLayout? wideControls,
+    LyricsControlLayout? compactControls,
+  }) : _wideControls = wideControls,
+       _compactControls = compactControls;
+
+  final LyricsControlLayout? _wideControls;
+  final LyricsControlLayout? _compactControls;
+
+  /// 宽屏（双栏）次要按钮布局（偏好 `lyrics_control_layout`；未给 = 出厂）。
+  LyricsControlLayout get wideControls =>
+      _wideControls ?? LyricsControlLayout.defaults;
+
+  /// 窄屏（单栏）次要按钮布局（偏好 `lyrics_control_layout_compact`；未给 = 出厂）。
+  LyricsControlLayout get compactControls =>
+      _compactControls ?? LyricsControlLayout.compactDefaults;
+
+  /// 当前尺寸下生效的那份布局（与 [lyricsPlayerIsWide] 同一判据）。
+  LyricsControlLayout controlsFor(Size size) =>
+      lyricsPlayerIsWide(size) ? wideControls : compactControls;
 
   /// 宽屏双栏左右互换（偏好 `lyrics_panel_mirrored`）：true = 歌词在左、封面与
   /// 播放卡在右。只换位置，两栏各自的宽度不变。窄屏不受影响。
@@ -134,8 +153,9 @@ class LyricsPlayerData {
   /// 当前章名（正文跟随音频所在的目录项）；未知为 null。只用于显示。
   final String? chapterLabel;
 
-  /// 睡眠定时剩余分钟；没开定时为 null。只用于显示（定时本身挂在播放控制器上）。
-  final int? sleepTimerMinutes;
+  /// 阅读统计计时是否被用户手动停了（阅读器的手动暂停旗）——计时键的状态。
+  /// 只用于显示，停 / 续走 [LyricsPlayerCallbacks.onToggleStatsTimer]。
+  final bool statsTimerPaused;
 
   /// 封面（无封面为 null，设计系统画占位）。
   final ImageProvider? cover;
@@ -199,7 +219,8 @@ class LyricsPlayerCallbacks {
     required this.onTapBackground,
     this.onTypography,
     this.onSeekRelative,
-    this.onSleepTimer,
+    this.onToggleStatsTimer,
+    this.onSpeedPanel,
     this.onOpenIllustration,
     this.onReplayCue,
     this.onSwapSides,
@@ -225,8 +246,13 @@ class LyricsPlayerCallbacks {
   /// 后退 / 前进若干秒（负数后退）。null = 不显示 ±10 秒键。
   final ValueChanged<int>? onSeekRelative;
 
-  /// 睡眠定时菜单（锚定在按钮上，从按钮 context 取歌词模式主题）。null = 不显示。
-  final ValueChanged<LyricsMenuAnchor>? onSleepTimer;
+  /// 停 / 续阅读统计计时（阅读器的手动暂停，与顶栏计时键、快捷键同一入口）。
+  /// null = 不显示该键。
+  final VoidCallback? onToggleStatsTimer;
+
+  /// 打开倍速面板（锚定在按钮上）。由页面弹，面板开着期间页面停表（BUG-2208
+  /// 「面板压着听书也停表」，与阅读器一致）。null = 按钮自己弹（无停表，测试用）。
+  final ValueChanged<LyricsMenuAnchor>? onSpeedPanel;
 
   /// Aa：歌词文字快捷面板（字号 / 竖排 / 更多歌词设置）。参数带按钮的全局矩形与
   /// 按钮自己的 context（面板从它取歌词模式主题）。null = 不显示该键。

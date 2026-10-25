@@ -36,12 +36,45 @@ void main() {
               'popup': File('assets/popup/popup.js').readAsStringSync(),
             }),
           );
-        final ProcessResult run = await Process.run(node, <String>[
+        // harness 自带 70 秒总时限（超时报出卡在哪个场景、关 Chrome 再退出）；这里的 80 秒
+        // 只兜 node 本身卡死：到点杀进程树，并把已有输出（逐场景进度行）带进失败信息——
+        // 以前 `Process.run(...).timeout` 超时只抛 TimeoutException，输出全丢、node 和
+        // Chrome 留作孤儿。
+        final Process process = await Process.start(node, <String>[
           'test/pages/popup_dict_sandbox_harness.mjs',
           payload.path,
-        ]).timeout(const Duration(seconds: 80));
-        expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
-        expect(run.stdout, contains('PASS 10 dictionary sandbox scenarios'));
+        ]);
+        final StringBuffer out = StringBuffer();
+        final StringBuffer err = StringBuffer();
+        final Future<void> outDone = process.stdout
+            .transform(utf8.decoder)
+            .forEach(out.write);
+        final Future<void> errDone = process.stderr
+            .transform(utf8.decoder)
+            .forEach(err.write);
+        final int? exitCode = await process.exitCode
+            .then<int?>((int code) => code)
+            .timeout(
+              const Duration(seconds: 80),
+              onTimeout: () {
+                killProcessTree(process);
+                return null;
+              },
+            );
+        await Future.wait(<Future<void>>[
+          outDone,
+          errDone,
+        ]).timeout(const Duration(seconds: 5), onTimeout: () => <void>[]);
+        expect(
+          exitCode,
+          0,
+          reason:
+              '${exitCode == null ? 'node killed after 80 s\n' : ''}$out\n$err',
+        );
+        expect(
+          out.toString(),
+          contains('PASS 10 dictionary sandbox scenarios'),
+        );
       } finally {
         temp.deleteSync(recursive: true);
       }

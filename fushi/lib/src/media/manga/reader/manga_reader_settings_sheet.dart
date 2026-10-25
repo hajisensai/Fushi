@@ -305,12 +305,6 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
       '#000000',
     ],
   ),
-  MangaReaderPreferenceDescriptor(
-    key: 'saveDirectory',
-    kind: MangaReaderPreferenceKind.choice,
-    title: t.manga_reader_save_directory,
-    choices: const <String>['flat', 'book', 'chapter'],
-  ),
 ];
 
 /// 漫画阅读设置面板：宽窗贴右侧（章节目录占左侧，不提供左右换边），窄窗
@@ -609,11 +603,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       'kindle' => t.manga_reader_tap_kindle,
       _ => t.manga_reader_tap_default,
     },
-    'saveDirectory' => switch (value) {
-      'flat' => t.manga_reader_save_flat,
-      'book' => t.manga_reader_save_book,
-      _ => t.manga_reader_save_chapter,
-    },
     _ => '$value',
   };
 
@@ -658,7 +647,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     'readerHideThreshold' => FushiIcons.visibilityOff,
     'showReadingMode' => FushiIcons.info,
     'showTapZonesOverlay' => FushiIcons.touch,
-    'saveDirectory' => FushiIcons.folder,
     'invertColors' => FushiIcons.darkMode,
     'grayscale' => FushiIcons.filter,
     'brightness' => FushiIcons.lightMode,
@@ -899,7 +887,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       'readerHideThreshold',
       'showReadingMode',
       'showTapZonesOverlay',
-      'saveDirectory',
     }.contains(key)) {
       return 1;
     }
@@ -965,7 +952,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
         () => t.manga_reader_group_hints,
         <String>['showReadingMode', 'showTapZonesOverlay'],
       ),
-      (() => t.manga_reader_group_other, <String>['saveDirectory']),
     ],
     2 => <(String Function(), List<String>)>[
       (() => t.manga_reader_group_color, <String>['invertColors', 'grayscale']),

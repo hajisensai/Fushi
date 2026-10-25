@@ -22,6 +22,7 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
@@ -630,7 +631,7 @@ class _DiscoveryScrollTopFadeState extends State<DiscoveryScrollTopFade> {
   @override
   Widget build(BuildContext context) {
     final bool eink = isEinkTheme(context);
-    final Color background = Theme.of(context).scaffoldBackgroundColor;
+    final Color background = fushiOpaquePageColor(context);
     return NotificationListener<ScrollMetricsNotification>(
       onNotification: (ScrollMetricsNotification notification) {
         _track(notification.metrics, notification.depth);

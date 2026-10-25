@@ -137,11 +137,16 @@ List<SettingsSection> buildListeningSections() {
         SettingsSwitchItem(
           id: 'listening.media_notification',
           title: t.show_media_notification,
+          subtitle: t.show_media_notification_hint,
           icon: FushiIcons.notifications,
           value: (SettingsContext settingsContext) =>
               settingsContext.appModel.showMediaNotification,
           onChanged: (SettingsContext settingsContext, bool value) async {
             await settingsContext.appModel.setShowMediaNotification(value);
+            // 退书后台听书时会话仍在播：当场换通知形态（完整 ↔ 最简），与阅读器
+            // 快捷设置的开关走同一入口（BUG-3777 A）。
+            settingsContext.appModel.audiobookSession
+                .onMediaNotificationToggled(enabled: value);
             settingsContext.refresh();
           },
         ),
@@ -151,10 +156,7 @@ List<SettingsSection> buildListeningSections() {
           icon: FushiIcons.skipNext,
           // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
           visible: (_) => Platform.isAndroid,
-          reader: const ReaderPlacement(
-            group: ReaderGroup.behavior,
-            order: 10,
-          ),
+          reader: const ReaderPlacement(group: ReaderGroup.behavior, order: 10),
           value: (SettingsContext settingsContext) =>
               settingsContext.readerSource.volumeKeySentenceNavEnabled,
           onChanged: (SettingsContext settingsContext, bool value) {

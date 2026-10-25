@@ -119,7 +119,7 @@ void main() {
     final String resolver = functionSource(
       source,
       'Future<void> _exportAudiobookClipFromSelection()',
-      'Future<void> _shareReaderImage(String imgUrl)',
+      'Future<void> _showReaderImageActions(String imgUrl)',
     );
 
     // Resolves the native selection -> sentence cue range via the shared JS

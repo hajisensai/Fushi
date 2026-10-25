@@ -1842,7 +1842,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       studyClockMayRun(
         manualPause: _studyClockManualPause,
         lifecycleStopped: _studyClockLifecycleStopped,
-        modalDepth: _studyClockModalDepth,
+        modalDepth: _studyClockModalDepth + (_studyClockCoveredByRoute ? 1 : 0),
         audiobookPlaying: _audiobookController?.isPlaying ?? false,
       );
 

@@ -5123,9 +5123,8 @@ function createEntryHeader(entry, idx) {
     if (window.__fushiLookupLanguage) {
         expressionSpan.setAttribute('lang', window.__fushiLookupLanguage);
     }
-    let needsScroll = false;
     if (reading && reading !== expression) {
-        needsScroll = buildFuriganaEl(expressionSpan, expression, reading);
+        buildFuriganaEl(expressionSpan, expression, reading);
     } else {
         expressionSpan.textContent = expression;
         // 没有注音的词头（なんて / すたすた）不需要注音预留带：popup.css 据此收掉
@@ -5156,14 +5155,16 @@ function createEntryHeader(entry, idx) {
     // 用户 10-09：词头右边原本是一大片空白，频率与「音调 · N / 读音」两行却各占一整行
     // 压在词头下面，顶部留白很多。改成左簇内 flex-wrap：宽度够时元数据列贴在词头右侧，
     // 不够（窄弹窗 / 长词头）时整列自然换到词头下方——纯布局自适应，不量宽、不分支。
+    //
+    // 词头一律套 .expression-scroll（不折行、超长横向滚动）。曾经只有「整词一段注音」才套，
+    // 多段注音（手心を加える）与无注音词头是可逐字折行的裸 span：左簇的 min-content 下限
+    // （BUG-3320「词头本身永远不被挤压」）对它失效，按钮组挤上同一行把词头压到折行，频率
+    // chip 一枚一行（用户 10-24 录屏的那一态），还让 updateEntryHeaderMetaLayout 读到随
+    // 布局变化的词头宽而每帧来回切。
     const headerMain = el('div', { className: 'entry-header-main' });
-    if (needsScroll) {
-        const expressionScroll = el('div', { className: 'expression-scroll' });
-        expressionScroll.appendChild(expressionSpan);
-        headerMain.appendChild(expressionScroll);
-    } else {
-        headerMain.appendChild(expressionSpan);
-    }
+    const expressionScroll = el('div', { className: 'expression-scroll' });
+    expressionScroll.appendChild(expressionSpan);
+    headerMain.appendChild(expressionScroll);
     header.appendChild(headerMain);
     
     const buttonsContainer = el('div', { className: 'header-buttons' });
@@ -6337,6 +6338,12 @@ function buildEntryElement(entry, idx, maximumDictionaryBlocks = Infinity) {
 //   · 词头 + 按钮组本身放不下 → 维持原布局（按钮组整组换行，见 BUG-3320）。
 // 判据只读词头 / 按钮组 / 词头行三者的宽度，挂不挂类名都不改变它们，不会来回振荡。
 // 由 ResizeObserver 驱动：content-visibility 跳过的尾批词条不渲染就不量（BUG-3274）。
+//
+// 「词头宽不随类名变」靠的是词头**必须**是 .expression-scroll（createEntryHeader 一律套）：
+// 用户 10-24 录屏里弹窗词头区每帧来回切、一直闪，就是因为多段注音词头曾是可折行的裸 span——
+// 不挂类时被左簇压到「行宽 − 按钮组 − gap」并折行，scrollWidth 报压缩宽 → 挂类；挂上后
+// 按整宽参与换行 → 摘类……压缩宽 + gap + 按钮组恰好等于行宽，翻不翻只看整数取整。
+// 不是滚动容器的词头（理论上不该出现）不判定，宁可不铺满也不振荡。
 var __fushiHeaderMetaObserver = null;
 
 function entryHeaderChildByClass(parent, className) {
@@ -6355,12 +6362,13 @@ function updateEntryHeaderMetaLayout(header) {
     const meta = entryHeaderChildByClass(main, 'entry-header-meta');
     const headword = main && main.firstElementChild;
     if (!buttons || !meta || !headword || headword === meta) return;
+    if (!headword.classList.contains('expression-scroll')) return;
     const rowWidth = header.clientWidth;
     if (!rowWidth) return;
     const headerGap = parseFloat(getComputedStyle(header).columnGap) || 0;
     const mainGap = parseFloat(getComputedStyle(main).columnGap) || 0;
     const metaMin = 14 * (parseFloat(getComputedStyle(meta).fontSize) || 16);
-    // 滚动容器的 scrollWidth 是词头完整宽度（被压缩时也一样）；非滚动词头是 flex 项，同理。
+    // 滚动容器的 scrollWidth 是词头完整单行宽：被压缩、被 100cqw 封顶、挂不挂类都一样。
     const headwordWidth = headword.scrollWidth;
     const buttonsWidth = buttons.offsetWidth;
     const headwordRow = headwordWidth + headerGap + buttonsWidth;
@@ -6622,8 +6630,11 @@ function __fushiPruneDetachedTone() {
 }
 
 // 主题变化后的可逆重调色：复原 → 按当前明暗重做。宿主热更新主题后也可直接调用。
+// 复原不在这里同步做，而是挂起到重调那一帧开头（__fushiM3eRestorePending）：同步复原、
+// 下一帧才重调，中间那一帧画出来的就是词典原色——暗色下每次滚动 / nudge 都闪一下浅底。
+var __fushiM3eRestorePending = false;
 function __fushiRetoneDictColors() {
-    __fushiRestoreDictTone();
+    __fushiM3eRestorePending = true;
     const roots = __fushiM3eKnownRoots ? [...__fushiM3eKnownRoots] : [];
     const container = __fushiContainer();
     if (container && !roots.includes(container)) roots.push(container);
@@ -6653,6 +6664,11 @@ function __fushiObserveM3eToneHosts() {
                 const dark = __fushiM3eDarkSurface();
                 // 明暗没变且当前也没有调过色的节点：无事可做。
                 if (dark === __fushiM3eLastDark && !(dark && __fushiM3eTonedNodes && __fushiM3eTonedNodes.size)) return;
+                // 调色输入没变：无事可做。滚动指示每个 scroll 事件都 classList.add
+                // popup-scroll-active（类已在也照样产生 mutation 记录）、nudge 写 opacity、
+                // 宽度 / zoom 注入也落在 style 上，它们都不影响颜色。
+                const signature = __fushiM3eToneSignature();
+                if (signature !== null && signature === __fushiM3eLastToneSignature) return;
                 __fushiRetoneDictColors();
             });
         });
@@ -6665,6 +6681,36 @@ function __fushiObserveM3eToneHosts() {
     }
 }
 var __fushiM3eLastDark = null;
+var __fushiM3eLastToneSignature = null;
+
+// 调色依赖的全部输入拼成的签名：明暗、统一开关，以及两个主题载体上的 data-theme、去掉
+// 瞬态类后的 class、与颜色相关的内联声明（CSS 变量 / *color* / background* / filter）。
+// 读不出（非浏览器测试壳等）返回 null：调用方一律当作「变了」，退回照常重调。
+var __FUSHI_M3E_TRANSIENT_CLASSES = ['popup-scroll-active'];
+function __fushiM3eToneSignature() {
+    try {
+        const parts = [__fushiM3eDarkSurface() ? 'd' : 'l', __fushiDictUnifiedEnabled() ? 'u' : '-'];
+        for (const host of [document.documentElement, __fushiContainer()]) {
+            if (!host) { parts.push('∅'); continue; }
+            parts.push(host.getAttribute('data-theme') || '');
+            parts.push([...host.classList]
+                .filter((c) => !__FUSHI_M3E_TRANSIENT_CLASSES.includes(c)).sort().join(' '));
+            const style = host.style;
+            const decls = [];
+            for (let i = 0; style && i < style.length; i++) {
+                const prop = style[i];
+                if (prop.startsWith('--') || prop.includes('color') ||
+                    prop.startsWith('background') || prop === 'filter') {
+                    decls.push(prop + ':' + style.getPropertyValue(prop));
+                }
+            }
+            parts.push(decls.sort().join(';'));
+        }
+        return parts.join('|');
+    } catch (_) {
+        return null;
+    }
+}
 
 function __fushiM3eDarkSurface() {
     try {
@@ -6694,8 +6740,15 @@ function __fushiScheduleM3eDictTone(root) {
         __fushiM3eToneRaf = 0;
         const roots = [...__fushiM3eToneRoots];
         __fushiM3eToneRoots.clear();
+        // 重调色挂起的复原与重调落在同一帧：先复原（下面读计算色才是词典原色），再按当前
+        // 明暗重做，绘制前完成，不露出中间态。
+        if (__fushiM3eRestorePending) {
+            __fushiM3eRestorePending = false;
+            __fushiRestoreDictTone();
+        }
         const dark = __fushiM3eDarkSurface();
         __fushiM3eLastDark = dark;
+        __fushiM3eLastToneSignature = __fushiM3eToneSignature();
         // 词典样式统一（开着时）：颜色整体交给 popup.css 的令牌规则，暗色调色这层不再
         // 需要——先复原它写过的内联色，否则统一层量到的是调过色的值而不是词典原色。
         if (__fushiDictUnifiedEnabled()) {

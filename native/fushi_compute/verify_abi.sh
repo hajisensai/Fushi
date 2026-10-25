@@ -26,11 +26,11 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 # -h：多文件时不带文件名前缀；--include 只扫 .dart。没有任何命中时 grep 退 1，交给下面的哨兵判。
-grep -rhoE --include='*.dart' "'ffc_[a-z0-9_]+'" "$BINDINGS_DIR" | tr -d "'" | sort -u > "$work/expected.txt" || true
+grep -rhoE --include='*.dart' "'f(fc|cp)_[a-z0-9_]+'" "$BINDINGS_DIR" | tr -d "'" | sort -u > "$work/expected.txt" || true
 expected_count="$(wc -l < "$work/expected.txt" | tr -d ' ')"
-echo "ffc_* symbols looked up by the Dart bindings: $expected_count"
+echo "ffc_* / fcp_* symbols looked up by the Dart bindings: $expected_count"
 # 扫描规模哨兵：正则被绑定文件的格式改写打断时，期望集会塌成 0 条，「全都导出了」恒真。
-# 下界是「已知必有」的符号数（当前 120：ffc_abi_version、ffc_free_bytes、14 个 ffc_hash_*、2 个 ffc_text_*、2 个 ffc_font_*、7 个 ffc_signal_*、22 个 ffc_image_*、6 个 ffc_ocr_*、5 个 ffc_ts_*、4 个 ffc_gal_*、45 个 ffc_parse_* 与 11 个 ffc_crypto_*）；新增域符号
+# 下界是「已知必有」的符号数（当前 120：ffc_abi_version、ffc_free_bytes、14 个 ffc_hash_*、2 个 ffc_text_*、2 个 ffc_font_*、5 个 ffc_signal_*、2 个 fcp_*（上游 fushi_asr_cue_post 链进本库，清单在 lib/src/linked_crates.dart）、22 个 ffc_image_*、6 个 ffc_ocr_*、5 个 ffc_ts_*、4 个 ffc_gal_*、45 个 ffc_parse_* 与 11 个 ffc_crypto_*）；新增域符号
 # 会自动进期望集、不必改这里，但下界应随之调高，免得某个域的绑定整体漏扫还判通过。
 # 真删符号是破坏性 ABI 变更（ffc_abi_version 同时要升），应当同时改这里。
 if [[ "$expected_count" -lt 120 ]]; then
@@ -49,7 +49,7 @@ case "$kind" in
   *ar\ archive*) { "$NM" -gU "$BIN" 2>/dev/null || true; } | awk 'NF >= 2 { print $NF }' | sed 's/^_//' > "$work/raw.txt" ;;
   *) echo "::error::unsupported binary format: $kind" >&2; exit 1 ;;
 esac
-grep -E '^ffc_' "$work/raw.txt" | sort -u > "$work/exported.txt" || true
+grep -E '^f(fc|cp)_' "$work/raw.txt" | sort -u > "$work/exported.txt" || true
 
 missing="$(comm -23 "$work/expected.txt" "$work/exported.txt")"
 if [[ -n "$missing" ]]; then

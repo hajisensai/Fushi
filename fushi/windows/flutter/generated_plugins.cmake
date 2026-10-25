@@ -9,6 +9,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_inappwebview_windows
   flutter_onnxruntime
   flutter_webrtc
+  gal
   gamepads_windows
   hotkey_manager_windows
   media_kit_libs_windows_video

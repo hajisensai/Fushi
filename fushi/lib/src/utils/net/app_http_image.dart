@@ -132,15 +132,41 @@ class AppCachedHttpImage extends CachedNetworkImageProvider {
 }
 
 /// 与原默认缓存共享磁盘命名空间，已有封面无需重新下载。
+///
+/// 元数据仓库（`repo`）默认交给 flutter_cache_manager 按**宿主平台**选：
+/// Android / iOS / macOS 是 sqflite 的 `CacheObjectProvider`（与原默认缓存同一个
+/// 库文件），其余平台是 `JsonCacheInfoRepository`。生产里必须保持这个默认，否则
+/// 与 [DefaultCacheManager] 共享的命名空间会裂成两份索引。
+///
+/// 但 `flutter test` 跑在宿主 VM 上：macOS 宿主的 `Platform.isMacOS` 为真，库会
+/// 去开 sqflite 平台插件，而测试进程里没有这个插件（「databaseFactory not
+/// initialized」）。所以单例首次构造前可经 [debugRepositoryOverride] 注入仓库，
+/// 由测试装配（`test/flutter_test_config.dart`）统一换成与宿主无关的实现。
 class AppImageCacheManager extends CacheManager with ImageCacheManager {
-  AppImageCacheManager._()
+  AppImageCacheManager._(CacheInfoRepository? repo)
       : super(
-          Config(DefaultCacheManager.key, fileService: AppImageFileService()),
+          // Config 的 repo 形参不可空（缺省才走平台默认），所以按有无注入分两种构造。
+          repo == null
+              ? Config(DefaultCacheManager.key,
+                  fileService: AppImageFileService())
+              : Config(
+                  DefaultCacheManager.key,
+                  repo: repo,
+                  fileService: AppImageFileService(),
+                ),
         );
 
-  static final AppImageCacheManager _instance = AppImageCacheManager._();
+  static AppImageCacheManager? _instance;
 
-  factory AppImageCacheManager() => _instance;
+  /// 单例首次构造时用它造元数据仓库（入参为数据库名）；`null` = 库的平台默认。
+  /// 只在测试装配里设置，且必须早于第一次 `AppImageCacheManager()`。
+  @visibleForTesting
+  static CacheInfoRepository Function(String databaseName)?
+      debugRepositoryOverride;
+
+  factory AppImageCacheManager() => _instance ??= AppImageCacheManager._(
+        debugRepositoryOverride?.call(DefaultCacheManager.key),
+      );
 }
 
 /// 磁盘缓存图片的首响应 / 正文空闲超时（BUG-2450）。

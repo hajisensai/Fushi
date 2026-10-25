@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
@@ -341,8 +342,14 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
         padding,
         mirror: mirrorProgress,
       );
-      final VoidCallback? onSwap = callbacks.onSwapSides;
       final VoidCallback? onExitBook = callbacks.onExitBook;
+      final List<Widget> corner = _md3ControlButtons(
+        data.wideControls.itemsIn(LyricsControlSlot.top),
+        data,
+        callbacks,
+        wide: true,
+        tonal: true,
+      );
       return Stack(
         clipBehavior: Clip.none,
         children: <Widget>[
@@ -350,31 +357,17 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
             rect: geometry.panel,
             child: _WidePanel(data: data, callbacks: callbacks),
           ),
-          // 底板右上角：书籍模式 + 左右互换 + 关闭（M3E 按钮组，tonal 同一档）。
-          // 有 [LyricsPlayerCallbacks.onExitBook] 时 × 直接退书回书架，回正文
-          // 交给前面的「书籍模式」键（反馈 QvYpZODImz）。
+          // 底板右上角：布局「顶部」区的按钮（出厂 书籍模式 + 左右互换）+ 关闭
+          // （M3E 按钮组，tonal 同一档）。有 [LyricsPlayerCallbacks.onExitBook] 时
+          // × 直接退书回书架，回正文交给「书籍模式」键（反馈 QvYpZODImz）。
           Positioned(
             top: geometry.plate.top + 12,
             right: size.width - geometry.plate.right + 12,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                if (onExitBook != null) ...<Widget>[
-                  FushiIconButtonControl.filledTonal(
-                    key: const ValueKey<String>('lyrics_return_to_book_button'),
-                    tooltip: t.book_mode,
-                    onPressed: callbacks.onClose,
-                    icon: const FushiIcon(FushiIcons.readingMode),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                if (onSwap != null) ...<Widget>[
-                  FushiIconButtonControl.filledTonal(
-                    key: const ValueKey<String>('lyrics_swap_sides_button'),
-                    tooltip: t.lyrics_layout_swap_sides,
-                    onPressed: onSwap,
-                    icon: const FushiIcon(FushiIcons.swap),
-                  ),
+                for (final Widget button in corner) ...<Widget>[
+                  button,
                   const SizedBox(width: 8),
                 ],
                 FushiIconButtonControl.filledTonal(
@@ -502,7 +495,8 @@ class _WidePanel extends StatelessWidget {
                   child: _SecondaryActions(
                     data: data,
                     callbacks: callbacks,
-                    full: true,
+                    items: data.wideControls.itemsIn(LyricsControlSlot.toolbar),
+                    wide: true,
                   ),
                 ),
               ],
@@ -1045,10 +1039,17 @@ class _StatsChips extends StatelessWidget {
 /// tonal 倍速键：显示当前倍速，点开含拖动条的倍速面板（与普通阅读模式快捷
 /// 设置同一条 `AudiobookSpeedSlider`），拖动实时生效。
 class _SpeedButton extends StatelessWidget {
-  const _SpeedButton({required this.speed, required this.onSpeedChanged});
+  const _SpeedButton({
+    required this.speed,
+    required this.onSpeedChanged,
+    this.onSpeedPanel,
+  });
 
   final double speed;
   final ValueChanged<double> onSpeedChanged;
+
+  /// 页面弹面板（面板开着期间停表）；null 时按钮自己弹。
+  final ValueChanged<LyricsMenuAnchor>? onSpeedPanel;
 
   @override
   Widget build(BuildContext context) {
@@ -1060,11 +1061,22 @@ class _SpeedButton extends StatelessWidget {
       child: Builder(
         builder: (BuildContext anchor) => FushiPressScale(
           child: FushiFilledButton.tonal(
-            onPressed: () => showLyricsSpeedPanel(
-              anchorContext: anchor,
-              speed: speed,
-              onChanged: onSpeedChanged,
-            ),
+            key: const ValueKey<String>('lyrics_speed_button'),
+            onPressed: () {
+              final ValueChanged<LyricsMenuAnchor>? viaPage = onSpeedPanel;
+              final LyricsMenuAnchor? at = _anchorOf(anchor);
+              if (viaPage != null && at != null) {
+                viaPage(at);
+                return;
+              }
+              unawaited(
+                showLyricsSpeedPanel(
+                  anchorContext: anchor,
+                  speed: speed,
+                  onChanged: onSpeedChanged,
+                ),
+              );
+            },
             // 邻居被按下时本键按 M3E 设计让出宽度：标签缩一点而不是折成两行。
             child: FittedBox(
               fit: BoxFit.scaleDown,
@@ -1077,25 +1089,24 @@ class _SpeedButton extends StatelessWidget {
   }
 }
 
-//// 次要操作工具条：一颗 surfaceContainerHighest 胶囊里的 M3E 标准按钮组（按下
-/// 变宽、邻居让出）——倍速 / 睡眠定时 / 遮罩 / Aa / 统计 / ⋯。[full] = false 时只放
-/// 倍速 / 睡眠定时 / ⋯（窄屏：遮罩 / Aa / 统计在顶栏胶囊里）。
+/// 次要操作工具条：一颗 surfaceContainerHighest 胶囊里的 M3E 标准按钮组（按下
+/// 变宽、邻居让出）——布局「播放卡工具条」区的按钮（[LyricsControlLayout]，出厂
+/// 宽屏 倍速 / 计时 / 重播 / 遮罩 / Aa / 统计，窄屏 倍速 / 计时 / 重播），⋯ 恒在末尾。
 class _SecondaryActions extends StatelessWidget {
   const _SecondaryActions({
     required this.data,
     required this.callbacks,
-    required this.full,
+    required this.items,
+    required this.wide,
   });
 
   final LyricsPlayerData data;
   final LyricsPlayerCallbacks callbacks;
-  final bool full;
+  final List<LyricsControlItem> items;
+  final bool wide;
 
   @override
   Widget build(BuildContext context) {
-    final ValueChanged<LyricsMenuAnchor>? onSleep = callbacks.onSleepTimer;
-    final ValueChanged<LyricsMenuAnchor>? onTypography = callbacks.onTypography;
-    final VoidCallback? onReplay = callbacks.onReplayCue;
     return DecoratedBox(
       decoration: ShapeDecoration(
         color: FushiDesignTokens.of(context).surfaces.overlay,
@@ -1106,30 +1117,13 @@ class _SecondaryActions extends StatelessWidget {
         child: FushiButtonGroup(
           spacing: 2,
           children: <Widget>[
-            _SpeedButton(
-              speed: data.speed,
-              onSpeedChanged: callbacks.onSpeedChanged,
+            ..._md3ControlButtons(
+              items,
+              data,
+              callbacks,
+              wide: wide,
+              tonal: false,
             ),
-            if (onSleep != null)
-              _SleepButton(
-                minutes: data.sleepTimerMinutes,
-                onSleepTimer: onSleep,
-              ),
-            // 重播当前句是播放动作，窄屏卡片的精简工具条里也留着（与倍速同排）。
-            if (onReplay != null) _ReplayCueButton(onPressed: onReplay),
-            if (full) ...<Widget>[
-              _MaskButton(
-                masked: data.lyricsMasked,
-                onPressed: callbacks.onToggleMask,
-              ),
-              if (onTypography != null)
-                _TypographyButton(onTypography: onTypography),
-              FushiIconButtonControl(
-                tooltip: t.reading_statistics,
-                onPressed: callbacks.onOpenStatistics,
-                icon: const FushiIcon(FushiIcons.statistics),
-              ),
-            ],
             _MoreButton(onMore: callbacks.onMore),
           ],
         ),
@@ -1138,55 +1132,119 @@ class _SecondaryActions extends StatelessWidget {
   }
 }
 
-/// 睡眠定时：开着时是选中态（实心图标），提示里写剩余分钟；点开锚定菜单
-/// （关闭 / 15 / 30 / 45 / 60 分钟，由页面弹，与有声书侧栏同一个定时器）。
-class _SleepButton extends StatelessWidget {
-  const _SleepButton({required this.minutes, required this.onSleepTimer});
-
-  final int? minutes;
-  final ValueChanged<LyricsMenuAnchor> onSleepTimer;
-
-  @override
-  Widget build(BuildContext context) {
-    final int? m = minutes;
-    return Builder(
-      builder: (BuildContext anchor) => FushiIconButtonControl(
-        key: const ValueKey<String>('lyrics_sleep_timer_button'),
-        tooltip: m == null
-            ? t.reader_audiobook_sleep_timer
-            : t.reader_audiobook_sleep_remaining(n: m),
-        isSelected: m != null,
-        onPressed: () {
-          final RenderObject? box = anchor.findRenderObject();
-          if (box is! RenderBox || !box.hasSize) return;
-          onSleepTimer(
-            LyricsMenuAnchor(
-              rect: box.localToGlobal(Offset.zero) & box.size,
-              context: anchor,
-            ),
-          );
-        },
-        icon: const FushiIcon(FushiIcons.timer),
-        selectedIcon: FushiIcon(FushiIcons.filled(FushiIcons.timer)),
-      ),
-    );
-  }
+/// 按钮在全局坐标里的矩形 + 它自己的 context（菜单 / 面板从它取歌词模式主题）。
+LyricsMenuAnchor? _anchorOf(BuildContext anchor) {
+  final RenderObject? box = anchor.findRenderObject();
+  if (box is! RenderBox || !box.hasSize) return null;
+  return LyricsMenuAnchor(
+    rect: box.localToGlobal(Offset.zero) & box.size,
+    context: anchor,
+  );
 }
 
-/// 重播当前句（回到高亮那句的起点接着播）。
-class _ReplayCueButton extends StatelessWidget {
-  const _ReplayCueButton({required this.onPressed});
+/// 布局里一个区的按钮，按顺序渲染。页面没给回调的按钮（如没有 Aa 回调）与当前
+/// 形态下无意义的按钮（左右互换只在宽屏）不画。[tonal] = 宽屏右上角那组
+/// filledTonal 外观。
+List<Widget> _md3ControlButtons(
+  List<LyricsControlItem> items,
+  LyricsPlayerData data,
+  LyricsPlayerCallbacks callbacks, {
+  required bool wide,
+  required bool tonal,
+}) => <Widget>[
+  for (final LyricsControlItem item in items)
+    ?_md3ControlButton(item, data, callbacks, wide: wide, tonal: tonal),
+];
 
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return FushiIconButtonControl(
-      key: const ValueKey<String>('lyrics_replay_cue_button'),
-      tooltip: t.lyrics_sentence_replay,
-      onPressed: onPressed,
-      icon: const FushiIcon(FushiIcons.replay),
-    );
+Widget? _md3ControlButton(
+  LyricsControlItem item,
+  LyricsPlayerData data,
+  LyricsPlayerCallbacks callbacks, {
+  required bool wide,
+  required bool tonal,
+}) {
+  Widget iconButton({
+    required Key key,
+    required String tooltip,
+    required VoidCallback onPressed,
+    required IconData icon,
+  }) => tonal
+      ? FushiIconButtonControl.filledTonal(
+          key: key,
+          tooltip: tooltip,
+          onPressed: onPressed,
+          icon: FushiIcon(icon),
+        )
+      : FushiIconButtonControl(
+          key: key,
+          tooltip: tooltip,
+          onPressed: onPressed,
+          icon: FushiIcon(icon),
+        );
+  switch (item) {
+    case LyricsControlItem.speed:
+      return _SpeedButton(
+        speed: data.speed,
+        onSpeedChanged: callbacks.onSpeedChanged,
+        onSpeedPanel: callbacks.onSpeedPanel,
+      );
+    case LyricsControlItem.studyTimer:
+      final VoidCallback? onToggle = callbacks.onToggleStatsTimer;
+      if (onToggle == null) return null;
+      // 文案是「按下去会怎样」（与阅读器顶栏计时键同口径）；停着时换划掉的图标。
+      final bool paused = data.statsTimerPaused;
+      return iconButton(
+        key: const ValueKey<String>('lyrics_study_timer_button'),
+        tooltip: paused
+            ? t.reader_stats_clock_resume
+            : t.reader_stats_clock_pause,
+        onPressed: onToggle,
+        icon: paused ? FushiIcons.timerOff : FushiIcons.timer,
+      );
+    case LyricsControlItem.replayCue:
+      final VoidCallback? onReplay = callbacks.onReplayCue;
+      if (onReplay == null) return null;
+      return iconButton(
+        key: const ValueKey<String>('lyrics_replay_cue_button'),
+        tooltip: t.lyrics_sentence_replay,
+        onPressed: onReplay,
+        icon: FushiIcons.replay,
+      );
+    case LyricsControlItem.mask:
+      return _MaskButton(
+        masked: data.lyricsMasked,
+        onPressed: callbacks.onToggleMask,
+      );
+    case LyricsControlItem.typography:
+      final ValueChanged<LyricsMenuAnchor>? onTypography =
+          callbacks.onTypography;
+      if (onTypography == null) return null;
+      return _TypographyButton(onTypography: onTypography, tonal: tonal);
+    case LyricsControlItem.statistics:
+      return iconButton(
+        key: const ValueKey<String>('lyrics_statistics_button'),
+        tooltip: t.reading_statistics,
+        onPressed: callbacks.onOpenStatistics,
+        icon: FushiIcons.statistics,
+      );
+    case LyricsControlItem.bookMode:
+      // 没有退书回调时 × 本身就是「回正文」，再摆一颗同义键只是重复。
+      if (callbacks.onExitBook == null) return null;
+      return iconButton(
+        key: const ValueKey<String>('lyrics_return_to_book_button'),
+        tooltip: t.book_mode,
+        onPressed: callbacks.onClose,
+        icon: FushiIcons.readingMode,
+      );
+    case LyricsControlItem.swapSides:
+      final VoidCallback? onSwap = callbacks.onSwapSides;
+      if (onSwap == null || !wide) return null;
+      return iconButton(
+        key: const ValueKey<String>('lyrics_swap_sides_button'),
+        tooltip: t.lyrics_layout_swap_sides,
+        onPressed: onSwap,
+        icon: FushiIcons.swap,
+      );
   }
 }
 
@@ -1211,28 +1269,36 @@ class _MaskButton extends StatelessWidget {
 
 /// Aa：歌词文字快捷面板（字号 / 竖排 / 更多歌词设置）。
 class _TypographyButton extends StatelessWidget {
-  const _TypographyButton({required this.onTypography});
+  const _TypographyButton({required this.onTypography, this.tonal = false});
 
   final ValueChanged<LyricsMenuAnchor> onTypography;
+  final bool tonal;
 
   @override
   Widget build(BuildContext context) {
     return Builder(
-      builder: (BuildContext anchor) => FushiIconButtonControl(
-        key: const ValueKey<String>('lyrics_typography_button'),
-        tooltip: t.lyrics_typography_title,
-        onPressed: () {
-          final RenderObject? box = anchor.findRenderObject();
-          if (box is! RenderBox || !box.hasSize) return;
-          onTypography(
-            LyricsMenuAnchor(
-              rect: box.localToGlobal(Offset.zero) & box.size,
-              context: anchor,
-            ),
-          );
-        },
-        icon: const FushiIcon(FushiIcons.textFields),
-      ),
+      builder: (BuildContext anchor) {
+        void open() {
+          final LyricsMenuAnchor? at = _anchorOf(anchor);
+          if (at != null) onTypography(at);
+        }
+
+        const Key key = ValueKey<String>('lyrics_typography_button');
+        const Widget icon = FushiIcon(FushiIcons.textFields);
+        return tonal
+            ? FushiIconButtonControl.filledTonal(
+                key: key,
+                tooltip: t.lyrics_typography_title,
+                onPressed: open,
+                icon: icon,
+              )
+            : FushiIconButtonControl(
+                key: key,
+                tooltip: t.lyrics_typography_title,
+                onPressed: open,
+                icon: icon,
+              );
+      },
     );
   }
 }
@@ -1249,14 +1315,8 @@ class _MoreButton extends StatelessWidget {
       builder: (BuildContext anchor) => FushiIconButtonControl(
         tooltip: MaterialLocalizations.of(context).moreButtonTooltip,
         onPressed: () {
-          final RenderObject? box = anchor.findRenderObject();
-          if (box is! RenderBox || !box.hasSize) return;
-          onMore(
-            LyricsMenuAnchor(
-              rect: box.localToGlobal(Offset.zero) & box.size,
-              context: anchor,
-            ),
-          );
+          final LyricsMenuAnchor? at = _anchorOf(anchor);
+          if (at != null) onMore(at);
         },
         icon: const FushiIcon(FushiIcons.moreHoriz),
       ),
@@ -1330,16 +1390,13 @@ class _NarrowTopBar extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              _MaskButton(
-                masked: data.lyricsMasked,
-                onPressed: callbacks.onToggleMask,
-              ),
-              if (callbacks.onTypography != null)
-                _TypographyButton(onTypography: callbacks.onTypography!),
-              FushiIconButtonControl(
-                tooltip: t.reading_statistics,
-                onPressed: callbacks.onOpenStatistics,
-                icon: const FushiIcon(FushiIcons.statistics),
+              // 布局「顶部」区的按钮（出厂 遮罩 / Aa / 统计）。
+              ..._md3ControlButtons(
+                data.compactControls.itemsIn(LyricsControlSlot.top),
+                data,
+                callbacks,
+                wide: false,
+                tonal: false,
               ),
               // 左上角返回键回正文；× 直接退书回书架（反馈 QvYpZODImz）。
               if (callbacks.onExitBook != null)
@@ -1459,7 +1516,10 @@ class _NarrowControlBar extends StatelessWidget {
                 child: _SecondaryActions(
                   data: data,
                   callbacks: callbacks,
-                  full: false,
+                  items: data.compactControls.itemsIn(
+                    LyricsControlSlot.toolbar,
+                  ),
+                  wide: false,
                 ),
               ),
             ),

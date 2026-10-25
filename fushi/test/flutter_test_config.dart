@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers/fake_inappwebview_platform.dart';
 import 'helpers/fake_video_specs_probe.dart';
 import 'package:fushi/src/engine_bindings.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi_web_core/testing.dart';
 
 /// Suite-wide setup for all tests under `test/`.
@@ -27,6 +29,8 @@ import 'package:fushi_web_core/testing.dart';
 ///    one `AppModel.videoSpecsService` creates) use a process-free fake probe,
 ///    so widget tests that render real video files never spawn ffprobe and race
 ///    FakeAsync's 20s timeout timer. See [installFakeVideoSpecsProbe].
+/// 5. Pins the disk image cache's metadata repository to the host-independent
+///    JSON one. See [installHostIndependentImageCacheRepository].
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // 引擎（fushi_engine）的日志 / 数据根 / ffmpeg 平台后端装配点：与 main() 同一份，
   // 让测试里的引擎代码拿到与从前逐字节一致的行为（AppPaths 路径、ErrorLogService）。
@@ -35,10 +39,30 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   installInMemorySharedPreferences();
   installToleranceGoldenComparator();
   installFakeVideoSpecsProbe();
+  installHostIndependentImageCacheRepository();
   // 网页内容核心（fushi_web_core）是硬依赖：指向本仓刚编好的原生库（或 FUSHI_WEB_CORE_LIB）。
   // 找不到不在这里报错——用到它的测试第一次加载时抛 FushiWebCoreLibraryMissing，照常失败。
   useDevFushiWebCoreLibrary();
   await testMain();
+}
+
+/// 磁盘缓存图片（[AppImageCacheManager]）的元数据仓库在整个 `test/` 套件里钉成
+/// `JsonCacheInfoRepository`。
+///
+/// flutter_cache_manager 按**宿主** `Platform` 选仓库：Android / iOS / macOS 用 sqflite
+/// 平台插件，其余用 JSON 文件。`flutter test` 的 `Platform` 就是开发机本身，于是同一
+/// 份测试在 Windows / Linux 上走 JSON、在 macOS 开发机上去开 sqflite——而测试进程里
+/// 没有 sqflite 插件，`CacheManager` 构造时异步 open 仓库即抛「databaseFactory not
+/// initialized」，以未捕获异步错误落到恰好在跑的那条用例或 `tearDownAll` 上
+/// （lnreader_cover_image_test / app_image_file_service_retry_test /
+/// app_http_image_proxy_test 在 Mac 上稳定红、在 Windows / Linux 上绿）。
+///
+/// 触发面是「任何构造 `AppCachedHttpImage` / 用到该单例的测试」，开放集合，所以在套件
+/// 级装一次。钉成 JSON = Windows / Linux 上本来的行为，逐字节不变；macOS 宿主从此
+/// 与它们一致。生产默认不受影响（只有测试设置 `debugRepositoryOverride`）。
+void installHostIndependentImageCacheRepository() {
+  AppImageCacheManager.debugRepositoryOverride = (String databaseName) =>
+      JsonCacheInfoRepository(databaseName: databaseName);
 }
 
 /// BUG-1585：给 golden 比较装一个**跨平台光栅容差**，让基准图在非生成平台上也能校验。

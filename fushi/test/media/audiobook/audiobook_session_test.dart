@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:audio_service/audio_service.dart' as ag;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
@@ -73,11 +74,15 @@ void main() {
     FloatingLyricChannel.platformOverride = null;
   });
 
-  AudiobookSession makeSession({FushiDatabase? db}) {
+  AudiobookSession makeSession({
+    FushiDatabase? db,
+    FushiAudioHandler? handler,
+    bool Function()? showMediaNotification,
+  }) {
     return AudiobookSession(
-      audioHandler: () => null,
+      audioHandler: () => handler,
       showFloatingLyric: () => false,
-      showMediaNotification: () => false,
+      showMediaNotification: showMediaNotification ?? () => false,
       floatingLyricVisibleLines: () => 1,
       floatingLyricStyle: () => const FloatingLyricStyle(
         fontSize: 16,
@@ -127,9 +132,15 @@ void main() {
     List<AudioCue> cues = const <AudioCue>[],
     int positionMs = 0,
     FushiDatabase? db,
+    FushiAudioHandler? handler,
+    bool Function()? showMediaNotification,
   }) async {
     installPlatform();
-    final AudiobookSession session = makeSession(db: db);
+    final AudiobookSession session = makeSession(
+      db: db,
+      handler: handler,
+      showMediaNotification: showMediaNotification,
+    );
     addTearDown(session.dispose);
     await session.start(
       info: SessionBookInfo(
@@ -257,6 +268,118 @@ void main() {
     expect(session.book?.bookKey, 'b');
     expect(identical(session.controller, first), isFalse,
         reason: '切书应顶掉旧控制器换新');
+  });
+
+  group('BUG-3777 A 媒体通知开关关着也要保活（最简通知）', () {
+    FushiAudioHandler buildHandler() => FushiAudioHandler(
+          onPlayIntent: (_) {},
+          onSeek: (_) {},
+          onRewind: () {},
+          onFastForward: () {},
+          onSkipToNext: () {},
+          onSkipToPrevious: () {},
+          onToggleFloatingLyric: () {},
+        );
+
+    void expectMinimal(FushiAudioHandler handler, {required bool playing}) {
+      final ag.PlaybackState state = handler.playbackState.value;
+      expect(state.playing, playing);
+      expect(state.processingState, ag.AudioProcessingState.ready,
+          reason: '不能是 idle：idle 会让 audio_service 当场 stop 前台服务');
+      expect(state.controls, <ag.MediaControl>[
+        if (playing) ag.MediaControl.pause else ag.MediaControl.play,
+      ], reason: '最简通知只留播放 / 暂停（无上下句、无悬浮字幕键）');
+      expect(state.systemActions, isEmpty, reason: '不声明 seek = 不画进度条');
+      expect(state.androidCompactActionIndices, <int>[0]);
+      final ag.MediaItem? item = handler.mediaItem.value;
+      expect(item, isNotNull, reason: '前台服务的通知要有标题');
+      expect(item!.title, 'Book a');
+      expect(item.artist, isNull);
+      expect(item.artUri, isNull);
+      expect(item.duration, isNull);
+      expect(item.displaySubtitle, isNull, reason: '不推当前句副标题');
+    }
+
+    test('开关关着播放：播放态照推给 audio_service，卡片是最简形态', () async {
+      final FushiAudioHandler handler = buildHandler();
+      final AudiobookSession session = await startedSession(
+        'a',
+        cues: <AudioCue>[cue(0), cue(1000)],
+        handler: handler,
+        showMediaNotification: () => false,
+      );
+      expectMinimal(handler, playing: false);
+
+      await session.controller!.play();
+      await pumpEventQueue();
+      expectMinimal(handler, playing: true);
+
+      await session.controller!.pause();
+      await pumpEventQueue();
+      expectMinimal(handler, playing: false);
+    });
+
+    test('播放中切开关：开→关 换最简且全程不出现 idle，关→开 恢复完整', () async {
+      final FushiAudioHandler handler = buildHandler();
+      bool show = true;
+      final AudiobookSession session = await startedSession(
+        'a',
+        cues: <AudioCue>[cue(0), cue(1000)],
+        handler: handler,
+        showMediaNotification: () => show,
+      );
+      await session.controller!.play();
+      await pumpEventQueue();
+      expect(handler.playbackState.value.playing, isTrue);
+      expect(handler.playbackState.value.controls.length, 4,
+          reason: '完整形态：上句 / 暂停 / 下句 / 悬浮字幕');
+
+      final List<ag.PlaybackState> seen = <ag.PlaybackState>[];
+      final StreamSubscription<ag.PlaybackState> sub =
+          handler.playbackState.listen(seen.add);
+      addTearDown(sub.cancel);
+
+      show = false;
+      session.onMediaNotificationToggled(enabled: false);
+      await pumpEventQueue();
+      expectMinimal(handler, playing: true);
+
+      show = true;
+      session.onMediaNotificationToggled(enabled: true);
+      await pumpEventQueue();
+      final ag.PlaybackState full = handler.playbackState.value;
+      expect(full.playing, isTrue);
+      expect(full.controls, contains(ag.MediaControl.skipToNext));
+      expect(full.systemActions, contains(ag.MediaAction.seek));
+      expect(handler.mediaItem.value?.duration, isNotNull,
+          reason: '完整卡片带时长（进度条）');
+
+      expect(
+        seen.where(
+          (ag.PlaybackState s) =>
+              s.processingState == ag.AudioProcessingState.idle,
+        ),
+        isEmpty,
+        reason: '播放中切开关不得推 idle（会 stop 前台服务）',
+      );
+    });
+
+    test('停会话照旧清掉通知（idle + 无卡片）', () async {
+      final FushiAudioHandler handler = buildHandler();
+      final AudiobookSession session = await startedSession(
+        'a',
+        handler: handler,
+        showMediaNotification: () => false,
+      );
+      await session.controller!.play();
+      await pumpEventQueue();
+      expect(handler.playbackState.value.playing, isTrue);
+
+      await session.stop();
+      expect(handler.playbackState.value.processingState,
+          ag.AudioProcessingState.idle);
+      expect(handler.mediaItem.value, isNull);
+    });
   });
 
   test('stop disposes the controller and clears the session', () async {

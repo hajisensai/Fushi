@@ -22,12 +22,10 @@ void main() {
             key: const ValueKey<String>('preview'),
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: ExtensionCatalogActions(
+              child: ExtensionMinDownloadsFilter(
                 keyPrefix: 'test_extension',
                 minDownloads: 0,
                 onMinDownloadsChanged: (int _) {},
-                onBulkInstall: () {},
-                onUpdateAll: () {},
               ),
             ),
           ),

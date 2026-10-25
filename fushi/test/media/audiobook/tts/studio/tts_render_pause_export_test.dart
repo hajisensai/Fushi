@@ -719,9 +719,9 @@ void main() {
       expect(second.listSync(), isEmpty, reason: '上一次的导出文件必须被清掉');
     });
 
-    test('制作台移动端导出走自管暂存目录，不再每次 createTemp 一个新目录', () {
+    test('移动端导出走自管暂存目录，不再每次 createTemp 一个新目录', () {
       final String src = File(
-        'lib/src/media/audiobook/tts/studio/tts_studio_page.dart',
+        'lib/src/media/audiobook/tts/studio/audiobook_m4b_export_flow.dart',
       ).readAsStringSync();
       expect(src, contains('prepareTtsAudiobookShareStagingDir('));
       expect(src, contains('kTtsAudiobookShareStagingDirName'));

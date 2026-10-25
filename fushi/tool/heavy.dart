@@ -15,7 +15,11 @@
 // `flutter test` without its own --concurrency a default of 4, and on
 // Windows runs the command
 // tree at below-normal priority under a memory ceiling, killing whatever the
-// command leaves behind when it ends. Exit code: the command's; 75 when an
+// command leaves behind when it ends. A bare flutter / dart is resolved like
+// the other repo tools (FUSHI_FLUTTER, FLUTTER_ROOT, the SDK running this
+// script, PATH) and refused before queueing when that SDK is not the
+// fushi/.fvmrc version (test_flow/heavy_sdk_check.dart). Exit code: the
+// command's; 2 for a mismatched SDK; 75 when an
 // explicit --wait-max-min ran out before admission; 124 when --max-minutes cut it off. CI / FUSHI_HEAVY=off
 // run the command directly.
 import 'dart:async';
@@ -23,6 +27,7 @@ import 'dart:io';
 
 import 'test_flow/heavy_budget.dart';
 import 'test_flow/heavy_lease.dart';
+import 'test_flow/heavy_sdk_check.dart';
 
 Future<void> main(List<String> args) async {
   if (args.contains('--status')) return _status();
@@ -35,14 +40,25 @@ Future<void> main(List<String> args) async {
     exit(64);
   }
   final List<String> own = args.sublist(0, sep);
-  final List<String> command = withDefaultTestConcurrency(
+  final String? checkout = locateCheckoutRoot();
+  final HeavySdkCheck sdk = checkHeavyCommandSdk(
     args.sublist(sep + 1),
+    pinned: checkout == null ? null : readPinnedFlutterVersion(checkout),
   );
+  if (sdk.error != null) {
+    stderr.writeln(sdk.error);
+    exit(2);
+  }
+  final List<String> command = withDefaultTestConcurrency(sdk.command);
   final HeavyNeed classified = classifyHeavyCommand(command);
+  final int? capOverride = _intArg(own, '--cap-mb=');
   final HeavyNeed need = HeavyNeed(
     kind: classified.kind,
-    capMb: _intArg(own, '--cap-mb=') ?? classified.capMb,
+    capMb: capOverride ?? classified.capMb,
+    // An explicit --cap-mb books what it asks for.
+    bookMb: capOverride ?? classified.bookMb,
     worktreeExclusive: classified.worktreeExclusive,
+    light: classified.light,
   );
   final int waitMax = _intArg(own, '--wait-max-min=') ?? 0;
   final int maxMinutes = _intArg(own, '--max-minutes=') ?? 120;
@@ -57,7 +73,7 @@ Future<void> main(List<String> args) async {
     lease = await acquireHeavyLease(
       need: need,
       label: label,
-      worktreeRoot: locateCheckoutRoot(),
+      worktreeRoot: checkout,
       waitMax: waitMax > 0 ? Duration(minutes: waitMax) : null,
     );
   } on HeavyLeaseTimeout catch (e) {
@@ -127,9 +143,16 @@ void _status() {
   final Directory dir = heavyStateDir()..createSync(recursive: true);
   final List<HeavyHolder> holders = readHeavyHolders(dir, slots);
   final int ours = holders.where((HeavyHolder h) => h.slot < slots).length;
-  final int beyond = holders.length - ours;
+  final int light = holders
+      .where(
+        (HeavyHolder h) =>
+            h.slot >= kLightSlotBase &&
+            h.slot < kLightSlotBase + kLightSlotCount,
+      )
+      .length;
+  final int beyond = holders.length - ours - light;
   stdout.writeln(
-    'heavy: $ours/$slots slots busy'
+    'heavy: $ours/$slots slots busy, $light/$kLightSlotCount light (analyze)'
     '${beyond > 0 ? ' (+$beyond past this slot count, booked below)' : ''}'
     ' (${dir.path})',
   );

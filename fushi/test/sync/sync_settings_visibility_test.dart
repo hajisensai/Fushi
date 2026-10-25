@@ -104,7 +104,7 @@ void main() {
     });
 
     test('what / when / assets / backup groups remain global', () {
-      // C1：§2 只放五个同形态开关；§3 是时机（自动 + 手动）；§4 是显式动作行。
+      // C1：§2 只放六个同形态开关；§3 是时机（自动 + 手动）；§4 是显式动作行。
       expect(idsOf(dest.sections[1]), <String>[
         'sync.statistics',
         // 设备级「同步浏览历史」（默认关，3fdceb86fa / PR #2500）：云备份与互联
@@ -164,6 +164,13 @@ void main() {
           isNull,
           reason:
               'sync.statistics is a content-scope setting, global to every backend',
+        );
+        expect(
+          byId('sync.web_history').visible,
+          isNull,
+          reason:
+              'sync.web_history gates both cloud backup and interconnect, so it '
+              'stays visible for every sync method',
         );
         for (final String id in <String>[
           'sync.content',

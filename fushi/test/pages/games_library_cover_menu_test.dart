@@ -38,8 +38,9 @@ void main() {
     addTearDown(db.close);
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    final Directory tmpDir =
-        Directory.systemTemp.createTempSync('fushi_game_cover_menu_');
+    final Directory tmpDir = Directory.systemTemp.createTempSync(
+      'fushi_game_cover_menu_',
+    );
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);
@@ -47,7 +48,9 @@ void main() {
     });
     final AppModel appModel = AppModel(testPlatformServices())
       ..wireLocalAudioForTesting(
-          prefsRepo: prefsRepo, databaseDirectory: tmpDir)
+        prefsRepo: prefsRepo,
+        databaseDirectory: tmpDir,
+      )
       // v54：游戏库真相源是 Drift 表，仓储绑 AppModel.database，测试必须注入。
       ..wireDatabaseForTesting(db);
     await appModel.setGalgames(games);
@@ -80,38 +83,38 @@ void main() {
   /// 所以两个分支都要断言：Windows 上必须在场，非 Windows 上必须不在场——后者正是
   /// Linux CI 会跑到的分支，它守的是「平台门没被顺手删掉」。
   List<String> menuLabels() => <String>[
-        t.game_view_detail,
-        t.game_play_status,
-        t.media_stats_action,
-        t.game_rename,
-        t.game_set_cover,
-        t.game_auto_cover,
-        t.game_scrape,
-        t.add_to_collection,
-        t.tag_label,
-        // 私密（v122 作品级标记：不上传排行榜、不推 Bangumi）：与标签同属「每作品
-        // 归类」，紧随其后，与书架 / 视频卡同一条动作。
-        t.media_privacy_action,
-        // 内容语言（内容字体链）：决定这个游戏的 hook 文本 / 查词卡词头用哪条字体
-        // 链。hook 文本没有任何语言声明可读，用户指定是它唯一的真值来源，所以与
-        // 标签同属「每游戏配置」，紧随其后。
-        t.book_language_action,
-        if (Platform.isWindows) '${t.game_upscaling} · ${t.game_upscaling_off}',
-        // BUG-1477：每游戏「日语区域（转区）」档，与超分同为「启动期配置」，
-        // 故紧邻它排在删除之前。未设过的游戏显示默认档——BUG-2253 起默认档是
-        // `off` 而不再是 `auto`（判错的代价不对称：该转没转只是乱码、用户看得见
-        // 且能来这个菜单改；不该转却转了会让汉化版直接闪退），于是这一行与紧邻的
-        // 超分行同形，两个「启动期配置」默认都不替用户动游戏的启动方式。
-        if (Platform.isWindows)
-          '${t.game_japanese_locale} · ${t.game_japanese_locale_off}',
-        // 「打开文件位置」：与书架书卡 / 视频卡同一条动作、同一份文案。门控是
-        // 「有没有文件管理器契约」（桌面恒有，移动端恒无），不是 galgame 的 Windows
-        // 边界——flutter_test 宿主恒为桌面，故这里恒在场。
-        if (currentRevealHost() != null) t.media_file_location_open,
-        t.game_remove,
-      ];
+    t.game_view_detail,
+    t.game_play_status,
+    t.media_stats_action,
+    t.game_rename,
+    t.game_set_cover,
+    t.game_auto_cover,
+    t.game_scrape,
+    t.add_to_collection,
+    t.tag_label,
+    // 私密（v122 作品级标记：不上传排行榜、不推 Bangumi）：与标签同属「每作品
+    // 归类」，紧随其后，与书架 / 视频卡同一条动作。
+    t.media_privacy_action,
+    // 内容语言（内容字体链）：决定这个游戏的 hook 文本 / 查词卡词头用哪条字体
+    // 链。hook 文本没有任何语言声明可读，用户指定是它唯一的真值来源，所以与
+    // 标签同属「每游戏配置」，紧随其后。
+    t.book_language_action,
+    if (Platform.isWindows) '${t.game_upscaling} · ${t.game_upscaling_off}',
+    // BUG-1477：每游戏「日语区域（转区）」档，与超分同为「启动期配置」，
+    // 故紧邻它排在删除之前。未设过的游戏显示默认档——BUG-2253 起默认档是
+    // `off` 而不再是 `auto`（判错的代价不对称：该转没转只是乱码、用户看得见
+    // 且能来这个菜单改；不该转却转了会让汉化版直接闪退），于是这一行与紧邻的
+    // 超分行同形，两个「启动期配置」默认都不替用户动游戏的启动方式。
+    if (Platform.isWindows)
+      '${t.game_japanese_locale} · ${t.game_japanese_locale_off}',
+    // 「打开文件位置」：与书架书卡 / 视频卡同一条动作、同一份文案。门控是
+    // 「有没有文件管理器契约」（桌面恒有，移动端恒无），不是 galgame 的 Windows
+    // 边界——flutter_test 宿主恒为桌面，故这里恒在场。
+    if (currentRevealHost() != null) t.media_file_location_open,
+    t.game_remove,
+  ];
 
-  testWidgets('溢出菜单项齐全（含设置封面 / 自动获取封面 / 加入合集）', (WidgetTester tester) async {
+  testWidgets('列表行溢出菜单项齐全（含设置封面 / 自动获取封面 / 加入合集）', (WidgetTester tester) async {
     final AppModel appModel = await buildModel(<GalgameEntry>[
       GalgameEntry(
         id: 'g1',
@@ -121,12 +124,16 @@ void main() {
         addedAt: DateTime(2026),
       ),
     ]);
+    // 2026-10-25 卡盒定版：网格卡封面上不再放 ⋯ 按钮（菜单走长按 / 右键，见下一
+    // 条）；鼠标点按的溢出菜单留在列表布局的行尾，菜单项同一份 _menuItems。
+    await appModel.prefsRepo.setGamesLibraryListLayout(true);
     await pumpPage(tester, appModel);
 
     // 设计系统包装 FushiPopupMenuButton 是 PopupMenuButton 的子类，byType 按
     // 精确运行时类型匹配会漏掉它。
     await tester.tap(
-        find.byWidgetPredicate((Widget w) => w is PopupMenuButton<String>));
+      find.byWidgetPredicate((Widget w) => w is PopupMenuButton<String>),
+    );
     await tester.pumpAndSettle();
 
     // 限定在溢出菜单项内找：工具栏的「游玩状态」下拉 chip 与菜单项同文案，
@@ -150,8 +157,9 @@ void main() {
     expect(shown, menuLabels(), reason: '溢出菜单次序偏离三库页统一约定');
   });
 
-  testWidgets('长按菜单走 MediaItemDialogFrame 且与溢出菜单项一致',
-      (WidgetTester tester) async {
+  testWidgets('长按菜单走 MediaItemDialogFrame 且与溢出菜单项一致', (
+    WidgetTester tester,
+  ) async {
     final AppModel appModel = await buildModel(<GalgameEntry>[
       GalgameEntry(
         id: 'g1',
@@ -181,8 +189,9 @@ void main() {
   });
 
   testWidgets('有封面文件时卡片渲染封面图而非占位图标', (WidgetTester tester) async {
-    final Directory dir =
-        Directory.systemTemp.createTempSync('fushi_game_cover_render_');
+    final Directory dir = Directory.systemTemp.createTempSync(
+      'fushi_game_cover_render_',
+    );
     addTearDown(() {
       try {
         dir.deleteSync(recursive: true);

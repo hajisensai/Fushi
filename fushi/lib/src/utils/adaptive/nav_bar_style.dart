@@ -8,29 +8,24 @@ enum AdaptiveNavBarStyle {
   /// 「底部左边要分页右下角是查词」）。MD3 悬浮胶囊与 Apple 胶囊都支持。
   pager('pager'),
 
-  // 以下五种是「放不下的入口怎么露出来」的交互原型（2026-10-23，设计稿见
+  // 以下三种是「放不下的入口怎么露出来」的交互原型（2026-10-23，设计稿见
   // fushi/build/bottom_nav_design/divergent.html），只接 MD3 悬浮胶囊；
   // Apple 胶囊遇到它们按平铺画。实现见 `nav_overflow/`。
 
   /// 拇指转盘：末格是刻度旋钮，按住升起半圆转盘，转到顶端指针松手跳转。
   dial('dial'),
 
-  /// 书脊：末格是一排书脊（本数 = 隐藏数），点开升起竖排书名的书架。
-  shelf('shelf'),
-
   /// 圆柱滚筒：全部目的地贴在横放的滚筒上，横拨浏览、点击跳转。
   drum('drum'),
 
-  /// 纸牌扇：末格是牌叠，按住上拖全部目的地扇开，滑到哪张松手打出哪张。
-  fan('fan'),
-
-  /// 相机模式条：当前项居中带名字，左右邻居渐隐延伸，横拨逐个切换。
+  /// 相机模式条：当前项居中（图标 + 专属多边形），左右邻居渐隐延伸，横拨
+  /// 逐个切换。
   modeStrip('mode_strip');
 
   /// 是否是 `nav_overflow/` 里的交互原型之一（只 MD3 悬浮胶囊画）。
   bool get isOverflowVariant => switch (this) {
     flat || pager => false,
-    dial || shelf || drum || fan || modeStrip => true,
+    dial || drum || modeStrip => true,
   };
 
   const AdaptiveNavBarStyle(this.prefValue);
@@ -47,7 +42,7 @@ enum AdaptiveNavBarStyle {
   final String prefValue;
 
   /// 没写过（空串）与未知值（含原型期一度存在、已删掉的 launcher /
-  /// launcher_pager）一律回落出厂默认 [defaultStyle]。
+  /// launcher_pager / shelf / fan）一律回落出厂默认 [defaultStyle]。
   static AdaptiveNavBarStyle fromPref(String value) {
     for (final AdaptiveNavBarStyle style in values) {
       if (style.prefValue == value) return style;

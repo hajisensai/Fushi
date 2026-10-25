@@ -1,6 +1,7 @@
 // Minimal Chrome DevTools Protocol (CDP) client over WebSocket using only
 // Node built-in modules (no puppeteer / no npm deps). Enough to: launch
-// headless Chrome, open a page target, navigate to a data: URL, and run
+// headless Chrome, open a page target, load an HTML string (served from a
+// private loopback server, see startPageServer), and run
 // Runtime.evaluate to read back JSON-serialisable layout numbers.
 //
 // Used by TODO-753 horizontal sub-pixel pageStep harness + flutter guard.
@@ -326,13 +327,93 @@ function waitForDevToolsPort(proc, stderrLog, timeoutMs) {
 }
 
 /**
+ * Sandbox flags for the pages the driver serves. Without `allow-same-origin`
+ * the document gets an opaque origin, as a `data:` document does (storage and
+ * cookies throw, `origin` is "null", a sandboxed child iframe stays
+ * cross-origin to it); everything else a top-level `data:` page may do stays
+ * allowed.
+ */
+const PAGE_SANDBOX_CSP =
+  'sandbox allow-scripts allow-forms allow-modals allow-popups ' +
+  'allow-popups-to-escape-sandbox allow-pointer-lock allow-downloads ' +
+  'allow-presentation allow-orientation-lock allow-top-navigation';
+
+/**
+ * Serves each page the driver loads from a private loopback HTTP server.
+ *
+ * Why not a `data:` URL: the page travels inside the URL, so Chrome has to
+ * carry, parse and percent-decode a URL three times the size of the HTML in
+ * the browser process before the renderer even sees it. For the harnesses that
+ * inline the production popup / reader scripts (~460 KB) that cost 1.4-2.3 s
+ * per load on an idle 2026 desktop versus 0.1-0.2 s served over HTTP, and a
+ * harness loads 20+ pages -- on a CPU-starved CI runner the popup sandbox
+ * suite went past its 80 s budget from page loads alone. Each page gets a
+ * fresh path (no cache) and stays servable while it is one of the last
+ * [KEPT_PAGES] (Chrome may fetch a navigation again), with [PAGE_SANDBOX_CSP]
+ * so its origin stays opaque like the `data:` page it replaces. Relative
+ * subresources 404, which fails them the same way an unresolvable relative
+ * URL in `data:` does.
+ */
+const KEPT_PAGES = 8;
+
+async function startPageServer() {
+  const pages = new Map();
+  const served = new Set();
+  let seq = 0;
+  const server = http.createServer((req, res) => {
+    const html = pages.get(req.url);
+    if (html === undefined) {
+      res.statusCode = 404;
+      res.end();
+      return;
+    }
+    served.add(req.url);
+    res.setHeader('content-type', 'text/html; charset=utf-8');
+    res.setHeader('cache-control', 'no-store');
+    res.setHeader('content-security-policy', PAGE_SANDBOX_CSP);
+    res.end(html);
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const port = server.address().port;
+  return {
+    /** Registers `html` and returns the URL that serves it (once). */
+    urlFor(html) {
+      const p = `/page/${++seq}`;
+      pages.set(p, html);
+      for (const old of pages.keys()) {
+        if (pages.size <= KEPT_PAGES) break;
+        pages.delete(old);
+        served.delete(old);
+      }
+      return `http://127.0.0.1:${port}${p}`;
+    },
+    /** Whether Chrome has fetched the page behind `url` at least once. */
+    wasServed(url) {
+      return served.has(new URL(url).pathname);
+    },
+    close() {
+      pages.clear();
+      try {
+        server.closeAllConnections?.();
+      } catch (_) {}
+      server.close();
+    },
+  };
+}
+
+/**
  * Launch headless Chrome, open one page, return a driver with `evalOnPage(html, expr)`.
- * The driver navigates to a data: URL built from `html`, waits for load, then
- * evaluates `expr` (a JS expression string returning a JSON value) and returns it.
+ * The driver loads `html` (served once from a private loopback server, see
+ * [startPageServer]), waits for load, then evaluates `expr` (a JS expression
+ * string returning a JSON value) and returns it.
  */
 export async function launchChromeDriver() {
   const chromePath = resolveChrome();
   if (!chromePath) throw new Error('NO_CHROME');
+  const pageServer = await startPageServer();
   const userDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rph-chrome-'));
   const proc = spawn(
     chromePath,
@@ -349,6 +430,17 @@ export async function launchChromeDriver() {
       // the collision and the connect-before-listen race.
       '--remote-debugging-port=0',
       '--remote-allow-origins=*',
+      // Hermetic network: every host name except localhost fails to resolve
+      // at once, and no system proxy is consulted. The reader CSS points its
+      // fonts at the app's virtual host (https://fushi.local/...), which the
+      // harnesses do not serve; on Windows a `.local` name goes to
+      // mDNS / LLMNR and took ~27 s to fail, holding every such page's load
+      // event that long (VN / highlight suites ran 100+ s, or were evaluated
+      // half-loaded). The outcome -- the font request fails -- is unchanged,
+      // it just fails in milliseconds (BUG-3779). `MAP *` matches IP literals too, so the
+      // loopback the harness servers listen on is excluded explicitly.
+      '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1',
+      '--no-proxy-server',
       '--window-size=1280,800',
       'about:blank',
     ],
@@ -384,19 +476,31 @@ export async function launchChromeDriver() {
     try {
       fs.rmSync(userDir, { recursive: true, force: true });
     } catch (_) {}
+    pageServer.close();
     throw e;
   }
 
-  async function evalOnPage(html, expr) {
-    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+  // Load `html` and wait for its load event. The load event is the readiness
+  // signal; the bound is the same hang guard as a CDP command. A page that
+  // never finishes loading fails here, naming why -- it used to be evaluated
+  // anyway after 8 s, so a slow load surfaced later as an unrelated
+  // "X is not defined" / "reading 'length' of undefined" from the harness.
+  async function load(html) {
     sock.events.length = 0;
-    await sock.send('Page.navigate', { url: dataUrl });
-    // Wait for load event.
-    const deadline = Date.now() + 8000;
-    while (Date.now() < deadline) {
-      if (sock.events.some((e) => e.method === 'Page.loadEventFired')) break;
-      await new Promise((r) => setTimeout(r, 30));
+    const url = pageServer.urlFor(html);
+    await sock.send('Page.navigate', { url });
+    const deadline = Date.now() + CDP_COMMAND_HANG_GUARD_MS;
+    while (!sock.events.some((e) => e.method === 'Page.loadEventFired')) {
+      if (Date.now() > deadline) {
+        throw new Error(`page load event did not fire within ${CDP_COMMAND_HANG_GUARD_MS} ms ` +
+          `(${url}, ${html.length} chars, ${pageServer.wasServed(url) ? 'served' : 'never requested'})`);
+      }
+      await new Promise((r) => setTimeout(r, 20));
     }
+  }
+
+  async function evalOnPage(html, expr) {
+    await load(html);
     // Give layout one more frame.
     await sock.send('Runtime.evaluate', {
       expression: 'new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))',
@@ -419,14 +523,7 @@ export async function launchChromeDriver() {
     if (vw && vh) {
       await sock.send('Emulation.setDeviceMetricsOverride', { width: vw, height: vh, deviceScaleFactor: 1, mobile: false });
     }
-    const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
-    sock.events.length = 0;
-    await sock.send('Page.navigate', { url: dataUrl });
-    const deadline = Date.now() + 8000;
-    while (Date.now() < deadline) {
-      if (sock.events.some((e) => e.method === 'Page.loadEventFired')) break;
-      await new Promise((r) => setTimeout(r, 30));
-    }
+    await load(html);
     if (preExpr) {
       await sock.send('Runtime.evaluate', { expression: preExpr, returnByValue: true });
     }
@@ -479,6 +576,7 @@ export async function launchChromeDriver() {
     try {
       fs.rmSync(userDir, { recursive: true, force: true });
     } catch (_) {}
+    pageServer.close();
   }
 
   return { evalOnPage, evalHere, capture, snap, close };

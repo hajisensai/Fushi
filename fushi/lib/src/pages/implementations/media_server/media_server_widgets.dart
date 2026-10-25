@@ -15,6 +15,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiFloatingChromeScope;
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -134,25 +135,10 @@ String mediaServerItemMetadata(MediaServerItem item) {
   return parts.join(' · ');
 }
 
-/// 封面卡标题块的上下内边距（[_MediaServerCardCaption]）。
-const double _kCaptionTop = 8;
-const double _kCaptionBottom = 4;
-
-/// 卡片文字块高度（一行名称 + 一行元数据 + 上下 padding）。行高 = 封面高 + 它。
-/// 名称行按封面卡标题样式（[shelfCardTitleStyle]）量，与卡内实际字阶同源。
-double mediaServerCardTextBlock(BuildContext context) {
-  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-  final double titleLine = textLineHeight(
-    context,
-    shelfCardTitleStyle(context),
-  );
-  final double metaLine = textLineHeight(context, tokens.type.metadata);
-  return titleLine +
-      metaLine +
-      _kCaptionTop +
-      _kCaptionBottom +
-      kTextBlockSlack;
-}
+/// 卡片文字块高度：材质库页统一的 [ShelfCardMeta]（标题 + 副行 + 进度条）。
+/// 行高 = 封面高 + 它。与视频库同一口径（`ShelfCardMeta.heightFor`）。
+double mediaServerCardTextBlock(BuildContext context) =>
+    ShelfCardMeta.heightFor(context);
 
 /// 横滚行竖卡的整卡高度。
 double mediaServerRowCardHeight(BuildContext context) =>
@@ -251,45 +237,95 @@ class MediaServerStatusDot extends StatelessWidget {
   }
 }
 
-/// 封面卡下方的两行文字：名称（封面卡标题样式）+ 元数据。左对齐、单行省略；
-/// 高度与 [mediaServerCardTextBlock] 同口径。
-class _MediaServerCardCaption extends StatelessWidget {
-  const _MediaServerCardCaption({required this.title, required this.subtitle});
+/// 条目卡封面下副行的内容：副行文字、进度条（0–1，null 不画）、是否已看完。
+typedef MediaServerCardStatus = ({
+  String? subtitle,
+  double? progress,
+  bool completed,
+});
 
-  final String title;
-  final String subtitle;
+/// 剧 / 季的总集数：剧只认 `episodeCount`（它的 `childCount` 是季数），季的
+/// `childCount` 就是集数。
+int? _mediaServerEpisodeTotal(MediaServerItem item) => switch (item.type) {
+  MediaServerItemType.series => item.episodeCount,
+  MediaServerItemType.season => item.episodeCount ?? item.childCount,
+  _ => null,
+};
 
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, _kCaptionTop, 2, _kCaptionBottom),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: shelfCardTitleStyle(context),
-          ),
-          Text(
-            subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: tokens.type.metadata,
-          ),
-        ],
-      ),
-    );
+/// 海报卡的副行（2026-10-25 材质定版：封面上不压任何角标，原「未看集数」
+/// 角标 / 已看勾 / 封面底边进度条全部挪到这里）：
+/// - 剧 / 季：`未看 3 集 · 12 集`（进度条 = 已看比例）/ `已完成 · 12 集`
+///   （完成色满条）/ 其余 `年份 · 剧集 · 12 集`；
+/// - 电影：`已完成 · 年份 · 电影` / `已看至 m:ss · 年份 · 电影`（进度条 =
+///   服务器断点）/ `年份 · 电影`；
+/// - 集：同电影，基底是 `S01E02 集名`；
+/// - 文件夹：`文件夹 · N`。
+MediaServerCardStatus mediaServerItemCardStatus(MediaServerItem item) {
+  switch (item.type) {
+    case MediaServerItemType.series:
+    case MediaServerItemType.season:
+      final int? total = _mediaServerEpisodeTotal(item);
+      final String? totalLabel = total != null && total > 0
+          ? t.video_playlist_episodes(count: total)
+          : null;
+      final int? unplayed = item.unplayedChildCount;
+      if (unplayed != null && unplayed > 0) {
+        final int done = total == null ? 0 : (total - unplayed).clamp(0, total);
+        return (
+          subtitle: <String>[
+            t.media_server_item_unplayed_episodes(n: unplayed),
+            ?totalLabel,
+          ].join(' · '),
+          progress: total != null && total > 0 && done > 0
+              ? done / total
+              : null,
+          completed: false,
+        );
+      }
+      if (item.played || (unplayed == 0 && total != null && total > 0)) {
+        return (
+          subtitle: <String>[t.video_stat_completed, ?totalLabel].join(' · '),
+          progress: 1,
+          completed: true,
+        );
+      }
+      final String meta = mediaServerItemMetadata(item);
+      return (
+        subtitle: <String>[if (meta.isNotEmpty) meta, ?totalLabel].join(' · '),
+        progress: null,
+        completed: false,
+      );
+    case MediaServerItemType.movie:
+    case MediaServerItemType.episode:
+      final String base = item.type == MediaServerItemType.episode
+          ? '${item.episodeCode} ${item.name}'.trim()
+          : mediaServerItemMetadata(item);
+      final String? status = item.played
+          ? t.video_stat_completed
+          : item.positionMs > 0
+          ? t.video_watched_up_to(
+              time: formatMediaServerDuration(item.positionMs),
+            )
+          : null;
+      return (
+        subtitle: <String>[?status, if (base.isNotEmpty) base].join(' · '),
+        progress: item.played ? 1 : mediaServerProgress(item),
+        completed: item.played,
+      );
+    case MediaServerItemType.folder:
+      return (
+        subtitle: mediaServerItemMetadata(item),
+        progress: null,
+        completed: false,
+      );
   }
 }
 
-/// 一张服务器条目卡：「封面即卡片」（与书架 / 视频库同一套 [ShelfCoverFrame]：
-/// MD3 12 圆角、悬停柔和投影；Apple 10 圆角 + 0.5px 内描边 + 柔和投影）+ 名称 +
-/// 元数据。角标：剧的未看集数（右上）、已看勾（右上）、服务器端断点进度胶囊
-/// （封面底边）。悬停抬升 / 按压下沉来自 [FushiHoverLift] 与卡片自带的按压缩放。
+/// 一张服务器条目卡：光面海报（与视频库同一套材质，[ShelfCoverMaterialScope]
+/// 由页面外壳 [MediaServerPageFrame] 给；墨水屏下退回描边封面框）+ 封面下的
+/// [ShelfCardMeta]。封面上不压任何角标（用户 2026-10-25：「全部都不用角标
+/// 设计」）：未看集数 / 已看 / 断点进度都在副行（[mediaServerItemCardStatus]）。
+/// 悬停抬升与扫光来自 [FushiHoverLift] 与材质，按压缩放来自卡壳。
 class MediaServerItemCard extends StatelessWidget {
   const MediaServerItemCard({
     required this.browser,
@@ -311,44 +347,19 @@ class MediaServerItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ImageProvider? image = mediaServerCoverImage(browser, item);
-    final double? progress = mediaServerProgress(item);
-    final int unplayed = item.unplayedChildCount ?? 0;
-    final Widget cover = Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        if (image == null)
-          ShelfCoverPlaceholder(icon: _placeholderIcon(item.type))
-        else
-          PortraitCoverImage(
+    final Widget cover = image == null
+        ? ShelfCoverPlaceholder(icon: _placeholderIcon(item.type))
+        : PortraitCoverImage(
             image: image,
             errorBuilder: (_) =>
                 const ShelfCoverPlaceholder(icon: FushiIcons.brokenImage),
-          ),
-        if (item.isContainer && unplayed > 0)
-          Positioned(top: 6, right: 6, child: CoverBadge(label: '$unplayed')),
-        if (item.isPlayable && item.played)
-          const Positioned(
-            top: 6,
-            right: 6,
-            child: CoverBadge(icon: FushiIcons.check),
-          ),
-        if (progress != null)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: CoverProgressStrip(value: progress),
-          ),
-      ],
-    );
+          );
     final String title =
         item.type == MediaServerItemType.episode &&
             (item.seriesName?.isNotEmpty ?? false)
         ? item.seriesName!
         : item.name;
-    final String subtitle = item.type == MediaServerItemType.episode
-        ? '${item.episodeCode} ${item.name}'.trim()
-        : mediaServerItemMetadata(item);
+    final MediaServerCardStatus status = mediaServerItemCardStatus(item);
     return FushiHoverLift(
       builder: (BuildContext context, bool _) => shelfCoverCard(
         onTap: onTap,
@@ -363,7 +374,13 @@ class MediaServerItemCard extends StatelessWidget {
               aspectRatio: 2 / 3,
               child: ShelfCoverFrame(child: cover),
             ),
-            _MediaServerCardCaption(title: title, subtitle: subtitle),
+            ShelfCardMeta(
+              key: ValueKey<String>('media-server-item-meta-${item.id}'),
+              title: title,
+              subtitle: status.subtitle,
+              progress: status.progress,
+              completed: status.completed,
+            ),
           ],
         ),
       ),
@@ -485,12 +502,28 @@ String mediaServerContinueSubtitle(MediaServerItem item) {
   return mediaServerItemMetadata(item);
 }
 
-/// 「继续观看」横卡：16:9 缩略图（候选图逐张回落，封面即卡片）+ 剧名 / 片名 +
-/// 第二行。缩略图底边是服务器端进度条（Apple 是内缩胶囊），右下角标写明还剩
-/// 多少或看到哪。
+/// 「继续观看」横卡的副行：`剩余 N 分钟 · S01E02 集名`（集）/ `剩余 N 分钟`
+/// （电影；没有断点时退回 [mediaServerContinueSubtitle]）。原先压在缩略图右下
+/// 的角标（[mediaServerContinueBadge]）并进副行最前。
+String mediaServerContinueMetaLine(MediaServerItem item) {
+  final String? badge = mediaServerContinueBadge(item);
+  final bool isEpisode = item.type == MediaServerItemType.episode;
+  final String episode = isEpisode
+      ? '${item.episodeCode} ${item.name}'.trim()
+      : '';
+  return <String>[
+    ?badge,
+    if (episode.isNotEmpty) episode,
+    if (!isEpisode && badge == null) mediaServerContinueSubtitle(item),
+  ].join(' · ');
+}
+
+/// 「继续观看」横卡：16:9 缩略图（候选图逐张回落，光面海报材质）+ 封面下的
+/// [ShelfCardMeta]：剧名 / 片名、副行（[mediaServerContinueMetaLine]：还剩多少 /
+/// 看到哪 + 集号集名）、服务器端进度条。缩略图上不压任何角标。
 ///
 /// 视频本身是横屏的；继续观看要让人一眼认出「停在哪一集、看到哪」，所以这一行
-/// 不用 2:3 海报竖卡——竖卡只认得出是哪部剧，进度只有一条 3px 细线。
+/// 不用 2:3 海报竖卡——竖卡只认得出是哪部剧。
 class MediaServerContinueCard extends StatelessWidget {
   const MediaServerContinueCard({
     required this.browser,
@@ -509,15 +542,10 @@ class MediaServerContinueCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double? progress = mediaServerProgress(item);
-    final String? badge = mediaServerContinueBadge(item);
     final bool isEpisode = item.type == MediaServerItemType.episode;
     final String title = isEpisode && (item.seriesName?.isNotEmpty ?? false)
         ? item.seriesName!
         : item.name;
-    final bool apple = isGlassDesign(context);
-    // Apple 进度是内缩 8 的胶囊（底边留 8 + 4 高），角标要让到它上面。
-    final double badgeBottom = progress == null ? 6 : (apple ? 18 : 10);
     return FushiHoverLift(
       builder: (BuildContext context, bool _) => shelfCoverCard(
         onTap: onTap,
@@ -531,47 +559,17 @@ class MediaServerContinueCard extends StatelessWidget {
             AspectRatio(
               aspectRatio: 16 / 9,
               child: ShelfCoverFrame(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    MediaServerFallbackImage(
-                      images: mediaServerContinueImages(browser, item),
-                      placeholderIcon: isEpisode
-                          ? FushiIcons.tv
-                          : FushiIcons.video,
-                    ),
-                    if (badge != null)
-                      Positioned(
-                        right: 6,
-                        bottom: badgeBottom,
-                        child: CoverBadge(
-                          key: const ValueKey<String>(
-                            'media-server-continue-badge',
-                          ),
-                          label: badge,
-                        ),
-                      ),
-                    if (progress != null)
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: CoverProgressStrip(
-                          progressKey: const ValueKey<String>(
-                            'media-server-continue-progress',
-                          ),
-                          value: progress,
-                          minHeight: 4,
-                          trackOpacity: 0.45,
-                        ),
-                      ),
-                  ],
+                child: MediaServerFallbackImage(
+                  images: mediaServerContinueImages(browser, item),
+                  placeholderIcon: isEpisode ? FushiIcons.tv : FushiIcons.video,
                 ),
               ),
             ),
-            _MediaServerCardCaption(
+            ShelfCardMeta(
+              key: const ValueKey<String>('media-server-continue-meta'),
               title: title,
-              subtitle: mediaServerContinueSubtitle(item),
+              subtitle: mediaServerContinueMetaLine(item),
+              progress: mediaServerProgress(item),
             ),
           ],
         ),
@@ -991,13 +989,15 @@ class _MediaServerPageFrameState extends State<MediaServerPageFrame> {
     if (isGlassDesign(context)) {
       return Scaffold(
         backgroundColor: tokens.surfaces.page,
-        body: FushiFloatingChromeInsetPadding(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              widget.header,
-              Expanded(child: widget.body),
-            ],
+        body: _libraryMaterial(
+          FushiFloatingChromeInsetPadding(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                widget.header,
+                Expanded(child: widget.body),
+              ],
+            ),
           ),
         ),
       );
@@ -1006,21 +1006,30 @@ class _MediaServerPageFrameState extends State<MediaServerPageFrame> {
         FushiFloatingChromeScope.maybeOf(context);
     return Scaffold(
       backgroundColor: tokens.surfaces.page,
-      body: FushiFloatingChromeScope(
-        controller: outer ?? _ownChrome,
-        // 外壳在时由外壳听滚动通知（通知照常冒泡上去），这里只喂自备的那份。
-        child: NotificationListener<ScrollNotification>(
-          onNotification: (ScrollNotification notification) =>
-              outer == null &&
-              _ownChrome.handleScrollNotification(notification),
-          child: FushiFloatingChromeOverlay(
-            chrome: widget.header,
-            child: widget.body,
+      body: _libraryMaterial(
+        FushiFloatingChromeScope(
+          controller: outer ?? _ownChrome,
+          // 外壳在时由外壳听滚动通知（通知照常冒泡上去），这里只喂自备的那份。
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (ScrollNotification notification) =>
+                outer == null &&
+                _ownChrome.handleScrollNotification(notification),
+            child: FushiFloatingChromeOverlay(
+              chrome: widget.header,
+              child: widget.body,
+            ),
           ),
         ),
       ),
     );
   }
+
+  /// 库页材质（2026-10-25 用户定版，与视频库同一套）：条目一律光面海报
+  /// （[ShelfCoverMaterial.glossyPoster]，墨水屏自动退回描边封面框）。
+  static Widget _libraryMaterial(Widget child) => ShelfCoverMaterialScope(
+    material: ShelfCoverMaterial.glossyPoster,
+    child: child,
+  );
 }
 
 /// [MediaServerPageFrame] 正文的顶部让位（外层库页工具区 + 本页头的高度，恒定、
@@ -1049,7 +1058,7 @@ class MediaServerPosterSkeleton extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         const AspectRatio(aspectRatio: 2 / 3, child: FushiSkeleton()),
-        const SizedBox(height: _kCaptionTop + 2),
+        const SizedBox(height: 10),
         FushiSkeleton.line(widthFactor: 0.8),
         const SizedBox(height: 6),
         FushiSkeleton.line(widthFactor: 0.5, height: 10),

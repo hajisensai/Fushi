@@ -28,6 +28,7 @@ import 'package:fushi/src/media/collections/collection_shelf_row.dart'
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
     show kShelfBookCardAspectRatio;
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/utils.dart';
@@ -709,7 +710,11 @@ class _MediaCollectionGridDetailPageState
       if (card == null) continue;
       final String key = '${r.mediaType}|${r.entryKey}';
       final ({String title, int importedAt})? meta = _meta[key];
-      cards[key] = card;
+      // 详情页成员卡与库页同一套条目材质（2026-10-25 库页定版）。
+      final ShelfCoverMaterial? material = _coverMaterialFor(r.mediaType);
+      cards[key] = material == null
+          ? card
+          : ShelfCoverMaterialScope(material: material, child: card);
       entries.add(
         CollectionMemberEntry(
           row: r,
@@ -826,6 +831,19 @@ class _MediaCollectionGridDetailPageState
           targetWidth: targetWidth,
           spacing: spacing,
         );
+        // 游戏合集：卡盒竖长 1:1.6 + 封面下文字块，按真实行高算格子比例（书卡
+        // 比例装不下，卡片会溢出格子）；其余域沿用书架卡槽比例。
+        final bool gameDomain =
+            _rows.isNotEmpty &&
+            _rows.every(
+              (MediaCollectionItemRow r) =>
+                  r.mediaType == MediaKind.game.dbValue,
+            );
+        final double memberAspect = gameDomain
+            ? layout.cardWidth /
+                  (layout.cardWidth / kShelfGameCaseAspectRatio +
+                      ShelfCardMeta.heightFor(context))
+            : kShelfBookCardAspectRatio;
 
         final List<Widget> slivers = <Widget>[
           SliverPadding(
@@ -909,7 +927,7 @@ class _MediaCollectionGridDetailPageState
                 child: FushiReorderableGrid(
                   itemCount: arranged.length,
                   crossAxisCount: layout.columns,
-                  childAspectRatio: kShelfBookCardAspectRatio,
+                  childAspectRatio: memberAspect,
                   crossAxisSpacing: spacing,
                   mainAxisSpacing: spacing,
                   feedbackBorderRadius: FushiBorderRadius.card,
@@ -941,7 +959,7 @@ class _MediaCollectionGridDetailPageState
               sliver: SliverGrid.builder(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: layout.columns,
-                  childAspectRatio: kShelfBookCardAspectRatio,
+                  childAspectRatio: memberAspect,
                   crossAxisSpacing: spacing,
                   mainAxisSpacing: spacing,
                 ),
@@ -1383,7 +1401,27 @@ class _MediaCollectionGridDetailPageState
   }
 }
 
+/// 成员卡是否套着条目材质（墨水屏下材质整体退场，仍走旧的罩层 / 描边反馈）。
+bool _hasCoverMaterial(BuildContext context, Widget card) =>
+    card is ShelfCoverMaterialScope && !isEinkTheme(context);
+
 /// 网格 / 列表切换：M3E 连接式按钮组（选中段形变）/ Apple 分段控件。
+/// 成员媒体类型 → 条目材质：书 / 字幕书 = 光面书皮、视频 = 光面海报、游戏 =
+/// 透明卡盒；未知类型不套材质。
+ShelfCoverMaterial? _coverMaterialFor(String mediaType) {
+  switch (MediaKind.tryParse(mediaType)) {
+    case MediaKind.epub:
+    case MediaKind.srt:
+      return ShelfCoverMaterial.glossyBook;
+    case MediaKind.video:
+      return ShelfCoverMaterial.glossyPoster;
+    case MediaKind.game:
+      return ShelfCoverMaterial.gameCase;
+    case null:
+      return null;
+  }
+}
+
 class _ViewModeToggle extends StatelessWidget {
   const _ViewModeToggle({required this.mode, required this.onChanged});
 
@@ -1475,12 +1513,18 @@ class _MemberGridTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool material = _hasCoverMaterial(context, child);
     return ContextMenuTrigger(
       onInvoke: onMenu,
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
           borderRadius: tokens.radii.cardRadius,
+          // 材质卡的悬停 / 按压反馈是卡片自己的抬升 + 扫光，不再垫灰底板。
+          overlayColor: material
+              ? const WidgetStatePropertyAll<Color>(Colors.transparent)
+              : null,
+          splashFactory: material ? NoSplash.splashFactory : null,
           onTap: onTap,
           onLongPress: _memberLongPressHandler(
             context,
@@ -1813,6 +1857,7 @@ class _HoverableMemberCardState extends State<_HoverableMemberCard> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool eink = isEinkTheme(context);
+    final bool material = _hasCoverMaterial(context, widget.child);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovering = true),
@@ -1820,8 +1865,13 @@ class _HoverableMemberCardState extends State<_HoverableMemberCard> {
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          IgnorePointer(child: widget.child),
-          if (_hovering)
+          // 卡片被 IgnorePointer 挡掉了命中测试，自己的悬停收不到；由这里代收
+          // 再往下传，卡片照常走库页同一套抬升 / 扫光 / 接触阴影。
+          FushiHoverLiftHost(
+            hovering: _hovering,
+            child: IgnorePointer(child: widget.child),
+          ),
+          if (_hovering && !material)
             Positioned.fill(
               child: IgnorePointer(
                 child: DecoratedBox(

@@ -2372,6 +2372,50 @@ void FlutterWindow::RegisterFloatingBallChannel() {
           }
           floating_ball_window_->SetHiddenForApp(hidden);
           result->Success();
+        } else if (method == "showProfileMenu") {
+          // 桌面「切换配置」：在球旁弹原生菜单，不唤起主窗。items 每项
+          // {id, label, checked}；anchor = systemBallAction 报出去的球矩形原样回传
+          // （物理像素、左上原点），null = 贴光标。回选中项 id；关掉 / 空列表 → null。
+          std::vector<FloatingBallWindow::ProfileMenuItem> items;
+          if (const auto* v = FindArg(args, "items")) {
+            if (const auto* list = std::get_if<flutter::EncodableList>(v)) {
+              for (const auto& entry : *list) {
+                const auto* map = std::get_if<flutter::EncodableMap>(&entry);
+                const auto* id = FindArg(map, "id");
+                const std::optional<int64_t> id_value =
+                    id == nullptr ? std::nullopt : id->TryGetLongValue();
+                if (!id_value) continue;
+                FloatingBallWindow::ProfileMenuItem item;
+                item.id = *id_value;
+                item.label =
+                    Utf8ToWideString(StringFromValue(map, "label", ""));
+                item.checked = BoolFromValue(map, "checked", false);
+                items.push_back(std::move(item));
+              }
+            }
+          }
+          std::optional<RECT> anchor;
+          if (const auto* v = FindArg(args, "anchor")) {
+            if (const auto rect = RectFromValue(*v)) {
+              anchor = RECT{static_cast<LONG>(std::lround(rect->left)),
+                            static_cast<LONG>(std::lround(rect->top)),
+                            static_cast<LONG>(std::lround(rect->right)),
+                            static_cast<LONG>(std::lround(rect->bottom))};
+            }
+          }
+          // 菜单结束（模态循环在之后的球窗消息里跑）才回结果：result 先存进回调。
+          // 回调必须可拷贝（std::function），所以 unique_ptr 转成 shared_ptr。
+          std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>
+              pending(std::move(result));
+          floating_ball_window_->ShowProfileMenu(
+              std::move(items), anchor,
+              [pending](std::optional<int64_t> selected) {
+                if (selected) {
+                  pending->Success(flutter::EncodableValue(*selected));
+                } else {
+                  pending->Success();
+                }
+              });
         } else if (method == "takeSystemBallClosedByUser") {
           // 关闭即时推给 Dart（进程就是 app），没有待取的持久标记。
           result->Success(flutter::EncodableValue(false));

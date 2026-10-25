@@ -104,6 +104,20 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_audiobook_prev_sentence;
       case ShortcutAction.audiobookSeekToClickedSentence:
         return t.shortcut_action_audiobook_seek_clicked;
+      case ShortcutAction.audiobookReplaySentence:
+        return t.shortcut_action_audiobook_replay_sentence;
+      case ShortcutAction.audiobookSeekBackward:
+        return t.shortcut_action_audiobook_seek_backward;
+      case ShortcutAction.audiobookSeekForward:
+        return t.shortcut_action_audiobook_seek_forward;
+      case ShortcutAction.audiobookSpeedUp:
+        return t.shortcut_action_audiobook_speed_up;
+      case ShortcutAction.audiobookSpeedDown:
+        return t.shortcut_action_audiobook_speed_down;
+      case ShortcutAction.audiobookToggleLyricsMode:
+        return t.shortcut_action_audiobook_toggle_lyrics_mode;
+      case ShortcutAction.audiobookToggleLyricsMask:
+        return t.shortcut_action_audiobook_toggle_lyrics_mask;
       case ShortcutAction.videoDismissDict:
         return t.shortcut_action_video_dismiss_dict;
       case ShortcutAction.videoTogglePlayPause:

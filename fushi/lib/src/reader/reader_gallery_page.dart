@@ -19,6 +19,7 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
     show TtuTocEntry;
 import 'package:fushi/src/reader/illustration_aspect_probe.dart';
 import 'package:fushi/src/reader/illustration_grid_columns.dart';
+import 'package:fushi/src/reader/image_actions_sheet.dart';
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/masked_illustration_cover.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart'
@@ -26,6 +27,7 @@ import 'package:fushi/src/reader/ttu_toc_flatten.dart'
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 某一卷的插图表 + 文件解析（兄弟卷由页面层在 isolate 解析后提供）。
@@ -884,6 +886,8 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     setState(() => _focusedSrc = ref.src);
     final bool locked = _isLocked(ref);
     final bool canRelock = _canRelock(ref);
+    // 已解锁的图才给「保存图片」：遮罩中的图存出去等于绕过防剧透。
+    final File? saveFile = locked ? null : _fileFor(ref);
     await adaptiveModalSheet<void>(
       context: context,
       builder: (BuildContext sheetContext) => FushiModalSheetFrame(
@@ -913,6 +917,17 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   _reveal(ref);
+                },
+              ),
+            if (saveFile != null)
+              FushiListItem(
+                key: const ValueKey<String>('fushi_gallery_menu_save'),
+                focusId: const FushiFocusId('fushi_gallery_menu_save'),
+                leading: const FushiIcon(FushiIcons.download),
+                title: Text(t.reader_image_save),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  unawaited(runImageAction(ImageAction.save, saveFile));
                 },
               ),
             if (canRelock)
@@ -1441,7 +1456,10 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               Flexible(child: _PositionBadge(tokens: tokens)),
               const SizedBox(width: 8),
               Expanded(
-                child: FushiDividerControl(color: tokens.surfaces.primary, thickness: 1),
+                child: FushiDividerControl(
+                  color: tokens.surfaces.primary,
+                  thickness: 1,
+                ),
               ),
             ],
           ),
@@ -1687,6 +1705,13 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
             setState(() => _viewerZoomed = zoomed);
           },
           onEdgePage: _viewerStep,
+          // 长按 = 全局图片动作面板（保存 / 分享），与阅读器正文同一个。
+          onLongPress: () {
+            final File? file = _fileFor(ref);
+            if (file != null) {
+              unawaited(showImageActionsSheet(context, file: file));
+            }
+          },
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Center(child: _viewerImage(tokens, ref)),
@@ -1808,6 +1833,7 @@ class _ZoomableGalleryImage extends StatefulWidget {
     required this.onZoomChanged,
     required this.onEdgePage,
     required this.child,
+    this.onLongPress,
     super.key,
   });
 
@@ -1816,6 +1842,9 @@ class _ZoomableGalleryImage extends StatefulWidget {
   final ValueChanged<bool> onZoomChanged;
   final ValueChanged<int> onEdgePage;
   final Widget child;
+
+  /// 长按：图片动作面板（保存 / 分享）。
+  final VoidCallback? onLongPress;
 
   @override
   State<_ZoomableGalleryImage> createState() => _ZoomableGalleryImageState();
@@ -1922,6 +1951,7 @@ class _ZoomableGalleryImageState extends State<_ZoomableGalleryImage>
     return GestureDetector(
       onDoubleTapDown: (TapDownDetails d) => _doubleTapAt = d.localPosition,
       onDoubleTap: _onDoubleTap,
+      onLongPress: widget.onLongPress,
       child: InteractiveViewer(
         transformationController: _transform,
         maxScale: 5,

@@ -61,45 +61,14 @@ String extensionDownloadCountLabel(int? downloads) => downloads == null
         count: formatMihonDownloadCount(downloads),
       );
 
-/// 祖先页头已经挂着「刷新仓库」动作时由页面提供（库页「扩展」子标签）：扩展目录
-/// 据此不在正文顶部再画一枚刷新按钮。没有这个 scope 的宿主（浏览模块、独立页、
-/// 测试）照旧在目录顶部给刷新入口——入口只挪位置，不会丢。
-class ExtensionCatalogHeaderScope extends InheritedWidget {
-  const ExtensionCatalogHeaderScope({
-    required super.child,
-    super.key,
-    this.refreshInHeader = true,
-  });
-
-  /// 页头里已经有「刷新仓库」。
-  final bool refreshInHeader;
-
-  /// [context] 所在页面的页头是否已经挂了「刷新仓库」。
-  static bool refreshInHeaderOf(BuildContext context) =>
-      context
-          .dependOnInheritedWidgetOfExactType<ExtensionCatalogHeaderScope>()
-          ?.refreshInHeader ??
-      false;
-
-  @override
-  bool updateShouldNotify(ExtensionCatalogHeaderScope oldWidget) =>
-      oldWidget.refreshInHeader != refreshInHeader;
-}
-
-/// 扩展目录的动作区：最低下载量 chip 行 + 批量安装 + 一键更新（M3E）。
-///
-/// 下载量门槛是一排单选 chip（[ExtensionFilterChipRow]，与仓库 / 语言筛选同一
-/// 形态）；批量安装是 outlined（装进来的是会执行的代码，不给主色），一键更新是
-/// tonal 强调。键名按 [keyPrefix] 生成（`<prefix>_min_downloads`（chip 行）/
-/// `<prefix>_min_downloads_<档位>`（chip）/ `<prefix>_bulk_install` /
-/// `<prefix>_update_all`），测试按它定位。
-class ExtensionCatalogActions extends StatelessWidget {
-  const ExtensionCatalogActions({
+/// 扩展目录「最低下载量」筛选：一排单选 chip（[ExtensionFilterChipRow]，与仓库 /
+/// 语言筛选同一形态）。键名 `<prefix>_min_downloads`（chip 行）/
+/// `<prefix>_min_downloads_<档位>`（chip）。
+class ExtensionMinDownloadsFilter extends StatelessWidget {
+  const ExtensionMinDownloadsFilter({
     required this.keyPrefix,
     required this.minDownloads,
     required this.onMinDownloadsChanged,
-    required this.onBulkInstall,
-    required this.onUpdateAll,
     this.minDownloadOptions = kExtensionMinDownloadOptions,
     super.key,
   });
@@ -107,57 +76,77 @@ class ExtensionCatalogActions extends StatelessWidget {
   final String keyPrefix;
   final int minDownloads;
   final ValueChanged<int> onMinDownloadsChanged;
-
-  /// null = 置灰（批量动作进行中 / 目录加载中）。
-  final VoidCallback? onBulkInstall;
-  final VoidCallback? onUpdateAll;
   final List<int> minDownloadOptions;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
+    return ExtensionFilterChipRow<int>(
+      key: ValueKey<String>('${keyPrefix}_min_downloads'),
+      icon: FushiIcons.download,
+      label: t.mihon_extension_min_downloads,
+      chipKeyPrefix: '${keyPrefix}_min_downloads_',
+      selected: minDownloads,
+      options: <ExtensionFilterOption<int>>[
+        for (final int option in minDownloadOptions)
+          (
+            value: option,
+            label: option == 0
+                ? t.mihon_extension_min_downloads_any
+                : '≥ ${formatMihonDownloadCount(option)}',
+          ),
+      ],
+      onSelected: onMinDownloadsChanged,
+    );
+  }
+}
+
+/// 扩展目录的动作排：批量安装 + 一键更新 + [trailing]（M3E，同一行、靠左）。
+///
+/// 排在目录最上面、搜索框之上（2026-10-25 用户拍板：四颗按钮同一行放左上角，
+/// 页头的仓库 / 刷新图标砍掉）。批量安装是 outlined（装进来的是会执行的代码，
+/// 不给主色），一键更新是 tonal 强调。键名 `<prefix>_bulk_install` /
+/// `<prefix>_update_all`，测试按它定位。
+class ExtensionCatalogActions extends StatelessWidget {
+  const ExtensionCatalogActions({
+    required this.keyPrefix,
+    required this.onBulkInstall,
+    required this.onUpdateAll,
+    this.trailing = const <Widget>[],
+    super.key,
+  });
+
+  final String keyPrefix;
+
+  /// null = 置灰（批量动作进行中 / 目录加载中）。
+  final VoidCallback? onBulkInstall;
+  final VoidCallback? onUpdateAll;
+
+  /// 同一行末尾的其它目录动作（「扩展仓库」「导入本地 APK」；按钮尺寸用
+  /// [FushiButtonSize.s] 与前两颗对齐）。
+  final List<Widget> trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        ExtensionFilterChipRow<int>(
-          key: ValueKey<String>('${keyPrefix}_min_downloads'),
-          icon: FushiIcons.download,
-          label: t.mihon_extension_min_downloads,
-          chipKeyPrefix: '${keyPrefix}_min_downloads_',
-          selected: minDownloads,
-          options: <ExtensionFilterOption<int>>[
-            for (final int option in minDownloadOptions)
-              (
-                value: option,
-                label: option == 0
-                    ? t.mihon_extension_min_downloads_any
-                    : '≥ ${formatMihonDownloadCount(option)}',
-              ),
-          ],
-          onSelected: onMinDownloadsChanged,
+        FushiOutlinedButton.icon(
+          key: ValueKey<String>('${keyPrefix}_bulk_install'),
+          size: FushiButtonSize.s,
+          onPressed: onBulkInstall,
+          icon: const FushiIcon(FushiIcons.libraryAdd),
+          label: Text(t.mihon_extension_bulk_install),
         ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: <Widget>[
-            FushiOutlinedButton.icon(
-              key: ValueKey<String>('${keyPrefix}_bulk_install'),
-              size: FushiButtonSize.s,
-              onPressed: onBulkInstall,
-              icon: const FushiIcon(FushiIcons.libraryAdd),
-              label: Text(t.mihon_extension_bulk_install),
-            ),
-            FushiFilledButton.tonalIcon(
-              key: ValueKey<String>('${keyPrefix}_update_all'),
-              size: FushiButtonSize.s,
-              onPressed: onUpdateAll,
-              icon: const FushiIcon(FushiIcons.sync),
-              label: Text(t.mihon_extension_update_all),
-            ),
-          ],
+        FushiFilledButton.tonalIcon(
+          key: ValueKey<String>('${keyPrefix}_update_all'),
+          size: FushiButtonSize.s,
+          onPressed: onUpdateAll,
+          icon: const FushiIcon(FushiIcons.sync),
+          label: Text(t.mihon_extension_update_all),
         ),
+        ...trailing,
       ],
     );
   }

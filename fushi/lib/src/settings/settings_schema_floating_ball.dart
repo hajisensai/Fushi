@@ -304,6 +304,8 @@ String _buttonLabel(FloatingBallScope scope, String id) {
       FloatingBallGlobalAction.screenOcr => t.floating_ball_action_screen_ocr,
       FloatingBallGlobalAction.cameraOcr => t.floating_ball_action_camera_ocr,
       FloatingBallGlobalAction.sync => t.sync_now,
+      FloatingBallGlobalAction.switchProfile =>
+        t.floating_ball_action_switch_profile,
       FloatingBallGlobalAction.feedback => t.feedback_title,
     };
   }
@@ -341,6 +343,7 @@ IconData _buttonIcon(FloatingBallScope scope, String id) {
       FloatingBallGlobalAction.screenOcr => FushiIcons.ocr,
       FloatingBallGlobalAction.cameraOcr => Icons.photo_camera_outlined,
       FloatingBallGlobalAction.sync => FushiIcons.sync,
+      FloatingBallGlobalAction.switchProfile => FushiIcons.profiles,
       FloatingBallGlobalAction.feedback => FushiIcons.forum,
     };
   }

@@ -425,6 +425,23 @@ enum ShortcutAction {
     ShortcutScope.audiobook,
     'audiobook_seek_clicked_sentence',
   ),
+  // 歌词模式按钮的快捷键（2026-10-25 用户：「可以自定义布局可以自定义快捷键」）：
+  // 与歌词页按钮同一执行体，阅读器正文态同样生效（都是有声书动作）。默认**不绑**——
+  // reader+audiobook co-active 组的空闲键不多，留给用户自绑，不抢任何现有默认键。
+  // 停 / 续计时与统计侧栏沿用 reader 组的 readerToggleStudyClock / readerOpenStatistics。
+  audiobookReplaySentence(ShortcutScope.audiobook, 'audiobook_replay_sentence'),
+  audiobookSeekBackward(ShortcutScope.audiobook, 'audiobook_seek_backward'),
+  audiobookSeekForward(ShortcutScope.audiobook, 'audiobook_seek_forward'),
+  audiobookSpeedUp(ShortcutScope.audiobook, 'audiobook_speed_up'),
+  audiobookSpeedDown(ShortcutScope.audiobook, 'audiobook_speed_down'),
+  audiobookToggleLyricsMode(
+    ShortcutScope.audiobook,
+    'audiobook_toggle_lyrics_mode',
+  ),
+  audiobookToggleLyricsMask(
+    ShortcutScope.audiobook,
+    'audiobook_toggle_lyrics_mask',
+  ),
 
   // Video player (TODO-134): migrated out of the hard-coded
   // buildVideoPlayerShortcuts map so they live in the remappable registry and
@@ -745,35 +762,35 @@ enum ShortcutAction {
   /// 拒收表外按钮——通道级 gating 只管到「有没有鼠标这条路」，管不到按钮号，于是
   /// 会出现同一个病：**设置里能录、能保存、能回显，按下去什么都不发生**。
   Set<int>? get allowedMouseButtons => switch (this) {
-        // app 外全局查词是**不拦截**的（RawInput 只能监听），绑中键(1)/右键(2)等于
-        // 「查词 + 前台程序的原有动作同时发生」：右键会同时弹出上下文菜单、中键会
-        // 同时触发自动滚动。侧键 3/4 没有这种全系统级默认语义，是唯一能安全共存的
-        // 一对，消费侧（`GlobalLookupController._globalMouseTriggerButtons`）也只认
-        // 它俩——真相源在这里，那边读它。
-        ShortcutAction.globalExternalLookup => const <int>{3, 4},
-        _ => null,
-      };
+    // app 外全局查词是**不拦截**的（RawInput 只能监听），绑中键(1)/右键(2)等于
+    // 「查词 + 前台程序的原有动作同时发生」：右键会同时弹出上下文菜单、中键会
+    // 同时触发自动滚动。侧键 3/4 没有这种全系统级默认语义，是唯一能安全共存的
+    // 一对，消费侧（`GlobalLookupController._globalMouseTriggerButtons`）也只认
+    // 它俩——真相源在这里，那边读它。
+    ShortcutAction.globalExternalLookup => const <int>{3, 4},
+    _ => null,
+  };
 
   Set<ShortcutChannel> get channels => switch (this) {
-        // 右键菜单只有鼠标一条路：`ContextMenuTrigger` 只读鼠标通道，键盘兜底
-        // （`global_navigation.dart` 的 `_handleGlobalKey`）只认 globalToggleFullscreen、
-        // 其余一律 ignored，手柄同理。它继承 global 的 keyboard+gamepad 就是两条死通道，
-        // 而 Windows 键盘上有 Menu 键，用户几乎必然会去试着绑一下。
-        ShortcutAction.globalContextMenu => const <ShortcutChannel>{
-            ShortcutChannel.mouse,
-          },
-        // 「置顶并打开查词页」只有键盘一条路：执行体挂在 hotkey_manager 的 OS 热键
-        // 上（GlobalLookupController._osHotKeyActions），而本 scope 继承来的另外两条
-        // 通道各自只有**一个**消费者、且都只认 globalExternalLookup ——鼠标是 native
-        // RawInput 侧键触发（runner 侧只登记那一个按钮号），手柄是进程级单槽
-        // `GlobalExternalLookupRoute`。开着它俩就是两条死通道：设置里能录、能保存、
-        // 能回显，按下去什么都不发生。
-        ShortcutAction.globalExternalOpenLookupPage ||
+    // 右键菜单只有鼠标一条路：`ContextMenuTrigger` 只读鼠标通道，键盘兜底
+    // （`global_navigation.dart` 的 `_handleGlobalKey`）只认 globalToggleFullscreen、
+    // 其余一律 ignored，手柄同理。它继承 global 的 keyboard+gamepad 就是两条死通道，
+    // 而 Windows 键盘上有 Menu 键，用户几乎必然会去试着绑一下。
+    ShortcutAction.globalContextMenu => const <ShortcutChannel>{
+      ShortcutChannel.mouse,
+    },
+    // 「置顶并打开查词页」只有键盘一条路：执行体挂在 hotkey_manager 的 OS 热键
+    // 上（GlobalLookupController._osHotKeyActions），而本 scope 继承来的另外两条
+    // 通道各自只有**一个**消费者、且都只认 globalExternalLookup ——鼠标是 native
+    // RawInput 侧键触发（runner 侧只登记那一个按钮号），手柄是进程级单槽
+    // `GlobalExternalLookupRoute`。开着它俩就是两条死通道：设置里能录、能保存、
+    // 能回显，按下去什么都不发生。
+    ShortcutAction.globalExternalOpenLookupPage ||
     ShortcutAction.globalExternalScreenOcr => const <ShortcutChannel>{
-            ShortcutChannel.keyboard,
-          },
-        _ => scope.channels,
-      };
+      ShortcutChannel.keyboard,
+    },
+    _ => scope.channels,
+  };
 
   static ShortcutAction? fromKey(String key) {
     for (final action in values) {

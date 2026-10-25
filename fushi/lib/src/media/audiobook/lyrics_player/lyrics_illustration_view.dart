@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
@@ -6,6 +8,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
     show illustrationZoomRoute;
+import 'package:fushi/src/reader/image_actions_sheet.dart'
+    show showImageActionsSheet;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -372,6 +376,7 @@ class _IllustrationCardState extends State<_IllustrationCard> {
                     key: const ValueKey<String>('lyrics_illustration_card'),
                     behavior: HitTestBehavior.opaque,
                     onTapUp: (TapUpDetails d) => _onTapUp(d, w),
+                    onLongPress: _longPressFor(context, c.items[widget.index]),
                     child: MouseRegion(
                       cursor: SystemMouseCursors.zoomIn,
                       child: Image(
@@ -701,6 +706,7 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
                   onDoubleTapDown: (TapDownDetails d) =>
                       focal = d.localPosition,
                   onDoubleTap: () => _toggleZoom(index, focal),
+                  onLongPress: _longPressFor(context, item),
                   child: InteractiveViewer(
                     transformationController: _zoomFor(index),
                     minScale: 1,
@@ -821,6 +827,14 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
       ),
     );
   }
+}
+
+/// 长按插图 = 全局图片动作面板（保存 / 分享，与阅读器正文同一个）；没有磁盘
+/// 文件（测试里的内存图源）时不挂长按。
+VoidCallback? _longPressFor(BuildContext context, LyricsIllustration item) {
+  final File? file = item.file;
+  if (file == null) return null;
+  return () => unawaited(showImageActionsSheet(context, file: file));
 }
 
 /// 插图工具按钮的悬浮面底色：悬浮面实色，不再半透明（Apple 2026-10-13 拍板：

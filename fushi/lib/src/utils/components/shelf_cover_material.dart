@@ -1,0 +1,918 @@
+import 'dart:math' as math;
+
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+
+/// 库页条目材质（2026-10-25 用户定版，设计稿
+/// `fushi/build/library_material_design/library_final_landscape.html`）。
+///
+/// 三个库共用同一套背景与布局，只换条目本身的材质：
+/// - [glossyBook]：书架 / 漫画——光面书皮：左缘细书脊阴影 + 很淡的斜向光泽 +
+///   0.5px 内描边；
+/// - [glossyPoster]：视频库——光面海报：6dp 圆角、没有书脊，光泽同书；
+/// - [gameCase]：游戏库——透明卡盒：10dp 圆角、4px 半透明塑料外圈 + 左上盒面
+///   反光，封面在 6dp 内窗里居中裁切。
+///
+/// 三者悬停都是同一道柔光慢扫（[ShelfCoverSheen]），底下一团接触阴影
+/// （[ShelfContactShadow]）；封面上**不压任何角标**（用户 2026-10-25：「全部
+/// 都不用角标设计」）——类型 / 卷数 / 集数 / 远端 / 下载 / 状态一律进封面下的
+/// 副行（[ShelfCardMeta]）。墨水屏不走材质（[shelfCoverMaterialOf] 返回 null），
+/// 保留描边封面框。
+enum ShelfCoverMaterial { glossyBook, glossyPoster, gameCase }
+
+/// 给子树里的封面框（[ShelfCoverFrame]）指定材质。库页在网格外包一层即可。
+class ShelfCoverMaterialScope extends InheritedWidget {
+  const ShelfCoverMaterialScope({
+    required this.material,
+    required super.child,
+    super.key,
+  });
+
+  final ShelfCoverMaterial material;
+
+  @override
+  bool updateShouldNotify(ShelfCoverMaterialScope oldWidget) =>
+      oldWidget.material != material;
+}
+
+/// 当前生效的条目材质；墨水屏或子树没有 [ShelfCoverMaterialScope] 时为 null。
+ShelfCoverMaterial? shelfCoverMaterialOf(BuildContext context) {
+  final ShelfCoverMaterialScope? scope = context
+      .dependOnInheritedWidgetOfExactType<ShelfCoverMaterialScope>();
+  if (scope == null || isEinkTheme(context)) return null;
+  return scope.material;
+}
+
+/// 材质的外轮廓圆角：书 2/3（书脊侧更方）、海报 6、卡盒 10。
+BorderRadius shelfMaterialRadius(ShelfCoverMaterial material) {
+  switch (material) {
+    case ShelfCoverMaterial.glossyBook:
+      return const BorderRadiusDirectional.horizontal(
+        start: Radius.circular(2),
+        end: Radius.circular(3),
+      ).resolve(TextDirection.ltr);
+    case ShelfCoverMaterial.glossyPoster:
+      return const BorderRadius.all(Radius.circular(6));
+    case ShelfCoverMaterial.gameCase:
+      return const BorderRadius.all(Radius.circular(10));
+  }
+}
+
+/// 卡盒外圈宽度（封面内窗四周的塑料边）。
+const double kShelfGameCaseRim = 4;
+
+/// 卡盒内窗圆角。
+const BorderRadius kShelfGameCaseWindowRadius = BorderRadius.all(
+  Radius.circular(6),
+);
+
+/// 游戏卡盒的竖长比例（宽 / 高 ≈ 1:1.6）。
+const double kShelfGameCaseAspectRatio = 1 / 1.6;
+
+/// 材质条目的投影：静止就有（书 / 海报 / 卡盒都是「立在桌面上」的实物），
+/// 悬停时抬得更高、更散。
+List<BoxShadow> shelfMaterialShadows({
+  required bool dark,
+  required bool lifted,
+}) {
+  final double near = dark ? 0.5 : 0.2;
+  final double far = dark ? 0.7 : 0.32;
+  return <BoxShadow>[
+    BoxShadow(
+      color: Colors.black.withValues(alpha: near),
+      blurRadius: 2,
+      offset: const Offset(0, 1),
+    ),
+    BoxShadow(
+      color: Colors.black.withValues(alpha: lifted ? far * 1.1 : far),
+      blurRadius: lifted ? 24 : 16,
+      spreadRadius: -6,
+      offset: Offset(0, lifted ? 14 : 8),
+    ),
+  ];
+}
+
+/// 柔光扫过一次的时长：取动效 token（墨水屏 / 系统减弱动态效果下归零）。
+Duration shelfSheenDuration(BuildContext context) =>
+    fushiMotionDuration(context, FushiMotion.long * 3);
+
+/// 材质表面：给一张封面图套上外轮廓、投影、光泽、柔光扫过。
+///
+/// [ShelfCoverFrame] 的单张封面与 [ShelfCoverPile] 叠在后面的那几张共用这一份，
+/// 所以扇形 / 叠层里每一本都是同样的实物质感。[overlay] 画在材质之上、扫光之下
+/// （选中罩 / 勾选圈 / 加载层），[dim] 是后层压暗（0–1）。
+class ShelfMaterialSurface extends StatelessWidget {
+  const ShelfMaterialSurface({
+    required this.material,
+    required this.child,
+    this.backgroundColor,
+    this.overlay = const <Widget>[],
+    this.dim = 0,
+    this.lifted = false,
+    super.key,
+  });
+
+  final ShelfCoverMaterial material;
+  final Widget child;
+  final Color? backgroundColor;
+  final List<Widget> overlay;
+  final double dim;
+  final bool lifted;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool dark = cs.brightness == Brightness.dark;
+    final BorderRadius radius = shelfMaterialRadius(material);
+    final Color fill = backgroundColor ?? cs.surfaceContainerHigh;
+    final Widget dimmer = dim <= 0
+        ? const SizedBox.shrink()
+        : ColoredBox(color: Colors.black.withValues(alpha: dim));
+
+    final Widget body;
+    if (material == ShelfCoverMaterial.gameCase) {
+      // 透明卡盒：塑料外圈（斜向渐变 + 1px 内描边）包着 6dp 内窗。
+      body = DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: dark
+                ? <Color>[
+                    Colors.white.withValues(alpha: 0.22),
+                    Colors.white.withValues(alpha: 0.08),
+                    Colors.white.withValues(alpha: 0.15),
+                  ]
+                : <Color>[
+                    Colors.white.withValues(alpha: 0.75),
+                    Colors.white.withValues(alpha: 0.40),
+                    Colors.white.withValues(alpha: 0.60),
+                  ],
+            stops: const <double>[0, 0.4, 1],
+          ),
+          border: Border.all(
+            color: dark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.10),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(kShelfGameCaseRim - 1),
+          child: ClipRRect(
+            borderRadius: kShelfGameCaseWindowRadius,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                ColoredBox(color: fill, child: child),
+                dimmer,
+                IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: kShelfGameCaseWindowRadius,
+                      border: Border.all(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        width: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
+                ...overlay,
+              ],
+            ),
+          ),
+        ),
+      );
+    } else {
+      body = ClipRRect(
+        borderRadius: radius,
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            ColoredBox(color: fill, child: child),
+            dimmer,
+            IgnorePointer(child: _GlossLayer(material: material)),
+            ...overlay,
+          ],
+        ),
+      );
+    }
+
+    return AnimatedContainer(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      curve: FushiMotion.standard,
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        boxShadow: shelfMaterialShadows(dark: dark, lifted: lifted),
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          body,
+          if (material == ShelfCoverMaterial.gameCase)
+            IgnorePointer(child: _GlossLayer(material: material)),
+          IgnorePointer(
+            child: ClipRRect(
+              borderRadius: radius,
+              child: ShelfCoverSheen(active: lifted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 静态光泽：书 = 左缘书脊阴影 + 一线高光 + 斜向淡光；海报 = 斜向淡光 + 顶边
+/// 1px 高光；卡盒 = 左上盒面反光。三者都有 0.5px 内描边。
+class _GlossLayer extends StatelessWidget {
+  const _GlossLayer({required this.material});
+
+  final ShelfCoverMaterial material;
+
+  @override
+  Widget build(BuildContext context) {
+    final BorderRadius radius = shelfMaterialRadius(material);
+    switch (material) {
+      case ShelfCoverMaterial.glossyBook:
+        return Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: AlignmentDirectional.centerStart,
+                  end: AlignmentDirectional.centerEnd,
+                  colors: <Color>[
+                    Colors.black.withValues(alpha: 0.12),
+                    Colors.white.withValues(alpha: 0.14),
+                    Colors.white.withValues(alpha: 0),
+                  ],
+                  stops: const <double>[0, 0.015, 0.04],
+                ),
+              ),
+            ),
+            _diagonalGloss(0.07),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: radius,
+                border: Border.all(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  width: 0.5,
+                ),
+              ),
+            ),
+          ],
+        );
+      case ShelfCoverMaterial.glossyPoster:
+        return Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            _diagonalGloss(0.08),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: radius,
+                border: Border(
+                  top: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
+                ),
+              ),
+            ),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: radius,
+                border: Border.all(
+                  color: Colors.black.withValues(alpha: 0.14),
+                  width: 0.5,
+                ),
+              ),
+            ),
+          ],
+        );
+      case ShelfCoverMaterial.gameCase:
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            gradient: LinearGradient(
+              begin: const Alignment(-1, -0.8),
+              end: const Alignment(1, 0.8),
+              colors: <Color>[
+                Colors.white.withValues(alpha: 0.25),
+                Colors.white.withValues(alpha: 0.25),
+                Colors.white.withValues(alpha: 0),
+              ],
+              stops: const <double>[0, 0.10, 0.22],
+            ),
+          ),
+        );
+    }
+  }
+
+  static Widget _diagonalGloss(double alpha) => DecoratedBox(
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: const Alignment(-1, -0.7),
+        end: const Alignment(1, 0.7),
+        colors: <Color>[
+          Colors.white.withValues(alpha: alpha),
+          Colors.white.withValues(alpha: 0),
+        ],
+        stops: const <double>[0, 0.45],
+      ),
+    ),
+  );
+}
+
+/// 悬停时从右往左慢慢扫过的一道柔光（最亮约 16%，深色 11%）。
+///
+/// [active] 由 false→true 时扫入、true→false 时扫回；时长取
+/// [shelfSheenDuration]，减弱动态效果下直接跳到终点（光带停在封面外，不可见）。
+class ShelfCoverSheen extends StatelessWidget {
+  const ShelfCoverSheen({required this.active, super.key});
+
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark =
+        Theme.of(context).colorScheme.brightness == Brightness.dark;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: active ? 1 : 0),
+      duration: shelfSheenDuration(context),
+      curve: FushiMotion.enter,
+      builder: (BuildContext context, double t, Widget? _) {
+        // t=0 / t=1 光带都在封面之外：不画，省一层 shader。
+        if (t <= 0.001 || t >= 0.999) return const SizedBox.expand();
+        return CustomPaint(
+          painter: _SheenPainter(progress: t, peak: dark ? 0.11 : 0.16),
+          child: const SizedBox.expand(),
+        );
+      },
+    );
+  }
+}
+
+class _SheenPainter extends CustomPainter {
+  const _SheenPainter({required this.progress, required this.peak});
+
+  final double progress;
+  final double peak;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // 光带中心从封面右外侧（1.3 宽）扫到左外侧（-0.3 宽），带宽约 0.5 宽，
+    // 向左倾斜（115°）。
+    final double cx = size.width * (1.3 - 1.6 * progress);
+    final double band = size.width * 0.5;
+    final double slant = size.height * 0.42;
+    final Rect rect = Rect.fromLTRB(
+      cx - band - slant,
+      0,
+      cx + band + slant,
+      size.height,
+    );
+    final Paint paint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        transform: _SkewGradient(slant / rect.width),
+        colors: <Color>[
+          Colors.white.withValues(alpha: 0),
+          Colors.white.withValues(alpha: peak * 0.3),
+          Colors.white.withValues(alpha: peak),
+          Colors.white.withValues(alpha: peak * 0.3),
+          Colors.white.withValues(alpha: 0),
+        ],
+        stops: const <double>[0.2, 0.35, 0.5, 0.65, 0.8],
+      ).createShader(rect);
+    canvas.drawRect(Offset.zero & size, paint);
+  }
+
+  @override
+  bool shouldRepaint(_SheenPainter oldDelegate) =>
+      oldDelegate.progress != progress || oldDelegate.peak != peak;
+}
+
+/// 把横向渐变按高度错切，让光带斜着走。
+class _SkewGradient extends GradientTransform {
+  const _SkewGradient(this.amount);
+
+  final double amount;
+
+  @override
+  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) {
+    final double k = amount * bounds.width / math.max(bounds.height, 1);
+    return Matrix4.identity()
+      ..setEntry(0, 1, -k)
+      ..setEntry(0, 3, k * bounds.center.dy);
+  }
+}
+
+/// 条目底下的一团柔和接触阴影（代替托盘）。悬停时收窄变淡，读作「抬起来了」。
+///
+/// 放在封面框的 Stack 里、`bottom` 为负值地探出封面底边；[widthFactor] 是相对
+/// 封面宽度的倍数（单本约 1.07、扇形 / 叠层约 1.4）。
+class ShelfContactShadow extends StatelessWidget {
+  const ShelfContactShadow({
+    required this.lifted,
+    this.widthFactor = 1.07,
+    super.key,
+  });
+
+  final bool lifted;
+  final double widthFactor;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool dark =
+        Theme.of(context).colorScheme.brightness == Brightness.dark;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
+    return IgnorePointer(
+      child: AnimatedOpacity(
+        opacity: lifted ? 0.7 : 1,
+        duration: duration,
+        curve: FushiMotion.standard,
+        child: AnimatedScale(
+          scale: lifted ? 0.86 : 1,
+          duration: duration,
+          curve: FushiMotion.standard,
+          child: FractionallySizedBox(
+            widthFactor: widthFactor,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  colors: <Color>[
+                    Colors.black.withValues(alpha: dark ? 0.7 : 0.26),
+                    Colors.black.withValues(alpha: 0),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 接触阴影的高度，以及它探出封面底边的距离。
+const double kShelfContactShadowHeight = 16;
+const double kShelfContactShadowDrop = 6;
+
+/// 多本排列（系列 / 多季 / 多作）：[covers] 首个是最前面那本，其后依次往后。
+///
+/// - 书 / 卡盒 = 扇形：最多 4 本，绕底部下方一点转开（-10° / -4° / 3° / 0°），
+///   悬停时角度放大 1.7 倍并整体抬 4px；
+/// - 海报 = 碟盒式叠层：最多 3 季往右上各错开 4px、越往后越暗，悬停时散开到
+///   7px / 6px。
+///
+/// [front] 是最前面那本的完整内容（含选中罩 / 勾选圈等 overlay），其余只画封面。
+class ShelfCoverPile extends StatelessWidget {
+  const ShelfCoverPile({
+    required this.material,
+    required this.front,
+    required this.behind,
+    this.frontOverlay = const <Widget>[],
+    this.backgroundColor,
+    super.key,
+  });
+
+  final ShelfCoverMaterial material;
+  final Widget front;
+
+  /// 后面几本的封面（近 → 远）。为空时退化成单张。
+  final List<Widget> behind;
+  final List<Widget> frontOverlay;
+  final Color? backgroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool lifted = FushiHoverLift.liftedOf(context);
+    final Duration duration = fushiMotionDuration(context, FushiMotion.long);
+    final bool stack = material == ShelfCoverMaterial.glossyPoster;
+    final List<Widget> back = behind
+        .take(stack ? 2 : 3)
+        .toList(growable: false);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final double w = c.maxWidth;
+        final double h = c.maxHeight;
+        // 单本是满格；多本整体缩一点，给转开 / 错开留位置。
+        final double step = stack ? 4 : 0;
+        final double shrink = back.isEmpty ? 1 : 0.92;
+        final double itemW = stack ? w - step * back.length : w * shrink;
+        final double itemH = stack ? h - step * back.length : h * shrink;
+        Widget surface(Widget child, {double dim = 0, List<Widget>? overlay}) =>
+            SizedBox(
+              width: itemW,
+              height: itemH,
+              child: ShelfMaterialSurface(
+                material: material,
+                backgroundColor: backgroundColor,
+                dim: dim,
+                lifted: lifted && overlay != null,
+                overlay: overlay ?? const <Widget>[],
+                child: child,
+              ),
+            );
+
+        final List<Widget> layers = <Widget>[];
+        if (stack) {
+          for (int d = back.length; d >= 1; d--) {
+            final Offset rest = Offset(d * step, -d * step);
+            final Offset spread = Offset(d * 7.0, -d * 6.0);
+            layers.add(
+              Positioned(
+                left: 0,
+                bottom: 0,
+                child: AnimatedSlide(
+                  offset: Offset(
+                    (lifted ? spread.dx : rest.dx) / itemW,
+                    (lifted ? spread.dy : rest.dy) / itemH,
+                  ),
+                  duration: duration,
+                  curve: FushiMotion.standard,
+                  child: surface(back[d - 1], dim: d * 0.1),
+                ),
+              ),
+            );
+          }
+          layers.add(
+            Positioned(
+              left: 0,
+              bottom: 0,
+              child: surface(front, overlay: frontOverlay),
+            ),
+          );
+        } else {
+          const List<double> angles = <double>[3, -4, -10];
+          for (int d = back.length; d >= 1; d--) {
+            final double deg = angles[d - 1] * (lifted ? 1.7 : 1);
+            layers.add(
+              Positioned(
+                left: (w - itemW) / 2,
+                bottom: 0,
+                child: AnimatedSlide(
+                  offset: Offset(0, lifted ? -4 / itemH : 0),
+                  duration: duration,
+                  curve: FushiMotion.standard,
+                  child: AnimatedRotation(
+                    turns: deg / 360,
+                    alignment: const Alignment(0, 1.4),
+                    duration: duration,
+                    curve: FushiMotion.standard,
+                    child: surface(back[d - 1]),
+                  ),
+                ),
+              ),
+            );
+          }
+          layers.add(
+            Positioned(
+              left: (w - itemW) / 2,
+              bottom: 0,
+              child: AnimatedSlide(
+                offset: Offset(0, lifted ? -4 / itemH : 0),
+                duration: duration,
+                curve: FushiMotion.standard,
+                child: surface(front, overlay: frontOverlay),
+              ),
+            ),
+          );
+        }
+        return Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: -kShelfContactShadowDrop,
+              height: kShelfContactShadowHeight,
+              child: ShelfContactShadow(
+                lifted: lifted,
+                widthFactor: back.isEmpty ? 1.07 : 1.35,
+              ),
+            ),
+            ...layers,
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 卡片标题的默认行数（书架 / 视频 / 游戏 / 媒体服务器统一两行）。
+const int kShelfCardMetaTitleLines = 2;
+
+/// 副行的语气：普通 / 警示（部分完成）/ 错误（失败 / 缺文件）。
+enum ShelfMetaTone { normal, warning, error }
+
+/// 封面下的文字块（材质库页统一形态）：标题两行（[titleMaxLines]）、副行一行（可带前导图标与
+/// 语气色）、可选进度条。原先压在封面上的角标信息全部进副行：
+/// 「🎧 有声书 · 46%」「☁ 未下载」「7 卷 · 读到第 24 卷」「共 3 集 · 继续看第 2 集」。
+class ShelfCardMeta extends StatelessWidget {
+  const ShelfCardMeta({
+    required this.title,
+    this.subtitle,
+    this.leadingIcon,
+    this.tone = ShelfMetaTone.normal,
+    this.progress,
+    this.completed = false,
+    this.trailing,
+    this.titleMaxLines = kShelfCardMetaTitleLines,
+    super.key,
+  });
+
+  final String title;
+
+  /// 标题行数上限（用户 2026-10-25：卡片标题显示两行）。网格行高按同一行数算
+  /// （[heightFor] 的 `titleLines`），两边必须一致。
+  final int titleMaxLines;
+  final String? subtitle;
+  final IconData? leadingIcon;
+  final ShelfMetaTone tone;
+
+  /// 0–1；null = 不画进度条（仍占位，保证同一网格行高一致）。
+  final double? progress;
+
+  /// 已完成：进度条换完成色（tertiary / Apple 系统绿）。
+  final bool completed;
+
+  /// 副行尾部的附加小部件（如下载百分比圆环）。
+  final Widget? trailing;
+
+  /// 文字块总高（随文字缩放）：标题 [titleLines] 行 + 副行 + 进度条 + 间距。
+  static double heightFor(
+    BuildContext context, {
+    int titleLines = kShelfCardMetaTitleLines,
+  }) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
+    final double titleLine = textLineHeight(
+      context,
+      _titleStyle(theme, tokens, apple: false),
+    );
+    final double subLine = textLineHeight(context, _subStyle(theme));
+    return tokens.spacing.gap * 1.25 +
+        titleLine * titleLines +
+        subLine +
+        _kProgressGap +
+        _kProgressHeight +
+        kTextBlockSlack;
+  }
+
+  static const double _kProgressHeight = 4;
+  static const double _kProgressGap = 5;
+
+  static TextStyle _titleStyle(
+    ThemeData theme,
+    FushiDesignTokens tokens, {
+    required bool apple,
+  }) => tokens.type.metadata.copyWith(
+    fontWeight: apple ? FontWeight.w600 : FontWeight.w500,
+  );
+
+  static TextStyle _subStyle(ThemeData theme) =>
+      (theme.textTheme.labelSmall ?? const TextStyle()).copyWith(
+        fontWeight: FontWeight.w400,
+        letterSpacing: 0.1,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool eink = isEinkTheme(context);
+    final bool apple = isGlassDesign(context) && !eink;
+    final FushiAppleColors appleColors = appleColorsOf(context);
+    final Color onSurface = apple ? appleColors.label : cs.onSurface;
+    final Color muted = apple
+        ? appleColors.secondaryLabel
+        : cs.onSurfaceVariant;
+    final Color toneColor = switch (tone) {
+      ShelfMetaTone.normal => muted,
+      ShelfMetaTone.warning =>
+        eink ? cs.onSurface : (apple ? appleColors.warning : cs.tertiary),
+      ShelfMetaTone.error =>
+        eink ? cs.onSurface : (apple ? appleColors.destructive : cs.error),
+    };
+    final TextStyle titleStyle = _titleStyle(
+      theme,
+      tokens,
+      apple: apple,
+    ).copyWith(color: onSurface);
+    final TextStyle subStyle = _subStyle(theme).copyWith(color: toneColor);
+    final double? value = progress;
+    final Color fill = eink
+        ? cs.onSurface
+        : completed
+        ? (apple ? appleColors.success : cs.tertiary)
+        : (apple ? appleColors.accent : cs.primary);
+    final Color track = eink
+        ? cs.surface
+        : apple
+        ? appleColors.tertiaryFill
+        : cs.surfaceContainerHighest;
+
+    return Padding(
+      padding: EdgeInsetsDirectional.fromSTEB(
+        2,
+        tokens.spacing.gap * 1.25,
+        2,
+        0,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          ShelfTitleLine(
+            title: title,
+            style: titleStyle,
+            maxLines: titleMaxLines,
+          ),
+          Row(
+            children: <Widget>[
+              if (leadingIcon != null) ...<Widget>[
+                FushiIcon(
+                  leadingIcon!,
+                  size: (subStyle.fontSize ?? 11) + 1,
+                  color: tone == ShelfMetaTone.normal ? onSurface : toneColor,
+                ),
+                const SizedBox(width: 4),
+              ],
+              Expanded(
+                child: Text(
+                  subtitle ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: subStyle,
+                ),
+              ),
+              if (trailing != null) trailing!,
+            ],
+          ),
+          const SizedBox(height: _kProgressGap),
+          SizedBox(
+            height: _kProgressHeight,
+            child: value == null
+                ? null
+                : ClipRRect(
+                    borderRadius: BorderRadius.circular(_kProgressHeight / 2),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: track,
+                        border: eink ? Border.all(color: cs.onSurface) : null,
+                        borderRadius: BorderRadius.circular(
+                          _kProgressHeight / 2,
+                        ),
+                      ),
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: FractionallySizedBox(
+                          widthFactor: value.clamp(0.0, 1.0),
+                          heightFactor: 1,
+                          child: ColoredBox(color: fill),
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 卡片标题：最多 [maxLines] 行，放不下时桌面悬停显示全名（与 [ShelfCardFooter]
+/// 同一套溢出提示）。
+class ShelfTitleLine extends StatelessWidget {
+  const ShelfTitleLine({
+    required this.title,
+    required this.style,
+    this.maxLines = kShelfCardMetaTitleLines,
+    super.key,
+  });
+
+  final String title;
+  final TextStyle style;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    return ShelfTitleOverflowTooltip(
+      title: title,
+      style: style,
+      maxLines: maxLines,
+      child: Text(
+        title,
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      ),
+    );
+  }
+}
+
+/// 应用背景：角落三块低饱和 M3E 形状（9 瓣饼干 / 四叶 / 6 瓣饼干），颜色取动态
+/// 主题的 container 色阶，深浅色都跟着走。2026-10-25 先定在库页，同日用户拍板
+/// 「整个应用都加」，由路由层 `FushiPageBackdrop` 给每一页垫上。只在 Material
+/// 设计系统下画（Apple / 墨水屏不画）。形状是纯装饰：不参与命中、不进无障碍树。
+///
+/// 子树结构恒定（不画时形状层换成空盒，[child] 位置不变）：切换设计系统 / 墨水
+/// 屏时页面 State 不重建。
+class LibraryShapeBackdrop extends StatelessWidget {
+  const LibraryShapeBackdrop({required this.child, super.key});
+
+  final Widget child;
+
+  /// 当前主题下是否画形状（Material 设计系统且不是墨水屏）。
+  static bool enabledOf(BuildContext context) =>
+      !isEinkTheme(context) && !isGlassDesign(context);
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: enabledOf(context)
+              ? const _LibraryShapeLayer()
+              : const SizedBox.shrink(),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+class _LibraryShapeLayer extends StatelessWidget {
+  const _LibraryShapeLayer();
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool dark = cs.brightness == Brightness.dark;
+    Widget blob(RoundedPolygon shape, Color color, double alpha) =>
+        DecoratedBox(
+          decoration: ShapeDecoration(
+            color: color.withValues(alpha: alpha),
+            shape: MaterialShapeBorder(shape: shape),
+          ),
+        );
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints c) {
+            final double unit = math.min(c.maxWidth, c.maxHeight);
+            final double big = unit * 0.52;
+            final double mid = unit * 0.38;
+            final double small = unit * 0.25;
+            return Stack(
+              clipBehavior: Clip.hardEdge,
+              children: <Widget>[
+                Positioned(
+                  right: -big * 0.15,
+                  top: -big * 0.28,
+                  width: big,
+                  height: big,
+                  child: blob(
+                    MaterialShapes.cookie9Sided,
+                    cs.primaryContainer,
+                    dark ? 0.35 : 0.8,
+                  ),
+                ),
+                Positioned(
+                  left: unit * 0.05,
+                  bottom: -mid * 0.2,
+                  width: mid,
+                  height: mid,
+                  child: blob(
+                    MaterialShapes.clover4Leaf,
+                    cs.tertiaryContainer,
+                    dark ? 0.32 : 0.65,
+                  ),
+                ),
+                Positioned(
+                  right: c.maxWidth * 0.24,
+                  bottom: -small * 0.2,
+                  width: small,
+                  height: small,
+                  child: blob(
+                    MaterialShapes.cookie6Sided,
+                    cs.secondaryContainer,
+                    dark ? 0.32 : 0.6,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}

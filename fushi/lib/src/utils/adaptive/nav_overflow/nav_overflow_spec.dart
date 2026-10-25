@@ -4,15 +4,13 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_dial_bar.dart';
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_drum_bar.dart';
-import 'package:fushi/src/utils/adaptive/nav_overflow/nav_fan_bar.dart';
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_mode_strip_bar.dart';
-import 'package:fushi/src/utils/adaptive/nav_overflow/nav_shelf_bar.dart';
 
 /// MD3 悬浮胶囊**内部**交给「放不下的入口」交互原型画的那一块（2026-10-23）。
 ///
 /// 胶囊底色、圆角、投影、随滚动收起、右侧 FAB 都仍由 `_MaterialFloatingBar`
 /// 画；原型只负责胶囊里的这一排（[width] × [height]），需要冒出胶囊的部分
-/// （转盘 / 书架 / 扇面）用 [OverlayPortal] 画到上层。
+/// （转盘）用 [OverlayPortal] 画到上层。
 class NavOverflowSpec {
   const NavOverflowSpec({
     required this.items,
@@ -63,9 +61,7 @@ Widget buildNavOverflowVariant(
 ) {
   return switch (style) {
     AdaptiveNavBarStyle.dial => NavDialBar(spec: spec),
-    AdaptiveNavBarStyle.shelf => NavShelfBar(spec: spec),
     AdaptiveNavBarStyle.drum => NavDrumBar(spec: spec),
-    AdaptiveNavBarStyle.fan => NavFanBar(spec: spec),
     AdaptiveNavBarStyle.modeStrip => NavModeStripBar(spec: spec),
     AdaptiveNavBarStyle.flat ||
     AdaptiveNavBarStyle.pager => navOverflowPlainRow(spec),

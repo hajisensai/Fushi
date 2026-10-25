@@ -10,6 +10,8 @@
 		<string>Fushi uses the camera to capture images to add to your Anki cards, to scan pairing QR codes from your other devices, and to let websites you open in the built-in browser use it when you allow them.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>Fushi accesses your photo library to pick images to add to your Anki cards.</string>
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>Fushi saves images you choose to keep (for example illustrations from your books) to your photo library.</string>
 		<key>NSLocalNetworkUsageDescription</key>
 		<string>Fushi connects to your other Fushi devices on your local network to sync your library and to stream games from your computer.</string>
 		<key>NSBonjourServices</key>

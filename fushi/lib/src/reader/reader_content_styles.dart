@@ -1746,7 +1746,18 @@ body {
 .fushi-vn-content, .fushi-vn-content * {
   hanging-punctuation: none !important;
 }
-/* The reveal (M1) hides not-yet-typed text by collapsing the trailing span. */
+/* The reveal (M1) hides not-yet-typed text. BUG-3778: engines with CSS
+   Highlight paint the unrevealed Range transparent so the DOM (and Blink's
+   ruby line boxes) never change mid-reveal; old WebViews fall back to the
+   trailing visibility:hidden span. */
+::highlight(fushi-vn-unrevealed) {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke-color: transparent;
+  text-decoration-color: transparent;
+  text-shadow: none;
+  background-color: transparent;
+}
 [data-fushi-visual-novel-unrevealed] {
   visibility: hidden !important;
 }

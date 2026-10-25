@@ -72,3 +72,5 @@ test_screenshots/
 
 # Codex test outputs
 .codex-test/
+# dist_test --itest: generated entry point (tool/dist_test/itest_entry.sh)
+/integration_test/.dist/

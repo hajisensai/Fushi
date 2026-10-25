@@ -23,7 +23,7 @@
 | 级别 | 判据 | 谁干 | 分支上的验证 |
 |---|---|---|---|
 | **S 琐碎** | 文档、注释、单行改动、纯重命名 | 主代理直接干，**不派子代理**（派发开销 > 收益） | `git diff --cached --check`；涉及 Dart 再加定向 analyze |
-| **A 小修** | 单文件或单模块，根因明确 | 主代理修核心；测试可拆一个子代理并行写 | `flutter analyze` 全量 + 定向 `flutter test <目标> --no-pub` |
+| **A 小修** | 单文件或单模块，根因明确 | 主代理修核心；测试可拆一个子代理并行写 | 定向 `flutter test <目标...> --no-pub`（一次调用）+ push 前一次 `flutter analyze` 全量 |
 | **B 功能 / 复杂 bug** | 跨模块、多文件、时序/状态/平台边界问题 | 主代理定根因和数据结构；机械面（样板、i18n、多文件同构、测试）拆子代理并行 | 定向 + 相邻功能测试；全量交 PR CI |
 | **C 大型 / 长周期** | 多阶段、需分批审查 | 按 claim 拆多 agent；integration owner 统一收口 | 定向 + 目录枚举型守卫整批；全量交 PR CI |
 
@@ -36,7 +36,7 @@ t=0   EnterWorktree → setup_worktree -SkipBootstrap（秒级，只搬密钥）
 t=0   ↳ 后台: powershell -File tool/bootstrap.ps1
 t=0   ↳ 并行: 主代理读代码定根因；≥2 个独立疑点 → 子代理并行定位
 t=3   根因确定 → 主代理写核心修改；同时子代理并行写测试/机械面
-t=8   bootstrap 已就绪 → dart format 改动文件 + flutter analyze + 定向 test --no-pub
+t=8   bootstrap 已就绪 → dart format 改动文件 + 定向 test --no-pub（几个文件一次调用）；全量 analyze 留到 push 前
 t=8   ↳ 测试跑的同时: 子代理建 bug 文档 (dart run tool/bug.dart new)，
       主代理写 commit message / PR 描述
 t=12  测试绿 → commit → push → draft PR（CI 跑全量兜底）
@@ -54,7 +54,7 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
     而**点名单个生产文件的守卫既不在那 51 条里、也不按功能域取名**，正好落在两道门的缝里。
     实测漏网：PR#764 收口弹窗复制入口，`test/dictionary/popup_touch_copy_actionmode_guard_test.dart`
     只被 `test/lookup` 的定向测试擦肩而过，红直接进了 develop（TODO-2745）。
-- **`flutter analyze` 全量在 push 前必跑**（含 test 目录）——它本身只要秒级~1 分钟，而 CI 把 warning 当致命，省这一步只会在 CI 上浪费一轮。
+- **`flutter analyze` 全量在 push 前必跑一次，且只在最后跑一次**（含 test 目录）——CI 把 warning 当致命，省这一步只会在 CI 上浪费一轮；但它每次要 2–3 分钟（实测 125–171 s，不含排队）、一个 3.4–4 GB 的 analysis server，开发中改一处就全量跑一遍、批量合并时逐分支各跑一遍都是白烧（2026-10-25 用户拍板：开发中用 `dart analyze <改动文件>`，全量留到 push 前 / 集成结果上一次）。租约上 analyze 是轻量任务：不占测试槽位、不排队，只记 4.5 GB 内存预算（[heavy-lease.md](heavy-lease.md)）。
 - **分支 draft PR**：全量 analyze 绿即可 push（2026-10-02 起推送门只有 analyze；定向测试在开发中按需跑，不是推送前置条件）；守卫与全量 test 由 CI 兜底（真单测门是 **Build Release APK 的 Run unit tests**，不是 Build and Test）。声明「修好了」的真机复测门槛**不变**（[integration-testing.md](integration-testing.md)）。
 - **合入 `develop`**：integration owner 本地全量 analyze + 定向 test + 「目录枚举型守卫」整批；**不再本地跑全量 test**（用户 2026-09-06 拍板：`dart run tool/flutter_test_failures.dart` 全量 / 裸 `flutter test` 全量一律不跑，全量只由 PR CI 兜底）。别 `| tail` 吞退出码；重叠跑会互抢 `sqlite3.dll`，见下节。
 

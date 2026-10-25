@@ -10,6 +10,7 @@ import 'package:cupertino_ui/cupertino_ui.dart'
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
@@ -2478,17 +2479,31 @@ ThemeData buildFushiThemeData({
         // 其余平台必须逐个列出：PageTransitionsTheme 的 builders 是全量替换，漏一个
         // 平台它就回落到 ZoomPageTransitionsBuilder（iOS/macOS 会因此丢掉 Cupertino
         // 的边缘滑动返回）。
+        //
+        // 每个 builder 外面套一层 [FushiBackdropPageTransitionsBuilder]：每页垫
+        // 页面底色 + 角落 M3E 形状背景（2026-10-25 用户拍板「整个应用都加」）。
         : const PageTransitionsTheme(
             builders: <TargetPlatform, PageTransitionsBuilder>{
-              TargetPlatform.android:
-                  FushiPredictiveBackPageTransitionsBuilder(),
-              TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-              TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+              TargetPlatform.android: FushiBackdropPageTransitionsBuilder(
+                FushiPredictiveBackPageTransitionsBuilder(),
+              ),
+              TargetPlatform.iOS: FushiBackdropPageTransitionsBuilder(
+                CupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.macOS: FushiBackdropPageTransitionsBuilder(
+                CupertinoPageTransitionsBuilder(),
+              ),
               // 桌面：原地淡入、不位移（2026-10 动效重做）。Zoom 的整窗缩放位移
               // 随窗口尺寸线性增长，大屏上很重，见该 builder 类注释。
-              TargetPlatform.windows: FushiSharedAxisPageTransitionsBuilder(),
-              TargetPlatform.linux: FushiSharedAxisPageTransitionsBuilder(),
-              TargetPlatform.fuchsia: FushiSharedAxisPageTransitionsBuilder(),
+              TargetPlatform.windows: FushiBackdropPageTransitionsBuilder(
+                FushiSharedAxisPageTransitionsBuilder(),
+              ),
+              TargetPlatform.linux: FushiBackdropPageTransitionsBuilder(
+                FushiSharedAxisPageTransitionsBuilder(),
+              ),
+              TargetPlatform.fuchsia: FushiBackdropPageTransitionsBuilder(
+                FushiSharedAxisPageTransitionsBuilder(),
+              ),
             },
           ),
     // Apple 设计系统同样不要水波：iOS / macOS 的按压反馈是整块变暗 / 变淡，

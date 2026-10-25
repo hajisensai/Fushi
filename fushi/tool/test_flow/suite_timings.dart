@@ -96,7 +96,7 @@ Map<String, int> suiteDurationsFromEvents(
         if (suite is Map<String, Object?> &&
             suite['id'] is int &&
             suite['path'] is String) {
-          final String? path = _matchKnownSuite(
+          final String? path = matchKnownSuite(
             suite['path']! as String,
             knownSuites,
           );
@@ -125,16 +125,15 @@ Map<String, int> suiteDurationsFromEvents(
   return durations;
 }
 
-String? _matchKnownSuite(String rawPath, Set<String> knownSuites) {
+/// Maps an event's suite path (relative, absolute, or `/`-prefixed) onto
+/// [knownSuites] (paths relative to `fushi/`) by suffix, cut at a `/` (so
+/// `integration_test/a_test.dart` is not read as `test/a_test.dart`); null
+/// when none match.
+String? matchKnownSuite(String rawPath, Set<String> knownSuites) {
   final String path = rawPath.replaceAll(r'\', '/');
   if (knownSuites.contains(path)) return path;
-  for (
-    int i = path.indexOf('test/');
-    i >= 0;
-    i = path.indexOf('test/', i + 1)
-  ) {
-    if (i > 0 && path[i - 1] != '/') continue;
-    final String candidate = path.substring(i);
+  for (int i = path.indexOf('/'); i >= 0; i = path.indexOf('/', i + 1)) {
+    final String candidate = path.substring(i + 1);
     if (knownSuites.contains(candidate)) return candidate;
   }
   return null;

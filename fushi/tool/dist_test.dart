@@ -1,0 +1,811 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
+import 'test_flow/dist_console.dart';
+import 'test_flow/dist_plan.dart';
+import 'test_flow/dist_results.dart';
+import 'test_flow/dist_snapshot.dart';
+import 'test_flow/dist_workers.dart';
+import 'test_flow/flutter_test_failure_filter.dart';
+import 'test_flow/suite_timings.dart';
+
+/// Runs the unit tests spread over several machines.
+///
+///   cd fushi
+///   dart tool/dist_test.dart                     # all of test/
+///   dart tool/dist_test.dart test/reader         # a subtree / files
+///   dart tool/dist_test.dart --workers=self-mac  # a subset of workers
+///   dart tool/dist_test.dart --status            # who is reachable
+///   dart tool/dist_test.dart --dry-run           # show what would run where
+///   dart tool/dist_test.dart --itest             # the desktop integration
+///                                                # tests of dist_itests.json
+///
+/// Any other `--flag` is passed to every `flutter test` (e.g.
+/// `--exclude-tags golden`). Workers: tool/dist_test/workers.local.json.
+/// Design: docs/specs/2026-10-24-distributed-unit-tests.md.
+///
+/// Last stdout line: `DIST TEST VERDICT: PASSED|FAILED - ...`; exit code 0
+/// only when green.
+Future<void> main(List<String> args) async {
+  final _Options options = _Options.parse(args);
+  if (options.itest && options.flutterArgs.isNotEmpty) {
+    stderr.writeln(
+      '--itest takes no flutter test options '
+      '(${options.flutterArgs.join(' ')}): each file is one app launch',
+    );
+    exit(64);
+  }
+  if (!hasSharedConsole()) {
+    stderr.writeln(
+      'dist_test: this process has no console, so every flutter / git / ssh '
+      'it starts would open a window of its own and take the focus. Run it '
+      'from a terminal or an agent shell.',
+    );
+    exit(64);
+  }
+  if (!File('pubspec.yaml').existsSync() || !Directory('test').existsSync()) {
+    stderr.writeln('run from fushi/ (the Flutter app directory)');
+    exit(64);
+  }
+  final String repoRoot = Directory.current.parent.absolute.path.replaceAll(
+    r'\',
+    '/',
+  );
+
+  final File configFile = File(options.configPath);
+  if (!configFile.existsSync()) {
+    stderr.writeln(
+      'no worker config at ${options.configPath}; copy '
+      'tool/dist_test/workers.example.json there and edit it',
+    );
+    exit(64);
+  }
+  List<DistWorkerConfig> configs;
+  try {
+    configs = readDistWorkers(configFile.readAsStringSync());
+  } on DistConfigError catch (e) {
+    stderr.writeln('${options.configPath}: $e');
+    exit(64);
+  }
+  if (options.workers != null) {
+    final Set<String> unknown = options.workers!.difference(
+      configs.map((DistWorkerConfig c) => c.name).toSet(),
+    );
+    if (unknown.isNotEmpty) {
+      stderr.writeln('unknown worker(s): ${unknown.join(', ')}');
+      exit(64);
+    }
+    configs = <DistWorkerConfig>[
+      for (final DistWorkerConfig c in configs)
+        if (options.workers!.contains(c.name)) c,
+    ];
+  }
+  final List<DistWorker> workers = <DistWorker>[
+    for (final DistWorkerConfig c in configs)
+      ...createDistWorkers(c, repoRoot: repoRoot),
+  ];
+  if (workers.isEmpty) {
+    stderr.writeln('no workers selected');
+    exit(64);
+  }
+
+  if (options.status) {
+    await Future.wait(<Future<void>>[
+      for (final DistWorker w in workers)
+        w.status().then((String s) => stdout.writeln('${w.name}: $s')),
+    ]);
+    return;
+  }
+
+  // ---- plan ----
+  final Map<String, int> weights;
+  final List<DistUnit> units;
+  if (options.itest) {
+    final Map<String, Set<DistPlatform>> manifest = _selectItests(
+      options.paths,
+    );
+    weights = <String, int>{
+      for (final String p in manifest.keys) p: kDistItestWeightMs,
+    };
+    units = distItestUnits(manifest);
+  } else {
+    final Map<String, int> bytes = _discoverSuites(options.paths);
+    if (bytes.isEmpty) {
+      stderr.writeln('no *_test.dart under ${options.paths.join(', ')}');
+      exit(64);
+    }
+    final List<String> unsafe = <String>[
+      for (final String p in bytes.keys)
+        if (!isSafeDistTestPath(p)) p,
+    ];
+    if (unsafe.isNotEmpty) {
+      stderr.writeln(
+        'test paths outside [A-Za-z0-9_./-] cannot be shipped: '
+        '${unsafe.join(', ')}',
+      );
+      exit(64);
+    }
+    weights = suiteShardWeights(
+      bytes,
+      readSuiteTimings(File(kSuiteTimingsPath)),
+    );
+    final Map<String, Set<DistPlatform>> pins = readDistAffinity(
+      File(kDistAffinityPath).readAsStringSync(),
+    );
+    final Map<String, SuiteRequirement> requirements =
+        <String, SuiteRequirement>{
+          for (final String p in bytes.keys)
+            p: applyDistPin(
+              scanSuiteRequirement(File(p).readAsStringSync()),
+              pins[p],
+            ),
+        };
+    units = distUnits(weights: weights, requirements: requirements);
+  }
+  final List<DistUnit> unplaceable = <DistUnit>[
+    for (final DistUnit u in units)
+      if (!workers.any((DistWorker w) => w.eligible(u))) u,
+  ];
+  final DistSuiteQueue queue = DistSuiteQueue(
+    units.where((DistUnit u) => !unplaceable.contains(u)),
+  );
+  _printPlan(units, unplaceable);
+  if (options.dryRun) return;
+
+  // ---- snapshot ----
+  final Directory scratch = Directory.systemTemp.createTempSync('dist_test_');
+  final DistSnapshot snapshot;
+  try {
+    snapshot = await createDistSnapshot(gitIn(repoRoot), scratchDir: scratch);
+  } on DistSnapshotError catch (e) {
+    stderr.writeln(e.message);
+    stdout.writeln('DIST TEST VERDICT: FAILED - no snapshot');
+    exit(1);
+  } finally {
+    scratch.deleteSync(recursive: true);
+  }
+  stdout.writeln(
+    'snapshot ${snapshot.commit.substring(0, 12)}'
+    '${snapshot.isHead ? ' (= HEAD)' : ' (HEAD + working tree)'}; '
+    'held at HEAD: ${snapshot.protectedPaths.join(', ')}',
+  );
+
+  final String runId = _runId();
+  final Directory out = Directory(
+    options.outputDir ?? '../.codex-test/dist/$runId',
+  )..createSync(recursive: true);
+  stdout.writeln('logs: ${out.absolute.path}');
+
+  // ---- run ----
+  final Stopwatch wall = Stopwatch()..start();
+  final _Scheduler scheduler = _Scheduler(
+    queue: queue,
+    workers: workers,
+    flutterArgs: options.flutterArgs,
+    out: out,
+    runId: runId,
+    snapshot: snapshot,
+  );
+  final StreamSubscription<ProcessSignal> sigint = ProcessSignal.sigint
+      .watch()
+      .listen((_) async {
+        stderr.writeln('\ninterrupted: stopping the workers');
+        await Future.wait(<Future<void>>[
+          for (final DistWorker w in workers) w.cancel(),
+        ]);
+        await Future.wait(<Future<void>>[
+          for (final DistWorker w in workers) w.finish(runId),
+        ]);
+        exit(130);
+      });
+  await Future.wait(<Future<void>>[
+    for (final DistWorker w in workers) scheduler.drive(w),
+  ]);
+  // Every red suite once more on another machine, for the report only.
+  await scheduler.rerunFailures();
+  await Future.wait(<Future<void>>[
+    for (final DistWorker w in workers) w.finish(runId),
+  ]);
+  await sigint.cancel();
+  wall.stop();
+
+  final DistRunVerdict verdict = DistRunVerdict(
+    results: scheduler.results,
+    unplaced: <String>[
+      for (final DistUnit u in <DistUnit>[...unplaceable, ...queue.remaining])
+        '${u.path} (${u.label})',
+    ],
+  );
+  _writeTimings(out, scheduler.results, weights.keys.toSet());
+  final String summary =
+      renderDistSummary(
+        verdict: verdict,
+        estimatedMsByBatch: scheduler.weightByBatch,
+        wall: wall.elapsed,
+        snapshot: snapshot.commit,
+      ) +
+      renderDistFollowUp(
+        reruns: scheduler.reruns,
+        notRerun: scheduler.notRerun,
+        skips: <DistPlatformSkip>[
+          for (final DistBatchResult r in scheduler.results)
+            ...platformSkipsOf(r),
+        ],
+      );
+  File('${out.path}/summary.md').writeAsStringSync(summary);
+  stdout.writeln(summary);
+  for (final DistBatchResult r in verdict.failedBatches) {
+    if (r.infraError != null) continue;
+    stderr.writeln(
+      renderFlutterTestFailureSummary(
+        r.summary,
+        logPath: '${out.path}/batch-${r.batchId}.${r.worker}.jsonl',
+        stderrLogPath: '${out.path}/batch-${r.batchId}.${r.worker}.stderr.log',
+      ),
+    );
+  }
+  final String? failure = verdict.failure;
+  stdout.writeln(
+    failure == null
+        ? 'DIST TEST VERDICT: PASSED - ${verdict.testsCompleted} tests ran on '
+              '${scheduler.results.map((DistBatchResult r) => r.worker).toSet().length} '
+              'worker(s) in ${wall.elapsed.inSeconds}s'
+        : 'DIST TEST VERDICT: FAILED - $failure '
+              '(tests completed: ${verdict.testsCompleted})',
+  );
+  await stdout.flush();
+  exit(failure == null ? 0 : 1);
+}
+
+/// Pull-based and adaptive: every worker prepares, then repeatedly cuts its
+/// next batch off the shared queue, sized from its own measured speed
+/// ([distChunkBudgetMs]), until nothing it can run is left and nothing in
+/// flight could come back.
+class _Scheduler {
+  _Scheduler({
+    required this.queue,
+    required List<DistWorker> workers,
+    required this.flutterArgs,
+    required this.out,
+    required this.runId,
+    required this.snapshot,
+  }) : _speeds = <DistWorker, DistSpeed>{
+         for (final DistWorker w in workers) w: DistSpeed(),
+       };
+
+  final DistSuiteQueue queue;
+  final List<String> flutterArgs;
+  final Directory out;
+  final String runId;
+  final DistSnapshot snapshot;
+  final List<DistBatchResult> results = <DistBatchResult>[];
+  final Map<int, int> weightByBatch = <int, int>{};
+
+  /// Classification re-runs of red suites ([rerunFailures]).
+  final List<DistRerun> reruns = <DistRerun>[];
+  final List<DistNotRerun> notRerun = <DistNotRerun>[];
+
+  final Map<DistWorker, DistSpeed> _speeds;
+
+  /// Workers that are ready and not dropped: the ones sharing the queue.
+  final Set<DistWorker> _live = <DistWorker>{};
+
+  /// Workers that prepared and were never dropped: still usable after the
+  /// queue ran dry (for [rerunFailures]).
+  final List<DistWorker> _usable = <DistWorker>[];
+
+  /// The units of every batch that ran to the end, by batch id.
+  final Map<int, List<DistUnit>> _unitsByBatch = <int, List<DistUnit>>{};
+
+  /// A worker that is busy (owner's memory limit) is asked again after this
+  /// long, at most [kBusyRetries] times in a row.
+  static const Duration kBusyWait = Duration(seconds: 30);
+  static const int kBusyRetries = 20;
+
+  int _inFlight = 0;
+  Completer<void> _changed = Completer<void>();
+
+  void _notify() {
+    final Completer<void> done = _changed;
+    _changed = Completer<void>();
+    done.complete();
+  }
+
+  double get _liveSpeedSum => _live.fold<double>(
+    0,
+    (double s, DistWorker w) => s + 1 / _speeds[w]!.factor,
+  );
+
+  Future<void> drive(DistWorker worker) async {
+    final IOSink prepLog = File(
+      '${out.path}/prepare.${worker.name}.log',
+    ).openWrite();
+    final Stopwatch prep = Stopwatch()..start();
+    try {
+      stdout.writeln('[${worker.name}] preparing');
+      await worker.prepare(snapshot, runId, prepLog);
+      stdout.writeln('[${worker.name}] ready after ${prep.elapsed.inSeconds}s');
+    } on Object catch (e) {
+      stdout.writeln(
+        '[${worker.name}] DROPPED: prepare failed: $e '
+        '(see prepare.${worker.name}.log)',
+      );
+      await prepLog.close();
+      await worker.finish(runId);
+      _notify();
+      return;
+    }
+    await prepLog.close();
+    _live.add(worker);
+    final DistSpeed speed = _speeds[worker]!;
+
+    int infraStreak = 0;
+    int busyStreak = 0;
+    bool dropped = false;
+    while (true) {
+      final DistBatch? batch = queue.take(
+        eligible: worker.eligible,
+        budgetMs: distChunkBudgetMs(
+          remainingEligibleMs: queue.remainingMs(worker.eligible),
+          speed: speed,
+          liveSpeedSum: _liveSpeedSum,
+        ),
+      );
+      if (batch == null) {
+        if (_inFlight == 0) break;
+        await _changed.future;
+        continue;
+      }
+      _inFlight++;
+      weightByBatch[batch.id] = batch.weightMs;
+      final String base = '${out.path}/batch-${batch.id}.${worker.name}';
+      final IOSink errLog = File('$base.stderr.log').openWrite();
+      final Stopwatch sw = Stopwatch()..start();
+      DistBatchRun run;
+      try {
+        run = await worker.run(
+          batch,
+          flutterArgs: flutterArgs,
+          stderrLog: errLog,
+          // Three times what this machine's own speed predicts, plus slack.
+          timeout:
+              Duration(
+                milliseconds: (batch.weightMs * speed.factor * 3).round(),
+              ) +
+              const Duration(minutes: 10),
+        );
+      } on Object catch (e) {
+        run = DistBatchRun(
+          exitCode: -1,
+          lines: const <String>[],
+          infraError: 'could not start: $e',
+        );
+      }
+      sw.stop();
+      await errLog.close();
+      _inFlight--;
+      final String? busy = run.busy;
+      if (busy != null) {
+        // Turned down before anything ran (worker_shim.sh): the batch goes
+        // back whole, and it is neither a failure nor an infrastructure one.
+        queue.giveBack(batch);
+        weightByBatch.remove(batch.id);
+        _notify();
+        if (run.paused || ++busyStreak > kBusyRetries) {
+          stdout.writeln('[${worker.name}] DROPPED: $busy');
+          dropped = true;
+          break;
+        }
+        stdout.writeln(
+          '[${worker.name}] $busy; asking again in ${kBusyWait.inSeconds}s',
+        );
+        await Future<void>.delayed(kBusyWait);
+        continue;
+      }
+      busyStreak = 0;
+      File(
+        '$base.jsonl',
+      ).writeAsStringSync(run.lines.isEmpty ? '' : '${run.lines.join('\n')}\n');
+
+      if (run.infraError != null && queue.retryAfterInfra(batch)) {
+        // Back into the queue for whichever worker asks next. Test failures
+        // are never retried (that would hide flaky reds); this is only for
+        // runs that did not get a fair chance.
+        weightByBatch.remove(batch.id);
+        stdout.writeln(
+          '[${worker.name}] batch ${batch.id} requeued: '
+          '${run.infraError}',
+        );
+        infraStreak++;
+        _notify();
+        if (infraStreak >= 2) {
+          stdout.writeln(
+            '[${worker.name}] DROPPED after two infrastructure '
+            'failures in a row',
+          );
+          dropped = true;
+          break;
+        }
+        continue;
+      }
+      // A second infrastructure failure of suites that already had their
+      // retry is recorded red and blamed on them (a test that hangs every
+      // time), not on this worker: it does not count towards dropping it.
+      if (run.infraError == null) {
+        infraStreak = 0;
+        speed.record(wallMs: sw.elapsedMilliseconds, weightMs: batch.weightMs);
+      }
+      final DistBatchResult result = DistBatchResult(
+        batchId: batch.id,
+        worker: worker.name,
+        files: batch.files,
+        exitCode: run.exitCode,
+        lines: run.lines,
+        elapsed: sw.elapsed,
+        infraError: run.infraError,
+      );
+      results.add(result);
+      _unitsByBatch[batch.id] = batch.units;
+      final String? failure = result.failure;
+      stdout.writeln(
+        '[${worker.name}] batch ${batch.id} (${batch.files.length} suites: '
+        '${batch.label}): ${result.summary.testsCompleted} tests, '
+        '${failure == null ? 'ok' : 'FAILED'} in ${sw.elapsed.inSeconds}s; '
+        'speed ${speed.factor.toStringAsFixed(2)} wall/weight, '
+        '${queue.remaining.length} suites left',
+      );
+      _notify();
+      if (infraStreak >= 2) {
+        stdout.writeln(
+          '[${worker.name}] DROPPED after two infrastructure '
+          'failures in a row',
+        );
+        dropped = true;
+        break;
+      }
+    }
+    _live.remove(worker);
+    if (dropped) {
+      await worker.finish(runId);
+    } else {
+      // Kept prepared (checkout lock / heavy lease) for [rerunFailures];
+      // main() finishes every worker afterwards.
+      _usable.add(worker);
+    }
+    _notify();
+  }
+
+  /// Re-runs every red suite once, alone, on a worker of another machine
+  /// that may run it (§4 of the spec): red there too is a real red, green
+  /// there leaves a machine-local suspect. For the report only; the verdict
+  /// comes from the first run. Each worker runs its re-runs one at a time.
+  Future<void> rerunFailures() async {
+    final List<({DistUnit unit, String redOn, String redMachine})> red =
+        <({DistUnit unit, String redOn, String redMachine})>[];
+    final Map<String, String> machineOf = <String, String>{
+      for (final DistWorker w in _speeds.keys) w.name: w.machine,
+    };
+    for (final DistBatchResult r in results) {
+      final List<DistUnit> units = _unitsByBatch[r.batchId] ?? <DistUnit>[];
+      for (final String path in failedSuitesOf(r)) {
+        for (final DistUnit u in units) {
+          if (u.path == path) {
+            red.add((
+              unit: u,
+              redOn: r.worker,
+              redMachine: machineOf[r.worker]!,
+            ));
+          }
+        }
+      }
+    }
+    if (red.isEmpty) return;
+    if (red.length > kDistMaxReruns) {
+      for (final ({DistUnit unit, String redOn, String redMachine}) r in red) {
+        notRerun.add((
+          path: r.unit.path,
+          redOn: r.redOn,
+          why: '${red.length} red suites (re-runs only up to $kDistMaxReruns)',
+        ));
+      }
+      return;
+    }
+    // Faster machines first.
+    final List<DistWorker> order = List<DistWorker>.of(_usable)
+      ..sort(
+        (DistWorker a, DistWorker b) =>
+            _speeds[a]!.factor.compareTo(_speeds[b]!.factor),
+      );
+    final Map<DistWorker, List<({DistUnit unit, String redOn})>> plan =
+        <DistWorker, List<({DistUnit unit, String redOn})>>{};
+    for (final ({DistUnit unit, String redOn, String redMachine}) r in red) {
+      final DistWorker? target = pickRerunTarget<DistWorker>(
+        r.unit,
+        redMachine: r.redMachine,
+        order: order,
+        machineOf: (DistWorker w) => w.machine,
+        eligible: (DistWorker w, DistUnit u) => w.eligible(u),
+      );
+      if (target == null) {
+        notRerun.add((
+          path: r.unit.path,
+          redOn: r.redOn,
+          why: 'no other machine may run it',
+        ));
+        continue;
+      }
+      plan.putIfAbsent(target, () => <({DistUnit unit, String redOn})>[]).add((
+        unit: r.unit,
+        redOn: r.redOn,
+      ));
+    }
+    stdout.writeln(
+      're-running ${red.length - notRerun.length} red suite(s) on another '
+      'machine for classification',
+    );
+    int nextId = 1000000;
+    await Future.wait(<Future<void>>[
+      for (final MapEntry<DistWorker, List<({DistUnit unit, String redOn})>> e
+          in plan.entries)
+        () async {
+          for (final ({DistUnit unit, String redOn}) r in e.value) {
+            final DistBatch batch = DistBatch(
+              id: nextId++,
+              units: <DistUnit>[r.unit],
+            );
+            final String base = '${out.path}/rerun-${batch.id}.${e.key.name}';
+            final IOSink errLog = File('$base.stderr.log').openWrite();
+            final Stopwatch sw = Stopwatch()..start();
+            DistBatchRun run;
+            try {
+              run = await e.key.run(
+                batch,
+                flutterArgs: flutterArgs,
+                stderrLog: errLog,
+                timeout:
+                    Duration(
+                      milliseconds:
+                          (batch.weightMs * _speeds[e.key]!.factor * 3).round(),
+                    ) +
+                    const Duration(minutes: 10),
+              );
+            } on Object catch (err) {
+              run = DistBatchRun(
+                exitCode: -1,
+                lines: const <String>[],
+                infraError: 'could not start: $err',
+              );
+            }
+            sw.stop();
+            await errLog.close();
+            File('$base.jsonl').writeAsStringSync(
+              run.lines.isEmpty ? '' : '${run.lines.join('\n')}\n',
+            );
+            final DistRerunOutcome outcome = classifyRerun(
+              DistBatchResult(
+                batchId: batch.id,
+                worker: e.key.name,
+                files: batch.files,
+                exitCode: run.exitCode,
+                lines: run.lines,
+                elapsed: sw.elapsed,
+                infraError: run.infraError ?? run.busy,
+              ),
+            );
+            reruns.add(
+              DistRerun(
+                path: r.unit.path,
+                redOn: r.redOn,
+                rerunOn: e.key.name,
+                outcome: outcome,
+              ),
+            );
+            stdout.writeln(
+              '[${e.key.name}] re-run of ${r.unit.path} (red on ${r.redOn}): '
+              '${outcome.name}',
+            );
+          }
+        }(),
+    ]);
+  }
+}
+
+class _Options {
+  _Options({
+    required this.paths,
+    required this.flutterArgs,
+    required this.configPath,
+    required this.workers,
+    required this.outputDir,
+    required this.status,
+    required this.dryRun,
+    required this.itest,
+  });
+
+  final List<String> paths;
+  final List<String> flutterArgs;
+  final String configPath;
+  final Set<String>? workers;
+  final String? outputDir;
+  final bool status;
+  final bool dryRun;
+
+  /// Integration tests (tool/test_flow/dist_itests.json) instead of test/.
+  final bool itest;
+
+  static _Options parse(List<String> args) {
+    final List<String> paths = <String>[];
+    final List<String> flutterArgs = <String>[];
+    String configPath = 'tool/dist_test/workers.local.json';
+    Set<String>? workers;
+    String? outputDir;
+    bool status = false;
+    bool dryRun = false;
+    bool itest = false;
+    for (int i = 0; i < args.length; i++) {
+      final String arg = args[i];
+      if (arg == '--status') {
+        status = true;
+      } else if (arg == '--dry-run') {
+        dryRun = true;
+      } else if (arg == '--itest') {
+        itest = true;
+      } else if (arg.startsWith('--config=')) {
+        configPath = arg.substring('--config='.length);
+      } else if (arg.startsWith('--workers=')) {
+        workers = arg.substring('--workers='.length).split(',').toSet();
+      } else if (arg.startsWith('--output-dir=')) {
+        outputDir = arg.substring('--output-dir='.length);
+      } else if (arg.startsWith('--')) {
+        flutterArgs.add(arg);
+        // `--exclude-tags golden` style: take the value along.
+        if (!arg.contains('=') &&
+            i + 1 < args.length &&
+            !args[i + 1].startsWith('-') &&
+            !args[i + 1].startsWith('test') &&
+            !args[i + 1].startsWith('integration_test')) {
+          flutterArgs.add(args[++i]);
+        }
+      } else {
+        paths.add(arg.replaceAll(r'\', '/'));
+      }
+    }
+    return _Options(
+      paths: paths.isEmpty && !itest ? <String>['test'] : paths,
+      flutterArgs: flutterArgs,
+      configPath: configPath,
+      workers: workers,
+      outputDir: outputDir,
+      status: status,
+      dryRun: dryRun,
+      itest: itest,
+    );
+  }
+}
+
+/// The manifest's integration tests, all of them or the [paths] given (each
+/// must be listed: the manifest says on which platforms it runs).
+Map<String, Set<DistPlatform>> _selectItests(List<String> paths) {
+  final Map<String, Set<DistPlatform>> manifest;
+  try {
+    manifest = readDistItests(File(kDistItestManifestPath).readAsStringSync());
+  } on FormatException catch (e) {
+    stderr.writeln('$kDistItestManifestPath: ${e.message}');
+    exit(64);
+  }
+  if (paths.isEmpty) return manifest;
+  final List<String> unlisted = <String>[
+    for (final String p in paths)
+      if (!manifest.containsKey(p)) p,
+  ];
+  if (unlisted.isNotEmpty) {
+    stderr.writeln(
+      'not in $kDistItestManifestPath (add it there with its platforms): '
+      '${unlisted.join(', ')}',
+    );
+    exit(64);
+  }
+  return <String, Set<DistPlatform>>{
+    for (final String p in paths) p: manifest[p]!,
+  };
+}
+
+/// `*_test.dart` under [paths] (files or directories inside `test/`) → bytes.
+Map<String, int> _discoverSuites(List<String> paths) {
+  final Map<String, int> bytes = <String, int>{};
+  for (final String raw in paths) {
+    final String path = raw.endsWith('/')
+        ? raw.substring(0, raw.length - 1)
+        : raw;
+    if (!path.startsWith('test')) {
+      stderr.writeln('only paths under test/ can be distributed: $raw');
+      exit(64);
+    }
+    if (File(path).existsSync()) {
+      bytes[path] = File(path).lengthSync();
+      continue;
+    }
+    if (!Directory(path).existsSync()) {
+      stderr.writeln('no such test path: $raw');
+      exit(64);
+    }
+    for (final FileSystemEntity e in Directory(
+      path,
+    ).listSync(recursive: true, followLinks: false)) {
+      if (e is File && e.path.endsWith('_test.dart')) {
+        bytes[e.path.replaceAll(r'\', '/')] = e.lengthSync();
+      }
+    }
+  }
+  return bytes;
+}
+
+void _printPlan(List<DistUnit> units, List<DistUnit> unplaceable) {
+  final Map<String, (int, int)> byLabel = <String, (int, int)>{};
+  for (final DistUnit u in units) {
+    final (int, int) prev = byLabel[u.label] ?? (0, 0);
+    byLabel[u.label] = (prev.$1 + 1, prev.$2 + u.weightMs);
+  }
+  final int totalMs = units.fold<int>(0, (int s, DistUnit u) => s + u.weightMs);
+  stdout.writeln(
+    '${units.length} suite placements, ~${(totalMs / 60000).toStringAsFixed(1)} '
+    'model minutes; batches are cut on the fly from each worker\'s speed:',
+  );
+  for (final String label in byLabel.keys.toList()..sort()) {
+    final (int, int) v = byLabel[label]!;
+    stdout.writeln(
+      '  $label: ${v.$1} suites, ~${(v.$2 / 60000).toStringAsFixed(1)} min',
+    );
+  }
+  if (unplaceable.isNotEmpty) {
+    stdout.writeln(
+      '  NO ELIGIBLE WORKER: ${unplaceable.length} suites (will count as '
+      'not run)',
+    );
+  }
+}
+
+void _writeTimings(
+  Directory out,
+  List<DistBatchResult> results,
+  Set<String> known,
+) {
+  final Map<String, Map<String, int>> byWorker = <String, Map<String, int>>{};
+  for (final DistBatchResult r in results) {
+    final Map<String, int> durations = suiteDurationsFromEvents(
+      r.lines.where((String l) => l.startsWith('{')).map(_decodeEvent).nonNulls,
+      known,
+    );
+    byWorker.putIfAbsent(r.worker, () => <String, int>{}).addAll(<String, int>{
+      for (final MapEntry<String, int> e in durations.entries)
+        e.key: roundSuiteTiming(e.value),
+    });
+  }
+  for (final MapEntry<String, Map<String, int>> e in byWorker.entries) {
+    writeSuiteTimings(File('${out.path}/timings.${e.key}.json'), e.value);
+  }
+}
+
+Map<String, Object?>? _decodeEvent(String line) {
+  try {
+    final Object? v = jsonDecode(line);
+    return v is Map<String, Object?> ? v : null;
+  } on FormatException {
+    return null;
+  }
+}
+
+String _runId() {
+  final DateTime n = DateTime.now();
+  String two(int v) => v.toString().padLeft(2, '0');
+  // The random tail keeps two coordinators started in the same second apart
+  // (the run id names the remote lock owner and the snapshot ref).
+  final String tail = Random()
+      .nextInt(0x10000)
+      .toRadixString(16)
+      .padLeft(4, '0');
+  return '${n.year}${two(n.month)}${two(n.day)}-'
+      '${two(n.hour)}${two(n.minute)}${two(n.second)}-$tail';
+}

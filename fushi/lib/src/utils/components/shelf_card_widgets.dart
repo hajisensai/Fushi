@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -110,18 +111,22 @@ class ShelfSelectionCheck extends StatelessWidget {
     // （同一个 Container + 图标），只换颜色。
     final bool apple = isGlassDesign(context) && !eink;
     final FushiAppleColors palette = appleColorsOf(context);
-    final Color selectionColor = apple ? palette.accent : tokens.surfaces.primary;
+    final Color selectionColor = apple
+        ? palette.accent
+        : tokens.surfaces.primary;
     final Color idleFill = eink
         ? tokens.surfaces.page
         : apple
-            ? Colors.transparent
-            : tokens.surfaces.page.withValues(alpha: 0.7);
+        ? Colors.transparent
+        : tokens.surfaces.page.withValues(alpha: 0.7);
     final Color ringColor = apple
         ? (selected ? selectionColor : Colors.white)
         : selected
-            ? selectionColor
-            : tokens.surfaces.outline;
-    final Color checkColor = apple ? palette.onAccent : theme.colorScheme.onPrimary;
+        ? selectionColor
+        : tokens.surfaces.outline;
+    final Color checkColor = apple
+        ? palette.onAccent
+        : theme.colorScheme.onPrimary;
     return IgnorePointer(
       child: Container(
         decoration: BoxDecoration(
@@ -192,6 +197,8 @@ class ShelfSelectedOverlay extends StatelessWidget {
 /// 祖先有 [ShelfCoverRadiusScope] 时以它为准（游戏卡局部改成 20，书 / 视频库
 /// 共享的封面组件不受影响）。
 BorderRadius shelfCoverRadius(BuildContext context) {
+  final ShelfCoverMaterial? material = shelfCoverMaterialOf(context);
+  if (material != null) return shelfMaterialRadius(material);
   final BorderRadius? scoped = ShelfCoverRadiusScope.maybeOf(context);
   if (scoped != null) return scoped;
   final bool apple = isGlassDesign(context) && !isEinkTheme(context);
@@ -262,6 +269,9 @@ FushiCard shelfCoverCard({
     borderColor: Colors.transparent,
     borderRadius: borderRadius,
     clipBehavior: Clip.none,
+    // 封面卡不画状态层：卡面透明，悬停 / 按下的灰底会在封面后面露出一块
+    // 底板（2026-10-25 用户截图指出）；反馈由 FushiHoverLift 与材质扫光负责。
+    stateLayer: false,
     onTap: onTap,
     onLongPress: onLongPress,
     onSecondaryTap: onSecondaryTap,
@@ -317,6 +327,7 @@ class ShelfCoverFrame extends StatelessWidget {
     required this.child,
     this.backgroundColor,
     this.stackedBehind,
+    this.stackedCovers,
     super.key,
   });
 
@@ -325,6 +336,10 @@ class ShelfCoverFrame extends StatelessWidget {
 
   /// 叠层用的封面图（不含角标），null = 单张封面。
   final Widget? stackedBehind;
+
+  /// 材质库页（[ShelfCoverMaterialScope]）的多本排列：最前那本之后的成员封面
+  /// （近 → 远）。null 时退回用 [stackedBehind] 重复填后几层。
+  final List<Widget>? stackedCovers;
 
   @override
   Widget build(BuildContext context) {
@@ -336,6 +351,10 @@ class ShelfCoverFrame extends StatelessWidget {
     final bool lifted = !eink && FushiHoverLift.liftedOf(context);
     final BorderRadius radius = shelfCoverRadius(context);
     final ShelfCoverSelection? selection = ShelfCoverSelection.maybeOf(context);
+    final ShelfCoverMaterial? material = shelfCoverMaterialOf(context);
+    if (material != null) {
+      return _buildMaterial(context, material, tokens, cs, selection);
+    }
 
     final List<BoxShadow> shadows;
     if (eink) {
@@ -362,19 +381,20 @@ class ShelfCoverFrame extends StatelessWidget {
     final BorderSide stroke = eink
         ? BorderSide(color: tokens.surfaces.outline)
         : apple
-            ? BorderSide(
-                color: dark
-                    ? Colors.white.withValues(alpha: 0.14)
-                    : Colors.black.withValues(alpha: 0.10),
-                width: 0.5,
-              )
-            : BorderSide.none;
-    final Color fill = backgroundColor ??
+        ? BorderSide(
+            color: dark
+                ? Colors.white.withValues(alpha: 0.14)
+                : Colors.black.withValues(alpha: 0.10),
+            width: 0.5,
+          )
+        : BorderSide.none;
+    final Color fill =
+        backgroundColor ??
         (eink
             ? tokens.surfaces.page
             : apple
-                ? appleColorsOf(context).tertiaryFill
-                : cs.surfaceContainerHigh);
+            ? appleColorsOf(context).tertiaryFill
+            : cs.surfaceContainerHigh);
     final double checkInset = tokens.spacing.gap / 2;
     final Widget cover = AnimatedContainer(
       duration: fushiMotionDuration(context, FushiMotion.short),
@@ -413,8 +433,8 @@ class ShelfCoverFrame extends StatelessWidget {
       final Color layerFill = eink
           ? tokens.surfaces.page
           : depth == 2
-              ? cs.surfaceContainerHigh
-              : cs.surfaceContainerHighest;
+          ? cs.surfaceContainerHigh
+          : cs.surfaceContainerHighest;
       return Positioned(
         top: kShelfCoverStackLift - step * depth,
         left: 8.0 * depth,
@@ -451,6 +471,39 @@ class ShelfCoverFrame extends StatelessWidget {
         layer(1),
         Positioned.fill(top: kShelfCoverStackLift, child: cover),
       ],
+    );
+  }
+
+  /// 材质库页：单张 = 材质表面 + 接触阴影；多本 = [ShelfCoverPile]。
+  Widget _buildMaterial(
+    BuildContext context,
+    ShelfCoverMaterial material,
+    FushiDesignTokens tokens,
+    ColorScheme cs,
+    ShelfCoverSelection? selection,
+  ) {
+    final double checkInset = tokens.spacing.gap / 2;
+    final List<Widget> overlay = <Widget>[
+      if (selection != null && selection.selected)
+        const Positioned.fill(child: ShelfSelectedOverlay()),
+      if (selection != null && selection.selectionMode)
+        PositionedDirectional(
+          top: checkInset,
+          start: checkInset,
+          child: ShelfSelectionCheck(selected: selection.selected),
+        ),
+    ];
+    final List<Widget> behind =
+        stackedCovers ??
+        (stackedBehind == null
+            ? const <Widget>[]
+            : <Widget>[stackedBehind!, stackedBehind!]);
+    return ShelfCoverPile(
+      material: material,
+      front: child,
+      behind: behind,
+      frontOverlay: overlay,
+      backgroundColor: backgroundColor,
     );
   }
 }
@@ -502,8 +555,9 @@ class CoverProgressStrip extends StatelessWidget {
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context) && !eink;
     final Color appleAccent = appleColorsOf(context).accent;
-    final Color appleFill =
-        appleAccent.computeLuminance() < 0.05 ? Colors.white : appleAccent;
+    final Color appleFill = appleAccent.computeLuminance() < 0.05
+        ? Colors.white
+        : appleAccent;
     final double height = apple ? math.max(minHeight, 4) : minHeight;
     return IgnorePointer(
       child: Padding(
@@ -525,14 +579,15 @@ class CoverProgressStrip extends StatelessWidget {
             backgroundColor: eink
                 ? tokens.surfaces.page
                 : apple
-                    ? Colors.white.withValues(alpha: 0.38)
-                    : Colors.black.withValues(alpha: trackOpacity),
-            color: color ??
+                ? Colors.white.withValues(alpha: 0.38)
+                : Colors.black.withValues(alpha: trackOpacity),
+            color:
+                color ??
                 (eink
                     ? tokens.surfaces.onSurface
                     : apple
-                        ? appleFill
-                        : Theme.of(context).colorScheme.primary),
+                    ? appleFill
+                    : Theme.of(context).colorScheme.primary),
           ),
         ),
       ),
@@ -574,9 +629,12 @@ class ShelfCoverPlaceholder extends StatelessWidget {
     final Color? fill = glass
         ? apple.tertiaryFill
         : backgroundColor ??
-            (eink ? null : Theme.of(context).colorScheme.surfaceContainerHigh);
-    final Color foreground =
-        glass ? apple.tertiaryLabel : tokens.surfaces.onVariant;
+              (eink
+                  ? null
+                  : Theme.of(context).colorScheme.surfaceContainerHigh);
+    final Color foreground = glass
+        ? apple.tertiaryLabel
+        : tokens.surfaces.onVariant;
     final String? label = title;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -685,8 +743,9 @@ class ShelfTitleOverflowTooltip extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints constraints) {
         if (!constraints.hasBoundedWidth) return child;
         // 与 [Text] 相同的样式合成路径（inherit 时并入 DefaultTextStyle）。
-        final TextStyle effective =
-            DefaultTextStyle.of(context).style.merge(style);
+        final TextStyle effective = DefaultTextStyle.of(
+          context,
+        ).style.merge(style);
         final TextPainter painter = TextPainter(
           text: TextSpan(text: title, style: effective),
           maxLines: maxLines,
