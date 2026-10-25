@@ -270,7 +270,7 @@ void main() {
         reason: '切书应顶掉旧控制器换新');
   });
 
-  group('BUG-3770 A 媒体通知开关关着也要保活（最简通知）', () {
+  group('BUG-3777 A 媒体通知开关关着也要保活（最简通知）', () {
     FushiAudioHandler buildHandler() => FushiAudioHandler(
           onPlayIntent: (_) {},
           onSeek: (_) {},

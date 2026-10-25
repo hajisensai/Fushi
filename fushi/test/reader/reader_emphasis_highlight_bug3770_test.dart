@@ -12,7 +12,7 @@ import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// BUG-3770：Blink 上任何生效的 CSS Custom Highlight 都会裁掉它覆盖的着重号（傍点）。VN 的有声书
+/// BUG-3776：Blink 上任何生效的 CSS Custom Highlight 都会裁掉它覆盖的着重号（傍点）。VN 的有声书
 /// 当前句自 BUG-3741 起在 Blink 上也走 Range + CSS.highlights，播到带傍点的句子时傍点只剩一角。
 /// 同一机制还把墨迹伸出文字片段盒的字形切平（圆体 / Meiryo 的 ruby 基字）。真 Chrome 跑生产 CSS +
 /// 引擎壳 + 选区脚本，三种 view mode、横竖排、默认 / 自定义字色各一遍：高亮前后截同一块着重号区域，

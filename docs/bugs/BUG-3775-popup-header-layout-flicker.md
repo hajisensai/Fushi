@@ -1,4 +1,4 @@
-## BUG-3770 · 查词弹窗词头区在两种布局之间每帧来回切（一直闪）
+## BUG-3775 · 查词弹窗词头区在两种布局之间每帧来回切（一直闪）
 - **报告**：2026-10-25（用户：Windows 阅读器查词偶发「一直闪」，录屏 `2026-10-24 23-34-19.mp4`，怀疑「px 刚好差 1、到了中间值」；要求连同类问题一起修）
 - **真实性**：✅ 真 bug。录屏逐帧：弹窗外框不动，词头区在两态间不规则来回切——A 态词头整行、按钮组换到下一行、频率 / 词形标签铺满整行；B 态按钮组挤在词头旁、词头被压到折行（「る」掉到第二行）、频率 chip 一枚一行。根因在 `fushi/assets/popup/popup.js` 的 `updateEntryHeaderMetaLayout`（10-23 引入，ResizeObserver 驱动、按测量切 `.meta-stacked`）：
   1. 判据读 `headword.scrollWidth`，注释断言「挂不挂类都不改变它」——只对 `.expression-scroll` 成立。`createEntryHeader` 原先只给「整词一段注音」的词头套 `.expression-scroll`（`needsScroll`），多段注音（手心を加える）与无注音词头是可逐字折行的裸 span。

@@ -47,7 +47,7 @@ Future<void> playActivationSettled(
   ]);
 }
 
-/// BUG-3770 D：App 生命周期下阅读器是否对用户可见（喂给
+/// BUG-3777 D：App 生命周期下阅读器是否对用户可见（喂给
 /// [AudiobookPlayerController.setReaderVisible]）。`inactive` 仍算可见：桌面失焦、
 /// iOS 下拉控制中心时画面还在；`hidden` / `paused` / `detached` 才是看不见、且即将
 /// 或已经被系统挂起的状态。
@@ -63,7 +63,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<bool>? _playingSub;
 
-  /// BUG-3770 F：只为观测播放器平台错误（解码失败 / 输出设备丢失 / 后台被系统掐断）。
+  /// BUG-3777 F：只为观测播放器平台错误（解码失败 / 输出设备丢失 / 后台被系统掐断）。
   /// 只记日志，不自动重试——重试会掩盖根因。
   StreamSubscription<PlaybackEvent>? _playbackErrorSub;
   StreamSubscription<void>? _noisySub;
@@ -191,7 +191,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     return best;
   }
 
-  /// BUG-3770 R1：播放器此刻所在句（整书下标），每个播放 tick 按真实位置更新，
+  /// BUG-3777 R1：播放器此刻所在句（整书下标），每个播放 tick 按真实位置更新，
   /// **不受**跨章守卫 [_chapterTransition] 冻结（显式 seek / 首次激活载入窗口这两类
   /// 音频瞬态照样挡在外面）。-1 = 自上次跨章开始 / 换 cue 以来还没有可信的 tick。
   ///
@@ -216,7 +216,7 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 歌词层当前行（整书下标，-1 = 不可解析）。平时与正文跟随句同源（[allBookCueIdx]，
   /// 解析不到再按位置）；跨章过渡期间正文跟随句冻结，改用按 tick 推进的播放所在句
-  /// （BUG-3770 R1）。
+  /// （BUG-3777 R1）。
   int get lyricsCueAllBookIdx {
     final int playing = _playbackAllBookIdx;
     if (_chapterTransition && playing >= 0 && playing < _allBookCues.length) {
@@ -600,7 +600,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
   }
 
-  /// BUG-3770 D：阅读器此刻是否对用户可见（reader 按 App 生命周期喂进来）。
+  /// BUG-3777 D：阅读器此刻是否对用户可见（reader 按 App 生命周期喂进来）。
   ///
   /// 图片停留的语义是「暂停几秒让用户看插图」——看不见时没有插图可看，停留只剩副
   /// 作用：iOS 后台暂停后 App 立刻被挂起，负责恢复播放的 Dart [Timer] 永不触发；
@@ -687,7 +687,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   Future<void> awaitImageChapterPause() async {
     final int sec = imagePauseSec.value;
     if (sec <= 0) return;
-    // BUG-3770 D：后台看不见插图，不停留（见 [setReaderVisible]）。
+    // BUG-3777 D：后台看不见插图，不停留（见 [setReaderVisible]）。
     if (!_readerVisible) return;
     // 自身重入：上一轮停留成对作废，本轮拿新 epoch。
     _invalidateImageChapterPause();
@@ -1932,7 +1932,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    // BUG-3770 R1：播放所在句照常按位置推进（歌词层用它），跨章期间换句也要 notify——
+    // BUG-3777 R1：播放所在句照常按位置推进（歌词层用它），跨章期间换句也要 notify——
     // 否则后台跨章卡住时歌词层一直停在进章那一句。
     final bool playbackCueChanged = _trackPlaybackCue(posMs);
     // 跨章 await 期间不推进 cue，否则 positionStream 连续触发

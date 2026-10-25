@@ -133,7 +133,7 @@ void main() {
   // BUG-3320（反馈 ICrzgr8FsV）：窄弹窗里按钮组压住词头。左簇 flex-basis 0 让换行判定永远
   // 「放得下」，按钮组从不换行；min-content 下限恢复「放不下就整组换到下一行」，长词头由
   // 词头行自身宽度（容器单位）封顶、仍横向滚动。前后对比截图见 PR。
-  // BUG-3773：这三件当初只写在 html.fushi-m3e 层，墨水屏 / Apple 设计系统走基础层，窄弹窗
+  // BUG-3782：这三件当初只写在 html.fushi-m3e 层，墨水屏 / Apple 设计系统走基础层，窄弹窗
   // 里词头照样被压进滚动盒裁掉右半截——所以锁的是**基础层**规则（选择器锚到行首，不让
   // `html.fushi-m3e .entry-header` / `.entry-current .entry-header` 冒充）。
   test(

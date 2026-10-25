@@ -15,7 +15,7 @@ import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// BUG-3770：VN 逐字显现推进到带注音的词时整屏平移。
+/// BUG-3778：VN 逐字显现推进到带注音的词时整屏平移。
 ///
 /// 用户原始失败（Windows WebView2，竖排 VN，逐字显现开着）：翻到下一屏后显现推进到
 /// 「明後日」那一刻整屏左移 3px，显现结束又移回来。根因是显现把文本节点切成「已显现文本 +

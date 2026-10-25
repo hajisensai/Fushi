@@ -144,7 +144,7 @@ List<SettingsSection> buildListeningSections() {
           onChanged: (SettingsContext settingsContext, bool value) async {
             await settingsContext.appModel.setShowMediaNotification(value);
             // 退书后台听书时会话仍在播：当场换通知形态（完整 ↔ 最简），与阅读器
-            // 快捷设置的开关走同一入口（BUG-3770 A）。
+            // 快捷设置的开关走同一入口（BUG-3777 A）。
             settingsContext.appModel.audiobookSession
                 .onMediaNotificationToggled(enabled: value);
             settingsContext.refresh();

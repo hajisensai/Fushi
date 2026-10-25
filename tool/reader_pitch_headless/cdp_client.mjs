@@ -354,7 +354,7 @@ export async function launchChromeDriver() {
       // only the app's WebView interceptor serves. Without this rule Chrome
       // asks the OS resolver; on Windows `.local` goes through mDNS/LLMNR and
       // only fails after ~14 s, holding document.fonts.ready (and everything
-      // the shell runs after it) past the harness budgets (BUG-3773). Fail it
+      // the shell runs after it) past the harness budgets (BUG-3779). Fail it
       // at once on every platform instead.
       '--host-resolver-rules=MAP fushi.local ~NOTFOUND',
       '--window-size=1280,800',

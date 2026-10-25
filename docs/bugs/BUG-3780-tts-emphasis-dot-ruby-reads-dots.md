@@ -1,4 +1,4 @@
-## BUG-3773 · TTS 朗读把傍点 ruby（`・・` / `﹅`）当读音，着重的词整个读丢
+## BUG-3780 · TTS 朗读把傍点 ruby（`・・` / `﹅`）当读音，着重的词整个读丢
 - **报告**：2026-10-25（Discord 用户问 TTS 是否按作者标的 ruby 读人名 / 词；核对时发现）
 - **真实性**：✅ 真 bug。TTS 朗读与有声书制作都经 `buildTtsBookPlan` → `splitTtsText` → `native/fushi_compute/src/parse/tts_split.rs` 切句，ruby 底本整体换成 `<rt>` 读音合成（作者标的读音确实被采用）。但 ruby 过滤（`tts_split.rs` 修复前 `:108-116`）只排除重叠 / 越界 / 空区间 / 读音全空白 / 超长，出版社用 ruby 画的傍点（`<ruby>本当<rt>・・</rt></ruby>`、`﹅`、`●`）也被收下，合成文本里「本当」变成「・・」，引擎读成停顿或不读。
 - **[x] ① 已修复** — ruby 过滤加 `is_emphasis_only`：读音里一个字母 / 数字（含假名、漢字）都没有的 ruby 不收，底本按原文合成。

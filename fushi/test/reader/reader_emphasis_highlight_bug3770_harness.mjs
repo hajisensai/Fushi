@@ -1,4 +1,4 @@
-// BUG-3770: a current-sentence highlight must not clip the emphasis marks (text-emphasis)
+// BUG-3776: a current-sentence highlight must not clip the emphasis marks (text-emphasis)
 // it covers. Runs the generated production reader CSS + engine shell + selection script in
 // real Chrome (default and custom cue text colour), screenshots the emphasis-mark strip before and after the cue highlight and
 // compares the mark ink. Only the Flutter bridge is replaced by a recorder.

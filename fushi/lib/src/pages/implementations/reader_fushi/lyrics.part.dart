@@ -849,7 +849,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     }
     int sourceIdx;
     if (_lyricsCueWindowUsesAllBookCues) {
-      // BUG-3770 R1：播放所在句——跨章过渡期间（后台正文 WebView 被节流、跨章迟迟
+      // BUG-3777 R1：播放所在句——跨章过渡期间（后台正文 WebView 被节流、跨章迟迟
       // 完不成）正文跟随句冻结，歌词层照样跟着声音走。
       sourceIdx = controller.lyricsCueAllBookIdx;
     } else {
@@ -888,7 +888,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           '${forceReveal ? 'if(window.__lyricsScrollToCue)'
                     'window.__lyricsScrollToCue($idx);' : ''}'
           'if(window.__lyricsSetPlaying)window.__lyricsSetPlaying($playing);'
-          // BUG-3770 R2：带上算出 fraction 的墙钟时刻，JS 执行晚了按速率自己补上延迟。
+          // BUG-3777 R2：带上算出 fraction 的墙钟时刻，JS 执行晚了按速率自己补上延迟。
           'if(window.__lyricsSetProgress)'
           'window.__lyricsSetProgress($idx,${fraction.toStringAsFixed(4)},'
           '${ratePerSec.toStringAsFixed(5)},'
@@ -897,7 +897,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     );
   }
 
-  /// BUG-3770 R2：回前台 / 歌词文档重新可见时按当前播放位置无条件重推歌词层快照
+  /// BUG-3777 R2：回前台 / 歌词文档重新可见时按当前播放位置无条件重推歌词层快照
   /// （当前行 / 播放态 / 扫过进度）。不走正文的 reveal / 跨章门控——那些挡住的是
   /// 正文视口，歌词层是整书列表；滚不滚仍由 [_syncLyricsOverlayCue] 看跟随开关、
   /// JS 看浏览态。
@@ -1239,7 +1239,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             );
           },
         );
-        // BUG-3770 R2：歌词文档变回可见（visibilitychange）→ 重推快照。
+        // BUG-3777 R2：歌词文档变回可见（visibilitychange）→ 重推快照。
         controller.addJavaScriptHandler(
           handlerName: 'onLyricsVisible',
           callback: (_) {

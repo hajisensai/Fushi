@@ -971,7 +971,7 @@ public class AudioService extends MediaBrowserServiceCompat {
                 // around this, we make PLAY and PAUSE actions use different keycodes:
                 // KEYCODE_BYPASS_PLAY/PAUSE. Now if we get KEYCODE_MEDIA_PLAY/PUASE
                 // we know it is actually a media button press.
-                // FUSHI PATCH (BUG-3770): genuine KEYCODE_MEDIA_PLAY / KEYCODE_MEDIA_PAUSE
+                // FUSHI PATCH (BUG-3777): genuine KEYCODE_MEDIA_PLAY / KEYCODE_MEDIA_PAUSE
                 // are *directional* (Bluetooth AVRCP PLAY, car head units re-sending PLAY
                 // on reconnect). Upstream routed them through onClick(MediaButton.media),
                 // i.e. a toggle, so a PLAY arriving while already playing paused playback.

@@ -377,7 +377,7 @@ html {
 
 /* 词头 + 按钮组放不下一行时整组换到下一行（仍右对齐，.header-buttons margin-left:auto），
    不去挤压词头。BUG-3320 当年只把这套换行写在 html.fushi-m3e 层，墨水屏与 Apple 设计系统
-   走基础层、行不换行，窄弹窗里词头被压进 .expression-scroll 裁掉右半截（BUG-3773）；
+   走基础层、行不换行，窄弹窗里词头被压进 .expression-scroll 裁掉右半截（BUG-3782）；
    换行所需的三件（本条 wrap、左簇 min-content 下限、词头 100cqw 封顶）都放在基础层。
    container-type：.expression-scroll 的 100cqw 按词头行自身宽度解析；词条宽度由弹窗 /
    网格列决定，不靠内容撑。 */

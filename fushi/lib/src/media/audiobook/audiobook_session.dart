@@ -684,7 +684,7 @@ class AudiobookSession extends ChangeNotifier {
   }
 
   /// 把播放态推给 audio_service。「显示媒体通知」开关只决定通知的**形态**，不决定
-  /// 推不推（BUG-3770 A）：Android 的前台服务与 PARTIAL_WAKE_LOCK 只在播放态
+  /// 推不推（BUG-3777 A）：Android 的前台服务与 PARTIAL_WAKE_LOCK 只在播放态
   /// 「未播放→播放」翻转时建立，不推就没有前台服务、后台久播必被系统冻结；Android
   /// 也不允许无通知的媒体前台服务。所以关着时推最简形态（只有书名 + 播放 / 暂停），
   /// 开着时推完整形态（封面 / 进度条 / 上下句 / 悬浮字幕键 / 当前句副标题）。
@@ -935,7 +935,7 @@ class AudiobookSession extends ChangeNotifier {
 
   /// reader / 设置切换媒体通知时调用：会话在场时只换通知形态（开 → 完整、关 →
   /// 最简），**不**推 idle——idle 会让 audio_service 当场 stop 前台服务，播放中
-  /// 关开关等于把后台保活一起关掉（BUG-3770 A）。没有会话时无事可做：通知只随
+  /// 关开关等于把后台保活一起关掉（BUG-3777 A）。没有会话时无事可做：通知只随
   /// 会话起停（[_startBackgroundSurfaces] / [_stopBackgroundSurfaces]）。
   ///
   /// 形态以实时偏好为准（每次 cue 同步都重读），调用方须先落偏好再调本方法；

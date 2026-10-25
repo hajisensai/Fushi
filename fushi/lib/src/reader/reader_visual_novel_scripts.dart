@@ -2737,7 +2737,7 @@ $sharedInitViewport
     this.revealComplete = false;
     this.scheduleRevealTick();
   },
-  // BUG-3770：逐字显现不能改屏上 DOM。旧做法把每个文本节点切成「已显现文本 + visibility:hidden
+  // BUG-3778：逐字显现不能改屏上 DOM。旧做法把每个文本节点切成「已显现文本 + visibility:hidden
   // 的 span」，每个 tick 在两者之间挪字；Blink 对含 ruby 的段落按不同的文本节点切分排出不同的
   // 行盒（与 BUG-3741 同一机制，含注音那列差 6px），显现推进到注音词时整屏居中平移 3px、显现
   // 完成拆掉 span 时又平移回来。所以支持 CSS Highlight 的引擎上，未显现部分登记成一个 live Range
@@ -3124,7 +3124,7 @@ $sharedInitViewport
     // 排版恰好在高亮出现那一刻变动（句子被「顶开」）。那边改登记 Range，不动 DOM。
     // BUG-3741：Blink 同样会变——包裹段落里后一句的文本节点，同段含 ruby 那一列的行盒差出 6px，
     // 整屏居中跟着平移。所以 VN 在任何支持 CSS Highlight 的引擎上都登记 Range；包裹只留给旧 WebView。
-    // BUG-3770：Blink 上要换字色时不登记 Range（CSS Highlight 换色会把墨迹裁进字框），改包裹；
+    // BUG-3776：Blink 上要换字色时不登记 Range（CSS Highlight 换色会把墨迹裁进字框），改包裹；
     // 包裹在换屏时（显示之前）就做完（prewrapScreenSentenceAudioCues），播放中不再切 DOM。
     var rangeLayer = window.__fushiCueRanges;
     if (rangeLayer && rangeLayer.availableForLiveText() && !this.recolorsSentenceAudioByWrapping()) {
@@ -3165,7 +3165,7 @@ $sharedInitViewport
     if (!layer || typeof layer.recolorClipsInk !== 'function' || !this.screen) return false;
     return layer.recolorClipsInk(this.screen.querySelector('p') || this.screen);
   },
-  // BUG-3770：换字色走包裹时，屏上各句在这一屏显示之前一次包好（BUG-3741：句子已在屏上再切文本
+  // BUG-3776：换字色走包裹时，屏上各句在这一屏显示之前一次包好（BUG-3741：句子已在屏上再切文本
   // 节点，Blink 含 ruby 的段落会重排、整屏平移）。之后播放只切 class。
   prewrapScreenSentenceAudioCues: function() {
     if (!this.sentenceAudioCues.length || !this.recolorsSentenceAudioByWrapping()) return;

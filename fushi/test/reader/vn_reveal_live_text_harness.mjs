@@ -1,4 +1,4 @@
-// BUG-3770：VN 逐字显现推进时排版不得变化——真 Chrome 跑手。
+// BUG-3778：VN 逐字显现推进时排版不得变化——真 Chrome 跑手。
 // 由 vn_reveal_live_text_test.dart 执行，argv[2] = payload.json（生产 VN shell +
 // 选区脚本 + 生产 VN CSS）。
 //

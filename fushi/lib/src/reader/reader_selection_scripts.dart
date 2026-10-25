@@ -420,7 +420,7 @@ if (!window.__fushiLiveRanges) {
         if (r && typeof r.setStart === 'function' && out.indexOf(r) < 0) out.push(r);
       };
       if (typeof CSS !== 'undefined' && CSS.highlights) {
-        // 遍历拿到的是交给引擎绘制的那份；窄条层在 Blink 上会剔掉一部分文字另存一份（BUG-3770），
+        // 遍历拿到的是交给引擎绘制的那份；窄条层在 Blink 上会剔掉一部分文字另存一份（BUG-3776），
         // get 读回的调用方原件也要一起写回。
         CSS.highlights.forEach(function(hl, name) {
           hl.forEach(add);
@@ -567,7 +567,7 @@ if (!window.__fushiLiveRanges) {
 // Range 登记在 tracked() 里，正文其它 DOM 手术（__fushiLiveRanges.moveNodes）会把它们写回而不塌缩。
 // Blink 与不支持 CSS Highlight 的旧 WebView 继续走包裹。window.__fushiSentenceAudioRangeMode
 // （布尔）可强制开关，供测试在 Chrome 里跑这条路径。
-// BUG-3770：VN 逐字显现时未显现的字只是被 ::highlight(fushi-vn-unrevealed) 画成透明，仍在 DOM
+// BUG-3778：VN 逐字显现时未显现的字只是被 ::highlight(fushi-vn-unrevealed) 画成透明，仍在 DOM
 // 里、照样能被 caretPositionFromPoint 命中。window.__fushiRevealRange 是那段未显现正文的
 // live Range（VN shell 维护，其余时候为 null）；查词命中与窄条层都经这里认出「还看不见」的字。
 if (typeof window.__fushiTextUnrevealed !== 'function') {
@@ -602,7 +602,7 @@ if (!window.__fushiCueRanges) {
         if (!window.__fushiCssHighlightsSupported || typeof Highlight !== 'function') return false;
         return window.__fushiSentenceAudioRangeMode !== false;
       },
-      // BUG-3770：Blink 用 CSS Highlight 换字色时把字形墨迹裁进文字片段盒（傍点、墨迹宽的字体被切边，
+      // BUG-3776：Blink 用 CSS Highlight 换字色时把字形墨迹裁进文字片段盒（傍点、墨迹宽的字体被切边，
       // 见窄条层 paintable）。当前句真要换字色（用户设了自定义字色）时，VN 改在换屏、显示之前把屏上
       // 各句包裹好，字色走 wrapper 的 class，播放中只切 class。sample 取正文里的一个元素，比较它的
       // ::highlight 计算字色与本身字色。
@@ -1057,7 +1057,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       if (!parent || end <= start) return;
       // VN 逐字显现时未显现的字（data-fushi-visual-novel-unrevealed）是 visibility:hidden 的，窄条不能先露出来。
       if (parent.closest('rt, rp, [data-fushi-visual-novel-unrevealed], ' + HOST)) return;
-      // Range 版逐字显现（BUG-3770）：未显现的部分同样不画，只留已显现的那截。
+      // Range 版逐字显现（BUG-3778）：未显现的部分同样不画，只留已显现的那截。
       var unrevealed = window.__fushiRevealRange;
       if (unrevealed && typeof window.__fushiTextUnrevealed === 'function') {
         if (window.__fushiTextUnrevealed(node, start)) return;
@@ -1718,7 +1718,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     // 通知、不重画（BUG-3506）。hookedRegistry 由 flush 每次经 hookRegistry 读到，保证它活着；万一引擎
     // 仍换了对象，hookRegistry 给新对象补装。
     var hookedRegistry = null;
-    // BUG-3770：Blink 上任何生效的 CSS Custom Highlight 都把它覆盖的文字裁进文字片段盒里重画——墨迹伸出
+    // BUG-3776：Blink 上任何生效的 CSS Custom Highlight 都把它覆盖的文字裁进文字片段盒里重画——墨迹伸出
     // 片段盒的部分一律丢掉：着重号（傍点）只剩一角，墨迹宽的字体（圆体 / Meiryo 等）在 ruby 基字与行首字上
     // 被切平（::highlight 规则为空也一样，Chromium 实测；WebKit 不受影响）。底色本来就由窄条层画，所以注册表
     // 入口按元素核对这层 ::highlight 的计算样式：对这段字什么都不改（字色相同、无底色 / 装饰 / 阴影 / 描边）

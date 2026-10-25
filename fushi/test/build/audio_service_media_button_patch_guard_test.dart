@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-3770 B：audio_service Android 原生层把真实的 `KEYCODE_MEDIA_PLAY` /
+/// BUG-3777 B：audio_service Android 原生层把真实的 `KEYCODE_MEDIA_PLAY` /
 /// `KEYCODE_MEDIA_PAUSE` 当成「单击」（切换）交给 Dart，蓝牙 / 车机补发的 PLAY 在
 /// 播放中到达就把声音暂停。补丁在 `ci/patches/hosted/audio_service-<版本>/`，整份
 /// `AudioService.java` 覆盖进 pub cache。

@@ -1,4 +1,4 @@
-## BUG-3770 · vn-highlight-clips-emphasis-marks
+## BUG-3776 · vn-highlight-clips-emphasis-marks
 - **报告**：2026-10-24（用户：VN 模式有声书高亮条有时把字截断——「砥石」基字左右被切平；带傍点的句子傍点只剩一角。Windows / WebView2）
 - **真实性**：✅ 真 bug。Blink（Chromium / WebView2 / Android WebView）上任何生效的 CSS Custom Highlight 都把覆盖的文字裁进文字片段盒里重画，墨迹伸出片段盒的部分丢掉：着重号整体在盒外只剩一角，墨迹宽的字体（圆体、Meiryo 等）在 ruby 基字与行首字上被切平；`::highlight()` 规则为空也照样裁（headless Chromium 实测，Yu Gothic / Meiryo / HG丸ゴシック 对照）。BUG-3741 起 VN 在 Blink 上当前句也走 Range + `CSS.highlights`（`reader_visual_novel_scripts.dart` `wrapSentenceAudioCueRangesInBatch`），所以 VN 播到这类句子就出现；查词 / 搜索 / 收藏走同一个注册表，同样受影响。底色本来就由窄条层画，`::highlight` 只管字色，默认字色下是纯空操作却仍触发裁切。
 - **[x] ① 已修复** — `reader_selection_scripts.dart` 窄条层注册表钩子（`hookRegistry` / `paintable`）：Blink 上 `CSS.highlights.set` 时按元素读 `::highlight(name)` 计算样式，对文字是空操作（字色相同、无底色 / 装饰 / 阴影 / 描边）的部分不交给引擎绘制，带着重号的文字也不交（宁可不换字色）；`CSS.highlights.get` 与窄条层仍读调用方原件，`__fushiLiveRanges.ranges()` 把原件与绘制件的 Range 一起登记（DOM 搬移时都写回）。默认字色下当前句 / 查词 / 搜索整段不再由引擎重画。

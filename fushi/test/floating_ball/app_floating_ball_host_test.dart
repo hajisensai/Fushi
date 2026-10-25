@@ -372,10 +372,10 @@ void main() {
     expect(taps, 1);
   });
 
-  // BUG-3773：底下页面用 Listener 计数，模拟阅读器正文 WebView（Windows fork 的
+  // BUG-3781：底下页面用 Listener 计数，模拟阅读器正文 WebView（Windows fork 的
   // 指针转发就是一层 Listener，不进手势竞技场，只要被命中就收到按下）。球被点中时
   // 整个宿主必须向根 Stack 报「已命中」，按下不能再落到下层页面。
-  testWidgets('BUG-3773：点球展开 / 收起，按下不落到底下页面', (WidgetTester tester) async {
+  testWidgets('BUG-3781：点球展开 / 收起，按下不落到底下页面', (WidgetTester tester) async {
     int pageDowns = 0;
     await pumpHost(
       tester,

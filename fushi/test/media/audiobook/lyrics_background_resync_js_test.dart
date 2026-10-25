@@ -6,7 +6,7 @@ import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
-/// BUG-3770 R2：歌词层在后台 / 节流后回前台的两处 JS 行为（node vm 真跑生成文档里的
+/// BUG-3777 R2：歌词层在后台 / 节流后回前台的两处 JS 行为（node vm 真跑生成文档里的
 /// 脚本片段）。
 ///
 /// * 扫过进度：Dart 在发送时刻按真实播放位置算出 fraction，JS 却可能晚很久才执行

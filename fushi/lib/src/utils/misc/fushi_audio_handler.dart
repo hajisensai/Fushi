@@ -100,7 +100,7 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
 
   /// 推播放态给 audio_service（Android 媒体会话 + 前台服务 / iOS Now Playing）。
   ///
-  /// [minimal] = 「显示媒体通知」关着时的最简形态（BUG-3770 A）：播放态照推，
+  /// [minimal] = 「显示媒体通知」关着时的最简形态（BUG-3777 A）：播放态照推，
   /// 让 Android 照常进前台服务 + PARTIAL_WAKE_LOCK（无通知的媒体前台服务不被允许，
   /// 不推播放态则后台必被冻结），但通知只剩一个播放 / 暂停键——不给上下句、悬浮
   /// 字幕键，也不声明 seek（Android 13+ 没有 seek 动作就不画进度条，iOS 控制中心

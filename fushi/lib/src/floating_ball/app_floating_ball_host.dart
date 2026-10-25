@@ -1602,7 +1602,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       // opaque 必须保持默认 true：RenderMouseRegion.hitTest 返回的是
       // `super.hitTest(...) && opaque`，false 时球被点中也向上报「没命中」，根 Stack
       // 就接着把同一次按下命中到底下页面——阅读器正文 WebView 把这下当成点空白，
-      // 唤出顶栏 / 底栏（BUG-3773）。
+      // 唤出顶栏 / 底栏（BUG-3781）。
       child: MouseRegion(
         hitTestBehavior: HitTestBehavior.deferToChild,
         onEnter: (_) => appFloatingBallPointerInside.value = true,

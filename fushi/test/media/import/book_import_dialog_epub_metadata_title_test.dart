@@ -1,4 +1,4 @@
-// BUG-3770：选中 EPUB 后，导入对话框的标题框必须显示 OPF `dc:title`，而不是文件名。
+// BUG-3774：选中 EPUB 后，导入对话框的标题框必须显示 OPF `dc:title`，而不是文件名。
 // 入库书名本来就取 OPF，标题框显示文件名会让用户以为书会以文件名入库。走真对话框 +
 // 真 EPUB 文件 + 真 EpubImporter，证明「框里看到的」和「库里落的」是同一个书名。
 import 'dart:convert';
@@ -40,7 +40,7 @@ Uint8List _epubBytes({required String? title}) {
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0"
     unique-identifier="book-id">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:identifier id="book-id">bug-3770</dc:identifier>
+    <dc:identifier id="book-id">bug-3774</dc:identifier>
     ${title == null ? '' : '<dc:title>$title</dc:title>'}
     <dc:language>ja</dc:language>
   </metadata>
@@ -118,7 +118,7 @@ void main() {
     addTearDown(tester.view.reset);
 
     final ({FushiDatabase db, Directory root}) env = await setUpEnv(
-      'bug_3770_meta_title_',
+      'bug_3774_meta_title_',
     );
     const String metadataTitle = '吾輩は猫である';
     final File epub = File(p.join(env.root.path, 'neko_v01 [scan].epub'))
@@ -162,7 +162,7 @@ void main() {
     addTearDown(tester.view.reset);
 
     final ({FushiDatabase db, Directory root}) env = await setUpEnv(
-      'bug_3770_no_meta_title_',
+      'bug_3774_no_meta_title_',
     );
     final File epub = File(p.join(env.root.path, 'untitled_book.epub'))
       ..writeAsBytesSync(_epubBytes(title: null));

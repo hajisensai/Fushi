@@ -11,7 +11,7 @@
 //
 // 当年只有部分词被削：buildFuriganaEl 只在**整词一段**时要 .expression-scroll 包装
 // （纯汉字词 気配 / 邂逅 / 逢瀬），正是 galgame 高频查的名词；食べる 这类切两段的
-// 不套 wrapper，所以不裁。BUG-3770 起所有词头都套 wrapper，下面的注音预留对每个词头
+// 不套 wrapper，所以不裁。BUG-3775 起所有词头都套 wrapper，下面的注音预留对每个词头
 // 都是必需的。
 //
 // BUG-1098 当年的修法是把词头并进 glossary 那套 per-base 单元（.ruby-unit 的 em

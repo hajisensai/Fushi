@@ -1,4 +1,4 @@
-## BUG-3770 · VN 逐字显现推进到注音词时整屏抖动
+## BUG-3778 · VN 逐字显现推进到注音词时整屏抖动
 - **报告**：2026-10-24（用户：Windows 录屏 `2026-10-24 23-41-08.mp4`，「vn模式翻到下一个会抖动」；竖排 VN、逐字显现开着、有声书在播；安装版 `D:\fushi\Fushi`，app.so 2026-10-24 09:49，已含 BUG-3741 的 Range 高亮修复）
 - **真实性**：✅ 真 bug。录屏逐帧量首列横坐标：翻到下一屏后显现全程 863.5px，显现推进到带注音的「<ruby>明後日<rt>あさって</rt></ruby>」那一帧整块左移 3.1px，显现结束那一帧移回 863.5px。录屏里还能看到基字没出来时注音「あさって」「いま」已经先挂在空列上。
 - **根因**：`fushi/lib/src/reader/reader_visual_novel_scripts.dart:2714`（`hideCurrentScreenForReveal` → 旧 `prepareTextNodeForReveal` / `revealOneCharacter`）逐字显现把屏上每个文本节点切成「已显现文本 + `visibility:hidden` 的 span」，每个 tick 在两者之间挪字，显现完成再拆掉 span。与 BUG-3741 同一机制：Blink 对含 ruby 的段落按不同的文本节点切分排出不同行盒（含注音那列差 6px），VN 居中把整屏平移 3px。BUG-3741 只把有声书高亮改成了 Range，显现这条路径仍在切 DOM。走查器跳过 `rt`，注音从不在隐藏范围里，所以先于基字露出。

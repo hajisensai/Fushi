@@ -634,7 +634,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     }
   }
 
-  /// 选中的书是 EPUB 时，把文件名派生的书名换成 OPF `dc:title`（BUG-3770）。
+  /// 选中的书是 EPUB 时，把文件名派生的书名换成 OPF `dc:title`（BUG-3774）。
   /// 入库书名本来就取 OPF（[EpubImporter] 只在 OPF 没写书名时退回文件名），标题框
   /// 却一直显示文件名，用户看到的和最终入库的不一致。走 [_autoFillTitle] 的同一
   /// 来源（epub）：用户手打过的标题不动；读取期间重选了别的文件也不回写。读取在

@@ -3540,7 +3540,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 再开书时用户的「跟随音频=关」会被这个残留覆盖成强制跟随。只在本页确实还在
     // 歌词层时撤——覆盖层关掉时 [_exitLyricsMode] 已经撤过。
     if (_lyricsMode) _audiobookController?.setReaderFollowOverride(false);
-    // 可见性是本页喂的；会话比本页活得久，撤掉本页的「后台」判断（BUG-3770 D）。
+    // 可见性是本页喂的；会话比本页活得久，撤掉本页的「后台」判断（BUG-3777 D）。
     _audiobookController?.setReaderVisible(true);
     // 控制器是会话对象、可能比页面活得久：解绑前把播放态监听摘掉。
     _audiobookController = null;
@@ -3787,7 +3787,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // BUG-3770 D：图片停留只在用户看得见阅读器时才有意义；后台（hidden / paused）
+    // BUG-3777 D：图片停留只在用户看得见阅读器时才有意义；后台（hidden / paused）
     // 发起的停留会在 App 被挂起后永远等不到恢复。
     _audiobookController?.setReaderVisible(
       readerVisibleForLifecycleState(state),
@@ -3827,7 +3827,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _audiobookController?.resyncReaderToAudio();
-        // BUG-3770 R2：歌词层不吃正文的 reveal / 跨章门控，按当前播放位置无条件重推
+        // BUG-3777 R2：歌词层不吃正文的 reveal / 跨章门控，按当前播放位置无条件重推
         // 当前行 / 播放态 / 扫过进度（滚不滚仍看跟随开关与浏览态）。
         _resyncLyricsOverlayToAudio();
       });
