@@ -194,8 +194,8 @@ fn intern_deps(conn: &Connection, deps: &Vv) -> Result<i64, String> {
 pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain, now: i64) -> Result<(), String> {
     let deps = intern_deps(conn, &op.deps)?;
     conn.prepare_cached(
-        "INSERT INTO sync2_ops (profile_uid, device, seq, wall, logical, deps, kind, schema, payload, chain, received_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT INTO sync2_ops (profile_uid, device, seq, wall, logical, deps, kind, schema, payload, purged, chain, received_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
     )
     .map_err(sql)?
     .execute(params![
@@ -208,6 +208,7 @@ pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain
         i64::from(op.kind),
         i64::from(op.schema),
         &op.payload[..],
+        i64::from(op.purged),
         chain.to_vec(),
         now
     ])
@@ -218,16 +219,24 @@ pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain
 /// 读一条操作（因果判定、前缀闭包、重签发用）。
 pub(crate) fn load_op(conn: &Connection, profile: &str, id: &OpId) -> Result<Option<Op>, String> {
     conn.prepare_cached(
-        "SELECT o.wall, o.logical, d.vv, o.kind, o.schema, o.payload FROM sync2_ops o JOIN sync2_deps d ON d.id = o.deps \
+        "SELECT o.wall, o.logical, d.vv, o.kind, o.schema, o.payload, o.purged FROM sync2_ops o JOIN sync2_deps d ON d.id = o.deps \
          WHERE o.profile_uid = ?1 AND o.device = ?2 AND o.seq = ?3",
     )
     .map_err(sql)?
     .query_row(params![profile, id.device.0.to_vec(), id.seq as i64], |r| {
-        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, Vec<u8>>(2)?, r.get::<_, i64>(3)?, r.get::<_, i64>(4)?, r.get::<_, Vec<u8>>(5)?))
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, i64>(1)?,
+            r.get::<_, Vec<u8>>(2)?,
+            r.get::<_, i64>(3)?,
+            r.get::<_, i64>(4)?,
+            r.get::<_, Vec<u8>>(5)?,
+            r.get::<_, i64>(6)? != 0,
+        ))
     })
     .optional()
     .map_err(sql)?
-    .map(|(w, l, vv, k, s, p)| {
+    .map(|(w, l, vv, k, s, p, purged)| {
         let deps = Vv::read(&mut crate::sync2::codec::Reader::new(&vv)).map_err(|e| e.to_string())?;
         Ok(Op {
             id: *id,
@@ -236,6 +245,7 @@ pub(crate) fn load_op(conn: &Connection, profile: &str, id: &OpId) -> Result<Opt
             kind: k as u16,
             schema: s as u16,
             payload: p.into(),
+            purged,
         })
     })
     .transpose()
@@ -801,6 +811,7 @@ pub(crate) fn append_local(conn: &Connection, local: &mut Local, applied: &mut V
         kind: body.kind(),
         schema: op::SCHEMA,
         payload: body.encode().into(),
+        purged: false,
     };
     let chain = chain_next(&local.chain, &op);
     insert_op(conn, &local.profile, &op, &chain, now)?;

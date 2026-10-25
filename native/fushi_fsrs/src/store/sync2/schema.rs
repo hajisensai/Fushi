@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS sync2_ops (
   kind INTEGER NOT NULL,
   schema INTEGER NOT NULL,
   payload BLOB NOT NULL,
+  purged INTEGER NOT NULL DEFAULT 0,
   chain BLOB NOT NULL,
   received_at INTEGER NOT NULL,
   PRIMARY KEY (profile_uid, device, seq)

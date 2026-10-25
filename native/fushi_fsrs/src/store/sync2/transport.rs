@@ -215,6 +215,7 @@ pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &
             kind: op.kind,
             schema: op.schema,
             payload: op.payload.clone(),
+            purged: op.purged,
         };
         let chain = chain_next(&fresh.chain, &re);
         insert_op(conn, profile, &re, &chain, now)?;

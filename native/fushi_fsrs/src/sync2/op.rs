@@ -38,10 +38,42 @@ pub struct Op {
     pub deps: Arc<Vv>,
     pub kind: u16,
     pub schema: u16,
+    /// 载荷原字节；[Op::purged] 时是原载荷的 BLAKE3（32 字节）。
     pub payload: Arc<[u8]>,
+    /// 内容已被「彻底清除」（设计 §10.5）：只剩骨架（信封 + 原载荷哈希），链值不变。
+    pub purged: bool,
 }
 
 impl Op {
+    /// 原载荷的 BLAKE3（哈希链按它算，所以清除载荷不影响链与签名的可验证性）。
+    pub fn payload_hash(&self) -> [u8; 32] {
+        if self.purged {
+            self.payload[..].try_into().unwrap_or([0; 32])
+        } else {
+            *blake3::hash(&self.payload).as_bytes()
+        }
+    }
+
+    /// 清除后的骨架。
+    pub fn purge(&self) -> Op {
+        if self.purged {
+            return self.clone();
+        }
+        Op { payload: self.payload_hash().to_vec().into(), purged: true, ..self.clone() }
+    }
+
+    /// 信封（不含载荷）的规范编码：链值 = blake3(前一环 || 信封 || 载荷哈希)。
+    pub fn envelope(&self) -> Vec<u8> {
+        let mut w = Writer::new();
+        self.id.device.write(&mut w);
+        w.uv(self.id.seq);
+        self.hlc.write_time(&mut w);
+        self.deps.write(&mut w);
+        w.uv(u64::from(self.kind));
+        w.uv(u64::from(self.schema));
+        w.into_vec()
+    }
+
     /// 作者创建这条操作时见过 [other]（因果上在它之后）。
     pub fn saw(&self, other: &OpId) -> bool {
         if other.device == self.id.device {
@@ -59,6 +91,9 @@ impl Op {
     }
 
     pub fn body(&self) -> DResult<Body> {
+        if self.purged {
+            return Ok(Body::Purged);
+        }
         Body::decode(self.kind, &self.payload)
     }
 
@@ -70,6 +105,7 @@ impl Op {
         self.deps.write(w);
         w.uv(u64::from(self.kind));
         w.uv(u64::from(self.schema));
+        w.bool(self.purged);
         w.bytes(&self.payload);
     }
 
@@ -86,8 +122,12 @@ impl Op {
         }
         let kind = u16::try_from(r.uv()?).map_err(|_| DecodeError("op kind"))?;
         let schema = u16::try_from(r.uv()?).map_err(|_| DecodeError("op schema"))?;
+        let purged = r.bool()?;
         let payload: Arc<[u8]> = r.bytes()?.into();
-        Ok(Op { id: OpId { device, seq }, hlc, deps: Arc::new(deps), kind, schema, payload })
+        if purged && payload.len() != 32 {
+            return Err(DecodeError("purged op without payload hash"));
+        }
+        Ok(Op { id: OpId { device, seq }, hlc, deps: Arc::new(deps), kind, schema, payload, purged })
     }
 
     pub fn encode(&self) -> Vec<u8> {
@@ -253,6 +293,8 @@ pub enum Body {
     LegacyUnknown { json: String },
     /// 本版本不认识的种类：原样保存、原样转发、不应用。
     Unknown,
+    /// 载荷已被彻底清除，只剩骨架。
+    Purged,
 }
 
 impl Body {
@@ -268,7 +310,7 @@ impl Body {
             Body::Media { .. } => KIND_MEDIA,
             Body::DeckAlias { .. } => KIND_DECK_ALIAS,
             Body::LegacyUnknown { .. } => KIND_LEGACY_UNKNOWN,
-            Body::Unknown => u16::MAX,
+            Body::Unknown | Body::Purged => u16::MAX,
         }
     }
 
@@ -317,7 +359,7 @@ impl Body {
                 to.write(&mut w);
             }
             Body::LegacyUnknown { json } => w.str(json),
-            Body::Unknown => {}
+            Body::Unknown | Body::Purged => {}
         }
         w.into_vec()
     }
@@ -590,6 +632,7 @@ pub(crate) mod tests {
             kind: KIND_TAG_ADD,
             schema: SCHEMA,
             payload: Body::TagAdd { note: Key::of("n"), tag: "t".into() }.encode().into(),
+            purged: false,
         };
         let bytes = op.encode();
         assert_eq!(Op::read(&mut Reader::new(&bytes)).unwrap(), op);

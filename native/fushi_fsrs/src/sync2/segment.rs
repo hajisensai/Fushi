@@ -41,11 +41,13 @@ pub const SEGMENT_MAX_BYTES: usize = 64 * 1024;
 pub type Chain = [u8; 32];
 pub const CHAIN_ZERO: Chain = [0; 32];
 
-/// 链的下一环。
+/// 链的下一环：`blake3(前一环 || 信封 || 载荷哈希)`。按载荷哈希而不是原字节算：彻底清除（§10.5）把载荷换成
+/// 它的哈希之后，链值、段签名都照样可验证。
 pub fn chain_next(prev: &Chain, op: &Op) -> Chain {
     let mut h = blake3::Hasher::new();
     h.update(prev);
-    h.update(&op.encode());
+    h.update(&op.envelope());
+    h.update(&op.payload_hash());
     *h.finalize().as_bytes()
 }
 
@@ -173,6 +175,7 @@ fn write_body(ops: &[Op]) -> Vec<u8> {
         prev_deps = Some(&op.deps);
         w.uv(u64::from(op.kind));
         w.uv(u64::from(op.schema));
+        w.bool(op.purged);
         w.bytes(&op.payload);
     }
     w.into_vec()
@@ -203,7 +206,11 @@ fn read_body(body: &[u8], device: Id, first: u64, last: u64) -> DResult<Vec<Op>>
         }
         let kind = u16::try_from(r.uv()?).map_err(|_| DecodeError("op kind"))?;
         let schema = u16::try_from(r.uv()?).map_err(|_| DecodeError("op schema"))?;
+        let purged = r.bool()?;
         let payload: Arc<[u8]> = r.bytes()?.into();
+        if purged && payload.len() != 32 {
+            return Err(DecodeError("purged op without payload hash"));
+        }
         out.push(Op {
             id: OpId { device, seq: first + i },
             hlc: Hlc { wall, logical, device },
@@ -211,6 +218,7 @@ fn read_body(body: &[u8], device: Id, first: u64, last: u64) -> DResult<Vec<Op>>
             kind,
             schema,
             payload,
+            purged,
         });
     }
     if !r.is_empty() {
@@ -489,6 +497,7 @@ pub(crate) mod tests {
                 kind: crate::sync2::op::KIND_TAG_ADD,
                 schema: SCHEMA,
                 payload: Body::TagAdd { note: Key::of("n"), tag: format!("t{seq}") }.encode().into(),
+                purged: false,
             })
             .collect()
     }
@@ -613,6 +622,7 @@ mod size_tests {
                     kind: KIND_LOG,
                     schema: SCHEMA,
                     payload: Body::Log(log).encode().into(),
+                    purged: false,
                 }
             })
             .collect();
