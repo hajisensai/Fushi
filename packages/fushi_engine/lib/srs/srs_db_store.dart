@@ -1057,7 +1057,11 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
     _ => true,
   };
 
-  Future<List<String>> _storeLocalBatch(List<SrsEvent> events) async {
+  Future<List<String>> _storeLocalBatch(
+    List<SrsEvent> events, {
+    bool stamped = false,
+    int? serverTimeMs,
+  }) async {
     // 同步 v2：本机事件交给 Rust 的 `apply`——分配 OpId / HLC / 因果上下文、落唯一事实表（ops）、落投影、
     // 重放受影响的卡，一次 FFI（docs/specs/2026-10-25-srs-sync-v2-design.md §3、§4）。修改记录的 dot / ID
     // 由 Rust 按本机设备身份重新分配，这里只交内容；日志的结果由重放算，作者给的只是提示。
@@ -1082,11 +1086,15 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
         ),
         _ => e,
       };
-      if (stored case SrsEditEvent(:final SrsFieldEdit edit))
+      if (stored case SrsEditEvent(:final SrsFieldEdit edit)) {
         _writer.apply(edit);
+      }
       input.add(<String, Object?>{
         'e': stored.toJson(),
         'note': stored is SrsLogEvent ? noteOf[stored.log.cardId] : null,
+        // 外来、已盖戳的事件（备份合并 / 按时间点恢复并入备份）：保留原 dot / 因果上下文 / HLC，支配关系照旧。
+        if (stamped) 'stamped': true,
+        if (stamped && serverTimeMs != null) 'server': serverTimeMs,
       });
     }
     final Map<String, Object?> r = await _sync2(
@@ -5235,7 +5243,11 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
         if (e is! SrsEntityEvent || e.record.profileUid == profileUid) e,
     ];
     await _transactionOrReload(() async {
-      final Set<String> landed = (await _storeLocalBatch(mine)).toSet();
+      final Set<String> landed = (await _storeLocalBatch(
+        mine,
+        stamped: true,
+        serverTimeMs: serverTimeMs,
+      )).toSet();
       // 同步合并：别的设备的作答带动了牌组 / 全局状态，RWKV 分数表整表重查（见 rwkvScoresKey）。
       if (landed.isNotEmpty) _rwkvScoresRevision++;
       final Set<String> lowered = await _upsertEventLocal(

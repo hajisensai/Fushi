@@ -617,3 +617,19 @@ fn timeline_restore_compensates_and_can_itself_be_undone() {
     assert_ne!(v(&a, "deleted", "N1"), "NULL");
     let _ = before_restore;
 }
+
+/// 外来、已盖戳的事件（备份合并）并入时保留原 dot / 上下文：被现值支配的旧值不会被盖回来，并发的仍并发。
+#[test]
+fn stamped_foreign_edits_keep_their_causality() {
+    let a = Device::new("a");
+    a.apply(T0, vec![edit("note", "N1", "f/x", json!("v1"))]);
+    // 拿到 v1 落库的那一行（备份里存的就是这种行），然后本机改成 v2。
+    let old: Value = serde_json::from_str(&a.rows("SELECT json FROM srs_field_edits WHERE field_key = 'f/x'")[1][0]).unwrap();
+    a.apply(T0 + 1, vec![edit("note", "N1", "f/x", json!("v2"))]);
+    let input = json!([{"e": {"t": "edit", "x": old}, "stamped": true}]);
+    let r: Value = serde_json::from_str(&a.core.sync2_apply_local(P, T0 + 2, &input.to_string()).unwrap()).unwrap();
+    assert_eq!(r["landed"], json!([false]), "the backup's v1 is dominated by the newer v2");
+    let vals = a.rows("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE field_key = 'f/x'");
+    assert_eq!(vals.len(), 2);
+    assert_eq!(vals[1][0], "v2");
+}

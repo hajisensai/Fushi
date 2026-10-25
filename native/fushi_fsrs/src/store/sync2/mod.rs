@@ -876,7 +876,34 @@ pub(crate) fn replay_cards(conn: &Connection, profile: &str, cards: &BTreeSet<St
 
 /// Dart 事件（`SrsEvent.toJson`）→ 操作载荷。修改记录的 dot / ctx / hlc / id 由这里重新分配（不读 Dart 给的）；
 /// 日志按作者结果推出意图，结果作为作者原值留在操作里。[note] 是日志卡片所属的笔记（Dart 知道）。
-pub(crate) fn body_of_event(ev: &Value, note: Option<&str>) -> Result<Body, String> {
+///
+/// [stamped]：外来的、已经盖过戳的事件（备份合并、按时间点恢复并入的备份事件）——修改记录**保留**原 dot /
+/// 因果上下文 / HLC / S(e)（与迁移同一机制），支配关系照旧成立；当本机新写入并入会把旧值盖在现值上。
+pub(crate) fn body_of_event(ev: &Value, note: Option<&str>, stamped: bool, server: Option<i64>) -> Result<Body, String> {
+    if stamped {
+        let x = &ev["x"];
+        if ev["t"].as_str() == Some("edit") {
+            let s = |k: &str| x.get(k).and_then(Value::as_str);
+            return Ok(Body::Edit(EditBody {
+                kind: EntKind::parse(s("k").unwrap_or_default()).ok_or("unknown entity kind")?,
+                entity: Key::of(s("e").ok_or("edit entity")?),
+                key: s("f").ok_or("edit key")?.to_owned(),
+                value: canonical(x.get("v").unwrap_or(&Value::Null)),
+                machine: x.get("m") == Some(&Value::Bool(true)),
+                ts: op::ts_code(s("ts").unwrap_or("wall")),
+                legacy: Some(LegacyStamp {
+                    writer: s("w").ok_or("edit writer")?.to_owned(),
+                    seq: x["s"].as_i64().ok_or("edit seq")?,
+                    ctx_json: canonical(x.get("ctx").unwrap_or(&json!({"vv": {}}))),
+                    hlc: s("hlc").ok_or("edit hlc")?.to_owned(),
+                    server_time: server,
+                }),
+            }));
+        }
+        if ev["t"].as_str() == Some("log") {
+            return Ok(Body::Log(log_body_of(x, note, x.get("hlc").and_then(Value::as_str).map(str::to_owned), server)?));
+        }
+    }
     let x = &ev["x"];
     let s = |k: &str| x.get(k).and_then(Value::as_str);
     Ok(match ev["t"].as_str() {
@@ -994,7 +1021,7 @@ impl SrsCore {
             let mut landed = Vec::with_capacity(items.len());
             let mut out_events = Vec::with_capacity(items.len());
             for it in &items {
-                let body = body_of_event(&it["e"], it["note"].as_str())?;
+                let body = body_of_event(&it["e"], it["note"].as_str(), it["stamped"] == Value::Bool(true), it["server"].as_i64())?;
                 let before = t.events.len();
                 // 标签是 OR-Set：Dart 写的整列表 `tags` 按与当前值的差拆成添加 / 观察删除。
                 let bodies = match &body {

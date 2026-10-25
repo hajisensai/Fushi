@@ -201,8 +201,9 @@ Future<SrsSync2Report> srsSync2Round({
   final int gen = (head.map['gen'] as int?) ?? 0;
   for (final SrsLocationEntry f in await location.list('devices/$self')) {
     final int? g = _headGen(f.name);
-    if (g != null && g < gen - 2)
+    if (g != null && g < gen - 2) {
       await location.delete('devices/$self/${f.name}');
+    }
     if (f.name == written) report.serverTimeMs = f.modifiedAt;
   }
   return report;
