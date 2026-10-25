@@ -653,10 +653,17 @@ Future<SrsDbStore?> readSrsStore(WidgetRef ref) async {
 }
 
 /// 把一个 Future 交给后台跑并记录失败（按钮回调里用）。
+///
+/// 用 `then(onError:)` 而不是 `catchError`：[body] 实际返回的可能是 `Future<bool>` 之类（`Future<void>`
+/// 收得下任何 Future），`catchError` 的处理函数返回 null 时 Dart 会再抛一个「error handler must return a
+/// value of the future's type」的未处理错误。
 void srsRunLogged(String where, Future<void> Function() body) {
   unawaited(
-    body().catchError((Object e, StackTrace stack) {
-      ErrorLogService.instance.log(where, e, stack);
-    }),
+    body().then<void>(
+      (_) {},
+      onError: (Object e, StackTrace stack) {
+        ErrorLogService.instance.log(where, e, stack);
+      },
+    ),
   );
 }
