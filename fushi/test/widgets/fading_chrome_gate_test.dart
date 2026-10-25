@@ -100,7 +100,8 @@ void main() {
 
   test('源码守卫：视频页三处淡出 chrome 必须走 FadingChromeGate', () {
     // BUG-1301 调用点守卫：episode.part.dart（剧集横轨）与 layout.part.dart
-    // （侧边锁按钮 + on-rail 沉浸退出钮）不得回退成「裸 IgnorePointer(ignoring:
+    // （沉浸态侧栏整层：沉浸布局 2026-10-25 后锁按钮与其它沉浸按钮共用
+    // _withImmersiveLockAutoHide 这一个淡出层）不得回退成「裸 IgnorePointer(ignoring:
     // !visible) 挡指针、不挡焦点」的旧写法。chapter.part.dart 的常驻 IgnorePointer
     // 是纯展示层（无可聚焦子孙、永不拦指针），不在此列。
     final String episode = File(
@@ -114,8 +115,14 @@ void main() {
         greaterThanOrEqualTo(1),
         reason: '剧集横轨隐藏态必须经 FadingChromeGate（不可见⇒不可聚焦）');
     expect(RegExp(r'FadingChromeGate\(').allMatches(layout).length,
-        greaterThanOrEqualTo(2),
-        reason: '侧边锁按钮与 on-rail 沉浸退出钮都必须经 FadingChromeGate');
+        greaterThanOrEqualTo(1),
+        reason: '沉浸态侧栏（含锁按钮）必须经 FadingChromeGate');
+    final int wrap = layout.indexOf(
+      'Widget _withImmersiveLockAutoHide({required Widget child})',
+    );
+    expect(wrap, greaterThanOrEqualTo(0));
+    expect(layout.indexOf('FadingChromeGate(', wrap), greaterThan(wrap),
+        reason: '沉浸态侧栏的淡出层 _withImmersiveLockAutoHide 必须走 FadingChromeGate');
     // 旧病灶写法：IgnorePointer(ignoring: !visible…) 直接包淡出 chrome。
     final RegExp bare = RegExp(r'IgnorePointer\(\s*ignoring:\s*!\s*visible');
     expect(bare.hasMatch(episode), isFalse,

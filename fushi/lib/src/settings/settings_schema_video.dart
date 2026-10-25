@@ -227,7 +227,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.playback.immersive_tap_reveal',
             title: t.video_setting_immersive_tap_reveal,
             subtitle: t.video_setting_immersive_tap_reveal_hint,
-            icon: Icons.touch_app_outlined,
+            icon: FushiIcons.touch,
             video: VideoPlacement(group: VideoGroup.playback, order: 72),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoImmersiveTapReveal,
@@ -1738,7 +1738,7 @@ SettingsDestination buildVideoDestination() {
           SettingsActionItem(
             id: 'video.controls.reset_immersive_layout',
             title: t.video_control_reset_immersive_layout,
-            icon: Icons.restart_alt_outlined,
+            icon: FushiIcons.restart,
             video: VideoPlacement(
               group: VideoGroup.controls,
               order: 24,
