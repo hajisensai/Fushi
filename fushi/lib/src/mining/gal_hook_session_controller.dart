@@ -18,6 +18,7 @@ import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_line_voice_window.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
+import 'package:fushi/src/mining/knife_text_websocket.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 import 'package:fushi/src/mining/galgame_system_ui_filter.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
@@ -486,6 +487,9 @@ class GalHookSessionState {
     this.japaneseLocaleApplied = false,
     this.japaneseLocaleVerdict,
     this.japaneseLocaleSkipReason,
+    this.knifeTextServiceIniPath,
+    this.knifeTextServiceIniWritten = false,
+    this.knifeTextServiceIniWriteFailed = false,
   });
 
   final GalHookSessionPhase phase;
@@ -540,6 +544,18 @@ class GalHookSessionState {
   /// 状态卡按它说话。转了、或不是 `auto`，为 null；生命周期与 [japaneseLocaleVerdict] 相同。
   final GalJapaneseLocaleSkipReason? japaneseLocaleSkipReason;
 
+  /// knife（《月姬 -A piece of blue glass moon-》Switch 引擎的 Rust 重写版）的台词只经它
+  /// 自带的 WebSocket 文本服务出来，而该服务默认关闭、只在游戏启动时读开关。附着到一个
+  /// 没开服务的 knife 时，这里是需要打开开关的 knife.ini；UI 据此提示并提供一键写入。
+  /// launch 路径自己带参数开服务，恒为 null。见 knife_text_websocket.dart。
+  final String? knifeTextServiceIniPath;
+
+  /// 本局已经替用户把开关写进 [knifeTextServiceIniPath]（重启游戏后生效）。
+  final bool knifeTextServiceIniWritten;
+
+  /// 本局写 [knifeTextServiceIniPath] 失败过（UI 改为提示手动添加那一行）。
+  final bool knifeTextServiceIniWriteFailed;
+
   bool get isActive =>
       phase != GalHookSessionPhase.idle && phase != GalHookSessionPhase.error;
   bool get hasText => textSignalReceived;
@@ -578,6 +594,10 @@ class GalHookSessionState {
     GalJapaneseLocaleVerdict? japaneseLocaleVerdict,
     GalJapaneseLocaleSkipReason? japaneseLocaleSkipReason,
     bool clearJapaneseLocaleVerdict = false,
+    String? knifeTextServiceIniPath,
+    bool clearKnifeTextServiceIniPath = false,
+    bool? knifeTextServiceIniWritten,
+    bool? knifeTextServiceIniWriteFailed,
   }) {
     return GalHookSessionState(
       phase: phase ?? this.phase,
@@ -630,6 +650,16 @@ class GalHookSessionState {
           : clearJapaneseLocaleVerdict || japaneseLocaleVerdict != null
           ? japaneseLocaleSkipReason
           : japaneseLocaleSkipReason ?? this.japaneseLocaleSkipReason,
+      knifeTextServiceIniPath: clearKnifeTextServiceIniPath
+          ? null
+          : knifeTextServiceIniPath ?? this.knifeTextServiceIniPath,
+      knifeTextServiceIniWritten: clearKnifeTextServiceIniPath
+          ? false
+          : knifeTextServiceIniWritten ?? this.knifeTextServiceIniWritten,
+      knifeTextServiceIniWriteFailed: clearKnifeTextServiceIniPath
+          ? false
+          : knifeTextServiceIniWriteFailed ??
+                this.knifeTextServiceIniWriteFailed,
     );
   }
 }
@@ -1335,6 +1365,53 @@ class GalHookSessionController extends ChangeNotifier {
     }
   }
 
+  /// 附着到 knife 时判断它的台词服务是否开着：knife.ini 没开 → 记下 ini 路径让 UI 提示。
+  /// 用户若是用 `-t` 自己开的，第一句 knife 台词到达时提示随即撤掉（见
+  /// [_onTextBufferChanged]）；进程命令行 host 读不到，这是唯一可靠的「已开」证据。
+  void _noteKnifeTextServiceForAttach(String? executablePath) {
+    if (executablePath == null || executablePath.isEmpty) return;
+    final KnifeInstall? install = detectKnifeInstall(executablePath);
+    if (install == null || install.iniTextWebSocket != null) return;
+    _setState(_state.copyWith(knifeTextServiceIniPath: install.iniPath));
+    _record(
+      GalHookEventSeverity.warning,
+      'text',
+      'knife.text_service_off',
+      'knife text WebSocket server is off; the game must be restarted with it '
+          'enabled',
+      details: <String, Object?>{'ini': install.iniPath},
+    );
+  }
+
+  /// 经用户确认后把 knife 台词服务开关写进 knife.ini（重启游戏后生效）。
+  /// 返回 false = 当前会话没有待开启的 knife，或写入失败。
+  bool enableKnifeTextServiceInIni() {
+    final String? iniPath = _state.knifeTextServiceIniPath;
+    if (iniPath == null || _state.knifeTextServiceIniWritten) return false;
+    try {
+      final String address = enableKnifeTextWebSocketInIni(iniPath);
+      _setState(_state.copyWith(knifeTextServiceIniWritten: true));
+      _record(
+        GalHookEventSeverity.success,
+        'text',
+        'knife.text_service_ini_written',
+        'Enabled the knife text WebSocket server in knife.ini',
+        details: <String, Object?>{'ini': iniPath, 'address': address},
+      );
+      return true;
+    } on FileSystemException catch (error) {
+      _setState(_state.copyWith(knifeTextServiceIniWriteFailed: true));
+      _record(
+        GalHookEventSeverity.error,
+        'text',
+        'knife.text_service_ini_failed',
+        'Could not write knife.ini',
+        details: <String, Object?>{'ini': iniPath, 'error': error.message},
+      );
+      return false;
+    }
+  }
+
   /// BUG-1267 — attach 路径的 `lunaPcHooks` 判据。
   ///
   /// 与 launch 路径**共用** [shouldUseLunaPcHooksForExecutable]：判据本身只认 exe
@@ -1444,6 +1521,7 @@ class GalHookSessionController extends ChangeNotifier {
         clearLastError: true,
         clearFallbackReason: true,
         textSignalReceived: false,
+        clearKnifeTextServiceIniPath: true,
       ),
     );
     // BUG-1892 — attach 不是「没有稳定身份」，只是此前没去查：PID 查得到 exe 全路径，
@@ -1456,6 +1534,7 @@ class GalHookSessionController extends ChangeNotifier {
     if (generation != _operationGeneration) return;
     _beginActivitySession(title: identity.title, mediaKey: identity.gameId);
     _attachedCaptureExecutable = identity.executablePath;
+    _noteKnifeTextServiceForAttach(identity.executablePath);
     // 计时与 hook 彻底解耦：附着时游戏**已经在跑**，注入成功与否、走哪条降级，都不
     // 改变「用户此刻正在玩」这个事实。所以计时起点就在这里，不挂在任何一条成功分支上。
     _startPlayTracker(
@@ -1612,6 +1691,7 @@ class GalHookSessionController extends ChangeNotifier {
         clearLastError: true,
         clearFallbackReason: true,
         textSignalReceived: false,
+        clearKnifeTextServiceIniPath: true,
       ),
     );
     // 身份解析与 attach 共用同一条：上层给了 galgames.id 就采信，没给就按 exe 路径
@@ -1649,6 +1729,24 @@ class GalHookSessionController extends ChangeNotifier {
       );
     }
     final bool lunaPcHooks = shouldUseLunaPcHooksForExecutable(executablePath);
+    // knife 的台词服务默认关闭：没开就在本次启动参数里打开（只加给这一次启动，不改
+    // 用户保存的参数；转区回退递归 launchGame 时仍传用户原参数，不会叠两份）。
+    final List<String> gameArguments = <String>[
+      ...launchArguments,
+      if (knifeNeedsTextWebSocketLaunchArg(
+        executablePath,
+        userArgs: launchArguments,
+        workingDirectory: workdir.isEmpty ? null : workdir,
+      )) ...<String>[
+        '--text-websocket',
+        '127.0.0.1:${await pickFreeLoopbackPort()}',
+      ],
+    ];
+    if (generation != _operationGeneration) {
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.superseded,
+      );
+    }
     _setState(_state.copyWith(phase: GalHookSessionPhase.launching));
     _record(
       GalHookEventSeverity.info,
@@ -1660,6 +1758,7 @@ class GalHookSessionController extends ChangeNotifier {
         'arch': is32Bit == true ? 'x86' : 'x64',
         'lunaPcHooks': lunaPcHooks,
         'gameArgCount': launchArguments.length,
+        'knifeTextServiceAuto': gameArguments.length != launchArguments.length,
         'hasWorkdir': workdir.isNotEmpty,
       },
     );
@@ -1667,7 +1766,7 @@ class GalHookSessionController extends ChangeNotifier {
       _engineSourceFactory(
         targetPid: 0,
         launchExe: executablePath,
-        launchArguments: launchArguments,
+        launchArguments: gameArguments,
         launchWorkdir: workdir,
         injectorPath: injector,
         lunaPcHooks: lunaPcHooks,
@@ -6101,6 +6200,11 @@ class GalHookSessionController extends ChangeNotifier {
     final String? latestId = entries.isEmpty ? null : entries.last.id;
     if (latestId != null && latestId != _lastObservedLineId) {
       final TexthookerLineEntry latest = entries.last;
+      if (_state.knifeTextServiceIniPath != null &&
+          (latest.textThreadKey?.startsWith('knife:') ?? false)) {
+        // 台词服务其实开着（例如用户自己带了 -t）：提示作废。
+        _state = _state.copyWith(clearKnifeTextServiceIniPath: true);
+      }
       if (latest.source != TexthookerLineSource.engineHook) {
         _record(
           GalHookEventSeverity.success,

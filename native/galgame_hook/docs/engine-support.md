@@ -33,6 +33,7 @@
 | `fvp` | FVP (Favorite View Point) | `implemented_unverified` | fvp_text_print_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | fvp_decoder_input_ogg_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `kogado_hy` | Kogado Hy engine | `implemented_unverified` | kogado_hy_message_page_hook (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `luca` | LucaSystem (Prototype) | `implemented_unverified` | luca_message_text (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | luca_voice_pak_member (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `knife` | knife (Tsukihime -A piece of blue glass moon- Switch engine, Rust PC port) | `implemented_unverified` | knife_text_websocket (implemented_unverified)；luna_auto_or_pc_hooks (unavailable) | knife_stream_voice_file (implemented_unverified)；loopback (implemented_unverified) | 0 |
 
 ## 无 OCR 内嵌查词矩阵
 
@@ -1240,6 +1241,48 @@ Tests：`tests/kogado_hy_adapter_test.cpp`
 Fixtures：`tests/fixtures/luca_replay.json`
 
 Tests：`tests/luca_adapter_test.cpp`、`tests/luca_x64_text_test.cpp`、`tests/luca_x64_lookup_test.cpp`
+
+### knife (Tsukihime -A piece of blue glass moon- Switch engine, Rust PC port) (`knife`)
+
+- 状态：`implemented_unverified`
+- 别名：knife、Tsukihime Remake PC port
+- 家族：`knife`（AuroraWright/knife: a Rust reimplementation of the Nintendo Switch engine of Tsukihime -A piece of blue glass moon-, playing the Switch romfs; no sibling engine）
+- 当前 adapter：`hook/adapters/knife_adapter.inc`
+- 进程策略：launch=`generic_launch_available`，attach=`generic_attach_available`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：knife.exe；证据：real_sample — Catalogue only: the release zip knife-x86_64-pc-windows-msvc.zip ships knife.exe. The adapter never matches on names; identity is the romfs layout knife plays from (allscr.mrg plus Nintendo Opus streams in stream/), located through knife.ini assets-dir / -a / the default assets folder.
+- `pe_architectures`：x64；证据：real_sample — knife.exe is PE32+ machine 0x8664
+- `directory_files_all`：assets/allscr.mrg、assets/stream/*.opus；证据：real_sample — Romfs extracted into assets/ next to knife.exe (knife.ini assets-dir = assets); stream/ holds 16601 loose .opus files starting with the Nintendo Opus header chunk 0x80000001
+- `pe_imports`：KERNEL32.DLL、WS2_32.DLL、USER32.DLL；证据：real_sample — knife.exe: wgpu (Vulkan / D3D12) draws glyphs from its own atlas and cpal (WASAPI) plays decoded PCM, so no GDI text or engine audio API is observable
+- `resource_extensions`：.opus、.mrg；证据：real_sample — Voice lines are loose stream/<voice id>.opus (Nintendo Opus) files named <speaker letter><2 digits>_..., read whole at the message start; BGM in the same folder is named MOON<nn>_BGM<nn>
+- `hashes`：knife.exe sha256:8fb49b68d18f2906d1ad68fde42f97fde8636a6baecd50b2cd956d0fc33ff139；证据：real_sample — Catalogue only; the adapter does not hash-pin
+
+文本能力：
+
+- `knife_text_websocket`：`implemented_unverified` — Native exact text lane (source kind 13, hook 'knife exact', ENGINE:KNIFE:text_websocket): an adapter-owned thread inside the game process connects to the engine's text WebSocket with WinHTTP and publishes every message (ruby and control codes already removed by the engine; a message continuation arrives as its own message, a choice list as its options one per line). The server address is read where knife reads it (command line over knife.ini). The raw WebSocket stream was observed on the original path 2026-10-24; no Fushi-host text_ready run of this lane is recorded yet.
+- `luna_auto_or_pc_hooks`：`unavailable` — wgpu renders every glyph from its own font atlas; LunaHook finds no text (user report 2026-10-24: attach shows no usable hook text).
+- codepage：UTF-8 over the WebSocket, published as UTF-16LE
+- 线程提示：Select the 'knife exact' lane.
+
+音频优先级：
+
+1. `knife_stream_voice_file` — `implemented_unverified`；格式：loose Nintendo Opus voice file (mono 48 kHz) read whole at the message start, rewrapped packet for packet into Ogg Opus and dumped with the committed TextSlot seq of the message it precedes (window 1000 ms; older reads are replay / config-test voices and are dropped)；clean voice：not_verified
+2. `loopback` — `implemented_unverified`；格式：process loopback fallback；clean voice：engine_dependent
+
+真实样本证据：
+
+
+已知限制：
+
+- Text needs knife's text WebSocket: Fushi adds it to its own launches; an attached game needs knife.ini text-websocket and one restart (Fushi offers to write it).
+- Native glyph-hit in-game lookup is unavailable (no glyph geometry leaves the GPU renderer); in-game lookup goes through the attached calibrated surface.
+- Voices pair with the line published within 1 s after they are read: a voice played mid-message (VPL2) or by the voice-replay button can attach to the next line when it follows within that window.
+
+Fixtures：`tests/fixtures/knife_replay.json`
+
+Tests：`tests/knife_adapter_test.cpp`
 
 ## 状态定义
 

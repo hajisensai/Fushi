@@ -3836,6 +3836,137 @@
         "tests/luca_x64_text_test.cpp",
         "tests/luca_x64_lookup_test.cpp"
       ]
+    },
+    {
+      "id": "knife",
+      "display_name": "knife (Tsukihime -A piece of blue glass moon- Switch engine, Rust PC port)",
+      "aliases": [
+        "knife",
+        "Tsukihime Remake PC port"
+      ],
+      "family": {
+        "id": "knife",
+        "relation": "AuroraWright/knife: a Rust reimplementation of the Nintendo Switch engine of Tsukihime -A piece of blue glass moon-, playing the Switch romfs; no sibling engine"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "knife.exe"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only: the release zip knife-x86_64-pc-windows-msvc.zip ships knife.exe. The adapter never matches on names; identity is the romfs layout knife plays from (allscr.mrg plus Nintendo Opus streams in stream/), located through knife.ini assets-dir / -a / the default assets folder."
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x64"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "knife.exe is PE32+ machine 0x8664"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "assets/allscr.mrg",
+            "assets/stream/*.opus"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Romfs extracted into assets/ next to knife.exe (knife.ini assets-dir = assets); stream/ holds 16601 loose .opus files starting with the Nintendo Opus header chunk 0x80000001"
+          }
+        },
+        "pe_imports": {
+          "values": [
+            "KERNEL32.DLL",
+            "WS2_32.DLL",
+            "USER32.DLL"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "knife.exe: wgpu (Vulkan / D3D12) draws glyphs from its own atlas and cpal (WASAPI) plays decoded PCM, so no GDI text or engine audio API is observable"
+          }
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [
+            ".opus",
+            ".mrg"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Voice lines are loose stream/<voice id>.opus (Nintendo Opus) files named <speaker letter><2 digits>_..., read whole at the message start; BGM in the same folder is named MOON<nn>_BGM<nn>"
+          }
+        },
+        "hashes": {
+          "values": [
+            "knife.exe sha256:8fb49b68d18f2906d1ad68fde42f97fde8636a6baecd50b2cd956d0fc33ff139"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only; the adapter does not hash-pin"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "generic_launch_available",
+        "attach": "generic_attach_available",
+        "follow_child_processes": false,
+        "notes": [
+          "The original path is a batch file that changes to the game folder and starts knife.exe; knife.exe is the only process.",
+          "Text needs knife's own text WebSocket server: text-websocket = 127.0.0.1:6677 in knife.ini (or -t HOST:PORT). Without it the adapter reports kKnifeDiagWebSocketUnconfigured and publishes no text."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "knife_text_websocket",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 13, hook 'knife exact', ENGINE:KNIFE:text_websocket): an adapter-owned thread inside the game process connects to the engine's text WebSocket with WinHTTP and publishes every message (ruby and control codes already removed by the engine; a message continuation arrives as its own message, a choice list as its options one per line). The server address is read where knife reads it (command line over knife.ini). The raw WebSocket stream was observed on the original path 2026-10-24; no Fushi-host text_ready run of this lane is recorded yet."
+          },
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "unavailable",
+            "verification": "wgpu renders every glyph from its own font atlas; LunaHook finds no text (user report 2026-10-24: attach shows no usable hook text)."
+          }
+        ],
+        "codepage": "UTF-8 over the WebSocket, published as UTF-16LE",
+        "thread_selection_hint": "Select the 'knife exact' lane."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "knife_stream_voice_file",
+            "format": "loose Nintendo Opus voice file (mono 48 kHz) read whole at the message start, rewrapped packet for packet into Ogg Opus and dumped with the committed TextSlot seq of the message it precedes (window 1000 ms; older reads are replay / config-test voices and are dropped)",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "loopback",
+            "format": "process loopback fallback",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "Text needs knife's text WebSocket: Fushi adds it to its own launches; an attached game needs knife.ini text-websocket and one restart (Fushi offers to write it).",
+        "Native glyph-hit in-game lookup is unavailable (no glyph geometry leaves the GPU renderer); in-game lookup goes through the attached calibrated surface.",
+        "Voices pair with the line published within 1 s after they are read: a voice played mid-message (VPL2) or by the voice-replay button can attach to the next line when it follows within that window."
+      ],
+      "adapter_path": "hook/adapters/knife_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/knife_replay.json"
+      ],
+      "test_paths": [
+        "tests/knife_adapter_test.cpp"
+      ]
     }
   ]
 }
