@@ -146,8 +146,9 @@ Future<({String? keyHex, String? error})> srsCheckLocationKey(
   final Object? kdf = meta is Map ? meta['kdf'] : null;
   if (kdf is! Map) return (keyHex: null, error: null);
   if (key == null) return (keyHex: null, error: kSrsSync2NeedsKey);
-  if (kdf['check'] != key.check)
+  if (kdf['check'] != key.check) {
     return (keyHex: null, error: kSrsSync2WrongKey);
+  }
   return (keyHex: key.keyHex, error: null);
 }
 
