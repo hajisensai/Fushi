@@ -1783,7 +1783,10 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       if (run) out.push(run);
       return cut ? out : null;
     };
+    // VN 逐字显现的「未显现」高亮（fushi-vn-unrevealed）本意就是把字画成透明：剔掉带着重号的元素会让
+    // 傍点字在轮到它之前就露出来，所以它整份原样交给引擎。
     var paintable = function(name, value) {
+      if (name === 'fushi-vn-unrevealed') return value;
       if (!clipsInk || !value || typeof value.forEach !== 'function' || typeof Highlight !== 'function') return value;
       var memo = new Map();
       var ranges = [];

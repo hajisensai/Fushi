@@ -79,6 +79,25 @@ const PLAY = String.raw`(async () => {
   };
 })()`;
 
+// VN reveal hides untyped text with the fushi-vn-unrevealed highlight (transparent text). The
+// registry hook above must hand it to the engine whole: stripping the emphasised element would
+// show those characters before their turn.
+const UNREVEALED = String.raw`(() => {
+  const root = document.querySelector('.fushi-vn-content') || document.body;
+  const el = root.querySelector('.em');
+  const range = document.createRange();
+  range.selectNodeContents(root.querySelector('p'));
+  const h = new Highlight(range);
+  h.priority = 100;
+  CSS.highlights.set('fushi-vn-unrevealed', h);
+  const painted = HighlightRegistry.prototype.get.call(CSS.highlights, 'fushi-vn-unrevealed');
+  const emText = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode();
+  let hidesEmphasis = false;
+  if (painted) painted.forEach((r) => { if (r.intersectsNode(emText)) hidesEmphasis = true; });
+  CSS.highlights.delete('fushi-vn-unrevealed');
+  return { hidesEmphasis };
+})()`;
+
 function decodePng(buf) {
   let p = 8, w = 0, h = 0, ct = 0;
   const idat = [];
@@ -154,6 +173,8 @@ try {
     if (page.customColor && play.rangeMode) fail('a custom cue text colour still goes through a CSS highlight');
     if (page.customColor && play.emColor !== 'rgb(30, 90, 200)') fail('emphasised text did not take the custom cue colour: ' + play.emColor);
     if (play.rangeMode && !page.customColor && play.paintsPlain) fail('a no-op cue highlight is still painted by the engine');
+    const unrevealed = await driver.evalHere(UNREVEALED);
+    if (!unrevealed.hidesEmphasis) fail('the VN unrevealed highlight no longer covers emphasised text (marks show before their turn)');
     console.log(page.name + ': ink ' + before + ' -> ' + after + (play.rangeMode ? ' (range)' : ' (wrapper)'));
     checked++;
   }
