@@ -880,6 +880,7 @@ class SrsDbStore implements SrsSync2Host {
     List<SrsEvent> events, {
     bool stamped = false,
     int? serverTimeMs,
+    Map<String, int>? serverTimes,
   }) async {
     // 同步 v2：本机事件交给 Rust 的 `apply`——分配 OpId / HLC / 因果上下文、落唯一事实表（ops）、落投影、
     // 重放受影响的卡，一次 FFI（docs/specs/2026-10-25-srs-sync-v2-design.md §3、§4）。修改记录的 dot / ID
@@ -913,7 +914,8 @@ class SrsDbStore implements SrsSync2Host {
         'note': stored is SrsLogEvent ? noteOf[stored.log.cardId] : null,
         // 外来、已盖戳的事件（备份合并 / 按时间点恢复并入备份）：保留原 dot / 因果上下文 / HLC，支配关系照旧。
         if (stamped) 'stamped': true,
-        if (stamped && serverTimeMs != null) 'server': serverTimeMs,
+        if (stamped && (serverTimes?[stored.id] ?? serverTimeMs) != null)
+          'server': serverTimes?[stored.id] ?? serverTimeMs,
       });
     }
     final Map<String, Object?> r = await _sync2(
@@ -4716,9 +4718,14 @@ class SrsDbStore implements SrsSync2Host {
 
   // ------------------------------------------------------------------ SrsSyncReplica
 
-  /// 并入一批外来、已盖过戳的事件（备份合并、按时间点恢复里并入备份）：保留原 dot / 因果上下文 / HLC
+  /// 并入一批外来、已盖过戳的事件（备份合并、旧格式 `.fushisrs` 备份导入）：保留原 dot / 因果上下文 / HLC
   /// （Rust `apply` 的 stamped 路径），按 ID 取并集、修改记录走支配判定，一个事务、一次缓存刷新。
-  Future<void> applyRemote(List<SrsEvent> events, {int? serverTimeMs}) =>
+  /// [serverTimes] = 逐事件的服务器时间 S(e)（旧备份的 `server_times.json`；排序键），没有的取 [serverTimeMs]。
+  Future<void> applyRemote(
+    List<SrsEvent> events, {
+    int? serverTimeMs,
+    Map<String, int>? serverTimes,
+  }) =>
       runExclusive(() async {
         final (int nowMs, _) = now();
         final List<SrsEvent> mine = <SrsEvent>[
@@ -4730,6 +4737,7 @@ class SrsDbStore implements SrsSync2Host {
             mine,
             stamped: true,
             serverTimeMs: serverTimeMs,
+            serverTimes: serverTimes,
           )).toSet();
           // 同步合并：别的设备的作答带动了牌组 / 全局状态，RWKV 分数表整表重查（见 rwkvScoresKey）。
           if (landed.isNotEmpty) _rwkvScoresRevision++;
@@ -4742,7 +4750,7 @@ class SrsDbStore implements SrsSync2Host {
             if (h != null) {
               _clock.receive(
                 h,
-                serverTimeMs: serverTimeMs,
+                serverTimeMs: serverTimes?[e.id] ?? serverTimeMs,
                 trustedNowMs: nowMs,
               );
             }
