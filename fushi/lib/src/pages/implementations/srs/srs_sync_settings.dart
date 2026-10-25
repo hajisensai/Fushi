@@ -77,7 +77,7 @@ Future<void> showSrsSyncSetupDialog(
   await openSrsSyncDestination(context, picked);
 }
 
-/// 备份页的说明：本机备份不上云；上云 / 跨设备走同步设置（附两个分类的入口）。
+/// 同步与历史页的说明：复习数据随已有的同步通道走（附两个分类的入口）。
 class SrsSyncSettingsNotice extends StatelessWidget {
   const SrsSyncSettingsNotice({super.key, required this.modules});
 
@@ -87,13 +87,13 @@ class SrsSyncSettingsNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     final List<SettingsDestination> destinations = srsSyncDestinations(modules);
     return FushiInlineNotice(
-      key: const ValueKey<String>('srs-backup-cloud-hint'),
+      key: const ValueKey<String>('srs-sync-cloud-hint'),
       icon: FushiIcons.cloudSync,
-      message: t.srs_backup_cloud_hint,
+      message: t.srs_timeline_cloud_hint,
       actions: <Widget>[
         for (final SettingsDestination d in destinations)
           FushiTextButton(
-            key: ValueKey<String>('srs-backup-open-${d.id.name}'),
+            key: ValueKey<String>('srs-sync-open-${d.id.name}'),
             onPressed: () => unawaited(openSrsSyncDestination(context, d)),
             child: Text(srsSyncDestinationLabel(d)),
           ),

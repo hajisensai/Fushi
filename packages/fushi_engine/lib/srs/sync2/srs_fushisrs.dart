@@ -109,6 +109,7 @@ Future<SrsFushiSrsImport> srsImportFushiSrs(
       media++;
     }
   }
+  await store.sync2Checkpoint(p.basename(file.path), 'import');
   final int applied = await store.sync2ImportOps(
     Uint8List.fromList(ops.content as List<int>),
   );

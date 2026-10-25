@@ -637,7 +637,8 @@ final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
   if (store == null) return 0;
   return _srsMemoByContent(_conflictCountMemo, store, () async {
     final int conflicts = (await store.syncConflicts()).length;
-    return conflicts + await store.pendingDecisionCount();
+    final int held = (await store.sync2Conflicts()).length;
+    return conflicts + held + await store.pendingDecisionCount();
   });
 });
 

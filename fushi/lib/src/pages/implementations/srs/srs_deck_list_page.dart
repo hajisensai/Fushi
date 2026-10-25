@@ -24,7 +24,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_page.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_backups_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_history_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
@@ -445,12 +445,12 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       onPressed: () => srsRunLogged('SrsDeckList.noteTypes', _openNoteTypes),
     ),
     FushiToolbarItem(
-      key: const ValueKey<String>('srs_backups'),
-      icon: FushiIcons.backup,
-      label: t.srs_backup_title,
+      key: const ValueKey<String>('srs_timeline'),
+      icon: FushiIcons.history,
+      label: t.srs_timeline_title,
       onPressed: () => srsRunLogged(
-        'SrsDeckList.backups',
-        () => _push<void>((_) => const SrsBackupsPage()),
+        'SrsDeckList.history',
+        () => _push<void>((_) => const SrsHistoryPage()),
       ),
     ),
   ];

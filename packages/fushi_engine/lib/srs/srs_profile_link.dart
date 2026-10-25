@@ -22,12 +22,10 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
-import 'package:fushi_engine/srs/srs_asset_store_directory.dart'
-    show kSrsSyncNamespace;
 import 'package:fushi_engine/srs/srs_backup_merge.dart' show srsAdoptProfileUid;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
-    show kSrsSync2Folder;
+    show kSrsSync2Folder, kSrsSync2Namespace;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 
 /// 写入者目录里的 profile 说明文件。同步引擎只认 `batch-*` / `snapshot-*` / `cursor` / `probe`，
@@ -161,7 +159,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
   SyncAssetStore store, {
   Directory? tempDir,
 }) async {
-  final String ns = await store.ensureNamespace(kSrsSyncNamespace);
+  final String ns = await store.ensureNamespace(kSrsSync2Namespace);
   final List<SrsRemoteProfile> out = <SrsRemoteProfile>[];
   for (final AssetEntry p in await store.listChildren(ns)) {
     if (!p.isFolder) continue;
@@ -249,7 +247,7 @@ Future<void> srsPublishProfileInfo(
   required bool hasNotes,
   Directory? tempDir,
 }) async {
-  final String ns = await store.ensureNamespace(kSrsSyncNamespace);
+  final String ns = await store.ensureNamespace(kSrsSync2Namespace);
   final String profile = await store.ensureFolder(ns, profileUid);
   final String v2 = await store.ensureFolder(profile, kSrsSync2Folder);
   final String devices = await store.ensureFolder(v2, 'devices');
@@ -284,7 +282,7 @@ Future<void> srsRemoveOwnProfileFolder(
   required String profileUid,
   required String deviceId,
 }) async {
-  final String ns = await store.ensureNamespace(kSrsSyncNamespace);
+  final String ns = await store.ensureNamespace(kSrsSync2Namespace);
   AssetEntry? profile;
   for (final AssetEntry e in await store.listChildren(ns)) {
     if (e.isFolder && e.name == profileUid) profile = e;

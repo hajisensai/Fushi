@@ -34,7 +34,7 @@ import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
-import 'package:fushi/src/srs/srs_backup.dart';
+import 'package:fushi/src/srs/srs_legacy_backup_cleanup.dart';
 import 'package:fushi/src/srs/srs_directory_key.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
@@ -70,7 +70,6 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
       },
       engine: () => ref.read(srsEngineProvider),
       bumpRevision: () => ref.read(srsRevisionProvider.notifier).state++,
-      backup: ref.read(srsBackupControllerProvider),
       // 同步前的 profile 关联（铁律 E）：采用目录里已有的 uid 后按新身份重开 store。
       profileLinker: SrsDbProfileLinker(
         db: app.database,
@@ -84,11 +83,6 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
         },
         onError: ErrorLogService.instance.log,
       ),
-    );
-    // 自动备份：库有变动（本机写 / 同步进来）就看一眼要不要备份（见 srs_backup.dart）。
-    ref.listen<int>(
-      srsRevisionProvider,
-      (int? previous, int next) => runtime.backup.onDataChanged(),
     );
     // RWKV 排程服务随模块常驻（store.rwkv 由它装配；对象很轻，重活按需启动）。
     ref.listen<AsyncValue<Object?>>(
@@ -118,7 +112,6 @@ class SrsAppRuntime {
     required Future<SrsMediaStore?> Function() readMedia,
     required FsrsEngine? Function() engine,
     required void Function() bumpRevision,
-    required this.backup,
     SrsProfileLinker? profileLinker,
   }) : _profileLinker = profileLinker,
        _readStore = readStore,
@@ -132,9 +125,6 @@ class SrsAppRuntime {
   final FsrsEngine? Function() _engine;
   final void Function() _bumpRevision;
   final SrsProfileLinker? _profileLinker;
-
-  /// 自动备份（离开 SRS 界面、库有变动时触发；见 srs_backup.dart）。
-  final SrsBackupController backup;
 
   late final SrsSyncScheduler sync = SrsSyncScheduler(
     readStore: _readStore,
@@ -230,10 +220,13 @@ class SrsAppRuntime {
     _hostWrites = app.syncServerController.clientSyncWrites.listen(
       _onHostClientWrite,
     );
-    // 启动就停在 SRS 底栏时自动备份先让路（离开时补）。
-    _syncBackupUse();
-    // 启动时看一次：上次退出前的改动还没备份、且已满间隔就补一份。
-    backup.onDataChanged();
+    // 旧版定时备份已由同步 v2 的时间线 / 归档 / 手动导出取代：本机旧备份文件升级后留 30 天再清。
+    unawaited(
+      srsCleanupLegacyBackups().catchError((Object e, StackTrace stack) {
+        ErrorLogService.instance.log('srsCleanupLegacyBackups', e, stack);
+        return 0;
+      }),
+    );
   }
 
   void dispose() {
@@ -300,32 +293,7 @@ class SrsAppRuntime {
   /// 牌组列表「立即同步」：对所有已认证通道跑一轮（结果区分没配置 / 失败 / 成功）。
   Future<SrsSyncNowResult> syncNow() => sync.syncNow();
 
-  /// SRS 界面正在用：app 在前台，且有复习页开着或 SRS 底栏在显示（牌组列表的计数同样会被
-  /// 备份读快照的事务挡住）。
-  bool get _srsInUse {
-    final AppLifecycleState? state = WidgetsBinding.instance.lifecycleState;
-    if (state != null && state != AppLifecycleState.resumed) return false;
-    return srsActiveReviewSessions.value > 0 ||
-        homeShellTabNotifier.value == HomeTab.srs;
-  }
-
-  bool _lastSrsInUse = false;
-
-  /// 自动备份让路：开始用时叫停在做的那一份；不用了（离开 SRS 界面 / app 退到后台）立即补一份
-  /// （BUG-3579：以前离开复习页就开始备份，回到牌组列表、再点下一个牌组全被挡二三十秒）。
-  void _syncBackupUse() {
-    final bool inUse = _srsInUse;
-    if (inUse == _lastSrsInUse) return;
-    _lastSrsInUse = inUse;
-    if (inUse) {
-      backup.onSrsInUse();
-    } else {
-      backup.onSrsIdle();
-    }
-  }
-
   void _onHomeTabChanged() {
-    _syncBackupUse();
     if (homeShellTabNotifier.value != HomeTab.srs) return;
     unawaited(
       sync.syncThrottled().catchError((Object e, StackTrace stack) {
@@ -338,11 +306,9 @@ class SrsAppRuntime {
   void _onReviewSessionsChanged() {
     final int now = srsActiveReviewSessions.value;
     if (now > 0) optimizer.cancel();
-    _syncBackupUse();
   }
 
   void _onLifecycle(AppLifecycleState state) {
-    _syncBackupUse();
     if (state != AppLifecycleState.resumed) optimizer.cancel();
   }
 

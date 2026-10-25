@@ -1029,7 +1029,8 @@ class SrsDbStore implements SrsSync2Host {
     <String, Object?>{'op': 'purge', 'kind': kind.wire, 'entity': entityId},
   );
 
-  /// 打一个还原点（设计 §10.2：批量删除 / 导入 / 改笔记类型 / 重训参数之前自动打）。
+  /// 打一个还原点（设计 §10.2：批量删除 / 导入 / 改笔记类型 / 重训参数之前自动打）。[reason] 是稳定短码：
+  /// `bulk_delete` / `import` / `note_type` / `fsrs_params` / `manual`（`restore` 由内核自己打）。
   Future<void> sync2Checkpoint(String name, String reason) => _sync2Write(
     <String, Object?>{'op': 'checkpoint', 'name': name, 'reason': reason},
   );
@@ -2788,6 +2789,10 @@ class SrsDbStore implements SrsSync2Host {
         : const <String>[];
     final List<String> cards = await _cardIdsInDecks(sub);
     final int total = notes.length + cards.length;
+    // 批量删除之前自动打还原点（设计 §10.2），删错了能从时间线回到这一刻。
+    if (notes.isNotEmpty) {
+      await sync2Checkpoint(tree.fullName(deckId), 'bulk_delete');
+    }
     onProgress?.call(0, total);
     final (int deletedAt, _) = now();
     for (int i = 0; i < notes.length; i += _deleteDeckChunk) {

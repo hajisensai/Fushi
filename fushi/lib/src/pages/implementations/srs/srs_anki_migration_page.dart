@@ -23,8 +23,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_setup_page.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_backups_page.dart'
-    show srsBackupTimeLabel;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_anki_migration.dart';
 import 'package:fushi/src/srs/srs_import_entry.dart' show srsImportReportLines;
@@ -660,7 +658,7 @@ class _ProfileRow extends StatelessWidget {
               size: FushiByteFormat.bytes(
                 profile.collectionBytes + profile.walBytes,
               ),
-              time: srsBackupTimeLabel(context, profile.modified),
+              time: srsTimeLabel(context, profile.modified),
             ),
           ),
         ]),
