@@ -8,7 +8,8 @@
 //! 语义与旧 Dart 实现逐句逐字段一致（删 Dart 前用 41 本日文书 + 1 本英文书全章节对拍过）：
 //! - 原子：一个码点（合法代理对合成一个，孤立代理单独一个）或一整个 ruby 底本；
 //! - ruby 过滤：按输入顺序，与上一个**收下的** ruby 重叠、越界、空区间、读音全空白、
-//!   读音长于 `max_length / 2`（UTF-16 码元）的跳过；
+//!   读音没有任何文字（傍点 ruby `・・` / `﹅﹅`，见 [is_emphasis_only]）、
+//!   读音长于 `max_length / 2`（UTF-16 码元）的跳过——跳过的底本按原文合成；
 //! - 句界：句末标点 / 引号收尾之后，只再吞收尾括号与句末标点；块边界 / 场景分隔是硬句界；
 //!   单句合成文本（UTF-16 码元）不超过 `max_length`，超长先退到最近的软切点；
 //! - 句首尾的空白原子剪掉；空白的判定与 Dart `String.trim` 相同（见 [is_dart_whitespace]）；
@@ -53,6 +54,13 @@ pub fn is_dart_whitespace(unit: u16) -> bool {
 /// `units.trim().isEmpty`（Dart 语义）。
 fn is_blank(units: &[u16]) -> bool {
     units.iter().all(|&u| is_dart_whitespace(u))
+}
+
+/// 读音里一个文字（字母 / 数字，含假名与漢字）都没有：出版社拿 ruby 画的傍点
+/// （`<ruby>本当<rt>・・</rt></ruby>`、`﹅` / `●` 等），不是读音。换进合成文本会把
+/// 着重的词整个读丢，所以这类 ruby 不收，底本照原文读。
+fn is_emphasis_only(units: &[u16]) -> bool {
+    !char::decode_utf16(units.iter().copied()).any(|c| c.is_ok_and(char::is_alphanumeric))
 }
 
 /// Dart `hay.contains(needle)`（needle 非空）。
@@ -111,6 +119,7 @@ pub fn split_tts_text(
             || ruby.end > len as i64
             || ruby.end <= ruby.start
             || is_blank(ruby.reading)
+            || is_emphasis_only(ruby.reading)
             || ruby.reading.len() as i64 > max_length / 2
         {
             continue;
@@ -413,6 +422,23 @@ mod tests {
         assert_eq!(segs[0].text, "漢字を読む。");
         assert_eq!(segs[0].spoken, "かんじを読む。");
         assert_eq!((segs[0].start, segs[0].end), (0, 6));
+    }
+
+    #[test]
+    fn emphasis_dot_ruby_keeps_base_text() {
+        let segs = split(
+            "本当に嫌だ。",
+            &[(0, 2, "・・"), (3, 4, "﹅"), (4, 5, "●")],
+            &[],
+            120,
+        );
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].spoken, "本当に嫌だ。");
+        // 片假名长音、汉字读音仍算读音。
+        let segs = split("明日だ。", &[(0, 2, "あした")], &[], 120);
+        assert_eq!(segs[0].spoken, "あしただ。");
+        let segs = split("主だ。", &[(0, 1, "ボース")], &[], 120);
+        assert_eq!(segs[0].spoken, "ボースだ。");
     }
 
     #[test]
