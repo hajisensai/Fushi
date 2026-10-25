@@ -152,6 +152,42 @@ Future<BlurayMenuAacsState> prepareBlurayMenuAacs(
   return BlurayMenuAacsState.clear;
 }
 
+/// Remote disc (disc share over HTTP): the same key policy as
+/// [prepareBlurayMenuAacs], with the disc's `AACS/Unit_Key_RO.inf` read from
+/// the share and the KEYDB of **this** device.
+///
+/// The host only shares `AACS/` when the disc still has encrypted streams
+/// ([sharedAacs]); a plain copy is shared without it, so libbluray never loads
+/// libaacs and nothing needs registering. An encrypted disc without a usable
+/// key throws the KEYDB guidance before libbluray opens it.
+Future<BlurayMenuAacsState> prepareRemoteBlurayMenuAacs({
+  required bool sharedAacs,
+  required Future<Uint8List?> Function() readUnitKeyFile,
+  BlurayAacsModule? Function() module = loadBlurayAacsModule,
+  Future<({Uint8List unitKeyFile, Uint8List volumeUniqueKey})> Function(
+        Uint8List unitKeyFile,
+      )
+      loadConfiguration =
+      loadAacsConfigurationForUnitKeyFile,
+}) async {
+  if (!sharedAacs) return BlurayMenuAacsState.notProtected;
+  final BlurayAacsModule? native = module();
+  if (native == null) return BlurayMenuAacsState.unmanaged;
+  final Uint8List? unitFile = await readUnitKeyFile();
+  if (unitFile == null) {
+    throw const AacsConfigurationException(
+      AacsConfigurationError.unsupportedDisc,
+    );
+  }
+  final ({Uint8List unitKeyFile, Uint8List volumeUniqueKey}) configuration =
+      await loadConfiguration(unitFile);
+  native.setDiscKey(
+    Uint8List.fromList(sha1.convert(configuration.unitKeyFile).bytes),
+    configuration.volumeUniqueKey,
+  );
+  return BlurayMenuAacsState.keyed;
+}
+
 /// Menus also read clips no title list references, so every stream counts.
 Future<bool> _hasEncryptedStream(
   String discRoot,

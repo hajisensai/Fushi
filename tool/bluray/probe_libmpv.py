@@ -3,7 +3,22 @@
 The Lua check writes one throwaway script to a temporary directory.
 
 python tool/bluray/probe_libmpv.py /path/to/libmpv-2.dll [--disc /path/to/disc]
-The optional disc probe reports native logs, not an assertion of menu playback.
+    [--dvd /path/to/VIDEO_TS-or-iso]
+The optional disc probes report native logs, not an assertion of menu playback.
+
+DVD (docs/specs/2026-10-24-dvd-original-menu.md) is a required capability:
+the build must expose the `dvd` protocol (stream_dvdnav, -Ddvdnav=enabled) AND
+have libdvdcss loaded as a link-time dependency of the library (libdvdread
+built --with-libdvdcss). A runtime without libdvdcss would only play
+unencrypted discs, so it fails here instead of degrading at the first
+commercial disc.
+
+Audio CD (docs/specs/2026-10-23-music-module-design.md, P5) is required on
+Windows: the `cdda` protocol (stream_cdda, -Dcdda=enabled) with libcdio's
+paranoia library loaded beside libmpv. Whether a seek keeps its offset inside
+the CD sector (patches/cdda-seek-sector-offset.patch) needs a disc in a drive;
+fushi/test/media/music/disc/music_cdda_playback_real_test.dart checks it
+sample-exactly against a cd-paranoia rip.
 """
 
 import argparse
@@ -11,6 +26,7 @@ import ctypes as C
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import time
 
@@ -140,7 +156,111 @@ def probe_lua(mpv, seconds=5):
         return result
 
 
-def probe(path, disc=None, seconds=5):
+def loaded_modules():
+    """Paths of the shared libraries mapped into this process right now."""
+    if sys.platform == "win32":
+        kernel32 = C.WinDLL("kernel32", use_last_error=True)
+        psapi = C.WinDLL("psapi", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = C.c_void_p
+        process = kernel32.GetCurrentProcess()
+        handles = (C.c_void_p * 4096)()
+        needed = C.c_ulong()
+        psapi.EnumProcessModules.argtypes = [C.c_void_p, C.c_void_p, C.c_ulong,
+                                             C.POINTER(C.c_ulong)]
+        if not psapi.EnumProcessModules(process, handles, C.sizeof(handles), C.byref(needed)):
+            raise OSError(C.get_last_error(), "EnumProcessModules failed")
+        psapi.GetModuleFileNameExW.argtypes = [C.c_void_p, C.c_void_p, C.c_wchar_p, C.c_ulong]
+        names = []
+        for handle in handles[:needed.value // C.sizeof(C.c_void_p)]:
+            buffer = C.create_unicode_buffer(32768)
+            if psapi.GetModuleFileNameExW(process, handle, buffer, 32768):
+                names.append(buffer.value)
+        return names
+    if sys.platform == "darwin":
+        dyld = C.CDLL(None)
+        dyld._dyld_image_count.restype = C.c_uint32
+        dyld._dyld_get_image_name.restype = C.c_char_p
+        dyld._dyld_get_image_name.argtypes = [C.c_uint32]
+        return [dyld._dyld_get_image_name(i).decode("utf-8", "replace")
+                for i in range(dyld._dyld_image_count())]
+    with open("/proc/self/maps", encoding="utf-8", errors="replace") as maps:
+        return sorted({line.split(None, 5)[5].strip() for line in maps
+                       if len(line.split(None, 5)) == 6 and "/" in line})
+
+
+def dvd_capability(protocols):
+    """The DVD half of the capability report (see the module docstring).
+
+    libdvdcss is a link-time import of libdvdread, so it is mapped as soon as
+    libmpv is; the package renames it (fbddvdcss-2.dll on Windows), hence the
+    substring match.
+    """
+    modules = [Path(name).name for name in loaded_modules()]
+    css = sorted(name for name in modules if "dvdcss" in name.lower())
+    read = sorted(name for name in modules if "dvdread" in name.lower())
+    nav = sorted(name for name in modules if "dvdnav" in name.lower())
+    report = {
+        "dvd_protocol": "dvd" in protocols,
+        "dvdnav_module": nav,
+        "dvdread_module": read,
+        "dvdcss_module": css,
+    }
+    report["errors"] = [message for ok, message in (
+        (report["dvd_protocol"], "libmpv has no dvd:// protocol (build without -Ddvdnav=enabled)"),
+        (bool(nav), "libdvdnav is not loaded with libmpv"),
+        (bool(read), "libdvdread is not loaded with libmpv"),
+        (bool(css), "libdvdcss is not loaded: libdvdread was not linked --with-libdvdcss "
+                    "(encrypted DVDs cannot be read)"),
+    ) if not ok]
+    return report
+
+
+def cdda_capability(protocols):
+    """The audio CD half of the capability report (see the module docstring).
+
+    libcdio_paranoia -> libcdio_cdda -> libcdio are link-time imports of
+    libmpv; the package renames them (fbdcdio_paranoia-2.dll on Windows),
+    hence the substring match.
+    """
+    modules = [Path(name).name.lower() for name in loaded_modules()]
+    paranoia = sorted(name for name in modules if "cdio_paranoia" in name)
+    cdio = sorted(name for name in modules if "cdio" in name and "cdio_" not in name)
+    report = {"cdda_protocol": "cdda" in protocols, "paranoia_module": paranoia, "cdio_module": cdio}
+    report["errors"] = [message for ok, message in (
+        (report["cdda_protocol"], "libmpv has no cdda:// protocol (build without -Dcdda=enabled)"),
+        (bool(paranoia), "libcdio_paranoia is not loaded with libmpv"),
+        (bool(cdio), "libcdio is not loaded with libmpv"),
+    ) if not ok]
+    return report
+
+
+def probe_dvd_disc(mpv, disc, seconds):
+    """Open a DVD (VIDEO_TS folder or .iso) through dvd:// with menus on and
+    report the native logs plus the v2 navigation snapshot (dvd-state)."""
+    mpv.lib.mpv_request_log_messages(mpv.handle, b"v")
+    target = Path(disc).resolve()
+    if target.is_dir() and (target / "VIDEO_TS").is_dir():
+        target = target / "VIDEO_TS"
+    report = {"load_result": mpv.command("loadfile", "dvd://menu/" + str(target))}
+    logs, snapshots = [], []
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        event = mpv.lib.mpv_wait_event(mpv.handle, 0.1).contents
+        if event.event_id == 2:
+            log = C.cast(event.data, C.POINTER(Log)).contents
+            logs.append({"prefix": log.prefix.decode(), "level": log.level.decode(),
+                         "text": log.text.decode("utf-8", "replace").strip()})
+        state = mpv.get("disc-navigation-state-json")
+        if isinstance(state, str) and (not snapshots or snapshots[-1] != state):
+            snapshots.append(state)
+    report["snapshots"] = [json.loads(s) for s in snapshots]
+    report["disc_state"] = {name: mpv.get(name) for name in (
+        "disc-menu-active", "edition-list", "duration", "track-list")}
+    report["logs"] = logs
+    return report
+
+
+def probe(path, disc=None, seconds=5, dvd=None):
     mpv = Mpv(path)
     try:
         for name, value in (("config", "no"), ("vo", "null"), ("ao", "null"),
@@ -162,12 +282,17 @@ def probe(path, disc=None, seconds=5):
             "discnav": [item for item in commands if item.get("name") == "discnav"],
             "disc_menu_active_property": "disc-menu-active" in properties,
             "disc_navigation_state_json_property": "disc-navigation-state-json" in properties,
+            # Remote discs (disc-interaction-handoff phase 2): bluray-device /
+            # dvd-device accept a paired host's disc share URL.
+            "disc_remote_access_property": "disc-remote-access" in properties,
             "bluray_protocol": "bd" in protocols or "bluray" in protocols,
             "truehd_decoder": any(item.get("codec") == "truehd" for item in decoders),
             "render_api": all(hasattr(mpv.lib, name) for name in (
                 "mpv_render_context_create", "mpv_render_context_render",
                 "mpv_render_context_set_update_callback", "mpv_render_context_free")),
             "lua_script": probe_lua(mpv),
+            "dvd": dvd_capability(protocols),
+            "cdda": cdda_capability(protocols),
         }
         if disc:
             mpv.lib.mpv_request_log_messages(mpv.handle, b"v")
@@ -184,6 +309,8 @@ def probe(path, disc=None, seconds=5):
                 "disc-menu-active", "disc-navigation-state", "disc-navigation-state-json",
                 "current-edition", "edition-list", "duration", "track-list")}
             report["logs"] = logs
+        if dvd:
+            report["dvd_disc"] = probe_dvd_disc(mpv, dvd, seconds)
         return report
     finally:
         mpv.close()
@@ -192,16 +319,22 @@ def probe(path, disc=None, seconds=5):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("library")
-    parser.add_argument("--disc")
+    parser.add_argument("--disc", help="Blu-ray disc root (bd://menu)")
+    parser.add_argument("--dvd", help="DVD VIDEO_TS folder, its parent, or an .iso (dvd://menu)")
     parser.add_argument("--seconds", type=float, default=5)
     parser.add_argument("--preload", help="Preload an existing Fushi runtime before the new library")
     args = parser.parse_args()
     preload = preload_runtime(args.preload) if args.preload else []
-    report = probe(args.library, args.disc, args.seconds)
+    report = probe(args.library, args.disc, args.seconds, args.dvd)
     report["preloaded_modules"] = len(preload) - 1 if preload else 0
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0 if all((report["disc_menu_option_result"] == 0, report["discnav"],
+    for error in report["dvd"]["errors"]:
+        print(f"DVD capability missing: {error}", file=sys.stderr)
+    for error in report["cdda"]["errors"]:
+        print(f"Audio CD capability missing: {error}", file=sys.stderr)
+    return 0 if all((not report["dvd"]["errors"], not report["cdda"]["errors"],report["disc_menu_option_result"] == 0, report["discnav"],
                      report["disc_menu_active_property"], report["bluray_protocol"],
+                     report["disc_remote_access_property"],
                      report["truehd_decoder"], report["render_api"],
                      report["lua_script"]["message"])) else 1
 

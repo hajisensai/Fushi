@@ -46,7 +46,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 128);
+    expect(migrated.schemaVersion, 135);
     expect((await migrated.getAllMediaCollections()).single.name, 'Keep');
     await migrated.recordWebBrowserVisit(
       url: 'https://example.com/',
@@ -86,7 +86,7 @@ void main() {
         'started_at',
       ]),
     );
-    expect(probe.select('PRAGMA user_version').first.values.first, 128);
+    expect(probe.select('PRAGMA user_version').first.values.first, 135);
     // 重跑：表已存在时 _tableExists 守卫让整步 no-op，数据保留。
     probe.execute('PRAGMA user_version = 127');
     probe.dispose();
@@ -98,4 +98,52 @@ void main() {
     expect((await reopened.getWebBrowserHistory()).single.title, 'Example');
     await reopened.close();
   });
+
+  // 并行迁移史：音乐 / 作品图谱分支（PR #2534）合入前把 v125–v131 用给了自己的表，
+  // 合入时整体后移到 v129–v135。那条分支构建打开过的库 user_version 落在 129–131，
+  // 却没有 develop 的 v125–v128 产物；升级必须补齐，不能因为版本号已过 128 就跳过。
+  for (final int parallelVersion in <int>[129, 130, 131]) {
+    test('并行史 user_version=$parallelVersion 缺 v125–v128 产物：升级补齐', () async {
+      final Directory dir = Directory.systemTemp.createTempSync(
+        'web_parallel_$parallelVersion',
+      );
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final String path = '${dir.path}/test.db';
+      final FushiDatabase db = FushiDatabase.atFile(path, isMainProcess: false);
+      await db.createMediaCollection('Keep');
+      await db.close();
+
+      final sqlite.Database raw = sqlite.sqlite3.open(path);
+      for (final String t in webTables) {
+        raw.execute('DROP TABLE $t');
+      }
+      raw.execute('ALTER TABLE bookmarks DROP COLUMN char_offset');
+      raw.execute('ALTER TABLE bookmarks DROP COLUMN chapter_key');
+      raw.execute(
+        'ALTER TABLE collection_member_tombstones DROP COLUMN published_at',
+      );
+      raw.execute('PRAGMA user_version = $parallelVersion');
+      raw.dispose();
+
+      final FushiDatabase migrated = FushiDatabase.atFile(
+        path,
+        isMainProcess: false,
+      );
+      expect((await migrated.getAllMediaCollections()).single.name, 'Keep');
+      await migrated.close();
+
+      final sqlite.Database probe = sqlite.sqlite3.open(path);
+      addTearDown(probe.dispose);
+      expect(tablesOf(probe), containsAll(webTables));
+      expect(
+        columnsOf(probe, 'bookmarks'),
+        containsAll(<String>['char_offset', 'chapter_key']),
+      );
+      expect(
+        columnsOf(probe, 'collection_member_tombstones'),
+        contains('published_at'),
+      );
+      expect(probe.select('PRAGMA user_version').first.values.first, 135);
+    });
+  }
 }

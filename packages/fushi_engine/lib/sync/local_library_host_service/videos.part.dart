@@ -25,9 +25,11 @@ mixin _LocalLibraryHostVideos
     // 入库条目只在登录了那台服务器的本机可播（令牌在本机设置里）：对端拿到也放
     // 不了，都不下发。
     final List<VideoBookRow> rows = (await _db.allVideoBooks())
-        .where((VideoBookRow row) =>
-            !isAnimeSourceVideoPath(row.videoPath) &&
-            !isMediaServerVideoPath(row.videoPath))
+        .where(
+          (VideoBookRow row) =>
+              !isAnimeSourceVideoPath(row.videoPath) &&
+              !isMediaServerVideoPath(row.videoPath),
+        )
         .toList();
     // 按 importedAt 降序（null 排最后）
     rows.sort((VideoBookRow a, VideoBookRow b) {
@@ -391,6 +393,37 @@ mixin _LocalLibraryHostVideos
     // async stat：视频常在网络盘上，同步 existsSync 会冻结 host 所在 isolate（BUG-3756）。
     final String? existing = await _existingFilePathAsync(path);
     return existing == null ? null : File(existing);
+  }
+
+  /// 远端原盘（[VideoDiscShareHost]）：视频行的成员路径是原盘标题时反推盘根。只认
+  /// `videoPath`（当前集）——一张盘的每条标题各是一行，不经播放列表下标。
+  @override
+  Future<String?> resolveVideoDiscRoot(String id) async {
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    if (row == null || row.videoPath.isEmpty) return null;
+    final String? root = discRootForMemberPath(row.videoPath);
+    if (root == null) return null;
+    final FileSystemEntityType type = FileSystemEntity.typeSync(root);
+    return type == FileSystemEntityType.notFound ? null : root;
+  }
+
+  @override
+  Future<List<({String id, String path})>> videoTitlesOnDisc(
+    String discRoot,
+  ) async {
+    final String target = p.normalize(discRoot);
+    return <({String id, String path})>[
+      for (final VideoBookRow row in await _db.allVideoBooks())
+        if (discRootForMemberPath(row.videoPath) case final String root
+            when p.equals(p.normalize(root), target))
+          (
+            id: row.bookUid,
+            path: p
+                .relative(row.videoPath, from: target)
+                .split(p.separator)
+                .join('/'),
+          ),
+    ];
   }
 
   /// 弹弹play 指纹（[VideoDanmakuKeyHost]，BUG-3614）：对 [resolveVideoFile] 反查到

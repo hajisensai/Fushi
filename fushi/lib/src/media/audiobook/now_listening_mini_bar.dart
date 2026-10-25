@@ -6,7 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/audio_controller.dart'
+    show MediaSessionOwner;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -78,6 +81,11 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
     if (book == null || controller == null) {
       return const SizedBox.shrink();
     }
+    // 与音乐迷你条互斥（音乐模块 §7.5）：音乐持有媒体会话时让位给音乐条。
+    if (appModel.musicSession.isActive &&
+        appModel.audioCtrl.sessionOwner.value == MediaSessionOwner.music) {
+      return const SizedBox.shrink();
+    }
 
     final ColorScheme scheme = Theme.of(context).colorScheme;
     // 书架 mini bar 字幕行同属「显示意图」（TODO-1065, BUG-509）：display cue
@@ -120,9 +128,10 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
         ),
         // TODO-354 ③：书架底栏迷你条上的「悬浮字幕」开关——真启停 app 外悬浮字幕
         // 窗口（复用 toggleFloatingLyricFromControls：拉起/隐藏悬浮窗 + 偏好读写）。
-        // 仅 Android/Windows 有 native 悬浮窗后端（floating_lyric_channel），其余桌面
-        // 隐藏开关（优雅降级）。开着态用实心高亮图标提示当前已开。
-        if (Platform.isAndroid || Platform.isWindows)
+        // 只有有 native 悬浮窗后端的平台（FloatingLyricChannel.supported：Android /
+        // Windows / macOS）显示开关，其余（Linux）隐藏（优雅降级）。开着态用实心高亮
+        // 图标提示当前已开。
+        if (FloatingLyricChannel.supported)
           FushiIconButtonControl(
             icon: FushiIcon(
               appModel.showFloatingLyric

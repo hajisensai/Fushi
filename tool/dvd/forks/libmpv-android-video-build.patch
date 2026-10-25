@@ -1,0 +1,79 @@
+diff --git a/buildscripts/scripts/unified_ffmpeg.sh b/buildscripts/scripts/unified_ffmpeg.sh
+--- a/buildscripts/scripts/unified_ffmpeg.sh
++++ b/buildscripts/scripts/unified_ffmpeg.sh
+@@ -26,6 +26,13 @@
+ 	[ -f "staging/lib/$lib.so" ] || { echo "dev prefix lacks $lib.so" >&2; exit 1; }
+ 	[ -f "staging/lib/pkgconfig/$lib.pc" ] || { echo "dev prefix lacks $lib.pc" >&2; exit 1; }
+ done
++# Fushi DVD (hajisensai/fushi tool/dvd): the same shared libdvdcss / libdvdread /
++# libdvdnav the AAR ships next to libavformat.so (FFmpegKitNext patch 0003);
++# libmpv's dvd:// navigation links them, never a private copy.
++for pc in libdvdcss:libdvdcss dvdread:libdvdread dvdnav:libdvdnav; do
++	[ -f "staging/lib/${pc#*:}.so" ] || { echo "dev prefix lacks ${pc#*:}.so" >&2; exit 1; }
++	[ -f "staging/lib/pkgconfig/${pc%%:*}.pc" ] || { echo "dev prefix lacks ${pc%%:*}.pc" >&2; exit 1; }
++done
+ 
+ mkdir -p "$prefix_dir/include" "$prefix_dir/lib/pkgconfig"
+ cp -a staging/include/. "$prefix_dir/include/"
+@@ -34,7 +41,7 @@
+ # prefix; /usr/local maps back onto it through setup_prefix's symlinks) and
+ # drop the static-link closure: libmpv links these libraries dynamically, and
+ # meson's --prefer-static would otherwise demand -lx264 & co.
+-for pc in staging/lib/pkgconfig/lib*.pc; do
++for pc in staging/lib/pkgconfig/lib*.pc staging/lib/pkgconfig/dvdread.pc staging/lib/pkgconfig/dvdnav.pc; do
+ 	sed -E \
+ 		-e 's#^prefix=.*#prefix=/usr/local#' \
+ 		-e 's#^exec_prefix=.*#exec_prefix=${prefix}#' \
+@@ -45,3 +52,4 @@
+ 		"$pc" > "$prefix_dir/lib/pkgconfig/$(basename "$pc")"
+ done
+ pkg-config --modversion libavcodec
++pkg-config --modversion dvdnav
+diff --git a/buildscripts/scripts/mpv.sh b/buildscripts/scripts/mpv.sh
+--- a/buildscripts/scripts/mpv.sh
++++ b/buildscripts/scripts/mpv.sh
+@@ -20,13 +20,15 @@
+ 	--prefer-static \
+ 	--default-library shared \
+ 	-Db_lundef=true \
+-	-Dgpl=false \
++	-Dgpl=true \
+ 	-Dlibmpv=true \
+  	-Dlua=lua \
+  	-Dcplayer=false \
+ 	-Diconv=disabled \
+ 	-Dvulkan=disabled \
+ 	-Dlibbluray=enabled \
++	-Ddvdnav=enabled \
++	-Ddvda=disabled \
+  	-Dmanpage-build=disabled
+ 
+ ninja -C $build -j$cores
+diff --git a/buildscripts/bundle_unified.sh b/buildscripts/bundle_unified.sh
+--- a/buildscripts/bundle_unified.sh
++++ b/buildscripts/bundle_unified.sh
+@@ -44,7 +44,9 @@
+
+ # Unified FFmpeg: libmpv must NEED the AAR's plain-named FFmpeg libraries and
+ # must not carry an FFmpeg copy of its own.
+-for ff in libavcodec libavformat libavutil libavfilter libswresample libswscale; do
++# libdvdread is not listed: mpv calls only the dvdnav API, so --as-needed drops
++# the direct dependency and libdvdread.so loads through libdvdnav.so's NEEDED.
++for ff in libavcodec libavformat libavutil libavfilter libswresample libswscale libdvdnav; do
+     grep -Eq "\(NEEDED\)[[:space:]]+Shared library: \[$ff\.so\]" "$out/$abi.elf.txt" ||
+         { echo "libmpv.so does not NEED $ff.so (shared unified FFmpeg)" >&2; exit 3; }
+ done
+@@ -57,6 +59,13 @@
+     { echo "libmpv.so does not import avcodec_send_packet" >&2; exit 3; }
+ 
+ "$bin/llvm-strings" "$lib" > "$out/$abi.strings.txt"
++# Fushi DVD menus: dvd:// stream + disc-navigation-state v2 (dvd-state).
++grep -Fq -- '-Ddvdnav=enabled' "$out/$abi.strings.txt"
++grep -Fxq 'dvd-state' "$out/$abi.strings.txt"
++if grep -Eq ' T dvdnav_open(@|$)' "$out/$abi.symbols.txt"; then
++    echo "libmpv.so defines libdvdnav itself: a private DVD copy was linked in" >&2
++    exit 3
++fi
+ for capability in discnav disc-navigation-state-json disc-menu-active; do
+     grep -Fxq "$capability" "$out/$abi.strings.txt"
+ done

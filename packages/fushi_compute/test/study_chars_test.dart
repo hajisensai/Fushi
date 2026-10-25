@@ -86,6 +86,22 @@ void main() {
     expect(_count('x'), 1);
   });
 
+  test('prefixTotals equals counting each prefix (one FFI call)', () {
+    const String text = '猫が魚。 Hello world! 𠮷野家 rock\'n\'roll';
+    final List<int> offsets = <int>[0, 3, 4, 8, 11, 17, 21, 25, text.length];
+    expect(StudyCharsNative.instance.prefixTotals(text, offsets), <int>[
+      for (final int o in offsets) _count(text.substring(0, o)),
+    ]);
+    expect(
+      StudyCharsNative.instance.prefixTotals(text, const <int>[]),
+      isEmpty,
+    );
+    expect(
+      () => StudyCharsNative.instance.prefixTotals(text, const <int>[5, 2]),
+      throwsStateError,
+    );
+  });
+
   test('out-of-range code points classify as breaker', () {
     expect(StudyCharsNative.instance.classOf(-1), 0);
     expect(StudyCharsNative.instance.classOf(0x110000), 0);

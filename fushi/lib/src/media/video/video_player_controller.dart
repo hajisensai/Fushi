@@ -12,6 +12,7 @@ import 'package:fushi/src/media/video/coalesced_rereader.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
 import 'package:fushi/src/media/video/bluray_aacs_module.dart';
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
@@ -41,6 +42,10 @@ import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show discRootForMemberPath;
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show dvdPlaybackUriForTitlePath, dvdTitlePath, isDvdTitlePath;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -882,6 +887,15 @@ class VideoPlayerController extends ChangeNotifier
   /// 旧媒体的异步章节读取结果；token 让旧 load 的结果可被丢弃。
   int _loadToken = 0;
   String? _discRootPath;
+
+  /// The navigation session is a DVD (libdvdnav, `dvd://menu`), not a Blu-ray.
+  /// Its selected / bound "playlist" paths then carry DVD title member paths
+  /// (`<disc>/VIDEO_TS/TITLE_nn.dvdtitle`, dvd_title_path.dart).
+  bool _discIsDvd = false;
+
+  /// 流式原盘会话（远端原盘第二期）：盘在已配对 host 上，libmpv 经 HTTP 读它。
+  /// 非 null 时 [_discRootPath] 是只作身份的虚拟根（[RemoteDiscMenuSource.identityRoot]）。
+  RemoteDiscMenuSource? _discRemote;
   VideoDiscNavigationState? _discState;
   String? _selectedDiscPlaylistPath;
   String? _boundDiscPlaylistPath;
@@ -2572,8 +2586,13 @@ class VideoPlayerController extends ChangeNotifier
     _lastSubtitleEndPauseCueIndex = null;
     // 主字幕换了：给 Lua 脚本的镜像轨跟着重挂（没装脚本时零开销）。
     _scheduleLuaSubtitleMirrorSync();
+    if (_cues.isNotEmpty) onCuesReplaced?.call(_cues);
     notifyListeners();
   }
+
+  /// 主字幕 cue 列表整体换成了一份非空的新列表（加载 / 换轨 / 换集）。页面接到
+  /// 「我库里的例句」的语料喂入（LibraryCorpusService.feedVideoCues）；null = 不关心。
+  void Function(List<AudioCue> cues)? onCuesReplaced;
 
   /// TODO-1312：设置**副字幕** cue 列表：拷贝并按 startMs 升序排序，复位副字幕活动集。
   /// 副字幕与主字幕独立、同一 effective 位置各自求活动集，一起交给 Flutter overlay 多层
@@ -3121,6 +3140,8 @@ class VideoPlayerController extends ChangeNotifier
     // 互联 host 下发的蓝光标题段表（与 [mediaUri] 同时给，非 null 时取代它）。与本地
     // 蓝光同一套 EDL 拼法；[nativePlaybackUri] 对 `edl://` 逐段改写自签 https 段。
     BlurayRemoteTitle? remoteDiscTitle,
+    // 流式原盘会话的盘源（与 [openBlurayMenu] 同时给；[mediaUri] 给它的设备串）。
+    RemoteDiscMenuSource? remoteDisc,
     // TODO-1280：YouTube 等分离流（video-only 主流 + audio-only 外挂）的 audio-only 流 URL。
     // 必须在本次 load 内、恢复 seek + play() **之前**经 `audio-add ... select` 外挂，libmpv
     // 才会让它随首个 seek / 起播与视频时间轴同步；若等 load 返回后再挂（play 已开始），新加的
@@ -3144,12 +3165,22 @@ class VideoPlayerController extends ChangeNotifier
       if (loadToken != _loadToken) return;
     }
     _resetDiscMenu();
-    if (openBlurayMenu) {
+    if (openBlurayMenu && remoteDisc != null) {
+      // Remote disc: libbluray / libdvdnav read the host's share over HTTP; the
+      // virtual root only tells titles apart, nothing reads from it.
+      _discRootPath = remoteDisc.identityRoot;
+      _discIsDvd = remoteDisc.isDvd;
+      _discRemote = remoteDisc;
+      _miningSourceOverride = null;
+      _miningAudioSourceOverride = null;
+    } else if (openBlurayMenu) {
+      // Blu-ray `.mpls` or DVD `TITLE_nn.dvdtitle` member: both name their disc.
       final String? root = videoFile == null
           ? null
-          : blurayDiscRootForPlaylistPath(videoFile.path);
+          : discRootForMemberPath(videoFile.path);
       if (root == null) throw const VideoDiscMenuException('invalid-disc-root');
       _discRootPath = root;
+      _discIsDvd = isDvdTitlePath(videoFile!.path);
       _miningSourceOverride = null;
       _miningAudioSourceOverride = null;
     }
@@ -3189,13 +3220,19 @@ class VideoPlayerController extends ChangeNotifier
     // menu (`bd://menu`) is read by libbluray itself; `resolve` returns its
     // `.mpls` path unchanged, so the session stays empty there.
     final AacsMediaSession aacsSession = AacsMediaSession();
+    // A DVD title is a virtual member path: libdvdnav reads the disc
+    // (`dvd://<title-1>/<disc>`), never a file at that path.
+    final String? dvdTitleUri = !openBlurayMenu && videoFile != null
+        ? dvdPlaybackUriForTitlePath(videoFile.path)
+        : null;
     final String? localPlaybackSource;
     try {
       localPlaybackSource = videoFile == null
           ? null
-          : bluray == null
-          ? await aacsSession.resolve(videoFile.path)
-          : await aacsSession.playbackSource(bluray);
+          : dvdTitleUri ??
+                (bluray == null
+                    ? await aacsSession.resolve(videoFile.path)
+                    : await aacsSession.playbackSource(bluray));
     } catch (_) {
       await aacsSession.close();
       rethrow;
@@ -3230,12 +3267,13 @@ class VideoPlayerController extends ChangeNotifier
     // 逐段改写（host 的自签 https 段降级给本地中继）。
     final String sourceUri = nativePlaybackUri(
       openBlurayMenu
-          ? 'bd://menu'
+          ? (_discIsDvd ? 'dvd://menu' : 'bd://menu')
           : remoteDiscTitle?.edlUri() ??
                 mediaUri ??
                 // EDL 串与解密回环 URL 都不是文件路径，不能再过 `mediaUriForVideoPath` 包成 file://。
                 (localPlaybackSource!.startsWith('http://') ||
-                        localPlaybackSource.startsWith('edl://')
+                        localPlaybackSource.startsWith('edl://') ||
+                        localPlaybackSource.startsWith('dvd://')
                     ? localPlaybackSource
                     : mediaUriForVideoPath(localPlaybackSource)),
     );
@@ -3381,7 +3419,11 @@ class VideoPlayerController extends ChangeNotifier
       // 「删这一集前先放句柄」放错对象。
       _mediaHandleRegistration ??= MediaHandleRegistry.instance.register(
         _releaseMediaHandles,
-        mediaPath: () => _discRootPath ?? videoPath,
+        mediaPath: () =>
+            _discRootPath ??
+            (videoPath == null
+                ? null
+                : discRootForMemberPath(videoPath!) ?? videoPath),
       );
       // BUG-739：设备切换后回补音量目标（详见 [_audioDeviceSub] 字段注释）。随 Player
       // 生命周期挂一次；换集复用同一 Player 不重挂，避免叠加订阅。

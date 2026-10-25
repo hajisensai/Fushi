@@ -12,6 +12,7 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
   private var sourceUrlEventSink: FlutterEventSink?
   private var globalLookupOverlay: GlobalLookupOverlayController?
   private var desktopFloatingBall: DesktopFloatingBallController?
+  private var floatingLyric: FloatingLyricController?
   /// Dart 最后一次表达的查词输入法语言。app 重新回到前台时按它再切回去——否则
   /// 用户 Cmd-Tab 出去一趟回来，查词页面还开着但输入法已经不是他选的那个了。
   private var desiredLookupImeTag: String?
@@ -55,6 +56,24 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
         name: "app.fushi/window",
         binaryMessenger: controller.engine.binaryMessenger)
       startupWindowChannel.setMethodCallHandler { [weak self] call, result in
+        // App-owned borderless fullscreen (disc sessions); see
+        // MainFlutterWindow.setBorderlessFullscreen.
+        if call.method == "setBorderlessFullscreen"
+          || call.method == "isBorderlessFullscreen"
+        {
+          guard let window = self?.mainFlutterWindow as? MainFlutterWindow else {
+            result(FlutterError(code: "window_unavailable", message: nil, details: nil))
+            return
+          }
+          if call.method == "isBorderlessFullscreen" {
+            result(window.isBorderlessFullscreen)
+            return
+          }
+          let args = call.arguments as? [String: Any]
+          let enabled = args?["fullscreen"] as? Bool ?? false
+          result(window.setBorderlessFullscreen(enabled))
+          return
+        }
         guard call.method == "showStartupWindow" else {
           result(FlutterMethodNotImplemented)
           return
@@ -129,6 +148,12 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       // 原生只画球与按钮列、报点击与位置，动作全在 Dart 执行。见
       // FushiDesktopFloatingBall.swift 与 docs/specs/2026-09-30-desktop-system-floating-ball.md。
       desktopFloatingBall = DesktopFloatingBallController(
+        binaryMessenger: controller.engine.binaryMessenger)
+
+      // 有声书悬浮字幕 / 音乐桌面歌词（与 Android FloatingLyricService、Windows
+      // floating_lyric_window.cpp 同名通道 app.fushi.reader/floating_lyric）：置顶、
+      // 不抢前台的 NSPanel。见 FushiFloatingLyric.swift。
+      floatingLyric = FloatingLyricController(
         binaryMessenger: controller.engine.binaryMessenger)
 
       // 查词输入框的输入法语言。macOS 的输入源是系统全局状态，所以除了「切过去」
@@ -463,6 +488,8 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
     // 应用外悬浮球的面板随进程收掉。
     desktopFloatingBall?.destroy()
     desktopFloatingBall = nil
+    floatingLyric?.destroy()
+    floatingLyric = nil
     super.applicationWillTerminate(notification)
   }
 

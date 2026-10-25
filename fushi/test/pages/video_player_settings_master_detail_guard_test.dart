@@ -52,7 +52,7 @@ void main() {
     final String hostMethod = _between(
       source,
       'VideoQuickSettingsHost _buildVideoQuickSettingsHost() {',
-      'Future<void> _switchToSkiaAndRestart()',
+      'void _showPlayerSettings({',
     );
     final String panelChildMethod = _between(
       source,

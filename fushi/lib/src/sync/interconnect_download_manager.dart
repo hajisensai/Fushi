@@ -244,6 +244,7 @@ class _DownloadSpec {
     required this.pausable,
     this.resumeRecord,
     this.origin = InterconnectDownloadOrigin.ownDevice,
+    this.discardLeftovers,
   });
 
   final String title;
@@ -258,6 +259,10 @@ class _DownloadSpec {
 
   /// 视频任务的续传清单（null = 不落清单）。
   final InterconnectVideoResumeRecord? resumeRecord;
+
+  /// 落点不是单个 `.part` 文件的任务（整盘下载是一整棵目录）自己清半成品；null
+  /// 走 [InterconnectDownloadManager.discard] 的单文件残片清单。
+  final Future<bool> Function()? discardLeftovers;
 }
 
 /// **app 级互联下载管理器（TODO-819）**。持有所有进行中/已完成/失败的互联下载任务，
@@ -294,6 +299,10 @@ class InterconnectDownloadManager extends ChangeNotifier {
   /// 纯 SRT（standalone）远端有声书任务键（身份 = uid，与书 downloadId 又是一个
   /// 不同值域，再隔一个域前缀）。
   static String srtAudiobookTaskId(String identity) => 'srt:$identity';
+
+  /// 远端原盘整盘下载的任务键（host 下发的盘身份 `discKey`；一张盘的几条标题
+  /// 共用一个任务，再隔一个域前缀与视频键分开）。
+  static String discTaskId(String discKey) => 'disc:$discKey';
 
   /// 合集整体下载的批键（本地 `media_collections.id`）。
   static String collectionBatchId(int collectionId) =>
@@ -511,6 +520,31 @@ class InterconnectDownloadManager extends ChangeNotifier {
           pausable: true,
           resumeRecord: resumeRecord,
           origin: origin,
+        ),
+      );
+
+  /// 启动一个远端原盘整盘下载（键 = [discTaskId]）。与视频任务同一套生命周期：
+  /// 可暂停 / 继续 / 取消，续传由 [run] 承接（已落地的文件跳过、没下完的按
+  /// `.part` 续）。[dest] 是本机盘根（目录盘是目录、镜像盘是 `.iso`），[discard]
+  /// 放弃任务时清掉整棵半成品。
+  Future<InterconnectDownloadTask> startDiscDownload({
+    required String discKey,
+    required String title,
+    required File dest,
+    required InterconnectVideoDownloadRunner run,
+    required Future<bool> Function() discard,
+    InterconnectDownloadComplete? onComplete,
+  }) =>
+      _startDownload(
+        discTaskId(discKey),
+        _DownloadSpec(
+          title: title,
+          kind: InterconnectDownloadKind.video,
+          dest: dest,
+          run: run,
+          onComplete: onComplete,
+          pausable: true,
+          discardLeftovers: discard,
         ),
       );
 
@@ -799,6 +833,8 @@ class InterconnectDownloadManager extends ChangeNotifier {
     final _DownloadSpec? spec = _specs[id];
     if (task == null || task.isRunning || spec == null) return false;
     clearTask(id);
+    final Future<bool> Function()? leftovers = spec.discardLeftovers;
+    if (leftovers != null) return leftovers();
     final String destPath = spec.dest.path;
     bool deleted = false;
     for (final File f in <File>[

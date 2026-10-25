@@ -7,6 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
+import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -57,76 +58,6 @@ const double _kNarrowMinTitleWidth = 56;
 // ---------------------------------------------------------------------------
 // 几何
 // ---------------------------------------------------------------------------
-
-/// 宽屏双栏几何。背景（画歌词底板）与 [Md3LyricsPlayerDesign.lyricsRect] /
-/// 控件层共用同一份计算，三者才对得齐。
-@immutable
-class _WideGeometry {
-  const _WideGeometry._({
-    required this.panel,
-    required this.plate,
-    required this.lyrics,
-  });
-
-  /// [mirror] = 左右互换进度：0 = 封面栏在左、歌词底板在右；1 = 封面栏到右、
-  /// 歌词底板到左；中间值把两端几何逐矩形线性插值（换位动画途中）。两栏宽度与
-  /// 间距不变——换位置不会让歌词区变小。
-  factory _WideGeometry.of(Size size, EdgeInsets padding, {double mirror = 0}) {
-    if (mirror <= 0) return _WideGeometry._side(size, padding, mirrored: false);
-    if (mirror >= 1) return _WideGeometry._side(size, padding, mirrored: true);
-    final _WideGeometry a = _WideGeometry._side(size, padding, mirrored: false);
-    final _WideGeometry b = _WideGeometry._side(size, padding, mirrored: true);
-    return _WideGeometry._(
-      panel: Rect.lerp(a.panel, b.panel, mirror)!,
-      plate: Rect.lerp(a.plate, b.plate, mirror)!,
-      lyrics: Rect.lerp(a.lyrics, b.lyrics, mirror)!,
-    );
-  }
-
-  factory _WideGeometry._side(
-    Size size,
-    EdgeInsets padding, {
-    bool mirrored = false,
-  }) {
-    final double hPad = (size.width * 0.04).clamp(20.0, 56.0);
-    final double left = padding.left + hPad;
-    final double right = size.width - padding.right - hPad;
-    final double top = padding.top + 20;
-    final double bottom = math.max(top + 1, size.height - padding.bottom - 20);
-    final double contentWidth = math.max(1, right - left);
-    // 左栏比例参考 Niratan playerPanel（宽 32%、夹在 220–430），MD3 的控件更大
-    // 一号，取 36% 夹在 260–440。
-    final double maxPanel = math.min(440, contentWidth * 0.44);
-    final double panelWidth = (contentWidth * 0.36).clamp(
-      math.min(260.0, maxPanel),
-      maxPanel,
-    );
-    final double gap = (contentWidth * 0.04).clamp(20.0, 64.0);
-    final Rect panel = mirrored
-        ? Rect.fromLTRB(right - panelWidth, top, right, bottom)
-        : Rect.fromLTRB(left, top, left + panelWidth, bottom);
-    final Rect plate = mirrored
-        ? Rect.fromLTRB(left, top, math.max(left + 1, panel.left - gap), bottom)
-        : Rect.fromLTRB(
-            math.min(right - 1, panel.right + gap),
-            top,
-            right,
-            bottom,
-          );
-    // 歌词矩形在底板里内缩：顶部留 64 给右上角关闭键（不让它压在首行上）。
-    final Rect lyrics = Rect.fromLTRB(
-      plate.left + 8,
-      math.min(plate.bottom - 1, plate.top + 64),
-      math.max(plate.left + 9, plate.right - 8),
-      math.max(plate.top + 65, plate.bottom - 8),
-    );
-    return _WideGeometry._(panel: panel, plate: plate, lyrics: lyrics);
-  }
-
-  final Rect panel;
-  final Rect plate;
-  final Rect lyrics;
-}
 
 /// 窄屏几何：顶栏与底部播放卡的高度按当前文字缩放下各行的真实行高和触控
 /// 目标尺寸算出来（HBK048）。之前是写死的 56 / 210，200% 字号下顶栏底溢 24、
@@ -226,26 +157,6 @@ double lyricsPlayerTapDimension(ThemeData theme) =>
     ? kMinInteractiveDimension
     : 40;
 
-/// 宽屏歌词底板（画在 mesh 背景里，WebView 在控件层下面）；窄屏不画。两个顶层
-/// 函数而不是闭包：背景按解析器身份判断要不要重画。
-Rect? _widePlateRect(Size page, EdgeInsets padding) =>
-    lyricsPlayerIsWide(page) ? _WideGeometry.of(page, padding).plate : null;
-
-Rect? _widePlateRectMirrored(Size page, EdgeInsets padding) =>
-    lyricsPlayerIsWide(page)
-    ? _WideGeometry.of(page, padding, mirror: 1).plate
-    : null;
-
-/// 底板解析器：停在两端时返回上面两个顶层函数（身份稳定，背景不重画）；换位
-/// 动画途中才返回按进度插值的闭包（每帧新身份 = 每帧重画，正是动画要的）。
-FushiMeshPlateResolver _widePlateResolver(double mirror) {
-  if (mirror <= 0) return _widePlateRect;
-  if (mirror >= 1) return _widePlateRectMirrored;
-  return (Size page, EdgeInsets padding) => lyricsPlayerIsWide(page)
-      ? _WideGeometry.of(page, padding, mirror: mirror).plate
-      : null;
-}
-
 /// −10 秒 / 上一句 / 播放 / 下一句 / +10 秒：公共 [FushiTransportGroup] 接上歌词
 /// 页的回调。
 class _TransportGroup extends StatelessWidget {
@@ -304,7 +215,11 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
   @override
   Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding) {
     if (lyricsPlayerIsWide(size)) {
-      return _WideGeometry.of(size, padding, mirror: mirrorProgress).lyrics;
+      return LyricsShellMd3WideGeometry.of(
+        size,
+        padding,
+        mirror: mirrorProgress,
+      ).lyrics;
     }
     final _NarrowGeometry geometry = _NarrowGeometry.of(context, size, padding);
     final double top = padding.top + 8 + geometry.topBarHeight + 8;
@@ -324,7 +239,7 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
     double bleedTop = 0,
   }) => FushiMeshBackdrop(
     bleedTop: bleedTop,
-    plateRect: _widePlateResolver(mirrorProgress),
+    plateRect: lyricsShellMd3PlateResolver(mirrorProgress),
   );
 
   @override
@@ -337,7 +252,7 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
     required Rect lyricsRect,
   }) {
     if (lyricsPlayerIsWide(size)) {
-      final _WideGeometry geometry = _WideGeometry.of(
+      final LyricsShellMd3WideGeometry geometry = LyricsShellMd3WideGeometry.of(
         size,
         padding,
         mirror: mirrorProgress,
@@ -451,7 +366,7 @@ class _WidePanel extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints constraints) {
         final double width = constraints.maxWidth;
         // 播放卡按内容高度（紧凑排布），封面 / 插图吃掉剩下的全部高度：栏宽是
-        // 固定几何（[_WideGeometry]），封面变大只往竖向长，歌词区不受影响。
+        // 固定几何（[LyricsShellMd3WideGeometry]），封面变大只往竖向长，歌词区不受影响。
         // 竖版书封 / 插图按原比例放进「栏宽 × 剩余高度」的框里，不再先裁成
         // 正方形——以前竖图被正方形的高卡住，左右空出一大截。
         final Widget card = _SpringEntrance(

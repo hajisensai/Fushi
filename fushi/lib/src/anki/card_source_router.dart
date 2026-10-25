@@ -12,6 +12,7 @@ import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/source_review_session.dart';
 import 'package:fushi/src/anki/source_review_draft_store.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
+import 'package:fushi/src/mining/mined_origin_navigation.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -104,6 +105,28 @@ Future<void> _openCardSource({
   final AppModel app = ref.read(appProvider);
   final NavigatorState? navigator = app.navigatorKey.currentState;
   if (navigator == null || app.isMigrationReadonly) return;
+  // 游戏 / 音乐出处没有「回看并改原卡」的审阅形态（游戏台词不在可重放的正文里，
+  // 音乐只是一段原曲）：直接落到出处本身，不建 [SourceReviewSession]。
+  switch (link.kind) {
+    case CardSourceKind.game:
+      await openGameOrigin(
+        navigator: navigator,
+        db: app.database,
+        gameId: link.uid,
+      );
+      return;
+    case CardSourceKind.music:
+      await playMusicOriginClip(
+        app: app,
+        trackUid: link.uid,
+        positionMs: link.startMs ?? 0,
+      );
+      return;
+    case CardSourceKind.book:
+    case CardSourceKind.manga:
+    case CardSourceKind.video:
+      break;
+  }
   final EpubBookRow? book = link.kind == CardSourceKind.video
       ? null
       : await resolveCardSourceBook(app.database, link);

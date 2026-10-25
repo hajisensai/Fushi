@@ -111,6 +111,8 @@ import 'package:fushi/src/media/video/media_server/media_server_library.dart'
 import 'package:fushi/src/sync/remote_library_cache.dart'
     show remoteLibraryCacheProvider;
 import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart';
+import 'package:fushi/src/pages/implementations/music/music_library_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
@@ -279,6 +281,12 @@ AdaptiveNavItem _homeNavItemBase(HomeTab tab) {
         icon: FushiIcons.video,
         selectedIcon: FushiIcons.filled(FushiIcons.video),
         label: t.nav_video,
+      );
+    case HomeTab.music:
+      return AdaptiveNavItem(
+        icon: FushiIcons.music,
+        selectedIcon: FushiIcons.filled(FushiIcons.music),
+        label: t.nav_music,
       );
     case HomeTab.browse:
       // Mihon 的 Browse：来源 / 扩展 / 发现 / 下载（2026-09-27 由「下载」改名）。
@@ -2065,6 +2073,7 @@ class _HomePageState extends BasePageState<HomePage>
                 const RecommendedPackDownloadMiniBar(),
               if (visibility.isEnabled(ModuleId.listening))
                 const NowListeningMiniBar(),
+                const MusicNowPlayingBar(),
             ],
           ),
         ),
@@ -2254,6 +2263,7 @@ class _HomePageState extends BasePageState<HomePage>
     HomeTab.books,
     HomeTab.manga,
     HomeTab.video,
+    HomeTab.music,
     HomeTab.games,
     HomeTab.browse,
   };
@@ -3710,6 +3720,7 @@ class _HomePageState extends BasePageState<HomePage>
         _buildSettingsTabContent(showBackButton: false),
       HomeTab.books => const HomeReaderPage(),
       HomeTab.manga => const MangaLibraryPage(),
+      HomeTab.music => const MusicLibraryPage(),
     };
     return FushiShellTitleScope(
       title: _shellTitleFor(tab),
@@ -4063,8 +4074,13 @@ String? homeShellTitleFor(
     HomeTab.games ||
     HomeTab.browse ||
     HomeTab.dictionaries => homeNavItemFor(tab).label,
-    // 复习页自己画页头（标题 + 牌组动作），同「网页」页（子页自己画页头）。
-    HomeTab.home || HomeTab.web || HomeTab.srs || HomeTab.settings => null,
+    // 复习页自己画页头（标题 + 牌组动作），同「网页」页（子页自己画页头）；音乐库
+    // 页同样自己画浮动顶栏（标题 + 加文件夹 / 重扫）。
+    HomeTab.home ||
+    HomeTab.web ||
+    HomeTab.srs ||
+    HomeTab.music ||
+    HomeTab.settings => null,
   };
 }
 

@@ -272,6 +272,9 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'favoriteEntry',
   'findMinedMatches',
   'getDictAsset',
+  // 「我库里的例句」：预览不查用户库（回 null = 区块不出现）、不跳转。
+  'librarySentenceOpen',
+  'librarySentences',
   'listWordAudioSources',
   'mineEntry',
   // BUG-3652 续：制卡失败回包到达时发起按钮已被换掉 → 交回宿主 toast；预览不制卡。

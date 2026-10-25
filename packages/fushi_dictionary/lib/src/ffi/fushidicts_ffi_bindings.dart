@@ -418,3 +418,39 @@ ZstdDecompressFileDart? lookupZstdDecompressFile() {
     return null;
   }
 }
+
+// ── 语料词元（「我库里的例句」，按需解析） ───────────────────────────────
+
+typedef _CorpusTermsNative = Int32 Function(
+    Pointer<Void> handle,
+    Pointer<Uint8> input,
+    Int32 inputLen,
+    Int32 scanLength,
+    Pointer<Pointer<Uint8>> out,
+    Pointer<Int32> outLen);
+typedef CorpusTermsDart = int Function(
+    Pointer<Void> handle,
+    Pointer<Uint8> input,
+    int inputLen,
+    int scanLength,
+    Pointer<Pointer<Uint8>> out,
+    Pointer<Int32> outLen);
+typedef _FreeBytesNative = Void Function(Pointer<Uint8> p);
+typedef FreeBytesDart = void Function(Pointer<Uint8> p);
+
+/// `fushidicts_corpus_terms` / `fushidicts_free_bytes` 的绑定，**用到时才解析**（理由同
+/// [lookupZstdDecompressFile]：这是「我库里的例句」建索引的喂入路径，随包旧库缺这个导出
+/// 时只让建索引报不可用，不连累查词绑定）。线格式见 native/fushidicts/fushidicts_ffi.cpp。
+({CorpusTermsDart corpusTerms, FreeBytesDart freeBytes})? lookupCorpusTerms() {
+  try {
+    final DynamicLibrary lib = _openNativeLib();
+    return (
+      corpusTerms: lib.lookupFunction<_CorpusTermsNative, CorpusTermsDart>(
+          'fushidicts_corpus_terms'),
+      freeBytes: lib.lookupFunction<_FreeBytesNative, FreeBytesDart>(
+          'fushidicts_free_bytes'),
+    );
+  } on ArgumentError {
+    return null;
+  }
+}

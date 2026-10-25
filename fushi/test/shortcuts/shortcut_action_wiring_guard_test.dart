@@ -88,6 +88,8 @@ void main() {
       // `resolveKeyboard(event, scope: ShortcutScope.webBrowser)` 后按动作派发
       // （新建 / 关闭标签页、地址栏、页内查找、缩放…），未命中再兜底 universal。
       'lib/src/pages/implementations/fushi_web_browser_page.dart',
+      // 音乐（ShortcutScope.music）的执行体：曲库页 _handleKey → dispatchMusicShortcut。
+      'lib/src/pages/implementations/music/music_library_page.dart',
     ];
 
     final StringBuffer corpus = StringBuffer();

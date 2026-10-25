@@ -555,6 +555,26 @@ class ShortcutDefaults {
     // TODO-700 T6：dpad 四向可绑触发键。默认各绑对应 dpad 键；键盘留空（方向焦点
     // 移动由箭头键 / 摇杆负责，避免与各页面方向键语义重复）。执行体 = 通用方向焦点
     // 移动（gamepadMoveFocusInDirection），见 gamepad_service._dispatchButton。
+    // 音乐：K 播放暂停（与视频页同一习惯键）、N / P 上下曲、Shift+←/→ ±5 秒，外加媒体键。
+    ShortcutAction.musicTogglePlayPause: _kb([
+      _key(LogicalKeyboardKey.keyK),
+      _key(LogicalKeyboardKey.mediaPlayPause),
+    ]),
+    ShortcutAction.musicNextTrack: _kb([
+      _key(LogicalKeyboardKey.keyN),
+      _key(LogicalKeyboardKey.mediaTrackNext),
+    ]),
+    ShortcutAction.musicPreviousTrack: _kb([
+      _key(LogicalKeyboardKey.keyP),
+      _key(LogicalKeyboardKey.mediaTrackPrevious),
+    ]),
+    // ±5 秒用 Shift+←/→：裸方向键在曲库网格里是焦点移动，不能被播放控制夺走。
+    ShortcutAction.musicSeekForward: _kb([
+      _key(LogicalKeyboardKey.arrowRight, {ModifierKey.shift}),
+    ]),
+    ShortcutAction.musicSeekBackward: _kb([
+      _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.shift}),
+    ]),
     ShortcutAction.dpadUp: _kb([], [_gDpadUp]),
     ShortcutAction.dpadDown: _kb([], [_gDpadDown]),
     ShortcutAction.dpadLeft: _kb([], [_gDpadLeft]),
@@ -712,6 +732,7 @@ class ShortcutDefaults {
           case ShortcutScope.video:
           case ShortcutScope.manga:
           case ShortcutScope.webBrowser:
+          case ShortcutScope.music:
             return ShortcutBindingSet(
               keyboardBindings: desktop.keyboardBindings,
               gamepadBindings: desktop.gamepadBindings,

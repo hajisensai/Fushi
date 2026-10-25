@@ -79,6 +79,7 @@ abstract final class PrefRedactionPolicy {
     'video_subtitle_subdl_api_key',
     'manga_cloud_ocr_api_key',
     'video_scraper_tmdb_api_key',
+    'music_acoustid_api_key',
     'video_metadata_fanart_api_key',
     'video_metadata_bangumi_token',
     'video_metadata_douban_authorized_token',
@@ -103,6 +104,8 @@ abstract final class PrefRedactionPolicy {
     'discovery_alist_sites',
     // 同形：Audiobookshelf 服务器清单里的 base64 access / refresh token。
     'discovery_audiobookshelf_servers',
+    // 同形：OpenSubsonic 服务器清单（服务器曲库）里的 base64 密码 / API key。
+    'music_subsonic_servers',
     // 同形：朗读声音预设清单里 base64 的 Azure / Google API key 与网关 Bearer。
     // 也在 deviceLocalPrefKeys 中。
     'tts_voice_presets',

@@ -889,21 +889,34 @@ class MinedSentences extends Table {
   TextColumn get glossary => text().withDefault(const Constant(''))();
   TextColumn get sentence => text().withDefault(const Constant(''))();
 
-  /// 跳转/分流来源标识，与 `kFavoriteSentenceSourceBook` / `Video` 等同值（'book' |
-  /// 'video' | 'audiobook' | 'lyrics'）。统计语义（book/video 桶）也由它派生。
+  /// 跳转/分流来源标识，与 `kFavoriteSentenceSource*` 同值（'book' | 'video' |
+  /// 'audiobook' | 'lyrics' | 'game' | 'manga' | 'music'，见 `SentenceSourceKind`）。
   TextColumn get source => text()();
   TextColumn get documentTitle => text().nullable()();
   TextColumn get chapterLabel => text().nullable()();
 
-  /// 定位锚点（与收藏句同构）：书内是 bookKey，视频是 bookUid。
+  /// 出处身份（按 [source] 分域）：书 / 有声书 / 歌词模式 / 漫画是 bookKey，视频是
+  /// bookUid，游戏是 `galgames.id`，音乐是 `music_tracks.track_uid`。
   TextColumn get bookKey => text().nullable()();
+
+  /// 书内章节下标；视频是集下标（单视频恒 0）。
   IntColumn get sectionIndex => integer().nullable()();
 
-  /// 书内是归一化字符偏移；视频来源里复用为 cue 起点 ms（与收藏句一致）。
+  /// **只**表示章内归一化字符偏移（书 / 有声书 / 歌词模式）。v132 前视频来源把它
+  /// 复用成 cue 起点毫秒，v132 迁移已把那批值搬进 [positionMs] 并清空本列。
   IntColumn get normCharOffset => integer().nullable()();
 
-  /// 视频来源里复用为 cue 时长 ms（书内为选区长度）。
+  /// **只**表示选区字符长度（同 [normCharOffset]）。v132 前视频复用为 cue 时长。
   IntColumn get normCharLength => integer().nullable()();
+
+  /// 媒体时间轴上的起点毫秒（视频 / 音乐；v132）。
+  IntColumn get positionMs => integer().nullable()();
+
+  /// 片段时长毫秒（与 [positionMs] 成对；v132）。
+  IntColumn get durationMs => integer().nullable()();
+
+  /// 漫画页码（0 起；v132）。
+  IntColumn get pageIndex => integer().nullable()();
 
   /// AnkiConnect 成功制卡带回的 note id；AnkiDroid 恒 null。
   IntColumn get noteId => integer().nullable()();
@@ -3588,4 +3601,64 @@ class WebBrowserDownloads extends Table {
   /// 下载落盘的本机绝对路径；完成前为 NULL。
   TextColumn get savedPath => text().nullable()();
   IntColumn get startedAt => integer()();
+}
+
+// ── media_links（跨模块作品图谱，schema v129）───────────────────────────
+/// 跨模块作品图谱的一条连接（spec `docs/specs/2026-10-24-cross-media-links.md`）：
+/// `(from_kind, from_key) —relation→ (to_kind, to_key)`。不另起「作品」实体取代
+/// 各模块数据，只加一层连接。
+///
+/// 端点种类 / 关系的值域见 `MediaLinkKind` / `MediaLinkRelation`（落库值冻结）；
+/// 键是各模块的**本地**稳定身份（书 bookKey、视频 bookUid、合集 id 字符串、游戏
+/// `Galgames.id`、音乐 uid），跨端换算只在互联同步清单里做（`media_link_sync.dart`），
+/// 与标签映射同一套。端点不设外键：目标条目本机不存在时照常保留（详情页显示「未入库」
+/// 灰卡），宿主删除也不级联。
+///
+/// 一行三态（`MediaLinkState`）：[deletedAt] 非空 = 已删除 / 已否决（墓碑，推断
+/// 不得重复提议同一对条目）；否则 [isUserConfirmed] 决定是「同一作品」事实还是
+/// 「可能相关」建议。跨端合并整行 LWW（按 [updatedAt]），所以删除 / 否决只写墓碑
+/// 不删行——删了就分不清「否决过」和「从没提过」，对端的旧行会把它复活。
+@DataClassName('MediaLinkRow')
+class MediaLinks extends Table {
+  TextColumn get fromKind => text()();
+  TextColumn get fromKey => text()();
+
+  /// `MediaLinkRelation.dbValue`。无方向关系（same_work）落库前两端已按
+  /// `canonicalMediaLinkEndpoints` 排序。
+  TextColumn get relation => text()();
+  TextColumn get toKind => text()();
+  TextColumn get toKey => text()();
+
+  /// 关系内的角色：theme_song 的 `op` / `ed` / `insert` / `theme`，cast 的角色名等。
+  TextColumn get role => text().nullable()();
+
+  /// 适用集数范围（theme_song 用，如 `1-12`）；NULL = 全部。
+  TextColumn get episodeRange => text().nullable()();
+
+  /// `MediaLinkSource`：`manual` 或推断来源名（vndb / mal / ai …）。
+  TextColumn get source => text().withDefault(const Constant('manual'))();
+
+  /// 推断置信度 0..1；手动连接为 NULL。
+  RealColumn get confidence => real().nullable()();
+
+  BoolColumn get isUserConfirmed =>
+      boolean().withDefault(const Constant(false))();
+
+  /// 推断理由（AI 的「为什么认为是同一作品」、确定性判据的证据摘要）。
+  TextColumn get reason => text().nullable()();
+
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  /// 删除 / 否决时刻（墓碑）；NULL = 存活。
+  IntColumn get deletedAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{
+        fromKind,
+        fromKey,
+        relation,
+        toKind,
+        toKey,
+      };
 }

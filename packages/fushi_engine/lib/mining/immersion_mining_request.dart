@@ -47,8 +47,8 @@ class VideoMiningHistorySnapshot {
   }) : expression = fields['expression'] ?? '',
        reading = fields['reading'] ?? '',
        glossary = fields['glossary'] ?? '',
-       normCharOffset = cueStartMs,
-       normCharLength = cueStartMs == null || cueEndMs == null
+       positionMs = cueStartMs,
+       durationMs = cueStartMs == null || cueEndMs == null
            ? null
            : (cueEndMs - cueStartMs).clamp(0, 1 << 31).toInt();
 
@@ -59,8 +59,12 @@ class VideoMiningHistorySnapshot {
   final String documentTitle;
   final String bookKey;
   final int? sectionIndex;
-  final int? normCharOffset;
-  final int? normCharLength;
+
+  /// cue 起点毫秒（落 `mined_sentences.position_ms`）。
+  final int? positionMs;
+
+  /// cue 时长毫秒（落 `mined_sentences.duration_ms`）。
+  final int? durationMs;
   final String dateKey;
 }
 

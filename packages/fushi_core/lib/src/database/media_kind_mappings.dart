@@ -37,6 +37,8 @@ List<MediaKind> shelfKindsOfActivityMedia(ActivityMediaKind kind) =>
         ],
       ActivityMediaKind.video => const <MediaKind>[MediaKind.video],
       ActivityMediaKind.game => const <MediaKind>[MediaKind.game],
+      // 音乐曲目不在合集 / 书架域里（曲库有自己的专辑 / 歌单），没有对应书架种类。
+      ActivityMediaKind.music => const <MediaKind>[],
     };
 
 /// 合集/书架种类 → 统计来源种类（epub / srt 都归 `book` 桶）。

@@ -73,3 +73,19 @@ enum StoreRestrictedCapability {
   /// 别依赖宿主真实平台——否则同一条用例在 Windows 本机与 macOS CI 上结论相反。
   bool get isAvailable => availableOn(isIOS: Platform.isIOS);
 }
+
+/// DVD CSS 解密（随包 libdvdcss，`tool/dvd`）**不是**受限能力：所有者 2026-10-24
+/// 拍板五端一致随包，iOS 也链接 libdvdcss（见
+/// `docs/specs/2026-10-24-dvd-original-menu.md`「风险」）。
+///
+/// 这里是预留判据，不是散落的开关：若 App Store 审核以「绕过复制保护」拒绝，回退
+/// 办法是 ① 本函数改成 `!isIOS`（或并入 [StoreRestrictedCapability] 作为新值）；
+/// ② iOS 的 DVD 库改用 `DVD_MESON_ARGS=-Dlibdvdcss=disabled` 构建
+/// （`tool/dvd/build_dvd_libs.sh` 届时放开对 libdvdcss 的硬检查），只播未加密 /
+/// 已解密的 ISO。消费端（加密盘的报错文案、能力提示）一律问这里，不另写
+/// `Platform.isIOS`。
+bool dvdCssDecryptionAvailableOn({required bool isIOS}) => true;
+
+/// 真实平台上的 [dvdCssDecryptionAvailableOn]。
+bool get dvdCssDecryptionAvailable =>
+    dvdCssDecryptionAvailableOn(isIOS: Platform.isIOS);

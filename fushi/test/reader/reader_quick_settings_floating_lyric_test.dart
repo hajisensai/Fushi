@@ -8,19 +8,22 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 /// pin the load-bearing wiring that a refactor could silently break.
 void main() {
   group('desktop floating lyric guards', () {
-    test('channel isSupported includes Windows alongside Android', () {
+    test('channel isSupported delegates to the single platform predicate', () {
       final File file = File(
         'lib/src/media/audiobook/floating_lyric_channel.dart',
       );
       final String src = file.readAsStringSync();
-      // The strip is the Windows counterpart of the Android overlay, so both
-      // platforms must pass the gate; macOS/Linux must stay excluded.
+      // 平台判据只写一处（floatingLyricBackendAvailableOn，行为在
+      // floating_lyric_channel_test 里按 OS 取值逐个钉）；isSupported 不得再自己
+      // 拼 Platform.isXxx，否则入口与 channel 会各说各的。
       expect(
-        src.contains('Platform.isAndroid || Platform.isWindows'),
+        RegExp(
+          r'platformOverride \?\?\s*floatingLyricBackendAvailableOn\(\s*'
+          r'Platform\.operatingSystem',
+        ).hasMatch(src),
         isTrue,
-        reason: 'isSupported must allow Android and Windows.',
+        reason: 'isSupported must delegate to floatingLyricBackendAvailableOn.',
       );
-      expect(src.contains('Platform.isMacOS'), isFalse);
       expect(src.contains('Platform.isLinux'), isFalse);
     });
 

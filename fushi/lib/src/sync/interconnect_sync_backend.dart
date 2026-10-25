@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
@@ -11,6 +12,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
     show VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -22,6 +24,9 @@ import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
+import 'package:fushi/src/sync/remote_disc_share.dart';
+import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart'
+    show DiscShareFile;
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/interconnect_video_quality.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
@@ -198,6 +203,7 @@ class InterconnectSyncBackend extends SyncBackend
         RemoteVideoQualityLimit,
         RemoteVideoDanmakuKeyFetch,
         RemoteVideoWorkMetadataFetch,
+        RemoteDiscShareSource,
         RemoteCoverFetcher,
         RemoteListingCapable {
   InterconnectSyncBackend._({FushiProbe? probe})
@@ -1761,6 +1767,43 @@ class InterconnectSyncBackend extends SyncBackend
     return TagManifest.fromJson(jsonDecode(body));
   }
 
+  // ── Live media links (interconnect-only) ──────────────────────────────
+  // 互联作品图谱同步（`media_link_sync.dart`）：直打 /api/library/media-links。
+
+  /// GET 对端 host 作品图谱清单。老 host 无端点（404）返回 null，调用方跳过。
+  Future<MediaLinkManifest?> getRemoteMediaLinkManifest() async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/media-links',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/media-links');
+    final String body = await _readBodyBounded(res);
+    return MediaLinkManifest.fromJson(jsonDecode(body));
+  }
+
+  /// POST 本机作品图谱清单到 host，host 按整行 LWW 并入并回并入后的清单。
+  Future<MediaLinkManifest> putRemoteMediaLinkManifest(
+    MediaLinkManifest manifest,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'POST',
+      '$_apiBase/api/library/media-links',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(manifest.canonicalJson()));
+    final HttpClientResponse res = await _sendBounded(req);
+    _ops!.checkStatus(res.statusCode, 'POST /api/library/media-links');
+    final String body = await _readBodyBounded(res);
+    return MediaLinkManifest.fromJson(jsonDecode(body));
+  }
+
   // ── Live video metadata (interconnect-only, #7) ────────────────────────
   // `docs/specs/2026-09-12-interconnect-scrape-metadata.md`。
 
@@ -2865,6 +2908,165 @@ class InterconnectSyncBackend extends SyncBackend
       onCancel: () => sub?.cancel(),
     );
     return controller.stream;
+  }
+
+  // ── 远端原盘（第二期）：只读盘目录共享 ──────────────────────────────────
+
+  String? _discShareCapabilityScope;
+  bool? _discShareCapability;
+
+  /// host 的 `/api/capabilities` 是否声明 `liveLibrary.discShareV1`。同一 host 基址
+  /// 只探一次；探测失败（网络）抛错、不入缓存。
+  @override
+  Future<bool> hostSupportsDiscShare() async {
+    await _ensureResolved();
+    final String scope = _apiBase;
+    final bool? cached = _discShareCapability;
+    if (cached != null && _discShareCapabilityScope == scope) return cached;
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/capabilities',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    bool supported = false;
+    if (res.statusCode == 404 || res.statusCode == 405) {
+      await res.drain<void>();
+    } else {
+      _ops!.checkStatus(res.statusCode, 'GET /api/capabilities');
+      final Object? decoded = jsonDecode(await _readBodyBounded(res));
+      final Object? live = decoded is Map ? decoded['liveLibrary'] : null;
+      supported = live is Map && live['discShareV1'] == true;
+    }
+    _discShareCapabilityScope = scope;
+    _discShareCapability = supported;
+    return supported;
+  }
+
+  /// 签发盘目录共享会话（`GET /api/library/videos/<id>/disc`）。老 host 404 →
+  /// [RemoteDiscShareUnsupported]（先看能力位，免得把「不是原盘」误判成老 host）。
+  @override
+  Future<RemoteDiscShare> openRemoteDiscShare(String videoId) async {
+    if (!await hostSupportsDiscShare()) {
+      throw const RemoteDiscShareUnsupported();
+    }
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/videos/${_encodeVideoId(videoId)}/disc',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/videos/$videoId/disc');
+    final RemoteDiscShare? share = RemoteDiscShare.fromJson(
+      jsonDecode(await _readBodyBounded(res)),
+    );
+    if (share == null) {
+      throw SyncBackendError(
+        'host returned an invalid disc share for $videoId',
+      );
+    }
+    // https 会话根（自签证书）要让本地中继按配对指纹升回 https：与 API 通道同一
+    // 处登记（native 播放器只看到经 [nativePlaybackUri] 降级的 loopback 明文）。
+    final String? fp = _activeFingerprint;
+    if (share.baseUrl.isScheme('https') && fp != null && fp.isNotEmpty) {
+      registerPinnedNativeOrigin(
+        host: share.baseUrl.host,
+        port: share.baseUrl.port,
+        fingerprintSha256: fp,
+      );
+    }
+    return share;
+  }
+
+  @override
+  Future<Uint8List?> readRemoteDiscFile(
+    RemoteDiscShare share,
+    String relativePath,
+    int maxBytes,
+  ) async {
+    final DiscShareFile? file = share.manifest.fileAt(relativePath);
+    if (file == null || file.size > maxBytes) return null;
+    final String? fp = _activeFingerprint;
+    final HttpClient client =
+        share.baseUrl.isScheme('https') && fp != null && fp.isNotEmpty
+        ? createPinnedHttpClient(expectedFingerprint: fp)
+        : HttpClient();
+    try {
+      final HttpClientRequest req = await client
+          .getUrl(share.fileUrl(relativePath))
+          .timeout(requestTimeout);
+      final HttpClientResponse res = await _sendBounded(req);
+      if (res.statusCode != HttpStatus.ok) {
+        await res.drain<void>();
+        return null;
+      }
+      final BytesBuilder bytes = BytesBuilder(copy: false);
+      await for (final List<int> chunk in res.timeout(requestTimeout)) {
+        bytes.add(chunk);
+        if (bytes.length > maxBytes) return null;
+      }
+      return bytes.takeBytes();
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// 整盘下载的单文件原语：与 [downloadRemoteVideo] 同一套续传（`.part` + 验证器
+  /// 侧车、host 换了文件就从头下）、同一套钉扎与取消。
+  @override
+  Future<void> downloadRemoteDiscFile(
+    RemoteDiscShare share,
+    DiscShareFile file,
+    File dest, {
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
+  }) async {
+    bool cancelled = false;
+    HttpClient? client;
+    final Completer<void> cancel = Completer<void>();
+    if (cancelSignal != null) {
+      unawaited(
+        cancelSignal.then((_) {}, onError: (Object _) {}).then((_) {
+          cancelled = true;
+          if (!cancel.isCompleted) cancel.complete();
+          client?.close(force: true);
+        }),
+      );
+    }
+    if (cancelled) throw const RemoteDownloadCancelled();
+    final String? fp = _activeFingerprint;
+    final HttpClient activeClient =
+        share.baseUrl.isScheme('https') && fp != null && fp.isNotEmpty
+        ? createPinnedHttpClient(expectedFingerprint: fp)
+        : HttpClient();
+    client = activeClient;
+    try {
+      await _downloadWithValidatorSidecar(
+        url: share.fileUrl(file.path).toString(),
+        destination: dest,
+        open: (Uri uri, Map<String, String> headers) async {
+          final ResumableDownloadResponse res = await _openResumableRequest(
+            activeClient,
+            uri,
+            headers,
+          );
+          if (cancelSignal == null) return res;
+          return ResumableDownloadResponse(
+            statusCode: res.statusCode,
+            headers: res.headers,
+            stream: _cancellableBody(res.stream, cancel.future),
+          );
+        },
+        firstByteTimeout: videoFirstByteTimeout,
+        requireValidatorToResume: true,
+        onProgress: (int received, int? total) {
+          if (!cancelled) onBytes?.call(received, total);
+        },
+      );
+    } catch (_) {
+      if (cancelled) throw const RemoteDownloadCancelled();
+      rethrow;
+    } finally {
+      activeClient.close(force: true);
+    }
   }
 
   /// ResumableDownloader 的注入缝：用 [client] 发一次带 [headers]（含 Range/If-Range）

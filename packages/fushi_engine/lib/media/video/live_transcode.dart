@@ -40,6 +40,7 @@ import 'dart:typed_data';
 
 import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_ffmpeg_input.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:meta/meta.dart';
@@ -335,11 +336,18 @@ bool transcodeAvailable() {
   // 一次时，移动端照样拿到 CliFfmpegBackend，于是能力位报 true、HLS URL 照发、
   // 每一段都失败。这里兜一条硬的。
   if (Platform.isAndroid || Platform.isIOS) return false;
-  // 进程单例外面恒套一层蓝光输入适配器；判的是它代理的真实后端能不能 exec 子进程。
-  final FfmpegBackend backend = resolveFfmpegBackend();
-  final FfmpegBackend runner = backend is BlurayFfmpegBackend
-      ? backend.delegate
-      : backend;
+  // 进程单例外面恒套原盘输入适配器（蓝光 → DVD）；判的是它们最终代理的真实后端
+  // 能不能 exec 子进程，适配器层数与顺序不进判据。
+  FfmpegBackend runner = resolveFfmpegBackend();
+  while (true) {
+    if (runner is BlurayFfmpegBackend) {
+      runner = runner.delegate;
+    } else if (runner is DvdFfmpegBackend) {
+      runner = runner.delegate;
+    } else {
+      break;
+    }
+  }
   return runner is CliFfmpegBackend;
 }
 
@@ -476,8 +484,10 @@ bool _bundledSegmentUnusable(int code, List<int> bytes) =>
 /// 就是把播放列表文件本身交给 ffmpeg。普通文件经过它原样不变。
 ///
 /// 先取并发名额再开改写：加密盘的改写要为每段起一个解密 isolate，排队中的分段不该
-/// 提前占着它们。
-Future<Uint8List> _runSegment(List<String> args) async {
+/// 提前占着它们。DVD 标题输入同理改写成 `dvdvideo` demuxer（[prepareDvdFfmpegArgs]，
+/// 与 [DvdFfmpegBackend] 同一条），不直接读 VOB。
+Future<Uint8List> _runSegment(List<String> input) async {
+  final List<String> args = prepareDvdFfmpegArgs(input);
   final TranscodeSegmentRunner? override = _runnerOverride;
   if (override != null) {
     return runWithBlurayFfmpegInput(

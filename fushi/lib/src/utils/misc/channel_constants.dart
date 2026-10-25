@@ -63,7 +63,4 @@ abstract final class FushiChannels {
   /// `AndroidPictureInPicture` 恒答「不支持」且不发调用。
   static const MethodChannel pictureInPicture =
       MethodChannel('$_prefix/picture_in_picture');
-  // TODO-1232 A3: render-backend experiment toggle (persist "disable Impeller"
-  // so MainActivity can force Skia at the next launch; Android-only).
-  static const MethodChannel render = MethodChannel('$_prefix/render');
 }

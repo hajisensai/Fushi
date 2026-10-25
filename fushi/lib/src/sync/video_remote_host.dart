@@ -210,7 +210,11 @@ Future<int?> videoRemoteCoverVersion(String? coverPath) async {
 /// (`library` / `openVideo`). Unlike [VideoRemotePlaybackBinding] it does not
 /// depend on a video page being open: the phone uses it to start one.
 final class VideoRemoteLibrary {
-  const VideoRemoteLibrary({required this.list, required this.open});
+  const VideoRemoteLibrary({
+    required this.list,
+    required this.open,
+    this.openDisc,
+  });
 
   /// The library in display order (most recently played first).
   final Future<List<VideoRemoteLibraryItem>> Function() list;
@@ -218,6 +222,11 @@ final class VideoRemoteLibrary {
   /// Closes the open video page through its normal exit and opens [bookUid].
   /// Fails with a [VideoRemoteException] (`video_missing` / `host_busy`).
   final Future<void> Function(String bookUid) open;
+
+  /// Like [open], but enters the disc session of the original disc [bookUid]
+  /// is a title of (`openVideo` with `discMenu: true`). Null = this host
+  /// cannot (`openDiscMenu` is not advertised).
+  final Future<void> Function(String bookUid)? openDisc;
 }
 
 /// App-owned callbacks; the HTTP layer never sees media paths or widget state.
@@ -478,6 +487,7 @@ final class VideoRemoteHost implements VideoRemoteService {
     'capabilities': <String>[
       ...?_binding?.capabilities,
       if (_library != null) videoRemoteCapabilityOpenVideo,
+      if (_library?.openDisc != null) videoRemoteCapabilityOpenDiscMenu,
     ],
     ...?_binding?.state(),
   };
@@ -726,9 +736,17 @@ final class VideoRemoteHost implements VideoRemoteService {
       if (bookUid is! String || bookUid.isEmpty) {
         throw const VideoRemoteException(400, 'invalid_argument');
       }
+      final Future<void> Function(String bookUid)? openDisc = library.openDisc;
+      if (body['discMenu'] == true && openDisc == null) {
+        throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+      }
       // The outgoing page's lookup pause ends with the page; never resume it.
       _lookup = null;
-      await library.open(bookUid);
+      if (body['discMenu'] == true) {
+        await openDisc!(bookUid);
+      } else {
+        await library.open(bookUid);
+      }
       return <String, Object?>{'ok': true};
     }
     if (operation == 'lookupContext') {

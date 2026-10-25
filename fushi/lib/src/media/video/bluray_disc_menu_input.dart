@@ -3,6 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 
 /// Disc menus own these keys only while their authored buttons are active.
+///
+/// Esc and gamepad B are not disc keys: in a disc session they are the
+/// session's back key (summon the session bar / leave the disc, hold to exit,
+/// see `disc_session_controls.dart`). The disc's own Return stays on Backspace.
 String? blurayMenuKeyAction(LogicalKeyboardKey key) {
   if (key == LogicalKeyboardKey.arrowUp) return 'up';
   if (key == LogicalKeyboardKey.arrowDown) return 'down';
@@ -12,7 +16,7 @@ String? blurayMenuKeyAction(LogicalKeyboardKey key) {
       key == LogicalKeyboardKey.numpadEnter) {
     return 'select';
   }
-  if (key == LogicalKeyboardKey.escape) return 'prev';
+  if (key == LogicalKeyboardKey.backspace) return 'prev';
   return null;
 }
 
@@ -22,7 +26,6 @@ String? blurayMenuGamepadAction(GamepadButton button) => switch (button) {
   GamepadButton.dpadLeft => 'left',
   GamepadButton.dpadRight => 'right',
   GamepadButton.a => 'select',
-  GamepadButton.b => 'prev',
   GamepadButton.start => 'menu',
   GamepadButton.select => 'popup',
   _ => null,

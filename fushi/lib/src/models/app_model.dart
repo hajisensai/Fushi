@@ -9,6 +9,9 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/corpus/library_corpus_service.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kLibrarySentencesEnabledPrefKey;
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/models/asset_licenses.dart';
@@ -19,6 +22,7 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_probes.dart';
@@ -283,6 +287,23 @@ import 'package:fushi/src/models/theme_notifier.dart'
 export 'package:fushi/src/models/theme_notifier.dart'
     show CustomThemeEntry, ThemePreset;
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
+    show MusicAssRenderPreference;
+import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
+import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
+import 'package:fushi/src/media/music/music_crossfade.dart';
+import 'package:fushi/src/media/music/music_equalizer.dart';
+import 'package:fushi/src/media/music/music_study_tracker.dart';
+import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_library_scanner.dart'
+    show onMusicSourceScanned;
+import 'package:fushi/src/media/music/music_loudness_scanner.dart';
+import 'package:fushi/src/media/music/music_session.dart';
+import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
@@ -997,6 +1018,11 @@ class AppModel with ChangeNotifier {
       for (final SrtBookRow r in await database.getAllSrtBooks())
         r.uid: r.title,
     };
+    // 音乐曲目：itemKey 是内容派生的 track_uid，展示曲名。
+    final Map<String, String> musicTitles = <String, String>{
+      for (final MusicTrackRow r in await database.listMusicTracks())
+        r.trackUid: r.title,
+    };
     // 收藏句：itemKey 是内容键（用户看不懂），从本地在库收藏句解析回句子文本展示。
     // deleteLocal 候选必是本地仍在库者，映射通常命中；查不到退回 itemKey。
     final Map<String, String> favSentenceTexts = <String, String>{
@@ -1022,13 +1048,13 @@ class AppModel with ChangeNotifier {
               parseFavoriteWordItemKey(c.itemKey)?.expression ?? c.itemKey,
             SyncTombstoneKind.favoritesentence =>
               favSentenceTexts[c.itemKey] ?? c.itemKey,
+            SyncTombstoneKind.music => musicTitles[c.itemKey] ?? c.itemKey,
             // localaudio: displayName 本身即可读；null = 未知种类原样展示。浏览器
             // 历史 / 书签只经聚合快照传播、不进确认清单，到不了这里，兜底原样展示。
             SyncTombstoneKind.localaudio ||
             SyncTombstoneKind.webhistory ||
             SyncTombstoneKind.webbookmark ||
-            null =>
-              c.itemKey,
+            null => c.itemKey,
           },
         ),
     ];
@@ -1096,7 +1122,14 @@ class AppModel with ChangeNotifier {
             // v128 浏览器历史 / 书签的删除只经聚合快照仲裁落地，从不产生删除确认候选
             // （[SyncTombstoneKind.propagatesViaAggregateSnapshotOnly]）；万一出现也不在此删。
             debugPrint(
-                '[sync] skip snapshot-only deletion ${c.mediaType}/${c.itemKey}');
+              '[sync] skip snapshot-only deletion ${c.mediaType}/${c.itemKey}',
+            );
+          case SyncTombstoneKind.music:
+            // 音乐曲目：软删（与重扫发现文件消失同一语义），不回写墓碑。
+            await database.softDeleteMusicTrack(
+              c.itemKey,
+              deletedAt: DateTime.now().millisecondsSinceEpoch,
+            );
           case null:
             // 未知类型：跳过，但留痕——用户确认了删除、这里静默吞掉会造成
             // 「以为删了实际没删」且无从排查（mediaType 审计 2026-07-25）。
@@ -1246,6 +1279,14 @@ class AppModel with ChangeNotifier {
   /// Preference management, extracted from AppModel for testability.
   PreferencesRepository? _prefsRepo;
   PreferencesRepository get prefsRepo => _prefsRepo!;
+
+  /// 查词弹窗「我库里的例句」开关（D-L2 默认开）。偏好还没装好（独立弹窗 entry point /
+  /// 测试替身没跑 initialise）时按默认值，不抛——判据放在这个 getter 自己身上，弹窗注入等
+  /// 读它的地方不各自判空。
+  bool get librarySentencesEnabled =>
+      _prefsRepo?.getPref(kLibrarySentencesEnabledPrefKey, defaultValue: true)
+          as bool? ??
+      true;
   bool get isPreferencesReady => _prefsRepo != null;
 
   /// v101 统一更新提醒。懒建：四个投递方（番剧订阅检查、漫画库刷新、扩展检查、
@@ -1408,14 +1449,15 @@ class AppModel with ChangeNotifier {
       ),
       probes: <UpdateFeedKind, UpdateProbe>{
         UpdateFeedKind.videoEpisode: () => runVideoLibraryUpdateProbe(
-              database: database,
-              feed: feed,
-              loadMediaServers: SyncRepository(database).getMediaServers,
-              // 不为后台检查拉起 Mihon 宿主（与漫画探针同理）；平台 / 合规门外
-              // 恒为 null。
-              animeManager:
-                  isVideoOnlineSourcesAvailable ? _animeMihonManager : null,
-            ),
+          database: database,
+          feed: feed,
+          loadMediaServers: SyncRepository(database).getMediaServers,
+          // 不为后台检查拉起 Mihon 宿主（与漫画探针同理）；平台 / 合规门外
+          // 恒为 null。
+          animeManager: isVideoOnlineSourcesAvailable
+              ? _animeMihonManager
+              : null,
+        ),
         UpdateFeedKind.mangaChapter: () async {
           if (_mihonManager == null) return;
           await runOnlineMangaUpdateProbe(
@@ -1555,11 +1597,24 @@ class AppModel with ChangeNotifier {
               FloatingLyricLookupNotifier.instance.requestLookup(text, index);
             }());
           },
+          // 媒体会话与音乐互斥（音乐模块 §7.5）：音乐持有会话时，锁屏 / 耳机键不发给有声书。
           controlStreams: AudioControlStreams(
-            playIntentStream: audioCtrl.playIntentStream,
-            seekStream: audioCtrl.seekStream,
-            skipNextStream: audioCtrl.skipNextStream,
-            skipPreviousStream: audioCtrl.skipPreviousStream,
+            playIntentStream: audioCtrl.streamFor(
+              audioCtrl.playIntentStream,
+              MediaSessionOwner.audiobook,
+            ),
+            seekStream: audioCtrl.streamFor(
+              audioCtrl.seekStream,
+              MediaSessionOwner.audiobook,
+            ),
+            skipNextStream: audioCtrl.streamFor(
+              audioCtrl.skipNextStream,
+              MediaSessionOwner.audiobook,
+            ),
+            skipPreviousStream: audioCtrl.streamFor(
+              audioCtrl.skipPreviousStream,
+              MediaSessionOwner.audiobook,
+            ),
             toggleFloatingLyricStream: audioCtrl.toggleFloatingLyricStream,
           ),
           // BUG-2558：后台听书（reader 已 dispose）期间的学习统计写入方。两个 getter 都是
@@ -1575,6 +1630,261 @@ class AppModel with ChangeNotifier {
         ..onFloatingLyricBoundsPersist = _persistFloatingLyricWindowRect
         ..onToggleFloatingLyricFromNotification =
             toggleFloatingLyricFromControls;
+
+  /// 进程级音乐会话（音乐模块，docs/specs/2026-10-23-music-module-design.md §7）：独立
+  /// libmpv 实例（首次播放才建）、队列 / 无缝 / ReplayGain 编排，与有声书互斥持有
+  /// 媒体会话。
+  late final MusicSession musicSession = _createMusicSession();
+
+  MusicLyricsLive? _musicLyricsLive;
+  MusicStudyTracker? _musicStudy;
+
+  /// 音乐会话 + 跟着引擎走的两个常驻伴随者（歌词当前行 → 桌面歌词 / 锁屏副标题；
+  /// 学习统计写入面）。三者共用同一个引擎，所以在一处一起建。
+  MusicSession _createMusicSession() {
+    final MusicPlayerEngine engine = MusicPlayerEngine(
+      // 交叉淡入（设计 §7.2）：关着时只有一个 mpv 实例、调用原样转发；开了在曲目真边界处
+      // 用第二个实例预加载下一首、按样本等功率淡入淡出（music_crossfade.dart）。
+      backendFactory: () => MusicCrossfadeBackend(
+        instanceFactory: MpvMusicOutputBackend.new,
+        platform: musicOutputPlatformOfHost(),
+      ),
+      gaplessEnabled: () => !isDatabaseReady || prefsRepo.musicGapless,
+      replayGainEnabled: () => !isDatabaseReady || prefsRepo.musicReplayGain,
+      baseSettings: _musicBaseOutputSettings,
+    );
+    final MusicSession session = MusicSession(
+      engine: engine,
+      audio: audioCtrl,
+      audiobook: audiobookSession,
+      database: () => isDatabaseReady ? database : null,
+      showMediaNotification: () => showMediaNotification,
+    );
+    final MusicLyricsLive live = MusicLyricsLive(
+      engine: engine,
+      service: musicLyrics,
+      desktop: FloatingLyricMusicSurface(
+        style: _appLevelFloatingLyricStyle,
+        clickLookup: () => floatingLyricClickLookup,
+        windowRect: _floatingLyricWindowRect,
+        onBoundsChanged: (FloatingLyricWindowRect rect) =>
+            unawaited(_persistFloatingLyricWindowRect(rect)),
+        onLookup: (String text, int index, Rect? wordRect) {
+          unawaited(() async {
+            if (await tryFloatingLyricGlobalLookup(
+              appModel: this,
+              text: text,
+              index: index,
+              wordRect: wordRect,
+            )) {
+              return;
+            }
+            FloatingLyricLookupNotifier.instance.requestLookup(text, index);
+          }());
+        },
+        onPlayPause: () => unawaited(engine.togglePlayPause()),
+        onPrevious: () => unawaited(engine.skipPrevious()),
+        onNext: () => unawaited(engine.skipNext()),
+        onClose: () => unawaited(setMusicDesktopLyrics(false)),
+      ),
+      desktopEnabled: () => isDatabaseReady && prefsRepo.musicDesktopLyrics,
+      mediaSessionEnabled: () =>
+          isDatabaseReady && prefsRepo.musicLyricsMediaSession,
+      sessionOwnerChanged: audioCtrl.sessionOwner,
+      musicOwnsSession: () =>
+          audioCtrl.sessionOwner.value == MediaSessionOwner.music,
+      // 音乐让出窗口时，有声书若还挂着悬浮字幕就把它的窗口还回去。
+      onDesktopReleased: () {
+        if (audiobookSession.isActive && showFloatingLyric) {
+          unawaited(
+            audiobookSession.showFloatingLyricOverlay().then(
+              (_) => audiobookSession.resyncFloatingLyricText(),
+            ),
+          );
+        }
+      },
+    )..addListener(session.refreshMediaSession);
+    session.mediaSessionLyricLine = () => live.mediaSessionLine;
+    _musicLyricsLive = live;
+    _musicStudy = MusicStudyTracker(
+      engine: engine,
+      database: () => isDatabaseReady ? database : null,
+      listeningCountsAsStudy: () =>
+          isDatabaseReady && prefsRepo.musicListeningCountsAsStudy,
+      idleTimeout: () => readingIdleTimeout,
+    );
+    return session;
+  }
+
+  /// 歌词页之外的当前行（桌面歌词 / 锁屏副标题）。
+  MusicLyricsLive get musicLyricsLive {
+    musicSession;
+    return _musicLyricsLive!;
+  }
+
+  /// 音乐学习统计写入面（决策 D4）。
+  MusicStudyTracker get musicStudy {
+    musicSession;
+    return _musicStudy!;
+  }
+
+  bool get musicDesktopLyrics => prefsRepo.musicDesktopLyrics;
+  Future<void> setMusicDesktopLyrics(bool value) async {
+    await prefsRepo.setMusicDesktopLyrics(value);
+    musicLyricsLive.onSettingsChanged();
+  }
+
+  bool get musicLyricsMediaSession => prefsRepo.musicLyricsMediaSession;
+  Future<void> setMusicLyricsMediaSession(bool value) async {
+    await prefsRepo.setMusicLyricsMediaSession(value);
+    musicLyricsLive.onSettingsChanged();
+    musicSession.refreshMediaSession();
+  }
+
+  MusicAssRenderPreference get musicKaraokeAssRender =>
+      MusicAssRenderPreference.fromPref(prefsRepo.musicKaraokeAssRender);
+  Future<void> setMusicKaraokeAssRender(MusicAssRenderPreference value) =>
+      prefsRepo.setMusicKaraokeAssRender(value.prefValue);
+
+  bool get musicListeningCountsAsStudy => prefsRepo.musicListeningCountsAsStudy;
+  Future<void> setMusicListeningCountsAsStudy(bool value) async {
+    await prefsRepo.setMusicListeningCountsAsStudy(value);
+    musicStudy.onSettingChanged();
+  }
+
+  bool get musicGapless => prefsRepo.musicGapless;
+  Future<void> setMusicGapless(bool value) async {
+    await prefsRepo.setMusicGapless(value);
+    await musicSession.engine.reapplySettings();
+  }
+
+  bool get musicReplayGain => prefsRepo.musicReplayGain;
+  Future<void> setMusicReplayGain(bool value) async {
+    await prefsRepo.setMusicReplayGain(value);
+    await musicSession.engine.reapplySettings();
+  }
+
+  /// 音乐歌词来源解析与落库（设计 §5.4）：sidecar → 内嵌 → LRCLIB。
+  late final MusicLyricsService musicLyrics = MusicLyricsService(
+    database: () => isDatabaseReady ? database : null,
+    lrclib: LrclibClient(),
+    onlineEnabled: () => isDatabaseReady && prefsRepo.musicLyricsOnline,
+  );
+
+  bool get musicLyricsOnline => prefsRepo.musicLyricsOnline;
+  Future<void> setMusicLyricsOnline(bool value) =>
+      prefsRepo.setMusicLyricsOnline(value);
+
+  /// 音乐刮削（设计 §8）：MusicBrainz 主源 + AcoustID（有应用 key 才用）+ CAA + VGMdb（开关）。
+  late final MusicScrapeService musicScrape = MusicScrapeService(
+    database: () => isDatabaseReady ? database : null,
+    acoustidApiKey: () => resolveMusicAcoustidApiKey(
+      isDatabaseReady ? prefsRepo.musicAcoustidApiKey : '',
+    ),
+    vgmdbEnabled: () => isDatabaseReady && prefsRepo.musicVgmdbEnabled,
+  );
+
+  String get musicAcoustidApiKey => prefsRepo.musicAcoustidApiKey;
+  Future<void> setMusicAcoustidApiKey(String value) =>
+      prefsRepo.setMusicAcoustidApiKey(value);
+
+  bool get musicVgmdbEnabled => prefsRepo.musicVgmdbEnabled;
+  Future<void> setMusicVgmdbEnabled(bool value) =>
+      prefsRepo.setMusicVgmdbEnabled(value);
+
+  bool get musicLyricsLookupPause => prefsRepo.musicLyricsLookupPause;
+  Future<void> setMusicLyricsLookupPause(bool value) =>
+      prefsRepo.setMusicLyricsLookupPause(value);
+
+  /// 后台响度扫描（缺 ReplayGain 标签的曲目，设计 §7.3）。
+  late final MusicLoudnessScanner musicLoudness = MusicLoudnessScanner(
+    database: () => isDatabaseReady ? database : null,
+    enabled: () => isDatabaseReady && prefsRepo.musicLoudnessScan,
+  );
+
+  bool get musicLoudnessScan => prefsRepo.musicLoudnessScan;
+  Future<void> setMusicLoudnessScan(bool value) async {
+    await prefsRepo.setMusicLoudnessScan(value);
+    if (value) unawaited(musicLoudness.schedule());
+  }
+
+  /// 音乐输出偏好（设计 §7.4）。库没开时给默认值（不碰 late 偏好）。
+  MusicOutputSettings _musicBaseOutputSettings() {
+    if (!isDatabaseReady) {
+      return const MusicOutputSettings(
+        gapless: true,
+        replayGain: MusicReplayGainMode.off,
+      );
+    }
+    return MusicOutputSettings(
+      gapless: prefsRepo.musicGapless,
+      replayGain: MusicReplayGainMode.off,
+      replayGainPreampDb: prefsRepo.musicReplayGainPreampDb,
+      exclusive: prefsRepo.musicExclusiveOutput,
+      audioDevice: prefsRepo.musicAudioDevice,
+      speed: prefsRepo.musicSpeed,
+      volume: prefsRepo.musicVolume,
+      dsdPcmRate: MusicDsdPcmRate.values.firstWhere(
+        (MusicDsdPcmRate r) => r.hz == prefsRepo.musicDsdPcmRate,
+        orElse: () => MusicDsdPcmRate.khz176,
+      ),
+      crossfade: Duration(milliseconds: prefsRepo.musicCrossfadeMs),
+      crossfadeContinuous: prefsRepo.musicCrossfadeContinuous,
+      equalizer: MusicEqualizerSettings(
+        enabled: prefsRepo.musicEqEnabled,
+        gainsDb: MusicEqualizerSettings.parseGains(prefsRepo.musicEqGains),
+      ),
+    );
+  }
+
+  double get musicReplayGainPreampDb => prefsRepo.musicReplayGainPreampDb;
+  Future<void> setMusicReplayGainPreampDb(double value) async {
+    await prefsRepo.setMusicReplayGainPreampDb(value);
+    await musicSession.engine.reapplySettings();
+  }
+
+  bool get musicExclusiveOutput => prefsRepo.musicExclusiveOutput;
+  Future<void> setMusicExclusiveOutput(bool value) async {
+    await prefsRepo.setMusicExclusiveOutput(value);
+    await musicSession.engine.reapplySettings();
+  }
+
+  String get musicAudioDevice => prefsRepo.musicAudioDevice;
+  Future<void> setMusicAudioDevice(String value) async {
+    await prefsRepo.setMusicAudioDevice(value);
+    await musicSession.engine.reapplySettings();
+  }
+
+  double get musicVolume => prefsRepo.musicVolume;
+  Future<void> setMusicVolume(double value) async {
+    await prefsRepo.setMusicVolume(value);
+    await musicSession.engine.reapplySettings();
+  }
+
+  double get musicSpeed => prefsRepo.musicSpeed;
+  Future<void> setMusicSpeed(double value) async {
+    await prefsRepo.setMusicSpeed(value);
+    await musicSession.engine.reapplySettings();
+  }
+
+  int get musicDsdPcmRate => prefsRepo.musicDsdPcmRate;
+  Future<void> setMusicDsdPcmRate(int value) async {
+    await prefsRepo.setMusicDsdPcmRate(value);
+    await musicSession.engine.reapplySettings();
+  }
+
+  int get musicCrossfadeMs => prefsRepo.musicCrossfadeMs;
+  Future<void> setMusicCrossfadeMs(int value) async {
+    await prefsRepo.setMusicCrossfadeMs(value);
+    await musicSession.engine.reapplySettings();
+  }
+
+  bool get musicCrossfadeContinuous => prefsRepo.musicCrossfadeContinuous;
+  Future<void> setMusicCrossfadeContinuous(bool value) async {
+    await prefsRepo.setMusicCrossfadeContinuous(value);
+    await musicSession.engine.reapplySettings();
+  }
+
   late DictionaryImportManager _dictImportManager;
 
   /// BUG-1499 / BUG-1500：词典下载/更新任务的所有权持有者。挂在 [AppModel] 上而不是
@@ -3408,6 +3718,8 @@ class AppModel with ChangeNotifier {
       _database = FushiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
       await _resetSrsStorageHost(isMainProcess: true);
+      // 音乐来源扫完 → 缺 ReplayGain 标签的曲目进后台 EBU R128 测量（设计 §7.3）。
+      onMusicSourceScanned = () => unawaited(musicLoudness.schedule());
 
       // Sync-pref maintenance, before any repository loads them or sync runs:
       // 1) recover device-local sync config if a previous backup import crashed
@@ -3764,6 +4076,12 @@ class AppModel with ChangeNotifier {
       );
       unawaited(_warmUpSearchAfterFirstFrame());
       unawaited(_migrateDictionaryRedirectFlags());
+      // 「我库里的例句」（作品图谱 L4）：延后打开本机语料库并对账、订阅来源表做增量。
+      LibraryCorpusService.instance.start(
+        database: _database,
+        directory: LibraryCorpusService.directoryUnder(_databaseDirectory.path),
+        isEnabled: () => librarySentencesEnabled,
+      );
       // 已下架的本机 OCR 模型（约 10 GB 的 CUDA 档）留在磁盘上的目录：设置页与
       // 存储页都没有它的入口了，不清就永远占着空间。幂等、失败只记日志。
       unawaited(deleteRemovedMangaOcrModelDirs());
@@ -4836,6 +5154,34 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoAutoPlayNext(bool value) =>
       prefsRepo.setVideoAutoPlayNext(value);
+
+  /// 原盘会话三项（落 Drift preferences，默认都开）：桌面自动全屏 / 启动动画 /
+  /// 详情页主按钮默认进菜单。
+  bool get videoDiscAutoFullscreen => prefsRepo.videoDiscAutoFullscreen;
+
+  Future<void> setVideoDiscAutoFullscreen(bool value) =>
+      prefsRepo.setVideoDiscAutoFullscreen(value);
+
+  bool get videoDiscLaunchAnimation => prefsRepo.videoDiscLaunchAnimation;
+
+  /// 作品图谱 L2：OP / ED 自动跳过 / 角落曲名（落 Drift preferences）。
+  bool get videoThemeSongAutoSkip => prefsRepo.videoThemeSongAutoSkip;
+
+  Future<void> setVideoThemeSongAutoSkip(bool value) =>
+      prefsRepo.setVideoThemeSongAutoSkip(value);
+
+  bool get videoThemeSongNowPlaying => prefsRepo.videoThemeSongNowPlaying;
+
+  Future<void> setVideoThemeSongNowPlaying(bool value) =>
+      prefsRepo.setVideoThemeSongNowPlaying(value);
+
+  Future<void> setVideoDiscLaunchAnimation(bool value) =>
+      prefsRepo.setVideoDiscLaunchAnimation(value);
+
+  bool get videoDiscOpenMenuByDefault => prefsRepo.videoDiscOpenMenuByDefault;
+
+  Future<void> setVideoDiscOpenMenuByDefault(bool value) =>
+      prefsRepo.setVideoDiscOpenMenuByDefault(value);
 
   /// 底部细进度条开关（落 Drift preferences，默认关）：控制条淡出后在视频最下方
   /// 留一条主题色细线。小窗档恒显、不受它管，见 `videoSlimProgressBarVisible`。
@@ -6357,8 +6703,8 @@ class AppModel with ChangeNotifier {
       database,
     ).getByBookUid(videoId);
     if (row == null) return null;
-    final File file = File(row.videoPath);
-    return await file.exists() ? file.path : null;
+    // ASR 要读媒体字节：DVD title / 网络流 / .strm 没有本地媒体文件。
+    return await hasLocalMediaFile(row.videoPath) ? row.videoPath : null;
   }
 
   /// 只暴露当前设备可访问的本地受管视频来源，供发现页新任务/订阅选择。
@@ -6772,23 +7118,23 @@ class AppModel with ChangeNotifier {
           serviceFactory: createAsrTranscriptionService,
           preferredLanguageTag: () => prefsRepo.asrTranscribeLanguage,
         ),
-        importer: (
-          AudiobookTranscribeJob job,
-          String subtitlePath,
-          AudiobookTranscribeImportSink sink,
-        ) =>
-            importTranscribedAudiobook(
-          db: database,
-          srtBookRepo: SrtBookRepository(database),
-          audiobookRepo: AudiobookRepository(database),
-          subtitlePath: subtitlePath,
-          audioPaths: job.audioPaths,
-          contentPath: job.contentPath,
-          targetBookKey: job.targetBookKey,
-          title: job.title,
-          onStep: sink.step,
-          onCoverage: sink.coverage,
-        ),
+        importer:
+            (
+              AudiobookTranscribeJob job,
+              String subtitlePath,
+              AudiobookTranscribeImportSink sink,
+            ) => importTranscribedAudiobook(
+              db: database,
+              srtBookRepo: SrtBookRepository(database),
+              audiobookRepo: AudiobookRepository(database),
+              subtitlePath: subtitlePath,
+              audioPaths: job.audioPaths,
+              contentPath: job.contentPath,
+              targetBookKey: job.targetBookKey,
+              title: job.title,
+              onStep: sink.step,
+              onCoverage: sink.coverage,
+            ),
       );
   AudiobookTranscribeImportQueue? _audiobookTranscribeImportQueue;
 
@@ -8486,9 +8832,10 @@ class AppModel with ChangeNotifier {
       );
 
   /// 悬浮字幕字体（`FontTarget.floatingLyric` 第一条可用 ttf/otf/ttc）。只有
-  /// Windows 原生窗吃字体；阅读器设置尚未加载时返回 null（原生用默认字族）。
+  /// 桌面原生窗（Windows / macOS）吃字体；阅读器设置尚未加载时返回 null（原生用
+  /// 默认字族）。
   ({String family, String? path})? _floatingLyricNativeFont() {
-    if (!Platform.isWindows) return null;
+    if (!isFontTargetAvailableOnPlatform(FontTarget.floatingLyric)) return null;
     final ReaderSettings? settings = ReaderFushiSource.readerSettings;
     if (settings == null) return null;
     return AppFontLoader.resolveForNativeOverlay(

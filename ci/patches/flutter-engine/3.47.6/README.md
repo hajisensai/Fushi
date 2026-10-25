@@ -12,10 +12,14 @@
 | 引擎版本（`bin/internal/engine.version`） | `692136cb6582dbfc5af3fb33c2515a069f2f66d0` |
 | ANGLE（`engine/src/flutter/third_party/angle`，DEPS 拉取） | `84027aca9b71c9ba335bd000dad1107b8810a511` |
 
-升级 Flutter 时两份补丁都要重新对齐基线（3.44.0 → 3.47.6 的移植记录见文末）；`tool/engine_overlay.ps1` 会拒绝把
+升级 Flutter 时全部补丁都要重新对齐基线（3.44.0 → 3.47.6 的移植记录见文末）；`tool/engine_overlay.ps1` 会拒绝把
 引擎版本不符的产物装进 SDK。
 
-## 两份补丁
+## 补丁（按顺序 `git apply`）
+
+渲染后端：Fushi 五端全线 Impeller、不保留 Skia 回退（所有者 2026-10-24 拍板，
+`docs/specs/2026-10-23-music-module-design.md` D13）。runner（`fushi/windows/runner/main.cpp`）显式
+`set_impeller_switch(Enabled)`；HDR 输出在 Impeller 下由第 3 份补丁接上。
 
 ### `engine-hdr-output.patch`（flutter 仓库根目录 `git apply`）
 
@@ -34,9 +38,33 @@
 - 渲染目标缓存按尺寸命中，补了「格式代」计数：开关 HDR 时作废旧 backing store。
 - 诊断：`FUSHI_HDR_PROBE=1` 时在切到 RGBA16F 后第 120 帧回读 backing store 三个点；
   状态切换以 `FML_LOG(IMPORTANT)` 记一行（只在变化时）。
-- Impeller 路径不支持（`SetHdrOutput` 直接返回 false）。Flutter 3.47 起 Windows **默认 Impeller**，
-  所以 runner（`fushi/windows/runner/main.cpp`）显式 `set_impeller_switch(Disabled)` 钉 Skia——
-  删了它不会编译失败，只会让 HDR 静默退回 SDR（守卫咬住）。
+- 这份补丁本身只接了 Skia 路径（Impeller 下 `SetHdrOutput` 返回 false）；Impeller 由
+  `engine-impeller-hdr.patch` 接上。
+
+### `engine-underlay-composition.patch`（flutter 仓库根目录，叠在上一份之上）
+
+`FlutterDesktopViewSetUnderlayComposition`：按 view 改用 DirectComposition 顶层 visual 呈现
+（8-bit，开着时 HDR 暂停），让网页视频的窗口化 WebView2 子窗透过 Flutter 透明像素显示。
+与渲染后端无关（只换窗口 surface）。
+
+### `engine-impeller-hdr.patch`（flutter 仓库根目录，叠在前两份之上）
+
+把合成器内 HDR 接到 Impeller（GLES / ANGLE）路径上，行为与 Skia 路径一致：
+
+- 合成器：Impeller 的三条 backing store 分支都能分配 RGBA16F（隐式 MSAA = 半浮点纹理 +
+  `EXT_multisampled_render_to_texture`；只有离屏 MSAA 时半浮点改走单采样纹理，因为 Present
+  的 scRGB pass 要把 backing store 当纹理采样）；`SetHdrOutput` 不再因 Impeller 拒绝。
+- embedder：`GL_RGBA16F` 的 backing store 包成 `kR16G16B16A16Float` 渲染目标；RGBA16F 外部
+  纹理（HDR 视频）按 `kR16G16B16A16Float` 包装，不再被「只支持 GL_RGBA8」拒掉。
+- Impeller 离屏格式：Impeller GLES 的离屏层（saveLayer、背景滤镜触发的整帧 readback、模糊等
+  滤镜子 pass）一律按上下文默认的 8-bit 分配——不改的话画面里一出现 `BackdropFilter`，整帧
+  就被钳回 ≤1.0（实测：backing store 中线三点全部 1.000）。`RenderTargetAllocator` 加了「默认
+  颜色格式覆盖」，`Canvas` 在根目标是 RGBA16F 的帧里把它设成 RGBA16F、帧尾还原；渲染目标缓存
+  命中时额外比对颜色格式。Impeller GLES 的着色器程序按 shader 缓存、与目标格式无关，半浮点
+  变体不触发重新编译。
+- 诊断：`FUSHI_HDR_PROBE=repeat` 每 30 帧回读一次（8-bit 帧也读，便于两种渲染器对照），
+  `FUSHI_HDR_PROBE_LOG=<文件>` 同时追加到文件（`flutter test -d windows` 不收引擎日志）。
+  取证脚本：`fushi/integration_test/video_compositor_hdr_probe_itest.dart`。
 
 ### `angle-scrgb-swapchain.patch`（ANGLE 仓库根目录 `git apply`）
 
@@ -55,7 +83,7 @@ sRGB 合成，>1.0 全被钳掉（实测：backing store 里 2.57，桌面上 1.
 `<工作目录>\depot_tools`）：
 
 ```powershell
-tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-1   # 自动取 fushi/.fvmrc 的 Flutter 版本
+tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-2   # 自动取 fushi/.fvmrc 的 Flutter 版本
 # 只重编 / 只打包：-Steps build,stage,pack -Modes release
 # 本机 VS 缺 ATL 时：-AtlDir '<另一套 VS>\VC\Tools\MSVC\<ver>\atlmfc'
 ```
@@ -74,11 +102,13 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 
 ## 当前产物
 
-`artifacts.json` → release `flutter-engine-3.47.6-hdr-output-1`（prerelease、非 Latest；
-三种模式 + 匹配的 pdb——`flutter build windows` 缺 pdb 会在 assemble 失败；tag 不以数字 /
-`v`+数字开头，app 更新检查与发布 workflow 都不会把它当 app 版本）。重编后换一个新的
-`patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release 留着给旧提交复现用
-（3.44.0 时代的是 `flutter-engine-3.44.0-hdr-output-2`）。
+`artifacts.json` → release `flutter-engine-3.47.6-hdr-output-2`（prerelease、非 Latest；
+2026-10-25 编，含 `engine-hdr-output` + `engine-underlay-composition` + `engine-impeller-hdr`
+三份引擎补丁与 ANGLE 补丁；三种模式 + 匹配的 pdb——`flutter build windows` 缺 pdb 会在 assemble
+失败；tag 不以数字 / `v`+数字开头，app 更新检查与发布 workflow 都不会把它当 app 版本）。重编后
+换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release 留着给旧提交复现用
+（`hdr-output-1` 只有 Skia 路径的 HDR、不含 underlay；3.44.0 时代的是
+`flutter-engine-3.44.0-hdr-output-2`）。
 
 ## 3.44.0 → 3.47.6 移植记录
 
@@ -90,8 +120,9 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 - embedder：上游把 `EmbedderExternalView::Render` 的渲染目标处理挪进
   `embedder_external_view_embedder.cc`，新增的缓存查找点用单参 `RenderTargetDescriptor`
   （取当前格式代），格式代失效语义不变。
-- **Windows 默认渲染器变成 Impeller**（3.44 要显式 `--enable-impeller=true` 才开）：补丁只有
-  Skia 路径，runner 因此显式钉 Skia（见上文「两份补丁」）。
+- **Windows 默认渲染器变成 Impeller**（3.44 要显式 `--enable-impeller=true` 才开）：当时补丁只有
+  Skia 路径，runner 曾显式钉 Skia；2026-10-24 起 `engine-impeller-hdr.patch` 把 HDR 接到
+  Impeller，runner 改钉 Impeller（见上文「补丁」）。
 
 ## 运行时契约
 

@@ -8,7 +8,7 @@ void main() {
 
   test('popup engine holder runs popupMain on a cached engine', () {
     final String src = File(holderPath).readAsStringSync();
-    // 引擎参数（BUG-2790 的 --enable-impeller=false）由
+    // 引擎参数（BUG-2790：不关 Impeller，热引擎查词 WebView 走 TLHC）由
     // test/build/popup_engine_impeller_guard_test.dart 钉；这里只钉应用级
     // context 与 automaticallyRegisterPlugins=false。
     expect(
