@@ -79,10 +79,17 @@ Directory srsFolderCollectionRoot(
 
 /// 一个文件夹位置这一轮的结果（[ops] 里带加密握手的结论：kdf / encryptionEnabled / 口令错误）。
 class SrsFolderSyncReport {
-  SrsFolderSyncReport({this.ops, this.media});
+  SrsFolderSyncReport({this.ops, this.media, this.handshake});
 
+  /// 操作同步这一轮的结果（只做媒体的位置：握手没过时带着错误，否则为 null）。
   final SrsSync2Report? ops;
   final SrsMediaSyncReport? media;
+
+  /// 只做媒体的位置的 `meta.json` 握手结论（kdf / 本机刚开的加密已写上 / 用没用密钥）。
+  final SrsSync2Report? handshake;
+
+  /// 这个位置这一轮的加密结论（调度器据此记加密状态、把本机刚开的加密标成已生效）。
+  SrsSync2Report? get crypto => ops ?? handshake;
 }
 
 /// 对一个文件夹位置跑一轮：同步 / 归档用途跑操作同步，媒体 / 归档用途跑媒体镜像。文件夹不在（U 盘没插）时
@@ -114,18 +121,35 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
     // 加密位置口令不对 / 没有：媒体也不碰（明文媒体不能写进加密位置）。
     if (ops.error != null) return SrsFolderSyncReport(ops: ops);
   }
-  SrsMediaSyncReport? media;
   String? mediaKey = (ops?.encrypted ?? false) ? key!.keyHex : null;
+  SrsSync2Report? handshake;
   if (ops == null && mediaRoot != null && location.media) {
-    final ({String? keyHex, String? error}) k = await srsCheckLocationKey(
+    // 只做媒体的位置：同一份 meta.json 握手（本机开过加密而位置上 kdf 不见了同样停下，不传明文媒体；本机刚开
+    // 加密也在这里把 kdf 写上）。
+    final SrsLocationHandshake h = await srsLocationHandshake(
       root,
-      key,
+      key: key,
+      collection: (await store.sync2Command(<String, Object?>{
+        'op': 'identity',
+        'now': store.now().$1,
+      })).map['collection'],
+      nowMs: store.now().$1,
+      protocol: kSrsSync2Protocol,
+      minReader: kSrsSync2MinReader,
     );
-    if (k.error != null) {
-      return SrsFolderSyncReport(ops: SrsSync2Report()..error = k.error);
+    // 握手结论照样交回（调度器据此记加密状态、把本机刚开的加密标成已生效）。
+    handshake = SrsSync2Report()
+      ..needsUpgrade = h.needsUpgrade
+      ..error = h.error
+      ..kdf = h.kdf
+      ..encryptionEnabled = h.encryptionEnabled
+      ..encrypted = h.keyHex != null;
+    if (h.needsUpgrade || h.error != null) {
+      return SrsFolderSyncReport(ops: handshake);
     }
-    mediaKey = k.keyHex;
+    mediaKey = h.keyHex;
   }
+  SrsMediaSyncReport? media;
   if (mediaRoot != null && (location.media || location.archive)) {
     media = await srsSyncMedia(
       location: root,
@@ -135,5 +159,5 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
       cipher: mediaKey == null ? null : SrsMediaCipher(store, mediaKey),
     );
   }
-  return SrsFolderSyncReport(ops: ops, media: media);
+  return SrsFolderSyncReport(ops: ops, media: media, handshake: handshake);
 }

@@ -3,6 +3,7 @@
 // tab 的 60 秒节流、没配置后端时什么都不做、用户加的文件夹位置（不可用只记 folderErrors，不算失败）；
 // 以及「常规同步每条通道成功后调后置步骤」这条接线。
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
@@ -16,7 +17,9 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
@@ -188,6 +191,99 @@ void main() {
     ];
   }
 
+  test('加密路径经调度器：注入的 runner / 媒体 runner 拿到本机密钥与封装，开加密生效后位置上没有明文', () async {
+    // P2-8：调度器不再按 identical(runner, 默认实现) 区分测试注入；注入的实现收到的就是生产路径会用的密钥。
+    final SrsLocationKey pending = await srsDeriveLocationKey(
+      store,
+      'correct horse',
+      pendingEnable: true,
+    );
+    SrsLocationKey current = pending;
+    final List<SrsLocationKey?> runnerKeys = <SrsLocationKey?>[];
+    final List<SrsMediaCipher?> ciphers = <SrsMediaCipher?>[];
+    final List<SrsLocationKey> enabled = <SrsLocationKey>[];
+    final Directory media = Directory(p.join(root.path, '_media'))
+      ..createSync();
+    final Directory location = Directory(p.join(root.path, 'loc'))
+      ..createSync();
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(location));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:loc',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      locationKey: (String id) => id == 'local:loc' ? current : null,
+      onEncryptionEnabled: (String id, SrsLocationKey k) async {
+        enabled.add(k);
+        current = k;
+      },
+      readMediaRoot: () async => media,
+      runner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            String key, {
+            SrsLocationKey? locationKey,
+          }) {
+            runnerKeys.add(locationKey);
+            return srsDefaultSyncRunner(
+              backend,
+              st,
+              key,
+              locationKey: locationKey,
+            );
+          },
+      mediaRunner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            Directory mediaRoot, {
+            SrsMediaCipher? cipher,
+          }) async {
+            ciphers.add(cipher);
+            return SrsMediaSyncReport();
+          },
+    );
+    final SrsSync2Report first = await s.syncWithBackend(
+      LocalDirectoryAssetStore(location),
+    );
+    expect(first.error, isNull);
+    expect(first.encryptionEnabled, isTrue);
+    expect(first.encrypted, isTrue);
+    expect(runnerKeys.single?.keyHex, pending.keyHex);
+    expect(ciphers.single?.keyHex, pending.keyHex);
+    expect(enabled.single.pendingEnable, isFalse);
+    expect(s.locationCrypto['local:loc']?.encrypted, isTrue);
+
+    await store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '秘密の単語',
+      },
+    );
+    final SrsSync2Report second = await s.syncWithBackend(
+      LocalDirectoryAssetStore(location),
+    );
+    expect(second.error, isNull);
+    expect(runnerKeys.last?.pendingEnable, isFalse);
+    final List<int> needle = utf8.encode('秘密の単語');
+    for (final File f in ownDeviceDir(
+      location,
+      store,
+    ).listSync().whereType<File>()) {
+      if (!p.basename(f.path).startsWith('seg-')) continue;
+      final String hex = f.readAsBytesSync().map((int b) => '$b,').join();
+      expect(
+        hex.contains(needle.map((int b) => '$b,').join()),
+        isFalse,
+        reason: f.path,
+      );
+    }
+  });
+
   test('支持服务器时间的后端：同步成功、上传段与 head、校时；不提示', () async {
     final SrsSync2Report r = await scheduler().syncWithBackend(
       LocalDirectoryAssetStore(root),
@@ -304,11 +400,22 @@ void main() {
       directoryKeyOf: (SyncAssetStore b) async => 'local:${root.path}',
       onDataChanged: () => changed++,
       onNotice: notices.add,
-      runner: (SyncAssetStore backend, SrsDbStore st, String key) async {
-        final SrsSync2Report r = await srsDefaultSyncRunner(backend, st, key);
-        clock.advance(roundTook);
-        return r;
-      },
+      runner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            String key, {
+            SrsLocationKey? locationKey,
+          }) async {
+            final SrsSync2Report r = await srsDefaultSyncRunner(
+              backend,
+              st,
+              key,
+              locationKey: locationKey,
+            );
+            clock.advance(roundTook);
+            return r;
+          },
     );
     final SrsSync2Report r = await s.syncWithBackend(
       LocalDirectoryAssetStore(root),
@@ -462,10 +569,16 @@ void main() {
         directoryKeyOf: (SyncAssetStore b) async => null,
         onDataChanged: () {},
         onNotice: (SrsSyncNotice _) {},
-        runner: (SyncAssetStore b, SrsDbStore st, String key) async {
-          runs++;
-          return SrsSync2Report();
-        },
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              runs++;
+              return SrsSync2Report();
+            },
       );
       final SrsSync2Report r = await s.syncWithBackend(
         LocalDirectoryAssetStore(root),
@@ -499,10 +612,16 @@ void main() {
           onDataChanged: () {},
           onNotice: (SrsSyncNotice _) {},
           hostWriteDebounce: const Duration(milliseconds: 30),
-          runner: (SyncAssetStore b, SrsDbStore st, String key) async {
-            keys.add(key);
-            return SrsSync2Report();
-          },
+          runner:
+              (
+                SyncAssetStore b,
+                SrsDbStore st,
+                String key, {
+                SrsLocationKey? locationKey,
+              }) async {
+                keys.add(key);
+                return SrsSync2Report();
+              },
         );
         addTearDown(s.dispose);
         for (int i = 0; i < 5; i++) {
@@ -534,8 +653,15 @@ void main() {
         directoryKeyOf: (SyncAssetStore b) async => 'k',
         onDataChanged: () {},
         onNotice: (SrsSyncNotice _) {},
-        runner: (SyncAssetStore b, SrsDbStore st, String key) async =>
-            SrsSync2Report()..errors.add('devices/x/seg-1-2-00000000.bin: bad'),
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async =>
+                SrsSync2Report()
+                  ..errors.add('devices/x/seg-1-2-00000000.bin: bad'),
       );
       final SrsSync2Report r = await s.syncWithBackend(
         LocalDirectoryAssetStore(root),
@@ -554,13 +680,19 @@ void main() {
         directoryKeyOf: (SyncAssetStore b) async => 'k',
         onDataChanged: () {},
         onNotice: (SrsSyncNotice _) {},
-        runner: (SyncAssetStore b, SrsDbStore st, String key) async {
-          running++;
-          if (running > maxRunning) maxRunning = running;
-          await Future<void>.delayed(const Duration(milliseconds: 20));
-          running--;
-          return SrsSync2Report();
-        },
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              running++;
+              if (running > maxRunning) maxRunning = running;
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+              running--;
+              return SrsSync2Report();
+            },
       );
       await Future.wait(<Future<SrsSync2Report>>[
         for (int i = 0; i < 4; i++)
@@ -782,10 +914,16 @@ void main() {
         directoryKeyOf: (SyncAssetStore b) async => 'k',
         onDataChanged: () {},
         onNotice: notices.add,
-        runner: (SyncAssetStore b, SrsDbStore st, String key) async {
-          runs++;
-          return SrsSync2Report();
-        },
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              runs++;
+              return SrsSync2Report();
+            },
         canRun: () => false,
       );
       final SrsSync2Report r = await s.syncWithBackend(
@@ -807,12 +945,18 @@ void main() {
         directoryKeyOf: (SyncAssetStore b) async => 'k',
         onDataChanged: () {},
         onNotice: notices.add,
-        runner: (SyncAssetStore b, SrsDbStore st, String key) async {
-          runs++;
-          started.complete();
-          await release.future;
-          return SrsSync2Report();
-        },
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              runs++;
+              started.complete();
+              await release.future;
+              return SrsSync2Report();
+            },
         canRun: () => open,
       );
       final Future<SrsSync2Report> inFlight = s.syncWithBackend(

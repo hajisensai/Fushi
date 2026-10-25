@@ -677,7 +677,7 @@ impl SrsCore {
             if let Some(k) = fork_at {
                 rotate(c, profile, k, now, &mut t)?;
             }
-            let replayed = replay_touched(c, profile, &t)?;
+            let replayed = replay_touched(c, &t)?;
             let pending: i64 = c
                 .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1", [profile], |r| r.get(0))
                 .map_err(sql)?;
@@ -947,7 +947,7 @@ impl SrsCore {
                 }
             }
             let applied = deliver(c, profile, now, &mut t)?;
-            let replayed = replay_touched(c, profile, &t)?;
+            let replayed = replay_touched(c, &t)?;
             let pending: i64 = c
                 .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1", [profile], |r| r.get(0))
                 .map_err(sql)?;

@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS sync2_edit_ops (
   device BLOB NOT NULL,
   seq INTEGER NOT NULL
 );
+-- sync2_card_deck：冻结，不再读写（重放按日志自己的配置快照算，改配置不再按牌组找卡重放）。
 CREATE TABLE IF NOT EXISTS sync2_card_deck (
   card_id TEXT NOT NULL PRIMARY KEY,
   profile_uid TEXT NOT NULL,

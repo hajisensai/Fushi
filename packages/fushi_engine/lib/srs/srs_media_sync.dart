@@ -146,9 +146,8 @@ Future<SrsMediaSyncReport> srsSyncMedia({
   SrsMediaCipher? cipher,
 }) async {
   final SrsMediaSyncReport report = SrsMediaSyncReport();
-  final String folder = cipher == null
-      ? kSrsMediaFolder
-      : kSrsSealedMediaFolder;
+  // 加密媒体按密钥指纹分目录（换了密钥 = 新目录，全部按新密钥重传）。
+  final String folder = cipher == null ? kSrsMediaFolder : cipher.folder;
   Future<void> put(String name, Uint8List plain) async => location.put(
     '$folder/$name',
     cipher == null ? plain : await cipher.seal(name, plain),

@@ -174,7 +174,8 @@ void main() {
       mediaRoot: ma,
       cipher: SrsMediaCipher(a, ka.keyHex),
     );
-    final Uint8List sealed = loc.written['media-e/pic.png']!;
+    final Uint8List sealed =
+        loc.written['${SrsMediaCipher(a, ka.keyHex).folder}/pic.png']!;
     expect(_contains(sealed, picture), isFalse);
     expect(
       loc.written.keys.where((String k) => k.startsWith('media/')),

@@ -312,12 +312,9 @@ pub(crate) struct Touched {
     pub events: Vec<Value>,
     /// 被新落的修改记录支配、从投影删掉的修改记录 ID。
     pub dominated: Vec<String>,
-    /// 需要重放的卡。
+    /// 需要重放的卡（新落的日志、血统变化）。牌组配置 / 归属的变化不在这里：派生日志按自己记下的配置快照
+    /// 重放（replay.rs 文件头），改配置不追溯改写历史。
     pub cards: BTreeSet<String>,
-    /// 配置可能变了的牌组（子树里的卡都要重放）。
-    pub decks: BTreeSet<String>,
-    /// 首选牌组变了的笔记（它的卡要重放）。
-    pub notes: BTreeSet<String>,
     /// 可见性 / 内容被冲突扣住、解除、清除改变了的实体 (kind, id)：Dart 侧要刷新它们的缓存。
     pub entities_changed: BTreeSet<(String, String)>,
     /// 这一次被彻底清除的实体 (kind, id)：Dart 侧要通知依赖它们的派生表（RWKV 分数表）。
@@ -425,10 +422,6 @@ fn upsert_server_time(conn: &Connection, profile: &str, id: &str, s: Option<i64>
 }
 
 /// 牌组配置相关的键（改了要重放该牌组子树里的卡）。
-fn deck_config_key(k: &str) -> bool {
-    matches!(k, "steps" | "retention" | "algorithm" | "fsrs6Params" | "fsrs7Params" | "maxInterval" | "paramsMode" | "parent" | "deleted")
-}
-
 /// 把一条操作落进投影。[project] = false 时只记意图 / 索引 / 闭包（迁移：投影行本来就在）。
 pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
     let body = op.body().map_err(|e| e.to_string())?;
@@ -549,9 +542,6 @@ fn project_entity(conn: &Connection, profile: &str, kind: EntKind, idt: &str, da
         .map_err(sql)?
         .execute(params![idt, profile, kind.wire(), canonical(&d), d["createdAt"].as_i64().unwrap_or(0)])
         .map_err(sql)?;
-        if kind == EntKind::Deck {
-            t.decks.insert(idt.to_owned());
-        }
         t.events.push(json!({"t": "entity", "x": rec}));
     }
     Ok(())
@@ -638,17 +628,12 @@ pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody,
     .map_err(sql)?;
     upsert_server_time(conn, profile, &eid, server, now)?;
     match e.kind {
-        EntKind::Card if e.key == "deck" || e.key.starts_with("historyFrom/") => {
+        // 血统变了：归属组变了，链尾与前身都要重放。
+        EntKind::Card if e.key.starts_with("historyFrom/") => {
             t.cards.insert(ent.clone());
             if let Some(p) = e.key.strip_prefix("historyFrom/") {
                 t.cards.insert(p.to_owned());
             }
-        }
-        EntKind::Note if e.key == "deck" => {
-            t.notes.insert(ent.clone());
-        }
-        EntKind::Deck if deck_config_key(&e.key) => {
-            t.decks.insert(ent.clone());
         }
         _ => {}
     }
@@ -724,39 +709,9 @@ fn intent_of(code: i64, arg: Option<i64>) -> Intent {
 // ---------------------------------------------------------------- 重放写回
 
 /// 重放受影响的卡：每张卡找到血统的链尾（继承它历史的、没有后继的卡），在链尾的归属组里重放
-/// （链尾 + 全部前身的日志一起排），按链尾的牌组配置算，结果写回投影行。返回日志行被改写的卡。
-pub(crate) fn replay_touched(conn: &Connection, profile: &str, t: &Touched) -> Result<BTreeSet<String>, String> {
-    let mut cards: BTreeSet<String> = t.cards.clone();
-    if !t.notes.is_empty() || !t.decks.is_empty() {
-        let tree = config::DeckTree::load(conn, profile)?;
-        let mut decks: BTreeSet<String> = BTreeSet::new();
-        for d in &t.decks {
-            decks.extend(tree.subtree(d));
-            decks.insert(d.clone());
-        }
-        // 卡 → 牌组的索引由重放自己维护（每次重放链尾时写下它算出的牌组），不读设备本地的缓存表：
-        // 缓存可能滞后，两台设备会因此重放出不同的结果。
-        for chunk in decks.iter().cloned().collect::<Vec<_>>().chunks(400) {
-            let marks = vec!["?"; chunk.len()].join(",");
-            let mut stmt = conn
-                .prepare(&format!("SELECT card_id FROM sync2_card_deck WHERE profile_uid = ? AND deck_id IN ({marks})"))
-                .map_err(sql)?;
-            let mut p: Vec<&dyn rusqlite::ToSql> = vec![&profile];
-            for d in chunk {
-                p.push(d);
-            }
-            for id in stmt.query_map(p.as_slice(), |r| r.get::<_, String>(0)).map_err(sql)? {
-                cards.insert(id.map_err(sql)?);
-            }
-        }
-        for n in &t.notes {
-            let mut stmt = conn.prepare_cached("SELECT DISTINCT card_id FROM sync2_log_meta WHERE note_id = ?1").map_err(sql)?;
-            for id in stmt.query_map([n], |r| r.get::<_, String>(0)).map_err(sql)? {
-                cards.insert(id.map_err(sql)?);
-            }
-        }
-    }
-    replay_cards(conn, profile, &cards)
+/// （链尾 + 全部前身的日志一起排），派生日志按各自记下的配置快照算，结果写回投影行。返回日志行被改写的卡。
+pub(crate) fn replay_touched(conn: &Connection, t: &Touched) -> Result<BTreeSet<String>, String> {
+    replay_cards(conn, &t.cards)
 }
 
 /// [cards] 的链尾。
@@ -780,13 +735,13 @@ fn tails(conn: &Connection, card: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-/// 一个归属组（链尾 + 广度优先的全部前身）的日志行与链尾的排程配置。
+/// 一个归属组（链尾 + 广度优先的全部前身）的日志行与链尾所属的笔记（日志上记的，没有则取调用方给的）。
 struct Group {
     rows: Vec<(String, String, Option<i64>, Intent, String)>,
-    cfg: crate::sync2::sched::Config,
+    note: Option<String>,
 }
 
-fn group_of(conn: &Connection, profile: &str, tree: &config::DeckTree, tail: &str, note_hint: Option<&str>) -> Result<Group, String> {
+fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Group, String> {
     let tail = &tail.to_owned();
     // 归属组：链尾 + 广度优先的全部前身。
     let mut lineage = vec![tail.clone()];
@@ -833,18 +788,10 @@ fn group_of(conn: &Connection, profile: &str, tree: &config::DeckTree, tail: &st
     if note.is_none() {
         note = note_hint.map(str::to_owned);
     }
-    if rows.is_empty() && note_hint.is_none() {
-        return Ok(Group { rows, cfg: crate::sync2::sched::Config::default() });
-    }
-    let deck = config::card_deck(conn, tree, tail, note.as_deref())?;
-    conn.prepare_cached("INSERT OR REPLACE INTO sync2_card_deck (card_id, profile_uid, deck_id) VALUES (?1, ?2, ?3)")
-        .map_err(sql)?
-        .execute(params![tail, profile, deck])
-        .map_err(sql)?;
-    Ok(Group { rows, cfg: tree.config(&deck) })
+    Ok(Group { rows, note })
 }
 
-pub(crate) fn replay_cards(conn: &Connection, profile: &str, cards: &BTreeSet<String>) -> Result<BTreeSet<String>, String> {
+pub(crate) fn replay_cards(conn: &Connection, cards: &BTreeSet<String>) -> Result<BTreeSet<String>, String> {
     let mut groups: BTreeSet<String> = BTreeSet::new();
     for c in cards {
         groups.extend(tails(conn, c)?);
@@ -853,14 +800,13 @@ pub(crate) fn replay_cards(conn: &Connection, profile: &str, cards: &BTreeSet<St
     if groups.is_empty() {
         return Ok(changed);
     }
-    let tree = config::DeckTree::load(conn, profile)?;
     for tail in &groups {
-        let Group { rows, cfg } = group_of(conn, profile, &tree, tail, None)?;
+        let Group { rows, .. } = group_of(conn, tail, None)?;
         if rows.is_empty() {
             continue;
         }
         let input: Vec<Row<'_>> = rows.iter().map(|(_, j, s, i, _)| Row { json: j, server_time: *s, intent: i.clone() }).collect();
-        let out = replay::replay(&input, &cfg)?;
+        let out = replay::replay(&input)?;
         for (k, new) in out.rows.iter().enumerate() {
             if let Some(json) = new {
                 conn.prepare_cached("UPDATE srs_review_logs SET json = ?2 WHERE id = ?1")
@@ -927,6 +873,134 @@ pub(crate) fn body_of_event(ev: &Value, note: Option<&str>, stamped: bool, serve
         Some("log") => Body::Log(log_body_of(x, note, x.get("hlc").and_then(Value::as_str).map(str::to_owned), None)?),
         _ => Body::LegacyUnknown { json: canonical(ev) },
     })
+}
+
+/// 迁移队列：要包成操作的旧行（phase 0 身份记录 / 1 修改记录 / 2 日志 / 3 不认识的事件），`pos` 是确定的包装顺序。
+const MIGRATE_QUEUE_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS sync2_migrate_queue (\
+     profile_uid TEXT NOT NULL, pos INTEGER NOT NULL, phase INTEGER NOT NULL, src TEXT NOT NULL, \
+     PRIMARY KEY (profile_uid, pos)) WITHOUT ROWID;";
+
+/// `srs_meta` 里「这个 profile 的迁移已开始、队列已排好」的标记键前缀（值 = 开始时刻）。
+const MIGRATING_KEY: &str = "sync2_migrating/";
+
+/// 把这一刻已有的旧行按迁移顺序排进队列：身份记录按创建时刻再按 ID；修改记录按旧 writer 再按旧 seq（同一旧
+/// 写入者的记录保持原先后，闭包按序累积）；日志按发生时刻再按 ID；不认识的事件按 ID。
+fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<(), String> {
+    let phases: [(i64, &str, &str); 4] = [
+        (0, "srs_entities", "created_at, id"),
+        (1, "srs_field_edits", "writer_id, seq"),
+        (2, "srs_review_logs", "occurred_at, id"),
+        (3, "srs_unknown_events", "id"),
+    ];
+    let mut base: i64 = 0;
+    for (phase, table, order) in phases {
+        let added = c
+            .execute(
+                &format!(
+                    "INSERT INTO sync2_migrate_queue (profile_uid, pos, phase, src) \
+                     SELECT ?1, ?2 + ROW_NUMBER() OVER (ORDER BY {order}), ?3, id FROM {table} WHERE profile_uid = ?1"
+                ),
+                params![profile, base, phase],
+            )
+            .map_err(sql)?;
+        base += added as i64;
+    }
+    Ok(())
+}
+
+/// 一条排队的旧行 → 操作载荷；行已经不在了（不会发生：迁移期间独占写）返回 `None`。
+fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, String> {
+    Ok(match phase {
+        0 => {
+            let row: Option<(String, String)> = c
+                .prepare_cached("SELECT kind, payload_json FROM srs_entities WHERE id = ?1")
+                .map_err(sql)?
+                .query_row([src], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()
+                .map_err(sql)?;
+            row.and_then(|(kind, payload)| {
+                let kind = EntKind::parse(&kind)?;
+                let data = canonical(&serde_json::from_str::<Value>(&payload).unwrap_or(Value::Null));
+                Some(Body::Entity { kind, id: Key::of(src), data })
+            })
+        }
+        1 => {
+            let row: Option<(String, Option<i64>)> = c
+                .prepare_cached(
+                    "SELECT f.json, e.server_time FROM srs_field_edits f LEFT JOIN srs_event_local e ON e.event_id = f.id \
+                     WHERE f.id = ?1",
+                )
+                .map_err(sql)?
+                .query_row([src], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()
+                .map_err(sql)?;
+            let Some((json, st)) = row else { return Ok(None) };
+            let x: Value = serde_json::from_str(&json).map_err(|e| format!("bad field edit: {e}"))?;
+            let s = |k: &str| x.get(k).and_then(Value::as_str);
+            let Some(kind) = EntKind::parse(s("k").unwrap_or_default()) else { return Ok(None) };
+            Some(Body::Edit(EditBody {
+                kind,
+                entity: Key::of(s("e").ok_or("edit entity")?),
+                key: s("f").ok_or("edit key")?.to_owned(),
+                value: canonical(x.get("v").unwrap_or(&Value::Null)),
+                machine: x.get("m") == Some(&Value::Bool(true)),
+                ts: op::ts_code(s("ts").unwrap_or("wall")),
+                legacy: Some(LegacyStamp {
+                    writer: s("w").ok_or("edit writer")?.to_owned(),
+                    seq: x["s"].as_i64().ok_or("edit seq")?,
+                    ctx_json: canonical(x.get("ctx").unwrap_or(&json!({"vv": {}}))),
+                    hlc: s("hlc").ok_or("edit hlc")?.to_owned(),
+                    server_time: st,
+                }),
+            }))
+        }
+        2 => {
+            // 笔记 ID 取缓存行（迁移时卡都已物化过）。
+            let row: Option<(String, Option<i64>, Option<String>)> = c
+                .prepare_cached(
+                    "SELECT l.json, e.server_time, cc.note_id FROM srs_review_logs l \
+                     LEFT JOIN srs_event_local e ON e.event_id = l.id LEFT JOIN srs_cards_cache cc ON cc.id = l.card_id \
+                     WHERE l.id = ?1",
+                )
+                .map_err(sql)?
+                .query_row([src], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .optional()
+                .map_err(sql)?;
+            let Some((json, st, note)) = row else { return Ok(None) };
+            let x: Value = serde_json::from_str(&json).map_err(|e| format!("bad review log: {e}"))?;
+            let hlc = x["hlc"].as_str().map(str::to_owned);
+            // 旧日志不带配置快照（`sc`）：重放按作者结果照抄，迁移不改任何卡的到期日。
+            Some(Body::Log(log_body_of(&x, note.as_deref(), hlc, st)?))
+        }
+        _ => c
+            .prepare_cached("SELECT json FROM srs_unknown_events WHERE id = ?1")
+            .map_err(sql)?
+            .query_row([src], |r| r.get::<_, String>(0))
+            .optional()
+            .map_err(sql)?
+            .map(|json| Body::LegacyUnknown { json }),
+    })
+}
+
+/// 迁移收尾：本机标成已迁移。
+fn finish_migration(c: &Connection, local: &mut Local, profile: &str, now: i64, ops: u64) -> Result<Value, String> {
+    local.migrated = true;
+    local.save(c)?;
+    c.execute("UPDATE sync2_self SET migrated_at = ?2 WHERE profile_uid = ?1", params![profile, now]).map_err(sql)?;
+    Ok(json!({"done": true, "ops": ops, "remaining": 0}))
+}
+
+/// 把 [l] 所属卡此刻的生效排程配置写进日志的 `sc`（[replay::SNAPSHOT_KEY]）。
+fn stamp_config(conn: &Connection, tree: &config::DeckTree, l: &mut LogBody) -> Result<(), String> {
+    let note = l.note.as_ref().map(Key::text);
+    let deck = config::card_deck(conn, tree, &l.card.text(), note.as_deref())?;
+    let mut extra: Map<String, Value> = match serde_json::from_str::<Value>(&l.extra) {
+        Ok(Value::Object(m)) => m,
+        _ => Map::new(),
+    };
+    extra.insert(replay::SNAPSHOT_KEY.into(), tree.config(&deck).to_json());
+    l.extra = canonical(&Value::Object(extra));
+    Ok(())
 }
 
 const LOG_KNOWN_KEYS: [&str; 19] = [
@@ -1022,8 +1096,28 @@ impl SrsCore {
             let mut t = Touched::default();
             let mut landed = Vec::with_capacity(items.len());
             let mut out_events = Vec::with_capacity(items.len());
+            // 牌组树（配置快照用）：这一批里落过非日志操作（可能改了配置 / 归属）就重读。
+            let mut tree: Option<config::DeckTree> = None;
             for it in &items {
-                let body = body_of_event(&it["e"], it["note"].as_str(), it["stamped"] == Value::Bool(true), it["server"].as_i64())?;
+                let stamped = it["stamped"] == Value::Bool(true);
+                let body = body_of_event(&it["e"], it["note"].as_str(), stamped, it["server"].as_i64())?;
+                let body = match body {
+                    // 本机新写的派生日志记下此刻的生效配置（重放按它算，改配置不追溯；replay.rs 文件头）。外来、已盖戳
+                    // 的日志保留它原有的（旧日志没有 = 按作者结果照抄）。
+                    Body::Log(mut l) if !stamped && !matches!(l.intent, Intent::Absolute) => {
+                        if tree.is_none() {
+                            tree = Some(config::DeckTree::load(c, profile)?);
+                        }
+                        stamp_config(c, tree.as_ref().expect("tree just loaded"), &mut l)?;
+                        Body::Log(l)
+                    }
+                    other => {
+                        if !matches!(other, Body::Log(_)) {
+                            tree = None;
+                        }
+                        other
+                    }
+                };
                 let before = t.events.len();
                 // 标签是 OR-Set：Dart 写的整列表 `tags` 按与当前值的差拆成添加 / 观察删除。
                 let bodies = match &body {
@@ -1061,7 +1155,7 @@ impl SrsCore {
                 out_events.push(if did { t.events.last().cloned().unwrap_or(Value::Null) } else { Value::Null });
             }
             local.save(c)?;
-            let replayed = replay_touched(c, profile, &t)?;
+            let replayed = replay_touched(c, &t)?;
             Ok(json!({
                 "events": out_events,
                 "landed": landed,
@@ -1078,8 +1172,18 @@ impl SrsCore {
 
     /// 旧库并入（计划 P3.2；拍板 5）：把本 profile 现有的身份记录、修改记录、日志、不认识的事件逐条包成
     /// **本机新身份**的操作（旧修改记录带上旧 dot / 旧上下文 / 旧 HLC / S(e)，因果判定照旧成立）。投影行
-    /// 本来就在，只补 ops 与元数据。可重入：已迁移直接返回。返回 `{"ops": n, "replayed": [...]}`。
-    pub fn sync2_migrate(&self, profile: &str, now: i64) -> Result<Value, String> {
+    /// 本来就在，只补 ops 与元数据。
+    ///
+    /// **不改任何一张卡的排程**：迁移来的日志没有配置快照，重放按作者结果照抄（replay.rs 文件头），迁移后也不
+    /// 重放。旧投影行（身份记录 / 日志 / 修改记录）原样留着——唯一的改写是旧的整列表 `tags` 行换成等值的
+    /// OR-Set 合成行——所以迁移随时中断都不丢旧数据（设计 §13「迁移」）。
+    ///
+    /// **分批、可续跑**（[limit] 条一批，`None` = 一次做完）：第一批把要包的旧行按确定顺序排进
+    /// `sync2_migrate_queue`（只排这一刻已有的行，之后的本机写入本来就是操作），每批在自己的 savepoint 里包一段、
+    /// 从队列里删掉、提交；进程被杀 / 关库只丢正在做的那一批，下次打开从队列剩下的接着做。备份快照里带着队列与
+    /// 进行中标记：从迁移到一半的快照恢复出来的新身份也接着做完，而不是被「已经有操作了」误判为迁移完成。
+    /// 返回 `{"done": bool, "ops": 这一批包的条数, "remaining": 队列剩余}`。
+    pub fn sync2_migrate(&self, profile: &str, now: i64, limit: Option<u64>) -> Result<Value, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let mut local = match Local::load(c, profile)? {
@@ -1087,114 +1191,64 @@ impl SrsCore {
                 None => Local::create(c, profile, now)?,
             };
             if local.migrated {
-                return Ok(json!({"ops": 0, "replayed": []}));
+                return Ok(json!({"done": true, "ops": 0, "remaining": 0}));
             }
-            // 已经有操作了（v2 之后的备份恢复出来的库：本机身份被快照剥掉、迁移标记随之没了，但投影行全是操作
-            // 投影出来的）：只补标记，绝不再把投影行包一遍（那会造出一条重复的操作流）。
-            let has_ops: bool = c
-                .prepare("SELECT 1 FROM sync2_ops WHERE profile_uid = ?1 AND device != ?2 LIMIT 1")
+            c.execute_batch(MIGRATE_QUEUE_SCHEMA).map_err(sql)?;
+            let marker = format!("{MIGRATING_KEY}{profile}");
+            let started: bool = c
+                .prepare_cached("SELECT 1 FROM srs_meta WHERE key = ?1")
                 .map_err(sql)?
-                .exists(params![profile, local.device.0.to_vec()])
+                .exists([&marker])
                 .map_err(sql)?;
-            if has_ops {
-                local.migrated = true;
-                local.save(c)?;
-                c.execute("UPDATE sync2_self SET migrated_at = ?2 WHERE profile_uid = ?1", params![profile, now]).map_err(sql)?;
-                return Ok(json!({"ops": 0, "replayed": []}));
+            if !started {
+                // 已经有操作了（v2 之后的备份恢复出来的库：本机身份被快照剥掉、迁移标记随之没了，但投影行全是操作
+                // 投影出来的）：只补标记，绝不再把投影行包一遍（那会造出一条重复的操作流）。
+                let has_ops: bool = c
+                    .prepare("SELECT 1 FROM sync2_ops WHERE profile_uid = ?1 AND device != ?2 LIMIT 1")
+                    .map_err(sql)?
+                    .exists(params![profile, local.device.0.to_vec()])
+                    .map_err(sql)?;
+                if has_ops {
+                    return finish_migration(c, &mut local, profile, now, 0);
+                }
+                enqueue_legacy_rows(c, profile)?;
+                c.execute("INSERT INTO srs_meta (key, value) VALUES (?1, ?2)", params![marker, now.to_string()]).map_err(sql)?;
             }
             let mut applied = applied_vv(c, profile)?;
             let mut t = Touched::default();
             let mut n = 0u64;
-            // 身份记录（牌组 / 笔记类型 / 笔记 / profile），按创建时刻再按 ID，确定性。
-            let ents: Vec<(String, String, String)> = c
-                .prepare("SELECT id, kind, payload_json FROM srs_entities WHERE profile_uid = ?1 ORDER BY created_at, id")
+            let batch: Vec<(i64, i64, String)> = c
+                .prepare_cached("SELECT pos, phase, src FROM sync2_migrate_queue WHERE profile_uid = ?1 ORDER BY pos LIMIT ?2")
                 .map_err(sql)?
-                .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-                .map_err(sql)?
-                .collect::<Result<_, _>>()
-                .map_err(sql)?;
-            for (id, kind, payload) in ents {
-                let Some(kind) = EntKind::parse(&kind) else { continue };
-                let data = canonical(&serde_json::from_str::<Value>(&payload).unwrap_or(Value::Null));
-                let op = append_local(c, &mut local, &mut applied, &Body::Entity { kind, id: Key::of(&id), data }, now)?;
-                project(c, profile, &op, now, false, &mut t)?;
-                n += 1;
-            }
-            // 修改记录：按旧 writer 再按旧 seq（同一旧写入者的记录保持原先后，闭包按序累积）。
-            let edits: Vec<(String, Option<i64>)> = c
-                .prepare(
-                    "SELECT f.json, e.server_time FROM srs_field_edits f LEFT JOIN srs_event_local e ON e.event_id = f.id \
-                     WHERE f.profile_uid = ?1 ORDER BY f.writer_id, f.seq",
-                )
-                .map_err(sql)?
-                .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?)))
+                .query_map(params![profile, limit.map_or(-1, |l| l.max(1) as i64)], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
                 .map_err(sql)?
                 .collect::<Result<_, _>>()
                 .map_err(sql)?;
-            for (json, st) in edits {
-                let x: Value = serde_json::from_str(&json).map_err(|e| format!("bad field edit: {e}"))?;
-                let s = |k: &str| x.get(k).and_then(Value::as_str);
-                let Some(kind) = EntKind::parse(s("k").unwrap_or_default()) else { continue };
-                let body = Body::Edit(EditBody {
-                    kind,
-                    entity: Key::of(s("e").ok_or("edit entity")?),
-                    key: s("f").ok_or("edit key")?.to_owned(),
-                    value: canonical(x.get("v").unwrap_or(&Value::Null)),
-                    machine: x.get("m") == Some(&Value::Bool(true)),
-                    ts: op::ts_code(s("ts").unwrap_or("wall")),
-                    legacy: Some(LegacyStamp {
-                        writer: s("w").ok_or("edit writer")?.to_owned(),
-                        seq: x["s"].as_i64().ok_or("edit seq")?,
-                        ctx_json: canonical(x.get("ctx").unwrap_or(&json!({"vv": {}}))),
-                        hlc: s("hlc").ok_or("edit hlc")?.to_owned(),
-                        server_time: st,
-                    }),
-                });
+            for (_, phase, src) in &batch {
+                let Some(body) = legacy_body(c, *phase, src)? else { continue };
                 let op = append_local(c, &mut local, &mut applied, &body, now)?;
-                project(c, profile, &op, now, false, &mut t)?;
-                n += 1;
-            }
-            // 日志：按发生时刻再按 ID；笔记 ID 取缓存行（迁移时卡都已物化过）。
-            let logs: Vec<(String, Option<i64>, Option<String>)> = c
-                .prepare(
-                    "SELECT l.json, e.server_time, cc.note_id FROM srs_review_logs l \
-                     LEFT JOIN srs_event_local e ON e.event_id = l.id LEFT JOIN srs_cards_cache cc ON cc.id = l.card_id \
-                     WHERE l.profile_uid = ?1 ORDER BY l.occurred_at, l.id",
-                )
-                .map_err(sql)?
-                .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-                .map_err(sql)?
-                .collect::<Result<_, _>>()
-                .map_err(sql)?;
-            let mut cards: BTreeSet<String> = BTreeSet::new();
-            for (json, st, note) in logs {
-                let x: Value = serde_json::from_str(&json).map_err(|e| format!("bad review log: {e}"))?;
-                let hlc = x["hlc"].as_str().map(str::to_owned);
-                let body = Body::Log(log_body_of(&x, note.as_deref(), hlc, st)?);
-                let op = append_local(c, &mut local, &mut applied, &body, now)?;
-                project(c, profile, &op, now, false, &mut t)?;
-                if let Body::Log(l) = op.body().map_err(|e| e.to_string())? {
-                    cards.insert(l.card.text());
+                if !matches!(body, Body::LegacyUnknown { .. }) {
+                    project(c, profile, &op, now, false, &mut t)?;
                 }
                 n += 1;
             }
-            let unknown: Vec<String> = c
-                .prepare("SELECT json FROM srs_unknown_events WHERE profile_uid = ?1 ORDER BY id")
-                .map_err(sql)?
-                .query_map([profile], |r| r.get(0))
-                .map_err(sql)?
-                .collect::<Result<_, _>>()
-                .map_err(sql)?;
-            for json in unknown {
-                append_local(c, &mut local, &mut applied, &Body::LegacyUnknown { json }, now)?;
-                n += 1;
+            if let Some((last, _, _)) = batch.last() {
+                c.prepare_cached("DELETE FROM sync2_migrate_queue WHERE profile_uid = ?1 AND pos <= ?2")
+                    .map_err(sql)?
+                    .execute(params![profile, last])
+                    .map_err(sql)?;
             }
-            local.migrated = true;
-            local.save(c)?;
-            c.execute("UPDATE sync2_self SET migrated_at = ?2 WHERE profile_uid = ?1", params![profile, now]).map_err(sql)?;
-            // 迁移后全量重放一次：并发复习从此按事实合并（与迁移前的差别 = 旧实现丢掉的调度影响 + 配置改过）。
-            let replayed = replay_cards(c, profile, &cards)?;
-            Ok(json!({"ops": n, "replayed": replayed, "cards": cards.len()}))
+            let remaining: i64 = c
+                .prepare_cached("SELECT COUNT(*) FROM sync2_migrate_queue WHERE profile_uid = ?1")
+                .map_err(sql)?
+                .query_row([profile], |r| r.get(0))
+                .map_err(sql)?;
+            if remaining > 0 {
+                local.save(c)?;
+                return Ok(json!({"done": false, "ops": n, "remaining": remaining}));
+            }
+            c.execute("DELETE FROM srs_meta WHERE key = ?1", [&marker]).map_err(sql)?;
+            finish_migration(c, &mut local, profile, now, n)
         })
     }
 
@@ -1213,7 +1267,7 @@ impl SrsCore {
                 project(c, profile, &op, now, true, &mut t)?;
             }
             local.save(c)?;
-            let replayed = replay_touched(c, profile, &t)?;
+            let replayed = replay_touched(c, &t)?;
             Ok(json!({
                 "events": t.events,
                 "dominated": t.dominated,
@@ -1318,7 +1372,7 @@ impl SrsCore {
                 .map_err(sql)?
                 .collect::<Result<_, _>>()
                 .map_err(sql)?;
-            Ok(replay_cards(c, profile, &cards)?.into_iter().collect())
+            Ok(replay_cards(c, &cards)?.into_iter().collect())
         })
     }
 }
@@ -1339,7 +1393,13 @@ impl SrsCore {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let tree = config::DeckTree::load(c, profile)?;
-            let Group { rows, cfg } = group_of(c, profile, &tree, card, note)?;
+            let Group { rows, note: group_note } = group_of(c, card, note)?;
+            // 此刻的生效配置：预览的是「现在作答」，作答落库时 `sc` 记下的也是这一份（[stamp_config]）。
+            let cfg = if rows.is_empty() && note.is_none() {
+                crate::sync2::sched::Config::default()
+            } else {
+                tree.config(&config::card_deck(c, &tree, card, group_note.as_deref())?)
+            };
             let input: Vec<Row<'_>> = rows.iter().map(|(_, j, s, i, _)| Row { json: j, server_time: *s, intent: i.clone() }).collect();
             let day = crate::projection::Day { utc_offset_min: utc_off, rollover_hour: rollover };
             let (cur, mem, plan) = replay::preview(&input, &cfg, card, now, &day)?;

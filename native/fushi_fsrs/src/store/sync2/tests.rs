@@ -254,7 +254,7 @@ fn migration_wraps_legacy_rows_and_keeps_projection() {
     .unwrap();
     drop(w);
     let before = projection(&a);
-    let m = a.core.sync2_migrate(P, T0).unwrap();
+    let m = a.core.sync2_migrate(P, T0, None).unwrap();
     assert_eq!(m["ops"], json!(2));
     assert_eq!(projection(&a), before, "migration does not rewrite projection rows");
     // 迁移后的本机新写入因果覆盖旧记录（旧 dot 在新写入的上下文闭包里）。
@@ -668,13 +668,13 @@ fn stamped_foreign_edits_keep_their_causality() {
 #[test]
 fn restoring_a_v2_backup_does_not_migrate_twice() {
     let a = Device::new("a");
-    a.core.sync2_migrate(P, T0).unwrap();
+    a.core.sync2_migrate(P, T0, None).unwrap();
     a.apply(T0 + 1, vec![edit("note", "N1", "f/x", json!("v"))]);
     let dir = tempdir::new("restore2");
     a.core.snapshot_into(&dir.0.join("srs.db"), true).unwrap();
     let r = Device { core: SrsCore::open(&dir.0.join("srs.db")).unwrap(), _dir: dir };
     let before = r.rows("SELECT COUNT(*) FROM sync2_ops")[1][0].clone();
-    let m = r.core.sync2_migrate(P, T0 + 2).unwrap();
+    let m = r.core.sync2_migrate(P, T0 + 2, None).unwrap();
     assert_eq!(m["ops"], json!(0));
     assert_eq!(r.rows("SELECT COUNT(*) FROM sync2_ops")[1][0], before);
 }
@@ -852,4 +852,230 @@ fn digest_is_recomputed_only_when_due() {
     a.apply(T0 + 2, vec![edit("deck", &deck, "name", json!("X"))]);
     assert_eq!(a.core.sync2_digest_due(P, T0 + 3, Some(ten_min)).unwrap()["skipped"], json!(true), "vv changed but too soon");
     assert!(a.core.sync2_digest_due(P, T0 + ten_min + 3, Some(ten_min)).unwrap().get("digest").is_some());
+}
+
+fn log_json(d: &Device, id: &str) -> Value {
+    serde_json::from_str(&d.rows(&format!("SELECT json FROM srs_review_logs WHERE id = '{id}'"))[1][0]).unwrap()
+}
+
+/// 改牌组配置只影响之后的复习（设计 §4.6）：已发生的复习按它自己记下的配置快照重放，结果一字不变，也不触发
+/// 重放；之后的复习记下新配置。两台设备各在自己的配置下复习同一张卡，合并后仍逐行一致。
+#[test]
+fn deck_config_change_does_not_rewrite_past_reviews() {
+    let a = Device::new("cfg-a");
+    let b = Device::new("cfg-b");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "retention", json!(0.8))]);
+    a.sync(&mut bucket, "loc", T0);
+    b.sync(&mut bucket, "loc", T0);
+    a.apply(T0 + 10, vec![review("r1", "C", T0 + 10, 3, "learn")]);
+    a.apply(T0 + DAY, vec![review("r2", "C", T0 + DAY, 3, "review")]);
+    let r2 = log_json(&a, "r2");
+    assert_eq!(r2["sc"]["ret"], json!(0.8), "the review records the config it was answered under: {r2}");
+    let out = a.apply(T0 + DAY + 1, vec![edit("deck", &deck, "retention", json!(0.95))]);
+    assert_eq!(out["replayed"], json!([]), "a config change replays nothing");
+    assert_eq!(log_json(&a, "r2"), r2, "past results are not rewritten");
+    a.apply(T0 + 5 * DAY, vec![review("r3", "C", T0 + 5 * DAY, 3, "review")]);
+    assert_eq!(log_json(&a, "r3")["sc"]["ret"], json!(0.95));
+    assert_eq!(log_json(&a, "r2"), r2);
+    // B 还在旧配置上离线复习同一张卡；合并后两边重放出同样的结果。
+    b.apply(T0 + 2 * DAY, vec![review("b1", "C", T0 + 2 * DAY, 2, "review")]);
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 6 * DAY);
+        b.sync(&mut bucket, "loc", T0 + 6 * DAY);
+    }
+    assert_eq!(projection(&a), projection(&b));
+    assert_eq!(log_json(&a, "b1")["sc"]["ret"], json!(0.8));
+}
+
+/// 旧库：一张卡两条旧日志，作者结果故意与「按当前配置重放」会算出的不同；牌组配置也改过。
+fn legacy_library(d: &Device) {
+    let deck = super::config::default_deck_id(P);
+    let w = d.core.writer().unwrap();
+    let log = |id: &str, at: i64, due: i64| {
+        json!({
+            "id": id, "p": P, "card": "C", "kind": "review", "rating": 3, "hlc": format!("{at}:0:old"), "at": at,
+            "ts": "anchored", "origin": "fushi", "rtype": "review", "utcOff": 0, "rollover": 4, "fv": 1,
+            "res": {"queue": "review", "dueDay": due, "ivl": 40, "step": 0, "reps": 2, "lapses": 0, "scheduler": "fushi",
+                    "memory": {"s": 41.5, "d": 5.25, "sf": 0.0}, "lastReviewedAt": at}
+        })
+        .to_string()
+    };
+    let e1 = crate::registers::edit_id("old", 1);
+    let e2 = crate::registers::edit_id("old", 2);
+    let edit_json = |id: &str, s: i64, f: &str, v: Value| {
+        json!({"ctx": {"vv": {}}, "e": deck, "f": f, "hlc": format!("{s}:0:old"), "id": id, "k": "deck", "p": P, "s": s, "ts": "wall", "v": v, "w": "old"})
+            .to_string()
+    };
+    for (id, at, due) in [("L1", T0, 19_700), ("L2", T0 + 3 * DAY, 19_800)] {
+        w.execute(
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, json) \
+             VALUES (?1, ?2, 'C', 'review', 3, ?3, 'review', 'fushi', ?4)",
+            rusqlite::params![id, P, at, log(id, at, due)],
+        )
+        .unwrap();
+    }
+    w.execute(
+        "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (?1, ?2, 'deck', '{\"createdAt\":1}', 1)",
+        rusqlite::params![deck, P],
+    )
+    .unwrap();
+    for (id, s, f, v) in [(&e1, 1, "retention", json!(0.97)), (&e2, 2, "name", json!("Deck"))] {
+        w.execute(
+            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
+             VALUES (?1, ?2, 'deck', ?3, ?4, 'old', ?5, ?6)",
+            rusqlite::params![id, P, deck, f, s, edit_json(id, s, f, v)],
+        )
+        .unwrap();
+    }
+    for k in 0..5i64 {
+        w.execute(
+            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (?1, ?2, 'note', '{\"createdAt\":2}', ?3)",
+            rusqlite::params![format!("N{k}"), P, 2 + k],
+        )
+        .unwrap();
+    }
+}
+
+fn legacy_rows(d: &Device) -> Vec<Vec<String>> {
+    let mut out = d.rows("SELECT id, json FROM srs_review_logs ORDER BY id");
+    out.extend(d.rows("SELECT id, json FROM srs_field_edits ORDER BY id"));
+    out.extend(d.rows("SELECT id, payload_json, created_at FROM srs_entities ORDER BY id"));
+    out
+}
+
+/// 迁移不改任何一张卡的排程（旧日志没有配置快照 = 按作者结果照抄），旧行一字不动；迁移后新复习接着旧的
+/// 最后状态算，旧日志的结果仍不被追溯改写。
+#[test]
+fn migration_keeps_every_schedule_and_every_legacy_row() {
+    let a = Device::new("mig");
+    legacy_library(&a);
+    let before = legacy_rows(&a);
+    let m = a.core.sync2_migrate(P, T0 + 10 * DAY, None).unwrap();
+    assert_eq!(m["done"], json!(true));
+    assert_eq!(m["ops"], json!(10), "2 logs + 2 edits + 6 entities: {m}");
+    assert_eq!(legacy_rows(&a), before, "migration rewrites no legacy row");
+    assert_eq!(a.core.sync2_replay_all(P).unwrap(), Vec::<String>::new(), "replaying migrated logs changes nothing");
+    a.apply(T0 + 40 * DAY, vec![review("new", "C", T0 + 40 * DAY, 3, "review")]);
+    assert_eq!(legacy_rows(&a)[1..3], before[1..3], "legacy log results stay as authored");
+    let new = log_json(&a, "new");
+    assert_eq!(new["res"]["reps"], json!(3), "the new review continues from the legacy state: {new}");
+    assert_eq!(new["sc"]["ret"], json!(0.97));
+}
+
+/// 分批迁移：三条一批、中途「被杀」（换一个连接重开）接着做，结果与一次做完逐行相同；队列与标记清干净。
+/// 从迁移到一半的备份快照（剥掉本机身份）恢复出来的新设备也接着做完，不被「已经有操作了」误判为已迁移。
+#[test]
+fn migration_runs_in_resumable_batches() {
+    let one = Device::new("mig-one");
+    legacy_library(&one);
+    one.core.sync2_migrate(P, T0, None).unwrap();
+
+    let dir = tempdir::new("mig-batched");
+    let path = dir.0.join("srs.db");
+    {
+        let d = Device { core: SrsCore::open(&path).unwrap(), _dir: tempdir::new("unused") };
+        legacy_library(&d);
+        let m = d.core.sync2_migrate(P, T0, Some(3)).unwrap();
+        assert_eq!(m["done"], json!(false));
+        assert_eq!(m["ops"], json!(3));
+        assert_eq!(m["remaining"], json!(7));
+    }
+    // 「进程被杀」：重开，从剩下的接着做。
+    let d = Device { core: SrsCore::open(&path).unwrap(), _dir: dir };
+    assert_eq!(d.core.sync2_identity(P, T0).unwrap()["migrated"], json!(false));
+    let mut batches = 1;
+    loop {
+        let m = d.core.sync2_migrate(P, T0, Some(3)).unwrap();
+        batches += 1;
+        if m["done"] == json!(true) {
+            break;
+        }
+    }
+    assert_eq!(batches, 4);
+    assert_eq!(legacy_rows(&d), legacy_rows(&one));
+    let ops = |x: &Device| x.rows("SELECT COUNT(*), SUM(LENGTH(payload)) FROM sync2_ops");
+    assert_eq!(ops(&d), ops(&one));
+    assert_eq!(d.rows("SELECT COUNT(*) FROM sync2_migrate_queue")[1][0], "0");
+    assert_eq!(d.rows("SELECT COUNT(*) FROM srs_meta WHERE key LIKE 'sync2_migrating/%'")[1][0], "0");
+
+    // 迁移到一半的备份快照。
+    let half = Device::new("mig-half");
+    legacy_library(&half);
+    half.core.sync2_migrate(P, T0, Some(4)).unwrap();
+    let snap = tempdir::new("mig-snap");
+    half.core.snapshot_into(&snap.0.join("srs.db"), true).unwrap();
+    let r = Device { core: SrsCore::open(&snap.0.join("srs.db")).unwrap(), _dir: snap };
+    let m = r.core.sync2_migrate(P, T0 + 1, None).unwrap();
+    assert_eq!(m["done"], json!(true));
+    assert_eq!(m["ops"], json!(6), "the restored device wraps the rows the snapshot had not reached yet");
+    assert_eq!(r.rows("SELECT COUNT(*) FROM sync2_ops")[1][0], "10");
+}
+
+/// 迁移耗时（P2-6）：`SRS_BENCH_CARDS` 张卡 × 20 条旧日志 + 每卡一条笔记三条旧修改记录（旧写入者 = 3 台设备，
+/// 与真实旧库同形：writer 是设备安装，不是每条笔记一个）。
+/// `cargo test --release --lib bench_migrate -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn bench_migrate() {
+    use std::time::Instant;
+    let cards: i64 = std::env::var("SRS_BENCH_CARDS").ok().and_then(|v| v.parse().ok()).unwrap_or(5000);
+    let batch: u64 = std::env::var("SRS_BENCH_BATCH").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000);
+    let a = Device::new("bench-mig");
+    let w = a.core.writer().unwrap();
+    w.execute_batch("BEGIN").unwrap();
+    for c in 0..cards {
+        w.execute(
+            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (?1, ?2, 'note', '{\"createdAt\":2}', ?3)",
+            rusqlite::params![format!("N{c}"), P, c],
+        )
+        .unwrap();
+        for f in 1..=3i64 {
+            let writer = format!("dev{}", c % 3);
+            let s = c / 3 * 3 + f;
+            let id = crate::registers::edit_id(&writer, s);
+            let x = json!({"ctx": {"vv": {}}, "e": format!("N{c}"), "f": format!("f/{f}"), "hlc": format!("{s}:0:{writer}"), "id": id,
+                "k": "note", "p": P, "s": s, "ts": "wall", "v": format!("value {c} {f}"), "w": writer});
+            w.execute(
+                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
+                 VALUES (?1, ?2, 'note', ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![id, P, format!("N{c}"), format!("f/{f}"), writer, s, x.to_string()],
+            )
+            .unwrap();
+        }
+        for r in 0..20i64 {
+            let at = T0 + r * DAY + c;
+            let id = format!("r{c}-{r}");
+            let x = json!({"id": id, "p": P, "card": format!("C{c}"), "kind": "review", "rating": 3, "hlc": format!("{at}:0:old"),
+                "at": at, "ts": "anchored", "origin": "fushi", "rtype": "review", "utcOff": 0, "rollover": 4, "fv": 1,
+                "res": {"queue": "review", "dueDay": 19_700 + r, "ivl": r, "step": 0, "reps": r + 1, "lapses": 0, "scheduler": "fushi"}});
+            w.execute(
+                "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, json) \
+                 VALUES (?1, ?2, ?3, 'review', 3, ?4, 'review', 'fushi', ?5)",
+                rusqlite::params![id, P, format!("C{c}"), at, x.to_string()],
+            )
+            .unwrap();
+        }
+    }
+    w.execute_batch("COMMIT").unwrap();
+    drop(w);
+    let t = Instant::now();
+    let mut longest = 0u128;
+    let mut n = 0;
+    loop {
+        let b = Instant::now();
+        let m = a.core.sync2_migrate(P, T0, Some(batch)).unwrap();
+        longest = longest.max(b.elapsed().as_millis());
+        n += 1;
+        if m["done"] == json!(true) {
+            break;
+        }
+    }
+    println!(
+        "bench_migrate cards={cards} reviews={} edits={} batch={batch} batches={n} total={}ms longest_batch={longest}ms",
+        cards * 20,
+        cards * 3,
+        t.elapsed().as_millis()
+    );
 }

@@ -69,13 +69,15 @@ const String kSrsSyncAwaitingConfirm = 'srs first v2 sync not confirmed';
 /// 一轮客户端同步会连写探针 / 批次 / cursor 几个文件，去抖把它们并成一次。
 const Duration kSrsHostWriteDebounce = Duration(seconds: 3);
 
-/// 一次 SRS 同步（测试注入假实现）。[directoryKey] 是 [backend] 所指同步目录的稳定身份。
+/// 一次 SRS 同步（测试注入假实现）。[directoryKey] 是 [backend] 所指同步目录的稳定身份；[locationKey] = 本机为
+/// 这个位置记的密钥（调度器一律传进来，注入的实现与生产实现走同一条加密路径）。
 typedef SrsSyncRunner =
     Future<SrsSync2Report> Function(
       SyncAssetStore backend,
       SrsDbStore store,
-      String directoryKey,
-    );
+      String directoryKey, {
+      SrsLocationKey? locationKey,
+    });
 
 /// 生产实现：现有同步后端上的 v2 集合根（`fushi-srs/<profileUid>/v2/`）跑一轮同步 v2。[directoryKey] 就是
 /// 这个位置的稳定身份（本机按它记每个位置传到了哪）。
@@ -83,7 +85,7 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
   SyncAssetStore backend,
   SrsDbStore store,
   String directoryKey, {
-  SrsLocationKey? key,
+  SrsLocationKey? locationKey,
 }) async {
   final SrsSync2Report r = await srsSync2Round(
     host: store,
@@ -93,7 +95,7 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
     ),
     locationId: directoryKey,
     nowMs: () => store.now().$1,
-    key: key,
+    key: locationKey,
   );
   if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
   return r;
@@ -108,13 +110,14 @@ class SrsLocalDirectory {
   final SyncAssetStore store;
 }
 
-/// 一轮媒体同步（测试注入假实现）。
+/// 一轮媒体同步（测试注入假实现）。[cipher] = 位置开了加密时的媒体封装（调度器一律传进来）。
 typedef SrsMediaSyncRunner =
     Future<SrsMediaSyncReport> Function(
       SyncAssetStore backend,
       SrsDbStore store,
-      Directory mediaRoot,
-    );
+      Directory mediaRoot, {
+      SrsMediaCipher? cipher,
+    });
 
 /// 生产实现：见 packages/fushi_engine/lib/srs/srs_media_sync.dart。
 Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
@@ -168,9 +171,17 @@ class SrsLocationCryptoState {
   /// 这一轮用密钥收发了。
   final bool encrypted;
 
-  /// [kSrsSync2NeedsKey] / [kSrsSync2WrongKey]，或 null。
+  /// [kSrsLocationCryptoErrors] 之一，或 null。
   final String? error;
 }
+
+/// 位置的加密握手没过、这一轮不同步该位置的原因（同步与历史页按它提示用户）。
+const Set<String> kSrsLocationCryptoErrors = <String>{
+  kSrsSync2NeedsKey,
+  kSrsSync2WrongKey,
+  kSrsSync2EncryptionMissing,
+  kSrsSync2BadKdf,
+};
 
 /// 只提示一次的通知类别。
 enum SrsSyncNotice {
@@ -212,8 +223,6 @@ class SrsSyncScheduler {
   }) : _profileLinker = profileLinker,
        _locationKey = locationKey,
        _onEncryptionEnabled = onEncryptionEnabled,
-       _customRunner = !identical(runner, srsDefaultSyncRunner),
-       _customMediaRunner = !identical(mediaRunner, srsDefaultMediaSyncRunner),
        _onLocalDirectoryPublished = onLocalDirectoryPublished,
        _firstSyncConfirmed = firstSyncConfirmed ?? _alwaysRun,
        _canRun = canRun ?? _alwaysRun,
@@ -277,10 +286,6 @@ class SrsSyncScheduler {
   final Future<void> Function(String locationId, SrsLocationKey key)?
   _onEncryptionEnabled;
 
-  /// 测试注入了自己的 runner：不带密钥（假 runner 不认识加密）。
-  final bool _customRunner;
-  final bool _customMediaRunner;
-
   /// 各位置最近一轮看到的加密状态（同步与历史页显示「已加密 / 需要口令 / 口令不对」）。
   final Map<String, SrsLocationCryptoState> locationCrypto =
       <String, SrsLocationCryptoState>{};
@@ -316,9 +321,7 @@ class SrsSyncScheduler {
     locationCrypto[locationId] = SrsLocationCryptoState(
       kdf: r.kdf,
       encrypted: r.encrypted,
-      error: r.error == kSrsSync2NeedsKey || r.error == kSrsSync2WrongKey
-          ? r.error
-          : null,
+      error: kSrsLocationCryptoErrors.contains(r.error) ? r.error : null,
     );
     final SrsLocationKey? k = _locationKey?.call(locationId);
     if (r.encryptionEnabled && k != null) {
@@ -414,9 +417,12 @@ class SrsSyncScheduler {
     // 放在 profile 关联之后：关联可能换成另一个 store，校时落在真正跑同步的那个上。
     final int probedAtMono = store.trustedClock.monotonicNowMs();
     final SrsLocationKey? locKey = _locationKey?.call(key);
-    final SrsSync2Report report = _customRunner
-        ? await _runner(backend, store, key)
-        : await srsDefaultSyncRunner(backend, store, key, key: locKey);
+    final SrsSync2Report report = await _runner(
+      backend,
+      store,
+      key,
+      locationKey: locKey,
+    );
     await _noteCrypto(key, report);
     if (linker != null && report.error == null && !_halted) {
       try {
@@ -455,16 +461,14 @@ class SrsSyncScheduler {
       try {
         final Directory? root = await readMediaRoot();
         if (root != null) {
-          final SrsMediaSyncReport media = _customMediaRunner
-              ? await _mediaRunner(backend, store, root)
-              : await srsDefaultMediaSyncRunner(
-                  backend,
-                  store,
-                  root,
-                  cipher: report.encrypted && locKey != null
-                      ? SrsMediaCipher(store, locKey.keyHex)
-                      : null,
-                );
+          final SrsMediaSyncReport media = await _mediaRunner(
+            backend,
+            store,
+            root,
+            cipher: report.encrypted && locKey != null
+                ? SrsMediaCipher(store, locKey.keyHex)
+                : null,
+          );
           mediaChanged = media.downloaded > 0;
         }
       } catch (e, stack) {
@@ -528,7 +532,7 @@ class SrsSyncScheduler {
           mediaRoot: mediaRoot,
           key: _locationKey?.call(l.locationId),
         );
-        await _noteCrypto(l.locationId, r.ops);
+        await _noteCrypto(l.locationId, r.crypto);
         folderErrors.remove(l.id);
         ran++;
         final SrsSync2Report? ops = r.ops;

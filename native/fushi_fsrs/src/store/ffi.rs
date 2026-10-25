@@ -636,7 +636,7 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
             let input = std::str::from_utf8(blobs.first().ok_or("apply: missing input")?).map_err(|e| e.to_string())?;
             parse(c.sync2_apply_local(profile, i("now")?, input)?)?
         }
-        "migrate" => c.sync2_migrate(profile, i("now")?)?,
+        "migrate" => c.sync2_migrate(profile, i("now")?, req.get("limit").and_then(Value::as_u64))?,
         "replay_all" => json!(c.sync2_replay_all(profile)?),
         "preview" => c.sync2_preview(profile, s("card")?, req.get("note").and_then(Value::as_str), i("now")?, i("utcOff")?, i("rollover")?)?,
         "outbox" => {
@@ -703,7 +703,7 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
                 .map(|k| u8::from_str_radix(&salt_hex[2 * k..2 * k + 2], 16))
                 .collect::<Result<_, _>>()
                 .map_err(|e| e.to_string())?;
-            let params = crate::sync2::keys::KdfParams { m_kib: i("m")? as u32, t: i("t")? as u32, p: i("p")? as u32 };
+            let params = crate::sync2::keys::KdfParams::checked(i("m")?, i("t")?, i("p")?)?;
             let k = crate::sync2::keys::CollectionKey::derive(s("passphrase")?.as_bytes(), &salt, params)?;
             json!({"key": k.0.iter().map(|b| format!("{b:02x}")).collect::<String>()})
         }

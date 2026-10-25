@@ -340,6 +340,10 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         .locationCrypto[locationId];
     if (s?.error == kSrsSync2NeedsKey) return t.srs_timeline_location_needs_key;
     if (s?.error == kSrsSync2WrongKey) return t.srs_timeline_location_wrong_key;
+    if (s?.error == kSrsSync2EncryptionMissing) {
+      return t.srs_timeline_location_encryption_missing;
+    }
+    if (s?.error == kSrsSync2BadKdf) return t.srs_timeline_location_bad_kdf;
     if (s?.encrypted ?? false) return t.srs_timeline_location_encrypted;
     final SrsLocationKey? k = ref.read(appProvider).srsLocationKeys[locationId];
     if (k != null && k.pendingEnable) {
@@ -358,6 +362,30 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         .locationCrypto[locationId];
     final SrsLocationKey? k = ref.read(appProvider).srsLocationKeys[locationId];
     final SrsKdf? kdf = s?.kdf;
+    if (s?.error == kSrsSync2EncryptionMissing && k != null) {
+      // 位置上的 kdf 不见了（本机开过加密）：用本机这把密钥重新写上（同一份盐与校验值），不降级成明文。
+      await _run('encrypt', () async {
+        await ref
+            .read(appProvider)
+            .setSrsLocationKey(
+              locationId,
+              SrsLocationKey(keyHex: k.keyHex, kdf: k.kdf, pendingEnable: true),
+            );
+        await ref.read(srsAppRuntimeProvider)?.syncNow();
+        FushiToast.show(
+          msg: t.srs_timeline_location_encrypt_done,
+          severity: ToastSeverity.success,
+        );
+      }, failure: t.srs_timeline_location_encrypt_failed);
+      return;
+    }
+    if (s?.error == kSrsSync2BadKdf) {
+      FushiToast.show(
+        msg: t.srs_timeline_location_bad_kdf,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (s?.error != null && kdf != null) {
       final String? pass = await showAppDialog<String>(
         context: context,
@@ -434,8 +462,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     for (final Object? x
         in (_status['locations'] as List<Object?>?) ?? const <Object?>[]) {
       if (x is! Map) continue;
-      String id = x['location'] as String? ?? '';
-      if (id.endsWith('#e')) id = id.substring(0, id.length - 2);
+      final String id = srsLocationOfProgressId(x['location'] as String? ?? '');
       final int? at = (x['lastOk'] as num?)?.toInt();
       final int? prev = lastOk[id];
       lastOk[id] = prev == null || (at != null && at > prev) ? at : prev;

@@ -202,6 +202,44 @@ impl Config {
         }
         Model::new(Model::defaults(self.alg.version()))
     }
+
+    /// 作答 / 立即重排那一刻的生效配置快照（日志的 `sc` 键；设计 §4.6）。重放按日志自己记下的这份算，
+    /// 不按「此刻」的牌组配置：改牌组设置只影响之后的复习，不追溯改写已经发生的复习。
+    pub fn to_json(&self) -> Value {
+        json!({
+            "ls": self.learn_steps,
+            "rs": self.relearn_steps,
+            "ret": self.desired_retention,
+            "mi": self.max_interval,
+            "alg": match self.alg {
+                MemAlg::Fsrs6 => "fsrs6",
+                MemAlg::Fsrs7 => "fsrs7",
+            },
+            "params": self.params.iter().map(|p| f32_json(*p)).collect::<Vec<_>>(),
+            "fuzz": self.fuzz,
+        })
+    }
+
+    /// [Config::to_json] 的逆；缺键或类型不对返回 `None`（这条日志按作者结果照抄，不重算）。
+    pub fn from_json(v: &Value) -> Option<Config> {
+        let o = v.as_object()?;
+        let f64s = |k: &str| -> Option<Vec<f64>> { o.get(k)?.as_array()?.iter().map(Value::as_f64).collect() };
+        let alg = match o.get("alg")?.as_str()? {
+            "fsrs6" => MemAlg::Fsrs6,
+            "fsrs7" => MemAlg::Fsrs7,
+            _ => return None,
+        };
+        let params: Vec<f32> = o.get("params")?.as_array()?.iter().map(|x| x.as_f64().map(|f| f as f32)).collect::<Option<_>>()?;
+        Some(Config {
+            learn_steps: f64s("ls")?,
+            relearn_steps: f64s("rs")?,
+            desired_retention: o.get("ret")?.as_f64()?,
+            max_interval: o.get("mi")?.as_i64()?,
+            alg,
+            params,
+            fuzz: o.get("fuzz")?.as_bool()?,
+        })
+    }
 }
 
 /// splitmix64（Dart 64 位补码 int 同语义）。

@@ -491,6 +491,12 @@ String srsSyncErrorReason(Object error) => switch (error) {
     t.srs_timeline_location_needs_key,
   SrsSyncReportError(message: kSrsSync2WrongKey) =>
     t.srs_timeline_location_wrong_key,
+  SrsSyncReportError(message: kSrsSync2EncryptionMissing) =>
+    t.srs_timeline_location_encryption_missing,
+  SrsSyncReportError(message: kSrsSync2BadKdf) =>
+    t.srs_timeline_location_bad_kdf,
+  SrsSyncReportError(message: kSrsSync2MetaUnavailable) =>
+    t.srs_sync_location_meta_unavailable,
   _ => friendlySyncErrorDetail(error),
 };
 

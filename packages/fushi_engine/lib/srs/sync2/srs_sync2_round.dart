@@ -11,7 +11,6 @@
 /// 中断、列目录最终一致（Google Drive）都只会让这一轮少收一点，下一轮补齐。传输只经 [SrsLocationStore]。
 library;
 
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
@@ -83,23 +82,10 @@ class SrsSync2Report {
   final List<String> errors = <String>[];
 }
 
-Future<Map<String, Object?>?> _readJson(
-  SrsLocationStore loc,
-  String path,
-) async {
-  final Uint8List? b = await loc.get(path);
-  if (b == null) return null;
-  try {
-    final Object? j = jsonDecode(utf8.decode(b));
-    return j is Map ? j.cast<String, Object?>() : null;
-  } on FormatException {
-    return null;
-  }
-}
-
 /// 跑一轮。[locationId] 是这个位置的稳定身份（本机记每个位置传到了哪）；[key] = 本机为这个位置记的密钥
-/// （见 srs_location_crypto.dart：位置是加密的而本机没有 / 不对 → 这一轮不同步，报 [kSrsSync2NeedsKey] /
-/// [kSrsSync2WrongKey]；本机刚开加密 → 这一轮把 `kdf` 写进 `meta.json`）；[archive] = 归档位置：只写不删（不清本机
+/// （见 srs_location_crypto.dart [srsLocationHandshake]：位置是加密的而本机没有 / 不对 → 这一轮不同步，报
+/// [kSrsSync2NeedsKey] / [kSrsSync2WrongKey]；本机开过加密而位置上的 `kdf` 不见了 → [kSrsSync2EncryptionMissing]，
+/// 绝不降级成明文；本机刚开加密 → 这一轮把 `kdf` 写进 `meta.json`）；[archive] = 归档位置：只写不删（不清本机
 /// 的旧 head，设计 §10.3）。
 Future<SrsSync2Report> srsSync2Round({
   required SrsSync2Host host,
@@ -110,59 +96,34 @@ Future<SrsSync2Report> srsSync2Round({
   bool archive = false,
 }) async {
   final SrsSync2Report report = SrsSync2Report();
-  // meta.json：协议版本与集合身份，创建后只读（§6.1）。
+  // meta.json：协议版本与集合身份，创建后只读（§6.1）；加密握手（§9）以位置上的 kdf 为准。
   final Map<String, Object?> id = (await host.sync2Command(<String, Object?>{
     'op': 'identity',
     'now': nowMs(),
   })).map;
-  Map<String, Object?>? meta = await _readJson(location, 'meta.json');
-  if (meta == null) {
-    meta = <String, Object?>{
-      'v': kSrsSync2Protocol,
-      'minReader': kSrsSync2MinReader,
-      'collection': id['collection'],
-      'createdAt': nowMs(),
-    };
-    await location.put('meta.json', utf8.encode(jsonEncode(meta)));
-  } else if (((meta['minReader'] as int?) ?? 1) > kSrsSync2Protocol) {
+  final SrsLocationHandshake hs = await srsLocationHandshake(
+    location,
+    key: key,
+    collection: id['collection'],
+    nowMs: nowMs(),
+    protocol: kSrsSync2Protocol,
+    minReader: kSrsSync2MinReader,
+  );
+  report.kdf = hs.kdf;
+  report.encryptionEnabled = hs.encryptionEnabled;
+  if (hs.needsUpgrade) {
     report.needsUpgrade = true;
     return report;
   }
-
-  // 加密握手（§9）：位置上的 kdf 是准；本机密钥对不上就不碰这个位置。
-  final Map<String, Object?>? kdfJson = (meta['kdf'] as Map?)
-      ?.cast<String, Object?>();
-  String? keyHex;
-  if (kdfJson == null) {
-    if (key != null && key.pendingEnable) {
-      await location.put(
-        'meta.json',
-        utf8.encode(
-          jsonEncode(<String, Object?>{
-            ...meta,
-            'kdf': <String, Object?>{...key.kdf.toJson(), 'check': key.check},
-          }),
-        ),
-      );
-      report.encryptionEnabled = true;
-      report.kdf = key.kdf;
-      keyHex = key.keyHex;
-    }
-  } else {
-    report.kdf = SrsKdf.fromJson(kdfJson);
-    if (key == null) {
-      report.error = kSrsSync2NeedsKey;
-      return report;
-    }
-    if (kdfJson['check'] != key.check) {
-      report.error = kSrsSync2WrongKey;
-      return report;
-    }
-    keyHex = key.keyHex;
+  if (hs.error != null) {
+    report.error = hs.error;
+    return report;
   }
+  final String? keyHex = hs.keyHex;
   report.encrypted = keyHex != null;
-  // 加密位置换一个上传进度身份：开加密之前传过的明文段，本机全部按密文重传一遍（同名覆盖）。
-  final String progressId = keyHex == null ? locationId : '$locationId#e';
+  // 上传进度按「位置 + 密钥指纹」记：开加密之前传过的明文段、或用另一把密钥（并发开加密时输掉的那份 kdf）
+  // 传过的密文段，本机全部按当前密钥重传一遍（同名覆盖）。
+  final String progressId = srsLocationProgressId(locationId, keyHex);
 
   // 1. 全部设备的 head。
   final List<Uint8List> heads = <Uint8List>[];

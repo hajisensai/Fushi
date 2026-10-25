@@ -27,6 +27,10 @@ import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 
+/// 旧库迁移成同步 v2 操作时每批包多少条旧行（[SrsDbStore] 打开时）。每批是内核里一个独立提交的 savepoint：
+/// 被杀 / 关库只丢这一批。桌面实测见 docs/specs/2026-10-25-srs-sync-v2-plan.md「规模基准」。
+const int kSrsSync2MigrateBatch = 20000;
+
 /// 本机时间：服务器校时锚点 + 本进程单调时钟（Stopwatch）。
 ///
 /// 计划要求「含睡眠的开机单调时钟」（Android elapsedRealtime 等）；纯 Dart 拿不到，这里退到本进程内的
@@ -301,7 +305,11 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 同步 v2 起步：本机身份（没有就建）；旧库里的事件还没并成操作就并一次（拍板 5：并入、不覆盖）。
-  /// 迁移后全量重放一次，重放改写过的卡刷新缓存（与迁移前只差在旧实现丢掉的并发调度影响与配置变更）。
+  ///
+  /// 迁移不改任何卡的排程、不重放（旧日志按作者结果照抄，native/fushi_fsrs/src/sync2/replay.rs 文件头），所以
+  /// 缓存不用刷新。迁移分批（[kSrsSync2MigrateBatch] 条一批），每批是内核里一个独立提交的 savepoint：进程被杀 /
+  /// 关库只丢正在做的那一批，下次打开从剩下的接着做（大库在慢设备上一次做不完也不会每次从头来）。整个迁移
+  /// 在独占区里：迁移期间不会插进本机写入（它们要等迁移做完才落库）。
   Future<void> _sync2Open() => runExclusive(() async {
     final (int nowMs, _) = now();
     final Map<String, Object?> id = await _sync2(<String, Object?>{
@@ -310,19 +318,14 @@ class SrsDbStore implements SrsSync2Host {
     });
     _sync2Device = id['device'] as String?;
     if (id['migrated'] == true) return;
-    final Map<String, Object?> m = await _sync2(<String, Object?>{
-      'op': 'migrate',
-      'now': nowMs,
-    });
-    final List<Object?> replayed =
-        (m['replayed'] as List?) ?? const <Object?>[];
-    if (replayed.isEmpty) return;
-    await _transactionOrReload(() async {
-      for (final Object? c in replayed) {
-        if (c is String) _dirtyCards.add(c);
-      }
-      await _flushCaches();
-    });
+    while (true) {
+      final Map<String, Object?> m = await _sync2(<String, Object?>{
+        'op': 'migrate',
+        'now': nowMs,
+        'limit': kSrsSync2MigrateBatch,
+      });
+      if (m['done'] == true) return;
+    }
   });
 
   /// 本机在这个 profile 集合里的同步 v2 设备 ID（换身份后会变）。
@@ -1006,11 +1009,24 @@ class SrsDbStore implements SrsSync2Host {
 
   // ------------------------------------------------------------------ 同步 v2（SrsSync2Host）
 
+  /// 同步 v2 的命令（看 head / 发件 / 写 head / 身份 / 摘要……）与写事务互斥：内核与本机写入共用一条连接，
+  /// 不排队的话 `outbox` / `head` / `plan` 会读到另一笔还没提交的 `apply` 事务里的操作——那笔回滚后同一个 seq
+  /// 被重用、head 的代号回退，已经发出去的段与 head 让对端判本机分叉（P1-4）。只有不碰库的纯计算（派生密钥、
+  /// 封装 / 解封媒体）不排队：Argon2 派生要上百毫秒，不该挡住复习写入。
   @override
   Future<SrsSync2Result> sync2Command(
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
-  }) => _sync2Raw(request, blobs: blobs);
+  }) => _kSync2PureOps.contains(request['op'])
+      ? _sync2Raw(request, blobs: blobs)
+      : runExclusive(() => _sync2Raw(request, blobs: blobs));
+
+  /// 不读写库的 v2 命令（见 [sync2Command]）。
+  static const Set<String> _kSync2PureOps = <String>{
+    'derive_key',
+    'seal',
+    'open',
+  };
 
   @override
   Future<Map<String, Object?>> sync2Ingest(
@@ -1116,9 +1132,10 @@ class SrsDbStore implements SrsSync2Host {
     'retract': retractReviews,
   });
 
-  /// `.fushisrs` 的操作部分（全部操作 + 各设备公钥；见 sync2/srs_fushisrs.dart）。
+  /// `.fushisrs` 的操作部分（全部操作 + 各设备公钥；见 sync2/srs_fushisrs.dart）。与写事务互斥（同 [sync2Command]：
+  /// 不能把一笔还没提交、之后可能回滚的操作导出去）。
   Future<Uint8List> sync2ExportOps() async =>
-      (await _sync2Raw(<String, Object?>{'op': 'export'})).files.single.$2;
+      (await sync2Command(<String, Object?>{'op': 'export'})).files.single.$2;
 
   /// 并入 `.fushisrs` 的操作部分（不覆盖；包里有本机身份的操作时先换身份）。返回并入条数。
   Future<int> sync2ImportOps(Uint8List bytes) => runExclusive(() async {
@@ -1143,12 +1160,12 @@ class SrsDbStore implements SrsSync2Host {
   });
 
   /// 同步状态（设计 §10.6）。
-  Future<Map<String, Object?>> sync2Status() =>
-      _sync2(<String, Object?>{'op': 'status'});
+  Future<Map<String, Object?>> sync2Status() async =>
+      (await sync2Command(<String, Object?>{'op': 'status'})).map;
 
   /// 算并记下状态摘要（写 head 时带上；两台设备在同一版本向量下摘要不同 = 确定性 bug）。
-  Future<Map<String, Object?>> sync2Digest() =>
-      _sync2(<String, Object?>{'op': 'digest'});
+  Future<Map<String, Object?>> sync2Digest() async =>
+      (await sync2Command(<String, Object?>{'op': 'digest'})).map;
 
   /// 一条同步 v2 命令（native/fushi_fsrs/src/store/ffi.rs `ffsrs_store_sync2`），在后台 isolate 跑。
   Future<Map<String, Object?>> _sync2(
@@ -4725,40 +4742,39 @@ class SrsDbStore implements SrsSync2Host {
     List<SrsEvent> events, {
     int? serverTimeMs,
     Map<String, int>? serverTimes,
-  }) =>
-      runExclusive(() async {
-        final (int nowMs, _) = now();
-        final List<SrsEvent> mine = <SrsEvent>[
-          for (final SrsEvent e in events)
-            if (e is! SrsEntityEvent || e.record.profileUid == profileUid) e,
-        ];
-        await _transactionOrReload(() async {
-          final Set<String> landed = (await _storeLocalBatch(
-            mine,
-            stamped: true,
-            serverTimeMs: serverTimeMs,
-            serverTimes: serverTimes,
-          )).toSet();
-          // 同步合并：别的设备的作答带动了牌组 / 全局状态，RWKV 分数表整表重查（见 rwkvScoresKey）。
-          if (landed.isNotEmpty) _rwkvScoresRevision++;
-          for (final SrsEvent e in mine) {
-            final Hlc? h = switch (e) {
-              SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
-              SrsLogEvent(:final SrsReviewLog log) => log.hlc,
-              _ => null,
-            };
-            if (h != null) {
-              _clock.receive(
-                h,
-                serverTimeMs: serverTimes?[e.id] ?? serverTimeMs,
-                trustedNowMs: nowMs,
-              );
-            }
-          }
-          await _flushCaches();
-          await _saveLocal();
-        });
-      });
+  }) => runExclusive(() async {
+    final (int nowMs, _) = now();
+    final List<SrsEvent> mine = <SrsEvent>[
+      for (final SrsEvent e in events)
+        if (e is! SrsEntityEvent || e.record.profileUid == profileUid) e,
+    ];
+    await _transactionOrReload(() async {
+      final Set<String> landed = (await _storeLocalBatch(
+        mine,
+        stamped: true,
+        serverTimeMs: serverTimeMs,
+        serverTimes: serverTimes,
+      )).toSet();
+      // 同步合并：别的设备的作答带动了牌组 / 全局状态，RWKV 分数表整表重查（见 rwkvScoresKey）。
+      if (landed.isNotEmpty) _rwkvScoresRevision++;
+      for (final SrsEvent e in mine) {
+        final Hlc? h = switch (e) {
+          SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
+          SrsLogEvent(:final SrsReviewLog log) => log.hlc,
+          _ => null,
+        };
+        if (h != null) {
+          _clock.receive(
+            h,
+            serverTimeMs: serverTimes?[e.id] ?? serverTimeMs,
+            trustedNowMs: nowMs,
+          );
+        }
+      }
+      await _flushCaches();
+      await _saveLocal();
+    });
+  });
 
   /// 一个写事务；失败（回滚）时从库里重读本机状态再抛出。事务回滚不回滚内存：落库前已分配的
   /// 序号 / 已并进因果上下文的 dot、推进过的时钟与发件箱序号、攒下的影响面都要丢掉，否则

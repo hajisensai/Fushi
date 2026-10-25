@@ -7,7 +7,10 @@
 //!
 //! - 排序与有效日志选取不变（history.rs：撤销、等价导入、排程归属的规则只写一份）；
 //! - 「派生」日志（评分、手动改期 / 重置、立即重排、移交）的结果在重放到它时用**重放出的前一状态**、
-//!   当前牌组配置、确定性 FSRS 重新算；导入锚点、恢复照抄这类外部给定的绝对状态照抄；
+//!   **这条日志自己记下的生效配置**（`sc`，作答那一刻的牌组配置快照）、确定性 FSRS 重新算；导入锚点、
+//!   恢复照抄这类外部给定的绝对状态照抄。没有 `sc` 的日志（迁移来的旧日志、旧备份并入的日志）一律按作者
+//!   结果照抄：它们的结果就是当时的事实。所以改牌组配置只影响之后的复习，不追溯改写历史，也不触发重放
+//!   （设计 §4.6）；迁移也因此不改任何一张卡的到期日；
 //! - 记忆状态输入沿用 projection.rs 的规则（重置之后的有效评分、锚点 / SM-2 起点），输入里的结果用重放值；
 //! - 日界用每条日志自己记下的 UTC 偏移与翻日时刻（作者当时的口径；与设备当前时区无关，重放逐位确定）；
 //! - fuzz 种子 = (日志所属卡, reps)，与旧实现同一公式（不用 RNG）。
@@ -117,16 +120,25 @@ fn compute_memory(input: &MemoryInput, model: &super::fsrs_det::Model) -> Option
     model.memory_state(&reviews, starting).ok()
 }
 
-/// 重放一个归属组。[rows] 顺序任意（排序由选取规则定）；同 ID 的多行按选取规则只认最后一行。
-pub fn replay(rows: &[Row<'_>], cfg: &Config) -> Result<Replayed, String> {
-    Ok(fold(rows, cfg)?.0)
+/// 重放一个归属组。[rows] 顺序任意（排序由选取规则定）；同 ID 的多行按选取规则只认最后一行。派生日志按
+/// 各自的配置快照算（[Config::from_json]），所以结果与「此刻」的牌组配置无关。
+pub fn replay(rows: &[Row<'_>]) -> Result<Replayed, String> {
+    Ok(fold(rows)?.0)
 }
+
+/// 日志里记下的生效配置快照（`sc`）。
+pub fn snapshot_of(log: &Value) -> Option<Config> {
+    log.get(SNAPSHOT_KEY).and_then(Config::from_json)
+}
+
+/// 日志 JSON 里存生效配置快照的键。
+pub const SNAPSHOT_KEY: &str = "sc";
 
 /// 评分预览（四个按钮的「这次操作后」结果）：在重放到此刻的状态上算，与之后真正作答时的重放是同一段
 /// 代码、同一套浮点运算——按钮上显示的间隔就是合并后重放出的到期。返回 (当前状态, 作答前记忆状态, 四个结果)。
 pub fn preview(rows: &[Row<'_>], cfg: &Config, card: &str, now: i64, day: &Day) -> Result<(Sched, Option<super::fsrs_det::Memory>, [Sched; 4]), String> {
     let model = cfg.model()?;
-    let (r, prefix) = fold(rows, cfg)?;
+    let (r, prefix) = fold(rows)?;
     let cur = r.state.unwrap_or_else(Sched::initial);
     let input = memory_input(&prefix, cfg.alg.projection_alg(), day)?;
     let memory = compute_memory(&input, &model);
@@ -136,8 +148,9 @@ pub fn preview(rows: &[Row<'_>], cfg: &Config, card: &str, now: i64, day: &Day) 
     Ok((cur, memory, plan))
 }
 
-fn fold(rows: &[Row<'_>], cfg: &Config) -> Result<(Replayed, Vec<EffLog>), String> {
-    let model = cfg.model()?;
+fn fold(rows: &[Row<'_>]) -> Result<(Replayed, Vec<EffLog>), String> {
+    // 同一归属组的日志几乎总是同一份配置：上一份的模型留着复用。
+    let mut models: Option<(Config, super::fsrs_det::Model)> = None;
     let mut values: Vec<Map<String, Value>> = Vec::with_capacity(rows.len());
     let mut parsed = Vec::with_capacity(rows.len());
     for r in rows {
@@ -159,10 +172,13 @@ fn fold(rows: &[Row<'_>], cfg: &Config) -> Result<(Replayed, Vec<EffLog>), Strin
         // 无效的派生日志（被撤销的评分等）也按它所在位置的状态算一次结果、写进投影行，只是不推进状态：
         // 投影行必须是操作集合的纯函数，不能取决于「撤销先到还是评分先到」。
         let effective = status & STATUS_EFFECTIVE != 0;
-        if !effective && matches!(rows[i].intent, Intent::Absolute) {
+        let v = &values[i];
+        // 没有生效配置快照的派生日志按作者结果照抄（见文件头）。
+        let snap = v.get(SNAPSHOT_KEY).and_then(Config::from_json);
+        let intent = if snap.is_some() { rows[i].intent.clone() } else { Intent::Absolute };
+        if !effective && matches!(intent, Intent::Absolute) {
             continue;
         }
-        let v = &values[i];
         let at = parsed[i].0.occurred_at;
         let day = Day {
             utc_offset_min: v.get("utcOff").and_then(Value::as_i64).unwrap_or(0),
@@ -173,15 +189,26 @@ fn fold(rows: &[Row<'_>], cfg: &Config) -> Result<(Replayed, Vec<EffLog>), Strin
         let scheduler = owner.clone().unwrap_or_else(|| "fushi".into());
         let cur = if base.scheduler == scheduler { base } else { Sched { scheduler, ..base } };
         let author = v.get("res").filter(|x| x.is_object()).map(Sched::from_json);
-        let derived: Option<Option<Sched>> = match &rows[i].intent {
-            Intent::Absolute => None,
-            Intent::Answer => {
+        let (cfg, model) = match snap {
+            Some(c) => {
+                if models.as_ref().is_none_or(|(k, _)| *k != c) {
+                    let m = c.model()?;
+                    models = Some((c, m));
+                }
+                let (c, m) = models.as_ref().expect("model just cached");
+                (Some(c), Some(m))
+            }
+            None => (None, None),
+        };
+        let derived: Option<Option<Sched>> = match (&intent, cfg, model) {
+            (Intent::Absolute, _, _) | (_, None, _) | (_, _, None) => None,
+            (Intent::Answer, Some(cfg), Some(model)) => {
                 let rating = parsed[i].0.rating.unwrap_or(0);
                 if !(1..=4).contains(&rating) {
                     None
                 } else {
                     let input = memory_input(&prefix, cfg.alg.projection_alg(), &day)?;
-                    let memory = compute_memory(&input, &model);
+                    let memory = compute_memory(&input, model);
                     let elapsed = sched::elapsed_days(cfg.alg, cur.last_reviewed_at, at, &day) as f32;
                     Some(
                         model
@@ -191,13 +218,13 @@ fn fold(rows: &[Row<'_>], cfg: &Config) -> Result<(Replayed, Vec<EffLog>), Strin
                     )
                 }
             }
-            Intent::SetDue { due_day } => Some(Some(sched::manual_set_due(&cur, *due_day, day.index(at)))),
-            Intent::Reset => Some(Some(sched::manual_reset(&cur))),
-            Intent::HandOff { to_anki } => Some(Some(sched::hand_off(&cur, *to_anki))),
-            Intent::Reschedule => {
+            (Intent::SetDue { due_day }, _, _) => Some(Some(sched::manual_set_due(&cur, *due_day, day.index(at)))),
+            (Intent::Reset, _, _) => Some(Some(sched::manual_reset(&cur))),
+            (Intent::HandOff { to_anki }, _, _) => Some(Some(sched::hand_off(&cur, *to_anki))),
+            (Intent::Reschedule, Some(cfg), Some(model)) => {
                 let input = memory_input(&prefix, cfg.alg.projection_alg(), &day)?;
-                let memory = compute_memory(&input, &model);
-                Some(Some(sched::reschedule(card, &cur, memory, &model, cfg, &day)))
+                let memory = compute_memory(&input, model);
+                Some(Some(sched::reschedule(card, &cur, memory, model, cfg, &day)))
             }
         };
         let is_derived = derived.is_some();
@@ -254,14 +281,24 @@ pub(crate) mod tests {
         })
     }
 
+    /// 跑一次重放；没带配置快照的行补上 [cfg]（相当于「作答时就是这份配置」）。
     pub fn run(rows: &[Value], cfg: &Config) -> (Vec<Value>, Option<Sched>) {
-        let texts: Vec<String> = rows.iter().map(|r| r.to_string()).collect();
+        let texts: Vec<String> = rows
+            .iter()
+            .map(|r| {
+                let mut r = r.clone();
+                if r.get(SNAPSHOT_KEY).is_none() {
+                    r[SNAPSHOT_KEY] = cfg.to_json();
+                }
+                r.to_string()
+            })
+            .collect();
         let input: Vec<Row<'_>> = texts
             .iter()
             .zip(rows)
             .map(|(t, v)| Row { json: t, server_time: None, intent: infer_intent(v) })
             .collect();
-        let r = replay(&input, cfg).unwrap();
+        let r = replay(&input).unwrap();
         let out = r
             .rows
             .iter()
@@ -284,7 +321,7 @@ pub(crate) mod tests {
         }
         let texts: Vec<String> = rows.iter().map(|r| r.to_string()).collect();
         let input: Vec<Row<'_>> = texts.iter().map(|t| Row { json: t, server_time: None, intent: Intent::Answer }).collect();
-        let again = replay(&input, &cfg).unwrap();
+        let again = replay(&input).unwrap();
         assert!(again.rows.iter().all(Option::is_none), "replay must be idempotent");
         let s = again.state.unwrap();
         assert_eq!(s.reps, 6);
