@@ -58,6 +58,7 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
+import 'package:fushi_engine/sync/srs_change_feed.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart';
 import 'package:fushi_core/fushi_core.dart'
     show fushiDebugPrint, mimeTypeForFilePath;
@@ -480,10 +481,17 @@ class FushiSyncServer {
   Future<void> Function(FushiPairedPeerRegistration registration)? onPeerPaired;
 
   /// 已鉴权的对端经 WebDAV 成功写入（PUT）或删除（DELETE）了同步目录里的一个文件后回调，
-  /// 参数是相对 [syncDataDir] 的路径（`/` 分隔，如 `fushi-data/fushi-srs/<profile>/<writer>/cursor`）。
+  /// 参数是相对 [syncDataDir] 的路径（`/` 分隔，如 `fushi-data/fushi-srs/<profile>/v2/devices/<id>/head-…json`）。
   /// host 自己也参与同一套资产协议时（复习同步：app 作为 host 直接读写这块目录）据此去抖触发
   /// 一轮本机同步。host 经本机文件系统写，不走这里，所以不会自己触发自己。
   void Function(String relativePath)? onClientWrite;
+
+  /// 复习同步的「有新段」通知（`GET /api/srs/changes` 长轮询，srs_change_feed.dart）。对端写进 `fushi-srs/`
+  /// 时这里自己 bump；host 自己的复习数据发布到本机目录后由 app 调 [notifySrsChanged]。
+  final SrsChangeFeed srsChanges = SrsChangeFeed();
+
+  /// host 自己的复习数据刚发布到本机同步目录（app 侧在本机目录一轮上传了段之后调）。
+  void notifySrsChanged() => srsChanges.bump();
 
   /// TODO-961 M1b: 供给当前全部未吊销的 per-peer token（auth 校验入站请求时，除共享
   /// [_token] 外接受任一 peer token）。注入而非直连 DB。首次 auth 时惰性加载并缓存；
@@ -900,6 +908,14 @@ class FushiSyncServer {
       if (method != 'GET') return shelf.Response(405);
       return _handlePing();
     }
+    // 复习同步快速通道（设计 §6.3）：令牌变了立刻回，没变挂到下一次写入或超时。鉴权走上方 middleware。
+    if (reqPath == '/api/srs/changes') {
+      if (method != 'GET') return shelf.Response(405);
+      final int token = await srsChanges.waitAfter(
+        int.tryParse(request.url.queryParameters['after'] ?? ''),
+      );
+      return jsonResponse(<String, dynamic>{'token': token});
+    }
     if (reqPath == '/api/capabilities') {
       if (method != 'GET') return shelf.Response(405);
       final shelf.Response response = await _handleCapabilities();
@@ -1067,6 +1083,14 @@ class FushiSyncServer {
 
   /// 写成功（2xx）才回调 [onClientWrite]；回调异常不影响响应。
   shelf.Response _reportClientWrite(String reqPath, shelf.Response response) {
+    if (response.statusCode >= 200 &&
+        response.statusCode < 300 &&
+        // 复习同步的命名空间（srs/sync2/srs_location_store.dart kSrsSync2Namespace）下的 head：段先于 head
+        // 写，head 落地才说明这一轮的段齐了，只在这时唤醒长轮询。
+        reqPath.contains('/fushi-srs/') &&
+        p.posix.basename(reqPath).startsWith('head-')) {
+      srsChanges.bump();
+    }
     final void Function(String relativePath)? cb = onClientWrite;
     if (cb != null && response.statusCode >= 200 && response.statusCode < 300) {
       try {
