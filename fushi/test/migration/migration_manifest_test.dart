@@ -162,6 +162,7 @@ void main() {
         BackupCategory.settings,
         BackupCategory.profiles,
         BackupCategory.srs,
+        BackupCategory.music,
       };
       for (final MigrationBatch b in MigrationBatch.values) {
         final Set<BackupCategory> cats = categoriesForBatch(b);

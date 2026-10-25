@@ -5,7 +5,7 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.da
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show kStatSourceBook, kStatSourceVideo;
+    show kStatSourceBook, kStatSourceMusic, kStatSourceVideo;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
@@ -481,15 +481,17 @@ mixin DictionaryPageMixin {
   ///
   /// Shows a Fluttertoast for each outcome and returns `true` on success.
   /// 把统计来源标识（[kStatSourceBook]/[kStatSourceVideo]）映射成 [AnkiMiningSource]，
-  /// 用于给制出的卡片追加分类标签（书籍→`book`，视频→`video`）。未知来源返回
+  /// 用于给制出的卡片追加分类标签（书籍→`book`，视频→`video`，音乐→`music`）。未知来源返回
   /// [AnkiMiningSource.book]（保守归书籍，与默认 [dictionarySourceType] 一致）。
   ///
   /// 可覆写（BUG-1137）：统计来源与制卡分类标签是两个维度——texthooker 页统计仍归
   /// 书籍桶，但制出的卡应打 `game` 分类标签，故覆写本 getter 而非动统计口径。
   @protected
-  AnkiMiningSource get miningSource => dictionarySourceType == kStatSourceVideo
-      ? AnkiMiningSource.video
-      : AnkiMiningSource.book;
+  AnkiMiningSource get miningSource => switch (dictionarySourceType) {
+    kStatSourceVideo => AnkiMiningSource.video,
+    kStatSourceMusic => AnkiMiningSource.music,
+    _ => AnkiMiningSource.book,
+  };
 
   /// 制卡来源标题（卡面 `{document-title}`，无库内定位时也是 `{source-link}` 的链接
   /// 文字）。默认 null = 不带标题（独立查词页 / 复习卡面）；app 内浏览器经查词宿主覆写成
@@ -571,11 +573,17 @@ mixin DictionaryPageMixin {
     Map<String, String> fields,
     String? coverPath,
   ) async {
+    final CardSourceLink? sourceLink = miningCardSourceLink;
     final miningContext = AnkiMiningContext(
       sentence: fields['sentence'] ?? '',
       coverPath: coverPath,
       source: miningSource,
-      documentTitle: miningDocumentTitle,
+      // 有库内定位（回到出处）时标题取出处的标题；否则取宿主给的来源标题（app 内浏览器
+      // = 当前网页标题，其余默认 null）。
+      documentTitle: sourceLink != null
+          ? minedSentenceOrigin?.title
+          : miningDocumentTitle,
+      sourceLink: sourceLink,
       sourceUrl: miningSourceUrl,
     );
     // TODO-1325 #6：制卡可能要走网络（AnkiConnect）+ 下音频，先弹「制卡中…」蓝色
@@ -832,17 +840,31 @@ mixin DictionaryPageMixin {
     controller.onLookupStarted = recordLookup;
   }
 
-  /// TODO-633: land one mined-sentence history row (no book locator here —
-  /// home/standalone lookup). Best-effort; failure is swallowed + logged.
+  /// 制卡历史行的出处身份（`mined_sentences.book_key` + 标题快照）。首页 / 独立
+  /// 查词窗没有出处，恒 null（行不可跳转）；texthooker 覆写为当前 galgame 会话的
+  /// `galgames.id`（回到出处 = 打开该游戏详情 / 文本钩子历史）。
+  @protected
+  ({String key, String? title})? get minedSentenceOrigin => null;
+
+  /// 本宿主制出的卡携带的出处链接（复习时「回到出处」）。默认 null（首页 / 独立
+  /// 查词无出处）；texthooker 覆写为游戏出处。
+  @protected
+  CardSourceLink? get miningCardSourceLink => null;
+
+  /// TODO-633: land one mined-sentence history row. Locator = [minedSentenceOrigin]
+  /// (null for home/standalone lookup). Best-effort; failure is swallowed + logged.
   @protected
   Future<void> recordMinedSentence(
     Map<String, String> fields,
     int? noteId,
   ) async {
     try {
+      final ({String key, String? title})? origin = minedSentenceOrigin;
       await mixinAppModel.database.addMinedSentence(
         source: dictionarySourceType,
         dateKey: _statTodayKey(),
+        bookKey: origin?.key,
+        documentTitle: origin?.title,
         expression: fields['expression'] ?? '',
         reading: fields['reading'] ?? '',
         glossary: fields['glossary'] ?? '',

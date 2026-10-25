@@ -1,0 +1,10 @@
+format=lrc quality=line effects=false lang=- title=夜に駆ける artist=YOASOBI agents=[]
+L 800-5300 agent=- role=Main style=-
+  S 800-5300 Sweep "沈むように溶けてゆくように"
+  T und "As if sinking, as if melting"
+L 5300-8800 agent=- role=Main style=-
+  S 5300-8800 Sweep "二人だけの空が広がる夜に"
+L 12100-19800 agent=- role=Main style=-
+  S 12100-19800 Sweep "騒がしい日々に笑えない君に"
+L 19800-30000 agent=- role=Main style=-
+  S 19800-30000 Sweep "二人だけの空が広がる夜に"

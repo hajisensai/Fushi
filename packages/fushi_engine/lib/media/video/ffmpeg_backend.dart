@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/video/bluray/bluray_ffmpeg_input.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_ffmpeg_input.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
@@ -804,7 +805,51 @@ FfmpegBackend? _cachedBackend;
 ///   （进程内自编 ffmpeg-kit；移动端无系统 ffmpeg 且 iOS 禁 exec 子进程）。
 /// - 桌面（Windows/macOS/Linux）→ 系统 CLI（打包/用户提供 ffmpeg）。
 FfmpegBackend resolveFfmpegBackend() =>
-    _cachedBackend ??= BlurayFfmpegBackend(_selectBackend());
+    _cachedBackend ??= BlurayFfmpegBackend(DvdFfmpegBackend(_selectBackend()));
+
+/// DVD counterpart of [BlurayFfmpegBackend]: rewrites DVD title inputs
+/// ([encodeDvdTitleInput]) into the unified FFmpeg's `dvdvideo` demuxer
+/// (`-f dvdvideo -title N [-chapter_start/-chapter_end/-angle] -i <disc>`) and
+/// refuses direct `VIDEO_TS/*.VOB` inputs ([DvdFfmpegInputException]): an
+/// encrypted disc's VOBs are ciphertext, and a title can span VOBs and cells.
+/// Commands without DVD inputs reach [delegate] unchanged.
+class DvdFfmpegBackend implements FfmpegBackend, FfmpegWatchedRunner {
+  const DvdFfmpegBackend(this.delegate);
+
+  final FfmpegBackend delegate;
+
+  @override
+  Future<FfmpegRunResult> runWatched(
+    List<String> args,
+    FfmpegWatch watch,
+  ) async {
+    final List<String> resolved = prepareDvdFfmpegArgs(args);
+    return switch (delegate) {
+      final FfmpegWatchedRunner watched => await watched.runWatched(
+        resolved,
+        watch,
+      ),
+      final FfmpegBackend other => await other.run(
+        resolved,
+        watch.stallTimeout,
+      ),
+    };
+  }
+
+  // async: a refused VOB input fails the returned future, never synchronously.
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async =>
+      delegate.run(prepareDvdFfmpegArgs(args), timeout);
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
+      delegate.runProbe(prepareDvdFfmpegArgs(args, probe: true), timeout);
+
+  /// Query commands (`-encoders`, `-h ...`) have no media input.
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      delegate.runQuery(args, timeout);
+}
 
 /// Adapts the shared input contract for desktop and platform FFmpeg backends.
 class BlurayFfmpegBackend implements FfmpegBackend, FfmpegWatchedRunner {

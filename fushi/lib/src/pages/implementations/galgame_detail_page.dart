@@ -36,6 +36,16 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart'
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/media/links/media_link_entries.dart'
+    show MediaLinkEntry;
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
+import 'package:fushi/src/media/links/media_link_opener.dart'
+    show mediaLinkSearchAction, openMediaLinkEntry;
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show MediaLinksSection;
+import 'package:fushi/src/media/people/person_entry_sections.dart'
+    show GameVoiceCastSection;
 import 'package:fushi/utils.dart';
 
 /// galgame 详情页（契约 §4.2）：头部常驻 + 统计 / 简介 / 编辑三个 tab。
@@ -772,6 +782,16 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     );
   }
 
+  /// 已绑定的 VNDB VN id（配音表的取数键）；没绑 VNDB 返回 null。
+  static String? _vndbIdOf(List<GalgameSourceRow> sources) {
+    for (final GalgameSourceRow row in sources) {
+      if (row.source != GalgameMetadataSource.vndb.key) continue;
+      final String? id = row.externalId?.trim();
+      if (id != null && id.isNotEmpty) return id;
+    }
+    return null;
+  }
+
   String? _externalUrl(GalgameSourceRow row) {
     final GalgameMetadataSource? source = GalgameMetadataSource.fromKey(
       row.source,
@@ -1150,6 +1170,25 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       ),
       if (game.tags.isNotEmpty)
         _sectionCard(context, child: _tagsSection(context, game)),
+      // 配音（作品图谱 L5）：VNDB 角色 + 声优，点声优进人物聚合页。
+      GameVoiceCastSection(
+        database: _appModel.database,
+        gameId: game.id,
+        vndbId: _vndbIdOf(_sources),
+      ),
+      // 跨模块「同一作品」（作品图谱 media_links）：改编动画 / 原作小说…
+      MediaLinksSection(
+        database: _appModel.database,
+        self: (kind: MediaLinkKind.game, key: game.id),
+        onOpen: (MediaLinkEntry e) =>
+            openMediaLinkEntry(context: context, ref: ref, entry: e),
+        searchActionFor: (MediaLinkKind k) =>
+            mediaLinkSearchAction(context: context, ref: ref, kind: k),
+        onInfer: mediaLinkInferCallback(
+          ref: ref,
+          self: (kind: MediaLinkKind.game, key: game.id),
+        ),
+      ),
     ];
     return FushiEntranceScope(
       child: ListView(

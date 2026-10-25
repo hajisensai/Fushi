@@ -8,6 +8,8 @@ import 'package:fushi/src/sync/video_remote_host.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show discRootForMemberPath;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart';
 import 'package:material_ui/material_ui.dart';
@@ -36,6 +38,17 @@ VideoRemoteLibrary createVideoRemoteLibrary({
         stopAudiobook: stopAudiobook,
         isMigrationReadonly: isMigrationReadonly,
         bookUid: bookUid,
+      ),
+    ),
+    // 远端原盘「在 PC 上打开」：同一条切换队列，进的是这张盘的原盘会话。
+    openDisc: (String bookUid) => ExternalMediaNavigation.instance.navigate(
+      () => _open(
+        database: database(),
+        navigatorKey: navigatorKey,
+        stopAudiobook: stopAudiobook,
+        isMigrationReadonly: isMigrationReadonly,
+        bookUid: bookUid,
+        discMenu: true,
       ),
     ),
   );
@@ -85,6 +98,7 @@ Future<void> _open({
   required Future<void> Function() stopAudiobook,
   required bool Function() isMigrationReadonly,
   required String bookUid,
+  bool discMenu = false,
 }) async {
   // 迁移只读期间不开新页（新页会写进度），与卡片回看同一口径。
   if (isMigrationReadonly()) {
@@ -93,14 +107,21 @@ Future<void> _open({
   final VideoBookRepository repo = VideoBookRepository(database);
   final VideoBookRow? row = await repo.getByBookUid(bookUid);
   if (row == null) throw const VideoRemoteException(404, 'video_missing');
+  // 原盘会话只对原盘标题有意义；普通视频按 `discMenu` 打开是调用方的错。
+  if (discMenu && discRootForMemberPath(row.videoPath) == null) {
+    throw const VideoRemoteException(409, 'not_a_disc');
+  }
   if (await isLocalVideoResourceMissing(row.videoPath)) {
     throw const VideoRemoteException(404, 'video_missing');
   }
   final NavigatorState? navigator = navigatorKey.currentState;
   if (navigator == null) throw const VideoRemoteException(409, 'host_busy');
   await DesktopLookupService.instance.bringMainWindowToFront();
-  // 已经在放这一部：只把窗口带到前台，不重开（重开会从断点重新起播）。
-  if (ExternalMediaNavigation.instance.activeVideoUid == bookUid) return;
+  // 已经在放这一部：只把窗口带到前台，不重开（重开会从断点重新起播）。原盘会话
+  // 没有固定的「这一部」（菜单里随时换标题），总是重开进菜单。
+  if (!discMenu && ExternalMediaNavigation.instance.activeVideoUid == bookUid) {
+    return;
+  }
   if (!await ExternalMediaNavigation.instance.closeActive()) {
     throw const VideoRemoteException(409, 'host_busy');
   }
@@ -120,6 +141,7 @@ Future<void> _open({
           repo: repo,
           playlistCollectionId:
               primary[MediaKind.video.compositeKey(row.bookUid)],
+          openBlurayMenu: discMenu,
         ),
       ),
     ),

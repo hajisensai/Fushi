@@ -99,6 +99,8 @@ OnboardingFeature? onboardingFeatureOfModule(ModuleId module) =>
       ModuleId.books => OnboardingFeature.books,
       ModuleId.manga => OnboardingFeature.manga,
       ModuleId.video => OnboardingFeature.video,
+      // 音乐（2026-10 新模块）向导暂不出方格：默认开，关在 设置 → 外观 → 功能模块。
+      ModuleId.music => null,
       ModuleId.games => OnboardingFeature.games,
       ModuleId.browse => OnboardingFeature.browse,
       ModuleId.lookup => OnboardingFeature.lookup,

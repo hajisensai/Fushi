@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_apple.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
+import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_backgrounds.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// Apple 歌词页背景的两层整屏高斯模糊（sigma 36 / 48）只在输入变化时离屏算一次，
@@ -210,11 +211,11 @@ void main() {
 
   setUp(() {
     rendered = <ui.Image>[];
-    AppleLyricsPlayerDesign.debugOnBlurredBackgroundRendered = rendered.add;
+    LyricsShellAppleBackground.debugOnBlurredBackgroundRendered = rendered.add;
   });
 
   tearDown(() {
-    AppleLyricsPlayerDesign.debugOnBlurredBackgroundRendered = null;
+    LyricsShellAppleBackground.debugOnBlurredBackgroundRendered = null;
   });
 
   /// 让真实图片解码跑完（解码走引擎异步回调，fake async 里推不动）。

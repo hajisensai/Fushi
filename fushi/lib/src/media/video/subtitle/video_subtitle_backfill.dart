@@ -20,6 +20,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi_audio/fushi_audio.dart' show decodeTextBytes;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
@@ -163,14 +164,15 @@ class VideoSubtitleBackfillService {
       );
     }
     // 全部文件判据 async：补字幕跑在 UI isolate，视频与 sidecar 常在网络盘上，同步
-    // stat / list 冷目录要数秒、冻结界面与同 isolate 的互联 host（BUG-3756）。
-    final File video = File(target.videoPath);
-    if (!await video.exists()) {
+    // stat / list 冷目录要数秒、冻结界面与同 isolate 的互联 host（BUG-3756）。DVD
+    // title 是虚拟路径，按「这个路径本身是不是文件」判（video_member_file.dart）。
+    if (!await videoPathFileExists(target.videoPath)) {
       return const SubtitleBackfillResult(
         SubtitleBackfillOutcome.failed,
         detail: 'video file is gone',
       );
     }
+    final File video = File(target.videoPath);
     // 目录里已经躺着 sidecar 就当已有字幕——它可能是用户手放的，也可能是下载
     // 流水线放的。两种都不该被覆盖。
     if ((await _existingSidecars(video)).isNotEmpty) {
@@ -354,10 +356,10 @@ class VideoSubtitleBackfillService {
     String? query,
     int? episode,
   }) async {
-    final File video = File(target.videoPath);
-    if (!await video.exists()) {
+    if (!await videoPathFileExists(target.videoPath)) {
       throw FileSystemException('video file is gone', target.videoPath);
     }
+    final File video = File(target.videoPath);
     return registry.search(
       await _request(target, video, query: query, episode: episode),
     );
@@ -370,13 +372,13 @@ class VideoSubtitleBackfillService {
     SubtitleBackfillTarget target,
     VideoSubtitleCandidate candidate,
   ) async {
-    final File video = File(target.videoPath);
-    if (!await video.exists()) {
+    if (!await videoPathFileExists(target.videoPath)) {
       return const SubtitleBackfillResult(
         SubtitleBackfillOutcome.failed,
         detail: 'video file is gone',
       );
     }
+    final File video = File(target.videoPath);
     final VideoSubtitleDownload download;
     try {
       download = await registry.download(candidate);

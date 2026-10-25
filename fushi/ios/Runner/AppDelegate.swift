@@ -224,6 +224,8 @@ final class FushiRemotePush {
     // 全局悬浮球的 iOS 半边：截本 app 窗口给 OCR + App Intent 查词投递
     // （docs/specs/2026-09-28-floating-ball.md）。
     FushiFloatingBall.register(binaryMessenger: binaryMessenger)
+    // 音乐输出：AVAudioSession 首选采样率（Dart 契约 music_platform_output.dart）。
+    MusicOutputChannel.register(binaryMessenger: binaryMessenger)
     // 反馈回复的 APNs 远程推送（见文件顶部 FushiRemotePush）。
     FushiRemotePush.shared.install(binaryMessenger: binaryMessenger)
     // 查词输入框的输入法语言。install 必须在任何输入框成为第一响应者之前完成——

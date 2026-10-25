@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
     show lacksLocalMediaFile;
@@ -20,6 +21,7 @@ import 'package:fushi_engine/sync/manga_sync_package.dart'
         repackageMangaBook;
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
+import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/font_sync.dart';
@@ -53,6 +55,7 @@ import 'package:path/path.dart' as p;
 part 'sync_orchestrator/aggregate.part.dart';
 part 'sync_orchestrator/collections.part.dart';
 part 'sync_orchestrator/tags.part.dart';
+part 'sync_orchestrator/media_links.part.dart';
 part 'sync_orchestrator/video_metadata.part.dart';
 part 'sync_orchestrator/tombstones.part.dart';
 part 'sync_orchestrator/books.part.dart';
@@ -255,6 +258,11 @@ class SyncRunReport {
   /// [needsLocalLibraryRefresh]。
   int tagsUpdated = 0;
 
+  /// 本轮互联作品图谱同步在本地改动的连接行数（`media_link_sync.dart`）。详情页
+  /// 「同一作品」区块自己监听 `media_links` 表变更刷新，所以不计入
+  /// [needsLocalLibraryRefresh]。
+  int mediaLinksUpdated = 0;
+
   /// 7c：本轮从互联 host 落到本地的视频刮削元数据作品数（`applyRemoteVideoMetadata`）。
   /// >0 时合集详情页 / 视频卡的简介、评分、分集名会变，计入 [needsLocalLibraryRefresh]。
   int videoMetadataUpdated = 0;
@@ -382,6 +390,7 @@ class SyncRunReport {
     rootSpillFilesRemoved += other.rootSpillFilesRemoved;
     collectionsUpdated += other.collectionsUpdated;
     tagsUpdated += other.tagsUpdated;
+    mediaLinksUpdated += other.mediaLinksUpdated;
     videoMetadataUpdated += other.videoMetadataUpdated;
     serviceConfigsImported += other.serviceConfigsImported;
     errors.addAll(other.errors);
@@ -873,10 +882,13 @@ class SyncOrchestrator {
       await _syncCollectionsLive(report, b);
       // 标签紧跟合集之后：合集标签按合集自然键解析，要先让合集行落地。
       await _syncTagsLive(report, b);
+      // 作品图谱按合集自然键 / 书 / 游戏身份解析端点，同样要在合集落地之后。
+      await _syncMediaLinksLive(report, b);
       // 7c：刮削元数据紧跟合集之后（合集级作品按自然键解析刚同步出来的合集行）。
       await _syncVideoMetadataLive(report, b);
     } else {
       await syncCollections(report);
+      await _syncMediaLinksCloud(report);
     }
     mark('collections+tags+metadata');
 
@@ -963,10 +975,12 @@ class SyncOrchestrator {
       // installCollectionsSyncWatcher）；刮削元数据整库拉取留给完整 sweep（审查 #4）。
       await _syncCollectionsLive(report, b);
       await _syncTagsLive(report, b);
+      await _syncMediaLinksLive(report, b);
     } else {
       // 云路径的 ensureNamespace 依赖同步根已解析（与 [run] 开头一致）。
       await _backend.findOrCreateRootFolder();
       await syncCollections(report);
+      await _syncMediaLinksCloud(report);
     }
     return report;
   }
@@ -1198,6 +1212,18 @@ class SyncOrchestrator {
     InterconnectSyncBackend backend,
   ) => _syncTagsLive(report, backend);
 
+  /// 测试入口：直接调用 [_syncMediaLinksLive]。
+  @visibleForTesting
+  Future<void> syncMediaLinksLiveForTest(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) => _syncMediaLinksLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncMediaLinksCloud]。
+  @visibleForTesting
+  Future<void> syncMediaLinksCloudForTest(SyncRunReport report) =>
+      _syncMediaLinksCloud(report);
+
   /// 测试入口：直接调用 [_syncCollectionsLive]（private 方法对测试文件不可见）。
   @visibleForTesting
   Future<void> syncCollectionsLiveForTest(
@@ -1240,8 +1266,9 @@ class SyncOrchestrator {
         if (row.remotePublishedAt != 0) continue;
         // v128：浏览器历史 / 书签的墓碑只随聚合快照走，不发布逐条标记（一次「清除浏览
         // 数据」可能上千条，且没有逐条确认语义）。
-        if (SyncTombstoneKind.tryParse(row.mediaType)
-                ?.propagatesViaAggregateSnapshotOnly ??
+        if (SyncTombstoneKind.tryParse(
+              row.mediaType,
+            )?.propagatesViaAggregateSnapshotOnly ??
             false) {
           continue;
         }
@@ -1443,16 +1470,17 @@ class SyncOrchestrator {
           title: v.title,
         );
         try {
-          final File file = File(v.videoPath);
-          // async 判存在：视频常在网络盘上，同步 existsSync 冷目录时会冻结主 isolate
-          // （BUG-3756）。
-          if (!await file.exists()) {
+          // async 判存在：视频常在网络盘上，同步 stat 冷目录时会冻结主 isolate
+          // （BUG-3756）。没有本机媒体字节的路径（网络流 / `.strm` / DVD title）
+          // 一律按缺失处理（video_member_file.dart 第 2 种问法）。
+          if (!await hasLocalMediaFile(v.videoPath)) {
             report.errors.add(
               'video "${v.title}": local file missing: ${v.videoPath}',
             );
             index++;
             continue;
           }
+          final File file = File(v.videoPath);
           final int size = await file.length();
           final String assetName = videoAssetName(v.bookUid, v.videoPath);
 

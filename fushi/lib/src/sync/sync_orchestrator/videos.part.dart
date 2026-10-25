@@ -324,13 +324,13 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
     final List<({VideoBookRow row, File file, bool pushVideo})> toPush =
         <({VideoBookRow row, File file, bool pushVideo})>[];
     for (final VideoBookRow v in localVideos) {
-      final File file = File(v.videoPath);
-      if (!file.existsSync()) {
+      if (!hasLocalMediaFileSync(v.videoPath)) {
         report.errors.add(
           'live push video "${v.title}": local file missing: ${v.videoPath}',
         );
         continue;
       }
+      final File file = File(v.videoPath);
       final RemoteVideoInfo? host = hostByUid[v.bookUid];
       final int? hostSize = host?.sizeBytes;
       final int localSize = await file.length();

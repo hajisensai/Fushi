@@ -29,8 +29,10 @@ workspace:
   - packages/fushi_cli
   - packages/fushi_compute
   - packages/fushi_core
+  - packages/fushi_corpus
   - packages/fushi_dictionary
   - packages/fushi_engine
+  - packages/fushi_music
   - packages/fushi_server
   - packages/fushi_p2p
   - packages/fushi_platform

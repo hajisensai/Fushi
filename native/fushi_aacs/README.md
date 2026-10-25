@@ -14,7 +14,12 @@ check, CPI clearing, multi-key retry), but error handling differs: unencrypted
 units pass through without a 0x47 sync check here (libbluray's own
 `_validate_unit()` then skips a bad unit), while `AacsContentDecoder` rejects such
 a unit and stops the stream; `aacs_decrypt_unit()` also only reports
-success/failure. Not supported (same as title playback): bus encryption,
+success/failure. Both libbluray open contracts are exported: `aacs_open2()`
+(reads `AACS/` by path) and libaacs 0.11's `aacs_init()` + `aacs_set_fopen()` +
+`aacs_open_device()` (reads the same files through libbluray's file layer).
+libbluray prefers the latter; it is what makes a remote disc work, because a
+disc opened with `bd_open_files()` over HTTP has no local path. Not supported
+(same as title playback): bus encryption,
 AACS 2, BD+, media key block processing, drive access.
 
 | Platform | File | How libbluray finds it |

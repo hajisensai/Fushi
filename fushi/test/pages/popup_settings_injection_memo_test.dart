@@ -443,6 +443,11 @@ void main() {
             marker: 'window.__fushiPopupFontSize = 24.0',
           ),
           (
+            name: 'librarySentencesEnabled（「我库里的例句」开关，作品图谱 L4）',
+            mutate: (MemoAppModel m) => m.librarySentencesEnabledValue = false,
+            marker: 'window.__fushiLibrarySentencesEnabled = false',
+          ),
+          (
             name: 'popupWheelSpeed（BUG-1026 滚轮速度）',
             mutate: (MemoAppModel m) => m.popupWheelSpeedValue = 2.5,
             marker: 'window.__fushiPopupWheelSpeed = 2.5',
@@ -876,12 +881,15 @@ class MemoAppModel extends AppModel {
   double popupInstantScrollWheelStepValue = 0.5;
   double popupInstantScrollTouchStepValue = 0.25;
   bool compactGlossariesValue = false;
+  bool librarySentencesEnabledValue = true;
   List<Dictionary> dictionariesValue = <Dictionary>[];
   Map<String, String> customDictCSSValue = <String, String>{};
   String globalDictCSSValue = '';
   List<String> enabledAudioSourcesValue = const <String>[];
   Directory? appDirectoryOverride;
 
+  @override
+  bool get librarySentencesEnabled => librarySentencesEnabledValue;
   @override
   double get appUiScale => appUiScaleValue;
   @override

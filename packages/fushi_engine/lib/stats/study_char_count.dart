@@ -109,3 +109,9 @@ class StudyCharCounter {
   /// 目前为止的学习单位数（未收尾的词串按 1 计，与 [countStudyChars] 结尾一致）。
   int get count => _count + (_inWord ? 1 : 0);
 }
+
+/// [text] 里多个位置（UTF-16 偏移，升序、不超过 `text.length`）的学习单位前缀数，一次
+/// FFI 算完：第 i 个结果 = `countStudyChars(text.substring(0, offsets[i]))`。给「一章里
+/// 所有句子的起止」换算成阅读器锚点（`charAnchor`）用，不逐句跨 FFI。
+List<int> studyCharPrefixTotals(String text, List<int> offsets) =>
+    StudyCharsNative.instance.prefixTotals(text, offsets);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -21,6 +22,7 @@ import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/favorites/favorite_batch_mining.dart';
 import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
+import 'package:fushi/src/mining/mined_origin_navigation.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -114,7 +116,7 @@ List<CollectionGroupRow<T>> groupCollectionItems<T>({
   return rows;
 }
 
-@visibleForTesting
+/// 收藏句 / 「我库里的例句」（`corpus_origin_navigation.dart`）共用的视频起点解析。
 ({int? episodeIndex, int? startMs}) resolveVideoFavoriteOpenTarget({
   required VideoBookRow row,
   required int? favoriteSectionIndex,
@@ -204,6 +206,11 @@ MediaItem buildCollectionReaderMediaItem({
   );
 }
 
+/// 制卡历史行的定位是否在媒体时间轴上（v132 position_ms / duration_ms）。
+bool _minedIsTimeAxis(String source) =>
+    source == kFavoriteSentenceSourceVideo ||
+    source == kFavoriteSentenceSourceMusic;
+
 class _CollectionItem {
   _CollectionItem({
     required this.type,
@@ -215,6 +222,7 @@ class _CollectionItem {
     this.sectionIndex,
     this.normCharOffset,
     this.normCharLength,
+    this.pageIndex,
     this.favoriteId,
     this.minedId,
     this.wordReading,
@@ -233,8 +241,15 @@ class _CollectionItem {
   final String? text;
   final String? chapterLabel;
   final int? sectionIndex;
+  /// 收藏句 wire 口径的锚点：书 = 章内字符偏移 / 长度；**视频 = cue 起点 / 时长毫秒**
+  /// （FavoriteSentence / favorite_words 仍一列两义）。制卡历史 v132 起在 DB 里各占
+  /// 一列（position_ms / duration_ms），读进本模型时在 [_load] 边界折回这一口径，
+  /// 让下游视频跳转 / 抽音只认一种形状。音乐行同视频（毫秒）。
   final int? normCharOffset;
   final int? normCharLength;
+
+  /// 漫画制卡行的页码（0 起；[_CollectionType.mined] 且来源 manga 专用）。
+  final int? pageIndex;
   final String? favoriteId;
 
   /// 制卡历史行 id（TODO-633，[_CollectionType.mined] 专用，供删除一条用）。
@@ -431,8 +446,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           text: m.sentence.isNotEmpty ? m.sentence : m.expression,
           chapterLabel: m.chapterLabel,
           sectionIndex: m.sectionIndex,
-          normCharOffset: m.normCharOffset,
-          normCharLength: m.normCharLength,
+          // v132：时间轴来源的定位在 position_ms / duration_ms，折回本模型的
+          // 收藏句口径（见 [_CollectionItem.normCharOffset]）。
+          normCharOffset: _minedIsTimeAxis(m.source)
+              ? m.positionMs
+              : m.normCharOffset,
+          normCharLength: _minedIsTimeAxis(m.source)
+              ? m.durationMs
+              : m.normCharLength,
+          pageIndex: m.pageIndex,
           minedId: m.id,
           source: m.source,
         ),
@@ -473,7 +495,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       }
     }
     for (final m in allMined) {
-      if (m.source != kFavoriteSentenceSourceVideo &&
+      // 只有书域（书 / 有声书 / 歌词模式）的行按 bookKey 解析书内音频；视频 / 游戏 /
+      // 漫画 / 音乐行的 bookKey 不是书身份。
+      final SentenceSourceKind kind = sentenceSourceKindOf(m.source);
+      if ((kind == SentenceSourceKind.book ||
+              kind == SentenceSourceKind.audiobook ||
+              kind == SentenceSourceKind.lyrics) &&
           m.bookKey != null &&
           m.bookKey!.isNotEmpty) {
         allBookKeys.add(m.bookKey!);
@@ -1372,10 +1399,57 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// 阅读器打开。
   ModuleId _moduleOfSentenceSource(SentenceSourceKind kind) => switch (kind) {
     SentenceSourceKind.video => ModuleId.video,
+    SentenceSourceKind.game => ModuleId.games,
+    SentenceSourceKind.manga => ModuleId.manga,
+    SentenceSourceKind.music => ModuleId.music,
     SentenceSourceKind.book ||
     SentenceSourceKind.audiobook ||
     SentenceSourceKind.lyrics => ModuleId.books,
   };
+
+  /// 「跳回原文」的唯一分派（条目菜单与列表行共用）：每种来源落到自己模块已有的
+  /// 出口（漫画 / 游戏 / 音乐经 `mined_origin_navigation.dart`，与复习卡片的来源
+  /// 链接同一组出口）。
+  void _openOrigin(_CollectionItem item, SentenceSourceKind kind) {
+    final String? key = item.bookKey;
+    switch (kind) {
+      case SentenceSourceKind.video:
+        unawaited(_openVideoSentence(item));
+      case SentenceSourceKind.game:
+        if (key == null || key.isEmpty) return;
+        unawaited(
+          openGameOrigin(
+            navigator: Navigator.of(context),
+            db: appModel.database,
+            gameId: key,
+          ),
+        );
+      case SentenceSourceKind.manga:
+        if (key == null || key.isEmpty) return;
+        unawaited(
+          openMangaOriginAtPage(
+            ref: ref,
+            bookKey: key,
+            pageIndex: item.pageIndex,
+          ),
+        );
+      case SentenceSourceKind.music:
+        if (key == null || key.isEmpty) return;
+        unawaited(
+          playMusicOriginClip(
+            app: appModel,
+            trackUid: key,
+            positionMs: item.normCharOffset ?? 0,
+          ),
+        );
+      case SentenceSourceKind.book:
+      case SentenceSourceKind.audiobook:
+      case SentenceSourceKind.lyrics:
+        // audiobook/lyrics 的 bookKey 共享 hoshi://book/ 身份，reader 是正确目的地
+        // （内部处理有声书/歌词模式）。
+        unawaited(_openBook(item));
+    }
+  }
 
   /// 收藏行能否「跳回原文」的**唯一**谓词：条目菜单（[_showItemDialog]）与列表行
   /// （[_buildItem]）共用，此前是两份逐字同构的表达式。
@@ -1552,22 +1626,24 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                   SentenceSourceKind.audiobook => FushiIcons.audio,
                   SentenceSourceKind.lyrics => FushiIcons.lyrics,
                   SentenceSourceKind.book => FushiIcons.books,
+                  SentenceSourceKind.game => FushiIcons.games,
+                  SentenceSourceKind.manga => FushiIcons.manga,
+                  SentenceSourceKind.music => FushiIcons.music,
                 },
                 size: 18,
               ),
-              label: Text(
-                kind == SentenceSourceKind.video ? t.nav_video : t.dialog_read,
-              ),
+              label: Text(switch (kind) {
+                SentenceSourceKind.video => t.nav_video,
+                SentenceSourceKind.game => t.nav_game,
+                SentenceSourceKind.music => t.nav_music,
+                SentenceSourceKind.book ||
+                SentenceSourceKind.audiobook ||
+                SentenceSourceKind.lyrics ||
+                SentenceSourceKind.manga => t.dialog_read,
+              }),
               onPressed: () {
                 Navigator.pop(ctx);
-                switch (kind) {
-                  case SentenceSourceKind.video:
-                    _openVideoSentence(item);
-                  case SentenceSourceKind.book:
-                  case SentenceSourceKind.audiobook:
-                  case SentenceSourceKind.lyrics:
-                    _openBook(item);
-                }
+                _openOrigin(item, kind);
               },
             ),
         ],
@@ -1983,6 +2059,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         SentenceSourceKind.video => t.nav_video,
         SentenceSourceKind.audiobook => t.section_audiobook,
         SentenceSourceKind.lyrics => t.lyrics_mode,
+        SentenceSourceKind.game => t.nav_game,
+        SentenceSourceKind.manga => t.manga_library,
+        SentenceSourceKind.music => t.nav_music,
         SentenceSourceKind.book => null,
       };
       title = item.text ?? '';
@@ -2109,18 +2188,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               // Non-navigable rows still get an onTap so they are a gamepad focus
               // stop (otherwise hold-A / the item menu can never be reached).
               onTap: canNavigate
-                  ? () {
-                      switch (kind) {
-                        case SentenceSourceKind.video:
-                          _openVideoSentence(item);
-                        case SentenceSourceKind.book:
-                        case SentenceSourceKind.audiobook:
-                        case SentenceSourceKind.lyrics:
-                          // audiobook/lyrics 的 bookKey 共享 hoshi://book/ 身份，
-                          // reader 是正确目的地（内部处理有声书/歌词模式）。
-                          _openBook(item);
-                      }
-                    }
+                  ? () => _openOrigin(item, kind)
                   : () => _showItemDialog(item),
             ),
           ),

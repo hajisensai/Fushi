@@ -159,7 +159,8 @@ void main() {
     expect(history.single.expression, '走る');
     expect(history.single.noteId, 11);
     expect(history.single.bookKey, 'remote/emby/1');
-    expect(history.single.normCharOffset, 1000);
+    expect(history.single.positionMs, 1000);
+    expect(history.single.normCharOffset, isNull);
   });
 
   test('失败的卡下次写入会重试', () async {

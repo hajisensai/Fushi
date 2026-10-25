@@ -125,7 +125,6 @@ void main() {
     // 谓词门控（否则会在首页出现一个没有播放器就没意义/会崩的行）。
     const Set<String> hostOnlyIds = <String>{
       'video.player.quality_entry',
-      'video.player.skia_fallback',
       'video.player.speed',
       'video.playback.speed_step',
       'video.player.audio_track',

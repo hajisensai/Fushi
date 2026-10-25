@@ -44,6 +44,7 @@ RoundedPolygon homeNavRailShapeFor(HomeTab tab) => switch (tab) {
   HomeTab.books => MaterialShapes.cookie9Sided,
   HomeTab.manga => MaterialShapes.clover4Leaf,
   HomeTab.video => MaterialShapes.softBurst,
+  HomeTab.music => MaterialShapes.puffyDiamond,
   HomeTab.browse => MaterialShapes.sunny,
   HomeTab.dictionaries => MaterialShapes.gem,
   HomeTab.srs => MaterialShapes.pentagon,
@@ -109,6 +110,7 @@ AdaptiveNavPeek? homeNavPeekFor(
             _loadDownloads(appModel: appModel, openDownloads: openDownloads),
       );
     case HomeTab.home:
+    case HomeTab.music:
     case HomeTab.dictionaries:
     case HomeTab.web:
     case HomeTab.settings:

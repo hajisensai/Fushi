@@ -24,11 +24,17 @@ let package = Package(
         .binaryTarget(name: "libavutil",     path: "Frameworks/libavutil.xcframework"),
         .binaryTarget(name: "libswresample", path: "Frameworks/libswresample.xcframework"),
         .binaryTarget(name: "libswscale",    path: "Frameworks/libswscale.xcframework"),
+        // tool/dvd (FFmpegKitNext patch 0003): libavformat links these, and
+        // media_kit's Mpv.framework links the same libdvdnav for dvd:// menus.
+        .binaryTarget(name: "libdvdcss",     path: "Frameworks/libdvdcss.xcframework"),
+        .binaryTarget(name: "libdvdread",    path: "Frameworks/libdvdread.xcframework"),
+        .binaryTarget(name: "libdvdnav",     path: "Frameworks/libdvdnav.xcframework"),
         .target(
             name: "ffmpeg_kit_next_flutter",
             dependencies: [
                 "ffmpegkit", "libavcodec", "libavdevice", "libavfilter",
-                "libavformat", "libavutil", "libswresample", "libswscale"
+                "libavformat", "libavutil", "libswresample", "libswscale",
+                "libdvdcss", "libdvdread", "libdvdnav"
             ],
             cSettings: [
                 .headerSearchPath("include")

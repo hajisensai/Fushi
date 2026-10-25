@@ -14,6 +14,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Directory;
 
+import 'package:fushi/src/corpus/library_sentences_bridge.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/mine_failure_notice.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
@@ -117,6 +118,14 @@ bool maybeHandleOverlayDeferredBridge({
       return true;
     case 'srsOpenCard':
       unawaited(_handleSrsOpenCardBridge(message, resolveBridge));
+      return true;
+    // 「我库里的例句」（作品图谱 L4）：查本机语料库 / 在主窗口回到出处。开关关着时注入的
+    // __fushiLibrarySentencesEnabled=false 已让 JS 不发；这里照样秒回 null / false。
+    case 'librarySentences':
+      unawaited(_handleLibrarySentencesBridge(model, message, resolveBridge));
+      return true;
+    case 'librarySentenceOpen':
+      unawaited(_handleLibrarySentenceOpenBridge(message, resolveBridge));
       return true;
     // BUG-1064 —— app 外「卡已存在」操作面板的两根数据桥。面板本身画在 popup.js
     // 自己的 WebView 里（app 外没有 Flutter 层可以呈现对话框，见文件尾注），Dart
@@ -446,12 +455,18 @@ Future<Map<String, Object?>> _mineEntry(
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final String sentence = resolveMineSentence(fields, sentenceContext);
   final BaseAnkiRepository repo = model.miningAnkiRepository;
+  // galgame 会话在跑：卡片带游戏出处（复习时「回到出处」打开该游戏），书域不带。
+  final ({String gameId, String? title})? game =
+      overlayMinedSentenceGameOrigin();
   final MineOutcome outcome = await repo.mineEntry(
     rawPayloadJson: jsonEncode(fields),
     context: AnkiMiningContext(
       sentence: sentence,
       coverPath: coverPath,
       source: AnkiMiningSource.book,
+      documentTitle: game?.title,
+      sourceLink:
+          game == null ? null : CardSourceLink.tryGame(gameId: game.gameId),
     ),
   );
   // 与 in-app 入口（texthooker 页）同判据：describeMineOutcome 决定成败与记不记，
@@ -532,9 +547,14 @@ Future<void> _recordMinedStats(
     // P4 写侧收敛：全局汇总 + per-book 计数走 DB 复合入口（同事务；app 外查词
     // 无书 → bookKey/title 空，只进汇总桶）。制卡历史行与之共用同一时刻的 dateKey。
     await db.recordMiningEvent(sourceType: overlayStatSourceType(), at: now);
+    // 游戏域时记下「哪个游戏」（回到出处 = 打开该游戏的详情 / 文本钩子历史）。
+    final ({String gameId, String? title})? game =
+        overlayMinedSentenceGameOrigin();
     await db.addMinedSentence(
       source: overlayMinedSentenceSource(),
       dateKey: dateKey,
+      bookKey: game?.gameId,
+      documentTitle: game?.title,
       expression: fields['expression'] ?? '',
       reading: fields['reading'] ?? '',
       glossary: fields['glossary'] ?? '',
@@ -612,6 +632,46 @@ Future<void> _handleSrsTermStatusBridge(
   } catch (e, st) {
     ErrorLogService.instance.log('overlay.srsTermStatus', e, st);
     reply = null;
+  }
+  if (id != null) unawaited(resolveBridge(id, reply));
+}
+
+/// 「我库里的例句」（deferred）：回 popup.js 的分组例句回包（没有 / 关着回 null）。
+Future<void> _handleLibrarySentencesBridge(
+  AppModel? model,
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  Map<String, Object?>? reply;
+  try {
+    if (model != null) {
+      reply = await librarySentencesHandleBridge(
+        <dynamic>[_firstMapArg(message)],
+        model.moduleVisibility,
+      );
+    }
+  } catch (e, st) {
+    ErrorLogService.instance.log('overlay.librarySentences', e, st);
+    reply = null;
+  }
+  if (id != null) unawaited(resolveBridge(id, reply));
+}
+
+/// 点一条例句（deferred）：在主窗口回到出处，回是否打开。
+Future<void> _handleLibrarySentenceOpenBridge(
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  bool reply = false;
+  try {
+    reply = await librarySentenceOpenHandleBridge(
+      <dynamic>[_firstMapArg(message)],
+    );
+  } catch (e, st) {
+    ErrorLogService.instance.log('overlay.librarySentenceOpen', e, st);
+    reply = false;
   }
   if (id != null) unawaited(resolveBridge(id, reply));
 }

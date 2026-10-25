@@ -424,9 +424,13 @@ class FavoriteBatchMiningRunner {
     } catch (e, stack) {
       ErrorLogService.instance.log('FavoriteBatchMining.stats', e, stack);
     }
+    // 收藏的锚点沿用收藏句 wire 口径（视频 = cue 起点 / 时长毫秒复用在
+    // normCharOffset / normCharLength），制卡历史 v132 起各占一列：边界上拆开。
+    final bool timeAxis =
+        item.isVideo || item.sourceKind == SentenceSourceKind.music;
     try {
       await _db.addMinedSentence(
-        source: source,
+        source: minedSentenceSourceOf(item),
         dateKey: statTodayKey(),
         expression: fields['expression'] ?? item.expression,
         reading: fields['reading'] ?? item.reading,
@@ -435,8 +439,10 @@ class FavoriteBatchMiningRunner {
         documentTitle: documentTitle.isEmpty ? null : documentTitle,
         bookKey: bookKey,
         sectionIndex: item.sectionIndex,
-        normCharOffset: item.normCharOffset,
-        normCharLength: item.normCharLength,
+        normCharOffset: timeAxis ? null : item.normCharOffset,
+        normCharLength: timeAxis ? null : item.normCharLength,
+        positionMs: timeAxis ? item.normCharOffset : null,
+        durationMs: timeAxis ? item.normCharLength : null,
         noteId: noteId,
       );
     } catch (e, stack) {

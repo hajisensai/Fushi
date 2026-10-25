@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
-import 'dart:ui' show ImageFilter, lerpDouble;
+import 'dart:ui' show lerpDouble;
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
@@ -11,6 +10,8 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.da
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
+import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_backgrounds.dart';
+import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -34,17 +35,16 @@ class AppleLyricsPlayerDesign extends LyricsPlayerDesign {
   /// `fushiMotionDuration` 驱动，墨水屏 / 减弱动态下直接跳到终值）。
   final double mirrorProgress;
 
-  /// 测试钩子：背景每离屏渲染一张模糊快照就回调一次（参数是本次产出的图，
-  /// 归背景 State 所有，测试只读不释放）。
-  @visibleForTesting
-  static ValueChanged<ui.Image>? debugOnBlurredBackgroundRendered;
-
   @override
   Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding) {
     if (lyricsPlayerIsWide(size)) {
-      return _WideLayout(size, padding, mirror: mirrorProgress).lyricsRect;
+      return LyricsShellAppleWideLayout(
+        size,
+        padding,
+        mirror: mirrorProgress,
+      ).lyricsRect;
     }
-    return _NarrowLayout(size, padding).lyricsRect;
+    return LyricsShellAppleNarrowLayout(size, padding).lyricsRect;
   }
 
   @override
@@ -54,7 +54,7 @@ class AppleLyricsPlayerDesign extends LyricsPlayerDesign {
     double bleedTop = 0,
   }) {
     // 模糊封面各层按画布比例铺，与页面几何无关：整张画布照画即可。
-    return _AppleLyricsBackground(
+    return LyricsShellAppleBackground(
       cover: data.cover,
       accent: appleColorsOf(context).accent,
     );
@@ -76,13 +76,17 @@ class AppleLyricsPlayerDesign extends LyricsPlayerDesign {
           ? _WideChrome(
               data: data,
               callbacks: callbacks,
-              layout: _WideLayout(size, padding, mirror: mirrorProgress),
+              layout: LyricsShellAppleWideLayout(
+                size,
+                padding,
+                mirror: mirrorProgress,
+              ),
               padding: padding,
             )
           : _NarrowChrome(
               data: data,
               callbacks: callbacks,
-              layout: _NarrowLayout(size, padding),
+              layout: LyricsShellAppleNarrowLayout(size, padding),
               padding: padding,
             ),
     );
@@ -113,454 +117,6 @@ class AppleLyricsPlayerDesign extends LyricsPlayerDesign {
 // 几何：lyricsRect 与控件层必须出自同一份计算，否则歌词与面板会错位。
 // ---------------------------------------------------------------------------
 
-double _clampD(double value, double lo, double hi) =>
-    math.min(math.max(value, lo), hi);
-
-/// 宽屏双栏几何（Niratan `ReaderLyricsLayoutMetrics` + `playerPanel*` 系列）。
-class _WideLayout {
-  /// [mirror] = 左右互换进度：0 = 面板在左、歌词在右；1 = 歌词在左、面板在右；
-  /// 中间值按比例线性插值两栏的左边（换位动画），各自宽度始终不变。
-  factory _WideLayout(Size size, EdgeInsets padding, {double mirror = 0}) {
-    final double w = math.max(size.width, 1);
-    final double h = math.max(size.height, 1);
-    final double chromePad = _clampD(w * 0.038, 22, 34);
-    final double headerTop = _clampD(h * 0.032, 14, 26);
-    final double lyricsHPad = _clampD(w * 0.052, 22, 42);
-    final double contentMaxWidth = _clampD(w - lyricsHPad * 2, 1, 920);
-    final double left0 = padding.left + chromePad;
-    final double top0 = padding.top + headerTop;
-    final double avail = math.max(w - padding.horizontal - chromePad * 2, 1);
-    final double availH = math.max(h - padding.vertical - headerTop * 2, 1);
-    final double panelWidth = math.min(
-      math.max(avail * 0.32, 220),
-      math.min(430, avail * 0.44),
-    );
-    final double spacing = _clampD(avail * 0.06, 28, 96);
-    final double lyricsWidth = math.max(
-      math.min(contentMaxWidth, avail - panelWidth - spacing),
-      260,
-    );
-    // Niratan 把「面板 + 间距 + 歌词」整体在内容区水平居中：铺满时与左对齐
-    // 一致，超宽窗口两侧对称留白，而不是歌词贴左、右侧空一大片。
-    final double total = panelWidth + spacing + lyricsWidth;
-    final double startX = left0 + math.max(0, (avail - total) / 2);
-    final double panelSpacing = _clampD(availH * 0.018, 8, 20);
-    final double metadataHeight = _clampD(availH * 0.1, 50, 72);
-    final double reserved =
-        metadataHeight + _kScrubberHeight + 64 + 34 + panelSpacing * 4;
-    final double artworkSize = math.min(
-      panelWidth,
-      math.max(availH - reserved, 96),
-    );
-    return _WideLayout._(
-      chromePad: chromePad,
-      headerTop: headerTop,
-      panelLeft: startX + (lyricsWidth + spacing) * mirror,
-      panelWidth: panelWidth,
-      top: top0,
-      height: availH,
-      lyricsRect: Rect.fromLTWH(
-        startX + (panelWidth + spacing) * (1 - mirror),
-        top0,
-        lyricsWidth,
-        availH,
-      ),
-      panelSpacing: panelSpacing,
-      metadataHeight: metadataHeight,
-      artworkSize: artworkSize,
-      controlSpacing: _clampD(panelWidth * 0.08, 16, 36),
-    );
-  }
-
-  const _WideLayout._({
-    required this.chromePad,
-    required this.headerTop,
-    required this.panelLeft,
-    required this.panelWidth,
-    required this.top,
-    required this.height,
-    required this.lyricsRect,
-    required this.panelSpacing,
-    required this.metadataHeight,
-    required this.artworkSize,
-    required this.controlSpacing,
-  });
-
-  final double chromePad;
-  final double headerTop;
-  final double panelLeft;
-  final double panelWidth;
-  final double top;
-  final double height;
-  final Rect lyricsRect;
-  final double panelSpacing;
-  final double metadataHeight;
-  final double artworkSize;
-  final double controlSpacing;
-}
-
-/// Niratan `ReaderLyricsVisualSpec.scrubberHeight`：进度条 + 时间两行的总高。
-const double _kScrubberHeight = 34;
-
-/// 窄屏（手机竖屏 / 窄窗）底部玻璃控制条高度：进度条 34 + 间距 4 + 按钮行 52
-/// + 上下内边距 10×2。
-const double _kNarrowBarHeight = 110;
-
-/// 窄屏顶栏（书名 + 读数 + ✕）高度。
-const double _kNarrowHeaderHeight = 44;
-
-/// 窄屏单栏几何。
-class _NarrowLayout {
-  factory _NarrowLayout(Size size, EdgeInsets padding) {
-    final double w = math.max(size.width, 1);
-    final double h = math.max(size.height, 1);
-    final double headerTop = padding.top + 8;
-    // 有 home indicator 时贴着它上沿；没有安全区时离底 14（Apple Music 迷你条）。
-    final double bottomGap = padding.bottom > 0 ? padding.bottom : 14;
-    final double availW = math.max(w - padding.horizontal, 1);
-    final double barWidth = math.min(availW - 24, 560);
-    final double barLeft = padding.left + (availW - barWidth) / 2;
-    final double barTop = h - bottomGap - _kNarrowBarHeight;
-    final double lyricsTop = headerTop + _kNarrowHeaderHeight + 6;
-    final double lyricsBottom = barTop - 6;
-    return _NarrowLayout._(
-      headerTop: headerTop,
-      barRect: Rect.fromLTWH(barLeft, barTop, barWidth, _kNarrowBarHeight),
-      lyricsRect: Rect.fromLTWH(
-        padding.left + 8,
-        lyricsTop,
-        math.max(availW - 16, 1),
-        math.max(lyricsBottom - lyricsTop, 1),
-      ),
-    );
-  }
-
-  const _NarrowLayout._({
-    required this.headerTop,
-    required this.barRect,
-    required this.lyricsRect,
-  });
-
-  final double headerTop;
-  final Rect barRect;
-  final Rect lyricsRect;
-}
-
-// ---------------------------------------------------------------------------
-// 背景
-// ---------------------------------------------------------------------------
-
-/// 饱和度 × 不透明度合成一个颜色矩阵（Rec.709 亮度权重，与 Core Image 同口径）。
-/// 把 opacity 折进 alpha 行，省掉一层 Opacity 的 saveLayer。
-List<double> _saturationMatrix(double saturation, double opacity) {
-  const double lr = 0.2126;
-  const double lg = 0.7152;
-  const double lb = 0.0722;
-  final double inv = 1 - saturation;
-  return <double>[
-    lr * inv + saturation, lg * inv, lb * inv, 0, 0, //
-    lr * inv, lg * inv + saturation, lb * inv, 0, 0, //
-    lr * inv, lg * inv, lb * inv + saturation, 0, 0, //
-    0, 0, 0, opacity, 0, //
-  ];
-}
-
-/// Apple Music 式模糊封面底（Niratan `lyricsBackground`）：黑底 + 两层强模糊
-/// 高饱和封面 + 自上而下压暗渐变。
-///
-/// 两层模糊（sigma 36 / 48，整屏）**只在输入变化时离屏算一次**，之后作为静态图
-/// 合成：Impeller 没有栅格缓存，若用 `ImageFiltered` 层，覆盖层每出一帧（进度条、
-/// 换句动画、按钮动效）这两层都会整屏重新模糊。快照的输入 = 封面帧 × 画布尺寸 ×
-/// DPR；配色只影响无封面时的渐变与压暗层，那两层是廉价的普通绘制、照常走 widget。
-class _AppleLyricsBackground extends StatefulWidget {
-  const _AppleLyricsBackground({required this.cover, required this.accent});
-
-  final ImageProvider? cover;
-  final Color accent;
-
-  @override
-  State<_AppleLyricsBackground> createState() => _AppleLyricsBackgroundState();
-}
-
-/// 模糊快照的缓存键：封面帧序号 × 画布逻辑尺寸 × DPR。
-typedef _BlurKey = ({int coverRevision, Size size, double devicePixelRatio});
-
-class _AppleLyricsBackgroundState extends State<_AppleLyricsBackground> {
-  ImageStream? _stream;
-  late final ImageStreamListener _listener = ImageStreamListener(
-    _onCoverFrame,
-    onError: _onCoverError,
-  );
-
-  /// 当前封面帧（本 State 持有的克隆，换帧 / 卸载时释放）。封面换了但新图还没
-  /// 解码完时保留旧帧（等价于原 `Image(gaplessPlayback: true)`）。
-  ImageInfo? _coverFrame;
-  int _coverRevision = 0;
-
-  /// 离屏模糊快照（本 State 持有，键变化 / 卸载时释放）。
-  ui.Image? _blurred;
-  _BlurKey? _blurredKey;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _resolveCover();
-  }
-
-  @override
-  void didUpdateWidget(_AppleLyricsBackground oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.cover != oldWidget.cover) _resolveCover();
-  }
-
-  @override
-  void dispose() {
-    _stream?.removeListener(_listener);
-    _stream = null;
-    _coverFrame?.dispose();
-    _coverFrame = null;
-    _disposeBlurred();
-    super.dispose();
-  }
-
-  void _resolveCover() {
-    final ImageProvider? cover = widget.cover;
-    if (cover == null) {
-      _stream?.removeListener(_listener);
-      _stream = null;
-      _coverFrame?.dispose();
-      _coverFrame = null;
-      _disposeBlurred();
-      return;
-    }
-    // 封面糊到看不出细节，解码成 160px 宽足够，省内存也省模糊开销。
-    final ImageStream stream = ResizeImage.resizeIfNeeded(
-      160,
-      null,
-      cover,
-    ).resolve(createLocalImageConfiguration(context));
-    if (_stream?.key == stream.key) return;
-    _stream?.removeListener(_listener);
-    _stream = stream;
-    stream.addListener(_listener);
-  }
-
-  void _onCoverFrame(ImageInfo info, bool synchronousCall) {
-    if (_coverFrame?.isCloneOf(info) ?? false) {
-      info.dispose();
-      return;
-    }
-    setState(() {
-      _coverFrame?.dispose();
-      _coverFrame = info;
-      _coverRevision++;
-    });
-  }
-
-  void _onCoverError(Object error, StackTrace? stackTrace) {
-    // 与原 `Image(errorBuilder: SizedBox.shrink)` 一致：解码失败 = 只剩黑底。
-    setState(() {
-      _coverFrame?.dispose();
-      _coverFrame = null;
-      _coverRevision++;
-      _disposeBlurred();
-    });
-  }
-
-  void _disposeBlurred() {
-    _blurred?.dispose();
-    _blurred = null;
-    _blurredKey = null;
-  }
-
-  /// 取（必要时重算）当前输入对应的模糊快照；输入不变时直接复用。
-  ui.Image? _blurredFor(ImageInfo frame, Size size, double devicePixelRatio) {
-    if (size.isEmpty || !size.isFinite || devicePixelRatio <= 0) return null;
-    final _BlurKey key = (
-      coverRevision: _coverRevision,
-      size: size,
-      devicePixelRatio: devicePixelRatio,
-    );
-    if (_blurred != null && _blurredKey == key) return _blurred;
-    final ui.Image next = _renderBlurredCover(frame, size, devicePixelRatio);
-    _disposeBlurred();
-    _blurred = next;
-    _blurredKey = key;
-    AppleLyricsPlayerDesign.debugOnBlurredBackgroundRendered?.call(next);
-    return next;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final double devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
-    return RepaintBoundary(
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final Size size = constraints.biggest;
-          final ImageInfo? frame = widget.cover == null ? null : _coverFrame;
-          final ui.Image? blurred = frame == null
-              ? null
-              : _blurredFor(frame, size, devicePixelRatio);
-          return Stack(
-            fit: StackFit.expand,
-            clipBehavior: Clip.hardEdge,
-            children: <Widget>[
-              const ColoredBox(color: Colors.black),
-              if (widget.cover != null) ...<Widget>[
-                if (blurred != null)
-                  RawImage(
-                    key: const ValueKey<String>('lyrics_apple_blurred_cover'),
-                    image: blurred,
-                    width: size.width,
-                    height: size.height,
-                    fit: BoxFit.fill,
-                    filterQuality: FilterQuality.low,
-                  ),
-              ] else
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: <Color>[
-                        Color.lerp(
-                          const Color(0xFF1C1C1E),
-                          widget.accent,
-                          0.38,
-                        )!,
-                        const Color(0xFF111114),
-                        Colors.black,
-                      ],
-                    ),
-                  ),
-                ),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: <Color>[
-                      Colors.black.withValues(alpha: 0.2),
-                      Colors.black.withValues(alpha: 0.46),
-                      Colors.black.withValues(alpha: 0.74),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// 把黑底 + 两层模糊封面一次性画进一张物理像素尺寸的离屏图。
-///
-/// 几何、滤镜顺序与原先的 widget 树逐层对应：`ColorFiltered(ImageFiltered(
-/// Image(fit: cover)))`；画布先按 DPR 缩放，模糊 sigma 与原 `ImageFiltered`
-/// 一样在逻辑坐标里生效。
-ui.Image _renderBlurredCover(
-  ImageInfo frame,
-  Size size,
-  double devicePixelRatio,
-) {
-  final double w = size.width;
-  final double h = size.height;
-  final ui.PictureRecorder recorder = ui.PictureRecorder();
-  final Canvas canvas = Canvas(recorder)..scale(devicePixelRatio);
-  canvas.drawRect(Offset.zero & size, Paint()..color = Colors.black);
-  // 第一层铺满且溢出视口：clamp 让模糊边缘延伸原色，不会在视口边缘晕出一圈黑
-  // （窄屏溢出量只有 ~24px，decal 会露底）。
-  _paintBlurredCoverLayer(
-    canvas,
-    frame,
-    rect: Rect.fromLTWH(-w * 0.125, -h * 0.125, w * 1.25, h * 1.25),
-    rotated: false,
-    sigma: 36,
-    saturation: 1.6,
-    opacity: 0.6,
-    tileMode: TileMode.clamp,
-  );
-  // 第二层是偏移的旋转色斑：decal 让它的边缘自然淡出，无硬边。
-  _paintBlurredCoverLayer(
-    canvas,
-    frame,
-    rect: Rect.fromLTWH(
-      w * 0.05 + w * 0.24,
-      h * 0.05 + h * 0.2,
-      w * 0.9,
-      h * 0.9,
-    ),
-    rotated: true,
-    sigma: 48,
-    saturation: 1.5,
-    opacity: 0.38,
-    tileMode: TileMode.decal,
-  );
-  final ui.Picture picture = recorder.endRecording();
-  try {
-    return picture.toImageSync(
-      math.max(1, (w * devicePixelRatio).round()),
-      math.max(1, (h * devicePixelRatio).round()),
-    );
-  } finally {
-    picture.dispose();
-  }
-}
-
-void _paintBlurredCoverLayer(
-  Canvas canvas,
-  ImageInfo frame, {
-  required Rect rect,
-  required bool rotated,
-  required double sigma,
-  required double saturation,
-  required double opacity,
-  required TileMode tileMode,
-}) {
-  canvas.save();
-  if (rotated) {
-    // 原 `Transform.rotate(angle: pi)`：绕盒子中心转半圈。
-    final Offset c = rect.center;
-    canvas
-      ..translate(c.dx, c.dy)
-      ..rotate(math.pi)
-      ..translate(-c.dx, -c.dy);
-  }
-  canvas.saveLayer(
-    null,
-    Paint()
-      ..colorFilter = ColorFilter.matrix(
-        _saturationMatrix(saturation, opacity),
-      ),
-  );
-  // 模糊层的输入边界 = 子节点（铺满盒子的封面）的绘制边界，与 ImageFilterLayer
-  // 一致：clamp / decal 都以盒子边缘为界。
-  canvas.saveLayer(
-    rect,
-    Paint()
-      ..imageFilter = ImageFilter.blur(
-        sigmaX: sigma,
-        sigmaY: sigma,
-        tileMode: tileMode,
-      ),
-  );
-  paintImage(
-    canvas: canvas,
-    rect: rect,
-    image: frame.image,
-    scale: frame.scale,
-    debugImageLabel: frame.debugLabel,
-    fit: BoxFit.cover,
-    filterQuality: FilterQuality.medium,
-  );
-  canvas
-    ..restore()
-    ..restore()
-    ..restore();
-}
-
 // ---------------------------------------------------------------------------
 // 宽屏控件层
 // ---------------------------------------------------------------------------
@@ -575,7 +131,7 @@ class _WideChrome extends StatelessWidget {
 
   final LyricsPlayerData data;
   final LyricsPlayerCallbacks callbacks;
-  final _WideLayout layout;
+  final LyricsShellAppleWideLayout layout;
   final EdgeInsets padding;
 
   @override
@@ -641,7 +197,7 @@ class _PlayerPanel extends StatelessWidget {
 
   final LyricsPlayerData data;
   final LyricsPlayerCallbacks callbacks;
-  final _WideLayout layout;
+  final LyricsShellAppleWideLayout layout;
 
   @override
   Widget build(BuildContext context) {
@@ -686,7 +242,7 @@ class _PlayerPanel extends StatelessWidget {
         ),
         gap,
         SizedBox(
-          height: _kScrubberHeight,
+          height: kLyricsShellAppleScrubberHeight,
           child: _LyricsScrubber(clock: data.clock, onSeek: callbacks.onSeek),
         ),
         gap,
@@ -1030,7 +586,7 @@ class _NarrowChrome extends StatelessWidget {
 
   final LyricsPlayerData data;
   final LyricsPlayerCallbacks callbacks;
-  final _NarrowLayout layout;
+  final LyricsShellAppleNarrowLayout layout;
   final EdgeInsets padding;
 
   @override
@@ -1056,7 +612,7 @@ class _NarrowChrome extends StatelessWidget {
           left: padding.left + 18,
           right: padding.right + 10,
           top: layout.headerTop,
-          height: _kNarrowHeaderHeight,
+          height: kLyricsShellAppleNarrowHeaderHeight,
           child: Row(
             children: <Widget>[
               // 窄屏左上角返回键（iOS 没有系统返回键；此前只有右上角 ×，用户
@@ -1105,7 +661,7 @@ class _NarrowChrome extends StatelessWidget {
               child: Column(
                 children: <Widget>[
                   SizedBox(
-                    height: _kScrubberHeight,
+                    height: kLyricsShellAppleScrubberHeight,
                     child: _LyricsScrubber(
                       clock: data.clock,
                       onSeek: callbacks.onSeek,

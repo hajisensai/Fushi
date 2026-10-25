@@ -3,7 +3,9 @@
 # (tool/ffmpeg-unified; built by .github/workflows/ffmpeg-unified-mobile.yml).
 # The libav*/libsw* xcframeworks shipped here are the ONE FFmpeg of the iOS app:
 # the libmpv player (media_kit_libs_ios_video, Mpv.framework) links them through
-# @rpath at runtime instead of carrying its own copy.
+# @rpath at runtime instead of carrying its own copy. The libdvd{css,read,nav}
+# xcframeworks (tool/dvd, FFmpegKitNext patch 0003) are likewise the one DVD
+# stack: libavformat's dvdvideo demuxer and Mpv's dvd:// both link them.
 #
 # The build enables --enable-gpl (x264), so the effective license is GPLv3,
 # matching Fushi itself. BUG-1373: CocoaPods only accepts license files with
@@ -37,6 +39,9 @@ Pod::Spec.new do |s|
     'ffmpeg_kit_next_flutter/Frameworks/libavfilter.xcframework',
     'ffmpeg_kit_next_flutter/Frameworks/libavformat.xcframework',
     'ffmpeg_kit_next_flutter/Frameworks/libavutil.xcframework',
+    'ffmpeg_kit_next_flutter/Frameworks/libdvdcss.xcframework',
+    'ffmpeg_kit_next_flutter/Frameworks/libdvdread.xcframework',
+    'ffmpeg_kit_next_flutter/Frameworks/libdvdnav.xcframework',
     'ffmpeg_kit_next_flutter/Frameworks/libswresample.xcframework',
     'ffmpeg_kit_next_flutter/Frameworks/libswscale.xcframework',
   ]

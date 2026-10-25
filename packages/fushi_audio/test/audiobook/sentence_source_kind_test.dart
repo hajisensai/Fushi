@@ -47,6 +47,15 @@ void main() {
       expect(sentenceSourceKindOf('lyrics'), SentenceSourceKind.lyrics);
     });
 
+    test('L3 新增的 game / manga / music 落库值精确映射（与常量逐字节一致）', () {
+      expect(sentenceSourceKindOf('game'), SentenceSourceKind.game);
+      expect(sentenceSourceKindOf('manga'), SentenceSourceKind.manga);
+      expect(sentenceSourceKindOf('music'), SentenceSourceKind.music);
+      expect(SentenceSourceKind.game.dbValue, kFavoriteSentenceSourceGame);
+      expect(SentenceSourceKind.manga.dbValue, kFavoriteSentenceSourceManga);
+      expect(SentenceSourceKind.music.dbValue, kFavoriteSentenceSourceMusic);
+    });
+
     test('未知串/null/空串一律回退 book（向后兼容默认）', () {
       expect(sentenceSourceKindOf(null), SentenceSourceKind.book);
       expect(sentenceSourceKindOf(''), SentenceSourceKind.book);

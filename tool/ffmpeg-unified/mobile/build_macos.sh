@@ -20,8 +20,13 @@ OUT="$(cd "${OUT}" && pwd)"
 KIT="${WORK}/ffmpeg-kit-next"
 bash "${HERE}/prepare_kit.sh" "${KIT}"
 
+# DVD (tool/dvd): see build_ios.sh.
+DVD="${WORK}/dvd"
+bash "${HERE}/../../dvd/platforms/build_cross.sh" macos-arm64 "${DVD}" "${OUT}"
+bash "${HERE}/../../dvd/platforms/make_xcframeworks.sh" macos "${DVD}" "${WORK}/dvd-xcframeworks"
+
 cd "${KIT}"
-if ! FUSHI_FFMPEG_PROGRAMS=1 ./macos.sh "${KIT_COMMON_OPTIONS[@]}" "${KIT_MACOS_OPTIONS[@]}"; then
+if ! FUSHI_DVD_ROOT="${DVD}" FUSHI_FFMPEG_PROGRAMS=1 ./macos.sh "${KIT_COMMON_OPTIONS[@]}" "${KIT_MACOS_OPTIONS[@]}"; then
   tail -200 build.log || true
   exit 1
 fi
@@ -36,6 +41,8 @@ for xcf in "${bundle}"/lib*.xcframework; do
   [ -n "${slice}" ] || { echo "build_macos: ${xcf} has no macOS slice" >&2; exit 5; }
   cp -a "${slice}"/*.framework "${layout}/Frameworks/"
 done
+# libavformat loads @rpath/libdvd*.framework/libdvd* (kit patch 0003).
+cp -a "${DVD}/macos-arm64/frameworks"/libdvd*.framework "${layout}/Frameworks/"
 
 for prog in ffmpeg ffprobe; do
   src="$(find prebuilt -path "*/ffmpeg/bin/${prog}" -type f | head -1)"
@@ -44,7 +51,7 @@ for prog in ffmpeg ffprobe; do
   install_name_tool -add_rpath "@executable_path/../Frameworks" "${layout}/MacOS/${prog}"
   # Every FFmpeg dependency must be an @rpath framework reference, never a
   # build-machine path.
-  if otool -L "${layout}/MacOS/${prog}" | grep -E 'lib(av|sw)[a-z]+' | grep -v '@rpath/lib'; then
+  if otool -L "${layout}/MacOS/${prog}" | grep -E 'lib(av|sw|dvd)[a-z]+' | grep -v '@rpath/lib'; then
     echo "build_macos: ${prog} links FFmpeg outside @rpath" >&2; exit 6
   fi
   codesign --force --sign - "${layout}/MacOS/${prog}"
@@ -62,7 +69,7 @@ done
 
 # Prove the shipped layout is closed: run the programs from it.
 python3 "${HERE}/../verify_ffmpeg_capabilities.py" \
-  --ffmpeg "${layout}/MacOS/ffmpeg" --ffprobe "${layout}/MacOS/ffprobe"
+  --ffmpeg "${layout}/MacOS/ffmpeg" --ffprobe "${layout}/MacOS/ffprobe" --require-staged
 FFMPEG="${layout}/MacOS/ffmpeg" FFPROBE="${layout}/MacOS/ffprobe" \
   bash "${HERE}/../smoke-test.sh"
 # HTTPS with FFmpeg's default verification: a self-signed certificate (local
@@ -76,4 +83,5 @@ bash "${HERE}/../https_trust_smoke.sh" "${layout}/MacOS/ffmpeg" \
 
 tar -C "${layout}" -czf "${OUT}/ffmpeg-unified-macos.tar.gz" Frameworks MacOS
 (cd "${bundle}" && zip -qry "${OUT}/ffmpeg-kit-next-macos-xcframeworks.zip" ./lib*.xcframework)
+(cd "${WORK}/dvd-xcframeworks" && zip -qry "${OUT}/ffmpeg-kit-next-macos-xcframeworks.zip" ./libdvd*.xcframework)
 ls -la "${OUT}"

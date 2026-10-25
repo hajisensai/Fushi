@@ -550,6 +550,9 @@ class AppPaths {
     'hoshi_books',
     'video_covers',
     'game_covers',
+    // 音乐刮削下载的 Cover Art Archive 专辑封面（`<documents>/music_covers/<发行 MBID>.jpg`，
+    // music_albums.cover_path 指向它；数据根迁移按 DataRootMigrator._rebaseMusicAlbums 改写）。
+    'music_covers',
     'video_subtitles',
     'mpv_shaders',
     'mpv_scripts',
@@ -646,6 +649,10 @@ class AppPaths {
   /// 文件名是 `<GalgameEntry.id>.<ext>`）。
   static Future<Directory> gameCoversDirectory() =>
       documentsSubdirectory('game_covers');
+
+  /// 音乐刮削封面目录 `<documents>/music_covers`（文件名 = 发行 MBID）。
+  static Future<Directory> musicCoversDirectory() =>
+      documentsSubdirectory('music_covers');
 
   /// 视频外挂字幕副本目录 `<documents>/video_subtitles`。
   static Future<Directory> videoSubtitlesDirectory() =>

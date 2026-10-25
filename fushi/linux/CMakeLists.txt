@@ -186,6 +186,30 @@ endif()
 install(FILES "${FUSHI_RWKV_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
+# 音乐胖核心（**硬依赖**，GPL-3.0-only）：native/fushi_music/build_linux_so.sh 产出
+# prebuilt/linux-x64/libfushi_music.so 随包进 bundle/lib/（Dart 侧按裸名经 $ORIGIN/lib 定位）。
+set(FUSHI_MUSIC_SO
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_music/prebuilt/linux-x64/libfushi_music.so")
+if(NOT EXISTS "${FUSHI_MUSIC_SO}")
+  message(FATAL_ERROR
+    "fushi_music is a required native dependency, but ${FUSHI_MUSIC_SO} is missing. "
+    "Build it first: bash native/fushi_music/build_linux_so.sh (needs Rust/cargo).")
+endif()
+install(FILES "${FUSHI_MUSIC_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
+# 语料胖核心（**硬依赖**，GPL-3.0-only）：native/fushi_corpus/build_linux_so.sh 产出
+# prebuilt/linux-x64/libfushi_corpus.so 随包进 bundle/lib/（Dart 侧按裸名经 $ORIGIN/lib 定位）。
+set(FUSHI_CORPUS_SO
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_corpus/prebuilt/linux-x64/libfushi_corpus.so")
+if(NOT EXISTS "${FUSHI_CORPUS_SO}")
+  message(FATAL_ERROR
+    "fushi_corpus is a required native dependency, but ${FUSHI_CORPUS_SO} is missing. "
+    "Build it first: bash native/fushi_corpus/build_linux_so.sh (needs Rust/cargo).")
+endif()
+install(FILES "${FUSHI_CORPUS_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
 # 内置 libtorrent 引擎（copy-if-present）：native/fushi_torrent/build_linux_so.sh 产出
 # prebuilt/linux-x64/libfushi_torrent_ffi.so（vcpkg 静态链 libtorrent/boost/openssl +
 # -static-libstdc++，只剩 glibc 动态），与无头服务端随包的是同一份。存在则随包进

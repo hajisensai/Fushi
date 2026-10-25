@@ -19,6 +19,8 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
+import 'package:fushi/src/lookup/overlay_stat_source.dart'
+    show overlayMinedSentenceGameOrigin;
 import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/gal_hook_failure_text.dart';
@@ -717,6 +719,21 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 的 galgame 表面，来源恒定是游戏域，不需要判据。
   @override
   String get dictionarySourceType => kStatSourceGame;
+
+  /// 制卡历史记下「哪个游戏」：与 app 外浮窗同一判据（有归属的 galgame 会话）。
+  @override
+  ({String key, String? title})? get minedSentenceOrigin {
+    final ({String gameId, String? title})? game =
+        overlayMinedSentenceGameOrigin();
+    return game == null ? null : (key: game.gameId, title: game.title);
+  }
+
+  @override
+  CardSourceLink? get miningCardSourceLink {
+    final ({String gameId, String? title})? game =
+        overlayMinedSentenceGameOrigin();
+    return game == null ? null : CardSourceLink.tryGame(gameId: game.gameId);
+  }
 
   @override
   ModuleId? get popupDockModule => ModuleId.games;

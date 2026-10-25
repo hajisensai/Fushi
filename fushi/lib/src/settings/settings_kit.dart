@@ -229,6 +229,7 @@ SettingsIconTone settingsIconToneFor(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.reading => SettingsIconTone.blue,
   SettingsDestinationId.manga => SettingsIconTone.teal,
   SettingsDestinationId.video => SettingsIconTone.pink,
+  SettingsDestinationId.music => SettingsIconTone.purple,
   SettingsDestinationId.game => SettingsIconTone.green,
   SettingsDestinationId.mediaTracking => SettingsIconTone.orange,
   SettingsDestinationId.lookup => SettingsIconTone.orange,

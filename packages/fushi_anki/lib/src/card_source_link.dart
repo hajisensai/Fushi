@@ -5,7 +5,13 @@ import 'dart:math';
 /// manga UIDs are machine-local (`book_<time>` minted at import), so those
 /// links also carry the cross-device `bookKey` that sync/backup/interconnect
 /// align on; a card mined on one device still finds the synced copy.
-enum CardSourceKind { book, manga, video }
+///
+/// [game] (`galgames.id`, no position: hook lines live in the game's text-hook
+/// history) and [music] (`music_tracks.track_uid` + the lyric line's time
+/// range) were added for 「回到出处」(2026-10-24). Builds before that reject the
+/// unknown `kind`, so on those devices such a link renders as plain title text
+/// and is not clickable — the card itself is unaffected.
+enum CardSourceKind { book, manga, video, game, music }
 
 /// Versioned, portable source locator embedded in a mined Anki note.
 /// Character offsets use the reader's chapter anchor convention; all indices
@@ -28,6 +34,43 @@ class CardSourceLink {
     String? bookKey,
   }) : bookKey = _portableBookKey(bookKey) {
     _validate();
+  }
+
+  /// A galgame card's origin (`galgames.id`). Returns null when [gameId] is not
+  /// a portable library identity (empty / path-shaped legacy ids), so mining
+  /// never fails because the origin cannot be linked.
+  static CardSourceLink? tryGame({required String gameId, String? sourceId}) {
+    try {
+      return CardSourceLink(
+        kind: CardSourceKind.game,
+        uid: gameId,
+        sourceId: sourceId ?? newSourceId(),
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// A music-lyric card's origin: the track identity (`music_tracks.track_uid`)
+  /// and the lyric line's `[startMs, endMs]` on the track timeline. Null when the
+  /// identity / range is not representable (same contract as [tryGame]).
+  static CardSourceLink? tryMusic({
+    required String trackUid,
+    required int startMs,
+    required int endMs,
+    String? sourceId,
+  }) {
+    try {
+      return CardSourceLink(
+        kind: CardSourceKind.music,
+        uid: trackUid,
+        sourceId: sourceId ?? newSourceId(),
+        startMs: startMs,
+        endMs: endMs,
+      );
+    } on FormatException {
+      return null;
+    }
   }
 
   /// [bookKey] is only a fallback identity next to [uid]. A key that cannot be
@@ -193,8 +236,11 @@ class CardSourceLink {
       throw const FormatException('Invalid library UID');
     }
     // Content problems were already dropped by [_portableBookKey]; a book key on
-    // a video identity is a malformed link (video identity is the fingerprint).
-    if (bookKey != null && kind == CardSourceKind.video) {
+    // a video / game / music identity is a malformed link (only books and manga
+    // have the title-derived cross-device key).
+    if (bookKey != null &&
+        kind != CardSourceKind.book &&
+        kind != CardSourceKind.manga) {
       throw const FormatException('Invalid library book key');
     }
     for (final int? value in <int?>[
@@ -256,6 +302,31 @@ class CardSourceLink {
           throw const FormatException(
             'Video requires a file fingerprint, episode and time range',
           );
+        }
+      case CardSourceKind.game:
+        if (chapterIndex != null ||
+            charOffset != null ||
+            charLength != null ||
+            pageIndex != null ||
+            episodeIndex != null ||
+            startMs != null ||
+            audioFileIndex != null ||
+            chapterId != null ||
+            fingerprint != null) {
+          throw const FormatException(
+            'Game links carry only the game identity',
+          );
+        }
+      case CardSourceKind.music:
+        if (startMs == null ||
+            chapterIndex != null ||
+            charOffset != null ||
+            charLength != null ||
+            pageIndex != null ||
+            episodeIndex != null ||
+            audioFileIndex != null ||
+            chapterId != null) {
+          throw const FormatException('Music requires a track time range');
         }
     }
   }
@@ -321,6 +392,8 @@ class CardSourceLink {
       'book' => CardSourceKind.book,
       'manga' => CardSourceKind.manga,
       'video' => CardSourceKind.video,
+      'game' => CardSourceKind.game,
+      'music' => CardSourceKind.music,
       _ => throw const FormatException('Unknown source kind'),
     };
     int? number(String key) {

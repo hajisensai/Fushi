@@ -1,0 +1,154 @@
+libdvdcss: build without DVD drive ioctls when FUSHI_DVDCSS_NO_DRIVE is set
+
+iOS has no optical drives and no IOKit DVD media client, so upstream ioctl.c
+stops at "#error DVD ioctls are unavailable on this system". Fushi only opens
+image files there (ISO / VIDEO_TS), which libdvdcss reads without ioctls (CSS
+title keys are cracked from the image), so each ioctl reports failure instead.
+Only tool/dvd/platforms/build_cross.sh ios-* defines the macro; every other
+platform compiles the upstream code unchanged.
+
+--- a/src/ioctl.c
++++ b/src/ioctl.c
+@@ -230,6 +230,10 @@
+ 
+     *pi_copyright = p_buffer[ 4 ];
+ 
++#elif defined( FUSHI_DVDCSS_NO_DRIVE )
++    /* Fushi: no optical drive (iOS); image files never reach the ioctls. */
++    i_ret = -1;
++
+ #else
+ #   error "DVD ioctls are unavailable on this system"
+ 
+@@ -360,6 +364,10 @@
+ 
+     memcpy( p_key, p_buffer + 4, DVD_DISCKEY_SIZE );
+ 
++#elif defined( FUSHI_DVDCSS_NO_DRIVE )
++    /* Fushi: no optical drive (iOS); image files never reach the ioctls. */
++    i_ret = -1;
++
+ #else
+ #   error "DVD ioctls are unavailable on this system"
+ 
+@@ -492,6 +500,10 @@
+ 
+     memcpy( p_key, p_buffer + 5, DVD_KEY_SIZE );
+ 
++#elif defined( FUSHI_DVDCSS_NO_DRIVE )
++    /* Fushi: no optical drive (iOS); image files never reach the ioctls. */
++    i_ret = -1;
++
+ #else
+ #   error "DVD ioctls are unavailable on this system"
+ 
+@@ -591,6 +603,10 @@
+ 
+     *pi_agid = p_buffer[ 7 ] >> 6;
+ 
++#elif defined( FUSHI_DVDCSS_NO_DRIVE )
++    /* Fushi: no optical drive (iOS); image files never reach the ioctls. */
++    i_ret = -1;
++
+ #else
+ #   error "DVD ioctls are unavailable on this system"
+ 
+@@ -701,6 +717,10 @@
+ 
+     memcpy( p_challenge, p_buffer + 4, DVD_CHALLENGE_SIZE );
+ 
++#elif defined( FUSHI_DVDCSS_NO_DRIVE )
++    /* Fushi: no optical drive (iOS); image files never reach the ioctls. */
++    i_ret = -1;
++
+ #else
+ #   error "DVD ioctls are unavailable on this system"
+ 
+@@ -813,6 +833,10 @@
+ 
+     *pi_asf = p_buffer[ 7 ] & 1;
+ 
++#elif defined( FUSHI_DVDCSS_NO_DRIVE )
++    /* Fushi: no optical drive (iOS); image files never reach the ioctls. */
++    i_ret = -1;
++
+ #else
+ #   error "DVD ioctls are unavailable on this system"
+ 
+@@ -918,6 +942,10 @@
+ 
+     memcpy( p_key, p_buffer + 4, DVD_KEY_SIZE );
+ 
++#elif defined( FUSHI_DVDCSS_NO_DRIVE )
++    /* Fushi: no optical drive (iOS); image files never reach the ioctls. */
++    i_ret = -1;
++
+ #else
+ #   error "DVD ioctls are unavailable on this system"
+ 
+@@ -1003,6 +1031,10 @@
+     i_ret = DosDevIOCtl(i_fd, IOCTL_CDROMDISK, CDROMDISK_EXECMD,
+                         &sdc, sizeof(sdc), &ulParamLen,
+                         NULL, 0, &ulDataLen);
++#elif defined( FUSHI_DVDCSS_NO_DRIVE )
++    /* Fushi: no optical drive (iOS); image files never reach the ioctls. */
++    i_ret = -1;
++
+ #else
+ #   error "DVD ioctls are unavailable on this system"
+ 
+@@ -1122,6 +1154,10 @@
+     if (i_ret == 0)
+         memcpy(p_data_buffer, p_buffer, CPRM_MEDIA_ID_SIZE);
+ 
++#elif defined( FUSHI_DVDCSS_NO_DRIVE )
++    /* Fushi: no optical drive (iOS); image files never reach the ioctls. */
++    i_ret = -1;
++
+ #else
+ #   error "DVD ioctls are unavailable on this system"
+ 
+@@ -1271,6 +1307,10 @@
+         memcpy(p_mkb_pack, p_buffer + 4, CPRM_MKB_PACK_SIZE);
+     }
+ 
++#elif defined( FUSHI_DVDCSS_NO_DRIVE )
++    /* Fushi: no optical drive (iOS); image files never reach the ioctls. */
++    i_ret = -1;
++
+ #else
+ #   error "DVD ioctls are unavailable on this system"
+ 
+@@ -1383,6 +1423,10 @@
+                          &sdc, sizeof(sdc), &ulParamLen,
+                          p_buffer, sizeof(p_buffer), &ulDataLen );
+ 
++#elif defined( FUSHI_DVDCSS_NO_DRIVE )
++    /* Fushi: no optical drive (iOS); image files never reach the ioctls. */
++    i_ret = -1;
++
+ #else
+ #   error "DVD ioctls are unavailable on this system"
+ 
+@@ -1494,6 +1538,10 @@
+                          &sdc, sizeof(sdc), &ulParamLen,
+                          p_buffer, sizeof(p_buffer), &ulDataLen );
+ 
++#elif defined( FUSHI_DVDCSS_NO_DRIVE )
++    /* Fushi: no optical drive (iOS); image files never reach the ioctls. */
++    i_ret = -1;
++
+ #else
+ #   error "DVD ioctls are unavailable on this system"
+ 
+@@ -1623,6 +1671,10 @@
+     *p_mask = p_buffer[ 5 ];
+     *p_scheme = p_buffer[ 6 ];
+ 
++#elif defined( FUSHI_DVDCSS_NO_DRIVE )
++    /* Fushi: no optical drive (iOS); image files never reach the ioctls. */
++    i_ret = -1;
++
+ #else
+ #   error "DVD ioctls are unavailable on this system"
+ 

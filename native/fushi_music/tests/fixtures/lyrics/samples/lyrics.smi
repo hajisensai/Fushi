@@ -1,0 +1,11 @@
+<SAMI>
+<HEAD><STYLE TYPE="text/css"><!--
+.JPCC { Name: Japanese; lang: ja-JP; }
+.ENCC { Name: English; lang: en-US; }
+--></STYLE></HEAD>
+<BODY>
+<SYNC Start=1000><P Class=JPCC>沈むように<P Class=ENCC>As if sinking
+<SYNC Start=4000><P Class=JPCC>&nbsp;
+<SYNC Start=5000><P Class=JPCC>溶けてゆくように<br>二人だけの空
+</BODY>
+</SAMI>

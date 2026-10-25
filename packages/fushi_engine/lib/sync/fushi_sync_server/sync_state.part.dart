@@ -158,6 +158,46 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
     }
   }
 
+  /// 作品图谱清单跨设备 live 端点（互联作品图谱同步，`media_link_sync.dart`）。
+  ///
+  /// GET /api/library/media-links — host 全部作品连接（含建议与墓碑）；
+  /// POST /api/library/media-links — client 上报本端清单，host 按整行 LWW 并入，
+  /// 返回并入后的 host 清单。host 不实现 [MediaLinkSyncHost] → 404。鉴权与容错同
+  /// [_handleLibraryTags]。
+  Future<shelf.Response> _handleLibraryMediaLinks(
+    shelf.Request request,
+    String method,
+  ) async {
+    final Object? svc = _libraryService;
+    if (svc is! MediaLinkSyncHost) {
+      return shelf.Response.notFound('Media link sync off');
+    }
+    final MediaLinkSyncHost host = svc;
+    const Map<String, String> jsonHeaders = <String, String>{
+      'Content-Type': 'application/json; charset=utf-8'
+    };
+    switch (method) {
+      case 'GET':
+        final MediaLinkManifest manifest = await host.getMediaLinkManifest();
+        return shelf.Response.ok(manifest.canonicalJson(),
+            headers: jsonHeaders);
+      case 'POST':
+        final Map<String, dynamic>? json = await readJsonObjectBody(request);
+        if (json == null) return shelf.Response(400, body: 'Invalid JSON');
+        MediaLinkManifest incoming;
+        try {
+          incoming = MediaLinkManifest.fromJson(json);
+        } on FormatException catch (e) {
+          return shelf.Response(400, body: 'Invalid manifest: $e');
+        }
+        final MediaLinkManifest merged =
+            await host.mergeMediaLinkManifest(incoming);
+        return shelf.Response.ok(merged.canonicalJson(), headers: jsonHeaders);
+      default:
+        return shelf.Response(405);
+    }
+  }
+
   /// Host → paired child service configuration.
   ///
   /// This endpoint carries API keys and connection credentials, so its security

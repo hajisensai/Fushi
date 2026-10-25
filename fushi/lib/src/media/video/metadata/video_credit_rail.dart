@@ -3,14 +3,17 @@
 /// 不会再各自漂移（BUG-2612：单文件作品页此前只画文字 Chip，结构上没有照片）。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/async_file_existence_cache.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/media/people/person_detail_page.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/media/people/person_identity.dart';
 
 /// 一条人物关系在卡片上该显示的图：先人物照（本地落地 > 远端 URL），声优没有
 /// 人物照时退到角色图——AniDB / MAL 对角色图的覆盖率远高于声优照，卡片上本来
@@ -61,6 +64,9 @@ VideoCreditCardImage? _imageFor(
 /// 角色或职位），错峰进场。视觉是作品详情共享骨架的 [MediaDetailCastStrip]；这里
 /// 只负责把规范人物行换成纯值——照片来源与回退规则（[videoCreditCardImage]）、
 /// 坏图诊断日志（BUG-2496）与测试 key 前缀都留在本文件。
+///
+/// 点头像进人物聚合页（作品图谱 L5，[PersonDetailPage]）：同一位声优在其它动画、
+/// 游戏、音乐里的出场都汇在那一页。
 class VideoCreditRail extends StatefulWidget {
   const VideoCreditRail({
     required this.title,
@@ -106,17 +112,31 @@ class _VideoCreditRailState extends State<VideoCreditRail> {
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
       people: <MediaDetailPerson>[
         for (int index = 0; index < credits.length; index++)
-          _personOf(credits[index], index),
+          _personOf(context, credits[index], index),
       ],
     );
   }
 
-  MediaDetailPerson _personOf(VideoMetadataCreditSummary credit, int index) {
+  MediaDetailPerson _personOf(
+    BuildContext context,
+    VideoMetadataCreditSummary credit,
+    int index,
+  ) {
     final VideoCreditCardImage? image = videoCreditCardImage(
       credit,
       fileExists: _fileExists.lookup,
     );
     return MediaDetailPerson(
+      onTap: () => unawaited(
+        openPersonPage(
+          context,
+          seedNode: personRefNode(
+            PersonRefDomain.video,
+            credit.person.personKey,
+          ),
+          initialName: credit.person.name,
+        ),
+      ),
       key: ValueKey<String>('$keyPrefix-${credit.person.personKey}-$index'),
       name: credit.person.name,
       role:

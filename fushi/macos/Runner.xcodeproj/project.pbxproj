@@ -26,6 +26,7 @@
 		FA171A002B000003001C0F01 /* FushiSpeechTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */; };
 		FA171A002B000001001C0F11 /* GlobalLookupOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000001001C0F12 /* GlobalLookupOverlay.swift */; };
 		FA171A002B000001001C0F31 /* FushiDesktopFloatingBall.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000001001C0F32 /* FushiDesktopFloatingBall.swift */; };
+		FA171A002B000001001C0F51 /* FushiFloatingLyric.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000001001C0F52 /* FushiFloatingLyric.swift */; };
 		FA171A002B000001001C0F41 /* FushiDesktopScreenOcr.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000001001C0F42 /* FushiDesktopScreenOcr.swift */; };
 		FA171A002B000001001C0F21 /* SelectionCaptureMac.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000001001C0F22 /* SelectionCaptureMac.swift */; };
 		FA171A002B000004001C0F01 /* FushiClipboardImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000004001C0F02 /* FushiClipboardImage.swift */; };
@@ -78,6 +79,7 @@
 		FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiSpeechTranscriber.swift; path = ../../apple/FushiSpeechTranscriber.swift; sourceTree = "<group>"; };
 		FA171A002B000001001C0F12 /* GlobalLookupOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalLookupOverlay.swift; sourceTree = "<group>"; };
 		FA171A002B000001001C0F32 /* FushiDesktopFloatingBall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FushiDesktopFloatingBall.swift; sourceTree = "<group>"; };
+		FA171A002B000001001C0F52 /* FushiFloatingLyric.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FushiFloatingLyric.swift; sourceTree = "<group>"; };
 		FA171A002B000001001C0F42 /* FushiDesktopScreenOcr.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FushiDesktopScreenOcr.swift; sourceTree = "<group>"; };
 		FA171A002B000001001C0F22 /* SelectionCaptureMac.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionCaptureMac.swift; sourceTree = "<group>"; };
 		FA171A002B000004001C0F02 /* FushiClipboardImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiClipboardImage.swift; path = ../../apple/FushiClipboardImage.swift; sourceTree = "<group>"; };
@@ -207,6 +209,7 @@
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				FA171A002B000001001C0F12 /* GlobalLookupOverlay.swift */,
 				FA171A002B000001001C0F32 /* FushiDesktopFloatingBall.swift */,
+				FA171A002B000001001C0F52 /* FushiFloatingLyric.swift */,
 				FA171A002B000001001C0F42 /* FushiDesktopScreenOcr.swift */,
 				FA171A002B000001001C0F22 /* SelectionCaptureMac.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
@@ -282,6 +285,8 @@
 				B20100000000000000000006 /* Bundle fushi_compute dylib */,
 				B20100000000000000000007 /* Bundle fushi_web_core dylib */,
 				B20100000000000000000008 /* Bundle fushi_rwkv dylib */,
+				B20100000000000000000009 /* Bundle fushi_music dylib */,
+				B2010000000000000000000A /* Bundle fushi_corpus dylib */,
 				6BD9B3C08D0CCB6379299F3A /* [CP] Embed Pods Frameworks */,
 				9B7ACE8C08531AD7CBBD7799 /* [CP] Copy Pods Resources */,
 			);
@@ -642,6 +647,44 @@
 			shellPath = /bin/bash;
 			shellScript = "/bin/bash \"$PROJECT_DIR/bundle_fushi_rwkv.sh\"\n";
 		};
+		B20100000000000000000009 /* Bundle fushi_music dylib */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle fushi_music dylib";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$PROJECT_DIR/bundle_fushi_music.sh\"\n";
+		};
+		B2010000000000000000000A /* Bundle fushi_corpus dylib */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle fushi_corpus dylib";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$PROJECT_DIR/bundle_fushi_corpus.sh\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -664,6 +707,7 @@
 				FA171A002B000003001C0F01 /* FushiSpeechTranscriber.swift in Sources */,
 				FA171A002B000001001C0F11 /* GlobalLookupOverlay.swift in Sources */,
 				FA171A002B000001001C0F31 /* FushiDesktopFloatingBall.swift in Sources */,
+				FA171A002B000001001C0F51 /* FushiFloatingLyric.swift in Sources */,
 				FA171A002B000001001C0F41 /* FushiDesktopScreenOcr.swift in Sources */,
 				FA171A002B000001001C0F21 /* SelectionCaptureMac.swift in Sources */,
 				FA171A002B000004001C0F01 /* FushiClipboardImage.swift in Sources */,

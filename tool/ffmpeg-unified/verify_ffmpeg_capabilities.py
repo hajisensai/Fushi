@@ -4,10 +4,15 @@
 Runs the binaries (so it validates what actually links and loads, not what a
 configure string claims) and fails on the first missing component class:
 
-    verify_ffmpeg_capabilities.py --ffmpeg PATH [--ffprobe PATH]
+    verify_ffmpeg_capabilities.py --ffmpeg PATH [--ffprobe PATH] [--require-staged]
 
 Also asserts the version line matches recipe.env and that the TLS protocol
 exposes the Fushi tls_pin_sha256 option (patch 0001).
+
+--require-staged also requires the "staged" section of capabilities.json
+(components whose rollout is still waiting for every platform's artifact to be
+re-vendored, e.g. the DVD dvdvideo demuxer): new builds pass it, checks of the
+already vendored artifacts do not.
 """
 from __future__ import annotations
 
@@ -68,6 +73,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ffmpeg", required=True)
     ap.add_argument("--ffprobe")
+    ap.add_argument("--require-staged", action="store_true",
+                    help="also require capabilities.json's staged section")
     args = ap.parse_args()
 
     caps = json.loads((HERE / "capabilities.json").read_text(encoding="utf-8"))
@@ -84,6 +91,20 @@ def main() -> int:
         missing = [n for n in caps[key] if n not in have]
         if missing:
             failures.append(f"{key}: missing {missing}")
+
+    if args.require_staged:
+        staged = caps["staged"]
+        for key in _LISTS:
+            if key not in staged:
+                continue
+            have = _names(_run([ffmpeg, "-hide_banner", _LISTS[key]]), key)
+            missing = [n for n in staged[key] if n not in have]
+            if missing:
+                failures.append(f"staged {key}: missing {missing}")
+        buildconf = _run([ffmpeg, "-hide_banner", "-buildconf"])
+        missing = [flag for flag in staged.get("configure", []) if flag not in buildconf]
+        if missing:
+            failures.append(f"staged configure flags missing: {missing}")
 
     protocols = _run([ffmpeg, "-hide_banner", "-protocols"])
     proto_names = {l.strip() for l in protocols.splitlines()}
@@ -108,7 +129,9 @@ def main() -> int:
         return 1
     print(f"unified FFmpeg capability check OK ({want}): "
           + ", ".join(f"{k}={len(caps[k])}" for k in _LISTS)
-          + f", protocols={len(caps['protocols'])}")
+          + f", protocols={len(caps['protocols'])}"
+          + (", staged=" + ",".join(n for k in _LISTS for n in caps["staged"].get(k, []))
+             if args.require_staged else ""))
     return 0
 
 

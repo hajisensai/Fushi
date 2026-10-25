@@ -1,5 +1,6 @@
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart' show DiscFormat;
 
 /// 视频首页（hayase 式改版，TODO-2486）的布局与筛选纯函数。
 ///
@@ -352,6 +353,55 @@ int? continueWatchingSeriesIndex(List<VideoSeriesPlaybackState> members) {
   if (current == null) return null;
   if (!members[current].progress.isFinished) return current;
   return current + 1 < members.length ? current + 1 : null;
+}
+
+/// 「规格」筛选的档位（多选，交接文档 2026-10-24 第 9 项）：前四档是**载体**
+/// （BD 原盘 / UHD BD / DVD / 普通文件，互斥），后两档是**画质**（4K / HDR）。
+enum VideoSpecFilter { bluray, uhdBluray, dvd, plainFile, uhd4k, hdr }
+
+/// 载体档位集合（同组内「或」）。
+const Set<VideoSpecFilter> kVideoSpecCarrierFilters = <VideoSpecFilter>{
+  VideoSpecFilter.bluray,
+  VideoSpecFilter.uhdBluray,
+  VideoSpecFilter.dvd,
+  VideoSpecFilter.plainFile,
+};
+
+/// 条目级规格判定（本地即筛）。
+///
+/// 语义按分面筛选：**同组内「或」、两组之间「与」**——勾「BD + DVD」= 两种盘都要；
+/// 再勾「HDR」= 其中带 HDR 的。一组都没勾 = 这组不设限。
+///
+/// - [discFormat]：已确证的原盘规格；普通文件为 null。蓝光还没读过 `index.bdmv`
+///   时调用方也传 null 但 [isDiscMember] 为真——此时既不算 BD 也不算 UHD（分不清
+///   就不猜），也不算普通文件，库页会立刻补解析再重建。
+/// - [is4k] / [isHdr]：来自规格服务；没探过的文件两者都是 false。
+bool matchesVideoSpecFilter({
+  required Set<VideoSpecFilter> selected,
+  required DiscFormat? discFormat,
+  required bool isDiscMember,
+  required bool is4k,
+  required bool isHdr,
+}) {
+  if (selected.isEmpty) return true;
+  final Set<VideoSpecFilter> carriers = selected.intersection(
+    kVideoSpecCarrierFilters,
+  );
+  if (carriers.isNotEmpty) {
+    final VideoSpecFilter? carrier = switch (discFormat) {
+      DiscFormat.bluray => VideoSpecFilter.bluray,
+      DiscFormat.uhdBluray => VideoSpecFilter.uhdBluray,
+      DiscFormat.dvd => VideoSpecFilter.dvd,
+      null => isDiscMember ? null : VideoSpecFilter.plainFile,
+    };
+    if (carrier == null || !carriers.contains(carrier)) return false;
+  }
+  final bool wants4k = selected.contains(VideoSpecFilter.uhd4k);
+  final bool wantsHdr = selected.contains(VideoSpecFilter.hdr);
+  if (wants4k || wantsHdr) {
+    if (!((wants4k && is4k) || (wantsHdr && isHdr))) return false;
+  }
+  return true;
 }
 
 /// 条目级看完状态判定（本地即筛）：

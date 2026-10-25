@@ -28,6 +28,9 @@ const String kActivityMediaVideo = 'video';
 /// media_type：游戏（galgame 游玩会话与 hook 文本活动）。
 const String kActivityMediaGame = 'game';
 
+/// media_type：音乐（mediaKey=music_tracks.track_uid；v130 起）。
+const String kActivityMediaMusic = 'music';
+
 /// 活动事件 media_type 的**内存态**枚举（命名统一 Phase 3.4，模式照
 /// `SentenceSourceKind` / `MediaKind`）。落库仍存上面的 `kActivityMedia*`
 /// 原字符串（字节不变），本枚举供读取侧显式解析 / 穷尽 switch。
@@ -43,7 +46,10 @@ enum ActivityMediaKind {
   video(kActivityMediaVideo),
 
   /// 游戏（mediaKey=galgames.id）。
-  game(kActivityMediaGame);
+  game(kActivityMediaGame),
+
+  /// 音乐（mediaKey=music_tracks.track_uid）。
+  music(kActivityMediaMusic);
 
   const ActivityMediaKind(this.dbValue);
 
@@ -51,7 +57,7 @@ enum ActivityMediaKind {
   /// 持久化场景只用本字段，绝不用 `.name`。
   final String dbValue;
 
-  /// 严格解析：精确匹配三个落库值之一，未知 / null → null，绝不抛。
+  /// 严格解析：精确匹配任一落库值，未知 / null → null，绝不抛。
   static ActivityMediaKind? tryParse(String? raw) {
     for (final ActivityMediaKind kind in ActivityMediaKind.values) {
       if (kind.dbValue == raw) return kind;

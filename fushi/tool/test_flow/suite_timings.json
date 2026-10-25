@@ -4092,7 +4092,6 @@
     "test/utils/misc/platform_updater_test.dart": 400,
     "test/utils/misc/popup_dict_css_atrule_scope_test.dart": 100,
     "test/utils/misc/popup_dict_css_memo_test.dart": 200,
-    "test/utils/misc/render_backend_service_test.dart": 100,
     "test/utils/misc/responsive_breakpoint_real_width_test.dart": 100,
     "test/utils/misc/resumable_downloader_test.dart": 200,
     "test/utils/misc/safe_file_name_test.dart": 100,

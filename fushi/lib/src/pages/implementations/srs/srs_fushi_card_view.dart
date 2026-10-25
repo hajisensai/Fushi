@@ -24,7 +24,10 @@ import 'package:fushi_anki/fushi_anki.dart' show CardSourceLink;
 import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardBlock;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/anki/card_source_origin.dart'
+    show CardSourceLocatorText, cardSourceKindIcon;
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
+import 'package:fushi/src/models/app_model.dart' show appProvider;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
@@ -948,15 +951,31 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           'SrsFushiCardView.openSource',
           () => openCardSource(ref: ref, link: link),
         ),
+        // 出处 = 种类图标 + 标题（链接锚文本：书名 / 番名 / 歌名 / 游戏名）+ 定位
+        // （第几集 · 时间 / 第几页，[CardSourceLocatorText]）。
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            FushiIcon(
+              cardSourceKindIcon(link.kind),
+              size: 14,
+              color: s.scheme.primary,
+            ),
+            const SizedBox(width: 4),
             Flexible(
               child: Text(
                 text,
                 style: s
                     .text(s.tokens.caption, color: s.scheme.primary, ui: true)
                     .copyWith(decoration: TextDecoration.underline),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: CardSourceLocatorText(
+                database: ref.read(appProvider).database,
+                link: link,
+                style: s.text(s.tokens.caption, color: s.muted, ui: true),
               ),
             ),
             const SizedBox(width: 4),
