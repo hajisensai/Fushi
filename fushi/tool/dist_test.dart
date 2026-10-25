@@ -184,6 +184,11 @@ Future<void> main(List<String> args) async {
   await Future.wait(<Future<void>>[
     for (final DistWorker w in workers) scheduler.drive(w),
   ]);
+  // Every red suite once more on another machine, for the report only.
+  await scheduler.rerunFailures();
+  await Future.wait(<Future<void>>[
+    for (final DistWorker w in workers) w.finish(runId),
+  ]);
   await sigint.cancel();
   wall.stop();
 
@@ -195,12 +200,21 @@ Future<void> main(List<String> args) async {
     ],
   );
   _writeTimings(out, scheduler.results, weights.keys.toSet());
-  final String summary = renderDistSummary(
-    verdict: verdict,
-    estimatedMsByBatch: scheduler.weightByBatch,
-    wall: wall.elapsed,
-    snapshot: snapshot.commit,
-  );
+  final String summary =
+      renderDistSummary(
+        verdict: verdict,
+        estimatedMsByBatch: scheduler.weightByBatch,
+        wall: wall.elapsed,
+        snapshot: snapshot.commit,
+      ) +
+      renderDistFollowUp(
+        reruns: scheduler.reruns,
+        notRerun: scheduler.notRerun,
+        skips: <DistPlatformSkip>[
+          for (final DistBatchResult r in scheduler.results)
+            ...platformSkipsOf(r),
+        ],
+      );
   File('${out.path}/summary.md').writeAsStringSync(summary);
   stdout.writeln(summary);
   for (final DistBatchResult r in verdict.failedBatches) {
@@ -250,10 +264,26 @@ class _Scheduler {
   final List<DistBatchResult> results = <DistBatchResult>[];
   final Map<int, int> weightByBatch = <int, int>{};
 
+  /// Classification re-runs of red suites ([rerunFailures]).
+  final List<DistRerun> reruns = <DistRerun>[];
+  final List<DistNotRerun> notRerun = <DistNotRerun>[];
+
   final Map<DistWorker, DistSpeed> _speeds;
 
   /// Workers that are ready and not dropped: the ones sharing the queue.
   final Set<DistWorker> _live = <DistWorker>{};
+
+  /// Workers that prepared and were never dropped: still usable after the
+  /// queue ran dry (for [rerunFailures]).
+  final List<DistWorker> _usable = <DistWorker>[];
+
+  /// The units of every batch that ran to the end, by batch id.
+  final Map<int, List<DistUnit>> _unitsByBatch = <int, List<DistUnit>>{};
+
+  /// A worker that is busy (owner's memory limit) is asked again after this
+  /// long, at most [kBusyRetries] times in a row.
+  static const Duration kBusyWait = Duration(seconds: 30);
+  static const int kBusyRetries = 20;
 
   int _inFlight = 0;
   Completer<void> _changed = Completer<void>();
@@ -293,6 +323,8 @@ class _Scheduler {
     final DistSpeed speed = _speeds[worker]!;
 
     int infraStreak = 0;
+    int busyStreak = 0;
+    bool dropped = false;
     while (true) {
       final DistBatch? batch = queue.take(
         eligible: worker.eligible,
@@ -334,10 +366,29 @@ class _Scheduler {
       }
       sw.stop();
       await errLog.close();
+      _inFlight--;
+      final String? busy = run.busy;
+      if (busy != null) {
+        // Turned down before anything ran (worker_shim.sh): the batch goes
+        // back whole, and it is neither a failure nor an infrastructure one.
+        queue.giveBack(batch);
+        weightByBatch.remove(batch.id);
+        _notify();
+        if (run.paused || ++busyStreak > kBusyRetries) {
+          stdout.writeln('[${worker.name}] DROPPED: $busy');
+          dropped = true;
+          break;
+        }
+        stdout.writeln(
+          '[${worker.name}] $busy; asking again in ${kBusyWait.inSeconds}s',
+        );
+        await Future<void>.delayed(kBusyWait);
+        continue;
+      }
+      busyStreak = 0;
       File(
         '$base.jsonl',
       ).writeAsStringSync(run.lines.isEmpty ? '' : '${run.lines.join('\n')}\n');
-      _inFlight--;
 
       if (run.infraError != null && batch.attempts == 0) {
         // Back into the queue for whichever worker asks next. Test failures
@@ -356,6 +407,7 @@ class _Scheduler {
             '[${worker.name}] DROPPED after two infrastructure '
             'failures in a row',
           );
+          dropped = true;
           break;
         }
         continue;
@@ -376,6 +428,7 @@ class _Scheduler {
         infraError: run.infraError,
       );
       results.add(result);
+      _unitsByBatch[batch.id] = batch.units;
       final String? failure = result.failure;
       stdout.writeln(
         '[${worker.name}] batch ${batch.id} (${batch.files.length} suites: '
@@ -390,12 +443,153 @@ class _Scheduler {
           '[${worker.name}] DROPPED after two infrastructure '
           'failures in a row',
         );
+        dropped = true;
         break;
       }
     }
     _live.remove(worker);
-    await worker.finish(runId);
+    if (dropped) {
+      await worker.finish(runId);
+    } else {
+      // Kept prepared (checkout lock / heavy lease) for [rerunFailures];
+      // main() finishes every worker afterwards.
+      _usable.add(worker);
+    }
     _notify();
+  }
+
+  /// Re-runs every red suite once, alone, on a worker of another machine
+  /// that may run it (§4 of the spec): red there too is a real red, green
+  /// there leaves a machine-local suspect. For the report only; the verdict
+  /// comes from the first run. Each worker runs its re-runs one at a time.
+  Future<void> rerunFailures() async {
+    final List<({DistUnit unit, String redOn, String redMachine})> red =
+        <({DistUnit unit, String redOn, String redMachine})>[];
+    final Map<String, String> machineOf = <String, String>{
+      for (final DistWorker w in _speeds.keys) w.name: w.machine,
+    };
+    for (final DistBatchResult r in results) {
+      final List<DistUnit> units = _unitsByBatch[r.batchId] ?? <DistUnit>[];
+      for (final String path in failedSuitesOf(r)) {
+        for (final DistUnit u in units) {
+          if (u.path == path) {
+            red.add((
+              unit: u,
+              redOn: r.worker,
+              redMachine: machineOf[r.worker]!,
+            ));
+          }
+        }
+      }
+    }
+    if (red.isEmpty) return;
+    if (red.length > kDistMaxReruns) {
+      for (final ({DistUnit unit, String redOn, String redMachine}) r in red) {
+        notRerun.add((
+          path: r.unit.path,
+          redOn: r.redOn,
+          why: '${red.length} red suites (re-runs only up to $kDistMaxReruns)',
+        ));
+      }
+      return;
+    }
+    // Faster machines first.
+    final List<DistWorker> order = List<DistWorker>.of(_usable)
+      ..sort(
+        (DistWorker a, DistWorker b) =>
+            _speeds[a]!.factor.compareTo(_speeds[b]!.factor),
+      );
+    final Map<DistWorker, List<({DistUnit unit, String redOn})>> plan =
+        <DistWorker, List<({DistUnit unit, String redOn})>>{};
+    for (final ({DistUnit unit, String redOn, String redMachine}) r in red) {
+      final DistWorker? target = pickRerunTarget<DistWorker>(
+        r.unit,
+        redMachine: r.redMachine,
+        order: order,
+        machineOf: (DistWorker w) => w.machine,
+        eligible: (DistWorker w, DistUnit u) => w.eligible(u),
+      );
+      if (target == null) {
+        notRerun.add((
+          path: r.unit.path,
+          redOn: r.redOn,
+          why: 'no other machine may run it',
+        ));
+        continue;
+      }
+      plan.putIfAbsent(target, () => <({DistUnit unit, String redOn})>[]).add((
+        unit: r.unit,
+        redOn: r.redOn,
+      ));
+    }
+    stdout.writeln(
+      're-running ${red.length - notRerun.length} red suite(s) on another '
+      'machine for classification',
+    );
+    int nextId = 1000000;
+    await Future.wait(<Future<void>>[
+      for (final MapEntry<DistWorker, List<({DistUnit unit, String redOn})>> e
+          in plan.entries)
+        () async {
+          for (final ({DistUnit unit, String redOn}) r in e.value) {
+            final DistBatch batch = DistBatch(
+              id: nextId++,
+              units: <DistUnit>[r.unit],
+            );
+            final String base = '${out.path}/rerun-${batch.id}.${e.key.name}';
+            final IOSink errLog = File('$base.stderr.log').openWrite();
+            final Stopwatch sw = Stopwatch()..start();
+            DistBatchRun run;
+            try {
+              run = await e.key.run(
+                batch,
+                flutterArgs: flutterArgs,
+                stderrLog: errLog,
+                timeout:
+                    Duration(
+                      milliseconds:
+                          (batch.weightMs * _speeds[e.key]!.factor * 3).round(),
+                    ) +
+                    const Duration(minutes: 10),
+              );
+            } on Object catch (err) {
+              run = DistBatchRun(
+                exitCode: -1,
+                lines: const <String>[],
+                infraError: 'could not start: $err',
+              );
+            }
+            sw.stop();
+            await errLog.close();
+            File('$base.jsonl').writeAsStringSync(
+              run.lines.isEmpty ? '' : '${run.lines.join('\n')}\n',
+            );
+            final DistRerunOutcome outcome = classifyRerun(
+              DistBatchResult(
+                batchId: batch.id,
+                worker: e.key.name,
+                files: batch.files,
+                exitCode: run.exitCode,
+                lines: run.lines,
+                elapsed: sw.elapsed,
+                infraError: run.infraError ?? run.busy,
+              ),
+            );
+            reruns.add(
+              DistRerun(
+                path: r.unit.path,
+                redOn: r.redOn,
+                rerunOn: e.key.name,
+                outcome: outcome,
+              ),
+            );
+            stdout.writeln(
+              '[${e.key.name}] re-run of ${r.unit.path} (red on ${r.redOn}): '
+              '${outcome.name}',
+            );
+          }
+        }(),
+    ]);
   }
 }
 

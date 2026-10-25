@@ -152,6 +152,92 @@ void main() {
     );
   });
 
+  group('ssh-shim workers', () {
+    test('parse, and address their checkouts by slot', () {
+      final List<DistWorkerConfig> configs = readDistWorkers(
+        '{"workers": [{"name": "fw", "kind": "ssh-shim", "os": "windows", '
+        '"host": "fushitest@fw.ts.net", "identity": "k", "slots": 2}]}',
+      );
+      final List<DistWorker> workers = createDistWorkers(
+        configs.single,
+        repoRoot: '.',
+      );
+      expect(workers.map((DistWorker w) => w.config.slotIndex), <int>[1, 2]);
+      expect(workers.map((DistWorker w) => w.machine).toSet(), <String>{
+        'fushitest@fw.ts.net',
+      });
+      expect(shimCheckoutName(1), 'work');
+      expect(shimCheckoutName(2), 'work-2');
+    });
+
+    test('paths, PATH and env are the owner\'s, not the config\'s', () {
+      for (final String extra in <String>[
+        '"workdir": "w"',
+        '"seedRepo": "s"',
+        '"path": ["/x"]',
+        '"prepareEnv": {"A": "b"}',
+      ]) {
+        expect(
+          () => readDistWorkers(
+            '{"workers": [{"name": "fw", "kind": "ssh-shim", "os": "macos", '
+            '"host": "u@h", $extra}]}',
+          ),
+          throwsA(isA<DistConfigError>()),
+          reason: extra,
+        );
+      }
+    });
+
+    test('a Windows machine is only reachable through the shim', () {
+      expect(
+        () => readDistWorkers(
+          '{"workers": [{"name": "w", "kind": "ssh-trusted", "os": "windows", '
+          '"host": "u@h"}]}',
+        ),
+        throwsA(isA<DistConfigError>()),
+      );
+    });
+
+    test('requests are plain words; anything else fails here', () {
+      expect(
+        shimRequest('run', <String>['2', '0', '--exclude-tags', 'golden']),
+        'run 2 0 --exclude-tags golden',
+      );
+      expect(
+        shimRequest('run', <String>['1', '4', '--tags=a,b']),
+        'run 1 4 --tags=a,b',
+      );
+      for (final String bad in <String>[
+        r'--name=$(id)',
+        '--x;y',
+        "--plain-name='a b'",
+        '--file-reporter=json:/tmp/x',
+        '-x',
+        'a b',
+      ]) {
+        expect(
+          () => shimRequest('run', <String>['1', '0', bad]),
+          throwsA(isA<DistWorkerError>()),
+          reason: bad,
+        );
+      }
+      expect(
+        () => shimRequest('lock', <String>['1', 'r;rm']),
+        throwsA(isA<DistWorkerError>()),
+      );
+    });
+  });
+
+  test('FUSHI_DIST_SSH carries the snapshot push too', () {
+    expect(distGitSshProgram(<String, String>{}), 'ssh');
+    expect(
+      distGitSshProgram(<String, String>{
+        'FUSHI_DIST_SSH': r'C:\tools\fake ssh.sh',
+      }),
+      "'C:/tools/fake ssh.sh'",
+    );
+  });
+
   test('shellQuote survives single quotes', () {
     expect(shellQuote("it's"), r"'it'\''s'");
     expect(shellQuote(r'$HOME'), r"'$HOME'");

@@ -1,6 +1,53 @@
 # 单元测试跨机分流（dist_test）设计
 
-日期：2026-10-24　状态：第一期（本机 + 自己的 Mac）已实现；第二、三期未做
+日期：2026-10-24　状态：第一期（本机 + 自己的 Mac）、第二期（朋友机器：shim / 暂停 / 资源上限 / 种子仓）、第三期中的「红 suite 跨机复跑分型」与「平台原因跳过报告」已实现；集成测试分流未做（单独设计）。朋友真机与 Tailscale 共享尚未接入，见「第二期实现」末尾的验证范围。
+
+## 第二期实现：朋友机器（`ssh-shim`）
+
+### 形态
+
+- worker 种类 `ssh-shim`：朋友机器上这把 key 在 `authorized_keys` 里钉死成 `restrict,command=` 只能进 `~/.fushi-worker/shim`（即 `fushi/tool/dist_test/worker_shim.sh` 的副本）。协调者发的每个请求都是 shim 的一个动词，拿不到 shell：
+
+  | 动词 | 作用 |
+  |---|---|
+  | `hello` | 平台、Flutter 版本、核数、空闲内存 / 磁盘、槽位上限、是否暂停（`--status` 用它） |
+  | `lock <slot> <runId>` | 抢该槽位 checkout 的整轮锁（同第一期的 `mkdir` 锁 + 心跳 + 15 分钟接管），借种子仓 / 首槽位的对象库 |
+  | `git-receive-pack '<work\|work-N>'` | 收快照推送；只认这两种名字，映射到 shim 自己的目录，且必须先 `lock` |
+  | `prepare <slot> <sha>` | checkout + clean + `worker_prepare.sh`（只带主人的 `prepare.env`） |
+  | `run <slot> <concurrency> [flutter 参数]` | 跑一批，测试文件从 stdin 读（`worker_run.sh` 逐行校验） |
+  | `kill <slot>` / `finish <slot> <runId>` | 停批次 / 删本轮 ref 并释放自己的锁 |
+
+  请求先过字符集 `[A-Za-z0-9_ ,.:=+-]`（不认引号 / `$` / `;` / 反引号 / 斜杠），再逐参数按模式校验；flutter 参数只认 `--name`、`--name=朴素值` 或紧随其后的朴素值（不能以 `-` 开头），协调者在本机先用同一套规则拒绝（`shimRequest`），不把会被拒的请求发出去。
+- 主人侧设置全在 `~/.fushi-worker/`，请求方一个都改不了：`limits`（`MAX_SLOTS` 默认 1、`MAX_CONCURRENCY` 默认核数/2、`MIN_FREE_MEM_MB` 默认 4096、`MIN_FREE_DISK_GB` 默认 20；只按 `KEY=数字` 解析、不执行）、`path`（Flutter / cargo 的 bin，sshd 的非交互 shell 不读 profile）、`prepare.env`（只给准备步骤，如代理）、`seed`（公开仓的裸 clone）、`pause`。因此 `ssh-shim` 配置里出现 `workdir` / `seedRepo` / `path` / `prepareEnv` 直接报配置错误。
+- **暂停**：`bash ~/.fushi-worker/shim pause|resume|status`（不经 ssh 直接跑就是主人的开关）。暂停后 `lock` / `run` 回 `busy: paused`（退出码 75），协调者把这台本轮剔除、批次原样退回队列，别的机器接走。正在跑的批次主人可以等它跑完，也可以 `kill`（被当成失联，转给别的机器）。
+- **资源上限**：`run` 前看空闲内存，低于 `MIN_FREE_MEM_MB` 回 `busy: low memory`，协调者把批次退回队列、30 秒后再问，连续 20 次仍忙才剔除；`lock` 前看磁盘。`--concurrency` 被钳到 `MAX_CONCURRENCY`，槽位超出 `MAX_SLOTS` 直接拒绝。
+- **种子仓**：仓库全历史约 6 GB，首推全量对朋友上行不现实。`worker_setup` 默认 `git clone --bare` 公开仓到 `~/.fushi-worker/seed`，首槽位 checkout 借它的对象库，推送只带种子之后的新提交；次槽位借首槽位。
+- **Windows worker**：Windows 的 sshd 默认给 cmd，给不了 POSIX shell，所以 Windows worker 只能是 `ssh-shim`（`ssh-trusted` + `windows` 报配置错误）。`worker_setup.ps1` 写一个 `shim.cmd` 用 Git Bash 起 shim，强制命令指向它（账户 profile 路径不能带空格）。worker 端三个脚本在 Git Bash 下的差异：原生库走 `tool/native_libs.ps1`（自带戳记）；杀进程树按 `/proc/<pid>/winpid` 用 `taskkill /T`；Windows 命令行上限 32767，一批按 24000 字符拆成连续几个 `flutter test` 进程（协调者按 `start` 事件拆段合并，与本机 worker 一致）。`worker_kill.sh` 先停 `worker_run.sh` 本身（`runner.pid`，它的 trap 带走测试树），拆段时不会再起下一段。
+- macOS 自带 bash 3.2：worker 端脚本只用 3.2 能跑的语法（无 `mapfile`）。
+
+### 一次性准备（朋友执行）
+
+1. 建专用低权限账户（Windows 普通用户 / macOS standard user，账户名不带空格），装 Git、Flutter（`.fvmrc` 的版本）、Rust（Windows 还要 MSVC 生成工具）；Windows 还要启用 OpenSSH Server。
+2. 在该账户下：macOS / Linux `bash worker_setup.sh "<公钥行>"`；Windows `powershell -ExecutionPolicy Bypass -File worker_setup.ps1 -PublicKey "<公钥行>"`。脚本装 shim、写默认设置、克隆种子仓、把公钥以 `restrict,command=` 形式追加进 `authorized_keys`（Windows 同时把该文件 ACL 收到本账户 + SYSTEM），最后自检 `hello`。
+3. Tailscale：朋友把这台机器**共享（node sharing）**给你的账号；你的 tailnet ACL 只放行本机 → 这台的 22 端口。验证：从朋友机器 `tailscale ping` / `ssh` 你的本机应当不通（共享是单向的）。
+4. 你这边：`ssh-keygen -t ed25519 -f ~/.ssh/fushi_dist_ed25519` 专用一把；`workers.local.json` 加一条 `{"kind": "ssh-shim", "host": "fushitest@<机器>.ts.net", "os": "windows|macos", "identity": "~/.ssh/fushi_dist_ed25519"}`；`--status` 看到 `hello` 输出即通。
+
+### 验证范围（2026-10-25）
+
+- 契约测试：`fushi/test/tools/dist_shim_test.dart` 真跑 shim（注入、越权路径、未加锁的后续步骤、锁的归属、槽位上限、`limits` 不被执行、暂停、内存门槛、flutter 参数），`dist_workers_test` 覆盖配置与 `shimRequest`。
+- 端到端（见「实测」）：用一个测试传输（按 sshd 强制命令的方式把客户端命令放进 `SSH_ORIGINAL_COMMAND` 再起 shim）分别在本机 Git Bash（= Windows worker 路径）和真实 Mac（经 ssh，bash 3.2）上跑通 lock → push → prepare → run → 复跑 → finish。
+- 实测（2026-10-25，`test/tools` 83 suite + 工作区里 3 个临时探针：必红 / 只在非 shim 机器红 / 以平台原因跳过；探针不入库）：
+  - 本机 + loopback shim（Git Bash，全新 checkout）：首次准备 267 s（种子仓让推送秒级完成；大头是四个 Rust crate 冷编译），再跑一轮准备 6 s，两台按速度分到 44 / 39 个 suite，墙钟 3 分 42 秒。复跑分型三种结果（两台都红 / 只在本机红）与平台跳过报告全部按预期出现。
+  - 忙与暂停：把 shim 的 `MIN_FREE_MEM_MB` 调到不可能满足，协调者打出 `busy: low memory …; asking again in 30s`，门槛调回后同一批照常跑完、判绿；`pause` 后 `--status` 显示 `paused=yes`，跑一轮时该机在 `lock` 处被剔除，本机独跑判绿。
+  - 本机 + 真实 Mac（经 ssh，bash 3.2，复用 `~/fushi-dist/work`）：准备 1 s（缓存命中），Mac 分到 50 个 suite（含两个只能在 macOS 跑的），649 个测试，墙钟 2 分 50 秒；两个红探针在 Mac 上复跑，分型正确。
+  - 首推暴露的问题已修：深路径下 Windows 收包撞 MAX_PATH（shim 给 Windows checkout 设 `core.longpaths`）；flutter 参数校验曾放过 `-x`（朴素值不许以 `-` 开头，两端同改，契约测试覆盖）。
+- **没验证到的**：真实 sshd 的 `restrict,command=` 生效与 Windows OpenSSH 经 `shim.cmd` 起 Git Bash 这一层（本机按规定不跑 sshd，Mac 上没改 `authorized_keys`）、Tailscale 单向性。朋友接入时按上面第 3、4 步各验一次。
+
+## 第三期实现（部分）
+
+- **红 suite 跨机复跑分型**：主队列跑完后，每个红 suite（有 error 事件或零事件的；整批红又定位不到 suite 时取整批）单独在**另一台机器**（不是同机另一个槽位：同机共享磁盘 / 内存 / 负载，分不出本机伪红）上能跑它的 worker 再跑一次，最快的机器优先，每台串行。报告 `summary.md` 的「Red suites re-run on another machine」逐条写「两台都红 = 真红」「只在 X 红」或「没复跑：原因」。**判绿结论不因复跑改变**，「只在 X 红」仍要按 `docs/agent/fast-workflow.md` 的并发伪红判别分型。红 suite 超过 20 个不复跑（整轮已经坏到复跑解释不了）。worker 在复跑结束后才释放锁 / 租约。
+- **平台原因跳过报告**：json 事件里 `skip` 且 `skipReason` 带平台字样（windows / macos / linux / platform / host）的测试列进「Skipped for a platform reason」——这是静态扫描没看到的宿主依赖、覆盖在那台机器上悄悄丢了。**只报告不回写**：宿主依赖按根因修，手工钉选进 `dist_affinity.json` 必须写原因（与第一期的规则一致），所以原设计的 `suite_affinity.json` 自动回写不做。
+- 集成测试分流：未做，要真 app / 显示器 / 模拟器，单独设计。
 
 ## 第一期实现（与下文设计的差异以此为准）
 

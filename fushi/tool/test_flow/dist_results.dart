@@ -241,3 +241,192 @@ String _fmt(Duration d) {
       ? '${s ~/ 60}m${(s % 60).toString().padLeft(2, '0')}s'
       : '${s}s';
 }
+
+/// Suites of [result] that failed: the ones with an error event, plus the
+/// ones that never produced events. Empty for an infrastructure failure (the
+/// batch never got a fair run) or a green batch. A red batch whose failure
+/// cannot be pinned to a suite (crash before any error event) names all its
+/// files.
+List<String> failedSuitesOf(DistBatchResult result) {
+  if (result.infraError != null || result.failure == null) {
+    return const <String>[];
+  }
+  final Set<String> files = result.files.toSet();
+  final Set<String> failed = <String>{
+    for (final FlutterTestErrorEvent e in result.summary.errors)
+      ?matchKnownSuite(e.suitePath, files),
+    ...result.missingSuites,
+  };
+  if (failed.isEmpty) return List<String>.of(result.files);
+  return <String>[
+    for (final String f in result.files)
+      if (failed.contains(f)) f,
+  ];
+}
+
+/// At most this many red suites are re-run for classification; beyond that
+/// the run is broken in a way one re-run each will not explain.
+const int kDistMaxReruns = 20;
+
+enum DistRerunOutcome {
+  /// Red again on the other machine: a real red.
+  redOnBoth,
+
+  /// Green on the other machine: red only where it first ran. Still red for
+  /// the verdict; classify it per docs/agent/fast-workflow.md (concurrency
+  /// false reds) before calling it flaky.
+  onlyOriginal,
+
+  /// The re-run itself never got a fair run (ssh dropped, timed out).
+  rerunInfra,
+}
+
+/// One red suite and what its re-run on another machine said. Only for the
+/// report: the run's verdict never changes because of a re-run.
+class DistRerun {
+  const DistRerun({
+    required this.path,
+    required this.redOn,
+    required this.rerunOn,
+    required this.outcome,
+  });
+
+  final String path;
+  final String redOn;
+  final String rerunOn;
+  final DistRerunOutcome outcome;
+}
+
+/// A red suite that got no classification re-run, and why.
+typedef DistNotRerun = ({String path, String redOn, String why});
+
+/// The outcome of re-running [path] (red on another worker) as [rerun].
+DistRerunOutcome classifyRerun(DistBatchResult rerun) {
+  if (rerun.infraError != null) return DistRerunOutcome.rerunInfra;
+  return rerun.failure == null
+      ? DistRerunOutcome.onlyOriginal
+      : DistRerunOutcome.redOnBoth;
+}
+
+/// A test the worker skipped with a reason that names a platform: the static
+/// scan placed its suite on a machine where (part of) it does not run, so that
+/// coverage silently went missing. Reported, never written back: a host
+/// dependency is fixed at the root, and `dist_affinity.json` takes a pin by
+/// hand with its reason (see the spec).
+class DistPlatformSkip {
+  const DistPlatformSkip({
+    required this.path,
+    required this.test,
+    required this.reason,
+    required this.worker,
+  });
+
+  final String path;
+  final String test;
+  final String reason;
+  final String worker;
+}
+
+final RegExp _platformWords = RegExp(
+  r'\b(windows|mac ?os|macos|darwin|linux|platform|host)\b',
+  caseSensitive: false,
+);
+
+/// Platform-worded skips in [result]'s event streams.
+List<DistPlatformSkip> platformSkipsOf(DistBatchResult result) {
+  final Set<String> files = result.files.toSet();
+  final List<DistPlatformSkip> skips = <DistPlatformSkip>[];
+  for (final List<String> run in splitEventRuns(result.lines)) {
+    final Map<int, String> suites = <int, String>{};
+    for (final String line in run) {
+      if (!line.startsWith('{')) continue;
+      final Object? decoded;
+      try {
+        decoded = jsonDecode(line);
+      } on FormatException {
+        continue;
+      }
+      if (decoded is! Map<String, Object?>) continue;
+      if (decoded['type'] == 'suite') {
+        final Object? suite = decoded['suite'];
+        if (suite is Map<String, Object?> &&
+            suite['id'] is int &&
+            suite['path'] is String) {
+          final String? path = matchKnownSuite(suite['path']! as String, files);
+          if (path != null) suites[suite['id']! as int] = path;
+        }
+        continue;
+      }
+      if (decoded['type'] != 'testStart') continue;
+      final Object? test = decoded['test'];
+      if (test is! Map<String, Object?>) continue;
+      final Object? metadata = test['metadata'];
+      if (metadata is! Map<String, Object?> || metadata['skip'] != true) {
+        continue;
+      }
+      final Object? reason = metadata['skipReason'];
+      if (reason is! String || !_platformWords.hasMatch(reason)) continue;
+      final String? path = suites[test['suiteID']];
+      if (path == null) continue;
+      skips.add(
+        DistPlatformSkip(
+          path: path,
+          test: '${test['name']}',
+          reason: reason,
+          worker: result.worker,
+        ),
+      );
+    }
+  }
+  return skips;
+}
+
+/// The report sections for [reruns] and [skips] (empty when there is nothing
+/// to say), appended to `summary.md`.
+String renderDistFollowUp({
+  required List<DistRerun> reruns,
+  required List<DistNotRerun> notRerun,
+  required List<DistPlatformSkip> skips,
+}) {
+  final StringBuffer out = StringBuffer();
+  if (reruns.isNotEmpty || notRerun.isNotEmpty) {
+    out
+      ..writeln()
+      ..writeln('## Red suites re-run on another machine')
+      ..writeln()
+      ..writeln(
+        'For classification only; the verdict above stands. "only red on" '
+        'still needs the false-red triage of docs/agent/fast-workflow.md.',
+      )
+      ..writeln()
+      ..writeln('| suite | red on | re-run on | result |')
+      ..writeln('|---|---|---|---|');
+    for (final DistRerun r in reruns) {
+      final String result = switch (r.outcome) {
+        DistRerunOutcome.redOnBoth => 'red on both: real red',
+        DistRerunOutcome.onlyOriginal => 'only red on ${r.redOn}',
+        DistRerunOutcome.rerunInfra => 're-run did not complete',
+      };
+      out.writeln('| `${r.path}` | ${r.redOn} | ${r.rerunOn} | $result |');
+    }
+    for (final DistNotRerun n in notRerun) {
+      out.writeln('| `${n.path}` | ${n.redOn} | - | not re-run: ${n.why} |');
+    }
+  }
+  if (skips.isNotEmpty) {
+    out
+      ..writeln()
+      ..writeln('## Skipped for a platform reason')
+      ..writeln()
+      ..writeln(
+        'These ran where (part of) them skips; the scan did not see the '
+        'host dependency. Fix it at the root, or pin the suite by hand in '
+        'tool/test_flow/dist_affinity.json with the reason.',
+      )
+      ..writeln();
+    for (final DistPlatformSkip s in skips) {
+      out.writeln('- `${s.path}` on ${s.worker}: ${s.test} — ${s.reason}');
+    }
+  }
+  return out.toString();
+}

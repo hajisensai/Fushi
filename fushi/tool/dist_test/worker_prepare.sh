@@ -43,6 +43,15 @@ fi
 case "$(uname -s)" in
   Darwin) plat=macos; script=build_macos_dylib.sh ;;
   Linux) plat=linux-x64; script=build_linux_so.sh ;;
+  MINGW*|MSYS*)
+    # A Windows worker runs this under Git Bash; tool/native_libs.ps1 keeps
+    # its own per-crate stamps (and copies from a sibling checkout, e.g. the
+    # first slot, when the source tree matches).
+    echo "==> native libraries (tool/native_libs.ps1)"
+    powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+      -File tool/native_libs.ps1
+    echo "==> ready"
+    exit 0 ;;
   *) echo "error: unsupported worker OS $(uname -s)" >&2; exit 3 ;;
 esac
 for crate in fushi_compute fushi_fsrs fushi_web_core fushi_rwkv; do

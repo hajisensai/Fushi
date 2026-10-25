@@ -126,4 +126,122 @@ void main() {
       isNotNull,
     );
   });
+
+  group('classification re-runs', () {
+    // An `error` event on the test of suite [index] in a [_run] stream.
+    List<String> failing(List<String> suites, int index) {
+      final List<String> lines = _run(suites, success: false);
+      return <String>[
+        ...lines.sublist(0, lines.length - 1),
+        jsonEncode(<String, Object?>{
+          'type': 'error',
+          'testID': index + 1,
+          'error': 'boom',
+          'stackTrace': '',
+        }),
+        lines.last,
+      ];
+    }
+
+    test('red suites are the erroring and the silent ones', () {
+      final DistBatchResult r = _result(
+        <String>[...files, 'test/c_test.dart'],
+        failing(files, 1),
+        exitCode: 1,
+      );
+      expect(failedSuitesOf(r), <String>[
+        'test/b_test.dart',
+        'test/c_test.dart',
+      ]);
+    });
+
+    test('a red batch with nothing to pin it on names every file', () {
+      expect(failedSuitesOf(_result(files, _run(files), exitCode: 1)), files);
+    });
+
+    test('green and infrastructure-failed batches have no red suites', () {
+      expect(failedSuitesOf(_result(files, _run(files))), isEmpty);
+      expect(
+        failedSuitesOf(_result(files, const <String>[], infra: 'ssh dropped')),
+        isEmpty,
+      );
+    });
+
+    test('outcome of the re-run', () {
+      const List<String> one = <String>['test/a_test.dart'];
+      expect(
+        classifyRerun(_result(one, failing(one, 0), exitCode: 1)),
+        DistRerunOutcome.redOnBoth,
+      );
+      expect(
+        classifyRerun(_result(one, _run(one))),
+        DistRerunOutcome.onlyOriginal,
+      );
+      expect(
+        classifyRerun(_result(one, const <String>[], infra: 'timed out')),
+        DistRerunOutcome.rerunInfra,
+      );
+    });
+
+    test('the report says which, and that the verdict stands', () {
+      final String text = renderDistFollowUp(
+        reruns: const <DistRerun>[
+          DistRerun(
+            path: 'test/a_test.dart',
+            redOn: 'self-win',
+            rerunOn: 'self-mac',
+            outcome: DistRerunOutcome.onlyOriginal,
+          ),
+        ],
+        notRerun: const <DistNotRerun>[
+          (path: 'test/w_test.dart', redOn: 'self-win', why: 'no other'),
+        ],
+        skips: const <DistPlatformSkip>[],
+      );
+      expect(text, contains('verdict above stands'));
+      expect(text, contains('only red on self-win'));
+      expect(text, contains('not re-run: no other'));
+      expect(
+        renderDistFollowUp(
+          reruns: const <DistRerun>[],
+          notRerun: const <DistNotRerun>[],
+          skips: const <DistPlatformSkip>[],
+        ),
+        isEmpty,
+      );
+    });
+  });
+
+  test('platform-worded skips are reported with their suite', () {
+    String skipped(int suiteId, int id, String reason) =>
+        jsonEncode(<String, Object?>{
+          'type': 'testStart',
+          'test': <String, Object?>{
+            'id': id,
+            'name': 'skipped $id',
+            'suiteID': suiteId,
+            'metadata': <String, Object?>{'skip': true, 'skipReason': reason},
+          },
+          'time': 1,
+        });
+    final List<String> lines = _run(files);
+    lines.insertAll(lines.length - 1, <String>[
+      skipped(1, 90, 'needs Windows (WebView2)'),
+      skipped(0, 91, 'slow; run with --run-skipped'),
+      skipped(0, 92, 'not supported on this platform'),
+    ]);
+    final List<DistPlatformSkip> skips = platformSkipsOf(_result(files, lines));
+    expect(skips.map((DistPlatformSkip s) => '${s.path}|${s.test}'), <String>[
+      'test/b_test.dart|skipped 90',
+      'test/a_test.dart|skipped 92',
+    ]);
+    expect(
+      renderDistFollowUp(
+        reruns: const <DistRerun>[],
+        notRerun: const <DistNotRerun>[],
+        skips: skips,
+      ),
+      contains('dist_affinity.json'),
+    );
+  });
 }

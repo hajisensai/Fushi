@@ -354,3 +354,21 @@ final RegExp kDistTestPathPattern = RegExp(
 
 bool isSafeDistTestPath(String path) =>
     kDistTestPathPattern.hasMatch(path) && !path.split('/').contains('..');
+
+/// The worker to re-run a red [unit] on for classification: one that may run
+/// it and sits on a different machine than [redMachine] (another slot of the
+/// same machine shares its disk, memory and load, so it would not tell a
+/// machine-local false red from a real one). Faster machines first ([order]
+/// is the caller's preference). Null when there is no such worker.
+T? pickRerunTarget<T>(
+  DistUnit unit, {
+  required String redMachine,
+  required List<T> order,
+  required String Function(T worker) machineOf,
+  required bool Function(T worker, DistUnit unit) eligible,
+}) {
+  for (final T w in order) {
+    if (machineOf(w) != redMachine && eligible(w, unit)) return w;
+  }
+  return null;
+}

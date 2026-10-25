@@ -52,6 +52,18 @@ String distSshExecutable([Map<String, String>? environment]) {
   return 'ssh';
 }
 
+/// The ssh program git uses for the snapshot push: `FUSHI_DIST_SSH` when set
+/// (so a test transport carries both), otherwise git's own `ssh`.
+String distGitSshProgram([Map<String, String>? environment]) {
+  final String? override =
+      (environment ?? Platform.environment)['FUSHI_DIST_SSH'];
+  if (override != null && override.isNotEmpty) {
+    // GIT_SSH_COMMAND goes through git's sh: forward slashes, quoted.
+    return shellQuote(override.replaceAll('\\', '/'));
+  }
+  return 'ssh';
+}
+
 /// Proxy variables never reach a test process: CI has none, and a
 /// `NO_PROXY=127.0.0.1` makes ffmpeg drop an explicit `-http_proxy`, which
 /// turns the media relay tests red on a machine that only set a proxy for
@@ -78,12 +90,22 @@ const int kDistLockStaleMinutes = 15;
 /// ssh's own exit code for connection-level failures.
 const int kSshConnectionFailure = 255;
 
+/// `worker_shim.sh`: the worker refuses work for now (paused by its owner,
+/// low memory / disk). Not a failure of the batch.
+const int kDistShimBusy = 75;
+
 enum DistWorkerKind {
   /// This checkout, through the machine-wide heavy lease.
   local,
 
   /// A machine of your own reached by ssh with a normal shell.
   sshTrusted,
+
+  /// Someone else's machine: the key is pinned to `worker_shim.sh` there
+  /// (`restrict,command=`), so every request is one of the shim's verbs and
+  /// the coordinator never gets a shell. Paths, PATH, proxy and limits are
+  /// the owner's settings on that machine, not part of this config.
+  sshShim,
 }
 
 class DistConfigError implements Exception {
@@ -108,6 +130,7 @@ class DistWorkerConfig {
     this.capabilities = const <String>{},
     this.slots = 1,
     this.nativePeer,
+    this.slotIndex = 1,
   });
 
   final String name;
@@ -151,6 +174,10 @@ class DistWorkerConfig {
   /// copies matching native libraries from instead of building them again.
   final String? nativePeer;
 
+  /// Which of the machine's [slots] this is (1-based); the shim addresses its
+  /// checkouts by it.
+  final int slotIndex;
+
   /// Slot [index] (2..[slots]) of this machine: its own checkout next to the
   /// primary one, seeded from the primary's objects.
   DistWorkerConfig slot(int index) => DistWorkerConfig(
@@ -166,6 +193,7 @@ class DistWorkerConfig {
     concurrency: concurrency,
     capabilities: capabilities,
     nativePeer: workdir,
+    slotIndex: index,
   );
 
   static final RegExp _name = RegExp(r'^[A-Za-z0-9_-]+$');
@@ -194,8 +222,9 @@ class DistWorkerConfig {
     final DistWorkerKind kind = switch (str('kind', required: true)) {
       'local' => DistWorkerKind.local,
       'ssh-trusted' => DistWorkerKind.sshTrusted,
+      'ssh-shim' => DistWorkerKind.sshShim,
       final String other => throw DistConfigError(
-        'worker $name: unknown kind "$other" (local / ssh-trusted)',
+        'worker $name: unknown kind "$other" (local / ssh-trusted / ssh-shim)',
       ),
     };
     final DistPlatform platform = switch (str('os', required: true)) {
@@ -205,6 +234,27 @@ class DistWorkerConfig {
         'worker $name: unknown os "$other"',
       ),
     };
+    if (kind == DistWorkerKind.sshShim) {
+      for (final String key in <String>[
+        'workdir',
+        'seedRepo',
+        'path',
+        'prepareEnv',
+      ]) {
+        if (json.containsKey(key)) {
+          throw DistConfigError(
+            'worker $name: "$key" is the machine owner\'s setting on an '
+            'ssh-shim worker (~/.fushi-worker), not part of this config',
+          );
+        }
+      }
+    }
+    if (kind == DistWorkerKind.sshTrusted && platform == DistPlatform.windows) {
+      throw DistConfigError(
+        'worker $name: a Windows worker is reached through the shim '
+        '(kind "ssh-shim"; Windows sshd does not give a POSIX shell)',
+      );
+    }
     String? host;
     if (kind != DistWorkerKind.local) {
       host = str('host', required: true);
@@ -310,6 +360,7 @@ class DistBatchRun {
     required this.exitCode,
     required this.lines,
     this.infraError,
+    this.busy,
   });
 
   final int exitCode;
@@ -318,6 +369,13 @@ class DistBatchRun {
   /// The run did not get a fair chance (connection lost, timed out, killed);
   /// the scheduler may hand the batch to another worker.
   final String? infraError;
+
+  /// The worker turned the batch down before running it ([kDistShimBusy]):
+  /// its owner paused it, or memory is short. Nothing ran.
+  final String? busy;
+
+  /// Paused by the owner: no point asking again during this run.
+  bool get paused => busy != null && busy!.contains('paused');
 }
 
 class DistWorkerError implements Exception {
@@ -333,6 +391,9 @@ abstract class DistWorker {
   final DistWorkerConfig config;
 
   String get name => config.name;
+
+  /// The physical machine (slots of one machine share it).
+  String get machine => config.host ?? 'local';
 
   bool eligible(DistUnit unit) =>
       unit.eligibleFor(config.platform, config.capabilities);
@@ -367,6 +428,7 @@ List<DistWorker> createDistWorkers(
     case DistWorkerKind.local:
       return <DistWorker>[LocalDistWorker(config, repoRoot: repoRoot)];
     case DistWorkerKind.sshTrusted:
+    case DistWorkerKind.sshShim:
       final SshDistWorker primary = SshDistWorker(config, repoRoot: repoRoot);
       return <DistWorker>[
         primary,
@@ -384,6 +446,7 @@ Future<DistBatchRun> _drive(
   required Duration timeout,
   required Future<void> Function() kill,
   required int Function(int exitCode)? connectionFailure,
+  StringBuffer? stderrCopy,
 }) async {
   const Utf8Decoder decoder = Utf8Decoder(allowMalformed: true);
   final List<String> lines = <String>[];
@@ -391,9 +454,12 @@ Future<DistBatchRun> _drive(
       .transform(decoder)
       .transform(const LineSplitter())
       .forEach(lines.add);
-  final Future<void> err = process.stderr
-      .transform(decoder)
-      .forEach(stderrLog.write);
+  final Future<void> err = process.stderr.transform(decoder).forEach((
+    String chunk,
+  ) {
+    stderrLog.write(chunk);
+    stderrCopy?.write(chunk);
+  });
   bool timedOut = false;
   final Timer timer = Timer(timeout, () {
     timedOut = true;
@@ -564,6 +630,8 @@ class SshDistWorker extends DistWorker {
   bool _locked = false;
   Process? _process;
 
+  bool get _shim => config.kind == DistWorkerKind.sshShim;
+
   List<String> get _sshBase => <String>[
     ...kDistSshOptions,
     if (config.identity != null) ...<String>[
@@ -617,6 +685,7 @@ class SshDistWorker extends DistWorker {
   }
 
   Future<void> _prepare(DistSnapshot snapshot, String runId, IOSink log) async {
+    if (_shim) return _prepareShim(snapshot, runId, log);
     final String workdir = shellQuote(config.workdir);
     final String seed = config.seedRepo == null
         ? ''
@@ -647,32 +716,7 @@ class SshDistWorker extends DistWorker {
     );
     _locked = true;
 
-    final String sshCommand = <String>[
-      'ssh',
-      for (final String a in _sshBase.sublist(0, _sshBase.length - 1))
-        shellQuote(a),
-    ].join(' ');
-    final ProcessResult push = await Process.run(
-      'git',
-      <String>[
-        'push',
-        '--quiet',
-        '${config.host}:${config.workdir}',
-        '${snapshot.commit}:refs/dist/$runId',
-      ],
-      workingDirectory: repoRoot,
-      environment: <String, String>{'GIT_SSH_COMMAND': sshCommand},
-    );
-    log
-      ..writeln('== push (exit ${push.exitCode})')
-      ..write(push.stdout)
-      ..write(push.stderr);
-    if (push.exitCode != 0) {
-      throw DistWorkerError(
-        'git push to $name failed: '
-        '${'${push.stderr}'.trim()}',
-      );
-    }
+    await _push(snapshot, runId, config.workdir, log);
 
     final String env = <String>[
       for (final MapEntry<String, String> e in config.prepareEnv.entries)
@@ -700,6 +744,65 @@ class SshDistWorker extends DistWorker {
     );
   }
 
+  /// Pushes the snapshot to `refs/dist/<runId>` of the checkout at
+  /// [remotePath] (an ssh-shim worker maps `work` / `work-N` to its own
+  /// checkouts).
+  Future<void> _push(
+    DistSnapshot snapshot,
+    String runId,
+    String remotePath,
+    IOSink log,
+  ) async {
+    final String sshCommand = <String>[
+      distGitSshProgram(),
+      for (final String a in _sshBase.sublist(0, _sshBase.length - 1))
+        shellQuote(a),
+    ].join(' ');
+    final ProcessResult push = await Process.run(
+      'git',
+      <String>[
+        'push',
+        '--quiet',
+        '${config.host}:$remotePath',
+        '${snapshot.commit}:refs/dist/$runId',
+      ],
+      workingDirectory: repoRoot,
+      environment: <String, String>{'GIT_SSH_COMMAND': sshCommand},
+    );
+    log
+      ..writeln('== push (exit ${push.exitCode})')
+      ..write(push.stdout)
+      ..write(push.stderr);
+    if (push.exitCode != 0) {
+      throw DistWorkerError(
+        'git push to $name failed: '
+        '${'${push.stderr}'.trim()}',
+      );
+    }
+  }
+
+  /// The same steps through the shim's verbs: lock, push, prepare (checkout +
+  /// worker_prepare.sh with the owner's prepare.env).
+  Future<void> _prepareShim(
+    DistSnapshot snapshot,
+    String runId,
+    IOSink log,
+  ) async {
+    final int slot = config.slotIndex;
+    await _sshChecked(
+      'lock',
+      shimRequest('lock', <String>['$slot', runId]),
+      log,
+    );
+    _locked = true;
+    await _push(snapshot, runId, shimCheckoutName(slot), log);
+    await _sshChecked(
+      'prepare',
+      shimRequest('prepare', <String>['$slot', snapshot.commit]),
+      log,
+    );
+  }
+
   @override
   Future<DistBatchRun> run(
     DistBatch batch, {
@@ -712,33 +815,59 @@ class SshDistWorker extends DistWorker {
         throw DistWorkerError('refusing to send unsafe test path "$f"');
       }
     }
-    final String args = <String>[
-      '${config.concurrency ?? 0}',
-      ...flutterArgs.map(shellQuote),
-    ].join(' ');
+    final String remote;
+    if (_shim) {
+      remote = shimRequest('run', <String>[
+        '${config.slotIndex}',
+        '${config.concurrency ?? 0}',
+        ...flutterArgs,
+      ]);
+    } else {
+      final String args = <String>[
+        '${config.concurrency ?? 0}',
+        ...flutterArgs.map(shellQuote),
+      ].join(' ');
+      remote = '${_prefix}bash fushi/tool/dist_test/worker_run.sh $args';
+    }
     final Process process = await Process.start(distSshExecutable(), <String>[
       ..._sshBase,
-      '${_prefix}bash fushi/tool/dist_test/worker_run.sh $args',
+      remote,
     ]);
     _process = process;
     process.stdin.write('${batch.files.join('\n')}\n');
     await process.stdin.close();
+    final StringBuffer errors = StringBuffer();
+    final DistBatchRun run;
     try {
-      return await _drive(
+      run = await _drive(
         process,
         stderrLog: stderrLog,
         timeout: timeout,
         kill: _killRemote,
         connectionFailure: (int code) => code,
+        stderrCopy: errors,
       );
     } finally {
       _process = null;
     }
+    if (run.exitCode == kDistShimBusy && run.lines.isEmpty) {
+      final String reason = errors.toString().trim().split('\n').last;
+      return DistBatchRun(
+        exitCode: run.exitCode,
+        lines: const <String>[],
+        busy: reason.isEmpty ? 'busy' : reason,
+      );
+    }
+    return run;
   }
 
   Future<void> _killRemote() async {
     _process?.kill();
-    await _ssh('${_prefix}bash fushi/tool/dist_test/worker_kill.sh');
+    await _ssh(
+      _shim
+          ? shimRequest('kill', <String>['${config.slotIndex}'])
+          : '${_prefix}bash fushi/tool/dist_test/worker_kill.sh',
+    );
   }
 
   @override
@@ -750,6 +879,10 @@ class SshDistWorker extends DistWorker {
   Future<void> finish(String runId) async {
     if (!_locked) return;
     _locked = false;
+    if (_shim) {
+      await _ssh(shimRequest('finish', <String>['${config.slotIndex}', runId]));
+      return;
+    }
     await _ssh(
       '${_prefix}git update-ref -d refs/dist/$runId; '
       '[ "\$(cat .git/fushi-dist/lock/owner 2>/dev/null)" = $runId ] && '
@@ -759,6 +892,17 @@ class SshDistWorker extends DistWorker {
 
   @override
   Future<String> status() async {
+    if (_shim) {
+      final ProcessResult r = await _ssh('hello');
+      if (r.exitCode != 0) {
+        return 'unreachable (exit ${r.exitCode}): '
+            '${'${r.stderr}'.trim().split('\n').last}';
+      }
+      return const LineSplitter()
+          .convert('${r.stdout}'.trim())
+          .map((String l) => l.trim())
+          .join(', ');
+    }
     final ProcessResult r = await _ssh(
       '$_pathPrefix'
       r'printf "%s, " "$(flutter --version 2>/dev/null | head -1)"; '
@@ -771,4 +915,35 @@ class SshDistWorker extends DistWorker {
     }
     return '${r.stdout}'.trim();
   }
+}
+
+/// Name of slot [slot]'s checkout on an ssh-shim worker, as `git push`
+/// addresses it (the shim maps it under its own home).
+String shimCheckoutName(int slot) => slot == 1 ? 'work' : 'work-$slot';
+
+/// Words the shim accepts in a request: no quoting, no shell syntax, so the
+/// request reaches it unchanged through sshd / cmd.exe / bash
+/// (worker_shim.sh checks the same patterns).
+final RegExp _shimWord = RegExp(r'^[A-Za-z0-9_,.:=+-]+$');
+
+/// flutter test options the shim passes on: `--name`, `--name=value`, or a
+/// plain value after one.
+final RegExp _shimFlutterArg = RegExp(
+  r'^(--[a-z][a-z-]*(=[A-Za-z0-9_,.:+-]*)?|[A-Za-z0-9_,.:+][A-Za-z0-9_,.:+-]*)$',
+);
+
+/// One request line for `worker_shim.sh`. Throws [DistWorkerError] for an
+/// argument the shim would refuse, so the run stops here with the reason
+/// instead of on the worker.
+String shimRequest(String verb, List<String> args) {
+  for (final String a in args) {
+    if (!_shimWord.hasMatch(a) ||
+        (verb == 'run' && !_shimFlutterArg.hasMatch(a))) {
+      throw DistWorkerError(
+        'ssh-shim workers only take plain flutter test options; '
+        'cannot send "$a"',
+      );
+    }
+  }
+  return <String>[verb, ...args].join(' ');
 }

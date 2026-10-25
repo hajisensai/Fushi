@@ -356,4 +356,39 @@ void main() {
       hasLength(1),
     );
   });
+
+  test('a red suite is re-run on another machine that may run it', () {
+    // (name, machine, platform)
+    const List<(String, String, DistPlatform)> workers =
+        <(String, String, DistPlatform)>[
+          ('mac', 'u@mac', DistPlatform.macos),
+          ('mac.2', 'u@mac', DistPlatform.macos),
+          ('win', 'local', DistPlatform.windows),
+          ('friend', 'f@win', DistPlatform.windows),
+        ];
+    String? pick(DistUnit unit, String redMachine) =>
+        pickRerunTarget<(String, String, DistPlatform)>(
+          unit,
+          redMachine: redMachine,
+          order: workers,
+          machineOf: ((String, String, DistPlatform) w) => w.$2,
+          eligible: ((String, String, DistPlatform) w, DistUnit u) =>
+              u.eligibleFor(w.$3, const <String>{}),
+        )?.$1;
+    const DistUnit any = DistUnit(path: 'test/a_test.dart', weightMs: 1);
+    const DistUnit mac = DistUnit(
+      path: 'test/m_test.dart',
+      weightMs: 1,
+      platform: DistPlatform.macos,
+    );
+    const DistUnit win = DistUnit(
+      path: 'test/w_test.dart',
+      weightMs: 1,
+      platform: DistPlatform.windows,
+    );
+    expect(pick(any, 'u@mac'), 'win', reason: 'never another slot of it');
+    expect(pick(any, 'local'), 'mac');
+    expect(pick(win, 'local'), 'friend');
+    expect(pick(mac, 'u@mac'), isNull, reason: 'the only Mac');
+  });
 }

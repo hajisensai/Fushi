@@ -41,7 +41,19 @@ if [ "$concurrency" -gt 0 ]; then
   args+=("--concurrency=$concurrency")
 fi
 
+windows=
+case "$(uname -s)" in MINGW*|MSYS*) windows=1 ;; esac
+
 kill_tree() {
+  if [ -n "$windows" ]; then
+    # Git Bash: $! is an msys pid; the Windows tree (dart, flutter_tester)
+    # hangs off its Windows pid.
+    local winpid
+    winpid=$(cat "/proc/$1/winpid" 2>/dev/null) &&
+      taskkill //F //T //PID "$winpid" > /dev/null 2>&1
+    kill -TERM "$1" 2>/dev/null || true
+    return
+  fi
   local child
   for child in $(pgrep -P "$1" 2>/dev/null); do
     kill_tree "$child"
@@ -49,17 +61,47 @@ kill_tree() {
   kill -TERM "$1" 2>/dev/null || true
 }
 
-flutter "${args[@]}" "$@" "${files[@]}" < /dev/null &
-pid=$!
-echo "$pid" > "$state/run.pid"
+# Windows caps a command line at 32767 characters: a big batch runs as several
+# back-to-back processes, whose event streams the coordinator splits again at
+# each `start` event (as for its own local worker).
+max_chars=0
+[ -n "$windows" ] && max_chars=24000
+# Start index of each chunk in files (plain arrays: macOS ships bash 3.2).
+starts=(0)
+len=0
+for i in "${!files[@]}"; do
+  f=${files[$i]}
+  if [ "$max_chars" -gt 0 ] && [ "$len" -gt 0 ] &&
+     [ $(( len + ${#f} + 1 )) -gt "$max_chars" ]; then
+    starts+=("$i")
+    len=0
+  fi
+  len=$(( len + ${#f} + 1 ))
+done
+starts+=("${#files[@]}")
+
 # Heartbeat of the checkout lock (see kDistLockStaleMinutes); fds detached
 # so it can never hold the ssh channel open.
 (while sleep 60; do touch "$state/lock"; done) > /dev/null 2>&1 < /dev/null &
 heartbeat=$!
-trap 'kill "$heartbeat" 2>/dev/null; kill_tree "$pid"; rm -f "$state/run.pid"; exit 143' TERM INT HUP
+pid=
+trap 'kill "$heartbeat" 2>/dev/null; [ -n "$pid" ] && kill_tree "$pid"; rm -f "$state/run.pid" "$state/runner.pid"; exit 143' TERM INT HUP
 touch "$state/lock" 2>/dev/null
-wait "$pid"
-rc=$?
+
+# worker_kill.sh stops this script (whose trap takes the test tree down) so
+# no further chunk starts.
+echo "$$" > "$state/runner.pid"
+rc=0
+for (( c = 0; c + 1 < ${#starts[@]}; c++ )); do
+  from=${starts[$c]}
+  count=$(( ${starts[$((c + 1))]} - from ))
+  flutter "${args[@]}" "$@" "${files[@]:$from:$count}" < /dev/null &
+  pid=$!
+  echo "$pid" > "$state/run.pid"
+  wait "$pid"
+  status=$?
+  [ "$rc" -eq 0 ] && rc=$status
+done
 kill "$heartbeat" 2>/dev/null
-rm -f "$state/run.pid"
+rm -f "$state/run.pid" "$state/runner.pid"
 exit "$rc"

@@ -20,6 +20,15 @@
         "HTTP_PROXY": "http://127.0.0.1:7897"
       },
       "capabilities": []
+    },
+    {
+      "name": "friend-win",
+      "kind": "ssh-shim",
+      "host": "fushitest@friend-win.example-tailnet.ts.net",
+      "os": "windows",
+      "identity": "~/.ssh/fushi_dist_ed25519",
+      "slots": 1,
+      "capabilities": []
     }
   ]
 }
