@@ -789,7 +789,6 @@ final class SrsReadSession {
   }
 }
 
-
 /// [SrsCore.sync2] 的结果：命令的 JSON 结果，以及发件 / 写 head 产出的文件（相对路径 → 字节）。
 final class SrsSync2Result {
   const SrsSync2Result(this.json, this.files);
