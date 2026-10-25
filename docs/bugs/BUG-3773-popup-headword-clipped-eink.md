@@ -1,0 +1,6 @@
+## BUG-3773 · 墨水屏 / Apple 设计系统窄弹窗词头右侧被裁
+- **报告**：2026-10-25（用户：「right side of headword text cut off」，墨水屏手机竖排阅读，查「精鋭部隊」，弹窗窄条里词头「隊」与读音「たい」被按钮组切掉）
+- **真实性**：✅ 真 bug。BUG-3320 的「词头 + 按钮组放不下就整组换行」三件（`.entry-header` 的 `flex-wrap: wrap` + `container-type: inline-size`、`.entry-header-main` 的 `min-width: min-content`、`.expression-scroll` 的 `max-width: 100cqw`）只写在 `html.fushi-m3e` 层（`fushi/assets/popup/popup.css` 原 3066–3120 行）。`popup_settings_injection.dart` 里 `m3e = !eink && 非 Apple`——墨水屏与 Apple 设计系统走基础层：`.entry-header` 不换行、`.entry-header-main { flex: 1 1 0; min-width: 0 }`，按钮组硬挤在同一行，`.expression-scroll`（`overflow-x: auto`、滚动条隐藏）被压窄，词头右半截被裁。真 popup.js + headless Chromium（html.eink、行宽 140）复现：改前 `.expression-scroll` clientWidth 79 / scrollWidth 104（裁 25px，截图读音只剩「せいえいぶ」）。
+- **[x] ① 已修复** — 三件换行规则下沉到基础层（`.entry-header` / `.entry-header-main` / `.entry-header-main > .expression-scroll`），M3E 层只留列距与最小行高。改后同条件 104 / 104、按钮组整组换到下一行（仍右对齐）；M3E 在 160 / 190 / 320 宽下几何数值与改前逐项一致。扩展两份 vendor popup.css 同步、content.css 重新生成（`--check` in sync）。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/popup_dict_style_1009_guard_test.dart`「narrow popup wraps the header buttons instead of covering the headword」改为锁基础层规则（选择器锚行首，M3E 层规则冒充不了）。
+- **备注**：按钮组换行后排在元数据列（频率行）下面，与 M3E 窄宽时的既有布局一致。真机（用户墨水屏设备）未复测，证据是 headless Chromium 真 popup.js 前后对比。
