@@ -2893,9 +2893,11 @@ void main() {
       );
       // 主题切换行已移除：主题归全局「外观」设置，视频画面继承 app 主题，不在此重复暴露。
       for (final String src in <String>[sheet, schema, actions]) {
+        // 精确到键名：`video_setting_theme_song_*`（OP/ED 跳过等）是另一组设置，
+        // 裸子串会把它们误判成主题行。
         expect(
-          src,
-          isNot(contains('video_setting_theme')),
+          RegExp(r'video_setting_theme(?![A-Za-z0-9_])').hasMatch(src),
+          isFalse,
           reason: '视频设置不应再有独立主题切换行（主题归全局外观）',
         );
         expect(
