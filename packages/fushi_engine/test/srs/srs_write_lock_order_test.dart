@@ -1,11 +1,10 @@
 // BUG-3545：本机写入的「分配序号 → 落库」不被别的写入插队。
 //
-// 修改记录的序号（dot）在内存里分配、立刻并进因果上下文；若分配与落库之间插进别的写入，后分配的
-// 记录先落库、先进发件箱，它的 ctx 还声称看见了尚未落库的记录。这里让长操作（导入攒批、更改笔记类型
-// 的多实体写）与零碎的本机写入（改旗标）并发，核对：本机写入者的修改记录按发件箱顺序排，序号严格递增。
-// 修前两处都会乱序：导入在攒批时就分配序号；writeEdits「读一个实体的现值、分配一个实体的序号」交替
-// 进行，中间夹着几百次往返。第一个用例在修前的代码上实测复现乱序（发件箱里序号 1028 排在 752 前）；
-// 第二个用例是独占区的性质守卫（修前那段时序在测试里不能稳定复现）。
+// 同步 v2：本机操作的序号（seq）与 HLC 在 Rust `apply` 里同一个保存点内分配并落进操作日志
+// （sync2_ops）。若分配与落库之间插进别的写入，日志里就会出现序号与 HLC 顺序不一致、或序号有洞。
+// 这里让长操作（导入攒批、更改笔记类型的多实体写）与零碎的本机写入（改旗标）并发，核对：每台设备的
+// 操作按 seq 排列时 seq 从 1 起连续、HLC（wall, logical）严格递增。第一个用例在修前的代码（旧发件箱）
+// 上实测复现过乱序；第二个用例是独占区的性质守卫。
 import 'dart:async';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -20,35 +19,56 @@ import 'apkg/srs_apkg_import_bench_test.dart' show benchApkg;
 import 'apkg/srs_apkg_import_test.dart' show kFullOptions;
 import 'support/srs_bulk_fixture.dart';
 
-/// 本机写入者的修改记录按发件箱顺序给出的序号。
-Future<List<int>> outboxSeqs(BulkFixture f) async => <int>[
+/// 操作日志里每台设备的操作，按 seq 排：(seq, wall, logical)。
+Future<Map<String, List<(int, int, int)>>> opsByDevice(BulkFixture f) async {
+  final Map<String, List<(int, int, int)>> out =
+      <String, List<(int, int, int)>>{};
   for (final QueryRow r
       in await f.db
           .customSelect(
-            'SELECT e.seq AS seq FROM srs_event_local l '
-            'JOIN srs_field_edits e ON e.id = l.event_id '
-            'WHERE l.outbox_seq IS NOT NULL AND e.writer_id = ? '
-            'ORDER BY l.outbox_seq',
-            variables: <Variable<Object>>[Variable<String>(f.store.writerId)],
+            'SELECT hex(device) AS d, seq, wall, logical FROM sync2_ops '
+            'WHERE profile_uid = ? ORDER BY device, seq',
+            variables: <Variable<Object>>[Variable<String>(f.store.profileUid)],
           )
-          .get())
-    r.read<int>('seq'),
-];
-
-void expectIncreasing(List<int> seqs) {
-  for (int i = 1; i < seqs.length; i++) {
-    expect(
-      seqs[i],
-      greaterThan(seqs[i - 1]),
-      reason: 'outbox position $i: seq ${seqs[i]} after ${seqs[i - 1]}',
-    );
+          .get()) {
+    (out[r.read<String>('d')] ??= <(int, int, int)>[]).add((
+      r.read<int>('seq'),
+      r.read<int>('wall'),
+      r.read<int>('logical'),
+    ));
   }
+  return out;
+}
+
+/// 每台设备：seq 从 1 起连续，HLC 随 seq 严格递增。返回操作总数。
+Future<int> expectOrdered(BulkFixture f) async {
+  int total = 0;
+  for (final MapEntry<String, List<(int, int, int)>> d in (await opsByDevice(
+    f,
+  )).entries) {
+    final List<(int, int, int)> ops = d.value;
+    for (int i = 0; i < ops.length; i++) {
+      expect(ops[i].$1, i + 1, reason: 'device ${d.key}: seq hole at $i');
+      if (i == 0) continue;
+      final (int, int, int) a = ops[i - 1];
+      final (int, int, int) b = ops[i];
+      expect(
+        b.$2 > a.$2 || (b.$2 == a.$2 && b.$3 > a.$3),
+        isTrue,
+        reason:
+            'device ${d.key}: seq ${b.$1} HLC (${b.$2}, ${b.$3}) '
+            'not after seq ${a.$1} (${a.$2}, ${a.$3})',
+      );
+    }
+    total += ops.length;
+  }
+  return total;
 }
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
-  test('导入攒批期间插进来的本机写入：发件箱顺序 = 序号顺序', () async {
+  test('导入攒批期间插进来的本机写入：操作日志 seq 连续、HLC 随 seq 递增', () async {
     final BulkFixture f = await BulkFixture.open(notes: 2, background: true);
     final SrsDbStore s = f.store;
     // 每次写不同的卡：同一字段键上后写的会支配并删掉先写的，乱序就看不见了。
@@ -76,12 +96,10 @@ void main() {
     );
     await Future.wait(writes);
     expect(writes.length, greaterThan(3));
-    final List<int> seqs = await outboxSeqs(f);
-    expect(seqs.length, greaterThan(300));
-    expectIncreasing(seqs);
+    expect(await expectOrdered(f), greaterThan(300));
   });
 
-  test('更改笔记类型（多实体一次写）期间插进来的本机写入：发件箱顺序 = 序号顺序', () async {
+  test('更改笔记类型（多实体一次写）期间插进来的本机写入：操作日志 seq 连续、HLC 随 seq 递增', () async {
     final BulkFixture f = await BulkFixture.open(notes: 120, background: true);
     final SrsDbStore s = f.store;
     final List<String> cards = <String>[
@@ -118,8 +136,6 @@ void main() {
     }
     await Future.wait(<Future<void>>[change, ...writes]);
     expect(writes.length, greaterThan(5));
-    final List<int> seqs = await outboxSeqs(f);
-    expect(seqs.length, greaterThan(120));
-    expectIncreasing(seqs);
+    expect(await expectOrdered(f), greaterThan(120));
   });
 }

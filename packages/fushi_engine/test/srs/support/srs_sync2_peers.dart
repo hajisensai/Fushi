@@ -22,13 +22,6 @@ Future<void> srsSyncPeers(
   }
 }
 
-final Expando<SrsMemoryLocationStore> _locations =
-    Expando<SrsMemoryLocationStore>();
-
-/// 旧测试里「同一个同步目录」对象 [key] 对应的内存位置（同一个 key 永远同一个位置）。
-SrsMemoryLocationStore srsLocationFor(Object key) =>
-    _locations[key] ??= SrsMemoryLocationStore();
-
 /// 一台设备对 [location] 跑一轮同步 v2。
 Future<SrsSync2Report> srsSyncOnce(SrsDbStore s, SrsLocationStore location) =>
     srsSync2Round(

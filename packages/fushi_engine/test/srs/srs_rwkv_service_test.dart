@@ -809,7 +809,7 @@ void main() {
       final SrsPurgeReport r = await srsPurgeNotesNow(f.store, <String>[
         noteId,
       ]);
-      expect(r.cards, 1);
+      expect(r.notes, 1);
       await pumpEventQueue();
       expect(backend.removed, <int>[goneId]);
       expect(backend.scores.containsKey(goneId), isFalse);

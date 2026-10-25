@@ -96,32 +96,6 @@ class FakeFsrsEngine implements FsrsEngine {
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
 }
 
-/// 内存同步目录。
-class MemoryDir implements SrsSyncDirectory {
-  MemoryDir(this.now);
-  final int Function() now;
-  final Map<String, Map<String, Uint8List>> files =
-      <String, Map<String, Uint8List>>{};
-  @override
-  Future<List<String>> listWriters() async => files.keys.toList()..sort();
-  @override
-  Future<List<String>?> listFiles(String w) async => files[w]?.keys.toList();
-  @override
-  Future<Uint8List?> read(String w, String n) async => files[w]?[n];
-  @override
-  Future<void> write(String w, String n, Uint8List b) async =>
-      (files[w] ??= <String, Uint8List>{})[n] = b;
-  @override
-  Future<void> delete(String w, String n) async => files[w]?.remove(n);
-  @override
-  Future<void> deleteWriter(String w) async => files.remove(w);
-  @override
-  Future<int?> serverTime(String w) async {
-    await write(w, srsProbeName, Uint8List(0));
-    return now();
-  }
-}
-
 /// 打开一个内存数据库上的 SrsDbStore。
 Future<SrsDbStore> openTestStore({
   required String profileUid,

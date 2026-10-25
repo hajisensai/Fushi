@@ -9,6 +9,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
@@ -19,7 +20,7 @@ const String kProfile = '01928c3e-0000-7000-8000-0000000000a1';
 
 void main() {
   int t = DateTime.utc(2026, 10, 22, 12).millisecondsSinceEpoch;
-  late MemoryDir dir;
+  late SrsMemoryLocationStore dir;
 
   Future<SrsDbStore> device(String id) =>
       openTestStore(profileUid: kProfile, deviceId: id, now: () => t);
@@ -27,7 +28,7 @@ void main() {
   Future<void> syncAll(List<SrsDbStore> stores) async {
     for (int round = 0; round < 3; round++) {
       for (final SrsDbStore s in stores) {
-        await srsSyncOnce(s, srsLocationFor(dir));
+        await srsSyncOnce(s, dir);
       }
     }
   }
@@ -62,7 +63,7 @@ void main() {
 
   setUp(() {
     t = DateTime.utc(2026, 10, 22, 12).millisecondsSinceEpoch;
-    dir = MemoryDir(() => t);
+    dir = SrsMemoryLocationStore();
   });
 
   group('笔记类型改动的缓存影响面（H5）', () {

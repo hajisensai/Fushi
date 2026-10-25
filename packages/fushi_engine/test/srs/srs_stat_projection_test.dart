@@ -2,7 +2,7 @@
 // - 增量维护的结果 = 整份重建的结果 = 参考实现（全部日志按卡分组、前身卡日志并到继承卡、每组选取后分类）；
 // - undo / 再答 / 导入 revlog 都随卡片缓存重算；保留原始时刻，日界换了读时重分桶；
 // - 更改笔记类型后旧卡的复习归到新卡；对端并发复习旧卡按合并历史分类；新设备首次同步得出同样的行；
-// - 笔记物理清除后复习照样计入，重建也不丢；
+// - 笔记彻底清除（v2 Purge）后复习照样计入，重建也不丢；
 // - 存量库（缓存修订号 < 2）打开时补齐；
 // - 统计读取路径不再读 srs_review_logs。
 import 'dart:convert';
@@ -17,11 +17,11 @@ import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_engine/srs/srs_purge.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
-import 'apkg/apkg_test_support.dart'
-    show FakeFsrsEngine, MemoryDir, openTestStore;
+import 'apkg/apkg_test_support.dart' show FakeFsrsEngine, openTestStore;
 import 'support/srs_bulk_fixture.dart' show importBench;
 import 'support/srs_test_storage.dart';
 import 'support/srs_sync2_peers.dart';
@@ -375,7 +375,7 @@ void main() {
     expect(await fromLoader(store, jst), await fromReference(store, jst));
   });
 
-  test('删笔记 → 物理清除：投影不变（复习照样计入），再整份重建仍不变', () async {
+  test('删笔记 → 彻底清除：投影不变（复习照样计入），再整份重建仍不变', () async {
     final String expr = srsLapisFieldId(_uid, 'Expression');
     final String note = await store.createNote(
       noteTypeId: store.lapisNoteTypeId,
@@ -396,12 +396,15 @@ void main() {
     expect(stats.where((String s) => s.startsWith('r ')), hasLength(3));
     expect(stats, await fromReference(store, jst));
 
-    expect(store.neverSynced, isTrue);
     await store.deleteNote(note);
     expect(await projectionRows(db), before, reason: '删除只隐藏卡，复习仍归自己');
     final SrsPurgeReport r = await srsPurgeNotesNow(store, <String>[note]);
     expect(r.notes, 1);
-    expect(await store.cardRow(card), isNull, reason: '卡片缓存行已清');
+    expect(
+      (await store.cardRow(card))!.hidden,
+      isTrue,
+      reason: '彻底清除只抹内容：卡行留着（复习历史要用），不再出现在队列',
+    );
     expect(await projectionRows(db), before);
     expect(await fromLoader(store, jst), stats);
 
@@ -412,9 +415,9 @@ void main() {
   });
 
   group('更改笔记类型 / 两台设备', () {
-    late MemoryDir dir;
+    late SrsMemoryLocationStore dir;
 
-    setUp(() => dir = MemoryDir(() => now));
+    setUp(() => dir = SrsMemoryLocationStore());
 
     Future<SrsDbStore> device(String id) =>
         openTestStore(profileUid: _uid, deviceId: id, now: () => now);
@@ -422,7 +425,7 @@ void main() {
     Future<void> syncAll(List<SrsDbStore> stores) async {
       for (int round = 0; round < 3; round++) {
         for (final SrsDbStore s in stores) {
-          await srsSyncOnce(s, srsLocationFor(dir));
+          await srsSyncOnce(s, dir);
         }
       }
     }

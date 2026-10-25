@@ -4,11 +4,11 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
-import 'support/srs_fake_engine.dart';
 import 'support/srs_sync2_peers.dart';
 
 const String kTreeProfile = '01928c3e-0000-7000-8000-0000000000aa';
@@ -295,13 +295,13 @@ void main() {
     });
 
     test('多设备：收下挪动记录的设备按旧全名新建，与挪动方得到同一个 ID', () async {
-      final SrsMemoryDir dir = SrsMemoryDir(() => t);
+      final SrsMemoryLocationStore dir = SrsMemoryLocationStore();
       final SrsDbStore a = await open('a');
       final SrsDbStore b = await open('b');
       Future<void> syncAll() async {
         for (int round = 0; round < 3; round++) {
           for (final SrsDbStore s in <SrsDbStore>[a, b]) {
-            await srsSyncOnce(s, srsLocationFor(dir));
+            await srsSyncOnce(s, dir);
           }
         }
       }
