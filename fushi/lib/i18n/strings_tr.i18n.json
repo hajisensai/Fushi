@@ -6133,6 +6133,7 @@
   "show_expression_tags": "İfade etiketlerini göster",
   "show_floating_lyric": "Kayan altyazı katmanı",
   "show_media_notification": "Medya bildirimini göster",
+  "show_media_notification_hint": "When off, a minimal notification (title and play/pause only) stays during playback so the system doesn't stop audio in the background.",
   "show_options": "Seçenekleri göster",
   "show_top_progress_bar": "Okuma ilerleme göstergesi",
   "skip_action": "Atlama Eylemi",

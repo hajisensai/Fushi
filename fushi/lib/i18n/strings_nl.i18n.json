@@ -6133,6 +6133,7 @@
   "show_expression_tags": "Expressietags tonen",
   "show_floating_lyric": "Zwevende ondertitel",
   "show_media_notification": "Mediamelding tonen",
+  "show_media_notification_hint": "When off, a minimal notification (title and play/pause only) stays during playback so the system doesn't stop audio in the background.",
   "show_options": "Opties tonen",
   "show_top_progress_bar": "Leesvoortgangsindicator",
   "skip_action": "Overslaan",

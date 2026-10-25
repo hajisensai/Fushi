@@ -6133,6 +6133,7 @@
   "show_expression_tags": "Показать теги выражений",
   "show_floating_lyric": "Плавающие субтитры",
   "show_media_notification": "Показать уведомление о медиа",
+  "show_media_notification_hint": "When off, a minimal notification (title and play/pause only) stays during playback so the system doesn't stop audio in the background.",
   "show_options": "Показать параметры",
   "show_top_progress_bar": "Индикатор прогресса чтения",
   "skip_action": "Действие пропуска",

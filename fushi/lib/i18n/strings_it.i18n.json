@@ -6133,6 +6133,7 @@
   "show_expression_tags": "Mostra tag delle espressioni",
   "show_floating_lyric": "Testo flottante sovrapposto",
   "show_media_notification": "Mostra notifica multimediale",
+  "show_media_notification_hint": "When off, a minimal notification (title and play/pause only) stays during playback so the system doesn't stop audio in the background.",
   "show_options": "Mostra opzioni",
   "show_top_progress_bar": "Indicatore di avanzamento",
   "skip_action": "Azione di salto",

@@ -2392,6 +2392,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       children: [
         AdaptiveSettingsSwitchRow(
           title: t.show_media_notification,
+          subtitle: t.show_media_notification_hint,
           value: _localShowMediaNotification,
           onChanged: (_) {
             widget.onToggleMediaNotification?.call();

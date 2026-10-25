@@ -6133,6 +6133,7 @@
   "show_expression_tags": "แสดงแท็กนิพจน์",
   "show_floating_lyric": "ซับไตเติลลอย",
   "show_media_notification": "แสดงการแจ้งเตือนสื่อ",
+  "show_media_notification_hint": "When off, a minimal notification (title and play/pause only) stays during playback so the system doesn't stop audio in the background.",
   "show_options": "แสดงตัวเลือก",
   "show_top_progress_bar": "ตัวบ่งชี้ความคืบหน้าการอ่าน",
   "skip_action": "การกระทำเมื่อข้าม",

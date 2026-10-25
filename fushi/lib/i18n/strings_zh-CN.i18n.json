@@ -6133,6 +6133,7 @@
   "show_expression_tags": "显示表达标签",
   "show_floating_lyric": "悬浮字幕",
   "show_media_notification": "显示媒体通知",
+  "show_media_notification_hint": "关闭后，播放时仍保留一条只有书名和播放/暂停键的最简通知，防止后台播放被系统停掉。",
   "show_options": "显示选项",
   "show_top_progress_bar": "顶部阅读进度",
   "skip_action": "跳过操作",

@@ -6133,6 +6133,7 @@
   "show_expression_tags": "表現タグを表示",
   "show_floating_lyric": "フローティング字幕",
   "show_media_notification": "メディア通知を表示",
+  "show_media_notification_hint": "オフにしても、再生中はタイトルと再生/一時停止ボタンだけの最小限の通知が残り、バックグラウンド再生がシステムに止められないようにします。",
   "show_options": "オプション表示",
   "show_top_progress_bar": "上部の読書進捗バー",
   "skip_action": "アクションをスキップ",

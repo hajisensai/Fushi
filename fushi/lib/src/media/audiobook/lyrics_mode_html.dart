@@ -1055,6 +1055,17 @@ window.__lyricsScrollToCue = function(index) {
     window.addEventListener('flutterInAppWebViewPlatformReady', notifyLyricsReady, {once: true});
   }
 })();
+// BUG-3770 R2：文档从不可见变回可见（App 回前台 / WebView 重新上屏）时请 Dart 按此刻
+// 的播放位置重推一次当前行 / 播放态 / 扫过进度——不可见期间被节流积压或丢掉的同步
+// 不能指望下一句才纠正。
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState !== 'visible') return;
+  var bridge = window.flutter_inappwebview;
+  if (!bridge || typeof bridge.callHandler !== 'function') return;
+  try {
+    bridge.callHandler('onLyricsVisible');
+  } catch (err) {}
+});
 
 // ── 逐字扫过（Niratan line progress）──
 // Dart 在 cue 推进 / 播放态翻转 / seek / 倍速变化时下发「当前行已播比例 + 每秒推进量」，
@@ -1258,12 +1269,22 @@ window.__lyricsRelayoutSweep = _lySweepRelayout;
 if (document.fonts && document.fonts.addEventListener) {
   document.fonts.addEventListener('loadingdone', function() { _lySweepRelayout(); });
 }
-window.__lyricsSetProgress = function(index, fraction, ratePerSec) {
+// 纯函数：Dart 在 [sentAtMs]（墙钟）按真实播放位置算出 [fraction]；这段脚本可能晚
+// 很久才执行（WebView 被节流 / 后台积压），执行时再把这段延迟按播放速率补上，否则
+// 扫过会整段落后于声音（BUG-3770 R2）。没带发送时刻（旧调用方）或未在推进时原样返回。
+function __lyricsProgressAtArrival(fraction, ratePerSec, sentAtMs, nowMs) {
+  var f = Math.max(0, Math.min(1, fraction || 0));
+  if (!(ratePerSec > 0) || !(sentAtMs > 0)) return f;
+  var lag = nowMs - sentAtMs;
+  if (!(lag > 0)) return f;
+  return Math.min(1, f + lag / 1000 * ratePerSec);
+}
+window.__lyricsSetProgress = function(index, fraction, ratePerSec, sentAtMs) {
   if (index !== _currentIdx || !_lyPlaying) return;
   var el = _cues[index];
   if (!el) return;
-  var f = Math.max(0, Math.min(1, fraction || 0));
-  _lySweepBuild(el, f, ratePerSec > 0 ? ratePerSec : 0);
+  var rate = ratePerSec > 0 ? ratePerSec : 0;
+  _lySweepBuild(el, __lyricsProgressAtArrival(fraction, rate, sentAtMs, Date.now()), rate);
 };
 // 播放态：暂停时当前行整行点亮（不扫）、并停掉自动回到当前行的计时；继续播放时
 // 若用户正停在别处浏览，重新起 4 秒回中计时。
