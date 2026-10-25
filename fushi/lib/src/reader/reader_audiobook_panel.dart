@@ -1060,72 +1060,71 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
             GlobalKey currentRowKey,
             VoidCallback revealCurrent,
           ) {
-            final NullableIndexedWidgetBuilder itemBuilder = fushiStaggeredItemBuilder((
-              BuildContext context,
-              int index,
-            ) {
-              if (index < lead.length) return lead[index];
-              if (index < leadCount) {
-                return ReaderPanelSectionLabel(
-                  t.reader_audiobook_tab_chapters,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(
-                        '${widget.toc.length}',
-                        style: theme.textTheme.labelMedium,
+            final NullableIndexedWidgetBuilder itemBuilder =
+                fushiStaggeredItemBuilder((BuildContext context, int index) {
+                  if (index < lead.length) return lead[index];
+                  if (index < leadCount) {
+                    return ReaderPanelSectionLabel(
+                      t.reader_audiobook_tab_chapters,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(
+                            '${widget.toc.length}',
+                            style: theme.textTheme.labelMedium,
+                          ),
+                          FushiIconButtonControl(
+                            key: const ValueKey<String>(
+                              'fushi_audiobook_reveal_current_chapter',
+                            ),
+                            tooltip: t.reader_audiobook_current_chapter,
+                            constraints: const BoxConstraints(
+                              minWidth: 48,
+                              minHeight: 48,
+                            ),
+                            onPressed: currentEntry < 0 ? null : revealCurrent,
+                            icon: const FushiIcon(FushiIcons.myLocation),
+                          ),
+                        ],
                       ),
-                      FushiIconButtonControl(
-                        key: const ValueKey<String>(
-                          'fushi_audiobook_reveal_current_chapter',
-                        ),
-                        tooltip: t.reader_audiobook_current_chapter,
-                        constraints: const BoxConstraints(
-                          minWidth: 48,
-                          minHeight: 48,
-                        ),
-                        onPressed: currentEntry < 0 ? null : revealCurrent,
-                        icon: const FushiIcon(FushiIcons.myLocation),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              final int i = index - leadCount;
-              final TtuTocEntry entry = widget.toc[i];
-              final int? startMs = starts[i];
-              final int? dms = durationFor(i);
-              final String? subtitle = <String>[
-                if (i == currentEntry) t.reader_audiobook_current_chapter,
-                if (dms != null) _formatDuration(Duration(milliseconds: dms)),
-              ].join(' · ').let((String s) => s.isEmpty ? null : s);
-              return ReaderPanelListItem(
-                key: i == currentEntry ? currentRowKey : null,
-                title: entry.label,
-                subtitle: subtitle,
-                current: i == currentEntry,
-                trailing: Text(
-                  startMs == null
-                      ? '—'
-                      : _formatDuration(Duration(milliseconds: startMs)),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontFeatures: const <FontFeature>[
-                      FontFeature.tabularFigures(),
-                    ],
-                  ),
-                ),
-                onTap: () async {
-                  Navigator.of(context).pop();
-                  await widget.onJumpSection(entry.index, entry.fragment);
-                  final AudioCue? first = ctrl == null
-                      ? null
-                      : _entryStartCue(ctrl, i);
-                  if (ctrl != null && first != null) {
-                    await ctrl.skipToCue(first);
+                    );
                   }
-                },
-              );
-            });
+                  final int i = index - leadCount;
+                  final TtuTocEntry entry = widget.toc[i];
+                  final int? startMs = starts[i];
+                  final int? dms = durationFor(i);
+                  final String? subtitle = <String>[
+                    if (i == currentEntry) t.reader_audiobook_current_chapter,
+                    if (dms != null)
+                      _formatDuration(Duration(milliseconds: dms)),
+                  ].join(' · ').let((String s) => s.isEmpty ? null : s);
+                  return ReaderPanelListItem(
+                    key: i == currentEntry ? currentRowKey : null,
+                    title: entry.label,
+                    subtitle: subtitle,
+                    current: i == currentEntry,
+                    trailing: Text(
+                      startMs == null
+                          ? '—'
+                          : _formatDuration(Duration(milliseconds: startMs)),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontFeatures: const <FontFeature>[
+                          FontFeature.tabularFigures(),
+                        ],
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.of(context).pop();
+                      await widget.onJumpSection(entry.index, entry.fragment);
+                      final AudioCue? first = ctrl == null
+                          ? null
+                          : _entryStartCue(ctrl, i);
+                      if (ctrl != null && first != null) {
+                        await ctrl.skipToCue(first, manualTarget: true);
+                      }
+                    },
+                  );
+                });
             final int count = leadCount + widget.toc.length;
             const Key listKey = ValueKey<String>('fushi_audiobook_chapters');
             if (header == null) {

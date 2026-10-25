@@ -413,6 +413,10 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 跨章 await 期间为 true，[_updateCurrentCue] 和 [setChapterCues]
   /// 直接 return，避免 cue 推进 / _currentCue 被清零。reader 完成跳章后
   /// 调 [notifySectionRestoreCompleted] 清回 false。
+  ///
+  /// 守卫只在该次跨章导航确实还没落地时有意义：如果 reader 已经停在 cue
+  /// 所属章（导航早于回执落地 / 回执被代际判旧丢弃），继续持守卫会永久冻结
+  /// cue 推进。这两处入口都会在「reader 当前章 == cue 所属章」时自愈释放。
   bool _chapterTransition = false;
 
   /// User-initiated reader navigation temporarily owns the visible section.
@@ -1220,7 +1224,20 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 否则 _updateCurrentCue 被 guard 挡住，_currentCue 卡 null，
     // 守卫放下后第一次 tick 会匹配到 cue[0] 导致进度清零。
     // 守卫放下后 notifySectionRestoreCompleted 会负责恢复。
-    if (_chapterTransition) return;
+    //
+    // 自愈：若这批 cue 就属于 reader 当前章，说明这次跨章的导航已经落地（回执
+    // 可能被代际判旧丢弃），守卫再持着只会让新章永远无法高亮。释放后照常装载。
+    if (_chapterTransition) {
+      final int readerSection = getCurrentReaderSection?.call() ?? -1;
+      final int cueSection = _firstCueSectionIndex(_chapterCues);
+      if (readerSection >= 0 &&
+          cueSection >= 0 &&
+          readerSection == cueSection) {
+        _chapterTransition = false;
+      } else {
+        return;
+      }
+    }
     // 换 cue 列表是上下文边界：任何挂起的显式 seek 抑制窗都失效，必须复位，
     // 否则下面的 _updateCurrentCue 重算会被旗挡住、_currentCue 卡 null（W-2）。
     _clearExplicitSeekSuppression();
@@ -1573,8 +1590,12 @@ class AudiobookPlayerController extends ChangeNotifier {
   @visibleForTesting
   bool get explicitSeekInFlightForTesting => _explicitSeekInFlight;
 
-  Future<void> skipToCue(AudioCue cue) async {
-    _manualReaderOverrideCue = null;
+  /// [manualTarget]：调用方（有声书面板「章节」tab）已经手动把 reader 导航到
+  /// 这一章，紧随其后的 seek 不应再把同一条 cue 当成「音频自动跨章」而去重复
+  /// 请求 reader 跳章。置 [_manualReaderOverrideCue] 后，[followAudio] 在音频
+  /// 仍停在这条 cue 时不再发跨章；播到下一句自动恢复跟随。不传时行为不变。
+  Future<void> skipToCue(AudioCue cue, {bool manualTarget = false}) async {
+    _manualReaderOverrideCue = manualTarget ? cue : null;
     _stopAtPositionMs = null;
     _returnToPosition = null;
     await _loadReady.future;
@@ -1935,13 +1956,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     // BUG-3777 R1：播放所在句照常按位置推进（歌词层用它），跨章期间换句也要 notify——
     // 否则后台跨章卡住时歌词层一直停在进章那一句。
     final bool playbackCueChanged = _trackPlaybackCue(posMs);
-    // 跨章 await 期间不推进 cue，否则 positionStream 连续触发
-    // _maybeEmitCrossChapter 重复调 onCrossChapter。
-    if (_chapterTransition) {
-      if (playbackCueChanged) notifyListeners();
-      return;
-    }
     if (_chapterCues.isEmpty) {
+      if (_chapterTransition && playbackCueChanged) notifyListeners();
       return;
     }
     // 应用用户设置的音画延迟：delayMs 正值表示"音频比文字先播"，查询
@@ -1950,7 +1966,10 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 自行返回最后一个 cue 即可。
     final int audioFileIndex = _player.currentIndex ?? 0;
     final List<AudioCue> fileCues = _chapterCuesForAudioFile(audioFileIndex);
-    if (fileCues.isEmpty) return;
+    if (fileCues.isEmpty) {
+      if (_chapterTransition && playbackCueChanged) notifyListeners();
+      return;
+    }
     final int effectiveMs = (posMs - delayMs.value).clamp(0, 1 << 30);
     final int idx = JsonAlignmentParser.findCueIndex(
       cues: fileCues,
@@ -1958,8 +1977,28 @@ class AudiobookPlayerController extends ChangeNotifier {
     );
     // Gap（两条 cue 之间的静音）：保持上一条 cue 不清高亮，避免闪烁。
     // 用 index 而非 textFragmentId 比较，防止重复短句 id 相同时短路。
-    if (idx < 0) return;
+    if (idx < 0) {
+      if (_chapterTransition && playbackCueChanged) notifyListeners();
+      return;
+    }
     final AudioCue cue = fileCues[idx];
+    // 跨章 await 期间不推进 cue，否则 positionStream 连续触发
+    // _maybeEmitCrossChapter 重复调 onCrossChapter。但守卫只应挡住「reader 还在
+    // 别的章」的 tick：如果 reader 已经停在 cue 所属章（导航落地了，回执被代际
+    // 判旧丢弃 / 或从未送达），继续持守卫会让高亮永久冻结在旧句（真机 ch89
+    // 面板跳章后音频已走 9 分钟、高亮仍停在章首）。这种情况直接自愈释放。
+    if (_chapterTransition) {
+      final int readerSection = getCurrentReaderSection?.call() ?? -1;
+      final int cueSection = _cueSectionIndex(cue);
+      if (readerSection >= 0 &&
+          cueSection >= 0 &&
+          readerSection == cueSection) {
+        _chapterTransition = false;
+      } else {
+        if (playbackCueChanged) notifyListeners();
+        return;
+      }
+    }
     final int chapterIdx = _chapterCues.indexOf(cue);
     if (chapterIdx == _currentCueIndex) {
       // cue 未变但 reader 章可能仍不同步（BUG-069）：skipToCue 跨章时会预置
@@ -2034,15 +2073,21 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// SMIL/JSON 等非 sasayaki 路径 cue 的 textFragmentId 解码返回 null，
   /// 自然跳过这套逻辑（它们没有跨章同步概念）。
   void _maybeEmitCrossChapter(AudioCue? cue, {bool bypassPlayGuard = false}) {
-    if (_chapterTransition) {
-      return;
-    }
     if (cue == null) return;
-    if (!bypassPlayGuard && _isManualReaderOverrideCue(cue)) return;
     final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
       cue.textFragmentId,
     );
     final int currentSec = getCurrentReaderSection?.call() ?? -1;
+    if (_chapterTransition) {
+      // 与 [_updateCurrentCue] 同一自愈判据：reader 已经在 cue 所属章时，
+      // 守卫对应那次导航已经落地，回执丢了也不该继续挡跨章/高亮。
+      if (frag != null && currentSec >= 0 && frag.sectionIndex == currentSec) {
+        _chapterTransition = false;
+      } else {
+        return;
+      }
+    }
+    if (!bypassPlayGuard && _isManualReaderOverrideCue(cue)) return;
     final int cueSec;
     if (frag != null) {
       cueSec = frag.sectionIndex;
@@ -2468,6 +2513,23 @@ class AudiobookPlayerController extends ChangeNotifier {
   }) {
     for (int i = 0; i < allBookCues.length; i++) {
       if (_isSameCue(allBookCues[i], currentCue)) return i;
+    }
+    return -1;
+  }
+
+  /// Section index encoded in a SASayaki cue (`fushi-cue://s=...`), or -1.
+  static int _cueSectionIndex(AudioCue cue) {
+    final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+      cue.textFragmentId,
+    );
+    return frag?.sectionIndex ?? -1;
+  }
+
+  /// First decodable section among [cues], or -1.
+  static int _firstCueSectionIndex(List<AudioCue> cues) {
+    for (final AudioCue cue in cues) {
+      final int section = _cueSectionIndex(cue);
+      if (section >= 0) return section;
     }
     return -1;
   }
