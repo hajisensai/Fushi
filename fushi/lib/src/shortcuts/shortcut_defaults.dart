@@ -242,6 +242,14 @@ class ShortcutDefaults {
     ShortcutAction.audiobookSeekToClickedSentence: const ShortcutBindingSet(
       mouseBindings: [MouseBinding(1)],
     ),
+    // 歌词模式按钮的快捷键：默认不绑，用户自绑（见 shortcut_action.dart）。
+    ShortcutAction.audiobookReplaySentence: const ShortcutBindingSet(),
+    ShortcutAction.audiobookSeekBackward: const ShortcutBindingSet(),
+    ShortcutAction.audiobookSeekForward: const ShortcutBindingSet(),
+    ShortcutAction.audiobookSpeedUp: const ShortcutBindingSet(),
+    ShortcutAction.audiobookSpeedDown: const ShortcutBindingSet(),
+    ShortcutAction.audiobookToggleLyricsMode: const ShortcutBindingSet(),
+    ShortcutAction.audiobookToggleLyricsMask: const ShortcutBindingSet(),
     // Video player defaults (TODO-134). Mirror the previous hard-coded
     // buildVideoPlayerShortcuts map exactly so migrating into the registry does
     // not change any default behaviour (Never break userspace). The video page

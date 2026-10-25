@@ -64,7 +64,11 @@ import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart'
+    show AudiobookSpeedSlider;
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout_editor.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
@@ -76,6 +80,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/highlight_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_typography_panel.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart'
+    show showLyricsSpeedPanel;
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
@@ -112,8 +118,6 @@ import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
 import 'package:fushi/src/reader/reader_audio_cue_offset_index.dart';
-import 'package:fushi/src/reader/reader_audiobook_panel.dart'
-    show AudiobookSleepTimer;
 import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';
 import 'package:fushi/src/reader/reader_engine_config.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
@@ -550,8 +554,10 @@ ReaderThemeColors _resolveBaseReaderThemeColors({
   // 经 M3E 阅读配色 [fushiReaderPaletteFor] 派生（纸色 neutral 98 / 6、正文
   // neutral 12 / 90、查词 = primaryContainer、当前句 = tertiaryContainer），
   // 编辑页「跟随主题」显示的值也走这里——单一真源。
-  final FushiReaderPalette palette =
-      fushiReaderPaletteFor(scheme, scheme.brightness);
+  final FushiReaderPalette palette = fushiReaderPaletteFor(
+    scheme,
+    scheme.brightness,
+  );
   final ReaderThemeColors fromScheme = readerThemeColorsFromPalette(palette);
   if (customOverrides == null || !ThemeNotifier.isCustomThemeKey(themeKey)) {
     return fromScheme;
@@ -1356,10 +1362,10 @@ Future<List<EpubImageRef>> _buildBookImagesOffUiIsolate(
     final File? cacheFile = extractDir == null
         ? null
         : await epubImageIndexCacheFileFor(extractDir);
-    final EpubImageIndexLoad result = await compute(
-      _epubBookImagesOf,
-      (book: book, cacheFile: cacheFile?.path),
-    );
+    final EpubImageIndexLoad result = await compute(_epubBookImagesOf, (
+      book: book,
+      cacheFile: cacheFile?.path,
+    ));
     reportEpubImageIndexCacheFailures(
       'ReaderFushiPage.bookImages',
       result.failures,
@@ -1670,7 +1676,7 @@ class ReaderFushiPage extends BaseSourcePage {
 }
 
 class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
-    with WidgetsBindingObserver
+    with WidgetsBindingObserver, RouteAware
     implements ReaderAudiobookView, DictionaryCaretHost {
   InAppWebViewController? _controller;
 
@@ -1807,8 +1813,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   int _currentChapter = 0;
 
   /// 桌面控制通道遥控面（见 `reader_fushi/session_remote.part.dart`）。
-  late final _ReaderPageSessionRemote _sessionRemote =
-      _ReaderPageSessionRemote(this);
+  late final _ReaderPageSessionRemote _sessionRemote = _ReaderPageSessionRemote(
+    this,
+  );
   // 压平目录的按书缓存（见 [_buildTtuToc]）：顶栏章名逐帧要查，压平却要走整棵 TOC
   // 树。只随 _book 失效，故这两个字段总是成对写。
   List<TtuTocEntry>? _ttuTocCache;
@@ -1947,7 +1954,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     if (settings == null || !_foldState.isBook) return 0;
     final double width = _foldWindowWidth;
     final double marginLeftPx = width * math.max(0, settings.marginLeft) / 100;
-    final double marginRightPx = width * math.max(0, settings.marginRight) / 100;
+    final double marginRightPx =
+        width * math.max(0, settings.marginRight) / 100;
     return fushiHingeGutterPx(
       fold: _foldState,
       contentCenterX: marginLeftPx + (width - marginLeftPx - marginRightPx) / 2,
@@ -1956,28 +1964,28 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   /// 本次排版实际的每页列数覆盖与栏间隙覆盖（都由折叠状态 + 当前设置推出）。
   int? get _foldPageColumns => ReaderContentStyles.foldPageColumnsOverride(
-        bookPosture: _foldBookPosture,
-        settings: _settings!,
-      );
+    bookPosture: _foldBookPosture,
+    settings: _settings!,
+  );
 
   /// 图片跨页文档（[buildSpreadPageHtml]，两半各占半屏、以窗口中线为界）的铰链缝。
   double get _foldSpreadGutterPx => fushiHingeGutterPx(
-        fold: _foldState,
-        contentCenterX: _foldWindowWidth / 2,
-      );
+    fold: _foldState,
+    contentCenterX: _foldWindowWidth / 2,
+  );
 
   /// 竖排对开（一屏右页 + 左页）；与 [_foldPageColumns] 互斥（一个只管横排、一个只管竖排）。
   bool get _foldVerticalSpread => ReaderContentStyles.foldVerticalSpread(
-        bookPosture: _foldBookPosture,
-        settings: _settings!,
-      );
+    bookPosture: _foldBookPosture,
+    settings: _settings!,
+  );
 
   int? get _foldColumnGap => ReaderContentStyles.foldColumnGapPx(
-        hingeGutterPx: _foldHingeGutterPx,
-        effectivePageColumns: _foldPageColumns ?? _settings!.pageColumns,
-        settings: _settings!,
-        verticalSpread: _foldVerticalSpread,
-      );
+    hingeGutterPx: _foldHingeGutterPx,
+    effectivePageColumns: _foldPageColumns ?? _settings!.pageColumns,
+    settings: _settings!,
+    verticalSpread: _foldVerticalSpread,
+  );
   double _stableBottomInset = 0;
 
   /// 底栏内容行的自然（未缩放）高度。
@@ -2401,6 +2409,18 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 外观参数、翻目录、搜书、看插图都不是阅读。经 [_withStudyClockPaused] 增减。
   int _studyClockModalDepth = 0;
 
+  /// 有整页路由盖在阅读器上（[RouteAware.didPushNext] / [didPopNext]）。与
+  /// [_studyClockModalDepth] 一起进判据（BUG-2208 的「全页路由压住正文」）：从页面
+  /// 外推上来的路由——悬浮球的反馈中心、通知点进的反馈详情——不经任何
+  /// [_withStudyClockPaused] 入口，阅读器只能靠路由监听看见它们。只认 [PageRoute]
+  /// （`appModel.routeObserver` 的类型参数）：侧板 / 对话框 / 查词浮层不触发，统计
+  /// 侧栏与制卡「不停表」的拍板不受影响。bool 而非计数：叠几层页面也只在直接盖住
+  /// / 揭开这一层时各通知一次。
+  bool _studyClockCoveredByRoute = false;
+
+  /// 已向 `appModel.routeObserver` 订阅的本页路由（换路由时重订）。
+  ModalRoute<Object?>? _studyClockRoute;
+
   /// 上一次喂给 [_noteAudiobookPlayingForStudyClock] 的有声书播放态镜像（BUG-2558）。
   ///
   /// **只用于边沿检测**（播放态翻转时才 sync 时钟运行态）；[_studyClockMayRun] 判定时
@@ -2775,24 +2795,24 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   double get popupBottomReserve => readerPopupBottomReserve(
-        // 挤压底栏：_bottomChromeReserve 已含「占位 + 非悬浮」两道门控。
-        squeezeReserve: _bottomChromeReserve,
-        readerBottomReserve: _readerBottomReserve,
-        // BUG-3292：底栏不占位（「点空白隐藏控制栏」）但被点出来时，它画在弹层之上，
-        // 弹窗必须让开；收起时 0。门控看「不占位」而不是工具栏样式：悬浮样式
-        // （[_buildFloatingBottomChrome]）与贴边样式（[_buildBottomChrome] →
-        // [_wrapBottomChromeBar]）此刻都按 `!_lyricsMode && _bottomBarShouldPaint` 画。
-        floatingChromePainted:
-            _bottomBarFloating && !_lyricsMode && _bottomBarShouldPaint,
-        // 贴边样式是一条缩放后的 [_readerChromeHeight]，悬浮样式是叠放高 + 外边距。
-        floatingChromeExtent: _bottomChromeExtent,
-        chromeBaseBand: readerBottomChromeBaseBand(
-          floatingToolbars: _floatingToolbars,
-          separatePlaybackStatus: _separatePlaybackStatus,
-          paintedFooterBand: _statusFooterPaintedBand,
-          bottomInset: _stableBottomInset,
-        ),
-      );
+    // 挤压底栏：_bottomChromeReserve 已含「占位 + 非悬浮」两道门控。
+    squeezeReserve: _bottomChromeReserve,
+    readerBottomReserve: _readerBottomReserve,
+    // BUG-3292：底栏不占位（「点空白隐藏控制栏」）但被点出来时，它画在弹层之上，
+    // 弹窗必须让开；收起时 0。门控看「不占位」而不是工具栏样式：悬浮样式
+    // （[_buildFloatingBottomChrome]）与贴边样式（[_buildBottomChrome] →
+    // [_wrapBottomChromeBar]）此刻都按 `!_lyricsMode && _bottomBarShouldPaint` 画。
+    floatingChromePainted:
+        _bottomBarFloating && !_lyricsMode && _bottomBarShouldPaint,
+    // 贴边样式是一条缩放后的 [_readerChromeHeight]，悬浮样式是叠放高 + 外边距。
+    floatingChromeExtent: _bottomChromeExtent,
+    chromeBaseBand: readerBottomChromeBaseBand(
+      floatingToolbars: _floatingToolbars,
+      separatePlaybackStatus: _separatePlaybackStatus,
+      paintedFooterBand: _statusFooterPaintedBand,
+      bottomInset: _stableBottomInset,
+    ),
+  );
 
   @override
   double get popupTopReserve => _stableTopInset;
@@ -3511,6 +3531,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
+    appModelNoUpdate.routeObserver.unsubscribe(this);
     _stopFollowingScrollDismissPointer();
     _sourceReviewClosed = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
@@ -3899,8 +3920,27 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   }
 
   @override
+  void didPushNext() {
+    _studyClockCoveredByRoute = true;
+    _syncStudyClockRunState();
+  }
+
+  @override
+  void didPopNext() {
+    _studyClockCoveredByRoute = false;
+    _syncStudyClockRunState();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    if (route is PageRoute && !identical(route, _studyClockRoute)) {
+      appModelNoUpdate.routeObserver
+        ..unsubscribe(this)
+        ..subscribe(this, route);
+      _studyClockRoute = route;
+    }
     final LyricsThemeHostState? themeHost = LyricsThemeHost.maybeOf(context);
     if (!identical(themeHost, _lyricsThemeHost)) {
       _lyricsThemeHost?.themeChanges.removeListener(_onLyricsThemeHostChanged);
@@ -3950,9 +3990,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       final int? afterGap = settings == null ? null : _foldColumnGap;
       final bool afterVerticalSpread = settings != null && _foldVerticalSpread;
       // 当前是图片跨页文档时，铰链缝变了也要重挂（同走 _reloadWithCurrentSettings）。
-      final bool spreadChanged = _spreadDocumentLoaded &&
-          beforeSpreadGutter != _foldSpreadGutterPx;
-      final bool changed = beforeColumns != afterColumns ||
+      final bool spreadChanged =
+          _spreadDocumentLoaded && beforeSpreadGutter != _foldSpreadGutterPx;
+      final bool changed =
+          beforeColumns != afterColumns ||
           beforeGap != afterGap ||
           beforeVerticalSpread != afterVerticalSpread ||
           spreadChanged;
@@ -4091,8 +4132,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                   colors: _sourceReviewSession == null
                       ? (background: bgColor, foreground: _themeTextColor())
                       : (
-                          background:
-                              Theme.of(context).colorScheme.secondaryContainer,
+                          background: Theme.of(
+                            context,
+                          ).colorScheme.secondaryContainer,
                           foreground: Theme.of(
                             context,
                           ).colorScheme.onSecondaryContainer,
@@ -4379,7 +4421,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // CSS 的 `_themeColors` 对预设 key 用写死纸色、忽略 customBg：预设明暗与 app
       // 不符（[readerPresetFor] 返回 null）时不能再把预设 key 传进去，否则 Dart 侧
       // 已回落到派生深色、正文却仍是浅纸。走 default 分支吃 customBg/customFg。
-      themeOverride: _readerPresetApplies ? appModel.readerThemeKey : 'system-theme',
+      themeOverride: _readerPresetApplies
+          ? appModel.readerThemeKey
+          : 'system-theme',
       // 正文字体按**书自己的语言**选链（与界面语言无关）：中文界面下打开日文书，
       // 界面该是中文字形、正文该是日文字形，两个独立的正确答案。
       contentLanguage: _contentLanguage,
@@ -4401,8 +4445,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 跟随主题的 M3E 阅读配色才写注音色 / 原生选区；预设与钉纸色保持旧行为。
       // 分页 / 滚动 / VN 三种布局共用这一份 CSS，取色同源。
       rubyColor: palette == null ? null : _colorToCssRgba(palette.rubyText),
-      nativeSelectionColor:
-          palette == null ? null : _colorToCssRgba(palette.nativeSelection),
+      nativeSelectionColor: palette == null
+          ? null
+          : _colorToCssRgba(palette.nativeSelection),
       // 墨水屏模式：全局单开关叠加在阅读器主题之上（纯黑白+线式高亮+关过渡），
       // 黑白方向跟 app 明暗模式，与全局 E-ink ColorScheme 一致。
       einkMode: appModel.einkMode,
@@ -4439,8 +4484,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     final bool hostHover = hostOwnsWebViewHoverLookup;
     try {
       // 覆盖层架构：正文与歌词是两个 WebView，开关两份文档都要拿到。
-      for (final InAppWebViewController? web
-          in <InAppWebViewController?>[_controller, _lyricsController]) {
+      for (final InAppWebViewController? web in <InAppWebViewController?>[
+        _controller,
+        _lyricsController,
+      ]) {
         await web?.evaluateJavascript(
           source:
               'window.__hoverAutoLookup = $enabled;'
@@ -5208,8 +5255,8 @@ $liveConfigJs
     // 故不需要再乘 devicePixelRatio（DPR 换的是逻辑↔物理，不是逻辑↔CSS；多乘反而
     // 会重新引入这个偏移）。RenderBox 不可用时（不应发生：barrier 在屏说明 WebView
     // 也在树上）回退到 barrier-local，退化成旧行为而非崩溃。
-    final RenderObject? obj =
-        _surfaceWebViewKey.currentContext?.findRenderObject();
+    final RenderObject? obj = _surfaceWebViewKey.currentContext
+        ?.findRenderObject();
     final Offset local = (obj is RenderBox && obj.attached && obj.hasSize)
         ? obj.globalToLocal(event.position)
         : event.localPosition;
@@ -5357,8 +5404,7 @@ $liveConfigJs
   void _hostHoverLookupAt(Offset local, {required bool hoverAutoLookup}) {
     if (!_hostHoverGate.shouldLookup(
       local,
-      shiftPressed: ReaderFushiSource.instance.hoverLookupModifier
-          .isPressed(),
+      shiftPressed: ReaderFushiSource.instance.hoverLookupModifier.isPressed(),
       hoverAutoLookup: hoverAutoLookup,
     )) {
       return;
@@ -5374,8 +5420,8 @@ $liveConfigJs
   /// `onShiftHover` 的 `e.clientX/clientY` 同尺度。
   void _handleWebViewHostHover(PointerHoverEvent event) {
     final Offset local = event.localPosition;
-    final RenderObject? obj =
-        _surfaceWebViewKey.currentContext?.findRenderObject();
+    final RenderObject? obj = _surfaceWebViewKey.currentContext
+        ?.findRenderObject();
     if (obj is RenderBox &&
         obj.hasSize &&
         !readerHostHoverPointInside(local, obj.size)) {
@@ -5433,8 +5479,8 @@ $liveConfigJs
   /// RenderBox 不可用时（不应发生：barrier 在屏说明 WebView 也在树上）退回默认清栈。
   @override
   void onDismissBarrierTap(Offset globalPos) {
-    final RenderObject? obj =
-        _surfaceWebViewKey.currentContext?.findRenderObject();
+    final RenderObject? obj = _surfaceWebViewKey.currentContext
+        ?.findRenderObject();
     if (obj is! RenderBox || !obj.attached || !obj.hasSize) {
       // WebView 不可用：退回默认「点空白关栈」。
       clearDictionaryResult();
@@ -5488,7 +5534,9 @@ $liveConfigJs
         child: DictionaryPopupToolGroup(
           children: [
             FushiIconButton(
-              icon: _currentSentenceIsFavorited ? Icons.star : Icons.star_border,
+              icon: _currentSentenceIsFavorited
+                  ? Icons.star
+                  : Icons.star_border,
               size: kDictionaryPopupTopActionIconSize,
               enabledColor: _currentSentenceIsFavorited
                   ? theme.colorScheme.primary

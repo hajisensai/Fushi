@@ -764,6 +764,21 @@ extension _ReaderCaret on _ReaderFushiPageState {
         }
         _audiobookController?.skipToPrevCue();
         return KeyEventResult.handled;
+      // 歌词模式按钮的快捷键（默认不绑，用户自绑）：与歌词页按钮同一执行体，正文态
+      // 同样生效。没有有声书 / 「听书」模块关掉时不消费，让键冒泡给别的动作。
+      case ShortcutAction.audiobookReplaySentence:
+      case ShortcutAction.audiobookSeekBackward:
+      case ShortcutAction.audiobookSeekForward:
+      case ShortcutAction.audiobookSpeedUp:
+      case ShortcutAction.audiobookSpeedDown:
+      case ShortcutAction.audiobookToggleLyricsMode:
+      case ShortcutAction.audiobookToggleLyricsMask:
+        final AudiobookPlayerController? ctrl = _audiobookController;
+        if (ctrl == null || !_moduleVisibility.isEnabled(ModuleId.listening)) {
+          return KeyEventResult.ignored;
+        }
+        _runLyricsShortcut(action, ctrl);
+        return KeyEventResult.handled;
       default:
         return KeyEventResult.ignored;
     }
@@ -999,8 +1014,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
       }
       return;
     }
-    final InAppWebViewController? caretWeb =
-        _caretOnLyrics ? _lyricsController : _controller;
+    final InAppWebViewController? caretWeb = _caretOnLyrics
+        ? _lyricsController
+        : _controller;
     if (caretWeb == null) return;
     final Object? raw = await caretWeb.evaluateJavascript(
       source: _caretOnLyrics
@@ -1035,8 +1051,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
         await _caretTopPopupState?.caretScrollPage(forward);
         return;
       }
-      final InAppWebViewController? caretWeb =
-          _caretOnLyrics ? _lyricsController : _controller;
+      final InAppWebViewController? caretWeb = _caretOnLyrics
+          ? _lyricsController
+          : _controller;
       if (caretWeb == null) return;
       final Object? raw = await caretWeb.evaluateJavascript(
         source: _caretOnLyrics
@@ -1063,8 +1080,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
       await _caretTopPopupState?.caretLookup();
       return;
     }
-    final InAppWebViewController? caretWeb =
-        _caretOnLyrics ? _lyricsController : _controller;
+    final InAppWebViewController? caretWeb = _caretOnLyrics
+        ? _lyricsController
+        : _controller;
     if (caretWeb == null) return;
     await caretWeb.evaluateJavascript(
       source: _caretOnLyrics
@@ -1083,8 +1101,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
       await _caretTopPopupState?.caretActivate();
       return;
     }
-    final InAppWebViewController? caretWeb =
-        _caretOnLyrics ? _lyricsController : _controller;
+    final InAppWebViewController? caretWeb = _caretOnLyrics
+        ? _lyricsController
+        : _controller;
     if (caretWeb == null) return;
     await caretWeb.evaluateJavascript(
       source: _caretOnLyrics
@@ -1098,8 +1117,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
       await _caretTopPopupState?.caretLongPress();
       return;
     }
-    final InAppWebViewController? caretWeb =
-        _caretOnLyrics ? _lyricsController : _controller;
+    final InAppWebViewController? caretWeb = _caretOnLyrics
+        ? _lyricsController
+        : _controller;
     if (caretWeb == null) return;
     await caretWeb.evaluateJavascript(
       source: _caretOnLyrics
@@ -1152,8 +1172,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
   /// Reader-only.
   Future<void> _caretRefresh() async {
     if (!_caretOnReader && !_caretOnLyrics) return;
-    final InAppWebViewController? caretWeb =
-        _caretOnLyrics ? _lyricsController : _controller;
+    final InAppWebViewController? caretWeb = _caretOnLyrics
+        ? _lyricsController
+        : _controller;
     if (caretWeb == null) return;
     await caretWeb.evaluateJavascript(
       source: _caretOnLyrics

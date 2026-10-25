@@ -7,6 +7,7 @@ import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
@@ -602,32 +603,15 @@ class _WideChrome extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              // 有退书回调时：「书籍模式」键回正文，× 直接退书回书架（反馈
-              // QvYpZODImz）。
-              if (callbacks.onExitBook != null) ...<Widget>[
-                _LyricsIconButton(
-                  key: const ValueKey<String>('lyrics_return_to_book_button'),
-                  icon: CupertinoIcons.book,
-                  diameter: 38,
-                  iconSize: 18,
-                  color: Colors.white.withValues(alpha: 0.74),
-                  tooltip: t.book_mode,
-                  onPressed: callbacks.onClose,
-                ),
-                const SizedBox(width: 8),
-              ],
-              if (callbacks.onSwapSides != null) ...<Widget>[
-                _LyricsIconButton(
-                  key: const ValueKey<String>('lyrics_swap_sides_button'),
-                  icon: CupertinoIcons.arrow_right_arrow_left,
-                  diameter: 38,
-                  iconSize: 18,
-                  color: Colors.white.withValues(alpha: 0.74),
-                  tooltip: t.lyrics_layout_swap_sides,
-                  onPressed: callbacks.onSwapSides!,
-                ),
-                const SizedBox(width: 8),
-              ],
+              // 布局「顶部」区的按钮（出厂 书籍模式 / 左右互换）；有退书回调时
+              // × 直接退书回书架、「书籍模式」键回正文（反馈 QvYpZODImz）。
+              for (final Widget button in _appleControlButtons(
+                data.wideControls.itemsIn(LyricsControlSlot.top),
+                data,
+                callbacks,
+                wide: true,
+                header: true,
+              )) ...<Widget>[button, const SizedBox(width: 8)],
               _LyricsIconButton(
                 key: const ValueKey<String>('lyrics_close_button'),
                 icon: CupertinoIcons.xmark,
@@ -719,37 +703,14 @@ class _PlayerPanel extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            _MaskButton(data: data, callbacks: callbacks),
-            if (callbacks.onReplayCue != null) ...<Widget>[
-              const SizedBox(width: 10),
-              _ReplayCueButton(onPressed: callbacks.onReplayCue!),
-            ],
-            if (callbacks.onTypography != null) ...<Widget>[
-              const SizedBox(width: 10),
-              _TypographyButton(onTypography: callbacks.onTypography!),
-            ],
-            const SizedBox(width: 10),
-            _LyricsIconButton(
-              icon: CupertinoIcons.rectangle,
-              diameter: 34,
-              iconSize: 19,
-              tooltip: t.back,
-              onPressed: callbacks.onClose,
-            ),
-            const SizedBox(width: 10),
-            _LyricsIconButton(
-              icon: CupertinoIcons.chart_bar,
-              diameter: 34,
-              iconSize: 19,
-              tooltip: t.reading_statistics,
-              onPressed: callbacks.onOpenStatistics,
-            ),
-            const SizedBox(width: 10),
-            _SpeedButton(
-              speed: data.speed,
-              onChanged: callbacks.onSpeedChanged,
-            ),
-            const SizedBox(width: 10),
+            // 布局「播放卡工具条」区的按钮，⋯ 恒在末尾。
+            for (final Widget button in _appleControlButtons(
+              data.wideControls.itemsIn(LyricsControlSlot.toolbar),
+              data,
+              callbacks,
+              wide: true,
+              header: false,
+            )) ...<Widget>[button, const SizedBox(width: 10)],
             _MoreButton(onMore: callbacks.onMore),
           ],
         ),
@@ -1075,6 +1036,20 @@ class _NarrowChrome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Rect bar = layout.barRect;
+    // 布局「播放卡工具条」区的按钮分到播放键两侧：前一半在左、后一半在右（⋯
+    // 恒在右侧末尾）。出厂 倍速 / 计时 | 重播。
+    final List<Widget> buttons = _appleControlButtons(
+      data.compactControls.itemsIn(LyricsControlSlot.toolbar),
+      data,
+      callbacks,
+      wide: false,
+      header: false,
+    );
+    final int split = (buttons.length + 1) ~/ 2;
+    final ({List<Widget> leading, List<Widget> trailing}) toolbar = (
+      leading: buttons.sublist(0, split),
+      trailing: buttons.sublist(split),
+    );
     return Stack(
       children: <Widget>[
         Positioned(
@@ -1099,6 +1074,14 @@ class _NarrowChrome extends StatelessWidget {
               _NarrowIllustrationEntry(data: data, callbacks: callbacks),
               Expanded(
                 child: _NarrowHeader(title: data.title, clock: data.clock),
+              ),
+              // 布局「顶部」区的按钮（出厂 遮罩 / Aa / 统计）。
+              ..._appleControlButtons(
+                data.compactControls.itemsIn(LyricsControlSlot.top),
+                data,
+                callbacks,
+                wide: false,
+                header: true,
               ),
               // 左上角返回键回正文；× 直接退书回书架（反馈 QvYpZODImz）。
               if (callbacks.onExitBook != null)
@@ -1135,17 +1118,7 @@ class _NarrowChrome extends StatelessWidget {
                         Expanded(
                           child: _SideGroup(
                             alignment: Alignment.centerLeft,
-                            children: <Widget>[
-                              _SpeedButton(
-                                speed: data.speed,
-                                onChanged: callbacks.onSpeedChanged,
-                              ),
-                              _MaskButton(data: data, callbacks: callbacks),
-                              if (callbacks.onTypography != null)
-                                _TypographyButton(
-                                  onTypography: callbacks.onTypography!,
-                                ),
-                            ],
+                            children: toolbar.leading,
                           ),
                         ),
                         _TransportRow(
@@ -1161,17 +1134,7 @@ class _NarrowChrome extends StatelessWidget {
                           child: _SideGroup(
                             alignment: Alignment.centerRight,
                             children: <Widget>[
-                              if (callbacks.onReplayCue != null)
-                                _ReplayCueButton(
-                                  onPressed: callbacks.onReplayCue!,
-                                ),
-                              _LyricsIconButton(
-                                icon: CupertinoIcons.chart_bar,
-                                diameter: 34,
-                                iconSize: 19,
-                                tooltip: t.reading_statistics,
-                                onPressed: callbacks.onOpenStatistics,
-                              ),
+                              ...toolbar.trailing,
                               _MoreButton(onMore: callbacks.onMore),
                             ],
                           ),
@@ -1510,61 +1473,118 @@ class _TransportRow extends StatelessWidget {
   }
 }
 
-class _MaskButton extends StatelessWidget {
-  const _MaskButton({required this.data, required this.callbacks});
-
-  final LyricsPlayerData data;
-  final LyricsPlayerCallbacks callbacks;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool masked = data.lyricsMasked;
-    return _LyricsIconButton(
-      icon: masked ? CupertinoIcons.eye_slash : CupertinoIcons.eye,
-      iconKey: ValueKey<bool>(masked),
-      diameter: 34,
-      iconSize: 19,
-      tooltip: t.lyrics_blur,
-      onPressed: callbacks.onToggleMask,
-    );
+/// 布局里一个区的按钮，按顺序渲染（[LyricsControlLayout]）。页面没给回调的按钮
+/// 与当前形态下无意义的按钮（左右互换只在宽屏）不画。[header] = 页眉那组 38 号
+/// 淡白色键，否则是播放面板里的 34 号键。
+List<Widget> _appleControlButtons(
+  List<LyricsControlItem> items,
+  LyricsPlayerData data,
+  LyricsPlayerCallbacks callbacks, {
+  required bool wide,
+  required bool header,
+}) {
+  final double diameter = header ? 38 : 34;
+  final double iconSize = header ? 18 : 19;
+  final Color? color = header ? Colors.white.withValues(alpha: 0.74) : null;
+  Widget? build(LyricsControlItem item) {
+    switch (item) {
+      case LyricsControlItem.speed:
+        return _SpeedButton(
+          speed: data.speed,
+          onChanged: callbacks.onSpeedChanged,
+          onSpeedPanel: callbacks.onSpeedPanel,
+        );
+      case LyricsControlItem.studyTimer:
+        final VoidCallback? onToggle = callbacks.onToggleStatsTimer;
+        if (onToggle == null) return null;
+        // 文案是「按下去会怎样」（与阅读器顶栏计时键同口径）。
+        final bool paused = data.statsTimerPaused;
+        return _LyricsIconButton(
+          key: const ValueKey<String>('lyrics_study_timer_button'),
+          icon: paused ? CupertinoIcons.timer_fill : CupertinoIcons.timer,
+          iconKey: ValueKey<bool>(paused),
+          diameter: diameter,
+          iconSize: iconSize,
+          color: color,
+          tooltip: paused
+              ? t.reader_stats_clock_resume
+              : t.reader_stats_clock_pause,
+          onPressed: onToggle,
+        );
+      case LyricsControlItem.replayCue:
+        final VoidCallback? onReplay = callbacks.onReplayCue;
+        if (onReplay == null) return null;
+        return _LyricsIconButton(
+          key: const ValueKey<String>('lyrics_replay_cue_button'),
+          icon: CupertinoIcons.arrow_counterclockwise,
+          diameter: diameter,
+          iconSize: iconSize,
+          color: color,
+          tooltip: t.lyrics_sentence_replay,
+          onPressed: onReplay,
+        );
+      case LyricsControlItem.mask:
+        final bool masked = data.lyricsMasked;
+        return _LyricsIconButton(
+          icon: masked ? CupertinoIcons.eye_slash : CupertinoIcons.eye,
+          iconKey: ValueKey<bool>(masked),
+          diameter: diameter,
+          iconSize: iconSize,
+          color: color,
+          tooltip: t.lyrics_blur,
+          onPressed: callbacks.onToggleMask,
+        );
+      case LyricsControlItem.typography:
+        final ValueChanged<LyricsMenuAnchor>? onTypography =
+            callbacks.onTypography;
+        if (onTypography == null) return null;
+        return _LyricsIconButton(
+          key: const ValueKey<String>('lyrics_typography_button'),
+          icon: CupertinoIcons.textformat_size,
+          diameter: diameter,
+          iconSize: iconSize,
+          color: color,
+          tooltip: t.lyrics_typography_title,
+          onPressedWithRect: onTypography,
+        );
+      case LyricsControlItem.statistics:
+        return _LyricsIconButton(
+          key: const ValueKey<String>('lyrics_statistics_button'),
+          icon: CupertinoIcons.chart_bar,
+          diameter: diameter,
+          iconSize: iconSize,
+          color: color,
+          tooltip: t.reading_statistics,
+          onPressed: callbacks.onOpenStatistics,
+        );
+      case LyricsControlItem.bookMode:
+        // 没有退书回调时 × 本身就是「回正文」，再摆一颗同义键只是重复。
+        if (callbacks.onExitBook == null) return null;
+        return _LyricsIconButton(
+          key: const ValueKey<String>('lyrics_return_to_book_button'),
+          icon: CupertinoIcons.book,
+          diameter: diameter,
+          iconSize: iconSize,
+          color: color,
+          tooltip: t.book_mode,
+          onPressed: callbacks.onClose,
+        );
+      case LyricsControlItem.swapSides:
+        final VoidCallback? onSwap = callbacks.onSwapSides;
+        if (onSwap == null || !wide) return null;
+        return _LyricsIconButton(
+          key: const ValueKey<String>('lyrics_swap_sides_button'),
+          icon: CupertinoIcons.arrow_right_arrow_left,
+          diameter: diameter,
+          iconSize: iconSize,
+          color: color,
+          tooltip: t.lyrics_layout_swap_sides,
+          onPressed: onSwap,
+        );
+    }
   }
-}
 
-/// 重播当前句（回到高亮那句的起点接着播）。
-class _ReplayCueButton extends StatelessWidget {
-  const _ReplayCueButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return _LyricsIconButton(
-      key: const ValueKey<String>('lyrics_replay_cue_button'),
-      icon: CupertinoIcons.arrow_counterclockwise,
-      diameter: 34,
-      iconSize: 19,
-      tooltip: t.lyrics_sentence_replay,
-      onPressed: onPressed,
-    );
-  }
-}
-
-/// Aa：歌词文字快捷面板（字号 / 竖排 / 更多歌词设置）。
-class _TypographyButton extends StatelessWidget {
-  const _TypographyButton({required this.onTypography});
-
-  final ValueChanged<LyricsMenuAnchor> onTypography;
-
-  @override
-  Widget build(BuildContext context) {
-    return _LyricsIconButton(
-      icon: CupertinoIcons.textformat_size,
-      diameter: 34,
-      iconSize: 19,
-      tooltip: t.lyrics_typography_title,
-      onPressedWithRect: onTypography,
-    );
-  }
+  return <Widget>[for (final LyricsControlItem item in items) ?build(item)];
 }
 
 class _MoreButton extends StatelessWidget {
@@ -1587,10 +1607,17 @@ class _MoreButton extends StatelessWidget {
 /// 倍速小文字按钮，点开锚定在按钮上的倍速面板（与普通阅读模式快捷设置同一条
 /// `AudiobookSpeedSlider`），拖动实时生效。
 class _SpeedButton extends StatelessWidget {
-  const _SpeedButton({required this.speed, required this.onChanged});
+  const _SpeedButton({
+    required this.speed,
+    required this.onChanged,
+    this.onSpeedPanel,
+  });
 
   final double speed;
   final ValueChanged<double> onChanged;
+
+  /// 页面弹面板（面板开着期间停表）；null 时按钮自己弹。
+  final ValueChanged<LyricsMenuAnchor>? onSpeedPanel;
 
   @override
   Widget build(BuildContext context) {
@@ -1601,11 +1628,26 @@ class _SpeedButton extends StatelessWidget {
         child: FushiPlainButton(
           semanticLabel: '${t.playback_speed} $label',
           borderRadius: BorderRadius.circular(17),
-          onPressed: () => showLyricsSpeedPanel(
-            anchorContext: context,
-            speed: speed,
-            onChanged: onChanged,
-          ),
+          onPressed: () {
+            final ValueChanged<LyricsMenuAnchor>? viaPage = onSpeedPanel;
+            final RenderObject? box = context.findRenderObject();
+            if (viaPage != null && box is RenderBox && box.hasSize) {
+              viaPage(
+                LyricsMenuAnchor(
+                  rect: box.localToGlobal(Offset.zero) & box.size,
+                  context: context,
+                ),
+              );
+              return;
+            }
+            unawaited(
+              showLyricsSpeedPanel(
+                anchorContext: context,
+                speed: speed,
+                onChanged: onChanged,
+              ),
+            );
+          },
           child: ConstrainedBox(
             constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
             child: Padding(
