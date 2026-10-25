@@ -64,6 +64,12 @@ class SrsAssetLocationStore implements SrsLocationStore {
   final Map<String, String> _folders = <String, String>{};
   final Random _rand = Random();
 
+  /// 本实例 [list] 过的目录里每个文件的条目（目录 → 文件名 → 条目）。[get] 先查这里拿文件 id，省掉逐个文件
+  /// 按名字查一次（云盘上是一次网络往返）；一轮同步先列 `devices/<设备>` 看 head，再拉同一目录里的段。
+  /// 实例只活一轮；本实例的 [put] / [delete] 把对应项清掉，id 失效（别的设备覆盖了同名文件）时退回按名字查。
+  final Map<String, Map<String, AssetEntry>> _listed =
+      <String, Map<String, AssetEntry>>{};
+
   Future<String> _root() async {
     final String? cached = _folders[''];
     if (cached != null) return cached;
@@ -121,8 +127,13 @@ class SrsAssetLocationStore implements SrsLocationStore {
   Future<List<SrsLocationEntry>> list(String dir) async {
     final String? id = await _folder(dir, create: false);
     if (id == null) return const <SrsLocationEntry>[];
+    final List<AssetEntry> children = await store.listChildren(id);
+    _listed[_norm(dir)] = <String, AssetEntry>{
+      for (final AssetEntry e in children)
+        if (!e.isFolder) e.name: e,
+    };
     return <SrsLocationEntry>[
-      for (final AssetEntry e in await store.listChildren(id))
+      for (final AssetEntry e in children)
         SrsLocationEntry(
           e.name,
           isFolder: e.isFolder,
@@ -135,13 +146,29 @@ class SrsAssetLocationStore implements SrsLocationStore {
   @override
   Future<Uint8List?> get(String path) async {
     final (String dir, String name) = _split(path);
+    final AssetEntry? listed = _listed[_norm(dir)]?[name];
+    if (listed != null) {
+      try {
+        return await _download(listed.id);
+      } on Object {
+        // 列目录之后被覆盖 / 删掉了：按名字再查一次。
+        _listed[_norm(dir)]?.remove(name);
+      }
+    }
     final String? id = await _folder(dir, create: false);
     if (id == null) return null;
     final AssetEntry? a = await store.findAsset(id, name);
     if (a == null) return null;
+    return _download(a.id);
+  }
+
+  String _norm(String dir) =>
+      dir.split('/').where((String s) => s.isNotEmpty).join('/');
+
+  Future<Uint8List> _download(String assetId) async {
     final File f = _tmp();
     try {
-      await store.getAsset(a.id, f);
+      await store.getAsset(assetId, f);
       return await f.readAsBytes();
     } finally {
       try {
@@ -155,6 +182,7 @@ class SrsAssetLocationStore implements SrsLocationStore {
   @override
   Future<void> put(String path, Uint8List bytes) async {
     final (String dir, String name) = _split(path);
+    _listed[_norm(dir)]?.remove(name);
     final String id = (await _folder(dir, create: true))!;
     // 允许同名多文件的后端（Google Drive）先删旧的，免得读到旧的那份（只有清除重写的段与说明文件会覆盖）。
     final AssetEntry? old = await store.findAsset(id, name);
@@ -175,6 +203,7 @@ class SrsAssetLocationStore implements SrsLocationStore {
   @override
   Future<void> delete(String path) async {
     final (String dir, String name) = _split(path);
+    _listed[_norm(dir)]?.remove(name);
     final String? id = await _folder(dir, create: false);
     if (id == null) return;
     final AssetEntry? a = await store.findAsset(id, name);

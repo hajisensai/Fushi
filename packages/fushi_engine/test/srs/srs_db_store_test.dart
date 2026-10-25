@@ -448,6 +448,55 @@ void main() {
     expect(r.fork, isFalse);
   });
 
+  test('首次同步分批拉段、分批收：进度逐批上报，中途收手已收的保留、下一轮补齐', () async {
+    final SrsDbStore a = await device('a');
+    final List<String> notes = <String>[];
+    // 每建一条就同步一轮：a 在位置上留下多个段。
+    for (final String w in <String>['川', '山', '海', '空']) {
+      notes.add(
+        await a.createNote(noteTypeId: a.lapisNoteTypeId, fieldsById: lapis(w)),
+      );
+      await srsSync2Round(
+        host: a,
+        location: loc,
+        locationId: 'test',
+        nowMs: () => t,
+      );
+    }
+    final SrsDbStore b = await device('b');
+    final List<(int, int)> progress = <(int, int)>[];
+    final SrsSync2Report stopped = await srsSync2Round(
+      host: b,
+      location: loc,
+      locationId: 'test',
+      nowMs: () => t,
+      ingestBatch: 1,
+      onFetchProgress: (int done, int total) => progress.add((done, total)),
+      shouldStop: () => progress.length >= 2,
+    );
+    expect(stopped.error, kSrsSync2Stopped);
+    final int total = progress.first.$2;
+    expect(total, greaterThan(1), reason: '要有多个段才能验证分批');
+    expect(progress, <(int, int)>[(0, total), (1, total)]);
+    expect(stopped.applied, greaterThan(0), reason: '第一批已经提交');
+
+    progress.clear();
+    final SrsSync2Report rest = await srsSync2Round(
+      host: b,
+      location: loc,
+      locationId: 'test',
+      nowMs: () => t,
+      ingestBatch: 1,
+      onFetchProgress: (int done, int total) => progress.add((done, total)),
+    );
+    expect(rest.error, isNull);
+    expect(progress.first.$2, total - 1, reason: '已收的段 plan 不再要');
+    expect(progress.last, (total - 1, total - 1));
+    for (final String n in notes) {
+      expect(await b.cardsOfNote(n), isNotEmpty);
+    }
+  });
+
   test('两台设备离线各建同名牌组，同步后只有一个（确定性牌组 ID）', () async {
     final SrsDbStore a = await device('a');
     final SrsDbStore b = await device('b');

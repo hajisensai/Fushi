@@ -37,6 +37,15 @@ abstract interface class SrsSync2Host {
 /// 状态摘要最多多久重算一次（版本向量没变就不算）。
 const Duration kSrsSync2DigestInterval = Duration(minutes: 10);
 
+/// 每次 ingest 最多收多少个段（段上限 64 KB，一批最多约 8 MB）。
+const int kSrsSync2IngestBatch = 128;
+
+/// 同时在途的段下载数。
+const int kSrsSync2FetchConcurrency = 8;
+
+/// 调用方要求中途收手（库要关 / 调度器卸下）：已收的批次都已提交，下一轮接着拉。
+const String kSrsSync2Stopped = 'srs sync round stopped';
+
 /// 本协议版本（`meta.json` 的 `v`）与能读它的最低读者版本。
 const int kSrsSync2Protocol = 1;
 const int kSrsSync2MinReader = 1;
@@ -86,7 +95,8 @@ class SrsSync2Report {
 /// （见 srs_location_crypto.dart [srsLocationHandshake]：位置是加密的而本机没有 / 不对 → 这一轮不同步，报
 /// [kSrsSync2NeedsKey] / [kSrsSync2WrongKey]；本机开过加密而位置上的 `kdf` 不见了 → [kSrsSync2EncryptionMissing]，
 /// 绝不降级成明文；本机刚开加密 → 这一轮把 `kdf` 写进 `meta.json`）；[archive] = 归档位置：只写不删（不清本机
-/// 的旧 head，设计 §10.3）。
+/// 的旧 head，设计 §10.3）。[onFetchProgress] 报下载 + 收进本机的段数（每批之后一次）；[onUploadStart] 在开始
+/// 发件时调一次；[shouldStop] 每批收完后问一次，为真就以 [kSrsSync2Stopped] 收手（已收的批次都已提交）。
 Future<SrsSync2Report> srsSync2Round({
   required SrsSync2Host host,
   required SrsLocationStore location,
@@ -94,6 +104,10 @@ Future<SrsSync2Report> srsSync2Round({
   required int Function() nowMs,
   SrsLocationKey? key,
   bool archive = false,
+  void Function(int done, int total)? onFetchProgress,
+  void Function()? onUploadStart,
+  bool Function()? shouldStop,
+  int ingestBatch = kSrsSync2IngestBatch,
 }) async {
   final SrsSync2Report report = SrsSync2Report();
   // meta.json：协议版本与集合身份，创建后只读（§6.1）；加密握手（§9）以位置上的 kdf 为准。
@@ -151,33 +165,61 @@ Future<SrsSync2Report> srsSync2Round({
   final Map<String, Object?> plan = (await host.sync2Command(<String, Object?>{
     'op': 'plan',
   }, blobs: heads)).map;
-  final List<Uint8List> segments = <Uint8List>[];
+  // 本机身份的段（只用来比链找分叉点）整批放进第一次收：分叉点要在同一次 ingest 里看全。
+  final List<String> own = <String>[];
+  final List<String> others = <String>[];
   for (final Object? f in (plan['fetch'] as List?) ?? const <Object?>[]) {
     final Map<String, Object?> e = (f! as Map).cast<String, Object?>();
-    for (final Object? name in (e['files'] as List?) ?? const <Object?>[]) {
-      // head 指向的段暂时还列不到（最终一致）就这一轮跳过，下一轮再来。
-      final Uint8List? b = await location.get(name! as String);
-      if (b != null) segments.add(b);
-    }
+    final List<String> files = <String>[
+      for (final Object? name in (e['files'] as List?) ?? const <Object?>[])
+        name! as String,
+    ];
+    (e['own'] == true ? own : others).addAll(files);
   }
-  if (segments.isNotEmpty || plan['fork'] == true) {
-    final Map<String, Object?> r = await host.sync2Ingest(
-      segments,
-      keyHex: keyHex,
-    );
-    report.applied = (r['applied'] as int?) ?? 0;
-    report.pending = (r['pending'] as int?) ?? 0;
-    report.fork = r['fork'] == true;
-    report.changed =
-        ((r['events'] as List?)?.isNotEmpty ?? false) ||
-        ((r['replayed'] as List?)?.isNotEmpty ?? false) ||
-        ((r['changed'] as List?)?.isNotEmpty ?? false);
-    report.errors.addAll(<String>[
-      for (final Object? x in (r['errors'] as List?) ?? const <Object?>[]) '$x',
-    ]);
+  final int total = own.length + others.length;
+  // 分批拉、分批收（首次同步一台老设备可能是几千个段）：每批独立提交，中途断网 / 被杀 / 关库都只丢在途
+  // 那一批（已收的进了本机投影或因果缓冲，plan 下一轮不再要它们）；写锁每批只占一小会儿，复习写入不被
+  // 整轮挡住；返回给 Dart 的投影变化也按批解析，不会一次把几十万条事件压在 UI isolate 上。
+  int done = 0;
+  onFetchProgress?.call(0, total);
+  bool first = true;
+  int start = 0;
+  while (first || start < others.length) {
+    final List<String> batch = <String>[
+      if (first) ...own,
+      ...others.sublist(start, (start + ingestBatch).clamp(0, others.length)),
+    ];
+    start += ingestBatch;
+    // head 指向的段暂时还列不到（最终一致）就这一轮跳过，下一轮再来。
+    final List<Uint8List> segments = <Uint8List>[
+      for (final Uint8List? b in await _fetchAll(location, batch)) ?b,
+    ];
+    if (segments.isNotEmpty || (first && plan['fork'] == true)) {
+      final Map<String, Object?> r = await host.sync2Ingest(
+        segments,
+        keyHex: keyHex,
+      );
+      report.applied += (r['applied'] as int?) ?? 0;
+      report.pending = (r['pending'] as int?) ?? 0;
+      report.fork = report.fork || r['fork'] == true;
+      report.changed =
+          report.changed ||
+          ((r['events'] as List?)?.isNotEmpty ?? false) ||
+          ((r['replayed'] as List?)?.isNotEmpty ?? false) ||
+          ((r['changed'] as List?)?.isNotEmpty ?? false);
+      report.errors.addAll(<String>[
+        for (final Object? x in (r['errors'] as List?) ?? const <Object?>[])
+          '$x',
+      ]);
+    }
+    done += batch.length;
+    first = false;
+    onFetchProgress?.call(done, total);
+    if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
   }
 
   // 3. 发件：先段、后 head。
+  onUploadStart?.call();
   final SrsSync2Result out = await host.sync2Command(<String, Object?>{
     'op': 'outbox',
     'location': progressId,
@@ -230,6 +272,28 @@ Future<SrsSync2Report> srsSync2Round({
     if (f.name == written) report.serverTimeMs = f.modifiedAt;
   }
   return report;
+}
+
+/// 并发下载 [paths]（最多 [kSrsSync2FetchConcurrency] 个同时在途），按原顺序返回；不存在的为 null。
+/// 段是几十 KB 的小文件，逐个串行下载时耗时几乎全是网络往返（云盘一次请求几百毫秒）。
+Future<List<Uint8List?>> _fetchAll(
+  SrsLocationStore location,
+  List<String> paths,
+) async {
+  final List<Uint8List?> out = List<Uint8List?>.filled(paths.length, null);
+  int next = 0;
+  Future<void> worker() async {
+    while (next < paths.length) {
+      final int i = next++;
+      out[i] = await location.get(paths[i]);
+    }
+  }
+
+  await Future.wait(<Future<void>>[
+    for (int w = 0; w < kSrsSync2FetchConcurrency && w < paths.length; w++)
+      worker(),
+  ]);
+  return out;
 }
 
 /// `head-<gen>-<tag>.json` 的代号；不是 head 返回 null。
