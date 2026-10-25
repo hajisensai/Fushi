@@ -249,7 +249,7 @@ class SrsPurgeChunk {
   final Set<String> mediaRefs;
 }
 
-class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
+class SrsDbStore implements SrsSync2Host {
   SrsDbStore._({
     required this.db,
     required this.core,
@@ -287,13 +287,12 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
     final bool hadLocalState = await s._loadLocal();
     // 老版本存的本机状态没有纪元：当场落盘，否则每次打开都是新纪元、指纹每次都「变了」。
     if (hadLocalState && s._epochMissing) await s._saveLocal();
-    await s._migrateLegacyFrozenBatch();
     if (hadLocalState && s._cacheRevision < _kCacheRevision) {
       await s._upgradeCaches();
     }
     if (!hadLocalState && await s._hasAnyEvent()) {
-      // 有事件却没有本机状态：覆盖恢复了备份（本机状态与缓存不进备份，恢复时清空）。
-      // 换新化身、重新发布、重建缓存；绝不沿用备份来源设备的写入者身份。
+      // 有事件却没有本机状态：覆盖恢复了备份（本机状态与缓存不进备份，恢复时清空）。重建缓存；同步 v2 的
+      // 本机身份同样不进备份，打开时按新设备起步（[_sync2Open]），绝不沿用备份来源设备的身份。
       await s.afterRestore();
     }
     await s.ensureBuiltins();
@@ -351,7 +350,6 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
   final SrsTrustedClock _trusted;
   final int Function() _fallbackRollover;
 
-  late SrsSyncLocalState _sync;
   late SrsEditWriter _writer;
   late HlcClock _clock;
   int _incarnation = 1;
@@ -417,7 +415,12 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
   String _epoch = '';
   bool _epochMissing = false;
 
-  String get writerId => _sync.writerId;
+  /// 旧协议的本机写入者 ID（只用来认出迁移进来的旧修改记录里哪些是本机写的；v2 的写入者是 [sync2Device]）。
+  String get writerId => _writer.writerId;
+
+  /// [writer]（修改记录 / HLC 的写入者）是不是本机：v2 设备 ID 或旧协议的本机写入者。
+  bool isOwnWriter(String writer) =>
+      writer == _sync2Device || writer == _writer.writerId;
   SrsTrustedClock get trustedClock => _trusted;
   bool get canSchedule => engine != null;
 
@@ -502,39 +505,6 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
           .getSingleOrNull() !=
       null;
 
-  /// 本机状态 `sync` 段里的下一个批次号（以及旧版本存在本机状态里的冻结批次原字节）。
-  ///
-  /// 旧版本（不分目录记账）：冻结中、还没确认上传的批次那时存在本机状态里，且 next 还停在它的号上。
-  /// 搬进留存表（同号同字节，之后照常传到每个目录），next 越过它。
-  static (int, Uint8List?) _nextBatchNoOf(Map<String, Object?> sync) {
-    int next = (sync['next'] as int?) ?? 1;
-    final Uint8List? legacyFrozen = sync['frozen'] is String
-        ? base64Decode(sync['frozen']! as String)
-        : null;
-    final SrsBatch? frozen = legacyFrozen == null
-        ? null
-        : SrsBatch.decode(legacyFrozen);
-    if (frozen != null && frozen.no >= next) next = frozen.no + 1;
-    return (next, legacyFrozen);
-  }
-
-  /// [profileUid] 在 [db] 里是否发布过批次（同 [everPublished]），只读本机状态、不打开副本。
-  ///
-  /// 给「能不能改用别的 profile 身份」这类只读判断用：那时这个 profile 的副本可能正开着（复习备份页
-  /// 「从文件恢复」），另开一个 [SrsDbStore] 会当场写本机状态 / 内置行，成了同一 profile 的第二个写者。
-  static Future<bool> everPublishedIn(SrsDatabase db, String profileUid) async {
-    final SrsLocalStateRow? row = await (db.select(
-      db.srsLocalState,
-    )..where((t) => t.profileUid.equals(profileUid))).getSingleOrNull();
-    if (row == null) return false;
-    final Map<String, Object?> j = (jsonDecode(row.json) as Map)
-        .cast<String, Object?>();
-    final Map<String, Object?> sync =
-        (j['sync'] as Map?)?.cast<String, Object?>() ??
-        const <String, Object?>{};
-    return _nextBatchNoOf(sync).$1 > 1;
-  }
-
   /// 读本机状态；返回之前是否存过。
   Future<bool> _loadLocal() async {
     _contentRevision++;
@@ -548,34 +518,6 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
     _incarnation = (j['incarnation'] as int?) ?? 1;
     final String writer =
         (j['writerId'] as String?) ?? '$deviceId#$_incarnation';
-    final Map<String, Object?> sync =
-        (j['sync'] as Map?)?.cast<String, Object?>() ??
-        const <String, Object?>{};
-    final Object? dirs = sync['dirs'];
-    final (int next, Uint8List? legacyFrozen) = _nextBatchNoOf(sync);
-    _legacyFrozen = legacyFrozen;
-    _sync = SrsSyncLocalState(
-      writerId: writer,
-      nextBatchNo: next,
-      cursors: Map<String, int>.of(
-        ((sync['cursors'] as Map?) ?? const <String, int>{})
-            .cast<String, int>(),
-      ),
-      lastBatchServerTime: Map<String, int>.of(
-        ((sync['lastS'] as Map?) ?? const <String, int>{}).cast<String, int>(),
-      ),
-      directories: <String, SrsDirectoryState>{
-        if (dirs is Map)
-          for (final MapEntry<String, Object?> e
-              in dirs.cast<String, Object?>().entries)
-            e.key: SrsDirectoryState.fromJson(
-              (e.value! as Map).cast<String, Object?>(),
-            ),
-      },
-      // 有过本机状态、却没有按目录的记账：来自旧版本（见 SrsSyncLocalState.legacyDirectories）。
-      legacyDirectories:
-          sync['legacyDirs'] == true || (row != null && dirs is! Map),
-    );
     _writer = SrsEditWriter(
       writerId: writer,
       lastSeq: (j['lastSeq'] as int?) ?? 0,
@@ -617,35 +559,10 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
 
   Hlc _rehome(Hlc h, String writer) => Hlc(h.physical, h.counter, writer);
 
-  /// 旧版本本机状态里的冻结批次（[_loadLocal] 读出，[_migrateLegacyFrozenBatch] 搬进留存表）。
-  Uint8List? _legacyFrozen;
-
-  Future<void> _migrateLegacyFrozenBatch() async {
-    final Uint8List? bytes = _legacyFrozen;
-    _legacyFrozen = null;
-    if (bytes == null) return;
-    final SrsBatch? b = SrsBatch.decode(bytes);
-    await db.transaction(() async {
-      if (b != null && b.writerId == _sync.writerId) {
-        await db
-            .into(db.srsSentBatches)
-            .insertOnConflictUpdate(
-              SrsSentBatchesCompanion.insert(
-                profileUid: profileUid,
-                writerId: b.writerId,
-                batchNo: b.no,
-                bytes: bytes,
-              ),
-            );
-      }
-      await _saveLocal();
-    });
-  }
-
   Future<void> _saveLocal() async {
     final Map<String, Object?> j = <String, Object?>{
       'incarnation': _incarnation,
-      'writerId': _sync.writerId,
+      'writerId': _writer.writerId,
       'lastSeq': _writer.lastSeq,
       'applied': _writer.applied.toJson(),
       'hlc': _clock.last.encode(),
@@ -656,17 +573,6 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
       'cacheRev': _cacheRevision,
       'revision': _revision,
       'epoch': _epoch,
-      'sync': <String, Object?>{
-        'next': _sync.nextBatchNo,
-        'cursors': _sync.cursors,
-        'lastS': _sync.lastBatchServerTime,
-        'dirs': <String, Object?>{
-          for (final MapEntry<String, SrsDirectoryState> e
-              in _sync.directories.entries)
-            e.key: e.value.toJson(),
-        },
-        if (_sync.legacyDirectories) 'legacyDirs': true,
-      },
     };
     await db
         .into(db.srsLocalState)
@@ -677,9 +583,6 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
           ),
         );
   }
-
-  /// 是否发布过批次（第六轮审查第 15 条：发布过就不能再改 profile uid）。
-  bool get everPublished => _sync.everPublished;
 
   (int, SrsTimeSource) now() => _trusted.now();
 
@@ -767,93 +670,6 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
   final Set<String> _dirtyNotes = <String>{};
   final Set<String> _dirtyCards = <String>{};
   final Set<String> _dirtyNoteTypes = <String>{};
-
-  /// 一组事件的「服务器时刻 / 发件箱序号」本机元信息（srs_event_local）成批写：每项
-  /// `(eventId, serverTime, outboxSeq)`，与按序逐条 upsert 同结果——服务器时刻取已知值与新值里
-  /// 较早的（[srsMergeServerTime]），给了 outboxSeq 就覆盖（重新入队）。旧行按 ID 分块一次预读，
-  /// 写入合成一个 Drift batch（以前每条事件「先查再写」两次往返，应用一批对端事件 / 恢复后重新入队
-  /// 全部事件都是几万次往返，BUG-3543）。
-  ///
-  /// 返回本机**原先已有**这条事件的发布元信息、且服务器时刻因此变小（含从未知变已知）的事件 ID：
-  /// 多目录转发据此把更小的 S 带给只看得到转发的设备（见 [applyRemote] / [observeServerTimes]）。
-  Future<Set<String>> _upsertEventLocal(
-    List<(String, int?, int?)> items,
-  ) async {
-    if (items.isEmpty) return <String>{};
-    // 服务器时刻参与寄存器裁决（谁胜出）：同步冲突的计数可能随之变。
-    _contentRevision++;
-    final Map<String, SrsEventLocalRow> old = <String, SrsEventLocalRow>{};
-    for (final List<String> chunk in _chunks(<String>{
-      for (final (String id, int? _, int? _) in items) id,
-    })) {
-      for (final SrsEventLocalRow r in await (db.select(
-        db.srsEventLocal,
-      )..where((t) => t.eventId.isIn(chunk))).get()) {
-        old[r.eventId] = r;
-      }
-    }
-    // 按序在内存里推进：同一 ID 出现多次时与逐条落库同结果。
-    final Map<String, (int?, int?)> inserts = <String, (int?, int?)>{};
-    final Map<String, (int?, Value<int?>)> updates =
-        <String, (int?, Value<int?>)>{};
-    for (final (String id, int? s, int? outboxSeq) in items) {
-      final (int?, int?)? fresh = inserts[id];
-      if (fresh != null) {
-        inserts[id] = (srsMergeServerTime(fresh.$1, s), outboxSeq ?? fresh.$2);
-        continue;
-      }
-      final SrsEventLocalRow? row = old[id];
-      if (row == null) {
-        inserts[id] = (s, outboxSeq);
-        continue;
-      }
-      final (int?, Value<int?>)? pending = updates[id];
-      final int? before = pending == null ? row.serverTime : pending.$1;
-      final int? merged = srsMergeServerTime(before, s);
-      if (merged != before || outboxSeq != null) {
-        updates[id] = (
-          merged,
-          outboxSeq != null
-              ? Value<int?>(outboxSeq)
-              : (pending?.$2 ?? const Value<int?>.absent()),
-        );
-      }
-    }
-    final Set<String> lowered = <String>{
-      for (final MapEntry<String, (int?, Value<int?>)> e in updates.entries)
-        if (e.value.$1 case final int after
-            when old[e.key]!.serverTime == null ||
-                after < old[e.key]!.serverTime!)
-          e.key,
-    };
-    if (inserts.isEmpty && updates.isEmpty) return lowered;
-    final int receivedAt = DateTime.now().millisecondsSinceEpoch;
-    await db.batch((Batch b) {
-      if (inserts.isNotEmpty) {
-        b.insertAll(db.srsEventLocal, <SrsEventLocalCompanion>[
-          for (final MapEntry<String, (int?, int?)> e in inserts.entries)
-            SrsEventLocalCompanion.insert(
-              eventId: e.key,
-              profileUid: profileUid,
-              outboxSeq: Value<int?>(e.value.$2),
-              serverTime: Value<int?>(e.value.$1),
-              receivedAt: Value<int>(receivedAt),
-            ),
-        ]);
-      }
-      for (final MapEntry<String, (int?, Value<int?>)> e in updates.entries) {
-        b.update(
-          db.srsEventLocal,
-          SrsEventLocalCompanion(
-            serverTime: Value<int?>(e.value.$1),
-            outboxSeq: e.value.$2,
-          ),
-          where: ($SrsEventLocalTable t) => t.eventId.equals(e.key),
-        );
-      }
-    });
-    return lowered;
-  }
 
   /// 笔记字段值里的内联样式换成共享样式引用（表示层，见库注释）。只动 `f/<fieldId>` 的字符串值；
   /// 其余字段键、没有可换的块、没装样式库时原样返回。本机写、导入、对端事件都经这里落库。
@@ -2177,8 +1993,9 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
     );
   }
 
-  /// 本 profile 未删除笔记当前引用的全部媒体文件名（读笔记缓存的 media_refs 列，不解析字段值）。
-  Future<Set<String>> noteMediaRefs() async {
+  /// 删除时刻不晚于 [deletedBeforeMs] 的已删笔记引用的媒体（过了保留期、可以回收的候选；是否真删由调用方
+  /// 再扣掉存活引用）。
+  Future<Set<String>> expiredNoteMediaRefs(int deletedBeforeMs) async {
     final $SrsNotesCacheTable t = db.srsNotesCache;
     final Set<String> out = <String>{};
     for (final TypedResult r
@@ -2186,7 +2003,31 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
               ..addColumns(<Expression<Object>>[t.mediaRefs])
               ..where(
                 t.profileUid.equals(profileUid) &
-                    t.deletedAt.isNull() &
+                    t.deletedAt.isSmallerOrEqualValue(deletedBeforeMs) &
+                    t.mediaRefs.equals('').not(),
+              ))
+            .get()) {
+      out.addAll(r.read(t.mediaRefs)!.split('\n'));
+    }
+    return out;
+  }
+
+  /// 本 profile 未删除笔记当前引用的全部媒体文件名（读笔记缓存的 media_refs 列，不解析字段值）。
+  ///
+  /// [deletedAfterMs] 给出时，删除时刻晚于它的已删笔记也算（媒体保留期，设计 §10.5：被删笔记独占的媒体满
+  /// 90 天才清，期间恢复笔记媒体还在）。
+  Future<Set<String>> noteMediaRefs({int? deletedAfterMs}) async {
+    final $SrsNotesCacheTable t = db.srsNotesCache;
+    final Set<String> out = <String>{};
+    final Expression<bool> alive = deletedAfterMs == null
+        ? t.deletedAt.isNull()
+        : t.deletedAt.isNull() | t.deletedAt.isBiggerThanValue(deletedAfterMs);
+    for (final TypedResult r
+        in await (db.selectOnly(t)
+              ..addColumns(<Expression<Object>>[t.mediaRefs])
+              ..where(
+                t.profileUid.equals(profileUid) &
+                    alive &
                     t.mediaRefs.equals('').not(),
               ))
             .get()) {
@@ -3026,238 +2867,15 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
 
   // ------------------------------------------------------------------ 墓碑物理清除（策略见 srs_purge.dart）
 
-  /// 本机副本从没参与过同步：没发布过批次、没有任何同步目录的记账、没读过任何别的写入者。
-  /// 这时本机的事件只有本机写的 / 导入的 / 备份并进来的，不存在「对端还要靠墓碑得知删除」的情形，
-  /// 删掉的笔记可以当场清除（`srsPurgeNotesNow`）。
-  bool get neverSynced =>
-      !_sync.everPublished &&
-      _sync.directories.isEmpty &&
-      _sync.cursors.isEmpty;
-
-  /// 墓碑清除的候选笔记：缓存里已删除的笔记，加上「只剩修改记录、没有身份记录、却有删除寄存器」的
-  /// 笔记（清除之后对端晚到的同一笔记的内容修改记录；身份记录已删，它们不会进缓存）。
-  /// 是否真清由 [purgeDeletedNotes] 在独占区里逐条复核。
-  Future<List<String>> purgeCandidateNoteIds() async {
-    final Set<String> out = <String>{
-      for (final SrsNoteCacheRow n
-          in await (db.select(db.srsNotesCache)..where(
-                (n) =>
-                    n.profileUid.equals(profileUid) & n.deletedAt.isNotNull(),
-              ))
-              .get())
-        n.id,
-    };
-    final List<QueryRow> orphans = await db
-        .customSelect(
-          'SELECT DISTINCT e.entity_id AS id FROM srs_field_edits e '
-          'WHERE e.profile_uid = ? AND e.entity_kind = ? AND e.field_key <> ? '
-          'AND NOT EXISTS (SELECT 1 FROM srs_entities x WHERE x.id = e.entity_id) '
-          'AND EXISTS (SELECT 1 FROM srs_field_edits d WHERE d.entity_kind = ? '
-          'AND d.entity_id = e.entity_id AND d.field_key = ?)',
-          variables: <Variable<Object>>[
-            Variable<String>(profileUid),
-            Variable<String>(SrsEntityKind.note.wire),
-            Variable<String>(SrsFieldKeys.deleted),
-            Variable<String>(SrsEntityKind.note.wire),
-            Variable<String>(SrsFieldKeys.deleted),
-          ],
-          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-            db.srsFieldEdits,
-            db.srsEntities,
-          },
-        )
-        .get();
-    out.addAll(orphans.map((QueryRow r) => r.read<String>('id')));
-    return out.toList()..sort();
-  }
-
-  /// 物理清除 [noteIds] 里**此刻仍是已删除、且 [eligible] 认可**的笔记（一个独占区 + 一个事务）：
-  ///
-  /// - 删：笔记身份记录、笔记除删除寄存器外的全部修改记录（字段 / 标签 / 来源 / 牌组 / 类型）、
-  ///   笔记缓存行；它全部卡的修改记录、卡片缓存行；这些事件的本机元信息（srs_event_local，
-  ///   含发件箱里还没发出去的）。
-  /// - 留复习日志：统计（复习日历 / 复习量 / 时长）以日志为唯一事实，清掉会让过去的学习记录凭空消失
-  ///   （用户 2026-10-23 拍板不可接受；与 Anki 删卡保留 revlog 一致）。日志每条只有几十字节，
-  ///   占空间的是正文与媒体。
-  /// - 留：笔记删除寄存器里的修改记录（墓碑本身，几十字节）。它让清除之后对端晚到的同一笔记的事件
-  ///   照样被判为「已删除」，下次维护再清掉（见 [purgeCandidateNoteIds]），不会复活成可见笔记。
-  /// - 跳过：已被恢复的；删除寄存器里有并发内容修改（「待裁决」，用户还没决定恢复还是确认删除）的；
-  ///   作为前身被别的（不清除的）卡继承复习历史的卡（只留这张卡的事件）。
-  ///
-  /// [mediaRefsOf] 给出时，从被清除笔记的字段值里收集它们引用的媒体文件名，随结果返回
-  /// （是否删文件由调用方再核对存活引用后决定）。修订号随删除的行数推进（[changeFingerprint] 变化，
-  /// 自动备份 / RWKV 回放据此知道库变了）。
-  Future<SrsPurgeChunk> purgeDeletedNotes(
-    List<String> noteIds, {
-    required SrsTombstonePredicate eligible,
-    Set<String> Function(String html)? mediaRefsOf,
-  }) async {
-    final SrsPurgeChunk r = await _purgeDeletedNotes(
-      noteIds,
-      eligible: eligible,
-      mediaRefsOf: mediaRefsOf,
-    );
-    // 事务提交之后再告诉 RWKV：清掉的卡不会再成为候选，常驻分数表里它们的项一并删掉。
-    if (r.cardIds.isNotEmpty) unawaited(rwkv?.onCardsPurged(r.cardIds));
-    return r;
-  }
-
-  Future<SrsPurgeChunk> _purgeDeletedNotes(
-    List<String> noteIds, {
-    required SrsTombstonePredicate eligible,
-    Set<String> Function(String html)? mediaRefsOf,
-  }) => runExclusive(
-    () => db.transaction(() async {
-      if (noteIds.isEmpty) return SrsPurgeChunk.empty;
-      final String noteKind = SrsEntityKind.note.wire;
-      final String cardKind = SrsEntityKind.card.wire;
-      final Map<String, List<SrsFieldEdit>> byNote =
-          <String, List<SrsFieldEdit>>{};
-      for (final List<String> chunk in _chunks(noteIds)) {
-        for (final SrsFieldEditRow r
-            in await (db.select(db.srsFieldEdits)..where(
-                  (t) => t.entityKind.equals(noteKind) & t.entityId.isIn(chunk),
-                ))
-                .get()) {
-          (byNote[r.entityId] ??= <SrsFieldEdit>[]).add(
-            SrsFieldEdit.fromJson(
-              (jsonDecode(r.json) as Map).cast<String, Object?>(),
-            ),
-          );
-        }
-      }
-      final Map<String, int> s = await _serverTimesFor(<String>[
-        for (final List<SrsFieldEdit> l in byNote.values)
-          for (final SrsFieldEdit e in l) e.id,
-      ]);
-      int? serverTimeOf(String id) => s[id];
-      final List<String> purge = <String>[];
-      final List<String> contentEditIds = <String>[];
-      final Set<String> media = <String>{};
-      for (final String noteId in noteIds) {
-        final List<SrsFieldEdit> edits =
-            byNote[noteId] ?? const <SrsFieldEdit>[];
-        final SrsEntityEdits ee = SrsEntityEdits.build(
-          edits,
-          serverTimeOf: serverTimeOf,
-        );
-        final SrsRegister? del = ee[SrsFieldKeys.deleted];
-        if (del == null || ee.deletedAt == null) continue;
-        // 与删除并发的内容修改（待裁决「恢复 / 确认删除」）：字段寄存器内核算好的。
-        if (ee.concurrentWithDelete.isNotEmpty) continue;
-        if (!eligible(del, serverTimeOf)) continue;
-        purge.add(noteId);
-        for (final SrsFieldEdit e in edits) {
-          if (e.fieldKey == SrsFieldKeys.deleted) continue;
-          contentEditIds.add(e.id);
-          final Object? v = e.value;
-          if (mediaRefsOf != null &&
-              v is String &&
-              e.fieldKey.startsWith(_noteFieldPrefix)) {
-            media.addAll(mediaRefsOf(v));
-          }
-        }
-      }
-      if (purge.isEmpty) return SrsPurgeChunk.empty;
-
-      // 这些笔记的卡（缓存里按笔记归属；卡片本身没有身份记录，ID 由笔记派生）。
-      final Set<String> cards = <String>{};
-      for (final List<String> chunk in _chunks(purge)) {
-        for (final SrsCardCacheRow c in await (db.select(
-          db.srsCardsCache,
-        )..where((c) => c.noteId.isIn(chunk))).get()) {
-          cards.add(c.id);
-        }
-      }
-      if (cards.isNotEmpty) {
-        // 被不清除的卡当作前身继承历史的卡不清（它的历史还在别处生效）；留下它会让它的前身也留下。
-        final Map<String, List<String>> successors = await _successorIndex();
-        bool changed = true;
-        while (changed) {
-          changed = false;
-          for (final String c in cards.toList()) {
-            final List<String> succ = successors[c] ?? const <String>[];
-            if (succ.any((String x) => !cards.contains(x))) {
-              cards.remove(c);
-              changed = true;
-            }
-          }
-        }
-      }
-      final List<String> cardList = cards.toList();
-      final List<String> cardEditIds = <String>[];
-      for (final List<String> chunk in _chunks(cardList)) {
-        for (final QueryRow r
-            in await db
-                .customSelect(
-                  'SELECT id FROM srs_field_edits WHERE entity_kind = ? '
-                  'AND entity_id IN (${List<String>.filled(chunk.length, '?').join(',')})',
-                  variables: <Variable<Object>>[
-                    Variable<String>(cardKind),
-                    for (final String c in chunk) Variable<String>(c),
-                  ],
-                  readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-                    db.srsFieldEdits,
-                  },
-                )
-                .get()) {
-          cardEditIds.add(r.read<String>('id'));
-        }
-      }
-
-      int events = 0;
-      for (final List<String> chunk in _chunks(contentEditIds)) {
-        events += await (db.delete(
-          db.srsFieldEdits,
-        )..where((t) => t.id.isIn(chunk))).go();
-      }
-      for (final List<String> chunk in _chunks(cardEditIds)) {
-        events += await (db.delete(
-          db.srsFieldEdits,
-        )..where((t) => t.id.isIn(chunk))).go();
-      }
-      for (final List<String> chunk in _chunks(purge)) {
-        events += await (db.delete(
-          db.srsEntities,
-        )..where((t) => t.id.isIn(chunk) & t.kind.equals(noteKind))).go();
-        await (db.delete(
-          db.srsNotesCache,
-        )..where((t) => t.id.isIn(chunk))).go();
-      }
-      for (final List<String> chunk in _chunks(cardList)) {
-        await (db.delete(
-          db.srsCardsCache,
-        )..where((t) => t.id.isIn(chunk))).go();
-      }
-      for (final List<String> chunk in _chunks(<String>[
-        ...contentEditIds,
-        ...cardEditIds,
-        ...purge,
-      ])) {
-        await (db.delete(
-          db.srsEventLocal,
-        )..where((t) => t.eventId.isIn(chunk))).go();
-      }
-      // 缓存行已直接删掉；同一独占区里不可能还有等刷新的脏标记指向它们，保险起见清掉。
-      _dirtyNotes.removeAll(purge);
-      _dirtyCards.removeAll(cardList);
-      _ankiNoteIndex = null;
-      _ankiCardIndex = null;
-      _revision += events == 0 ? 1 : events;
-      _contentRevision++;
-      _pendingMediaGc.addAll(media);
-      await _saveLocal();
-      return SrsPurgeChunk(
-        notes: purge,
-        cardIds: cardList,
-        events: events,
-        mediaRefs: media,
-      );
-    }),
-  );
-
   /// 待回收的媒体文件名（见 [_pendingMediaGc]）。
   Set<String> get pendingMediaGc => Set<String>.unmodifiable(_pendingMediaGc);
+
+  /// 把 [names] 加进待回收集合并落盘（媒体保留期到了的候选、彻底清除的笔记引用过的文件）。
+  Future<void> queueMediaGc(Iterable<String> names) => runExclusive(() async {
+    final int before = _pendingMediaGc.length;
+    _pendingMediaGc.addAll(names);
+    if (_pendingMediaGc.length != before) await _saveLocal();
+  });
 
   /// 把 [names] 移出待回收集合并落盘。只能在独占区里调：回收方在同一个独占区里核对存活引用、
   /// 删文件、再调这里，期间不会有别的写入插进来重新引用它们。
@@ -5015,301 +4633,41 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
 
   // ------------------------------------------------------------------ SrsSyncReplica
 
-  @override
-  Future<SrsSyncLocalState> loadSyncState() async => _sync;
-
-  @override
-  Future<void> saveSyncState(SrsSyncLocalState state) => runExclusive(() async {
-    if (state.writerId != _writer.writerId) {
-      _writer = SrsEditWriter(
-        writerId: state.writerId,
-        applied: _writer.applied,
-      );
-      _clock = HlcClock(
-        state.writerId,
-        last: _rehome(_clock.last, state.writerId),
-      );
-    }
-    _sync = state;
-    await _saveLocal();
-  });
-
-  /// 发件箱里的事件，按入箱顺序。事件正文按 ID 分块从四张事件表各一次读回（以前每条事件最多
-  /// 查四次，同步一次几万次往返，BUG-3543）。本机未发布的修改记录可能已被（本机更晚的）修改支配
-  /// 而丢弃：它在本机已不存在，后一条记录的 ctx 覆盖它，无需再发——跳过。
-  ///
-  /// [limit]：按发件箱序号键集分页，凑够这么多条还在的事件为止（冻结逐批取，不把几万条一次读进内存）。
-  @override
-  Future<List<SrsEvent>> unpublishedEvents({int? limit}) async {
-    final List<SrsEvent> out = <SrsEvent>[];
-    int after = -1 << 62;
-    while (true) {
-      final int? want = limit == null ? null : limit - out.length;
-      final SimpleSelectStatement<$SrsEventLocalTable, SrsEventLocalRow> q =
-          db.select(db.srsEventLocal)
-            ..where(
-              (t) =>
-                  t.profileUid.equals(profileUid) &
-                  t.outboxSeq.isBiggerThanValue(after),
-            )
-            ..orderBy(<OrderClauseGenerator<$SrsEventLocalTable>>[
-              (t) => OrderingTerm.asc(t.outboxSeq),
-            ]);
-      if (want != null) q.limit(want);
-      final List<SrsEventLocalRow> rows = await q.get();
-      out.addAll(
-        await _eventsByIds(<String>[
-          for (final SrsEventLocalRow r in rows) r.eventId,
-        ]),
-      );
-      if (want == null || rows.length < want || out.length >= limit!) {
-        return out;
-      }
-      after = rows.last.outboxSeq!;
-    }
-  }
-
-  /// [ids] 对应的事件（按给定顺序；库里已不存在的跳过）。
-  Future<List<SrsEvent>> _eventsByIds(List<String> ids) async {
-    final Map<String, SrsEvent> found = <String, SrsEvent>{};
-    for (final List<String> chunk in _chunks(ids)) {
-      // 与逐条查找同一优先级：身份记录 → 修改记录 → 日志 → 不认识的事件。
-      for (final SrsEntityRow r in await (db.select(
-        db.srsEntities,
-      )..where((t) => t.id.isIn(chunk))).get()) {
-        found.putIfAbsent(r.id, () => SrsEntityEvent(_entityFromRow(r)));
-      }
-      for (final SrsFieldEditRow r in await (db.select(
-        db.srsFieldEdits,
-      )..where((t) => t.id.isIn(chunk))).get()) {
-        found.putIfAbsent(
-          r.id,
-          () => SrsEditEvent(
-            SrsFieldEdit.fromJson(
-              (jsonDecode(r.json) as Map).cast<String, Object?>(),
-            ),
-          ),
-        );
-      }
-      for (final SrsReviewLogRow r in await (db.select(
-        db.srsReviewLogs,
-      )..where((t) => t.id.isIn(chunk))).get()) {
-        found.putIfAbsent(
-          r.id,
-          () => SrsLogEvent(
-            SrsReviewLog.fromJson(
-              (jsonDecode(r.json) as Map).cast<String, Object?>(),
-            ),
-          ),
-        );
-      }
-      for (final SrsUnknownEventRow r in await (db.select(
-        db.srsUnknownEvents,
-      )..where((t) => t.id.isIn(chunk))).get()) {
-        found.putIfAbsent(
-          r.id,
-          () => SrsUnknownEvent(
-            (jsonDecode(r.json) as Map).cast<String, Object?>(),
-          ),
-        );
-      }
-    }
-    return <SrsEvent>[
-      for (final String id in ids)
-        if (found[id] case final SrsEvent e) e,
-    ];
-  }
-
-  @override
-  Future<void> freezeBatch(
-    SrsSyncLocalState state,
-    int no,
-    Uint8List bytes,
-    List<String> eventIds,
-  ) => runExclusive(
-    () => _transactionOrReload(() async {
-      await db
-          .into(db.srsSentBatches)
-          .insertOnConflictUpdate(
-            SrsSentBatchesCompanion.insert(
-              profileUid: profileUid,
-              writerId: state.writerId,
-              batchNo: no,
-              bytes: bytes,
-            ),
-          );
-      for (int i = 0; i < eventIds.length; i += 500) {
-        await (db.update(db.srsEventLocal)..where(
-              (t) => t.eventId.isIn(
-                eventIds.sublist(i, min(i + 500, eventIds.length)),
-              ),
-            ))
-            .write(const SrsEventLocalCompanion(outboxSeq: Value<int?>(null)));
-      }
-      await saveSyncState(state);
-    }),
-  );
-
-  @override
-  Future<Uint8List?> sentBatch(String writerId, int no) async =>
-      (await (db.select(db.srsSentBatches)..where(
-                (t) =>
-                    t.profileUid.equals(profileUid) &
-                    t.writerId.equals(writerId) &
-                    t.batchNo.equals(no),
-              ))
-              .getSingleOrNull())
-          ?.bytes;
-
-  @override
-  Future<List<int>> sentBatchNos(String writerId) async {
-    final Expression<int> no = db.srsSentBatches.batchNo;
-    final List<TypedResult> rows =
-        await (db.selectOnly(db.srsSentBatches)
-              ..addColumns(<Expression<Object>>[no])
-              ..where(
-                db.srsSentBatches.profileUid.equals(profileUid) &
-                    db.srsSentBatches.writerId.equals(writerId),
-              )
-              ..orderBy(<OrderingTerm>[OrderingTerm.asc(no)]))
-            .get();
-    return <int>[for (final TypedResult r in rows) r.read(no)!];
-  }
-
-  @override
-  Future<void> dropSentBatches(String writerId, {int? throughNo}) =>
+  /// 并入一批外来、已盖过戳的事件（备份合并、按时间点恢复里并入备份）：保留原 dot / 因果上下文 / HLC
+  /// （Rust `apply` 的 stamped 路径），按 ID 取并集、修改记录走支配判定，一个事务、一次缓存刷新。
+  Future<void> applyRemote(List<SrsEvent> events, {int? serverTimeMs}) =>
       runExclusive(() async {
-        await (db.delete(db.srsSentBatches)..where(
-              (t) =>
-                  t.profileUid.equals(profileUid) &
-                  t.writerId.equals(writerId) &
-                  (throughNo == null
-                      ? const Constant<bool>(true)
-                      : t.batchNo.isSmallerOrEqualValue(throughNo)),
-            ))
-            .go();
+        final (int nowMs, _) = now();
+        final List<SrsEvent> mine = <SrsEvent>[
+          for (final SrsEvent e in events)
+            if (e is! SrsEntityEvent || e.record.profileUid == profileUid) e,
+        ];
+        await _transactionOrReload(() async {
+          final Set<String> landed = (await _storeLocalBatch(
+            mine,
+            stamped: true,
+            serverTimeMs: serverTimeMs,
+          )).toSet();
+          // 同步合并：别的设备的作答带动了牌组 / 全局状态，RWKV 分数表整表重查（见 rwkvScoresKey）。
+          if (landed.isNotEmpty) _rwkvScoresRevision++;
+          for (final SrsEvent e in mine) {
+            final Hlc? h = switch (e) {
+              SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
+              SrsLogEvent(:final SrsReviewLog log) => log.hlc,
+              _ => null,
+            };
+            if (h != null) {
+              _clock.receive(
+                h,
+                serverTimeMs: serverTimeMs,
+                trustedNowMs: nowMs,
+              );
+            }
+          }
+          await _flushCaches();
+          await _saveLocal();
+        });
       });
-
-  @override
-  Future<Map<String, int>> knownServerTimes(List<String> eventIds) async {
-    final Map<String, int> out = <String, int>{};
-    for (final List<String> chunk in _chunks(eventIds)) {
-      for (final SrsEventLocalRow r
-          in await (db.select(
-                db.srsEventLocal,
-              )..where((t) => t.eventId.isIn(chunk) & t.serverTime.isNotNull()))
-              .get()) {
-        out[r.eventId] = r.serverTime!;
-      }
-    }
-    return out;
-  }
-
-  /// 转发（见 [SrsSyncReplica.applyRemote]）：[ids] 按给定顺序进本机发件箱，随本机批次带去别的目录。
-  /// 调用方在独占区与写事务里。
-  Future<void> _enqueueForward(List<String> ids) async {
-    if (ids.isEmpty) return;
-    await _upsertEventLocal(<(String, int?, int?)>[
-      for (final String id in ids) (id, null, ++_outboxSeq),
-    ]);
-  }
-
-  /// 重新入队：按给定顺序续发件箱序号，一个 batch 写回（以前每条事件「先查再写」两次往返，
-  /// 恢复备份后整库重新入队就是几万次往返）。
-  @override
-  Future<void> requeue(List<String> eventIds) => runExclusive(() async {
-    final List<(String, int?, int?)> items = <(String, int?, int?)>[
-      for (final String id in eventIds) (id, null, ++_outboxSeq),
-    ];
-    await _transactionOrReload(() async {
-      await _upsertEventLocal(items);
-      await _saveLocal();
-    });
-  });
-
-  /// 应用一批对端事件：与逐条落库同结果（[_storeLocalBatch]：按序在内存视图上判定），服务器时刻
-  /// 成批合并（[_upsertEventLocal]），一个事务、一次缓存刷新。以前每条事件「先查再写」四五次往返。
-  ///
-  /// [forward] 为真时，新落地的与 S 因此变小的事件进本机发件箱（多目录转发）。
-  @override
-  Future<void> applyRemote(
-    List<SrsEvent> events, {
-    int? serverTimeMs,
-    bool forward = false,
-  }) => runExclusive(() async {
-    final (int nowMs, _) = now();
-    final List<SrsEvent> mine = <SrsEvent>[
-      for (final SrsEvent e in events)
-        if (e is! SrsEntityEvent || e.record.profileUid == profileUid) e,
-    ];
-    await _transactionOrReload(() async {
-      final Set<String> landed = (await _storeLocalBatch(
-        mine,
-        stamped: true,
-        serverTimeMs: serverTimeMs,
-      )).toSet();
-      // 同步合并：别的设备的作答带动了牌组 / 全局状态，RWKV 分数表整表重查（见 rwkvScoresKey）。
-      if (landed.isNotEmpty) _rwkvScoresRevision++;
-      final Set<String> lowered = await _upsertEventLocal(
-        <(String, int?, int?)>[
-          for (final SrsEvent e in mine) (e.id, serverTimeMs, null),
-        ],
-      );
-      if (forward) {
-        final Set<String> seen = <String>{};
-        await _enqueueForward(<String>[
-          for (final SrsEvent e in mine)
-            if ((landed.contains(e.id) || lowered.contains(e.id)) &&
-                seen.add(e.id))
-              e.id,
-        ]);
-      }
-      for (final SrsEvent e in mine) {
-        final Hlc? h = switch (e) {
-          SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
-          SrsLogEvent(:final SrsReviewLog log) => log.hlc,
-          _ => null,
-        };
-        if (h != null) {
-          _clock.receive(h, serverTimeMs: serverTimeMs, trustedNowMs: nowMs);
-        }
-      }
-      await _flushCaches();
-      await _saveLocal();
-    });
-  });
-
-  /// [forward] 为真时，已在本机、S 因此变小的事件进本机发件箱（多目录转发）。
-  @override
-  Future<void> observeServerTimes(
-    Map<String, int> times, {
-    bool forward = false,
-  }) => runExclusive(() async {
-    await _transactionOrReload(() async {
-      final Set<String> lowered = await _upsertEventLocal(
-        <(String, int?, int?)>[
-          for (final MapEntry<String, int> e in times.entries)
-            (e.key, e.value, null),
-        ],
-      );
-      if (forward && lowered.isNotEmpty) {
-        await _enqueueForward(<String>[
-          for (final String id in times.keys)
-            if (lowered.contains(id)) id,
-        ]);
-        await _saveLocal();
-      }
-      // S 变化可能改变排序：相关卡片的「最后一条有效日志」要重算。
-      for (final List<String> chunk in _chunks(times.keys)) {
-        for (final SrsReviewLogRow r in await (db.select(
-          db.srsReviewLogs,
-        )..where((t) => t.id.isIn(chunk))).get()) {
-          _dirtyCards.add(r.cardId);
-        }
-      }
-      await _flushCaches();
-    });
-  });
 
   /// 一个写事务；失败（回滚）时从库里重读本机状态再抛出。事务回滚不回滚内存：落库前已分配的
   /// 序号 / 已并进因果上下文的 dot、推进过的时钟与发件箱序号、攒下的影响面都要丢掉，否则
@@ -5343,7 +4701,6 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
   /// 写失败后重读本机状态也失败时置上（见 [_transactionOrReload]）；之后进独占区的写入都抛它。
   StateError? _unusable;
 
-  @override
   Future<List<SrsEvent>> exportAll() async {
     final List<SrsEvent> out = await exportEntitiesAndEdits();
     for (final SrsReviewLogRow r in await (db.select(
@@ -5430,38 +4787,6 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
   /// 卡片的「前身 → 后继」链接（更改笔记类型 / Lapis 迁移的 historyFrom 修改记录，只扫部分索引）。
   Future<Map<String, List<String>>> successorIndex() => _successorIndex();
 
-  /// 全部事件的 ID，与 [exportAll] 同序（身份记录 → 修改记录 → 日志 → 不认识的事件，表内按 rowid）。
-  /// 全量重新发布只要 ID：只读 id 列，不把正文读回来解析。
-  @override
-  Future<List<String>> exportAllIds() async {
-    final List<String> out = <String>[];
-    for (final String table in const <String>[
-      'srs_entities',
-      'srs_field_edits',
-      'srs_review_logs',
-      'srs_unknown_events',
-    ]) {
-      await _pageRows(table, 'id', 20000, (List<QueryRow> rows) async {
-        for (final QueryRow r in rows) {
-          out.add(r.read<String>('id'));
-        }
-      });
-    }
-    return out;
-  }
-
-  /// 写快照用的分页导出（[SrsSyncReplica.exportSnapshotPages]）：事件规范行与服务器时间在同一个
-  /// 事务里按页读（中间插不进别的写入，两者是同一份状态），与备份同一套分页设施。
-  @override
-  Future<void> exportSnapshotPages({
-    required Future<void> Function(List<String> canonicalLines) onEvents,
-    required Future<void> Function(List<(String, int)> serverTimes)
-    onServerTimes,
-  }) => db.transaction(() async {
-    await forEachCanonicalLinePage(onEvents);
-    await forEachServerTimePage(onServerTimes);
-  });
-
   /// 全部事件的规范 JSON 行（与 `SrsEvent.canonical()` 逐字节相同；按表、表内按 rowid 排）。
   /// 一次全进内存，只给测试 / 小规模调用；备份走分页的 [forEachCanonicalLinePage]。
   Future<List<String>> exportCanonicalLines() async {
@@ -5478,17 +4803,6 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
     Future<void> Function(List<String> lines) onPage, {
     int pageSize = 2000,
   }) => srsForEachCanonicalLinePage(
-    backupSelect,
-    profileUid,
-    onPage,
-    pageSize: pageSize,
-  );
-
-  /// 按页导出已知的「事件 ID → 服务器时间 S」（备份用，同 [exportServerTimes] 的内容）。
-  Future<void> forEachServerTimePage(
-    Future<void> Function(List<(String, int)> page) onPage, {
-    int pageSize = 5000,
-  }) => srsForEachServerTimePage(
     backupSelect,
     profileUid,
     onPage,
@@ -5529,24 +4843,6 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
     }
   }
 
-  @override
-  Future<Map<String, int>> exportServerTimes() async {
-    final List<SrsEventLocalRow> rows =
-        await (db.select(db.srsEventLocal)..where(
-              (t) => t.profileUid.equals(profileUid) & t.serverTime.isNotNull(),
-            ))
-            .get();
-    return <String, int>{
-      for (final SrsEventLocalRow r in rows) r.eventId: r.serverTime!,
-    };
-  }
-
-  @override
-  String newIncarnationWriterId() {
-    _incarnation += 1;
-    return '$deviceId#$_incarnation';
-  }
-
   /// 同步成功拿到服务器时间后校时。[atMonotonicMs] 见 [SrsTrustedClock.anchor]。
   Future<void> anchorTime(int serverTimeMs, {int? atMonotonicMs}) =>
       runExclusive(() async {
@@ -5557,50 +4853,16 @@ class SrsDbStore implements SrsSyncReplica, SrsSync2Host {
         await _saveLocal();
       });
 
-  /// 恢复备份后调用：本机换新化身号（不复用旧 writerId），重新起步读快照。
+  /// 覆盖恢复备份（或采用了别处的 profile 身份）后调用：按库里的事实重建缓存，存量样式去重从头再查。
   ///
-  /// 本机发布元信息（srs_event_local）不进备份，恢复后不知道备份里哪些事件已经发布过：
-  /// 一律由新化身重新发布（事件不可变、按 ID 取并集，重复发布无害；代价相当于写一次快照）。
-  ///
-  /// [freshIncarnation]：化身号跳到「当前秒数」量级而不只是 +1——本机状态是新建的（例如新装设备
-  /// 采用了别处的 profile 身份）时，`设备ID#2` 这类小号可能这台设备以前在同一个 profile 下用过。
+  /// 同步 v2 的本机身份不进备份（快照剥掉 `sync2_self`），恢复出来的库打开时就是一台新设备；旧身份按普通
+  /// 远端设备续收（设计 §7.3）。所以这里不需要换化身、重新发布。[freshIncarnation] 只为兼容旧调用方保留。
   Future<void> afterRestore({bool freshIncarnation = false}) =>
-      runExclusive(() => _afterRestore(freshIncarnation: freshIncarnation));
-
-  Future<void> _afterRestore({required bool freshIncarnation}) async {
-    _incarnation = freshIncarnation
-        ? max(_incarnation + 1, DateTime.now().millisecondsSinceEpoch ~/ 1000)
-        : _incarnation + 1;
-    _sync = SrsSyncLocalState(writerId: '$deviceId#$_incarnation');
-    _writer = SrsEditWriter(writerId: _sync.writerId);
-    // 因果上下文只由修改记录决定：按页读修改记录，不把整库事件一次物化。
-    await _pageRows('srs_field_edits', 'json', 2000, (
-      List<QueryRow> rows,
-    ) async {
-      for (final QueryRow r in rows) {
-        _writer.apply(
-          SrsFieldEdit.fromJson(
-            (jsonDecode(r.read<String>('json')) as Map).cast<String, Object?>(),
-          ),
-        );
-      }
-    });
-    _clock = HlcClock(
-      _sync.writerId,
-      last: _rehome(_clock.last, _sync.writerId),
-    );
-    // 恢复进来的行可能还是内联样式：存量去重从头再查一遍。
-    _styleCursor = 0;
-    await (db.delete(
-      db.srsEventLocal,
-    )..where((t) => t.profileUid.equals(profileUid))).go();
-    // 旧写入者的批次流随恢复作废（新化身全部重新发布），留存的旧批次不再传。
-    await (db.delete(
-      db.srsSentBatches,
-    )..where((t) => t.profileUid.equals(profileUid))).go();
-    await requeue(await exportAllIds());
-    await rebuildCaches();
-  }
+      runExclusive(() async {
+        // 恢复进来的行可能还是内联样式：存量去重从头再查一遍。
+        _styleCursor = 0;
+        await rebuildCaches();
+      });
 
   // ------------------------------------------------------------------ AnkiConnect 兼容层（只读）
 

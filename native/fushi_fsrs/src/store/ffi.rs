@@ -652,6 +652,11 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
         "plan" => c.sync2_plan(profile, blobs)?,
         "ingest" => parse(c.sync2_ingest(profile, blobs, key32(&req["key"])?, i("now")?)?)?,
         "rotate" => c.sync2_rotate(profile, i("now")?)?,
+        "export" => {
+            files.push(("export.fushisrs".to_owned(), c.sync2_export(profile)?));
+            json!({})
+        }
+        "import" => parse(c.sync2_import(profile, blobs.first().ok_or("import: missing file")?, i("now")?)?)?,
         "digest" => c.sync2_digest(profile)?,
         "status" => c.sync2_status(profile)?,
         "conflicts" => c.sync2_conflicts(profile)?,

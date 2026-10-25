@@ -236,6 +236,80 @@ pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &
     Ok(())
 }
 
+/// 因果投递：反复扫缓冲，能接上的（seq = applied + 1、链接得上、依赖都已应用）就应用。返回应用条数。
+fn deliver(c: &Connection, profile: &str, now: i64, t: &mut Touched) -> Result<usize, String> {
+    let mut applied_n = 0usize;
+    loop {
+        let mut progress = false;
+        let vv = applied_vv(c, profile)?;
+        let rows: Vec<(Vec<u8>, i64, Vec<u8>, Vec<u8>)> = c
+            .prepare_cached("SELECT device, seq, op, chain FROM sync2_pending WHERE profile_uid = ?1 ORDER BY device, seq")
+            .map_err(sql)?
+            .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)?;
+        let mut vv = vv;
+        for (dev, seq, opb, chb) in rows {
+            let device = Id(dev.clone().try_into().map_err(|_| "bad device")?);
+            let seq = seq as u64;
+            let have = vv.get(&device);
+            if seq <= have {
+                // 已有：同一 seq 链值不同 = 那台设备的身份分叉了（它自己会换身份重签发）。
+                if chain_at(c, profile, &device, seq)?.map(|x| x.to_vec()) != Some(chb.clone()) {
+                    c.execute(
+                        "UPDATE sync2_devices SET warning = 'fork' WHERE profile_uid = ?1 AND device = ?2",
+                        params![profile, dev],
+                    )
+                    .map_err(sql)?;
+                }
+                c.execute(
+                    "DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3",
+                    params![profile, dev, seq as i64],
+                )
+                .map_err(sql)?;
+                continue;
+            }
+            if seq != have + 1 {
+                continue;
+            }
+            let op = Op::read(&mut Reader::new(&opb)).map_err(|e| e.to_string())?;
+            let chain: Chain = chb.clone().try_into().map_err(|_| "bad chain")?;
+            let prev = chain_at(c, profile, &device, seq - 1)?.unwrap_or(CHAIN_ZERO);
+            if chain_next(&prev, &op) != chain {
+                // 接不上本机已有的前缀：那台设备分叉过，这一支不收。
+                c.execute(
+                    "UPDATE sync2_devices SET warning = 'fork' WHERE profile_uid = ?1 AND device = ?2",
+                    params![profile, dev],
+                )
+                .map_err(sql)?;
+                c.execute(
+                    "DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq >= ?3",
+                    params![profile, dev, seq as i64],
+                )
+                .map_err(sql)?;
+                continue;
+            }
+            if !op.deps.le(&vv) {
+                continue;
+            }
+            apply_remote(c, profile, &op, &chain, now, t)?;
+            c.execute(
+                "DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3",
+                params![profile, dev, seq as i64],
+            )
+            .map_err(sql)?;
+            vv.set(device, seq);
+            applied_n += 1;
+            progress = true;
+        }
+        if !progress {
+            break;
+        }
+    }
+    Ok(applied_n)
+}
+
 impl SrsCore {
     /// 发件：本设备还没上传到 [location] 的段（文件相对路径 → 字节）。段切点在第一次发件时定下，
     /// 各位置拿到同样的段；[key] = 该位置开了加密时的集合密钥。返回 `(段, 发到的最大 seq)`。
@@ -476,76 +550,7 @@ impl SrsCore {
                     .map_err(sql)?;
                 }
             }
-            // 因果投递：反复扫缓冲，能接上的（seq = applied + 1、链接得上、依赖都已应用）就应用。
-            let mut applied_n = 0usize;
-            loop {
-                let mut progress = false;
-                let vv = applied_vv(c, profile)?;
-                let rows: Vec<(Vec<u8>, i64, Vec<u8>, Vec<u8>)> = c
-                    .prepare_cached("SELECT device, seq, op, chain FROM sync2_pending WHERE profile_uid = ?1 ORDER BY device, seq")
-                    .map_err(sql)?
-                    .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
-                    .map_err(sql)?
-                    .collect::<Result<_, _>>()
-                    .map_err(sql)?;
-                let mut vv = vv;
-                for (dev, seq, opb, chb) in rows {
-                    let device = Id(dev.clone().try_into().map_err(|_| "bad device")?);
-                    let seq = seq as u64;
-                    let have = vv.get(&device);
-                    if seq <= have {
-                        // 已有：同一 seq 链值不同 = 那台设备的身份分叉了（它自己会换身份重签发）。
-                        if chain_at(c, profile, &device, seq)?.map(|x| x.to_vec()) != Some(chb.clone()) {
-                            c.execute(
-                                "UPDATE sync2_devices SET warning = 'fork' WHERE profile_uid = ?1 AND device = ?2",
-                                params![profile, dev],
-                            )
-                            .map_err(sql)?;
-                        }
-                        c.execute(
-                            "DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3",
-                            params![profile, dev, seq as i64],
-                        )
-                        .map_err(sql)?;
-                        continue;
-                    }
-                    if seq != have + 1 {
-                        continue;
-                    }
-                    let op = Op::read(&mut Reader::new(&opb)).map_err(|e| e.to_string())?;
-                    let chain: Chain = chb.clone().try_into().map_err(|_| "bad chain")?;
-                    let prev = chain_at(c, profile, &device, seq - 1)?.unwrap_or(CHAIN_ZERO);
-                    if chain_next(&prev, &op) != chain {
-                        // 接不上本机已有的前缀：那台设备分叉过，这一支不收。
-                        c.execute(
-                            "UPDATE sync2_devices SET warning = 'fork' WHERE profile_uid = ?1 AND device = ?2",
-                            params![profile, dev],
-                        )
-                        .map_err(sql)?;
-                        c.execute(
-                            "DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq >= ?3",
-                            params![profile, dev, seq as i64],
-                        )
-                        .map_err(sql)?;
-                        continue;
-                    }
-                    if !op.deps.le(&vv) {
-                        continue;
-                    }
-                    apply_remote(c, profile, &op, &chain, now, &mut t)?;
-                    c.execute(
-                        "DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3",
-                        params![profile, dev, seq as i64],
-                    )
-                    .map_err(sql)?;
-                    vv.set(device, seq);
-                    applied_n += 1;
-                    progress = true;
-                }
-                if !progress {
-                    break;
-                }
-            }
+            let applied_n = deliver(c, profile, now, &mut t)?;
             let fork = fork_at.is_some();
             if let Some(k) = fork_at {
                 rotate(c, profile, k, now, &mut t)?;
@@ -670,4 +675,133 @@ impl SrsCore {
 
 fn hex_id(b: &[u8]) -> String {
     <[u8; 16]>::try_from(b).map(|a| Id(a).text()).unwrap_or_else(|_| hex(b))
+}
+
+/// `.fushisrs`（设计 §10.4）：一个集合的全部操作（每台设备从 seq 1 起的完整前缀 + 每条的链值）与各设备公钥，
+/// zstd 压缩。媒体由 Dart 侧另打进同一个包。
+const EXPORT_MAGIC: &[u8; 8] = b"FSRS2EXP";
+
+impl SrsCore {
+    /// 手动导出：全部操作（含已清除内容的骨架）+ 各设备公钥。
+    pub fn sync2_export(&self, profile: &str) -> Result<Vec<u8>, String> {
+        let w = self.writer()?;
+        in_savepoint(&w, |c| {
+            let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+            let mut out = crate::sync2::codec::Writer::new();
+            out.raw(EXPORT_MAGIC);
+            out.u8(1);
+            local.collection.write(&mut out);
+            let devices: Vec<(Vec<u8>, Option<Vec<u8>>, i64)> = c
+                .prepare("SELECT device, public, applied FROM sync2_devices WHERE profile_uid = ?1 ORDER BY device")
+                .map_err(sql)?
+                .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .map_err(sql)?
+                .collect::<Result<_, _>>()
+                .map_err(sql)?;
+            out.uv(devices.len() as u64);
+            for (dev, public, applied) in devices {
+                let device = Id(dev.clone().try_into().map_err(|_| "bad device")?);
+                device.write(&mut out);
+                out.bytes(&public.unwrap_or_default());
+                out.uv(applied as u64);
+                for seq in 1..=applied as u64 {
+                    let op = load_op(c, profile, &OpId { device, seq })?.ok_or("missing op in export")?;
+                    out.bytes(&op.encode());
+                }
+            }
+            Ok(ruzstd::encoding::compress_to_vec(&out.into_vec()[..], ruzstd::encoding::CompressionLevel::Fastest))
+        })
+    }
+
+    /// 导入 `.fushisrs`：操作并入（不覆盖）。包里有本机身份的操作时先换身份（§7.3：包可能来自本设备
+    /// 更早的自己或它的克隆），共同前缀之后的本机操作以新身份重签发。返回与 ingest 同形的结果。
+    pub fn sync2_import(&self, profile: &str, bytes: &[u8], now: i64) -> Result<String, String> {
+        let plain = crate::zstd_decompress(bytes)?;
+        let mut r = Reader::new(&plain);
+        if r.raw(8).map_err(|e| e.to_string())? != EXPORT_MAGIC {
+            return Err("not a .fushisrs file".into());
+        }
+        if r.u8().map_err(|e| e.to_string())? != 1 {
+            return Err("unsupported .fushisrs version".into());
+        }
+        let collection = Id::read(&mut r).map_err(|e| e.to_string())?;
+        let n = r.uv().map_err(|e| e.to_string())?;
+        let mut runs: Vec<(Id, Vec<u8>, Vec<Op>)> = Vec::new();
+        for _ in 0..n {
+            let device = Id::read(&mut r).map_err(|e| e.to_string())?;
+            let public = r.bytes().map_err(|e| e.to_string())?.to_vec();
+            let count = r.uv().map_err(|e| e.to_string())?;
+            let mut ops = Vec::new();
+            for seq in 1..=count {
+                let op = Op::read(&mut Reader::new(r.bytes().map_err(|e| e.to_string())?)).map_err(|e| e.to_string())?;
+                if op.id.device != device || op.id.seq != seq {
+                    return Err("corrupt .fushisrs (op order)".into());
+                }
+                ops.push(op);
+            }
+            runs.push((device, public, ops));
+        }
+        let w = self.writer()?;
+        in_savepoint(&w, |c| {
+            let local = match Local::load(c, profile)? {
+                Some(l) => l,
+                None => Local::create(c, profile, now)?,
+            };
+            if collection != local.collection {
+                return Err("this .fushisrs belongs to another profile".into());
+            }
+            let mut t = Touched::default();
+            // 本机身份：找共同前缀，有分歧或包里更长就换身份。
+            if let Some((_, _, ops)) = runs.iter().find(|(d, _, _)| *d == local.device) {
+                let mut chain = CHAIN_ZERO;
+                let mut k = 0u64;
+                for op in ops {
+                    chain = chain_next(&chain, op);
+                    if chain_at(c, profile, &local.device, op.id.seq)? == Some(chain) {
+                        k = op.id.seq;
+                    } else {
+                        break;
+                    }
+                }
+                // 包是本机更早的前缀（全部对得上）不用换；有分歧或包里更长（另一个安装接着写过）才换。
+                if k < ops.len() as u64 {
+                    rotate(c, profile, k, now, &mut t)?;
+                }
+            }
+            for (device, public, ops) in &runs {
+                c.execute(
+                    "INSERT INTO sync2_devices (profile_uid, device, public, applied) VALUES (?1, ?2, ?3, 0) \
+                     ON CONFLICT(profile_uid, device) DO UPDATE SET public = COALESCE(sync2_devices.public, excluded.public)",
+                    params![profile, device.0.to_vec(), if public.is_empty() { None } else { Some(public.clone()) }],
+                )
+                .map_err(sql)?;
+                let mut chain = CHAIN_ZERO;
+                for op in ops {
+                    chain = chain_next(&chain, op);
+                    c.prepare_cached(
+                        "INSERT OR IGNORE INTO sync2_pending (profile_uid, device, seq, op, chain) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    )
+                    .map_err(sql)?
+                    .execute(params![profile, device.0.to_vec(), op.id.seq as i64, op.encode(), chain.to_vec()])
+                    .map_err(sql)?;
+                }
+            }
+            let applied = deliver(c, profile, now, &mut t)?;
+            let replayed = replay_touched(c, profile, &t)?;
+            let pending: i64 = c
+                .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1", [profile], |r| r.get(0))
+                .map_err(sql)?;
+            Ok(json!({
+                "events": t.events,
+                "dominated": t.dominated,
+                "replayed": replayed,
+                "applied": applied,
+                "pending": pending,
+                "errors": [],
+                "fork": false,
+                "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+            })
+            .to_string())
+        })
+    }
 }

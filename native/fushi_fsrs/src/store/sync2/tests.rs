@@ -633,3 +633,47 @@ fn stamped_foreign_edits_keep_their_causality() {
     assert_eq!(vals.len(), 2);
     assert_eq!(vals[1][0], "v2");
 }
+
+/// 从 v2 之后的备份恢复（快照剥掉了本机身份与迁移标记）：打开时不得把投影行再迁移一遍。
+#[test]
+fn restoring_a_v2_backup_does_not_migrate_twice() {
+    let a = Device::new("a");
+    a.core.sync2_migrate(P, T0).unwrap();
+    a.apply(T0 + 1, vec![edit("note", "N1", "f/x", json!("v"))]);
+    let dir = tempdir::new("restore2");
+    a.core.snapshot_into(&dir.0.join("srs.db"), true).unwrap();
+    let r = Device { core: SrsCore::open(&dir.0.join("srs.db")).unwrap(), _dir: dir };
+    let before = r.rows("SELECT COUNT(*) FROM sync2_ops")[1][0].clone();
+    let m = r.core.sync2_migrate(P, T0 + 2).unwrap();
+    assert_eq!(m["ops"], json!(0));
+    assert_eq!(r.rows("SELECT COUNT(*) FROM sync2_ops")[1][0], before);
+}
+
+/// 手动导出 / 导入（设计 §10.4）：并入不覆盖；导入自己更早的导出不换身份；导入克隆体的导出会换身份、不丢任何一边。
+#[test]
+fn fushisrs_export_import_merges_without_overwriting() {
+    let a = Device::new("a");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck), edit("note", "N1", "f/x", json!("a1")), review("r1", "C", T0, 3, "learn")]);
+    let early = a.core.sync2_export(P).unwrap();
+    a.apply(T0 + 1, vec![edit("note", "N1", "f/x", json!("a2"))]);
+    // 新设备导入：与 A 当时的投影一致。
+    let c = Device::new("c");
+    c.core.sync2_identity(P, T0).unwrap();
+    c.core.sync2_import(P, &a.core.sync2_export(P).unwrap(), T0 + 2).unwrap();
+    assert_eq!(projection(&c), projection(&a));
+    // A 导入自己更早的导出：什么都不变、不换身份。
+    let me = a.core.sync2_status(P).unwrap()["device"].clone();
+    let before = projection(&a);
+    a.core.sync2_import(P, &early, T0 + 3).unwrap();
+    assert_eq!(a.core.sync2_status(P).unwrap()["device"], me);
+    assert_eq!(projection(&a), before);
+    // 克隆体（拷了数据目录）写了别的东西再导出；A 导入它：A 换身份，两边的写入都在。
+    let twin = Device::copy_of(&a, "twin");
+    twin.apply(T0 + 4, vec![review("rt", "C", T0 + 4, 4, "learn")]);
+    a.apply(T0 + 5, vec![review("ra", "C", T0 + 5, 2, "learn")]);
+    a.core.sync2_import(P, &twin.core.sync2_export(P).unwrap(), T0 + 6).unwrap();
+    assert_ne!(a.core.sync2_status(P).unwrap()["device"], me);
+    let ids = a.rows("SELECT id FROM srs_review_logs ORDER BY id");
+    assert!(ids.iter().any(|r| r[0] == "ra") && ids.iter().any(|r| r[0] == "rt"));
+}

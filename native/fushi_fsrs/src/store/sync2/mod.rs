@@ -1086,6 +1086,19 @@ impl SrsCore {
             if local.migrated {
                 return Ok(json!({"ops": 0, "replayed": []}));
             }
+            // 已经有操作了（v2 之后的备份恢复出来的库：本机身份被快照剥掉、迁移标记随之没了，但投影行全是操作
+            // 投影出来的）：只补标记，绝不再把投影行包一遍（那会造出一条重复的操作流）。
+            let has_ops: bool = c
+                .prepare("SELECT 1 FROM sync2_ops WHERE profile_uid = ?1 AND device != ?2 LIMIT 1")
+                .map_err(sql)?
+                .exists(params![profile, local.device.0.to_vec()])
+                .map_err(sql)?;
+            if has_ops {
+                local.migrated = true;
+                local.save(c)?;
+                c.execute("UPDATE sync2_self SET migrated_at = ?2 WHERE profile_uid = ?1", params![profile, now]).map_err(sql)?;
+                return Ok(json!({"ops": 0, "replayed": []}));
+            }
             let mut applied = applied_vv(c, profile)?;
             let mut t = Touched::default();
             let mut n = 0u64;
