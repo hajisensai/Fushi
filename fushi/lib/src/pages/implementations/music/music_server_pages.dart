@@ -868,17 +868,20 @@ class _MusicServerSearchPageState extends ConsumerState<MusicServerSearchPage> {
                               FushiSectionTitle(t.music_section_albums),
                               SizedBox(
                                 height: 220,
-                                child: ListView.separated(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: r.albums.length,
-                                  separatorBuilder: (_, _) =>
-                                      SizedBox(width: tokens.spacing.gap),
-                                  itemBuilder: fushiStaggeredItemBuilder(
-                                    (BuildContext context, int i) => SizedBox(
-                                      width: 160,
-                                      child: MusicServerAlbumCard(
-                                        browser: widget.browser,
-                                        album: r.albums[i],
+                                // 桌面端默认 dragDevices 不含鼠标：专辑横排要鼠标也拖得动。
+                                child: HorizontalDragScrollable(
+                                  child: ListView.separated(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: r.albums.length,
+                                    separatorBuilder: (_, _) =>
+                                        SizedBox(width: tokens.spacing.gap),
+                                    itemBuilder: fushiStaggeredItemBuilder(
+                                      (BuildContext context, int i) => SizedBox(
+                                        width: 160,
+                                        child: MusicServerAlbumCard(
+                                          browser: widget.browser,
+                                          album: r.albums[i],
+                                        ),
                                       ),
                                     ),
                                   ),

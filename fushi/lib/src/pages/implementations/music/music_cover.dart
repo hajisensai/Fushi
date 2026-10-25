@@ -7,6 +7,7 @@ import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart' show FushiDesignTokens;
 
 /// 内嵌封面字节的进程内缓存（按音频路径）。取封面要读整个文件头里的图片块，放后台
@@ -73,10 +74,14 @@ class MusicCover extends StatelessWidget {
     Widget child;
     if (file != null &&
         (file.startsWith('http://') || file.startsWith('https://'))) {
-      child = Image.network(
-        file,
+      // 服务器曲库封面走全应用代理装配（裸 Image.network 会绕过代理）。
+      child = Image(
+        image: ResizeImage.resizeIfNeeded(
+          size == null ? 512 : (size! * 2).round(),
+          null,
+          AppHttpImage(file),
+        ),
         fit: BoxFit.cover,
-        cacheWidth: size == null ? 512 : (size! * 2).round(),
         gaplessPlayback: true,
         errorBuilder: (_, _, _) => placeholder,
       );
