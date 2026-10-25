@@ -11,6 +11,7 @@
 
 pub mod config;
 pub mod schema;
+pub(crate) mod semantics;
 pub mod transport;
 
 use std::collections::BTreeSet;
@@ -316,10 +317,12 @@ pub(crate) struct Touched {
     pub decks: BTreeSet<String>,
     /// 首选牌组变了的笔记（它的卡要重放）。
     pub notes: BTreeSet<String>,
+    /// 可见性 / 内容被冲突扣住、解除、清除改变了的实体 (kind, id)：Dart 侧要刷新它们的缓存。
+    pub entities_changed: BTreeSet<(String, String)>,
     pub diagnostics: Vec<String>,
 }
 
-fn canonical(v: &Value) -> String {
+pub(crate) fn canonical(v: &Value) -> String {
     serde_json::to_string(v).expect("json")
 }
 
@@ -423,157 +426,260 @@ fn deck_config_key(k: &str) -> bool {
     matches!(k, "steps" | "retention" | "algorithm" | "fsrs6Params" | "fsrs7Params" | "maxInterval" | "paramsMode" | "parent" | "deleted")
 }
 
-/// 把一条操作落进投影。[project] = false 时只记意图 / 闭包（迁移：投影行本来就在）。
+/// 把一条操作落进投影。[project] = false 时只记意图 / 索引 / 闭包（迁移：投影行本来就在）。
 pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
     let body = op.body().map_err(|e| e.to_string())?;
     match body {
         Body::Entity { kind, id, data } => {
-            if !project {
+            if project {
+                project_entity(conn, profile, kind, &id.text(), &data, t)?;
+            }
+        }
+        Body::Edit(e) => project_edit(conn, profile, op, &e, now, project, t)?,
+        Body::Log(l) => project_log(conn, profile, op, &l, now, project, t)?,
+        Body::TagAdd { note, tag } | Body::TagRemove { note, tag } => {
+            let n = note.text();
+            semantics::index(conn, profile, "note", &n, &op.id, "#tag")?;
+            if semantics::is_purged(conn, profile, "note", &n)? {
+                semantics::purge_op(conn, profile, &op.id, Some(&self_device(conn, profile)?))?;
                 return Ok(());
             }
-            let idt = id.text();
-            let d: Value = serde_json::from_str(&data).unwrap_or(Value::Null);
-            let rec = json!({"id": idt, "p": profile, "k": kind.wire(), "d": d});
-            let existing: Option<(String, String)> = conn
-                .prepare_cached("SELECT payload_json, kind FROM srs_entities WHERE id = ?1")
+            if op.kind == op::KIND_TAG_ADD {
+                semantics::tag_add(conn, profile, &n, &tag, op)?;
+            } else {
+                semantics::tag_remove(conn, profile, &n, &tag, op)?;
+            }
+            semantics::refresh_tags_row(conn, profile, &n, t)?;
+            semantics::evaluate_holds(conn, profile, "note", &n, now, t)?;
+        }
+        Body::Purge { kind, entity } => {
+            let own = self_device(conn, profile)?;
+            semantics::purge_entity(conn, profile, kind, &entity.text(), &own, t)?;
+        }
+        Body::Checkpoint { name, reason } => {
+            conn.prepare_cached(
+                "INSERT OR IGNORE INTO sync2_checkpoints (profile_uid, device, seq, wall, name, reason) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )
+            .map_err(sql)?
+            .execute(params![profile, op.id.device.0.to_vec(), op.id.seq as i64, op.hlc.wall, name, reason])
+            .map_err(sql)?;
+        }
+        Body::Media { name, sha256, size } => {
+            // 文件名 → 内容：HLC 大者胜（同一文件名并发绑了两份内容 = 低价值标量，设计 §5.2）。
+            let cur: Option<(i64, i64, Vec<u8>)> = conn
+                .prepare_cached("SELECT wall, logical, device FROM sync2_media WHERE profile_uid = ?1 AND name = ?2")
                 .map_err(sql)?
-                .query_row([&idt], |r| Ok((r.get(0)?, r.get(1)?)))
+                .query_row(params![profile, name], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
                 .optional()
                 .map_err(sql)?;
-            let write = match existing {
-                None => true,
-                Some((pj, k)) => {
-                    let old = json!({"id": idt, "p": profile, "k": k, "d": serde_json::from_str::<Value>(&pj).unwrap_or(Value::Null)});
-                    if canonical(&old) == canonical(&rec) {
-                        false
-                    } else {
-                        t.diagnostics.push(format!("entity {idt}: same id, different content"));
-                        canonical(&rec) < canonical(&old)
-                    }
-                }
-            };
-            if write {
+            let newer = cur.is_none_or(|(w, l, d)| (op.hlc.wall, i64::from(op.hlc.logical), op.id.device.0.to_vec()) > (w, l, d));
+            if newer {
                 conn.prepare_cached(
-                    "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5) \
-                     ON CONFLICT(id) DO UPDATE SET profile_uid = excluded.profile_uid, kind = excluded.kind, \
-                     payload_json = excluded.payload_json, created_at = excluded.created_at",
+                    "INSERT OR REPLACE INTO sync2_media (profile_uid, name, sha256, size, wall, logical, device) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 )
                 .map_err(sql)?
-                .execute(params![idt, profile, kind.wire(), canonical(&d), d["createdAt"].as_i64().unwrap_or(0)])
+                .execute(params![profile, name, sha256.to_vec(), size as i64, op.hlc.wall, i64::from(op.hlc.logical), op.id.device.0.to_vec()])
                 .map_err(sql)?;
-                if kind == EntKind::Deck {
-                    t.decks.insert(idt.clone());
-                }
-                t.events.push(json!({"t": "entity", "x": rec}));
             }
-        }
-        Body::Edit(e) => {
-            if let Some(l) = &e.legacy {
-                note_legacy(conn, profile, &op.id.device, op.id.seq, l)?;
-            }
-            let (eid, row) = edit_row(conn, profile, op, &e)?;
-            conn.prepare_cached("INSERT OR REPLACE INTO sync2_edit_ops (edit_id, profile_uid, device, seq) VALUES (?1, ?2, ?3, ?4)")
-                .map_err(sql)?
-                .execute(params![eid, profile, op.id.device.0.to_vec(), op.id.seq as i64])
-                .map_err(sql)?;
-            if !project {
-                return Ok(());
-            }
-            let ent = e.entity.text();
-            let existing: Vec<(String, String, Option<i64>)> = conn
-                .prepare_cached(
-                    "SELECT f.id, f.json, l.server_time FROM srs_field_edits f LEFT JOIN srs_event_local l ON l.event_id = f.id \
-                     WHERE f.entity_kind = ?1 AND f.entity_id = ?2",
-                )
-                .map_err(sql)?
-                .query_map(params![e.kind.wire(), ent], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-                .map_err(sql)?
-                .collect::<Result<_, _>>()
-                .map_err(sql)?;
-            let row_text = canonical(&row);
-            let server = e.legacy.as_ref().and_then(|l| l.server_time);
-            let mut items: Vec<(&str, Option<i64>)> = existing.iter().map(|(_, j, s)| (j.as_str(), *s)).collect();
-            items.push((&row_text, server));
-            let (landed, deleted) = crate::registers::land_stored(&items, existing.len())?;
-            if landed.first().copied() != Some(true) {
-                return Ok(());
-            }
-            for &d in &deleted[0] {
-                let id = &existing[d].0;
-                conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = ?1").map_err(sql)?.execute([id]).map_err(sql)?;
-                t.dominated.push(id.clone());
-            }
-            conn.prepare_cached(
-                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            )
-            .map_err(sql)?
-            .execute(params![eid, profile, e.kind.wire(), ent, e.key, row["w"].as_str().unwrap_or_default(), row["s"].as_i64().unwrap_or(0), row_text])
-            .map_err(sql)?;
-            upsert_server_time(conn, profile, &eid, server, now)?;
-            match e.kind {
-                EntKind::Card if e.key == "deck" || e.key.starts_with("historyFrom/") => {
-                    t.cards.insert(ent.clone());
-                    if let Some(p) = e.key.strip_prefix("historyFrom/") {
-                        t.cards.insert(p.to_owned());
-                    }
-                }
-                EntKind::Note if e.key == "deck" => {
-                    t.notes.insert(ent.clone());
-                }
-                EntKind::Deck if deck_config_key(&e.key) => {
-                    t.decks.insert(ent.clone());
-                }
-                _ => {}
-            }
-            t.events.push(json!({"t": "edit", "x": row}));
-        }
-        Body::Log(l) => {
-            let (intent, arg) = intent_code(&l.intent);
-            let lid = l.id.text();
-            conn.prepare_cached(
-                "INSERT OR IGNORE INTO sync2_log_meta (log_id, profile_uid, card_id, note_id, intent, arg, device, seq) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            )
-            .map_err(sql)?
-            .execute(params![lid, profile, l.card.text(), l.note.as_ref().map(Key::text), intent, arg, op.id.device.0.to_vec(), op.id.seq as i64])
-            .map_err(sql)?;
-            if !project {
-                return Ok(());
-            }
-            let exists: bool = conn
-                .prepare_cached("SELECT 1 FROM srs_review_logs WHERE id = ?1")
-                .map_err(sql)?
-                .exists([&lid])
-                .map_err(sql)?;
-            if exists {
-                return Ok(());
-            }
-            let row = log_row(profile, op, &l);
-            conn.prepare_cached(
-                "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, json) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            )
-            .map_err(sql)?
-            .execute(params![lid, profile, l.card.text(), l.kind, l.rating, l.at, l.rtype, l.origin, l.dur, canonical(&row)])
-            .map_err(sql)?;
-            upsert_server_time(conn, profile, &lid, l.legacy_server_time, now)?;
-            t.cards.insert(l.card.text());
-            t.events.push(json!({"t": "log", "x": row}));
         }
         Body::LegacyUnknown { json } => {
-            if !project {
-                return Ok(());
+            if project {
+                let v: Value = serde_json::from_str(&json).unwrap_or(Value::Null);
+                let id = v["x"]["id"].as_str().map(str::to_owned).unwrap_or_else(|| json.clone());
+                conn.prepare_cached("INSERT OR IGNORE INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, ?2, ?3)")
+                    .map_err(sql)?
+                    .execute(params![id, profile, json])
+                    .map_err(sql)?;
             }
-            let v: Value = serde_json::from_str(&json).unwrap_or(Value::Null);
-            let id = v["x"]["id"].as_str().map(str::to_owned).unwrap_or_else(|| json.clone());
-            conn.prepare_cached("INSERT OR IGNORE INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, ?2, ?3)")
-                .map_err(sql)?
-                .execute(params![id, profile, json])
-                .map_err(sql)?;
         }
-        // 标签 OR-Set、清除、还原点、媒体、别名的投影在各自的模块里补（这一层只保存事实）。
+        // 不认识的种类 / 已清除的骨架 / 牌组别名：只保存事实，不投影。
+        Body::Unknown | Body::Purged | Body::DeckAlias { .. } => {}
+    }
+    Ok(())
+}
+
+fn self_device(conn: &Connection, profile: &str) -> Result<Id, String> {
+    conn.prepare_cached("SELECT device FROM sync2_self WHERE profile_uid = ?1")
+        .map_err(sql)?
+        .query_row([profile], |r| r.get::<_, Vec<u8>>(0))
+        .map_err(sql)
+        .and_then(id_of)
+}
+
+fn project_entity(conn: &Connection, profile: &str, kind: EntKind, idt: &str, data: &str, t: &mut Touched) -> Result<(), String> {
+    let d: Value = serde_json::from_str(data).unwrap_or(Value::Null);
+    let rec = json!({"id": idt, "p": profile, "k": kind.wire(), "d": d});
+    let existing: Option<(String, String)> = conn
+        .prepare_cached("SELECT payload_json, kind FROM srs_entities WHERE id = ?1")
+        .map_err(sql)?
+        .query_row([idt], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()
+        .map_err(sql)?;
+    let write = match existing {
+        None => true,
+        Some((pj, k)) => {
+            let old = json!({"id": idt, "p": profile, "k": k, "d": serde_json::from_str::<Value>(&pj).unwrap_or(Value::Null)});
+            if canonical(&old) == canonical(&rec) {
+                false
+            } else {
+                t.diagnostics.push(format!("entity {idt}: same id, different content"));
+                canonical(&rec) < canonical(&old)
+            }
+        }
+    };
+    if write {
+        conn.prepare_cached(
+            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT(id) DO UPDATE SET profile_uid = excluded.profile_uid, kind = excluded.kind, \
+             payload_json = excluded.payload_json, created_at = excluded.created_at",
+        )
+        .map_err(sql)?
+        .execute(params![idt, profile, kind.wire(), canonical(&d), d["createdAt"].as_i64().unwrap_or(0)])
+        .map_err(sql)?;
+        if kind == EntKind::Deck {
+            t.decks.insert(idt.to_owned());
+        }
+        t.events.push(json!({"t": "entity", "x": rec}));
+    }
+    Ok(())
+}
+
+fn project_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
+    if let Some(l) = &e.legacy {
+        note_legacy(conn, profile, &op.id.device, op.id.seq, l)?;
+    }
+    let (eid, _) = edit_row(conn, profile, op, e)?;
+    conn.prepare_cached("INSERT OR REPLACE INTO sync2_edit_ops (edit_id, profile_uid, device, seq) VALUES (?1, ?2, ?3, ?4)")
+        .map_err(sql)?
+        .execute(params![eid, profile, op.id.device.0.to_vec(), op.id.seq as i64])
+        .map_err(sql)?;
+    let ent = e.entity.text();
+    semantics::index(conn, profile, e.kind.wire(), &ent, &op.id, &e.key)?;
+    if e.kind == EntKind::Card && e.key == "deck" {
+        if let Ok(Value::String(d)) = serde_json::from_str::<Value>(&e.value) {
+            semantics::index(conn, profile, "deck", &d, &op.id, "#move")?;
+        }
+    }
+    // 标签是 OR-Set：整列表的 `tags` 写入（迁移进来的旧记录）按「添加其中每个标签」并入。迁移时也要做：
+    // 合成行替换掉旧的 `tags` 行，各设备收到同一批操作后结果相同。
+    if e.kind == EntKind::Note && e.key == "tags" {
+        if let Ok(Value::Array(xs)) = serde_json::from_str::<Value>(&e.value) {
+            for x in xs.iter().filter_map(Value::as_str) {
+                semantics::tag_add(conn, profile, &ent, x, op)?;
+            }
+        }
+        semantics::refresh_tags_row(conn, profile, &ent, t)?;
+        semantics::evaluate_holds(conn, profile, "note", &ent, now, t)?;
+        return Ok(());
+    }
+    if !project {
+        return Ok(());
+    }
+    if e.key != "deleted" && semantics::is_purged(conn, profile, e.kind.wire(), &ent)? {
+        semantics::purge_op(conn, profile, &op.id, Some(&self_device(conn, profile)?))?;
+        return Ok(());
+    }
+    if semantics::should_hold(conn, profile, e.kind.wire(), &ent, op)? {
+        semantics::evaluate_holds(conn, profile, e.kind.wire(), &ent, now, t)?;
+        return Ok(());
+    }
+    land_edit(conn, profile, op, e, e.legacy.as_ref().and_then(|l| l.server_time), now, t)?;
+    semantics::evaluate_holds(conn, profile, e.kind.wire(), &ent, now, t)
+}
+
+/// 一条修改记录落进投影（与 Dart 旧 `_storeLocalBatch` 同语义：同 ID 已在或被同字段键上现存的记录支配
+/// → 不落；落了就删掉被它支配的）。
+pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, server: Option<i64>, now: i64, t: &mut Touched) -> Result<(), String> {
+    let (eid, row) = edit_row(conn, profile, op, e)?;
+    let ent = e.entity.text();
+    let existing: Vec<(String, String, Option<i64>)> = conn
+        .prepare_cached(
+            "SELECT f.id, f.json, l.server_time FROM srs_field_edits f LEFT JOIN srs_event_local l ON l.event_id = f.id \
+             WHERE f.entity_kind = ?1 AND f.entity_id = ?2",
+        )
+        .map_err(sql)?
+        .query_map(params![e.kind.wire(), ent], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    let row_text = canonical(&row);
+    let mut items: Vec<(&str, Option<i64>)> = existing.iter().map(|(_, j, s)| (j.as_str(), *s)).collect();
+    items.push((&row_text, server));
+    let (landed, deleted) = crate::registers::land_stored(&items, existing.len())?;
+    if landed.first().copied() != Some(true) {
+        return Ok(());
+    }
+    for &d in &deleted[0] {
+        let id = &existing[d].0;
+        conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = ?1").map_err(sql)?.execute([id]).map_err(sql)?;
+        t.dominated.push(id.clone());
+    }
+    conn.prepare_cached(
+        "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+    )
+    .map_err(sql)?
+    .execute(params![eid, profile, e.kind.wire(), ent, e.key, row["w"].as_str().unwrap_or_default(), row["s"].as_i64().unwrap_or(0), row_text])
+    .map_err(sql)?;
+    upsert_server_time(conn, profile, &eid, server, now)?;
+    match e.kind {
+        EntKind::Card if e.key == "deck" || e.key.starts_with("historyFrom/") => {
+            t.cards.insert(ent.clone());
+            if let Some(p) = e.key.strip_prefix("historyFrom/") {
+                t.cards.insert(p.to_owned());
+            }
+        }
+        EntKind::Note if e.key == "deck" => {
+            t.notes.insert(ent.clone());
+        }
+        EntKind::Deck if deck_config_key(&e.key) => {
+            t.decks.insert(ent.clone());
+        }
         _ => {}
+    }
+    t.events.push(json!({"t": "edit", "x": row}));
+    Ok(())
+}
+
+fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64, project: bool, t: &mut Touched) -> Result<(), String> {
+    let (intent, arg) = intent_code(&l.intent);
+    let lid = l.id.text();
+    let card = l.card.text();
+    conn.prepare_cached(
+        "INSERT OR IGNORE INTO sync2_log_meta (log_id, profile_uid, card_id, note_id, intent, arg, device, seq) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+    )
+    .map_err(sql)?
+    .execute(params![lid, profile, card, l.note.as_ref().map(Key::text), intent, arg, op.id.device.0.to_vec(), op.id.seq as i64])
+    .map_err(sql)?;
+    semantics::index(conn, profile, "card", &card, &op.id, "#log")?;
+    if let Some(n) = &l.note {
+        semantics::index(conn, profile, "note", &n.text(), &op.id, "#log")?;
+    }
+    if !project {
+        return Ok(());
+    }
+    let exists: bool = conn
+        .prepare_cached("SELECT 1 FROM srs_review_logs WHERE id = ?1")
+        .map_err(sql)?
+        .exists([&lid])
+        .map_err(sql)?;
+    if !exists {
+        let row = log_row(profile, op, l);
+        conn.prepare_cached(
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, json) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        )
+        .map_err(sql)?
+        .execute(params![lid, profile, card, l.kind, l.rating, l.at, l.rtype, l.origin, l.dur, canonical(&row)])
+        .map_err(sql)?;
+        upsert_server_time(conn, profile, &lid, l.legacy_server_time, now)?;
+        t.cards.insert(card.clone());
+        t.events.push(json!({"t": "log", "x": row}));
+    }
+    semantics::evaluate_holds(conn, profile, "card", &card, now, t)?;
+    if let Some(n) = &l.note {
+        semantics::evaluate_holds(conn, profile, "note", &n.text(), now, t)?;
     }
     Ok(())
 }
@@ -858,12 +964,35 @@ impl SrsCore {
             let mut out_events = Vec::with_capacity(items.len());
             for it in &items {
                 let body = body_of_event(&it["e"], it["note"].as_str())?;
-                let op = append_local(c, &mut local, &mut applied, &body, now)?;
                 let before = t.events.len();
-                project(c, profile, &op, now, true, &mut t)?;
+                // 标签是 OR-Set：Dart 写的整列表 `tags` 按与当前值的差拆成添加 / 观察删除。
+                let bodies = match &body {
+                    Body::Edit(e) if e.kind == EntKind::Note && e.key == "tags" && e.legacy.is_none() => {
+                        let note = e.entity.text();
+                        let cur = semantics::current_tags(c, profile, &note)?;
+                        let want: Vec<String> = match serde_json::from_str::<Value>(&e.value) {
+                            Ok(Value::Array(xs)) => xs.iter().filter_map(Value::as_str).map(str::to_owned).collect(),
+                            _ => Vec::new(),
+                        };
+                        let mut out: Vec<Body> = Vec::new();
+                        for tag in want.iter().filter(|x| !cur.contains(x)) {
+                            out.push(Body::TagAdd { note: e.entity.clone(), tag: tag.clone() });
+                        }
+                        for tag in cur.iter().filter(|x| !want.contains(x)) {
+                            out.push(Body::TagRemove { note: e.entity.clone(), tag: tag.clone() });
+                        }
+                        out
+                    }
+                    _ => vec![body],
+                };
+                for b in &bodies {
+                    let op = append_local(c, &mut local, &mut applied, b, now)?;
+                    project(c, profile, &op, now, true, &mut t)?;
+                }
                 let did = t.events.len() > before;
                 landed.push(did);
-                out_events.push(if did { t.events[before].clone() } else { Value::Null });
+                // 一项可能拆成多条操作（标签）：交回最后落进投影的那一行（合成的 `tags` 行是最终值）。
+                out_events.push(if did { t.events.last().cloned().unwrap_or(Value::Null) } else { Value::Null });
             }
             local.save(c)?;
             let replayed = replay_touched(c, profile, &t)?;
@@ -873,6 +1002,7 @@ impl SrsCore {
                 "dominated": t.dominated,
                 "replayed": replayed,
                 "diagnostics": t.diagnostics,
+                "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
                 "nextSeq": local.next_seq,
             })
             .to_string())
@@ -986,6 +1116,114 @@ impl SrsCore {
             let replayed = replay_cards(c, profile, &cards)?;
             Ok(json!({"ops": n, "replayed": replayed, "cards": cards.len()}))
         })
+    }
+
+    /// 追加一批本机内部操作（冲突解决、清除、还原点）：与 [SrsCore::sync2_apply_local] 同一条落库 / 投影 / 重放路径。
+    fn sync2_append(&self, profile: &str, now: i64, bodies: Vec<Body>) -> Result<Value, String> {
+        let w = self.writer()?;
+        in_savepoint(&w, |c| {
+            let mut local = match Local::load(c, profile)? {
+                Some(l) => l,
+                None => Local::create(c, profile, now)?,
+            };
+            let mut applied = applied_vv(c, profile)?;
+            let mut t = Touched::default();
+            for b in &bodies {
+                let op = append_local(c, &mut local, &mut applied, b, now)?;
+                project(c, profile, &op, now, true, &mut t)?;
+            }
+            local.save(c)?;
+            let replayed = replay_touched(c, profile, &t)?;
+            Ok(json!({
+                "events": t.events,
+                "dominated": t.dominated,
+                "replayed": replayed,
+                "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+            }))
+        })
+    }
+
+    /// 冲突中心（设计 §5.3）：待用户定的破坏性并发。每项
+    /// `{"id","kind":"delete_edit|delete_review|delete_move","entityKind","entity","by","others","at"}`。
+    pub fn sync2_conflicts(&self, profile: &str) -> Result<Value, String> {
+        let r = self.reader()?;
+        let mut stmt = r
+            .prepare(
+                "SELECT id, kind, entity_kind, entity, device, other_count, at FROM sync2_conflicts \
+                 WHERE profile_uid = ?1 ORDER BY at, id",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map([profile], |x| {
+                Ok(json!({
+                    "id": x.get::<_, String>(0)?,
+                    "kind": x.get::<_, String>(1)?,
+                    "entityKind": x.get::<_, String>(2)?,
+                    "entity": x.get::<_, String>(3)?,
+                    "by": <[u8; 16]>::try_from(x.get::<_, Vec<u8>>(4)?).map(|a| Id(a).text()).unwrap_or_default(),
+                    "others": x.get::<_, i64>(5)?,
+                    "at": x.get::<_, i64>(6)?,
+                }))
+            })
+            .map_err(sql)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(sql)?;
+        Ok(Value::Array(rows))
+    }
+
+    /// 解决一项冲突：`delete` = 以删除为准（一条因果覆盖并发方的新删除）；`keep` = 保留（一条覆盖删除的恢复）。
+    /// 结论是普通操作，同步到各设备后同一冲突不会在别处再冒出来。
+    pub fn sync2_resolve(&self, profile: &str, conflict: &str, delete: bool, now: i64) -> Result<Value, String> {
+        let (kind, entity): (String, String) = {
+            let r = self.reader()?;
+            r.query_row(
+                "SELECT entity_kind, entity FROM sync2_conflicts WHERE profile_uid = ?1 AND id = ?2",
+                params![profile, conflict],
+                |x| Ok((x.get(0)?, x.get(1)?)),
+            )
+            .map_err(|e| format!("no such conflict {conflict}: {e}"))?
+        };
+        let kind = EntKind::parse(&kind).ok_or("bad conflict entity kind")?;
+        let value = if delete { json!(now) } else { Value::Null };
+        self.sync2_append(
+            profile,
+            now,
+            vec![Body::Edit(EditBody {
+                kind,
+                entity: Key::of(&entity),
+                key: "deleted".into(),
+                value: canonical(&value),
+                machine: false,
+                ts: 0,
+                legacy: None,
+            })],
+        )
+    }
+
+    /// 彻底清除（设计 §10.5）：二次确认由界面做。先删除（保证实体不可见），再追加清除操作。
+    pub fn sync2_purge(&self, profile: &str, kind: &str, entity: &str, now: i64) -> Result<Value, String> {
+        let k = EntKind::parse(kind).ok_or("bad entity kind")?;
+        self.sync2_append(
+            profile,
+            now,
+            vec![
+                Body::Edit(EditBody {
+                    kind: k,
+                    entity: Key::of(entity),
+                    key: "deleted".into(),
+                    value: canonical(&json!(now)),
+                    machine: false,
+                    ts: 0,
+                    legacy: None,
+                }),
+                Body::Purge { kind: k, entity: Key::of(entity) },
+            ],
+        )
+    }
+
+    /// 自动 / 手动还原点（设计 §10.2）。
+    pub fn sync2_checkpoint(&self, profile: &str, name: &str, reason: &str, now: i64) -> Result<Value, String> {
+        self.sync2_append(profile, now, vec![Body::Checkpoint { name: name.to_owned(), reason: reason.to_owned() }])
     }
 
     /// 全量重放一个 profile 的全部卡（参数整体变更、自检用；设计 §3.4 `rebuild_all` 的调度部分）。

@@ -256,8 +256,16 @@ impl SrsCore {
             let ck = key.map(CollectionKey);
             let mut out = Vec::new();
             let mut top = uploaded;
+            // 清除（§10.5）改写过的本机段：已经传过也要重传（同名覆盖；链值不变，名字不变）。
+            let rewrites: BTreeSet<u64> = c
+                .prepare_cached("SELECT first FROM sync2_rewrites WHERE profile_uid = ?1 AND location = ?2")
+                .map_err(sql)?
+                .query_map(params![profile, location], |r| Ok(r.get::<_, i64>(0)? as u64))
+                .map_err(sql)?
+                .collect::<Result<_, _>>()
+                .map_err(sql)?;
             for (first, last) in cuts {
-                if last <= uploaded {
+                if last <= uploaded && !rewrites.contains(&first) {
                     continue;
                 }
                 let mut ops = Vec::with_capacity((last - first + 1) as usize);
@@ -267,7 +275,7 @@ impl SrsCore {
                 let prev = chain_at(c, profile, &local.device, first - 1)?.ok_or("missing chain")?;
                 let (h, bytes) = segment::pack(local.collection, &ops, prev, &local.key, ck.as_ref())?;
                 out.push((format!("devices/{}/{}", local.device.text(), h.file_name()), bytes));
-                top = last;
+                top = top.max(last);
             }
             Ok((out, top))
         })
@@ -309,6 +317,11 @@ impl SrsCore {
             };
             let bytes = head.encode(&local.key);
             local.save(c)?;
+            c.execute(
+                "DELETE FROM sync2_rewrites WHERE profile_uid = ?1 AND location = ?2 AND first <= ?3",
+                params![profile, location, seq as i64],
+            )
+            .map_err(sql)?;
             c.execute(
                 "INSERT INTO sync2_locations (profile_uid, location, uploaded, head_gen, last_ok) VALUES (?1, ?2, ?3, ?4, ?5) \
                  ON CONFLICT(profile_uid, location) DO UPDATE SET uploaded = MAX(uploaded, excluded.uploaded), \
@@ -550,6 +563,7 @@ impl SrsCore {
                 "errors": errors,
                 "fork": fork,
                 "diagnostics": t.diagnostics,
+                "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
             })
             .to_string())
         })

@@ -419,3 +419,156 @@ mod convergence {
         }
     }
 }
+
+fn tags_of(d: &Device, note: &str) -> String {
+    let r = d.rows(&format!("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE entity_id = '{note}' AND field_key = 'tags'"));
+    assert!(r.len() <= 2, "exactly one tags row: {r:?}");
+    r.get(1).map(|x| x[0].clone()).unwrap_or_default()
+}
+
+/// 标签 OR-Set（设计 §5.2）：一边加标签、一边并发删同一标签 → 保留；各自加不同标签 → 都在；删除只抹掉见过的。
+#[test]
+fn tags_are_an_add_wins_or_set() {
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let mut bucket = Bucket::default();
+    let tag = |v: Value| edit("note", "N1", "tags", v);
+    a.apply(T0, vec![tag(json!(["x", "y"]))]);
+    a.sync(&mut bucket, "loc", T0);
+    b.sync(&mut bucket, "loc", T0);
+    assert_eq!(tags_of(&b, "N1"), r#"["x","y"]"#);
+    // A 删掉 y、加 z；B 并发地「重新加」y 并加 w。
+    a.apply(T0 + 1, vec![tag(json!(["x", "z"]))]);
+    b.apply(T0 + 2, vec![tag(json!(["x", "y", "w"]))]);
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 3);
+        b.sync(&mut bucket, "loc", T0 + 3);
+    }
+    let ta = tags_of(&a, "N1");
+    assert_eq!(ta, tags_of(&b, "N1"));
+    for t in ["x", "z", "w"] {
+        assert!(ta.contains(&format!("\"{t}\"")), "{t} in {ta}");
+    }
+    // B 「重新加 y」只是没变（y 已在）→ 没有新的添加点；A 的删除见过唯一的添加点 → y 没了。
+    assert!(!ta.contains("\"y\""), "{ta}");
+    // 之后 A 删掉 w（见过 B 的添加）→ 两边都没了。
+    a.apply(T0 + 4, vec![tag(json!(["x", "z"]))]);
+    a.sync(&mut bucket, "loc", T0 + 5);
+    b.sync(&mut bucket, "loc", T0 + 5);
+    assert!(!tags_of(&b, "N1").contains("\"w\""));
+}
+
+/// 删除 ⟂ 编辑（设计 §5.3）：不自动判输赢——删除被扣住、笔记保持可见，冲突进冲突中心；用户选了之后各端一致。
+#[test]
+fn delete_concurrent_with_edit_is_held_until_the_user_decides() {
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![edit("note", "N1", "f/x", json!("v1"))]);
+    a.sync(&mut bucket, "loc", T0);
+    b.sync(&mut bucket, "loc", T0);
+    a.apply(T0 + 1, vec![edit("note", "N1", "deleted", json!(T0 + 1))]);
+    b.apply(T0 + 2, vec![edit("note", "N1", "f/x", json!("edited on B"))]);
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 3);
+        b.sync(&mut bucket, "loc", T0 + 3);
+    }
+    let deleted = |d: &Device| d.rows("SELECT COUNT(*) FROM srs_field_edits WHERE entity_id = 'N1' AND field_key = 'deleted'")[1][0].clone();
+    for d in [&a, &b] {
+        assert_eq!(deleted(d), "0", "the delete is held: the note stays visible");
+        let c = d.core.sync2_conflicts(P).unwrap();
+        assert_eq!(c.as_array().unwrap().len(), 1, "{c}");
+        assert_eq!(c[0]["kind"], json!("delete_edit"));
+    }
+    assert_eq!(projection(&a), projection(&b));
+    // B 上选「删除」：一条覆盖双方的新删除。
+    let id = b.core.sync2_conflicts(P).unwrap()[0]["id"].as_str().unwrap().to_owned();
+    b.core.sync2_resolve(P, &id, true, T0 + 10).unwrap();
+    for _ in 0..2 {
+        b.sync(&mut bucket, "loc", T0 + 11);
+        a.sync(&mut bucket, "loc", T0 + 11);
+    }
+    for d in [&a, &b] {
+        assert_eq!(deleted(d), "1");
+        assert!(d.core.sync2_conflicts(P).unwrap().as_array().unwrap().is_empty());
+    }
+    assert_eq!(projection(&a), projection(&b));
+}
+
+/// 删除笔记 ⟂ 另一台设备上复习它的卡：同样扣住（多留一张卡不丢任何东西）；选「保留」后笔记照旧在。
+#[test]
+fn delete_concurrent_with_review_is_held_and_keep_restores() {
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck), edit("note", "N1", "f/x", json!("v1"))]);
+    a.sync(&mut bucket, "loc", T0);
+    b.sync(&mut bucket, "loc", T0);
+    a.apply(T0 + 1, vec![edit("note", "N1", "deleted", json!(T0 + 1))]);
+    b.apply(T0 + 2, vec![review("rb", "C1", T0 + 2, 3, "learn")]);
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 3);
+        b.sync(&mut bucket, "loc", T0 + 3);
+    }
+    let c = a.core.sync2_conflicts(P).unwrap();
+    assert_eq!(c[0]["kind"], json!("delete_review"), "{c}");
+    a.core.sync2_resolve(P, c[0]["id"].as_str().unwrap(), false, T0 + 4).unwrap();
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 5);
+        b.sync(&mut bucket, "loc", T0 + 5);
+    }
+    for d in [&a, &b] {
+        let v = d.rows("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE entity_id = 'N1' AND field_key = 'deleted'");
+        assert_eq!(v[1][0], "NULL", "restored (deleted = null)");
+        assert!(d.core.sync2_conflicts(P).unwrap().as_array().unwrap().is_empty());
+    }
+    assert_eq!(projection(&a), projection(&b));
+}
+
+/// 彻底清除（设计 §10.5）：各设备本机日志里只剩骨架，投影里的内容没了，段被重写，链与签名照样可验证。
+#[test]
+fn purge_erases_content_everywhere_and_keeps_the_chain_valid() {
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![edit("note", "N1", "f/x", json!("secret text")), edit("note", "N1", "tags", json!(["private"]))]);
+    a.sync(&mut bucket, "loc", T0);
+    b.sync(&mut bucket, "loc", T0);
+    b.apply(T0 + 1, vec![edit("note", "N1", "f/y", json!("more secret"))]);
+    b.sync(&mut bucket, "loc", T0 + 1);
+    a.sync(&mut bucket, "loc", T0 + 1);
+    a.core.sync2_purge(P, "note", "N1", T0 + 2).unwrap();
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 3);
+        b.sync(&mut bucket, "loc", T0 + 3);
+    }
+    for d in [&a, &b] {
+        let left = d.rows("SELECT field_key FROM srs_field_edits WHERE entity_id = 'N1'");
+        assert_eq!(left.iter().skip(1).map(|r| r[0].as_str()).collect::<Vec<_>>(), vec!["deleted"]);
+        let raw = d.rows("SELECT COUNT(*) FROM sync2_ops WHERE CAST(payload AS TEXT) LIKE '%secret%' OR CAST(payload AS TEXT) LIKE '%private%'");
+        assert_eq!(raw[1][0], "0", "no content left in the local op log");
+    }
+    // 第三台新设备从位置上完整收下（被清除的骨架链照样接得上）。
+    let c = Device::new("c");
+    c.sync(&mut bucket, "loc", T0 + 4);
+    assert_eq!(projection(&c), projection(&a));
+    // 位置上的每个段都解开逐条看：内容已被各自的作者重写成骨架（不是只在本机抹掉）。
+    let mut checked = 0;
+    for (path, bytes) in &bucket.0 {
+        if !path.contains("/seg-") {
+            continue;
+        }
+        let dev = path.split('/').nth(1).unwrap();
+        let public = c.rows(&format!("SELECT hex(public) FROM sync2_devices WHERE hex(device) = upper(replace('{dev}', '-', ''))"));
+        let hexkey = &public[1][0];
+        let key: [u8; 32] = (0..32).map(|i| u8::from_str_radix(&hexkey[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<_>>().try_into().unwrap();
+        let seg = crate::sync2::segment::open(bytes, &key, None).unwrap();
+        for op in &seg.ops {
+            let text = String::from_utf8_lossy(&op.payload);
+            assert!(!text.contains("secret") && !text.contains("private"), "segment {path} still carries content");
+        }
+        checked += 1;
+    }
+    assert!(checked >= 2);
+}

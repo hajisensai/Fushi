@@ -102,6 +102,75 @@ CREATE TABLE IF NOT EXISTS sync2_card_deck (
   deck_id TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sync2_card_deck ON sync2_card_deck (profile_uid, deck_id);
+CREATE TABLE IF NOT EXISTS sync2_ent_ops (
+  profile_uid TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  entity TEXT NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  what TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, kind, entity, device, seq)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_tag_adds (
+  profile_uid TEXT NOT NULL,
+  note TEXT NOT NULL,
+  tag TEXT NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  wall INTEGER NOT NULL,
+  logical INTEGER NOT NULL,
+  PRIMARY KEY (profile_uid, note, tag, device, seq)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_held (
+  profile_uid TEXT NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  entity TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, device, seq)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_conflicts (
+  id TEXT NOT NULL PRIMARY KEY,
+  profile_uid TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  entity_kind TEXT NOT NULL,
+  entity TEXT NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  other_count INTEGER NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sync2_purged (
+  profile_uid TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  entity TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, kind, entity)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_rewrites (
+  profile_uid TEXT NOT NULL,
+  location TEXT NOT NULL,
+  first INTEGER NOT NULL,
+  PRIMARY KEY (profile_uid, location, first)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_checkpoints (
+  profile_uid TEXT NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  wall INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, device, seq)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_media (
+  profile_uid TEXT NOT NULL,
+  name TEXT NOT NULL,
+  sha256 BLOB NOT NULL,
+  size INTEGER NOT NULL,
+  wall INTEGER NOT NULL,
+  logical INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  PRIMARY KEY (profile_uid, name)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS sync2_legacy (
   profile_uid TEXT NOT NULL,
   device BLOB NOT NULL,
