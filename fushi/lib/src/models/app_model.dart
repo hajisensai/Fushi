@@ -280,12 +280,15 @@ import 'package:fushi/src/models/theme_notifier.dart'
 export 'package:fushi/src/models/theme_notifier.dart'
     show CustomThemeEntry, ThemePreset;
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
+    show MusicAssRenderPreference;
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
+import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -1618,6 +1621,11 @@ class AppModel with ChangeNotifier {
     musicSession.refreshMediaSession();
   }
 
+  MusicAssRenderPreference get musicKaraokeAssRender =>
+      MusicAssRenderPreference.fromPref(prefsRepo.musicKaraokeAssRender);
+  Future<void> setMusicKaraokeAssRender(MusicAssRenderPreference value) =>
+      prefsRepo.setMusicKaraokeAssRender(value.prefValue);
+
   bool get musicListeningCountsAsStudy =>
       prefsRepo.musicListeningCountsAsStudy;
   Future<void> setMusicListeningCountsAsStudy(bool value) async {
@@ -1703,6 +1711,10 @@ class AppModel with ChangeNotifier {
       ),
       crossfade: Duration(milliseconds: prefsRepo.musicCrossfadeMs),
       crossfadeContinuous: prefsRepo.musicCrossfadeContinuous,
+      equalizer: MusicEqualizerSettings(
+        enabled: prefsRepo.musicEqEnabled,
+        gainsDb: MusicEqualizerSettings.parseGains(prefsRepo.musicEqGains),
+      ),
     );
   }
 
@@ -8490,9 +8502,10 @@ class AppModel with ChangeNotifier {
           fontSize: fontSize, font: _floatingLyricNativeFont());
 
   /// 悬浮字幕字体（`FontTarget.floatingLyric` 第一条可用 ttf/otf/ttc）。只有
-  /// Windows 原生窗吃字体；阅读器设置尚未加载时返回 null（原生用默认字族）。
+  /// 桌面原生窗（Windows / macOS）吃字体；阅读器设置尚未加载时返回 null（原生用
+  /// 默认字族）。
   ({String family, String? path})? _floatingLyricNativeFont() {
-    if (!Platform.isWindows) return null;
+    if (!isFontTargetAvailableOnPlatform(FontTarget.floatingLyric)) return null;
     final ReaderSettings? settings = ReaderFushiSource.readerSettings;
     if (settings == null) return null;
     return AppFontLoader.resolveForNativeOverlay(settings.floatingLyricFonts,

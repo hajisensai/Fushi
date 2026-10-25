@@ -10,6 +10,7 @@ library;
 
 import 'package:fushi_engine/media/music/metadata/music_metadata_models.dart';
 import 'package:fushi_engine/media/music/metadata/music_metadata_provider.dart';
+import 'package:fushi_engine/media/music/metadata/music_release_match.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:fushi_engine/utils/net/app_user_agent.dart';
 
@@ -59,7 +60,8 @@ String buildMusicBrainzRecordingQuery(
   return parts.join(' AND ');
 }
 
-class MusicBrainzProvider implements MusicRecordingProvider {
+class MusicBrainzProvider
+    implements MusicRecordingProvider, MusicReleaseProvider {
   MusicBrainzProvider({
     VideoMetadataHttpClient? transport,
     MusicRequestThrottle? throttle,
@@ -204,6 +206,76 @@ class MusicBrainzProvider implements MusicRecordingProvider {
       rawId: id,
     );
     return parseMusicBrainzWork(work, browse);
+  }
+
+  static const String _releaseInc =
+      'recordings+artist-credits+labels+release-groups';
+
+  @override
+  Future<List<MusicReleaseTracklist>> searchDiscReleases(
+    String title, {
+    String? artist,
+    int limit = 5,
+  }) async {
+    if (title.trim().isEmpty) return const <MusicReleaseTracklist>[];
+    final Map<String, Object?>? json = await _get('release', <String, String>{
+      'query': buildMusicBrainzDiscReleaseQuery(title, artist: artist),
+      'limit': '${limit.clamp(1, 25)}',
+    }, operation: 'musicbrainz disc release search');
+    final List<String> ids = <String>[
+      for (final Map<String, Object?> r in _maps(json?['releases']))
+        if (_str(r['id']) case final String id) id,
+    ];
+    final List<MusicReleaseTracklist> out = <MusicReleaseTracklist>[];
+    for (final String id in ids.take(limit)) {
+      final MusicReleaseTracklist? full = await fetchReleaseTracklist(id);
+      if (full != null) out.add(full);
+    }
+    return out;
+  }
+
+  @override
+  Future<MusicReleaseTracklist?> fetchReleaseTracklist(
+    String mbReleaseId,
+  ) async {
+    final String? id = normalizeMusicBrainzId(mbReleaseId);
+    if (id == null) return null;
+    final Map<String, Object?>? json = await _get(
+      'release/$id',
+      <String, String>{'inc': _releaseInc},
+      operation: 'musicbrainz release lookup',
+      rawKind: 'release',
+      rawId: id,
+    );
+    return json == null
+        ? null
+        : parseMusicBrainzReleaseTracklist(
+            json,
+            parseCredit: parseMusicBrainzArtistCredit,
+          );
+  }
+
+  @override
+  Future<List<MusicReleaseTracklist>> lookupDiscId(
+    String discId, {
+    String? toc,
+  }) async {
+    final String id = discId.trim();
+    if (id.isEmpty) return const <MusicReleaseTracklist>[];
+    final Map<String, Object?>? json = await _get(
+      'discid/${Uri.encodeComponent(id)}',
+      <String, String>{'inc': _releaseInc, 'toc': ?toc},
+      operation: 'musicbrainz discid lookup',
+      rawKind: 'discid',
+      rawId: id,
+    );
+    return <MusicReleaseTracklist>[
+      for (final Map<String, Object?> r in _maps(json?['releases']))
+        ?parseMusicBrainzReleaseTracklist(
+          r,
+          parseCredit: parseMusicBrainzArtistCredit,
+        ),
+    ];
   }
 
   @override

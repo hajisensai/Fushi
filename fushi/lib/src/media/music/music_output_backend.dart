@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 
 /// 一首要播的曲目（CUE 虚拟曲目带起止）。
@@ -110,6 +111,7 @@ class MusicOutputSettings {
     this.dsdPcmRate = MusicDsdPcmRate.khz176,
     this.crossfade = Duration.zero,
     this.crossfadeContinuous = false,
+    this.equalizer = const MusicEqualizerSettings(),
   });
 
   /// mpv `gapless-audio=weak`（同格式真无缝，格式变化时重开设备）。
@@ -138,6 +140,9 @@ class MusicOutputSettings {
   /// 专辑连续曲目 / CUE 拆轨这类本来就该无缝的衔接也交叉淡入（默认否：真无缝优先）。
   final bool crossfadeContinuous;
 
+  /// 图示均衡器（P5，可选）：作用于信号时即非 bit-perfect；关 / 平直时不挂滤镜。
+  final MusicEqualizerSettings equalizer;
+
   MusicOutputSettings copyWith({
     bool? gapless,
     MusicReplayGainMode? replayGain,
@@ -149,6 +154,7 @@ class MusicOutputSettings {
     MusicDsdPcmRate? dsdPcmRate,
     Duration? crossfade,
     bool? crossfadeContinuous,
+    MusicEqualizerSettings? equalizer,
   }) => MusicOutputSettings(
     gapless: gapless ?? this.gapless,
     replayGain: replayGain ?? this.replayGain,
@@ -160,6 +166,7 @@ class MusicOutputSettings {
     dsdPcmRate: dsdPcmRate ?? this.dsdPcmRate,
     crossfade: crossfade ?? this.crossfade,
     crossfadeContinuous: crossfadeContinuous ?? this.crossfadeContinuous,
+    equalizer: equalizer ?? this.equalizer,
   );
 
   @override
@@ -174,7 +181,8 @@ class MusicOutputSettings {
       other.volume == volume &&
       other.dsdPcmRate == dsdPcmRate &&
       other.crossfade == crossfade &&
-      other.crossfadeContinuous == crossfadeContinuous;
+      other.crossfadeContinuous == crossfadeContinuous &&
+      other.equalizer == equalizer;
 
   @override
   int get hashCode => Object.hash(
@@ -188,6 +196,7 @@ class MusicOutputSettings {
     dsdPcmRate,
     crossfade,
     crossfadeContinuous,
+    equalizer,
   );
 }
 
@@ -244,10 +253,25 @@ final class MusicBackendOutputFallback extends MusicBackendEvent {
   final String detail;
 }
 
+/// 播放失败里界面要单独说清楚的几种（其余只有 mpv 原文）。
+enum MusicPlaybackFailure {
+  /// 音频 CD 曲目：光驱里没有能读的盘（没盘 / 托盘开着 / 中途拔出）。
+  cdNoDisc,
+
+  /// 音频 CD 曲目：光驱里换成了另一张盘（Disc ID 对不上）。
+  cdOtherDisc,
+}
+
 final class MusicBackendFailed extends MusicBackendEvent {
-  const MusicBackendFailed(this.message);
+  const MusicBackendFailed(this.message, {this.reason, this.device});
 
   final String message;
+
+  /// 已知原因；null = 只有 [message]。
+  final MusicPlaybackFailure? reason;
+
+  /// [reason] 涉及的设备（音频 CD 的光驱，如 `E:`）。
+  final String? device;
 }
 
 /// 输出后端。实现必须保证：[openPair] 后后端只持有 [current] 与（可选）[next] 两项；

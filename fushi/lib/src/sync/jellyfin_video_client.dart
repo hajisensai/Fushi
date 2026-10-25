@@ -1072,6 +1072,11 @@ class JellyfinApi {
   Future<Object?> _getDecoded(String path, [Map<String, String>? query]) =>
       _getDecodedAt(serverUrl, path, query);
 
+  /// [_getDecoded] 的公开版：同一台服务器、同一份认证头 / 超时 / 凭据脱敏，给视频以外的域
+  /// （音乐的服务器曲库，`jellyfin_music_client.dart`）用，不另起一套传输。
+  Future<Object?> getDecodedJson(String path, [Map<String, String>? query]) =>
+      _getDecoded(path, query);
+
   /// [_getDecoded] 的「指定根地址」版（连接探测要在候选根地址之间试，见
   /// [probeServer]）。
   Future<Object?> _getDecodedAt(

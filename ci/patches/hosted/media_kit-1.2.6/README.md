@@ -17,6 +17,14 @@ are described in `PATCHES.md`. The other is an imported predicate for the existi
   `loadfile ... append` branch. Public state, stream events, pause,
   headers, hooks, playlist position and locking remain in media_kit's normal
   open implementation.
+- An audio CD gets the same treatment only in the exact shape the app builds
+  from its own drive list: `cdda://<drive letter>:` (Windows) or
+  `cdda:///dev/<name>` (Linux `sr0`, macOS `rdisk4`). mpv's cdda stream takes
+  the whole remainder as a device path, so every other `cdda://` string
+  (sub-paths, `..`, query strings, image files, UNC paths) keeps mpv's origin
+  check. The music backend opens a CD track as a single `Media` and appends
+  the following track with `Player.add` (a plain `loadfile ... append`), so it
+  never needs a disc inside a `Playlist`.
 - A `Playlist`, including a one-entry or mixed `fd://`/disc playlist, retains
   mpv's playlist-origin restriction for disc URLs. External playlist files are
   not inspected or promoted to trusted disc requests.
@@ -24,8 +32,8 @@ are described in `PATCHES.md`. The other is an imported predicate for the existi
   behavior. Ordinary local files, HTTP URLs and EDL requests are unchanged.
 - `load-unsafe-playlists` is never enabled.
 
-mpv marks its Blu-ray and DVD (`stream_dvdnav.c`, 2026-10-24) stream drivers
-`STREAM_ORIGIN_UNSAFE`. media_kit's usual
+mpv marks its Blu-ray, DVD (`stream_dvdnav.c`, 2026-10-24) and audio CD
+(`stream_cdda.c`, 2026-10-25) stream drivers `STREAM_ORIGIN_UNSAFE`. media_kit's usual
 temporary m3u turns even a single explicitly requested disc into a file-origin
 playlist entry and mpv rejects it. A native `loadfile`/`loadlist` comparison
 using the same bundled DLL and disc reproduced that difference.

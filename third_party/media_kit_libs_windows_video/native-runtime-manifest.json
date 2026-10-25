@@ -261,6 +261,48 @@
     ]
   },
   {
+    "name": "fbdcdio-19.dll",
+    "source_name": "libcdio-19.dll",
+    "source_sha256": "cd99245273478caad2ba3e5869b51610e60be29c0b4c063adf511b3479fdb839",
+    "sha256": "1b26da92f1a0335e1f5edb85b3551e579a8f89511f57ace164abb08a7d8097c2",
+    "bytes": 220298,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdiconv-2.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "WINMM.dll"
+    ]
+  },
+  {
+    "name": "fbdcdio_cdda-2.dll",
+    "source_name": "libcdio_cdda-2.dll",
+    "source_sha256": "a67b5389a3943efac785eb4953a5e7377679d0a9ac54d2c427c14a4e0118c733",
+    "sha256": "16966bd845d94135c6a9a7a618fe41c46a1f41afc914862e69c5f7f9211f0d7e",
+    "bytes": 64277,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdcdio-19.dll",
+      "fbdwinpthread-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdcdio_paranoia-2.dll",
+    "source_name": "libcdio_paranoia-2.dll",
+    "source_sha256": "ea0c0a5e7101570729614514a13881f642631004d460e7c845362ab35d25eaa0",
+    "sha256": "e59c3997df33026cff55948ab13fd9488c6e8c8375a0e808762efaa90cb84ccf",
+    "bytes": 38671,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdcdio-19.dll",
+      "fbdcdio_cdda-2.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
     "name": "fbdcrypto-3-x64.dll",
     "source_name": "libcrypto-3-x64.dll",
     "source_sha256": "ad397e1391ae38100fa1043d69a3495efa73fd9c2784de0ffc3ede3df1fd092e",
@@ -785,10 +827,10 @@
   {
     "name": "libmpv-2.dll",
     "source_name": "libmpv-2.dll",
-    "source_sha256": "f9e006a81be48e45d5497caacc13d702b0015423856711febd35269e22e6f4bd",
-    "sha256": "052d3450cecd6eceb13287f4a8c00be0115c3e6ddae9ce9bf2c3556c01aff112",
-    "bytes": 4595576,
-    "rewritten_references": 24,
+    "source_sha256": "bd48c6771041a2558ced0b24e9b83595f3bac6764cef2b2da7ad0f353c266f74",
+    "sha256": "c9c4fec34c7a15d6dfad184654fd32a0ea30320fd0a79a5b9c0ca76e90fc70c7",
+    "bytes": 4606228,
+    "rewritten_references": 27,
     "imports_and_forwarders": [
       "ADVAPI32.dll",
       "api-ms-win-core-path-l1-1-0.dll",
@@ -800,6 +842,9 @@
       "fbdbluray-4.dll",
       "fbdcaca-0.dll",
       "fbdcale-10.dll",
+      "fbdcdio-19.dll",
+      "fbdcdio_cdda-2.dll",
+      "fbdcdio_paranoia-2.dll",
       "fbdcurl-4.dll",
       "fbddvdnav-4.dll",
       "fbdesample-7.dll",

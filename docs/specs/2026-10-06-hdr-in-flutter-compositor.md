@@ -56,7 +56,7 @@ Windows「SDR 内容亮度」，HDR 片源按绝对亮度出，面板峰值以�
 
 - 原版引擎（没有 `FlutterDesktopViewSetHdrOutput` 导出）、ANGLE 缺扩展、软件渲染：
   一律报告不支持，视频留在 8-bit SDR 纹理里（HDR 片源由 mpv 色调映射）。
-- 渲染后端（2026-10-24 起）：app 全线 Impeller（音乐设计 D12），合成器内 HDR 经
+- 渲染后端（2026-10-24 起）：app 全线 Impeller（音乐设计 D13），合成器内 HDR 经
   `engine-impeller-hdr.patch` 接到 Impeller（GLES / ANGLE）路径；Impeller 的离屏层（saveLayer、
   背景滤镜整帧 readback、滤镜子 pass）在 HDR 帧里跟随根目标用 RGBA16F，不然一个 `BackdropFilter`
   就把整帧钳回 1.0。同一片源同一窗口下 Skia / Impeller 的 backing store 回读逐值一致（取证脚本

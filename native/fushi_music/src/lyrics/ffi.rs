@@ -8,6 +8,7 @@
 //! | `ffm_lyrics_embedded(path, path_len, duration_ms, out, out_len) -> i32` | 读文件内嵌歌词（列表） |
 //! | `ffm_lyrics_merge(primary, len, secondary, len, lang, lang_len, out, out_len) -> i32` | 翻译按时间配对 |
 //! | `ffm_lyrics_export(timeline, len, format, format_len, out, out_len) -> i32` | 导出 `ttml` / `lrc` |
+//! | `ffm_lyrics_ass_raw(data, len, out, out_len) -> i32` | ASS 原样渲染准备：`u32 PlayResX · u32 PlayResY · UTF-8 脚本` |
 //!
 //! `duration_ms < 0` = 曲长未知。
 
@@ -180,6 +181,33 @@ pub unsafe extern "C" fn ffm_lyrics_export(
             _ => return status::INVALID_ARGUMENT,
         };
         hand_over_bytes(out.into_bytes(), out_ptr, out_len);
+        status::OK
+    })
+}
+
+/// ASS 原样渲染（设计 §6.3）的准备：任意编码 → UTF-8 脚本 + 画布尺寸。输出
+/// `u32 LE PlayResX · u32 LE PlayResY · 余下全部 = UTF-8 脚本`。
+///
+/// # Safety
+/// 同 [ffm_lyrics_parse]。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_lyrics_ass_raw(
+    data_ptr: *const u8,
+    data_len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let Some(data) = slice_arg(data_ptr, data_len) else { return status::NULL_ARGUMENT };
+        let raw = super::ass::prepare_raw(data);
+        let mut out = Vec::with_capacity(8 + raw.text.len());
+        out.extend_from_slice(&raw.play_res_x.to_le_bytes());
+        out.extend_from_slice(&raw.play_res_y.to_le_bytes());
+        out.extend_from_slice(raw.text.as_bytes());
+        hand_over_bytes(out, out_ptr, out_len);
         status::OK
     })
 }

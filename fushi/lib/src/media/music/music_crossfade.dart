@@ -109,9 +109,15 @@ const double kMusicCrossfadeIdleStartSeconds = 86400;
 String _secs(Duration d) => (d.inMicroseconds / 1e6).toStringAsFixed(6);
 
 /// 纯函数：逐文件 `af`。[fadeIn] 为 0 = 不淡入（`nofade`，逐样本不变）。
-String musicCrossfadeAf({required Duration fadeIn}) {
+///
+/// [originSeconds]：这一首在文件时间轴上的起点。普通文件与 EDL 段从 0 起；音频 CD 曲目是
+/// 整盘 `cdda://` 加 `start`，时间戳是盘时间，淡入要从这一首的起点算。
+String musicCrossfadeAf({required Duration fadeIn, double originSeconds = 0}) {
   final bool inActive = fadeIn > Duration.zero;
-  return '@$kMusicCrossfadeInLabel:lavfi=[afade=t=in:st=0:'
+  final String origin = originSeconds == 0
+      ? '0'
+      : originSeconds.toStringAsFixed(6);
+  return '@$kMusicCrossfadeInLabel:lavfi=[afade=t=in:st=$origin:'
       'd=${inActive ? _secs(fadeIn) : '1'}:curve=${inActive ? 'qsin' : 'nofade'}],'
       '@$kMusicCrossfadeOutLabel:lavfi=[afade=t=out:'
       'st=${kMusicCrossfadeIdleStartSeconds.toStringAsFixed(0)}:d=1:curve=qsin]';

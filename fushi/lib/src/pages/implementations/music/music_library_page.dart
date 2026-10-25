@@ -20,7 +20,11 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
+import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -71,10 +75,17 @@ bool dispatchMusicShortcut(ShortcutAction? action, MusicPlayerEngine engine) {
 }
 
 class MusicLibraryPage extends ConsumerStatefulWidget {
-  const MusicLibraryPage({super.key, this.snapshotLoader});
+  const MusicLibraryPage({
+    super.key,
+    this.snapshotLoader,
+    this.serverAlbumsLoader,
+  });
 
   /// 测试注入：替代读数据库。
   final Future<MusicLibrarySnapshot> Function()? snapshotLoader;
+
+  /// 测试注入：替代读「混排进曲库」的服务器专辑。
+  final Future<List<MusicServerAlbumRef>> Function()? serverAlbumsLoader;
 
   @override
   ConsumerState<MusicLibraryPage> createState() => _MusicLibraryPageState();
@@ -83,6 +94,10 @@ class MusicLibraryPage extends ConsumerStatefulWidget {
 class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   MusicLibrarySection _section = MusicLibrarySection.albums;
   MusicLibrarySnapshot? _snapshot;
+
+  /// 显式 opt-in 混排进曲库的服务器专辑（服务器曲库 P5）。与本地快照分开取：服务器慢或
+  /// 不在线不拖住本地曲库。
+  List<MusicServerAlbumRef> _serverAlbums = const <MusicServerAlbumRef>[];
   bool _scanning = false;
   StreamSubscription<Set<TableUpdate>>? _dbSub;
 
@@ -92,6 +107,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   void initState() {
     super.initState();
     unawaited(_reload());
+    unawaited(_reloadServerAlbums());
     if (widget.snapshotLoader == null && _app.isDatabaseReady) {
       final FushiDatabase db = _app.database;
       // 表级变更流（不是 drift .watch()：长驻页面订阅 watch 会在 dispose 时挂死测试）。
@@ -102,6 +118,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                 db.musicTracks,
                 db.musicAlbums,
                 db.musicPlaylists,
+                db.musicDiscSources,
               ],
             ),
           )
@@ -125,6 +142,24 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
               : MusicLibrarySnapshot.empty);
     if (!mounted) return;
     setState(() => _snapshot = snap);
+  }
+
+  Future<void> _reloadServerAlbums() async {
+    final Future<List<MusicServerAlbumRef>> Function()? loader =
+        widget.serverAlbumsLoader;
+    final List<MusicServerAlbumRef> albums = loader != null
+        ? await loader()
+        : (_app.isDatabaseReady
+              ? await loadMixedServerAlbums(_app)
+              : const <MusicServerAlbumRef>[]);
+    if (!mounted) return;
+    setState(() => _serverAlbums = albums);
+  }
+
+  Future<void> _openServers() async {
+    await openMusicServerList(context);
+    // 设置页可能改了混排开关 / 服务器清单。
+    await _reloadServerAlbums();
   }
 
   Future<void> _addFolder() async {
@@ -175,6 +210,26 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     await _reload();
   }
 
+  Future<void> _addDisc() async {
+    setState(() => _scanning = true);
+    try {
+      await pickAndAddMusicDiscs(context: context, app: _app);
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
+    await _reload();
+  }
+
+  Future<void> _readCd() async {
+    setState(() => _scanning = true);
+    try {
+      await readAudioCdIntoLibrary(context: context, app: _app);
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
+    await _reload();
+  }
+
   Future<void> _reportScan() async {
     final int count = (await _app.database.listMusicTracks()).length;
     FushiToast.show(msg: t.music_scan_done(count: count));
@@ -210,6 +265,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
             album: album,
             tracks: snap.tracksOfAlbum(album.albumUid),
             embeddedCoverPath: snap.embeddedCoverPathOf(album),
+            disc: snap.discOf(album),
           ),
         ),
       ),
@@ -262,6 +318,27 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                       onPressed: _scanning
                           ? null
                           : () => unawaited(_addFolder()),
+                    ),
+                    FushiToolbarItem(
+                      key: const ValueKey<String>('music_add_disc'),
+                      icon: FushiIcons.storage,
+                      label: t.music_disc_add,
+                      onPressed: _scanning ? null : () => unawaited(_addDisc()),
+                    ),
+                    if (musicAudioCdSupported())
+                      FushiToolbarItem(
+                        key: const ValueKey<String>('music_read_cd'),
+                        icon: FushiIcons.audio,
+                        label: t.music_cd_read,
+                        onPressed: _scanning
+                            ? null
+                            : () => unawaited(_readCd()),
+                      ),
+                    FushiToolbarItem(
+                      key: const ValueKey<String>('music_servers'),
+                      icon: FushiIcons.cloud,
+                      label: t.music_servers_title,
+                      onPressed: () => unawaited(_openServers()),
                     ),
                     FushiToolbarItem(
                       key: const ValueKey<String>('music_rescan'),
@@ -319,7 +396,9 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   }
 
   Widget _buildSection(BuildContext context, MusicLibrarySnapshot snap) {
-    if (snap.isEmpty && _section != MusicLibrarySection.works) {
+    if (snap.isEmpty &&
+        _serverAlbums.isEmpty &&
+        _section != MusicLibrarySection.works) {
       return Center(
         child: FushiPlaceholderMessage(
           icon: FushiIcons.music,
@@ -337,6 +416,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     return switch (_section) {
       MusicLibrarySection.albums => _AlbumGrid(
         snapshot: snap,
+        serverAlbums: _serverAlbums,
         onOpen: _openAlbum,
       ),
       MusicLibrarySection.artists => _ArtistList(
@@ -369,10 +449,17 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
 }
 
 class _AlbumGrid extends StatelessWidget {
-  const _AlbumGrid({required this.snapshot, required this.onOpen});
+  const _AlbumGrid({
+    required this.snapshot,
+    required this.onOpen,
+    this.serverAlbums = const <MusicServerAlbumRef>[],
+  });
 
   final MusicLibrarySnapshot snapshot;
   final ValueChanged<MusicAlbumRow> onOpen;
+
+  /// 混排进来的服务器专辑：排在本地专辑之后，卡片带云朵、点开走服务器专辑页。
+  final List<MusicServerAlbumRef> serverAlbums;
 
   @override
   Widget build(BuildContext context) {
@@ -395,14 +482,25 @@ class _AlbumGrid extends StatelessWidget {
           crossAxisSpacing: tokens.spacing.gap * 1.5,
           childAspectRatio: 0.74,
         ),
-        itemCount: albums.length,
+        itemCount: albums.length + serverAlbums.length,
         itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
+          if (i >= albums.length) {
+            final MusicServerAlbumRef ref = serverAlbums[i - albums.length];
+            return MusicServerAlbumCard(
+              key: ValueKey<String>(
+                'music-server-album-${ref.browser.serverId}-${ref.album.id}',
+              ),
+              browser: ref.browser,
+              album: ref.album,
+            );
+          }
           final MusicAlbumRow album = albums[i];
           return _AlbumCard(
             key: ValueKey<String>('music-album-${album.albumUid}'),
             album: album,
             tracks: snapshot.tracksOfAlbum(album.albumUid),
             embeddedCoverPath: snapshot.embeddedCoverPathOf(album),
+            disc: snapshot.discOf(album),
             onTap: () => onOpen(album),
           );
         }),
@@ -411,13 +509,14 @@ class _AlbumGrid extends StatelessWidget {
   }
 }
 
-class _AlbumCard extends StatelessWidget {
+class _AlbumCard extends ConsumerWidget {
   const _AlbumCard({
     super.key,
     required this.album,
     required this.tracks,
     required this.embeddedCoverPath,
     required this.onTap,
+    this.disc,
   });
 
   final MusicAlbumRow album;
@@ -425,8 +524,28 @@ class _AlbumCard extends StatelessWidget {
   final String? embeddedCoverPath;
   final VoidCallback onTap;
 
+  /// 光盘来源：盘是一张带 `DVD` / `BD` 角标的专辑，右键 / 长按菜单里有「章节导入为曲目」
+  /// （§9.2）。
+  final MusicDiscSourceRow? disc;
+
+  void _showDiscMenu(BuildContext context, WidgetRef ref, Offset position) {
+    final MusicDiscSourceRow? d = disc;
+    if (d == null) return;
+    unawaited(
+      showMusicDiscAlbumMenu(
+        context: context,
+        app: ref.read(appProvider),
+        globalPosition: position,
+        album: album,
+        disc: d,
+        tracks: tracks,
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final MusicDiscSourceRow? disc = this.disc;
     final MusicTrackRow? first = tracks.isEmpty ? null : tracks.first;
     final String badge = first == null
         ? ''
@@ -437,18 +556,40 @@ class _AlbumCard extends StatelessWidget {
             bitDepth: first.bitDepth,
             bitrateKbps: first.bitrate,
           );
-    return FushiHoverLift(
+    final Widget card = FushiHoverLift(
       builder: (BuildContext context, bool hovering) => FushiPressScale(
         child: InkWell(
           borderRadius: FushiDesignTokens.of(context).radii.cardRadius,
           onTap: onTap,
+          onLongPress: disc == null
+              ? null
+              : () {
+                  final RenderObject? box = context.findRenderObject();
+                  if (box is! RenderBox) return;
+                  _showDiscMenu(
+                    context,
+                    ref,
+                    box.localToGlobal(box.size.center(Offset.zero)),
+                  );
+                },
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Expanded(
-                child: MusicCover(
-                  coverPath: album.coverPath,
-                  embeddedFromPath: embeddedCoverPath,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    MusicCover(
+                      coverPath: album.coverPath,
+                      embeddedFromPath: embeddedCoverPath,
+                    ),
+                    if (disc != null)
+                      Positioned(
+                        left: 6,
+                        top: 6,
+                        child: IgnorePointer(child: MusicDiscBadge(disc: disc)),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(height: 6),
@@ -462,6 +603,7 @@ class _AlbumCard extends StatelessWidget {
                 <String>[
                   album.albumArtistCredit ?? t.music_artist_unknown,
                   if (badge.isNotEmpty) badge,
+                  if (disc != null && tracks.isEmpty) t.music_disc_not_imported,
                 ].join(' · '),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -471,6 +613,12 @@ class _AlbumCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+    if (disc == null) return card;
+    // 右键菜单由绑定表决定唤出键（默认右键），右键被别的动作占用时自动让位。
+    return ContextMenuTrigger(
+      onInvoke: (Offset position) => _showDiscMenu(context, ref, position),
+      child: card,
     );
   }
 }

@@ -1005,6 +1005,34 @@
       "note": "DLL: libdvdnav-4.dll (fbddvdnav-4.dll in the bundle); one copy for libmpv's dvd:// navigation (-Ddvdnav=enabled) and FFmpeg's dvdvideo demuxer (--enable-libdvdnav)."
     },
     {
+      "name": "libcdio",
+      "version": "2.3.0",
+      "license": "GPL-3.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/cdda/libcdio-2.3.0-COPYING"
+      ],
+      "source": "tool/cdda/recipe.env: MSYS2 binary package mingw-w64-x86_64-libcdio 2.3.0-1 (sha256 e8ce99bc…), unpacked into a private prefix by tool/cdda/fetch_cdio_msys2.py; corresponding source = MSYS2 source package mingw-w64-libcdio-2.3.0-1.src.tar.zst (sha256 d2cf5c1b…: upstream libcdio-2.3.0.tar.bz2 sha256 53e83d28… + PKGBUILD + libcdio-0.83-linking.patch); source headers: 'either version 3 of the License, or (at your option) any later version'; text = COPYING of that tarball (licenses/fushi-cdda/ in the rebuilt archive, with SOURCE.txt)",
+      "note": "DLL: libcdio-19.dll (fbdcdio-19.dll in the bundle), linked by libmpv's cdda:// stream (-Dcdda=enabled) through libcdio_cdda / libcdio_paranoia; imports only libiconv. Audio CD playback, docs/specs/2026-10-23-music-module-design.md §9.3."
+    },
+    {
+      "name": "libcdio-paranoia",
+      "version": "10.2+2.0.2",
+      "license": "GPL-3.0-or-later",
+      "component": "pub:media_kit_libs_windows_video",
+      "platforms": [
+        "windows"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/cdda/libcdio-paranoia-10.2+2.0.2-COPYING"
+      ],
+      "source": "tool/cdda/recipe.env: MSYS2 binary package mingw-w64-x86_64-libcdio-paranoia 10.2+2.0.2-1 (sha256 298bf8ef…), unpacked by tool/cdda/fetch_cdio_msys2.py; corresponding source = MSYS2 source package mingw-w64-libcdio-paranoia-10.2+2.0.2-1.src.tar.zst (sha256 614a7747…: upstream libcdio-paranoia-10.2+2.0.2.tar.bz2 sha256 18689253…); source headers of lib/paranoia and lib/cdda_interface: 'either version 3 of the License, or (at your option) any later version' (MSYS2's PKGBUILD says GPL-2.0-or-later; the shipped sources and COPYING are GPLv3, which is what is recorded)",
+      "note": "DLLs: libcdio_cdda-2.dll and libcdio_paranoia-2.dll (fbdcdio_cdda-2.dll / fbdcdio_paranoia-2.dll in the bundle), the CD-DA reader and jitter correction behind mpv's stream_cdda."
+    },
+    {
       "name": "libcaca",
       "version": "0.99.beta20",
       "license": "WTFPL",
@@ -2378,6 +2406,34 @@
       ],
       "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix libbluray 1.5.0（sha256 f676408e…）；Bluray 二进制内嵌 'libbluray version 1.5.0'",
       "note": "Bluray.framework；-Dbdj_jar=disabled -Dfreetype=disabled -Dlibxml2=disabled -Dembed_udfread=true。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
+    },
+    {
+      "name": "libcdio",
+      "version": "2.3.0",
+      "license": "GPL-3.0-or-later",
+      "component": "pub:media_kit_libs_macos_video",
+      "platforms": [
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/cdda/libcdio-2.3.0-COPYING"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@07d6afd9f8c2606320a35b0e1d32143b5da25f15（分支 fushi/cdda，镜像仓 run 40132136924）packages.lock.nix libcdio 2.3.0，tarball https://github.com/libcdio/libcdio/releases/download/2.3.0/libcdio-2.3.0.tar.bz2 sha256 53e83d28…；源码头 'either version 3 of the License, or (at your option) any later version'；原文 = 该 tarball 的 COPYING",
+      "note": "Cdio.framework（macos-arm64，仅 macOS：iOS 不编 cdda），音频 CD 的 cdda:// 读盘；链系统 /usr/lib/libiconv.2.dylib 与 IOKit / DiskArbitration。"
+    },
+    {
+      "name": "libcdio-paranoia",
+      "version": "10.2+2.0.2",
+      "license": "GPL-3.0-or-later",
+      "component": "pub:media_kit_libs_macos_video",
+      "platforms": [
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/cdda/libcdio-paranoia-10.2+2.0.2-COPYING"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@07d6afd9f8c2606320a35b0e1d32143b5da25f15（分支 fushi/cdda，镜像仓 run 40132136924）packages.lock.nix libcdio-paranoia 10.2+2.0.2，tarball https://ftp.gnu.org/gnu/libcdio/libcdio-paranoia-10.2+2.0.2.tar.bz2 sha256 18689253…；lib/paranoia 与 lib/cdda_interface 源码头 'either version 3 of the License, or (at your option) any later version'",
+      "note": "Cdio_cdda.framework 与 Cdio_paranoia.framework（macos-arm64，仅 macOS），mpv stream_cdda 的 CD-DA 读取与抖动校正。"
     },
     {
       "name": "libudfread",

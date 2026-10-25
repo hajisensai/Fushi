@@ -1,6 +1,7 @@
 /// 音乐桌面歌词的真实窗口：复用有声书的原生悬浮字幕窗（Android 系统 overlay
-/// `FloatingLyricService` / Windows 置顶分层窗 `floating_lyric_window.cpp`：置顶、可穿透、
-/// 不抢前台），同一条 `FloatingLyricChannel` 契约。音乐与有声书同一时刻只有一方持有它
+/// `FloatingLyricService` / Windows 置顶分层窗 `floating_lyric_window.cpp` / macOS 置顶
+/// NSPanel `FushiFloatingLyric.swift`：置顶、可穿透、不抢前台），同一条
+/// `FloatingLyricChannel` 契约。音乐与有声书同一时刻只有一方持有它
 /// （[MusicLyricsLive] 按媒体会话归属让出 / 拿回）。
 library;
 

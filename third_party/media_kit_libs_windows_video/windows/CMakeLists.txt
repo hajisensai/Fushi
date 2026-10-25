@@ -117,11 +117,16 @@ get_filename_component(
 # disc share over HTTP (bd_open_files: files by Range, directories from the
 # share manifest) and libdvdnav read a shared DVD image block-wise
 # (dvdnav_open_stream2). The navigation snapshot schema stays v2.
-set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1.7z")
+# `cdda1`: audio CD (music module P5): -Dcdda=enabled on libcdio 2.3.0 /
+# libcdio-paranoia 10.2+2.0.2 (tool/cdda/recipe.env; fbdcdio*.dll) plus
+# patches/cdda-seek-sector-offset.patch (stream_cdda's seek dropped the byte
+# offset inside the CD sector, so audio after any seek came up to 587 frames
+# early). See NATIVE_BUILD.md.
+set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1-cdda1.7z")
 
 # Upstream source provenance; the committed patched archive is the build input.
 set(LIBMPV_URL "https://github.com/mpv-player/mpv/tree/36abaa32d00a7229ee206aae12dc0e97e7962dca")
-set(LIBMPV_MD5 "f826fdedc0b628cf299ff25541eaddd4")
+set(LIBMPV_MD5 "8e7ee2aacddce372fb6b813c3ffddf83")
 
 # Vendored archive (committed) + build-dir extraction target (TODO-1172).
 set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")

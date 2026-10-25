@@ -83,6 +83,30 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/music/metadata/music_scrape_service_test.dart',
   'music/Pause while looking up words':
       'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
+  // 服务器曲库的码率上限：生效点是播放服务器曲目时向服务器要的流（直出 / 转码），harness
+  // 里没有服务器。设置值 → musicServerBitrateLimit → streamFor 的直出 / 转码与信号路径源
+  // 属性由 music_server_test 咬住。
+  'music/Server streaming quality':
+      'test/media/music/server/music_server_test.dart',
+  // 图示均衡器：生效点是音乐 libmpv 实例的 `af`，harness 里没有在播的 mpv。偏好串 → 均衡
+  // 设置 → `af` 链由 music_equalizer_test 咬住；真 libmpv 上的增益 / 关时逐样本不变 /
+  // 与交叉淡入同链在 music_equalizer_real_test。
+  'music/Enable equalizer': 'test/media/music/music_equalizer_test.dart',
+  'music/31 Hz': 'test/media/music/music_equalizer_test.dart',
+  'music/62 Hz': 'test/media/music/music_equalizer_test.dart',
+  'music/125 Hz': 'test/media/music/music_equalizer_test.dart',
+  'music/250 Hz': 'test/media/music/music_equalizer_test.dart',
+  'music/500 Hz': 'test/media/music/music_equalizer_test.dart',
+  'music/1 kHz': 'test/media/music/music_equalizer_test.dart',
+  'music/2 kHz': 'test/media/music/music_equalizer_test.dart',
+  'music/4 kHz': 'test/media/music/music_equalizer_test.dart',
+  'music/8 kHz': 'test/media/music/music_equalizer_test.dart',
+  'music/16 kHz': 'test/media/music/music_equalizer_test.dart',
+  // ASS 卡拉 OK 字幕默认显示：生效点是卡拉 OK 字幕页打开时选哪种叠加
+  // （musicKaraokeDefaultOverlay），harness 设置页没有在播的曲目与 mpv；设置值 → 默认
+  // 叠加的判据由 karaoke_stage_plan_test 咬住。
+  'music/ASS karaoke subtitles':
+      'test/media/music/karaoke/karaoke_stage_plan_test.dart',
   // 桌面歌词 / 锁屏歌词：生效点是 MusicLyricsLive（解析当前曲目歌词、按位置推当前行到
   // 原生悬浮窗 / 媒体会话副标题），harness 没有在播的曲目与原生窗口。开关开 = 弹窗推
   // 双行块与已唱高亮、关 = 隐藏 / 不给副标题、两项都关 = 不解析，由

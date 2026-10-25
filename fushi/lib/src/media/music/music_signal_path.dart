@@ -144,6 +144,7 @@ class MusicSignalPathSnapshot {
     this.speed = 1,
     this.pitchCorrection = true,
     this.userFilters = '',
+    this.equalizer = false,
     this.crossfade = false,
     this.crossfadeAvailability = MusicCrossfadeAvailability.off,
     this.androidBitPerfect,
@@ -200,6 +201,9 @@ class MusicSignalPathSnapshot {
   /// `af`：用户 / 本模块显式插的滤镜链；空串 = 没有。
   final String userFilters;
 
+  /// 本模块的均衡器挂在 `af` 上（P5）。
+  final bool equalizer;
+
   /// 交叉淡入正在作用于本曲（加载时装了淡入淡出滤镜）。
   final bool crossfade;
 
@@ -246,6 +250,9 @@ enum MusicSignalStage {
 
   /// 显式滤镜链（`af`）。
   filters,
+
+  /// 图示均衡器（P5）。
+  equalizer,
 
   /// 交叉淡入。
   crossfade,
@@ -315,6 +322,7 @@ MusicSignalPathVerdict judgeMusicSignalPath(MusicSignalPathSnapshot s) {
   }
   final List<MusicSignalStage> stages = <MusicSignalStage>[];
   if (s.isDsd) stages.add(MusicSignalStage.dsdToPcm);
+  if (s.equalizer) stages.add(MusicSignalStage.equalizer);
   if (s.userFilters.trim().isNotEmpty) stages.add(MusicSignalStage.filters);
   if ((s.speed - 1).abs() > 1e-9) stages.add(MusicSignalStage.speed);
   if (s.volumeGainDb.abs() > 1e-9) stages.add(MusicSignalStage.replayGain);

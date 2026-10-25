@@ -113,6 +113,9 @@ class MusicPlayerEngine extends ChangeNotifier {
   /// 输出自动退回（独占 → 共享 / 指定设备 → 默认）时调用：界面弹明确提示。
   void Function(MusicBackendOutputFallback fallback)? onOutputFallback;
 
+  /// 播放失败（打不开 / 音频 CD 没盘或换了盘）时调用：界面弹明确提示。
+  void Function(MusicBackendFailed failure)? onPlaybackFailed;
+
   /// 每次真正开始播一首新曲（含无缝推进）时调用：播放流落库、媒体会话刷新。
   void Function(MusicPlayItem item)? onTrackStarted;
 
@@ -495,6 +498,7 @@ class MusicPlayerEngine extends ChangeNotifier {
       case MusicBackendFailed(:final String message):
         _lastError = message;
         _playing = false;
+        onPlaybackFailed?.call(event);
         notifyListeners();
     }
   }

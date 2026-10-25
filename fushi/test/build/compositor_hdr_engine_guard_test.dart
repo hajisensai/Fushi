@@ -113,7 +113,7 @@ void main() {
     );
   });
 
-  test('runner 钉 Impeller：全线 Impeller、不留 Skia 回退（D12）', () {
+  test('runner 钉 Impeller：全线 Impeller、不留 Skia 回退（D13）', () {
     final String main = _read('$fushi/windows/runner/main.cpp');
     expect(
       main,

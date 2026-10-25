@@ -18,7 +18,7 @@
 ## 补丁（按顺序 `git apply`）
 
 渲染后端：Fushi 五端全线 Impeller、不保留 Skia 回退（所有者 2026-10-24 拍板，
-`docs/specs/2026-10-23-music-module-design.md` D12）。runner（`fushi/windows/runner/main.cpp`）显式
+`docs/specs/2026-10-23-music-module-design.md` D13）。runner（`fushi/windows/runner/main.cpp`）显式
 `set_impeller_switch(Enabled)`；HDR 输出在 Impeller 下由第 3 份补丁接上。
 
 ### `engine-hdr-output.patch`（flutter 仓库根目录 `git apply`）

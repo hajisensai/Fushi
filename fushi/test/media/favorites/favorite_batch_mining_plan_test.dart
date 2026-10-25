@@ -6,7 +6,7 @@ import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMiningSource;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show kStatSourceBook, kStatSourceGame, kStatSourceVideo;
+    show kStatSourceBook, kStatSourceGame, kStatSourceMusic, kStatSourceVideo;
 
 FavoriteMiningItem _item({
   String source = kFavoriteSentenceSourceBook,
@@ -274,6 +274,12 @@ void main() {
         // SentenceSourceKind has no game member (lenient parse → book); the
         // mapping must read the raw string or game cards get tagged `book`.
         kFavoriteSentenceSourceGame: (AnkiMiningSource.game, kStatSourceGame),
+        // 音乐模块歌词句单独打 `music`（所有者 2026-10-24），有声书歌词模式
+        // （kFavoriteSentenceSourceLyrics）仍归书籍。
+        kFavoriteSentenceSourceMusic: (
+          AnkiMiningSource.music,
+          kStatSourceMusic,
+        ),
       };
       expected.forEach((String source, (AnkiMiningSource, String) want) {
         final FavoriteMiningItem item = _item(source: source);

@@ -252,7 +252,8 @@ mixin _FushiDbMusic on _$FushiDatabase {
             ..where(($MusicTracksTable t) => t.trackUid.equals(trackUid)))
           .getSingleOrNull();
 
-  /// 至少有一首在库曲目的专辑，按标题排序。
+  /// 至少有一首在库曲目的专辑，以及光盘专辑（盘加进曲库、章节还没导入时也要能看到它，
+  /// 「章节导入为曲目」的入口就在这张专辑上），按标题排序。
   Future<List<MusicAlbumRow>> listMusicAlbums() {
     final Expression<bool> hasLiveTrack = existsQuery(
       select(musicTracks)..where(
@@ -261,7 +262,7 @@ mixin _FushiDbMusic on _$FushiDatabase {
       ),
     );
     return (select(musicAlbums)
-          ..where((_) => hasLiveTrack)
+          ..where(($MusicAlbumsTable t) => hasLiveTrack | t.discUid.isNotNull())
           ..orderBy(<OrderingTerm Function($MusicAlbumsTable)>[
             ($MusicAlbumsTable t) => OrderingTerm(
               expression: coalesce(<Expression<String>>[t.titleSort, t.title]),
@@ -331,6 +332,191 @@ mixin _FushiDbMusic on _$FushiDatabase {
     }
     return unique.values.toList();
   }
+
+  // ── 光盘专辑（音乐方案 §9.2：演唱会 / MV 合集 DVD·BD 的章节导入为曲目）──
+
+  Future<MusicDiscSourceRow?> getMusicDiscSource(String discUid) =>
+      (select(musicDiscSources)
+            ..where(($MusicDiscSourcesTable t) => t.discUid.equals(discUid)))
+          .getSingleOrNull();
+
+  Future<List<MusicDiscSourceRow>> listMusicDiscSources() =>
+      select(musicDiscSources).get();
+
+  /// 把一张盘登记成曲库里的专辑（还没导入章节）。盘已登记时只更新路径 / 卷标（同一张盘
+  /// 挪了目录），专辑标题等用户可能改过的不动。
+  Future<void> registerMusicDisc({
+    required MusicAlbumsCompanion album,
+    required MusicDiscSourcesCompanion disc,
+  }) => transaction(() async {
+    await into(musicDiscSources).insert(
+      disc,
+      onConflict: DoUpdate<$MusicDiscSourcesTable, MusicDiscSourceRow>(
+        (_) => MusicDiscSourcesCompanion(
+          path: disc.path,
+          volumeId: disc.volumeId,
+          hasMenu: disc.hasMenu,
+        ),
+      ),
+    );
+    await into(musicAlbums).insert(
+      album,
+      onConflict: DoUpdate<$MusicAlbumsTable, MusicAlbumRow>(
+        (_) => MusicAlbumsCompanion(discUid: album.discUid),
+      ),
+    );
+  });
+
+  /// 一次「章节导入为曲目」整体落库（一个事务）：专辑 / 光盘来源 upsert，曲目 upsert（重新
+  /// 导入时清软删标记、不改入库时刻，**也不改已有曲目的标题 / 艺人 / 录音 MBID**——那是
+  /// MusicBrainz 结论或用户改过的名字，重新导入只更新盘上的事实：路径、起止、时长、序号），
+  /// 这张专辑上一轮导入、这一轮没选的曲目软删（歌单 / 播放记录仍能解析到行）。
+  Future<void> writeMusicDiscImport({
+    required MusicAlbumsCompanion album,
+    required MusicDiscSourcesCompanion disc,
+    required List<MusicTracksCompanion> tracks,
+    required int deletedAt,
+  }) => transaction(() async {
+    await into(musicDiscSources).insertOnConflictUpdate(disc);
+    // 已有的专辑行只认领光盘来源、刷新时刻：标题 / 艺人 / 封面可能是 MusicBrainz 结论。
+    await into(musicAlbums).insert(
+      album,
+      onConflict: DoUpdate<$MusicAlbumsTable, MusicAlbumRow>(
+        (_) => MusicAlbumsCompanion(
+          discUid: album.discUid,
+          updatedAt: album.updatedAt,
+        ),
+      ),
+    );
+    final String albumUid = album.albumUid.value;
+    final Set<String> keep = <String>{
+      for (final MusicTracksCompanion t in tracks) t.trackUid.value,
+    };
+    for (final MusicTracksCompanion track in tracks) {
+      await into(musicTracks).insert(
+        track,
+        onConflict: DoUpdate<$MusicTracksTable, MusicTrackRow>(
+          (_) => track.copyWith(
+            addedAt: const Value<int>.absent(),
+            title: const Value<String>.absent(),
+            artistCredit: const Value<String?>.absent(),
+            mbRecordingId: const Value<String?>.absent(),
+            deletedAt: const Value<int?>(null),
+          ),
+        ),
+      );
+    }
+    await (update(musicTracks)..where(
+          ($MusicTracksTable t) =>
+              t.albumUid.equals(albumUid) &
+              t.deletedAt.isNull() &
+              t.trackUid.isNotIn(keep),
+        ))
+        .write(MusicTracksCompanion(deletedAt: Value<int?>(deletedAt)));
+    if (keep.isNotEmpty) {
+      await _reapplyMusicScrapeOverlaySql(this, keep.toList());
+    }
+  });
+
+  /// 读一张音频 CD 落库（一个事务）：这是用户显式「重新读盘 / 识别」，专辑与曲目的名字
+  /// 按这一次的结论整行覆盖（入库时刻不动、软删标记清掉）。
+  Future<void> writeMusicAudioCd({
+    required MusicAlbumsCompanion album,
+    required MusicDiscSourcesCompanion disc,
+    required List<MusicTracksCompanion> tracks,
+  }) => transaction(() async {
+    await into(musicDiscSources).insert(
+      disc,
+      onConflict: DoUpdate<$MusicDiscSourcesTable, MusicDiscSourceRow>(
+        (_) => disc.copyWith(addedAt: const Value<int>.absent()),
+      ),
+    );
+    await into(musicAlbums).insert(
+      album,
+      onConflict: DoUpdate<$MusicAlbumsTable, MusicAlbumRow>(
+        (_) => album.copyWith(addedAt: const Value<int>.absent()),
+      ),
+    );
+    for (final MusicTracksCompanion track in tracks) {
+      await into(musicTracks).insert(
+        track,
+        onConflict: DoUpdate<$MusicTracksTable, MusicTrackRow>(
+          (_) => track.copyWith(
+            addedAt: const Value<int>.absent(),
+            deletedAt: const Value<int?>(null),
+          ),
+        ),
+      );
+    }
+    if (tracks.isNotEmpty) {
+      await _reapplyMusicScrapeOverlaySql(this, <String>[
+        for (final MusicTracksCompanion t in tracks) t.trackUid.value,
+      ]);
+    }
+  });
+
+  /// 从曲库移除一张盘：光盘来源与专辑行删掉，它的曲目软删（歌单 / 播放记录仍能解析）。
+  Future<void> removeMusicDisc({
+    required String discUid,
+    required int deletedAt,
+  }) => transaction(() async {
+    final List<String> albums =
+        await (selectOnly(musicAlbums)
+              ..addColumns(<Expression<Object>>[musicAlbums.albumUid])
+              ..where(musicAlbums.discUid.equals(discUid)))
+            .map((TypedResult r) => r.read(musicAlbums.albumUid)!)
+            .get();
+    if (albums.isNotEmpty) {
+      await (update(musicTracks)..where(
+            ($MusicTracksTable t) =>
+                t.albumUid.isIn(albums) & t.deletedAt.isNull(),
+          ))
+          .write(MusicTracksCompanion(deletedAt: Value<int?>(deletedAt)));
+      await (delete(
+        musicAlbums,
+      )..where(($MusicAlbumsTable t) => t.albumUid.isIn(albums))).go();
+    }
+    await (delete(
+      musicDiscSources,
+    )..where(($MusicDiscSourcesTable t) => t.discUid.equals(discUid))).go();
+  });
+
+  /// 用 MusicBrainz 发行结论更新光盘专辑（[album] 里给了的列）并给曲目改名（逐首标题 /
+  /// 艺人 / 录音 MBID）。
+  Future<void> applyMusicDiscRelease({
+    required String albumUid,
+    required MusicAlbumsCompanion album,
+    required List<
+      ({String trackUid, String title, String? artist, String? mbRecordingId})
+    >
+    names,
+  }) => transaction(() async {
+    await (update(musicAlbums)
+          ..where(($MusicAlbumsTable t) => t.albumUid.equals(albumUid)))
+        .write(album);
+    for (final ({
+          String trackUid,
+          String title,
+          String? artist,
+          String? mbRecordingId,
+        })
+        n
+        in names) {
+      await (update(
+        musicTracks,
+      )..where(($MusicTracksTable t) => t.trackUid.equals(n.trackUid))).write(
+        MusicTracksCompanion(
+          title: Value<String>(n.title),
+          artistCredit: n.artist == null
+              ? const Value<String?>.absent()
+              : Value<String?>(n.artist),
+          mbRecordingId: n.mbRecordingId == null
+              ? const Value<String?>.absent()
+              : Value<String?>(n.mbRecordingId),
+        ),
+      );
+    }
+  });
 
   Future<List<MusicPlaylistRow>> listMusicPlaylists() =>
       (select(musicPlaylists)

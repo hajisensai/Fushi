@@ -497,6 +497,93 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   查询；抓轨（rip 成 FLAC + CUE + 日志，AccurateRip 校验）列为 P5 可选。
 - **CD+G**：`.cdg` + 音频成对识别，画面走 FFmpeg `cdgraphics` 解码到纹理。
 
+### 9.3 P5 落地记录（2026-10-24，光盘与扩展；DVD 菜单与 CD+G 不在此列）
+
+**不加 schema**：全部复用 v126 已建的 `music_disc_sources` / `music_albums.disc_uid`，没有新表 / 新列。
+
+- **章节导入为曲目（DVD / BD）**：盘登记成一张带 `DVD` / `BD` / `UHD` 角标的专辑（不设光盘分区）——
+  工具栏「添加光盘」选目录（盘根 / 光驱根 / 含盘的目录，`.iso` 也认）；音乐来源扫描时顺带登记目录树
+  里的盘。入口在专辑详情与专辑卡右键 / 长按菜单（`ContextMenuTrigger`）：章节导入（选 title，默认勾
+  章节最多的那条——**不沿用视频入库的「正片」判定**，实测一张 TV BD 视频侧选中的是 9 小时只有 1 章
+  的循环播放列表）、在 MusicBrainz 查曲目表、从曲库移除。曲目与 CUE 虚拟曲目同一约定：`path` =
+  title 身份路径（DVD `…/VIDEO_TS/TITLE_nn.dvdtitle`、BD `.mpls`），`cue_start_ms` / `cue_end_ms`
+  = 章节起止；`source_id` 留空（来源重扫不会把它当消失的文件）；uid 由盘身份派生（挪目录 / 换盘符
+  不变）。重新导入只更新盘上的事实，不冲掉 MusicBrainz / 用户改过的名字。
+  - DVD 章节起点来自 IFO：PTT → PGC 的 program map → 入口 cell 的累计时长（角度块只算首个角度；
+    program map 缺失且 program 数 ≠ cell 数时不猜，整条当一首）。短于 1.5 s 的章节并进相邻章节
+    （BD 结尾常见 1.06 s 的黑场章节点）。
+  - **播放**：DVD 不用 dvdvideo demuxer 自己的 `chapter_start/chapter_end` 裁——实测它按 VOBU 粒度
+    截，相邻两章之间各丢约 0.36 s；改为 title 整条经 `demuxer-lavf-format=dvdvideo` +
+    `demuxer-lavf-o=title=N`（逐文件选项）读出，再套 EDL 段按章节时间裁（EDL 段的源写 `VIDEO_TS`
+    目录 / `.iso`；mpv 的 `dvd://` 不能当 EDL 段源，实测 `EDL: Could not open source file`）。BD 按
+    MPLS PlayItem 拼 m2ts EDL 段（与视频 `bluray_source.dart` 同一拼法）。音乐实例逐文件
+    `vid=no` / `sid=no`。真 libmpv：自制测试盘第 2+3 章连播 4.17 s、第 2 章 2.39 s（AC-3 帧内裁边，
+    误差 < 1 帧）；真 BD 章节段按 3 s 截取出 3.00 s。
+  - **对号**：按专辑名（可改）搜 MusicBrainz 的 DVD-Video / Blu-ray 发行，逐张取曲目表，章节时长与
+    曲目时长逐首比（视频盘 medium 优先，平均误差 ≤ 3 s 且一半以上曲目有时长才标可信），用户选一张
+    套用；曲数不一致不半截套用。DVD / BD 章节本身没有名字，所以「章节名」这一条判据实际不可用。
+  - **没做**：BD 镜像（`.iso`）的章节导入（MPLS 在镜像里、EDL 要真实 m2ts 路径，给出明确提示）；
+    加密 BD（AACS 解密会话在视频链路，音乐实例不接）；专辑页的「播放原盘」主按钮（DVD 方案写的
+    音乐专辑页同规则——原盘菜单会话要绑定视频库条目，盘不在视频库时没有入口，需另定）。
+- **音频 CD**：`native/fushi_music/src/cd.rs` 读 MMC TOC（格式 0）与 CD-TEXT（格式 5）原始响应，
+  算 MusicBrainz Disc ID（Enhanced CD 扣掉数据轨与 11400 帧 session 间隙）。设备读：Windows
+  `IOCTL_CDROM_READ_TOC_EX`、Linux `CDROMREADTOCHDR/ENTRY`（CD-TEXT 要 SG_IO，未做）、macOS
+  `DKIOCCDREADTOC`（完整 TOC 换算成格式 0）；移动端返回不支持。实测本机光驱一张 12 轨 CD：Disc ID
+  `wQ8ygYRJ6TxS9evQ5yIRDW8yJLo-` 在 MusicBrainz 查到对应发行，整盘入库。曲目路径 `cdda://<设备>` +
+  起止（毫秒，相对第 1 轨起点）。
+  - **播放（2026-10-25 放开，所有者批准）**：
+    - **libmpv**：Windows 随包 libmpv 改为 `-Dcdda=enabled`（`…-rdisc1-cdda1.7z`），libcdio 2.3.0 /
+      libcdio-paranoia 10.2+2.0.2 取自 `tool/cdda/recipe.env` 钉版本与 sha256 的 MSYS2 包、解到私有前缀
+      （不往 MSYS2 装包），随包 `fbdcdio*.dll`，GPL-3.0-or-later 许可进 `licenses/fushi-cdda/` 与原生
+      许可清单。第 6 个 mpv 补丁 `cdda-seek-sector-offset.patch` 修 `stream_cdda.c` 的 seek 丢扇区内
+      偏移（原来 seek 后整段提前最多 587 个样本，第 2 轨实测提前 172 个）。补丁说明与各平台状态见
+      `tool/bluray/forks/README.md`。
+    - **直接加载**：mpv 把 `stream_cdda` 标 `STREAM_ORIGIN_UNSAFE`，进 media_kit 的临时播放列表会被拒。
+      覆盖层 `native_open_policy.dart` 只放行 app 自己构造的 `cdda://<光驱>`（`E:` / `/dev/sr0` /
+      `/dev/rdiskN`），别的写法一律保持 mpv 的来源检查；音乐后端含 CD 的一对曲目改为「单个 Media 打开
+      + `Player.add` 追加」（各自一条 `loadfile`），不再把盘放进 Playlist。EDL 包 `cdda://` 仍被 mpv 拒，
+      不用。
+    - **无缝**：`start` 是播放器级 seek、会清掉前一首的尾巴，所以盘上**相邻**的下一首不另开 mpv 文件，
+      而是把当前 `cdda://` 文件的 `end` 延到下一首的终点（同一条盘时间轴，轨界不经 seek），越过下一首
+      起点即发「已推进」。起止毫秒按 CD 扇区（1/75 s）还原到轨界、再后挪 1 µs（mpv 截断取样本）。
+      不相邻的下一首（随机 / 跳播 / 换文件）照常进播放列表，前一首尾巴会被 `start` 的 seek 清掉——
+      mpv 的限制，只在不相邻时发生。
+    - **时间轴**：CD 曲目的 mpv 时间是盘时间，位置 / seek / A-B 循环 / 交叉淡入的淡入淡出时刻都按本曲
+      起点换算；均衡器照常（与时间无关）；ReplayGain：CD 没有标签、也不做响度扫描（FFmpeg 没有 cdda
+      协议，光驱里的盘随时会换），按 0 dB 播，信号路径面板照实显示；交叉淡入：盘上相邻曲目本来就是
+      连续的、默认不淡入（与 CUE 同规则），选了「连续曲目也淡入」时按盘时间起点淡入淡出。
+    - **换盘 / 没盘**：打开前按 Disc ID 核对光驱里的盘（曲目 uid = Disc ID + 轨号）；CD 曲目提前结束或
+      mpv 报错时再核对一次。没盘 / 换了盘给出带光驱名的明确提示（`music_cd_play_no_disc` /
+      `music_cd_play_other_disc`），不会拿别的盘的音频顶着这张专辑的曲名播；其余播放失败现在也会
+      toast（`music_play_failed`），原来只记在引擎里、界面不显示。
+    - **平台**：Windows 已实测（下）；macOS 随包 libmpv 已换成 Darwin fork `fushi/cdda` `07d6afd`
+      （run 40132136924）的 cdda 构建，产物校验通过（带补丁、链 libcdio_paranoia），**未在 Mac 上实测
+      播放**；iOS / Android 没有光驱，不做；Linux 用系统 mpv，需带 cdda（`docs/agent/build.md`）。
+    - **实测**（Windows x64，`…-cdda1` 归档，光驱 E: 里 12 轨盘 `wQ8ygYRJ6TxS9evQ5yIRDW8yJLo-`，参考为
+      `cd-paranoia -d E: -Z -r N` 直读，`music_cdda_playback_real_test.dart`，5/5 通过）：第 2 轨
+      11,176,704 帧与直读逐字节相同（偏移 0）；轨中 seek 到 100.123 s 后 6,761,295 帧与直读从第
+      4,415,409 帧起逐字节相同（偏移 0）；第 2 → 3 轨连播（打开时排好 / 播放中 `replaceNext` 延长
+      终点两种）16,010,652 帧 = 两轨直读首尾相接、逐字节相同，各发一次「已推进」；光驱里不是这张盘
+      / 盘符不存在时打开即报 `cdOtherDisc` / `cdNoDisc`、不出声。对照：同一测试换没打补丁的 cdda
+      libmpv，第 2 轨与连播整段提前 172 帧、seek 后提前 580 帧，4 条全红。
+  - **抓轨（FLAC + CUE + 日志 + AccurateRip）评估后不做**：需要原始扇区读（C2 / 重读校验）、驱动器
+    读偏移库、AccurateRip v1/v2 校验与数据库查询、日志格式——是一个独立子系统的量级。
+- **服务器曲库**：`packages/fushi_engine/lib/media/music/server/`（`MusicServerBrowser` 契约 +
+  OpenSubsonic 客户端 + Jellyfin 解析）、app `media/music/server/`。Jellyfin 家族**复用视频的媒体
+  服务器登录**（`JellyfinServerConfig` + `JellyfinApi` 传输），不另登录；OpenSubsonic 在 设置 › 音乐 ›
+  服务器 里增删（token+salt 或 OpenSubsonic API key，`music_subsonic_servers` 登记为凭据键 / 脱敏 /
+  设备本地）。只读浏览（专辑分页 / 艺人 / 搜索 / 专辑曲目）+ 播放：缺省原样直出，设了码率上限才请
+  服务器转码（信号路径按转码后的属性）。每台服务器「显示在曲库里」是显式 opt-in
+  （`music_server_library_mix`），混排进来的是专辑卡（每台至多 500 张，带云朵，点开走服务器专辑页）。
+  mpv 的打开失败文本带流地址，后端在报错前统一脱敏（含 Subsonic 的 `t` / `s`）。**没有真服务器验证**
+  （本机没有 Jellyfin 音乐库 / Navidrome），只有离线 fixture 与假客户端。
+- **均衡器（可选）**：10 段倍频程峰值滤波（`equalizer`，`precision=f64`）+ 自动余量，作为带标签的
+  lavfi 链挂在 `af` 上；关 / 平直时不挂滤镜。交叉淡入的逐文件 `af` 会整体替换全局 `af`，所以装淡入
+  淡出时把均衡器拼进同一条链。信号路径面板单列「均衡器」，判非 bit-perfect。真 libmpv：关时逐样本
+  与 FFmpeg 解码相同；1 kHz +6 dB 时 1 kHz 正弦 0.000 dB、125 Hz −5.95 dB（只剩余量）；满幅不削波。
+  卷积（`afir`）评估后不做：需要第二路 IR 输入，mpv 的 `af=lavfi` 包装只给单进单出，也没有可信的
+  质量验收数据。
+
 ## 10. 数据模型（Drift，schema 125 → 126；v125 是作品图谱的 `media_links`）
 
 命名遵守术语表（`cover`、`deletedAt`、`<名>At` 毫秒、`source library`）。
@@ -586,8 +673,7 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
 - 制卡：音频片段 = 该行（可前后扩 0.5 s）；图片 = 封面或 MV 当前帧；沿用
   `video_clip_exporter` 的导出路径。
 - AB 循环一行 / 多行。
-- 歌词生词统计：一首歌的未知词数 / 覆盖率（复用词典已知词判定），曲库可按「难度」
-  排序。
+- 不做难度 / 生词覆盖率类功能（曲库按难度排序、歌词页覆盖率），见 D12。
 
 ## 13. 分期
 
@@ -609,17 +695,21 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   `FloatingLyricChannel`（Android 系统悬浮窗 / Windows 置顶穿透分层窗，不抢前台）。双行
   （当前 + 下一行）；逐字推进按**音节边界**下发一次区间高亮（定时器排到下一个边界，
   不逐帧过平台通道）——原生窗口只有区间高亮，没有逐帧渐变擦色。与有声书按媒体会话
-  归属让出 / 拿回窗口。**macOS 没有原生悬浮窗后端**（有声书同样没有），设置项只在
-  Android / Windows 显示。
+  归属让出 / 拿回窗口。macOS 后端（2026-10-24 补上）：`macos/Runner/FushiFloatingLyric.swift`，
+  不激活的置顶 NSPanel（`.statusBar` 级、`canJoinAllSpaces + fullScreenAuxiliary`）+ 独立
+  工具条子窗，同一条通道契约；有声书悬浮字幕随之在 macOS 可用。不做竖排与注音，穿透态
+  （`ignoresMouseEvents` 整窗级）只剩 Shift-悬停查词。设置项按
+  `FloatingLyricChannel.supported`（Android / Windows / macOS）显示，竖排仍只在 Windows。
 - **锁屏 / 通知**：当前行写进媒体会话的副标题（`MusicSession.mediaSessionLyricLine`），
   设置「锁屏显示歌词」默认开。
 - **学习闭环（§12）**：歌词页制卡 = 查词那行 + 该行音频（前后扩 0.5 s）+ 封面 + `music`
   来源链接与 `mined_sentences.position_ms / duration_ms`（L3）；AB 循环一行 / 多行走 mpv
   原生 `ab-loop-a/b`（换曲自动关，交叉淡入下作用于出声的主实例）；学习统计
   `MusicStudyTracker` 写 `study_segments`（`media_kind = music`），按 D4 只在学习动作后
-  的空闲窗口内或开了「听歌计入学习」时计；生词覆盖率 = 复习库里已进复习队列的词 /
-  歌词里词典命中的词（新 C ABI `fushidicts_tokenize_terms` 整首一次 FFI 取词头）。
-  曲库按难度排序需要把覆盖率落库（新列 / 新表），未做，待分配 schema 号。
+  的空闲窗口内或开了「听歌计入学习」时计。
+  音乐卡的 Anki 分类标签单独打 `music`（`AnkiMiningSource.music`，所有者 2026-10-24；
+  歌词页手动制卡、收藏夹批量制卡与查词弹窗同口径，此前打成 `book` 的旧卡不迁移）。
+  生词覆盖率与曲库按难度排序曾经落地过，按 D12 已整体删除。
 - **120 Hz 实测**（`fushi/integration_test/karaoke_lyrics_perf_itest.dart`，Windows profile、
   Skia、160 Hz 屏、dpr 1.5、48 行 / 530 音节字级时间轴、每场景 25 s）：稳态（同进程第
   二遍 / 换歌）超 8.33 ms 帧数为 **0**，build p99 ≈ 0.5 ms、raster p99 ≈ 1.1 ms，每帧只
@@ -628,6 +718,42 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   → `driver_link_program` 11 ms），组件自身绘制 0.3 ms；三种组件内改法（统一模糊强度 /
   painter 内 saveLayer / 像素对齐）实测都只是挪动编译时机，已撤回。根治需在组件外
   （Impeller 预编译与 HDR 引擎补丁冲突 / 引擎持久化着色器缓存），待所有者决定。
+
+### 13.2 P3 卡拉 OK 字幕落地记录（2026-10-24）
+
+- **一页一个 mpv**：MV 页泛化成卡拉 OK 字幕页（`pages/implementations/music/music_mv_page.dart`
+  的 `MusicKaraokeStagePage`，纯判据与指令计划在 `media/music/lyrics/karaoke/karaoke_stage_plan.dart`）。
+  画面三选一：MV / 画布（主文件 = 曲目音频，CUE 曲目是 EDL 段；封面或纯色画布按 ASS 的
+  PlayRes 比例画成 PNG，`video-add … albumart` 挂成封面轨）/ CD+G（`video-add` 同名 `.cdg`）。
+  画面、声音、libass 字幕同一个实例出，不在 Dart 里追帧；进入时暂停音乐引擎，画布 / CD+G
+  离开时把引擎拨到本页位置。
+- **原样渲染**：`sub-add` ASS 原文（Rust `ffm_lyrics_ass_raw` 统一成 UTF-8 并按 libass 规则补
+  PlayRes），`sub-delay = MV 偏移 − 歌词偏移`。media_kit 默认 `libass: false` 会关掉 `sub-ass` /
+  `sub-visibility`，本页显式打开，其余字幕选项保持 mpv 默认。叠加三选一（原样 / 逐字歌词 /
+  关闭），默认 = Rust 特效检测（P3 加了 `\org`、`\p1` 绘图、逐字定位；解析器版本升 2）× 设置
+  「ASS 卡拉 OK 字幕」（`music_karaoke_ass_render`：自动 / 总是原样 / 总是逐字）。歌词来源是
+  ASS 时，手动选定也照存 ASS 原文（不再转 TTML）。歌词页在来源是 ASS 或有 `.cdg` 时出现入口，
+  ASS 带特效时歌词区顶上提示去原样渲染。
+- **`\ko` 语义修正**：真 libmpv 截帧确认 libass 的 `\k` 与 `\ko` 都在音节**起点**瞬间切换，
+  `\ko` 另外在起点之前不画描边；P1 的结构化渲染把 `\ko` 当线性擦色，已改。
+- **验收（真 libmpv，`fushi/test/media/music/karaoke/music_karaoke_stage_real_test.dart`，样本全由
+  测试程序生成）**：`\k` `\kf` `\ko` 按像素颜色量出的逐音节进度与结构化进度一致；字幕组风格特效
+  ASS（`\move` `\t` `\fad` `\blur` `\org`+`\frz` `\clip` `\p1` 粒子、fx 行）本页管线 vs「mpv 放视频
+  + `sub-files` 外挂、其余默认」在 0.48–4.48 s 按 25 fps 逐帧比：**101/101 帧逐像素一致**；MV
+  偏移 1.5 s、歌词偏移 +300 ms 下 31/31 帧与参考在 `v − 1.2 s` 一致；CD+G 解码与跳转正确。
+  截图走 `screenshot … subtitles`（视频分辨率合成）；纹理显示路径（libass 按纹理尺寸排字）
+  没有在离屏 runner 上截帧。
+- **CD+G**：统一 FFmpeg 能力下限已含 `cdgraphics` 解码器与 `cdg` 解复用器。图形指令稀疏的
+  `.cdg` 探测分只有个位数、低于 mpv 默认门槛，`video-add` 会静默失败——CD+G 实例下发
+  `demuxer-lavf-probescore=1`。解码器只在图形指令上出帧，跳到长间奏中间时画面要等下一个
+  指令包才出现。`.zip` 打包的 MP3+G 不认（要先解包）。
+- **UltraStar / `.kar`**：走结构化渲染。UltraStar 包按 `#MP3:` / `#AUDIO:` 头配对主名不同的
+  `.txt`；`.kar` / `.mid` 进 sidecar 分档（逐字格式之后、LRC 之前）。**音高条不做**：§5.1 定的
+  是音高忽略，时间轴模型不带音高，做它要改线格式 + 渲染；没有麦克风评分时价值有限。纯 `.kar`
+  文件本身不能当曲目播（统一 FFmpeg 没有 MIDI 合成）。
+- **未做**：原样渲染下「点画面按当前时间取行查词」（§6.3 末句）；Android 上 libass 找不到系统
+  字体（media_kit 需要随包字体资产，本仓没有），ASS 内嵌字体之外的字形在 Android 原样渲染下
+  未验证。
 
 ## 14. 风险
 
@@ -659,7 +785,11 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
 - **D7 人声分离**：作废——卡拉 OK 只做字幕兼容，不做人声分离（范围澄清见 §0）。
 - **D8 DVD 菜单**：与 BD 原盘菜单同一套体验（§9.1）。
 - **D9 曲库统计卡**：不要。
-- **D12 渲染后端**（所有者 2026-10-24：「impeller 就该全线替换整个 app 的」）：五端全线
+- **D12 难度 / 生词覆盖率**（所有者 2026-10-24）：**不做难度 / 生词覆盖率类功能**——
+  曲库按难度排序（`music_lyric_coverage` 缓存表、排序偏好、「已知 N%」标记）与歌词页
+  「已知词 / 歌词里的词」覆盖率一并删除，只为它们存在的复习库已知词快照与
+  `fushidicts_tokenize_terms` 批量取词头接口同删；类似功能以后也不加。
+- **D13 渲染后端**（所有者 2026-10-24：「impeller 就该全线替换整个 app 的」）：五端全线
   Impeller，**不保留 Skia 回退开关**。起因是逐字歌词在 Windows（当时钉 Skia）每次启动后
   首播的头几次换行掉帧（模糊着色器首次编译约 11 ms，§13 P1 退出标准）。Windows 的合成器内
   HDR 引擎补丁随之移植到 Impeller 路径（`ci/patches/flutter-engine/3.47.6/engine-impeller-hdr.patch`），

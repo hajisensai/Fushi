@@ -382,7 +382,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         // TODO-1068：SRT/有声书卡长按菜单对称补「悬浮字幕」项（与 EPUB 侧
         // extraActions 一致）。复用同一 i18n key、同一回调、同一平台门控；
         // bookKey 非空才可用，_toggleFloatingLyricFromShelf 按 bookKey 解析。
-        if ((Platform.isAndroid || Platform.isWindows) &&
+        if (FloatingLyricChannel.supported &&
             modules.isEnabled(ModuleId.listening))
           // 2026-10 体验优化：开启态不再拼「悬浮字幕 ✓」（看不出点了是开还是关），
           // 改成明确的「关闭悬浮字幕」+ 不同图标。

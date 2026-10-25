@@ -40,6 +40,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
     show kMangaOcrMaxSelectableTasks;
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show kDefaultMangaOcrLocalModel, MangaOcrLocalModel;
+import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
@@ -4354,6 +4355,86 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 图示均衡器开关（P5，可选；开且不平直时即非 bit-perfect）。默认关。
+  bool get musicEqEnabled =>
+      getPref('music_eq_enabled', defaultValue: false) == true;
+
+  Future<void> setMusicEqEnabled(bool value) async {
+    await setPref('music_eq_enabled', value);
+    notifyListeners();
+  }
+
+  /// 图示均衡器各段增益（dB，逗号分隔，与 `kMusicEqualizerBandsHz` 一一对应）；空 = 平直。
+  String get musicEqGains =>
+      (getPref('music_eq_gains', defaultValue: '') as String?) ?? '';
+
+  Future<void> setMusicEqGains(String value) async {
+    await setPref('music_eq_gains', value);
+    notifyListeners();
+  }
+
+  /// 用户自配的 OpenSubsonic 服务器清单（服务器曲库，音乐方案 §13 P5；设备本地，条目里
+  /// 带 base64 的密码 / API key）。坏条目逐条丢弃（`decodeSubsonicServerConfigs`）。
+  List<SubsonicServerConfig> get musicSubsonicServers {
+    final String raw =
+        getPref('music_subsonic_servers', defaultValue: '') as String;
+    if (raw.trim().isEmpty) return const <SubsonicServerConfig>[];
+    try {
+      return decodeSubsonicServerConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.musicSubsonicServers.decode',
+        error,
+        stack,
+      );
+      return const <SubsonicServerConfig>[];
+    }
+  }
+
+  Future<void> setMusicSubsonicServers(
+    Iterable<SubsonicServerConfig> servers,
+  ) async {
+    await setPref('music_subsonic_servers', encodeSubsonicServerConfigs(servers));
+    notifyListeners();
+  }
+
+  /// 混排进本地曲库的服务器（`MusicServerBrowser.serverId` 集合）：显式 opt-in，与视频
+  /// `jellyfin_show_in_library` 同模式。设备本地（服务器配置本身就是设备本地的）。
+  Set<String> get musicServerLibraryMix {
+    final Object? raw = getPref('music_server_library_mix', defaultValue: '');
+    if (raw is! String || raw.trim().isEmpty) return const <String>{};
+    try {
+      final Object? list = jsonDecode(raw);
+      return <String>{
+        if (list is List<Object?>)
+          for (final Object? id in list)
+            if (id is String && id.isNotEmpty) id,
+      };
+    } on FormatException {
+      return const <String>{};
+    }
+  }
+
+  Future<void> setMusicServerLibraryMix(Set<String> serverIds) async {
+    await setPref(
+      'music_server_library_mix',
+      jsonEncode((serverIds.toList()..sort())),
+    );
+    notifyListeners();
+  }
+
+  /// 服务器曲库的码率上限（kbps）：0 = 原样直出（direct play，缺省），其余请服务器转码。
+  int get musicServerMaxBitrate {
+    final Object? raw = getPref('music_server_max_bitrate', defaultValue: 0);
+    final int v = raw is num ? raw.toInt() : 0;
+    return v < 0 ? 0 : v;
+  }
+
+  Future<void> setMusicServerMaxBitrate(int kbps) async {
+    await setPref('music_server_max_bitrate', kbps < 0 ? 0 : kbps);
+    notifyListeners();
+  }
+
   /// VGMdb 补充开关（社区镜像，无官方 API）。默认关。
   bool get musicVgmdbEnabled =>
       getPref('music_vgmdb_enabled', defaultValue: false) == true;
@@ -4396,6 +4477,17 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMusicListeningCountsAsStudy(bool value) async {
     await setPref('music_listening_counts_as_study', value);
+    notifyListeners();
+  }
+
+  /// 卡拉 OK 字幕页里 ASS 歌词的默认显示：`auto`（按特效检测）/ `original`（libass 原样）/
+  /// `structured`（逐字歌词）。默认 `auto`（音乐 P3，设计 §6.3）。
+  String get musicKaraokeAssRender =>
+      (getPref('music_karaoke_ass_render', defaultValue: 'auto') as String?) ??
+      'auto';
+
+  Future<void> setMusicKaraokeAssRender(String value) async {
+    await setPref('music_karaoke_ass_render', value);
     notifyListeners();
   }
 

@@ -279,7 +279,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   flutter::DartProject project(L"data");
   // 全线 Impeller，不留 Skia 回退（docs/specs/2026-10-23-music-module-design.md
-  // D12）。显式钉住而不是依赖引擎默认：环境变量 FLUTTER_ENGINE_SWITCHES 的
+  // D13）。显式钉住而不是依赖引擎默认：环境变量 FLUTTER_ENGINE_SWITCHES 的
   // --enable-impeller=false 在默认档下仍会生效。合成器内 HDR 在 Impeller 下由
   // ci/patches/flutter-engine/<版本>/engine-impeller-hdr.patch 接上；没有它的
   // 引擎产物会让 HDR 视频静默退回 SDR（守卫 compositor_hdr_engine_guard_test）。

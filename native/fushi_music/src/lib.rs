@@ -13,6 +13,7 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+pub mod cd;
 pub mod cue;
 pub mod dsf;
 pub mod fingerprint;
@@ -40,6 +41,10 @@ pub mod status {
     pub const NOT_FOUND: i32 = -5;
     /// 写文件失败（只读 / 被占用 / 格式不支持写标签）。
     pub const WRITE_FAILED: i32 = -6;
+    /// 设备读失败（光驱打不开 / 没有盘 / 不是音频 CD）。
+    pub const IO_FAILED: i32 = -7;
+    /// 本平台不支持（移动端读物理光驱）。
+    pub const UNSUPPORTED: i32 = -8;
     /// Rust 侧 panic（已接住）。
     pub const PANIC: i32 = -100;
 }
@@ -281,6 +286,93 @@ pub unsafe extern "C" fn ffm_tags_write_fields(
             Err(tag_write::TagWriteError::Unreadable(_)) => status::BAD_INPUT,
             Err(tag_write::TagWriteError::WriteFailed(_)) => status::WRITE_FAILED,
         }
+    })
+}
+
+/// 音频 CD：MMC READ TOC 格式 0 / 格式 5 的原始响应 → 盘信息（[cd::encode_info] 线格式）。
+/// 纯计算（Disc ID、CD-TEXT 解析），不碰设备；`cdtext` 可为空。TOC 不合法返回
+/// [status::BAD_INPUT]。
+///
+/// # Safety
+/// `toc_ptr` 指向 `toc_len` 字节，`text_ptr` 为空（`text_len == 0`）或指向 `text_len` 字节；
+/// `out_ptr` / `out_len` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_cd_info_from_raw(
+    toc_ptr: *const u8,
+    toc_len: usize,
+    text_ptr: *const u8,
+    text_len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let (Some(toc), Some(text)) = (slice_arg(toc_ptr, toc_len), slice_arg(text_ptr, text_len))
+        else {
+            return status::NULL_ARGUMENT;
+        };
+        match cd::info_from_raw(toc, text) {
+            Some(info) => {
+                hand_over_bytes(cd::encode_info(&info), out_ptr, out_len);
+                status::OK
+            }
+            None => status::BAD_INPUT,
+        }
+    })
+}
+
+/// 音频 CD：读物理光驱（`device` = Windows 盘符 `E:` / Linux `/dev/srN` / macOS `/dev/rdiskN`）的
+/// TOC 与 CD-TEXT，一次返回盘信息（Disc ID 已算好）。打不开 / 没有盘 / 不是音频 CD 返回
+/// [status::IO_FAILED]，移动端返回 [status::UNSUPPORTED]。可能阻塞数百毫秒（光驱转起来），
+/// 调用方放后台 isolate。
+///
+/// # Safety
+/// `device_ptr` 指向 `device_len` 字节；`out_ptr` / `out_len` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_cd_read(
+    device_ptr: *const u8,
+    device_len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let device = match utf8_path_arg(device_ptr, device_len) {
+            Ok(d) => d,
+            Err(code) => return code,
+        };
+        let (toc, text) = match cd::device::read(device) {
+            Ok(raw) => raw,
+            Err(cd::DeviceError::Unsupported) => return status::UNSUPPORTED,
+            Err(cd::DeviceError::Io(_)) => return status::IO_FAILED,
+        };
+        match cd::info_from_raw(&toc, &text) {
+            Some(info) => {
+                hand_over_bytes(cd::encode_info(&info), out_ptr, out_len);
+                status::OK
+            }
+            // 读到了 TOC 但不像音频盘（全是数据轨 / 地址不单调）。
+            None => status::IO_FAILED,
+        }
+    })
+}
+
+/// 本机光驱列表（[cd::encode_drives] 线格式）。移动端为空表。
+///
+/// # Safety
+/// `out_ptr` / `out_len` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_cd_list_drives(out_ptr: *mut *mut u8, out_len: *mut usize) -> i32 {
+    guard(|| {
+        if out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        hand_over_bytes(cd::encode_drives(&cd::device::list_drives()), out_ptr, out_len);
+        status::OK
     })
 }
 

@@ -17,6 +17,12 @@ abstract final class FfmStatus {
 
   /// 写文件失败（只读 / 被占用 / 格式不支持写标签，tag_write.rs）。
   static const int writeFailed = -6;
+
+  /// 设备读失败（光驱打不开 / 没有盘 / 不是音频 CD，cd.rs）。
+  static const int ioFailed = -7;
+
+  /// 本平台不支持（移动端读物理光驱）。
+  static const int unsupported = -8;
   static const int panic = -100;
 }
 

@@ -1,12 +1,17 @@
 import 'dart:async';
 
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
+    show MusicAssRenderPreference;
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
+import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
+import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -188,6 +193,19 @@ SettingsDestination buildMusicDestination() {
             ),
             onTap: _pickAudioDevice,
           ),
+          // 图示均衡器（P5，可选）：子页里开关 + 10 段；开且不平直即非 bit-perfect（信号路径
+          // 面板单独标「均衡器」），关 / 平直时不挂任何滤镜。
+          SettingsNavigationItem(
+            id: 'music.equalizer',
+            title: t.music_eq_title,
+            subtitleBuilder: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicEqEnabled
+                ? t.music_eq_on
+                : t.music_eq_off,
+            icon: FushiIcons.barChart,
+            showIcon: true,
+            child: _equalizerDestination,
+          ),
           SettingsSegmentedItem<int>(
             id: 'music.dsd_rate',
             title: t.music_dsd_rate_title,
@@ -258,6 +276,47 @@ SettingsDestination buildMusicDestination() {
           ),
         ],
       ),
+      // 服务器曲库（P5）：Jellyfin 家族复用视频的媒体服务器登录，OpenSubsonic 在子页里增删；
+      // 混排进曲库是每台服务器的显式开关（子页）。
+      SettingsSection(
+        title: t.music_servers_title,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'music.servers',
+            title: t.music_servers_manage,
+            subtitle: t.music_servers_settings_hint,
+            icon: FushiIcons.server,
+            showIcon: true,
+            child: () => SettingsDestination(
+              id: SettingsDestinationId.music,
+              title: t.music_servers_title,
+              icon: FushiIcons.server,
+              sections: const <SettingsSection>[],
+              body: (SettingsContext c) =>
+                  MusicServerSettingsBody(appModel: c.appModel),
+            ),
+          ),
+          SettingsSegmentedItem<int>(
+            id: 'music.server_bitrate',
+            title: t.music_server_bitrate_title,
+            subtitle: t.music_server_bitrate_hint,
+            icon: FushiIcons.highQuality,
+            defaultValue: 0,
+            options: <SettingsSegmentOption<int>>[
+              SettingsSegmentOption<int>(
+                value: 0,
+                label: t.music_server_bitrate_original,
+              ),
+              for (final int kbps in kMusicServerBitrateChoices)
+                SettingsSegmentOption<int>(value: kbps, label: '$kbps kbps'),
+            ],
+            selected: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicServerMaxBitrate,
+            onChanged: (SettingsContext c, int v) =>
+                c.appModel.prefsRepo.setMusicServerMaxBitrate(v),
+          ),
+        ],
+      ),
       // 歌词（P1，设计 §5.4 / §6.1）。
       SettingsSection(
         title: t.music_lyrics_title,
@@ -291,7 +350,8 @@ SettingsDestination buildMusicDestination() {
             subtitle: t.music_desktop_lyrics_hint,
             icon: FushiIcons.lyrics,
             defaultValue: false,
-            // 原生悬浮字幕窗只有 Android / Windows（与有声书悬浮字幕同一个窗口）。
+            // 原生悬浮字幕窗只有 Android / Windows / macOS（与有声书悬浮字幕同一个
+            // 窗口）。
             visible: (SettingsContext c) => FloatingLyricChannel.supported,
             value: (SettingsContext c) => c.appModel.musicDesktopLyrics,
             onChanged: (SettingsContext c, bool value) =>
@@ -306,6 +366,33 @@ SettingsDestination buildMusicDestination() {
             value: (SettingsContext c) => c.appModel.musicLyricsMediaSession,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMusicLyricsMediaSession(value),
+          ),
+          // 卡拉 OK 字幕页里 ASS 的默认显示（P3，设计 §6.3）：自动 = 按 Rust 特效检测。
+          SettingsSegmentedItem<MusicAssRenderPreference>(
+            id: 'music.karaoke_ass_render',
+            dropdown: true,
+            title: t.music_karaoke_ass_render_title,
+            subtitle: t.music_karaoke_ass_render_hint,
+            icon: FushiIcons.lyrics,
+            options: <SettingsSegmentOption<MusicAssRenderPreference>>[
+              for (final MusicAssRenderPreference p
+                  in MusicAssRenderPreference.values)
+                SettingsSegmentOption<MusicAssRenderPreference>(
+                  value: p,
+                  label: switch (p) {
+                    MusicAssRenderPreference.auto =>
+                      t.music_karaoke_ass_render_auto,
+                    MusicAssRenderPreference.original =>
+                      t.music_karaoke_overlay_original,
+                    MusicAssRenderPreference.structured =>
+                      t.music_karaoke_overlay_structured,
+                  },
+                ),
+            ],
+            selected: (SettingsContext c) => c.appModel.musicKaraokeAssRender,
+            onChanged: (SettingsContext c, MusicAssRenderPreference value) =>
+                c.appModel.setMusicKaraokeAssRender(value),
+            defaultValue: MusicAssRenderPreference.auto,
           ),
           SettingsSwitchItem(
             id: 'music.listening_counts_as_study',
@@ -322,6 +409,78 @@ SettingsDestination buildMusicDestination() {
     ],
   );
 }
+
+/// 均衡器子页：开关 + 每段一个 ±12 dB 滑块 + 复位。改动立即经引擎重新下发（`af`）。
+SettingsDestination _equalizerDestination() => SettingsDestination(
+  id: SettingsDestinationId.music,
+  title: t.music_eq_title,
+  icon: FushiIcons.barChart,
+  sections: <SettingsSection>[
+    SettingsSection(
+      items: <SettingsItem>[
+        SettingsSwitchItem(
+          id: 'music.eq_enabled',
+          title: t.music_eq_enabled_title,
+          subtitle: t.music_eq_enabled_hint,
+          icon: FushiIcons.barChart,
+          defaultValue: false,
+          value: (SettingsContext c) => c.appModel.prefsRepo.musicEqEnabled,
+          onChanged: (SettingsContext c, bool v) async {
+            await c.appModel.prefsRepo.setMusicEqEnabled(v);
+            await c.appModel.musicSession.engine.reapplySettings();
+          },
+        ),
+      ],
+    ),
+    SettingsSection(
+      title: t.music_eq_bands,
+      items: <SettingsItem>[
+        for (int i = 0; i < kMusicEqualizerBandsHz.length; i++)
+          SettingsSliderItem(
+            id: 'music.eq_band_${kMusicEqualizerBandsHz[i]}',
+            title: musicEqualizerBandLabel(kMusicEqualizerBandsHz[i]),
+            icon: FushiIcons.barChart,
+            min: -kMusicEqualizerMaxGainDb,
+            max: kMusicEqualizerMaxGainDb,
+            divisions: (kMusicEqualizerMaxGainDb * 4).round(),
+            defaultValue: 0,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) =>
+                '${v >= 0 ? '+' : ''}${v.toStringAsFixed(1)} dB',
+            value: (SettingsContext c) => MusicEqualizerSettings.parseGains(
+              c.appModel.prefsRepo.musicEqGains,
+            )[i],
+            onChanged: (SettingsContext c, double v) async {
+              final List<double> gains = MusicEqualizerSettings.parseGains(
+                c.appModel.prefsRepo.musicEqGains,
+              );
+              gains[i] = (v * 2).roundToDouble() / 2;
+              await c.appModel.prefsRepo.setMusicEqGains(
+                MusicEqualizerSettings.encodeGains(gains),
+              );
+              await c.appModel.musicSession.engine.reapplySettings();
+            },
+          ),
+        SettingsActionItem(
+          id: 'music.eq_reset',
+          title: t.music_eq_reset,
+          icon: FushiIcons.restart,
+          cli: const SettingsCliAction.tap(),
+          onTap: (SettingsContext c) async {
+            await c.appModel.prefsRepo.setMusicEqGains('');
+            await c.appModel.musicSession.engine.reapplySettings();
+            c.refresh();
+          },
+        ),
+      ],
+    ),
+  ],
+);
+
+/// 频段名（`31 Hz` / `1 kHz`）：单位是国际通用写法，不翻译。
+String musicEqualizerBandLabel(int hz) =>
+    hz >= 1000 ? '${hz ~/ 1000} kHz' : '$hz Hz';
 
 /// 识别整个曲库：串行跑（MusicBrainz 1 req/s），进度与结果走 toast。
 Future<void> _identifyLibrary(SettingsContext c) async {

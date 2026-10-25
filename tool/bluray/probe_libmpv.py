@@ -12,6 +12,13 @@ have libdvdcss loaded as a link-time dependency of the library (libdvdread
 built --with-libdvdcss). A runtime without libdvdcss would only play
 unencrypted discs, so it fails here instead of degrading at the first
 commercial disc.
+
+Audio CD (docs/specs/2026-10-23-music-module-design.md, P5) is required on
+Windows: the `cdda` protocol (stream_cdda, -Dcdda=enabled) with libcdio's
+paranoia library loaded beside libmpv. Whether a seek keeps its offset inside
+the CD sector (patches/cdda-seek-sector-offset.patch) needs a disc in a drive;
+fushi/test/media/music/disc/music_cdda_playback_real_test.dart checks it
+sample-exactly against a cd-paranoia rip.
 """
 
 import argparse
@@ -208,6 +215,25 @@ def dvd_capability(protocols):
     return report
 
 
+def cdda_capability(protocols):
+    """The audio CD half of the capability report (see the module docstring).
+
+    libcdio_paranoia -> libcdio_cdda -> libcdio are link-time imports of
+    libmpv; the package renames them (fbdcdio_paranoia-2.dll on Windows),
+    hence the substring match.
+    """
+    modules = [Path(name).name.lower() for name in loaded_modules()]
+    paranoia = sorted(name for name in modules if "cdio_paranoia" in name)
+    cdio = sorted(name for name in modules if "cdio" in name and "cdio_" not in name)
+    report = {"cdda_protocol": "cdda" in protocols, "paranoia_module": paranoia, "cdio_module": cdio}
+    report["errors"] = [message for ok, message in (
+        (report["cdda_protocol"], "libmpv has no cdda:// protocol (build without -Dcdda=enabled)"),
+        (bool(paranoia), "libcdio_paranoia is not loaded with libmpv"),
+        (bool(cdio), "libcdio is not loaded with libmpv"),
+    ) if not ok]
+    return report
+
+
 def probe_dvd_disc(mpv, disc, seconds):
     """Open a DVD (VIDEO_TS folder or .iso) through dvd:// with menus on and
     report the native logs plus the v2 navigation snapshot (dvd-state)."""
@@ -266,6 +292,7 @@ def probe(path, disc=None, seconds=5, dvd=None):
                 "mpv_render_context_set_update_callback", "mpv_render_context_free")),
             "lua_script": probe_lua(mpv),
             "dvd": dvd_capability(protocols),
+            "cdda": cdda_capability(protocols),
         }
         if disc:
             mpv.lib.mpv_request_log_messages(mpv.handle, b"v")
@@ -303,7 +330,9 @@ def main():
     print(json.dumps(report, ensure_ascii=False, indent=2))
     for error in report["dvd"]["errors"]:
         print(f"DVD capability missing: {error}", file=sys.stderr)
-    return 0 if all((not report["dvd"]["errors"],report["disc_menu_option_result"] == 0, report["discnav"],
+    for error in report["cdda"]["errors"]:
+        print(f"Audio CD capability missing: {error}", file=sys.stderr)
+    return 0 if all((not report["dvd"]["errors"], not report["cdda"]["errors"],report["disc_menu_option_result"] == 0, report["discnav"],
                      report["disc_menu_active_property"], report["bluray_protocol"],
                      report["disc_remote_access_property"],
                      report["truehd_decoder"], report["render_api"],

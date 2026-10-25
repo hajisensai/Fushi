@@ -291,6 +291,16 @@ void main() {
         fadeIn,
         startsWith('@fushixfin:lavfi=[afade=t=in:st=0:d=2.500000:curve=qsin]'),
       );
+      // 音频 CD 曲目的时间戳是盘时间：淡入从本曲在盘上的起点算。
+      expect(
+        musicCrossfadeAf(
+          fadeIn: const Duration(milliseconds: 2500),
+          originSeconds: 232.6133333,
+        ),
+        startsWith(
+          '@fushixfin:lavfi=[afade=t=in:st=232.613333:d=2.500000:curve=qsin]',
+        ),
+      );
       expect(musicStripCrossfadeFilters(idle), isEmpty);
       expect(
         musicStripCrossfadeFilters('lavfi=[aecho=0.8:0.9:1000:0.3],$idle'),

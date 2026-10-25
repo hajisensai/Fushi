@@ -19,12 +19,14 @@ abstract final class MusicLyricsSource {
   ];
 }
 
-/// sidecar 扩展名分档（高 → 低）：同名 `.ttml` > `.ass` > `.lys/.qrc/.krc/.yrc` > `.lrc` >
-/// `.srt/.vtt` > `.txt`。SAMI 与 SRT / VTT 同档。
+/// sidecar 扩展名分档（高 → 低）：同名 `.ttml` > `.ass` > `.lys/.qrc/.krc/.yrc` >
+/// `.kar/.mid`（MIDI 歌词事件，卡拉 OK 歌曲文件，P3）> `.lrc` > `.srt/.vtt` > `.txt`
+/// （UltraStar `.txt` 由内容嗅探认出）。SAMI 与 SRT / VTT 同档。
 const List<List<String>> kLyricSidecarTiers = <List<String>>[
   <String>['ttml'],
   <String>['ass', 'ssa'],
   <String>['lys', 'qrc', 'krc', 'yrc'],
+  <String>['kar', 'mid', 'midi'],
   <String>['lrc'],
   <String>['srt', 'vtt', 'smi', 'sami'],
   <String>['txt'],
@@ -141,4 +143,61 @@ EmbeddedLyrics? pickBestEmbedded(List<EmbeddedLyrics> items) {
     }
   }
   return best;
+}
+
+/// UltraStar 歌曲包常见的命名：`Artist - Title.txt` 与音频文件主名不同，靠头部 `#MP3:`
+/// （新版 `#AUDIO:`）指向音频文件名。纯函数：从 `.txt` 开头 [head] 里取它指向的文件名
+/// （不含目录）；不是 UltraStar 头或没写返回 null。
+String? ultraStarAudioReference(String head) {
+  bool sawBpm = false;
+  String? audio;
+  for (final String raw in head.split('\n')) {
+    final String l = raw.trim();
+    if (!l.startsWith('#')) {
+      if (l.isEmpty) continue;
+      break; // 音符段开始：头部结束。
+    }
+    final int colon = l.indexOf(':');
+    if (colon < 0) continue;
+    final String key = l.substring(1, colon).trim().toUpperCase();
+    final String value = l.substring(colon + 1).trim();
+    if (key == 'BPM') sawBpm = true;
+    if ((key == 'AUDIO' || (key == 'MP3' && audio == null)) &&
+        value.isNotEmpty) {
+      audio = _baseName(value);
+    }
+  }
+  return sawBpm ? audio : null;
+}
+
+/// 读多少字节判 UltraStar 头（头部都在文件开头几百字节内）。
+const int kUltraStarHeadBytes = 4096;
+
+/// 一个目录里最多看多少个 `.txt`（防止往大目录里逐个读文件）。
+const int kUltraStarMaxCandidates = 32;
+
+/// 同目录里可能是 UltraStar 歌曲文件的 `.txt`（主名与音频不同的那些；同名的已按 sidecar 认）。
+List<String> ultraStarCandidates(String audioPath, Iterable<String> siblings) {
+  final String audioName = _baseName(audioPath).toLowerCase();
+  final int dot = audioName.lastIndexOf('.');
+  final String stem = dot <= 0 ? audioName : audioName.substring(0, dot);
+  return <String>[
+    for (final String p in siblings)
+      if (_baseName(p).toLowerCase().endsWith('.txt') &&
+          !_baseName(p).toLowerCase().startsWith('$stem.'))
+        p,
+  ].take(kUltraStarMaxCandidates).toList();
+}
+
+/// CD+G（设计 §9.2）：音频旁同主名的 `.cdg` 图形轨（`song.mp3` + `song.cdg`，大小写不敏感）。
+/// 纯函数；没有返回 null。`.zip` 打包的 MP3+G 不认（要先解包）。
+String? pickCdgCompanion(String audioPath, Iterable<String> siblings) {
+  final String audioName = _baseName(audioPath).toLowerCase();
+  final int dot = audioName.lastIndexOf('.');
+  if (dot <= 0 || audioName.endsWith('.cdg')) return null;
+  final String want = '${audioName.substring(0, dot)}.cdg';
+  for (final String p in siblings) {
+    if (_baseName(p).toLowerCase() == want) return p;
+  }
+  return null;
 }

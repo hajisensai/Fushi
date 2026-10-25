@@ -6,11 +6,43 @@ including upstream HDMV/BD-J navigation added on 2026-08-25. The previous
 2026-08-13 binary had neither `discnav` nor `disc-menu`; updating Flutter alone
 could not enable original menus.
 
-Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1.7z` (40,657,787 bytes).
-SHA-256: `344e3159d78ee509cbc036cf231fe0a62bdf7979300c5ff6dbd88ec9b370d935`.
-The `fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1` suffix identifies this patched build; it is not an
+Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1-cdda1.7z` (40,729,854 bytes).
+SHA-256: `2407c208d6e00dbb876faeb2c5a6b1731dc85844393e7b7dc3066ae35c6ca31f`.
+The `fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1-cdda1` suffix identifies this patched build; it is not an
 unmodified zhongfly release. Its DLL and dependency manifests are also tracked
 beside this document for review without unpacking the binary.
+
+`cdda1` (2026-10-25): audio CD playback (`cdda://`, music module P5,
+`docs/specs/2026-10-23-music-module-design.md` §9.3). libmpv is built with
+`-Dcdda=enabled` against libcdio 2.3.0 and libcdio-paranoia 10.2+2.0.2 from
+`tool/cdda/recipe.env`: pinned MSYS2 binary packages (URL + SHA-256) that
+`tool/cdda/fetch_cdio_msys2.py` unpacks into a private prefix inside the build
+directory - nothing is installed into MSYS2, so the rest of the closure keeps
+the recorded package set. The archive adds `fbdcdio-19.dll`,
+`fbdcdio_cdda-2.dll` and `fbdcdio_paranoia-2.dll` (libcdio's optional libcddb
+is not imported by any of them and is not shipped) and
+`licenses/fushi-cdda/` (both libraries are GPL-3.0-or-later; `SOURCE.txt`
+names the MSYS2 source packages with their SHA-256), recorded as the
+`fushi-cdda` entry of `native-dependency-packages.json`. The sixth mpv patch,
+`patches/cdda-seek-sector-offset.patch` (`stream_patches` in the provenance),
+fixes upstream `stream_cdda.c`: `seek()` kept only the sector number and
+dropped the byte offset inside the 2352-byte sector (and kept serving the tail
+of the sector read before the seek). The raw audio demuxer seeks to packet
+boundaries, which are almost never sector boundaries, so after any seek -
+including `--start` of a track - every sample was delivered up to 587 frames
+early under its own timestamp; precise seeking then trimmed the wrong samples
+(track 2 of the test disc came out 172 frames early, length unchanged). The
+patch keeps the offset and starts the first sector after a seek there. Apart
+from the three libcdio DLLs and their licenses the file list is identical to
+`rdisc1` and only `libmpv-2.dll` changed (same MSYS2 package set and unified
+FFmpeg prefix). `build_libmpv.ps1` ran every verifier (`probe_libmpv.py` now
+also requires the `cdda` protocol with libcdio_paranoia loaded; mkv lace /
+DTS; DV P5 0.36 / 255, P8.1 0.27). Real-disc check:
+`fushi/test/media/music/disc/music_cdda_playback_real_test.dart` against a
+cd-paranoia rip of the same disc (see the music design doc for the numbers).
+The media_kit overlay (`ci/patches/hosted/media_kit-1.2.6/native_open_policy.dart`)
+lets exactly `cdda://<drive>` load directly; mpv marks `stream_cdda`
+`STREAM_ORIGIN_UNSAFE`, so the temporary-playlist path refuses it.
 
 `dvd1-rdisc1` (2026-10-24): remote discs (`docs/specs/2026-10-24-disc-interaction-handoff.md`,
 phase 2). `disc-navigation-state.patch` adds, without changing the v2 snapshot:

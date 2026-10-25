@@ -10,9 +10,10 @@
 /// - 制卡（§12）：句子 = 查词所在那行，音频片段 = 该行前后各扩 0.5 s，卡图 = 封面，出处 =
 ///   `music` 来源链接 + 制卡历史 `position_ms` / `duration_ms`（L3）；
 /// - AB 循环一行 / 多行（mpv 原生 ab-loop）；
-/// - 生词覆盖率：已在复习库里的词 / 歌词里的词；
 /// - 来源：选来源（本地候选 + 在线模糊搜索）写成用户行，可恢复自动来源，可显式导出 TTML。
-///   不做歌词编辑与自动注音（所有者 2026-10-24 拍板，设计 D11）。
+///   不做歌词编辑与自动注音（所有者 2026-10-24 拍板，设计 D11）；
+/// - 卡拉 OK 字幕页（P3，§6.3 / §9.2）：歌词来源是 ASS 或音频旁有同名 `.cdg` 时出现入口；
+///   ASS 带字幕组特效且设置为「自动 / 原样」时，歌词区顶上提示去原样渲染。
 library;
 
 import 'dart:async';
@@ -25,22 +26,20 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, kStatSourceMusic;
-import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
-import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_music/fushi_music.dart';
-import 'package:fushi_srs/fushi_srs.dart'
-    show SrsQueue, SrsTermQuery, SrsTermStatus;
 
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
+import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_clock.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_coverage.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_learning.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart'
+    show pickCdgCompanion;
 import 'package:fushi/src/media/music/music_mining_origin.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -50,7 +49,8 @@ import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
-import 'package:fushi/src/srs/srs_providers.dart' show srsStoreProvider;
+import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
+    show MusicKaraokeTrack, openMusicKaraokePage;
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
@@ -73,6 +73,23 @@ MusicLyricsTrackRef musicLyricsTrackRefOf(MusicPlayItem item) =>
       durationMs: item.durationMs,
       cueStartMs: item.startMs,
     );
+
+/// 播放项旁同名 `.cdg`（CD+G，设计 §9.2）：CUE 曲目不认（一份整轨对应的是整张盘）。
+/// 列目录用同步 API（与歌词 sidecar 同一口径；异步 `Directory.list` 在 widget 测试的
+/// fake-async 里永远不完成）。
+String? musicCdgCompanionOf(MusicPlayItem item) {
+  if (item.startMs != null) return null;
+  final List<String> siblings;
+  try {
+    siblings = <String>[
+      for (final FileSystemEntity e in File(item.path).parent.listSync())
+        if (e is File) e.path,
+    ];
+  } on FileSystemException {
+    return null;
+  }
+  return pickCdgCompanion(item.path, siblings);
+}
 
 /// 纯函数：查词命中 → 查词起点文本（从命中字符到行尾，查词引擎自己取最长匹配）。
 String musicLyricsLookupTerm(KaraokeLookupHit hit) {
@@ -120,23 +137,6 @@ Future<String?> _ffmpegClip({
 @visibleForTesting
 MusicLyricsClipExtractor musicLyricsClipExtractor = _ffmpegClip;
 
-/// 复习库 → 「已知」词头（卡已进入复习队列）。[store] 为 null（复习模块关着）返回 null。
-Future<Set<String>?> musicKnownTermsFromSrs(
-  SrsDbStore? store,
-  List<({String expression, String reading})> terms,
-) async {
-  if (store == null) return null;
-  final Map<String, SrsTermStatus> hits = await store
-      .lookupTermStatus(<SrsTermQuery>[
-        for (final ({String expression, String reading}) t in terms)
-          SrsTermQuery(t.expression, t.reading.isEmpty ? null : t.reading),
-      ]);
-  return <String>{
-    for (final MapEntry<String, SrsTermStatus> e in hits.entries)
-      if (e.value.queue == SrsQueue.review) e.key,
-  };
-}
-
 class MusicLyricsPage extends BaseSourcePage {
   const MusicLyricsPage({super.key, this.startWithLyrics = true})
     : super(item: null);
@@ -159,6 +159,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
 
   String? _loadedUid;
   MusicLyricsResolution? _lyrics;
+
+  /// 音频旁同名 `.cdg`（CD+G 画面，§9.2）；CUE 曲目不认。
+  String? _cdgPath;
   bool _loading = false;
   Object? _error;
   int _offsetMs = 0;
@@ -169,9 +172,6 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
 
   /// AB 循环覆盖的行（含）；没开为 null。
   (int, int)? _loopLines;
-
-  MusicLyricsCoverage? _coverage;
-  int _coverageGeneration = 0;
 
   @override
   void initState() {
@@ -204,9 +204,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       _loading = true;
       _error = null;
       _lyrics = null;
+      _cdgPath = null;
       _lookupLine = null;
       _loopLines = null;
-      _coverage = null;
     });
     MusicLyricsResolution? r;
     Object? error;
@@ -217,40 +217,19 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       error = e;
     }
     if (!mounted || _loadedUid != item.trackUid) return;
+    final String? cdg = musicCdgCompanionOf(item);
     setState(() {
       _loading = false;
       _lyrics = r;
+      _cdgPath = cdg;
       _error = error;
       _offsetMs = r?.timeline.offsetMs ?? 0;
     });
-    if (r != null) unawaited(_computeCoverage(r.timeline));
   }
 
   /// 当前生效的时间轴（带界面上实时调的偏移）。
   LyricTimeline? get _timeline =>
       _lyrics?.timeline.copyWith(offsetMs: _offsetMs);
-
-  Future<void> _computeCoverage(LyricTimeline t) async {
-    final int generation = ++_coverageGeneration;
-    MusicLyricsCoverage? c;
-    try {
-      if (!FushiDicts.isInitialized) return;
-      c = await computeMusicLyricsCoverage(
-        t,
-        tokenize: (List<String> texts) =>
-            FushiDicts.instance.tokenizeTermsInBackground(texts),
-        knownTerms: (List<({String expression, String reading})> terms) async =>
-            musicKnownTermsFromSrs(
-              await ref.read(srsStoreProvider.future),
-              terms,
-            ),
-      );
-    } on Object catch (e, st) {
-      ErrorLogService.instance.log('MusicLyricsPage.coverage', e, st);
-    }
-    if (!mounted || generation != _coverageGeneration) return;
-    setState(() => _coverage = c);
-  }
 
   void _nudgeOffset(int deltaMs) {
     final MusicLyricsResolution? r = _lyrics;
@@ -395,8 +374,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         documentTitle: item?.title,
         coverPath: cover != null && File(cover).existsSync() ? cover : null,
         sentenceAudioPath: audioPath,
-        // 与收藏夹批量制卡同口径：音乐卡归「书」分类标签（ankiMiningSourceOf）。
-        source: AnkiMiningSource.book,
+        // 音乐卡单独打 `music` 分类标签（所有者 2026-10-24），与收藏夹批量制卡
+        // 的 ankiMiningSourceOf 同口径。
+        source: AnkiMiningSource.music,
         bookTitleTag: appModel.autoAddBookNameToTags
             ? BaseAnkiRepository.sanitizeTitleTag(item?.title)
             : null,
@@ -749,6 +729,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         const Spacer(),
+        if (_hasKaraokeStage) _buildKaraokeButton(),
         if (FloatingLyricChannel.supported) _buildDesktopLyricsButton(),
         FushiIconButtonControl(
           key: const ValueKey<String>('music_lyrics_toggle_face'),
@@ -760,6 +741,40 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         ),
         _buildMoreButton(context),
       ],
+    );
+  }
+
+  /// 有 ASS 原文或 CD+G 时才有卡拉 OK 字幕页可开。
+  bool get _hasKaraokeStage => _lyrics?.rawAss != null || _cdgPath != null;
+
+  /// 这份 ASS 打开卡拉 OK 字幕页时默认走原样渲染（特效检测 + 设置项）。
+  bool get _prefersOriginal =>
+      _lyrics?.rawAss != null &&
+      musicKaraokeDefaultOverlay(
+            hasRawAss: true,
+            hasEffects: _lyrics?.timeline.hasEffects ?? false,
+            hasTimeline: _lyrics?.timeline.isSynced ?? false,
+            preference: appModel.musicKaraokeAssRender,
+          ) ==
+          MusicKaraokeOverlay.original;
+
+  Future<void> _openKaraoke() async {
+    final MusicPlayItem? item = _engine.current;
+    if (item == null) return;
+    await openMusicKaraokePage(
+      context: context,
+      track: MusicKaraokeTrack.fromPlayItem(item),
+      cdgPath: _cdgPath,
+    );
+  }
+
+  Widget _buildKaraokeButton() {
+    return FushiIconButtonControl(
+      key: const ValueKey<String>('music_lyrics_karaoke'),
+      icon: const FushiIcon(FushiIcons.mic),
+      isSelected: _prefersOriginal,
+      tooltip: t.music_karaoke_open,
+      onPressed: () => unawaited(_openKaraoke()),
     );
   }
 
@@ -839,7 +854,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             : Text(message, style: context.fushiType.bodyLarge),
       );
     }
-    return KaraokeLyricsView(
+    final Widget view = KaraokeLyricsView(
       key: ValueKey<String>('karaoke_${_loadedUid}_${r.source}'),
       timeline: r.timeline,
       clock: _clock,
@@ -847,6 +862,35 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       offsetMs: _offsetMs,
       onSeek: (int ms) => unawaited(_engine.seek(Duration(milliseconds: ms))),
       onLookup: (KaraokeLookupHit hit) => unawaited(_onLookup(hit)),
+    );
+    // 字幕组特效 ASS：结构化会丢特效，提示去卡拉 OK 字幕页原样渲染（§6.3）。
+    return Column(
+      children: <Widget>[
+        FushiAnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: context.fushiMotion.spatialDefault.curve,
+          child: _prefersOriginal
+              ? Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: FushiInlineNotice(
+                    key: const ValueKey<String>('music_lyrics_karaoke_notice'),
+                    message: t.music_karaoke_effects_hint,
+                    icon: FushiIcons.mic,
+                    actions: <Widget>[
+                      FushiTextButton(
+                        key: const ValueKey<String>(
+                          'music_lyrics_karaoke_notice_open',
+                        ),
+                        onPressed: () => unawaited(_openKaraoke()),
+                        child: Text(t.music_karaoke_open),
+                      ),
+                    ],
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+        Expanded(child: view),
+      ],
     );
   }
 
@@ -859,7 +903,6 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     final Duration? duration = _engine.duration;
     final double max = (duration?.inMilliseconds ?? 0).toDouble();
     final bool synced = _lyrics?.timeline.isSynced ?? false;
-    final MusicLyricsCoverage? coverage = _coverage;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -868,6 +911,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           Row(
             children: <Widget>[
               const Spacer(),
+              if (_hasKaraokeStage) _buildKaraokeButton(),
               if (FloatingLyricChannel.supported) _buildDesktopLyricsButton(),
               _buildMoreButton(context),
             ],
@@ -897,28 +941,6 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: context.fushiType.bodyMedium,
-        ),
-        // 生词覆盖率：有词典、复习模块开着、至少命中一个词才显示。
-        FushiAnimatedSize(
-          duration: fushiMotionDuration(context, FushiMotion.short),
-          curve: context.fushiMotion.spatialDefault.curve,
-          child: coverage == null
-              ? const SizedBox(width: double.infinity)
-              : FushiTooltip(
-                  message: t.music_lyrics_coverage_hint,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      t.music_lyrics_coverage(
-                        known: coverage.knownTokens,
-                        total: coverage.totalTokens,
-                        percent: coverage.percent,
-                      ),
-                      key: const ValueKey<String>('music_lyrics_coverage'),
-                      style: context.fushiType.bodySmall,
-                    ),
-                  ),
-                ),
         ),
         Slider(
           value: position.inMilliseconds.toDouble().clamp(

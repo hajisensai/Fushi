@@ -135,11 +135,16 @@ class DvdTitleCandidate {
     required this.entry,
     required this.duration,
     required this.cellIds,
+    this.chapterStarts = const <Duration>[],
   });
 
   final DvdTitleEntry entry;
   final Duration duration;
   final List<String> cellIds;
+
+  /// 各章节（PTT）在 title 时间轴上的起点，按章节号升序；program map 缺失 / 对不上时为空
+  /// （章节起点不可知，不猜）。音乐「章节导入为曲目」用，入库选片不用。
+  final List<Duration> chapterStarts;
 
   String get _id => entry.titleNumber.toString().padLeft(2, '0');
 }
@@ -282,10 +287,17 @@ class _ImageVideoTs implements _VideoTsFiles {
 ///
 /// 不是盘、或一条 title 都选不出来时返回 null；`VIDEO_TS.IFO` 与它的备份
 /// `VIDEO_TS.BUP` 都损坏时抛 [DvdIfoFormatException]（明确报错，不当成「不是盘」吞掉）。
-Future<DvdDisc?> readDvdDisc(String rootPath) async {
+///
+/// [keepWithoutTitles]：入库选片一条都没选出（全部短于入库下限）时仍返回这张盘
+/// （[DvdDisc.titles] 为空、[DvdDisc.candidates] 照常）。音乐的「章节导入为曲目」用：MV
+/// 合集的单曲 title 可能不足视频入库的一分钟下限。
+Future<DvdDisc?> readDvdDisc(
+  String rootPath, {
+  bool keepWithoutTitles = false,
+}) async {
   if (isDiscImagePath(rootPath) &&
       FileSystemEntity.typeSync(rootPath) == FileSystemEntityType.file) {
-    return readDvdDiscImage(rootPath);
+    return readDvdDiscImage(rootPath, keepWithoutTitles: keepWithoutTitles);
   }
   final String? root = dvdDiscRootForDirectory(rootPath);
   if (root == null) return null;
@@ -294,42 +306,47 @@ Future<DvdDisc?> readDvdDisc(String rootPath) async {
     root: root,
     name: p.basename(p.normalize(root)),
     files: _FolderVideoTs(paths),
+    keepWithoutTitles: keepWithoutTitles,
   );
 }
 
 /// 读入镜像形态的 DVD：打开 `.iso` 的 UDF / ISO 9660，读出 `VIDEO_TS/*.IFO` 字节后走
 /// 与文件夹形态同一条解析 / 选片链路。镜像里没有 `VIDEO_TS/VIDEO_TS.IFO`（是 BD 镜像、
 /// 数据盘、或根本打不开）返回 null；IFO 两份都坏抛 [DvdIfoFormatException]。
-Future<DvdDisc?> readDvdDiscImage(String imagePath) =>
-    withDiscImageFile<DvdDisc?>(imagePath, (DiscImageFileSystem? fs) async {
-      if (fs == null) return null;
-      final List<DiscImageEntry> inside;
-      try {
-        final DiscImageEntry? videoTs = findDiscImageEntry(
-          fs.listRoot(),
-          kDvdVideoDirectory,
-          directory: true,
-        );
-        if (videoTs == null) return null;
-        inside = fs.list(videoTs);
-      } on DiscImageFormatException {
-        return null;
-      }
-      final _ImageVideoTs files = _ImageVideoTs(fs, inside);
-      if (!files.has('VIDEO_TS.IFO') && !files.has('VIDEO_TS.BUP')) return null;
-      return _readDisc(
-        root: p.normalize(imagePath),
-        name: p.basenameWithoutExtension(imagePath),
-        files: files,
-        volumeLabel: fs.label,
-      );
-    });
+Future<DvdDisc?> readDvdDiscImage(
+  String imagePath, {
+  bool keepWithoutTitles = false,
+}) => withDiscImageFile<DvdDisc?>(imagePath, (DiscImageFileSystem? fs) async {
+  if (fs == null) return null;
+  final List<DiscImageEntry> inside;
+  try {
+    final DiscImageEntry? videoTs = findDiscImageEntry(
+      fs.listRoot(),
+      kDvdVideoDirectory,
+      directory: true,
+    );
+    if (videoTs == null) return null;
+    inside = fs.list(videoTs);
+  } on DiscImageFormatException {
+    return null;
+  }
+  final _ImageVideoTs files = _ImageVideoTs(fs, inside);
+  if (!files.has('VIDEO_TS.IFO') && !files.has('VIDEO_TS.BUP')) return null;
+  return _readDisc(
+    root: p.normalize(imagePath),
+    name: p.basenameWithoutExtension(imagePath),
+    files: files,
+    volumeLabel: fs.label,
+    keepWithoutTitles: keepWithoutTitles,
+  );
+});
 
 Future<DvdDisc?> _readDisc({
   required String root,
   required String name,
   required _VideoTsFiles files,
   String? volumeLabel,
+  bool keepWithoutTitles = false,
 }) async {
   final DvdVmgInfo vmg = await _readWithBackup<DvdVmgInfo>(
     files,
@@ -371,7 +388,9 @@ Future<DvdDisc?> _readDisc({
     discRootPath: root,
     discName: name,
   );
-  if (titles.isEmpty) return null;
+  if (titles.isEmpty && (!keepWithoutTitles || candidates.isEmpty)) {
+    return null;
+  }
   return DvdDisc(
     rootPath: root,
     name: name,
@@ -428,6 +447,8 @@ DvdTitleCandidate? dvdTitleCandidate(
   if (pgcs.isEmpty) return null;
   Duration duration = Duration.zero;
   final List<String> cellIds = <String>[];
+  // 每条 PGC 在 title 时间轴上的起点（章节起点 = 所在 PGC 起点 + 入口 cell 在 PGC 内的偏移）。
+  final Map<int, Duration> pgcStart = <int, Duration>{};
   for (final int pgcNumber in pgcs) {
     final DvdProgramChain? pgc = titleSet.programChains[pgcNumber - 1];
     if (pgc == null) return null;
@@ -438,6 +459,7 @@ DvdTitleCandidate? dvdTitleCandidate(
         pgcTime += cell.playbackTime;
       }
     }
+    pgcStart[pgcNumber] = duration;
     duration += pgcTime;
     for (final DvdCell cell in pgc.cells) {
       cellIds.add(
@@ -450,7 +472,33 @@ DvdTitleCandidate? dvdTitleCandidate(
     entry: entry,
     duration: duration,
     cellIds: List<String>.unmodifiable(cellIds),
+    chapterStarts: _chapterStarts(titleSet, entry, pgcStart),
   );
+}
+
+/// 一个 title 各章节的起点；任何一个章节的入口 cell 定不下来就整体返回空（半截章节表
+/// 会让后面的曲目整体错位，比没有更糟）。
+List<Duration> _chapterStarts(
+  DvdTitleSetInfo titleSet,
+  DvdTitleEntry entry,
+  Map<int, Duration> pgcStart,
+) {
+  final int index = entry.titleSetTitleNumber - 1;
+  if (index < 0 || index >= titleSet.partsByTitle.length) {
+    return const <Duration>[];
+  }
+  final List<Duration> starts = <Duration>[];
+  for (final DvdPartOfTitle part in titleSet.partsByTitle[index]) {
+    final DvdProgramChain? pgc = titleSet.programChains[part.pgcNumber - 1];
+    final Duration? base = pgcStart[part.pgcNumber];
+    final int? cell = pgc?.entryCellOf(part.programNumber);
+    if (pgc == null || base == null || cell == null) return const <Duration>[];
+    final Duration start = base + pgc.offsetOfCell(cell);
+    // 章节号单调：起点倒退说明 PTT 表指回了前面（含跳转命令的 title），时间轴不可知。
+    if (starts.isNotEmpty && start < starts.last) return const <Duration>[];
+    starts.add(start);
+  }
+  return List<Duration>.unmodifiable(starts);
 }
 
 List<String> _cellIdsOf(DvdTitleCandidate candidate) => candidate.cellIds;
