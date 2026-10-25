@@ -83,7 +83,7 @@ sRGB 合成，>1.0 全被钳掉（实测：backing store 里 2.57，桌面上 1.
 `<工作目录>\depot_tools`）：
 
 ```powershell
-tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-1   # 自动取 fushi/.fvmrc 的 Flutter 版本
+tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-2   # 自动取 fushi/.fvmrc 的 Flutter 版本
 # 只重编 / 只打包：-Steps build,stage,pack -Modes release
 # 本机 VS 缺 ATL 时：-AtlDir '<另一套 VS>\VC\Tools\MSVC\<ver>\atlmfc'
 ```
@@ -102,16 +102,13 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 
 ## 当前产物
 
-**待重编（2026-10-24）**：现有产物 `hdr-output-1` 早于 `engine-underlay-composition.patch` 与
-`engine-impeller-hdr.patch`，在 Impeller 下 `SetHdrOutput` 恒返回 false——runner 已钉 Impeller，
-换上新产物之前发布包的 HDR 视频只能 SDR 输出。需要按「构建与产物」三种模式重编、发新
-release（新 `patchVersion`，例如 `hdr-output-2`）并更新 `artifacts.json`。
-
-`artifacts.json` → release `flutter-engine-3.47.6-hdr-output-1`（prerelease、非 Latest；
-三种模式 + 匹配的 pdb——`flutter build windows` 缺 pdb 会在 assemble 失败；tag 不以数字 /
-`v`+数字开头，app 更新检查与发布 workflow 都不会把它当 app 版本）。重编后换一个新的
-`patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release 留着给旧提交复现用
-（3.44.0 时代的是 `flutter-engine-3.44.0-hdr-output-2`）。
+`artifacts.json` → release `flutter-engine-3.47.6-hdr-output-2`（prerelease、非 Latest；
+2026-10-25 编，含 `engine-hdr-output` + `engine-underlay-composition` + `engine-impeller-hdr`
+三份引擎补丁与 ANGLE 补丁；三种模式 + 匹配的 pdb——`flutter build windows` 缺 pdb 会在 assemble
+失败；tag 不以数字 / `v`+数字开头，app 更新检查与发布 workflow 都不会把它当 app 版本）。重编后
+换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release 留着给旧提交复现用
+（`hdr-output-1` 只有 Skia 路径的 HDR、不含 underlay；3.44.0 时代的是
+`flutter-engine-3.44.0-hdr-output-2`）。
 
 ## 3.44.0 → 3.47.6 移植记录
 

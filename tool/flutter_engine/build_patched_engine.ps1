@@ -11,7 +11,7 @@
 #   pack   zip the staged overlay (pdbs included) and print artifacts.json
 #
 # Example (everything):
-#   tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-1
+#   tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-2
 #
 # Requirements: Visual Studio 2022 with the C++ workload (+ ATL; a BuildTools
 # install that has ATL can be pointed at with -AtlDir), a Windows 10/11 SDK,
