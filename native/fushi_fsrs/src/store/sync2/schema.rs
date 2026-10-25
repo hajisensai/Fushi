@@ -95,6 +95,12 @@ CREATE TABLE IF NOT EXISTS sync2_edit_ops (
   device BLOB NOT NULL,
   seq INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sync2_card_deck (
+  card_id TEXT NOT NULL PRIMARY KEY,
+  profile_uid TEXT NOT NULL,
+  deck_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sync2_card_deck ON sync2_card_deck (profile_uid, deck_id);
 CREATE TABLE IF NOT EXISTS sync2_legacy (
   profile_uid TEXT NOT NULL,
   device BLOB NOT NULL,

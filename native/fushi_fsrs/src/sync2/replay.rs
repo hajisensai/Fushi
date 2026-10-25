@@ -35,8 +35,8 @@ pub struct Row<'a> {
 pub struct Replayed {
     pub rows: Vec<Option<String>>,
     pub state: Option<Sched>,
-    /// 算不出来、保留作者原结果的日志（参数坏 / 记忆状态非有限）：诊断用。
-    pub kept_author: Vec<usize>,
+    /// 算不出来、按「状态不变」处理的日志（参数坏 / 记忆状态非有限）：诊断用。
+    pub uncomputable: Vec<usize>,
 }
 
 /// 从一条日志（落库形态）推出它的意图。v2 本机新写的日志在创建时就按这一份算好存进操作；迁移进来的
@@ -132,13 +132,16 @@ pub fn replay(rows: &[Row<'_>], cfg: &Config) -> Result<Replayed, String> {
     let sel = select(&logs);
 
     let mut out: Vec<Option<String>> = vec![None; rows.len()];
-    let mut kept_author = Vec::new();
+    let mut uncomputable = Vec::new();
     let mut prefix: Vec<EffLog> = Vec::new();
     let mut last: Option<Sched> = None;
     let mut owner: Option<String> = None;
     for (k, &i) in sel.order.iter().enumerate() {
         let status = sel.status[k];
-        if status & STATUS_EFFECTIVE == 0 {
+        // 无效的派生日志（被撤销的评分等）也按它所在位置的状态算一次结果、写进投影行，只是不推进状态：
+        // 投影行必须是操作集合的纯函数，不能取决于「撤销先到还是评分先到」。
+        let effective = status & STATUS_EFFECTIVE != 0;
+        if !effective && matches!(rows[i].intent, Intent::Absolute) {
             continue;
         }
         let v = &values[i];
@@ -183,9 +186,10 @@ pub fn replay(rows: &[Row<'_>], cfg: &Config) -> Result<Replayed, String> {
         let res: Option<Sched> = match derived {
             None => author,
             Some(Some(s)) => Some(s),
+            // 算不出来（参数坏 / 记忆状态非有限）：确定性地视为不改变状态，记诊断。
             Some(None) => {
-                kept_author.push(i);
-                author
+                uncomputable.push(i);
+                Some(cur.clone())
             }
         };
         if let (true, Some(r)) = (is_derived, &res) {
@@ -195,6 +199,9 @@ pub fn replay(rows: &[Row<'_>], cfg: &Config) -> Result<Replayed, String> {
                 m.insert("res".into(), new);
                 out[i] = Some(serde_json::to_string(&Value::Object(m)).map_err(|e| e.to_string())?);
             }
+        }
+        if !effective {
+            continue;
         }
         if let Some(r) = &res {
             last = Some(r.clone());
@@ -209,7 +216,7 @@ pub fn replay(rows: &[Row<'_>], cfg: &Config) -> Result<Replayed, String> {
         let scheduler = owner.unwrap_or_else(|| "fushi".into());
         if b.scheduler == scheduler { b } else { Sched { scheduler, ..b } }
     });
-    Ok(Replayed { rows: out, state, kept_author })
+    Ok(Replayed { rows: out, state, uncomputable })
 }
 
 #[cfg(test)]

@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 1dc920b9618fcf0117e5fd409a31b01c23cab8480666f6c62da4e0291747f1cf # shrinks to (n, acts) = (2, [Steps { dev: 1, first: 1 }, Review { dev: 0, card: 0, rating: 2, dt_min: 0 }])
+cc 04fe7533ea01e5d6d558a49c3eee2e4b9d6ade455a3c968f82ee2bd58238d5cb # shrinks to (n, acts) = (2, [Review { dev: 1, card: 1, rating: 1, dt_min: 0 }, Undo { dev: 1, card: 1 }])

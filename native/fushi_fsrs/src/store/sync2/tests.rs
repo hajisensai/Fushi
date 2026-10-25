@@ -291,3 +291,131 @@ fn restoring_a_backup_snapshot_is_a_new_device_not_a_fork() {
     assert_eq!(projection(&a), projection(&restored));
     assert_eq!(a.rows("SELECT COUNT(*) FROM srs_review_logs")[1][0], "3");
 }
+
+mod convergence {
+    //! 性质测试（设计 §12.1 / §12.2）：随机 2–4 台设备、随机写入（同一批字段的并发写、同几张卡的复习、
+    //! 牌组配置改动、撤销、改期）、随机同步日程（谁先谁后、重复、部分设备长期离线）——最后全体互通
+    //! 之后，投影逐行相同、摘要相同、每张卡的重放状态相同。
+
+    use super::*;
+    use proptest::prelude::*;
+
+    #[derive(Debug, Clone)]
+    enum Act {
+        Edit { dev: usize, field: u8, val: u16 },
+        Review { dev: usize, card: u8, rating: u8, dt_min: u16 },
+        SetDue { dev: usize, card: u8, due: u8 },
+        Steps { dev: usize, first: u8 },
+        Undo { dev: usize, card: u8 },
+        /// C3 继承某张卡的历史（更改笔记类型的血统，historyFrom）。
+        Lineage { dev: usize, from: u8 },
+        Retention { dev: usize, pct: u8 },
+        Sync { dev: usize },
+    }
+
+    fn act(n: usize) -> impl Strategy<Value = Act> {
+        prop_oneof![
+            (0..n, 0..3u8, any::<u16>()).prop_map(|(dev, field, val)| Act::Edit { dev, field, val }),
+            (0..n, 0..3u8, 1..5u8, 0..3000u16).prop_map(|(dev, card, rating, dt_min)| Act::Review { dev, card, rating, dt_min }),
+            (0..n, 0..3u8, 0..60u8).prop_map(|(dev, card, due)| Act::SetDue { dev, card, due }),
+            (0..n, 1..30u8).prop_map(|(dev, first)| Act::Steps { dev, first }),
+            (0..n, 0..3u8).prop_map(|(dev, card)| Act::Undo { dev, card }),
+            (0..n, 0..3u8).prop_map(|(dev, from)| Act::Lineage { dev, from }),
+            (0..n, 70..97u8).prop_map(|(dev, pct)| Act::Retention { dev, pct }),
+            (0..n).prop_map(|dev| Act::Sync { dev }),
+            (0..n).prop_map(|dev| Act::Sync { dev }),
+        ]
+    }
+
+    fn scenario() -> impl Strategy<Value = (usize, Vec<Act>)> {
+        (2..5usize).prop_flat_map(|n| (Just(n), prop::collection::vec(act(n), 1..40)))
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: std::env::var("PROPTEST_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(24),
+            .. ProptestConfig::default()
+        })]
+        #[test]
+        fn all_replicas_converge((n, acts) in scenario()) {
+            let deck = super::super::config::default_deck_id(P);
+            let devs: Vec<Device> = (0..n).map(|i| Device::new(&format!("p{i}"))).collect();
+            let mut bucket = Bucket::default();
+            devs[0].apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
+            let mut clock = vec![T0; n];
+            let mut k = 0u32;
+            // 每台设备每张卡最后一条自己写的评分（撤销只撤它，Dart 侧的 canUndo 同一约束由界面保证）。
+            let mut last_review: std::collections::HashMap<(usize, u8), String> = std::collections::HashMap::new();
+            for a in &acts {
+                k += 1;
+                match a {
+                    Act::Edit { dev, field, val } => {
+                        clock[*dev] += 1000;
+                        devs[*dev].apply(clock[*dev], vec![edit("note", "N1", &format!("f/{field}"), json!(format!("{val}")))]);
+                    }
+                    Act::Review { dev, card, rating, dt_min } => {
+                        clock[*dev] += i64::from(*dt_min) * 60_000 + 1;
+                        let rtype = if *rating == 1 { "relearn" } else { "learn" };
+                        let id = format!("r{dev}-{k}");
+                        devs[*dev].apply(clock[*dev], vec![review(&id, &format!("C{card}"), clock[*dev], i64::from(*rating), rtype)]);
+                        last_review.insert((*dev, *card), id);
+                    }
+                    Act::SetDue { dev, card, due } => {
+                        clock[*dev] += 5000;
+                        let mut m = review(&format!("m{dev}-{k}"), &format!("C{card}"), clock[*dev], 0, "manual");
+                        m["x"]["kind"] = json!("manual");
+                        m["x"].as_object_mut().unwrap().remove("rating");
+                        m["x"]["res"] = json!({"queue": "review", "dueDay": 19_700 + i64::from(*due), "ivl": 3, "step": 0, "reps": 1, "lapses": 0, "scheduler": "fushi"});
+                        devs[*dev].apply(clock[*dev], vec![m]);
+                    }
+                    Act::Steps { dev, first } => {
+                        clock[*dev] += 1000;
+                        devs[*dev].apply(clock[*dev], vec![edit("deck", &deck, "steps", json!({"learn": [f64::from(*first), 60.0], "relearn": [10.0]}))]);
+                    }
+                    Act::Undo { dev, card } => {
+                        if let Some(target) = last_review.remove(&(*dev, *card)) {
+                            clock[*dev] += 1000;
+                            let u = json!({"t": "log", "x": {
+                                "id": format!("u{dev}-{k}"), "p": P, "card": format!("C{card}"), "kind": "undo", "revokes": target,
+                                "hlc": "0:0:dart", "at": clock[*dev], "ts": "anchored", "origin": "fushi", "rtype": "manual",
+                                "utcOff": 0, "rollover": 4, "fv": 1
+                            }});
+                            devs[*dev].apply(clock[*dev], vec![u]);
+                        }
+                    }
+                    Act::Lineage { dev, from } => {
+                        clock[*dev] += 1000;
+                        devs[*dev].apply(clock[*dev], vec![edit("card", "C3", &format!("historyFrom/C{from}"), json!(true))]);
+                    }
+                    Act::Retention { dev, pct } => {
+                        clock[*dev] += 1000;
+                        devs[*dev].apply(clock[*dev], vec![edit("deck", &deck, "retention", json!(f64::from(*pct) / 100.0))]);
+                    }
+                    Act::Sync { dev } => {
+                        devs[*dev].sync(&mut bucket, "loc", clock[*dev]);
+                    }
+                }
+            }
+            let end = *clock.iter().max().unwrap() + 1;
+            for _ in 0..3 {
+                for d in &devs {
+                    d.sync(&mut bucket, "loc", end);
+                }
+            }
+            let p0 = projection(&devs[0]);
+            for d in &devs[1..] {
+                prop_assert_eq!(&projection(d), &p0);
+            }
+            let d0 = devs[0].digest();
+            for d in &devs[1..] {
+                prop_assert_eq!(d.digest(), d0.clone());
+            }
+            for card in ["C0", "C1", "C2", "C3"] {
+                let s0 = devs[0].state(card);
+                for d in &devs[1..] {
+                    prop_assert_eq!(d.state(card), s0.clone());
+                }
+            }
+        }
+    }
+}

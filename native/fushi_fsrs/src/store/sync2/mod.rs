@@ -603,10 +603,12 @@ pub(crate) fn replay_touched(conn: &Connection, profile: &str, t: &Touched) -> R
             decks.extend(tree.subtree(d));
             decks.insert(d.clone());
         }
+        // 卡 → 牌组的索引由重放自己维护（每次重放链尾时写下它算出的牌组），不读设备本地的缓存表：
+        // 缓存可能滞后，两台设备会因此重放出不同的结果。
         for chunk in decks.iter().cloned().collect::<Vec<_>>().chunks(400) {
             let marks = vec!["?"; chunk.len()].join(",");
             let mut stmt = conn
-                .prepare(&format!("SELECT id FROM srs_cards_cache WHERE profile_uid = ? AND deck_id IN ({marks})"))
+                .prepare(&format!("SELECT card_id FROM sync2_card_deck WHERE profile_uid = ? AND deck_id IN ({marks})"))
                 .map_err(sql)?;
             let mut p: Vec<&dyn rusqlite::ToSql> = vec![&profile];
             for d in chunk {
@@ -617,10 +619,6 @@ pub(crate) fn replay_touched(conn: &Connection, profile: &str, t: &Touched) -> R
             }
         }
         for n in &t.notes {
-            let mut stmt = conn.prepare_cached("SELECT id FROM srs_cards_cache WHERE note_id = ?1").map_err(sql)?;
-            for id in stmt.query_map([n], |r| r.get::<_, String>(0)).map_err(sql)? {
-                cards.insert(id.map_err(sql)?);
-            }
             let mut stmt = conn.prepare_cached("SELECT DISTINCT card_id FROM sync2_log_meta WHERE note_id = ?1").map_err(sql)?;
             for id in stmt.query_map([n], |r| r.get::<_, String>(0)).map_err(sql)? {
                 cards.insert(id.map_err(sql)?);
@@ -693,7 +691,8 @@ pub(crate) fn replay_cards(conn: &Connection, profile: &str, cards: &BTreeSet<St
                 let code: Option<i64> = r.get(3).map_err(sql)?;
                 let arg: Option<i64> = r.get(4).map_err(sql)?;
                 let n: Option<String> = r.get(5).map_err(sql)?;
-                if c == tail && note.is_none() {
+                // 笔记取链尾自己日志上记的；链尾还没有日志就取前身的（换笔记类型不换笔记）。
+                if n.is_some() && (note.is_none() || c == tail) {
                     note = n;
                 }
                 let intent = match code {
@@ -706,15 +705,11 @@ pub(crate) fn replay_cards(conn: &Connection, profile: &str, cards: &BTreeSet<St
         if rows.is_empty() {
             continue;
         }
-        if note.is_none() {
-            note = conn
-                .prepare_cached("SELECT note_id FROM srs_cards_cache WHERE id = ?1")
-                .map_err(sql)?
-                .query_row([tail], |r| r.get(0))
-                .optional()
-                .map_err(sql)?;
-        }
         let deck = config::card_deck(conn, &tree, tail, note.as_deref())?;
+        conn.prepare_cached("INSERT OR REPLACE INTO sync2_card_deck (card_id, profile_uid, deck_id) VALUES (?1, ?2, ?3)")
+            .map_err(sql)?
+            .execute(params![tail, profile, deck])
+            .map_err(sql)?;
         let cfg = tree.config(&deck);
         let input: Vec<Row<'_>> = rows.iter().map(|(_, j, s, i, _)| Row { json: j, server_time: *s, intent: i.clone() }).collect();
         let out = replay::replay(&input, &cfg)?;
