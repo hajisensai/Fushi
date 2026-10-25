@@ -317,6 +317,7 @@ import 'package:fushi/src/settings/settings_destination.dart'
     show VideoGroup;
 import 'package:fushi/src/media/video/video_subtitle_sync_row.dart'
     show VideoSubtitleSyncRow;
+import 'package:fushi/src/media/video/video_top_float_bar_layer.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_jump_history.dart';

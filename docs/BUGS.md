@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3376 条。点号进各自文件。
+> 共 3377 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3773](bugs/BUG-3773-subtitle-delay-float-bar-blank-panel.md) | ✅ | ✅ | subtitle-delay-float-bar-blank-panel |
 | [BUG-3772](bugs/BUG-3772-srs-stats-full-log-decode.md) | ✅ | ✅ | SRS 统计页每次全量读复习日志逐条 jsonDecode，随日志量线性变慢 |
 | [BUG-3771](bugs/BUG-3771-stats-overview-missing-srs-review-time.md) | ✅ | ✅ | 统计中心总览看不到 SRS 复习时长（含导入的 Anki 复习时长） |
 | [BUG-3770](bugs/BUG-3770-srs-clock-skew-false-alarm-long-sync.md) | ✅ | ✅ | srs-clock-skew-false-alarm-long-sync |
