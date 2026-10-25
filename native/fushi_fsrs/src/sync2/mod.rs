@@ -5,9 +5,12 @@
 //! srs.db 上的持久化与投影在 `store::sync2`。
 
 pub mod codec;
+pub mod fsrs_det;
 pub mod hlc;
 pub mod id;
 pub mod keys;
 pub mod op;
+pub mod replay;
+pub mod sched;
 pub mod segment;
 pub mod vv;
