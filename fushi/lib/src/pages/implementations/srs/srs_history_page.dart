@@ -19,6 +19,7 @@ import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -29,6 +30,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -601,6 +603,10 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
           store,
           File(path),
           mediaRoot: await _mediaRoot(store),
+          // 旧格式（v2 之前的定时 / 手动备份）没内嵌媒体时，到本机旧备份的共享媒体池里找。
+          legacyMediaPool: Directory(
+            p.join((await AppPaths.srsBackupsDirectory()).path, 'media'),
+          ),
         );
       } on FormatException catch (e) {
         failure = e.message.contains('another profile')

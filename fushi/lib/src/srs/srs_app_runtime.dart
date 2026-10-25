@@ -270,7 +270,8 @@ class SrsAppRuntime {
       _onHostClientWrite,
     );
     interconnectWatch.start();
-    // 旧版定时备份已由同步 v2 的时间线 / 归档 / 手动导出取代：本机旧备份文件升级后留 30 天再清。
+    // 旧版定时备份已由同步 v2 的时间线 / 归档 / 手动导出取代：本机旧备份文件（仍可经「导入」恢复）从升级后
+    // 第一次看到起留 30 天再清（起算时刻持久化在目录里的标记文件，见 srs_legacy_backup_cleanup.dart）。
     unawaited(
       srsCleanupLegacyBackups().catchError((Object e, StackTrace stack) {
         ErrorLogService.instance.log('srsCleanupLegacyBackups', e, stack);
