@@ -15,12 +15,15 @@ import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:fushi/src/utils/cover_image.dart' show resizedFileImage;
 import 'package:fushi/utils.dart' show adaptivePageRoute, t;
 import 'package:fushi_core/fushi_core.dart'
     show
         MediaCollectionRow,
         MediaKind,
         VideoBookRow,
+        VideoMetadataImageRow,
+        VideoMetadataWorkRow,
         VideoDownloadJobLifecycle,
         VideoDownloadJobRow;
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDeckSummary;
@@ -229,13 +232,22 @@ Future<AdaptiveNavPeekData> _loadVideos({
           (VideoBookRow a, VideoBookRow b) =>
               (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0),
         );
-  AdaptiveNavPeekEntry entryOf(VideoBookRow v, {String? collection}) {
+  AdaptiveNavPeekEntry entryOf(
+    VideoBookRow v, {
+    String? collection,
+    ImageProvider? collectionCover,
+  }) {
     final String? cover = v.coverPath;
     return AdaptiveNavPeekEntry(
       title: collection ?? v.title,
-      cover: cover == null || cover.isEmpty || !File(cover).existsSync()
-          ? null
-          : resolveMediaCoverImage(kind: MediaKind.video, localPath: cover),
+      cover:
+          collectionCover ??
+          (cover == null || cover.isEmpty || !File(cover).existsSync()
+              ? null
+              : resolveMediaCoverImage(
+                  kind: MediaKind.video,
+                  localPath: cover,
+                )),
       subtitle: _peekSubtitle(
         collection == null ? null : v.title,
         v.lastPositionMs > 0 ? formatVideoPosition(v.lastPositionMs) : null,
@@ -259,11 +271,32 @@ Future<AdaptiveNavPeekData> _loadVideos({
         primaryCollectionIdByEntry: collections.primaryByEntry,
         collectionsById: collections.byId,
       );
-  AdaptiveNavPeekEntry unitEntry(NavPeekUnit<VideoBookRow> unit) =>
-      entryOf(unit.item, collection: unit.collectionName);
+  // 合集项用合集自己的封面（与视频库合集卡同一条链），不是最近那一集的抽帧
+  // 截图——否则一排都是分集画面，认不出是哪部剧（2026-10-25 用户「视频没有
+  // 看到系列」）。只查要显示的那几个合集。
+  final List<NavPeekUnit<VideoBookRow>> shown = units
+      .take(_kPeekRecentCount + 1)
+      .toList();
+  final Map<int, ImageProvider> covers = <int, ImageProvider>{};
+  for (final NavPeekUnit<VideoBookRow> unit in shown) {
+    final int? cid = unit.collectionId;
+    if (cid == null || covers.containsKey(cid)) continue;
+    final ImageProvider? cover = await _videoCollectionCover(
+      appModel,
+      collections.byId[cid]!,
+    );
+    if (cover != null) covers[cid] = cover;
+  }
+  AdaptiveNavPeekEntry unitEntry(NavPeekUnit<VideoBookRow> unit) => entryOf(
+    unit.item,
+    collection: unit.collectionName,
+    collectionCover: unit.collectionId == null
+        ? null
+        : covers[unit.collectionId],
+  );
   return AdaptiveNavPeekData(
-    resume: units.isEmpty ? null : unitEntry(units.first),
-    recent: units.skip(1).take(_kPeekRecentCount).map(unitEntry).toList(),
+    resume: shown.isEmpty ? null : unitEntry(shown.first),
+    recent: shown.skip(1).map(unitEntry).toList(),
   );
 }
 
@@ -405,11 +438,16 @@ Future<AdaptiveNavPeekData> _loadDownloads({
 /// [collectionName] 是合集名）。
 @immutable
 class NavPeekUnit<T> {
-  const NavPeekUnit({required this.item, this.collectionName});
+  const NavPeekUnit({
+    required this.item,
+    this.collectionId,
+    this.collectionName,
+  });
 
   final T item;
 
   /// null = 散条目。
+  final int? collectionId;
   final String? collectionName;
 }
 
@@ -432,7 +470,13 @@ List<NavPeekUnit<T>> foldNavPeekByCollection<T>({
     if (collection == null) {
       units.add(NavPeekUnit<T>(item: item));
     } else if (seen.add(collection.id)) {
-      units.add(NavPeekUnit<T>(item: item, collectionName: collection.name));
+      units.add(
+        NavPeekUnit<T>(
+          item: item,
+          collectionId: collection.id,
+          collectionName: collection.name,
+        ),
+      );
     }
   }
   return units;
@@ -464,4 +508,37 @@ Future<_NavPeekCollections> _loadCollections(AppModel appModel) async {
     },
     primaryByEntry: await appModel.database.getPrimaryCollectionIdByEntry(),
   );
+}
+
+/// 视频合集的封面，顺序与视频库合集卡一致：合集自己的封面文件（手选 / 刮削 /
+/// 下载导入写的 `cover_path`）→ 刮削作品的海报（cover / poster，本地文件优先、
+/// 没有落盘就走远端地址）→ null（调用方退回成员封面）。
+Future<ImageProvider?> _videoCollectionCover(
+  AppModel appModel,
+  MediaCollectionRow collection,
+) async {
+  final String? own = collection.coverPath;
+  if (own != null && own.isNotEmpty && File(own).existsSync()) {
+    return resizedFileImage(File(own));
+  }
+  final VideoMetadataWorkRow? work = await appModel.database
+      .resolveVideoMetadataWorkForCollection(collection.id);
+  if (work == null) return null;
+  final List<VideoMetadataImageRow> images =
+      (await appModel.database.getVideoMetadataImages(workId: work.id)).toList()
+        ..sort(
+          (VideoMetadataImageRow a, VideoMetadataImageRow b) =>
+              a.position.compareTo(b.position),
+        );
+  for (final String kind in const <String>['cover', 'poster']) {
+    for (final VideoMetadataImageRow row in images) {
+      if (row.kind != kind) continue;
+      final String? local = row.localPath;
+      if (local != null && local.isNotEmpty && File(local).existsSync()) {
+        return resizedFileImage(File(local));
+      }
+      if (row.remoteUrl.isNotEmpty) return AppCachedHttpImage(row.remoteUrl);
+    }
+  }
+  return null;
 }
