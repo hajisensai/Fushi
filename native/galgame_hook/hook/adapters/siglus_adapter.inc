@@ -99,6 +99,10 @@ void RememberRealliveNwk(HANDLE handle, const wchar_t* path);
 void ObserveRealliveNwkRead(HANDLE file, const void* buffer, DWORD done,
                             LPOVERLAPPED overlapped);
 void ForgetRealliveNwk(HANDLE handle);
+// knife owns its voice-path filter, pairing and Nintendo Opus remux
+// (knife_adapter.inc). Open-time only: the engine reads each loose voice file
+// whole, so the path is the identity and no read/close tracking is needed.
+void RememberKnifeVoice(HANDLE handle, const wchar_t* path);
 
 bool HasOvkSuffix(const wchar_t* path) {
   if (path == nullptr) return false;
@@ -185,6 +189,7 @@ HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
   }
   if (result != INVALID_HANDLE_VALUE) RememberHunexVoiceHfa(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberRealliveNwk(result, file_name);
+  if (result != INVALID_HANDLE_VALUE) RememberKnifeVoice(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberUnityVoiceBundle(file_name);
   return result;
 }
@@ -217,6 +222,7 @@ HANDLE WINAPI Detour_CreateFileA(LPCSTR file_name, DWORD desired_access,
       RememberLeafAquaplusVoicePak(result, wide);
       RememberHunexVoiceHfa(result, wide);
       RememberRealliveNwk(result, wide);
+      RememberKnifeVoice(result, wide);
       RememberUnityVoiceBundle(wide);
     }
   }

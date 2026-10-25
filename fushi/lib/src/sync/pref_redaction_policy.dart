@@ -67,6 +67,8 @@ abstract final class PrefRedactionPolicy {
   /// 形状兜底对它们无效（`qb_connection_config` 不含任何凭据子串），而它们的值
   /// 确实是明文密码或 API key。新增同类 key 时必须补进这里。
   static const Set<String> sensitiveKeys = <String>{
+    // 复习同步 v2 各存储位置的端到端加密密钥（hex）。
+    'srs_sync2_location_keys',
     // qBittorrent WebUI 连接配置：{host, port, username, password} JSON，密码明文。
     'qb_connection_config',
     // 手动 HTTP 代理登录名；密码由 `password` 形状兜底命中，两者都不得随备份出境。

@@ -35,7 +35,6 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
 
 /// 可手动推进的假导入：每次调用登记一个待完成的导入。
@@ -523,9 +522,7 @@ void main() {
         _app(
           apple: apple,
           overrides: <Override>[
-            appProvider.overrideWith(
-              (Ref ref) => AppModel(testPlatformServices()),
-            ),
+            appProvider.overrideWith((Ref ref) => SrsTestAppModel()),
             srsStoreProvider.overrideWith((Ref ref) async => store),
             srsConflictCountProvider.overrideWith((Ref ref) async => 0),
             srsImportControllerProvider.overrideWithValue(c),
@@ -621,9 +618,7 @@ void main() {
         _app(
           apple: apple,
           overrides: <Override>[
-            appProvider.overrideWith(
-              (Ref ref) => AppModel(testPlatformServices()),
-            ),
+            appProvider.overrideWith((Ref ref) => SrsTestAppModel()),
             srsStoreProvider.overrideWith((Ref ref) async => store),
             srsConflictCountProvider.overrideWith(
               (Ref ref) => conflicts.future,
@@ -804,9 +799,7 @@ void main() {
       // 容器比页面活得久（app 根容器）：页面换下去，删牌组控制器还在。
       final ProviderContainer container = ProviderContainer(
         overrides: <Override>[
-          appProvider.overrideWith(
-            (Ref ref) => AppModel(testPlatformServices()),
-          ),
+          appProvider.overrideWith((Ref ref) => SrsTestAppModel()),
           srsStoreProvider.overrideWith((Ref ref) async => store),
           srsConflictCountProvider.overrideWith((Ref ref) async => 0),
           srsImportControllerProvider.overrideWithValue(imports),

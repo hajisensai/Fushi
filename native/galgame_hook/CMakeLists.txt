@@ -114,6 +114,9 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/kogado_hy_lookup.inc"
   "hook/adapters/kogado_hy_profile.h"
   "hook/adapters/kogado_hy_text.inc"
+  "hook/adapters/knife_adapter.inc"
+  "hook/adapters/knife_core.h"
+  "hook/adapters/knife_profile.h"
   "hook/adapters/fvp_adapter.inc"
   "hook/adapters/fvp_profile.h"
   "hook/adapters/fvp_lookup.inc"
@@ -1225,3 +1228,7 @@ add_executable(fushi_luca_x64_lookup_test "tests/luca_x64_lookup_test.cpp")
 target_include_directories(fushi_luca_x64_lookup_test PRIVATE "hook" "hook/adapters")
 target_compile_definitions(fushi_luca_x64_lookup_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_luca_x64_lookup_test COMMAND fushi_luca_x64_lookup_test)
+add_executable(fushi_knife_adapter_test "tests/knife_adapter_test.cpp")
+target_include_directories(fushi_knife_adapter_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_knife_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_knife_adapter_test COMMAND fushi_knife_adapter_test)

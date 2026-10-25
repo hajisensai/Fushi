@@ -8,8 +8,9 @@
 #   build_android_so.sh
 #       -> 没有任何 `pull_request` 触发的 workflow 编它。本 workflow 的 android job 补这一条：
 #          cargo-ndk 三个 ABI + ELF 架构 + ffsrs_* 符号核对。
-#   lib.rs 自己的单元测试（defaults 个数、next_states 单调、参数个数校验、zstd 往返……）
-#       -> 本 workflow 的 rust-tests job（ubuntu 上 `cargo test --release`）。
+#   lib.rs 自己的单元测试（defaults 个数、next_states 单调、参数个数校验、zstd 往返……）与同步 v2 的
+#   收敛 / 确定性测试
+#       -> 本 workflow 的 rust-tests job（linux x86_64 / aarch64、macOS arm64、Windows 四格 `cargo test --release`）。
 #
 # ── 它**不**负责什么 ──────────────────────────────────────────────────────────────
 #   * 不重复跑上面四端；不碰发布路径（全程只读，不上传产物、不建 tag）。
@@ -78,8 +79,25 @@ jobs:
             bash native/fushi_fsrs/verify_abi.sh "$so" "$nm_bin"
           done
 
+  # 复习同步 v2 的确定性门（docs/specs/2026-10-25-srs-sync-v2-design.md §4.5、计划 P8）：各设备必须逐比特
+  # 算出同样的调度，否则两台设备在同一版本向量下摘要不同。`sync2::fsrs_det` 的固定向量哈希测试在每个平台上
+  # 跑一遍——任一平台哈希不一致即红。FSRS 只用纯 Rust 的 libm（不走平台 libm），Android / iOS 与这里的
+  # linux-aarch64 / macos-arm64 同一套 aarch64 浮点路径，所以这四格覆盖五个出包平台的算术。
   rust-tests:
-    runs-on: ubuntu-latest
+    name: cargo test --release (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
+          - name: macos-arm64
+            os: macos-latest
+          - name: windows-x86_64
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
@@ -91,7 +109,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/fushi_fsrs -> target
-          key: fushi-fsrs-tests
+          key: fushi-fsrs-tests-${{ matrix.name }}
       - name: cargo test --release (fushi_fsrs)
         shell: bash
         working-directory: native/fushi_fsrs

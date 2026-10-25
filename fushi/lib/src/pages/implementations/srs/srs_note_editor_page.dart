@@ -28,6 +28,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_edit_history_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_label.dart';
@@ -453,6 +454,24 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
           onPressed: () => srsRunLogged('SrsNoteEditor.preview', _openPreview),
         );
 
+  /// 已有的笔记：顶栏「修改历史」（每个字段的每次修改，哪台设备、何时）。
+  FushiToolbarItem? get _historyItem => !_editing || _note == null
+      ? null
+      : FushiToolbarItem(
+          key: const ValueKey<String>('srs_note_history'),
+          icon: FushiIcons.history,
+          label: t.srs_note_history,
+          onPressed: () => srsRunLogged(
+            'SrsNoteEditor.history',
+            () => Navigator.of(context).push<void>(
+              adaptivePageRoute<void>(
+                context: context,
+                builder: (_) => SrsEditHistoryPage(noteId: _note!.id),
+              ),
+            ),
+          ),
+        );
+
   /// 已有、且没在待删除状态的笔记可以从顶栏删除。
   bool get _canDelete => _editing && _note != null && _note!.deletedAt == null;
 
@@ -492,6 +511,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
           ? <Widget>[
               for (final FushiToolbarItem item in <FushiToolbarItem>[
                 ?_previewItem,
+                ?_historyItem,
                 ?_deleteItem,
                 _saveItem,
               ])
@@ -529,7 +549,12 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
             ),
         ],
         actions: <List<FushiToolbarItem>>[
-          <FushiToolbarItem>[?_previewItem, ?_deleteItem, _saveItem],
+          <FushiToolbarItem>[
+            ?_previewItem,
+            ?_historyItem,
+            ?_deleteItem,
+            _saveItem,
+          ],
         ],
       ),
     );

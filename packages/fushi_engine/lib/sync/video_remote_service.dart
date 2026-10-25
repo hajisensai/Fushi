@@ -45,11 +45,21 @@ const Set<String> videoRemoteOperations = <String>{
   'openFavorite',
   // Read-only lists behind the episode / subtitle-track pickers:
   // `{sessionId, subtitleVersion}` -> `{episodes: [{index, title,
-  // current}], subtitleTracks: [{id, label, kind, selected, selectable}],
-  // subtitleOff: bool}`. Only hosts that advertise
+  // current, hasCover?}], subtitleTracks: [{id, label, kind, selected,
+  // selectable}], subtitleOff: bool}`. Only hosts that advertise
   // [videoRemoteCapabilityEpisodes] / [videoRemoteCapabilitySubtitleTracks]
   // answer it; older hosts reject the path as an unknown operation.
   'playbackOptions',
+  // Cover preview of one episode in the phone's episode picker, read only:
+  // `{sessionId, subtitleVersion, episodeIndex}` -> `{mime, data}` (base64
+  // image, large covers scaled down to a preview on the computer). Phones
+  // only ask for episodes whose `playbackOptions` entry says `hasCover`, so
+  // hosts that predate the field never receive it. Covers the episode list
+  // of any source (local files and media-server episodes alike), unlike the
+  // library cover endpoint that only knows library rows. Errors:
+  // `404 cover_missing`, `502 cover_unavailable` (fetching a media-server
+  // episode's cover failed).
+  'episodeCover',
   // On-demand playback ([videoRemoteCapabilityOpenVideo]): pick a video from
   // the computer's library on the phone and have the computer play it, with
   // or without a video page already open.
@@ -78,6 +88,13 @@ const Set<String> videoRemoteOperations = <String>{
   // Errors: `409 subtitle_source_missing` (no source configured),
   // `502 subtitle_search_failed` (no result and a source failed).
   'subtitleSearch',
+  // `closeVideo` — `{sessionId, requestId}` ([videoRemoteCapabilityCloseVideo]):
+  // closes the open video page through its normal exit (position saved),
+  // leaving the computer on whatever is underneath. Errors: `409 no_video`,
+  // `409 session_changed` (the phone still shows an earlier video), `409
+  // host_busy` (the page cannot be closed from the phone, e.g. another media
+  // page or a dialog is on top of it).
+  'closeVideo',
   'disconnect',
 };
 
@@ -160,6 +177,9 @@ const String videoRemoteCapabilityEpisodes = 'episodes';
 const String videoRemoteCapabilitySubtitleTracks = 'subtitleTracks';
 const String videoRemoteCapabilitySubtitleSearch = 'subtitleSearch';
 const String videoRemoteCapabilityCaret = 'caret';
+
+/// The open video can be closed from the phone (`closeVideo`).
+const String videoRemoteCapabilityCloseVideo = 'closeVideo';
 
 /// Host-level capability (present with or without an open video): the host
 /// answers `library` / `openVideo`.

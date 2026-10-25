@@ -10,6 +10,7 @@ pub mod ffi;
 pub mod rows;
 mod projections;
 pub mod schema;
+pub mod sync2;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -232,7 +233,9 @@ impl SrsCore {
     // ------------------------------------------------------------ 备份快照
 
     /// `VACUUM INTO` 一份一致快照（读连接上做：不挡写）。`strip_device_local` 时在快照里清空
-    /// 6 张设备本地表（本机状态、发件箱元信息、留存批次、三张缓存），与通用备份的规则一致。
+    /// 6 张设备本地表（本机状态、发件箱元信息、留存批次、三张缓存），与通用备份的规则一致；
+    /// 同步 v2 的本机身份（`sync2_self`、切段点、各位置进度、因果缓冲）也剥掉：从备份恢复出来的库是
+    /// 一台新设备，打开时生成新身份，旧身份按普通远端设备续收（设计 §7.3 的预防）。
     pub fn snapshot_into(&self, target: &Path, strip_device_local: bool) -> Result<(), String> {
         if target.exists() {
             return Err(format!("{} already exists", target.display()));
@@ -248,10 +251,15 @@ impl SrsCore {
         if strip_device_local {
             let snap = Connection::open(target).map_err(|e| e.to_string())?;
             snap.execute_batch(
-                "BEGIN; DELETE FROM srs_event_local; DELETE FROM srs_local_state; \
+                // srs_event_local 不删：它的 server_time 是迁移来的旧修改记录 / 外来带戳事件的排序键（S），
+                // 删了恢复出来的设备会按另一种顺序解寄存器、与其它设备分叉。发件箱列早已无人读写。
+                "BEGIN; UPDATE srs_event_local SET outbox_seq = NULL; DELETE FROM srs_local_state; \
                  DELETE FROM srs_sent_batches; DELETE FROM srs_notes_cache; \
                  DELETE FROM srs_cards_cache; DELETE FROM srs_stat_reviews; \
                  DELETE FROM srs_meta WHERE key = 'legacy_import'; \
+                 DELETE FROM sync2_self; DELETE FROM sync2_pending; DELETE FROM sync2_segments; \
+                 DELETE FROM sync2_locations; DELETE FROM sync2_rewrites; DELETE FROM sync2_obsolete; \
+                 DELETE FROM srs_meta WHERE key LIKE 'sync2_digest/%'; \
                  COMMIT; VACUUM;",
             )
             .map_err(|e| e.to_string())?;

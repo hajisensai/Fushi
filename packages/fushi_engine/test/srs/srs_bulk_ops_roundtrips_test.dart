@@ -222,7 +222,7 @@ void main() {
     expect(f.counter.total, lessThan(40), reason: f.counter.summary());
   });
 
-  test('同步：应用对端事件 / 取发件箱 / 重新入队：语句数不随事件数增长', () async {
+  test('同步：应用对端事件：语句数不随事件数增长', () async {
     Future<int> applyAt(int notes) async {
       final BulkFixture src = await BulkFixture.open(notes: notes);
       final List<SrsEvent> events = await src.store.exportAll();
@@ -236,17 +236,5 @@ void main() {
     }
 
     expectFlat('applyRemote', (await applyAt(40), await applyAt(160)));
-    expectFlat(
-      'unpublishedEvents',
-      await measure((SrsDbStore s) async => s.unpublishedEvents()),
-    );
-    expectFlat(
-      'requeue',
-      await measure((SrsDbStore s) async {
-        await s.requeue(<String>[
-          for (final SrsEvent e in await s.exportAll()) e.id,
-        ]);
-      }),
-    );
   });
 }

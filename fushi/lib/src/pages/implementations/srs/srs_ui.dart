@@ -299,6 +299,14 @@ String srsFormatValue(Object? value) => switch (value) {
   _ => jsonEncode(value),
 };
 
+/// 本地化的「日期 时刻」（跟随系统 24 小时制设置）。
+String srsTimeLabel(BuildContext context, DateTime t) {
+  final MaterialLocalizations l = MaterialLocalizations.of(context);
+  final bool h24 = MediaQuery.maybeAlwaysUse24HourFormatOf(context) ?? false;
+  return '${l.formatMediumDate(t)} '
+      '${l.formatTimeOfDay(TimeOfDay.fromDateTime(t), alwaysUse24HourFormat: h24)}';
+}
+
 /// 毫秒时刻 → 本地「日期 时:分」。
 String srsFormatMoment(int ms) =>
     FushiTimeFormat.dateHourMinute(DateTime.fromMillisecondsSinceEpoch(ms));

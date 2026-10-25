@@ -15,6 +15,8 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show PreferencesRepository;
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_cover_image.dart';
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_episode_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_library_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_subtitle_search_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_touchpad.dart';
@@ -52,10 +54,12 @@ import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:fushi_core/fushi_core.dart'
     show kStatSourceVideo, mimeTypeForFilePath;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart'
     show
+        videoRemoteCapabilityCloseVideo,
         videoRemoteActionUnsupported,
         videoRemoteCapabilityCaret,
         videoRemoteCapabilityEpisodes,
@@ -813,36 +817,71 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   Future<Map<String, dynamic>> _playbackOptions() =>
       _client.call('playbackOptions', <String, dynamic>{..._session});
 
-  /// 选集：列出电脑上这部作品的各集，点选后电脑与剧集列表点选同一入口换集。
+  /// 选集：列出电脑上这部作品的各集（带封面、打开即在当前集），点选后电脑与剧集
+  /// 列表点选同一入口换集。
   Future<void> pickEpisode() => _guard(() async {
+    final Map<String, dynamic> session = _session;
     final Map<String, dynamic> options = await _playbackOptions();
     if (!context.mounted) return;
-    final List<Map<String, dynamic>> episodes = <Map<String, dynamic>>[
+    final List<VideoRemoteEpisodeEntry> episodes = <VideoRemoteEpisodeEntry>[
       for (final Object? item in options['episodes'] as List? ?? <Object?>[])
-        if (item is Map) Map<String, dynamic>.from(item),
+        if (item is Map)
+          VideoRemoteEpisodeEntry.fromJson(Map<String, dynamic>.from(item)),
     ];
-    int? current;
-    for (final Map<String, dynamic> episode in episodes) {
-      if (episode['current'] == true) {
-        current = (episode['index'] as num?)?.toInt();
-      }
-    }
-    final int? picked = await showFushiChoiceDialog<int>(
+    final int? current = episodes
+        .where((VideoRemoteEpisodeEntry e) => e.current)
+        .map((VideoRemoteEpisodeEntry e) => e.index)
+        .firstOrNull;
+    final int? picked = await showVideoRemoteEpisodeSheet(
       context: context,
-      title: t.video_episode_list,
-      icon: FushiIcons.playlist,
-      selected: current,
-      message: episodes.isEmpty ? t.video_episode_list_empty : null,
-      options: <FushiChoiceOption<int>>[
-        for (final Map<String, dynamic> episode in episodes)
-          FushiChoiceOption<int>(
-            value: (episode['index'] as num).toInt(),
-            label: episode['title']?.toString() ?? '',
-          ),
-      ],
+      episodes: episodes,
+      coverFor: (VideoRemoteEpisodeEntry entry) =>
+          _episodeCover(session, entry.index),
     );
     if (picked == null || picked == current || !mounted) return;
     await _command('episode', extra: <String, dynamic>{'episodeIndex': picked});
+  });
+
+  /// 选集第 [index] 集的封面（电脑 `episodeCover`）。缓存键带电脑身份与这次会话：
+  /// 换一台电脑、或同一部作品换了集（新会话、同一下标是另一份列表）都不串图。
+  ImageProvider _episodeCover(Map<String, dynamic> session, int index) =>
+      VideoRemoteCoverImage(
+        cacheKey:
+            'video-remote-episode-cover|${_client.coverCacheNamespace}|'
+            '${session['sessionId']}|$index',
+        load: () async {
+          final Map<String, dynamic> result = await _client.call(
+            'episodeCover',
+            <String, dynamic>{...session, 'episodeIndex': index},
+          );
+          final Object? data = result['data'];
+          return data is String ? base64Decode(data) : null;
+        },
+      );
+
+  /// 电脑能否从手机关掉正在放的视频。
+  bool get canCloseVideo =>
+      available && capabilities.contains(videoRemoteCapabilityCloseVideo);
+
+  /// 关闭电脑上正在放的视频（电脑走视频页自己的退出流程，进度照常保存）。
+  Future<void> closeVideo() => _guard(() async {
+    if (!canCloseVideo || !context.mounted) return;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.video_remote_close_video,
+      message: t.video_remote_close_video_confirm,
+      confirmLabel: t.video_remote_close_video,
+      icon: FushiIcons.stop,
+    );
+    if (!confirmed || !mounted) return;
+    // 正在查的词属于要被关掉的视频：先收起弹框、结束电脑上的查词上下文。
+    closeLookup();
+    await _client.call('closeVideo', <String, dynamic>{
+      'sessionId': _session['sessionId'],
+      'requestId': _client.requestId(),
+    });
+    if (context.mounted) fushiRemoteActionHaptic(context);
+    await _apply(await _client.snapshot());
   });
 
   /// 切换电脑上的主字幕轨（含「关闭字幕」）。
@@ -944,6 +983,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
       errorText: videoRemoteErrorText,
     );
     if (applied && mounted) {
+      if (context.mounted) fushiRemoteActionHaptic(context);
       FushiToast.show(
         msg: t.video_remote_subtitle_search_applied,
         severity: ToastSeverity.success,
@@ -1974,6 +2014,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
               unawaited(removeFavorites(ids)),
           onRefresh: () => unawaited(reconnect()),
           onPickVideo: canPickVideo ? () => unawaited(pickVideo()) : null,
+          onCloseVideo: canCloseVideo ? () => unawaited(closeVideo()) : null,
           onOpenTouchpad: available ? () => setTouchpad(true) : null,
           onSeek: available ? (Duration to) => unawaited(seekTo(to)) : null,
           onCustomizeControls: _prefs == null

@@ -5,7 +5,8 @@ import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
-import 'package:fushi_engine/srs/srs_backup_retention.dart';
+import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/profile/profile_document.dart'
     show kProfileSettingCategoryPref;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
@@ -3299,25 +3300,82 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 复习自动备份开关（默认开）。设备本地。
-  static const String srsBackupAutoKey = 'srs_backup_auto';
+  /// 复习同步 v2 用户自己加的文件夹存储位置（JSON 数组，[SrsFolderLocation]）。设备本地：路径只在这台设备上有意义。
+  static const String srsFolderLocationsKey = 'srs_sync2_folder_locations';
 
-  /// 复习自动备份的间隔与保留份数（JSON，缺省 = Anki 默认）。设备本地。
-  static const String srsBackupLimitsKey = 'srs_backup_limits';
+  List<SrsFolderLocation> get srsFolderLocations {
+    final Object? raw = getPref(srsFolderLocationsKey, defaultValue: '');
+    if (raw is! String || raw.isEmpty) return const <SrsFolderLocation>[];
+    try {
+      final Object? j = jsonDecode(raw);
+      if (j is! List) return const <SrsFolderLocation>[];
+      return <SrsFolderLocation>[
+        for (final Object? e in j)
+          if (e is Map) SrsFolderLocation.fromJson(e.cast<String, Object?>()),
+      ].where((SrsFolderLocation l) => l.id.isNotEmpty && l.path.isNotEmpty).toList();
+    } on FormatException {
+      return const <SrsFolderLocation>[];
+    }
+  }
 
-  bool get srsBackupAuto =>
-      getPref(srsBackupAutoKey, defaultValue: true) as bool;
-
-  Future<void> setSrsBackupAuto(bool value) async {
-    await setPref(srsBackupAutoKey, value);
+  Future<void> setSrsFolderLocations(List<SrsFolderLocation> value) async {
+    await setPref(
+      srsFolderLocationsKey,
+      jsonEncode(<Object?>[for (final SrsFolderLocation l in value) l.toJson()]),
+    );
     notifyListeners();
   }
 
-  SrsBackupLimits get srsBackupLimits =>
-      srsBackupLimitsFromJson(getPref(srsBackupLimitsKey, defaultValue: ''));
+  /// 复习同步 v2 各存储位置的端到端加密密钥（JSON：位置身份 → [SrsLocationKey]）。**凭据**：设备本地，
+  /// 不进备份 / 同步 / Profile 快照，不写日志。
+  static const String srsLocationKeysKey = 'srs_sync2_location_keys';
 
-  Future<void> setSrsBackupLimits(SrsBackupLimits value) async {
-    await setPref(srsBackupLimitsKey, srsBackupLimitsToJson(value));
+  Map<String, SrsLocationKey> get srsLocationKeys {
+    final Object? raw = getPref(srsLocationKeysKey, defaultValue: '');
+    if (raw is! String || raw.isEmpty) return const <String, SrsLocationKey>{};
+    try {
+      final Object? j = jsonDecode(raw);
+      if (j is! Map) return const <String, SrsLocationKey>{};
+      return <String, SrsLocationKey>{
+        for (final MapEntry<Object?, Object?> e in j.entries)
+          if (e.key is String && e.value is Map)
+            e.key! as String: SrsLocationKey.fromJson(
+              (e.value! as Map).cast<String, Object?>(),
+            ),
+      };
+    } on FormatException {
+      return const <String, SrsLocationKey>{};
+    }
+  }
+
+  /// [key] 为 null = 删掉这个位置的密钥。
+  Future<void> setSrsLocationKey(String locationId, SrsLocationKey? key) async {
+    final Map<String, SrsLocationKey> all = <String, SrsLocationKey>{
+      ...srsLocationKeys,
+    };
+    if (key == null) {
+      all.remove(locationId);
+    } else {
+      all[locationId] = key;
+    }
+    await setPref(
+      srsLocationKeysKey,
+      jsonEncode(<String, Object?>{
+        for (final MapEntry<String, SrsLocationKey> e in all.entries)
+          e.key: e.value.toJson(),
+      }),
+    );
+    notifyListeners();
+  }
+
+  /// 升级到同步 v2 后，用户确认过「首次同步把各设备的数据并到一起」（设备本地：每台设备各确认一次）。
+  static const String srsSync2MergeConfirmedKey = 'srs_sync2_merge_confirmed';
+
+  bool get srsSync2MergeConfirmed =>
+      getPref(srsSync2MergeConfirmedKey, defaultValue: false) as bool;
+
+  Future<void> setSrsSync2MergeConfirmed(bool value) async {
+    await setPref(srsSync2MergeConfirmedKey, value);
     notifyListeners();
   }
 

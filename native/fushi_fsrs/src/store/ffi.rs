@@ -578,3 +578,173 @@ pub extern "C" fn ffsrs_store_rwkv_log_tail(
         )
     })
 }
+
+// ---------------------------------------------------------------- 同步 v2（store/sync2）
+
+/// 分帧字节块：`u32 n`，再 n 个 `u32 len + 字节`（小端）。空输入 = 0 块。
+fn frames(b: &[u8]) -> Result<Vec<Vec<u8>>, String> {
+    if b.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut at = 0usize;
+    let mut take = |n: usize| -> Result<&[u8], String> {
+        let end = at.checked_add(n).ok_or("frame overflow")?;
+        if end > b.len() {
+            return Err("truncated frames".into());
+        }
+        let s = &b[at..end];
+        at = end;
+        Ok(s)
+    };
+    let n = u32::from_le_bytes(take(4)?.try_into().map_err(|_| "frames")?) as usize;
+    let mut out = Vec::with_capacity(n.min(1 << 16));
+    for _ in 0..n {
+        let len = u32::from_le_bytes(take(4)?.try_into().map_err(|_| "frames")?) as usize;
+        out.push(take(len)?.to_vec());
+    }
+    Ok(out)
+}
+
+fn push_frame(out: &mut Vec<u8>, b: &[u8]) {
+    out.extend_from_slice(&(b.len() as u32).to_le_bytes());
+    out.extend_from_slice(b);
+}
+
+fn key32(v: &serde_json::Value) -> Result<Option<[u8; 32]>, String> {
+    match v.as_str() {
+        None => Ok(None),
+        Some(h) if h.len() == 64 => {
+            let mut k = [0u8; 32];
+            for (i, x) in k.iter_mut().enumerate() {
+                *x = u8::from_str_radix(&h[2 * i..2 * i + 2], 16).map_err(|e| e.to_string())?;
+            }
+            Ok(Some(k))
+        }
+        Some(_) => Err("bad collection key".into()),
+    }
+}
+
+fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files: &mut Vec<(String, Vec<u8>)>) -> Result<serde_json::Value, String> {
+    use serde_json::{json, Value};
+    let s = |k: &str| req.get(k).and_then(Value::as_str).ok_or_else(|| format!("sync2: missing {k}"));
+    let i = |k: &str| req.get(k).and_then(Value::as_i64).ok_or_else(|| format!("sync2: missing {k}"));
+    let parse = |t: String| serde_json::from_str::<Value>(&t).map_err(|e| e.to_string());
+    let profile = s("profile")?;
+    Ok(match s("op")? {
+        "identity" => c.sync2_identity(profile, i("now")?)?,
+        "apply" => {
+            let input = std::str::from_utf8(blobs.first().ok_or("apply: missing input")?).map_err(|e| e.to_string())?;
+            parse(c.sync2_apply_local(profile, i("now")?, input)?)?
+        }
+        "migrate" => c.sync2_migrate(profile, i("now")?, req.get("limit").and_then(Value::as_u64))?,
+        "replay_all" => json!(c.sync2_replay_all(profile)?),
+        "preview" => c.sync2_preview(profile, s("card")?, req.get("note").and_then(Value::as_str), i("now")?, i("utcOff")?, i("rollover")?)?,
+        "outbox" => {
+            let (segs, upto) = c.sync2_outbox(profile, s("location")?, key32(&req["key"])?)?;
+            *files = segs;
+            json!({"upto": upto})
+        }
+        "head" => {
+            let (path, bytes, gen, obsolete) = c.sync2_head(profile, s("location")?, i("upto")? as u64, i("now")?)?;
+            files.push((path, bytes));
+            json!({"gen": gen, "delete": obsolete})
+        }
+        "plan" => c.sync2_plan(profile, blobs)?,
+        "ingest" => parse(c.sync2_ingest(profile, blobs, key32(&req["key"])?, i("now")?)?)?,
+        "rotate" => c.sync2_rotate(profile, i("now")?)?,
+        "export" => {
+            files.push(("export.fushisrs".to_owned(), c.sync2_export(profile)?));
+            json!({})
+        }
+        "import" => parse(c.sync2_import(profile, blobs.first().ok_or("import: missing file")?, i("now")?)?)?,
+        // 加密位置上的媒体（设计 §9：网盘只见密文和文件大小）：XChaCha20-Poly1305，AAD 绑定文件名，
+        // 换名 / 换内容即解密失败。段的加解密在 outbox / ingest 里，这里只给媒体用。
+        "seal" | "open" => {
+            let key = crate::sync2::keys::CollectionKey(key32(&req["key"])?.ok_or("seal/open: missing key")?);
+            let aad = format!("fushi-srs-media:{}", s("name")?);
+            let input = blobs.first().ok_or("seal/open: missing input")?;
+            if s("op")? == "seal" {
+                files.push(("sealed".to_owned(), key.seal(input, aad.as_bytes())));
+            } else {
+                files.push(("plain".to_owned(), key.open(input, aad.as_bytes()).ok_or("media decrypt failed")?));
+            }
+            json!({})
+        }
+        "digest" => match req.get("minIntervalMs").and_then(Value::as_i64) {
+            Some(ms) => c.sync2_digest_due(profile, i("now")?, Some(ms))?,
+            None => c.sync2_digest(profile)?,
+        },
+        "status" => c.sync2_status(profile)?,
+        "conflicts" => c.sync2_conflicts(profile)?,
+        "resolve" => c.sync2_resolve(profile, s("conflict")?, req["delete"] == Value::Bool(true), i("now")?)?,
+        "purge" => c.sync2_purge(profile, s("kind")?, s("entity")?, i("now")?)?,
+        "checkpoint" => c.sync2_checkpoint(profile, s("name")?, s("reason")?, i("now")?)?,
+        "checkpoints" => c.sync2_checkpoints(profile)?,
+        "history" => c.sync2_history(profile, s("kind")?, s("entity")?)?,
+        "plan_restore" | "restore" => {
+            // 恢复到还原点（`checkpoint: {device, seq}`，按它的因果截断）或某个时刻（`at`）。
+            let to = match req.get("checkpoint") {
+                Some(cp) if cp.is_object() => crate::store::sync2::timeline::RestoreTarget::Checkpoint(crate::sync2::vv::OpId {
+                    device: crate::sync2::id::Id::parse(cp["device"].as_str().ok_or("checkpoint.device")?).ok_or("bad checkpoint device")?,
+                    seq: cp["seq"].as_u64().ok_or("checkpoint.seq")?,
+                }),
+                _ => crate::store::sync2::timeline::RestoreTarget::At(i("at")?),
+            };
+            let retract = req["retract"] == Value::Bool(true);
+            if s("op")? == "plan_restore" {
+                c.sync2_plan_restore(profile, &to, retract, i("now")?)?
+            } else {
+                c.sync2_restore(profile, &to, retract, i("now")?)?
+            }
+        }
+        "derive_key" => {
+            let salt_hex = s("salt")?;
+            let salt: Vec<u8> = (0..salt_hex.len() / 2)
+                .map(|k| u8::from_str_radix(&salt_hex[2 * k..2 * k + 2], 16))
+                .collect::<Result<_, _>>()
+                .map_err(|e| e.to_string())?;
+            let params = crate::sync2::keys::KdfParams::checked(i("m")?, i("t")?, i("p")?)?;
+            let k = crate::sync2::keys::CollectionKey::derive(s("passphrase")?.as_bytes(), &salt, params)?;
+            json!({"key": k.0.iter().map(|b| format!("{b:02x}")).collect::<String>()})
+        }
+        other => return Err(format!("unknown sync2 op {other}")),
+    })
+}
+
+/// 同步 v2 的唯一入口（粗粒度命令，设计 §11；命令表见 `sync2_dispatch`）。请求是 JSON
+/// `{"op": ..., "profile": ..., ...}`；[blobs] 是分帧字节块（段 / head 文件，或 `apply` 的事件数组 JSON）。
+/// 输出 = `u32 json_len + JSON`，再接 `u32 n` 与 n 组分帧的 `(相对路径, 字节)`（发件 / 写 head 才有）。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_sync2(
+    core: *const SrsCore,
+    request: *const u8,
+    request_len: usize,
+    blobs: *const u8,
+    blobs_len: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run(core, error_out, |c| {
+        let req: serde_json::Value =
+            serde_json::from_str(utf8(request, request_len)?).map_err(|e| format!("bad sync2 request: {e}"))?;
+        let blobs = frames(bytes(blobs, blobs_len).ok_or("null blobs")?)?;
+        let mut files = Vec::new();
+        let result = sync2_dispatch(c, &req, &blobs, &mut files)?;
+        let text = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
+        let mut buf = Vec::with_capacity(text.len() + 8);
+        buf.extend_from_slice(&(text.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&text);
+        buf.extend_from_slice(&(files.len() as u32).to_le_bytes());
+        for (p, b) in &files {
+            push_frame(&mut buf, p.as_bytes());
+            push_frame(&mut buf, b);
+        }
+        hand_out(buf, out, out_len);
+        Ok(())
+    })
+}

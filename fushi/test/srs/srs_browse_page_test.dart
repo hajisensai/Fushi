@@ -24,7 +24,6 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart' show FushiFsrs, kFushiFsrsLibEnv;
 import 'package:material_ui/material_ui.dart';
 
-import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
 
 /// 每个测试一个可拨的时钟：笔记的新建时间确定、互不相同（默认排序按它）。
@@ -77,7 +76,7 @@ Future<void> _pump(
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final AppModel appModel = AppModel(testPlatformServices());
+  final AppModel appModel = SrsTestAppModel();
   await tester.pumpWidget(
     ProviderScope(
       overrides: <Override>[

@@ -6,12 +6,27 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
+import 'package:fushi/models.dart' show AppModel;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:flutter_test/flutter_test.dart' show addTearDown;
 import 'package:fushi_srs/fushi_srs.dart';
+
+import '../helpers/test_platform_services.dart';
+
+/// 页面测试用的 AppModel（偏好层没初始化）：「首次 v2 同步」视为已确认。
+///
+/// 牌组列表首帧会问一次首次同步（`ensureSrsFirstSyncConfirmed`）：偏好层没初始化时 getter 恒为 false，
+/// 有笔记就弹确认框挡住后续点按、没笔记则写偏好失败——与被测功能无关，在这里钉成已确认。
+/// 专门测这个确认框的用例自己装真偏好层。
+class SrsTestAppModel extends AppModel {
+  SrsTestAppModel() : super(testPlatformServices());
+
+  @override
+  bool get srsSync2MergeConfirmed => true;
+}
 
 const String kSrsTestProfile = '01928c3e-0000-7000-8000-0000000000cd';
 

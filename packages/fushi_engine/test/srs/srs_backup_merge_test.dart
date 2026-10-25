@@ -5,9 +5,11 @@ import 'package:fushi_engine/srs/srs_backup_merge.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
+import 'support/srs_sync2_peers.dart';
 import 'support/srs_test_storage.dart';
 
 /// 铁律 E：备份合并导入的 SRS 专用步骤（profiles 在主库、SRS 在各自的 srs.db，纯逻辑）。
@@ -138,10 +140,19 @@ void main() {
     final SrsNoteView? n = await s.note(noteId);
     expect(n!.field(srsLapisFieldId(uid, 'Expression')), '雪');
     expect(await s.cardsOfNote(noteId), hasLength(1));
-    // 新事件重新进本机发件箱（备份来源设备可能从未同步过）。
+    // 并入即发布（同步 v2 没有发件箱）：备份来源设备可能从未同步过，本机下一轮同步把这些操作传出去，
+    // 同一 profile 的另一台设备从同步位置收到。
+    final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+    await srsSyncOnce(s, loc);
+    final SrsDbStore peer = await store(
+      await openTestSrsStorage(),
+      uid,
+      'devC',
+    );
+    await srsSyncOnce(peer, loc);
     expect(
-      (await s.unpublishedEvents()).map((SrsEvent e) => e.id),
-      contains(noteId),
+      (await peer.note(noteId))?.field(srsLapisFieldId(uid, 'Expression')),
+      '雪',
     );
     expect(await profileCount(local), 1);
   });
@@ -212,15 +223,15 @@ void main() {
     expect(await copied.cardsOfNote(noteId), hasLength(1));
   });
 
-  test('同名、没有笔记但发布过批次 → 不改 uid，新建「（备份）」', () async {
+  test('同名、没有笔记但传到过同步位置 → 不改 uid，新建「（备份）」', () async {
     final (String uid, _) = await seedBackup('日语', '雪');
     final int localId = await insertProfile(local, '日语');
     final String oldUid = await local.profileUidOf(localId);
     final SrsDbStore s = await store(localSrs, oldUid, 'devA');
-    await s.saveSyncState(
-      SrsSyncLocalState(writerId: s.writerId, nextBatchNo: 2),
-    );
-    expect(s.everPublished, isTrue);
+    expect(await srsCanAdoptProfileUid(localSrs, oldUid), isTrue);
+    // 同步 v2：传到过任何位置就算发布过（别的设备可能已经拿到这个身份下的操作）。
+    await srsSyncOnce(s, SrsMemoryLocationStore());
+    expect(await srsCanAdoptProfileUid(localSrs, oldUid), isFalse);
 
     final List<SrsBackupMergeResult> r = await merge();
     expect(r.single.action, SrsBackupMergeAction.createdProfile);
@@ -285,7 +296,7 @@ void main() {
     );
   });
 
-  test('srsCanAdoptProfileUid 只读：副本正开着时不另开副本、不写任何行；发布过就不能采用', () async {
+  test('srsCanAdoptProfileUid 只读：副本正开着时不另开副本、不写任何行；传到过同步位置就不能采用', () async {
     // 复习备份页「从文件恢复」时当前 profile 的副本正开着；判断「能不能改用备份的身份」若另开一个
     // SrsDbStore，会当场写本机状态 / 内置行，成了同一 profile 的第二个写者。
     final int localId = await insertProfile(local, '日语');
@@ -313,11 +324,10 @@ void main() {
     expect(await srsCanAdoptProfileUid(localSrs, uid), isTrue);
     expect(await snapshot(), before);
 
-    // 发布过批次（下一个批次号 > 1）→ 不能采用。
-    await localSrs.db.customStatement(
-      "UPDATE srs_local_state SET json = json_set(json, '\$.sync.next', 3) "
-      'WHERE profile_uid = ?',
-      <Object>[uid],
+    // 传到过同步位置 → 不能采用。
+    await srsSyncOnce(
+      await store(localSrs, uid, 'devA'),
+      SrsMemoryLocationStore(),
     );
     expect(await srsCanAdoptProfileUid(localSrs, uid), isFalse);
   });

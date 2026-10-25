@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptiveModalSheet;
+import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show formatFushiPlaybackTime;
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
@@ -304,7 +305,10 @@ class _VideoRemoteLibrarySheetState extends State<VideoRemoteLibrarySheet> {
               ),
         title: Text(entry.title, maxLines: 2, overflow: TextOverflow.ellipsis),
         subtitle: subtitle.isEmpty ? null : Text(subtitle),
-        onTap: () => widget.onPick(entry.bookUid),
+        onTap: () {
+          fushiSelectionHaptic(context);
+          widget.onPick(entry.bookUid);
+        },
       ),
     );
   }

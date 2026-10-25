@@ -491,6 +491,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     final Map<String, Object?>? subscriptions = await _subscriptions?.capability();
     final Map<String, Object?>? assistant = await _assistant?.capability();
     return jsonResponse(<String, dynamic>{
+      // 复习同步的长轮询通知（`GET /api/srs/changes`）。老 host 没有这一位，客户端只按定时同步。
+      'srsChangesV1': true,
       if (mangaOcr != null) 'mangaOcr': mangaOcr,
       // 通用任务能力位：`jobs.kinds` + 每种 kind 的就绪信息；老 client 读不到也不崩。
       if (jobs != null) 'jobs': jobs,

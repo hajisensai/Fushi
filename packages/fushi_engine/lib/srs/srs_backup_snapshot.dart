@@ -1,19 +1,14 @@
-/// SRS 备份读快照：全部事件的规范行、服务器时间表、清单计数。
+/// SRS 事件的分页读取：全部事件的规范行（整 app 备份合并、测试比对用）与库内计数。
 ///
-/// 读法与连接无关（[SrsSqlSelect]）。备份时由 [SrsBackupSnapshotReader] 在 srs.db 上另开一条
-/// **独立只读连接**（Rust 打开，[SrsCore.beginRead]；Dart 的 SQLite 绝不打开 srs.db）、在后台 isolate
-/// 里读：库是 WAL，读事务拿的是开会话那一刻的快照，写连接上的复习写入照常进行，不再排在二三十秒的
-/// 备份读取后面（BUG-3579 只做到「给复习界面让路」，读的时候仍占着主连接）。
+/// 读法与连接无关（[SrsSqlSelect]）。旧版定时备份的后台快照读取已随同步 v2 删除（设计 §10：时间线 + 归档 +
+/// 手动导出取代）。
 library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:isolate';
 import 'dart:math';
 
 import 'package:fushi_srs/fushi_srs.dart';
-import 'package:meta/meta.dart' show visibleForTesting;
 
 /// 一条只读查询：`?` 占位，结果每行一个列名 → 值的表。
 typedef SrsSqlSelect =
@@ -86,25 +81,6 @@ Future<void> srsForEachCanonicalLinePage(
   );
 }
 
-/// 按页导出已知的「事件 ID → 服务器时间 S」（备份用）。
-Future<void> srsForEachServerTimePage(
-  SrsSqlSelect select,
-  String profileUid,
-  Future<void> Function(List<(String, int)> page) onPage, {
-  int pageSize = 5000,
-}) => _pageRows(
-  select,
-  profileUid,
-  'srs_event_local',
-  'event_id, server_time',
-  pageSize,
-  (List<Map<String, Object?>> rows) => onPage(<(String, int)>[
-    for (final Map<String, Object?> r in rows)
-      (r['event_id']! as String, r['server_time']! as int),
-  ]),
-  extraWhere: 'server_time IS NOT NULL',
-);
-
 /// 备份清单里显示的计数：未删除的笔记、可见的卡片、有效的复习（评分且没被撤销）。
 Future<SrsBackupCounts> srsBackupCounts(
   SrsSqlSelect select,
@@ -174,213 +150,5 @@ Future<void> _pageRows(
     await onPage(rows);
     if (rows.length < pageSize) return;
     after = rows.last['rid_']! as int;
-  }
-}
-
-/// 把一份快照的事件与服务器时间流式写进两个暂存文件（`events` 每行一条规范 JSON，`serverTimes` 是
-/// 一个 JSON 对象），返回事件条数与清单计数。[checkStop] 每读完一页调一次（抛异常即中止）。
-Future<({int eventCount, SrsBackupCounts counts})> srsWriteSnapshotFiles(
-  SrsSqlSelect select,
-  String profileUid, {
-  required String eventsPath,
-  required String serverTimesPath,
-  required FutureOr<void> Function() checkStop,
-  int pageSize = 2000,
-}) async {
-  int eventCount = 0;
-  final IOSink ev = File(eventsPath).openWrite();
-  try {
-    await srsForEachCanonicalLinePage(select, profileUid, (
-      List<String> lines,
-    ) async {
-      await checkStop();
-      final StringBuffer sb = StringBuffer();
-      for (final String l in lines) {
-        sb
-          ..write(l)
-          ..write('\n');
-      }
-      ev.add(utf8.encode(sb.toString()));
-      eventCount += lines.length;
-      await ev.flush();
-    }, pageSize: pageSize);
-  } finally {
-    await ev.close();
-  }
-  final IOSink st = File(serverTimesPath).openWrite();
-  try {
-    st.write('{');
-    bool first = true;
-    await srsForEachServerTimePage(select, profileUid, (
-      List<(String, int)> page,
-    ) async {
-      await checkStop();
-      final StringBuffer sb = StringBuffer();
-      for (final (String eventId, int s) in page) {
-        if (!first) sb.write(',');
-        first = false;
-        sb
-          ..write(jsonEncode(eventId))
-          ..write(':')
-          ..write(s);
-      }
-      st.write(sb.toString());
-      await st.flush();
-    }, pageSize: pageSize);
-    st.write('}');
-  } finally {
-    await st.close();
-  }
-  return (
-    eventCount: eventCount,
-    counts: await srsBackupCounts(select, profileUid),
-  );
-}
-
-/// 读快照时被叫停（宿主要用数据库 / 界面）。
-class SrsSnapshotCancelled implements Exception {
-  const SrsSnapshotCancelled();
-
-  @override
-  String toString() => 'SrsSnapshotCancelled';
-}
-
-/// 后台 isolate 里的快照读取：独立只读连接、一个读事务（[SrsReadSession]），读完写两个暂存文件。
-///
-/// [start] 在读事务**已经拿到快照**之后才返回：调用方在写锁里调它，锁一放开写连接上的新写入
-/// 都不在这份快照里（与锁里取的变化指纹一致）。之后读取全在后台，写连接与界面 isolate 都不等它。
-class SrsBackupSnapshotReader {
-  SrsBackupSnapshotReader._(this._control, this._done);
-
-  final SendPort _control;
-  final Future<({int eventCount, SrsBackupCounts counts})> _done;
-
-  /// 读完：事件条数与计数。叫停时抛 [SrsSnapshotCancelled]，读失败时抛原错误（文本）。
-  Future<({int eventCount, SrsBackupCounts counts})> get done => _done;
-
-  /// 叫停：后台读完当前页就停，[done] 抛 [SrsSnapshotCancelled]（会话在后台退出后结束）。
-  void cancel() => _control.send('cancel');
-
-  /// [shouldStop] 后台每读完一页就在本 isolate 问一次（与在同一条连接上读时同一粒度），为 true 时叫停。
-  static Future<SrsBackupSnapshotReader> start({
-    required SrsCore core,
-    required String profileUid,
-    required String eventsPath,
-    required String serverTimesPath,
-    bool Function()? shouldStop,
-    @visibleForTesting int pageSize = 2000,
-  }) async {
-    // 快照在这里（调用方的写锁里）定下；后台 isolate 只借用这个会话，会话由本 isolate 在后台
-    // 退出后结束（不论读完、叫停还是出错）。
-    final SrsReadSession session = core.beginRead();
-    final ReceivePort port = ReceivePort();
-    final Completer<SendPort> ready = Completer<SendPort>();
-    final Completer<({int eventCount, SrsBackupCounts counts})> done =
-        Completer<({int eventCount, SrsBackupCounts counts})>();
-    // 后台还没起来就失败时调用方拿不到 [done]（错误经 [start] 抛出），别让它成为未处理的异步错误。
-    done.future.ignore();
-    void fail(Object error) {
-      if (!ready.isCompleted) ready.completeError(error);
-      if (!done.isCompleted) done.completeError(error);
-    }
-
-    SendPort? reply;
-    port.listen((Object? m) {
-      if (m is SendPort) {
-        reply = m;
-        ready.complete(m);
-      } else if (m == 'page') {
-        // 后台读完一页、等着回话：这里问叫停与否（读库在后台，这一问不碰库）。
-        reply?.send((shouldStop?.call() ?? false) ? 'cancel' : 'go');
-      } else if (m is List && m.isNotEmpty && m.first == 'done') {
-        done.complete((
-          eventCount: m[1] as int,
-          counts: (
-            notes: m[2] as int,
-            cards: m[3] as int,
-            reviews: m[4] as int,
-          ),
-        ));
-      } else if (m == 'cancelled') {
-        fail(const SrsSnapshotCancelled());
-      } else if (m is List && m.isNotEmpty && m.first == 'error') {
-        fail(StateError('SRS backup snapshot: ${m[1]}\n${m[2]}'));
-      } else if (m == null) {
-        // onExit：后台已经不再用会话了，这里才结束它。没回报就退出 = 被杀 / 崩溃。
-        session.close();
-        port.close();
-        fail(StateError('SRS backup snapshot isolate exited'));
-      }
-    });
-    try {
-      await Isolate.spawn<List<Object?>>(_main, <Object?>[
-        port.sendPort,
-        session.address,
-        core.libraryPath,
-        profileUid,
-        eventsPath,
-        serverTimesPath,
-        pageSize,
-      ], onExit: port.sendPort);
-    } catch (_) {
-      session.close();
-      port.close();
-      rethrow;
-    }
-    final SendPort control = await ready.future;
-    return SrsBackupSnapshotReader._(control, done.future);
-  }
-
-  static Future<void> _main(List<Object?> args) async {
-    final SendPort out = args[0]! as SendPort;
-    final SrsReadSession session = SrsReadSession.fromAddress(
-      args[1]! as int,
-      libraryPath: args[2] as String?,
-    );
-    final String profileUid = args[3]! as String;
-    final ReceivePort control = ReceivePort();
-    bool cancelled = false;
-    Completer<void>? waiting;
-    control.listen((Object? m) {
-      if (m == 'cancel') cancelled = true;
-      if (m == 'cancel' || m == 'go') waiting?.complete();
-    });
-    out.send(control.sendPort);
-    try {
-      Future<List<Map<String, Object?>>> select(
-        String sql,
-        List<Object?> params,
-      ) async => session.query(sql, params);
-      final ({int eventCount, SrsBackupCounts counts}) r =
-          await srsWriteSnapshotFiles(
-            select,
-            profileUid,
-            eventsPath: args[4]! as String,
-            serverTimesPath: args[5]! as String,
-            pageSize: args[6]! as int,
-            checkStop: () async {
-              // 每页问一次调用方要不要停（[start] 的 shouldStop），等它回话；外部的 [cancel] 也在这里生效。
-              if (cancelled) throw const SrsSnapshotCancelled();
-              final Completer<void> reply = waiting = Completer<void>();
-              out.send('page');
-              await reply.future;
-              waiting = null;
-              if (cancelled) throw const SrsSnapshotCancelled();
-            },
-          );
-      out.send(<Object?>[
-        'done',
-        r.eventCount,
-        r.counts.notes,
-        r.counts.cards,
-        r.counts.reviews,
-      ]);
-    } on SrsSnapshotCancelled {
-      out.send('cancelled');
-    } catch (e, stack) {
-      out.send(<Object?>['error', '$e', '$stack']);
-    } finally {
-      control.close();
-    }
   }
 }

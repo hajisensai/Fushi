@@ -8,7 +8,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:fushi_srs/fushi_srs.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:path/path.dart' as p;
 
 import '../srs/srs_test_support.dart' show openSrsTestStorage;
@@ -249,8 +250,21 @@ void main() {
         final int localId = await insertProfile(target, '日语');
         final String oldUid = await target.profileUidOf(localId);
         final SrsDbStore s = await store(oldUid);
-        await s.saveSyncState(
-          SrsSyncLocalState(writerId: s.writerId, nextBatchNo: 2),
+        // 同步 v2：传到过任何位置就算发布过（别的设备可能已拿到这个身份下的操作）。
+        await srsSync2Round(
+          host: s,
+          location: SrsMemoryLocationStore(),
+          locationId: 'test',
+          nowMs: () => s.now().$1,
+        );
+        final Object? locations = (await s.sync2Status())['locations'];
+        expect(
+          locations is List &&
+              locations.any(
+                (Object? l) => l is Map && ((l['uploaded'] as int?) ?? 0) > 0,
+              ),
+          isTrue,
+          reason: '前提：本机确实传出过段',
         );
 
         await attachAndMerge(b);
