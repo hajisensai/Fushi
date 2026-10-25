@@ -110,7 +110,7 @@ void main() {
       expect(tester.takeException(), null);
     });
 
-    testWidgets('「扩展」段：扩展目录 + 刷新 / 导入 APK，没有仓库卡与添加仓库', (
+    testWidgets('「扩展」段：扩展目录 + 导入 APK，没有刷新、仓库卡与添加仓库', (
       WidgetTester tester,
     ) async {
       await pumpSlivers(tester, <Widget>[
@@ -124,7 +124,11 @@ void main() {
       ]);
       expect(find.text('Fixture Extension'), findsOneWidget);
       expect(find.text(t.mihon_extension_import), findsOneWidget);
-      expect(find.text(t.mihon_store_refresh), findsOneWidget);
+      expect(
+        find.text(t.mihon_store_refresh),
+        findsNothing,
+        reason: '刷新只在「扩展仓库」页，目录那排只放四颗目录动作',
+      );
       expect(
         find.byKey(const ValueKey<String>('mihon_extension_bulk_install')),
         findsOneWidget,

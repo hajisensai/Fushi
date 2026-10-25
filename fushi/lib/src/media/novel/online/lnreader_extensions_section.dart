@@ -325,39 +325,40 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
     );
   }
 
-  /// 内嵌目录顶部的动作行（M3E 按钮）。库页「扩展」子标签的页头动作组已挂着
-  /// 「刷新仓库」（[ExtensionCatalogHeaderScope]）时这里不再重复；没有页头的宿主
-  /// （浏览模块、测试）刷新仍留在这里，入口一个不丢。仓库段同在时附「添加仓库」。
+  /// 仓库段同在时顶部的动作行：刷新 + 添加仓库（M3E 按钮）。只有插件目录一节
+  /// 时没有这一行：「扩展仓库」并进批量安装那一排（[_catalogTrailing]），刷新
+  /// 留在「扩展仓库」页（2026-10-25 用户拍板，页头的仓库 / 刷新图标砍掉）。
   List<Widget> _actions({required bool stores}) {
     final LnReaderManager manager = widget.manager;
-    final bool refreshInHeader = ExtensionCatalogHeaderScope.refreshInHeaderOf(
-      context,
-    );
+    if (!stores) return const <Widget>[];
     return <Widget>[
-      if (!refreshInHeader)
-        FushiTextButton.icon(
-          key: const ValueKey<String>('novel_extension_refresh'),
-          onPressed: manager.loading
-              ? null
-              : () => unawaited(manager.refreshStores()),
-          icon: const FushiIcon(FushiIcons.refresh),
-          label: Text(t.mihon_store_refresh),
-        ),
-      if (stores)
-        FushiFilledButton.tonalIcon(
-          onPressed: manager.loading ? null : _addStore,
-          icon: const FushiIcon(FushiIcons.link),
-          label: Text(t.mihon_store_add),
-        ),
-      if (widget.showCatalog && widget.onOpenStores != null)
-        FushiOutlinedButton.icon(
-          key: const ValueKey<String>('novel_extension_open_stores'),
-          onPressed: widget.onOpenStores,
-          icon: const FushiIcon(FushiIcons.hub),
-          label: Text(t.online_sources_stores_manage),
-        ),
+      FushiTextButton.icon(
+        key: const ValueKey<String>('novel_extension_refresh'),
+        onPressed: manager.loading
+            ? null
+            : () => unawaited(manager.refreshStores()),
+        icon: const FushiIcon(FushiIcons.refresh),
+        label: Text(t.mihon_store_refresh),
+      ),
+      FushiFilledButton.tonalIcon(
+        onPressed: manager.loading ? null : _addStore,
+        icon: const FushiIcon(FushiIcons.link),
+        label: Text(t.mihon_store_add),
+      ),
     ];
   }
+
+  /// 接在批量安装 / 一键更新后面的同排动作：扩展仓库。
+  List<Widget> _catalogTrailing() => <Widget>[
+    if (widget.onOpenStores case final VoidCallback openStores)
+      FushiOutlinedButton.icon(
+        key: const ValueKey<String>('novel_extension_open_stores'),
+        size: FushiButtonSize.s,
+        onPressed: openStores,
+        icon: const FushiIcon(FushiIcons.hub),
+        label: Text(t.online_sources_stores_manage),
+      ),
+  ];
 
   /// 刷新中的波浪进度条：弹簧展开 / 收起。
   Widget _loadingSlot(bool loading) {
@@ -641,6 +642,17 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              ExtensionCatalogActions(
+                keyPrefix: 'novel_extension',
+                onBulkInstall: manager.loading || _bulkRunning
+                    ? null
+                    : () => unawaited(_bulkInstall()),
+                onUpdateAll: manager.loading || _bulkRunning
+                    ? null
+                    : () => unawaited(_updateAll()),
+                trailing: _catalogTrailing(),
+              ),
+              const SizedBox(height: 12),
               MangaExtensionFilters(
                 keyPrefix: 'novel_extension',
                 stores: <ExtensionFilterOption<String>>[
@@ -673,17 +685,11 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
                 },
               ),
               const SizedBox(height: 8),
-              ExtensionCatalogActions(
+              ExtensionMinDownloadsFilter(
                 keyPrefix: 'novel_extension',
                 minDownloads: _minDownloads,
                 onMinDownloadsChanged: (int value) =>
                     setState(() => _minDownloads = value),
-                onBulkInstall: manager.loading || _bulkRunning
-                    ? null
-                    : () => unawaited(_bulkInstall()),
-                onUpdateAll: manager.loading || _bulkRunning
-                    ? null
-                    : () => unawaited(_updateAll()),
               ),
             ],
           ),

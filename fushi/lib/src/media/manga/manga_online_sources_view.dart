@@ -122,6 +122,18 @@ class _MangaOnlineSourcesViewState
         StoreRestrictedCapability.onlineMangaSource.isAvailable;
     final OnlineSourcesSection section = widget.section;
     final List<Widget> slivers = <Widget>[
+      // 与视频（Aniyomi）/ 小说（LNReader）同一行域说明：讲清扩展是哪个生态的。
+      // 仓库页顶部自带信任提示，不再叠这段。
+      if (onlineSourcesAvailable && section != OnlineSourcesSection.stores)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Text(
+              t.manga_online_sources_hint,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ),
       if (section == OnlineSourcesSection.sources)
         if (onlineSourcesAvailable && manager != null)
           MihonInstalledSourcesSection(

@@ -375,16 +375,6 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     });
   }
 
-  /// 在线源此刻选中的内容域（当前域已被模块开关关掉时回落第一个可见域）；
-  /// 没有可见域时为 null。
-  OnlineSourcesDomain? _selectedOnlineDomain() {
-    final List<OnlineSourcesDomain> domains = visibleOnlineSourcesDomains(
-      ref.read(appProvider).moduleVisibility,
-    );
-    if (domains.isEmpty) return null;
-    return domains.contains(_onlineDomain) ? _onlineDomain : domains.first;
-  }
-
   /// 「在线源」页签：内容域选择条 + 来源 / 扩展切换 + 各域可横滑、保活的
   /// 在线来源面。
   Widget _buildOnlineTab() {
@@ -780,24 +770,9 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
         final bool onDownloads =
             tabs[controller.index.clamp(0, tabs.length - 1)] ==
             BrowseTab.downloads;
-        final BrowseTab current =
-            tabs[controller.index.clamp(0, tabs.length - 1)];
-        final OnlineSourcesDomain? storesDomain =
-            current == BrowseTab.sources &&
-                _onlineSection == OnlineSourcesSection.extensions
-            ? _selectedOnlineDomain()
-            : null;
+        // 扩展的「扩展仓库」不在顶栏：它和导入 APK 一起排在扩展目录批量安装那一行
+        // （2026-10-25 用户拍板，顶栏那颗无字图标与正文按钮重复）。
         final List<Widget> actions = <Widget>[
-          // 扩展的「仓库」是整页动作，与下载页签的动作同处顶栏右侧动作组
-          // （2026-10-14 用户截图：夹在内容域胶囊与来源 / 扩展切换之间不自然）。
-          if (storesDomain != null)
-            FushiIconButton(
-              key: const ValueKey<String>('browse-extensions-stores'),
-              icon: Icons.hub_outlined,
-              tooltip: t.media_import_segment_stores,
-              label: t.media_import_segment_stores,
-              onTap: () => openOnlineSourceStores(context, storesDomain),
-            ),
           if (onDownloads) ...<Widget>[
             FushiIconButton(
               icon: Icons.add,
@@ -1069,9 +1044,10 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                                               database: appModel.database,
                                               job: job,
                                               deleteFiles: deleteFiles,
-                                              pathMappings: appModel.downloadPathMappingsForProfile(
-                                                job.backendProfileId,
-                                              ),
+                                              pathMappings: appModel
+                                                  .downloadPathMappingsForProfile(
+                                                    job.backendProfileId,
+                                                  ),
                                             );
                                           }
                                         },

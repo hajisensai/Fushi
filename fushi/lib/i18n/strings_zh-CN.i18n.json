@@ -4326,6 +4326,7 @@
   "manga_online_series_empty": "这个系列没有可下载的卷。",
   "manga_online_source_disabled": "此互联网来源已关闭，请在「来源」中开启后浏览目录。",
   "manga_online_sources_empty": "还没有扩展提供的漫画源。安装扩展即可添加更多来源。",
+  "manga_online_sources_hint": "第三方 Mihon 扩展（extensions-lib 1.4 / 1.6）。内容来自各扩展对应的站点，在内置漫画阅读器中阅读。",
   "manga_online_stage_cbz": "下载卷包…",
   "manga_online_stage_extract": "解包中…",
   "manga_online_stage_mokuro": "下载 OCR 数据…",
