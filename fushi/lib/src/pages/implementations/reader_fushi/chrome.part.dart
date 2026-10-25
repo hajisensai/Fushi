@@ -176,7 +176,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   ) async {
     if (!mounted) return;
     if (!isWindowsPlatform) {
-      await _shareReaderImage(imgUrl);
+      await _showReaderImageActions(imgUrl);
       return;
     }
     final RenderBox? box = context.findRenderObject() as RenderBox?;
@@ -197,6 +197,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       menuContext ?? context,
       globalPosition,
       onCopy: () => _copyReaderImageToClipboard(imgUrl),
+      onSave: () => _saveReaderImage(imgUrl),
     );
   }
 
@@ -884,17 +885,28 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _exportAudiobookClip();
   }
 
-  /// 分享 / 复制的动作本体在 illustration_zoom_viewer.dart（[shareImageFile] /
-  /// [copyImageFileToClipboard]），与书架端插图册共用；这里只把 fushi.local URL
-  /// 解析成本书解压目录里的文件。
-  Future<void> _shareReaderImage(String imgUrl) async {
+  /// 长按正文图片：弹全局图片动作面板（保存 / 分享，见 image_actions_sheet.dart），
+  /// 与缩放看图、插图册、书架端插图册、歌词模式插图同一个面板、同一份动作本体；
+  /// 这里只把 fushi.local URL 解析成本书解压目录里的文件。
+  Future<void> _showReaderImageActions(String imgUrl) async {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) {
       FushiToast.show(
           msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
       return;
     }
-    await shareImageFile(file);
+    await showImageActionsSheet(context, file: file);
+  }
+
+  /// Windows 右键菜单的「保存图片」：与面板同一份保存实现。
+  Future<void> _saveReaderImage(String imgUrl) async {
+    final File? file = _readerImageFileForUrl(imgUrl);
+    if (file == null) {
+      FushiToast.show(
+          msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
+      return;
+    }
+    await runImageAction(ImageAction.save, file);
   }
 
   Future<void> _copyReaderImageToClipboard(String imgUrl) async {
@@ -935,9 +947,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   : null,
               ladder: kReaderMouseLadder,
               // 缩放查看本体与书架端插图册同一份（illustration_zoom_viewer.dart）。
+              // 长按（移动端）= 全局图片动作面板；兄弟卷插图也有文件，同样可存。
               child: IllustrationZoomViewer(
                 file: file,
                 diagnosticTag: 'ReaderFushiPage.imageViewer',
+                onLongPress: isWindowsPlatform
+                    ? null
+                    : () => unawaited(
+                          showImageActionsSheet(routeContext, file: file),
+                        ),
               ),
             ),
           ),

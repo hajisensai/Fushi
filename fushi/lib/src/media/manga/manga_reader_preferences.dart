@@ -69,7 +69,6 @@ class MangaReaderPreferences {
     this.background = 'black',
     this.zoomStartPosition = 'automatic',
     this.rotation = 'free',
-    this.saveDirectory = 'chapter',
     this.zoomStart = 100,
     this.longStripSidePadding = 0,
     this.tapZones = MangaTapZonePreset.defaultZones,
@@ -126,7 +125,6 @@ class MangaReaderPreferences {
   final String background;
   final String zoomStartPosition;
   final String rotation;
-  final String saveDirectory;
   final int zoomStart;
   final int longStripSidePadding;
   final MangaTapZonePreset tapZones;
@@ -197,7 +195,6 @@ class MangaReaderPreferences {
     'background': background,
     'zoomStartPosition': zoomStartPosition,
     'rotation': rotation,
-    'saveDirectory': saveDirectory,
     'zoomStart': zoomStart,
     'longStripSidePadding': longStripSidePadding,
     'tapZones': tapZones.key,
@@ -289,11 +286,6 @@ class MangaReaderPreferences {
         'free',
         'portrait',
         'landscape',
-      }),
-      saveDirectory: text('saveDirectory', 'chapter', <String>{
-        'flat',
-        'book',
-        'chapter',
       }),
       zoomStart: number('zoomStart', 100, 50, 400),
       longStripSidePadding: number('longStripSidePadding', 0, 0, 24),

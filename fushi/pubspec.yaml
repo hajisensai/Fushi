@@ -59,6 +59,9 @@ dependencies:
   fading_edge_scrollview: ^3.0.0
   file_picker: ^8.0.0
   float_column: ^4.0.3
+  # 长按图片「保存图片」写进系统相册（Android MediaStore / iOS Photos）。
+  # 只在移动端调用；桌面端走另存为对话框（lib/src/utils/misc/image_file_saver.dart）。
+  gal: ^2.3.1
   # Cross-platform game controllers (GameInput / GameController / evdev).
   # BUILD PREREQ: the Windows backend (gamepads_windows) #includes <GameInput.h>,
   # which ships only in Windows SDK >= 10.0.26100 — every Windows build

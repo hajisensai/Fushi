@@ -12,6 +12,7 @@
 #include <flutter_inappwebview_windows/flutter_inappwebview_windows_plugin_c_api.h>
 #include <flutter_onnxruntime/flutter_onnxruntime_plugin.h>
 #include <flutter_webrtc/flutter_web_r_t_c_plugin.h>
+#include <gal/gal_plugin_c_api.h>
 #include <gamepads_windows/gamepads_windows_plugin_c_api.h>
 #include <hotkey_manager_windows/hotkey_manager_windows_plugin_c_api.h>
 #include <media_kit_libs_windows_video/media_kit_libs_windows_video_plugin_c_api.h>
@@ -36,6 +37,8 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("FlutterOnnxruntimePlugin"));
   FlutterWebRTCPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterWebRTCPlugin"));
+  GalPluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("GalPluginCApi"));
   GamepadsWindowsPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("GamepadsWindowsPluginCApi"));
   HotkeyManagerWindowsPluginCApiRegisterWithRegistrar(

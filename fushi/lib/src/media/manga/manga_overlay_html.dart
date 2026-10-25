@@ -2556,6 +2556,72 @@ String _mangaGestureJs({
       if (ax < 20 && ay < 20 && el < 500) _onTap(x, y);
     }
   }
+  // 触屏长按页图 → Dart 弹全局图片动作面板（保存 / 分享，image_actions_sheet.dart），
+  // 作用于**被按住的那一页**（条漫 / 双页模式下命中的那页，不是当前跨页）。
+  // 漫画页的触屏手势里长按原本是空的：单击 = OCR 查词 / 热区翻页 / 空白切栏，
+  // 双击 = 缩放，拖动 = 翻页 / 平移 / 条漫滚动，双指 = 捏合；按住超过 500ms 的
+  // 松手本来就不算单击（_end 的 el < 500），所以长按不抢任何已有功能。
+  // 鼠标走右键菜单（onMangaContextMenu），这里只认触摸主触点。
+  // 取消判据：移动超过 LONG_PRESS_SLOP、第二指落下（捏合）、松手 / 被系统夺走。
+  // 触发后本次按压作废：跟手回弹、挂起的空白单击与双击武装清掉，松手不再走
+  // 单击 / swipe 路径。
+  var LONG_PRESS_MS = 500, LONG_PRESS_SLOP = 10;
+  var longPress = null, longPressFired = null;
+  function _mangaPageIndexAt(x, y){
+    var stack = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [];
+    for (var i = 0; i < stack.length; i++) {
+      var el = stack[i];
+      var page = el.closest ? el.closest('.manga-page') : null;
+      // 翻页动画的克隆层摘掉了 data-page，不认；加载失败页没有图可存。
+      if (!page || !page.hasAttribute('data-page')) continue;
+      if (page.getAttribute('data-load-failed') === '1') return null;
+      var index = Number(page.getAttribute('data-page'));
+      return isFinite(index) && index >= 0 ? index : null;
+    }
+    return null;
+  }
+  function _cancelLongPress(){
+    if (longPress) { clearTimeout(longPress.timer); longPress = null; }
+  }
+  function _armLongPress(e){
+    _cancelLongPress();
+    longPressFired = null;
+    if (e.pointerType !== 'touch' || !e.isPrimary) return;
+    var lp = {id: e.pointerId, x: e.clientX, y: e.clientY, timer: null};
+    lp.timer = setTimeout(function(){
+      if (longPress === lp) _fireLongPress();
+    }, LONG_PRESS_MS);
+    longPress = lp;
+  }
+  function _moveLongPress(e){
+    if (!longPress || longPress.id !== e.pointerId) return;
+    var dx = e.clientX - longPress.x, dy = e.clientY - longPress.y;
+    if (dx * dx + dy * dy > LONG_PRESS_SLOP * LONG_PRESS_SLOP) _cancelLongPress();
+  }
+  function _fireLongPress(){
+    var lp = longPress;
+    longPress = null;
+    if (!lp || pinch || pinchGuard) return;
+    var page = _mangaPageIndexAt(lp.x, lp.y);
+    if (page === null) return;
+    longPressFired = lp.id;
+    has = false;
+    _swipeRelease(false);
+    panDrag = null;
+    _cancelPendingEmptyTap();
+    dblArmed = false;
+    var b = _bridge();
+    if (b) b.callHandler('onMangaPageLongPress', JSON.stringify({page: page}));
+  }
+  // 松手时：本指已触发长按就吞掉这次松手（返回 true）。
+  function _consumeLongPressRelease(id){
+    _cancelLongPress();
+    if (longPressFired !== null && longPressFired === id) {
+      longPressFired = null;
+      return true;
+    }
+    return false;
+  }
   document.addEventListener('pointerdown', function(e){
     if (e.pointerType === 'touch') {
       // 触点表只靠「松手 / 取消」事件删条目，而这两个事件不保证到得了 document：
@@ -2577,6 +2643,7 @@ String _mangaGestureJs({
         pinch = {dist: g.dist, zoom: ZOOM, cx: g.cx, cy: g.cy};
         pinchGuard = true;
         has = false;
+        _cancelLongPress();
         // 跟到一半的页面立即复位（不播回弹），捏合从静止的当前跨页开始。
         _swipeRelease(false, true);
         panDrag = null;
@@ -2602,10 +2669,12 @@ String _mangaGestureJs({
       samples: [{t: e.timeStamp, y: e.clientY}]
     };
     _armDoubleTapOnDown(e.clientX, e.clientY);
+    _armLongPress(e);
     _start(e.clientX, e.clientY);
   }, {passive: true});
   document.addEventListener('pointermove', function(e){
     if (e.pointerType !== 'touch') return;
+    _moveLongPress(e);
     if (!touchPts[e.pointerId]) return;
     touchPts[e.pointerId] = {x: e.clientX, y: e.clientY};
     if (!pinch) return;
@@ -2623,6 +2692,10 @@ String _mangaGestureJs({
   document.addEventListener('pointerup', function(e){
     var drag = (panDrag && panDrag.id === e.pointerId) ? panDrag : null;
     if (drag) panDrag = null;
+    if (_consumeLongPressRelease(e.pointerId)) {
+      if (e.pointerType === 'touch') delete touchPts[e.pointerId];
+      return;
+    }
     if (e.pointerType === 'touch') {
       delete touchPts[e.pointerId];
       if (pinch) {
@@ -2672,6 +2745,7 @@ String _mangaGestureJs({
   // 注意：本注释随文档注入 WebView，不能出现松手事件的字面名——
   // manga_overlay_html_test 的 C1 不变式按该字面量计数，恰好允许一个。
   document.addEventListener('pointercancel', function(e){
+    _consumeLongPressRelease(e.pointerId);
     if (panDrag && panDrag.id === e.pointerId) {
       panDrag = null;
       // 系统夺走指针：跟到一半的页面不能挂在半路，回弹到当前跨页。
