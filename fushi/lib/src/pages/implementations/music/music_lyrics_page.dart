@@ -850,7 +850,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                 : t.music_lyrics_empty);
       return Center(
         child: _loading
-            ? const CircularProgressIndicator()
+            ? const FushiCircularProgressIndicator()
             : Text(message, style: context.fushiType.bodyLarge),
       );
     }
@@ -942,7 +942,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           overflow: TextOverflow.ellipsis,
           style: context.fushiType.bodyMedium,
         ),
-        Slider(
+        FushiSlider(
           value: position.inMilliseconds.toDouble().clamp(
             0,
             max <= 0 ? 1 : max,

@@ -19,8 +19,7 @@ import '../helpers/source_guard.dart';
 /// 源码守卫是最强可落地层：行为门在 `dart:io` 的 `Platform.isMacOS` 与
 /// `NSWindow.standardWindowButton` 平台通道上，`flutter test` 下两者都不存在。
 void main() {
-  test(
-      'setMacOSTrafficLightsHidden gates on macOS and toggles all three '
+  test('setMacOSTrafficLightsHidden gates on macOS and toggles all three '
       'traffic-light buttons (BUG-973)', () {
     final String source = File(
       'lib/src/platform/desktop/macos_traffic_lights.dart',
@@ -29,7 +28,8 @@ void main() {
     expect(
       RegExp(r'if\s*\(\s*!\s*Platform\.isMacOS\s*\)').hasMatch(source),
       isTrue,
-      reason: 'The helper must early-return on non-macOS so it is a no-op on '
+      reason:
+          'The helper must early-return on non-macOS so it is a no-op on '
           'Windows/Linux/mobile (no traffic lights there).',
     );
 
@@ -44,7 +44,8 @@ void main() {
       expect(
         source.contains('WindowManipulator.$call'),
         isTrue,
-        reason: 'The helper must call WindowManipulator.$call so every traffic '
+        reason:
+            'The helper must call WindowManipulator.$call so every traffic '
             'light is hidden/restored (a partial hide still leaves overlap).',
       );
     }
@@ -55,7 +56,8 @@ void main() {
     expect(
       main.contains('windowButtonVisibility: Platform.isMacOS'),
       isTrue,
-      reason: 'macOS 一律用系统原生红绿灯（用户 2026-10-04）：隐藏标题栏的同一次'
+      reason:
+          'macOS 一律用系统原生红绿灯（用户 2026-10-04）：隐藏标题栏的同一次'
           'setTitleBarStyle 必须按平台保留它们。',
     );
 
@@ -68,62 +70,60 @@ void main() {
     expect(
       video.contains('setMacOSTrafficLightsHidden('),
       isFalse,
-      reason: '红绿灯显隐只有 FushiDesktopTitleBar 一个真值（内容全屏藏、否则显示）；'
+      reason:
+          '红绿灯显隐只有 FushiDesktopTitleBar 一个真值（内容全屏藏、否则显示）；'
           '视频页直接开关会与它打架——退页恢复时若仍在全屏，三个圆点会压回内容上。',
     );
   });
 
-  test(
-    'exiting native fullscreen re-asserts traffic lights via the title bar '
-    'truth (BUG-973)',
-    () {
-      final String source = maskComments(
-        File(
-          'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
-        ).readAsStringSync(),
-      );
+  test('exiting native fullscreen re-asserts traffic lights via the title bar '
+      'truth (BUG-973)', () {
+    final String source = maskComments(
+      File(
+        'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
+      ).readAsStringSync(),
+    );
 
-      // 锚定**定义**而非裸符号：BUG-2043 后同文件里更早处有一个调用点
-      // （_releaseHandedOverNativeFullscreen），裸 indexOf 会先命中它、扫错方法体。
-      final int exitFs = source.indexOf(
-        'Future<void> _exitVideoNativeFullscreen()',
-      );
-      expect(exitFs, greaterThanOrEqualTo(0));
-      // Scan the method body: from its declaration to the next method.
-      final int nextMethod = source.indexOf('\n  Future<', exitFs + 1);
-      final int nextAny = source.indexOf('\n  Widget ', exitFs + 1);
-      int end = source.length;
-      if (nextMethod > exitFs) end = nextMethod;
-      if (nextAny > exitFs && nextAny < end) end = nextAny;
-      final String body = source.substring(exitFs, end);
+    // 锚定**定义**而非裸符号：BUG-2043 后同文件里更早处有一个调用点
+    // （_releaseHandedOverNativeFullscreen），裸 indexOf 会先命中它、扫错方法体。
+    final String body = methodBody(
+      source,
+      'Future<void> _exitVideoNativeFullscreen()',
+    );
 
-      // AppKit's toggleFullScreen can reset standardWindowButton.isHidden when it
-      // rebuilds the titlebar; the desktop branch must re-assert AFTER exiting,
-      // through the title bar's single source of truth (not a hard-coded value).
-      final int defaultExit = body.indexOf('defaultExitNativeFullscreen()');
-      final int reHide = body.indexOf(
-        'FushiDesktopTitleBar.reassertMacTrafficLights()',
-      );
-      expect(
-        body.contains('setMacOSTrafficLightsHidden('),
-        isFalse,
-        reason: 'Hard-coding the visibility here would fight the title bar '
-            'truth (hidden only while content is fullscreen).',
-      );
-      expect(
-        defaultExit,
-        greaterThanOrEqualTo(0),
-        reason: 'desktop branch still exits native fullscreen via media_kit.',
-      );
-      expect(
-        reHide,
-        greaterThan(defaultExit),
-        reason:
-            'The desktop branch must call '
-            'FushiDesktopTitleBar.reassertMacTrafficLights() after '
-            'defaultExitNativeFullscreen(), because AppKit can reset the '
-            'button visibility when leaving fullscreen (BUG-973).',
-      );
-    },
-  );
+    // AppKit's toggleFullScreen can reset standardWindowButton.isHidden when it
+    // rebuilds the titlebar; the desktop branch must re-assert AFTER exiting,
+    // through the title bar's single source of truth (not a hard-coded value).
+    // The macOS borderless-fullscreen branch (33374d5832) re-asserts too, and
+    // it sits *before* the native branch, so the re-assert we need is searched
+    // from the defaultExitNativeFullscreen() call onward, not from the top.
+    final int defaultExit = body.indexOf('defaultExitNativeFullscreen()');
+    final int reHide = defaultExit < 0
+        ? -1
+        : body.indexOf(
+            'FushiDesktopTitleBar.reassertMacTrafficLights()',
+            defaultExit,
+          );
+    expect(
+      body.contains('setMacOSTrafficLightsHidden('),
+      isFalse,
+      reason:
+          'Hard-coding the visibility here would fight the title bar '
+          'truth (hidden only while content is fullscreen).',
+    );
+    expect(
+      defaultExit,
+      greaterThanOrEqualTo(0),
+      reason: 'desktop branch still exits native fullscreen via media_kit.',
+    );
+    expect(
+      reHide,
+      greaterThan(defaultExit),
+      reason:
+          'The desktop branch must call '
+          'FushiDesktopTitleBar.reassertMacTrafficLights() after '
+          'defaultExitNativeFullscreen(), because AppKit can reset the '
+          'button visibility when leaving fullscreen (BUG-973).',
+    );
+  });
 }

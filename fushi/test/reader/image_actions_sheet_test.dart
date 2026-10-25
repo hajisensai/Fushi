@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi/src/reader/image_actions_sheet.dart';
 import 'package:fushi/src/utils/misc/image_file_saver.dart';
 
@@ -96,7 +97,12 @@ void main() {
 
     test('保留原文件名，缺扩展名补 .png', () {
       expect(suggestedImageFileName('/books/x/OEBPS/i-012.jpg'), 'i-012.jpg');
-      expect(suggestedImageFileName(r'C:\b\cover'), 'cover.png');
+      // 入参是宿主平台的本地 File.path（Windows 上 `C:\b\cover`、POSIX 上 `/b/cover`）；
+      // POSIX 上反斜杠是合法文件名字符，不能拿 Windows 字面路径在 Linux CI 上断言。
+      expect(
+        suggestedImageFileName(p.join(p.rootPrefix(p.current), 'b', 'cover')),
+        'cover.png',
+      );
       expect(suggestedImageFileName(''), 'image.png');
     });
   });

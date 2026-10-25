@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 漫画 OCR P1 的接线守卫（源码扫描 + 键不变量），与 PDF 的
 /// `reader_pdf_routing_guard_test.dart` 同纪律。
 ///
@@ -122,13 +124,15 @@ void main() {
 
   test('书架漫画进度按页计（与 PDF 共用 1-based 页序分支）', () {
     final String src = read('lib/src/media/sources/reader_fushi_source.dart');
+    // 空白无关：只钉「pos==null → 0，否则 1-based 页序」这条契约，不钉 dart format 排版。
+    final String code = compactCode(src);
     expect(
-      src.contains('(pos.sectionIndex + 1)'),
+      code.contains('?0:(pos.sectionIndex+1)'),
       isTrue,
       reason: '页码型书进度用 1-based 页序，停在第 1 页也要计入在读',
     );
     expect(
-      src.contains('position: pos == null'),
+      code.contains('position:pos==null'),
       isTrue,
       reason: '没有阅读记录的卷 position 必须是 0（未读），不能算停在第 1 页',
     );

@@ -371,9 +371,7 @@ class _PersonHeader extends StatelessWidget {
     final List<Widget> chips = <Widget>[
       for (final String scheme in PersonIdScheme.all)
         for (final String v in data.cluster.idsOf(scheme))
-          Chip(
-            label: Text('${personIdSchemeLabel(scheme)} $v'),
-          ),
+          FushiChip(label: Text('${personIdSchemeLabel(scheme)} $v')),
     ];
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),

@@ -15,8 +15,10 @@ import '../helpers/source_guard.dart';
 ///   回来，看到的还是一张什么都没发生的占位卡。
 /// - 生命周期：`clearTask` 生产零调用，completed/failed 任务在 Map 里永久占格。
 ///
-/// 修法两头：卡片上给失败态一个恒定出口（[RemoteDownloadFailedBadge]，重进页面照样
-/// 在，tooltip 带真实错误文本，再点一次下载即重试），以及结束态有界保留。
+/// 修法两头：卡片上给失败态一个恒定出口（重进页面照样在，带真实错误文本，再点一次
+/// 下载即重试；2026-10-25 材质定版后封面不再画角标，出口从封面角标
+/// `RemoteDownloadFailedBadge` 挪到封面下的错误色副行 `_remoteDownloadMeta`），
+/// 以及结束态有界保留。
 void main() {
   group('InterconnectDownloadManager 结束态生命周期', () {
     late Directory dir;
@@ -39,14 +41,17 @@ void main() {
     File dest(String name) => File('${dir.path}/$name');
 
     Future<void> runOk(String id) => manager.startVideoDownload(
-          id: id,
-          title: id,
-          dest: dest('$id.mp4'),
-          run: (File target,
-              {void Function(double progress)? onProgress,
-              void Function(int received, int? total)? onBytes,
-              Future<void>? cancelSignal}) async {},
-        );
+      id: id,
+      title: id,
+      dest: dest('$id.mp4'),
+      run:
+          (
+            File target, {
+            void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal,
+          }) async {},
+    );
 
     test('结束态有界保留：超过 maxFinishedTasks 的最旧任务被淘汰（不再只增不减）', () async {
       const int cap = InterconnectDownloadManager.maxFinishedTasks;
@@ -67,11 +72,13 @@ void main() {
           id: 'v1',
           title: 'v1',
           dest: dest('v1.mp4'),
-          run: (File target,
-                  {void Function(double progress)? onProgress,
-                  void Function(int received, int? total)? onBytes,
-                  Future<void>? cancelSignal}) =>
-              throw const SocketException('reset'),
+          run:
+              (
+                File target, {
+                void Function(double progress)? onProgress,
+                void Function(int received, int? total)? onBytes,
+                Future<void>? cancelSignal,
+              }) => throw const SocketException('reset'),
         ),
         throwsA(isA<SocketException>()),
       );
@@ -79,7 +86,9 @@ void main() {
 
       await runOk('v1');
       expect(
-          manager.taskFor('v1')!.status, InterconnectDownloadStatus.completed);
+        manager.taskFor('v1')!.status,
+        InterconnectDownloadStatus.completed,
+      );
       expect(manager.tasks.length, 1);
     });
 
@@ -90,20 +99,26 @@ void main() {
         id: 'running',
         title: 'running',
         dest: dest('running.mp4'),
-        run: (File target,
-            {void Function(double progress)? onProgress,
-            void Function(int received, int? total)? onBytes,
-            Future<void>? cancelSignal}) async {
-          while (!released) {
-            await Future<void>.delayed(const Duration(milliseconds: 1));
-          }
-        },
+        run:
+            (
+              File target, {
+              void Function(double progress)? onProgress,
+              void Function(int received, int? total)? onBytes,
+              Future<void>? cancelSignal,
+            }) async {
+              while (!released) {
+                await Future<void>.delayed(const Duration(milliseconds: 1));
+              }
+            },
       );
       for (int i = 0; i < cap + 5; i++) {
         await runOk('v$i');
       }
-      expect(manager.isRunning('running'), isTrue,
-          reason: '进行中的任务被淘汰会让占位卡的进度环凭空消失');
+      expect(
+        manager.isRunning('running'),
+        isTrue,
+        reason: '进行中的任务被淘汰会让占位卡的进度环凭空消失',
+      );
       released = true;
       await pending;
     });
@@ -114,11 +129,13 @@ void main() {
           id: 'v1',
           title: 'v1',
           dest: dest('v1.mp4'),
-          run: (File target,
-                  {void Function(double progress)? onProgress,
-                  void Function(int received, int? total)? onBytes,
-                  Future<void>? cancelSignal}) =>
-              throw const SocketException('connection reset by peer'),
+          run:
+              (
+                File target, {
+                void Function(double progress)? onProgress,
+                void Function(int received, int? total)? onBytes,
+                Future<void>? cancelSignal,
+              }) => throw const SocketException('connection reset by peer'),
         ),
         throwsA(isA<SocketException>()),
       );
@@ -138,10 +155,12 @@ void main() {
         isNot(equals(InterconnectDownloadManager.bookTaskId('X'))),
       );
 
-      Future<void> ok(File target,
-          {void Function(double progress)? onProgress,
-          void Function(int received, int? total)? onBytes,
-          Future<void>? cancelSignal}) async {}
+      Future<void> ok(
+        File target, {
+        void Function(double progress)? onProgress,
+        void Function(int received, int? total)? onBytes,
+        Future<void>? cancelSignal,
+      }) async {}
 
       await runOk('X'); // 视频任务（裸键）
       await manager.startBookDownload(
@@ -156,10 +175,15 @@ void main() {
         dest: dest('X.fushiaudio'),
         run: ok,
       );
-      expect(manager.tasks.length, 3,
-          reason: '同名 id 的视频/书/SRT 任务必须各占一格；共享任务表撞键会互相顶掉状态');
       expect(
-          manager.taskFor('X')!.status, InterconnectDownloadStatus.completed);
+        manager.tasks.length,
+        3,
+        reason: '同名 id 的视频/书/SRT 任务必须各占一格；共享任务表撞键会互相顶掉状态',
+      );
+      expect(
+        manager.taskFor('X')!.status,
+        InterconnectDownloadStatus.completed,
+      );
       expect(
         manager.taskFor(InterconnectDownloadManager.bookTaskId('X'))!.status,
         InterconnectDownloadStatus.completed,
@@ -178,16 +202,19 @@ void main() {
           downloadId: 'b1',
           title: 'b1',
           dest: dest('b1.epub'),
-          run: (File target,
-                  {void Function(double progress)? onProgress,
-                  void Function(int received, int? total)? onBytes,
-                  Future<void>? cancelSignal}) =>
-              throw const SocketException('connection refused'),
+          run:
+              (
+                File target, {
+                void Function(double progress)? onProgress,
+                void Function(int received, int? total)? onBytes,
+                Future<void>? cancelSignal,
+              }) => throw const SocketException('connection refused'),
         ),
         throwsA(isA<SocketException>()),
       );
-      final InterconnectDownloadTask task =
-          manager.taskFor(InterconnectDownloadManager.bookTaskId('b1'))!;
+      final InterconnectDownloadTask task = manager.taskFor(
+        InterconnectDownloadManager.bookTaskId('b1'),
+      )!;
       expect(task.status, InterconnectDownloadStatus.failed);
       expect(task.error, equals(t.sync_err_network));
     });
@@ -198,11 +225,13 @@ void main() {
           id: 'v2',
           title: 'v2',
           dest: dest('v2.mp4'),
-          run: (File target,
-                  {void Function(double progress)? onProgress,
-                  void Function(int received, int? total)? onBytes,
-                  Future<void>? cancelSignal}) =>
-              throw StateError('weird custom failure'),
+          run:
+              (
+                File target, {
+                void Function(double progress)? onProgress,
+                void Function(int received, int? total)? onBytes,
+                Future<void>? cancelSignal,
+              }) => throw StateError('weird custom failure'),
         ),
         throwsA(isA<StateError>()),
       );
@@ -214,32 +243,75 @@ void main() {
 
   group('远端占位卡把失败态渲染出来', () {
     String pageSource() => File(
-          'lib/src/pages/implementations/home_video_page.dart',
-        ).readAsStringSync().replaceAll('\r\n', '\n');
+      'lib/src/pages/implementations/home_video_page.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
 
-    test('角标按任务状态分流：running → 进度环，failed → 失败角标', () {
-      final String badge = methodBody(
+    test('副行下载态按任务状态分流：running → 进度，failed → 错误态带原文', () {
+      // 2026-10-25 材质定版（2abfd1327b）：封面角标撤掉，下载态改由
+      // `_remoteDownloadMeta` 产出副行（文字 + 进度 / 错误色）。契约不变：失败态
+      // 必须单独分流出来，否则失败永远没有卡片出口（旧实现只看 isRunning）。
+      final String meta = methodBody(
         pageSource(),
-        '  Widget? _remoteDownloadBadge(RemoteVideoInfo video, String safeKey)',
+        '  _CardDownloadMeta? _remoteDownloadMeta(',
+      );
+      final String code = compactCode(meta);
+      expect(
+        containsCodeLine(meta, 'case InterconnectDownloadStatus.failed:'),
+        isTrue,
+        reason: '失败态不分流 = 失败永远没有卡片出口（旧实现只看 isRunning）',
       );
       expect(
-          containsCodeLine(badge, 'InterconnectDownloadStatus.failed'), isTrue,
-          reason: '失败态不分流 = 失败永远没有卡片出口（旧实现只看 isRunning）');
-      expect(containsIdentifierCall(badge, 'RemoteDownloadFailedBadge'), isTrue,
-          reason: '失败角标是失败态唯一恒定的出口（SnackBar 会被 !mounted 吃掉）');
+        containsCodeLine(meta, 'case InterconnectDownloadStatus.running:'),
+        isTrue,
+        reason: '进行中仍要显示进度',
+      );
+      final int failedAt = code.indexOf(
+        'caseInterconnectDownloadStatus.failed:',
+      );
+      final int nextCaseAt = code.indexOf('case', failedAt + 1);
+      final String failedBranch = code.substring(
+        failedAt,
+        nextCaseAt < 0 ? code.length : nextCaseAt,
+      );
       expect(
-          containsIdentifierCall(badge, 'RemoteDownloadProgressBadge'), isTrue,
-          reason: '进行中仍要显示进度环');
-      expect(containsCodeLine(badge, 'task.error'), isTrue,
-          reason: 'tooltip 必须带真实错误文本，否则用户只知道「失败了」');
+        failedBranch.contains('failed:true'),
+        isTrue,
+        reason: '失败分支必须标 failed，卡片才会按错误色渲染',
+      );
+      expect(
+        failedBranch.contains("'remote_video_download_failed_\$safeKey'"),
+        isTrue,
+        reason: '失败态要有独立 key，供卡片与测试按状态定位',
+      );
+      expect(
+        failedBranch.contains('task.error'),
+        isTrue,
+        reason: '副行必须带真实错误文本，否则用户只知道「失败了」',
+      );
     });
 
-    test('占位卡渲染的是这个分流后的角标，不是裸 isRunning 判据', () {
+    test('占位卡渲染的是这个分流后的下载态，不是裸 isRunning 判据', () {
       final String card = methodBody(
         pageSource(),
         '  Widget _buildRemoteVideoCard(',
       );
-      expect(containsIdentifierCall(card, '_remoteDownloadBadge'), isTrue);
+      expect(containsIdentifierCall(card, '_remoteDownloadMeta'), isTrue);
+      final String code = compactCode(card);
+      expect(
+        code.contains('download?.label'),
+        isTrue,
+        reason: '副行文字必须优先取分流后的下载态（失败原文 / 进度）',
+      );
+      expect(
+        code.contains('download?.key'),
+        isTrue,
+        reason: '副行 key 必须随下载态切换（失败 key 才能被定位）',
+      );
+      expect(
+        code.contains('download?.failed??false?ShelfMetaTone.error'),
+        isTrue,
+        reason: '失败态必须以错误色渲染，不能与普通副行同色',
+      );
       expect(
         RegExp(r'\.isRunning\(video\.id\)').hasMatch(maskComments(card)),
         isFalse,

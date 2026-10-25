@@ -11,6 +11,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io' show ProcessException;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -174,7 +175,19 @@ class MusicLoudnessScanner extends ChangeNotifier {
           .listMusicTracksNeedingLoudnessScan(limit: 50);
       if (batch.isEmpty) break;
       for (final MusicTrackRow track in batch) {
-        final MusicLoudnessMeasurement? m = await _measure(track);
+        final MusicLoudnessMeasurement? m;
+        try {
+          m = await _measure(track);
+        } on ProcessException catch (e) {
+          // FFmpeg 本身起不来（随包 / PATH 都没有，FFmpeg 后端契约是向上抛
+          // ProcessException、由调用方处理）：这是工具缺失，不是这首读不了——
+          // 不记已扫描（装好 FFmpeg 后下一轮照测），本轮就此停下，不逐首再撞。
+          // 调用方都是 unawaited 触发，异常若漏出去就是未处理的 zone 错误。
+          _lastError = 'ffmpeg unavailable: ${e.executable}: ${e.message}';
+          debugPrint('[music-loudness] $_lastError');
+          notifyListeners();
+          return;
+        }
         await db.writeMusicTrackLoudness(
           track.trackUid,
           gain: m?.replayGainDb,

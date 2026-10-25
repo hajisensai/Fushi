@@ -224,8 +224,12 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
       currentScreenIndex: index, revealComplete: true, revealSpeed: 0, nativeSelectionActive: false,
       clearRevealTimer() {}, clearRevealRange() {}, clearCurrentSentenceAudioScreenTargets() {}, centerScreenInk() {},
       setupReaderImages() {}, buildNodeOffsets() {}, applyCurrentScreenHighlights() {},
-      refreshSentenceAudioCuePresentation() {}});
-    for (const name of ['paginate', 'renderScreen', 'completeCurrentReveal']) reader[name] = fn('vn', name);
+      refreshSentenceAudioCuePresentation() {},
+      // 本屏没有有声书句子：生产 prewrapScreenSentenceAudioCues（BUG-3776，renderScreen 在
+      // 换屏后调用）照常执行并在入口提前返回，不碰 DOM。
+      sentenceAudioCues: []});
+    for (const name of ['paginate', 'renderScreen', 'completeCurrentReveal',
+      'prewrapScreenSentenceAudioCues']) reader[name] = fn('vn', name);
     return text;
   }
   return {window, doc, html, body, native, highlights, stats, reader, selection, start, end,

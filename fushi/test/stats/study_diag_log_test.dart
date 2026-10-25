@@ -7,6 +7,8 @@ import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 用户 2026-09-12：「要有个导出日志的方式用于排查阅读速度异常」。
 ///  * [StudyDiagLog]：一行一事件、追加落盘、跨运行保留、超限保尾对齐行首；
 ///  * 会话快照行：字/时与统计页同口径（最小样本 1 分钟，不足写 `-`）；
@@ -55,18 +57,18 @@ void main() {
 
   test('会话快照行：字/时与统计页同口径，样本不足写 -', () {
     StudySession session({required int ms, required int chars}) => StudySession(
-          mediaKind: kActivityMediaBook,
-          mediaKey: 'k',
-          title: '小説',
-          format: 'epub',
-          deviceId: 'dev',
-          startAt: 0,
-          endAt: ms,
-          durationMs: ms,
-          chars: chars,
-          pages: 0,
-          segmentUids: const <String>['a', 'b'],
-        );
+      mediaKind: kActivityMediaBook,
+      mediaKey: 'k',
+      title: '小説',
+      format: 'epub',
+      deviceId: 'dev',
+      startAt: 0,
+      endAt: ms,
+      durationMs: ms,
+      chars: chars,
+      pages: 0,
+      segmentUids: const <String>['a', 'b'],
+    );
     final String ok = formatStudySessionDiagRow(
       session(ms: 30 * 60000, chars: 6000),
     );
@@ -81,10 +83,11 @@ void main() {
     test('main 装 StudyDiagLog + StudyClock.trace；时钟有静态 sink', () {
       final String main = File('lib/main.dart').readAsStringSync();
       expect(main, contains('await StudyDiagLog.instance.init();'));
+      // 空白无关：dart format 会把这条赋值在 `=>` 后拆行。
       expect(
-        main,
+        compactCode(main),
         contains(
-          "StudyClock.trace = (String line) => StudyDiagLog.instance.add('clock', line);",
+          "StudyClock.trace=(Stringline)=>StudyDiagLog.instance.add('clock',line);",
         ),
       );
       final String clock = File(
@@ -124,11 +127,14 @@ void main() {
       // 正文与参数；守卫跟着两跳：动作走 _buildStudyDiagLog，它再走
       // buildStudyDiagExport。
       expect(body, contains('_buildStudyDiagLog('));
-      final int builder =
-          settings.indexOf('Future<String> _buildStudyDiagLog(');
+      final int builder = settings.indexOf(
+        'Future<String> _buildStudyDiagLog(',
+      );
       expect(builder, greaterThanOrEqualTo(0));
-      final String builderBody =
-          settings.substring(builder, settings.indexOf(');\n', builder));
+      final String builderBody = settings.substring(
+        builder,
+        settings.indexOf(');\n', builder),
+      );
       expect(builderBody, contains('=> buildStudyDiagExport('));
       expect(builderBody, contains('appModel.database'));
       expect(body, contains('saveLogToFile('));

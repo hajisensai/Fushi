@@ -837,7 +837,12 @@ class LibraryShapeBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // passthrough：背景是纯装饰，必须对布局透明——父级给 [child] 的约束原样
+    // 下传。默认的 StackFit.loose 会把路由给页面的紧约束放松成「0 ~ 屏宽」，
+    // 根部不是 Scaffold 的页面（裸按钮 / Column / Center 等）因此缩成内容大小、
+    // 贴到左上角（showAppDialog 玻璃测试里「open」按钮跑出对话框下方即此症状）。
     return Stack(
+      fit: StackFit.passthrough,
       children: <Widget>[
         Positioned.fill(
           child: enabledOf(context)

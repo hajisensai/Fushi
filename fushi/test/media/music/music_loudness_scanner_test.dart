@@ -9,6 +9,27 @@ import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 
+import '../../helpers/unified_ffmpeg.dart';
+
+/// 只实现 [run] 的假后端：响度扫描只走 `run`。
+class _FakeFfmpegBackend implements FfmpegBackend {
+  _FakeFfmpegBackend(this._run);
+
+  final Future<FfmpegRunResult> Function(List<String> args) _run;
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) =>
+      _run(args);
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
+      throw UnimplementedError();
+
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      throw UnimplementedError();
+}
+
 const String _summary = '''
 [Parsed_ebur128_0 @ 000001] t: 2.9   TARGET:-23 LUFS    M: -21.0 S: -21.0     I: -21.0 LUFS
 [Parsed_ebur128_0 @ 000001] Summary:
@@ -167,12 +188,19 @@ void main() {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     int runs = 0;
+    // 「文件读不了」用假后端模拟（ffmpeg 对不存在的输入退出码非 0）：这条只测开关
+    // 与失败落库语义，不该依赖本机 / CI 有没有真 FFmpeg。
     final MusicLoudnessScanner scanner = MusicLoudnessScanner(
       database: () => db,
       enabled: () => false,
       ffmpeg: () {
         runs++;
-        return resolveFfmpegBackend();
+        return _FakeFfmpegBackend(
+          (List<String> args) async => const FfmpegRunResult(
+            returnCode: 1,
+            output: '/nonexistent/x.flac: No such file or directory',
+          ),
+        );
       },
     );
     await db
@@ -189,14 +217,53 @@ void main() {
     expect(x.rgTrackGain, isNull);
   });
 
+  test('FFmpeg 起不来（ProcessException）：不抛出、不记已扫描、本轮停下并记错误', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    int runs = 0;
+    final MusicLoudnessScanner scanner = MusicLoudnessScanner(
+      database: () => db,
+      enabled: () => true,
+      ffmpeg: () {
+        runs++;
+        return _FakeFfmpegBackend(
+          (List<String> args) async => throw const ProcessException(
+            'ffmpeg',
+            <String>[],
+            'No such file or directory',
+            2,
+          ),
+        );
+      },
+    );
+    await db.into(db.musicTracks).insert(_track('a', path: '/music/a.flac'));
+    await db.into(db.musicTracks).insert(_track('b', path: '/music/b.flac'));
+    // 调用方全是 unawaited：异常漏出去就是未处理的 zone 错误。
+    await scanner.schedule();
+    expect(runs, 1, reason: '工具缺失时不逐首再撞');
+    expect(scanner.isRunning, isFalse);
+    expect(scanner.lastError, contains('ffmpeg unavailable'));
+    expect(
+      (await db.getMusicTrack('a'))!.r128ScannedAt,
+      isNull,
+      reason: '工具缺失不是文件读不了：装好 FFmpeg 后下一轮要照测',
+    );
+    expect((await db.getMusicTrack('b'))!.r128ScannedAt, isNull);
+  });
+
   group('真 FFmpeg + 内存 DB', () {
+    // 统一 FFmpeg（Windows / macOS vendored）或 PATH / FUSHI_FFMPEG；都没有（如 CI 的
+    // ubuntu runner）就 skip——与仓库其它真 FFmpeg 测试同一解析入口。
+    final UnifiedFfmpegForTests? unified = resolveUnifiedFfmpegForTests();
     late FushiDatabase db;
     late Directory dir;
     setUp(() {
+      ffmpegPathOverride = unified?.ffmpeg;
       db = FushiDatabase.forTesting(NativeDatabase.memory());
       dir = Directory.systemTemp.createTempSync('fushi_music_r128_');
     });
     tearDown(() async {
+      ffmpegPathOverride = null;
       await db.close();
       dir.deleteSync(recursive: true);
     });
@@ -221,46 +288,51 @@ void main() {
       return out;
     }
 
-    test('缺标签曲目被测出增益写库，有标签的不碰；专辑增益补齐；扫过的不再扫', () async {
-      final String loud = await tone('loud.flac', 4);
-      final String quiet = await tone('quiet.flac', 1);
-      await db
-          .into(db.musicTracks)
-          .insert(_track('loud', path: loud, albumUid: 'al'));
-      await db
-          .into(db.musicTracks)
-          .insert(_track('quiet', path: quiet, albumUid: 'al'));
-      await db
-          .into(db.musicTracks)
-          .insert(_track('tagged', path: quiet, gain: -7.5));
-      int runs = 0;
-      final MusicLoudnessScanner scanner = MusicLoudnessScanner(
-        database: () => db,
-        enabled: () => true,
-        ffmpeg: () {
-          runs++;
-          return resolveFfmpegBackend();
-        },
-      );
-      await scanner.schedule();
-      expect(runs, 2, reason: '只测两首缺标签的');
-      final MusicTrackRow l = (await db.getMusicTrack('loud'))!;
-      final MusicTrackRow q = (await db.getMusicTrack('quiet'))!;
-      final MusicTrackRow t = (await db.getMusicTrack('tagged'))!;
-      expect(l.r128ScannedAt, isNotNull);
-      expect(t.rgTrackGain, -7.5);
-      expect(t.r128ScannedAt, isNull);
-      // 振幅 ×4 = +12.04 dB：响的那首增益应低约 12 dB。
-      expect(q.rgTrackGain! - l.rgTrackGain!, closeTo(12.04, 0.2));
-      expect(l.rgTrackPeak, isNotNull);
-      expect(l.rgAlbumGain, isNotNull);
-      expect(l.rgAlbumGain, q.rgAlbumGain);
-      // 专辑在两首之间、偏向响的那首（能量平均）。
-      expect(l.rgAlbumGain!, lessThan(q.rgTrackGain!));
-      expect(l.rgAlbumGain!, greaterThan(l.rgTrackGain!));
-      expect(l.rgAlbumPeak, l.rgTrackPeak);
-      await scanner.schedule();
-      expect(runs, 2, reason: '扫过的曲目不再重扫');
-    }, timeout: const Timeout(Duration(seconds: 120)));
+    test(
+      '缺标签曲目被测出增益写库，有标签的不碰；专辑增益补齐；扫过的不再扫',
+      () async {
+        final String loud = await tone('loud.flac', 4);
+        final String quiet = await tone('quiet.flac', 1);
+        await db
+            .into(db.musicTracks)
+            .insert(_track('loud', path: loud, albumUid: 'al'));
+        await db
+            .into(db.musicTracks)
+            .insert(_track('quiet', path: quiet, albumUid: 'al'));
+        await db
+            .into(db.musicTracks)
+            .insert(_track('tagged', path: quiet, gain: -7.5));
+        int runs = 0;
+        final MusicLoudnessScanner scanner = MusicLoudnessScanner(
+          database: () => db,
+          enabled: () => true,
+          ffmpeg: () {
+            runs++;
+            return resolveFfmpegBackend();
+          },
+        );
+        await scanner.schedule();
+        expect(runs, 2, reason: '只测两首缺标签的');
+        final MusicTrackRow l = (await db.getMusicTrack('loud'))!;
+        final MusicTrackRow q = (await db.getMusicTrack('quiet'))!;
+        final MusicTrackRow t = (await db.getMusicTrack('tagged'))!;
+        expect(l.r128ScannedAt, isNotNull);
+        expect(t.rgTrackGain, -7.5);
+        expect(t.r128ScannedAt, isNull);
+        // 振幅 ×4 = +12.04 dB：响的那首增益应低约 12 dB。
+        expect(q.rgTrackGain! - l.rgTrackGain!, closeTo(12.04, 0.2));
+        expect(l.rgTrackPeak, isNotNull);
+        expect(l.rgAlbumGain, isNotNull);
+        expect(l.rgAlbumGain, q.rgAlbumGain);
+        // 专辑在两首之间、偏向响的那首（能量平均）。
+        expect(l.rgAlbumGain!, lessThan(q.rgTrackGain!));
+        expect(l.rgAlbumGain!, greaterThan(l.rgTrackGain!));
+        expect(l.rgAlbumPeak, l.rgTrackPeak);
+        await scanner.schedule();
+        expect(runs, 2, reason: '扫过的曲目不再重扫');
+      },
+      timeout: const Timeout(Duration(seconds: 120)),
+      skip: unified != null ? false : '找不到统一 FFmpeg / PATH 上的 ffmpeg',
+    );
   });
 }

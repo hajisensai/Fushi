@@ -1053,6 +1053,11 @@ void main() {
     await tester.longPress(localCard);
     await tester.pumpAndSettle();
     expect(action, findsOneWidget);
+    // 1f2ddbc5d9 重做动作菜单后（分组分节 + 封面卡），800×600 测试面上这一项落在
+    // 对话框的可滚动正文下方（FushiDialogFrame 限高 0.82 屏高 + SingleChildScrollView）。
+    // 先滚到可见再点，用户同样要滚一下才看得到；不可滚就到不了，这里会照样红。
+    await tester.ensureVisible(action);
+    await tester.pumpAndSettle();
 
     await tester.runAsync(() async {
       await tester.tap(action);
