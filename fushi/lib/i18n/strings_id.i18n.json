@@ -4595,6 +4595,7 @@
   "media_server_browse_by_folder": "Browse by folder",
   "media_server_browse_by_title": "Browse shows and movies",
   "media_server_item_folder": "Folder",
+  "media_server_item_unplayed_episodes": "$n unwatched",
   "media_server_items_empty": "Tidak ada item",
   "media_server_items_load_failed": "Tidak dapat memuat item dari server",
   "media_server_libraries_title": "Pustaka",

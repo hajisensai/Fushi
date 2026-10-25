@@ -4419,14 +4419,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         onDrop: _handleVideoDrop,
         child: CardDropScope<VideoBookRow>(
           registry: _cardDropRegistry,
-          // 库页材质（2026-10-25 用户定版）：背景三块 M3E 形状，条目统一走光面
+          // 库页材质（2026-10-25 用户定版）：条目统一走光面
           // 海报（单部 = 海报、合集 = 碟盒叠层）；封面上不压任何角标，信息全进
-          // 封面下的副行（[_videoCardMeta]）。墨水屏下材质与背景自动关闭。
-          child: LibraryShapeBackdrop(
-            child: ShelfCoverMaterialScope(
-              material: ShelfCoverMaterial.glossyPoster,
-              child: _buildPageLayout(allTags),
-            ),
+          // 封面下的副行（[_videoCardMeta]）。墨水屏下材质自动关闭。
+          child: ShelfCoverMaterialScope(
+            material: ShelfCoverMaterial.glossyPoster,
+            child: _buildPageLayout(allTags),
           ),
         ),
       ),

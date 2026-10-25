@@ -4595,6 +4595,7 @@
   "media_server_browse_by_folder": "按文件夹浏览",
   "media_server_browse_by_title": "按作品浏览",
   "media_server_item_folder": "文件夹",
+  "media_server_item_unplayed_episodes": "未看 $n 集",
   "media_server_items_empty": "没有条目",
   "media_server_items_load_failed": "无法从服务器加载条目",
   "media_server_libraries_title": "媒体库",

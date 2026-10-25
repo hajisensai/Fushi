@@ -20,12 +20,12 @@ BoxFit get _bookCardCoverFit => BoxFit.fitHeight;
 /// 160/260≈0.6154，使 `fitHeight` 自然铺满卡槽、两侧残白收敛到几像素（不改 cover，
 /// 绝不触碰 TODO-552 的不裁切决策与其守卫的 cover 禁令）。
 ///
-/// 2026-10-25 库页定版：封面下的文字块换成 [ShelfCardMeta]（标题一行 + 副行一行
-/// + 进度条，约 56px，随文字缩放），封面区要保持约 1:1.42 的竖长书封比例。按
+/// 2026-10-25 库页定版：封面下的文字块换成 [ShelfCardMeta]（标题两行 + 副行一行
+/// + 进度条，约 74px，随文字缩放），封面区要保持约 1:1.42 的竖长书封比例。按
 /// 三档网格宽度（150 / 180 / 210，卡内四边各让 12px）推算：封面高 = 1.42 × 内宽，
-/// 卡槽高 = 封面高 + 文字块 + 24，卡槽比例落在 0.58–0.61，取中间档 180 / 302。
+/// 卡槽高 = 封面高 + 文字块 + 24，卡槽比例落在 0.55–0.58，取中间档 180 / 320。
 /// 文字块是固定像素，跨档仍有一两像素残差，由 fitHeight 两侧的衬底吸收。
-const double kShelfBookCardAspectRatio = 180 / 302;
+const double kShelfBookCardAspectRatio = 180 / 320;
 
 /// card domain methods extracted via part-of (TODO-587); shared private scope.
 extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {

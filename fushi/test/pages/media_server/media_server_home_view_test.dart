@@ -120,8 +120,15 @@ void main() {
       ),
       findsNWidgets(3),
     );
-    // 剧卡未看角标。
-    expect(find.text('3'), findsOneWidget);
+    // 剧卡未看集数在封面下副行（不再是封面角标）。
+    expect(
+      find.text(
+        '${t.video_filter_watch_status_unwatched} '
+        '${t.video_playlist_episodes(count: 3)}',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byType(CoverBadge), findsNothing);
   });
 
   testWidgets('库是按物理文件夹组织的：首页行显示最新作品海报，不显示文件夹卡', (WidgetTester tester) async {
@@ -173,7 +180,18 @@ void main() {
       find.descendant(of: row, matching: find.text('重生计划')),
       findsOneWidget,
     );
-    expect(find.descendant(of: row, matching: find.text('17')), findsOneWidget);
+    // 未看集数不再是封面角标，进封面下的副行（2026-10-25 材质定版）。
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.text(t.media_server_item_unplayed_episodes(n: 17)),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: row, matching: find.byType(CoverBadge)),
+      findsNothing,
+    );
     expect(find.text('完结动漫'), findsNothing, reason: '不再列库内物理文件夹');
     expect(find.text('新番完结'), findsNothing);
   });

@@ -1401,6 +1401,10 @@ class _MediaCollectionGridDetailPageState
   }
 }
 
+/// 成员卡是否套着条目材质（墨水屏下材质整体退场，仍走旧的罩层 / 描边反馈）。
+bool _hasCoverMaterial(BuildContext context, Widget card) =>
+    card is ShelfCoverMaterialScope && !isEinkTheme(context);
+
 /// 网格 / 列表切换：M3E 连接式按钮组（选中段形变）/ Apple 分段控件。
 /// 成员媒体类型 → 条目材质：书 / 字幕书 = 光面书皮、视频 = 光面海报、游戏 =
 /// 透明卡盒；未知类型不套材质。
@@ -1509,12 +1513,18 @@ class _MemberGridTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool material = _hasCoverMaterial(context, child);
     return ContextMenuTrigger(
       onInvoke: onMenu,
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
           borderRadius: tokens.radii.cardRadius,
+          // 材质卡的悬停 / 按压反馈是卡片自己的抬升 + 扫光，不再垫灰底板。
+          overlayColor: material
+              ? const WidgetStatePropertyAll<Color>(Colors.transparent)
+              : null,
+          splashFactory: material ? NoSplash.splashFactory : null,
           onTap: onTap,
           onLongPress: _memberLongPressHandler(
             context,
@@ -1847,6 +1857,7 @@ class _HoverableMemberCardState extends State<_HoverableMemberCard> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool eink = isEinkTheme(context);
+    final bool material = _hasCoverMaterial(context, widget.child);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovering = true),
@@ -1854,8 +1865,13 @@ class _HoverableMemberCardState extends State<_HoverableMemberCard> {
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          IgnorePointer(child: widget.child),
-          if (_hovering)
+          // 卡片被 IgnorePointer 挡掉了命中测试，自己的悬停收不到；由这里代收
+          // 再往下传，卡片照常走库页同一套抬升 / 扫光 / 接触阴影。
+          FushiHoverLiftHost(
+            hovering: _hovering,
+            child: IgnorePointer(child: widget.child),
+          ),
+          if (_hovering && !material)
             Positioned.fill(
               child: IgnorePointer(
                 child: DecoratedBox(

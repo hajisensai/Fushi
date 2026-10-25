@@ -4595,6 +4595,7 @@
   "media_server_browse_by_folder": "Browse by folder",
   "media_server_browse_by_title": "Browse shows and movies",
   "media_server_item_folder": "폴더",
+  "media_server_item_unplayed_episodes": "$n unwatched",
   "media_server_items_empty": "항목 없음",
   "media_server_items_load_failed": "서버에서 항목을 불러올 수 없습니다",
   "media_server_libraries_title": "라이브러리",

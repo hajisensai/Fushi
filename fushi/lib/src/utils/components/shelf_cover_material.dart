@@ -606,10 +606,13 @@ class ShelfCoverPile extends StatelessWidget {
   }
 }
 
+/// 卡片标题的默认行数（书架 / 视频 / 游戏 / 媒体服务器统一两行）。
+const int kShelfCardMetaTitleLines = 2;
+
 /// 副行的语气：普通 / 警示（部分完成）/ 错误（失败 / 缺文件）。
 enum ShelfMetaTone { normal, warning, error }
 
-/// 封面下的文字块（材质库页统一形态）：标题一行、副行一行（可带前导图标与
+/// 封面下的文字块（材质库页统一形态）：标题两行（[titleMaxLines]）、副行一行（可带前导图标与
 /// 语气色）、可选进度条。原先压在封面上的角标信息全部进副行：
 /// 「🎧 有声书 · 46%」「☁ 未下载」「7 卷 · 读到第 24 卷」「共 3 集 · 继续看第 2 集」。
 class ShelfCardMeta extends StatelessWidget {
@@ -621,10 +624,15 @@ class ShelfCardMeta extends StatelessWidget {
     this.progress,
     this.completed = false,
     this.trailing,
+    this.titleMaxLines = kShelfCardMetaTitleLines,
     super.key,
   });
 
   final String title;
+
+  /// 标题行数上限（用户 2026-10-25：卡片标题显示两行）。网格行高按同一行数算
+  /// （[heightFor] 的 `titleLines`），两边必须一致。
+  final int titleMaxLines;
   final String? subtitle;
   final IconData? leadingIcon;
   final ShelfMetaTone tone;
@@ -638,8 +646,11 @@ class ShelfCardMeta extends StatelessWidget {
   /// 副行尾部的附加小部件（如下载百分比圆环）。
   final Widget? trailing;
 
-  /// 文字块总高（随文字缩放）：标题行 + 副行 + 进度条 + 间距。
-  static double heightFor(BuildContext context) {
+  /// 文字块总高（随文字缩放）：标题 [titleLines] 行 + 副行 + 进度条 + 间距。
+  static double heightFor(
+    BuildContext context, {
+    int titleLines = kShelfCardMetaTitleLines,
+  }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
     final double titleLine = textLineHeight(
@@ -648,7 +659,7 @@ class ShelfCardMeta extends StatelessWidget {
     );
     final double subLine = textLineHeight(context, _subStyle(theme));
     return tokens.spacing.gap * 1.25 +
-        titleLine +
+        titleLine * titleLines +
         subLine +
         _kProgressGap +
         _kProgressHeight +
@@ -720,7 +731,11 @@ class ShelfCardMeta extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          ShelfTitleLine(title: title, style: titleStyle),
+          ShelfTitleLine(
+            title: title,
+            style: titleStyle,
+            maxLines: titleMaxLines,
+          ),
           Row(
             children: <Widget>[
               if (leadingIcon != null) ...<Widget>[
@@ -774,22 +789,29 @@ class ShelfCardMeta extends StatelessWidget {
   }
 }
 
-/// 一行标题：放不下时桌面悬停显示全名（与 [ShelfCardFooter] 同一套溢出提示）。
+/// 卡片标题：最多 [maxLines] 行，放不下时桌面悬停显示全名（与 [ShelfCardFooter]
+/// 同一套溢出提示）。
 class ShelfTitleLine extends StatelessWidget {
-  const ShelfTitleLine({required this.title, required this.style, super.key});
+  const ShelfTitleLine({
+    required this.title,
+    required this.style,
+    this.maxLines = kShelfCardMetaTitleLines,
+    super.key,
+  });
 
   final String title;
   final TextStyle style;
+  final int maxLines;
 
   @override
   Widget build(BuildContext context) {
     return ShelfTitleOverflowTooltip(
       title: title,
       style: style,
-      maxLines: 1,
+      maxLines: maxLines,
       child: Text(
         title,
-        maxLines: 1,
+        maxLines: maxLines,
         overflow: TextOverflow.ellipsis,
         style: style,
       ),
@@ -797,17 +819,42 @@ class ShelfTitleLine extends StatelessWidget {
   }
 }
 
-/// 库页背景：角落三块低饱和 M3E 形状（9 瓣饼干 / 四叶 / 6 瓣饼干），颜色取动态
-/// 主题的 container 色阶，深浅色都跟着走。只在 Material 设计系统下画（Apple /
-/// 墨水屏原样返回 [child]）。形状是纯装饰：不参与命中、不进无障碍树。
+/// 应用背景：角落三块低饱和 M3E 形状（9 瓣饼干 / 四叶 / 6 瓣饼干），颜色取动态
+/// 主题的 container 色阶，深浅色都跟着走。2026-10-25 先定在库页，同日用户拍板
+/// 「整个应用都加」，由路由层 `FushiPageBackdrop` 给每一页垫上。只在 Material
+/// 设计系统下画（Apple / 墨水屏不画）。形状是纯装饰：不参与命中、不进无障碍树。
+///
+/// 子树结构恒定（不画时形状层换成空盒，[child] 位置不变）：切换设计系统 / 墨水
+/// 屏时页面 State 不重建。
 class LibraryShapeBackdrop extends StatelessWidget {
   const LibraryShapeBackdrop({required this.child, super.key});
 
   final Widget child;
 
+  /// 当前主题下是否画形状（Material 设计系统且不是墨水屏）。
+  static bool enabledOf(BuildContext context) =>
+      !isEinkTheme(context) && !isGlassDesign(context);
+
   @override
   Widget build(BuildContext context) {
-    if (isEinkTheme(context) || isGlassDesign(context)) return child;
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: enabledOf(context)
+              ? const _LibraryShapeLayer()
+              : const SizedBox.shrink(),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+class _LibraryShapeLayer extends StatelessWidget {
+  const _LibraryShapeLayer();
+
+  @override
+  Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool dark = cs.brightness == Brightness.dark;
     Widget blob(RoundedPolygon shape, Color color, double alpha) =>
@@ -817,62 +864,55 @@ class LibraryShapeBackdrop extends StatelessWidget {
             shape: MaterialShapeBorder(shape: shape),
           ),
         );
-    return Stack(
-      children: <Widget>[
-        Positioned.fill(
-          child: IgnorePointer(
-            child: ExcludeSemantics(
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints c) {
-                  final double unit = math.min(c.maxWidth, c.maxHeight);
-                  final double big = unit * 0.52;
-                  final double mid = unit * 0.38;
-                  final double small = unit * 0.25;
-                  return Stack(
-                    clipBehavior: Clip.hardEdge,
-                    children: <Widget>[
-                      Positioned(
-                        right: -big * 0.15,
-                        top: -big * 0.28,
-                        width: big,
-                        height: big,
-                        child: blob(
-                          MaterialShapes.cookie9Sided,
-                          cs.primaryContainer,
-                          dark ? 0.35 : 0.8,
-                        ),
-                      ),
-                      Positioned(
-                        left: unit * 0.05,
-                        bottom: -mid * 0.2,
-                        width: mid,
-                        height: mid,
-                        child: blob(
-                          MaterialShapes.clover4Leaf,
-                          cs.tertiaryContainer,
-                          dark ? 0.32 : 0.65,
-                        ),
-                      ),
-                      Positioned(
-                        right: c.maxWidth * 0.24,
-                        bottom: -small * 0.2,
-                        width: small,
-                        height: small,
-                        child: blob(
-                          MaterialShapes.cookie6Sided,
-                          cs.secondaryContainer,
-                          dark ? 0.32 : 0.6,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints c) {
+            final double unit = math.min(c.maxWidth, c.maxHeight);
+            final double big = unit * 0.52;
+            final double mid = unit * 0.38;
+            final double small = unit * 0.25;
+            return Stack(
+              clipBehavior: Clip.hardEdge,
+              children: <Widget>[
+                Positioned(
+                  right: -big * 0.15,
+                  top: -big * 0.28,
+                  width: big,
+                  height: big,
+                  child: blob(
+                    MaterialShapes.cookie9Sided,
+                    cs.primaryContainer,
+                    dark ? 0.35 : 0.8,
+                  ),
+                ),
+                Positioned(
+                  left: unit * 0.05,
+                  bottom: -mid * 0.2,
+                  width: mid,
+                  height: mid,
+                  child: blob(
+                    MaterialShapes.clover4Leaf,
+                    cs.tertiaryContainer,
+                    dark ? 0.32 : 0.65,
+                  ),
+                ),
+                Positioned(
+                  right: c.maxWidth * 0.24,
+                  bottom: -small * 0.2,
+                  width: small,
+                  height: small,
+                  child: blob(
+                    MaterialShapes.cookie6Sided,
+                    cs.secondaryContainer,
+                    dark ? 0.32 : 0.6,
+                  ),
+                ),
+              ],
+            );
+          },
         ),
-        child,
-      ],
+      ),
     );
   }
 }

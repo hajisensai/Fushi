@@ -774,8 +774,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     // BUG-1911：**不要**把三元收回来。在途下载占位与「库里有什么 / 筛出了什么」
     // 是两条正交的渲染输入，分支判定整个下沉到 [_buildBody]；这里再挑一次分支就
     // 等于重新把占位关进网格分支里。
-    // 库页材质（2026-10-25 用户定版）：背景三块 M3E 形状（[LibraryShapeBackdrop]，
-    // Apple / 墨水屏原样返回），网格条目走透明卡盒（材质作用域挂在网格 sliver 上，
+    // 库页材质（2026-10-25 用户定版）：网格条目走透明卡盒（材质作用域挂在网格 sliver 上，
     // 见 [_buildLibrarySlivers]）。
     final Widget body = FushiFileDropTarget(
       debugLabel: 'games-library',
@@ -799,13 +798,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             if (_games.isNotEmpty) _buildTagFilterBar(allTags),
           ],
         ),
-        child: LibraryShapeBackdrop(
-          child: FushiFloatingChromeScrollInset(
-            child: _buildBody(
-              context,
-              visible,
-              tagFilterActive: allowedIds != null,
-            ),
+        child: FushiFloatingChromeScrollInset(
+          child: _buildBody(
+            context,
+            visible,
+            tagFilterActive: allowedIds != null,
           ),
         ),
       ),

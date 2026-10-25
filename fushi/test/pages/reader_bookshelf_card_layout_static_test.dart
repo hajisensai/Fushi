@@ -202,7 +202,7 @@ void main() {
     // ① 书类卡槽比例常量必须存在（窄，接近书封比例）。
     expect(
       source,
-      contains('const double kShelfBookCardAspectRatio = 180 / 302;'),
+      contains('const double kShelfBookCardAspectRatio = 180 / 320;'),
       reason:
           'book/audiobook/SRT/remote cards keep a ~1:1.42 cover above the '
           'ShelfCardMeta text block (2026-10-25), so fitHeight fills the slot '

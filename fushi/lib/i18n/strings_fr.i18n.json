@@ -4595,6 +4595,7 @@
   "media_server_browse_by_folder": "Browse by folder",
   "media_server_browse_by_title": "Browse shows and movies",
   "media_server_item_folder": "Dossier",
+  "media_server_item_unplayed_episodes": "$n unwatched",
   "media_server_items_empty": "Aucun élément",
   "media_server_items_load_failed": "Impossible de charger les éléments depuis le serveur",
   "media_server_libraries_title": "Bibliothèques",

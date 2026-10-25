@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'dart:async';
 import 'dart:io';
@@ -354,7 +355,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// Hero 背景：模糊封面（淡入）+ 融进页面底的渐变。树结构恒定——无封面 / 墨水屏
   /// 只把不透明度压到 0，不增删层。
   Widget _heroBackdrop(BuildContext context, GalgameEntry game) {
-    final Color page = Theme.of(context).scaffoldBackgroundColor;
+    final Color page = fushiOpaquePageColor(context);
     final String? cover = game.coverPath;
     final bool show =
         !isEinkTheme(context) &&

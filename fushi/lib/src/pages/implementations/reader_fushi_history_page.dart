@@ -2056,57 +2056,53 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     }
     // 2026-10 动效重做：书架首屏的散书卡错峰淡入（见 FushiStaggeredEntrance）；
     // 窗口关闭后滚动带出的卡瞬间出现，不拖影。
-    // 2026-10-25 库页定版：角落三块低饱和 M3E 形状垫在书架主体后面（只在
-    // Material 设计系统下画，Apple / 墨水屏原样返回）。
-    return LibraryShapeBackdrop(
-      child: FushiEntranceScope(
-        child: FushiScrollbar(
-          controller: _shelfScrollController,
-          child: LayoutBuilder(
-            // 下拉刷新：保活后切回书架不再隐式重拉远端，给用户显式强制刷新入口。
-            builder: (context, constraints) => RefreshIndicator(
-              onRefresh: _pullToRefreshBooks,
-              // 叠放工具区的高度（恒定，不随显隐变）：转圈从工具区下沿出来。
-              edgeOffset: FushiFloatingChromeInset.of(context),
-              child: CustomScrollView(
-                controller: _shelfScrollController,
-                physics: const AlwaysScrollableScrollPhysics(
-                  parent: BouncingScrollPhysics(),
-                ),
-                slivers: [
-                  // 叠放工具区让出的顶部高度（不在外壳里时为 0）+ 原有的 gap：内容
-                  // 从工具区下方开始、滚动时滚到工具区底下。
-                  SliverToBoxAdapter(
-                    child: SizedBox(
-                      height:
-                          FushiFloatingChromeInset.of(context) +
-                          tokens.spacing.gap,
-                    ),
-                  ),
-                  // 书架顶部「继续阅读 hero」条。原并排的「统计」三格（总数/在读/
-                  // 已完成）按用户反馈移除——右上角「阅读统计」已有完整入口，此处
-                  // 属重复信息。无在读候选时整条隐藏。
-                  // BUG-804：hero 喂**未过滤的全量 EPUB-backed `books`**（含有声书），
-                  // 不是 srt 过滤后的 `epubBooks`——否则读了有声书「继续阅读」永不更新。
-                  if (epubBooks.isNotEmpty || srtBooks.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: _buildShelfOverviewSection(shelfBooks),
-                    ),
-                  // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
-                  // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
-                  // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频不再进书架
-                  // （归「视频」tab 独占）。
-                  // 合集折成网格里的一个格子，与散书同一个 SliverGrid。多端库联合
-                  // 视图（spec §2.1）：远端占位书已作为散卡混入 shelfGroups（撤独立远端分区），
-                  // shelfGroups 非空即渲染（含仅远端占位、无任何本地书的情形）。
-                  if (shelfGroups.isNotEmpty)
-                    ..._buildShelfGroupSlivers(
-                      shelfGroups,
-                      epubCoverUrisByBookKey,
-                      constraints,
-                    ),
-                ],
+    return FushiEntranceScope(
+      child: FushiScrollbar(
+        controller: _shelfScrollController,
+        child: LayoutBuilder(
+          // 下拉刷新：保活后切回书架不再隐式重拉远端，给用户显式强制刷新入口。
+          builder: (context, constraints) => RefreshIndicator(
+            onRefresh: _pullToRefreshBooks,
+            // 叠放工具区的高度（恒定，不随显隐变）：转圈从工具区下沿出来。
+            edgeOffset: FushiFloatingChromeInset.of(context),
+            child: CustomScrollView(
+              controller: _shelfScrollController,
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
               ),
+              slivers: [
+                // 叠放工具区让出的顶部高度（不在外壳里时为 0）+ 原有的 gap：内容
+                // 从工具区下方开始、滚动时滚到工具区底下。
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height:
+                        FushiFloatingChromeInset.of(context) +
+                        tokens.spacing.gap,
+                  ),
+                ),
+                // 书架顶部「继续阅读 hero」条。原并排的「统计」三格（总数/在读/
+                // 已完成）按用户反馈移除——右上角「阅读统计」已有完整入口，此处
+                // 属重复信息。无在读候选时整条隐藏。
+                // BUG-804：hero 喂**未过滤的全量 EPUB-backed `books`**（含有声书），
+                // 不是 srt 过滤后的 `epubBooks`——否则读了有声书「继续阅读」永不更新。
+                if (epubBooks.isNotEmpty || srtBooks.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: _buildShelfOverviewSection(shelfBooks),
+                  ),
+                // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
+                // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
+                // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频不再进书架
+                // （归「视频」tab 独占）。
+                // 合集折成网格里的一个格子，与散书同一个 SliverGrid。多端库联合
+                // 视图（spec §2.1）：远端占位书已作为散卡混入 shelfGroups（撤独立远端分区），
+                // shelfGroups 非空即渲染（含仅远端占位、无任何本地书的情形）。
+                if (shelfGroups.isNotEmpty)
+                  ..._buildShelfGroupSlivers(
+                    shelfGroups,
+                    epubCoverUrisByBookKey,
+                    constraints,
+                  ),
+              ],
             ),
           ),
         ),

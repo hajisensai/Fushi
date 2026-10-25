@@ -4595,6 +4595,7 @@
   "media_server_browse_by_folder": "Browse by folder",
   "media_server_browse_by_title": "Browse shows and movies",
   "media_server_item_folder": "Pasta",
+  "media_server_item_unplayed_episodes": "$n unwatched",
   "media_server_items_empty": "Nenhum item",
   "media_server_items_load_failed": "Não foi possível carregar os itens do servidor",
   "media_server_libraries_title": "Bibliotecas",

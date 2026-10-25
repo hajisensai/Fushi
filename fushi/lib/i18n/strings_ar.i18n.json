@@ -4595,6 +4595,7 @@
   "media_server_browse_by_folder": "Browse by folder",
   "media_server_browse_by_title": "Browse shows and movies",
   "media_server_item_folder": "مجلد",
+  "media_server_item_unplayed_episodes": "$n unwatched",
   "media_server_items_empty": "لا توجد عناصر",
   "media_server_items_load_failed": "تعذّر تحميل العناصر من الخادم",
   "media_server_libraries_title": "المكتبات",

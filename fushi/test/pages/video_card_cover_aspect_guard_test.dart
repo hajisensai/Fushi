@@ -72,13 +72,19 @@ void main() {
             '文字块高度浮动、把空隙灌回封面区（BUG-928 回归）',
       );
 
-      // 2026-10-25 库页材质定版：文字块统一为 [ShelfCardMeta]（标题一行 +
-      // 副行 + 进度条，三个库同一形态）；长标题由 ShelfTitleLine 的溢出 tooltip
-      // 与长按菜单看全名（BUG-1184 的「看不全」出口）。
+      // 2026-10-25 库页材质定版：文字块统一为 [ShelfCardMeta]（标题 + 副行 +
+      // 进度条，三个库同一形态）。标题仍是两行（BUG-1184：窄屏卡宽约 154px，
+      // 单行放不下常见的日文剧名；用户 10-25 复核「卡片标题要显示两行」），
+      // 行数由 kShelfCardMetaTitleLines 一处钉住。
       expect(
         body,
         contains('_videoCardMeta('),
         reason: '$name 文字块必须走统一的 _videoCardMeta / ShelfCardMeta',
+      );
+      expect(
+        kShelfCardMetaTitleLines,
+        2,
+        reason: '卡片标题必须两行（BUG-1184 / 用户 2026-10-25）',
       );
     }
   });
@@ -148,7 +154,7 @@ void main() {
       );
       expect(
         measured!,
-        greaterThan(40),
+        greaterThan(60),
         reason:
             '标题行 + 副行 + 进度条装不下 40px——低于这个值说明公式漏了一行或行高，'
             '大字号下会裁字（BUG-1184）',

@@ -4595,6 +4595,7 @@
   "media_server_browse_by_folder": "Browse by folder",
   "media_server_browse_by_title": "Browse shows and movies",
   "media_server_item_folder": "フォルダー",
+  "media_server_item_unplayed_episodes": "未視聴 $n 話",
   "media_server_items_empty": "項目がありません",
   "media_server_items_load_failed": "サーバーから項目を読み込めませんでした",
   "media_server_libraries_title": "ライブラリ",

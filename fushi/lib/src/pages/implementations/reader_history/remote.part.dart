@@ -437,7 +437,11 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         return _RemoteCardTaskView(
           meta: _ShelfMetaSpec(
             key: ValueKey<String>('${keyPrefix}_cloud_badge_$safeKey'),
-            status: withKind(t.shelf_card_meta_not_downloaded),
+            // 「远端 · 未下载」：没有封面角标后，远端身份只靠这一行认出来
+            // （用户 2026-10-25 追问「怎么知道是远端的」）。
+            status: withKind(
+              '${t.home_remote_source} · ${t.shelf_card_meta_not_downloaded}',
+            ),
             icon: FushiIcons.cloud,
             tooltip: t.remote_book_download,
           ),

@@ -4595,6 +4595,7 @@
   "media_server_browse_by_folder": "Browse by folder",
   "media_server_browse_by_title": "Browse shows and movies",
   "media_server_item_folder": "資料夾",
+  "media_server_item_unplayed_episodes": "未看 $n 集",
   "media_server_items_empty": "沒有條目",
   "media_server_items_load_failed": "無法從伺服器加載條目",
   "media_server_libraries_title": "媒體庫",
