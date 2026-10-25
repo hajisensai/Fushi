@@ -122,6 +122,32 @@ void main() {
         expect(n.capMb, greaterThanOrEqualTo(8192), reason: '$k');
       }
     });
+
+    // 2026-10-25: analyze is mostly memory and under one core; holding a
+    // regular slot at its full ceiling made tests queue behind it.
+    test('only analyze is light and books less than its ceiling', () {
+      for (final HeavyKind k in HeavyKind.values) {
+        final HeavyNeed n = heavyNeedFor(k);
+        expect(n.light, k == HeavyKind.analyze, reason: '$k');
+        expect(n.bookedMb, lessThanOrEqualTo(n.capMb), reason: '$k');
+        if (k != HeavyKind.analyze) {
+          expect(n.bookedMb, n.capMb, reason: '$k');
+        }
+      }
+      final HeavyNeed analyze = heavyNeedFor(HeavyKind.analyze);
+      expect(analyze.capMb, 8192);
+      expect(analyze.bookedMb, 4608);
+      // Still never three test runs at once on a 64 GB machine (2026-10-19);
+      // two tests and an analyze fit, as do a test and both light slots.
+      final int test = heavyNeedFor(HeavyKind.test).bookedMb;
+      final int budget = defaultHeavyBudgetMb(65156);
+      expect(3 * test, greaterThan(budget));
+      expect(2 * test + analyze.bookedMb, lessThanOrEqualTo(budget));
+      expect(
+        test + kLightSlotCount * analyze.bookedMb,
+        lessThanOrEqualTo(budget),
+      );
+    });
   });
 
   test('defaultHeavySlots: one per 20 GB, 1..4', () {
@@ -140,9 +166,9 @@ void main() {
   // 2026-10-19 (owner's call): three 12-16 GB ceilings promised 48 GB on a
   // 64 GB desktop full of agent sessions; the commit limit ran out.
   test('heavyBudgetBlocker books the holders\' ceilings, not free RAM', () {
-    final int test = heavyNeedFor(HeavyKind.test).capMb;
-    final int analyze = heavyNeedFor(HeavyKind.analyze).capMb;
-    final int build = heavyNeedFor(HeavyKind.build).capMb;
+    final int test = heavyNeedFor(HeavyKind.test).bookedMb;
+    final int analyze = heavyNeedFor(HeavyKind.analyze).bookedMb;
+    final int build = heavyNeedFor(HeavyKind.build).bookedMb;
     const int budget = 32768;
     // Idle machine: always starts, even past the budget on its own.
     expect(

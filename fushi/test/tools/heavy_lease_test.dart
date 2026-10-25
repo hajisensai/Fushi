@@ -33,7 +33,8 @@ void main() {
 
   Future<HeavyLease> take(
     int slots, {
-    HeavyKind kind = HeavyKind.analyze,
+    // Not analyze: that one is light (own slots, no queue), see below.
+    HeavyKind kind = HeavyKind.other,
     String? worktree,
     MemorySnapshot memory = roomy,
     int? budgetMb,
@@ -67,7 +68,7 @@ void main() {
           isA<HeavyLeaseTimeout>().having(
             (HeavyLeaseTimeout e) => e.message,
             'message',
-            allOf(contains('all 1 slots busy'), contains('lease-analyze')),
+            allOf(contains('all 1 slots busy'), contains('lease-other')),
           ),
         ),
       );
@@ -133,14 +134,15 @@ void main() {
           ),
         ),
       );
-      // An analyze still fits next to the two test runs.
+      // An analyze still fits next to the two test runs, booked at its
+      // measured footprint rather than its 8 GB ceiling.
       final HeavyLease a = await take(4, kind: HeavyKind.analyze);
       expect(
         readHeavyHolders(
           Directory('${tmp.path}/state'),
           4,
         ).map((HeavyHolder h) => h.bookedMb).fold(0, (int s, int m) => s + m),
-        32768,
+        24576 + 4608,
       );
       a.release();
       t2.release();
@@ -198,9 +200,9 @@ void main() {
             ),
           ),
         );
-        // An analyze fits next to it, in one of our own slots.
-        final HeavyLease a = await take(2);
-        expect(a.slot, 0);
+        // An analyze fits next to it, in a light slot.
+        final HeavyLease a = await take(2, kind: HeavyKind.analyze);
+        expect(a.slot, kLightSlotBase);
         a.release();
       } finally {
         await child.stdin.close();
@@ -259,7 +261,7 @@ void main() {
     expect(admitted, isFalse);
     expect(
       readHeavyQueue(Directory('${tmp.path}/state')).map((q) => q.label),
-      <String>['lease-analyze'],
+      <String>['lease-other'],
     );
     a.release();
     final HeavyLease b = await waiting;
@@ -329,6 +331,64 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 90)),
   );
+
+  // 2026-10-25 (owner's feedback: "analyze barely uses CPU but holds task
+  // slots and slows the tests down"): analyze takes no regular slot and no
+  // queue ticket, only memory budget.
+  test('analyze runs while every slot is busy and never queues', () async {
+    final HeavyLease t = await take(1, kind: HeavyKind.test);
+    bool queued = false;
+    final Future<HeavyLease> waiting = take(
+      1,
+      kind: HeavyKind.test,
+      waitMax: null,
+    )..then((_) => queued = true);
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    expect(readHeavyQueue(Directory('${tmp.path}/state')), hasLength(1));
+    final HeavyLease a = await take(1, kind: HeavyKind.analyze);
+    expect(a.slot, kLightSlotBase);
+    expect(a.waited, lessThan(const Duration(seconds: 1)));
+    // It took no ticket and left the regular slot for the queued test.
+    expect(
+      readHeavyQueue(Directory('${tmp.path}/state')).map((q) => q.label),
+      <String>['lease-test'],
+    );
+    expect(queued, isFalse);
+    t.release();
+    final HeavyLease t2 = await waiting;
+    expect(t2.slot, 0);
+    a.release();
+    t2.release();
+  });
+
+  test('light slots are bounded and still book the budget', () async {
+    final HeavyLease a1 = await take(1, kind: HeavyKind.analyze);
+    final HeavyLease a2 = await take(1, kind: HeavyKind.analyze);
+    expect(<int?>{a1.slot, a2.slot}, <int>{kLightSlotBase, kLightSlotBase + 1});
+    await expectLater(
+      take(1, kind: HeavyKind.analyze),
+      throwsA(
+        isA<HeavyLeaseTimeout>().having(
+          (HeavyLeaseTimeout e) => e.message,
+          'message',
+          contains('all $kLightSlotCount light slots busy'),
+        ),
+      ),
+    );
+    // Two analyzes (9216 MB) + a test (12288 MB) > a 16 GB budget.
+    await expectLater(
+      take(1, kind: HeavyKind.test, budgetMb: 16384),
+      throwsA(
+        isA<HeavyLeaseTimeout>().having(
+          (HeavyLeaseTimeout e) => e.message,
+          'message',
+          contains('9216 MB booked + 12288 MB > 16384 MB'),
+        ),
+      ),
+    );
+    a2.release();
+    a1.release();
+  });
 
   test('children inherit the lease; nested tools take none', () async {
     final HeavyLease a = await take(1);

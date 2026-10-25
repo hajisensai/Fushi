@@ -30,6 +30,8 @@ class HeavyNeed {
     required this.kind,
     required this.capMb,
     required this.worktreeExclusive,
+    this.bookMb,
+    this.light = false,
   });
 
   final HeavyKind kind;
@@ -41,17 +43,45 @@ class HeavyNeed {
   /// Runs that write the checkout's build/ (native assets, sqlite3.dll,
   /// result files) must not overlap inside one worktree.
   final bool worktreeExclusive;
+
+  /// What the run counts against the budget when that is below [capMb]
+  /// (see [bookedMb]); null books the ceiling itself.
+  final int? bookMb;
+
+  /// A light run (analyze) takes no regular slot and no queue ticket: it holds
+  /// one of [kLightSlotCount] separate slots and only has to fit the memory
+  /// budget, so it never makes a test or build wait for a slot and never
+  /// waits behind one.
+  final bool light;
+
+  /// What this run books against the budget.
+  int get bookedMb => bookMb ?? capMb;
 }
+
+/// Light runs hold `slot-<kLightSlotBase + i>.lock`; every holder enumerates
+/// all slot files, so they book the budget for every checkout's tool.
+const int kLightSlotBase = 100;
+
+/// At most this many light runs at once (two analyzes book 9 GB; they still
+/// have to fit the budget next to the tests and builds).
+const int kLightSlotCount = 2;
 
 const HeavyNeed _test = HeavyNeed(
   kind: HeavyKind.test,
   capMb: 12288,
   worktreeExclusive: true,
 );
+// Analyze (2026-10-25, measured): 1004 local runs peaked at p50 3.4 GB /
+// p90 4.0 GB / max 7.8 GB, never hit the 8 GB ceiling, and the analysis
+// server averages under one core. Holding a regular slot and booking the
+// full ceiling made tests queue behind it (11 h of queueing on analyze across
+// those runs) for a job that is mostly memory, so it books ~p90 and is light.
 const HeavyNeed _analyze = HeavyNeed(
   kind: HeavyKind.analyze,
   capMb: 8192,
+  bookMb: 4608,
   worktreeExclusive: false,
+  light: true,
 );
 const HeavyNeed _build = HeavyNeed(
   kind: HeavyKind.build,
@@ -244,7 +274,8 @@ class HeavyHolder {
   final String label;
   final String cwd;
 
-  /// The memory ceiling the holder booked; null when it recorded none.
+  /// The memory the holder booked (its need's [HeavyNeed.bookedMb], which is
+  /// its ceiling except for analyze); null when it recorded none.
   final int? capMb;
 
   /// What this holder counts against the budget.

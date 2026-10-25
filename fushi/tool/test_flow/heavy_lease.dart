@@ -191,6 +191,25 @@ Future<HeavyLease> acquireHeavyLease({
     worktree = await _waitWorktreeLock(worktreeRoot, label, sw, waitMax, say);
   }
   try {
+    // A light run neither queues nor waits behind this process's other lanes:
+    // the chain is held for a lane's whole wait, so pre_push_check --parallel
+    // would park its analyze behind a test lane waiting for a slot. Each
+    // admission attempt is one synchronous block under the gate, so skipping
+    // the chain cannot interleave two attempts.
+    if (need.light) {
+      return await _waitSlot(
+        dir,
+        need,
+        label,
+        sw,
+        waitMax,
+        say,
+        worktree,
+        env: env,
+        readMemory: readMemory,
+        poll: poll,
+      );
+    }
     final Completer<void> mine = Completer<void>();
     final Future<void> before = _admissionChain;
     _admissionChain = mine.future;
@@ -378,7 +397,9 @@ Future<HeavyLease> _waitSlot(
       String reason;
       try {
         gate.lockSync(FileLock.blockingExclusive);
-        ticket ??= _Ticket.take(dir, label);
+        // A light run (analyze) does not queue: it never takes a regular
+        // slot, so a slot waiter at the head has nothing to wait on it for.
+        if (!need.light) ticket ??= _Ticket.take(dir, label);
         final (HeavyLease? lease, String blocker) = _admitHead(
           dir,
           need,
@@ -413,12 +434,12 @@ Future<HeavyLease> _waitSlot(
 }
 
 /// Under the admission gate: the slot lease for [ticket] if it heads the
-/// queue, a slot is free and [need]'s ceiling fits the budget, else null and
-/// why not.
+/// queue, a slot is free and [need]'s booking fits the budget, else null and
+/// why not. A light [need] has no ticket and picks among the light slots.
 (HeavyLease?, String) _admitHead(
   Directory dir,
   HeavyNeed need,
-  _Ticket ticket,
+  _Ticket? ticket,
   String label,
   Stopwatch sw,
   void Function(String) say,
@@ -426,33 +447,43 @@ Future<HeavyLease> _waitSlot(
   required Map<String, String> env,
   required MemorySnapshot? Function() readMemory,
 }) {
-  final List<HeavyQueued> queue = readHeavyQueue(dir);
-  final int ahead = queue.indexWhere((HeavyQueued q) => q.name == ticket.name);
-  if (ahead > 0) {
-    return (
-      null,
-      'queued behind $ahead earlier run(s): '
-          '${queue.take(ahead).map((HeavyQueued q) => q.label).join(', ')}',
+  if (ticket != null) {
+    final List<HeavyQueued> queue = readHeavyQueue(dir);
+    final int ahead = queue.indexWhere(
+      (HeavyQueued q) => q.name == ticket.name,
     );
+    if (ahead > 0) {
+      return (
+        null,
+        'queued behind $ahead earlier run(s): '
+            '${queue.take(ahead).map((HeavyQueued q) => q.label).join(', ')}',
+      );
+    }
   }
   final MemorySnapshot? memory = readMemory();
   final int slots = heavySlotCount(memory, env);
   final List<HeavyHolder> holders = readHeavyHolders(dir, slots);
   final Set<int> busy = holders.map((HeavyHolder h) => h.slot).toSet();
-  // Holders past our own slot count book memory below but are no slot of
-  // ours: "full" means every one of 0..slots-1 is taken.
-  if (!Iterable<int>.generate(slots).any((int i) => !busy.contains(i))) {
+  final List<int> candidates = need.light
+      ? <int>[for (int i = 0; i < kLightSlotCount; i++) kLightSlotBase + i]
+      : <int>[for (int i = 0; i < slots; i++) i];
+  // Holders past our own range book memory below but are no slot of ours:
+  // "full" means every candidate is taken.
+  if (!candidates.any((int i) => !busy.contains(i))) {
+    final Iterable<HeavyHolder> rivals = holders.where(
+      (HeavyHolder h) => candidates.contains(h.slot),
+    );
     return (
       null,
-      'all $slots slots busy: '
-          '${holders.map((HeavyHolder h) => '${h.label} (pid ${h.pid})').join(', ')}',
+      'all ${candidates.length} ${need.light ? 'light ' : ''}slots busy: '
+          '${rivals.map((HeavyHolder h) => '${h.label} (pid ${h.pid})').join(', ')}',
     );
   }
   final int? budget = heavyBudgetMb(memory, env);
   final String? overBudget = budget == null
       ? null
       : heavyBudgetBlocker(
-          needMb: need.capMb,
+          needMb: need.bookedMb,
           heldCapsMb: <int>[for (final HeavyHolder h in holders) h.bookedMb],
           budgetMb: budget,
         );
@@ -463,7 +494,7 @@ Future<HeavyLease> _waitSlot(
           '${holders.map((HeavyHolder h) => '${h.label} (pid ${h.pid}, ${h.bookedMb} MB)').join(', ')}',
     );
   }
-  for (int i = 0; i < slots; i++) {
+  for (final int i in candidates) {
     if (busy.contains(i) || _heldInProcess.contains(i)) continue;
     final RandomAccessFile? lock = _tryLock(File('${dir.path}/slot-$i.lock'));
     if (lock == null) continue;
@@ -478,7 +509,7 @@ Future<HeavyLease> _waitSlot(
             startedAtMs: DateTime.now().millisecondsSinceEpoch,
             label: label,
             cwd: Directory.current.path,
-            capMb: need.capMb,
+            capMb: need.bookedMb,
           ).toJson(),
         ),
       );
