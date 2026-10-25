@@ -41,6 +41,7 @@
 | [BUG-3773](bugs/BUG-3773-chrome-harness-fushi-local-mdns-stall.md) | ✅ | ✅ | chrome-harness-fushi-local-mdns-stall |
 | [BUG-3773](bugs/BUG-3773-tts-emphasis-dot-ruby-reads-dots.md) | ✅ | ✅ | TTS 朗读把傍点 ruby（`・・` / `﹅`）当读音，着重的词整个读丢 |
 | [BUG-3773](bugs/BUG-3773-floating-ball-tap-leaks-to-reader.md) | ✅ | ✅ | 小说阅读器里点应用内悬浮球会唤出顶栏 / 底栏 |
+| [BUG-3773](bugs/BUG-3773-popup-headword-clipped-eink.md) | ✅ | ✅ | 墨水屏 / Apple 设计系统窄弹窗词头右侧被裁 |
 | [BUG-3772](bugs/BUG-3772-srs-stats-full-log-decode.md) | ✅ | ✅ | SRS 统计页每次全量读复习日志逐条 jsonDecode，随日志量线性变慢 |
 | [BUG-3771](bugs/BUG-3771-stats-overview-missing-srs-review-time.md) | ✅ | ✅ | 统计中心总览看不到 SRS 复习时长（含导入的 Anki 复习时长） |
 | [BUG-3770](bugs/BUG-3770-srs-clock-skew-false-alarm-long-sync.md) | ✅ | ✅ | srs-clock-skew-false-alarm-long-sync |
