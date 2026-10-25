@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
@@ -109,7 +110,7 @@ class FushiComputeTs {
   }) {
     final Pointer<Void> h = Pointer<Void>.fromAddress(handle);
     final Pointer<Uint8> src = NativeScratch.input.reserve(data.length);
-    src.asTypedList(data.length).setAll(0, data);
+    src.asTypedListOutOfLine(data.length).setAll(0, data);
     final int cap = _bound(h, data.length);
     final Pointer<Uint8> out = NativeScratch.output.reserve(cap);
     final Pointer<Size> outLen = malloc<Size>();
@@ -131,7 +132,7 @@ class FushiComputeTs {
       }
       final int n = outLen.value;
       // 一次拷回 Dart 堆，各包取它的视图（不逐包分配）。
-      final Uint8List bytes = Uint8List.fromList(out.asTypedList(n));
+      final Uint8List bytes = Uint8List.fromList(out.asTypedListOutOfLine(n));
       final ByteData view = ByteData.sublistView(bytes);
       final List<FfcTsPacket> packets = <FfcTsPacket>[];
       int o = 0;

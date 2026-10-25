@@ -1,6 +1,8 @@
 import 'dart:ffi';
 import 'dart:typed_data';
 
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
+
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
 
@@ -141,7 +143,7 @@ final class ReaderSanitizeNative implements Finalizable {
     final int headEndAt = headStartAt + headStartLen;
     final int total = headEndAt + headEndLen;
     final Pointer<Uint8> base = _reserve(total);
-    final Uint8List view = base.asTypedList(total);
+    final Uint8List view = base.asTypedListOutOfLine(total);
     view.setRange(0, imagesAt, input);
     if (images != null) view.setRange(imagesAt, headStartAt, images);
     if (headStart != null) view.setRange(headStartAt, headEndAt, headStart);
@@ -168,7 +170,7 @@ final class ReaderSanitizeNative implements Finalizable {
   /// 书内 CSS 链：宽松解码后改写 `-epub-*` 前缀属性。[flags] 只认 [inputIsText]。
   Uint8List css(Uint8List input, {int flags = 0}) {
     final Pointer<Uint8> base = _reserve(input.length);
-    base.asTypedList(input.length).setAll(0, input);
+    base.asTypedListOutOfLine(input.length).setAll(0, input);
     final int status = _css(base, input.length, flags, _outPtr, _outLen);
     return _takeOutput(status, 'ffc_parse_sanitize_css');
   }
@@ -180,7 +182,7 @@ final class ReaderSanitizeNative implements Finalizable {
     final Pointer<Uint8> ptr = _outPtr.value;
     final int len = _outLen.value;
     try {
-      return Uint8List.fromList(ptr.asTypedList(len));
+      return Uint8List.fromList(ptr.asTypedListOutOfLine(len));
     } finally {
       _freeBytes(ptr, len);
     }

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import 'ffi/fushi_web_core_bindings.dart';
 
@@ -195,7 +196,7 @@ class FushiWebCoreLibrary {
       final int len = outLen.value;
       if (ptr == ffi.nullptr || len == 0) return null;
       try {
-        return Uint8List.fromList(ptr.asTypedList(len));
+        return Uint8List.fromList(ptr.asTypedListOutOfLine(len));
       } finally {
         bindings.fwc_bytes_free(ptr, len);
       }

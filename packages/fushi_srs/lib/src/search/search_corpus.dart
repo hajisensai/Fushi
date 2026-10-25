@@ -14,6 +14,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../ffi/fushi_fsrs_bindings.dart'
     show FfsrsChunkNewC, FfsrsChunkNewDart, FfsrsMatchC, FfsrsMatchDart;
@@ -146,7 +147,7 @@ final class SrsSearchCorpus implements Finalizable {
         ),
         query,
       );
-      final Uint8List bits = out.asTypedList(cards.length);
+      final Uint8List bits = out.asTypedListOutOfLine(cards.length);
       return <int>[
         for (int i = 0; i < bits.length; i++)
           if (bits[i] != 0) i,
@@ -219,8 +220,10 @@ final class SrsSearchCorpus implements Finalizable {
     final Pointer<Uint32> layoutPtr = malloc<Uint32>(layout.words.length);
     final Pointer<Pointer<Char>> err = calloc<Pointer<Char>>();
     try {
-      textPtr.asTypedList(text.length).setAll(0, text);
-      layoutPtr.asTypedList(layout.words.length).setAll(0, layout.words);
+      textPtr.asTypedListOutOfLine(text.length).setAll(0, text);
+      layoutPtr
+          .asTypedListOutOfLine(layout.words.length)
+          .setAll(0, layout.words);
       final Pointer<Void> h = lib.bindings.ffsrs_search_corpus_new(
         textPtr,
         text.length,
@@ -663,8 +666,10 @@ final class SrsSearchCorpus implements Finalizable {
         final Pointer<Uint32> fieldPtr = malloc<Uint32>(n == 0 ? 1 : n);
         final Pointer<Uint32> spanPtr = malloc<Uint32>(n == 0 ? 1 : n * 2);
         try {
-          fieldPtr.asTypedList(n).setRange(0, n, values.fieldIds, from);
-          spanPtr.asTypedList(n * 2).setAll(0, e.spans);
+          fieldPtr
+              .asTypedListOutOfLine(n)
+              .setRange(0, n, values.fieldIds, from);
+          spanPtr.asTypedListOutOfLine(n * 2).setAll(0, e.spans);
           if (lib.bindings.ffsrs_search_corpus_attach(
                 _handle,
                 Pointer<Void>.fromAddress(e.chunk),
@@ -708,7 +713,7 @@ final class SrsSearchCorpus implements Finalizable {
     final int n = cards.length;
     final Pointer<Int64> p = malloc<Int64>(n);
     try {
-      final Int64List v = p.asTypedList(n);
+      final Int64List v = p.asTypedListOutOfLine(n);
       for (int i = 0; i < n; i++) {
         final SrsSearchSubject s = cards[i];
         v[i] = switch (col) {
@@ -750,7 +755,7 @@ final class SrsSearchCorpus implements Finalizable {
     final int n = cards.length;
     final Pointer<Double> p = malloc<Double>(n);
     try {
-      final Float64List v = p.asTypedList(n);
+      final Float64List v = p.asTypedListOutOfLine(n);
       for (int i = 0; i < n; i++) {
         final SrsSearchSubject s = cards[i];
         v[i] =
@@ -1229,7 +1234,7 @@ class _NativeUtf8Writer {
   _NativeUtf8Writer(int estimate)
     : _cap = estimate < 16 ? 16 : estimate,
       _ptr = malloc<Uint8>(estimate < 16 ? 16 : estimate) {
-    _buf = _ptr.asTypedList(_cap);
+    _buf = _ptr.asTypedListOutOfLine(_cap);
   }
 
   int _cap;
@@ -1243,7 +1248,7 @@ class _NativeUtf8Writer {
     int cap = _cap + (_cap >> 1);
     if (cap < need) cap = need + (need >> 3);
     final Pointer<Uint8> next = malloc<Uint8>(cap);
-    final Uint8List nextBuf = next.asTypedList(cap);
+    final Uint8List nextBuf = next.asTypedListOutOfLine(cap);
     nextBuf.setRange(0, length, _buf);
     malloc.free(_ptr);
     _ptr = next;
@@ -1347,8 +1352,8 @@ List<String> srsDupeNormBatch(List<String> fields, {FushiFsrs? library}) {
   final Pointer<Uint32> offs = malloc<Uint32>(fields.length + 1);
   final Pointer<Size> outLen = calloc<Size>();
   try {
-    final Uint8List t = text.asTypedList(total);
-    final Uint32List o = offs.asTypedList(fields.length + 1);
+    final Uint8List t = text.asTypedListOutOfLine(total);
+    final Uint32List o = offs.asTypedListOutOfLine(fields.length + 1);
     int at = 0;
     o[0] = 0;
     for (int i = 0; i < encoded.length; i++) {
@@ -1372,7 +1377,7 @@ List<String> srsDupeNormBatch(List<String> fields, {FushiFsrs? library}) {
     }
     final int len = outLen.value;
     try {
-      final Uint8List all = out.asTypedList(len);
+      final Uint8List all = out.asTypedListOutOfLine(len);
       final int headerBytes = (fields.length + 1) * 4;
       final ByteData header = ByteData.sublistView(all, 0, headerBytes);
       final List<String> result = <String>[];

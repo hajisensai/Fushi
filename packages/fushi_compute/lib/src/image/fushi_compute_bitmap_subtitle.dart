@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
@@ -169,7 +170,7 @@ class FushiComputeBitmapSubtitle {
 
   static Pointer<Uint8> _copyIn(Uint8List bytes, Arena arena) {
     final Pointer<Uint8> ptr = arena<Uint8>(bytes.isEmpty ? 1 : bytes.length);
-    ptr.asTypedList(bytes.length).setAll(0, bytes);
+    ptr.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
     return ptr;
   }
 
@@ -178,7 +179,7 @@ class FushiComputeBitmapSubtitle {
     final Pointer<Uint8> ptr = NativeScratch.input.reserve(
       bytes.isEmpty ? 1 : bytes.length,
     );
-    ptr.asTypedList(bytes.length).setAll(0, bytes);
+    ptr.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
     return ptr;
   }
 
@@ -194,7 +195,7 @@ class FushiComputeBitmapSubtitle {
         'ffc_image_pgs_rle_decode',
         _pgs(_scratchIn(rle), rle.length, width, height, out, outLen),
       );
-      return Uint8List.fromList(out.asTypedList(outLen));
+      return Uint8List.fromList(out.asTypedListOutOfLine(outLen));
     });
   }
 
@@ -226,7 +227,7 @@ class FushiComputeBitmapSubtitle {
           outLen,
         ),
       );
-      return Uint8List.fromList(out.asTypedList(outLen));
+      return Uint8List.fromList(out.asTypedListOutOfLine(outLen));
     });
   }
 
@@ -289,7 +290,7 @@ class FushiComputeBitmapSubtitle {
         ),
       );
       // 拷回 Dart 堆：原生内存不挂 finalizer 交出（见类注释）。
-      return Uint8List.fromList(out.asTypedList(outLen));
+      return Uint8List.fromList(out.asTypedListOutOfLine(outLen));
     });
   }
 
@@ -319,7 +320,7 @@ class FushiComputeBitmapSubtitle {
         final Pointer<Uint32> pal = arena<Uint32>(
           l.palette.isEmpty ? 1 : l.palette.length,
         );
-        pal.asTypedList(l.palette.length).setAll(0, l.palette);
+        pal.asTypedListOutOfLine(l.palette.length).setAll(0, l.palette);
         s.palette = pal;
         s.paletteLen = l.palette.length;
         s.x = l.x;
@@ -344,7 +345,7 @@ class FushiComputeBitmapSubtitle {
         ),
       );
       // 拷回 Dart 堆：原生内存不挂 finalizer 交出（见类注释）。
-      return Uint8List.fromList(out.asTypedList(outLen));
+      return Uint8List.fromList(out.asTypedListOutOfLine(outLen));
     });
   }
 }

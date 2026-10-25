@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:math' as math;
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 /// 本包所有长寿命原生内存（每 isolate 一份的输入 / 输出暂存区、固定小输出槽、对象自带的
 /// 原生数组）的唯一 owner：分配即挂 [NativeFinalizer]，对象不可达或所在 isolate 退出时
@@ -23,7 +24,7 @@ final class NativeScratch implements Finalizable {
   /// 之后 [pointer] 不变（不要再对它 [reserve] 更大的尺寸）。
   NativeScratch.fixed(int bytes) : _minCapacity = math.max(1, bytes) {
     _allocate(_minCapacity);
-    _ptr.asTypedList(_capacity).fillRange(0, _capacity, 0);
+    _ptr.asTypedListOutOfLine(_capacity).fillRange(0, _capacity, 0);
   }
 
   static final NativeFinalizer _finalizer = NativeFinalizer(malloc.nativeFree);

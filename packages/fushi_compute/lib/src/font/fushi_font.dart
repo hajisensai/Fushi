@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 
@@ -67,7 +68,7 @@ final class FushiFont {
     final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
     final Pointer<Size> outLen = malloc<Size>();
     try {
-      input.asTypedList(len).setAll(0, woff2);
+      input.asTypedListOutOfLine(len).setAll(0, woff2);
       final int status = _woff2ToSfnt(input, len, outPtr, outLen);
       if (status == FfcStatus.badInput) return null;
       if (status != FfcStatus.ok) {
@@ -76,7 +77,7 @@ final class FushiFont {
       final int n = outLen.value;
       final Pointer<Uint8> out = outPtr.value;
       try {
-        return Uint8List.fromList(out.asTypedList(n));
+        return Uint8List.fromList(out.asTypedListOutOfLine(n));
       } finally {
         _compute.freeBytes(out, n);
       }
@@ -103,7 +104,7 @@ final class FushiFont {
     final Pointer<Uint8> buf = malloc<Uint8>(len == 0 ? 1 : len);
     final Pointer<Uint32> out = malloc<Uint32>();
     try {
-      buf.asTypedList(len).setRange(0, len, data, offset);
+      buf.asTypedListOutOfLine(len).setRange(0, len, data, offset);
       final int status = _tableChecksum(buf, len, headTable ? 1 : 0, out);
       if (status != FfcStatus.ok) {
         throw StateError('ffc_font_table_checksum failed with status $status');

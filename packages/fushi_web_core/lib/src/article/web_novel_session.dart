@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../ffi/fushi_web_core_bindings.dart';
 import '../fushi_web_core_library.dart';
@@ -304,7 +305,7 @@ abstract final class WebArticleExtractor {
     final Uint8List encoded = utf8.encode(url.toString());
     final ffi.Pointer<ffi.Uint8> u = malloc<ffi.Uint8>(encoded.length + 1);
     try {
-      u.asTypedList(encoded.length).setAll(0, encoded);
+      u.asTypedListOutOfLine(encoded.length).setAll(0, encoded);
       final Uint8List? bytes = lib.takeBytes(
         (ffi.Pointer<ffi.Size> out) =>
             lib.bindings.fwc_article_work_key(u, encoded.length, out),
@@ -339,8 +340,8 @@ Future<Uint8List> _runOnNativeCopy(
   );
   final ffi.Pointer<ffi.Uint8> u = malloc<ffi.Uint8>(urlBytes.length + 1);
   try {
-    h.asTypedList(html.length).setAll(0, html);
-    u.asTypedList(urlBytes.length).setAll(0, urlBytes);
+    h.asTypedListOutOfLine(html.length).setAll(0, html);
+    u.asTypedListOutOfLine(urlBytes.length).setAll(0, urlBytes);
     final String? path = lib.libraryPath;
     final int hAddr = h.address;
     final int hLen = html.length;
@@ -394,7 +395,7 @@ class WebNovelSession implements ffi.Finalizable {
       bytes.isEmpty ? 1 : bytes.length,
     );
     try {
-      p.asTypedList(bytes.length).setAll(0, bytes);
+      p.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
       final ffi.Pointer<FwcNovelSession> handle = lib.bindings
           .fwc_novel_session_open(p, bytes.length);
       if (handle == ffi.nullptr) {

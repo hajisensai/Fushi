@@ -14,6 +14,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import 'algorithm.dart';
 import 'deck.dart';
@@ -100,10 +101,10 @@ class _Batch {
     final Pointer<Size> outLen = calloc<Size>();
     final Pointer<Pointer<Char>> error = calloc<Pointer<Char>>();
     try {
-      h.asTypedList(header.length).setAll(0, header);
-      final Uint8List t = text.asTypedList(total == 0 ? 1 : total);
-      final Uint32List o = offs.asTypedList(n + 1);
-      final Int64List s = servers.asTypedList(n == 0 ? 1 : n);
+      h.asTypedListOutOfLine(header.length).setAll(0, header);
+      final Uint8List t = text.asTypedListOutOfLine(total == 0 ? 1 : total);
+      final Uint32List o = offs.asTypedListOutOfLine(n + 1);
+      final Int64List s = servers.asTypedListOutOfLine(n == 0 ? 1 : n);
       int at = 0;
       o[0] = 0;
       for (int i = 0; i < n; i++) {
@@ -127,7 +128,8 @@ class _Batch {
       if (out == nullptr) throw FormatException(_takeError(lib, error));
       final int len = outLen.value;
       try {
-        return jsonDecode(utf8.decode(out.asTypedList(len))) as List<Object?>;
+        return jsonDecode(utf8.decode(out.asTypedListOutOfLine(len)))
+            as List<Object?>;
       } finally {
         lib.bindings.ffsrs_free_bytes(out, len);
       }

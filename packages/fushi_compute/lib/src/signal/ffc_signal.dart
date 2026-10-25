@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
@@ -150,7 +151,8 @@ void _check(int status, String what) {
 /// 把 [values] 拷进 [arena] 分配的原生 f64 数组（空列表也给一个非空指针）。
 Pointer<Double> _doublesIn(Arena arena, List<double> values) {
   final Pointer<Double> ptr = arena<Double>(values.isEmpty ? 1 : values.length);
-  if (values.isNotEmpty) ptr.asTypedList(values.length).setAll(0, values);
+  if (values.isNotEmpty)
+    ptr.asTypedListOutOfLine(values.length).setAll(0, values);
   return ptr;
 }
 
@@ -206,7 +208,7 @@ Float64List ffcPcmRmsDb(
   final _SignalBindings b = _SignalBindings.of(library);
   return using((Arena arena) {
     final Pointer<Uint8> input = arena<Uint8>(pcm.isEmpty ? 1 : pcm.length);
-    if (pcm.isNotEmpty) input.asTypedList(pcm.length).setAll(0, pcm);
+    if (pcm.isNotEmpty) input.asTypedListOutOfLine(pcm.length).setAll(0, pcm);
     final Pointer<Size> need = arena<Size>();
     int call(Pointer<Double> out, int cap) => b.pcmRms(
       input,
@@ -229,7 +231,7 @@ Float64List ffcPcmRmsDb(
     final int count = need.value;
     final Pointer<Double> out = arena<Double>(count);
     _check(call(out, count), 'ffc_signal_pcm_rms_db');
-    return Float64List.fromList(out.asTypedList(count));
+    return Float64List.fromList(out.asTypedListOutOfLine(count));
   }, malloc); // 输入整段拷进来就覆盖，不需要 calloc 先清零（10 s 立体声 float32 = 3.8 MB）。
 }
 
@@ -250,7 +252,7 @@ Float64List ffcParseRmsLog(
       utf8Bytes.isEmpty ? 1 : utf8Bytes.length,
     );
     if (utf8Bytes.isNotEmpty) {
-      input.asTypedList(utf8Bytes.length).setAll(0, utf8Bytes);
+      input.asTypedListOutOfLine(utf8Bytes.length).setAll(0, utf8Bytes);
     }
     final Pointer<Pointer<Uint8>> outPtr = arena<Pointer<Uint8>>();
     final Pointer<Size> outLen = arena<Size>();
@@ -269,7 +271,7 @@ Float64List ffcParseRmsLog(
     if (bytes == 0) return Float64List(0);
     try {
       return Float64List.fromList(
-        outPtr.value.cast<Double>().asTypedList(bytes ~/ 8),
+        outPtr.value.cast<Double>().asTypedListOutOfLine(bytes ~/ 8),
       );
     } finally {
       compute.freeBytes(outPtr.value, bytes);
@@ -293,7 +295,7 @@ final class FfcEnergyEnvelope implements Finalizable {
     final int n = db.length;
     final NativeScratch amp = NativeScratch.fixed((n == 0 ? 1 : n) * 8);
     final Pointer<Double> ptr = amp.pointer.cast<Double>();
-    ptr.asTypedList(n).setAll(0, db);
+    ptr.asTypedListOutOfLine(n).setAll(0, db);
     _check(b.dbToAmp(ptr, ptr, n), 'ffc_signal_db_to_amplitude');
     return FfcEnergyEnvelope._(b, amp, n);
   }
@@ -321,7 +323,7 @@ final class FfcEnergyEnvelope implements Finalizable {
         _b.downsample(amp, n, targetBuckets, percentile, out, count, outLen),
         'ffc_signal_downsample_peaks',
       );
-      return Float64List.fromList(out.asTypedList(outLen.value));
+      return Float64List.fromList(out.asTypedListOutOfLine(outLen.value));
     });
   }
 }

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
@@ -211,7 +212,7 @@ class FushiComputeOcr {
 
   static Pointer<Float> _floatsIn(NativeScratch scratch, Float32List v) {
     final Pointer<Float> p = scratch.reserve(math.max(4, v.length * 4)).cast();
-    p.asTypedList(v.length).setAll(0, v);
+    p.asTypedListOutOfLine(v.length).setAll(0, v);
     return p;
   }
 
@@ -246,7 +247,7 @@ class FushiComputeOcr {
       );
       if (status == FfcStatus.badInput) return null;
       _check('ffc_ocr_ctc_greedy', status);
-      final Float64List v = out.asTypedList(count.value * _ctcFields);
+      final Float64List v = out.asTypedListOutOfLine(count.value * _ctcFields);
       return <FfcCtcRun>[
         for (int i = 0; i < v.length; i += _ctcFields)
           (
@@ -274,7 +275,7 @@ class FushiComputeOcr {
   }
 
   static List<FfcDetection> _readDetections(Pointer<Double> out, int count) {
-    final Float64List v = out.asTypedList(count * _detFields);
+    final Float64List v = out.asTypedListOutOfLine(count * _detFields);
     return <FfcDetection>[
       for (int i = 0; i < v.length; i += _detFields)
         (
@@ -309,8 +310,8 @@ class FushiComputeOcr {
     );
     final Pointer<Float> pl = input.cast();
     final Pointer<Float> pb = pl + logits.length;
-    pl.asTypedList(logits.length).setAll(0, logits);
-    pb.asTypedList(boxes.length).setAll(0, boxes);
+    pl.asTypedListOutOfLine(logits.length).setAll(0, logits);
+    pb.asTypedListOutOfLine(boxes.length).setAll(0, boxes);
     final int cap = math.max(1, queries * classes * _detFields);
     final Pointer<Double> out = NativeScratch.output.reserve(cap * 8).cast();
     final Pointer<Double> tr = malloc<Double>(8);
@@ -359,8 +360,8 @@ class FushiComputeOcr {
     );
     final Pointer<Float> ps = input.cast();
     final Pointer<Float> pb = ps + scores.length;
-    ps.asTypedList(scores.length).setAll(0, scores);
-    pb.asTypedList(boxes.length).setAll(0, boxes);
+    ps.asTypedListOutOfLine(scores.length).setAll(0, scores);
+    pb.asTypedListOutOfLine(boxes.length).setAll(0, boxes);
     final int cap = math.max(1, scores.length * _detFields);
     final Pointer<Double> out = NativeScratch.output.reserve(cap * 8).cast();
     final Pointer<Double> tr = malloc<Double>(8);
@@ -416,7 +417,7 @@ class FushiComputeOcr {
         'ffc_ocr_class_aware_nms',
         _nms(dets, n, iouThreshold, kept, count),
       );
-      return List<int>.of(kept.asTypedList(count.value));
+      return List<int>.of(kept.asTypedListOutOfLine(count.value));
     } finally {
       malloc.free(count);
     }
@@ -455,7 +456,9 @@ class FushiComputeOcr {
         out,
       ),
     );
-    return <bool>[for (final int v in out.asTypedList(targets.length)) v != 0];
+    return <bool>[
+      for (final int v in out.asTypedListOutOfLine(targets.length)) v != 0,
+    ];
   }
 
   /// `orderPanelRects`：输入未夹取的 ltrb + 分数，返回输出顺序上的输入下标（调用方取
@@ -483,7 +486,7 @@ class FushiComputeOcr {
         'ffc_ocr_order_panels',
         _panels(buf, n, iouThreshold, rtl ? 1 : 0, order, count),
       );
-      return List<int>.of(order.asTypedList(count.value));
+      return List<int>.of(order.asTypedListOutOfLine(count.value));
     } finally {
       malloc.free(count);
     }

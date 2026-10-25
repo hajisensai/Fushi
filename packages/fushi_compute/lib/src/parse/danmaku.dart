@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 
@@ -195,7 +196,7 @@ final class DanmakuNative {
     final Pointer<Size> outLen = calloc<Size>();
     try {
       if (length > 0) {
-        final Uint16List units = input.asTypedList(length);
+        final Uint16List units = input.asTypedListOutOfLine(length);
         for (int i = 0; i < length; i++) {
           units[i] = source.codeUnitAt(i);
         }
@@ -228,7 +229,9 @@ final class DanmakuNative {
     if (out.address % 4 != 0 || outLength < _headerWords * 4) {
       throw StateError('ffc_parse_danmaku_* returned a malformed buffer');
     }
-    final Uint32List header = out.cast<Uint32>().asTypedList(_headerWords);
+    final Uint32List header = out.cast<Uint32>().asTypedListOutOfLine(
+      _headerWords,
+    );
     final int outcome = header[0];
     final int count = header[3];
     final int poolLength = header[4];
@@ -255,8 +258,8 @@ final class DanmakuNative {
         formatException,
       );
     }
-    final Uint32List words = out.cast<Uint32>().asTypedList(recordEnd);
-    final Uint16List pool = out.cast<Uint16>().asTypedList(
+    final Uint32List words = out.cast<Uint32>().asTypedListOutOfLine(recordEnd);
+    final Uint16List pool = out.cast<Uint16>().asTypedListOutOfLine(
       recordEnd * 2 + poolLength,
     );
     final List<T> items = <T>[];

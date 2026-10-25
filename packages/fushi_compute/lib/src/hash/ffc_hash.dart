@@ -5,6 +5,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
@@ -140,7 +141,7 @@ sealed class FfcStreamingHash implements Finalizable {
   FfcStreamingHash._(this._ctx, int bufferSize)
     : _bufferOwner = NativeScratch.fixed(bufferSize),
       bufferSize = bufferSize {
-    buffer = _bufferOwner.pointer.asTypedList(bufferSize);
+    buffer = _bufferOwner.pointer.asTypedListOutOfLine(bufferSize);
   }
 
   Pointer<Void> _ctx;
@@ -233,7 +234,7 @@ final class FfcEd2kHasher extends FfcStreamingHash {
     try {
       FfcStreamingHash._checkStatus(_b.ed2kFinish(_ctx, out, hasAlternative));
       _finished = true;
-      final Uint8List bytes = out.asTypedList(32);
+      final Uint8List bytes = out.asTypedListOutOfLine(32);
       return (
         _hex(bytes, 0, 16),
         hasAlternative.value == 1 ? _hex(bytes, 16, 32) : null,
@@ -281,7 +282,7 @@ final class FfcSha256Hasher extends FfcStreamingHash {
     try {
       FfcStreamingHash._checkStatus(_b.sha256Finish(_ctx, out));
       _finished = true;
-      return _hex(out.asTypedList(32), 0, 32);
+      return _hex(out.asTypedListOutOfLine(32), 0, 32);
     } finally {
       malloc.free(out);
     }
@@ -300,7 +301,7 @@ final NativeScratch _crcScratch = NativeScratch.fixed(_crcSlice);
 int ffcCrc32(List<int> bytes, [int crc = 0, FushiCompute? library]) {
   final _HashBindings b = _HashBindings.of(library ?? FushiCompute.require());
   final Pointer<Uint8> ptr = _crcScratch.pointer;
-  final Uint8List scratch = ptr.asTypedList(_crcSlice);
+  final Uint8List scratch = ptr.asTypedListOutOfLine(_crcSlice);
   int value = crc & 0xffffffff;
   for (int offset = 0; offset < bytes.length; offset += _crcSlice) {
     final int n = min(bytes.length - offset, _crcSlice);
@@ -391,8 +392,10 @@ T _withPacked<T>(
   final Pointer<Uint8> data = malloc<Uint8>(max(total, 1));
   final Pointer<Uint64> offsets = malloc<Uint64>(items.length + 1);
   try {
-    final Uint8List dataView = data.asTypedList(max(total, 1));
-    final Uint64List offsetView = offsets.asTypedList(items.length + 1);
+    final Uint8List dataView = data.asTypedListOutOfLine(max(total, 1));
+    final Uint64List offsetView = offsets.asTypedListOutOfLine(
+      items.length + 1,
+    );
     int at = 0;
     for (int i = 0; i < items.length; i++) {
       offsetView[i] = at;
@@ -427,13 +430,13 @@ Uint8List ffcUuidV5Batch(
   final Pointer<Uint8> ns = malloc<Uint8>(namespaces.length);
   final Pointer<Uint8> out = malloc<Uint8>(namespaces.length);
   try {
-    ns.asTypedList(namespaces.length).setAll(0, namespaces);
+    ns.asTypedListOutOfLine(namespaces.length).setAll(0, namespaces);
     _withPacked<void>(names, (Pointer<Uint8> data, Pointer<Uint64> offsets) {
       FfcStreamingHash._checkStatus(
         b.uuidV5Batch(ns, data, offsets, names.length, out),
       );
     });
-    return Uint8List.fromList(out.asTypedList(namespaces.length));
+    return Uint8List.fromList(out.asTypedListOutOfLine(namespaces.length));
   } finally {
     malloc.free(ns);
     malloc.free(out);
@@ -447,7 +450,7 @@ int ffcPowSolve(List<int> prefix, int bits, {FushiCompute? library}) {
   final Pointer<Uint8> p = malloc<Uint8>(max(prefix.length, 1));
   final Pointer<Uint64> nonce = malloc<Uint64>();
   try {
-    p.asTypedList(max(prefix.length, 1)).setAll(0, prefix);
+    p.asTypedListOutOfLine(max(prefix.length, 1)).setAll(0, prefix);
     FfcStreamingHash._checkStatus(b.powSolve(p, prefix.length, bits, nonce));
     return nonce.value;
   } finally {
@@ -491,8 +494,8 @@ bool ffcBytesEqual(List<int> a, List<int> b, {FushiCompute? library}) {
   if (a.length != b.length) return false;
   final Pointer<Uint8> left = _equalScratch.pointer;
   final Pointer<Uint8> right = left + _equalSlice;
-  final Uint8List leftView = left.asTypedList(_equalSlice);
-  final Uint8List rightView = right.asTypedList(_equalSlice);
+  final Uint8List leftView = left.asTypedListOutOfLine(_equalSlice);
+  final Uint8List rightView = right.asTypedListOutOfLine(_equalSlice);
   for (int offset = 0; offset < a.length; offset += _equalSlice) {
     final int n = min(a.length - offset, _equalSlice);
     leftView.setRange(0, n, a, offset);
@@ -517,7 +520,7 @@ final Pointer<Uint64> _singleOut = (_singleSlots.pointer + 48).cast<Uint64>();
 
 Pointer<Uint8> _singleInput(List<int> bytes) {
   final Pointer<Uint8> data = _singleScratch.reserve(bytes.length);
-  data.asTypedList(bytes.length).setRange(0, bytes.length, bytes);
+  data.asTypedListOutOfLine(bytes.length).setRange(0, bytes.length, bytes);
   _singleOffsets[0] = 0;
   _singleOffsets[1] = bytes.length;
   return data;
@@ -539,7 +542,7 @@ Uint8List ffcUuidV5(
   }
   final _HashBindings b = _HashBindings.of(library ?? FushiCompute.require());
   final Pointer<Uint8> data = _singleInput(name);
-  final Uint8List ns = _singleNamespace.asTypedList(32);
+  final Uint8List ns = _singleNamespace.asTypedListOutOfLine(32);
   ns.setRange(0, 16, namespace);
   FfcStreamingHash._checkStatus(
     b.uuidV5Batch(
@@ -610,8 +613,8 @@ Uint64List ffcHash53Batch(
   final Pointer<Uint64> offsets = malloc<Uint64>(n + 1);
   final Pointer<Uint64> out = malloc<Uint64>(n);
   try {
-    final Uint8List dataView = data.asTypedList(max(total, 1));
-    final Uint64List offsetView = offsets.asTypedList(n + 1);
+    final Uint8List dataView = data.asTypedListOutOfLine(max(total, 1));
+    final Uint64List offsetView = offsets.asTypedListOutOfLine(n + 1);
     int at = 0;
     for (int i = 0; i < n; i++) {
       offsetView[i] = at;
@@ -631,7 +634,7 @@ Uint64List ffcHash53Batch(
     }
     offsetView[n] = at;
     FfcStreamingHash._checkStatus(b.hash53Batch(data, offsets, n, out));
-    return Uint64List.fromList(out.asTypedList(n));
+    return Uint64List.fromList(out.asTypedListOutOfLine(n));
   } finally {
     malloc.free(data);
     malloc.free(offsets);

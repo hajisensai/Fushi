@@ -8,6 +8,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 import 'package:fushi_rwkv/fushi_rwkv.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -345,7 +346,7 @@ RwkvRows srsRwkvNowRows(
   final Pointer<Size> outLen = calloc<Size>();
   final Pointer<Pointer<Char>> error = calloc<Pointer<Char>>();
   try {
-    final Int64List c = ints.asTypedList(n == 0 ? 1 : n * words);
+    final Int64List c = ints.asTypedListOutOfLine(n == 0 ? 1 : n * words);
     for (int i = 0; i < n; i++) {
       final SrsRwkvNowCard x = cards[i];
       final SrsRwkvLastRating? last = x.last;
@@ -379,7 +380,9 @@ RwkvRows srsRwkvNowRows(
     }
     final int len = outLen.value;
     try {
-      return RwkvRows.fromBytes(Uint8List.fromList(out.asTypedList(len)));
+      return RwkvRows.fromBytes(
+        Uint8List.fromList(out.asTypedListOutOfLine(len)),
+      );
     } finally {
       lib.bindings.ffsrs_free_bytes(out, len);
     }

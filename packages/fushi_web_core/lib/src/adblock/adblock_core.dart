@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../ffi/fushi_web_core_bindings.dart';
 import '../fushi_web_core_library.dart';
@@ -106,7 +107,7 @@ class AdblockCore implements ffi.Finalizable {
       dir.isEmpty ? 1 : dir.length,
     );
     try {
-      buf.asTypedList(dir.length).setAll(0, dir);
+      buf.asTypedListOutOfLine(dir.length).setAll(0, dir);
       final ffi.Pointer<FwcAdblockCore> handle = lib.bindings.fwc_adblock_open(
         buf,
         dir.length,
@@ -347,13 +348,13 @@ class AdblockCore implements ffi.Finalizable {
   int _scratchWrite(int offset, String s) {
     final int n = s.length;
     _ensureScratch(offset + n);
-    Uint8List view = _scratch.asTypedList(_scratchCap);
+    Uint8List view = _scratch.asTypedListOutOfLine(_scratchCap);
     for (int i = 0; i < n; i++) {
       final int cu = s.codeUnitAt(i);
       if (cu >= 0x80) {
         final Uint8List enc = utf8.encode(s);
         _ensureScratch(offset + enc.length);
-        view = _scratch.asTypedList(_scratchCap);
+        view = _scratch.asTypedListOutOfLine(_scratchCap);
         view.setAll(offset, enc);
         return enc.length;
       }
@@ -371,8 +372,8 @@ class AdblockCore implements ffi.Finalizable {
     final ffi.Pointer<ffi.Uint8> next = malloc<ffi.Uint8>(cap);
     if (_scratch != ffi.nullptr) {
       next
-          .asTypedList(_scratchCap)
-          .setAll(0, _scratch.asTypedList(_scratchCap));
+          .asTypedListOutOfLine(_scratchCap)
+          .setAll(0, _scratch.asTypedListOutOfLine(_scratchCap));
       malloc.free(_scratch);
     }
     _scratch = next;
@@ -455,7 +456,7 @@ class AdblockCore implements ffi.Finalizable {
   static (ffi.Pointer<ffi.Uint8>, int) _bytesIn(Arena arena, Uint8List? b) {
     if (b == null || b.isEmpty) return (ffi.nullptr, 0);
     final ffi.Pointer<ffi.Uint8> p = arena<ffi.Uint8>(b.length);
-    p.asTypedList(b.length).setAll(0, b);
+    p.asTypedListOutOfLine(b.length).setAll(0, b);
     return (p, b.length);
   }
 }

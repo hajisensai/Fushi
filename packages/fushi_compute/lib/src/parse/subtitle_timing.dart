@@ -1,6 +1,8 @@
 import 'dart:ffi';
 import 'dart:typed_data';
 
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
+
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
 
@@ -44,7 +46,7 @@ final class SubtitleTimingNative implements Finalizable {
     final int length = content.length;
     final Pointer<Uint16> buffer = _buffer.reserve(length * 2).cast<Uint16>();
     if (length > 0) {
-      final Uint16List units = buffer.asTypedList(length);
+      final Uint16List units = buffer.asTypedListOutOfLine(length);
       for (int i = 0; i < length; i++) {
         units[i] = content.codeUnitAt(i);
       }

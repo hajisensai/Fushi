@@ -1,0 +1,15 @@
+name: fushi_ffi_view
+resolution: workspace
+description: >-
+  原生内存的 Dart 视图（`Pointer.asTypedList`）的唯一入口。Dart VM 的 JIT 会把只在本函数里
+  按下标读写的 asTypedList 视图做分配下沉，函数随后在视图存活期间去优化时，物化出来的
+  外部 typed data 指向错误地址（Smi 标记过的地址，约为真地址的 2 倍），下一次读写即 SIGSEGV。
+  这里把视图放到不内联的函数里创建，调用方拿到的是已物化对象，JIT 无从下沉。纯 Dart。
+publish_to: none
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+
+dev_dependencies:
+  ffi: ^2.1.3
+  test: ^1.24.0

@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 
@@ -207,7 +208,7 @@ final class FfcMediaNameMatcher implements Finalizable {
       final int length = outLen.value;
       try {
         final ByteData data = out
-            .asTypedList(length)
+            .asTypedListOutOfLine(length)
             .buffer
             .asByteData(0, length);
         final int hitBase = (groups.length + 1) * 4;
@@ -257,7 +258,7 @@ final class FfcMediaNameMatcher implements Finalizable {
           'ffc_parse_anki_lower_utf16 failed with status $status',
         );
       }
-      return String.fromCharCodes(buffer.asTypedList(text.length));
+      return String.fromCharCodes(buffer.asTypedListOutOfLine(text.length));
     } finally {
       malloc.free(buffer);
     }

@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 
@@ -154,8 +155,8 @@ final class FushiComputeText {
       if (code != FfcStatus.ok) {
         throw StateError('$alignPositionsSymbol failed with status $code');
       }
-      final Int32List all = out.asTypedList(outLen);
-      final Int32List offsets = aOff.asTypedList(count + 1);
+      final Int32List all = out.asTypedListOutOfLine(outLen);
+      final Int32List offsets = aOff.asTypedListOutOfLine(count + 1);
       return <Int32List>[
         for (int k = 0; k < count; k++)
           Int32List.fromList(
@@ -176,8 +177,8 @@ final class FushiComputeText {
     }
     final Pointer<Uint16> units = arena<Uint16>(total == 0 ? 1 : total);
     final Pointer<Int32> offsets = arena<Int32>(texts.length + 1);
-    final Uint16List u = units.asTypedList(total);
-    final Int32List o = offsets.asTypedList(texts.length + 1);
+    final Uint16List u = units.asTypedListOutOfLine(total);
+    final Int32List o = offsets.asTypedListOutOfLine(texts.length + 1);
     int at = 0;
     for (int i = 0; i < texts.length; i++) {
       o[i] = at;
@@ -230,7 +231,7 @@ final class FushiComputeText {
         final int r1 = readingLen + 1;
         final int mapsLen = r1 * 4 + base.length + 1;
         mapsPtr = arena<Int32>(mapsLen);
-        final Int32List maps = mapsPtr.asTypedList(mapsLen);
+        final Int32List maps = mapsPtr.asTypedListOutOfLine(mapsLen);
         maps.setRange(0, r1, reading.toBaseStart);
         maps.setRange(r1, 2 * r1, reading.toBaseEnd);
         maps.setRange(2 * r1, 3 * r1, reading.atomReadStart);
@@ -241,8 +242,8 @@ final class FushiComputeText {
         cueUnits == 0 ? 1 : cueUnits,
       );
       final Pointer<Int32> offsetsPtr = arena<Int32>(cueCount + 1);
-      final Uint16List units = unitsPtr.asTypedList(cueUnits);
-      final Int32List offsets = offsetsPtr.asTypedList(cueCount + 1);
+      final Uint16List units = unitsPtr.asTypedListOutOfLine(cueUnits);
+      final Int32List offsets = offsetsPtr.asTypedListOutOfLine(cueCount + 1);
       int at = 0;
       for (int i = 0; i < cueCount; i++) {
         offsets[i] = at;
@@ -256,11 +257,11 @@ final class FushiComputeText {
       final Pointer<Uint8> flagsPtr = arena<Uint8>(
         cueCount == 0 ? 1 : cueCount,
       );
-      flagsPtr.asTypedList(cueCount).setAll(0, cueFlags);
+      flagsPtr.asTypedListOutOfLine(cueCount).setAll(0, cueFlags);
       final Pointer<Int32> windowsPtr = arena<Int32>(
         windowCount == 0 ? 1 : windowCount,
       );
-      windowsPtr.asTypedList(windowCount).setAll(0, windows);
+      windowsPtr.asTypedListOutOfLine(windowCount).setAll(0, windows);
       final Pointer<Int32> paramsPtr = _ints(arena, intParams);
 
       final int outAlloc = outLen == 0 ? 1 : outLen;
@@ -303,30 +304,32 @@ final class FushiComputeText {
         throw StateError('$cueMatchSymbol failed with status $code');
       }
 
-      final Int32List stats = outStats.asTypedList(windowCount * 3);
-      final Int32List recoverCounts = outRecoverCount.asTypedList(windowCount);
-      final Int32List recover = outRecover.asTypedList(outLen * 4);
+      final Int32List stats = outStats.asTypedListOutOfLine(windowCount * 3);
+      final Int32List recoverCounts = outRecoverCount.asTypedListOutOfLine(
+        windowCount,
+      );
+      final Int32List recover = outRecover.asTypedListOutOfLine(outLen * 4);
       return <CueMatchWindowResult>[
         for (int w = 0; w < windowCount; w++)
           CueMatchWindowResult(
             section: Int32List.fromList(
               outSection
-                  .asTypedList(outAlloc)
+                  .asTypedListOutOfLine(outAlloc)
                   .sublist(w * cueCount, (w + 1) * cueCount),
             ),
             start: Int32List.fromList(
               outStart
-                  .asTypedList(outAlloc)
+                  .asTypedListOutOfLine(outAlloc)
                   .sublist(w * cueCount, (w + 1) * cueCount),
             ),
             end: Int32List.fromList(
               outEnd
-                  .asTypedList(outAlloc)
+                  .asTypedListOutOfLine(outAlloc)
                   .sublist(w * cueCount, (w + 1) * cueCount),
             ),
             score: Float64List.fromList(
               outScore
-                  .asTypedList(outAlloc)
+                  .asTypedListOutOfLine(outAlloc)
                   .sublist(w * cueCount, (w + 1) * cueCount),
             ),
             matched: stats[w * 3],
@@ -351,13 +354,13 @@ final class FushiComputeText {
 
   static Pointer<Uint16> _units(Arena arena, String s) {
     final Pointer<Uint16> p = arena<Uint16>(s.isEmpty ? 1 : s.length);
-    p.asTypedList(s.length).setRange(0, s.length, s.codeUnits);
+    p.asTypedListOutOfLine(s.length).setRange(0, s.length, s.codeUnits);
     return p;
   }
 
   static Pointer<Int32> _ints(Arena arena, Int32List xs) {
     final Pointer<Int32> p = arena<Int32>(xs.isEmpty ? 1 : xs.length);
-    p.asTypedList(xs.length).setAll(0, xs);
+    p.asTypedListOutOfLine(xs.length).setAll(0, xs);
     return p;
   }
 }

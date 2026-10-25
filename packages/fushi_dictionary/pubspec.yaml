@@ -27,6 +27,9 @@ dependencies:
   recase: ^4.1.0
   flutter_archive: ^5.0.0
   dio: ^5.1.1
+  # Pointer.asTypedList 的唯一入口（绕开 Dart JIT 去优化物化视图的崩溃，见包内注释）。
+  fushi_ffi_view:
+    path: ../fushi_ffi_view
 
 dev_dependencies:
   flutter_test:

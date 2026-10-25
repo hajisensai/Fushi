@@ -54,6 +54,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -186,7 +187,10 @@ const int _keyUp = 0x0002;
 void _sendMouse(int flags, {int dx = 0, int dy = 0}) {
   final Pointer<Uint8> buffer = calloc<Uint8>(_inputSize);
   try {
-    final ByteData view = buffer.asTypedList(_inputSize).buffer.asByteData();
+    final ByteData view = buffer
+        .asTypedListOutOfLine(_inputSize)
+        .buffer
+        .asByteData();
     view.setUint32(0, _inputMouse, Endian.little);
     view.setInt32(8, dx, Endian.little);
     view.setInt32(12, dy, Endian.little);
@@ -201,7 +205,10 @@ void _sendMouse(int flags, {int dx = 0, int dy = 0}) {
 void _sendKey(int vk, {required bool up}) {
   final Pointer<Uint8> buffer = calloc<Uint8>(_inputSize);
   try {
-    final ByteData view = buffer.asTypedList(_inputSize).buffer.asByteData();
+    final ByteData view = buffer
+        .asTypedListOutOfLine(_inputSize)
+        .buffer
+        .asByteData();
     view.setUint32(0, _inputKeyboard, Endian.little);
     view.setUint16(8, vk, Endian.little);
     view.setUint16(10, 0, Endian.little);

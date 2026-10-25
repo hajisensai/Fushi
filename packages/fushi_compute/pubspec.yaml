@@ -11,6 +11,9 @@ environment:
 
 dependencies:
   ffi: ^2.1.3
+  # Pointer.asTypedList 的唯一入口（绕开 Dart JIT 去优化物化视图的崩溃，见包内注释）。
+  fushi_ffi_view:
+    path: ../fushi_ffi_view
 
 dev_dependencies:
   crypto: ^3.0.0

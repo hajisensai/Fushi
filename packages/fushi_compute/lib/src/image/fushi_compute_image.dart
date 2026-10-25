@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
@@ -394,7 +395,7 @@ class FushiComputeImage {
   /// 把输入拷进本 isolate 的输入暂存区（[NativeScratch.input]，不需要释放）。
   static Pointer<Uint8> _copyIn(Uint8List bytes) {
     final Pointer<Uint8> ptr = NativeScratch.input.reserve(bytes.length);
-    ptr.asTypedList(bytes.length).setAll(0, bytes);
+    ptr.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
     return ptr;
   }
 
@@ -405,7 +406,7 @@ class FushiComputeImage {
   ) {
     final Pointer<Uint8> ptr = NativeScratch.output.reserve(length);
     call(ptr);
-    return Uint8List.fromList(ptr.asTypedList(length));
+    return Uint8List.fromList(ptr.asTypedListOutOfLine(length));
   }
 
   static void _checkPixels(
@@ -464,7 +465,7 @@ class FushiComputeImage {
         rowBytes * dstHeight,
       );
       {
-        final Uint8List view = rows.asTypedList(rowBytes * dstHeight);
+        final Uint8List view = rows.asTypedListOutOfLine(rowBytes * dstHeight);
         for (int y = 0; y < dstHeight; y++) {
           final int start =
               (cropY + (y * dy).toInt()) * stride + cropX * channels;
@@ -590,7 +591,7 @@ class FushiComputeImage {
           n,
         ),
       );
-      return Float32List.fromList(outPtr.asTypedList(n));
+      return Float32List.fromList(outPtr.asTypedListOutOfLine(n));
     } finally {
       malloc.free(norm);
     }
@@ -653,7 +654,7 @@ class FushiComputeImage {
     final Pointer<Uint8> buf = NativeScratch.input.reserve(rowBytes * bh);
     final Pointer<Int32> r = malloc<Int32>(rects.length * 4);
     try {
-      final Uint8List view = buf.asTypedList(rowBytes * bh);
+      final Uint8List view = buf.asTypedListOutOfLine(rowBytes * bh);
       for (int y = 0; y < bh; y++) {
         final int from = ((bandTop + y) * width + bandLeft) * 4;
         view.setRange(y * rowBytes, (y + 1) * rowBytes, rgba, from);
@@ -693,7 +694,7 @@ class FushiComputeImage {
         'ffc_image_dhash',
         _dhash(src, pixels.length, stride, channels, width, height, out),
       );
-      return Uint8List.fromList(out.asTypedList(8));
+      return Uint8List.fromList(out.asTypedListOutOfLine(8));
     } finally {
       malloc.free(out);
     }
@@ -704,7 +705,7 @@ class FushiComputeImage {
     final Pointer<Uint8> data = ptr.value;
     final int n = len.value;
     try {
-      return Uint8List.fromList(data.asTypedList(n));
+      return Uint8List.fromList(data.asTypedListOutOfLine(n));
     } finally {
       _lib.freeBytes(data, n);
     }
@@ -798,7 +799,7 @@ class FushiComputeImage {
     final Pointer<Uint8> r = malloc<Uint8>(right.isEmpty ? 1 : right.length);
     final Pointer<Double> out = malloc<Double>();
     try {
-      r.asTypedList(right.length).setAll(0, right);
+      r.asTypedListOutOfLine(right.length).setAll(0, right);
       final int status = _edge(
         l,
         left.length,
@@ -837,7 +838,7 @@ class FushiComputeImage {
     final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
     final Pointer<Size> outLen = malloc<Size>();
     try {
-      src.asTypedList(prob.length).setAll(0, prob);
+      src.asTypedListOutOfLine(prob.length).setAll(0, prob);
       _check(
         'ffc_image_db_components',
         _db(src, prob.length, width, height, thresh, boxThresh, outPtr, outLen),
@@ -848,7 +849,9 @@ class FushiComputeImage {
         // 没有连通域时原生交出的是空切片的悬空指针（只按 1 字节对齐）：`cast<Double>()`
         // 的 asTypedList 即便长度 0 也查 8 字节对齐，会抛 ArgumentError。
         if (bytes == 0) return const <FfcDbComponent>[];
-        final Float64List v = data.cast<Double>().asTypedList(bytes ~/ 8);
+        final Float64List v = data.cast<Double>().asTypedListOutOfLine(
+          bytes ~/ 8,
+        );
         return <FfcDbComponent>[
           for (int i = 0; i + 11 <= v.length; i += 11)
             (
@@ -913,7 +916,9 @@ class FushiComputeImage {
       final int status = _coverSig(src, bytes.length, out);
       if (status == FfcStatus.badInput) return null;
       _check('ffc_image_cover_signature', status);
-      return Float64List.fromList(out.asTypedList(coverGrid * coverGrid));
+      return Float64List.fromList(
+        out.asTypedListOutOfLine(coverGrid * coverGrid),
+      );
     } finally {
       malloc.free(out);
     }
@@ -932,8 +937,8 @@ class FushiComputeImage {
     try {
       final Pointer<Double> pb = pa + n;
       final Pointer<Double> out = pa + n * 2;
-      pa.asTypedList(n).setAll(0, a);
-      pb.asTypedList(n).setAll(0, b);
+      pa.asTypedListOutOfLine(n).setAll(0, a);
+      pb.asTypedListOutOfLine(n).setAll(0, b);
       _check('ffc_image_cover_compare', _coverCmp(pa, pb, out));
       return (ncc: out[0], detailNcc: out[1]);
     } finally {

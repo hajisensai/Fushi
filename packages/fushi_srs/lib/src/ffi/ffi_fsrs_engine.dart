@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../algorithm.dart';
 import '../fsrs_engine.dart';
@@ -175,7 +176,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
     final int slots = n == 0 ? 1 : n;
     final Pointer<Float> buf = calloc<Float>(slots * 5);
     try {
-      final Float32List view = buf.asTypedList(slots * 5);
+      final Float32List view = buf.asTypedListOutOfLine(slots * 5);
       for (int i = 0; i < n; i++) {
         final SrsMemory m = memories[i];
         view[i] = m.stability;
@@ -272,12 +273,16 @@ class FfiFsrsEngine implements FsrsBatchEngine {
     final Pointer<Uint32> itemCards = calloc<Uint32>(_slots(set.length));
     final Pointer<Uint32> itemLengths = calloc<Uint32>(_slots(set.length));
     try {
-      ratings.asTypedList(set.ratings.length).setAll(0, set.ratings);
-      deltas.asTypedList(set.deltaDays.length).setAll(0, set.deltaDays);
-      offsets.asTypedList(set.cardOffsets.length).setAll(0, set.cardOffsets);
-      if (ids != null) cardIds.asTypedList(ids.length).setAll(0, ids);
-      itemCards.asTypedList(set.length).setAll(0, set.itemCards);
-      itemLengths.asTypedList(set.length).setAll(0, set.itemLengths);
+      ratings.asTypedListOutOfLine(set.ratings.length).setAll(0, set.ratings);
+      deltas
+          .asTypedListOutOfLine(set.deltaDays.length)
+          .setAll(0, set.deltaDays);
+      offsets
+          .asTypedListOutOfLine(set.cardOffsets.length)
+          .setAll(0, set.cardOffsets);
+      if (ids != null) cardIds.asTypedListOutOfLine(ids.length).setAll(0, ids);
+      itemCards.asTypedListOutOfLine(set.length).setAll(0, set.itemCards);
+      itemLengths.asTypedListOutOfLine(set.length).setAll(0, set.itemLengths);
       return _decodeResponse(
         _b.ffsrs_fit(
           req,
@@ -318,7 +323,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
     final Pointer<Uint8> input = calloc<Uint8>(data.isEmpty ? 1 : data.length);
     final Pointer<Size> outLen = calloc<Size>();
     try {
-      input.asTypedList(data.length).setAll(0, data);
+      input.asTypedListOutOfLine(data.length).setAll(0, data);
       final Pointer<Uint8> out = b.ffsrs_zstd_decompress(
         input,
         data.length,
@@ -327,7 +332,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
       if (out == nullptr) return null;
       final int len = outLen.value;
       try {
-        return Uint8List.fromList(out.asTypedList(len));
+        return Uint8List.fromList(out.asTypedListOutOfLine(len));
       } finally {
         b.ffsrs_free_bytes(out, len);
       }

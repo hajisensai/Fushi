@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
@@ -146,13 +147,13 @@ final class EpubChapterScanner implements Finalizable {
     Pointer<Uint16> wantedPtr = nullptr;
     int wantedLen = 0;
     try {
-      htmlPtr.asTypedList(bytes.length).setAll(0, bytes);
+      htmlPtr.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
       if (wantedIds.isNotEmpty) {
         for (final String id in wantedIds) {
           wantedLen += 2 + id.length;
         }
         wantedPtr = calloc<Uint16>(wantedLen);
-        final Uint16List w = wantedPtr.asTypedList(wantedLen);
+        final Uint16List w = wantedPtr.asTypedListOutOfLine(wantedLen);
         int o = 0;
         for (final String id in wantedIds) {
           w[o++] = id.length & 0xFFFF;
@@ -184,7 +185,7 @@ final class EpubChapterScanner implements Finalizable {
       final Pointer<Uint16> out = _outPtr.value;
       final int len = _outLen.value;
       try {
-        return _decode(out.asTypedList(len), request);
+        return _decode(out.asTypedListOutOfLine(len), request);
       } finally {
         _freeUnits(out, len);
       }

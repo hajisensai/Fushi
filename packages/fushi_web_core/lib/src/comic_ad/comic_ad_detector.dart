@@ -3,6 +3,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../ffi/fushi_web_core_bindings.dart';
 import '../fushi_web_core_library.dart';
@@ -114,7 +115,7 @@ class ComicAdDetector {
           bytes.isEmpty ? 1 : bytes.length,
         );
         owned.add(p);
-        p.asTypedList(bytes.length).setAll(0, bytes);
+        p.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
         ptrs[i] = p;
         lens[i] = bytes.length;
       }

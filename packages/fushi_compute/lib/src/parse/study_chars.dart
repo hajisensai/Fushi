@@ -1,6 +1,8 @@
 import 'dart:ffi';
 import 'dart:typed_data';
 
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
+
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
 
@@ -65,7 +67,7 @@ final class StudyCharsNative implements Finalizable {
     final int length = text.length;
     if (length == 0) return (count: count, inWord: inWord);
     final Pointer<Uint16> buffer = _buffer.reserve(length * 2).cast<Uint16>();
-    final Uint16List units = buffer.asTypedList(length);
+    final Uint16List units = buffer.asTypedListOutOfLine(length);
     for (int i = 0; i < length; i++) {
       units[i] = text.codeUnitAt(i);
     }

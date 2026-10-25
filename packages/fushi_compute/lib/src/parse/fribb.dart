@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 
@@ -110,7 +111,7 @@ final class FribbNative {
     final Pointer<Int32> errorKind = calloc<Int32>();
     final Pointer<Size> errorOffset = calloc<Size>();
     try {
-      input.asTypedList(utf8Json.length).setAll(0, utf8Json);
+      input.asTypedListOutOfLine(utf8Json.length).setAll(0, utf8Json);
       final int status = _entries(
         input,
         utf8Json.length,
@@ -129,7 +130,7 @@ final class FribbNative {
       final Pointer<Uint8> ptr = outPtr.value;
       final int len = outLen.value;
       try {
-        return _decode(ptr.asTypedList(len));
+        return _decode(ptr.asTypedListOutOfLine(len));
       } finally {
         _compute.freeBytes(ptr, len);
       }
