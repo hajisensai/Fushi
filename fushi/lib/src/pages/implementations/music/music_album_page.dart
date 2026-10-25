@@ -18,6 +18,8 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
+    show musicAlbumDetailCover, kMusicAlbumDetailCoverSize;
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -176,26 +178,14 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
       runSpacing: tokens.spacing.gap,
       crossAxisAlignment: WrapCrossAlignment.end,
       children: <Widget>[
-        Stack(
-          children: <Widget>[
-            MusicCover(
-              coverPath: album.coverPath,
-              embeddedFromPath: embeddedCoverPath,
-              size: 200,
-              borderRadius: tokens.radii.groupRadius,
-            ),
-            if (disc != null)
-              Positioned(
-                left: 8,
-                top: 8,
-                child: IgnorePointer(
-                  child: MusicDiscBadge(
-                    key: const ValueKey<String>('music-album-disc-badge'),
-                    disc: disc,
-                  ),
-                ),
-              ),
-          ],
+        // 方形「唱片」材质大图（与专辑网格同一材质）；封面上不压角标，光盘规格
+        // 徽标挪到右侧格式徽章那一排。
+        musicAlbumDetailCover(
+          MusicCover(
+            coverPath: album.coverPath,
+            embeddedFromPath: embeddedCoverPath,
+            size: kMusicAlbumDetailCoverSize,
+          ),
         ),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
@@ -216,7 +206,15 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: <Widget>[
+                  if (disc != null)
+                    IgnorePointer(
+                      child: MusicDiscBadge(
+                        key: const ValueKey<String>('music-album-disc-badge'),
+                        disc: disc,
+                      ),
+                    ),
                   for (final String b in fmt.badges) _Badge(text: b),
                   if (fmt.hiRes)
                     _Badge(text: t.music_hi_res_badge, strong: true),

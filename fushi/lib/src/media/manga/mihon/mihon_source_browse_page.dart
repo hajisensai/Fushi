@@ -17,6 +17,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/online/online_source_browse_page.dart';
 import 'package:fushi/src/media/video/online/anime_source_detail_page.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/utils.dart';
 
 /// 浏览页要浏览的那「一个源」从哪来。
@@ -229,6 +230,14 @@ class _MihonCatalog extends OnlineSourceCatalog<MihonCatalogueEntry> {
 
   @override
   String titleOf(MihonCatalogueEntry item) => item.title;
+
+  /// 漫画源 = 光面书皮（与漫画书架同材质）；Aniyomi 视频源 = 光面海报（与视频库
+  /// 同材质）。
+  @override
+  ShelfCoverMaterial get coverMaterial => switch (manager.kind) {
+    MihonMediaKind.manga => ShelfCoverMaterial.glossyBook,
+    MihonMediaKind.anime => ShelfCoverMaterial.glossyPoster,
+  };
 
   @override
   Widget buildCover(BuildContext context, MihonCatalogueEntry item) =>

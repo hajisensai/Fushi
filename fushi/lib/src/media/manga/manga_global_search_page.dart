@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/manga_global_search_runner.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
@@ -185,9 +186,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
         action: onOpenSources == null
             ? null
             : FushiFilledButton.tonalIcon(
-                key: const ValueKey<String>(
-                  'manga_global_search_open_sources',
-                ),
+                key: const ValueKey<String>('manga_global_search_open_sources'),
                 onPressed: onOpenSources,
                 // 「导入」的图标（与书架空态引导同一个）。拼图块 extension_outlined
                 // 恰恰是本 bug 的病根：漫画库里没有叫「扩展」的入口。
@@ -292,15 +291,24 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     };
     // 桌面端默认 dragDevices 不含 mouse，横向滚动区必须包 HorizontalDragScrollable
     // 才能用鼠标左键拖动平移（横向滚动守卫）。
+    // 行高 = 2:3 封面 + 库页同款文字块 + 上下各一点悬停抬升余量。
+    const double liftRoom = _kHitCardWidth * 0.04;
     return SizedBox(
-      height: 210,
-      child: HorizontalDragScrollable(
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          itemCount: count,
-          itemBuilder: (BuildContext context, int index) =>
-              _buildHit(run, index),
+      height:
+          _kHitCardWidth * 3 / 2 +
+          ShelfCardMeta.heightFor(context) +
+          liftRoom * 2,
+      // 与漫画库同一套条目材质（光面书皮，2026-10-25 库页定版）。
+      child: ShelfCoverMaterialScope(
+        material: ShelfCoverMaterial.glossyBook,
+        child: HorizontalDragScrollable(
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: liftRoom),
+            itemCount: count,
+            itemBuilder: (BuildContext context, int index) =>
+                _buildHit(run, index),
+          ),
         ),
       ),
     );
@@ -323,33 +331,33 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
         );
         onTap = () => _openMihon(run, manga);
     }
-    return SizedBox(
-      width: 130,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 12),
-        child: FushiCard(
-          padding: EdgeInsets.zero,
-          onTap: onTap,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Expanded(child: cover),
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(end: 12),
+      child: SizedBox(
+        width: _kHitCardWidth,
+        child: FushiHoverLift(
+          builder: (BuildContext context, bool _) => shelfCoverCard(
+            onTap: onTap,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                AspectRatio(
+                  aspectRatio: 2 / 3,
+                  child: ShelfCoverFrame(child: cover),
                 ),
-              ),
-            ],
+                ShelfCardMeta(title: title),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 }
+
+/// 全局搜索结果横条里一张卡的宽度（封面宽）。
+const double _kHitCardWidth = 118;
 
 class _LanguageChip extends StatelessWidget {
   const _LanguageChip(this.language);

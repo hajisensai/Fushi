@@ -11,6 +11,7 @@ import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -87,10 +88,22 @@ class MediaLinksSection extends StatefulWidget {
   State<MediaLinksSection> createState() => _MediaLinksSectionState();
 }
 
+/// 关联 / 跨媒体卡的条目材质：与对端在各自库页上的样子一致——视频 = 光面海报、
+/// 书 / 有声书 = 光面书皮、游戏 = 透明卡盒、音乐 = 方形唱片。关联区与人物详情页
+/// 的作品卡共用。
+ShelfCoverMaterial mediaLinkCoverMaterial(MediaLinkKind kind) => switch (kind) {
+  MediaLinkKind.videoCollection ||
+  MediaLinkKind.videoEpisode => ShelfCoverMaterial.glossyPoster,
+  MediaLinkKind.book ||
+  MediaLinkKind.audiobook => ShelfCoverMaterial.glossyBook,
+  MediaLinkKind.game => ShelfCoverMaterial.gameCase,
+  MediaLinkKind.musicAlbum ||
+  MediaLinkKind.musicTrack => ShelfCoverMaterial.glossyAlbum,
+};
+
 class _MediaLinksSectionState extends State<MediaLinksSection> {
   static const double _cardWidth = 116;
   static const double _coverHeight = _cardWidth * 3 / 2;
-  static const double _textHeight = 44;
   static const double _gap = 12;
   static const double _suggestionWidth = 300;
   static const double _suggestionHeight = 148;
@@ -215,66 +228,50 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
         missing && other.endpoint.kind != MediaLinkKind.videoCollection
         ? widget.searchActionFor?.call(other.endpoint.kind)
         : null;
+    final String? status = missing
+        ? (search == null
+              ? t.media_link_not_in_library
+              : t.media_link_search_missing)
+        : null;
+    final Widget cover = ShelfCoverMaterialScope(
+      material: mediaLinkCoverMaterial(other.endpoint.kind),
+      child: ShelfCoverFrame(child: _cover(context, other, _cardWidth)),
+    );
+    // 封面即卡片（与库页同一套材质，按对端种类逐卡选）；关系 / 未入库不再压在
+    // 封面上，进封面下的副行。
     final Widget card = SizedBox(
       key: ValueKey<String>(
         'media-link-card-${other.endpoint.kind.dbValue}-${other.endpoint.key}',
       ),
       width: _cardWidth,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          ClipRRect(
-            borderRadius: FushiBorderRadius.card,
-            child: SizedBox(
-              width: _cardWidth,
-              height: _coverHeight,
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  // 「未入库」灰卡：去饱和 + 半透明，与可点卡片一眼区分。
-                  if (missing)
-                    Opacity(
-                      opacity: 0.45,
-                      child: ColorFiltered(
-                        colorFilter: const ColorFilter.mode(
-                          Colors.grey,
-                          BlendMode.saturation,
-                        ),
-                        child: _cover(context, other, _cardWidth),
-                      ),
-                    )
-                  else
-                    _cover(context, other, _cardWidth),
-                  PositionedDirectional(
-                    top: 6,
-                    start: 6,
-                    child: CoverBadge(label: mediaLinkBadgeLabel(view)),
-                  ),
-                  if (missing)
-                    PositionedDirectional(
-                      bottom: 6,
-                      start: 6,
-                      child: CoverBadge(
-                        label: search == null
-                            ? t.media_link_not_in_library
-                            : t.media_link_search_missing,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
           SizedBox(
-            height: _textHeight - 6,
-            child: Text(
-              other.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: missing ? Theme.of(context).disabledColor : null,
-              ),
+            width: _cardWidth,
+            height: _coverHeight,
+            // 「未入库」灰卡：去饱和 + 半透明（材质一起变灰），与可点卡片一眼区分。
+            child: missing
+                ? Opacity(
+                    opacity: 0.45,
+                    child: ColorFiltered(
+                      colorFilter: const ColorFilter.mode(
+                        Colors.grey,
+                        BlendMode.saturation,
+                      ),
+                      child: cover,
+                    ),
+                  )
+                : cover,
+          ),
+          Opacity(
+            opacity: missing ? 0.6 : 1,
+            child: ShelfCardMeta(
+              title: other.title,
+              subtitle: <String>[
+                mediaLinkBadgeLabel(view),
+                ?status,
+              ].join(' · '),
             ),
           ),
         ],
@@ -475,7 +472,7 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
                 if (confirmed.isNotEmpty) ...<Widget>[
                   SizedBox(height: tokens.spacing.rowVertical),
                   _row(
-                    height: _coverHeight + _textHeight,
+                    height: _coverHeight + ShelfCardMeta.heightFor(context),
                     items: confirmed,
                     builder: _buildCard,
                     replayKey: confirmed.length,

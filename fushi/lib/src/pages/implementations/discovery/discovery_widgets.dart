@@ -12,6 +12,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/utils.dart';
 
@@ -189,8 +190,7 @@ class DiscoveryShelf extends StatelessWidget {
     required this.itemWidth,
     this.height,
     this.shape = DiscoveryCoverShape.portrait,
-    this.titleMaxLines = 2,
-    this.hasSubtitle = true,
+    this.titleMaxLines = kShelfCardMetaTitleLines,
     this.loading = false,
     this.trailing,
     this.storageKey,
@@ -210,9 +210,8 @@ class DiscoveryShelf extends StatelessWidget {
   /// 卡片封面槽向（决定缺省行高与骨架形状）。
   final DiscoveryCoverShape shape;
 
-  /// 卡片标题行数 / 是否有次行（参与缺省行高计算）。
+  /// 卡片标题行数（参与缺省行高计算）。
   final int titleMaxLines;
-  final bool hasSubtitle;
 
   final bool loading;
 
@@ -227,26 +226,33 @@ class DiscoveryShelf extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? storage = storageKey;
     final Widget? trailingWidget = trailing;
-    final double stripHeight = height ??
+    final double cardHeight =
+        height ??
         DiscoveryCoverCard.extentFor(
           context,
           width: itemWidth,
           shape: shape,
           titleMaxLines: titleMaxLines,
-          hasSubtitle: hasSubtitle,
         );
-    final EdgeInsets stripPadding =
-        EdgeInsets.symmetric(horizontal: tokens.spacing.page);
+    // 悬停抬升（[FushiHoverLift]）放大的卡与加深的投影要有地方画：视口上下各
+    // 留 [headroom]，行高随之加两份（与媒体服务器横滚行同一口径）。
+    final double headroom = discoveryShelfLiftHeadroom(cardHeight);
+    final double stripHeight = cardHeight + headroom * 2;
+    final EdgeInsets stripPadding = EdgeInsets.symmetric(
+      horizontal: tokens.spacing.page,
+      vertical: headroom,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         FushiSectionTitle(
           title,
+          // 卡片条上下已有悬停留白：行头的上下间距扣掉它，节奏不变。
           padding: EdgeInsets.fromLTRB(
             tokens.spacing.page,
-            tokens.spacing.section,
+            (tokens.spacing.section - headroom).clamp(0, double.infinity),
             tokens.spacing.page,
-            tokens.spacing.gap,
+            (tokens.spacing.gap - headroom).clamp(0, double.infinity),
           ),
           trailing: !loading && trailingWidget == null
               ? null
@@ -294,24 +300,24 @@ class DiscoveryShelf extends StatelessWidget {
                   ),
                 )
               : FushiHorizontalEdgeFade(
-                child: HorizontalDragScrollable(
-                  child: ListView.separated(
-                    key: storage == null
-                        ? null
-                        : PageStorageKey<String>(storage),
-                    padding: stripPadding,
-                    scrollDirection: Axis.horizontal,
-                    itemCount: itemCount,
-                    separatorBuilder: (BuildContext context, int index) =>
-                        SizedBox(width: tokens.spacing.card),
-                    itemBuilder: (BuildContext context, int index) =>
-                        SizedBox(
-                      width: itemWidth,
-                      child: itemBuilder(context, index),
+                  child: HorizontalDragScrollable(
+                    child: ListView.separated(
+                      key: storage == null
+                          ? null
+                          : PageStorageKey<String>(storage),
+                      padding: stripPadding,
+                      scrollDirection: Axis.horizontal,
+                      itemCount: itemCount,
+                      separatorBuilder: (BuildContext context, int index) =>
+                          SizedBox(width: tokens.spacing.card),
+                      itemBuilder: (BuildContext context, int index) =>
+                          SizedBox(
+                            width: itemWidth,
+                            child: itemBuilder(context, index),
+                          ),
                     ),
                   ),
                 ),
-              ),
         ),
       ],
     );

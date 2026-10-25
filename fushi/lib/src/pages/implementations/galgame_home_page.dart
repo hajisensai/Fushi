@@ -34,6 +34,7 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromePinnedOffset;
 import 'package:fushi/src/utils/cover_image.dart';
@@ -817,8 +818,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
               SizedBox(
                 width: coverWidth,
                 child: AspectRatio(
-                  aspectRatio: 3 / 4,
-                  child: ShelfCoverFrame(child: _GameCoverArt(game: game)),
+                  aspectRatio: kShelfGameCaseAspectRatio,
+                  child: _gameCaseFrame(_GameCoverArt(game: game)),
                 ),
               ),
               SizedBox(width: roomy ? 24 : 16),
@@ -1007,10 +1008,11 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            // 卡高固定 144：卡盒比例下封面宽随之收窄，右侧文字列多出空间。
             AspectRatio(
-              aspectRatio: 3 / 4,
-              child: ShelfCoverFrame(
-                child: _GameCoverArt(
+              aspectRatio: kShelfGameCaseAspectRatio,
+              child: _gameCaseFrame(
+                _GameCoverArt(
                   game: game,
                   decodeWidth: kActivityCoverDecodePixelWidth,
                 ),
@@ -1201,11 +1203,16 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                       FushiIcons.games,
                       shape: FushiLeadingShape.square,
                     )
-                  : ClipRRect(
-                      borderRadius: FushiM3eShape.smallRadius,
-                      child: _GameCoverArt(
-                        game: game,
-                        decodeWidth: kActivityCoverDecodePixelWidth,
+                  // 列表行小缩略图：卡盒材质的简化档（只有圆角 / 内描边 / 轻
+                  // 光泽），方形槽里封面居中裁切。
+                  : ShelfCoverMaterialScope(
+                      material: ShelfCoverMaterial.gameCase,
+                      child: ShelfCoverFrame(
+                        density: ShelfCoverDensity.compact,
+                        child: _GameCoverArt(
+                          game: game,
+                          decodeWidth: kActivityCoverDecodePixelWidth,
+                        ),
                       ),
                     ),
             ),
@@ -1287,11 +1294,18 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       FushiTimeFormat.dayKey(DateTime.fromMillisecondsSinceEpoch(epochMs));
 }
 
-/// 「最近玩过」封面行：单张宽度、封面高（3:4）与整行高（封面 + 两行标题 + 上下
-/// 留给悬停抬升 / 焦点环的余量）。
+/// 「最近玩过」封面行：单张宽度、封面高（卡盒 1:1.6，与游戏库同形）与整行高
+/// （封面 + 两行标题 + 上下留给悬停抬升 / 焦点环 / 接触阴影的余量）。
 const double _kRecentTileWidth = 120;
-const double _kRecentCoverHeight = 160;
-const double _kRecentRowHeight = 224;
+const double _kRecentCoverHeight = _kRecentTileWidth / kShelfGameCaseAspectRatio;
+const double _kRecentRowHeight = _kRecentCoverHeight + 68;
+
+/// 游戏首页的封面框：与游戏库同一个透明卡盒材质（2026-10-25 库页定版；墨水屏
+/// 自动退回描边封面框）。悬停扫光 / 投影随祖先 [FushiHoverLift]。
+Widget _gameCaseFrame(Widget cover) => ShelfCoverMaterialScope(
+  material: ShelfCoverMaterial.gameCase,
+  child: ShelfCoverFrame(child: cover),
+);
 
 /// 游戏封面：来源解析与首页 Activity / 游戏库共用；没有封面或解码失败时画
 /// [_GameCoverPlaceholder]（M3E 饱和色块 + 首字），不再是一块灰。
@@ -1469,9 +1483,9 @@ class _RecentCoverTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 AspectRatio(
-                  aspectRatio: 3 / 4,
-                  child: ShelfCoverFrame(
-                    child: _GameCoverArt(
+                  aspectRatio: kShelfGameCaseAspectRatio,
+                  child: _gameCaseFrame(
+                    _GameCoverArt(
                       game: game,
                       decodeWidth: kActivityCoverDecodePixelWidth,
                     ),

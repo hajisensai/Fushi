@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingToolbarSurface;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -79,6 +80,7 @@ class CollectionDetailHero extends StatelessWidget {
     this.backdrop,
     this.backdropIndex = 0,
     this.cover,
+    this.coverMaterial,
     this.logo,
     this.semanticsName,
     this.originalTitle,
@@ -108,6 +110,9 @@ class CollectionDetailHero extends StatelessWidget {
 
   /// 2:3 海报（封面卡；没有 [backdrop] 时也拿它模糊垫底）。
   final ImageProvider? cover;
+
+  /// 封面卡的条目材质（与库页一致，视频调用方传光面海报）；null = 不套材质。
+  final ShelfCoverMaterial? coverMaterial;
 
   /// 标题 logo：有则替代文字大标题（Jellyfin `.detailLogo` 同款），解码失败回落文字。
   final ImageProvider? logo;
@@ -250,7 +255,11 @@ class CollectionDetailHero extends StatelessWidget {
   Widget? _buildCoverCard(double width) {
     final Widget? content = _buildCoverContent();
     if (content == null) return null;
-    return MediaDetailCoverFrame(width: width, child: content);
+    return MediaDetailCoverFrame(
+      width: width,
+      material: coverMaterial,
+      child: content,
+    );
   }
 
   Widget _buildWide(BuildContext context) {
@@ -297,6 +306,7 @@ class CollectionDetailHero extends StatelessWidget {
     ];
     return MediaDetailCompactHero(
       cover: _buildCoverContent(),
+      coverMaterial: coverMaterial,
       heading: _buildHeading(
         context,
         centered: false,
@@ -1036,6 +1046,8 @@ int collectionEpisodeColumns(double maxWidth) =>
     maxWidth >= kCollectionEpisodeTwoColumnMinWidth ? 2 : 1;
 
 /// 集卡缩略图：有图走 [PortraitCoverImage] 横槽（解码失败退占位），无图占位。
+/// 外框是 16:9 的光面海报材质（与视频库同一套，2026-10-26 用户拍板「海报材质
+/// 横版」），材质按实际尺寸画。
 Widget collectionEpisodeThumb(
   BuildContext context,
   ImageProvider? image, {
@@ -1043,22 +1055,22 @@ Widget collectionEpisodeThumb(
   double h = kCollectionEpisodeThumbHeight,
 }) {
   final ColorScheme cs = Theme.of(context).colorScheme;
-  if (image != null) {
-    return ClipRRect(
-      borderRadius: FushiBorderRadius.card,
-      child: SizedBox(
-        width: w,
-        height: h,
-        child: PortraitCoverImage(
+  final Widget content = image == null
+      ? collectionEpisodeThumbPlaceholder(w, h, cs)
+      : PortraitCoverImage(
           image: image,
           landscapeSlot: true,
           errorBuilder: (BuildContext _) =>
               collectionEpisodeThumbPlaceholder(w, h, cs),
-        ),
-      ),
-    );
-  }
-  return collectionEpisodeThumbPlaceholder(w, h, cs);
+        );
+  return SizedBox(
+    width: w,
+    height: h,
+    child: ShelfCoverMaterialScope(
+      material: ShelfCoverMaterial.glossyPoster,
+      child: ShelfCoverFrame(child: content),
+    ),
+  );
 }
 
 Widget collectionEpisodeThumbPlaceholder(double w, double h, ColorScheme cs) =>

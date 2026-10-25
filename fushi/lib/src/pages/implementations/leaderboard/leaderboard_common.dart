@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
@@ -388,6 +389,10 @@ class LeaderboardAvatar extends ConsumerWidget {
 }
 
 /// 作品封面。[nsfw] 时先模糊，点一下（或 Enter）才显示；没有封面画种类图标占位。
+///
+/// 封面框走作品种类对应的库页材质（书 / 漫画光面书皮、视频光面海报、游戏
+/// 卡盒；用户 2026-10-26）：列表行的 40 / 56 宽小图走简化档，作品页与分享卡
+/// 的大图（宽超过 [_compactMaxWidth]）走完整材质。墨水屏退回描边框。
 class LeaderboardCover extends ConsumerStatefulWidget {
   const LeaderboardCover({required this.work, this.width = 56, super.key});
 
@@ -400,6 +405,16 @@ class LeaderboardCover extends ConsumerStatefulWidget {
 
 class _LeaderboardCoverState extends ConsumerState<LeaderboardCover> {
   bool _revealed = false;
+
+  /// 宽不超过它的封面走材质简化档（列表行小图）。
+  static const double _compactMaxWidth = 64;
+
+  ShelfCoverMaterial get _material => switch (widget.work.kind) {
+    LeaderboardKind.book ||
+    LeaderboardKind.manga => ShelfCoverMaterial.glossyBook,
+    LeaderboardKind.video => ShelfCoverMaterial.glossyPoster,
+    LeaderboardKind.game => ShelfCoverMaterial.gameCase,
+  };
 
   IconData get _kindIcon => switch (widget.work.kind) {
     LeaderboardKind.book => FushiIcons.books,
@@ -451,17 +466,29 @@ class _LeaderboardCoverState extends ConsumerState<LeaderboardCover> {
         ],
       );
     }
+    final ShelfCoverMaterial material = _material;
     final Widget box = SizedBox(
       width: width,
       height: height,
-      child: ClipRRect(borderRadius: tokens.radii.chipRadius, child: image),
+      child: ShelfCoverMaterialScope(
+        material: material,
+        child: ShelfCoverFrame(
+          density: width <= _compactMaxWidth
+              ? ShelfCoverDensity.compact
+              : ShelfCoverDensity.regular,
+          backgroundColor: fushiNeutralBlockColor(context),
+          child: image,
+        ),
+      ),
     );
     if (!hidden) return box;
     return FushiTooltip(
       message: t.leaderboard_cover_reveal,
       child: FushiFocusable(
         onTap: () => setState(() => _revealed = true),
-        borderRadius: tokens.radii.chipRadius,
+        borderRadius: isEinkTheme(context)
+            ? tokens.radii.chipRadius
+            : shelfMaterialRadius(material),
         child: box,
       ),
     );

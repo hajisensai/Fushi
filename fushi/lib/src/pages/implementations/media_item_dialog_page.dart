@@ -11,6 +11,7 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 
 // ---------------------------------------------------------------------------
 // Action data model
@@ -189,6 +190,13 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
       (widget.item.base64Image?.isNotEmpty ?? false) ||
       (widget.item.extraUrl?.isNotEmpty ?? false);
 
+  /// 封面材质按条目域推断：阅读器条目（书 / 漫画 / 有声书）= 光面书皮；其它
+  /// 媒体类型（词典历史等）没有库页材质，保留旧封面卡。
+  ShelfCoverMaterial? get _coverMaterial =>
+      widget.item.mediaTypeIdentifier == ReaderMediaType.instance.uniqueKey
+      ? ShelfCoverMaterial.glossyBook
+      : null;
+
   @override
   Widget build(BuildContext context) {
     final String displayTitle = mediaSource.getDisplayTitleFromMediaItem(
@@ -211,6 +219,7 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
       quickActions: _quickActions,
       listActions: _listActions,
       dangerActions: _dangerActions,
+      coverMaterial: _coverMaterial,
       coverBackdrop: _hasCover
           ? mediaSource.getDisplayThumbnailFromMediaItem(
               appModel: appModel,
@@ -411,6 +420,7 @@ class MediaItemDialogFrame extends StatelessWidget {
     this.listActions = const [],
     this.dangerActions = const [],
     this.coverBackdrop,
+    this.coverMaterial,
     super.key,
   });
 
@@ -424,6 +434,12 @@ class MediaItemDialogFrame extends StatelessWidget {
   /// key。解码按 [_aspectDecodeWidth] 降采样，宽高比只差不到 1%。为 null 时
   /// 封面卡按默认竖版比例。
   final ImageProvider? coverBackdrop;
+
+  /// 封面卡的条目材质（库页定版，用户 2026-10-26：长按菜单封面与库页同一套
+  /// 材质）：由调用方按条目域给——书 / 漫画 [ShelfCoverMaterial.glossyBook]、
+  /// 视频 [ShelfCoverMaterial.glossyPoster]、游戏 [ShelfCoverMaterial.gameCase]。
+  /// null = 旧封面卡（圆角 + 投影）；墨水屏下材质自动退回描边框。
+  final ShelfCoverMaterial? coverMaterial;
   final String title;
   final String? author;
   final bool showLaunchAction;
@@ -450,6 +466,10 @@ class MediaItemDialogFrame extends StatelessWidget {
 
   /// 宽高比超过它按横版封面（视频）排。
   static const double _bannerMinAspect = 1.15;
+
+  /// 材质封面宽不超过它时走 [ShelfCoverDensity.compact]（宫格 / 右键菜单的
+  /// 小书头，含横版视频的 104 宽），更宽的（双栏左栏大封面）走完整材质。
+  static const double _compactCoverMaxWidth = 104;
 
   /// 宽高比尚未解析时的默认比例：书封最常见的 2:3。
   static const double _defaultPortraitAspect = 2 / 3;
@@ -551,7 +571,8 @@ class MediaItemDialogFrame extends StatelessWidget {
   // -- shared pieces -----------------------------------------------------------
 
   /// 封面卡：按 [aspect] 定尺寸（宽不超过 [maxWidth]、高不超过 [maxHeight]），
-  /// 整幅可见不裁切。MD3 圆角 [radius] + 投影；Apple 两层柔和阴影。
+  /// 整幅可见不裁切。MD3 圆角 [radius] + 投影；Apple 两层柔和阴影；给了
+  /// [coverMaterial] 时改走库页材质框（[ShelfCoverFrame]）。
   Widget _buildCoverCard(
     BuildContext context, {
     required double? aspect,
@@ -563,31 +584,56 @@ class MediaItemDialogFrame extends StatelessWidget {
     final bool eink = isEinkTheme(context);
     final bool dark =
         Theme.of(context).colorScheme.brightness == Brightness.dark;
-    final BorderRadius borderRadius = BorderRadius.all(Radius.circular(radius));
-    final List<BoxShadow>? shadows = eink
-        ? null
-        : <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(
-                alpha: apple ? (dark ? 0.45 : 0.18) : 0.28,
-              ),
-              blurRadius: apple ? 24 : 14,
-              spreadRadius: apple ? -4 : 0,
-              offset: Offset(0, apple ? 10 : 5),
-            ),
-          ];
-    final Widget card = DecoratedBox(
-      decoration: BoxDecoration(borderRadius: borderRadius, boxShadow: shadows),
-      child: ClipRRect(
-        borderRadius: borderRadius,
-        child: ColoredBox(
-          color: apple
-              ? appleColorsOf(context).secondaryFill
-              : FushiDesignTokens.of(context).surfaces.overlay,
-          child: cover!,
-        ),
-      ),
+    final Color fill = apple
+        ? appleColorsOf(context).secondaryFill
+        : FushiDesignTokens.of(context).surfaces.overlay;
+    final ShelfCoverMaterial? material = coverMaterial;
+    final BorderRadius borderRadius = material == null
+        ? BorderRadius.all(Radius.circular(radius))
+        : shelfMaterialRadius(material);
+    // 前景封面只画这一次（材质 / 旧卡共用）：外层再决定材质框还是圆角投影卡。
+    final Widget front = ClipRRect(
+      borderRadius: borderRadius,
+      clipBehavior: Clip.antiAlias,
+      child: cover!,
     );
+    final Widget card;
+    if (material != null) {
+      // 材质封面：外轮廓 / 投影 / 光泽全归 [ShelfCoverFrame]，不再叠本卡的
+      // 圆角与投影。宽不超过 [_compactCoverMaxWidth] 的小头像（宫格书头、右键
+      // 菜单书头）走简化档：只有圆角 + 内描边 + 轻光泽。
+      card = ShelfCoverMaterialScope(
+        material: material,
+        child: ShelfCoverFrame(
+          backgroundColor: fill,
+          density: maxWidth <= _compactCoverMaxWidth
+              ? ShelfCoverDensity.compact
+              : ShelfCoverDensity.regular,
+          child: front,
+        ),
+      );
+    } else {
+      final List<BoxShadow>? shadows = eink
+          ? null
+          : <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(
+                  alpha: apple ? (dark ? 0.45 : 0.18) : 0.28,
+                ),
+                blurRadius: apple ? 24 : 14,
+                spreadRadius: apple ? -4 : 0,
+                offset: Offset(0, apple ? 10 : 5),
+              ),
+            ];
+      card = DecoratedBox(
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: borderRadius,
+          boxShadow: shadows,
+        ),
+        child: front,
+      );
+    }
     final double ratio = aspect ?? _defaultPortraitAspect;
     double width = maxWidth;
     double height = width / ratio;

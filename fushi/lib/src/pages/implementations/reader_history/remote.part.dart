@@ -475,6 +475,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     showMediaItemActions<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
+        coverMaterial: ShelfCoverMaterial.glossyBook,
         cover: _buildRemoteBookCover(book),
         coverBackdrop: _remoteBookCoverBackdrop(book),
         title: book.displayName,
@@ -1658,6 +1659,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     showMediaItemActions<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
+        coverMaterial: ShelfCoverMaterial.glossyBook,
         cover: _coverPlaceholderIcon(Icons.headphones_outlined),
         title: title,
         showLaunchAction: false,

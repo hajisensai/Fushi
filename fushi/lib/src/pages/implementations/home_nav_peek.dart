@@ -12,6 +12,7 @@ import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi_core/fushi_core.dart' show MediaKind, VideoBookRow;
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show ShelfReadStatus, classifyShelfReadStatus;
@@ -58,6 +59,7 @@ AdaptiveNavPeek? homeNavPeekFor(
     case HomeTab.books:
     case HomeTab.manga:
       return AdaptiveNavPeek(
+        coverMaterial: ShelfCoverMaterial.glossyBook,
         load: () => _loadBooks(
           ref: ref,
           appModel: appModel,
@@ -66,10 +68,12 @@ AdaptiveNavPeek? homeNavPeekFor(
       );
     case HomeTab.video:
       return AdaptiveNavPeek(
+        coverMaterial: ShelfCoverMaterial.glossyPoster,
         load: () => _loadVideos(repo: videoRepo(), contextOf: contextOf),
       );
     case HomeTab.games:
       return AdaptiveNavPeek(
+        coverMaterial: ShelfCoverMaterial.gameCase,
         load: () =>
             _loadGames(appModel: appModel, open: () => goToTab(HomeTab.games)),
       );

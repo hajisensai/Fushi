@@ -14,6 +14,7 @@ import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
@@ -127,31 +128,35 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final FushiMotionScheme motion = context.fushiMotion;
-    return Column(
-      key: const ValueKey<String>('video-discovery-airing-today'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        _buildHeader(tokens),
-        LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            final double itemWidth = _itemWidth(constraints.maxWidth);
-            return FushiAnimatedSize(
-              duration: motion.spatialDefault.duration,
-              curve: motion.spatialDefault.curve,
-              alignment: AlignmentDirectional.topStart,
-              child: AnimatedSwitcher(
-                duration: motion.effectsDefault.duration,
-                switchInCurve: motion.effectsDefault.curve,
-                switchOutCurve: motion.effectsFast.curve,
-                child: KeyedSubtree(
-                  key: ValueKey<_AiringTodayPhase>(_phase),
-                  child: _buildContent(tokens, itemWidth),
+    // 库页材质（2026-10-25 定版）：放送卡与视频库同为光面海报。
+    return ShelfCoverMaterialScope(
+      material: ShelfCoverMaterial.glossyPoster,
+      child: Column(
+        key: const ValueKey<String>('video-discovery-airing-today'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _buildHeader(tokens),
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final double itemWidth = _itemWidth(constraints.maxWidth);
+              return FushiAnimatedSize(
+                duration: motion.spatialDefault.duration,
+                curve: motion.spatialDefault.curve,
+                alignment: AlignmentDirectional.topStart,
+                child: AnimatedSwitcher(
+                  duration: motion.effectsDefault.duration,
+                  switchInCurve: motion.effectsDefault.curve,
+                  switchOutCurve: motion.effectsFast.curve,
+                  child: KeyedSubtree(
+                    key: ValueKey<_AiringTodayPhase>(_phase),
+                    child: _buildContent(tokens, itemWidth),
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
-      ],
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -170,11 +175,13 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
             label: t.download_airing_calendar_title,
             child: FushiSectionTitle(
               t.download_airing_calendar_today_title,
+              // 底部不再留 gap：卡片条顶上的悬停留白（[discoveryShelfLiftHeadroom]）
+              // 就是行头与卡片之间的距离。
               padding: EdgeInsets.fromLTRB(
                 tokens.spacing.page,
                 tokens.spacing.section,
                 tokens.spacing.page,
-                tokens.spacing.gap,
+                0,
               ),
               trailing: DiscoveryViewAllButton(
                 key: const ValueKey<String>(
@@ -239,13 +246,16 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
     required IndexedWidgetBuilder itemBuilder,
     required bool scrollable,
   }) {
-    final double height = DiscoveryCoverCard.extentFor(
+    final double cardHeight = DiscoveryCoverCard.extentFor(
       context,
       width: itemWidth,
-      titleMaxLines: 2,
     );
+    // 悬停抬升放大的卡与加深的投影要有地方画：视口上下各留一份留白。
+    final double headroom = discoveryShelfLiftHeadroom(cardHeight);
+    final double height = cardHeight + headroom * 2;
     final EdgeInsets padding = EdgeInsets.symmetric(
       horizontal: tokens.spacing.page,
+      vertical: headroom,
     );
     Widget separator(BuildContext context, int index) =>
         SizedBox(width: tokens.spacing.card);
@@ -300,7 +310,6 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
       focusId: FushiFocusId('video-discovery-airing-today-$stableId'),
       title: episode.media.displayTitle,
       subtitle: '$time · $episodeLabel',
-      titleMaxLines: 2,
       onTap: () => unawaited(_openEpisode(episode)),
       cover: DiscoveryImageCover(
         image: url.isEmpty ? null : AppCachedHttpImage(url),

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/downloads/download_source_method.dart';
@@ -590,6 +591,7 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
             ),
           );
     return OnlineWorkHeader(
+      coverMaterial: ShelfCoverMaterial.glossyPoster,
       cover: MihonSourceImage(
         runtime: widget.manager.runtime,
         cache: widget.manager.coverCache,

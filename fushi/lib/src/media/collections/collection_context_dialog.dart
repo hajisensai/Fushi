@@ -13,6 +13,8 @@ import 'package:fushi/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart'
+    show ShelfCoverMaterial;
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -44,8 +46,12 @@ import 'package:fushi_core/fushi_core.dart';
 /// 获取字幕），本对话框统一负责「先关自身再执行」，回调里不要再 pop。
 /// 排序两项内建（[applyCollectionOneKeySort]，与详情页 AppBar 排序菜单同源），
 /// 各页零接线成本。
+/// [anchor]：右键按下处的全局坐标。调用方若在弹出前要 await（取成员 / 封面），
+/// 必须在入口第一个 await 之前读 `activeContextMenuAnchor` 传进来，否则右键会
+/// 退化成长按的抽屉 / 对话框（同步调用时可省，[showMediaItemActions] 自己读）。
 Future<void> showCollectionContextDialog({
   required BuildContext context,
+  Offset? anchor,
   required FushiDatabase db,
   required MediaCollectionRow collection,
   required VoidCallback onOpenDetail,
@@ -54,7 +60,8 @@ Future<void> showCollectionContextDialog({
     List<MediaCollectionItemRow> members,
     bool deleteLocalFiles,
     bool deleteStatistics,
-  )? onDeleteMembersMedia,
+  )?
+  onDeleteMembersMedia,
   String? deleteMembersCheckboxLabel,
   String? deleteMembersLocalFilesSubtitle,
   String? deleteMembersStatisticsSubtitle,
@@ -63,13 +70,17 @@ Future<void> showCollectionContextDialog({
   List<DialogListAction> leadingListActions = const <DialogListAction>[],
   Widget? cover,
   ImageProvider? coverImage,
+  ShelfCoverMaterial? coverMaterial,
 }) async {
+  // [coverMaterial]：封面卡的条目材质（[MediaItemDialogFrame.coverMaterial]），
+  // 合集表不记媒体域，由调用方按所在库页给；null = 旧封面卡。
   // [coverImage]：合集封面图源（自设封面 / 首个有封面的成员）。只给图源时由这里
   // 画前景（contain，整幅可见），同时作为封面块两侧的模糊垫底
   // （[MediaItemDialogFrame.coverBackdrop]）——此前合集菜单根本没有封面，一眼
   // 认不出是哪个合集（2026-10-04 用户截图）。
   final ImageProvider? coverSource = coverImage;
-  final Widget? effectiveCover = cover ??
+  final Widget? effectiveCover =
+      cover ??
       (coverSource == null
           ? null
           : Image(
@@ -79,6 +90,7 @@ Future<void> showCollectionContextDialog({
             ));
   await showMediaItemActions<void>(
     context: context,
+    anchor: anchor,
     builder: (BuildContext dialogContext) {
       void closeThen(void Function() action) {
         Navigator.pop(dialogContext);
@@ -88,6 +100,7 @@ Future<void> showCollectionContextDialog({
       return MediaItemDialogFrame(
         cover: effectiveCover,
         coverBackdrop: coverSource,
+        coverMaterial: coverMaterial,
         title: collection.name,
         // 顶部主按钮 = 打开详情（与行头/卡片单击同路径，键盘/手柄用户可达）。
         launchLabel: t.collection_view_all,
@@ -274,14 +287,16 @@ Future<void> _deleteCollection({
     List<MediaCollectionItemRow> members,
     bool deleteLocalFiles,
     bool deleteStatistics,
-  )? onDeleteMembersMedia,
+  )?
+  onDeleteMembersMedia,
   required String? deleteMembersCheckboxLabel,
   required String? deleteMembersLocalFilesSubtitle,
   required String? deleteMembersStatisticsSubtitle,
   required DeletionDisclosure? deleteMembersDisclosure,
 }) async {
-  final List<MediaCollectionItemRow> members =
-      await db.getCollectionItems(collection.id);
+  final List<MediaCollectionItemRow> members = await db.getCollectionItems(
+    collection.id,
+  );
   final CollectionOwnedSubscriptions subscriptions =
       await CollectionOwnedSubscriptions.load(db, <int>[collection.id]);
   if (!context.mounted) return;
@@ -289,20 +304,22 @@ Future<void> _deleteCollection({
       onDeleteMembersMedia != null && members.isNotEmpty;
   final FushiDestructiveConfirmResult? result =
       await showAppDialog<FushiDestructiveConfirmResult>(
-    context: context,
-    builder: (_) => FushiDestructiveConfirmDialog(
-      title: t.delete_collection,
-      message: t.delete_collection_confirm,
-      confirmLabel: t.delete_collection,
-      checkboxLabel: canDeleteMembers ? deleteMembersCheckboxLabel : null,
-      localFilesSubtitle:
-          canDeleteMembers ? deleteMembersLocalFilesSubtitle : null,
-      statisticsSubtitle:
-          canDeleteMembers ? deleteMembersStatisticsSubtitle : null,
-      checkedDisclosure: canDeleteMembers ? deleteMembersDisclosure : null,
-      deleteSubscriptionsLabel: subscriptions.deleteLabel,
-    ),
-  );
+        context: context,
+        builder: (_) => FushiDestructiveConfirmDialog(
+          title: t.delete_collection,
+          message: t.delete_collection_confirm,
+          confirmLabel: t.delete_collection,
+          checkboxLabel: canDeleteMembers ? deleteMembersCheckboxLabel : null,
+          localFilesSubtitle: canDeleteMembers
+              ? deleteMembersLocalFilesSubtitle
+              : null,
+          statisticsSubtitle: canDeleteMembers
+              ? deleteMembersStatisticsSubtitle
+              : null,
+          checkedDisclosure: canDeleteMembers ? deleteMembersDisclosure : null,
+          deleteSubscriptionsLabel: subscriptions.deleteLabel,
+        ),
+      );
   if (result == null || !context.mounted) return;
   // 订阅先于合集删：合集一没，后台下一轮轮询就可能按身份把它重建出来。
   if (result.deleteSubscriptions) await subscriptions.delete(db);
@@ -323,8 +340,9 @@ Future<void> _openCollectionStatistics({
   required FushiDatabase db,
   required MediaCollectionRow collection,
 }) async {
-  final List<MediaCollectionItemRow> members =
-      await db.getCollectionItems(collection.id);
+  final List<MediaCollectionItemRow> members = await db.getCollectionItems(
+    collection.id,
+  );
   if (!context.mounted) return;
   await showMediaItemStatsDialog(
     context,

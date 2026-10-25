@@ -36,6 +36,9 @@ import 'package:fushi/src/media/media_search_text.dart' show matchesMediaSearch;
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show ShelfCoverFrame;
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
     show
         FushiSpring,

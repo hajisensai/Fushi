@@ -6,6 +6,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart' show FushiDesignTokens;
@@ -54,7 +56,9 @@ class MusicCover extends StatelessWidget {
   final String? embeddedFromPath;
   final double? size;
 
-  /// 缺省 = 设计令牌的卡内小件圆角（与书架封面框同形）。
+  /// 缺省 = 设计令牌的卡内小件圆角（与书架封面框同形）；祖先有
+  /// [ShelfCoverMaterialScope]（如专辑网格的 [ShelfCoverMaterial.glossyAlbum]）时
+  /// 取材质圆角，被 `ShelfCoverFrame` 包着时内外轮廓重合、角上不露衬底。
   final BorderRadius? borderRadius;
 
   @override
@@ -112,7 +116,10 @@ class MusicCover extends StatelessWidget {
     }
     return ClipRRect(
       borderRadius:
-          borderRadius ?? FushiDesignTokens.of(context).radii.cardRadius,
+          borderRadius ??
+          (shelfCoverMaterialOf(context) != null
+              ? shelfCoverRadius(context)
+              : FushiDesignTokens.of(context).radii.cardRadius),
       child: SizedBox(
         width: size,
         height: size,

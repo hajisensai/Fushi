@@ -23,8 +23,9 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 一个浏览列表（「热门」「最新」或源声明的 listing）。
@@ -103,7 +104,15 @@ abstract class OnlineSourceCatalog<T> {
   /// 条目的稳定身份（去重、控件 key）。
   String keyOf(T item);
   String titleOf(T item);
+
+  /// 封面 widget：交给 [ShelfCoverFrame] 裁圆角并铺满，自己不要再裁圆角；
+  /// 图片用 `BoxFit.cover` 填满。
   Widget buildCover(BuildContext context, T item);
+
+  /// 条目材质（2026-10-25 库页定版）：与该域本地库同一种——漫画 / 小说 =
+  /// 光面书皮（[ShelfCoverMaterial.glossyBook]），视频 = 光面海报
+  /// （[ShelfCoverMaterial.glossyPoster]）。同时决定网格的封面比例。
+  ShelfCoverMaterial get coverMaterial;
 
   /// 点封面进详情；null = 只读（试用预览）。
   void Function(BuildContext context, T item)? get openDetail;
@@ -151,6 +160,27 @@ abstract class OnlineSourceCatalog<T> {
 
 /// 离底多少像素开始自动加载下一页（与视频发现页同值）。
 const double kOnlineBrowseAutoLoadExtent = 600;
+
+/// 材质对应的封面比例：书皮 = 书架书封 1:1.42，海报 = 2:3，专辑 = 1:1。卡盒只有
+/// 游戏库用，在线源没有游戏域，按海报比例处理。
+DiscoveryCoverShape onlineBrowseCoverShape(ShelfCoverMaterial material) =>
+    switch (material) {
+      ShelfCoverMaterial.glossyBook => DiscoveryCoverShape.book,
+      ShelfCoverMaterial.glossyAlbum => DiscoveryCoverShape.square,
+      ShelfCoverMaterial.glossyPoster ||
+      ShelfCoverMaterial.gameCase => DiscoveryCoverShape.portrait,
+    };
+
+/// 结果网格的列数（2~8 列，按 180 一列）；骨架与真网格共用。
+int _onlineBrowseColumns(double width) => (width / 180).floor().clamp(2, 8);
+
+/// 网格四周内边距与列间距。
+const double _kOnlineBrowseGridPadding = 16;
+const double _kOnlineBrowseGridCrossSpacing = 12;
+
+/// 行间比列间多留一点：封面即卡片没有卡底，标题与下一排封面之间要留得开
+/// （与库页网格同一口径）。
+const double _kOnlineBrowseGridMainSpacing = 16;
 
 class OnlineSourceBrowsePage<T> extends StatefulWidget {
   const OnlineSourceBrowsePage({required this.catalog, super.key, this.footer});
@@ -337,92 +367,112 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
     final List<OnlineBrowseListing> listings = _prepared
         ? _catalog.listings
         : const <OnlineBrowseListing>[];
-    return FushiPageScaffold(
-      title: _catalog.title,
-      // 列表分段条与验证入口原本固定在正文顶部：页头浮在正文上之后（脚手架默认
-      // extendBodyBehindHeader）会被胶囊盖住，所以随页头一起进 headerBottom，
-      // 按「搜索 → 分段 → 验证」纵向堆叠；网格自己让开顶部。
-      headerBottom: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Row(
-              children: <Widget>[
-                // 共享 M3E 搜索栏（焦点登记 / 回车兜底 / Esc 清空 / 移动端收键盘与
-                // 其它搜索框一致）。仍是「提交才搜」，不挂 onQueryChanged。
-                Expanded(
-                  child: FushiSearchBar(
-                    fieldKey: ValueKey<String>('${prefix}_search_field'),
-                    focusId: FushiFocusId('$prefix-online-browse-search'),
-                    controller: _searchController,
-                    focusNode: _searchFocus,
-                    hintText: _catalog.searchHint,
-                    onSubmitted: _search,
-                    onClear: () {
-                      _searchController.clear();
-                      _search('');
-                    },
-                  ),
-                ),
-                if (_prepared && _catalog.hasFilters) ...<Widget>[
-                  const SizedBox(width: 8),
-                  FushiIconButtonControl.filledTonal(
-                    key: ValueKey<String>('${prefix}_filters'),
-                    tooltip: _catalog.filtersTooltip,
-                    onPressed: _showFilters,
-                    icon: const FushiIcon(FushiIcons.filter),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          if (listings.isNotEmpty)
+    // 条目材质由 catalog 决定（漫画 / 小说书皮、视频海报）；骨架与结果网格都在
+    // 这一层下面，墨水屏时 [ShelfCoverFrame] 自动退回描边封面框。
+    return ShelfCoverMaterialScope(
+      material: _catalog.coverMaterial,
+      child: FushiPageScaffold(
+        title: _catalog.title,
+        // 列表分段条与验证入口原本固定在正文顶部：页头浮在正文上之后（脚手架默认
+        // extendBodyBehindHeader）会被胶囊盖住，所以随页头一起进 headerBottom，
+        // 按「搜索 → 分段 → 验证」纵向堆叠；网格自己让开顶部。
+        headerBottom: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: FushiSegmentedStrip<String>(
-                key: ValueKey<String>('${prefix}_listing'),
-                segments: <ButtonSegment<String>>[
-                  for (final OnlineBrowseListing listing in listings)
-                    ButtonSegment<String>(
-                      value: listing.id,
-                      label: Text(listing.label),
-                    ),
-                ],
-                // 搜索态没有列表被选中；分段条仍停在最近的列表上，免得一片空白。
-                selected: _listingId ?? listings.first.id,
-                onChanged: _selectListing,
-                alignment: Alignment.centerLeft,
-              ),
-            ),
-          if (_error != null && _items.isNotEmpty)
-            _catalog.buildVerifyAction(
-              context,
-              error: _error,
-              onVerified: () => _load(reset: false),
-            ),
-        ],
-      ),
-      // 正文用 body 子树里的 context 构建，才读得到脚手架下发的顶部让位。
-      body: widget.footer == null
-          ? Builder(builder: _buildResults)
-          : Column(
-              children: <Widget>[
-                // BUG-2440：有 footer 时底部安全区归 footer 自己的 SafeArea 认领，
-                // 先从网格的 MediaQuery 里摘掉，免得两边各补一次。
-                Expanded(
-                  child: Builder(
-                    builder: (BuildContext context) => MediaQuery.removePadding(
-                      context: context,
-                      removeBottom: true,
-                      child: Builder(builder: _buildResults),
+              child: Row(
+                children: <Widget>[
+                  // 共享 M3E 搜索栏（焦点登记 / 回车兜底 / Esc 清空 / 移动端收键盘与
+                  // 其它搜索框一致）。仍是「提交才搜」，不挂 onQueryChanged。
+                  Expanded(
+                    child: FushiSearchBar(
+                      fieldKey: ValueKey<String>('${prefix}_search_field'),
+                      focusId: FushiFocusId('$prefix-online-browse-search'),
+                      controller: _searchController,
+                      focusNode: _searchFocus,
+                      hintText: _catalog.searchHint,
+                      onSubmitted: _search,
+                      onClear: () {
+                        _searchController.clear();
+                        _search('');
+                      },
                     ),
                   ),
-                ),
-                widget.footer!,
-              ],
+                  if (_prepared && _catalog.hasFilters) ...<Widget>[
+                    const SizedBox(width: 8),
+                    FushiIconButtonControl.filledTonal(
+                      key: ValueKey<String>('${prefix}_filters'),
+                      tooltip: _catalog.filtersTooltip,
+                      onPressed: _showFilters,
+                      icon: const FushiIcon(FushiIcons.filter),
+                    ),
+                  ],
+                ],
+              ),
             ),
+            if (listings.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: FushiSegmentedStrip<String>(
+                  key: ValueKey<String>('${prefix}_listing'),
+                  segments: <ButtonSegment<String>>[
+                    for (final OnlineBrowseListing listing in listings)
+                      ButtonSegment<String>(
+                        value: listing.id,
+                        label: Text(listing.label),
+                      ),
+                  ],
+                  // 搜索态没有列表被选中；分段条仍停在最近的列表上，免得一片空白。
+                  selected: _listingId ?? listings.first.id,
+                  onChanged: _selectListing,
+                  alignment: Alignment.centerLeft,
+                ),
+              ),
+            if (_error != null && _items.isNotEmpty)
+              _catalog.buildVerifyAction(
+                context,
+                error: _error,
+                onVerified: () => _load(reset: false),
+              ),
+          ],
+        ),
+        // 正文用 body 子树里的 context 构建，才读得到脚手架下发的顶部让位。
+        body: widget.footer == null
+            ? Builder(builder: _buildResults)
+            : Column(
+                children: <Widget>[
+                  // BUG-2440：有 footer 时底部安全区归 footer 自己的 SafeArea 认领，
+                  // 先从网格的 MediaQuery 里摘掉，免得两边各补一次。
+                  Expanded(
+                    child: Builder(
+                      builder: (BuildContext context) =>
+                          MediaQuery.removePadding(
+                            context: context,
+                            removeBottom: true,
+                            child: Builder(builder: _buildResults),
+                          ),
+                    ),
+                  ),
+                  widget.footer!,
+                ],
+              ),
+      ),
+    );
+  }
+
+  /// 给定可用宽度时一格卡片的高度（封面按材质比例 + 库页同款文字块）。
+  double _gridItemExtent(BuildContext context, double maxWidth, int columns) {
+    final double width =
+        (maxWidth -
+            _kOnlineBrowseGridPadding * 2 -
+            _kOnlineBrowseGridCrossSpacing * (columns - 1)) /
+        columns;
+    return DiscoveryCoverCard.extentFor(
+      context,
+      width: width,
+      shape: onlineBrowseCoverShape(_catalog.coverMaterial),
     );
   }
 
@@ -480,7 +530,10 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
     final void Function(BuildContext, T)? open = _catalog.openDetail;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
+        final int columns = _onlineBrowseColumns(constraints.maxWidth);
+        final DiscoveryCoverShape shape = onlineBrowseCoverShape(
+          _catalog.coverMaterial,
+        );
         return NotificationListener<ScrollNotification>(
           onNotification: _onScroll,
           child: FushiEntranceScope(
@@ -490,17 +543,23 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
               padding: withBottomSafeInset(
                 context,
                 EdgeInsets.fromLTRB(
-                  16,
-                  16 + MediaQuery.paddingOf(context).top,
-                  16,
-                  16,
+                  _kOnlineBrowseGridPadding,
+                  _kOnlineBrowseGridPadding + MediaQuery.paddingOf(context).top,
+                  _kOnlineBrowseGridPadding,
+                  _kOnlineBrowseGridPadding,
                 ),
               ),
+              // 行高 = 封面（材质比例）+ 库页同款文字块，按实际列宽精确给：
+              // 大字体不溢出，也不在卡底空出一截。
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: columns,
-                childAspectRatio: 0.62,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
+                mainAxisExtent: _gridItemExtent(
+                  context,
+                  constraints.maxWidth,
+                  columns,
+                ),
+                crossAxisSpacing: _kOnlineBrowseGridCrossSpacing,
+                mainAxisSpacing: _kOnlineBrowseGridMainSpacing,
               ),
               itemCount: _items.length + (_hasNextPage ? 1 : 0),
               itemBuilder: fushiStaggeredItemBuilder((
@@ -520,28 +579,16 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
                   );
                 }
                 final T item = _items[index];
-                return FushiCard(
+                // 库页同款封面卡（透明卡壳 + 材质封面 + 两行标题），与发现页同一个
+                // 组件；悬停抬升 / 扫光由它与材质负责。
+                return DiscoveryCoverCard(
                   key: ValueKey<String>(
                     '${prefix}_item_${_catalog.keyOf(item)}',
                   ),
-                  padding: EdgeInsets.zero,
+                  title: _catalog.titleOf(item),
+                  shape: shape,
                   onTap: open == null ? null : () => open(context, item),
-                  // FushiCard 内部已按同一圆角 token 裁剪，这里不再多包 ClipRRect。
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      Expanded(child: _catalog.buildCover(context, item)),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                        child: Text(
-                          _catalog.titleOf(item),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: context.fushiType.titleSmall,
-                        ),
-                      ),
-                    ],
-                  ),
+                  cover: _catalog.buildCover(context, item),
                 );
               }),
             ),
@@ -551,42 +598,39 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
     );
   }
 
-  /// 首屏加载骨架：与结果网格同列数、同比例的封面块 + 两条标题条，整组共享
-  /// 一道有界闪光。
+  /// 首屏加载骨架：与结果网格同列数、同几何的 [DiscoverySkeletonCard]（封面块 +
+  /// 两条标题条），数据到达时版面不跳。每张骨架卡自带有界闪光。
   Widget _buildSkeleton() {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
-        return FushiSkeletonShimmer(
+        final int columns = _onlineBrowseColumns(constraints.maxWidth);
+        final DiscoveryCoverShape shape = onlineBrowseCoverShape(
+          _catalog.coverMaterial,
+        );
+        return ExcludeSemantics(
           child: GridView.builder(
             key: ValueKey<String>('${_catalog.keyPrefix}_skeleton'),
             primary: false,
             physics: const NeverScrollableScrollPhysics(),
             padding: EdgeInsets.fromLTRB(
-              16,
-              16 + MediaQuery.paddingOf(context).top,
-              16,
-              16,
+              _kOnlineBrowseGridPadding,
+              _kOnlineBrowseGridPadding + MediaQuery.paddingOf(context).top,
+              _kOnlineBrowseGridPadding,
+              _kOnlineBrowseGridPadding,
             ),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
-              childAspectRatio: 0.62,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
+              mainAxisExtent: _gridItemExtent(
+                context,
+                constraints.maxWidth,
+                columns,
+              ),
+              crossAxisSpacing: _kOnlineBrowseGridCrossSpacing,
+              mainAxisSpacing: _kOnlineBrowseGridMainSpacing,
             ),
             itemCount: columns * 3,
-            itemBuilder: (BuildContext context, int index) => Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Expanded(
-                  child: FushiSkeleton(borderRadius: FushiM3eShape.cardRadius),
-                ),
-                const SizedBox(height: 10),
-                FushiSkeleton.line(widthFactor: 0.9),
-                const SizedBox(height: 6),
-                FushiSkeleton.line(widthFactor: 0.5),
-              ],
-            ),
+            itemBuilder: (BuildContext context, int index) =>
+                DiscoverySkeletonCard(shape: shape),
           ),
         );
       },

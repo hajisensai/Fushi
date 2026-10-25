@@ -27,9 +27,12 @@ import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiFloatingChromeInsetSpacer, FushiFloatingChromeOverlay,
+    show
+        FushiFloatingChromeInsetSpacer,
+        FushiFloatingChromeOverlay,
         FushiFloatingChromeScope;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 
 /// 漫画库「发现」视图：**漫画唯一的发现入口**。
 ///
@@ -103,8 +106,9 @@ class MangaDiscoveryPage extends ConsumerStatefulWidget {
 
 class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   MihonManager? _mihonManager;
-  final MihonSourceImageLoadQueue _imageQueue =
-      MihonSourceImageLoadQueue(maxConcurrent: 4);
+  final MihonSourceImageLoadQueue _imageQueue = MihonSourceImageLoadQueue(
+    maxConcurrent: 4,
+  );
 
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
@@ -238,18 +242,19 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// mokuro.moe），不是「导入」——导入页只有本地来源，装不了在线源。
   VoidCallback? _openSourcesAction() =>
       widget.onOpenSources ??
-      MediaLibraryShellScope.maybeOf(context)
-          ?.actionFor(MediaLibraryViewKind.onlineSources);
+      MediaLibraryShellScope.maybeOf(
+        context,
+      )?.actionFor(MediaLibraryViewKind.onlineSources);
 
   /// 页头只在独立 / 库页壳里渲染；不渲染时（embedded、Cupertino）刷新挪进搜索行。
   bool get _headerVisible => !widget.embedded && !isCupertinoPlatform(context);
 
   Widget _refreshButton() => FushiIconButtonControl(
-        key: const ValueKey<String>('manga_discovery_refresh'),
-        tooltip: t.refresh,
-        onPressed: _refresh,
-        icon: const FushiIcon(FushiIcons.refresh),
-      );
+    key: const ValueKey<String>('manga_discovery_refresh'),
+    tooltip: t.refresh,
+    onPressed: _refresh,
+    icon: const FushiIcon(FushiIcons.refresh),
+  );
 
   void _openMokuro() {
     final AppModel appModel = ref.read(appProvider);
@@ -262,10 +267,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           // + 底部动作行」的竖排正文，搜索行嵌在视图状态里、挪不进 headerBottom，
           // 叠到页头底下会被胶囊盖住。
           extendBodyBehindHeader: false,
-          body: MokuroMoeCatalogView(
-            db: appModel.database,
-            embedded: true,
-          ),
+          body: MokuroMoeCatalogView(db: appModel.database, embedded: true),
         ),
       ),
     );
@@ -372,9 +374,10 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     final List<DiscoverySourceOption> options = catalog.sourceOptions;
     // 选中的来源被停用/卸载后自动回落到「全部来源」：把它算成派生值而不是在
     // setState 里纠正，选中项就不可能停在一个已经不存在的 id 上。
-    final String selected = options.any(
-      (DiscoverySourceOption option) => option.id == _selectedSourceId,
-    )
+    final String selected =
+        options.any(
+          (DiscoverySourceOption option) => option.id == _selectedSourceId,
+        )
         ? _selectedSourceId
         : kDiscoveryAllSourcesId;
     // 库页外壳里：页头 / 来源 + 搜索行叠进 M3E 浮动工具区（与外壳页签同一份
@@ -382,42 +385,46 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     // 「一整块不透明控件区 + 下面才是内容」。外壳外退化成原来的竖排。
     final bool floating = FushiFloatingChromeScope.maybeOf(context) != null;
     final Widget body = _buildBody(catalog, selected);
-    return DesktopContentLayout(
-      kind: DesktopContentKind.readerShelf,
-      child: FushiFloatingChromeOverlay(
-        chrome: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          if (_headerVisible) _buildHeader(),
-          DiscoveryHeaderControls(
-              trailing: <Widget>[
-                if (widget.onAiAcquire case final ValueChanged<String> onAi)
-                  DiscoveryAiAcquireButton(
-                    key: const ValueKey<String>('manga-discovery-ai-acquire'),
-                    onPressed: () => onAi(_searchController.text),
-                  ),
-                _refreshButton(),
-              ],
-              sources: options,
-              selectedSourceId: selected,
-              onSourceSelected: (String id) => setState(() {
-                _selectedSourceId = id;
-                _rowFailures.clear();
-                // 回到「全部来源」时各行重新挂载、重新拉取，Hero 跟着重选。
-                _heroes.clear();
-                _anyRowSettled = false;
-              }),
-              searchController: _searchController,
-              searchFocusNode: _searchFocusNode,
-              searchFocusId: const FushiFocusId('manga-discovery-search'),
-              searchHintText: t.manga_global_search_hint,
-              onSearchSubmitted: (String query) =>
-                  _submitSearch(query, catalog, selected),
-            ),
-        ],
+    // 库页材质（2026-10-25 定版）：漫画发现的卡片与漫画书架同为光面书皮。
+    return ShelfCoverMaterialScope(
+      material: ShelfCoverMaterial.glossyBook,
+      child: DesktopContentLayout(
+        kind: DesktopContentKind.readerShelf,
+        child: FushiFloatingChromeOverlay(
+          chrome: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (_headerVisible) _buildHeader(),
+              DiscoveryHeaderControls(
+                trailing: <Widget>[
+                  if (widget.onAiAcquire case final ValueChanged<String> onAi)
+                    DiscoveryAiAcquireButton(
+                      key: const ValueKey<String>('manga-discovery-ai-acquire'),
+                      onPressed: () => onAi(_searchController.text),
+                    ),
+                  _refreshButton(),
+                ],
+                sources: options,
+                selectedSourceId: selected,
+                onSourceSelected: (String id) => setState(() {
+                  _selectedSourceId = id;
+                  _rowFailures.clear();
+                  // 回到「全部来源」时各行重新挂载、重新拉取，Hero 跟着重选。
+                  _heroes.clear();
+                  _anyRowSettled = false;
+                }),
+                searchController: _searchController,
+                searchFocusNode: _searchFocusNode,
+                searchFocusId: const FushiFocusId('manga-discovery-search'),
+                searchHintText: t.manga_global_search_hint,
+                onSearchSubmitted: (String query) =>
+                    _submitSearch(query, catalog, selected),
+              ),
+            ],
+          ),
+          child: floating ? body : DiscoveryScrollTopFade(child: body),
         ),
-        child: floating ? body : DiscoveryScrollTopFade(child: body),
       ),
     );
   }
@@ -455,8 +462,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     }
     final Map<String, MangaDiscoverySourceFeed> feedsById =
         <String, MangaDiscoverySourceFeed>{
-      for (final MangaDiscoverySourceFeed feed in feeds) feed.id: feed,
-    };
+          for (final MangaDiscoverySourceFeed feed in feeds) feed.id: feed,
+        };
     // 已停用 / 卸载的来源不再有行，它的旧失败也不该留在横幅上。
     final List<ExternalProviderFailure> failures = <ExternalProviderFailure>[
       for (final MapEntry<String, Object> failure in _rowFailures.entries)
@@ -505,8 +512,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                       _buildHero(heroes[index]),
                 )
               : !_anyRowSettled && feeds.isNotEmpty
-                  ? const DiscoveryHeroSkeleton()
-                  : const SizedBox.shrink(),
+              ? const DiscoveryHeroSkeleton()
+              : const SizedBox.shrink(),
         ),
         SliverToBoxAdapter(child: catalogSection),
         // 条目直接来自已启用来源，点开即可读。空行整行收起；失败行也收起，
@@ -593,8 +600,9 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
             key: const ValueKey<String>('manga_discovery_empty'),
             icon: FushiIcons.travelExplore,
             message: t.manga_discovery_empty_title,
-            detail:
-                MihonRuntimeFactory.isSupported ? t.mihon_source_empty : null,
+            detail: MihonRuntimeFactory.isSupported
+                ? t.mihon_source_empty
+                : null,
             action: openSources == null
                 ? null
                 : FushiFilledButton.tonalIcon(
@@ -664,8 +672,8 @@ class _FeedHeader extends StatelessWidget {
   }
 }
 
-/// 一张来源条目卡片：共享 [DiscoveryCoverCard]（圆角竖版封面 + 下方两行标题）。
-/// 行与网格共用。
+/// 一张来源条目卡片：共享 [DiscoveryCoverCard]（光面书皮封面 + 下方两行标题，
+/// 与漫画书架同几何）。行与网格共用。
 class _SourceItemCard extends StatelessWidget {
   const _SourceItemCard({required this.item});
 
@@ -675,6 +683,7 @@ class _SourceItemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return DiscoveryCoverCard(
       title: item.title,
+      shape: DiscoveryCoverShape.book,
       cover: item.buildCover(context),
       onTap: () => item.open(context),
     );
@@ -743,8 +752,8 @@ class _MangaDiscoverySourceRowState extends State<MangaDiscoverySourceRow> {
 
   Future<void> _load() async {
     try {
-      final List<MangaDiscoverySourceItem> loaded =
-          await widget.feed.loadPopular();
+      final List<MangaDiscoverySourceItem> loaded = await widget.feed
+          .loadPopular();
       if (!mounted) return;
       setState(() => _items = loaded);
       widget.onItems?.call(loaded);
@@ -762,8 +771,8 @@ class _MangaDiscoverySourceRowState extends State<MangaDiscoverySourceRow> {
     final List<MangaDiscoverySourceItem>? all = _items;
     final List<MangaDiscoverySourceItem>? loaded =
         all != null && widget.excludeFirst && all.isNotEmpty
-            ? all.sublist(1)
-            : all;
+        ? all.sublist(1)
+        : all;
     if (loaded != null && loaded.isEmpty) return const SizedBox.shrink();
     final MangaDiscoverySourceFeed feed = widget.feed;
     return DiscoveryShelf(
@@ -772,7 +781,7 @@ class _MangaDiscoverySourceRowState extends State<MangaDiscoverySourceRow> {
       loading: loaded == null,
       // 行高由共享件按卡宽实测：加载中骨架与加载完的卡片条同高，行高不变。
       itemWidth: _sourceCardWidth(context),
-      hasSubtitle: false,
+      shape: DiscoveryCoverShape.book,
       trailing: _viewAllButton(feed),
       itemCount: loaded?.length ?? 0,
       itemBuilder: (BuildContext context, int index) =>
@@ -939,9 +948,9 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
       // 首页未到：同几何骨架网格占位。
       body = DiscoveryCoverGrid(
         itemCount: 12,
-        hasSubtitle: false,
+        shape: DiscoveryCoverShape.book,
         itemBuilder: (BuildContext context, int index) =>
-            const DiscoverySkeletonCard(),
+            const DiscoverySkeletonCard(shape: DiscoveryCoverShape.book),
       );
     } else if (loaded.isEmpty) {
       body = SliverToBoxAdapter(
@@ -956,12 +965,12 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
       body = FushiEntranceScope(
         child: DiscoveryCoverGrid(
           itemCount: loaded.length,
-          hasSubtitle: false,
+          shape: DiscoveryCoverShape.book,
           itemBuilder: (BuildContext context, int index) =>
               FushiStaggeredEntrance(
-            index: index,
-            child: _SourceItemCard(item: loaded[index]),
-          ),
+                index: index,
+                child: _SourceItemCard(item: loaded[index]),
+              ),
         ),
       );
     }
