@@ -1,12 +1,12 @@
 {
   "source_repository": "https://github.com/hajisensai/libmpv-darwin-build",
-  "source_commit": "07d6afd9f8c2606320a35b0e1d32143b5da25f15",
-  "workflow_run": "https://github.com/hajisensai/libmpv-darwin-build-fushi/actions/runs/40132136924",
+  "source_commit": "cf017beae7a4372b35e48552211af2d621096290",
+  "workflow_run": "https://github.com/hajisensai/libmpv-darwin-build-fushi/actions/runs/40196136860",
   "mpv_commit": "36abaa32d00a7229ee206aae12dc0e97e7962dca",
   "native_navigation_patch_sha256": "5edcd0de27d14793204b89754dd18c3d1b3c18e29a6edd19c594ef60c72d2b00",
   "dovi_patch_sha256": "bff4b4bc5cafecf7cf622a85d5c5ebb5ba76739f64189e87e450f7086000b08b",
   "archive": "libmpv-xcframeworks-bluray.tar.gz",
-  "archive_sha256": "4b58264bdd57d95c6c7bd56320c48f79958e7977729f160e2c5fcaa90b80ff32",
+  "archive_sha256": "25e4d8d85ff7b508ad722846076cbce29080f24a5d7971e76f8c9ef9c27a17ee",
   "host_runtime_probe": {
     "version": "mpv v0.41.0-UNKNOWN",
     "disc_menu_option_result": 0,
@@ -56,7 +56,7 @@
   },
   "host_runtime_probe_architecture": "arm64",
   "verification": {
-    "sha256": "4b58264bdd57d95c6c7bd56320c48f79958e7977729f160e2c5fcaa90b80ff32",
+    "sha256": "25e4d8d85ff7b508ad722846076cbce29080f24a5d7971e76f8c9ef9c27a17ee",
     "platform": "macos",
     "frameworks": {
       "Placebo": {
@@ -209,6 +209,8 @@
               "@rpath/Bluray.framework/Versions/A/Bluray",
               "@rpath/Uchardet.framework/Versions/A/Uchardet",
               "/usr/lib/libz.1.dylib",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/AVFoundation.framework/Versions/A/AVFoundation",
               "/System/Library/Frameworks/CoreAudio.framework/Versions/A/CoreAudio",
               "/System/Library/Frameworks/AudioUnit.framework/Versions/A/AudioUnit",
               "/System/Library/Frameworks/AudioToolbox.framework/Versions/A/AudioToolbox",
@@ -255,5 +257,11 @@
   "gpl": "libmpv built with -Dgpl=true -Ddvdnav=enabled (stream_dvdnav is GPL-only): GPL-2.0-or-later",
   "remote_disc": "rdisc1: bluray-device / dvd-device accept http(s) URLs of a paired host's disc share; Mpv carries the disc-remote-access marker (verify_darwin_archive.py requires it)",
   "cdda_seek_patch_sha256": "502d390dbec960f2e6ba6937b69448ee74e8457e6998d47067e49fe56bc0c81f",
-  "audio_cd": "cdda1: -Dcdda=enabled on libcdio 2.3.0 / libcdio-paranoia 10.2+2.0.2 (GPL-3.0-or-later, built in the fork, shipped as Cdio / Cdio_cdda / Cdio_paranoia frameworks linking the SDK's /usr/lib/libiconv.2.dylib and IOKit / DiskArbitration); Mpv carries the cdda-seek-sector-offset.patch marker and links @rpath/Cdio_paranoia.framework (verify_darwin_archive.py requires both). Audio CD playback has not been tested on a Mac."
+  "audio_cd": "cdda1: -Dcdda=enabled on libcdio 2.3.0 / libcdio-paranoia 10.2+2.0.2 (GPL-3.0-or-later, built in the fork, shipped as Cdio / Cdio_cdda / Cdio_paranoia frameworks linking the SDK's /usr/lib/libiconv.2.dylib and IOKit / DiskArbitration); Mpv carries the cdda-seek-sector-offset.patch marker and links @rpath/Cdio_paranoia.framework (verify_darwin_archive.py requires both). Audio CD playback has not been tested on a Mac.",
+  "upstream_pull_request": "https://github.com/hajisensai/libmpv-darwin-build/pull/3",
+  "audio_outputs": [
+    "coreaudio",
+    "avfoundation"
+  ],
+  "avfoundation_ao": "BUG-3662 / BUG-3735: W1ght/libmpv-darwin-build@b2c41c6 (fushi/avfoundation-ao) cherry-picked onto fushi/cdda as cf017be: macOS mpv adds -Davfoundation=enabled (fallback when ao_coreaudio fails with -50 on macOS 27); the CI host probe requires the 'AVFoundation AVSampleBufferAudioRenderer' string and Mpv now links AVFoundation / CoreMedia. host_runtime_probe is the run's artifacts/probe.json (macos-15 arm64 runner), not a local Mac run."
 }

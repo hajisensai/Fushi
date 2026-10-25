@@ -20,8 +20,8 @@ Frameworks/.unified-ffmpeg: $(UNIFIED_FFMPEG_ARCHIVE)
 
 # Verified original-menu libmpv bundle. Source and actual slice/closure checks:
 # ../native/provenance.json. Keep full TrueHD decoding and the DOVI GL patch.
-MPV_XCFRAMEWORKS_VERSION=unified-07d6afd9f8c2
-MPV_XCFRAMEWORKS_SHA256SUM=4b58264bdd57d95c6c7bd56320c48f79958e7977729f160e2c5fcaa90b80ff32
+MPV_XCFRAMEWORKS_VERSION=unified-cf017beae7a4
+MPV_XCFRAMEWORKS_SHA256SUM=25e4d8d85ff7b508ad722846076cbce29080f24a5d7971e76f8c9ef9c27a17ee
 MPV_XCFRAMEWORKS_VENDOR_ARCHIVE=$(abspath ../native/libmpv-xcframeworks-bluray.tar.gz)
 
 # Explicit local build verification, without publishing or changing production pins.
