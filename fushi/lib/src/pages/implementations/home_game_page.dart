@@ -27,6 +27,7 @@ import 'package:fushi/src/utils/components/fushi_header_search.dart'
     show FushiHeaderSearchKeys, fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
+import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/utils.dart';
 
 // GameSection / gameSectionNotifier 已迁到 game_shared.dart（三页共享），
@@ -315,9 +316,17 @@ class _HomeGamePageState extends State<HomeGamePage> {
             controller: _chrome,
             // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（BUG-2975）。
             child: FushiFloatingChromeOverlay(
-              chrome: FushiFloatingChromeBar(
-                tabs: navigation,
-                slot: _actionsSlot,
+              // 浮动工具区 = 顶栏 + 同步进度条（常规同步 / 复习同步在跑时才有高度），
+              // 子区按整个工具区的高度让位，进度条不压内容。
+              chrome: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
+                  const SyncProgressBanner(
+                    key: ValueKey<String>('games-sync-progress'),
+                  ),
+                ],
               ),
               child: NotificationListener<ScrollNotification>(
                 onNotification: _onScroll,

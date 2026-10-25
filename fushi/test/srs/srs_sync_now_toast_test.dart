@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_import_entry.dart';
+import 'package:fushi/src/srs/srs_sync_progress.dart';
+import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi/utils.dart';
 
@@ -59,5 +61,21 @@ void main() {
     );
     expect(toast.msg, t.srs_sync_done);
     expect(toast.severity, ToastSeverity.success);
+  });
+
+  test('「立即同步」点下：没在跑 → 立刻说开始同步', () {
+    expect(srsSyncNowStartToast(null), t.srs_sync_now_started);
+  });
+
+  test('「立即同步」点下：已有一轮在跑 → 立刻说正在同步并带进度，不静默排队', () {
+    const SrsSyncProgress running = SrsSyncProgress(
+      stage: SrsSyncStage.downloading,
+      done: 123,
+      total: 2048,
+    );
+    final String msg = srsSyncNowStartToast(running);
+    expect(msg, t.srs_sync_now_busy(progress: srsSyncProgressLine(running)));
+    expect(msg, contains('123'));
+    expect(msg, contains('2048'));
   });
 }

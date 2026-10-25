@@ -41,6 +41,8 @@ import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mined_history_import.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_sync_progress.dart';
+import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -504,11 +506,26 @@ String srsSyncErrorReason(Object error) => switch (error) {
 ///
 /// [onNoChannel]：没配置任何同步通道时调用（页面借它直达同步设置）；不给就只弹提示。
 /// 配置了但失败时照常报失败原因，不跳设置。
+///
+/// 点下就有反馈（同步一轮可能跑十几分钟，以前要等到跑完才弹结果，看上去像没反应）：
+/// - 已有一轮在跑（[srsSyncProgress] 非 null）：立刻提示「正在同步：<进度>」，这次请求排在
+///   那一轮后面（补跑一次增量，保证点下之后的改动也传上去），跑完照常报结果；
+/// - 本入口发起的请求还没回来时再点：只提示进度，不再叠一轮；
+/// - 否则立刻提示「开始同步」。
 Future<void> openSrsSyncNow(
   Future<SrsSyncNowResult> Function()? syncNow, {
   Future<void> Function()? onNoChannel,
 }) async {
   if (syncNow == null) return;
+  final SrsSyncProgress? running = srsSyncProgress.value;
+  if (_srsSyncNowInFlight) {
+    FushiToast.show(
+      msg: srsSyncNowStartToast(running ?? const SrsSyncProgress()),
+    );
+    return;
+  }
+  _srsSyncNowInFlight = true;
+  FushiToast.show(msg: srsSyncNowStartToast(running));
   try {
     final SrsSyncNowResult result = await syncNow();
     if (result.unconfigured && onNoChannel != null) {
@@ -522,5 +539,15 @@ Future<void> openSrsSyncNow(
   } catch (e, stack) {
     ErrorLogService.instance.log('openSrsSyncNow', e, stack);
     FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+  } finally {
+    _srsSyncNowInFlight = false;
   }
 }
+
+/// 本入口发起的「立即同步」还没回来。
+bool _srsSyncNowInFlight = false;
+
+/// 「立即同步」点下那一刻的提示：已有一轮在跑 → 「正在同步：<进度>」，否则 → 「开始同步」。
+String srsSyncNowStartToast(SrsSyncProgress? running) => running == null
+    ? t.srs_sync_now_started
+    : t.srs_sync_now_busy(progress: srsSyncProgressLine(running));
