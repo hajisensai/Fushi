@@ -129,6 +129,17 @@ enum AnkiOpenWordOutcome {
   failed,
 }
 
+/// BUG-3783：已制卡片存在哪里——决定「已存在的卡片」对话框的标题、「查看 /
+/// 打开」文案与打开失败提示用 Anki 还是 Fushi 复习的说法。制卡落点是 Fushi 复习
+/// 时界面却一律写「在 Anki 中打开」，用户以为卡进了 Anki。
+enum MinedNoteHome {
+  /// 卡在 Anki（AnkiConnect / AnkiDroid / AnkiMobile / Anki 同步客户端）。
+  anki,
+
+  /// 卡在 Fushi 自带的复习里。
+  fushiReview,
+}
+
 /// TODO-1007/1008：一张**已存在于 Anki**的、与当前查词同条件匹配的卡片的轻量引用。
 ///
 /// 用户痛点（根因）：旧的「点 ✓ 默默 return / 只覆写本会话最近一张」把「別处或上次会话

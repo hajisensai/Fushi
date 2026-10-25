@@ -1113,6 +1113,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   // AnkiConnect），而不是「exe 叫 anki.exe」——新版 Anki 的 anki.exe 只是启动器，
   // 真正持有窗口的是 venv 里的 pythonw.exe，按名字找必然落空、整套让渡空转。
   @override
+  bool get canOpenMinedNote => true;
+
+  @override
   Future<bool> openNoteInAnki(int noteId) async {
     try {
       final service = await _getService();

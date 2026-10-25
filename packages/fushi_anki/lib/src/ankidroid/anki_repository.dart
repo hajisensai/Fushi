@@ -712,6 +712,9 @@ class AnkiRepository extends BaseAnkiRepository {
     }
   }
 
+  @override
+  bool get canOpenMinedNote => true;
+
   // TODO-1007/1008：用 ACTION_VIEW intent 在 AnkiDroid 中打开该 note（native `openNote`）。
   @override
   Future<bool> openNoteInAnki(int noteId) async {
