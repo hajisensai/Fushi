@@ -1079,3 +1079,91 @@ fn bench_migrate() {
         t.elapsed().as_millis()
     );
 }
+
+/// 投影里一条笔记的物化视图（Dart `srsMaterializeNotes` 同一个内核入口）：读 `srs_field_edits` 的落库行。
+fn materialized_note(d: &Device, note: &str) -> Value {
+    let rows = d.rows(&format!("SELECT json FROM srs_field_edits WHERE entity_kind = 'note' AND entity_id = '{note}' ORDER BY id"));
+    let items: Vec<&str> = rows.iter().skip(1).map(|r| r[0].as_str()).collect();
+    let header = json!([{"t": "note", "n": items.len(), "rec": {"noteTypeId": "T", "guid": "g", "createdAt": 1}}]).to_string();
+    let mut text = String::new();
+    let mut offs = vec![0u32];
+    for i in &items {
+        text.push_str(i);
+        offs.push(text.len() as u32);
+    }
+    let servers = vec![crate::history::NONE_I64; items.len()];
+    let out = crate::registers::materialize(header.as_bytes(), text.as_bytes(), &offs, &servers).unwrap();
+    serde_json::from_slice::<Value>(&out).unwrap()[0].clone()
+}
+
+/// BUG：带标签的笔记删掉后一直挂在「等你决定的笔记」里，再点「确认删除」也消不掉。标签 OR-Set 投影出的
+/// 合成 `tags` 行没有因果 dot（写入者 `sync2:tags:<笔记>`、ctx 空），寄存器内核把它当成「与删除并发的修改」，
+/// 任何删除都看不见它 → `pd` 恒真。合成行与删除的并发由 sync2 扣住机制（按 `#tag` 操作）判定，内核不再判它。
+#[test]
+fn deleting_a_tagged_note_is_not_a_pending_decision() {
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![edit("note", "N1", "f/x", json!("v1")), edit("note", "N1", "tags", json!(["vocab"]))]);
+    a.apply(T0 + 1, vec![edit("note", "N1", "deleted", json!(T0 + 1))]);
+    let v = materialized_note(&a, "N1");
+    assert_eq!(v["v"]["da"], json!(T0 + 1), "{v}");
+    assert_eq!(v["v"]["pd"], json!(false), "a plain delete of a tagged note is not a conflict: {v}");
+    assert_eq!(v["x"], json!([]), "{v}");
+    // 「确认删除」= 再写一次删除：仍是已删、不待裁决；同步到另一台设备、再收一遍同样的段也不冒出来。
+    a.apply(T0 + 2, vec![edit("note", "N1", "deleted", json!(T0 + 2))]);
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 3);
+        b.sync(&mut bucket, "loc", T0 + 3);
+    }
+    for d in [&a, &b] {
+        let v = materialized_note(d, "N1");
+        assert!(v["v"]["da"].is_i64(), "{v}");
+        assert_eq!(v["v"]["pd"], json!(false), "{v}");
+        assert!(d.core.sync2_conflicts(P).unwrap().as_array().unwrap().is_empty());
+    }
+    assert_eq!(projection(&a), projection(&b));
+}
+
+/// 删除 ⟂ 另一台设备上改标签：sync2 照样扣住删除进冲突中心（合成行不被内核判，不等于不判）；选「删除」后
+/// 笔记已删、不待裁决、冲突清空，再收同样的段不重新冒出；选「保留」后笔记照旧在、标签是加胜的结果。
+#[test]
+fn delete_concurrent_with_tag_change_resolves_either_way() {
+    for delete in [true, false] {
+        let a = Device::new("a");
+        let b = Device::new("b");
+        let mut bucket = Bucket::default();
+        a.apply(T0, vec![edit("note", "N1", "f/x", json!("v1")), edit("note", "N1", "tags", json!(["vocab"]))]);
+        a.sync(&mut bucket, "loc", T0);
+        b.sync(&mut bucket, "loc", T0);
+        a.apply(T0 + 1, vec![edit("note", "N1", "deleted", json!(T0 + 1))]);
+        b.apply(T0 + 2, vec![edit("note", "N1", "tags", json!(["vocab", "new"]))]);
+        for _ in 0..2 {
+            a.sync(&mut bucket, "loc", T0 + 3);
+            b.sync(&mut bucket, "loc", T0 + 3);
+        }
+        let c = a.core.sync2_conflicts(P).unwrap();
+        assert_eq!(c.as_array().unwrap().len(), 1, "{c}");
+        assert_eq!(materialized_note(&a, "N1")["v"]["da"], Value::Null, "held: still visible");
+        a.core.sync2_resolve(P, c[0]["id"].as_str().unwrap(), delete, T0 + 4).unwrap();
+        for _ in 0..2 {
+            a.sync(&mut bucket, "loc", T0 + 5);
+            b.sync(&mut bucket, "loc", T0 + 5);
+        }
+        // 再收一遍全部段（重复投递）：结论不变。
+        let all: Vec<Vec<u8>> = bucket.0.values().cloned().collect();
+        for d in [&a, &b] {
+            d.core.sync2_ingest(P, &all, None, T0 + 6).unwrap();
+        }
+        for d in [&a, &b] {
+            let v = materialized_note(d, "N1");
+            assert_eq!(v["v"]["da"].is_i64(), delete, "{v}");
+            assert_eq!(v["v"]["pd"], json!(false), "{v}");
+            assert!(d.core.sync2_conflicts(P).unwrap().as_array().unwrap().is_empty());
+            if !delete {
+                assert_eq!(v["v"]["t"], json!(["vocab", "new"]), "{v}");
+            }
+        }
+        assert_eq!(projection(&a), projection(&b));
+    }
+}
