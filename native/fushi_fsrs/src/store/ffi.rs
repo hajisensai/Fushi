@@ -100,11 +100,17 @@ pub extern "C" fn ffsrs_store_open(
     }
 }
 
-/// 关闭（NULL 无操作）。之后句柄不可再用。
+/// 关闭（NULL 无操作，重复关闭无操作）：等在途命令跑完再关两条连接，之后经这个句柄的命令一律报
+/// 「已关闭」。
+///
+/// 句柄指向的结构体**不释放**：Dart 侧把句柄地址交给后台 isolate（`SrsCore.fromAddress`），
+/// 拥有者关闭时那边可能还在调用、甚至之后才调用；释放掉就是 use-after-free（2026-10-25 CI 实测：
+/// 测试 tearDown 关库时 `Isolate.run` 里的 sync2 还在跑，析构 serde_json 时 `free(): invalid
+/// pointer`）。留下的只有两把空锁加一个路径，每次打开一份，进程里打开 srs.db 的次数是个位数。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_close(core: *mut SrsCore) {
     if !core.is_null() {
-        let _ = catch_unwind(AssertUnwindSafe(|| unsafe { drop(Box::from_raw(core)) }));
+        let _ = catch_unwind(AssertUnwindSafe(|| unsafe { (*core).close() }));
     }
 }
 

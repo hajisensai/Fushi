@@ -3,6 +3,9 @@
 //! 一条写连接 + 一条读连接，各在一把 Mutex 里：写命令 = 写连接上的一个事务（这把锁就是 SRS 的
 //! 写锁），读命令走读连接上的 WAL 快照，不被长写挡住。对象可以从任意线程 / isolate 调用。
 //!
+//! 关闭（[SrsCore::close]）与在途调用互斥：它先后拿读、写两把锁再丢掉连接，所以会等别的线程手上
+//! 的命令跑完；之后的命令一律报「已关闭」。结构体本身不随关闭释放（见 [ffi::ffsrs_store_close]）。
+//!
 //! 只打开 `srs.db`、它的备份快照副本或自己生成的临时文件；绝不打开主库 `fushi.db`（同一进程里
 //! Drift 那份 SQLite 与这里自带的一份同开一个文件，会在 POSIX 平台上互相清掉文件锁）。
 
@@ -14,7 +17,8 @@ pub mod sync2;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::ops::{Deref, DerefMut};
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use rusqlite::types::Value;
@@ -25,8 +29,9 @@ const LEGACY_KEY: &str = "legacy_import";
 pub struct SrsCore {
     // 字段按声明顺序析构：只读连接先关，写连接最后关。最后一个关闭的连接负责把 WAL 并回主文件
     // 并删掉 -wal；只读连接做不了，让它最后关会把整段 WAL 留在磁盘上（拷库 / 换库时丢数据）。
-    reader: Mutex<Connection>,
-    writer: Mutex<Connection>,
+    // `None` = 已关闭（[SrsCore::close]）。
+    reader: Mutex<Option<Connection>>,
+    writer: Mutex<Option<Connection>>,
     /// 旧库搬迁的事务开着（写连接上挂着一个 BEGIN）：别的写命令一律拒绝。
     legacy_open: AtomicBool,
     /// 库文件路径（[SrsCore::read_session] 另开只读连接用）。
@@ -37,6 +42,32 @@ pub struct SrsCore {
 /// 不占 [SrsCore] 自己的读 / 写连接。析构即回滚并关闭。
 pub struct ReadSession {
     conn: Connection,
+}
+
+/// 打开着的一条连接（[SrsCore::reader] / [SrsCore::writer]），持有它就持有那把锁。
+pub(crate) struct Conn<'a>(MutexGuard<'a, Option<Connection>>);
+
+impl<'a> Conn<'a> {
+    fn of(guard: MutexGuard<'a, Option<Connection>>) -> Result<Self, String> {
+        if guard.is_none() {
+            return Err("srs store is closed".to_string());
+        }
+        Ok(Self(guard))
+    }
+}
+
+impl Deref for Conn<'_> {
+    type Target = Connection;
+
+    fn deref(&self) -> &Connection {
+        self.0.as_ref().expect("Conn::of checked the connection is open")
+    }
+}
+
+impl DerefMut for Conn<'_> {
+    fn deref_mut(&mut self) -> &mut Connection {
+        self.0.as_mut().expect("Conn::of checked the connection is open")
+    }
 }
 
 impl ReadSession {
@@ -110,19 +141,29 @@ impl SrsCore {
         .map_err(|e| format!("open reader {}: {e}", path.display()))?;
         configure(&reader)?;
         Ok(Self {
-            writer: Mutex::new(writer),
-            reader: Mutex::new(reader),
+            writer: Mutex::new(Some(writer)),
+            reader: Mutex::new(Some(reader)),
             legacy_open: AtomicBool::new(false),
             path: path.to_path_buf(),
         })
     }
 
-    pub(crate) fn writer(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
-        self.writer.lock().map_err(|_| "srs writer poisoned".to_string())
+    pub(crate) fn writer(&self) -> Result<Conn<'_>, String> {
+        Conn::of(self.writer.lock().map_err(|_| "srs writer poisoned".to_string())?)
     }
 
-    pub(crate) fn reader(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
-        self.reader.lock().map_err(|_| "srs reader poisoned".to_string())
+    pub(crate) fn reader(&self) -> Result<Conn<'_>, String> {
+        Conn::of(self.reader.lock().map_err(|_| "srs reader poisoned".to_string())?)
+    }
+
+    /// 关闭两条连接（幂等）。先拿读锁再拿写锁，所以会等其它线程上在途的命令跑完，关闭返回时库文件
+    /// 已没有打开的句柄（覆盖恢复要删换 srs.db）。读连接先关、写连接最后关：最后关的连接负责把 WAL
+    /// 并回主文件并删掉 -wal。之后的命令一律报「已关闭」。
+    pub fn close(&self) {
+        let reader = self.reader.lock().unwrap_or_else(|e| e.into_inner()).take();
+        drop(reader);
+        let writer = self.writer.lock().unwrap_or_else(|e| e.into_inner()).take();
+        drop(writer);
     }
 
     fn meta(conn: &Connection, key: &str) -> Result<Option<String>, String> {
@@ -486,6 +527,42 @@ mod tests {
             .unwrap()
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
             .unwrap()
+    }
+
+    /// 关闭与在途调用互斥：另一线程正拿着读连接时 close 等它跑完；之后的命令报已关闭，文件可删。
+    /// （回归：拥有者关库时后台 isolate 的命令还在跑，原来直接 free 结构体 → use-after-free。）
+    #[test]
+    fn close_waits_for_in_flight_calls_and_rejects_later_ones() {
+        use std::sync::{Arc, Barrier};
+        use std::time::Instant;
+
+        let p = temp("close_inflight");
+        let core = Arc::new(SrsCore::open(&p).unwrap());
+        let started = Arc::new(Barrier::new(2));
+        let worker = {
+            let core = Arc::clone(&core);
+            let started = Arc::clone(&started);
+            std::thread::spawn(move || {
+                let conn = core.reader().unwrap();
+                started.wait();
+                std::thread::sleep(Duration::from_millis(300));
+                conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
+                    .unwrap()
+            })
+        };
+        started.wait();
+        let t0 = Instant::now();
+        core.close();
+        assert!(
+            t0.elapsed() >= Duration::from_millis(200),
+            "close returned while another thread was still using the reader"
+        );
+        assert!(worker.join().unwrap() > 0);
+        assert_eq!(core.reader().err().as_deref(), Some("srs store is closed"));
+        assert_eq!(core.writer().err().as_deref(), Some("srs store is closed"));
+        assert!(core.debug_query("SELECT 1", &[]).is_err());
+        core.close();
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
     }
 
     #[test]
