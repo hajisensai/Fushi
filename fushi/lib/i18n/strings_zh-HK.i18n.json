@@ -6126,6 +6126,7 @@
   "show_expression_tags": "顯示表達標籤",
   "show_floating_lyric": "懸浮字幕",
   "show_media_notification": "顯示媒體通知",
+  "show_media_notification_hint": "關閉後，播放時仍保留一則只有書名和播放/暫停鍵的最簡通知，防止背景播放被系統停掉。",
   "show_options": "顯示選項",
   "show_top_progress_bar": "頂部閱讀進度",
   "skip_action": "略過操作",

@@ -6126,6 +6126,7 @@
   "show_expression_tags": "عرض علامات التعبير",
   "show_floating_lyric": "ترجمة عائمة",
   "show_media_notification": "عرض إشعار الوسائط",
+  "show_media_notification_hint": "When off, a minimal notification (title and play/pause only) stays during playback so the system doesn't stop audio in the background.",
   "show_options": "عرض الخيارات",
   "show_top_progress_bar": "مؤشر تقدّم القراءة",
   "skip_action": "تخطّي الإجراء",

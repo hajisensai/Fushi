@@ -6126,6 +6126,7 @@
   "show_expression_tags": "Tampilkan tag ekspresi",
   "show_floating_lyric": "Overlay subtitle mengambang",
   "show_media_notification": "Tampilkan notifikasi media",
+  "show_media_notification_hint": "When off, a minimal notification (title and play/pause only) stays during playback so the system doesn't stop audio in the background.",
   "show_options": "Tampilkan Opsi",
   "show_top_progress_bar": "Indikator progres baca",
   "skip_action": "Lewati Aksi",

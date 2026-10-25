@@ -6126,6 +6126,7 @@
   "show_expression_tags": "Mostrar tags de expressão",
   "show_floating_lyric": "Legenda flutuante sobreposta",
   "show_media_notification": "Mostrar notificação de mídia",
+  "show_media_notification_hint": "When off, a minimal notification (title and play/pause only) stays during playback so the system doesn't stop audio in the background.",
   "show_options": "Mostrar Opções",
   "show_top_progress_bar": "Indicador de progresso",
   "skip_action": "Ação de pular",
