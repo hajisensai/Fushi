@@ -139,12 +139,15 @@ function decodePng(buf) {
 
 // Dark (text-coloured) pixels: the default theme prints dark text on a light page and the
 // lane colour is light, so only glyph / mark ink counts.
-function inkOf(png64) {
+// With a custom cue colour (rgb(30, 90, 200)) the marks turn blue while the cue plays; blue
+// anti-aliased edges are not "dark", so judging them by brightness reads recolouring as clipping.
+// Those pages count ink on the red channel instead, which both the black and the blue ink keep low.
+function inkOf(png64, customColor) {
   const img = decodePng(Buffer.from(png64, 'base64'));
   let ink = 0;
   for (let i = 0; i < img.w * img.h; i++) {
     const r = img.data[i * img.ch], g = img.data[i * img.ch + 1], b = img.data[i * img.ch + 2];
-    if (r + g + b < 3 * 110) ink++;
+    if (customColor ? r < 140 : r + g + b < 3 * 110) ink++;
   }
   return ink;
 }
@@ -156,9 +159,9 @@ try {
   for (const page of payload.pages) {
     const prep = await driver.evalOnPage(page.html, PREP);
     if (prep.error) { failures.push(page.name + ': ' + prep.error); continue; }
-    const before = inkOf(await driver.capture(prep.strip));
+    const before = inkOf(await driver.capture(prep.strip), !!page.customColor);
     const play = await driver.evalHere(PLAY);
-    const after = inkOf(await driver.capture(prep.strip));
+    const after = inkOf(await driver.capture(prep.strip), !!page.customColor);
     const fail = (msg) => failures.push(page.name + ': ' + msg);
     // Horizontal continuous draws the sesame marks as small dots (about 5 dark pixels).
     if (before < 4) fail('no emphasis marks painted before the highlight (ink ' + before + ')');

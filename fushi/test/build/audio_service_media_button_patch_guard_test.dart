@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-3777 B：audio_service Android 原生层把真实的 `KEYCODE_MEDIA_PLAY` /
 /// `KEYCODE_MEDIA_PAUSE` 当成「单击」（切换）交给 Dart，蓝牙 / 车机补发的 PLAY 在
 /// 播放中到达就把声音暂停。补丁在 `ci/patches/hosted/audio_service-<版本>/`，整份
@@ -62,7 +64,10 @@ void main() {
   test(
     'PLAY / PAUSE 键码走有方向的 onPlay / onPause，只有 PLAY_PAUSE / HEADSETHOOK 是切换',
     () {
-      final String src = java.readAsStringSync().replaceAll('\r\n', '\n');
+      // 注释先抹成空白（Java 与 Dart 同为 C 风格注释）：注释里出现的语句不能冒充分支实现。
+      final String src = maskComments(
+        java.readAsStringSync().replaceAll('\r\n', '\n'),
+      );
       final int start = src.indexOf(
         'public boolean onMediaButtonEvent(Intent mediaButtonEvent)',
       );
@@ -80,7 +85,7 @@ void main() {
             .substring(at, brk)
             .split('\n')
             .map((String l) => l.trim())
-            .where((String l) => l.isNotEmpty && !l.startsWith('//'))
+            .where((String l) => l.isNotEmpty)
             .where((String l) => !l.startsWith('case '))
             .join(' ');
       }

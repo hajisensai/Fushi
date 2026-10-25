@@ -1560,7 +1560,7 @@ class _ContextMenuPanel extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Tooltip(
+                FushiTooltip(
                   message: frame.title,
                   child: Text(
                     frame.title,
@@ -1631,7 +1631,7 @@ class _MenuIconBar extends StatelessWidget {
         for (int i = 0; i < actions.length; i++) ...<Widget>[
           if (i > 0) const SizedBox(width: 2),
           Expanded(
-            child: Tooltip(
+            child: FushiTooltip(
               message: actions[i].label,
               child: FushiPressScale(
                 child: Material(

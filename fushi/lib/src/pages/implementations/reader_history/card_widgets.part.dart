@@ -310,7 +310,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
       case HealthKind.failed:
         return _ShelfMetaSpec(
           status: t.shelf_card_meta_alignment_failed,
-          icon: Icons.error_outline,
+          icon: FushiIcons.error,
           tone: ShelfMetaTone.error,
           progress: fraction,
           completed: done,
@@ -318,7 +318,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
       case HealthKind.partial:
         return _ShelfMetaSpec(
           status: '${t.shelf_card_meta_alignment_partial} · $status',
-          icon: Icons.warning_amber_rounded,
+          icon: FushiIcons.warning,
           tone: ShelfMetaTone.warning,
           progress: fraction,
           completed: done,
@@ -329,7 +329,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
       case HealthKind.notApplicable:
         return _ShelfMetaSpec(
           status: '${t.section_audiobook} · $status',
-          icon: Icons.headphones_outlined,
+          icon: FushiIcons.audiobook,
           progress: fraction,
           completed: done,
         );
