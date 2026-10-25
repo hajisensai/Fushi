@@ -17,7 +17,7 @@ use crate::sync2::id::Id;
 use crate::sync2::keys::CollectionKey;
 use crate::sync2::op::{Body, Op};
 use crate::sync2::segment::{self, chain_next, Chain, Head, CHAIN_ZERO};
-use crate::sync2::vv::OpId;
+use crate::sync2::vv::{OpId, Vv};
 
 fn chain_at(conn: &Connection, profile: &str, device: &Id, seq: u64) -> Result<Option<Chain>, String> {
     if seq == 0 {
@@ -61,6 +61,124 @@ fn cut_segments(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64)>, Str
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)
+}
+
+/// 小段合并（设计 §7.1）：本机连续的小段（每段少于 [COMPACT_SMALL_OPS] 条）攒到 [COMPACT_MIN_RUN] 个以上，就按
+/// 段上限重新切成大段——同一 seq 区间、同样的操作、重新签名，名字随之变化。网盘上的文件数因此不随同步次数线性涨。
+///
+/// 各位置上已经有旧小段的：合并后的大段登记成「要重传」（[sync2_rewrites]），旧小段登记成「待删」
+/// （[sync2_obsolete]）；待删的旧文件在新 head 写出、且所有活跃设备的 ack 都越过它之后才删（`sync2_head` 返回），
+/// 归档位置由 Dart 侧跳过删除。还没传过的位置直接拿合并后的段。
+const COMPACT_SMALL_OPS: u64 = 200;
+const COMPACT_MIN_RUN: usize = 16;
+
+fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
+    let segs: Vec<(u64, u64)> = conn
+        .prepare_cached("SELECT first, last FROM sync2_segments WHERE profile_uid = ?1 AND device = ?2 ORDER BY first")
+        .map_err(sql)?
+        .query_map(params![local.profile, local.device.0.to_vec()], |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64)))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    // 连续的小段成一组（中间夹着大段就断开）。
+    let mut runs: Vec<Vec<(u64, u64)>> = Vec::new();
+    let mut cur: Vec<(u64, u64)> = Vec::new();
+    for s in segs {
+        if s.1 - s.0 + 1 < COMPACT_SMALL_OPS {
+            cur.push(s);
+        } else if !cur.is_empty() {
+            runs.push(std::mem::take(&mut cur));
+        }
+    }
+    if !cur.is_empty() {
+        runs.push(cur);
+    }
+    let locations: Vec<(String, u64)> = conn
+        .prepare_cached("SELECT location, uploaded FROM sync2_locations WHERE profile_uid = ?1")
+        .map_err(sql)?
+        .query_map([&local.profile], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64)))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    for run in runs.into_iter().filter(|r| r.len() >= COMPACT_MIN_RUN) {
+        let (first, last) = (run[0].0, run[run.len() - 1].1);
+        let mut ops = Vec::with_capacity((last - first + 1) as usize);
+        for seq in first..=last {
+            ops.push(load_op(conn, &local.profile, &OpId { device: local.device, seq })?.ok_or("missing local op")?);
+        }
+        let merged: Vec<(u64, u64)> = segment::split_ranges(&ops)
+            .into_iter()
+            .map(|(a, b)| (ops[a].id.seq, ops[b - 1].id.seq))
+            .collect();
+        if merged.len() >= run.len() {
+            continue;
+        }
+        for (a, b) in &run {
+            let tag = segment::chain_tag(&chain_at(conn, &local.profile, &local.device, *b)?.ok_or("missing chain")?);
+            let name = format!("devices/{}/{}", local.device.text(), segment::segment_file_name(*a, *b, &tag));
+            for (loc, uploaded) in &locations {
+                if *uploaded >= *b {
+                    conn.prepare_cached(
+                        "INSERT OR IGNORE INTO sync2_obsolete (profile_uid, location, name, last) VALUES (?1, ?2, ?3, ?4)",
+                    )
+                    .map_err(sql)?
+                    .execute(params![local.profile, loc, name, *b as i64])
+                    .map_err(sql)?;
+                }
+            }
+        }
+        conn.execute(
+            "DELETE FROM sync2_segments WHERE profile_uid = ?1 AND device = ?2 AND first >= ?3 AND last <= ?4",
+            params![local.profile, local.device.0.to_vec(), first as i64, last as i64],
+        )
+        .map_err(sql)?;
+        for (a, b) in &merged {
+            conn.execute(
+                "INSERT INTO sync2_segments (profile_uid, device, first, last) VALUES (?1, ?2, ?3, ?4)",
+                params![local.profile, local.device.0.to_vec(), *a as i64, *b as i64],
+            )
+            .map_err(sql)?;
+            for (loc, uploaded) in &locations {
+                if *uploaded >= *a {
+                    conn.prepare_cached("INSERT OR IGNORE INTO sync2_rewrites (profile_uid, location, first) VALUES (?1, ?2, ?3)")
+                        .map_err(sql)?
+                        .execute(params![local.profile, loc, *a as i64])
+                        .map_err(sql)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// [location] 上可以删的旧小段：新 head 已写出（调用方在写 head 之后取），且所有活跃的其它设备（没冻结、
+/// 不是本机）在 head 里 ack 本机的进度都越过了它。取出即从待删表里移除。
+fn take_obsolete(conn: &Connection, local: &Local, location: &str) -> Result<Vec<String>, String> {
+    let mut floor = u64::MAX;
+    let mut stmt = conn
+        .prepare_cached("SELECT ack FROM sync2_devices WHERE profile_uid = ?1 AND device != ?2 AND frozen = 0")
+        .map_err(sql)?;
+    let mut q = stmt.query(params![local.profile, local.device.0.to_vec()]).map_err(sql)?;
+    while let Some(r) = q.next().map_err(sql)? {
+        let acked = match r.get::<_, Option<Vec<u8>>>(0).map_err(sql)? {
+            Some(b) => Vv::read(&mut Reader::new(&b)).map(|v| v.get(&local.device)).unwrap_or(0),
+            None => 0,
+        };
+        floor = floor.min(acked);
+    }
+    let names: Vec<String> = conn
+        .prepare_cached("SELECT name FROM sync2_obsolete WHERE profile_uid = ?1 AND location = ?2 AND last <= ?3")
+        .map_err(sql)?
+        .query_map(params![local.profile, location, floor.min(i64::MAX as u64) as i64], |r| r.get(0))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    conn.execute(
+        "DELETE FROM sync2_obsolete WHERE profile_uid = ?1 AND location = ?2 AND last <= ?3",
+        params![local.profile, location, floor.min(i64::MAX as u64) as i64],
+    )
+    .map_err(sql)?;
+    Ok(names)
 }
 
 fn hex(b: &[u8]) -> String {
@@ -317,6 +435,8 @@ impl SrsCore {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+            cut_segments(c, &local)?;
+            compact_segments(c, &local)?;
             let cuts = cut_segments(c, &local)?;
             let uploaded: u64 = c
                 .query_row(
@@ -356,7 +476,7 @@ impl SrsCore {
     }
 
     /// 写 head（段都传完之后）：[upto] = 已传到该位置的最大 seq。返回 `(相对路径, 字节, gen)`。
-    pub fn sync2_head(&self, profile: &str, location: &str, upto: u64, now: i64) -> Result<(String, Vec<u8>, u64), String> {
+    pub fn sync2_head(&self, profile: &str, location: &str, upto: u64, now: i64) -> Result<(String, Vec<u8>, u64, Vec<String>), String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let mut local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
@@ -403,7 +523,9 @@ impl SrsCore {
                 params![profile, location, seq as i64, head.gen as i64, now],
             )
             .map_err(sql)?;
-            Ok((format!("devices/{}/{}", local.device.text(), head.file_name()), bytes, head.gen))
+            // 新 head 已经不再引用合并掉的旧小段：可以删的（全部活跃设备都 ack 过了）一并交给 Dart 删。
+            let obsolete = take_obsolete(c, &local, location)?;
+            Ok((format!("devices/{}/{}", local.device.text(), head.file_name()), bytes, head.gen, obsolete))
         })
     }
 

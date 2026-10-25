@@ -155,6 +155,13 @@ CREATE TABLE IF NOT EXISTS sync2_purged (
   entity TEXT NOT NULL,
   PRIMARY KEY (profile_uid, kind, entity)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_obsolete (
+  profile_uid TEXT NOT NULL,
+  location TEXT NOT NULL,
+  name TEXT NOT NULL,
+  last INTEGER NOT NULL,
+  PRIMARY KEY (profile_uid, location, name)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS sync2_rewrites (
   profile_uid TEXT NOT NULL,
   location TEXT NOT NULL,

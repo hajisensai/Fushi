@@ -83,8 +83,11 @@ impl Device {
         for (path, bytes) in segs {
             bucket.0.insert(path, bytes);
         }
-        let (path, bytes, _) = self.core.sync2_head(P, location, upto, now).unwrap();
+        let (path, bytes, _, obsolete) = self.core.sync2_head(P, location, upto, now).unwrap();
         bucket.0.insert(path, bytes);
+        for name in obsolete {
+            bucket.0.remove(&name);
+        }
         self.core.sync2_digest(P).unwrap();
         out
     }
@@ -676,4 +679,64 @@ fn fushisrs_export_import_merges_without_overwriting() {
     assert_ne!(a.core.sync2_status(P).unwrap()["device"], me);
     let ids = a.rows("SELECT id FROM srs_review_logs ORDER BY id");
     assert!(ids.iter().any(|r| r[0] == "ra") && ids.iter().any(|r| r[0] == "rt"));
+}
+
+fn segment_files(bucket: &Bucket, d: &Device) -> usize {
+    let dev = d.core.sync2_identity(P, T0).unwrap()["device"].as_str().unwrap().to_owned();
+    bucket.0.keys().filter(|k| k.starts_with(&format!("devices/{dev}/seg-"))).count()
+}
+
+#[test]
+fn small_own_segments_are_compacted_and_old_files_deleted_after_everyone_acks() {
+    let a = Device::new("ca");
+    let b = Device::new("cb");
+    let mut bucket = Bucket::default();
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
+    a.sync(&mut bucket, "loc", T0);
+    b.sync(&mut bucket, "loc", T0);
+    // 每轮同步只带一条改动：一轮一个小段。
+    for i in 0..40 {
+        a.apply(T0 + i, vec![review(&format!("r{i}"), "C", T0 + 1000 * i, 3, "review")]);
+        a.sync(&mut bucket, "loc", T0 + 1000 * i);
+    }
+    let before = segment_files(&bucket, &a);
+    // B 还没 ack：A 已合并并上传大段，但旧小段一个都不能删。
+    assert!(before > 16, "{before}");
+    b.sync(&mut bucket, "loc", T0 + DAY);
+    a.sync(&mut bucket, "loc", T0 + DAY);
+    let after = segment_files(&bucket, &a);
+    let rows = a.rows("SELECT COUNT(*) FROM sync2_segments")[1][0].parse::<usize>().unwrap();
+    // 位置上只剩当前切法下的段（合并掉的旧小段全删了）；尾部不足一组的小段留到下次合并。
+    assert_eq!(after, rows, "no stale segment files left once B acked");
+    assert!(after * 2 < before && after <= 16, "{before} -> {after}");
+    assert_eq!(projection(&a), projection(&b));
+    // 新设备只看得到合并后的段，也能完整收齐。
+    let c = Device::new("cc");
+    c.sync(&mut bucket, "loc", T0 + DAY);
+    c.sync(&mut bucket, "loc", T0 + DAY);
+    assert_eq!(projection(&a), projection(&c));
+    assert_eq!(a.digest(), c.digest());
+}
+
+#[test]
+fn backup_snapshot_keeps_server_times_of_legacy_edits() {
+    let a = Device::new("st");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck)]);
+    a.core
+        .writer()
+        .unwrap()
+        .execute(
+            "INSERT INTO srs_event_local (event_id, profile_uid, outbox_seq, server_time, received_at) VALUES ('legacy-1', ?1, 7, 123, 1)",
+            [P],
+        )
+        .unwrap();
+    let dir = tempdir::new("st-snap");
+    a.core.snapshot_into(&dir.0.join("srs.db"), true).unwrap();
+    let restored = Device { core: SrsCore::open(&dir.0.join("srs.db")).unwrap(), _dir: dir };
+    assert_eq!(
+        restored.rows("SELECT server_time, outbox_seq IS NULL FROM srs_event_local WHERE event_id = 'legacy-1'")[1..],
+        [vec!["123".to_owned(), "1".to_owned()]]
+    );
 }

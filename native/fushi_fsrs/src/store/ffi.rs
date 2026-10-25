@@ -645,9 +645,9 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
             json!({"upto": upto})
         }
         "head" => {
-            let (path, bytes, gen) = c.sync2_head(profile, s("location")?, i("upto")? as u64, i("now")?)?;
+            let (path, bytes, gen, obsolete) = c.sync2_head(profile, s("location")?, i("upto")? as u64, i("now")?)?;
             files.push((path, bytes));
-            json!({"gen": gen})
+            json!({"gen": gen, "delete": obsolete})
         }
         "plan" => c.sync2_plan(profile, blobs)?,
         "ingest" => parse(c.sync2_ingest(profile, blobs, key32(&req["key"])?, i("now")?)?)?,

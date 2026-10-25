@@ -5,7 +5,7 @@
 ///    重放受影响的卡；本机身份分叉就在这一步换身份、重签发）；
 /// 3. 发件：本机还没传到这个位置的段 → 上传 → 写新 head（**先读后写**：同一身份的另一个安装刚写的 head 不会
 ///    被自己这一轮的 head 挡住视线）；
-/// 4. 清掉本机两代以前的 head。
+/// 4. 清掉本机两代以前的 head，以及小段合并换下来、大家都 ack 过的旧小段（归档位置都不删）。
 ///
 /// 写入纪律（§6.1）：先写段、再写 head；读者只认「head 引用的段都可读」的前缀，所以 head 先于段可见、上传
 /// 中断、列目录最终一致（Google Drive）都只会让这一轮少收一点，下一轮补齐。传输只经 [SrsLocationStore]。
@@ -240,6 +240,13 @@ Future<SrsSync2Report> srsSync2Round({
   for (final (String path, Uint8List bytes) in head.files) {
     await location.put(path, bytes);
     written = path.substring(path.lastIndexOf('/') + 1);
+  }
+  // 小段合并（§7.1）换下来的旧小段：新 head 已不再引用、全部活跃设备都 ack 过了。归档位置一个不删。
+  if (!archive) {
+    for (final Object? name
+        in (head.map['delete'] as List?) ?? const <Object?>[]) {
+      await location.delete(name! as String);
+    }
   }
 
   // 4. 本机两代以前的 head；顺便取服务端时间。
