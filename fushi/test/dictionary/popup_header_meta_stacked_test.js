@@ -4,7 +4,8 @@
 //   * 词头 + 按钮组放得下、再加 14em 元数据列放不下 → 挂（元数据列独占下一行整宽）；
 //   * 三者放得进一行 → 不挂（元数据列贴词头右侧）；
 //   * 词头 + 按钮组本身放不下 → 不挂（按钮组整组换行，BUG-3320 的既有布局）；
-//   * 弹窗拖宽后摘掉，判据不依赖类名本身（不会来回振荡）。
+//   * 弹窗拖宽后摘掉，判据不依赖类名本身（不会来回振荡）；
+//   * 用户 10-24：宽度随布局变的词头（旧的裸 span）不得驱动类名——曾每帧来回切。
 // 真实绘制（display:contents 后元数据列确实铺满）由 PR 里的 headless Chrome 截图证明。
 //
 // 运行：node fushi/test/dictionary/popup_header_meta_stacked_test.js
@@ -102,5 +103,34 @@ assert.strictEqual(stacked(noMeta), false, '无元数据列不挂类名');
 const unrendered = buildHeader({ row: 0, headword: 168, buttons: 176 });
 context.update(unrendered);
 assert.strictEqual(stacked(unrendered), false, '宽度 0 不判定');
+
+// 用户 10-24 录屏（词头区每帧来回切、一直闪）：多段注音词头曾是可折行的裸 span，它的
+// scrollWidth 随类名变——不挂类时被左簇压到「行宽 − 按钮组 − gap」（360 − 176 − 12 =
+// 172），挂上后按整宽 210 参与换行。旧判据读到 172 → 挂、读到 210 → 摘，每次
+// ResizeObserver 回调翻一次。非滚动容器的词头不判定，连续多轮回调类名一次都不能翻。
+const bare = buildHeader({ row: 360, headword: 0, buttons: 176 });
+const bareHeadword = bare.children[0].children[0];
+bareHeadword.classList = new FakeClassList(['expression']);
+Object.defineProperty(bareHeadword, 'scrollWidth', {
+  get: () => (stacked(bare) ? 210 : 172),
+});
+const bareStates = [];
+for (let i = 0; i < 6; i++) {
+  context.update(bare);
+  bareStates.push(stacked(bare));
+}
+assert.deepStrictEqual(bareStates, [false, false, false, false, false, false],
+  `宽度随布局变的词头不能驱动 .meta-stacked（会自激振荡），实得 ${bareStates}`);
+
+// 上面那条只是兜底；根治是词头一律套 .expression-scroll（滚动容器的 scrollWidth 恒为
+// 完整单行宽，挂不挂类都一样），同时让左簇 min-content 下限（BUG-3320「词头不被挤压」）
+// 对多段注音 / 无注音词头也成立。
+const headerFn = extract(
+  /function createEntryHeader\(entry, idx\) \{[\s\S]*?\n\}/,
+  'createEntryHeader');
+assert.ok(!/needsScroll/.test(headerFn),
+  'createEntryHeader 不能再按 needsScroll 决定是否套 .expression-scroll');
+assert.ok(/const expressionScroll = el\('div', \{ className: 'expression-scroll' \}\);\s*expressionScroll\.appendChild\(expressionSpan\);\s*headerMain\.appendChild\(expressionScroll\);/
+  .test(headerFn), '词头必须无条件套进 .expression-scroll 再挂进左簇');
 
 console.log('all assertions passed');
