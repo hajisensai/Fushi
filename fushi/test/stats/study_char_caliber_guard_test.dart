@@ -129,6 +129,9 @@ void main() {
         // PDF 文字层：一页文字层字素数是否达到「整页正文就是文字层」门槛
         // （kPdfTextLayerCompletePageMinChars），是覆盖判据不是学习计数。
         'packages/fushi_engine/lib/media/manga/manga_pdf_text_layer.dart': 1,
+        // 作品图谱 L5 人物同名建议：归一化后的名字短于 2 个码点不出建议键（单字名
+        // 撞名太多），是匹配判据不是学习计数。
+        'packages/fushi_engine/lib/media/people/person_identity.dart': 1,
         // 视频字幕 AI 校对（spec 2026-10-19）：S4 片假名名字编辑距离 1 的长度比较
         // （与基准 consistency.py 的 len() 同口径），是匹配判据不是学习计数。
         'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/subtitle_consistency_pass.dart':

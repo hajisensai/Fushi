@@ -8,14 +8,22 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
-import 'package:fushi_srs/fushi_srs.dart';
 
-/// BUG-3576：复习同步的写入者目录名是 `<deviceId>#<化身号>`。host 的 PROPFIND href 曾用
+import '../srs/srs_test_support.dart' show openSrsTestStorage;
+
+/// BUG-3576：旧版复习同步的写入者目录名是 `<deviceId>#<化身号>`。host 的 PROPFIND href 曾用
 /// `Uri.encodeFull`（不编码 `#`），客户端又 `Uri.decodeFull` 后把 href 原样当 URL 用，
 /// `Uri.parse` 把 `#1/` 当成片段截掉——第一轮（建目录走 ensureFolder）正常，第二轮起列写入者
 /// 目录 PROPFIND 404，「立即同步」失败（iOS / 桌面同样）。
+///
+/// 同步 v2 的设备目录名是 UUID 文本（`v2/devices/<DeviceId>/`，不含 `#`），旧的写入者目录语义已不存在；
+/// `#` 的编解码回归仍由前两组（通用 WebDAV href）钉住。第三条改成 v2 的等价形态：每轮新建位置对象（生产里
+/// 每轮同步都是空的文件夹缓存），第二轮起设备目录只能靠 PROPFIND 列出来。
 void main() {
   group('decodedDavHref', () {
     test('解码后重新转义 URL 分隔符，其余字符保持可读', () {
@@ -95,23 +103,28 @@ void main() {
       expect(await backend.restoreAuth(repo), isTrue);
       await backend.authenticate(repo: repo);
 
-      final SrsMemoryReplica replica = SrsMemoryReplica(
+      final SrsStorage srs = await openSrsTestStorage();
+      final SrsDbStore store = await SrsDbStore.open(
+        db: srs.db,
+        core: srs.core,
+        profileUid: 'href-profile',
         deviceId: 'probe_abc=',
-        trustedNow: () =>
-            (DateTime.now().millisecondsSinceEpoch, SrsTimeSource.wall),
       );
-      // 写入者 id = `probe_abc=#1`（memory_replica.dart），目录名带 `#`。
       for (int round = 1; round <= 3; round++) {
-        // 每轮新建目录对象 = 生产里每次同步的形态（写入者目录缓存为空，只能靠 PROPFIND 找）。
-        final SrsSyncReport r = await SrsSyncEngine(
-          directory: SrsAssetStoreDirectory(
+        // 每轮新建位置对象 = 生产里每次同步的形态（文件夹缓存为空，只能靠 PROPFIND 找）。
+        final SrsSync2Report r = await srsSync2Round(
+          host: store,
+          location: SrsAssetLocationStore(
             store: backend,
             profileUid: 'href-profile',
           ),
-          directoryKey: 'interconnect:srs-href-host',
-          replica: replica,
-        ).syncOnce();
+          locationId: 'interconnect:srs-href-host',
+          nowMs: () => store.now().$1,
+        );
         expect(r.error, isNull, reason: 'round $round');
+        expect(r.errors, isEmpty, reason: 'round $round');
+        // 写完 head 再列本机设备目录才拿得到服务端时间：PROPFIND 列不到设备目录时这里是 null。
+        expect(r.serverTimeMs, isNotNull, reason: 'round $round');
       }
     });
   });

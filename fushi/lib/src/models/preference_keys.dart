@@ -35,6 +35,9 @@ const String kAnkiSettingsPrefKey = 'anki_settings';
 /// Profile 快照（ProfileKeys._excludedPrefPrefixes）。
 const String kSectionTabOrderPrefKeyPrefix = 'section_tab_order::';
 
+/// 查词弹窗「我库里的例句」开关（bool，默认 true：全在本机、不上传，所有者 D-L2）。
+const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -297,6 +300,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：已删除的「查词时让 AI 按句意挑词条」开关（2026-10-09
   // 所有者拍板移除）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'lookup_ai_context_auto',
+  // bool（默认 true，D-L2）：查词弹窗「我库里的例句」区块（作品图谱 L4）。关掉时弹窗不渲染、
+  // 也不再往语料库喂入（索引留在本机，再开时增量补齐）。常量 [kLibrarySentencesEnabledPrefKey]。
+  'lookup_library_sentences',
   // bool（默认 false，桌面端）：查词页按「返回上一级」直接最小化主窗（一键收窗
   // 回到之前的程序），不走关弹窗 → 清查询的阶梯。
   'lookup_page_escape_minimizes_window',
@@ -392,7 +398,60 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：「功能模块」里的首页 dashboard 开关（2026-10-09 起可关）。
   'module_home_enabled',
   'module_manga_enabled',
+  'module_music_enabled',
   'module_video_enabled',
+  // String（默认 ''）：用户自填的 AcoustID 应用 API key（音乐刮削 §8.1；空 = 用内置 key
+  // `kBuiltinAcoustidApiKey`，两者都空 = AcoustID 不可用）。凭据：同时登记在
+  // kCredentialPreferenceKeys 与 PrefRedactionPolicy.sensitiveKeys。
+  'music_acoustid_api_key',
+  // String（默认 'auto'）：音乐输出设备（mpv audio-device 名；设备本地）。
+  'music_audio_device',
+  // int（默认 0 = 关）：交叉淡入时长毫秒（设计 §7.2）。
+  // bool（默认 false）：专辑连续曲目 / CUE 拆轨也交叉淡入（设计 §7.2）。
+  'music_crossfade_continuous',
+  'music_crossfade_ms',
+  // bool（默认 false）：桌面歌词（Android 悬浮窗 / Windows 置顶穿透窗，设计 §6.2）。
+  'music_desktop_lyrics',
+  // int（默认 176400）：DSD → PCM 目标采样率 Hz（设计 §7.1）。
+  'music_dsd_pcm_rate',
+  // bool（默认 false）：图示均衡器开关（P5，可选；开且不平直即非 bit-perfect）。
+  'music_eq_enabled',
+  // String（逗号分隔 10 段 dB，默认 '' = 平直）：图示均衡器各段增益（31 Hz … 16 kHz）。
+  'music_eq_gains',
+  // bool（默认 false）：独占 / bit-perfect 输出（设计 §7.4；设备本地）。
+  'music_exclusive_output',
+  'music_gapless',
+  // String（默认 'auto'）：卡拉 OK 字幕页 ASS 歌词默认显示 auto / original / structured
+  // （音乐 P3，设计 §6.3；MusicAssRenderPreference.prefValue）。
+  'music_karaoke_ass_render',
+  // bool（默认 false）：听歌计入学习时长（决策 D4；关着时只在歌词页学习动作后计）。
+  'music_listening_counts_as_study',
+  // bool（默认 true）：缺 ReplayGain 标签时后台 EBU R128 测响度写曲库（设计 §7.3）。
+  'music_loudness_scan',
+  // bool（默认 true）：查歌词时自动暂停（音乐 P1 歌词页）。
+  'music_lyrics_lookup_pause',
+  // bool（默认 true）：锁屏 / 媒体通知副标题显示当前歌词行（设计 §6.2）。
+  'music_lyrics_media_session',
+  // bool（默认 true）：本地没有歌词时去 LRCLIB 精确匹配（设计 §5.4 / D3）。
+  'music_lyrics_online',
+  'music_replaygain',
+  // double（默认 0）：ReplayGain 预放大 dB（设计 §7.3）。
+  'music_replaygain_preamp_db',
+  // String（JSON 数组，serverId）：混排进本地曲库的服务器（服务器曲库 P5，显式 opt-in）。
+  // 服务器配置本身设备本地，这份也设备本地（deviceLocalPrefKeys）。
+  'music_server_library_mix',
+  // int（kbps，默认 0 = 原样直出）：服务器曲库的码率上限，非 0 时请服务器转码。跨设备。
+  'music_server_max_bitrate',
+  // double（默认 1.0）：音乐播放速度（变速不变调）。
+  'music_speed',
+  // String（JSON 数组）：用户自配的 OpenSubsonic 服务器（服务器曲库 P5），每条里带
+  // base64 的密码 / API key → 同时登记在 kCredentialPreferenceKeys、
+  // PrefRedactionPolicy.sensitiveKeys 与 deviceLocalPrefKeys。
+  'music_subsonic_servers',
+  // bool（默认 false）：VGMdb 补充（社区镜像 vgmdb.info，无官方 API，频率保守、可关）。
+  'music_vgmdb_enabled',
+  // double（默认 100）：音乐软件音量（100 = 不改样本）。
+  'music_volume',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
   'nav_bar_labels_visible',
   // String（默认 '' = AdaptiveNavBarStyle.defaultStyle，2026-10-23 起 mode_strip）：
@@ -485,12 +544,6 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'show_floating_lyric',
   'show_media_notification',
   'show_remote_entries',
-  // bool（默认 true）：复习自动备份（有变动后最多每 N 分钟一份、离开复习页时一份）。
-  // 设备本地（SyncRepository._deviceLocalFixedKeys）：备份文件本来就只存在本机。
-  'srs_backup_auto',
-  // String（JSON，SrsBackupLimits：daily / weekly / monthly / intervalMinutes）：复习自动备份的
-  // 间隔与保留份数；缺省 = Anki 默认（30 分钟；日 12 / 周 10 / 月 9）。设备本地，同上。
-  'srs_backup_limits',
   // String（JSON，SrsAnkiImportOptions.toJson）：上次「导入 Anki 包」选的五个选项，
   // 下次作对话框初值；缺省 = Anki 默认值。非凭据、跨设备（随 Profile / 备份）。
   // String（JSON，SrsCardAppearance.toJson）：复习卡面（Fushi 卡片模板）的外观：
@@ -541,6 +594,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'srs_review_volume',
   // double（默认 1.0，0.6–2.0）：复习页卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）。
   'srs_review_zoom',
+  // String（JSON 数组，SrsFolderLocation）：复习同步 v2 用户加的文件夹存储位置与用途（同步 / 媒体 / 归档）。
+  // 设备本地（SyncRepository._deviceLocalFixedKeys）：路径只在这台设备上有意义。
+  'srs_sync2_folder_locations',
+  // String（JSON：位置身份 → SrsLocationKey）：复习同步 v2 各存储位置的端到端加密密钥。凭据 + 设备本地
+  // （同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与 deviceLocalPrefKeys）。
+  'srs_sync2_location_keys',
+  // bool（默认 false）：升级到同步 v2 后已确认首次同步（并入、不覆盖）。设备本地，同上。
+  'srs_sync2_merge_confirmed',
   'startup_default_dictionary_tab',
   // String：启动页模块（ModuleId.prefKey，'' = 底栏第一个页面）。设备本地，
   // 与 module_nav_order 同族（ModuleId.devicePrefKeys）。
@@ -616,6 +677,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：系列详情页宽屏版式——true = 海报横幅（与竖屏同形），
   // false = 两栏。详情页右上角切换，跨作品记住。
   'video_detail_poster_layout',
+  // bool（三项默认都 true）：原盘会话。auto_fullscreen = 桌面端进原盘会话自动全屏、
+  // 退出恢复进入前窗口状态；launch_animation = 封面放大铺满再淡入盘菜单的启动动画；
+  // open_menu_by_default = 原盘作品详情页主按钮打开原盘菜单（关 = 直接播正片）。
+  'video_disc_auto_fullscreen',
+  'video_disc_launch_animation',
+  'video_disc_open_menu_by_default',
+  // bool（默认 false）：远端原盘流式播放反复缓冲时的「建议下载到本机」提示，用户
+  // 点了「不再提示」后为 true（拍板决策：只提示、绝不强制切换）。
+  'video_disc_remote_buffering_notice_suppressed',
   'video_download_backend_path_mappings',
   'video_download_embedded_installation_id',
   // bool：下载进受管视频来源时跳过特典（PV / CM / NCOP / NCED / 菜单…）——管线
@@ -721,6 +791,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_subdl_enabled',
   // bool（默认 false）：播放器底栏时间显示「剩余时长」而不是「已播时长」。
   // 点按底栏时间切换（MD3 Expressive chrome），跨设备。
+  // bool：作品图谱 L2 的 OP / ED。auto_skip（默认 false）= 进入识别出的片头 / 片尾
+  // 时自动跳到段尾；now_playing（默认 true）= OP / ED 期间左上角显示「♪ 曲名 · 在
+  // 音乐库打开」。
+  'video_theme_song_auto_skip',
+  'video_theme_song_now_playing',
   'video_time_display_remaining',
   'video_youtube_quality_height',
   // bool（默认 true）：浏览器手机上滚动时收起工具栏（web_browser_prefs.dart，设备本地）。
@@ -811,6 +886,8 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 /// 🔴 凭据键：值为 base64 敏感凭据，不进日志 / 不进明文导出。
 /// （`media_source_secret_<id>` 前缀族见 [kKnownPreferenceKeyPrefixes]。）
 const Set<String> kCredentialPreferenceKeys = <String>{
+  // 复习同步 v2 各存储位置的集合密钥（hex）。
+  'srs_sync2_location_keys',
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。
   'ai_providers',
   // AnkiSettings JSON 里的 AnkiConnect apiKey（明文）。
@@ -822,6 +899,9 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   // 每条 OPDS 服务器记录里带 base64 的 passwordB64。
   'discovery_opds_servers',
   'jimaku_api_key',
+  'music_acoustid_api_key',
+  // 每条 OpenSubsonic 服务器记录里带 base64 的 passwordB64 / apiKeyB64。
+  'music_subsonic_servers',
   'network_proxy_password',
   'network_proxy_username',
   // 每份朗读声音预设里 base64 的 secretsB64（API key / Bearer）。

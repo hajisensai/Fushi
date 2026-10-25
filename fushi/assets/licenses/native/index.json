@@ -7,10 +7,14 @@
     "native/fushi_anki_sync/Cargo.toml": "5e2fab544da4eb3ff0b9481130104a95c8ed094d7c54da1fe8959d3b1e22aecb",
     "native/fushi_compute/Cargo.lock": "34dc0eca0b8cfe62e780cafe313e7f6556f68448ce457f9b92e420d6237077be",
     "native/fushi_compute/Cargo.toml": "0ff07491267bf2b0701423e1311c0893d659287b5b5dd8d97da98ba55ae564e9",
-    "native/fushi_fsrs/Cargo.lock": "f50920e41e41fffd1c409a55308dbd9449551b978f0b7e56d50bd1e0d3f9de75",
-    "native/fushi_fsrs/Cargo.toml": "12c866e24106d7f039dc6df359e9a648c07a71d42dcb1d7611e997096d9b65ef",
-    "native/fushi_ios_umbrella/Cargo.lock": "ed5567542030ff8ed47dece2d5fba0bce513eecf6bb66123bf7bbd0ce32cc008",
-    "native/fushi_ios_umbrella/Cargo.toml": "e00e225cbd3e845e97603f7f0bcf67a2e89b83faf5f9adb20d07e8b6d86c4bb2",
+    "native/fushi_corpus/Cargo.lock": "4695a11421e561835f0a2dd874cef58caff88b3ddee493b8a7287c8836c309cf",
+    "native/fushi_corpus/Cargo.toml": "1c892a3a2775a105af6922d82ae6528ce2974fa4dd36b493753daa2dae690cb7",
+    "native/fushi_fsrs/Cargo.lock": "78c5ea7d38e660dbaeb59a6659e3c012fcaa3150907493b873746639e02dd14e",
+    "native/fushi_fsrs/Cargo.toml": "026fc64ababbc107fa75cefad082ac80a5c5db4a85dce45fef57d0606ecb454f",
+    "native/fushi_ios_umbrella/Cargo.lock": "7286acc35384f142d2545ac8164c3630c41a2bc9bd701f5b3c126b181f99845e",
+    "native/fushi_ios_umbrella/Cargo.toml": "b0d847351339d0dca895285bcfe34fb3fdc7434e2a917fa44cba37f96186b0d7",
+    "native/fushi_music/Cargo.lock": "d60da239f95ea65b13a54f5c93d5545d77ba14ebfefa801e41175a92d8d2d64b",
+    "native/fushi_music/Cargo.toml": "e4111d04a0c3dd6e480419741fee2fb014051cfc5cf267c3889da24db24e0082",
     "native/fushi_p2p/Cargo.lock": "e50e51d44154f56bc3771a7278dbae39ba260f5d884fa68f9e98d0dd501be4e4",
     "native/fushi_p2p/Cargo.toml": "4c1cd272cf7d1ebbaa774a8cf9f17ae771bd6f36d2607fb3a4590447178d68a2",
     "native/fushi_rwkv/Cargo.lock": "4266ab30ac34757a5e95aa95202377ca0a021b4fb288b12e0e009ac157444961",
@@ -28,8 +32,10 @@
     "native/galgame_hook/third_party/locale_emulator/LICENSE-LGPL.txt": "ea8af5e789cb2d4e9b10bce3874982ade163b749b6bfbdb32e2df21c4d106de1",
     "native/galgame_hook/third_party/lunahook/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "native/galgame_hook/third_party/minhook/LICENSE.txt": "2bfff5fa29fc5d1cb2745acfaad9d930e983f5c8dd97e0ec5735d9199cf8f416",
-    "native/third_party_licenses/manifest.json": "0c97280009b7bf274af95bdbbc5e00b6bf29604064785d4c0cf71dc79144e76d",
+    "native/third_party_licenses/manifest.json": "7d8aa48066615072b7b0c8b960c61c55bd80758059725360e2079d738ca37e89",
     "native/third_party_licenses/texts/boost-1.91.0-LICENSE_1_0.txt": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
+    "native/third_party_licenses/texts/cdda/libcdio-2.3.0-COPYING": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+    "native/third_party_licenses/texts/cdda/libcdio-paranoia-10.2+2.0.2-COPYING": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
     "native/third_party_licenses/texts/crates/DimaKudosh-difflib-6fd59b0c/LICENSE": "6725d1437fc6c77301f2ff0e7d52914cf4f9509213e1078dc77d9356dbe6eac5",
     "native/third_party_licenses/texts/crates/OpenByteDev-dlopen2-cc80e4a0/LICENSE": "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2",
     "native/third_party_licenses/texts/crates/dropbox-rust-alloc-no-stdlib-0a81fd69/LICENSE": "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae",
@@ -62,6 +68,9 @@
     "native/third_party_licenses/texts/crates/rustls-rustls-platform-verifier-252e2516/LICENSE-MIT": "1c7cf76689c837a68ed8d704994e52a0f2940c087958f860d17f3186afbdcc0c",
     "native/third_party_licenses/texts/crates/zbraniecki-pluralrules-d0715d5b/intl_pluralrules/LICENSE-APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
     "native/third_party_licenses/texts/crates/zbraniecki-pluralrules-d0715d5b/intl_pluralrules/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+    "native/third_party_licenses/texts/dvd/libdvdcss-1.6.0-COPYING": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+    "native/third_party_licenses/texts/dvd/libdvdnav-7.0.0-COPYING": "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670",
+    "native/third_party_licenses/texts/dvd/libdvdread-7.1.1-COPYING": "d6cb0e9e560f51085556949a84af12b79a00f10ab8b66c752537faf7cd665572",
     "native/third_party_licenses/texts/ffmpeg_unified/cpu_features-0.11.0-LICENSE": "af272c1b4dd08dd61d43e001d3134119d03ca7a2b057a64f7355fdf27fbea3dd",
     "native/third_party_licenses/texts/ffmpeg_unified/ffmpeg-9.0.1-LICENSE.md": "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af",
     "native/third_party_licenses/texts/ffmpeg_unified/libiconv-1.17-COPYING.LIB": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
@@ -316,6 +325,10 @@
     "third_party/libplacebo-win/LICENSE.libplacebo": "b3aa400aca6d2ba1f0bd03bd98d03d1fe7489a3bbb26969d72016360af8a5c9d"
   },
   "pendingUpstreamLicense": [
+    "lofty@0.22.4",
+    "ogg_pager@0.7.2",
+    "realfft@3.5.0",
+    "rusty-chromaprint@0.3.0",
     "seahash@4.1.0",
     "selectors@0.38.0"
   ],
@@ -426,11 +439,13 @@
       "packages": [
         "dispatch2",
         "htmlescape",
+        "lofty",
         "objc2-core-foundation",
         "objc2-core-wlan",
         "objc2-security",
         "objc2-security-foundation",
-        "objc2-system-configuration"
+        "objc2-system-configuration",
+        "ogg_pager"
       ]
     },
     {
@@ -468,6 +483,12 @@
       "file": "09f1f96437694942.txt",
       "packages": [
         "combine"
+      ]
+    },
+    {
+      "file": "0a4e5a27177da58e.txt",
+      "packages": [
+        "transpose"
       ]
     },
     {
@@ -692,6 +713,7 @@
         "percent-encoding",
         "png",
         "postcard",
+        "primal-check",
         "prost",
         "psl-types",
         "rawpointer",
@@ -812,6 +834,12 @@
       "file": "197d8a73ffee0d6b.txt",
       "packages": [
         "pcre2"
+      ]
+    },
+    {
+      "file": "199b95d7900b06e1.txt",
+      "packages": [
+        "libdvdread"
       ]
     },
     {
@@ -1045,6 +1073,12 @@
       ]
     },
     {
+      "file": "275370a97013f37a.txt",
+      "packages": [
+        "transpose"
+      ]
+    },
+    {
       "file": "2775d45acac79b1b.txt",
       "packages": [
         "rustls-native-certs"
@@ -1233,6 +1267,12 @@
       ]
     },
     {
+      "file": "33b32a251d445c5c.txt",
+      "packages": [
+        "aead"
+      ]
+    },
+    {
       "file": "33ba259f4960f446.txt",
       "packages": [
         "fast_float"
@@ -1293,6 +1333,12 @@
       "file": "36bb253818ac1376.txt",
       "packages": [
         "typenum"
+      ]
+    },
+    {
+      "file": "3721e5764ca38405.txt",
+      "packages": [
+        "blake2"
       ]
     },
     {
@@ -1708,6 +1754,8 @@
     {
       "file": "57a4d75c1d095bb9.txt",
       "packages": [
+        "argon2",
+        "phc",
         "spki"
       ]
     },
@@ -1973,12 +2021,15 @@
         "aead",
         "aes",
         "aes-gcm",
+        "argon2",
         "base16ct",
         "base64ct",
+        "blake2",
         "block-buffer",
         "block-padding",
         "cbc",
         "chacha20",
+        "chacha20poly1305",
         "cipher",
         "const-oid",
         "cpufeatures",
@@ -1998,7 +2049,9 @@
         "password-hash",
         "pbkdf2",
         "pem-rfc7468",
+        "phc",
         "pkcs8",
+        "poly1305",
         "polyval",
         "primeorder",
         "sec1",
@@ -2307,6 +2360,8 @@
         "FFmpeg",
         "GCC runtime libraries",
         "lcms2",
+        "libcdio",
+        "libcdio-paranoia",
         "libiconv",
         "Locale-Emulator-Core"
       ]
@@ -2377,6 +2432,12 @@
       "file": "838118388fe5c2e7.txt",
       "packages": [
         "encoding_rs"
+      ]
+    },
+    {
+      "file": "8385bbba0704efc3.txt",
+      "packages": [
+        "rubato"
       ]
     },
     {
@@ -2676,6 +2737,12 @@
       ]
     },
     {
+      "file": "950d712c518a02fc.txt",
+      "packages": [
+        "cipher"
+      ]
+    },
+    {
       "file": "961eacd9633fff6d.txt",
       "packages": [
         "PDFium (pdfium-binaries)",
@@ -2792,6 +2859,12 @@
       ]
     },
     {
+      "file": "a07fcacc3c60de4d.txt",
+      "packages": [
+        "inout"
+      ]
+    },
+    {
       "file": "a1f30b77c01e0995.txt",
       "packages": [
         "pffft / rnnoise / crc32c (in WebRTC)"
@@ -2877,6 +2950,8 @@
         "hex",
         "jni-sys",
         "quick-error",
+        "rustfft",
+        "strength_reduce",
         "winapi"
       ]
     },
@@ -2999,6 +3074,7 @@
         "block2",
         "dispatch2",
         "htmlescape",
+        "lofty",
         "objc2",
         "objc2-core-foundation",
         "objc2-core-wlan",
@@ -3007,6 +3083,9 @@
         "objc2-security",
         "objc2-security-foundation",
         "objc2-system-configuration",
+        "ogg_pager",
+        "realfft",
+        "rusty-chromaprint",
         "seahash"
       ]
     },
@@ -3091,6 +3170,12 @@
       ]
     },
     {
+      "file": "b67acfaaf787b346.txt",
+      "packages": [
+        "poly1305"
+      ]
+    },
+    {
       "file": "b68ad1a3367b8254.txt",
       "packages": [
         "data-encoding",
@@ -3112,13 +3197,15 @@
     {
       "file": "b8c6939380a400f5.txt",
       "packages": [
-        "chacha20"
+        "chacha20",
+        "chacha20poly1305"
       ]
     },
     {
       "file": "b90ed8150a6d371c.txt",
       "packages": [
         "gmp",
+        "libdvdcss",
         "nettle",
         "self_cell",
         "Zstandard (in libzstd-kmp.so)"
@@ -3404,6 +3491,13 @@
       ]
     },
     {
+      "file": "cb22dce3ea93e49e.txt",
+      "packages": [
+        "rustfft",
+        "strength_reduce"
+      ]
+    },
+    {
       "file": "cb3b46a575dd9b39.txt",
       "packages": [
         "windows",
@@ -3476,6 +3570,7 @@
     {
       "file": "ce34cda77a9b4bf8.txt",
       "packages": [
+        "libdvdnav",
         "x264"
       ]
     },
@@ -3603,6 +3698,12 @@
       "packages": [
         "GNU libiconv",
         "libudfread"
+      ]
+    },
+    {
+      "file": "d8c4ab431f20da84.txt",
+      "packages": [
+        "password-hash"
       ]
     },
     {
@@ -3863,6 +3964,12 @@
       ]
     },
     {
+      "file": "ec835b87c9b101e2.txt",
+      "packages": [
+        "primal-check"
+      ]
+    },
+    {
       "file": "ecc269ef87fd38a1.txt",
       "packages": [
         "indexmap"
@@ -3885,6 +3992,12 @@
       "packages": [
         "moxcms",
         "pxfm"
+      ]
+    },
+    {
+      "file": "efa52eb70a774b62.txt",
+      "packages": [
+        "universal-hash"
       ]
     },
     {
@@ -4154,6 +4267,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -4175,6 +4289,20 @@
       "texts": [
         "6aed14a798714567.txt",
         "949ab7b3e7140fee.txt"
+      ]
+    },
+    {
+      "name": "aead",
+      "version": "0.6.1",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "33b32a251d445c5c.txt"
       ]
     },
     {
@@ -4389,11 +4517,26 @@
       ]
     },
     {
+      "name": "argon2",
+      "version": "0.6.0",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "57a4d75c1d095bb9.txt"
+      ]
+    },
+    {
       "name": "arrayvec",
       "version": "0.7.8",
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p",
         "fushi_web_core"
@@ -4631,6 +4774,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_compute",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -4687,11 +4831,26 @@
       ]
     },
     {
+      "name": "blake2",
+      "version": "0.11.0",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "3721e5764ca38405.txt"
+      ]
+    },
+    {
       "name": "blake3",
       "version": "1.8.7",
       "license": "CC0-1.0 OR Apache-2.0 OR Apache-2.0 WITH LLVM-exception",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -4710,7 +4869,8 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_fsrs",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -4724,6 +4884,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -4880,7 +5041,8 @@
       "license": "Unlicense OR MIT",
       "origin": [
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -4984,6 +5146,7 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_rwkv",
         "fushi_web_core"
@@ -5000,8 +5163,23 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "b8c6939380a400f5.txt"
+      ]
+    },
+    {
+      "name": "chacha20poly1305",
+      "version": "0.11.0",
+      "license": "Apache-2.0 OR MIT",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
       ],
       "textSource": "package",
       "texts": [
@@ -5038,6 +5216,20 @@
       ]
     },
     {
+      "name": "cipher",
+      "version": "0.5.2",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "950d712c518a02fc.txt"
+      ]
+    },
+    {
       "name": "client-ip",
       "version": "0.2.1",
       "license": "MIT",
@@ -5054,6 +5246,7 @@
       "version": "0.5.4",
       "license": "Apache-2.0 OR MIT",
       "origin": [
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5176,6 +5369,7 @@
       "license": "CC0-1.0 OR MIT-0 OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5248,6 +5442,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -5282,6 +5477,7 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -5296,6 +5492,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5342,6 +5539,19 @@
         "fushi_compute",
         "fushi_ios_umbrella",
         "fushi_web_core"
+      ],
+      "textSource": "package",
+      "texts": [
+        "a8ad31b1c3f40dca.txt",
+        "61d383b05b87d78f.txt"
+      ]
+    },
+    {
+      "name": "crc32fast",
+      "version": "1.5.3",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -5434,6 +5644,7 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -5448,6 +5659,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5539,6 +5751,19 @@
       ]
     },
     {
+      "name": "ctutils",
+      "version": "0.4.5",
+      "license": "Apache-2.0 OR MIT",
+      "origin": [
+        "fushi_fsrs"
+      ],
+      "textSource": "package",
+      "texts": [
+        "50e6751797c50ded.txt",
+        "91585c36e4fb9ab4.txt"
+      ]
+    },
+    {
       "name": "curl",
       "version": "8.21.0",
       "license": "curl",
@@ -5560,6 +5785,7 @@
       "version": "5.0.0",
       "license": "BSD-3-Clause",
       "origin": [
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5592,6 +5818,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -5762,7 +5989,8 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_fsrs",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -5776,6 +6004,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5966,6 +6195,7 @@
       "version": "3.0.0",
       "license": "Apache-2.0 OR MIT",
       "origin": [
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5980,6 +6210,7 @@
       "version": "3.0.0",
       "license": "BSD-3-Clause",
       "origin": [
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -6066,6 +6297,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -6214,7 +6446,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix fast-float 97b54ca9…（注释 'Exact submodule revision from libplacebo v7.360.1'）；nix/packages/mk-pkg-libplacebo/default.nix:15-26 拷入 3rdparty/fast_float",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix fast-float 97b54ca9…（注释 'Exact submodule revision from libplacebo v7.360.1'）；nix/packages/mk-pkg-libplacebo/default.nix:15-26 拷入 3rdparty/fast_float",
       "note": "header-only，编进 Placebo.framework。"
     },
     {
@@ -6309,7 +6541,7 @@
         "ios",
         "macos"
       ],
-      "source": "tool/ffmpeg-unified/recipe.env FFMPEG_TAG=n9.0.1 / FFMPEG_COMMIT=bf1b838f…；fushi 仓 .github/workflows/ffmpeg-unified-mobile.yml：Android / iOS / macOS run 39225163967（docs/specs/2026-10-17-unified-ffmpeg.md「落地实测」）。二进制内嵌版本串：Android libavutil.so 'n9.0.1-4-g79a6f40'、iOS libavutil 'n9.0.1-4-g5907999'、macOS libavutil 'n9.0.1-4-g326b7fb'（n9.0.1 之上 4 个补丁提交）；三平台 configure 串均含 '--enable-gpl' 与 '--enable-version3'，无 --enable-nonfree （Android 另有 --enable-mediacodec --enable-jni，Apple 有 --enable-videotoolbox --enable-audiotoolbox --enable-bzlib，macOS 有 --enable-ffmpeg --enable-ffprobe）；外部库开关 --enable-libx264 --enable-libvpx --enable-libopus --enable-libdav1d --enable-libsvtav1 --enable-libwebp --enable-openssl --enable-libxml2 --enable-iconv --enable-zlib（tool/ffmpeg-unified/mobile/kit_options.sh）",
+      "source": "tool/ffmpeg-unified/recipe.env FFMPEG_TAG=n9.0.1 / FFMPEG_COMMIT=bf1b838f…；fushi 仓 .github/workflows/ffmpeg-unified-mobile.yml：Android / iOS / macOS run 40064825841（unified-ffmpeg-9.0.1-r2，含 tool/dvd 共享 DVD 库；首版落地见 docs/specs/2026-10-17-unified-ffmpeg.md「落地实测」）。二进制内嵌版本串：Android libavutil.so 'n9.0.1-4-ge8feddf'、iOS libavutil 'n9.0.1-4-g3dcaa13'、macOS libavutil 'n9.0.1-4-ga0085b8'（n9.0.1 之上 4 个补丁提交）；三平台 configure 串均含 '--enable-gpl' 与 '--enable-version3'，无 --enable-nonfree （Android 另有 --enable-mediacodec --enable-jni，Apple 有 --enable-videotoolbox --enable-audiotoolbox --enable-bzlib，macOS 有 --enable-ffmpeg --enable-ffprobe）；外部库开关 --enable-libx264 --enable-libvpx --enable-libopus --enable-libdav1d --enable-libsvtav1 --enable-libwebp --enable-openssl --enable-libxml2 --enable-iconv --enable-zlib（tool/ffmpeg-unified/mobile/kit_options.sh），以及 FFmpegKitNext 补丁 0003 加的 --enable-libdvdnav --enable-libdvdread（dvdvideo 解复用器，DVD 库见 libdvdcss / libdvdread / libdvdnav 条目）",
       "note": "统一 FFmpeg：同一平台上播放器 libmpv 与制卡 / 导出共用这一份。--enable-gpl + --enable-version3 → 按 LICENSE.md 为 GPL v3（or later）。Android：AAR android/libs/ffmpeg-kit-next.aar 的 jni/<abi>/libav{codec,device,filter,format,util}.so + libsw{resample,scale}.so（arm64-v8a / armeabi-v7a / x86_64）；iOS：ios/ffmpeg_kit_next_flutter/Frameworks/libav*.xcframework（ios-arm64 + ios-arm64_x86_64-simulator）；macOS：third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz 的 Frameworks/libav*.framework 与 MacOS/ffmpeg、MacOS/ffprobe（arm64）。zlib / bzip2 / iconv 在 Apple 上链系统库（LC_LOAD_DYLIB /usr/lib/libz.1.dylib、libbz2.1.0.dylib、libiconv.2.dylib），Android 的 zlib 链系统 libz.so（DT_NEEDED），均不随包。FFmpegKitNext 为 libwebp 一并构建并在 AAR res/raw 与 framework Resources 里附了 giflib / libjpeg-turbo / libpng / libtiff 的许可文件，但二进制里查不到这些库的特征串，判定未链接，不登记。Windows 的 FFmpeg 9.0.1 见 pub:media_kit_libs_windows_video 条目。"
     },
     {
@@ -6346,7 +6578,7 @@
         "android",
         "ios"
       ],
-      "source": "tool/ffmpeg-unified/recipe.env FFMPEG_KIT_NEXT_TAG=v9.0.0 / FFMPEG_KIT_NEXT_COMMIT=a724ed99…，补丁 tool/ffmpeg-unified/patches/ffmpeg-kit-next/；fushi 仓 .github/workflows/ffmpeg-unified-mobile.yml：Android / iOS / macOS run 39225163967（docs/specs/2026-10-17-unified-ffmpeg.md「落地实测」）。Android libffmpegkit.so / iOS ffmpegkit 二进制内嵌 '9.0.0'；源文件头（android/ffmpeg-kit-next-android-lib/src/main/cpp/ffmpegkit.c）为 'GNU Lesser General License ... either version 3 of the License, or (at your option) any later version'；third_party/ffmpeg_kit_next_flutter/LICENSE 与上游 a724ed99 根目录 LICENSE 逐字节一致（LGPL v3）",
+      "source": "tool/ffmpeg-unified/recipe.env FFMPEG_KIT_NEXT_TAG=v9.0.0 / FFMPEG_KIT_NEXT_COMMIT=a724ed99…，补丁 tool/ffmpeg-unified/patches/ffmpeg-kit-next/；fushi 仓 .github/workflows/ffmpeg-unified-mobile.yml：Android / iOS / macOS run 40064825841（unified-ffmpeg-9.0.1-r2，含 tool/dvd 共享 DVD 库；首版落地见 docs/specs/2026-10-17-unified-ffmpeg.md「落地实测」）。Android libffmpegkit.so / iOS ffmpegkit 二进制内嵌 '9.0.0'；源文件头（android/ffmpeg-kit-next-android-lib/src/main/cpp/ffmpegkit.c）为 'GNU Lesser General License ... either version 3 of the License, or (at your option) any later version'；third_party/ffmpeg_kit_next_flutter/LICENSE 与上游 a724ed99 根目录 LICENSE 逐字节一致（LGPL v3）",
       "note": "进程内命令执行器：Android libffmpegkit.so + libffmpegkit_abidetect.so（每 ABI 一份），iOS ffmpegkit.xcframework。本身 LGPL v3，但链接的是 GPL 构建的 FFmpeg，随包分发按 GPL-3.0（ffmpegkit.framework/LICENSE 与 AAR res/raw/license.txt 即 GPL v3 全文）。macOS 不用它（CliFfmpegBackend 直接跑 ffmpeg / ffprobe 程序）。AAR 另带一份 NDK 的 libc++_shared.so，与 fushi/android 的 libc++_shared.so 条目是同一组件。"
     },
     {
@@ -6384,6 +6616,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -6537,7 +6770,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_freetype=2-13-0（git tag VER-2-13-0）；二进制只见 'Raster: FreeType %d.%d.%d'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_freetype=2-13-0（git tag VER-2-13-0）；二进制只见 'Raster: FreeType %d.%d.%d'",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）。双许可，任选其一。"
     },
     {
@@ -6557,7 +6790,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix freetype 2.13.2（二进制无版本串，仅配方）",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix freetype 2.13.2（二进制无版本串，仅配方）",
       "note": "Freetype.framework（依赖 Png16、Harfbuzz、系统 libz）。双许可。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -6592,7 +6825,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_fribidi=1.0.12; libmpv.so 内嵌 'Shaper: FriBidi 1.0.12 (SIMPLE)'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_fribidi=1.0.12; libmpv.so 内嵌 'Shaper: FriBidi 1.0.12 (SIMPLE)'",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）"
     },
     {
@@ -6610,7 +6843,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix fribidi 1.0.13；Ass 二进制内嵌 'Shaper: FriBidi 1.0.13'",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix fribidi 1.0.13；Ass 二进制内嵌 'Shaper: FriBidi 1.0.13'",
       "note": "Fribidi.framework。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -6834,6 +7067,7 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -6891,6 +7125,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -7191,7 +7426,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_harfbuzz=7.2.0（二进制只见 'HarfBuzz-ng %s'，版本只来自配方）",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_harfbuzz=7.2.0（二进制只见 'HarfBuzz-ng %s'，版本只来自配方）",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）。SPDX 按 HarfBuzz COPYING 的 'Old MIT' 措辞取 MIT-Modern-Variant；COPYING 说明部分文件另有许可（见文本）。"
     },
     {
@@ -7209,7 +7444,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix harfbuzz 8.1.1；Harfbuzz 二进制内嵌 '8.1.1'",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix harfbuzz 8.1.1；Harfbuzz 二进制内嵌 '8.1.1'",
       "note": "Harfbuzz.framework（-Dcoretext=enabled）。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -7483,6 +7718,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -7785,6 +8021,20 @@
       "texts": [
         "6aed14a798714567.txt",
         "304b898acad7f02e.txt"
+      ]
+    },
+    {
+      "name": "inout",
+      "version": "0.2.5",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "a07fcacc3c60de4d.txt"
       ]
     },
     {
@@ -8146,7 +8396,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_libass=0.17.1; libmpv.so 内嵌 'commit: 0.17.1-0-ge8ad72accd3a...'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_libass=0.17.1; libmpv.so 内嵌 'commit: 0.17.1-0-ge8ad72accd3a...'",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）"
     },
     {
@@ -8164,7 +8414,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix libass 0.17.1",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix libass 0.17.1",
       "note": "Ass.framework。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -8198,7 +8448,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_libbluray=1.5.0，tarball https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz sha256 f676408e…（本地复核一致）；libmpv.so 内嵌 'libbluray version 1.5.0'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_libbluray=1.5.0，tarball https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz sha256 f676408e…（本地复核一致）；libmpv.so 内嵌 'libbluray version 1.5.0'",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）。-Dbdj_jar=disabled（不含 BD-J jar，tarball 里的 contrib/asm 不参与原生构建）。"
     },
     {
@@ -8216,7 +8466,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix libbluray 1.5.0（sha256 f676408e…）；Bluray 二进制内嵌 'libbluray version 1.5.0'",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix libbluray 1.5.0（sha256 f676408e…）；Bluray 二进制内嵌 'libbluray version 1.5.0'",
       "note": "Bluray.framework；-Dbdj_jar=disabled -Dfreetype=disabled -Dlibxml2=disabled -Dembed_udfread=true。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -8287,6 +8537,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_compute",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -8335,6 +8586,74 @@
       "note": "DLLs: libcaca-0.dll. COPYING is the WTFPL; upstream also ships COPYING.GPL / COPYING.LGPL / COPYING.ISC for individual files, all included."
     },
     {
+      "name": "libcdio",
+      "version": "2.3.0",
+      "license": "GPL-3.0-or-later",
+      "origin": [
+        "pub:media_kit_libs_macos_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "7fa7e56c0db71105.txt"
+      ],
+      "platforms": [
+        "macos"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@07d6afd9f8c2606320a35b0e1d32143b5da25f15（分支 fushi/cdda，镜像仓 run 40132136924）packages.lock.nix libcdio 2.3.0，tarball https://github.com/libcdio/libcdio/releases/download/2.3.0/libcdio-2.3.0.tar.bz2 sha256 53e83d28…；源码头 'either version 3 of the License, or (at your option) any later version'；原文 = 该 tarball 的 COPYING",
+      "note": "Cdio.framework（macos-arm64，仅 macOS：iOS 不编 cdda），音频 CD 的 cdda:// 读盘；链系统 /usr/lib/libiconv.2.dylib 与 IOKit / DiskArbitration。"
+    },
+    {
+      "name": "libcdio",
+      "version": "2.3.0",
+      "license": "GPL-3.0-or-later",
+      "origin": [
+        "pub:media_kit_libs_windows_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "7fa7e56c0db71105.txt"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "source": "tool/cdda/recipe.env: MSYS2 binary package mingw-w64-x86_64-libcdio 2.3.0-1 (sha256 e8ce99bc…), unpacked into a private prefix by tool/cdda/fetch_cdio_msys2.py; corresponding source = MSYS2 source package mingw-w64-libcdio-2.3.0-1.src.tar.zst (sha256 d2cf5c1b…: upstream libcdio-2.3.0.tar.bz2 sha256 53e83d28… + PKGBUILD + libcdio-0.83-linking.patch); source headers: 'either version 3 of the License, or (at your option) any later version'; text = COPYING of that tarball (licenses/fushi-cdda/ in the rebuilt archive, with SOURCE.txt)",
+      "note": "DLL: libcdio-19.dll (fbdcdio-19.dll in the bundle), linked by libmpv's cdda:// stream (-Dcdda=enabled) through libcdio_cdda / libcdio_paranoia; imports only libiconv. Audio CD playback, docs/specs/2026-10-23-music-module-design.md §9.3."
+    },
+    {
+      "name": "libcdio-paranoia",
+      "version": "10.2+2.0.2",
+      "license": "GPL-3.0-or-later",
+      "origin": [
+        "pub:media_kit_libs_macos_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "7fa7e56c0db71105.txt"
+      ],
+      "platforms": [
+        "macos"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@07d6afd9f8c2606320a35b0e1d32143b5da25f15（分支 fushi/cdda，镜像仓 run 40132136924）packages.lock.nix libcdio-paranoia 10.2+2.0.2，tarball https://ftp.gnu.org/gnu/libcdio/libcdio-paranoia-10.2+2.0.2.tar.bz2 sha256 18689253…；lib/paranoia 与 lib/cdda_interface 源码头 'either version 3 of the License, or (at your option) any later version'",
+      "note": "Cdio_cdda.framework 与 Cdio_paranoia.framework（macos-arm64，仅 macOS），mpv stream_cdda 的 CD-DA 读取与抖动校正。"
+    },
+    {
+      "name": "libcdio-paranoia",
+      "version": "10.2+2.0.2",
+      "license": "GPL-3.0-or-later",
+      "origin": [
+        "pub:media_kit_libs_windows_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "7fa7e56c0db71105.txt"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "source": "tool/cdda/recipe.env: MSYS2 binary package mingw-w64-x86_64-libcdio-paranoia 10.2+2.0.2-1 (sha256 298bf8ef…), unpacked by tool/cdda/fetch_cdio_msys2.py; corresponding source = MSYS2 source package mingw-w64-libcdio-paranoia-10.2+2.0.2-1.src.tar.zst (sha256 614a7747…: upstream libcdio-paranoia-10.2+2.0.2.tar.bz2 sha256 18689253…); source headers of lib/paranoia and lib/cdda_interface: 'either version 3 of the License, or (at your option) any later version' (MSYS2's PKGBUILD says GPL-2.0-or-later; the shipped sources and COPYING are GPLv3, which is what is recorded)",
+      "note": "DLLs: libcdio_cdda-2.dll and libcdio_paranoia-2.dll (fbdcdio_cdda-2.dll / fbdcdio_paranoia-2.dll in the bundle), the CD-DA reader and jitter correction behind mpv's stream_cdda."
+    },
+    {
       "name": "libdeflate",
       "version": "1.25",
       "license": "MIT",
@@ -8369,6 +8688,114 @@
       ],
       "source": "MSYS2 mingw-w64-x86_64-libdovi 3.4.0-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
       "note": "DLLs: libdovi.dll. Rust library; its statically linked crate dependencies are not listed separately."
+    },
+    {
+      "name": "libdvdcss",
+      "version": "1.6.0",
+      "license": "GPL-2.0-or-later",
+      "origin": [
+        "pub:media_kit_libs_windows_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "b90ed8150a6d371c.txt"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDCSS_VERSION=1.6.0, tarball https://download.videolan.org/pub/videolan/libdvdcss/1.6.0/libdvdcss-1.6.0.tar.xz sha256 7ea556c8… (matches VideoLAN's .sha256); built by tool/dvd/build_dvd_libs.sh into the unified FFmpeg prefix; source headers: 'either version 2 of the License, or (at your option) any later version'; text = COPYING of that tarball (licenses/fushi-dvd/ in the rebuilt archive)",
+      "note": "DLL: libdvdcss-2.dll (fbddvdcss-2.dll in the bundle), linked by libdvdread (built against it, not dlopen). Ships in the vendored Windows libmpv archive (…-ffu2-dvd1.7z, tool/bluray/build_libmpv.ps1; docs/specs/2026-10-24-dvd-original-menu.md); Android / iOS / macOS artifacts with DVD are not vendored yet."
+    },
+    {
+      "name": "libdvdcss",
+      "version": "1.6.0",
+      "license": "GPL-2.0-or-later",
+      "origin": [
+        "third_party/ffmpeg_kit_next_flutter, third_party/media_kit_libs_macos_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "b90ed8150a6d371c.txt"
+      ],
+      "platforms": [
+        "android",
+        "ios",
+        "macos"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDCSS_VERSION=1.6.0, tarball https://download.videolan.org/pub/videolan/libdvdcss/1.6.0/libdvdcss-1.6.0.tar.xz sha256 7ea556c8… (matches VideoLAN's .sha256)；由 tool/dvd/platforms/build_cross.sh 交叉编译，tool/ffmpeg-unified/mobile/build_{android,ios,macos}.sh 经 FFmpegKitNext 补丁 0003（FUSHI_DVD_ROOT）链入统一 FFmpeg 并随包（ffmpeg-unified-mobile.yml run 40064825841）",
+      "note": "Android libdvdcss.so / iOS libdvdcss.xcframework / macOS libdvdcss.framework。iOS 打 tool/dvd/patches/libdvdcss/0001-no-drive-ioctls.patch（FUSHI_DVDCSS_NO_DRIVE：无光驱 ioctl，只解镜像/目录）。"
+    },
+    {
+      "name": "libdvdnav",
+      "version": "7.0.0",
+      "license": "GPL-2.0-or-later",
+      "origin": [
+        "pub:media_kit_libs_windows_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "ce34cda77a9b4bf8.txt"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDNAV_VERSION=7.0.0, tarball https://download.videolan.org/pub/videolan/libdvdnav/7.0.0/libdvdnav-7.0.0.tar.xz sha256 a2a18f5a… (matches VideoLAN's .sha256); source headers: 'either version 2 of the License, or (at your option) any later version'",
+      "note": "DLL: libdvdnav-4.dll (fbddvdnav-4.dll in the bundle); one copy for libmpv's dvd:// navigation (-Ddvdnav=enabled) and FFmpeg's dvdvideo demuxer (--enable-libdvdnav)."
+    },
+    {
+      "name": "libdvdnav",
+      "version": "7.0.0",
+      "license": "GPL-2.0-or-later",
+      "origin": [
+        "third_party/ffmpeg_kit_next_flutter, third_party/media_kit_libs_macos_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "ce34cda77a9b4bf8.txt"
+      ],
+      "platforms": [
+        "android",
+        "ios",
+        "macos"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDNAV_VERSION=7.0.0, tarball https://download.videolan.org/pub/videolan/libdvdnav/7.0.0/libdvdnav-7.0.0.tar.xz sha256 a2a18f5a… (matches VideoLAN's .sha256)；由 tool/dvd/platforms/build_cross.sh 交叉编译，tool/ffmpeg-unified/mobile/build_{android,ios,macos}.sh 经 FFmpegKitNext 补丁 0003（FUSHI_DVD_ROOT）链入统一 FFmpeg 并随包（ffmpeg-unified-mobile.yml run 40064825841）",
+      "note": "Android libdvdnav.so / iOS libdvdnav.xcframework / macOS libdvdnav.framework；一份同时供 libmpv dvd://（-Ddvdnav=enabled）与 FFmpeg dvdvideo（--enable-libdvdnav）。"
+    },
+    {
+      "name": "libdvdread",
+      "version": "7.1.1",
+      "license": "GPL-2.0-or-later",
+      "origin": [
+        "pub:media_kit_libs_windows_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "199b95d7900b06e1.txt"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDREAD_VERSION=7.1.1, tarball https://download.videolan.org/pub/videolan/libdvdread/7.1.1/libdvdread-7.1.1.tar.xz sha256 a0d47876… (matches VideoLAN's .sha256); meson -Dlibdvdcss=enabled; source headers: 'either version 2 of the License, or (at your option) any later version'",
+      "note": "DLL: libdvdread-8.dll (fbddvdread-8.dll in the bundle); used by libdvdnav and by FFmpeg's dvdvideo demuxer (--enable-libdvdread)."
+    },
+    {
+      "name": "libdvdread",
+      "version": "7.1.1",
+      "license": "GPL-2.0-or-later",
+      "origin": [
+        "third_party/ffmpeg_kit_next_flutter, third_party/media_kit_libs_macos_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "199b95d7900b06e1.txt"
+      ],
+      "platforms": [
+        "android",
+        "ios",
+        "macos"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDREAD_VERSION=7.1.1, tarball https://download.videolan.org/pub/videolan/libdvdread/7.1.1/libdvdread-7.1.1.tar.xz sha256 a0d47876… (matches VideoLAN's .sha256)；由 tool/dvd/platforms/build_cross.sh 交叉编译，tool/ffmpeg-unified/mobile/build_{android,ios,macos}.sh 经 FFmpegKitNext 补丁 0003（FUSHI_DVD_ROOT）链入统一 FFmpeg 并随包（ffmpeg-unified-mobile.yml run 40064825841）",
+      "note": "Android libdvdread.so / iOS libdvdread.xcframework / macOS libdvdread.framework；libdvdnav 与 FFmpeg dvdvideo 解复用器共用。"
     },
     {
       "name": "libffi",
@@ -8575,7 +9002,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_libplacebo=cee9b076（= tag v7.360.1 的提交，gh api repos/haasn/libplacebo/commits/v7.360.1）；libmpv.so 内嵌 'v7.360.1 (v7.360.1)'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_libplacebo=cee9b076（= tag v7.360.1 的提交，gh api repos/haasn/libplacebo/commits/v7.360.1）；libmpv.so 内嵌 'v7.360.1 (v7.360.1)'",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）。-Dopengl=enabled，vulkan/glslang/shaderc/lcms/libdovi=disabled，-Ddovi=enabled（内置 DoVi 解析，不链 libdovi；二进制含 'libplacebo compiled without LittleCMS 2 support!'）。"
     },
     {
@@ -8593,7 +9020,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix libplacebo 7.360.1（tag v7.360.1 tarball）；Placebo 二进制内嵌 'v7.360.1'",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix libplacebo 7.360.1（tag v7.360.1 tarball）；Placebo 二进制内嵌 'v7.360.1'",
       "note": "Placebo.framework；-Dauto_features=disabled -Ddovi=enabled（无 OpenGL/Vulkan/lcms/libdovi，二进制含 'compiled without OpenGL support' 与 'without LittleCMS 2 support'）。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -8644,7 +9071,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix libpng 1.6.40（+ wrapdb 构建补丁 1.6.40-1）；Png16 二进制内嵌 ' libpng version 1.6.40 - June 21, 2023'",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix libpng 1.6.40（+ wrapdb 构建补丁 1.6.40-1）；Png16 二进制内嵌 ' libpng version 1.6.40 - June 21, 2023'",
       "note": "Png16.framework，仅 Apple 有（FreeType PNG 支持）。LICENSE 同时含 PNG Reference Library License v2 与旧版 libpng 许可。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -9101,7 +9528,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_libxml2=2.10.3（git tag v2.10.3）",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_libxml2=2.10.3（git tag v2.10.3）",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）（--with-minimum 配置）。统一 FFmpeg 后只剩 libbluray 使用（dep_libbluray=(freetype libxml2)；libmpv.so 内嵌 LIBXML_VERSION 串 '21003'）；FFmpeg 的 DASH 用 AAR 里自带的 libxml2 2.11.4。"
     },
     {
@@ -9225,7 +9652,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce scripts/libplacebo.sh 追加 'Libs.private: -lc++_static -lc++abi -lunwind'；README 'The C++ runtime is linked statically'；libmpv.so 含 std::__ndk1 符号串；本机 NDK r27 AndroidVersion.txt '18.0.1 based on r522817'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 scripts/libplacebo.sh 追加 'Libs.private: -lc++_static -lc++abi -lunwind'；README 'The C++ runtime is linked statically'；libmpv.so 含 std::__ndk1 符号串；本机 NDK r27 AndroidVersion.txt '18.0.1 based on r522817'",
       "note": "存疑：文本取自 llvm-project tag llvmorg-18.1.0 的三份 LICENSE.TXT，NDK 的 r522817 是 LLVM 18 开发快照，版本为近似。LLVM-exception 免除二进制嵌入时的署名要求，是否登记由所有者决定。"
     },
     {
@@ -9262,6 +9689,21 @@
       ]
     },
     {
+      "name": "lofty",
+      "version": "0.22.4",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "spdx-fallback",
+      "texts": [
+        "b05785f9f18e6716.txt",
+        "074e6e32c86a4c0e.txt"
+      ],
+      "note": "crate 包内没有许可文件；以下是 MIT OR Apache-2.0 的标准文本，版权人见 crate 作者：Serial <69764315+Serial-ATA@users.noreply.github.com>"
+    },
+    {
       "name": "log",
       "version": "0.4.34",
       "license": "MIT OR Apache-2.0",
@@ -9269,6 +9711,7 @@
         "fushi_anki_sync",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -9321,7 +9764,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_lua=5.2.4，tarball https://www.lua.org/ftp/lua-5.2.4.tar.gz sha256 b9e2e4aa…（本地复核一致）；libmpv.so 内嵌 '$LuaVersion: Lua 5.2.4  Copyright (C) 1994-2015 Lua.org, PUC-Rio $'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_lua=5.2.4，tarball https://www.lua.org/ftp/lua-5.2.4.tar.gz sha256 b9e2e4aa…（本地复核一致）；libmpv.so 内嵌 '$LuaVersion: Lua 5.2.4  Copyright (C) 1994-2015 Lua.org, PUC-Rio $'",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）（liblua.a）。Lua 发行包无独立 LICENSE 文件，文本取自 src/lua.h 末尾许可注释块（第 420–444 行，逐字）。"
     },
     {
@@ -9490,7 +9933,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce include/download-deps.sh 'git reset --hard 42054e5d479f…'；buildscripts/bundle_unified.sh 从 https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-<abi>-ffmpeg6.1.6-dovi.jar 取 helper 并校验 md5",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 include/download-deps.sh 'git reset --hard 42054e5d479f…'；buildscripts/bundle_unified.sh 从 https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-<abi>-ffmpeg6.1.6-dovi.jar 取 helper 并校验 md5",
       "note": "独立 .so（每 ABI 一份）。存疑：随包 helper 是从旧 vendor jar 按 md5 取出的既有二进制，未从 42054e5d 重编复核；许可按该提交的 LICENSE。"
     },
     {
@@ -9502,6 +9945,7 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -9594,6 +10038,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -9636,39 +10081,41 @@
     {
       "name": "mpv (libmpv)",
       "version": "36abaa32 (v0.41.0-dev)",
-      "license": "LGPL-2.1-or-later",
+      "license": "GPL-2.0-or-later",
       "origin": [
         "pub:media_kit_libs_android_video"
       ],
       "textSource": "manifest",
       "texts": [
         "bfe9ee4cceabcb8e.txt",
+        "e329c2735166ea18.txt",
         "1c895bfaf60b9069.txt"
       ],
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce buildscripts/include/depinfo.sh v_mpv、dep_mpv=(unified_ffmpeg libass lua libbluray libplacebo)；provenance.json build_commit / mpv_commit / unified_ffmpeg；libmpv.so 内嵌 'Configuration: -Db_lundef=true -Dgpl=false -Dlibmpv=true -Dlua=lua ...'",
-      "note": "-Dgpl=false（LGPL 构建）；Fushi 补丁 5 个（provenance.json patches）。三 ABI（arm64-v8a / armeabi-v7a / x86_64）的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 不再自带 FFmpeg，NEEDED libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so（统一 FFmpeg 9.0.1，见 third_party/ffmpeg_kit_next_flutter 条目），其余 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc。mpv Copyright 文件说明 -Dgpl=false 本身不构成 LGPL 授权，链接库可影响最终许可：所链的统一 FFmpeg 是 --enable-gpl --enable-version3 构建，合并分发按 GPL-3.0。"
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726（分支 fushi/dvd，私有镜像 hajisensai/libmpv-android-build-fushi run 40068054506）buildscripts/include/depinfo.sh v_mpv、dep_mpv=(unified_ffmpeg libass lua libbluray libplacebo)；provenance.json build_commit / mpv_commit / unified_ffmpeg；libmpv.so 内嵌 'Configuration: -Db_lundef=true -Dgpl=true -Dlibmpv=true -Dlua=lua ... -Dlibbluray=enabled -Ddvdnav=enabled -Ddvda=disabled ...'",
+      "note": "-Dgpl=true -Ddvdnav=enabled（mpv 的 stream_dvdnav 只在 GPL 构建可用，meson 'dvdnav' 依赖 'gpl'），故按 GPL-2.0-or-later；Fushi 补丁 5 个（provenance.json patches，含 disc-navigation-state v2 的 dvd-state）。三 ABI（arm64-v8a / armeabi-v7a / x86_64）的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 不自带 FFmpeg / DVD 库，NEEDED libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so（统一 FFmpeg 9.0.1）与 libdvdnav.so（tool/dvd，libdvdread/libdvdcss 经 libdvdnav 加载），均由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供；其余 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc。所链的统一 FFmpeg 是 --enable-gpl --enable-version3 构建，合并分发按 GPL-3.0。"
     },
     {
       "name": "mpv (libmpv)",
       "version": "36abaa32 (v0.41.0-dev)",
-      "license": "LGPL-2.1-or-later",
+      "license": "GPL-2.0-or-later",
       "origin": [
         "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video"
       ],
       "textSource": "manifest",
       "texts": [
         "bfe9ee4cceabcb8e.txt",
+        "e329c2735166ea18.txt",
         "1c895bfaf60b9069.txt"
       ],
       "platforms": [
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix mpv-menu.version=36abaa32…（分支 fushi/unified-ffmpeg）；provenance.json mpv_commit / unified_ffmpeg；Mpv 二进制内嵌 'mpv v0.41.0-UNKNOWN' 与 'Configuration: ... -Dgpl=false ... -Dlibbluray=enabled'；Mpv 的 LC_LOAD_DYLIB 为 @rpath/libavcodec.framework/libavcodec 等统一 FFmpeg framework",
-      "note": "Mpv.framework，-Dgpl=false；未启用 Lua（-Dauto_features=disabled，无 -Dlua）。不再打包 FFmpeg / Mbed TLS / dav1d / libxml2 framework：归档只剩 Ass/Bluray/Freetype/Fribidi/Harfbuzz/Mpv/Placebo/Png16/Uchardet，Mpv 动态链接统一 FFmpeg 9.0.1 的 libav*.framework（iOS 由 third_party/ffmpeg_kit_next_flutter 的 xcframework 提供，macOS 由 third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz 提供）。所链 FFmpeg 为 --enable-gpl --enable-version3 构建，合并分发按 GPL-3.0。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f（分支 fushi/dvd，私有镜像 hajisensai/libmpv-darwin-build-fushi run 40067864441）packages.lock.nix mpv-menu.version=36abaa32…；provenance.json mpv_commit / unified_ffmpeg；Mpv 二进制内嵌 'mpv v0.41.0-UNKNOWN' 与 'Configuration: ... -Dgpl=true ... -Dlibbluray=enabled -Ddvdnav=enabled -Ddvda=disabled ...'；Mpv 的 LC_LOAD_DYLIB 含 @rpath/libavcodec.framework/libavcodec 等统一 FFmpeg framework 与 @rpath/libdvdnav.framework/libdvdnav",
+      "note": "Mpv.framework，-Dgpl=true -Ddvdnav=enabled（stream_dvdnav 只在 GPL 构建可用），故按 GPL-2.0-or-later；未启用 Lua（-Dauto_features=disabled，无 -Dlua）。不打包 FFmpeg / DVD 库 / Mbed TLS / dav1d / libxml2 framework：归档只剩 Ass/Bluray/Freetype/Fribidi/Harfbuzz/Mpv/Placebo/Png16/Uchardet，Mpv 动态链接统一 FFmpeg 9.0.1 的 libav*.framework 与 tool/dvd 的 libdvdnav.framework（iOS 由 third_party/ffmpeg_kit_next_flutter 的 xcframework 提供，macOS 由 third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz 提供）。所链 FFmpeg 为 --enable-gpl --enable-version3 构建，合并分发按 GPL-3.0。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
       "name": "mpv (libmpv)",
@@ -10115,7 +10562,8 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_fsrs",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -10159,7 +10607,8 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_fsrs",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -10190,6 +10639,7 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -10354,6 +10804,21 @@
         "b05785f9f18e6716.txt"
       ],
       "note": "crate 包内没有许可文件；原文取自上游 https://github.com/madsmtm/objc2/tree/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b。Upstream LICENSE.md only names the licenses and carries no license body or copyright line; it also notes the crates are derived from Apple SDKs。附 Zlib OR Apache-2.0 OR MIT 的 SPDX 标准正文；crate 作者："
+    },
+    {
+      "name": "ogg_pager",
+      "version": "0.7.2",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "spdx-fallback",
+      "texts": [
+        "b05785f9f18e6716.txt",
+        "074e6e32c86a4c0e.txt"
+      ],
+      "note": "crate 包内没有许可文件；以下是 MIT OR Apache-2.0 的标准文本，版权人见 crate 作者：Serial <69764315+Serial-ATA@users.noreply.github.com>"
     },
     {
       "name": "once_cell",
@@ -10782,6 +11247,20 @@
       ]
     },
     {
+      "name": "password-hash",
+      "version": "0.6.1",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "d8c4ab431f20da84.txt"
+      ]
+    },
+    {
       "name": "pbkdf2",
       "version": "0.12.2",
       "license": "MIT OR Apache-2.0",
@@ -10964,6 +11443,20 @@
       "note": "NOT verified in the binaries (no recognisable strings); inferred only because WebRTC audio processing / dcSCTP depend on them by default. pffft is an FFTPACK-derived BSD-style text; SPDX mapping needs review"
     },
     {
+      "name": "phc",
+      "version": "0.6.1",
+      "license": "Apache-2.0 OR MIT",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "57a4d75c1d095bb9.txt"
+      ]
+    },
+    {
       "name": "phf",
       "version": "0.11.3",
       "license": "MIT",
@@ -11124,6 +11617,20 @@
       ]
     },
     {
+      "name": "poly1305",
+      "version": "0.9.1",
+      "license": "Apache-2.0 OR MIT",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "b67acfaaf787b346.txt"
+      ]
+    },
+    {
       "name": "polyval",
       "version": "0.6.2",
       "license": "Apache-2.0 OR MIT",
@@ -11237,6 +11744,20 @@
       "textSource": "package",
       "texts": [
         "7ca6700600dfa9c9.txt"
+      ]
+    },
+    {
+      "name": "primal-check",
+      "version": "0.3.4",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "143368af9701a24e.txt",
+        "ec835b87c9b101e2.txt"
       ]
     },
     {
@@ -11368,6 +11889,7 @@
       "license": "MIT",
       "origin": [
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -11502,6 +12024,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -11667,6 +12190,20 @@
       ]
     },
     {
+      "name": "realfft",
+      "version": "3.5.0",
+      "license": "MIT",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "spdx-fallback",
+      "texts": [
+        "b05785f9f18e6716.txt"
+      ],
+      "note": "crate 包内没有许可文件；以下是 MIT 的标准文本，版权人见 crate 作者：HEnquist <henrik.enquist@gmail.com>"
+    },
+    {
       "name": "regex",
       "version": "1.13.1",
       "license": "MIT OR Apache-2.0",
@@ -11805,6 +12342,19 @@
       "note": "DLLs: librtmp-1.dll."
     },
     {
+      "name": "rubato",
+      "version": "0.16.2",
+      "license": "MIT",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "8385bbba0704efc3.txt"
+      ]
+    },
+    {
       "name": "rusqlite",
       "version": "0.36.0",
       "license": "MIT",
@@ -11843,6 +12393,20 @@
       "texts": [
         "b30df9a48463d1c9.txt",
         "23f18e03dc49df91.txt"
+      ]
+    },
+    {
+      "name": "rustfft",
+      "version": "6.4.1",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "a8ad31b1c3f40dca.txt",
+        "cb22dce3ea93e49e.txt"
       ]
     },
     {
@@ -11965,6 +12529,20 @@
       ]
     },
     {
+      "name": "rusty-chromaprint",
+      "version": "0.3.0",
+      "license": "MIT",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "spdx-fallback",
+      "texts": [
+        "b05785f9f18e6716.txt"
+      ],
+      "note": "crate 包内没有许可文件；以下是 MIT 的标准文本，版权人见 crate 作者："
+    },
+    {
       "name": "ruzstd",
       "version": "0.8.3",
       "license": "MIT",
@@ -12042,6 +12620,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -12336,7 +12915,8 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_fsrs",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -12380,6 +12960,19 @@
         "fushi_anki_sync",
         "fushi_ios_umbrella",
         "fushi_p2p"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "831e0f43ad0bf014.txt"
+      ]
+    },
+    {
+      "name": "sha2",
+      "version": "0.11.1",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs"
       ],
       "textSource": "package",
       "texts": [
@@ -12466,6 +13059,7 @@
       "version": "3.0.0",
       "license": "Apache-2.0 OR MIT",
       "origin": [
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -12483,6 +13077,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -12510,6 +13105,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -12869,6 +13465,20 @@
       ]
     },
     {
+      "name": "strength_reduce",
+      "version": "0.2.4",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "a8ad31b1c3f40dca.txt",
+        "cb22dce3ea93e49e.txt"
+      ]
+    },
+    {
       "name": "string_cache",
       "version": "0.11.0",
       "license": "MIT OR Apache-2.0",
@@ -12931,6 +13541,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_compute",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -13399,6 +14010,20 @@
       ]
     },
     {
+      "name": "transpose",
+      "version": "0.2.3",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "0a4e5a27177da58e.txt",
+        "275370a97013f37a.txt"
+      ]
+    },
+    {
       "name": "try-lock",
       "version": "0.2.5",
       "license": "MIT",
@@ -13447,6 +14072,7 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -13471,7 +14097,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix uchardet 0.0.8（tarball sha256 e97a60cf… 本地复核一致）；Uchardet 二进制内嵌 nix 路径 'mk-pkg-uchardet-patched-source-0.0.8'",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix uchardet 0.0.8（tarball sha256 e97a60cf… 本地复核一致）；Uchardet 二进制内嵌 nix 路径 'mk-pkg-uchardet-patched-source-0.0.8'",
       "note": "Uchardet.framework，仅 Apple 有（mpv -Duchardet=enabled）。三选一许可；COPYING 依次含 MPL 1.1、GPL v2、LGPL v2.1 三份全文（第 473、815 行起）。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -13657,6 +14283,20 @@
       "texts": [
         "6aed14a798714567.txt",
         "6b50510a0400c721.txt"
+      ]
+    },
+    {
+      "name": "universal-hash",
+      "version": "0.6.1",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "efa52eb70a774b62.txt"
       ]
     },
     {
@@ -14563,7 +15203,8 @@
       "version": "1.9.1",
       "license": "Apache-2.0 OR MIT",
       "origin": [
-        "fushi_compute"
+        "fushi_compute",
+        "fushi_fsrs"
       ],
       "textSource": "package",
       "texts": [
@@ -14689,6 +15330,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",

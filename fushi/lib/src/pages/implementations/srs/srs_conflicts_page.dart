@@ -1,6 +1,9 @@
 /// 复习的同步冲突：两台设备同时改了同一项设置 / 卡片标志时，后写的生效、被覆盖的
 /// 留在这里，逐条「改回」（写被覆盖的值）或「确认」（写当前值）；另列出内容类
-/// 待裁决的笔记（字段并发修改 / 删除与并发修改），点开进编辑页处理。
+/// 待裁决的笔记（字段并发修改），点开进编辑页处理；以及同步 v2 扣住的删除（一台设备删了、
+/// 另一台同时还在改 / 复习 / 移动它：删除先不生效、条目照常可见，等这里选「删除」或「保留」，
+/// docs/specs/2026-10-25-srs-sync-v2-design.md §5.3）；以及疑似重复的笔记（两台设备各自制了同一个词，§5.4），
+/// 用户选「合并」才合并（复习历史并入保留的那条），选「不是重复」就不再提示。
 library;
 
 import 'dart:async';
@@ -9,6 +12,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsNoteCacheRow;
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
@@ -20,6 +24,31 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+
+/// 同步 v2 扣住的一次删除（内核 `sync2_conflicts` 的一行）。
+class _HeldDelete {
+  const _HeldDelete({
+    required this.id,
+    required this.kind,
+    required this.by,
+    required this.others,
+    required this.at,
+    required this.label,
+  });
+
+  final String id;
+
+  /// `delete_edit` / `delete_review` / `delete_move`。
+  final String kind;
+
+  /// 删除它的设备。
+  final String by;
+
+  /// 与删除并发的修改条数。
+  final int others;
+  final int at;
+  final String label;
+}
 
 /// 冲突页的一条（标志 / 设置类）。
 class _Conflict {
@@ -59,6 +88,8 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
   bool _loading = true;
   List<_Conflict> _conflicts = const <_Conflict>[];
   List<SrsNoteCacheRow> _pending = const <SrsNoteCacheRow>[];
+  List<_HeldDelete> _held = const <_HeldDelete>[];
+  List<SrsDuplicateGroup> _duplicates = const <SrsDuplicateGroup>[];
 
   @override
   void initState() {
@@ -127,12 +158,107 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
       );
     }
     final List<SrsNoteCacheRow> pending = await store.notesPendingDecision();
+    final List<_HeldDelete> held = <_HeldDelete>[];
+    for (final Map<String, Object?> c in await store.sync2Conflicts()) {
+      held.add(
+        _HeldDelete(
+          id: c['id'] as String? ?? '',
+          kind: c['kind'] as String? ?? '',
+          by: c['by'] as String? ?? '',
+          others: (c['others'] as num?)?.toInt() ?? 0,
+          at: (c['at'] as num?)?.toInt() ?? 0,
+          label: await _entityLabel(
+            store,
+            tree,
+            SrsEntityKind.tryParse(c['entityKind'] as String?),
+            c['entity'] as String? ?? '',
+          ),
+        ),
+      );
+    }
+    final List<SrsDuplicateGroup> duplicates = await store
+        .duplicateNoteGroups();
     if (!mounted) return;
     setState(() {
       _conflicts = conflicts;
       _pending = pending;
+      _held = held;
+      _duplicates = duplicates;
       _loading = false;
     });
+  }
+
+  /// 冲突里实体的人读名：牌组全名 / 笔记（卡片按所属笔记）的第一个字段 / 笔记类型名。
+  Future<String> _entityLabel(
+    SrsDbStore store,
+    SrsDeckTree tree,
+    SrsEntityKind? kind,
+    String id,
+  ) async {
+    String firstField(SrsNoteView? n, SrsNoteTypeView? nt) {
+      final SrsFieldDef? first = nt?.fields.firstOrNull;
+      if (n == null || first == null) return '';
+      return n.field(first.id).replaceAll(RegExp(r'<[^>]+>'), '').trim();
+    }
+
+    switch (kind) {
+      case SrsEntityKind.deck:
+        return tree[id] == null ? id : tree.fullName(id);
+      case SrsEntityKind.card:
+        final SrsCardDetail? d = await store.cardDetail(id);
+        final String text = firstField(d?.note, d?.noteType);
+        return text.isEmpty ? id : text;
+      case SrsEntityKind.note:
+        final SrsNoteView? n = await store.note(id);
+        final String text = firstField(
+          n,
+          n == null ? null : await store.noteType(n.noteTypeId),
+        );
+        return text.isEmpty ? id : text;
+      case SrsEntityKind.noteType:
+        return (await store.noteType(id))?.name ?? id;
+      case SrsEntityKind.profile:
+        return t.srs_conflict_profile;
+      case null:
+        return id;
+    }
+  }
+
+  Future<void> _resolveHeld(_HeldDelete c, {required bool delete}) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null) return;
+    await store.sync2Resolve(c.id, delete: delete);
+    if (!mounted) return;
+    bumpSrsRevision(ref);
+    await _reload();
+  }
+
+  Future<void> _mergeDuplicates(SrsDuplicateGroup g, String keepId) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null) return;
+    final SrsMergeReport r = await store.mergeNotes(
+      keepId: keepId,
+      absorbIds: <String>[
+        for (final String id in g.noteIds)
+          if (id != keepId) id,
+      ],
+    );
+    FushiToast.show(
+      msg: t.srs_duplicates_merged(n: r.linkedCards),
+      severity: ToastSeverity.success,
+    );
+    if (!mounted) return;
+    bumpSrsRevision(ref);
+    await _reload();
+  }
+
+  Future<void> _dismissDuplicates(SrsDuplicateGroup g) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null) return;
+    await store.dismissDuplicates(g.noteIds);
+    if (!mounted) return;
+    bumpSrsRevision(ref);
+    await _reload();
   }
 
   Future<void> _resolve(_Conflict c, {required bool revert}) async {
@@ -236,7 +362,10 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     if (_loading) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
     }
-    if (_conflicts.isEmpty && _pending.isEmpty) {
+    if (_conflicts.isEmpty &&
+        _pending.isEmpty &&
+        _held.isEmpty &&
+        _duplicates.isEmpty) {
       return SafeArea(
         bottom: false,
         child: Center(
@@ -250,6 +379,38 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<Widget> items = <Widget>[
+      if (_held.isNotEmpty) ...<Widget>[
+        FushiSectionTitle(t.srs_conflicts_deletions),
+        for (final _HeldDelete c in _held)
+          _HeldDeleteCard(
+            key: ValueKey<String>('srs-held-${c.id}'),
+            conflict: c,
+            onDelete: () => srsRunLogged(
+              'SrsConflicts.applyDelete',
+              () => _resolveHeld(c, delete: true),
+            ),
+            onKeep: () => srsRunLogged(
+              'SrsConflicts.keep',
+              () => _resolveHeld(c, delete: false),
+            ),
+          ),
+      ],
+      if (_duplicates.isNotEmpty) ...<Widget>[
+        FushiSectionTitle(t.srs_duplicates_title),
+        for (final SrsDuplicateGroup g in _duplicates)
+          _DuplicateCard(
+            key: ValueKey<String>('srs-dup-${g.noteIds.join('-')}'),
+            group: g,
+            onMerge: (String keepId) => srsRunLogged(
+              'SrsConflicts.merge',
+              () => _mergeDuplicates(g, keepId),
+            ),
+            onDismiss: () => srsRunLogged(
+              'SrsConflicts.notDuplicate',
+              () => _dismissDuplicates(g),
+            ),
+          ),
+      ],
       if (_pending.isNotEmpty) ...<Widget>[
         FushiSectionTitle(t.srs_conflicts_pending_notes),
         for (int i = 0; i < _pending.length; i++)
@@ -317,6 +478,152 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
         itemBuilder: fushiStaggeredItemBuilder(
           (BuildContext context, int index) => items[index],
         ),
+      ),
+    );
+  }
+}
+
+/// 一组疑似重复的笔记：点一行选「保留这条」（默认复习最多的那条），「合并」把其余并进来。
+class _DuplicateCard extends StatefulWidget {
+  const _DuplicateCard({
+    super.key,
+    required this.group,
+    required this.onMerge,
+    required this.onDismiss,
+  });
+
+  final SrsDuplicateGroup group;
+  final void Function(String keepId) onMerge;
+  final VoidCallback onDismiss;
+
+  @override
+  State<_DuplicateCard> createState() => _DuplicateCardState();
+}
+
+class _DuplicateCardState extends State<_DuplicateCard> {
+  late String _keep = widget.group.noteIds.first;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final SrsDuplicateGroup g = widget.group;
+    return FushiCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          Text(t.srs_duplicates_hint, style: context.fushiType.bodySmall),
+          for (int i = 0; i < g.noteIds.length; i++)
+            FushiPressScale(
+              child: FushiGroupedListItem(
+                key: ValueKey<String>('srs-dup-row-${g.noteIds[i]}'),
+                index: i,
+                count: g.noteIds.length,
+                onTap: () => setState(() => _keep = g.noteIds[i]),
+                child: FushiListItem(
+                  leading: FushiListLeadingIcon(
+                    _keep == g.noteIds[i]
+                        ? FushiIcons.check
+                        : FushiIcons.ankiCard,
+                    tone: _keep == g.noteIds[i]
+                        ? FushiCardTone.primary
+                        : FushiCardTone.neutral,
+                  ),
+                  title: Text(
+                    (g.sortFields[g.noteIds[i]] ?? '').isEmpty
+                        ? '—'
+                        : g.sortFields[g.noteIds[i]]!,
+                  ),
+                  subtitle: Text(
+                    <String>[
+                      t.srs_duplicates_reviews(n: g.reviews[g.noteIds[i]] ?? 0),
+                      if (_keep == g.noteIds[i]) t.srs_duplicates_keep,
+                    ].join(' · '),
+                  ),
+                ),
+              ),
+            ),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: <Widget>[
+              FushiOutlinedButton.icon(
+                key: const ValueKey<String>('srs-dup-dismiss'),
+                onPressed: widget.onDismiss,
+                icon: const FushiIcon(FushiIcons.close),
+                label: Text(t.srs_duplicates_dismiss),
+              ),
+              FushiFilledButton.tonalIcon(
+                key: const ValueKey<String>('srs-dup-merge'),
+                onPressed: () => widget.onMerge(_keep),
+                icon: const FushiIcon(FushiIcons.check),
+                label: Text(t.srs_duplicates_merge),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeldDeleteCard extends StatelessWidget {
+  const _HeldDeleteCard({
+    super.key,
+    required this.conflict,
+    required this.onDelete,
+    required this.onKeep,
+  });
+
+  final _HeldDelete conflict;
+  final VoidCallback onDelete;
+  final VoidCallback onKeep;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final String what = switch (conflict.kind) {
+      'delete_review' => t.srs_conflict_deleted_while_reviewed(
+        n: conflict.others,
+      ),
+      'delete_move' => t.srs_conflict_deleted_while_moved,
+      _ => t.srs_conflict_deleted_while_edited(n: conflict.others),
+    };
+    return FushiCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          Text(conflict.label, style: context.fushiType.titleSmallEmphasized),
+          Text(what, style: context.fushiType.bodyMedium),
+          Text(
+            t.srs_conflict_from(
+              device: srsShortDevice(conflict.by),
+              time: srsFormatMoment(conflict.at),
+            ),
+            style: context.fushiType.bodySmall,
+          ),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: <Widget>[
+              FushiOutlinedButton.icon(
+                key: const ValueKey<String>('srs-held-delete'),
+                onPressed: onDelete,
+                icon: const FushiIcon(FushiIcons.delete),
+                label: Text(t.srs_conflict_apply_delete),
+              ),
+              FushiFilledButton.tonalIcon(
+                key: const ValueKey<String>('srs-held-keep'),
+                onPressed: onKeep,
+                icon: const FushiIcon(FushiIcons.check),
+                label: Text(t.srs_conflict_keep),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

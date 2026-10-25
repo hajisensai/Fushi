@@ -416,6 +416,7 @@ void main() {
         gameCount: 0,
         progressCount: 0,
         srsNoteCount: 0,
+        musicCount: 0,
       ),
       peekFailed: true,
     );

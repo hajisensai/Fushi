@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """Verify unified-FFmpeg mobile artifacts by reading the binaries' bytes.
 
-    verify_mobile_outputs.py android <out-dir>   # ffmpeg-kit-next.aar + ffmpeg-dev-android-*.tar.gz
-    verify_mobile_outputs.py ios <out-dir>       # ffmpeg-kit-next-ios-xcframeworks.zip
+    verify_mobile_outputs.py android <out-dir> [--require-staged]   # ffmpeg-kit-next.aar + ffmpeg-dev-android-*.tar.gz
+    verify_mobile_outputs.py ios <out-dir> [--require-staged]       # ffmpeg-kit-next-ios-xcframeworks.zip
+
+--require-staged also checks capabilities.json's "staged" section (new builds;
+see verify_ffmpeg_capabilities.py) and, for the DVD entries, that the shared
+tool/dvd libraries ship next to the libav* libraries (AAR jni/<abi>/ and the
+iOS xcframework zip) and that libavformat links them dynamically.
 
 The mobile binaries cannot run on the CI host, so this checks what the guard
 tests also pin: ABI/slice set, the embedded FFmpeg configure line, the version,
@@ -68,12 +73,37 @@ def capabilities() -> dict:
     return json.loads((HERE.parent / "capabilities.json").read_text(encoding="utf-8"))
 
 
+REQUIRE_STAGED = False
+# tool/dvd: the shared libraries libmpv and libavformat both link (one copy).
+DVD_LIBS = ("libdvdcss", "libdvdread", "libdvdnav")
+
+
 def check_capabilities(label: str, blobs: dict[str, bytes], failures: list[str]) -> None:
     caps = capabilities()
     for key, lib in CAPABILITY_LIBS.items():
         for name in caps.get(key, []):
             if b"\0" + name.encode() + b"\0" not in blobs[lib]:
                 failures.append(f"{label}: capability floor: {key[:-1]} {name!r} not in {lib}")
+    if not REQUIRE_STAGED:
+        return
+    staged = caps["staged"]
+    for key, lib in CAPABILITY_LIBS.items():
+        for name in staged.get(key, []):
+            if b"\0" + name.encode() + b"\0" not in blobs[lib]:
+                failures.append(f"{label}: staged: {key[:-1]} {name!r} not in {lib}")
+    conf = configuration(blobs["libavutil"])
+    for flag in staged.get("configure", []):
+        if flag not in conf:
+            failures.append(f"{label}: staged configure flag {flag} missing")
+    # Dynamic link to the shared DVD libraries (ELF DT_NEEDED "libdvdnav.so" or
+    # Mach-O "@rpath/libdvdnav.framework/libdvdnav"), never a private copy.
+    for dvd in ("libdvdnav", "libdvdread"):
+        pattern = rb"\0(?:@rpath/)?" + dvd.encode() + rb"(?:\.so|\.framework/" + dvd.encode() + rb")\0"
+        if not re.search(pattern, blobs["libavformat"]):
+            failures.append(f"{label}: libavformat does not link the shared {dvd}")
+    for dvd in DVD_LIBS:
+        if dvd not in blobs:
+            failures.append(f"{label}: {dvd} is not shipped next to libavformat")
 
 
 def recipe_version() -> str:
@@ -171,9 +201,13 @@ def verify_ios(out: pathlib.Path) -> list[str]:
 
 
 def main() -> int:
-    if len(sys.argv) != 3 or sys.argv[1] not in ("android", "ios"):
+    global REQUIRE_STAGED
+    args = [a for a in sys.argv[1:] if a != "--require-staged"]
+    REQUIRE_STAGED = len(args) != len(sys.argv) - 1
+    if len(args) != 2 or args[0] not in ("android", "ios"):
         print(__doc__)
         return 2
+    sys.argv[1:] = args
     out = pathlib.Path(sys.argv[2])
     failures = verify_android(out) if sys.argv[1] == "android" else verify_ios(out)
     if failures:

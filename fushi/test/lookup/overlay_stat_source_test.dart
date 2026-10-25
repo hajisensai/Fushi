@@ -75,15 +75,17 @@ void main() {
       );
     });
 
-    test('已知限制：SentenceSourceKind 还没有 game，宽松解析回退 book', () {
-      // 加枚举值会让 collections_page 的四处穷尽 switch 编译不过（图标 / 标签 /
-      // 跳转模块都要补 game 分支）。在补齐之前，游戏来源的制卡句在收藏夹里按书
-      // 展示——那些行本来就无定位锚点、不可跳转，行为无退化。统计分桶**不**经这
-      // 个枚举（走 StatSourceKind + 字符串比较），故三域之和的恒等式不受影响。
-      expect(SentenceSourceKind.tryParse(kFavoriteSentenceSourceGame), isNull);
+    test('SentenceSourceKind 认得 game（v128 起收藏夹按游戏展示 / 跳转）', () {
+      // L3「回到出处」补齐了 collections_page 的穷尽 switch（图标 / 标签 / 跳转
+      // 模块）后，游戏来源的制卡句不再宽松回退成书。统计分桶**不**经这个枚举
+      // （走 StatSourceKind + 字符串比较），三域之和的恒等式不受影响。
+      expect(
+        SentenceSourceKind.tryParse(kFavoriteSentenceSourceGame),
+        SentenceSourceKind.game,
+      );
       expect(
         sentenceSourceKindOf(kFavoriteSentenceSourceGame),
-        SentenceSourceKind.book,
+        SentenceSourceKind.game,
       );
     });
 

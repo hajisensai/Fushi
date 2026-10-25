@@ -60,8 +60,8 @@ void main() {
     expect(snapshot.documentTitle, 'Old episode');
     expect(snapshot.bookKey, 'old-book');
     expect(snapshot.sectionIndex, 1);
-    expect(snapshot.normCharOffset, 1200);
-    expect(snapshot.normCharLength, 1250);
+    expect(snapshot.positionMs, 1200);
+    expect(snapshot.durationMs, 1250);
     expect(snapshot.dateKey, '2026-07-29');
   });
 

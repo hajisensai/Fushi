@@ -1,7 +1,5 @@
-/// 复习备份 / 恢复测试共用：确定性假排程内核与内存同步目录（与 srs_db_store_test.dart 同一套）。
+/// 复习测试共用：确定性假排程内核（与 srs_db_store_test.dart 同一套）。
 library;
-
-import 'dart:typed_data';
 
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -87,29 +85,4 @@ class SrsFakeEngine implements FsrsEngine {
     required List<double> params,
     required SrsFsrsTrainingSet items,
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
-}
-
-class SrsMemoryDir implements SrsSyncDirectory {
-  SrsMemoryDir(this.now);
-  final int Function() now;
-  final Map<String, Map<String, Uint8List>> files =
-      <String, Map<String, Uint8List>>{};
-  @override
-  Future<List<String>> listWriters() async => files.keys.toList()..sort();
-  @override
-  Future<List<String>?> listFiles(String w) async => files[w]?.keys.toList();
-  @override
-  Future<Uint8List?> read(String w, String n) async => files[w]?[n];
-  @override
-  Future<void> write(String w, String n, Uint8List b) async =>
-      (files[w] ??= <String, Uint8List>{})[n] = b;
-  @override
-  Future<void> delete(String w, String n) async => files[w]?.remove(n);
-  @override
-  Future<void> deleteWriter(String w) async => files.remove(w);
-  @override
-  Future<int?> serverTime(String w) async {
-    await write(w, srsProbeName, Uint8List(0));
-    return now();
-  }
 }

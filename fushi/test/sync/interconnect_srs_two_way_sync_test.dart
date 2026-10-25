@@ -9,11 +9,12 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_utils.dart' show kSyncRootFolderName;
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
@@ -112,28 +113,61 @@ void main() {
     final Directory hostRoot = Directory(
       p.join(server.syncDataDir, kSyncRootFolderName),
     );
-    Future<SrsSyncReport> syncPhone() => SrsSyncEngine(
-      directory: SrsAssetStoreDirectory(store: backend, profileUid: kProfile),
-      directoryKey: clientKey!,
-      replica: phone,
-    ).syncOnce();
-    Future<SrsSyncReport> syncHost() => SrsSyncEngine(
-      directory: SrsAssetStoreDirectory(
-        store: LocalDirectoryAssetStore(hostRoot),
-        profileUid: kProfile,
-      ),
-      directoryKey: hostKey,
-      replica: host,
-    ).syncOnce();
+    // 两边各自的位置视图：手机经互联（WebDAV），host 经本机目录——同一块 `fushi-srs/<uid>/v2/`。
+    final SrsAssetLocationStore phoneLoc = SrsAssetLocationStore(
+      store: backend,
+      profileUid: kProfile,
+    );
+    final SrsAssetLocationStore hostLoc = SrsAssetLocationStore(
+      store: LocalDirectoryAssetStore(hostRoot),
+      profileUid: kProfile,
+    );
+    Future<SrsSync2Report> syncPhone() => srsSync2Round(
+      host: phone,
+      location: phoneLoc,
+      locationId: clientKey!,
+      nowMs: () => phone.now().$1,
+    );
+    Future<SrsSync2Report> syncHost() => srsSync2Round(
+      host: host,
+      location: hostLoc,
+      locationId: hostKey,
+      nowMs: () => host.now().$1,
+    );
 
     for (int round = 0; round < 3; round++) {
-      final SrsSyncReport a = await syncPhone();
+      final SrsSync2Report a = await syncPhone();
       expect(a.error, isNull, reason: 'phone round $round');
-      final SrsSyncReport b = await syncHost();
+      expect(a.errors, isEmpty, reason: 'phone round $round');
+      final SrsSync2Report b = await syncHost();
       expect(b.error, isNull, reason: 'host round $round');
+      expect(b.errors, isEmpty, reason: 'host round $round');
     }
     expect(expressionOf(await host.note(fromPhone)), '雨');
     expect(expressionOf(await phone.note(fromHost)), '雪');
+    // 两份真实 v2 副本收敛：摘要一致。
+    expect(
+      (await phone.sync2Digest())['digest'],
+      (await host.sync2Digest())['digest'],
+    );
+    // 落盘布局是 v2：host 的本机目录下每台设备一个 `v2/devices/<设备 ID>/`。
+    final Directory devices = Directory(
+      p.join(
+        hostRoot.path,
+        kSrsSync2Namespace,
+        kProfile,
+        kSrsSync2Folder,
+        'devices',
+      ),
+    );
+    expect(
+      devices
+          .listSync()
+          .whereType<Directory>()
+          .map((Directory d) => p.basename(d.path))
+          .toSet(),
+      <String>{phone.sync2Device!, host.sync2Device!},
+    );
 
     // 之后的增量也接得上（第二轮起写入者目录只能靠 PROPFIND 找到）。
     final String later = await addNote(phone, '霧');
@@ -174,7 +208,15 @@ void main() {
       )).error,
       isNull,
     );
-    expect(phone.store.everPublished, isTrue);
+    final Object? locations = (await phone.store.sync2Status())['locations'];
+    expect(
+      locations is List &&
+          locations.any(
+            (Object? l) => l is Map && ((l['uploaded'] as int?) ?? 0) > 0,
+          ),
+      isTrue,
+      reason: '手机在自己的 uid 下传出过段',
+    );
 
     final String fromHost = await _addNote(host.store, '雪');
     for (int round = 0; round < 3; round++) {
@@ -201,7 +243,7 @@ void main() {
     // 本设备在旧 uid 下的孤儿目录已清掉。
     expect(
       Directory(
-        p.join(hostDir.root.path, kSrsSyncNamespace, phoneOldUid),
+        p.join(hostDir.root.path, kSrsSync2Namespace, phoneOldUid),
       ).existsSync(),
       isFalse,
     );

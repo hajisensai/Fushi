@@ -1,0 +1,447 @@
+{
+ "attributes": [
+  {
+   "type": "SUISA ID",
+   "type-id": "034f35ae-d250-3749-95e7-854e606d5960",
+   "value": "006645 986 92"
+  },
+  {
+   "type": "SPA ID",
+   "type-id": "f15e9a05-231e-415b-8b7d-8ec44c736bde",
+   "value": "5891705"
+  },
+  {
+   "value": "17696436900",
+   "type-id": "2e4f9e12-d094-4bd0-b4dd-a560cc5c4977",
+   "type": "SIAE ID"
+  },
+  {
+   "type": "SGAE ID",
+   "type-id": "6a200b13-ca08-3b32-87a9-7aaa46368d75",
+   "value": "17.364.749"
+  },
+  {
+   "type": "SAYCO ID",
+   "type-id": "4439b1a5-47da-4774-9caa-8b8589129297",
+   "value": "13374461"
+  },
+  {
+   "type-id": "b2e4067b-a9e4-44fb-bfcd-3c1fc41dc06d",
+   "type": "SABAM ID",
+   "value": "A0AU5IX00"
+  },
+  {
+   "type-id": "cd76035f-b94e-4e47-850d-aa2cd825d1a6",
+   "type": "PRS tune code",
+   "value": "317406LS"
+  },
+  {
+   "value": "20907607-001",
+   "type-id": "01eeee67-f514-3801-bdce-279e04872f91",
+   "type": "GEMA ID"
+  },
+  {
+   "type": "ECAD ID",
+   "type-id": "d37a8c27-8f83-47c7-954d-175d35759990",
+   "value": "21986454"
+  },
+  {
+   "type": "COMPASS ID",
+   "type-id": "5ea37343-be89-4cd0-8a37-f471738df641",
+   "value": "13369623"
+  },
+  {
+   "value": "896125632",
+   "type": "ASCAP ID",
+   "type-id": "d833318c-6c6a-370e-8b16-9cb15873ba76"
+  },
+  {
+   "value": "720-5540-5",
+   "type": "JASRAC ID",
+   "type-id": "31048fcc-3dbb-3979-8f85-805afb933e0c"
+  }
+ ],
+ "languages": [
+  "jpn"
+ ],
+ "relations": [
+  {
+   "attributes": [
+    "cover"
+   ],
+   "recording": {
+    "title": "lemon",
+    "video": false,
+    "disambiguation": "",
+    "id": "f530830a-7db8-424d-930d-cf105cb85192",
+    "artist-credit": [
+     {
+      "name": "yurisa",
+      "joinphrase": "",
+      "artist": {
+       "country": null,
+       "disambiguation": "Korean singer, cover artist",
+       "type": null,
+       "sort-name": "yurisa",
+       "name": "yurisa",
+       "type-id": null,
+       "id": "0f8e5e71-ef74-4faa-b75c-0871143f2748"
+      }
+     }
+    ],
+    "length": 255021
+   },
+   "target-type": "recording",
+   "begin": null,
+   "attribute-ids": {
+    "cover": "1e8536bd-6eda-3822-8e78-1c0f4d3d2113"
+   },
+   "target-credit": "",
+   "type": "performance",
+   "source-credit": "",
+   "attribute-values": {},
+   "end": null,
+   "type-id": "a3005666-a872-32c3-ad06-98af558e99b0",
+   "direction": "backward",
+   "ended": false
+  },
+  {
+   "type": "performance",
+   "source-credit": "",
+   "target-credit": "",
+   "attribute-ids": {
+    "cover": "1e8536bd-6eda-3822-8e78-1c0f4d3d2113"
+   },
+   "target-type": "recording",
+   "begin": null,
+   "end": null,
+   "type-id": "a3005666-a872-32c3-ad06-98af558e99b0",
+   "direction": "backward",
+   "ended": false,
+   "attribute-values": {},
+   "recording": {
+    "video": false,
+    "title": "lemon",
+    "disambiguation": "",
+    "artist-credit": [
+     {
+      "name": "J‐POP CHANNEL PROJECT",
+      "artist": {
+       "id": "e0a68a8f-948e-4dd2-8329-45fbe5a58feb",
+       "type-id": null,
+       "sort-name": "J‐POP CHANNEL PROJECT",
+       "type": null,
+       "country": "JP",
+       "disambiguation": "",
+       "name": "J‐POP CHANNEL PROJECT"
+      },
+      "joinphrase": ""
+     }
+    ],
+    "id": "b138e408-30cb-4086-89f5-5eaaa4330ba9",
+    "length": 256058
+   },
+   "attributes": [
+    "cover"
+   ]
+  },
+  {
+   "attributes": [],
+   "recording": {
+    "length": 255826,
+    "id": "79a8b80c-018d-4004-b3ff-cc10d21a3ddd",
+    "artist-credit": [
+     {
+      "name": "米津玄師",
+      "joinphrase": "",
+      "artist": {
+       "type-id": null,
+       "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+       "type": null,
+       "sort-name": "Yonezu, Kenshi",
+       "country": "JP",
+       "disambiguation": "",
+       "name": "米津玄師"
+      }
+     }
+    ],
+    "title": "Lemon",
+    "video": false,
+    "disambiguation": ""
+   },
+   "attribute-values": {},
+   "ended": false,
+   "end": null,
+   "direction": "backward",
+   "type-id": "a3005666-a872-32c3-ad06-98af558e99b0",
+   "attribute-ids": {},
+   "begin": null,
+   "target-type": "recording",
+   "type": "performance",
+   "source-credit": "",
+   "target-credit": ""
+  },
+  {
+   "attribute-ids": {
+    "cover": "1e8536bd-6eda-3822-8e78-1c0f4d3d2113"
+   },
+   "begin": null,
+   "target-type": "recording",
+   "type": "performance",
+   "source-credit": "",
+   "target-credit": "",
+   "attribute-values": {},
+   "direction": "backward",
+   "type-id": "a3005666-a872-32c3-ad06-98af558e99b0",
+   "end": null,
+   "ended": false,
+   "attributes": [
+    "cover"
+   ],
+   "recording": {
+    "title": "Lemon",
+    "video": true,
+    "disambiguation": "",
+    "id": "76f113e3-81ed-4c4d-8418-fe1bc5274048",
+    "artist-credit": [
+     {
+      "joinphrase": "",
+      "artist": {
+       "type-id": null,
+       "id": "47ba70a2-d040-4265-bf52-86b9ef28c2c9",
+       "type": null,
+       "sort-name": "KAF",
+       "country": "JP",
+       "disambiguation": "",
+       "name": "花譜"
+      },
+      "name": "花譜"
+     }
+    ],
+    "length": 259000
+   }
+  },
+  {
+   "attributes": [
+    "cover"
+   ],
+   "recording": {
+    "id": "2e5c1dbe-39e5-486c-b087-fc3ba71b7d18",
+    "artist-credit": [
+     {
+      "joinphrase": "",
+      "artist": {
+       "name": "Bao the Whale",
+       "type": null,
+       "sort-name": "Bao the Whale",
+       "disambiguation": "VTuber",
+       "country": "US",
+       "type-id": null,
+       "id": "f8e62ed9-d88b-4331-8d21-14922016c505"
+      },
+      "name": "Bao The Whale"
+     }
+    ],
+    "length": 260000,
+    "title": "Lemon",
+    "video": false,
+    "disambiguation": ""
+   },
+   "attribute-values": {},
+   "ended": false,
+   "end": null,
+   "direction": "backward",
+   "type-id": "a3005666-a872-32c3-ad06-98af558e99b0",
+   "target-type": "recording",
+   "begin": null,
+   "attribute-ids": {
+    "cover": "1e8536bd-6eda-3822-8e78-1c0f4d3d2113"
+   },
+   "target-credit": "",
+   "type": "performance",
+   "source-credit": ""
+  },
+  {
+   "target-type": "recording",
+   "begin": null,
+   "attribute-ids": {
+    "cover": "1e8536bd-6eda-3822-8e78-1c0f4d3d2113"
+   },
+   "target-credit": "",
+   "type": "performance",
+   "source-credit": "",
+   "attribute-values": {},
+   "ended": false,
+   "direction": "backward",
+   "type-id": "a3005666-a872-32c3-ad06-98af558e99b0",
+   "end": null,
+   "attributes": [
+    "cover"
+   ],
+   "recording": {
+    "id": "67b6a4ef-dabb-429a-b3f7-6bdabfd4634e",
+    "artist-credit": [
+     {
+      "name": "富士葵",
+      "artist": {
+       "id": "03b96523-db37-4e85-ac9d-b7ceb6926e9b",
+       "type-id": null,
+       "sort-name": "Fuji, Aoi",
+       "type": null,
+       "country": "JP",
+       "disambiguation": "バーチャルYouTuber",
+       "name": "富士葵"
+      },
+      "joinphrase": ""
+     }
+    ],
+    "length": 256000,
+    "title": "Lemon",
+    "video": true,
+    "disambiguation": ""
+   }
+  },
+  {
+   "target-type": "recording",
+   "begin": null,
+   "attribute-ids": {
+    "cover": "1e8536bd-6eda-3822-8e78-1c0f4d3d2113"
+   },
+   "target-credit": "",
+   "type": "performance",
+   "source-credit": "",
+   "attribute-values": {},
+   "ended": false,
+   "type-id": "a3005666-a872-32c3-ad06-98af558e99b0",
+   "end": null,
+   "direction": "backward",
+   "attributes": [
+    "cover"
+   ],
+   "recording": {
+    "artist-credit": [
+     {
+      "artist": {
+       "type-id": null,
+       "id": "4d6e9b5f-6ba3-41f6-ac94-c634ae971304",
+       "type": null,
+       "sort-name": "Orgel Sound J‐pop",
+       "disambiguation": "orgel group",
+       "country": "JP",
+       "name": "オルゴールサウンド J‐POP"
+      },
+      "joinphrase": "",
+      "name": "オルゴールサウンド J‐POP"
+     }
+    ],
+    "id": "e9b253f8-0068-4573-81b7-861bcd09aa0f",
+    "length": 247587,
+    "title": "Lemon",
+    "video": false,
+    "disambiguation": ""
+   }
+  },
+  {
+   "attribute-values": {},
+   "direction": "backward",
+   "type-id": "a3005666-a872-32c3-ad06-98af558e99b0",
+   "end": null,
+   "ended": false,
+   "target-type": "recording",
+   "begin": null,
+   "attribute-ids": {
+    "cover": "1e8536bd-6eda-3822-8e78-1c0f4d3d2113"
+   },
+   "target-credit": "",
+   "source-credit": "",
+   "type": "performance",
+   "attributes": [
+    "cover"
+   ],
+   "recording": {
+    "length": 256000,
+    "id": "f6921995-abfc-46bb-a6c4-da9b4df81624",
+    "artist-credit": [
+     {
+      "name": "ダズビー",
+      "joinphrase": "",
+      "artist": {
+       "name": "ダズビー",
+       "type": null,
+       "sort-name": "Dazbee",
+       "country": "JP",
+       "disambiguation": "",
+       "type-id": null,
+       "id": "10623c33-205c-49f4-b8a0-55a105dd4fa3"
+      }
+     }
+    ],
+    "title": "Lemon",
+    "video": true,
+    "disambiguation": ""
+   }
+  },
+  {
+   "attribute-values": {},
+   "direction": "backward",
+   "type-id": "a3005666-a872-32c3-ad06-98af558e99b0",
+   "end": null,
+   "ended": false,
+   "attribute-ids": {
+    "cover": "1e8536bd-6eda-3822-8e78-1c0f4d3d2113"
+   },
+   "target-type": "recording",
+   "begin": null,
+   "type": "performance",
+   "source-credit": "",
+   "target-credit": "",
+   "attributes": [
+    "cover"
+   ],
+   "recording": {
+    "id": "47ff3783-34ea-47a3-a945-1e4fca3b3085",
+    "length": 271000,
+    "artist-credit": [
+     {
+      "name": "KOBASOLO",
+      "artist": {
+       "name": "コバソロ",
+       "sort-name": "Kobasolo",
+       "type": null,
+       "disambiguation": "",
+       "country": "JP",
+       "id": "4981caf4-856a-4a2f-bdf1-3cfd65c6a532",
+       "type-id": null
+      },
+      "joinphrase": " & "
+     },
+     {
+      "joinphrase": "",
+      "artist": {
+       "name": "春茶",
+       "sort-name": "Harutya",
+       "type": null,
+       "country": "JP",
+       "disambiguation": "Japanese singer",
+       "id": "4f5a5fb0-81f1-4006-a0e3-a1848325a96e",
+       "type-id": null
+      },
+      "name": "Harutya"
+     }
+    ],
+    "disambiguation": "",
+    "video": false,
+    "title": "Lemon (Kenshi Yonezu Cover)"
+   }
+  }
+ ],
+ "type-id": "f061270a-2fd6-32f1-a641-f0f8676d14e6",
+ "iswcs": [
+  "T-924.390.287-6"
+ ],
+ "id": "d69ecd96-bb2c-461f-9762-29102d2b50a1",
+ "language": "jpn",
+ "title": "Lemon",
+ "disambiguation": "",
+ "type": "Song"
+}

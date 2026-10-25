@@ -88,6 +88,74 @@ SettingsDestination buildVideoDestination() {
             },
             defaultValue: true,
           ),
+          // 原盘会话三项（2026-10-24 BD/DVD 原盘交互改造）：纯 pref，默认都开。播放页
+          // 面板不单列（无 VideoPlacement）——它们决定的是「怎么进原盘会话」，进了会话
+          // 再改没有意义，下一次进入生效。
+          SettingsSwitchItem(
+            id: 'video.playback.disc_auto_fullscreen',
+            title: t.video_setting_disc_auto_fullscreen,
+            subtitle: t.video_setting_disc_auto_fullscreen_hint,
+            icon: FushiIcons.fullscreen,
+            // 移动端视频页全程横屏沉浸，没有窗口全屏这回事。
+            visible: (_) => isDesktopPlatform,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDiscAutoFullscreen,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoDiscAutoFullscreen(value);
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.disc_launch_animation',
+            title: t.video_setting_disc_launch_animation,
+            icon: FushiIcons.animation,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDiscLaunchAnimation,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoDiscLaunchAnimation(value);
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.disc_open_menu_by_default',
+            title: t.video_setting_disc_open_menu_by_default,
+            subtitle: t.video_setting_disc_open_menu_by_default_hint,
+            icon: FushiIcons.menuOpen,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDiscOpenMenuByDefault,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoDiscOpenMenuByDefault(
+                value,
+              );
+            },
+            defaultValue: true,
+          ),
+          // 作品图谱 L2：音乐库里的 OP / ED 经声纹识别出每集起止后的两项行为。纯 pref，
+          // 播放页面板不单列（与原盘会话三项同理：它们决定的是进入 OP 时怎么办）。
+          SettingsSwitchItem(
+            id: 'video.playback.theme_song_auto_skip',
+            title: t.video_setting_theme_song_auto_skip,
+            subtitle: t.video_setting_theme_song_auto_skip_hint,
+            icon: FushiIcons.skipNext,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoThemeSongAutoSkip,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoThemeSongAutoSkip(value);
+            },
+            defaultValue: false,
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.theme_song_now_playing',
+            title: t.video_setting_theme_song_now_playing,
+            subtitle: t.video_setting_theme_song_now_playing_hint,
+            icon: FushiIcons.music,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoThemeSongNowPlaying,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoThemeSongNowPlaying(value);
+            },
+            defaultValue: true,
+          ),
           // 「单文件循环」从「画质」分区移到「播放」分区（语义归属播放行为，紧随自动
           // 连播）。VideoPlacement（mpv/playback order 200）不变——面板投影位置照旧，
           // 仅调全局设置页所属 SettingsSection。
@@ -375,7 +443,7 @@ SettingsDestination buildVideoDestination() {
           _videoMpvSwitchItem(
             id: 'video.quality.interpolation',
             title: t.video_setting_mpv_interpolation,
-            icon: Icons.animation_outlined,
+            icon: FushiIcons.animation,
             video: VideoPlacement(
               group: VideoGroup.mpv,
               order: 40,
@@ -2281,14 +2349,6 @@ SettingsDestination buildVideoDestination() {
                 videoQuickSettingsHostOf(c)?.onOpenQuality != null,
             video: VideoPlacement(group: VideoGroup.playback, order: 10),
             builder: buildVideoQualityEntryRow,
-          ),
-          // TODO-1232 / BUG-597：「切 Skia 渲染器并重启」黑屏降级入口。
-          SettingsCustomItem(
-            id: 'video.player.skia_fallback',
-            visible: (SettingsContext c) =>
-                videoQuickSettingsHostOf(c)?.onSwitchToSkiaRenderer != null,
-            video: VideoPlacement(group: VideoGroup.playback, order: 20),
-            builder: buildVideoSkiaFallbackRow,
           ),
           // 倍速：MD3 全长滑条（0.5–2.0，0.1 步）；拖动实时预览（下发真实播放倍速，
           // 不落盘），松手提交并持久化。

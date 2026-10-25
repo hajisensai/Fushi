@@ -38,7 +38,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionaryEntry, DictionarySearchResult;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'srs_test_support.dart' show openSrsTestStorage;
+import 'srs_test_support.dart' show SrsTestAppModel, openSrsTestStorage;
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -46,7 +46,6 @@ import 'package:material_ui/material_ui.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/popup_mining_target_overrides.dart';
-import '../helpers/test_platform_services.dart';
 
 /// 确定性假引擎（同 packages/fushi_engine/test/srs/srs_db_store_test.dart）。
 class _FakeEngine implements FsrsEngine {
@@ -133,8 +132,8 @@ class _FakeEngine implements FsrsEngine {
 }
 
 /// 复习页「只留重来 / 良好」偏好放内存里（不碰数据库），其余同真 AppModel。
-class _HideHardEasyApp extends AppModel {
-  _HideHardEasyApp() : super(testPlatformServices());
+class _HideHardEasyApp extends SrsTestAppModel {
+  _HideHardEasyApp();
 
   bool hidden = false;
 
@@ -149,8 +148,8 @@ class _HideHardEasyApp extends AppModel {
 }
 
 /// 复习布局两项偏好钉在内存里（测试里偏好层没初始化）。
-class _LayoutApp extends AppModel {
-  _LayoutApp() : super(testPlatformServices());
+class _LayoutApp extends SrsTestAppModel {
+  _LayoutApp();
 
   SrsReviewReplayButton replay = SrsReviewReplayButton.end;
   bool intervals = true;
@@ -206,8 +205,8 @@ class _LayoutApp extends AppModel {
 }
 
 /// 卡面查词：弹窗几何 / 历史读偏好的那几项钉成常量（测试里偏好层没初始化）。
-class _LookupApp extends AppModel {
-  _LookupApp() : super(testPlatformServices());
+class _LookupApp extends SrsTestAppModel {
+  _LookupApp();
 
   @override
   int get maximumTerms => 10;
@@ -287,7 +286,7 @@ Future<void> _pumpPage(
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final AppModel appModel = app ?? AppModel(testPlatformServices());
+  final AppModel appModel = app ?? SrsTestAppModel();
   await tester.pumpWidget(
     ProviderScope(
       overrides: <Override>[

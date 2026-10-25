@@ -80,6 +80,19 @@ SrsSourceRef srsSourceRefFromMiningContext(AnkiMiningContext context) {
           endMs: end,
           title: title,
         );
+      case CardSourceKind.game:
+        return SrsSourceRef(SrsSourceKind.game, <String, Object?>{
+          'gameId': link.uid,
+          if (title != null) 'title': title,
+        });
+      case CardSourceKind.music:
+        return SrsSourceRef.media(
+          kind: SrsSourceKind.music,
+          mediaKey: link.uid,
+          startMs: context.clipStartMs ?? link.startMs ?? 0,
+          endMs: context.clipEndMs ?? link.endMs,
+          title: title,
+        );
     }
   }
   // 外部网页（app 内浏览器制卡）：没有库内定位时按网址记出处。

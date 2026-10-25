@@ -117,7 +117,14 @@ enum AiFeature {
   /// 报错，也不该在用户没点名的情况下把整本有声书传出去。只有显式指派了一家、并在
   /// 转录弹层里选了「云端」引擎才会发请求；产物与设备端转录同构（单时间轴 SRT +
   /// 逐 token 时间 sidecar），时间轴来自服务端的逐词 / 逐段时间。
-  cloudTranscription;
+  cloudTranscription,
+
+  /// 作品图谱裁决（`ai_media_link_assistant.dart`，spec
+  /// `docs/specs/2026-10-24-cross-media-links.md`「AI 辅助判断」）：确定性规则缩出的
+  /// 候选（标题对得上但没有共享 id 的跨模块条目）交 AI 判是否同一作品、关系与方向。
+  /// AI 只按候选下标回结论，不产生任何 id；结论一律写成建议，用户确认后才算事实。
+  /// 只在用户点「查找相关作品」时发请求。
+  mediaLinks;
 
   /// 没显式指派时是否跟随默认提供商（见 [cloudTranscription]）。
   bool get followsDefaultProvider => this != AiFeature.cloudTranscription;

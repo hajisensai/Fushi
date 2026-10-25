@@ -19,6 +19,7 @@ const Map<String, String> kSelfManagedVideoConstructionSites = <String, String>{
   'lib/src/pages/implementations/feedback/feedback_dev_video_page.dart':
       '反馈处理台视频预览',
   'lib/src/pages/implementations/srs/srs_card_video_clip.dart': '复习卡面视频片段',
+  'lib/src/pages/implementations/music/music_mv_page.dart': '音乐 MV 页',
 };
 
 /// media_kit vendored fork 里 `Video` 的定义（默认值就长在这儿）。

@@ -216,6 +216,8 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       // v128 浏览器历史 / 书签同理：只经聚合快照传播。
       case SyncTombstoneKind.webhistory:
       case SyncTombstoneKind.webbookmark:
+      // 音乐曲库（v130）还没有互联删除端点：曲库目录是本机重扫出来的，P0 不跨端传播删除。
+      case SyncTombstoneKind.music:
         return false;
     }
   }
@@ -248,6 +250,7 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       case SyncTombstoneKind.favoritesentence:
       case SyncTombstoneKind.webhistory:
       case SyncTombstoneKind.webbookmark:
+      case SyncTombstoneKind.music:
         // [_hasInterconnectDeletionChannel] 已挡在前面，走不到这里。
         return true;
     }

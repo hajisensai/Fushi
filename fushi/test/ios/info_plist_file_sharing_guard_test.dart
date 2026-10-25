@@ -8,7 +8,8 @@ import 'package:fushi/src/storage/app_paths.dart';
 /// iOS 没有「只共享 Documents 的某个子目录」的办法：`UIFileSharingEnabled` /
 /// `LSSupportsOpeningDocumentsInPlace` 一开就是整份 Documents——书正文、有声书、视频、词典资源、
 /// 卡片来源回写草稿、未脱敏的错误日志全部可见、可被用户删改（删改让库条目指向丢失的文件）。
-/// 复习备份的「带走」需求走备份页的「另存为 / 分享」与「从文件恢复」，不靠暴露 Documents。
+/// 复习数据的「带走」需求走「同步与历史」页的 `.fushisrs` 导出（桌面另存为 / 移动端系统分享）与导入
+/// （同步 v2 取代了旧的定时备份页，docs/specs/2026-10-25-srs-sync-v2-design.md §10.4），不靠暴露 Documents。
 ///
 /// 另外钉住「数据库目录 = support 根」：哪怕将来有人重新打开共享，数据库也不能在 Documents 里。
 void main() {
@@ -29,13 +30,14 @@ void main() {
     expect(hasKey('ITSAppUsesNonExemptEncryption'), isTrue);
   });
 
-  test('备份页保留「另存为 / 分享」与「从文件恢复」两条带走 / 带回路径', () {
+  test('同步与历史页保留「导出 .fushisrs（另存为 / 分享）」与「导入」两条带走 / 带回路径', () {
     final String page = File(
-      'lib/src/pages/implementations/srs/srs_backups_page.dart',
+      'lib/src/pages/implementations/srs/srs_history_page.dart',
     ).readAsStringSync();
     expect(page, contains('FushiShare.shareFiles('));
     expect(page, contains('pickSystemFilePath('));
-    expect(page, contains("ValueKey<String>('srs_backup_restore_file')"));
+    expect(page, contains("ValueKey<String>('srs_timeline_export')"));
+    expect(page, contains("ValueKey<String>('srs_timeline_import')"));
   });
 
   test('复习备份目录在 documents 根下、并随数据根迁移', () {

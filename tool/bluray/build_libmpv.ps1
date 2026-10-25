@@ -2,6 +2,12 @@
 # libmpv-2.dll + ffmpeg.exe + ffprobe.exe on ONE set of fbd*.dll: the player and
 # card mining share the same FFmpeg. Build the FFmpeg first:
 #   MINGW64> tool/ffmpeg-unified/windows/build_ffmpeg_msys2.sh <ffmpeg-work-dir>
+# That prefix also holds the DVD libraries (tool/dvd: libdvdcss, libdvdread
+# linked against it, libdvdnav); libmpv's dvd:// navigation links the same
+# copies as the FFmpeg dvdvideo demuxer.
+# Audio CD (cdda://, -Dcdda=enabled) links libcdio / libcdio-paranoia from the
+# pinned MSYS2 packages in tool/cdda/recipe.env, unpacked (hash-checked) into a
+# private prefix under the output directory - never installed into MSYS2.
 param(
   [Parameter(Mandatory = $true)][string]$FfmpegWorkDirectory,
   [string]$MsysRoot = 'C:\msys64',
@@ -19,18 +25,23 @@ $ffmpegWork = [IO.Path]::GetFullPath($FfmpegWorkDirectory)
 $ffmpegPrefix = Join-Path $ffmpegWork 'prefix'
 $ffmpegSource = Join-Path $ffmpegWork 'src'
 foreach ($required in @("$ffmpegPrefix\bin\ffmpeg.exe", "$ffmpegPrefix\bin\ffprobe.exe",
-    "$ffmpegPrefix\lib\pkgconfig\libavcodec.pc")) {
+    "$ffmpegPrefix\lib\pkgconfig\libavcodec.pc", "$ffmpegPrefix\lib\pkgconfig\dvdnav.pc",
+    "$ffmpegPrefix\lib\pkgconfig\dvdread.pc", "$ffmpegPrefix\lib\pkgconfig\libdvdcss.pc")) {
   if (-not (Test-Path $required)) { throw "Unified FFmpeg is not built: missing $required" }
 }
 # The unified FFmpeg must win over MSYS2's own ffmpeg package for both meson's
 # pkg-config lookup and the runtime closure (package_libmpv.py enforces it).
-$env:PKG_CONFIG_PATH = "$ffmpegPrefix\lib\pkgconfig"
-$env:PATH = "$ffmpegPrefix\bin;$prefix\bin;$MsysRoot\usr\bin;$env:PATH"
 New-Item -ItemType Directory -Path $out | Out-Null
 function Run([string]$Program, [string[]]$Arguments) {
   & $Program @Arguments
   if ($LASTEXITCODE -ne 0) { throw "$Program failed: $LASTEXITCODE" }
 }
+$cdioRoot = Join-Path $out 'cdio'
+Run $python @('-I', (Join-Path $repoRoot 'tool\cdda\fetch_cdio_msys2.py'), '--output', $cdioRoot,
+  '--zstd', (Join-Path $MsysRoot 'usr\bin\zstd.exe'), '--msys-prefix', $prefix)
+$cdioPrefix = Join-Path $cdioRoot 'mingw64'
+$env:PKG_CONFIG_PATH = "$ffmpegPrefix\lib\pkgconfig;$cdioPrefix\lib\pkgconfig"
+$env:PATH = "$ffmpegPrefix\bin;$cdioPrefix\bin;$prefix\bin;$MsysRoot\usr\bin;$env:PATH"
 $source = Join-Path $out 'source'
 $build = Join-Path $out 'build'
 $package = Join-Path $out 'package'
@@ -53,26 +64,32 @@ Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'third_party\media_kit_
 # inverted purple/green IPT colours; the same patch Android / macOS / iOS ship
 # ports libplacebo's RPU reshaping into it, so DV no longer needs vo=gpu-next.
 Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'tool\bluray\platforms\patches\mpv-gl-dovi-p5.patch'))
+# Audio CD (music P5): stream_cdda's seek() kept only the sector and dropped the
+# byte offset inside it, so after any seek (including --start of a track) every
+# sample came up to 587 frames early while its timestamp did not.
+Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\patches\cdda-seek-sector-offset.patch'))
 New-Item -ItemType Directory -Path $angle | Out-Null
 Push-Location $angle
 try { Run 'cmake' @('-E', 'tar', 'xzf', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\vendored\ANGLE.7z')) }
 finally { Pop-Location }
 $include = (Join-Path $angle 'include').Replace('\', '/')
 Run 'meson' @('setup', $build, $source, '--buildtype=release', '-Dlibmpv=true',
-  '-Dcplayer=false', '-Dlibbluray=enabled', '-Dlua=luajit', '-Djavascript=disabled',
+  '-Dcplayer=false', '-Dlibbluray=enabled', '-Ddvdnav=enabled', '-Ddvda=disabled',
+  '-Dcdda=enabled', '-Dlua=luajit', '-Djavascript=disabled',
   '-Dtests=true', '-Degl-angle=enabled', "-Dc_args=-I$include")
 Push-Location (Join-Path $repoRoot 'fushi')
 try { Run 'dart' @('tool/heavy.dart', '--', 'ninja', '-C', $build, '-j', "$Jobs") }
 finally { Pop-Location }
 Run $python @((Join-Path $PSScriptRoot 'package_libmpv.py'), '--build', $build,
   '--source', $source, '--prefix', $prefix, '--ffmpeg-prefix', $ffmpegPrefix,
-  '--ffmpeg-source', $ffmpegSource, '--output', $package)
+  '--ffmpeg-source', $ffmpegSource, '--cdio-prefix', $cdioPrefix, '--output', $package)
 Copy-Item (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\bdj\libbluray*.jar') $package
 # Run the packaged programs from a PATH without any prefix, so they can only
 # load the renamed fbd*.dll next to them (proves the shared runtime is closed).
 $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
 Run $python @('-I', (Join-Path $repoRoot 'tool\ffmpeg-unified\verify_ffmpeg_capabilities.py'),
-  '--ffmpeg', (Join-Path $package 'ffmpeg.exe'), '--ffprobe', (Join-Path $package 'ffprobe.exe'))
+  '--ffmpeg', (Join-Path $package 'ffmpeg.exe'), '--ffprobe', (Join-Path $package 'ffprobe.exe'),
+  '--require-staged')
 Run $python @((Join-Path $PSScriptRoot 'probe_libmpv.py'), (Join-Path $package 'libmpv-2.dll'))
 # BUG-3499 / BUG-3500: dump-cache must keep every frame of laced Matroska audio
 # and of Matroska B-frame video.
@@ -83,4 +100,7 @@ Run $python @((Join-Path $PSScriptRoot 'verify_mkv_lace_dump.py'), '--library', 
 Run $python @((Join-Path $PSScriptRoot 'verify_dovi_p5.py'), '--library', $package,
   '--angle', $angle, '--work', (Join-Path $out 'verify-dovi'))
 Write-Output "Verified native runtime directory: $package"
-Write-Output 'Run verify_menu_render.py against a readable real disc before repinning an archive.'
+Write-Output 'Run verify_menu_render.py against a readable real disc (Blu-ray: --disc, DVD: --dvd;'
+Write-Output 'tool/dvd/make_test_dvd.py authors an unencrypted menu DVD) before repinning an archive.'
+Write-Output 'With an audio CD in a drive, run fushi/test/media/music/disc/music_cdda_playback_real_test.dart'
+Write-Output '(FUSHI_CDDA_DEVICE / FUSHI_CDDA_REFERENCE) against the new archive: sample-exact, offset 0.'

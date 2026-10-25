@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show FontLoader;
 import 'package:fushi/src/media/video/ass_font_metrics.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
@@ -230,8 +231,9 @@ class SubtitleEmbeddedFontLoader {
 
     final Set<String> families = <String>{};
     try {
-      // async：视频可能在网络盘上，同步 stat 会冻结 UI isolate（BUG-3756）。
-      if (!await File(videoPath).exists()) {
+      // async：视频可能在网络盘上，同步 stat 会冻结 UI isolate（BUG-3756）。没有本机
+      // 媒体字节的路径（网络流 / `.strm` / DVD title）直接判无。
+      if (!await hasLocalMediaFile(videoPath)) {
         _byVideoPath[videoPath] = families;
         return families;
       }

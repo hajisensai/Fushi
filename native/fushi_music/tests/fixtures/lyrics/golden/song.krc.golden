@@ -1,0 +1,13 @@
+format=krc quality=syllable effects=false lang=- title=夜に駆ける artist=YOASOBI agents=[]
+L 1000-4000 agent=- role=Main style=-
+  S 1000-1400 Sweep "沈"
+  S 1400-1800 Sweep "む"
+  S 1800-2600 Sweep "よう"
+  S 2600-4000 Sweep "に"
+  T und "像沉没一般"
+  R "shi zu mu yo u ni"
+L 5000-7000 agent=- role=Main style=-
+  S 5000-6000 Sweep "夜"
+  S 6000-7000 Sweep "に"
+  T und "在夜里"
+  R "yo ru ni"

@@ -27,6 +27,11 @@ extension _FushiSyncServerAuth on FushiSyncServer {
         // Only the /stream sub-path is exempted; /streamurl, /subtitle, and the
         // video list still require Basic auth.
         if (_isVideoStreamPath(request.url.path)) return innerHandler(request);
+        // 远端原盘的盘目录：libbluray / libdvdnav 在 libmpv 里直接取文件，带不了
+        // Authorization；门是路径里的会话 token（handler 内校验、按空闲过期）。
+        if (isDiscShareSessionPath(request.url.path)) {
+          return innerHandler(request);
+        }
         // Remote lookup audio file URLs are handed to platform audio players,
         // which issue a bare GET without Authorization. The lookup endpoint
         // stays authenticated; the file endpoint is guarded by an opaque,

@@ -45,6 +45,8 @@ Set<BackupCategory> categoriesForBatch(MigrationBatch batch) {
     BackupCategory.settings,
     BackupCategory.profiles,
     BackupCategory.srs,
+    // 音乐用户数据（歌单 / 歌词 / MV 绑定 / 播放流）同样只活在 DB 里，归核心批。
+    BackupCategory.music,
   };
   return switch (batch) {
     MigrationBatch.core => core,

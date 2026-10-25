@@ -11,6 +11,19 @@ retained Dolby Vision profile 5 GL patch. It contains **no FFmpeg**: `Mpv.framew
 `tool/ffmpeg-unified`), so playback and card mining load one libavcodec in the process.
 No Java runtime/BD-J jar is included. Device menu rendering has not been tested.
 
+**DVD menus (2026-10-24):** rebuilt from branch `fushi/dvd` `95d986e` (private CI mirror
+`hajisensai/libmpv-darwin-build-fushi`, run 40067864441; fork patch `tool/dvd/forks/libmpv-darwin-build.patch`)
+with `-Dgpl=true -Ddvdnav=enabled` (mpv's `stream_dvdnav` is GPL-only, so this libmpv is GPL-2.0-or-later).
+`Mpv.framework` links `@rpath/libdvdnav.framework/libdvdnav` — `third_party/ffmpeg_kit_next_flutter`'s `libdvdnav.xcframework`, the same copy
+FFmpeg's `dvdvideo` demuxer uses — and packages no DVD library of its own; it carries the v2
+navigation snapshot (`dvd-state`). DVD menu playback has not been tested on a device.
+
+**Remote disc access (2026-10-24, `rdisc1`):** rebuilt from branch `fushi/rdisc` `568c907`
+(private CI mirror `hajisensai/libmpv-darwin-build-fushi`, run 40085846799) with the updated
+`disc-navigation-state.patch` (sha256 `5edcd0de...`): `bluray-device` / `dvd-device` accept
+`http(s)://` URLs of a paired host's disc share, and `Mpv` carries the read-only property
+`disc-remote-access` (`verify_darwin_archive.py` requires it). Remote playback has not been tested on a device.
+
 Rebuild with `tool/bluray/platforms/build_darwin.sh` from the repository root and
 verify with `tool/bluray/platforms/verify_darwin_archive.py --platform ios` before replacing this archive.
 The package Makefile verifies the SHA-256 before extraction and supports an explicit

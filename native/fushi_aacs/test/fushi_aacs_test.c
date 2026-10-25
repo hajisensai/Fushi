@@ -31,7 +31,85 @@ int fushi_aacs_abi_version(void);
 int fushi_aacs_set_disc_key(const uint8_t *disc_id, const uint8_t *vuk);
 void fushi_aacs_forget_disc(const uint8_t *disc_id);
 
+/* libaacs 0.11 split open (libbluray uses it for bd_open_files discs). */
+typedef struct aacs_file_s AACS_FILE_H;
+struct aacs_file_s {
+  void *internal;
+  void (*close)(AACS_FILE_H *file);
+  int64_t (*seek)(AACS_FILE_H *file, int64_t offset, int32_t origin);
+  int64_t (*tell)(AACS_FILE_H *file);
+  int (*eof)(AACS_FILE_H *file);
+  int64_t (*read)(AACS_FILE_H *file, uint8_t *buf, int64_t size);
+  int64_t (*write)(AACS_FILE_H *file, const uint8_t *buf, int64_t size);
+};
+typedef AACS_FILE_H *(*AACS_FILE_OPEN2)(void *handle, const char *filename);
+AACS *aacs_init(void);
+void aacs_set_fopen(AACS *aacs, void *handle, AACS_FILE_OPEN2 p);
+int aacs_open_device(AACS *aacs, const char *path, const char *configfile_path);
+
 static int g_failures = 0;
+
+/* An in-memory disc for the file-callback contract (no path at all, like a
+ * disc libbluray reads over HTTP). */
+typedef struct {
+  const char *name;
+  const uint8_t *data;
+  int64_t size;
+} mem_entry;
+
+typedef struct {
+  mem_entry entries[4];
+  int count;
+  int opened;
+} mem_disc;
+
+typedef struct {
+  const mem_entry *entry;
+  int64_t pos;
+} mem_file;
+
+static void mem_close(AACS_FILE_H *file) {
+  free(file->internal);
+  free(file);
+}
+
+static int64_t mem_seek(AACS_FILE_H *file, int64_t offset, int32_t origin) {
+  mem_file *f = (mem_file *)file->internal;
+  const int64_t target = origin == SEEK_END   ? f->entry->size + offset
+                         : origin == SEEK_CUR ? f->pos + offset
+                                              : offset;
+  if (target < 0 || target > f->entry->size) return -1;
+  f->pos = target;
+  return target;
+}
+
+static int64_t mem_read(AACS_FILE_H *file, uint8_t *buf, int64_t size) {
+  mem_file *f = (mem_file *)file->internal;
+  int64_t left = f->entry->size - f->pos;
+  if (size > left) size = left;
+  /* Short reads on purpose: the module must loop. */
+  if (size > 7) size = 7;
+  memcpy(buf, f->entry->data + f->pos, (size_t)size);
+  f->pos += size;
+  return size;
+}
+
+static AACS_FILE_H *mem_open(void *handle, const char *filename) {
+  mem_disc *disc = (mem_disc *)handle;
+  for (int i = 0; i < disc->count; i++) {
+    if (strcmp(disc->entries[i].name, filename) != 0) continue;
+    AACS_FILE_H *file = (AACS_FILE_H *)calloc(1, sizeof(*file));
+    mem_file *f = (mem_file *)calloc(1, sizeof(*f));
+    f->entry = &disc->entries[i];
+    file->internal = f;
+    file->close = mem_close;
+    file->seek = mem_seek;
+    file->read = mem_read;
+    disc->opened++;
+    return file;
+  }
+  return NULL;
+}
 
 #define CHECK(cond)                                                   \
   do {                                                                \
@@ -225,6 +303,46 @@ int main(void) {
     CHECK(aacs_decrypt_unit(aacs, unit) == 0);
     plain[0] &= 0x3f;
     CHECK(aacs_decrypt_unit(aacs, plain) == 1);
+    aacs_close(aacs);
+  }
+
+  /* File-callback contract: no path, files only through libbluray's layer. */
+  fushi_aacs_set_disc_key(disc_id, vuk);
+  mem_disc memory = {{{"AACS/Unit_Key_RO.inf", unit_file, sizeof(unit_file)},
+                      {"AACS/Content000.cer", cert, sizeof(cert)},
+                      {"AACS/MKB_RO.inf", mkb, 12}},
+                     3,
+                     0};
+  aacs = aacs_init();
+  CHECK(aacs != NULL);
+  if (aacs) {
+    aacs_set_fopen(aacs, &memory, mem_open);
+    CHECK(aacs_open_device(aacs, NULL, NULL) == 0);
+    CHECK(memory.opened == 3);
+    CHECK(memcmp(aacs_get_disc_id(aacs), disc_id, 20) == 0);
+    CHECK(aacs_get_bus_encryption(aacs) == 1);
+    CHECK(aacs_get_mkb_version(aacs) == 0x44);
+    uint8_t plain[6144], unit[6144];
+    make_plain_unit(plain, 77);
+    encrypt_unit(unit_keys[1], plain, unit);
+    CHECK(aacs_decrypt_unit(aacs, unit) == 1);
+    for (int packet = 0; packet < 32; packet++) plain[packet * 192] &= 0x3f;
+    CHECK(memcmp(unit, plain, 6144) == 0);
+    aacs_close(aacs);
+  }
+  /* The callback wins over a path; a disc it cannot serve is corrupted. */
+  mem_disc empty = {{{0}}, 0, 0};
+  aacs = aacs_init();
+  if (aacs) {
+    aacs_set_fopen(aacs, &empty, mem_open);
+    CHECK(aacs_open_device(aacs, root, NULL) == -1);
+    aacs_close(aacs);
+  }
+  /* No callback: the split open reads the path like aacs_open2(). */
+  aacs = aacs_init();
+  if (aacs) {
+    CHECK(aacs_open_device(aacs, root, NULL) == 0);
+    CHECK(memcmp(aacs_get_disc_id(aacs), disc_id, 20) == 0);
     aacs_close(aacs);
   }
 

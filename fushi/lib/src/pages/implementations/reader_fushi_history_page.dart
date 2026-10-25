@@ -27,6 +27,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_page.dart';
 import 'package:fushi/src/media/import/srt_book_attach_epub.dart';
 import 'package:fushi/src/media/import/srt_book_reimport.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
@@ -142,6 +143,14 @@ import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/cover_image.dart';
+import 'package:fushi/src/media/links/media_link_entries.dart'
+    show MediaLinkEntry;
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
+import 'package:fushi/src/media/links/media_link_opener.dart'
+    show mediaLinkSearchAction, openMediaLinkEntry;
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show showMediaLinksDialog;
 
 part 'reader_history/card_widgets.part.dart';
 part 'reader_history/remote.part.dart';
@@ -3312,6 +3321,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           MediaRef(kind: MediaKind.epub, entryKey: bookKey),
         ),
       ),
+      // 跨模块「同一作品」（作品图谱）：书没有详情页，区块装进弹窗。
+      DialogListAction(
+        label: t.media_link_add,
+        icon: FushiIcons.link,
+        onPressed: () => showMediaLinksDialog(
+          context: context,
+          database: appModel.database,
+          self: (kind: MediaLinkKind.book, key: bookKey),
+          onOpen: (MediaLinkEntry e) =>
+              openMediaLinkEntry(context: context, ref: ref, entry: e),
+          searchActionFor: (MediaLinkKind k) =>
+              mediaLinkSearchAction(context: context, ref: ref, kind: k),
+          onInfer: mediaLinkInferCallback(
+            ref: ref,
+            self: (kind: MediaLinkKind.book, key: bookKey),
+          ),
+        ),
+      ),
       // 私密：不上传排行榜、不推 Bangumi（本地书 / 漫画没有外部分级可依）。
       DialogListAction(
         label: t.media_privacy_action,
@@ -3391,8 +3418,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ),
       // TODO-291 阶段2：书架长按「悬浮字幕」= 启动该书的后台听书会话（无正在播则用该书
       // 启动 + 拉起悬浮窗），不再只翻 bool。该书已是活动会话则改为「停止后台听书」。
-      // 「悬浮字幕」= 用该书起一个后台听书会话，属听书模块。
-      if ((Platform.isAndroid || Platform.isWindows) &&
+      // 「悬浮字幕」= 用该书起一个后台听书会话，属听书模块；平台门 = 有原生悬浮窗后端
+      // （FloatingLyricChannel.supported：Android / Windows / macOS）。
+      if (FloatingLyricChannel.supported &&
           modules.isEnabled(ModuleId.listening))
         // 2026-10 体验优化：开启态不再拼「悬浮字幕 ✓」（看不出点了是开还是关），
         // 改成明确的「关闭悬浮字幕」+ 不同图标。

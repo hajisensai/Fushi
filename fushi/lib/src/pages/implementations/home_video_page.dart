@@ -41,6 +41,7 @@ import 'package:fushi/src/media/detail/media_detail_kit.dart'
     show MediaDetailResumeFab;
 import 'package:fushi/src/media/video/cover_ui/video_online_cover_picker.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
+import 'package:fushi/src/media/video/cover_ui/disc_format_badge.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
     show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
@@ -52,7 +53,9 @@ import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/media/video/video_subscription_updates.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
-import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart'
+    show VideoProbeFacts, VideoStreamFacts;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show blurayDiscRootForDirectory;
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
@@ -65,6 +68,8 @@ import 'package:fushi_engine/media/video/video_cover_extractor.dart'
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/video_folder_collection_policy.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart'
+    show DiscShareFile;
 import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
@@ -95,6 +100,8 @@ import 'package:fushi/src/pages/implementations/book_drag_target.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/batch_combine.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
+import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
+import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
@@ -135,12 +142,17 @@ import 'package:fushi/src/sync/cloud_remote_video_client.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_deletion_filter.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
+import 'package:fushi/src/sync/remote_disc_share.dart';
+import 'package:fushi/src/sync/remote_disc_host_open.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_download.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/video_remote_client.dart';
 import 'package:fushi/src/sync/video_remote_targets.dart';
 import 'package:fushi/src/pages/implementations/video_remote_page.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
@@ -634,6 +646,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   VideoExtrasFilter _extrasFilter = VideoExtrasFilter.all;
   int? _sourceFilter;
 
+  /// 「规格」筛选（多选，2026-10-24 原盘交接第 9 项）：BD / UHD / DVD / 普通文件 +
+  /// 4K / HDR。与年份 / 看完状态一样不持久化。
+  Set<VideoSpecFilter> _specFilters = const <VideoSpecFilter>{};
+
+  /// 规格筛选含 4K / HDR 时订阅着的规格服务（探测结果陆续回来要重筛）。
+  VideoSpecsService? _specsListened;
+
+  /// 规格筛选判过、但规格还没有结论的路径：攒成一批在帧后交给解析器 / 规格服务，
+  /// 不在 build 里逐条发 IO。[_specPrimed] 记已经交过的，避免同一路径反复排队。
+  final Set<String> _pendingDiscResolve = <String>{};
+  final Set<String> _pendingSpecPrime = <String>{};
+  final Set<String> _specPrimed = <String>{};
+
   /// 分组 / 折叠 / 筛选依赖的映射（合集字典、折叠归属、刮削资料、海报…）是否
   /// 已由 [_loadLibraryMaps] 首次落位。只从 false 变 true，此后的重载用旧映射顶住。
   ///
@@ -847,6 +872,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   void dispose() {
     _coverExists.dispose();
     _remoteCoverExists.dispose();
+    _specsListened?.removeListener(_onVideoSpecsChangedForFilter);
     _headerSearch.dispose();
     _searchController.dispose();
     _continueRowController.dispose();
@@ -2003,7 +2029,125 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       matchesVideoSource(
         sourceFilter: _effectiveSourceFilter,
         sourceId: b.sourceId,
+      ) &&
+      _passesSpecFilter(b);
+
+  /// 「规格」筛选判定。原盘规格（蓝光要读一次 `index.bdmv` 分 UHD）与 4K / HDR
+  /// （规格服务的探测结果）都是纯读缓存；还没结论的路径攒批补解析，结论回来后重筛。
+  /// 合集按成员逐条判、再折成合集卡，所以「合集里任一成员命中」即整张卡出现。
+  bool _passesSpecFilter(VideoBookRow b) {
+    if (_specFilters.isEmpty) return true;
+    final String path = b.videoPath;
+    final DiscFormatResolver resolver = ref.read(discFormatResolverProvider);
+    if (_specFilters.any(kVideoSpecCarrierFilters.contains) &&
+        !resolver.isResolved(path)) {
+      _queueDiscResolve(path);
+    }
+    final bool wantsQuality =
+        _specFilters.contains(VideoSpecFilter.uhd4k) ||
+        _specFilters.contains(VideoSpecFilter.hdr);
+    final VideoSpecsService specs = ref.read(videoSpecsProvider);
+    if (wantsQuality &&
+        !specs.isResolved(path) &&
+        !_specPrimed.contains(path)) {
+      _queueSpecPrime(path);
+    }
+    final VideoProbeFacts? facts = wantsQuality ? specs.specsFor(path) : null;
+    final VideoStreamFacts? video = facts?.video;
+    return matchesVideoSpecFilter(
+      selected: _specFilters,
+      discFormat: resolver.peek(path),
+      isDiscMember: isDiscMemberPath(path),
+      is4k: video?.resolutionLabel == '4K',
+      isHdr: video?.dynamicRange.isHdr ?? false,
+    );
+  }
+
+  void _queueDiscResolve(String path) {
+    final bool first = _pendingDiscResolve.isEmpty;
+    _pendingDiscResolve.add(path);
+    if (!first) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final List<String> batch = _pendingDiscResolve.toList();
+      _pendingDiscResolve.clear();
+      if (!mounted || batch.isEmpty) return;
+      unawaited(
+        ref.read(discFormatResolverProvider).resolveAll(batch).then((_) {
+          if (mounted) setState(() {});
+        }),
       );
+    });
+  }
+
+  void _queueSpecPrime(String path) {
+    final bool first = _pendingSpecPrime.isEmpty;
+    _pendingSpecPrime.add(path);
+    if (!first) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final List<String> batch = _pendingSpecPrime.toList();
+      _pendingSpecPrime.clear();
+      if (!mounted || batch.isEmpty) return;
+      _specPrimed.addAll(batch);
+      unawaited(ref.read(videoSpecsProvider).prime(batch));
+    });
+  }
+
+  /// 改「规格」筛选：含 4K / HDR 时订阅规格服务（探测陆续回来要重筛），不含时退订。
+  void _setSpecFilters(Set<VideoSpecFilter> next) {
+    setState(() => _specFilters = next);
+    final bool wantsQuality =
+        next.contains(VideoSpecFilter.uhd4k) ||
+        next.contains(VideoSpecFilter.hdr);
+    final VideoSpecsService? listened = _specsListened;
+    if (wantsQuality) {
+      final VideoSpecsService service = ref.read(videoSpecsProvider);
+      if (!identical(listened, service)) {
+        listened?.removeListener(_onVideoSpecsChangedForFilter);
+        service.addListener(_onVideoSpecsChangedForFilter);
+        _specsListened = service;
+      }
+    } else if (listened != null) {
+      listened.removeListener(_onVideoSpecsChangedForFilter);
+      _specsListened = null;
+    }
+  }
+
+  void _onVideoSpecsChangedForFilter() {
+    if (mounted) setState(() {});
+  }
+
+  /// 生效中的规格档位，按档位声明顺序以「 / 」连接（生效 chip 的文字）。
+  String _specFiltersSummary() => <String>[
+    for (final VideoSpecFilter f in VideoSpecFilter.values)
+      if (_specFilters.contains(f)) _specFilterLabel(f),
+  ].join(' / ');
+
+  String _specFilterLabel(VideoSpecFilter filter) => switch (filter) {
+    VideoSpecFilter.bluray => t.video_filter_spec_bluray,
+    VideoSpecFilter.uhdBluray => t.video_filter_spec_uhd_bluray,
+    VideoSpecFilter.dvd => t.video_filter_spec_dvd,
+    VideoSpecFilter.plainFile => t.video_filter_spec_plain_file,
+    VideoSpecFilter.uhd4k => t.video_filter_spec_4k,
+    VideoSpecFilter.hdr => t.video_filter_spec_hdr,
+  };
+
+  /// 原盘规格角标（BD / UHD / DVD，多盘 `BD ×3`）。2026-10-25 库页材质定版后封面上
+  /// 不再压角标，它与用户标签色点一起进封面下副行的尾部（[_videoCardMeta] 的
+  /// `discBadge`）。成员里没有原盘标题时返回 null（不占位）——纯字符串判据，普通
+  /// 视频卡不会多挂一个 widget。
+  Widget? _discFormatBadge({
+    required Key badgeKey,
+    required List<String> memberPaths,
+  }) {
+    if (!memberPaths.any(isDiscMemberPath)) return null;
+    return IgnorePointer(
+      child: DiscFormatBadge(
+        key: badgeKey,
+        resolver: ref.read(discFormatResolverProvider),
+        memberPaths: memberPaths,
+      ),
+    );
+  }
 
   bool _isCollectionMember(String bookUid) {
     final int? collectionId =
@@ -3242,11 +3386,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       );
       return;
     }
+    // 原盘标题（`.mpls` / DVD title）不是一个能单独存下来的文件：按盘整体下载
+    // （远端原盘第二期，一张盘一个任务），其余成员照旧逐集下载。
+    final List<RemoteVideoInfo> discMembers = <RemoteVideoInfo>[
+      for (final RemoteVideoInfo video in pending)
+        if (isRemoteDiscMemberFileName(video.fileName)) video,
+    ];
+    final List<Future<void> Function()> discStarters = discMembers.isEmpty
+        ? const <Future<void> Function()>[]
+        : await _prepareRemoteDiscDownloads(discMembers, source, manager);
     // 先把整批启动器解析完再起跑：启动器不依赖本页 State（见 _prepareRemoteDownload）。
     final List<Future<void> Function()> starters = <Future<void> Function()>[
+      ...discStarters,
       for (final RemoteVideoInfo video in pending)
-        await _prepareRemoteDownload(video, source, manager),
+        if (!isRemoteDiscMemberFileName(video.fileName))
+          await _prepareRemoteDownload(video, source, manager),
     ];
+    if (starters.isEmpty) return;
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         FushiSnackBar(
@@ -3273,6 +3429,138 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ),
       ),
     );
+  }
+
+  /// 远端原盘整盘下载的启动器：按盘分组（一张盘签发一次共享会话、一个任务），每个
+  /// 启动器在起跑时**重新签发**会话——任务可能被暂停很久，旧会话 token 早已按空闲
+  /// 过期；盘身份（discKey）变了就是 host 上换了盘，按失败报而不是接着下。
+  /// 对端不支持（老 host）或全部签发失败时给出原因并返回空表。
+  Future<List<Future<void> Function()>> _prepareRemoteDiscDownloads(
+    List<RemoteVideoInfo> members,
+    RemoteVideoSource source,
+    InterconnectDownloadManager manager,
+  ) async {
+    if (source is! RemoteDiscShareSource) {
+      _showDiscDownloadNotice(t.video_disc_remote_download_unsupported);
+      return const <Future<void> Function()>[];
+    }
+    final RemoteDiscShareSource discSource = source as RemoteDiscShareSource;
+    final ({List<RemoteDiscShare> shares, List<RemoteVideoInfo> failed})
+    grouped;
+    try {
+      grouped = await groupRemoteDiscMembers(
+        members,
+        discSource.openRemoteDiscShare,
+      );
+    } on RemoteDiscShareUnsupported {
+      _showDiscDownloadNotice(t.video_disc_remote_download_unsupported);
+      return const <Future<void> Function()>[];
+    }
+    if (grouped.failed.isNotEmpty) {
+      _showDiscDownloadNotice(t.remote_video_download_failed);
+    }
+    final Directory root = Directory(
+      p.join((await AppPaths.remoteVideosDirectory()).path, 'discs'),
+    );
+    final Map<String, RemoteVideoInfo> byId = <String, RemoteVideoInfo>{
+      for (final RemoteVideoInfo video in _lastRemoteState?.videos ?? members)
+        video.id: video,
+      for (final RemoteVideoInfo video in members) video.id: video,
+    };
+    final VideoBookRepository repo = widget.repo;
+    final RemoteCollectionAdoptionService adoption =
+        RemoteCollectionAdoptionService(appModelNoUpdate.database);
+    return <Future<void> Function()>[
+      for (final RemoteDiscShare share in grouped.shares)
+        if (!manager.isRunning(
+          InterconnectDownloadManager.discTaskId(share.manifest.discKey),
+        ))
+          () => _startRemoteDiscDownload(
+            share: share,
+            source: discSource,
+            manager: manager,
+            localRoot: remoteDiscLocalRoot(root.path, share.manifest),
+            repo: repo,
+            adoption: adoption,
+            remoteById: byId,
+          ),
+    ];
+  }
+
+  /// 起跑（或续跑）一张盘的整盘下载。不碰本页 State：批里排在后面的盘起跑时本页
+  /// 可能早已 dispose。
+  static Future<void> _startRemoteDiscDownload({
+    required RemoteDiscShare share,
+    required RemoteDiscShareSource source,
+    required InterconnectDownloadManager manager,
+    required String localRoot,
+    required VideoBookRepository repo,
+    required RemoteCollectionAdoptionService adoption,
+    required Map<String, RemoteVideoInfo> remoteById,
+  }) async {
+    final String anyTitle = share.titles.isEmpty ? '' : share.titles.first.id;
+    RemoteDiscShare current = share;
+    await manager.startDiscDownload(
+      discKey: share.manifest.discKey,
+      title: share.manifest.name,
+      dest: File(localRoot),
+      discard: () => discardRemoteDiscDownload(localRoot),
+      run:
+          (
+            File dest, {
+            void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal,
+          }) async {
+            if (anyTitle.isNotEmpty) {
+              final RemoteDiscShare fresh = await source.openRemoteDiscShare(
+                anyTitle,
+              );
+              if (fresh.manifest.discKey != share.manifest.discKey) {
+                throw StateError('the disc on the paired device changed');
+              }
+              current = fresh;
+            }
+            await downloadRemoteDisc(
+              manifest: current.manifest,
+              localRoot: dest.path,
+              fetch:
+                  (
+                    DiscShareFile file,
+                    File target, {
+                    void Function(int received, int? total)? onBytes,
+                    Future<void>? cancelSignal,
+                  }) => source.downloadRemoteDiscFile(
+                    current,
+                    file,
+                    target,
+                    onBytes: onBytes,
+                    cancelSignal: cancelSignal,
+                  ),
+              onBytes: (int received, int total) {
+                onBytes?.call(received, total);
+                if (total > 0) onProgress?.call(received / total);
+              },
+              cancelSignal: cancelSignal,
+            );
+          },
+      onComplete: (File dest) async {
+        await registerDownloadedRemoteDisc(
+          repo: repo,
+          adoption: adoption,
+          share: current,
+          localRoot: dest.path,
+          remoteById: remoteById,
+        );
+      },
+    );
+  }
+
+  void _showDiscDownloadNotice(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   /// 合集卡右键「下载远端集」：先按详情页同一路径解析成员槽，取远端子集交给
@@ -3650,18 +3938,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // 统一三库页卡菜单次序：重命名 → 封面/刮削 → 媒体特有 → 加入合集 →
         // 标签 → 删除（与书卡/游戏卡同一约定；「标签」原在首位，移到合集后）。
         quickActions: <DialogQuickAction>[
-          if (blurayDiscRootForPlaylistPath(book.videoPath) != null)
+          if (collectDiscRefs(<VideoBookRow>[book])
+              case final List<DiscRef> discs when discs.isNotEmpty)
             DialogQuickAction(
               label: t.video_disc_open_menu,
               icon: FushiIcons.toc,
               onPressed: () {
                 Navigator.pop(dialogContext);
                 unawaited(
-                  openLocalVideoBook(
+                  openDiscSessionWithPicker(
                     context: context,
                     repo: widget.repo,
-                    bookUid: book.bookUid,
-                    openBlurayMenu: true,
+                    discs: discs,
+                    cover: _coverBackdropFor(book.coverPath),
                   ),
                 );
               },
@@ -4662,7 +4951,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                           _effectiveMediaTypeFilter ==
                               VideoMediaTypeFilter.all &&
                           _effectiveExtrasFilter == VideoExtrasFilter.all &&
-                          _effectiveSourceFilter == null)
+                          _effectiveSourceFilter == null &&
+                          // 远端占位不带文件路径，判不出载体 / 画质。
+                          _specFilters.isEmpty)
                         v,
                 ];
                 // 反馈 ZjKzpkfZ1N：首页分区没有任何筛选入口（标签栏、筛选面板、
@@ -7248,6 +7539,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               completed:
                   download == null && progress.completed >= progress.total,
               tags: tags,
+              discBadge: _discFormatBadge(
+                badgeKey: ValueKey<String>(
+                  'home_video_collection_disc_badge_${collection.id}',
+                ),
+                memberPaths: <String>[
+                  for (final CollectionOrderingItem<_VideoSlot> it
+                      in group.items)
+                    if (it.payload.local case final VideoBookRow local)
+                      local.videoPath,
+                ],
+              ),
             ),
           ),
         ],
@@ -7924,6 +8226,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   bool get _hasActivePanelFilter =>
       !_yearFilter.isAll ||
       _watchStatusFilter != VideoWatchStatusFilter.all ||
+      _specFilters.isNotEmpty ||
       _seriesFilterIsNonDefault ||
       _effectiveMediaTypeFilter != VideoMediaTypeFilter.all ||
       _effectiveExtrasFilter != VideoExtrasFilter.all ||
@@ -7966,6 +8269,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           onTap: openPanel,
           onRemove: () =>
               setState(() => _watchStatusFilter = VideoWatchStatusFilter.all),
+        ),
+      if (_specFilters.isNotEmpty)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_spec'),
+          label: '${t.video_filter_spec} · ${_specFiltersSummary()}',
+          onTap: openPanel,
+          onRemove: () => _setSpecFilters(const <VideoSpecFilter>{}),
         ),
       if (_seriesFilterIsNonDefault)
         LibraryActiveFilterChip(
@@ -8050,6 +8360,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             onSelected: (VideoWatchStatusFilter value) =>
                 update(() => setState(() => _watchStatusFilter = value)),
           ),
+          LibraryFilterMultiChoiceSection<VideoSpecFilter>(
+            key: const ValueKey<String>('video_filter_panel_spec'),
+            title: t.video_filter_spec,
+            values: VideoSpecFilter.values,
+            selected: _specFilters,
+            labelOf: _specFilterLabel,
+            onChanged: (Set<VideoSpecFilter> next) =>
+                update(() => _setSpecFilters(next)),
+          ),
           if (_isAllVideosSection) ...<Widget>[
             LibraryFilterChoiceSection<VideoSeriesFilter>(
               key: const ValueKey<String>('video_filter_panel_series'),
@@ -8116,6 +8435,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       _extrasFilter = VideoExtrasFilter.all;
       _sourceFilter = null;
     });
+    _setSpecFilters(const <VideoSpecFilter>{});
     _setSeriesFilter(kDefaultVideoSeriesFilter);
   }
 
@@ -8786,6 +9106,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       _extrasFilter = VideoExtrasFilter.all;
       _sourceFilter = null;
     });
+    _setSpecFilters(const <VideoSpecFilter>{});
     if (ref.read(selectedTagIdsProvider).isNotEmpty) {
       ref.read(selectedTagIdsProvider.notifier).state = <int>{};
     }
@@ -8923,16 +9244,39 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       (VideoBookRow b) =>
           memberUids.contains(b.bookUid) && videoBookHasLocalFiles(b),
     );
+    // 原盘合集：菜单第一项「进入原盘菜单」，多张盘时展开成选盘子菜单（按盘号 /
+    // 目录名排序，见 [collectDiscRefs]）。
+    final List<DiscRef> discs = collectDiscRefs(<VideoBookRow>[
+      for (final VideoBookRow b in library)
+        if (memberUids.contains(b.bookUid)) b,
+    ]);
+    final ImageProvider? coverImage = _collectionMenuCoverImage(
+      collection,
+      memberUidOrder,
+      library,
+    );
     if (!mounted) return;
     return showCollectionContextDialog(
       context: context,
       db: db,
       collection: collection,
-      coverImage: _collectionMenuCoverImage(
-        collection,
-        memberUidOrder,
-        library,
-      ),
+      coverImage: coverImage,
+      leadingListActions: <DialogListAction>[
+        if (discs.isNotEmpty)
+          DialogListAction(
+            label: t.video_disc_open_menu,
+            icon: FushiIcons.toc,
+            onPressed: () => unawaited(
+              openDiscSessionWithPicker(
+                context: context,
+                repo: repo,
+                discs: discs,
+                collectionId: collection.id,
+                cover: coverImage,
+              ),
+            ),
+          ),
+      ],
       onOpenDetail: () => _openCollectionDetail(collection),
       onChanged: () {
         ref.invalidate(collectionTagMapProvider);
@@ -9389,6 +9733,42 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ? null
           : _chooseTmdbOrderingOnHost,
       deleteLocalCopy: _deleteDownloadedLocalCopy,
+      discActions: _remoteDiscActions(source),
+    );
+  }
+
+  /// 远端原盘（第二期）：只有互联 host 能把一张盘按目录共享出来；它同时是视频遥控
+  /// 的对端，「在 PC 上打开」走同一台 host 的遥控通道。
+  RemoteDiscActions? _remoteDiscActions(RemoteVideoSource source) {
+    if (source is! RemoteDiscShareSource) return null;
+    final RemoteDiscShareSource discs = source as RemoteDiscShareSource;
+    final SyncRepository repository = SyncRepository(appModelNoUpdate.database);
+    Future<VideoRemoteClient?> hostClient() async {
+      if (source is! InterconnectSyncBackend) return null;
+      final String identity = await source.connectedHostIdentity();
+      final FushiClientUrl? peer = await videoRemotePeerForHost(
+        repository,
+        identity,
+      );
+      return peer == null
+          ? null
+          : VideoRemoteClient(repository: repository, peer: peer);
+    }
+
+    return RemoteDiscActions(
+      openShare: discs.openRemoteDiscShare,
+      readFile: discs.readRemoteDiscFile,
+      hostCanOpenDisc: () async {
+        final VideoRemoteClient? client = await hostClient();
+        return client != null && await hostCanOpenDiscMenu(client);
+      },
+      openOnHost: (String videoId) async {
+        final VideoRemoteClient? client = await hostClient();
+        if (client == null) {
+          throw const VideoRemoteError(VideoRemoteError.unreachableCode);
+        }
+        await openDiscOnHost(client, videoId);
+      },
     );
   }
 
@@ -9927,6 +10307,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               progress: watchFrac ?? _bookPositionFraction(book),
               completed: book.completedAt != null,
               tags: tags,
+              discBadge: _discFormatBadge(
+                badgeKey: ValueKey<String>(
+                  'home_video_disc_badge_${book.bookUid}',
+                ),
+                memberPaths: <String>[book.videoPath],
+              ),
             ),
           ),
         ],
@@ -10071,7 +10457,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 远端 / 下载态都进 [subtitle]，远端用前导 ☁ 图标，下载中 / 已看进度画在
   /// [progress]。用户标签（BUG-1808）收成副行尾部的小色点（[_VideoTagDots]，
   /// 悬停 / 长按看全名），不占封面。墙卡与横滚卡共用这一份，行高见
-  /// [_videoCardTextBlock]。
+  /// [_videoCardTextBlock]。原盘规格角标（[_discFormatBadge]）同样排在副行尾部、
+  /// 标签色点之前。
   Widget _videoCardMeta({
     required String title,
     String? subtitle,
@@ -10080,8 +10467,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     double? progress,
     bool completed = false,
     List<_VideoTagChip> tags = const <_VideoTagChip>[],
+    Widget? discBadge,
     Key? key,
   }) {
+    final Widget? tagDots = tags.isEmpty ? null : _VideoTagDots(tags: tags);
     return ShelfCardMeta(
       key: key,
       title: title,
@@ -10090,7 +10479,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       tone: tone,
       progress: progress,
       completed: completed,
-      trailing: tags.isEmpty ? null : _VideoTagDots(tags: tags),
+      trailing: discBadge == null
+          ? tagDots
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                discBadge,
+                if (tagDots != null) ...<Widget>[
+                  const SizedBox(width: 4),
+                  tagDots,
+                ],
+              ],
+            ),
     );
   }
 

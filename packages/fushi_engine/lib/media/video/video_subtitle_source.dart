@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -606,7 +608,11 @@ Future<EmbeddedSubtitleTrackProbeResult> probeEmbeddedSubtitleTracks(
 ) async {
   // 一次 async stat 同时拿体积与存在性：互联 host 的 streamurl / 内封字幕端点在 app
   // 主 isolate 上调这里，视频常在网络盘上，同步 stat 会冻结全部端点与 UI（BUG-3756）。
-  final FileStat? videoStat = await _regularFileStat(videoPath);
+  // 没有本机媒体字节的路径（网络流 / `.strm` / DVD title）不碰文件系统、按缺失处理
+  // （video_member_file.dart 第 2 种问法）。
+  final FileStat? videoStat = lacksLocalMediaFile(videoPath)
+      ? null
+      : await _regularFileStat(videoPath);
   final int sizeBytes = videoStat?.size ?? 0;
   final Duration timeout = subtitleExtractTimeoutForBytes(sizeBytes);
   if (videoStat == null) {

@@ -6,11 +6,85 @@ including upstream HDMV/BD-J navigation added on 2026-08-25. The previous
 2026-08-13 binary had neither `discnav` nor `disc-menu`; updating Flutter alone
 could not enable original menus.
 
-Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2.7z` (42,951,609 bytes).
-SHA-256: `9187cf8594bee5c90432ddbedd719dbca6e3d24c9741c17ecf71dfa0a5f147f1`.
-The `fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2` suffix identifies this patched build; it is not an
+Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1-cdda1.7z` (40,729,854 bytes).
+SHA-256: `2407c208d6e00dbb876faeb2c5a6b1731dc85844393e7b7dc3066ae35c6ca31f`.
+The `fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1-cdda1` suffix identifies this patched build; it is not an
 unmodified zhongfly release. Its DLL and dependency manifests are also tracked
 beside this document for review without unpacking the binary.
+
+`cdda1` (2026-10-25): audio CD playback (`cdda://`, music module P5,
+`docs/specs/2026-10-23-music-module-design.md` §9.3). libmpv is built with
+`-Dcdda=enabled` against libcdio 2.3.0 and libcdio-paranoia 10.2+2.0.2 from
+`tool/cdda/recipe.env`: pinned MSYS2 binary packages (URL + SHA-256) that
+`tool/cdda/fetch_cdio_msys2.py` unpacks into a private prefix inside the build
+directory - nothing is installed into MSYS2, so the rest of the closure keeps
+the recorded package set. The archive adds `fbdcdio-19.dll`,
+`fbdcdio_cdda-2.dll` and `fbdcdio_paranoia-2.dll` (libcdio's optional libcddb
+is not imported by any of them and is not shipped) and
+`licenses/fushi-cdda/` (both libraries are GPL-3.0-or-later; `SOURCE.txt`
+names the MSYS2 source packages with their SHA-256), recorded as the
+`fushi-cdda` entry of `native-dependency-packages.json`. The sixth mpv patch,
+`patches/cdda-seek-sector-offset.patch` (`stream_patches` in the provenance),
+fixes upstream `stream_cdda.c`: `seek()` kept only the sector number and
+dropped the byte offset inside the 2352-byte sector (and kept serving the tail
+of the sector read before the seek). The raw audio demuxer seeks to packet
+boundaries, which are almost never sector boundaries, so after any seek -
+including `--start` of a track - every sample was delivered up to 587 frames
+early under its own timestamp; precise seeking then trimmed the wrong samples
+(track 2 of the test disc came out 172 frames early, length unchanged). The
+patch keeps the offset and starts the first sector after a seek there. Apart
+from the three libcdio DLLs and their licenses the file list is identical to
+`rdisc1` and only `libmpv-2.dll` changed (same MSYS2 package set and unified
+FFmpeg prefix). `build_libmpv.ps1` ran every verifier (`probe_libmpv.py` now
+also requires the `cdda` protocol with libcdio_paranoia loaded; mkv lace /
+DTS; DV P5 0.36 / 255, P8.1 0.27). Real-disc check:
+`fushi/test/media/music/disc/music_cdda_playback_real_test.dart` against a
+cd-paranoia rip of the same disc (see the music design doc for the numbers).
+The media_kit overlay (`ci/patches/hosted/media_kit-1.2.6/native_open_policy.dart`)
+lets exactly `cdda://<drive>` load directly; mpv marks `stream_cdda`
+`STREAM_ORIGIN_UNSAFE`, so the temporary-playlist path refuses it.
+
+`dvd1-rdisc1` (2026-10-24): remote discs (`docs/specs/2026-10-24-disc-interaction-handoff.md`,
+phase 2). `disc-navigation-state.patch` adds, without changing the v2 snapshot:
+a `bluray-device` that is an `http(s)://` URL is the base of a paired host's
+read-only disc share (`packages/fushi_engine/lib/sync/disc_share_routes.dart`);
+libbluray opens it with `bd_open_files()` — every file is an mpv stream (HTTP
+Range through the app's `http-proxy` relay, which owns TLS pinning), and
+directories are listed from the share's `manifest.json` (paths with `..`,
+absolute paths or backslashes reject the whole manifest). A `dvd-device` URL is
+a shared DVD image read block-wise through `dvdnav_open_stream2()`; VIDEO_TS
+folders cannot be streamed (libdvdnav 7.0 has no file-access entry point).
+A read-only `disc-remote-access` property (`1`) tells the app the runtime can
+do this; `probe_libmpv.py` requires it, and the app checks it before handing a
+URL device to an older runtime (which would only report a generic open failure).
+Same unified FFmpeg recipe and MSYS2 package set as `dvd1` (only the FFmpeg
+`patched_commit` differs, it is a fresh local commit of the same patches);
+`build_libmpv.ps1` ran every verifier. Remote verification with
+`verify_menu_render.py --remote-disc` against
+`packages/fushi_engine/tool/disc_share_host_probe.dart` serving the readable
+Disc 2 copy over loopback HTTP: same states as the local disc (first play →
+HDMV IG menu at ~18 s, `right` moves to チャプター, the local and remote
+`select` on 全編再生 both return to the menu identically), and
+right ×3 → `select` ×2 plays title 2 (00002.mpls) from the share.
+
+`discnav2-...-dvd1` (2026-10-24): DVD menus (`docs/specs/2026-10-24-dvd-original-menu.md`,
+`tool/dvd/README.md`). The unified FFmpeg prefix now also holds libdvdcss 1.6.0,
+libdvdread 7.1.1 (linked against libdvdcss) and libdvdnav 7.0.0 from
+`tool/dvd/recipe.env`; FFmpeg adds `--enable-libdvdnav --enable-libdvdread`
+(`dvdvideo` demuxer) and libmpv `-Ddvdnav=enabled -Ddvda=disabled`, so both
+load the same `fbddvdcss-2.dll` / `fbddvdread-8.dll` / `fbddvdnav-4.dll`
+(licenses in `licenses/fushi-dvd/`, provenance entry `fushi-dvd`).
+`disc-navigation-state.patch` is v2: `disc-type` plus a `dvd-state` branch;
+the Blu-ray fields are unchanged and the Dart side accepts v1 and v2. Apart
+from the three DVD DLLs and their licenses the file list is identical to `ffu2`.
+`build_libmpv.ps1` ran every verifier (capability floor with `--require-staged`,
+`probe_libmpv.py` incl. the DVD capability, mkv lace / DTS, DV P5 0.36 / 255,
+P8.1 0.27). Blu-ray regression with `verify_menu_render.py` on the readable
+Disc 2 test copy: same states, same HDMV IG menu (`right` moves to チャプター)
+as the `ffu2` archive; the authored DVD (`tool/dvd/make_test_dvd.py`) renders
+every focused button 100 % in its select colour and completes menu → title →
+menu. A second, encrypted / BD-J Blu-ray does not open in the isolated probe
+with either archive (no app-side AACS), identically.
 
 `ffu1` (2026-10-17): built against the **unified FFmpeg** (`tool/ffmpeg-unified`,
 FFmpeg 9.0.1 + Fushi patches, see `docs/specs/2026-10-17-unified-ffmpeg.md`)

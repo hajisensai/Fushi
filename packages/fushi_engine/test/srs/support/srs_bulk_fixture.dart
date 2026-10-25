@@ -156,6 +156,13 @@ Future<Map<String, List<String>>> dumpSrsState(SrsDatabase db) async {
     for (final QueryRow r in await db.customSelect(sql).get())
       r.data.values.join('|'),
   ];
+  final List<String> devices = await rows('SELECT device FROM sync2_self');
+  final String device = devices.isEmpty
+      ? '\u0000'
+      : _uuidText(
+          (await db.customSelect('SELECT device FROM sync2_self').getSingle())
+              .read<Uint8List>('device'),
+        );
 
   // 排序键不能含 ID 本身（随机）：按 (卡, 抹掉 ID 的规范 JSON) 排。
   final List<(String, String)> logs = <(String, String)>[
@@ -185,10 +192,17 @@ Future<Map<String, List<String>>> dumpSrsState(SrsDatabase db) async {
       'SELECT id, profile_uid, kind, payload_json, created_at '
       'FROM srs_entities ORDER BY id',
     ),
-    'edits': await rows(
-      'SELECT id, entity_kind, entity_id, field_key, writer_id, seq, json '
-      'FROM srs_field_edits ORDER BY id',
-    ),
+    // 同步 v2：修改记录的 dot 是 (本机 v2 设备 ID, op seq)，设备 ID 每个库随机生成；ID 由 dot 派生。
+    // 设备 ID 换成占位、按 (实体, 字段键, seq) 排、不比 ID 列——比的是语义（同样的写入、同样的先后）。
+    'edits': <String>[
+      for (final String r in await rows(
+        'SELECT entity_kind, entity_id, field_key, writer_id, seq, json '
+        'FROM srs_field_edits ORDER BY entity_kind, entity_id, field_key, seq',
+      ))
+        r
+            .replaceAll(device, 'DEV')
+            .replaceAll(RegExp(r'"id":"[0-9a-f-]{36}",'), ''),
+    ],
     'logs': (await rows(
       'SELECT id, card_id, kind, rating, occurred_at, review_type, origin, '
       'duration_ms, json FROM srs_review_logs',
@@ -238,4 +252,12 @@ void expectSameState(
     }
     expect(a.length, e.length, reason: '$label$table row count');
   }
+}
+
+String _uuidText(Uint8List b) {
+  final String h = <String>[
+    for (final int x in b) x.toRadixString(16).padLeft(2, '0'),
+  ].join();
+  return '${h.substring(0, 8)}-${h.substring(8, 12)}-${h.substring(12, 16)}-'
+      '${h.substring(16, 20)}-${h.substring(20)}';
 }

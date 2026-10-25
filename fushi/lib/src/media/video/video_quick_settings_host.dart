@@ -84,7 +84,6 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     this.qualityOptionCount = 0,
     this.qualityCurrentLabel,
     this.onOpenQuality,
-    this.onSwitchToSkiaRenderer,
     this.onDanmakuEnabledChanged,
     this.onDanmakuOnlineEnabledChanged,
     this.onDanmakuMaxActiveChanged,
@@ -242,11 +241,10 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   final Future<void> Function(VideoImmersiveControlLayout? layout)?
       onImmersiveControlLayoutChanged;
 
-  // ── HLS 画质入口 / Skia 降级入口（仅特定流/机型出现）─────────────────────
+  // ── HLS 画质入口（仅特定流出现）─────────────────────────────────────────
   final int qualityOptionCount;
   final String? qualityCurrentLabel;
   final VoidCallback? onOpenQuality;
-  final VoidCallback? onSwitchToSkiaRenderer;
 
   // ── 弹幕（页面持久化 + 弹幕层即时刷新 / 实时预览）────────────────────────
   final Future<void> Function(bool value)? onDanmakuEnabledChanged;

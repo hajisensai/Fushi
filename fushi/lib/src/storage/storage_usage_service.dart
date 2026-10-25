@@ -469,6 +469,7 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
       StorageCategoryId.covers: <String>[
         'video_covers',
         'game_covers',
+        'music_covers',
         'thumbnails',
       ],
       StorageCategoryId.subtitles: <String>['video_subtitles'],
@@ -485,9 +486,7 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
       ],
       StorageCategoryId.database: <String>[
         'onboarding_tutorial',
-        // 复习（Fushi SRS）自动备份：`<profileUid>/*.fushisrs` 与它们共享的内容寻址媒体池
-        // `media/`。归「数据库 / 本地状态」而不是可裸删的 exports：单删 `media/` 会让池里
-        // 每一份备份都恢复不全，清理只能走备份页的保留策略 / 逐份删除（会回收无引用媒体）。
+        // 旧版复习自动备份（升级到同步 v2 后留 30 天自动清理，见 srs_legacy_backup_cleanup.dart）。
         'srs_backups',
       ],
       StorageCategoryId.ocrModels: <String>[],

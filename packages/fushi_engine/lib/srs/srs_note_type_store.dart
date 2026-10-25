@@ -699,6 +699,7 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
       templateMap: templateMap,
     );
     if (p.from.id == p.to.id) return;
+    await sync2Checkpoint(p.to.name, 'note_type');
     await writeEdits(<SrsEditSpec>[
       for (final SrsNoteTypeChangePlan plan in p.plans) ...<SrsEditSpec>[
         SrsEditSpec(

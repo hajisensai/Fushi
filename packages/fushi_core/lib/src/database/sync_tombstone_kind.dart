@@ -4,7 +4,7 @@
 /// `book` 指「书资产」整体，itemKey=bookKey）。表注释只列了 4 个资产种类，
 /// 但收藏词 / 收藏句的删除传播墓碑也存进同一列（写入点
 /// `FushiDatabase.removeFavoriteWord` / `FavoriteSentenceRepository`），
-/// 故本枚举含全部已落库值（v128 起另含内置浏览器的历史 / 书签两种）。
+/// 故本枚举含全部已落库值（v128 起另含内置浏览器的历史 / 书签两种，v130 起加音乐曲目）。
 library;
 
 /// sync 删除墓碑的资产种类（命名统一 Phase 3.4，模式照 `SentenceSourceKind` /
@@ -45,7 +45,10 @@ enum SyncTombstoneKind {
 
   /// 内置浏览器书签 / 书签文件夹（v128；itemKey = web_browser_bookmarks.uid）。
   /// 删文件夹时每个后代各写一条。只经聚合快照传播。
-  webbookmark('webbookmark');
+  webbookmark('webbookmark'),
+
+  /// 音乐曲目（itemKey=music_tracks.track_uid，内容派生、跨设备稳定；v130 起）。
+  music('music');
 
   const SyncTombstoneKind(this.dbValue);
 

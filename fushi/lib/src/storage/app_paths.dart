@@ -550,6 +550,9 @@ class AppPaths {
     'hoshi_books',
     'video_covers',
     'game_covers',
+    // 音乐刮削下载的 Cover Art Archive 专辑封面（`<documents>/music_covers/<发行 MBID>.jpg`，
+    // music_albums.cover_path 指向它；数据根迁移按 DataRootMigrator._rebaseMusicAlbums 改写）。
+    'music_covers',
     'video_subtitles',
     'mpv_shaders',
     'mpv_scripts',
@@ -578,9 +581,8 @@ class AppPaths {
     // 音频 CD 抓轨产物（BUG-3312，`<documents>/audio_cd/<卷标> (<光盘id>)/`）。导入后的
     // 视频条目 videoPath 指向这里，必须随数据根走。派生点：audio_cd_import.dart。
     'audio_cd',
-    // 复习（Fushi SRS）自动备份（`<documents>/srs_backups/<profileUid>/*.fushisrs` + 共享媒体池
-    // `media/<sha256>`）。与 Anki 一样放在用户看得到、换设备能带走的位置，必须随数据根走；
-    // 清单里只存相对名，无需 rebase。派生点：[srsBackupsDirectory]。
+    // 旧版复习自动备份（`<documents>/srs_backups/`）。同步 v2 已取消定时备份（时间线 + 归档 + 手动
+    // 导出取代），旧文件升级后再留 30 天（srs_legacy_backup_cleanup.dart），这期间仍随数据根走。
     'srs_backups',
   };
 
@@ -648,6 +650,10 @@ class AppPaths {
   static Future<Directory> gameCoversDirectory() =>
       documentsSubdirectory('game_covers');
 
+  /// 音乐刮削封面目录 `<documents>/music_covers`（文件名 = 发行 MBID）。
+  static Future<Directory> musicCoversDirectory() =>
+      documentsSubdirectory('music_covers');
+
   /// 视频外挂字幕副本目录 `<documents>/video_subtitles`。
   static Future<Directory> videoSubtitlesDirectory() =>
       documentsSubdirectory('video_subtitles');
@@ -664,7 +670,7 @@ class AppPaths {
   static Future<Directory> remoteVideosDirectory() =>
       documentsSubdirectory('remote_videos');
 
-  /// 复习自动备份根 `<documents>/srs_backups`（见 docs/specs/2026-10-17-srs-auto-backup-restore.md）。
+  /// 旧版复习自动备份根 `<documents>/srs_backups`（只剩升级后 30 天的清理在用）。
   static Future<Directory> srsBackupsDirectory() =>
       documentsSubdirectory('srs_backups');
 }

@@ -1798,6 +1798,12 @@ class SyncRepository {
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
+    // 复习同步 v2 的文件夹存储位置：路径是这台设备的磁盘 / 挂载点，换设备恢复带过去没有意义。
+    PreferencesRepository.srsFolderLocationsKey,
+    // 首次 v2 同步的确认是这台设备做的：别的设备恢复备份带过来不能替它确认。
+    PreferencesRepository.srsSync2MergeConfirmedKey,
+    // 复习同步 v2 存储位置的加密密钥：凭据，绝不随备份 / Profile 出境（换设备时重新输入口令）。
+    PreferencesRepository.srsLocationKeysKey,
     // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
     kStudyProfileNameAliasesPrefKey,
     _keyBackendType,
@@ -1815,10 +1821,6 @@ class SyncRepository {
     // 「本机作为制卡落地设备」：换设备恢复备份若把它带过去，就会同时有两台落地设备，
     // 同一张卡被两边各落一次。
     _keyPendingMineLandingClaimedAt,
-    // 复习自动备份的开关与保留策略：备份文件只存在本机（<documents>/srs_backups），
-    // 设置描述的是这台设备的磁盘，换设备恢复带过去没有意义。
-    PreferencesRepository.srsBackupAutoKey,
-    PreferencesRepository.srsBackupLimitsKey,
     // Anki 制卡设置：AnkiConnect 地址 / apiKey（明文）/ 本机 Anki 路径都是这台设备的
     // 事实，迁 Drift 之前它活在 SharedPreferences 里，本来就不随备份 / 同步出境。
     kAnkiSettingsPrefKey,
@@ -1897,6 +1899,10 @@ class SyncRepository {
     'ai_feature_providers',
     // 多 key 轮换的冷却记录：按本机 key 的指纹索引，换台设备全是悬空记录。
     'ai_key_health',
+    // 音乐输出设备与独占模式描述的是这台机器的声卡 / DAC：别的设备上同名设备不存在，
+    // 独占在另一台机器上会让别的程序静默无声。
+    'music_audio_device',
+    'music_exclusive_output',
     // 漫画 OCR 大模型档位：开了就是「上传漫画页 + 按量计费」，这种同意只对点它的
     // 那台设备成立，漂过去会让另一台配了 AI 的设备静默开始上传。
     'manga_ocr_ai_mode',
@@ -1924,6 +1930,10 @@ class SyncRepository {
     // 同形：Audiobookshelf 服务器清单，条目里带 base64 令牌（refresh token 会轮换，
     // 两台设备共用一枚只会互相把对方挤下线）。
     'discovery_audiobookshelf_servers',
+    // 同形：OpenSubsonic 服务器清单（服务器曲库），条目里带 base64 密码 / API key；
+    // 混排开关按这些服务器的 id 记，跟着一起设备本地。
+    'music_subsonic_servers',
+    'music_server_library_mix',
     'video_download_backend_path_mappings',
     'video_download_target_source_id',
     'video_download_embedded_installation_id',

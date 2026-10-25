@@ -42,6 +42,11 @@ enum ModuleId {
   /// 视频库（播放器 + 番剧刮削 + 发现）。
   video('module_video_enabled'),
 
+  /// 音乐库（曲库 / 专辑 / 播放 / 歌词，docs/specs/2026-10-23-music-module-design.md）。
+  /// 独立底栏模块（设计 D1），与只管有声书的 [listening] 不合并；五端都有，不新增
+  /// App Store 受限能力。
+  music('module_music_enabled'),
+
   /// 游戏。Windows 上是本机 galgame 库与文本/语音捕获（galgame hook 平台边界）；
   /// Android / iOS / macOS / Linux 上是串流接收端的远端游戏库（从已配对 Windows
   /// 主机启动并串流）。iOS 上只有串流这一种形态，不属于 App Store 受限能力。
@@ -149,6 +154,7 @@ enum ModuleId {
     ModuleId.books ||
     ModuleId.manga ||
     ModuleId.video ||
+    ModuleId.music ||
     ModuleId.lookup ||
     // 复习不是 App Store 受限能力（纯本地数据 + 用户自己的同步后端），五端都有。
     ModuleId.srs ||
@@ -171,6 +177,7 @@ enum ModuleId {
     ModuleId.books ||
     ModuleId.manga ||
     ModuleId.video ||
+    ModuleId.music ||
     ModuleId.games ||
     ModuleId.browse ||
     ModuleId.lookup ||

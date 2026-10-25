@@ -56,12 +56,12 @@ void main() {
         // 总开关内联写判据；其余参数项统一走 _floatingLyricOn（下面单独钉它
         // 的定义同时放行两端并跟随开关）。
         expect(
-          block.contains('Platform.isAndroid || Platform.isWindows') ||
+          block.contains('visible: (_) => FloatingLyricChannel.supported,') ||
               block.contains('visible: _floatingLyricOn,'),
           isTrue,
           reason:
-              '$id must be visible on Android and Windows '
-              '(the desktop strip is supported).',
+              '$id must be visible on every platform with a native back-end '
+              '(Android / Windows / macOS, FloatingLyricChannel.supported).',
         );
         expect(
           RegExp(
@@ -103,7 +103,7 @@ void main() {
           gate,
           schema.indexOf(';', gate),
         );
-        expect(gateBody, contains('Platform.isAndroid || Platform.isWindows'));
+        expect(gateBody, contains('FloatingLyricChannel.supported'));
         expect(gateBody, contains('c.appModel.showFloatingLyric'));
       },
     );

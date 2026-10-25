@@ -137,4 +137,103 @@ void main() {
     expect(src.contains(r"replace('$'"), isTrue,
         reason: '缺 \$ 转义：含 \$ 的 key 会被当成 Dart 插值');
   });
+
+  // 只读源码的断言挡不住「脚本本身跑不起来」：PR #2534 的 write_acoustid_key.py 把
+  // `value.replace('\\', r'\\')` 写成了 `replace('\', r'\')`——Python 语法错误，
+  // 上面那类字符串匹配照样全过，而 CI 上每个带 ACOUSTID_API_KEY 的 job 都会在这一步
+  // 崩掉。所以每份生成脚本都要**真跑一遍**：用含 `\` / `'` / `$` 的 key 生成文件，
+  // 再把单引号字面量解回来，必须逐字还原成原 key。
+  for (final _SecretWriter writer in _secretWriters) {
+    test('${writer.script} 真执行：生成单引号字面量且逐字还原 key', () async {
+      final File script = File(
+        '${_repoRoot.path}/.github/actions/provide-baked-secrets/'
+        '${writer.script}',
+      );
+      expect(
+        script.existsSync(),
+        isTrue,
+        reason: '生成脚本不在了；action.yml 会在 CI 上直接报 file not found',
+      );
+      expect(
+        _actionFile.readAsStringSync(),
+        contains(writer.script),
+        reason: 'action.yml 不再调用 ${writer.script}，守卫在测一份没人用的脚本',
+      );
+
+      final String python = await _findPython3();
+      final Directory tmp = Directory.systemTemp.createTempSync(
+        'baked_secret_writer_',
+      );
+      addTearDown(() => tmp.deleteSync(recursive: true));
+
+      const String key = r"k\e'y$id";
+      final File out = File('${tmp.path}/out.dart');
+      final ProcessResult run = await Process.run(
+        python,
+        <String>[script.path, out.path],
+        environment: <String, String>{writer.envVar: key},
+      );
+      expect(
+        run.exitCode,
+        0,
+        reason: '${writer.script} 执行失败：\n${run.stdout}\n${run.stderr}',
+      );
+      expect(out.existsSync(), isTrue, reason: '给了 key 却没写出文件');
+
+      final String dart = out.readAsStringSync();
+      final RegExpMatch? m = RegExp(
+        'const String ${writer.constName} = \'((?:[^\'\\\\]|\\\\.)*)\';',
+      ).firstMatch(dart);
+      expect(m, isNotNull, reason: '没产出单引号的 ${writer.constName} 字面量：\n$dart');
+      final String decoded = m!
+          .group(1)!
+          .replaceAllMapped(RegExp(r'\\(.)'), (Match e) => e.group(1)!);
+      expect(decoded, key, reason: '转义后解不回原 key：${m.group(1)}');
+
+      // 没给 key：脚本照常退出 0、不动入库占位（不创建文件）。
+      final File untouched = File('${tmp.path}/untouched.dart');
+      final ProcessResult empty = await Process.run(
+        python,
+        <String>[script.path, untouched.path],
+        environment: <String, String>{writer.envVar: ''},
+      );
+      expect(empty.exitCode, 0, reason: '${empty.stdout}\n${empty.stderr}');
+      expect(untouched.existsSync(), isFalse);
+    });
+  }
+}
+
+/// provide-baked-secrets 里每个「把 secret 写成 Dart 单引号字面量」的生成脚本。
+typedef _SecretWriter = ({String script, String envVar, String constName});
+
+const List<_SecretWriter> _secretWriters = <_SecretWriter>[
+  (
+    script: 'write_opensubtitles_key.py',
+    envVar: 'OPENSUBTITLES_API_KEY',
+    constName: 'kBuiltinOpenSubtitlesApiKey',
+  ),
+  (
+    script: 'write_acoustid_key.py',
+    envVar: 'ACOUSTID_API_KEY',
+    constName: 'kBuiltinAcoustidApiKey',
+  ),
+];
+
+/// CI（action.yml 用 `python3`）与本机（Windows 常只有 `python`）都能找到的
+/// Python 3 解释器。找不到就失败而不是跳过——跳过等于守卫恒绿。
+Future<String> _findPython3() async {
+  for (final String candidate in <String>['python3', 'python']) {
+    try {
+      final ProcessResult r = await Process.run(candidate, <String>[
+        '-c',
+        'import sys; print(sys.version_info[0])',
+      ]);
+      if (r.exitCode == 0 && (r.stdout as String).trim() == '3') {
+        return candidate;
+      }
+    } on ProcessException {
+      continue;
+    }
+  }
+  fail('找不到 Python 3 解释器（python3 / python），无法执行生成脚本');
 }

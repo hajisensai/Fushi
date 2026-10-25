@@ -1,0 +1,9 @@
+format=vtt quality=word effects=false lang=- title=- artist=- agents=[Ikura:Person:Ikura, Ayase:Person:Ayase]
+L 1000-3000 agent=Ikura role=Main style=-
+  S 1000-1800 Sweep "沈む"
+  S 1800-2400 Sweep "よう"
+  S 2400-3000 Sweep "に"
+L 3500-5000 agent=Ayase role=Main style=-
+  S 3500-3800 Sweep "夜" ruby="よる"
+  S 3800-5000 Sweep "に駆ける"
+  T und "Running into the night"

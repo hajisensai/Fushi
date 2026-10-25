@@ -22,6 +22,9 @@ enum SettingsDestinationId {
   // 「LLM」子页，枚举值保留（模块门控与入口可见性判据仍按它问）。
   models,
   video,
+  // 「音乐」一级分类（音乐模块，docs/specs/2026-10-23-music-module-design.md §11.1）：
+  // 曲库来源、播放（无缝 / ReplayGain）。与 music 顶层 tab 同门控。
+  music,
   mediaTracking,
   // 「下载」一级分类：torrent / qBittorrent 后端配置从下载页齿轮抬进设置主页
   // （可达 + 可搜）。位置紧随视频/听，在同步备份之前。

@@ -491,6 +491,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     final Map<String, Object?>? subscriptions = await _subscriptions?.capability();
     final Map<String, Object?>? assistant = await _assistant?.capability();
     return jsonResponse(<String, dynamic>{
+      // 复习同步的长轮询通知（`GET /api/srs/changes`）。老 host 没有这一位，客户端只按定时同步。
+      'srsChangesV1': true,
       if (mangaOcr != null) 'mangaOcr': mangaOcr,
       // 通用任务能力位：`jobs.kinds` + 每种 kind 的就绪信息；老 client 读不到也不崩。
       if (jobs != null) 'jobs': jobs,
@@ -535,6 +537,9 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 互联标签同步（`/api/library/tags`）。老 host 无此字段 / false → client
         // 跳过标签维度（下载时搬一次标签的旧行为不受影响）。
         'tags': _libraryService is TagSyncHost,
+        // 互联作品图谱同步（`/api/library/media-links`）。老 host 无此字段 / false
+        // → client 跳过作品图谱维度。
+        'mediaLinks': _libraryService is MediaLinkSyncHost,
         // 弱网实时转码（`/streamurl?maxHeight=&maxBitrate=`）。老 host 无此字段 →
         // client 不显示画质档，行为与从前一致。字段随用户开关与本机 ffmpeg 可用性
         // 实时变化，不是启动时的快照；最终真相仍是 `/streamurl` 回的 `transcoded`。
@@ -548,6 +553,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // `DELETE .../subtitle?which=`（清字幕源 + 备份本视频 sidecar）与
         // `POST .../subtitle/backfill`（立即补字幕）。老 host 无此字段 → 404。
         'videoSubtitleClear': _libraryService is VideoSubtitleClearHost,
+        // 远端原盘：整盘下载 + 流式原盘菜单共用的只读盘目录服务
+        // （`/api/library/videos/<id>/disc` + `/api/library/disc/<token>/**`）。老 host
+        // 无此字段 → client 的远端原盘按钮说明「对端版本过低」，不发请求。
+        kDiscShareCapability: _libraryService is VideoDiscShareHost,
         'videoSubtitleBackfill': lib && videoSubtitleBackfill != null,
         // 图形字幕整轨回传（`GET .../graphicsubtitle?embeddedStreamIndex=`）。老 host
         // 无此字段 / 没注入抽取实现 → false，client 不请求、时间表只靠边播边记。

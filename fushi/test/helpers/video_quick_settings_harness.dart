@@ -132,7 +132,6 @@ VideoQuickSettingsHost buildTestVideoHost({
   int qualityOptionCount = 0,
   String? qualityCurrentLabel,
   VoidCallback? onOpenQuality,
-  VoidCallback? onSwitchToSkiaRenderer,
   void Function(bool value)? onDanmakuEnabledChanged,
   void Function(bool value)? onDanmakuOnlineEnabledChanged,
   void Function(int value)? onDanmakuMaxActiveChanged,
@@ -224,7 +223,6 @@ VideoQuickSettingsHost buildTestVideoHost({
     qualityOptionCount: qualityOptionCount,
     qualityCurrentLabel: qualityCurrentLabel,
     onOpenQuality: onOpenQuality,
-    onSwitchToSkiaRenderer: onSwitchToSkiaRenderer,
     onDanmakuEnabledChanged: onDanmakuEnabledChanged == null
         ? null
         : (bool value) async => onDanmakuEnabledChanged(value),

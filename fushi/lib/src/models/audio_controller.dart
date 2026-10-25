@@ -4,7 +4,25 @@ import 'package:audio_service/audio_service.dart' as ag;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 
+/// 系统媒体会话（锁屏 / 通知 / 耳机键）此刻归谁：有声书与音乐**同一时刻只有一个**
+/// 持有（设计 §7.5），另一个暂停。
+enum MediaSessionOwner { none, audiobook, music }
+
 class AudioController {
+  /// 当前持有媒体会话的一方。控制流按它分发：有声书收除音乐持有外的全部事件（保持
+  /// 既有行为），音乐只在自己持有时收。
+  final ValueNotifier<MediaSessionOwner> sessionOwner =
+      ValueNotifier<MediaSessionOwner>(MediaSessionOwner.none);
+
+  /// 认领媒体会话。
+  void claimSession(MediaSessionOwner owner) => sessionOwner.value = owner;
+
+  /// 只在 [owner] 持有会话时放行的控制流视图。
+  Stream<T> streamFor<T>(Stream<T> source, MediaSessionOwner owner) =>
+      owner == MediaSessionOwner.music
+      ? source.where((_) => sessionOwner.value == MediaSessionOwner.music)
+      : source.where((_) => sessionOwner.value != MediaSessionOwner.music);
+
   Stream<MediaPlayIntent> get playIntentStream => _playController.stream;
   final StreamController<MediaPlayIntent> _playController =
       StreamController.broadcast();
@@ -96,6 +114,7 @@ class AudioController {
   }
 
   void dispose() {
+    sessionOwner.dispose();
     _mediaPauseController.close();
     _playPauseHeadsetController.close();
     _playController.close();

@@ -434,7 +434,10 @@ extension _VideoLayout on _VideoFushiPageState {
                 child: Stack(
                   children: <Widget>[
                     Positioned.fill(child: _buildDiscMenuSurface(controller)),
+                    // 栏内「章节」（正片上的盘弹出菜单阶段）用的同一套侧栏。
+                    _buildVideoSidePanelOverlay(controller),
                     _buildDiscMenuChrome(controller),
+                    Positioned.fill(child: _buildDiscExitHoldRing()),
                     _buildOsdOverlay(),
                   ],
                 ),
@@ -782,12 +785,16 @@ extension _VideoLayout on _VideoFushiPageState {
                         // TODO-1154：长按倍速徽章跟随指针（在 OSD 之后、其余 chrome 之前挂）。
                         _buildLongPressSpeedBadgeOverlay(),
                         _buildAutoAdvanceOverlay(),
+                        // 作品图谱 L2：跳过片头 / 片尾 + 「♪ 曲名」角标（无段时零尺寸）。
+                        _buildThemeSongOverlay(),
                         // 远端换集在途 OSD（纯展示，IgnorePointer；非换集态零尺寸）。
                         _buildRemoteSwitchOverlay(),
                         // TODO-1119：Windows 黑闪运行时提示条（可点按钮，非
                         // IgnorePointer；隐藏态零尺寸）。挂在 auto-advance 之后、
                         // level HUD 之前，与其它 chrome overlay 同源。
                         _buildBlackFlickerNoticeOverlay(),
+                        // 远端原盘反复缓冲时的非强制提示（建议下载到本机）。
+                        _buildRemoteDiscBufferingNoticeOverlay(),
                         // TODO-2838：拖拽调整字幕位置模式的顶部横幅（提示 + 「完成」退出）。
                         // 非模式态零尺寸。
                         _buildSubtitleDragAdjustBanner(),

@@ -14,6 +14,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'package:fushi/src/corpus/library_corpus_settings.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
@@ -918,6 +919,7 @@ class _PopupStaticSettingsMemo {
     required this.miningEnabled,
     required this.srsEnabled,
     required this.srsMiningToReview,
+    required this.librarySentencesEnabled,
     required this.deduplicatePitchAccents,
     required this.harmonicFrequency,
     required this.showExpressionTags,
@@ -952,6 +954,7 @@ class _PopupStaticSettingsMemo {
   final bool miningEnabled;
   final bool srsEnabled;
   final bool srsMiningToReview;
+  final bool librarySentencesEnabled;
   final bool deduplicatePitchAccents;
   final bool harmonicFrequency;
   final bool showExpressionTags;
@@ -1089,6 +1092,9 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // 据此只留状态标记一颗。
   final bool srsMiningToReview =
       srsEnabled && appModel.srsMiningTarget == SrsMiningTarget.srs;
+  // 「我库里的例句」（作品图谱 L4，D-L2 默认开）。false ⇒ popup.js 不渲染区块、不发
+  // librarySentences 桥。
+  final bool librarySentencesEnabled = librarySentencesEnabledOf(appModel);
 
   final String slotKey =
       '${options.globalLookup}|${options.mobileExternal}'
@@ -1114,6 +1120,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.miningEnabled == miningEnabled &&
       cached.srsEnabled == srsEnabled &&
       cached.srsMiningToReview == srsMiningToReview &&
+      cached.librarySentencesEnabled == librarySentencesEnabled &&
       cached.deduplicatePitchAccents == appModel.deduplicatePitchAccents &&
       cached.harmonicFrequency == appModel.harmonicFrequency &&
       cached.showExpressionTags == appModel.showExpressionTags &&
@@ -1237,6 +1244,9 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.__fushiSrsEnabled = $srsEnabled;
     // 制卡目标 = Fushi 复习：↗ 与复习状态标记打开同一张笔记，popup.js 不再渲染 ↗。
     window.__fushiSrsMiningTarget = $srsMiningToReview;
+    // 「我库里的例句」开关：false ⇒ popup.js 不渲染该区块、不发 librarySentences 桥。
+    // 浏览器扩展没有本注入通道 → undefined ⇒ 照问桥，扩展 shim 对未知桥回 null（不显示）。
+    window.__fushiLibrarySentencesEnabled = $librarySentencesEnabled;
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
     window._noResultsHint = ${jsonEncode(t.settings_search_empty_hint)};
@@ -1292,6 +1302,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     miningEnabled: miningEnabled,
     srsEnabled: srsEnabled,
     srsMiningToReview: srsMiningToReview,
+    librarySentencesEnabled: librarySentencesEnabled,
     deduplicatePitchAccents: appModel.deduplicatePitchAccents,
     harmonicFrequency: appModel.harmonicFrequency,
     showExpressionTags: appModel.showExpressionTags,

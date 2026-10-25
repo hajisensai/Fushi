@@ -46,6 +46,8 @@ const Map<String, String> _kAllowed = <String, String>{
       'SRS 备份读快照（Rust 只读会话上）',
   'packages/fushi_engine/lib/srs/srs_browse_query.dart': 'SRS 浏览查询',
   'packages/fushi_engine/lib/srs/srs_note_type_store.dart': 'SRS 子系统',
+  // 重复笔记建议：按笔记缓存的词形键 / 读音键分组（SrsDbStore 扩展，SQL 跑在 srs.db 的连接上）。
+  'packages/fushi_engine/lib/srs/srs_duplicate_notes.dart': 'SRS 子系统',
   // 通用备份里老形态（SRS 表还在主库 / 老备份主库条目里）的唯一处置点。
   'fushi/lib/src/sync/backup_srs_tables.dart': '老形态备份兼容',
 };

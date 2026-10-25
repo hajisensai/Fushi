@@ -755,6 +755,15 @@ class AnotherPopupPart {
       'lib/src/utils/components/settings_shared.dart':
           'Shared adaptive settings primitives own compact settings controls '
           '(including the Apple pop-up button capsule radius).',
+      'lib/src/media/music/lyrics/karaoke/karaoke_appearance.dart':
+          'Karaoke lyrics are content, not chrome: the main-line size is the '
+          'user-adjustable lyric font size (KaraokeLyricsAppearance.fontSize, '
+          'multiplied by system text scale), and ruby / background-vocal / '
+          'translation rows are fixed ratios of it — same reviewed exception '
+          'class as reader / subtitle content text.',
+      'lib/src/media/music/lyrics/karaoke/karaoke_line_layout.dart':
+          'Pre-layout of karaoke lyric rows derives the ruby row size from the '
+          'line font size (content ratio, see karaoke_appearance.dart).',
       'lib/src/models/theme_notifier.dart':
           'Theme preview content intentionally displays generated surface '
           'roles. buildFushiThemeData is also the ThemeData source for both '
@@ -866,6 +875,12 @@ class AnotherPopupPart {
           'size to the platform overlay channel (content/data passed to '
           'FloatingLyricChannel.show/updateStyle), not page chrome — same '
           'rationale as audiobook_bridge.',
+      'lib/src/media/music/lyrics/music_desktop_lyrics_surface.dart':
+          'Music desktop lyrics reuse the audiobook floating-lyric overlay: the '
+          'user-configurable caption font size is forwarded to the native '
+          'Android / Win32 window via FloatingLyricChannel.show (content data, '
+          'renders no Flutter widgets) — same reviewed exception as '
+          'audiobook_session.',
       'lib/src/media/audiobook/now_listening_mini_bar.dart':
           'Now-listening media mini-bar: surface role + book-cover thumbnail '
           'radius are media-subsystem content chrome (same category as the '
@@ -1336,6 +1351,12 @@ class AnotherPopupPart {
       'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart': <String>{
         'BorderRadius.circular(',
       },
+      'lib/src/media/music/lyrics/karaoke/karaoke_appearance.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/media/music/lyrics/karaoke/karaoke_line_layout.dart': <String>{
+        'fontSize:',
+      },
       'lib/src/creator/fields/image_field.dart': <String>{'fontSize:'},
       'lib/src/floating_ball/desktop_system_ball_assets.dart': <String>{
         'fontSize:',
@@ -1350,6 +1371,9 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/media/audiobook/audiobook_session.dart': <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/music_desktop_lyrics_surface.dart': <String>{
+        'fontSize:',
+      },
       'lib/src/media/audiobook/floating_lyric_style.dart': <String>{
         'surfaceContainerHigh',
         'fontSize:',

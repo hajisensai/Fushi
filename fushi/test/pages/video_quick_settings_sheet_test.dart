@@ -61,7 +61,6 @@ Future<VideoSheetHarness> _pumpSheet(
   Widget? audioTrackSection,
   Widget? subtitleTrackSection,
   VoidCallback? onSubtitleCategoryShown,
-  VoidCallback? onSwitchToSkiaRenderer,
   Widget Function(Widget sheet)? wrap,
   List<VideoGroup> groups = VideoGroup.values,
 }) async {
@@ -96,7 +95,6 @@ Future<VideoSheetHarness> _pumpSheet(
       onVideoFitModeChanged: onVideoFitModeChanged,
       onImmersiveModeChanged: onImmersiveModeChanged,
       onControlLayoutChanged: onControlLayoutChanged,
-      onSwitchToSkiaRenderer: onSwitchToSkiaRenderer,
       audioTrackSection: audioTrackSection,
       subtitleTrackSection: subtitleTrackSection,
       onSubtitleCategoryShown: onSubtitleCategoryShown,
@@ -994,52 +992,6 @@ void main() {
     await tester.tap(plus50);
     await tester.pump();
     expect(delay, 50);
-  });
-
-  // ── TODO-1232 / BUG-597：视频黑屏（有声无画）降级行 ─────────────────────────
-  // Android 默认已保持 Impeller；受影响机型（Impeller 合成不了 media_kit 外部纹理，见
-  // BUG-597）经「播放」分类的一键「切 Skia 并重启」行显式降级。该行仅在页面判定本次跑
-  // Impeller + 渲染 channel 已接线（Android）时接线 onSwitchToSkiaRenderer；此处锁死
-  // 「有回调 → 行在 playback 详情渲染且可点触发」「无回调 → 不渲染该行」。
-  testWidgets('TODO-1232：提供 onSwitchToSkiaRenderer 时渲染「切 Skia」降级行并可触发', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1000, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    int switched = 0;
-    await _pumpSheet(tester, onSwitchToSkiaRenderer: () => switched++);
-
-    // 宽窗默认选中 playback 分类，降级行随之渲染。
-    final Finder row = find.widgetWithText(
-      ListTile,
-      t.video_render_skia_fix_title,
-    );
-    await tester.ensureVisible(row);
-    await tester.pumpAndSettle();
-    expect(
-      row,
-      findsOneWidget,
-      reason: 'onSwitchToSkiaRenderer 非空时「切 Skia」降级行须在 playback 详情渲染',
-    );
-    await tester.tap(row);
-    await tester.pump();
-    expect(switched, 1, reason: '点降级行须触发 onSwitchToSkiaRenderer 回调');
-  });
-
-  testWidgets('TODO-1232：onSwitchToSkiaRenderer 为 null 时不渲染「切 Skia」降级行', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1000, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _pumpSheet(tester);
-
-    // 默认 playback 详情里倍速行在（证明确在 playback 分类），但降级行不渲染。
-    expect(find.text(t.video_setting_speed), findsOneWidget);
-    expect(
-      find.text(t.video_render_skia_fix_title),
-      findsNothing,
-      reason: '无 onSwitchToSkiaRenderer 回调时不应渲染「切 Skia」降级行',
-    );
   });
 
   // ── TODO-060：字幕调轴（正名 + 滑条 + 数值输入） ───────────────────────────
@@ -2941,9 +2893,11 @@ void main() {
       );
       // 主题切换行已移除：主题归全局「外观」设置，视频画面继承 app 主题，不在此重复暴露。
       for (final String src in <String>[sheet, schema, actions]) {
+        // 精确到键名：`video_setting_theme_song_*`（OP/ED 跳过等）是另一组设置，
+        // 裸子串会把它们误判成主题行。
         expect(
-          src,
-          isNot(contains('video_setting_theme')),
+          RegExp(r'video_setting_theme(?![A-Za-z0-9_])').hasMatch(src),
+          isFalse,
           reason: '视频设置不应再有独立主题切换行（主题归全局外观）',
         );
         expect(

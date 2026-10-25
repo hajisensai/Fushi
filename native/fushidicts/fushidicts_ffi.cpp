@@ -19,6 +19,7 @@
 #include "fushidicts/query.hpp"
 #include "fushidicts/popup_json.hpp"
 #include "fushidicts/tokenize.hpp"
+#include <utf8.h>
 #include <zstd.h>
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -1022,6 +1023,82 @@ int32_t fushidicts_match_length(void* handle, const char* text, int32_t scan_len
     Lookup lookup(h->query, h->deinflector);
     return match_length_utf16(lookup, text, static_cast<size_t>(scan_length), &h->match_cache);
   });
+}
+
+// ── 语料词元（native/fushi_corpus 的倒排键，见 tokenize.hpp 的 tokenize_corpus） ──
+//
+// 一次调用处理**一批**句子（一本书的一章 / 一集字幕 / 一首歌词），不逐句跨 FFI。线格式
+// （全部小端，与 packages/fushi_dictionary 的 `FushiDicts.corpusTermsBorrowed` 和
+// native/fushi_corpus/src/wire.rs 的 `TermsReader` 同一份约定）：
+//
+//   输入：u32 句数 N，然后 N 个 { u32 UTF-8 字节数, 字节 }
+//   输出：N 个 { u32 词元数 M, M 个 { u32 起点(UTF-16), u32 长度(UTF-16), u32 词典形字节数, 字节 } }
+//
+// 输出缓冲区由 malloc 分配，调用方用 fushidicts_free_bytes 释放。返回 0 成功；-1 参数
+// 非法 / 输入截断；-2 内存不足；异常经闸门回 -3。
+static void put_u32(std::string& out, uint32_t v) {
+  for (int k = 0; k < 4; k++) out.push_back(static_cast<char>((v >> (8 * k)) & 0xFF));
+}
+
+static bool read_u32(const uint8_t* data, size_t len, size_t& at, uint32_t& v) {
+  if (at > len || len - at < 4) return false;
+  v = static_cast<uint32_t>(data[at]) | (static_cast<uint32_t>(data[at + 1]) << 8) |
+      (static_cast<uint32_t>(data[at + 2]) << 16) | (static_cast<uint32_t>(data[at + 3]) << 24);
+  at += 4;
+  return true;
+}
+
+FUSHI_EXPORT
+int32_t fushidicts_corpus_terms(void* handle, const uint8_t* input, int32_t input_len, int32_t scan_length,
+                                uint8_t** out, int32_t* out_len) {
+  return ffi_guard_or(
+      "fushidicts_corpus_terms",
+      [&]() -> int32_t {
+        if (!handle || !out || !out_len || input_len < 0 || (!input && input_len > 0)) return -1;
+        *out = nullptr;
+        *out_len = 0;
+        const size_t len = static_cast<size_t>(input_len);
+        size_t at = 0;
+        uint32_t count = 0;
+        if (!read_u32(input, len, at, count)) return -1;
+        auto* h = static_cast<FushidictsHandle*>(handle);
+        std::shared_lock lock(h->rw);
+        Lookup lookup(h->query, h->deinflector);
+        CorpusLemmaMemo memo;
+        std::string buffer;
+        for (uint32_t s = 0; s < count; s++) {
+          uint32_t bytes = 0;
+          if (!read_u32(input, len, at, bytes) || len - at < bytes) return -1;
+          const std::string text(reinterpret_cast<const char*>(input + at), bytes);
+          at += bytes;
+          if (!utf8::is_valid(text.begin(), text.end())) {
+            put_u32(buffer, 0);
+            continue;
+          }
+          const std::vector<CorpusToken> tokens =
+              tokenize_corpus(lookup, text, static_cast<size_t>(scan_length), &memo);
+          put_u32(buffer, static_cast<uint32_t>(tokens.size()));
+          for (const CorpusToken& t : tokens) {
+            put_u32(buffer, static_cast<uint32_t>(t.start));
+            put_u32(buffer, static_cast<uint32_t>(t.length));
+            put_u32(buffer, static_cast<uint32_t>(t.lemma.size()));
+            buffer += t.lemma;
+          }
+        }
+        if (buffer.size() > static_cast<size_t>(INT32_MAX)) return -1;
+        auto* bytes_out = static_cast<uint8_t*>(malloc(buffer.empty() ? 1 : buffer.size()));
+        if (!bytes_out) return -2;
+        if (!buffer.empty()) std::memcpy(bytes_out, buffer.data(), buffer.size());
+        *out = bytes_out;
+        *out_len = static_cast<int32_t>(buffer.size());
+        return 0;
+      },
+      []() -> int32_t { return -3; });
+}
+
+FUSHI_EXPORT
+void fushidicts_free_bytes(uint8_t* p) {
+  ffi_guard_void("fushidicts_free_bytes", [&]() { free(p); });
 }
 
 // ── zstd 文件解压 ────────────────────────────────────────────────────

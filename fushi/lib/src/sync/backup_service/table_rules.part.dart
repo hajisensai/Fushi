@@ -187,12 +187,35 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // ── 游戏 ──
   'galgame_sources': BackupTableRule.rowLevel('_retainGames（FK cascade）'),
   'galgames': BackupTableRule.rowLevel('_retainGames'),
+  // v134：文本钩子台词——唯一的持久副本（「我库里的例句」的游戏来源由它派生），随游戏
+  // 一起出境；按游戏选择裁剪时经外键 cascade 跟着宿主走。合并导入见
+  // BackupMergeEngine._mergeGalgameTextLines（按游戏身份重映射 + (游戏, 台词) 去重）。
+  'galgame_text_lines': BackupTableRule.rowLevel('_retainGames（FK cascade）'),
 
   // ── 书 / 视频共享 ──
   'media_tracking_outbox': BackupTableRule.follows(_bookOrVideo),
   'media_tracking_mappings': BackupTableRule.follows(_bookOrVideo),
   'series': BackupTableRule.follows(_bookOrVideo),
   'collection_member_tombstones': BackupTableRule.follows(_bookOrVideo),
+  // v129 作品图谱：连接跨书 / 视频 / 游戏三类内容，任一勾选就随包（端点本机不在
+  // 的连接照常保留，详情页显示「未入库」灰卡），三类全不勾整表清空。
+  'media_links': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.books,
+    BackupCategory.videos,
+    BackupCategory.games,
+  }),
+  // v135 作品图谱 L5：人物身份桥（Wikidata 桥接缓存 + 用户确认 / 否决的「同一人」）
+  // 连接视频 / 游戏 / 音乐三域的人物，任一勾选就随包；只含外部 id 与人物引用串。
+  'person_identity_bridges': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.videos,
+    BackupCategory.games,
+    BackupCategory.music,
+  }),
+  // v135：动画集 ↔ 原作卷 / 章的手动对应点（用户数据，端点是书与视频）。
+  'adaptation_progress_anchors': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.books,
+    BackupCategory.videos,
+  }),
 
   // ── 合集 / 书架 / 标签 / 同步墓碑（按 media_type 行级裁剪）──
   'collection_scrape_meta': BackupTableRule.rowLevel(
@@ -285,6 +308,23 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // 复习（SRS）的表不在主库里：归 Rust 的 srs.db，随「复习」类别整份快照进 zip 的 `srs.db`
   // 条目（docs/specs/2026-10-23-srs-rust-store.md §4，见 backup_srs_tables.dart）。
 
+  // ── 音乐用户数据（v130；与 musicUserTables 一致，子表在前）──
+  'music_playlist_entries': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.music,
+  }),
+  'music_playlists': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.music,
+  }),
+  'music_lyrics': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.music,
+  }),
+  'music_videos': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.music,
+  }),
+  'music_play_events': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.music,
+  }),
+
   // ── 私人使用痕迹 ──
   'search_history_items': BackupTableRule.alwaysStripped(),
   'dictionary_history': BackupTableRule.alwaysStripped(),
@@ -315,6 +355,21 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'web_browser_session_tabs': BackupTableRule.deviceLocal(),
   'web_browser_closed_tabs': BackupTableRule.deviceLocal(),
   'web_browser_downloads': BackupTableRule.deviceLocal(),
+  // v130 音乐曲库目录：设备本地（本机重扫产物 + 绝对路径，见 _deviceLocalTables）。
+  'music_track_credits': BackupTableRule.deviceLocal(),
+  'music_tracks': BackupTableRule.deviceLocal(),
+  'music_albums': BackupTableRule.deviceLocal(),
+  'music_artists': BackupTableRule.deviceLocal(),
+  'music_disc_sources': BackupTableRule.deviceLocal(),
+  // v131：OP / ED 声纹比对的按集缓存，设备本地（见 _deviceLocalTables）。
+  'video_theme_song_spans': BackupTableRule.deviceLocal(),
+  // v135：游戏 VNDB 配音表缓存，设备本地（见 _deviceLocalTables）。
+  'game_voice_casts': BackupTableRule.deviceLocal(),
+  // v133：音乐刮削三表（识别结论 / 原始快照 / 字段锁），键含本机路径派生的 track_uid、
+  // 可由重刮重建，设备本地（见 _deviceLocalTables）。
+  'music_scrape_meta': BackupTableRule.deviceLocal(),
+  'music_metadata_raw_snapshots': BackupTableRule.deviceLocal(),
+  'music_locked_fields': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]

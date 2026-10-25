@@ -280,6 +280,17 @@ void main() {
         },
       );
 
+      // 所有者 2026-10-24：音乐卡单独打 `music`，不再沿用 `book`。
+      test(
+        'music source -> appends both fushi and music (AnkiConnect)',
+        () async {
+          expect(
+            await tagsForConnect('', source: AnkiMiningSource.music),
+            <String>['fushi', 'music'],
+          );
+        },
+      );
+
       test(
         'null source -> only fushi, no category tag (AnkiConnect)',
         () async {
@@ -319,6 +330,10 @@ void main() {
         expect(await tagsForDroid('', source: AnkiMiningSource.game), <String>[
           'fushi',
           'game',
+        ]);
+        expect(await tagsForDroid('', source: AnkiMiningSource.music), <String>[
+          'fushi',
+          'music',
         ]);
         expect(await tagsForDroid('foo', source: null), <String>[
           'foo',
