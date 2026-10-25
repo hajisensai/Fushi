@@ -32,12 +32,25 @@ class AdaptiveNavPeekData {
   const AdaptiveNavPeekData({
     this.resume,
     this.recent = const <AdaptiveNavPeekEntry>[],
+    this.listLayout = false,
+    this.resumeLabel,
+    this.recentLabel,
   });
 
   final AdaptiveNavPeekEntry? resume;
 
   /// 最多画 4 个。
   final List<AdaptiveNavPeekEntry> recent;
+
+  /// true = 没有封面的目的地（复习的牌组）：「继续」不画封面，[recent] 画成
+  /// 「名称 + 副行」的列表，而不是一排只有图标占位、看不出是什么的封面。
+  final bool listLayout;
+
+  /// 「继续」卡上方的小字；null = 「继续」。
+  final String? resumeLabel;
+
+  /// [recent] 上方的小标题；null = 「最近」。
+  final String? recentLabel;
 
   bool get isEmpty => resume == null && recent.isEmpty;
 }
@@ -499,75 +512,93 @@ class _NavRailPeekContent extends StatelessWidget {
                       if (value.resume case final AdaptiveNavPeekEntry entry)
                         _NavPeekResume(
                           entry: entry,
+                          label: value.resumeLabel ?? t.home_continue,
+                          showCover: !value.listLayout,
                           fallbackIcon: item.icon,
                           onOpen: () => onOpenEntry(entry),
                         ),
                       if (value.recent.isNotEmpty) ...<Widget>[
                         const SizedBox(height: 12),
                         Text(
-                          t.nav_peek_recent,
+                          value.recentLabel ?? t.nav_peek_recent,
                           style: text.labelMedium?.copyWith(
                             color: colors.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 6),
-                        _NavPeekImageAspects(
-                          images: <ImageProvider?>[
-                            for (final AdaptiveNavPeekEntry e in value.recent)
-                              e.cover,
-                          ],
-                          builder:
-                              (
-                                BuildContext context,
-                                List<double> aspects,
-                              ) => LayoutBuilder(
-                                builder:
-                                    (BuildContext context, BoxConstraints box) {
-                                      final List<List<double>> rows =
-                                          navPeekRecentLayout(
-                                            aspects: aspects,
-                                            maxWidth: box.maxWidth,
-                                          );
-                                      final List<int> starts = <int>[0];
-                                      for (final List<double> row in rows) {
-                                        starts.add(starts.last + row.length);
-                                      }
-                                      return Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        spacing: kNavPeekRecentGap,
-                                        children: <Widget>[
-                                          for (int r = 0; r < rows.length; r++)
-                                            Row(
-                                              spacing: kNavPeekRecentGap,
-                                              children: <Widget>[
-                                                for (
-                                                  int j = 0;
-                                                  j < rows[r].length;
-                                                  j++
-                                                )
-                                                  SizedBox(
-                                                    width: rows[r][j],
-                                                    child: _NavPeekRecent(
-                                                      entry: value
-                                                          .recent[starts[r] + j],
-                                                      aspectRatio:
-                                                          aspects[starts[r] +
+                        if (value.listLayout)
+                          for (final AdaptiveNavPeekEntry e in value.recent)
+                            _NavPeekListRow(
+                              entry: e,
+                              fallbackIcon: item.icon,
+                              onOpen: () => onOpenEntry(e),
+                            )
+                        else
+                          _NavPeekImageAspects(
+                            images: <ImageProvider?>[
+                              for (final AdaptiveNavPeekEntry e in value.recent)
+                                e.cover,
+                            ],
+                            builder:
+                                (
+                                  BuildContext context,
+                                  List<double> aspects,
+                                ) => LayoutBuilder(
+                                  builder:
+                                      (
+                                        BuildContext context,
+                                        BoxConstraints box,
+                                      ) {
+                                        final List<List<double>> rows =
+                                            navPeekRecentLayout(
+                                              aspects: aspects,
+                                              maxWidth: box.maxWidth,
+                                            );
+                                        final List<int> starts = <int>[0];
+                                        for (final List<double> row in rows) {
+                                          starts.add(starts.last + row.length);
+                                        }
+                                        return Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          spacing: kNavPeekRecentGap,
+                                          children: <Widget>[
+                                            for (
+                                              int r = 0;
+                                              r < rows.length;
+                                              r++
+                                            )
+                                              Row(
+                                                spacing: kNavPeekRecentGap,
+                                                children: <Widget>[
+                                                  for (
+                                                    int j = 0;
+                                                    j < rows[r].length;
+                                                    j++
+                                                  )
+                                                    SizedBox(
+                                                      width: rows[r][j],
+                                                      child: _NavPeekRecent(
+                                                        entry: value
+                                                            .recent[starts[r] + j],
+                                                        aspectRatio:
+                                                            aspects[starts[r] +
+                                                                j],
+                                                        fallbackIcon: item.icon,
+                                                        onOpen: () => onOpenEntry(
+                                                          value
+                                                              .recent[starts[r] +
                                                               j],
-                                                      fallbackIcon: item.icon,
-                                                      onOpen: () => onOpenEntry(
-                                                        value.recent[starts[r] +
-                                                            j],
+                                                        ),
                                                       ),
                                                     ),
-                                                  ),
-                                              ],
-                                            ),
-                                        ],
-                                      );
-                                    },
-                              ),
-                        ),
+                                                ],
+                                              ),
+                                          ],
+                                        );
+                                      },
+                                ),
+                          ),
                       ],
                     ],
                   );
@@ -626,11 +657,19 @@ class _NavPeekCover extends StatelessWidget {
 class _NavPeekResume extends StatelessWidget {
   const _NavPeekResume({
     required this.entry,
+    required this.label,
+    required this.showCover,
     required this.fallbackIcon,
     required this.onOpen,
   });
 
   final AdaptiveNavPeekEntry entry;
+
+  /// 卡片上方的小字（「继续」/「开始复习」）。
+  final String label;
+
+  /// false = 没有封面的目的地（牌组），只画文字。
+  final bool showCover;
   final IconData fallbackIcon;
   final VoidCallback onOpen;
 
@@ -653,31 +692,33 @@ class _NavPeekResume extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  _NavPeekImageAspects(
-                    images: <ImageProvider?>[entry.cover],
-                    builder: (BuildContext context, List<double> aspects) {
-                      final double width = navPeekResumeCoverWidth(
-                        aspects.single,
-                      );
-                      return SizedBox(
-                        width: width,
-                        height: kNavPeekResumeCoverHeight,
-                        child: _NavPeekCover(
-                          image: entry.cover,
-                          fallbackIcon: fallbackIcon,
-                          radius: 10,
-                          aspectRatio: width / kNavPeekResumeCoverHeight,
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(width: 12),
+                  if (showCover) ...<Widget>[
+                    _NavPeekImageAspects(
+                      images: <ImageProvider?>[entry.cover],
+                      builder: (BuildContext context, List<double> aspects) {
+                        final double width = navPeekResumeCoverWidth(
+                          aspects.single,
+                        );
+                        return SizedBox(
+                          width: width,
+                          height: kNavPeekResumeCoverHeight,
+                          child: _NavPeekCover(
+                            image: entry.cover,
+                            fallbackIcon: fallbackIcon,
+                            radius: 10,
+                            aspectRatio: width / kNavPeekResumeCoverHeight,
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 12),
+                  ],
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Text(
-                          t.home_continue,
+                          label,
                           style: text.labelSmall?.copyWith(
                             color: colors.onSurfaceVariant,
                           ),
@@ -752,13 +793,90 @@ class _NavPeekRecent extends StatelessWidget {
               onTap: onOpen,
               child: MouseRegion(
                 cursor: SystemMouseCursors.click,
-                child: _NavPeekCover(
-                  image: entry.cover,
-                  fallbackIcon: fallbackIcon,
-                  radius: 10,
-                  aspectRatio: aspectRatio,
+                // 封面下写上名字：只有封面时看不出最近看的是哪部（2026-10-25
+                // 用户「媒体的话最近看的是什么」）。
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _NavPeekCover(
+                      image: entry.cover,
+                      fallbackIcon: fallbackIcon,
+                      radius: 10,
+                      aspectRatio: aspectRatio,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      entry.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ],
                 ),
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 列表式速览（[AdaptiveNavPeekData.listLayout]）的一行：模块图标 + 名称 +
+/// 副行（牌组的今日计数 / 「今日已完成」）。
+class _NavPeekListRow extends StatelessWidget {
+  const _NavPeekListRow({
+    required this.entry,
+    required this.fallbackIcon,
+    required this.onOpen,
+  });
+
+  final AdaptiveNavPeekEntry entry;
+  final IconData fallbackIcon;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final TextTheme text = Theme.of(context).textTheme;
+    return FushiPressScale(
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: FushiM3eShape.cardRadius,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onOpen,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              children: <Widget>[
+                FushiIcon(
+                  fallbackIcon,
+                  size: 18,
+                  color: colors.onSurfaceVariant,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    entry.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (entry.subtitle case final String subtitle) ...<Widget>[
+                  const SizedBox(width: 10),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    style: text.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ),

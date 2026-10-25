@@ -358,11 +358,13 @@ Future<AdaptiveNavPeekData> _loadSrsDecks({
     final bool hasWork = deck.newCount + deck.learnCount + deck.reviewCount > 0;
     return AdaptiveNavPeekEntry(
       title: deck.fullName,
-      subtitle: srsNavPeekCountsLabel(
-        newCount: deck.newCount,
-        learnCount: deck.learnCount,
-        reviewCount: deck.reviewCount,
-      ),
+      subtitle:
+          srsNavPeekCountsLabel(
+            newCount: deck.newCount,
+            learnCount: deck.learnCount,
+            reviewCount: deck.reviewCount,
+          ) ??
+          t.home_srs_panel_done,
       // 有待复习的卡就直接进这个牌组的复习页（同首页复习条）；今天已复习完
       // 的牌组进复习里没卡可看，改为打开牌组列表。
       onOpen: hasWork
@@ -385,7 +387,13 @@ Future<AdaptiveNavPeekData> _loadSrsDecks({
   }
 
   final SrsDeckSummary? resume = data.firstRootWithWork;
+  // 牌组没有封面：列表式（名称 + 今日计数），「继续」写成「开始复习」，
+  // 其余牌组列在「牌组」下（2026-10-25 用户「复习不知道显示的是什么，要显示
+  // 牌组之类的」）。
   return AdaptiveNavPeekData(
+    listLayout: true,
+    resumeLabel: t.home_srs_panel_start,
+    recentLabel: t.nav_peek_decks,
     resume: resume == null ? null : entryOf(resume),
     recent: roots
         .where((SrsDeckSummary d) => d.deck.id != resume?.deck.id)
