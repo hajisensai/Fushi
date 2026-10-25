@@ -31,6 +31,7 @@ import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:material_ui/material_ui.dart';
@@ -258,7 +259,7 @@ class SrsCardMediaMissing extends StatelessWidget {
       SrsCardMediaKind.image => t.srs_card_media_missing_image,
       SrsCardMediaKind.video => t.srs_card_media_missing_video,
     };
-    final Color fg = scheme.onSurfaceVariant;
+    final Color fg = scheme.onContainerOf(FushiTone.neutral);
     return Semantics(
       label: label,
       container: true,
@@ -267,7 +268,7 @@ class SrsCardMediaMissing extends StatelessWidget {
         child: SizedBox.fromSize(
           size: size,
           child: ColoredBox(
-            color: scheme.surfaceContainerHighest,
+            color: scheme.containerOf(FushiTone.neutral),
             child: Padding(
               padding: const EdgeInsets.all(8),
               child: FittedBox(
