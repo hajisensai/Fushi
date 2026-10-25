@@ -9229,6 +9229,11 @@ class AppModel with ChangeNotifier {
       _prefsRepo?.srsFolderLocations ?? const <SrsFolderLocation>[];
   Future<void> setSrsFolderLocations(List<SrsFolderLocation> value) =>
       prefsRepo.setSrsFolderLocations(value);
+
+  /// 首次同步 v2 是否已确认（设备本地；prefs 未装配时按未确认，不同步）。
+  bool get srsSync2MergeConfirmed => _prefsRepo?.srsSync2MergeConfirmed ?? false;
+  Future<void> setSrsSync2MergeConfirmed(bool value) =>
+      prefsRepo.setSrsSync2MergeConfirmed(value);
   Future<void> setSrsReviewZoom(double value) =>
       prefsRepo.setSrsReviewZoom(value);
 

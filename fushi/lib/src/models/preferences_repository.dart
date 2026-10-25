@@ -3262,6 +3262,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 升级到同步 v2 后，用户确认过「首次同步把各设备的数据并到一起」（设备本地：每台设备各确认一次）。
+  static const String srsSync2MergeConfirmedKey = 'srs_sync2_merge_confirmed';
+
+  bool get srsSync2MergeConfirmed =>
+      getPref(srsSync2MergeConfirmedKey, defaultValue: false) as bool;
+
+  Future<void> setSrsSync2MergeConfirmed(bool value) async {
+    await setPref(srsSync2MergeConfirmedKey, value);
+    notifyListeners();
+  }
+
   static const String srsMiningTargetKey = 'srs_mining_target';
 
   /// 本安装「挖词目标」的出厂默认（'anki' / 'srs'），兼一次性判定的已跑标记。

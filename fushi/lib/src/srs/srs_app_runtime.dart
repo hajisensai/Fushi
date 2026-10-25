@@ -143,6 +143,8 @@ class SrsAppRuntime {
     readMediaRoot: () async => (await _readMedia())?.root,
     // 库关着（备份恢复 / 数据根迁移 / 退出）时不开新一轮；重开后自动恢复。
     canRun: () => app.isInitialised,
+    // 首次 v2 同步要用户确认一次（复习页弹窗，见 ensureSrsFirstSyncConfirmed）。
+    firstSyncConfirmed: () => app.srsSync2MergeConfirmed,
   );
 
   /// 关库前等 SRS 同步收尾（登记到 [AppModel.addDatabaseCloseQuiescer]）。
@@ -328,6 +330,7 @@ class SrsAppRuntime {
         SrsSyncNotice.profileNotLinked => t.srs_sync_profile_not_linked(
           name: sync.lastUnlinkedProfile ?? '',
         ),
+        SrsSyncNotice.awaitingConfirm => t.srs_sync_awaiting_confirm,
       },
       severity: ToastSeverity.warning,
     );

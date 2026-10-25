@@ -61,6 +61,9 @@ const String kSrsSyncDirectoryIdentityUnavailable =
 /// 本机的 SRS 副本此刻打不开（模块关着 / 还在打开 / 调度器已卸下）：这一轮没同步。
 const String kSrsSyncStoreUnavailable = 'srs store unavailable';
 
+/// 升级到同步 v2 后还没确认过首次同步（设计 §13 第 5 条：首次 v2 同步弹窗确认一次，说明「并入、不覆盖」）。
+const String kSrsSyncAwaitingConfirm = 'srs first v2 sync not confirmed';
+
 /// 已配对设备往本机 host 的 SRS 目录写入后，等这么久没有新写入再跑一次本机目录。
 /// 一轮客户端同步会连写探针 / 批次 / cursor 几个文件，去抖把它们并成一次。
 const Duration kSrsHostWriteDebounce = Duration(seconds: 3);
@@ -161,6 +164,9 @@ enum SrsSyncNotice {
   /// 同步目录里有另一台设备的同一个 profile，但两边都有用户笔记，没法自动关联
   /// （[SrsSyncScheduler.lastUnlinkedProfile] 是对方的 profile 名）。
   profileNotLinked,
+
+  /// 升级到同步 v2 后首次同步还没确认（[kSrsSyncAwaitingConfirm]），复习数据暂不同步。
+  awaitingConfirm,
 }
 
 class SrsSyncScheduler {
@@ -179,7 +185,9 @@ class SrsSyncScheduler {
     DateTime Function()? clock,
     Duration hostWriteDebounce = kSrsHostWriteDebounce,
     bool Function()? canRun,
+    bool Function()? firstSyncConfirmed,
   }) : _profileLinker = profileLinker,
+       _firstSyncConfirmed = firstSyncConfirmed ?? _alwaysRun,
        _canRun = canRun ?? _alwaysRun,
        _hostWriteDebounce = hostWriteDebounce,
        _readMediaRoot = readMediaRoot,
@@ -227,6 +235,9 @@ class SrsSyncScheduler {
   final bool Function() _canRun;
 
   static bool _alwaysRun() => true;
+
+  /// 首次 v2 同步是否已确认（没确认前一轮也不跑，见 [kSrsSyncAwaitingConfirm]）。
+  final bool Function() _firstSyncConfirmed;
 
   /// 调度器已卸下，或库正关着：这一轮不该开始 / 不该继续。
   bool get _halted => _disposed || !_canRun();
@@ -285,6 +296,10 @@ class SrsSyncScheduler {
     String? directoryKey,
   ) async {
     if (_halted) return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
+    if (!_firstSyncConfirmed()) {
+      _noticeOnce(SrsSyncNotice.awaitingConfirm);
+      return SrsSync2Report()..error = kSrsSyncAwaitingConfirm;
+    }
     SrsDbStore? store = await _readStore();
     if (store == null || _halted) {
       return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
@@ -399,7 +414,9 @@ class SrsSyncScheduler {
   /// （U 盘没插）只记进 [folderErrors]，不算这轮「立即同步」失败——它是可选的冗余副本。
   Future<SrsSyncNowResult> syncFolderLocations() => _serially(() async {
     final Future<List<SrsFolderLocation>> Function()? read = _folderLocations;
-    if (read == null || _halted) return const SrsSyncNowResult(ran: 0);
+    if (read == null || _halted || !_firstSyncConfirmed()) {
+      return const SrsSyncNowResult(ran: 0);
+    }
     final SrsDbStore? store = await _readStore();
     if (store == null || _halted) return const SrsSyncNowResult(ran: 0);
     final Directory? mediaRoot = await _readMediaRoot?.call();

@@ -8,6 +8,9 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi_engine/srs/srs_db_store.dart';
+
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -75,6 +78,35 @@ Future<void> showSrsSyncSetupDialog(
   );
   if (picked == null || !context.mounted) return;
   await openSrsSyncDestination(context, picked);
+}
+
+/// 首次 v2 同步的确认（设计 §13 第 5 条）：升级后第一次同步前问一次，说明各设备的数据是「并入、不覆盖」。
+///
+/// 本机没有用户笔记（新装、只有内置行）时没什么可并的，直接记成已确认、不打扰。返回此刻是否已确认。
+/// 「稍后」不记任何东西：同步暂停，下次进复习页或点「立即同步」再问。
+Future<bool> ensureSrsFirstSyncConfirmed(
+  BuildContext context,
+  AppModel app,
+  SrsDbStore? store,
+) async {
+  if (app.srsSync2MergeConfirmed) return true;
+  if (store == null) return false;
+  if (!await store.hasUserNotes()) {
+    await app.setSrsSync2MergeConfirmed(true);
+    return true;
+  }
+  if (!context.mounted) return false;
+  final bool ok = await showFushiConfirmDialog(
+    context: context,
+    title: t.srs_sync_confirm_title,
+    message: t.srs_sync_confirm_body,
+    confirmLabel: t.srs_sync_confirm_start,
+    cancelLabel: t.srs_sync_confirm_later,
+    icon: FushiIcons.cloudSync,
+  );
+  if (!ok) return false;
+  await app.setSrsSync2MergeConfirmed(true);
+  return true;
 }
 
 /// 同步与历史页的说明：复习数据随已有的同步通道走（附两个分类的入口）。

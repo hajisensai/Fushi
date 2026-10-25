@@ -62,6 +62,7 @@ String srsCheckpointReasonLabel(String reason) => switch (reason) {
   'bulk_delete' => t.srs_timeline_reason_bulk_delete,
   'note_type' => t.srs_timeline_reason_note_type,
   'fsrs_params' => t.srs_timeline_reason_fsrs_params,
+  'merge_notes' => t.srs_timeline_reason_merge_notes,
   _ => t.srs_timeline_reason_manual,
 };
 

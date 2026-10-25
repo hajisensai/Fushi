@@ -484,6 +484,8 @@ String srsSyncErrorReason(Object error) => switch (error) {
     t.srs_sync_directory_unidentified,
   SrsSyncReportError(message: kSrsSyncStoreUnavailable) =>
     t.srs_sync_store_unavailable,
+  SrsSyncReportError(message: kSrsSyncAwaitingConfirm) =>
+    t.srs_sync_awaiting_confirm,
   _ => friendlySyncErrorDetail(error),
 };
 

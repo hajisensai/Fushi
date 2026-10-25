@@ -103,6 +103,36 @@ class SrsDeckListPage extends ConsumerStatefulWidget {
 }
 
 class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
+  /// 首次 v2 同步的确认每次启动最多主动问一次（「稍后」之后点「立即同步」还会再问）。
+  static bool _askedFirstSync = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_askedFirstSync || !mounted) return;
+      _askedFirstSync = true;
+      srsRunLogged(
+        'SrsDeckList.firstSync',
+        () => _confirmFirstSync(sync: true),
+      );
+    });
+  }
+
+  /// 问一次首次同步；刚确认就顺手跑一轮。
+  Future<bool> _confirmFirstSync({required bool sync}) async {
+    final AppModel app = ref.read(appProvider);
+    if (app.srsSync2MergeConfirmed) return true;
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (!mounted) return false;
+    final bool ok = await ensureSrsFirstSyncConfirmed(context, app, store);
+    if (ok && sync) {
+      final SrsAppRuntime? runtime = ref.read(srsAppRuntimeProvider);
+      if (runtime != null) await runtime.syncNow();
+    }
+    return ok;
+  }
+
   /// Anki 一键迁移完成后：迁进来的笔记里有旧 Lapis（或此前迁移漏掉的字段）时，
   /// 顺手问一句要不要迁到 Fushi 卡片。[context] 是迁移页的。
   Future<void> _offerLegacyLapisMigration(
@@ -337,16 +367,19 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     }
   }
 
-  Future<void> _syncNow() => openSrsSyncNow(
-    ref.read(srsAppRuntimeProvider)?.syncNow,
-    onNoChannel: () async {
-      if (!mounted) return;
-      await showSrsSyncSetupDialog(
-        context,
-        ref.read(appProvider).moduleVisibility,
-      );
-    },
-  );
+  Future<void> _syncNow() async {
+    if (!await _confirmFirstSync(sync: false) || !mounted) return;
+    await openSrsSyncNow(
+      ref.read(srsAppRuntimeProvider)?.syncNow,
+      onNoChannel: () async {
+        if (!mounted) return;
+        await showSrsSyncSetupDialog(
+          context,
+          ref.read(appProvider).moduleVisibility,
+        );
+      },
+    );
+  }
 
   /// 牌组拖放 / 「移动到… / 上移 / 下移」落地：拒绝时说明原因，成功后列表重读。
   Future<void> _placeDeck(
