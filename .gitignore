@@ -175,3 +175,6 @@ third_party/media_kit_video/macos/Headers/
 /tool/sync_to_mac.ps1
 /tool/run_mac_itest.ps1
 /tool/sync_upload_exclusions.txt
+
+# dist_test worker list (hosts, keys): machine-local, never committed.
+fushi/tool/dist_test/workers.local.json

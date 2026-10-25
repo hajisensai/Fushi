@@ -6,6 +6,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 // 查词浮层（装平台视图的 FushiPopupSurface，borderOnForeground = false）在 Apple
@@ -220,6 +221,13 @@ void main() {
   testWidgets('iOS / macOS（背后是原生平台视图、采不到模糊）：两套设计系统都画不透明面板', (
     WidgetTester tester,
   ) async {
+    // 本用例验的是「宿主挂不了原生系统材质」时的回落：真 macOS / iOS 宿主进程
+    // 能挂 NSVisualEffectView，会走原生材质真模糊（那条路径见
+    // test/widgets/fushi_native_material_test.dart）。显式钉住宿主能力，
+    // 否则在 macOS 开发机上这里读到真宿主、走的是另一条分支。
+    final bool Function() savedHost = debugNativeMaterialHostSupported;
+    debugNativeMaterialHostSupported = () => false;
+    addTearDown(() => debugNativeMaterialHostSupported = savedHost);
     for (final bool glass in <bool>[true, false]) {
       await tester.pumpWidget(
         host(

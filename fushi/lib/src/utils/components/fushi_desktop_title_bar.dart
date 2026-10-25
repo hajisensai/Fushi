@@ -53,6 +53,32 @@ class FushiDesktopTitleBar extends StatefulWidget {
 
   static bool _isEnabled = false;
 
+  /// 宿主窗口的原生平台——本组件里**只**用来回答「宿主 window 插件 / 系统画什么」：
+  /// macOS 用系统红绿灯、AppKit 自己拥有四边 resize（`window_manager` 的 macOS
+  /// 插件没有 `startResizing`）、原生全屏信号来自 [MacosFullscreenState]；只有
+  /// Windows runner 认 HTMAXBUTTON 贴靠命中区。这些都是宿主进程的事实，不随
+  /// [ThemeData.platform] / 设计系统变，所以读真实宿主而不是主题平台。
+  ///
+  /// widget 测试跑在哪台机器上就是哪个宿主，必须显式钉住被测宿主（否则同一用例在
+  /// Windows / Linux 与 macOS 开发机上走不同分支）；测试改完要还原成
+  /// [_realHostPlatform]。
+  @visibleForTesting
+  static TargetPlatform Function() debugHostPlatform = _realHostPlatform;
+
+  static TargetPlatform _realHostPlatform() {
+    if (Platform.isMacOS) return TargetPlatform.macOS;
+    if (Platform.isWindows) return TargetPlatform.windows;
+    if (Platform.isLinux) return TargetPlatform.linux;
+    if (Platform.isIOS) return TargetPlatform.iOS;
+    if (Platform.isAndroid) return TargetPlatform.android;
+    return TargetPlatform.fuchsia;
+  }
+
+  static bool get _hostIsMacOS => debugHostPlatform() == TargetPlatform.macOS;
+
+  static bool get _hostIsWindows =>
+      debugHostPlatform() == TargetPlatform.windows;
+
   /// True once the app shell has installed its own desktop frame
   /// ([TitleBarStyle.hidden] + this widget). Widgets below the app frame read
   /// it to avoid rendering a second, redundant page header, and `HomePage`
@@ -234,7 +260,7 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
   void initState() {
     super.initState();
     windowManager.addListener(this);
-    if (Platform.isMacOS) {
+    if (FushiDesktopTitleBar._hostIsMacOS) {
       // macOS 上 window_manager 的 [WindowListener] 收不到全屏通知：
       // macos_window_utils 持有 NSWindow.delegate 并把它的 delegate 覆盖掉。
       // [MacosFullscreenState] 挂的是 NSWindowDelegate，AppKit 在**所有**入口
@@ -292,7 +318,7 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
     if (WindowCaptionChannel.onCaptionMaxButtonClick == _toggleMaximize) {
       WindowCaptionChannel.onCaptionMaxButtonClick = null;
     }
-    if (Platform.isMacOS) {
+    if (FushiDesktopTitleBar._hostIsMacOS) {
       MacosFullscreenState.instance.isFullscreen.removeListener(
         _onMacosFullscreenChanged,
       );
@@ -492,7 +518,7 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
         : Color.alphaBlend(page.background, colors.surface);
     // 窗口按钮按平台而不是按设计系统（用户 2026-10-04）：macOS 一律用系统原生
     // 红绿灯（左上角，顶栏只给它们留位），Windows / Linux 一律是 MD3 那组按钮。
-    final bool trafficLights = Platform.isMacOS;
+    final bool trafficLights = FushiDesktopTitleBar._hostIsMacOS;
     return Container(
       height: FushiDesktopTitleBar.height,
       color: captionFill,
@@ -603,7 +629,7 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
                 glyph: _CaptionGlyph.maximize,
                 maximized: _isMaximized,
                 // 只有 Windows runner 认 HTMAXBUTTON 命中区（贴靠布局）。
-                snapLayouts: Platform.isWindows,
+                snapLayouts: FushiDesktopTitleBar._hostIsWindows,
                 page: page,
                 active: _isFocused,
                 onPressed: _toggleMaximize,
@@ -637,7 +663,7 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
   /// 本来就不需要 app 代劳。Windows 侧维持原状：全屏无命中区、最大化时禁用，
   /// 其余只接管顶边三段（左右下三边由 runner 的非客户区命中测试处理）。
   List<ResizeEdge> _resizeEdges({required bool hideFrame}) {
-    if (Platform.isMacOS) return const <ResizeEdge>[];
+    if (FushiDesktopTitleBar._hostIsMacOS) return const <ResizeEdge>[];
     if (hideFrame || _isMaximized) return const <ResizeEdge>[];
     return const <ResizeEdge>[
       ResizeEdge.topLeft,

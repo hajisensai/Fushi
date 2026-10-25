@@ -66,11 +66,11 @@ const HeavyNeed _other = HeavyNeed(
 
 /// The [HeavyNeed] for a kind (pre_push_check leases per step by kind).
 HeavyNeed heavyNeedFor(HeavyKind kind) => switch (kind) {
-      HeavyKind.test => _test,
-      HeavyKind.analyze => _analyze,
-      HeavyKind.build => _build,
-      HeavyKind.other => _other,
-    };
+  HeavyKind.test => _test,
+  HeavyKind.analyze => _analyze,
+  HeavyKind.build => _build,
+  HeavyKind.other => _other,
+};
 
 String _base(String path) {
   final String name = path.replaceAll(r'\', '/').split('/').last.toLowerCase();
@@ -84,8 +84,10 @@ HeavyNeed classifyHeavyCommand(List<String> argv) {
   if (argv.isEmpty) return _other;
   final String exe = _base(argv.first);
   final List<String> rest = argv.skip(1).toList();
-  final String? verb =
-      rest.where((String a) => !a.startsWith('-')).firstOrNull?.toLowerCase();
+  final String? verb = rest
+      .where((String a) => !a.startsWith('-'))
+      .firstOrNull
+      ?.toLowerCase();
   if (exe == 'flutter' || exe == 'dart' || exe == 'fvm') {
     // `fvm flutter test` / `fvm dart analyze`: classify the inner tool.
     if (exe == 'fvm' && rest.isNotEmpty) return classifyHeavyCommand(rest);
@@ -129,13 +131,14 @@ int prePushCheckCapMb({required bool parallel}) =>
 /// over-booked flutter_test_failures (12 GB) and under-capped
 /// `pre_push_check --parallel` (20 GB).
 HeavyNeed? _leasedDartTool(List<String> rest) {
-  final List<String> positional =
-      rest.where((String a) => !a.startsWith('-')).toList();
+  final List<String> positional = rest
+      .where((String a) => !a.startsWith('-'))
+      .toList();
   if (positional.isEmpty) return null;
   final String script =
       positional.first.toLowerCase() == 'run' && positional.length > 1
-          ? positional[1]
-          : positional.first;
+      ? positional[1]
+      : positional.first;
   switch (_base(script)) {
     case 'pre_push_check':
       return HeavyNeed(
@@ -248,12 +251,12 @@ class HeavyHolder {
   int get bookedMb => capMb ?? kUnknownHolderCapMb;
 
   Map<String, Object> toJson() => <String, Object>{
-        'pid': pid,
-        'startedAt': startedAtMs,
-        'label': label,
-        'cwd': cwd,
-        if (capMb != null) 'capMb': capMb!,
-      };
+    'pid': pid,
+    'startedAt': startedAtMs,
+    'label': label,
+    'cwd': cwd,
+    if (capMb != null) 'capMb': capMb!,
+  };
 
   static HeavyHolder? fromJson(int slot, Object? json) {
     if (json is! Map) return null;
