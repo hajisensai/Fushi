@@ -278,8 +278,7 @@ Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
         profiles,
         (_LocalProfile p) => p.name == bp.name,
       );
-      if (sameName != null &&
-          await _canAdoptUid(localSrs, sameName.uid)) {
+      if (sameName != null && await _canAdoptUid(localSrs, sameName.uid)) {
         final String? oldUid = sameName.uid;
         if (oldUid != null && oldUid.isNotEmpty) {
           await _deleteProfileRows(localSrs.db, oldUid);
@@ -360,9 +359,17 @@ Future<bool> _canAdoptUid(SrsStorage srs, String? uid) async {
           .getSingleOrNull() !=
       null;
   if (hasNotes) return false;
-  // 发布进度只记在本机状态里；只读判断，不打开副本：这个 profile 的副本此刻可能正开着（复习备份页
-  // 「从文件恢复」），另开一个会当场写本机状态 / 内置行，成了同一 profile 的第二个写者。
-  return !await SrsDbStore.everPublishedIn(db, uid);
+  // 同步 v2：传到过任何位置就算发布过（别的设备可能已经拿到这个身份下的操作）。只读判断，不打开副本。
+  final Object? locations = srs.core.sync2(<String, Object?>{
+    'op': 'status',
+    'profile': uid,
+  }).map['locations'];
+  final bool published =
+      locations is List &&
+      locations.any(
+        (Object? l) => l is Map && ((l['uploaded'] as int?) ?? 0) > 0,
+      );
+  return !published;
 }
 
 /// 本机 profile（当前 uid [currentUid]）能否改用另一个 uid：没有用户笔记、也从未发布过批次（铁律 E）。
@@ -451,12 +458,10 @@ Future<int> _mergeEvents({
       if (!before.contains(id)) id,
   ];
   if (fresh.isEmpty) return 0;
-  // 被本机更晚的修改支配而丢掉的记录不在库里，不进发件箱（否则发件箱留下永远发不出的行）。
+  // 被本机更晚的修改支配而丢掉的记录不在库里；落进来的都已是本机操作（同步 v2：并入即发布，不需要发件箱）。
   final Set<String> landed = await _existingEventIds(local.db, fresh);
-  final List<String> requeue = <String>[
+  return <String>[
     for (final String id in fresh)
       if (landed.contains(id)) id,
-  ];
-  if (requeue.isNotEmpty) await store.requeue(requeue);
-  return requeue.length;
+  ].length;
 }

@@ -515,6 +515,9 @@ class FushiSyncServerController extends ChangeNotifier {
   /// （`fushi-data/...`）。跨 server 重启持续有效（每次 start 都接到这一条流上）。
   Stream<String> get clientSyncWrites => _clientSyncWrites.stream;
 
+  /// host 自己的复习数据刚发布到本机同步目录：唤醒已配对设备的长轮询（`/api/srs/changes`，设计 §6.3）。
+  void notifySrsChanged() => _server?.notifySrsChanged();
+
   void _onClientWrite(String relativePath) {
     if (_clientSyncWrites.isClosed) return;
     _clientSyncWrites.add(relativePath);

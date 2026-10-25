@@ -2,7 +2,7 @@
 // 两台设备各自打开复习模块时 profileUid 各自随机生成（FushiDatabase.profileUidOf），同步目录按
 // uid 分区（fushi-srs/<uid>/），以前两台设备「同步成功」却各写各的目录、谁也看不到谁的卡。
 //
-// 这里按 SrsSyncScheduler 的顺序跑：关联（link）→ 引擎（syncOnce）→ 发布说明文件（publish）。
+// 这里按 SrsSyncScheduler 的顺序跑：关联（link）→ 同步 v2 的一轮（srsSync2Round）→ 发布说明文件（publish）。
 // 互联传输本身（WebDAV PROPFIND / PUT）另由 fushi/test/sync/interconnect_srs_two_way_sync_test.dart
 // 用真 host + 真互联客户端验证。
 import 'dart:io';
@@ -10,13 +10,15 @@ import 'dart:io';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
+import 'package:fushi_engine/srs/srs_backup_merge.dart'
+    show srsCanAdoptProfileUid;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
-import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_test_storage.dart';
@@ -57,21 +59,14 @@ class _Device {
     deviceId: deviceId,
   );
 
-  /// 与 SrsSyncScheduler._syncWithBackend 同序：关联 → 引擎 → 发布说明文件。
-  Future<SrsSyncReport> sync(LocalDirectoryAssetStore dir) async {
+  /// 与 SrsSyncScheduler 同序：关联 → 同步 v2 的一轮 → 发布说明文件。
+  Future<SrsSync2Report> sync(LocalDirectoryAssetStore dir) async {
     final SrsProfileLinkOutcome link = await linker.link(dir, store);
     store = link.store;
     if (link.unlinkedProfileName != null) {
       unlinked.add(link.unlinkedProfileName!);
     }
-    final SrsSyncReport r = await SrsSyncEngine(
-      directory: SrsAssetStoreDirectory(
-        store: dir,
-        profileUid: store.profileUid,
-      ),
-      directoryKey: 'interconnect:host',
-      replica: store,
-    ).syncOnce();
+    final SrsSync2Report r = await _round(dir, store);
     if (r.error == null) await linker.publish(dir, store, 'interconnect:host');
     return r;
   }
@@ -87,6 +82,15 @@ class _Device {
     noteId,
   ))?.field(srsLapisFieldId(store.profileUid, 'Expression'));
 }
+
+/// 不经关联、直接对 [dir] 上 [store] 自己 uid 的集合根跑一轮同步 v2。
+Future<SrsSync2Report> _round(LocalDirectoryAssetStore dir, SrsDbStore store) =>
+    srsSync2Round(
+      host: store,
+      location: SrsAssetLocationStore(store: dir, profileUid: store.profileUid),
+      locationId: 'interconnect:host',
+      nowMs: () => store.now().$1,
+    );
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -104,14 +108,7 @@ void main() {
     final _Device phone = await _Device.open('phone');
     expect(host.store.profileUid, isNot(phone.store.profileUid));
     final String fromHost = await host.addNote('雪');
-    Future<SrsSyncReport> raw(_Device d) => SrsSyncEngine(
-      directory: SrsAssetStoreDirectory(
-        store: dir,
-        profileUid: d.store.profileUid,
-      ),
-      directoryKey: 'interconnect:host',
-      replica: d.store,
-    ).syncOnce();
+    Future<SrsSync2Report> raw(_Device d) => _round(dir, d.store);
     for (int i = 0; i < 2; i++) {
       expect((await raw(host)).error, isNull);
       expect((await raw(phone)).error, isNull);
@@ -124,9 +121,13 @@ void main() {
     final _Device phone = await _Device.open('phone');
     final String phoneOldUid = phone.store.profileUid;
 
-    // 手机先单独同步过（内置行批次已发布在它自己的 uid 下）。
+    // 手机先单独同步过（自己的操作已传到它自己 uid 下的 v2 目录）。
     expect((await phone.sync(dir)).error, isNull);
-    expect(phone.store.everPublished, isTrue);
+    expect(
+      await srsCanAdoptProfileUid(phone.srs, phoneOldUid),
+      isFalse,
+      reason: '传到过同步位置：备份合并不会再改它的 uid（同步路径的关联照样可以）',
+    );
 
     final String fromHost = await host.addNote('雪');
     for (int i = 0; i < 3; i++) {
@@ -137,7 +138,7 @@ void main() {
     expect(await phone.db.profileUidOf(phone.profileId), host.store.profileUid);
     expect(await phone.expressionOf(fromHost), '雪');
     expect(
-      Directory('${root.path}/$kSrsSyncNamespace/$phoneOldUid').existsSync(),
+      Directory('${root.path}/$kSrsSync2Namespace/$phoneOldUid').existsSync(),
       isFalse,
     );
 

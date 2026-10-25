@@ -24,7 +24,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_page.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_backups_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_history_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
@@ -66,8 +66,7 @@ enum _DeckAction {
 
 enum _ImportSource { anki, file, starter, minedHistory }
 
-/// [purge]：连卡片一起删并当场物理清除（释放磁盘、不可恢复）；只在本机从没同步过时提供
-/// （`SrsDbStore.neverSynced`，见 srs_purge.dart）。同步过的副本由维护在同步安全期后自动清除。
+/// [purge]：连卡片一起删并彻底清除（v2 `Purge` 操作，各设备一起清内容、不可恢复；见 srs_purge.dart）。
 enum _DeckDeleteMode { moveCards, deleteCards, purge }
 
 /// [deckId] 的同级（含自己），按列表顺序（列表是先序、同级已按 [SrsDeckView.compareSiblings] 排好）。
@@ -104,6 +103,36 @@ class SrsDeckListPage extends ConsumerStatefulWidget {
 }
 
 class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
+  /// 首次 v2 同步的确认每次启动最多主动问一次（「稍后」之后点「立即同步」还会再问）。
+  static bool _askedFirstSync = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_askedFirstSync || !mounted) return;
+      _askedFirstSync = true;
+      srsRunLogged(
+        'SrsDeckList.firstSync',
+        () => _confirmFirstSync(sync: true),
+      );
+    });
+  }
+
+  /// 问一次首次同步；刚确认就顺手跑一轮。
+  Future<bool> _confirmFirstSync({required bool sync}) async {
+    final AppModel app = ref.read(appProvider);
+    if (app.srsSync2MergeConfirmed) return true;
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (!mounted) return false;
+    final bool ok = await ensureSrsFirstSyncConfirmed(context, app, store);
+    if (ok && sync) {
+      final SrsAppRuntime? runtime = ref.read(srsAppRuntimeProvider);
+      if (runtime != null) await runtime.syncNow();
+    }
+    return ok;
+  }
+
   /// Anki 一键迁移完成后：迁进来的笔记里有旧 Lapis（或此前迁移漏掉的字段）时，
   /// 顺手问一句要不要迁到 Fushi 卡片。[context] 是迁移页的。
   Future<void> _offerLegacyLapisMigration(
@@ -198,7 +227,6 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   Future<void> _delete(SrsDeckSummary deck) async {
     final SrsDbStore? before = await readSrsStore(ref);
     if (before == null || !mounted) return;
-    final bool canPurgeNow = before.neverSynced;
     final _DeckDeleteMode? mode = await showFushiChoiceDialog<_DeckDeleteMode>(
       context: context,
       title: t.srs_deck_delete,
@@ -217,13 +245,13 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
           subtitle: t.srs_deck_delete_with_cards_hint,
           icon: FushiIcons.deleteSweep,
         ),
-        if (canPurgeNow)
-          FushiChoiceOption<_DeckDeleteMode>(
-            value: _DeckDeleteMode.purge,
-            label: t.srs_deck_delete_purge,
-            subtitle: t.srs_deck_delete_purge_hint,
-            icon: FushiIcons.delete,
-          ),
+        // 同步 v2：彻底清除是一条 Purge 操作，各设备收到后一起清（设计 §10.2），任何时候都能选。
+        FushiChoiceOption<_DeckDeleteMode>(
+          value: _DeckDeleteMode.purge,
+          label: t.srs_deck_delete_purge,
+          subtitle: t.srs_deck_delete_purge_hint,
+          icon: FushiIcons.delete,
+        ),
       ],
     );
     if (mode == null || !mounted) return;
@@ -339,16 +367,19 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     }
   }
 
-  Future<void> _syncNow() => openSrsSyncNow(
-    ref.read(srsAppRuntimeProvider)?.syncNow,
-    onNoChannel: () async {
-      if (!mounted) return;
-      await showSrsSyncSetupDialog(
-        context,
-        ref.read(appProvider).moduleVisibility,
-      );
-    },
-  );
+  Future<void> _syncNow() async {
+    if (!await _confirmFirstSync(sync: false) || !mounted) return;
+    await openSrsSyncNow(
+      ref.read(srsAppRuntimeProvider)?.syncNow,
+      onNoChannel: () async {
+        if (!mounted) return;
+        await showSrsSyncSetupDialog(
+          context,
+          ref.read(appProvider).moduleVisibility,
+        );
+      },
+    );
+  }
 
   /// 牌组拖放 / 「移动到… / 上移 / 下移」落地：拒绝时说明原因，成功后列表重读。
   Future<void> _placeDeck(
@@ -447,12 +478,12 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       onPressed: () => srsRunLogged('SrsDeckList.noteTypes', _openNoteTypes),
     ),
     FushiToolbarItem(
-      key: const ValueKey<String>('srs_backups'),
-      icon: FushiIcons.backup,
-      label: t.srs_backup_title,
+      key: const ValueKey<String>('srs_timeline'),
+      icon: FushiIcons.history,
+      label: t.srs_timeline_title,
       onPressed: () => srsRunLogged(
-        'SrsDeckList.backups',
-        () => _push<void>((_) => const SrsBackupsPage()),
+        'SrsDeckList.history',
+        () => _push<void>((_) => const SrsHistoryPage()),
       ),
     ),
   ];

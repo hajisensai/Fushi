@@ -5,11 +5,12 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
-import 'support/srs_fake_engine.dart';
+import 'support/srs_sync2_peers.dart';
 
 const String kPosProfile = '01928c3e-0000-7000-8000-0000000000b7';
 
@@ -140,17 +141,13 @@ void main() {
   });
 
   test('位置随同步走；两台设备各自重排同一张卡：最后修改生效、不进同步冲突记录', () async {
-    final SrsMemoryDir dir = SrsMemoryDir(() => t);
+    final SrsMemoryLocationStore dir = SrsMemoryLocationStore();
     final SrsDbStore a = await open('a');
     final SrsDbStore b = await open('b');
     Future<void> syncAll() async {
       for (int round = 0; round < 3; round++) {
         for (final SrsDbStore s in <SrsDbStore>[a, b]) {
-          await SrsSyncEngine(
-            directoryKey: 'test',
-            directory: dir,
-            replica: s,
-          ).syncOnce();
+          await srsSyncOnce(s, dir);
         }
       }
     }

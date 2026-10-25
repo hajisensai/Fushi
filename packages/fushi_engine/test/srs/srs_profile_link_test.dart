@@ -2,8 +2,8 @@
 // 不关联时两台设备各写各的目录、复习数据从不互通。
 import 'dart:io';
 
-import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:test/test.dart';
 
@@ -16,6 +16,7 @@ SrsProfileLinkDecision decide({
   String localName = 'Default',
   int localProfileCount = 1,
   required List<SrsRemoteProfile> remote,
+  String? v2Device,
 }) => srsDecideProfileLink(
   localUid: kMine,
   localName: localName,
@@ -23,6 +24,7 @@ SrsProfileLinkDecision decide({
   localHasNotes: localHasNotes,
   localProfileCount: localProfileCount,
   remote: remote,
+  v2Device: v2Device,
 );
 
 void main() {
@@ -134,6 +136,47 @@ void main() {
       );
     });
 
+    test('同步 v2 设备目录：本机 v2 设备写的目录算本设备的，别的 v2 设备算别人的', () {
+      const List<SrsRemoteProfile> remote = <SrsRemoteProfile>[
+        SrsRemoteProfile(
+          uid: kOther,
+          writers: <String>['v2:dev-phone'],
+          names: <String>{'Default'},
+          hasNotes: true,
+        ),
+      ];
+      expect(
+        decide(remote: remote, v2Device: 'dev-phone'),
+        isA<SrsProfileLinkKeep>(),
+        reason: '只有本设备（v2 身份）留下的目录',
+      );
+      final SrsProfileLinkDecision d = decide(
+        remote: remote,
+        v2Device: 'dev-other',
+      );
+      expect(d, isA<SrsProfileLinkAdopt>());
+      expect((d as SrsProfileLinkAdopt).uid, kOther);
+      // 本机 uid 下已有别的 v2 设备：已经关联上了，保持。
+      expect(
+        decide(
+          v2Device: 'dev-phone',
+          remote: const <SrsRemoteProfile>[
+            SrsRemoteProfile(
+              uid: kMine,
+              writers: <String>['v2:dev-phone', 'v2:dev-tab'],
+            ),
+            SrsRemoteProfile(
+              uid: kOther,
+              writers: <String>['v2:dev-host'],
+              names: <String>{'Default'},
+              hasNotes: true,
+            ),
+          ],
+        ),
+        isA<SrsProfileLinkKeep>(),
+      );
+    });
+
     test('两边都有笔记：报告无法自动关联', () {
       final SrsProfileLinkDecision d = decide(
         localHasNotes: true,
@@ -213,7 +256,7 @@ void main() {
     });
     tearDown(() => root.deleteSync(recursive: true));
 
-    test('发布后列得出名字与有无笔记；写入者目录照常是写入者', () async {
+    test('发布后列得出名字与有无笔记；说明文件落在同步 v2 的设备目录里', () async {
       await srsPublishProfileInfo(
         store,
         profileUid: kOther,
@@ -231,25 +274,41 @@ void main() {
       );
       final List<SrsRemoteProfile> list = await srsListRemoteProfiles(store);
       expect(list.single.uid, kOther);
-      expect(list.single.writers, <String>['host#1']);
+      expect(list.single.writers, <String>[srsV2WriterName('host#1')]);
       expect(list.single.names, <String>{'Main'});
       expect(list.single.hasNotes, isTrue);
-      final SrsAssetStoreDirectory dir = SrsAssetStoreDirectory(
-        store: store,
-        profileUid: kOther,
+      expect(
+        File(
+          '${root.path}/$kSrsSync2Namespace/$kOther/$kSrsSync2Folder/devices/'
+          'host#1/$kSrsProfileInfoName',
+        ).existsSync(),
+        isTrue,
       );
-      expect(await dir.listWriters(), <String>['host#1']);
     });
 
-    test('清理只删本设备的写入者目录；目录空了整个删', () async {
+    test('旧格式写入者目录的说明文件照样列得出（升级前写的）', () async {
+      final String ns = await store.ensureNamespace(kSrsSync2Namespace);
+      final String profile = await store.ensureFolder(ns, kOther);
+      final String writer = await store.ensureFolder(profile, 'host#1');
+      final File f = File('${root.path}/info.json')
+        ..writeAsStringSync('{"v":1,"name":"Old","hasNotes":true}');
+      await store.putAsset(writer, kSrsProfileInfoName, f);
+      f.deleteSync();
+      final List<SrsRemoteProfile> list = await srsListRemoteProfiles(store);
+      expect(list.single.writers, <String>['host#1']);
+      expect(list.single.names, <String>{'Old'});
+      expect(list.single.hasNotes, isTrue);
+    });
+
+    test('清理只删本设备的旧格式写入者目录；目录空了整个删', () async {
+      Future<void> legacyWriter(String w) async {
+        final String ns = await store.ensureNamespace(kSrsSync2Namespace);
+        final String profile = await store.ensureFolder(ns, kMine);
+        await store.ensureFolder(profile, w);
+      }
+
       for (final String w in <String>['phone#1', 'phone#2']) {
-        await srsPublishProfileInfo(
-          store,
-          profileUid: kMine,
-          writerId: w,
-          name: 'Default',
-          hasNotes: false,
-        );
+        await legacyWriter(w);
       }
       await srsRemoveOwnProfileFolder(
         store,
@@ -257,23 +316,11 @@ void main() {
         deviceId: kDevice,
       );
       expect(
-        Directory('${root.path}/$kSrsSyncNamespace/$kMine').existsSync(),
+        Directory('${root.path}/$kSrsSync2Namespace/$kMine').existsSync(),
         isFalse,
       );
-      await srsPublishProfileInfo(
-        store,
-        profileUid: kMine,
-        writerId: 'phone#3',
-        name: 'Default',
-        hasNotes: false,
-      );
-      await srsPublishProfileInfo(
-        store,
-        profileUid: kMine,
-        writerId: 'tab#1',
-        name: 'Default',
-        hasNotes: false,
-      );
+      await legacyWriter('phone#3');
+      await legacyWriter('tab#1');
       await srsRemoveOwnProfileFolder(
         store,
         profileUid: kMine,

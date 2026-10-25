@@ -1,9 +1,9 @@
-import 'dart:typed_data';
-
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 import 'support/srs_test_storage.dart';
@@ -93,36 +93,11 @@ class _FakeEngine implements FsrsEngine {
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
 }
 
-class _Dir implements SrsSyncDirectory {
-  _Dir(this.now);
-  final int Function() now;
-  final Map<String, Map<String, Uint8List>> files =
-      <String, Map<String, Uint8List>>{};
-  @override
-  Future<List<String>> listWriters() async => files.keys.toList()..sort();
-  @override
-  Future<List<String>?> listFiles(String w) async => files[w]?.keys.toList();
-  @override
-  Future<Uint8List?> read(String w, String n) async => files[w]?[n];
-  @override
-  Future<void> write(String w, String n, Uint8List b) async =>
-      (files[w] ??= <String, Uint8List>{})[n] = b;
-  @override
-  Future<void> delete(String w, String n) async => files[w]?.remove(n);
-  @override
-  Future<void> deleteWriter(String w) async => files.remove(w);
-  @override
-  Future<int?> serverTime(String w) async {
-    await write(w, srsProbeName, Uint8List(0));
-    return now();
-  }
-}
-
 const String kProfile = '01928c3e-0000-7000-8000-000000000001';
 
 void main() {
   int t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch;
-  late _Dir dir;
+  late SrsMemoryLocationStore loc;
 
   Future<SrsDbStore> device(String id) async {
     final SrsStorage srsStorage = await openTestSrsStorage();
@@ -144,11 +119,12 @@ void main() {
   Future<void> syncAll(List<SrsDbStore> stores) async {
     for (int round = 0; round < 3; round++) {
       for (final SrsDbStore s in stores) {
-        await SrsSyncEngine(
-          directoryKey: 'test',
-          directory: dir,
-          replica: s,
-        ).syncOnce();
+        await srsSync2Round(
+          host: s,
+          location: loc,
+          locationId: 'test',
+          nowMs: () => t,
+        );
       }
     }
   }
@@ -167,7 +143,7 @@ void main() {
 
   setUp(() {
     t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch;
-    dir = _Dir(() => t);
+    loc = SrsMemoryLocationStore();
   });
 
   test('内置牌组与 Lapis 由每台设备确定性生成，同步后不重复', () async {
@@ -312,7 +288,7 @@ void main() {
     expect(any['<b>上手</b>']!.cardCount, 1);
   });
 
-  test('删除笔记：卡片不可见；删除与对端并发修改 → 待裁决', () async {
+  test('删除笔记：删除与对端并发修改 → 进冲突中心、笔记保持可见；选「删除」后两端都删', () async {
     final SrsDbStore a = await device('a');
     final SrsDbStore b = await device('b');
     final String noteId = await a.createNote(
@@ -328,12 +304,21 @@ void main() {
       },
     );
     await syncAll(<SrsDbStore>[a, b]);
+    // 设计 §5.3（2026-10-25 拍板）：破坏性并发不自动判输赢，保守保留、进冲突中心。
+    for (final SrsDbStore s in <SrsDbStore>[a, b]) {
+      expect((await s.cardsOfNote(noteId)).single.hidden, isFalse);
+      final List<Map<String, Object?>> c = await s.sync2Conflicts();
+      expect(c.single['kind'], 'delete_edit');
+      expect(c.single['entity'], noteId);
+    }
+    await b.sync2Resolve(
+      (await b.sync2Conflicts()).single['id']! as String,
+      delete: true,
+    );
+    await syncAll(<SrsDbStore>[a, b]);
     for (final SrsDbStore s in <SrsDbStore>[a, b]) {
       expect((await s.cardsOfNote(noteId)).single.hidden, isTrue);
-      expect(
-        (await s.notesPendingDecision()).map((SrsNoteCacheRow n) => n.id),
-        <String>[noteId],
-      );
+      expect(await s.sync2Conflicts(), isEmpty);
     }
   });
 
@@ -430,18 +415,19 @@ void main() {
     );
     final String cardId = (await a.cardsOfNote(noteId)).single.id;
     await a.answer(cardId, 3);
-    await SrsSyncEngine(
-      directoryKey: 'test',
-      directory: dir,
-      replica: a,
-    ).syncOnce();
-    expect(await a.unpublishedEvents(), isEmpty);
-    final String oldWriter = a.writerId;
-    // 恢复备份：本机状态与缓存表被清空（backup_service 的 _srsDeviceLocalDiscardTables）。
+    await srsSync2Round(
+      host: a,
+      location: loc,
+      locationId: 'test',
+      nowMs: () => t,
+    );
+    final String? oldDevice = a.sync2Device;
+    // 恢复备份：本机状态、缓存表与同步 v2 的本机身份被清空（备份快照剥掉设备本地表，见 SrsCore.snapshotInto）。
     await srsStorage.db.delete(srsStorage.db.srsLocalState).go();
     await srsStorage.db.delete(srsStorage.db.srsEventLocal).go();
     await srsStorage.db.delete(srsStorage.db.srsCardsCache).go();
     await srsStorage.db.delete(srsStorage.db.srsNotesCache).go();
+    await srsStorage.db.customStatement('DELETE FROM sync2_self');
     final SrsDbStore restored = await SrsDbStore.open(
       db: srsStorage.db,
       core: srsStorage.core,
@@ -450,9 +436,16 @@ void main() {
       engine: const _FakeEngine(),
       trustedClock: clock(),
     );
-    expect(restored.writerId, isNot(oldWriter));
+    // 恢复出来的库是一台新设备（新身份，设计 §7.3 的预防），旧身份按普通远端设备续收，不会分叉。
+    expect(restored.sync2Device, isNot(oldDevice));
     expect((await restored.cardRow(cardId))!.reps, 1);
-    expect(await restored.unpublishedEvents(), isNotEmpty);
+    final SrsSync2Report r = await srsSync2Round(
+      host: restored,
+      location: loc,
+      locationId: 'test',
+      nowMs: () => t,
+    );
+    expect(r.fork, isFalse);
   });
 
   test('两台设备离线各建同名牌组，同步后只有一个（确定性牌组 ID）', () async {

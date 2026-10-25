@@ -7,9 +7,9 @@
     "native/fushi_anki_sync/Cargo.toml": "5e2fab544da4eb3ff0b9481130104a95c8ed094d7c54da1fe8959d3b1e22aecb",
     "native/fushi_compute/Cargo.lock": "34dc0eca0b8cfe62e780cafe313e7f6556f68448ce457f9b92e420d6237077be",
     "native/fushi_compute/Cargo.toml": "0ff07491267bf2b0701423e1311c0893d659287b5b5dd8d97da98ba55ae564e9",
-    "native/fushi_fsrs/Cargo.lock": "f50920e41e41fffd1c409a55308dbd9449551b978f0b7e56d50bd1e0d3f9de75",
-    "native/fushi_fsrs/Cargo.toml": "12c866e24106d7f039dc6df359e9a648c07a71d42dcb1d7611e997096d9b65ef",
-    "native/fushi_ios_umbrella/Cargo.lock": "ed5567542030ff8ed47dece2d5fba0bce513eecf6bb66123bf7bbd0ce32cc008",
+    "native/fushi_fsrs/Cargo.lock": "78c5ea7d38e660dbaeb59a6659e3c012fcaa3150907493b873746639e02dd14e",
+    "native/fushi_fsrs/Cargo.toml": "026fc64ababbc107fa75cefad082ac80a5c5db4a85dce45fef57d0606ecb454f",
+    "native/fushi_ios_umbrella/Cargo.lock": "669dd11a208708387e54570af0ca44dc4c268f6f2d788e0d344c0f0c71754945",
     "native/fushi_ios_umbrella/Cargo.toml": "e00e225cbd3e845e97603f7f0bcf67a2e89b83faf5f9adb20d07e8b6d86c4bb2",
     "native/fushi_p2p/Cargo.lock": "e50e51d44154f56bc3771a7278dbae39ba260f5d884fa68f9e98d0dd501be4e4",
     "native/fushi_p2p/Cargo.toml": "4c1cd272cf7d1ebbaa774a8cf9f17ae771bd6f36d2607fb3a4590447178d68a2",
@@ -1233,6 +1233,12 @@
       ]
     },
     {
+      "file": "33b32a251d445c5c.txt",
+      "packages": [
+        "aead"
+      ]
+    },
+    {
       "file": "33ba259f4960f446.txt",
       "packages": [
         "fast_float"
@@ -1293,6 +1299,12 @@
       "file": "36bb253818ac1376.txt",
       "packages": [
         "typenum"
+      ]
+    },
+    {
+      "file": "3721e5764ca38405.txt",
+      "packages": [
+        "blake2"
       ]
     },
     {
@@ -1708,6 +1720,8 @@
     {
       "file": "57a4d75c1d095bb9.txt",
       "packages": [
+        "argon2",
+        "phc",
         "spki"
       ]
     },
@@ -1973,12 +1987,15 @@
         "aead",
         "aes",
         "aes-gcm",
+        "argon2",
         "base16ct",
         "base64ct",
+        "blake2",
         "block-buffer",
         "block-padding",
         "cbc",
         "chacha20",
+        "chacha20poly1305",
         "cipher",
         "const-oid",
         "cpufeatures",
@@ -1998,7 +2015,9 @@
         "password-hash",
         "pbkdf2",
         "pem-rfc7468",
+        "phc",
         "pkcs8",
+        "poly1305",
         "polyval",
         "primeorder",
         "sec1",
@@ -2676,6 +2695,12 @@
       ]
     },
     {
+      "file": "950d712c518a02fc.txt",
+      "packages": [
+        "cipher"
+      ]
+    },
+    {
       "file": "961eacd9633fff6d.txt",
       "packages": [
         "PDFium (pdfium-binaries)",
@@ -2789,6 +2814,12 @@
       "file": "a030dcb4f468634c.txt",
       "packages": [
         "uchardet"
+      ]
+    },
+    {
+      "file": "a07fcacc3c60de4d.txt",
+      "packages": [
+        "inout"
       ]
     },
     {
@@ -3091,6 +3122,12 @@
       ]
     },
     {
+      "file": "b67acfaaf787b346.txt",
+      "packages": [
+        "poly1305"
+      ]
+    },
+    {
       "file": "b68ad1a3367b8254.txt",
       "packages": [
         "data-encoding",
@@ -3112,7 +3149,8 @@
     {
       "file": "b8c6939380a400f5.txt",
       "packages": [
-        "chacha20"
+        "chacha20",
+        "chacha20poly1305"
       ]
     },
     {
@@ -3606,6 +3644,12 @@
       ]
     },
     {
+      "file": "d8c4ab431f20da84.txt",
+      "packages": [
+        "password-hash"
+      ]
+    },
+    {
       "file": "d91cb5a9929bf298.txt",
       "packages": [
         "id_tree"
@@ -3885,6 +3929,12 @@
       "packages": [
         "moxcms",
         "pxfm"
+      ]
+    },
+    {
+      "file": "efa52eb70a774b62.txt",
+      "packages": [
+        "universal-hash"
       ]
     },
     {
@@ -4178,6 +4228,20 @@
       ]
     },
     {
+      "name": "aead",
+      "version": "0.6.1",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "33b32a251d445c5c.txt"
+      ]
+    },
+    {
       "name": "aes",
       "version": "0.8.4",
       "license": "MIT OR Apache-2.0",
@@ -4389,11 +4453,26 @@
       ]
     },
     {
+      "name": "argon2",
+      "version": "0.6.0",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "57a4d75c1d095bb9.txt"
+      ]
+    },
+    {
       "name": "arrayvec",
       "version": "0.7.8",
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p",
         "fushi_web_core"
@@ -4631,6 +4710,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_compute",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -4687,11 +4767,26 @@
       ]
     },
     {
+      "name": "blake2",
+      "version": "0.11.0",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "3721e5764ca38405.txt"
+      ]
+    },
+    {
       "name": "blake3",
       "version": "1.8.7",
       "license": "CC0-1.0 OR Apache-2.0 OR Apache-2.0 WITH LLVM-exception",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -4724,6 +4819,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5000,8 +5096,23 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "b8c6939380a400f5.txt"
+      ]
+    },
+    {
+      "name": "chacha20poly1305",
+      "version": "0.11.0",
+      "license": "Apache-2.0 OR MIT",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
       ],
       "textSource": "package",
       "texts": [
@@ -5038,6 +5149,20 @@
       ]
     },
     {
+      "name": "cipher",
+      "version": "0.5.2",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "950d712c518a02fc.txt"
+      ]
+    },
+    {
       "name": "client-ip",
       "version": "0.2.1",
       "license": "MIT",
@@ -5054,6 +5179,7 @@
       "version": "0.5.4",
       "license": "Apache-2.0 OR MIT",
       "origin": [
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5176,6 +5302,7 @@
       "license": "CC0-1.0 OR MIT-0 OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5296,6 +5423,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5448,6 +5576,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5539,6 +5668,19 @@
       ]
     },
     {
+      "name": "ctutils",
+      "version": "0.4.5",
+      "license": "Apache-2.0 OR MIT",
+      "origin": [
+        "fushi_fsrs"
+      ],
+      "textSource": "package",
+      "texts": [
+        "50e6751797c50ded.txt",
+        "91585c36e4fb9ab4.txt"
+      ]
+    },
+    {
       "name": "curl",
       "version": "8.21.0",
       "license": "curl",
@@ -5560,6 +5702,7 @@
       "version": "5.0.0",
       "license": "BSD-3-Clause",
       "origin": [
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5776,6 +5919,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5966,6 +6110,7 @@
       "version": "3.0.0",
       "license": "Apache-2.0 OR MIT",
       "origin": [
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -5980,6 +6125,7 @@
       "version": "3.0.0",
       "license": "BSD-3-Clause",
       "origin": [
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -6891,6 +7037,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -7483,6 +7630,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -7785,6 +7933,20 @@
       "texts": [
         "6aed14a798714567.txt",
         "304b898acad7f02e.txt"
+      ]
+    },
+    {
+      "name": "inout",
+      "version": "0.2.5",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "a07fcacc3c60de4d.txt"
       ]
     },
     {
@@ -10782,6 +10944,20 @@
       ]
     },
     {
+      "name": "password-hash",
+      "version": "0.6.1",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "d8c4ab431f20da84.txt"
+      ]
+    },
+    {
       "name": "pbkdf2",
       "version": "0.12.2",
       "license": "MIT OR Apache-2.0",
@@ -10964,6 +11140,20 @@
       "note": "NOT verified in the binaries (no recognisable strings); inferred only because WebRTC audio processing / dcSCTP depend on them by default. pffft is an FFTPACK-derived BSD-style text; SPDX mapping needs review"
     },
     {
+      "name": "phc",
+      "version": "0.6.1",
+      "license": "Apache-2.0 OR MIT",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "57a4d75c1d095bb9.txt"
+      ]
+    },
+    {
       "name": "phf",
       "version": "0.11.3",
       "license": "MIT",
@@ -11121,6 +11311,20 @@
       "texts": [
         "143368af9701a24e.txt",
         "eaf40297c75da471.txt"
+      ]
+    },
+    {
+      "name": "poly1305",
+      "version": "0.9.1",
+      "license": "Apache-2.0 OR MIT",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "b67acfaaf787b346.txt"
       ]
     },
     {
@@ -11502,6 +11706,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -12388,6 +12593,19 @@
       ]
     },
     {
+      "name": "sha2",
+      "version": "0.11.1",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "831e0f43ad0bf014.txt"
+      ]
+    },
+    {
       "name": "shaderc",
       "version": "2026.3",
       "license": "Apache-2.0",
@@ -12466,6 +12684,7 @@
       "version": "3.0.0",
       "license": "Apache-2.0 OR MIT",
       "origin": [
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -12931,6 +13150,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_compute",
+        "fushi_fsrs",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -13657,6 +13877,20 @@
       "texts": [
         "6aed14a798714567.txt",
         "6b50510a0400c721.txt"
+      ]
+    },
+    {
+      "name": "universal-hash",
+      "version": "0.6.1",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "efa52eb70a774b62.txt"
       ]
     },
     {
@@ -14563,7 +14797,8 @@
       "version": "1.9.1",
       "license": "Apache-2.0 OR MIT",
       "origin": [
-        "fushi_compute"
+        "fushi_compute",
+        "fushi_fsrs"
       ],
       "textSource": "package",
       "texts": [

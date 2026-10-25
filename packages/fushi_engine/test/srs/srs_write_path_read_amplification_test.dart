@@ -9,16 +9,18 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
+import 'support/srs_sync2_peers.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000a1';
 
 void main() {
   int t = DateTime.utc(2026, 10, 22, 12).millisecondsSinceEpoch;
-  late MemoryDir dir;
+  late SrsMemoryLocationStore dir;
 
   Future<SrsDbStore> device(String id) =>
       openTestStore(profileUid: kProfile, deviceId: id, now: () => t);
@@ -26,11 +28,7 @@ void main() {
   Future<void> syncAll(List<SrsDbStore> stores) async {
     for (int round = 0; round < 3; round++) {
       for (final SrsDbStore s in stores) {
-        await SrsSyncEngine(
-          directoryKey: 'test',
-          directory: dir,
-          replica: s,
-        ).syncOnce();
+        await srsSyncOnce(s, dir);
       }
     }
   }
@@ -65,7 +63,7 @@ void main() {
 
   setUp(() {
     t = DateTime.utc(2026, 10, 22, 12).millisecondsSinceEpoch;
-    dir = MemoryDir(() => t);
+    dir = SrsMemoryLocationStore();
   });
 
   group('笔记类型改动的缓存影响面（H5）', () {
@@ -241,7 +239,8 @@ void main() {
       );
       await syncAll(<SrsDbStore>[a, b]);
       expect(await a.pendingDecisionCount(), 0);
-      await a.deleteNote(note);
+      // 两边并发改同一个内容字段 = 待裁决（删除与编辑并发走冲突中心，见设计 §5.3，不算待裁决）。
+      await a.updateNote(note, fieldsById: lapis('魚1'));
       await b.updateNote(note, fieldsById: lapis('魚2'));
       final String fp = a.contentFingerprint;
       await syncAll(<SrsDbStore>[a, b]);

@@ -36,8 +36,5 @@ export 'src/source_ref.dart';
 export 'src/store/srs_core.dart';
 export 'src/store/srs_rows.dart';
 export 'src/style_dedup.dart';
-export 'src/sync/memory_replica.dart';
-export 'src/sync/sync_engine.dart';
-export 'src/sync/sync_files.dart';
 export 'src/term_status.dart';
 export 'src/valid_logs.dart';

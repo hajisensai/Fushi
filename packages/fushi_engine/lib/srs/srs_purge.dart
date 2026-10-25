@@ -1,55 +1,24 @@
-/// 复习库墓碑的物理清除（删牌组 / 删笔记之后磁盘要能释放）。
+/// 复习库的空间回收（docs/specs/2026-10-25-srs-sync-v2-design.md §10.2、§10.5）。
 ///
-/// 删除在事件日志里只是一条「删除寄存器」修改记录（墓碑）：笔记正文、缓存行、媒体文件都还在。
-/// 这里在墓碑过了**同步安全期**之后把它们物理删掉，只留墓碑本身与卡片的复习日志。
+/// 同步 v2 的历史永久保留：删除只是一条操作，笔记正文、复习日志都还在操作日志与投影里（时间线恢复要用；
+/// 各设备的投影也必须逐行一致，按本机时钟删行会让它们分叉）。所以这里**不再物理删行**，只做两件事：
 ///
-/// ## 为什么清除不会让实体复活、也不会让合并出错
-///
-/// 事件按 ID 取并集（event_store.dart），删除寄存器是「删除优先」的多值寄存器
-/// （field_edit.dart `srsEffectiveDeletedAt`：只要有一条没被支配的删除记录，行就是已删）。
-/// - **墓碑留着**：本机清除后，对端（或快照 / 备份）再把同一笔记的身份记录、内容修改记录、复习日志
-///   送来时，它们照常落库（并集），但删除寄存器还在 → 笔记仍是已删除、不可见；下一次维护
-///   （[srsPurgeExpiredTombstones]，候选见 `SrsDbStore.purgeCandidateNoteIds`）把它们再清掉。
-///   晚到的内容修改与删除并发时，笔记进「待裁决」、不清除，交给用户决定——与清除前的语义一致。
-/// - **并发的恢复赢不了**：没看见删除就写的「恢复」（deleted=null）不支配删除记录，删除照样生效。
-///   只有看见了删除之后的恢复（支配删除）才会让笔记回来；这样的恢复只能在对端自己清除之前做，
-///   而所有设备按**同一个**服务器时间 S（同步时取全网最小值）+ 同一个安全期判定，清除时刻一致。
-///   剩下的窗口是「对端在安全期快到时恢复、却在本机清除之后才同步上来」：本机收到恢复，删除寄存器
-///   变回未删，但身份记录 / 正文已清，笔记在本机仍不出现（不报错、不产生坏行）；正文还在那台对端上，
-///   本机下次读它的快照（新目录起步、超过退役时限后重新起步）时并集回来。
-/// - **安全期取 90 天 = [SrsSyncOptions.retireAfterMs]**：同步层已经约定一台设备 90 天没来就当退役，
-///   它回来时整套重新起步（读全部快照）；未退役的活跃设备至少每 90 天交一次 cursor，安全期内必然
-///   已经读到删除记录并按同一规则自己清除。
-/// - **只认已发布的删除**：同步过的副本，删除记录的 S 未知（还没发布出去）就不清——对端还不知道删除。
-///   从没同步过的副本（`SrsDbStore.neverSynced`）没有对端，按删除时刻（删除记录的值）算；
-///   用户确认后可以当场清（[srsPurgeNotesNow]）。
-///
-/// ## 不破坏的东西
-///
-/// - 已冻结 / 已上传的批次与快照不改（批次冻结后逐字节不变）；本机之后写的快照不再含被清的事件，
-///   旧批次照常按快照覆盖规则在同步目录里清理，云端空间随之释放。
-/// - 备份文件不改：恢复到某个更早的时间点（srs_point_in_time_restore.dart）先把备份里的事件并进来，
-///   被清的笔记连同正文一起回来，再按备份时的删除寄存器写恢复 / 删除；所以「清除之后能回到的过去」
-///   = 还保留着的备份。备份之后才删、已被清除的笔记，只有更早的备份里有。
-/// - **复习日志不删**：统计（复习日历 / 复习量 / 时长）以日志为唯一事实，过去的学习记录不能因为
-///   删了卡就消失（与 Anki 删卡保留 revlog 一致）。日志不动，日志指纹不变，也就不触发 RWKV 重建；
-///   RWKV 回放按卡片缓存取卡，已清除的卡不再参与。
-/// - 媒体：只删「被清除笔记引用过、而此刻没有任何存活引用」的文件（存活引用见
-///   [srsAllMediaReferences]，含已删未清的笔记与并发候选值），按不区分大小写比较。媒体删除不跨设备
-///   传播（srs_media_sync.dart），同步目录里的媒体不动；备份的共享媒体池有自己的副本。
+/// 1. **媒体保留期**（自动维护，[srsPurgeExpiredTombstones]）：只被「删除已满 [kSrsMediaRetention]」的笔记
+///    引用、且不被任何存活引用的本机媒体文件 → 删。保留期内恢复笔记媒体还在；之后恢复，文字回来、媒体
+///    显示缺失（有归档位置就从那里补回）。同步 / 媒体位置上的同一批文件由 srs_media_sync.dart 按同一口径清。
+/// 2. **彻底清除**（用户确认，[srsPurgeNotesNow]）：每条笔记追加 v2 的 `Purge` 操作——各设备收到后把本机
+///    日志里它的内容载荷换成哈希、删掉投影里的内容、重写自己写过的段（全系统唯一改写历史的操作），然后
+///    回收它独占的媒体。
 ///
 /// ## 媒体回收与并发写入的契约
 ///
 /// 「扫存活引用 → 删文件」若不在一个独占区里，中间插进来的编辑 / 恢复 / 撤销会重新引用某个刚判为
 /// 无引用的文件，清理照旧按过期的结论删掉它，且无从找回（HBK-AUDIT-014）。所以：
-/// - 扫描、删文件、移出待回收集合在**同一个** `runExclusive` 里做；库里每一种引入引用的写入
-///   （编辑、导入、同步并入、按时间点恢复、撤销）都走这把锁，插不进来。
+/// - 扫描、删文件、移出待回收集合在**同一个** `runExclusive` 里做；库里每一种引入引用的写入都走这把锁。
 /// - 媒体文件本身先于引用落盘（`SrsMediaStore.store` 写文件 / 复用同内容文件 → 之后才提交引用它的
 ///   笔记），这一步在锁外。为此 `store` 复用已有文件时也刷新修改时间，回收只删修改时间早于
-///   [kSrsMediaGcGrace] 的文件：刚写 / 刚复用、引用可能还没提交的文件留到下一轮（与 git gc 对
-///   松散对象的宽限期同理）。
-/// - 候选随笔记清除同一事务落进本机状态（`SrsDbStore.pendingMediaGc`）：被跳过、被叫停或中途崩溃
-///   的下次维护接着处理，不会因为笔记已清而永远没人回收。
+///   [kSrsMediaGcGrace] 的文件：刚写 / 刚复用、引用可能还没提交的文件留到下一轮。
+/// - 候选落进本机状态（`SrsDbStore.pendingMediaGc`）：被跳过、被叫停或中途崩溃的下次维护接着处理。
 library;
 
 import 'dart:io';
@@ -57,160 +26,76 @@ import 'dart:io';
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart' show srsMediaRefsIn;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart'
-    show srsAllMediaReferences;
+    show kSrsMediaRetention, srsLiveMediaReferences;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 
-/// 同步安全期：墓碑发布（服务器时间 S）后过了这么久才物理清除。与同步层的退役时限
-/// （[SrsSyncOptions.retireAfterMs] 的缺省值）一致，测试钉住两者相等。
-const Duration kSrsTombstonePurgeAfter = Duration(days: 90);
-
-/// 维护时每块处理的候选笔记数（一块一个独占区 + 一个事务）。
-const int kSrsPurgeChunk = 200;
-
 /// 媒体回收宽限期：修改时间在这之内的文件不删（见库注释「媒体回收与并发写入的契约」）。
-/// 远大于任何「存文件 → 提交笔记」之间的间隔（制卡、导入、AnkiConnect `storeMediaFile` 后
-/// `addNote`），又短到用户删牌组后第二天的维护就能释放空间。
 const Duration kSrsMediaGcGrace = Duration(hours: 24);
 
-/// 一次清除做了什么。
+/// 一次回收做了什么。
 class SrsPurgeReport {
+  /// 彻底清除的笔记数（只有 [srsPurgeNotesNow] 会清）。
   int notes = 0;
-  int cards = 0;
-  int events = 0;
   int mediaFiles = 0;
 
-  /// 被 shouldStop 叫停（下次打开 store 从剩下的候选继续）。
-  bool stopped = false;
-
   @override
-  String toString() =>
-      'SrsPurgeReport(notes=$notes, cards=$cards, events=$events, '
-      'media=$mediaFiles, stopped=$stopped)';
+  String toString() => 'SrsPurgeReport(notes=$notes, media=$mediaFiles)';
 }
 
-/// 墓碑是否已过安全期。
-///
-/// 参考时刻取删除寄存器里每条生效的删除记录的 S（已知时）——取其中**最晚**的一条；任何一条删除记录
-/// 的 S 未知时：从没同步过的副本（[localOnly]）用删除记录的值（删除时的可信时间），否则不清。
-bool srsTombstoneExpired(
-  SrsRegister deleted,
-  int? Function(String eventId) serverTimeOf, {
-  required int nowMs,
-  required int afterMs,
-  required bool localOnly,
-}) {
-  int? latest;
-  for (final SrsFieldEdit e in deleted.live) {
-    final Object? v = e.value;
-    if (v is! int) continue;
-    final int? ref = serverTimeOf(e.id) ?? (localOnly ? v : null);
-    if (ref == null) return false;
-    if (latest == null || ref > latest) latest = ref;
-  }
-  return latest != null && nowMs - latest >= afterMs;
-}
-
-Set<String> _refsIn(String html) => <String>{
-  ...srsMediaRefsIn(html),
-  ...srsStyleRefsIn(html),
-};
-
-/// 维护：清除全部过了安全期的墓碑（store 打开后在后台跑）。分块、每块之间让出事件循环；
-/// [shouldStop] 每块前问一次（store 换掉时停，下次从剩下的候选继续——已清的不会再成为候选）。
-/// [mediaRoot] 给出时一并回收不再被引用的媒体文件。
+/// 维护：回收过了保留期的媒体（store 打开后在后台跑）。[mediaRoot] 为 null 时什么也不做。
 Future<SrsPurgeReport> srsPurgeExpiredTombstones(
   SrsDbStore store, {
   Directory? mediaRoot,
-  Duration after = kSrsTombstonePurgeAfter,
+  Duration after = kSrsMediaRetention,
   Duration mediaGrace = kSrsMediaGcGrace,
-  int chunkSize = kSrsPurgeChunk,
-  bool Function()? shouldStop,
 }) async {
-  final List<String> candidates = await store.purgeCandidateNoteIds();
-  return _purge(
-    store,
-    candidates,
-    afterMs: after.inMilliseconds,
-    localOnly: store.neverSynced,
-    mediaRoot: mediaRoot,
-    mediaGrace: mediaGrace,
-    chunkSize: chunkSize,
-    shouldStop: shouldStop,
-  );
+  final SrsPurgeReport report = SrsPurgeReport();
+  if (mediaRoot == null) return report;
+  final int cutoff = store.now().$1 - after.inMilliseconds;
+  await store.queueMediaGc(await store.expiredNoteMediaRefs(cutoff));
+  if (store.pendingMediaGc.isNotEmpty) {
+    report.mediaFiles = await _collectPendingMedia(
+      store,
+      mediaRoot,
+      grace: mediaGrace,
+      retention: after,
+    );
+  }
+  return report;
 }
 
-/// 用户确认后当场清除 [noteIds]（例如删牌组时选了「永久删除」）。只允许从没同步过的副本：
-/// 同步过的副本当场清除会让还没读到删除记录的对端无从得知删除（见库注释），调用方应先看
-/// [SrsDbStore.neverSynced]。笔记必须已经删除（还没删的跳过）。
+/// 用户确认后彻底清除 [noteIds]（例如删牌组时选了「永久删除」）：每条一个 v2 `Purge`（先删除、再清除内容，
+/// 全网一致）；它们引用过的、此刻没有存活引用的媒体随后回收。
 Future<SrsPurgeReport> srsPurgeNotesNow(
   SrsDbStore store,
   List<String> noteIds, {
   Directory? mediaRoot,
   Duration mediaGrace = kSrsMediaGcGrace,
-}) {
-  if (!store.neverSynced) {
-    throw StateError('immediate purge is only allowed before the first sync');
-  }
-  return _purge(
-    store,
-    noteIds,
-    afterMs: 0,
-    localOnly: true,
-    mediaRoot: mediaRoot,
-    mediaGrace: mediaGrace,
-    chunkSize: kSrsPurgeChunk,
-  );
-}
-
-Future<SrsPurgeReport> _purge(
-  SrsDbStore store,
-  List<String> noteIds, {
-  required int afterMs,
-  required bool localOnly,
-  required Directory? mediaRoot,
-  required Duration mediaGrace,
-  required int chunkSize,
-  bool Function()? shouldStop,
 }) async {
   final SrsPurgeReport report = SrsPurgeReport();
-  final int step = chunkSize < 1 ? 1 : chunkSize;
-  for (int i = 0; i < noteIds.length; i += step) {
-    if (shouldStop?.call() == true) {
-      report.stopped = true;
-      break;
+  final Set<String> media = <String>{};
+  for (final SrsNoteView? n in (await store.notes(noteIds)).values) {
+    if (n == null) continue;
+    for (final String v in n.fields.values) {
+      media
+        ..addAll(srsMediaRefsIn(v))
+        ..addAll(srsStyleRefsIn(v));
     }
-    final List<String> chunk = noteIds.sublist(
-      i,
-      i + step > noteIds.length ? noteIds.length : i + step,
-    );
-    // 「此刻」在每块里重取：长时间维护期间可信时间在走。
-    final (int nowMs, _) = store.now();
-    final SrsPurgeChunk r = await store.purgeDeletedNotes(
-      chunk,
-      eligible: (SrsRegister del, int? Function(String) serverTimeOf) =>
-          srsTombstoneExpired(
-            del,
-            serverTimeOf,
-            nowMs: nowMs,
-            afterMs: afterMs,
-            localOnly: localOnly,
-          ),
-      mediaRefsOf: mediaRoot == null ? null : _refsIn,
-    );
-    report
-      ..notes += r.notes.length
-      ..cards += r.cards
-      ..events += r.events;
-    // 让出事件循环：维护在后台跑，块与块之间复习 / 编辑的写入照常插进来。
-    await Future<void>.delayed(Duration.zero);
   }
-  // 本轮新清除的笔记引用的媒体已随清除事务进了待回收集合；以前轮次被跳过 / 叫停的也在里面。
-  if (mediaRoot != null && !report.stopped && store.pendingMediaGc.isNotEmpty) {
+  for (final String id in noteIds) {
+    await store.sync2Purge(SrsEntityKind.note, id);
+    report.notes++;
+  }
+  if (mediaRoot != null && media.isNotEmpty) {
+    await store.queueMediaGc(media);
     report.mediaFiles = await _collectPendingMedia(
       store,
       mediaRoot,
       grace: mediaGrace,
+      // 回收站里删除未满保留期的笔记仍算存活引用：只回收被清除的这些笔记独占的媒体（清除抹掉了它们的
+      // 字段，它们自己不再引用任何文件）。
+      retention: kSrsMediaRetention,
     );
   }
   return report;
@@ -218,21 +103,26 @@ Future<SrsPurgeReport> _purge(
 
 /// 回收待回收集合里此刻没有任何存活引用、且过了宽限期的文件（只删 [mediaRoot] 下的裸文件名）。
 ///
-/// 扫描、删除、移出集合全程在一个独占区里（见库注释「媒体回收与并发写入的契约」）。比较不区分
-/// 大小写：Windows / macOS 默认卷上大小写不同的两个名字是同一个文件。
+/// 扫描、删除、移出集合全程在一个独占区里（见库注释）。比较不区分大小写：Windows / macOS 默认卷上
+/// 大小写不同的两个名字是同一个文件。
 Future<int> _collectPendingMedia(
   SrsDbStore store,
   Directory mediaRoot, {
   required Duration grace,
+  required Duration retention,
 }) => store.runExclusive(() async {
   final Set<String> alive = <String>{
-    for (final String n in await srsAllMediaReferences(store)) n.toLowerCase(),
+    for (final String n in await srsLiveMediaReferences(
+      store,
+      retention: retention,
+    ))
+      n.toLowerCase(),
   };
   final DateTime freshAfter = DateTime.now().subtract(grace);
   final List<String> settled = <String>[];
   int deleted = 0;
   for (final String name in store.pendingMediaGc) {
-    // 又被引用了：不是垃圾。以后引用它的笔记被清除时会重新成为候选。
+    // 又被引用了：不是垃圾。以后引用它的笔记删除满保留期时会重新成为候选。
     if (!_isBareName(name) || alive.contains(name.toLowerCase())) {
       settled.add(name);
       continue;

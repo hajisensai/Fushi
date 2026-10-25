@@ -1057,6 +1057,38 @@ class InterconnectSyncBackend extends SyncBackend
   /// 故 /api 端点在 `${_apiBase}/api/...`）。
   String get _apiBase => _ops!.baseUrl;
 
+  /// 复习同步快速通道（设计 §6.3）：长轮询 host 的 `GET /api/srs/changes?after=<令牌>`，host 那边有新的复习数据
+  /// 落地（别的设备写了 head / host 自己发布了）就立刻返回新令牌，否则最多挂 25 s 回原令牌。老 host 没有这个
+  /// 端点（404）返回 null，调用方退回只靠定时同步。
+  Future<int?> waitSrsChanges(int? after) async {
+    await _ensureResolved();
+    final Uri uri = Uri.parse('$_apiBase/api/srs/changes').replace(
+      queryParameters: after == null ? null : <String, String>{'after': '$after'},
+    );
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      uri.toString(),
+    );
+    // host 最多挂 25 s；多给一点余量，别把正常的挂起当超时。
+    final HttpClientResponse res = await _sendBounded(
+      req,
+      timeout: const Duration(seconds: 40),
+    );
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    if (res.statusCode >= 400) {
+      _ops!.checkStatus(
+        res.statusCode,
+        'GET /api/srs/changes',
+        serverReason: await readSyncErrorBody(res),
+      );
+    }
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    return decoded is Map ? (decoded['token'] as num?)?.toInt() : null;
+  }
+
   /// Pulls the host-owned service configuration over the pinned HTTPS session.
   /// Old hosts return 404 and are treated as not supporting the capability.
   /// HTTP/shared-token sessions are rejected by the server rather than silently

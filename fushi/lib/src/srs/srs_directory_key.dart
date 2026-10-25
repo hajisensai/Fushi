@@ -1,4 +1,4 @@
-/// 复习（SRS）同步目录的稳定身份（`SrsSyncEngine.directoryKey`）。
+/// 复习（SRS）同步目录的稳定身份（同步 v2 按它记每个位置传到了哪：`sync2_locations`）。
 ///
 /// 一台设备可以同时用几个同步目录（云盘、所连的互联 host、本机作为 host 时自己的目录），
 /// SRS 按目录记「传到了哪、起步过没有、里面有哪些写入者」。身份要满足：同一个物理目录每次给
@@ -15,8 +15,8 @@
 /// 同一个物理目录会重新起步、可能整库重发；两个不同账户都落成「空」更会互相套用进度、误判换化身。
 library;
 
-import 'package:fushi_engine/srs/srs_asset_store_directory.dart'
-    show kSrsSyncNamespace;
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
+    show kSrsSync2Namespace;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
@@ -33,7 +33,7 @@ import 'package:fushi/src/sync/webdav_sync_backend.dart';
 /// host 的同步数据根（`<sync-data>`）下、复习同步命名空间里的路径：
 /// `fushi-data/fushi-srs/...`（[FushiSyncServerController.clientSyncWrites] 给的相对路径）。
 bool srsIsHostSrsPath(String relativePath) =>
-    relativePath.startsWith('$kSyncRootFolderName/$kSrsSyncNamespace/');
+    relativePath.startsWith('$kSyncRootFolderName/$kSrsSync2Namespace/');
 
 /// 互联目录的身份（客户端连 host、host 读自己的目录，同一块目录给同一个值）。
 String srsInterconnectDirectoryKey(String hostId) => 'interconnect:$hostId';

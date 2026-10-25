@@ -31,6 +31,7 @@ pub mod projection;
 pub mod registers;
 pub mod search;
 pub mod store;
+pub mod sync2;
 pub mod style_dedup;
 
 use std::ffi::{c_char, CStr, CString};
@@ -49,7 +50,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。
-pub const ABI_VERSION: i32 = 2;
+pub const ABI_VERSION: i32 = 3;
 
 /// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev。
 pub const FSRS_RS_REV: &str = "0a5737406a0c5c7a5259b144738cbe4a0b649d76";

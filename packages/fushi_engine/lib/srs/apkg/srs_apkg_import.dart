@@ -195,6 +195,8 @@ Future<SrsImportReport> _importOpened({
       onProgress: onProgress,
       shouldStop: shouldStop,
     );
+    // 导入之前自动打还原点（设计 §10.2）：导错了包能从时间线回到导入前。
+    await store.sync2Checkpoint('apkg', 'import');
     return await store.bulkWrites(imp.run);
   } finally {
     await col.close();

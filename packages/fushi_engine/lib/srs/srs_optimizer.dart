@@ -200,6 +200,8 @@ Future<void> srsApplyOptimization(
     },
   };
   if (r.adopted) {
+    // 换参数会改变之后全部重放的间隔：先打还原点（设计 §10.2）。
+    await store.sync2Checkpoint(r.deckId, 'fsrs_params');
     final String key = r.algorithm == SrsAlgorithm.fsrs7
         ? SrsFieldKeys.deckFsrs7Params
         : SrsFieldKeys.deckFsrs6Params;
