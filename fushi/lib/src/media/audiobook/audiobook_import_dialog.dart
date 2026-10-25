@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audiobook_m4b_export_flow.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart'
     show ImportDropZoneCard, ImportMatchOptionsCard, ImportProgressCard;
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
@@ -109,6 +110,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   Audiobook? _existing;
   bool _existingLoaded = false;
+
+  /// 「导出有声书」进行中与进度（null = 不定进度）。
+  bool _exporting = false;
+  double? _exportProgress;
   Future<AudiobookHealth>? _healthFuture;
 
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
@@ -276,7 +281,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
               ),
               adaptiveDialogAction(
                 context: context,
-                onPressed: importing
+                onPressed: importing || _exporting
                     ? null
                     : () => _enterReplaceSubtitleMode(existing),
                 child: Text(t.audio_panel_pick_new_subtitle),
@@ -284,7 +289,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
               adaptiveDialogAction(
                 context: context,
                 isDestructiveAction: true,
-                onPressed: importing ? null : () => _removeAudiobook(existing),
+                onPressed: importing || _exporting
+                    ? null
+                    : () => _removeAudiobook(existing),
                 child: Text(t.audiobook_delete),
               ),
             ],
@@ -341,10 +348,66 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
                 ),
               ),
             ],
+            SizedBox(height: tokens.spacing.gap),
+            _buildExportSection(),
           ],
         );
       },
     );
+  }
+
+  /// 「导出有声书」：整本导出成带章节 / 封面 / 字幕的 M4B。任何已附加的有声书都能
+  /// 导出（不只 TTS 制作的），所以出口放在这里，离开制作页后也找得到。
+  Widget _buildExportSection() {
+    final double inset = FushiDesignTokens.of(context).spacing.rowHorizontal;
+    return AdaptiveSettingsSection(
+      key: const ValueKey<String>('audiobook-attached-export'),
+      children: <Widget>[
+        AdaptiveSettingsRow(
+          key: const ValueKey<String>('audiobook-attached-export-run'),
+          icon: FushiIcons.download,
+          showIcon: true,
+          title: t.audiobook_studio_export,
+          subtitle: _exporting
+              ? t.audiobook_studio_export_running
+              : t.audiobook_studio_export_hint,
+          onTap: _exporting || importing ? null : () => unawaited(_export()),
+        ),
+        if (_exporting)
+          Padding(
+            key: const ValueKey<String>('audiobook-attached-export-progress'),
+            padding: EdgeInsets.fromLTRB(inset, 0, inset, 12),
+            child: FushiLinearProgressIndicator(value: _exportProgress),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _export() async {
+    if (_exporting) return;
+    try {
+      await runAudiobookM4bExport(
+        database: widget.repo.database,
+        bookKey: widget.bookKey,
+        onStart: () {
+          if (!mounted) return;
+          setState(() {
+            _exporting = true;
+            _exportProgress = null;
+          });
+        },
+        onProgress: (double progress) {
+          if (mounted) setState(() => _exportProgress = progress);
+        },
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _exporting = false;
+          _exportProgress = null;
+        });
+      }
+    }
   }
 
   /// 只有挂了 ttu book 且 alignmentFormat 属于 matcher 管线（srt/lrc/vtt/ass）

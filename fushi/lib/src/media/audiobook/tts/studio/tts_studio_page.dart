@@ -5,9 +5,7 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
@@ -21,11 +19,9 @@ import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:path/path.dart' as p;
-import 'package:share_plus/share_plus.dart' show XFile;
 
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
-import 'package:fushi/src/media/audiobook/tts/studio/tts_audiobook_export.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audiobook_m4b_export_flow.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_annotator.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_lines_page.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_layout.dart';
@@ -46,7 +42,6 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/engine_listenable.dart';
-import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
 
 export 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
@@ -575,69 +570,24 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
     return loaded.row.title.isEmpty ? loaded.book.title : loaded.row.title;
   }
 
-  /// 移动端分享导出的输出路径：清掉上一次导出留下的暂存，再落在空的暂存目录里。
-  Future<String> _shareStagingPath(String fileName) async {
-    final Directory staging = await prepareTtsAudiobookShareStagingDir(
-      Directory(
-        p.join(Directory.systemTemp.path, kTtsAudiobookShareStagingDirName),
-      ),
-    );
-    return p.join(staging.path, fileName);
-  }
-
-  /// 导出为 M4B：桌面选保存位置直接写；移动端写进 app 自管的暂存目录再走系统
-  /// 分享（暂存目录每次导出前清空，见 [prepareTtsAudiobookShareStagingDir]）。
+  /// 导出为 M4B（流程与「已附加有声书」对话框共用，见 [runAudiobookM4bExport]）。
   Future<void> _export() async {
     if (_exporting) return;
-    final String fileName = ttsAudiobookExportFileName(_bookTitle);
-    final bool desktop = isDesktopPlatform;
-    String? pickedPath;
-    if (desktop) {
-      // 只在桌面弹保存框（移动端走分享），默认文件名已带 .m4b；不传
-      // FileType.custom 扩展名过滤（BUG-2099 的选择器纪律，同 collection_exporter）。
-      final String? picked = await FilePicker.platform.saveFile(
-        dialogTitle: t.audiobook_studio_export,
-        fileName: fileName,
-      );
-      if (picked == null || picked.trim().isEmpty || !mounted) return;
-      pickedPath = picked;
-    }
-    setState(() {
-      _exporting = true;
-      _exportProgress = null;
-    });
     try {
-      final String outputPath =
-          pickedPath ?? await _shareStagingPath(fileName);
-      final String written = await exportTtsAudiobookM4b(
-        appModel: widget.appModel,
+      await runAudiobookM4bExport(
+        database: widget.appModel.database,
         bookKey: widget.bookKey,
-        outputPath: outputPath,
+        title: _bookTitle,
+        onStart: () {
+          if (!mounted) return;
+          setState(() {
+            _exporting = true;
+            _exportProgress = null;
+          });
+        },
         onProgress: (double progress) {
           if (mounted) setState(() => _exportProgress = progress);
         },
-      );
-      if (desktop) {
-        FushiToast.show(msg: t.audiobook_studio_export_done(path: written));
-      } else {
-        final String srt = p.setExtension(written, '.srt');
-        await FushiShare.shareFiles(<XFile>[
-          XFile(written, mimeType: 'audio/mp4', name: p.basename(written)),
-          if (File(srt).existsSync())
-            XFile(srt, mimeType: 'application/x-subrip', name: p.basename(srt)),
-        ], subject: p.basename(written));
-      }
-    } on AudiobookExportFailure catch (failure) {
-      FushiToast.show(
-        msg: ttsAudiobookExportFailureText(failure.code, failure.message),
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log('TtsStudio.export', e, stack);
-      FushiToast.show(
-        msg: ttsAudiobookExportFailureText(
-          'export_failed',
-          t.audiobook_studio_failure_internal,
-        ),
       );
     } finally {
       if (mounted) {
