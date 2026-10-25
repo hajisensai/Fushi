@@ -740,3 +740,65 @@ fn backup_snapshot_keeps_server_times_of_legacy_edits() {
         [vec!["123".to_owned(), "1".to_owned()]]
     );
 }
+
+/// 规模基准（计划 P8，默认不跑）：`SRS_BENCH_CARDS` 张卡（缺省 5000）× 每张 20 次复习。量本机写入、全量重放、
+/// 首次发件（切段 + 打包签名）、新设备收齐全部段（校验 + 投影 + 重放）的端到端耗时。
+/// `SRS_BENCH_CARDS=50000 cargo test --release --lib bench_scale -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn bench_scale() {
+    use std::time::Instant;
+    let cards: i64 = std::env::var("SRS_BENCH_CARDS").ok().and_then(|v| v.parse().ok()).unwrap_or(5000);
+    let a = Device::new("bench-a");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
+    let t = Instant::now();
+    for chunk in 0..(cards + 99) / 100 {
+        let mut evs = Vec::new();
+        for c in chunk * 100..((chunk + 1) * 100).min(cards) {
+            for r in 0..20 {
+                let at = T0 + r * DAY + c;
+                evs.push(review(&format!("r{c}-{r}"), &format!("C{c}"), at, 3, if r == 0 { "learn" } else { "review" }));
+            }
+        }
+        a.apply(T0 + chunk, evs);
+    }
+    let apply_ms = t.elapsed().as_millis();
+    let t = Instant::now();
+    a.core.sync2_replay_all(P).unwrap();
+    let replay_ms = t.elapsed().as_millis();
+    let mut bucket = Bucket::default();
+    let t = Instant::now();
+    a.sync(&mut bucket, "loc", T0 + 30 * DAY);
+    let publish_ms = t.elapsed().as_millis();
+    let bytes: usize = bucket.0.values().map(Vec::len).sum();
+    let b = Device::new("bench-b");
+    let t = Instant::now();
+    b.sync(&mut bucket, "loc", T0 + 30 * DAY);
+    let join_ms = t.elapsed().as_millis();
+    let t = Instant::now();
+    a.apply(T0 + 31 * DAY, vec![review("inc", "C0", T0 + 31 * DAY, 3, "review")]);
+    a.sync(&mut bucket, "loc", T0 + 31 * DAY);
+    b.sync(&mut bucket, "loc", T0 + 31 * DAY);
+    let incremental_ms = t.elapsed().as_millis();
+    assert_eq!(a.digest(), b.digest());
+    println!(
+        "bench_scale cards={cards} reviews={} apply={apply_ms}ms replay_all={replay_ms}ms publish={publish_ms}ms \
+         files={} bytes={bytes} join={join_ms}ms incremental_round_trip={incremental_ms}ms",
+        cards * 20,
+        bucket.0.len()
+    );
+}
+
+#[test]
+fn history_lists_every_edit_including_overwritten_ones() {
+    let a = Device::new("hist");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("One"))]);
+    a.apply(T0 + 1000, vec![edit("deck", &deck, "name", json!("Two"))]);
+    // 投影里只剩生效的那条；历史里两条都在，新的在前。
+    assert_eq!(a.rows(&format!("SELECT COUNT(*) FROM srs_field_edits WHERE entity_id = '{deck}' AND field_key = 'name'"))[1][0], "1");
+    let h = a.core.sync2_history(P, "deck", &deck).unwrap();
+    let names: Vec<&Value> = h.as_array().unwrap().iter().filter(|e| e["key"] == "name").map(|e| &e["value"]).collect();
+    assert_eq!(names, vec![&json!("Two"), &json!("One")]);
+}

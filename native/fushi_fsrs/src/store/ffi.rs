@@ -677,6 +677,7 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
         "purge" => c.sync2_purge(profile, s("kind")?, s("entity")?, i("now")?)?,
         "checkpoint" => c.sync2_checkpoint(profile, s("name")?, s("reason")?, i("now")?)?,
         "checkpoints" => c.sync2_checkpoints(profile)?,
+        "history" => c.sync2_history(profile, s("kind")?, s("entity")?)?,
         "plan_restore" => c.sync2_plan_restore(profile, i("at")?, req["retract"] == Value::Bool(true), i("now")?)?,
         "restore" => c.sync2_restore(profile, i("at")?, req["retract"] == Value::Bool(true), i("now")?)?,
         "derive_key" => {

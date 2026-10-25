@@ -32,7 +32,7 @@ pub(crate) fn index(conn: &Connection, profile: &str, kind: &str, entity: &str, 
     Ok(())
 }
 
-fn ops_of(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Result<Vec<(OpId, String)>, String> {
+pub(crate) fn ops_of(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Result<Vec<(OpId, String)>, String> {
     let mut stmt = conn
         .prepare_cached("SELECT device, seq, what FROM sync2_ent_ops WHERE profile_uid = ?1 AND kind = ?2 AND entity = ?3")
         .map_err(sql)?;

@@ -316,3 +316,51 @@ impl SrsCore {
         Ok(Value::Array(rows))
     }
 }
+
+impl SrsCore {
+    /// 一个实体的修改历史（设计 §10.2：每张卡、每个字段的修改历史——谁、哪台设备、何时）：碰过它的全部字段修改与
+    /// 标签操作，**含**被覆盖、被因果支配而早已不在投影里的；新的在前。迁移来的旧记录按旧写入者 / 旧 HLC 报。
+    /// 被彻底清除的实体只剩骨架：报 `purged`，不报内容。
+    pub fn sync2_history(&self, profile: &str, kind: &str, entity: &str) -> Result<Value, String> {
+        let r = self.reader()?;
+        let mut out: Vec<(i64, u32, Value)> = Vec::new();
+        for (id, what) in super::semantics::ops_of(&r, profile, kind, entity)? {
+            if what == "#log" || what == "#move" {
+                continue;
+            }
+            let Some(op) = load_op(&r, profile, &id)? else { continue };
+            let device = id.device.text();
+            let (wall, logical) = (op.hlc.wall, op.hlc.logical);
+            let entry = match op.body().map_err(|e| e.to_string())? {
+                Body::Edit(e) => {
+                    let (writer, at) = match &e.legacy {
+                        Some(l) => (
+                            l.writer.clone(),
+                            l.hlc.split(':').next().and_then(|x| x.parse::<i64>().ok()).unwrap_or(wall),
+                        ),
+                        None => (device.clone(), wall),
+                    };
+                    json!({
+                        "key": e.key,
+                        "value": serde_json::from_str::<Value>(&e.value).unwrap_or(Value::Null),
+                        "writer": writer,
+                        "device": device,
+                        "seq": id.seq,
+                        "at": at,
+                        "machine": e.machine,
+                    })
+                }
+                Body::TagAdd { tag, .. } => json!({"key": "tags", "tagAdded": tag, "writer": device, "device": device, "seq": id.seq, "at": wall}),
+                Body::TagRemove { tag, .. } => {
+                    json!({"key": "tags", "tagRemoved": tag, "writer": device, "device": device, "seq": id.seq, "at": wall})
+                }
+                Body::Purged => json!({"key": what, "purged": true, "writer": device, "device": device, "seq": id.seq, "at": wall}),
+                _ => continue,
+            };
+            let at = entry["at"].as_i64().unwrap_or(wall);
+            out.push((at, logical, entry));
+        }
+        out.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
+        Ok(Value::Array(out.into_iter().map(|x| x.2).collect()))
+    }
+}
