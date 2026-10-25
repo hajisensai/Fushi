@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
@@ -25,10 +26,10 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/galgame_poster_card.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
-import 'package:fushi/src/utils/components/cover_badge.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -454,52 +455,68 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
     // 否则页头（外壳已画标题时只剩副标题一行）整段压在标题胶囊底下
     // （2026-10-09 用户截图：「游戏」胶囊挡住「在电脑上启动游戏并串流到这里」）。
     // 嵌在游戏模块分区里时外层已消费过 inset（这里读到 0），不会重复让位。
+    // 库页材质（2026-10-25 用户定版，与本机游戏库同一套）：游戏卡走透明卡盒（材质作用域在 [_buildBody] 的滚动视图上）。
     return Scaffold(
       body: FushiFloatingChromeVisiblePadding(
         child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          if (navigation == null)
-            FushiPageHeader(
-              title: t.nav_game,
-              subtitle: t.game_stream_library_subtitle,
-              actions: actions,
-            )
-          else
-            FushiPageHeader.customTitle(title: navigation, actions: actions),
-          Expanded(
-            // 骨架 → 内容交叉淡入（effects 弹簧，不过冲；减弱动态效果下瞬切）。
-            child: AnimatedSwitcher(
-              duration: motion.effectsDefault.duration,
-              switchInCurve: motion.effectsDefault.curve,
-              switchOutCurve: motion.effectsDefault.curve,
-              child: loading
-                  ? KeyedSubtree(
-                      key: const ValueKey<String>('game-stream-skeleton'),
-                      child: _buildLoadingSkeleton(context),
-                    )
-                  : KeyedSubtree(
-                      key: const ValueKey<String>('game-stream-body'),
-                      child: _buildBody(context),
-                    ),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (navigation == null)
+              FushiPageHeader(
+                title: t.nav_game,
+                subtitle: t.game_stream_library_subtitle,
+                actions: actions,
+              )
+            else
+              FushiPageHeader.customTitle(title: navigation, actions: actions),
+            Expanded(
+              // 骨架 → 内容交叉淡入（effects 弹簧，不过冲；减弱动态效果下瞬切）。
+              child: AnimatedSwitcher(
+                duration: motion.effectsDefault.duration,
+                switchInCurve: motion.effectsDefault.curve,
+                switchOutCurve: motion.effectsDefault.curve,
+                child: loading
+                    ? KeyedSubtree(
+                        key: const ValueKey<String>('game-stream-skeleton'),
+                        child: _buildLoadingSkeleton(context),
+                      )
+                    : KeyedSubtree(
+                        key: const ValueKey<String>('game-stream-body'),
+                        child: _buildBody(context),
+                      ),
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
 
-  /// 网格列宽：窄屏（手机竖屏）两到三列海报，宽屏放大海报而不是挤出很多列。
+  /// 网格列宽：窄屏（手机竖屏）两到三列卡盒，宽屏放大卡盒而不是挤出很多列。
   static double _gridExtent(double width) => width >= 840 ? 220 : 180;
 
-  SliverGridDelegate _gridDelegate(double width) {
+  /// [width] 是视口宽；网格段左右各让一个页边（[FushiSpacingTokens.page]）。卡高 =
+  /// 卡盒封面（1:1.6）+ 封面下文字块（[ShelfCardMeta.heightFor]），按
+  /// `MaxCrossAxisExtent` 同一列数公式复算卡宽（与本机游戏库同一套几何）。
+  SliverGridDelegate _gridDelegate(BuildContext context, double width) {
     final bool wide = width >= 600;
+    final double crossSpacing = wide ? 20 : 12;
+    final double maxExtent = _gridExtent(width);
+    final double page = FushiDesignTokens.of(context).spacing.page;
+    final double available = math.max(1, width - page * 2);
+    final int columns = (available / (maxExtent + crossSpacing)).ceil().clamp(
+      1,
+      1 << 10,
+    );
+    final double cardWidth =
+        (available - (columns - 1) * crossSpacing) / columns;
     return SliverGridDelegateWithMaxCrossAxisExtent(
-      maxCrossAxisExtent: _gridExtent(width),
+      maxCrossAxisExtent: maxExtent,
       mainAxisSpacing: wide ? 24 : 16,
-      crossAxisSpacing: wide ? 20 : 12,
-      childAspectRatio: 0.6,
+      crossAxisSpacing: crossSpacing,
+      mainAxisExtent:
+          cardWidth / kShelfGameCaseAspectRatio +
+          ShelfCardMeta.heightFor(context),
     );
   }
 
@@ -562,7 +579,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
     return SliverPadding(
       padding: EdgeInsets.symmetric(horizontal: page),
       sliver: SliverGrid.builder(
-        gridDelegate: _gridDelegate(width),
+        gridDelegate: _gridDelegate(context, width),
         itemCount: 6,
         itemBuilder: (BuildContext context, int index) =>
             shimmer ? const FushiSkeletonShimmer(child: cell) : cell,
@@ -591,51 +608,64 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
         return FushiEntranceScope(
           // 切主机 = 换一屏内容，重开进场窗口让新主机的卡同样错峰进场。
           replayKey: host.key,
-          child: CustomScrollView(
-            slivers: <Widget>[
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(page, 0, page, tokens.spacing.gap),
-                sliver: SliverList.list(
-                  children: <Widget>[
-                    for (int i = 0; i < header.length; i++)
-                      FushiStaggeredEntrance(index: i, child: header[i]),
-                  ],
+          child: ShelfCoverMaterialScope(
+            material: ShelfCoverMaterial.gameCase,
+            child: CustomScrollView(
+              slivers: <Widget>[
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    page,
+                    0,
+                    page,
+                    tokens.spacing.gap,
+                  ),
+                  sliver: SliverList.list(
+                    children: <Widget>[
+                      for (int i = 0; i < header.length; i++)
+                        FushiStaggeredEntrance(index: i, child: header[i]),
+                    ],
+                  ),
                 ),
-              ),
-              // 主机在线但库是空的：与本机游戏库同一个共享空态（图标 + 文案）。
-              if (host.phase == _HostPhase.ready && games.isEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: page),
-                    child: FushiPlaceholderMessage(
-                      icon: FushiIcons.games,
-                      message: t.game_stream_library_empty,
+                // 主机在线但库是空的：与本机游戏库同一个共享空态（图标 + 文案）。
+                if (host.phase == _HostPhase.ready && games.isEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: page),
+                      child: FushiPlaceholderMessage(
+                        icon: FushiIcons.games,
+                        message: t.game_stream_library_empty,
+                      ),
                     ),
                   ),
-                ),
-              // 主机还在连：游戏库位置先放同轮廓骨架，连上后整块换成海报。
-              if (host.phase == _HostPhase.loading && games.isEmpty)
-                SliverPadding(
-                  padding: EdgeInsets.only(top: tokens.spacing.gap),
-                  sliver: _buildSkeletonGrid(context, width),
-                ),
-              if (host.phase == _HostPhase.ready && games.isNotEmpty)
-                SliverPadding(
-                  padding: withBottomSafeInset(
-                    context,
-                    EdgeInsets.fromLTRB(page, 0, page, tokens.spacing.section),
+                // 主机还在连：游戏库位置先放同轮廓骨架，连上后整块换成海报。
+                if (host.phase == _HostPhase.loading && games.isEmpty)
+                  SliverPadding(
+                    padding: EdgeInsets.only(top: tokens.spacing.gap),
+                    sliver: _buildSkeletonGrid(context, width),
                   ),
-                  sliver: SliverGrid.builder(
-                    gridDelegate: _gridDelegate(width),
-                    itemCount: games.length,
-                    // 首屏错峰进场（与本机游戏库同一套）；滚动带出的卡瞬间出现。
-                    itemBuilder: fushiStaggeredItemBuilder(
-                      (BuildContext context, int index) =>
-                          _buildGameCard(context, host, games[index]),
+                if (host.phase == _HostPhase.ready && games.isNotEmpty)
+                  SliverPadding(
+                    padding: withBottomSafeInset(
+                      context,
+                      EdgeInsets.fromLTRB(
+                        page,
+                        0,
+                        page,
+                        tokens.spacing.section,
+                      ),
+                    ),
+                    sliver: SliverGrid.builder(
+                      gridDelegate: _gridDelegate(context, width),
+                      itemCount: games.length,
+                      // 首屏错峰进场（与本机游戏库同一套）；滚动带出的卡瞬间出现。
+                      itemBuilder: fushiStaggeredItemBuilder(
+                        (BuildContext context, int index) =>
+                            _buildGameCard(context, host, games[index]),
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -892,11 +922,13 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
     GameStreamLibraryGame game,
   ) {
     final int? lastPlayedAt = game.lastPlayedAt;
-    final String? overlay = lastPlayedAt == null
+    final String? lastPlayed = lastPlayedAt == null
         ? null
         : t.game_stream_last_played(
             time: formatActivityRelativeTime(lastPlayedAt, DateTime.now()),
           );
+    // 卡盒定版（2026-10-25）：封面上不压角标——「运行中」与最近游玩都进副行，
+    // 运行中优先（它决定点下去是加入会话还是新启动）。
     return GalgamePosterCard(
       key: GameStreamLibraryPage.gameCardKey(game.id),
       focusId: FushiFocusId('game-stream-card-${host.key}-${game.id}'),
@@ -906,25 +938,13 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
         load: () => host.client!.libraryCover(game.id),
       ),
       title: game.title,
-      overlayText: overlay,
-      trailing: game.running ? const _RunningBadge() : null,
+      subtitle: game.running ? t.game_stream_running : lastPlayed,
+      subtitleIcon: game.running ? FushiIcons.play : null,
       semanticLabel: game.running
           ? '${game.title} · ${t.game_stream_running}'
           : game.title,
       onTap: _busy ? null : () => unawaited(_activateGame(host, game)),
     );
-  }
-}
-
-class _RunningBadge extends StatelessWidget {
-  const _RunningBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    // 与书架 / 视频卡的封面角标同一形态（深色胶囊；Apple 磨砂），不再铺整块
-    // primary 彩色底（角标底随主题反相，语义绿在浅色主题的深底上对比不够，
-    // 保持角标前景色）。
-    return CoverBadge(icon: FushiIcons.play, label: t.game_stream_running);
   }
 }
 

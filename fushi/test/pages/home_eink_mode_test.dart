@@ -511,17 +511,19 @@ void main() {
           contains('color: active ? colors.onSurface : null'),
         ),
       );
-      // 两条封面进度条收进共享 CoverProgressStrip（eink 实心页面底色轨道在组件
-      // 里，见上面首页那条的守卫）。
+      // 2026-10-25 材质定版：进度条从封面底边挪到封面下的文字块
+      // （ShelfCardMeta），横排卡与墙卡共用 _videoCardMeta；eink 下轨道换页面
+      // 底色 + 描边、填充换前景色（组件内）。
       expect(
         'CoverProgressStrip('.allMatches(src).length,
-        2,
-        reason: '横排卡与墙卡两条进度条都要换实心轨道',
+        0,
+        reason: '封面上不再压进度条',
       );
+      expect(src, contains('ShelfCardMeta('));
       expect(
         RegExp(
-          r'class CoverProgressStrip[\s\S]*?backgroundColor: eink\s*\?\s*tokens\.surfaces\.page',
-        ).hasMatch(read('lib/src/utils/components/shelf_card_widgets.dart')),
+          r'class ShelfCardMeta[\s\S]*?final Color track = eink\s*\?\s*cs\.surface',
+        ).hasMatch(read('lib/src/utils/components/shelf_cover_material.dart')),
         isTrue,
       );
       expect(

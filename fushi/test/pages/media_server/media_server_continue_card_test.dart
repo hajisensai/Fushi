@@ -9,6 +9,7 @@ import 'package:fushi/src/pages/implementations/media_server/media_server_home_v
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
 import 'package:fushi/src/sync/remote_cover_cache.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/utils.dart';
 
@@ -51,11 +52,12 @@ void main() {
         parentThumbItemId: 'series',
         parentBackdropItemId: 'series',
       );
-      expect(
-        urlsOf(mediaServerContinueImages(browser, episode)),
-        <String>['ep|thumb', 'ep|primary', 'series|thumb', 'series|backdrop'],
-        reason: '集自身的 Backdrop 不参与：服务器给集报的背景通常就是剧的',
-      );
+      expect(urlsOf(mediaServerContinueImages(browser, episode)), <String>[
+        'ep|thumb',
+        'ep|primary',
+        'series|thumb',
+        'series|backdrop',
+      ], reason: '集自身的 Backdrop 不参与：服务器给集报的背景通常就是剧的');
     });
 
     test('集没有任何自身图：直接落到剧的横图；没有上级 id 就不造请求', () {
@@ -207,6 +209,104 @@ void main() {
     });
   });
 
+  group('封面下副行', () {
+    test('继续观看：剩余时间 · 集号集名；电影无断点退回第二行', () {
+      expect(
+        mediaServerContinueMetaLine(
+          const MediaServerItem(
+            id: 'a',
+            name: '出发',
+            type: MediaServerItemType.episode,
+            seasonNumber: 1,
+            episodeNumber: 3,
+            durationMs: 24 * 60000,
+          ),
+        ),
+        '${t.video_next_episode} · S01E03 出发',
+      );
+      expect(
+        mediaServerContinueMetaLine(
+          const MediaServerItem(
+            id: 'a',
+            name: 'M',
+            type: MediaServerItemType.movie,
+            durationMs: 5525000,
+          ),
+        ),
+        '1:32:05',
+      );
+    });
+
+    test('剧：未看 N 集 · 总集数 + 已看比例进度；全看完是完成态', () {
+      final MediaServerCardStatus unwatched = mediaServerItemCardStatus(
+        const MediaServerItem(
+          id: 's',
+          name: 's',
+          type: MediaServerItemType.series,
+          episodeCount: 12,
+          childCount: 2,
+          unplayedChildCount: 3,
+        ),
+      );
+      expect(
+        unwatched.subtitle,
+        '${t.media_server_item_unplayed_episodes(n: 3)} · '
+        '${t.video_playlist_episodes(count: 12)}',
+      );
+      expect(unwatched.progress, closeTo(9 / 12, 1e-9));
+      expect(unwatched.completed, isFalse);
+
+      final MediaServerCardStatus done = mediaServerItemCardStatus(
+        const MediaServerItem(
+          id: 's',
+          name: 's',
+          type: MediaServerItemType.series,
+          episodeCount: 12,
+          unplayedChildCount: 0,
+        ),
+      );
+      expect(
+        done.subtitle,
+        '${t.video_stat_completed} · ${t.video_playlist_episodes(count: 12)}',
+      );
+      expect(done.completed, isTrue);
+      expect(done.progress, 1);
+    });
+
+    test('电影 / 集：已看完、看到哪进副行，进度条是服务器断点', () {
+      final MediaServerCardStatus partial = mediaServerItemCardStatus(
+        const MediaServerItem(
+          id: 'e',
+          name: '出发',
+          type: MediaServerItemType.episode,
+          seasonNumber: 1,
+          episodeNumber: 3,
+          positionMs: 6 * 60000,
+          durationMs: 24 * 60000,
+        ),
+      );
+      expect(
+        partial.subtitle,
+        '${t.video_watched_up_to(time: '6:00')} · S01E03 出发',
+      );
+      expect(partial.progress, closeTo(0.25, 1e-9));
+      final MediaServerCardStatus watched = mediaServerItemCardStatus(
+        const MediaServerItem(
+          id: 'm',
+          name: 'M',
+          type: MediaServerItemType.movie,
+          productionYear: 2020,
+          played: true,
+        ),
+      );
+      expect(
+        watched.subtitle,
+        '${t.video_stat_completed} · 2020 · ${t.collection_relation_movie}',
+      );
+      expect(watched.completed, isTrue);
+    });
+  });
+
   group('缩略图回落', () {
     Widget harness(Widget child) => TranslationProvider(
       child: MaterialApp(
@@ -271,7 +371,7 @@ void main() {
     });
   });
 
-  testWidgets('服务器首页：继续观看是 16:9 横卡 + 剩余时间角标 + 加粗进度条；其它行仍是竖卡', (
+  testWidgets('服务器首页：继续观看是 16:9 横卡，剩余时间 / 集号 / 进度在封面下副行，不压角标；其它行仍是竖卡', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(1200, 2400);
@@ -325,23 +425,28 @@ void main() {
     // 封面即卡片（shelfCoverCard）的透明卡边仍占 1px 描边宽，缩略图比卡槽窄 2。
     expect(thumb.width, closeTo(kMediaServerContinueCardWidth, 2));
     expect(thumb.width / thumb.height, closeTo(16 / 9, 0.01));
-    expect(
-      find.descendant(
-        of: card,
-        matching: find.text(t.video_home_remaining_minutes(minutes: 14)),
-      ),
-      findsOneWidget,
-    );
     expect(find.descendant(of: card, matching: find.text('葬送的芙莉莲')), findsOne);
+    final ShelfCardMeta meta = tester.widget(
+      find.byKey(const ValueKey<String>('media-server-continue-meta')),
+    );
     expect(
-      find.descendant(of: card, matching: find.text('S01E03 出发')),
+      meta.subtitle,
+      '${t.video_home_remaining_minutes(minutes: 14)} · S01E03 出发',
+    );
+    expect(meta.progress, closeTo(10 / 24, 1e-9));
+    expect(
+      find.descendant(of: card, matching: find.text(meta.subtitle!)),
       findsOne,
     );
-    final FushiLinearProgressIndicator bar = tester.widget(
-      find.byKey(const ValueKey<String>('media-server-continue-progress')),
+    // 2026-10-25 材质定版：缩略图上不压任何角标 / 进度条。
+    expect(
+      find.descendant(of: card, matching: find.byType(CoverBadge)),
+      findsNothing,
     );
-    expect(bar.value, closeTo(10 / 24, 1e-9));
-    expect(bar.minHeight!, greaterThanOrEqualTo(4));
+    expect(
+      find.descendant(of: card, matching: find.byType(CoverProgressStrip)),
+      findsNothing,
+    );
     // 库行仍是海报竖卡，不受影响。
     expect(find.byType(MediaServerItemCard), findsNWidgets(2));
   });

@@ -24,7 +24,6 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
-import '../helpers/glass_unwrap.dart';
 
 void main() {
   final TestWidgetsFlutterBinding binding =
@@ -75,31 +74,30 @@ void main() {
   });
 
   Widget buildApp({required RemoteBookClient client}) => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-          fushiBooksProvider.overrideWith(
-            (ref, language) =>
-                Future<List<MediaItem>>.value(const <MediaItem>[]),
-          ),
-          srtBooksProvider.overrideWith(
-            (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
-          ),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            builder: (BuildContext context, Widget? child) =>
-                child ?? const SizedBox.shrink(),
-            home: Scaffold(
-              body: ReaderFushiHistoryPage(
-                remoteBookClientLoader: () async => client,
-                remoteBookDownloadDestination: (RemoteBookInfo book) async =>
-                    File('${pathProviderDir.path}/${book.title.hashCode}.epub'),
-                remoteBookImporter: (File file) async => null,
-              ),
-            ),
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      fushiBooksProvider.overrideWith(
+        (ref, language) => Future<List<MediaItem>>.value(const <MediaItem>[]),
+      ),
+      srtBooksProvider.overrideWith(
+        (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
+      ),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        builder: (BuildContext context, Widget? child) =>
+            child ?? const SizedBox.shrink(),
+        home: Scaffold(
+          body: ReaderFushiHistoryPage(
+            remoteBookClientLoader: () async => client,
+            remoteBookDownloadDestination: (RemoteBookInfo book) async =>
+                File('${pathProviderDir.path}/${book.title.hashCode}.epub'),
+            remoteBookImporter: (File file) async => null,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   String safeKey(String title) =>
       sanitizeTtuFilename(title).replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
@@ -118,9 +116,9 @@ void main() {
   testWidgets('多选态点远端卡 = 勾选，不触发下载；本地动作对纯远端选中集禁用', (WidgetTester tester) async {
     final _CountingRemoteBookClient client =
         _CountingRemoteBookClient(<RemoteBookInfo>[
-      const RemoteBookInfo(title: 'Cloud One', hasContent: true),
-      const RemoteBookInfo(title: 'Cloud Two', hasContent: true),
-    ]);
+          const RemoteBookInfo(title: 'Cloud One', hasContent: true),
+          const RemoteBookInfo(title: 'Cloud Two', hasContent: true),
+        ]);
     await tester.pumpWidget(buildApp(client: client));
     await tester.pumpAndSettle();
     expect(remoteCard('Cloud One'), findsOneWidget);
@@ -150,17 +148,18 @@ void main() {
       isFalse,
       reason: '组合是本地动作，纯远端选中集不能启用',
     );
+    // 2026-10-25 库页定版：封面上不再有下载按钮（点卡片本身就是下载），多选态
+    // 也就不存在「点到卡内按钮绕过勾选直接下载」的口子；「未下载」在副行。
     expect(
-      tester
-          .widget<IconButton>(glassUnwrap<IconButton>(find.byKey(
-              ValueKey<String>('remote_book_download_${safeKey('Cloud Two')}'))))
-          .onPressed,
-      isNull,
-      reason: '多选态卡内右上角下载按钮必须禁用，否则点到它仍直接下载',
+      find.byKey(
+        ValueKey<String>('remote_book_download_${safeKey('Cloud Two')}'),
+      ),
+      findsNothing,
     );
     expect(
       find.byKey(
-          ValueKey<String>('remote_book_download_${safeKey('Cloud Two')}')),
+        ValueKey<String>('remote_book_cloud_badge_${safeKey('Cloud Two')}'),
+      ),
       findsOneWidget,
     );
 
@@ -174,10 +173,10 @@ void main() {
   testWidgets('勾选两本云书 → 批量「下载」把两本都交给下载链并退出多选', (WidgetTester tester) async {
     final _CountingRemoteBookClient client =
         _CountingRemoteBookClient(<RemoteBookInfo>[
-      const RemoteBookInfo(title: 'Cloud One', hasContent: true),
-      const RemoteBookInfo(title: 'Cloud Two', hasContent: true),
-      const RemoteBookInfo(title: 'Cloud Three', hasContent: true),
-    ]);
+          const RemoteBookInfo(title: 'Cloud One', hasContent: true),
+          const RemoteBookInfo(title: 'Cloud Two', hasContent: true),
+          const RemoteBookInfo(title: 'Cloud Three', hasContent: true),
+        ]);
     await tester.pumpWidget(buildApp(client: client));
     await tester.pumpAndSettle();
 
@@ -195,18 +194,20 @@ void main() {
     await tester.pump();
 
     // 串行：第一本挂在闸门上时第二本还没起（审查 #2：批量不得一帧扇出 N 个）。
-    expect(client.fetched, <String>['Cloud One'],
-        reason: '批量下载逐本串行，第一本没完第二本不起');
-    expect(find.byIcon(FushiIcons.checklist), findsOneWidget,
-        reason: '批量下载一开始就退出多选态（入口图标回到「选择」）');
-    // 多选态期间卡内右上角下载按钮必须是禁用态（审查 #1），此时已退出多选，
-    // 按钮回到可用——用另一张未勾选的卡核对壳与按钮都活着。
+    expect(client.fetched, <String>[
+      'Cloud One',
+    ], reason: '批量下载逐本串行，第一本没完第二本不起');
     expect(
-      tester
-          .widget<IconButton>(glassUnwrap<IconButton>(find.byKey(
-              ValueKey<String>('remote_book_download_${safeKey('Cloud Two')}'))))
-          .onPressed,
-      isNotNull,
+      find.byIcon(FushiIcons.checklist),
+      findsOneWidget,
+      reason: '批量下载一开始就退出多选态（入口图标回到「选择」）',
+    );
+    // 未勾选的 Cloud Two 仍是「☁ 未下载」占位（副行），没被批量带走。
+    expect(
+      find.byKey(
+        ValueKey<String>('remote_book_cloud_badge_${safeKey('Cloud Two')}'),
+      ),
+      findsOneWidget,
     );
 
     // 放行闸门：第一本收尾后才轮到第三本；未勾的 Cloud Two 始终不动。
@@ -220,8 +221,10 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 20));
     }
-    expect(client.fetched, <String>['Cloud One', 'Cloud Three'],
-        reason: '只下勾选的两本、按目录序串行，未勾的 Cloud Two 不动');
+    expect(client.fetched, <String>[
+      'Cloud One',
+      'Cloud Three',
+    ], reason: '只下勾选的两本、按目录序串行，未勾的 Cloud Two 不动');
   });
 }
 

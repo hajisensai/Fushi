@@ -11,17 +11,19 @@ import 'package:flutter_test/flutter_test.dart';
 /// `shelf_srt_card_override_title_guard_test.dart`，这里按同一范式补上 hero 条。
 void main() {
   String hero() => _functionSource(
-        File('lib/src/pages/implementations/reader_fushi_history_page.dart')
-            .readAsStringSync()
-            .replaceAll('\r\n', '\n'),
-        '  Widget _buildContinueReadingHero(',
-        '\n  Widget ',
-      );
+    File(
+      'lib/src/pages/implementations/reader_fushi_history_page.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n'),
+    '  Widget _buildContinueReadingHero(',
+    '\n  Widget ',
+  );
 
   test('hero 书名经 getDisplayTitleFromMediaItem 应用 override', () {
     expect(
       hero(),
-      contains('mediaSource.getDisplayTitleFromMediaItem(hero)'),
+      matches(
+        RegExp(r'mediaSource\s*\.getDisplayTitleFromMediaItem\(\s*hero\s*\)'),
+      ),
       reason: 'hero 条书名必须与同卡封面同源，应用编辑弹窗写入的 override 书名',
     );
   });

@@ -12,13 +12,20 @@
 //    Cupertino 的边缘滑动返回——没有任何报错，只有用户发现「滑不回去了」。
 import 'package:drift/drift.dart' hide isNotNull;
 import 'package:drift/native.dart';
-import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoPageTransitionsBuilder;
+import 'package:cupertino_ui/cupertino_ui.dart'
+    show CupertinoPageTransitionsBuilder;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';
 import 'package:fushi_core/fushi_core.dart';
+
+/// Material 主题每个 builder 外面套着 [FushiBackdropPageTransitionsBuilder]（每页
+/// 垫形状背景）；真正负责转场 / 返回手势的是它包着的那个。
+PageTransitionsBuilder? _transition(PageTransitionsBuilder? builder) =>
+    builder is FushiBackdropPageTransitionsBuilder ? builder.inner : builder;
 
 void main() {
   late FushiDatabase db;
@@ -40,7 +47,9 @@ void main() {
       notifier.darkTheme,
     ]) {
       expect(
-        theme.pageTransitionsTheme.builders[TargetPlatform.android],
+        _transition(
+          theme.pageTransitionsTheme.builders[TargetPlatform.android],
+        ),
         isA<FushiPredictiveBackPageTransitionsBuilder>(),
       );
     }
@@ -57,11 +66,11 @@ void main() {
       );
     }
     expect(
-      builders[TargetPlatform.iOS],
+      _transition(builders[TargetPlatform.iOS]),
       isA<CupertinoPageTransitionsBuilder>(),
     );
     expect(
-      builders[TargetPlatform.macOS],
+      _transition(builders[TargetPlatform.macOS]),
       isA<CupertinoPageTransitionsBuilder>(),
     );
   });
@@ -75,7 +84,7 @@ void main() {
       TargetPlatform.fuchsia,
     ]) {
       expect(
-        builders[platform],
+        _transition(builders[platform]),
         isA<FushiSharedAxisPageTransitionsBuilder>(),
         reason: '$platform',
       );
@@ -105,13 +114,29 @@ void main() {
     final Map<TargetPlatform, PageTransitionsBuilder> eink = build(
       eink: true,
     ).pageTransitionsTheme.builders;
-    expect(
-      eink[TargetPlatform.android],
-      isA<EinkNoPageTransitionsBuilder>(),
-    );
+    expect(eink[TargetPlatform.android], isA<EinkNoPageTransitionsBuilder>());
     expect(
       eink[TargetPlatform.iOS],
       isA<EinkCupertinoPageTransitionsBuilder>(),
     );
+  });
+
+  test('Material 主题每页垫形状背景；Apple / 墨水屏不套', () {
+    for (final PageTransitionsBuilder b
+        in notifier.theme.pageTransitionsTheme.builders.values) {
+      expect(b, isA<FushiBackdropPageTransitionsBuilder>());
+    }
+    for (final bool eink in <bool>[false, true]) {
+      final ThemeData theme = buildFushiThemeData(
+        scheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1F4959)),
+        textTheme: const TextTheme(),
+        glassDesign: !eink,
+        eink: eink,
+      );
+      for (final PageTransitionsBuilder b
+          in theme.pageTransitionsTheme.builders.values) {
+        expect(b, isNot(isA<FushiBackdropPageTransitionsBuilder>()));
+      }
+    }
   });
 }

@@ -18,6 +18,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -205,8 +206,15 @@ void main() {
   }
 
   /// 网格里那张卡上的书名（书架顶部「继续阅读」条也会显示书名）。
+  // 按卡片文字块（ShelfCardMeta）的标题找，而不是 find.text：副行状态文案
+  // （如「Unread」）可能与书名撞字。
   Finder inGrid(String title) => find
-      .descendant(of: find.byType(SliverGrid), matching: find.text(title))
+      .descendant(
+        of: find.byType(SliverGrid),
+        matching: find.byWidgetPredicate(
+          (Widget w) => w is ShelfCardMeta && w.title == title,
+        ),
+      )
       .first;
 
   Future<void> unmount(WidgetTester tester) async {
@@ -236,7 +244,10 @@ void main() {
     ]);
     await tester.pumpWidget(buildApp(client));
     await settle(tester);
-    expect(find.text(t.shelf_collection_volume_count(n: 3)), findsOneWidget);
+    expect(
+      find.textContaining(t.shelf_collection_volume_count(n: 3)),
+      findsOneWidget,
+    );
     final int cid = (await db.getAllMediaCollections()).single.id;
 
     // 合集详情页里点 Vol1 下载：EPUB 落地，任务停在「拉对端进度」这一步（真机上
@@ -264,14 +275,17 @@ void main() {
       reason: '已落地的书不能再以占位卡挂在书架上（合集外的「未下载」卡）',
     );
     expect(
-      find.text(t.shelf_collection_volume_count(n: 3)),
+      find.textContaining(t.shelf_collection_volume_count(n: 3)),
       findsOneWidget,
       reason: '本地卡 + 旧占位卡同在合集里 = 册数翻倍',
     );
 
     client.releaseProgress();
     await settle(tester);
-    expect(find.text(t.shelf_collection_volume_count(n: 3)), findsOneWidget);
+    expect(
+      find.textContaining(t.shelf_collection_volume_count(n: 3)),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>('remote_book_card_Vol1')),
       findsNothing,
@@ -307,7 +321,7 @@ void main() {
 
     // 挑一张此刻完整可见的占位卡。
     final Finder target = find.byKey(
-      const ValueKey<String>('remote_book_download_Cloud20'),
+      const ValueKey<String>('remote_book_card_Cloud20'),
     );
     expect(target.hitTestable(), findsOneWidget, reason: '前置：Cloud20 在屏上');
     final Offset before = tester.getTopLeft(inGrid('Cloud20'));
@@ -389,9 +403,7 @@ void main() {
     await settle(tester);
 
     for (final String title in <String>['ReadOnPeer', 'Unread']) {
-      await tester.tap(
-        find.byKey(ValueKey<String>('remote_book_download_$title')),
-      );
+      await tester.tap(find.byKey(ValueKey<String>('remote_book_card_$title')));
       await settle(tester);
     }
     expect(
@@ -420,8 +432,9 @@ void main() {
     await unmount(tester);
   });
 
-  testWidgets('⑤ 第三台设备在对端入库后、本机下载前「从所有设备删除」：本机下载后不弹删除确认',
-      (WidgetTester tester) async {
+  testWidgets('⑤ 第三台设备在对端入库后、本机下载前「从所有设备删除」：本机下载后不弹删除确认', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -439,7 +452,7 @@ void main() {
     await tester.pumpWidget(buildApp(client));
     await settle(tester);
     await tester.tap(
-      find.byKey(const ValueKey<String>('remote_book_download_$title')),
+      find.byKey(const ValueKey<String>('remote_book_card_$title')),
     );
     await settle(tester);
     final EpubBookRow landed = (await tester.runAsync<EpubBookRow?>(

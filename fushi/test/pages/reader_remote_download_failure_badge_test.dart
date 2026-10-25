@@ -33,8 +33,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_remote_dl_badge_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_remote_dl_badge_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -61,21 +62,24 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final Directory storeDir =
-        Directory.systemTemp.createTempSync('fushi_remote_dl_badge_store');
+    final Directory storeDir = Directory.systemTemp.createTempSync(
+      'fushi_remote_dl_badge_store',
+    );
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
     appModel.populateLanguages();
-    container = ProviderContainer(overrides: <Override>[
-      appProvider.overrideWith((ref) => appModel),
-      fushiBooksProvider.overrideWith(
-        (ref, language) => Future<List<MediaItem>>.value(const <MediaItem>[]),
-      ),
-      srtBooksProvider.overrideWith(
-        (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
-      ),
-    ]);
+    container = ProviderContainer(
+      overrides: <Override>[
+        appProvider.overrideWith((ref) => appModel),
+        fushiBooksProvider.overrideWith(
+          (ref, language) => Future<List<MediaItem>>.value(const <MediaItem>[]),
+        ),
+        srtBooksProvider.overrideWith(
+          (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
+        ),
+      ],
+    );
   });
 
   tearDown(() async {
@@ -86,17 +90,15 @@ void main() {
   // 外置 ProviderContainer：页面卸载（模拟用户离页）后 app 级下载管理器必须继续
   // 活着——这正是被测语义，所以不能用随 pumpWidget 重建的 ProviderScope。
   Widget host(Widget body) => UncontrolledProviderScope(
-        container: container,
-        child: TranslationProvider(
-          child: MaterialApp(
-            builder: (BuildContext context, Widget? child) =>
-                child ?? const SizedBox.shrink(),
-            home: Scaffold(
-              body: body,
-            ),
-          ),
-        ),
-      );
+    container: container,
+    child: TranslationProvider(
+      child: MaterialApp(
+        builder: (BuildContext context, Widget? child) =>
+            child ?? const SizedBox.shrink(),
+        home: Scaffold(body: body),
+      ),
+    ),
+  );
 
   ReaderFushiHistoryPage buildPage(RemoteBookClient client) =>
       ReaderFushiHistoryPage(
@@ -109,8 +111,9 @@ void main() {
   String safeKey(String title) =>
       sanitizeTtuFilename(title).replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
-  testWidgets('P1 主诉：下载失败发生在离页后，重进页面失败角标仍可见（tooltip 带友好原因）',
-      (WidgetTester tester) async {
+  testWidgets('P1 主诉：下载失败发生在离页后，重进页面失败角标仍可见（tooltip 带友好原因）', (
+    WidgetTester tester,
+  ) async {
     final _GatedFailingRemoteBookClient client =
         _GatedFailingRemoteBookClient();
     final String key = safeKey('Doomed Book');
@@ -119,7 +122,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 点下载 → 任务进管理器，占位卡显示进度环。
-    await tester.tap(find.byKey(ValueKey<String>('remote_book_download_$key')));
+    await tester.tap(find.byKey(ValueKey<String>('remote_book_card_$key')));
     await tester.pump();
     await tester.pump();
     expect(
@@ -141,8 +144,11 @@ void main() {
         .taskFor(InterconnectDownloadManager.bookTaskId('Doomed Book'));
     expect(task, isNotNull, reason: '任务必须活在 app 级管理器里，不随页面 dispose 消失');
     expect(task!.status, InterconnectDownloadStatus.failed);
-    expect(task.error, t.sync_err_network,
-        reason: '角标 tooltip 数据源须是本地化友好文案，不是原始异常文本');
+    expect(
+      task.error,
+      t.sync_err_network,
+      reason: '角标 tooltip 数据源须是本地化友好文案，不是原始异常文本',
+    );
 
     // 重进页面：失败角标是恒定出口，重进照样看得到。
     await tester.pumpWidget(host(buildPage(client)));
@@ -160,8 +166,9 @@ void main() {
     expect(find.byType(SnackBar), findsNothing);
   });
 
-  testWidgets('纯 SRT 有声书占位卡下载失败 → 失败角标（下载按钮被顶掉，可再点重试）',
-      (WidgetTester tester) async {
+  testWidgets('纯 SRT 有声书占位卡下载失败 → 失败角标（下载按钮被顶掉，可再点重试）', (
+    WidgetTester tester,
+  ) async {
     final _FakeInterconnectRemoteClient client =
         _FakeInterconnectRemoteClient();
     final String key = safeKey('Solo Cast');
@@ -174,14 +181,15 @@ void main() {
       reason: '前置：standalone SRT 占位卡在场',
     );
 
-    final InterconnectDownloadManager manager =
-        container.read(interconnectDownloadManagerProvider);
-    final String taskId =
-        InterconnectDownloadManager.srtAudiobookTaskId('srt-uid-1');
+    final InterconnectDownloadManager manager = container.read(
+      interconnectDownloadManagerProvider,
+    );
+    final String taskId = InterconnectDownloadManager.srtAudiobookTaskId(
+      'srt-uid-1',
+    );
     // getTemporaryDirectory / 临时文件删除是真实 IO，须在 runAsync 里驱动。
     await tester.runAsync(() async {
-      await tester
-          .tap(find.byKey(ValueKey<String>('remote_srt_download_$key')));
+      await tester.tap(find.byKey(ValueKey<String>('remote_srt_card_$key')));
       for (int i = 0; i < 100; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
         if (manager.taskFor(taskId)?.status ==
@@ -199,9 +207,9 @@ void main() {
       reason: 'SRT 占位卡的失败态同样走管理器角标，不再是页面 State 里的一次性 SnackBar',
     );
     expect(
-      find.byKey(ValueKey<String>('remote_srt_download_$key')),
+      find.byKey(ValueKey<String>('remote_srt_cloud_badge_$key')),
       findsNothing,
-      reason: '失败角标替换下载按钮的位置（卡片 onTap 仍可重试）',
+      reason: '失败态副行替换「☁ 未下载」（卡片 onTap 仍可重试）',
     );
     // 冲掉在场 SnackBar 的 4s 定时器，避免测试结束时挂着 pending timer。
     await tester.pumpAndSettle();
@@ -222,8 +230,8 @@ class _GatedFailingRemoteBookClient implements RemoteBookClient {
 
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[
-        const RemoteBookInfo(title: 'Doomed Book', hasContent: true),
-      ];
+    const RemoteBookInfo(title: 'Doomed Book', hasContent: true),
+  ];
 
   @override
   Future<void> getRemoteBook(
@@ -250,7 +258,7 @@ class _GatedFailingRemoteBookClient implements RemoteBookClient {
 /// [InterconnectSyncBackend] 类型开放，普通 [RemoteBookClient] fake 进不了这条路）。
 class _FakeInterconnectRemoteClient extends InterconnectSyncBackend {
   _FakeInterconnectRemoteClient()
-      : super.withProbe((String url, String token) async => true);
+    : super.withProbe((String url, String token) async => true);
 
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async =>

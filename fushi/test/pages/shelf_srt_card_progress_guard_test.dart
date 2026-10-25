@@ -9,8 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// → 有声书书架永远没有进度条（用户「有声书好像少了进度条」）。
 ///
 /// 修复把 EPUB 卡已算好的 position/duration（经 `computeBookProgress`，含听书
-/// normCharOffset 回退）按 bookKey 建映射喂给 SRT 卡，并对 EPUB-backed 书渲染同一个
-/// `_progressBar`。用源码扫描锁死三根线，避免回归。
+/// normCharOffset 回退）按 bookKey 建映射喂给 SRT 卡，并对 EPUB-backed 书渲染同一份
+/// 阅读比例（副行进度条）。用源码扫描锁死三根线，避免回归。
 void main() {
   final String historyPage = File(
     'lib/src/pages/implementations/reader_fushi_history_page.dart',
@@ -37,8 +37,11 @@ void main() {
     final int assemble = historyPage.indexOf('epubProgressByBookKey[key] =');
     final int filter = historyPage.indexOf('!srtBookKeys.contains(key)');
     expect(assemble, greaterThanOrEqualTo(0));
-    expect(filter, greaterThan(assemble),
-        reason: '进度映射装配必须早于 EPUB 卡过滤，才能覆盖被过滤成 SRT 卡的有声书');
+    expect(
+      filter,
+      greaterThan(assemble),
+      reason: '进度映射装配必须早于 EPUB 卡过滤，才能覆盖被过滤成 SRT 卡的有声书',
+    );
   });
 
   test('_srtBookMediaItem 用 _epubProgressByBookKey 而非硬编码 0/1', () {
@@ -65,18 +68,20 @@ void main() {
     );
   });
 
-  test('_buildSrtCard 对 EPUB-backed 书渲染 _progressBar，纯字幕书不渲染', () {
-    // EPUB-backed 有声书画进度条（走与 EPUB 卡同一 _progressBar）；纯字幕书无进度
-    // 真值 → 不传 metadata，保持无进度条（不显永远空的条）。
-    // 结构性守卫：门控 `_srtBookHasProgress(book) ?`，真分支画 `_progressBar(srtItem…)`，
-    // 纯字幕书 `: null` 不渲染。用正则而非单行字面量，容忍进度条扩展参数（如 BUG-888
-    // 手动读完态 `completed:`）导致的多行 dart format，同时仍锁死门控与真/假分支。
+  test('_buildSrtCard 对 EPUB-backed 书画进度条，纯字幕书不画', () {
+    // 2026-10-25 库页定版：进度条从封面底边挪进封面下的 ShelfCardMeta（SRT 卡副行
+    // 由 _srtBookMeta 决定）。门控不变：`_srtBookHasProgress(book)` 为真才给进度值，
+    // 纯字幕书给 null（ShelfCardMeta 不画永远空的条）。
+    expect(booksPart, contains('meta: _srtBookMeta(book, srtItem'));
     expect(
-      booksPart.contains(RegExp(
-          r'metadata: _srtBookHasProgress\(book\)\s*\?\s*_progressBar\(\s*srtItem,?[\s\S]*?\)\s*:\s*null')),
-      isTrue,
-      reason: 'SRT 卡进度条须按 _srtBookHasProgress 门控渲染'
-          '（true 分支画 _progressBar(srtItem…)，纯字幕书 : null 不渲染）',
+      booksPart,
+      contains('final bool hasProgress = _srtBookHasProgress(book);'),
+      reason: 'SRT 卡进度条须按 _srtBookHasProgress 门控',
+    );
+    expect(
+      'progress: hasProgress ? fraction : null'.allMatches(booksPart).length,
+      greaterThanOrEqualTo(2),
+      reason: '断链 / 纯字幕书分支都按门控给进度（无真值 → null 不画）',
     );
     expect(
       booksPart,

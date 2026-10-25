@@ -14,12 +14,12 @@ import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 ///   Bug2：SRT 无自选封面且未关联 EPUB 封面时长按对话框整块隐藏封面（网格却有
 ///          占位图标），显示不一致。
 void main() {
-  final String booksPart =
-      File('lib/src/pages/implementations/reader_history/books.part.dart')
-          .readAsStringSync();
-  final String dialogPage =
-      File('lib/src/pages/implementations/media_item_dialog_page.dart')
-          .readAsStringSync();
+  final String booksPart = File(
+    'lib/src/pages/implementations/reader_history/books.part.dart',
+  ).readAsStringSync();
+  final String dialogPage = File(
+    'lib/src/pages/implementations/media_item_dialog_page.dart',
+  ).readAsStringSync();
 
   test('Bug1: 网格 SRT 卡书名经 getDisplayTitleFromMediaItem 而非直读 book.title', () {
     // The SRT grid card must derive its title from the same media item + source
@@ -27,7 +27,11 @@ void main() {
     // shows up in both.
     expect(
       booksPart,
-      contains('mediaSource.getDisplayTitleFromMediaItem(srtItem)'),
+      matches(
+        RegExp(
+          r'mediaSource\s*\.getDisplayTitleFromMediaItem\(\s*srtItem,?\s*\)',
+        ),
+      ),
       reason: 'SRT 卡书名必须经 getDisplayTitleFromMediaItem 应用 override',
     );
     // Regression sentinel: the grid card layout (`_bookCardLayout`) must not feed
@@ -57,8 +61,9 @@ void main() {
     );
   });
 
-  testWidgets('MediaItemDialogFrame 在传入占位封面 widget 时渲染封面块（而非隐藏）',
-      (WidgetTester tester) async {
+  testWidgets('MediaItemDialogFrame 在传入占位封面 widget 时渲染封面块（而非隐藏）', (
+    WidgetTester tester,
+  ) async {
     const Key fallbackKey = ValueKey<String>('srt-fallback-cover');
     await tester.pumpWidget(
       const MaterialApp(

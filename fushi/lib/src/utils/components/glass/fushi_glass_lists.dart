@@ -213,6 +213,7 @@ class FushiAppleRow extends StatefulWidget {
     this.background,
     this.selectedBackground,
     this.mouseCursor,
+    this.stateBackground = true,
   });
 
   final Widget child;
@@ -234,6 +235,10 @@ class FushiAppleRow extends StatefulWidget {
   /// 选中底色；null = secondaryFill。
   final Color? selectedBackground;
   final MouseCursor? mouseCursor;
+
+  /// false = 悬停 / 按下不铺底色（封面卡：反馈由悬停放大与材质扫光负责，
+  /// 铺一块灰底会在封面后面露出卡片轮廓）。
+  final bool stateBackground;
 
   @override
   State<FushiAppleRow> createState() => _FushiAppleRowState();
@@ -260,7 +265,7 @@ class _FushiAppleRowState extends State<FushiAppleRow> {
     // 反馈——否则当前项悬停没有任何反应。
     final Color selectedBg = widget.selectedBackground ?? apple.secondaryFill;
     final bool paintSelected = widget.selected && selectedBg.a > 0;
-    final Color background = !interactive
+    final Color background = !interactive || !widget.stateBackground
         ? (paintSelected
               ? selectedBg
               : (widget.background ?? Colors.transparent))

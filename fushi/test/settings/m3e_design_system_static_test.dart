@@ -143,11 +143,12 @@ void main() {
       'AdaptiveSettingsSection',
       'FushiFilePickerRow',
     ],
+    // 2026-10-25 库页定版：书卡封面不再压标签 chip / 类型角标，信息进共享
+    // 文字块 ShelfCardMeta（标签以「#名字」接在副行里）。
     'lib/src/pages/implementations/reader_fushi_history_page.dart': <String>[
       'FushiPageHeader',
       'FushiCard',
-      'FushiTagChip',
-      'FushiBadge',
+      'ShelfCardMeta',
       '_bookCardShell',
     ],
     'lib/src/pages/implementations/dictionary_dialog_page.dart': <String>[
@@ -634,7 +635,7 @@ void main() {
               _functionSource(
                 fileSource,
                 'Widget _bookCardShell({',
-                'Widget _cardBadge({',
+                'Widget _bookCardLayout({',
               ),
             )
           : entry.key.endsWith('dictionary_dialog_page.dart')
@@ -823,8 +824,6 @@ class AnotherPopupPart {
           'accent and becomes invisible on the card.',
       // TODO-587: 书架页拆成主壳 + reader_history/*.part.dart 五个 part 文件，
       // 同一份「书架内容 chrome」豁免理由随之延伸到各 part 文件（仅拆分搬运，零行为变化）。
-      'lib/src/pages/implementations/reader_history/remote.part.dart':
-          'Remote book download control density is reader-shelf content.',
       'lib/src/pages/implementations/reader_fushi_page.dart':
           'Hoshi reader content and reader chrome have separate migration rules.',
       // TODO-589 batch1: reader_fushi_page.dart 拆成主壳 + reader_fushi/*.part.dart；
@@ -1496,10 +1495,6 @@ class AnotherPopupPart {
       'lib/src/pages/implementations/reader_fushi_page.dart': <String>{
         'BorderRadius.circular(',
       },
-      'lib/src/pages/implementations/reader_history/remote.part.dart': <String>{
-        'VisualDensity.compact',
-        'surfaceContainerHighest',
-      },
       'lib/src/pages/implementations/video_fushi/controls_popover.part.dart':
           <String>{'surfaceContainerHighest', 'fontSize:'},
       'lib/src/pages/implementations/video_fushi/controls_theme.part.dart':
@@ -2143,7 +2138,7 @@ class AnotherPopupPart {
     final String cardLayout = _functionSource(
       source,
       'Widget _bookCardLayout({',
-      'Widget _bookCardTagArea(',
+      'Widget _bookCardCoverFrame(',
     );
     final String epubCardChrome = _functionSource(
       source,
@@ -2151,21 +2146,15 @@ class AnotherPopupPart {
       'Widget buildMediaItem(MediaItem item)',
     );
 
-    expect(cardLayout, contains('FushiDesignTokens.of(context)'));
-    expect(cardLayout, contains('tokens.spacing'));
-    // 巡检 PR-3：footer 提取到共享 ShelfCardFooter（与 SeriesShelfCard 共用）。
-    expect(cardLayout, contains('ShelfCardFooter(title: title)'));
-    // BUG-1184：footer 高度改为随文字缩放算出（ShelfCardFooter.heightFor），不再是
-    // 死的 kShelfTitleFooterHeight——40px 装两行 12sp，textScale≥1.25 时书名第二行
-    // 的下半截被 SizedBox 切掉。封面区是 Expanded，footer 长高只是等量压缩封面。
+    // 2026-10-25 库页定版：标题 + 副行 + 进度条收进共享 ShelfCardMeta（排版 /
+    // 间距 token 在组件里），封面上不压角标。高度随文字缩放走（BUG-1184）。
+    expect(cardLayout, contains('ShelfCardMeta('));
     expect(
       cardLayout,
-      contains('height: ShelfCardFooter.heightFor(context)'),
-      reason: 'footer 高度必须随文字缩放走，不得退回固定像素（BUG-1184）',
+      contains('height: ShelfCardMeta.heightFor(context)'),
+      reason: '文字块高度必须随文字缩放走，不得退回固定像素（BUG-1184）',
     );
     expect(cardLayout, isNot(contains('height: kShelfTitleFooterHeight')));
-    expect(cardLayout, contains('PositionedDirectional('));
-    expect(cardLayout, contains('tokens.spacing.gap * 0.75'));
     expect(cardLayout, isNot(contains('_titleOverlay(title)')));
     expect(epubCardChrome, contains('_bookCardLayout('));
     expect(cardLayout, isNot(contains('EdgeInsets.only(right: 3, bottom: 2)')));

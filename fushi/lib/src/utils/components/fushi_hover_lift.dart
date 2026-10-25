@@ -89,6 +89,32 @@ class _FushiHoverLiftScope extends InheritedWidget {
       oldWidget.lifted != lifted;
 }
 
+/// 由外层代收悬停：子树里的 [FushiHoverLift] 把 [hovering] 当作自己的指针悬停。
+///
+/// 给「卡片整张包在 `IgnorePointer` 里、手势由外层格子统一接管」的场景用（合集
+/// 详情页拖排网格）：`IgnorePointer` 同时挡掉了命中测试，卡片自己的
+/// [MouseRegion] 永远收不到 enter，悬停抬升 / 封面扫光 / 接触阴影收窄就全没了。
+/// 外层格子自己测悬停再经本组件往下传，卡片照常走同一套悬停动效。
+class FushiHoverLiftHost extends InheritedWidget {
+  const FushiHoverLiftHost({
+    required this.hovering,
+    required super.child,
+    super.key,
+  });
+
+  final bool hovering;
+
+  static bool hoveringOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<FushiHoverLiftHost>()
+          ?.hovering ??
+      false;
+
+  @override
+  bool updateShouldNotify(FushiHoverLiftHost oldWidget) =>
+      oldWidget.hovering != hovering;
+}
+
 /// 悬停缩放倍数：与 `docs/design/galgame-library-reina-visual-parity.md` 里定的
 /// 游戏库观感一致，推广到其余库页时不另立数值。
 const double kFushiHoverLiftScale = 1.05;
@@ -104,6 +130,11 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     with SingleTickerProviderStateMixin {
   /// 指针是否真的在这张卡上（[MouseRegion] 的真值，滚动**不得**改它）。
   bool _hovering = false;
+
+  /// 外层 [FushiHoverLiftHost] 代收的悬停（同样是指针真值，与 [_hovering] 取或）。
+  bool _hostHovering = false;
+
+  bool get _pointerOver => _hovering || _hostHovering;
 
   /// 本帧发生过滚动位移。**这是唯一的压制位**——覆盖三条路径：Flutter 默认滚轮
   /// （同一次事件处理里把 Start/Update/End 全发完）、拖拽滚动、以及
@@ -135,14 +166,8 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   @override
   void initState() {
     super.initState();
-    _lift = AnimationController(
-      vsync: this,
-      duration: kFushiHoverLiftDuration,
-    );
-    _curved = CurvedAnimation(
-      parent: _lift,
-      curve: FushiSpringCurve.effects,
-    );
+    _lift = AnimationController(vsync: this, duration: kFushiHoverLiftDuration);
+    _curved = CurvedAnimation(parent: _lift, curve: FushiSpringCurve.effects);
   }
 
   /// 抬升的唯一判据：指针在这张卡上，且**这一帧刚滚过**（BUG-2124）。
@@ -155,7 +180,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   /// 才是真的滚起来了；`SmoothWheelScrollScope` 的 140ms 补间走 `DrivenScrollActivity`，
   /// 每帧都发 ScrollUpdate，同样被这一位盖住。
   bool get _lifted =>
-      widget.enabled && (widget.forceLifted || (_hovering && !_moved));
+      widget.enabled && (widget.forceLifted || (_pointerOver && !_moved));
 
   /// [immediate] 为真时同帧落位，不走缓动。
   void _syncLift({bool immediate = false}) {
@@ -184,7 +209,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     if (notification is! ScrollUpdateNotification) return;
     // 本帧位只在正悬停时才置：没悬停的卡抬升本来就是 0，这一位对它毫无意义，
     // 而置了却不重建就会一直挂着。
-    if (!_hovering || _moved) return;
+    if (!_pointerOver || _moved) return;
     _moved = true;
     // 落下这一位的 post-frame **在这里挂**，不在 build 里挂：build 有 `!enabled`
     // 的提前 return 分支（长按进多选正好会在指针停在卡上时把 enabled 翻假），
@@ -205,6 +230,11 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     super.didChangeDependencies();
     final bool reduceMotion =
         MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final bool hostHovering = FushiHoverLiftHost.hoveringOf(context);
+    if (hostHovering != _hostHovering) {
+      _hostHovering = hostHovering;
+      _syncLift();
+    }
     final bool animate = !reduceMotion && !isEinkTheme(context);
     if (animate != _animate) {
       _animate = animate;
@@ -264,8 +294,8 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     // 设计系统只换倍数，不改子树结构（切换设计系统时 builder 的 State 不重建）。
     final double scale =
         widget.scale == kFushiHoverLiftScale && isGlassDesign(context)
-            ? kFushiAppleHoverLiftScale
-            : widget.scale;
+        ? kFushiAppleHoverLiftScale
+        : widget.scale;
     if (!_animate) return _wrapHover(content);
     return _wrapHover(
       AnimatedBuilder(
@@ -280,8 +310,8 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   }
 
   Widget _wrapHover(Widget child) => MouseRegion(
-        onEnter: (_) => _setHover(true),
-        onExit: (_) => _setHover(false),
-        child: child,
-      );
+    onEnter: (_) => _setHover(true),
+    onExit: (_) => _setHover(false),
+    child: child,
+  );
 }

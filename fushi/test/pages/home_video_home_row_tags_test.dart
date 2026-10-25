@@ -20,7 +20,6 @@ import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -159,9 +158,14 @@ void main() {
     return cid;
   }
 
+  // 2026-10-25 库页材质定版：封面上不再压标签 chip，标签收成封面下副行尾部的
+  // 色点，全名在 tooltip（与无障碍语义）里——按 tooltip 文案定位。
   Finder tagTextIn(String cardKey, String tagName) => find.descendant(
     of: find.byKey(ValueKey<String>(cardKey)),
-    matching: find.text(tagName),
+    matching: find.byWidgetPredicate(
+      (Widget w) =>
+          w is Tooltip && (w.message ?? '').split(' · ').contains(tagName),
+    ),
   );
 
   testWidgets('继续观看行的散卡显示该视频的标签', (WidgetTester tester) async {
@@ -372,28 +376,37 @@ void main() {
       ],
     );
 
-    final FushiTagChip known = tester.widget<FushiTagChip>(
-      find.ancestor(
-        of: find.text('Known'),
-        matching: find.byType(FushiTagChip),
+    // 标签色点按标签顺序排（Known、Unknown），全名在 tooltip 里。
+    final Finder dots = find.descendant(
+      of: find.byTooltip('Known · Unknown'),
+      matching: find.byWidgetPredicate(
+        (Widget w) =>
+            w is DecoratedBox &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).shape == BoxShape.circle,
       ),
     );
-    final FushiTagChip unknown = tester.widget<FushiTagChip>(
-      find.ancestor(
-        of: find.text('Unknown'),
-        matching: find.byType(FushiTagChip),
-      ),
-    );
+    expect(dots, findsNWidgets(2));
+    Color? dotColor(int i) =>
+        ((tester.widget<DecoratedBox>(dots.at(i)).decoration) as BoxDecoration)
+            .color;
+    final ColorScheme cs = Theme.of(
+      tester.element(find.byTooltip('Known · Unknown')),
+    ).colorScheme;
 
     expect(
-      known.color,
+      dotColor(0),
       const Color(knownColor),
       reason: '本机有同名标签就借它的颜色，两端看同一条标签颜色才一致',
     );
-    expect(unknown.color, isNull, reason: 'host 只下发名字，本机没这条标签时不得凭空造颜色');
+    expect(
+      dotColor(1),
+      cs.onSurfaceVariant,
+      reason: 'host 只下发名字，本机没这条标签时不得凭空造颜色（走中性默认色）',
+    );
   });
 
-  testWidgets('「全部视频」墙格里的远端占位卡也显示标签（与字幕角标并成一列）', (WidgetTester tester) async {
+  testWidgets('「全部视频」墙格里的远端占位卡也显示标签（封面无字幕角标）', (WidgetTester tester) async {
     await pumpHome(
       tester,
       section: VideoLibrarySection.allVideos,
@@ -412,6 +425,8 @@ void main() {
       findsOneWidget,
       reason: '墙格远端卡此前左上角只有字幕角标，标签整层缺失',
     );
+    // 2026-10-25「全部都不用角标设计」：字幕角标撤掉（「包含字幕」在长按信息
+    // 面板里），封面上不再压任何角标。
     expect(
       find.descendant(
         of: find.byKey(
@@ -419,8 +434,8 @@ void main() {
         ),
         matching: find.byIcon(Icons.subtitles_outlined),
       ),
-      findsOneWidget,
-      reason: '补标签不能把字幕角标挤掉——两者并成一列，谁都不遮谁',
+      findsNothing,
+      reason: '封面上不再压字幕角标',
     );
   });
 

@@ -386,19 +386,19 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('视频卡渲染所挂的共享标签 chip', (WidgetTester tester) async {
+  testWidgets('视频卡副行渲染所挂的共享标签（色点 + tooltip）', (WidgetTester tester) async {
     await seedTaggedVideo();
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
     expect(find.text('My Episode'), findsOneWidget);
     // 标签来自共享 BookTags 池，经 video_book_tag_mappings 映射。
-    // 卡片与顶部筛选条现都用同款共享 FushiTagChip，故按卡片范围定位避免与
-    // 筛选条里的同名标签冲突。
+    // 2026-10-25 库页材质定版：封面上不再压标签 chip，标签收成封面下副行尾部
+    // 的色点，全名在 tooltip 里；按卡片范围定位避免与筛选条里的同名标签冲突。
     expect(
       find.descendant(
         of: videoCard('video/1'),
-        matching: find.widgetWithText(FushiTagChip, 'Anime'),
+        matching: find.byTooltip('Anime'),
       ),
       findsOneWidget,
     );
@@ -853,7 +853,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('home_video_video/1')),
-        matching: find.widgetWithText(FushiTagChip, 'Anime'),
+        matching: find.byTooltip('Anime'),
       ),
       findsOneWidget,
     );

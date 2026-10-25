@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart' show Clipboard, KeyDownEvent, KeyEvent;
@@ -1057,7 +1058,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         _buildQueryStateBody(state),
         FushiDeferredLoading(
           active: state == QueryBodyState.loading,
-          background: Theme.of(context).scaffoldBackgroundColor,
+          background: fushiOpaquePageColor(context),
         ),
       ],
     );
