@@ -316,8 +316,9 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     if (s?.error == kSrsSync2WrongKey) return t.srs_timeline_location_wrong_key;
     if (s?.encrypted ?? false) return t.srs_timeline_location_encrypted;
     final SrsLocationKey? k = ref.read(appProvider).srsLocationKeys[locationId];
-    if (k != null && k.pendingEnable)
+    if (k != null && k.pendingEnable) {
       return t.srs_timeline_location_encrypt_pending;
+    }
     return null;
   }
 
