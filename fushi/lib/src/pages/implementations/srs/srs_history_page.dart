@@ -44,6 +44,8 @@ class SrsCheckpointView {
     required this.at,
     required this.name,
     required this.reason,
+    this.device = '',
+    this.seq = 0,
   });
 
   factory SrsCheckpointView.fromJson(Map<String, Object?> j) =>
@@ -51,9 +53,15 @@ class SrsCheckpointView {
         at: (j['at'] as num?)?.toInt() ?? 0,
         name: j['name'] as String? ?? '',
         reason: j['reason'] as String? ?? '',
+        device: j['device'] as String? ?? '',
+        seq: (j['seq'] as num?)?.toInt() ?? 0,
       );
 
   final int at;
+
+  /// 打这个还原点的操作（恢复按它的因果截断）。
+  final String device;
+  final int seq;
   final String name;
   final String reason;
 }
@@ -187,7 +195,11 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     await _restore(at.isAfter(now) ? now : at);
   }
 
-  Future<void> _restore(DateTime at) async {
+  Future<void> _restore(DateTime at, {SrsCheckpointView? checkpoint}) async {
+    final ({String device, int seq})? cp =
+        checkpoint == null || checkpoint.device.isEmpty
+        ? null
+        : (device: checkpoint.device, seq: checkpoint.seq);
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null || !mounted) return;
     final int atMs = at.millisecondsSinceEpoch;
@@ -195,10 +207,18 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     final SrsRestorePlanView retract;
     try {
       keep = SrsRestorePlanView.fromJson(
-        await store.sync2PlanRestore(atMs, retractReviews: false),
+        await store.sync2PlanRestore(
+          atMs,
+          retractReviews: false,
+          checkpoint: cp,
+        ),
       );
       retract = SrsRestorePlanView.fromJson(
-        await store.sync2PlanRestore(atMs, retractReviews: true),
+        await store.sync2PlanRestore(
+          atMs,
+          retractReviews: true,
+          checkpoint: cp,
+        ),
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsHistoryPage.plan', e, stack);
@@ -221,7 +241,11 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     );
     if (retractReviews == null || !mounted) return;
     await _run('restore', () async {
-      await store.sync2Restore(atMs, retractReviews: retractReviews);
+      await store.sync2Restore(
+        atMs,
+        retractReviews: retractReviews,
+        checkpoint: cp,
+      );
       if (mounted) bumpSrsRevision(ref);
       FushiToast.show(
         msg: t.srs_timeline_restore_done(time: time),
@@ -810,6 +834,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
                     'SrsHistory.restoreCheckpoint',
                     () => _restore(
                       DateTime.fromMillisecondsSinceEpoch(_checkpoints[i].at),
+                      checkpoint: _checkpoints[i],
                     ),
                   ),
             child: FushiListItem(

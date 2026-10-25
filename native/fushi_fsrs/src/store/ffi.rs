@@ -678,8 +678,22 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
         "checkpoint" => c.sync2_checkpoint(profile, s("name")?, s("reason")?, i("now")?)?,
         "checkpoints" => c.sync2_checkpoints(profile)?,
         "history" => c.sync2_history(profile, s("kind")?, s("entity")?)?,
-        "plan_restore" => c.sync2_plan_restore(profile, i("at")?, req["retract"] == Value::Bool(true), i("now")?)?,
-        "restore" => c.sync2_restore(profile, i("at")?, req["retract"] == Value::Bool(true), i("now")?)?,
+        "plan_restore" | "restore" => {
+            // 恢复到还原点（`checkpoint: {device, seq}`，按它的因果截断）或某个时刻（`at`）。
+            let to = match req.get("checkpoint") {
+                Some(cp) if cp.is_object() => crate::store::sync2::timeline::RestoreTarget::Checkpoint(crate::sync2::vv::OpId {
+                    device: crate::sync2::id::Id::parse(cp["device"].as_str().ok_or("checkpoint.device")?).ok_or("bad checkpoint device")?,
+                    seq: cp["seq"].as_u64().ok_or("checkpoint.seq")?,
+                }),
+                _ => crate::store::sync2::timeline::RestoreTarget::At(i("at")?),
+            };
+            let retract = req["retract"] == Value::Bool(true);
+            if s("op")? == "plan_restore" {
+                c.sync2_plan_restore(profile, &to, retract, i("now")?)?
+            } else {
+                c.sync2_restore(profile, &to, retract, i("now")?)?
+            }
+        }
         "derive_key" => {
             let salt_hex = s("salt")?;
             let salt: Vec<u8> = (0..salt_hex.len() / 2)

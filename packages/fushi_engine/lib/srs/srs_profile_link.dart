@@ -274,13 +274,15 @@ Future<void> srsPublishProfileInfo(
   }
 }
 
-/// 采用别的 uid 之后，删掉本设备在旧 uid 下留下的写入者目录（[srsDecideProfileLink] 只在旧目录
-/// 里没有别的设备时才会决定采用，所以这里删的只是本设备自己的孤儿目录）。旧 profile 目录空了
-/// 一并删除。
+/// 采用别的 uid 之后，删掉本设备在旧 uid 下留下的目录：旧格式的写入者目录（`<设备>#n`）与同步 v2 的设备目录
+/// （`v2/devices/<[v2Device]>`）。[srsDecideProfileLink] 只在旧目录里没有别的设备时才会决定采用，所以删的只是
+/// 本设备自己的孤儿目录；`v2/devices` 下没有别的设备了，v2 集合根（meta.json、媒体）也只属于本设备。旧 profile
+/// 目录空了一并删除——否则后来的设备会看到两个同名 profile，判不出该关联哪个。
 Future<void> srsRemoveOwnProfileFolder(
   SyncAssetStore store, {
   required String profileUid,
   required String deviceId,
+  String? v2Device,
 }) async {
   final String ns = await store.ensureNamespace(kSrsSync2Namespace);
   AssetEntry? profile;
@@ -288,18 +290,39 @@ Future<void> srsRemoveOwnProfileFolder(
     if (e.isFolder && e.name == profileUid) profile = e;
   }
   if (profile == null) return;
-  final List<AssetEntry> children = await store.listChildren(profile.id);
-  if (children.any(
-    (AssetEntry e) => !e.isFolder || !srsWriterOfDevice(e.name, deviceId),
-  )) {
-    for (final AssetEntry e in children) {
-      if (e.isFolder && srsWriterOfDevice(e.name, deviceId)) {
-        await store.deleteAsset(e.id, isFolder: true);
+  bool foreign = false;
+  for (final AssetEntry e in await store.listChildren(profile.id)) {
+    if (e.isFolder && srsWriterOfDevice(e.name, deviceId)) {
+      await store.deleteAsset(e.id, isFolder: true);
+    } else if (e.isFolder && e.name == kSrsSync2Folder) {
+      if (!await _removeOwnV2Device(store, e, v2Device)) foreign = true;
+    } else {
+      foreign = true;
+    }
+  }
+  if (!foreign) await store.deleteAsset(profile.id, isFolder: true);
+}
+
+/// 删掉 v2 集合根里本设备的设备目录；返回 v2 根是否只剩本设备的东西（已整个删掉）。
+Future<bool> _removeOwnV2Device(
+  SyncAssetStore store,
+  AssetEntry v2,
+  String? v2Device,
+) async {
+  bool others = false;
+  for (final AssetEntry e in await store.listChildren(v2.id)) {
+    if (!e.isFolder || e.name != 'devices') continue;
+    for (final AssetEntry d in await store.listChildren(e.id)) {
+      if (d.isFolder && d.name == v2Device) {
+        await store.deleteAsset(d.id, isFolder: true);
+      } else {
+        others = true;
       }
     }
-    return;
   }
-  await store.deleteAsset(profile.id, isFolder: true);
+  if (others) return false;
+  await store.deleteAsset(v2.id, isFolder: true);
+  return true;
 }
 
 /// 一次 profile 关联的结果：继续同步用的 store（采用了目录里已有的 uid 时是按新身份重开的那个）。
@@ -429,6 +452,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
             backend,
             profileUid: oldUid,
             deviceId: store.deviceId,
+            v2Device: store.sync2Device,
           );
         } catch (e, stack) {
           // 孤儿目录只有本设备的内置行批次，删不掉不影响同步。

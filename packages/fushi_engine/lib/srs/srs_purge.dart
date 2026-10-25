@@ -93,7 +93,9 @@ Future<SrsPurgeReport> srsPurgeNotesNow(
       store,
       mediaRoot,
       grace: mediaGrace,
-      retention: Duration.zero,
+      // 回收站里删除未满保留期的笔记仍算存活引用：只回收被清除的这些笔记独占的媒体（清除抹掉了它们的
+      // 字段，它们自己不再引用任何文件）。
+      retention: kSrsMediaRetention,
     );
   }
   return report;

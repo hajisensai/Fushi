@@ -376,7 +376,10 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 3（srs.db schema v4）：srs_notes_cache.media_refs（笔记引用的媒体）。老库这一列是空的，升级时
   /// 全部笔记缓存重算一遍。
-  static const int _kCacheRevision = 3;
+  ///
+  /// 4（同步 v2）：已删笔记也存 media_refs（以前写空串）。被删笔记的媒体要保留 90 天、过期后才回收
+  /// （设计 §10.5），两边都靠这一列找到它们；老库已删笔记的这一列是空的，升级时重算一遍。
+  static const int _kCacheRevision = 4;
   int _cacheRevision = _kCacheRevision;
 
   /// 有效复习投影要重算的卡（缓存刷新写过 / 隐藏的卡、脏卡、重建与升级时的全部卡）：[_flushCachesNow]
@@ -960,7 +963,43 @@ class SrsDbStore implements SrsSync2Host {
         }
       }
     }
+    for (final Object? c in (r['purged'] as List?) ?? const <Object?>[]) {
+      if (c is List && c.length == 2) {
+        final SrsEntityKind? kind = SrsEntityKind.tryParse(c[0] as String?);
+        if (kind != null) _purgedPending.add((kind, c[1]! as String));
+      }
+    }
     return landed;
+  }
+
+  /// 被彻底清除（本机或对端的 Purge）、还没通知派生表的实体。
+  final Set<(SrsEntityKind, String)> _purgedPending =
+      <(SrsEntityKind, String)>{};
+
+  /// 把清除掉的卡交给 RWKV 分数表（HBK-AUDIT-020：否则分数表里一直留着它们的项）。写事务提交之后调；
+  /// 笔记按它的卡展开（卡缓存行在清除后仍在，只是隐藏）。
+  Future<void> _notifyPurged() async {
+    if (_purgedPending.isEmpty) return;
+    final List<(SrsEntityKind, String)> pending = _purgedPending.toList();
+    _purgedPending.clear();
+    final SrsRwkvScheduling? r = rwkv;
+    if (r == null) return;
+    final Set<String> cards = <String>{
+      for (final (SrsEntityKind k, String id) in pending)
+        if (k == SrsEntityKind.card) id,
+    };
+    final List<String> notes = <String>[
+      for (final (SrsEntityKind k, String id) in pending)
+        if (k == SrsEntityKind.note) id,
+    ];
+    for (final List<String> chunk in _chunks(notes)) {
+      for (final SrsCardCacheRow c in await (db.select(
+        db.srsCardsCache,
+      )..where((x) => x.noteId.isIn(chunk))).get()) {
+        cards.add(c.id);
+      }
+    }
+    if (cards.isNotEmpty) await r.onCardsPurged(cards.toList());
   }
 
   // ------------------------------------------------------------------ 同步 v2（SrsSync2Host）
@@ -991,6 +1030,7 @@ class SrsDbStore implements SrsSync2Host {
       await _flushCaches();
       await _saveLocal();
     });
+    await _notifyPurged();
     return r;
   });
 
@@ -1004,6 +1044,7 @@ class SrsDbStore implements SrsSync2Host {
           await _flushCaches();
           await _saveLocal();
         });
+        await _notifyPurged();
         return r;
       });
 
@@ -1044,24 +1085,34 @@ class SrsDbStore implements SrsSync2Host {
           (c! as Map).cast<String, Object?>(),
       ];
 
-  /// 预览恢复到 [atMs]：会改回多少字段 / 复活 / 删除多少实体 / 改多少标签 / 撤回多少次复习。
+  /// 预览恢复到 [atMs]：会改回多少字段 / 复活 / 删除多少实体 / 改多少标签 / 撤回多少次复习。给了
+  /// [checkpoint]（还原点的 `{device, seq}`）就按那个还原点的因果截断，不按墙钟（同一毫秒的删除不会被算进去）。
   Future<Map<String, Object?>> sync2PlanRestore(
     int atMs, {
     required bool retractReviews,
+    ({String device, int seq})? checkpoint,
   }) => _sync2(<String, Object?>{
     'op': 'plan_restore',
     'at': atMs,
+    'checkpoint': ?_checkpointJson(checkpoint),
     'retract': retractReviews,
     'now': now().$1,
   });
 
+  static Map<String, Object?>? _checkpointJson(({String device, int seq})? c) =>
+      c == null ? null : <String, Object?>{'device': c.device, 'seq': c.seq};
+
   /// 恢复到 [atMs]（先自动打还原点，再追加补偿操作；恢复本身也可再恢复回去）。
-  Future<void> sync2Restore(int atMs, {required bool retractReviews}) =>
-      _sync2Write(<String, Object?>{
-        'op': 'restore',
-        'at': atMs,
-        'retract': retractReviews,
-      });
+  Future<void> sync2Restore(
+    int atMs, {
+    required bool retractReviews,
+    ({String device, int seq})? checkpoint,
+  }) => _sync2Write(<String, Object?>{
+    'op': 'restore',
+    'at': atMs,
+    'checkpoint': ?_checkpointJson(checkpoint),
+    'retract': retractReviews,
+  });
 
   /// `.fushisrs` 的操作部分（全部操作 + 各设备公钥；见 sync2/srs_fushisrs.dart）。
   Future<Uint8List> sync2ExportOps() async =>
@@ -1085,6 +1136,7 @@ class SrsDbStore implements SrsSync2Host {
       'now': now().$1,
     });
     _sync2Device = id['device'] as String?;
+    await _notifyPurged();
     return (r['applied'] as int?) ?? 0;
   });
 
@@ -2089,7 +2141,8 @@ class SrsDbStore implements SrsSync2Host {
         tagsJson: Value<String>(jsonEncode(n.tags)),
         pendingDecision: Value<bool>(n.hasPendingDecision),
         updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
-        mediaRefs: Value<String>(n.deletedAt != null ? '' : _mediaRefsOf(n)),
+        // 已删笔记也记：存活引用按 deleted_at 过滤，保留期 / 过期回收要读到被删笔记引用了什么。
+        mediaRefs: Value<String>(_mediaRefsOf(n)),
       ),
     );
     final Map<String, (String, int, bool)> expected = plan.expected;

@@ -549,7 +549,8 @@ fn purge_erases_content_everywhere_and_keeps_the_chain_valid() {
     for d in [&a, &b] {
         let left = d.rows("SELECT field_key FROM srs_field_edits WHERE entity_id = 'N1'");
         assert_eq!(left.iter().skip(1).map(|r| r[0].as_str()).collect::<Vec<_>>(), vec!["deleted"]);
-        let raw = d.rows("SELECT COUNT(*) FROM sync2_ops WHERE CAST(payload AS TEXT) LIKE '%secret%' OR CAST(payload AS TEXT) LIKE '%private%'");
+        // 按字节找（载荷是二进制，开头就有 0x00：CAST 成 TEXT 后 LIKE 永远匹配不到，断言会恒成立）。
+        let raw = d.rows("SELECT COUNT(*) FROM sync2_ops WHERE instr(payload, CAST('secret' AS BLOB)) > 0 OR instr(payload, CAST('private' AS BLOB)) > 0");
         assert_eq!(raw[1][0], "0", "no content left in the local op log");
     }
     // 第三台新设备从位置上完整收下（被清除的骨架链照样接得上）。
@@ -590,13 +591,14 @@ fn timeline_restore_compensates_and_can_itself_be_undone() {
     // 「误操作」：改坏字段、删笔记、改标签、新建一条笔记、又复习一次。
     a.apply(T0 + 2000, vec![edit("note", "N1", "f/x", json!("broken")), edit("note", "N1", "deleted", json!(T0 + 2000))]);
     a.apply(T0 + 2100, vec![edit("note", "N1", "tags", json!(["oops"])), note("N2"), review("r2", "C1", T0 + 2100, 1, "review")]);
-    let preview = a.core.sync2_plan_restore(P, t1, true, T0 + 3000).unwrap();
+    use super::timeline::RestoreTarget;
+    let preview = a.core.sync2_plan_restore(P, &RestoreTarget::At(t1), true, T0 + 3000).unwrap();
     assert_eq!(preview["fields"], json!(1), "{preview}");
     assert_eq!(preview["revived"], json!(1), "{preview}");
     assert_eq!(preview["removed"], json!(1), "N2 is removed: {preview}");
     assert_eq!(preview["reviews"], json!(1), "{preview}");
     let before_restore = projection(&a);
-    a.core.sync2_restore(P, t1, true, T0 + 3000).unwrap();
+    a.core.sync2_restore(P, &RestoreTarget::At(t1), true, T0 + 3000).unwrap();
     let v = |d: &Device, key: &str, e: &str| {
         d.rows(&format!("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE entity_id = '{e}' AND field_key = '{key}'"))
             .get(1)
@@ -615,10 +617,34 @@ fn timeline_restore_compensates_and_can_itself_be_undone() {
     // 恢复之前自动打了还原点；恢复到那一刻 = 撤销这次恢复（内容回到恢复前；复习撤回不再撤回由另一次恢复的勾选决定）。
     let cps = a.core.sync2_checkpoints(P).unwrap();
     assert_eq!(cps[0]["reason"], json!("restore"));
-    a.core.sync2_restore(P, T0 + 2999, false, T0 + 4000).unwrap();
+    a.core.sync2_restore(P, &RestoreTarget::At(T0 + 2999), false, T0 + 4000).unwrap();
     assert_eq!(v(&a, "f/x", "N1"), "broken");
     assert_ne!(v(&a, "deleted", "N1"), "NULL");
     let _ = before_restore;
+}
+
+/// 还原点与随后的批量删除落在同一毫秒：按还原点的因果截断，「恢复到这个还原点」照样把删除撤回。
+#[test]
+fn restoring_to_a_checkpoint_uses_its_causality_not_its_wall_clock() {
+    use super::timeline::RestoreTarget;
+    let a = Device::new("cp");
+    let note = |id: &str| json!({"t": "entity", "x": {"id": id, "p": P, "k": "note", "d": {"createdAt": 1, "guid": id, "noteTypeId": "NT"}}});
+    a.apply(T0, vec![note("N1"), edit("note", "N1", "f/x", json!("keep me"))]);
+    a.core.sync2_checkpoint(P, "deck", "bulk_delete", T0 + 1000).unwrap();
+    a.apply(T0 + 1000, vec![edit("note", "N1", "deleted", json!(T0 + 1000))]);
+    let cp = a.core.sync2_checkpoints(P).unwrap()[0].clone();
+    // 按墙钟（同一毫秒）恢复：删除也被算进「那一刻」。
+    let by_wall = a.core.sync2_plan_restore(P, &RestoreTarget::At(cp["at"].as_i64().unwrap()), false, T0 + 2000).unwrap();
+    assert_eq!(by_wall["revived"], json!(0), "{by_wall}");
+    let id = crate::sync2::vv::OpId {
+        device: crate::sync2::id::Id::parse(cp["device"].as_str().unwrap()).unwrap(),
+        seq: cp["seq"].as_u64().unwrap(),
+    };
+    let by_cp = a.core.sync2_plan_restore(P, &RestoreTarget::Checkpoint(id), false, T0 + 2000).unwrap();
+    assert_eq!(by_cp["revived"], json!(1), "{by_cp}");
+    a.core.sync2_restore(P, &RestoreTarget::Checkpoint(id), false, T0 + 2000).unwrap();
+    let deleted = a.rows("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE entity_id = 'N1' AND field_key = 'deleted'");
+    assert_eq!(deleted[1][0], "NULL");
 }
 
 /// 外来、已盖戳的事件（备份合并）并入时保留原 dot / 上下文：被现值支配的旧值不会被盖回来，并发的仍并发。

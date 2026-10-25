@@ -691,6 +691,7 @@ impl SrsCore {
                 "fork": fork,
                 "diagnostics": t.diagnostics,
                 "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+                "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
             })
             .to_string())
         })
@@ -922,6 +923,7 @@ impl SrsCore {
                 "errors": [],
                 "fork": false,
                 "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+                "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
             })
             .to_string())
         })

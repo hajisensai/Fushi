@@ -320,6 +320,8 @@ pub(crate) struct Touched {
     pub notes: BTreeSet<String>,
     /// 可见性 / 内容被冲突扣住、解除、清除改变了的实体 (kind, id)：Dart 侧要刷新它们的缓存。
     pub entities_changed: BTreeSet<(String, String)>,
+    /// 这一次被彻底清除的实体 (kind, id)：Dart 侧要通知依赖它们的派生表（RWKV 分数表）。
+    pub purged: BTreeSet<(String, String)>,
     pub diagnostics: Vec<String>,
 }
 
@@ -1067,6 +1069,7 @@ impl SrsCore {
                 "replayed": replayed,
                 "diagnostics": t.diagnostics,
                 "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+                "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
                 "nextSeq": local.next_seq,
             })
             .to_string())
@@ -1216,6 +1219,7 @@ impl SrsCore {
                 "dominated": t.dominated,
                 "replayed": replayed,
                 "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+                "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
             }))
         })
     }

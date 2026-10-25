@@ -409,5 +409,6 @@ pub(crate) fn purge_entity(conn: &Connection, profile: &str, kind: EntKind, enti
             .map_err(sql)?;
     }
     t.entities_changed.insert((kind.wire().to_owned(), entity.to_owned()));
+    t.purged.insert((kind.wire().to_owned(), entity.to_owned()));
     Ok(())
 }

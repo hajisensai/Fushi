@@ -30,6 +30,27 @@ pub(crate) fn vv_at(conn: &Connection, profile: &str, t: i64) -> Result<Vv, Stri
     Ok(vv)
 }
 
+/// 恢复的目标：一个时刻，或一个还原点（打还原点那台设备当时已应用的全部操作 + 它自己到还原点为止的前缀）。
+///
+/// 还原点不能按它自己的墙钟截断：打还原点与随后的批量删除常落在同一毫秒，按 `wall <= t` 会把删除也算进
+/// 「那一刻」，恢复什么都不做。按还原点操作的因果（deps + 自己的 seq）截断才是「它之前」。
+pub enum RestoreTarget {
+    At(i64),
+    Checkpoint(OpId),
+}
+
+fn target_vv(conn: &Connection, profile: &str, target: &RestoreTarget) -> Result<Vv, String> {
+    match target {
+        RestoreTarget::At(t) => vv_at(conn, profile, *t),
+        RestoreTarget::Checkpoint(id) => {
+            let op = load_op(conn, profile, id)?.ok_or("checkpoint not found")?;
+            let mut vv: Vv = (*op.deps).clone();
+            vv.set(id.device, id.seq);
+            Ok(vv)
+        }
+    }
+}
+
 #[derive(Default, Debug)]
 pub(crate) struct Plan {
     pub bodies: Vec<Body>,
@@ -277,27 +298,31 @@ fn tags_at(conn: &Connection, profile: &str, note: &str, target: &Vv) -> Result<
 }
 
 impl SrsCore {
-    /// 预览恢复到 [at_ms]：会改回多少字段、复活 / 删除多少实体、改多少标签、撤回多少次复习。
-    pub fn sync2_plan_restore(&self, profile: &str, at_ms: i64, retract_reviews: bool, now: i64) -> Result<Value, String> {
+    /// 预览恢复到 [to]：会改回多少字段、复活 / 删除多少实体、改多少标签、撤回多少次复习。
+    pub fn sync2_plan_restore(&self, profile: &str, to: &RestoreTarget, retract_reviews: bool, now: i64) -> Result<Value, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
-            let target = vv_at(c, profile, at_ms)?;
+            let target = target_vv(c, profile, to)?;
             let p = plan(c, profile, &target, retract_reviews, now)?;
             Ok(json!({"fields": p.fields, "revived": p.revived, "removed": p.removed, "tags": p.tags, "reviews": p.reviews}))
         })
     }
 
-    /// 恢复到 [at_ms]（先打还原点，再追加补偿操作）。返回与 `sync2_apply_local` 同形的投影变化。
-    pub fn sync2_restore(&self, profile: &str, at_ms: i64, retract_reviews: bool, now: i64) -> Result<Value, String> {
+    /// 恢复到 [to]（先打还原点，再追加补偿操作）。返回与 `sync2_apply_local` 同形的投影变化。
+    pub fn sync2_restore(&self, profile: &str, to: &RestoreTarget, retract_reviews: bool, now: i64) -> Result<Value, String> {
         let bodies = {
             let w = self.writer()?;
             in_savepoint(&w, |c| {
                 Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
-                let target = vv_at(c, profile, at_ms)?;
+                let target = target_vv(c, profile, to)?;
                 Ok(plan(c, profile, &target, retract_reviews, now)?.bodies)
             })?
         };
-        let mut all = vec![Body::Checkpoint { name: format!("before restore to {at_ms}"), reason: "restore".into() }];
+        let label = match to {
+            RestoreTarget::At(t) => format!("before restore to {t}"),
+            RestoreTarget::Checkpoint(id) => format!("before restore to {}:{}", id.device.text(), id.seq),
+        };
+        let mut all = vec![Body::Checkpoint { name: label, reason: "restore".into() }];
         all.extend(bodies);
         self.sync2_append(profile, now, all)
     }
@@ -306,10 +331,19 @@ impl SrsCore {
     pub fn sync2_checkpoints(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         let mut stmt = r
-            .prepare("SELECT wall, name, reason FROM sync2_checkpoints WHERE profile_uid = ?1 ORDER BY wall DESC")
+            .prepare("SELECT wall, name, reason, device, seq FROM sync2_checkpoints WHERE profile_uid = ?1 ORDER BY wall DESC, seq DESC")
             .map_err(sql)?;
         let rows = stmt
-            .query_map([profile], |x| Ok(json!({"at": x.get::<_, i64>(0)?, "name": x.get::<_, String>(1)?, "reason": x.get::<_, String>(2)?})))
+            .query_map([profile], |x| {
+                let device = <[u8; 16]>::try_from(x.get::<_, Vec<u8>>(3)?).map(|a| Id(a).text()).unwrap_or_default();
+                Ok(json!({
+                    "at": x.get::<_, i64>(0)?,
+                    "name": x.get::<_, String>(1)?,
+                    "reason": x.get::<_, String>(2)?,
+                    "device": device,
+                    "seq": x.get::<_, i64>(4)?,
+                }))
+            })
             .map_err(sql)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(sql)?;
