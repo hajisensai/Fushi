@@ -763,6 +763,39 @@ void main() {
       expect(s.folderErrors, isEmpty);
     });
 
+    test(
+      '文件夹位置的 meta.json 不见了而已有数据：不重写、记进 folderErrors、不算 ran；放回后恢复',
+      () async {
+        final Directory folder = Directory.systemTemp.createTempSync(
+          'fushi_srs_folder_meta_',
+        );
+        addTearDown(() => folder.deleteSync(recursive: true));
+        final SrsFolderLocation loc = SrsFolderLocation(
+          id: 'nas',
+          path: folder.path,
+        );
+        final SrsSyncScheduler s = scheduler(
+          channels: (Future<void> Function(SyncAssetStore) body) async =>
+              (ran: 0, errors: const <Object>[]),
+          folderLocations: () async => <SrsFolderLocation>[loc],
+        );
+        expect((await s.syncNow()).ran, 1);
+        final File meta = File(p.join(folderRoot(loc).path, 'meta.json'));
+        final String original = meta.readAsStringSync();
+        meta.deleteSync();
+        final SrsSyncNowResult r = await s.syncNow();
+        expect(r.ran, 0);
+        expect(meta.existsSync(), isFalse, reason: '不替一份可能还在的 meta.json 重写');
+        expect(
+          (s.folderErrors['nas']! as SrsSyncReportError).message,
+          kSrsSync2MetaUnavailable,
+        );
+        meta.writeAsStringSync(original);
+        expect((await s.syncNow()).ran, 1);
+        expect(s.folderErrors, isEmpty);
+      },
+    );
+
     test('一个用途都没勾的位置：保留配置但不跑', () async {
       final Directory folder = Directory.systemTemp.createTempSync(
         'fushi_srs_folder_idle_',

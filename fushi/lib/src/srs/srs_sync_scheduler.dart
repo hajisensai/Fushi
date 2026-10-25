@@ -533,6 +533,15 @@ class SrsSyncScheduler {
           key: _locationKey?.call(l.locationId),
         );
         await _noteCrypto(l.locationId, r.crypto);
+        // 握手没过但不是口令类问题（meta.json 读不到 / 位置来自更新版本）：如实记成这个位置没同步成。
+        // 口令类问题由 [locationCrypto] 显示（需要口令 / 口令不对 / 加密设置不见了）。
+        final String? error = (r.crypto?.needsUpgrade ?? false)
+            ? kSrsSyncNeedsUpgrade
+            : r.crypto?.error;
+        if (error != null && !kSrsLocationCryptoErrors.contains(error)) {
+          folderErrors[l.id] = SrsSyncReportError(error);
+          continue;
+        }
         folderErrors.remove(l.id);
         ran++;
         final SrsSync2Report? ops = r.ops;
