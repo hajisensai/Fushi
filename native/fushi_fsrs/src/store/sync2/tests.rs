@@ -780,14 +780,16 @@ fn bench_scale() {
     a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
     let t = Instant::now();
     for chunk in 0..(cards + 99) / 100 {
-        let mut evs = Vec::new();
+        // 每张卡一条笔记（真实库的形状；全挂在一条笔记上会把「每条写入看一眼实体」放大成平方级）。
+        let mut input = Vec::new();
         for c in chunk * 100..((chunk + 1) * 100).min(cards) {
             for r in 0..20 {
                 let at = T0 + r * DAY + c;
-                evs.push(review(&format!("r{c}-{r}"), &format!("C{c}"), at, 3, if r == 0 { "learn" } else { "review" }));
+                let e = review(&format!("r{c}-{r}"), &format!("C{c}"), at, 3, if r == 0 { "learn" } else { "review" });
+                input.push(json!({"e": e, "note": format!("N{c}")}));
             }
         }
-        a.apply(T0 + chunk, evs);
+        a.core.sync2_apply_local(P, T0 + chunk, &Value::Array(input).to_string()).unwrap();
     }
     let apply_ms = t.elapsed().as_millis();
     let t = Instant::now();
@@ -827,4 +829,17 @@ fn history_lists_every_edit_including_overwritten_ones() {
     let h = a.core.sync2_history(P, "deck", &deck).unwrap();
     let names: Vec<&Value> = h.as_array().unwrap().iter().filter(|e| e["key"] == "name").map(|e| &e["value"]).collect();
     assert_eq!(names, vec![&json!("Two"), &json!("One")]);
+}
+
+#[test]
+fn digest_is_recomputed_only_when_due() {
+    let a = Device::new("dg");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck)]);
+    let ten_min = 600_000;
+    assert!(a.core.sync2_digest_due(P, T0, Some(ten_min)).unwrap().get("digest").is_some(), "first one always runs");
+    assert_eq!(a.core.sync2_digest_due(P, T0 + 1, Some(ten_min)).unwrap()["skipped"], json!(true), "same vv");
+    a.apply(T0 + 2, vec![edit("deck", &deck, "name", json!("X"))]);
+    assert_eq!(a.core.sync2_digest_due(P, T0 + 3, Some(ten_min)).unwrap()["skipped"], json!(true), "vv changed but too soon");
+    assert!(a.core.sync2_digest_due(P, T0 + ten_min + 3, Some(ten_min)).unwrap().get("digest").is_some());
 }

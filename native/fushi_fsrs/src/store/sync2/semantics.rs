@@ -237,6 +237,16 @@ fn conflict_kind(what: &str, entity_kind: &str) -> &'static str {
 
 /// 重新判定一个实体上的删除该不该扣住（每次有碰它的操作落进来都调）。
 pub(crate) fn evaluate_holds(conn: &Connection, profile: &str, kind: &str, entity: &str, now: i64, t: &mut Touched) -> Result<(), String> {
+    // 每条碰到实体的写入都会走这里；绝大多数实体从没被删过。先走 (实体, 键) 索引问一句「有没有删除」，
+    // 没有就返回——否则每条写入都要把这个实体的全部操作读一遍，同一实体上的操作越多越慢（平方级）。
+    let any_delete: bool = conn
+        .prepare_cached("SELECT 1 FROM sync2_ent_ops WHERE profile_uid = ?1 AND kind = ?2 AND entity = ?3 AND what = 'deleted' LIMIT 1")
+        .map_err(sql)?
+        .exists(params![profile, kind, entity])
+        .map_err(sql)?;
+    if !any_delete {
+        return Ok(());
+    }
     let all = ops_of(conn, profile, kind, entity)?;
     let deleted_ops: Vec<OpId> = all.iter().filter(|(_, w)| w == "deleted").map(|(o, _)| *o).collect();
     if deleted_ops.is_empty() {

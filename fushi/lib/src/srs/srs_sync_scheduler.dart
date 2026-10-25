@@ -285,6 +285,31 @@ class SrsSyncScheduler {
   final Map<String, SrsLocationCryptoState> locationCrypto =
       <String, SrsLocationCryptoState>{};
 
+  /// 已经上报过摘要不一致的设备（每次启动每台只报一次）。
+  final Set<String> _digestReported = <String>{};
+
+  /// 设计 §4.5：两台设备在同一版本向量下派生状态摘要不同 = 确定性 bug，自动上报日志（不让用户处理）。
+  Future<void> _reportDigestMismatch(SrsDbStore store) async {
+    try {
+      final Map<String, Object?> status = await store.sync2Status();
+      for (final Object? d
+          in (status['devices'] as List?) ?? const <Object?>[]) {
+        if (d is! Map || d['digestMismatch'] != true) continue;
+        final String id = d['device'] as String? ?? '';
+        if (!_digestReported.add(id)) continue;
+        ErrorLogService.instance.log(
+          'SrsSync2.digestMismatch',
+          StateError(
+            'SRS state digest differs from device $id at the same version vector',
+          ),
+          StackTrace.current,
+        );
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsSyncScheduler.digest', e, stack);
+    }
+  }
+
   /// 记下一轮的加密结论；本机刚开的加密生效了就交给调用方保存。
   Future<void> _noteCrypto(String locationId, SrsSync2Report? r) async {
     if (r == null) return;
@@ -421,6 +446,7 @@ class SrsSyncScheduler {
     if (report.error == kSrsSyncNeedsUpgrade) {
       _noticeOnce(SrsSyncNotice.backendUnsupported);
     }
+    if (report.error == null && !_halted) await _reportDigestMismatch(store);
     bool mediaChanged = false;
     final Future<Directory?> Function()? readMediaRoot = _readMediaRoot;
     if (report.error == null && readMediaRoot != null && !_halted) {

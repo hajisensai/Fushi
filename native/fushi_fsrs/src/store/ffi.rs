@@ -670,7 +670,10 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
             }
             json!({})
         }
-        "digest" => c.sync2_digest(profile)?,
+        "digest" => match req.get("minIntervalMs").and_then(Value::as_i64) {
+            Some(ms) => c.sync2_digest_due(profile, i("now")?, Some(ms))?,
+            None => c.sync2_digest(profile)?,
+        },
         "status" => c.sync2_status(profile)?,
         "conflicts" => c.sync2_conflicts(profile)?,
         "resolve" => c.sync2_resolve(profile, s("conflict")?, req["delete"] == Value::Bool(true), i("now")?)?,

@@ -712,16 +712,53 @@ impl SrsCore {
 
     /// 算并记下状态摘要（设计 §4.5；写 head 时带上）。返回 `{"digest", "vv"}`。
     pub fn sync2_digest(&self, profile: &str) -> Result<Value, String> {
+        self.sync2_digest_due(profile, 0, None)
+    }
+
+    /// 算并记下状态摘要（写进 head，§4.5）。摘要是全库扫描（100 万次复习约数秒），所以：
+    /// - 在**读连接**的一个读事务里算（WAL 快照：摘要与版本向量出自同一时刻；不占写锁，复习照常写）；
+    /// - 给了 [min_interval_ms]：版本向量没变、或离上次算不到这个间隔，就不算（返回 `{"skipped": true}`）。
+    pub fn sync2_digest_due(&self, profile: &str, now: i64, min_interval_ms: Option<i64>) -> Result<Value, String> {
+        let key = format!("sync2_digest/{profile}");
+        let at_key = format!("sync2_digest_at/{profile}");
+        let (d, vv) = {
+            let r = self.reader()?;
+            r.execute_batch("BEGIN").map_err(sql)?;
+            let out = (|| {
+                let vv = applied_vv(&r, profile)?;
+                if let Some(interval) = min_interval_ms {
+                    let prev: Option<String> = r
+                        .query_row("SELECT value FROM srs_meta WHERE key = ?1", [&key], |x| x.get(0))
+                        .optional()
+                        .map_err(sql)?;
+                    let last_at: i64 = r
+                        .query_row("SELECT value FROM srs_meta WHERE key = ?1", [&at_key], |x| x.get::<_, String>(0))
+                        .optional()
+                        .map_err(sql)?
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    let same_vv = prev.as_deref().and_then(|p| p.split_once('@')).is_some_and(|(_, v)| v == vv.hash_hex());
+                    if same_vv || now - last_at < interval {
+                        return Ok(None);
+                    }
+                }
+                Ok::<_, String>(Some((digest(&r, profile)?, vv)))
+            })();
+            r.execute_batch("COMMIT").map_err(sql)?;
+            match out? {
+                Some(x) => x,
+                None => return Ok(json!({"skipped": true})),
+            }
+        };
         let w = self.writer()?;
         in_savepoint(&w, |c| {
-            let d = digest(c, profile)?;
-            let vv = applied_vv(c, profile)?;
-            let tagged = format!("{}@{}", d, vv.hash_hex());
-            c.execute(
-                "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                params![format!("sync2_digest/{profile}"), tagged],
-            )
-            .map_err(sql)?;
+            for (k, v) in [(&key, format!("{}@{}", d, vv.hash_hex())), (&at_key, now.to_string())] {
+                c.execute(
+                    "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    params![k, v],
+                )
+                .map_err(sql)?;
+            }
             Ok(json!({"digest": d, "vv": vv.hash_hex()}))
         })
     }

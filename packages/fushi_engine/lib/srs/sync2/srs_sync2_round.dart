@@ -35,6 +35,9 @@ abstract interface class SrsSync2Host {
   });
 }
 
+/// 状态摘要最多多久重算一次（版本向量没变就不算）。
+const Duration kSrsSync2DigestInterval = Duration(minutes: 10);
+
 /// 本协议版本（`meta.json` 的 `v`）与能读它的最低读者版本。
 const int kSrsSync2Protocol = 1;
 const int kSrsSync2MinReader = 1;
@@ -224,6 +227,13 @@ Future<SrsSync2Report> srsSync2Round({
     report.uploaded++;
   }
   final int upto = (out.map['upto'] as int?) ?? 0;
+  // 状态摘要随 head 发布（§4.5：同一版本向量下两台设备摘要不同 = 确定性 bug）。全库扫描，内核只在版本向量
+  // 变了且离上次满 [kSrsSync2DigestInterval] 时才重算，读连接上算、不占写锁。
+  await host.sync2Command(<String, Object?>{
+    'op': 'digest',
+    'now': nowMs(),
+    'minIntervalMs': kSrsSync2DigestInterval.inMilliseconds,
+  });
   final SrsSync2Result head = await host.sync2Command(<String, Object?>{
     'op': 'head',
     'location': progressId,
