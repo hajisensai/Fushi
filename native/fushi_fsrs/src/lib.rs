@@ -31,6 +31,7 @@ pub mod projection;
 pub mod registers;
 pub mod search;
 pub mod store;
+pub mod sync2;
 pub mod style_dedup;
 
 use std::ffi::{c_char, CStr, CString};

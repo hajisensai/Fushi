@@ -195,6 +195,11 @@ fn uuid_v5(namespace: &[u8; 16], name: &str) -> String {
     )
 }
 
+/// 修改记录 ID（Dart `SrsIds.fieldEdit`）：由 dot 决定。同步 v2 的投影行（sync2）与这里同一个函数。
+pub fn edit_id(writer: &str, seq: i64) -> String {
+    uuid_v5(&uuid_bytes(SRS_NAMESPACE), &format!("edit/{writer}/{seq}"))
+}
+
 /// Dart `SrsFieldEdit.fromJson`：kind 不认识 / 必填键缺失或类型不对 / ID 与 dot 不符 → 坏数据。
 fn parse_edit<'a>(
     json: &'a str,
