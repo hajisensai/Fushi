@@ -12,6 +12,7 @@
 pub mod config;
 pub mod schema;
 pub(crate) mod semantics;
+pub mod timeline;
 pub mod transport;
 
 use std::collections::BTreeSet;
@@ -1119,7 +1120,7 @@ impl SrsCore {
     }
 
     /// 追加一批本机内部操作（冲突解决、清除、还原点）：与 [SrsCore::sync2_apply_local] 同一条落库 / 投影 / 重放路径。
-    fn sync2_append(&self, profile: &str, now: i64, bodies: Vec<Body>) -> Result<Value, String> {
+    pub(crate) fn sync2_append(&self, profile: &str, now: i64, bodies: Vec<Body>) -> Result<Value, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let mut local = match Local::load(c, profile)? {

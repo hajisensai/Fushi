@@ -572,3 +572,48 @@ fn purge_erases_content_everywhere_and_keeps_the_chain_valid() {
     }
     assert!(checked >= 2);
 }
+
+/// 时间线（设计 §10.2）：恢复到某时刻 = 追加补偿操作；恢复后各端一致；恢复本身可以再恢复回去。
+#[test]
+fn timeline_restore_compensates_and_can_itself_be_undone() {
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    let note = |id: &str| json!({"t": "entity", "x": {"id": id, "p": P, "k": "note", "d": {"createdAt": 1, "guid": id, "noteTypeId": "NT"}}});
+    a.apply(T0, vec![deck_entity(&deck), note("N1"), edit("note", "N1", "f/x", json!("original")), edit("note", "N1", "tags", json!(["keep"]))]);
+    a.apply(T0 + 1000, vec![review("r1", "C1", T0 + 1000, 3, "learn")]);
+    let t1 = T0 + 1500;
+    // 「误操作」：改坏字段、删笔记、改标签、新建一条笔记、又复习一次。
+    a.apply(T0 + 2000, vec![edit("note", "N1", "f/x", json!("broken")), edit("note", "N1", "deleted", json!(T0 + 2000))]);
+    a.apply(T0 + 2100, vec![edit("note", "N1", "tags", json!(["oops"])), note("N2"), review("r2", "C1", T0 + 2100, 1, "review")]);
+    let preview = a.core.sync2_plan_restore(P, t1, true, T0 + 3000).unwrap();
+    assert_eq!(preview["fields"], json!(1), "{preview}");
+    assert_eq!(preview["revived"], json!(1), "{preview}");
+    assert_eq!(preview["removed"], json!(1), "N2 is removed: {preview}");
+    assert_eq!(preview["reviews"], json!(1), "{preview}");
+    let before_restore = projection(&a);
+    a.core.sync2_restore(P, t1, true, T0 + 3000).unwrap();
+    let v = |d: &Device, key: &str, e: &str| {
+        d.rows(&format!("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE entity_id = '{e}' AND field_key = '{key}'"))
+            .get(1)
+            .map(|r| r[0].clone())
+            .unwrap_or_default()
+    };
+    assert_eq!(v(&a, "f/x", "N1"), "original");
+    assert_eq!(v(&a, "deleted", "N1"), "NULL");
+    assert_eq!(tags_of(&a, "N1"), r#"["keep"]"#);
+    assert_ne!(v(&a, "deleted", "N2"), "", "N2 created after t1 is deleted");
+    assert!(a.state("C1").as_str().unwrap().contains("reps: 1"), "the later review is retracted: {}", a.state("C1"));
+    // 恢复是普通操作：同步到 B，两端一致。
+    a.sync(&mut bucket, "loc", T0 + 3100);
+    b.sync(&mut bucket, "loc", T0 + 3100);
+    assert_eq!(projection(&a), projection(&b));
+    // 恢复之前自动打了还原点；恢复到那一刻 = 撤销这次恢复（内容回到恢复前；复习撤回不再撤回由另一次恢复的勾选决定）。
+    let cps = a.core.sync2_checkpoints(P).unwrap();
+    assert_eq!(cps[0]["reason"], json!("restore"));
+    a.core.sync2_restore(P, T0 + 2999, false, T0 + 4000).unwrap();
+    assert_eq!(v(&a, "f/x", "N1"), "broken");
+    assert_ne!(v(&a, "deleted", "N1"), "NULL");
+    let _ = before_restore;
+}
