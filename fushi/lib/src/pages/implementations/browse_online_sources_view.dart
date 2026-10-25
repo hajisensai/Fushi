@@ -16,6 +16,7 @@ import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart' show MangaOnlineSourceRow;
@@ -94,6 +95,37 @@ void openOnlineSourceStores(BuildContext context, OnlineSourcesDomain domain) {
         child: BrowseOnlineSourcesView(
           domain: domain,
           section: OnlineSourcesSection.stores,
+        ),
+      ),
+    ),
+  );
+}
+
+/// 从「来源」空态去 [domain] 的「扩展」。
+///
+/// 在库页壳里（壳声明了「扩展」视图）就地切过去，与库页顶栏点「扩展」等价；
+/// 不在壳里（浏览模块、被单独 push 的来源页）push 一页扩展目录，不留死按钮。
+void openOnlineSourceExtensions(
+  BuildContext context,
+  OnlineSourcesDomain domain,
+) {
+  final VoidCallback? select = MediaLibraryShellScope.maybeOf(
+    context,
+  )?.actionFor(MediaLibraryViewKind.extensions);
+  if (select != null) {
+    select();
+    return;
+  }
+  Navigator.of(context).push(
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (BuildContext context) => BrowseSubPage(
+        title:
+            '${t.media_import_segment_extensions} · '
+            '${onlineSourcesDomainLabel(domain)}',
+        child: BrowseOnlineSourcesView(
+          domain: domain,
+          section: OnlineSourcesSection.extensions,
         ),
       ),
     ),
@@ -208,12 +240,17 @@ class _BrowseOnlineSourcesViewState
         manager: manager,
         onOpenSource: _openAnimeSource,
         emptyLabel: t.video_online_sources_empty,
+        onBrowseExtensions: () =>
+            openOnlineSourceExtensions(context, OnlineSourcesDomain.video),
       )
     else
       MihonExtensionsPage(
         key: ValueKey<String>('video_mihon_extensions_${widget.section.name}'),
         manager: manager,
         embedded: true,
+        onOpenStores: widget.section == OnlineSourcesSection.extensions
+            ? () => openOnlineSourceStores(context, OnlineSourcesDomain.video)
+            : null,
         sections: <MihonExtensionsSection>[
           if (widget.section == OnlineSourcesSection.stores)
             MihonExtensionsSection.stores
@@ -232,6 +269,8 @@ class _BrowseOnlineSourcesViewState
         key: const ValueKey<String>('book_lnreader_sources'),
         manager: manager,
         onOpenSource: _openNovelSource,
+        onBrowseExtensions: () =>
+            openOnlineSourceExtensions(context, OnlineSourcesDomain.novel),
       )
     else
       LnReaderExtensionsSection(
@@ -241,6 +280,9 @@ class _BrowseOnlineSourcesViewState
         manager: manager,
         showStores: widget.section == OnlineSourcesSection.stores,
         showCatalog: widget.section == OnlineSourcesSection.extensions,
+        onOpenStores: widget.section == OnlineSourcesSection.extensions
+            ? () => openOnlineSourceStores(context, OnlineSourcesDomain.novel)
+            : null,
       ),
   ];
 

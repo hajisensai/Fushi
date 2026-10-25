@@ -62,6 +62,7 @@ class MihonExtensionsPage extends ConsumerStatefulWidget {
     this.manager,
     this.embedded = false,
     this.sections = MihonExtensionsSection.values,
+    this.onOpenStores,
   });
 
   final Widget? navigation;
@@ -72,6 +73,12 @@ class MihonExtensionsPage extends ConsumerStatefulWidget {
 
   /// 内嵌时渲染的节；独立页形态忽略它、恒渲染全部。
   final List<MihonExtensionsSection> sections;
+
+  /// 内嵌目录按钮行上的「扩展仓库」入口（push 仓库管理页）；null 不显示。
+  ///
+  /// 页头动作组里同一动作只是一颗无字的图标，新用户认不出「加扩展先得加仓库」
+  /// 的入口在哪，所以目录正文里再给一颗带字的按钮。
+  final VoidCallback? onOpenStores;
 
   bool get _showStores => sections.contains(MihonExtensionsSection.stores);
   bool get _showCatalog => sections.contains(MihonExtensionsSection.catalog);
@@ -484,16 +491,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       ),
   ];
 
-  /// 内嵌目录顶部的动作行（M3E 按钮）。
+  /// 内嵌且仓库段同在时目录顶部的动作行：刷新 + 添加仓库（M3E 按钮）。
   ///
-  /// 库页「扩展」子标签的页头动作组已经挂着「刷新仓库」（
-  /// [ExtensionCatalogHeaderScope]），这里只留一枚 tonal「导入 APK」；没有页头
-  /// 的宿主（浏览模块、测试）刷新仍留在这里——入口只挪位置、一个不丢。仓库段
-  /// 同在时附「添加仓库」。
+  /// 只有扩展目录一节时没有这一行：目录级动作全部并进批量安装那一排
+  /// （[_catalogTrailing]），刷新留在「扩展仓库」页（2026-10-25 用户拍板：四颗
+  /// 按钮同一行，页头的仓库 / 刷新图标砍掉）。
   Widget _embeddedActions(MihonManager manager) {
-    final bool refreshInHeader = ExtensionCatalogHeaderScope.refreshInHeaderOf(
-      context,
-    );
     final bool busy = manager.loading;
     return Align(
       alignment: AlignmentDirectional.centerEnd,
@@ -503,29 +506,44 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         runSpacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: <Widget>[
-          if (!refreshInHeader)
-            FushiTextButton.icon(
-              key: const ValueKey<String>('mihon_extension_refresh'),
-              onPressed: busy ? null : () => unawaited(manager.refreshStores()),
-              icon: const FushiIcon(FushiIcons.refresh),
-              label: Text(t.mihon_store_refresh),
-            ),
-          if (widget._showStores)
-            FushiOutlinedButton.icon(
-              onPressed: busy ? null : _addStore,
-              icon: const FushiIcon(FushiIcons.link),
-              label: Text(t.mihon_store_add),
-            ),
-          if (widget._showCatalog)
-            FushiFilledButton.tonalIcon(
-              key: const ValueKey<String>('mihon_extension_import_apk'),
-              onPressed: busy ? null : _importApk,
-              icon: const FushiIcon(FushiIcons.importFile),
-              label: Text(t.mihon_extension_import),
-            ),
+          FushiTextButton.icon(
+            key: const ValueKey<String>('mihon_extension_refresh'),
+            onPressed: busy ? null : () => unawaited(manager.refreshStores()),
+            icon: const FushiIcon(FushiIcons.refresh),
+            label: Text(t.mihon_store_refresh),
+          ),
+          FushiOutlinedButton.icon(
+            onPressed: busy ? null : _addStore,
+            icon: const FushiIcon(FushiIcons.link),
+            label: Text(t.mihon_store_add),
+          ),
         ],
       ),
     );
+  }
+
+  /// 内嵌目录接在批量安装 / 一键更新后面的同排动作：扩展仓库 + 导入本地 APK。
+  /// 独立页形态这两样在页头动作里，这里返回空。
+  List<Widget> _catalogTrailing(MihonManager manager) {
+    if (!widget.embedded) return const <Widget>[];
+    final VoidCallback? openStores = widget.onOpenStores;
+    return <Widget>[
+      if (openStores != null)
+        FushiOutlinedButton.icon(
+          key: const ValueKey<String>('mihon_extension_open_stores'),
+          size: FushiButtonSize.s,
+          onPressed: openStores,
+          icon: const FushiIcon(FushiIcons.hub),
+          label: Text(t.online_sources_stores_manage),
+        ),
+      FushiFilledButton.tonalIcon(
+        key: const ValueKey<String>('mihon_extension_import_apk'),
+        size: FushiButtonSize.s,
+        onPressed: manager.loading ? null : _importApk,
+        icon: const FushiIcon(FushiIcons.importFile),
+        label: Text(t.mihon_extension_import),
+      ),
+    ];
   }
 
   /// 刷新中的波浪进度条：弹簧展开 / 收起，不再一帧跳出来把列表顶下去。
@@ -561,7 +579,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         replayKey: (_language, _store, _minDownloads),
         child: SliverMainAxisGroup(
           slivers: <Widget>[
-            SliverToBoxAdapter(child: _embeddedActions(manager)),
+            if (widget._showStores)
+              SliverToBoxAdapter(child: _embeddedActions(manager)),
             SliverToBoxAdapter(child: _loadingSlot(manager.loading)),
             ..._buildContentSlivers(
               manager,
@@ -648,9 +667,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   /// 顶部刷新 / 添加仓库、信任提示、加载条、仓库分组列表。与小说插件仓库页
   /// 同一组零件（`extension_store_list.dart`）。
   Widget _buildStorePage(MihonManager manager) {
-    return FushiEntranceScope(
-      child: _buildStorePageBody(manager),
-    );
+    return FushiEntranceScope(child: _buildStorePageBody(manager));
   }
 
   Widget _buildStorePageBody(MihonManager manager) {
@@ -765,7 +782,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     );
     // 每个仓库（表头 + 展开的扩展行）读作一个分组：逐行算出组内位置。
     final List<(int, int)> groupSlots = extensionGroupSlots(
-      groupedRows.map((MihonExtensionListRow row) => row is MihonStoreHeaderRow),
+      groupedRows.map(
+        (MihonExtensionListRow row) => row is MihonStoreHeaderRow,
+      ),
     );
     final Widget storesSliver = SliverList.builder(
       itemCount: manager.stores.length,
@@ -793,23 +812,22 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
               (MihonAvailableExtension item) => item.storeUrl == store.indexUrl,
             )
             .length;
-        final ExtensionStoreStatus? status =
-            switch ((store.lastError, returnedNothing)) {
-              (final String error, _) => (
-                text: error,
-                tone: FushiStatusTone.error,
-              ),
-              (null, true) => (
-                text: t.mihon_store_zero_extensions,
-                tone: FushiStatusTone.warning,
-              ),
-              // 刷新中 / 停用的仓库没有可信的条数，只显示地址。
-              (null, false) when extensionCount > 0 => (
-                text: t.mihon_store_extension_count(count: extensionCount),
-                tone: null,
-              ),
-              (null, false) => null,
-            };
+        final ExtensionStoreStatus? status = switch ((
+          store.lastError,
+          returnedNothing,
+        )) {
+          (final String error, _) => (text: error, tone: FushiStatusTone.error),
+          (null, true) => (
+            text: t.mihon_store_zero_extensions,
+            tone: FushiStatusTone.warning,
+          ),
+          // 刷新中 / 停用的仓库没有可信的条数，只显示地址。
+          (null, false) when extensionCount > 0 => (
+            text: t.mihon_store_extension_count(count: extensionCount),
+            tone: null,
+          ),
+          (null, false) => null,
+        };
         // 仓库列表整段读作一个分组（MD3 分段 / Apple inset grouped），组尾
         // 留组间距与下面的目录隔开。
         return ExtensionStoreTile(
@@ -848,6 +866,21 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: _buildFilters(manager, languages),
+          ),
+        )
+      else if (_catalogTrailing(manager) case final List<Widget> trailing
+          when trailing.isNotEmpty)
+        // 有仓库但目录一个扩展都没取到（刷新失败 / 仓库为空）：没有筛选区可挂，
+        // 目录动作单独成行，「扩展仓库」「导入 APK」入口不丢。
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: trailing,
+            ),
           ),
         ),
       const SliverToBoxAdapter(child: SizedBox(height: 8)),
@@ -1012,7 +1045,10 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         extension.name,
         extension.packageName,
         ...extension.sources.expand(
-          (MihonAvailableSource source) => <String>[source.name, source.baseUrl],
+          (MihonAvailableSource source) => <String>[
+            source.name,
+            source.baseUrl,
+          ],
         ),
       ],
     );
@@ -1159,15 +1195,20 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
+        ExtensionCatalogActions(
+          keyPrefix: 'mihon_extension',
+          onBulkInstall: _bulkInstalling ? null : _bulkInstall,
+          onUpdateAll: _bulkInstalling ? null : _updateAll,
+          trailing: _catalogTrailing(manager),
+        ),
+        const SizedBox(height: 12),
         _buildSearchAndLanguageFilters(manager, languages),
         const SizedBox(height: 8),
-        ExtensionCatalogActions(
+        ExtensionMinDownloadsFilter(
           keyPrefix: 'mihon_extension',
           minDownloads: _minDownloads,
           onMinDownloadsChanged: (int value) =>
               setState(() => _minDownloads = value),
-          onBulkInstall: _bulkInstalling ? null : _bulkInstall,
-          onUpdateAll: _bulkInstalling ? null : _updateAll,
         ),
       ],
     );

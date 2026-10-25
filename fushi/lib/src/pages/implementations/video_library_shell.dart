@@ -12,6 +12,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/library_online_sources_view.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
@@ -316,62 +317,73 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
     );
     // 保留外壳给本 tab 的页面名（页头据它判断「标题已由外壳画出」），只把动作槽
     // 换成壳自己的，动作改由浮动动作组画。
-    return FushiShellTitleScope(
-      title: FushiShellTitleScope.maybeTitleOf(context) ?? t.nav_video,
-      actionsSlot: _actionsSlot,
-      child: FushiHeaderSearchKeys(
-        // Ctrl+F / `/` 展开当前视图的页头搜索，展开时 Esc 先清空再收起
-        // （焦点在页签、动作或内容上都认）。
-        resolve: () => fushiVisibleHeaderSearch(_actionsSlot),
-        child: FushiFloatingChromeScope(
-          controller: _chrome,
-          // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
-          // 滚不动」的根因是收起改了视口高度，见 [FushiFloatingChromeOverlay]）。
-          child: FushiFloatingChromeOverlay(
-            chrome: FushiFloatingChromeBar(
-              tabs: navigation,
-              slot: _actionsSlot,
-            ),
-            child: NotificationListener<ScrollNotification>(
-              onNotification: _onScroll,
-              child: SectionSwipeNavigator<VideoLibrarySection>(
-                sections: <VideoLibrarySection>[
-                  for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
-                    tab.value,
-                ],
-                selected: _section,
-                onSelect: _select,
-                // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
-                // [FushiFloatingChromeOverlay] 读同一个作用域，内层页面的顶部
-                // 让位自动累加两行），收放不改页面视口。
-                child: FushiFloatingChromeOverlay(
-                  chrome: subTabs.length < 2
-                      ? const SizedBox.shrink()
-                      : Padding(
-                          // 与顶栏胶囊、页面内容同一条页边；顶上 8 + 顶栏底边 4
-                          // = 两级页签之间 12（同浏览页二级内容域）。
-                          padding: EdgeInsets.fromLTRB(
-                            FushiDesignTokens.of(context).spacing.page,
-                            FushiDesignTokens.of(context).spacing.gap,
-                            FushiDesignTokens.of(context).spacing.page,
-                            FushiDesignTokens.of(context).spacing.gap,
-                          ),
-                          child: Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: LibrarySectionTabs<VideoLibrarySection>(
-                              // 换组即换一份页签（段数与段值都变），不复用旧
-                              // controller。
-                              key: ValueKey<_VideoSectionGroup>(currentGroup),
-                              tabs: subTabs,
-                              selected: _section,
-                              onChanged: _select,
-                              focusIdPrefix: 'video-library-subview',
-                              secondary: true,
-                              floating: true,
+    //
+    // 对子树暴露与通用库页壳同一个「切到某视图」能力：「来源」空态的「浏览扩展」
+    // 经它就地切到本页「扩展」，而不是再 push 一页。只声明本壳真有的在线分区。
+    return MediaLibraryShellScope(
+      kinds: <MediaLibraryViewKind>{
+        if (online) MediaLibraryViewKind.onlineSources,
+        if (online) MediaLibraryViewKind.extensions,
+      },
+      select: _selectViewKind,
+      child: FushiShellTitleScope(
+        title: FushiShellTitleScope.maybeTitleOf(context) ?? t.nav_video,
+        actionsSlot: _actionsSlot,
+        child: FushiHeaderSearchKeys(
+          // Ctrl+F / `/` 展开当前视图的页头搜索，展开时 Esc 先清空再收起
+          // （焦点在页签、动作或内容上都认）。
+          resolve: () => fushiVisibleHeaderSearch(_actionsSlot),
+          child: FushiFloatingChromeScope(
+            controller: _chrome,
+            // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
+            // 滚不动」的根因是收起改了视口高度，见 [FushiFloatingChromeOverlay]）。
+            child: FushiFloatingChromeOverlay(
+              chrome: FushiFloatingChromeBar(
+                tabs: navigation,
+                slot: _actionsSlot,
+              ),
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _onScroll,
+                child: SectionSwipeNavigator<VideoLibrarySection>(
+                  sections: <VideoLibrarySection>[
+                    for (final LibrarySectionTab<VideoLibrarySection> tab
+                        in tabs)
+                      tab.value,
+                  ],
+                  selected: _section,
+                  onSelect: _select,
+                  // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
+                  // [FushiFloatingChromeOverlay] 读同一个作用域，内层页面的顶部
+                  // 让位自动累加两行），收放不改页面视口。
+                  child: FushiFloatingChromeOverlay(
+                    chrome: subTabs.length < 2
+                        ? const SizedBox.shrink()
+                        : Padding(
+                            // 与顶栏胶囊、页面内容同一条页边；顶上 8 + 顶栏底边 4
+                            // = 两级页签之间 12（同浏览页二级内容域）。
+                            padding: EdgeInsets.fromLTRB(
+                              FushiDesignTokens.of(context).spacing.page,
+                              FushiDesignTokens.of(context).spacing.gap,
+                              FushiDesignTokens.of(context).spacing.page,
+                              FushiDesignTokens.of(context).spacing.gap,
+                            ),
+                            child: Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: LibrarySectionTabs<VideoLibrarySection>(
+                                // 换组即换一份页签（段数与段值都变），不复用旧
+                                // controller。
+                                key: ValueKey<_VideoSectionGroup>(currentGroup),
+                                tabs: subTabs,
+                                selected: _section,
+                                onChanged: _select,
+                                focusIdPrefix: 'video-library-subview',
+                                secondary: true,
+                                floating: true,
+                              ),
                             ),
                           ),
-                        ),
-                  child: _buildSections(navigation),
+                    child: _buildSections(navigation),
+                  ),
                 ),
               ),
             ),
@@ -379,6 +391,19 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         ),
       ),
     );
+  }
+
+  /// [MediaLibraryShellScope.select] 的落地：库页视图种类 → 本壳分区。只认本壳
+  /// 声明进 `kinds` 的在线分区，其它种类静默忽略（与通用壳同一契约）。
+  void _selectViewKind(MediaLibraryViewKind kind) {
+    switch (kind) {
+      case MediaLibraryViewKind.onlineSources:
+        _select(VideoLibrarySection.onlineSources);
+      case MediaLibraryViewKind.extensions:
+        _select(VideoLibrarySection.extensions);
+      default:
+        break;
+    }
   }
 
   Widget _buildSections(Widget navigation) {
