@@ -1,0 +1,5 @@
+# 升级 material_ui：M3E 自研件切官方实现
+
+从根 `CLAUDE.md`「基本规则」迁出（2026-10-24），原文照录、效力不变。
+
+- **升级 `material_ui` 必须把 M3E 自研件切到官方实现（用户 2026-10-23 拍板：「每次更新 material_ui 都要 m3e 切换为官方实现」）**：每次升 `material_ui`（`cupertino_ui` 同批升）都要通读新版 CHANGELOG，并在包源码里 `grep material3Expressive` / 看 `MaterialShapes`、`RoundedPolygon`、`MaterialShapeBorder` 等新导出，盘出**官方新覆盖的 M3E 组件 / 形状 / 动效**；仓库里对应的自研 M3E 件（`fushi/lib/src/utils/components/fushi_m3e_*`、`fushi_expressive*`、`glass/fushi_expressive*`、各处自绘形状 border 等）一律改用官方实现、**删掉自研版本**（不留双份），只有官方尚未覆盖的才继续自研。**M3E 规范的全部特性优先（用户 2026-10-23 拍板：「先遵循 m3e 所有特性，替换官方实现的时候如果有损失了，则在官方组件上改到符合」）**：判据是 M3E 规范本身，不是「官方长什么样」。官方实现缺了或近似了某项 M3E 特性（典型：material_ui 1.8 的 M3E `IconButton` 形变是 200 ms 定时补间，没有 M3E 弹簧；包内 `page_transitions_theme.dart` 自己写明 M3E springs 尚未支持），**不许因为换官方而丢掉它**，也不许为此退回整套自研——在官方组件之上补齐（如经官方 `statesController` 读状态、用 `FushiSpring` 驱动形状并盖掉官方补间），注释写明补的是哪项、官方哪版补上后删。自研件与 M3E 规范不符而官方相符的按官方 / 规范改；用户拍板保留的视觉偏离（如标准 toggle 图标按钮选中保留 secondaryContainer 浅色底，2026-10-23）同样叠在官方组件上并注释写明出处。切换时保留本仓的设计系统分派（Apple 路径不变）、墨水屏 / 减弱动态效果静态化与焦点 / 语义行为；PR 描述里逐项列出「切了什么 / 在官方组件上补了什么 / 哪些官方还没有、仍自研」。
