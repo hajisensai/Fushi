@@ -8,8 +8,8 @@ import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// 两套设计系统：MD3 悬浮底栏 / Apple 胶囊。
-enum _Design { md3, apple }
+/// 设计系统：分页只剩 Apple 胶囊在用（MD3 分页样式 2026-10-25 删除）。
+enum _Design { apple }
 
 // 2026-10-15 底栏「分页滑动」：胶囊里每页 5 个（查词留在右下角固定钮）；
 // 底栏横滑翻页（跟手、过 1/4 页或甩一下就翻）；按住约 0.3 秒进入拖选，手指

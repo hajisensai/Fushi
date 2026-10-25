@@ -6,6 +6,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_mode_strip_bar.dart';
+import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
 import 'package:fushi/src/utils/misc/stale_pointer_guard.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -90,13 +91,31 @@ Future<void> _lostMouseDrag(WidgetTester tester, Finder strip) async {
   }
 }
 
-void _expectCentered(WidgetTester tester, ValueNotifier<int> index) {
-  final Rect strip = tester.getRect(find.byType(NavModeStripBar));
+/// 当前项停在静止位置：没有残留拖动位移（不卡在半路）。2026-10-25 起条带
+/// 首尾贴边、两端不留白（[navModeStripTrackOffset]），中间的项照旧居中，
+/// 靠两端的项贴边，所以按同一份几何算期望位置，而不是一律比条带中线。
+void _expectSettled(WidgetTester tester, ValueNotifier<int> index) {
+  final Finder stripFinder = find.byType(NavModeStripBar);
+  final Rect strip = tester.getRect(stripFinder);
+  final NavOverflowSpec spec = tester.widget<NavModeStripBar>(stripFinder).spec;
+  final int pos = spec.indices.indexOf(index.value);
+  final int count = spec.indices.length;
+  final double slot = navModeStripSlotWidth(spec.width, count);
+  final double expected =
+      strip.left +
+      navModeStripTrackOffset(
+        width: spec.width,
+        count: count,
+        sel: pos.toDouble(),
+        drag: 0,
+      ) +
+      pos * slot +
+      slot / 2;
   final Rect icon = tester.getRect(find.byIcon(_icons[index.value]).first);
   expect(
-    (icon.center.dx - strip.center.dx).abs(),
+    (icon.center.dx - expected).abs(),
     lessThan(2),
-    reason: '当前项 ${index.value} 在 ${icon.center.dx}，条带中线 ${strip.center.dx}',
+    reason: '当前项 ${index.value} 在 ${icon.center.dx}，静止位置 $expected',
   );
 }
 
@@ -107,7 +126,7 @@ void main() {
     PointerDeviceKind.touch,
     PointerDeviceKind.mouse,
   ]) {
-    testWidgets('[$kind] 连续快速甩动后当前项回到正中', (WidgetTester tester) async {
+    testWidgets('[$kind] 连续快速甩动后当前项停回静止位置', (WidgetTester tester) async {
       final ValueNotifier<int> index = await _pumpHost(tester);
       final Finder strip = find.byType(NavModeStripBar);
       for (final double dx in <double>[-300, -300, 250, -200, 300, -400]) {
@@ -115,21 +134,21 @@ void main() {
         await tester.pump(const Duration(milliseconds: 16));
       }
       await tester.pumpAndSettle();
-      _expectCentered(tester, index);
+      _expectSettled(tester, index);
     });
 
-    testWidgets('[$kind] 一次拖很远（超过两端）后回到正中', (WidgetTester tester) async {
+    testWidgets('[$kind] 一次拖很远（超过两端）后停回静止位置', (WidgetTester tester) async {
       final ValueNotifier<int> index = await _pumpHost(tester);
       final Finder strip = find.byType(NavModeStripBar);
       await _fastDrag(tester, strip, -900, kind);
       await tester.pumpAndSettle();
-      _expectCentered(tester, index);
+      _expectSettled(tester, index);
       await _fastDrag(tester, strip, 900, kind);
       await tester.pumpAndSettle();
-      _expectCentered(tester, index);
+      _expectSettled(tester, index);
     });
 
-    testWidgets('[$kind] 拖动中指针被取消后回到正中', (WidgetTester tester) async {
+    testWidgets('[$kind] 拖动中指针被取消后停回静止位置', (WidgetTester tester) async {
       final ValueNotifier<int> index = await _pumpHost(tester);
       final Finder strip = find.byType(NavModeStripBar);
       final TestGesture g = await tester.startGesture(
@@ -142,11 +161,13 @@ void main() {
       }
       await g.cancel();
       await tester.pumpAndSettle();
-      _expectCentered(tester, index);
+      _expectSettled(tester, index);
     });
   }
 
-  testWidgets('鼠标抬起丢了：随后的 hover 收尾拖动，当前项回正中且还能再拖', (WidgetTester tester) async {
+  testWidgets('鼠标抬起丢了：随后的 hover 收尾拖动，当前项停回静止位置且还能再拖', (
+    WidgetTester tester,
+  ) async {
     final ValueNotifier<int> index = await _pumpHost(tester);
     final Finder strip = find.byType(NavModeStripBar);
     await _lostMouseDrag(tester, strip);
@@ -160,21 +181,21 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    _expectCentered(tester, index);
+    _expectSettled(tester, index);
     final int before = index.value;
     await _fastDrag(tester, strip, 120, PointerDeviceKind.mouse);
     await tester.pumpAndSettle();
     expect(index.value, isNot(before), reason: '收尾后新的拖动照常切模块');
-    _expectCentered(tester, index);
+    _expectSettled(tester, index);
   });
 
-  testWidgets('鼠标抬起丢了：直接再按下拖动，松手后当前项回正中', (WidgetTester tester) async {
+  testWidgets('鼠标抬起丢了：直接再按下拖动，松手后当前项停回静止位置', (WidgetTester tester) async {
     final ValueNotifier<int> index = await _pumpHost(tester);
     final Finder strip = find.byType(NavModeStripBar);
     await _lostMouseDrag(tester, strip);
     await tester.pump(const Duration(seconds: 1));
     await _fastDrag(tester, strip, 120, PointerDeviceKind.mouse);
     await tester.pumpAndSettle();
-    _expectCentered(tester, index);
+    _expectSettled(tester, index);
   });
 }
