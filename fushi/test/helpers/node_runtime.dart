@@ -51,6 +51,22 @@ bool chromeAvailableVia(String node) {
   return result.exitCode == 0;
 }
 
+/// 杀掉 [process] 及其子进程（node harness 起的 headless Chrome）：只杀 node 会把 Chrome
+/// 留作孤儿，继续占 CPU / 内存拖慢同机的其它测试。Windows 用 `taskkill /T`；POSIX 先杀直接
+/// 子进程（Chrome 浏览器进程一死，它的 renderer 随之退出）再杀 node 本身。
+void killProcessTree(Process process) {
+  if (Platform.isWindows) {
+    Process.runSync('taskkill', <String>['/PID', '${process.pid}', '/T', '/F']);
+    return;
+  }
+  try {
+    Process.runSync('pkill', <String>['-KILL', '-P', '${process.pid}']);
+  } on ProcessException {
+    // 没有 pkill 时至少杀掉 node 本身。
+  }
+  process.kill(ProcessSignal.sigkill);
+}
+
 /// 一个测试文件要的 node（以及可选的 Chrome）的探测结果。
 class NodeTestRuntime {
   NodeTestRuntime._({

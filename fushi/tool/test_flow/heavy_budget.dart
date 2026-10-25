@@ -30,6 +30,8 @@ class HeavyNeed {
     required this.kind,
     required this.capMb,
     required this.worktreeExclusive,
+    this.bookMb,
+    this.light = false,
   });
 
   final HeavyKind kind;
@@ -41,17 +43,45 @@ class HeavyNeed {
   /// Runs that write the checkout's build/ (native assets, sqlite3.dll,
   /// result files) must not overlap inside one worktree.
   final bool worktreeExclusive;
+
+  /// What the run counts against the budget when that is below [capMb]
+  /// (see [bookedMb]); null books the ceiling itself.
+  final int? bookMb;
+
+  /// A light run (analyze) takes no regular slot and no queue ticket: it holds
+  /// one of [kLightSlotCount] separate slots and only has to fit the memory
+  /// budget, so it never makes a test or build wait for a slot and never
+  /// waits behind one.
+  final bool light;
+
+  /// What this run books against the budget.
+  int get bookedMb => bookMb ?? capMb;
 }
+
+/// Light runs hold `slot-<kLightSlotBase + i>.lock`; every holder enumerates
+/// all slot files, so they book the budget for every checkout's tool.
+const int kLightSlotBase = 100;
+
+/// At most this many light runs at once (two analyzes book 9 GB; they still
+/// have to fit the budget next to the tests and builds).
+const int kLightSlotCount = 2;
 
 const HeavyNeed _test = HeavyNeed(
   kind: HeavyKind.test,
   capMb: 12288,
   worktreeExclusive: true,
 );
+// Analyze (2026-10-25, measured): 1004 local runs peaked at p50 3.4 GB /
+// p90 4.0 GB / max 7.8 GB, never hit the 8 GB ceiling, and the analysis
+// server averages under one core. Holding a regular slot and booking the
+// full ceiling made tests queue behind it (11 h of queueing on analyze across
+// those runs) for a job that is mostly memory, so it books ~p90 and is light.
 const HeavyNeed _analyze = HeavyNeed(
   kind: HeavyKind.analyze,
   capMb: 8192,
+  bookMb: 4608,
   worktreeExclusive: false,
+  light: true,
 );
 const HeavyNeed _build = HeavyNeed(
   kind: HeavyKind.build,
@@ -66,11 +96,11 @@ const HeavyNeed _other = HeavyNeed(
 
 /// The [HeavyNeed] for a kind (pre_push_check leases per step by kind).
 HeavyNeed heavyNeedFor(HeavyKind kind) => switch (kind) {
-      HeavyKind.test => _test,
-      HeavyKind.analyze => _analyze,
-      HeavyKind.build => _build,
-      HeavyKind.other => _other,
-    };
+  HeavyKind.test => _test,
+  HeavyKind.analyze => _analyze,
+  HeavyKind.build => _build,
+  HeavyKind.other => _other,
+};
 
 String _base(String path) {
   final String name = path.replaceAll(r'\', '/').split('/').last.toLowerCase();
@@ -84,8 +114,10 @@ HeavyNeed classifyHeavyCommand(List<String> argv) {
   if (argv.isEmpty) return _other;
   final String exe = _base(argv.first);
   final List<String> rest = argv.skip(1).toList();
-  final String? verb =
-      rest.where((String a) => !a.startsWith('-')).firstOrNull?.toLowerCase();
+  final String? verb = rest
+      .where((String a) => !a.startsWith('-'))
+      .firstOrNull
+      ?.toLowerCase();
   if (exe == 'flutter' || exe == 'dart' || exe == 'fvm') {
     // `fvm flutter test` / `fvm dart analyze`: classify the inner tool.
     if (exe == 'fvm' && rest.isNotEmpty) return classifyHeavyCommand(rest);
@@ -129,13 +161,14 @@ int prePushCheckCapMb({required bool parallel}) =>
 /// over-booked flutter_test_failures (12 GB) and under-capped
 /// `pre_push_check --parallel` (20 GB).
 HeavyNeed? _leasedDartTool(List<String> rest) {
-  final List<String> positional =
-      rest.where((String a) => !a.startsWith('-')).toList();
+  final List<String> positional = rest
+      .where((String a) => !a.startsWith('-'))
+      .toList();
   if (positional.isEmpty) return null;
   final String script =
       positional.first.toLowerCase() == 'run' && positional.length > 1
-          ? positional[1]
-          : positional.first;
+      ? positional[1]
+      : positional.first;
   switch (_base(script)) {
     case 'pre_push_check':
       return HeavyNeed(
@@ -241,19 +274,20 @@ class HeavyHolder {
   final String label;
   final String cwd;
 
-  /// The memory ceiling the holder booked; null when it recorded none.
+  /// The memory the holder booked (its need's [HeavyNeed.bookedMb], which is
+  /// its ceiling except for analyze); null when it recorded none.
   final int? capMb;
 
   /// What this holder counts against the budget.
   int get bookedMb => capMb ?? kUnknownHolderCapMb;
 
   Map<String, Object> toJson() => <String, Object>{
-        'pid': pid,
-        'startedAt': startedAtMs,
-        'label': label,
-        'cwd': cwd,
-        if (capMb != null) 'capMb': capMb!,
-      };
+    'pid': pid,
+    'startedAt': startedAtMs,
+    'label': label,
+    'cwd': cwd,
+    if (capMb != null) 'capMb': capMb!,
+  };
 
   static HeavyHolder? fromJson(int slot, Object? json) {
     if (json is! Map) return null;
