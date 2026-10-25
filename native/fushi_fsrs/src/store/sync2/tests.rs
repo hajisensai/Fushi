@@ -88,7 +88,8 @@ impl Device {
         for name in obsolete {
             bucket.0.remove(&name);
         }
-        self.core.sync2_digest(P).unwrap();
+        // 与生产同一节奏：版本向量变了且到期才重算（测试里间隔为 0 = 变了就算）。
+        self.core.sync2_digest_due(P, now, Some(0)).unwrap();
         out
     }
 
@@ -806,8 +807,17 @@ fn bench_scale() {
     let join_ms = t.elapsed().as_millis();
     let t = Instant::now();
     a.apply(T0 + 31 * DAY, vec![review("inc", "C0", T0 + 31 * DAY, 3, "review")]);
+    let inc_apply = t.elapsed().as_millis();
+    let t2 = Instant::now();
     a.sync(&mut bucket, "loc", T0 + 31 * DAY);
+    let inc_push = t2.elapsed().as_millis();
+    let t3 = Instant::now();
     b.sync(&mut bucket, "loc", T0 + 31 * DAY);
+    let inc_pull = t3.elapsed().as_millis();
+    let t4 = Instant::now();
+    a.core.sync2_digest(P).unwrap();
+    let digest_ms = t4.elapsed().as_millis();
+    println!("bench_scale incremental apply={inc_apply}ms push_round={inc_push}ms pull_round={inc_pull}ms (each incl. digest={digest_ms}ms)");
     let incremental_ms = t.elapsed().as_millis();
     assert_eq!(a.digest(), b.digest());
     println!(
