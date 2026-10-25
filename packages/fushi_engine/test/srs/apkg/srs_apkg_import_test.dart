@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_anki_package.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
@@ -21,6 +20,8 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
 import 'apkg_test_support.dart';
+import '../support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-000000000001';
 const String kProfile2 = '01928c3e-0000-7000-8000-000000000002';
@@ -2031,8 +2032,10 @@ void main() {
 
   test('建牌组途中失败：牌组与它的设置同一事务，重导时设置照样写上（BUG-3552）', () async {
     final _FailFirstValidate engine = _FailFirstValidate();
+    final SrsStorage srsStorage = await openTestSrsStorage();
     final SrsDbStore s = await SrsDbStore.open(
-      db: FushiDatabase.forTesting(NativeDatabase.memory()),
+      db: srsStorage.db,
+      core: srsStorage.core,
       profileUid: kProfile,
       deviceId: 'a',
       engine: engine,

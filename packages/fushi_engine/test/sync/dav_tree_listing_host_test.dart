@@ -37,10 +37,9 @@ Future<({int status, String body})> _send(
   }
 }
 
-List<String> _hrefs(String xml) => RegExp(r'<d:href>(.*?)</d:href>')
-    .allMatches(xml)
-    .map((RegExpMatch m) => Uri.decodeFull(m.group(1)!))
-    .toList();
+List<String> _hrefs(String xml) => RegExp(
+  r'<d:href>(.*?)</d:href>',
+).allMatches(xml).map((RegExpMatch m) => Uri.decodeFull(m.group(1)!)).toList();
 
 void main() {
   late Directory tmp;
@@ -103,20 +102,17 @@ void main() {
       headers: <String, String>{'Depth': 'infinity'},
     );
     expect(r.status, 207);
-    expect(
-      _hrefs(r.body).toSet(),
-      <String>{
-        '/fushi-data/',
-        '/fushi-data/Book A/',
-        '/fushi-data/Book A/progress_1_6_1000_0.5.json',
-        '/fushi-data/Re%3Aゼロ/',
-        '/fushi-data/Re%3Aゼロ/statistics_1_6_1000_2.json',
-        '/fushi-data/Empty/',
-        '/fushi-data/__srs__/',
-        '/fushi-data/__srs__/writer/',
-        '/fushi-data/spill.json',
-      },
-    );
+    expect(_hrefs(r.body).toSet(), <String>{
+      '/fushi-data/',
+      '/fushi-data/Book A/',
+      '/fushi-data/Book A/progress_1_6_1000_0.5.json',
+      '/fushi-data/Re%3Aゼロ/',
+      '/fushi-data/Re%3Aゼロ/statistics_1_6_1000_2.json',
+      '/fushi-data/Empty/',
+      '/fushi-data/__srs__/',
+      '/fushi-data/__srs__/writer/',
+      '/fushi-data/spill.json',
+    });
   });
 
   test('孙层条目与对该文件夹单独 Depth 1 的回包逐字相同', () async {
@@ -133,8 +129,10 @@ void main() {
       headers: <String, String>{'Depth': '1'},
     );
     final RegExp block = RegExp(r'<d:response>.*?</d:response>', dotAll: true);
-    final Set<String> treeBlocks =
-        block.allMatches(tree.body).map((RegExpMatch m) => m.group(0)!).toSet();
+    final Set<String> treeBlocks = block
+        .allMatches(tree.body)
+        .map((RegExpMatch m) => m.group(0)!)
+        .toSet();
     for (final RegExpMatch m in block.allMatches(single.body)) {
       expect(treeBlocks, contains(m.group(0)));
     }

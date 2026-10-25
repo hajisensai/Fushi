@@ -20,8 +20,12 @@ Uint8List _storedZip(List<_Entry> entries) {
   final BytesBuilder out = BytesBuilder();
   final BytesBuilder central = BytesBuilder();
   void u16(BytesBuilder b, int v) => b.add(<int>[v & 0xff, (v >> 8) & 0xff]);
-  void u32(BytesBuilder b, int v) =>
-      b.add(<int>[v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >> 24) & 0xff]);
+  void u32(BytesBuilder b, int v) => b.add(<int>[
+    v & 0xff,
+    (v >> 8) & 0xff,
+    (v >> 16) & 0xff,
+    (v >> 24) & 0xff,
+  ]);
   for (final _Entry e in entries) {
     final List<int> name = utf8.encode(e.name);
     final int crc = getCrc32(e.data);
@@ -85,32 +89,42 @@ final List<int> _paddedExtra = <int>[
 Uint8List _epub(List<int> extraOnChapter) {
   List<int> text(String s) => utf8.encode(s);
   return _storedZip(<_Entry>[
-    (name: 'mimetype', data: text('application/epub+zip'), centralExtra: const <int>[]),
+    (
+      name: 'mimetype',
+      data: text('application/epub+zip'),
+      centralExtra: const <int>[],
+    ),
     (
       name: 'META-INF/container.xml',
-      data: text('<?xml version="1.0"?>'
-          '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
-          '<rootfiles><rootfile full-path="OEBPS/content.opf" '
-          'media-type="application/oebps-package+xml"/></rootfiles></container>'),
+      data: text(
+        '<?xml version="1.0"?>'
+        '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+        '<rootfiles><rootfile full-path="OEBPS/content.opf" '
+        'media-type="application/oebps-package+xml"/></rootfiles></container>',
+      ),
       centralExtra: const <int>[],
     ),
     (
       name: 'OEBPS/content.opf',
-      data: text('<?xml version="1.0" encoding="utf-8"?>'
-          '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">'
-          '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
-          '<dc:identifier id="id">x</dc:identifier>'
-          '<dc:title>Re：ゼロから始める異世界生活 01</dc:title><dc:language>ja</dc:language>'
-          '</metadata><manifest>'
-          '<item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>'
-          '</manifest><spine><itemref idref="c1"/></spine></package>'),
+      data: text(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">'
+        '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        '<dc:identifier id="id">x</dc:identifier>'
+        '<dc:title>Re：ゼロから始める異世界生活 01</dc:title><dc:language>ja</dc:language>'
+        '</metadata><manifest>'
+        '<item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>'
+        '</manifest><spine><itemref idref="c1"/></spine></package>',
+      ),
       centralExtra: const <int>[],
     ),
     (
       name: 'OEBPS/c1.xhtml',
-      data: text('<?xml version="1.0" encoding="utf-8"?>'
-          '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>c1</title></head>'
-          '<body><p>本文</p></body></html>'),
+      data: text(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>c1</title></head>'
+        '<body><p>本文</p></body></html>',
+      ),
       centralExtra: extraOnChapter,
     ),
   ]);
@@ -123,8 +137,10 @@ void main() {
 
   test('中央目录 extra field 末尾不足一个块头的填充不让 EPUB 解析越界', () {
     expect(_paddedExtra, hasLength(37));
-    final EpubBook book =
-        EpubParser.parseSync(_epub(_paddedExtra), p.join(tmp.path, 'out'));
+    final EpubBook book = EpubParser.parseSync(
+      _epub(_paddedExtra),
+      p.join(tmp.path, 'out'),
+    );
     expect(book.title, 'Re：ゼロから始める異世界生活 01');
     expect(book.chapters, hasLength(1));
     expect(
@@ -136,16 +152,19 @@ void main() {
   test('声明长度超过剩余字节的截断块被跳过，不影响条目本身', () {
     // 一个声称 40 字节、实际只剩 2 字节的块：补丁在这里 break，条目照常解出。
     final List<int> truncated = <int>[0xfe, 0xca, 40, 0, 0x20, 0x20];
-    final EpubBook book =
-        EpubParser.parseSync(_epub(truncated), p.join(tmp.path, 'out'));
+    final EpubBook book = EpubParser.parseSync(
+      _epub(truncated),
+      p.join(tmp.path, 'out'),
+    );
     expect(book.chapters, hasLength(1));
   });
 
   test('合法 extra field（zip64 以外的块）解析结果不变', () {
     final List<int> clean = _paddedExtra.sublist(0, 36);
     final Archive archive = ZipDecoder().decodeBytes(_epub(clean));
-    final ArchiveFile chapter =
-        archive.files.firstWhere((ArchiveFile f) => f.name == 'OEBPS/c1.xhtml');
+    final ArchiveFile chapter = archive.files.firstWhere(
+      (ArchiveFile f) => f.name == 'OEBPS/c1.xhtml',
+    );
     expect(utf8.decode(chapter.content as List<int>), contains('本文'));
   });
 }

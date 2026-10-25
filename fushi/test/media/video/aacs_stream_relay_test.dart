@@ -410,6 +410,38 @@ void main() {
   );
 
   test(
+    'shutdown destroys a finished body whose player still holds the socket',
+    () async {
+      // A raw client: it reads the whole response, then keeps its end open
+      // the way a paused player keeps its connection.
+      final uri = Uri.parse(relay.url);
+      final socket = await Socket.connect(uri.host, uri.port);
+      final received = BytesBuilder(copy: false);
+      final finished = Completer<void>();
+      socket.listen(
+        received.add,
+        onError: (Object _) {},
+        onDone: finished.complete,
+      );
+      socket.write(
+        'GET ${uri.path} HTTP/1.1\r\nHost: ${uri.host}:${uri.port}\r\n\r\n',
+      );
+      try {
+        // End-of-stream: the relay sent the whole body and shut down its
+        // sending half; the socket stays open until the player closes it.
+        await finished.future;
+        final response = received.takeBytes();
+        expect(response.length, greaterThan(expected.length));
+        expect(response.sublist(response.length - expected.length), expected);
+        await relay.close().timeout(const Duration(seconds: 5));
+      } finally {
+        socket.destroy();
+      }
+      await file.delete();
+    },
+  );
+
+  test(
     'disconnect and shutdown release files and stop the listening socket',
     () async {
       // A large file keeps the response in flight after headers arrive.

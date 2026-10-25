@@ -2,13 +2,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_media.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
+import '../support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kAcProfile = '01928c3e-0000-7000-8000-0000000000ac';
 
@@ -34,10 +34,11 @@ class AcHarness {
     List<String> Function(List<String> fields)? dupeNormBatch,
   }) async {
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    final SrsStorage srsStorage = await openTestSrsStorage();
     int t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch;
     final SrsDbStore store = await SrsDbStore.open(
-      db: db,
+      db: srsStorage.db,
+      core: srsStorage.core,
       profileUid: kAcProfile,
       deviceId: 'dev',
       trustedClock: SrsTrustedClock(

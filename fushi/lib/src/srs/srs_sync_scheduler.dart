@@ -284,6 +284,10 @@ class SrsSyncScheduler {
       }
       if (_halted) return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
     }
+    // 引擎在一轮开头写探针取服务器时间，整轮（上传 / 拉取 / 快照，大库能跑几十分钟）跑完才回来：
+    // 校时按开跑那一刻的单调时钟算，误差只剩探针前的一次列目录，而不是整轮耗时。
+    // 放在 profile 关联之后：关联可能换成另一个 store，校时落在真正跑同步的那个上。
+    final int probedAtMono = store.trustedClock.monotonicNowMs();
     final SrsSyncReport report = await _runner(backend, store, key);
     if (linker != null && report.error == null && !_halted) {
       try {
@@ -304,7 +308,7 @@ class SrsSyncScheduler {
     }
     final int? serverTime = report.serverTimeMs;
     if (serverTime != null) {
-      await store.anchorTime(serverTime);
+      await store.anchorTime(serverTime, atMonotonicMs: probedAtMono);
       final int? skew = store.trustedClock.wallSkewMs;
       if (skew != null && skew.abs() > kSrsClockSkewWarnMs) {
         _noticeOnce(SrsSyncNotice.clockSkew);

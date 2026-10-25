@@ -234,9 +234,7 @@ void main() {
         // orient: false 也应用 irot / imir（HEIF 的必选变换，不是 EXIF）。
         final img.Image? raw = decodeImageNative(bytes, orient: false);
         expect((raw!.width, raw.height), (w, h));
-        final img.Image ref = img.decodePng(
-          _fixture('avif/${e.key}.ref.png'),
-        )!;
+        final img.Image ref = img.decodePng(_fixture('avif/${e.key}.ref.png'))!;
         final ({int max, double mean}) d = _diff(
           got.image.toUint8List(),
           _reference(ref, ch),

@@ -6,8 +6,6 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
@@ -18,6 +16,7 @@ import 'apkg/apkg_test_support.dart';
 import 'apkg/srs_apkg_import_bench_test.dart' show benchApkg;
 import 'apkg/srs_apkg_import_test.dart' show kFullOptions;
 import 'support/srs_query_counter.dart';
+import 'support/srs_test_storage.dart';
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -29,22 +28,22 @@ void main() {
       final int notes = int.parse(n!);
       final CountingInterceptor counter = CountingInterceptor();
       final Directory tmp = Directory.systemTemp.createTempSync('srs_wp_');
-      final FushiDatabase db = FushiDatabase.forTesting(
-        NativeDatabase.createInBackground(
-          File('${tmp.path}/b.db'),
-        ).interceptWith(counter),
-      );
-      addTearDown(() async {
-        await db.close();
+      addTearDown(() {
         try {
           tmp.deleteSync(recursive: true);
         } on FileSystemException {
           // 句柄晚释放。
         }
       });
+      final TestSrs srs = await openTestSrsAt(
+        '${tmp.path}/b.db',
+        interceptor: counter,
+        inline: false,
+      );
       const String uid = '01928c3e-0000-7000-8000-0000000be4c7';
       final SrsDbStore store = await SrsDbStore.open(
-        db: db,
+        db: srs.db,
+        core: srs.core,
         profileUid: uid,
         deviceId: 'bench',
         engine: const FakeFsrsEngine(),

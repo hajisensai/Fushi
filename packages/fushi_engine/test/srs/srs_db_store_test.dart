@@ -1,12 +1,13 @@
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 /// 协议测试用的确定性假引擎（真实数值见 packages/fushi_srs 的 FFI 测试）。
 class _FakeEngine implements FsrsEngine {
@@ -124,14 +125,15 @@ void main() {
   late _Dir dir;
 
   Future<SrsDbStore> device(String id) async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    final SrsStorage srsStorage = await openTestSrsStorage();
     final SrsTrustedClock clock = SrsTrustedClock(
       wallClockMs: () => t,
       monotonicMs: () => t,
       bootId: 'boot-$id',
     );
     return SrsDbStore.open(
-      db: db,
+      db: srsStorage.db,
+      core: srsStorage.core,
       profileUid: kProfile,
       deviceId: id,
       engine: const _FakeEngine(),
@@ -408,14 +410,15 @@ void main() {
   });
 
   test('覆盖恢复备份后：换新化身、全部重新发布、缓存重建', () async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    final SrsStorage srsStorage = await openTestSrsStorage();
     SrsTrustedClock clock() => SrsTrustedClock(
       wallClockMs: () => t,
       monotonicMs: () => t,
       bootId: 'boot',
     );
     final SrsDbStore a = await SrsDbStore.open(
-      db: db,
+      db: srsStorage.db,
+      core: srsStorage.core,
       profileUid: kProfile,
       deviceId: 'a',
       engine: const _FakeEngine(),
@@ -435,12 +438,13 @@ void main() {
     expect(await a.unpublishedEvents(), isEmpty);
     final String oldWriter = a.writerId;
     // 恢复备份：本机状态与缓存表被清空（backup_service 的 _srsDeviceLocalDiscardTables）。
-    await db.delete(db.srsLocalState).go();
-    await db.delete(db.srsEventLocal).go();
-    await db.delete(db.srsCardsCache).go();
-    await db.delete(db.srsNotesCache).go();
+    await srsStorage.db.delete(srsStorage.db.srsLocalState).go();
+    await srsStorage.db.delete(srsStorage.db.srsEventLocal).go();
+    await srsStorage.db.delete(srsStorage.db.srsCardsCache).go();
+    await srsStorage.db.delete(srsStorage.db.srsNotesCache).go();
     final SrsDbStore restored = await SrsDbStore.open(
-      db: db,
+      db: srsStorage.db,
+      core: srsStorage.core,
       profileUid: kProfile,
       deviceId: 'a',
       engine: const _FakeEngine(),

@@ -10,7 +10,7 @@ import 'field_edit.dart' show srsCanonicalJson;
 const int srsLogFormatVersion = 1;
 
 /// 「恢复到备份时间点」写出的日志在 `extra` 里带这个键（值 = 备份 ID；持久化名冻结）。
-/// 带它的 manual 日志是记忆状态的起点（见 valid_logs.dart `srsIsRestoreState`）；旧版本原样保留。
+/// 带它的 manual 日志是记忆状态的起点（见 native/fushi_fsrs/src/projection.rs `is_restore_state`）；旧版本原样保留。
 const String srsRestoreLogExtraKey = 'restoreOf';
 
 /// 恢复写出的「重放副本」在 `extra` 里带这个键（值 = 被重放的原日志 ID；持久化名冻结，只作追溯）。

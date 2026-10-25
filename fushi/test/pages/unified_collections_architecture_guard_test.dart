@@ -45,13 +45,26 @@ void main() {
   // 删除：v38 台阶本身不在了，低于门槛的库直接拒绝打开。）
 
   test('备份合并携带 media_collections（Phase 5a：合集随备份存活）', () {
-    final int mergeFn = mergeSrc.indexOf('Future<void> merge() async {');
-    expect(mergeFn, isNonNegative);
-    final int mergeEnd = mergeSrc.indexOf('\n  }', mergeFn);
-    expect(mergeEnd, isNonNegative);
-    final String body = mergeSrc.substring(mergeFn, mergeEnd);
+    String bodyOf(String signature) {
+      final int start = mergeSrc.indexOf(signature);
+      expect(start, isNonNegative, reason: '找不到 $signature');
+      final int end = mergeSrc.indexOf('\n  }', start);
+      expect(end, isNonNegative);
+      return mergeSrc.substring(start, end);
+    }
+
+    // merge() = 主库事务（_mergeMainDatabase）+ srs.db（另一个文件，不能进主库事务）。
     expect(
-      body.contains('await _mergeMediaCollections();'),
+      bodyOf(
+        'Future<void> merge() async {',
+      ).contains('await _mergeMainDatabase();'),
+      isTrue,
+      reason: 'merge() 必须执行主库合并 _mergeMainDatabase()',
+    );
+    expect(
+      bodyOf(
+        'Future<void> _mergeMainDatabase() async {',
+      ).contains('await _mergeMediaCollections();'),
       isTrue,
       reason: 'merge() 必须合并 media_collections，否则备份恢复后分组全丢',
     );

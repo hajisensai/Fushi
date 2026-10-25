@@ -123,7 +123,8 @@ void main() {
     }
     await bulk.store.deleteDeck(await deckId(bulk.store, 'Lang'));
     await expectSame(bulk, ref);
-  });
+    // 参照路径逐张 editField 约 1000 次提交；srs.db 是磁盘 WAL 文件，比旧内存库慢，默认 30s 太紧。
+  }, timeout: const Timeout(Duration(seconds: 180)));
 
   test('批量移动 / 暂停 / 旗标 = 逐张 editField（值没变的跳过）', () async {
     final (BulkFixture ref, BulkFixture bulk) = await twins();

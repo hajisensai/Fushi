@@ -58,11 +58,7 @@ void main() {
     expect(tree[child], isNull, reason: '删除期间建的子牌组也随子树删掉');
     for (final String note in <String>[parentNote, late]) {
       for (final SrsCardCacheRow c in await s.cardsOfNote(note)) {
-        expect(
-          c.deckId,
-          s.defaultDeckId,
-          reason: '删除期间放进来的卡也移出了已删除的牌组',
-        );
+        expect(c.deckId, s.defaultDeckId, reason: '删除期间放进来的卡也移出了已删除的牌组');
       }
     }
   });

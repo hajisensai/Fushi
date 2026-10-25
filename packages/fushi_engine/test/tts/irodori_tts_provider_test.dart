@@ -23,16 +23,26 @@ void main() {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((HttpRequest req) async {
       final String raw = await utf8.decoder.bind(req).join();
-      requests.add((path: req.uri.path, body: raw.isEmpty ? null : jsonDecode(raw)));
+      requests.add((
+        path: req.uri.path,
+        body: raw.isEmpty ? null : jsonDecode(raw),
+      ));
       req.response.statusCode = status;
       if (req.uri.path == '/api/quick/voices') {
         req.response.headers.contentType = ContentType.json;
-        req.response.write(jsonEncode(<String, Object?>{
-          'items': <Object?>[
-            <String, Object?>{'id': 'v1', 'name': 'エミリア', 'trained': true, 'language': 'ja'},
-            <String, Object?>{'id': 'v2', 'name': 'スバル', 'trained': false},
-          ],
-        }));
+        req.response.write(
+          jsonEncode(<String, Object?>{
+            'items': <Object?>[
+              <String, Object?>{
+                'id': 'v1',
+                'name': 'エミリア',
+                'trained': true,
+                'language': 'ja',
+              },
+              <String, Object?>{'id': 'v2', 'name': 'スバル', 'trained': false},
+            ],
+          }),
+        );
       } else if (status == 200) {
         req.response.add(buildWav(dataBytes: 3200));
       }
@@ -45,7 +55,8 @@ void main() {
     await tmp.delete(recursive: true);
   });
 
-  TtsProvider provider({String voice = 'v1'}) => const IrodoriTtsDescriptor().create(
+  TtsProvider provider({String voice = 'v1'}) =>
+      const IrodoriTtsDescriptor().create(
         TtsVoicePreset(
           id: 'p',
           providerId: IrodoriTtsDescriptor.providerId,
@@ -61,10 +72,17 @@ void main() {
   test('posts text and voice to /api/quick/speech', () async {
     final TtsProvider p = provider();
     final String out = '${tmp.path}/a.wav';
-    final TtsResult r = await p.synthesize('こんにちは', outputPath: out, cancel: TtsCancelToken());
+    final TtsResult r = await p.synthesize(
+      'こんにちは',
+      outputPath: out,
+      cancel: TtsCancelToken(),
+    );
     expect(r.format, TtsAudioFormat.wav);
     expect(requests.single.path, '/api/quick/speech');
-    expect(requests.single.body, <String, Object?>{'text': 'こんにちは', 'voice': 'v1'});
+    expect(requests.single.body, <String, Object?>{
+      'text': 'こんにちは',
+      'voice': 'v1',
+    });
     expect(File(out).lengthSync(), greaterThan(44));
     await p.dispose();
   });
@@ -73,8 +91,18 @@ void main() {
     status = 409;
     final TtsProvider p = provider();
     await expectLater(
-      p.synthesize('x', outputPath: '${tmp.path}/b.wav', cancel: TtsCancelToken()),
-      throwsA(isA<TtsFailure>().having((TtsFailure f) => f.code, 'code', TtsFailureCode.busy)),
+      p.synthesize(
+        'x',
+        outputPath: '${tmp.path}/b.wav',
+        cancel: TtsCancelToken(),
+      ),
+      throwsA(
+        isA<TtsFailure>().having(
+          (TtsFailure f) => f.code,
+          'code',
+          TtsFailureCode.busy,
+        ),
+      ),
     );
     await p.dispose();
   });
@@ -82,8 +110,18 @@ void main() {
   test('missing voice is not configured', () async {
     final TtsProvider p = provider(voice: '');
     await expectLater(
-      p.synthesize('x', outputPath: '${tmp.path}/c.wav', cancel: TtsCancelToken()),
-      throwsA(isA<TtsFailure>().having((TtsFailure f) => f.code, 'code', TtsFailureCode.notConfigured)),
+      p.synthesize(
+        'x',
+        outputPath: '${tmp.path}/c.wav',
+        cancel: TtsCancelToken(),
+      ),
+      throwsA(
+        isA<TtsFailure>().having(
+          (TtsFailure f) => f.code,
+          'code',
+          TtsFailureCode.notConfigured,
+        ),
+      ),
     );
     await p.dispose();
   });
@@ -98,7 +136,8 @@ void main() {
   });
 
   test('audio identity separates studio ports but not hosts', () {
-    Map<String, Object?> id(String endpoint) => const IrodoriTtsDescriptor().audioIdentity(
+    Map<String, Object?> id(String endpoint) =>
+        const IrodoriTtsDescriptor().audioIdentity(
           TtsVoicePreset(
             id: 'p',
             providerId: 'irodori',

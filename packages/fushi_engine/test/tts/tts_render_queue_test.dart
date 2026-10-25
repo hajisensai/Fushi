@@ -124,10 +124,7 @@ void main() {
     );
     expect(firstDir.existsSync(), isFalse, reason: '被取代的任务目录要删');
     expect(otherDir.existsSync(), isTrue, reason: '别的书的目录不动');
-    expect(
-      ttsRenderJobWorkDir(workRoot, second.id).existsSync(),
-      isTrue,
-    );
+    expect(ttsRenderJobWorkDir(workRoot, second.id).existsSync(), isTrue);
     await queue.close();
   });
 

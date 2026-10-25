@@ -178,130 +178,113 @@ void main() {
 
   // 真实二进制：设 FUSHI_ANKI_SYNC_BIN 指向 native/fushi_anki_sync 的构建产物才跑。
   final String? bin = Platform.environment['FUSHI_ANKI_SYNC_BIN'];
-  test(
-    '真实 helper：如实标识为 fushi，并能新建 / 打开 collection',
-    () async {
-      final Directory tmp = await Directory.systemTemp.createTemp('anki_sync');
-      final FushiAnkiSyncClient c = await FushiAnkiSyncClient.start(bin!);
-      try {
-        final String client = await c.version();
-        expect(client, startsWith('fushi,'));
-        expect(client, contains('(anki 26.09.3)'));
-        expect(client, isNot(startsWith('anki,')));
+  test('真实 helper：如实标识为 fushi，并能新建 / 打开 collection', () async {
+    final Directory tmp = await Directory.systemTemp.createTemp('anki_sync');
+    final FushiAnkiSyncClient c = await FushiAnkiSyncClient.start(bin!);
+    try {
+      final String client = await c.version();
+      expect(client, startsWith('fushi,'));
+      expect(client, contains('(anki 26.09.3)'));
+      expect(client, isNot(startsWith('anki,')));
 
-        final String path = '${tmp.path}/collection.anki2';
-        expect(await c.open(path), isTrue);
-        final AnkiSyncMeta meta = await c.listMeta();
-        expect(
-          meta.notetypes.map((AnkiSyncNotetype n) => n.name),
-          contains('Basic'),
-        );
-        await c.close();
-        expect(await c.open(path), isFalse, reason: '第二次打开是已存在的库');
-      } finally {
-        await c.dispose();
-        await tmp.delete(recursive: true);
-      }
-    },
-    skip: bin == null ? 'FUSHI_ANKI_SYNC_BIN 未设置' : false,
-  );
+      final String path = '${tmp.path}/collection.anki2';
+      expect(await c.open(path), isTrue);
+      final AnkiSyncMeta meta = await c.listMeta();
+      expect(
+        meta.notetypes.map((AnkiSyncNotetype n) => n.name),
+        contains('Basic'),
+      );
+      await c.close();
+      expect(await c.open(path), isFalse, reason: '第二次打开是已存在的库');
+    } finally {
+      await c.dispose();
+      await tmp.delete(recursive: true);
+    }
+  }, skip: bin == null ? 'FUSHI_ANKI_SYNC_BIN 未设置' : false);
 
-  test(
-    '真实 helper：find_notes 与查重同一判据（去 HTML、通配符按字面、不做子串匹配）',
-    () async {
-      final Directory tmp = await Directory.systemTemp.createTemp('anki_sync');
-      final FushiAnkiSyncClient c = await FushiAnkiSyncClient.start(bin!);
-      try {
-        await c.open('${tmp.path}/collection.anki2');
-        final (int a, String ga) = await c.addNote(
-          notetype: 'Basic',
-          deck: 'Mining',
-          fields: <String>['<b>猫_*</b>', 'x'],
-        );
-        final (int b, String gb) = await c.addNote(
-          notetype: 'Basic',
-          deck: 'Mining',
-          fields: <String>['猫_*', 'y'],
-          tags: <String>['fushi'],
-        );
-        await c.addNote(
-          notetype: 'Basic',
-          deck: 'Mining',
-          fields: <String>['猫又', 'z'],
-        );
-        expect(ga, isNotEmpty);
-        expect(ga, isNot(gb));
+  test('真实 helper：find_notes 与查重同一判据（去 HTML、通配符按字面、不做子串匹配）', () async {
+    final Directory tmp = await Directory.systemTemp.createTemp('anki_sync');
+    final FushiAnkiSyncClient c = await FushiAnkiSyncClient.start(bin!);
+    try {
+      await c.open('${tmp.path}/collection.anki2');
+      final (int a, String ga) = await c.addNote(
+        notetype: 'Basic',
+        deck: 'Mining',
+        fields: <String>['<b>猫_*</b>', 'x'],
+      );
+      final (int b, String gb) = await c.addNote(
+        notetype: 'Basic',
+        deck: 'Mining',
+        fields: <String>['猫_*', 'y'],
+        tags: <String>['fushi'],
+      );
+      await c.addNote(
+        notetype: 'Basic',
+        deck: 'Mining',
+        fields: <String>['猫又', 'z'],
+      );
+      expect(ga, isNotEmpty);
+      expect(ga, isNot(gb));
 
-        final List<AnkiSyncNoteHit> hits = await c.findNotes(
+      final List<AnkiSyncNoteHit> hits = await c.findNotes(
+        notetype: 'Basic',
+        firstField: '猫_*',
+      );
+      expect(hits.map((AnkiSyncNoteHit h) => h.noteId), <int>[
+        b,
+        a,
+      ], reason: '两张都命中，新卡在前');
+      expect(hits.first.preview, '猫_*');
+      expect(
+        await c.findNotes(notetype: 'Basic', firstField: '猫'),
+        isEmpty,
+        reason: '「猫」不能命中「猫_*」「猫又」',
+      );
+      expect(await c.isDuplicate(notetype: 'Basic', firstField: '猫_*'), isTrue);
+      // existing_notes：id 在库里且 guid 对得上才算。
+      expect(
+        await c.existingNotes(<(int, String)>[
+          (a, ga),
+          (b, 'not-its-guid'),
+          (1, ga),
+        ]),
+        <int>{a},
+      );
+      // 复审 3 重要 1：rslib 写库时规范化字段（删 \r 等控制字符、NFC）。按内容核对
+      // 会把这张确实在库里的卡永远认成不在；按 guid 不受影响。
+      final (int crlf, String gCrlf) = await c.addNote(
+        notetype: 'Basic',
+        deck: 'Mining',
+        fields: <String>['行一\r\n行二', 'x'],
+      );
+      final (int nfd, String gNfd) = await c.addNote(
+        notetype: 'Basic',
+        deck: 'Mining',
+        fields: <String>['Tie\u0302\u0301ng Vie\u0323\u0302t', 'x'],
+      );
+      expect(
+        await c.existingNotes(<(int, String)>[(crlf, gCrlf), (nfd, gNfd)]),
+        <int>{crlf, nfd},
+      );
+      // HTML 把词切开：原始字段里不连续包含「食べる」，按去 HTML 后比较才命中
+      // （与 is_duplicate 同口径；旧的字段子串筛选会漏）。
+      final (int eat, String _) = await c.addNote(
+        notetype: 'Basic',
+        deck: 'Mining',
+        fields: <String>['<b>食</b>べる', 'x'],
+      );
+      expect(
+        (await c.findNotes(
           notetype: 'Basic',
-          firstField: '猫_*',
-        );
-        expect(hits.map((AnkiSyncNoteHit h) => h.noteId), <int>[
-          b,
-          a,
-        ], reason: '两张都命中，新卡在前');
-        expect(hits.first.preview, '猫_*');
-        expect(
-          await c.findNotes(notetype: 'Basic', firstField: '猫'),
-          isEmpty,
-          reason: '「猫」不能命中「猫_*」「猫又」',
-        );
-        expect(
-          await c.isDuplicate(notetype: 'Basic', firstField: '猫_*'),
-          isTrue,
-        );
-        // existing_notes：id 在库里且 guid 对得上才算。
-        expect(
-          await c.existingNotes(<(int, String)>[
-            (a, ga),
-            (b, 'not-its-guid'),
-            (1, ga),
-          ]),
-          <int>{a},
-        );
-        // 复审 3 重要 1：rslib 写库时规范化字段（删 \r 等控制字符、NFC）。按内容核对
-        // 会把这张确实在库里的卡永远认成不在；按 guid 不受影响。
-        final (int crlf, String gCrlf) = await c.addNote(
-          notetype: 'Basic',
-          deck: 'Mining',
-          fields: <String>['行一\r\n行二', 'x'],
-        );
-        final (int nfd, String gNfd) = await c.addNote(
-          notetype: 'Basic',
-          deck: 'Mining',
-          fields: <String>['Tie\u0302\u0301ng Vie\u0323\u0302t', 'x'],
-        );
-        expect(
-          await c.existingNotes(<(int, String)>[(crlf, gCrlf), (nfd, gNfd)]),
-          <int>{crlf, nfd},
-        );
-        // HTML 把词切开：原始字段里不连续包含「食べる」，按去 HTML 后比较才命中
-        // （与 is_duplicate 同口径；旧的字段子串筛选会漏）。
-        final (int eat, String _) = await c.addNote(
-          notetype: 'Basic',
-          deck: 'Mining',
-          fields: <String>['<b>食</b>べる', 'x'],
-        );
-        expect(
-          (await c.findNotes(
-            notetype: 'Basic',
-            firstField: '食べる',
-          )).map((AnkiSyncNoteHit h) => h.noteId),
-          <int>[eat],
-        );
-        expect(
-          await c.isDuplicate(notetype: 'Basic', firstField: '食べる'),
-          isTrue,
-        );
-        expect(
-          await c.isDuplicate(notetype: 'Basic', firstField: '猫'),
-          isFalse,
-        );
-      } finally {
-        await c.dispose();
-        await tmp.delete(recursive: true);
-      }
-    },
-    skip: bin == null ? 'FUSHI_ANKI_SYNC_BIN 未设置' : false,
-  );
+          firstField: '食べる',
+        )).map((AnkiSyncNoteHit h) => h.noteId),
+        <int>[eat],
+      );
+      expect(await c.isDuplicate(notetype: 'Basic', firstField: '食べる'), isTrue);
+      expect(await c.isDuplicate(notetype: 'Basic', firstField: '猫'), isFalse);
+    } finally {
+      await c.dispose();
+      await tmp.delete(recursive: true);
+    }
+  }, skip: bin == null ? 'FUSHI_ANKI_SYNC_BIN 未设置' : false);
 }

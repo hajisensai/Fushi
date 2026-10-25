@@ -1,12 +1,14 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 const int kDayMs = 86400000;
@@ -51,11 +53,76 @@ SrsReviewLog rlog(
 SrsScheduleResult res(SrsQueue q, {int ivl = 0, int? dueDay}) =>
     SrsScheduleResult(queue: q, scheduledDays: ivl, dueDay: dueDay);
 
+/// 把内存里的日志（落库原文 = `canonical()`，与 `SrsDbStore` 写 `srs_review_logs` 同形）写进一份临时
+/// srs.db，经 Rust `SrsCore.statProjection` 走生产的投影路径，再按 [day] 口径展开成统计记录。
+/// 全部日志合成一个归属组，归属卡 = 第一条日志的卡。
+({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
+statsViaRust(List<SrsReviewLog> logs, SrsDayContext day) {
+  final Directory dir = Directory.systemTemp.createTempSync('srs_stats_rust_');
+  final SrsCore core = SrsCore.open('${dir.path}/srs.db')..legacyMarkNone();
+  addTearDown(() {
+    core.close();
+    try {
+      dir.deleteSync(recursive: true);
+    } on FileSystemException {
+      // 句柄晚释放。
+    }
+  });
+  core.execBatch(
+    <String>[
+      'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, '
+          'review_type, origin, duration_ms, json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ],
+    <(int, List<Object?>)>[
+      for (final SrsReviewLog l in logs)
+        (
+          0,
+          <Object?>[
+            l.id,
+            l.profileUid,
+            l.cardId,
+            l.kind,
+            l.rating,
+            l.occurredAt,
+            l.reviewType,
+            l.origin,
+            l.durationMs,
+            l.canonical(),
+          ],
+        ),
+    ],
+  );
+  final String owner = logs.first.cardId;
+  final List<String> group = <String>[
+    owner,
+    ...<String>{
+      for (final SrsReviewLog l in logs) l.cardId,
+    }.difference(<String>{owner}),
+  ];
+  final (int _, List<List<Object?>> rows) = srsDecodeRows(
+    core.statProjection(<List<String>>[group]),
+  );
+  return srsStatsFromProjection(<SrsStatProjection>[
+    for (final List<Object?> r in rows)
+      SrsStatProjection(
+        logId: r[1]! as String,
+        cardId: owner,
+        occurredAt: r[2]! as int,
+        utcOffsetMin: r[3]! as int,
+        rating: r[4] as int?,
+        kind: SrsStatReviewKind.values[r[5]! as int],
+        durationMs: r[6]! as int,
+        prevDueDay: r[7] as int?,
+        maturityDelta: r[8]! as int,
+      ),
+  ], day);
+}
+
 void main() {
-  group('srsStatsFromHistory 分类', () {
+  group('有效复习投影分类（srs.db → Rust stat_projection）', () {
     test('新卡 → 学习 → 年轻 → 成熟 → 重学，成熟事件 +1 / −1', () {
       final int d0 = jst(2026, 9, 1, 10);
-      final SrsCardHistory h = SrsCardHistory(<SrsReviewLog>[
+      final List<SrsReviewLog> h = <SrsReviewLog>[
         rlog(
           'c',
           d0,
@@ -91,8 +158,8 @@ void main() {
           rating: 3,
           result: res(SrsQueue.review, ivl: 5),
         ),
-      ]);
-      final out = srsStatsFromHistory(h, kJst);
+      ];
+      final out = statsViaRust(h, kJst);
       expect(out.reviews.map((SrsStatReview r) => r.kind), <SrsStatReviewKind>[
         SrsStatReviewKind.newCard,
         SrsStatReviewKind.learn,
@@ -109,7 +176,7 @@ void main() {
 
     test('被 undo 撤销的评分不计', () {
       final int t = jst(2026, 9, 1, 10);
-      final SrsCardHistory h = SrsCardHistory(<SrsReviewLog>[
+      final List<SrsReviewLog> h = <SrsReviewLog>[
         rlog(
           'c',
           t,
@@ -132,8 +199,8 @@ void main() {
           rating: 1,
           result: res(SrsQueue.learning),
         ),
-      ]);
-      final out = srsStatsFromHistory(h, kJst);
+      ];
+      final out = statsViaRust(h, kJst);
       expect(out.reviews, hasLength(1));
       expect(out.reviews.single.rating, 1);
       // 撤销后它仍是新卡的第一次评分。
@@ -143,7 +210,7 @@ void main() {
     test('翻日：凌晨 2 点算前一天；小时按日志自己的 UTC 偏移', () {
       final int lateNight = jst(2026, 10, 10, 2);
       final int morning = jst(2026, 10, 10, 5);
-      final SrsCardHistory h = SrsCardHistory(<SrsReviewLog>[
+      final List<SrsReviewLog> h = <SrsReviewLog>[
         rlog(
           'c',
           lateNight,
@@ -160,8 +227,8 @@ void main() {
           utcOffsetMin: 0,
           result: res(SrsQueue.learning),
         ),
-      ]);
-      final out = srsStatsFromHistory(h, kJst);
+      ];
+      final out = statsViaRust(h, kJst);
       expect(out.reviews[0].day, srsDateToDay(2026, 10, 9));
       expect(out.reviews[0].hour, 2);
       expect(out.reviews[1].day, srsDateToDay(2026, 10, 10));
@@ -171,7 +238,7 @@ void main() {
     test('到期前复习记为提前复习', () {
       final int t = jst(2026, 9, 1, 10);
       final int day = kJst.dayIndexOf(t);
-      final SrsCardHistory h = SrsCardHistory(<SrsReviewLog>[
+      final List<SrsReviewLog> h = <SrsReviewLog>[
         rlog(
           'c',
           t,
@@ -193,8 +260,8 @@ void main() {
           rating: 3,
           result: res(SrsQueue.review, ivl: 40, dueDay: day + 62),
         ),
-      ]);
-      final out = srsStatsFromHistory(h, kJst);
+      ];
+      final out = statsViaRust(h, kJst);
       expect(out.reviews.map((SrsStatReview r) => r.early), <bool>[
         false,
         true,
@@ -204,7 +271,7 @@ void main() {
 
     test('手动改期 / 不认识的复习类型不进复习数，但更新状态', () {
       final int t = jst(2026, 9, 1, 10);
-      final SrsCardHistory h = SrsCardHistory(<SrsReviewLog>[
+      final List<SrsReviewLog> h = <SrsReviewLog>[
         rlog(
           'c',
           t,
@@ -219,8 +286,8 @@ void main() {
           rating: 4,
           result: res(SrsQueue.review, ivl: 60),
         ),
-      ]);
-      final out = srsStatsFromHistory(h, kJst);
+      ];
+      final out = statsViaRust(h, kJst);
       expect(out.reviews.single.kind, SrsStatReviewKind.mature);
     });
   });
@@ -506,16 +573,17 @@ void main() {
   });
 
   group('loadSrsStats（真实库）', () {
-    late FushiDatabase db;
+    late SrsStorage srsStorage;
     late SrsDbStore store;
     int now = 0;
 
     setUp(() async {
       driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
       now = jst(2026, 10, 14, 10);
-      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      srsStorage = await openTestSrsStorage();
       store = await SrsDbStore.open(
-        db: db,
+        db: srsStorage.db,
+        core: srsStorage.core,
         profileUid: kProfile,
         deviceId: 'dev',
         engine: const _Engine(),
@@ -527,8 +595,6 @@ void main() {
         fallbackRolloverHour: () => 4,
       );
     });
-
-    tearDown(() => db.close());
 
     Map<String, String> lapis(String expr) => <String, String>{
       srsLapisFieldId(kProfile, 'Expression'): expr,
