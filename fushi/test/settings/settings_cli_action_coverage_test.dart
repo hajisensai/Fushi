@@ -111,6 +111,7 @@ void main() {
       'video.player.mpv_raw',
       'video.player.danmaku_block_rules',
       'video.player.controls_editor',
+      'video.player.immersive_controls_editor',
       'reading_controls.controls_editor',
       'manga.controls_editor',
       'game.gal_hook_text_color',

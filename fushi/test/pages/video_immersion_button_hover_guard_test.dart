@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫（TODO-388 / BUG-295）：视频侧边锁 / 解锁（沉浸）按钮在鼠标 hover 时不消失。
@@ -38,9 +39,12 @@ void main() {
       reason: '锁按钮可见性应为 _lockButtonVisible OR _lockButtonHovered（BUG-295）',
     );
     expect(
-      src.contains(
-          'Listenable.merge(<Listenable>[\n                  _lockButtonVisible,\n                  _lockButtonHovered,\n                ])'),
-      isTrue,
+      compactCode(src),
+      contains(
+        compactCode(
+          'Listenable.merge(<Listenable>[_lockButtonVisible, _lockButtonHovered,])',
+        ),
+      ),
       reason: '锁按钮应同时监听 _lockButtonVisible 与 _lockButtonHovered',
     );
   });
@@ -60,13 +64,17 @@ void main() {
         reason: '出按钮置 false，可见性回落到 _lockButtonVisible 的自然淡出');
   });
 
-  test('keep-alive 真正包住锁按钮本体（_buildSideLockButton 内调用）', () {
-    final int start = src.indexOf('Widget _buildSideLockButton()');
+  test('keep-alive 真正包住沉浸态侧栏（锁按钮所在的那一层）', () {
+    // 沉浸布局（2026-10-25）之后锁按钮画在沉浸态侧栏里，整层由
+    // _withImmersiveLockAutoHide 管显隐；keep-alive 必须挂在这一层上。
+    final int start = src.indexOf(
+      'Widget _withImmersiveLockAutoHide({required Widget child})',
+    );
     expect(start, greaterThan(0));
-    final int end = src.indexOf('onPressed: _toggleImmersiveLock,', start);
+    final int end = src.indexOf('Widget _buildVideoSideActionRail(', start);
     expect(end, greaterThan(start));
     final String body = src.substring(start, end);
-    expect(body.contains('_lockButtonHoverKeepAlive('), isTrue,
-        reason: 'keep-alive 应包在锁按钮本体上');
+    expect(body.contains('_lockButtonHoverKeepAlive(child: child)'), isTrue,
+        reason: 'keep-alive 应包在沉浸态侧栏（含锁按钮）上');
   });
 }

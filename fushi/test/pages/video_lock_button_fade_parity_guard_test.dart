@@ -11,7 +11,8 @@ String _section(String src, String startToken, String endToken) {
 
 /// 源码守卫（TODO-435）：沉浸 / 锁按钮的显隐淡入淡出速度与 media_kit 视频控制条一致。
 ///
-/// 根因：锁按钮 [_buildSideLockButton] 的 AnimatedOpacity 旧实现用
+/// 根因：锁按钮（当年的 `_buildSideLockButton`，沉浸布局之后是沉浸态侧栏整层的
+/// [_withImmersiveLockAutoHide]）的 AnimatedOpacity 旧实现用
 /// `duration: const Duration(milliseconds: 200)` + 默认 linear 曲线，而 media_kit
 /// 控制条用 `controlsTransitionDuration`（桌面默认 150ms / 移动默认 300ms）+ easeInOut，
 /// 两者既不同时长也不同曲线 → 淡入淡出不同步。
@@ -21,7 +22,7 @@ String _section(String src, String startToken, String endToken) {
 /// 改读它 + `Curves.easeInOut`，并让桌面 / 移动控制主题各显式写
 /// `controlsTransitionDuration: _videoControlsTransitionDuration`，三处读同一真相源。
 ///
-/// media_kit controls 跑不了 headless（[_buildSideLockButton] / 控制主题都需真 controller），
+/// media_kit controls 跑不了 headless（锁按钮 / 控制主题都需真 controller），
 /// 故锁源码结构不变量（与 [video_immersion_button_hover_guard_test] 同理）。
 void main() {
   late String src;
@@ -58,11 +59,11 @@ void main() {
   test(
       '锁按钮淡出用 _videoControlsTransitionDuration + easeInOut（不回退 200ms / linear）',
       () {
-    final int start = src.indexOf('Widget _buildSideLockButton()');
-    expect(start, greaterThan(0), reason: '应有 _buildSideLockButton 构造器');
-    final int end = src.indexOf('onPressed: _toggleImmersiveLock,', start);
-    expect(end, greaterThan(start));
-    final String body = src.substring(start, end);
+    final String body = _section(
+      src,
+      'Widget _withImmersiveLockAutoHide({required Widget child})',
+      'Widget _buildVideoSideActionRail(',
+    );
 
     expect(
       body.contains('FadingChromeGate('),

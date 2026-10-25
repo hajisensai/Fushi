@@ -8,6 +8,7 @@ import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_custom_action_picker.dart';
+import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
@@ -46,7 +47,7 @@ class VideoControlLayoutEditor extends StatefulWidget {
   /// 改绑回调：点「快捷键 N」chip 选动作后落盘 + 实时生效（调用方负责）。
   /// null = 不提供改绑入口（chip 仍可拖动，只是点不出选择器）。
   final Future<void> Function(VideoCustomActionBindings bindings)?
-      onCustomActionBindingsChanged;
+  onCustomActionBindingsChanged;
 
   @override
   State<VideoControlLayoutEditor> createState() =>
@@ -76,18 +77,15 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
       onLayoutChanged: onLayoutChanged == null
           ? null
           : (ControlLayout<VideoControlSlot, VideoControlItem> next) =>
-              unawaited(onLayoutChanged(VideoControlLayout.fromCore(next))),
+                unawaited(onLayoutChanged(VideoControlLayout.fromCore(next))),
       isTouchControls: widget.isTouchControls,
       paletteItems: VideoControlItem.customizableItems,
       paletteTitle: t.video_control_palette_title,
       stageBuilder: _buildControlStagePreview,
       iconOf: (VideoControlItem item) =>
           videoControlItemIcon(item, bindings: _customActionBindings),
-      labelOf: (VideoControlItem item) => videoControlItemLabel(
-        item,
-        context,
-        bindings: _customActionBindings,
-      ),
+      labelOf: (VideoControlItem item) =>
+          videoControlItemLabel(item, context, bindings: _customActionBindings),
       slotLabelOf: _controlSlotLabel,
       rejectionMessageOf: _controlRejectionMessage,
       dragCanceledMessageOf: _controlDragCanceledMessage,
@@ -278,8 +276,10 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
     // null = 用户点外部 / 返回键取消（区别于显式选了「不绑定」，那是
     // `VideoCustomActionPick(null)`）——取消必须保持原绑定不动。
     if (pick == null || !mounted) return;
-    final VideoCustomActionBindings next =
-        _customActionBindings.withAction(slotIndex, pick.action);
+    final VideoCustomActionBindings next = _customActionBindings.withAction(
+      slotIndex,
+      pick.action,
+    );
     if (next == _customActionBindings) return;
     setState(() => _customActionBindings = next);
     await onChanged(next);
@@ -289,8 +289,8 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
   /// 槽位拒收，松手时给一句为什么）。
   String? _controlDragCanceledMessage(VideoControlItem item) =>
       item == VideoControlItem.volume
-          ? t.video_control_reject_volume_bottom
-          : null;
+      ? t.video_control_reject_volume_bottom
+      : null;
 
   String? _controlRejectionMessage(
     VideoControlItem item,
@@ -304,10 +304,7 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
         target == VideoControlSlot.hidden) {
       return t.video_control_reject_required;
     }
-    if (!item.canMoveToSlot(
-      target,
-      isTouchControls: widget.isTouchControls,
-    )) {
+    if (!item.canMoveToSlot(target, isTouchControls: widget.isTouchControls)) {
       return t.video_control_reject_unavailable;
     }
     return null;
@@ -333,6 +330,131 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
         return t.video_control_slot_hidden;
       case VideoControlSlot.topCenter:
         return t.video_control_slot_top_center;
+    }
+  }
+}
+
+/// 沉浸布局编辑器（设计案 `docs/specs/2026-10-25-video-immersive-one-hand.md` §3.2）：
+/// 决定沉浸锁定后屏幕上还剩哪些按钮。与普通布局编辑器同一个泛型
+/// [ControlLayoutEditor]，舞台只有屏幕左 / 右两条竖栏——沉浸态顶栏、底栏整个不画，
+/// 给出来也是摆设。锁按钮拖不进隐藏托盘（它是唯一退出口）。
+class VideoImmersiveControlLayoutEditor extends StatelessWidget {
+  const VideoImmersiveControlLayoutEditor({
+    required this.layout,
+    required this.onLayoutChanged,
+    super.key,
+  });
+
+  /// 当前生效的沉浸布局（外部改动经 rebuild 传入）。
+  final VideoImmersiveControlLayout layout;
+
+  /// 布局变化后回调：落盘 + 实时生效（调用方负责）。
+  final Future<void> Function(VideoImmersiveControlLayout layout)?
+  onLayoutChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final Future<void> Function(VideoImmersiveControlLayout layout)? onChanged =
+        onLayoutChanged;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            t.video_control_immersive_layout_hint,
+            style: controlLayoutEditorHintStyle(context),
+          ),
+        ),
+        ControlLayoutEditor<VideoImmersiveSlot, VideoImmersiveItem>(
+          layout: layout.core,
+          onLayoutChanged: onChanged == null
+              ? null
+              : (ControlLayout<VideoImmersiveSlot, VideoImmersiveItem> next) =>
+                    unawaited(
+                      onChanged(VideoImmersiveControlLayout.fromCore(next)),
+                    ),
+          isTouchControls: false,
+          paletteItems: VideoImmersiveItem.values,
+          paletteTitle: t.video_control_palette_title,
+          stageBuilder: _buildStage,
+          iconOf: (VideoImmersiveItem item) =>
+              videoControlItemIcon(item.controlItem),
+          labelOf: (VideoImmersiveItem item) =>
+              videoControlItemLabel(item.controlItem, context),
+          slotLabelOf: _slotLabel,
+          rejectionMessageOf:
+              (VideoImmersiveItem item, VideoImmersiveSlot target) =>
+                  item.canMoveToSlot(target)
+                  ? null
+                  : t.video_control_reject_immersive_lock,
+          slotOrder: const <VideoImmersiveSlot>[
+            VideoImmersiveSlot.screenLeft,
+            VideoImmersiveSlot.screenRight,
+            VideoImmersiveSlot.hidden,
+          ],
+          keyPrefix: 'video-immersive-control',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStage(
+    BuildContext context,
+    ControlSlotRegionBuilder<VideoImmersiveSlot> buildSlotRegion,
+  ) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
+    final Gradient frame = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: isGlassDesign(context)
+          ? <Color>[
+              apple.tertiaryGroupedBackground,
+              apple.secondaryGroupedBackground,
+            ]
+          : <Color>[cs.surfaceContainerHigh, cs.surfaceContainerHighest],
+    );
+    return ControlStagePanel(
+      key: const ValueKey<String>('video-immersive-control-editor-preview'),
+      heightRatio: 9 / 16,
+      minHeight: 200,
+      maxHeight: 360,
+      background: frame,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: <Widget>[
+            ControlStageRail(
+              child: buildSlotRegion(
+                VideoImmersiveSlot.screenLeft,
+                growToContent: true,
+                direction: Axis.vertical,
+              ),
+            ),
+            const Expanded(child: _MockVideoCenter()),
+            ControlStageRail(
+              child: buildSlotRegion(
+                VideoImmersiveSlot.screenRight,
+                growToContent: true,
+                direction: Axis.vertical,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _slotLabel(VideoImmersiveSlot slot) {
+    switch (slot) {
+      case VideoImmersiveSlot.screenLeft:
+        return t.video_control_slot_screen_left;
+      case VideoImmersiveSlot.screenRight:
+        return t.video_control_slot_screen_right;
+      case VideoImmersiveSlot.hidden:
+        return t.video_control_slot_hidden;
     }
   }
 }

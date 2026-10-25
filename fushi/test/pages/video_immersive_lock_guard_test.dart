@@ -42,9 +42,17 @@ void main() {
       isTrue,
       reason: '锁定态必须是 ValueNotifier，否则全屏下锁屏按钮 / 快捷键翻不动',
     );
+    // 沉浸态侧栏层（解锁口所在）必须监听 _immersiveLocked：它在 Listenable.merge 里。
+    final String rail = _section(
+      src,
+      'Widget _buildVideoSideActionRail(',
+      'Widget _buildVideoSideRailFor(',
+    );
+    final int mergeIdx = rail.indexOf('Listenable.merge(<Listenable>[');
+    expect(mergeIdx, greaterThanOrEqualTo(0));
     expect(
-      src.contains('valueListenable: _immersiveLocked'),
-      isTrue,
+      rail.substring(mergeIdx, rail.indexOf(']),', mergeIdx)),
+      contains('_immersiveLocked,'),
       reason: '锁定态层未监听 _immersiveLocked（全屏路由不随页面 setState 重建，BUG-120）',
     );
     expect(
@@ -227,53 +235,7 @@ void main() {
     );
   });
 
-  test('④ 沉浸态常驻解锁层移到视频左侧居中（_buildSideLockButton，挂在 controls Stack）', () {
-    final int railIdx = src.indexOf('Widget _buildVideoSideActionRail(');
-    expect(
-      railIdx,
-      greaterThanOrEqualTo(0),
-      reason: 'controls Stack 应该挂载侧边 rail / 锁按钮层',
-    );
-    expect(
-      src.indexOf('_buildSideLockButton()', railIdx),
-      greaterThan(railIdx),
-      reason: '侧边锁 / 解锁层未挂进 controls Stack（全屏将看不到解锁按钮）',
-    );
-    final String rail = compactCode(
-      methodBody(src, 'Widget _buildVideoSideActionRail('),
-    ).replaceAll(',)', ')');
-    for (final String slot in <String>['screenLeft', 'screenRight']) {
-      expect(
-        rail,
-        contains(
-          '_slotChipItems(VideoControlSlot.$slot).contains(VideoControlItem.immersiveLock)',
-        ),
-        reason:
-            'both adjustable side rails must test their actual immersive-lock placement',
-      );
-    }
-    expect(
-      src.contains('Widget _buildSideLockButton()'),
-      isTrue,
-      reason: '缺侧边锁 / 解锁层构建函数',
-    );
-    // 解锁层点击退出锁定。
-    final int idx = src.indexOf('Widget _buildSideLockButton()');
-    expect(
-      src.indexOf('onPressed: _toggleImmersiveLock,', idx),
-      greaterThan(idx),
-      reason: '侧边解锁按钮未接到 _toggleImmersiveLock',
-    );
-    // TODO-126：放在视频正左边、垂直居中（左侧贴边 + centerLeft 对齐）。
-    final int alignIdx = src.indexOf('alignment: Alignment.centerLeft', idx);
-    expect(
-      alignIdx,
-      greaterThan(idx),
-      reason: '侧边锁按钮应在视频正左边垂直居中（Alignment.centerLeft）',
-    );
-  });
-
-  test('④ 沉浸锁只压制普通 rail，仍保留可见解锁入口', () {
+  test('④ 沉浸态解锁口挂在 controls Stack 的沉浸布局侧栏里（2026-10-25 沉浸布局）', () {
     final String railBody = _section(
       src,
       'Widget _buildVideoSideActionRail(',
@@ -284,21 +246,55 @@ void main() {
     final int afterLocked = railBody.indexOf('if (!controlsVisible', lockedIdx);
     expect(afterLocked, greaterThan(lockedIdx));
     final String lockedBranch = railBody.substring(lockedIdx, afterLocked);
-
+    // 沉浸态屏幕上只剩沉浸布局：左右两条侧栏都按沉浸布局渲染，不读普通布局。
     expect(
-      lockedBranch.contains('_buildSideLockButton()'),
+      lockedBranch.contains('_immersiveControlLayout'),
       isTrue,
-      reason: '沉浸锁下若锁按钮不在 rail 配置中，仍必须渲染独立解锁入口',
+      reason: '沉浸锁定态侧栏必须取自沉浸布局',
     );
     expect(
-      lockedBranch.contains('immersiveOnly: true'),
+      lockedBranch.contains('VideoImmersiveSlot.railSlots'),
       isTrue,
-      reason: '沉浸锁下若锁按钮在 rail 配置中，只能渲染 immersiveLock，不得保留普通 rail 按钮',
+      reason: '沉浸布局的左右两条侧栏都必须渲染（锁按钮可能在任一侧）',
     );
     expect(
-      lockedBranch.contains('VideoControlItem.immersiveLock'),
+      lockedBranch.contains('_slotChipItems('),
+      isFalse,
+      reason: '沉浸锁定态不得再渲染普通布局的侧栏按钮',
+    );
+    // 锁按钮在沉浸布局里恒在（模型必选），渲染时不受 _shouldRenderControlItem 影响。
+    final String items = _section(
+      src,
+      'List<VideoControlItem> _immersiveRailItems(',
+      'Widget _buildVideoSideRailFor(',
+    );
+    expect(
+      items.contains('item == VideoImmersiveItem.immersiveLock ||'),
       isTrue,
-      reason: '沉浸锁分支必须保留 immersiveLock 解锁入口',
+      reason: '锁按钮（唯一退出口）不得被渲染门控过滤掉',
+    );
+    // 侧栏里的锁按钮在锁定态画成带圆底的解锁钮，点击退出锁定。
+    final String railFor = _section(
+      src,
+      'Widget _buildVideoSideRailFor(',
+      'EdgeInsets _mergeRailSafeAreaPadding(',
+    );
+    expect(
+      compactCode(railFor),
+      contains(
+        compactCode(
+          'if (item == VideoControlItem.immersiveLock && _immersiveLocked.value) {'
+          ' return _buildLockToggleButton(locked: true); }',
+        ),
+      ),
+      reason: '沉浸锁定态侧栏里的锁按钮应画成解锁钮',
+    );
+    final int idx = src.indexOf('Widget _buildLockToggleButton(');
+    expect(idx, greaterThanOrEqualTo(0), reason: '缺锁 / 解锁按钮构建函数');
+    expect(
+      src.indexOf('onPressed: _toggleImmersiveLock,', idx),
+      greaterThan(idx),
+      reason: '解锁按钮未接到 _toggleImmersiveLock',
     );
   });
 
@@ -314,17 +310,15 @@ void main() {
       isTrue,
       reason: '缺侧边锁按钮唤回方法',
     );
-    final int sideIdx = src.indexOf('Widget _buildSideLockButton()');
-    // TODO-388（BUG-295）：可见性源从单一 ValueListenableBuilder 升级为
-    // Listenable.merge([_lockButtonVisible, _lockButtonHovered])，判据
-    // `_lockButtonVisible.value || _lockButtonHovered.value`——自动淡出仍由
-    // _lockButtonVisible 驱动（hover 期间由 _lockButtonHovered 顶住，根除 hover 即消失）。
-    // _buildSideLockButton 拆到 layout.part 后是该 extension（也是整份合并语料）的最末
-    // 个成员，原来的「下一个方法 IconData _volumeIconFor( 作截断锚点」在合并语料里落在它
-    // 之前 → indexOf 返 -1。改用方法自身的 2 空格闭合作段终点（与下方 _pokeLockButton 同款）。
-    final int sideEnd = src.indexOf('\n  }', sideIdx);
-    expect(sideEnd, greaterThan(sideIdx));
-    final String sideBody = src.substring(sideIdx, sideEnd);
+    // TODO-388（BUG-295）：判据 `_lockButtonVisible.value || _lockButtonHovered.value`
+    // ——自动淡出由 _lockButtonVisible 驱动（hover 期间由 _lockButtonHovered 顶住，根除
+    // hover 即消失）。沉浸布局（2026-10-25）之后沉浸态整层侧栏（含锁按钮）由
+    // _withImmersiveLockAutoHide 统一管显隐。
+    final String sideBody = _section(
+      src,
+      'Widget _withImmersiveLockAutoHide({required Widget child})',
+      'Widget _buildVideoSideActionRail(',
+    );
     expect(
       sideBody.contains('_lockButtonVisible.value'),
       isTrue,
