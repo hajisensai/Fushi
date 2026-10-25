@@ -186,7 +186,9 @@ class SrsSyncScheduler {
     Duration hostWriteDebounce = kSrsHostWriteDebounce,
     bool Function()? canRun,
     bool Function()? firstSyncConfirmed,
+    void Function()? onLocalDirectoryPublished,
   }) : _profileLinker = profileLinker,
+       _onLocalDirectoryPublished = onLocalDirectoryPublished,
        _firstSyncConfirmed = firstSyncConfirmed ?? _alwaysRun,
        _canRun = canRun ?? _alwaysRun,
        _hostWriteDebounce = hostWriteDebounce,
@@ -238,6 +240,9 @@ class SrsSyncScheduler {
 
   /// 首次 v2 同步是否已确认（没确认前一轮也不跑，见 [kSrsSyncAwaitingConfirm]）。
   final bool Function() _firstSyncConfirmed;
+
+  /// 本机目录（本机作为互联 host 时）的一轮传上了新段：app 据此唤醒已配对设备的长轮询。
+  final void Function()? _onLocalDirectoryPublished;
 
   /// 调度器已卸下，或库正关着：这一轮不该开始 / 不该继续。
   bool get _halted => _disposed || !_canRun();
@@ -456,14 +461,16 @@ class SrsSyncScheduler {
     final List<Object> errors = <Object>[];
     for (final SrsLocalDirectory d in await local()) {
       try {
-        final String? error = (await syncWithBackend(
+        final SrsSync2Report report = await syncWithBackend(
           d.store,
           directoryKey: d.directoryKey,
-        )).error;
+        );
+        final String? error = report.error;
         if (error != null) {
           errors.add(SrsSyncReportError(error));
         } else {
           ran++;
+          if (report.uploaded > 0) _onLocalDirectoryPublished?.call();
         }
       } catch (e, stack) {
         errors.add(e);

@@ -36,10 +36,12 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_legacy_backup_cleanup.dart';
 import 'package:fushi/src/srs/srs_directory_key.dart';
+import 'package:fushi/src/srs/srs_interconnect_watch.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -83,6 +85,11 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
         },
         onError: ErrorLogService.instance.log,
       ),
+    );
+    // 本机复习数据有变动（本机写 / 同步进来）：去抖后经互联快速通道推一轮（设计 §6.3）。
+    ref.listen<int>(
+      srsRevisionProvider,
+      (int? previous, int next) => runtime.localPush.trigger(),
     );
     // RWKV 排程服务随模块常驻（store.rwkv 由它装配；对象很轻，重活按需启动）。
     ref.listen<AsyncValue<Object?>>(
@@ -145,7 +152,43 @@ class SrsAppRuntime {
     canRun: () => app.isInitialised,
     // 首次 v2 同步要用户确认一次（复习页弹窗，见 ensureSrsFirstSyncConfirmed）。
     firstSyncConfirmed: () => app.srsSync2MergeConfirmed,
+    // 本机作为 host 发布了新数据：唤醒连着它的设备（长轮询 /api/srs/changes）。
+    onLocalDirectoryPublished: app.syncServerController.notifySrsChanged,
   );
+
+  /// 互联快速通道（srs_interconnect_watch.dart）：长轮询所连 host，有新数据立刻同步这一条通道。
+  late final SrsInterconnectWatcher interconnectWatch = SrsInterconnectWatcher(
+    ready: _interconnectReady,
+    wait: InterconnectSyncBackend.instance.waitSrsChanges,
+    onChange: () async {
+      await sync.syncWithBackend(InterconnectSyncBackend.instance);
+    },
+  );
+
+  /// 本机变动后去抖推送：连着互联 host 就同步那条通道；本机自己是 host 就跑本机目录（唤醒连它的设备）。
+  late final SrsLocalPush localPush = SrsLocalPush(push: _pushInterconnect);
+
+  Future<bool> _interconnectReady() async {
+    if (!app.isInitialised || !app.srsSync2MergeConfirmed) return false;
+    final AppLifecycleState? state = WidgetsBinding.instance.lifecycleState;
+    if (state != null && state != AppLifecycleState.resumed) return false;
+    final SyncRepository repo = SyncRepository(app.database);
+    if (!await repo.isInterconnectEnabled()) return false;
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
+    await backend.restoreAuth(repo);
+    return backend.isAuthenticated;
+  }
+
+  Future<void> _pushInterconnect() async {
+    try {
+      if (await _interconnectReady()) {
+        await sync.syncWithBackend(InterconnectSyncBackend.instance);
+      }
+      await sync.syncLocalDirectories();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsAppRuntime.pushInterconnect', e, stack);
+    }
+  }
 
   /// 关库前等 SRS 同步收尾（登记到 [AppModel.addDatabaseCloseQuiescer]）。
   late final Future<void> Function() _quiesceSync = sync.quiesce;
@@ -223,6 +266,7 @@ class SrsAppRuntime {
     _hostWrites = app.syncServerController.clientSyncWrites.listen(
       _onHostClientWrite,
     );
+    interconnectWatch.start();
     // 旧版定时备份已由同步 v2 的时间线 / 归档 / 手动导出取代：本机旧备份文件升级后留 30 天再清。
     unawaited(
       srsCleanupLegacyBackups().catchError((Object e, StackTrace stack) {
@@ -243,6 +287,8 @@ class SrsAppRuntime {
     app.removeDatabaseCloseQuiescer(_quiesceSync);
     unawaited(_hostWrites?.cancel());
     _hostWrites = null;
+    interconnectWatch.stop();
+    localPush.dispose();
     sync.dispose();
     if (identical(syncChannelPostRunHook, _postRunHook)) {
       syncChannelPostRunHook = null;
@@ -313,6 +359,8 @@ class SrsAppRuntime {
 
   void _onLifecycle(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) optimizer.cancel();
+    // 回到前台：快速通道马上重新挂上（不等空闲重查的间隔）。
+    if (state == AppLifecycleState.resumed) interconnectWatch.nudge();
   }
 
   /// 自动优化的空闲判据：app 在前台、不在复习页。
