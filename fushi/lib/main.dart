@@ -24,6 +24,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:receive_intent/receive_intent.dart' as intents;
 import 'package:stack_trace/stack_trace.dart';
 import 'package:fushi/src/utils/misc/screen_wakelock.dart';
+import 'package:fushi/src/utils/misc/stale_pointer_guard.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -302,6 +303,8 @@ void main([List<String> args = const <String>[]]) {
     // 词典），写在 main 里哪个入口都不会漏。
     installEngineHostBindings();
     installAsrHostBindings();
+    // 丢了抬起事件的指针补发取消，免得拖动识别器一直卡在「按着」（见该函数注释）。
+    installStalePointerGuard();
     // Windows：偏好落在 DirectML 且环境已下载时换用它的 onnxruntime core。必须
     // 先于本进程任何 ORT 调用（一个进程只能绑定一份 onnxruntime.dll），且要在
     // 数据根解析器装好之后。

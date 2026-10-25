@@ -6,6 +6,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
     show AdaptiveNavItem;
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
+import 'package:fushi/src/utils/adaptive/nav_shape.dart';
+import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
@@ -35,6 +37,10 @@ const double _kDialItemSize = 52;
 ///   排在圆环上；左右拖 = 转盘跟手转动，松手吸附到最近一格并跳到指针对准的项。
 /// - 轻点旋钮：转盘打开后停住，可在转盘上画圈转动、点图标直接跳转，点遮罩关闭。
 /// - 键盘 / 手柄：Enter 打开，左右方向键转一格，Enter 跳转，Esc 关闭。
+///
+/// 转盘打开期间指针对准的项每换一次就轻震一次（按住旋钮横拖、画圈、方向键
+/// 与吸附动画经过的每一格都算）。正对指针的项背后是它专属的 M3E 多边形
+/// （[navShapeOf]），转动时由圆连续形变过去。
 class NavDialBar extends StatefulWidget {
   const NavDialBar({super.key, required this.spec});
 
@@ -80,6 +86,9 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
   double _panStartAngle = 0;
   double _panStartRotation = 0;
 
+  /// 上一次发触觉时指针对准的格；转盘打开期间它一变就轻震一次。
+  int _hapticSlot = 0;
+
   NavOverflowSpec get _spec => widget.spec;
   int get _count => _spec.indices.length;
 
@@ -93,6 +102,8 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _rotation.value = math.max(_currentSlot, 0).toDouble();
+    _hapticSlot = _topSlot(_rotation.value);
+    _rotation.addListener(_onRotationChanged);
   }
 
   @override
@@ -118,6 +129,15 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
   // ---------------------------------------------------------------------------
   // 状态与动效
 
+  /// 指针对准的格变了（转盘打开时）就轻震一次：每经过一个目的地都震。
+  /// 关着时（外部切页把转盘复位）只同步、不震。
+  void _onRotationChanged() {
+    final int slot = _topSlot(_rotation.value);
+    if (slot == _hapticSlot) return;
+    _hapticSlot = slot;
+    if (_isOpen && mounted) fushiSelectionHaptic(context);
+  }
+
   /// 指针对准的那一格（`spec.indices` 里的位置）。
   int _topSlot(double rotation) {
     if (_count == 0) return 0;
@@ -134,6 +154,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
       } else {
         _rotation.value = _rotation.value.roundToDouble();
       }
+      _hapticSlot = _topSlot(_rotation.value);
     }
     setState(() => _isOpen = true);
     _portal.show();
@@ -407,6 +428,9 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
                       focused: _focused,
                       showDot: slot >= 0 && hiddenCurrent == null,
                       counterTurns: -(nudge + follow),
+                      centerShape: hiddenCurrent == null
+                          ? null
+                          : navShapeOf(_spec.items, _spec.currentIndex),
                       center: hiddenCurrent == null
                           ? null
                           : FushiIcon(
@@ -539,6 +563,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
           height: _kDialItemSize,
           child: _DialItem(
             item: _spec.item(index),
+            shape: navShapeOf(_spec.items, index),
             proximity: proximity,
             current: index == _spec.currentIndex,
             scheme: scheme,
@@ -622,6 +647,7 @@ class _KnobFace extends StatelessWidget {
     required this.showDot,
     required this.counterTurns,
     this.center,
+    this.centerShape,
   });
 
   final ColorScheme scheme;
@@ -634,6 +660,9 @@ class _KnobFace extends StatelessWidget {
   /// 外层旋转量的反向，让中心图标保持正立。
   final double counterTurns;
   final Widget? center;
+
+  /// 中心高亮的形状：当前项的专属多边形（与侧栏、底栏同一套）。
+  final RoundedPolygon? centerShape;
 
   @override
   Widget build(BuildContext context) {
@@ -676,9 +705,11 @@ class _KnobFace extends StatelessWidget {
                 width: 26,
                 height: 26,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: scheme.tertiary,
-                  shape: BoxShape.circle,
+                  shape: MaterialShapeBorder(
+                    shape: centerShape ?? MaterialShapes.circle,
+                  ),
                 ),
                 child: centerGlyph,
               ),
@@ -788,10 +819,11 @@ class _DialPlatePainter extends CustomPainter {
       old.tickTurns != tickTurns;
 }
 
-/// 转盘上的一个目的地：越靠近指针越大、越接近选中色。
+/// 转盘上的一个目的地：越靠近指针越大、越接近选中色与专属多边形。
 class _DialItem extends StatelessWidget {
   const _DialItem({
     required this.item,
+    required this.shape,
     required this.proximity,
     required this.current,
     required this.scheme,
@@ -799,6 +831,9 @@ class _DialItem extends StatelessWidget {
   });
 
   final AdaptiveNavItem item;
+
+  /// 该项的专属多边形：正对指针时背后画成它，离开时连续形变回圆。
+  final RoundedPolygon shape;
 
   /// 0 = 离指针一格以上，1 = 正对指针。
   final double proximity;
@@ -821,7 +856,12 @@ class _DialItem extends StatelessWidget {
     final Color fg =
         Color.lerp(scheme.onTertiaryContainer, scheme.onTertiary, p) ??
         scheme.onTertiary;
-    final double radius = lerpDouble(_kDialItemSize / 2, 18, p) ?? 18;
+    // 离指针越近越接近专属多边形（官方 MaterialShapeBorder 插值，转动即形变）。
+    final ShapeBorder border = OutlinedBorder.lerp(
+      MaterialShapeBorder(shape: MaterialShapes.circle),
+      MaterialShapeBorder(shape: shape),
+      p.clamp(0.0, 1.0),
+    )!;
     return Semantics(
       button: true,
       selected: current,
@@ -832,10 +872,7 @@ class _DialItem extends StatelessWidget {
         child: Transform.scale(
           scale: 1 + 0.25 * p,
           child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(radius),
-            ),
+            decoration: ShapeDecoration(color: bg, shape: border),
             child: Center(
               child: FushiIcon(
                 (current || p > 0.5)
