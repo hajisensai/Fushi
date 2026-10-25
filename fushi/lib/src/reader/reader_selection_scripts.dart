@@ -420,7 +420,13 @@ if (!window.__fushiLiveRanges) {
         if (r && typeof r.setStart === 'function' && out.indexOf(r) < 0) out.push(r);
       };
       if (typeof CSS !== 'undefined' && CSS.highlights) {
-        CSS.highlights.forEach(function(hl) { hl.forEach(add); });
+        // 遍历拿到的是交给引擎绘制的那份；窄条层在 Blink 上会剔掉一部分文字另存一份（BUG-3770），
+        // get 读回的调用方原件也要一起写回。
+        CSS.highlights.forEach(function(hl, name) {
+          hl.forEach(add);
+          var own = CSS.highlights.get(name);
+          if (own && own !== hl) own.forEach(add);
+        });
       }
       var pending = window.__fushiHighlightRangeMap;
       if (pending) {
@@ -581,6 +587,17 @@ if (!window.__fushiCueRanges) {
       availableForLiveText: function() {
         if (!window.__fushiCssHighlightsSupported || typeof Highlight !== 'function') return false;
         return window.__fushiSentenceAudioRangeMode !== false;
+      },
+      // BUG-3770：Blink 用 CSS Highlight 换字色时把字形墨迹裁进文字片段盒（傍点、墨迹宽的字体被切边，
+      // 见窄条层 paintable）。当前句真要换字色（用户设了自定义字色）时，VN 改在换屏、显示之前把屏上
+      // 各句包裹好，字色走 wrapper 的 class，播放中只切 class。sample 取正文里的一个元素，比较它的
+      // ::highlight 计算字色与本身字色。
+      recolorClipsInk: function(sample) {
+        if (!sample || isWebKit()) return false;
+        var ua = typeof navigator !== 'undefined' && navigator.userAgent || '';
+        if (!/(Chrome|Chromium)\//.test(ua)) return false;
+        var color = getComputedStyle(sample, '::highlight(' + HIGHLIGHT + ')').color;
+        return !!color && color !== getComputedStyle(sample).color;
       },
       // 分段 {node, start, end} → Range（建 Range 前让文本可被 ::highlight 绘制，见 BUG-3323）。
       build: function(segments) {
@@ -1680,16 +1697,115 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     // 通知、不重画（BUG-3506）。hookedRegistry 由 flush 每次经 hookRegistry 读到，保证它活着；万一引擎
     // 仍换了对象，hookRegistry 给新对象补装。
     var hookedRegistry = null;
+    // BUG-3770：Blink 上任何生效的 CSS Custom Highlight 都把它覆盖的文字裁进文字片段盒里重画——墨迹伸出
+    // 片段盒的部分一律丢掉：着重号（傍点）只剩一角，墨迹宽的字体（圆体 / Meiryo 等）在 ruby 基字与行首字上
+    // 被切平（::highlight 规则为空也一样，Chromium 实测；WebKit 不受影响）。底色本来就由窄条层画，所以注册表
+    // 入口按元素核对这层 ::highlight 的计算样式：对这段字什么都不改（字色相同、无底色 / 装饰 / 阴影 / 描边）
+    // 的文字不交给引擎绘制；带着重号的文字也不交（宁可不换字色，也不能把傍点裁掉）。窄条层仍读调用方给的
+    // 完整范围（painted 记着名字 → 原件，get 读回原件）。调用方都是建好整份 Highlight 再 set、之后不再改，剔一次即可。
+    var painted = new Map();
+    var clipsInk = (function() {
+      var ua = typeof navigator !== 'undefined' && navigator.userAgent || '';
+      return /(Chrome|Chromium)\//.test(ua);
+    })();
+    var clearColor = function(c) {
+      return c === 'transparent' || /^rgba\(.*,\s*0(\.0+)?\)$/.test(c);
+    };
+    // 这一元素里的字不交给引擎绘制：带着重号，或这层高亮对它是空操作。读不到 ::highlight 计算样式的旧内核
+    // 返回空串，按「会改」处理（照旧交给引擎）。
+    var unpainted = function(el, name, memo) {
+      if (!el) return false;
+      if (memo.has(el)) return memo.get(el);
+      var cs = getComputedStyle(el);
+      var hs = getComputedStyle(el, '::highlight(' + name + ')');
+      var emphasis = (cs.textEmphasisStyle || cs.webkitTextEmphasisStyle || 'none') !== 'none';
+      var noop = !!hs.color && hs.color === cs.color && clearColor(hs.backgroundColor) &&
+          hs.textDecorationLine === 'none' && hs.textShadow === 'none' &&
+          !(parseFloat(hs.webkitTextStrokeWidth) > 0);
+      var hit = emphasis || noop;
+      memo.set(el, hit);
+      return hit;
+    };
+    // range 里的文字按元素切开，返回仍要交给引擎绘制的那几段；整段都要绘制返回 null（原样用）。
+    var paintedParts = function(range, name, memo) {
+      if (!range || range.collapsed || typeof range.intersectsNode !== 'function') return null;
+      var root = range.commonAncestorContainer;
+      var nodes = [];
+      if (root.nodeType === 3) {
+        nodes.push(root);
+      } else {
+        var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        for (var n = walker.nextNode(); n; n = walker.nextNode()) {
+          if (range.intersectsNode(n)) nodes.push(n);
+        }
+      }
+      var out = [];
+      var cut = false;
+      var run = null;
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        var s = node === range.startContainer ? range.startOffset : 0;
+        var e = node === range.endContainer ? range.endOffset : node.length;
+        if (e <= s) continue;
+        if (unpainted(node.parentElement, name, memo)) {
+          cut = true;
+          if (run) out.push(run);
+          run = null;
+          continue;
+        }
+        if (!run) {
+          run = document.createRange();
+          run.setStart(node, s);
+        }
+        run.setEnd(node, e);
+      }
+      if (run) out.push(run);
+      return cut ? out : null;
+    };
+    var paintable = function(name, value) {
+      if (!clipsInk || !value || typeof value.forEach !== 'function' || typeof Highlight !== 'function') return value;
+      var memo = new Map();
+      var ranges = [];
+      var cut = false;
+      value.forEach(function(range) {
+        var parts = paintedParts(range, name, memo);
+        if (parts) {
+          cut = true;
+          for (var i = 0; i < parts.length; i++) ranges.push(parts[i]);
+        } else {
+          ranges.push(range);
+        }
+      });
+      if (!cut) return value;
+      var h = new Highlight();
+      for (var i = 0; i < ranges.length; i++) h.add(ranges[i]);
+      h.priority = value.priority;
+      if (value.type) h.type = value.type;
+      return h;
+    };
     var hookRegistry = function() {
       var reg = registry();
       if (!reg || reg === hookedRegistry) return;
       hookedRegistry = reg;
       if (reg.__fushiLanesHooked) return;
       reg.__fushiLanesHooked = true;
-      var set = reg.set, del = reg.delete, clear = reg.clear;
-      reg.set = function(name, value) { var res = set.call(this, name, value); schedule(name); return res; };
-      reg.delete = function(name) { var res = del.call(this, name); schedule(name); return res; };
-      reg.clear = function() { var res = clear.call(this); schedule(); return res; };
+      var set = reg.set, get = reg.get, del = reg.delete, clear = reg.clear;
+      // 读回的是调用方 set 进来的原件（窄条层、跟读 / 查词各处都按原件取范围）；剔过的那份只给引擎绘制。
+      reg.get = function(name) {
+        var value = get.call(this, name);
+        var entry = painted.get(name);
+        return entry && entry.paint === value ? entry.value : value;
+      };
+      reg.set = function(name, value) {
+        var paint = paintable(name, value);
+        if (paint !== value) painted.set(name, { paint: paint, value: value });
+        else painted.delete(name);
+        var res = set.call(this, name, paint);
+        schedule(name);
+        return res;
+      };
+      reg.delete = function(name) { painted.delete(name); var res = del.call(this, name); schedule(name); return res; };
+      reg.clear = function() { painted.clear(); var res = clear.call(this); schedule(); return res; };
     };
     hookRegistry();
     var repaintAll = function() { schedule(); };

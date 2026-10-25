@@ -55,6 +55,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3770](bugs/BUG-3770-popup-header-layout-flicker.md) | ✅ | ✅ | 查词弹窗词头区在两种布局之间每帧来回切（一直闪） |
+> 共 3374 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3770](bugs/BUG-3770-vn-highlight-clips-emphasis-marks.md) | ✅ | ✅ | vn-highlight-clips-emphasis-marks |
 | [BUG-3769](bugs/BUG-3769-browser-windows-cert-error-interstitial.md) | ✅ | ✅ | Windows 浏览器证书错误停在 WebView2 自带拦截页，app 失败页不出现 |
 | [BUG-3768](bugs/BUG-3768-win-hidden-test-window-pulled-onscreen.md) | ✅ | ✅ | Windows 隐藏测试模式（FUSHI_TEST_HIDDEN）的主窗口被 Dart 启动定位挪回屏内 |
 | [BUG-3767](bugs/BUG-3767-video-audio-output-lost-never-recovers.md) | ✅ | ✅ | 播放中音频设备失效后视频永久没声音，只能重启 app |
