@@ -8351,6 +8351,8 @@
   "video_quality_switched": "画质：$label",
   "video_recently_added_badge": "新",
   "video_remote_all": "全部视频",
+  "video_remote_close_video": "关闭视频",
+  "video_remote_close_video_confirm": "关闭电脑上正在播放的视频？播放进度会保存。",
   "video_remote_control_customize": "自定义按钮",
   "video_remote_control_editor_hint": "在主控制组与更多按钮之间拖动按钮。播放 / 暂停始终保留。",
   "video_remote_control_favorite": "收藏本句",

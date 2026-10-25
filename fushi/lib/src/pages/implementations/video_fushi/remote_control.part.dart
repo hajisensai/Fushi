@@ -166,6 +166,10 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       // 手机触控板驱动的是本页的字幕选词光标（与键盘 / 手柄同一套），查词卡弹在
       // 电脑屏幕上。
       caret: (String step) => _runRemoteCaretStep(controller, step),
+      // 手机选集的封面与本页剧集面板同一份图源。
+      episodeCover: _remoteEpisodeCover,
+      // 手机「关闭视频」：与点播换片同一条媒体切换队列、同一个退出流程（落进度）。
+      close: _closeForRemote,
     );
     _videoRemoteBinding = binding;
     appModel.videoRemoteHost.register(binding);
@@ -178,8 +182,52 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         index: i,
         title: _episodes[i].displayTitle ?? _episodes[i].title,
         current: i == _currentEpisode,
+        hasCover: _remoteEpisodeHasCover(_episodes[i]),
       ),
   ];
+
+  /// 这一集有没有可给手机预览的封面（与剧集面板同一份图源）。
+  bool _remoteEpisodeHasCover(_PlaylistEpisodeRef episode) =>
+      (episode.coverPath?.isNotEmpty ?? false) ||
+      ((episode.coverUrl?.isNotEmpty ?? false) && _episodeCoverFetcher != null);
+
+  /// 手机选集的封面字节：本地集读 `coverPath`，远端集经剧集面板同一个取图器拉
+  /// `coverUrl`；都没有返回 null（电脑回 `cover_missing`，手机画占位）。远端取图
+  /// 失败记诊断日志并回 `502 cover_unavailable`（与「没有封面」分开），手机同样画
+  /// 占位、下次进入视野再问。
+  Future<Uint8List?> _remoteEpisodeCover(int index) async {
+    if (index < 0 || index >= _episodes.length) return null;
+    final _PlaylistEpisodeRef episode = _episodes[index];
+    final String? path = episode.coverPath;
+    if (path != null && path.isNotEmpty) {
+      final File file = File(path);
+      if (await file.exists()) return file.readAsBytes();
+    }
+    final String? url = episode.coverUrl;
+    final RemoteCoverFetcher? fetcher = _episodeCoverFetcher;
+    if (url == null || url.isEmpty || fetcher == null) return null;
+    try {
+      return await fetcher.fetchRemoteCover(url);
+    } on Object catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'VideoFushiPage.remoteEpisodeCover',
+        error,
+      );
+      throw const VideoRemoteException(502, 'cover_unavailable');
+    }
+  }
+
+  /// 手机「关闭视频」：只关被遥控的这一页。别的媒体页压在它上面（当前登记的不是
+  /// 本页）或本页退出被拦下（落进度失败、压着对话框）都回 `host_busy`，不硬拆。
+  Future<void> _closeForRemote() =>
+      ExternalMediaNavigation.instance.navigate(() async {
+        if (!mounted || !ExternalMediaNavigation.instance.isActive(this)) {
+          throw const VideoRemoteException(409, 'host_busy');
+        }
+        if (!await ExternalMediaNavigation.instance.closeActive()) {
+          throw const VideoRemoteException(409, 'host_busy');
+        }
+      });
 
   /// 手机选集：与剧集列表点选同一入口（[_switchEpisode]，listSelect）。不等它
   /// 完成——本地换集是 pushReplacement 到新页，其 Future 要等新页退出才 settle，

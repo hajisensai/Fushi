@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/sync/video_remote_cover.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/sync/video_remote_service.dart';
@@ -70,16 +71,22 @@ final class VideoRemoteEpisode {
     required this.index,
     required this.title,
     required this.current,
+    this.hasCover = false,
   });
 
   /// Position in the player's episode list (what `episode` commands name).
   final int index;
   final String title;
   final bool current;
+
+  /// Whether `episodeCover` can answer for this episode (the phone only asks
+  /// then).
+  final bool hasCover;
   Map<String, Object?> toJson() => <String, Object?>{
     'index': index,
     'title': title,
     'current': current,
+    if (hasCover) 'hasCover': true,
   };
 }
 
@@ -248,6 +255,8 @@ final class VideoRemotePlaybackBinding {
     this.searchSubtitles,
     this.downloadSubtitle,
     this.caret,
+    this.episodeCover,
+    this.close,
   });
   final String Function() identity;
   final String Function() title;
@@ -324,6 +333,16 @@ final class VideoRemotePlaybackBinding {
   /// same surface as `caret`. Null: the `caret` action is unsupported.
   final Future<String> Function(String action)? caret;
 
+  /// The stored cover bytes of episode [index] (null: it has none); the host
+  /// scales them down to a preview before they leave the computer. Null:
+  /// `episodeCover` is unsupported.
+  final Future<Uint8List?> Function(int index)? episodeCover;
+
+  /// Closes this video page through its normal exit (position saved). Fails
+  /// with a [VideoRemoteException] (`host_busy` when something the phone
+  /// cannot close sits on top of it). Null: `closeVideo` is unsupported.
+  final Future<void> Function()? close;
+
   /// Optional controls this player supports (snapshot `capabilities`).
   List<String> get capabilities => <String>[
     if (setVolume != null) videoRemoteCapabilityVolume,
@@ -334,6 +353,7 @@ final class VideoRemotePlaybackBinding {
     if (searchSubtitles != null && downloadSubtitle != null)
       videoRemoteCapabilitySubtitleSearch,
     if (caret != null) videoRemoteCapabilityCaret,
+    if (close != null) videoRemoteCapabilityCloseVideo,
   ];
 }
 
@@ -579,6 +599,9 @@ final class VideoRemoteHost implements VideoRemoteService {
     if (operation == 'subtitleSearch') {
       return _searchSubtitles(body);
     }
+    if (operation == 'episodeCover') {
+      return _episodeCover(body);
+    }
     if (operation == 'mineStatus') {
       _RemoteMineTask? task = _tasks[body['taskId']];
       if (task == null && body['requestId'] is String) {
@@ -729,6 +752,24 @@ final class VideoRemoteHost implements VideoRemoteService {
       // The outgoing page's lookup pause ends with the page; never resume it.
       _lookup = null;
       await library.open(bookUid);
+      return <String, Object?>{'ok': true};
+    }
+    if (operation == 'closeVideo') {
+      _refresh();
+      final VideoRemotePlaybackBinding? binding = _binding;
+      if (binding == null) throw const VideoRemoteException(409, 'no_video');
+      // Only the video the phone is looking at; the subtitle version is not
+      // checked, a reloaded subtitle does not make it another video.
+      if (body['sessionId'] != _sessionId) {
+        throw const VideoRemoteException(409, 'session_changed');
+      }
+      final Future<void> Function()? close = binding.close;
+      if (close == null) {
+        throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+      }
+      // The closing page's lookup pause ends with the page; never resume it.
+      _lookup = null;
+      await close();
       return <String, Object?>{'ok': true};
     }
     if (operation == 'lookupContext') {
@@ -1078,6 +1119,35 @@ final class VideoRemoteHost implements VideoRemoteService {
       throw const VideoRemoteException(409, 'session_changed');
     }
     return result.toJson();
+  }
+
+  /// `episodeCover`: a small preview of one episode's cover for the phone's
+  /// episode picker. Re-validated after the (possibly networked) fetch like
+  /// [_playbackOptions].
+  Future<Map<String, Object?>> _episodeCover(Map<String, dynamic> body) async {
+    final VideoRemotePlaybackBinding binding = _requireSession(body);
+    final Future<Uint8List?> Function(int)? cover = binding.episodeCover;
+    if (cover == null) {
+      throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+    }
+    final Object? index = body['episodeIndex'];
+    if (index is! int || index < 0) {
+      throw const VideoRemoteException(400, 'invalid_number');
+    }
+    final Uint8List? bytes = await cover(index);
+    if (!identical(binding, _requireSession(body))) {
+      throw const VideoRemoteException(409, 'session_changed');
+    }
+    final VideoRemoteCoverPreview? preview = bytes == null
+        ? null
+        : await videoRemoteCoverPreview(bytes);
+    if (preview == null) {
+      throw const VideoRemoteException(404, 'cover_missing');
+    }
+    return <String, Object?>{
+      'mime': preview.mime,
+      'data': base64Encode(preview.bytes),
+    };
   }
 
   /// The open lookup [body] names, still bound to the current session and
