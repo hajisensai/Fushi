@@ -15,6 +15,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiHeightReporter, FushiTopFadeScrim;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 
 class SettingsHomePage extends BasePage {
   const SettingsHomePage({super.key, this.embedded = false, this.onBack});
@@ -824,7 +825,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     );
     // 整页底色（不是顶部底带）：本页是 home tab，没有 Scaffold 提供底色与 ink。
     return Material(
-      color: tokens.surfaces.page,
+      color: fushiPageBackgroundColor(context),
       child: !showHeader
           ? scroll
           : Stack(

@@ -19,6 +19,7 @@ import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 
 /// 横滚行里一张竖卡的宽度（2:3 海报）。与视频首页横滚行同量级。
 const double kMediaServerRowCardWidth = 150;
@@ -1005,7 +1006,7 @@ class _MediaServerPageFrameState extends State<MediaServerPageFrame> {
     final FushiFloatingChromeController? outer =
         FushiFloatingChromeScope.maybeOf(context);
     return Scaffold(
-      backgroundColor: tokens.surfaces.page,
+      backgroundColor: fushiPageBackgroundColor(context),
       body: _libraryMaterial(
         FushiFloatingChromeScope(
           controller: outer ?? _ownChrome,

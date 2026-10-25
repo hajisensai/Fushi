@@ -60,6 +60,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show GlassContainer, LiquidRoundedRectangle, LiquidRoundedSuperellipse;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 
 // ── 「玻璃」设计系统的共享原语 ────────────────────────────────────────────
 //
@@ -5202,7 +5203,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
       // everywhere.
       automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
       child: Scaffold(
-        backgroundColor: tokens.surfaces.page,
+        backgroundColor: fushiPageBackgroundColor(context),
         floatingActionButton: widget.floatingActionButton,
         floatingActionButtonLocation: widget.floatingActionButtonLocation,
         bottomNavigationBar: widget.bottomNavigationBar,
@@ -5417,7 +5418,7 @@ class FushiToolScaffold extends StatelessWidget {
     final Widget? effectiveLeading = leading ?? _defaultLeading(context);
 
     return Scaffold(
-      backgroundColor: backgroundColor ?? tokens.surfaces.page,
+      backgroundColor: backgroundColor ?? fushiPageBackgroundColor(context),
       bottomNavigationBar: bottomNavigationBar,
       body: SafeArea(
         // 与 [FushiPageScaffold] 同一口径（BUG-2440）：底部 inset 不扣 viewport。
@@ -5632,10 +5633,9 @@ class FushiTransientScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget content = safeArea ? SafeArea(child: body) : body;
     return Scaffold(
-      backgroundColor: backgroundColor ?? tokens.surfaces.page,
+      backgroundColor: backgroundColor ?? fushiPageBackgroundColor(context),
       body: content,
     );
   }
