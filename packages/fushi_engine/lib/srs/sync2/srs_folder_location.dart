@@ -14,6 +14,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:path/path.dart' as p;
@@ -76,7 +77,7 @@ Directory srsFolderCollectionRoot(
   p.join(location.path, kSrsSync2Namespace, profileUid, kSrsSync2Folder),
 );
 
-/// 一个文件夹位置这一轮的结果。
+/// 一个文件夹位置这一轮的结果（[ops] 里带加密握手的结论：kdf / encryptionEnabled / 口令错误）。
 class SrsFolderSyncReport {
   SrsFolderSyncReport({this.ops, this.media});
 
@@ -90,6 +91,7 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
   required SrsFolderLocation location,
   required SrsDbStore store,
   Directory? mediaRoot,
+  SrsLocationKey? key,
 }) async {
   if (location.idle) return SrsFolderSyncReport();
   if (!Directory(location.path).existsSync()) {
@@ -105,17 +107,32 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
       location: root,
       locationId: location.locationId,
       nowMs: () => store.now().$1,
+      key: key,
       // 勾了归档就一个旧 head 也不删（归档位置永不删除，§10.3）。
       archive: location.archive,
     );
+    // 加密位置口令不对 / 没有：媒体也不碰（明文媒体不能写进加密位置）。
+    if (ops.error != null) return SrsFolderSyncReport(ops: ops);
   }
   SrsMediaSyncReport? media;
+  String? mediaKey = (ops?.encrypted ?? false) ? key!.keyHex : null;
+  if (ops == null && mediaRoot != null && location.media) {
+    final ({String? keyHex, String? error}) k = await srsCheckLocationKey(
+      root,
+      key,
+    );
+    if (k.error != null) {
+      return SrsFolderSyncReport(ops: SrsSync2Report()..error = k.error);
+    }
+    mediaKey = k.keyHex;
+  }
   if (mediaRoot != null && (location.media || location.archive)) {
     media = await srsSyncMedia(
       location: root,
       store: store,
       mediaRoot: mediaRoot,
       archive: location.archive,
+      cipher: mediaKey == null ? null : SrsMediaCipher(store, mediaKey),
     );
   }
   return SrsFolderSyncReport(ops: ops, media: media);

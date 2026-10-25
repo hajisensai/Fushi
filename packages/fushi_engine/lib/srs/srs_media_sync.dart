@@ -16,6 +16,7 @@ import 'dart:typed_data';
 
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -134,21 +135,36 @@ SrsLegacyMediaReader srsLegacyMediaReader(
   };
 }
 
-/// 跑一轮媒体同步。[mediaRoot] 是本 profile 的本机媒体目录；[archive] = 归档位置（只写不删）。
+/// 跑一轮媒体同步。[mediaRoot] 是本 profile 的本机媒体目录；[archive] = 归档位置（只写不删）；[cipher] = 位置开了
+/// 加密时的媒体封装（文件放 `media-e/`、内容是密文，见 srs_location_crypto.dart）。
 Future<SrsMediaSyncReport> srsSyncMedia({
   required SrsLocationStore location,
   required SrsDbStore store,
   required Directory mediaRoot,
   bool archive = false,
   SrsLegacyMediaReader? legacy,
+  SrsMediaCipher? cipher,
 }) async {
   final SrsMediaSyncReport report = SrsMediaSyncReport();
+  final String folder = cipher == null
+      ? kSrsMediaFolder
+      : kSrsSealedMediaFolder;
+  Future<void> put(String name, Uint8List plain) async => location.put(
+    '$folder/$name',
+    cipher == null ? plain : await cipher.seal(name, plain),
+  );
+  Future<Uint8List?> get(String name) async {
+    final Uint8List? b = await location.get('$folder/$name');
+    if (b == null || cipher == null) return b;
+    return cipher.open(name, b);
+  }
+
   final Set<String> wanted = await srsReferencedMedia(
     store,
     deletedAfterMs: store.now().$1 - kSrsMediaRetention.inMilliseconds,
   );
   final Set<String> remote = <String>{
-    for (final SrsLocationEntry e in await location.list(kSrsMediaFolder))
+    for (final SrsLocationEntry e in await location.list(folder))
       if (!e.isFolder) e.name,
   };
   for (final String name in wanted) {
@@ -157,7 +173,7 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     final bool haveRemote = remote.contains(name);
     if (!haveLocal) {
       final Uint8List? bytes = haveRemote
-          ? await location.get('$kSrsMediaFolder/$name')
+          ? await get(name)
           : await legacy?.call(name);
       if (bytes == null) {
         report.missing.add(name);
@@ -169,11 +185,11 @@ Future<SrsMediaSyncReport> srsSyncMedia({
       await tmp.rename(local.path);
       report.downloaded++;
       if (!haveRemote) {
-        await location.put('$kSrsMediaFolder/$name', bytes);
+        await put(name, bytes);
         report.uploaded++;
       }
     } else if (!haveRemote) {
-      await location.put('$kSrsMediaFolder/$name', await local.readAsBytes());
+      await put(name, await local.readAsBytes());
       report.uploaded++;
     }
   }
@@ -193,7 +209,7 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     for (final String name in remote) {
       final String k = name.toLowerCase();
       if (expired.contains(k) && !live.contains(k)) {
-        await location.delete('$kSrsMediaFolder/$name');
+        await location.delete('$folder/$name');
         report.deleted++;
       }
     }

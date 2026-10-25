@@ -14,6 +14,7 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsSync2Result;
 
@@ -66,6 +67,15 @@ class SrsSync2Report {
   /// 这个位置这一轮没同步成的原因（调度器据此如实报「未同步」）；null = 成功。
   String? error;
 
+  /// 位置开了加密（`meta.json` 有 `kdf`）时它的参数；UI 让用户输入口令时用同一份盐与参数派生。
+  SrsKdf? kdf;
+
+  /// 这一轮把本机的「开加密」写进了位置的 `meta.json`（调度器据此把本机密钥标成已生效）。
+  bool encryptionEnabled = false;
+
+  /// 这一轮实际用密钥收发（位置是加密的且本机口令对）。
+  bool encrypted = false;
+
   /// 非致命错误（段损坏 / 签名不符 / 解不开……）：记日志，不打断这一轮。
   final List<String> errors = <String>[];
 }
@@ -84,14 +94,16 @@ Future<Map<String, Object?>?> _readJson(
   }
 }
 
-/// 跑一轮。[locationId] 是这个位置的稳定身份（本机记每个位置传到了哪）；[keyHex] = 开了加密时的集合密钥；
-/// [archive] = 归档位置：只写不删（不清本机的旧 head，设计 §10.3）。
+/// 跑一轮。[locationId] 是这个位置的稳定身份（本机记每个位置传到了哪）；[key] = 本机为这个位置记的密钥
+/// （见 srs_location_crypto.dart：位置是加密的而本机没有 / 不对 → 这一轮不同步，报 [kSrsSync2NeedsKey] /
+/// [kSrsSync2WrongKey]；本机刚开加密 → 这一轮把 `kdf` 写进 `meta.json`）；[archive] = 归档位置：只写不删（不清本机
+/// 的旧 head，设计 §10.3）。
 Future<SrsSync2Report> srsSync2Round({
   required SrsSync2Host host,
   required SrsLocationStore location,
   required String locationId,
   required int Function() nowMs,
-  String? keyHex,
+  SrsLocationKey? key,
   bool archive = false,
 }) async {
   final SrsSync2Report report = SrsSync2Report();
@@ -100,23 +112,54 @@ Future<SrsSync2Report> srsSync2Round({
     'op': 'identity',
     'now': nowMs(),
   })).map;
-  final Map<String, Object?>? meta = await _readJson(location, 'meta.json');
+  Map<String, Object?>? meta = await _readJson(location, 'meta.json');
   if (meta == null) {
-    await location.put(
-      'meta.json',
-      utf8.encode(
-        jsonEncode(<String, Object?>{
-          'v': kSrsSync2Protocol,
-          'minReader': kSrsSync2MinReader,
-          'collection': id['collection'],
-          'createdAt': nowMs(),
-        }),
-      ),
-    );
+    meta = <String, Object?>{
+      'v': kSrsSync2Protocol,
+      'minReader': kSrsSync2MinReader,
+      'collection': id['collection'],
+      'createdAt': nowMs(),
+    };
+    await location.put('meta.json', utf8.encode(jsonEncode(meta)));
   } else if (((meta['minReader'] as int?) ?? 1) > kSrsSync2Protocol) {
     report.needsUpgrade = true;
     return report;
   }
+
+  // 加密握手（§9）：位置上的 kdf 是准；本机密钥对不上就不碰这个位置。
+  final Map<String, Object?>? kdfJson = (meta['kdf'] as Map?)
+      ?.cast<String, Object?>();
+  String? keyHex;
+  if (kdfJson == null) {
+    if (key != null && key.pendingEnable) {
+      await location.put(
+        'meta.json',
+        utf8.encode(
+          jsonEncode(<String, Object?>{
+            ...meta,
+            'kdf': <String, Object?>{...key.kdf.toJson(), 'check': key.check},
+          }),
+        ),
+      );
+      report.encryptionEnabled = true;
+      report.kdf = key.kdf;
+      keyHex = key.keyHex;
+    }
+  } else {
+    report.kdf = SrsKdf.fromJson(kdfJson);
+    if (key == null) {
+      report.error = kSrsSync2NeedsKey;
+      return report;
+    }
+    if (kdfJson['check'] != key.check) {
+      report.error = kSrsSync2WrongKey;
+      return report;
+    }
+    keyHex = key.keyHex;
+  }
+  report.encrypted = keyHex != null;
+  // 加密位置换一个上传进度身份：开加密之前传过的明文段，本机全部按密文重传一遍（同名覆盖）。
+  final String progressId = keyHex == null ? locationId : '$locationId#e';
 
   // 1. 全部设备的 head。
   final List<Uint8List> heads = <Uint8List>[];
@@ -173,7 +216,7 @@ Future<SrsSync2Report> srsSync2Round({
   // 3. 发件：先段、后 head。
   final SrsSync2Result out = await host.sync2Command(<String, Object?>{
     'op': 'outbox',
-    'location': locationId,
+    'location': progressId,
     'key': keyHex,
   });
   for (final (String path, Uint8List bytes) in out.files) {
@@ -183,7 +226,7 @@ Future<SrsSync2Report> srsSync2Round({
   final int upto = (out.map['upto'] as int?) ?? 0;
   final SrsSync2Result head = await host.sync2Command(<String, Object?>{
     'op': 'head',
-    'location': locationId,
+    'location': progressId,
     'upto': upto,
     'now': nowMs(),
   });

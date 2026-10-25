@@ -657,6 +657,19 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
             json!({})
         }
         "import" => parse(c.sync2_import(profile, blobs.first().ok_or("import: missing file")?, i("now")?)?)?,
+        // 加密位置上的媒体（设计 §9：网盘只见密文和文件大小）：XChaCha20-Poly1305，AAD 绑定文件名，
+        // 换名 / 换内容即解密失败。段的加解密在 outbox / ingest 里，这里只给媒体用。
+        "seal" | "open" => {
+            let key = crate::sync2::keys::CollectionKey(key32(&req["key"])?.ok_or("seal/open: missing key")?);
+            let aad = format!("fushi-srs-media:{}", s("name")?);
+            let input = blobs.first().ok_or("seal/open: missing input")?;
+            if s("op")? == "seal" {
+                files.push(("sealed".to_owned(), key.seal(input, aad.as_bytes())));
+            } else {
+                files.push(("plain".to_owned(), key.open(input, aad.as_bytes()).ok_or("media decrypt failed")?));
+            }
+            json!({})
+        }
         "digest" => c.sync2_digest(profile)?,
         "status" => c.sync2_status(profile)?,
         "conflicts" => c.sync2_conflicts(profile)?,
