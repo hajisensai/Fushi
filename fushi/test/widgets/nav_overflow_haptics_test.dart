@@ -3,14 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
     show AdaptiveNavItem;
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_dial_bar.dart';
-import 'package:fushi/src/utils/adaptive/nav_overflow/nav_drum_bar.dart';
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_mode_strip_bar.dart';
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
 import 'package:fushi/src/utils/adaptive/nav_shape.dart';
 import 'package:material_ui/material_ui.dart';
 
 // 底栏原型的「逐项经过就轻震」与多边形高亮（2026-10-24 用户：模式条拖动要
-// 预览目标模块、换项震一次；转盘 / 滚筒每经过一个模块都震；滚筒铺满宽度）。
+// 预览目标模块、换项震一次；转盘每经过一个模块都震）。2026-10-25：圆柱滚筒
+// 删除，模式条改为铺满胶囊宽度、首尾贴边不留白、高亮下带底标。
 
 const double _kWidth = 360;
 const double _kHeight = 64;
@@ -164,52 +164,99 @@ void main() {
     expect(haptics, hasLength(2));
   });
 
-  testWidgets('drum buzzes once per slot while dragging', (
+  /// 模式条里各项（按 Semantics 标签找）的中心横坐标，按序号排。
+  List<double> stripCenters(WidgetTester tester, int count) => <double>[
+    for (int i = 0; i < count; i++)
+      tester
+          .getCenter(
+            find.descendant(
+              of: find.byType(NavModeStripBar),
+              matching: find.byWidgetPredicate(
+                (Widget w) => w is Semantics && w.properties.label == 'Item $i',
+              ),
+            ),
+          )
+          .dx,
+  ];
+
+  testWidgets('mode strip spreads few items across the full capsule width', (
     WidgetTester tester,
   ) async {
-    final List<int> selected = await pumpVariant(
-      tester,
-      (NavOverflowSpec spec) => NavDrumBar(spec: spec),
-    );
-    final TestGesture gesture = await tester.startGesture(
-      tester.getCenter(find.byType(NavDrumBar)),
-    );
-    // 42px 一格：往左拨约 130px 转过 3 格。
-    await dragBy(gesture, tester, -130);
-    expect(haptics, hasLength(3));
-
-    // 慢慢停住再松手，不带惯性。
-    await tester.pump(const Duration(milliseconds: 300));
-    await gesture.up();
-    await tester.pumpAndSettle();
-    expect(haptics, hasLength(3));
-    // 滚筒横拨只浏览、不切页。
-    expect(selected, isEmpty);
-  });
-
-  testWidgets('drum fills the capsule width', (WidgetTester tester) async {
     await pumpVariant(
       tester,
-      (NavOverflowSpec spec) => NavDrumBar(spec: spec),
-      count: 12,
-      current: 6,
+      (NavOverflowSpec spec) => NavModeStripBar(spec: spec),
+      count: 4,
     );
-    // 固定 24° 角距 + 118 半径时 360 宽只露 7 项、两侧空着；按宽度推导后
-    // 当前项两侧各铺到胶囊边缘。
-    final Finder cells = find.descendant(
-      of: find.byType(NavDrumBar),
+    // 4 项放得下：按项数等分 360，第一项贴左、最后一项贴右，当前项不居中。
+    final double left = tester.getTopLeft(find.byType(NavModeStripBar)).dx;
+    final List<double> xs = stripCenters(tester, 4);
+    for (int i = 0; i < 4; i++) {
+      expect(xs[i] - left, moreOrLessEquals(_kWidth / 4 * (i + 0.5)));
+    }
+    // 全部放得下时两端不渐隐。
+    expect(
+      find.descendant(
+        of: find.byType(NavModeStripBar),
+        matching: find.byType(ShaderMask),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('mode strip leaves no blank at either end when scrolling', (
+    WidgetTester tester,
+  ) async {
+    // 12 项、360 宽：6 格放得下，格宽 60。
+    final List<int> selected = await pumpVariant(
+      tester,
+      (NavOverflowSpec spec) => NavModeStripBar(spec: spec),
+      count: 12,
+    );
+    final double left = tester.getTopLeft(find.byType(NavModeStripBar)).dx;
+    // 当前是第一项：它贴左边，不居中留出半条空白。
+    expect(stripCenters(tester, 12).first - left, moreOrLessEquals(30));
+
+    // 往左拨几次走到末项：末项贴右边。
+    for (int step = 0; step < 4; step++) {
+      final TestGesture gesture = await tester.startGesture(
+        tester.getCenter(find.byType(NavModeStripBar)),
+      );
+      await dragBy(gesture, tester, -180);
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+    expect(selected.last, 11);
+    expect(
+      left + _kWidth - stripCenters(tester, 12).last,
+      moreOrLessEquals(30),
+    );
+  });
+
+  testWidgets('mode strip draws a bottom marker under the highlight', (
+    WidgetTester tester,
+  ) async {
+    await pumpVariant(
+      tester,
+      (NavOverflowSpec spec) => NavModeStripBar(spec: spec),
+      count: 4,
+      current: 2,
+    );
+    final Finder marker = find.descendant(
+      of: find.byType(NavModeStripBar),
       matching: find.byWidgetPredicate(
         (Widget w) =>
-            w is Semantics && (w.properties.label ?? '').startsWith('Item'),
+            w is DecoratedBox &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).borderRadius ==
+                BorderRadius.circular(2),
       ),
     );
-    final int visible = cells.evaluate().length;
-    expect(visible, greaterThanOrEqualTo(9));
-    final List<double> xs = <double>[
-      for (int i = 0; i < visible; i++) tester.getCenter(cells.at(i)).dx,
-    ]..sort();
-    final double left = tester.getTopLeft(find.byType(NavDrumBar)).dx;
-    expect(xs.first - left, lessThan(_kWidth * 0.15));
-    expect(left + _kWidth - xs.last, lessThan(_kWidth * 0.15));
+    expect(marker, findsOneWidget);
+    final Rect rect = tester.getRect(marker);
+    expect(rect.width, 16);
+    expect(rect.height, 3);
+    expect(rect.center.dx, moreOrLessEquals(stripCenters(tester, 4)[2]));
+    final double bottom = tester.getBottomLeft(find.byType(NavModeStripBar)).dy;
+    expect(bottom - rect.bottom, moreOrLessEquals(2));
   });
 }

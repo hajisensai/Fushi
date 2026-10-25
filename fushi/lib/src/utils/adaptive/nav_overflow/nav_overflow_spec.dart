@@ -3,7 +3,6 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
     show AdaptiveNavItem;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_dial_bar.dart';
-import 'package:fushi/src/utils/adaptive/nav_overflow/nav_drum_bar.dart';
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_mode_strip_bar.dart';
 
 /// MD3 悬浮胶囊**内部**交给「放不下的入口」交互原型画的那一块（2026-10-23）。
@@ -61,10 +60,8 @@ Widget buildNavOverflowVariant(
 ) {
   return switch (style) {
     AdaptiveNavBarStyle.dial => NavDialBar(spec: spec),
-    AdaptiveNavBarStyle.drum => NavDrumBar(spec: spec),
     AdaptiveNavBarStyle.modeStrip => NavModeStripBar(spec: spec),
-    AdaptiveNavBarStyle.flat ||
-    AdaptiveNavBarStyle.pager => navOverflowPlainRow(spec),
+    AdaptiveNavBarStyle.flat => navOverflowPlainRow(spec),
   };
 }
 

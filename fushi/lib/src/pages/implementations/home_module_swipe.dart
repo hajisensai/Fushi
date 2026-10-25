@@ -25,6 +25,7 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/home_tab.dart';
+import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart'
     show SectionSwipeOverflowScope;
@@ -231,8 +232,7 @@ class _HomeModuleSwipeDetectorState extends State<HomeModuleSwipeDetector>
       fingerTowardStart: fingerTowardStart,
     );
     if (target == null) return;
-    widget.onSwipe(target);
-    _playEnter(fromScreenRight: fingerTowardStart);
+    _commit(target, fromScreenRight: fingerTowardStart);
   }
 
   /// 库页分区横滑越过首 / 末分区时的接力（[SectionSwipeOverflowScope]）。
@@ -245,11 +245,17 @@ class _HomeModuleSwipeDetectorState extends State<HomeModuleSwipeDetector>
       fingerTowardStart: fingerTowardStart,
     );
     if (target == null) return;
-    widget.onSwipe(target);
-    _playEnter(fromScreenRight: fingerTowardStart);
+    _commit(target, fromScreenRight: fingerTowardStart);
   }
 
   void _onCancel() => _drag = null;
+
+  /// 横滑切到 [target]：与底栏切页同一种选中轻震，再切页、播进场。
+  void _commit(HomeTab target, {required bool fromScreenRight}) {
+    fushiSelectionHaptic(context);
+    widget.onSwipe(target);
+    _playEnter(fromScreenRight: fromScreenRight);
+  }
 
   void _playEnter({required bool fromScreenRight}) {
     final FushiSpringSpec spec = context.fushiMotion.spatialDefault;
