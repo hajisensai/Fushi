@@ -100,7 +100,7 @@ if (-not (Test-Path -LiteralPath $pathFile)) {
 $seed = Join-Path $w 'seed'
 if (-not $NoSeed -and -not (Test-Path -LiteralPath $seed)) {
     Write-Host 'cloning the seed repository (bare, a few GB; -NoSeed skips)'
-    & git clone --bare --quiet 'https://github.com/hajisensai/Fushi.git' $seed
+    & git clone --bare --quiet 'https://github.com/hajisensai/fushi' $seed
     if ($LASTEXITCODE -ne 0) { throw 'seed clone failed' }
 }
 

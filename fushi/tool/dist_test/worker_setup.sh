@@ -29,7 +29,7 @@ case "$key" in
   *'"'*|*,*command=*) echo "error: pass the bare public key line" >&2; exit 2 ;;
 esac
 
-SEED_URL=https://github.com/hajisensai/Fushi.git
+SEED_URL=https://github.com/hajisensai/fushi
 here=$(cd "$(dirname "$0")" && pwd)
 W="$HOME/.fushi-worker"
 mkdir -p "$W" "$HOME/.ssh"
