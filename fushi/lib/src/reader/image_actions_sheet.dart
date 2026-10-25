@@ -95,7 +95,7 @@ class ImageActionsSheet extends StatelessWidget {
                     key: ValueKey<String>('image_action_${actions[i].name}'),
                     autofocus: i == 0,
                     leading: FushiListLeadingIcon(
-                      _iconOf(actions[i]),
+                      imageActionIcon(actions[i]),
                       shape: i == 0
                           ? FushiLeadingShape.cookie
                           : FushiLeadingShape.circle,
@@ -103,7 +103,7 @@ class ImageActionsSheet extends StatelessWidget {
                           ? FushiCardTone.primary
                           : FushiCardTone.secondary,
                     ),
-                    title: Text(_labelOf(actions[i])),
+                    title: Text(imageActionLabel(actions[i])),
                     onTap: () => Navigator.of(context).pop(actions[i]),
                   ),
                 ),
@@ -113,16 +113,18 @@ class ImageActionsSheet extends StatelessWidget {
       ),
     );
   }
-
-  static IconData _iconOf(ImageAction action) => switch (action) {
-    ImageAction.save => FushiIcons.download,
-    ImageAction.share => FushiIcons.share,
-    ImageAction.copy => FushiIcons.copy,
-  };
-
-  static String _labelOf(ImageAction action) => switch (action) {
-    ImageAction.save => t.reader_image_save,
-    ImageAction.share => t.reader_image_share,
-    ImageAction.copy => t.reader_copy_image,
-  };
 }
+
+/// 动作的图标（面板与漫画右键菜单等其它入口共用）。
+IconData imageActionIcon(ImageAction action) => switch (action) {
+  ImageAction.save => FushiIcons.download,
+  ImageAction.share => FushiIcons.share,
+  ImageAction.copy => FushiIcons.copy,
+};
+
+/// 动作的文案（面板与漫画右键菜单等其它入口共用）。
+String imageActionLabel(ImageAction action) => switch (action) {
+  ImageAction.save => t.reader_image_save,
+  ImageAction.share => t.reader_image_share,
+  ImageAction.copy => t.reader_copy_image,
+};

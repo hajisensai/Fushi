@@ -129,8 +129,10 @@ import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
-import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
-    show copyImageFileToClipboard, shareImageFile;
+import 'package:fushi/src/reader/image_actions_sheet.dart'
+    show ImageAction, imageActionLabel, imageActionsFor, runImageAction;
+import 'package:fushi/src/utils/misc/image_file_saver.dart'
+    show defaultTargetPlatformForImageSave;
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
@@ -428,10 +430,18 @@ enum _MangaContextAction {
   direction,
   zoomIn,
   zoomOut,
-  copyImage,
-  shareImage,
-  saveImage,
-  setCover,
+  copyImage(ImageAction.copy),
+  shareImage(ImageAction.share),
+  saveImage(ImageAction.save),
+  setCover;
+
+  const _MangaContextAction([this.imageAction]);
+
+  /// 图片动作项对应的全局 [ImageAction]；非图片项为 null。
+  final ImageAction? imageAction;
+
+  static _MangaContextAction forImageAction(ImageAction action) =>
+      values.firstWhere((_MangaContextAction a) => a.imageAction == action);
 }
 
 Future<int?> showMangaPageJumpDialog(
@@ -1170,7 +1180,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   bool _panWide = true;
   String _zoomStartPosition = 'automatic';
   bool _invertVolumeKeys = false;
-  String _saveDirectory = 'chapter';
 
   /// 双页配对偏移（0/1）与宽页独占；两者都只影响 [_buildSpreadsFor] 的配对。
   int _spreadOffset = 1;
@@ -1219,6 +1228,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void _setJumpPillFlashing(bool value) {
     if (mounted) setState(() => _jumpPillFlashing = value);
   }
+
   int _lastSavedPage = -1;
   double _lastSavedFraction = -1;
 
@@ -2105,7 +2115,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _panWide = readerPreferences.panWide;
     _zoomStartPosition = readerPreferences.zoomStartPosition;
     _invertVolumeKeys = readerPreferences.invertVolumeKeys;
-    _saveDirectory = readerPreferences.saveDirectory;
     _applyVolumeKeyPaging(
       readerPreferences.volumeKeys,
       invertDirection: _invertVolumeKeys,
@@ -5796,7 +5805,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _panWide = prefs.panWide;
       _zoomStartPosition = prefs.zoomStartPosition;
       _invertVolumeKeys = prefs.invertVolumeKeys;
-      _saveDirectory = prefs.saveDirectory;
       if (modeChanged) {
         _mode = nextMode;
         _spreads = spreads;
@@ -6019,23 +6027,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     return session.localFile(page);
   }
 
-  Future<void> _saveCurrentMangaPage() async {
-    final File? source = await _currentMangaPageFile();
-    final EpubBookRow? row = _bookRow;
-    if (source == null || row == null || !await source.exists()) return;
-    final String root = await MangaStorage.bookPath(row.bookKey);
-    final String chapter = _shelfChapterKey ?? 'chapter';
-    final String book = safeWindowsFileName(row.title);
-    final String savePath = switch (_saveDirectory) {
-      'flat' => p.join(root, 'saved'),
-      'book' => p.join(root, 'saved', book),
-      _ => p.join(root, 'saved', book, chapter),
-    };
-    final Directory destination = Directory(savePath);
-    await destination.create(recursive: true);
-    final String name = p.basename(source.path);
-    await source.copy(p.join(destination.path, name));
-    if (mounted) FushiToast.show(msg: t.manga_page_save);
+  /// 右键菜单的图片动作（保存 / 分享 / 复制）：与小说正文、插图册、缩放看图
+  /// 同一份动作本体（image_actions_sheet.dart 的 [runImageAction]；保存 =
+  /// 手机写系统相册、桌面另存为）。这里只负责把当前页解析成文件。
+  Future<void> _runCurrentMangaPageImageAction(ImageAction action) async {
+    final File? file = await _currentMangaPageFile();
+    if (file == null || !await file.exists()) {
+      FushiToast.show(
+        msg: t.reader_image_file_unavailable,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    await runImageAction(action, file);
   }
 
   Future<void> _setCurrentMangaPageAsCover() async {
@@ -6120,18 +6124,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               enabled: _zoomPercent > kMangaZoomMinPercent,
               child: Text('${t.manga_zoom} − ($_zoomPercent%)'),
             ),
-            PopupMenuItem<_MangaContextAction>(
-              value: _MangaContextAction.copyImage,
-              child: Text(t.manga_page_copy),
-            ),
-            PopupMenuItem<_MangaContextAction>(
-              value: _MangaContextAction.shareImage,
-              child: Text(t.manga_page_share),
-            ),
-            PopupMenuItem<_MangaContextAction>(
-              value: _MangaContextAction.saveImage,
-              child: Text(t.manga_page_save),
-            ),
+            // 图片动作按平台列（与长按图片面板同一判据 [imageActionsFor]）。
+            for (final ImageAction imageAction in imageActionsFor(
+              defaultTargetPlatformForImageSave(),
+            ))
+              PopupMenuItem<_MangaContextAction>(
+                value: _MangaContextAction.forImageAction(imageAction),
+                child: Text(imageActionLabel(imageAction)),
+              ),
             PopupMenuItem<_MangaContextAction>(
               value: _MangaContextAction.setCover,
               child: Text(t.manga_page_set_cover),
@@ -6163,15 +6163,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         await _setZoomPercent(_zoomPercent - 10);
         return;
       case _MangaContextAction.copyImage:
-        final File? file = await _currentMangaPageFile();
-        if (file != null) await copyImageFileToClipboard(file);
-        return;
       case _MangaContextAction.shareImage:
-        final File? file = await _currentMangaPageFile();
-        if (file != null) await shareImageFile(file);
-        return;
       case _MangaContextAction.saveImage:
-        await _saveCurrentMangaPage();
+        await _runCurrentMangaPageImageAction(action.imageAction!);
         return;
       case _MangaContextAction.setCover:
         await _setCurrentMangaPageAsCover();
