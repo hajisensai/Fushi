@@ -21,6 +21,8 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
+import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:http/http.dart' as http;
@@ -41,6 +43,50 @@ class _ReadyAppModel extends AppModel {
   // 桩没有主题子系统；宿主读它决定球要不要动画。
   @override
   bool get einkMode => false;
+}
+
+/// 两份配置（Default 激活中 + Lapis）的配置仓库桩：只答视图模型首装与悬浮球
+/// 「切换配置」要读的几样。
+class _TwoProfilesRepository implements ProfileRepository {
+  @override
+  Future<void> ensureDefaultProfile() async {}
+
+  @override
+  Future<List<ProfileRow>> getAllProfiles() async => const <ProfileRow>[
+    ProfileRow(id: 1, name: 'Default', createdAt: 0, updatedAt: 0),
+    ProfileRow(id: 2, name: 'Lapis', createdAt: 0, updatedAt: 0),
+  ];
+
+  @override
+  Future<int> getActiveProfileId() async => 1;
+
+  @override
+  Future<Map<String, int>> getAllMediaTypeBindings() async =>
+      const <String, int>{};
+
+  @override
+  Future<Map<String, int>> getAllLanguageBindings() async =>
+      const <String, int>{};
+
+  @override
+  Stream<void> watchProfilesChanged() => const Stream<void>.empty();
+
+  @override
+  Future<void> snapshotCurrentSettings(int profileId) async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// 只记下切到了哪份配置的视图模型（真切换要整套 Anki / 偏好重装，不是这里测的）。
+class _RecordingProfileViewModel extends ProfileViewModel {
+  _RecordingProfileViewModel(ProfileRepository repo)
+    : super(repo, () async {}, ProfileDraftCoordinator());
+
+  final List<int> switched = <int>[];
+
+  @override
+  Future<void> switchProfile(int profileId) async => switched.add(profileId);
 }
 
 ReaderHeaderAction _action(String key) => ReaderHeaderAction(
@@ -1469,6 +1515,197 @@ void main() {
         await tester.pump();
         expect(pendingSync.value, isFalse);
         expect(find.text(t.sync_now_busy), findsOneWidget);
+      });
+
+      group('切换配置', () {
+        late _RecordingProfileViewModel profileVm;
+
+        /// 原生消息的处理链跑在 [WidgetTester.runAsync] 的真实异步区里：对话框关掉后
+        /// 它的后续（切配置）也在那边续上，要让真实时间走一下再 pump。
+        Future<void> settleNativeChain(WidgetTester tester) async {
+          await tester.pumpAndSettle();
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pumpAndSettle();
+        }
+
+        List<Override> profileOverrides() {
+          final ProfileRepository repo = _TwoProfilesRepository();
+          final _RecordingProfileViewModel vm = _RecordingProfileViewModel(
+            repo,
+          );
+          profileVm = vm;
+          return <Override>[
+            profileRepositoryProvider.overrideWith((Ref ref) => repo),
+            profileViewModelProvider.overrideWith((Ref ref) => vm),
+          ];
+        }
+
+        /// 原生桩：`showProfileMenu` 回 [picked]（null = 用户关掉了菜单），其余只记录。
+        void mockProfileMenu(WidgetTester tester, int? picked) {
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            FloatingBallChannel.channel,
+            (MethodCall call) async {
+              calls.add(call);
+              return switch (call.method) {
+                'showProfileMenu' => picked,
+                'startSystemBall' => true,
+                'takeSystemBallClosedByUser' => false,
+                _ => null,
+              };
+            },
+          );
+          addTearDown(
+            () => tester.binding.defaultBinaryMessenger
+                .setMockMethodCallHandler(FloatingBallChannel.channel, null),
+          );
+        }
+
+        /// 原生 → Dart 的一次调用，取回 Dart 的回值（[fromNative] 丢掉了回话）。
+        Future<Object?> askDart(
+          WidgetTester tester,
+          String method, [
+          Object? args,
+        ]) async {
+          const StandardMethodCodec codec = StandardMethodCodec();
+          Object? result;
+          await tester.runAsync(() async {
+            final Completer<ByteData?> reply = Completer<ByteData?>();
+            await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+              FloatingBallChannel.channel.name,
+              codec.encodeMethodCall(MethodCall(method, args)),
+              reply.complete,
+            );
+            final ByteData? data = await reply.future;
+            result = data == null ? null : codec.decodeEnvelope(data);
+          });
+          await tester.pump();
+          return result;
+        }
+
+        testWidgets('桌面系统球：在球旁弹原生配置菜单、原地切，不唤起主窗', (WidgetTester tester) async {
+          await pumpHost(tester, extraOverrides: profileOverrides());
+          mockProfileMenu(tester, 2);
+          await tapAction(tester, 'switch_profile');
+          await settleNativeChain(tester);
+          expect(target.log, isEmpty, reason: '用户在别的程序里，主窗不动');
+          final MethodCall menu = calls.lastWhere(
+            (MethodCall c) => c.method == 'showProfileMenu',
+          );
+          final Map<Object?, Object?> args =
+              menu.arguments as Map<Object?, Object?>;
+          expect(args['items'], <Map<String, Object?>>[
+            <String, Object?>{'id': 1, 'label': 'Default', 'checked': true},
+            <String, Object?>{'id': 2, 'label': 'Lapis', 'checked': false},
+          ]);
+          expect(args['anchor'], <double>[1800, 900, 1896, 996]);
+          expect(profileVm.switched, <int>[2]);
+          expect(find.text('Lapis'), findsNothing, reason: '不弹应用内对话框');
+        });
+
+        testWidgets('桌面系统球：选当前配置或关掉菜单都不切', (WidgetTester tester) async {
+          await pumpHost(tester, extraOverrides: profileOverrides());
+          mockProfileMenu(tester, 1);
+          await tapAction(tester, 'switch_profile');
+          await settleNativeChain(tester);
+          mockProfileMenu(tester, null);
+          await tapAction(tester, 'switch_profile');
+          await settleNativeChain(tester);
+          expect(profileVm.switched, isEmpty);
+          expect(target.log, isEmpty);
+        });
+
+        testWidgets('Android 系统球：原生要菜单、选一项后 Dart 原地切并回 Toast 文案', (
+          WidgetTester tester,
+        ) async {
+          await pumpHost(tester, extraOverrides: profileOverrides());
+          expect(await askDart(tester, 'getProfileMenu'), <Object?>[
+            <Object?, Object?>{'id': 1, 'label': 'Default', 'checked': true},
+            <Object?, Object?>{'id': 2, 'label': 'Lapis', 'checked': false},
+          ]);
+          expect(
+            await askDart(tester, 'switchProfileTo', <String, Object?>{
+              'id': 2,
+            }),
+            t.floating_ball_profile_switched(name: 'Lapis'),
+          );
+          expect(profileVm.switched, <int>[2]);
+          expect(
+            await askDart(tester, 'switchProfileTo', <String, Object?>{
+              'id': 99,
+            }),
+            t.floating_ball_profile_switch_failed,
+            reason: '菜单给出后配置被删掉了',
+          );
+          expect(profileVm.switched, <int>[2]);
+        });
+
+        testWidgets('宿主重建后原生回调转给新宿主（不打到已销毁的旧 State 上）', (
+          WidgetTester tester,
+        ) async {
+          // 同一个 ProviderScope 里换掉宿主（新手引导结束换树时就是这样）：旧
+          // State 销毁、新 State 挂上，原生回调只装过一次。
+          final ValueNotifier<int> generation = ValueNotifier<int>(0);
+          addTearDown(generation.dispose);
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: <Override>[
+                appProvider.overrideWith((Ref ref) => appModel),
+                ...profileOverrides(),
+              ],
+              child: TranslationProvider(
+                child: MaterialApp(
+                  navigatorKey: appModel.navigatorKey,
+                  navigatorObservers: <NavigatorObserver>[
+                    floatingBallRouteObserver,
+                  ],
+                  home: const Scaffold(body: SizedBox()),
+                  builder: (BuildContext context, Widget? child) =>
+                      ValueListenableBuilder<int>(
+                        valueListenable: generation,
+                        builder: (BuildContext context, int g, Widget? _) =>
+                            Stack(
+                              children: <Widget>[
+                                child!,
+                                AppFloatingBallHost(key: ValueKey<int>(g)),
+                              ],
+                            ),
+                      ),
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+          generation.value++;
+          await tester.pump();
+          expect(await askDart(tester, 'getProfileMenu'), hasLength(2));
+          expect(
+            await askDart(tester, 'switchProfileTo', <String, Object?>{
+              'id': 2,
+            }),
+            t.floating_ball_profile_switched(name: 'Lapis'),
+          );
+          expect(profileVm.switched, <int>[2]);
+        });
+
+        testWidgets('Android 主引擎不在时排队的 openProfileSwitch：就绪后在主窗弹配置列表', (
+          WidgetTester tester,
+        ) async {
+          await pumpHost(tester, extraOverrides: profileOverrides());
+          await fromNative(
+            tester,
+            'openProfileSwitch',
+            const <String, Object?>{},
+          );
+          await tester.pumpAndSettle();
+          expect(pendingProfileSwitch.value, isFalse);
+          expect(find.text('Default'), findsOneWidget);
+          await tester.tap(find.text('Lapis'));
+          await settleNativeChain(tester);
+          expect(profileVm.switched, <int>[2]);
+          expect(find.text('Lapis'), findsNothing, reason: '选完对话框关掉');
+        });
       });
 
       group('截屏识字', () {

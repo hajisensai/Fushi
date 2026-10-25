@@ -37,6 +37,11 @@ constexpr UINT kAnimationTimerMs = 10;
 // 尚未显现的进场按钮不能提前截获桌面点击；绘制命中垫与 ButtonAt 同门控。
 constexpr double kMenuMinHitOpacity = 0.05;
 
+// 「切换配置」菜单请求的球窗私有消息：把 TrackPopupMenu 挪出通道回调栈再弹。
+// 菜单是模态循环，直接在 MethodChannel 回调里跑会把引擎的派发挂在半截（同
+// global_lookup_window 的 kShowContextMenuMessage）。
+constexpr UINT kShowProfileMenuMessage = WM_APP + 0x71;
+
 constexpr char kActionOpenApp[] = "open_app";
 constexpr char kActionClose[] = "close";
 
@@ -88,6 +93,8 @@ FloatingBallWindow::FloatingBallWindow() = default;
 
 FloatingBallWindow::~FloatingBallWindow() {
   Stop();
+  // 配置菜单的模态循环若还在栈上，它返回后看到这个就不再碰本对象。
+  *alive_ = false;
   if (classes_registered_) {
     UnregisterClassW(kBallClassName, GetModuleHandle(nullptr));
     UnregisterClassW(kMenuClassName, GetModuleHandle(nullptr));
@@ -180,6 +187,7 @@ std::wstring FloatingBallWindow::LabelFor(const std::string& id) const {
   if (id == "popup_lookup") return L"App-external lookup";
   if (id == "clipboard") return L"Clipboard";
   if (id == "sync") return L"Sync now";
+  if (id == "switch_profile") return L"Switch profile";
   if (id == kActionOpenApp) return L"Open Fushi";
   if (id == kActionClose) return L"Close";
   if (id == "ball") return L"Floating ball";
@@ -316,6 +324,12 @@ bool FloatingBallWindow::Start(const Config& config, bool dock_left,
 }
 
 void FloatingBallWindow::Stop() {
+  // 配置菜单先收尾：正弹着就让模态循环退出（它返回后见已收尾，不再回第二次），
+  // 已投递未弹的那条消息会随球窗一起丢掉——两种都在这里以空结果回 Dart。
+  if (profile_menu_tracking_) {
+    EndMenu();
+  }
+  FinishProfileMenu(std::nullopt);
   CancelAnimations();
   // 先落状态再拆窗：DestroyWindow 会同步发 WM_CAPTURECHANGED，拖动中的状态若还在
   // 就会走 EndDrag，给一个正在消失的球起吸附动画、报位置。
@@ -391,6 +405,145 @@ void FloatingBallWindow::ShowBallWindows() {
     SetWindowPos(menu_hwnd_, ball_hwnd_, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   }
+}
+
+// ── 切换配置菜单 ────────────────────────────────────────────────────────────
+
+void FloatingBallWindow::ShowProfileMenu(std::vector<ProfileMenuItem> items,
+                                         std::optional<RECT> anchor,
+                                         ProfileMenuCallback done) {
+  if (!done) {
+    return;
+  }
+  // 一次只一个：旧的还在等（含模态循环里又来一次）就拒绝新的，旧的照常收尾。
+  // 截屏冻结 / 让位中球不可见，菜单没有可贴的球，也拒绝。
+  if (profile_menu_done_ || items.empty() || !IsRunning() || Suppressed()) {
+    done(std::nullopt);
+    return;
+  }
+  profile_menu_items_ = std::move(items);
+  profile_menu_anchor_ = anchor;
+  profile_menu_done_ = std::move(done);
+  profile_menu_tracking_ = false;
+  if (!PostMessage(ball_hwnd_, kShowProfileMenuMessage, 0, 0)) {
+    FinishProfileMenu(std::nullopt);
+  }
+}
+
+void FloatingBallWindow::FinishProfileMenu(std::optional<int64_t> selected) {
+  if (!profile_menu_done_) {
+    return;
+  }
+  // 先摘再回：回调里可能紧接着又来一次 ShowProfileMenu。
+  ProfileMenuCallback done = std::move(profile_menu_done_);
+  profile_menu_done_ = nullptr;
+  profile_menu_items_.clear();
+  profile_menu_anchor_.reset();
+  profile_menu_tracking_ = false;
+  done(selected);
+}
+
+void FloatingBallWindow::RunProfileMenu(HWND hwnd) {
+  if (!profile_menu_done_ || profile_menu_tracking_) {
+    return;
+  }
+  if (hwnd != ball_hwnd_ || Suppressed()) {
+    FinishProfileMenu(std::nullopt);
+    return;
+  }
+  // 拷一份：模态循环里 Stop() 会清掉成员。
+  const std::vector<ProfileMenuItem> items = profile_menu_items_;
+  const std::optional<RECT> anchor = profile_menu_anchor_;
+  HMENU menu = CreatePopupMenu();
+  if (menu == nullptr) {
+    FinishProfileMenu(std::nullopt);
+    return;
+  }
+  // 命令 id = 下标 + 1：0 是 TPM_RETURNCMD 的「什么都没选」。
+  int checked = -1;
+  for (size_t i = 0; i < items.size(); ++i) {
+    // & 是菜单助记符前缀：配置名里的 & 要写成 && 才原样显示。
+    std::wstring label;
+    label.reserve(items[i].label.size());
+    for (const wchar_t ch : items[i].label) {
+      if (ch == L'&') label += L'&';
+      label += ch;
+    }
+    AppendMenuW(menu, MF_STRING, static_cast<UINT_PTR>(i + 1), label.c_str());
+    if (items[i].checked && checked < 0) {
+      checked = static_cast<int>(i);
+    }
+  }
+  if (checked >= 0) {
+    // 单选语义：当前配置画圆点（MFT_RADIOCHECK）而不是对勾，其余显式不勾。
+    CheckMenuRadioItem(menu, 1, static_cast<UINT>(items.size()),
+                       static_cast<UINT>(checked + 1), MF_BYCOMMAND);
+  }
+
+  // 贴球弹：球在屏幕左半边就往右弹（菜单左上角对齐球右缘），右半边往左弹；
+  // rcExclude = 球，放不下时系统先保横向不盖球（没设 TPM_VERTICAL）。
+  // 坐标都是物理像素：runner 是 Per-Monitor V2，TrackPopupMenuEx 收的也是物理像素。
+  UINT align = TPM_TOPALIGN;
+  int x = 0;
+  int y = 0;
+  TPMPARAMS params = {};
+  params.cbSize = sizeof(params);
+  TPMPARAMS* exclude = nullptr;
+  if (anchor.has_value()) {
+    const RECT a = *anchor;
+    bool open_right = dock_left_;
+    MONITORINFO mi = {};
+    mi.cbSize = sizeof(mi);
+    if (GetMonitorInfo(MonitorFromRect(&a, MONITOR_DEFAULTTONEAREST), &mi)) {
+      open_right =
+          (a.left + a.right) / 2 < (mi.rcWork.left + mi.rcWork.right) / 2;
+    }
+    x = open_right ? a.right : a.left;
+    y = a.top;
+    align |= open_right ? TPM_LEFTALIGN : TPM_RIGHTALIGN;
+    params.rcExclude = a;
+    exclude = &params;
+  } else {
+    POINT cursor = {};
+    GetCursorPos(&cursor);
+    x = cursor.x;
+    y = cursor.y;
+    align |= dock_left_ ? TPM_LEFTALIGN : TPM_RIGHTALIGN;
+  }
+
+  // TrackPopupMenu 的已知契约：宿主窗口不是前台时，点菜单外不会收起菜单、Esc 也
+  // 到不了菜单。球窗是 WS_EX_NOACTIVATE，所以弹菜单期间临时把前台拿过来（刚点了
+  // 球上的按钮，本进程收到了最后一次输入，有资格这么做）；菜单结束后若前台还在
+  // 我们手里就还给用户原来的程序——用户正在别的程序里，不能落到 Fushi 主窗。
+  // 球窗的 WM_MOUSEACTIVATE / WM_POINTERACTIVATE 照旧回「不激活」：点球不抢前台
+  // 不变，这里只是菜单这一窗口期的显式自激活。
+  const HWND previous_foreground = GetForegroundWindow();
+  const bool took_foreground = previous_foreground != hwnd &&
+                               SetForegroundWindow(hwnd) != FALSE;
+  profile_menu_tracking_ = true;
+  const std::shared_ptr<bool> alive = alive_;
+  const UINT command = static_cast<UINT>(TrackPopupMenuEx(
+      menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY | align, x, y, hwnd,
+      exclude));
+  // 同一契约的后半截：让菜单循环确实退出后再继续。
+  PostMessage(hwnd, WM_NULL, 0, 0);
+  DestroyMenu(menu);
+  // 点了菜单外的别的程序时前台已经是它，不动；还在球窗上（选了一项 / Esc / 点了
+  // 桌面空白）才交还。
+  if (took_foreground && previous_foreground != nullptr &&
+      IsWindow(previous_foreground) && GetForegroundWindow() == hwnd) {
+    SetForegroundWindow(previous_foreground);
+  }
+  // 模态循环里本对象被析构 / Stop() 已经以空结果收尾（或已换成新的一次请求）：
+  // 不再回第二次。
+  if (!*alive || !profile_menu_tracking_) {
+    return;
+  }
+  std::optional<int64_t> selected;
+  if (command >= 1 && command <= items.size()) {
+    selected = items[command - 1].id;
+  }
+  FinishProfileMenu(selected);
 }
 
 // ── 展开 / 收起 ─────────────────────────────────────────────────────────────
@@ -1427,6 +1580,10 @@ LRESULT FloatingBallWindow::HandleBallMessage(HWND hwnd, UINT message,
         return 0;
       }
       break;
+    case kShowProfileMenuMessage:
+      // ShowProfileMenu 投递来的：此刻已不在通道回调栈里，可以跑模态菜单循环。
+      RunProfileMenu(hwnd);
+      return 0;
     case WM_DPICHANGED:
       // 拖动跨屏时的 DPI 变化由 DragTo 接管（按新屏重算尺寸）；其余情形（用户改
       // 缩放）收起并按停靠边 + 比例重摆。不采用系统建议矩形：几何由本类自己算。
@@ -1455,6 +1612,11 @@ LRESULT FloatingBallWindow::HandleBallMessage(HWND hwnd, UINT message,
         expand_target_ = false;
         progress_ = 0;
         DestroyMenuWindow();
+        // 已投递未弹的配置菜单请求随窗口一起丢了：以空结果收尾。正弹着的由模态
+        // 循环返回后自己收尾。
+        if (!profile_menu_tracking_) {
+          FinishProfileMenu(std::nullopt);
+        }
       }
       break;
     default:

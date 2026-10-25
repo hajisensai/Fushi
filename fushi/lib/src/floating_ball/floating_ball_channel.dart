@@ -151,6 +151,11 @@ class FloatingBallChannel {
   static Future<bool> takePendingSync() async =>
       await _invoke<bool>('takePendingSync') ?? false;
 
+  /// 取走（并清掉）原生系统球「切换配置」排队的请求（同
+  /// [takePendingOpenLookupPage]：主引擎不在时原生先把 Fushi 拉起来再排队）。
+  static Future<bool> takePendingProfileSwitch() async =>
+      await _invoke<bool>('takePendingProfileSwitch') ?? false;
+
   /// 取走（并清掉）截屏 OCR 报「模型未就绪」后排队的「打开系统 OCR 配置」请求
   /// （同 [takePendingOpenLookupPage]，BUG-2906）。
   static Future<bool> takePendingSystemOcrSetup() async =>
@@ -185,6 +190,19 @@ class FloatingBallChannel {
     );
     return DesktopScreenOcrCapture.fromWire(raw);
   }
+
+  /// 桌面应用外球「切换配置」：在球旁弹原生配置菜单（不唤起主窗）。[items] 每项
+  /// `{id, label, checked}`；[anchor] 同 `systemBallAction` 报来的球矩形（屏幕物理
+  /// 像素、左上原点），原样回传。返回选中的配置 id；关掉菜单 / 原生没有该方法 → null。
+  static Future<int?> showProfileMenu({
+    required List<Map<String, Object?>> items,
+    required Rect? anchor,
+  }) => _invoke<int>('showProfileMenu', <String, Object?>{
+    'items': items,
+    'anchor': anchor == null
+        ? null
+        : <double>[anchor.left, anchor.top, anchor.right, anchor.bottom],
+  });
 
   /// 在冻结层上画识别出的行框（截图像素坐标）；[message] 非空时替换顶部提示
   /// （失败 / 没识别到字），null 时显示「点文字查词」。
@@ -240,6 +258,12 @@ class FloatingBallChannel {
   ///  - `openLookupPage`（Android 系统球「查词」，Fushi 已被拉到前台）→ [onOpenLookupPage]；
   ///  - `openCameraOcr`（Android 系统球「拍照查词」，Fushi 已被拉到前台）→ [onOpenCameraOcr]；
   ///  - `openSync`（Android 系统球「立即同步」，Fushi 已被拉到前台）→ [onOpenSync]；
+  ///  - `openProfileSwitch`（Android 系统球「切换配置」，Fushi 已被拉到前台）→
+  ///    [onOpenProfileSwitch]；
+  ///  - `getProfileMenu`（Android 系统球「切换配置」要在球旁弹配置菜单）→
+  ///    [onProfileMenu]，回 `[{id, label, checked}]`；
+  ///  - `switchProfileTo {id}`（在那个菜单里选了一项）→ [onSwitchProfileTo]，回给
+  ///    原生 Toast 的一句话（成功 / 失败）；
   ///  - `openSystemOcrSetup`（Android 截屏 OCR 报模型未就绪，Fushi 已被拉到前台）→
   ///    [onOpenSystemOcrSetup]；
   ///  - `systemBallClosedByUser`（系统球 / 常驻通知上点了关闭）→
@@ -265,6 +289,9 @@ class FloatingBallChannel {
     void Function()? onOpenLookupPage,
     void Function()? onOpenCameraOcr,
     void Function()? onOpenSync,
+    void Function()? onOpenProfileSwitch,
+    Future<List<Map<String, Object?>>?> Function()? onProfileMenu,
+    Future<String> Function(int id)? onSwitchProfileTo,
     void Function()? onOpenSystemOcrSetup,
     void Function()? onSystemBallClosedByUser,
     void Function(String id, Rect? anchor)? onSystemBallAction,
@@ -289,6 +316,14 @@ class FloatingBallChannel {
           onOpenCameraOcr?.call();
         case 'openSync':
           onOpenSync?.call();
+        case 'openProfileSwitch':
+          onOpenProfileSwitch?.call();
+        case 'getProfileMenu':
+          return await onProfileMenu?.call();
+        case 'switchProfileTo':
+          final Object? args = call.arguments;
+          final Object? id = args is Map ? args['id'] : null;
+          if (id is int) return await onSwitchProfileTo?.call(id);
         case 'openSystemOcrSetup':
           onOpenSystemOcrSetup?.call();
         case 'systemBallClosedByUser':
@@ -327,6 +362,7 @@ class FloatingBallChannel {
       if (await takePendingOpenLookupPage()) onOpenLookupPage?.call();
       if (await takePendingCameraOcr()) onOpenCameraOcr?.call();
       if (await takePendingSync()) onOpenSync?.call();
+      if (await takePendingProfileSwitch()) onOpenProfileSwitch?.call();
       if (await takePendingSystemOcrSetup()) onOpenSystemOcrSetup?.call();
       return;
     }

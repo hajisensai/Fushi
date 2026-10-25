@@ -59,7 +59,7 @@ void main() {
       );
     });
 
-    test('桌面应用外球：查词 / 应用外查词（查选区）/ 剪贴板 / 截屏识字 / 同步，没有拍照', () {
+    test('桌面应用外球：查词 / 应用外查词（查选区）/ 剪贴板 / 截屏识字 / 同步 / 切换配置，没有拍照', () {
       Set<FloatingBallGlobalAction> onDesktop(
         FloatingBallScope scope, {
         bool lookupModuleEnabled = true,
@@ -81,14 +81,16 @@ void main() {
         FloatingBallGlobalAction.clipboard,
         FloatingBallGlobalAction.screenOcr,
         FloatingBallGlobalAction.sync,
+        FloatingBallGlobalAction.switchProfile,
       });
       // 查词模块关着：打开查词页与全局查词（含截屏识字的结果卡）都没有入口，只剩
-      // 剪贴板（它在覆盖窗不可用时退回主窗查词弹窗）与同步（与查词无关）。
+      // 剪贴板（它在覆盖窗不可用时退回主窗查词弹窗）与同步、切换配置（与查词无关）。
       expect(
         onDesktop(FloatingBallScope.system, lookupModuleEnabled: false),
         <FloatingBallGlobalAction>{
           FloatingBallGlobalAction.clipboard,
           FloatingBallGlobalAction.sync,
+          FloatingBallGlobalAction.switchProfile,
         },
       );
       // 应用内的球仍按平台能力（桌面没有独立查词窗），与查词模块无关。
@@ -99,6 +101,7 @@ void main() {
             FloatingBallGlobalAction.lookup,
             FloatingBallGlobalAction.clipboard,
             FloatingBallGlobalAction.sync,
+            FloatingBallGlobalAction.switchProfile,
             FloatingBallGlobalAction.feedback,
           },
         );
@@ -194,6 +197,40 @@ void main() {
           ),
           isTrue,
         );
+      }
+    });
+
+    test('切换配置：每个场景都能勾选、出厂不勾，五端都有（桌面应用外球也有）', () {
+      const String id = 'switch_profile';
+      expect(
+        FloatingBallGlobalAction.fromStorage(id),
+        FloatingBallGlobalAction.switchProfile,
+      );
+      for (final FloatingBallScope scope in FloatingBallScope.values) {
+        expect(
+          FloatingBallGlobalAction.switchProfile.onByDefaultIn(scope),
+          isFalse,
+        );
+        expect(scope.catalog, contains(id), reason: scope.storageValue);
+        expect(scope.defaultButtons, isNot(contains(id)));
+        for (final (bool android, bool ios, bool desktop)
+            in <(bool, bool, bool)>[
+              (true, false, false),
+              (false, true, false),
+              (false, false, true),
+            ]) {
+          expect(
+            FloatingBallGlobalAction.switchProfile.availableIn(
+              scope,
+              isAndroid: android,
+              isIOS: ios,
+              isDesktop: desktop,
+              lookupModuleEnabled: false,
+            ),
+            isTrue,
+            reason: '${scope.storageValue} $android/$ios/$desktop',
+          );
+        }
       }
     });
 

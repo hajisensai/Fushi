@@ -673,6 +673,32 @@ final class DesktopFloatingBallLabelView: NSView {
 // MARK: - 控制器
 
 /// `app.fushi.reader/floating_ball` 的 macOS 实现。只在主线程使用。
+/// 配置菜单项的 action 接收者 + 菜单 delegate：记下 action 送达的选中项 id 与最后高亮项 id
+/// （popUp 返回后由控制器读）。
+final class DesktopFloatingBallMenuTarget: NSObject, NSMenuDelegate {
+  private(set) var selectedId: Int?
+  /// 最后一个**非空**高亮项：收起时 AppKit 可能再报一次 willHighlight(nil)，不能被它冲掉。
+  private(set) var highlightedId: Int?
+
+  @objc func pick(_ sender: NSMenuItem) {
+    selectedId = (sender.representedObject as? NSNumber)?.intValue
+  }
+
+  func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+    if let id = (item?.representedObject as? NSNumber)?.intValue { highlightedId = id }
+  }
+
+  /// 选中判定不依赖「action 在 popUp 返回前送达」：
+  /// - action 已送达 → 以它为准（action 只会在真选中时发，`performActionForItem` 也走这条，
+  ///   此时 popUp 可能因 cancelTracking 回 false）；
+  /// - 否则 popUp 回 true（选中某项结束跟踪）→ 取最后高亮项；
+  /// - 其余（点外面关 / cancelTracking / 无高亮）→ nil。
+  static func resolve(actionId: Int?, popUpChose: Bool, highlightedId: Int?) -> Int? {
+    if let id = actionId { return id }
+    return popUpChose ? highlightedId : nil
+  }
+}
+
 final class DesktopFloatingBallController: NSObject {
   private struct ExpandAnimation {
     let from: CGFloat
@@ -747,6 +773,8 @@ final class DesktopFloatingBallController: NSObject {
   /// Fushi 在前台且应用内球开着时让位（Dart `setAppForeground`）。跨 destroy / start
   /// 保留：Dart 在起球之前先下发，新球首帧就按它决定显不显示。
   private var hiddenForApp = false
+  /// `showProfileMenu` 正在跟踪的菜单（NSMenu 是嵌套 run loop，期间通道消息照常派发）。
+  private var profileMenu: NSMenu?
 
   init(binaryMessenger: FlutterBinaryMessenger) {
     channel = FlutterMethodChannel(
@@ -793,6 +821,9 @@ final class DesktopFloatingBallController: NSObject {
       // Dart 主动关：不回调。
       endScreenOcr(restoreBall: true)
       result(nil)
+    case "showProfileMenu":
+      // 同步模态：菜单收起后才回 result（选中项 id / nil）。
+      showProfileMenu(call.arguments as? [String: Any] ?? [:], result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -851,6 +882,8 @@ final class DesktopFloatingBallController: NSObject {
     // 冻结层随球一起拆（不回调、不恢复——球马上也没了）。
     endScreenOcr(restoreBall: false)
     screenOcrBallHidden = false
+    // 配置菜单还开着：收掉（它自己的 result 在 popUp 返回后按「未选」回 nil）。
+    profileMenu?.cancelTracking()
     stopTimer()
     expandAnimation = nil
     snapAnimation = nil
@@ -1385,8 +1418,95 @@ final class DesktopFloatingBallController: NSObject {
     case "popup_lookup": return "App-external lookup"
     case "clipboard": return "Clipboard"
     case "sync": return "Sync now"
+    case "switch_profile": return "Switch profile"
     default: return id
     }
+  }
+
+  // MARK: 配置菜单（switch_profile）
+
+  /// `showProfileMenu {items: [{id, label, checked}], anchor}`：在球旁边弹原生配置列表，
+  /// 回选中项 id（Int）；关掉 / 空列表回 nil。
+  ///
+  /// 前台：`popUp(positioning:at:in: nil)` 走屏幕坐标、不挂在任何窗口上，弹出与跟踪期间不激活
+  /// Fushi（非激活 app 也能正常跟踪鼠标与收起）；但真点中菜单项时系统会激活 Fushi，所以
+  /// 菜单结束后把前台还给弹出前的 app（见方法末尾）。
+  /// 代价：Fushi 不是 key app，菜单不吃键盘（方向键 / 回车 / Esc）——只能鼠标选、点外面关。
+  ///
+  /// 选中判定见 `DesktopFloatingBallMenuTarget.resolve`：action 路径与「popUp 回 true +
+  /// 最后高亮项」两条取先到的，不赌 action 一定在 popUp 返回前送达。
+  ///
+  /// 重入：菜单跟踪是嵌套 run loop，期间再来一次 showProfileMenu 时直接回 nil（不叠第二个
+  /// 菜单），已开着的那个照常结束并回它自己的 result。每次调用的 result 恰好回一次。
+  private func showProfileMenu(_ args: [String: Any], result: @escaping FlutterResult) {
+    if profileMenu != nil {
+      result(nil)
+      return
+    }
+    let rawItems = (args["items"] as? [[String: Any]]) ?? []
+    let target = DesktopFloatingBallMenuTarget()
+    let menu = NSMenu(title: "")
+    menu.autoenablesItems = false
+    for raw in rawItems {
+      guard let id = (raw["id"] as? NSNumber)?.intValue else { continue }
+      let item = NSMenuItem(
+        title: (raw["label"] as? String) ?? "",
+        action: #selector(DesktopFloatingBallMenuTarget.pick(_:)), keyEquivalent: "")
+      item.target = target
+      item.representedObject = NSNumber(value: id)
+      item.state = ((raw["checked"] as? Bool) ?? false) ? .on : .off
+      item.isEnabled = true
+      menu.addItem(item)
+    }
+    if menu.items.isEmpty {
+      result(nil)
+      return
+    }
+
+    // anchor 是物理像素、左上原点（ballAnchorPixels）：按它所在屏的 scale 还原成左上原点 pt。
+    // 没有 anchor（或换算不出屏）就贴着鼠标弹。
+    let anchor = (args["anchor"] as? [NSNumber])?.map { $0.doubleValue }
+    let screen = DesktopScreenCapture.screen(forAnchor: anchor)
+    let ballRect: CGRect
+    if let a = anchor, a.count == 4, let screen = screen {
+      let s = Double(screen.backingScaleFactor)
+      ballRect = CGRect(
+        x: a[0] / s, y: a[1] / s, width: max(0, a[2] - a[0]) / s, height: max(0, a[3] - a[1]) / s)
+    } else {
+      ballRect = CGRect(origin: DesktopFloatingBallController.mouseTopLeft(), size: .zero)
+    }
+    // 球在屏幕左半 → 往右弹；右半 → 往左弹（与按钮列朝屏幕中央展开同一判据）。
+    let gap: CGFloat = 4
+    let menuWidth = menu.size.width
+    var x = ballRect.maxX + gap
+    if let screen = screen {
+      let frame = DesktopScreenCapture.topLeftFrame(of: screen)
+      let openRight = ballRect.midX < frame.midX
+      x = openRight ? ballRect.maxX + gap : ballRect.minX - gap - menuWidth
+      x = min(max(x, frame.minX), max(frame.minX, frame.maxX - menuWidth))
+    }
+    // popUp 的 location 是菜单左上角（AppKit 屏幕坐标）；竖直越界由 AppKit 自己推回屏内。
+    let location = NSPoint(
+      x: x, y: DesktopFloatingBallController.primaryScreenHeight - ballRect.minY)
+
+    // 真鼠标点中菜单项时 macOS（27 实测）会把 Fushi 激活成前台（点下即激活，早于
+    // didClose / action；`in:` 传面板视图或改用 popUpContextMenu 都一样，点菜单外关掉则不会）。
+    // 弹之前记下用户正在用的 app，菜单结束后若 Fushi 被顶到前台就把前台还给它。
+    let wasActive = NSApp.isActive
+    let previousFront = NSWorkspace.shared.frontmostApplication
+    profileMenu = menu
+    menu.delegate = target
+    let chose = menu.popUp(positioning: nil, at: location, in: nil)
+    profileMenu = nil
+    menu.delegate = nil
+    if !wasActive, NSApp.isActive, let previous = previousFront,
+      previous.processIdentifier != NSRunningApplication.current.processIdentifier
+    {
+      previous.activate(options: [])
+    }
+    let picked = DesktopFloatingBallMenuTarget.resolve(
+      actionId: target.selectedId, popUpChose: chose, highlightedId: target.highlightedId)
+    result(picked.map { NSNumber(value: $0) })
   }
 
   // MARK: 截屏识字

@@ -201,6 +201,11 @@ enum FloatingBallGlobalAction {
   /// 冲突裁决与重新登录提示都在主窗里给。
   sync('sync'),
 
+  /// 切换配置（Profile）：弹出配置列表，点一项即切过去——与查词弹窗顶栏「制卡
+  /// 目标」菜单、设置页配置选择器同一条 `ProfileViewModel.switchProfile`。应用外球
+  /// 把 Fushi 唤到前台再弹（配置在主窗的数据库里）。
+  switchProfile('switch_profile'),
+
   /// 反馈：截下当前画面后打开反馈中心（与首页顶栏的反馈按钮同一个入口
   /// `openFeedbackCenter`）。只在应用内球上：截图截的是 Fushi 自己的页面，应用外
   /// 球浮在别的程序上，截不到也没有页面可附。
@@ -213,7 +218,7 @@ enum FloatingBallGlobalAction {
   /// 在 [scope] 的球上出厂勾不勾上（都能在 设置 → 悬浮球 里自己勾 / 取消）：
   ///
   /// - 同步各场景都不勾：多数人没配同步后端，出厂就塞一颗点了只会说「同步不可用」
-  ///   的按钮是噪音。
+  ///   的按钮是噪音。切换配置同理：多数人只有一份配置。
   /// - 应用外球：其余全勾——它本来就是给别的程序用的这些入口。
   /// - 阅读器 / 漫画 / 视频只勾「查词」与「反馈」：球上已有一整排本页专属按钮，
   ///   再叠上应用外查词 / 剪贴板 / 截屏识字 / 拍照这些与当前媒体无关的入口，漫画页
@@ -221,7 +226,7 @@ enum FloatingBallGlobalAction {
   /// - 其它应用内页面：除「应用外查词」外都勾——在 Fushi 里面它只是另开一个独立
   ///   查词窗，与「查词」重复。
   bool onByDefaultIn(FloatingBallScope scope) {
-    if (this == sync) return false;
+    if (this == sync || this == switchProfile) return false;
     if (scope == FloatingBallScope.system) return true;
     if (scope.isMediaScene) return this == lookup || this == feedback;
     return this != popupLookup;
@@ -274,6 +279,7 @@ enum FloatingBallGlobalAction {
         FloatingBallGlobalAction.clipboard => true,
         FloatingBallGlobalAction.cameraOcr => false,
         FloatingBallGlobalAction.sync => true,
+        FloatingBallGlobalAction.switchProfile => true,
         FloatingBallGlobalAction.feedback => false,
       };
     }
