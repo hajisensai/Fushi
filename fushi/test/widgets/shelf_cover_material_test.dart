@@ -96,8 +96,8 @@ void main() {
   // 2026-10-25 用户：合集扇形「克制一点，别出界、别和侧边重叠太多」。
   test('扇形角度上限按几何反推：转开后外角正好贴住允许的半宽', () {
     const double w = 120;
-    const double itemW = w * 0.88;
-    const double itemH = 150 * 0.88;
+    const double itemW = w;
+    const double itemH = 150;
     const double limit = w / 2 + w * kShelfFanOverhang;
     final double deg = shelfFanMaxDegrees(
       itemW: itemW,
@@ -120,6 +120,29 @@ void main() {
       shelfFanMaxDegrees(itemW: 10, itemH: 10, halfLimit: 1000),
       kShelfFanMaxDegrees,
     );
+  });
+
+  testWidgets('合集最前那本与单本同大（用户：单本和合集大小不协调）', (WidgetTester tester) async {
+    Future<Size> frontSize(List<Widget>? behind) async {
+      await tester.pumpWidget(
+        harness(
+          ShelfCoverFrame(stackedCovers: behind, child: cover('a')),
+          material: ShelfCoverMaterial.glossyBook,
+        ),
+      );
+      return tester.getSize(
+        find
+            .ancestor(
+              of: find.byKey(const ValueKey<String>('cover-a')),
+              matching: find.byType(ShelfMaterialSurface),
+            )
+            .first,
+      );
+    }
+
+    final Size single = await frontSize(null);
+    final Size pile = await frontSize(<Widget>[cover('b'), cover('c')]);
+    expect(pile, single);
   });
 
   testWidgets('扇形悬停时最远那本也不超出格子允许的范围', (WidgetTester tester) async {

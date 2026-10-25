@@ -464,8 +464,9 @@ class ShelfContactShadow extends StatelessWidget {
 const double kShelfContactShadowHeight = 16;
 const double kShelfContactShadowDrop = 6;
 
-/// 扇形最远那本悬停时外角最多探出格子半宽的比例（相对格子宽度）。
-const double kShelfFanOverhang = 0.06;
+/// 扇形最远那本悬停时外角最多探出格子半宽的比例（相对格子宽度）。封面与
+/// 单本同大、铺满整格，这点探出落在卡片内边距里。
+const double kShelfFanOverhang = 0.08;
 
 /// 扇形角度上限（度），宽格子里也不转得更开。
 const double kShelfFanMaxDegrees = 8;
@@ -532,11 +533,12 @@ class ShelfCoverPile extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints c) {
         final double w = c.maxWidth;
         final double h = c.maxHeight;
-        // 单本是满格；多本整体缩一点，给转开 / 错开留位置。
+        // 扇形的每一本都与单本同大、铺满整格（2026-10-25 用户「单本书和合集
+        // 大小不协调」：此前合集整体缩到 88–92%，比旁边的单本小一圈）；后面
+        // 几本藏在最前那本身后，只靠转开露出边角。海报叠层仍按错开步长让位。
         final double step = stack ? 4 : 0;
-        final double shrink = back.isEmpty ? 1 : 0.88;
-        final double itemW = stack ? w - step * back.length : w * shrink;
-        final double itemH = stack ? h - step * back.length : h * shrink;
+        final double itemW = stack ? w - step * back.length : w;
+        final double itemH = stack ? h - step * back.length : h;
         Widget surface(Widget child, {double dim = 0, List<Widget>? overlay}) =>
             SizedBox(
               width: itemW,
@@ -632,7 +634,7 @@ class ShelfCoverPile extends StatelessWidget {
               height: kShelfContactShadowHeight,
               child: ShelfContactShadow(
                 lifted: lifted,
-                widthFactor: back.isEmpty ? 1.07 : 1.2,
+                widthFactor: back.isEmpty ? 1.07 : 1.15,
               ),
             ),
             ...layers,
