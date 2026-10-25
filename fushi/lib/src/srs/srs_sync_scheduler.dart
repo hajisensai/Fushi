@@ -114,7 +114,12 @@ Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   SyncAssetStore backend,
   SrsDbStore store,
   Directory mediaRoot,
-) => srsSyncMedia(backend: backend, store: store, mediaRoot: mediaRoot);
+) => srsSyncMedia(
+  location: SrsAssetLocationStore(store: backend, profileUid: store.profileUid),
+  store: store,
+  mediaRoot: mediaRoot,
+  legacy: srsLegacyMediaReader(backend, store.profileUid),
+);
 
 /// 「对所有已认证通道跑一次」的入口（生产：`runOnAuthenticatedSyncChannels`）。
 /// 返回跑成功的通道数与抛错通道的异常。

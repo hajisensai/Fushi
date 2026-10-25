@@ -1062,6 +1062,31 @@ class SrsDbStore implements SrsSync2Host {
         'retract': retractReviews,
       });
 
+  /// `.fushisrs` 的操作部分（全部操作 + 各设备公钥；见 sync2/srs_fushisrs.dart）。
+  Future<Uint8List> sync2ExportOps() async =>
+      (await _sync2Raw(<String, Object?>{'op': 'export'})).files.single.$2;
+
+  /// 并入 `.fushisrs` 的操作部分（不覆盖；包里有本机身份的操作时先换身份）。返回并入条数。
+  Future<int> sync2ImportOps(Uint8List bytes) => runExclusive(() async {
+    late Map<String, Object?> r;
+    await _transactionOrReload(() async {
+      r = await _sync2(
+        <String, Object?>{'op': 'import', 'now': now().$1},
+        blobs: <Uint8List>[bytes],
+      );
+      _absorbProjection(r);
+      _rwkvScoresRevision++;
+      await _flushCaches();
+      await _saveLocal();
+    });
+    final Map<String, Object?> id = await _sync2(<String, Object?>{
+      'op': 'identity',
+      'now': now().$1,
+    });
+    _sync2Device = id['device'] as String?;
+    return (r['applied'] as int?) ?? 0;
+  });
+
   /// 同步状态（设计 §10.6）。
   Future<Map<String, Object?>> sync2Status() =>
       _sync2(<String, Object?>{'op': 'status'});

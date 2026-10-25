@@ -66,8 +66,7 @@ enum _DeckAction {
 
 enum _ImportSource { anki, file, starter, minedHistory }
 
-/// [purge]：连卡片一起删并当场物理清除（释放磁盘、不可恢复）；只在本机从没同步过时提供
-/// （`SrsDbStore.neverSynced`，见 srs_purge.dart）。同步过的副本由维护在同步安全期后自动清除。
+/// [purge]：连卡片一起删并彻底清除（v2 `Purge` 操作，各设备一起清内容、不可恢复；见 srs_purge.dart）。
 enum _DeckDeleteMode { moveCards, deleteCards, purge }
 
 /// [deckId] 的同级（含自己），按列表顺序（列表是先序、同级已按 [SrsDeckView.compareSiblings] 排好）。
@@ -198,7 +197,6 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   Future<void> _delete(SrsDeckSummary deck) async {
     final SrsDbStore? before = await readSrsStore(ref);
     if (before == null || !mounted) return;
-    final bool canPurgeNow = before.neverSynced;
     final _DeckDeleteMode? mode = await showFushiChoiceDialog<_DeckDeleteMode>(
       context: context,
       title: t.srs_deck_delete,
@@ -217,13 +215,13 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
           subtitle: t.srs_deck_delete_with_cards_hint,
           icon: FushiIcons.deleteSweep,
         ),
-        if (canPurgeNow)
-          FushiChoiceOption<_DeckDeleteMode>(
-            value: _DeckDeleteMode.purge,
-            label: t.srs_deck_delete_purge,
-            subtitle: t.srs_deck_delete_purge_hint,
-            icon: FushiIcons.delete,
-          ),
+        // 同步 v2：彻底清除是一条 Purge 操作，各设备收到后一起清（设计 §10.2），任何时候都能选。
+        FushiChoiceOption<_DeckDeleteMode>(
+          value: _DeckDeleteMode.purge,
+          label: t.srs_deck_delete_purge,
+          subtitle: t.srs_deck_delete_purge_hint,
+          icon: FushiIcons.delete,
+        ),
       ],
     );
     if (mode == null || !mounted) return;
