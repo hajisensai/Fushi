@@ -882,7 +882,8 @@ pub(crate) fn body_of_event(ev: &Value, note: Option<&str>) -> Result<Body, Stri
             ts: op::ts_code(s("ts").unwrap_or("wall")),
             legacy: None,
         }),
-        Some("log") => Body::Log(log_body_of(x, note, None, None)?),
+        // 日志的排序键是它自带的 HLC（导入的 Anki 复习按原始复习时刻排、撤销排在被撤者之后），原样保留。
+        Some("log") => Body::Log(log_body_of(x, note, x.get("hlc").and_then(Value::as_str).map(str::to_owned), None)?),
         _ => Body::LegacyUnknown { json: canonical(ev) },
     })
 }

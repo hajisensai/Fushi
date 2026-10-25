@@ -267,7 +267,7 @@ pub struct LogBody {
     pub res: Option<String>,
     /// 不认识的键（JSON 对象原文，`{}` = 没有）。
     pub extra: String,
-    /// 迁移进来的旧日志：旧 HLC 文本与 S(e)（投影行原样带回）。
+    /// 作者给日志的 HLC 文本（排序键；投影行原样带回）与迁移进来的旧日志的 S(e)。
     pub legacy_hlc: Option<String>,
     pub legacy_server_time: Option<i64>,
 }

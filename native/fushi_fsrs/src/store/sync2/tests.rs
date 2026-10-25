@@ -119,7 +119,7 @@ pub(crate) fn edit(kind: &str, entity: &str, key: &str, v: Value) -> Value {
 
 pub(crate) fn review(id: &str, card: &str, at: i64, rating: i64, rtype: &str) -> Value {
     json!({"t": "log", "x": {
-        "id": id, "p": P, "card": card, "kind": "review", "rating": rating, "hlc": "0:0:dart", "at": at,
+        "id": id, "p": P, "card": card, "kind": "review", "rating": rating, "hlc": format!("{at}:0:dart"), "at": at,
         "ts": "anchored", "origin": "fushi", "rtype": rtype, "utcOff": 0, "rollover": 4, "fv": 1,
         "res": {"queue": "new", "ivl": 0, "step": 0, "reps": 0, "lapses": 0, "scheduler": "fushi"}
     }})
@@ -377,7 +377,7 @@ mod convergence {
                             clock[*dev] += 1000;
                             let u = json!({"t": "log", "x": {
                                 "id": format!("u{dev}-{k}"), "p": P, "card": format!("C{card}"), "kind": "undo", "revokes": target,
-                                "hlc": "0:0:dart", "at": clock[*dev], "ts": "anchored", "origin": "fushi", "rtype": "manual",
+                                "hlc": format!("{}:0:dart", clock[*dev]), "at": clock[*dev], "ts": "anchored", "origin": "fushi", "rtype": "manual",
                                 "utcOff": 0, "rollover": 4, "fv": 1
                             }});
                             devs[*dev].apply(clock[*dev], vec![u]);
