@@ -8280,6 +8280,8 @@
   "video_quality_switched": "Qualidade: $label",
   "video_recently_added_badge": "NOVO",
   "video_remote_all": "All videos",
+  "video_remote_close_video": "Close video",
+  "video_remote_close_video_confirm": "Close the video playing on the computer? Its position is saved.",
   "video_remote_control_customize": "Customize buttons",
   "video_remote_control_editor_hint": "Drag buttons between the main controls and more buttons. Play/pause always stays.",
   "video_remote_control_favorite": "Favorite this line",
