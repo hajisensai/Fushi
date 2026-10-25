@@ -5,6 +5,7 @@ import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/profile/profile_document.dart'
     show kProfileSettingCategoryPref;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
@@ -3232,6 +3233,32 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setSrsReviewZoom(double value) async {
     await setPref('srs_review_zoom', value);
+    notifyListeners();
+  }
+
+  /// 复习同步 v2 用户自己加的文件夹存储位置（JSON 数组，[SrsFolderLocation]）。设备本地：路径只在这台设备上有意义。
+  static const String srsFolderLocationsKey = 'srs_sync2_folder_locations';
+
+  List<SrsFolderLocation> get srsFolderLocations {
+    final Object? raw = getPref(srsFolderLocationsKey, defaultValue: '');
+    if (raw is! String || raw.isEmpty) return const <SrsFolderLocation>[];
+    try {
+      final Object? j = jsonDecode(raw);
+      if (j is! List) return const <SrsFolderLocation>[];
+      return <SrsFolderLocation>[
+        for (final Object? e in j)
+          if (e is Map) SrsFolderLocation.fromJson(e.cast<String, Object?>()),
+      ].where((SrsFolderLocation l) => l.id.isNotEmpty && l.path.isNotEmpty).toList();
+    } on FormatException {
+      return const <SrsFolderLocation>[];
+    }
+  }
+
+  Future<void> setSrsFolderLocations(List<SrsFolderLocation> value) async {
+    await setPref(
+      srsFolderLocationsKey,
+      jsonEncode(<Object?>[for (final SrsFolderLocation l in value) l.toJson()]),
+    );
     notifyListeners();
   }
 

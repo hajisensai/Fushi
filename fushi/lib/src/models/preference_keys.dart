@@ -535,6 +535,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'srs_review_volume',
   // double（默认 1.0，0.6–2.0）：复习页卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）。
   'srs_review_zoom',
+  // String（JSON 数组，SrsFolderLocation）：复习同步 v2 用户加的文件夹存储位置与用途（同步 / 媒体 / 归档）。
+  // 设备本地（SyncRepository._deviceLocalFixedKeys）：路径只在这台设备上有意义。
+  'srs_sync2_folder_locations',
   'startup_default_dictionary_tab',
   // String：启动页模块（ModuleId.prefKey，'' = 底栏第一个页面）。设备本地，
   // 与 module_nav_order 同族（ModuleId.devicePrefKeys）。

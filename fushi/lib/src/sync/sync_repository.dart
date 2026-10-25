@@ -1798,6 +1798,8 @@ class SyncRepository {
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
+    // 复习同步 v2 的文件夹存储位置：路径是这台设备的磁盘 / 挂载点，换设备恢复带过去没有意义。
+    PreferencesRepository.srsFolderLocationsKey,
     // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
     kStudyProfileNameAliasesPrefKey,
     _keyBackendType,

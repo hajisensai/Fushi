@@ -84,13 +84,15 @@ Future<Map<String, Object?>?> _readJson(
   }
 }
 
-/// 跑一轮。[locationId] 是这个位置的稳定身份（本机记每个位置传到了哪）；[keyHex] = 开了加密时的集合密钥。
+/// 跑一轮。[locationId] 是这个位置的稳定身份（本机记每个位置传到了哪）；[keyHex] = 开了加密时的集合密钥；
+/// [archive] = 归档位置：只写不删（不清本机的旧 head，设计 §10.3）。
 Future<SrsSync2Report> srsSync2Round({
   required SrsSync2Host host,
   required SrsLocationStore location,
   required String locationId,
   required int Function() nowMs,
   String? keyHex,
+  bool archive = false,
 }) async {
   final SrsSync2Report report = SrsSync2Report();
   // meta.json：协议版本与集合身份，创建后只读（§6.1）。
@@ -201,7 +203,7 @@ Future<SrsSync2Report> srsSync2Round({
   final int gen = (head.map['gen'] as int?) ?? 0;
   for (final SrsLocationEntry f in await location.list('devices/$self')) {
     final int? g = _headGen(f.name);
-    if (g != null && g < gen - 2) {
+    if (!archive && g != null && g < gen - 2) {
       await location.delete('devices/$self/${f.name}');
     }
     if (f.name == written) report.serverTimeMs = f.modifiedAt;

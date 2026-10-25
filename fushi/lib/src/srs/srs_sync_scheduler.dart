@@ -35,6 +35,7 @@ import 'dart:io';
 
 import 'package:fushi/utils.dart' show ErrorLogService;
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
@@ -170,6 +171,7 @@ class SrsSyncScheduler {
     required void Function() onDataChanged,
     required void Function(SrsSyncNotice notice) onNotice,
     Future<List<SrsLocalDirectory>> Function()? localDirectories,
+    Future<List<SrsFolderLocation>> Function()? folderLocations,
     SrsProfileLinker? profileLinker,
     SrsSyncRunner runner = srsDefaultSyncRunner,
     Future<Directory?> Function()? readMediaRoot,
@@ -186,6 +188,7 @@ class SrsSyncScheduler {
        _channels = channels,
        _directoryKeyOf = directoryKeyOf,
        _localDirectories = localDirectories,
+       _folderLocations = folderLocations,
        _onDataChanged = onDataChanged,
        _onNotice = onNotice,
        _runner = runner,
@@ -201,6 +204,10 @@ class SrsSyncScheduler {
   /// 坏文件只记一次日志（每轮都会再跳过同一个文件）。
   final Set<String> _loggedSkipped = <String>{};
   final Future<List<SrsLocalDirectory>> Function()? _localDirectories;
+  final Future<List<SrsFolderLocation>> Function()? _folderLocations;
+
+  /// 每个文件夹位置最近一次的错误（同步与历史页显示；成功一轮即清掉）。
+  final Map<String, Object> folderErrors = <String, Object>{};
   final void Function() _onDataChanged;
   final void Function(SrsSyncNotice notice) _onNotice;
   final SrsSyncRunner _runner;
@@ -380,11 +387,49 @@ class SrsSyncScheduler {
     errors.addAll(channels.errors);
     final SrsSyncNowResult local = await syncLocalDirectories();
     errors.addAll(local.errors);
+    final SrsSyncNowResult folders = await syncFolderLocations();
+    errors.addAll(folders.errors);
     return SrsSyncNowResult(
-      ran: channels.ran - reportFailures + local.ran,
+      ran: channels.ran - reportFailures + local.ran + folders.ran,
       errors: errors,
     );
   }
+
+  /// 跑用户加的文件夹存储位置（设计 §6.5：U 盘 / NAS / 被别的同步工具同步的目录）。文件夹此刻不在
+  /// （U 盘没插）只记进 [folderErrors]，不算这轮「立即同步」失败——它是可选的冗余副本。
+  Future<SrsSyncNowResult> syncFolderLocations() => _serially(() async {
+    final Future<List<SrsFolderLocation>> Function()? read = _folderLocations;
+    if (read == null || _halted) return const SrsSyncNowResult(ran: 0);
+    final SrsDbStore? store = await _readStore();
+    if (store == null || _halted) return const SrsSyncNowResult(ran: 0);
+    final Directory? mediaRoot = await _readMediaRoot?.call();
+    int ran = 0;
+    bool changed = false;
+    for (final SrsFolderLocation l in await read()) {
+      if (l.idle || _halted) continue;
+      try {
+        final SrsFolderSyncReport r = await srsSyncFolderLocation(
+          location: l,
+          store: store,
+          mediaRoot: mediaRoot,
+        );
+        folderErrors.remove(l.id);
+        ran++;
+        final SrsSync2Report? ops = r.ops;
+        if (ops != null && (ops.changed || ops.applied > 0 || ops.fork)) {
+          changed = true;
+        }
+        if ((r.media?.downloaded ?? 0) > 0) changed = true;
+      } catch (e, stack) {
+        folderErrors[l.id] = e;
+        if (e is! FileSystemException) {
+          ErrorLogService.instance.log('SrsSyncScheduler.folder', e, stack);
+        }
+      }
+    }
+    if (changed) _onDataChanged();
+    return SrsSyncNowResult(ran: ran);
+  });
 
   /// 只跑本机直接读写的目录（本机作为互联 host 时）。
   Future<SrsSyncNowResult> syncLocalDirectories() async {

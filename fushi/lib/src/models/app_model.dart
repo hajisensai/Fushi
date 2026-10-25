@@ -97,6 +97,7 @@ import 'package:fushi/src/models/browser_extension_font_catalog.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
@@ -9222,6 +9223,12 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsReviewVolume(double value) =>
       prefsRepo.setSrsReviewVolume(value);
   double get srsReviewZoom => _prefsRepo?.srsReviewZoom ?? 1.0;
+
+  /// 复习同步 v2 的文件夹存储位置（设备本地；透传 prefsRepo）。
+  List<SrsFolderLocation> get srsFolderLocations =>
+      _prefsRepo?.srsFolderLocations ?? const <SrsFolderLocation>[];
+  Future<void> setSrsFolderLocations(List<SrsFolderLocation> value) =>
+      prefsRepo.setSrsFolderLocations(value);
   Future<void> setSrsReviewZoom(double value) =>
       prefsRepo.setSrsReviewZoom(value);
 

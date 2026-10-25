@@ -136,6 +136,7 @@ class SrsAppRuntime {
     directoryKeyOf: (SyncAssetStore backend) =>
         srsDirectoryKeyOf(backend, SyncRepository(app.database)),
     localDirectories: _localDirectories,
+    folderLocations: () async => app.srsFolderLocations,
     profileLinker: _profileLinker,
     onDataChanged: _bumpRevision,
     onNotice: _showSyncNotice,

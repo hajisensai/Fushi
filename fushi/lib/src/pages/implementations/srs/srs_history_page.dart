@@ -3,6 +3,8 @@
 /// - **同步状态**：本机身份、尚未传到全部位置的操作、各设备的进度 / 落后条数 / 最后见到 / 摘要不一致警告。
 /// - **时间线**：自动还原点列表 + 任选时刻；恢复前预览会改动多少，可勾选一起撤回之后的复习。恢复是追加
 ///   补偿操作、不覆盖任何设备，内核先自动打一个还原点，所以恢复本身也能再恢复回去。
+/// - **存储位置**：已有同步通道（云盘 / 互联）各算一个同步 + 媒体位置；另可「＋」本地文件夹（U 盘 / NAS / 被别的
+///   同步工具同步的目录），每个勾选用途：同步 / 媒体 / 归档（只写不删，默认不勾）。取消用途或移除不删文件。
 /// - **导出 / 导入** `.fushisrs`：离线保存或不连同步地搬家；导入是并入、不覆盖。
 library;
 
@@ -12,6 +14,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
@@ -21,6 +24,7 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -232,6 +236,169 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       severity: ToastSeverity.success,
     );
   }, failure: t.srs_timeline_checkpoint_failed);
+
+  // ---------------------------------------------------------------- 存储位置
+
+  Future<void> _saveFolders(List<SrsFolderLocation> folders) async {
+    await ref.read(appProvider).setSrsFolderLocations(folders);
+    // 改完立刻跑一轮文件夹位置（新加的马上有一份完整副本）；失败显示在该行上。
+    await ref.read(srsAppRuntimeProvider)?.sync.syncFolderLocations();
+  }
+
+  Future<void> _addFolder() async {
+    final String? path = await pickRealDirectoryPath(
+      context: context,
+      appModel: ref.read(appProvider),
+      dialogTitle: t.srs_timeline_location_add,
+    );
+    if (path == null || !mounted) return;
+    final List<SrsFolderLocation> folders = ref
+        .read(appProvider)
+        .srsFolderLocations;
+    if (folders.any((SrsFolderLocation l) => l.path == path)) return;
+    await _run('addFolder', () async {
+      await _saveFolders(<SrsFolderLocation>[
+        ...folders,
+        SrsFolderLocation(
+          id: DateTime.now().microsecondsSinceEpoch.toRadixString(36),
+          path: path,
+        ),
+      ]);
+    }, failure: t.srs_timeline_location_unavailable);
+  }
+
+  Future<void> _editFolder(SrsFolderLocation l) async {
+    final SrsFolderLocation? edited = await showAppDialog<SrsFolderLocation>(
+      context: context,
+      builder: (BuildContext dialogContext) =>
+          _FolderPurposesDialog(location: l),
+    );
+    if (edited == null || !mounted) return;
+    await _run('editFolder', () async {
+      await _saveFolders(<SrsFolderLocation>[
+        for (final SrsFolderLocation x
+            in ref.read(appProvider).srsFolderLocations)
+          x.id == l.id ? edited : x,
+      ]);
+    }, failure: t.srs_timeline_location_unavailable);
+  }
+
+  Future<void> _removeFolder(SrsFolderLocation l) async {
+    final bool ok = await showFushiConfirmDialog(
+      context: context,
+      title: t.srs_timeline_location_remove,
+      message: t.srs_timeline_location_remove_confirm,
+      confirmLabel: t.srs_timeline_location_remove,
+      cancelLabel: t.cancel,
+      icon: FushiIcons.folder,
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    await ref.read(appProvider).setSrsFolderLocations(<SrsFolderLocation>[
+      for (final SrsFolderLocation x
+          in ref.read(appProvider).srsFolderLocations)
+        if (x.id != l.id) x,
+    ]);
+    if (mounted) setState(() {});
+  }
+
+  String _purposesLabel(SrsFolderLocation l) {
+    if (l.idle) return t.srs_timeline_location_idle;
+    return <String>[
+      if (l.sync) t.srs_timeline_location_purpose_sync,
+      if (l.media) t.srs_timeline_location_purpose_media,
+      if (l.archive) t.srs_timeline_location_purpose_archive,
+    ].join(' · ');
+  }
+
+  String _lastOkLabel(BuildContext context, int? lastOk) => lastOk == null
+      ? t.srs_timeline_location_never
+      : t.srs_timeline_location_last_ok(
+          time: srsTimeLabel(
+            context,
+            DateTime.fromMillisecondsSinceEpoch(lastOk),
+          ),
+        );
+
+  Widget _buildLocations(BuildContext context) {
+    final Map<String, int?> lastOk = <String, int?>{
+      for (final Object? x
+          in (_status['locations'] as List<Object?>?) ?? const [])
+        if (x is Map)
+          x['location'] as String? ?? '': (x['lastOk'] as num?)?.toInt(),
+    };
+    final List<SrsFolderLocation> folders = ref
+        .watch(appProvider)
+        .srsFolderLocations;
+    final Map<String, Object> errors =
+        ref.read(srsAppRuntimeProvider)?.sync.folderErrors ??
+        const <String, Object>{};
+    final List<String> channels = <String>[
+      for (final String id in lastOk.keys)
+        if (!id.startsWith('folder:')) id,
+    ]..sort();
+    return AdaptiveSettingsSection(
+      title: t.srs_timeline_locations,
+      children: <Widget>[
+        for (final String id in channels)
+          AdaptiveSettingsRow(
+            key: ValueKey<String>('srs_timeline_channel_$id'),
+            title: id.contains(':') ? id.substring(id.indexOf(':') + 1) : id,
+            subtitle: <String>[
+              t.srs_timeline_location_channel,
+              _lastOkLabel(context, lastOk[id]),
+            ].join(' · '),
+            icon: FushiIcons.cloudSync,
+            showIcon: true,
+            subtitleMaxLines: 2,
+          ),
+        for (final SrsFolderLocation l in folders)
+          AdaptiveSettingsRow(
+            key: ValueKey<String>('srs_timeline_folder_${l.id}'),
+            title: l.path,
+            titleMaxLines: 3,
+            subtitle: <String>[
+              _purposesLabel(l),
+              if (errors.containsKey(l.id))
+                t.srs_timeline_location_unavailable
+              else
+                _lastOkLabel(context, lastOk[l.locationId]),
+            ].join(' · '),
+            subtitleMaxLines: 3,
+            icon: errors.containsKey(l.id)
+                ? FushiIcons.warning
+                : FushiIcons.folder,
+            showIcon: true,
+            onTap: _busy
+                ? null
+                : () => srsRunLogged(
+                    'SrsHistory.editFolder',
+                    () => _editFolder(l),
+                  ),
+            trailing: FushiIconButton(
+              key: ValueKey<String>('srs_timeline_folder_remove_${l.id}'),
+              icon: FushiIcons.delete,
+              tooltip: t.srs_timeline_location_remove,
+              enabled: !_busy,
+              onTap: () => srsRunLogged(
+                'SrsHistory.removeFolder',
+                () => _removeFolder(l),
+              ),
+            ),
+          ),
+        AdaptiveSettingsNavigationRow(
+          key: const ValueKey<String>('srs_timeline_location_add'),
+          title: t.srs_timeline_location_add,
+          subtitle: t.srs_timeline_location_add_hint,
+          icon: FushiIcons.add,
+          showIcon: true,
+          onTap: () {
+            if (!_busy) srsRunLogged('SrsHistory.addFolder', _addFolder);
+          },
+        ),
+      ],
+    );
+  }
 
   // ---------------------------------------------------------------- 导出 / 导入
 
@@ -481,6 +648,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         ),
       ),
       if (_status['enabled'] == true) _buildStatus(context),
+      _buildLocations(context),
       AdaptiveSettingsSection(
         title: t.srs_timeline_section,
         children: <Widget>[
@@ -635,6 +803,74 @@ class _RestoreDialogState extends State<_RestoreDialog> {
           label: t.srs_timeline_restore,
           kind: FushiDialogActionKind.destructive,
           onPressed: () => Navigator.of(context).pop(_retract),
+        ),
+      ],
+    );
+  }
+}
+
+/// 一个文件夹位置的用途（可多选）。返回 null = 取消。
+class _FolderPurposesDialog extends StatefulWidget {
+  const _FolderPurposesDialog({required this.location});
+
+  final SrsFolderLocation location;
+
+  @override
+  State<_FolderPurposesDialog> createState() => _FolderPurposesDialogState();
+}
+
+class _FolderPurposesDialogState extends State<_FolderPurposesDialog> {
+  late SrsFolderLocation _l = widget.location;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(icon: FushiIcons.folder),
+      title: Text(t.srs_timeline_location_purposes),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          Text(_l.path, maxLines: 3, overflow: TextOverflow.ellipsis),
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('srs_timeline_purpose_sync'),
+            title: t.srs_timeline_location_purpose_sync,
+            subtitle: t.srs_timeline_location_purpose_sync_hint,
+            value: _l.sync,
+            horizontalPadding: 0,
+            onChanged: (bool v) => setState(() => _l = _l.copyWith(sync: v)),
+          ),
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('srs_timeline_purpose_media'),
+            title: t.srs_timeline_location_purpose_media,
+            subtitle: t.srs_timeline_location_purpose_media_hint,
+            value: _l.media,
+            horizontalPadding: 0,
+            onChanged: (bool v) => setState(() => _l = _l.copyWith(media: v)),
+          ),
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('srs_timeline_purpose_archive'),
+            title: t.srs_timeline_location_purpose_archive,
+            subtitle: t.srs_timeline_location_purpose_archive_hint,
+            value: _l.archive,
+            horizontalPadding: 0,
+            onChanged: (bool v) => setState(() => _l = _l.copyWith(archive: v)),
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        FushiDialogAction(
+          label: t.cancel,
+          kind: FushiDialogActionKind.secondary,
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        FushiDialogAction(
+          key: const ValueKey<String>('srs_timeline_purposes_save'),
+          label: t.srs_note_save,
+          kind: FushiDialogActionKind.primary,
+          onPressed: () => Navigator.of(context).pop(_l),
         ),
       ],
     );
