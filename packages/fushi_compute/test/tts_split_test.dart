@@ -438,8 +438,13 @@ int _fuzzDigest(
 }
 
 /// 旧 Dart 实现对 [_fuzzInputs] 全部 400 章（12.5 万码元、2.2 万句，其中 795 句含 ruby
-/// 读音）的 [_fuzzDigest]。
-const int _oldDartFuzzDigest = 0x5b5451ff;
+/// 读音）的 [_fuzzDigest] 是 `0x5b5451ff`。
+///
+/// BUG-3773 有意改了一条语义：读音里没有任何文字的 ruby（傍点 `・・` / `﹅` / `●`）不再收、
+/// 底本照原文读，所以伪随机章节里这类 ruby 的句子与旧实现不同，摘要随之变成下面这个值。
+/// 核对过：只去掉 `tts_split.rs` 的 `is_emphasis_only` 判定重编，摘要回到 `0x5b5451ff`
+/// （其余语义与旧 Dart 实现仍逐句一致）。旧 Dart 实现已删除，无法再按它重算。
+const int _fuzzDigestAfterBug3773 = 0x5c1b42ce;
 
 List<TtsSplitSegment> _split(
   String text, {
@@ -496,7 +501,7 @@ void main() {
     }
   });
 
-  test('伪随机章节与旧 Dart 实现摘要一致', () {
+  test('伪随机章节摘要与旧 Dart 实现（加 BUG-3773 傍点规则）一致', () {
     final int digest = _fuzzDigest((_FuzzInput input) {
       return <({int start, int end, String text, String spokenText})>[
         for (final TtsSplitSegment s in _split(
@@ -509,7 +514,7 @@ void main() {
           (start: s.start, end: s.end, text: s.text, spokenText: s.spokenText),
       ];
     });
-    expect(digest, _oldDartFuzzDigest);
+    expect(digest, _fuzzDigestAfterBug3773);
   });
 
   test('空白判定与 Dart String.trim 逐码点一致', () {
