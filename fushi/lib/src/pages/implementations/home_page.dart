@@ -1778,6 +1778,7 @@ class _HomePageState extends BasePageState<HomePage>
       contextOf: () => context,
       videoRepo: () => _videoRepository,
       goToTab: _selectTabFromNav,
+      openDownloads: () => _openBrowseTab(BrowseTab.downloads),
     ),
   );
 

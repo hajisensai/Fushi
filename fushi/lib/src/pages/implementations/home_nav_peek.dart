@@ -11,8 +11,19 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
+import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
-import 'package:fushi_core/fushi_core.dart' show MediaKind, VideoBookRow;
+import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:fushi/utils.dart' show adaptivePageRoute, t;
+import 'package:fushi_core/fushi_core.dart'
+    show
+        MediaCollectionRow,
+        MediaKind,
+        VideoBookRow,
+        VideoDownloadJobLifecycle,
+        VideoDownloadJobRow;
+import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDeckSummary;
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show ShelfReadStatus, classifyShelfReadStatus;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
@@ -39,7 +50,11 @@ RoundedPolygon homeNavRailShapeFor(HomeTab tab) => switch (tab) {
 };
 
 /// 首页侧栏悬停速览卡的数据源（[AdaptiveNavItem.peek]）：书 / 漫画 / 视频 /
-/// 游戏四个库页给「继续」+「最近」，其余目的地没有速览（null，名称走 tooltip）。
+/// 游戏四个库页给「继续」+「最近」；复习给「继续」= 第一个还有待复习卡的顶层
+/// 牌组（与首页复习条「开始复习」同一个 [SrsDeckListData.firstRootWithWork]）、
+/// 「最近」= 其余顶层牌组；浏览给下载任务：「继续」= 最近更新的进行中任务（带
+/// 进度），「最近」= 其余最近更新的任务（2026-10-25 用户「侧边栏预览给复习和
+/// 浏览加一下」）。其余目的地没有速览（null，名称走 tooltip）。
 ///
 /// 口径对齐首页 dashboard 的「继续」区：书按 `reader_positions.updatedAt` 排、
 /// 只把「在读」的书当继续项（与首页同一判据 [classifyShelfReadStatus]）；视频按最后播放时刻；
@@ -52,6 +67,7 @@ AdaptiveNavPeek? homeNavPeekFor(
   required BuildContext Function() contextOf,
   required VideoBookRepository Function() videoRepo,
   required ValueChanged<HomeTab> goToTab,
+  required VoidCallback openDownloads,
 }) {
   switch (tab) {
     case HomeTab.books:
@@ -65,17 +81,32 @@ AdaptiveNavPeek? homeNavPeekFor(
       );
     case HomeTab.video:
       return AdaptiveNavPeek(
-        load: () => _loadVideos(repo: videoRepo(), contextOf: contextOf),
+        load: () => _loadVideos(
+          appModel: appModel,
+          repo: videoRepo(),
+          contextOf: contextOf,
+        ),
       );
     case HomeTab.games:
       return AdaptiveNavPeek(
         load: () =>
             _loadGames(appModel: appModel, open: () => goToTab(HomeTab.games)),
       );
-    case HomeTab.home:
-    case HomeTab.browse:
-    case HomeTab.dictionaries:
     case HomeTab.srs:
+      return AdaptiveNavPeek(
+        load: () => _loadSrsDecks(
+          ref: ref,
+          contextOf: contextOf,
+          openDecks: () => goToTab(HomeTab.srs),
+        ),
+      );
+    case HomeTab.browse:
+      return AdaptiveNavPeek(
+        load: () =>
+            _loadDownloads(appModel: appModel, openDownloads: openDownloads),
+      );
+    case HomeTab.home:
+    case HomeTab.dictionaries:
     case HomeTab.web:
     case HomeTab.settings:
       return null;
@@ -107,6 +138,7 @@ Future<AdaptiveNavPeekData> _loadBooks({
     return lastReadByUid[uidByKey[key] ?? key] ?? 0;
   }
 
+  final _NavPeekCollections collections = await _loadCollections(appModel);
   final List<MediaItem> read =
       all
           .where(
@@ -117,8 +149,8 @@ Future<AdaptiveNavPeekData> _loadBooks({
           )
           .toList()
         ..sort((MediaItem a, MediaItem b) => recentOf(b) - recentOf(a));
-  AdaptiveNavPeekEntry entryOf(MediaItem item) {
-    final String title = ReaderFushiSource.instance
+  AdaptiveNavPeekEntry entryOf(MediaItem item, {String? collection}) {
+    final String itemTitle = ReaderFushiSource.instance
         .getDisplayTitleFromMediaItem(item);
     final ImageProvider image = ReaderFushiSource.instance
         .getDisplayThumbnailFromMediaItem(appModel: appModel, item: item);
@@ -128,10 +160,13 @@ Future<AdaptiveNavPeekData> _loadBooks({
         ? (item.position / item.duration).clamp(0.0, 1.0)
         : null;
     return AdaptiveNavPeekEntry(
-      title: title,
+      title: collection ?? itemTitle,
       cover: noCover ? null : image,
       progress: progress,
-      subtitle: progress == null ? null : '${(progress * 100).round()}%',
+      subtitle: _peekSubtitle(
+        collection == null ? null : itemTitle,
+        progress == null ? null : '${(progress * 100).round()}%',
+      ),
       onOpen: () => unawaited(
         appModel.openMedia(
           ref: ref,
@@ -142,31 +177,50 @@ Future<AdaptiveNavPeekData> _loadBooks({
     );
   }
 
-  final MediaItem? resume = read
+  // 与书架同一份折叠：同一系列 / 合集只占一项，由其最近读过的那本代表
+  // （2026-10-25 用户「侧栏预览系列和合集没正确显示」：此前逐本列，同一系列
+  // 的几卷各占一格、标题是单卷名）。合集身份键与书架同为 `epub|<uid>`。
+  final List<NavPeekUnit<MediaItem>> units = foldNavPeekByCollection<MediaItem>(
+    recentFirst: read,
+    compositeKeyOf: (MediaItem item) {
+      final String key = keyOf(item);
+      return MediaKind.epub.compositeKey(uidByKey[key] ?? key);
+    },
+    primaryCollectionIdByEntry: collections.primaryByEntry,
+    collectionsById: collections.byId,
+  );
+  final NavPeekUnit<MediaItem>? resume = units
       .where(
-        (MediaItem item) =>
+        (NavPeekUnit<MediaItem> unit) =>
             classifyShelfReadStatus(
-              completed: completed.contains(keyOf(item)),
-              position: item.position,
-              duration: item.duration,
+              completed: completed.contains(keyOf(unit.item)),
+              position: unit.item.position,
+              duration: unit.item.duration,
             ) ==
             ShelfReadStatus.reading,
       )
       .firstOrNull;
   return AdaptiveNavPeekData(
-    resume: resume == null ? null : entryOf(resume),
-    recent: read
-        .where((MediaItem item) => !identical(item, resume))
+    resume: resume == null
+        ? null
+        : entryOf(resume.item, collection: resume.collectionName),
+    recent: units
+        .where((NavPeekUnit<MediaItem> unit) => !identical(unit, resume))
         .take(_kPeekRecentCount)
-        .map(entryOf)
+        .map(
+          (NavPeekUnit<MediaItem> unit) =>
+              entryOf(unit.item, collection: unit.collectionName),
+        )
         .toList(),
   );
 }
 
 Future<AdaptiveNavPeekData> _loadVideos({
+  required AppModel appModel,
   required VideoBookRepository repo,
   required BuildContext Function() contextOf,
 }) async {
+  final _NavPeekCollections collections = await _loadCollections(appModel);
   final List<VideoBookRow> rows =
       (await repo.listForShelf())
           .where((VideoBookRow v) => (v.lastPlayedAt ?? 0) > 0)
@@ -175,16 +229,17 @@ Future<AdaptiveNavPeekData> _loadVideos({
           (VideoBookRow a, VideoBookRow b) =>
               (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0),
         );
-  AdaptiveNavPeekEntry entryOf(VideoBookRow v) {
+  AdaptiveNavPeekEntry entryOf(VideoBookRow v, {String? collection}) {
     final String? cover = v.coverPath;
     return AdaptiveNavPeekEntry(
-      title: v.title,
+      title: collection ?? v.title,
       cover: cover == null || cover.isEmpty || !File(cover).existsSync()
           ? null
           : resolveMediaCoverImage(kind: MediaKind.video, localPath: cover),
-      subtitle: v.lastPositionMs > 0
-          ? formatVideoPosition(v.lastPositionMs)
-          : null,
+      subtitle: _peekSubtitle(
+        collection == null ? null : v.title,
+        v.lastPositionMs > 0 ? formatVideoPosition(v.lastPositionMs) : null,
+      ),
       onOpen: () {
         final BuildContext context = contextOf();
         if (!context.mounted) return;
@@ -195,9 +250,20 @@ Future<AdaptiveNavPeekData> _loadVideos({
     );
   }
 
+  // 多季 / 合集与视频库同一份折叠（身份键 `video|<bookUid>`）。
+  final List<NavPeekUnit<VideoBookRow>> units =
+      foldNavPeekByCollection<VideoBookRow>(
+        recentFirst: rows,
+        compositeKeyOf: (VideoBookRow v) =>
+            MediaKind.video.compositeKey(v.bookUid),
+        primaryCollectionIdByEntry: collections.primaryByEntry,
+        collectionsById: collections.byId,
+      );
+  AdaptiveNavPeekEntry unitEntry(NavPeekUnit<VideoBookRow> unit) =>
+      entryOf(unit.item, collection: unit.collectionName);
   return AdaptiveNavPeekData(
-    resume: rows.isEmpty ? null : entryOf(rows.first),
-    recent: rows.skip(1).take(_kPeekRecentCount).map(entryOf).toList(),
+    resume: units.isEmpty ? null : unitEntry(units.first),
+    recent: units.skip(1).take(_kPeekRecentCount).map(unitEntry).toList(),
   );
 }
 
@@ -226,5 +292,176 @@ Future<AdaptiveNavPeekData> _loadGames({
   return AdaptiveNavPeekData(
     resume: played.isEmpty ? null : entryOf(played.first),
     recent: played.skip(1).take(_kPeekRecentCount).map(entryOf).toList(),
+  );
+}
+
+/// 复习速览的副行：「新卡 3 · 学习中 1 · 到期 20」，只列非零的计数；三个都为
+/// 零（今天已复习完）时为 null。口径与牌组列表 / 首页复习条同一份计数。
+String? srsNavPeekCountsLabel({
+  required int newCount,
+  required int learnCount,
+  required int reviewCount,
+}) {
+  final List<String> parts = <String>[
+    if (newCount > 0) '${t.srs_count_new} $newCount',
+    if (learnCount > 0) '${t.srs_count_learn} $learnCount',
+    if (reviewCount > 0) '${t.srs_count_review} $reviewCount',
+  ];
+  return parts.isEmpty ? null : parts.join(' · ');
+}
+
+Future<AdaptiveNavPeekData> _loadSrsDecks({
+  required WidgetRef ref,
+  required BuildContext Function() contextOf,
+  required VoidCallback openDecks,
+}) async {
+  final SrsDeckListData? data = await ref.read(srsDeckListProvider.future);
+  if (data == null) return const AdaptiveNavPeekData();
+  // provider 已按牌组列表的口径藏掉空的默认牌组（[srsVisibleDecks]）。
+  final List<SrsDeckSummary> roots = data.decks
+      .where((SrsDeckSummary d) => d.depth == 0)
+      .toList();
+  AdaptiveNavPeekEntry entryOf(SrsDeckSummary deck) {
+    final bool hasWork = deck.newCount + deck.learnCount + deck.reviewCount > 0;
+    return AdaptiveNavPeekEntry(
+      title: deck.fullName,
+      subtitle: srsNavPeekCountsLabel(
+        newCount: deck.newCount,
+        learnCount: deck.learnCount,
+        reviewCount: deck.reviewCount,
+      ),
+      // 有待复习的卡就直接进这个牌组的复习页（同首页复习条）；今天已复习完
+      // 的牌组进复习里没卡可看，改为打开牌组列表。
+      onOpen: hasWork
+          ? () => srsRunLogged('HomeNavPeek.srsReview', () async {
+              final BuildContext context = contextOf();
+              if (!context.mounted) return;
+              await Navigator.of(context).push<void>(
+                adaptivePageRoute<void>(
+                  context: context,
+                  builder: (BuildContext context) => SrsReviewPage(
+                    deckId: deck.deck.id,
+                    deckName: deck.fullName,
+                  ),
+                ),
+              );
+              if (context.mounted) bumpSrsRevision(ref);
+            })
+          : openDecks,
+    );
+  }
+
+  final SrsDeckSummary? resume = data.firstRootWithWork;
+  return AdaptiveNavPeekData(
+    resume: resume == null ? null : entryOf(resume),
+    recent: roots
+        .where((SrsDeckSummary d) => d.deck.id != resume?.deck.id)
+        .take(_kPeekRecentCount)
+        .map(entryOf)
+        .toList(),
+  );
+}
+
+Future<AdaptiveNavPeekData> _loadDownloads({
+  required AppModel appModel,
+  required VoidCallback openDownloads,
+}) async {
+  final List<VideoDownloadJobRow> jobs =
+      (await appModel.database.getVideoDownloadJobs()).toList()..sort(
+        (VideoDownloadJobRow a, VideoDownloadJobRow b) =>
+            b.updatedAt - a.updatedAt,
+      );
+  AdaptiveNavPeekEntry entryOf(VideoDownloadJobRow job) {
+    final String? cover = job.coverUrl;
+    final double progress = job.lifecycle == VideoDownloadJobLifecycle.completed
+        ? 1
+        : job.stageProgress.clamp(0.0, 1.0).toDouble();
+    return AdaptiveNavPeekEntry(
+      title: job.title,
+      cover: cover == null || cover.isEmpty ? null : AppHttpImage(cover),
+      progress: progress,
+      subtitle: '${(progress * 100).round()}%',
+      onOpen: openDownloads,
+    );
+  }
+
+  final VideoDownloadJobRow? resume = jobs
+      .where(
+        (VideoDownloadJobRow j) =>
+            j.lifecycle == VideoDownloadJobLifecycle.active,
+      )
+      .firstOrNull;
+  return AdaptiveNavPeekData(
+    resume: resume == null ? null : entryOf(resume),
+    recent: jobs
+        .where((VideoDownloadJobRow j) => !identical(j, resume))
+        .take(_kPeekRecentCount)
+        .map(entryOf)
+        .toList(),
+  );
+}
+
+/// 速览里的一个展示单元：散条目，或一个合集（由它最近的那个成员 [item] 代表，
+/// [collectionName] 是合集名）。
+@immutable
+class NavPeekUnit<T> {
+  const NavPeekUnit({required this.item, this.collectionName});
+
+  final T item;
+
+  /// null = 散条目。
+  final String? collectionName;
+}
+
+/// 把按最近排好的 [recentFirst] 按所属合集折叠：同一合集只留最靠前（最近）的
+/// 成员，单元顺序 = 各单元最近成员的出现顺序。归属判据与库页折叠同一份
+/// （[primaryCollectionIdByEntry] 的主折叠合集；合集已删的孤儿引用退回散条目）。
+List<NavPeekUnit<T>> foldNavPeekByCollection<T>({
+  required List<T> recentFirst,
+  required String Function(T item) compositeKeyOf,
+  required Map<String, int> primaryCollectionIdByEntry,
+  required Map<int, MediaCollectionRow> collectionsById,
+}) {
+  final Set<int> seen = <int>{};
+  final List<NavPeekUnit<T>> units = <NavPeekUnit<T>>[];
+  for (final T item in recentFirst) {
+    final int? cid = primaryCollectionIdByEntry[compositeKeyOf(item)];
+    final MediaCollectionRow? collection = cid == null
+        ? null
+        : collectionsById[cid];
+    if (collection == null) {
+      units.add(NavPeekUnit<T>(item: item));
+    } else if (seen.add(collection.id)) {
+      units.add(NavPeekUnit<T>(item: item, collectionName: collection.name));
+    }
+  }
+  return units;
+}
+
+/// 合集速览的副行：「第 3 卷标题 · 42%」；缺哪段就不拼哪段。
+String? _peekSubtitle(String? member, String? progress) {
+  final List<String> parts = <String>[
+    if (member != null) member,
+    if (progress != null) progress,
+  ];
+  return parts.isEmpty ? null : parts.join(' · ');
+}
+
+/// 速览折叠用的合集映射（一次读两张表）。
+class _NavPeekCollections {
+  const _NavPeekCollections({required this.byId, required this.primaryByEntry});
+
+  final Map<int, MediaCollectionRow> byId;
+  final Map<String, int> primaryByEntry;
+}
+
+Future<_NavPeekCollections> _loadCollections(AppModel appModel) async {
+  final List<MediaCollectionRow> rows = await appModel.database
+      .getAllMediaCollections();
+  return _NavPeekCollections(
+    byId: <int, MediaCollectionRow>{
+      for (final MediaCollectionRow c in rows) c.id: c,
+    },
+    primaryByEntry: await appModel.database.getPrimaryCollectionIdByEntry(),
   );
 }
