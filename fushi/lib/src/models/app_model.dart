@@ -98,6 +98,7 @@ import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
@@ -9229,6 +9230,12 @@ class AppModel with ChangeNotifier {
       _prefsRepo?.srsFolderLocations ?? const <SrsFolderLocation>[];
   Future<void> setSrsFolderLocations(List<SrsFolderLocation> value) =>
       prefsRepo.setSrsFolderLocations(value);
+
+  /// 复习同步 v2 各存储位置的加密密钥（设备本地凭据；透传 prefsRepo）。
+  Map<String, SrsLocationKey> get srsLocationKeys =>
+      _prefsRepo?.srsLocationKeys ?? const <String, SrsLocationKey>{};
+  Future<void> setSrsLocationKey(String locationId, SrsLocationKey? key) =>
+      prefsRepo.setSrsLocationKey(locationId, key);
 
   /// 首次同步 v2 是否已确认（设备本地；prefs 未装配时按未确认，不同步）。
   bool get srsSync2MergeConfirmed => _prefsRepo?.srsSync2MergeConfirmed ?? false;

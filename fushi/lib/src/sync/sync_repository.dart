@@ -1802,6 +1802,8 @@ class SyncRepository {
     PreferencesRepository.srsFolderLocationsKey,
     // 首次 v2 同步的确认是这台设备做的：别的设备恢复备份带过来不能替它确认。
     PreferencesRepository.srsSync2MergeConfirmedKey,
+    // 复习同步 v2 存储位置的加密密钥：凭据，绝不随备份 / Profile 出境（换设备时重新输入口令）。
+    PreferencesRepository.srsLocationKeysKey,
     // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
     kStudyProfileNameAliasesPrefKey,
     _keyBackendType,

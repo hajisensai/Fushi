@@ -154,6 +154,9 @@ class SrsAppRuntime {
     firstSyncConfirmed: () => app.srsSync2MergeConfirmed,
     // 本机作为 host 发布了新数据：唤醒连着它的设备（长轮询 /api/srs/changes）。
     onLocalDirectoryPublished: app.syncServerController.notifySrsChanged,
+    // 每个位置的端到端加密密钥（设备本地凭据；同步与历史页里开 / 输入口令）。
+    locationKey: (String id) => app.srsLocationKeys[id],
+    onEncryptionEnabled: app.setSrsLocationKey,
   );
 
   /// 互联快速通道（srs_interconnect_watch.dart）：长轮询所连 host，有新数据立刻同步这一条通道。

@@ -36,6 +36,7 @@ import 'dart:io';
 import 'package:fushi/utils.dart' show ErrorLogService;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
@@ -81,8 +82,9 @@ typedef SrsSyncRunner =
 Future<SrsSync2Report> srsDefaultSyncRunner(
   SyncAssetStore backend,
   SrsDbStore store,
-  String directoryKey,
-) async {
+  String directoryKey, {
+  SrsLocationKey? key,
+}) async {
   final SrsSync2Report r = await srsSync2Round(
     host: store,
     location: SrsAssetLocationStore(
@@ -91,6 +93,7 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
     ),
     locationId: directoryKey,
     nowMs: () => store.now().$1,
+    key: key,
   );
   if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
   return r;
@@ -117,8 +120,10 @@ typedef SrsMediaSyncRunner =
 Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   SyncAssetStore backend,
   SrsDbStore store,
-  Directory mediaRoot,
-) => srsSyncMedia(
+  Directory mediaRoot, {
+  SrsMediaCipher? cipher,
+}) => srsSyncMedia(
+  cipher: cipher,
   location: SrsAssetLocationStore(store: backend, profileUid: store.profileUid),
   store: store,
   mediaRoot: mediaRoot,
@@ -151,6 +156,20 @@ class SrsSyncNowResult {
   final List<Object> errors;
 
   bool get unconfigured => ran == 0 && errors.isEmpty;
+}
+
+/// 一个位置最近一轮的加密状态。
+class SrsLocationCryptoState {
+  const SrsLocationCryptoState({this.kdf, this.encrypted = false, this.error});
+
+  /// 位置开了加密时它的参数（输入口令时用同一份盐派生）。
+  final SrsKdf? kdf;
+
+  /// 这一轮用密钥收发了。
+  final bool encrypted;
+
+  /// [kSrsSync2NeedsKey] / [kSrsSync2WrongKey]，或 null。
+  final String? error;
 }
 
 /// 只提示一次的通知类别。
@@ -187,7 +206,14 @@ class SrsSyncScheduler {
     bool Function()? canRun,
     bool Function()? firstSyncConfirmed,
     void Function()? onLocalDirectoryPublished,
+    SrsLocationKey? Function(String locationId)? locationKey,
+    Future<void> Function(String locationId, SrsLocationKey key)?
+    onEncryptionEnabled,
   }) : _profileLinker = profileLinker,
+       _locationKey = locationKey,
+       _onEncryptionEnabled = onEncryptionEnabled,
+       _customRunner = !identical(runner, srsDefaultSyncRunner),
+       _customMediaRunner = !identical(mediaRunner, srsDefaultMediaSyncRunner),
        _onLocalDirectoryPublished = onLocalDirectoryPublished,
        _firstSyncConfirmed = firstSyncConfirmed ?? _alwaysRun,
        _canRun = canRun ?? _alwaysRun,
@@ -243,6 +269,37 @@ class SrsSyncScheduler {
 
   /// 本机目录（本机作为互联 host 时）的一轮传上了新段：app 据此唤醒已配对设备的长轮询。
   final void Function()? _onLocalDirectoryPublished;
+
+  /// 每个位置的本机密钥（设计 §9：每个位置一个可选的端到端加密开关；见 srs_location_crypto.dart）。
+  final SrsLocationKey? Function(String locationId)? _locationKey;
+
+  /// 本机刚开的加密已写进位置的 `meta.json`：调用方把密钥标成已生效。
+  final Future<void> Function(String locationId, SrsLocationKey key)?
+  _onEncryptionEnabled;
+
+  /// 测试注入了自己的 runner：不带密钥（假 runner 不认识加密）。
+  final bool _customRunner;
+  final bool _customMediaRunner;
+
+  /// 各位置最近一轮看到的加密状态（同步与历史页显示「已加密 / 需要口令 / 口令不对」）。
+  final Map<String, SrsLocationCryptoState> locationCrypto =
+      <String, SrsLocationCryptoState>{};
+
+  /// 记下一轮的加密结论；本机刚开的加密生效了就交给调用方保存。
+  Future<void> _noteCrypto(String locationId, SrsSync2Report? r) async {
+    if (r == null) return;
+    locationCrypto[locationId] = SrsLocationCryptoState(
+      kdf: r.kdf,
+      encrypted: r.encrypted,
+      error: r.error == kSrsSync2NeedsKey || r.error == kSrsSync2WrongKey
+          ? r.error
+          : null,
+    );
+    final SrsLocationKey? k = _locationKey?.call(locationId);
+    if (r.encryptionEnabled && k != null) {
+      await _onEncryptionEnabled?.call(locationId, k.enabled());
+    }
+  }
 
   /// 调度器已卸下，或库正关着：这一轮不该开始 / 不该继续。
   bool get _halted => _disposed || !_canRun();
@@ -331,7 +388,11 @@ class SrsSyncScheduler {
     // 校时按开跑那一刻的单调时钟算，误差只剩探针前的一次列目录，而不是整轮耗时。
     // 放在 profile 关联之后：关联可能换成另一个 store，校时落在真正跑同步的那个上。
     final int probedAtMono = store.trustedClock.monotonicNowMs();
-    final SrsSync2Report report = await _runner(backend, store, key);
+    final SrsLocationKey? locKey = _locationKey?.call(key);
+    final SrsSync2Report report = _customRunner
+        ? await _runner(backend, store, key)
+        : await srsDefaultSyncRunner(backend, store, key, key: locKey);
+    await _noteCrypto(key, report);
     if (linker != null && report.error == null && !_halted) {
       try {
         await linker.publish(backend, store, key);
@@ -368,11 +429,16 @@ class SrsSyncScheduler {
       try {
         final Directory? root = await readMediaRoot();
         if (root != null) {
-          final SrsMediaSyncReport media = await _mediaRunner(
-            backend,
-            store,
-            root,
-          );
+          final SrsMediaSyncReport media = _customMediaRunner
+              ? await _mediaRunner(backend, store, root)
+              : await srsDefaultMediaSyncRunner(
+                  backend,
+                  store,
+                  root,
+                  cipher: report.encrypted && locKey != null
+                      ? SrsMediaCipher(store, locKey.keyHex)
+                      : null,
+                );
           mediaChanged = media.downloaded > 0;
         }
       } catch (e, stack) {
@@ -434,7 +500,9 @@ class SrsSyncScheduler {
           location: l,
           store: store,
           mediaRoot: mediaRoot,
+          key: _locationKey?.call(l.locationId),
         );
+        await _noteCrypto(l.locationId, r.ops);
         folderErrors.remove(l.id);
         ran++;
         final SrsSync2Report? ops = r.ops;

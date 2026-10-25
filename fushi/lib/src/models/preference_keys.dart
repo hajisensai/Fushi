@@ -538,6 +538,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON 数组，SrsFolderLocation）：复习同步 v2 用户加的文件夹存储位置与用途（同步 / 媒体 / 归档）。
   // 设备本地（SyncRepository._deviceLocalFixedKeys）：路径只在这台设备上有意义。
   'srs_sync2_folder_locations',
+  // String（JSON：位置身份 → SrsLocationKey）：复习同步 v2 各存储位置的端到端加密密钥。凭据 + 设备本地
+  // （同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与 deviceLocalPrefKeys）。
+  'srs_sync2_location_keys',
   // bool（默认 false）：升级到同步 v2 后已确认首次同步（并入、不覆盖）。设备本地，同上。
   'srs_sync2_merge_confirmed',
   'startup_default_dictionary_tab',
@@ -805,6 +808,8 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 /// 🔴 凭据键：值为 base64 敏感凭据，不进日志 / 不进明文导出。
 /// （`media_source_secret_<id>` 前缀族见 [kKnownPreferenceKeyPrefixes]。）
 const Set<String> kCredentialPreferenceKeys = <String>{
+  // 复习同步 v2 各存储位置的集合密钥（hex）。
+  'srs_sync2_location_keys',
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。
   'ai_providers',
   // AnkiSettings JSON 里的 AnkiConnect apiKey（明文）。

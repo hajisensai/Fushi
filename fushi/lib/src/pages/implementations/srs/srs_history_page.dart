@@ -5,6 +5,7 @@
 ///   补偿操作、不覆盖任何设备，内核先自动打一个还原点，所以恢复本身也能再恢复回去。
 /// - **存储位置**：已有同步通道（云盘 / 互联）各算一个同步 + 媒体位置；另可「＋」本地文件夹（U 盘 / NAS / 被别的
 ///   同步工具同步的目录），每个勾选用途：同步 / 媒体 / 归档（只写不删，默认不勾）。取消用途或移除不删文件。
+/// - **端到端加密**：每个位置一个可选开关（设计 §9，默认关）；别的设备开过的位置在这里输入同一个口令。
 /// - **导出 / 导入** `.fushisrs`：离线保存或不连同步地搬家；导入是并入、不覆盖。
 library;
 
@@ -16,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -26,6 +28,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -303,6 +306,83 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     if (mounted) setState(() {});
   }
 
+  /// 位置的加密状态（最近一轮同步看到的；还没同步过的位置按本机记的密钥推断）。
+  String? _cryptoLabel(String locationId) {
+    final SrsLocationCryptoState? s = ref
+        .read(srsAppRuntimeProvider)
+        ?.sync
+        .locationCrypto[locationId];
+    if (s?.error == kSrsSync2NeedsKey) return t.srs_timeline_location_needs_key;
+    if (s?.error == kSrsSync2WrongKey) return t.srs_timeline_location_wrong_key;
+    if (s?.encrypted ?? false) return t.srs_timeline_location_encrypted;
+    final SrsLocationKey? k = ref.read(appProvider).srsLocationKeys[locationId];
+    if (k != null && k.pendingEnable)
+      return t.srs_timeline_location_encrypt_pending;
+    return null;
+  }
+
+  /// 位置的加密：没开 → 设口令开启；要口令 / 口令不对 → 输入口令；已开 → 说明。
+  Future<void> _encryption(String locationId) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null || !mounted) return;
+    final SrsLocationCryptoState? s = ref
+        .read(srsAppRuntimeProvider)
+        ?.sync
+        .locationCrypto[locationId];
+    final SrsLocationKey? k = ref.read(appProvider).srsLocationKeys[locationId];
+    final SrsKdf? kdf = s?.kdf;
+    if (s?.error != null && kdf != null) {
+      final String? pass = await showAppDialog<String>(
+        context: context,
+        builder: (_) => const _PassphraseDialog(confirm: false),
+      );
+      if (pass == null || !mounted) return;
+      await _run('unlock', () async {
+        final SrsLocationKey key = await srsDeriveLocationKey(
+          store,
+          pass,
+          kdf: kdf,
+        );
+        await ref.read(appProvider).setSrsLocationKey(locationId, key);
+        await ref.read(srsAppRuntimeProvider)?.syncNow();
+        final String? err = ref
+            .read(srsAppRuntimeProvider)
+            ?.sync
+            .locationCrypto[locationId]
+            ?.error;
+        FushiToast.show(
+          msg: err == kSrsSync2WrongKey
+              ? t.srs_timeline_location_wrong_key
+              : t.srs_timeline_location_unlocked,
+          severity: err == null ? ToastSeverity.success : ToastSeverity.error,
+        );
+      }, failure: t.srs_timeline_location_encrypt_failed);
+      return;
+    }
+    if ((s?.encrypted ?? false) || k != null) {
+      FushiToast.show(msg: t.srs_timeline_location_encrypted_hint);
+      return;
+    }
+    final String? pass = await showAppDialog<String>(
+      context: context,
+      builder: (_) => const _PassphraseDialog(confirm: true),
+    );
+    if (pass == null || !mounted) return;
+    await _run('encrypt', () async {
+      final SrsLocationKey key = await srsDeriveLocationKey(
+        store,
+        pass,
+        pendingEnable: true,
+      );
+      await ref.read(appProvider).setSrsLocationKey(locationId, key);
+      await ref.read(srsAppRuntimeProvider)?.syncNow();
+      FushiToast.show(
+        msg: t.srs_timeline_location_encrypt_done,
+        severity: ToastSeverity.success,
+      );
+    }, failure: t.srs_timeline_location_encrypt_failed);
+  }
+
   String _purposesLabel(SrsFolderLocation l) {
     if (l.idle) return t.srs_timeline_location_idle;
     return <String>[
@@ -322,12 +402,17 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         );
 
   Widget _buildLocations(BuildContext context) {
-    final Map<String, int?> lastOk = <String, int?>{
-      for (final Object? x
-          in (_status['locations'] as List<Object?>?) ?? const [])
-        if (x is Map)
-          x['location'] as String? ?? '': (x['lastOk'] as num?)?.toInt(),
-    };
+    // 加密位置的上传进度记在 `<位置>#e` 下（srs_sync2_round.dart）：合回同一个位置显示，取较新的一次。
+    final Map<String, int?> lastOk = <String, int?>{};
+    for (final Object? x
+        in (_status['locations'] as List<Object?>?) ?? const <Object?>[]) {
+      if (x is! Map) continue;
+      String id = x['location'] as String? ?? '';
+      if (id.endsWith('#e')) id = id.substring(0, id.length - 2);
+      final int? at = (x['lastOk'] as num?)?.toInt();
+      final int? prev = lastOk[id];
+      lastOk[id] = prev == null || (at != null && at > prev) ? at : prev;
+    }
     final List<SrsFolderLocation> folders = ref
         .watch(appProvider)
         .srsFolderLocations;
@@ -347,11 +432,20 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
             title: id.contains(':') ? id.substring(id.indexOf(':') + 1) : id,
             subtitle: <String>[
               t.srs_timeline_location_channel,
+              ?_cryptoLabel(id),
               _lastOkLabel(context, lastOk[id]),
             ].join(' · '),
-            icon: FushiIcons.cloudSync,
+            icon: _cryptoLabel(id) == null
+                ? FushiIcons.cloudSync
+                : FushiIcons.lock,
             showIcon: true,
             subtitleMaxLines: 2,
+            onTap: _busy
+                ? null
+                : () => srsRunLogged(
+                    'SrsHistory.encryption',
+                    () => _encryption(id),
+                  ),
           ),
         for (final SrsFolderLocation l in folders)
           AdaptiveSettingsRow(
@@ -360,6 +454,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
             titleMaxLines: 3,
             subtitle: <String>[
               _purposesLabel(l),
+              ?_cryptoLabel(l.locationId),
               if (errors.containsKey(l.id))
                 t.srs_timeline_location_unavailable
               else
@@ -376,15 +471,30 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
                     'SrsHistory.editFolder',
                     () => _editFolder(l),
                   ),
-            trailing: FushiIconButton(
-              key: ValueKey<String>('srs_timeline_folder_remove_${l.id}'),
-              icon: FushiIcons.delete,
-              tooltip: t.srs_timeline_location_remove,
-              enabled: !_busy,
-              onTap: () => srsRunLogged(
-                'SrsHistory.removeFolder',
-                () => _removeFolder(l),
-              ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                FushiIconButton(
+                  key: ValueKey<String>('srs_timeline_folder_encrypt_${l.id}'),
+                  icon: FushiIcons.lock,
+                  tooltip: t.srs_timeline_location_encryption,
+                  enabled: !_busy && (l.sync || l.archive),
+                  onTap: () => srsRunLogged(
+                    'SrsHistory.folderEncryption',
+                    () => _encryption(l.locationId),
+                  ),
+                ),
+                FushiIconButton(
+                  key: ValueKey<String>('srs_timeline_folder_remove_${l.id}'),
+                  icon: FushiIcons.delete,
+                  tooltip: t.srs_timeline_location_remove,
+                  enabled: !_busy,
+                  onTap: () => srsRunLogged(
+                    'SrsHistory.removeFolder',
+                    () => _removeFolder(l),
+                  ),
+                ),
+              ],
             ),
           ),
         AdaptiveSettingsNavigationRow(
@@ -872,6 +982,100 @@ class _FolderPurposesDialogState extends State<_FolderPurposesDialog> {
           label: t.srs_note_save,
           kind: FushiDialogActionKind.primary,
           onPressed: () => Navigator.of(context).pop(_l),
+        ),
+      ],
+    );
+  }
+}
+
+/// 输入口令（[confirm] = 新开加密：输两遍、提示口令丢失的后果）。返回 null = 取消。
+class _PassphraseDialog extends StatefulWidget {
+  const _PassphraseDialog({required this.confirm});
+
+  final bool confirm;
+
+  @override
+  State<_PassphraseDialog> createState() => _PassphraseDialogState();
+}
+
+class _PassphraseDialogState extends State<_PassphraseDialog> {
+  final TextEditingController _a = TextEditingController();
+  final TextEditingController _b = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _a.dispose();
+    _b.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final String pass = _a.text;
+    if (pass.length < 8) {
+      setState(() => _error = t.srs_timeline_passphrase_too_short);
+      return;
+    }
+    if (widget.confirm && _b.text != pass) {
+      setState(() => _error = t.srs_timeline_passphrase_mismatch);
+      return;
+    }
+    Navigator.of(context).pop(pass);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(icon: FushiIcons.lock),
+      title: Text(
+        widget.confirm
+            ? t.srs_timeline_location_encrypt
+            : t.srs_timeline_location_unlock,
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          Text(
+            widget.confirm
+                ? t.srs_timeline_location_encrypt_body
+                : t.srs_timeline_location_unlock_body,
+          ),
+          FushiTextField(
+            key: const ValueKey<String>('srs_timeline_passphrase'),
+            controller: _a,
+            obscureText: true,
+            autofocus: true,
+            labelText: t.srs_timeline_passphrase,
+            errorText: widget.confirm ? null : _error,
+            onSubmitted: widget.confirm ? null : (_) => _submit(),
+          ),
+          if (widget.confirm)
+            FushiTextField(
+              key: const ValueKey<String>('srs_timeline_passphrase_again'),
+              controller: _b,
+              obscureText: true,
+              labelText: t.srs_timeline_passphrase_again,
+              errorText: _error,
+              onSubmitted: (_) => _submit(),
+            ),
+        ],
+      ),
+      actions: <Widget>[
+        FushiDialogAction(
+          label: t.cancel,
+          kind: FushiDialogActionKind.secondary,
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        FushiDialogAction(
+          key: const ValueKey<String>('srs_timeline_passphrase_ok'),
+          label: widget.confirm
+              ? t.srs_timeline_location_encrypt
+              : t.srs_timeline_location_unlock,
+          kind: FushiDialogActionKind.primary,
+          onPressed: _submit,
         ),
       ],
     );

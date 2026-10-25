@@ -6,6 +6,7 @@ import 'package:fushi_audio/fushi_audio.dart'
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/profile/profile_document.dart'
     show kProfileSettingCategoryPref;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
@@ -3258,6 +3259,48 @@ class PreferencesRepository extends ChangeNotifier
     await setPref(
       srsFolderLocationsKey,
       jsonEncode(<Object?>[for (final SrsFolderLocation l in value) l.toJson()]),
+    );
+    notifyListeners();
+  }
+
+  /// 复习同步 v2 各存储位置的端到端加密密钥（JSON：位置身份 → [SrsLocationKey]）。**凭据**：设备本地，
+  /// 不进备份 / 同步 / Profile 快照，不写日志。
+  static const String srsLocationKeysKey = 'srs_sync2_location_keys';
+
+  Map<String, SrsLocationKey> get srsLocationKeys {
+    final Object? raw = getPref(srsLocationKeysKey, defaultValue: '');
+    if (raw is! String || raw.isEmpty) return const <String, SrsLocationKey>{};
+    try {
+      final Object? j = jsonDecode(raw);
+      if (j is! Map) return const <String, SrsLocationKey>{};
+      return <String, SrsLocationKey>{
+        for (final MapEntry<Object?, Object?> e in j.entries)
+          if (e.key is String && e.value is Map)
+            e.key! as String: SrsLocationKey.fromJson(
+              (e.value! as Map).cast<String, Object?>(),
+            ),
+      };
+    } on FormatException {
+      return const <String, SrsLocationKey>{};
+    }
+  }
+
+  /// [key] 为 null = 删掉这个位置的密钥。
+  Future<void> setSrsLocationKey(String locationId, SrsLocationKey? key) async {
+    final Map<String, SrsLocationKey> all = <String, SrsLocationKey>{
+      ...srsLocationKeys,
+    };
+    if (key == null) {
+      all.remove(locationId);
+    } else {
+      all[locationId] = key;
+    }
+    await setPref(
+      srsLocationKeysKey,
+      jsonEncode(<String, Object?>{
+        for (final MapEntry<String, SrsLocationKey> e in all.entries)
+          e.key: e.value.toJson(),
+      }),
     );
     notifyListeners();
   }
