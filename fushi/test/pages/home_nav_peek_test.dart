@@ -5,7 +5,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/pages/implementations/home_nav_peek.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
-    show kNavPeekRecentGap, navPeekRecentRowWidths;
+    show kNavPeekRecentGap, kNavPeekRecentMinHeight, navPeekRecentLayout;
 import 'package:fushi_core/fushi_core.dart' show MediaCollectionRow;
 
 MediaCollectionRow _collection(int id, String name) => MediaCollectionRow(
@@ -79,36 +79,56 @@ void main() {
     expect(units[2].collectionName, isNull);
   });
 
-  // 用户：「视频预览要自适应横屏，都要显示全并且等高」。
-  test('「最近」一排封面等高、按各自比例整张显示、放得下', () {
-    const double width = 296;
-    // 横版视频缩略图与竖版书封混排。
-    const List<double> aspects = <double>[16 / 9, 2 / 3, 16 / 9, 16 / 9];
-    final List<double> widths = navPeekRecentRowWidths(
-      aspects: aspects,
+  // 用户：「视频预览要自适应横屏，都要显示全并且等高」「预览有点小，视频横屏
+  // 看着难受」。
+  test('「最近」封面等高、按各自比例整张显示；横版挤成一排太矮时换成两排', () {
+    const double width = 336;
+    List<double> heightsOf(List<List<double>> rows, List<double> aspects) {
+      final List<double> widths = rows.expand((List<double> r) => r).toList();
+      return <double>[
+        for (int i = 0; i < aspects.length; i++) widths[i] / aspects[i],
+      ];
+    }
+
+    void expectFits(List<List<double>> rows) {
+      for (final List<double> row in rows) {
+        final double total =
+            row.fold<double>(0, (double a, double b) => a + b) +
+            kNavPeekRecentGap * (row.length - 1);
+        expect(total, lessThanOrEqualTo(width + 0.001));
+      }
+    }
+
+    // 四张横版视频：2 × 2，够高、等高、放得下。
+    const List<double> videos = <double>[16 / 9, 16 / 9, 16 / 9, 16 / 9];
+    final List<List<double>> videoRows = navPeekRecentLayout(
+      aspects: videos,
       maxWidth: width,
     );
-    final List<double> heights = <double>[
-      for (int i = 0; i < aspects.length; i++) widths[i] / aspects[i],
-    ];
-    for (final double h in heights) {
-      expect(h, moreOrLessEquals(heights.first));
+    expect(videoRows.map((List<double> r) => r.length), <int>[2, 2]);
+    final List<double> videoHeights = heightsOf(videoRows, videos);
+    for (final double h in videoHeights) {
+      expect(h, moreOrLessEquals(videoHeights.first));
+      expect(h, greaterThanOrEqualTo(kNavPeekRecentMinHeight));
     }
-    final double total =
-        widths.fold<double>(0, (double a, double b) => a + b) +
-        kNavPeekRecentGap * (aspects.length - 1);
-    expect(total, lessThanOrEqualTo(width + 0.001));
-    // 四本竖版书封：铺满整排，与原先的四等分同尺寸。
-    final List<double> books = navPeekRecentRowWidths(
+    expectFits(videoRows);
+
+    // 四本竖版书封：一排，与原先四等分同尺寸。
+    final List<List<double>> bookRows = navPeekRecentLayout(
       aspects: const <double>[2 / 3, 2 / 3, 2 / 3, 2 / 3],
       maxWidth: width,
     );
-    expect(books.first, moreOrLessEquals((width - kNavPeekRecentGap * 3) / 4));
-    // 只有一本时不会被放大成巨图：仍按四本时的高度。
-    final List<double> one = navPeekRecentRowWidths(
+    expect(bookRows, hasLength(1));
+    expect(
+      bookRows.single.first,
+      moreOrLessEquals((width - kNavPeekRecentGap * 3) / 4),
+    );
+
+    // 只有一本时不放大成巨图：仍按四本时的尺寸。
+    final List<List<double>> one = navPeekRecentLayout(
       aspects: const <double>[2 / 3],
       maxWidth: width,
     );
-    expect(one.single, moreOrLessEquals(books.first));
+    expect(one.single.single, moreOrLessEquals(bookRows.single.first));
   });
 }

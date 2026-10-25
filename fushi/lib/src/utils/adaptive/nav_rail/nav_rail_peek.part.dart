@@ -61,7 +61,7 @@ const Duration _kNavPeekCloseGrace = Duration(milliseconds: 260);
 /// 同一项的速览数据缓存多久。
 const Duration _kNavPeekCacheTtl = Duration(seconds: 30);
 
-const double _kNavPeekWidth = 320;
+const double _kNavPeekWidth = 360;
 const double _kNavPeekGap = 10;
 
 /// 收起 / 展开 rail 的格向速览卡登记自己：悬停进出与卡片定位都经它。
@@ -517,47 +517,56 @@ class _NavRailPeekContent extends StatelessWidget {
                               e.cover,
                           ],
                           builder:
-                              (BuildContext context, List<double> aspects) =>
-                                  LayoutBuilder(
-                                    builder:
-                                        (
-                                          BuildContext context,
-                                          BoxConstraints box,
-                                        ) {
-                                          final List<double> widths =
-                                              navPeekRecentRowWidths(
-                                                aspects: aspects,
-                                                maxWidth: box.maxWidth,
-                                              );
-                                          return Row(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.end,
-                                            children: <Widget>[
-                                              for (
-                                                int i = 0;
-                                                i < widths.length;
-                                                i++
-                                              ) ...<Widget>[
-                                                if (i > 0)
-                                                  const SizedBox(
-                                                    width: kNavPeekRecentGap,
-                                                  ),
-                                                SizedBox(
-                                                  width: widths[i],
-                                                  child: _NavPeekRecent(
-                                                    entry: value.recent[i],
-                                                    aspectRatio: aspects[i],
-                                                    fallbackIcon: item.icon,
-                                                    onOpen: () => onOpenEntry(
-                                                      value.recent[i],
+                              (
+                                BuildContext context,
+                                List<double> aspects,
+                              ) => LayoutBuilder(
+                                builder:
+                                    (BuildContext context, BoxConstraints box) {
+                                      final List<List<double>> rows =
+                                          navPeekRecentLayout(
+                                            aspects: aspects,
+                                            maxWidth: box.maxWidth,
+                                          );
+                                      final List<int> starts = <int>[0];
+                                      for (final List<double> row in rows) {
+                                        starts.add(starts.last + row.length);
+                                      }
+                                      return Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        spacing: kNavPeekRecentGap,
+                                        children: <Widget>[
+                                          for (int r = 0; r < rows.length; r++)
+                                            Row(
+                                              spacing: kNavPeekRecentGap,
+                                              children: <Widget>[
+                                                for (
+                                                  int j = 0;
+                                                  j < rows[r].length;
+                                                  j++
+                                                )
+                                                  SizedBox(
+                                                    width: rows[r][j],
+                                                    child: _NavPeekRecent(
+                                                      entry: value
+                                                          .recent[starts[r] + j],
+                                                      aspectRatio:
+                                                          aspects[starts[r] +
+                                                              j],
+                                                      fallbackIcon: item.icon,
+                                                      onOpen: () => onOpenEntry(
+                                                        value.recent[starts[r] +
+                                                            j],
+                                                      ),
                                                     ),
                                                   ),
-                                                ),
                                               ],
-                                            ],
-                                          );
-                                        },
-                                  ),
+                                            ),
+                                        ],
+                                      );
+                                    },
+                              ),
                         ),
                       ],
                     ],
@@ -765,28 +774,60 @@ const double kNavPeekDefaultCoverAspect = 2 / 3;
 const double kNavPeekRecentGap = 8;
 
 /// 「继续」条目封面的固定高度（宽度按封面比例算，见 [navPeekResumeCoverWidth]）。
-const double kNavPeekResumeCoverHeight = 84;
+const double kNavPeekResumeCoverHeight = 100;
 
 /// 「继续」封面的宽度：固定高 [kNavPeekResumeCoverHeight] 乘封面比例，夹在
-/// 48–150 之间（横版视频缩略图不至于把标题挤没）。
+/// 56–180 之间（横版视频缩略图整张显示，又不至于把标题挤没）。
 double navPeekResumeCoverWidth(double aspect) =>
-    (kNavPeekResumeCoverHeight * aspect).clamp(48.0, 150.0).toDouble();
+    (kNavPeekResumeCoverHeight * aspect).clamp(56.0, 180.0).toDouble();
 
-/// 「最近」一排各封面的宽度：整排**等高**、每张按自己的比例整张显示（横版
-/// 视频与竖版书封混排也不裁），高度取「铺满可用宽度」与「4 本竖版书封时的
-/// 高度」两者较小的那个——条目少时不会被放大成巨图，横版多时整排一起压低
-/// 以放得下（2026-10-25 用户「视频预览要自适应横屏，都要显示全并且等高」）。
-List<double> navPeekRecentRowWidths({
+/// 「最近」封面的最低高度：一排挤下去低于它就换成两排（横版视频四张一排只有
+/// 四十来像素高，2026-10-25 用户「预览有点小，视频横屏看着难受」）。
+const double kNavPeekRecentMinHeight = 80;
+
+/// 「最近」封面的排布：返回若干排、每排各封面的宽度（条目按顺序依次填）。
+///
+/// - 所有封面**同一高度**、按各自比例整张显示（横版视频与竖版书封混排也不裁）；
+/// - 先试一排；一排铺满后高度低于 [kNavPeekRecentMinHeight] 就每排少放一张、
+///   依次往下排，直到够高（四张横版视频 → 2 × 2）；
+/// - 高度不超过「4 本竖版书封一排」的高度：条目少时不放大成巨图。
+List<List<double>> navPeekRecentLayout({
   required List<double> aspects,
   required double maxWidth,
 }) {
-  if (aspects.isEmpty || maxWidth <= 0) return const <double>[];
-  final double sum = aspects.fold(0, (double a, double b) => a + b);
-  final double usable = maxWidth - kNavPeekRecentGap * (aspects.length - 1);
+  if (aspects.isEmpty || maxWidth <= 0) return const <List<double>>[];
   final double cap =
       (maxWidth - kNavPeekRecentGap * 3) / 4 / kNavPeekDefaultCoverAspect;
-  final double height = math.min(cap, usable / sum);
-  return <double>[for (final double a in aspects) height * a];
+  // 每排 perRow 张时，所有排共用的高度（各排铺满宽度时高度的最小值）。
+  double heightFor(int perRow) {
+    double height = cap;
+    for (int start = 0; start < aspects.length; start += perRow) {
+      final List<double> row = aspects.sublist(
+        start,
+        math.min(aspects.length, start + perRow),
+      );
+      final double sum = row.fold<double>(0, (double a, double b) => a + b);
+      final double usable = maxWidth - kNavPeekRecentGap * (row.length - 1);
+      height = math.min(height, usable / sum);
+    }
+    return height;
+  }
+
+  int perRow = aspects.length;
+  while (perRow > 1 && heightFor(perRow) < kNavPeekRecentMinHeight) {
+    perRow--;
+  }
+  final double height = heightFor(perRow);
+  return <List<double>>[
+    for (int start = 0; start < aspects.length; start += perRow)
+      <double>[
+        for (final double a in aspects.sublist(
+          start,
+          math.min(aspects.length, start + perRow),
+        ))
+          height * a,
+      ],
+  ];
 }
 
 /// 解出每张封面图自己的宽高比，交给 [builder]；没有封面、还没解出或解码失败
