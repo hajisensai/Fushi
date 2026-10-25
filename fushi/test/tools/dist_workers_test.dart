@@ -228,6 +228,64 @@ void main() {
     });
   });
 
+  group('integration tests', () {
+    test('the generated entry imports and dispatches every manifest test', () {
+      final String bash = distBashExecutable();
+      final ProcessResult r = Process.runSync(bash, <String>[
+        'tool/dist_test/itest_entry.sh',
+      ]);
+      expect(r.exitCode, 0, reason: '${r.stderr}');
+      final String entry = '${r.stdout}';
+      final List<String> files = readDistItests(
+        File(kDistItestManifestPath).readAsStringSync(),
+      ).keys.toList();
+      for (final String f in files) {
+        expect(
+          entry,
+          contains("import '../${f.substring('integration_test/'.length)}'"),
+        );
+        expect(entry, contains("'$f': t"));
+      }
+      expect(
+        RegExp(r'^import ', multiLine: true).allMatches(entry),
+        hasLength(files.length + 1),
+      );
+      expect(entry, contains("Platform.environment['FUSHI_DIST_ITEST']"));
+    });
+
+    test('never on an ssh-shim worker', () {
+      expect(
+        () => readDistWorkers(
+          '{"workers": [{"name": "fw", "kind": "ssh-shim", "os": "windows", '
+          '"host": "u@h", "capabilities": ["itest"]}]}',
+        ),
+        throwsA(isA<DistConfigError>()),
+      );
+    });
+
+    test('only on the first slot of a machine', () {
+      final List<DistWorker> workers = createDistWorkers(
+        readDistWorkers(
+          '{"workers": [{"name": "mac", "kind": "ssh-trusted", "os": "macos", '
+          '"host": "u@h", "slots": 2, "capabilities": ["itest"]}]}',
+        ).single,
+        repoRoot: '.',
+      );
+      final DistUnit itest = distItestUnits(<String, Set<DistPlatform>>{
+        'integration_test/a_test.dart': <DistPlatform>{DistPlatform.macos},
+      }).single;
+      expect(workers.map((DistWorker w) => w.eligible(itest)), <bool>[
+        true,
+        false,
+      ]);
+      const DistUnit unit = DistUnit(path: 'test/a_test.dart', weightMs: 1);
+      expect(workers.map((DistWorker w) => w.eligible(unit)), <bool>[
+        true,
+        true,
+      ]);
+    });
+  });
+
   test('FUSHI_DIST_SSH carries the snapshot push too', () {
     expect(distGitSshProgram(<String, String>{}), 'ssh');
     expect(

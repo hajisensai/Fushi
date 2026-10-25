@@ -75,6 +75,91 @@ void main() {
     expect(r.failure, contains('produced no events'));
   });
 
+  test('integration test suites are matched by their whole path', () {
+    const List<String> itest = <String>['integration_test/a_test.dart'];
+    expect(_result(itest, _run(itest)).failure, isNull);
+    // `.../integration_test/a_test.dart` is not `test/a_test.dart`.
+    expect(
+      _result(<String>['test/a_test.dart'], _run(itest)).missingSuites,
+      <String>['test/a_test.dart'],
+    );
+  });
+
+  test('an integration test launch report becomes a suite of its own', () {
+    const List<String> itests = <String>[
+      'integration_test/a_test.dart',
+      'integration_test/b_test.dart',
+    ];
+    final List<String> lines = expandDistItestReports(<String>[
+      'Building macOS application...',
+      distItestReport(path: itests[0], exitCode: 0, ms: 9000),
+      distItestReport(
+        path: itests[1],
+        exitCode: 1,
+        ms: 12000,
+        tail: 'Failure in method: opens the reader',
+      ),
+    ]);
+    final DistBatchResult r = _result(itests, lines, exitCode: 1);
+    expect(r.missingSuites, isEmpty);
+    expect(r.summary.testsCompleted, 2);
+    expect(failedSuitesOf(r), <String>['integration_test/b_test.dart']);
+    expect(lines.join('\n'), contains('Failure in method: opens the reader'));
+    expect(lines.first, 'Building macOS application...');
+
+    // drive exits 0 when every test skipped: nothing ran, so it is red.
+    const String allSkipped =
+        'flutter: 00:00 +0: plays a video\n'
+        'flutter: 00:00 +0 ~1: (tearDownAll)\n'
+        'flutter: 00:00 +1 ~1: All tests passed!';
+    expect(driveProgressOf(allSkipped), (tests: 1, skipped: 1));
+    expect(
+      failedSuitesOf(
+        _result(
+          <String>[itests[0]],
+          expandDistItestReports(<String>[
+            distItestReport(
+              path: itests[0],
+              exitCode: 0,
+              ms: 1,
+              tail: allSkipped,
+            ),
+          ]),
+        ),
+      ),
+      <String>[itests[0]],
+    );
+    // Some skipped, the rest ran: green, and the skip is reported.
+    const String someSkipped =
+        'flutter: 00:00 +0: a\n'
+        'flutter: 00:04 +1: b\n'
+        'flutter: 00:05 +1 ~1: (tearDownAll)\n'
+        'flutter: 00:05 +2 ~1: All tests passed!';
+    expect(driveProgressOf(someSkipped), (tests: 2, skipped: 1));
+    // Windows prints the same lines without the `flutter: ` prefix.
+    expect(driveProgressOf(allSkipped.replaceAll('flutter: ', '')), (
+      tests: 1,
+      skipped: 1,
+    ));
+    final DistBatchResult partly = _result(
+      <String>[itests[0]],
+      expandDistItestReports(<String>[
+        distItestReport(path: itests[0], exitCode: 0, ms: 1, tail: someSkipped),
+      ]),
+    );
+    expect(partly.failure, isNull);
+    expect(platformSkipsOf(partly), hasLength(1));
+    expect(
+      _result(
+        <String>[itests[0]],
+        expandDistItestReports(<String>[
+          distItestReport(path: itests[0], exitCode: 0, ms: 1),
+        ]),
+      ).failure,
+      isNull,
+    );
+  });
+
   test('non-zero exit, no done, zero tests, infra error: all red', () {
     expect(_result(files, _run(files), exitCode: 1).failure, isNotNull);
     expect(_result(files, _run(files)..removeLast()).failure, isNotNull);

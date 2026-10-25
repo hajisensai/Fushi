@@ -153,6 +153,23 @@ void main() {
     };
     bool any(DistUnit u) => u.eligibleFor(DistPlatform.macos, <String>{});
 
+    test('one retry after an infrastructure failure, per suite', () {
+      const DistUnit hangs = DistUnit(path: 'test/hang_test.dart', weightMs: 9);
+      const DistUnit other = DistUnit(path: 'test/ok_test.dart', weightMs: 5);
+      final DistSuiteQueue queue = DistSuiteQueue(<DistUnit>[hangs, other]);
+      final DistBatch first = queue.take(eligible: any, budgetMs: 100)!;
+      expect(queue.retryAfterInfra(first), isTrue);
+      expect(queue.remaining, hasLength(2));
+      // Given back and cut up again: the new batch is a different object,
+      // the retry was spent all the same.
+      final DistBatch second = queue.take(eligible: any, budgetMs: 9)!;
+      expect(second.files, <String>['test/hang_test.dart']);
+      expect(queue.retryAfterInfra(second), isFalse);
+      expect(queue.remaining.map((DistUnit u) => u.path), <String>[
+        'test/ok_test.dart',
+      ]);
+    });
+
     test('draining it hands out every placement exactly once', () {
       final DistSuiteQueue queue = DistSuiteQueue(
         distUnits(
@@ -326,6 +343,7 @@ void main() {
 
   test('isSafeDistTestPath', () {
     expect(isSafeDistTestPath('test/a/b_test.dart'), isTrue);
+    expect(isSafeDistTestPath('integration_test/app_smoke_test.dart'), isTrue);
     for (final String bad in <String>[
       'test/../x_test.dart',
       '/etc/x_test.dart',
@@ -334,9 +352,68 @@ void main() {
       'test/a_test.dart; rm -rf ~',
       'lib/a_test.dart',
       'test/a.dart',
+      'integration_test/../lib/x_test.dart',
+      'integration_test/helpers/a.dart',
     ]) {
       expect(isSafeDistTestPath(bad), isFalse, reason: bad);
     }
+  });
+
+  group('integration tests', () {
+    test('every manifest entry is an existing test with its platforms', () {
+      final Map<String, Set<DistPlatform>> manifest = readDistItests(
+        File(kDistItestManifestPath).readAsStringSync(),
+      );
+      expect(manifest, isNotEmpty);
+      for (final MapEntry<String, Set<DistPlatform>> e in manifest.entries) {
+        expect(File(e.key).existsSync(), isTrue, reason: e.key);
+        expect(e.value, isNotEmpty, reason: e.key);
+      }
+    });
+
+    test('manifest entries are checked', () {
+      void rejects(String json) => expect(
+        () => readDistItests(json),
+        throwsFormatException,
+        reason: json,
+      );
+      rejects('{"pins": {}}');
+      rejects('{"itests": {"test/a_test.dart": {"platforms": ["macos"]}}}');
+      rejects(
+        '{"itests": {"integration_test/a_test.dart": {"platforms": []}}}',
+      );
+      rejects(
+        '{"itests": {"integration_test/a_test.dart": {"platforms": ["linux"]}}}',
+      );
+      rejects('{"itests": {"integration_test/a_test.dart": {}}}');
+    });
+
+    test('one unit per platform, all needing the itest capability', () {
+      final List<DistUnit> units = distItestUnits(<String, Set<DistPlatform>>{
+        'integration_test/a_test.dart': <DistPlatform>{
+          DistPlatform.macos,
+          DistPlatform.windows,
+        },
+        'integration_test/b_test.dart': <DistPlatform>{DistPlatform.macos},
+      });
+      expect(units.map((DistUnit u) => '${u.path}|${u.label}'), <String>[
+        'integration_test/a_test.dart|windows+itest',
+        'integration_test/a_test.dart|macos+itest',
+        'integration_test/b_test.dart|macos+itest',
+      ]);
+      expect(units.first.weightMs, kDistItestWeightMs);
+      expect(
+        units.first.eligibleFor(DistPlatform.windows, <String>{}),
+        isFalse,
+        reason: 'a worker that did not opt in never launches the app',
+      );
+      expect(
+        units.first.eligibleFor(DistPlatform.windows, <String>{
+          kDistItestCapability,
+        }),
+        isTrue,
+      );
+    });
   });
 
   test('splitByPathChars keeps order and the character cap', () {

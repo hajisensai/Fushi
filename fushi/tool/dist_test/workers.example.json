@@ -4,7 +4,7 @@
       "name": "self-win",
       "kind": "local",
       "os": "windows",
-      "capabilities": ["golden", "realdata", "ffmpeg", "chrome"]
+      "capabilities": ["golden", "realdata", "ffmpeg", "chrome", "itest"]
     },
     {
       "name": "self-mac",
@@ -19,7 +19,7 @@
         "HTTPS_PROXY": "http://127.0.0.1:7897",
         "HTTP_PROXY": "http://127.0.0.1:7897"
       },
-      "capabilities": []
+      "capabilities": ["itest"]
     },
     {
       "name": "friend-win",

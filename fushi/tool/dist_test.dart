@@ -19,6 +19,8 @@ import 'test_flow/suite_timings.dart';
 ///   dart tool/dist_test.dart --workers=self-mac  # a subset of workers
 ///   dart tool/dist_test.dart --status            # who is reachable
 ///   dart tool/dist_test.dart --dry-run           # show what would run where
+///   dart tool/dist_test.dart --itest             # the desktop integration
+///                                                # tests of dist_itests.json
 ///
 /// Any other `--flag` is passed to every `flutter test` (e.g.
 /// `--exclude-tags golden`). Workers: tool/dist_test/workers.local.json.
@@ -28,6 +30,13 @@ import 'test_flow/suite_timings.dart';
 /// only when green.
 Future<void> main(List<String> args) async {
   final _Options options = _Options.parse(args);
+  if (options.itest && options.flutterArgs.isNotEmpty) {
+    stderr.writeln(
+      '--itest takes no flutter test options '
+      '(${options.flutterArgs.join(' ')}): each file is one app launch',
+    );
+    exit(64);
+  }
   if (!hasSharedConsole()) {
     stderr.writeln(
       'dist_test: this process has no console, so every flutter / git / ssh '
@@ -91,40 +100,50 @@ Future<void> main(List<String> args) async {
   }
 
   // ---- plan ----
-  final Map<String, int> bytes = _discoverSuites(options.paths);
-  if (bytes.isEmpty) {
-    stderr.writeln('no *_test.dart under ${options.paths.join(', ')}');
-    exit(64);
-  }
-  final List<String> unsafe = <String>[
-    for (final String p in bytes.keys)
-      if (!isSafeDistTestPath(p)) p,
-  ];
-  if (unsafe.isNotEmpty) {
-    stderr.writeln(
-      'test paths outside [A-Za-z0-9_./-] cannot be shipped: '
-      '${unsafe.join(', ')}',
+  final Map<String, int> weights;
+  final List<DistUnit> units;
+  if (options.itest) {
+    final Map<String, Set<DistPlatform>> manifest = _selectItests(
+      options.paths,
     );
-    exit(64);
+    weights = <String, int>{
+      for (final String p in manifest.keys) p: kDistItestWeightMs,
+    };
+    units = distItestUnits(manifest);
+  } else {
+    final Map<String, int> bytes = _discoverSuites(options.paths);
+    if (bytes.isEmpty) {
+      stderr.writeln('no *_test.dart under ${options.paths.join(', ')}');
+      exit(64);
+    }
+    final List<String> unsafe = <String>[
+      for (final String p in bytes.keys)
+        if (!isSafeDistTestPath(p)) p,
+    ];
+    if (unsafe.isNotEmpty) {
+      stderr.writeln(
+        'test paths outside [A-Za-z0-9_./-] cannot be shipped: '
+        '${unsafe.join(', ')}',
+      );
+      exit(64);
+    }
+    weights = suiteShardWeights(
+      bytes,
+      readSuiteTimings(File(kSuiteTimingsPath)),
+    );
+    final Map<String, Set<DistPlatform>> pins = readDistAffinity(
+      File(kDistAffinityPath).readAsStringSync(),
+    );
+    final Map<String, SuiteRequirement> requirements =
+        <String, SuiteRequirement>{
+          for (final String p in bytes.keys)
+            p: applyDistPin(
+              scanSuiteRequirement(File(p).readAsStringSync()),
+              pins[p],
+            ),
+        };
+    units = distUnits(weights: weights, requirements: requirements);
   }
-  final Map<String, int> weights = suiteShardWeights(
-    bytes,
-    readSuiteTimings(File(kSuiteTimingsPath)),
-  );
-  final Map<String, Set<DistPlatform>> pins = readDistAffinity(
-    File(kDistAffinityPath).readAsStringSync(),
-  );
-  final Map<String, SuiteRequirement> requirements = <String, SuiteRequirement>{
-    for (final String p in bytes.keys)
-      p: applyDistPin(
-        scanSuiteRequirement(File(p).readAsStringSync()),
-        pins[p],
-      ),
-  };
-  final List<DistUnit> units = distUnits(
-    weights: weights,
-    requirements: requirements,
-  );
   final List<DistUnit> unplaceable = <DistUnit>[
     for (final DistUnit u in units)
       if (!workers.any((DistWorker w) => w.eligible(u))) u,
@@ -390,11 +409,10 @@ class _Scheduler {
         '$base.jsonl',
       ).writeAsStringSync(run.lines.isEmpty ? '' : '${run.lines.join('\n')}\n');
 
-      if (run.infraError != null && batch.attempts == 0) {
+      if (run.infraError != null && queue.retryAfterInfra(batch)) {
         // Back into the queue for whichever worker asks next. Test failures
         // are never retried (that would hide flaky reds); this is only for
         // runs that did not get a fair chance.
-        queue.giveBack(batch);
         weightByBatch.remove(batch.id);
         stdout.writeln(
           '[${worker.name}] batch ${batch.id} requeued: '
@@ -412,11 +430,12 @@ class _Scheduler {
         }
         continue;
       }
+      // A second infrastructure failure of suites that already had their
+      // retry is recorded red and blamed on them (a test that hangs every
+      // time), not on this worker: it does not count towards dropping it.
       if (run.infraError == null) {
         infraStreak = 0;
         speed.record(wallMs: sw.elapsedMilliseconds, weightMs: batch.weightMs);
-      } else {
-        infraStreak++;
       }
       final DistBatchResult result = DistBatchResult(
         batchId: batch.id,
@@ -602,6 +621,7 @@ class _Options {
     required this.outputDir,
     required this.status,
     required this.dryRun,
+    required this.itest,
   });
 
   final List<String> paths;
@@ -612,6 +632,9 @@ class _Options {
   final bool status;
   final bool dryRun;
 
+  /// Integration tests (tool/test_flow/dist_itests.json) instead of test/.
+  final bool itest;
+
   static _Options parse(List<String> args) {
     final List<String> paths = <String>[];
     final List<String> flutterArgs = <String>[];
@@ -620,12 +643,15 @@ class _Options {
     String? outputDir;
     bool status = false;
     bool dryRun = false;
+    bool itest = false;
     for (int i = 0; i < args.length; i++) {
       final String arg = args[i];
       if (arg == '--status') {
         status = true;
       } else if (arg == '--dry-run') {
         dryRun = true;
+      } else if (arg == '--itest') {
+        itest = true;
       } else if (arg.startsWith('--config=')) {
         configPath = arg.substring('--config='.length);
       } else if (arg.startsWith('--workers=')) {
@@ -638,7 +664,8 @@ class _Options {
         if (!arg.contains('=') &&
             i + 1 < args.length &&
             !args[i + 1].startsWith('-') &&
-            !args[i + 1].startsWith('test')) {
+            !args[i + 1].startsWith('test') &&
+            !args[i + 1].startsWith('integration_test')) {
           flutterArgs.add(args[++i]);
         }
       } else {
@@ -646,15 +673,43 @@ class _Options {
       }
     }
     return _Options(
-      paths: paths.isEmpty ? <String>['test'] : paths,
+      paths: paths.isEmpty && !itest ? <String>['test'] : paths,
       flutterArgs: flutterArgs,
       configPath: configPath,
       workers: workers,
       outputDir: outputDir,
       status: status,
       dryRun: dryRun,
+      itest: itest,
     );
   }
+}
+
+/// The manifest's integration tests, all of them or the [paths] given (each
+/// must be listed: the manifest says on which platforms it runs).
+Map<String, Set<DistPlatform>> _selectItests(List<String> paths) {
+  final Map<String, Set<DistPlatform>> manifest;
+  try {
+    manifest = readDistItests(File(kDistItestManifestPath).readAsStringSync());
+  } on FormatException catch (e) {
+    stderr.writeln('$kDistItestManifestPath: ${e.message}');
+    exit(64);
+  }
+  if (paths.isEmpty) return manifest;
+  final List<String> unlisted = <String>[
+    for (final String p in paths)
+      if (!manifest.containsKey(p)) p,
+  ];
+  if (unlisted.isNotEmpty) {
+    stderr.writeln(
+      'not in $kDistItestManifestPath (add it there with its platforms): '
+      '${unlisted.join(', ')}',
+    );
+    exit(64);
+  }
+  return <String, Set<DistPlatform>>{
+    for (final String p in paths) p: manifest[p]!,
+  };
 }
 
 /// `*_test.dart` under [paths] (files or directories inside `test/`) → bytes.

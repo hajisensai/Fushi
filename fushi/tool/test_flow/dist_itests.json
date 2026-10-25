@@ -1,0 +1,70 @@
+{
+  "itests": {
+    "integration_test/app_smoke_test.dart": {
+      "platforms": [
+        "windows",
+        "macos"
+      ]
+    },
+    "integration_test/card_source_return_test.dart": {
+      "platforms": [
+        "windows",
+        "macos"
+      ]
+    },
+    "integration_test/comprehensive_imports_test.dart": {
+      "platforms": [
+        "windows",
+        "macos"
+      ]
+    },
+    "integration_test/comprehensive_reader_lookup_test.dart": {
+      "platforms": [
+        "windows",
+        "macos"
+      ]
+    },
+    "integration_test/comprehensive_settings_test.dart": {
+      "platforms": [
+        "windows",
+        "macos"
+      ]
+    },
+    "integration_test/desktop_reader_columns_dom_test.dart": {
+      "platforms": [
+        "windows",
+        "macos"
+      ]
+    },
+    "integration_test/desktop_reader_css_dom_test.dart": {
+      "platforms": [
+        "windows",
+        "macos"
+      ]
+    },
+    "integration_test/desktop_settings_smoke_test.dart": {
+      "platforms": [
+        "windows",
+        "macos"
+      ]
+    },
+    "integration_test/home_keyboard_test.dart": {
+      "platforms": [
+        "windows",
+        "macos"
+      ]
+    },
+    "integration_test/module_gating_test.dart": {
+      "platforms": [
+        "windows",
+        "macos"
+      ]
+    },
+    "integration_test/regression_test.dart": {
+      "platforms": [
+        "windows",
+        "macos"
+      ]
+    }
+  }
+}

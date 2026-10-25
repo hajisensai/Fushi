@@ -185,10 +185,6 @@ class DistBatch {
   final int id;
   final List<DistUnit> units;
 
-  /// Infrastructure attempts so far (ssh drop, timeout); test failures are
-  /// never retried.
-  int attempts = 0;
-
   /// Suite paths, sorted.
   late final List<String> files = <String>[
     for (final DistUnit u in units) u.path,
@@ -268,6 +264,21 @@ class DistSuiteQueue {
     _units
       ..addAll(batch.units)
       ..sort(_heaviestFirst);
+  }
+
+  /// Units already given back once after an infrastructure failure.
+  final Set<DistUnit> _retried = Set<DistUnit>.identity();
+
+  /// After an infrastructure failure (ssh drop, timeout): puts [batch] back
+  /// and returns true when none of its units had that second chance yet;
+  /// false when one had (a suite that hangs every time is then reported, not
+  /// retried until every worker is dropped). Kept per unit, not per batch:
+  /// a given-back batch is cut up again into new batches.
+  bool retryAfterInfra(DistBatch batch) {
+    if (batch.units.any(_retried.contains)) return false;
+    _retried.addAll(batch.units);
+    giveBack(batch);
+    return true;
   }
 }
 
@@ -353,7 +364,89 @@ final RegExp kDistTestPathPattern = RegExp(
 );
 
 bool isSafeDistTestPath(String path) =>
-    kDistTestPathPattern.hasMatch(path) && !path.split('/').contains('..');
+    (kDistTestPathPattern.hasMatch(path) ||
+        kDistItestPathPattern.hasMatch(path)) &&
+    !path.split('/').contains('..');
+
+/// Integration test files (`dist_test.dart --itest`): the real app, built and
+/// launched on a desktop.
+final RegExp kDistItestPathPattern = RegExp(
+  r'^integration_test/[A-Za-z0-9_./-]+_test\.dart$',
+);
+
+bool isDistItestPath(String path) => path.startsWith('integration_test/');
+
+/// The capability every integration test unit carries: a worker runs them
+/// only when its config lists it (its owner agreed to the app being built
+/// and launched there, off-screen, under an isolated data root).
+const String kDistItestCapability = 'itest';
+
+/// Which integration tests are distributed, and on which desktop platforms
+/// (relative to `fushi/`). A list and not a scan: most of integration_test/
+/// are probes that need real discs, games, devices or `--dart-define`d
+/// files, and nothing in a file says which.
+const String kDistItestManifestPath = 'tool/test_flow/dist_itests.json';
+
+/// Model cost of one integration test file: one launch of the app built
+/// once per run (start-up plus the test, 10-40 s measured), not a build.
+const int kDistItestWeightMs = 40000;
+
+/// The generated entry every distributed integration test is built into
+/// (tool/dist_test/itest_entry.sh; git-ignored).
+const String kDistItestEntryPath = 'integration_test/.dist/entry.dart';
+
+/// Reads `{"itests": {path: {"platforms": [...]}}}`; every entry names at
+/// least one platform and an `integration_test/..._test.dart` path.
+Map<String, Set<DistPlatform>> readDistItests(String text) {
+  final Object? decoded = jsonDecode(text);
+  final Object? itests = decoded is Map<String, Object?>
+      ? decoded['itests']
+      : null;
+  if (itests is! Map<String, Object?>) {
+    throw const FormatException('expected {"itests": {path: {...}}}');
+  }
+  final Map<String, Set<DistPlatform>> out = <String, Set<DistPlatform>>{};
+  for (final MapEntry<String, Object?> e in itests.entries) {
+    if (!isSafeDistTestPath(e.key) || !isDistItestPath(e.key)) {
+      throw FormatException('${e.key}: not an integration_test/*_test.dart');
+    }
+    final Object? entry = e.value;
+    if (entry is! Map<String, Object?> ||
+        entry['platforms'] is! List<Object?>) {
+      throw FormatException('${e.key}: needs "platforms"');
+    }
+    final Set<DistPlatform> platforms = <DistPlatform>{
+      for (final Object? p in entry['platforms']! as List<Object?>)
+        DistPlatform.values.firstWhere(
+          (DistPlatform d) => d.name == p,
+          orElse: () =>
+              throw FormatException('${e.key}: unknown platform "$p"'),
+        ),
+    };
+    if (platforms.isEmpty) throw FormatException('${e.key}: empty "platforms"');
+    out[e.key] = platforms;
+  }
+  return out;
+}
+
+/// One unit per (integration test, platform): each one is about the app on
+/// that platform, so it runs on every platform the manifest lists.
+/// [weights] holds measured ms where known.
+List<DistUnit> distItestUnits(
+  Map<String, Set<DistPlatform>> manifest, {
+  Map<String, int> weights = const <String, int>{},
+}) => <DistUnit>[
+  for (final String path in manifest.keys)
+    for (final DistPlatform platform
+        in manifest[path]!.toList()
+          ..sort((DistPlatform a, DistPlatform b) => a.index - b.index))
+      DistUnit(
+        path: path,
+        weightMs: weights[path] ?? kDistItestWeightMs,
+        platform: platform,
+        capabilities: const <String>{kDistItestCapability},
+      ),
+];
 
 /// The worker to re-run a red [unit] on for classification: one that may run
 /// it and sits on a different machine than [redMachine] (another slot of the

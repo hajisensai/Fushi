@@ -1,6 +1,60 @@
 # 单元测试跨机分流（dist_test）设计
 
-日期：2026-10-24　状态：第一期（本机 + 自己的 Mac）、第二期（朋友机器：shim / 暂停 / 资源上限 / 种子仓）、第三期中的「红 suite 跨机复跑分型」与「平台原因跳过报告」已实现；集成测试分流未做（单独设计）。朋友真机与 Tailscale 共享尚未接入，见「第二期实现」末尾的验证范围。
+日期：2026-10-24　状态：第一期（本机 + 自己的 Mac）、第二期（朋友机器：shim / 暂停 / 资源上限 / 种子仓）、第三期（红 suite 跨机复跑分型、平台原因跳过报告、桌面集成测试分流 `--itest`）已实现。朋友真机与 Tailscale 共享尚未接入，见「第二期实现」末尾的验证范围。
+
+## 集成测试分流（`--itest`，2026-10-25）
+
+### 形态
+
+- `dart tool/dist_test.dart --itest [integration_test/<f>_test.dart ...]`：只跑清单 `fushi/tool/test_flow/dist_itests.json` 里的文件（显式给的路径也必须在清单里），每个文件在清单列出的**每个**平台各跑一次（一个文件 × 一个平台 = 一个单元，能力 `itest`）。清单而不是扫描：`integration_test/` 大部分是要真盘 / 真游戏 / 真机 / `--dart-define` 素材的探针，文件里没有任何东西能说明它属于哪种。不接受 flutter 参数。
+- 只有配置里声明了 `itest` 能力的 worker 接，且只在每台机器的第一个槽位（同机共享屏幕 / GPU / app 级服务）。`ssh-shim`（朋友机器）声明 `itest` 直接是配置错误；shim 的 `run` 只认数字并发，`worker_run.sh itest` 经 shim 不可达（契约测试钉住）。
+- 本机 Windows worker 走 `tool/run_windows_itest.ps1`（隔离的唯一真相源：APPDATA / LOCALAPPDATA / TEMP / USERPROFILE 重定向、WebView2 profile、进程归属核对）；Mac worker 经 ssh 跑 `worker_run.sh itest`，设 `FUSHI_TEST_HIDDEN`（离屏、不抢焦点）与 `FUSHI_TEST_ROOT`（全新数据根）。
+- **一台机器每轮只编一次 app**：`tool/dist_test/itest_entry.sh` 按清单生成 `integration_test/.dist/entry.dart`（git-ignored），import 全部清单文件，启动时按环境变量 `FUSHI_DIST_ITEST` 选跑哪一个；先 `flutter build <os> --debug -t` 它，之后每个文件一次 `flutter drive --use-application-binary`——每个文件仍是独立进程、独立数据根，测试本身不改。数据根只经环境变量传（dart-define 改不了已编好的二进制，也会让构建输入每次不同）。Mac 侧按「检出提交 + entry 内容」打戳，同一轮后续批次不再编。
+- `flutter drive` 没有 json reporter：每个文件回一行 `{"type":"fushiItest", path, exitCode, ms, tail}`（tail 是 app 的进度行加输出末 40 行，base64），协调者展开成标准事件（一个文件一个 suite、一个以文件命名的测试），判绿 / 计时 / 复跑 / 跳过报告照旧。**drive 在全部测试 skip 时也退出 0**：进度行显示一个都没跑的判红（「这个平台上什么都没跑，清单不该列它」）；部分 skip 进「Skipped for a platform reason」。进度行在 Mac 带 `flutter: ` 前缀、Windows 不带，两种都认。
+- Windows 绿的那次启动的证据目录（隔离数据根，约 20 MB）用完即删，红的留着分型；分流模式不截 PrintWindow 图（脚本自己注明那些图对 Flutter / WebView 通常是空白）。
+
+### 为什么要「一次编译」：实测
+
+第一版每个文件一次 `flutter test -d <os> <file>`。按 json 事件拆开，单文件耗时几乎全在加载：
+
+| | 每文件加载（编译 + 启动） | 测试本身 |
+|---|---|---|
+| Mac M4 | 45 s（代码没变也是） | 3–40 s |
+| 本机 Windows | 80–130 s（冷编 357 s） | 4–40 s |
+
+`flutter test -v` 显示原因：桌面集成测试的构建目标是 flutter_tools 每次新生成在临时目录里的 `listener.dart`（`-dTargetFile=/var/folders/.../flutter_test_listener.XXXX/listener.dart`），所以每次都是一份新构建——`kernel_snapshot_program` 每次重编 20 s，build hooks 重跑，什么都复用不上；同一个 entry、同样参数连跑也一样。这是 `flutter test -d` 的固有行为，调参数绕不过。换成「编一次 + `drive --use-application-binary`」后在 Mac 上：`home_keyboard` 54 s → 12 s（测试 9 s），`module_gating` 66 s → 23 s（测试 21 s）。
+
+整轮（22 个候选文件 × 两平台，本机 + Mac 并行）：旧做法跑了约 60 分钟还没跑完（见下面的挂死问题，两台都被剔除，8 个文件没跑）；新做法 15 分 33 秒跑完全部 44 个单元。清单定稿后的验收数字见「验收」。
+
+### 顺带修掉的问题
+
+- **基础设施重试从没生效过**（第一期起）：「超时 / 断连的批次退回队列重试一次」靠 `DistBatch.attempts`，但它从没被加过，而退回的批次会被重新切成新批次、计数归零——一个每次都挂死的 suite 会一直重试到所有 worker 都被剔除（实测 `reader_keyboard` 两台各挂 17 分钟后两台都被剔除）。改为队列按**单元**记「已重试过」：每个单元只重试一次，第二次仍是基础设施失败就记红、归咎于 suite 而不计入 worker 的剔除计数。单元测试同样受益。
+- **suite 路径匹配把 `integration_test/a_test.dart` 当成 `test/a_test.dart`**（`matchKnownSuite` 只认 `test/` 锚点，落在 `integration_test/` 里面）：改为在任意 `/` 边界截后缀匹配。
+- **隔离泄漏（app 侧真 bug）**：`browser_extension_installer.dart` 直接取平台 app-support 目录、不认 `FUSHI_TEST_ROOT`。Mac 上 debug 包与正式版同 bundle id，集成测试一启动就把用户真实的 `hibiki-browser-extension/` 删掉重写，`fushi-defaults.js` 里换成测试实例的 token（实测 Mac 上该目录 10-25 14:53 被改写，正是探针启动的时刻）。改为测试根下落进测试根（生产路径不变：扩展按绝对路径被浏览器记住，不能跟数据根搬家）。
+
+### 已知残留风险
+
+- Mac 上 debug 包与正式版同 bundle id（`app.fushi.reader`），`NSUserDefaults`（`~/Library/Preferences/app.fushi.reader.plist`，`shared_preferences` 已被测试根接管，但窗口位置等系统级写入不经它）与 WebKit 缓存（`~/Library/Caches/app.fushi.reader/WebKit`）按 bundle id 共享，环境变量隔离不到。实测两处 10-25 有改动，但该机同时开着用户的正式版，分不清是谁写的。根治要让测试构建换 bundle id，未做。
+- `lib/` 里还有约 20 处直接调 `getApplicationSupportDirectory()` / `getApplicationDocumentsDirectory()`、不经 `AppPaths` 的测试根分支（制卡增强的临时文件、图标偏好、更新下载等）；这轮清单内的测试没有走到它们（实测本机与 Mac 的真实数据目录除上面两处外无改动），但新加进清单的测试可能走到。
+
+### 清单与验收
+
+清单收录的 11 个文件是两轮独立实测里两平台都绿的：`app_smoke`、`card_source_return`、`comprehensive_imports`、`comprehensive_reader_lookup`、`comprehensive_settings`、`desktop_reader_columns_dom`、`desktop_reader_css_dom`、`desktop_settings_smoke`、`home_keyboard`、`module_gating`、`regression`。
+
+验收（2026-10-25，本机 Windows + M4 Mac，清单全量）：`DIST TEST VERDICT: PASSED - 22 tests ran on 2 worker(s)`，墙钟 **9 分 41 秒**。Mac 编一次后单文件 5–23 s；Windows 首批含编译 164 s，之后单文件 17–49 s——Windows 是瓶颈（11 个文件串行），每次启动仍有约 15 s 的固定开销（PowerShell + runner 的进程归属核对 + drive 连接）。旧做法同样 11 个文件仅 Windows 一侧就要约 22 分钟。
+
+候选里**两平台都红、没进清单**的（CI 从不跑它们，红是早就坏了的测试，不是分流引入的；修它们是另一件事）：
+
+| 文件 | 症状（两平台一致） |
+|---|---|
+| `feature_flows` | 找不到图标 `IconData(U+0EEBC)` 的控件 |
+| `navigation_stability` | 遍历设置目的地时抛 `StateError` |
+| `reader_caret` | 找不到 `book_entry_fushi://book/Pagination Test…` 的书架条目 |
+| `reader_dictionary` | 断言 `Expected: true, Actual: false`（阅读器查词） |
+| `reader_keyboard` | `FlutterError.onError` 未还原的断言后**挂死**到超时 |
+| `reader_pagination` / `reader_popup_caret` / `reader_settings_layout_reachability` / `settings_validation` / `user_path` | 测试失败（日志见实测输出目录） |
+| `video_position_restore` | Windows 红；Mac 上因缺素材整文件 skip |
+| `video_player` | `skip: true`（要真机 + `fixtures/sample.mp4`），桌面上什么都不跑 |
 
 ## 第二期实现：朋友机器（`ssh-shim`）
 
@@ -47,7 +101,7 @@
 
 - **红 suite 跨机复跑分型**：主队列跑完后，每个红 suite（有 error 事件或零事件的；整批红又定位不到 suite 时取整批）单独在**另一台机器**（不是同机另一个槽位：同机共享磁盘 / 内存 / 负载，分不出本机伪红）上能跑它的 worker 再跑一次，最快的机器优先，每台串行。报告 `summary.md` 的「Red suites re-run on another machine」逐条写「两台都红 = 真红」「只在 X 红」或「没复跑：原因」。**判绿结论不因复跑改变**，「只在 X 红」仍要按 `docs/agent/fast-workflow.md` 的并发伪红判别分型。红 suite 超过 20 个不复跑（整轮已经坏到复跑解释不了）。worker 在复跑结束后才释放锁 / 租约。
 - **平台原因跳过报告**：json 事件里 `skip` 且 `skipReason` 带平台字样（windows / macos / linux / platform / host）的测试列进「Skipped for a platform reason」——这是静态扫描没看到的宿主依赖、覆盖在那台机器上悄悄丢了。**只报告不回写**：宿主依赖按根因修，手工钉选进 `dist_affinity.json` 必须写原因（与第一期的规则一致），所以原设计的 `suite_affinity.json` 自动回写不做。
-- 集成测试分流：未做，要真 app / 显示器 / 模拟器，单独设计。
+- 集成测试分流：已做（桌面 Windows / macOS，见文首「集成测试分流」；Android 模拟器 / iOS 不在范围内）。
 
 ## 第一期实现（与下文设计的差异以此为准）
 

@@ -105,6 +105,173 @@ List<List<String>> splitEventRuns(List<String> lines) {
   return runs;
 }
 
+/// `type` of the one line an integration test launch reports (worker_run.sh
+/// itest mode, and the local worker): `flutter drive` has no json reporter.
+const String kDistItestReportType = 'fushiItest';
+
+/// The json reporter's first event of a run.
+const String _kStartEventType = 'start';
+
+/// The report line of one integration test launch; [tail] is the end of
+/// drive's output (the failure, when there is one).
+String distItestReport({
+  required String path,
+  required int exitCode,
+  required int ms,
+  String tail = '',
+}) => jsonEncode(<String, Object?>{
+  'type': kDistItestReportType,
+  'path': path,
+  'exitCode': exitCode,
+  'ms': ms,
+  'tail': base64Encode(utf8.encode(tail)),
+});
+
+/// The app's progress lines in `flutter drive` output:
+/// `flutter: 00:04 +1 ~1: <test name>` on macOS, without the `flutter: `
+/// prefix on Windows.
+final RegExp kDriveProgressLine = RegExp(
+  r'^(?:flutter: )?\d+:\d+ \+\d+(?: ~(\d+))?(?: -\d+)?: (.*)$',
+  multiLine: true,
+);
+
+/// The tests one `flutter drive` launch ran and skipped, from the app's
+/// progress lines ([kDriveProgressLine]): `+N` also counts the binding's
+/// hidden `(tearDownAll)`, so tests are the distinct names.
+({int tests, int skipped}) driveProgressOf(String output) {
+  final Set<String> names = <String>{};
+  int skipped = 0;
+  for (final RegExpMatch m in kDriveProgressLine.allMatches(output)) {
+    skipped = int.tryParse(m.group(1) ?? '') ?? 0;
+    final String name = m.group(2)!.trim();
+    if (const <String>{
+      '(setUpAll)',
+      '(tearDownAll)',
+      'All tests passed!',
+      'Some tests failed.',
+    }.contains(name)) {
+      continue;
+    }
+    names.add(name);
+  }
+  return (tests: names.length, skipped: skipped);
+}
+
+/// Turns every [distItestReport] line into a json-reporter run of its own
+/// (one suite, one test named after the file: green on exit 0, otherwise an
+/// error carrying the output tail), so the verdict, the timings and the
+/// re-runs treat integration tests like any other suite. Other lines pass
+/// through.
+List<String> expandDistItestReports(List<String> lines) {
+  final List<String> out = <String>[];
+  for (final String line in lines) {
+    Object? decoded;
+    if (line.startsWith('{"type":"$kDistItestReportType"')) {
+      try {
+        decoded = jsonDecode(line);
+      } on FormatException {
+        decoded = null;
+      }
+    }
+    if (decoded is! Map<String, Object?>) {
+      out.add(line);
+      continue;
+    }
+    final String path = '${decoded['path']}';
+    final int exitCode = (decoded['exitCode'] as num?)?.toInt() ?? -1;
+    final int ms = (decoded['ms'] as num?)?.toInt() ?? 0;
+    String tail;
+    try {
+      tail = utf8.decode(
+        base64Decode('${decoded['tail'] ?? ''}'),
+        allowMalformed: true,
+      );
+    } on FormatException {
+      tail = '';
+    }
+    final ({int tests, int skipped}) progress = driveProgressOf(tail);
+    // drive passes a launch whose every test skipped; nothing ran, so the
+    // manifest lists the file for a platform it does not run on.
+    final bool allSkipped =
+        exitCode == 0 &&
+        progress.skipped > 0 &&
+        progress.skipped >= progress.tests;
+    final bool ok = exitCode == 0 && !allSkipped;
+    out.addAll(<String>[
+      jsonEncode(<String, Object?>{
+        'type': _kStartEventType,
+        'protocolVersion': '0.1.1',
+        'time': 0,
+      }),
+      jsonEncode(<String, Object?>{
+        'type': 'suite',
+        'suite': <String, Object?>{'id': 0, 'platform': 'app', 'path': path},
+        'time': 0,
+      }),
+      jsonEncode(<String, Object?>{
+        'type': 'testStart',
+        'test': <String, Object?>{
+          'id': 1,
+          'name': path,
+          'suiteID': 0,
+          'groupIDs': <int>[],
+          'metadata': <String, Object?>{'skip': false, 'skipReason': null},
+        },
+        'time': 0,
+      }),
+      if (!ok)
+        jsonEncode(<String, Object?>{
+          'type': 'error',
+          'testID': 1,
+          'error': allSkipped
+              ? 'every test of this file skipped on this platform '
+                    '(${progress.skipped}): nothing ran; list it in '
+                    'dist_itests.json only for platforms it runs on\n$tail'
+              : 'flutter drive exited $exitCode\n$tail',
+          'stackTrace': '',
+          'isFailure': true,
+          'time': ms,
+        }),
+      jsonEncode(<String, Object?>{
+        'type': 'testDone',
+        'testID': 1,
+        'result': ok ? 'success' : 'failure',
+        'skipped': false,
+        'hidden': false,
+        'time': ms,
+      }),
+      // Some skipped, the rest ran: reported (platform skip report).
+      if (ok && progress.skipped > 0) ...<String>[
+        jsonEncode(<String, Object?>{
+          'type': 'testStart',
+          'test': <String, Object?>{
+            'id': 2,
+            'name': '$path (${progress.skipped} skipped)',
+            'suiteID': 0,
+            'groupIDs': <int>[],
+            'metadata': <String, Object?>{
+              'skip': true,
+              'skipReason':
+                  '${progress.skipped} test(s) skipped on this platform',
+            },
+          },
+          'time': ms,
+        }),
+        jsonEncode(<String, Object?>{
+          'type': 'testDone',
+          'testID': 2,
+          'result': 'success',
+          'skipped': true,
+          'hidden': false,
+          'time': ms,
+        }),
+      ],
+      jsonEncode(<String, Object?>{'type': 'done', 'success': ok, 'time': ms}),
+    ]);
+  }
+  return out;
+}
+
 /// The whole run.
 class DistRunVerdict {
   DistRunVerdict({required this.results, required this.unplaced});

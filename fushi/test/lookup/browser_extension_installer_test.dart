@@ -5,14 +5,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 
 void main() {
+  test('under an isolated test root the extension never lands in the real '
+      'app-support directory', () async {
+    final Directory root = Directory.systemTemp.createTempSync('ext_root_');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final Directory dir = await browserExtensionSupportRoot(
+      environment: <String, String>{'FUSHI_TEST_ROOT': root.path},
+    );
+    expect(dir.path, startsWith(root.absolute.path));
+  });
+
   group('browserExtensionsPageUrl', () {
     test('management page url of every supported Chromium browser', () {
       expect(
-          browserExtensionsPageUrl(BrowserKind.chrome), 'chrome://extensions');
+        browserExtensionsPageUrl(BrowserKind.chrome),
+        'chrome://extensions',
+      );
       expect(browserExtensionsPageUrl(BrowserKind.edge), 'edge://extensions');
       expect(browserExtensionsPageUrl(BrowserKind.brave), 'brave://extensions');
-      expect(browserExtensionsPageUrl(BrowserKind.vivaldi),
-          'vivaldi://extensions');
+      expect(
+        browserExtensionsPageUrl(BrowserKind.vivaldi),
+        'vivaldi://extensions',
+      );
       expect(browserExtensionsPageUrl(BrowserKind.opera), 'opera://extensions');
     });
 
@@ -47,8 +61,10 @@ void main() {
     });
 
     test('every loadable source file is bundled byte-identical', () {
-      final List<FileSystemEntity> entities =
-          srcDir.listSync(recursive: true).whereType<File>().toList();
+      final List<FileSystemEntity> entities = srcDir
+          .listSync(recursive: true)
+          .whereType<File>()
+          .toList();
       for (final FileSystemEntity e in entities) {
         final String rel = e.path
             .substring(srcDir.path.length)
@@ -58,10 +74,16 @@ void main() {
         if (rel.startsWith('scripts/')) continue; // 构建期生成器/overlay 不进 bundle
         if (rel == 'README.md') continue; // 开发文档不进 bundle（防指纹随文档翻新）
         final File bundled = File('${bundleDir.path}/$rel');
-        expect(bundled.existsSync(), isTrue,
-            reason: 'not bundled: $rel (run the re-sync copy)');
-        expect(bundled.readAsBytesSync(), (e as File).readAsBytesSync(),
-            reason: 'bundle out of sync with source: $rel');
+        expect(
+          bundled.existsSync(),
+          isTrue,
+          reason: 'not bundled: $rel (run the re-sync copy)',
+        );
+        expect(
+          bundled.readAsBytesSync(),
+          (e as File).readAsBytesSync(),
+          reason: 'bundle out of sync with source: $rel',
+        );
       }
     });
   });
@@ -111,8 +133,10 @@ void main() {
         'vendor/popup.js': <int>[4, 5],
         'background.js': <int>[1, 2, 3],
       };
-      expect(computeBrowserExtensionFingerprint(a),
-          computeBrowserExtensionFingerprint(b));
+      expect(
+        computeBrowserExtensionFingerprint(a),
+        computeBrowserExtensionFingerprint(b),
+      );
       expect(computeBrowserExtensionFingerprint(a), hasLength(16));
     });
 
@@ -123,8 +147,10 @@ void main() {
       final Map<String, List<int>> b = <String, List<int>>{
         'background.js': <int>[1, 2, 4],
       };
-      expect(computeBrowserExtensionFingerprint(a),
-          isNot(computeBrowserExtensionFingerprint(b)));
+      expect(
+        computeBrowserExtensionFingerprint(a),
+        isNot(computeBrowserExtensionFingerprint(b)),
+      );
     });
 
     test('ignores fushi-defaults.js (rewritten on every extract)', () {
@@ -136,15 +162,22 @@ void main() {
         'background.js': <int>[1],
         'fushi-defaults.js': <int>[7],
       };
-      expect(computeBrowserExtensionFingerprint(a),
-          computeBrowserExtensionFingerprint(b));
+      expect(
+        computeBrowserExtensionFingerprint(a),
+        computeBrowserExtensionFingerprint(b),
+      );
     });
 
     test('defaults js build key round-trips through parse', () {
       const BrowserExtensionServerConfig cfg = BrowserExtensionServerConfig(
-          host: '127.0.0.1', port: 19633, token: 't');
-      final String withBuild =
-          buildBrowserExtensionDefaultsJs(cfg, build: 'deadbeef01234567');
+        host: '127.0.0.1',
+        port: 19633,
+        token: 't',
+      );
+      final String withBuild = buildBrowserExtensionDefaultsJs(
+        cfg,
+        build: 'deadbeef01234567',
+      );
       expect(parseBrowserExtensionBuild(withBuild), 'deadbeef01234567');
       // 不传 build（旧调用/占位）→ 不写键、解析回 null（与旧副本一致 → 触发刷新）。
       final String withoutBuild = buildBrowserExtensionDefaultsJs(cfg);
@@ -154,36 +187,53 @@ void main() {
 
     // 改了密钥 / 端口后只重写 defaults（保留 build）：此前只在内容指纹变化时重写，
     // 改密钥后扩展永远拿着旧 token，状态卡一直报「API 密钥不匹配」。
-    test('rewriteBrowserExtensionDefaultsFile keeps build, swaps token/port',
-        () async {
-      final Directory dir =
-          Directory.systemTemp.createTempSync('fushi_ext_defaults_');
-      addTearDown(() => dir.deleteSync(recursive: true));
-      final File defaults = File('${dir.path}/fushi-defaults.js');
-      await defaults.writeAsString(buildBrowserExtensionDefaultsJs(
-        const BrowserExtensionServerConfig(
-            host: '127.0.0.1', port: 19633, token: 'old'),
-        build: 'deadbeef01234567',
-      ));
+    test(
+      'rewriteBrowserExtensionDefaultsFile keeps build, swaps token/port',
+      () async {
+        final Directory dir = Directory.systemTemp.createTempSync(
+          'fushi_ext_defaults_',
+        );
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final File defaults = File('${dir.path}/fushi-defaults.js');
+        await defaults.writeAsString(
+          buildBrowserExtensionDefaultsJs(
+            const BrowserExtensionServerConfig(
+              host: '127.0.0.1',
+              port: 19633,
+              token: 'old',
+            ),
+            build: 'deadbeef01234567',
+          ),
+        );
 
-      const BrowserExtensionServerConfig next = BrowserExtensionServerConfig(
-          host: '127.0.0.1', port: 19700, token: 'new');
-      expect(await rewriteBrowserExtensionDefaultsFile(defaults, next), isTrue);
-      final String written = await defaults.readAsString();
-      expect(
-        written,
-        buildBrowserExtensionDefaultsJs(next, build: 'deadbeef01234567'),
-      );
-      // 已一致：不再写（不碰 mtime，不扰动扩展）。
-      expect(
-          await rewriteBrowserExtensionDefaultsFile(defaults, next), isFalse);
-    });
+        const BrowserExtensionServerConfig next = BrowserExtensionServerConfig(
+          host: '127.0.0.1',
+          port: 19700,
+          token: 'new',
+        );
+        expect(
+          await rewriteBrowserExtensionDefaultsFile(defaults, next),
+          isTrue,
+        );
+        final String written = await defaults.readAsString();
+        expect(
+          written,
+          buildBrowserExtensionDefaultsJs(next, build: 'deadbeef01234567'),
+        );
+        // 已一致：不再写（不碰 mtime，不扰动扩展）。
+        expect(
+          await rewriteBrowserExtensionDefaultsFile(defaults, next),
+          isFalse,
+        );
+      },
+    );
 
     test('prepareBundledBrowserExtension writes fingerprint into defaults', () {
       // 生产接线守卫（源码扫描）：解压时必须把指纹写进 fushi-defaults.js 的 build，
       // 否则启动刷新（refreshBundledBrowserExtensionIfStale）恒判陈旧、每次启动全量重写。
-      final String src = File('lib/src/lookup/browser_extension_installer.dart')
-          .readAsStringSync();
+      final String src = File(
+        'lib/src/lookup/browser_extension_installer.dart',
+      ).readAsStringSync();
       expect(src, contains('build: computeBrowserExtensionFingerprint('));
     });
   });
@@ -193,8 +243,11 @@ void main() {
   group('bundled extension default connection', () {
     test('fushi-defaults.js defaults to 127.0.0.1:19633', () {
       final File defaults = File('assets/browser_extension/fushi-defaults.js');
-      expect(defaults.existsSync(), isTrue,
-          reason: 'missing bundled fushi-defaults.js');
+      expect(
+        defaults.existsSync(),
+        isTrue,
+        reason: 'missing bundled fushi-defaults.js',
+      );
       final String src = defaults.readAsStringSync();
       expect(src, contains('self.FUSHI_DEFAULTS'));
       expect(src, contains("host: '127.0.0.1'"));

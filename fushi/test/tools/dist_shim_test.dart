@@ -159,4 +159,9 @@ void main() {
     refused('run 1 0 --file-reporter=json:/tmp/x');
     refused('run 1 0 -x');
   });
+
+  test('integration tests (worker_run.sh itest) are out of reach', () {
+    expect(shim('lock 1 $_runA').exitCode, 0);
+    refused('run 1 itest');
+  });
 }

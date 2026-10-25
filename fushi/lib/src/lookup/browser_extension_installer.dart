@@ -5,6 +5,7 @@ import 'dart:typed_data' show BytesBuilder, Uint8List;
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/services.dart' show AssetManifest, ByteData, rootBundle;
 import 'package:path/path.dart' as p;
+import 'package:fushi/src/startup/test_environment.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// TODO-1000：浏览器扩展「安装助手」。自建 MV3 扩展没有真·一键（浏览器封了商店外侧载），
@@ -179,13 +180,23 @@ Future<void> _extractExtensionTo(
   }
 }
 
+/// 扩展解压的父目录：平台 app-support 根（**不跟数据根**——浏览器按绝对路径记住
+/// 扩展，搬家会让已加载的扩展失效），但隔离测试根（`FUSHI_TEST_ROOT`）下落进测试根。
+/// 曾经直接取平台目录：Mac 上 debug 包与用户正式版同 bundle id，集成测试一启动就把
+/// 用户真实的扩展目录删掉重写，`fushi-defaults.js` 换成测试实例的 token。
+Future<Directory> browserExtensionSupportRoot({
+  Map<String, String>? environment,
+}) async =>
+    fushiTestDirectory('app-support', environment: environment) ??
+    await getApplicationSupportDirectory();
+
 Future<Directory> _extensionDestDir() async {
-  final Directory support = await getApplicationSupportDirectory();
+  final Directory support = await browserExtensionSupportRoot();
   return Directory(p.join(support.path, _kExtensionDirName));
 }
 
 Future<Directory> _legacyExtensionDestDir() async {
-  final Directory support = await getApplicationSupportDirectory();
+  final Directory support = await browserExtensionSupportRoot();
   return Directory(p.join(support.path, _kLegacyExtensionDirName));
 }
 

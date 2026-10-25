@@ -13,6 +13,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'dist_plan.dart';
+import 'dist_results.dart';
 import 'dist_snapshot.dart';
 import 'flutter_sdk_executables.dart';
 import 'heavy_budget.dart';
@@ -39,6 +40,16 @@ const int kLocalMaxCommandChars = 6000;
 /// finds first, emulates select() over the pipes Dart hands it and stalled a
 /// batch mid-line (the remote run had finished; the stream never arrived).
 /// `FUSHI_DIST_SSH` overrides. The snapshot push keeps git's own ssh.
+/// bash for the worker-side scripts run on this machine: Git for Windows' own
+/// on Windows (never the WSL `bash.exe` System32 may put first on PATH).
+String distBashExecutable() {
+  if (!Platform.isWindows) return 'bash';
+  final String exec =
+      '${Process.runSync('git', <String>['--exec-path']).stdout}'.trim();
+  // <Git>/mingw64/libexec/git-core -> <Git>/bin/bash.exe
+  return '${File(exec).parent.parent.parent.path}/bin/bash.exe';
+}
+
 String distSshExecutable([Map<String, String>? environment]) {
   final Map<String, String> env = environment ?? Platform.environment;
   final String? override = env['FUSHI_DIST_SSH'];
@@ -249,6 +260,17 @@ class DistWorkerConfig {
         }
       }
     }
+    if (kind == DistWorkerKind.sshShim &&
+        ((json['capabilities'] as List<Object?>?) ?? const <Object?>[])
+            .contains(kDistItestCapability)) {
+      // The shim runs unit tests only (worker_run.sh is reached with a
+      // numeric concurrency); integration tests build and launch the app on
+      // the machine's desktop, which is not what its owner signed up for.
+      throw DistConfigError(
+        'worker $name: "$kDistItestCapability" is for your own machines '
+        '(kind "local" or "ssh-trusted"), not an ssh-shim worker',
+      );
+    }
     if (kind == DistWorkerKind.sshTrusted && platform == DistPlatform.windows) {
       throw DistConfigError(
         'worker $name: a Windows worker is reached through the shim '
@@ -395,8 +417,11 @@ abstract class DistWorker {
   /// The physical machine (slots of one machine share it).
   String get machine => config.host ?? 'local';
 
+  /// Integration tests only on a machine's first slot: one desktop app under
+  /// test per machine (they share its screen, GPU and app-level services).
   bool eligible(DistUnit unit) =>
-      unit.eligibleFor(config.platform, config.capabilities);
+      unit.eligibleFor(config.platform, config.capabilities) &&
+      (!isDistItestPath(unit.path) || config.slotIndex == 1);
 
   /// Gets the worker onto [snapshot] with dependencies and native libraries
   /// ready. Throws [DistWorkerError]; [log] receives the step output.
@@ -485,6 +510,9 @@ class LocalDistWorker extends DistWorker {
   HeavyLease? _lease;
   Process? _process;
 
+  /// The integration test app is built (once per run, [_runItests]).
+  bool _itestBuilt = false;
+
   String get _fushiDir => '$repoRoot/fushi';
 
   @override
@@ -528,6 +556,9 @@ class LocalDistWorker extends DistWorker {
     required IOSink stderrLog,
     required Duration timeout,
   }) async {
+    if (batch.files.any(isDistItestPath)) {
+      return _runItests(batch, stderrLog: stderrLog, timeout: timeout);
+    }
     // cmd.exe (flutter.bat) caps a command line at 8191 characters, so a big
     // batch runs as several back-to-back processes; their event streams are
     // concatenated (each starts with its own `start` event).
@@ -581,6 +612,231 @@ class LocalDistWorker extends DistWorker {
       }
     }
     return DistBatchRun(exitCode: exitCode, lines: lines);
+  }
+
+  /// Integration tests: the app is built once per run from the generated
+  /// entry (tool/dist_test/itest_entry.sh), then each file is one
+  /// `flutter drive` launch of that binary under a fresh data root (they
+  /// assume a fresh install), off-screen and never taking the focus. Windows
+  /// launches go through tool/run_windows_itest.ps1, the one place that
+  /// isolates the app's data, WebView2 profile and user directories there;
+  /// on macOS the FUSHI_TEST_* switches are set here.
+  Future<DistBatchRun> _runItests(
+    DistBatch batch, {
+    required IOSink stderrLog,
+    required Duration timeout,
+  }) async {
+    if (!batch.files.every(isDistItestPath)) {
+      throw DistWorkerError('integration tests run in batches of their own');
+    }
+    final Stopwatch elapsed = Stopwatch()..start();
+    Duration left() {
+      final Duration d = timeout - elapsed.elapsed;
+      return d.isNegative ? Duration.zero : d;
+    }
+
+    final List<String> reports = <String>[];
+    int exitCode = 0;
+    String? buildFailure;
+    if (!_itestBuilt) {
+      final DistBatchRun build = await _runLogged(
+        await Process.start(
+          FlutterSdkExecutables.current().flutter(),
+          <String>[
+            'build',
+            Platform.isWindows ? 'windows' : 'macos',
+            '--debug',
+            '--no-pub',
+            '-t',
+            await _writeItestEntry(),
+          ],
+          workingDirectory: _fushiDir,
+          runInShell: Platform.isWindows,
+        ),
+        stderrLog: stderrLog,
+        timeout: left(),
+        header: '== building the integration test app',
+      );
+      if (build.infraError != null) {
+        return DistBatchRun(
+          exitCode: build.exitCode,
+          lines: const <String>[],
+          infraError: build.infraError,
+        );
+      }
+      if (build.exitCode == 0) {
+        _itestBuilt = true;
+      } else {
+        buildFailure = build.lines.skip(build.lines.length - 40).join('\n');
+      }
+    }
+    for (final String file in batch.files) {
+      final Stopwatch sw = Stopwatch()..start();
+      int status;
+      String tail;
+      if (buildFailure != null) {
+        status = 1;
+        tail = 'the app did not build:\n$buildFailure';
+      } else {
+        final DistBatchRun run = await _runLogged(
+          await _startItest(file),
+          stderrLog: stderrLog,
+          timeout: left(),
+          header: '== $file',
+        );
+        if (run.infraError != null) {
+          return DistBatchRun(
+            exitCode: run.exitCode,
+            lines: expandDistItestReports(reports),
+            infraError: run.infraError,
+          );
+        }
+        status = run.exitCode;
+        final Directory? evidence = _itestEvidence(run.lines);
+        tail = _itestTail(run.lines, evidence);
+        // A green launch's evidence (isolated data root, ~20 MB) is of no
+        // further use; a red one's stays for the triage.
+        if (status == 0 && evidence != null && evidence.existsSync()) {
+          try {
+            evidence.deleteSync(recursive: true);
+          } on FileSystemException {
+            // WebView2 can hold its profile a moment past the app's exit;
+            // a leftover directory only costs disk.
+          }
+        }
+      }
+      if (exitCode == 0) exitCode = status;
+      reports.add(
+        distItestReport(
+          path: file,
+          exitCode: status,
+          ms: sw.elapsedMilliseconds,
+          tail: tail,
+        ),
+      );
+    }
+    return DistBatchRun(
+      exitCode: exitCode,
+      lines: expandDistItestReports(reports),
+    );
+  }
+
+  /// Writes [kDistItestEntryPath] when its content changed (an unchanged
+  /// file keeps the build incremental); returns its path.
+  Future<String> _writeItestEntry() async {
+    final ProcessResult r = await Process.run(distBashExecutable(), <String>[
+      'tool/dist_test/itest_entry.sh',
+    ], workingDirectory: _fushiDir);
+    if (r.exitCode != 0) {
+      throw DistWorkerError('itest_entry.sh failed: ${r.stderr}');
+    }
+    final File entry = File('$_fushiDir/$kDistItestEntryPath');
+    final String text = '${r.stdout}';
+    if (!entry.existsSync() || entry.readAsStringSync() != text) {
+      entry
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync(text);
+    }
+    return kDistItestEntryPath;
+  }
+
+  Future<Process> _startItest(String file) {
+    if (Platform.isWindows) {
+      return Process.start('powershell', <String>[
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        '$_fushiDir/tool/run_windows_itest.ps1',
+        '-Target',
+        kDistItestEntryPath,
+        '-ApplicationBinary',
+        // Absolute: flutter looks a relative binary up on PATH on Windows.
+        File(
+          '$_fushiDir/build/windows/x64/runner/Debug/fushi.exe',
+        ).absolute.path,
+        '-DistItest',
+        file,
+      ], workingDirectory: _fushiDir);
+    }
+    final Directory root = Directory.systemTemp.createTempSync('dist_itest_');
+    return Process.start(
+      FlutterSdkExecutables.current().flutter(),
+      <String>[
+        'drive',
+        '--no-pub',
+        '-d',
+        'macos',
+        '--driver=test_driver/integration_test.dart',
+        '-t',
+        kDistItestEntryPath,
+        '--use-application-binary=build/macos/Build/Products/Debug/fushi.app',
+      ],
+      workingDirectory: _fushiDir,
+      environment: <String, String>{
+        ...distTestEnvironment(Platform.environment),
+        'FUSHI_TEST_HIDDEN': '1',
+        'FUSHI_TEST_ROOT': root.path,
+        'FUSHI_TEST_RUN_ID': 'dist-itest-$pid',
+        'FUSHI_DIST_ITEST': file,
+      },
+      includeParentEnvironment: false,
+    );
+  }
+
+  /// The evidence directory run_windows_itest.ps1 printed, if any.
+  Directory? _itestEvidence(List<String> output) {
+    const String marker = '[itest] evidence: ';
+    for (final String line in output.reversed) {
+      final int at = line.indexOf(marker);
+      if (at >= 0) return Directory(line.substring(at + marker.length).trim());
+    }
+    return null;
+  }
+
+  /// The end of a launch's output: on Windows the runner keeps flutter's
+  /// output in [evidence]/command.log.
+  String _itestTail(List<String> output, Directory? evidence) {
+    final File? log = evidence == null
+        ? null
+        : File('${evidence.path}/command.log');
+    final List<String> all = log != null && log.existsSync()
+        ? log.readAsLinesSync()
+        : output;
+    // The app's progress lines (tests run / skipped) plus the end of output.
+    return <String>[
+      ...all.where(kDriveProgressLine.hasMatch),
+      '...',
+      ...all.skip(all.length > 40 ? all.length - 40 : 0),
+    ].join('\n');
+  }
+
+  /// Runs [process] to the end with its output (stdout and stderr) in
+  /// [stderrLog] under [header]; the stdout lines come back for the tail.
+  Future<DistBatchRun> _runLogged(
+    Process process, {
+    required IOSink stderrLog,
+    required Duration timeout,
+    required String header,
+  }) async {
+    stderrLog.writeln(header);
+    _process = process;
+    await process.stdin.close();
+    try {
+      final DistBatchRun run = await _drive(
+        process,
+        stderrLog: stderrLog,
+        timeout: timeout,
+        kill: () async => _killTree(process),
+        connectionFailure: null,
+      );
+      stderrLog
+        ..writeAll(run.lines, '\n')
+        ..writeln();
+      return run;
+    } finally {
+      _process = null;
+    }
   }
 
   void _killTree(Process p) {
@@ -815,8 +1071,16 @@ class SshDistWorker extends DistWorker {
         throw DistWorkerError('refusing to send unsafe test path "$f"');
       }
     }
+    final bool itest = batch.files.any(isDistItestPath);
+    if (itest && (_shim || !batch.files.every(isDistItestPath))) {
+      throw DistWorkerError(
+        'integration tests run alone and never through the shim',
+      );
+    }
     final String remote;
-    if (_shim) {
+    if (itest) {
+      remote = '${_prefix}bash fushi/tool/dist_test/worker_run.sh itest';
+    } else if (_shim) {
       remote = shimRequest('run', <String>[
         '${config.slotIndex}',
         '${config.concurrency ?? 0}',
@@ -856,6 +1120,13 @@ class SshDistWorker extends DistWorker {
         exitCode: run.exitCode,
         lines: const <String>[],
         busy: reason.isEmpty ? 'busy' : reason,
+      );
+    }
+    if (itest) {
+      return DistBatchRun(
+        exitCode: run.exitCode,
+        lines: expandDistItestReports(run.lines),
+        infraError: run.infraError,
       );
     }
     return run;
