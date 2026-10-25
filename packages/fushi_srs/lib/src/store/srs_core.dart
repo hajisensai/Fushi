@@ -265,7 +265,8 @@ final class SrsCoreBindings {
       ),
       statProjection = lib.lookupFunction<_HistC, _HistDart>(
         'ffsrs_store_stat_projection',
-      );
+      ),
+      sync2 = lib.lookupFunction<_QueryC, _QueryDart>('ffsrs_store_sync2');
 
   final FushiFsrs _fsrs;
   final _OpenDart open;
@@ -289,6 +290,7 @@ final class SrsCoreBindings {
   final _CmdDart rwkvRows;
   final _CmdDart rwkvLogTail;
   final _HistDart statProjection;
+  final _QueryDart sync2;
 
   static SrsCoreBindings? _instance;
 
@@ -521,6 +523,30 @@ final class SrsCore {
       ),
       err,
     );
+  });
+
+  /// 同步 v2 的命令（native/fushi_fsrs/src/store/ffi.rs `ffsrs_store_sync2`，命令表见那里的
+  /// `sync2_dispatch`）：[request] 是 `{"op": ..., "profile": ..., ...}`，[blobs] 是段 / head 文件或
+  /// `apply` 的事件数组 JSON。一次调用一个粗粒度命令；可能较慢（收段、迁移、全量重放），调用方放后台 isolate。
+  SrsSync2Result sync2(
+    Map<String, Object?> request, {
+    List<Uint8List> blobs = const <Uint8List>[],
+  }) => using((Arena arena) {
+    final (ffi.Pointer<ffi.Uint8> rq, int rqn) = _utf8(
+      arena,
+      jsonEncode(request),
+    );
+    final Uint8List framed = srsSync2Frames(blobs);
+    final ffi.Pointer<ffi.Uint8> bp = _copy(arena, framed);
+    final ffi.Pointer<ffi.Pointer<ffi.Uint8>> out = arena();
+    final ffi.Pointer<ffi.Size> outLen = arena();
+    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+    err.value = ffi.nullptr;
+    _check(_b, _b.sync2(_h, rq, rqn, bp, framed.length, out, outLen, err), err);
+    final int len = outLen.value;
+    final Uint8List bytes = Uint8List.fromList(out.value.asTypedList(len));
+    _b._freeBytes(out.value, len);
+    return SrsSync2Result.decode(bytes);
   });
 
   /// 卡片历史的当前状态，Rust 直接从写连接读日志（含事务里未提交的行）。[lineages] 每项是一份
@@ -761,4 +787,61 @@ final class SrsReadSession {
     if (owned) _b.readEnd(_handle);
     _handle = ffi.nullptr;
   }
+}
+
+
+/// [SrsCore.sync2] 的结果：命令的 JSON 结果，以及发件 / 写 head 产出的文件（相对路径 → 字节）。
+final class SrsSync2Result {
+  const SrsSync2Result(this.json, this.files);
+
+  final Object? json;
+  final List<(String, Uint8List)> files;
+
+  Map<String, Object?> get map => (json! as Map).cast<String, Object?>();
+
+  /// `u32 json_len + JSON`，再 `u32 n` 与 n 组分帧的 `(路径, 字节)`（小端）。
+  static SrsSync2Result decode(Uint8List b) {
+    final ByteData d = ByteData.sublistView(b);
+    int at = 0;
+    int u32() {
+      final int v = d.getUint32(at, Endian.little);
+      at += 4;
+      return v;
+    }
+
+    Uint8List take(int n) {
+      final Uint8List s = Uint8List.sublistView(b, at, at + n);
+      at += n;
+      return s;
+    }
+
+    final Object? json = jsonDecode(utf8.decode(take(u32())));
+    final int n = u32();
+    final List<(String, Uint8List)> files = <(String, Uint8List)>[];
+    for (int i = 0; i < n; i++) {
+      final String path = utf8.decode(take(u32()));
+      files.add((path, Uint8List.fromList(take(u32()))));
+    }
+    return SrsSync2Result(json, files);
+  }
+}
+
+/// 分帧：`u32 n`，再 n 个 `u32 len + 字节`（小端）。空列表 = 0 字节。
+Uint8List srsSync2Frames(List<Uint8List> blobs) {
+  if (blobs.isEmpty) return Uint8List(0);
+  int total = 4;
+  for (final Uint8List x in blobs) {
+    total += 4 + x.length;
+  }
+  final Uint8List out = Uint8List(total);
+  final ByteData d = ByteData.sublistView(out);
+  d.setUint32(0, blobs.length, Endian.little);
+  int at = 4;
+  for (final Uint8List x in blobs) {
+    d.setUint32(at, x.length, Endian.little);
+    at += 4;
+    out.setRange(at, at + x.length, x);
+    at += x.length;
+  }
+  return out;
 }

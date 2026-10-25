@@ -766,6 +766,70 @@ fn tails(conn: &Connection, card: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// 一个归属组（链尾 + 广度优先的全部前身）的日志行与链尾的排程配置。
+struct Group {
+    rows: Vec<(String, String, Option<i64>, Intent, String)>,
+    cfg: crate::sync2::sched::Config,
+}
+
+fn group_of(conn: &Connection, profile: &str, tree: &config::DeckTree, tail: &str, note_hint: Option<&str>) -> Result<Group, String> {
+    let tail = &tail.to_owned();
+    // 归属组：链尾 + 广度优先的全部前身。
+    let mut lineage = vec![tail.clone()];
+    let mut i = 0;
+    while i < lineage.len() && lineage.len() < 256 {
+        let c = lineage[i].clone();
+        let es = config::edits_of(conn, "card", std::slice::from_ref(&c))?.remove(&c).unwrap_or_default();
+        for p in config::predecessors(&es) {
+            if !lineage.contains(&p) {
+                lineage.push(p);
+            }
+        }
+        i += 1;
+    }
+    let mut rows: Vec<(String, String, Option<i64>, Intent, String)> = Vec::new();
+    let mut note: Option<String> = None;
+    for c in &lineage {
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT l.id, l.json, e.server_time, m.intent, m.arg, m.note_id FROM srs_review_logs l \
+                 LEFT JOIN srs_event_local e ON e.event_id = l.id LEFT JOIN sync2_log_meta m ON m.log_id = l.id \
+                 WHERE l.card_id = ?1",
+            )
+            .map_err(sql)?;
+        let mut q = stmt.query([c]).map_err(sql)?;
+        while let Some(r) = q.next().map_err(sql)? {
+            let id: String = r.get(0).map_err(sql)?;
+            let json: String = r.get(1).map_err(sql)?;
+            let st: Option<i64> = r.get(2).map_err(sql)?;
+            let code: Option<i64> = r.get(3).map_err(sql)?;
+            let arg: Option<i64> = r.get(4).map_err(sql)?;
+            let n: Option<String> = r.get(5).map_err(sql)?;
+            // 笔记取链尾自己日志上记的；链尾还没有日志就取前身的（换笔记类型不换笔记）。
+            if n.is_some() && (note.is_none() || c == tail) {
+                note = n;
+            }
+            let intent = match code {
+                Some(k) => intent_of(k, arg),
+                None => infer_intent(&serde_json::from_str(&json).unwrap_or(Value::Null)),
+            };
+            rows.push((id, json, st, intent, c.clone()));
+        }
+    }
+    if note.is_none() {
+        note = note_hint.map(str::to_owned);
+    }
+    if rows.is_empty() && note_hint.is_none() {
+        return Ok(Group { rows, cfg: crate::sync2::sched::Config::default() });
+    }
+    let deck = config::card_deck(conn, tree, tail, note.as_deref())?;
+    conn.prepare_cached("INSERT OR REPLACE INTO sync2_card_deck (card_id, profile_uid, deck_id) VALUES (?1, ?2, ?3)")
+        .map_err(sql)?
+        .execute(params![tail, profile, deck])
+        .map_err(sql)?;
+    Ok(Group { rows, cfg: tree.config(&deck) })
+}
+
 pub(crate) fn replay_cards(conn: &Connection, profile: &str, cards: &BTreeSet<String>) -> Result<BTreeSet<String>, String> {
     let mut groups: BTreeSet<String> = BTreeSet::new();
     for c in cards {
@@ -777,57 +841,10 @@ pub(crate) fn replay_cards(conn: &Connection, profile: &str, cards: &BTreeSet<St
     }
     let tree = config::DeckTree::load(conn, profile)?;
     for tail in &groups {
-        // 归属组：链尾 + 广度优先的全部前身。
-        let mut lineage = vec![tail.clone()];
-        let mut i = 0;
-        while i < lineage.len() && lineage.len() < 256 {
-            let c = lineage[i].clone();
-            let es = config::edits_of(conn, "card", std::slice::from_ref(&c))?.remove(&c).unwrap_or_default();
-            for p in config::predecessors(&es) {
-                if !lineage.contains(&p) {
-                    lineage.push(p);
-                }
-            }
-            i += 1;
-        }
-        let mut rows: Vec<(String, String, Option<i64>, Intent, String)> = Vec::new();
-        let mut note: Option<String> = None;
-        for c in &lineage {
-            let mut stmt = conn
-                .prepare_cached(
-                    "SELECT l.id, l.json, e.server_time, m.intent, m.arg, m.note_id FROM srs_review_logs l \
-                     LEFT JOIN srs_event_local e ON e.event_id = l.id LEFT JOIN sync2_log_meta m ON m.log_id = l.id \
-                     WHERE l.card_id = ?1",
-                )
-                .map_err(sql)?;
-            let mut q = stmt.query([c]).map_err(sql)?;
-            while let Some(r) = q.next().map_err(sql)? {
-                let id: String = r.get(0).map_err(sql)?;
-                let json: String = r.get(1).map_err(sql)?;
-                let st: Option<i64> = r.get(2).map_err(sql)?;
-                let code: Option<i64> = r.get(3).map_err(sql)?;
-                let arg: Option<i64> = r.get(4).map_err(sql)?;
-                let n: Option<String> = r.get(5).map_err(sql)?;
-                // 笔记取链尾自己日志上记的；链尾还没有日志就取前身的（换笔记类型不换笔记）。
-                if n.is_some() && (note.is_none() || c == tail) {
-                    note = n;
-                }
-                let intent = match code {
-                    Some(k) => intent_of(k, arg),
-                    None => infer_intent(&serde_json::from_str(&json).unwrap_or(Value::Null)),
-                };
-                rows.push((id, json, st, intent, c.clone()));
-            }
-        }
+        let Group { rows, cfg } = group_of(conn, profile, &tree, tail, None)?;
         if rows.is_empty() {
             continue;
         }
-        let deck = config::card_deck(conn, &tree, tail, note.as_deref())?;
-        conn.prepare_cached("INSERT OR REPLACE INTO sync2_card_deck (card_id, profile_uid, deck_id) VALUES (?1, ?2, ?3)")
-            .map_err(sql)?
-            .execute(params![tail, profile, deck])
-            .map_err(sql)?;
-        let cfg = tree.config(&deck);
         let input: Vec<Row<'_>> = rows.iter().map(|(_, j, s, i, _)| Row { json: j, server_time: *s, intent: i.clone() }).collect();
         let out = replay::replay(&input, &cfg)?;
         for (k, new) in out.rows.iter().enumerate() {
@@ -1250,3 +1267,30 @@ pub fn parse_device(s: &str) -> Result<Id, String> {
 
 #[cfg(test)]
 mod tests;
+
+impl SrsCore {
+    /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
+    /// 确定性 FSRS 算四个按钮的结果。[note] = 卡所属笔记（新卡没有日志时据它找牌组）。日界用调用方此刻的口径
+    /// （与写进日志的 utcOff / rollover 相同）。
+    pub fn sync2_preview(&self, profile: &str, card: &str, note: Option<&str>, now: i64, utc_off: i64, rollover: i64) -> Result<Value, String> {
+        let w = self.writer()?;
+        in_savepoint(&w, |c| {
+            let tree = config::DeckTree::load(c, profile)?;
+            let Group { rows, cfg } = group_of(c, profile, &tree, card, note)?;
+            let input: Vec<Row<'_>> = rows.iter().map(|(_, j, s, i, _)| Row { json: j, server_time: *s, intent: i.clone() }).collect();
+            let day = crate::projection::Day { utc_offset_min: utc_off, rollover_hour: rollover };
+            let (cur, mem, plan) = replay::preview(&input, &cfg, card, now, &day)?;
+            let f = crate::sync2::sched::f32_json;
+            Ok(json!({
+                "current": cur.to_json(),
+                "memoryBefore": mem.map(|m| json!({"s": f(m.s), "d": f(m.d), "sf": f(m.sf)})),
+                "plan": plan.iter().map(|s| s.to_json()).collect::<Vec<_>>(),
+                "params": cfg.params.iter().map(|p| f(*p)).collect::<Vec<_>>(),
+                "memoryAlgorithm": match cfg.alg {
+                    crate::sync2::sched::MemAlg::Fsrs6 => "fsrs6",
+                    crate::sync2::sched::MemAlg::Fsrs7 => "fsrs7",
+                },
+            }))
+        })
+    }
+}

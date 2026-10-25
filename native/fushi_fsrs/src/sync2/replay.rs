@@ -119,6 +119,24 @@ fn compute_memory(input: &MemoryInput, model: &super::fsrs_det::Model) -> Option
 
 /// 重放一个归属组。[rows] 顺序任意（排序由选取规则定）；同 ID 的多行按选取规则只认最后一行。
 pub fn replay(rows: &[Row<'_>], cfg: &Config) -> Result<Replayed, String> {
+    Ok(fold(rows, cfg)?.0)
+}
+
+/// 评分预览（四个按钮的「这次操作后」结果）：在重放到此刻的状态上算，与之后真正作答时的重放是同一段
+/// 代码、同一套浮点运算——按钮上显示的间隔就是合并后重放出的到期。返回 (当前状态, 作答前记忆状态, 四个结果)。
+pub fn preview(rows: &[Row<'_>], cfg: &Config, card: &str, now: i64, day: &Day) -> Result<(Sched, Option<super::fsrs_det::Memory>, [Sched; 4]), String> {
+    let model = cfg.model()?;
+    let (r, prefix) = fold(rows, cfg)?;
+    let cur = r.state.unwrap_or_else(Sched::initial);
+    let input = memory_input(&prefix, cfg.alg.projection_alg(), day)?;
+    let memory = compute_memory(&input, &model);
+    let elapsed = sched::elapsed_days(cfg.alg, cur.last_reviewed_at, now, day) as f32;
+    let next = model.next_states(memory, cfg.desired_retention as f32, elapsed)?;
+    let plan = sched::plan_answer(card, &cur, now, day, cfg, &next);
+    Ok((cur, memory, plan))
+}
+
+fn fold(rows: &[Row<'_>], cfg: &Config) -> Result<(Replayed, Vec<EffLog>), String> {
     let model = cfg.model()?;
     let mut values: Vec<Map<String, Value>> = Vec::with_capacity(rows.len());
     let mut parsed = Vec::with_capacity(rows.len());
@@ -216,7 +234,7 @@ pub fn replay(rows: &[Row<'_>], cfg: &Config) -> Result<Replayed, String> {
         let scheduler = owner.unwrap_or_else(|| "fushi".into());
         if b.scheduler == scheduler { b } else { Sched { scheduler, ..b } }
     });
-    Ok(Replayed { rows: out, state, uncomputable })
+    Ok((Replayed { rows: out, state, uncomputable }, prefix))
 }
 
 #[cfg(test)]
