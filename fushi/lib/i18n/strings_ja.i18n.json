@@ -6745,6 +6745,8 @@
   "srs_card_label_other_dictionaries": "Other dictionaries",
   "srs_card_label_show_more": "Show more",
   "srs_card_label_source": "Source",
+  "srs_card_media_missing_image": "画像は未同期です",
+  "srs_card_media_missing_video": "動画は未同期です",
   "srs_card_move": "Move to deck",
   "srs_card_reset": "Reset to new",
   "srs_card_reset_confirm": "Forget this card's progress and treat it as new? You can undo right after.",

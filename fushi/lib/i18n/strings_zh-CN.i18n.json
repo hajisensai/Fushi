@@ -6745,6 +6745,8 @@
   "srs_card_label_other_dictionaries": "其他词典",
   "srs_card_label_show_more": "展开全文",
   "srs_card_label_source": "来源",
+  "srs_card_media_missing_image": "图片未同步",
+  "srs_card_media_missing_video": "视频未同步",
   "srs_card_move": "移到牌组",
   "srs_card_reset": "重置为新卡",
   "srs_card_reset_confirm": "清除这张卡的进度、当作新卡重新学？之后可以马上撤销。",

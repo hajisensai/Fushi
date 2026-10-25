@@ -12,9 +12,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
+    show SrsPictureLimits, srsPictureLimits;
 import 'package:fushi/src/srs/srs_card_video_channel.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_layout.dart' show SrsReviewImageSize;
 import 'package:material_ui/material_ui.dart';
 
 class _FakePlayer implements SrsCardVideoPlayer {
@@ -236,7 +239,11 @@ void main() {
       await dir.delete(recursive: true);
     });
 
-    Widget host(String? name) => UncontrolledProviderScope(
+    Widget host(
+      String? name, {
+      bool fillWidth = false,
+      double? maxFillHeight,
+    }) => UncontrolledProviderScope(
       container: container,
       child: TranslationProvider(
         child: MaterialApp(
@@ -248,6 +255,8 @@ void main() {
                       name: name,
                       maxWidth: 300,
                       maxHeight: 120,
+                      fillWidth: fillWidth,
+                      maxFillHeight: maxFillHeight,
                       radius: 8,
                     ),
             ),
@@ -264,9 +273,16 @@ void main() {
       await tester.pump();
     }
 
-    Future<void> mount(WidgetTester tester, [String name = 'clip.webm']) async {
+    Future<void> mount(
+      WidgetTester tester, [
+      String name = 'clip.webm',
+      bool fillWidth = false,
+      double? maxFillHeight,
+    ]) async {
       await tester.runAsync(() async {
-        await tester.pumpWidget(host(name));
+        await tester.pumpWidget(
+          host(name, fillWidth: fillWidth, maxFillHeight: maxFillHeight),
+        );
         await Future<void>.delayed(const Duration(milliseconds: 30));
       });
       await tester.pump();
@@ -478,15 +494,40 @@ void main() {
       expect(channel.playToEnd('clip.webm'), isNull);
     });
 
-    testWidgets('缺文件：什么也不画、不登记、不建播放器', (WidgetTester tester) async {
+    testWidgets('缺文件（媒体还没同步过来）：画同尺寸「视频未同步」占位，不登记、不建播放器', (
+      WidgetTester tester,
+    ) async {
       await mount(tester, 'missing.webm');
       expect(
         find.byKey(const ValueKey<String>('srs-card-video-toggle')),
         findsNothing,
       );
-      expect(find.byType(SizedBox), findsWidgets);
+      final Finder placeholder = find.byKey(
+        const ValueKey<String>('srs-card-video-missing'),
+      );
+      expect(placeholder, findsOne);
+      expect(find.text(t.srs_card_media_missing_video), findsOne);
+      // 与片段正常显示时同尺寸（16:9，受 maxHeight 120 限制），不是零尺寸。
+      expect(tester.getSize(placeholder).height, moreOrLessEquals(120));
+      expect(tester.getSize(placeholder).width, moreOrLessEquals(120 * 16 / 9));
       expect(players, isEmpty);
       expect(channel.playToEnd('missing.webm'), isNull);
+    });
+
+    testWidgets('铺满模式：16:9 片段宽 = 父级宽度（300），高不超过铺满上限', (
+      WidgetTester tester,
+    ) async {
+      await mount(tester, 'clip.webm', true, 400);
+      final Finder box = find.byKey(
+        const ValueKey<String>('srs-card-video-toggle'),
+      );
+      expect(tester.getSize(box).width, moreOrLessEquals(300));
+      expect(tester.getSize(box).height, moreOrLessEquals(300 * 9 / 16));
+
+      // 上限 120：等比缩小到高 120，不裁切。
+      await mount(tester, 'clip.webm', true, 120);
+      expect(tester.getSize(box).height, moreOrLessEquals(120));
+      expect(tester.getSize(box).width, moreOrLessEquals(120 * 16 / 9));
     });
 
     testWidgets('点按画面切换播放 / 暂停，并打断序列播放；重播从 0 开始', (WidgetTester tester) async {
@@ -553,6 +594,53 @@ void main() {
       await tester.pump();
       expect(tester.getSize(box), const Size(120, 120));
     });
+  });
+
+  test('srsCardMediaBoxSize：宽版式 16:9 视频与图片同规则铺满栏宽、高不超上限', () {
+    // 宽版式左栏 560 宽、视口 800、「原样」档：铺满上限 = 视口 40% = 320。
+    final SrsPictureLimits limits = srsPictureLimits(
+      SrsReviewImageSize.original,
+      wide: true,
+      viewport: 800,
+      thumb: 84,
+    );
+    expect(limits.fillWidth, isTrue);
+    Size box(double aspect, {double column = 560}) => srsCardMediaBoxSize(
+      aspect: aspect,
+      maxWidth: column,
+      maxHeight: limits.maxHeight,
+      fillWidth: limits.fillWidth,
+      maxFillHeight: limits.maxFillHeight,
+    );
+    final Size video = box(16 / 9);
+    expect(video.width, 560);
+    expect(video.height, lessThanOrEqualTo(limits.maxFillHeight));
+    expect(video.height, moreOrLessEquals(560 * 9 / 16));
+    // 栏更宽、按比例高超过上限：整段等比缩小到上限高度。
+    final Size capped = box(16 / 9, column: 640);
+    expect(capped.height, moreOrLessEquals(limits.maxFillHeight));
+    expect(capped.width, moreOrLessEquals(limits.maxFillHeight * 16 / 9));
+    // 超出 0.9–2.5 的比例退回写死限高（220）。
+    expect(box(3).height, lessThanOrEqualTo(limits.maxHeight));
+    expect(box(0.5).height, moreOrLessEquals(limits.maxHeight));
+    // 矮视口 +「原样」档：图片不铺满，视频同样不铺满（同一份 limits）。
+    final SrsPictureLimits short = srsPictureLimits(
+      SrsReviewImageSize.original,
+      wide: true,
+      viewport: 500,
+      thumb: 84,
+    );
+    expect(short.fillWidth, isFalse);
+    expect(
+      srsCardMediaBoxSize(
+        aspect: 16 / 9,
+        maxWidth: 560,
+        maxHeight: short.maxHeight,
+        fillWidth: short.fillWidth,
+        maxFillHeight: short.maxFillHeight,
+      ).height,
+      moreOrLessEquals(short.maxHeight),
+    );
   });
 
   test('srsCardVideoClipSize：宽受限 / 高受限 / 无宽度上限', () {
