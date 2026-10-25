@@ -102,8 +102,9 @@ class _SrsEditHistoryPageState extends ConsumerState<SrsEditHistoryPage> {
 
   String _value(SrsHistoryEntry e) {
     if (e.purged) return t.srs_note_history_purged;
-    if (e.tagAdded != null)
+    if (e.tagAdded != null) {
       return t.srs_note_history_tag_added(tag: e.tagAdded!);
+    }
     if (e.tagRemoved != null) {
       return t.srs_note_history_tag_removed(tag: e.tagRemoved!);
     }
