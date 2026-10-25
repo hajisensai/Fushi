@@ -8,8 +8,9 @@
 
 - SRS 已在 `develop` 上（`packages/fushi_srs`、`native/fushi_fsrs`、srs.db），已有用户数据和旧同步文件，所以 v2 必须带**一次性迁移**（用户已拍板：首次 v2 同步弹窗确认）。
 - 现有主键全是 UUID 文本（v7 / v5）。迁移只做「文本 → 16 字节」的无损转换，**存量 ID 一个不换**（包括按牌组名派生出的旧 ID，迁移后它们只是普通的不透明 ID）；新规则（设计 §3.1）只管今后新建的实体。
+- 要被 v2 整体替换并删除的旧备份层（P7 删）：现有自动备份 `fushi/lib/src/srs/srs_backup.dart`、备份页 `srs_backups_page.dart` 及其存储（由设计 §10 时间线 + 归档 + 手动导出取代）。
 - 要被 v2 整体替换并删除的旧同步层（P7 删）：`packages/fushi_srs/lib/src/sync/`（`sync_engine.dart` / `sync_files.dart` / `memory_replica.dart`）、`fushi/lib/src/srs/srs_sync_scheduler.dart`、`fushi/lib/src/pages/implementations/srs/srs_sync_settings.dart`、srs.db 的 `srs_sent_batches` / `srs_event_local` 及相关读写。
-- **不在本计划内**：备份（设计里的备份节已删，待重新设计；现有 `srs_backup.dart` / 备份页本计划不碰）、Anki 互通（AnkiConnect / AnkiDroid）、ASR、调度算法本身。
+- **不在本计划内**：Anki 互通（AnkiConnect / AnkiDroid）、ASR、调度算法本身。
 
 ## 1. 阶段总览
 
@@ -68,11 +69,14 @@ P5 与 P6 可并行（不碰同一批文件）；其余按序。
 6. **复习重放**：每卡事件流（Review − Retract + 调度干预）按 `(时刻, hlc)` 排序；尾部插入前推、中间插入只重放该卡尾部、参数变更全量重放；fuzz 种子 = `hash(card_id, review_op_id)`；每日计数从合并日志推出。
 7. **快照**：内容寄存器 + 标签 + 墓碑 + 冲突项 + 别名 + 复习列式表，以覆盖的版本向量命名；加载 = 快照 + 尾段。
 8. **Merkle 摘要**：按卡 ID 前缀分桶的派生状态摘要。
+9. **时间线**（设计 §10.2）：`state_at(vv)` 按截断版本向量算历史状态；`plan_restore(target, retract_reviews: bool)` 与当前状态求差、产出补偿操作（字段改回 / 复活 / 删除之后新建者 / 配置改回 / 可选 `RetractReview`）；`Checkpoint` 操作。
+10. **彻底清除**（设计 §10.5）：`Purge{entity}` 的本地执行——抹去内容载荷、保留操作骨架与哈希链可验证（段重签 + 记录被清除区间）。
 
 测试（本阶段的核心交付）：
 - 收敛性质测试：随机 2–6 台设备操作序列，任意顺序 / 重复 / 分批投递，断言最终派生状态与 Merkle 根逐比特一致。
 - 重放等价：一次性顺序喂入 ≡ 乱序分批增量重放。
 - 冲突六种组合各一组确定用例；别名「改名 + 新建旧名」不误合用例（设计 §3.1 反例）。
+- 时间线：任意时间点恢复后 `state == state_at(target)`（除勾选保留的复习外）；恢复再撤销回到恢复前状态；并发恢复与编辑的收敛性质测试。
 
 ### P3 srs.db 新 schema、旧库迁移、本地写入改走操作
 
@@ -82,7 +86,7 @@ P5 与 P6 可并行（不碰同一批文件）；其余按序。
    - 同步元数据：`devices`（DeviceId、公钥、最新 head、ack）、`self`（本机 DeviceId、下一个 seq、分叉检测用的末段哈希）、`locations`（存储位置配置与每位置上传进度）。
 2. **旧库迁移**（Rust 内一次性命令，后台 isolate，带进度）：旧事件 / 字段修改 / 复习日志 → v2 操作（ID 文本转 16 字节、不换值）；旧 writerId 不复用，本机生成新 DeviceId；迁移后 `rebuild_all()` 与迁移前的派生状态逐卡比对，不一致则中止并保留旧库。迁移前用旧实现生成固定输入 → 输出向量做回归测试（CLAUDE.md 重写规则）。
 3. **本地写入**：先由 scout 盘出现有全部写命令清单（新建 / 编辑 / 复习 / 撤销 / 挂起 / 埋卡 / 重置 / 改笔记类型 / 移动 / 删除 / 导入 / 优化参数…），逐个改成「组装操作 → 一次 FFI `apply_local(ops)`」；Dart 侧不再直接写 srs.db 业务表。
-4. **FFI**（粗粒度，设计 §11）：`apply_local(ops_bytes)`、`pending_segments(location)`、`ingest_segments(bytes[])`、`ingest_snapshot(bytes)`、`make_snapshot()`、`sync_status()`、`list_conflicts()` / `resolve_conflict()`、`migrate_v1(progress_cb)`；查询仍走现有的 Rust 直读命令。
+4. **FFI**（粗粒度，设计 §11）：`apply_local(ops_bytes)`、`plan_restore(...)` / `list_checkpoints()` / `export_fushisrs(path, with_media)` / `import_fushisrs(path)`、`pending_segments(location)`、`ingest_segments(bytes[])`、`ingest_snapshot(bytes)`、`make_snapshot()`、`sync_status()`、`list_conflicts()` / `resolve_conflict()`、`migrate_v1(progress_cb)`；查询仍走现有的 Rust 直读命令。
 
 退出条件：单机下所有 SRS 功能跑在操作日志上，现有 SRS 测试全部迁移通过；迁移回归向量全绿。
 
@@ -94,8 +98,10 @@ P5 与 P6 可并行（不碰同一批文件）；其余按序。
 2. **同步轮次编排**（设计 §6.2）：对每个勾了「同步」的位置并发执行「上传本地段 → 写 head → 读各设备 head → 拉缺段 / 快照 → `ingest_segments`」；位置间互为副本，按 OpId 幂等。
 3. **触发**：本地新操作防抖 10 s、回前台、前台 5 min 定时、手动；复习落盘不等网络。
 4. **媒体**：内容寻址上传（先于引用段）、按需拉取 + Wi-Fi 预取今日 / 明日队列、多位置镜像。
-5. **分叉检测**（设计 §7.3）、**段 / 快照 GC**（§7.1，以全部同步位置可见的 ack 为准）、**休眠设备**（§7.2）。
-6. **哑存储容错**：GDrive 最终一致与同名重复文件、写入中断、head 先于段可见。
+5. **分叉检测**（设计 §7.3）、**小段合并与旧快照清理**（§7.1，历史操作不删；以全部同步位置可见的 ack 为准）、**休眠设备**（§7.2）。
+6. **归档用途**（设计 §10.3）：写入全部段 / 快照 / 媒体，任何删除路径对归档位置一律短路（加单测钉死）。
+7. **媒体清理**：仅「被删笔记独占且删除满 90 天」的媒体，归档位置跳过；`Purge` 的跨位置重写与删除，离线位置下次连上补执行。
+8. **哑存储容错**：GDrive 最终一致与同名重复文件、写入中断、head 先于段可见。
 
 退出条件：两个模拟设备分别经 本地文件夹 / WebDAV（测试服务）/ 内存假网盘 收敛；故障注入测试全绿。
 
@@ -109,18 +115,21 @@ P5 与 P6 可并行（不碰同一批文件）；其余按序。
 
 | 页面 / 组件 | 要点 |
 |---|---|
-| 存储位置列表 | 「＋」添加（复用已登录账号 / 新后端 / 本地文件夹）；每卡显示后端、用途标签（同步 / 媒体）、加密开关、已用空间、最近成功时间、落后条数；首个位置默认全勾；取消用途不删文件，「清理此位置」二次确认 |
+| 存储位置列表 | 「＋」添加（复用已登录账号 / 新后端 / 本地文件夹）；每卡显示后端、用途标签（同步 / 媒体 / 归档，归档默认不勾）、加密开关、已用空间、最近成功时间、落后条数；首个位置默认全勾；取消用途不删文件，「清理此位置」二次确认 |
 | 冲突中心 | 六种冲突的列表与详情、通知入口、处理后同步；卡片上的「待确认」标记 |
 | 重复笔记合并建议 | 首字段 + 读音判重，确认后发 `MergeNotes` |
 | 同步状态 | 每台设备最后可见时间、落后多少、冲突数、Merkle 一致性 |
 | 迁移弹窗 | 首次 v2 同步时确认一次，说明「并入、不覆盖」 |
 | 同步历史 | 被 LWW 覆盖的低价值标量可查 |
+| 时间线 | 按天刻度 + 自动还原点列表；选时间点预览差异（多少笔记 / 卡会变）→ 勾选是否撤回之后的复习 → 恢复；恢复后可撤销 |
+| 导出 / 导入 | 手动导出 `.fushisrs`（媒体默认勾选）；导入为并入，不覆盖 |
+| 彻底清除 | 笔记 / 牌组详情里的入口，二次确认，说明不可撤销 |
 
 动效：列表 `FushiEntranceScope` + 错峰进场，按压 `FushiPressScale`，时长取 `FushiMotion`；分段选择用 `adaptiveSegmentedButton`；顶栏动作走 `FushiFloatingTopBar` 自适应溢出。新增文案全部 `i18n_sync --add`，`dart run slang` 重新生成。
 
 ### P7 删除旧同步层
 
-删除 §0 列出的旧文件与旧表的读写、旧设置项入口；旧网盘目录不自动删（用户在位置管理里手动清理）。更新 `docs/agent/` 相关段落与 CLAUDE.md 仓库地图里的 SRS 同步条目；补守卫：禁止重新引用旧同步符号。
+删除 §0 列出的旧同步层与旧备份层（文件、旧表读写、设置项与页面入口）；本机旧备份文件在迁移成功后保留 30 天再清理；旧网盘目录不自动删（用户在位置管理里手动清理）。更新 `docs/agent/` 相关段落与 CLAUDE.md 仓库地图里的 SRS 同步条目；补守卫：禁止重新引用旧同步符号。
 
 ### P8 验证与验收
 
