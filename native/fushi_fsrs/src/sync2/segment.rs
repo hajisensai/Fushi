@@ -123,22 +123,28 @@ impl SegmentHeader {
         Ok(SegmentHeader { encrypted: flags & 1 != 0, collection, device, first, last, prev_chain, last_chain })
     }
 
-    /// 文件名（设计 §6.1）。seq 补零到 12 位，按名字排序即按 seq 排序。
+    /// 文件名（设计 §6.1）。seq 补零到 12 位，按名字排序即按 seq 排序；末尾带链尾的前 8 位十六进制：
+    /// 同一 DeviceId 的两个安装（数据目录被复制，§7.3）写出的同区间段名字不同，哑存储上不会互相覆盖。
     pub fn file_name(&self) -> String {
-        segment_file_name(self.first, self.last)
+        segment_file_name(self.first, self.last, &chain_tag(&self.last_chain))
     }
 }
 
-pub fn segment_file_name(first: u64, last: u64) -> String {
-    format!("seg-{first:012}-{last:012}.bin")
+/// 链值的短标签（文件名用）。
+pub fn chain_tag(c: &Chain) -> String {
+    c[..4].iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// 从文件名解出 seq 区间。
-pub fn parse_segment_file_name(name: &str) -> Option<(u64, u64)> {
+pub fn segment_file_name(first: u64, last: u64, tag: &str) -> String {
+    format!("seg-{first:012}-{last:012}-{tag}.bin")
+}
+
+/// 从文件名解出 (first, last, 标签)。
+pub fn parse_segment_file_name(name: &str) -> Option<(u64, u64, String)> {
     let rest = name.strip_prefix("seg-")?.strip_suffix(".bin")?;
-    let (a, b) = rest.split_once('-')?;
-    let (a, b) = (a.parse().ok()?, b.parse().ok()?);
-    (a >= 1 && b >= a).then_some((a, b))
+    let mut it = rest.splitn(3, '-');
+    let (a, b, t) = (it.next()?.parse().ok()?, it.next()?.parse().ok()?, it.next()?);
+    (a >= 1 && b >= a && t.len() == 8).then(|| (a, b, t.to_owned()))
 }
 
 /// 一段已校验的操作。
@@ -333,8 +339,8 @@ pub struct Head {
     /// 该设备已发布的最大 seq（0 = 只发布了身份，还没有操作）。
     pub seq: u64,
     pub chain: Chain,
-    /// 已发布的段区间（升序、首尾相接、覆盖 1..=seq）。
-    pub segments: Vec<(u64, u64)>,
+    /// 已发布的段（升序、首尾相接、覆盖 1..=seq）：(first, last, 链尾标签)。
+    pub segments: Vec<(u64, u64, String)>,
     /// 该设备已应用的版本向量（压缩 / 清理以「全部设备的 ack」为准）。
     pub ack: Vv,
     /// 在 [ack] 下的派生状态摘要（确定性自检，设计 §4.5）。
@@ -364,7 +370,12 @@ fn unhex<const N: usize>(s: &str) -> Option<[u8; N]> {
 
 impl Head {
     pub fn file_name(&self) -> String {
-        head_file_name(self.gen)
+        head_file_name(self.gen, &chain_tag(&self.chain))
+    }
+
+    /// head 引用的段文件名。
+    pub fn segment_files(&self) -> Vec<String> {
+        self.segments.iter().map(|(a, b, t)| segment_file_name(*a, *b, t)).collect()
     }
 
     /// 签名覆盖的规范 JSON（键序固定）。
@@ -380,7 +391,7 @@ impl Head {
             "pub": hex(&self.public),
             "seq": self.seq,
             "chain": hex(&self.chain),
-            "segments": self.segments.iter().map(|(a, b)| json!([a, b])).collect::<Vec<_>>(),
+            "segments": self.segments.iter().map(|(a, b, t)| json!([a, b, t])).collect::<Vec<_>>(),
             "ack": ack,
             "digest": self.digest,
             "at": self.at_ms,
@@ -410,7 +421,8 @@ impl Head {
         for x in v.get("segments").and_then(Value::as_array).ok_or("head: missing segments")? {
             let a = x.get(0).and_then(Value::as_u64).ok_or("head: bad segment")?;
             let b = x.get(1).and_then(Value::as_u64).ok_or("head: bad segment")?;
-            segments.push((a, b));
+            let t = x.get(2).and_then(Value::as_str).filter(|t| t.len() == 8).ok_or("head: bad segment")?;
+            segments.push((a, b, t.to_owned()));
         }
         let mut ack = Vv::new();
         for (k, x) in v.get("ack").and_then(Value::as_object).ok_or("head: missing ack")? {
@@ -438,7 +450,7 @@ impl Head {
         }
         // 段清单必须首尾相接、覆盖 1..=seq（否则读者无法判断「引用段都可读」）。
         let mut next = 1;
-        for &(a, b) in &head.segments {
+        for &(a, b, _) in &head.segments {
             if a != next || b < a {
                 return Err("head: segments not contiguous".into());
             }
@@ -451,12 +463,14 @@ impl Head {
     }
 }
 
-pub fn head_file_name(gen: u64) -> String {
-    format!("head-{gen:012}.json")
+/// head 文件名：代号 + 链尾标签（同一身份的两个安装写同一代号也不互相覆盖）。
+pub fn head_file_name(gen: u64, tag: &str) -> String {
+    format!("head-{gen:012}-{tag}.json")
 }
 
 pub fn parse_head_file_name(name: &str) -> Option<u64> {
-    name.strip_prefix("head-")?.strip_suffix(".json")?.parse().ok()
+    let rest = name.strip_prefix("head-")?.strip_suffix(".json")?;
+    rest.split_once('-')?.0.parse().ok()
 }
 
 #[cfg(test)]
@@ -539,7 +553,7 @@ pub(crate) mod tests {
             public: signer.public(),
             seq: 30,
             chain: [7; 32],
-            segments: vec![(1, 10), (11, 30)],
+            segments: vec![(1, 10, "aaaaaaaa".into()), (11, 30, "bbbbbbbb".into())],
             ack,
             digest: "abc".into(),
             at_ms: 123,
@@ -553,10 +567,10 @@ pub(crate) mod tests {
 
     #[test]
     fn file_names_sort_by_seq() {
-        assert_eq!(parse_segment_file_name(&segment_file_name(3, 2000)), Some((3, 2000)));
-        assert!(segment_file_name(9, 9) < segment_file_name(10, 10));
-        assert_eq!(parse_head_file_name(&head_file_name(42)), Some(42));
-        assert_eq!(parse_segment_file_name("seg-1-0.bin"), None);
+        assert_eq!(parse_segment_file_name(&segment_file_name(3, 2000, "0a1b2c3d")), Some((3, 2000, "0a1b2c3d".into())));
+        assert!(segment_file_name(9, 9, "ffffffff") < segment_file_name(10, 10, "00000000"));
+        assert_eq!(parse_head_file_name(&head_file_name(42, "0a1b2c3d")), Some(42));
+        assert_eq!(parse_segment_file_name("seg-1-0-00000000.bin"), None);
     }
 
     #[test]

@@ -1,0 +1,293 @@
+//! 端到端：每台「设备」一个独立的 srs.db，经一个内存哑存储（只会按路径存取字节）交换段与 head。
+
+use std::collections::BTreeMap;
+
+use serde_json::{json, Value};
+
+use crate::store::SrsCore;
+
+pub(crate) const P: &str = "0193a1b2-0000-7000-8000-00000000beef";
+
+/// 内存哑存储：路径 → 字节。
+#[derive(Default, Clone)]
+pub(crate) struct Bucket(pub BTreeMap<String, Vec<u8>>);
+
+pub(crate) struct Device {
+    pub core: SrsCore,
+    pub _dir: tempdir::Dir,
+}
+
+pub(crate) mod tempdir {
+    pub struct Dir(pub std::path::PathBuf);
+    impl Drop for Dir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    pub fn new(tag: &str) -> Dir {
+        let p = std::env::temp_dir().join(format!("fushi-sync2-{tag}-{}", crate::sync2::id::Id::random().text()));
+        std::fs::create_dir_all(&p).unwrap();
+        Dir(p)
+    }
+}
+
+impl Device {
+    pub fn new(tag: &str) -> Device {
+        let dir = tempdir::new(tag);
+        let core = SrsCore::open(&dir.0.join("srs.db")).unwrap();
+        Device { core, _dir: dir }
+    }
+
+    pub fn copy_of(other: &Device, tag: &str) -> Device {
+        let dir = tempdir::new(tag);
+        other.core.snapshot_into(&dir.0.join("srs.db"), false).unwrap();
+        let core = SrsCore::open(&dir.0.join("srs.db")).unwrap();
+        Device { core, _dir: dir }
+    }
+
+    pub fn apply(&self, now: i64, events: Vec<Value>) -> Value {
+        let input: Vec<Value> = events.into_iter().map(|e| json!({"e": e, "note": "N1"})).collect();
+        serde_json::from_str(&self.core.sync2_apply_local(P, now, &Value::Array(input).to_string()).unwrap()).unwrap()
+    }
+
+    /// 一轮同步（设计 §6.2）：先读全部 head → 拉缺的段 → 收（分叉在这一步发现并换身份）→ 再发段 → 写 head。
+    /// 先读后写：同一身份的另一个安装刚写的 head 不会被自己这一轮的 head 盖掉视线。
+    pub fn sync(&self, bucket: &mut Bucket, location: &str, now: i64) -> Value {
+        self.core.sync2_identity(P, now).unwrap();
+        // 每台设备取 gen 最大的 head；同一 gen 有两份（孪生）就都交给内核。
+        let mut by_dev: BTreeMap<String, Vec<(u64, Vec<u8>)>> = BTreeMap::new();
+        for (path, bytes) in &bucket.0 {
+            let parts: Vec<&str> = path.split('/').collect();
+            if parts.len() == 3 {
+                if let Some(g) = crate::sync2::segment::parse_head_file_name(parts[2]) {
+                    by_dev.entry(parts[1].to_owned()).or_default().push((g, bytes.clone()));
+                }
+            }
+        }
+        let mut heads: Vec<Vec<u8>> = Vec::new();
+        for (_, hs) in by_dev {
+            let top = hs.iter().map(|x| x.0).max().unwrap();
+            heads.extend(hs.into_iter().filter(|x| x.0 == top).map(|x| x.1));
+        }
+        let plan = self.core.sync2_plan(P, &heads).unwrap();
+        let mut fetched = Vec::new();
+        for f in plan["fetch"].as_array().unwrap() {
+            for name in f["files"].as_array().unwrap() {
+                if let Some(b) = bucket.0.get(name.as_str().unwrap()) {
+                    fetched.push(b.clone());
+                }
+            }
+        }
+        let out: Value = serde_json::from_str(&self.core.sync2_ingest(P, &fetched, None, now).unwrap()).unwrap();
+        let (segs, upto) = self.core.sync2_outbox(P, location, None).unwrap();
+        for (path, bytes) in segs {
+            bucket.0.insert(path, bytes);
+        }
+        let (path, bytes, _) = self.core.sync2_head(P, location, upto, now).unwrap();
+        bucket.0.insert(path, bytes);
+        self.core.sync2_digest(P).unwrap();
+        out
+    }
+
+    pub fn rows(&self, sql: &str) -> Vec<Vec<String>> {
+        let bytes = self.core.debug_query(sql, &[]).unwrap();
+        crate::store::rows::decode_for_tests(&bytes)
+    }
+
+    pub fn state(&self, card: &str) -> Value {
+        let rows = self.rows(&format!("SELECT json FROM srs_review_logs WHERE card_id = '{card}'"));
+        let jsons: Vec<&str> = rows.iter().skip(1).map(|r| r[0].as_str()).collect();
+        let st = crate::history::state_from_json(&jsons, &vec![None; jsons.len()]).unwrap();
+        json!(format!("{st:?}"))
+    }
+
+    pub fn digest(&self) -> String {
+        self.core.sync2_digest(P).unwrap()["digest"].as_str().unwrap().to_owned()
+    }
+}
+
+pub(crate) fn deck_entity(id: &str) -> Value {
+    json!({"t": "entity", "x": {"id": id, "p": P, "k": "deck", "d": {"createdAt": 1, "builtin": "default"}}})
+}
+
+pub(crate) fn edit(kind: &str, entity: &str, key: &str, v: Value) -> Value {
+    json!({"t": "edit", "x": {
+        "id": "ignored", "p": P, "k": kind, "e": entity, "f": key, "w": "dart", "s": 1,
+        "ctx": {"vv": {}}, "v": v, "hlc": "0:0:dart", "ts": "anchored"
+    }})
+}
+
+pub(crate) fn review(id: &str, card: &str, at: i64, rating: i64, rtype: &str) -> Value {
+    json!({"t": "log", "x": {
+        "id": id, "p": P, "card": card, "kind": "review", "rating": rating, "hlc": "0:0:dart", "at": at,
+        "ts": "anchored", "origin": "fushi", "rtype": rtype, "utcOff": 0, "rollover": 4, "fv": 1,
+        "res": {"queue": "new", "ivl": 0, "step": 0, "reps": 0, "lapses": 0, "scheduler": "fushi"}
+    }})
+}
+
+const T0: i64 = 1_700_000_000_000;
+const DAY: i64 = 86_400_000;
+
+fn projection(d: &Device) -> Vec<Vec<String>> {
+    let mut out = d.rows("SELECT id, json FROM srs_field_edits ORDER BY id");
+    out.extend(d.rows("SELECT id, json FROM srs_review_logs ORDER BY id"));
+    out.extend(d.rows("SELECT id, payload_json FROM srs_entities ORDER BY id"));
+    out
+}
+
+#[test]
+fn two_devices_converge_and_concurrent_reviews_all_count() {
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let mut bucket = Bucket::default();
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
+    a.sync(&mut bucket, "loc", T0);
+    b.sync(&mut bucket, "loc", T0);
+    assert_eq!(projection(&a), projection(&b), "B received A's ops");
+
+    // 离线各复习同一张卡（设计 §4.1 的例子）。
+    a.apply(T0 + 10, vec![review("a1", "C", T0 + 10, 3, "learn")]);
+    b.apply(T0 + 2 * 3_600_000, vec![review("b1", "C", T0 + 2 * 3_600_000, 2, "learn")]);
+    a.apply(T0 + DAY + 1_800_000, vec![review("a2", "C", T0 + DAY + 1_800_000, 1, "review")]);
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 2 * DAY);
+        b.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    }
+    assert_eq!(projection(&a), projection(&b), "same op set → same projection, row for row");
+    assert_eq!(a.state("C"), b.state("C"));
+    assert!(a.state("C").as_str().unwrap().contains("reps: 3"), "{}", a.state("C"));
+    assert_eq!(a.digest(), b.digest());
+
+    // 同一顺序在单台设备上依次复习得到的状态与合并结果相同（重放而非覆盖）。
+    let solo = Device::new("solo");
+    solo.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
+    solo.apply(T0 + 10, vec![review("a1", "C", T0 + 10, 3, "learn")]);
+    solo.apply(T0 + 2 * 3_600_000, vec![review("b1", "C", T0 + 2 * 3_600_000, 2, "learn")]);
+    solo.apply(T0 + DAY + 1_800_000, vec![review("a2", "C", T0 + DAY + 1_800_000, 1, "review")]);
+    let res = |d: &Device| d.rows("SELECT id, json_extract(json, '$.res') FROM srs_review_logs ORDER BY id");
+    assert_eq!(res(&a), res(&solo));
+}
+
+#[test]
+fn delivery_order_and_duplicates_do_not_matter() {
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let c = Device::new("c");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck)]);
+    for i in 0..30 {
+        a.apply(T0 + i * 1000, vec![edit("note", "N1", "f/x", json!(format!("a{i}")))]);
+        b.apply(T0 + i * 1000 + 500, vec![edit("note", "N1", "f/x", json!(format!("b{i}")))]);
+        a.apply(T0 + i * 7_200_000, vec![review(&format!("ra{i}"), "C", T0 + i * 7_200_000, 1 + i % 4, "learn")]);
+        b.apply(T0 + i * 7_200_000 + 60_000, vec![review(&format!("rb{i}"), "C", T0 + i * 7_200_000 + 60_000, 1 + (i + 1) % 4, "learn")]);
+    }
+    // C 先收 B 再收 A（顺序与 A、B 各自不同），而且收两遍。
+    b.sync(&mut bucket, "loc", T0 + 99 * DAY);
+    c.sync(&mut bucket, "loc", T0 + 99 * DAY);
+    a.sync(&mut bucket, "loc", T0 + 99 * DAY);
+    for _ in 0..2 {
+        c.sync(&mut bucket, "loc", T0 + 99 * DAY);
+        b.sync(&mut bucket, "loc", T0 + 99 * DAY);
+        a.sync(&mut bucket, "loc", T0 + 99 * DAY);
+    }
+    assert_eq!(projection(&a), projection(&b));
+    assert_eq!(projection(&b), projection(&c));
+    assert_eq!(a.digest(), c.digest());
+    // 两边并发写同一字段：多值寄存器保留两个现存值（不静默丢），三端一致。
+    let live = a.rows("SELECT COUNT(*) FROM srs_field_edits WHERE field_key = 'f/x'");
+    assert_eq!(live[1][0], "2");
+}
+
+#[test]
+fn cloned_data_directory_forks_and_rotates_without_losing_anything() {
+    let a = Device::new("a");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
+    a.sync(&mut bucket, "loc", T0);
+    // 把数据目录整个拷到「新手机」：同一个 DeviceId、同一个 seq，开始各写各的。
+    let twin = Device::copy_of(&a, "twin");
+    a.apply(T0 + 1000, vec![review("ra", "C", T0 + 1000, 3, "learn"), edit("note", "N1", "f/x", json!("from-a"))]);
+    twin.apply(T0 + 2000, vec![review("rt", "C", T0 + 2000, 4, "learn"), edit("note", "N1", "f/x", json!("from-twin"))]);
+    let observer = Device::new("obs");
+    a.sync(&mut bucket, "loc", T0 + DAY);
+    let t = twin.sync(&mut bucket, "loc", T0 + DAY);
+    let s = a.sync(&mut bucket, "loc", T0 + DAY);
+    assert!(t["fork"] == json!(true) || s["fork"] == json!(true), "a fork must be detected: {t} / {s}");
+    for _ in 0..3 {
+        a.sync(&mut bucket, "loc", T0 + DAY);
+        twin.sync(&mut bucket, "loc", T0 + DAY);
+        observer.sync(&mut bucket, "loc", T0 + DAY);
+    }
+    let ids = |d: &Device| d.rows("SELECT id FROM srs_review_logs ORDER BY id");
+    for d in [&a, &twin, &observer] {
+        let logs = ids(d);
+        assert!(logs.iter().any(|r| r[0] == "ra") && logs.iter().any(|r| r[0] == "rt"), "both branches' reviews survive");
+        let vals = d.rows("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE field_key = 'f/x' ORDER BY 1");
+        let vals: Vec<&str> = vals.iter().skip(1).map(|r| r[0].as_str()).collect();
+        assert!(vals.contains(&"from-a") && vals.contains(&"from-twin"), "both branches' edits survive: {vals:?}");
+    }
+    assert_eq!(ids(&a), ids(&observer));
+    assert_eq!(a.state("C"), observer.state("C"));
+    let devs = |d: &Device| d.core.sync2_status(P).unwrap()["device"].as_str().unwrap().to_owned();
+    assert_ne!(devs(&a), devs(&twin), "at least one side took a new identity");
+}
+
+#[test]
+fn migration_wraps_legacy_rows_and_keeps_projection() {
+    let a = Device::new("a");
+    // 旧库：直接写投影表（模拟 v2 之前的数据），再迁移。
+    let deck = super::config::default_deck_id(P);
+    let w = a.core.writer().unwrap();
+    w.execute_batch(&format!(
+        "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES ('{deck}', '{P}', 'deck', '{{\"createdAt\":1}}', 1);
+         INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) VALUES
+           ('{e1}', '{P}', 'note', 'N1', 'f/x', 'old', 1, '{{\"ctx\":{{\"vv\":{{}}}},\"e\":\"N1\",\"f\":\"f/x\",\"hlc\":\"5:0:old\",\"id\":\"{e1}\",\"k\":\"note\",\"p\":\"{P}\",\"s\":1,\"ts\":\"wall\",\"v\":\"legacy\",\"w\":\"old\"}}');",
+        e1 = crate::registers::edit_id("old", 1)
+    ))
+    .unwrap();
+    drop(w);
+    let before = projection(&a);
+    let m = a.core.sync2_migrate(P, T0).unwrap();
+    assert_eq!(m["ops"], json!(2));
+    assert_eq!(projection(&a), before, "migration does not rewrite projection rows");
+    // 迁移后的本机新写入因果覆盖旧记录（旧 dot 在新写入的上下文闭包里）。
+    a.apply(T0 + 1, vec![edit("note", "N1", "f/x", json!("v2"))]);
+    let vals = a.rows("SELECT json_extract(json, '$.v') FROM srs_field_edits WHERE field_key = 'f/x'");
+    assert_eq!(vals.len(), 2, "{vals:?}");
+    assert_eq!(vals[1][0], "v2");
+    // 另一台设备从位置上收到全部操作（含迁移的旧记录），投影与 A 相同。
+    let b = Device::new("b");
+    let mut bucket = Bucket::default();
+    a.sync(&mut bucket, "loc", T0 + 2);
+    b.sync(&mut bucket, "loc", T0 + 2);
+    assert_eq!(projection(&a), projection(&b));
+}
+
+/// 从备份快照恢复（快照剥掉了本机同步身份）= 一台新设备：拿新身份，原设备之后的操作照常续收（设计 §7.3）。
+#[test]
+fn restoring_a_backup_snapshot_is_a_new_device_not_a_fork() {
+    let a = Device::new("a");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck), review("r1", "C", T0, 3, "learn")]);
+    a.sync(&mut bucket, "loc", T0);
+    let dir = tempdir::new("restore");
+    a.core.snapshot_into(&dir.0.join("srs.db"), true).unwrap();
+    a.apply(T0 + 1000, vec![review("r2", "C", T0 + 1000, 3, "learn")]);
+    a.sync(&mut bucket, "loc", T0 + 1000);
+    let restored = Device { core: SrsCore::open(&dir.0.join("srs.db")).unwrap(), _dir: dir };
+    let out = restored.sync(&mut bucket, "loc", T0 + 2000);
+    assert_eq!(out["fork"], json!(false));
+    let me = |d: &Device| d.core.sync2_status(P).unwrap()["device"].as_str().unwrap().to_owned();
+    assert_ne!(me(&a), me(&restored));
+    restored.apply(T0 + 3000, vec![review("r3", "C", T0 + 3000, 1, "learn")]);
+    for _ in 0..2 {
+        restored.sync(&mut bucket, "loc", T0 + 4000);
+        a.sync(&mut bucket, "loc", T0 + 4000);
+    }
+    assert_eq!(projection(&a), projection(&restored));
+    assert_eq!(a.rows("SELECT COUNT(*) FROM srs_review_logs")[1][0], "3");
+}

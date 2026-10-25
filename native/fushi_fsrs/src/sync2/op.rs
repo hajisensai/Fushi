@@ -206,6 +206,8 @@ pub enum Intent {
 pub struct LogBody {
     pub id: Key,
     pub card: Key,
+    /// 卡所属的笔记（重放要按它找牌组配置；卡片行是派生的，收到的设备可能还没物化出这张卡）。
+    pub note: Option<Key>,
     pub kind: String,
     pub rating: Option<i64>,
     pub revokes: Option<Key>,
@@ -385,6 +387,13 @@ fn read_code(r: &mut Reader<'_>, table: &[&str]) -> DResult<String> {
 fn write_log(w: &mut Writer, l: &LogBody) {
     l.id.write(w);
     l.card.write(w);
+    match &l.note {
+        None => w.u8(0),
+        Some(k) => {
+            w.u8(1);
+            k.write(w);
+        }
+    }
     write_code(w, &LOG_KINDS, &l.kind);
     w.u8(l.rating.map_or(0, |r| (r.clamp(0, 254) + 1) as u8));
     match &l.revokes {
@@ -428,6 +437,11 @@ fn write_log(w: &mut Writer, l: &LogBody) {
 fn read_log(r: &mut Reader<'_>) -> DResult<LogBody> {
     let id = Key::read(r)?;
     let card = Key::read(r)?;
+    let note = match r.u8()? {
+        0 => None,
+        1 => Some(Key::read(r)?),
+        _ => return Err(DecodeError("log note tag")),
+    };
     let kind = read_code(r, &LOG_KINDS)?;
     let rating = match r.u8()? {
         0 => None,
@@ -461,6 +475,7 @@ fn read_log(r: &mut Reader<'_>) -> DResult<LogBody> {
     Ok(LogBody {
         id,
         card,
+        note,
         kind,
         rating,
         revokes,
@@ -491,6 +506,7 @@ pub(crate) mod tests {
         LogBody {
             id: Key::Uuid(Id([7; 16])),
             card: Key::Uuid(Id([8; 16])),
+            note: Some(Key::Uuid(Id([9; 16]))),
             kind: "review".into(),
             rating: Some(3),
             revokes: None,
@@ -553,7 +569,7 @@ pub(crate) mod tests {
     fn a_review_is_compact() {
         // 未压缩约 80 字节（两个 16 字节 ID 占大头）；段里 zstd 之后见 segment.rs 的体积测试。
         let n = Body::Log(sample_log()).encode().len();
-        assert!(n <= 96, "review payload {n} bytes");
+        assert!(n <= 112, "review payload {n} bytes");
     }
 
     #[test]
