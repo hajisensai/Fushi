@@ -1798,6 +1798,12 @@ class SyncRepository {
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
+    // 复习同步 v2 的文件夹存储位置：路径是这台设备的磁盘 / 挂载点，换设备恢复带过去没有意义。
+    PreferencesRepository.srsFolderLocationsKey,
+    // 首次 v2 同步的确认是这台设备做的：别的设备恢复备份带过来不能替它确认。
+    PreferencesRepository.srsSync2MergeConfirmedKey,
+    // 复习同步 v2 存储位置的加密密钥：凭据，绝不随备份 / Profile 出境（换设备时重新输入口令）。
+    PreferencesRepository.srsLocationKeysKey,
     // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
     kStudyProfileNameAliasesPrefKey,
     _keyBackendType,
@@ -1815,10 +1821,6 @@ class SyncRepository {
     // 「本机作为制卡落地设备」：换设备恢复备份若把它带过去，就会同时有两台落地设备，
     // 同一张卡被两边各落一次。
     _keyPendingMineLandingClaimedAt,
-    // 复习自动备份的开关与保留策略：备份文件只存在本机（<documents>/srs_backups），
-    // 设置描述的是这台设备的磁盘，换设备恢复带过去没有意义。
-    PreferencesRepository.srsBackupAutoKey,
-    PreferencesRepository.srsBackupLimitsKey,
     // Anki 制卡设置：AnkiConnect 地址 / apiKey（明文）/ 本机 Anki 路径都是这台设备的
     // 事实，迁 Drift 之前它活在 SharedPreferences 里，本来就不随备份 / 同步出境。
     kAnkiSettingsPrefKey,

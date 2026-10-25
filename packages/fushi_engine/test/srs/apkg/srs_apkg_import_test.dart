@@ -15,11 +15,13 @@ import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
 import 'apkg_test_support.dart';
+import '../support/srs_sync2_peers.dart';
 import '../support/srs_test_storage.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 
@@ -290,7 +292,7 @@ Uint8List customApkg(
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   int t = ms(2026, 10, 14, 12);
-  late MemoryDir dir;
+  late SrsMemoryLocationStore dir;
   late List<String> stored;
 
   Future<String> storeMedia(String name, Uint8List bytes) async {
@@ -300,7 +302,7 @@ void main() {
 
   setUp(() {
     t = ms(2026, 10, 14, 12);
-    dir = MemoryDir(() => t);
+    dir = SrsMemoryLocationStore();
     stored = <String>[];
   });
 
@@ -316,17 +318,8 @@ void main() {
     zstdDecompress: (Uint8List b) => null,
   );
 
-  Future<void> syncAll(List<SrsDbStore> stores) async {
-    for (int round = 0; round < 3; round++) {
-      for (final SrsDbStore s in stores) {
-        await SrsSyncEngine(
-          directoryKey: 'test',
-          directory: dir,
-          replica: s,
-        ).syncOnce();
-      }
-    }
-  }
+  Future<void> syncAll(List<SrsDbStore> stores) =>
+      srsSyncPeers(stores, dir, rounds: 3);
 
   String basicNt(String profile) => SrsIds.noteType(profile, kBasic);
   String clozeNt(String profile) => SrsIds.noteType(profile, kCloze);

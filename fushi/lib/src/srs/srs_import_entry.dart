@@ -26,6 +26,7 @@ import 'package:fushi_engine/srs/apkg/srs_export_options.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
@@ -484,6 +485,18 @@ String srsSyncErrorReason(Object error) => switch (error) {
     t.srs_sync_directory_unidentified,
   SrsSyncReportError(message: kSrsSyncStoreUnavailable) =>
     t.srs_sync_store_unavailable,
+  SrsSyncReportError(message: kSrsSyncAwaitingConfirm) =>
+    t.srs_sync_awaiting_confirm,
+  SrsSyncReportError(message: kSrsSync2NeedsKey) =>
+    t.srs_timeline_location_needs_key,
+  SrsSyncReportError(message: kSrsSync2WrongKey) =>
+    t.srs_timeline_location_wrong_key,
+  SrsSyncReportError(message: kSrsSync2EncryptionMissing) =>
+    t.srs_timeline_location_encryption_missing,
+  SrsSyncReportError(message: kSrsSync2BadKdf) =>
+    t.srs_timeline_location_bad_kdf,
+  SrsSyncReportError(message: kSrsSync2MetaUnavailable) =>
+    t.srs_sync_location_meta_unavailable,
   _ => friendlySyncErrorDetail(error),
 };
 

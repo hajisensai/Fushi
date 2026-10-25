@@ -195,6 +195,11 @@ fn uuid_v5(namespace: &[u8; 16], name: &str) -> String {
     )
 }
 
+/// 修改记录 ID（Dart `SrsIds.fieldEdit`）：由 dot 决定。同步 v2 的投影行（sync2）与这里同一个函数。
+pub fn edit_id(writer: &str, seq: i64) -> String {
+    uuid_v5(&uuid_bytes(SRS_NAMESPACE), &format!("edit/{writer}/{seq}"))
+}
+
 /// Dart `SrsFieldEdit.fromJson`：kind 不认识 / 必填键缺失或类型不对 / ID 与 dot 不符 → 坏数据。
 fn parse_edit<'a>(
     json: &'a str,
@@ -1046,6 +1051,69 @@ fn entity_json(ent: &Entity<'_, '_>, view: Option<Value>) -> Value {
         m.insert("v".to_owned(), v);
     }
     Value::Object(m)
+}
+
+// ---------------------------------------------------------------- crate 内部入口（同步 v2，sync2）
+
+/// 一条落库修改记录（JSON 原文 + S(e)）。
+pub(crate) type StoredEdit<'a> = (&'a str, Option<i64>);
+
+fn parse_stored<'a>(edits: &[StoredEdit<'a>]) -> Result<Vec<Edit<'a>>, String> {
+    let ns = uuid_bytes(SRS_NAMESPACE);
+    edits.iter().map(|(j, s)| parse_edit(j, *s, &ns)).collect()
+}
+
+/// 落库裁剪（[land]，与 `materialize` 的 `land` 组同一个判据）：前 [existing] 条是已有的，其余依次到达。
+/// 返回每条到达的落不落、以及删掉了谁（下标指向全部项）。
+pub(crate) fn land_stored(edits: &[StoredEdit<'_>], existing: usize) -> Result<(Vec<bool>, Vec<Vec<usize>>), String> {
+    let parsed = parse_stored(edits)?;
+    let v = land(&parsed, existing);
+    let landed = v["l"].as_array().map(|a| a.iter().map(|x| x.as_u64() == Some(1)).collect()).unwrap_or_default();
+    let deleted = v["d"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|d| d.as_array().map(|x| x.iter().filter_map(|i| i.as_u64().map(|i| i as usize)).collect()).unwrap_or_default())
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok((landed, deleted))
+}
+
+/// 牌组的物化视图（与 `materialize` 的 `deck` 组同一份，键见 [deck_view]）。
+pub(crate) fn deck_view_of(payload: &Value, edits: &[StoredEdit<'_>]) -> Result<Value, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    deck_view(&ent, payload)
+}
+
+/// 某实体某字段键的生效值（多值寄存器按读路径的规则取胜者；没有记录 = null）。
+pub(crate) fn register_value(edits: &[StoredEdit<'_>], key: &str) -> Result<Value, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    Ok(ent.value(key).clone())
+}
+
+/// 一组卡的血统与标志（与 `materialize` 的 `cards` 组同一份）：[cards] 是 (卡 ID, 它的修改记录)，
+/// [want] 是 (卡 ID, 笔记首选牌组, 默认牌组)。返回每个 want 的 (血统, 标志 JSON)。
+pub(crate) fn card_lineage_flags(
+    cards: &[(String, Vec<StoredEdit<'_>>)],
+    want: &[(String, Option<String>, String)],
+) -> Result<Vec<(Vec<String>, Value)>, String> {
+    let mut all: Vec<StoredEdit<'_>> = Vec::new();
+    let mut counts: Vec<(String, usize)> = Vec::with_capacity(cards.len());
+    for (id, es) in cards {
+        all.extend_from_slice(es);
+        counts.push((id.clone(), es.len()));
+    }
+    let parsed = parse_stored(&all)?;
+    let v = cards_group(&parsed, &counts, want)?;
+    let mut out = Vec::with_capacity(want.len());
+    for w in v["w"].as_array().cloned().unwrap_or_default() {
+        let lineage = w["l"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect()).unwrap_or_default();
+        out.push((lineage, w["f"].clone()));
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

@@ -107,3 +107,24 @@ impl<'a> Reader<'a> {
         })
     }
 }
+
+/// 测试用：一页行解成字符串（NULL = "NULL"，BLOB = 十六进制）。
+#[cfg(test)]
+pub fn decode_for_tests(bytes: &[u8]) -> Vec<Vec<String>> {
+    decode(bytes)
+        .expect("row page")
+        .1
+        .into_iter()
+        .map(|r| {
+            r.into_iter()
+                .map(|v| match v {
+                    Value::Null => "NULL".to_owned(),
+                    Value::Integer(i) => i.to_string(),
+                    Value::Real(f) => f.to_string(),
+                    Value::Text(t) => t,
+                    Value::Blob(b) => b.iter().map(|x| format!("{x:02x}")).collect(),
+                })
+                .collect()
+        })
+        .collect()
+}

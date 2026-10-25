@@ -20,7 +20,6 @@ import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
 
 Future<SrsDbStore> _openStore(WidgetTester tester) async {
@@ -53,7 +52,7 @@ Future<void> _pumpPage(
   tester.view.physicalSize = const Size(1100, 1600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final AppModel appModel = AppModel(testPlatformServices());
+  final AppModel appModel = SrsTestAppModel();
   await tester.pumpWidget(
     ProviderScope(
       overrides: <Override>[

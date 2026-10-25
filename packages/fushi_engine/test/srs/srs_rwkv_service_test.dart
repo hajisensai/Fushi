@@ -237,6 +237,13 @@ class _Fixture {
     }
   }
 
+  /// 推到 [card] 存下的到期日之后（排程只由 Rust 的确定性 FSRS 算，间隔取决于真实参数，不写死天数）。
+  Future<void> advancePastDue(String card) async {
+    final int due = (await store.cardRow(card))!.dueDay!;
+    final SrsDayContext day = await store.dayContext();
+    clock[0] = day.dayStartMs(due) + 3600 * 1000;
+  }
+
   Future<void> useAlgorithm(SrsAlgorithm algorithm) async {
     await store.editFields(
       SrsEntityKind.deck,
@@ -534,8 +541,8 @@ void main() {
       }
       expect(service.status.phase, SrsRwkvPhase.failed);
       expect(backend.queries, 0);
-      // 过了 FSRS 的到期日（6 天，带 fuzz）就照常出。
-      f.advance(kDay * 10);
+      // 过了 FSRS 的到期日就照常出。
+      await f.advancePastDue(cards.single);
       expect(await f.store.nextCard(f.store.defaultDeckId), cards.single);
       await service.close();
     });
@@ -552,7 +559,7 @@ void main() {
       final SrsAnswerPreview preview = await f.store.preview(cards.single);
       expect(preview.algorithm, SrsAlgorithm.fsrs7);
       expect(preview.rwkvUnavailable, isFalse);
-      f.advance(kDay * 10); // 过了 FSRS 的到期日（6 天，带 fuzz）
+      await f.advancePastDue(cards.single); // 过了 FSRS 的到期日
       expect(await f.store.nextCard(f.store.defaultDeckId), cards.single);
       expect(backend.queries, 0);
       await service.close();
@@ -802,7 +809,7 @@ void main() {
       final SrsPurgeReport r = await srsPurgeNotesNow(f.store, <String>[
         noteId,
       ]);
-      expect(r.cards, 1);
+      expect(r.notes, 1);
       await pumpEventQueue();
       expect(backend.removed, <int>[goneId]);
       expect(backend.scores.containsKey(goneId), isFalse);
@@ -994,7 +1001,7 @@ void main() {
       await service.close();
       final SrsFutureDue fallback = (await loadSrsStats(
         f.store,
-      )).data.futureDue(30);
+      )).data.futureDue(3650);
       expect(fallback.byRecall, 0);
       expect(fallback.total, 3);
     });

@@ -1,46 +1,56 @@
-/// SRS 媒体同步（第三期「传输」：媒体按内容哈希存，只传对方没有的文件，文件名就是哈希）。
+/// SRS 媒体同步（docs/specs/2026-10-25-srs-sync-v2-design.md §6.4、§6.5、§10.5）。
 ///
-/// 布局：`<namespace fushi-srs>/<profileUid>/<writerId>/media/<sha1.ext>`——媒体也只由上传它的写入者写
-/// （单写者规则）；读方从任意写入者的 media 目录取。
+/// 媒体内容寻址、不可变、只增：文件名就是内容哈希（制卡 / 导入时按内容命名），所以集合根下一个共用目录
+/// `media/<文件名>` 就是内容寻址存储，不再按写入者分目录。每轮（操作同步之后）：
+/// 1. 收集本 profile 全部存活笔记（含删除未满保留期的）与笔记类型引用的媒体文件名；
+/// 2. 本机缺、位置上有 → 下载；位置上没有、本机有 → 上传（位置之间互为镜像，缺的从别处补）；
+/// 3. 只被「删除已满 [kSrsMediaRetention]」的笔记引用、且不被任何存活引用的位置上的文件 → 删（要正面证据：
+///    本机不认识的文件不删）。别的设备若还看不到那次删除，会把它再传上来，不丢。**归档位置永不删**。
 ///
-/// 每轮（事件同步之后）：
-/// 1. 收集本 profile 全部笔记字段里引用的媒体文件名（`<img src>` / `[sound:]` 等，
-///    以及释义样式去重换出来的共享样式文件）。
-/// 2. 本机缺的 → 从任一写入者的 media 目录下载。
-/// 3. 本机有、但所有现存写入者的 media 目录里都没有的 → 上传到本写入者自己的 media 目录。
-///    退役写入者的目录被清理后，下一台仍持有该文件的活跃设备会在下一轮把它补传回来，
-///    所以只要还有任一活跃设备有这个文件，它就不会从同步目录里消失。
-/// 媒体删除不跨设备传播（Anki 的媒体删除会传播、误删后全线丢图）；无引用文件的回收留在本机。
+/// 旧格式（`fushi-srs/<profileUid>/<写入者>/media/`）里已经传上去的文件只读兜底：v2 目录里没有、旧目录有的
+/// 照样能下载，之后由持有它的设备补传进 v2 目录。旧目录不自动删（设计 P7：用户在位置管理里手动清理）。
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
-import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 
+/// 集合根下的媒体目录。
 const String kSrsMediaFolder = 'media';
+
+/// 被删笔记的媒体在同步 / 媒体位置上的保留期（设计 §10.5；本机媒体回收同一口径，见 srs_purge.dart）。
+const Duration kSrsMediaRetention = Duration(days: 90);
 
 /// 一轮媒体同步的结果。
 class SrsMediaSyncReport {
   int uploaded = 0;
   int downloaded = 0;
 
-  /// 引用了但同步目录与本机都没有的文件（等持有它的设备上线）。
+  /// 从位置上删掉的过期 / 无引用文件数。
+  int deleted = 0;
+
+  /// 引用了但位置与本机都没有的文件（等持有它的设备上线）。
   final Set<String> missing = <String>{};
 }
 
 /// 本 profile 全部未删除笔记（含模板正文里下划线开头的静态文件）引用的媒体文件名。
 ///
-/// 笔记字段的引用读笔记缓存的 `media_refs` 列（[SrsDbStore.noteMediaRefs]）：它随笔记缓存同一次刷新
-/// 算出（新事件、同步并入、恢复、存量样式去重 compactStoredStyles 改写字段后都会刷新这条笔记），
-/// 每轮媒体同步（host 收到对端写入去抖 3 秒就跑一轮）不再逐页读全部修改记录解析字段值。
-/// 字段有并发候选值时按物化的生效值算（多算一个候选值引用的文件只是多下载一个，不会少）。
-Future<Set<String>> srsReferencedMedia(SrsDbStore store) async {
-  final Set<String> out = await store.noteMediaRefs();
+/// 笔记字段的引用读笔记缓存的 `media_refs` 列（[SrsDbStore.noteMediaRefs]）：它随笔记缓存同一次刷新算出，
+/// 每轮媒体同步不逐页读全部修改记录解析字段。[deletedAfterMs] 给出时，删除晚于它的已删笔记也算。
+Future<Set<String>> srsReferencedMedia(
+  SrsDbStore store, {
+  int? deletedAfterMs,
+}) async {
+  final Set<String> out = await store.noteMediaRefs(
+    deletedAfterMs: deletedAfterMs,
+  );
   for (final SrsNoteTypeView t in await store.noteTypes()) {
     for (final SrsTemplateDef tpl in t.templates) {
       out.addAll(srsMediaRefsIn(tpl.front, includeStatic: true));
@@ -48,22 +58,17 @@ Future<Set<String>> srsReferencedMedia(SrsDbStore store) async {
     }
     out.addAll(srsMediaRefsIn(t.css, includeStatic: true));
   }
-  return out.where(_isBareName).toSet();
+  return out.where(srsIsBareMediaName).toSet();
 }
 
-/// 回收媒体文件前的「存活引用」全集：比 [srsReferencedMedia] 更保守——
-/// 已删除但还没清除的笔记（可能被恢复）、字段的并发候选值（可能被裁决选中）、
-/// 已删除的笔记类型的模板 / CSS 都算引用。只有物理清除了的笔记（身份记录已删）不算。
-///
-/// 字段值按页读（[SrsDbStore.forEachNoteFieldValuePage] 的保守口径），不物化笔记。
-Future<Set<String>> srsAllMediaReferences(SrsDbStore store) async {
-  final Set<String> out = <String>{};
-  await store.forEachNoteFieldValuePage((List<String> values) async {
-    for (final String v in values) {
-      out.addAll(srsMediaRefsIn(v));
-      out.addAll(srsStyleRefsIn(v));
-    }
-  }, currentOnly: false);
+/// 媒体回收 / 位置清理用的「存活引用」：存活笔记、删除未满 [retention] 的笔记、全部笔记类型（含已删除的）的
+/// 模板与 CSS。比 [srsReferencedMedia] 多算已删除的笔记类型（可能被恢复）。
+Future<Set<String>> srsLiveMediaReferences(
+  SrsDbStore store, {
+  Duration retention = kSrsMediaRetention,
+}) async {
+  final int cutoff = store.now().$1 - retention.inMilliseconds;
+  final Set<String> out = await store.noteMediaRefs(deletedAfterMs: cutoff);
   final Map<String, SrsNoteTypeView?> types = await store.noteTypesById(
     await store.entityIds(SrsEntityKind.noteType),
   );
@@ -75,70 +80,137 @@ Future<Set<String>> srsAllMediaReferences(SrsDbStore store) async {
     }
     out.addAll(srsMediaRefsIn(t.css, includeStatic: true));
   }
-  return out.where(_isBareName).toSet();
+  return out.where(srsIsBareMediaName).toSet();
 }
 
-bool _isBareName(String n) =>
+/// 只认裸文件名（不含路径分隔、不是 `.` / `..`）：媒体目录外的路径一律不碰。
+bool srsIsBareMediaName(String n) =>
     n.isNotEmpty &&
     !n.contains('/') &&
     !n.contains(r'\') &&
     n != '.' &&
     n != '..';
 
-/// 跑一轮媒体同步。[mediaRoot] 是本 profile 的本机媒体目录。
+/// 旧格式媒体的只读兜底：`fushi-srs/<profileUid>/<写入者>/media/<name>`。
+typedef SrsLegacyMediaReader = Future<Uint8List?> Function(String name);
+
+/// [SyncAssetStore] 上旧格式媒体目录的只读兜底（一轮里列一次目录）。
+SrsLegacyMediaReader srsLegacyMediaReader(
+  SyncAssetStore backend,
+  String profileUid, {
+  Directory? tempDir,
+}) {
+  Map<String, String>? index;
+  return (String name) async {
+    if (index == null) {
+      index = <String, String>{};
+      final String ns = await backend.ensureNamespace(kSrsSync2Namespace);
+      final String profile = await backend.ensureFolder(ns, profileUid);
+      for (final AssetEntry w in await backend.listChildren(profile)) {
+        if (!w.isFolder || w.name == kSrsSync2Folder) continue;
+        for (final AssetEntry m in await backend.listChildren(w.id)) {
+          if (!m.isFolder || m.name != kSrsMediaFolder) continue;
+          for (final AssetEntry f in await backend.listChildren(m.id)) {
+            if (!f.isFolder) index!.putIfAbsent(f.name, () => f.id);
+          }
+        }
+      }
+    }
+    final String? id = index![name];
+    if (id == null) return null;
+    final File tmp = File(
+      p.join(
+        (tempDir ?? Directory.systemTemp).path,
+        'fushi_srs_media_${DateTime.now().microsecondsSinceEpoch}',
+      ),
+    );
+    try {
+      await backend.getAsset(id, tmp);
+      return await tmp.readAsBytes();
+    } on Object {
+      return null;
+    } finally {
+      if (tmp.existsSync()) await tmp.delete();
+    }
+  };
+}
+
+/// 跑一轮媒体同步。[mediaRoot] 是本 profile 的本机媒体目录；[archive] = 归档位置（只写不删）；[cipher] = 位置开了
+/// 加密时的媒体封装（文件放 `media-e/`、内容是密文，见 srs_location_crypto.dart）。
 Future<SrsMediaSyncReport> srsSyncMedia({
-  required SyncAssetStore backend,
+  required SrsLocationStore location,
   required SrsDbStore store,
   required Directory mediaRoot,
+  bool archive = false,
+  SrsLegacyMediaReader? legacy,
+  SrsMediaCipher? cipher,
 }) async {
   final SrsMediaSyncReport report = SrsMediaSyncReport();
-  final Set<String> wanted = await srsReferencedMedia(store);
-  if (wanted.isEmpty) return report;
-
-  final String ns = await backend.ensureNamespace(kSrsSyncNamespace);
-  final String profileFolder = await backend.ensureFolder(ns, store.profileUid);
-  // 每个写入者 media 目录里有什么：文件名 → 资产 ID。
-  final Map<String, String> remote = <String, String>{};
-  String? ownMedia;
-  for (final AssetEntry w in await backend.listChildren(profileFolder)) {
-    if (!w.isFolder) continue;
-    String? mediaId;
-    for (final AssetEntry e in await backend.listChildren(w.id)) {
-      if (e.isFolder && e.name == kSrsMediaFolder) mediaId = e.id;
-    }
-    if (w.name == store.writerId) ownMedia = mediaId;
-    if (mediaId == null) continue;
-    for (final AssetEntry f in await backend.listChildren(mediaId)) {
-      if (!f.isFolder) remote.putIfAbsent(f.name, () => f.id);
-    }
+  // 加密媒体按密钥指纹分目录（换了密钥 = 新目录，全部按新密钥重传）。
+  final String folder = cipher == null ? kSrsMediaFolder : cipher.folder;
+  Future<void> put(String name, Uint8List plain) async => location.put(
+    '$folder/$name',
+    cipher == null ? plain : await cipher.seal(name, plain),
+  );
+  Future<Uint8List?> get(String name) async {
+    final Uint8List? b = await location.get('$folder/$name');
+    if (b == null || cipher == null) return b;
+    return cipher.open(name, b);
   }
 
+  final Set<String> wanted = await srsReferencedMedia(
+    store,
+    deletedAfterMs: store.now().$1 - kSrsMediaRetention.inMilliseconds,
+  );
+  final Set<String> remote = <String>{
+    for (final SrsLocationEntry e in await location.list(folder))
+      if (!e.isFolder) e.name,
+  };
   for (final String name in wanted) {
     final File local = File(p.join(mediaRoot.path, name));
     final bool haveLocal = local.existsSync();
-    final String? remoteId = remote[name];
-    if (!haveLocal && remoteId != null) {
+    final bool haveRemote = remote.contains(name);
+    if (!haveLocal) {
+      final Uint8List? bytes = haveRemote
+          ? await get(name)
+          : await legacy?.call(name);
+      if (bytes == null) {
+        report.missing.add(name);
+        continue;
+      }
       await mediaRoot.create(recursive: true);
       final File tmp = File('${local.path}.download');
-      try {
-        await backend.getAsset(remoteId, tmp);
-        await tmp.rename(local.path);
-        report.downloaded++;
-      } on Object {
-        if (tmp.existsSync()) await tmp.delete();
+      await tmp.writeAsBytes(bytes, flush: true);
+      await tmp.rename(local.path);
+      report.downloaded++;
+      if (!haveRemote) {
+        await put(name, bytes);
+        report.uploaded++;
       }
-    } else if (haveLocal && remoteId == null) {
-      if (ownMedia == null) {
-        final String writerFolder = await backend.ensureFolder(
-          profileFolder,
-          store.writerId,
-        );
-        ownMedia = await backend.ensureFolder(writerFolder, kSrsMediaFolder);
-      }
-      await backend.putAsset(ownMedia, name, local);
+    } else if (!haveRemote) {
+      await put(name, await local.readAsBytes());
       report.uploaded++;
-    } else if (!haveLocal) {
-      report.missing.add(name);
+    }
+  }
+  if (!archive) {
+    // 只删有正面证据的：被「删除已满保留期」的笔记引用、且不被任何存活引用。本机不认识的文件一律不删——
+    // 它可能是别的设备新笔记的媒体，而本机还没收到那条笔记。
+    final Set<String> live = <String>{
+      for (final String n in await srsLiveMediaReferences(store))
+        n.toLowerCase(),
+    };
+    final Set<String> expired = <String>{
+      for (final String n in await store.expiredNoteMediaRefs(
+        store.now().$1 - kSrsMediaRetention.inMilliseconds,
+      ))
+        n.toLowerCase(),
+    };
+    for (final String name in remote) {
+      final String k = name.toLowerCase();
+      if (expired.contains(k) && !live.contains(k)) {
+        await location.delete('$folder/$name');
+        report.deleted++;
+      }
     }
   }
   return report;

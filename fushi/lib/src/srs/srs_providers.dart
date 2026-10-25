@@ -261,13 +261,12 @@ final FutureProvider<SrsDbStore?> srsStoreProvider =
       srsRunLogged('srsCompactStoredStyles', () async {
         await store.compactStoredStyles(shouldStop: () => disposed);
       });
-      // 墓碑清除：删掉的笔记过了同步安全期后物理清除正文 / 复习日志 / 缓存 / 不再被引用的媒体
-      // （srs_purge.dart）。分块、每块让出，store 换掉时停，下次打开从剩下的候选继续。
+      // 媒体保留期回收：只被「删除已满 90 天」的笔记引用的本机媒体（srs_purge.dart）。历史本身永久保留。
       srsRunLogged('srsPurgeExpiredTombstones', () async {
+        if (disposed) return;
         await srsPurgeExpiredTombstones(
           store,
           mediaRoot: SrsMediaStore.directoryFor(support, profileUid),
-          shouldStop: () => disposed,
         );
       });
       return store;
@@ -381,8 +380,8 @@ class SrsDeckDeleteController extends ChangeNotifier {
   /// 同一个牌组已经在删时直接返回。
   /// 失败原样抛出（调用方记日志）；成功或失败都让列表重读（失败也可能已提交了前几块）。
   ///
-  /// [purgeNow]（只在 [deleteCards] 且 `store.neverSynced` 时有意义）：删完立刻物理清除这些笔记的
-  /// 正文、复习日志与不再被引用的媒体（[mediaRoot]），不进回收、不可恢复（见 srs_purge.dart）。
+  /// [purgeNow]（只在 [deleteCards] 时有意义）：删完立刻彻底清除这些笔记（v2 `Purge` 操作，各设备一起
+  /// 清内容）与不再被引用的媒体（[mediaRoot]），不可恢复（见 srs_purge.dart）。
   Future<void> delete(
     SrsDbStore store,
     String deckId, {
@@ -402,7 +401,7 @@ class SrsDeckDeleteController extends ChangeNotifier {
           if (!_disposed && total > 0) progress.value = done / total;
         },
       );
-      if (purgeNow && deletedNotes.isNotEmpty && store.neverSynced) {
+      if (purgeNow && deletedNotes.isNotEmpty) {
         await srsPurgeNotesNow(store, deletedNotes, mediaRoot: mediaRoot);
       }
       _deleted.add(deckId);
@@ -638,7 +637,8 @@ final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
   if (store == null) return 0;
   return _srsMemoByContent(_conflictCountMemo, store, () async {
     final int conflicts = (await store.syncConflicts()).length;
-    return conflicts + await store.pendingDecisionCount();
+    final int held = (await store.sync2Conflicts()).length;
+    return conflicts + held + await store.pendingDecisionCount();
   });
 });
 
@@ -653,10 +653,17 @@ Future<SrsDbStore?> readSrsStore(WidgetRef ref) async {
 }
 
 /// 把一个 Future 交给后台跑并记录失败（按钮回调里用）。
+///
+/// 用 `then(onError:)` 而不是 `catchError`：[body] 实际返回的可能是 `Future<bool>` 之类（`Future<void>`
+/// 收得下任何 Future），`catchError` 的处理函数返回 null 时 Dart 会再抛一个「error handler must return a
+/// value of the future's type」的未处理错误。
 void srsRunLogged(String where, Future<void> Function() body) {
   unawaited(
-    body().catchError((Object e, StackTrace stack) {
-      ErrorLogService.instance.log(where, e, stack);
-    }),
+    body().then<void>(
+      (_) {},
+      onError: (Object e, StackTrace stack) {
+        ErrorLogService.instance.log(where, e, stack);
+      },
+    ),
   );
 }

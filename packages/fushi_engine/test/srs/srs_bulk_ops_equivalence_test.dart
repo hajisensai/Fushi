@@ -265,6 +265,8 @@ void main() {
         ),
       );
     }
+    // 同步 v2：更改笔记类型之前自动打还原点（设计 §10.2），占一个序号 / HLC，逐条做时也先打。
+    await r.sync2Checkpoint(to.name, 'note_type');
     for (final SrsNoteTypeChangePlan plan in plans) {
       await r.editField(
         SrsEntityKind.note,
@@ -364,42 +366,6 @@ void main() {
       }
       await bulk.store.applyRemote(events, serverTimeMs: 7);
       await expectSame(bulk, ref);
-    });
-
-    test('服务器时刻 / 重新入队 / 取发件箱 = 逐条', () async {
-      final (BulkFixture ref, BulkFixture bulk) = await twins(notes: 10);
-      final List<String> ids = <String>[
-        for (final SrsEvent e in await ref.store.exportAll()) e.id,
-      ];
-      final Map<String, int> times = <String, int>{
-        for (int i = 0; i < ids.length; i += 3) ids[i]: 1000 + i,
-      };
-      for (final MapEntry<String, int> e in times.entries) {
-        await ref.store.observeServerTimes(<String, int>{e.key: e.value});
-      }
-      for (final String id in ids.reversed) {
-        await ref.store.requeue(<String>[id]);
-      }
-      await bulk.store.observeServerTimes(times);
-      await bulk.store.requeue(ids.reversed.toList());
-      await expectSame(bulk, ref);
-
-      // 发件箱：按入箱顺序给出事件正文（与逐条按 ID 找同一结果）。
-      final Map<String, SrsEvent> byId = <String, SrsEvent>{
-        for (final SrsEvent e in await bulk.store.exportAll()) e.id: e,
-      };
-      final List<SrsEvent> out = await bulk.store.unpublishedEvents();
-      expect(
-        out.map((SrsEvent e) => e.id).toList(),
-        ids.reversed.where(byId.containsKey).toList(),
-      );
-      expect(
-        out.map((SrsEvent e) => e.canonical()).toList(),
-        ids.reversed
-            .where(byId.containsKey)
-            .map((String id) => byId[id]!.canonical())
-            .toList(),
-      );
     });
   });
 

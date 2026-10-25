@@ -1,6 +1,5 @@
 // 浏览页的领域层：快照 + 搜索 + 排序 + 笔记模式；批量操作一个批次落库、可同步、可撤销。
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
@@ -8,8 +7,10 @@ import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_browse_ops.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
+import 'support/srs_sync2_peers.dart';
 import 'support/srs_test_storage.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 
@@ -95,31 +96,6 @@ class _FakeEngine implements FsrsEngine {
     required List<double> params,
     required SrsFsrsTrainingSet items,
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
-}
-
-class _Dir implements SrsSyncDirectory {
-  _Dir(this.now);
-  final int Function() now;
-  final Map<String, Map<String, Uint8List>> files =
-      <String, Map<String, Uint8List>>{};
-  @override
-  Future<List<String>> listWriters() async => files.keys.toList()..sort();
-  @override
-  Future<List<String>?> listFiles(String w) async => files[w]?.keys.toList();
-  @override
-  Future<Uint8List?> read(String w, String n) async => files[w]?[n];
-  @override
-  Future<void> write(String w, String n, Uint8List b) async =>
-      (files[w] ??= <String, Uint8List>{})[n] = b;
-  @override
-  Future<void> delete(String w, String n) async => files[w]?.remove(n);
-  @override
-  Future<void> deleteWriter(String w) async => files.remove(w);
-  @override
-  Future<int?> serverTime(String w) async {
-    await write(w, srsProbeName, Uint8List(0));
-    return now();
-  }
 }
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000b7';
@@ -494,31 +470,23 @@ void main() {
           await cardOf(a, await add(a, e)),
       ];
       await a.setSuspended(cards[0], true);
-      final int before = (await a.unpublishedEvents()).length;
+      final int before = (await a.sync2Status())['ops']! as int;
       final SrsBatchOutcome out = await srsBatchSetSuspended(
         a,
         cards,
         suspended: true,
       );
       expect(out.changed, 2, reason: '已暂停的那张不再写');
-      expect((await a.unpublishedEvents()).length, before + 2);
+      expect((await a.sync2Status())['ops'], before + 2, reason: '两张卡各一条操作');
       for (final SrsCardCacheRow r in await a.cardRows(cards)) {
         expect(r.suspended, isTrue);
       }
 
-      final _Dir dir = _Dir(() => t);
-      for (int i = 0; i < 3; i++) {
-        await SrsSyncEngine(
-          directoryKey: 'test',
-          directory: dir,
-          replica: a,
-        ).syncOnce();
-        await SrsSyncEngine(
-          directoryKey: 'test',
-          directory: dir,
-          replica: b,
-        ).syncOnce();
-      }
+      await srsSyncPeers(
+        <SrsDbStore>[a, b],
+        SrsMemoryLocationStore(),
+        rounds: 3,
+      );
       for (final SrsCardCacheRow r in await b.cardRows(cards)) {
         expect(r.suspended, isTrue, reason: '批量写的是普通修改记录，照常同步');
       }
