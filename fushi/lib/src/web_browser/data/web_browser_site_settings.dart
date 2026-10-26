@@ -9,9 +9,28 @@ enum WebBrowserSitePermission {
   geolocation,
   notifications,
   clipboard,
+
+  /// 受保护内容（EME / DRM：Android WebView 的 `RESOURCE_PROTECTED_MEDIA_ID`）。
+  /// 没记住时默认允许，见 [webBrowserEffectiveDecision]。
+  protectedContent,
   autoplay,
   popups,
 }
+
+/// 没记住（`ask`）时直接允许、不弹框的权限：受保护内容与 Chrome 默认一致——不放行
+/// Widevine 站点就放不了正版视频，弹框问用户也只会点允许。用户在网站设置里显式阻止的照样阻止。
+const Set<WebBrowserSitePermission> kWebBrowserDefaultAllowedPermissions =
+    <WebBrowserSitePermission>{WebBrowserSitePermission.protectedContent};
+
+/// 记住的决定 → 生效的决定：默认允许的权限把 `ask` 当 `allow`。
+WebBrowserPermissionDecision webBrowserEffectiveDecision(
+  WebBrowserSitePermission permission,
+  WebBrowserPermissionDecision remembered,
+) =>
+    remembered == WebBrowserPermissionDecision.ask &&
+        kWebBrowserDefaultAllowedPermissions.contains(permission)
+    ? WebBrowserPermissionDecision.allow
+    : remembered;
 
 /// 用户对某站点某权限的决定。`ask` = 没记住（每次问），不落盘。
 enum WebBrowserPermissionDecision { ask, allow, block }
