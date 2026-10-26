@@ -146,7 +146,7 @@ void main() {
       expect(prev, 1);
     });
 
-    // BUG-3783：「上一句」恒跳前一条，不因已播进当前句多久而改成回本句开头。
+    // BUG-3791：「上一句」恒跳前一条，不因已播进当前句多久而改成回本句开头。
     test('prev cue: deep into a long current cue still goes back one', () {
       final List<AudioCue> cues = [_cue(0), _cue(10000), _cue(20000)];
 

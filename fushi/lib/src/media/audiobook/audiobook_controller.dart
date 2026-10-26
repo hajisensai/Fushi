@@ -1667,7 +1667,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 为参照 —— 当前 cue 存在就取它的前一条；落在 gap 里就取"最近一条起点早于
   /// 当前位置"的前一条。始终跳立即邻居，不做「播进本句一段时间先回句首」的
   /// 音乐播放器语义：长句播到中后段时那样会连按都回句首、到不了上一句
-  /// （BUG-3783）。重播当前句走 [replayCurrentCue]。
+  /// （BUG-3791）。重播当前句走 [replayCurrentCue]。
   Future<void> skipToPrevCue() async {
     if (_chapterCues.isEmpty) return;
     final int? target = _prevCueIndex(
