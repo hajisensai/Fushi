@@ -80,6 +80,12 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
   Future<bool> openNoteInAnki(int noteId) => inner.openNoteInAnki(noteId);
 
   @override
+  MinedNoteHome get minedNoteHome => inner.minedNoteHome;
+
+  @override
+  bool get canOpenMinedNote => inner.canOpenMinedNote;
+
+  @override
   Future<Map<String, String>> prepareSourceNoteFields({
     required String rawPayloadJson,
     required AnkiMiningContext context,

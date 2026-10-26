@@ -44,6 +44,11 @@
 | [BUG-3785](bugs/BUG-3785-remove-source-orphans-music-tracks.md) | ✅ | ✅ | remove-source-orphans-music-tracks |
 | [BUG-3784](bugs/BUG-3784-profile-default-ensure-race.md) | ✅ | ✅ | profile-default-ensure-race |
 | [BUG-3783](bugs/BUG-3783-subtitle-backfill-race-reports-installed.md) | ✅ | ✅ | subtitle-backfill-race-reports-installed |
+> 共 3387 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3783](bugs/BUG-3783-mined-card-viewer-anki-label-on-fushi-review.md) | ✅ | ✅ | mined-card-viewer-anki-label-on-fushi-review |
 | [BUG-3782](bugs/BUG-3782-popup-headword-clipped-eink.md) | ✅ | ✅ | 墨水屏 / Apple 设计系统窄弹窗词头右侧被裁 |
 | [BUG-3781](bugs/BUG-3781-floating-ball-tap-leaks-to-reader.md) | ✅ | ✅ | 小说阅读器里点应用内悬浮球会唤出顶栏 / 底栏 |
 | [BUG-3780](bugs/BUG-3780-tts-emphasis-dot-ruby-reads-dots.md) | ✅ | ✅ | TTS 朗读把傍点 ruby（`・・` / `﹅`）当读音，着重的词整个读丢 |
