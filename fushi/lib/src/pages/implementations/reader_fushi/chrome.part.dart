@@ -1718,7 +1718,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
           .itemsIn(ReaderControlSlot.overflow)
           .contains(ReaderControlItem.modeToggle);
 
-  /// 「更多」溢出菜单里的动作（布局的 overflow 槽，减去被提到常驻位的模式键）。
+  /// 「更多」溢出菜单里的动作（布局的 overflow 槽，减去被提到常驻位的模式键），
+  /// 末尾是「问 AI」（最低优先级：悬浮顶栏放得下才平铺、空间不够最先收进「⋯」；
+  /// 经典顶栏恒在 ⋮ 菜单最后）。两种顶栏都只从这里取，不各自拼接。
   List<ReaderHeaderAction> _overflowControlActions() => <ReaderHeaderAction>[
     for (final ReaderControlItem item in _renderableControlsIn(
       ReaderControlSlot.overflow,
@@ -1726,6 +1728,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       if (item != ReaderControlItem.title &&
           !(item == ReaderControlItem.modeToggle && _modeTogglePromoted))
         _readerControlAction(item),
+    ..._askAiHeaderActions(),
   ];
 
   /// 按钮的功能分组（M3E button group 的组间留白）：0 导航类 / 1 阅读与工具类 /
@@ -3241,10 +3244,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           ],
           trailing: _readerControlActionsIn(ReaderControlSlot.topRight),
           // 布局的「更多」槽（2026-10 精简：中频按钮）恒在 ⋮ 菜单；「问 AI」排最后。
-          overflowActions: <ReaderHeaderAction>[
-            ..._overflowControlActions(),
-            ..._askAiHeaderActions(),
-          ],
+          overflowActions: _overflowControlActions(),
         ),
       ),
     );
@@ -3297,9 +3297,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
             ),
             overflow: <FushiToolbarItem>[
               for (final ReaderHeaderAction a in _overflowControlActions())
-                _toolbarItem(a),
-              // 「问 AI」最低优先级：放得下才平铺，空间不够最先收进「⋯」。
-              for (final ReaderHeaderAction a in _askAiHeaderActions())
                 _toolbarItem(a),
             ],
             colors: _floatingToolbarColors(),
