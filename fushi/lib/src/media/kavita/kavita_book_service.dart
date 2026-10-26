@@ -83,6 +83,27 @@ class KavitaBookService {
     return null;
   }
 
+  /// 一次取出 [serverConfigId] 上所有已绑定的章：chapterId → 绑定（含 pin 状态）。
+  /// 详情页一次查询渲染整列「已下载 / 已缓存」徽标，免得逐章查库。
+  Future<Map<int, ({String bookKey, KavitaBookBinding binding})>> boundChapters(
+    String serverConfigId,
+  ) async {
+    final List<EpubBookRow> rows = await (_db.select(
+      _db.epubBooks,
+    )..where((t) => t.sourceMetadata.like('%$kKavitaBookMarker%'))).get();
+    final Map<int, ({String bookKey, KavitaBookBinding binding})> out =
+        <int, ({String bookKey, KavitaBookBinding binding})>{};
+    for (final EpubBookRow row in rows) {
+      final KavitaBookBinding? binding = KavitaBookBinding.tryParse(
+        row.sourceMetadata,
+      );
+      if (binding != null && binding.serverConfigId == serverConfigId) {
+        out[binding.chapterId] = (bookKey: row.bookKey, binding: binding);
+      }
+    }
+    return out;
+  }
+
   /// 读某本书的绑定；不是 Kavita 书返回 null。
   Future<KavitaBookBinding?> bindingFor(String bookKey) async {
     final EpubBookRow? row = await _db.getEpubBook(bookKey);
