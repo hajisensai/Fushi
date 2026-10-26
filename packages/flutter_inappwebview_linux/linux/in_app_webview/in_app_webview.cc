@@ -1406,10 +1406,11 @@ void InAppWebView::OnWpePlatformBufferRendered(WPEBuffer* buffer) {
     bool is_shm = WPE_IS_BUFFER_SHM(buffer);
     
     // === Priority 1: Try EGL image import (zero-copy, best performance) ===
-    // Only attempt EGL for DMA-BUF buffers (SHM buffers cannot be imported via EGL)
-    // Skip if previous EGL attempts failed
-    if (egl_display_ != nullptr && 
-        is_dma_buf && !egl_import_failed_permanently) {
+    // Only attempt this when the platform view selected EGL texture sharing.
+    // WPEPlatform uses a pixel-buffer texture because its EGL image is not
+    // reliably sampleable from Flutter's Impeller context.
+    if (skip_pixel_readback_ && egl_display_ != nullptr && is_dma_buf &&
+        !egl_import_failed_permanently) {
       GError* error = nullptr;
       void* egl_image = wpe_buffer_import_to_egl_image(buffer, &error);
       
