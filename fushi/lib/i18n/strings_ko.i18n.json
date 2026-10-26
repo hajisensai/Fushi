@@ -3640,6 +3640,7 @@
   "home_onboarding_card_desc": "몇 분 만에 사전을 설정하고, 첫 책을 가져오고, 첫 카드를 만들어 보세요.",
   "home_onboarding_card_dismiss": "다시 표시 안 함",
   "home_onboarding_card_start": "설정 계속하기",
+  "home_panel_ai_agent_hint": "Auto: shown once an AI provider is assigned to the assistant",
   "home_panel_mode_auto": "자동",
   "home_panel_mode_hidden": "숨기기",
   "home_panel_mode_shown": "표시",

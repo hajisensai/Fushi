@@ -3640,6 +3640,7 @@
   "home_onboarding_card_desc": "幾分鐘設定好詞典、匯入第一本書、做出第一張卡片。",
   "home_onboarding_card_dismiss": "不再顯示",
   "home_onboarding_card_start": "繼續新手引導",
+  "home_panel_ai_agent_hint": "Auto: shown once an AI provider is assigned to the assistant",
   "home_panel_mode_auto": "自動",
   "home_panel_mode_hidden": "隱藏",
   "home_panel_mode_shown": "顯示",

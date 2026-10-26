@@ -3640,6 +3640,7 @@
   "home_onboarding_card_desc": "数分で辞書の設定、最初の本のインポート、最初のカード作成まで進められます。",
   "home_onboarding_card_dismiss": "今後表示しない",
   "home_onboarding_card_start": "セットアップを続ける",
+  "home_panel_ai_agent_hint": "Auto: shown once an AI provider is assigned to the assistant",
   "home_panel_mode_auto": "自動",
   "home_panel_mode_hidden": "非表示",
   "home_panel_mode_shown": "表示",

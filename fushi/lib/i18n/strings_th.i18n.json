@@ -3640,6 +3640,7 @@
   "home_onboarding_card_desc": "ตั้งค่าพจนานุกรม นำเข้าหนังสือเล่มแรก และสร้างการ์ดใบแรกได้ในไม่กี่นาที",
   "home_onboarding_card_dismiss": "ไม่ต้องแสดงอีก",
   "home_onboarding_card_start": "ตั้งค่าต่อ",
+  "home_panel_ai_agent_hint": "Auto: shown once an AI provider is assigned to the assistant",
   "home_panel_mode_auto": "อัตโนมัติ",
   "home_panel_mode_hidden": "ซ่อน",
   "home_panel_mode_shown": "แสดง",

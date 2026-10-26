@@ -3640,6 +3640,7 @@
   "home_onboarding_card_desc": "Configure dicionários, importe seu primeiro livro e crie seu primeiro cartão em poucos minutos.",
   "home_onboarding_card_dismiss": "Não mostrar novamente",
   "home_onboarding_card_start": "Continuar a configuração",
+  "home_panel_ai_agent_hint": "Auto: shown once an AI provider is assigned to the assistant",
   "home_panel_mode_auto": "Automático",
   "home_panel_mode_hidden": "Ocultar",
   "home_panel_mode_shown": "Mostrar",
