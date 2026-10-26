@@ -1514,8 +1514,10 @@ void InAppWebView::OnWpePlatformBufferRendered(WPEBuffer* buffer) {
           read_buffer_index_.store(write_idx, std::memory_order_release);
           write_buffer_index_.store((write_idx + 1) % kNumBuffers, std::memory_order_relaxed);
         }
-        
-        g_bytes_unref(pixels);
+
+        // wpe_buffer_import_to_pixels() returns a borrowed GBytes owned by
+        // WPEBuffer (WPEPlatform GIR transfer-ownership="none"). We copied
+        // its data above; unref'ing it here corrupts the buffer's refcount.
         current_buffer_width_ = buf_width;
         current_buffer_height_ = buf_height;
         buffer_handled = true;
