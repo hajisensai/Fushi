@@ -18,6 +18,10 @@ class FakeLnReaderRuntime implements LnReaderRuntime {
   List<LnReaderFilter> filters;
 
   final List<String> loaded = <String>[];
+
+  /// 每次装载时管理器送进来的插件存储（按插件 id，后一次覆盖前一次）。
+  final Map<String, Map<String, Object?>> loadedStorage =
+      <String, Map<String, Object?>>{};
   final List<String> forgotten = <String>[];
   final List<String> calls = <String>[];
   final List<Map<String, Object?>?> popularFilters = <Map<String, Object?>?>[];
@@ -28,7 +32,7 @@ class FakeLnReaderRuntime implements LnReaderRuntime {
     String pluginId,
     Future<LnReaderPluginSource> Function() source,
   ) async {
-    await source();
+    loadedStorage[pluginId] = (await source()).storage;
     loaded.add(pluginId);
     return LnReaderPluginInfo(
       id: pluginId,

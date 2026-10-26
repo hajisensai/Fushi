@@ -4,6 +4,7 @@ import 'package:fushi_cli/fushi_cli.dart';
 
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
+import 'package:fushi/src/ops/op_task_status.dart';
 
 /// 在线源（扩展仓库 / 扩展 / 在线漫画·小说·视频源 / 发现源）以及同一路由文件里的
 /// 播放遥控、顶层导航的操作描述（spec `docs/specs/2026-10-26-ai-operations-agent-design.md`
@@ -11,8 +12,9 @@ import 'package:fushi/src/ops/op_describe_kit.dart';
 /// 视频源剧集）与 CLI 小说下载任务归 `op_descriptions_downloads.dart`。
 ///
 /// - 装扩展、更新扩展、添加仓库一律 `confirm: true`（D9）。
-/// - 一条路由服务三个生态（`kind`），风险级按最坏的那个生态定：LNReader 卸载插件会
-///   连插件存储（登录态）一起删，所以卸载扩展是 irreversible。
+/// - 一条路由服务三个生态（`kind`），风险级按最坏的那个生态定。卸载扩展三个生态都
+///   保留数据（源偏好 / LNReader 插件存储），撤销 = 从同一仓库重装同一版本并接回；
+///   清数据只走 `online.source.clear-data`（irreversible）。
 /// - iOS 合规：可用性只认 [StoreRestrictedCapability]。
 List<OpDescription> describeOnlineOps(OpDescribeKit kit) {
   final _OnlineUndo u = _OnlineUndo(kit);
@@ -173,11 +175,15 @@ List<OpDescription> describeOnlineOps(OpDescribeKit kit) {
       method: 'DELETE',
       pattern: '/api/admin/extensions/:id',
       summary:
-          'Uninstall an extension. Mihon/Aniyomi keep source preferences unless '
-          'clearData=true; LNReader (novel) always deletes the plugin storage '
-          '(login state). Cannot be undone, so the user confirms.',
-      risk: OpRisk.irreversible,
+          'Uninstall an extension. Its data (source preferences, LNReader plugin '
+          'storage / login state) is kept, so reinstalling picks it up again; to '
+          'wipe data use online.source.clear-data. Undo reinstalls the same '
+          'version from the same repository.',
+      // 路由的 clearData 参数在这里刻意不声明（未声明的参数会被拒）：AI 侧卸载永远
+      // 保留数据，所以可撤销；清数据是独立的不可逆操作 online.source.clear-data。
+      risk: OpRisk.write,
       availability: anyOnline,
+      undo: u.extensionRemoveUndo(),
       params: const <OpParam>[
         OpParam.string(
           'id',
@@ -186,11 +192,6 @@ List<OpDescription> describeOnlineOps(OpDescribeKit kit) {
           inPath: true,
         ),
         _kind,
-        OpParam.boolean(
-          'clearData',
-          description:
-              'Mihon/Aniyomi only: also clear the sources\' saved preferences.',
-        ),
         OpParam.userGate('confirm', description: 'Destructive-action consent.'),
       ],
     ),
@@ -292,6 +293,8 @@ List<OpDescription> describeOnlineOps(OpDescribeKit kit) {
           'cancels / removes what was queued and the shelf entry it created.',
       risk: OpRisk.write,
       longRunning: true,
+      taskIdOf: opOnlineDownloadTaskIdOf,
+      taskStatus: (String id) => opOnlineDownloadTaskStatus(kit, id),
       params: const <OpParam>[
         _sourceId,
         _kind,
@@ -853,6 +856,114 @@ class _OnlineUndo {
         return const OpUndoOutcome.done();
       } on CtlFailure catch (failure) {
         return _failure(failure);
+      }
+    },
+  );
+
+  /// 卸载的撤销：从同一仓库重装同一版本（数据卸载时保留着，重装即接回），执行前
+  /// 是停用的再停回去。执行前从扩展列表（含仓库目录）记下包名 / 来源仓库 / 版本。
+  ///
+  /// 重装也是「装扩展」，D9 要用户确认：撤销是用户在撤销按钮上点的，这次点击本身
+  /// 就是确认，所以这里直接调安装路由、不再出卡片。安装路由唯一的表态参数
+  /// `trustSigner` **刻意不给**：该扩展当初装上时签名者已入信任表（卸载不撤销信任），
+  /// 同一签名重装照常通过；仓库里换了签名者就让安装路由拒绝、撤销如实报失败——
+  /// 撤销点击确认的是「装回原来那个」，不是信任一个新签名者。
+  /// 仓库已不提供该扩展、版本变了、或别的仓库会让安装路由选中另一版本 → failed。
+  OpUndo extensionRemoveUndo() => OpUndo(
+    capture: (CtlCall call) async {
+      final Object? kind = call.body['kind'];
+      final String id = call.params['id']!;
+      final Object? listed = await kit.callRoute(
+        'GET',
+        '/api/admin/extensions',
+        body: <String, Object?>{'kind': kind, 'available': true},
+      );
+      Map<String, Object?>? row;
+      for (final Map<String, Object?> r in _rows(listed, 'installed')) {
+        if ('${r['id']}' == id) row = r;
+      }
+      final String? version = row == null ? null : '${row['version']}';
+      String? repo;
+      for (final Map<String, Object?> e in _rows(listed, 'available')) {
+        if ('${e['id']}' != id || e['repo'] == null) continue;
+        if (repo == null || '${e['version']}' == version) repo = '${e['repo']}';
+      }
+      return <String, Object?>{
+        'kind': kind,
+        'id': id,
+        'version': version,
+        'repo': repo,
+        'enabled': row?['enabled'] ?? true,
+      };
+    },
+    record: (CtlCall call, Map<String, Object?> before, Object? result) =>
+        OpUndoRecord(
+          payload: before,
+          before: '${before['id']} ${before['version'] ?? ''}'.trim(),
+          after: 'uninstalled (data kept)',
+        ),
+    revert: (Map<String, Object?> payload) async {
+      final Object? kind = payload['kind'];
+      final String id = '${payload['id']}';
+      final String? version = payload['version'] as String?;
+      final String? repo = payload['repo'] as String?;
+      try {
+        if (await _installed(kind, id) != null) {
+          return const OpUndoOutcome.superseded('already reinstalled');
+        }
+        if (repo == null) {
+          return OpUndoOutcome.failed(
+            '$id was not installed from a configured repository; '
+            'reinstall it manually',
+          );
+        }
+        final List<Map<String, Object?>> offers = <Map<String, Object?>>[
+          for (final Map<String, Object?> e in _rows(
+            await kit.callRoute(
+              'GET',
+              '/api/admin/extensions',
+              body: <String, Object?>{'kind': kind, 'available': true},
+            ),
+            'available',
+          ))
+            if ('${e['id']}' == id) e,
+        ];
+        final Map<String, Object?>? same = offers
+            .where((Map<String, Object?> e) => '${e['repo']}' == repo)
+            .firstOrNull;
+        if (same == null) {
+          return OpUndoOutcome.failed(
+            'repository $repo no longer offers $id (removed or not synced)',
+          );
+        }
+        // 安装路由不收仓库参数（同包多仓库时自己挑），所以要求它能挑中的只有
+        // 这一个版本，才算「从同一仓库装回同一版本」。
+        final Set<String> versions = <String>{
+          for (final Map<String, Object?> e in offers) '${e['version']}',
+        };
+        if (version != null &&
+            (versions.length != 1 || versions.single != version)) {
+          return OpUndoOutcome.failed(
+            '$id $version is no longer available (repositories offer '
+            '${versions.join(', ')}); reinstall manually if wanted',
+          );
+        }
+        await kit.callRoute(
+          'POST',
+          '/api/admin/extensions/install',
+          body: <String, Object?>{'kind': kind, 'id': id},
+        );
+        if (payload['enabled'] == false) {
+          await kit.callRoute(
+            'POST',
+            '/api/admin/extensions/:id/enabled',
+            params: <String, String>{'id': id},
+            body: <String, Object?>{'kind': kind, 'enabled': false},
+          );
+        }
+        return const OpUndoOutcome.done();
+      } on CtlFailure catch (failure) {
+        return OpUndoOutcome.failed(failure.message ?? failure.code);
       }
     },
   );

@@ -4,6 +4,7 @@ import 'package:fushi_cli/fushi_cli.dart';
 
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
+import 'package:fushi/src/ops/op_task_status.dart';
 
 /// 书库 / 漫画库管理、合集、阅读器、有声书、漫画 OCR、库整理的操作描述（spec `docs/specs/2026-10-26-ai-operations-agent-design.md` §4）。
 ///
@@ -1504,6 +1505,8 @@ List<OpDescription> _describeAudiobookOps(OpDescribeKit kit) {
           'subtitle book (replaces the stored audio / cues). Returns a task id.',
       risk: OpRisk.irreversible,
       longRunning: true,
+      taskIdOf: opTaskIdFromId,
+      taskStatus: (String id) => opAudiobookTaskStatus(kit, id),
       availability: books,
       params: const <OpParam>[
         _keyParam,
@@ -1525,6 +1528,8 @@ List<OpDescription> _describeAudiobookOps(OpDescribeKit kit) {
           'stored alignment). Returns a task id.',
       risk: OpRisk.irreversible,
       longRunning: true,
+      taskIdOf: opTaskIdFromId,
+      taskStatus: (String id) => opAudiobookTaskStatus(kit, id),
       availability: books,
       params: const <OpParam>[
         _keyParam,
@@ -1580,6 +1585,8 @@ List<OpDescription> _describeAudiobookOps(OpDescribeKit kit) {
           'book, otherwise it becomes a subtitle book. Undo cancels the job.',
       risk: OpRisk.write,
       longRunning: true,
+      taskIdOf: opTaskIdFromId,
+      taskStatus: (String id) => opAudiobookJobTaskStatus(kit, id),
       availability: books,
       params: const <OpParam>[
         OpParam.stringList(

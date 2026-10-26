@@ -515,7 +515,11 @@ String _renderBulkReport(Object? data) {
 void _configureExtRm(ArgParser parser) {
   _addKind(parser);
   _addYes(parser);
-  parser.addFlag('clear-data', negatable: false, help: '同时清除该扩展各源的设置（漫画 / 视频）');
+  parser.addFlag(
+    'clear-data',
+    negatable: false,
+    help: '同时清除扩展数据（漫画 / 视频：各源设置；小说：插件存储 / 登录态）；不加则保留，重装即接回',
+  );
 }
 
 CtlRequestSpec _buildExtRm(CtlCommandContext context) {

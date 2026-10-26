@@ -54,6 +54,24 @@ class _World {
           'enabled': true,
         },
       };
+
+  /// 仓库目录（`available=true` 时列出）。
+  final List<Map<String, Object?>> available = <Map<String, Object?>>[
+    <String, Object?>{
+      'id': 'eu.ext.a',
+      'version': '1.0',
+      'repo': 'https://repo.example/index.min.json',
+    },
+  ];
+
+  /// 每次调安装路由的 body（撤销重装不该替用户信任签名者）。
+  final List<Map<String, Object?>> installBodies = <Map<String, Object?>>[];
+
+  /// 扩展数据（源偏好 / 插件存储）：卸载默认保留，clearData 才删。
+  final Map<String, Map<String, Object?>> extensionData =
+      <String, Map<String, Object?>>{
+        'eu.ext.a': <String, Object?>{'token': 'secret-login'},
+      };
   final List<Map<String, Object?>> preferences = <Map<String, Object?>>[
     <String, Object?>{
       'key': 'quality',
@@ -122,15 +140,23 @@ class _World {
     },
     'GET /api/admin/extensions': (CtlCall c) async => <String, Object?>{
       'installed': installed.values.toList(),
+      if (c.optBool('available') == true) 'available': available,
     },
     'POST /api/admin/extensions/install': (CtlCall c) async {
       final String id = c.requireString('id');
+      installBodies.add(Map<String, Object?>.of(c.body));
+      final String version =
+          available
+                  .where((Map<String, Object?> e) => e['id'] == id)
+                  .firstOrNull?['version']
+              as String? ??
+          '2.0';
       installed[id] = <String, Object?>{
         'id': id,
-        'version': '2.0',
+        'version': version,
         'enabled': true,
       };
-      return <String, Object?>{'id': id, 'version': '2.0'};
+      return <String, Object?>{'id': id, 'version': version};
     },
     'DELETE /api/admin/extensions/:id': (CtlCall c) async {
       expect(c.optBool('confirm'), isTrue);
@@ -447,6 +473,91 @@ void main() {
         OpUndoStatus.failed,
       );
       expect(world.installed, contains('eu.ext.a'));
+    });
+
+    test('卸载 → 数据保留；撤销 = 从同一仓库重装同一版本，回到列表、数据仍在', () async {
+      world.installed['eu.ext.a']!['enabled'] = false;
+      final OpUndoRecord r = await run(
+        'online.extension.remove',
+        <String, Object?>{'kind': 'manga', 'id': 'eu.ext.a'},
+        gates: <String>{'confirm'},
+      );
+      expect(world.installed, isEmpty);
+      expect(world.extensionData['eu.ext.a'], <String, Object?>{
+        'token': 'secret-login',
+      });
+      expect(r.payload['repo'], 'https://repo.example/index.min.json');
+      expect(r.payload['version'], '1.0');
+      expect(
+        (await revert('online.extension.remove', r)).status,
+        OpUndoStatus.done,
+      );
+      expect(world.installed['eu.ext.a']!['version'], '1.0');
+      expect(
+        world.installBodies.single.containsKey('trustSigner'),
+        isFalse,
+        reason: '撤销重装不替用户信任签名者（签名没变时信任表里本来就有）',
+      );
+      expect(
+        world.installed['eu.ext.a']!['enabled'],
+        isFalse,
+        reason: '停用的停回去',
+      );
+      expect(world.extensionData['eu.ext.a'], <String, Object?>{
+        'token': 'secret-login',
+      });
+      // 已经装回来了 → 再撤销是 superseded。
+      expect(
+        (await revert('online.extension.remove', r)).status,
+        OpUndoStatus.superseded,
+      );
+    });
+
+    test('卸载后仓库不再提供 / 版本变了 → 撤销如实失败、不乱装', () async {
+      OpUndoRecord r = await run(
+        'online.extension.remove',
+        <String, Object?>{'kind': 'manga', 'id': 'eu.ext.a'},
+        gates: <String>{'confirm'},
+      );
+      world.available.single['version'] = '1.1';
+      expect(
+        (await revert('online.extension.remove', r)).status,
+        OpUndoStatus.failed,
+      );
+      expect(world.installed, isEmpty);
+
+      world.available.single['version'] = '1.0';
+      await revert('online.extension.remove', r);
+      r = await run(
+        'online.extension.remove',
+        <String, Object?>{'kind': 'manga', 'id': 'eu.ext.a'},
+        gates: <String>{'confirm'},
+      );
+      world.available.clear();
+      final OpUndoOutcome gone = await revert('online.extension.remove', r);
+      expect(gone.status, OpUndoStatus.failed);
+      expect(gone.message, contains('no longer offers'));
+      expect(world.installed, isEmpty);
+    });
+
+    test('AI 侧卸载不声明 clearData：可撤销的 write；清数据是独立的不可逆操作', () async {
+      final FushiOp remove = catalog['online.extension.remove']!;
+      expect(remove.risk, OpRisk.write);
+      expect(remove.undo, isNotNull);
+      expect(
+        remove.params.map((OpParam p) => p.name),
+        isNot(contains('clearData')),
+      );
+      await expectLater(
+        invoker.invoke('online.extension.remove', <String, Object?>{
+          'kind': 'manga',
+          'id': 'eu.ext.a',
+          'clearData': true,
+        }, caller: OpCaller.model),
+        throwsA(isA<CtlFailure>()),
+      );
+      expect(world.installed, contains('eu.ext.a'));
+      expect(catalog['online.source.clear-data']!.risk, OpRisk.irreversible);
     });
 
     test('启停 → 撤销恢复；之后被手动改过 → superseded 不覆盖', () async {

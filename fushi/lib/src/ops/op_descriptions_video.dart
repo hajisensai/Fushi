@@ -5,6 +5,7 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
+import 'package:fushi/src/ops/op_task_status.dart';
 import 'package:fushi/src/ops/op_descriptions_library.dart'
     show OpUndoScope, opCustomUndo, opScopedSnapshotUndo, opUndoDisplay;
 
@@ -318,6 +319,7 @@ List<OpDescription> _describeDiscoveryOps(
         'download job id (track with the downloads ops). Undo cancels the job.',
     risk: OpRisk.write,
     longRunning: true,
+    taskStatus: (String id) => opDownloadJobTaskStatus(kit, id),
     availability: downloads,
     params: const <OpParam>[
       OpParam.string(
@@ -543,6 +545,8 @@ List<OpDescription> _describePlayerOps(
         'LLM. Returns a job id. $_needsPlayer',
     risk: OpRisk.irreversible,
     longRunning: true,
+    taskIdOf: opTaskIdFromId,
+    taskStatus: (String id) => opVideoJobTaskStatus(kit, id),
     availability: video,
     params: const <OpParam>[
       OpParam.string(
@@ -576,6 +580,8 @@ List<OpDescription> _describePlayerOps(
         'Returns a job id. $_needsPlayer',
     risk: OpRisk.irreversible,
     longRunning: true,
+    taskIdOf: opTaskIdFromId,
+    taskStatus: (String id) => opVideoJobTaskStatus(kit, id),
     availability: video,
     params: const <OpParam>[
       OpParam.string(
@@ -598,6 +604,8 @@ List<OpDescription> _describePlayerOps(
         '(rewrites its timing). Returns a job id. $_needsPlayer',
     risk: OpRisk.irreversible,
     longRunning: true,
+    taskIdOf: opTaskIdFromId,
+    taskStatus: (String id) => opVideoJobTaskStatus(kit, id),
     availability: video,
     params: const <OpParam>[
       _waitParam,
@@ -616,6 +624,8 @@ List<OpDescription> _describePlayerOps(
         'current subtitle) to a file. Returns a job id. $_needsPlayer',
     risk: OpRisk.irreversible,
     longRunning: true,
+    taskIdOf: opTaskIdFromId,
+    taskStatus: (String id) => opVideoJobTaskStatus(kit, id),
     availability: video,
     params: const <OpParam>[
       OpParam.integer(
@@ -852,6 +862,8 @@ List<OpDescription> _describeSubtitleOps(
         'files. Returns a job id (video.job.get).',
     risk: OpRisk.irreversible,
     longRunning: true,
+    taskIdOf: opTaskIdFromId,
+    taskStatus: (String id) => opVideoJobTaskStatus(kit, id),
     availability: video,
     params: const <OpParam>[
       _bookUidParam,

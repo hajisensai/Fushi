@@ -22,6 +22,10 @@ const Map<String, String> kRoutePrefixesNotForAi = <String, String>{
   '/api/admin/ai/agent/': 'AI 助手自己的会话 / 操作记录接口：AI 不能调 AI，终端版 AI 用',
 };
 
+/// 没有任何现有路由能读出任务状态的 longRunning 操作，值写明理由。只许放真没有
+/// 状态路由的；能读就该写 taskStatus。
+const Map<String, String> kLongRunningWithoutTaskStatus = <String, String>{};
+
 /// 「装扩展一律先确认」（spec D9，所有者 2026-10-26 拍板）覆盖的操作 id 模式。
 final RegExp _extensionInstallOp = RegExp(
   r'^online\.(extension\.(install|update)\w*|repo\.add)$',
@@ -87,8 +91,36 @@ void main() {
         reason: '${op.id}：AI 写操作必须可回滚（fushi/CLAUDE.md §13）',
       );
       if (op.risk == OpRisk.irreversible) {
-        expect(op.undo, isNull, reason: '${op.id}：能撤销就该是 write，不是 irreversible');
+        expect(
+          op.undo,
+          isNull,
+          reason: '${op.id}：能撤销就该是 write，不是 irreversible',
+        );
       }
+    }
+  });
+
+  test('longRunning 操作必须声明 taskStatus（AI 轮询任务、结束后报告，spec §6.1）', () {
+    final List<String> missing = <String>[
+      for (final FushiOp op in catalog.ops)
+        if (op.longRunning &&
+            op.taskStatus == null &&
+            !kLongRunningWithoutTaskStatus.containsKey(op.id))
+          op.id,
+    ];
+    expect(
+      missing,
+      isEmpty,
+      reason:
+          '这些 longRunning 操作没有 taskStatus：用现有状态路由（kit.callRoute）'
+          '映射成 OpTaskStatus，结果里任务 id 不在顶层 taskId/jobId 时再写 '
+          'taskIdOf（见 lib/src/ops/op_task_status.dart）。确实没有状态路由才进 '
+          'kLongRunningWithoutTaskStatus 并写明理由。\n${missing.join('\n')}',
+    );
+    for (final String id in kLongRunningWithoutTaskStatus.keys) {
+      final FushiOp? op = catalog[id];
+      expect(op?.longRunning, isTrue, reason: '$id：豁免表里的操作已不存在或不再 longRunning');
+      expect(op?.taskStatus, isNull, reason: '$id：已有 taskStatus，从豁免表删掉');
     }
   });
 
@@ -121,7 +153,11 @@ void main() {
         for (final OpParam p in op.params)
           if (p.inPath) p.name,
       };
-      expect(inPath, segments, reason: '${op.id}：inPath 参数要与 ${op.route.pattern} 的 :段一致');
+      expect(
+        inPath,
+        segments,
+        reason: '${op.id}：inPath 参数要与 ${op.route.pattern} 的 :段一致',
+      );
       for (final OpParam gate in op.params.where((OpParam p) => p.userGate)) {
         expect(
           routeSources.contains("'${gate.name}'"),

@@ -559,7 +559,11 @@ class _OnlineCtl {
       final LnReaderManager manager = await _lnReader();
       final LnReaderInstalledPlugin? plugin = manager.installedById(id);
       if (plugin == null) throw CtlFailure.notFound('没有安装这个插件：$id');
-      await manager.uninstall(plugin);
+      // 与 Mihon 同口径：默认保留插件存储（登录态），clearData=true 才删。
+      await manager.uninstall(
+        plugin,
+        clearData: call.optBool('clearData') ?? false,
+      );
       return null;
     }
     final MihonManager manager = await _mihon(kind);
