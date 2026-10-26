@@ -5,7 +5,7 @@ import 'collection_commands.dart' show collectionOrderCommandSpecs;
 import 'library_commands.dart' show libraryItemPath;
 
 /// 书架管理命令组：合集 / 标签 / 书签 / 收藏句（app 侧路由见
-/// `fushi/lib/src/platform/desktop/ctl/ctl_library_manage_routes.dart`）。
+/// `fushi/lib/src/ops/ctl_library_manage_routes.dart`）。
 ///
 /// 条目键与 `library` 组同一形状（`book:` / `srt:` / `video:` / `game:`，由
 /// `library ls` 给出）；合集 id、标签 id 由各自的 `ls` 给出。

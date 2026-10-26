@@ -4,7 +4,7 @@ import '../ctl_commands.dart';
 import 'reader_commands.dart';
 import 'shelf_commands.dart';
 
-/// library 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_library_routes.dart`）。
+/// library 域命令（app 侧路由见 `fushi/lib/src/ops/ctl_library_routes.dart`）。
 ///
 /// 条目键形如 `book:<bookKey>` / `srt:<uid>` / `video:<bookUid>` / `game:<id>`，
 /// 由 `library ls` 给出；拼进路径时整体 URI 编码（id 里可能有 `/`）。

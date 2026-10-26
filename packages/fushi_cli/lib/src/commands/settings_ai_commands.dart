@@ -7,7 +7,7 @@ import 'settings_commands.dart' show readCtlSecretFromStdin;
 
 /// `ai` 命令组：AI（大语言模型）提供商增删改、连接探测、功能指派。
 ///
-/// app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_settings_ai_routes.dart`，
+/// app 侧路由见 `fushi/lib/src/ops/ctl_settings_ai_routes.dart`，
 /// 读写与「设置 › 模型 › LLM」同一对偏好。API Key 只收 `--key-stdin` /
 /// `--key-from-env`，不收命令行明文；应答里只回显末 4 位。
 const List<CtlCommandGroup> settingsAiCommandGroups = <CtlCommandGroup>[

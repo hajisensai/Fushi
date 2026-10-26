@@ -4,7 +4,7 @@ import 'package:path/path.dart' as p;
 import '../ctl_commands.dart';
 import 'settings_ops_commands.dart' show plexLoginCommands, syncCompareCommands;
 
-/// data 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_data_routes.dart`）：
+/// data 域命令（app 侧路由见 `fushi/lib/src/ops/ctl_data_routes.dart`）：
 /// 备份、云同步、下载中心、媒体服务器、互联对端、存储。
 const List<CtlCommandGroup> dataCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(

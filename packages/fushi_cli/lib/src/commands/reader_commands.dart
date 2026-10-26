@@ -4,7 +4,7 @@ import '../ctl_commands.dart';
 import 'library_commands.dart' show libraryItemPath;
 
 /// 阅读会话遥控、有声书、漫画 OCR 命令组（app 侧路由见
-/// `fushi/lib/src/platform/desktop/ctl/ctl_reader_routes.dart` /
+/// `fushi/lib/src/ops/ctl_reader_routes.dart` /
 /// `ctl_audiobook_routes.dart` / `ctl_manga_ocr_routes.dart`）。
 const List<CtlCommandGroup> readerCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(

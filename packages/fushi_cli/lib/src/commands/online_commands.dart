@@ -3,7 +3,7 @@ import 'package:args/args.dart';
 import '../ctl_commands.dart';
 import 'ai_download_commands.dart';
 
-/// online 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_online_routes.dart`）。
+/// online 域命令（app 侧路由见 `fushi/lib/src/ops/ctl_online_routes.dart`）。
 ///
 /// 六组：`ext`（扩展仓库 / 扩展 / 启停）、`source`（在线源启停 / 置顶 / 偏好 /
 /// 筛选浏览 / 搜索 / 作品 / 入库 / 下载）、`discover`（发现源搜索与一键获取）、

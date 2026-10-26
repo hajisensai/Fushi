@@ -6,7 +6,7 @@ import 'package:args/args.dart';
 import '../ctl_commands.dart';
 
 /// `fushi_cli video` 组里的「生成日语字幕」命令（app 侧路由见
-/// `fushi/lib/src/platform/desktop/ctl/ctl_video_subtitle_routes.dart`）：与视频页
+/// `fushi/lib/src/ops/ctl_video_subtitle_routes.dart`）：与视频页
 /// 面板、合集页「整季生成日语字幕」同一个 app 服务。提交后返回任务号（`vj<N>`），
 /// `video job <id> --wait` 等结束、`video job-cancel <id>` 取消；AI 请求失败 /
 /// 专名表校验没过时任务停下，处理后同一命令再跑一次即从缓存续。

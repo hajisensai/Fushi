@@ -62,7 +62,7 @@ class DesktopCtlHost implements CtlDesktopHandler {
   final Future<void> Function(String word) lookupWord;
   final Future<void> Function() quitApp;
 
-  /// 按域注册的路由（`ctl/desktop_ctl_routes.dart`）。
+  /// 按域注册的路由（`ctl/op_routes.dart`）。
   @override
   final List<CtlRoute> routes;
 

@@ -3,7 +3,7 @@ import 'package:args/args.dart';
 import '../ctl_commands.dart';
 
 /// `fushi_cli video` 组里的「在线字幕」命令（app 侧路由见
-/// `fushi/lib/src/platform/desktop/ctl/ctl_video_subtitle_fetch_routes.dart`）：
+/// `fushi/lib/src/ops/ctl_video_subtitle_fetch_routes.dart`）：
 /// 与刮削后自动补字幕同一个 app 服务，身份取已落库的刮削结论，不要求视频页开着。
 /// 字幕落在视频旁（`<视频名>.<语言>.srt`），播放页按目录发现，之后用 `video subs` /
 /// `video sub` 选用。

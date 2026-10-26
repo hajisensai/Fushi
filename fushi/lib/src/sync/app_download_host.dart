@@ -162,7 +162,7 @@ class AppDownloadHost implements HostDownloadHost {
 ///
 /// 这是本机订阅操作的**唯一入口**：订阅页（`video_download_subscriptions_panel.dart`）
 /// 与桌面控制通道（`ctl_download_subscription_routes.dart`）都只调这里，不各自写库，
-/// 语义才不会分叉（守卫 `test/platform/desktop/ctl/ctl_ui_action_facade_coverage_guard_test.dart`）。
+/// 语义才不会分叉（守卫 `test/ops/ctl_ui_action_facade_coverage_guard_test.dart`）。
 class AppSubscriptionHost implements HostSubscriptionHost {
   const AppSubscriptionHost._(this._owner);
 

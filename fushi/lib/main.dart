@@ -105,10 +105,10 @@ import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
 import 'package:fushi/src/media/import/external_book.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart'
     show DuplicateChoice;
-import 'package:fushi/src/platform/desktop/ctl/ctl_library_entries.dart';
-import 'package:fushi/src/platform/desktop/ctl/ctl_library_import.dart';
-import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
-import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_routes.dart';
+import 'package:fushi/src/ops/ctl_library_entries.dart';
+import 'package:fushi/src/ops/ctl_library_import.dart';
+import 'package:fushi/src/ops/op_context.dart';
+import 'package:fushi/src/ops/op_routes.dart';
 import 'package:fushi_cli/fushi_cli.dart' show CtlOpenResult, CtlServer;
 import 'package:fushi/src/platform/app_shortcuts.dart';
 import 'package:fushi/src/platform/app_shortcut_router.dart';
@@ -1950,8 +1950,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           DesktopLookupService.instance.triggerLookup(word);
         },
         quitApp: _flushAndExitForWindowClose,
-        routes: buildDesktopCtlRoutes(
-          DesktopCtlContext(
+        routes: buildOpRoutes(
+          OpContext(
             ref: ref,
             focusMainWindow: _focusMainWindowForCtl,
             ingestExternalVideo: _ingestExternalVideo,
