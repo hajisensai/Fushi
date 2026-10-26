@@ -56,6 +56,9 @@ void main() {
     'src/profile/profile_selector.dart': <String>{'showCupertinoModalPopup'},
     // 阅读器侧板外壳（sh-reader-toolbar 分支在改，自绘侧滑路由）。
     'src/reader/reader_desktop_chrome.dart': <String>{'showGeneralDialog'},
+    // AI 助手的桌面靠边侧栏（spec 2026-10-26 §6.4：宽窗口从右侧滑出，不离开当前页）。
+    // 共享封装只有居中浮动面板 / 底部弹层，没有侧栏形态；窄屏仍走 adaptiveModalSheet。
+    'src/pages/implementations/ai_agent_page.dart': <String>{'showGeneralDialog'},
     // 以下仍在其它分支的改造范围内，迁完删行。
     // sh-reader-toolbar：阅读器 chrome 溢出菜单。
     'src/pages/implementations/reader_fushi/chrome.part.dart': <String>{

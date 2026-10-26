@@ -644,6 +644,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Font kerning (vertical)':
       'test/reader/reader_content_styles_test.dart',
   'reading/VPAL (vertical alt)': 'test/reader/reader_content_styles_test.dart',
+  // 首页「AI 助手」条显示档：显隐判据与持久化在专项测试里钉死。
+  'appearance/AI assistant': 'test/pages/home_ai_agent_panel_test.dart',
+  // 悬浮球「AI」按钮：默认勾选 / 平台可用 / 场景上下文在专项测试里钉死。
+  'floatingBall/AI': 'test/floating_ball/floating_ball_ai_action_test.dart',
   'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
   'reading/Spread mode': 'test/epub/epub_spread_map_test.dart',

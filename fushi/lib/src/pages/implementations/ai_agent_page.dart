@@ -35,6 +35,7 @@ import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dar
     show aiFailureText;
 import 'package:fushi/src/pages/implementations/ai_agent_screen_text.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show fushiFloatingPillDecoration;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -268,7 +269,7 @@ Future<void> _showSidePanel(
               child: Material(
                 color: scheme.surfaceContainerLow,
                 elevation: 6,
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: FushiBorderRadius.dialog,
                 clipBehavior: Clip.antiAlias,
                 child: SizedBox(
                   width: 440,
@@ -807,8 +808,9 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                 ],
               ),
               // 长任务还在跑：卡片底部一条不定进度条，结束后自动续一轮（spec §6.1）。
-              AnimatedSize(
+              FushiAnimatedSize(
                 duration: fushiMotionDuration(context, FushiMotion.short),
+                curve: FushiMotion.standard,
                 child: taskRunning
                     ? Padding(
                         padding: const EdgeInsetsDirectional.only(
@@ -1056,7 +1058,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
               color: isEinkTheme(context)
                   ? scheme.surface
                   : scheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: FushiBorderRadius.dialog,
               border: isEinkTheme(context)
                   ? Border.all(color: scheme.onSurface)
                   : null,
