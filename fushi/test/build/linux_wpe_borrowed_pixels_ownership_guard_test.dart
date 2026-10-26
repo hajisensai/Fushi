@@ -58,4 +58,40 @@ void main() {
       contains('release_buffer_after_copy && wpe_view_ != nullptr'),
     );
   });
+
+  test('WPE pointer-up excludes the released button from event modifiers', () {
+    final int handlerStart = source.indexOf(
+      'void InAppWebView::SetPointerButton(',
+    );
+    final int legacyPath = source.indexOf(
+      '#elif defined(HAVE_WPE_BACKEND_LEGACY)',
+      handlerStart,
+    );
+    expect(handlerStart, isNonNegative);
+    expect(legacyPath, greaterThan(handlerStart));
+
+    final String wpePointerHandler = source.substring(handlerStart, legacyPath);
+    final int pointerUp = wpePointerHandler.indexOf(
+      'case WpePointerEventKind::Up:',
+    );
+    final int clearButton = wpePointerHandler.indexOf(
+      'button_state_ &= ~button_modifier_bit;',
+      pointerUp,
+    );
+    final int createButtonEvent = wpePointerHandler.indexOf(
+      'WPEEvent* button_event =',
+      pointerUp,
+    );
+
+    expect(pointerUp, isNonNegative);
+    expect(clearButton, greaterThan(pointerUp));
+    expect(createButtonEvent, greaterThan(clearButton));
+    expect(
+      wpePointerHandler.indexOf(
+        'button_state_ &= ~button_modifier_bit;',
+        createButtonEvent,
+      ),
+      -1,
+    );
+  });
 }

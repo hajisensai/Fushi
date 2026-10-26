@@ -3385,7 +3385,10 @@ void InAppWebView::SetPointerButton(int kind, int button, int clickCount) {
       break;
     case WpePointerEventKind::Up:
       event_type = WPE_EVENT_POINTER_UP;
-      // Update button state AFTER the event (but include in modifiers)
+      // The released button must be absent from the pointer-up modifiers.
+      // Keeping its bit set makes WebKit treat the sequence as a drag and
+      // suppresses click activation (including the manga OCR hit layer).
+      button_state_ &= ~button_modifier_bit;
       break;
     default:
       // Ignore enter/leave/cancel etc for button events
@@ -3430,11 +3433,6 @@ void InAppWebView::SetPointerButton(int kind, int button, int clickCount) {
   );
   wpe_view_event(wpe_view_, button_event);
   wpe_event_unref(button_event);
-
-  // Clear button state AFTER sending the UP event
-  if (event_type == WPE_EVENT_POINTER_UP) {
-    button_state_ &= ~button_modifier_bit;
-  }
 
 #elif defined(HAVE_WPE_BACKEND_LEGACY)
   if (wpe_backend_ == nullptr)
