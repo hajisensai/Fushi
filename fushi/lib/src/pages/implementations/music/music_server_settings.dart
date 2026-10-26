@@ -108,7 +108,7 @@ class _MusicServerSettingsBodyState extends State<MusicServerSettingsBody> {
                     style: context.fushiType.bodySmall,
                   ),
                   if (snap.connectionState != ConnectionState.done)
-                    const LinearProgressIndicator()
+                    const FushiLinearProgressIndicator()
                   else if (servers.isEmpty)
                     Text(
                       t.music_servers_empty,
@@ -288,7 +288,7 @@ class _AddSubsonicDialogState extends State<_AddSubsonicDialog> {
             value: _allowHttp,
             onChanged: (bool v) => setState(() => _allowHttp = v),
           ),
-          if (_busy) const LinearProgressIndicator(),
+          if (_busy) const FushiLinearProgressIndicator(),
           if (_error != null)
             Text(
               _error!,

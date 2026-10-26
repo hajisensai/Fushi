@@ -46,6 +46,50 @@ MusicTracksCompanion _track(
   addedAt: 1,
 );
 
+/// 测扫描编排（开关门 / 失败落库 / FFmpeg 起不来）用的确定性后端：不依赖本机有没有
+/// FFmpeg——CI（Linux runner）没装，真 FFmpeg 只在下面的「真 FFmpeg」组里用。
+class _ScriptedFfmpeg implements FfmpegBackend {
+  _ScriptedFfmpeg({this.launchError, this.result});
+
+  /// 非 null：每次 run 都像 `Process.start` 找不到可执行那样抛出。
+  final ProcessException? launchError;
+
+  /// launchError 为 null 时 run 返回它。
+  final FfmpegRunResult? result;
+  int runs = 0;
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    runs++;
+    final ProcessException? error = launchError;
+    if (error != null) throw error;
+    return result!;
+  }
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
+      throw UnimplementedError('loudness scan never probes');
+
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      throw UnimplementedError('loudness scan never queries');
+}
+
+/// 本机（程序旁捆绑 / PATH / `FUSHI_FFMPEG`）能否真起 FFmpeg。与
+/// `test/media/video/ffmpeg_backend_test.dart` 同一判据；`dart_test.yaml` 的
+/// `ffmpeg` 标签约定：真跑 FFmpeg 的用例缺 FFmpeg 时自身跳过。
+Future<bool> _ffmpegAvailable() async {
+  try {
+    final FfmpegRunResult r = await resolveFfmpegBackend().run(<String>[
+      '-hide_banner',
+      '-version',
+    ], const Duration(seconds: 15));
+    return r.isSuccess;
+  } on ProcessException {
+    return false;
+  }
+}
+
 void main() {
   test('ebur128 摘要解析：只认 Summary 段；增益 = -18 - I；静音不给增益', () {
     final MusicLoudnessMeasurement m = parseEbur128Summary(_summary)!;
@@ -166,27 +210,59 @@ void main() {
   test('「自动测量」关掉时曲库扫描触发的请求不跑，「立即测量」(force) 照跑', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
-    int runs = 0;
+    // FFmpeg 跑起来了、但这个文件读不了（与真 FFmpeg 对不存在路径的退出形态一致）。
+    final _ScriptedFfmpeg ffmpeg = _ScriptedFfmpeg(
+      result: const FfmpegRunResult(
+        returnCode: 1,
+        output: '/nonexistent/x.flac: No such file or directory',
+      ),
+    );
     final MusicLoudnessScanner scanner = MusicLoudnessScanner(
       database: () => db,
       enabled: () => false,
-      ffmpeg: () {
-        runs++;
-        return resolveFfmpegBackend();
-      },
+      ffmpeg: () => ffmpeg,
     );
     await db
         .into(db.musicTracks)
         .insert(_track('x', path: '/nonexistent/x.flac'));
     await scanner.schedule();
-    expect(runs, 0);
+    expect(ffmpeg.runs, 0);
     expect((await db.getMusicTrack('x'))!.r128ScannedAt, isNull);
     await scanner.schedule(force: true);
-    expect(runs, 1);
+    expect(ffmpeg.runs, 1);
     // 文件读不了：记扫描时刻（不无限重试），增益留空。
     final MusicTrackRow x = (await db.getMusicTrack('x'))!;
     expect(x.r128ScannedAt, isNotNull);
     expect(x.rgTrackGain, isNull);
+    expect(scanner.lastError, contains('/nonexistent/x.flac'));
+  });
+
+  test('FFmpeg 本身起不来：schedule 不抛、原因进 lastError、曲目保持待测', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final _ScriptedFfmpeg ffmpeg = _ScriptedFfmpeg(
+      launchError: const ProcessException(
+        'ffmpeg',
+        <String>['-hide_banner'],
+        'No such file or directory',
+        2,
+      ),
+    );
+    final MusicLoudnessScanner scanner = MusicLoudnessScanner(
+      database: () => db,
+      enabled: () => true,
+      ffmpeg: () => ffmpeg,
+    );
+    await db.into(db.musicTracks).insert(_track('a', path: '/m/a.flac'));
+    await db.into(db.musicTracks).insert(_track('b', path: '/m/b.flac'));
+    // 三个生产调用点都是 unawaited(schedule())：异常逃出去就是未处理的异步错误。
+    await scanner.schedule(force: true);
+    expect(ffmpeg.runs, 1, reason: 'FFmpeg 起不来是环境问题，整轮停下，不逐首再撞一次');
+    expect(scanner.isRunning, isFalse);
+    expect(scanner.lastError, contains('ffmpeg launch failed'));
+    // 不能记成「已扫描」：否则装好 FFmpeg 后这些曲目再也不会被测。
+    expect((await db.getMusicTrack('a'))!.r128ScannedAt, isNull);
+    expect((await db.getMusicTrack('b'))!.r128ScannedAt, isNull);
   });
 
   group('真 FFmpeg + 内存 DB', () {
@@ -222,6 +298,10 @@ void main() {
     }
 
     test('缺标签曲目被测出增益写库，有标签的不碰；专辑增益补齐；扫过的不再扫', () async {
+      if (!await _ffmpegAvailable()) {
+        markTestSkipped('本机没有可用 FFmpeg（CI Linux runner 未装），跳过真跑用例');
+        return;
+      }
       final String loud = await tone('loud.flac', 4);
       final String quiet = await tone('quiet.flac', 1);
       await db

@@ -16,7 +16,8 @@ void main() {
     final String onLoadStop = _sectionSource(
       lyricsWebView,
       '      onLoadStop: (InAppWebViewController controller, WebUri? url) async {',
-      '      onReceivedError: (',
+      // 下一个具名实参；回调折到下一行时冒号后不再紧跟 `(`。
+      '      onReceivedError:',
     );
 
     expect(
