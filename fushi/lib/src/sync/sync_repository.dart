@@ -1929,6 +1929,8 @@ class SyncRepository {
     'discovery_opds_servers',
     // 同形：AList / OpenList 站点清单，条目里带 base64 密码。
     'discovery_alist_sites',
+    // 同形：Kavita 服务器清单，条目里带 base64 长期 API key，服务器地址多是局域网 IP。
+    'kavita_servers',
     // 同形：Audiobookshelf 服务器清单，条目里带 base64 令牌（refresh token 会轮换，
     // 两台设备共用一枚只会互相把对方挤下线）。
     'discovery_audiobookshelf_servers',

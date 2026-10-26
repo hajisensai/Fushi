@@ -26,6 +26,7 @@ import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
+import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart'
     show MineToastStatus, mineToastShown;
@@ -2116,6 +2117,28 @@ class PreferencesRepository extends ChangeNotifier
     Iterable<OpdsServerConfig> servers,
   ) async {
     await setPref('discovery_opds_servers', encodeOpdsServerConfigs(servers));
+    notifyListeners();
+  }
+
+  /// 用户自配的 Kavita 服务器清单（设备本地；含 base64 API key）。
+  /// 逐条容错同 [discoveryOpdsServers]。
+  List<KavitaServerConfig> get kavitaServers {
+    final String raw = getPref(kKavitaServersPref, defaultValue: '') as String;
+    if (raw.trim().isEmpty) return const <KavitaServerConfig>[];
+    try {
+      return decodeKavitaServerConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.kavitaServers.decode',
+        error,
+        stack,
+      );
+      return const <KavitaServerConfig>[];
+    }
+  }
+
+  Future<void> setKavitaServers(Iterable<KavitaServerConfig> servers) async {
+    await setPref(kKavitaServersPref, encodeKavitaServerConfigs(servers));
     notifyListeners();
   }
 
