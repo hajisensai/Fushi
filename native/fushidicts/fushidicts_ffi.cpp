@@ -835,6 +835,41 @@ FfiLookupResults fushidicts_lookup_with_options(void* handle, const char* text, 
   });
 }
 
+// 查询标志位（fushidicts_lookup_with_flags / fushidicts_lookup_popup_json_with_flags）。
+// bit0：查询语言为中文，额外尝试简体 → 繁體变体（见 LookupOptions::chinese_simp_to_trad）。
+// 老导出签名不动（Never break ABI），新增带 flags 的导出；未知位忽略。
+static constexpr int32_t kLookupFlagChineseSimpToTrad = 1;
+
+static void apply_lookup_flags(LookupOptions& options, int32_t flags) {
+  options.chinese_simp_to_trad = (flags & kLookupFlagChineseSimpToTrad) != 0;
+}
+
+FUSHI_EXPORT
+FfiLookupResults fushidicts_lookup_with_flags(void* handle, const char* text, int32_t max_results,
+                                              int32_t scan_length, const char* freq_dict, int32_t freq_order,
+                                              const char* primary_reading, int32_t flags) {
+  return ffi_guard("fushidicts_lookup_with_flags", [&]() -> FfiLookupResults {
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    Lookup lookup(h->query, h->deinflector);
+    LookupOptions options;
+    if (freq_dict && freq_dict[0] != '\0') {
+      options.frequency_dictionary = std::string(freq_dict);
+    }
+    switch (freq_order) {
+      case 1: options.frequency_order = LookupFrequencyOrder::Ascending; break;
+      case 2: options.frequency_order = LookupFrequencyOrder::Descending; break;
+      case 3: options.frequency_order = LookupFrequencyOrder::Disabled; break;
+      default: options.frequency_order = LookupFrequencyOrder::Auto; break;
+    }
+    if (primary_reading && primary_reading[0] != '\0') {
+      options.primary_reading = std::string(primary_reading);
+    }
+    apply_lookup_flags(options, flags);
+    auto results = lookup.lookup(text, max_results, static_cast<size_t>(scan_length), options);
+    return marshal_lookup_results(results);
+  });
+}
+
 FUSHI_EXPORT
 void fushidicts_free_lookup_results(FfiLookupResults* r) {
   ffi_guard_void("fushidicts_free_lookup_results", [&]() {
@@ -932,6 +967,22 @@ char* fushidicts_lookup_popup_json(void* handle, const char* text,
     Lookup lookup(h->query, h->deinflector);
     auto results = lookup.lookup(text, max_results,
                                  static_cast<size_t>(scan_length));
+    std::string json = build_popup_json(results, max_terms);
+    return dup(json);
+  });
+}
+
+FUSHI_EXPORT
+char* fushidicts_lookup_popup_json_with_flags(void* handle, const char* text,
+                                              int32_t max_results, int32_t scan_length,
+                                              int32_t max_terms, int32_t flags) {
+  return ffi_guard("fushidicts_lookup_popup_json_with_flags", [&]() -> char* {
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    Lookup lookup(h->query, h->deinflector);
+    LookupOptions options;
+    apply_lookup_flags(options, flags);
+    auto results = lookup.lookup(text, max_results,
+                                 static_cast<size_t>(scan_length), options);
     std::string json = build_popup_json(results, max_terms);
     return dup(json);
   });

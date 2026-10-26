@@ -3,6 +3,7 @@
 #include <utf8.h>
 #include <utf8proc.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -14,6 +15,7 @@
 #include <utility>
 
 #include "kanji_standardization_data.h"
+#include "opencc_st_data.h"
 
 namespace {
 struct TextProcessor {
@@ -708,8 +710,40 @@ std::vector<TextProcessor> get_korean_processors() {
 }
 }
 
+// 简体 → 繁體：二分查 OpenCC STCharacters 单字表（按简体码点升序）。
+// 表外字符（含已是繁體的字、假名、拉丁）一律原样。先扫一遍判断有无命中，没有就
+// 直接返回原串，保证中文以外的路径（即使开了开关）不做多余分配。
+std::u32string text_processor::simplified_to_traditional(const std::u32string& text) {
+  const auto* const begin = opencc_st::kSimpToTrad;
+  const auto* const end = begin + opencc_st::kSimpToTradCount;
+  auto lookup = [&](char32_t ch) -> char32_t {
+    // 表里最小的键是 U+3437，ASCII/假名等常见字符不用进二分。
+    if (ch < begin->simplified) return ch;
+    const auto* it = std::lower_bound(begin, end, ch, [](const opencc_st::SimpToTrad& e, char32_t c) {
+      return e.simplified < c;
+    });
+    return (it != end && it->simplified == ch) ? it->traditional : ch;
+  };
+  std::size_t first_hit = 0;
+  for (; first_hit < text.size(); ++first_hit) {
+    if (lookup(text[first_hit]) != text[first_hit]) break;
+  }
+  if (first_hit == text.size()) return text;
+  std::u32string out = text;
+  for (std::size_t i = first_hit; i < out.size(); ++i) out[i] = lookup(out[i]);
+  return out;
+}
+
+namespace {
+std::vector<TextProcessor> get_chinese_processors() {
+  return {{.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+             return opt == 1 ? text_processor::simplified_to_traditional(text) : text;
+           }}};
+}
+}
+
 // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/translator.js#L564
-std::vector<TextVariant> text_processor::process(const std::string& src) {
+std::vector<TextVariant> text_processor::process(const std::string& src, bool chinese_simp_to_trad) {
   std::u32string text = utf8::utf8to32(src);
   std::map<std::u32string, int> variants = {{text, 0}};
 
@@ -729,6 +763,12 @@ std::vector<TextVariant> text_processor::process(const std::string& src) {
   // 在链尾正好接住。
   auto ko_processors = get_korean_processors();
   all_processors.insert(all_processors.end(), ko_processors.begin(), ko_processors.end());
+  // 简繁回落只在调用方声明查询语言为中文时挂上（无语言路由，由 LookupOptions 传入）。
+  // 挂在链尾：原形变体始终保留（options 含 0），繁體变体是额外多出的一个。
+  if (chinese_simp_to_trad) {
+    auto zh_processors = get_chinese_processors();
+    all_processors.insert(all_processors.end(), zh_processors.begin(), zh_processors.end());
+  }
 
   for (const auto& processor : all_processors) {
     std::map<std::u32string, int> next;

@@ -9,7 +9,14 @@ struct TextVariant {
 };
 
 namespace text_processor {
-std::vector<TextVariant> process(const std::string& src);
+/// [chinese_simp_to_trad]：查询语言为中文时才置 true，额外产出「简体 → 繁體」变体
+/// （OpenCC STCharacters 单字表），让按繁體建索引的词典也能命中简体查询。默认 false，
+/// 非中文（日语的汉字大量有简体形）查询的变体集与耗时都与此前逐字节一致。
+std::vector<TextVariant> process(const std::string& src, bool chinese_simp_to_trad = false);
+
+/// 简体 → 繁體（逐字、取 OpenCC 首选项）。不含表内简体字时原样返回、不分配。
+/// 单独导出是为了让测试直接断言转换结果。
+std::u32string simplified_to_traditional(const std::u32string& text);
 
 /// 谚文预合成音节 → Hangul 兼容字母序列（复合字母拆到简单字母：ㅘ → ㅗㅏ，
 /// ㄺ → ㄹㄱ）。非谚文字符原样透传。ko.json 的 transform 表就写在这个字母域里，

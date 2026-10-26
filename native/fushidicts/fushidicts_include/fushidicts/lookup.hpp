@@ -31,6 +31,9 @@ struct LookupOptions {
   // 逐字不变；返回的 glossary 只剩压缩指针、glossary 文本为空、pitches 为空。
   // 只给只要匹配长度 / 读音的调用方（分词，见 tokenize.hpp）用。
   bool materialize = true;
+  // 查询语言为中文时置 true：文本预处理额外产出简体 → 繁體变体（原查询仍先试）。
+  // 引擎本身语言无关，由调用方（Dart 的内容语言 / 查词来源语言）声明。
+  bool chinese_simp_to_trad = false;
 };
 
 class Lookup {
