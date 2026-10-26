@@ -59,6 +59,8 @@
   "ai_agent_stop_token_budget": "Stopped: this conversation used up its token budget.",
   "ai_agent_stop_tool_limit": "Stopped: too many steps in one turn.",
   "ai_agent_superseded": "Changed again afterwards; left as is",
+  "ai_agent_task_done": "Finished: ${op} ${summary}",
+  "ai_agent_task_failed": "Did not finish: ${op} ${summary}",
   "ai_agent_title": "AI assistant",
   "ai_agent_tokens": "${n} tokens",
   "ai_agent_tool_declined": "Not run",

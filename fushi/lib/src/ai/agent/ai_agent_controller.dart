@@ -157,7 +157,34 @@ class AiAgentController extends ChangeNotifier {
     ),
     database: database,
     clock: _clock,
-  );
+  )..onTaskFinished = _onTaskFinished;
+
+  /// 长任务结束（spec §6.1）：还是当前这场对话就报告并自动续一轮；对话已换掉的
+  /// 只在操作记录里留着（下次恢复那场对话时条目仍显示为进行中）。
+  void _onTaskFinished(
+    String sessionId,
+    String opId,
+    String taskId,
+    OpTaskStatus status,
+  ) {
+    final AgentSession? session = _session;
+    if (session == null || session.id != sessionId) return;
+    final Object? data = status.data;
+    unawaited(
+      session
+          .continueAfterTask(
+            taskId,
+            opId: opId,
+            succeeded: status.succeeded,
+            status: <String, Object?>{
+              if (status.summary != null) 'summary': status.summary,
+              if (data != null) 'data': data,
+            },
+            summary: status.summary,
+          )
+          .whenComplete(_save),
+    );
+  }
 
   /// 没有会话就开一场（[scene] 记进存档，便于操作记录页分组）。
   AgentSession ensureSession({String scene = 'general'}) {
@@ -312,6 +339,7 @@ class AiAgentController extends ChangeNotifier {
   void dispose() {
     cancel();
     _detach();
+    _toolbox?.dispose();
     _client?.close();
     super.dispose();
   }

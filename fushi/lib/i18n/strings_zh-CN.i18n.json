@@ -59,6 +59,8 @@
   "ai_agent_stop_token_budget": "已停止：本次对话的 token 预算已用完。",
   "ai_agent_stop_tool_limit": "已停止：这一轮步骤太多。",
   "ai_agent_superseded": "之后又被改过，保留现状",
+  "ai_agent_task_done": "已完成：${op} ${summary}",
+  "ai_agent_task_failed": "未完成：${op} ${summary}",
   "ai_agent_title": "AI 助手",
   "ai_agent_tokens": "${n} tokens",
   "ai_agent_tool_declined": "未执行",

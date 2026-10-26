@@ -94,6 +94,28 @@ class AgentUiContext {
     if (position != null) 'position': position,
     ...extra,
   };
+
+  /// [toJson] 的逆（互联远端会话的 `text` 动作带上下文过线）。缺 `scene` 按
+  /// `general`；非字符串的已知字段丢弃，其余键原样进 [extra]。
+  static AgentUiContext fromJson(Map<String, Object?> json) {
+    final Map<String, Object?> rest = Map<String, Object?>.of(json);
+    String? text(String key) {
+      final Object? value = rest.remove(key);
+      if (value is! String) return null;
+      final String trimmed = value.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    }
+
+    return AgentUiContext(
+      scene: text('scene') ?? 'general',
+      page: text('page'),
+      itemKind: text('itemKind'),
+      itemId: text('itemId'),
+      itemTitle: text('itemTitle'),
+      position: text('position'),
+      extra: rest,
+    );
+  }
 }
 
 enum AgentEntryKind { user, assistant, toolCall, confirm, choice, notice }
@@ -129,6 +151,8 @@ class AgentEntry {
     this.errorCode,
     this.options = const <AgentChoiceOption>[],
     this.selected,
+    this.taskId,
+    this.taskState,
   });
 
   final String id;
@@ -149,6 +173,10 @@ class AgentEntry {
   String? errorCode;
   final List<AgentChoiceOption> options;
   String? selected;
+
+  /// 长任务 id（执行结果里带的）；[taskState] = `running` / `done` / `failed`。
+  String? taskId;
+  String? taskState;
 
   bool get canUndo =>
       kind == AgentEntryKind.toolCall &&
@@ -176,6 +204,8 @@ class AgentEntry {
         for (final AgentChoiceOption o in options) o.toJson(),
       ],
     if (selected != null) 'selected': selected,
+    if (taskId != null) 'taskId': taskId,
+    if (taskState != null) 'taskState': taskState,
   };
 
   static AgentEntry fromJson(Map<String, Object?> json) {
@@ -215,6 +245,8 @@ class AgentEntry {
             AgentChoiceOption.fromJson(Map<String, Object?>.from(o)),
       ],
       selected: json['selected'] as String?,
+      taskId: json['taskId'] as String?,
+      taskState: json['taskState'] as String?,
     );
   }
 }
@@ -226,6 +258,9 @@ abstract final class AgentStopCode {
   static const String tokenBudget = 'token_budget';
   static const String llmError = 'llm_error';
   static const String cancelled = 'cancelled';
+
+  /// 不是停止：长任务结束的通知条目（[AgentSession.continueAfterTask]）。
+  static const String taskFinished = 'task_finished';
 }
 
 /// 元工具：由 loop 自己处理，不进目录。
@@ -361,6 +396,7 @@ class AgentSession {
       _running = false;
       _notify();
     }
+    await _drainTaskEvents();
   }
 
   /// 撤销一条工具调用。
@@ -393,6 +429,84 @@ class AgentSession {
 
   /// 本场做过、还能撤销的写操作数。
   int get undoableCount => entries.where((AgentEntry e) => e.canUndo).length;
+
+  /// 还在跑的长任务 id。
+  List<String> get runningTaskIds => <String>[
+    for (final AgentEntry e in entries)
+      if (e.taskId != null && e.taskState == 'running') e.taskId!,
+  ];
+
+  /// 等本轮结束再报告的任务结果（任务在模型还在说话时结束）。
+  final List<(String, String, Map<String, Object?>)> _pendingTaskEvents =
+      <(String, String, Map<String, Object?>)>[];
+
+  /// 长任务结束（spec §6.1）：把条目标成 done / failed，在对话里插一条通知，
+  /// 再**自动续一轮**——模型拿到结果去汇报或做下一步（如下载完再补字幕）。
+  /// 正在跑一轮时先排队，这一轮结束后再续。任务结果是不可信数据。
+  Future<void> continueAfterTask(
+    String taskId, {
+    required String opId,
+    required bool succeeded,
+    Map<String, Object?> status = const <String, Object?>{},
+    String? summary,
+  }) async {
+    for (final AgentEntry e in entries) {
+      if (e.taskId == taskId) e.taskState = succeeded ? 'done' : 'failed';
+    }
+    _add(
+      AgentEntry(
+        id: _nextId(),
+        kind: AgentEntryKind.notice,
+        createdAt: _now(),
+        errorCode: AgentStopCode.taskFinished,
+        toolName: opId,
+        status: succeeded ? AgentEntryStatus.done : AgentEntryStatus.failed,
+        text: summary ?? '',
+      ),
+    );
+    final Map<String, Object?> event = <String, Object?>{
+      'taskId': taskId,
+      'op': opId,
+      'succeeded': succeeded,
+      ...status,
+    };
+    if (_running) {
+      _pendingTaskEvents.add((taskId, opId, event));
+      return;
+    }
+    await _resumeWithTaskEvents(<Map<String, Object?>>[event]);
+  }
+
+  Future<void> _resumeWithTaskEvents(List<Map<String, Object?>> events) async {
+    _running = true;
+    _cancelled = false;
+    try {
+      _history.add(
+        AiChatMessage.user(
+          '[Background task update — not from the user]\n'
+          '${wrapAgentUntrusted('tasks', jsonEncode(events))}\n'
+          'Tell the user the outcome briefly, and continue the plan if a next '
+          'step depended on it.',
+        ),
+      );
+      await _runTurn();
+    } finally {
+      _running = false;
+      _notify();
+    }
+    await _drainTaskEvents();
+  }
+
+  Future<void> _drainTaskEvents() async {
+    if (_pendingTaskEvents.isEmpty || _running) return;
+    final List<Map<String, Object?>> events = <Map<String, Object?>>[
+      for (final (String _, String _, Map<String, Object?> e)
+          in _pendingTaskEvents)
+        e,
+    ];
+    _pendingTaskEvents.clear();
+    await _resumeWithTaskEvents(events);
+  }
 
   // -------------------------------------------------------------------------
   // 一轮
@@ -683,6 +797,8 @@ class AgentSession {
     final String encoded = result.userPreview ?? _encodeResult(result.data);
     entry
       ..status = AgentEntryStatus.done
+      ..taskId = result.taskId
+      ..taskState = result.taskId != null && spec.longRunning ? 'running' : null
       ..actionId = result.actionId
       ..before = result.before
       ..after = result.after

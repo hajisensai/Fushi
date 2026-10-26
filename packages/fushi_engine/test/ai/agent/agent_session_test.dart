@@ -80,6 +80,14 @@ class _Toolbox implements AgentToolbox {
     parameters: <String, Object?>{'type': 'object'},
     risk: AgentToolRisk.irreversible,
   );
+  static const AgentToolSpec download = AgentToolSpec(
+    name: 'video.discovery.acquire',
+    description: 'Queue a download.',
+    parameters: <String, Object?>{'type': 'object'},
+    risk: AgentToolRisk.write,
+    undoable: true,
+    longRunning: true,
+  );
   static const AgentToolSpec flaky = AgentToolSpec(
     name: 'video.search',
     description: 'Search videos.',
@@ -107,6 +115,7 @@ class _Toolbox implements AgentToolbox {
     'online.extension.install' => install,
     'library.file.delete' => deleteFile,
     'video.search' => flaky,
+    'video.discovery.acquire' => download,
     _ => null,
   };
 
@@ -141,6 +150,12 @@ class _Toolbox implements AgentToolbox {
         return const AgentToolResult.ok(<String, Object?>{'deleted': 1});
       case 'video.search':
         return const AgentToolResult.error('bad_request', 'query 缺失');
+      case 'video.discovery.acquire':
+        return const AgentToolResult.ok(
+          <String, Object?>{'jobId': 'j1'},
+          actionId: 'a9',
+          taskId: 'j1',
+        );
     }
     return const AgentToolResult.error('not_found');
   }
@@ -526,5 +541,55 @@ void main() {
       'status': 'running',
     });
     expect(running.status, AgentEntryStatus.failed);
+  });
+
+  test('长任务：条目标 running；结束后插通知并自动续一轮（任务结果是不可信数据）', () async {
+    final _StubLlm llm = _StubLlm(<AiChatTurn>[
+      _call('video.discovery.acquire', <String, Object?>{'id': 'vr1'}),
+      _reply('已开始下载。'),
+      _reply('下载完成，接着补字幕。'),
+    ]);
+    final AgentSession session = _session(llm, _Toolbox(), _Host());
+    await session.send('下第三集');
+    final AgentEntry call = session.entries.firstWhere(
+      (AgentEntry e) => e.kind == AgentEntryKind.toolCall,
+    );
+    expect((call.taskId, call.taskState), ('j1', 'running'));
+    expect(session.runningTaskIds, <String>['j1']);
+
+    await session.continueAfterTask(
+      'j1',
+      opId: 'video.discovery.acquire',
+      succeeded: true,
+      status: const <String, Object?>{'file': 'ep3.mkv'},
+      summary: 'ep3.mkv',
+    );
+    expect(call.taskState, 'done');
+    expect(session.runningTaskIds, isEmpty);
+    final AgentEntry notice = session.entries.firstWhere(
+      (AgentEntry e) => e.errorCode == AgentStopCode.taskFinished,
+    );
+    expect(notice.text, 'ep3.mkv');
+    final AiChatMessage update = llm.requests.last.last;
+    expect(update.role, 'user');
+    expect(update.content, contains('<untrusted_data source="tasks">'));
+    expect(update.content, contains('ep3.mkv'));
+    expect(session.entries.last.text, '下载完成，接着补字幕。');
+  });
+
+  test('长任务在模型说话时结束：排队，本轮结束后再续', () async {
+    final _StubLlm llm = _StubLlm(<AiChatTurn>[_reply('第一轮'), _reply('任务那轮')]);
+    final AgentSession session = _session(llm, _Toolbox(), _Host());
+    final Future<void> turn = session.send('hi');
+    // send 已进入运行态：此刻到来的任务事件只排队。
+    final Future<void> queued = session.continueAfterTask(
+      'j2',
+      opId: 'x.y',
+      succeeded: false,
+    );
+    await queued;
+    await turn;
+    expect(llm.requests, hasLength(2));
+    expect(llm.requests.last.last.content, contains('"succeeded":false'));
   });
 }

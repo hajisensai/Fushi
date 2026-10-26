@@ -269,6 +269,35 @@ class OpUndo {
   final Future<OpUndoOutcome> Function(Map<String, Object?> payload) revert;
 }
 
+/// 长任务的一次状态读数（[FushiOp.taskStatus]）。
+class OpTaskStatus {
+  const OpTaskStatus({
+    required this.terminal,
+    this.succeeded = false,
+    this.summary,
+    this.data,
+  });
+
+  /// 任务已结束（成功、失败或被取消）。
+  final bool terminal;
+
+  /// 结束且成功。
+  final bool succeeded;
+
+  /// 给人看的一句话（可空）。
+  final String? summary;
+
+  /// 可 JSON 编码的原始状态（交给模型前包进不可信数据块）。
+  final Object? data;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'terminal': terminal,
+    'succeeded': succeeded,
+    if (summary != null) 'summary': summary,
+    if (data != null) 'data': data,
+  };
+}
+
 /// 可序列化的操作描述：`fushi_cli op ls/describe` 与 AI 工具 schema 都由它生成。
 class FushiOpSpec {
   const FushiOpSpec({
@@ -384,6 +413,7 @@ class FushiOp {
     this.undo,
     this.inProcessOnly = false,
     this.sensitiveResult = false,
+    this.taskStatus,
   });
 
   final String id;
@@ -401,6 +431,10 @@ class FushiOp {
   final OpAvailability Function()? availability;
 
   final OpUndo? undo;
+
+  /// [longRunning] 操作的状态读数：按执行结果里的 taskId 读一次（用现有的状态路由）。
+  /// AI 运行时据此轮询，结束后在对话里报告并自动续一轮（spec §6.1）。
+  final Future<OpTaskStatus> Function(String taskId)? taskStatus;
 
   OpAvailability currentAvailability() =>
       availability?.call() ?? const OpAvailability.available();
@@ -437,6 +471,7 @@ class OpDescription {
     this.availability,
     this.undo,
     this.sensitiveResult = false,
+    this.taskStatus,
   });
 
   final String id;
@@ -454,6 +489,9 @@ class OpDescription {
   /// 见 [FushiOpSpec.sensitiveResult]。
   final bool sensitiveResult;
 
+  /// 见 [FushiOp.taskStatus]。
+  final Future<OpTaskStatus> Function(String taskId)? taskStatus;
+
   String get routeKey => '$method $pattern';
 
   FushiOp bind(CtlRoute route) => FushiOp(
@@ -468,5 +506,6 @@ class OpDescription {
     availability: availability,
     undo: undo,
     sensitiveResult: sensitiveResult,
+    taskStatus: taskStatus,
   );
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value;
@@ -20,6 +21,15 @@ const List<String> kAiAgentResidentOps = <String>[
   'tasks.get',
 ];
 
+/// 长任务结束的回调（会话 id、操作 id、任务 id、最终状态）。
+typedef AiAgentTaskFinished =
+    void Function(
+      String sessionId,
+      String opId,
+      String taskId,
+      OpTaskStatus status,
+    );
+
 /// 参数里看起来像凭据的键：记账前抹掉（spec §5.3「参数（剔除凭据）」）。
 final RegExp _kSecretKey = RegExp(
   r'(api_?key|token|secret|password|passwd|cookie|authorization|credential)',
@@ -39,7 +49,21 @@ class AiAgentToolbox implements AgentToolbox {
     required this.database,
     DateTime Function()? clock,
     this.resident = kAiAgentResidentOps,
+    this.taskPollInterval = const Duration(seconds: 3),
+    this.maxTaskWatch = const Duration(hours: 6),
   }) : _clock = clock ?? DateTime.now;
+
+  /// 长任务轮询间隔与最长盯多久（spec §6.1）。
+  final Duration taskPollInterval;
+  final Duration maxTaskWatch;
+
+  /// 长任务结束时通知（控制器据此在对话里报告并自动续一轮）。
+  AiAgentTaskFinished? onTaskFinished;
+
+  bool _disposed = false;
+
+  /// 停掉所有在途的长任务轮询。
+  void dispose() => _disposed = true;
 
   final OpInvoker invoker;
   final FushiDatabase database;
@@ -131,6 +155,10 @@ class AiAgentToolbox implements AgentToolbox {
       resultCode: 'ok',
       undo: result.undo,
     );
+    final String? taskId = _taskId(result.result);
+    if (spec.longRunning && taskId != null && op.taskStatus != null) {
+      unawaited(_watchTask(invocation.sessionId, op, taskId));
+    }
     return AgentToolResult.ok(
       modelData,
       actionId: result.undo == null ? null : '$actionId',
@@ -212,6 +240,32 @@ class AiAgentToolbox implements AgentToolbox {
       );
     }
     return AgentUndoResult(status, outcome.message);
+  }
+
+  /// 轮询一个长任务直到结束（或超过 [maxTaskWatch] / 工具箱被释放）。状态路由
+  /// 报 404（任务记录已没了）当失败结束；其它错误继续轮询。
+  Future<void> _watchTask(String sessionId, FushiOp op, String taskId) async {
+    final Future<OpTaskStatus> Function(String taskId) read = op.taskStatus!;
+    final DateTime deadline = _clock().add(maxTaskWatch);
+    while (!_disposed && _clock().isBefore(deadline)) {
+      await Future<void>.delayed(taskPollInterval);
+      if (_disposed) return;
+      OpTaskStatus status;
+      try {
+        status = await read(taskId);
+      } on CtlFailure catch (failure) {
+        if (failure.status != 404) continue;
+        status = OpTaskStatus(
+          terminal: true,
+          summary: failure.message ?? failure.code,
+        );
+      } on Object {
+        continue;
+      }
+      if (!status.terminal) continue;
+      onTaskFinished?.call(sessionId, op.id, taskId, status);
+      return;
+    }
   }
 
   static String? _taskId(Object? result) {
