@@ -163,8 +163,13 @@ void main() {
               final VideoResourceRegistry registry =
                   VideoResourceRegistry(<VideoResourceProvider>[
                 NyaaVideoResourceProvider(
+                  siteId: 'nyaa-test',
+                  categoryByDomain: const <VideoDiscoveryCategory, String>{
+                    VideoDiscoveryCategory.anime: '1_0',
+                  },
                   closesClient: true,
                   client: NyaaClient(
+                    baseUrl: 'https://nyaa.si',
                     minRequestInterval: Duration.zero,
                     client: MockClient((http.Request request) async {
                       nyaaRequests.add(request.url);
@@ -269,8 +274,13 @@ void main() {
       final VideoResourceRegistry registry =
           VideoResourceRegistry(<VideoResourceProvider>[
         NyaaVideoResourceProvider(
+          siteId: 'nyaa-test',
+          categoryByDomain: const <VideoDiscoveryCategory, String>{
+            VideoDiscoveryCategory.anime: '1_0',
+          },
           closesClient: true,
           client: NyaaClient(
+            baseUrl: 'https://nyaa.si',
             minRequestInterval: Duration.zero,
             client: MockClient((http.Request request) async {
               nyaaRequests.add(request.url);

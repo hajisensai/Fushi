@@ -59,16 +59,14 @@ class LibraryAcquisitionBackend implements VideoAcquisitionChannelBackend {
 // ---------------------------------------------------------------------------
 
 /// [registry] 里有没有会参与 [category] 这类作品查询的来源。与
-/// [VideoResourceRegistry.search] 的选源口径相同（注册了 = 配好，再按
-/// 停用清单 [VideoResourceRegistry.disabledProviderIds] 排除，再按域归属
-/// [videoResourceProviderApplies] 取交集）：内置来源全部停用、又没有适用这类作品
-/// 的 Torznab 索引器时，BT 渠道报「未配置」而不是「无结果」。
+/// [VideoResourceRegistry.search] 的选源口径相同（注册了 = 已启用的用户站点 /
+/// Torznab，再按域归属 [videoResourceProviderApplies] 取交集）：没有适用这类作品
+/// 的来源时，BT 渠道报「未配置」而不是「无结果」。
 bool hasApplicableVideoResourceProvider(
   VideoResourceRegistry registry,
   VideoDiscoveryCategory? category,
 ) => registry.providers.any(
   (VideoResourceProvider provider) =>
-      !registry.disabledProviderIds.contains(provider.id) &&
       videoResourceProviderApplies(provider, category),
 );
 

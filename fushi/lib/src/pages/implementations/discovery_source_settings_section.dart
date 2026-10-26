@@ -10,9 +10,12 @@ import 'package:fushi/utils.dart';
 
 /// 「发现来源」开关区：统一发现页的内置源逐个可停用。
 ///
-/// 停用清单（`discovery_disabled_sources`）从发现页上线起就存在，出厂默认停用
-/// sukebei——但**没有任何 UI 写它**，用户既看不到有哪些源，也没法开关。这里补的
-/// 就是那个缺口，不新造第二套状态：读写的就是那一个偏好。
+/// 停用清单（`discovery_disabled_sources`）从发现页上线起就存在，这里是它唯一的
+/// UI，不新造第二套状态：读写的就是那一个偏好。
+///
+/// BT 站不在这一区：Fushi 不内置任何 BT 站，用户添加的 BT 站在发现页展开成
+/// `isUserConfigured` 源（启停在「BT 站」设置区那条记录上），按下面的过滤自然
+/// 不进这里。旧版本停用清单里残留的 `nyaa` / `sukebei` id 不再对应任何源，无害。
 ///
 /// 源列表直接遍历运行期注册表 [MediaDiscoveryService.sources]，而不是在设置层
 /// 抄一份 id 清单：抄一份就要靠守卫测试盯着两边别漂，而遍历真身根本不会漂。
@@ -30,11 +33,13 @@ class _DiscoverySourceSettingsSectionState
   Widget build(BuildContext context) {
     final AppModel appModel = ref.watch(appProvider);
     if (!appModel.isPreferencesReady) return const SizedBox.shrink();
-    // 只列**内置**源：自配源（OPDS 服务器）的开关是它自己那条记录上的 `enabled`，
+    // 只列**内置**源：自配源（OPDS / AList / BT 站）的开关是它自己那条记录上的
+    // `enabled`，
     // 由各自的配置区管。两套开关同时作用在一个源上会两头对不上，见
     // [MediaDiscoverySource.isUserConfigured]。
     final List<MediaDiscoverySource> sources = appModel
-        .mediaDiscoveryService.sources
+        .mediaDiscoveryService
+        .sources
         .where((MediaDiscoverySource s) => !s.isUserConfigured)
         .toList(growable: false);
     final Set<String> disabled = appModel.discoveryDisabledSourceIds;

@@ -45,6 +45,7 @@ import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart'
     show GameStreamVideoSettings;
@@ -5678,10 +5679,10 @@ class PreferencesRepository extends ChangeNotifier
   /// TODO-1961：内置下载引擎的下载根（新任务落点）。空串 = 未设置 → 用默认根
   /// `<documents>/anime_downloads/content`（与本 key 出现之前逐字节一致）。
   /// 设备本地路径，不进 Profile 快照（见 `ProfileKeys._excludedPrefKeys`）。
-  /// 发现页「全部源」聚合默认排除的源 id（逗号分隔）。默认排除 sukebei
-  /// （18+ 源只在用户于源下拉里**显式单选**时使用，不进默认聚合）。
+  /// 发现页「全部源」聚合排除的**内置**源 id（逗号分隔，默认空）。用户 BT 站
+  /// 展开的发现源各自带 `enabled`，不进这里（旧版默认排除的内置成人站已不存在）。
   String get discoveryDisabledSources =>
-      getPref('discovery_disabled_sources', defaultValue: 'sukebei') as String;
+      getPref('discovery_disabled_sources', defaultValue: '') as String;
 
   Future<void> setDiscoveryDisabledSources(String value) async {
     await setPref('discovery_disabled_sources', value);
@@ -5718,16 +5719,21 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 用户停用的**内置**视频资源索引器 id（逗号分隔，默认空 = 全部启用）。
-  ///
-  /// 与 [discoveryDisabledSources] 同形：都是「一组零配置内置源，按 id 记停用」。
-  /// 用户自配的 Torznab 索引器不进这里——它们各自带 `enabled` 字段，那是配置的
-  /// 一部分，不是内置源开关。
-  String get videoResourceDisabledSources =>
-      getPref('video_resource_disabled_sources', defaultValue: '') as String;
+  /// 用户自己添加的 BT 站（资源搜索 / 订阅 / 发现页的 torrent 来源；设备本地，
+  /// 地址可能带站点 passkey 故按凭据处理）。编码在引擎 `bt_site_config.dart`，
+  /// 与无头服务端同一份。坏 JSON 记错误日志、按空表处理。
+  List<BtSiteConfig> get btSites => readBtSiteConfigs(
+        this,
+        onDecodeError: (Object error, StackTrace stack) =>
+            ErrorLogService.instance.log(
+          'PreferencesRepository.btSites.decode',
+          error,
+          stack,
+        ),
+      );
 
-  Future<void> setVideoResourceDisabledSources(String value) async {
-    await setPref('video_resource_disabled_sources', value);
+  Future<void> setBtSites(Iterable<BtSiteConfig> sites) async {
+    await writeBtSiteConfigs(this, sites);
     notifyListeners();
   }
 

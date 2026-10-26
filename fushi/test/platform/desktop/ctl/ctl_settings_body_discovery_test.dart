@@ -101,20 +101,35 @@ void main() {
     await pumpContext(tester);
     final SettingsCliList cli = listOf(kCtlDiscoverySourcesListId);
     final List<Map<String, Object?>> rows = await cli.list(sc);
-    expect(rows.map((Map<String, Object?> r) => r['id']), contains('nyaa'));
-    await cli.update!(sc, 'nyaa', <String, String>{'enabled': 'false'});
-    expect(appModel.discoveryDisabledSourceIds, contains('nyaa'));
+    // 内置 BT 站发现源已移除（用户自己添加 BT 站）：这里只剩非 BT 的内置源。
+    expect(
+      rows.map((Map<String, Object?> r) => r['id']),
+      isNot(contains('nyaa')),
+    );
+    expect(
+      rows.map((Map<String, Object?> r) => r['id']),
+      contains('alist-erogame'),
+    );
+    await cli.update!(sc, 'alist-erogame', <String, String>{
+      'enabled': 'false',
+    });
+    expect(appModel.discoveryDisabledSourceIds, contains('alist-erogame'));
     final Map<String, Object?> back =
-        await cli.update!(sc, 'nyaa', <String, String>{'enabled': 'true'})
+        await cli.update!(sc, 'alist-erogame', <String, String>{
+              'enabled': 'true',
+            })
             as Map<String, Object?>;
     expect(back['enabled'], isTrue);
-    expect(appModel.discoveryDisabledSourceIds, isNot(contains('nyaa')));
+    expect(
+      appModel.discoveryDisabledSourceIds,
+      isNot(contains('alist-erogame')),
+    );
     await expectLater(
       cli.update!(sc, 'nope', <String, String>{'enabled': 'true'}),
       throwsArgumentError,
     );
     await expectLater(
-      cli.update!(sc, 'nyaa', <String, String>{'enabled': 'maybe'}),
+      cli.update!(sc, 'alist-erogame', <String, String>{'enabled': 'maybe'}),
       throwsArgumentError,
     );
   });

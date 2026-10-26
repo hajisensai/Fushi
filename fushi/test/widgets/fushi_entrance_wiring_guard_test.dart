@@ -103,6 +103,8 @@ void main() {
       'lib/src/media/video/subtitle/remote_video_subtitle_sheet.dart',
       // 2026-10-25 条目长按 / 右键菜单重设计：抽屉宫格 / 双栏分组列表 / 右键菜单行。
       'lib/src/pages/implementations/media_item_dialog_page.dart',
+      // 2026-10-27 用户 BT 站设置区：站点卡列表。
+      'lib/src/pages/implementations/bt_site_settings_section.dart',
       // 2026-10-27 发现作品详情页「获取途径」面板：渠道组 / 组内命中。
       'lib/src/pages/implementations/discovery/video_work_acquisition_section.dart',
     ]) {

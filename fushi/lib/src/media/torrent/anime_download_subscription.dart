@@ -13,6 +13,9 @@ import 'package:fushi_engine/media/torrent/anime_release_descriptor.dart';
 import 'package:fushi_engine/media/torrent/download_timeouts.dart'
     show kDownloadDiscoveryTimeout;
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart'
+    show VideoDownloadSubscriptionBtSiteMissing;
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/video/jimaku_batch.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
@@ -375,8 +378,10 @@ class AnimeDownloadSubscriptionService {
     String Function()? jimakuApiKeyProvider,
     AnimeSubscriptionSubtitleFetcher? subtitleFetcher,
     Future<http.Client> Function()? httpClientFactory,
+    BtSiteConfig? Function()? animeSiteProvider,
     this.interval = const Duration(minutes: 15),
   })  : _configProvider = configProvider,
+        _animeSiteProvider = animeSiteProvider ?? (() => null),
         _backendFactory = backendFactory,
         _search = search,
         _jimakuApiKeyProvider = jimakuApiKeyProvider ?? (() => ''),
@@ -392,6 +397,10 @@ class AnimeDownloadSubscriptionService {
   final String Function() _jimakuApiKeyProvider;
   final AnimeSubscriptionSubtitleFetcher? _subtitleFetcher;
   final Future<http.Client> Function() _httpClientFactory;
+
+  /// 用户的第一个启用、覆盖动画域的 Nyaa 式 BT 站（没有内置站点）。null =
+  /// 没有可用站点：这条旧订阅本轮不发请求，lastError 记「没有可用的 BT 站」。
+  final BtSiteConfig? Function() _animeSiteProvider;
   final Duration interval;
   final ValueNotifier<bool> checking = ValueNotifier<bool>(false);
 
@@ -401,13 +410,27 @@ class AnimeDownloadSubscriptionService {
   Future<List<NyaaTorrent>> _searchNyaa(
     AnimeDownloadSubscription subscription,
   ) async {
+    final BtSiteConfig? site = _animeSiteProvider();
+    final String? siteCategory = site?.nyaaCategories[BtSiteDomain.anime];
+    if (site == null || siteCategory == null) {
+      throw const VideoDownloadSubscriptionBtSiteMissing();
+    }
+    // 旧订阅存的分类号是按当年那个站点的分类体系记的；只有与用户站点动画分类
+    // 同一个大类（`1_2` 之于 `1_0`）时才沿用它的子类细分，否则用站点自己的动画分类。
+    final String category =
+        subscription.category.split('_').first == siteCategory.split('_').first
+            ? subscription.category
+            : siteCategory;
     final http.Client rawClient = await _httpClientFactory();
-    final NyaaClient client = NyaaClient(client: rawClient);
+    final NyaaClient client = NyaaClient(
+      baseUrl: site.baseUrl.toString(),
+      client: rawClient,
+    );
     try {
       return await client
           .search(
             subscription.nyaaQuery,
-            category: subscription.category,
+            category: category,
             filter: subscription.trustedOnly ? '2' : '0',
             // 订阅追的是「最新集」：一页只有 75 条，长篇（One Piece 级）按做种
             // 排会把刚出的新集挤出首页。按发布时间倒序保住旧 RSS 语义。
