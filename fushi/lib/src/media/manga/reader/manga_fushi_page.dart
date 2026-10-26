@@ -149,8 +149,6 @@ import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/manga/reader/manga_jump_point.dart';
 import 'package:fushi/src/utils/components/fushi_jump_history_pill.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
-
-part 'manga_jump_history.part.dart';
 import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_manga_sync.dart';
@@ -159,6 +157,7 @@ import 'package:fushi/src/pages/implementations/kavita/kavita_progress_conflict_
 import 'package:fushi_engine/media/kavita/kavita_models.dart'
     show KavitaProgress;
 
+part 'manga_jump_history.part.dart';
 part 'manga_fushi/kavita.part.dart';
 
 /// Manga reader implementation owned by the standalone manga module.
