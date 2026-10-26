@@ -323,4 +323,81 @@ void main() {
       expect(ExtensionFindSkill().spec.confirm, isTrue);
     });
   });
+
+  group('skill.srs.conflicts.resolve', () {
+    test('同值不同时刻按规则取当前；其余出卡片；保留删除按用户已选；重复组合并', () async {
+      final _Context context = _Context(
+        (String id, Map<String, Object?> args) => switch (id) {
+          'srs.conflicts.list' => _ok(<String, Object?>{
+            'fields': <Object?>[
+              <String, Object?>{
+                'kind': 'note',
+                'entity': 'n1',
+                'key': 'front',
+                'current': <String, Object?>{'value': 'a'},
+                'replaced': <String, Object?>{'value': 'a'},
+              },
+              <String, Object?>{
+                'kind': 'note',
+                'entity': 'n2',
+                'key': 'back',
+                'current': <String, Object?>{'value': 'x'},
+                'replaced': <String, Object?>{'value': 'y'},
+              },
+            ],
+            'held': <Object?>[
+              <String, Object?>{'id': 'h1', 'label': 'card'},
+            ],
+            'duplicates': <Object?>[
+              <String, Object?>{
+                'notes': <Object?>[
+                  <String, Object?>{'id': 'd1', 'label': 'A'},
+                  <String, Object?>{'id': 'd2', 'label': 'A'},
+                ],
+              },
+            ],
+            'pendingNotes': <Object?>[
+              <String, Object?>{'id': 'p1'},
+            ],
+          }),
+          _ => _ok(const <String, Object?>{'ok': true}),
+        },
+        pick: (String prompt, List<AgentChoiceOption> options) {
+          if (prompt.startsWith('Deleted')) return 'keep';
+          if (prompt.startsWith('These notes')) return 'd2';
+          return 'replaced';
+        },
+      );
+      final Object? summary = await SrsConflictsResolveSkill().run(
+        context,
+        const <String, Object?>{},
+      );
+      expect(summary, <String, Object?>{
+        'resolvedByRule': 1,
+        'resolvedByUser': 3,
+        'skipped': 0,
+        'failed': 0,
+        'pendingNotesLeftForConflictCenter': 1,
+      });
+      final List<(String, Map<String, Object?>, bool)> calls = context.calls
+          .where(
+            ((String, Map<String, Object?>, bool) c) =>
+                c.$1 != 'srs.conflicts.list',
+          )
+          .toList();
+      expect(calls[0].$2, <String, Object?>{
+        'kind': 'note',
+        'entity': 'n1',
+        'key': 'front',
+        'keep': 'current',
+      });
+      expect(calls[1].$2['keep'], 'replaced');
+      expect((calls[2].$1, calls[2].$3), ('srs.conflict.held.keep', true));
+      expect(calls[3].$2, <String, Object?>{
+        'keep': 'd2',
+        'absorb': <String>['d1'],
+      });
+      expect(context.cards, hasLength(3), reason: '同值那条不出卡片');
+    });
+  });
 }

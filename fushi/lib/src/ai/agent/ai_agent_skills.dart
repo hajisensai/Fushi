@@ -9,6 +9,7 @@ List<AiAgentAppSkill> buildAiAgentSkills() => <AiAgentAppSkill>[
   SubtitleFillSkill(),
   ScrapeResolveSkill(),
   ExtensionFindSkill(),
+  SrsConflictsResolveSkill(),
 ];
 
 /// app 侧技能：声明它要用的操作；任一当前不可用（模块关、平台 / 合规不支持）时
@@ -480,5 +481,200 @@ class ExtensionFindSkill extends AiAgentAppSkill {
       ];
     }
     return hits;
+  }
+}
+
+/// 「处理冲突」：复习（SRS）的同步冲突与重复笔记。
+///
+/// - 字段冲突：两侧值相同、只是写入时刻不同 → 按规则直接取当前生效的那一侧
+///   （`srs.conflict.field.resolve keep=current`，可撤销）；值不同的出候选卡让用户选。
+/// - 被扣住的删除：出候选卡——「删除」可撤销（墓碑带快照）；「保留」撤销不了，
+///   用户在卡片上点了「保留」即确认这一步。
+/// - 重复笔记组：出候选卡——保留哪一条（其余合并进来，可撤销）/「不是重复」/ 跳过。
+/// - 待决的笔记（`pendingNotes`）只报告数量，交给冲突中心页。
+///
+/// 云同步（书 / 播放位置）中途的冲突走 `sync.run` 的冲突策略参数，不在这里。
+class SrsConflictsResolveSkill extends AiAgentAppSkill {
+  @override
+  List<String> get requiredOps => const <String>[
+    'srs.conflicts.list',
+    'srs.conflict.field.resolve',
+    'srs.conflict.held.delete',
+    'srs.conflict.held.keep',
+    'srs.duplicates.merge',
+    'srs.duplicates.dismiss',
+  ];
+
+  @override
+  AgentToolSpec get spec => const AgentToolSpec(
+    name: 'skill.srs.conflicts.resolve',
+    description:
+        'Resolve spaced-repetition sync conflicts and duplicate notes: settles '
+        'the trivial ones by rule (same value, different time) and shows the '
+        'user choice cards for the rest.',
+    parameters: <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{},
+    },
+    risk: AgentToolRisk.write,
+  );
+
+  static const String _keep = 'keep';
+  static const String _delete = 'delete';
+  static const String _current = 'current';
+  static const String _replaced = 'replaced';
+  static const String _notDuplicate = '__not_duplicate__';
+
+  @override
+  Future<Object?> run(
+    AgentSkillContext context,
+    Map<String, Object?> args,
+  ) async {
+    final AgentToolResult listed = await context.call(
+      'srs.conflicts.list',
+      const <String, Object?>{},
+    );
+    if (listed.isError) {
+      throw AgentSkillFailure(listed.errorCode!, listed.errorMessage);
+    }
+    int byRule = 0;
+    int byUser = 0;
+    int skipped = 0;
+    int failed = 0;
+    void count(AgentToolResult r, {required bool rule}) {
+      if (r.isError) {
+        failed++;
+      } else if (rule) {
+        byRule++;
+      } else {
+        byUser++;
+      }
+    }
+
+    for (final Map<String, Object?> field in _list(listed.data, 'fields')) {
+      if (context.cancelled) break;
+      final Map<String, Object?> current = _map(field['current']);
+      final Map<String, Object?> replaced = _map(field['replaced']);
+      final Map<String, Object?> target = <String, Object?>{
+        'kind': field['kind'],
+        'entity': field['entity'],
+        'key': field['key'],
+      };
+      if ('${current['value']}' == '${replaced['value']}') {
+        count(
+          await context.call('srs.conflict.field.resolve', <String, Object?>{
+            ...target,
+            'keep': _current,
+          }),
+          rule: true,
+        );
+        continue;
+      }
+      final String? choice = await context.askChoice(
+        '${field['label'] ?? field['entity']} · ${field['key']}',
+        <AgentChoiceOption>[
+          AgentChoiceOption(
+            id: _current,
+            label: '${current['value']}',
+            detail: 'device ${current['device'] ?? '?'}',
+          ),
+          AgentChoiceOption(
+            id: _replaced,
+            label: '${replaced['value']}',
+            detail: 'device ${replaced['device'] ?? '?'}',
+          ),
+        ],
+      );
+      if (choice == null) {
+        skipped++;
+        continue;
+      }
+      count(
+        await context.call('srs.conflict.field.resolve', <String, Object?>{
+          ...target,
+          'keep': choice,
+        }),
+        rule: false,
+      );
+    }
+
+    for (final Map<String, Object?> held in _list(listed.data, 'held')) {
+      if (context.cancelled) break;
+      final String id = '${held['id']}';
+      final String? choice = await context.askChoice(
+        'Deleted on another device: ${held['label'] ?? held['entity']}',
+        const <AgentChoiceOption>[
+          AgentChoiceOption(id: _delete, label: 'Delete', detail: 'undoable'),
+          AgentChoiceOption(
+            id: _keep,
+            label: 'Keep',
+            detail: 'cannot be undone',
+          ),
+        ],
+      );
+      if (choice == null) {
+        skipped++;
+        continue;
+      }
+      count(
+        choice == _delete
+            ? await context.call('srs.conflict.held.delete', <String, Object?>{
+                'id': id,
+              })
+            : await context.call('srs.conflict.held.keep', <String, Object?>{
+                'id': id,
+              }, userChoseThisStep: true),
+        rule: false,
+      );
+    }
+
+    for (final Map<String, Object?> group in _list(listed.data, 'duplicates')) {
+      if (context.cancelled) break;
+      final List<Map<String, Object?>> notes = _list(group, 'notes');
+      if (notes.length < 2) continue;
+      final String? choice = await context.askChoice(
+        'These notes look like duplicates. Keep which one?',
+        <AgentChoiceOption>[
+          for (final Map<String, Object?> n in notes)
+            AgentChoiceOption(
+              id: '${n['id']}',
+              label: '${n['label'] ?? n['id']}',
+              detail: '${n['reviews'] ?? 0} reviews',
+            ),
+          const AgentChoiceOption(id: _notDuplicate, label: 'Not duplicates'),
+        ],
+      );
+      if (choice == null) {
+        skipped++;
+        continue;
+      }
+      count(
+        choice == _notDuplicate
+            ? await context.call('srs.duplicates.dismiss', <String, Object?>{
+                'notes': <String>[
+                  for (final Map<String, Object?> n in notes) '${n['id']}',
+                ],
+              })
+            : await context.call('srs.duplicates.merge', <String, Object?>{
+                'keep': choice,
+                'absorb': <String>[
+                  for (final Map<String, Object?> n in notes)
+                    if ('${n['id']}' != choice) '${n['id']}',
+                ],
+              }),
+        rule: false,
+      );
+    }
+
+    return <String, Object?>{
+      'resolvedByRule': byRule,
+      'resolvedByUser': byUser,
+      'skipped': skipped,
+      'failed': failed,
+      'pendingNotesLeftForConflictCenter': _list(
+        listed.data,
+        'pendingNotes',
+      ).length,
+    };
   }
 }
