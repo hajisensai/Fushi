@@ -1,5 +1,6 @@
 import 'package:fushi_cli/fushi_cli.dart';
 
+import 'package:fushi/src/ops/ctl_ai_agent_routes.dart';
 import 'package:fushi/src/ops/ctl_data_routes.dart';
 import 'package:fushi/src/ops/ctl_dictionary_routes.dart';
 import 'package:fushi/src/ops/ctl_game_routes.dart';
@@ -41,4 +42,5 @@ List<CtlRoute> buildDomainOpRoutes(OpContext context) => <CtlRoute>[
   ...buildOnlineCtlRoutes(context),
   ...buildVideoCtlRoutes(context),
   ...buildGameCtlRoutes(context),
+  ...buildAiAgentCtlRoutes(context),
 ];

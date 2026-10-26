@@ -105,6 +105,14 @@ class AiAgentController extends ChangeNotifier {
     );
   }
 
+  /// 不挂界面的独立会话（`fushi_cli ai ask`）：自带一个 [host]，确认 / 候选由终端
+  /// 经控制通道作答；与 app 内的 AI 浮层互不干扰。
+  static AiAgentController headless(OpContext context) => AiAgentController._(
+    database: context.appModel.database,
+    settings: context.appModel.prefsRepo,
+    opContext: context,
+  );
+
   @visibleForTesting
   static AiAgentController forTesting({
     required FushiDatabase database,

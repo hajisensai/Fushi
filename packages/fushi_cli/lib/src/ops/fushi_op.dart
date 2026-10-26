@@ -35,7 +35,10 @@ enum OpParamType {
   number('number'),
   boolean('boolean'),
   stringList('array'),
-  object('object');
+  object('object'),
+
+  /// 对象数组（如文本处理流水线的步骤列表）。
+  objectList('array');
 
   const OpParamType(this.schemaType);
 
@@ -123,6 +126,17 @@ class OpParam {
 
   /// [spread]：对象里的键值铺进 body 顶层（路由按动态键名读参数时用，如
   /// 设置动作行声明的参数）。
+  const OpParam.objectList(
+    String name, {
+    required String description,
+    bool required = false,
+  }) : this(
+         name,
+         OpParamType.objectList,
+         description: description,
+         required: required,
+       );
+
   const OpParam.object(
     String name, {
     required String description,
@@ -161,6 +175,8 @@ class OpParam {
     'description': description,
     if (type == OpParamType.stringList)
       'items': const <String, Object?>{'type': 'string'},
+    if (type == OpParamType.objectList)
+      'items': const <String, Object?>{'type': 'object'},
     if (enumValues != null) 'enum': enumValues,
   };
 

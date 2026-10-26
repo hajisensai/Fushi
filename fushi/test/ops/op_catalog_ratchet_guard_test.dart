@@ -17,6 +17,11 @@ class _UnusedRef implements WidgetRef {
 /// 调到新的实际值；新增路由必须同时带描述（否则这个数会涨）。
 const int kUndescribedRouteBaseline = 9999;
 
+/// 有意不进操作目录的路由前缀，值写明理由。
+const Map<String, String> kRoutePrefixesNotForAi = <String, String>{
+  '/api/admin/ai/agent/': 'AI 助手自己的会话 / 操作记录接口：AI 不能调 AI，终端版 AI 用',
+};
+
 /// 「装扩展一律先确认」（spec D9，所有者 2026-10-26 拍板）覆盖的操作 id 模式。
 final RegExp _extensionInstallOp = RegExp(
   r'^online\.(extension\.(install|update)\w*|repo\.add)$',
@@ -31,7 +36,9 @@ void main() {
   };
   final List<CtlRoute> undescribed = <CtlRoute>[
     for (final CtlRoute route in domain)
-      if (!described.contains(route)) route,
+      if (!described.contains(route) &&
+          !kRoutePrefixesNotForAi.keys.any(route.pattern.startsWith))
+        route,
   ];
 
   test('没描述的路由数只许减不许增', () {
@@ -47,6 +54,16 @@ void main() {
       kUndescribedRouteBaseline,
       reason: '描述补上了，把 kUndescribedRouteBaseline 调到 ${undescribed.length}',
     );
+  });
+
+  test('豁免前缀下没有被描述的路由（描述了就不该豁免）', () {
+    for (final FushiOp op in catalog.ops) {
+      expect(
+        kRoutePrefixesNotForAi.keys.any(op.route.pattern.startsWith),
+        isFalse,
+        reason: op.id,
+      );
+    }
   });
 
   test('操作 id 唯一、点分小写、不含 __（AI 线上名把点换成 __）', () {

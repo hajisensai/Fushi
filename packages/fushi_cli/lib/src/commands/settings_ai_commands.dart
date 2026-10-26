@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
+import 'ai_agent_commands.dart';
 import 'settings_commands.dart' show readCtlSecretFromStdin;
 
 /// `ai` 命令组：AI（大语言模型）提供商增删改、连接探测、功能指派。
@@ -13,8 +14,9 @@ import 'settings_commands.dart' show readCtlSecretFromStdin;
 const List<CtlCommandGroup> settingsAiCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'ai',
-    summary: 'AI 提供商与功能指派',
+    summary: 'AI 提供商与功能指派；AI 助手（ask / undo / log）',
     commands: <CtlCommandSpec>[
+      ...aiAgentCommands,
       CtlCommandSpec(
         name: 'presets',
         summary: '列出内置提供商预设（add 用它的 id）',

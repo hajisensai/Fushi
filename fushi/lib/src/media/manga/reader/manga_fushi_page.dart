@@ -7223,11 +7223,25 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   ///
   /// 键是 [kMangaFloatingBallButtons] 里的 id；显示哪几颗由 设置 → 悬浮球 → 漫画
   /// 决定。应用内悬浮球关闭时宿主不渲染，这里无条件挂载也无副作用。
+  /// 悬浮球「AI」取的当前页面上下文（漫画页）。
+  Map<String, Object?> _mangaAiContext() {
+    final int total = _spreads.length;
+    return <String, Object?>{
+      'itemKind': 'manga',
+      'itemId': _bookUid ?? _bookmarkBookUid ?? widget.bookKey,
+      'itemTitle': _bookRow?.title,
+      'position': total > 0
+          ? 'page ${_currentPage + 1} · spread ${_currentSpread + 1}/$total'
+          : 'page ${_currentPage + 1}',
+    };
+  }
+
   Widget _buildMangaFloatingBallScene() {
     if (!_chromeActionsEnabled) {
-      return const FloatingBallScene(
+      return FloatingBallScene(
         scope: FloatingBallScope.manga,
-        actions: <String, ReaderHeaderAction>{},
+        aiContext: _mangaAiContext,
+        actions: const <String, ReaderHeaderAction>{},
       );
     }
     // 图标跟文字走（上一页 ‹ / 下一页 ›），不按右→左翻页镜像：球是一列竖排的
@@ -7235,6 +7249,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 当成画反了（BUG-3365 截图）。
     return FloatingBallScene(
       scope: FloatingBallScope.manga,
+      aiContext: _mangaAiContext,
       actions: <String, ReaderHeaderAction>{
         'previous': ReaderHeaderAction(
           key: const ValueKey<String>('manga_floating_ball_previous'),

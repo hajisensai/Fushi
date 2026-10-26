@@ -278,6 +278,13 @@ class OpInvoker {
       case OpParamType.object:
         if (value is Map) return Map<String, Object?>.from(value);
         throw CtlFailure.badRequest('${param.name} 必须是对象');
+      case OpParamType.objectList:
+        if (value is List && value.every((Object? e) => e is Map)) {
+          return <Map<String, Object?>>[
+            for (final Object? e in value) Map<String, Object?>.from(e! as Map),
+          ];
+        }
+        throw CtlFailure.badRequest('${param.name} 必须是对象数组');
     }
   }
 }

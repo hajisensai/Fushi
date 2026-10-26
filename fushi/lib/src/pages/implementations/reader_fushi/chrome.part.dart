@@ -940,7 +940,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) {
       FushiToast.show(
-          msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
+        msg: t.reader_image_file_unavailable,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     await runImageAction(ImageAction.save, file);
@@ -993,8 +995,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
                 onLongPress: isWindowsPlatform
                     ? null
                     : () => unawaited(
-                          showImageActionsSheet(routeContext, file: file),
-                        ),
+                        showImageActionsSheet(routeContext, file: file),
+                      ),
               ),
             ),
           ),
@@ -2203,9 +2205,29 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 顶栏和底栏被关掉时球接管它们：[kReaderToolbarsTakeoverItems]（返回 / 设置 /
   /// 开回栏）不看勾选固定在球上，歌词模式再加模式切换键（顶栏在歌词模式也强制
   /// 保留它：那是回正文最直接的入口）；宿主据此不给「关闭悬浮球」。
+  /// 悬浮球 AI 上下文用的 mm:ss（超过一小时为 h:mm:ss）。
+  String _formatAiContextDuration(Duration d) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    final int h = d.inHours;
+    final String mmss = '${two(d.inMinutes % 60)}:${two(d.inSeconds % 60)}';
+    return h > 0 ? '$h:$mmss' : mmss;
+  }
+
   Widget _buildReaderFloatingBallScene() {
     return FloatingBallScene(
       scope: FloatingBallScope.reader,
+      aiContext: () {
+        final AudiobookPlayerController? audio = _audiobookController;
+        final int pct = (_lastProgressValue.clamp(0.0, 1.0) * 100).round();
+        return <String, Object?>{
+          'itemKind': 'book',
+          'itemId': _bookUid ?? widget.bookKey,
+          'itemTitle': _book?.title,
+          'position': 'chapter ${_currentChapter + 1} · $pct%',
+          if (audio != null && audio.isPlaying)
+            'audiobookPosition': _formatAiContextDuration(audio.globalPosition),
+        };
+      },
       pinnedIds: <String>[
         if (_hasEverLoaded && _toolbarsHidden) ...<String>[
           for (final ReaderControlItem item in kReaderToolbarsTakeoverItems)

@@ -11186,6 +11186,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 全屏是推到根导航器上的独立路由（[_pushNeutralizedVideoFullscreen]），窗口侧
   /// 这份登记随之不再是「当前路由」，宿主会退回「其它页面」那组按钮——所以全屏
   /// 路由里要再挂一份（[child] 包住全屏内容），两份登记同源同按钮。
+  /// 悬浮球「AI」取的当前页面上下文（视频页）；每次点球时现取。
+  Map<String, Object?> _videoAiContext() {
+    final int ms = _controller?.positionMs ?? 0;
+    final Duration d = Duration(milliseconds: ms < 0 ? 0 : ms);
+    String two(int n) => n.toString().padLeft(2, '0');
+    final String mmss = '${two(d.inMinutes)}:${two(d.inSeconds % 60)}';
+    final String work = (_playlistTitle ?? '').trim();
+    final String ep = (_title ?? '').trim();
+    final String title = work.isEmpty || work == ep
+        ? ep
+        : (ep.isEmpty ? work : '$work - $ep');
+    return <String, Object?>{
+      'itemKind': 'episode',
+      'itemId': _activeBookUid,
+      'itemTitle': title,
+      'position': mmss,
+      if (_isPlaylist) 'episode': _currentEpisode + 1,
+    };
+  }
+
   Widget _buildVideoFloatingBallScene(
     VideoPlayerController? controller, {
     Widget child = const SizedBox.shrink(),
@@ -11202,6 +11222,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         if (controller == null) {
           return FloatingBallScene(
             scope: FloatingBallScope.video,
+            aiContext: _videoAiContext,
             actions: const <String, ReaderHeaderAction>{},
             hideBall: hideBall,
             child: child!,
@@ -11210,6 +11231,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         final bool playing = controller.isPlaying;
         return FloatingBallScene(
           scope: FloatingBallScope.video,
+          aiContext: _videoAiContext,
           hideBall: hideBall,
           actions: <String, ReaderHeaderAction>{
             'play_pause': ReaderHeaderAction(
