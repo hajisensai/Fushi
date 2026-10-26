@@ -5,6 +5,7 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
+import 'package:fushi/src/ops/op_task_status.dart';
 
 /// 数据：备份 / 同步 / 下载中心 / 媒体服务器 / 互联 / 存储的操作描述（spec
 /// `docs/specs/2026-10-26-ai-operations-agent-design.md` §4）。
@@ -542,6 +543,8 @@ List<OpDescription> _downloadOps(OpDescribeKit kit) {
           'direct link (needs mediaKind). Finished files are imported into the '
           'library. Undo cancels the job and deletes its downloaded files.',
       risk: OpRisk.write,
+      longRunning: true,
+      taskStatus: (String id) => opDownloadJobTaskStatus(kit, id),
       params: const <OpParam>[
         OpParam.string(
           'target',
