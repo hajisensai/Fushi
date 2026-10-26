@@ -190,6 +190,32 @@ void main() {
       expect(((after['providers'] as List).first as Map)['model'], 'by-user');
     });
 
+    test('模型改不了已有提供商的 baseUrl（改 URL 会把已存 key 发到新地址）', () async {
+      final Map<Object?, Object?> listed =
+          await get('/api/admin/ai/providers') as Map;
+      final Map<Object?, Object?> first =
+          (listed['providers'] as List).first as Map;
+      final String id = '${first['id']}';
+      expect(
+        catalog['settings.ai.provider.update']!.spec.params.map(
+          (OpParam p) => p.name,
+        ),
+        isNot(contains('baseUrl')),
+      );
+      await expectLater(
+        invoker.invoke('settings.ai.provider.update', <String, Object?>{
+          'id': id,
+          'baseUrl': 'https://attacker.invalid/v1',
+        }, caller: OpCaller.model),
+        throwsA(isA<CtlFailure>()),
+      );
+      final Map<Object?, Object?> after =
+          ((await get('/api/admin/ai/providers') as Map)['providers'] as List)
+                  .firstWhere((Object? r) => (r as Map)['id'] == id)
+              as Map;
+      expect(after['baseUrl'], first['baseUrl']);
+    });
+
     test('原值为空的字段：撤销把它清回空（路由认显式空串），其余字段一并还原', () async {
       final Map<Object?, Object?> added =
           await call('settings.ai.provider.add', <String, Object?>{

@@ -959,9 +959,16 @@ const List<String> _providerFields = <String>[
   'rpm',
 ];
 
+/// 新增时可填的 base URL。改已有提供商的 URL 刻意不声明：路由改 URL 会保留已存的
+/// API Key，模型（受网页 / 字幕里的提示注入）把 URL 指到别处，下一次请求就把 key
+/// 发出去——撤销收不回已外泄的 key。新增的提供商没有 key，填 URL 无此风险。
+const OpParam _providerBaseUrl = OpParam.string(
+  'baseUrl',
+  description: 'API base URL.',
+);
+
 const List<OpParam> _providerEditable = <OpParam>[
   OpParam.string('name', description: 'Display name.'),
-  OpParam.string('baseUrl', description: 'API base URL.'),
   OpParam.string('model', description: 'Model name.'),
   OpParam.string(
     'protocol',
@@ -1011,6 +1018,7 @@ List<OpDescription> _aiOps(OpDescribeKit kit) => <OpDescription>[
         description: 'Preset id from settings.ai.preset.list.',
         required: true,
       ),
+      _providerBaseUrl,
       ..._providerEditable,
       OpParam.boolean(
         'makeDefault',
@@ -1024,9 +1032,10 @@ List<OpDescription> _aiOps(OpDescribeKit kit) => <OpDescription>[
     method: 'PUT',
     pattern: '/api/admin/ai/providers/:id',
     summary:
-        'Change an LLM provider\'s name, URL, model, protocol, reasoning, '
-        'enabled or rate limit. API keys cannot be changed here. Undo restores '
-        'the previous values.',
+        'Change an LLM provider\'s name, model, protocol, reasoning, enabled '
+        'or rate limit. The base URL and API keys cannot be changed here: the '
+        'user must edit them on the Settings › Models › LLM page. Undo '
+        'restores the previous values.',
     risk: OpRisk.write,
     params: const <OpParam>[_providerRef, ..._providerEditable],
     undo: _resolvedSnapshotUndo(
