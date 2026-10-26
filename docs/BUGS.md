@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3388 条。点号进各自文件。
+> 共 3389 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3785](bugs/BUG-3785-remove-source-orphans-music-tracks.md) | ✅ | ✅ | remove-source-orphans-music-tracks |
 | [BUG-3784](bugs/BUG-3784-profile-default-ensure-race.md) | ✅ | ✅ | profile-default-ensure-race |
 | [BUG-3783](bugs/BUG-3783-subtitle-backfill-race-reports-installed.md) | ✅ | ✅ | subtitle-backfill-race-reports-installed |
 | [BUG-3782](bugs/BUG-3782-popup-headword-clipped-eink.md) | ✅ | ✅ | 墨水屏 / Apple 设计系统窄弹窗词头右侧被裁 |
