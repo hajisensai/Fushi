@@ -8,6 +8,7 @@ import 'package:fushi_engine/ai/agent/agent_tool.dart';
 List<AiAgentAppSkill> buildAiAgentSkills() => <AiAgentAppSkill>[
   SubtitleFillSkill(),
   ScrapeResolveSkill(),
+  ExtensionFindSkill(),
 ];
 
 /// app 侧技能：声明它要用的操作；任一当前不可用（模块关、平台 / 合规不支持）时
@@ -284,5 +285,200 @@ class ScrapeResolveSkill extends AiAgentAppSkill {
       'noCandidates': noCandidates,
       'failed': failed,
     };
+  }
+}
+
+/// 「装一个能看 X 的源」：先在已装、已启用的源里搜 X；都搜不到再从仓库目录里挑
+/// 候选扩展（按下载量，去掉成人内容与已装的）出选择卡；用户选中后安装——**装扩展
+/// 一律再出确认卡片**（spec D9，所有者「装扩展的时候也要确认一下」：选择卡只是选
+/// 哪一个，确认卡写明来源与签名，两步都要用户点）；装好后在它提供的源里试搜 X
+/// 验证可用。撤销 = 卸载（安装操作自己的撤销）。
+class ExtensionFindSkill extends AiAgentAppSkill {
+  @override
+  List<String> get requiredOps => const <String>[
+    'online.extension.list',
+    'online.extension.install',
+    'online.source.list',
+    'online.source.search',
+  ];
+
+  @override
+  AgentToolSpec get spec => const AgentToolSpec(
+    name: 'skill.extension.find',
+    description:
+        'Find a way to read / watch a title online: search it in the installed '
+        'sources first; if none has it, let the user pick an extension from the '
+        'repositories, install it (the user confirms) and test-search the title.',
+    parameters: <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'kind': <String, Object?>{
+          'type': 'string',
+          'enum': <String>['manga', 'anime', 'novel'],
+          'description':
+              'manga (Mihon), anime (Aniyomi video), novel (LNReader).',
+        },
+        'title': <String, Object?>{
+          'type': 'string',
+          'description': 'The work to find, in its original language if known.',
+        },
+        'lang': <String, Object?>{
+          'type': 'string',
+          'description': 'Preferred source language code, e.g. "ja".',
+        },
+      },
+      'required': <String>['kind', 'title'],
+    },
+    risk: AgentToolRisk.write,
+    confirm: true,
+  );
+
+  /// 最多试搜几个源（已装的源可能很多）。
+  static const int _maxSourcesToTry = 6;
+
+  @override
+  Future<Object?> run(
+    AgentSkillContext context,
+    Map<String, Object?> args,
+  ) async {
+    final String kind = '${args['kind'] ?? ''}';
+    final String title = '${args['title'] ?? ''}'.trim();
+    final String? lang = (args['lang'] as String?)?.trim();
+    if (!const <String>['manga', 'anime', 'novel'].contains(kind) ||
+        title.isEmpty) {
+      throw const AgentSkillFailure(
+        'bad_request',
+        'kind and title are required',
+      );
+    }
+    // ① 已装的源里有没有。
+    final Map<String, Object?> already = await _searchSources(
+      context,
+      kind: kind,
+      title: title,
+      lang: lang,
+    );
+    if (already.isNotEmpty) {
+      return <String, Object?>{'alreadyAvailable': already, 'installed': null};
+    }
+    // ② 仓库目录里挑候选扩展。
+    final AgentToolResult listed = await context
+        .call('online.extension.list', <String, Object?>{
+          'kind': kind,
+          'available': true,
+          if (lang != null && lang.isNotEmpty) 'lang': lang,
+        });
+    if (listed.isError) {
+      throw AgentSkillFailure(listed.errorCode!, listed.errorMessage);
+    }
+    final List<Map<String, Object?>> candidates =
+        _list(listed.data, 'available')
+            .where(
+              (Map<String, Object?> e) =>
+                  e['installed'] != true && e['nsfw'] != true,
+            )
+            .toList()
+          ..sort(
+            (Map<String, Object?> a, Map<String, Object?> b) =>
+                ((b['downloads'] as num?) ?? 0).compareTo(
+                  (a['downloads'] as num?) ?? 0,
+                ),
+          );
+    if (candidates.isEmpty) {
+      return <String, Object?>{
+        'installed': null,
+        'note': 'no installable extension in the configured repositories',
+      };
+    }
+    final String? picked = await context.askChoice(
+      'No installed source has "$title". Install which extension?',
+      <AgentChoiceOption>[
+        for (final Map<String, Object?> e in candidates.take(8))
+          AgentChoiceOption(
+            id: '${e['id']}',
+            label: '${e['name'] ?? e['id']}',
+            detail: <String>[
+              '${e['lang'] ?? ''}',
+              if (e['version'] != null) 'v${e['version']}',
+              '${e['repo'] ?? ''}',
+            ].where((String s) => s.isNotEmpty).join(' · '),
+          ),
+      ],
+    );
+    if (picked == null) {
+      return <String, Object?>{'installed': null, 'cancelled': true};
+    }
+    // ③ 安装：照常出确认卡片（D9），选择卡不算确认。
+    final AgentToolResult installed = await context.call(
+      'online.extension.install',
+      <String, Object?>{'kind': kind, 'id': picked},
+    );
+    if (installed.isError) {
+      return <String, Object?>{
+        'installed': null,
+        'installError': installed.errorCode,
+      };
+    }
+    // ④ 在新扩展提供的源里试搜。
+    final Map<String, Object?> found = await _searchSources(
+      context,
+      kind: kind,
+      title: title,
+      lang: lang,
+      onlyExtension: picked,
+    );
+    return <String, Object?>{
+      'installed': picked,
+      'verified': found.isNotEmpty,
+      'found': found,
+    };
+  }
+
+  /// 在（某个扩展提供的 / 全部已启用的）源里搜 [title]，返回 {源名: 前几条标题}。
+  Future<Map<String, Object?>> _searchSources(
+    AgentSkillContext context, {
+    required String kind,
+    required String title,
+    String? lang,
+    String? onlyExtension,
+  }) async {
+    final AgentToolResult listed = await context.call(
+      'online.source.list',
+      <String, Object?>{'kind': kind},
+    );
+    if (listed.isError) return const <String, Object?>{};
+    final String wantLang = (lang ?? '').toLowerCase();
+    final List<Map<String, Object?>> sources = _list(listed.data, 'sources')
+        .where(
+          (Map<String, Object?> s) =>
+              s['enabled'] == true &&
+              (onlyExtension == null ||
+                  s['extension'] == onlyExtension ||
+                  s['id'] == onlyExtension) &&
+              (wantLang.isEmpty ||
+                  s['lang'] == 'all' ||
+                  '${s['lang'] ?? ''}'.toLowerCase().contains(wantLang)),
+        )
+        .take(_maxSourcesToTry)
+        .toList();
+    final Map<String, Object?> hits = <String, Object?>{};
+    for (final Map<String, Object?> source in sources) {
+      if (context.cancelled) break;
+      final String sourceId = source['extension'] == null
+          ? '${source['id']}'
+          : '${source['extension']}:${source['id']}';
+      final AgentToolResult searched = await context.call(
+        'online.source.search',
+        <String, Object?>{'sourceId': sourceId, 'kind': kind, 'q': title},
+      );
+      if (searched.isError) continue;
+      final List<Map<String, Object?>> items = _list(searched.data, 'items');
+      if (items.isEmpty) continue;
+      hits['${source['name'] ?? sourceId}'] = <String>[
+        for (final Map<String, Object?> item in items.take(3))
+          '${item['title'] ?? item['url']}',
+      ];
+    }
+    return hits;
   }
 }

@@ -207,4 +207,120 @@ void main() {
       expect(identify.$3, isTrue, reason: '候选卡即确认');
     });
   });
+
+  group('skill.extension.find', () {
+    AgentToolResult Function(String, Map<String, Object?>) app({
+      required bool foundInExisting,
+    }) {
+      bool installed = false;
+      return (String id, Map<String, Object?> args) {
+        switch (id) {
+          case 'online.source.list':
+            return _ok(<String, Object?>{
+              'sources': <Object?>[
+                <String, Object?>{
+                  'id': '1',
+                  'name': 'Old',
+                  'extension': 'pkg.old',
+                  'enabled': true,
+                  'lang': 'ja',
+                },
+                if (installed)
+                  <String, Object?>{
+                    'id': '2',
+                    'name': 'New',
+                    'extension': 'pkg.new',
+                    'enabled': true,
+                    'lang': 'ja',
+                  },
+              ],
+            });
+          case 'online.source.search':
+            final bool hit = args['sourceId'] == 'pkg.new:2' || foundInExisting;
+            return _ok(<String, Object?>{
+              'items': hit
+                  ? <Object?>[
+                      <String, Object?>{'title': 'X vol.1'},
+                    ]
+                  : const <Object?>[],
+            });
+          case 'online.extension.list':
+            return _ok(<String, Object?>{
+              'available': <Object?>[
+                <String, Object?>{
+                  'id': 'pkg.low',
+                  'name': 'Low',
+                  'downloads': 5,
+                },
+                <String, Object?>{
+                  'id': 'pkg.new',
+                  'name': 'New',
+                  'downloads': 50,
+                  'repo': 'r',
+                },
+                <String, Object?>{
+                  'id': 'pkg.nsfw',
+                  'name': 'N',
+                  'downloads': 999,
+                  'nsfw': true,
+                },
+                <String, Object?>{
+                  'id': 'pkg.old',
+                  'name': 'Old',
+                  'installed': true,
+                },
+              ],
+            });
+          case 'online.extension.install':
+            installed = true;
+            return _ok(const <String, Object?>{'ok': true});
+        }
+        return const AgentToolResult.error('unknown_tool');
+      };
+    }
+
+    test('已装的源里搜得到：不装新扩展', () async {
+      final _Context context = _Context(app(foundInExisting: true));
+      final Map<Object?, Object?> summary =
+          await ExtensionFindSkill().run(context, const <String, Object?>{
+                'kind': 'manga',
+                'title': 'X',
+              })
+              as Map<Object?, Object?>;
+      expect(summary['alreadyAvailable'], <String, Object?>{
+        'Old': <String>['X vol.1'],
+      });
+      expect(
+        context.calls.map(((String, Map<String, Object?>, bool) c) => c.$1),
+        isNot(contains('online.extension.install')),
+      );
+    });
+
+    test('搜不到：候选按下载量、去掉成人与已装；安装照常出确认（D9），装完试搜', () async {
+      final _Context context = _Context(
+        app(foundInExisting: false),
+        pick: (String _, List<AgentChoiceOption> options) => options.first.id,
+      );
+      final Map<Object?, Object?> summary =
+          await ExtensionFindSkill().run(context, const <String, Object?>{
+                'kind': 'manga',
+                'title': 'X',
+              })
+              as Map<Object?, Object?>;
+      expect(context.cards.single, <String>['pkg.new', 'pkg.low']);
+      final (String, Map<String, Object?>, bool) install = context.calls
+          .singleWhere(
+            ((String, Map<String, Object?>, bool) c) =>
+                c.$1 == 'online.extension.install',
+          );
+      expect(install.$2, <String, Object?>{'kind': 'manga', 'id': 'pkg.new'});
+      expect(install.$3, isFalse, reason: 'D9：装扩展必须再出确认卡片');
+      expect(summary['installed'], 'pkg.new');
+      expect(summary['verified'], isTrue);
+    });
+
+    test('技能本身声明 confirm（装扩展类）', () {
+      expect(ExtensionFindSkill().spec.confirm, isTrue);
+    });
+  });
 }
