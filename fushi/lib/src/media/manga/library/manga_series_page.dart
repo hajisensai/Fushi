@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
+import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
 import 'package:fushi/src/media/manga/library/manga_book_ocr.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
@@ -264,6 +265,12 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
 
   /// 在库时的 bookKey；未入库的源条目为 null。
   String? get _bookKey => _row?.bookKey;
+
+  /// 本条目的章节能不能下载（按运行时的合规门：Kavita 在 iOS 只直读不下载）。
+  bool get _downloadsAllowed {
+    final OnlineMangaLibraryEntry? entry = _entry;
+    return entry == null || onlineMangaChapterDownloadsAvailable(entry.runtime);
+  }
 
   String? get _bookUid {
     final String? uid = _row?.uid;
@@ -1611,7 +1618,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           languageScope: _languageScope,
           onSiblingSourceTap: (OnlineMangaSiblingSource sibling) =>
               unawaited(_openSiblingSource(sibling)),
-          onDownload: _bookKey == null
+          onDownload: _bookKey == null || !_downloadsAllowed
               ? null
               : (OnlineMangaChapter chapter) =>
                     unawaited(_enqueueChapter(chapter)),
@@ -2075,7 +2082,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           onPressed: _busy ? null : () => unawaited(_addToLibrary()),
         ),
       // 下载动作只对在库条目有意义：任务表按 bookKey 记，没有行就没地方挂任务。
-      if (inLibrary)
+      if (inLibrary && _downloadsAllowed)
         MediaDetailSecondaryButton(
           buttonKey: const ValueKey<String>('manga_series_download_all'),
           icon: FushiIcons.download,
@@ -2148,7 +2155,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           enabled: !_refreshing,
           onSelected: () => unawaited(_refreshFromSource()),
         ),
-      if (entry != null && inLibrary && _service != null && entry.subscribed)
+      if (entry != null &&
+          inLibrary &&
+          _service != null &&
+          entry.subscribed &&
+          _downloadsAllowed)
         MediaDetailMenuItem(
           key: const ValueKey<String>('manga_series_auto_download'),
           icon: entry.autoDownload

@@ -1931,6 +1931,9 @@ class SyncRepository {
     'discovery_alist_sites',
     // 同形：Kavita 服务器清单，条目里带 base64 长期 API key，服务器地址多是局域网 IP。
     'kavita_servers',
+    // Kavita 漫画每章「上次成功同步」时刻：只对这台设备的本地进度有意义，漂到别的
+    // 设备会让进度决策的基线错位（把别处的推进误判成冲突或被覆盖）。
+    'kavita_manga_sync_state',
     // 同形：Audiobookshelf 服务器清单，条目里带 base64 令牌（refresh token 会轮换，
     // 两台设备共用一枚只会互相把对方挤下线）。
     'discovery_audiobookshelf_servers',

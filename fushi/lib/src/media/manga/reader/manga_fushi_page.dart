@@ -151,6 +151,15 @@ import 'package:fushi/src/utils/components/fushi_jump_history_pill.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
 
 part 'manga_jump_history.part.dart';
+import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
+import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
+import 'package:fushi/src/media/kavita/kavita_manga_sync.dart';
+import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
+import 'package:fushi/src/pages/implementations/kavita/kavita_progress_conflict_dialog.dart';
+import 'package:fushi_engine/media/kavita/kavita_models.dart'
+    show KavitaProgress;
+
+part 'manga_fushi/kavita.part.dart';
 
 /// Manga reader implementation owned by the standalone manga module.
 ///
@@ -1068,6 +1077,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 一次：翻页每一步都会进来，不去重就是每页一次数据库 + 磁盘探测。
   final Set<String> _prefetchCheckedChapterKeys = <String>{};
 
+  /// Kavita 条目当前章的进度同步会话（开章拉取 + 阅读中推送）；非 Kavita 恒 null。
+  /// 逻辑全在 `media/kavita/kavita_manga_sync.dart`，接线见 `manga_fushi/kavita.part.dart`。
+  KavitaMangaSyncSession? _kavitaMangaSync;
+
   /// 当前章在书架体系里的身份；非书架在线条目为 null。
   String? get _shelfChapterKey {
     final OnlineMangaLibraryEntry? entry = _shelfEntry;
@@ -1695,6 +1708,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 时钟为空 = 本页从没开始计时，整段跳过。
     _studyClock?.detach();
     ExitFlushRegistry.instance.defer(_flushPosition);
+    // 异常拆栈兜底（正常退出已在 onSourcePagePop 收掉）：只推已排队的进度，
+    // 不 await 网络。
+    _closeKavitaMangaSync();
     _pageNotifier.dispose();
     _chrome
       ..removeListener(_onChromeChanged)
@@ -1853,6 +1869,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 返回书架的正常路径：await 落盘，保证书架 recency/进度立刻正确。
     await _flushPosition();
     await _studyClock?.stop();
+    // Kavita：位置已落库并转发，这里限时 flush 后释放（不 await 网络）。
+    _closeKavitaMangaSync();
   }
 
   @override
@@ -2393,6 +2411,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 那行** `reader_positions`，而那一行装的是**上一章**读到哪。读完第 3 话第
     // 20 页 → 自动换到未读的第 4 话 → 第 4 话从第 20 页开始，整章整章跳过内容。
     // 每章进度的真相源是 `manga_chapter_states`；书级那行只服务单章 / 本地条目。
+    //
+    // Kavita 条目：读章进度前先与服务器对账（可能改写本章进度，下面照常按章进度
+    // 落页）。非 Kavita 直接返回；离线 / 超时放行，永不抛错、不卡开章。
+    await _attachKavitaMangaSync(row, entry, chapter);
     int initialPage = landOnLastPage ? kMangaLandOnLastPage : 0;
     if (explicitInitialPage != null) {
       // 调用方点名的页（首次装载）：不再按章级进度挑页。
@@ -3601,6 +3623,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       pageCount: _payload?.images.length,
       readAt: readAt,
     );
+    _reportKavitaMangaPage(chapterKey, _currentPage);
   }
 
   Future<void> _markCurrentChapterRead() =>
@@ -5381,6 +5404,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         pageCount: pageCount > 0 ? pageCount : null,
         readAt: atLastPage ? DateTime.now().millisecondsSinceEpoch : null,
       );
+      _reportKavitaMangaPage(chapterKey, page);
     } catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage.saveChapterState', e, stack);
     }
@@ -7507,15 +7531,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 runSpacing: 8,
                 alignment: WrapAlignment.center,
                 children: <Widget>[
-                  FushiFilledButton.icon(
-                    key: const ValueKey<String>(
-                      'manga_reader_enqueue_download',
+                  // 按运行时的下载合规门（Kavita 在 iOS 只直读不下载）。
+                  if (_shelfEntry == null ||
+                      onlineMangaChapterDownloadsAvailable(
+                        _shelfEntry!.runtime,
+                      ))
+                    FushiFilledButton.icon(
+                      key: const ValueKey<String>(
+                        'manga_reader_enqueue_download',
+                      ),
+                      onPressed: () =>
+                          unawaited(_enqueueCurrentChapterDownload()),
+                      icon: const FushiIcon(Icons.download),
+                      label: Text(t.manga_chapter_download_action),
                     ),
-                    onPressed: () =>
-                        unawaited(_enqueueCurrentChapterDownload()),
-                    icon: const FushiIcon(Icons.download),
-                    label: Text(t.manga_chapter_download_action),
-                  ),
                   FushiOutlinedButton.icon(
                     key: const ValueKey<String>('manga_reader_pick_chapter'),
                     onPressed: _switchingChapter

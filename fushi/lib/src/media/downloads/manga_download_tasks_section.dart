@@ -175,7 +175,8 @@ DownloadTaskEntry mangaDownloadTaskEntry(
 
 /// 漫画下载任务的传输方式与是否外部来源（按 `runtime` 列）：Mihon / 旧
 /// Aidoku 是扩展从第三方站点抓、mokuro.moe 是该站的 HTTP 直链、互联是从自己
-/// 已配对的设备 HTTP 拉取（不算外部来源）。未知值按扩展源处理并标外部。
+/// 已配对的设备 HTTP 拉取（不算外部来源）、Kavita 是用户自配的服务器 HTTP 取页
+/// （同用户自配 OPDS / Audiobookshelf，不标外部）。未知值按扩展源处理并标外部。
 ({DownloadTransferMethod method, bool external}) mangaDownloadSourceOf(
   String runtime,
 ) =>
@@ -190,6 +191,7 @@ DownloadTaskEntry mangaDownloadTaskEntry(
         ),
       // 网页漫画：宿主自己按扫到的地址 HTTP 直取，来源是第三方站点。
       'web' => (method: DownloadTransferMethod.direct, external: true),
+      'kavita' => (method: DownloadTransferMethod.direct, external: false),
       _ => (method: DownloadTransferMethod.extension, external: true),
     };
 

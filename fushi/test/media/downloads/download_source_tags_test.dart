@@ -55,6 +55,11 @@ void main() {
         method: DownloadTransferMethod.direct,
         external: false,
       ));
+      // Kavita 是用户自配的服务器：HTTP 直链，不算外部来源。
+      expect(mangaDownloadSourceOf('kavita'), (
+        method: DownloadTransferMethod.direct,
+        external: false,
+      ));
     });
 
     test('the notice preference is a known, per-install key', () {

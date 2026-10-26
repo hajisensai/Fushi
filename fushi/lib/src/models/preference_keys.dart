@@ -276,6 +276,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 本键出现之前「填了 key」即启用，默认 false 会让存量用户升级后失效。
   'jimaku_enabled',
   'jimaku_pref_langs',
+  // Kavita 漫画每章「上次成功同步」时刻（JSON 对象 `"<bookUid>|<chapterKey>" →
+  // epoch 毫秒`）。String，读写见 kavita_manga_sync.dart；设备本地，不含凭据。
+  'kavita_manga_sync_state',
   // 用户自配的 Kavita 服务器清单（JSON 数组：id/name/url/apiKeyB64/enabled/
   // allowInsecureHttp）。String，读写见 PreferencesRepository。apiKey 是长期凭据，
   // 与 discovery_opds_servers 同隔离纪律。
