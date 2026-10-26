@@ -700,7 +700,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_download_skip_extras',
   'video_download_target_source_id',
   'video_fit_mode',
+  // String（VideoImmersiveControlLayout JSON，空串 = 没改过、按普通布局派生）：
+  // 沉浸锁定后屏幕左右侧栏的按钮排列。
+  'video_immersive_control_layout',
   'video_immersive_mode',
+  // bool（默认 true）：沉浸锁定 + 字幕遮蔽中点画面任意处显示当前句。
+  'video_immersive_tap_reveal',
   // int（默认 -1 = 自动）：互联远端视频画质档在 kInterconnectQualityPresets 里的
   // 下标。自动 = 局域网原画直传、走公网压到中档（interconnect_video_quality.dart）。
   'video_interconnect_quality_preset',

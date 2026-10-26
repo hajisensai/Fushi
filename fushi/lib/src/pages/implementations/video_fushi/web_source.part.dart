@@ -134,6 +134,8 @@ extension _VideoWebSource on _VideoFushiPageState {
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _controlLayoutNotifier.value = appModel.videoControlLayout;
+    _immersiveControlLayoutJson.value =
+        appModel.videoImmersiveControlLayoutJson;
     _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
     _videoFitMode = appModel.videoFitMode;
     final WebVideoSession session = WebVideoSession(

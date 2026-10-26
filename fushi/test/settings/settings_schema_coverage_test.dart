@@ -542,6 +542,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Secondary: reveal when paused or hovered':
       'test/media/video/video_subtitle_hide_hover_reveal_test.dart'
       '（⑫ 主 / 副显形开关各管各的层）',
+  // 沉浸锁定 + 字幕遮蔽中点画面显示当前句：生效点在播放页点画面抬起（要真播放器与
+  // 沉浸锁），harness 无适用探针。判据纯函数与 overlay 显形句柄由专项测试咬住，页面
+  // 接线由源码守卫咬住。
+  'video/Tap picture to show subtitles':
+      'test/media/video/video_immersive_tap_reveal_test.dart'
+      '（判据四条件 + 句柄显示 / 遮回 / 换句遮回）；页面接线见 '
+      'test/pages/video_immersive_tap_reveal_wiring_guard_test.dart',
   // BUG-3314：暂停时识别画面文字的范围（所有视频 / 仅图片字幕 / 关闭）。写 prefsRepo
   // （changed=true），生效点在播放页暂停 OCR 覆盖层的识别门——要真播放器暂停、截帧
   // 与 OCR 引擎，harness 无适用探针；由专项测试咬住判据（图形字幕必识别、文字字幕在屏

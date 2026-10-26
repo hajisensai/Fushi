@@ -2686,6 +2686,26 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 沉浸锁定 + 字幕遮蔽中「点画面任意处显示当前句」（默认开，见
+  /// `videoImmersiveTapRevealsSubtitle`）。
+  bool get videoImmersiveTapReveal =>
+      getPref('video_immersive_tap_reveal', defaultValue: true) as bool;
+
+  Future<void> setVideoImmersiveTapReveal(bool value) async {
+    await setPref('video_immersive_tap_reveal', value);
+    notifyListeners();
+  }
+
+  /// 沉浸布局（`VideoImmersiveControlLayout`）的持久化 JSON；空串 = 没改过，按普通
+  /// 布局派生。解码要用普通布局做派生基准，放在 AppModel 那一层组合。
+  String get videoImmersiveControlLayoutJson =>
+      getPref('video_immersive_control_layout', defaultValue: '') as String;
+
+  Future<void> setVideoImmersiveControlLayoutJson(String json) async {
+    await setPref('video_immersive_control_layout', json);
+    notifyListeners();
+  }
+
   /// 截图去向：保存对话框 / 剪贴板 / 指定目录。旧库没有该 key 时落到
   /// [VideoScreenshotDestination.ask]，即这个偏好出现之前的行为，不需要迁移。
   VideoScreenshotDestination get videoScreenshotDestination =>

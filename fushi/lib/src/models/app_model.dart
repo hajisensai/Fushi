@@ -236,6 +236,7 @@ import 'package:fushi_engine/media/video/video_path_migration.dart'
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
+import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
@@ -5364,6 +5365,29 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoImmersiveMode(VideoImmersiveMode mode) =>
       prefsRepo.setVideoImmersiveMode(mode);
+
+  /// 沉浸锁定 + 字幕遮蔽中点画面显示当前句（默认开）。
+  bool get videoImmersiveTapReveal => prefsRepo.videoImmersiveTapReveal;
+
+  Future<void> setVideoImmersiveTapReveal(bool value) =>
+      prefsRepo.setVideoImmersiveTapReveal(value);
+
+  /// 沉浸布局存值（JSON，空串 = 没改过）。播放页存原值、按自己的当前普通布局派生。
+  String get videoImmersiveControlLayoutJson =>
+      prefsRepo.videoImmersiveControlLayoutJson;
+
+  /// 沉浸布局：没改过时按当前普通布局派生（锁按钮跟着普通布局走）。
+  VideoImmersiveControlLayout get videoImmersiveControlLayout =>
+      VideoImmersiveControlLayout.decode(
+        prefsRepo.videoImmersiveControlLayoutJson,
+        base: videoControlLayout,
+      );
+
+  /// 落盘沉浸布局；null = 恢复默认（清空存值，回到派生）。
+  Future<void> setVideoImmersiveControlLayout(
+    VideoImmersiveControlLayout? layout,
+  ) =>
+      prefsRepo.setVideoImmersiveControlLayoutJson(layout?.encode() ?? '');
 
   /// 截图去向（对话框 / 剪贴板 / 指定目录）与目录路径。
   VideoScreenshotDestination get videoScreenshotDestination =>
