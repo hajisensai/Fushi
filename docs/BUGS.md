@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3386 条。点号进各自文件。
+> 共 3387 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3783](bugs/BUG-3783-reader-shrinks-under-ui-scale-below-1.md) | ✅ | ✅ | reader-shrinks-under-ui-scale-below-1 |
 | [BUG-3782](bugs/BUG-3782-popup-headword-clipped-eink.md) | ✅ | ✅ | 墨水屏 / Apple 设计系统窄弹窗词头右侧被裁 |
 | [BUG-3781](bugs/BUG-3781-floating-ball-tap-leaks-to-reader.md) | ✅ | ✅ | 小说阅读器里点应用内悬浮球会唤出顶栏 / 底栏 |
 | [BUG-3780](bugs/BUG-3780-tts-emphasis-dot-ruby-reads-dots.md) | ✅ | ✅ | TTS 朗读把傍点 ruby（`・・` / `﹅`）当读音，着重的词整个读丢 |

@@ -838,6 +838,9 @@ class LibraryShapeBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Stack(
+      // 路由给页面的是紧约束；垫一层背景不能把它放松成宽松约束——依赖紧约束铺满
+      // 视口的页面（阅读器外层的界面缩放中和层）会缩成内容尺寸贴在左上角。
+      fit: StackFit.passthrough,
       children: <Widget>[
         Positioned.fill(
           child: enabledOf(context)
