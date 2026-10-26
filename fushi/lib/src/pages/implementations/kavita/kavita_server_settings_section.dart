@@ -17,6 +17,7 @@ import 'package:fushi/src/media/kavita/kavita_connect_probe.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';
 
@@ -74,7 +75,7 @@ class _KavitaServerSettingsSectionState
           SourceSectionHeading(
             title: t.kavita_settings_title,
             hint: t.kavita_settings_hint,
-            icon: Icons.auto_stories_outlined,
+            icon: FushiIcons.books,
           ),
           for (int index = 0; index < _drafts.length; index++) _card(index),
           Align(
@@ -88,7 +89,7 @@ class _KavitaServerSettingsSectionState
                   ),
                 ),
               ),
-              icon: const Icon(Icons.add),
+              icon: const Icon(FushiIcons.add),
               label: Text(t.kavita_server_add),
             ),
           ),
@@ -130,7 +131,7 @@ class _KavitaServerSettingsSectionState
                   });
                   unawaited(_saveValidDrafts());
                 },
-                icon: const Icon(Icons.remove_circle_outline),
+                icon: const Icon(FushiIcons.removeCircle),
               ),
             ],
           ),
@@ -184,7 +185,7 @@ class _KavitaServerSettingsSectionState
                       height: 16,
                       child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.network_check_outlined),
+                  : const Icon(FushiIcons.wifi),
               label: Text(t.kavita_connect_test),
             ),
           ),

@@ -25,6 +25,7 @@ import 'package:fushi/src/pages/implementations/kavita/kavita_book_series_page.d
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart';
@@ -269,7 +270,7 @@ class _KavitaBooksViewState extends ConsumerState<KavitaBooksView> {
   Widget _body() {
     if (_server == null) {
       return FushiPlaceholderMessage(
-        icon: Icons.cloud_off_outlined,
+        icon: FushiIcons.cloudOff,
         message: t.kavita_server_add,
       );
     }
@@ -279,7 +280,7 @@ class _KavitaBooksViewState extends ConsumerState<KavitaBooksView> {
     final Object? error = _error;
     if (error != null && _items.isEmpty) {
       return FushiPlaceholderMessage(
-        icon: Icons.error_outline,
+        icon: FushiIcons.error,
         message:
             error is KavitaApiException &&
                 (error.isUnauthorized || error.isForbidden)
@@ -288,7 +289,7 @@ class _KavitaBooksViewState extends ConsumerState<KavitaBooksView> {
         action: FushiFilledButton.icon(
           key: const ValueKey<String>('kavita_books_retry'),
           onPressed: () => unawaited(_reload()),
-          icon: const FushiIcon(Icons.refresh_rounded),
+          icon: const FushiIcon(FushiIcons.refresh),
           label: Text(t.retry),
         ),
       );
@@ -296,7 +297,7 @@ class _KavitaBooksViewState extends ConsumerState<KavitaBooksView> {
     final List<KavitaSeries> visible = _visible;
     if (visible.isEmpty) {
       return FushiPlaceholderMessage(
-        icon: Icons.menu_book_outlined,
+        icon: FushiIcons.books,
         message: _query.isEmpty
             ? t.kavita_books_empty
             : t.mihon_source_no_results,

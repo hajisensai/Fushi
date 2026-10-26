@@ -21,6 +21,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart';
@@ -138,7 +139,7 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
       ErrorLogService.instance.log('KavitaBookSeries.download', error, stack);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text(
               t.kavita_book_download_failed(
                 reason: error is KavitaApiException
@@ -198,18 +199,18 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
     if (_loading) return Center(child: adaptiveIndicator(context: context));
     if (_error != null) {
       return FushiPlaceholderMessage(
-        icon: Icons.error_outline,
+        icon: FushiIcons.error,
         message: t.kavita_connect_failed(reason: ''),
         action: FushiFilledButton.icon(
           onPressed: () => unawaited(_load()),
-          icon: const FushiIcon(Icons.refresh_rounded),
+          icon: const FushiIcon(FushiIcons.refresh),
           label: Text(t.retry),
         ),
       );
     }
     if (_chapters.isEmpty) {
       return FushiPlaceholderMessage(
-        icon: Icons.menu_book_outlined,
+        icon: FushiIcons.books,
         message: t.kavita_book_no_chapters,
       );
     }
@@ -244,9 +245,10 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
         : local != null
         ? t.kavita_book_cached
         : '';
-    return ListTile(
+    return FushiListItem(
       key: ValueKey<String>('kavita_chapter_${chapter.id}'),
-      title: Text(chapter.displayName, maxLines: 2),
+      title: Text(chapter.displayName),
+      titleMaxLines: 2,
       subtitle: status.isEmpty ? null : Text(status),
       onTap: busy ? null : () => unawaited(_read(chapter)),
       trailing: busy
@@ -260,18 +262,18 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
                 if (canDownload && pinned)
                   IconButton(
                     tooltip: t.kavita_book_remove_download,
-                    icon: const FushiIcon(Icons.download_done_rounded),
+                    icon: const FushiIcon(FushiIcons.downloadDone),
                     onPressed: () => unawaited(_removeDownload(local.bookKey)),
                   )
                 else if (canDownload)
                   IconButton(
                     tooltip: t.kavita_book_download,
-                    icon: const FushiIcon(Icons.download_rounded),
+                    icon: const FushiIcon(FushiIcons.download),
                     onPressed: () => unawaited(_download(chapter)),
                   ),
                 IconButton(
                   tooltip: t.kavita_book_open,
-                  icon: const FushiIcon(Icons.menu_book_rounded),
+                  icon: const FushiIcon(FushiIcons.books),
                   onPressed: () => unawaited(_read(chapter)),
                 ),
               ],

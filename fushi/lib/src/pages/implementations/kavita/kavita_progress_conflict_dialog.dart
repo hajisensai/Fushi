@@ -15,9 +15,9 @@ Future<KavitaSyncAction> showKavitaProgressConflictDialog(
   required int localSection,
   required int serverSection,
 }) async {
-  final KavitaSyncAction? choice = await showDialog<KavitaSyncAction>(
+  final KavitaSyncAction? choice = await showAppDialog<KavitaSyncAction>(
     context: context,
-    builder: (BuildContext dialogContext) => AlertDialog(
+    builder: (BuildContext dialogContext) => FushiAlertDialog(
       key: const ValueKey<String>('kavita-progress-conflict'),
       title: Text(t.kavita_progress_conflict_title),
       content: Text(

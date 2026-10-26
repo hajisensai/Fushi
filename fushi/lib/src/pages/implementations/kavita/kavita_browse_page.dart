@@ -65,7 +65,7 @@ class KavitaBrowsePage extends ConsumerWidget {
           ? SafeArea(
               bottom: false,
               child: FushiPlaceholderMessage(
-                icon: Icons.cloud_off_outlined,
+                icon: FushiIcons.cloudOff,
                 message: t.kavita_server_add,
               ),
             )
@@ -210,7 +210,7 @@ class _KavitaLibrariesPageState extends State<KavitaLibrariesPage> {
       return SafeArea(
         bottom: false,
         child: FushiPlaceholderMessage(
-          icon: Icons.folder_off_outlined,
+          icon: FushiIcons.folder,
           message: t.kavita_browse_libraries_empty,
         ),
       );
@@ -442,7 +442,7 @@ class _KavitaSeriesGridPageState extends ConsumerState<KavitaSeriesGridPage> {
       return SafeArea(
         bottom: false,
         child: FushiPlaceholderMessage(
-          icon: Icons.search_off_outlined,
+          icon: FushiIcons.searchOff,
           message: _query.isEmpty
               ? t.kavita_browse_series_empty
               : t.mihon_source_no_results,
@@ -526,12 +526,12 @@ class _KavitaErrorView extends StatelessWidget {
         ? t.kavita_connect_unauthorized
         : describeOnlineSourceError(failure);
     return FushiPlaceholderMessage(
-      icon: Icons.error_outline,
+      icon: FushiIcons.error,
       message: message,
       action: FushiFilledButton.icon(
         key: retryKey,
         onPressed: () => unawaited(onRetry()),
-        icon: const FushiIcon(Icons.refresh_rounded),
+        icon: const FushiIcon(FushiIcons.refresh),
         label: Text(t.retry),
       ),
     );
@@ -624,9 +624,9 @@ class _KavitaSeriesCoverState extends State<KavitaSeriesCover> {
       future: _future,
       builder: (BuildContext context, AsyncSnapshot<Uint8List> snapshot) {
         final Uint8List? bytes = snapshot.data;
-        if (snapshot.hasError) return placeholder(Icons.broken_image_outlined);
+        if (snapshot.hasError) return placeholder(FushiIcons.brokenImage);
         if (bytes == null || bytes.isEmpty) {
-          return placeholder(Icons.menu_book_outlined);
+          return placeholder(FushiIcons.books);
         }
         return Image.memory(
           bytes,
@@ -634,7 +634,7 @@ class _KavitaSeriesCoverState extends State<KavitaSeriesCover> {
           gaplessPlayback: true,
           errorBuilder:
               (BuildContext context, Object error, StackTrace? stack) =>
-                  placeholder(Icons.broken_image_outlined),
+                  placeholder(FushiIcons.brokenImage),
         );
       },
     );
