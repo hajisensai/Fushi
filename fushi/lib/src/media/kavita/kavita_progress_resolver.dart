@@ -79,7 +79,7 @@ KavitaSyncDecision resolveKavitaProgress({
         : const KavitaSyncDecision(KavitaSyncAction.none);
   }
   if (!hasServer && hasLocal) {
-    return localPage! > 0
+    return localPage > 0
         ? const KavitaSyncDecision(KavitaSyncAction.pushLocal)
         : const KavitaSyncDecision(KavitaSyncAction.none);
   }
@@ -116,9 +116,12 @@ KavitaSyncDecision resolveKavitaProgress({
           : KavitaSyncAction.pushLocal,
     );
   }
-  if (serverMoved)
+  if (serverMoved) {
     return const KavitaSyncDecision(KavitaSyncAction.adoptServer);
-  if (localMoved) return const KavitaSyncDecision(KavitaSyncAction.pushLocal);
+  }
+  if (localMoved) {
+    return const KavitaSyncDecision(KavitaSyncAction.pushLocal);
+  }
   // 两侧自上次同步后都没动，页号却不同（比如上次同步后用户在别处手改）：不动。
   return const KavitaSyncDecision(KavitaSyncAction.none);
 }
