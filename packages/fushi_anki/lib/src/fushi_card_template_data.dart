@@ -313,7 +313,7 @@ const String kFushiCardBackTemplate = r'''<!--
         var value = text.slice(cut + 2).trim();
         var first = seen[dict];
         if (!first) { seen[dict] = { li: li, values: [value] }; return; }
-        if (first.values.indexOf(value) < 0) first.values.push(value);
+        if (!first.values.includes(value)) first.values.push(value);
         first.li.textContent = dict + ": " + first.values.join(", ");
         li.remove();
       });
