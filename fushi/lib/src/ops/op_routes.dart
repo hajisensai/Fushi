@@ -1,6 +1,13 @@
 import 'package:fushi_cli/fushi_cli.dart';
 
 import 'package:fushi/src/ops/ctl_ai_agent_routes.dart';
+import 'package:fushi/src/ops/ctl_web_routes.dart';
+import 'package:fushi/src/ops/ctl_url_import_routes.dart';
+import 'package:fushi/src/ops/ctl_disc_routes.dart';
+import 'package:fushi/src/ops/ctl_media_links_routes.dart';
+import 'package:fushi/src/ops/ctl_book_metadata_routes.dart';
+import 'package:fushi/src/ops/ctl_srs_routes.dart';
+import 'package:fushi/src/ops/ctl_music_routes.dart';
 import 'package:fushi/src/ops/ctl_data_routes.dart';
 import 'package:fushi/src/ops/ctl_dictionary_routes.dart';
 import 'package:fushi/src/ops/ctl_game_routes.dart';
@@ -42,5 +49,12 @@ List<CtlRoute> buildDomainOpRoutes(OpContext context) => <CtlRoute>[
   ...buildOnlineCtlRoutes(context),
   ...buildVideoCtlRoutes(context),
   ...buildGameCtlRoutes(context),
+  ...buildMusicCtlRoutes(context),
+  ...buildSrsCtlRoutes(context),
+  ...buildBookMetadataCtlRoutes(context),
+  ...buildMediaLinksCtlRoutes(context),
+  ...buildDiscCtlRoutes(context),
+  ...buildUrlImportCtlRoutes(context),
+  ...buildWebCtlRoutes(context),
   ...buildAiAgentCtlRoutes(context),
 ];
