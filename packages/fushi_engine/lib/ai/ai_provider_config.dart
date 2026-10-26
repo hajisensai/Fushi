@@ -62,6 +62,32 @@ enum AiReasoningEffort {
   }
 }
 
+/// 用户对「这家提供商能不能走原生 tool calling」的覆盖。
+///
+/// 预设的 [AiProviderPreset.supportsTools] 只是厂商公开能力的保守判断：本地模型、
+/// 中转站、部分国产兼容端点的工具调用时好时坏，用户实测后可以强制开 / 关。
+enum AiToolCallingOverride {
+  /// 跟随预设（默认；旧数据没有这个字段时也是它）。
+  followPreset,
+
+  /// 强制走原生 tool calling。
+  forceOn,
+
+  /// 强制不走（降级为「只回一个 JSON 动作」的提示词约束）。
+  forceOff;
+
+  String get storageKey => name;
+
+  static AiToolCallingOverride fromStorageKey(String? key) {
+    for (final AiToolCallingOverride o in AiToolCallingOverride.values) {
+      if (o.storageKey == key) {
+        return o;
+      }
+    }
+    return AiToolCallingOverride.followPreset;
+  }
+}
+
 /// 一个内置提供商预设：把「地址 + 协议 + 一个能用的起点模型」打包好，用户加一家
 /// 提供商时只需要填 API Key。
 ///
@@ -76,6 +102,7 @@ class AiProviderPreset {
     this.suggestedModel = '',
     this.requiresApiKey = true,
     this.isLocal = false,
+    this.supportsTools = false,
   });
 
   /// 稳定身份，进持久化。
@@ -90,6 +117,14 @@ class AiProviderPreset {
 
   /// 跑在本机、默认地址是 loopback HTTP。
   final bool isLocal;
+
+  /// 这家的 chat 端点稳定支持原生 tool calling（OpenAI `tools` / Anthropic
+  /// `tool_use` / Gemini `functionDeclarations`）。
+  ///
+  /// 默认 false（保守）：只给主流云端、文档明确支持的厂商开；本地推理服务与拿不准的
+  /// 兼容端点（工具调用依赖具体模型）关，用户可在提供商上覆盖
+  /// （[AiProviderConfig.toolCallingOverride]）。
+  final bool supportsTools;
 }
 
 /// 自定义提供商的预设 id——用户自己填地址和协议。
@@ -106,6 +141,7 @@ const List<AiProviderPreset> kAiProviderPresets = <AiProviderPreset>[
     protocol: AiWireProtocol.openAiCompatible,
     baseUrl: 'https://api.openai.com/v1',
     suggestedModel: 'gpt-4o-mini',
+    supportsTools: true,
   ),
   AiProviderPreset(
     id: 'anthropic',
@@ -113,6 +149,7 @@ const List<AiProviderPreset> kAiProviderPresets = <AiProviderPreset>[
     protocol: AiWireProtocol.anthropicMessages,
     baseUrl: 'https://api.anthropic.com',
     suggestedModel: 'claude-sonnet-5',
+    supportsTools: true,
   ),
   AiProviderPreset(
     id: 'gemini',
@@ -120,6 +157,7 @@ const List<AiProviderPreset> kAiProviderPresets = <AiProviderPreset>[
     protocol: AiWireProtocol.geminiGenerateContent,
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     suggestedModel: 'gemini-2.5-flash',
+    supportsTools: true,
   ),
   AiProviderPreset(
     id: 'deepseek',
@@ -127,6 +165,7 @@ const List<AiProviderPreset> kAiProviderPresets = <AiProviderPreset>[
     protocol: AiWireProtocol.openAiCompatible,
     baseUrl: 'https://api.deepseek.com/v1',
     suggestedModel: 'deepseek-chat',
+    supportsTools: true,
   ),
   AiProviderPreset(
     id: 'qwen',
@@ -134,6 +173,7 @@ const List<AiProviderPreset> kAiProviderPresets = <AiProviderPreset>[
     protocol: AiWireProtocol.openAiCompatible,
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     suggestedModel: 'qwen-plus',
+    supportsTools: true,
   ),
   AiProviderPreset(
     id: 'zhipu',
@@ -141,12 +181,14 @@ const List<AiProviderPreset> kAiProviderPresets = <AiProviderPreset>[
     protocol: AiWireProtocol.openAiCompatible,
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     suggestedModel: 'glm-4-flash',
+    supportsTools: true,
   ),
   AiProviderPreset(
     id: 'moonshot',
     displayName: 'Moonshot Kimi',
     protocol: AiWireProtocol.openAiCompatible,
     baseUrl: 'https://api.moonshot.cn/v1',
+    supportsTools: true,
   ),
   AiProviderPreset(
     id: 'volcengine',
@@ -177,6 +219,7 @@ const List<AiProviderPreset> kAiProviderPresets = <AiProviderPreset>[
     displayName: 'xAI Grok',
     protocol: AiWireProtocol.openAiCompatible,
     baseUrl: 'https://api.x.ai/v1',
+    supportsTools: true,
   ),
   AiProviderPreset(
     id: 'mistral',
@@ -184,18 +227,21 @@ const List<AiProviderPreset> kAiProviderPresets = <AiProviderPreset>[
     protocol: AiWireProtocol.openAiCompatible,
     baseUrl: 'https://api.mistral.ai/v1',
     suggestedModel: 'mistral-small-latest',
+    supportsTools: true,
   ),
   AiProviderPreset(
     id: 'groq',
     displayName: 'Groq',
     protocol: AiWireProtocol.openAiCompatible,
     baseUrl: 'https://api.groq.com/openai/v1',
+    supportsTools: true,
   ),
   AiProviderPreset(
     id: 'openrouter',
     displayName: 'OpenRouter',
     protocol: AiWireProtocol.openAiCompatible,
     baseUrl: 'https://openrouter.ai/api/v1',
+    supportsTools: true,
   ),
   AiProviderPreset(
     id: 'ollama',
@@ -285,6 +331,7 @@ class AiProviderConfig {
     this.enabled = true,
     this.allowInsecureHttp = false,
     this.requestsPerMinute = 0,
+    this.toolCallingOverride = AiToolCallingOverride.followPreset,
   }) : apiKeys = List<AiApiKey>.unmodifiable(
          apiKeys ??
              (apiKey.isEmpty
@@ -353,6 +400,9 @@ class AiProviderConfig {
       enabled: json['enabled'] as bool? ?? true,
       allowInsecureHttp: json['allowInsecureHttp'] as bool? ?? false,
       requestsPerMinute: math.max(0, (json['rpm'] as num?)?.toInt() ?? 0),
+      toolCallingOverride: AiToolCallingOverride.fromStorageKey(
+        json['toolCalling'] as String?,
+      ),
     );
   }
 
@@ -397,6 +447,18 @@ class AiProviderConfig {
   /// 免费档 / 低档 API 有速率上限，超了会被 429 拦下、整批作废。
   final int requestsPerMinute;
 
+  /// 用户对原生 tool calling 的覆盖；判据一律问 [supportsToolCalling]。
+  final AiToolCallingOverride toolCallingOverride;
+
+  /// 这家实际走不走原生 tool calling：用户强制开 / 关优先，否则跟随预设
+  /// （[AiProviderPreset.supportsTools]）。presetId 认不出（来自更新的版本）时
+  /// 按不支持处理——宁可降级成 JSON 动作，也不往不认识 `tools` 的端点上发。
+  bool get supportsToolCalling => switch (toolCallingOverride) {
+    AiToolCallingOverride.forceOn => true,
+    AiToolCallingOverride.forceOff => false,
+    AiToolCallingOverride.followPreset => preset?.supportsTools ?? false,
+  };
+
   String get displayName => name.trim().isNotEmpty ? name.trim() : baseUrl.host;
 
   AiProviderPreset? get preset => aiProviderPresetById(presetId);
@@ -427,6 +489,7 @@ class AiProviderConfig {
     bool? enabled,
     bool? allowInsecureHttp,
     int? requestsPerMinute,
+    AiToolCallingOverride? toolCallingOverride,
   }) => AiProviderConfig(
     id: id,
     presetId: presetId,
@@ -443,6 +506,7 @@ class AiProviderConfig {
     enabled: enabled ?? this.enabled,
     allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
     requestsPerMinute: requestsPerMinute ?? this.requestsPerMinute,
+    toolCallingOverride: toolCallingOverride ?? this.toolCallingOverride,
   );
 
   /// API Key 在 JSON 里 base64 存放：`apiKeys` 是完整有序列表（空白草稿不落盘），
@@ -475,6 +539,9 @@ class AiProviderConfig {
     'enabled': enabled,
     if (allowInsecureHttp) 'allowInsecureHttp': true,
     if (requestsPerMinute > 0) 'rpm': requestsPerMinute,
+    // 跟随预设时不落盘：旧数据缺字段 = 跟随预设，两者同一口径。
+    if (toolCallingOverride != AiToolCallingOverride.followPreset)
+      'toolCalling': toolCallingOverride.storageKey,
   };
 }
 

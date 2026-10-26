@@ -385,10 +385,11 @@ CtlRequestSpec _buildDictKanjiEnable(CtlCommandContext c) => CtlRequestSpec.put(
   body: const <String, Object?>{'kanjiEnabled': true},
 );
 
-CtlRequestSpec _buildDictKanjiDisable(CtlCommandContext c) => CtlRequestSpec.put(
-  _dictPath(c.joinedRest(0, 'name')),
-  body: const <String, Object?>{'kanjiEnabled': false},
-);
+CtlRequestSpec _buildDictKanjiDisable(CtlCommandContext c) =>
+    CtlRequestSpec.put(
+      _dictPath(c.joinedRest(0, 'name')),
+      body: const <String, Object?>{'kanjiEnabled': false},
+    );
 
 CtlRequestSpec _buildDictOrder(CtlCommandContext c) =>
     _buildDictPositionPut(c, 'position');

@@ -454,7 +454,8 @@ void _configureOrganize(ArgParser parser) {
     ..addFlag(
       'yes',
       negatable: false,
-      help: '同意把标题、作者或品牌、年份和视频文件夹名发给 AI 提供商（可能计费）；'
+      help:
+          '同意把标题、作者或品牌、年份和视频文件夹名发给 AI 提供商（可能计费）；'
           '界面里同意过就不必加',
     );
 }
@@ -496,8 +497,9 @@ String _renderOrganizeHistory(Object? data) {
   final StringBuffer out = StringBuffer();
   for (final Object? raw in runs) {
     if (raw is! Map) continue;
-    final DateTime at =
-        DateTime.fromMillisecondsSinceEpoch((raw['startedAt'] as num?)?.toInt() ?? 0);
+    final DateTime at = DateTime.fromMillisecondsSinceEpoch(
+      (raw['startedAt'] as num?)?.toInt() ?? 0,
+    );
     out.writeln(
       '#${raw['id']} ${at.toIso8601String().substring(0, 16)} '
       '${raw['domain']} · ${raw['trigger']} · ${raw['status']}'
