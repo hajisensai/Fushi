@@ -525,7 +525,7 @@ class _WebBrowserSiteTile extends StatelessWidget {
               ),
               // 点开进播放页的站点：标题后挂一个播放图标（只在有播放页的平台）。
               if (webBrowserSiteOpensInPlayer(site))
-                Tooltip(
+                FushiTooltip(
                   message: t.web_browser_site_opens_in_player,
                   child: FushiIcon(
                     FushiIcons.playCircle,
