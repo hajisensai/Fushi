@@ -859,6 +859,11 @@
 | [BUG-3521](bugs/BUG-3521-opds-komga-api-key.md) | ✅ | ✅ | OPDS：Komga 只认 X-API-Key 头，配置只有用户名/密码；Basic 用户名须为登录邮箱 |
 | [BUG-3520](bugs/BUG-3520-mihon-sidecar-prefs-root-tachidesk.md) | ✅ | ✅ | 桌面 sidecar 来源偏好写到 %LOCALAPPDATA%\Tachidesk\settings，不在 Fushi 数据根；已有值永远盖不过 Drift 快照 |
 | [BUG-3519](bugs/BUG-3519-epub-image-index-cache-windows-replace-race.md) | ✅ | ✅ | Windows 上多个 isolate 同时读写同一本书的插图表缓存：读撞 errno 32、替换撞 errno 5 |
+> 共 3149 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3652](bugs/BUG-3652-linux-wpe-borrowed-pixels-refcount.md) | ✅ | ✅ | Linux 漫画阅读器释放 WPE 借用像素缓冲区后崩溃 |
 | [BUG-3518](bugs/BUG-3518-ios-audio-lane-page-bleed.md) | ✅ | ✅ | iOS 竖排翻页：有声书当前句窄条越出页尾、画进下一页页顶 |
 | [BUG-3517](bugs/BUG-3517-video-chrome-double-click-fullscreen.md) | ✅ | ✅ | video-chrome-double-click-fullscreen |
 | [BUG-3516](bugs/BUG-3516-collection-member-touch-longpress-no-menu.md) | ✅ | ✅ | 合集详情页触屏长按成员只进多选，拿不到库页同一份卡片菜单 |
