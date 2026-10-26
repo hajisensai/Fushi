@@ -40,7 +40,7 @@ class KavitaBookOpenException implements Exception {
 class KavitaBookService {
   KavitaBookService({
     required FushiDatabase db,
-    required Directory tempRoot,
+    Directory? tempRoot,
     KavitaEpubImporter? importEpub,
     int Function()? nowMs,
   }) : _db = db,
@@ -49,7 +49,9 @@ class KavitaBookService {
        _nowMs = nowMs ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final FushiDatabase _db;
-  final Directory _tempRoot;
+
+  /// 下载临时目录；只有 [openOrImport] 需要（绑定读写不需要）。
+  final Directory? _tempRoot;
   final KavitaEpubImporter _importEpub;
   final int Function() _nowMs;
 
@@ -102,8 +104,12 @@ class KavitaBookService {
     );
     if (existing != null) return existing;
 
-    await _tempRoot.create(recursive: true);
-    final Directory work = await _tempRoot.createTemp('kavita_epub_');
+    final Directory? root = _tempRoot;
+    if (root == null) {
+      throw StateError('KavitaBookService.openOrImport needs a tempRoot');
+    }
+    await root.create(recursive: true);
+    final Directory work = await root.createTemp('kavita_epub_');
     try {
       final File target = File(p.join(work.path, 'book.epub'));
       final KavitaDownloadResult downloaded = await api.downloadChapter(

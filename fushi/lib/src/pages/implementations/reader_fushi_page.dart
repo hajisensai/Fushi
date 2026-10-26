@@ -23,6 +23,10 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
+import 'package:fushi/src/media/kavita/kavita_book_binding.dart';
+import 'package:fushi/src/media/kavita/kavita_epub_sync.dart';
+import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
@@ -40,6 +44,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
         dictionaryPopupTopActionConstraints,
         kDictionaryPopupTopActionIconSize;
 import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
+import 'package:fushi/src/pages/implementations/kavita/kavita_progress_conflict_dialog.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
@@ -103,6 +108,7 @@ import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi_engine/media/kavita/kavita_models.dart' show KavitaProgress;
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
     show kMediaTrackingEnabled;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
@@ -251,6 +257,7 @@ part 'reader_fushi/webview.part.dart';
 part 'reader_fushi/tts.part.dart';
 part 'reader_fushi/session_remote.part.dart';
 part 'reader_fushi/jump_history.part.dart';
+part 'reader_fushi/kavita.part.dart';
 
 /// TODO-904: native WebView2 实例创建失败时，fork 经 onReceivedError 合成的
 /// [WebResourceError] 描述里携带的 sentinel 前缀（须与
@@ -1766,6 +1773,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// resolveEpubBookUid 的契约一致）。
   String? _bookUid;
 
+  /// Kavita 绑定书的进度同步会话（打开时拉取 + 阅读中推送）；非 Kavita 书恒 null。
+  /// 逻辑全在 `media/kavita/kavita_epub_sync.dart`，本页只接三处线：开书恢复前
+  /// attach、`_persistPosition` 落库后转发、dispose 时 close。
+  KavitaEpubSyncSession? _kavitaSync;
+
   /// 同合集卷上下文（BUG-2521）：开书后由 [_loadVolumeContext] 一次装载；null =
   /// 不在多卷合集里。消费点：章节列表卷 chip、画廊卷 chip、[_switchToVolume]。
   ReaderVolumeContext? _volumeContext;
@@ -2989,11 +3001,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     final Future<ReaderPosition?> savedPositionFuture =
         widget.initialBookmarkJump != null
         ? Future<ReaderPosition?>.value(null)
-        : bookLocateFuture.then((_BookLocateResult located) {
+        : bookLocateFuture.then((_BookLocateResult located) async {
             final String? uid = located.bookRow?.uid;
             if (uid == null || uid.isEmpty) {
-              return Future<ReaderPosition?>.value(null);
+              return null;
             }
+            // Kavita 绑定书：恢复位置前先与服务器对账（可能改写本地位置）。
+            // 非 Kavita 书直接返回；离线 / 超时放行，永不抛错、不卡开书。
+            await _attachKavitaSync(db, located.bookRow!);
             return ReaderPositionRepository(db).findByBookUid(uid);
           });
     savedPositionFuture.ignore();
@@ -3555,6 +3570,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 整段跳过。
     _studyClock?.detach();
     readerSessionRemotes.unregister(_sessionRemote);
+    // Kavita 绑定书：关书时限时 flush 待推进度（不阻塞 dispose，内部吞错）。
+    unawaited(_kavitaSync?.close());
+    _kavitaSync = null;
     // Search navigation can still be awaiting restore while the route closes.
     // Complete it as failed now (and clear its precise-locate request) instead
     // of leaving the callback alive until the 10-second timeout.
