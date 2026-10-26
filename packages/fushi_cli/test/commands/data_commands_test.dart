@@ -185,6 +185,28 @@ void main() {
       );
       expect(() => build('sync', 'run', <String>['webDav']), usageError());
     });
+
+    test('run --conflicts：策略原样带上，限值域', () {
+      expect(
+        build('sync', 'run', <String>[
+          '--conflicts',
+          'keep-remote',
+          '--wait',
+        ]).body,
+        <String, Object?>{'wait': true, 'conflicts': 'keep-remote'},
+      );
+      expect(
+        build('sync', 'run', <String>['cloud', '--conflicts', 'ask']).body,
+        <String, Object?>{
+          'channels': <String>['cloud'],
+          'conflicts': 'ask',
+        },
+      );
+      expect(
+        () => build('sync', 'run', <String>['--conflicts', 'local']),
+        throwsA(isA<FormatException>()),
+      );
+    });
   });
 
   group('dl', () {
@@ -849,6 +871,36 @@ void main() {
         render('sync', 'run', <String, Object?>{'outcome': 'completed'}),
         '同步结束：completed',
       );
+    });
+
+    test('sync run --conflicts 的结果：已裁决 / 未解决清单', () {
+      expect(
+        render('sync', 'run', <String, Object?>{
+          'ok': true,
+          'started': true,
+          'conflictPolicy': 'newest',
+        }),
+        contains('newest'),
+      );
+      final String text = render('sync', 'run', <String, Object?>{
+        'ok': false,
+        'outcome': 'completed',
+        'conflicts': <String, Object?>{
+          'policy': 'ask',
+          'resolved': <Object?>[],
+          'unresolved': <Object?>[
+            <String, Object?>{
+              'type': 'book',
+              'title': 'BookA',
+              'localUpdatedAt': 120,
+              'remoteUpdatedAt': 100,
+            },
+          ],
+        },
+      });
+      expect(text, contains('冲突策略 ask'));
+      expect(text, contains('未解决的冲突'));
+      expect(text, contains('BookA'));
     });
   });
 }

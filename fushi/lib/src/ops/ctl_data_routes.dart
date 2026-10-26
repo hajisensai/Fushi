@@ -48,6 +48,8 @@ import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
     show withoutInterconnectHost;
 import 'package:fushi/src/sync/manual_sync_ui.dart'
     show runManualSyncWithFeedback;
+import 'package:fushi/src/sync/sync_conflict_decider.dart'
+    show SyncConflictPolicy, SyncConflictPolicyDecider;
 import 'package:fushi/src/sync/sync_auto_trigger.dart'
     show
         ManualSyncOutcome,
@@ -424,12 +426,27 @@ List<CtlRoute> _syncRoutes(OpContext context) => <CtlRoute>[
     };
   }),
   // 与设置页「立即同步」同一入口：缺省云通道 + 互联通道一起跑；`channels` 只跑
-  // 指定的通道（[runManualFullSync] 的 onlyChannels）。冲突 / 鉴权失效的交互与
-  // 提示都在 app 里出现。
+  // 指定的通道（[runManualFullSync] 的 onlyChannels）。鉴权失效的提示在 app 里出现。
+  // 同步中途的冲突：缺省照旧在 app 里弹窗让用户选；带 `conflicts` 策略（keep-local /
+  // keep-remote / newest / ask）时不弹窗，由 [SyncConflictPolicyDecider] 按策略落地，
+  // `ask` 什么都不选、把冲突清单返回（并隐含 wait）。
   CtlRoute.post('/api/admin/sync/run', (CtlCall call) async {
     final Set<SyncAssetChannelScope>? only = parseSyncChannelScopes(
       call.stringList('channels'),
     );
+    final String? policyRaw = call.optString('conflicts');
+    final SyncConflictPolicy? policy = policyRaw == null
+        ? null
+        : SyncConflictPolicy.tryParse(policyRaw) ??
+              (throw CtlFailure.badRequest(
+                'conflicts 只能是 ${SyncConflictPolicy.values.map((SyncConflictPolicy p) => p.wire).join(' / ')}：$policyRaw',
+              ));
+    final SyncConflictPolicyDecider? decider = policy == null
+        ? null
+        : SyncConflictPolicyDecider(
+            policy,
+            tempDir: context.appModel.temporaryDirectory,
+          );
     if (syncInProgress.value) {
       throw const CtlFailure.conflict('已有同步在进行中');
     }
@@ -458,16 +475,23 @@ List<CtlRoute> _syncRoutes(OpContext context) => <CtlRoute>[
       context: ui,
       appModel: appModel,
       onlyChannels: only,
+      conflictDecider: decider,
     );
-    if (call.optBool('wait') != true) {
+    if (call.optBool('wait') != true && policy != SyncConflictPolicy.ask) {
       _runDetached('sync.run', () => run);
-      return const <String, Object?>{'ok': true, 'started': true};
+      return <String, Object?>{
+        'ok': true,
+        'started': true,
+        if (policy != null) 'conflictPolicy': policy.wire,
+      };
     }
     final ManualSyncOutcome outcome = await run;
+    final bool unresolved = decider?.unresolved.isNotEmpty ?? false;
     return <String, Object?>{
-      'ok': outcome == ManualSyncOutcome.completed,
+      'ok': outcome == ManualSyncOutcome.completed && !unresolved,
       'outcome': outcome.name,
       'lastFullSweep': syncOutcomeToWire(lastFullSweepOutcome.value),
+      if (decider != null) 'conflicts': decider.toJson(),
     };
   }),
 ];

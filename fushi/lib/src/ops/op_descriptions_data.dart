@@ -159,7 +159,8 @@ List<OpDescription> describeDataOps(OpDescribeKit kit) => <OpDescription>[
     summary:
         'Sync now (same as Settings › Sync › Sync now): pushes local changes to '
         'the configured cloud backend / paired hosts and pulls theirs. Cannot be '
-        'undone. Conflicts and auth prompts appear in the app.',
+        'undone. Auth prompts appear in the app; conflicts found mid-sync are '
+        'asked in the app unless a conflicts policy is given.',
     risk: OpRisk.irreversible,
     needsUi: true,
     params: <OpParam>[
@@ -168,6 +169,15 @@ List<OpDescription> describeDataOps(OpDescribeKit kit) => <OpDescription>[
         description:
             'Only these channels (cloud, interconnect; from sync.status); '
             'default = all enabled.',
+      ),
+      OpParam.string(
+        'conflicts',
+        description:
+            'Resolve mid-sync conflicts without a dialog: keep-local, '
+            'keep-remote, newest (later update wins), or ask (resolve nothing '
+            'and return the conflict list; implies wait). Omit = ask the user '
+            'in the app.',
+        enumValues: <String>['keep-local', 'keep-remote', 'newest', 'ask'],
       ),
       OpParam.boolean(
         'wait',
