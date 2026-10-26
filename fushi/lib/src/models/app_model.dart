@@ -5386,8 +5386,7 @@ class AppModel with ChangeNotifier {
   /// 落盘沉浸布局；null = 恢复默认（清空存值，回到派生）。
   Future<void> setVideoImmersiveControlLayout(
     VideoImmersiveControlLayout? layout,
-  ) =>
-      prefsRepo.setVideoImmersiveControlLayoutJson(layout?.encode() ?? '');
+  ) => prefsRepo.setVideoImmersiveControlLayoutJson(layout?.encode() ?? '');
 
   /// 截图去向（对话框 / 剪贴板 / 指定目录）与目录路径。
   VideoScreenshotDestination get videoScreenshotDestination =>
@@ -7461,11 +7460,16 @@ class AppModel with ChangeNotifier {
     BtSiteConfig site, {
     String query = 'test',
   }) async {
+    final http.Client client = await createDownloadHttpClient();
     final VideoResourceProvider? provider = createBtSiteResourceProvider(
       site.copyWith(enabled: true),
-      await createDownloadHttpClient(),
+      client,
     );
-    if (provider == null) return null;
+    if (provider == null) {
+      // 没有 provider 接手 client，就没人会关它。
+      client.close();
+      return null;
+    }
     try {
       final VideoDiscoveryCategory category = provider.categories.first;
       final ProviderBatchResult<VideoResourceCandidate> result = await provider
