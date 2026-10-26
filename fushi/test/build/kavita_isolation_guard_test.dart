@@ -37,7 +37,7 @@ void main() {
       for (final File f in kavitaFiles()) {
         final String code = strip(f.readAsStringSync());
         if (RegExp(
-          r"^import .*audiobookshelf",
+          r'^import .*audiobookshelf',
           multiLine: true,
         ).hasMatch(code)) {
           offenders.add(f.path);
@@ -54,7 +54,7 @@ void main() {
       final String code = strip(f.readAsStringSync());
       expect(code, isNot(contains('package:flutter/')), reason: f.path);
       expect(code, isNot(contains('dart:ui')), reason: f.path);
-      expect(code, isNot(contains("package:fushi/")), reason: f.path);
+      expect(code, isNot(contains('package:fushi/')), reason: f.path);
     }
   });
 
