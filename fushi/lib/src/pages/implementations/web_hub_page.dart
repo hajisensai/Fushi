@@ -1,39 +1,36 @@
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart';
-import 'package:fushi/src/pages/implementations/video_web_sites_page.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiShellInlineTitle, kFushiFloatingChromeGap;
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi_engine/media/video/video_book_repository.dart';
 
 /// 「浏览器」模块（[ModuleId.web]）的子页（顺序即页签顺序）。
 ///
 /// 2026-10-19 用户拍板：app 内直接浏览网站（Netflix / YouTube 等站点在原生播放器页
 /// 里看）取代「装浏览器扩展」成为主路径，浏览器扩展降为本模块的次级子页。
+///
+/// 2026-10-26 用户：「这个站点和视频站点有什么关系？有必要分开吗？」——原「视频站点」
+/// 子页并进通用浏览的站点表：站点可标成「用播放页打开」，浏览页里也有「用 Fushi 播放」
+/// 按钮（Windows），见 `web_browser_site_launch.dart`。
 enum WebHubSection {
   /// 通用 app 内浏览器：模块页里是入口（[FushiWebBrowserHomePage]，地址栏 + 站点），
-  /// 打开网址推全屏浏览页（[FushiWebBrowserPage]）。五端都有，网页上查词；漫画站上
-  /// 的「用 Fushi 阅读本章」由浏览页自己按在线漫画源合规门控。
+  /// 打开网址推全屏浏览页（[FushiWebBrowserPage]），标了「用播放页打开」的站点在
+  /// Windows 上进视频播放页。五端都有，网页上查词；漫画站上的「用 Fushi 阅读本章」
+  /// 由浏览页自己按在线漫画源合规门控。
   browse,
-
-  /// 网页视频站点（[VideoWebSitesPage]），仅 Windows（[webVideoSitesAvailable]）。
-  videoSites,
 
   /// 浏览器扩展安装与连接状态（[BrowserExtensionPage]），仅桌面。
   browserExtension,
 }
 
-/// 本平台上 [section] 是否存在。平台判据各自只写一处：视频站点问
-/// [webVideoSitesAvailable]，浏览器扩展问 [browserExtensionSupportedOn]。
+/// 本平台上 [section] 是否存在。浏览器扩展问 [browserExtensionSupportedOn]。
 bool webHubSectionAvailable(WebHubSection section) => switch (section) {
   WebHubSection.browse => true,
-  WebHubSection.videoSites => webVideoSitesAvailable(),
   WebHubSection.browserExtension => browserExtensionSupportedOn(
     isDesktop: DesktopLookupService.isDesktop,
   ),
@@ -44,10 +41,7 @@ bool webHubSectionAvailable(WebHubSection section) => switch (section) {
 ///
 /// 只有一个子页可用时（如 macOS / Linux 只有浏览器扩展）不画页签，子页画自己的标题。
 class WebHubPage extends StatefulWidget {
-  const WebHubPage({required this.videoRepo, super.key});
-
-  /// 站点里看过的每一集落成流媒体书时用的视频库仓库。
-  final VideoBookRepository videoRepo;
+  const WebHubPage({super.key});
 
   @override
   State<WebHubPage> createState() => _WebHubPageState();
@@ -73,7 +67,6 @@ class _WebHubPageState extends State<WebHubPage> {
 
   String _label(WebHubSection section) => switch (section) {
     WebHubSection.browse => t.web_hub_browse,
-    WebHubSection.videoSites => t.web_hub_video_sites,
     WebHubSection.browserExtension => t.nav_browser_extension,
   };
 
@@ -130,11 +123,6 @@ class _WebHubPageState extends State<WebHubPage> {
         WebHubSection.browse => FushiWebBrowserHomePage(
           key: const ValueKey<String>('web-hub-browse'),
           navigation: navigation,
-        ),
-        WebHubSection.videoSites => VideoWebSitesPage(
-          key: const ValueKey<String>('web-hub-video-sites'),
-          repo: widget.videoRepo,
-          navigation: navigation ?? Text(_label(section)),
         ),
         WebHubSection.browserExtension => BrowserExtensionPage(
           key: const ValueKey<String>('web-hub-browser-extension'),

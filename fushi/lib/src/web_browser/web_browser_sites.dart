@@ -4,16 +4,35 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 
 /// app 内浏览器（`FushiWebBrowserPage`）的一个站点书签。
+///
+/// 视频站点与浏览器站点是同一份表（用户 2026-10-26「这个站点和视频站点有什么关系？
+/// 有必要分开吗？」）：[openInPlayer] 为 true 的站点点开时进 Fushi 播放页（Windows 的
+/// 网页播放器，Netflix 硬件 DRM / Fushi 字幕层 / 每集落库），否则进普通浏览器标签页。
+/// 播放页只在 Windows 上有，其它平台忽略这个标记。
 @immutable
 class WebBrowserSite {
-  const WebBrowserSite({required this.name, required this.url});
+  const WebBrowserSite({
+    required this.name,
+    required this.url,
+    this.openInPlayer = false,
+  });
 
   final String name;
   final Uri url;
 
+  /// 点开时默认用播放页打开（只在有播放页的平台生效，见 `webVideoSitesAvailable`）。
+  final bool openInPlayer;
+
+  WebBrowserSite copyWith({bool? openInPlayer}) => WebBrowserSite(
+    name: name,
+    url: url,
+    openInPlayer: openInPlayer ?? this.openInPlayer,
+  );
+
   Map<String, Object?> toJson() => <String, Object?>{
     'name': name,
     'url': url.toString(),
+    if (openInPlayer) 'player': true,
   };
 
   static WebBrowserSite? fromJson(Object? json) {
@@ -21,15 +40,58 @@ class WebBrowserSite {
     final Uri? url = parseWebBrowserAddress(json['url']?.toString() ?? '');
     if (url == null) return null;
     final String name = json['name']?.toString().trim() ?? '';
-    return WebBrowserSite(name: name.isEmpty ? url.host : name, url: url);
+    return WebBrowserSite(
+      name: name.isEmpty ? url.host : name,
+      url: url,
+      openInPlayer: json['player'] == true,
+    );
   }
 
   @override
   bool operator ==(Object other) =>
-      other is WebBrowserSite && other.name == name && other.url == url;
+      other is WebBrowserSite &&
+      other.name == name &&
+      other.url == url &&
+      other.openInPlayer == openInPlayer;
 
   @override
-  int get hashCode => Object.hash(name, url);
+  int get hashCode => Object.hash(name, url, openInPlayer);
+}
+
+/// 新加站点时「默认用播放页打开」的初值：不进播放页基本没法看的站（Netflix 要硬件
+/// DRM）默认开，其它站默认走浏览器。[playerAvailable] 由调用方按平台给。
+bool webBrowserSiteDefaultsToPlayer(Uri url, {required bool playerAvailable}) {
+  if (!playerAvailable) return false;
+  final String host = url.host.toLowerCase();
+  return host == 'netflix.com' || host.endsWith('.netflix.com');
+}
+
+/// 把旧「视频站点」子页里用户自己加的站点（[legacy]：`(名称, 地址)`）并进站点表，
+/// 一律标成用播放页打开；同地址已在表里的只把它标成播放页。
+List<WebBrowserSite> mergeLegacyVideoSites(
+  List<WebBrowserSite> sites,
+  Iterable<(String, String)> legacy,
+) {
+  final List<WebBrowserSite> out = <WebBrowserSite>[...sites];
+  for (final (String name, String rawUrl) in legacy) {
+    final Uri? url = parseWebBrowserAddress(rawUrl);
+    if (url == null) continue;
+    final int i = out.indexWhere(
+      (WebBrowserSite s) => s.url.toString() == url.toString(),
+    );
+    if (i >= 0) {
+      out[i] = out[i].copyWith(openInPlayer: true);
+    } else {
+      out.add(
+        WebBrowserSite(
+          name: name.trim().isEmpty ? url.host : name.trim(),
+          url: url,
+          openInPlayer: true,
+        ),
+      );
+    }
+  }
+  return List<WebBrowserSite>.unmodifiable(out);
 }
 
 /// 解析偏好里存的站点表；空串（从没改过）/ 坏 JSON → 空表。
