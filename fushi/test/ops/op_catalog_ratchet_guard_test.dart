@@ -15,7 +15,7 @@ class _UnusedRef implements WidgetRef {
 
 /// 没有描述的路由数上限（spec §4.2 棘轮）：只许减不许增。给路由补了描述就把它
 /// 调到新的实际值；新增路由必须同时带描述（否则这个数会涨）。
-const int kUndescribedRouteBaseline = 9999;
+const int kUndescribedRouteBaseline = 0;
 
 /// 有意不进操作目录的路由前缀，值写明理由。
 const Map<String, String> kRoutePrefixesNotForAi = <String, String>{
