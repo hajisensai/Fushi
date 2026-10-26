@@ -291,4 +291,35 @@ void main() {
       },
     );
   });
+
+  test('结果交给模型前抹掉凭据：键名像凭据的、标题像凭据的条目值', () {
+    expect(
+      redactAiAgentResult(<String, Object?>{
+        'providers': <Object?>[
+          <String, Object?>{'name': 'x', 'apiKey': 'sk-1', 'model': 'm'},
+        ],
+        'preferences': <Object?>[
+          <String, Object?>{'key': 'pwd', 'title': '密码', 'value': 'hunter2'},
+          <String, Object?>{
+            'key': 'quality',
+            'title': 'Quality',
+            'value': 'hd',
+          },
+        ],
+      }),
+      <String, Object?>{
+        'providers': <Object?>[
+          <String, Object?>{'name': 'x', 'apiKey': '<redacted>', 'model': 'm'},
+        ],
+        'preferences': <Object?>[
+          <String, Object?>{'key': 'pwd', 'title': '密码', 'value': '<redacted>'},
+          <String, Object?>{
+            'key': 'quality',
+            'title': 'Quality',
+            'value': 'hd',
+          },
+        ],
+      },
+    );
+  });
 }

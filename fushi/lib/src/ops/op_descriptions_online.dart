@@ -971,6 +971,14 @@ class _OnlineUndo {
         key,
       );
       if (pref == null) throw CtlFailure.notFound('preference $key is gone');
+      // 撤销快照只在 AI 路径上抓：凭据类偏好（登录密码 / token）AI 不可写，旧值也
+      // 不该进本机操作记录（spec §4.3）。CLI 不经这里，照常可改。
+      if (_looksLikeCredential(pref)) {
+        throw const CtlFailure.rejected(
+          'This preference looks like a credential; the user must change it in '
+          'the source settings dialog.',
+        );
+      }
       return pref;
     },
     write: (_Scope s, Object? old) async {
@@ -1345,3 +1353,15 @@ class _OnlineUndo {
     },
   );
 }
+
+/// 源偏好看起来是凭据（标题 / 键名带 password / token / 密码…）。
+bool _looksLikeCredential(
+  Map<String, Object?> pref,
+) => <Object?>[pref['key'], pref['title']].any(
+  (Object? v) =>
+      v is String &&
+      RegExp(
+        r'(password|passwd|api[ _-]?key|token|secret|cookie|credential|密码|密碼|パスワード|トークン)',
+        caseSensitive: false,
+      ).hasMatch(v),
+);

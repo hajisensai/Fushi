@@ -38,6 +38,40 @@ final RegExp _kSecretKey = RegExp(
   caseSensitive: false,
 );
 
+/// 结果里「这一项是凭据」的标题 / 键名（含中日文）：源偏好、表单项这类
+/// `{key, title, value}` 形状的条目按它判，值换成 `<redacted>`。
+final RegExp _kSecretLabel = RegExp(
+  r'(password|passwd|passcode|api[ _-]?key|token|secret|cookie|credential|密码|密碼|口令|パスワード|トークン)',
+  caseSensitive: false,
+);
+
+/// 交给模型前抹掉结果里的凭据（spec §4.3 / §10：AI 不可读凭据）。递归处理：
+/// 键名像凭据的值整体抹掉；`{key/title/name, value}` 形状的条目按其标题判。
+Object? redactAiAgentResult(Object? data) {
+  if (data is List) {
+    return <Object?>[for (final Object? e in data) redactAiAgentResult(e)];
+  }
+  if (data is! Map) return data;
+  final Map<String, Object?> map = <String, Object?>{
+    for (final MapEntry<Object?, Object?> e in data.entries)
+      '${e.key}': e.value,
+  };
+  final bool labelledSecret = <Object?>[
+    map['key'],
+    map['title'],
+    map['name'],
+    map['label'],
+  ].any((Object? v) => v is String && _kSecretLabel.hasMatch(v));
+  return <String, Object?>{
+    for (final MapEntry<String, Object?> e in map.entries)
+      e.key: _kSecretKey.hasMatch(e.key) && e.value is! Map && e.value is! List
+          ? '<redacted>'
+          : labelledSecret && e.key == 'value'
+          ? '<redacted>'
+          : redactAiAgentResult(e.value),
+  };
+}
+
 /// 把操作目录适配成 AI 助手的工具箱（spec §5、§6）。
 ///
 /// - 只暴露带描述、当前可用的操作；`irreversible` / `confirm` 的由 agent loop 先
@@ -151,7 +185,7 @@ class AiAgentToolbox implements AgentToolbox, AgentSkillProvider {
             'note':
                 'The result contains a one-time credential; it was shown to the user and withheld from you.',
           }
-        : result.result;
+        : redactAiAgentResult(result.result);
     final String? userPreview = spec.sensitiveResult
         ? _preview(result.result)
         : null;
