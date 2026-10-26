@@ -14,6 +14,7 @@ import 'package:fushi_engine/media/manga/manga_importer.dart'
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/kavita/kavita_manga_source_row.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -168,6 +169,11 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                   const FushiStaggeredEntrance(
                     index: 7,
                     child: InterconnectMangaSourceRow(),
+                  ),
+                  // Kavita（用户自己的服务器）同理不受合规边界约束；没配可用服务器时不占位。
+                  const FushiStaggeredEntrance(
+                    index: 8,
+                    child: KavitaMangaSourceRow(),
                   ),
                 ],
               ),

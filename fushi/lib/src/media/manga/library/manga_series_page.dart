@@ -1847,7 +1847,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         // 扩展源的作品来自第三方站点（10-09 所有者「外部来源」提示）；互联对端
         // 是用户自己的设备，本地卷没有在线来源，都不标。
         if (_entry case final OnlineMangaLibraryEntry entry
-            when entry.runtime != OnlineMangaRuntimeKind.interconnect)
+            when entry.runtime != OnlineMangaRuntimeKind.interconnect &&
+                entry.runtime != OnlineMangaRuntimeKind.kavita)
           ...extensionSourceDetailChips(),
       ],
       genres: series?.genreLabels ?? const <String>[],
