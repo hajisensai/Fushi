@@ -29,10 +29,10 @@
 - 数据层：`packages/fushi_core/lib/src/database/collection_organize.dart`（来源 / 键 / 别名的纯值层）、`tables.dart`、`database_library.part.dart`（`_claimCollectionForUser`、`absorbOrganizeIdentity`、`getRejectedOrganizeKeys`…）、迁移 `database.dart` `from < 124`。
 - 同步与收敛：`packages/fushi_engine/lib/sync/collection_sync_engine.dart`、`collection_manifest.dart`、`lib/media/collections/library_organize/organize_convergence.dart`、`lib/media/collections/collection_merge.dart`（合并唯一入口）。
 - AI 引擎：`packages/fushi_engine/lib/ai/ai_library_organize_assistant.dart`、`lib/media/collections/library_organize/`（facts / plan / apply（含撤销）/ service）。
-- app：`fushi/lib/src/media/collections/library_organize_runner.dart`、`pages/implementations/library_organize_history_page.dart`、`settings/settings_schema_ai.dart`（`ai.library_organize`）、`platform/desktop/ctl/ctl_library_organize_routes.dart`。
+- app：`fushi/lib/src/media/collections/library_organize_runner.dart`、`pages/implementations/library_organize_history_page.dart`、`settings/settings_schema_ai.dart`（`ai.library_organize`）、`ops/ctl_library_organize_routes.dart`。
 - CLI：`fushi_cli library organize --domain <books|manga|video|games> [--yes]` / `organize-history` / `organize-undo <id>`。
 - 服务端：`packages/fushi_server/lib/src/config/server_ai_config.dart`（`serverLibraryOrganizer`）、`library_scanner.dart`。
-- 测试：`fushi/test/sync/collection_organize_convergence_test.dart`（多端随机性质测试：逐项一致、每键至多一个合集、不丢任何一次归组）、`fushi/test/database/migration_v124_collection_organize_test.dart`、`fushi/test/media/collections/library_organize_test.dart`、`library_organize_runner_test.dart`、`fushi/test/platform/desktop/ctl/ctl_library_organize_routes_test.dart`、`packages/fushi_server/test/library_organize_config_test.dart`。
+- 测试：`fushi/test/sync/collection_organize_convergence_test.dart`（多端随机性质测试：逐项一致、每键至多一个合集、不丢任何一次归组）、`fushi/test/database/migration_v124_collection_organize_test.dart`、`fushi/test/media/collections/library_organize_test.dart`、`library_organize_runner_test.dart`、`fushi/test/ops/ctl_library_organize_routes_test.dart`、`packages/fushi_server/test/library_organize_config_test.dart`。
 
 ## 1. 要解决什么
 

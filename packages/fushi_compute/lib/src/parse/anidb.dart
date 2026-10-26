@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
@@ -277,7 +278,7 @@ final class _AniDbNative implements Finalizable {
   static void write(Pointer<Uint16> target, int offset, String text) {
     final int length = text.length;
     if (length == 0) return;
-    final Uint16List view = target.asTypedList(offset + length);
+    final Uint16List view = target.asTypedListOutOfLine(offset + length);
     for (int i = 0; i < length; i++) {
       view[offset + i] = text.codeUnitAt(i);
     }
@@ -291,7 +292,7 @@ final class _AniDbNative implements Finalizable {
       if (ptr != nullptr) compute.freeBytes(ptr, len);
       return Uint8List(0);
     }
-    final Uint8List copy = Uint8List.fromList(ptr.asTypedList(len));
+    final Uint8List copy = Uint8List.fromList(ptr.asTypedListOutOfLine(len));
     compute.freeBytes(ptr, len);
     return copy;
   }
@@ -339,7 +340,9 @@ abstract final class TitleScoreNative {
       }
       _check(status, 'ffc_parse_title_normalize');
       final int written = n.sizeOut.value;
-      return written == 0 ? '' : String.fromCharCodes(out.asTypedList(written));
+      return written == 0
+          ? ''
+          : String.fromCharCodes(out.asTypedListOutOfLine(written));
     }
   }
 
@@ -391,7 +394,7 @@ abstract final class TitleScoreNative {
         ),
         'ffc_parse_title_similarity_normalized_matrix',
       );
-      result.setAll(0, out.asTypedList(total));
+      result.setAll(0, out.asTypedListOutOfLine(total));
       return result;
     } finally {
       q.free();
@@ -475,7 +478,7 @@ abstract final class TitleScoreNative {
         n.similarityBatch(queryUnits, query.length, units, offsets, count, out),
         'ffc_parse_title_similarity_normalized_batch',
       );
-      result.setAll(0, out.asTypedList(count));
+      result.setAll(0, out.asTypedListOutOfLine(count));
       return result;
     } finally {
       calloc.free(offsets);
@@ -576,7 +579,7 @@ final class AniDbCatalogBuilderNative implements Finalizable {
     final int length = chunk.length;
     if (length == 0) return;
     final Pointer<Uint8> buffer = _chunk.reserve(length);
-    buffer.asTypedList(length).setAll(0, chunk);
+    buffer.asTypedListOutOfLine(length).setAll(0, chunk);
     _status(
       _n.builderFeed(_handle, buffer, length),
       'ffc_parse_anidb_catalog_builder_feed',
@@ -708,14 +711,16 @@ final class AniDbCatalogNative implements Finalizable {
     return _table = _AniDbRecordTable(
       ids: records == 0
           ? Int64List(0)
-          : Pointer<Int64>.fromAddress(w[0]).asTypedList(records),
-      titleStart: Pointer<Uint32>.fromAddress(w[2]).asTypedList(records + 1),
+          : Pointer<Int64>.fromAddress(w[0]).asTypedListOutOfLine(records),
+      titleStart: Pointer<Uint32>.fromAddress(
+        w[2],
+      ).asTypedListOutOfLine(records + 1),
       titles: titles == 0
           ? Uint32List(0)
-          : Pointer<Uint32>.fromAddress(w[3]).asTypedList(6 * titles),
+          : Pointer<Uint32>.fromAddress(w[3]).asTypedListOutOfLine(6 * titles),
       units: units == 0
           ? Uint16List(0)
-          : Pointer<Uint16>.fromAddress(w[5]).asTypedList(units),
+          : Pointer<Uint16>.fromAddress(w[5]).asTypedListOutOfLine(units),
       strings: strings,
     );
   }

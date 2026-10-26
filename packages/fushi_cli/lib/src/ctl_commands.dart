@@ -90,6 +90,40 @@ class CtlCommandContext {
   }
 }
 
+/// 交互式命令的后续阶段拿到的上下文（`fushi_cli ai ask` 轮询进度、终端 y/N）。
+class CtlFollowContext {
+  const CtlFollowContext({
+    required this.command,
+    required this.call,
+    required this.out,
+    required this.err,
+    required this.json,
+    required this.readLine,
+    required this.delay,
+  });
+
+  /// 本命令解析后的参数（follow 阶段也能读 flag，如 `--yes`）。
+  final CtlCommandContext command;
+
+  /// 再发一条请求（同一个已就绪的客户端）。
+  final Future<Object?> Function(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Map<String, Object?>? body,
+  })
+  call;
+  final StringSink out;
+  final StringSink err;
+  final bool json;
+
+  /// 读终端一行（stdin 关了返回 null）。
+  final Future<String?> Function() readLine;
+
+  /// 轮询间隔的等待（测试注入成立即返回）。
+  final Future<void> Function() delay;
+}
+
 /// 一条子命令。
 class CtlCommandSpec {
   const CtlCommandSpec({
@@ -99,6 +133,7 @@ class CtlCommandSpec {
     this.usage = '',
     this.configure,
     this.render,
+    this.follow,
   });
 
   final String name;
@@ -114,6 +149,10 @@ class CtlCommandSpec {
 
   /// 人类可读输出；缺省输出缩进 JSON。`--json` 时一律输出原始 JSON。
   final String Function(Object? data)? render;
+
+  /// 交互式后续：[build] 的请求回来后接管终端（轮询、提问），返回退出码。
+  /// 有它时不走 [render]。
+  final Future<int> Function(CtlFollowContext context, Object? first)? follow;
 }
 
 /// 一个域的命令组：`fushi_cli <name> <command>`。

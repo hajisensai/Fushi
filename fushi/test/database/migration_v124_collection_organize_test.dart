@@ -41,7 +41,7 @@ void main() {
     raw.dispose();
 
     final FushiDatabase migrated = FushiDatabase.atFile(path, isMainProcess: false);
-    expect(migrated.schemaVersion, 135);
+    expect(migrated.schemaVersion, 136);
     final Map<String, String> originByName = <String, String>{
       for (final MediaCollectionRow r in await migrated.getAllMediaCollections())
         r.name: r.origin,

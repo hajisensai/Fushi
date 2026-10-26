@@ -171,7 +171,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 ## 数据模型
 
-数据模型全部定义在 `fushi_core`（118 张 Drift 表，schema v135），本模块仅消费。互联配对设备表 `FushiPairedPeers` 也在其中。
+数据模型全部定义在 `fushi_core`（120 张 Drift 表，schema v136），本模块仅消费。互联配对设备表 `FushiPairedPeers` 也在其中。
 
 ## 测试与质量
 

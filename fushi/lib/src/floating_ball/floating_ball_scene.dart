@@ -36,6 +36,7 @@ class _SceneEntry {
   bool get hidesBall => state.widget.hideBall;
   List<String> get pinnedIds => state.widget.pinnedIds;
   ThemeData? get theme => state._theme;
+  FloatingBallAiContext? get aiContext => state.widget.aiContext;
 
   bool get isCurrent {
     if (!state.mounted || !state._active) return false;
@@ -60,6 +61,7 @@ class FloatingBallSceneSnapshot {
     this.pinnedIds = const <String>[],
     this.owner,
     this.theme,
+    this.aiContext,
   });
 
   /// 没有登记场景的页面：按「其它页面」的按钮配置。
@@ -90,7 +92,14 @@ class FloatingBallSceneSnapshot {
   /// 场景所在位置的主题：球按页面此刻的配色画（例如歌词模式按封面取色换了整页
   /// 主题，球要跟着换，不能停在导航之上的根主题）。没有场景时 null = 根主题。
   final ThemeData? theme;
+
+  /// 点「AI」时现取的页面上下文（当前书 / 视频 / 位置，spec §6.4）；null = 页面没给。
+  final FloatingBallAiContext? aiContext;
 }
+
+/// 页面给 AI 助手的上下文：`scene` / `page` / `itemKind` / `itemId` / `itemTitle` /
+/// `position` 等键（与 `AgentUiContext` 同名），点按钮那一刻才求值。
+typedef FloatingBallAiContext = Map<String, Object?> Function();
 
 /// 进程级场景登记表。
 class FloatingBallSceneRegistry extends ChangeNotifier {
@@ -117,6 +126,7 @@ class FloatingBallSceneRegistry extends ChangeNotifier {
         pinnedIds: entry.pinnedIds,
         owner: entry.owner,
         theme: entry.theme,
+        aiContext: entry.aiContext,
       );
     }
     final Route<dynamic>? top = _topPage;
@@ -180,6 +190,7 @@ class FloatingBallScene extends StatefulWidget {
     required this.actions,
     this.hideBall = false,
     this.pinnedIds = const <String>[],
+    this.aiContext,
     this.child = const SizedBox.shrink(),
     super.key,
   });
@@ -197,6 +208,9 @@ class FloatingBallScene extends StatefulWidget {
   /// 开回栏只剩球上这一处）。这些 id 必须在 [actions] 里；宿主不看用户勾选、把它们
   /// 排在最上面，且不给「关闭悬浮球」——关掉球就等于把人关在页面里。
   final List<String> pinnedIds;
+
+  /// 点悬浮球「AI」时交给 AI 助手的页面上下文（见 [FloatingBallAiContext]）。
+  final FloatingBallAiContext? aiContext;
 
   final Widget child;
 

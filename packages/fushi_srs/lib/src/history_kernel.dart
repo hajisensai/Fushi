@@ -14,6 +14,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import 'ffi/fushi_fsrs_library.dart';
 import 'fsrs_engine.dart';
@@ -86,10 +87,10 @@ List<SrsHistoryState> srsHistoryStatesFromJson(
   final Pointer<Size> outLen = calloc<Size>();
   final Pointer<Pointer<Char>> error = calloc<Pointer<Char>>();
   try {
-    final Uint8List t = text.asTypedList(total == 0 ? 1 : total);
-    final Uint32List o = offs.asTypedList(nLogs + 1);
-    final Int64List s = servers.asTypedList(nLogs == 0 ? 1 : nLogs);
-    final Uint32List g = groups.asTypedList(histories.length + 1);
+    final Uint8List t = text.asTypedListOutOfLine(total == 0 ? 1 : total);
+    final Uint32List o = offs.asTypedListOutOfLine(nLogs + 1);
+    final Int64List s = servers.asTypedListOutOfLine(nLogs == 0 ? 1 : nLogs);
+    final Uint32List g = groups.asTypedListOutOfLine(histories.length + 1);
     int at = 0;
     int i = 0;
     o[0] = 0;
@@ -117,7 +118,7 @@ List<SrsHistoryState> srsHistoryStatesFromJson(
     if (out == nullptr) throw FormatException(_takeError(lib, error));
     final int len = outLen.value;
     try {
-      return _decodeStates(out.asTypedList(len), histories.length);
+      return _decodeStates(out.asTypedListOutOfLine(len), histories.length);
     } finally {
       lib.bindings.ffsrs_free_bytes(out, len);
     }
@@ -218,9 +219,9 @@ List<bool> srsImportEquivalentAny(
   final Pointer<Size> outLen = calloc<Size>();
   final Pointer<Pointer<Char>> error = calloc<Pointer<Char>>();
   try {
-    final Uint8List t = text.asTypedList(total == 0 ? 1 : total);
-    final Uint32List o = offs.asTypedList(logs.length + 1);
-    final Uint32List g = bounds.asTypedList(groups.length + 1);
+    final Uint8List t = text.asTypedListOutOfLine(total == 0 ? 1 : total);
+    final Uint32List o = offs.asTypedListOutOfLine(logs.length + 1);
+    final Uint32List g = bounds.asTypedListOutOfLine(groups.length + 1);
     int at = 0;
     o[0] = 0;
     for (int i = 0; i < logs.length; i++) {
@@ -245,7 +246,7 @@ List<bool> srsImportEquivalentAny(
     if (out == nullptr) throw FormatException(_takeError(lib, error));
     final int len = outLen.value;
     try {
-      return <bool>[for (final int b in out.asTypedList(len)) b == 1];
+      return <bool>[for (final int b in out.asTypedListOutOfLine(len)) b == 1];
     } finally {
       lib.bindings.ffsrs_free_bytes(out, len);
     }
@@ -311,8 +312,8 @@ List<SrsHistorySelection> srsSelectHistories(
   Pointer<Uint8> text = nullptr;
   Pointer<Uint32> offs = nullptr;
   try {
-    final Int64List c = ints.asTypedList(nLogs * _columnWords);
-    final Uint32List g = groups.asTypedList(histories.length + 1);
+    final Int64List c = ints.asTypedListOutOfLine(nLogs * _columnWords);
+    final Uint32List g = groups.asTypedListOutOfLine(histories.length + 1);
     int i = 0;
     g[0] = 0;
     for (int k = 0; k < histories.length; k++) {
@@ -349,7 +350,7 @@ List<SrsHistorySelection> srsSelectHistories(
     if (out == nullptr) throw FormatException(_takeError(lib, error));
     final int len = outLen.value;
     try {
-      return _decodeSelections(out.asTypedList(len), histories);
+      return _decodeSelections(out.asTypedListOutOfLine(len), histories);
     } finally {
       lib.bindings.ffsrs_free_bytes(out, len);
     }
@@ -475,8 +476,8 @@ class _Utf8Packer {
   (Pointer<Uint8>, Pointer<Uint32>) toNative() {
     final Pointer<Uint8> text = malloc<Uint8>(length == 0 ? 1 : length);
     final Pointer<Uint32> offs = malloc<Uint32>(_offs.length);
-    if (length > 0) text.asTypedList(length).setRange(0, length, _buf);
-    offs.asTypedList(_offs.length).setAll(0, _offs);
+    if (length > 0) text.asTypedListOutOfLine(length).setRange(0, length, _buf);
+    offs.asTypedListOutOfLine(_offs.length).setAll(0, _offs);
     return (text, offs);
   }
 }

@@ -8,7 +8,7 @@ import 'settings_model_commands.dart';
 import 'settings_ops_commands.dart';
 import 'settings_task_commands.dart';
 
-/// settings 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_settings_routes.dart`）。
+/// settings 域命令（app 侧路由见 `fushi/lib/src/ops/ctl_settings_routes.dart`）。
 ///
 /// 命令组：
 /// - `config`：设置项读写 / 恢复默认 / 执行动作行（键 = 设置 schema 的条目 id，

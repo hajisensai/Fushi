@@ -24,6 +24,11 @@ const String kWebVideoSetShadersMethod = 'setShaders';
 /// （底层合成下关掉，输入落到上面的 Flutter）。
 const String kWebVideoSetWindowedInputEnabledMethod = 'setWindowedInputEnabled';
 
+/// 窗口宿主档：子窗口上挖掉的输入区（`[[left, top, right, bottom, radius], ...]`，逻辑 px，
+/// 相对 WebView 左上角）。
+const String kWebVideoSetWindowedInputExclusionsMethod =
+    'setWindowedInputExclusions';
+
 /// 网页播放器超分档位偏好键（值 = [VideoShaderTier.name]；缺省 off）。与 mpv 页的两套状态
 /// （内置缩放开关 + 启用集）无关：网页帧没有 mpv 缩放器可开，这里只有「GLSL 链」一个维度。
 const String kWebVideoShaderTierPrefKey = 'web_video_shader_tier';

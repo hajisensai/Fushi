@@ -18,6 +18,11 @@ import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 
 const int _nowAt = 1000;
 
+/// 用户 BT 站（测试数据）：provider id = `nyaa:<siteId>`，候选的 instance = siteId。
+/// 订阅行上存的仍是旧内置源写法 `nyaa`，由注册表解析到这个站。
+const String _nyaaSiteId = 'site-nyaa';
+const String _nyaaProviderId = 'nyaa:$_nyaaSiteId';
+
 Future<FushiDatabase> _openDatabase() async {
   final FushiDatabase database = FushiDatabase.forTesting(
     NativeDatabase.memory(
@@ -175,7 +180,7 @@ void main() {
       },
     );
     final _FakeResourceProvider provider = _FakeResourceProvider(
-      id: 'nyaa',
+      id: _nyaaProviderId,
       candidates: <VideoResourceCandidate>[
         _candidate(remoteId: 'old', episode: 1),
         _candidate(remoteId: 'wrong-group', episode: 2, group: 'Other'),
@@ -269,7 +274,7 @@ void main() {
         database: database,
         now: () => DateTime.fromMillisecondsSinceEpoch(atMs),
         provider: _FakeResourceProvider(
-          id: 'nyaa',
+          id: _nyaaProviderId,
           candidates: <VideoResourceCandidate>[
             _candidate(remoteId: 'ep-1', episode: 1),
           ],
@@ -486,7 +491,7 @@ void main() {
         autoRetryBudget: autoRetryBudget,
         now: () => DateTime.fromMillisecondsSinceEpoch(roundAt(round)),
         provider: _FakeResourceProvider(
-          id: 'nyaa',
+          id: _nyaaProviderId,
           candidates: <VideoResourceCandidate>[
             _candidate(remoteId: 'ep-1', episode: 1),
           ],
@@ -755,7 +760,7 @@ void main() {
     final VideoDownloadSubscriptionService service = _service(
       database: database,
       provider: _FakeResourceProvider(
-        id: 'nyaa',
+        id: _nyaaProviderId,
         candidates: <VideoResourceCandidate>[
           _candidate(
             remoteId: 'mushoku-iii-02',
@@ -844,7 +849,7 @@ void main() {
     final VideoDownloadSubscriptionService service = _service(
       database: database,
       provider: _FakeResourceProvider(
-        id: 'nyaa',
+        id: _nyaaProviderId,
         candidates: <VideoResourceCandidate>[
           _candidate(
             remoteId: 'duplicate-s03e02',
@@ -925,7 +930,7 @@ void main() {
       ),
     ];
     final _FakeResourceProvider provider = _FakeResourceProvider(
-      id: 'nyaa',
+      id: _nyaaProviderId,
       resultsByPage: <int, ProviderBatchResult<VideoResourceCandidate>>{
         1: ProviderBatchResult<VideoResourceCandidate>.success(firstPage),
         2: ProviderBatchResult<VideoResourceCandidate>.success(secondPage),
@@ -1017,7 +1022,7 @@ void main() {
       ),
     );
     final _FakeResourceProvider provider = _FakeResourceProvider(
-      id: 'nyaa',
+      id: _nyaaProviderId,
       resultsByPage: <int, ProviderBatchResult<VideoResourceCandidate>>{
         1: ProviderBatchResult<VideoResourceCandidate>.success(repeated),
         2: ProviderBatchResult<VideoResourceCandidate>.success(repeated),
@@ -1070,7 +1075,7 @@ void main() {
           final int release = page * 100 + index;
           return _FakeResourceCandidate(
             providerId: 'nyaa',
-            instanceId: 'nyaa.si',
+            instanceId: _nyaaSiteId,
             remoteId: 'page-$page-release-$index',
             title: '[SubsPlease] Example Show - 1 [1080p]',
             infoHash: release.toRadixString(16).padLeft(40, '0'),
@@ -1084,7 +1089,7 @@ void main() {
       );
     }
     final _FakeResourceProvider provider = _FakeResourceProvider(
-      id: 'nyaa',
+      id: _nyaaProviderId,
       resultsByPage: pages,
     );
     int enqueueCount = 0;
@@ -1271,7 +1276,7 @@ void main() {
     final VideoDownloadSubscriptionService service = _service(
       database: database,
       provider: _FakeResourceProvider(
-        id: 'nyaa',
+        id: _nyaaProviderId,
         candidates: <VideoResourceCandidate>[
           _candidate(
             remoteId: 'hevc',
@@ -1319,7 +1324,7 @@ void main() {
     final VideoDownloadSubscriptionService service = _service(
       database: database,
       provider: _FakeResourceProvider(
-        id: 'nyaa',
+        id: _nyaaProviderId,
         result: ProviderBatchResult<VideoResourceCandidate>.failure(
           const ExternalProviderFailure(
             providerId: 'nyaa',
@@ -1373,7 +1378,7 @@ void main() {
     final VideoDownloadSubscriptionService service = _service(
       database: database,
       provider: _FakeResourceProvider(
-        id: 'nyaa',
+        id: _nyaaProviderId,
         candidates: <VideoResourceCandidate>[
           _candidate(
             remoteId: 'revue-starlight-bd',
@@ -1437,7 +1442,7 @@ void main() {
     final VideoDownloadSubscriptionService service = _service(
       database: database,
       provider: _FakeResourceProvider(
-        id: 'nyaa',
+        id: _nyaaProviderId,
         candidates: <VideoResourceCandidate>[
           _candidate(
             remoteId: 'revue-starlight-bd',
@@ -1661,11 +1666,59 @@ void main() {
     expect(row.retryCount, 0);
     expect(row.lastError, isNull);
   });
+
+  test('BT 站来源找不到：订阅暂停在固定间隔，不指数退避、不发请求', () async {
+    final FushiDatabase database = await _openDatabase();
+    final int sourceId = await _insertVideoSource(database);
+    await _insertSubscription(
+      database,
+      id: 'no-site',
+      sourceId: sourceId,
+      // 旧内置源的持久化写法；当前没有任何 Nyaa 式用户站点。
+      resourceProvider: 'nyaa:nyaa.si',
+      mediaKind: 'tv',
+      discoveryCategory: 'anime',
+      filters: const <String, Object?>{},
+    );
+    // 注册表里只有别的格式的站点：不能被拿来顶 Nyaa 订阅。
+    final _FakeResourceProvider other = _FakeResourceProvider(
+      id: 'apibay:site-apibay',
+      candidates: <VideoResourceCandidate>[
+        _candidate(providerId: 'apibay', instanceId: 'site-apibay',
+            remoteId: 'x', episode: 1),
+      ],
+    );
+    int enqueued = 0;
+    int atMs = _nowAt;
+    final VideoDownloadSubscriptionService service = _service(
+      database: database,
+      provider: other,
+      now: () => DateTime.fromMillisecondsSinceEpoch(atMs),
+      enqueue: (VideoDownloadEnqueueRequest _) async {
+        enqueued++;
+        return 'unused';
+      },
+    );
+
+    for (int round = 0; round < 3; round++) {
+      await service.checkNow();
+      final VideoDownloadSubscriptionRow row =
+          (await database.getVideoDownloadSubscription('no-site'))!;
+      expect(row.lastError, kVideoSubscriptionBtSiteMissingError);
+      expect(isVideoSubscriptionBtSiteMissingError(row.lastError), isTrue);
+      expect(row.nextCheckAt,
+          atMs + const Duration(minutes: 15).inMilliseconds,
+          reason: '第 $round 轮：等用户加站点不是故障，间隔固定为基准间隔');
+      atMs = row.nextCheckAt! + 1;
+    }
+    expect(other.requestedPages, isEmpty, reason: '别的格式的站点不该被搜');
+    expect(enqueued, 0);
+  });
 }
 
 VideoResourceCandidate _candidate({
   String providerId = 'nyaa',
-  String instanceId = 'nyaa.si',
+  String instanceId = _nyaaSiteId,
   required String remoteId,
   int? episode,
   String? mediaTitle,

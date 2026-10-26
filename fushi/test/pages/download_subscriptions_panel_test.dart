@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart'
+    show kVideoSubscriptionBtSiteMissingError;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -169,6 +171,7 @@ void main() {
     WidgetTester tester, {
     required Size size,
     bool withSubscription = true,
+    String? lastError,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -195,6 +198,7 @@ void main() {
       ).copyWith(
         processedEpisodes: <int>{13},
         lastCheckedAtMs: DateTime.utc(2026, 7, 23).millisecondsSinceEpoch,
+        lastError: lastError,
       );
       store.values[subscription.id] = subscription;
     }
@@ -236,6 +240,25 @@ void main() {
         find.text('A Rather Long Example Anime Series Title'), findsOneWidget);
     expect(find.textContaining('A-Rather-Long-Release-Group'), findsOneWidget);
     expect(find.textContaining('Complete season pack'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    service.checking.dispose();
+    appModel.store.revision.dispose();
+  });
+
+  // 没有可用 BT 站而暂停：不显示引擎的英文标记，显示本地化提示 + 去 BT 站设置。
+  testWidgets('BT-site-missing pause shows a localized hint with a settings link',
+      (WidgetTester tester) async {
+    final (_FakeAppModel appModel, AnimeDownloadSubscriptionService service) =
+        await pumpPanel(
+      tester,
+      size: const Size(1200, 800),
+      lastError: kVideoSubscriptionBtSiteMissingError,
+    );
+
+    expect(find.text(t.bt_site_missing_status), findsOneWidget);
+    expect(find.text(t.bt_site_open_settings_action), findsOneWidget);
+    expect(find.text(kVideoSubscriptionBtSiteMissingError), findsNothing);
     expect(tester.takeException(), isNull);
 
     service.checking.dispose();

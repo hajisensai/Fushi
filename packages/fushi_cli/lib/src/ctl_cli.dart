@@ -143,6 +143,7 @@ Future<int> runFushiCli(
   CtlProcessStarter starter = startDetachedProcess,
   Duration pollInterval = const Duration(milliseconds: 250),
   List<CtlCommandGroup> groups = kCtlCommandGroups,
+  Future<String?> Function()? readLine,
 }) async {
   final StringSink stdoutSink = out ?? stdout;
   final StringSink stderrSink = err ?? stderr;
@@ -183,6 +184,7 @@ Future<int> runFushiCli(
     stateDir: resolveCtlStateDir(environment: env, operatingSystem: os),
     groups: groups,
     parser: parser,
+    readLine: readLine ?? _readStdinLine,
   );
   try {
     return await cli.run(command);
@@ -190,6 +192,8 @@ Future<int> runFushiCli(
     cli.close();
   }
 }
+
+Future<String?> _readStdinLine() async => stdin.readLineSync();
 
 class _CliFailure implements Exception {
   const _CliFailure(this.exitCode, this.message);
@@ -213,9 +217,11 @@ class _Cli {
     required this.stateDir,
     required this.groups,
     required this.parser,
+    required this.readLine,
   });
 
   final List<CtlCommandGroup> groups;
+  final Future<String?> Function() readLine;
   final ArgParser parser;
 
   final bool json;
@@ -287,8 +293,9 @@ class _Cli {
       return kCliExitOk;
     }
     final CtlRequestSpec request;
+    final CtlCommandContext commandContext = CtlCommandContext(sub);
     try {
-      request = spec.build(CtlCommandContext(sub));
+      request = spec.build(commandContext);
     } on CtlUsageError catch (error) {
       err.writeln(error.message);
       _commandUsage(group, spec, commandParser, err);
@@ -301,6 +308,21 @@ class _Cli {
       query: request.query,
       body: request.body,
     );
+    final Future<int> Function(CtlFollowContext, Object?)? follow = spec.follow;
+    if (follow != null) {
+      return follow(
+        CtlFollowContext(
+          command: commandContext,
+          call: _client!.call,
+          out: out,
+          err: err,
+          json: json,
+          readLine: readLine,
+          delay: () => Future<void>.delayed(pollInterval),
+        ),
+        data,
+      );
+    }
     if (json) {
       out.writeln(jsonEncode(data));
     } else {

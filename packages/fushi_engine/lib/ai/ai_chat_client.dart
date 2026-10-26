@@ -1,8 +1,9 @@
 /// AI 提供商的调用层：一次性问答 + 模型列表。
 ///
 /// 三种 wire 协议（OpenAI 兼容 / Anthropic Messages / Gemini generateContent）在
-/// 这里分派，上层只面对 [AiChatClient.complete]。**不做流式**：本仓当前的 AI 用途
-/// 是「生成一条规则/一段配置」这种短请求，流式只会把 UI 状态机复杂化。
+/// 这里分派，上层只面对 [AiChatClient.complete]（一次性问答）与 [AiChatClient.chat]
+/// （带原生 tool calling 的一轮对话，AI 助手的 agent loop 用）。**不做流式**：本仓
+/// 当前的 AI 用途是「生成一条规则/一段配置」这种短请求，流式只会把 UI 状态机复杂化。
 ///
 /// 出站一律经 `createAppHttpIoClient()`——裸 `http.Client()` 既绕过应用代理与连接
 /// 超时（代理环境下会出现「浏览器能开、app 里连不上」这种自相矛盾的结果），也会被
@@ -174,6 +175,110 @@ class AiChatCompletion {
   final AiChatUsage? usage;
 }
 
+/// 一个给模型调用的工具。[parameters] 是 JSON Schema（object 类型）。
+///
+/// 三家协议共用这一份描述：OpenAI 包成 `{type: function, function: {...}}`、
+/// Anthropic 叫 `input_schema`、Gemini 放进 `functionDeclarations` 并先经
+/// [sanitizeGeminiToolSchema] 去掉它不认的关键字。
+class AiChatToolSpec {
+  const AiChatToolSpec({
+    required this.name,
+    required this.description,
+    required this.parameters,
+  });
+
+  final String name;
+  final String description;
+  final Map<String, Object?> parameters;
+}
+
+/// 模型发起的一次工具调用。
+class AiChatToolCall {
+  const AiChatToolCall({
+    required this.id,
+    required this.name,
+    required this.arguments,
+    this.providerMeta = const <String, Object?>{},
+  });
+
+  /// OpenAI / Anthropic 用服务端给的 id；Gemini 没给 id 时本地按本轮序号生成
+  /// `call_<序号>`（Gemini 回传结果按 [name] 对应，不需要 id）。
+  final String id;
+  final String name;
+
+  /// 解析好的参数。OpenAI 的 `arguments` 是 JSON 字符串，解析失败（或不是对象）
+  /// 时给 `{'_raw': 原串}`——坏参数交给执行层当一次失败的工具调用回报给模型，
+  /// 不在这里抛掉整轮。
+  final Map<String, Object?> arguments;
+
+  /// 回传给同一家时需要原样带回的不透明字段（如 Gemini 的 `thoughtSignature`）。
+  final Map<String, Object?> providerMeta;
+}
+
+/// [AiChatClient.chat] 的结果：一轮应答的正文 + 工具调用 + 用量。
+class AiChatTurn {
+  const AiChatTurn({
+    required this.text,
+    required this.toolCalls,
+    this.usage,
+    this.stopReason,
+  });
+
+  /// 可为空串（只调工具时）。
+  final String text;
+  final List<AiChatToolCall> toolCalls;
+  final AiChatUsage? usage;
+
+  /// 原样的 `finish_reason`（OpenAI）/ `stop_reason`（Anthropic）/
+  /// `finishReason`（Gemini）；应答里没有时为 null。
+  final String? stopReason;
+
+  bool get hasToolCalls => toolCalls.isNotEmpty;
+}
+
+/// Gemini `functionDeclarations[].parameters` 不认的 JSON Schema 关键字。
+///
+/// Gemini 只收 OpenAPI 3 schema 的一个子集，带上这些键整个请求 400。
+const Set<String> _kGeminiUnsupportedSchemaKeys = <String>{
+  'additionalProperties',
+  r'$schema',
+  r'$id',
+  r'$comment',
+  'default',
+  'examples',
+};
+
+/// 把一份 JSON Schema 净化成 Gemini 认的形状：递归去掉
+/// [_kGeminiUnsupportedSchemaKeys]。
+///
+/// 只剥 **schema 关键字**：`properties` 底下的键是参数名（参数完全可以叫
+/// `default`），只递归它们的值；`items` / `anyOf` / `oneOf` / `allOf` 的元素按
+/// 子 schema 递归。只对 Gemini 用，另两家原样发。
+Map<String, Object?> sanitizeGeminiToolSchema(Map<Object?, Object?> schema) {
+  Object? sub(Object? value) =>
+      value is Map ? sanitizeGeminiToolSchema(value) : value;
+  final Map<String, Object?> out = <String, Object?>{};
+  for (final MapEntry<Object?, Object?> e in schema.entries) {
+    final Object? key = e.key;
+    if (key is! String || _kGeminiUnsupportedSchemaKeys.contains(key)) {
+      continue;
+    }
+    final Object? value = e.value;
+    out[key] = switch (key) {
+      'properties' when value is Map => <String, Object?>{
+        for (final MapEntry<Object?, Object?> p in value.entries)
+          '${p.key}': sub(p.value),
+      },
+      'items' => value is List ? value.map(sub).toList() : sub(value),
+      'anyOf' ||
+      'oneOf' ||
+      'allOf' when value is List => value.map(sub).toList(),
+      _ => value,
+    };
+  }
+  return out;
+}
+
 /// 按协议从应答体里取用量；没有 usage 段或一个认得的字段都没有时为 null。
 AiChatUsage? parseAiChatUsage(
   AiWireProtocol protocol,
@@ -279,17 +384,54 @@ class AiChatMessage {
   /// OpenAI 兼容 / DeepSeek / Gemini 按请求前缀自动缓存，不需要标记——只要前缀稳定。
   const AiChatMessage.system(this.content, {this.cacheable = false})
     : role = 'system',
-      images = const <AiChatImage>[];
+      images = const <AiChatImage>[],
+      toolCalls = const <AiChatToolCall>[],
+      toolCallId = null,
+      toolName = null,
+      isError = false;
 
   /// [images] 只对 user 消息有意义：三家协议都只在用户回合收图。
   const AiChatMessage.user(this.content, {this.images = const <AiChatImage>[]})
     : role = 'user',
-      cacheable = false;
+      cacheable = false,
+      toolCalls = const <AiChatToolCall>[],
+      toolCallId = null,
+      toolName = null,
+      isError = false;
   const AiChatMessage.assistant(this.content)
     : role = 'assistant',
       images = const <AiChatImage>[],
-      cacheable = false;
+      cacheable = false,
+      toolCalls = const <AiChatToolCall>[],
+      toolCallId = null,
+      toolName = null,
+      isError = false;
 
+  /// 模型上一轮发起了工具调用的那条 assistant 消息（原样回放进历史）。
+  /// [content] 是同一轮的正文，可为空串。
+  const AiChatMessage.assistantToolCalls(this.content, this.toolCalls)
+    : role = 'assistant',
+      images = const <AiChatImage>[],
+      cacheable = false,
+      toolCallId = null,
+      toolName = null,
+      isError = false;
+
+  /// 一次工具调用的执行结果。[toolCallId] 对应 [AiChatToolCall.id]（OpenAI /
+  /// Anthropic 按它配对），[toolName] 对应 [AiChatToolCall.name]（Gemini 按名配对）。
+  /// [isError]：执行失败，Anthropic 发 `is_error: true`，Gemini 在 response 里带
+  /// `error: true`；OpenAI 协议没有对应字段，失败信息只在 [content] 里。
+  const AiChatMessage.toolResult({
+    required String this.toolCallId,
+    required String this.toolName,
+    required this.content,
+    this.isError = false,
+  }) : role = 'tool',
+       images = const <AiChatImage>[],
+       cacheable = false,
+       toolCalls = const <AiChatToolCall>[];
+
+  /// `system` / `user` / `assistant` / `tool`。
   final String role;
   final String content;
 
@@ -299,7 +441,19 @@ class AiChatMessage {
   /// 只对 system 消息有意义，见 [AiChatMessage.system]。
   final bool cacheable;
 
+  /// 只对 [AiChatMessage.assistantToolCalls] 非空。
+  final List<AiChatToolCall> toolCalls;
+
+  /// 以下三项只对 [AiChatMessage.toolResult] 有意义。
+  final String? toolCallId;
+  final String? toolName;
+  final bool isError;
+
   bool get isSystem => role == 'system';
+
+  bool get isToolResult => role == 'tool';
+
+  bool get hasToolCalls => toolCalls.isNotEmpty;
 }
 
 /// 按 [AiProviderConfig.protocol] 分派的调用客户端。
@@ -399,6 +553,62 @@ class AiChatClient {
     return AiChatCompletion(
       text: text,
       usage: parseAiChatUsage(provider.protocol, body),
+    );
+  }
+
+  /// 一轮带工具的对话：发 [messages]（可含 [AiChatMessage.assistantToolCalls] /
+  /// [AiChatMessage.toolResult] 回放的历史）与 [tools]，拿回正文 + 工具调用。
+  ///
+  /// 发送路径与 [completeWithUsage] 完全同一条（限频、key 轮换、临时性失败退避）。
+  /// [tools] 为空时请求体与 [complete] 逐字相同。不发 `tool_choice`，由模型自己决定
+  /// 调不调工具。
+  ///
+  /// 只调工具、没有正文是合法的一轮；正文为空（或只有空白）**且**没有工具调用时抛
+  /// `empty_response`。是否该给这家发 [tools] 由调用方问
+  /// [AiProviderConfig.supportsToolCalling]，这里不拦。
+  Future<AiChatTurn> chat({
+    required AiProviderConfig provider,
+    required List<AiChatMessage> messages,
+    List<AiChatToolSpec> tools = const <AiChatToolSpec>[],
+    int maxTokens = 4096,
+  }) async {
+    if (!provider.isUsable) {
+      throw const AiChatFailure('provider_not_configured');
+    }
+    final Map<Object?, Object?> body = await _withRetry(
+      provider,
+      (String key) => _postChat(provider, key, messages, maxTokens, tools),
+    );
+    final (
+      String? text,
+      List<AiChatToolCall> calls,
+      String? stop,
+    ) = switch (provider.protocol) {
+      AiWireProtocol.openAiCompatible => (
+        _openAiText(body),
+        _openAiToolCalls(body),
+        _openAiStopReason(body),
+      ),
+      AiWireProtocol.anthropicMessages => (
+        _anthropicText(body),
+        _anthropicToolCalls(body),
+        body['stop_reason'] is String ? body['stop_reason'] as String : null,
+      ),
+      AiWireProtocol.geminiGenerateContent => (
+        _geminiText(body),
+        _geminiToolCalls(body),
+        _geminiStopReason(body),
+      ),
+    };
+    final String content = text ?? '';
+    if (content.trim().isEmpty && calls.isEmpty) {
+      throw const AiChatFailure('empty_response');
+    }
+    return AiChatTurn(
+      text: content,
+      toolCalls: List<AiChatToolCall>.unmodifiable(calls),
+      usage: parseAiChatUsage(provider.protocol, body),
+      stopReason: stop,
     );
   }
 
@@ -714,27 +924,30 @@ class AiChatClient {
   // -------------------------------------------------------------------------
 
   /// 按协议发一次 chat 请求，返回解码后的应答对象（不解释正文）。
+  ///
+  /// [tools] 为空时三家的请求体都不带工具字段，与没有 tool calling 之前逐字相同。
   Future<Map<Object?, Object?>> _postChat(
     AiProviderConfig provider,
     String key,
     List<AiChatMessage> messages,
-    int maxTokens,
-  ) async {
+    int maxTokens, [
+    List<AiChatToolSpec> tools = const <AiChatToolSpec>[],
+  ]) async {
     final (Uri uri, Map<String, Object?> payload) = switch (provider.protocol) {
       AiWireProtocol.openAiCompatible => (
         _resolve(provider.baseUrl, 'chat/completions'),
-        _openAiPayload(provider, messages, maxTokens),
+        _openAiPayload(provider, messages, maxTokens, tools),
       ),
       AiWireProtocol.anthropicMessages => (
         _resolve(provider.baseUrl, 'v1/messages'),
-        _anthropicPayload(provider, messages, maxTokens),
+        _anthropicPayload(provider, messages, maxTokens, tools),
       ),
       AiWireProtocol.geminiGenerateContent => (
         _resolve(
           provider.baseUrl,
           'models/${provider.model}:generateContent',
         ).replace(queryParameters: <String, String>{'key': key}),
-        _geminiPayload(messages, maxTokens),
+        _geminiPayload(messages, maxTokens, tools),
       ),
     };
     final http.Response response = await _send(
@@ -755,28 +968,66 @@ class AiChatClient {
     AiProviderConfig provider,
     List<AiChatMessage> messages,
     int maxTokens,
+    List<AiChatToolSpec> tools,
   ) => <String, Object?>{
     'model': provider.model,
     'messages': <Map<String, Object?>>[
       for (final AiChatMessage m in messages)
-        <String, Object?>{
-          'role': m.role,
-          // 无图时仍发纯字符串：大量兼容端点（含部分本地服务）不认 content 数组。
-          'content': m.images.isEmpty
-              ? m.content
-              : <Map<String, Object?>>[
-                  for (final AiChatImage image in m.images)
-                    <String, Object?>{
-                      'type': 'image_url',
-                      'image_url': <String, String>{
-                        'url':
-                            'data:${image.mimeType};base64,${image.base64Data}',
+        if (m.isToolResult)
+          <String, Object?>{
+            'role': 'tool',
+            'tool_call_id': m.toolCallId,
+            'content': m.content,
+          }
+        else if (m.hasToolCalls)
+          <String, Object?>{
+            'role': 'assistant',
+            // 只调工具时正文发 null：部分兼容端点不收空串 content 的 assistant 消息。
+            'content': m.content.isEmpty ? null : m.content,
+            'tool_calls': <Map<String, Object?>>[
+              for (final AiChatToolCall call in m.toolCalls)
+                <String, Object?>{
+                  'id': call.id,
+                  'type': 'function',
+                  'function': <String, Object?>{
+                    'name': call.name,
+                    'arguments': jsonEncode(call.arguments),
+                  },
+                },
+            ],
+          }
+        else
+          <String, Object?>{
+            'role': m.role,
+            // 无图时仍发纯字符串：大量兼容端点（含部分本地服务）不认 content 数组。
+            'content': m.images.isEmpty
+                ? m.content
+                : <Map<String, Object?>>[
+                    for (final AiChatImage image in m.images)
+                      <String, Object?>{
+                        'type': 'image_url',
+                        'image_url': <String, String>{
+                          'url':
+                              'data:${image.mimeType};base64,${image.base64Data}',
+                        },
                       },
-                    },
-                  <String, Object?>{'type': 'text', 'text': m.content},
-                ],
-        },
+                    <String, Object?>{'type': 'text', 'text': m.content},
+                  ],
+          },
     ],
+    // 不发 tool_choice：默认 auto，由模型决定调不调工具。
+    if (tools.isNotEmpty)
+      'tools': <Map<String, Object?>>[
+        for (final AiChatToolSpec tool in tools)
+          <String, Object?>{
+            'type': 'function',
+            'function': <String, Object?>{
+              'name': tool.name,
+              'description': tool.description,
+              'parameters': tool.parameters,
+            },
+          },
+      ],
     // OpenAI 官方的推理模型（o 系列 / gpt-5 系列）拒收 `max_tokens`、只认
     // `max_completion_tokens`（官方其余模型两者都认）；大量兼容端点却只认前者。
     _usesMaxCompletionTokens(provider.baseUrl)
@@ -799,6 +1050,7 @@ class AiChatClient {
     AiProviderConfig provider,
     List<AiChatMessage> messages,
     int maxTokens,
+    List<AiChatToolSpec> tools,
   ) {
     // Anthropic 把 system 提到顶层，不放进 messages 数组。
     final String system = _systemText(messages);
@@ -806,33 +1058,90 @@ class AiChatClient {
       'model': provider.model,
       'max_tokens': maxTokens,
       if (system.isNotEmpty) 'system': _anthropicSystem(messages, system),
-      'messages': <Map<String, Object?>>[
-        for (final AiChatMessage m in messages)
-          if (!m.isSystem)
+      'messages': _anthropicMessages(messages),
+      if (tools.isNotEmpty)
+        'tools': <Map<String, Object?>>[
+          for (int i = 0; i < tools.length; i++)
             <String, Object?>{
-              'role': m.role,
-              'content': m.images.isEmpty
-                  ? m.content
-                  : <Map<String, Object?>>[
-                      for (final AiChatImage image in m.images)
-                        <String, Object?>{
-                          'type': 'image',
-                          'source': <String, String>{
-                            'type': 'base64',
-                            'media_type': image.mimeType,
-                            'data': image.base64Data,
-                          },
-                        },
-                      <String, Object?>{'type': 'text', 'text': m.content},
-                    ],
+              'name': tools[i].name,
+              'description': tools[i].description,
+              'input_schema': tools[i].parameters,
+              // 工具定义是逐字稳定的前缀（排在 system 之前），断点挂在最后一个
+              // 工具上，整份工具表进缓存。
+              if (i == tools.length - 1)
+                'cache_control': const <String, String>{'type': 'ephemeral'},
             },
-      ],
+        ],
     };
+  }
+
+  /// Anthropic 的 messages 数组：普通消息形状与以往逐字相同；工具调用回放成
+  /// `tool_use` 块；**连续的** tool result 合进同一条 user 消息（Anthropic 要求
+  /// user / assistant 严格交替，一轮多个工具调用的结果必须在同一条里回）。
+  static List<Map<String, Object?>> _anthropicMessages(
+    List<AiChatMessage> messages,
+  ) {
+    final List<Map<String, Object?>> out = <Map<String, Object?>>[];
+    List<Map<String, Object?>>? pendingResults;
+    for (final AiChatMessage m in messages) {
+      if (m.isSystem) continue;
+      if (m.isToolResult) {
+        if (pendingResults == null) {
+          pendingResults = <Map<String, Object?>>[];
+          out.add(<String, Object?>{'role': 'user', 'content': pendingResults});
+        }
+        pendingResults.add(<String, Object?>{
+          'type': 'tool_result',
+          'tool_use_id': m.toolCallId,
+          'content': m.content,
+          if (m.isError) 'is_error': true,
+        });
+        continue;
+      }
+      pendingResults = null;
+      if (m.hasToolCalls) {
+        out.add(<String, Object?>{
+          'role': 'assistant',
+          'content': <Map<String, Object?>>[
+            // Anthropic 拒收空文本块，只调工具时不带 text 块。
+            if (m.content.isNotEmpty)
+              <String, Object?>{'type': 'text', 'text': m.content},
+            for (final AiChatToolCall call in m.toolCalls)
+              <String, Object?>{
+                'type': 'tool_use',
+                'id': call.id,
+                'name': call.name,
+                'input': call.arguments,
+              },
+          ],
+        });
+        continue;
+      }
+      out.add(<String, Object?>{
+        'role': m.role,
+        'content': m.images.isEmpty
+            ? m.content
+            : <Map<String, Object?>>[
+                for (final AiChatImage image in m.images)
+                  <String, Object?>{
+                    'type': 'image',
+                    'source': <String, String>{
+                      'type': 'base64',
+                      'media_type': image.mimeType,
+                      'data': image.base64Data,
+                    },
+                  },
+                <String, Object?>{'type': 'text', 'text': m.content},
+              ],
+      });
+    }
+    return out;
   }
 
   Map<String, Object?> _geminiPayload(
     List<AiChatMessage> messages,
     int maxTokens,
+    List<AiChatToolSpec> tools,
   ) {
     final String system = _systemText(messages);
     return <String, Object?>{
@@ -842,26 +1151,86 @@ class AiChatClient {
             <String, String>{'text': system},
           ],
         },
-      'contents': <Map<String, Object?>>[
-        for (final AiChatMessage m in messages)
-          if (!m.isSystem)
-            <String, Object?>{
-              // Gemini 管 assistant 叫 model。
-              'role': m.role == 'assistant' ? 'model' : 'user',
-              'parts': <Map<String, Object?>>[
-                for (final AiChatImage image in m.images)
-                  <String, Object?>{
-                    'inline_data': <String, String>{
-                      'mime_type': image.mimeType,
-                      'data': image.base64Data,
-                    },
-                  },
-                <String, Object?>{'text': m.content},
-              ],
-            },
-      ],
+      'contents': _geminiContents(messages),
+      if (tools.isNotEmpty)
+        'tools': <Map<String, Object?>>[
+          <String, Object?>{
+            'functionDeclarations': <Map<String, Object?>>[
+              for (final AiChatToolSpec tool in tools)
+                <String, Object?>{
+                  'name': tool.name,
+                  'description': tool.description,
+                  'parameters': sanitizeGeminiToolSchema(tool.parameters),
+                },
+            ],
+          },
+        ],
       'generationConfig': <String, Object?>{'maxOutputTokens': maxTokens},
     };
+  }
+
+  /// Gemini 的 contents：普通消息形状与以往逐字相同；工具调用回放成 model 回合的
+  /// `functionCall` part（带回 `thoughtSignature`——Gemini 思考模型缺了它会拒收
+  /// 回放的工具调用）；连续的 tool result 合进同一条 user 回合的
+  /// `functionResponse` part（按 name 配对）。
+  static List<Map<String, Object?>> _geminiContents(
+    List<AiChatMessage> messages,
+  ) {
+    final List<Map<String, Object?>> out = <Map<String, Object?>>[];
+    List<Map<String, Object?>>? pendingResults;
+    for (final AiChatMessage m in messages) {
+      if (m.isSystem) continue;
+      if (m.isToolResult) {
+        if (pendingResults == null) {
+          pendingResults = <Map<String, Object?>>[];
+          out.add(<String, Object?>{'role': 'user', 'parts': pendingResults});
+        }
+        pendingResults.add(<String, Object?>{
+          'functionResponse': <String, Object?>{
+            'name': m.toolName,
+            'response': <String, Object?>{
+              'content': m.content,
+              if (m.isError) 'error': true,
+            },
+          },
+        });
+        continue;
+      }
+      pendingResults = null;
+      if (m.hasToolCalls) {
+        out.add(<String, Object?>{
+          'role': 'model',
+          'parts': <Map<String, Object?>>[
+            if (m.content.isNotEmpty) <String, Object?>{'text': m.content},
+            for (final AiChatToolCall call in m.toolCalls)
+              <String, Object?>{
+                'functionCall': <String, Object?>{
+                  'name': call.name,
+                  'args': call.arguments,
+                },
+                if (call.providerMeta['thoughtSignature'] != null)
+                  'thoughtSignature': call.providerMeta['thoughtSignature'],
+              },
+          ],
+        });
+        continue;
+      }
+      out.add(<String, Object?>{
+        // Gemini 管 assistant 叫 model。
+        'role': m.role == 'assistant' ? 'model' : 'user',
+        'parts': <Map<String, Object?>>[
+          for (final AiChatImage image in m.images)
+            <String, Object?>{
+              'inline_data': <String, String>{
+                'mime_type': image.mimeType,
+                'data': image.base64Data,
+              },
+            },
+          <String, Object?>{'text': m.content},
+        ],
+      });
+    }
+    return out;
   }
 
   /// Anthropic 的顶层 `system`：没有 [AiChatMessage.cacheable] 段时仍是纯字符串
@@ -939,6 +1308,130 @@ class AiChatClient {
       }
     }
     return text.toString();
+  }
+
+  /// `choices[0]`；形状不对为 null。
+  static Map<Object?, Object?>? _openAiFirstChoice(Map<Object?, Object?> body) {
+    final Object? choices = body['choices'];
+    if (choices is! List || choices.isEmpty) return null;
+    final Object? first = choices.first;
+    return first is Map ? first : null;
+  }
+
+  static String? _openAiStopReason(Map<Object?, Object?> body) {
+    final Object? reason = _openAiFirstChoice(body)?['finish_reason'];
+    return reason is String ? reason : null;
+  }
+
+  /// `choices[0].message.tool_calls`；`arguments` 是 JSON 字符串（个别兼容端点
+  /// 直接给对象，也认）。
+  static List<AiChatToolCall> _openAiToolCalls(Map<Object?, Object?> body) {
+    final Object? message = _openAiFirstChoice(body)?['message'];
+    if (message is! Map) return const <AiChatToolCall>[];
+    final Object? raw = message['tool_calls'];
+    if (raw is! List) return const <AiChatToolCall>[];
+    final List<AiChatToolCall> calls = <AiChatToolCall>[];
+    for (final Object? entry in raw) {
+      if (entry is! Map) continue;
+      final Object? function = entry['function'];
+      if (function is! Map) continue;
+      final Object? name = function['name'];
+      if (name is! String || name.isEmpty) continue;
+      final Object? id = entry['id'];
+      calls.add(
+        AiChatToolCall(
+          id: id is String && id.isNotEmpty ? id : 'call_${calls.length}',
+          name: name,
+          arguments: _decodeToolArguments(function['arguments']),
+        ),
+      );
+    }
+    return calls;
+  }
+
+  /// OpenAI 的 `arguments`：空串 / 缺失 = 无参数；不是 JSON 对象时给
+  /// `{'_raw': 原串}`，不抛。
+  static Map<String, Object?> _decodeToolArguments(Object? raw) {
+    if (raw is Map) return raw.cast<String, Object?>();
+    if (raw is! String || raw.trim().isEmpty) return <String, Object?>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is Map) return decoded.cast<String, Object?>();
+    } on FormatException {
+      // 落到下面的 _raw。
+    }
+    return <String, Object?>{'_raw': raw};
+  }
+
+  static List<AiChatToolCall> _anthropicToolCalls(Map<Object?, Object?> body) {
+    final Object? content = body['content'];
+    if (content is! List) return const <AiChatToolCall>[];
+    final List<AiChatToolCall> calls = <AiChatToolCall>[];
+    for (final Object? block in content) {
+      if (block is! Map || block['type'] != 'tool_use') continue;
+      final Object? name = block['name'];
+      if (name is! String || name.isEmpty) continue;
+      final Object? id = block['id'];
+      final Object? input = block['input'];
+      calls.add(
+        AiChatToolCall(
+          id: id is String && id.isNotEmpty ? id : 'call_${calls.length}',
+          name: name,
+          arguments: input is Map
+              ? input.cast<String, Object?>()
+              : <String, Object?>{},
+        ),
+      );
+    }
+    return calls;
+  }
+
+  static Map<Object?, Object?>? _geminiFirstCandidate(
+    Map<Object?, Object?> body,
+  ) {
+    final Object? candidates = body['candidates'];
+    if (candidates is! List || candidates.isEmpty) return null;
+    final Object? first = candidates.first;
+    return first is Map ? first : null;
+  }
+
+  static String? _geminiStopReason(Map<Object?, Object?> body) {
+    final Object? reason = _geminiFirstCandidate(body)?['finishReason'];
+    return reason is String ? reason : null;
+  }
+
+  /// `candidates[0].content.parts[*].functionCall`；同一 part 上的
+  /// `thoughtSignature` 记进 [AiChatToolCall.providerMeta]，回放时原样带回。
+  /// Gemini 不一定给 id（新版本才有 `functionCall.id`），没有就按本轮序号生成。
+  static List<AiChatToolCall> _geminiToolCalls(Map<Object?, Object?> body) {
+    final Object? content = _geminiFirstCandidate(body)?['content'];
+    if (content is! Map) return const <AiChatToolCall>[];
+    final Object? parts = content['parts'];
+    if (parts is! List) return const <AiChatToolCall>[];
+    final List<AiChatToolCall> calls = <AiChatToolCall>[];
+    for (final Object? part in parts) {
+      if (part is! Map) continue;
+      final Object? call = part['functionCall'];
+      if (call is! Map) continue;
+      final Object? name = call['name'];
+      if (name is! String || name.isEmpty) continue;
+      final Object? id = call['id'];
+      final Object? args = call['args'];
+      final Object? signature = part['thoughtSignature'];
+      calls.add(
+        AiChatToolCall(
+          id: id is String && id.isNotEmpty ? id : 'call_${calls.length}',
+          name: name,
+          arguments: args is Map
+              ? args.cast<String, Object?>()
+              : <String, Object?>{},
+          providerMeta: <String, Object?>{
+            if (signature != null) 'thoughtSignature': signature,
+          },
+        ),
+      );
+    }
+    return calls;
   }
 
   // -------------------------------------------------------------------------

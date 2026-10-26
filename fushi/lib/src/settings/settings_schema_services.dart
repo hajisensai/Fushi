@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
@@ -8,6 +9,7 @@ import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/pages/implementations/discovery_source_settings_section.dart';
 import 'package:fushi/src/pages/implementations/alist_site_settings_section.dart';
+import 'package:fushi/src/pages/implementations/bt_site_settings_section.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/opds_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
@@ -190,7 +192,7 @@ SettingsDestination buildServicesDestination() {
       SettingsSection(
         id: 'services.resources',
         title: t.section_services_resources,
-        // iOS 上整节不渲染：内置索引器、Torznab、发现来源、OPDS 服务器四项配置的
+        // iOS 上整节不渲染：BT 站、Torznab、发现来源、OPDS 服务器等配置的
         // 全部消费端（发现页与下载中心）都已按 App Store 合规移除
         // （[StoreRestrictedCapability.externalDiscovery]），留着就是一组配了也
         // 不会生效的字段。用 section 级 `visible` 而不是逐项加判据：三条渲染路径
@@ -200,11 +202,18 @@ SettingsDestination buildServicesDestination() {
         summaryBuilder: (SettingsContext c) =>
             _servicesSectionSummary('services.resources', c),
         items: <SettingsItem>[
-          _externalServicePage(
-            id: 'services.builtin_sources',
-            title: t.video_builtin_sources_title,
-            scope: VideoExternalProviderScope.builtinSources,
-            status: (SettingsContext c) => t.settings_service_builtin,
+          // 用户自己添加的 BT 站（Fushi 不内置任何 BT 站）。
+          _servicePage(
+            id: 'services.bt_sites',
+            title: t.bt_site_section_title,
+            status: (SettingsContext c) {
+              final List<BtSiteConfig> sites = c.appModel.btSites;
+              if (sites.isEmpty) return t.settings_service_not_configured;
+              return sites.any((BtSiteConfig site) => site.enabled)
+                  ? t.settings_service_configured
+                  : t.settings_service_disabled;
+            },
+            body: (SettingsContext c) => const BtSiteSettingsSection(),
           ),
           _externalServicePage(
             id: 'services.torznab',

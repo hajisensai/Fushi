@@ -76,6 +76,8 @@ void main() {
       },
     );
     final SubtitleBackfillResult result = await service.backfill(target());
+    // BUG-3783：不是这次写的文件不能报 installed（撤销会按它删掉用户的字幕）。
+    expect(result.outcome, SubtitleBackfillOutcome.alreadyHasSubtitle);
     expect(result.installedPath, sidecar);
     expect(File(sidecar).readAsStringSync(), 'user');
     expect(File('$sidecar.fushi.tmp').existsSync(), isFalse);

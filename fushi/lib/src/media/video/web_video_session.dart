@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_ui/material_ui.dart';
@@ -21,6 +22,8 @@ import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
+import 'package:fushi/src/media/video/underlay_composition.dart'
+    show UnderlayInputExclusion, underlayInputExclusions;
 import 'package:fushi/src/media/video/web_video_shaders.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -220,24 +223,8 @@ Future<int> importWebVideoBrowserCookies(
       ErrorLogService.instance.log('web_video', 'browser cookie env: $e');
       continue;
     }
-    for (final BrowserSiteCookie cookie in cookies) {
-      try {
-        final bool ok = await manager.setCookie(
-          url: WebUri.uri(cookie.originUrl),
-          name: cookie.name,
-          value: cookie.value,
-          path: cookie.path,
-          // host-only cookie 不能带 domain：带了就变成覆盖全部子域的域 cookie。
-          domain: cookie.hostOnly ? null : cookie.canonicalDomain,
-          expiresDate: cookie.expiresAt,
-          isSecure: cookie.secure,
-          isHttpOnly: cookie.httpOnly,
-        );
-        if (ok && primary) written++;
-      } catch (_) {
-        // 单条写不进去：见方法注释。
-      }
-    }
+    final int count = await writeBrowserSiteCookies(manager, cookies);
+    if (primary) written = count;
   }
   return written;
 }
@@ -387,6 +374,16 @@ class WebVideoSession {
 
   /// WebView2 子窗口当前是否收输入；null = 新建的 WebView 还没同步过。
   bool? _inputEnabled;
+
+  /// 本页被别的路由（对话框 / 菜单 / 底部面板 / 新页）盖住：那些都画在网页上面，网页
+  /// 不能再收输入，否则点不到（[setCovered]）。
+  bool _covered = false;
+
+  /// 子窗口上挖掉的输入区（相对 WebView 左上角的逻辑 px，见 [setInputExclusions]）。
+  List<UnderlayInputExclusion> _exclusions = const <UnderlayInputExclusion>[];
+
+  /// 已下发给新建 WebView 的挖洞表；null = 还没同步过。
+  List<UnderlayInputExclusion>? _sentExclusions;
 
   bool get isReady => _environment != null && _userScripts != null;
 
@@ -567,10 +564,54 @@ class WebVideoSession {
   Future<void> exitPageFullscreen() =>
       evaluate('document.fullscreenElement&&document.exitFullscreen()');
 
+  /// 本页路由是不是被别的路由盖住了（[_covered]）。
+  void setCovered(bool covered) {
+    if (covered == _covered) return;
+    _covered = covered;
+    _applyInputEnabled();
+  }
+
+  /// 画在网页上面、要自己接鼠标的 Flutter 区域（悬浮球等，相对 WebView 左上角的逻辑 px）：
+  /// 从 WebView2 子窗口上挖掉，点击落到上面的 Flutter 控件。
+  void setInputExclusions(List<UnderlayInputExclusion> exclusions) {
+    if (listEquals(exclusions, _exclusions)) return;
+    _exclusions = List<UnderlayInputExclusion>.unmodifiable(exclusions);
+    _applyInputExclusions();
+  }
+
+  void _applyInputExclusions() {
+    final Object? viewId = _viewId;
+    if (viewId == null || _disposed) return;
+    if (_sentExclusions != null && listEquals(_sentExclusions, _exclusions)) {
+      return;
+    }
+    _sentExclusions = _exclusions;
+    unawaited(
+      MethodChannel('$kWebVideoPlatformViewChannelPrefix$viewId')
+          .invokeMethod<bool>(
+            kWebVideoSetWindowedInputExclusionsMethod,
+            <List<double>>[
+              for (final UnderlayInputExclusion e in _exclusions)
+                <double>[
+                  e.rect.left,
+                  e.rect.top,
+                  e.rect.right,
+                  e.rect.bottom,
+                  e.radius,
+                ],
+            ],
+          )
+          .catchError((Object e) {
+            ErrorLogService.instance.log('web_video', 'input exclusions: $e');
+            return false;
+          }),
+    );
+  }
+
   void _applyInputEnabled() {
     final Object? viewId = _viewId;
     if (viewId == null || _disposed) return;
-    final bool enabled = !_playerMode;
+    final bool enabled = !_playerMode && !_covered;
     if (_inputEnabled == enabled) return;
     _inputEnabled = enabled;
     unawaited(
@@ -596,6 +637,8 @@ class WebVideoSession {
     // 新建（含渲染进程死亡后重建）的 WebView：输入状态从头同步。
     _inputEnabled = null;
     _applyInputEnabled();
+    _sentExclusions = null;
+    _applyInputExclusions();
     controller.addJavaScriptHandler(
       handlerName: kWebVideoJsHandler,
       callback: limitWebPayload(
@@ -716,6 +759,44 @@ class WebVideoSurface extends StatefulWidget {
 }
 
 class _WebVideoSurfaceState extends State<WebVideoSurface> {
+  @override
+  void initState() {
+    super.initState();
+    underlayInputExclusions.addListener(_syncExclusions);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 对话框 / 菜单 / 新页盖在本页上面时网页整个不收输入（它们画在网页上面）。
+    widget.session.setCovered(!(ModalRoute.of(context)?.isCurrent ?? true));
+  }
+
+  @override
+  void didUpdateWidget(WebVideoSurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session != widget.session) _syncExclusions();
+  }
+
+  @override
+  void dispose() {
+    underlayInputExclusions.removeListener(_syncExclusions);
+    super.dispose();
+  }
+
+  /// 全局区域 → 相对本 WebView 左上角（与原生 setPosition 同一套逻辑坐标），只留压在网页上的。
+  void _syncExclusions() {
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return;
+    final Offset origin = box.localToGlobal(Offset.zero);
+    final Rect bounds = Offset.zero & box.size;
+    widget.session.setInputExclusions(<UnderlayInputExclusion>[
+      for (final UnderlayInputExclusion e in underlayInputExclusions.value)
+        if (e.rect.shift(-origin).overlaps(bounds))
+          UnderlayInputExclusion(e.rect.shift(-origin), e.radius),
+    ]);
+  }
+
   late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
     surface: 'web_video_underlay',
     flushBeforeRebuild: widget.session.recoverFromProcessGone,
@@ -729,6 +810,10 @@ class _WebVideoSurfaceState extends State<WebVideoSurface> {
   @override
   Widget build(BuildContext context) {
     final WebVideoSession session = widget.session;
+    // 本视图换了位置 / 尺寸（网页档 ↔ 播放器档的顶部让位）而全局区域没变时也要重算。
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      if (mounted) _syncExclusions();
+    });
     if (!session.isReady) return const SizedBox.shrink();
     return KeyedSubtree(
       key: _deathGuard.rebuildKey,

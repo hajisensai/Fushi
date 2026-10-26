@@ -50,6 +50,25 @@ class VideoDownloadSubscriptionConfigurationError implements Exception {
   String toString() => message;
 }
 
+/// 订阅的 BT 站来源找不到时落在订阅行 `lastError` 上的固定文案（稳定标记，UI 用
+/// [isVideoSubscriptionBtSiteMissingError] 认它并显示「请先添加 BT 站」入口）。
+const String kVideoSubscriptionBtSiteMissingError =
+    'bt-site-missing: no enabled BT site covers this subscription';
+
+/// 订阅行的 `lastError` 是不是「没有可用的 BT 站」。
+bool isVideoSubscriptionBtSiteMissingError(String? lastError) =>
+    lastError?.trim() == kVideoSubscriptionBtSiteMissingError;
+
+/// 订阅记的是 BT 站格式的 provider（含旧内置源的 `nyaa` / `apibay` / `knaben`
+/// 写法），但当前没有启用、同格式、覆盖该订阅视频域的用户站点：订阅**暂停**
+/// （按均匀间隔节流重查，不指数退避），用户添加 / 启用站点后自动恢复（见
+/// [VideoDownloadSubscriptionService.wakeBtSiteMissingSubscriptions]）。
+class VideoDownloadSubscriptionBtSiteMissing
+    extends VideoDownloadSubscriptionConfigurationError {
+  const VideoDownloadSubscriptionBtSiteMissing()
+    : super(kVideoSubscriptionBtSiteMissingError);
+}
+
 /// v78 订阅调度器。
 ///
 /// 每次检查先用数据库 lease 独占订阅，再把逻辑集的资源选择写入
@@ -269,6 +288,28 @@ class VideoDownloadSubscriptionService {
     _timer = Timer(delay, () => unawaited(checkNow()));
   }
 
+  /// 用户 BT 站配置变了（新增 / 启用 / 重新检测）后调：把因「没有可用的 BT 站」
+  /// 而暂停的启用订阅改成立即到期并检查一轮，新站点下一次检查就能接上，不必等
+  /// 节流间隔。没有这类订阅时什么都不做。
+  Future<void> wakeBtSiteMissingSubscriptions() async {
+    if (_disposed) return;
+    final int nowAt = _now().millisecondsSinceEpoch;
+    bool woke = false;
+    for (final VideoDownloadSubscriptionRow subscription
+        in await database.getVideoDownloadSubscriptions()) {
+      if (!subscription.enabled ||
+          !isVideoSubscriptionBtSiteMissingError(subscription.lastError)) {
+        continue;
+      }
+      await database.updateVideoDownloadSubscription(
+        subscription.subscriptionId,
+        VideoDownloadSubscriptionsCompanion(nextCheckAt: Value<int?>(nowAt)),
+      );
+      woke = true;
+    }
+    if (woke && !_stopped) await checkNow();
+  }
+
   Future<void> stop() async {
     // 必须先立标志：whenComplete 里的重排是 unawaited 的，它会在 _activeCheck
     // 完成之后才从 await 恢复——晚于本函数返回。只取消定时器停不住服务。
@@ -403,15 +444,37 @@ class VideoDownloadSubscriptionService {
       );
     }
 
-    final String selectedProvider = subscription.resourceProvider.trim();
-    final String providerBase = _providerBase(selectedProvider);
-    if (!resourceRegistry.providers.any(
-      (VideoResourceProvider provider) => provider.id == providerBase,
-    )) {
+    final String storedProvider = subscription.resourceProvider.trim();
+    final String providerBase = _providerBase(storedProvider);
+    final VideoDiscoveryCategory category = _discoveryCategory(subscription);
+    // 存量 / 当前 provider id → 实际负责的 provider：解析规则只在注册表一处
+    // （旧内置源的 `nyaa:nyaa.si` 之类解析到同格式的第一个用户站点）。
+    final VideoResourceProvider? provider = resourceRegistry.resolveProvider(
+      storedProvider,
+      category: category,
+    );
+    if (provider == null) {
+      if (isBtSiteProviderId(storedProvider)) {
+        throw const VideoDownloadSubscriptionBtSiteMissing();
+      }
       throw const VideoDownloadSubscriptionConfigurationError(
         'The selected resource provider is not configured on this device',
       );
     }
+    // BT 站订阅按「解析到的那个站」认候选；其余（Torznab 的 `torznab:<indexer>`）
+    // 仍按存的 id 认。
+    final String selectedProvider = isBtSiteProviderId(storedProvider)
+        ? provider.id
+        : storedProvider;
+    // 订阅条目 / 下载任务上存的 provider id 可能还是旧内置源的写法：解析到同一个
+    // 站点就算同一来源，否则旧条目会被当成「已不可用」、旧任务被重复派发。
+    bool sameProvider(String persisted) =>
+        persisted == selectedProvider ||
+        (isBtSiteProviderId(persisted) &&
+            identical(
+              resourceRegistry.resolveProvider(persisted, category: category),
+              provider,
+            ));
     final _SubscriptionFilter filter = _SubscriptionFilter.parse(
       subscription.filterJson,
       providerBase: providerBase,
@@ -423,7 +486,7 @@ class VideoDownloadSubscriptionService {
           query: subscription.searchQuery,
           season: subscription.season,
           selectedProvider: selectedProvider,
-          providerBase: providerBase,
+          provider: provider,
         );
 
     final Map<String, List<_SubscriptionRelease>> releasesByItem =
@@ -474,7 +537,7 @@ class VideoDownloadSubscriptionService {
       final List<_SubscriptionRelease> choices = releasesByItem[key]!;
       final _SubscriptionRelease? release = existing == null
           ? _bestRelease(choices)
-          : _findPersistedRelease(existing, choices);
+          : _findPersistedRelease(existing, choices, sameProvider);
       if (release == null) {
         firstError ??= ExternalProviderFailure(
           providerId: providerBase,
@@ -493,7 +556,13 @@ class VideoDownloadSubscriptionService {
           continue;
         }
         hasPersistentJob =
-            await _enqueueItem(subscription, media, release.candidate, item) ||
+            await _enqueueItem(
+              subscription,
+              media,
+              release.candidate,
+              item,
+              sameProvider,
+            ) ||
             hasPersistentJob;
       } on VideoDownloadLeaseLost {
         rethrow;
@@ -527,11 +596,11 @@ class VideoDownloadSubscriptionService {
     required String query,
     required int? season,
     required String selectedProvider,
-    required String providerBase,
+    required VideoResourceProvider provider,
   }) async {
-    final List<VideoResourceProvider> providers = resourceRegistry.providers
-        .where((VideoResourceProvider provider) => provider.id == providerBase)
-        .toList(growable: false);
+    final List<VideoResourceProvider> providers = <VideoResourceProvider>[
+      provider,
+    ];
     final Map<String, VideoResourceCandidate> candidatesByIdentity =
         <String, VideoResourceCandidate>{};
 
@@ -636,18 +705,18 @@ class VideoDownloadSubscriptionService {
     VideoMediaReference media,
     VideoResourceCandidate candidate,
     VideoDownloadSubscriptionItemRow item,
+    bool Function(String persistedProvider) sameProvider,
   ) async {
     _ensureLeaseHeld();
     // 前置条件：调用方已用 [subscriptionItemStillClaimed] 判过这一集还用不用管。
     // 这里**不再**重复写一遍 `item.jobId != null` —— 那份副本正是 BUG-1746 的
     // 第二道锁：放开上面的判定后它会照旧把重试挡在门外。判据只留一处。
-    final String providerId = persistedVideoResourceProviderId(candidate);
     final List<VideoDownloadJobRow> jobs = await database
         .getVideoDownloadJobs();
     _ensureLeaseHeld();
     for (final VideoDownloadJobRow job in jobs) {
       if (job.fingerprint != subscription.fingerprint ||
-          job.resourceProvider != providerId ||
+          !sameProvider(job.resourceProvider) ||
           job.selectedResourceId != candidate.remoteId) {
         continue;
       }
@@ -889,6 +958,11 @@ class VideoDownloadSubscriptionService {
     VideoDownloadSubscriptionRow subscription,
     Object error,
   ) {
+    // 没有可用 BT 站 = 等用户操作，不是故障：均匀间隔重查（添加站点时另有
+    // wakeBtSiteMissingSubscriptions 立即唤醒），不指数退避到 6 小时。
+    if (error is VideoDownloadSubscriptionBtSiteMissing) {
+      return cadence.baseInterval;
+    }
     final int exponent = subscription.retryCount.clamp(0, 5);
     final int multiplier = 1 << exponent;
     int milliseconds = checkInterval.inMilliseconds * multiplier;
@@ -1256,10 +1330,12 @@ _SubscriptionRelease? _bestRelease(List<_SubscriptionRelease> releases) {
 _SubscriptionRelease? _findPersistedRelease(
   VideoDownloadSubscriptionItemRow item,
   List<_SubscriptionRelease> releases,
+  bool Function(String persistedProvider) sameProvider,
 ) {
   for (final _SubscriptionRelease release in releases) {
-    if (persistedVideoResourceProviderId(release.candidate) ==
-            item.resourceProvider &&
+    if ((persistedVideoResourceProviderId(release.candidate) ==
+                item.resourceProvider ||
+            sameProvider(item.resourceProvider)) &&
         release.candidate.remoteId == item.selectedResourceId) {
       return release;
     }

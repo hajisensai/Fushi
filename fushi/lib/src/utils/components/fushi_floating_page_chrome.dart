@@ -408,8 +408,26 @@ class FushiScrollOwnerDepth {
       notification.depth <= (_depth ?? 0);
 }
 
+/// 子树里的滚动区不驱动页头收起：并排各自滚动的多栏正文（宽窗表单两栏）用。
+///
+/// 页头只有一条，却有两个互不相干的滚动位置：长的那栏滚下去把页头收掉，短的
+/// 那栏停在顶部、没有「往回滚」可做，页头（含返回键）就再也叫不回来。
+/// 遮罩 / 标题淡入等其它滚动监听不受影响。
+class FushiPinnedPageChromeScope extends InheritedWidget {
+  const FushiPinnedPageChromeScope({super.key, required super.child});
+
+  /// [context] 是否在钉住页头的作用域里（不建立依赖，滚动通知路径上调用）。
+  static bool pins(BuildContext? context) =>
+      context?.getInheritedWidgetOfExactType<FushiPinnedPageChromeScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(FushiPinnedPageChromeScope oldWidget) => false;
+}
+
 /// 页头「随滚动收起」的状态：内容被用户往下滚（看后面的内容）时收起，往回滚或
 /// 回到顶部时出现。焦点进入页头时由 [FushiScrollAwayChrome] 主动叫出。
+/// [FushiPinnedPageChromeScope] 里的滚动区不参与。
 class FushiScrollAwayController extends ChangeNotifier {
   /// 内容至少滚过这么多（逻辑 px）才允许收起：刚开始滚的一小段不收，避免
   /// 短页面一碰就把页头收掉。
@@ -464,6 +482,10 @@ class FushiScrollAwayController extends ChangeNotifier {
     }
     if (notification is! ScrollNotification) return false;
     if (notification.metrics.axis != Axis.vertical) return false;
+    if (FushiPinnedPageChromeScope.pins(notification.context)) {
+      hidden = false;
+      return false;
+    }
     if (notification is UserScrollNotification) {
       if (notification.direction != _userDirection) _travel = 0;
       _userDirection = notification.direction;

@@ -154,6 +154,31 @@ void main() {
     expect('${r.stderr}', contains('low memory'));
   });
 
+  test('hello reads free memory without WMI or PowerShell', () {
+    // A standard account under sshd is denied WMI: with nothing but Git's
+    // own tools on PATH the shim must still see the machine's memory.
+    final Map<String, String> env = <String, String>{
+      for (final MapEntry<String, String> e in Platform.environment.entries)
+        if (e.key != 'SSH_ORIGINAL_COMMAND') e.key: e.value,
+      'FUSHI_WORKER_HOME': workerHome(),
+      'SSH_ORIGINAL_COMMAND': 'hello',
+      if (Platform.isWindows)
+        'PATH': '${File(bash).parent.parent.path}/usr/bin',
+    };
+    final ProcessResult r = Process.runSync(
+      bash,
+      <String>[_shim],
+      environment: env,
+      includeParentEnvironment: false,
+    );
+    expect(r.exitCode, 0, reason: '${r.stderr}');
+    final String? mem = RegExp(
+      r'^free_mem_mb=(\d+)\s*$',
+      multiLine: true,
+    ).firstMatch('${r.stdout}')?.group(1);
+    expect(int.tryParse(mem ?? ''), greaterThan(0), reason: '${r.stdout}');
+  });
+
   test('flutter test options are plain, checked before anything runs', () {
     expect(shim('lock 1 $_runA').exitCode, 0);
     refused('run 1 0 --file-reporter=json:/tmp/x');

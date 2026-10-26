@@ -4,7 +4,7 @@ import '../ctl_commands.dart';
 import 'reader_commands.dart';
 import 'shelf_commands.dart';
 
-/// library 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_library_routes.dart`）。
+/// library 域命令（app 侧路由见 `fushi/lib/src/ops/ctl_library_routes.dart`）。
 ///
 /// 条目键形如 `book:<bookKey>` / `srt:<uid>` / `video:<bookUid>` / `game:<id>`，
 /// 由 `library ls` 给出；拼进路径时整体 URI 编码（id 里可能有 `/`）。
@@ -454,7 +454,8 @@ void _configureOrganize(ArgParser parser) {
     ..addFlag(
       'yes',
       negatable: false,
-      help: '同意把标题、作者或品牌、年份和视频文件夹名发给 AI 提供商（可能计费）；'
+      help:
+          '同意把标题、作者或品牌、年份和视频文件夹名发给 AI 提供商（可能计费）；'
           '界面里同意过就不必加',
     );
 }
@@ -496,8 +497,9 @@ String _renderOrganizeHistory(Object? data) {
   final StringBuffer out = StringBuffer();
   for (final Object? raw in runs) {
     if (raw is! Map) continue;
-    final DateTime at =
-        DateTime.fromMillisecondsSinceEpoch((raw['startedAt'] as num?)?.toInt() ?? 0);
+    final DateTime at = DateTime.fromMillisecondsSinceEpoch(
+      (raw['startedAt'] as num?)?.toInt() ?? 0,
+    );
     out.writeln(
       '#${raw['id']} ${at.toIso8601String().substring(0, 16)} '
       '${raw['domain']} · ${raw['trigger']} · ${raw['status']}'

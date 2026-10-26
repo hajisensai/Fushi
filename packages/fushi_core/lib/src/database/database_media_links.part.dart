@@ -227,16 +227,69 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
         return true;
       });
 
-  /// 把对端一行（键已换算成本机键）按 LWW 并入。**只在结果与本机不同时写库**，
-  /// 返回是否改了（表变更观察者会被无变化的写自激）。
-  Future<bool> mergeRemoteMediaLink(MediaLinkRow remote) =>
+  /// [confirmMediaLink] 的反向（撤销「接受建议」）：一条已确认、未删的**推断**
+  /// 连接退回建议，刷新 `updatedAt`（LWW 下这是一次新的用户动作）。手动连接
+  /// （`source = manual`）本来就不是建议，不退回。返回是否退回了。
+  Future<bool> unconfirmMediaLink(MediaLinkId id, {int? at}) =>
       transaction(() async {
-        final MediaLinkRow? local = await mediaLinkById(mediaLinkIdOf(remote));
-        if (local != null && !mediaLinkRemoteWins(local, remote)) return false;
-        // toCompanion(false)：null 列（deletedAt / role / reason …）必须显式写成
-        // NULL。直接传数据类时 drift 按 nullToAbsent 省略 null 列，冲突更新就保留
-        // 本机旧值——对端复活一条连接时墓碑会原地不动。
-        await into(mediaLinks).insertOnConflictUpdate(remote.toCompanion(false));
+        final MediaLinkRow? row = await mediaLinkById(id);
+        if (row == null ||
+            row.deletedAt != null ||
+            !row.isUserConfirmed ||
+            row.source == MediaLinkSource.manual) {
+          return false;
+        }
+        await (update(mediaLinks)..where((t) => _mediaLinkIdIs(t, id))).write(
+          MediaLinksCompanion(
+            isUserConfirmed: const Value<bool>(false),
+            updatedAt: Value<int>(at ?? DateTime.now().millisecondsSinceEpoch),
+          ),
+        );
         return true;
       });
+
+  /// [removeMediaLink] 否决建议的反向（撤销「不相关」）：未确认的墓碑行恢复成
+  /// 建议（清墓碑、刷新 `updatedAt`）。行不在 / 不是墓碑 / 是已确认连接的墓碑
+  /// 返回 false。
+  Future<bool> restoreMediaLinkSuggestion(MediaLinkId id, {int? at}) =>
+      transaction(() async {
+        final MediaLinkRow? row = await mediaLinkById(id);
+        if (row == null || row.deletedAt == null || row.isUserConfirmed) {
+          return false;
+        }
+        await (update(mediaLinks)..where((t) => _mediaLinkIdIs(t, id))).write(
+          MediaLinksCompanion(
+            deletedAt: const Value<int?>(null),
+            updatedAt: Value<int>(at ?? DateTime.now().millisecondsSinceEpoch),
+          ),
+        );
+        return true;
+      });
+
+  /// [proposeMediaLink] 的反向（撤销一轮「查找相关作品」）：删掉一条用户还没处理过
+  /// 的建议行（未确认、无墓碑）。**不写墓碑**——墓碑的语义是「否决过、不再提议」，
+  /// 撤销推断不是否决，下次推断仍可以再提。返回是否删了。
+  Future<bool> discardMediaLinkSuggestion(MediaLinkId id) =>
+      transaction(() async {
+        final MediaLinkRow? row = await mediaLinkById(id);
+        if (row == null || row.deletedAt != null || row.isUserConfirmed) {
+          return false;
+        }
+        await (delete(mediaLinks)..where((t) => _mediaLinkIdIs(t, id))).go();
+        return true;
+      });
+
+  /// 把对端一行（键已换算成本机键）按 LWW 并入。**只在结果与本机不同时写库**，
+  /// 返回是否改了（表变更观察者会被无变化的写自激）。
+  Future<bool> mergeRemoteMediaLink(MediaLinkRow remote) => transaction(
+    () async {
+      final MediaLinkRow? local = await mediaLinkById(mediaLinkIdOf(remote));
+      if (local != null && !mediaLinkRemoteWins(local, remote)) return false;
+      // toCompanion(false)：null 列（deletedAt / role / reason …）必须显式写成
+      // NULL。直接传数据类时 drift 按 nullToAbsent 省略 null 列，冲突更新就保留
+      // 本机旧值——对端复活一条连接时墓碑会原地不动。
+      await into(mediaLinks).insertOnConflictUpdate(remote.toCompanion(false));
+      return true;
+    },
+  );
 }

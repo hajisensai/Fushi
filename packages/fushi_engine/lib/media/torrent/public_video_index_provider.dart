@@ -5,7 +5,8 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 
-/// 内置公共索引器的 provider id（设置页开关、停用清单偏好、去重键三处共用）。
+/// JSON 两种站点格式的格式名 = provider id 前缀（`apibay:<siteId>` /
+/// `knaben:<siteId>`）。旧内置源的持久化 id 同前缀，存量订阅据此解析到用户站点。
 const String kApibayResourceProviderId = 'apibay';
 const String kKnabenResourceProviderId = 'knaben';
 
@@ -104,32 +105,49 @@ class PublicVideoIndexCandidate extends VideoResourceCandidate {
   final PublicVideoIndexTorrent torrent;
 }
 
-/// apibay（The Pirate Bay）内置资源索引器：电影 + 剧集，零配置。
+/// 用户添加的 apibay 式 JSON 站点的资源 provider：电影 + 剧集。
 ///
 /// 域：`movie` / `tv`。**刻意不含 `anime`**——动漫由 Nyaa 负责，那里的字幕组
 /// 标题/分类远比综合站精确，让综合站也进动漫域只会把 Nyaa 的结果挤下去。
-class ApibayVideoResourceProvider implements VideoResourceProvider {
+class ApibayVideoResourceProvider implements LabeledVideoResourceProvider {
   ApibayVideoResourceProvider({
     required ApibayClient client,
+    required this.siteId,
+    Set<VideoDiscoveryCategory> categories = const <VideoDiscoveryCategory>{
+      VideoDiscoveryCategory.movie,
+      VideoDiscoveryCategory.tv,
+    },
+    String? displayName,
     this.priority = 200,
     bool closesClient = false,
   }) : _client = client,
-       _closesClient = closesClient;
+       _closesClient = closesClient,
+       categories = Set<VideoDiscoveryCategory>.unmodifiable(
+         categories.intersection(const <VideoDiscoveryCategory>{
+           VideoDiscoveryCategory.movie,
+           VideoDiscoveryCategory.tv,
+         }),
+       ),
+       displayName = displayName ?? Uri.parse(client.baseUrl).host;
 
   final ApibayClient _client;
+
+  /// 站点 id（`BtSiteConfig.id`），也是候选的 providerInstanceId。
+  final String siteId;
+
+  @override
+  final String displayName;
+
+  /// 用户勾选的视频域 ∩ 本格式能搜的电影 / 剧集。
+  @override
+  final Set<VideoDiscoveryCategory> categories;
   final bool _closesClient;
 
   @override
   final int priority;
 
   @override
-  String get id => kApibayResourceProviderId;
-
-  @override
-  Set<VideoDiscoveryCategory> get categories => const <VideoDiscoveryCategory>{
-    VideoDiscoveryCategory.movie,
-    VideoDiscoveryCategory.tv,
-  };
+  String get id => '$kApibayResourceProviderId:$siteId';
 
   @override
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
@@ -171,8 +189,8 @@ class ApibayVideoResourceProvider implements VideoResourceProvider {
           torrents.map(
             (PublicVideoIndexTorrent torrent) => PublicVideoIndexCandidate(
               torrent: torrent,
-              providerId: id,
-              providerInstanceId: 'apibay.org',
+              providerId: kApibayResourceProviderId,
+              providerInstanceId: siteId,
               providerPriority: priority,
             ),
           ),
@@ -193,7 +211,7 @@ class ApibayVideoResourceProvider implements VideoResourceProvider {
 
   @override
   Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate) async =>
-      resolvePublicVideoIndexCandidate(candidate, id);
+      resolvePublicVideoIndexCandidate(candidate, id, siteId);
 
   @override
   void close() {
@@ -201,29 +219,46 @@ class ApibayVideoResourceProvider implements VideoResourceProvider {
   }
 }
 
-/// Knaben 内置资源索引器：电影 + 剧集，零配置。域约定同 apibay。
-class KnabenVideoResourceProvider implements VideoResourceProvider {
+/// 用户添加的 Knaben 式 JSON 站点的资源 provider：电影 + 剧集，域约定同上。
+class KnabenVideoResourceProvider implements LabeledVideoResourceProvider {
   KnabenVideoResourceProvider({
     required KnabenClient client,
-    this.priority = 210,
+    required this.siteId,
+    Set<VideoDiscoveryCategory> categories = const <VideoDiscoveryCategory>{
+      VideoDiscoveryCategory.movie,
+      VideoDiscoveryCategory.tv,
+    },
+    String? displayName,
+    this.priority = 300,
     bool closesClient = false,
   }) : _client = client,
-       _closesClient = closesClient;
+       _closesClient = closesClient,
+       categories = Set<VideoDiscoveryCategory>.unmodifiable(
+         categories.intersection(const <VideoDiscoveryCategory>{
+           VideoDiscoveryCategory.movie,
+           VideoDiscoveryCategory.tv,
+         }),
+       ),
+       displayName = displayName ?? Uri.parse(client.baseUrl).host;
 
   final KnabenClient _client;
+
+  /// 站点 id（`BtSiteConfig.id`），也是候选的 providerInstanceId。
+  final String siteId;
+
+  @override
+  final String displayName;
+
+  /// 用户勾选的视频域 ∩ 本格式能搜的电影 / 剧集。
+  @override
+  final Set<VideoDiscoveryCategory> categories;
   final bool _closesClient;
 
   @override
   final int priority;
 
   @override
-  String get id => kKnabenResourceProviderId;
-
-  @override
-  Set<VideoDiscoveryCategory> get categories => const <VideoDiscoveryCategory>{
-    VideoDiscoveryCategory.movie,
-    VideoDiscoveryCategory.tv,
-  };
+  String get id => '$kKnabenResourceProviderId:$siteId';
 
   @override
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
@@ -258,8 +293,8 @@ class KnabenVideoResourceProvider implements VideoResourceProvider {
           torrents.map(
             (PublicVideoIndexTorrent torrent) => PublicVideoIndexCandidate(
               torrent: torrent,
-              providerId: id,
-              providerInstanceId: 'knaben.org',
+              providerId: kKnabenResourceProviderId,
+              providerInstanceId: siteId,
               providerPriority: priority,
             ),
           ),
@@ -280,7 +315,7 @@ class KnabenVideoResourceProvider implements VideoResourceProvider {
 
   @override
   Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate) async =>
-      resolvePublicVideoIndexCandidate(candidate, id);
+      resolvePublicVideoIndexCandidate(candidate, id, siteId);
 
   @override
   void close() {
@@ -324,9 +359,11 @@ VideoResourceSearchResult publicVideoIndexResult({
 TorrentAddPayload resolvePublicVideoIndexCandidate(
   VideoResourceCandidate candidate,
   String providerId,
+  String siteId,
 ) {
   if (candidate is! PublicVideoIndexCandidate ||
-      candidate.providerId != providerId) {
+      '${candidate.providerId}:${candidate.providerInstanceId}' != providerId ||
+      candidate.providerInstanceId != siteId) {
     throw ExternalProviderFailure(
       providerId: providerId,
       operation: 'resolve',

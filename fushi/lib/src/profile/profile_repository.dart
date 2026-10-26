@@ -670,7 +670,24 @@ class ProfileRepository {
     }
   }
 
-  Future<void> ensureDefaultProfile() async {
+  /// 同一个库上在跑的 [ensureDefaultProfile]（按库对象分组：仓储有多个实例共用
+  /// 一个库）。它是「先查有没有、没有就建 Default」：两路并发（视图模型首次加载 +
+  /// 控制通道 / AI 的 reload）会都看见空表、都去建，第二路撞 `profiles.name` 唯一
+  /// 约束（BUG-3784）。并发调用合并到同一次。
+  static final Expando<Future<void>> _ensuringDefault =
+      Expando<Future<void>>('ensureDefaultProfile');
+
+  Future<void> ensureDefaultProfile() {
+    final Future<void>? running = _ensuringDefault[_db];
+    if (running != null) return running;
+    final Future<void> ensuring = _ensureDefaultProfile().whenComplete(
+      () => _ensuringDefault[_db] = null,
+    );
+    _ensuringDefault[_db] = ensuring;
+    return ensuring;
+  }
+
+  Future<void> _ensureDefaultProfile() async {
     final existing = await _db.getAllProfiles();
     if (existing.isEmpty) {
       final id = await createProfile('Default');

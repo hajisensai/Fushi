@@ -154,7 +154,12 @@ void main() {
     test('日文原名 0 条 + 罗马字 2 条：合并去重、逐词计数', () async {
       final List<String> queries = <String>[];
       final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
+        siteId: 'nyaa-test',
+        categoryByDomain: const <VideoDiscoveryCategory, String>{
+          VideoDiscoveryCategory.anime: '1_0',
+        },
         client: NyaaClient(
+          baseUrl: 'https://nyaa.si',
           minRequestInterval: Duration.zero,
           client: _nyaaServer(queries),
         ),
@@ -174,7 +179,7 @@ void main() {
       expect(result.successfulProviderCount, 1);
       final VideoResourceSourceReport report =
           (result as VideoResourceSearchResult).sources.single;
-      expect(report.providerId, kNyaaResourceProviderId);
+      expect(report.providerId, '$kNyaaResourceProviderId:nyaa-test');
       expect(report.succeeded, isTrue);
       expect(report.itemCount, 2);
       expect(
@@ -187,7 +192,12 @@ void main() {
 
     test('一条查询失败、另一条成功：成功照交，失败记在该查询上', () async {
       final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
+        siteId: 'nyaa-test',
+        categoryByDomain: const <VideoDiscoveryCategory, String>{
+          VideoDiscoveryCategory.anime: '1_0',
+        },
         client: NyaaClient(
+          baseUrl: 'https://nyaa.si',
           minRequestInterval: Duration.zero,
           client: MockClient((http.Request request) async {
             if (request.url.queryParameters['q'] == '葬送のフリーレン') {
@@ -228,7 +238,12 @@ void main() {
       final VideoResourceRegistry registry =
           VideoResourceRegistry(<VideoResourceProvider>[
             NyaaVideoResourceProvider(
+              siteId: 'nyaa-test',
+              categoryByDomain: const <VideoDiscoveryCategory, String>{
+                VideoDiscoveryCategory.anime: '1_0',
+              },
               client: NyaaClient(
+                baseUrl: 'https://nyaa.si',
                 minRequestInterval: Duration.zero,
                 client: _nyaaServer(<String>[]),
               ),
@@ -242,7 +257,7 @@ void main() {
       );
       expect(
         result.sources.map((VideoResourceSourceReport r) => r.providerId),
-        <String>[kNyaaResourceProviderId, 'torznab'],
+        <String>['$kNyaaResourceProviderId:nyaa-test', 'torznab'],
       );
       final VideoResourceSourceReport nyaa = result.sources.first;
       expect(nyaa.succeeded, isTrue);
@@ -267,6 +282,7 @@ void main() {
 
     test('一行缺 infohash：跳过该行并记诊断，其余照常返回', () async {
       final NyaaClient client = NyaaClient(
+        baseUrl: 'https://nyaa.si',
         minRequestInterval: Duration.zero,
         client: MockClient(
           (http.Request request) async => http.Response(
@@ -287,6 +303,7 @@ void main() {
 
     test('每一行都坏：页面结构变了，仍然抛而不是伪装成 0 条', () async {
       final NyaaClient client = NyaaClient(
+        baseUrl: 'https://nyaa.si',
         minRequestInterval: Duration.zero,
         client: MockClient(
           (http.Request request) async => http.Response(

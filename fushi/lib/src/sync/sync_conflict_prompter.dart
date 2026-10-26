@@ -3,6 +3,7 @@ import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/playback_position_conflict_dialog.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
+import 'package:fushi/src/sync/sync_conflict_decider.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -82,6 +83,10 @@ class SyncConflictPrompter with PromptQueue {
   /// [decisions] 是同一轮 sweep 内跨通道共享的裁决簿（见
   /// [SyncCompareDialog.decisions]）：调用方按通道逐个 present 时传同一个 map，
   /// 前一条通道里用户裁决过的书在后一条通道不再弹。null = 单通道 / 不共享。
+  ///
+  /// [decider]：非交互裁决器（CLI / AI 经 `/api/admin/sync/run` 的 `conflicts` 策略）。
+  /// 给了就不弹窗、不看 [shouldPrompt] 的时机约束与会话静默，冲突交给它按策略落地；
+  /// 同样排进本 prompter 的串行队列（不与同时在开的弹窗交错写）。
   Future<void> present({
     required GlobalKey<NavigatorState> navigatorKey,
     required FushiDatabase db,
@@ -90,8 +95,16 @@ class SyncConflictPrompter with PromptQueue {
     required ConflictSource source,
     required bool inBook,
     Map<String, SyncChoice>? decisions,
+    SyncConflictDecider? decider,
   }) =>
-      enqueuePrompt(() => _presentNow(
+      enqueuePrompt(() => decider != null
+          ? decider.decide(
+              db: db,
+              backend: backend,
+              conflicts: conflicts,
+              decisions: decisions,
+            )
+          : _presentNow(
             navigatorKey: navigatorKey,
             db: db,
             backend: backend,

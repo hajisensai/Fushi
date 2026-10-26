@@ -17,6 +17,8 @@ String webBrowserSitePermissionLabel(WebBrowserSitePermission p) => switch (p) {
   WebBrowserSitePermission.notifications =>
     t.web_browser_permission_notifications,
   WebBrowserSitePermission.clipboard => t.web_browser_permission_clipboard,
+  WebBrowserSitePermission.protectedContent =>
+    t.web_browser_permission_protected_content,
   WebBrowserSitePermission.autoplay => t.web_browser_permission_autoplay,
   WebBrowserSitePermission.popups => t.web_browser_permission_popups,
 };
@@ -28,6 +30,7 @@ IconData webBrowserSitePermissionIcon(WebBrowserSitePermission p) =>
       WebBrowserSitePermission.geolocation => FushiIcons.pin,
       WebBrowserSitePermission.notifications => FushiIcons.notifications,
       WebBrowserSitePermission.clipboard => FushiIcons.paste,
+      WebBrowserSitePermission.protectedContent => FushiIcons.lock,
       WebBrowserSitePermission.autoplay => FushiIcons.playCircle,
       WebBrowserSitePermission.popups => FushiIcons.openInNew,
     };
@@ -154,9 +157,13 @@ class _WebBrowserSiteSettingsPageState
                       ),
                       title: Text(webBrowserSitePermissionLabel(p)),
                       subtitle: Text(
+                        // 显示生效的决定：受保护内容没记住时实际是允许，别写成「询问」。
                         webBrowserPermissionDecisionLabel(
-                          _sites[origins[i]]![p] ??
-                              WebBrowserPermissionDecision.ask,
+                          webBrowserEffectiveDecision(
+                            p,
+                            _sites[origins[i]]![p] ??
+                                WebBrowserPermissionDecision.ask,
+                          ),
                         ),
                       ),
                       trailing: const FushiIcon(FushiIcons.chevronRight),

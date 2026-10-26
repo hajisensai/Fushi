@@ -94,6 +94,23 @@ class VideoSubtitleHitTester {
   int caretAnchorEntry() => _caretAnchorImpl?.call() ?? -1;
 }
 
+/// 让页面从字幕盒**之外**驱动主字幕「点击显形」的句柄（沉浸锁定态点画面任意处显示
+/// 当前句，设计案 `docs/specs/2026-10-25-video-immersive-one-hand.md` §3.1）。与
+/// [VideoSubtitleHitTester] 同范式：overlay 每帧 build 把实现绑进来，页面持同一对象调用。
+///
+/// 走的就是遮蔽热区那一条点击显形状态（随活动集换轮自动遮回），不另立显形态；
+/// 是否该调由页面判（`videoImmersiveTapRevealsSubtitle`），这里只在主字幕确实开着
+/// 遮蔽且允许临时显形时生效。
+class VideoSubtitleRevealHandle {
+  bool Function()? _toggleImpl;
+
+  void bindToggle(bool Function() impl) => _toggleImpl = impl;
+
+  /// 翻转主字幕的点击显形：遮着 → 显示当前句，已显示 → 遮回。返回是否真的翻转了
+  /// （overlay 未绑定 / 主字幕没开遮蔽 / 关了临时显形时为 false）。
+  bool toggleMainReveal() => _toggleImpl?.call() ?? false;
+}
+
 /// 选词光标的一次方向移动（手柄 D-pad / 键盘方向键，物理方向）。
 enum SubtitleCaretMove { left, right, up, down }
 
@@ -548,6 +565,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.hoverLookupModifier = HoverLookupModifier.shift,
     this.onHoverChanged,
     this.hitTester,
+    this.revealHandle,
     this.caretEntryIndex,
     this.lookupHighlight,
     this.isCueFavorited,
@@ -619,6 +637,10 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 可选的字符命中句柄：build 时把按全局坐标反查字符的实现绑进来，供查词浮层的
   /// dismiss barrier「点同句换词保持暂停」用（见 [VideoSubtitleHitTester]）。
   final VideoSubtitleHitTester? hitTester;
+
+  /// 可选的外部显形句柄：build 时把「翻转主字幕点击显形」绑进来，供页面在沉浸锁定态
+  /// 点画面任意处时显示 / 遮回当前句（见 [VideoSubtitleRevealHandle]）。null = 不挂。
+  final VideoSubtitleRevealHandle? revealHandle;
 
   /// 选词光标（手柄查词，videoEnterCaret）当前停在的登记表下标；null = 光标未激活。
   /// 命中该下标的字符外画一圈主题色光标环（与阅读器 fushiCaret 环同语义）。下标由
@@ -1310,6 +1332,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     }
   }
 
+  /// [VideoSubtitleRevealHandle.toggleMainReveal] 的实现：只动主字幕的**点击**显形态
+  /// （与遮蔽热区 onTap 同一个 [_tapRevealed]，随活动集换轮自动遮回）。主字幕没开遮蔽、
+  /// 或用户关了临时显形时什么都不做。
+  bool _toggleMainTapReveal() {
+    if (!mounted) return false;
+    if (!widget.blurEnabled && !widget.subtitleHidden) return false;
+    if (!_revealOnInteractionFor(isSecondary: false)) return false;
+    _setRevealed(!_tapRevealed, isSecondary: false, byTap: true);
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -1319,6 +1352,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // 时 hitTest 返回 null（barrier 走 dismiss）。TODO-1312：登记表二维（主 + 副字幕）。
         _charEntries.clear();
         widget.hitTester?.bindHitTest(_charHitTest);
+        widget.revealHandle?.bindToggle(_toggleMainTapReveal);
         // 选词光标视图与命中句柄同帧绑定（同一登记表真相源）。
         widget.hitTester?.bindCaretView(
           entryCount: () => _charEntries.length,

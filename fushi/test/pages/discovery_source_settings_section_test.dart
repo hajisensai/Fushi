@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -80,7 +81,7 @@ void main() {
         ),
       );
 
-  testWidgets('lists every registered discovery source, sukebei off by default',
+  testWidgets('lists every registered built-in discovery source, all on by default',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(800, 2400);
     tester.view.devicePixelRatio = 1;
@@ -93,6 +94,11 @@ void main() {
     final List<MediaDiscoverySource> sources =
         appModel.mediaDiscoveryService.sources;
     expect(sources, isNotEmpty);
+    // Fushi 不内置任何 BT 站：注册表里不该再有旧的 nyaa / sukebei 内置源。
+    expect(
+      sources.map((MediaDiscoverySource s) => s.id),
+      isNot(anyOf(contains('nyaa'), contains('sukebei'))),
+    );
     for (final MediaDiscoverySource source in sources) {
       final Finder row =
           find.byKey(ValueKey<String>('discovery-source-${source.id}'));
@@ -101,7 +107,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(row)).value,
-        source.id == 'sukebei' ? isFalse : isTrue,
+        isTrue,
         reason: '${source.id} default',
       );
     }
@@ -137,9 +143,45 @@ void main() {
       findsNothing,
     );
     // 内置源仍在。
+    final MediaDiscoverySource builtin = appModel.mediaDiscoveryService.sources
+        .firstWhere((MediaDiscoverySource s) => !s.isUserConfigured);
     expect(
-      find.byKey(const ValueKey<String>('discovery-source-nyaa')),
+      find.byKey(ValueKey<String>('discovery-source-${builtin.id}')),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('用户添加的 BT 站不进这一区（启停在 BT 站设置区那条记录上）',
+      (WidgetTester tester) async {
+    await prefs.setBtSites(<BtSiteConfig>[
+      BtSiteConfig(
+        id: 'site1',
+        baseUrl: Uri.parse('https://bt.example.com'),
+        format: BtSiteFormat.nyaa,
+        domains: const <BtSiteDomain>{BtSiteDomain.manga},
+        nyaaCategories: const <BtSiteDomain, String>{
+          BtSiteDomain.manga: '3_1',
+        },
+      ),
+    ]);
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    // 前提：站点确实已作为自配源进了运行期注册表。
+    expect(
+      appModel.mediaDiscoveryService.sources
+          .where((MediaDiscoverySource s) => s.id == 'bt-site1')
+          .single
+          .isUserConfigured,
+      isTrue,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('discovery-source-bt-site1')),
+      findsNothing,
     );
   });
 
@@ -152,24 +194,24 @@ void main() {
     await tester.pumpWidget(harness());
     await tester.pumpAndSettle();
 
-    final Finder nyaa =
-        find.byKey(const ValueKey<String>('discovery-source-nyaa'));
-    await tester.ensureVisible(nyaa);
+    final String sourceId = appModel.mediaDiscoveryService.sources
+        .firstWhere((MediaDiscoverySource s) => !s.isUserConfigured)
+        .id;
+    final Finder row =
+        find.byKey(ValueKey<String>('discovery-source-$sourceId'));
+    await tester.ensureVisible(row);
     await tester.pumpAndSettle();
-    await tester.tap(nyaa);
+    await tester.tap(row);
     await tester.pumpAndSettle();
 
     // 停用清单是**唯一**状态：开关写的就是发现页聚合读的那个偏好。
-    expect(appModel.discoveryDisabledSourceIds, contains('nyaa'));
-    expect(prefs.discoveryDisabledSources.split(','), contains('nyaa'));
-    expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(nyaa)).value, isFalse);
+    expect(appModel.discoveryDisabledSourceIds, contains(sourceId));
+    expect(prefs.discoveryDisabledSources.split(','), contains(sourceId));
+    expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(row)).value, isFalse);
 
-    // 出厂就停用的 sukebei 不能被这次写入顺手打开。
-    expect(appModel.discoveryDisabledSourceIds, contains('sukebei'));
-
-    await tester.tap(nyaa);
+    await tester.tap(row);
     await tester.pumpAndSettle();
-    expect(appModel.discoveryDisabledSourceIds, isNot(contains('nyaa')));
-    expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(nyaa)).value, isTrue);
+    expect(appModel.discoveryDisabledSourceIds, isNot(contains(sourceId)));
+    expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(row)).value, isTrue);
   });
 }

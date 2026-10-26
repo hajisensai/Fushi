@@ -380,6 +380,14 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   /// **默认实现 = 优雅降级**：基类返回 `false`。
   Future<bool> openNoteInAnki(int noteId) async => false;
 
+  /// BUG-3790：已制卡片住在哪（界面据此说「Anki」还是「Fushi 复习」）。
+  MinedNoteHome get minedNoteHome => MinedNoteHome.anki;
+
+  /// [openNoteInAnki] 在本后端是否可能成功。基类默认实现恒 `false`，与之同步默认
+  /// 为 `false`；真实现了按 id 打开的后端覆写为 `true`。为 `false` 时「已存在的
+  /// 卡片」不出「打开」按钮——点下去只能弹「打不开」。
+  bool get canOpenMinedNote => false;
+
   /// BUG-2051：点 ↗「在 Anki 中打开**这个词**已有的卡」。
   ///
   /// 语义是「按词去 Anki 里看」，不是「按我们记下的某个 note id 去看」——后者要求

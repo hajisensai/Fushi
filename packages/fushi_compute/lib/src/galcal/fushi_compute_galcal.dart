@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
@@ -203,7 +204,7 @@ class FushiComputeGal {
 
   static Pointer<Uint8> _pixelsIn(FfcGalPixels p) {
     final Pointer<Uint8> ptr = NativeScratch.input.reserve(p.pixels.length);
-    ptr.asTypedList(p.pixels.length).setAll(0, p.pixels);
+    ptr.asTypedListOutOfLine(p.pixels.length).setAll(0, p.pixels);
     return ptr;
   }
 
@@ -244,7 +245,9 @@ class FushiComputeGal {
       final Pointer<Uint8> blob = outPtr.value;
       final int n = outLen.value;
       try {
-        final ByteData view = ByteData.sublistView(blob.asTypedList(n));
+        final ByteData view = ByteData.sublistView(
+          blob.asTypedListOutOfLine(n),
+        );
         int o = 0;
         int next() {
           final int v = view.getInt32(o, Endian.host);
@@ -313,11 +316,11 @@ class FushiComputeGal {
     final Pointer<Int32> columns = base + rows.length * 4;
     for (int i = 0; i < rows.length; i++) {
       columns
-          .asTypedList(rows.length * width)
+          .asTypedListOutOfLine(rows.length * width)
           .setAll(i * width, rows[i].columns);
     }
     final Pointer<Uint32> u = (columns + rows.length * width).cast();
-    u.asTypedList(units.length).setAll(0, units);
+    u.asTypedListOutOfLine(units.length).setAll(0, units);
     return (rows: base, columns: columns, units: u);
   }
 
@@ -441,7 +444,7 @@ class FushiComputeGal {
         score: out[0],
         left: out[1],
         pitch: out[2],
-        mask: Uint8List.fromList(mask.asTypedList(width * height)),
+        mask: Uint8List.fromList(mask.asTypedListOutOfLine(width * height)),
       );
     } finally {
       malloc.free(centers);

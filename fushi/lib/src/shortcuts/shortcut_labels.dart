@@ -94,6 +94,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_global_scroll_to_bottom;
       case ShortcutAction.globalToggleFullscreen:
         return t.shortcut_action_global_toggle_fullscreen;
+      case ShortcutAction.globalOpenAiAssistant:
+        return t.shortcut_action_global_open_ai_assistant;
       case ShortcutAction.globalContextMenu:
         return t.shortcut_action_global_context_menu;
       case ShortcutAction.audiobookPlayPause:

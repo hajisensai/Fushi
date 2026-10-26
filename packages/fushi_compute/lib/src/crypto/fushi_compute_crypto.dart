@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:fushi_compute/src/fushi_compute_library.dart';
 import 'package:fushi_compute/src/native_scratch.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 /// `ffc_crypto_*` 的本域状态码（native/fushi_compute/src/crypto.rs）。
 abstract final class FfcCryptoStatus {
@@ -185,11 +186,12 @@ final class FushiComputeCrypto implements Finalizable {
       throw ArgumentError.value(data.length, 'data', 'not a multiple of 16');
     }
     if (data.isEmpty) return;
-    _keyBuf.asTypedList(16).setAll(0, key);
+    _keyBuf.asTypedListOutOfLine(16).setAll(0, key);
     final Pointer<Uint8> buf = _scratchFor(data.length);
-    final Uint8List view = buf.asTypedList(data.length)..setAll(0, data);
+    final Uint8List view = buf.asTypedListOutOfLine(data.length)
+      ..setAll(0, data);
     final int code = _ecbDecrypt(_keyBuf, buf, data.length);
-    _keyBuf.asTypedList(32).fillRange(0, 32, 0);
+    _keyBuf.asTypedListOutOfLine(32).fillRange(0, 32, 0);
     if (code != FfcStatus.ok) {
       throw StateError('ffc_crypto_aes128_ecb_decrypt: $code');
     }
@@ -216,10 +218,11 @@ final class FushiComputeCrypto implements Finalizable {
         "Input data length must be a multiple of cipher's block size",
       );
     }
-    _keyBuf.asTypedList(key.length).setAll(0, key);
-    _ivBuf.asTypedList(16).setAll(0, iv);
+    _keyBuf.asTypedListOutOfLine(key.length).setAll(0, key);
+    _ivBuf.asTypedListOutOfLine(16).setAll(0, iv);
     final Pointer<Uint8> buf = _scratchFor(data.length);
-    final Uint8List view = buf.asTypedList(data.length)..setAll(0, data);
+    final Uint8List view = buf.asTypedListOutOfLine(data.length)
+      ..setAll(0, data);
     final int code = _cbcPkcs7(
       _keyBuf,
       key.length,
@@ -228,7 +231,7 @@ final class FushiComputeCrypto implements Finalizable {
       data.length,
       _outLen,
     );
-    _keyBuf.asTypedList(32).fillRange(0, 32, 0);
+    _keyBuf.asTypedListOutOfLine(32).fillRange(0, 32, 0);
     if (code == FfcStatus.badInput) {
       throw ArgumentError('Invalid or corrupted pad block');
     }
@@ -252,12 +255,13 @@ final class FushiComputeCrypto implements Finalizable {
       throw ArgumentError('IV must be 16 bytes and data whole blocks');
     }
     if (data.isEmpty) return Uint8List(0);
-    _keyBuf.asTypedList(key.length).setAll(0, key);
-    _ivBuf.asTypedList(16).setAll(0, iv);
+    _keyBuf.asTypedListOutOfLine(key.length).setAll(0, key);
+    _ivBuf.asTypedListOutOfLine(16).setAll(0, iv);
     final Pointer<Uint8> buf = _scratchFor(data.length);
-    final Uint8List view = buf.asTypedList(data.length)..setAll(0, data);
+    final Uint8List view = buf.asTypedListOutOfLine(data.length)
+      ..setAll(0, data);
     final int code = _cbcEncrypt(_keyBuf, key.length, _ivBuf, buf, data.length);
-    _keyBuf.asTypedList(32).fillRange(0, 32, 0);
+    _keyBuf.asTypedListOutOfLine(32).fillRange(0, 32, 0);
     if (code != FfcStatus.ok) {
       throw StateError('ffc_crypto_aes_cbc_encrypt: $code');
     }
@@ -290,7 +294,7 @@ final class FushiComputeCrypto implements Finalizable {
     }
     final Pointer<Uint8> buf = malloc<Uint8>(src.length + dst.length);
     try {
-      buf.asTypedList(src.length + dst.length)
+      buf.asTypedListOutOfLine(src.length + dst.length)
         ..setAll(0, src)
         ..setAll(src.length, dst);
       final int code = fn(buf, src.length, buf + src.length, dst.length);
@@ -310,7 +314,7 @@ final class FushiComputeCrypto implements Finalizable {
   Uint8List p256PublicKey(Uint8List privateKey) {
     _loadScalar(privateKey);
     final int code = _p256PublicKey(_scalarBuf, _pointBuf);
-    _scalarBuf.asTypedList(32).fillRange(0, 32, 0);
+    _scalarBuf.asTypedListOutOfLine(32).fillRange(0, 32, 0);
     if (code == FfcStatus.invalidArgument) {
       throw ArgumentError.value(
         privateKey,
@@ -321,7 +325,7 @@ final class FushiComputeCrypto implements Finalizable {
     if (code != FfcStatus.ok) {
       throw StateError('ffc_crypto_p256_public_key: $code');
     }
-    return Uint8List.fromList(_pointBuf.asTypedList(65));
+    return Uint8List.fromList(_pointBuf.asTypedListOutOfLine(65));
   }
 
   /// ECDSA/SHA-256 签 [message]（RFC 6979 确定性 k，不做 low-s 归一），返回 P1363
@@ -329,9 +333,10 @@ final class FushiComputeCrypto implements Finalizable {
   Uint8List p256SignSha256(Uint8List privateKey, List<int> message) {
     _loadScalar(privateKey);
     final Pointer<Uint8> msg = _scratchFor(message.length);
-    if (message.isNotEmpty) msg.asTypedList(message.length).setAll(0, message);
+    if (message.isNotEmpty)
+      msg.asTypedListOutOfLine(message.length).setAll(0, message);
     final int code = _p256Sign(_scalarBuf, msg, message.length, _sigBuf);
-    _scalarBuf.asTypedList(32).fillRange(0, 32, 0);
+    _scalarBuf.asTypedListOutOfLine(32).fillRange(0, 32, 0);
     if (code == FfcStatus.invalidArgument) {
       throw ArgumentError.value(
         privateKey,
@@ -342,7 +347,7 @@ final class FushiComputeCrypto implements Finalizable {
     if (code != FfcStatus.ok) {
       throw StateError('ffc_crypto_p256_sign_sha256: $code');
     }
-    return Uint8List.fromList(_sigBuf.asTypedList(64));
+    return Uint8List.fromList(_sigBuf.asTypedListOutOfLine(64));
   }
 
   /// 用 65 字节未压缩点 [publicPoint] 验 [message] 的 P1363 签名 [signature]（64 字节）。
@@ -353,10 +358,11 @@ final class FushiComputeCrypto implements Finalizable {
     Uint8List signature,
   ) {
     if (publicPoint.length != 65 || signature.length != 64) return false;
-    _pointBuf.asTypedList(65).setAll(0, publicPoint);
-    _sigBuf.asTypedList(64).setAll(0, signature);
+    _pointBuf.asTypedListOutOfLine(65).setAll(0, publicPoint);
+    _sigBuf.asTypedListOutOfLine(64).setAll(0, signature);
     final Pointer<Uint8> msg = _scratchFor(message.length);
-    if (message.isNotEmpty) msg.asTypedList(message.length).setAll(0, message);
+    if (message.isNotEmpty)
+      msg.asTypedListOutOfLine(message.length).setAll(0, message);
     final int code = _p256Verify(_pointBuf, msg, message.length, _sigBuf);
     if (code == FfcStatus.ok) return true;
     if (code == FfcCryptoStatus.p256SignatureInvalid ||
@@ -374,7 +380,7 @@ final class FushiComputeCrypto implements Finalizable {
         'must be 32 bytes',
       );
     }
-    _scalarBuf.asTypedList(32).setAll(0, privateKey);
+    _scalarBuf.asTypedListOutOfLine(32).setAll(0, privateKey);
   }
 
   /// 建一个 AACS 内容解码器（每个 unit key 16 字节，至少一个）。
@@ -392,12 +398,12 @@ final class FushiComputeCrypto implements Finalizable {
     final Pointer<Uint8> keys = malloc<Uint8>(packed.length);
     final Pointer<Pointer<Void>> handle = calloc<Pointer<Void>>();
     try {
-      keys.asTypedList(packed.length).setAll(0, packed);
+      keys.asTypedListOutOfLine(packed.length).setAll(0, packed);
       final int code = _aacsOpen(keys, unitKeys.length, handle);
       if (code != FfcStatus.ok) throw StateError('ffc_crypto_aacs_open: $code');
       return AacsNativeDecoder._(this, handle.value);
     } finally {
-      keys.asTypedList(packed.length).fillRange(0, packed.length, 0);
+      keys.asTypedListOutOfLine(packed.length).fillRange(0, packed.length, 0);
       packed.fillRange(0, packed.length, 0);
       malloc.free(keys);
       calloc.free(handle);
@@ -439,7 +445,8 @@ final class AacsNativeDecoder implements Finalizable {
       throw ArgumentError.value(units.length, 'units', 'not whole AACS units');
     }
     final Pointer<Uint8> buf = _crypto._scratchFor(units.length);
-    final Uint8List view = buf.asTypedList(units.length)..setAll(0, units);
+    final Uint8List view = buf.asTypedListOutOfLine(units.length)
+      ..setAll(0, units);
     final Pointer<Size> doneOut = _done.pointer.cast<Size>();
     final int code = _crypto._aacsDecrypt(_handle, buf, units.length, doneOut);
     if (code != FfcStatus.ok &&

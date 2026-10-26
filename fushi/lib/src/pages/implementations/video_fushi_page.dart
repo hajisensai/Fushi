@@ -1,3 +1,5 @@
+import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -15,6 +17,7 @@ import 'package:fushi/src/media/video/bluray_disc_menu_input.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_bar.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_focus_host.dart';
 import 'package:fushi/src/media/video/disc/disc_session_controls.dart';
+import 'package:fushi/src/media/video/disc/disc_session_remote.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/media/video/bluray_disc_track_selection.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
@@ -178,6 +181,8 @@ import 'package:fushi/src/media/video/web_video_bridge.dart'
         kWebVideoLiveTrackLang,
         pickWebVideoSiteTrackForLanguage,
         shouldOpenInWebVideoPlayer;
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
+    show setFushiPageRouteTransparent;
 import 'package:fushi/src/media/video/underlay_composition.dart'
     show
         acquireUnderlayComposition,
@@ -252,6 +257,7 @@ import 'package:fushi/src/media/video/video_danmaku_overlay.dart';
 import 'package:fushi/src/media/video/video_backing_render_size.dart';
 import 'package:fushi/src/media/video/video_danmaku_source.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
@@ -2129,6 +2135,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final ValueNotifier<VideoControlLayout> _controlLayoutNotifier =
       ValueNotifier<VideoControlLayout>(VideoControlLayout.currentChrome);
 
+  /// 沉浸布局存值（JSON，空串 = 没改过、按 [_controlLayout] 派生）。与
+  /// [_controlLayoutNotifier] 同理走 notifier：全屏路由那棵独立子树只在通知时重建。
+  /// 存原值而不是解码结果，是因为「没改过」要跟着普通布局实时派生。
+  final ValueNotifier<String> _immersiveControlLayoutJson =
+      ValueNotifier<String>('');
+
   /// 自定义「快捷键 1..4」按钮的绑定（槽位 → 视频动作）。与 [_controlLayoutNotifier]
   /// 同样走 notifier 而不是裸字段：控制层（含全屏路由那棵独立子树）只在监听到通知时
   /// 才重建，绑定改了却不通知 = 按钮图标/行为停在旧动作上（BUG-391 那条「漏监听 =
@@ -2232,6 +2244,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 本页持有一份底层合成（[acquireUnderlayComposition]），dispose 归还。
   bool _webUnderlayHeld = false;
+
+  /// 持有底层合成期间让路由层页底（[FushiPageBackdrop]）整个让开的那条路由，dispose 恢复。
+  Route<Object?>? _webTransparentRoute;
 
   /// 播放器档（[_webPlayerModeFor]）：否则是网页档——WebView 收输入、整页原样，播放器控件
   /// 不挂，只留顶部返回条。
@@ -2457,7 +2472,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final ValueNotifier<bool> _railHovered = ValueNotifier<bool>(false);
 
   /// 视频左侧常驻锁 / 解锁按钮（TODO-126）的可见性。非沉浸态显示锁图标（进入沉浸）、
-  /// 沉浸态显示解锁图标（退出沉浸）——两态用同一枚侧边按钮（[_buildSideLockButton]）。
+  /// 沉浸态显示解锁图标（退出沉浸）。沉浸锁定态整层侧栏（沉浸布局）跟它一起显隐。
   ///
   /// 与 [_videoControlsVisible] 同样走「hover / tap 唤起 + 2s 自动淡出」时序，但**独立于
   /// 它**：沉浸态下 [_markControlsVisible] 被锁强制 false（防 media_kit 控制条弹出），若解
@@ -2757,6 +2772,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 字幕字符命中句柄：查词浮层的 dismiss barrier 用它反查「点到的是不是另一个字幕
   /// 字符」，是则切换查词、保持暂停（见 [_onDismissBarrierTap] / [VideoSubtitleHitTester]）。
   final VideoSubtitleHitTester _subtitleHitTester = VideoSubtitleHitTester();
+
+  /// 沉浸锁定态点画面显示 / 遮回当前主字幕的句柄（[_maybeToggleImmersiveSubtitleReveal]）。
+  final VideoSubtitleRevealHandle _subtitleRevealHandle =
+      VideoSubtitleRevealHandle();
 
   /// 暂停句「整句扫词」的会话状态（仅内存）：当前句 / 词序列 / 词游标。执行体见
   /// `_VideoWordSweep`（`video_fushi/word_sweep.part.dart`）。它是有模态的字级选词
@@ -3322,6 +3341,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// getter reads [_controlLayoutNotifier] so the current controls builder can
   /// rebuild immediately after [_setVideoControlLayout].
   VideoControlLayout get _controlLayout => _controlLayoutNotifier.value;
+
+  /// 当前生效的沉浸布局（锁定后屏幕左右侧栏的按钮）。
+  VideoImmersiveControlLayout get _immersiveControlLayout =>
+      VideoImmersiveControlLayout.decode(
+        _immersiveControlLayoutJson.value,
+        base: _controlLayout,
+      );
 
   /// 桌面端是否把原生窗口锁定为当前视频比例。移动端窗口不可改尺寸。
   /// 初始 false 与偏好默认对齐（回归修复）：偏好快照在 init 赋值前不主动锁窗口，
@@ -4154,6 +4180,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _controlLayoutNotifier.value = appModel.videoControlLayout;
+    _immersiveControlLayoutJson.value =
+        appModel.videoImmersiveControlLayoutJson;
     _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
     _lockWindowAspectRatio = appModel.videoLockWindowAspectRatio;
     _videoFitMode = appModel.videoFitMode;
@@ -4330,6 +4358,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _controlLayoutNotifier.value = appModel.videoControlLayout;
+    _immersiveControlLayoutJson.value =
+        appModel.videoImmersiveControlLayoutJson;
     _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
     // BUG-2691：画面 fit 与 HDR 输出是全局设置，本地路径（上面 `_init` 本体）读了，
     // 远端路径此前漏读——Emby / Jellyfin / 互联播放恒按默认 auto / contain，用户设的
@@ -6481,6 +6511,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _videoControlPopover.dispose();
     _videoControlEditMode.dispose();
     _controlLayoutNotifier.dispose();
+    _immersiveControlLayoutJson.dispose();
     _customActionBindingsNotifier.dispose();
     _immersiveLocked.dispose();
     _lockButtonHideTimer?.cancel();
@@ -6589,7 +6620,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 控制条 / 侧边锁按钮 / 浮动 rail 的显隐淡入淡出时长（TODO-435），单一真相源。
   /// 与 media_kit 的 `controlsTransitionDuration` 默认对齐：桌面 150ms、移动 300ms。
-  /// [_desktopControlsTheme] / [_mobileControlsTheme] / [_buildSideLockButton] /
+  /// [_desktopControlsTheme] / [_mobileControlsTheme] / [_buildLockToggleButton] /
   /// [_buildVideoSideActionRail] 都读它，将来调一处全部跟随，不再各写各的 200ms。
   /// eink 主题下经 [einkSafeDuration] 归零（墨水屏连续重绘=残影），控制条与全部
   /// 跟随者一次改单点全部生效（UI 巡检 PR-4）。
@@ -9703,7 +9734,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         : lastTopRightSegment && _webMode
         ? _webPageBarEntries(desktop: desktop)
         : const <VideoBarEntry>[];
-    if (items.isEmpty && folded.isEmpty && disc.isEmpty) {
+    final List<VideoBarEntry> askAi = lastTopRightSegment
+        ? _askAiBarEntries(desktop: desktop)
+        : const <VideoBarEntry>[];
+    if (items.isEmpty && folded.isEmpty && disc.isEmpty && askAi.isEmpty) {
       return const SizedBox.shrink();
     }
 
@@ -9768,6 +9802,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               cluster: VideoBarCluster.start,
               child: buttonFor(item),
             ),
+          ...askAi,
           ...folded,
         ],
       );
@@ -9780,6 +9815,39 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           : EdgeInsets.zero,
       child: buttonGroup(),
     );
+  }
+
+  /// 右上角按钮组的「问 AI」（D4 ③）：本页的顶栏动作体系是 [VideoControlBar]
+  /// （按 [VideoBarEntry.priority] 收进组尾「⋯」，不是 FushiFloatingTopBar），
+  /// 优先级 5 低于全部布局按钮（最冷门的逐帧是 10）= 空间不够时最先收起。上下文
+  /// 与悬浮球同一个 [_videoAiContext]。AI 模块关着时不出。
+  List<VideoBarEntry> _askAiBarEntries({required bool desktop}) {
+    if (!isAiModuleEnabled(appModel.moduleVisibility)) {
+      return const <VideoBarEntry>[];
+    }
+    void run() =>
+        openAiAgentForPage(context, scene: 'video', read: _videoAiContext);
+    return <VideoBarEntry>[
+      VideoBarEntry(
+        priority: 5,
+        menuAction: VideoBarMenuAction(
+          icon: kAiAgentAskIcon,
+          label: aiAgentAskLabel,
+          onSelected: run,
+        ),
+        child: FushiTooltip(
+          message: aiAgentAskLabel,
+          child: KeyedSubtree(
+            key: kAiAgentAskKey,
+            child: _chromeIconButton(
+              icon: kAiAgentAskIcon,
+              desktop: desktop,
+              onPressed: run,
+            ),
+          ),
+        ),
+      ),
+    ];
   }
 
   String get _clipExportTooltip {
@@ -10893,6 +10961,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (mounted) setState(() {});
   }
 
+  /// 落盘 + 即时生效沉浸布局；null = 恢复默认（清空存值，回到按普通布局派生）。与
+  /// [_setVideoControlLayout] 同款：先推 notifier 再持久化。
+  Future<void> _setVideoImmersiveControlLayout(
+    VideoImmersiveControlLayout? layout,
+  ) async {
+    _immersiveControlLayoutJson.value = layout?.encode() ?? '';
+    await appModel.setVideoImmersiveControlLayout(layout);
+    if (mounted) setState(() {});
+  }
+
   /// 落盘 + 即时生效「快捷键 1..4」按钮的新绑定。与 [_setVideoControlLayout] 同款：
   /// 先推 notifier（控制层与全屏子树立刻重建，图标/行为当场变），再持久化。
   Future<void> _setVideoCustomActionBindings(
@@ -11186,6 +11264,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 全屏是推到根导航器上的独立路由（[_pushNeutralizedVideoFullscreen]），窗口侧
   /// 这份登记随之不再是「当前路由」，宿主会退回「其它页面」那组按钮——所以全屏
   /// 路由里要再挂一份（[child] 包住全屏内容），两份登记同源同按钮。
+  /// 悬浮球「AI」取的当前页面上下文（视频页）；每次点球时现取。
+  Map<String, Object?> _videoAiContext() {
+    final int ms = _controller?.positionMs ?? 0;
+    final Duration d = Duration(milliseconds: ms < 0 ? 0 : ms);
+    String two(int n) => n.toString().padLeft(2, '0');
+    final String mmss = '${two(d.inMinutes)}:${two(d.inSeconds % 60)}';
+    final String work = (_playlistTitle ?? '').trim();
+    final String ep = (_title ?? '').trim();
+    final String title = work.isEmpty || work == ep
+        ? ep
+        : (ep.isEmpty ? work : '$work - $ep');
+    return <String, Object?>{
+      'itemKind': 'episode',
+      'itemId': _activeBookUid,
+      'itemTitle': title,
+      'position': mmss,
+      if (_isPlaylist) 'episode': _currentEpisode + 1,
+    };
+  }
+
   Widget _buildVideoFloatingBallScene(
     VideoPlayerController? controller, {
     Widget child = const SizedBox.shrink(),
@@ -11202,6 +11300,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         if (controller == null) {
           return FloatingBallScene(
             scope: FloatingBallScope.video,
+            aiContext: _videoAiContext,
             actions: const <String, ReaderHeaderAction>{},
             hideBall: hideBall,
             child: child!,
@@ -11210,6 +11309,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         final bool playing = controller.isPlaying;
         return FloatingBallScene(
           scope: FloatingBallScope.video,
+          aiContext: _videoAiContext,
           hideBall: hideBall,
           actions: <String, ReaderHeaderAction>{
             'play_pause': ReaderHeaderAction(
@@ -11528,6 +11628,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           (VideoShaderTier tier, bool highQuality, List<String> enabledNames) =>
               _applyShaderTier(highQuality, enabledNames),
       onControlLayoutChanged: _setVideoControlLayout,
+      immersiveControlLayout: () => _immersiveControlLayout,
+      onImmersiveControlLayoutChanged: _setVideoImmersiveControlLayout,
       // TODO-1158 / TODO-1159：多档画质入口（跨平台，经设置面板「播放」分类可达）。HLS
       // master variant 或 YouTube 流（懒解析多档）时给入口；点开画质侧栏（替换设置侧栏）。
       qualityOptionCount: _qualityOptionCount,
@@ -12188,6 +12290,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
 
+    // 沉浸锁定 + 字幕遮蔽：点画面任意处显示 / 遮回当前句（不等双击窗口，立即生效；
+    // full 档的双击 seek 照常往下走，首击顺带显形无害）。
+    _maybeToggleImmersiveSubtitleReveal(event.position);
+
     // 移动端点画面（非控制条按钮）的控制条显隐 toggle 不再在 Fushi 侧另做镜像
     // （TODO-364）：本外层 [Listener] 是 translucent，同一次点击会继续命中下方 media_kit
     // 移动控制条自己的手势层 → 其 `onTap` 翻 `visible` 并推送 [_mediaKitControlsVisible]，
@@ -12243,6 +12349,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoDoubleTapCenterAction.none:
         break;
     }
+  }
+
+  /// 沉浸锁定态点画面 = 显示 / 遮回当前主字幕（设计案
+  /// `docs/specs/2026-10-25-video-immersive-one-hand.md` §3.1，判据
+  /// [videoImmersiveTapRevealsSubtitle]）。点在**已显形的字幕字符**上不算——那一下是
+  /// 查词（字幕 overlay 的字符命中），再顺手把这句遮回去就成了「点字查词字幕消失」。
+  void _maybeToggleImmersiveSubtitleReveal(Offset globalPosition) {
+    if (!videoImmersiveTapRevealsSubtitle(
+      immersiveLocked: _immersiveLocked.value,
+      tapRevealEnabled: appModel.videoImmersiveTapReveal,
+      obscureMode: appModel.videoSubtitleObscureMode,
+      revealOnInteraction: appModel.videoSubtitleObscureReveal,
+    )) {
+      return;
+    }
+    if (_subtitleHitTester.hitTest(globalPosition, exactOnly: true) != null) {
+      return;
+    }
+    _subtitleRevealHandle.toggleMainReveal();
   }
 
   /// TODO-1058：桌面在视频画面上滚鼠标滚轮调音量（上滚增、下滚减，[_volumeStep] 步进，

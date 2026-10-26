@@ -20,7 +20,12 @@ import 'nyaa_html_fixture.dart';
 void main() {
   test('Nyaa adapter preserves release fields and resolves a magnet', () async {
     final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
+      siteId: 'nyaa-test',
+      categoryByDomain: const <VideoDiscoveryCategory, String>{
+        VideoDiscoveryCategory.anime: '1_0',
+      },
       client: NyaaClient(
+        baseUrl: 'https://nyaa.si',
         minRequestInterval: Duration.zero,
         client: MockClient((http.Request request) async {
           expect(request.url.queryParameters['q'], 'Test Show');
@@ -48,7 +53,12 @@ void main() {
       () async {
     final List<String> queries = <String>[];
     final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
+      siteId: 'nyaa-test',
+      categoryByDomain: const <VideoDiscoveryCategory, String>{
+        VideoDiscoveryCategory.anime: '1_0',
+      },
       client: NyaaClient(
+        baseUrl: 'https://nyaa.si',
         minRequestInterval: Duration.zero,
         client: MockClient((http.Request request) async {
           queries.add(request.url.queryParameters['q']!);
@@ -94,7 +104,12 @@ void main() {
     test('Nyaa explicit query plus work spellings: $query', () async {
       final List<String> queries = <String>[];
       final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
+        siteId: 'nyaa-test',
+        categoryByDomain: const <VideoDiscoveryCategory, String>{
+          VideoDiscoveryCategory.anime: '1_0',
+        },
         client: NyaaClient(
+          baseUrl: 'https://nyaa.si',
           minRequestInterval: Duration.zero,
           client: MockClient((http.Request request) async {
             queries.add(request.url.queryParameters['q']!);

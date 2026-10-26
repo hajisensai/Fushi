@@ -51,6 +51,7 @@ part 'database_music.part.dart';
 part 'database_music_scrape.part.dart';
 part 'database_theme_song_spans.part.dart';
 part 'database_people.part.dart';
+part 'database_ai_agent.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
@@ -846,6 +847,8 @@ void _requireOneVideoMetadataOwner({
   PersonIdentityBridges,
   AdaptationProgressAnchors,
   GalgameTextLines,
+  AiAgentSessions,
+  AiAgentActions,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -865,7 +868,8 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMusicScrape,
         _FushiDbThemeSongSpans,
         _FushiDbPeople,
-        _FushiDbGalgameTextLines {
+        _FushiDbGalgameTextLines,
+        _FushiDbAiAgent {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -886,7 +890,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 135;
+  int get schemaVersion => 136;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2628,6 +2632,22 @@ class FushiDatabase extends _$FushiDatabase
               }
             }
           }
+          if (from < 136) {
+            // v136（AI 助手，docs/specs/2026-10-26-ai-operations-agent-design.md §5.3 /
+            // D3 / D5）：ai_agent_sessions（对话存档）/ ai_agent_actions（操作记录）。
+            // 设备本地（同 library_organize_*：不同步、不进备份、不分 Profile）。
+            // 纯建表 + 索引；幂等守卫同 v119。
+            for (final TableInfo<Table, Object?> table
+                in <TableInfo<Table, Object?>>[
+              aiAgentSessions,
+              aiAgentActions,
+            ]) {
+              if (!await _tableExists(table.actualTableName)) {
+                await m.createTable(table);
+              }
+            }
+            await _ensureAiAgentIndexes();
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -2644,6 +2664,7 @@ class FushiDatabase extends _$FushiDatabase
           await _ensureProfileUidIndex();
           await _ensureSrsIndexes();
           await _ensureMusicIndexes();
+          await _ensureAiAgentIndexes();
         },
         beforeOpen: (details) async {
           // Second, belt-and-suspenders downgrade guard. drift calls beforeOpen

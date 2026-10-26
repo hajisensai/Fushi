@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import 'fushi_music_library.dart';
 import 'scan_wire.dart';
@@ -57,9 +58,7 @@ class _ScanBindings {
         'ffm_scan_set_known',
       );
       next = lib.library.lookupFunction<_NextC, _NextDart>('ffm_scan_next');
-      close = lib.library.lookupFunction<_CloseC, _CloseDart>(
-        'ffm_scan_close',
-      );
+      close = lib.library.lookupFunction<_CloseC, _CloseDart>('ffm_scan_close');
       cover = lib.library.lookupFunction<_CoverC, _CoverDart>(
         'ffm_tags_embedded_cover',
       );
@@ -82,7 +81,7 @@ class _ScanBindings {
 
 Pointer<Uint8> _copyIn(Uint8List bytes, Allocator alloc) {
   final Pointer<Uint8> p = alloc<Uint8>(bytes.isEmpty ? 1 : bytes.length);
-  p.asTypedList(bytes.length).setAll(0, bytes);
+  p.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
   return p;
 }
 
@@ -142,7 +141,7 @@ final class MusicScanSession {
       }
       final int len = outLen.value;
       final Uint8List copy = Uint8List.fromList(
-        outPtr.value.asTypedList(len),
+        outPtr.value.asTypedListOutOfLine(len),
       );
       _b._lib.freeBytes(outPtr.value, len);
       return copy;
@@ -175,7 +174,9 @@ Uint8List? readMusicEmbeddedCover(String path) {
     if (rc != FfmStatus.ok) return null;
     final int len = outLen.value;
     if (len == 0) return null;
-    final Uint8List copy = Uint8List.fromList(outPtr.value.asTypedList(len));
+    final Uint8List copy = Uint8List.fromList(
+      outPtr.value.asTypedListOutOfLine(len),
+    );
     b._lib.freeBytes(outPtr.value, len);
     return copy;
   });

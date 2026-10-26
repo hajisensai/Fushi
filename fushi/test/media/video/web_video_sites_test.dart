@@ -51,14 +51,7 @@ void main() {
     );
   });
 
-  test('地址栏：补 https，非网址给 null', () {
-    expect(normalizeWebVideoSiteInput('netflix.com'), 'https://netflix.com');
-    expect(
-      normalizeWebVideoSiteInput(' https://www.youtube.com/ '),
-      'https://www.youtube.com/',
-    );
-    expect(normalizeWebVideoSiteInput(''), isNull);
-    expect(normalizeWebVideoSiteInput('ftp://x.y'), isNull);
+  test('站名默认取去掉 www. 的 host', () {
     expect(webVideoSiteDefaultTitle('https://www.tver.jp/'), 'tver.jp');
   });
 
@@ -78,7 +71,12 @@ void main() {
   });
 
   test('站点入口的伪书不是任何库里的书身份', () {
-    final String uid = webVideoSiteRow(kWebVideoPresetSites.first).bookUid;
+    final String uid = webVideoSiteRow(
+      const WebVideoSite(
+        title: 'Netflix',
+        url: 'https://www.netflix.com/browse',
+      ),
+    ).bookUid;
     expect(isWebVideoSiteBookUid(uid), isTrue);
     expect(uid.startsWith('video/stream/'), isFalse);
   });

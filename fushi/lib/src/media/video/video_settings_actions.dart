@@ -470,6 +470,19 @@ Future<void> resetVideoControlLayoutDual(SettingsContext context) async {
   context.refresh();
 }
 
+/// 「恢复默认沉浸模式按钮」：清掉沉浸布局存值，回到按普通布局派生（只剩锁按钮）。
+Future<void> resetVideoImmersiveControlLayoutDual(
+  SettingsContext context,
+) async {
+  final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
+  if (host?.onImmersiveControlLayoutChanged != null) {
+    await host!.onImmersiveControlLayoutChanged!(null);
+  } else {
+    await context.appModel.setVideoImmersiveControlLayout(null);
+  }
+  context.refresh();
+}
+
 // ── 倍速吸附 ─────────────────────────────────────────────────────────────────
 
 /// 把滑条浮点值吸附到 0.1 档并夹进 0.5–2.0（消除二进制浮点尾差如 0.7000000000000001，
@@ -1114,5 +1127,14 @@ Widget buildVideoControlLayoutEditor(SettingsContext context) {
     customActionBindings:
         host.customActionBindings?.call() ?? VideoCustomActionBindings.empty,
     onCustomActionBindingsChanged: host.onCustomActionBindingsChanged,
+  );
+}
+
+/// 沉浸布局编辑器（锁定后屏幕左右侧栏的按钮）。只在宿主提供沉浸布局时可见。
+Widget buildVideoImmersiveControlLayoutEditor(SettingsContext context) {
+  final VideoQuickSettingsHost host = videoQuickSettingsHostOf(context)!;
+  return VideoImmersiveControlLayoutEditor(
+    layout: host.immersiveControlLayout!(),
+    onLayoutChanged: host.onImmersiveControlLayoutChanged,
   );
 }

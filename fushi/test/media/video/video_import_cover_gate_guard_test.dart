@@ -104,20 +104,32 @@ void main() {
       '_commitAutoFrameCoverWrite(',
     ]);
 
+    // 流媒体导入的落库本体在门面 StreamVideoUrlImporter.importUrl（对话框与控制通道
+    // 共用）；对话框的 _importStreamUrl 只经门面动手。
     final String stream = _slice(
       dialogSource,
-      'Future<void> _importStreamUrl(',
+      'Future<StreamVideoUrlImport> importUrl(',
       'Future<String?> _resolveYoutubeImportCover(',
     );
     _expectOrdered(stream, <String>[
       '_runVideoImportCoverMutation(',
-      '_uniqueBookUid(',
+      'uniqueVideoBookUid(',
       '_admitAutoFrameCoverWrite(',
       '_resolveYoutubeImportCover(',
       'saveVideoBook(',
       '_commitAutoFrameCoverWrite(',
     ]);
     expect(stream, contains('downloadCover: coverMetaStore != null'));
+    final String dialogStream = _slice(
+      dialogSource,
+      'Future<void> _importStreamUrl(',
+      'void _handleDialogDrop(',
+    );
+    expect(
+      compactCode(dialogStream),
+      contains('StreamVideoUrlImporter(widget.repo).importUrl('),
+    );
+    expect(dialogStream, isNot(contains('saveVideoBook(')));
   });
 
   test('YouTube 受保护或 maintenance 路径只取标题、不派生封面文件', () {
