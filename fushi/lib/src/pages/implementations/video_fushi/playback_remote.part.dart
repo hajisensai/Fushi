@@ -12,6 +12,7 @@ class _VideoPagePlaybackRemote
     implements
         VideoPlaybackRemote,
         VideoPlayerRemoteControl,
+        VideoDiscRemoteControl,
         VideoQuickSettingsHostProvider {
   _VideoPagePlaybackRemote(this._state);
 
@@ -930,6 +931,67 @@ class _VideoPagePlaybackRemote
   Future<void> refreshMineQueue() async {
     if (!_state.mounted) return;
     await _state._refreshStagedMineCount();
+  }
+
+  // ── 原盘会话（`fushi_cli disc …`，见 [VideoDiscRemoteControl]） ─────────────
+
+  @override
+  VideoDiscSessionSnapshot? discSession() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null || !controller.isBlurayNavigationSession) {
+      return null;
+    }
+    return VideoDiscSessionSnapshot(
+      bookUid: _state.widget.bookUid,
+      title: _state._title,
+      discType: controller.discType,
+      remote: controller.isRemoteDiscSession,
+      navigationSupported: controller.discNavigationSupported,
+      menuStarting: controller.discMenuEntryPending,
+      menuActive: controller.discMenuActive,
+      titleReady: controller.discTitleReady,
+      discTitle: controller.discNavigationState?.title,
+      playlistPath: controller.selectedDiscPlaylistPath,
+      error: controller.discMenuError,
+    );
+  }
+
+  /// 与盘菜单键位 / 遥控器同一条路径（[_VideoFushiPageState._runDiscNavigation] 里的
+  /// `controller.discMenuKey`），只是失败不弹 OSD、带回给调用方；同样不唤起控制栏。
+  @override
+  Future<void> discMenuKey(VideoDiscMenuKey key) async {
+    final VideoPlayerController controller = _requireController();
+    if (!controller.isBlurayNavigationSession) {
+      throw const VideoRemoteFailure('unsupported', '当前播放页不是原盘会话');
+    }
+    if (controller.discMenuEntryPending) {
+      throw const VideoRemoteFailure('busy', '原盘菜单还在启动，稍后再试');
+    }
+    try {
+      await controller.discMenuKey(key);
+    } on VideoDiscMenuException catch (e) {
+      throw switch (e.code) {
+        'navigation-initializing' => const VideoRemoteFailure(
+          'busy',
+          '原盘菜单还在启动，稍后再试',
+        ),
+        'navigation-not-active' => const VideoRemoteFailure(
+          'unsupported',
+          '这张盘当前不能导航菜单（播放组件不支持或菜单没打开）',
+        ),
+        _ => VideoRemoteFailure('failed', '原盘菜单操作失败：${e.code}'),
+      };
+    }
+  }
+
+  /// 「退出原盘」/ 按住 Esc 背后的同一个退出汇聚点。
+  @override
+  Future<void> exitDiscSession() async {
+    final VideoPlayerController controller = _requireController();
+    if (!controller.isBlurayNavigationSession) {
+      throw const VideoRemoteFailure('unsupported', '当前播放页不是原盘会话');
+    }
+    await _state._exitDiscSession();
   }
 }
 
