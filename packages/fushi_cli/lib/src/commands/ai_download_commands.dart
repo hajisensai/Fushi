@@ -2,7 +2,7 @@ import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
 
-/// `aidl`：AI 下载会话（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_ai_download_routes.dart`）。
+/// `aidl`：AI 下载会话（app 侧路由见 `fushi/lib/src/ops/ctl_ai_download_routes.dart`）。
 ///
 /// 一场会话 = app 里的一次「AI 下视频」对话（`--domain video`）或一次「AI 下载」
 /// （`--domain novel|manga|game`）。流程：`start` 说一句话 → `status` 看进度 / 问题 /

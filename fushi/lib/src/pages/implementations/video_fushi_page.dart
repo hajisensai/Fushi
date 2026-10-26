@@ -1,3 +1,5 @@
+import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -15,6 +17,7 @@ import 'package:fushi/src/media/video/bluray_disc_menu_input.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_bar.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_focus_host.dart';
 import 'package:fushi/src/media/video/disc/disc_session_controls.dart';
+import 'package:fushi/src/media/video/disc/disc_session_remote.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/media/video/bluray_disc_track_selection.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
@@ -9703,7 +9706,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         : lastTopRightSegment && _webMode
         ? _webPageBarEntries(desktop: desktop)
         : const <VideoBarEntry>[];
-    if (items.isEmpty && folded.isEmpty && disc.isEmpty) {
+    final List<VideoBarEntry> askAi = lastTopRightSegment
+        ? _askAiBarEntries(desktop: desktop)
+        : const <VideoBarEntry>[];
+    if (items.isEmpty && folded.isEmpty && disc.isEmpty && askAi.isEmpty) {
       return const SizedBox.shrink();
     }
 
@@ -9768,6 +9774,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               cluster: VideoBarCluster.start,
               child: buttonFor(item),
             ),
+          ...askAi,
           ...folded,
         ],
       );
@@ -9780,6 +9787,39 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           : EdgeInsets.zero,
       child: buttonGroup(),
     );
+  }
+
+  /// 右上角按钮组的「问 AI」（D4 ③）：本页的顶栏动作体系是 [VideoControlBar]
+  /// （按 [VideoBarEntry.priority] 收进组尾「⋯」，不是 FushiFloatingTopBar），
+  /// 优先级 5 低于全部布局按钮（最冷门的逐帧是 10）= 空间不够时最先收起。上下文
+  /// 与悬浮球同一个 [_videoAiContext]。AI 模块关着时不出。
+  List<VideoBarEntry> _askAiBarEntries({required bool desktop}) {
+    if (!isAiModuleEnabled(appModel.moduleVisibility)) {
+      return const <VideoBarEntry>[];
+    }
+    void run() =>
+        openAiAgentForPage(context, scene: 'video', read: _videoAiContext);
+    return <VideoBarEntry>[
+      VideoBarEntry(
+        priority: 5,
+        menuAction: VideoBarMenuAction(
+          icon: kAiAgentAskIcon,
+          label: aiAgentAskLabel,
+          onSelected: run,
+        ),
+        child: FushiTooltip(
+          message: aiAgentAskLabel,
+          child: KeyedSubtree(
+            key: kAiAgentAskKey,
+            child: _chromeIconButton(
+              icon: kAiAgentAskIcon,
+              desktop: desktop,
+              onPressed: run,
+            ),
+          ),
+        ),
+      ),
+    ];
   }
 
   String get _clipExportTooltip {
@@ -11186,6 +11226,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 全屏是推到根导航器上的独立路由（[_pushNeutralizedVideoFullscreen]），窗口侧
   /// 这份登记随之不再是「当前路由」，宿主会退回「其它页面」那组按钮——所以全屏
   /// 路由里要再挂一份（[child] 包住全屏内容），两份登记同源同按钮。
+  /// 悬浮球「AI」取的当前页面上下文（视频页）；每次点球时现取。
+  Map<String, Object?> _videoAiContext() {
+    final int ms = _controller?.positionMs ?? 0;
+    final Duration d = Duration(milliseconds: ms < 0 ? 0 : ms);
+    String two(int n) => n.toString().padLeft(2, '0');
+    final String mmss = '${two(d.inMinutes)}:${two(d.inSeconds % 60)}';
+    final String work = (_playlistTitle ?? '').trim();
+    final String ep = (_title ?? '').trim();
+    final String title = work.isEmpty || work == ep
+        ? ep
+        : (ep.isEmpty ? work : '$work - $ep');
+    return <String, Object?>{
+      'itemKind': 'episode',
+      'itemId': _activeBookUid,
+      'itemTitle': title,
+      'position': mmss,
+      if (_isPlaylist) 'episode': _currentEpisode + 1,
+    };
+  }
+
   Widget _buildVideoFloatingBallScene(
     VideoPlayerController? controller, {
     Widget child = const SizedBox.shrink(),
@@ -11202,6 +11262,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         if (controller == null) {
           return FloatingBallScene(
             scope: FloatingBallScope.video,
+            aiContext: _videoAiContext,
             actions: const <String, ReaderHeaderAction>{},
             hideBall: hideBall,
             child: child!,
@@ -11210,6 +11271,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         final bool playing = controller.isPlaying;
         return FloatingBallScene(
           scope: FloatingBallScope.video,
+          aiContext: _videoAiContext,
           hideBall: hideBall,
           actions: <String, ReaderHeaderAction>{
             'play_pause': ReaderHeaderAction(

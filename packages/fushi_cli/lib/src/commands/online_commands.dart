@@ -3,7 +3,7 @@ import 'package:args/args.dart';
 import '../ctl_commands.dart';
 import 'ai_download_commands.dart';
 
-/// online 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_online_routes.dart`）。
+/// online 域命令（app 侧路由见 `fushi/lib/src/ops/ctl_online_routes.dart`）。
 ///
 /// 六组：`ext`（扩展仓库 / 扩展 / 启停）、`source`（在线源启停 / 置顶 / 偏好 /
 /// 筛选浏览 / 搜索 / 作品 / 入库 / 下载）、`discover`（发现源搜索与一键获取）、
@@ -515,7 +515,11 @@ String _renderBulkReport(Object? data) {
 void _configureExtRm(ArgParser parser) {
   _addKind(parser);
   _addYes(parser);
-  parser.addFlag('clear-data', negatable: false, help: '同时清除该扩展各源的设置（漫画 / 视频）');
+  parser.addFlag(
+    'clear-data',
+    negatable: false,
+    help: '同时清除扩展数据（漫画 / 视频：各源设置；小说：插件存储 / 登录态）；不加则保留，重装即接回',
+  );
 }
 
 CtlRequestSpec _buildExtRm(CtlCommandContext context) {

@@ -6,7 +6,7 @@ import 'video_player_commands.dart';
 import 'video_subtitle_commands.dart';
 import 'video_subtitle_fetch_commands.dart';
 
-/// video 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_video_routes.dart`）：
+/// video 域命令（app 侧路由见 `fushi/lib/src/ops/ctl_video_routes.dart`）：
 /// 视频库刮削（作品列表 / 重刮 / 回答待确认 / 手动候选 / 手动指定身份）、视频发现
 /// （搜作品 → 搜资源 → 入队下载），以及播放页控制（[videoPlayerCommands]）。
 const List<CtlCommandGroup> videoCommandGroups = <CtlCommandGroup>[

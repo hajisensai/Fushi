@@ -72828,6 +72828,1265 @@ class GalgameTextLinesCompanion extends UpdateCompanion<GalgameTextLineRow> {
   }
 }
 
+class $AiAgentSessionsTable extends AiAgentSessions
+    with TableInfo<$AiAgentSessionsTable, AiAgentSessionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AiAgentSessionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sceneMeta = const VerificationMeta('scene');
+  @override
+  late final GeneratedColumn<String> scene = GeneratedColumn<String>(
+    'scene',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payloadJsonMeta = const VerificationMeta(
+    'payloadJson',
+  );
+  @override
+  late final GeneratedColumn<String> payloadJson = GeneratedColumn<String>(
+    'payload_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _totalTokensMeta = const VerificationMeta(
+    'totalTokens',
+  );
+  @override
+  late final GeneratedColumn<int> totalTokens = GeneratedColumn<int>(
+    'total_tokens',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    title,
+    scene,
+    payloadJson,
+    totalTokens,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'ai_agent_sessions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AiAgentSessionRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('scene')) {
+      context.handle(
+        _sceneMeta,
+        scene.isAcceptableOrUnknown(data['scene']!, _sceneMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sceneMeta);
+    }
+    if (data.containsKey('payload_json')) {
+      context.handle(
+        _payloadJsonMeta,
+        payloadJson.isAcceptableOrUnknown(
+          data['payload_json']!,
+          _payloadJsonMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadJsonMeta);
+    }
+    if (data.containsKey('total_tokens')) {
+      context.handle(
+        _totalTokensMeta,
+        totalTokens.isAcceptableOrUnknown(
+          data['total_tokens']!,
+          _totalTokensMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  AiAgentSessionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AiAgentSessionRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      scene: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}scene'],
+      )!,
+      payloadJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload_json'],
+      )!,
+      totalTokens: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}total_tokens'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $AiAgentSessionsTable createAlias(String alias) {
+    return $AiAgentSessionsTable(attachedDatabase, alias);
+  }
+}
+
+class AiAgentSessionRow extends DataClass
+    implements Insertable<AiAgentSessionRow> {
+  /// 会话 id（调用方生成）。
+  final String id;
+
+  /// 首句用户话截断，调用方给。
+  final String title;
+
+  /// `general` | `reader` | `manga` | `video` | `system`。
+  final String scene;
+
+  /// 整场会话 JSON（调用方序列化，已剔除凭据）。
+  final String payloadJson;
+  final int totalTokens;
+  final int createdAt;
+  final int updatedAt;
+  const AiAgentSessionRow({
+    required this.id,
+    required this.title,
+    required this.scene,
+    required this.payloadJson,
+    required this.totalTokens,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['title'] = Variable<String>(title);
+    map['scene'] = Variable<String>(scene);
+    map['payload_json'] = Variable<String>(payloadJson);
+    map['total_tokens'] = Variable<int>(totalTokens);
+    map['created_at'] = Variable<int>(createdAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  AiAgentSessionsCompanion toCompanion(bool nullToAbsent) {
+    return AiAgentSessionsCompanion(
+      id: Value(id),
+      title: Value(title),
+      scene: Value(scene),
+      payloadJson: Value(payloadJson),
+      totalTokens: Value(totalTokens),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory AiAgentSessionRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AiAgentSessionRow(
+      id: serializer.fromJson<String>(json['id']),
+      title: serializer.fromJson<String>(json['title']),
+      scene: serializer.fromJson<String>(json['scene']),
+      payloadJson: serializer.fromJson<String>(json['payloadJson']),
+      totalTokens: serializer.fromJson<int>(json['totalTokens']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'title': serializer.toJson<String>(title),
+      'scene': serializer.toJson<String>(scene),
+      'payloadJson': serializer.toJson<String>(payloadJson),
+      'totalTokens': serializer.toJson<int>(totalTokens),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  AiAgentSessionRow copyWith({
+    String? id,
+    String? title,
+    String? scene,
+    String? payloadJson,
+    int? totalTokens,
+    int? createdAt,
+    int? updatedAt,
+  }) => AiAgentSessionRow(
+    id: id ?? this.id,
+    title: title ?? this.title,
+    scene: scene ?? this.scene,
+    payloadJson: payloadJson ?? this.payloadJson,
+    totalTokens: totalTokens ?? this.totalTokens,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  AiAgentSessionRow copyWithCompanion(AiAgentSessionsCompanion data) {
+    return AiAgentSessionRow(
+      id: data.id.present ? data.id.value : this.id,
+      title: data.title.present ? data.title.value : this.title,
+      scene: data.scene.present ? data.scene.value : this.scene,
+      payloadJson: data.payloadJson.present
+          ? data.payloadJson.value
+          : this.payloadJson,
+      totalTokens: data.totalTokens.present
+          ? data.totalTokens.value
+          : this.totalTokens,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AiAgentSessionRow(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('scene: $scene, ')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('totalTokens: $totalTokens, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    title,
+    scene,
+    payloadJson,
+    totalTokens,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AiAgentSessionRow &&
+          other.id == this.id &&
+          other.title == this.title &&
+          other.scene == this.scene &&
+          other.payloadJson == this.payloadJson &&
+          other.totalTokens == this.totalTokens &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class AiAgentSessionsCompanion extends UpdateCompanion<AiAgentSessionRow> {
+  final Value<String> id;
+  final Value<String> title;
+  final Value<String> scene;
+  final Value<String> payloadJson;
+  final Value<int> totalTokens;
+  final Value<int> createdAt;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const AiAgentSessionsCompanion({
+    this.id = const Value.absent(),
+    this.title = const Value.absent(),
+    this.scene = const Value.absent(),
+    this.payloadJson = const Value.absent(),
+    this.totalTokens = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AiAgentSessionsCompanion.insert({
+    required String id,
+    required String title,
+    required String scene,
+    required String payloadJson,
+    this.totalTokens = const Value.absent(),
+    required int createdAt,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       title = Value(title),
+       scene = Value(scene),
+       payloadJson = Value(payloadJson),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<AiAgentSessionRow> custom({
+    Expression<String>? id,
+    Expression<String>? title,
+    Expression<String>? scene,
+    Expression<String>? payloadJson,
+    Expression<int>? totalTokens,
+    Expression<int>? createdAt,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (title != null) 'title': title,
+      if (scene != null) 'scene': scene,
+      if (payloadJson != null) 'payload_json': payloadJson,
+      if (totalTokens != null) 'total_tokens': totalTokens,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AiAgentSessionsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? title,
+    Value<String>? scene,
+    Value<String>? payloadJson,
+    Value<int>? totalTokens,
+    Value<int>? createdAt,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return AiAgentSessionsCompanion(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      scene: scene ?? this.scene,
+      payloadJson: payloadJson ?? this.payloadJson,
+      totalTokens: totalTokens ?? this.totalTokens,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (scene.present) {
+      map['scene'] = Variable<String>(scene.value);
+    }
+    if (payloadJson.present) {
+      map['payload_json'] = Variable<String>(payloadJson.value);
+    }
+    if (totalTokens.present) {
+      map['total_tokens'] = Variable<int>(totalTokens.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AiAgentSessionsCompanion(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('scene: $scene, ')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('totalTokens: $totalTokens, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $AiAgentActionsTable extends AiAgentActions
+    with TableInfo<$AiAgentActionsTable, AiAgentActionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AiAgentActionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _sessionIdMeta = const VerificationMeta(
+    'sessionId',
+  );
+  @override
+  late final GeneratedColumn<String> sessionId = GeneratedColumn<String>(
+    'session_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _opIdMeta = const VerificationMeta('opId');
+  @override
+  late final GeneratedColumn<String> opId = GeneratedColumn<String>(
+    'op_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _argsJsonMeta = const VerificationMeta(
+    'argsJson',
+  );
+  @override
+  late final GeneratedColumn<String> argsJson = GeneratedColumn<String>(
+    'args_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _riskMeta = const VerificationMeta('risk');
+  @override
+  late final GeneratedColumn<String> risk = GeneratedColumn<String>(
+    'risk',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _confirmationMeta = const VerificationMeta(
+    'confirmation',
+  );
+  @override
+  late final GeneratedColumn<String> confirmation = GeneratedColumn<String>(
+    'confirmation',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _resultCodeMeta = const VerificationMeta(
+    'resultCode',
+  );
+  @override
+  late final GeneratedColumn<String> resultCode = GeneratedColumn<String>(
+    'result_code',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _undoPayloadJsonMeta = const VerificationMeta(
+    'undoPayloadJson',
+  );
+  @override
+  late final GeneratedColumn<String> undoPayloadJson = GeneratedColumn<String>(
+    'undo_payload_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _beforeTextMeta = const VerificationMeta(
+    'beforeText',
+  );
+  @override
+  late final GeneratedColumn<String> beforeText = GeneratedColumn<String>(
+    'before_text',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _afterTextMeta = const VerificationMeta(
+    'afterText',
+  );
+  @override
+  late final GeneratedColumn<String> afterText = GeneratedColumn<String>(
+    'after_text',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _undoneAtMeta = const VerificationMeta(
+    'undoneAt',
+  );
+  @override
+  late final GeneratedColumn<int> undoneAt = GeneratedColumn<int>(
+    'undone_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _undoStatusMeta = const VerificationMeta(
+    'undoStatus',
+  );
+  @override
+  late final GeneratedColumn<String> undoStatus = GeneratedColumn<String>(
+    'undo_status',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    sessionId,
+    opId,
+    argsJson,
+    risk,
+    confirmation,
+    resultCode,
+    undoPayloadJson,
+    beforeText,
+    afterText,
+    createdAt,
+    undoneAt,
+    undoStatus,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'ai_agent_actions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AiAgentActionRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('session_id')) {
+      context.handle(
+        _sessionIdMeta,
+        sessionId.isAcceptableOrUnknown(data['session_id']!, _sessionIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sessionIdMeta);
+    }
+    if (data.containsKey('op_id')) {
+      context.handle(
+        _opIdMeta,
+        opId.isAcceptableOrUnknown(data['op_id']!, _opIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_opIdMeta);
+    }
+    if (data.containsKey('args_json')) {
+      context.handle(
+        _argsJsonMeta,
+        argsJson.isAcceptableOrUnknown(data['args_json']!, _argsJsonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_argsJsonMeta);
+    }
+    if (data.containsKey('risk')) {
+      context.handle(
+        _riskMeta,
+        risk.isAcceptableOrUnknown(data['risk']!, _riskMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_riskMeta);
+    }
+    if (data.containsKey('confirmation')) {
+      context.handle(
+        _confirmationMeta,
+        confirmation.isAcceptableOrUnknown(
+          data['confirmation']!,
+          _confirmationMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_confirmationMeta);
+    }
+    if (data.containsKey('result_code')) {
+      context.handle(
+        _resultCodeMeta,
+        resultCode.isAcceptableOrUnknown(data['result_code']!, _resultCodeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_resultCodeMeta);
+    }
+    if (data.containsKey('undo_payload_json')) {
+      context.handle(
+        _undoPayloadJsonMeta,
+        undoPayloadJson.isAcceptableOrUnknown(
+          data['undo_payload_json']!,
+          _undoPayloadJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('before_text')) {
+      context.handle(
+        _beforeTextMeta,
+        beforeText.isAcceptableOrUnknown(data['before_text']!, _beforeTextMeta),
+      );
+    }
+    if (data.containsKey('after_text')) {
+      context.handle(
+        _afterTextMeta,
+        afterText.isAcceptableOrUnknown(data['after_text']!, _afterTextMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('undone_at')) {
+      context.handle(
+        _undoneAtMeta,
+        undoneAt.isAcceptableOrUnknown(data['undone_at']!, _undoneAtMeta),
+      );
+    }
+    if (data.containsKey('undo_status')) {
+      context.handle(
+        _undoStatusMeta,
+        undoStatus.isAcceptableOrUnknown(data['undo_status']!, _undoStatusMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  AiAgentActionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AiAgentActionRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      sessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}session_id'],
+      )!,
+      opId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}op_id'],
+      )!,
+      argsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}args_json'],
+      )!,
+      risk: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}risk'],
+      )!,
+      confirmation: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}confirmation'],
+      )!,
+      resultCode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}result_code'],
+      )!,
+      undoPayloadJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}undo_payload_json'],
+      ),
+      beforeText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}before_text'],
+      ),
+      afterText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}after_text'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      undoneAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}undone_at'],
+      ),
+      undoStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}undo_status'],
+      ),
+    );
+  }
+
+  @override
+  $AiAgentActionsTable createAlias(String alias) {
+    return $AiAgentActionsTable(attachedDatabase, alias);
+  }
+}
+
+class AiAgentActionRow extends DataClass
+    implements Insertable<AiAgentActionRow> {
+  final int id;
+
+  /// `ai_agent_sessions.id`。**没有外键**：会话存档按期限删掉后，操作记录仍可保留到
+  /// 自己的期限；设备本地表在覆盖恢复后原样回灌，外键也会打断回灌。
+  final String sessionId;
+
+  /// 操作目录 id（如 `settings.set`）。
+  final String opId;
+
+  /// 参数 JSON（调用方已剔除凭据）。
+  final String argsJson;
+
+  /// `read` | `write` | `irreversible`。
+  final String risk;
+
+  /// `auto`（可逆、直接执行）| `user`（用户点了确认）。
+  final String confirmation;
+
+  /// `ok` 或错误短码。
+  final String resultCode;
+
+  /// 撤销载荷 JSON；NULL = 不可撤销。
+  final String? undoPayloadJson;
+
+  /// 给人看的改前 / 改后。
+  final String? beforeText;
+  final String? afterText;
+  final int createdAt;
+
+  /// 撤销时刻；NULL = 未撤销。
+  final int? undoneAt;
+
+  /// `done` | `superseded` | `failed`；NULL = 未撤销。
+  final String? undoStatus;
+  const AiAgentActionRow({
+    required this.id,
+    required this.sessionId,
+    required this.opId,
+    required this.argsJson,
+    required this.risk,
+    required this.confirmation,
+    required this.resultCode,
+    this.undoPayloadJson,
+    this.beforeText,
+    this.afterText,
+    required this.createdAt,
+    this.undoneAt,
+    this.undoStatus,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['session_id'] = Variable<String>(sessionId);
+    map['op_id'] = Variable<String>(opId);
+    map['args_json'] = Variable<String>(argsJson);
+    map['risk'] = Variable<String>(risk);
+    map['confirmation'] = Variable<String>(confirmation);
+    map['result_code'] = Variable<String>(resultCode);
+    if (!nullToAbsent || undoPayloadJson != null) {
+      map['undo_payload_json'] = Variable<String>(undoPayloadJson);
+    }
+    if (!nullToAbsent || beforeText != null) {
+      map['before_text'] = Variable<String>(beforeText);
+    }
+    if (!nullToAbsent || afterText != null) {
+      map['after_text'] = Variable<String>(afterText);
+    }
+    map['created_at'] = Variable<int>(createdAt);
+    if (!nullToAbsent || undoneAt != null) {
+      map['undone_at'] = Variable<int>(undoneAt);
+    }
+    if (!nullToAbsent || undoStatus != null) {
+      map['undo_status'] = Variable<String>(undoStatus);
+    }
+    return map;
+  }
+
+  AiAgentActionsCompanion toCompanion(bool nullToAbsent) {
+    return AiAgentActionsCompanion(
+      id: Value(id),
+      sessionId: Value(sessionId),
+      opId: Value(opId),
+      argsJson: Value(argsJson),
+      risk: Value(risk),
+      confirmation: Value(confirmation),
+      resultCode: Value(resultCode),
+      undoPayloadJson: undoPayloadJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(undoPayloadJson),
+      beforeText: beforeText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(beforeText),
+      afterText: afterText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(afterText),
+      createdAt: Value(createdAt),
+      undoneAt: undoneAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(undoneAt),
+      undoStatus: undoStatus == null && nullToAbsent
+          ? const Value.absent()
+          : Value(undoStatus),
+    );
+  }
+
+  factory AiAgentActionRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AiAgentActionRow(
+      id: serializer.fromJson<int>(json['id']),
+      sessionId: serializer.fromJson<String>(json['sessionId']),
+      opId: serializer.fromJson<String>(json['opId']),
+      argsJson: serializer.fromJson<String>(json['argsJson']),
+      risk: serializer.fromJson<String>(json['risk']),
+      confirmation: serializer.fromJson<String>(json['confirmation']),
+      resultCode: serializer.fromJson<String>(json['resultCode']),
+      undoPayloadJson: serializer.fromJson<String?>(json['undoPayloadJson']),
+      beforeText: serializer.fromJson<String?>(json['beforeText']),
+      afterText: serializer.fromJson<String?>(json['afterText']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      undoneAt: serializer.fromJson<int?>(json['undoneAt']),
+      undoStatus: serializer.fromJson<String?>(json['undoStatus']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'sessionId': serializer.toJson<String>(sessionId),
+      'opId': serializer.toJson<String>(opId),
+      'argsJson': serializer.toJson<String>(argsJson),
+      'risk': serializer.toJson<String>(risk),
+      'confirmation': serializer.toJson<String>(confirmation),
+      'resultCode': serializer.toJson<String>(resultCode),
+      'undoPayloadJson': serializer.toJson<String?>(undoPayloadJson),
+      'beforeText': serializer.toJson<String?>(beforeText),
+      'afterText': serializer.toJson<String?>(afterText),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'undoneAt': serializer.toJson<int?>(undoneAt),
+      'undoStatus': serializer.toJson<String?>(undoStatus),
+    };
+  }
+
+  AiAgentActionRow copyWith({
+    int? id,
+    String? sessionId,
+    String? opId,
+    String? argsJson,
+    String? risk,
+    String? confirmation,
+    String? resultCode,
+    Value<String?> undoPayloadJson = const Value.absent(),
+    Value<String?> beforeText = const Value.absent(),
+    Value<String?> afterText = const Value.absent(),
+    int? createdAt,
+    Value<int?> undoneAt = const Value.absent(),
+    Value<String?> undoStatus = const Value.absent(),
+  }) => AiAgentActionRow(
+    id: id ?? this.id,
+    sessionId: sessionId ?? this.sessionId,
+    opId: opId ?? this.opId,
+    argsJson: argsJson ?? this.argsJson,
+    risk: risk ?? this.risk,
+    confirmation: confirmation ?? this.confirmation,
+    resultCode: resultCode ?? this.resultCode,
+    undoPayloadJson: undoPayloadJson.present
+        ? undoPayloadJson.value
+        : this.undoPayloadJson,
+    beforeText: beforeText.present ? beforeText.value : this.beforeText,
+    afterText: afterText.present ? afterText.value : this.afterText,
+    createdAt: createdAt ?? this.createdAt,
+    undoneAt: undoneAt.present ? undoneAt.value : this.undoneAt,
+    undoStatus: undoStatus.present ? undoStatus.value : this.undoStatus,
+  );
+  AiAgentActionRow copyWithCompanion(AiAgentActionsCompanion data) {
+    return AiAgentActionRow(
+      id: data.id.present ? data.id.value : this.id,
+      sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
+      opId: data.opId.present ? data.opId.value : this.opId,
+      argsJson: data.argsJson.present ? data.argsJson.value : this.argsJson,
+      risk: data.risk.present ? data.risk.value : this.risk,
+      confirmation: data.confirmation.present
+          ? data.confirmation.value
+          : this.confirmation,
+      resultCode: data.resultCode.present
+          ? data.resultCode.value
+          : this.resultCode,
+      undoPayloadJson: data.undoPayloadJson.present
+          ? data.undoPayloadJson.value
+          : this.undoPayloadJson,
+      beforeText: data.beforeText.present
+          ? data.beforeText.value
+          : this.beforeText,
+      afterText: data.afterText.present ? data.afterText.value : this.afterText,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      undoneAt: data.undoneAt.present ? data.undoneAt.value : this.undoneAt,
+      undoStatus: data.undoStatus.present
+          ? data.undoStatus.value
+          : this.undoStatus,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AiAgentActionRow(')
+          ..write('id: $id, ')
+          ..write('sessionId: $sessionId, ')
+          ..write('opId: $opId, ')
+          ..write('argsJson: $argsJson, ')
+          ..write('risk: $risk, ')
+          ..write('confirmation: $confirmation, ')
+          ..write('resultCode: $resultCode, ')
+          ..write('undoPayloadJson: $undoPayloadJson, ')
+          ..write('beforeText: $beforeText, ')
+          ..write('afterText: $afterText, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('undoneAt: $undoneAt, ')
+          ..write('undoStatus: $undoStatus')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    sessionId,
+    opId,
+    argsJson,
+    risk,
+    confirmation,
+    resultCode,
+    undoPayloadJson,
+    beforeText,
+    afterText,
+    createdAt,
+    undoneAt,
+    undoStatus,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AiAgentActionRow &&
+          other.id == this.id &&
+          other.sessionId == this.sessionId &&
+          other.opId == this.opId &&
+          other.argsJson == this.argsJson &&
+          other.risk == this.risk &&
+          other.confirmation == this.confirmation &&
+          other.resultCode == this.resultCode &&
+          other.undoPayloadJson == this.undoPayloadJson &&
+          other.beforeText == this.beforeText &&
+          other.afterText == this.afterText &&
+          other.createdAt == this.createdAt &&
+          other.undoneAt == this.undoneAt &&
+          other.undoStatus == this.undoStatus);
+}
+
+class AiAgentActionsCompanion extends UpdateCompanion<AiAgentActionRow> {
+  final Value<int> id;
+  final Value<String> sessionId;
+  final Value<String> opId;
+  final Value<String> argsJson;
+  final Value<String> risk;
+  final Value<String> confirmation;
+  final Value<String> resultCode;
+  final Value<String?> undoPayloadJson;
+  final Value<String?> beforeText;
+  final Value<String?> afterText;
+  final Value<int> createdAt;
+  final Value<int?> undoneAt;
+  final Value<String?> undoStatus;
+  const AiAgentActionsCompanion({
+    this.id = const Value.absent(),
+    this.sessionId = const Value.absent(),
+    this.opId = const Value.absent(),
+    this.argsJson = const Value.absent(),
+    this.risk = const Value.absent(),
+    this.confirmation = const Value.absent(),
+    this.resultCode = const Value.absent(),
+    this.undoPayloadJson = const Value.absent(),
+    this.beforeText = const Value.absent(),
+    this.afterText = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.undoneAt = const Value.absent(),
+    this.undoStatus = const Value.absent(),
+  });
+  AiAgentActionsCompanion.insert({
+    this.id = const Value.absent(),
+    required String sessionId,
+    required String opId,
+    required String argsJson,
+    required String risk,
+    required String confirmation,
+    required String resultCode,
+    this.undoPayloadJson = const Value.absent(),
+    this.beforeText = const Value.absent(),
+    this.afterText = const Value.absent(),
+    required int createdAt,
+    this.undoneAt = const Value.absent(),
+    this.undoStatus = const Value.absent(),
+  }) : sessionId = Value(sessionId),
+       opId = Value(opId),
+       argsJson = Value(argsJson),
+       risk = Value(risk),
+       confirmation = Value(confirmation),
+       resultCode = Value(resultCode),
+       createdAt = Value(createdAt);
+  static Insertable<AiAgentActionRow> custom({
+    Expression<int>? id,
+    Expression<String>? sessionId,
+    Expression<String>? opId,
+    Expression<String>? argsJson,
+    Expression<String>? risk,
+    Expression<String>? confirmation,
+    Expression<String>? resultCode,
+    Expression<String>? undoPayloadJson,
+    Expression<String>? beforeText,
+    Expression<String>? afterText,
+    Expression<int>? createdAt,
+    Expression<int>? undoneAt,
+    Expression<String>? undoStatus,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (sessionId != null) 'session_id': sessionId,
+      if (opId != null) 'op_id': opId,
+      if (argsJson != null) 'args_json': argsJson,
+      if (risk != null) 'risk': risk,
+      if (confirmation != null) 'confirmation': confirmation,
+      if (resultCode != null) 'result_code': resultCode,
+      if (undoPayloadJson != null) 'undo_payload_json': undoPayloadJson,
+      if (beforeText != null) 'before_text': beforeText,
+      if (afterText != null) 'after_text': afterText,
+      if (createdAt != null) 'created_at': createdAt,
+      if (undoneAt != null) 'undone_at': undoneAt,
+      if (undoStatus != null) 'undo_status': undoStatus,
+    });
+  }
+
+  AiAgentActionsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? sessionId,
+    Value<String>? opId,
+    Value<String>? argsJson,
+    Value<String>? risk,
+    Value<String>? confirmation,
+    Value<String>? resultCode,
+    Value<String?>? undoPayloadJson,
+    Value<String?>? beforeText,
+    Value<String?>? afterText,
+    Value<int>? createdAt,
+    Value<int?>? undoneAt,
+    Value<String?>? undoStatus,
+  }) {
+    return AiAgentActionsCompanion(
+      id: id ?? this.id,
+      sessionId: sessionId ?? this.sessionId,
+      opId: opId ?? this.opId,
+      argsJson: argsJson ?? this.argsJson,
+      risk: risk ?? this.risk,
+      confirmation: confirmation ?? this.confirmation,
+      resultCode: resultCode ?? this.resultCode,
+      undoPayloadJson: undoPayloadJson ?? this.undoPayloadJson,
+      beforeText: beforeText ?? this.beforeText,
+      afterText: afterText ?? this.afterText,
+      createdAt: createdAt ?? this.createdAt,
+      undoneAt: undoneAt ?? this.undoneAt,
+      undoStatus: undoStatus ?? this.undoStatus,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (sessionId.present) {
+      map['session_id'] = Variable<String>(sessionId.value);
+    }
+    if (opId.present) {
+      map['op_id'] = Variable<String>(opId.value);
+    }
+    if (argsJson.present) {
+      map['args_json'] = Variable<String>(argsJson.value);
+    }
+    if (risk.present) {
+      map['risk'] = Variable<String>(risk.value);
+    }
+    if (confirmation.present) {
+      map['confirmation'] = Variable<String>(confirmation.value);
+    }
+    if (resultCode.present) {
+      map['result_code'] = Variable<String>(resultCode.value);
+    }
+    if (undoPayloadJson.present) {
+      map['undo_payload_json'] = Variable<String>(undoPayloadJson.value);
+    }
+    if (beforeText.present) {
+      map['before_text'] = Variable<String>(beforeText.value);
+    }
+    if (afterText.present) {
+      map['after_text'] = Variable<String>(afterText.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (undoneAt.present) {
+      map['undone_at'] = Variable<int>(undoneAt.value);
+    }
+    if (undoStatus.present) {
+      map['undo_status'] = Variable<String>(undoStatus.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AiAgentActionsCompanion(')
+          ..write('id: $id, ')
+          ..write('sessionId: $sessionId, ')
+          ..write('opId: $opId, ')
+          ..write('argsJson: $argsJson, ')
+          ..write('risk: $risk, ')
+          ..write('confirmation: $confirmation, ')
+          ..write('resultCode: $resultCode, ')
+          ..write('undoPayloadJson: $undoPayloadJson, ')
+          ..write('beforeText: $beforeText, ')
+          ..write('afterText: $afterText, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('undoneAt: $undoneAt, ')
+          ..write('undoStatus: $undoStatus')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -73048,6 +74307,10 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $GalgameTextLinesTable galgameTextLines = $GalgameTextLinesTable(
     this,
   );
+  late final $AiAgentSessionsTable aiAgentSessions = $AiAgentSessionsTable(
+    this,
+  );
+  late final $AiAgentActionsTable aiAgentActions = $AiAgentActionsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -73171,6 +74434,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     personIdentityBridges,
     adaptationProgressAnchors,
     galgameTextLines,
+    aiAgentSessions,
+    aiAgentActions,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -122758,6 +124023,620 @@ typedef $$GalgameTextLinesTableProcessedTableManager =
       GalgameTextLineRow,
       PrefetchHooks Function({bool gameId})
     >;
+typedef $$AiAgentSessionsTableCreateCompanionBuilder =
+    AiAgentSessionsCompanion Function({
+      required String id,
+      required String title,
+      required String scene,
+      required String payloadJson,
+      Value<int> totalTokens,
+      required int createdAt,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$AiAgentSessionsTableUpdateCompanionBuilder =
+    AiAgentSessionsCompanion Function({
+      Value<String> id,
+      Value<String> title,
+      Value<String> scene,
+      Value<String> payloadJson,
+      Value<int> totalTokens,
+      Value<int> createdAt,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$AiAgentSessionsTableFilterComposer
+    extends Composer<_$FushiDatabase, $AiAgentSessionsTable> {
+  $$AiAgentSessionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get scene => $composableBuilder(
+    column: $table.scene,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get totalTokens => $composableBuilder(
+    column: $table.totalTokens,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AiAgentSessionsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $AiAgentSessionsTable> {
+  $$AiAgentSessionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get scene => $composableBuilder(
+    column: $table.scene,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get totalTokens => $composableBuilder(
+    column: $table.totalTokens,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AiAgentSessionsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $AiAgentSessionsTable> {
+  $$AiAgentSessionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get scene =>
+      $composableBuilder(column: $table.scene, builder: (column) => column);
+
+  GeneratedColumn<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get totalTokens => $composableBuilder(
+    column: $table.totalTokens,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$AiAgentSessionsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $AiAgentSessionsTable,
+          AiAgentSessionRow,
+          $$AiAgentSessionsTableFilterComposer,
+          $$AiAgentSessionsTableOrderingComposer,
+          $$AiAgentSessionsTableAnnotationComposer,
+          $$AiAgentSessionsTableCreateCompanionBuilder,
+          $$AiAgentSessionsTableUpdateCompanionBuilder,
+          (
+            AiAgentSessionRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $AiAgentSessionsTable,
+              AiAgentSessionRow
+            >,
+          ),
+          AiAgentSessionRow,
+          PrefetchHooks Function()
+        > {
+  $$AiAgentSessionsTableTableManager(
+    _$FushiDatabase db,
+    $AiAgentSessionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AiAgentSessionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AiAgentSessionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$AiAgentSessionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<String> scene = const Value.absent(),
+                Value<String> payloadJson = const Value.absent(),
+                Value<int> totalTokens = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => AiAgentSessionsCompanion(
+                id: id,
+                title: title,
+                scene: scene,
+                payloadJson: payloadJson,
+                totalTokens: totalTokens,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String title,
+                required String scene,
+                required String payloadJson,
+                Value<int> totalTokens = const Value.absent(),
+                required int createdAt,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => AiAgentSessionsCompanion.insert(
+                id: id,
+                title: title,
+                scene: scene,
+                payloadJson: payloadJson,
+                totalTokens: totalTokens,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AiAgentSessionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $AiAgentSessionsTable,
+      AiAgentSessionRow,
+      $$AiAgentSessionsTableFilterComposer,
+      $$AiAgentSessionsTableOrderingComposer,
+      $$AiAgentSessionsTableAnnotationComposer,
+      $$AiAgentSessionsTableCreateCompanionBuilder,
+      $$AiAgentSessionsTableUpdateCompanionBuilder,
+      (
+        AiAgentSessionRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $AiAgentSessionsTable,
+          AiAgentSessionRow
+        >,
+      ),
+      AiAgentSessionRow,
+      PrefetchHooks Function()
+    >;
+typedef $$AiAgentActionsTableCreateCompanionBuilder =
+    AiAgentActionsCompanion Function({
+      Value<int> id,
+      required String sessionId,
+      required String opId,
+      required String argsJson,
+      required String risk,
+      required String confirmation,
+      required String resultCode,
+      Value<String?> undoPayloadJson,
+      Value<String?> beforeText,
+      Value<String?> afterText,
+      required int createdAt,
+      Value<int?> undoneAt,
+      Value<String?> undoStatus,
+    });
+typedef $$AiAgentActionsTableUpdateCompanionBuilder =
+    AiAgentActionsCompanion Function({
+      Value<int> id,
+      Value<String> sessionId,
+      Value<String> opId,
+      Value<String> argsJson,
+      Value<String> risk,
+      Value<String> confirmation,
+      Value<String> resultCode,
+      Value<String?> undoPayloadJson,
+      Value<String?> beforeText,
+      Value<String?> afterText,
+      Value<int> createdAt,
+      Value<int?> undoneAt,
+      Value<String?> undoStatus,
+    });
+
+class $$AiAgentActionsTableFilterComposer
+    extends Composer<_$FushiDatabase, $AiAgentActionsTable> {
+  $$AiAgentActionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get opId => $composableBuilder(
+    column: $table.opId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get argsJson => $composableBuilder(
+    column: $table.argsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get risk => $composableBuilder(
+    column: $table.risk,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get confirmation => $composableBuilder(
+    column: $table.confirmation,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get resultCode => $composableBuilder(
+    column: $table.resultCode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get undoPayloadJson => $composableBuilder(
+    column: $table.undoPayloadJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get beforeText => $composableBuilder(
+    column: $table.beforeText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get afterText => $composableBuilder(
+    column: $table.afterText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get undoneAt => $composableBuilder(
+    column: $table.undoneAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get undoStatus => $composableBuilder(
+    column: $table.undoStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AiAgentActionsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $AiAgentActionsTable> {
+  $$AiAgentActionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get opId => $composableBuilder(
+    column: $table.opId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get argsJson => $composableBuilder(
+    column: $table.argsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get risk => $composableBuilder(
+    column: $table.risk,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get confirmation => $composableBuilder(
+    column: $table.confirmation,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get resultCode => $composableBuilder(
+    column: $table.resultCode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get undoPayloadJson => $composableBuilder(
+    column: $table.undoPayloadJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get beforeText => $composableBuilder(
+    column: $table.beforeText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get afterText => $composableBuilder(
+    column: $table.afterText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get undoneAt => $composableBuilder(
+    column: $table.undoneAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get undoStatus => $composableBuilder(
+    column: $table.undoStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AiAgentActionsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $AiAgentActionsTable> {
+  $$AiAgentActionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get sessionId =>
+      $composableBuilder(column: $table.sessionId, builder: (column) => column);
+
+  GeneratedColumn<String> get opId =>
+      $composableBuilder(column: $table.opId, builder: (column) => column);
+
+  GeneratedColumn<String> get argsJson =>
+      $composableBuilder(column: $table.argsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get risk =>
+      $composableBuilder(column: $table.risk, builder: (column) => column);
+
+  GeneratedColumn<String> get confirmation => $composableBuilder(
+    column: $table.confirmation,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get resultCode => $composableBuilder(
+    column: $table.resultCode,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get undoPayloadJson => $composableBuilder(
+    column: $table.undoPayloadJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get beforeText => $composableBuilder(
+    column: $table.beforeText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get afterText =>
+      $composableBuilder(column: $table.afterText, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get undoneAt =>
+      $composableBuilder(column: $table.undoneAt, builder: (column) => column);
+
+  GeneratedColumn<String> get undoStatus => $composableBuilder(
+    column: $table.undoStatus,
+    builder: (column) => column,
+  );
+}
+
+class $$AiAgentActionsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $AiAgentActionsTable,
+          AiAgentActionRow,
+          $$AiAgentActionsTableFilterComposer,
+          $$AiAgentActionsTableOrderingComposer,
+          $$AiAgentActionsTableAnnotationComposer,
+          $$AiAgentActionsTableCreateCompanionBuilder,
+          $$AiAgentActionsTableUpdateCompanionBuilder,
+          (
+            AiAgentActionRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $AiAgentActionsTable,
+              AiAgentActionRow
+            >,
+          ),
+          AiAgentActionRow,
+          PrefetchHooks Function()
+        > {
+  $$AiAgentActionsTableTableManager(
+    _$FushiDatabase db,
+    $AiAgentActionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AiAgentActionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AiAgentActionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$AiAgentActionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> sessionId = const Value.absent(),
+                Value<String> opId = const Value.absent(),
+                Value<String> argsJson = const Value.absent(),
+                Value<String> risk = const Value.absent(),
+                Value<String> confirmation = const Value.absent(),
+                Value<String> resultCode = const Value.absent(),
+                Value<String?> undoPayloadJson = const Value.absent(),
+                Value<String?> beforeText = const Value.absent(),
+                Value<String?> afterText = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int?> undoneAt = const Value.absent(),
+                Value<String?> undoStatus = const Value.absent(),
+              }) => AiAgentActionsCompanion(
+                id: id,
+                sessionId: sessionId,
+                opId: opId,
+                argsJson: argsJson,
+                risk: risk,
+                confirmation: confirmation,
+                resultCode: resultCode,
+                undoPayloadJson: undoPayloadJson,
+                beforeText: beforeText,
+                afterText: afterText,
+                createdAt: createdAt,
+                undoneAt: undoneAt,
+                undoStatus: undoStatus,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String sessionId,
+                required String opId,
+                required String argsJson,
+                required String risk,
+                required String confirmation,
+                required String resultCode,
+                Value<String?> undoPayloadJson = const Value.absent(),
+                Value<String?> beforeText = const Value.absent(),
+                Value<String?> afterText = const Value.absent(),
+                required int createdAt,
+                Value<int?> undoneAt = const Value.absent(),
+                Value<String?> undoStatus = const Value.absent(),
+              }) => AiAgentActionsCompanion.insert(
+                id: id,
+                sessionId: sessionId,
+                opId: opId,
+                argsJson: argsJson,
+                risk: risk,
+                confirmation: confirmation,
+                resultCode: resultCode,
+                undoPayloadJson: undoPayloadJson,
+                beforeText: beforeText,
+                afterText: afterText,
+                createdAt: createdAt,
+                undoneAt: undoneAt,
+                undoStatus: undoStatus,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AiAgentActionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $AiAgentActionsTable,
+      AiAgentActionRow,
+      $$AiAgentActionsTableFilterComposer,
+      $$AiAgentActionsTableOrderingComposer,
+      $$AiAgentActionsTableAnnotationComposer,
+      $$AiAgentActionsTableCreateCompanionBuilder,
+      $$AiAgentActionsTableUpdateCompanionBuilder,
+      (
+        AiAgentActionRow,
+        BaseReferences<_$FushiDatabase, $AiAgentActionsTable, AiAgentActionRow>,
+      ),
+      AiAgentActionRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -123058,4 +124937,8 @@ class $FushiDatabaseManager {
       );
   $$GalgameTextLinesTableTableManager get galgameTextLines =>
       $$GalgameTextLinesTableTableManager(_db, _db.galgameTextLines);
+  $$AiAgentSessionsTableTableManager get aiAgentSessions =>
+      $$AiAgentSessionsTableTableManager(_db, _db.aiAgentSessions);
+  $$AiAgentActionsTableTableManager get aiAgentActions =>
+      $$AiAgentActionsTableTableManager(_db, _db.aiAgentActions);
 }

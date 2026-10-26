@@ -304,10 +304,13 @@ class VideoSubtitleBackfillService {
         continue;
       }
       try {
-        final String installed = await _writeSidecar(video, download);
+        final String target = sidecarPathFor(video.path, download);
+        if (!await _writeSidecar(video, download)) {
+          return _sameNameExists(target);
+        }
         return SubtitleBackfillResult(
           SubtitleBackfillOutcome.installed,
-          installedPath: installed,
+          installedPath: target,
           language: download.language,
         );
       } on Object catch (error) {
@@ -389,18 +392,12 @@ class VideoSubtitleBackfillService {
       );
     }
     final String dest = sidecarPathFor(video.path, download);
-    if (await File(dest).exists()) {
-      return SubtitleBackfillResult(
-        SubtitleBackfillOutcome.alreadyHasSubtitle,
-        installedPath: dest,
-        detail: 'a subtitle file with the same name already exists',
-      );
-    }
+    if (await File(dest).exists()) return _sameNameExists(dest);
     try {
-      final String installed = await _writeSidecar(video, download);
+      if (!await _writeSidecar(video, download)) return _sameNameExists(dest);
       return SubtitleBackfillResult(
         SubtitleBackfillOutcome.installed,
-        installedPath: installed,
+        installedPath: dest,
         language: download.language,
       );
     } on Object catch (error) {
@@ -483,15 +480,26 @@ class VideoSubtitleBackfillService {
     }
   }
 
+  /// 同名 sidecar 已经在了：不是这次写的，报 [SubtitleBackfillOutcome.alreadyHasSubtitle]
+  /// ——报成 installed 会让调用方（撤销「删掉刚装的字幕」、成功提示）把用户原有的
+  /// 那份当成这次的产物（BUG-3783）。
+  static SubtitleBackfillResult _sameNameExists(String path) =>
+      SubtitleBackfillResult(
+        SubtitleBackfillOutcome.alreadyHasSubtitle,
+        installedPath: path,
+        detail: 'a subtitle file with the same name already exists',
+      );
+
   /// 落 sidecar：`<video 基名>.<lang><ext>`。**已存在同名文件就不写**（上面已经
-  /// 查过整目录的 sidecar，这里是防并发的第二道）。
-  Future<String> _writeSidecar(
+  /// 查过整目录的 sidecar，这里是防并发的第二道）。返回 true = 这次真写了；false =
+  /// 同名文件已在（写之前就在，或对齐期间被别人落下），什么都没写。
+  Future<bool> _writeSidecar(
     File video,
     VideoSubtitleDownload download,
   ) async {
     final String target = sidecarPathFor(video.path, download);
     final File dest = File(target);
-    if (await dest.exists()) return target;
+    if (await dest.exists()) return false;
     // 先写临时文件再 rename：半截字幕文件比没有字幕更糟——播放页会把它当成
     // 一条可用字幕加载，用户看到的是「字幕只有前三句」。
     final File temp = File('$target.fushi.tmp');
@@ -510,10 +518,10 @@ class VideoSubtitleBackfillService {
       try {
         await temp.delete();
       } catch (_) {}
-      return target;
+      return false;
     }
     await temp.rename(target);
-    return target;
+    return true;
   }
 }
 

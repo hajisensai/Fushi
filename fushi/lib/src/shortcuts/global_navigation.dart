@@ -171,14 +171,16 @@ KeyEventResult _moveFocusForArrow(
   // Mirror the gamepad service's dispatch context: the focused widget's context
   // when one exists, else the navigator, so directional resolution starts from
   // the right scope inside whichever route is on top.
-  final BuildContext? context = FocusManager.instance.primaryFocus?.context ??
+  final BuildContext? context =
+      FocusManager.instance.primaryFocus?.context ??
       navigatorKey.currentContext;
   if (context == null) return KeyEventResult.ignored;
   if (!gamepadMoveFocusInDirection(context, dir) &&
       registry != null &&
       focusedEditableText() == null) {
-    final PageScrollRequest? request =
-        pageScrollRequestFor(_resolveGlobalKeyboardAction(registry, event));
+    final PageScrollRequest? request = pageScrollRequestFor(
+      _resolveGlobalKeyboardAction(registry, event),
+    );
     if (request != null) {
       executePageScroll(
         request,
@@ -418,6 +420,33 @@ KeyEventResult _handleGlobalToggleFullscreen(
   return KeyEventResult.handled;
 }
 
+/// 「呼出 AI 助手」（[ShortcutAction.globalOpenAiAssistant]，spec D4 ②）的执行面：
+/// 打开 AI 浮层并返回「这次按键是否被认领」。AI 模块关着 / 导航还没起来时返回
+/// false，按键照常冒泡（不做「绑了键却吞掉」的黑洞）。装配在 `main.dart`
+/// （`openAiAgentFromShortcut`）；测试直接注入。
+typedef GlobalOpenAiAssistant = bool Function();
+
+/// 键盘 / 手柄键事件解析到 [ShortcutAction.globalOpenAiAssistant] 时交给
+/// [open]。只认按下沿（重复沿不重开浮层）；解析不到或 [open] 不认领时 ignored。
+KeyEventResult _handleGlobalOpenAiAssistant(
+  FushiShortcutRegistry registry,
+  KeyEvent event,
+  GlobalOpenAiAssistant? open,
+) {
+  if (open == null || event is! KeyDownEvent) return KeyEventResult.ignored;
+  ShortcutAction? action = _resolveGlobalKeyboardAction(registry, event);
+  if (action == null) {
+    final GamepadButton? gamepad = GamepadButton.fromKeyEvent(event);
+    if (gamepad != null) {
+      action = registry.resolveGamepad(gamepad, scope: ShortcutScope.global);
+    }
+  }
+  if (action != ShortcutAction.globalOpenAiAssistant) {
+    return KeyEventResult.ignored;
+  }
+  return open() ? KeyEventResult.handled : KeyEventResult.ignored;
+}
+
 /// Whether the running platform has a desktop window whose fullscreen state can
 /// be toggled via [WindowManager] (mirrors [DesktopWindowPlacement] desktop gate).
 bool get desktopWindowFullscreenSupported =>
@@ -503,6 +532,7 @@ void _handleGlobalPointerDown(
   GlobalKey<NavigatorState> navigatorKey,
   FushiShortcutRegistry registry,
   PointerDownEvent event,
+  GlobalOpenAiAssistant? openAiAssistant,
 ) {
   final ShortcutAction? action = resolveMouseBindingAction(
     registry: registry,
@@ -515,7 +545,12 @@ void _handleGlobalPointerDown(
   if (action == null) return;
   dispatchClaimedMouseAction(
     event,
-    () => _executeGlobalMouseAction(context, navigatorKey, action),
+    () => _executeGlobalMouseAction(
+      context,
+      navigatorKey,
+      action,
+      openAiAssistant,
+    ),
   );
 }
 
@@ -525,6 +560,8 @@ void _handleGlobalPointerDown(
 ///   · [ShortcutAction.globalBack] → [Navigator.maybePop]（与 [_handleGlobalBack] 同）；
 ///   · [ShortcutAction.globalToggleFullscreen] → [_toggleWindowFullscreen]（与
 ///     [_handleGlobalToggleFullscreen] 同，移动端无窗口时有意 no-op）；
+///   · [ShortcutAction.globalOpenAiAssistant] → 注入的 [GlobalOpenAiAssistant]（与
+///     [_handleGlobalOpenAiAssistant] 同）；
 ///   · 页面滚动六件套（[ShortcutAction.globalScrollPageUp] 等）→ 与键盘 / 手柄
 ///     LB/RB 完全同一个执行体 [executePageScroll]（目标解析在
 ///     `FushiFocusScroll.resolveActivePageScrollable`）。
@@ -542,6 +579,7 @@ bool _executeGlobalMouseAction(
   BuildContext context,
   GlobalKey<NavigatorState> navigatorKey,
   ShortcutAction action,
+  GlobalOpenAiAssistant? openAiAssistant,
 ) {
   switch (action) {
     case ShortcutAction.globalBack:
@@ -560,6 +598,9 @@ bool _executeGlobalMouseAction(
         unawaited(_toggleWindowFullscreen());
       }
       return true;
+    case ShortcutAction.globalOpenAiAssistant:
+      // 与键盘同一个执行面；AI 模块关着时不认领，同一按钮上其它层的绑定照常。
+      return openAiAssistant?.call() ?? false;
     case ShortcutAction.globalScrollPageUp:
     case ShortcutAction.globalScrollPageDown:
     case ShortcutAction.globalScrollLineUp:
@@ -778,6 +819,7 @@ Widget wrapWithGlobalNavigation({
   required Widget child,
   bool focusNavigationEnabled = true,
   FushiShortcutRegistry? registry,
+  GlobalOpenAiAssistant? openAiAssistant,
 }) {
   final Map<ShortcutActivator, Intent> shortcuts = <ShortcutActivator, Intent>{
     // 焦点导航总开关关闭时，把 Tab / Shift+Tab 中和成 DoNothingIntent，使 Flutter
@@ -813,8 +855,9 @@ Widget wrapWithGlobalNavigation({
       // 关闭，此前把整块手柄逻辑一起关掉，导致默认安装上「注册表 globalBack」根本
       // 不参与解析——Android 上按 B 之所以还能返回，靠的是系统兜底（见下），于是
       // 用户把「返回」改绑到 RB 后 B 依旧退出页面。
-      final KeyEventResult gamepadResult =
-          dispatchNativeGamepadButtonIntent(event);
+      final KeyEventResult gamepadResult = dispatchNativeGamepadButtonIntent(
+        event,
+      );
       if (gamepadResult == KeyEventResult.handled) return gamepadResult;
       // 手柄重设计 P2（Android 键事件链）：页面 Actions 没消费的手柄按钮，弹窗
       // 可见时按 dictionaryPopup scope 解析（词条导航/制卡/发音）——与桌面轮询
@@ -827,32 +870,51 @@ Widget wrapWithGlobalNavigation({
         }
       }
       if (focusNavigationEnabled) {
-        final KeyEventResult arrowResult =
-            _handleGlobalArrowFocus(navigatorKey, registry, event);
+        final KeyEventResult arrowResult = _handleGlobalArrowFocus(
+          navigatorKey,
+          registry,
+          event,
+        );
         if (arrowResult == KeyEventResult.handled) return arrowResult;
       }
       // TODO-700 T1：注册表驱动的全局返回回退（Esc / Alt+← / B，或用户改键后的
       // 「返回」键）。仅对未自解析 globalBack 的页面（设置/对话框）生效；
       // home/reader/manga/video 已在更近的处理器消费。
       if (registry != null) {
-        final KeyEventResult backResult =
-            _handleGlobalBack(navigatorKey, registry, event);
+        final KeyEventResult backResult = _handleGlobalBack(
+          navigatorKey,
+          registry,
+          event,
+        );
         if (backResult == KeyEventResult.handled) return backResult;
         // TODO-1093 / BUG-1886：注册表驱动的窗口级全屏切换（默认 F11）。放在 globalBack
         // 之后、Escape 之前；仅桌面有窗口时真正 toggle，移动端 no-op（见下）。
         // **不受 [focusNavigationEnabled] 门控**——理由同 globalBack 与手柄分发
         // （BUG-1266）：全屏改键是正式功能（快捷键设置里有完整 UI 与默认绑定 F11），把它
         // 挂在一个默认关闭的实验开关上，等于在默认安装上「配了 F11 却永不解析」。
-        final KeyEventResult fullscreenResult =
-            _handleGlobalToggleFullscreen(registry, event);
+        final KeyEventResult fullscreenResult = _handleGlobalToggleFullscreen(
+          registry,
+          event,
+        );
         if (fullscreenResult == KeyEventResult.handled) {
           return fullscreenResult;
         }
+        // 呼出 AI 助手（默认 Ctrl+J / ⌘J，D4 ②）。同样不受焦点导航开关门控；AI 模块
+        // 关着时 [openAiAssistant] 不认领，按键继续往下走。
+        final KeyEventResult aiResult = _handleGlobalOpenAiAssistant(
+          registry,
+          event,
+          openAiAssistant,
+        );
+        if (aiResult == KeyEventResult.handled) return aiResult;
         // 页面滚动六件套（默认 PageUp/PageDown、↑/↓、Home/End）。同样**不受**
         // [focusNavigationEnabled] 门控——「用键盘滚页面」与实验性焦点导航无关，
         // 默认安装就得能用；方向键与焦点导航的让位规则见 [_handleGlobalScroll]。
-        final KeyEventResult scrollResult =
-            _handleGlobalScroll(navigatorKey, registry, event);
+        final KeyEventResult scrollResult = _handleGlobalScroll(
+          navigatorKey,
+          registry,
+          event,
+        );
         if (scrollResult == KeyEventResult.handled) return scrollResult;
       }
       // BUG-1266：走到这里说明**没有任何**处理器认领这次手柄按键。带系统兜底的键
@@ -892,11 +954,12 @@ Widget wrapWithGlobalNavigation({
                   behavior: HitTestBehavior.translucent,
                   onPointerDown: (PointerDownEvent event) =>
                       _handleGlobalPointerDown(
-                    context,
-                    navigatorKey,
-                    registry,
-                    event,
-                  ),
+                        context,
+                        navigatorKey,
+                        registry,
+                        event,
+                        openAiAssistant,
+                      ),
                   child: child,
                 ),
               ),

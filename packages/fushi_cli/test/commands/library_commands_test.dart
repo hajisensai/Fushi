@@ -28,8 +28,14 @@ CtlRequestSpec _build(
 void main() {
   group('library organize（AI 整理库）', () {
     test('organize：--domain 必填、--yes 才带同意', () {
-      expect(() => _build('organize', <String>[]), throwsA(isA<CtlUsageError>()));
-      final CtlRequestSpec r = _build('organize', <String>['--domain', 'books']);
+      expect(
+        () => _build('organize', <String>[]),
+        throwsA(isA<CtlUsageError>()),
+      );
+      final CtlRequestSpec r = _build('organize', <String>[
+        '--domain',
+        'books',
+      ]);
       expect(r.method, 'POST');
       expect(r.path, '/api/admin/library/organize');
       expect(r.body, <String, Object?>{'domain': 'books'});
@@ -44,8 +50,10 @@ void main() {
     });
 
     test('organize-history / organize-undo 的路径', () {
-      final CtlRequestSpec h =
-          _build('organize-history', <String>['--limit', '5']);
+      final CtlRequestSpec h = _build('organize-history', <String>[
+        '--limit',
+        '5',
+      ]);
       expect(h.method, 'GET');
       expect(h.path, '/api/admin/library/organize/runs');
       expect(h.query, <String, String>{'limit': '5'});

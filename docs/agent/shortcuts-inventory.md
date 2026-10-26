@@ -67,6 +67,7 @@
 | globalScrollLineUp | ↑ | — | 单步上滚（同上） |
 | globalScrollToBottom | End | — | 滚到底 |
 | globalScrollToTop | Home | — | 滚到顶 |
+| globalOpenAiAssistant | Ctrl+J（macOS ⌘J） | — | 呼出 AI 助手浮层（带当前悬浮球场景上下文；AI 模块关着时不响应、照常冒泡）。执行体在 app 根 `wrapWithGlobalNavigation`，三通道（键盘 / 手柄 / 鼠标）共用 `openAiAgentFromShortcut` |
 
 > 页面滚动六件套（2026-09-12）：键盘 / 手柄 / 鼠标三通道共用执行体
 > `shortcuts/page_scroll_shortcuts.dart`，目标解析唯一入口

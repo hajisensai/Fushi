@@ -2109,6 +2109,9 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       // v124：AI 整理记录，设备本地。
       'library_organize_runs',
       'library_organize_changes',
+      // v136：AI 助手对话与操作记录，设备本地，见 2026-10-26 设计稿 §5.3。
+      'ai_agent_sessions',
+      'ai_agent_actions',
       // v128：内置浏览器标签页会话 / 最近关闭 / 下载记录，设备本地（会话与最近关闭
       // 描述这台设备开着什么；下载记录指向本机磁盘上的文件）。
       'web_browser_session_tabs',

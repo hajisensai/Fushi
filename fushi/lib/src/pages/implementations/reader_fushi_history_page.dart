@@ -1,3 +1,4 @@
+import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async' show StreamSubscription, Timer, unawaited;
@@ -88,8 +89,8 @@ import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart';
 import 'package:fushi_engine/media/collections/collection_merge.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
-import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
+import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart';
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show scheduleAutomaticCollectionAiOrder;
 import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
@@ -1130,6 +1131,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           icon: Icons.movie_outlined,
           onTap: _openVideoImport,
         ),
+      // 「问 AI」（D4 ③）：最低优先级，宽度不够时最先收进「⋯」；AI 模块关着
+      // 时为空。
+      ...aiAgentAskHeaderActions(
+        context,
+        visibility: appModel.moduleVisibility,
+        page: _mangaOnly ? 'manga_library' : 'books',
+      ),
       // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01：各媒体页头不再
       // 各挂一个「xx统计」，统一从首页进统计中心）。收藏夹入口同理（用户定案
       // 2026-10-14）：收藏夹不按模块隔离，各库页都挂一个只会误导，统一从首页进。
@@ -3484,18 +3492,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   Future<void> _scrapeEpubCover(MediaItem item) async {
     Navigator.pop(context);
-    final MediaSource mediaSource = item.getMediaSource(appModel: appModel);
     final File? scraped = await showBookCoverScrapeDialog(
       context: context,
       initialQuery: displayTitleForBook(item: item, rawTitle: item.title),
     );
     if (scraped == null || !mounted) return;
-    await MediaCoverService.applyBookCoverOverride(
+    // 写回经门面（与 `fushi_cli book scrape-apply` 同一个方法）。
+    await BookMetadataScrapeFacade().applyToBook(
       appModel: appModel,
-      mediaSource: mediaSource,
       item: item,
-      file: scraped,
-      clearOverrideImage: false,
+      cover: scraped,
     );
     if (!mounted) return;
     ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));

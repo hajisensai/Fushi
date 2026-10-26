@@ -37,10 +37,12 @@ const List<String> _generalGlobals = <String>[
   'screen_ocr',
   'camera_ocr',
   'feedback',
+  'ai',
 ];
 
-/// 阅读器 / 漫画 / 视频：只带「查词」与「反馈」，其余全局按钮要用户自己勾。
-const List<String> _mediaGlobals = <String>['lookup', 'feedback'];
+/// 阅读器 / 漫画 / 视频：只带「查词」「反馈」与「AI」（spec 2026-10-26 §6.4），其余
+/// 全局按钮要用户自己勾。
+const List<String> _mediaGlobals = <String>['lookup', 'feedback', 'ai'];
 
 void main() {
   group('FloatingBallScope', () {
@@ -82,6 +84,7 @@ void main() {
         FloatingBallGlobalAction.screenOcr,
         FloatingBallGlobalAction.sync,
         FloatingBallGlobalAction.switchProfile,
+        FloatingBallGlobalAction.ai,
       });
       // 查词模块关着：打开查词页与全局查词（含截屏识字的结果卡）都没有入口，只剩
       // 剪贴板（它在覆盖窗不可用时退回主窗查词弹窗）与同步、切换配置（与查词无关）。
@@ -91,6 +94,7 @@ void main() {
           FloatingBallGlobalAction.clipboard,
           FloatingBallGlobalAction.sync,
           FloatingBallGlobalAction.switchProfile,
+          FloatingBallGlobalAction.ai,
         },
       );
       // 应用内的球仍按平台能力（桌面没有独立查词窗），与查词模块无关。
@@ -103,6 +107,7 @@ void main() {
             FloatingBallGlobalAction.sync,
             FloatingBallGlobalAction.switchProfile,
             FloatingBallGlobalAction.feedback,
+            FloatingBallGlobalAction.ai,
           },
         );
       }
