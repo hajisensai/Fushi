@@ -30,6 +30,7 @@ namespace flutter_inappwebview_plugin
   constexpr auto kMethodSetFpsLimit = "setFpsLimit";
   constexpr auto kMethodSetShaders = "setShaders";
   constexpr auto kMethodSetWindowedInputEnabled = "setWindowedInputEnabled";
+  constexpr auto kMethodSetWindowedInputExclusions = "setWindowedInputExclusions";
 
   constexpr auto kEventType = "type";
   constexpr auto kEventValue = "value";
@@ -478,6 +479,33 @@ namespace flutter_inappwebview_plugin
     else if (method_name.compare(kMethodSetWindowedInputEnabled) == 0) {
       if (const auto value = std::get_if<bool>(method_call.arguments())) {
         const bool ok = view ? view->setWindowedInputEnabled(*value) : false;
+        return result->Success(flutter::EncodableValue(ok));
+      }
+    }
+    else if (method_name.compare(kMethodSetWindowedInputExclusions) == 0) {
+      // [[left, top, right, bottom, radius], ...]（逻辑 px，相对 WebView 左上角）。
+      if (const auto list = std::get_if<flutter::EncodableList>(method_call.arguments())) {
+        std::vector<std::array<double, 5>> exclusions;
+        for (const auto& item : *list) {
+          const auto values = std::get_if<flutter::EncodableList>(&item);
+          if (!values || values->size() != 5) {
+            continue;
+          }
+          std::array<double, 5> e{};
+          bool valid = true;
+          for (size_t i = 0; i < 5; i++) {
+            const auto d = std::get_if<double>(&(*values)[i]);
+            if (!d) {
+              valid = false;
+              break;
+            }
+            e[i] = *d;
+          }
+          if (valid) {
+            exclusions.push_back(e);
+          }
+        }
+        const bool ok = view ? view->setWindowedInputExclusions(exclusions) : false;
         return result->Success(flutter::EncodableValue(ok));
       }
     }

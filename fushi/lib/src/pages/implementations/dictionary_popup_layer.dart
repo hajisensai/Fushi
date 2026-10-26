@@ -7,6 +7,8 @@ import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/media/video/underlay_composition.dart'
+    show UnderlayInputRegion;
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show
         kLookupPopupDefaultHeight,
@@ -1695,8 +1697,12 @@ class DictionaryPopupLayer extends StatelessWidget {
 
     final Widget shell = topBar != null ? content : _wrapSwipeDismiss(content);
 
-    return _maybeWrapHostKeyInput(
-      _maybeWrapHostPointerInput(_maybeWrapResizeGrip(shell)),
+    // 底层合成的网页档（视频站点）里查词框画在 WebView2 子窗口上面：登记成输入区，
+    // 否则点击全落进网页（underlay_composition.dart）。
+    return UnderlayInputRegion(
+      child: _maybeWrapHostKeyInput(
+        _maybeWrapHostPointerInput(_maybeWrapResizeGrip(shell)),
+      ),
     );
   }
 

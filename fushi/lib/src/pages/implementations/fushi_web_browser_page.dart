@@ -9,7 +9,6 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart';
-import 'package:fushi/src/media/manga/web/web_comic_reader_launch.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_address_bar.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.dart';
@@ -64,12 +63,7 @@ export 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.d
 
 /// 站点书签（偏好 `web_browser_sites`），入口页与新标签页起始页共用同一份解析。
 List<WebBrowserSite> _loadWebBrowserSites(AppModel appModel) =>
-    parseWebBrowserSites(
-      appModel.prefsRepo.webBrowserSitesJson,
-      presets: webBrowserPresetSites(
-        mangaAvailable: webComicReaderActionAvailable(),
-      ),
-    );
+    parseWebBrowserSites(appModel.prefsRepo.webBrowserSitesJson);
 
 /// 全屏浏览页（[FushiWebBrowserPage]）的路由：所有推浏览页的入口（入口页、视频站点
 /// 入口）都经这一处建路由。

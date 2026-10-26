@@ -3,27 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/web_browser/web_browser_sites.dart';
 
 void main() {
-  test('从没改过站点表：漫画能力可用才预置漫画站（iOS 合规：空表）', () {
-    expect(
-      parseWebBrowserSites(
-        '',
-        presets: webBrowserPresetSites(mangaAvailable: true),
-      ).map((WebBrowserSite s) => s.url.host),
-      contains('mangadex.org'),
-    );
-    expect(
-      parseWebBrowserSites(
-        '',
-        presets: webBrowserPresetSites(mangaAvailable: false),
-      ),
-      isEmpty,
-    );
+  test('从没改过站点表 / 坏 JSON：空表，不预置任何站点', () {
+    expect(parseWebBrowserSites(''), isEmpty);
+    expect(parseWebBrowserSites('{bad'), isEmpty);
   });
 
-  test('用户的表原样回读；删光就是空表，不补回预置', () {
-    final List<WebBrowserSite> presets = webBrowserPresetSites(
-      mangaAvailable: true,
-    );
+  test('用户的表原样回读；删光就是空表', () {
     final WebBrowserSite site = WebBrowserSite(
       name: 'Ex',
       url: Uri.parse('https://example.com/'),
@@ -32,19 +17,16 @@ void main() {
       const <WebBrowserSite>[],
       site,
     );
-    expect(
-      parseWebBrowserSites(encodeWebBrowserSites(added), presets: presets),
-      <WebBrowserSite>[site],
-    );
+    expect(parseWebBrowserSites(encodeWebBrowserSites(added)), <WebBrowserSite>[
+      site,
+    ]);
     expect(addWebBrowserSite(added, site), same(added), reason: '同 URL 不重复加');
     expect(
       parseWebBrowserSites(
         encodeWebBrowserSites(removeWebBrowserSite(added, site)),
-        presets: presets,
       ),
       isEmpty,
     );
-    expect(parseWebBrowserSites('{bad', presets: presets), presets);
   });
 
   test('地址栏输入：补 https、拒绝非 http(s) 与不像网址的输入', () {
@@ -129,10 +111,7 @@ void main() {
     );
     // 编辑后的站点经偏好往返仍可读回（无点号主机不再在解析时被丢掉）。
     expect(
-      parseWebBrowserSites(
-        encodeWebBrowserSites(<WebBrowserSite>[edited]),
-        presets: const <WebBrowserSite>[],
-      ),
+      parseWebBrowserSites(encodeWebBrowserSites(<WebBrowserSite>[edited])),
       <WebBrowserSite>[edited],
     );
   });

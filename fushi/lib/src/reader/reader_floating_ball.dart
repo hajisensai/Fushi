@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/media/video/underlay_composition.dart'
+    show UnderlayInputRegion;
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart';
 import 'package:fushi/src/utils/misc/logo_accent_tint.dart';
@@ -587,10 +589,15 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
                       top: ballCenter.dy - layout.ballSize / 2,
                       width: layout.ballSize,
                       height: layout.ballSize,
-                      child: _buildBall(
-                        layout,
-                        progress: t,
-                        dragging: dragging,
+                      // 底层合成的网页档（视频站点）里球画在 WebView2 子窗口上面：登记成
+                      // 输入区，否则点击全落进网页（2026-10-26「点不到悬浮球」）。
+                      child: UnderlayInputRegion(
+                        radius: layout.ballSize / 2,
+                        child: _buildBall(
+                          layout,
+                          progress: t,
+                          dragging: dragging,
+                        ),
                       ),
                     ),
                   ],
@@ -653,12 +660,15 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
             excludeFromSemantics: true,
             onTap: action.onPressed,
             child: Center(
-              child: SizedBox.square(
-                dimension: size,
-                child: _ColumnButton(
-                  action: action,
-                  size: size,
-                  focusNode: _itemFocus[index],
+              child: UnderlayInputRegion(
+                radius: size / 2,
+                child: SizedBox.square(
+                  dimension: size,
+                  child: _ColumnButton(
+                    action: action,
+                    size: size,
+                    focusNode: _itemFocus[index],
+                  ),
                 ),
               ),
             ),
@@ -698,10 +708,13 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
           alignment: towardRight ? Alignment.centerLeft : Alignment.centerRight,
           // 无障碍名已由按钮本身给出，标签只是同一个动作的第二个点击面。
           child: ExcludeSemantics(
-            child: _LabelCapsule(
-              label: action.label,
-              style: _labelStyle(context),
-              onPressed: action.onPressed,
+            child: UnderlayInputRegion(
+              radius: kReaderFloatingBallLabelHeight / 2,
+              child: _LabelCapsule(
+                label: action.label,
+                style: _labelStyle(context),
+                onPressed: action.onPressed,
+              ),
             ),
           ),
         ),

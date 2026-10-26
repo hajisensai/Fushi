@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <nlohmann/json.hpp>
@@ -2046,6 +2047,58 @@ namespace flutter_inappwebview_plugin
       SWP_NOACTIVATE | SWP_SHOWWINDOW);
     RECT bounds{ 0, 0, windowedWidth_, windowedHeight_ };
     failedLog(webViewController->put_Bounds(bounds));
+    applyWindowedRegion(child);
+  }
+
+  void InAppWebView::applyWindowedRegion(HWND child)
+  {
+    if (windowedExclusions_.empty()) {
+      ::SetWindowRgn(child, nullptr, TRUE);
+      return;
+    }
+    HRGN region = ::CreateRectRgn(0, 0, windowedWidth_, windowedHeight_);
+    if (!region) {
+      return;
+    }
+    const double scale = deviceScaleFactor_;
+    for (const auto& e : windowedExclusions_) {
+      const int left = static_cast<int>(std::floor(e[0] * scale));
+      const int top = static_cast<int>(std::floor(e[1] * scale));
+      const int right = static_cast<int>(std::ceil(e[2] * scale));
+      const int bottom = static_cast<int>(std::ceil(e[3] * scale));
+      const int diameter = static_cast<int>(std::round(e[4] * scale * 2));
+      if (right <= left || bottom <= top) {
+        continue;
+      }
+      // CreateRoundRectRgn 的右 / 下边不含在内，补 1 像素。
+      HRGN hole = diameter > 0
+        ? ::CreateRoundRectRgn(left, top, right + 1, bottom + 1, diameter, diameter)
+        : ::CreateRectRgn(left, top, right, bottom);
+      if (hole) {
+        ::CombineRgn(region, region, hole, RGN_DIFF);
+        ::DeleteObject(hole);
+      }
+    }
+    // 成功后区域归系统所有，不再 DeleteObject。
+    if (!::SetWindowRgn(child, region, TRUE)) {
+      ::DeleteObject(region);
+    }
+  }
+
+  bool InAppWebView::setWindowedInputExclusions(
+    const std::vector<std::array<double, 5>>& exclusions)
+  {
+    HWND child = nullptr;
+    if (surface_ || !webViewController ||
+      !succeededOrLog(webViewController->get_ParentWindow(&child)) || !child) {
+      return false;
+    }
+    if (exclusions == windowedExclusions_) {
+      return true;
+    }
+    windowedExclusions_ = exclusions;
+    applyWindowedRegion(child);
+    return true;
   }
 
   bool InAppWebView::setWindowedInputEnabled(bool enabled)

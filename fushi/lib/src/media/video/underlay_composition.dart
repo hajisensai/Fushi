@@ -8,8 +8,10 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 /// 与 HDR 输出同一条 runner 通道（`underlayCompositionSupported` / `setUnderlayComposition`）。
 const MethodChannel kUnderlayCompositionChannel = MethodChannel(
@@ -94,4 +96,106 @@ Future<void> _afterBuildPhase() {
   final Completer<void> done = Completer<void>();
   binding.addPostFrameCallback((Duration _) => done.complete());
   return done.future;
+}
+
+/// 底层合成下画在 WebView2 子窗口上面、要自己接鼠标的一块 Flutter 区域（全局逻辑坐标）。
+@immutable
+class UnderlayInputExclusion {
+  const UnderlayInputExclusion(this.rect, this.radius);
+
+  final Rect rect;
+
+  /// 圆角半径（同坐标系）；挖洞按圆角矩形挖，少裁掉一点网页。
+  final double radius;
+
+  @override
+  bool operator ==(Object other) =>
+      other is UnderlayInputExclusion &&
+      other.rect == rect &&
+      other.radius == radius;
+
+  @override
+  int get hashCode => Object.hash(rect, radius);
+}
+
+/// 当前所有 [UnderlayInputRegion] 的区域；底层合成关着时恒为空表。
+///
+/// 网页档里 WebView2 子窗口收整块矩形的输入（Win32 命中测试先落到子窗口），画在它上面的
+/// Flutter 控件看得见、点不到——2026-10-26 用户截图「网页的层级比悬浮球还高，点不到悬浮球」。
+/// 网页视图（`WebVideoSurface`）听这张表，把这些区域从子窗口上挖掉。
+final ValueNotifier<List<UnderlayInputExclusion>> underlayInputExclusions =
+    ValueNotifier<List<UnderlayInputExclusion>>(
+      const <UnderlayInputExclusion>[],
+    );
+
+final Set<_RenderUnderlayInputRegion> _regionBoxes =
+    <_RenderUnderlayInputRegion>{};
+bool _regionFrameCallbackInstalled = false;
+
+/// 每帧画完后收一次区域：区域盒子常在 [RepaintBoundary] 里随祖先平移（悬浮球拖动 / 吸附），
+/// 自己不重画，所以不能在 paint 里报。只有登记过盒子才装这个回调；表没变不通知。
+void _collectUnderlayInputExclusions(Duration _) {
+  final List<UnderlayInputExclusion> next = <UnderlayInputExclusion>[
+    if (underlayCompositionActive.value)
+      for (final _RenderUnderlayInputRegion box in _regionBoxes)
+        if (box.attached && box.hasSize && !box.size.isEmpty)
+          UnderlayInputExclusion(
+            MatrixUtils.transformRect(
+              box.getTransformTo(null),
+              Offset.zero & box.size,
+            ),
+            box.radius,
+          ),
+  ];
+  if (!listEquals(next, underlayInputExclusions.value)) {
+    underlayInputExclusions.value = next;
+  }
+}
+
+/// 标记一块「画在网页上面、要自己接鼠标」的 Flutter 区域（见 [underlayInputExclusions]）。
+/// 不改布局与绘制；底层合成关着时什么也不做。
+class UnderlayInputRegion extends SingleChildRenderObjectWidget {
+  const UnderlayInputRegion({this.radius = 0, super.child, super.key});
+
+  final double radius;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderUnderlayInputRegion(radius);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderUnderlayInputRegion renderObject,
+  ) {
+    renderObject.radius = radius;
+  }
+}
+
+class _RenderUnderlayInputRegion extends RenderProxyBox {
+  _RenderUnderlayInputRegion(this.radius);
+
+  double radius;
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _regionBoxes.add(this);
+    if (!_regionFrameCallbackInstalled) {
+      _regionFrameCallbackInstalled = true;
+      SchedulerBinding.instance.addPersistentFrameCallback(
+        _collectUnderlayInputExclusions,
+      );
+      // 开 / 关底层合成本身不一定引起重绘：补一帧，让区域表立刻跟上。
+      underlayCompositionActive.addListener(
+        () => SchedulerBinding.instance.scheduleFrame(),
+      );
+    }
+  }
+
+  @override
+  void detach() {
+    _regionBoxes.remove(this);
+    super.detach();
+  }
 }

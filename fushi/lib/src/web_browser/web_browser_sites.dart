@@ -32,41 +32,18 @@ class WebBrowserSite {
   int get hashCode => Object.hash(name, url);
 }
 
-/// 预置的漫画站：只放正规 / 常见的站，不预置成人站。只在网页漫画能力可用时
-/// 预置（iOS 合规：不预置任何漫画来源，见 [webBrowserPresetSites]）。用户删光后
-/// 不会自动补回（偏好里存的是用户自己的表，空数组就是空）。
-final List<WebBrowserSite> kWebBrowserMangaPresetSites =
-    List<WebBrowserSite>.unmodifiable(<WebBrowserSite>[
-      WebBrowserSite(name: 'MangaDex', url: Uri.parse('https://mangadex.org/')),
-      WebBrowserSite(name: 'Komiic', url: Uri.parse('https://komiic.com/')),
-      WebBrowserSite(
-        name: '拷贝漫画',
-        url: Uri.parse('https://www.mangacopy.com/'),
-      ),
-      WebBrowserSite(
-        name: 'WEBTOON',
-        url: Uri.parse('https://www.webtoons.com/'),
-      ),
-    ]);
-
-/// 从没改过站点表时的预置：网页漫画能力可用（[mangaAvailable]）才预置漫画站，
-/// 否则空表。
-List<WebBrowserSite> webBrowserPresetSites({required bool mangaAvailable}) =>
-    mangaAvailable ? kWebBrowserMangaPresetSites : const <WebBrowserSite>[];
-
-/// 解析偏好里存的站点表；空串 = 从没改过 → [presets]；坏 JSON → [presets]。
-List<WebBrowserSite> parseWebBrowserSites(
-  String raw, {
-  required List<WebBrowserSite> presets,
-}) {
-  if (raw.trim().isEmpty) return presets;
+/// 解析偏好里存的站点表；空串（从没改过）/ 坏 JSON → 空表。
+///
+/// 不预置任何站点（用户 2026-10-26「浏览器的默认网页删掉」）：站点全是用户自己加的。
+List<WebBrowserSite> parseWebBrowserSites(String raw) {
+  if (raw.trim().isEmpty) return const <WebBrowserSite>[];
   final Object? decoded;
   try {
     decoded = jsonDecode(raw);
   } on FormatException {
-    return presets;
+    return const <WebBrowserSite>[];
   }
-  if (decoded is! List) return presets;
+  if (decoded is! List) return const <WebBrowserSite>[];
   return List<WebBrowserSite>.unmodifiable(<WebBrowserSite>[
     for (final Object? item in decoded) ?WebBrowserSite.fromJson(item),
   ]);

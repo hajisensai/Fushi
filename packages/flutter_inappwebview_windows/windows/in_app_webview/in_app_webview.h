@@ -1,10 +1,12 @@
 #ifndef FLUTTER_INAPPWEBVIEW_PLUGIN_IN_APP_WEBVIEW_H_
 #define FLUTTER_INAPPWEBVIEW_PLUGIN_IN_APP_WEBVIEW_H_
 
+#include <array>
 #include <functional>
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 #include <WebView2.h>
 #include <wil/com.h>
 #include <windows.ui.composition.desktop.h>
@@ -133,6 +135,11 @@ namespace flutter_inappwebview_plugin
     // 窗口宿主模式：子 HWND 是否接收鼠标 / 触摸。关掉后（EnableWindow FALSE）命中测试跳过它，
     // 输入落到下面的 Flutter 视图（底层合成：Flutter 层画在它上面）。composition 档返回 false。
     bool setWindowedInputEnabled(bool enabled);
+    // 窗口宿主模式：子 HWND 上挖掉的输入区（逻辑 px，相对本 WebView 左上角；每项
+    // {left, top, right, bottom, radius}）。底层合成下画在网页上面的 Flutter 控件（悬浮球等）
+    // 在这些区域里收得到点击：窗口区域（SetWindowRgn）同时裁掉子窗口的命中测试与绘制。
+    // 空表 = 整块矩形。composition 档返回 false。
+    bool setWindowedInputExclusions(const std::vector<std::array<double, 5>>& exclusions);
     void setCursorPos(double x, double y);
     void setPointerUpdate(int32_t pointer, InAppWebViewPointerEventKind eventKind,
       double x, double y, double size, double pressure);
@@ -214,6 +221,8 @@ namespace flutter_inappwebview_plugin
     int windowedWidth_ = 0;
     int windowedHeight_ = 0;
     void applyWindowedBounds();
+    std::vector<std::array<double, 5>> windowedExclusions_;
+    void applyWindowedRegion(HWND child);
     POINT lastCursorPos_ = { 0, 0 };
     VirtualKeyState virtualKeys_;
 
