@@ -158,7 +158,7 @@ class AiAgentToolbox implements AgentToolbox, AgentSkillProvider {
     if (spec.risk == OpRisk.read) {
       return AgentToolResult.ok(
         modelData,
-        taskId: _taskId(result.result),
+        taskId: op.taskIdFrom(result.result),
         userPreview: userPreview,
       );
     }
@@ -168,7 +168,7 @@ class AiAgentToolbox implements AgentToolbox, AgentSkillProvider {
       resultCode: 'ok',
       undo: result.undo,
     );
-    final String? taskId = _taskId(result.result);
+    final String? taskId = op.taskIdFrom(result.result);
     if (spec.longRunning && taskId != null && op.taskStatus != null) {
       unawaited(_watchTask(invocation.sessionId, op, taskId));
     }
@@ -177,7 +177,7 @@ class AiAgentToolbox implements AgentToolbox, AgentSkillProvider {
       actionId: result.undo == null ? null : '$actionId',
       before: result.undo?.before,
       after: result.undo?.after,
-      taskId: _taskId(result.result),
+      taskId: taskId,
       userPreview: userPreview,
     );
   }
@@ -279,12 +279,6 @@ class AiAgentToolbox implements AgentToolbox, AgentSkillProvider {
       onTaskFinished?.call(sessionId, op.id, taskId, status);
       return;
     }
-  }
-
-  static String? _taskId(Object? result) {
-    if (result is! Map) return null;
-    final Object? id = result['taskId'] ?? result['jobId'];
-    return id == null ? null : '$id';
   }
 }
 

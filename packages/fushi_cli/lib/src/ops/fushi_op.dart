@@ -414,6 +414,7 @@ class FushiOp {
     this.inProcessOnly = false,
     this.sensitiveResult = false,
     this.taskStatus,
+    this.taskIdOf,
   });
 
   final String id;
@@ -435,6 +436,13 @@ class FushiOp {
   /// [longRunning] 操作的状态读数：按执行结果里的 taskId 读一次（用现有的状态路由）。
   /// AI 运行时据此轮询，结束后在对话里报告并自动续一轮（spec §6.1）。
   final Future<OpTaskStatus> Function(String taskId)? taskStatus;
+
+  /// 从执行结果里取任务 id；null = 默认取顶层的 `taskId` / `jobId`
+  /// （[defaultOpTaskIdOf]）。
+  final String? Function(Object? result)? taskIdOf;
+
+  /// 这次执行结果对应的任务 id（没有返回 null）。
+  String? taskIdFrom(Object? result) => (taskIdOf ?? defaultOpTaskIdOf)(result);
 
   OpAvailability currentAvailability() =>
       availability?.call() ?? const OpAvailability.available();
@@ -472,6 +480,7 @@ class OpDescription {
     this.undo,
     this.sensitiveResult = false,
     this.taskStatus,
+    this.taskIdOf,
   });
 
   final String id;
@@ -492,6 +501,9 @@ class OpDescription {
   /// 见 [FushiOp.taskStatus]。
   final Future<OpTaskStatus> Function(String taskId)? taskStatus;
 
+  /// 见 [FushiOp.taskIdOf]。
+  final String? Function(Object? result)? taskIdOf;
+
   String get routeKey => '$method $pattern';
 
   FushiOp bind(CtlRoute route) => FushiOp(
@@ -507,5 +519,13 @@ class OpDescription {
     undo: undo,
     sensitiveResult: sensitiveResult,
     taskStatus: taskStatus,
+    taskIdOf: taskIdOf,
   );
+}
+
+/// 默认的任务 id 提取：结果顶层的 `taskId`，其次 `jobId`。
+String? defaultOpTaskIdOf(Object? result) {
+  if (result is! Map) return null;
+  final Object? id = result['taskId'] ?? result['jobId'];
+  return id == null ? null : '$id';
 }
