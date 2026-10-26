@@ -7,10 +7,33 @@ import 'package:fushi/src/ops/ctl_library_routes.dart';
 import 'package:fushi/src/ops/ctl_online_routes.dart';
 import 'package:fushi/src/ops/ctl_settings_routes.dart';
 import 'package:fushi/src/ops/ctl_video_routes.dart';
+import 'package:fushi/src/ops/op_catalog_assembly.dart';
 import 'package:fushi/src/ops/op_context.dart';
 
+/// 全部按域注册的路由，外加操作目录的通用面（`/api/admin/ops*`，`fushi_cli op`）。
+/// 目录在第一次被访问时才组装（构造路由表本身不碰 AppModel）。
+List<CtlRoute> buildOpRoutes(OpContext context) {
+  final List<CtlRoute> domain = buildDomainOpRoutes(context);
+  OpInvoker? invoker;
+  return <CtlRoute>[
+    ...domain,
+    ...buildOpCatalogRoutes(
+      () => invoker ??= OpInvoker(buildAppOpCatalog(context, domain)),
+    ),
+  ];
+}
+
+/// 进程内调用器（五个平台的 AI 助手用）：同一批路由 + 只在进程内有的操作 [extra]。
+OpInvoker buildInProcessOpInvoker(
+  OpContext context, {
+  Iterable<FushiOp> extra = const <FushiOp>[],
+}) => OpInvoker(
+  buildAppOpCatalog(context, buildDomainOpRoutes(context), extra: extra),
+  ready: () => context.appModel.isInitialised,
+);
+
 /// 全部按域注册的控制通道路由。每个域只改自己的 `ctl_<域>_routes.dart`。
-List<CtlRoute> buildOpRoutes(OpContext context) => <CtlRoute>[
+List<CtlRoute> buildDomainOpRoutes(OpContext context) => <CtlRoute>[
   ...buildLibraryCtlRoutes(context),
   ...buildDictionaryCtlRoutes(context),
   ...buildSettingsCtlRoutes(context),

@@ -59,6 +59,7 @@ class OpParam {
     this.enumValues,
     this.userGate = false,
     this.inPath = false,
+    this.spread = false,
   });
 
   const OpParam.string(
@@ -120,15 +121,19 @@ class OpParam {
          required: required,
        );
 
+  /// [spread]：对象里的键值铺进 body 顶层（路由按动态键名读参数时用，如
+  /// 设置动作行声明的参数）。
   const OpParam.object(
     String name, {
     required String description,
     bool required = false,
+    bool spread = false,
   }) : this(
          name,
          OpParamType.object,
          description: description,
          required: required,
+         spread: spread,
        );
 
   /// 用户表态参数（`confirm` / `yes` / `trustSigner` / `allowInsecure` /
@@ -148,6 +153,9 @@ class OpParam {
   /// 路由模式里的 `:name` 段：调用时代入路径，不进 body。
   final bool inPath;
 
+  /// 对象参数的键值铺进 body 顶层，见 [OpParam.object]。
+  final bool spread;
+
   Map<String, Object?> toJsonSchema() => <String, Object?>{
     'type': type.schemaType,
     'description': description,
@@ -164,6 +172,7 @@ class OpParam {
     if (enumValues != null) 'enum': enumValues,
     if (userGate) 'userGate': true,
     if (inPath) 'inPath': true,
+    if (spread) 'spread': true,
   };
 
   static OpParam fromJson(Map<String, Object?> json) => OpParam(
@@ -176,6 +185,7 @@ class OpParam {
         .toList(growable: false),
     userGate: json['userGate'] == true,
     inPath: json['inPath'] == true,
+    spread: json['spread'] == true,
   );
 }
 

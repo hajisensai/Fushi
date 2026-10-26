@@ -189,6 +189,13 @@ class OpInvoker {
       final Object value = _coerce(param, entry.value!);
       if (param.inPath) {
         pathParams[param.name] = '$value';
+      } else if (param.spread && value is Map<String, Object?>) {
+        for (final MapEntry<String, Object?> e in value.entries) {
+          if (declared.containsKey(e.key)) {
+            throw CtlFailure.badRequest('${param.name}.${e.key} 与参数重名');
+          }
+          body[e.key] = e.value;
+        }
       } else {
         body[param.name] = value;
       }
