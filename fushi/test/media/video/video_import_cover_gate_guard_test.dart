@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
+
 String _slice(String source, String startMarker, String endMarker) {
   final int start = source.indexOf(startMarker);
   expect(start, isNonNegative, reason: 'missing source marker: $startMarker');
@@ -10,10 +12,18 @@ String _slice(String source, String startMarker, String endMarker) {
   return source.substring(start, end);
 }
 
+/// 按顺序在「掩注释 + 折叠空白」后的语料上找各步：`dart format` tall style
+/// 会把实参折到下一行（如 `markAutoFrameAfterWrite(` 换行 `candidateUid,`），
+/// 钉的是调用顺序而不是换行位置；折行带出的尾逗号（`,)`）同样归一掉。
+/// 注释里的同名文字不算数。
 void _expectOrdered(String source, List<String> markers) {
+  final String code = compactCode(source).replaceAll(',)', ')');
   int previous = -1;
-  for (final String marker in markers) {
-    final int current = source.indexOf(marker, previous + 1);
+  for (final String rawMarker in markers) {
+    final String marker = rawMarker
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll(',)', ')');
+    final int current = code.indexOf(marker, previous + 1);
     expect(
       current,
       greaterThan(previous),
@@ -28,8 +38,9 @@ void main() {
   late String mainSource;
 
   setUpAll(() {
-    dialogSource =
-        File('lib/src/media/video/video_import_dialog.dart').readAsStringSync();
+    dialogSource = File(
+      'lib/src/media/video/video_import_dialog.dart',
+    ).readAsStringSync();
     mainSource = File('lib/main.dart').readAsStringSync();
   });
 

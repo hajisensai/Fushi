@@ -837,7 +837,12 @@ class LibraryShapeBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // passthrough：[child] 拿到的约束与本组件收到的完全一致。它被路由层
+    // （FushiPageBackdrop）垫在每一页下面，路由给页面的是**紧约束**（整屏）；
+    // Stack 默认的 loose 会把紧约束放松，根组件不是 Scaffold 的页面（按钮、
+    // 按内容定尺寸的 Material 等）就缩到左上角、不再铺满路由。
     return Stack(
+      fit: StackFit.passthrough,
       children: <Widget>[
         Positioned.fill(
           child: enabledOf(context)

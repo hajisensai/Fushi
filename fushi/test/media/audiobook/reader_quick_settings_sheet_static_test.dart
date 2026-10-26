@@ -92,9 +92,10 @@ void main() {
       contains('_buildThemeSelectorSection()'),
       reason: 'TODO-802：主题选择器并入 layout 子页（外观组已删）',
     );
+    // 实参折不折行只是格式，钉去空白后的调用。
     expect(
-      layoutDetailSource,
-      contains('_buildReaderGroupContent(ReaderGroup.layout'),
+      compactCode(layoutDetailSource),
+      contains('_buildReaderGroupContent(ReaderGroup.layout,'),
       reason: 'layout 子页详情渲染 layout schema 行',
     );
     expect(

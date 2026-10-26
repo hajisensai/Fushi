@@ -27,16 +27,15 @@ void main() {
     FushiGlassMaterial glass = FushiGlassMaterial.off,
     bool eink = false,
     Brightness brightness = Brightness.light,
-  }) =>
-      buildFushiThemeData(
-        scheme: ColorScheme.fromSeed(
-          seedColor: Colors.teal,
-          brightness: brightness,
-        ),
-        textTheme: Typography.material2021().black,
-        eink: eink,
-        glass: glass,
-      );
+  }) => buildFushiThemeData(
+    scheme: ColorScheme.fromSeed(
+      seedColor: Colors.teal,
+      brightness: brightness,
+    ),
+    textTheme: Typography.material2021().black,
+    eink: eink,
+    glass: glass,
+  );
 
   Future<FushiGlassMaterial> resolve(
     WidgetTester tester,
@@ -66,20 +65,24 @@ void main() {
       .any((BackdropFilter f) => f.filter is ImageFilter);
 
   test('fromPrefValue parses known values and falls back to off', () {
-    expect(FushiGlassMaterial.fromPrefValue('frosted'),
-        FushiGlassMaterial.frosted);
+    expect(
+      FushiGlassMaterial.fromPrefValue('frosted'),
+      FushiGlassMaterial.frosted,
+    );
     expect(FushiGlassMaterial.fromPrefValue('off'), FushiGlassMaterial.off);
     expect(FushiGlassMaterial.fromPrefValue(null), FushiGlassMaterial.off);
     expect(
-        FushiGlassMaterial.fromPrefValue('liquid'), FushiGlassMaterial.liquid);
+      FushiGlassMaterial.fromPrefValue('liquid'),
+      FushiGlassMaterial.liquid,
+    );
     expect(FushiGlassMaterial.fromPrefValue('bogus'), FushiGlassMaterial.off);
   });
 
   test('buildFushiThemeData injects the glass extension', () {
     expect(
-      theme(glass: FushiGlassMaterial.frosted)
-          .extension<FushiGlassTheme>()
-          ?.material,
+      theme(
+        glass: FushiGlassMaterial.frosted,
+      ).extension<FushiGlassTheme>()?.material,
       FushiGlassMaterial.frosted,
     );
     expect(
@@ -230,7 +233,12 @@ void main() {
   ) async {
     await pumpDialog(tester, theme());
     expect(find.byType(BackdropFilter), findsNothing);
-    expect(tester.widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog))).backgroundColor, isNull);
+    expect(
+      tester
+          .widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog)))
+          .backgroundColor,
+      isNull,
+    );
   });
 
   testWidgets('FushiDialogFrame turns translucent when frosted', (
@@ -239,7 +247,9 @@ void main() {
     await pumpDialog(tester, theme(glass: FushiGlassMaterial.frosted));
     expect(hasBlur(tester), isTrue);
     expect(
-      tester.widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog))).backgroundColor,
+      tester
+          .widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog)))
+          .backgroundColor,
       Colors.transparent,
     );
     expect(find.text('Dialog body'), findsOneWidget);
@@ -336,8 +346,9 @@ void main() {
       );
       expect(
         alphaOf(
-          t.dropdownMenuTheme.menuStyle!.backgroundColor!
-              .resolve(<WidgetState>{}),
+          t.dropdownMenuTheme.menuStyle!.backgroundColor!.resolve(
+            <WidgetState>{},
+          ),
         ),
         lessThan(1),
       );
@@ -378,8 +389,10 @@ void main() {
     test('glass off keeps the stock solid component theme', () {
       final ThemeData t = theme();
       expectSolidComponentSurfaces(t);
-      expect(t.floatingActionButtonTheme.backgroundColor,
-          t.colorScheme.primaryContainer);
+      expect(
+        t.floatingActionButtonTheme.backgroundColor,
+        t.colorScheme.primaryContainer,
+      );
     });
 
     test('e-ink never tints component surfaces', () {
@@ -389,8 +402,10 @@ void main() {
 
     test('glass panels are translucent but the page stays solid', () {
       final ColorScheme cs = ColorScheme.fromSeed(seedColor: Colors.teal);
-      final FushiSurfaceColors glass =
-          FushiSurfaceColors.fromScheme(cs, glass: true);
+      final FushiSurfaceColors glass = FushiSurfaceColors.fromScheme(
+        cs,
+        glass: true,
+      );
       final FushiSurfaceColors solid = FushiSurfaceColors.fromScheme(cs);
       expect(glass.page.a, 1);
       for (final Color c in <Color>[
@@ -426,6 +441,17 @@ void main() {
           ),
         ),
       );
+      // MaterialApp 换主题走 AnimatedTheme 插值：showAppDialog 打开时按当下的
+      // 主题快照（InheritedTheme.capture），插值没落定就点会把旧主题的玻璃档
+      // 捕获进新对话框。
+      await tester.pumpAndSettle();
+      // 路由给页面的是紧约束：路由层垫的页面底（FushiPageBackdrop →
+      // LibraryShapeBackdrop）必须原样透传，根组件不是 Scaffold 的页面也铺满整屏
+      // （1f66c70df1 的 loose Stack 曾把它缩到左上角）。
+      expect(
+        tester.getSize(find.byType(TextButton)),
+        tester.view.physicalSize / tester.view.devicePixelRatio,
+      );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       expect(find.text('hi'), findsOneWidget);
@@ -439,35 +465,44 @@ void main() {
       expect(hasBlur(tester), isTrue);
       final Rect glassRect = tester.getRect(find.byType(AlertDialog));
 
+      // 先点遮罩关掉玻璃下的那一个，再在实心主题下真的打开一个新的——否则第二次
+      // 「打开」的点击落在旧对话框上，比较的是同一个对话框换主题后的样子。
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
+      expect(find.text('hi'), findsNothing);
+
       await openDialog(tester, theme());
+      expect(find.byType(AlertDialog), findsOneWidget);
       expect(hasBlur(tester), isFalse);
       // passthrough：包装不改变对话框本身的布局。
-      expect(tester.getRect(find.byType(AlertDialog).last), glassRect);
+      expect(tester.getRect(find.byType(AlertDialog)), glassRect);
     });
 
-    testWidgets('FushiGlassFab paints glass only when the theme clears the FAB',
-        (WidgetTester tester) async {
-      Future<void> pump(ThemeData data) => tester.pumpWidget(
-            MaterialApp(
-              theme: data,
-              home: Scaffold(
-                floatingActionButton: FushiGlassFab(
-                  child: FloatingActionButton(
-                    onPressed: () {},
-                    child: const Icon(Icons.add),
-                  ),
+    testWidgets(
+      'FushiGlassFab paints glass only when the theme clears the FAB',
+      (WidgetTester tester) async {
+        Future<void> pump(ThemeData data) => tester.pumpWidget(
+          MaterialApp(
+            theme: data,
+            home: Scaffold(
+              floatingActionButton: FushiGlassFab(
+                child: FloatingActionButton(
+                  onPressed: () {},
+                  child: const Icon(Icons.add),
                 ),
               ),
             ),
-          );
-      await pump(theme());
-      expect(find.byType(FushiGlassSurface), findsNothing);
+          ),
+        );
+        await pump(theme());
+        expect(find.byType(FushiGlassSurface), findsNothing);
 
-      await pump(theme(glass: FushiGlassMaterial.frosted));
-      // MaterialApp 换主题走 AnimatedTheme 插值，等它落定。
-      await tester.pumpAndSettle();
-      expect(find.byType(FushiGlassSurface), findsOneWidget);
-      expect(hasBlur(tester), isTrue);
-    });
+        await pump(theme(glass: FushiGlassMaterial.frosted));
+        // MaterialApp 换主题走 AnimatedTheme 插值，等它落定。
+        await tester.pumpAndSettle();
+        expect(find.byType(FushiGlassSurface), findsOneWidget);
+        expect(hasBlur(tester), isTrue);
+      },
+    );
   });
 }

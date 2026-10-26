@@ -331,7 +331,7 @@ class _AdaptationProgressCardState extends State<_AdaptationProgressCard> {
                             runSpacing: 6,
                             children: <Widget>[
                               for (final AdaptationProgressAnchor a in anchors)
-                                Chip(
+                                FushiChip(
                                   label: Text(
                                     t.adaptation_progress_anchor(
                                       episode: a.episode,

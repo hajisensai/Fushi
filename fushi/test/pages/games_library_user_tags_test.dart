@@ -17,7 +17,6 @@ import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// BUG-1113「游戏没有标签」的 UI 侧守卫：游戏库页必须接上书架 / 视频页那套**共享**
 /// 用户标签体系——同一个 [FushiTagFilterBar]、同一个标签池、同一套 AND 筛选、
@@ -34,13 +33,13 @@ void main() {
   });
 
   Future<(AppModel, FushiDatabase)> buildModel() async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    final Directory tmpDir =
-        Directory.systemTemp.createTempSync('fushi_games_user_tags_');
+    final Directory tmpDir = Directory.systemTemp.createTempSync(
+      'fushi_games_user_tags_',
+    );
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);
@@ -48,7 +47,9 @@ void main() {
     });
     final AppModel appModel = AppModel(testPlatformServices())
       ..wireLocalAudioForTesting(
-          prefsRepo: prefsRepo, databaseDirectory: tmpDir)
+        prefsRepo: prefsRepo,
+        databaseDirectory: tmpDir,
+      )
       ..wireDatabaseForTesting(db);
 
     await appModel.setGalgames(<GalgameEntry>[
@@ -71,9 +72,9 @@ void main() {
   }
 
   Finder cardTitle(String title) => find.descendant(
-        of: find.byType(CustomScrollView),
-        matching: find.text(title),
-      );
+    of: find.byType(CustomScrollView),
+    matching: find.text(title),
+  );
 
   Future<void> pumpPage(WidgetTester tester, AppModel appModel) async {
     navKey = GlobalKey<NavigatorState>();
@@ -98,8 +99,11 @@ void main() {
     await pumpPage(tester, appModel);
 
     // 2026-10-04 起同一组件拆两段渲染：工具行行尾的「管理标签」+ 下方标签 chip 段。
-    expect(find.byType(FushiTagFilterBar), findsWidgets,
-        reason: '必须复用书架/视频页同一组件，而不是游戏页自己手搓一条');
+    expect(
+      find.byType(FushiTagFilterBar),
+      findsWidgets,
+      reason: '必须复用书架/视频页同一组件，而不是游戏页自己手搓一条',
+    );
     expect(
       find.descendant(
         of: find.byType(FushiTagFilterBar),
@@ -118,19 +122,23 @@ void main() {
     expect(cardTitle('alpha'), findsOneWidget);
     expect(cardTitle('beta'), findsOneWidget);
 
-    await tester.tap(find.descendant(
-      of: find.byType(FushiTagFilterBar),
-      matching: find.text('神作'),
-    ));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(FushiTagFilterBar),
+        matching: find.text('神作'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(cardTitle('alpha'), findsOneWidget, reason: 'g1 挂了该标签');
     expect(cardTitle('beta'), findsNothing, reason: 'g2 没挂，必须被筛掉');
 
-    await tester.tap(find.descendant(
-      of: find.byType(FushiTagFilterBar),
-      matching: find.text('神作'),
-    ));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(FushiTagFilterBar),
+        matching: find.text('神作'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(cardTitle('alpha'), findsOneWidget);
@@ -142,10 +150,12 @@ void main() {
     await db.createTag('神作', 0xFFEF5350);
     await pumpPage(tester, appModel);
 
-    await tester.tap(find.descendant(
-      of: find.byType(FushiTagFilterBar),
-      matching: find.text('神作'),
-    ));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(FushiTagFilterBar),
+        matching: find.text('神作'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     // i18n key 是 game_*（命名术语表禁用 games_ 前缀），生产代码用的也是
@@ -154,13 +164,14 @@ void main() {
     expect(find.text(t.game_empty), findsNothing);
   });
 
-  testWidgets('卡片菜单有「标签」项，点开进共享标签选择器并真写穿 DB',
-      (WidgetTester tester) async {
+  testWidgets('卡片菜单有「标签」项，点开进共享标签选择器并真写穿 DB', (WidgetTester tester) async {
     final (AppModel appModel, FushiDatabase db) = await buildModel();
     final int tagId = await db.createTag('神作', 0xFFEF5350);
     await pumpPage(tester, appModel);
 
-    await tester.tap(find.byIcon(FushiIcons.more).first);
+    // 2026-10-25 卡盒卡定版（2abfd1327b）：封面上不再放 ⋯ 按钮，菜单走长按 /
+    // 右键 / 手柄长按 A，打开的是同一份 _menuItems。长按 g1（alpha）的卡。
+    await tester.longPress(cardTitle('alpha'));
     await tester.pumpAndSettle();
     expect(find.text(t.tag_label), findsOneWidget);
 
@@ -169,14 +180,19 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.tag_label));
     await tester.pumpAndSettle();
-    expect(find.byType(TagPickerPanel), findsOneWidget,
-        reason: '复用书/视频/合集那张选择器，不另做一套游戏专用的');
+    expect(
+      find.byType(TagPickerPanel),
+      findsOneWidget,
+      reason: '复用书/视频/合集那张选择器，不另做一套游戏专用的',
+    );
 
     // 勾上标签：必须真落 galgame_tag_mappings（不是只改本地 state）。
-    await tester.tap(find.descendant(
-      of: find.byType(TagPickerPanel),
-      matching: find.text('神作'),
-    ));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(TagPickerPanel),
+        matching: find.text('神作'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     final List<BookTagRow> tags = await db.getTagsForGame('g1');
