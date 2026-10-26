@@ -8,6 +8,7 @@ import 'package:fushi/src/sync/lan_discovery_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import '../helpers/source_guard.dart';
 import 'sync_settings_schema_source_corpus.dart';
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
@@ -47,8 +48,11 @@ void main() {
 
       await controller.shutdownForExit();
 
-      expect(a.isDisposed, isTrue,
-          reason: 'exit teardown must stop the Bonsoir browser at its root');
+      expect(
+        a.isDisposed,
+        isTrue,
+        reason: 'exit teardown must stop the Bonsoir browser at its root',
+      );
       expect(b.isDisposed, isTrue);
     });
 
@@ -63,9 +67,13 @@ void main() {
 
       await controller.shutdownForExit();
 
-      expect(a.isDisposed, isFalse,
-          reason: 'a page that already disposed its own browser must not be '
-              'double-disposed by the controller');
+      expect(
+        a.isDisposed,
+        isFalse,
+        reason:
+            'a page that already disposed its own browser must not be '
+            'double-disposed by the controller',
+      );
     });
 
     test('is idempotent and safe with nothing registered', () async {
@@ -80,85 +88,138 @@ void main() {
       expect(controller.isRunning, isFalse);
     });
 
-    test('does NOT persist serverEnabled=false (app exit is not a toggle-off)',
-        () async {
-      final FushiDatabase db = _memDb();
-      addTearDown(db.close);
-      final SyncRepository repo = SyncRepository(db);
-      // Simulate the user having enabled hosting in a previous session.
-      await repo.setServerEnabled(true);
+    test(
+      'does NOT persist serverEnabled=false (app exit is not a toggle-off)',
+      () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        final SyncRepository repo = SyncRepository(db);
+        // Simulate the user having enabled hosting in a previous session.
+        await repo.setServerEnabled(true);
 
-      final FushiSyncServerController controller = _controller(db);
-      await controller.shutdownForExit();
+        final FushiSyncServerController controller = _controller(db);
+        await controller.shutdownForExit();
 
-      expect(await repo.isServerEnabled(), isTrue,
-          reason: 'app exit must leave the hosting intent so the next launch '
-              'restores it; only an explicit user toggle-off clears it');
-    });
+        expect(
+          await repo.isServerEnabled(),
+          isTrue,
+          reason:
+              'app exit must leave the hosting intent so the next launch '
+              'restores it; only an explicit user toggle-off clears it',
+        );
+      },
+    );
   });
 
   group('source guards: main.dart installs the Bonsoir exit teardown', () {
     test('main() prevents the native window close to teardown first', () {
       final String main = File('lib/main.dart').readAsStringSync();
-      expect(main.contains('windowManager.setPreventClose(true)'), isTrue,
-          reason: 'desktop must intercept WM_CLOSE so Bonsoir is stopped '
-              'BEFORE the engine is torn down (TODO-036)');
-    });
-
-    test('the app state handles window close with a fast exit (no destroy)',
-        () {
-      final String main = File('lib/main.dart').readAsStringSync();
       expect(
-          main.contains('with WidgetsBindingObserver, WindowListener'), isTrue,
-          reason: 'the app state must implement WindowListener to receive '
-              'onWindowClose');
-      expect(main.contains('void onWindowClose()'), isTrue,
-          reason: 'must handle the native close signal');
-      // TODO-086: destroy() syncly tears down the engine plugin-by-plugin =
-      // the multi-second exit hang; the close path now uses exit(0).
-      expect(main.contains('windowManager.destroy()'), isFalse,
-          reason: 'onWindowClose must NOT destroy() (sync engine teardown); '
-              'it must exit(0) instead (TODO-086)');
+        main.contains('windowManager.setPreventClose(true)'),
+        isTrue,
+        reason:
+            'desktop must intercept WM_CLOSE so Bonsoir is stopped '
+            'BEFORE the engine is torn down (TODO-036)',
+      );
     });
 
-    test('onWindowClose cuts Bonsoir event source before exit (TODO-036 kept)',
-        () {
-      final String main = File('lib/main.dart').readAsStringSync();
-      final int closeAt = main.indexOf('void onWindowClose()');
-      expect(closeAt, greaterThanOrEqualTo(0));
-      final int hookAt = main.indexOf('_flushAndExitForWindowClose() async');
-      expect(hookAt, greaterThan(closeAt));
-      final int cutAt = main.indexOf('shutdownForExitFast()', hookAt);
-      final int exitAt =
-          main.indexOf('platformServices.lifecycle.exitApp()', hookAt);
-      expect(cutAt, greaterThan(hookAt),
-          reason: 'exit must cut the Bonsoir event source (TODO-036)');
-      expect(exitAt, greaterThan(cutAt),
-          reason: 'the event-source cut must run before exit(0)');
-    });
+    test(
+      'the app state handles window close with a fast exit (no destroy)',
+      () {
+        final String main = File('lib/main.dart').readAsStringSync();
+        expect(
+          main.contains('with WidgetsBindingObserver, WindowListener'),
+          isTrue,
+          reason:
+              'the app state must implement WindowListener to receive '
+              'onWindowClose',
+        );
+        expect(
+          main.contains('void onWindowClose()'),
+          isTrue,
+          reason: 'must handle the native close signal',
+        );
+        // TODO-086: destroy() syncly tears down the engine plugin-by-plugin =
+        // the multi-second exit hang; the close path now uses exit(0).
+        expect(
+          main.contains('windowManager.destroy()'),
+          isFalse,
+          reason:
+              'onWindowClose must NOT destroy() (sync engine teardown); '
+              'it must exit(0) instead (TODO-086)',
+        );
+      },
+    );
 
-    test('exit teardown is bounded by a timeout so close-X can never freeze',
-        () {
-      final String main = File('lib/main.dart').readAsStringSync();
-      final int hookAt = main.indexOf('_flushAndExitForWindowClose() async');
-      expect(hookAt, greaterThanOrEqualTo(0));
-      final String body = main.substring(hookAt);
-      // TODO-086: Bonsoir exit timeout tightened from 3s to 1.5s (the fast
-      // variant already backgrounds the native stop).
-      expect(
-          body.contains('.timeout(const Duration(milliseconds: 1500))'), isTrue,
-          reason: 'a hung bonsoir native stop must not block exit forever: '
-              'the fast teardown await must carry a 1.5s timeout (TODO-086)');
-      expect(body.contains('on TimeoutException'), isTrue,
-          reason: 'the timeout must be logged and swallowed, never escape '
-              'the close path');
-    });
+    test(
+      'onWindowClose cuts Bonsoir event source before exit (TODO-036 kept)',
+      () {
+        final String main = File('lib/main.dart').readAsStringSync();
+        final int closeAt = main.indexOf('void onWindowClose()');
+        expect(closeAt, greaterThanOrEqualTo(0));
+        final int hookAt = main.indexOf('_flushAndExitForWindowClose() async');
+        expect(hookAt, greaterThan(closeAt));
+        final int cutAt = main.indexOf('shutdownForExitFast()', hookAt);
+        final int exitAt = main.indexOf(
+          'platformServices.lifecycle.exitApp()',
+          hookAt,
+        );
+        expect(
+          cutAt,
+          greaterThan(hookAt),
+          reason: 'exit must cut the Bonsoir event source (TODO-036)',
+        );
+        expect(
+          exitAt,
+          greaterThan(cutAt),
+          reason: 'the event-source cut must run before exit(0)',
+        );
+      },
+    );
+
+    test(
+      'exit teardown is bounded by a timeout so close-X can never freeze',
+      () {
+        final String main = File('lib/main.dart').readAsStringSync();
+        // Match on comment-masked, whitespace-collapsed source: main.dart is
+        // `dart format`ed, which may split the call chain across lines and add
+        // a trailing comma inside `.timeout(...)`.
+        final String body = compactCode(
+          methodBody(main, 'Future<void> _flushAndExitForWindowClose() async'),
+        );
+        // TODO-086: Bonsoir exit timeout tightened from 3s to 1.5s (the fast
+        // variant already backgrounds the native stop).
+        expect(
+          RegExp(
+            r'_guardedExitStep\([^;]*?shutdownForExitFast\(\)'
+            r'\.timeout\(constDuration\(milliseconds:1500\),?\)',
+          ).hasMatch(body),
+          isTrue,
+          reason:
+              'a hung bonsoir native stop must not block exit forever: '
+              'the fast teardown await must carry a 1.5s timeout and run '
+              'inside _guardedExitStep (TODO-086)',
+        );
+        final String step = methodBody(main, 'Future<void> _guardedExitStep(');
+        expect(
+          step.contains('on TimeoutException'),
+          isTrue,
+          reason:
+              'the timeout must be logged and swallowed, never escape '
+              'the close path',
+        );
+      },
+    );
 
     test('detached lifecycle is a fallback teardown path', () {
       final String main = File('lib/main.dart').readAsStringSync();
-      expect(main.contains('AppLifecycleState.detached'), isTrue,
-          reason: 'detached must also tear down Bonsoir for paths that do not '
-              'go through window_manager');
+      expect(
+        main.contains('AppLifecycleState.detached'),
+        isTrue,
+        reason:
+            'detached must also tear down Bonsoir for paths that do not '
+            'go through window_manager',
+      );
     });
   });
 
@@ -168,12 +229,20 @@ void main() {
       // 覆盖全部 part（discovery widget 现住 interconnect.part.dart）。
       final String schema = readSyncSettingsSchemaSource();
       expect(schema.contains('syncServerController'), isTrue);
-      expect(schema.contains('.registerDiscovery('), isTrue,
-          reason: 'the discovery widget must register its browser so the exit '
-              'hook can stop it');
-      expect(schema.contains('.unregisterDiscovery('), isTrue,
-          reason: 'the widget must unregister on its own dispose to avoid a '
-              'double-dispose');
+      expect(
+        schema.contains('.registerDiscovery('),
+        isTrue,
+        reason:
+            'the discovery widget must register its browser so the exit '
+            'hook can stop it',
+      );
+      expect(
+        schema.contains('.unregisterDiscovery('),
+        isTrue,
+        reason:
+            'the widget must unregister on its own dispose to avoid a '
+            'double-dispose',
+      );
     });
   });
 
@@ -189,8 +258,11 @@ void main() {
 
       await controller.shutdownForExitFast();
 
-      expect(a.isDisposed, isTrue,
-          reason: 'fast exit must still cut the Bonsoir event source at root');
+      expect(
+        a.isDisposed,
+        isTrue,
+        reason: 'fast exit must still cut the Bonsoir event source at root',
+      );
       expect(b.isDisposed, isTrue);
     });
 
