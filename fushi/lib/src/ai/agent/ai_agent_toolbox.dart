@@ -6,6 +6,8 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 
+import 'package:fushi/src/ai/agent/ai_agent_skills.dart';
+
 /// 常驻工具（spec §6.1：约 15 个，每轮都带上）；其余经 `ops.search` → `ops.describe`
 /// 现取。只列目录里真实存在的 id，不存在的（当前平台没这条路由）静默跳过。
 const List<String> kAiAgentResidentOps = <String>[
@@ -43,7 +45,7 @@ final RegExp _kSecretKey = RegExp(
 ///   直接注入（spec §4.1）。
 /// - 每次写操作都记进本机 `ai_agent_actions`（不同步、不备份），撤销按记录里的
 ///   撤销载荷调 [OpUndo.revert]——过了会话、重启 app 也能撤。
-class AiAgentToolbox implements AgentToolbox {
+class AiAgentToolbox implements AgentToolbox, AgentSkillProvider {
   AiAgentToolbox({
     required this.invoker,
     required this.database,
@@ -51,7 +53,18 @@ class AiAgentToolbox implements AgentToolbox {
     this.resident = kAiAgentResidentOps,
     this.taskPollInterval = const Duration(seconds: 3),
     this.maxTaskWatch = const Duration(hours: 6),
-  }) : _clock = clock ?? DateTime.now;
+    List<AiAgentAppSkill>? skills,
+  }) : _clock = clock ?? DateTime.now,
+       _skills = skills ?? buildAiAgentSkills();
+
+  final List<AiAgentAppSkill> _skills;
+
+  /// 组合技能（spec §6.3）：所需操作全部当前可用的才给模型。
+  @override
+  List<AgentSkill> skills() => <AgentSkill>[
+    for (final AiAgentAppSkill skill in _skills)
+      if (skill.requiredOps.every((String id) => _available(id) != null)) skill,
+  ];
 
   /// 长任务轮询间隔与最长盯多久（spec §6.1）。
   final Duration taskPollInterval;
