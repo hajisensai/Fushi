@@ -85,6 +85,22 @@ class _FakeDecoder implements AsrBatchDecoder {
 /// 假服务：模型就绪与否、已完成产物可编程；`start` 装配真任务 + 假会话。
 /// 每次 plan / download / start 收到的语言都记下来，供「切语言真的传到了
 /// service」的断言。
+/// 在 `runAsync` 里泵帧，直到 [done]（后台任务在真实事件循环里跑：文件 IO / 隔离区）。按**真实时间**截止，
+/// 不按固定轮数：条件一满足就返回，本机照样快；CI runner 负载高时任务跑超过两秒也不会被截断成假红
+/// （原先 50 轮 × 40 ms 的预算在 Linux CI 上不够，PR #2562 的 unit-tests (3/4)）。
+Future<void> _pumpUntil(
+  WidgetTester tester,
+  bool Function() done, {
+  Duration timeout = const Duration(seconds: 30),
+}) async {
+  // 先泵一帧再判：点按之后旧状态（如上一轮的完成态按钮）可能还在树上，要先让点按生效。
+  final Stopwatch clock = Stopwatch()..start();
+  do {
+    await tester.pump(const Duration(milliseconds: 20));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  } while (!done() && clock.elapsed < timeout);
+}
+
 class _FakeService extends AsrTranscriptionService {
   _FakeService({
     required this.ready,
@@ -386,16 +402,13 @@ void main() {
       );
       // 要等到任务真跑完（完成态）再回 fake async：运行中的不定进度条会让
       // pumpAndSettle 永远等不到安定。
-      for (int i = 0; i < 50; i++) {
-        await tester.pump(const Duration(milliseconds: 20));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        if (find
+      await _pumpUntil(
+        tester,
+        () => find
             .widgetWithText(FilledButton, t.audiobook_transcribe_use_result)
             .evaluate()
-            .isNotEmpty) {
-          break;
-        }
-      }
+            .isNotEmpty,
+      );
     });
     await tester.pumpAndSettle();
     expect(service.lastStartLanguage, AsrLanguage.english);
@@ -435,18 +448,15 @@ void main() {
       await tester.tap(
         find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
       );
-      for (int i = 0; i < 50; i++) {
-        await tester.pump(const Duration(milliseconds: 20));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        // 等任务真正跑完再退出：提前退出会让 fake 任务还握着 jobsDir 里的文件
-        // 句柄，tearDown 删临时目录在 Windows 上会撞 errno 32。
-        if (find
+      // 等任务真正跑完再退出：提前退出会让 fake 任务还握着 jobsDir 里的文件
+      // 句柄，tearDown 删临时目录在 Windows 上会撞 errno 32。
+      await _pumpUntil(
+        tester,
+        () => find
             .widgetWithText(FilledButton, t.audiobook_transcribe_use_result)
             .evaluate()
-            .isNotEmpty) {
-          break;
-        }
-      }
+            .isNotEmpty,
+      );
     });
     await tester.pumpAndSettle();
     expect(service.lastStartPreference, AsrAccelerationPreference.coreml);
@@ -465,16 +475,13 @@ void main() {
       await tester.tap(
         find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
       );
-      for (int i = 0; i < 50; i++) {
-        await tester.pump(const Duration(milliseconds: 20));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        if (find
+      await _pumpUntil(
+        tester,
+        () => find
             .widgetWithText(FilledButton, t.audiobook_transcribe_use_result)
             .evaluate()
-            .isNotEmpty) {
-          break;
-        }
-      }
+            .isNotEmpty,
+      );
     });
     await tester.pumpAndSettle();
     expect(
@@ -524,23 +531,17 @@ void main() {
       await tester.tap(
         find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
       );
-      for (int i = 0; i < 50; i++) {
-        await tester.pump(const Duration(milliseconds: 20));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        if (find
+      await _pumpUntil(
+        tester,
+        () => find
             .widgetWithText(OutlinedButton, t.audiobook_transcribe_export)
             .evaluate()
-            .isNotEmpty) {
-          break;
-        }
-      }
+            .isNotEmpty,
+      );
       await tester.tap(
         find.widgetWithText(OutlinedButton, t.audiobook_transcribe_export),
       );
-      for (int i = 0; i < 20 && !File(target).existsSync(); i++) {
-        await tester.pump(const Duration(milliseconds: 20));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
+      await _pumpUntil(tester, () => File(target).existsSync());
     });
     await tester.pumpAndSettle();
     expect(File(target).existsSync(), isTrue);
@@ -702,9 +703,7 @@ void main() {
     expect(r, isFalse);
   });
 
-  testWidgets('阶段轨：待下载高亮第一格，下完后打勾（本弹层下过，不算跳过）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('阶段轨：待下载高亮第一格，下完后打勾（本弹层下过，不算跳过）', (WidgetTester tester) async {
     final _FakeService service = _FakeService(ready: false, jobsDir: tmp);
     await tester.pumpWidget(wrap(service, (String? _) {}));
     await tester.tap(find.byKey(const ValueKey<String>('open')));
@@ -727,9 +726,7 @@ void main() {
     );
   });
 
-  testWidgets('完成态没匹配过正文：后两格空着并说明「使用字幕」后才匹配', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('完成态没匹配过正文：后两格空着并说明「使用字幕」后才匹配', (WidgetTester tester) async {
     final File srt = File('${tmp.path}/old.srt')..writeAsStringSync('1\n');
     final _FakeService service = _FakeService(
       ready: true,
@@ -752,16 +749,17 @@ void main() {
       find.byKey(const ValueKey<String>('asr-pipeline-stage-3-pending')),
       findsOneWidget,
     );
-    expect(_statusText(tester), contains(t.audiobook_transcribe_match_after_use));
+    expect(
+      _statusText(tester),
+      contains(t.audiobook_transcribe_match_after_use),
+    );
     expect(
       find.byKey(const ValueKey<String>('asr-coverage-summary')),
       findsNothing,
     );
   });
 
-  testWidgets('完成态有上次匹配的覆盖情况：五格全完成，按档着色显示覆盖率', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('完成态有上次匹配的覆盖情况：五格全完成，按档着色显示覆盖率', (WidgetTester tester) async {
     final File srt = File('${tmp.path}/old.srt')..writeAsStringSync('1\n');
     File(asrCoveragePathFor(srt.path)).writeAsStringSync(
       '{"matchedCues":1250,"totalCues":1260,"coveredChars":990,'
@@ -873,16 +871,13 @@ void main() {
     // 重新转录真的开跑（与「就绪 → 开始 → 完成」同一种等法：任务在真实事件循环里跑）。
     await tester.runAsync(() async {
       await tester.tap(retranscribe);
-      for (int i = 0; i < 50; i++) {
-        await tester.pump(const Duration(milliseconds: 20));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        if (find
+      await _pumpUntil(
+        tester,
+        () => find
             .widgetWithText(FilledButton, t.audiobook_transcribe_use_result)
             .evaluate()
-            .isNotEmpty) {
-          break;
-        }
-      }
+            .isNotEmpty,
+      );
     });
     await tester.pumpAndSettle();
     expect(service.discardCalls, 1);
@@ -1024,16 +1019,13 @@ void main() {
       await tester.tap(
         find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
       );
-      for (int i = 0; i < 50; i++) {
-        await tester.pump(const Duration(milliseconds: 20));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        if (find
+      await _pumpUntil(
+        tester,
+        () => find
             .textContaining(t.audiobook_transcribe_audio_incomplete)
             .evaluate()
-            .isNotEmpty) {
-          break;
-        }
-      }
+            .isNotEmpty,
+      );
     });
     await tester.pumpAndSettle();
 

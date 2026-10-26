@@ -189,8 +189,8 @@ pub(crate) fn applied_vv(conn: &Connection, profile: &str) -> Result<Vv, String>
 
 fn intern_deps(conn: &Connection, deps: &Vv) -> Result<i64, String> {
     let bytes = deps.encode();
-    conn.execute("INSERT OR IGNORE INTO sync2_deps (vv) VALUES (?1)", [&bytes]).map_err(sql)?;
-    conn.query_row("SELECT id FROM sync2_deps WHERE vv = ?1", [&bytes], |r| r.get(0)).map_err(sql)
+    conn.prepare_cached("INSERT OR IGNORE INTO sync2_deps (vv) VALUES (?1)").map_err(sql)?.execute([&bytes]).map_err(sql)?;
+    conn.prepare_cached("SELECT id FROM sync2_deps WHERE vv = ?1").map_err(sql)?.query_row([&bytes], |r| r.get(0)).map_err(sql)
 }
 
 pub(crate) fn insert_op(conn: &Connection, profile: &str, op: &Op, chain: &Chain, now: i64) -> Result<(), String> {

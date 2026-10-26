@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -274,6 +274,21 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     if current < 5 {
         // V5：同步 v2 的事实表与元数据（store/sync2/schema.rs）。旧表不动：它们从此是 ops 的投影。
         tx.execute_batch(super::sync2::schema::V5).map_err(|e| e.to_string())?;
+    }
+    if current < 6 {
+        // V6：本机切段点记下压缩后体积（按体积切段与分层合并用，store/sync2/transport.rs）。老段留 0 = 未知，
+        // 合并时补算。
+        let has: bool = tx
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('sync2_segments') WHERE name = 'bytes'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .map_err(|e| e.to_string())?
+            > 0;
+        if !has {
+            tx.execute_batch(super::sync2::schema::V6).map_err(|e| e.to_string())?;
+        }
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \
