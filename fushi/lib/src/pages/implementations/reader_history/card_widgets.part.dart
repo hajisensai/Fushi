@@ -220,11 +220,12 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
   }) {
     final Widget metaBlock = ShelfCardMeta(
       title: title,
-      subtitle: _shelfMetaSubtitle(meta.status, tags),
+      subtitle: meta.status,
       leadingIcon: meta.icon,
       tone: meta.tone,
       progress: meta.progress,
       completed: meta.completed,
+      trailing: tags.isEmpty ? null : ShelfMetaTags(tags: _shelfMetaTags(tags)),
     );
     final String? tooltip = meta.tooltip;
     return Column(
@@ -262,16 +263,12 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     return ShelfCoverFrame(child: child);
   }
 
-  /// 副行：状态在前，用户标签接在后面（`46% · #tag1 #tag2`）。
-  String _shelfMetaSubtitle(String? status, List<BookTagRow> tags) {
-    final String tagText = tags
-        .map((BookTagRow tag) => '#${tag.name}')
-        .join(' ');
-    return <String>[
-      if (status != null && status.isNotEmpty) status,
-      if (tagText.isNotEmpty) tagText,
-    ].join(' · ');
-  }
+  /// 副行尾部的用户标签（[ShelfMetaTags]：标签色点 + 名字）。状态文字留在副行
+  /// 正文，标签不再拼成 `#tag` 文本（用户 2026-10-26：「#4⭐」太抽象）。
+  List<ShelfMetaTag> _shelfMetaTags(List<BookTagRow> tags) => <ShelfMetaTag>[
+    for (final BookTagRow tag in tags)
+      (label: tag.name, color: Color(tag.colorValue)),
+  ];
 
   /// 条目的阅读比例（0–1）：标了读完恒为 1；超过 97% 视同读完（跳过后记 / 附录）。
   double _itemReadFraction(MediaItem item, {bool completed = false}) {
