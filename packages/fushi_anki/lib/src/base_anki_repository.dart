@@ -380,7 +380,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   /// **默认实现 = 优雅降级**：基类返回 `false`。
   Future<bool> openNoteInAnki(int noteId) async => false;
 
-  /// BUG-3783：已制卡片住在哪（界面据此说「Anki」还是「Fushi 复习」）。
+  /// BUG-3790：已制卡片住在哪（界面据此说「Anki」还是「Fushi 复习」）。
   MinedNoteHome get minedNoteHome => MinedNoteHome.anki;
 
   /// [openNoteInAnki] 在本后端是否可能成功。基类默认实现恒 `false`，与之同步默认

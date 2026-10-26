@@ -4,7 +4,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
-// BUG-3783：「已存在的卡片」对话框按卡真正住的地方说话——卡在 Fushi 复习里时
+// BUG-3790：「已存在的卡片」对话框按卡真正住的地方说话——卡在 Fushi 复习里时
 // 不能出现「在 Anki 中打开」；后端打不开笔记时不出打开按钮。
 
 class _Repo extends BaseAnkiRepository {

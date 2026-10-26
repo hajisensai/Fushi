@@ -441,7 +441,7 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_close),
         ),
-        // BUG-3783：按钮说的是卡真正住的地方（Anki / Fushi 复习）；后端打不开
+        // BUG-3790：按钮说的是卡真正住的地方（Anki / Fushi 复习）；后端打不开
         // （远端制卡、AnkiMobile 等）就不出这颗按钮。
         if (widget.repo.canOpenMinedNote)
           FushiTextButton(
@@ -460,7 +460,7 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
   }
 }
 
-/// 已有卡行尾「查看」按钮的提示：能打开时说去哪打开（BUG-3783），打不开只说查看。
+/// 已有卡行尾「查看」按钮的提示：能打开时说去哪打开（BUG-3790），打不开只说查看。
 String _viewLabel(BaseAnkiRepository repo) {
   if (!repo.canOpenMinedNote) return t.anki_mined_action_view_only;
   return switch (repo.minedNoteHome) {

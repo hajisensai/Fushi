@@ -986,7 +986,7 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
 
   // ------------------------------------------------------------ 打开笔记
 
-  /// BUG-3783：笔记住在 Fushi 复习里，界面不能再说「Anki」。
+  /// BUG-3790：笔记住在 Fushi 复习里，界面不能再说「Anki」。
   @override
   MinedNoteHome get minedNoteHome => MinedNoteHome.fushiReview;
 

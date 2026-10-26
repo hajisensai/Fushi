@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3393 条。点号进各自文件。
+> 共 3394 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3790](bugs/BUG-3790-mined-card-viewer-anki-label-on-fushi-review.md) | ✅ | ✅ | mined-card-viewer-anki-label-on-fushi-review |
 | [BUG-3789](bugs/BUG-3789-srs-card-frequency-not-aggregated.md) | ✅ | ✅ | srs-card-frequency-not-aggregated |
 | [BUG-3788](bugs/BUG-3788-srs-template-preview-slow.md) | ✅ | ✅ | srs-template-preview-slow |
 | [BUG-3787](bugs/BUG-3787-srs-two-pane-header-back-lost.md) | ✅ | ✅ | srs-two-pane-header-back-lost |
@@ -44,11 +45,6 @@
 | [BUG-3785](bugs/BUG-3785-remove-source-orphans-music-tracks.md) | ✅ | ✅ | remove-source-orphans-music-tracks |
 | [BUG-3784](bugs/BUG-3784-profile-default-ensure-race.md) | ✅ | ✅ | profile-default-ensure-race |
 | [BUG-3783](bugs/BUG-3783-subtitle-backfill-race-reports-installed.md) | ✅ | ✅ | subtitle-backfill-race-reports-installed |
-> 共 3387 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3783](bugs/BUG-3783-mined-card-viewer-anki-label-on-fushi-review.md) | ✅ | ✅ | mined-card-viewer-anki-label-on-fushi-review |
 | [BUG-3782](bugs/BUG-3782-popup-headword-clipped-eink.md) | ✅ | ✅ | 墨水屏 / Apple 设计系统窄弹窗词头右侧被裁 |
 | [BUG-3781](bugs/BUG-3781-floating-ball-tap-leaks-to-reader.md) | ✅ | ✅ | 小说阅读器里点应用内悬浮球会唤出顶栏 / 底栏 |
 | [BUG-3780](bugs/BUG-3780-tts-emphasis-dot-ruby-reads-dots.md) | ✅ | ✅ | TTS 朗读把傍点 ruby（`・・` / `﹅`）当读音，着重的词整个读丢 |

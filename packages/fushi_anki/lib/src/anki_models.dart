@@ -129,7 +129,7 @@ enum AnkiOpenWordOutcome {
   failed,
 }
 
-/// BUG-3783：已制卡片存在哪里——决定「已存在的卡片」对话框的标题、「查看 /
+/// BUG-3790：已制卡片存在哪里——决定「已存在的卡片」对话框的标题、「查看 /
 /// 打开」文案与打开失败提示用 Anki 还是 Fushi 复习的说法。制卡落点是 Fushi 复习
 /// 时界面却一律写「在 Anki 中打开」，用户以为卡进了 Anki。
 enum MinedNoteHome {
