@@ -164,14 +164,10 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
     return display == f.name ? f.name : '$display · ${f.name}';
   }
 
-  /// 字段行副标题：说明（用户写的优先，其次内置说明）+ 内置字段标记。
-  static String? _fieldSubtitle(SrsFieldDef f, {required bool builtin}) {
+  /// 字段行副标题：说明（用户写的优先，其次内置说明）；内置 / 查词等标记另作标签。
+  static String? _fieldSubtitle(SrsFieldDef f) {
     final String description = srsFieldDisplayDescription(f);
-    final String text = <String>[
-      if (description.isNotEmpty) description,
-      if (builtin) t.srs_note_types_field_builtin,
-    ].join('\n');
-    return text.isEmpty ? null : text;
+    return description.isEmpty ? null : description;
   }
 
   Future<void> _openField(SrsNoteTypeView type, SrsFieldDef field) async {
@@ -544,189 +540,311 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
         ),
       );
     }
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final String termName =
-        type.fields
-            .where((SrsFieldDef f) => f.id == type.termFieldId)
-            .firstOrNull
-            ?.name ??
-        t.srs_note_types_term_field_none;
-    // 宽窗（手机横屏 / 桌面）：左栏类型属性、卡片模板与样式，右栏（通常最长的）
-    // 字段列表，两栏各自滚动；窄窗仍是原顺序单列。
+    // 宽窗（手机横屏 / 桌面）：左栏「这是什么类型 + 它出哪几种卡、每种卡上放了什么」，
+    // 右栏（通常最长的）字段列表，两栏各自滚动；窄窗同顺序单列。
     final List<SrsSection> sections = <SrsSection>[
-      if (type.builtinKey != null)
-        SrsSection(
-          FushiCard(
-            key: const ValueKey<String>('srs-note-type-builtin-hint'),
-            tone: FushiCardTone.primary,
-            child: Row(
-              spacing: tokens.spacing.gap * 1.5,
-              children: <Widget>[
-                const FushiIcon(FushiIcons.info),
-                Expanded(child: Text(t.srs_note_types_builtin_hint)),
-              ],
-            ),
-          ),
-        ),
       if (type.edits.conflicted.isNotEmpty)
         SrsSection(_buildConflicts(context, type)),
-      SrsSection(
-        FushiCard(
-          padding: EdgeInsets.zero,
-          child: Column(
-            children: <Widget>[
-              FushiListItem(
-                key: const ValueKey<String>('srs-note-type-name-row'),
-                leading: const FushiListLeadingIcon(FushiIcons.ankiCard),
-                title: Text(t.srs_key_name),
-                subtitle: Text(type.name),
-                onTap: () => srsRunLogged(
-                  'SrsNoteTypeEditor.rename',
-                  () => _rename(type),
-                ),
-                trailing: const FushiIcon(FushiIcons.rename),
-              ),
-              FushiListItem(
-                leading: const FushiListLeadingIcon(FushiIcons.info),
-                title: Text(t.srs_note_types_kind),
-                subtitle: Text(
-                  type.isCloze
-                      ? t.srs_note_types_kind_cloze
-                      : t.srs_note_types_kind_standard,
-                ),
-              ),
-              FushiListItem(
-                key: const ValueKey<String>('srs-note-type-term-row'),
-                leading: const FushiListLeadingIcon(FushiIcons.lookup),
-                title: Text(t.srs_note_types_term_field),
-                subtitle: Text(termName),
-                onTap: () => srsRunLogged(
-                  'SrsNoteTypeEditor.termField',
-                  () => _pickTermField(type),
-                ),
-                trailing: const FushiIcon(FushiIcons.chevronRight),
-              ),
-            ],
-          ),
-        ),
-      ),
-      SrsSection(
-        pane: SrsPane.secondary,
-        _Section(
-          title: t.srs_note_types_fields,
-          addKey: const ValueKey<String>('srs-note-type-add-field'),
-          addLabel: t.srs_note_types_field_add,
-          onAdd: () =>
-              srsRunLogged('SrsNoteTypeEditor.addField', () => _addField(type)),
-          children: <Widget>[
-            for (int i = 0; i < type.fields.length; i++)
-              _ItemRow(
-                key: ValueKey<String>(
-                  'srs-note-type-field-${type.fields[i].name}',
-                ),
-                icon: srsFieldKindIcon(srsFieldKind(type.fields[i])),
-                title: _fieldTitle(type.fields[i]),
-                renameLabel: t.srs_note_types_field_rename,
-                deleteLabel: t.srs_note_types_field_delete,
-                subtitle: _fieldSubtitle(
-                  type.fields[i],
-                  builtin: store.isBuiltinField(type, type.fields[i].id),
-                ),
-                onTap: () => srsRunLogged(
-                  'SrsNoteTypeEditor.openField',
-                  () => _openField(type, type.fields[i]),
-                ),
-                canMoveUp: i > 0,
-                canMoveDown: i < type.fields.length - 1,
-                canDelete:
-                    type.fields.length > 1 &&
-                    !store.isBuiltinField(type, type.fields[i].id),
-                onAction: (_ItemAction a) => srsRunLogged(
-                  'SrsNoteTypeEditor.field',
-                  () => _onFieldAction(type, type.fields[i], a),
-                ),
-              ),
-          ],
-        ),
-      ),
-      SrsSection(
-        _Section(
-          title: t.srs_note_types_templates,
-          addKey: const ValueKey<String>('srs-note-type-add-template'),
-          addLabel: t.srs_note_types_template_add,
-          onAdd: type.isCloze
-              ? null
-              : () => srsRunLogged(
-                  'SrsNoteTypeEditor.addTemplate',
-                  () => _addTemplate(type),
-                ),
-          children: <Widget>[
-            for (int i = 0; i < type.templates.length; i++)
-              _ItemRow(
-                key: ValueKey<String>(
-                  'srs-note-type-template-${type.templates[i].name}',
-                ),
-                icon: FushiIcons.ankiCard,
-                title: type.templates[i].name,
-                renameLabel: t.srs_note_types_template_rename,
-                deleteLabel: t.srs_note_types_template_delete,
-                onTap: () => srsRunLogged(
-                  'SrsNoteTypeEditor.openTemplate',
-                  () => _openTemplate(type, type.templates[i].id),
-                ),
-                canMoveUp: i > 0,
-                canMoveDown: i < type.templates.length - 1,
-                canDelete: type.templates.length > 1,
-                onAction: (_ItemAction a) => srsRunLogged(
-                  'SrsNoteTypeEditor.template',
-                  () => _onTemplateAction(type, type.templates[i], a),
-                ),
-              ),
-          ],
-        ),
-      ),
-      SrsSection(
-        FushiCard(
-          padding: EdgeInsets.zero,
-          child: FushiListItem(
-            key: const ValueKey<String>('srs-note-type-styling-row'),
-            leading: const FushiListLeadingIcon(FushiIcons.code),
-            title: Text(t.srs_note_types_styling),
-            subtitle: Text(t.srs_note_types_styling_hint),
-            onTap: type.templates.isEmpty
-                ? null
-                : () => srsRunLogged(
-                    'SrsNoteTypeEditor.styling',
-                    () => _openTemplate(
-                      type,
-                      type.templates.first.id,
-                      tab: SrsTemplateEditorTab.styling,
-                    ),
-                  ),
-            trailing: const FushiIcon(FushiIcons.chevronRight),
-          ),
-        ),
-      ),
+      SrsSection(_buildOverview(context, type)),
+      SrsSection(_buildTemplates(context, type)),
+      SrsSection(pane: SrsPane.secondary, _buildFields(context, type, store)),
     ];
     return SrsAdaptiveSections(sections: sections);
   }
+
+  /// 概览：名字（点了改名）+ 类型 / 内置 / 查词字段三枚标签，内置类型多一行说明。
+  Widget _buildOverview(BuildContext context, SrsNoteTypeView type) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final SrsFieldDef? term = type.fields
+        .where((SrsFieldDef f) => f.id == type.termFieldId)
+        .firstOrNull;
+    return FushiCard(
+      key: const ValueKey<String>('srs-note-type-overview'),
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          FushiListItem(
+            key: const ValueKey<String>('srs-note-type-name-row'),
+            leading: const FushiListLeadingIcon(FushiIcons.ankiCard),
+            title: Text(type.name, style: context.fushiType.titleLarge),
+            subtitle: Text(
+              t.srs_note_types_overview_counts(
+                fields: type.fields.length,
+                cards: type.templates.length,
+              ),
+            ),
+            onTap: () =>
+                srsRunLogged('SrsNoteTypeEditor.rename', () => _rename(type)),
+            trailing: FushiIcon(
+              FushiIcons.rename,
+              semanticLabel: t.srs_note_types_rename,
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.card,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: tokens.spacing.gap,
+              children: <Widget>[
+                Wrap(
+                  spacing: tokens.spacing.gap / 2,
+                  runSpacing: tokens.spacing.gap / 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: <Widget>[
+                    FushiTag(
+                      text: type.isCloze
+                          ? t.srs_note_types_kind_cloze
+                          : t.srs_note_types_kind_standard,
+                      tone: FushiTagTone.neutral,
+                    ),
+                    if (type.builtinKey != null)
+                      FushiTag(
+                        key: const ValueKey<String>(
+                          'srs-note-type-builtin-tag',
+                        ),
+                        text: t.srs_note_types_builtin,
+                        tone: FushiTagTone.accent,
+                      ),
+                    FushiActionChip(
+                      key: const ValueKey<String>('srs-note-type-term-row'),
+                      icon: FushiIcons.lookup,
+                      label: t.srs_note_types_term_chip(
+                        name: term == null
+                            ? t.srs_note_types_term_field_none
+                            : srsFieldDisplayName(term),
+                      ),
+                      onPressed: () => srsRunLogged(
+                        'SrsNoteTypeEditor.termField',
+                        () => _pickTermField(type),
+                      ),
+                    ),
+                  ],
+                ),
+                if (type.builtinKey != null)
+                  Text(
+                    t.srs_note_types_builtin_hint,
+                    key: const ValueKey<String>('srs-note-type-builtin-hint'),
+                    style: context.fushiType.bodySmall,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 卡片模板：每种卡一行，副标题直接列出正面 / 背面放了哪些字段（看一眼就知道这张卡
+  /// 长什么样，不必点进去）；末尾是全部模板共用的样式入口。
+  Widget _buildTemplates(BuildContext context, SrsNoteTypeView type) {
+    String sideText(String body) {
+      final List<String> names = <String>[
+        for (final SrsFieldDef f in srsFieldsShownOnSide(type, body))
+          srsFieldDisplayName(f),
+      ];
+      return names.isEmpty ? t.srs_note_types_side_none : names.join('、');
+    }
+
+    return _Section(
+      title: t.srs_note_types_templates,
+      hint: t.srs_note_types_templates_hint,
+      addKey: const ValueKey<String>('srs-note-type-add-template'),
+      addLabel: t.srs_note_types_template_add,
+      onAdd: type.isCloze
+          ? null
+          : () => srsRunLogged(
+              'SrsNoteTypeEditor.addTemplate',
+              () => _addTemplate(type),
+            ),
+      footer: FushiListItem(
+        key: const ValueKey<String>('srs-note-type-styling-row'),
+        leading: const FushiListLeadingIcon(FushiIcons.code),
+        title: Text(t.srs_note_types_styling),
+        subtitle: Text(t.srs_note_types_styling_hint),
+        onTap: type.templates.isEmpty
+            ? null
+            : () => srsRunLogged(
+                'SrsNoteTypeEditor.styling',
+                () => _openTemplate(
+                  type,
+                  type.templates.first.id,
+                  tab: SrsTemplateEditorTab.styling,
+                ),
+              ),
+        trailing: const FushiIcon(FushiIcons.chevronRight),
+      ),
+      children: <Widget>[
+        for (int i = 0; i < type.templates.length; i++)
+          _ItemRow(
+            key: ValueKey<String>(
+              'srs-note-type-template-${type.templates[i].name}',
+            ),
+            icon: FushiIcons.ankiCard,
+            title: type.templates[i].name,
+            subtitle: <String>[
+              t.srs_note_types_template_front_fields(
+                fields: sideText(type.templates[i].front),
+              ),
+              t.srs_note_types_template_back_fields(
+                fields: sideText(type.templates[i].back),
+              ),
+            ].join('\n'),
+            subtitleMaxLines: 4,
+            renameLabel: t.srs_note_types_template_rename,
+            deleteLabel: t.srs_note_types_template_delete,
+            onTap: () => srsRunLogged(
+              'SrsNoteTypeEditor.openTemplate',
+              () => _openTemplate(type, type.templates[i].id),
+            ),
+            canMoveUp: i > 0,
+            canMoveDown: i < type.templates.length - 1,
+            canDelete: type.templates.length > 1,
+            onAction: (_ItemAction a) => srsRunLogged(
+              'SrsNoteTypeEditor.template',
+              () => _onTemplateAction(type, type.templates[i], a),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 字段：内容字段按顺序平铺，每行标出「查词用」「没上卡面」；开关字段（填任意字符即
+  /// 开启某种卡面样式，Lapis 有一串）收进末尾的折叠组，不再和内容字段混排成一长条。
+  Widget _buildFields(
+    BuildContext context,
+    SrsNoteTypeView type,
+    SrsDbStore store,
+  ) {
+    final Set<String> used = <String>{
+      for (final SrsTemplateDef tpl in type.templates) ...<String>{
+        for (final SrsFieldDef f in type.fields)
+          if (srsTemplateReferencesField(tpl, f.id)) f.id,
+      },
+    };
+    Widget row(int i) {
+      final SrsFieldDef f = type.fields[i];
+      final bool builtin = store.isBuiltinField(type, f.id);
+      return _ItemRow(
+        key: ValueKey<String>('srs-note-type-field-${f.name}'),
+        icon: srsFieldKindIcon(srsFieldKind(f)),
+        title: _fieldTitle(f),
+        subtitle: _fieldSubtitle(f),
+        tags: <Widget>[
+          if (f.id == type.termFieldId)
+            FushiTag(
+              text: t.srs_note_types_field_term_tag,
+              tone: FushiTagTone.accent,
+            ),
+          if (!used.contains(f.id))
+            FushiTag(
+              key: ValueKey<String>('srs-note-type-field-unused-${f.name}'),
+              text: t.srs_note_types_field_unused,
+              tone: FushiTagTone.neutral,
+            ),
+          if (builtin)
+            FushiTag(
+              text: t.srs_note_types_field_builtin,
+              tone: FushiTagTone.neutral,
+            ),
+        ],
+        renameLabel: t.srs_note_types_field_rename,
+        deleteLabel: t.srs_note_types_field_delete,
+        onTap: () => srsRunLogged(
+          'SrsNoteTypeEditor.openField',
+          () => _openField(type, f),
+        ),
+        canMoveUp: i > 0,
+        canMoveDown: i < type.fields.length - 1,
+        canDelete: type.fields.length > 1 && !builtin,
+        onAction: (_ItemAction a) => srsRunLogged(
+          'SrsNoteTypeEditor.field',
+          () => _onFieldAction(type, f, a),
+        ),
+      );
+    }
+
+    final List<int> content = <int>[
+      for (int i = 0; i < type.fields.length; i++)
+        if (srsFieldKind(type.fields[i]) != SrsFieldKind.flag) i,
+    ];
+    final List<int> flags = <int>[
+      for (int i = 0; i < type.fields.length; i++)
+        if (srsFieldKind(type.fields[i]) == SrsFieldKind.flag) i,
+    ];
+    return _Section(
+      title: t.srs_note_types_fields_count(n: type.fields.length),
+      hint: t.srs_note_types_fields_hint,
+      addKey: const ValueKey<String>('srs-note-type-add-field'),
+      addLabel: t.srs_note_types_field_add,
+      onAdd: () =>
+          srsRunLogged('SrsNoteTypeEditor.addField', () => _addField(type)),
+      footer: flags.isEmpty
+          ? null
+          : FushiExpansionTile(
+              key: const ValueKey<String>('srs-note-type-flag-fields'),
+              leading: const FushiListLeadingIcon(FushiIcons.flag),
+              title: Text(t.srs_note_types_flag_fields(n: flags.length)),
+              subtitle: Text(t.srs_note_types_flag_fields_hint),
+              children: <Widget>[for (final int i in flags) row(i)],
+            ),
+      children: <Widget>[for (final int i in content) row(i)],
+    );
+  }
 }
 
-/// 一组（字段 / 卡片模板）：标题 + 行 + 「添加」按钮。
+/// 模板里**显示出来**的字段（`{{字段}}` / `{{过滤器:字段}}`，不算 `{{#字段}}` 这类条件段），
+/// 按在正文里第一次出现的位置排序。[body] 是 fieldId 形式的模板正文。
+List<SrsFieldDef> srsFieldsShownOnSide(SrsNoteTypeView type, String body) {
+  final List<(int, SrsFieldDef)> hits = <(int, SrsFieldDef)>[];
+  for (final SrsFieldDef f in type.fields) {
+    final RegExpMatch? m = RegExp(
+      r'\{\{(?![#^/])[^{}]*?'
+      '${RegExp.escape('fld:${f.id}')}'
+      r'\}\}',
+    ).firstMatch(body);
+    if (m != null) hits.add((m.start, f));
+  }
+  hits.sort(
+    ((int, SrsFieldDef) a, (int, SrsFieldDef) b) => a.$1.compareTo(b.$1),
+  );
+  return <SrsFieldDef>[for (final (int, SrsFieldDef) h in hits) h.$2];
+}
+
+/// 模板（任一面，含条件段）是否引用了这个字段。
+bool srsTemplateReferencesField(SrsTemplateDef tpl, String fieldId) {
+  final RegExp ref = RegExp(
+    '${RegExp.escape('fld:$fieldId')}'
+    r'\}\}',
+  );
+  return ref.hasMatch(tpl.front) || ref.hasMatch(tpl.back);
+}
+
+/// 一组（字段 / 卡片模板）：标题行（标题 + 一句说明 + 「添加」按钮）+ 行 + 可选的尾部。
+/// 「添加」放在标题行而不是列表末尾：字段一长，末尾的按钮要滚到底才看得见。
 class _Section extends StatelessWidget {
   const _Section({
     required this.title,
+    required this.hint,
     required this.addKey,
     required this.addLabel,
     required this.onAdd,
     required this.children,
+    this.footer,
   });
 
   final String title;
+  final String hint;
   final Key addKey;
   final String addLabel;
   final VoidCallback? onAdd;
   final List<Widget> children;
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -740,24 +858,33 @@ class _Section extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
               tokens.spacing.card,
-              tokens.spacing.card,
+              tokens.spacing.gap,
               tokens.spacing.gap / 2,
             ),
-            child: Text(title, style: context.fushiType.titleSmall),
-          ),
-          ...children,
-          Padding(
-            padding: EdgeInsets.all(tokens.spacing.gap),
-            child: Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: FushiFilledButton.tonalIcon(
-                key: addKey,
-                onPressed: onAdd,
-                icon: const FushiIcon(FushiIcons.add),
-                label: Text(addLabel),
-              ),
+            child: Row(
+              spacing: tokens.spacing.gap,
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(title, style: context.fushiType.titleSmall),
+                      Text(hint, style: context.fushiType.bodySmall),
+                    ],
+                  ),
+                ),
+                FushiFilledButton.tonalIcon(
+                  key: addKey,
+                  onPressed: onAdd,
+                  icon: const FushiIcon(FushiIcons.add),
+                  label: Text(addLabel),
+                ),
+              ],
             ),
           ),
+          ...children,
+          ?footer,
+          SizedBox(height: tokens.spacing.gap / 2),
         ],
       ),
     );
@@ -772,6 +899,8 @@ class _ItemRow extends StatelessWidget {
     required this.renameLabel,
     required this.deleteLabel,
     this.subtitle,
+    this.subtitleMaxLines = 2,
+    this.tags = const <Widget>[],
     this.onTap,
     required this.canMoveUp,
     required this.canMoveDown,
@@ -784,6 +913,10 @@ class _ItemRow extends StatelessWidget {
   final String renameLabel;
   final String deleteLabel;
   final String? subtitle;
+  final int subtitleMaxLines;
+
+  /// 标题下的一排小标签（查词用 / 没上卡面 / 内置）。
+  final List<Widget> tags;
   final VoidCallback? onTap;
   final bool canMoveUp;
   final bool canMoveDown;
@@ -793,8 +926,22 @@ class _ItemRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => FushiListItem(
     leading: FushiListLeadingIcon(icon),
-    title: Text(title),
-    subtitle: subtitle == null ? null : Text(subtitle!),
+    title: tags.isEmpty
+        ? Text(title)
+        : Wrap(
+            spacing: FushiDesignTokens.of(context).spacing.gap / 2,
+            runSpacing: 2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[Text(title), ...tags],
+          ),
+    subtitle: subtitle == null
+        ? null
+        : Text(
+            subtitle!,
+            maxLines: subtitleMaxLines,
+            overflow: TextOverflow.ellipsis,
+          ),
+    subtitleMaxLines: subtitleMaxLines,
     onTap: onTap,
     trailing: FushiPopupMenuButton<_ItemAction>(
       tooltip: t.srs_deck_menu,

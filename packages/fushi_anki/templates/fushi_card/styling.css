@@ -827,6 +827,14 @@
   display: none;
 }
 
+/* 词频跟随查词的「词频聚合」（宿主类 fushi-srs-freq-aggregate）：聚合且有平均值时只留读音行的
+   平均值，否则只留按词典合并的明细区，两者不同时出现（与原生卡面同一规则）。宿主类挂在 body 与
+   卡面根节点上；Anki 里没有宿主类 = 明细。 */
+.fushi-srs-freq-aggregate .fc-back:has(.fc-reading-row .fc-chip--freq) .fc-meta-row--freq,
+body:not(.fushi-srs-freq-aggregate) .fc-back:has(.fc-meta-row--freq) .fc-reading-row .fc-chip--freq {
+  display: none;
+}
+
 .fushi-srs-hide-frequency .fc-meta-row--source {
   padding-top: 12px;
   border-top: 1px solid var(--fc-outline);

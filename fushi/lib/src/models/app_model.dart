@@ -9536,8 +9536,11 @@ class AppModel with ChangeNotifier {
   );
 
   // 复习卡面外观（透传 prefsRepo）。可空读：prefs 未装配 = 模板默认外观。
-  SrsCardAppearance get srsCardAppearance =>
-      SrsCardAppearance.decode(_prefsRepo?.srsCardAppearance ?? '');
+  // 词频聚合不是卡面自己的设置，跟随查词的「词频聚合」叠上去（见
+  // SrsCardAppearance.aggregateFrequency）。
+  SrsCardAppearance get srsCardAppearance => SrsCardAppearance.decode(
+    _prefsRepo?.srsCardAppearance ?? '',
+  ).copyWith(aggregateFrequency: _prefsRepo?.harmonicFrequency ?? true);
   Future<void> setSrsCardAppearance(SrsCardAppearance appearance) =>
       prefsRepo.setSrsCardAppearance(appearance.encode());
 
@@ -9585,7 +9588,8 @@ class AppModel with ChangeNotifier {
       prefsRepo.setSrsLocationKey(locationId, key);
 
   /// 首次同步 v2 是否已确认（设备本地；prefs 未装配时按未确认，不同步）。
-  bool get srsSync2MergeConfirmed => _prefsRepo?.srsSync2MergeConfirmed ?? false;
+  bool get srsSync2MergeConfirmed =>
+      _prefsRepo?.srsSync2MergeConfirmed ?? false;
   Future<void> setSrsSync2MergeConfirmed(bool value) =>
       prefsRepo.setSrsSync2MergeConfirmed(value);
   Future<void> setSrsReviewZoom(double value) =>

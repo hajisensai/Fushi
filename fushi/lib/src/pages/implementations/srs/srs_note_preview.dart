@@ -123,6 +123,62 @@ srsNotePreviewNativeFushiCard({
   return (fieldsByName: fieldsByName, definitionsHtml: definitions);
 }
 
+/// 预览卡面的稳定宿主（笔记编辑 / 模板编辑 / 字段说明三处预览共用）。
+///
+/// 卡面视图一经建起就常驻：模板出错、正面为空、还在算时只在上面盖一层提示（[overlay]），
+/// 不拆视图。WebView 冷建一次约 1 s（BUG-3579 Windows 实测），旧实现在这几种状态间换不同
+/// 的子组件、或按「模板 + 正反面」换 key，每改出一处半截模板 / 每翻一次面都销毁重建一次，
+/// 预览就一直在「空白一秒」。翻面 / 换卡由 [SrsWebCardFace] 原地换内容。
+///
+/// [native] 非 null 时走与复习页同一个原生混合渲染（内置 Fushi 卡片、模板未改），不建
+/// 整面 WebView。[face] 为 null（还没有任何能渲染的内容）时只画 [overlay]。
+class SrsStablePreviewFace extends ConsumerWidget {
+  const SrsStablePreviewFace({
+    super.key,
+    required this.face,
+    this.native,
+    this.overlay,
+  });
+
+  final SrsCardFace? face;
+  final ({Map<String, String> fieldsByName, String definitionsHtml})? native;
+  final Widget? overlay;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final SrsCardFace? face = this.face;
+    final ({Map<String, String> fieldsByName, String definitionsHtml})? native =
+        this.native;
+    final Widget base = face == null
+        ? const SizedBox.expand()
+        : native != null
+        ? SrsFushiCardView(
+            key: const ValueKey<String>('srs-note-preview-native'),
+            face: face,
+            fields: native.fieldsByName,
+            definitionsHtml: native.definitionsHtml,
+          )
+        : KeyedSubtree(
+            key: const ValueKey<String>('srs-preview-web-face'),
+            child: ref.watch(srsCardFaceBuilderProvider)(context, face),
+          );
+    // 结构恒定：底层卡面永远是第 0 个孩子，盖层出现 / 消失不改它的位置。
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        base,
+        if (overlay != null)
+          Positioned.fill(
+            child: ColoredBox(
+              color: FushiDesignTokens.of(context).surfaces.card,
+              child: overlay,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// 把共享样式引用展开回内联（与复习页渲染同一份内容）；null = 原样用。
 typedef SrsNotePreviewExpand =
     Future<Map<String, String>> Function(Map<String, String> valuesById);
@@ -165,6 +221,11 @@ class _SrsNotePreviewState extends ConsumerState<SrsNotePreview> {
 
   /// 非 null = 原生混合渲染（与复习页同一个 [SrsFushiCardView]）。
   ({Map<String, String> fieldsByName, String definitionsHtml})? _native;
+
+  /// 卡面上正显示的那张（最近一次能渲染的结果）：出错 / 为空时卡面不拆，盖层提示，
+  /// 见 [SrsStablePreviewFace]。
+  AnkiRenderedCard? _shown;
+  ({Map<String, String> fieldsByName, String definitionsHtml})? _shownNative;
   Timer? _debounce;
   int _seq = 0;
   Listenable? _listening;
@@ -256,6 +317,11 @@ class _SrsNotePreviewState extends ConsumerState<SrsNotePreview> {
               tags: widget.tags,
             )
           : null;
+      final AnkiRenderedCard? card = _preview.card;
+      if (card != null && !card.isEmpty) {
+        _shown = card;
+        _shownNative = _native;
+      }
     });
   }
 
@@ -311,15 +377,7 @@ class _SrsNotePreviewState extends ConsumerState<SrsNotePreview> {
       key: const ValueKey<String>('srs-note-preview-surface'),
       padding: EdgeInsets.zero,
       pressScale: false,
-      child: AnimatedSwitcher(
-        duration: fushiMotionDuration(context, FushiMotion.short),
-        switchInCurve: FushiMotion.enter,
-        switchOutCurve: FushiMotion.exit,
-        child: KeyedSubtree(
-          key: ValueKey<String>('${_template?.id}-$_showAnswer'),
-          child: _face(context),
-        ),
-      ),
+      child: _face(context),
     );
     return Column(
       key: const ValueKey<String>('srs-note-preview'),
@@ -358,48 +416,44 @@ class _SrsNotePreviewState extends ConsumerState<SrsNotePreview> {
   Widget _face(BuildContext context) {
     final AnkiRenderedCard? card = _preview.card;
     final String? error = _preview.error;
-    if (error != null) {
-      return Center(
-        child: FushiPlaceholderMessage(
-          icon: FushiIcons.warning,
-          tone: FushiPlaceholderTone.error,
-          message: t.srs_note_types_template_error(error: error),
-        ),
-      );
-    }
-    if (card == null) return const FushiLoadingView();
-    if (card.isEmpty) {
-      return Center(
-        child: FushiPlaceholderMessage(
-          key: const ValueKey<String>('srs-note-preview-empty'),
-          icon: FushiIcons.info,
-          message: t.srs_note_types_preview_empty,
-        ),
-      );
-    }
+    final Widget? overlay = error != null
+        ? Center(
+            child: FushiPlaceholderMessage(
+              icon: FushiIcons.warning,
+              tone: FushiPlaceholderTone.error,
+              message: t.srs_note_types_template_error(error: error),
+            ),
+          )
+        : card == null
+        ? const FushiLoadingView()
+        : card.isEmpty
+        ? Center(
+            child: FushiPlaceholderMessage(
+              key: const ValueKey<String>('srs-note-preview-empty'),
+              icon: FushiIcons.info,
+              message: t.srs_note_types_preview_empty,
+            ),
+          )
+        : null;
+    final AnkiRenderedCard? shown = _shown;
     final String language = ref.read(appProvider).defaultContentLanguage;
-    final SrsCardFace face = SrsCardFace(
-      cardId: 'note-editor-preview',
-      showingAnswer: _showAnswer,
-      bodyHtml: _showAnswer ? card.answer : card.question,
-      css: widget.type.css,
-      languageCode: language.isEmpty ? null : language,
-      fushiCard: widget.type.builtinKey == kSrsBuiltinFushiCardKey,
-      onBridgeKey: (_) {},
-      bridgeKeys: const <String>[],
-      autoplayMedia: false,
+    return SrsStablePreviewFace(
+      face: shown == null
+          ? null
+          : SrsCardFace(
+              cardId: 'note-editor-preview',
+              showingAnswer: _showAnswer,
+              bodyHtml: _showAnswer ? shown.answer : shown.question,
+              css: widget.type.css,
+              languageCode: language.isEmpty ? null : language,
+              fushiCard: widget.type.builtinKey == kSrsBuiltinFushiCardKey,
+              onBridgeKey: (_) {},
+              bridgeKeys: const <String>[],
+              autoplayMedia: false,
+            ),
+      native: _shownNative,
+      overlay: overlay,
     );
-    final ({Map<String, String> fieldsByName, String definitionsHtml})? native =
-        _native;
-    if (native != null) {
-      return SrsFushiCardView(
-        key: const ValueKey<String>('srs-note-preview-native'),
-        face: face,
-        fields: native.fieldsByName,
-        definitionsHtml: native.definitionsHtml,
-      );
-    }
-    return ref.watch(srsCardFaceBuilderProvider)(context, face);
   }
 }
 

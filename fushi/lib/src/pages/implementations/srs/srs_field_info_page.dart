@@ -26,6 +26,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_label.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart'
+    show SrsStablePreviewFace;
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart'
     show SrsTemplatePreview, srsFieldPlaceholderHtml, srsRenderTemplatePreview;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
@@ -98,6 +100,9 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
   SrsNoteView? _sample;
   Map<String, String> _sampleValues = const <String, String>{};
 
+  /// 框出本字段的示例卡（[_renderSpotlight]，载入时算一次）。
+  SrsTemplatePreview _spot = const SrsTemplatePreview();
+
   @override
   void initState() {
     super.initState();
@@ -125,7 +130,8 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
       if (type == null || type.fieldById(widget.fieldId) == null) {
         throw StateError('field not found');
       }
-      final List<String> notes = await store.noteIdsOfType(type.id);
+      // 只要一条样本：走索引取第一条 id，不把整个类型的笔记都列出来。
+      final List<String> notes = await store.noteIdsOfType(type.id, limit: 1);
       final SrsNoteView? sample = notes.isEmpty
           ? null
           : await store.note(notes.first);
@@ -139,6 +145,7 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
       _sampleValues = values;
       _saved = type.fieldById(widget.fieldId)!.description;
       _description.text = _saved;
+      _spot = _renderSpotlight(type);
       setState(() => _loading = false);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsFieldInfo.load', e, stack);
@@ -355,42 +362,44 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
         }
         final double half = tokens.spacing.gap * 0.75;
         return FushiEntranceScope(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Expanded(
-                child: ListView.separated(
-                  key: SrsAdaptiveSections.primaryPaneKey,
-                  padding: EdgeInsets.fromLTRB(
-                    tokens.spacing.page,
-                    top,
-                    half,
-                    bottom.bottom,
-                  ),
-                  itemCount: info.length,
-                  separatorBuilder: (BuildContext context, int index) =>
-                      SizedBox(height: tokens.spacing.gap),
-                  itemBuilder: fushiStaggeredItemBuilder(
-                    (BuildContext context, int index) => info[index],
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Padding(
-                  key: SrsAdaptiveSections.secondaryPaneKey,
-                  padding: EdgeInsets.fromLTRB(
-                    half,
-                    top,
-                    tokens.spacing.page,
-                    bottom.bottom,
-                  ),
-                  child: FushiStaggeredEntrance(
-                    index: info.length,
-                    child: _preview(context, type, field, fill: true),
+          child: FushiPinnedPageChromeScope(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(
+                  child: ListView.separated(
+                    key: SrsAdaptiveSections.primaryPaneKey,
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.spacing.page,
+                      top,
+                      half,
+                      bottom.bottom,
+                    ),
+                    itemCount: info.length,
+                    separatorBuilder: (BuildContext context, int index) =>
+                        SizedBox(height: tokens.spacing.gap),
+                    itemBuilder: fushiStaggeredItemBuilder(
+                      (BuildContext context, int index) => info[index],
+                    ),
                   ),
                 ),
-              ),
-            ],
+                Expanded(
+                  child: Padding(
+                    key: SrsAdaptiveSections.secondaryPaneKey,
+                    padding: EdgeInsets.fromLTRB(
+                      half,
+                      top,
+                      tokens.spacing.page,
+                      bottom.bottom,
+                    ),
+                    child: FushiStaggeredEntrance(
+                      index: info.length,
+                      child: _preview(context, type, field, fill: true),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -549,6 +558,37 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
   static bool _references(SrsTemplateDef tpl, String fieldId) =>
       tpl.front.contains('fld:$fieldId') || tpl.back.contains('fld:$fieldId');
 
+  /// 框出本字段的示例卡。载入时算一次存进 State：说明框每敲一个字都会重建页面，
+  /// 不该每次都把几十 KB 的模板（Lapis / Fushi 卡）重新解析渲染一遍。
+  SrsTemplatePreview _renderSpotlight(SrsNoteTypeView type) {
+    final SrsTemplateDef? tpl =
+        type.templates
+            .where((SrsTemplateDef x) => _references(x, widget.fieldId))
+            .firstOrNull ??
+        type.templates.firstOrNull;
+    if (tpl == null) return const SrsTemplatePreview();
+    final Map<String, String> idToName = <String, String>{
+      for (final SrsFieldDef f in type.fields) f.id: f.name,
+    };
+    return srsRenderTemplatePreview(
+      front: templateIdsToNames(tpl.front, idToName),
+      back: templateIdsToNames(tpl.back, idToName),
+      fieldsByName: srsFieldSpotlightValues(
+        type: type,
+        fieldId: widget.fieldId,
+        sampleById: _sampleValues,
+      ),
+      isCloze: type.isCloze,
+      // 与模板编辑器同口径：填空预览 c1；普通类型按模板在列表里的位置。
+      cardOrd: type.isCloze ? 0 : type.templates.indexOf(tpl),
+      specials: AnkiCardSpecialFields(
+        tags: _sample?.tags ?? const <String>[],
+        noteTypeName: type.name,
+        cardName: tpl.name,
+      ),
+    );
+  }
+
   Widget _preview(
     BuildContext context,
     SrsNoteTypeView type,
@@ -556,52 +596,18 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
     bool fill = false,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final SrsTemplateDef? tpl =
-        type.templates
-            .where((SrsTemplateDef x) => _references(x, field.id))
-            .firstOrNull ??
-        type.templates.firstOrNull;
-    final Map<String, String> idToName = <String, String>{
-      for (final SrsFieldDef f in type.fields) f.id: f.name,
-    };
-    final SrsTemplatePreview preview = tpl == null
-        ? const SrsTemplatePreview()
-        : srsRenderTemplatePreview(
-            front: templateIdsToNames(tpl.front, idToName),
-            back: templateIdsToNames(tpl.back, idToName),
-            fieldsByName: srsFieldSpotlightValues(
-              type: type,
-              fieldId: field.id,
-              sampleById: _sampleValues,
-            ),
-            isCloze: type.isCloze,
-            // 与模板编辑器同口径：填空预览 c1；普通类型按模板在列表里的位置。
-            cardOrd: type.isCloze ? 0 : type.templates.indexOf(tpl),
-            specials: AnkiCardSpecialFields(
-              tags: _sample?.tags ?? const <String>[],
-              noteTypeName: type.name,
-              cardName: tpl.name,
-            ),
-          );
-    final AnkiRenderedCard? card = preview.card;
-    final SrsCardFaceBuilder faceBuilder = ref.watch(
-      srsCardFaceBuilderProvider,
-    );
+    final AnkiRenderedCard? card = _spot.card;
     final String language = ref.read(appProvider).defaultContentLanguage;
+    final bool empty = card == null || card.isEmpty;
+    // 高亮框是注入卡面 HTML 的，所以这里总用整面 WebView（原生 Fushi 卡面画不出它）。
     final Widget surface = FushiCard(
       key: const ValueKey<String>('srs-field-info-preview'),
       padding: EdgeInsets.zero,
       pressScale: false,
-      child: card == null || card.isEmpty
-          ? Center(
-              child: FushiPlaceholderMessage(
-                icon: FushiIcons.info,
-                message: t.srs_note_types_preview_empty,
-              ),
-            )
-          : faceBuilder(
-              context,
-              SrsCardFace(
+      child: SrsStablePreviewFace(
+        face: card == null || card.isEmpty
+            ? null
+            : SrsCardFace(
                 cardId: 'field-spot-${field.id}',
                 showingAnswer: _previewBack,
                 bodyHtml: _previewBack ? card.answer : card.question,
@@ -610,7 +616,15 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
                 fushiCard: type.builtinKey == kSrsBuiltinFushiCardKey,
                 onBridgeKey: (_) {},
               ),
-            ),
+        overlay: empty
+            ? Center(
+                child: FushiPlaceholderMessage(
+                  icon: FushiIcons.info,
+                  message: t.srs_note_types_preview_empty,
+                ),
+              )
+            : null,
+      ),
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

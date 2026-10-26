@@ -74,6 +74,7 @@ class SrsCardAppearance {
     this.sentenceFurigana = false,
     this.compactPhone = true,
     this.designSkin = true,
+    this.aggregateFrequency = true,
   });
 
   /// 字号缩放的取值范围（正文 / 词条 / 行距共用夹取）。
@@ -133,6 +134,11 @@ class SrsCardAppearance {
   /// 开着只会更协调；个别依赖整页配色的牌组可在外观页 / 复习页 ⋯ 里关掉。
   final bool designSkin;
 
+  /// 词频按聚合（调和平均）显示，否则按词典列明细。**不是卡面自己的设置**：跟随查词的
+  /// 「词频聚合」（偏好 `harmonic_frequency`，由 `AppModel.srsCardAppearance` 每次读时
+  /// 叠上），所以不进 [toJson] / 不从 JSON 读，只参与相等判断（切换后卡面要重建）。
+  final bool aggregateFrequency;
+
   SrsCardAppearance copyWith({
     double? textScale,
     double? termScale,
@@ -151,6 +157,7 @@ class SrsCardAppearance {
     bool? sentenceFurigana,
     bool? compactPhone,
     bool? designSkin,
+    bool? aggregateFrequency,
   }) => SrsCardAppearance(
     textScale: textScale ?? this.textScale,
     termScale: termScale ?? this.termScale,
@@ -169,6 +176,7 @@ class SrsCardAppearance {
     sentenceFurigana: sentenceFurigana ?? this.sentenceFurigana,
     compactPhone: compactPhone ?? this.compactPhone,
     designSkin: designSkin ?? this.designSkin,
+    aggregateFrequency: aggregateFrequency ?? this.aggregateFrequency,
   );
 
   static double _num(Object? v, double fallback, double min, double max) =>
@@ -251,10 +259,12 @@ class SrsCardAppearance {
 
   @override
   bool operator ==(Object other) =>
-      other is SrsCardAppearance && encode() == other.encode();
+      other is SrsCardAppearance &&
+      encode() == other.encode() &&
+      aggregateFrequency == other.aggregateFrequency;
 
   @override
-  int get hashCode => encode().hashCode;
+  int get hashCode => Object.hash(encode(), aggregateFrequency);
 }
 
 /// 卡面里由宿主按界面语言注入的标签文字。
@@ -474,6 +484,7 @@ String srsCardAppearanceClasses(SrsCardAppearance a) => <String>[
   if (!a.showPicture) 'fushi-srs-hide-picture',
   if (!a.showTranslation) 'fushi-srs-hide-translation',
   if (!a.showFrequency) 'fushi-srs-hide-frequency',
+  if (a.aggregateFrequency) 'fushi-srs-freq-aggregate',
   if (!a.showSource) 'fushi-srs-hide-source',
   if (!a.compactPhone) 'fushi-srs-full-gloss',
   if (a.density != SrsCardDensity.standard)

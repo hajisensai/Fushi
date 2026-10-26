@@ -35,6 +35,8 @@ import 'package:fushi/src/ai/ai_srs_template_assistant.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart'
+    show SrsStablePreviewFace, srsNotePreviewNativeFushiCard;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart';
@@ -130,6 +132,11 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
 
   Timer? _debounce;
   SrsTemplatePreview _preview = const SrsTemplatePreview();
+
+  /// 卡面上正显示的那张（最近一次能渲染的结果）：打字途中模板出错 / 为空时卡面不拆，
+  /// 只盖一层提示，见 [SrsStablePreviewFace]。
+  AnkiRenderedCard? _shown;
+  ({Map<String, String> fieldsByName, String definitionsHtml})? _shownNative;
 
   /// AI 顺带写的字段说明（fieldId → 说明），保存模板时一起写入；放弃修改即丢弃。
   Map<String, String> _pendingDescriptions = const <String, String>{};
@@ -364,6 +371,28 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
           cardName: tpl.name,
         ),
       );
+      final AnkiRenderedCard? card = _preview.card;
+      if (card != null && !card.isEmpty) {
+        _shown = card;
+        // 与内置代码逐字一致的 Fushi 卡片与复习页一样走原生混合渲染（不建整面 WebView，
+        // 判据在 srsNotePreviewNativeFushiCard 里）；一改就是复习时的模板渲染，预览跟着换。
+        // 共享样式按载入时的类型比对，样式框改过就按模板渲染。
+        final Map<String, String> nameToId = _nameToId;
+        _shownNative = _css.text == type.css
+            ? srsNotePreviewNativeFushiCard(
+                type: type,
+                template: tpl.copyWith(
+                  front: templateNamesToIds(_front.text, nameToId),
+                  back: templateNamesToIds(_back.text, nameToId),
+                ),
+                valuesById: <String, String>{
+                  for (final SrsFieldDef f in type.fields)
+                    f.id: _sampleFields[f.name] ?? '',
+                },
+                tags: _sample?.tags ?? const <String>[],
+              )
+            : null;
+      }
     });
   }
 
@@ -404,6 +433,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
         _savedCss = _css.text;
         _pendingDescriptions = const <String, String>{};
       });
+      _refreshPreview();
       FushiToast.show(
         msg: t.srs_note_types_saved,
         severity: ToastSeverity.success,
@@ -697,48 +727,50 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
           EdgeInsets.only(bottom: tokens.spacing.page),
         );
         return FushiEntranceScope(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Expanded(
-                child: FocusTraversalGroup(
-                  child: ListView(
-                    key: SrsAdaptiveSections.primaryPaneKey,
-                    padding: EdgeInsets.fromLTRB(
-                      tokens.spacing.page,
-                      top,
-                      half,
-                      bottom.bottom,
-                    ),
-                    children: <Widget>[
-                      FushiStaggeredEntrance(index: 0, child: tabs),
-                      SizedBox(height: tokens.spacing.gap * 1.5),
-                      FushiStaggeredEntrance(
-                        index: 1,
-                        child: editor(wide: true),
+          child: FushiPinnedPageChromeScope(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(
+                  child: FocusTraversalGroup(
+                    child: ListView(
+                      key: SrsAdaptiveSections.primaryPaneKey,
+                      padding: EdgeInsets.fromLTRB(
+                        tokens.spacing.page,
+                        top,
+                        half,
+                        bottom.bottom,
                       ),
-                    ],
-                  ),
-                ),
-              ),
-              Expanded(
-                child: FocusTraversalGroup(
-                  child: Padding(
-                    key: SrsAdaptiveSections.secondaryPaneKey,
-                    padding: EdgeInsets.fromLTRB(
-                      half,
-                      top,
-                      tokens.spacing.page,
-                      bottom.bottom,
-                    ),
-                    child: FushiStaggeredEntrance(
-                      index: 2,
-                      child: _buildPreview(context, type, fill: true),
+                      children: <Widget>[
+                        FushiStaggeredEntrance(index: 0, child: tabs),
+                        SizedBox(height: tokens.spacing.gap * 1.5),
+                        FushiStaggeredEntrance(
+                          index: 1,
+                          child: editor(wide: true),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ),
-            ],
+                Expanded(
+                  child: FocusTraversalGroup(
+                    child: Padding(
+                      key: SrsAdaptiveSections.secondaryPaneKey,
+                      padding: EdgeInsets.fromLTRB(
+                        half,
+                        top,
+                        tokens.spacing.page,
+                        bottom.bottom,
+                      ),
+                      child: FushiStaggeredEntrance(
+                        index: 2,
+                        child: _buildPreview(context, type, fill: true),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -805,9 +837,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final AnkiRenderedCard? card = _preview.card;
-    final SrsCardFaceBuilder faceBuilder = ref.watch(
-      srsCardFaceBuilderProvider,
-    );
+    final AnkiRenderedCard? shown = _shown;
     final String language = ref.read(appProvider).defaultContentLanguage;
     final SrsNoteView? sample = _sample;
     final String sampleLabel = sample == null
@@ -858,35 +888,38 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
             key: const ValueKey<String>('srs-template-preview'),
             padding: EdgeInsets.zero,
             pressScale: false,
-            child: card == null
-                ? Center(
-                    child: FushiPlaceholderMessage(
-                      icon: FushiIcons.warning,
-                      tone: FushiPlaceholderTone.error,
-                      message: t.srs_note_types_template_error(
-                        error: _preview.error ?? '',
-                      ),
-                    ),
-                  )
-                : card.isEmpty
-                ? Center(
-                    child: FushiPlaceholderMessage(
-                      icon: FushiIcons.info,
-                      message: t.srs_note_types_preview_empty,
-                    ),
-                  )
-                : faceBuilder(
-                    context,
-                    SrsCardFace(
+            child: SrsStablePreviewFace(
+              face: shown == null
+                  ? null
+                  : SrsCardFace(
                       cardId: 'preview-${widget.templateId}',
                       showingAnswer: _previewAnswer,
-                      bodyHtml: _previewAnswer ? card.answer : card.question,
+                      bodyHtml: _previewAnswer ? shown.answer : shown.question,
                       css: _css.text,
                       languageCode: language.isEmpty ? null : language,
                       fushiCard: _type?.builtinKey == kSrsBuiltinFushiCardKey,
                       onBridgeKey: (_) {},
                     ),
-                  ),
+              native: _shownNative,
+              overlay: card == null
+                  ? Center(
+                      child: FushiPlaceholderMessage(
+                        icon: FushiIcons.warning,
+                        tone: FushiPlaceholderTone.error,
+                        message: t.srs_note_types_template_error(
+                          error: _preview.error ?? '',
+                        ),
+                      ),
+                    )
+                  : card.isEmpty
+                  ? Center(
+                      child: FushiPlaceholderMessage(
+                        icon: FushiIcons.info,
+                        message: t.srs_note_types_preview_empty,
+                      ),
+                    )
+                  : null,
+            ),
           ),
         ),
       ],
