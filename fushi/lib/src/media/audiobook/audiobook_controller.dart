@@ -1661,22 +1661,13 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
   }
 
-  /// 「上一句」按音乐播放器的习惯：已经听进当前句超过
-  /// [prevCueRestartThresholdMs] 时先回到**当前句**开头，在句首附近再按才去上一句。
+  /// 跳到上一句（当前章节 cue 列表内）。
   ///
-  /// 用户反馈（XUBiOO8VML「想要重播一个句子很麻烦」/ lPEaXxZNhn「Start of the
-  /// previous sentence is too far when you get lost in the current sentence」）：
-  /// 原先严格跳立即邻居（对齐上游 Sasayaki `prevCue()`），听漏了当前句只能退到
-  /// 上一句再听两句。阈值以内（刚重播完 / 刚跳过来）再按一次照旧去上一句，所以
-  /// 连按两下仍能快速往回翻。
-  static const int prevCueRestartThresholdMs = 1500;
-
-  /// 跳到上一句（当前章节 cue 列表内），或重播当前句（见
-  /// [prevCueRestartThresholdMs]）。
-  ///
-  /// 以 `currentCue?.startTime ?? currentPosition` 为参照 —— 当前 cue 存在时：
-  /// 已播过阈值就回当前句开头，否则取它的前一条；落在 gap 里（没有当前 cue）就取
-  /// "最近一条起点早于当前位置"的那条（即刚听完的那句）。
+  /// 对齐上游 Sasayaki `prevCue()`：以 `currentCue?.startTime ?? currentPosition`
+  /// 为参照 —— 当前 cue 存在就取它的前一条；落在 gap 里就取"最近一条起点早于
+  /// 当前位置"的前一条。始终跳立即邻居，不做「播进本句一段时间先回句首」的
+  /// 音乐播放器语义：长句播到中后段时那样会连按都回句首、到不了上一句
+  /// （BUG-3783）。重播当前句走 [replayCurrentCue]。
   Future<void> skipToPrevCue() async {
     if (_chapterCues.isEmpty) return;
     final int? target = _prevCueIndex(
@@ -2433,15 +2424,6 @@ class AudiobookPlayerController extends ChangeNotifier {
           : cues.indexWhere(
               (c) => c.textFragmentId == currentCue.textFragmentId,
             );
-      // 已听进当前句（或停在它之后的句间静音里）超过阈值：先重播当前句。只比较
-      // 同一音频文件内的位置——跨文件的毫秒数没有可比性。
-      if (curIdx >= 0) {
-        final AudioCue cur = cues[curIdx];
-        if (cur.audioFileIndex == audioFileIndex &&
-            positionMs - cur.startMs > prevCueRestartThresholdMs) {
-          return curIdx;
-        }
-      }
       if (curIdx > 0) return curIdx - 1;
       if (curIdx == 0) return null; // 已在首句 → 跨章边界
       // curIdx == -1（未按 fragmentId 命中）：落到下面按位置查找。
