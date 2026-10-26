@@ -414,7 +414,30 @@ void main() {
       baseUrl: 'https://ai.example.com/v1',
       model: 'm',
       apiKey: 'sk-test',
+      agentForPeers: true,
     );
+
+    test('没打开 agent_for_peers：报 disabled，不开会话（默认关）', () async {
+      final AgentAssistantHost host = createServerAgentAssistantHost(
+        config: () => config(ai.copyWith(agentForPeers: false)),
+        db: db,
+        dispatch: () => admin.handle,
+        llmFactory: (AiProviderConfig _) => fail('不该建模型'),
+      );
+      expect((await host.capability())['reason'], 'disabled');
+      await expectLater(
+        host.open(kHostAssistantFeatureAgent, locale: 'zh'),
+        throwsA(isA<HostAssistantUnavailable>()),
+      );
+      expect(const ServerAiConfig(preset: 'openai').agentForPeers, isFalse);
+      expect(
+        ServerAiConfig.fromYaml(<String, Object?>{
+          'preset': 'openai',
+          'agent_for_peers': true,
+        })!.agentForPeers,
+        isTrue,
+      );
+    });
 
     test('配置 `ai:` 段指派给 AI 助手；没配 → no_provider 且不建模型', () async {
       expect(

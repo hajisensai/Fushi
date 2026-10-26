@@ -17,6 +17,7 @@
 ///   allow_insecure_http: false
 ///   web_knowledge: true       # 联网资料（内置维基站）辅助识别作品 / 列系列
 ///   library_organize: false   # 扫描入库后自动 AI 整理库（把该在一起的归进合集）
+///   agent_for_peers: false    # 允许已配对设备经 AI 助手调用本服务端的 admin 操作
 /// ```
 ///
 /// 没有 `ai:` 段 = 没指派提供商：能力位报 `no_provider`，**一个 AI 请求都不发**。
@@ -43,6 +44,7 @@ class ServerAiConfig {
     this.allowInsecureHttp = false,
     this.webKnowledge = true,
     this.libraryOrganize = false,
+    this.agentForPeers = false,
   });
 
   /// 预设 id（[kAiProviderPresets]）或 [kAiCustomPresetId]。
@@ -62,6 +64,12 @@ class ServerAiConfig {
   /// 绝不静默开启。服务端通常就是那台「负责自动整理」的设备。
   final bool libraryOrganize;
 
+  /// 允许已配对设备把 AI 助手会话交给本服务端跑（spec 2026-10-26 §6.5）。默认关：
+  /// 打开后已配对设备能经 AI 调到一部分 admin 操作（增删库根、改部分设置、确认后扫描 /
+  /// 刮削），比配对本来给的权限多——服务端可能是几个人共用的，必须管理员显式打开。
+  /// 凭据、配对、监听类操作无论如何都不进目录。
+  final bool agentForPeers;
+
   /// yaml `ai:` 段 → 配置；不是 map 或没有 `preset` → null（未配置）。解析保持宽松
   /// （手写的一条坏值不拒绝启动），地址等是否可用由 [problem] / [provider] 判。
   static ServerAiConfig? fromYaml(Object? raw) {
@@ -79,6 +87,7 @@ class ServerAiConfig {
       allowInsecureHttp: raw['allow_insecure_http'] == true || '${raw['allow_insecure_http']}' == 'true',
       webKnowledge: raw['web_knowledge'] != false && '${raw['web_knowledge']}' != 'false',
       libraryOrganize: raw['library_organize'] == true || '${raw['library_organize']}' == 'true',
+      agentForPeers: raw['agent_for_peers'] == true || '${raw['agent_for_peers']}' == 'true',
     );
   }
 
@@ -158,6 +167,7 @@ class ServerAiConfig {
     bool? allowInsecureHttp,
     bool? webKnowledge,
     bool? libraryOrganize,
+    bool? agentForPeers,
   }) =>
       ServerAiConfig(
         preset: preset ?? this.preset,
@@ -169,6 +179,7 @@ class ServerAiConfig {
         allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
         webKnowledge: webKnowledge ?? this.webKnowledge,
         libraryOrganize: libraryOrganize ?? this.libraryOrganize,
+        agentForPeers: agentForPeers ?? this.agentForPeers,
       );
 
   /// 写进 `ai:` 段（[q] 是 ServerConfig 的 yaml 字符串转义）。
@@ -183,6 +194,7 @@ class ServerAiConfig {
     b.writeln('  allow_insecure_http: $allowInsecureHttp');
     b.writeln('  web_knowledge: $webKnowledge');
     b.writeln('  library_organize: $libraryOrganize');
+    b.writeln('  agent_for_peers: $agentForPeers');
   }
 
   /// 给 admin API 的形状：API key 只报「设过没有」，不回显。
@@ -198,6 +210,7 @@ class ServerAiConfig {
       'allowInsecureHttp': allowInsecureHttp,
       'webKnowledge': webKnowledge,
       'libraryOrganize': libraryOrganize,
+      'agentForPeers': agentForPeers,
       'effectiveBaseUrl': effectiveBaseUrl,
       'effectiveModel': effectiveModel,
       'status': issue == null ? 'ready' : 'incomplete',

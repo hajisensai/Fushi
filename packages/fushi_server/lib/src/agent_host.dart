@@ -269,6 +269,8 @@ AgentAssistantHost createServerAgentAssistantHost({
     if (resolveServerAgentProvider(settings) == null) {
       return kHostAssistantReasonNoProvider;
     }
+    // 管理员没显式允许已配对设备用 AI 助手调 admin 操作（`ai.agent_for_peers`）。
+    if (config().ai?.agentForPeers != true) return kHostAssistantReasonDisabled;
     if (invoker() == null) return kHostAssistantReasonNotReady;
     return null;
   }
@@ -283,6 +285,9 @@ AgentAssistantHost createServerAgentAssistantHost({
       final OpInvoker? ops = invoker();
       if (provider == null) {
         throw const HostAssistantUnavailable(kHostAssistantReasonNoProvider);
+      }
+      if (config().ai?.agentForPeers != true) {
+        throw const HostAssistantUnavailable(kHostAssistantReasonDisabled);
       }
       if (ops == null) {
         throw const HostAssistantUnavailable(kHostAssistantReasonNotReady);
