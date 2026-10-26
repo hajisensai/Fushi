@@ -6,15 +6,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
-import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_downloads.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_items.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_video_providers.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/utils.dart' show t;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
@@ -291,6 +292,86 @@ void main() {
     expect(prefs.videoResourceTorznabConfigs, isEmpty);
   });
 
+  // Fushi 不内置任何 BT 站：控制通道列出用户 BT 站，只回显名称 / 主机名，
+  // 不回显完整地址（可能带 passkey）与接口格式；改名 / 域 / 启停不重新识别。
+  testWidgets('bt sites cliList: list hides url, update/rm, neutral errors', (
+    WidgetTester tester,
+  ) async {
+    await pumpContext(tester);
+    final SettingsCliList cli = item<SettingsCustomItem>(
+      vp,
+      'services.bt_sites.cli.sites',
+    ).cliList!;
+    expect(
+      cli.fields.singleWhere((SettingsCliParam f) => f.name == 'url').secret,
+      isTrue,
+      reason: '地址可能带 passkey，按凭据收',
+    );
+    await appModel.setBtSites(<BtSiteConfig>[
+      BtSiteConfig(
+        id: 'site1',
+        baseUrl: Uri.parse('https://bt.example.com/passkey-SECRET'),
+        format: BtSiteFormat.nyaa,
+        domains: const <BtSiteDomain>{BtSiteDomain.anime},
+        nyaaCategories: const <BtSiteDomain, String>{BtSiteDomain.anime: '1_0'},
+      ),
+    ]);
+    final List<Map<String, Object?>> rows = await cli.list(sc);
+    expect(rows.single['host'], 'bt.example.com');
+    expect(rows.single['name'], 'bt.example.com');
+    expect(rows.single['effectiveDomains'], <String>['anime']);
+    final String encoded = jsonEncode(rows);
+    expect(encoded, isNot(contains('SECRET')));
+    expect(encoded, isNot(contains('nyaa')), reason: '接口格式是内部字段');
+
+    await cli.update!(sc, 'site1', <String, String>{
+      'name': 'Mine',
+      'enabled': 'false',
+      'domains': 'anime,tv',
+    });
+    final BtSiteConfig updated = appModel.btSites.single;
+    expect(updated.name, 'Mine');
+    expect(updated.enabled, isFalse);
+    expect(updated.domains, <BtSiteDomain>{
+      BtSiteDomain.anime,
+      BtSiteDomain.tv,
+    });
+    expect(
+      updated.baseUrl.toString(),
+      'https://bt.example.com/passkey-SECRET',
+      reason: '没改地址不重新识别、不动地址',
+    );
+
+    await expectLater(
+      cli.update!(sc, 'site1', <String, String>{'domains': 'anime,nope'}),
+      throwsArgumentError,
+    );
+    await expectLater(
+      cli.add!(sc, <String, String>{
+        'url': 'http://remote.test/x',
+        'domains': 'anime',
+      }),
+      throwsA(
+        isA<ArgumentError>().having(
+          (ArgumentError e) => e.message,
+          'message',
+          t.bt_site_url_insecure_error,
+        ),
+      ),
+      reason: '非局域网明文 http 未开 insecure_http：探测前就拒，报中性提示',
+    );
+    await expectLater(
+      cli.add!(sc, <String, String>{'url': 'https://bt.example.org'}),
+      throwsArgumentError,
+      reason: '至少一个媒体域',
+    );
+    expect(appModel.btSites, hasLength(1));
+    await expectLater(cli.remove!(sc, 'nope'), throwsArgumentError);
+    await cli.remove!(sc, 'site1');
+    expect(appModel.btSites, isEmpty);
+    expect(prefs.btSites, isEmpty);
+  });
+
   testWidgets('path mapping cliList: add/update/rm with page validation', (
     WidgetTester tester,
   ) async {
@@ -379,16 +460,5 @@ void main() {
       'Fushi-Test v1',
       reason: '只改给出的字段',
     );
-
-    final String sourceId = kBuiltinVideoResourceSources.first.id;
-    final SettingsSwitchItem builtin = item(
-      vp,
-      'services.builtin_sources.cli.$sourceId',
-    );
-    await builtin.onChanged(sc, false);
-    expect(appModel.videoResourceDisabledSourceIds, contains(sourceId));
-    expect(builtin.value(sc), isFalse);
-    await builtin.onChanged(sc, true);
-    expect(appModel.videoResourceDisabledSourceIds, isNot(contains(sourceId)));
   });
 }

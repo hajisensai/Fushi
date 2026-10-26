@@ -1,20 +1,23 @@
 import 'package:flutter/widgets.dart';
-import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/bt_site_settings_section.dart'
+    show btSiteProbeErrorMessage;
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_items.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_values.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 
 /// 视频外部提供方（`VideoExternalProviderSettingsSection` 的 jimaku /
-/// openSubtitles / subdl / builtinSources / torznab / downloadRouting 各 scope，
-/// 正文自绘 widget）在控制通道上的条目。
+/// openSubtitles / subdl / torznab / downloadRouting 各 scope，正文自绘 widget）
+/// 与「BT 站」设置区（`BtSiteSettingsSection`）在控制通道上的条目。
 ///
 /// 写入全部走页面同一个 [AppVideoExternalSettingsStore]（同一组 AppModel /
 /// prefs 方法，含下载流水线运行时重建），字段校验走页面同一份
@@ -30,7 +33,7 @@ List<CtlBodyPage> buildCtlVideoProvidersBodyPages() => <CtlBodyPage>[
   _jimakuPage(),
   _openSubtitlesPage(),
   _subdlPage(),
-  _builtinSourcesPage(),
+  _btSitesPage(),
   _torznabPage(),
   _downloadRoutingPage(),
 ];
@@ -308,22 +311,183 @@ CtlBodyPage _openSubtitlesPage() => CtlBodyPage(
 
 // ── 资源索引器 ────────────────────────────────────────────────────────────────
 
-CtlBodyPage _builtinSourcesPage() => CtlBodyPage(
-  breadcrumb: _servicesCrumb(t.video_builtin_sources_title),
+/// BT 站一条记录：只给名称与主机名，**不回显完整地址**（可能带站点 passkey），
+/// 也不回显站点接口格式（内部字段）。
+Map<String, Object?> _btSiteRecord(BtSiteConfig site) => <String, Object?>{
+  'id': site.id,
+  'name': site.displayName,
+  'host': site.baseUrl.host,
+  'enabled': site.enabled,
+  'domains': <String>[
+    for (final BtSiteDomain d in BtSiteDomain.values)
+      if (site.domains.contains(d)) d.name,
+  ],
+  'effectiveDomains': <String>[
+    for (final BtSiteDomain d in BtSiteDomain.values)
+      if (site.effectiveDomains.contains(d)) d.name,
+  ],
+  'allowInsecureHttp': site.allowInsecureHttp,
+};
+
+BtSiteConfig _requireBtSite(SettingsContext c, String id) {
+  for (final BtSiteConfig site in c.appModel.btSites) {
+    if (site.id == id) return site;
+  }
+  throw ArgumentError('没有 id 为「$id」的 BT 站');
+}
+
+/// `anime,movie` → 域集合；不认识的名字报错，至少一个域。
+Set<BtSiteDomain> _parseBtSiteDomains(String raw) {
+  final Set<BtSiteDomain> domains = <BtSiteDomain>{};
+  for (final String part in raw.split(',')) {
+    final String name = part.trim().toLowerCase();
+    if (name.isEmpty) continue;
+    final BtSiteDomain? domain = BtSiteDomain.fromWire(name);
+    if (domain == null) {
+      throw ArgumentError(
+        '不认识的媒体域「$name」，可选：'
+        '${BtSiteDomain.values.map((BtSiteDomain d) => d.name).join(', ')}',
+      );
+    }
+    domains.add(domain);
+  }
+  if (domains.isEmpty) throw ArgumentError(t.bt_site_domains_required_error);
+  return domains;
+}
+
+/// 自动识别；失败只报中性提示（不列格式、不举站名）。
+Future<BtSiteProbeResult> _detectBtSite(
+  SettingsContext c,
+  String url, {
+  required bool allowInsecureHttp,
+}) async {
+  try {
+    return await c.appModel.detectBtSite(
+      url,
+      allowInsecureHttp: allowInsecureHttp,
+    );
+  } on Object catch (error) {
+    throw ArgumentError(btSiteProbeErrorMessage(error));
+  }
+}
+
+const List<SettingsCliParam> _btSiteFields = <SettingsCliParam>[
+  SettingsCliParam(
+    'url',
+    help: '站点地址（可能带 passkey，按凭据只收 stdin / 环境变量）；改地址会重新识别',
+    required: false,
+    secret: true,
+  ),
+  SettingsCliParam('name', help: '名称，空 = 用主机名', required: false),
+  SettingsCliParam(
+    'domains',
+    help: '逗号分隔的媒体域：anime,movie,tv,novel,audiobook,manga,game',
+    required: false,
+  ),
+  SettingsCliParam('enabled', help: 'true/false，默认 true', required: false),
+  SettingsCliParam(
+    'insecure_http',
+    help: 'true/false，允许明文 http（局域网），默认 false；改动会重新识别',
+    required: false,
+  ),
+];
+
+CtlBodyPage _btSitesPage() => CtlBodyPage(
+  breadcrumb: _servicesCrumb(t.bt_site_section_title),
   visible: _resourcesVisible,
   items: <SettingsItem>[
-    for (final BuiltinVideoResourceSource source
-        in kBuiltinVideoResourceSources)
-      SettingsSwitchItem(
-        id: 'services.builtin_sources.cli.${source.id}',
-        title: source.displayName,
-        subtitle: source.hint(),
-        value: (SettingsContext c) =>
-            !c.appModel.videoResourceDisabledSourceIds.contains(source.id),
-        onChanged: (SettingsContext c, bool v) =>
-            _store(c).saveBuiltinSourceEnabled(source.id, v),
-        defaultValue: true,
+    SettingsCustomItem(
+      id: 'services.bt_sites.cli.sites',
+      builder: (SettingsContext _) => const SizedBox.shrink(),
+      searchTitle: t.bt_site_section_title,
+      cliList: SettingsCliList(
+        fields: _btSiteFields,
+        list: (SettingsContext c) async => <Map<String, Object?>>[
+          for (final BtSiteConfig site in c.appModel.btSites)
+            _btSiteRecord(site),
+        ],
+        add: (SettingsContext c, Map<String, String> fields) async {
+          final String url = (fields['url'] ?? '').trim();
+          if (url.isEmpty) throw ArgumentError('缺少字段 url');
+          final Set<BtSiteDomain> domains = _parseBtSiteDomains(
+            fields['domains'] ?? '',
+          );
+          final bool allowInsecureHttp = _boolField(
+            fields,
+            'insecure_http',
+            false,
+          );
+          final BtSiteProbeResult probe = await _detectBtSite(
+            c,
+            url,
+            allowInsecureHttp: allowInsecureHttp,
+          );
+          final BtSiteConfig site = probe.applyTo(
+            id: newBtSiteId(),
+            name: (fields['name'] ?? '').trim(),
+            domains: domains,
+            enabled: _boolField(fields, 'enabled', true),
+            allowInsecureHttp: allowInsecureHttp,
+          );
+          await c.appModel.setBtSites(<BtSiteConfig>[
+            ...c.appModel.btSites,
+            site,
+          ]);
+          return _btSiteRecord(site);
+        },
+        update:
+            (SettingsContext c, String id, Map<String, String> fields) async {
+              final BtSiteConfig old = _requireBtSite(c, id);
+              final String name = fields['name']?.trim() ?? old.name;
+              final Set<BtSiteDomain> domains = fields.containsKey('domains')
+                  ? _parseBtSiteDomains(fields['domains']!)
+                  : old.domains;
+              final bool enabled = _boolField(fields, 'enabled', old.enabled);
+              final bool allowInsecureHttp = _boolField(
+                fields,
+                'insecure_http',
+                old.allowInsecureHttp,
+              );
+              final String? url = fields['url']?.trim();
+              final bool reprobe =
+                  (url != null && url != old.baseUrl.toString()) ||
+                  allowInsecureHttp != old.allowInsecureHttp;
+              final BtSiteConfig next;
+              if (reprobe) {
+                final BtSiteProbeResult probe = await _detectBtSite(
+                  c,
+                  url ?? old.baseUrl.toString(),
+                  allowInsecureHttp: allowInsecureHttp,
+                );
+                next = probe.applyTo(
+                  id: old.id,
+                  name: name,
+                  domains: domains,
+                  enabled: enabled,
+                  allowInsecureHttp: allowInsecureHttp,
+                );
+              } else {
+                next = old.copyWith(
+                  name: name,
+                  domains: domains,
+                  enabled: enabled,
+                );
+              }
+              await c.appModel.setBtSites(<BtSiteConfig>[
+                for (final BtSiteConfig site in c.appModel.btSites)
+                  site.id == id ? next : site,
+              ]);
+              return _btSiteRecord(next);
+            },
+        remove: (SettingsContext c, String id) async {
+          _requireBtSite(c, id);
+          await c.appModel.setBtSites(<BtSiteConfig>[
+            for (final BtSiteConfig site in c.appModel.btSites)
+              if (site.id != id) site,
+          ]);
+        },
       ),
+    ),
   ],
 );
 

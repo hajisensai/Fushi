@@ -7,10 +7,10 @@ import 'package:collection/collection.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/pages/implementations/download_notice.dart';
+import 'package:fushi/src/pages/implementations/bt_site_settings_route.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
-import 'package:fushi_engine/media/torrent/builtin_video_resource_providers.dart';
 import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
@@ -1413,8 +1413,17 @@ class _VideoResourceSearchSurfaceState
             key: const ValueKey<String>('video-resource-no-provider'),
             icon: Icons.travel_explore_outlined,
             title: t.video_resource_no_provider_title,
-            hint: t.video_resource_no_provider_hint,
+            hint: t.bt_site_empty_hint,
             selfScrolling: false,
+            // 没有任何 BT 来源：直接去添加 BT 站，回来后重搜一次。
+            action: FushiFilledButton.tonal(
+              key: const ValueKey<String>('video-resource-open-bt-sites'),
+              onPressed: () async {
+                await pushBtSiteSettingsPage(context);
+                if (mounted) unawaited(_search());
+              },
+              child: Text(t.bt_site_open_settings_action),
+            ),
           ),
         ),
       ];
@@ -2104,12 +2113,14 @@ class _VideoDiscoverySubtitleSearchDialogState
   }
 }
 
-/// 资源源的用户可见名：内置源取引擎表里的品牌名，其余（Torznab / 未知）按 id。
-String videoResourceSourceDisplayName(String providerId) {
-  for (final BuiltinVideoResourceProviderSpec spec
-      in kBuiltinVideoResourceProviderSpecs) {
-    if (spec.id == providerId) return spec.displayName;
-  }
+/// 资源源的用户可见名：回执自带名字（用户 BT 站的名字 / 主机名，由注册表从
+/// provider 填入）就用它；否则 Torznab 叫 Torznab，其余按 id。
+String videoResourceSourceDisplayName(
+  String providerId, {
+  String? displayName,
+}) {
+  final String name = displayName?.trim() ?? '';
+  if (name.isNotEmpty) return name;
   return providerId == 'torznab' ? 'Torznab' : providerId;
 }
 
@@ -2130,7 +2141,10 @@ String videoResourceFailureReason(ExternalProviderFailure failure) {
 /// 一个资源源这次搜索的一行状态：「Nyaa：75 条（Frieren 75 · 葬送のフリーレン 0）」
 /// / 「Nyaa：失败（超时）」/「apibay：未参与」。成功但 0 条同样成行（BUG-2794）。
 String videoResourceSourceStatusText(VideoResourceSourceReport report) {
-  final String name = videoResourceSourceDisplayName(report.providerId);
+  final String name = videoResourceSourceDisplayName(
+    report.providerId,
+    displayName: report.displayName,
+  );
   if (report.failed) {
     return t.video_resource_source_failed(
       name: name,
@@ -2228,12 +2242,16 @@ class _NoProviderEmptyState extends StatelessWidget {
     required this.title,
     required this.hint,
     this.selfScrolling = true,
+    this.action,
     super.key,
   });
 
   final IconData icon;
   final String title;
   final String hint;
+
+  /// 空态下方的动作（如「前往 BT 站设置」）。
+  final Widget? action;
 
   /// false = 已在外层滚动视图里（资源搜索的 [SliverFillRemaining]）：只居中，
   /// 不再自带滚动，也不用 LayoutBuilder（sliver 要按固有高度量它）。
@@ -2249,6 +2267,7 @@ class _NoProviderEmptyState extends StatelessWidget {
       icon: icon,
       message: title,
       detail: hint,
+      action: action,
     );
     if (!selfScrolling) return Center(child: placeholder);
     return LayoutBuilder(

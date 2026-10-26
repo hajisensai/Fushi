@@ -105,6 +105,7 @@ class VideoResourceQueryReport {
 class VideoResourceSourceReport {
   VideoResourceSourceReport({
     required this.providerId,
+    this.displayName,
     Iterable<VideoResourceQueryReport> queries =
         const <VideoResourceQueryReport>[],
     this.itemCount = 0,
@@ -115,6 +116,10 @@ class VideoResourceSourceReport {
         failures = List<ExternalProviderFailure>.unmodifiable(failures);
 
   final String providerId;
+
+  /// 用户可见的来源名（用户 BT 站的名字 / 主机名，见
+  /// [LabeledVideoResourceProvider]）；null = 调用方按 id 自己起名。
+  final String? displayName;
   final List<VideoResourceQueryReport> queries;
 
   /// 本源（自身去重后）交出的条数；跨源去重前。
@@ -129,6 +134,16 @@ class VideoResourceSourceReport {
 
   /// 没成功也没失败 = 这家表达不了这条查询、没有参与（如 apibay 遇纯 CJK 词）。
   bool get skipped => !succeeded && failures.isEmpty;
+
+  VideoResourceSourceReport withDisplayName(String? name) =>
+      VideoResourceSourceReport(
+        providerId: providerId,
+        displayName: name,
+        queries: queries,
+        itemCount: itemCount,
+        failures: failures,
+        succeeded: succeeded,
+      );
 }
 
 /// 带按源回执的资源搜索结果。[ProviderBatchResult] 的子类型，旧调用方照旧只读
@@ -198,6 +213,13 @@ abstract interface class VideoResourceProvider {
   Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate);
 
   void close();
+}
+
+/// 自带用户可见名的 provider（用户 BT 站）。注册表把这个名字写进按源回执，
+/// UI 不必再按 provider id 反查站名。
+abstract interface class LabeledVideoResourceProvider
+    implements VideoResourceProvider {
+  String get displayName;
 }
 
 List<VideoResourceCandidate> deduplicateVideoResources(

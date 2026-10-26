@@ -18,6 +18,12 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 const String _hashA = 'aabbccddeeff00112233445566778899aabbccdd';
 const String _hashB = '00112233445566778899aabbccddeeff00112233';
 
+// 测试用站点地址与站点 id（Fushi 不内置 BT 站，地址只是测试数据）。
+const String _apibayUrl = 'https://apibay.org';
+const String _knabenUrl = 'https://api.knaben.org/v1';
+const String _apibaySite = 'apibay-test';
+const String _knabenSite = 'knaben-test';
+
 VideoResourceSearchRequest _request({
   VideoDiscoveryCategory? category,
   int limit = 50,
@@ -87,6 +93,7 @@ void main() {
   group('ApibayClient', () {
     test('drops the sentinel no-results row', () async {
       final ApibayClient client = ApibayClient(
+        baseUrl: _apibayUrl,
         client: MockClient(
           (http.Request request) async => http.Response(
             jsonEncode(<Map<String, Object?>>[
@@ -106,6 +113,7 @@ void main() {
     test('deduplicates across the per-category requests', () async {
       final List<Uri> calls = <Uri>[];
       final ApibayClient client = ApibayClient(
+        baseUrl: _apibayUrl,
         client: MockClient((http.Request request) async {
           calls.add(request.url);
           return http.Response(
@@ -143,6 +151,7 @@ void main() {
 
     test('throws on a non-200 instead of reporting an empty result', () async {
       final ApibayClient client = ApibayClient(
+        baseUrl: _apibayUrl,
         client: MockClient(
           (http.Request request) async => http.Response('nope', 503),
         ),
@@ -158,6 +167,7 @@ void main() {
     test('parses hits and keeps the server-provided magnet', () async {
       late Map<String, Object?> body;
       final KnabenClient client = KnabenClient(
+        baseUrl: _knabenUrl,
         client: MockClient((http.Request request) async {
           body = jsonDecode(request.body) as Map<String, Object?>;
           return http.Response(
@@ -198,6 +208,7 @@ void main() {
 
     test('synthesizes a magnet when the API omits magnetUrl', () async {
       final KnabenClient client = KnabenClient(
+        baseUrl: _knabenUrl,
         client: MockClient(
           (http.Request request) async => http.Response(
             jsonEncode(<String, Object?>{
@@ -325,7 +336,9 @@ void main() {
     test('BUG-1985 apibay 传输层收到拉丁别名而不是原始 CJK', () async {
       final List<String> queries = <String>[];
       final ApibayVideoResourceProvider provider = ApibayVideoResourceProvider(
+        siteId: _apibaySite,
         client: ApibayClient(
+          baseUrl: _apibayUrl,
           client: MockClient((http.Request request) async {
             queries.add(request.url.queryParameters['q']!);
             return http.Response('[]', 200);
@@ -362,7 +375,9 @@ void main() {
     test('BUG-1985 手输的无别名 CJK 查询不发送给公共索引器', () async {
       int calls = 0;
       final ApibayVideoResourceProvider provider = ApibayVideoResourceProvider(
+        siteId: _apibaySite,
         client: ApibayClient(
+          baseUrl: _apibayUrl,
           client: MockClient((http.Request request) async {
             calls++;
             return http.Response('[]', 200);
@@ -406,7 +421,9 @@ void main() {
     test('BUG-1985 Knaben 不走拉丁词门：它是硬标题过滤，CJK 返回的是真的 0 条', () async {
       final List<String> queries = <String>[];
       final KnabenVideoResourceProvider provider = KnabenVideoResourceProvider(
+        siteId: _knabenSite,
         client: KnabenClient(
+          baseUrl: _knabenUrl,
           client: MockClient((http.Request request) async {
             queries.add(
               (jsonDecode(request.body) as Map<String, Object?>)['query']!
@@ -443,7 +460,8 @@ void main() {
 
     test('apibay only serves movie and tv, never anime', () {
       final ApibayVideoResourceProvider provider = ApibayVideoResourceProvider(
-        client: ApibayClient(),
+        siteId: _apibaySite,
+        client: ApibayClient(baseUrl: _apibayUrl),
       );
       expect(provider.categories, <VideoDiscoveryCategory>{
         VideoDiscoveryCategory.movie,
@@ -458,7 +476,8 @@ void main() {
 
     test('knaben only serves movie and tv, never anime', () {
       final KnabenVideoResourceProvider provider = KnabenVideoResourceProvider(
-        client: KnabenClient(),
+        siteId: _knabenSite,
+        client: KnabenClient(baseUrl: _knabenUrl),
       );
       expect(provider.categories, <VideoDiscoveryCategory>{
         VideoDiscoveryCategory.movie,
@@ -474,7 +493,9 @@ void main() {
     test('a tv request uses the tv categories', () async {
       late Uri seen;
       final ApibayVideoResourceProvider provider = ApibayVideoResourceProvider(
+        siteId: _apibaySite,
         client: ApibayClient(
+          baseUrl: _apibayUrl,
           client: MockClient((http.Request request) async {
             seen = request.url;
             return http.Response('[]', 200);
@@ -490,7 +511,9 @@ void main() {
       () async {
         final ApibayVideoResourceProvider provider =
             ApibayVideoResourceProvider(
+              siteId: _apibaySite,
               client: ApibayClient(
+                baseUrl: _apibayUrl,
                 client: MockClient(
                   (http.Request request) async => http.Response('boom', 500),
                 ),
@@ -521,17 +544,22 @@ void main() {
           sizeBytes: 1,
         ),
         providerId: kApibayResourceProviderId,
-        providerInstanceId: 'apibay.org',
+        providerInstanceId: _apibaySite,
         providerPriority: 200,
       );
       final TorrentAddPayload payload = resolvePublicVideoIndexCandidate(
         mine,
-        kApibayResourceProviderId,
+        '$kApibayResourceProviderId:$_apibaySite',
+        _apibaySite,
       );
       expect(payload, isA<TorrentMagnetPayload>());
       expect((payload as TorrentMagnetPayload).torrentId, _hashA);
       expect(
-        () => resolvePublicVideoIndexCandidate(mine, kKnabenResourceProviderId),
+        () => resolvePublicVideoIndexCandidate(
+          mine,
+          '$kKnabenResourceProviderId:$_apibaySite',
+          _apibaySite,
+        ),
         throwsA(isA<ExternalProviderFailure>()),
       );
     });
@@ -545,6 +573,7 @@ void main() {
 
     test('apibay 请求挂住时按 requestTimeout 抛 TimeoutException', () async {
       final ApibayClient client = ApibayClient(
+        baseUrl: _apibayUrl,
         client: hangingClient(),
         requestTimeout: const Duration(milliseconds: 50),
       );
@@ -556,6 +585,7 @@ void main() {
 
     test('Knaben 请求挂住时按 requestTimeout 抛 TimeoutException', () async {
       final KnabenClient client = KnabenClient(
+        baseUrl: _knabenUrl,
         client: hangingClient(),
         requestTimeout: const Duration(milliseconds: 50),
       );

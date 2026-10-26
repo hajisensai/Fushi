@@ -525,7 +525,10 @@ const int kNyaaMaxBrowsePages = 100;
 /// 同一 host 两次请求的最小间隔（对齐 Jackett/Prowlarr 的 nyaasi 定义）。
 const Duration kNyaaMinRequestInterval = Duration(seconds: 2);
 
-/// Nyaa（nyaa.si）搜索客户端。无需鉴权。
+/// Nyaa 式站点（HTML 搜索页 + `table.torrent-list`）的搜索客户端。无需鉴权。
+///
+/// **不内置任何站点地址**：[baseUrl] 由调用方给（用户在设置里添加的 BT 站，见
+/// `bt_site_config.dart`）。
 ///
 /// 端点：HTML 搜索页
 /// `GET {base}/?q=<query>&c=<category>&f=<filter>&s=<sort>&o=<order>[&p=<page>]`。
@@ -539,7 +542,7 @@ const Duration kNyaaMinRequestInterval = Duration(seconds: 2);
 /// 打同一站点 host 的请求按 [minRequestInterval] 节流（跨实例共用节奏，实例内串行）。
 class NyaaClient {
   NyaaClient({
-    this.baseUrl = 'https://nyaa.si',
+    required this.baseUrl,
     http.Client? client,
     this.requestTimeout = kDownloadDiscoveryTimeout,
     this.minRequestInterval = kNyaaMinRequestInterval,
@@ -676,11 +679,45 @@ class NyaaClient {
         if (page > 1) 'p': page.toString(),
       },
     );
+    final String? body = await _fetchSearchPage(uri, pastEndIsEmpty: page > 1);
+    if (body == null) return const <NyaaTorrent>[];
+    return _parseNyaaHtmlSearch(body, uri);
+  }
+
+  /// 探测这个地址是不是 Nyaa 式站点（添加 BT 站时的自动识别，见
+  /// `bt_site_probe.dart`）：用 [query] 搜一次全站（`c=0_0`），页面必须是能解析
+  /// 的搜索结果页（有结果表，或「No results found」）；顺带从页面的分类下拉
+  /// （`<select name="c">`）读出该站可用的分类。不是搜索页一律抛，与 [search]
+  /// 同一套错误契约。
+  Future<NyaaSiteProbe> probeSite(String query) async {
+    final Uri uri = Uri.parse(baseUrl).replace(
+      path: '/',
+      queryParameters: <String, String>{'q': query, 'c': '0_0', 'f': '0'},
+    );
+    final String body = (await _fetchSearchPage(uri, pastEndIsEmpty: false))!;
+    final List<NyaaTorrent> torrents = _parseNyaaHtmlSearch(body, uri);
+    final List<NyaaCategoryOption> categories = parseNyaaCategoryOptions(body);
+    // 0 条结果时页面上只剩一个「No results found」标题——任何网站都可能有这
+    // 句话，单凭它不足以认定是 Nyaa 式站点；还得有它的分类下拉。
+    if (torrents.isEmpty && categories.isEmpty) {
+      throw NyaaFeedFormatException(
+        NyaaFeedErrorCode.missingStructure,
+        'search page has neither results nor a category selector',
+      );
+    }
+    return NyaaSiteProbe(resultCount: torrents.length, categories: categories);
+  }
+
+  /// 取一页搜索 HTML。[pastEndIsEmpty] 时 404 视作「翻过末页」返回 null。
+  Future<String?> _fetchSearchPage(
+    Uri uri, {
+    required bool pastEndIsEmpty,
+  }) async {
     await _reserveRequestSlot();
     final http.Response res = await _client.get(uri).timeout(requestTimeout);
-    if (page > 1 && res.statusCode == 404) {
+    if (pastEndIsEmpty && res.statusCode == 404) {
       // Nyaa returns 404 when a valid HTML search asks past its final page.
-      return const <NyaaTorrent>[];
+      return null;
     }
     if (res.statusCode != 200) {
       throw http.ClientException('HTTP ${res.statusCode}', uri);
@@ -716,11 +753,88 @@ class NyaaClient {
         'response body was empty',
       );
     }
-    return _parseNyaaHtmlSearch(body, uri);
+    return body;
   }
 
   void close() => _client.close();
 }
+
+/// [NyaaClient.probeSite] 的结果。
+class NyaaSiteProbe {
+  const NyaaSiteProbe({required this.resultCount, required this.categories});
+
+  /// 测试关键词搜到的条数（0 也算识别成功——页面结构对就行）。
+  final int resultCount;
+
+  /// 站点分类下拉里的全部选项（含「All categories」`0_0`）。
+  final List<NyaaCategoryOption> categories;
+}
+
+/// Nyaa 式站点分类下拉的一个选项。
+class NyaaCategoryOption {
+  const NyaaCategoryOption({required this.value, required this.label});
+
+  /// 分类号，形如 `1_0`（大类）/ `1_2`（子类）。
+  final String value;
+
+  /// 完整分类名，子类带父类前缀：`Anime`、`Software - Games`、`Art - Games`。
+  final String label;
+
+  /// 大类（`X_0`）。
+  bool get isTopLevel => value.endsWith('_0');
+
+  @override
+  bool operator ==(Object other) =>
+      other is NyaaCategoryOption &&
+      other.value == value &&
+      other.label == label;
+
+  @override
+  int get hashCode => Object.hash(value, label);
+
+  @override
+  String toString() => 'NyaaCategoryOption($value, $label)';
+}
+
+/// 从 Nyaa 式搜索页 HTML 里解析分类下拉（`<select name="c">`）。
+///
+/// 子类选项的**文本**只有缩进后的短名（`- Games`），完整名在 `title` 属性里
+/// （`Software - Games`）；没有 `title` 时按分类号找父类拼出完整名。`0_0`
+/// （All categories）与形状不对的值丢弃。页面没有下拉 → 空表。
+List<NyaaCategoryOption> parseNyaaCategoryOptions(String html) {
+  final html_dom.Document document = html_parser.parse(html);
+  final html_dom.Element? select = document.querySelector('select[name="c"]');
+  if (select == null) return const <NyaaCategoryOption>[];
+  final RegExp valueShape = RegExp(r'^\d+_\d+$');
+  final Map<String, String> topLevelLabels = <String, String>{};
+  final List<NyaaCategoryOption> options = <NyaaCategoryOption>[];
+  for (final html_dom.Element option in select.querySelectorAll('option')) {
+    final String value = (option.attributes['value'] ?? '').trim();
+    if (!valueShape.hasMatch(value) || value == '0_0') continue;
+    final String text = _collapseSpaces(option.text);
+    final String title = _collapseSpaces(option.attributes['title'] ?? '');
+    final bool topLevel = value.endsWith('_0');
+    String label;
+    if (topLevel) {
+      label = title.isNotEmpty ? title : text;
+      topLevelLabels[value.split('_').first] = label;
+    } else {
+      final String parent = topLevelLabels[value.split('_').first] ?? '';
+      final String shortName = text.replaceFirst(RegExp(r'^-\s*'), '');
+      label = title.contains(' - ')
+          ? title
+          : parent.isNotEmpty && shortName.isNotEmpty
+              ? '$parent - $shortName'
+              : (title.isNotEmpty ? title : shortName);
+    }
+    if (label.isEmpty) continue;
+    options.add(NyaaCategoryOption(value: value, label: label));
+  }
+  return List<NyaaCategoryOption>.unmodifiable(options);
+}
+
+String _collapseSpaces(String value) =>
+    value.trim().replaceAll(RegExp(r'\s+'), ' ');
 
 List<NyaaTorrent> _parseNyaaHtmlSearch(String body, Uri requestUri) {
   final html_dom.Document document = html_parser.parse(body);
