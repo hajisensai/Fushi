@@ -63,6 +63,9 @@ void main() {
     PlayInFushiFeature feature() => PlayInFushiFeature(
       repository: () => throw StateError('not used'),
       youtubeTargetHeight: () => null,
+      // 这组只测 YouTube 观看页；有播放页时其它网页的动作见
+      // web_browser_site_player_test.dart。
+      playerAvailable: () => false,
     );
 
     Future<List<WebBrowserAction>> actionsFor(

@@ -181,6 +181,8 @@ import 'package:fushi/src/media/video/web_video_bridge.dart'
         kWebVideoLiveTrackLang,
         pickWebVideoSiteTrackForLanguage,
         shouldOpenInWebVideoPlayer;
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
+    show setFushiPageRouteTransparent;
 import 'package:fushi/src/media/video/underlay_composition.dart'
     show
         acquireUnderlayComposition,
@@ -2235,6 +2237,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 本页持有一份底层合成（[acquireUnderlayComposition]），dispose 归还。
   bool _webUnderlayHeld = false;
+
+  /// 持有底层合成期间让路由层页底（[FushiPageBackdrop]）整个让开的那条路由，dispose 恢复。
+  Route<Object?>? _webTransparentRoute;
 
   /// 播放器档（[_webPlayerModeFor]）：否则是网页档——WebView 收输入、整页原样，播放器控件
   /// 不挂，只留顶部返回条。

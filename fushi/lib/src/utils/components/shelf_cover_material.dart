@@ -913,9 +913,16 @@ class ShelfTitleLine extends StatelessWidget {
 /// 子树结构恒定（不画时形状层换成空盒，[child] 位置不变）：切换设计系统 / 墨水
 /// 屏时页面 State 不重建。
 class LibraryShapeBackdrop extends StatelessWidget {
-  const LibraryShapeBackdrop({required this.child, super.key});
+  const LibraryShapeBackdrop({
+    required this.child,
+    this.show = true,
+    super.key,
+  });
 
   final Widget child;
+
+  /// false = 本页不画形状（整页要透明的底层合成页，见 `FushiPageBackdrop`）。
+  final bool show;
 
   /// 当前主题下是否画形状（Material 设计系统且不是墨水屏）。
   static bool enabledOf(BuildContext context) =>
@@ -931,7 +938,7 @@ class LibraryShapeBackdrop extends StatelessWidget {
       fit: StackFit.passthrough,
       children: <Widget>[
         Positioned.fill(
-          child: enabledOf(context)
+          child: show && enabledOf(context)
               ? const _LibraryShapeLayer()
               : const SizedBox.shrink(),
         ),

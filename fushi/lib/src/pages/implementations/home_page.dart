@@ -3813,7 +3813,7 @@ class _HomePageState extends BasePageState<HomePage>
         appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient
             ? GameStreamLibraryPage(services: _gameStreamLibraryServices)
             : const HomeGamePage(),
-      HomeTab.web => WebHubPage(videoRepo: _videoRepository),
+      HomeTab.web => const WebHubPage(),
       HomeTab.srs => const SrsDeckListPage(),
       HomeTab.settings =>
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
