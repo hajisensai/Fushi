@@ -1,4 +1,4 @@
-## BUG-3785 · srs-card-frequency-not-aggregated
+## BUG-3789 · srs-card-frequency-not-aggregated
 - **报告**：2026-10-26（用户：「词频没聚合，即使我开了聚合词频，而且是不是有两个词频，重复了」）
 - **真实性**：✅ 真 bug。
   1. 「词频聚合」（偏好 `harmonic_frequency`）只注入查词弹窗（`popup_settings_injection.dart`），复习卡面完全不读它：原生 Fushi 卡面默认只出按 `<li>` 逐条拆开的明细（`srs_fushi_card_view.dart` `_footer` + `srsListItems`），聚合值 FreqSort 反而被藏起来。

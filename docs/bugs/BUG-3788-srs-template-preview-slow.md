@@ -1,4 +1,4 @@
-## BUG-3784 · srs-template-preview-slow
+## BUG-3788 · srs-template-preview-slow
 - **报告**：2026-10-26（用户：笔记类型 › 字段 / 卡片模板编辑「这个预览怎么加载这么慢」）
 - **真实性**：✅ 真 bug，多处叠加：
   1. 模板编辑页 / 笔记编辑预览在「模板出错 / 正面为空 / 正常」三种状态间换不同子组件（`srs_template_editor_page.dart` `_buildPreview`、`srs_note_preview.dart` `_face`），打字经过半截模板（`{{Expr`）时 WebView 被销毁、改好再冷建（Windows 冷建约 1 s，见 BUG-3579）。
