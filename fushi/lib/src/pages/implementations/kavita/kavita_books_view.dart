@@ -231,7 +231,7 @@ class _KavitaBooksViewState extends ConsumerState<KavitaBooksView> {
               focusId: const FushiFocusId('kavita-books-search'),
               controller: _searchController,
               focusNode: _searchFocus,
-              hintText: t.mihon_source_search,
+              hintText: t.kavita_books_search_hint,
               onChanged: (String value) => setState(() => _query = value),
               onSubmitted: (String value) => setState(() => _query = value),
               onClear: () {
@@ -298,9 +298,7 @@ class _KavitaBooksViewState extends ConsumerState<KavitaBooksView> {
     if (visible.isEmpty) {
       return FushiPlaceholderMessage(
         icon: FushiIcons.books,
-        message: _query.isEmpty
-            ? t.kavita_books_empty
-            : t.mihon_source_no_results,
+        message: t.kavita_books_empty,
       );
     }
     final KavitaServerConfig server = _server!;
