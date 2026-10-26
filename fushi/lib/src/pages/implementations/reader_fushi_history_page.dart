@@ -2200,7 +2200,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   }
 
   /// 合集「单个格子」卡：扇形封面（材质库页下组内最多 4 本，[_collectionCardCovers]）
-  /// + 封面下副行「N 卷 · 读到第 X 卷 · #标签」+ 合集阅读进度条（封面上不压角标）。
+  /// + 封面下副行「N 卷 · 读到第 X 卷 · ●标签」+ 合集阅读进度条（封面上不压角标）。
   /// 整行展开模式下合集行头的能力全部搬到这张卡上：
   /// - 点击 = 进合集详情页；多选态点击 = 整选合集；Ctrl/⌘/Shift + 点击直接进多选；
   /// - 长按 / 右键 = 合集上下文菜单（[_showCollectionContextMenu]，与行头同一个）；
@@ -2227,9 +2227,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       key: ValueKey<String>('reader_shelf_collection_card_${collection.id}'),
       name: collection.name,
       itemCount: memberCount,
-      // 「N 卷 · 读到第 X 卷」（原封面左上「N 册」+ 右上「系列」两枚角标）+ 标签。
-      subtitle: _shelfMetaSubtitle(
-        _collectionStatusLabel(group, readFraction),
+      // 「N 卷 · 读到第 X 卷」（原封面左上「N 册」+ 右上「系列」两枚角标）；
+      // 标签排在副行尾部（色点 + 名字）。
+      subtitle: _collectionStatusLabel(group, readFraction),
+      tags: _shelfMetaTags(
         _tagsFromMap(
           ref.watch(collectionTagMapProvider).valueOrNull,
           collection.id,
