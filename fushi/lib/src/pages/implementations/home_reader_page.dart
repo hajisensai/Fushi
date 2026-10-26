@@ -4,18 +4,13 @@ import 'package:fushi/pages.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
     show AiMediaAcquisitionDomain;
-import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/user_server_discovery_view.dart';
 import 'package:fushi/src/models/store_compliance.dart';
-import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_library_view.dart';
-import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui_helpers.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
-import 'package:fushi/src/pages/implementations/kavita/kavita_books_view.dart';
-import 'package:fushi/src/pages/implementations/kavita/kavita_browse_page.dart'
-    show usableKavitaServers;
 import 'package:fushi/src/pages/implementations/library_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
+import 'package:fushi/src/pages/implementations/media_server/book_media_servers_view.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
@@ -56,15 +51,6 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
     final bool online = isOnlineSourcesDomainAvailable(
       OnlineSourcesDomain.novel,
     );
-    // 用户自己的 Audiobookshelf 服务器：有已启用且已登录的才出标签页。它是用户自己的
-    // 服务器（同 Jellyfin / Plex），浏览、流式播放与下载到本机都不属于 App Store
-    // 受限的能力（`userConfiguredServersAvailable`，2026-10-27 用户拍板），iOS 也保留。
-    final List<AudiobookshelfServerConfig> absServers =
-        appModel.isPreferencesReady
-        ? audiobookshelfTabServers(
-            appModel.prefsRepo.discoveryAudiobookshelfServers,
-          )
-        : const <AudiobookshelfServerConfig>[];
     return MediaLibraryShell(
       focusIdPrefix: 'book-library-view',
       views: <MediaLibraryViewSpec>[
@@ -83,13 +69,6 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
                 : FushiFloatingChromeInsetPadding(child: page);
           },
         ),
-        if (usableKavitaServers(appModel.prefsRepo.kavitaServers).isNotEmpty)
-          MediaLibraryViewSpec(
-            kind: MediaLibraryViewKind.kavita,
-            label: t.library_view_kavita,
-            builder: (BuildContext context, Widget navigation) =>
-                KavitaBooksView(navigation: navigation),
-          ),
         if (StoreRestrictedCapability.externalDiscovery.isAvailable ||
             userServerDiscoverViewAvailable(
               appModel.mediaDiscoveryService,
@@ -113,19 +92,14 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
                   ),
                 ),
           ),
-        if (absServers.isNotEmpty)
-          MediaLibraryViewSpec(
-            kind: MediaLibraryViewKind.audiobookshelf,
-            // 主滚动视图自己把浮动工具区高度加成顶部内边距。
-            handlesChromeInset: true,
-            label: t.library_view_audiobookshelf,
-            builder: (BuildContext context, Widget navigation) =>
-                AudiobookshelfLibraryView(
-                  servers: absServers,
-                  apiFor: (AudiobookshelfServerConfig server) =>
-                      appModelNoUpdate.audiobookshelfApis.apiFor(server),
-                ),
-          ),
+        MediaLibraryViewSpec(
+          kind: MediaLibraryViewKind.mediaServers,
+          // 主滚动视图自己把浮动工具区高度加成顶部内边距。
+          handlesChromeInset: true,
+          label: t.library_view_media_servers,
+          builder: (BuildContext context, Widget navigation) =>
+              const BookMediaServersView(),
+        ),
         if (online)
           MediaLibraryViewSpec(
             kind: MediaLibraryViewKind.onlineSources,

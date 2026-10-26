@@ -36,7 +36,11 @@ class KavitaBooksView extends ConsumerStatefulWidget {
     super.key,
     this.servers,
     this.apiFor,
+    this.leading,
   });
+
+  /// 页头返回键；整页 push 时（「媒体服务器」页签点进某台）由调用方给，嵌在库页壳里为 null。
+  final Widget? leading;
 
   /// 库页壳交来的分段条，作为页头主位。
   final Widget navigation;
@@ -222,7 +226,10 @@ class _KavitaBooksViewState extends ConsumerState<KavitaBooksView> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          FushiPageHeader.customTitle(title: widget.navigation),
+          FushiPageHeader.customTitle(
+            title: widget.navigation,
+            leading: widget.leading,
+          ),
           if (servers.length > 1) _serverPicker(servers),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),

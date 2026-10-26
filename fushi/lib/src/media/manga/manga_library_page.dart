@@ -13,6 +13,7 @@ import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart
 import 'package:fushi/src/pages/implementations/library_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
+import 'package:fushi/src/pages/implementations/media_server/book_media_servers_view.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
@@ -99,6 +100,14 @@ class MangaLibraryPage extends ConsumerWidget {
                     navigation: navigation,
                   ),
           ),
+        MediaLibraryViewSpec(
+          kind: MediaLibraryViewKind.mediaServers,
+          // 主滚动视图自己把浮动工具区高度加成顶部内边距。
+          handlesChromeInset: true,
+          label: t.library_view_media_servers,
+          builder: (BuildContext context, Widget navigation) =>
+              const MangaMediaServersView(),
+        ),
         if (isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga))
           MediaLibraryViewSpec(
             kind: MediaLibraryViewKind.onlineSources,
