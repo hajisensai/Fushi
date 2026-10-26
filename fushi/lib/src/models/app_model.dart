@@ -9601,8 +9601,11 @@ class AppModel with ChangeNotifier {
   );
 
   // 复习卡面外观（透传 prefsRepo）。可空读：prefs 未装配 = 模板默认外观。
-  SrsCardAppearance get srsCardAppearance =>
-      SrsCardAppearance.decode(_prefsRepo?.srsCardAppearance ?? '');
+  // 词频聚合不是卡面自己的设置，跟随查词的「词频聚合」叠上去（见
+  // SrsCardAppearance.aggregateFrequency）。
+  SrsCardAppearance get srsCardAppearance => SrsCardAppearance.decode(
+    _prefsRepo?.srsCardAppearance ?? '',
+  ).copyWith(aggregateFrequency: _prefsRepo?.harmonicFrequency ?? true);
   Future<void> setSrsCardAppearance(SrsCardAppearance appearance) =>
       prefsRepo.setSrsCardAppearance(appearance.encode());
 
