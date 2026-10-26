@@ -207,3 +207,44 @@ abstract interface class AgentHost {
   /// 把候选渲染成可点的卡片，返回用户选中的 id；用户取消返回 null。
   Future<String?> askChoice(String prompt, List<AgentChoiceOption> options);
 }
+
+/// 技能（spec §6.3）：确定性的多步配方。模型只负责选技能、填参数，步骤由代码编排；
+/// 每一步经 [AgentSkillContext.call] 照常走确认 / 记账 / 撤销。
+abstract interface class AgentSkill {
+  /// 技能的工具描述（name 用 `skill.<名字>`）。
+  AgentToolSpec get spec;
+
+  /// 跑完返回给模型的汇总（可 JSON 编码）；整体失败抛 [AgentSkillFailure]。
+  Future<Object?> run(AgentSkillContext context, Map<String, Object?> args);
+}
+
+/// 技能整体失败（参数不对、前置条件不满足）。单步失败不抛，记进汇总。
+class AgentSkillFailure implements Exception {
+  const AgentSkillFailure(this.code, [this.message]);
+
+  final String code;
+  final String? message;
+}
+
+/// 技能能做的事：调目录工具、出候选卡片。
+abstract interface class AgentSkillContext {
+  /// 调一个目录工具（与模型调用同一套确认 / 记账 / 撤销）。
+  /// [userChoseThisStep]：用户刚在本技能出的候选卡片上点选了这一步本身，那张卡即
+  /// 确认，不再追加确认卡。
+  Future<AgentToolResult> call(
+    String toolId,
+    Map<String, Object?> args, {
+    bool userChoseThisStep = false,
+  });
+
+  /// 出候选卡片等用户点；取消返回 null。
+  Future<String?> askChoice(String prompt, List<AgentChoiceOption> options);
+
+  /// 用户按了停止：技能应尽快收尾。
+  bool get cancelled;
+}
+
+/// 工具箱可选实现：提供技能。
+abstract interface class AgentSkillProvider {
+  List<AgentSkill> skills();
+}

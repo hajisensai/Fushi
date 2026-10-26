@@ -715,6 +715,48 @@ class AgentSession {
       case AgentMetaTool.askChoice:
         return _askChoice(args);
     }
+    final AgentSkill? skill = _skill(name);
+    if (skill != null) return _runSkill(skill, args);
+    final AgentToolResult result = await _invoke(name, args);
+    if (result.isError) {
+      return (
+        wrapAgentUntrusted(
+          name,
+          jsonEncode(<String, Object?>{
+            'error': result.errorCode,
+            if (result.errorMessage != null) 'message': result.errorMessage,
+            if (result.errorCode == 'unknown_tool')
+              'hint': 'call ops__search then ops__describe',
+          }),
+        ),
+        true,
+      );
+    }
+    return (
+      wrapAgentUntrusted(
+        name,
+        jsonEncode(<String, Object?>{
+          'ok': true,
+          'result': result.data,
+          if (result.taskId != null) 'taskId': result.taskId,
+          if (result.actionId != null) 'undoable': true,
+        }),
+      ),
+      false,
+    );
+  }
+
+  /// 执行一个目录工具：建对话条目、按描述决定要不要确认卡片、调工具箱、回填条目。
+  /// 模型的工具调用与技能里的每一步都走这里（同一套确认 / 记账 / 撤销）。
+  ///
+  /// [preconfirmed]：只给技能用——用户刚在技能出的候选卡片上点选了**这一步本身**
+  /// （例如「认领这个刮削候选」），那张卡就是确认，不再追加一张确认卡。模型调用
+  /// 永远是 false。
+  Future<AgentToolResult> _invoke(
+    String name,
+    Map<String, Object?> args, {
+    bool preconfirmed = false,
+  }) async {
     final AgentToolSpec? spec = _lookup(name);
     final AgentEntry entry = AgentEntry(
       id: _nextId(),
@@ -732,16 +774,10 @@ class AgentSession {
         ..status = AgentEntryStatus.failed
         ..errorCode = 'unknown_tool';
       _notify();
-      return (
-        wrapAgentUntrusted(
-          'runtime',
-          '{"error":"unknown_tool","hint":"call ops__search then ops__describe"}',
-        ),
-        true,
-      );
+      return const AgentToolResult.error('unknown_tool');
     }
-    bool confirmed = false;
-    if (spec.needsConfirmation) {
+    bool confirmed = preconfirmed && spec.needsConfirmation;
+    if (spec.needsConfirmation && !confirmed) {
       final AgentEntry card = AgentEntry(
         id: _nextId(),
         kind: AgentEntryKind.confirm,
@@ -762,10 +798,7 @@ class AgentSession {
       if (!confirmed) {
         entry.status = AgentEntryStatus.declined;
         _notify();
-        return (
-          wrapAgentUntrusted('runtime', '{"error":"user_declined"}'),
-          true,
-        );
+        return const AgentToolResult.error('user_declined');
       }
       _notify();
     }
@@ -783,16 +816,7 @@ class AgentSession {
         ..errorCode = result.errorCode
         ..resultPreview = result.errorMessage;
       _notify();
-      return (
-        wrapAgentUntrusted(
-          name,
-          jsonEncode(<String, Object?>{
-            'error': result.errorCode,
-            if (result.errorMessage != null) 'message': result.errorMessage,
-          }),
-        ),
-        true,
-      );
+      return result;
     }
     final String encoded = result.userPreview ?? _encodeResult(result.data);
     entry
@@ -806,32 +830,76 @@ class AgentSession {
           ? '${encoded.substring(0, 2000)}…'
           : encoded;
     _notify();
+    return result;
+  }
+
+  AgentSkill? _skill(String name) {
+    final AgentToolbox toolbox = _toolbox;
+    if (toolbox is! AgentSkillProvider) return null;
+    for (final AgentSkill skill in (toolbox as AgentSkillProvider).skills()) {
+      if (skill.spec.name == name) return skill;
+    }
+    return null;
+  }
+
+  /// 跑一个技能（spec §6.3）：步骤由代码编排，每一步经 [_invoke] 照常建条目、
+  /// 确认、记账、可撤销；技能本身在对话里是一条汇总条目。
+  Future<(String, bool)> _runSkill(
+    AgentSkill skill,
+    Map<String, Object?> args,
+  ) async {
+    final AgentEntry entry = AgentEntry(
+      id: _nextId(),
+      kind: AgentEntryKind.toolCall,
+      createdAt: _now(),
+      toolName: skill.spec.name,
+      arguments: args,
+      status: AgentEntryStatus.running,
+      risk: skill.spec.risk,
+    );
+    _add(entry);
+    final AgentSkillContext context = _SessionSkillContext(this);
+    Object? summary;
+    try {
+      summary = await skill.run(context, args);
+    } on AgentSkillFailure catch (failure) {
+      entry
+        ..status = AgentEntryStatus.failed
+        ..errorCode = failure.code
+        ..resultPreview = failure.message;
+      _notify();
+      return (
+        wrapAgentUntrusted(
+          skill.spec.name,
+          jsonEncode(<String, Object?>{
+            'error': failure.code,
+            if (failure.message != null) 'message': failure.message,
+          }),
+        ),
+        true,
+      );
+    }
+    final String encoded = _encodeResult(summary);
+    entry
+      ..status = AgentEntryStatus.done
+      ..resultPreview = encoded.length > 2000
+          ? '${encoded.substring(0, 2000)}…'
+          : encoded;
+    _notify();
     return (
       wrapAgentUntrusted(
-        name,
-        jsonEncode(<String, Object?>{
-          'ok': true,
-          'result': result.data,
-          if (result.taskId != null) 'taskId': result.taskId,
-          if (result.actionId != null) 'undoable': true,
-        }),
+        skill.spec.name,
+        jsonEncode(<String, Object?>{'ok': true, 'result': summary}),
       ),
       false,
     );
   }
 
-  Future<(String, bool)> _askChoice(Map<String, Object?> args) async {
-    final String prompt = '${args['prompt'] ?? ''}';
-    final List<AgentChoiceOption> options = <AgentChoiceOption>[
-      for (final Object? o in (args['options'] as List? ?? const <Object?>[]))
-        if (o is Map) AgentChoiceOption.fromJson(Map<String, Object?>.from(o)),
-    ];
-    if (options.isEmpty) {
-      return (
-        wrapAgentUntrusted('ui.ask_choice', '{"error":"no_options"}'),
-        true,
-      );
-    }
+  /// 出一张候选卡片等用户点；取消返回 null。
+  Future<String?> _pickChoice(
+    String prompt,
+    List<AgentChoiceOption> options,
+  ) async {
     final AgentEntry card = AgentEntry(
       id: _nextId(),
       kind: AgentEntryKind.choice,
@@ -848,6 +916,22 @@ class AgentSession {
           ? AgentEntryStatus.declined
           : AgentEntryStatus.done;
     _notify();
+    return picked;
+  }
+
+  Future<(String, bool)> _askChoice(Map<String, Object?> args) async {
+    final String prompt = '${args['prompt'] ?? ''}';
+    final List<AgentChoiceOption> options = <AgentChoiceOption>[
+      for (final Object? o in (args['options'] as List? ?? const <Object?>[]))
+        if (o is Map) AgentChoiceOption.fromJson(Map<String, Object?>.from(o)),
+    ];
+    if (options.isEmpty) {
+      return (
+        wrapAgentUntrusted('ui.ask_choice', '{"error":"no_options"}'),
+        true,
+      );
+    }
+    final String? picked = await _pickChoice(prompt, options);
     return (
       wrapAgentUntrusted(
         'ui.ask_choice',
@@ -873,6 +957,9 @@ class AgentSession {
     final Map<String, AgentToolSpec> tools = <String, AgentToolSpec>{
       for (final AgentToolSpec t in _metaTools) t.name: t,
       for (final AgentToolSpec t in _toolbox.residentTools()) t.name: t,
+      if (_toolbox case final AgentSkillProvider provider)
+        for (final AgentSkill skill in provider.skills())
+          skill.spec.name: skill.spec,
     };
     for (final String id in _loadedTools) {
       if (tools.containsKey(id)) continue;
@@ -1117,4 +1204,25 @@ AiChatMessage? agentMessageFromJson(Map<String, Object?> json) {
       );
   }
   return null;
+}
+
+/// [AgentSession] 给技能的上下文。
+class _SessionSkillContext implements AgentSkillContext {
+  _SessionSkillContext(this._session);
+
+  final AgentSession _session;
+
+  @override
+  Future<AgentToolResult> call(
+    String toolId,
+    Map<String, Object?> args, {
+    bool userChoseThisStep = false,
+  }) => _session._invoke(toolId, args, preconfirmed: userChoseThisStep);
+
+  @override
+  Future<String?> askChoice(String prompt, List<AgentChoiceOption> options) =>
+      _session._pickChoice(prompt, options);
+
+  @override
+  bool get cancelled => _session._cancelled;
 }
