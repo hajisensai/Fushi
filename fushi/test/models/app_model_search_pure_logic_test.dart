@@ -279,4 +279,48 @@ void main() {
       }
     });
   });
+  group('中文查词简体→繁體回落的 Dart 侧开关', () {
+    test('isChineseLanguageTag 只认中文系标签', () {
+      for (final String tag in <String>[
+        'zh',
+        'zh-Hans',
+        'zh_CN',
+        'zh-Hant-TW',
+        'ZH-hk',
+        ' zh ',
+        'yue',
+      ]) {
+        expect(isChineseLanguageTag(tag), isTrue, reason: tag);
+      }
+      for (final String? tag in <String?>[
+        null,
+        '',
+        '  ',
+        'ja',
+        'ko',
+        'en-US',
+        'zhx',
+      ]) {
+        expect(isChineseLanguageTag(tag), isFalse, reason: '$tag');
+      }
+    });
+
+    test('缓存键：关着时与旧格式逐字相同，开着时带 /zh 后缀不与之共用', () {
+      expect(
+        buildSearchCacheKey(term: '这个', maxTerms: 8, maxResults: 8),
+        '2:这个/8/8',
+      );
+      expect(
+        buildSearchCacheKey(
+            term: '这个', maxTerms: 8, maxResults: 8, chineseSimpToTrad: true),
+        '2:这个/8/8/zh',
+      );
+      expect(buildFfiLookupCacheKey(term: '这个', maxResults: 8), '2:这个/8');
+      expect(
+        buildFfiLookupCacheKey(
+            term: '这个', maxResults: 8, chineseSimpToTrad: true),
+        '2:这个/8/zh',
+      );
+    });
+  });
 }

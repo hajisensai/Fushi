@@ -52,6 +52,8 @@ import 'package:fushi/src/utils/misc/system_tts.dart'
     show systemTtsDictionaryLanguages;
 import 'package:fushi/creator.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_engine/models/content_language.dart'
+    show resolveContentLanguage;
 import 'package:fushi/media.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode;
@@ -532,8 +534,9 @@ String buildSearchCacheKey({
   required String term,
   required int maxTerms,
   required int maxResults,
+  bool chineseSimpToTrad = false,
 }) {
-  return '${term.length}:$term/$maxTerms/$maxResults';
+  return '${term.length}:$term/$maxTerms/$maxResults${chineseSimpToTrad ? '/zh' : ''}';
 }
 
 /// [AppModel.searchDictionary] 本机部分的结局。
@@ -1562,6 +1565,17 @@ class AppModel with ChangeNotifier {
   /// 由各媒体页在进入/切换内容时写入（阅读器开书、视频页解析字幕语言、galgame
   /// 启动）；app 外查词（剪贴板/扩展）保持 null → 落到全局默认。
   String? currentLookupLanguage;
+
+  /// 当前查词是否按中文处理（引擎额外试简体 → 繁體变体，见 `FushiDicts.lookup` 的
+  /// `chineseSimpToTrad`）。语言取查词来源语言 [currentLookupLanguage]，缺省落到
+  /// 全局默认内容语言——与词头字体链同一套解析（[resolveContentLanguage]）。
+  /// 语言未知时为 false：不对日语等其它语言的查词做任何改动。
+  bool get lookupChineseSimpToTrad => isChineseLanguageTag(
+    resolveContentLanguage(
+      explicit: currentLookupLanguage,
+      globalDefault: defaultContentLanguage,
+    ),
+  );
 
   /// [dictRepo] 是否已经赋值。
   ///
@@ -8247,10 +8261,12 @@ class AppModel with ChangeNotifier {
   }) async {
     // maxTerms 与 maxResults 现在恒等（引擎上限已对齐词头预算），键格式保持不变以免
     // 旧键格式守卫漂移。
+    final bool simpToTrad = lookupChineseSimpToTrad;
     final String cacheKey = buildSearchCacheKey(
       term: searchTerm,
       maxTerms: effectiveMaxTerms,
       maxResults: effectiveMaxTerms,
+      chineseSimpToTrad: simpToTrad,
     );
     final DictionarySearchResult? cached = dictRepo.getCachedSearch(cacheKey);
     if (useCache && cached != null) {
@@ -8273,6 +8289,7 @@ class AppModel with ChangeNotifier {
             hiddenDictionaries: filters.hiddenDictionaryNames,
             dictionaryOrder: filters.termDictionaryOrder,
             ffiCacheMaxBytes: dictRepo.ffiLookupCacheBudgetBytes,
+            chineseSimpToTrad: simpToTrad,
           ),
         );
     // 后台关停（disposeInstance）时还没开始的请求以 superseded 结束：没有结果，也
@@ -12070,10 +12087,12 @@ class _AppModelRemoteLookupService
       }
       if (searchTerm.trim().isEmpty) return null;
 
+      final bool simpToTrad = _appModel.lookupChineseSimpToTrad;
       final String searchCacheKey = buildSearchCacheKey(
         term: searchTerm,
         maxTerms: maximumTerms,
         maxResults: maximumTerms,
+        chineseSimpToTrad: simpToTrad,
       );
       final Stopwatch? popupCacheWatch = startPhase();
       final DictionaryPopupCacheEntry? cachedPopup = _appModel.dictRepo
@@ -12126,6 +12145,7 @@ class _AppModelRemoteLookupService
               hiddenDictionaries: filters.hiddenDictionaryNames,
               dictionaryOrder: filters.termDictionaryOrder,
               ffiCacheMaxBytes: _appModel.dictRepo.ffiLookupCacheBudgetBytes,
+              chineseSimpToTrad: simpToTrad,
             ),
           );
       if (timing != null && outcome != null) {
