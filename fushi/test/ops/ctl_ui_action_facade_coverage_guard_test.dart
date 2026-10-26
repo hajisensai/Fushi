@@ -11,6 +11,7 @@ class _Facade {
     required this.ctlFiles,
     required this.uiFiles,
     required this.uiForbidden,
+    required this.sampleMethod,
     this.exempt = const <String, String>{},
   });
 
@@ -27,6 +28,9 @@ class _Facade {
   /// 页面里不许再出现的「绕过门面」调用（直接写库 / 直接驱动服务）。
   final List<String> uiForbidden;
 
+  /// 扫描器自检用：门面上一定有的一个公开方法名（读不到它说明扫描正则坏了）。
+  final String sampleMethod;
+
   /// 有意不进控制通道的公开方法 → 理由。
   final Map<String, String> exempt;
 }
@@ -36,9 +40,7 @@ const List<_Facade> _facades = <_Facade>[
   _Facade(
     file: 'lib/src/sync/app_download_host.dart',
     className: 'AppSubscriptionHost',
-    ctlFiles: <String>[
-      'lib/src/ops/ctl_download_subscription_routes.dart',
-    ],
+    ctlFiles: <String>['lib/src/ops/ctl_download_subscription_routes.dart'],
     uiFiles: <String>[
       'lib/src/pages/implementations/video_download_subscriptions_panel.dart',
     ],
@@ -48,7 +50,42 @@ const List<_Facade> _facades = <_Facade>[
       'videoDownloadSubscriptionService',
       'releaseSubscriptionSeedsOutsideTarget',
     ],
+    sampleMethod: 'checkNow',
     exempt: <String, String>{'create': '新建订阅走 aidl（AI 下视频）/ 发现页，它们各自已有 CLI 入口'},
+  ),
+  // 视频导入对话框「粘贴 URL 导入」：门面与对话框在同一个文件（共用文件私有的封面
+  // 临界区助手 _runVideoImportCoverMutation 等，且 video_import_cover_gate_guard_test
+  // 按这个文件切片钉锁顺序），所以不登记 uiFiles——整文件扫禁用词会扫到门面自己。
+  // 对话框只经门面落库由 video_import_cover_gate_guard_test 钉住。
+  _Facade(
+    file: 'lib/src/media/video/video_import_dialog.dart',
+    className: 'StreamVideoUrlImporter',
+    ctlFiles: <String>['lib/src/ops/ctl_url_import_routes.dart'],
+    uiFiles: <String>[],
+    uiForbidden: <String>[],
+    sampleMethod: 'importUrl',
+  ),
+  _Facade(
+    file: 'lib/src/media/metadata/book_metadata_scrape_facade.dart',
+    className: 'BookMetadataScrapeFacade',
+    ctlFiles: <String>['lib/src/ops/ctl_book_metadata_routes.dart'],
+    uiFiles: <String>[
+      'lib/src/media/metadata/book_cover_scrape_dialog.dart',
+      'lib/src/pages/implementations/reader_fushi_history_page.dart',
+    ],
+    uiForbidden: <String>[
+      'downloadImageToTempFile',
+      'fetchDlsiteById(',
+      'searchDlsite(',
+      'parseBangumiSubjectUrl',
+      'applyBookCoverOverride',
+    ],
+    sampleMethod: 'applyToBook',
+    exempt: <String, String>{
+      'currentState':
+          '只给 AI 撤销判「之后被手动改过」用（op_descriptions_book_metadata），不是 UI 动作',
+      'restore': '只给 AI 撤销写回快照用（op_descriptions_book_metadata），不是 UI 动作',
+    },
   ),
 ];
 
@@ -95,7 +132,7 @@ void main() {
 
       test('扫描器能读到门面方法', () {
         expect(methods, isNotEmpty);
-        expect(methods, contains('checkNow'));
+        expect(methods, contains(facade.sampleMethod));
       });
 
       test('每个公开方法都被控制通道路由用到', () {
