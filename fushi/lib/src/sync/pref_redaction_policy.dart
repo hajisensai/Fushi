@@ -96,6 +96,9 @@ abstract final class PrefRedactionPolicy {
     // 必须显式点名。两者也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
     'video_resource_torznab_config',
     'video_subtitle_opensubtitles_config',
+    // RSS 搜索站清单：URL 模板里可能带私有站 passkey，键名同样没有 credential
+    // 形状。与 Torznab 同处理，也在 deviceLocalPrefKeys 中。
+    'resource_rss_sites',
     // AI 提供商清单：每条里带 base64 的 API key，键名本身没有 api_key/token 形状，
     // 必须显式点名，否则备份/Profile 分享时会把用户的付费 key 旁路带出设备。
     'ai_providers',

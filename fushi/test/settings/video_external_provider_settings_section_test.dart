@@ -4,9 +4,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
-import 'package:fushi_engine/media/torrent/public_video_index_provider.dart';
-import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
@@ -31,7 +28,6 @@ class _FakeStore implements VideoExternalSettingsStore {
   final List<String> subdlKeyWrites = <String>[];
   final List<bool> subdlEnabledWrites = <bool>[];
   final List<bool> ajattEnabledWrites = <bool>[];
-  final List<(String, bool)> builtinSourceWrites = <(String, bool)>[];
 
   @override
   Future<VideoExternalSettingsSnapshot> load() async => snapshot;
@@ -72,11 +68,6 @@ class _FakeStore implements VideoExternalSettingsStore {
   }
 
   @override
-  Future<void> saveBuiltinSourceEnabled(String sourceId, bool enabled) async {
-    builtinSourceWrites.add((sourceId, enabled));
-  }
-
-  @override
   Future<void> savePathMappings(
     List<VideoDownloadBackendPathMappingConfig> mappings,
   ) async {
@@ -101,7 +92,7 @@ Widget _harness(
   _FakeStore store, {
   List<VideoExternalProviderScope> scopes = const <VideoExternalProviderScope>[
     VideoExternalProviderScope.subtitleSources,
-    VideoExternalProviderScope.resourceSources,
+    VideoExternalProviderScope.torznab,
     VideoExternalProviderScope.downloadRouting,
   ],
   double width = 560,
@@ -197,51 +188,56 @@ void main() {
     },
   );
 
-  testWidgets(
-    'SubDL subpage saves key and switch to their own store targets',
-    (WidgetTester tester) async {
-      final _FakeStore store = _FakeStore(
-        const VideoExternalSettingsSnapshot(subdlApiKey: 'old-key'),
-      );
-      await tester.pumpWidget(
-        _harness(
-          store,
-          scopes: const <VideoExternalProviderScope>[
-            VideoExternalProviderScope.subdl,
-          ],
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey<String>('video-jimaku-api-key')),
-        findsNothing,
-      );
-      expect(
-        find.byWidgetPredicate(
-          (Widget w) =>
-              w is SettingsSearchTarget && w.id == 'services.subdl.api_key',
-        ),
-        findsOneWidget,
-      );
-      final Finder keyField = _textField(
-        const ValueKey<String>('video-subdl-api-key'),
-      );
-      expect(tester.widget<TextField>(glassUnwrap<TextField>(keyField)).obscureText, isTrue);
-      await tester.enterText(keyField, 'subdl-key');
-      await _settleAutosave(tester);
-      expect(store.subdlKeyWrites.last, 'subdl-key');
-      expect(store.jimakuKeyWrites, isEmpty);
-      final Finder toggle = find.byKey(
-        const ValueKey<String>('video-subdl-enabled'),
-      );
-      expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(toggle)).value, isTrue);
-      await tester.tap(toggle);
-      await tester.pumpAndSettle();
-      expect(store.subdlEnabledWrites, <bool>[false]);
-      expect(store.jimakuEnabledWrites, isEmpty);
-      expect(store.ajattEnabledWrites, isEmpty);
-    },
-  );
+  testWidgets('SubDL subpage saves key and switch to their own store targets', (
+    WidgetTester tester,
+  ) async {
+    final _FakeStore store = _FakeStore(
+      const VideoExternalSettingsSnapshot(subdlApiKey: 'old-key'),
+    );
+    await tester.pumpWidget(
+      _harness(
+        store,
+        scopes: const <VideoExternalProviderScope>[
+          VideoExternalProviderScope.subdl,
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('video-jimaku-api-key')),
+      findsNothing,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is SettingsSearchTarget && w.id == 'services.subdl.api_key',
+      ),
+      findsOneWidget,
+    );
+    final Finder keyField = _textField(
+      const ValueKey<String>('video-subdl-api-key'),
+    );
+    expect(
+      tester.widget<TextField>(glassUnwrap<TextField>(keyField)).obscureText,
+      isTrue,
+    );
+    await tester.enterText(keyField, 'subdl-key');
+    await _settleAutosave(tester);
+    expect(store.subdlKeyWrites.last, 'subdl-key');
+    expect(store.jimakuKeyWrites, isEmpty);
+    final Finder toggle = find.byKey(
+      const ValueKey<String>('video-subdl-enabled'),
+    );
+    expect(
+      tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(toggle)).value,
+      isTrue,
+    );
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(store.subdlEnabledWrites, <bool>[false]);
+    expect(store.jimakuEnabledWrites, isEmpty);
+    expect(store.ajattEnabledWrites, isEmpty);
+  });
 
   testWidgets('OpenSubtitles subpage search resolves the actual secret field', (
     WidgetTester tester,
@@ -285,8 +281,7 @@ void main() {
   /// [OpenSubtitlesConfig] 的构造默认相反。用户在本页改任意一个字段都会触发 debounce
   /// 保存，于是这个没人选过的 false 被落盘，内置应用密钥从此失效，而设置列表还照样
   /// 显示「已内置」。
-  testWidgets('BUG-2429：未配置时启用开关默认打开，且不会把关闭态写回',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2429：未配置时启用开关默认打开，且不会把关闭态写回', (WidgetTester tester) async {
     final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
     await tester.pumpWidget(_wideHarness(store));
     await tester.pumpAndSettle();
@@ -415,9 +410,21 @@ void main() {
     await tester.pumpWidget(_harness(store));
     await tester.pumpAndSettle();
 
-    final TextField torznabSecret = tester.widget<TextField>(glassUnwrap<TextField>(_textField(const ValueKey<String>('video-torznab-0-api-key'))),);
-    final TextField subtitleSecret = tester.widget<TextField>(glassUnwrap<TextField>(_textField(const ValueKey<String>('video-opensubtitles-api-key'))),);
-    final TextField password = tester.widget<TextField>(glassUnwrap<TextField>(_textField(const ValueKey<String>('video-opensubtitles-password'))),);
+    final TextField torznabSecret = tester.widget<TextField>(
+      glassUnwrap<TextField>(
+        _textField(const ValueKey<String>('video-torznab-0-api-key')),
+      ),
+    );
+    final TextField subtitleSecret = tester.widget<TextField>(
+      glassUnwrap<TextField>(
+        _textField(const ValueKey<String>('video-opensubtitles-api-key')),
+      ),
+    );
+    final TextField password = tester.widget<TextField>(
+      glassUnwrap<TextField>(
+        _textField(const ValueKey<String>('video-opensubtitles-password')),
+      ),
+    );
     expect(torznabSecret.obscureText, isTrue);
     expect(subtitleSecret.obscureText, isTrue);
     expect(password.obscureText, isTrue);
@@ -615,7 +622,9 @@ void main() {
       findsOneWidget,
     );
     expect(
-      tester.widget<TextField>(glassUnwrap<TextField>(_textField(jimakuKeyId))).obscureText,
+      tester
+          .widget<TextField>(glassUnwrap<TextField>(_textField(jimakuKeyId)))
+          .obscureText,
       isTrue,
     );
 
@@ -639,7 +648,7 @@ void main() {
       _harness(
         store,
         scopes: const <VideoExternalProviderScope>[
-          VideoExternalProviderScope.resourceSources,
+          VideoExternalProviderScope.torznab,
         ],
       ),
     );
@@ -723,94 +732,6 @@ void main() {
     );
   });
 
-  // BUG-1712：内置 Nyaa 一直在跑（动漫），但设置里一个字都没有，用户看到的是
-  // 「Torznab（空）」= 这个 app 自己没有任何来源。
-  testWidgets('built-in Nyaa source is listed', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(800, 3200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
-
-    await tester.pumpWidget(_harness(store));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const ValueKey<String>('video-builtin-source-nyaa')),
-      findsOneWidget,
-    );
-    expect(find.text('Nyaa'), findsOneWidget);
-  });
-
-  testWidgets(
-    'every built-in source has a switch that writes through the store',
-    (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(800, 3200);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      final _FakeStore store = _FakeStore(
-        const VideoExternalSettingsSnapshot(),
-      );
-
-      await tester.pumpWidget(_harness(store));
-      await tester.pumpAndSettle();
-
-      // 表驱动：内置源全表都必须有一行开关，而不是只有当年手写的那一行 Nyaa。
-      for (final BuiltinVideoResourceSource source
-          in kBuiltinVideoResourceSources) {
-        final Finder row = find.byKey(
-          ValueKey<String>('video-builtin-source-${source.id}'),
-        );
-        expect(row, findsOneWidget, reason: 'missing row for ${source.id}');
-        await _show(tester, row);
-        expect(
-          tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(row)).value,
-          isTrue,
-          reason: '${source.id} defaults to enabled',
-        );
-      }
-
-      final Finder apibayRow = find.byKey(
-        ValueKey<String>('video-builtin-source-$kApibayResourceProviderId'),
-      );
-      await _show(tester, apibayRow);
-      await tester.tap(apibayRow);
-      await tester.pumpAndSettle();
-
-      expect(store.builtinSourceWrites, <(String, bool)>[
-        (kApibayResourceProviderId, false),
-      ]);
-      // 本地状态立刻翻转，不等下一次 load —— 否则开关会弹回去。
-      expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(apibayRow)).value, isFalse);
-    },
-  );
-
-  testWidgets('a disabled built-in source renders as off', (
-    WidgetTester tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 3200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final _FakeStore store = _FakeStore(
-      const VideoExternalSettingsSnapshot(
-        disabledBuiltinSourceIds: <String>{kKnabenResourceProviderId},
-      ),
-    );
-
-    await tester.pumpWidget(_harness(store));
-    await tester.pumpAndSettle();
-
-    final Finder knaben = find.byKey(
-      ValueKey<String>('video-builtin-source-$kKnabenResourceProviderId'),
-    );
-    await _show(tester, knaben);
-    expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(knaben)).value, isFalse);
-    final Finder nyaa = find.byKey(
-      ValueKey<String>('video-builtin-source-$kNyaaResourceProviderId'),
-    );
-    await _show(tester, nyaa);
-    expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(nyaa)).value, isTrue);
-  });
-
   testWidgets(
     'Jimaku has an enabled switch beside its API key, defaulting on',
     (WidgetTester tester) async {
@@ -836,7 +757,12 @@ void main() {
         const ValueKey<String>('video-jimaku-enabled'),
       );
       await _show(tester, jimaku);
-      expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(jimaku)).value, isTrue);
+      expect(
+        tester
+            .widget<SwitchListTile>(glassUnwrap<SwitchListTile>(jimaku))
+            .value,
+        isTrue,
+      );
       // 与 OpenSubtitles 并列同形：两家都在同一节里各有一个启用开关。
       expect(
         find.byKey(const ValueKey<String>('video-opensubtitles-enabled')),

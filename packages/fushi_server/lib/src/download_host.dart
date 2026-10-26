@@ -18,7 +18,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
-import 'package:fushi_engine/media/torrent/builtin_video_resource_providers.dart';
+import 'package:fushi_engine/media/torrent/rss_search_provider.dart';
+import 'package:fushi_engine/media/torrent/rss_search_site.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host_client.dart';
@@ -289,16 +290,19 @@ class ServerDownloadHost implements HostDownloadHost {
       onDecodeError: (Object e, StackTrace st) =>
           engineLog.log('ServerDownloadHost.torznabConfig', e, st),
     );
-    return VideoResourceRegistry(
-      <VideoResourceProvider>[
-        for (final BuiltinVideoResourceProviderSpec spec in kBuiltinVideoResourceProviderSpecs)
-          spec.create(createAppHttpIoClient()),
-        // 没有启用的索引器就不注册（判据与 app 同一处，见 torznabHasEnabledIndexer，BUG-2818）。
-        if (torznabHasEnabledIndexer(torznab))
-          TorznabClient(indexers: torznab, client: createAppHttpIoClient(), closesClient: true),
-      ],
-      disabledProviderIds: readVideoResourceDisabledSourceIds(prefs),
+    final List<RssSearchSiteConfig> rssSites = readRssSearchSiteConfigs(
+      prefs,
+      onDecodeError: (Object e, StackTrace st) =>
+          engineLog.log('ServerDownloadHost.rssSites', e, st),
     );
+    // 不内置任何 BT 搜索站：来源只有用户自配的 RSS 搜索站与 Torznab，与 app 读同一张
+    // preferences 表。没有可用的站 / 索引器就不注册（「注册了 = 配好了」，BUG-2818）。
+    return VideoResourceRegistry(<VideoResourceProvider>[
+      if (rssHasEnabledVideoSite(rssSites))
+        RssSearchProvider(sites: rssSites, client: createAppHttpIoClient(), closesClient: true),
+      if (torznabHasEnabledIndexer(torznab))
+        TorznabClient(indexers: torznab, client: createAppHttpIoClient(), closesClient: true),
+    ]);
   }
 
   PipelineSubscriptionHost _buildSubscriptionHost() => PipelineSubscriptionHost(

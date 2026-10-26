@@ -47,13 +47,14 @@ void main() {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     });
 
-    List<String> resumeNames() => Directory(resumeDir)
-        .listSync()
-        .whereType<File>()
-        .map((File f) => p.basename(f.path))
-        .where((String n) => n.endsWith('.resume'))
-        .toList()
-      ..sort();
+    List<String> resumeNames() =>
+        Directory(resumeDir)
+            .listSync()
+            .whereType<File>()
+            .map((File f) => p.basename(f.path))
+            .where((String n) => n.endsWith('.resume'))
+            .toList()
+          ..sort();
 
     test('keepIds == null（尚未加载）→ 拒绝剪枝，一个文件都不许删', () {
       expect(
@@ -64,14 +65,17 @@ void main() {
       expect(
         resumeNames(),
         <String>['aaaa1111.resume', 'bbbb2222.resume', 'cccc3333.resume'],
-        reason: '计划 id 未加载时剪枝 = 删光用户所有下载/做种任务，'
+        reason:
+            '计划 id 未加载时剪枝 = 删光用户所有下载/做种任务，'
             '这是数据销毁，不是「清理」',
       );
     });
 
     test('keepIds == 空集合（真的没有计划）→ 合法全删，与哨兵区分得开', () {
       expect(
-          pruneResumeFiles(resumeDir: resumeDir, keepIds: const <String>{}), 3);
+        pruneResumeFiles(resumeDir: resumeDir, keepIds: const <String>{}),
+        3,
+      );
       expect(resumeNames(), isEmpty);
       // 非 .resume 文件不碰。
       expect(File(p.join(resumeDir, 'notes.txt')).existsSync(), isTrue);
@@ -80,7 +84,9 @@ void main() {
     test('keepIds 有值 → 只删无主的；keepIds 的大小写不影响判定', () {
       expect(
         pruneResumeFiles(
-            resumeDir: resumeDir, keepIds: <String>{'AAAA1111', 'cccc3333'}),
+          resumeDir: resumeDir,
+          keepIds: <String>{'AAAA1111', 'cccc3333'},
+        ),
         1,
       );
       expect(resumeNames(), <String>['aaaa1111.resume', 'cccc3333.resume']);
@@ -90,7 +96,9 @@ void main() {
       final String missing = p.join(tempDir.path, 'no-such-resume');
       expect(pruneResumeFiles(resumeDir: missing, keepIds: null), -1);
       expect(
-          pruneResumeFiles(resumeDir: missing, keepIds: const <String>{}), 0);
+        pruneResumeFiles(resumeDir: missing, keepIds: const <String>{}),
+        0,
+      );
     });
   });
 
@@ -100,20 +108,28 @@ void main() {
 
     setUpAll(() {
       appModel = _read('lib/src/models/app_model.dart');
-      host = _read('../packages/fushi_engine/lib/media/torrent/embedded_torrent_host.dart');
+      host = _read(
+        '../packages/fushi_engine/lib/media/torrent/embedded_torrent_host.dart',
+      );
     });
 
     test('计划 id 集合是可空哨兵，不许退化成 const {}', () {
-      expect(appModel.contains('Set<String>? _animeDownloadPlanIds;'), isTrue,
-          reason: '空集合初值 = 「没有任何计划」，会让第一次剪枝删光 resume');
       expect(
-          appModel.contains('Set<String> _animeDownloadPlanIds = const'), false,
-          reason: '回归：哨兵被改回空集合初值');
+        appModel.contains('Set<String>? _animeDownloadPlanIds;'),
+        isTrue,
+        reason: '空集合初值 = 「没有任何计划」，会让第一次剪枝删光 resume',
+      );
+      expect(
+        appModel.contains('Set<String> _animeDownloadPlanIds = const'),
+        false,
+        reason: '回归：哨兵被改回空集合初值',
+      );
     });
 
     test('startAnimeDownloadService 必须先 await 计划 id 再 start service', () {
-      final int start =
-          appModel.indexOf('Future<void> startAnimeDownloadService()');
+      final int start = appModel.indexOf(
+        'Future<void> startAnimeDownloadService()',
+      );
       expect(start, greaterThanOrEqualTo(0));
       final int end = appModel.indexOf('\n  }', start);
       final String body = appModel.substring(start, end > start ? end : start);
@@ -121,18 +137,22 @@ void main() {
       // needle 用赋值形式：方法名 `startAnimeDownloadService()` 自身就含子串
       // `AnimeDownloadService(`，直接找会命中函数签名（永远在最前面）。
       final int refresh = body.indexOf('await _refreshAnimeDownloadPlanIds(');
-      final int service =
-          body.indexOf('_animeDownloadService = AnimeDownloadService(');
-      final int subscription = body.indexOf(
-          '_animeDownloadSubscriptionService = AnimeDownloadSubscriptionService(');
-      expect(refresh, greaterThanOrEqualTo(0),
-          reason: '启动路径必须 await 一次计划 id 加载');
+      final int service = body.indexOf(
+        '_animeDownloadService = AnimeDownloadService(',
+      );
+      expect(
+        refresh,
+        greaterThanOrEqualTo(0),
+        reason: '启动路径必须 await 一次计划 id 加载',
+      );
       expect(service, greaterThanOrEqualTo(0));
-      expect(subscription, greaterThanOrEqualTo(0));
-      expect(refresh, lessThan(service),
-          reason: 'AnimeDownloadService..start() 会立刻 tick → 懒建 host → 剪枝；'
-              '计划 id 必须在它之前就位');
-      expect(refresh, lessThan(subscription), reason: '订阅服务同样会 tick → 懒建 host');
+      expect(
+        refresh,
+        lessThan(service),
+        reason:
+            'AnimeDownloadService..start() 会立刻 tick → 懒建 host → 剪枝；'
+            '计划 id 必须在它之前就位',
+      );
     });
 
     test('JSON 归档后 keepIds 继续合并 v78 未完成 embedded 旧任务', () {
@@ -140,7 +160,8 @@ void main() {
       expect(
         appModel.contains('...await loadEmbeddedTorrentResumeIds(database)'),
         isTrue,
-        reason: 'Importer 会归档 plans JSON；若只读空 store，首次 host 恢复会把仍由 '
+        reason:
+            'Importer 会归档 plans JSON；若只读空 store，首次 host 恢复会把仍由 '
             'v78 接管的旧任务 resume 当成孤儿删除；keepIds 必须从 Drift 真相源重建',
       );
     });
@@ -148,15 +169,25 @@ void main() {
     test('剪枝/恢复/保存的 keepIds 一律可空（哨兵能穿到底）', () {
       expect(host.contains('required Set<String>? keepIds,'), isTrue);
       expect(
-          host.contains('int restoreFromResume(Set<String>? keepIds)'), true);
+        host.contains('int restoreFromResume(Set<String>? keepIds)'),
+        true,
+      );
       expect(
-          RegExp(r'int\? saveResumeSnapshot\(\s*Set<String>\? keepIds,')
-              .hasMatch(host),
-          isTrue);
-      expect(host.contains('void dispose({Set<String>? keepIds})'), isTrue,
-          reason: 'dispose 的 keepIds 默认值若是空集合，退出时同样会删光 resume');
-      expect(host.contains('Set<String> restoreIds = const <String>{}'), false,
-          reason: '回归：open 的 restoreIds 默认空集合 = 竞态里删光 resume');
+        RegExp(
+          r'int\? saveResumeSnapshot\(\s*Set<String>\? keepIds,',
+        ).hasMatch(host),
+        isTrue,
+      );
+      expect(
+        host.contains('void dispose({Set<String>? keepIds})'),
+        isTrue,
+        reason: 'dispose 的 keepIds 默认值若是空集合，退出时同样会删光 resume',
+      );
+      expect(
+        host.contains('Set<String> restoreIds = const <String>{}'),
+        false,
+        reason: '回归：open 的 restoreIds 默认空集合 = 竞态里删光 resume',
+      );
     });
 
     test('保存/剪枝失败必须留痕，不许静默吞', () {
@@ -164,11 +195,18 @@ void main() {
       // `\n  }`」在签名处就截断，窗口里一行方法体都没有。
       final String body = methodBody(host, 'int? saveResumeSnapshot(');
       // 引擎不依赖 Flutter：debugPrint 经 fushi_core 的 fushiDebugPrint 装配点。
-      expect(body.contains('fushiDebugPrint('), isTrue,
-          reason: 'resume 长期写不进去 = 重启后所有下载蒸发，必须可见');
-      expect(body.contains('} on Object {'), isFalse,
-          reason: '回归：裸 `on Object { return 0; }` 把 native 的 '
-              'failed/timed_out 全吞了');
+      expect(
+        body.contains('fushiDebugPrint('),
+        isTrue,
+        reason: 'resume 长期写不进去 = 重启后所有下载蒸发，必须可见',
+      );
+      expect(
+        body.contains('} on Object {'),
+        isFalse,
+        reason:
+            '回归：裸 `on Object { return 0; }` 把 native 的 '
+            'failed/timed_out 全吞了',
+      );
     });
   });
 }

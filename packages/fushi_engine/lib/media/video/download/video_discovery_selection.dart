@@ -11,6 +11,8 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:meta/meta.dart' show immutable;
 import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
+import 'package:fushi_engine/media/torrent/rss_search_provider.dart'
+    show kRssResourceProviderId;
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/subscription_release_scope.dart';
@@ -92,12 +94,17 @@ StrictVideoSubscriptionFilter? deriveStrictVideoSubscriptionFilter(
     filter['category'] = candidate.category!.trim();
   }
 
-  if (provider == 'nyaa') {
-    if (releaseGroup == null || resolution == null) return null;
-    // Nyaa 的 trusted 是来源给出的结构化证据；true/false 都按所选 release 精确锁定。
+  // RSS 搜索站与 Torznab 同一套：从标题里抠版本证据（发布组 / 分辨率 / 片源 /
+  // 编码 / 语言），至少一条才可订阅。
+  if (provider == kRssResourceProviderId) {
+    // trusted 是种子 RSS 扩展字段给的结构化证据，按所选 release 精确锁定（同组的 trusted
+    // 与非 trusted 发布不是同一条规则）。订阅绑在单个站上（`rss:<siteId>`），
+    // 不给这个字段的站所有条目都是 false，锁 false 恒命中，不会误伤。只是不算
+    // 版本证据——光有它不足以建订阅。
     filter['trusted'] = candidate.trusted;
-    summary.add(candidate.trusted ? 'trusted' : 'untrusted');
-  } else if (provider == 'torznab') {
+    if (candidate.trusted) summary.add('trusted');
+  }
+  if (provider == 'torznab' || provider == kRssResourceProviderId) {
     final String? source = _firstMatch(
       candidate.title,
       RegExp(
@@ -197,7 +204,7 @@ class VideoSubscriptionCandidateGroup {
 ///
 /// 于是分组键直接取 [deriveStrictVideoSubscriptionFilter] 的产物 `json`——它
 /// 就是「这两个发布订起来是不是同一条」的**定义本身**。自己另写一个
-/// 「releaseGroup + resolution」的键看着等价，但 nyaa 还锁 `trusted`、torznab
+/// 「releaseGroup + resolution」的键看着等价，但 RSS 还锁 `trusted`、torznab
 /// 还锁 source/codec/language，键一旦漏掉其中一维，两条本该分开的规则会被合成
 /// 一行，用户订到的和看到的就不是一回事。用定义当键，这种漂移不可能发生。
 ///

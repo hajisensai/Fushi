@@ -172,7 +172,6 @@ const Map<String, int> _fontSizeBudget = <String, int>{
   'lib/src/media/video/video_subtitle_style.dart': 1,
   'lib/src/media/video/video_volume_overlays.dart': 2,
   'lib/src/models/theme_notifier.dart': 12,
-  'lib/src/pages/implementations/anime_download_dialog.dart': 1,
   'lib/src/pages/implementations/game_stream_page.dart': 1,
   'lib/src/pages/implementations/reader_fushi/chrome.part.dart': 5,
   'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart': 1,

@@ -78,6 +78,8 @@ void main() {
       'lib/src/pages/implementations/home_dashboard_page.dart',
       // 2026-10 查词模块重做：查词页历史 / 最近搜索与词典管理列表。
       'lib/src/pages/implementations/home_dictionary_page.dart',
+      // 2026-10-26 资源来源重做：RSS 搜索站列表。
+      'lib/src/pages/implementations/rss_search_site_settings_section.dart',
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
       // 2026-10 字体库重做：样张卡网格 / 列表（含拖拽重排两种形态）。
       'lib/src/pages/implementations/custom_fonts_page.dart',

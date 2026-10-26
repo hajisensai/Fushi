@@ -10,8 +10,9 @@ class VideoResourceSearchRequest {
     this.episode,
     this.page = 1,
     this.limit = 100,
-  })  : assert(page > 0),
-        assert(limit > 0);
+    this.providerInstanceId,
+  }) : assert(page > 0),
+       assert(limit > 0);
 
   final VideoMediaReference? media;
   final String? query;
@@ -19,6 +20,11 @@ class VideoResourceSearchRequest {
   final int? episode;
   final int page;
   final int limit;
+
+  /// 只搜 provider 的这一个实例（`rss:<siteId>` 冒号后那段）。订阅检查与重启后
+  /// 重解析已经知道结果来自哪个站，没必要把用户配的每个站都再打一遍；null = 全部。
+  /// 只有多实例 provider（RSS 搜索站）看它，其余 provider 忽略。
+  final String? providerInstanceId;
 
   String get effectiveQuery => query?.trim().isNotEmpty == true
       ? query!.trim()
@@ -87,7 +93,7 @@ abstract class VideoResourceCandidate {
 /// 一个资源源在一次搜索里发出的**一个**查询词及其结果（BUG-2794）。
 ///
 /// [failure] 非空 = 这一条查询失败；否则 [itemCount] 是它拿回的条数（0 也是
-/// 合法结果，必须能被用户看见——「Nyaa 搜了日文原名、0 条」与「Nyaa 挂了」
+/// 合法结果，必须能被用户看见——「某站搜了日文原名、0 条」与「某站挂了」
 /// 是两件事，混成一个空列表用户只会以为这家没资源）。
 class VideoResourceQueryReport {
   const VideoResourceQueryReport({
@@ -111,8 +117,8 @@ class VideoResourceSourceReport {
     Iterable<ExternalProviderFailure> failures =
         const <ExternalProviderFailure>[],
     this.succeeded = false,
-  })  : queries = List<VideoResourceQueryReport>.unmodifiable(queries),
-        failures = List<ExternalProviderFailure>.unmodifiable(failures);
+  }) : queries = List<VideoResourceQueryReport>.unmodifiable(queries),
+       failures = List<ExternalProviderFailure>.unmodifiable(failures);
 
   final String providerId;
   final List<VideoResourceQueryReport> queries;
@@ -127,7 +133,7 @@ class VideoResourceSourceReport {
   /// 一条都没成功且有失败 = 这家这次整体失败。
   bool get failed => !succeeded && failures.isNotEmpty;
 
-  /// 没成功也没失败 = 这家表达不了这条查询、没有参与（如 apibay 遇纯 CJK 词）。
+  /// 没成功也没失败 = 这家表达不了这条查询、没有参与。
   bool get skipped => !succeeded && failures.isEmpty;
 }
 
@@ -146,17 +152,26 @@ class VideoResourceSearchResult
   final List<VideoResourceSourceReport> sources;
 }
 
-/// 把单个 provider 的结果归成一份按源回执。provider 自己给了回执（[result] 是
-/// 带 [VideoResourceSearchResult.sources] 的结果）就原样用；否则按「发了
-/// [fallbackQuery] 这一条」合成——Torznab 等外部 provider 不必各自实现回执。
-VideoResourceSourceReport videoResourceSourceReportOf({
+/// 把单个 provider 的结果归成按源回执。provider 自己给了回执（[result] 是
+/// [VideoResourceSearchResult]）就原样用——多实例 provider（RSS 搜索站）一个站
+/// 一份、没有站参与时为空；否则按「发了 [fallbackQuery] 这一条」合成一份——
+/// Torznab 等外部 provider 不必各自实现回执。
+List<VideoResourceSourceReport> videoResourceSourceReportsOf({
   required String providerId,
   required ProviderBatchResult<VideoResourceCandidate> result,
   required String fallbackQuery,
 }) {
-  if (result is VideoResourceSearchResult && result.sources.isNotEmpty) {
-    return result.sources.first;
-  }
+  if (result is VideoResourceSearchResult) return result.sources;
+  return <VideoResourceSourceReport>[
+    _syntheticSourceReport(providerId, result, fallbackQuery),
+  ];
+}
+
+VideoResourceSourceReport _syntheticSourceReport(
+  String providerId,
+  ProviderBatchResult<VideoResourceCandidate> result,
+  String fallbackQuery,
+) {
   final bool succeeded = result.successfulProviderCount > 0;
   return VideoResourceSourceReport(
     providerId: providerId,
@@ -181,10 +196,11 @@ abstract interface class VideoResourceProvider {
   int get priority;
 
   /// 本 provider 参与哪些视频域。**空集 = 不限域**（用户自配的 Torznab 索引器
-  /// 就是这种：搜什么由他自己填的分类决定，app 无权替他裁）。
+  /// 就是这种：搜什么由他自己填的分类决定，app 无权替他裁；RSS 搜索站也报空集，
+  /// 按每个站配置的域在 provider 内部逐站裁）。
   ///
   /// 这里之前不存在——域门控是 `VideoResourceRegistry` 里一行写死的 id 白名单
-  /// （`provider.id == 'torznab' || (anime && provider.id == 'nyaa')`）。每加一个
+  /// （torznab 恒参与、某内置源只进动漫）。每加一个
   /// 内置源就得回去改那行 if，而 provider 自己对「我该在哪个域出现」一无所知。
   /// 把它变成 provider 自报的能力，registry 那边的特殊情况就整个消失了。
   Set<VideoDiscoveryCategory> get categories;
@@ -222,10 +238,25 @@ List<VideoResourceCandidate> deduplicateVideoResources(
   return List<VideoResourceCandidate>.unmodifiable(result);
 }
 
+/// 已从仓库移除的内置 BT 搜索站 provider id（2026-10 起不再内置任何搜索站，
+/// BT 搜索只走用户自配的 RSS 搜索站与 Torznab）。存量订阅 / 任务的
+/// `resourceProvider` 冒号前若是其中之一，订阅服务报「来源已移除」，不迁移。
+const Set<String> kRemovedBuiltinVideoResourceProviderIds = <String>{
+  'nyaa',
+  'apibay',
+  'knaben',
+};
+
+/// [providerId]（裸 id 或 `<id>:<instance>`）是否属于已移除的内置搜索站。
+bool isRemovedBuiltinVideoResourceProvider(String providerId) =>
+    kRemovedBuiltinVideoResourceProviderIds.contains(
+      providerId.trim().split(':').first.toLowerCase(),
+    );
+
 /// provider 是否参与某个域的查询。
 ///
 /// [category] 为 null = 请求没带身份（纯关键词搜索）：此时只有不限域的 provider
-/// 参与，与 id 白名单时代的行为逐字一致（那时 `anime` 为 false，Nyaa 同样不进）。
+/// 参与，与 id 白名单时代的行为逐字一致（那时 `anime` 为 false，动漫专用源同样不进）。
 bool videoResourceProviderApplies(
   VideoResourceProvider provider,
   VideoDiscoveryCategory? category,

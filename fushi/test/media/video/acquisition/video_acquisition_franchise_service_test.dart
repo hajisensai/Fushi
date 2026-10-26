@@ -16,8 +16,8 @@ import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
 class _Resource extends VideoResourceCandidate {
   _Resource(String id, String title)
     : super(
-        providerId: 'nyaa',
-        providerInstanceId: 'nyaa',
+        providerId: 'rss',
+        providerInstanceId: 'nyaa-rss',
         providerPriority: 100,
         remoteId: id,
         title: title,
@@ -160,11 +160,10 @@ void main() {
       ],
     );
     // 只有剧集拉详情（定下载还是订阅），电影不拉。
-    expect(
-      calls.where((String c) => c.startsWith('details:')),
-      <String>['details:tv', 'details:tv'],
-      reason: '锚点在选定作品时拉一次、清单里再拉一次；电影一次都不拉',
-    );
+    expect(calls.where((String c) => c.startsWith('details:')), <String>[
+      'details:tv',
+      'details:tv',
+    ], reason: '锚点在选定作品时拉一次、清单里再拉一次；电影一次都不拉');
 
     await service.choose(
       VideoAcquisitionSlot.franchise,

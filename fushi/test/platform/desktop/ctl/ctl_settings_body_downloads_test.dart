@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
-import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_downloads.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_items.dart';
@@ -15,6 +14,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/rss_search_site.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
@@ -291,6 +291,73 @@ void main() {
     expect(prefs.videoResourceTorznabConfigs, isEmpty);
   });
 
+  testWidgets(
+    'rss sites cliList: add/update/rm, template redacted, bad input',
+    (WidgetTester tester) async {
+      await pumpContext(tester);
+      final SettingsCliList cli = item<SettingsCustomItem>(
+        vp,
+        'services.rss_sites.cli.sites',
+      ).cliList!;
+      expect(
+        cli.fields
+            .singleWhere((SettingsCliParam f) => f.name == 'url_template')
+            .secret,
+        isTrue,
+      );
+      final Object? added = await cli.add!(sc, <String, String>{
+        'name': 'Mine',
+        'url_template': 'https://private.test/rss?q={query}&passkey=SECRET',
+        'domains': 'anime,novel',
+      });
+      final String id = (added! as Map<String, Object?>)['id']! as String;
+      final List<RssSearchSiteConfig> stored = prefs.resourceRssSites;
+      expect(stored.single.name, 'Mine');
+      expect(stored.single.domains, <RssSearchDomain>{
+        RssSearchDomain.anime,
+        RssSearchDomain.novel,
+      });
+      final List<Map<String, Object?>> rows = await cli.list(sc);
+      expect(jsonEncode(rows), isNot(contains('SECRET')));
+      expect(rows.single['host'], 'private.test');
+
+      await cli.update!(sc, id, <String, String>{'enabled': 'false'});
+      expect(prefs.resourceRssSites.single.enabled, isFalse);
+      expect(prefs.resourceRssSites.single.urlTemplate, contains('SECRET'));
+
+      await expectLater(
+        cli.update!(sc, id, <String, String>{
+          'url_template': 'https://private.test/rss',
+        }),
+        throwsArgumentError,
+        reason: '模板缺 {query}',
+      );
+      await expectLater(
+        cli.update!(sc, id, <String, String>{
+          'url_template': 'http://remote.test/rss?q={query}',
+        }),
+        throwsArgumentError,
+        reason: '非 loopback 明文 http 未开 insecure_http',
+      );
+      await expectLater(
+        cli.update!(sc, id, <String, String>{'domains': 'nope'}),
+        throwsArgumentError,
+      );
+      await expectLater(
+        cli.add!(sc, <String, String>{
+          'url_template': 'https://x.test/rss?q={query}',
+          'domains': 'anime',
+        }),
+        throwsArgumentError,
+        reason: 'name 为空',
+      );
+      expect(prefs.resourceRssSites, hasLength(1));
+      await expectLater(cli.remove!(sc, 'nope'), throwsArgumentError);
+      await cli.remove!(sc, id);
+      expect(prefs.resourceRssSites, isEmpty);
+    },
+  );
+
   testWidgets('path mapping cliList: add/update/rm with page validation', (
     WidgetTester tester,
   ) async {
@@ -338,9 +405,7 @@ void main() {
     await expectLater(target.cliValue!.write(sc, '999'), throwsArgumentError);
   });
 
-  testWidgets('subtitle providers & builtin sources write through', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('subtitle providers write through', (WidgetTester tester) async {
     await pumpContext(tester);
     final SettingsTextItem jimakuKey = item(vp, 'services.jimaku.cli.api_key');
     expect(jimakuKey.secret, isTrue);
@@ -379,16 +444,5 @@ void main() {
       'Fushi-Test v1',
       reason: '只改给出的字段',
     );
-
-    final String sourceId = kBuiltinVideoResourceSources.first.id;
-    final SettingsSwitchItem builtin = item(
-      vp,
-      'services.builtin_sources.cli.$sourceId',
-    );
-    await builtin.onChanged(sc, false);
-    expect(appModel.videoResourceDisabledSourceIds, contains(sourceId));
-    expect(builtin.value(sc), isFalse);
-    await builtin.onChanged(sc, true);
-    expect(appModel.videoResourceDisabledSourceIds, isNot(contains(sourceId)));
   });
 }

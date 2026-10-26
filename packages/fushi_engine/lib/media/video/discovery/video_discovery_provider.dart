@@ -34,8 +34,8 @@ class VideoMediaReference {
     this.anilistId,
     this.bangumiId,
     Map<String, String> externalIds = const <String, String>{},
-  })  : aliases = List<String>.unmodifiable(aliases),
-        externalIds = Map<String, String>.unmodifiable(externalIds);
+  }) : aliases = List<String>.unmodifiable(aliases),
+       externalIds = Map<String, String>.unmodifiable(externalIds);
 
   final String providerId;
   final String mediaId;
@@ -60,23 +60,25 @@ class VideoMediaReference {
   final int? bangumiId;
   final Map<String, String> externalIds;
 
-  /// 身份里有没有拉丁字母写成的标题（罗马字 / 英文）。Nyaa 发布名绝大多数用
+  /// 身份里有没有拉丁字母写成的标题（罗马字 / 英文）。种子站发布名绝大多数用
   /// 这类拼写；只带原名的条目（TMDB 列表项、MAL/AniList 偶发失败后只剩 TMDB 身份
   /// 的合并卡片）在搜资源前要先从详情补齐（BUG-2794）。
-  bool get hasLatinTitle => <String?>[title, originalTitle, ...aliases].any(
-        (String? value) => value != null && isLatinScriptTitle(value.trim()),
-      );
+  bool get hasLatinTitle => <String?>[
+    title,
+    originalTitle,
+    ...aliases,
+  ].any((String? value) => value != null && isLatinScriptTitle(value.trim()));
 
   /// 用作品详情里的罗马字 / 英文名补齐别名（前置，供资源搜索优先使用）。
   VideoMediaReference withWorkLatinTitles(VideoMetadataWork? work) =>
       work == null
-          ? this
-          : withLeadingAliases(<String?>[work.romajiTitle, work.englishTitle]);
+      ? this
+      : withLeadingAliases(<String?>[work.romajiTitle, work.englishTitle]);
 
   /// 把 [leading] 排到别名最前（去重、跳过空值与展示标题），其余字段不变。
   ///
   /// 资源搜索的默认检索词从别名里挑第一个罗马字候选（见
-  /// `preferredNyaaSearchQueries`），详情拿到罗马音 / 英文名后用它前置。
+  /// `preferredResourceSearchQueries`），详情拿到罗马音 / 英文名后用它前置。
   VideoMediaReference withLeadingAliases(Iterable<String?> leading) {
     final List<String> merged = <String>[];
     final Set<String> seen = <String>{title.trim()};
@@ -170,8 +172,8 @@ class VideoDiscoveryRequest {
     this.year,
     this.genre,
     this.region,
-  })  : assert(page > 0),
-        assert(pageSize > 0);
+  }) : assert(page > 0),
+       assert(pageSize > 0);
 
   /// null means no category filter (the UI's "all" sentinel).
   final VideoDiscoveryCategory? category;
@@ -206,7 +208,8 @@ class VideoDiscoveryItem {
     String? externalId,
   }) {
     final String providerId = work.provider.name;
-    final String resolvedId = externalId ??
+    final String resolvedId =
+        externalId ??
         _metadataId(work, providerId) ??
         _defaultMetadataId(work) ??
         (throw ArgumentError('metadata work has no provider identity'));
@@ -293,17 +296,17 @@ class VideoDiscoveryCapabilities {
   VideoDiscoveryCapabilities({
     Iterable<VideoDiscoveryCategory> categories =
         const <VideoDiscoveryCategory>{
-      VideoDiscoveryCategory.movie,
-      VideoDiscoveryCategory.tv,
-      VideoDiscoveryCategory.anime,
-    },
+          VideoDiscoveryCategory.movie,
+          VideoDiscoveryCategory.tv,
+          VideoDiscoveryCategory.anime,
+        },
     Iterable<VideoDiscoveryFeed> feeds = const <VideoDiscoveryFeed>{
-      VideoDiscoveryFeed.popular
+      VideoDiscoveryFeed.popular,
     },
     this.supportsSearch = true,
     this.supportsPaging = true,
-  })  : categories = Set<VideoDiscoveryCategory>.unmodifiable(categories),
-        feeds = Set<VideoDiscoveryFeed>.unmodifiable(feeds);
+  }) : categories = Set<VideoDiscoveryCategory>.unmodifiable(categories),
+       feeds = Set<VideoDiscoveryFeed>.unmodifiable(feeds);
 
   final Set<VideoDiscoveryCategory> categories;
   final Set<VideoDiscoveryFeed> feeds;

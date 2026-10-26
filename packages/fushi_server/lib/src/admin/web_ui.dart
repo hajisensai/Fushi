@@ -127,8 +127,11 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <div class="card"><h2>订阅</h2><div class="row"><button class="b sec" id="btn-sub-check-all">全部立即检查</button></div>
 <table><thead><tr><th>标题</th><th>搜索词</th><th>源</th><th>状态</th><th>集数</th><th>最近</th><th></th></tr></thead><tbody id="subs"></tbody></table></div>
 <div class="card"><h2>资源索引器</h2>
-<p class="small muted">订阅与代下载在这些源里搜资源。与 Fushi app「视频资源」设置是同一份配置；保存后对正在运行的服务立即生效（正在下载的种子不受影响）。</p>
-<div class="row" id="ri-builtin"></div>
+<p class="small muted">订阅与代下载在这些源里搜资源。不内置任何 BT 搜索站，请自己添加 RSS 搜索站或 Torznab indexer。与 Fushi app「资源搜索站」设置是同一份配置；保存后对正在运行的服务立即生效（正在下载的种子不受影响）。</p>
+<h2 style="margin-top:16px">RSS 搜索站</h2>
+<p class="small muted">地址模板必须含 <code>{query}</code>（搜索词，自动 URL 编码），可选 <code>{page}</code>（页码）。例：<code>https://example.com/rss?q={query}</code>。至少勾一个视频域，订阅与代下载才会用它。</p>
+<div id="ri-rss"></div>
+<div class="row"><button class="b sec" id="btn-ri-rss-add">添加 RSS 搜索站</button></div>
 <h2 style="margin-top:16px">Torznab（Jackett / Prowlarr）</h2>
 <div id="ri-torznab"></div>
 <div class="row"><button class="b sec" id="btn-ri-add">添加 indexer</button><button class="b" id="btn-ri-save">保存</button><button class="b sec" id="btn-ri-reset">放弃修改</button></div>
@@ -324,8 +327,19 @@ async function loadSubscriptions(){
 $('#btn-sub-add').onclick = guard(async()=>{ const after=$('#sub-after').value.trim(); await post('subscriptions',{title:$('#sub-title').value, searchQuery:$('#sub-query').value, mediaKind:$('#sub-kind').value, resourceProvider:$('#sub-provider').value, startAfterEpisode: after?Number(after):undefined}); $('#sub-title').value=''; $('#sub-query').value=''; toast('已创建'); loadSubscriptions(); });
 $('#btn-sub-check-all').onclick = guard(async()=>{ await post('subscriptions/check'); toast('已触发检查'); loadSubscriptions(); });
 
-// ── 资源索引器（内置源启停 + Torznab；表单只在首次 / 保存 / 放弃时重画，轮询不冲掉编辑）──
+// ── 资源索引器（RSS 搜索站 + Torznab；表单只在首次 / 保存 / 放弃时重画，轮询不冲掉编辑）──
 let riLoaded=false;
+let riDomains=['anime','movie','tv','novel','audiobook','manga','game'];
+const riDomainLabels={anime:'动画',movie:'电影',tv:'剧集',novel:'小说',audiobook:'有声书',manga:'漫画',game:'游戏'};
+function rssRow(x){
+  const doms = new Set(x.domains||[]);
+  return `<div class="rss-row" data-id="${esc(x.id||'')}" style="border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0"><div class="grid">
+    <label class="f">名称<input type="text" data-k="name" value="${esc(x.name||'')}"></label>
+    <label class="f">地址模板（含 {query}，可选 {page}）<input type="text" data-k="urlTemplate" value="${esc(x.urlTemplate||'')}" placeholder="https://example.org/rss?q={query}"></label>
+    <label class="f">优先级（小的先搜）<input type="number" data-k="priority" value="${esc(x.priority??100)}"></label></div>
+    <div class="row">${riDomains.map(d=>`<label><input type="checkbox" data-domain="${esc(d)}" ${doms.has(d)?'checked':''}> ${esc(riDomainLabels[d]||d)}</label>`).join('')}</div>
+    <div class="row"><label><input type="checkbox" data-k="enabled" ${x.enabled!==false?'checked':''}> 启用</label><label><input type="checkbox" data-k="allowInsecureHttp" ${x.allowInsecureHttp?'checked':''}> 允许明文 HTTP（仅受信任局域网）</label><button class="b danger" data-ri-rm>移除</button></div></div>`;
+}
 function riRow(x){
   return `<div class="ri-row" data-id="${esc(x.id||'')}" style="border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0"><div class="grid">
     <label class="f">名称<input type="text" data-k="name" value="${esc(x.name||'')}"></label>
@@ -335,19 +349,32 @@ function riRow(x){
     <label class="f">分类（逗号分隔，可空）<input type="text" data-k="categories" value="${esc((x.categories||[]).join(','))}"></label></div>
     <div class="row"><label><input type="checkbox" data-k="enabled" ${x.enabled!==false?'checked':''}> 启用</label><label><input type="checkbox" data-k="allowInsecureHttp" ${x.allowInsecureHttp?'checked':''}> 允许明文 HTTP（仅受信任局域网）</label>${x.apiKeySet?'<label><input type="checkbox" data-k="clearApiKey"> 清除已存的 key</label>':''}<button class="b danger" data-ri-rm>移除</button></div></div>`;
 }
-function bindRiRemove(){ $('#ri-torznab').querySelectorAll('[data-ri-rm]').forEach(b=>b.onclick=()=>b.closest('.ri-row').remove()); }
+function bindRiRemove(){
+  $('#ri-torznab').querySelectorAll('[data-ri-rm]').forEach(b=>b.onclick=()=>b.closest('.ri-row').remove());
+  $('#ri-rss').querySelectorAll('[data-ri-rm]').forEach(b=>b.onclick=()=>b.closest('.rss-row').remove());
+}
 function renderIndexers(r){
-  $('#ri-builtin').innerHTML = (r.builtin||[]).map(b=>`<label><input type="checkbox" data-builtin="${esc(b.id)}" ${b.enabled?'checked':''}> ${esc(b.name)}</label>`).join('');
+  if (Array.isArray(r.rssDomains) && r.rssDomains.length) riDomains = r.rssDomains;
+  $('#ri-rss').innerHTML = (r.rss||[]).map(rssRow).join('') || '<p class="muted small" id="ri-rss-empty">还没有 RSS 搜索站。</p>';
   $('#ri-torznab').innerHTML = (r.torznab||[]).map(riRow).join('') || '<p class="muted small" id="ri-empty">还没有 Torznab indexer。</p>';
   bindRiRemove();
   $('#ri-state').textContent = r.applied ? `当前可用：${(r.providers||[]).join(', ')||'无'}` : '互联 host 未运行：保存后下次启动 serve 生效。';
 }
 async function loadIndexers(force){ if(riLoaded && !force) return; const r = await api('resource-indexers'); riLoaded=true; renderIndexers(r); }
 $('#btn-ri-add').onclick = ()=>{ const e=$('#ri-empty'); if(e) e.remove(); $('#ri-torznab').insertAdjacentHTML('beforeend', riRow({})); bindRiRemove(); };
+$('#btn-ri-rss-add').onclick = ()=>{ const e=$('#ri-rss-empty'); if(e) e.remove(); $('#ri-rss').insertAdjacentHTML('beforeend', rssRow({domains:['anime']})); bindRiRemove(); };
 $('#btn-ri-reset').onclick = guard(()=>loadIndexers(true));
 $('#btn-ri-save').onclick = guard(async()=>{
-  const builtin = {};
-  document.querySelectorAll('#ri-builtin [data-builtin]').forEach(el=>{ builtin[el.dataset.builtin] = el.checked; });
+  const rss = Array.from(document.querySelectorAll('#ri-rss .rss-row')).map((row,i)=>{
+    const v = (k)=>row.querySelector(`[data-k="${k}"]`);
+    const pr = v('priority').value.trim();
+    if (pr!=='' && !/^-?\d+$/.test(pr)) throw new Error(`第 ${i+1} 个 RSS 搜索站的优先级必须是整数`);
+    const tpl = v('urlTemplate').value.trim();
+    if (!tpl.includes('{query}')) throw new Error(`第 ${i+1} 个 RSS 搜索站的地址模板必须含 {query}`);
+    const domains = Array.from(row.querySelectorAll('[data-domain]')).filter(el=>el.checked).map(el=>el.dataset.domain);
+    return {id: row.dataset.id || undefined, name: v('name').value, urlTemplate: tpl, priority: pr==='' ? undefined : Number(pr),
+      domains, enabled: v('enabled').checked, allowInsecureHttp: v('allowInsecureHttp').checked};
+  });
   const torznab = Array.from(document.querySelectorAll('#ri-torznab .ri-row')).map((row,i)=>{
     const v = (k)=>row.querySelector(`[data-k="${k}"]`);
     const pr = v('priority').value.trim();
@@ -357,7 +384,7 @@ $('#btn-ri-save').onclick = guard(async()=>{
       priority: pr==='' ? undefined : Number(pr), categories: v('categories').value, enabled: v('enabled').checked, allowInsecureHttp: v('allowInsecureHttp').checked};
   });
   $('#btn-ri-save').disabled=true;
-  try { const r = await put('resource-indexers', {builtin, torznab}); renderIndexers(r); toast(r.applied ? '已保存并生效' : '已保存'); loadSubscriptions(); }
+  try { const r = await put('resource-indexers', {rss, torznab}); renderIndexers(r); toast(r.applied ? '已保存并生效' : '已保存'); loadSubscriptions(); }
   finally { $('#btn-ri-save').disabled=false; }
 });
 

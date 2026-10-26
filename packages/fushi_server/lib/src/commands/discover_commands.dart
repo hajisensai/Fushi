@@ -2,7 +2,7 @@
 ///
 /// 只有视频域：引擎里的 `VideoDiscoveryService`（TMDB / MAL / AniList 聚合，装配与
 /// 服务端 AI 助手同一个 `productionServerDiscovery`）。书 / 漫画 / 游戏的发现源
-/// （Nyaa / OPDS / AList / shinnku / mokuro.moe 等）住在 `fushi/` 的
+/// （RSS 搜索站 / OPDS / AList / shinnku / mokuro.moe 等）住在 `fushi/` 的
 /// `media_discovery_service.dart`，无头服务端装不了，所以 `--domain` 只接受 `video`。
 library;
 

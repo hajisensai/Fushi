@@ -85,7 +85,7 @@ VideoMediaReference videoReferenceWithAniDbId(
 /// 纯解析（无 UI）：复用来源刮削管线的严格解析器与判据。
 ///
 /// 标题候选按可靠度排序：日文原名 → 别名（含罗马字/英文名）→ 本地化显示名。
-/// 显示名（TMDB 类目常是中文）放最后兜底，与 nyaa 搜索词的取名顺序同一哲学。
+/// 显示名（TMDB 类目常是中文）放最后兜底，与 BT 资源搜索词的取名顺序同一哲学。
 Future<AniDbDiscoveryIdentityResult> resolveAniDbDiscoveryIdentity({
   required VideoMediaReference reference,
   required VideoMetadataProviderRegistry registry,

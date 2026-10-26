@@ -1,118 +1,31 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
-import 'package:fushi_engine/media/torrent/nyaa_client.dart';
-import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 
-NyaaTorrent _torrent({
-  required String hash,
-  required int episode,
-  String group = 'SubsPlease',
-  String resolution = '1080p',
-  int seeders = 10,
-  bool trusted = true,
-  bool remake = false,
-}) {
-  return NyaaTorrent(
-    title: '[$group] Example Show - ${episode.toString().padLeft(2, '0')} '
-        '($resolution) [WEB-DL]',
-    torrentUrl: 'https://nyaa.si/download/$hash.torrent',
-    pageUrl: 'https://nyaa.si/view/$hash',
-    infoHash: hash,
-    seeders: seeders,
-    leechers: 0,
-    downloads: 0,
-    sizeText: '1 GiB',
-    sizeBytes: 1024 * 1024 * 1024,
-    categoryId: '1_2',
-    trusted: trusted,
-    remake: remake,
-    pubDate: DateTime.utc(2026, 7, episode),
-  );
-}
+// 旧版 JSON 番剧订阅只剩一次性迁移（VideoDownloadLegacyImporter）要读它：这里只
+// 钉编解码契约。按订阅定时搜索种子站的旧服务已随内置 BT 搜索站一起删除。
 
-AnimeDownloadSubscription _subscription({
-  Set<int> processed = const <int>{},
-}) {
-  return AnimeDownloadSubscription.fromSelection(
-    anilistId: 42,
-    seriesTitle: 'Example Show',
-    nyaaQuery: 'Example Show',
-    category: '1_2',
-    releaseGroup: 'SubsPlease',
-    resolution: '1080p',
-    startAfterEpisode: 1,
-    trustedOnly: true,
-    now: DateTime.utc(2026, 7, 1),
-  ).copyWith(processedEpisodes: processed);
-}
-
-class _FakeBackend implements TorrentBackend {
-  final List<String> added = <String>[];
-  bool addResult = true;
-  bool reportExisting = false;
-  bool closed = false;
-
-  @override
-  Future<bool> addTorrent(
-    String magnetOrUrl, {
-    required String category,
-    String? savePath,
-    bool sequential = false,
-    bool firstLastPiecePrio = false,
-  }) async {
-    added.add(magnetOrUrl);
-    expect(category, 'fushi');
-    expect(sequential, isTrue);
-    expect(firstLastPiecePrio, isTrue);
-    return addResult;
-  }
-
-  @override
-  void close() => closed = true;
-
-  // TODO-1961-c：本 fake 不测改名/移动路径，给出明确的「未实现」结果而不是
-  // 假装成功——真要测这条链路的用例应当显式覆盖它。
-  @override
-  Future<TorrentStorageResult> renameFile(
-          String torrentId, int fileIndex, String newPath) async =>
-      const TorrentStorageResult.failure('not supported by fake');
-
-  @override
-  Future<TorrentStorageResult> moveStorage(
-          String torrentId, String newSavePath) async =>
-      const TorrentStorageResult.failure('not supported by fake');
-
-  @override
-  Future<List<TorrentFileEntry>> listFiles(String torrentId) async =>
-      const <TorrentFileEntry>[];
-
-  @override
-  Future<List<TorrentSnapshot>> listTorrents({String? category}) async =>
-      reportExisting
-          ? const <TorrentSnapshot>[
-              TorrentSnapshot(
-                hash: 'abc123',
-                name: 'Existing qB task',
-                progress: 0.2,
-                state: 'downloading',
-                savePath: '',
-                contentPath: '',
-                amountLeft: 1,
-              ),
-            ]
-          : const <TorrentSnapshot>[];
-
-  @override
-  Future<bool> prepareCategory(String category) async => true;
-
-  @override
-  Future<String?> probeConnection() async => 'fake';
-}
+AnimeDownloadSubscription _subscription({Set<int> processed = const <int>{}}) =>
+    AnimeDownloadSubscription(
+      id: 'sub-1',
+      createdAtMs: 1000,
+      anilistId: 42,
+      seriesTitle: 'Example Show',
+      nyaaQuery: 'Example Show',
+      category: '1_2',
+      releaseGroup: 'SubsPlease',
+      resolution: '1080p',
+      startAfterEpisode: 1,
+      processedEpisodes: processed,
+      jimakuEntryId: 77,
+      jimakuEntryName: 'Complete series',
+      jimakuLanguage: 'ja',
+      enabled: false,
+      lastCheckedAtMs: 123,
+      lastMatchedAtMs: 120,
+      lastError: 'offline',
+    );
 
 void main() {
   test('missing preference resolves to the same usable built-in defaults', () {
@@ -122,353 +35,63 @@ void main() {
     expect(config.category, 'fushi');
   });
 
-  test('subscription identity is stable for the same combination', () {
-    final AnimeDownloadSubscription first = _subscription();
-    final AnimeDownloadSubscription second =
-        AnimeDownloadSubscription.fromSelection(
-      anilistId: 42,
-      seriesTitle: 'Renamed display title',
-      nyaaQuery: 'Different query',
-      category: '1_2',
-      releaseGroup: ' subsplease ',
-      resolution: '1080P',
-      startAfterEpisode: 8,
-      now: DateTime.utc(2026, 7, 2),
-    );
-    expect(second.id, first.id);
-  });
-
-  test('subtitle source and language are part of subscription identity', () {
-    AnimeDownloadSubscription create(int entryId, String language) =>
-        AnimeDownloadSubscription.fromSelection(
-          anilistId: 42,
-          seriesTitle: 'Example Show',
-          nyaaQuery: 'Example Show',
-          category: '1_2',
-          releaseGroup: 'SubsPlease',
-          resolution: '1080p',
-          jimakuEntryId: entryId,
-          jimakuEntryName: 'Season pack',
-          jimakuLanguage: language,
-          startAfterEpisode: 1,
-        );
-
-    expect(create(11, 'ja').id, isNot(create(12, 'ja').id));
-    expect(create(11, 'ja').id, isNot(create(11, 'zh').id));
-  });
-
-  test('subtitle selection remains round-trippable', () {
-    final AnimeDownloadSubscription original =
-        AnimeDownloadSubscription.fromSelection(
-      anilistId: 42,
-      seriesTitle: 'Example Show',
-      nyaaQuery: 'Example Show',
-      category: '1_2',
-      releaseGroup: 'SubsPlease',
-      startAfterEpisode: 1,
-      jimakuEntryId: 77,
-      jimakuEntryName: 'Complete series',
-      jimakuLanguage: 'ja',
-    );
-    final AnimeDownloadSubscription decoded = decodeAnimeDownloadSubscription(
-      encodeAnimeDownloadSubscription(original),
-    )!;
-    expect(decoded.jimakuEntryId, 77);
-    expect(decoded.jimakuEntryName, 'Complete series');
-    expect(decoded.jimakuLanguage, 'ja');
-  });
-
-  test('selection uses exact group and resolution and does not backfill', () {
-    final List<NyaaTorrent> selected = selectSubscriptionReleases(
-      _subscription(processed: <int>{3}),
-      <NyaaTorrent>[
-        _torrent(hash: 'old', episode: 1),
-        _torrent(hash: 'processed', episode: 3),
-        _torrent(hash: 'wrong-group', episode: 2, group: 'SubsPlease v2'),
-        _torrent(hash: 'wrong-resolution', episode: 2, resolution: '720p'),
-        _torrent(hash: 'remake', episode: 2, remake: true, seeders: 100),
-        _torrent(hash: 'weak', episode: 2, seeders: 2),
-        _torrent(hash: 'best', episode: 2, seeders: 20),
-        _torrent(hash: 'next', episode: 4),
-        _torrent(hash: 'dimensions', episode: 5, resolution: '1920x1080'),
-      ],
-    );
-
-    expect(selected.map((NyaaTorrent torrent) => torrent.infoHash),
-        <String>['best', 'next', 'dimensions']);
-  });
-
   test('subscription JSON remains round-trippable', () {
     final AnimeDownloadSubscription original = _subscription(
       processed: <int>{2, 4},
-    ).copyWith(
-      enabled: false,
-      lastCheckedAtMs: 123,
-      lastMatchedAtMs: 120,
-      lastError: 'offline',
     );
     final AnimeDownloadSubscription? decoded = decodeAnimeDownloadSubscription(
       encodeAnimeDownloadSubscription(original),
     );
     expect(decoded, isNotNull);
     expect(decoded!.id, original.id);
+    expect(decoded.anilistId, 42);
+    expect(decoded.nyaaQuery, 'Example Show');
+    expect(decoded.releaseGroup, 'SubsPlease');
+    expect(decoded.resolution, '1080p');
     expect(decoded.processedEpisodes, <int>{2, 4});
+    expect(decoded.jimakuEntryId, 77);
+    expect(decoded.jimakuEntryName, 'Complete series');
+    expect(decoded.jimakuLanguage, 'ja');
     expect(decoded.enabled, isFalse);
+    expect(decoded.lastCheckedAtMs, 123);
+    expect(decoded.lastMatchedAtMs, 120);
     expect(decoded.lastError, 'offline');
   });
 
-  group('AnimeDownloadSubscriptionService', () {
-    late Directory directory;
-    late AnimeDownloadSubscriptionStore subscriptionStore;
-    late AnimeDownloadPlanStore planStore;
+  test('missing optional fields fall back to legacy defaults', () {
+    final AnimeDownloadSubscription? decoded = decodeAnimeDownloadSubscription(
+      <String, Object?>{
+        'id': 'sub-2',
+        'anilistId': 7,
+        'seriesTitle': 'Show',
+        'nyaaQuery': 'Show',
+        'releaseGroup': ' Group ',
+        'startAfterEpisode': 3,
+        'processedEpisodes': <Object?>[1, -2, 'x', 4],
+      },
+    );
+    expect(decoded, isNotNull);
+    expect(decoded!.createdAtMs, 0);
+    expect(decoded.category, '1_0');
+    expect(decoded.releaseGroup, 'Group');
+    expect(decoded.processedEpisodes, <int>{1, 4});
+    expect(decoded.enabled, isTrue);
+    expect(decoded.trustedOnly, isFalse);
+  });
 
-    setUp(() async {
-      directory =
-          await Directory.systemTemp.createTemp('fushi-subscription-test-');
-      subscriptionStore = AnimeDownloadSubscriptionStore(baseDir: directory);
-      planStore = AnimeDownloadPlanStore(baseDir: directory);
-    });
-
-    tearDown(() async {
-      subscriptionStore.revision.dispose();
-      if (await directory.exists()) {
-        await directory.delete(recursive: true);
-      }
-    });
-
-    test('queues a new release, creates a plan and marks episode processed',
-        () async {
-      final AnimeDownloadSubscription subscription = _subscription();
-      await subscriptionStore.save(subscription);
-      final _FakeBackend backend = _FakeBackend();
-      final AnimeDownloadSubscriptionService service =
-          AnimeDownloadSubscriptionService(
-        store: subscriptionStore,
-        planStore: planStore,
-        configProvider: () => const QbConnectionConfig(),
-        backendFactory: (_) => backend,
-        search: (_) async => <NyaaTorrent>[
-          _torrent(hash: 'abc123', episode: 2),
-        ],
-      );
-
-      await service.checkSubscription(subscription.id);
-
-      final List<AnimeDownloadPlan> plans = await planStore.loadAll();
-      expect(plans, hasLength(1));
-      expect(plans.single.id, 'abc123');
-      expect(plans.single.seriesTitle, 'Example Show');
-      expect(backend.added, hasLength(1));
-      expect(backend.closed, isTrue);
-
-      final AnimeDownloadSubscription updated =
-          (await subscriptionStore.loadAll()).single;
-      expect(updated.processedEpisodes, <int>{2});
-      expect(updated.lastCheckedAtMs, isNotNull);
-      expect(updated.lastMatchedAtMs, isNotNull);
-      expect(updated.lastError, isNull);
-      service.stop();
-      service.checking.dispose();
-    });
-
-    test('failed backend add rolls back plan and keeps episode pending',
-        () async {
-      final AnimeDownloadSubscription subscription = _subscription();
-      await subscriptionStore.save(subscription);
-      final _FakeBackend backend = _FakeBackend()..addResult = false;
-      final AnimeDownloadSubscriptionService service =
-          AnimeDownloadSubscriptionService(
-        store: subscriptionStore,
-        planStore: planStore,
-        configProvider: () => const QbConnectionConfig(),
-        backendFactory: (_) => backend,
-        search: (_) async => <NyaaTorrent>[
-          _torrent(hash: 'abc123', episode: 2),
-        ],
-      );
-
-      await service.checkSubscription(subscription.id);
-
-      expect(await planStore.loadAll(), isEmpty);
-      final AnimeDownloadSubscription updated =
-          (await subscriptionStore.loadAll()).single;
-      expect(updated.processedEpisodes, isEmpty);
-      expect(updated.lastError, isNotNull);
-      service.stop();
-      service.checking.dispose();
-    });
-
-    test('qB duplicate add is accepted when the hash is already listed',
-        () async {
-      final AnimeDownloadSubscription subscription = _subscription();
-      await subscriptionStore.save(subscription);
-      final _FakeBackend backend = _FakeBackend()
-        ..addResult = false
-        ..reportExisting = true;
-      final AnimeDownloadSubscriptionService service =
-          AnimeDownloadSubscriptionService(
-        store: subscriptionStore,
-        planStore: planStore,
-        configProvider: () => const QbConnectionConfig(),
-        backendFactory: (_) => backend,
-        search: (_) async => <NyaaTorrent>[
-          _torrent(hash: 'abc123', episode: 2),
-        ],
-      );
-
-      await service.checkSubscription(subscription.id);
-
-      expect(await planStore.loadAll(), hasLength(1));
-      final AnimeDownloadSubscription updated =
-          (await subscriptionStore.loadAll()).single;
-      expect(updated.processedEpisodes, <int>{2});
-      expect(updated.lastError, isNull);
-      service.stop();
-      service.checking.dispose();
-    });
-
-    test('existing plan is treated as queued without adding a duplicate',
-        () async {
-      final AnimeDownloadSubscription subscription = _subscription();
-      await subscriptionStore.save(subscription);
-      await planStore.save(AnimeDownloadPlan(
-        id: 'abc123',
-        createdAtMs: 1,
-        anilistId: 42,
-        seriesTitle: 'Example Show',
-        torrentTitle: 'Existing',
-        magnet: 'magnet:?xt=urn:btih:abc123',
-        qbCategory: 'hibiki',
-      ));
-      final _FakeBackend backend = _FakeBackend();
-      final AnimeDownloadSubscriptionService service =
-          AnimeDownloadSubscriptionService(
-        store: subscriptionStore,
-        planStore: planStore,
-        configProvider: () => const QbConnectionConfig(),
-        backendFactory: (_) => backend,
-        search: (_) async => <NyaaTorrent>[
-          _torrent(hash: 'abc123', episode: 2),
-        ],
-      );
-
-      await service.checkSubscription(subscription.id);
-
-      expect(backend.added, isEmpty);
-      expect((await subscriptionStore.loadAll()).single.processedEpisodes,
-          <int>{2});
-      service.stop();
-      service.checking.dispose();
-    });
-
-    test('selected Jimaku source is staged into each queued episode', () async {
-      final AnimeDownloadSubscription subscription =
-          AnimeDownloadSubscription.fromSelection(
-        anilistId: 42,
-        seriesTitle: 'Example Show',
-        nyaaQuery: 'Example Show',
-        category: '1_2',
-        releaseGroup: 'SubsPlease',
-        resolution: '1080p',
-        startAfterEpisode: 1,
-        jimakuEntryId: 77,
-        jimakuEntryName: 'Complete series',
-        jimakuLanguage: 'ja',
-      );
-      await subscriptionStore.save(subscription);
-      final _FakeBackend backend = _FakeBackend();
-      final AnimeDownloadSubscriptionService service =
-          AnimeDownloadSubscriptionService(
-        store: subscriptionStore,
-        planStore: planStore,
-        configProvider: () => const QbConnectionConfig(),
-        backendFactory: (_) => backend,
-        search: (_) async => <NyaaTorrent>[
-          _torrent(hash: 'abc123', episode: 2),
-        ],
-        subtitleFetcher: (selected, torrent, destination) async {
-          expect(selected.jimakuEntryId, 77);
-          expect(selected.jimakuLanguage, 'ja');
-          expect(torrent.episode, 2);
-          return <PlanSubtitle>[
-            PlanSubtitle(
-              episode: 2,
-              fileName: 'Example.Show.02.ja.srt',
-              stagedPath: '${destination.path}/Example.Show.02.ja.srt',
-              language: 'ja',
-            ),
-          ];
-        },
-      );
-
-      await service.checkSubscription(subscription.id);
-
-      final AnimeDownloadPlan plan = (await planStore.loadAll()).single;
-      expect(plan.subtitles.single.episode, 2);
-      expect(plan.subtitles.single.language, 'ja');
-      expect(plan.subtitleStatus, AnimeDownloadPlan.subtitleResolved);
-      expect(plan.subtitleAlignPending, isTrue,
-          reason: '发现期下好的字幕还没见过视频：必须交给下载完成那一轮按内嵌轨对齐，'
-              '否则订阅这条路下的字幕永远不对齐');
-      expect(
-        (await subscriptionStore.loadAll()).single.processedEpisodes,
-        <int>{2},
-      );
-      service.stop();
-      service.checking.dispose();
-    });
-
-    test('BUG-1696 字幕还没上传时照常下片，字幕落 pending 交给完成后反查', () async {
-      final AnimeDownloadSubscription subscription =
-          AnimeDownloadSubscription.fromSelection(
-        anilistId: 42,
-        seriesTitle: 'Example Show',
-        nyaaQuery: 'Example Show',
-        category: '1_2',
-        releaseGroup: 'SubsPlease',
-        startAfterEpisode: 1,
-        jimakuEntryId: 77,
-      );
-      await subscriptionStore.save(subscription);
-      final AnimeDownloadSubscriptionService service =
-          AnimeDownloadSubscriptionService(
-        store: subscriptionStore,
-        planStore: planStore,
-        configProvider: () => const QbConnectionConfig(),
-        backendFactory: (_) => _FakeBackend(),
-        search: (_) async => <NyaaTorrent>[
-          _torrent(hash: 'abc123', episode: 2),
-        ],
-        subtitleFetcher: (_, __, ___) async => const <PlanSubtitle>[],
-      );
-      await service.checkSubscription(subscription.id);
-      final AnimeDownloadSubscription updated =
-          (await subscriptionStore.loadAll()).single;
-
-      // 旧行为：delete plan + continue + processedEpisodes 保持空。于是绑了
-      // Jimaku 条目的订阅在字幕上传前**一集都不下**，而生肉普遍早字幕数小时到
-      // 数天——用户看到的是「订阅永远不动」。
-      expect(
-        updated.processedEpisodes,
-        <int>{2},
-        reason: '字幕没到不是不下这一集的理由',
-      );
-      final AnimeDownloadPlan plan = (await planStore.loadAll()).single;
-      expect(plan.id, 'abc123');
-      expect(plan.subtitles, isEmpty);
-      expect(
-        plan.subtitleStatus,
-        AnimeDownloadPlan.subtitlePending,
-        reason: 'pending 才会在下载完成时按包内真实文件名反查 + backoff 重试；'
-            '落 none 等于宣告这一集永远没字幕',
-      );
-      expect(plan.jimakuEntryId, 77, reason: '重试要靠它找回来源');
-      expect(plan.subtitleAlignPending, isFalse,
-          reason: '没有暂存字幕就没有要对齐的东西；由完成时反查配上后再置');
-      // 用户仍然被告知这一集的字幕还没到。
-      expect(updated.lastError, contains('subtitle not yet available'));
-      service.stop();
-      service.checking.dispose();
-    });
+  test('malformed JSON is rejected instead of half-decoded', () {
+    expect(decodeAnimeDownloadSubscription(<String, Object?>{}), isNull);
+    expect(
+      decodeAnimeDownloadSubscription(<String, Object?>{
+        'id': 'sub-3',
+        'anilistId': 7,
+        'seriesTitle': 'Show',
+        'nyaaQuery': 'Show',
+        'releaseGroup': '   ',
+        'startAfterEpisode': 1,
+      }),
+      isNull,
+      reason: '空发布组的旧订阅无法迁移',
+    );
   });
 }

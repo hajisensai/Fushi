@@ -125,16 +125,16 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // PreferencesRepository。不存密码，只存令牌；refresh token 轮换后由
   // AppModel.persistAudiobookshelfTokens 写回。与 discovery_opds_servers 同隔离纪律。
   'discovery_audiobookshelf_servers',
-  // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
-  // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
+  // 发现页「全部源」聚合排除的内置源 id（逗号分隔；默认空）。String，读写见
+  // PreferencesRepository。
   'discovery_disabled_sources',
   // bool（默认 true）：发现页隐藏疑似漫画（`DiscoveryContentHint.manga`）的
   // 条目；undecided 保留。读写见 PreferencesRepository。
   'discovery_hide_suspected_manga',
   // bool（默认 true）：发现页隐藏 0 做种的种子条目。读写见 PreferencesRepository。
   'discovery_hide_zero_seeders',
-  // int（0 全部 / 1 排除 remake / 2 仅 trusted，默认 0）：发现页 Nyaa 过滤三态，
-  // 透传为 nyaa `f`。读写见 PreferencesRepository。
+  // int：发现页内置 BT 源的过滤三态（2026-10-26 随内置 BT 搜索站一起删除）。存量键
+  // 冻结、不再读写；留在这里只为键名不被别的功能复用。
   'discovery_nyaa_quality_filter',
   // 用户自配的 OPDS 书目服务器清单（JSON 数组：id/name/url/username/
   // passwordB64/enabled/allowInsecureHttp）。String，读写见
@@ -522,6 +522,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 只能设、不显示进度）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'reading_goal_weekly_chars',
   'remote_lookup_enabled',
+  // 用户自配的 RSS 搜索站清单（JSON 数组，`RssSearchSiteConfig.toJson()`；模板里
+  // 可能带私有站 passkey）。视频资源搜索与发现页共用。String，读写见
+  // PreferencesRepository / 引擎 video_resource_prefs.dart。与
+  // video_resource_torznab_config 同隔离纪律（设备本地、显式凭据、互联服务配置）。
+  'resource_rss_sites',
   'reverse_navigation_bar',
   'reverse_reader_bottom_bar',
   // BUG-2100 沙箱重定位台账：上次启动时的两个数据根。根变了（iOS 每次更新都会换
@@ -732,8 +737,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 手机字幕遥控器控制卡按钮布局 JSON（VideoRemoteControlLayout，v1 槽位表）。
   'video_remote_control_layout',
   'video_remote_subtitle',
-  // 用户停用的内置视频资源索引器 id（逗号分隔，默认空 = 全部启用）。
-  // 与 discovery_disabled_sources 同形；自配 Torznab 各自带 enabled，不进这里。
+  // 内置视频资源索引器停用清单（2026-10-26 随内置 BT 搜索站一起删除，每条 RSS 站 /
+  // Torznab 配置自带 enabled）。存量键冻结、不再读写；留在这里只为键名不被复用。
   'video_resource_disabled_sources',
   'video_resource_torznab_config',
   'video_respect_ass_style',

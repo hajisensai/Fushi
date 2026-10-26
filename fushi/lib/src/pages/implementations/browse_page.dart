@@ -28,7 +28,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
     show AiMediaAcquisitionDomain;
-import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/legacy_download_plan_tasks_section.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
@@ -883,11 +883,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   }
 
   Widget _buildTaskSources(List<DownloadTaskEntry> transcribe, Widget banner) {
-    return AnimeDownloadDialog(
-      embedded: true,
-      tasksOnly: true,
-      showTasks: false,
-      onOpenSettings: _openDownloadSettings,
+    return LegacyDownloadPlanTasksSection(
       tasksBuilder: (BuildContext context, List<DownloadTaskEntry> legacy) =>
           DiscoveryDownloadTasksSection(
             tasksBuilder:

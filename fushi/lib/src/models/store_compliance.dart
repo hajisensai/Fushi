@@ -22,8 +22,8 @@ import 'dart:io' show Platform;
 enum StoreRestrictedCapability {
   /// 内置外部发现源与各库页的「发现 / 浏览」视图。
   ///
-  /// 覆盖 [MediaDiscoveryService] 的内置源（Nyaa / Sukebei / AList / Shinnku）、
-  /// 视频域的资源索引器与在线发现 provider，以及承载它们的发现页。用户自配的
+  /// 覆盖 [MediaDiscoveryService] 的内置源（AList / Shinnku / CoreAudio）与用户自配的
+  /// RSS 搜索站、视频域的资源索引器（RSS 搜索站 / Torznab）与在线发现 provider，以及承载它们的发现页。用户自配的
   /// OPDS 服务器同样落在这里：它虽是用户自己的书库，但入口与落地能力都是发现页
   /// 的下载入库流程，iOS 上那条流程整体不存在。
   externalDiscovery,

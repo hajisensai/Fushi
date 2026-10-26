@@ -3,8 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/external_provider.dart';
-import 'package:fushi_engine/media/torrent/nyaa_client.dart';
-import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/rss_search_provider.dart';
+import 'package:fushi_engine/media/torrent/rss_search_site.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_adapters.dart';
@@ -16,8 +16,6 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-
-import '../../../torrent/nyaa_html_fixture.dart';
 
 void main() {
   group('TMDB discovery adapter', () {
@@ -55,16 +53,16 @@ void main() {
       );
       addTearDown(provider.close);
 
-      final ProviderBatchResult<VideoDiscoveryPage> result =
-          await provider.discover(
-        const VideoDiscoveryRequest(
-          category: VideoDiscoveryCategory.movie,
-          year: 2024,
-          genre: 'Animation',
-          region: 'JP',
-          sort: VideoDiscoverySort.rating,
-        ),
-      );
+      final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+          .discover(
+            const VideoDiscoveryRequest(
+              category: VideoDiscoveryCategory.movie,
+              year: 2024,
+              genre: 'Animation',
+              region: 'JP',
+              sort: VideoDiscoverySort.rating,
+            ),
+          );
 
       expect(requested.path, '/3/discover/movie');
       expect(requested.queryParameters['api_key'], 'secret-key');
@@ -97,33 +95,33 @@ void main() {
               final List<Uri> nyaaRequests = <Uri>[];
               final TmdbVideoDiscoveryProvider provider =
                   TmdbVideoDiscoveryProvider(
-                apiKey: 'test-key',
-                client: MockClient((http.Request request) async {
-                  expect(request.url.path, contains('/${kind.name}'));
-                  if (search) {
-                    expect(request.url.queryParameters['query'], title);
-                  }
-                  return http.Response.bytes(
-                    utf8.encode(
-                      jsonEncode(<String, Object?>{
-                        'page': 1,
-                        'total_pages': 1,
-                        'results': <Object?>[
-                          <String, Object?>{
-                            'id': 42,
-                            if (kind == VideoMetadataMediaKind.movie)
-                              'title': title
-                            else
-                              'name': title,
-                            'genre_ids': <int>[35, if (animated) 16],
-                          },
-                        ],
-                      }),
-                    ),
-                    200,
+                    apiKey: 'test-key',
+                    client: MockClient((http.Request request) async {
+                      expect(request.url.path, contains('/${kind.name}'));
+                      if (search) {
+                        expect(request.url.queryParameters['query'], title);
+                      }
+                      return http.Response.bytes(
+                        utf8.encode(
+                          jsonEncode(<String, Object?>{
+                            'page': 1,
+                            'total_pages': 1,
+                            'results': <Object?>[
+                              <String, Object?>{
+                                'id': 42,
+                                if (kind == VideoMetadataMediaKind.movie)
+                                  'title': title
+                                else
+                                  'name': title,
+                                'genre_ids': <int>[35, if (animated) 16],
+                              },
+                            ],
+                          }),
+                        ),
+                        200,
+                      );
+                    }),
                   );
-                }),
-              );
               addTearDown(provider.close);
               final VideoDiscoveryRequest request = VideoDiscoveryRequest(
                 category: kind == VideoMetadataMediaKind.movie
@@ -160,40 +158,34 @@ void main() {
               expect(metadata.lookups.single.mediaKind, kind);
               expect(metadata.lookups.single.externalId, '42');
 
-              final VideoResourceRegistry registry =
-                  VideoResourceRegistry(<VideoResourceProvider>[
-                NyaaVideoResourceProvider(
-                  closesClient: true,
-                  client: NyaaClient(
-                    minRequestInterval: Duration.zero,
+              final VideoResourceRegistry registry = VideoResourceRegistry(
+                <VideoResourceProvider>[
+                  RssSearchProvider(
+                    sites: <RssSearchSiteConfig>[_animeOnlyRssSite],
                     client: MockClient((http.Request request) async {
                       nyaaRequests.add(request.url);
                       return http.Response.bytes(
                         utf8.encode(
-                          nyaaSearchHtml(const <NyaaHtmlRow>[
-                            NyaaHtmlRow(
-                              title: title,
-                              infoHash:
-                                  'abcdef0123456789abcdef0123456789abcdef01',
-                              id: '9',
-                              seeders: 1,
-                            ),
-                          ]),
+                          _rssFeed(
+                            title: title,
+                            infoHash:
+                                'abcdef0123456789abcdef0123456789abcdef01',
+                          ),
                         ),
                         200,
                       );
                     }),
                   ),
-                ),
-              ]);
+                ],
+              );
               addTearDown(registry.close);
               final ProviderBatchResult<VideoResourceCandidate> resources =
                   await registry.search(
-                VideoResourceSearchRequest(
-                  media: item.reference,
-                  query: title,
-                ),
-              );
+                    VideoResourceSearchRequest(
+                      media: item.reference,
+                      query: title,
+                    ),
+                  );
               expect(resources.failures, isEmpty);
               if (animated) {
                 expect(nyaaRequests.single.queryParameters['q'], title);
@@ -211,86 +203,90 @@ void main() {
 
     // BUG-2805：TMDB 新建的动画条目（实测「BLEACH 千年血戦篇 -禍進譚-」）genre 为空，
     // 旧判定把它当真人剧 → 资源搜索整个排除 Nyaa，页面只剩 apibay 一家。
-    test('untagged Japanese TMDB entries stay in the anime resource domain',
-        () async {
-      final List<Uri> nyaaRequests = <Uri>[];
-      final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
-        apiKey: 'test-key',
-        client: MockClient((http.Request request) async {
-          final bool tv = request.url.path.endsWith('/search/tv');
-          return http.Response.bytes(
-            utf8.encode(
-              jsonEncode(<String, Object?>{
-                'page': 1,
-                'total_pages': 1,
-                'results': <Object?>[
-                  if (tv) ...<Object?>[
-                    <String, Object?>{
-                      'id': 1,
-                      'name': 'BLEACH 千年血戦篇 -禍進譚-',
-                      'original_language': 'ja',
-                      'genre_ids': <int>[],
-                    },
-                    <String, Object?>{
-                      'id': 2,
-                      'name': 'Untagged English Show',
-                      'original_language': 'en',
-                      'genre_ids': <int>[],
-                    },
-                    <String, Object?>{
-                      'id': 3,
-                      'name': 'その着せ替え人形は恋をする',
-                      'original_language': 'ja',
-                      'genre_ids': <int>[18, 35],
-                    },
+    test(
+      'untagged Japanese TMDB entries stay in the anime resource domain',
+      () async {
+        final List<Uri> nyaaRequests = <Uri>[];
+        final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
+          apiKey: 'test-key',
+          client: MockClient((http.Request request) async {
+            final bool tv = request.url.path.endsWith('/search/tv');
+            return http.Response.bytes(
+              utf8.encode(
+                jsonEncode(<String, Object?>{
+                  'page': 1,
+                  'total_pages': 1,
+                  'results': <Object?>[
+                    if (tv) ...<Object?>[
+                      <String, Object?>{
+                        'id': 1,
+                        'name': 'BLEACH 千年血戦篇 -禍進譚-',
+                        'original_language': 'ja',
+                        'genre_ids': <int>[],
+                      },
+                      <String, Object?>{
+                        'id': 2,
+                        'name': 'Untagged English Show',
+                        'original_language': 'en',
+                        'genre_ids': <int>[],
+                      },
+                      <String, Object?>{
+                        'id': 3,
+                        'name': 'その着せ替え人形は恋をする',
+                        'original_language': 'ja',
+                        'genre_ids': <int>[18, 35],
+                      },
+                    ],
                   ],
-                ],
+                }),
+              ),
+              200,
+            );
+          }),
+        );
+        addTearDown(provider.close);
+        final ProviderBatchResult<VideoDiscoveryPage> page = await provider
+            .search(const VideoDiscoveryRequest(query: 'q'));
+        final Map<String, VideoDiscoveryItem> byId =
+            <String, VideoDiscoveryItem>{
+              for (final VideoDiscoveryItem item in page.items.single.items)
+                item.reference.mediaId: item,
+            };
+        expect(
+          byId['1']!.reference.discoveryCategory,
+          VideoDiscoveryCategory.anime,
+        );
+        expect(
+          byId['2']!.reference.discoveryCategory,
+          VideoDiscoveryCategory.tv,
+        );
+        // genre 明确给了且没有 Animation = TMDB 认定的真人作品，语言不改判。
+        expect(
+          byId['3']!.reference.discoveryCategory,
+          VideoDiscoveryCategory.tv,
+        );
+
+        final VideoResourceRegistry registry = VideoResourceRegistry(
+          <VideoResourceProvider>[
+            RssSearchProvider(
+              sites: <RssSearchSiteConfig>[_animeOnlyRssSite],
+              client: MockClient((http.Request request) async {
+                nyaaRequests.add(request.url);
+                return http.Response.bytes(utf8.encode(_rssFeed()), 200);
               }),
             ),
-            200,
-          );
-        }),
-      );
-      addTearDown(provider.close);
-      final ProviderBatchResult<VideoDiscoveryPage> page =
-          await provider.search(const VideoDiscoveryRequest(query: 'q'));
-      final Map<String, VideoDiscoveryItem> byId = <String, VideoDiscoveryItem>{
-        for (final VideoDiscoveryItem item in page.items.single.items)
-          item.reference.mediaId: item,
-      };
-      expect(
-        byId['1']!.reference.discoveryCategory,
-        VideoDiscoveryCategory.anime,
-      );
-      expect(byId['2']!.reference.discoveryCategory, VideoDiscoveryCategory.tv);
-      // genre 明确给了且没有 Animation = TMDB 认定的真人作品，语言不改判。
-      expect(byId['3']!.reference.discoveryCategory, VideoDiscoveryCategory.tv);
-
-      final VideoResourceRegistry registry =
-          VideoResourceRegistry(<VideoResourceProvider>[
-        NyaaVideoResourceProvider(
-          closesClient: true,
-          client: NyaaClient(
-            minRequestInterval: Duration.zero,
-            client: MockClient((http.Request request) async {
-              nyaaRequests.add(request.url);
-              return http.Response.bytes(
-                utf8.encode(nyaaSearchHtml(const <NyaaHtmlRow>[])),
-                200,
-              );
-            }),
-          ),
-        ),
-      ]);
-      addTearDown(registry.close);
-      for (final String id in <String>['1', '2', '3']) {
-        await registry.search(
-          VideoResourceSearchRequest(media: byId[id]!.reference, query: 'q'),
+          ],
         );
-      }
-      expect(nyaaRequests, hasLength(1));
-      expect(nyaaRequests.single.queryParameters['c'], '1_0');
-    });
+        addTearDown(registry.close);
+        for (final String id in <String>['1', '2', '3']) {
+          await registry.search(
+            VideoResourceSearchRequest(media: byId[id]!.reference, query: 'q'),
+          );
+        }
+        expect(nyaaRequests, hasLength(1));
+        expect(nyaaRequests.single.queryParameters['c'], '1_0');
+      },
+    );
 
     test('interleaves movies and series in the all category', () async {
       final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
@@ -317,8 +313,8 @@ void main() {
       );
       addTearDown(provider.close);
 
-      final ProviderBatchResult<VideoDiscoveryPage> result =
-          await provider.discover(const VideoDiscoveryRequest());
+      final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+          .discover(const VideoDiscoveryRequest());
 
       expect(
         result.items.single.items.map(
@@ -344,10 +340,10 @@ void main() {
       );
       addTearDown(transport.close);
 
-      final ProviderBatchResult<VideoDiscoveryPage> result =
-          await provider.discover(
-        const VideoDiscoveryRequest(category: VideoDiscoveryCategory.movie),
-      );
+      final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+          .discover(
+            const VideoDiscoveryRequest(category: VideoDiscoveryCategory.movie),
+          );
 
       expect(result.isTotalFailure, isTrue);
       expect(
@@ -355,155 +351,164 @@ void main() {
         ExternalProviderFailureKind.rateLimited,
       );
       expect(
-          result.failures.single.toString(), isNot(contains('super-secret')));
+        result.failures.single.toString(),
+        isNot(contains('super-secret')),
+      );
       expect(result.failures.single.toString(), isNot(contains('api_key')));
     });
 
-    test('search applies genre region year and requested sort locally',
-        () async {
-      final List<int> requestedPages = <int>[];
-      final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
-        apiKey: 'secret-key',
-        client: MockClient((http.Request request) async {
-          final int page = int.parse(request.url.queryParameters['page']!);
-          requestedPages.add(page);
-          expect(request.url.path, '/3/search/movie');
-          expect(request.url.queryParameters['query'], 'Test');
-          expect(request.url.queryParameters['primary_release_year'], '2024');
-          expect(request.url.queryParameters['with_genres'], isNull);
-          expect(request.url.queryParameters['region'], isNull);
-          expect(request.url.queryParameters['sort_by'], isNull);
-          return http.Response(
-            jsonEncode(<String, Object?>{
-              'total_pages': 2,
-              'results': page == 1
-                  ? <Object?>[
-                      _tmdbMovie(
-                        id: 1,
-                        title: 'Wrong country',
-                        score: 9.9,
-                        genres: const <int>[16],
-                        countries: const <String>['US'],
-                      ),
-                      _tmdbMovie(
-                        id: 2,
-                        title: 'Lower rated match',
-                        score: 7.0,
-                        genres: const <int>[16],
-                        countries: const <String>['JP'],
-                      ),
-                    ]
-                  : <Object?>[
-                      _tmdbMovie(
-                        id: 3,
-                        title: 'Higher rated match',
-                        score: 8.5,
-                        genres: const <int>[16],
-                        countries: const <String>['JP'],
-                      ),
-                      _tmdbMovie(
-                        id: 4,
-                        title: 'Wrong genre',
-                        score: 9.8,
-                        genres: const <int>[28],
-                        countries: const <String>['JP'],
-                      ),
-                    ],
-            }),
-            200,
-          );
-        }),
-      );
-      addTearDown(provider.close);
+    test(
+      'search applies genre region year and requested sort locally',
+      () async {
+        final List<int> requestedPages = <int>[];
+        final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
+          apiKey: 'secret-key',
+          client: MockClient((http.Request request) async {
+            final int page = int.parse(request.url.queryParameters['page']!);
+            requestedPages.add(page);
+            expect(request.url.path, '/3/search/movie');
+            expect(request.url.queryParameters['query'], 'Test');
+            expect(request.url.queryParameters['primary_release_year'], '2024');
+            expect(request.url.queryParameters['with_genres'], isNull);
+            expect(request.url.queryParameters['region'], isNull);
+            expect(request.url.queryParameters['sort_by'], isNull);
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'total_pages': 2,
+                'results': page == 1
+                    ? <Object?>[
+                        _tmdbMovie(
+                          id: 1,
+                          title: 'Wrong country',
+                          score: 9.9,
+                          genres: const <int>[16],
+                          countries: const <String>['US'],
+                        ),
+                        _tmdbMovie(
+                          id: 2,
+                          title: 'Lower rated match',
+                          score: 7.0,
+                          genres: const <int>[16],
+                          countries: const <String>['JP'],
+                        ),
+                      ]
+                    : <Object?>[
+                        _tmdbMovie(
+                          id: 3,
+                          title: 'Higher rated match',
+                          score: 8.5,
+                          genres: const <int>[16],
+                          countries: const <String>['JP'],
+                        ),
+                        _tmdbMovie(
+                          id: 4,
+                          title: 'Wrong genre',
+                          score: 9.8,
+                          genres: const <int>[28],
+                          countries: const <String>['JP'],
+                        ),
+                      ],
+              }),
+              200,
+            );
+          }),
+        );
+        addTearDown(provider.close);
 
-      final ProviderBatchResult<VideoDiscoveryPage> result =
-          await provider.search(
-        const VideoDiscoveryRequest(
-          category: VideoDiscoveryCategory.movie,
-          query: 'Test',
-          pageSize: 2,
-          year: 2024,
-          genre: 'Animation',
-          region: 'JP',
-          sort: VideoDiscoverySort.rating,
-        ),
-      );
+        final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+            .search(
+              const VideoDiscoveryRequest(
+                category: VideoDiscoveryCategory.movie,
+                query: 'Test',
+                pageSize: 2,
+                year: 2024,
+                genre: 'Animation',
+                region: 'JP',
+                sort: VideoDiscoverySort.rating,
+              ),
+            );
 
-      expect(requestedPages, <int>[1, 2]);
-      expect(
-        result.items.single.items
-            .map((VideoDiscoveryItem item) => item.reference.tmdbId),
-        <int?>[3, 2],
-      );
-      expect(result.items.single.hasMore, isFalse);
-    });
+        expect(requestedPages, <int>[1, 2]);
+        expect(
+          result.items.single.items.map(
+            (VideoDiscoveryItem item) => item.reference.tmdbId,
+          ),
+          <int?>[3, 2],
+        );
+        expect(result.items.single.hasMore, isFalse);
+      },
+    );
 
-    test('rejects an unrecognized search genre instead of ignoring it',
-        () async {
-      final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
-        apiKey: 'secret-key',
-        client: MockClient((http.Request request) async {
-          fail('unsupported filters must fail before network access');
-        }),
-      );
-      addTearDown(provider.close);
+    test(
+      'rejects an unrecognized search genre instead of ignoring it',
+      () async {
+        final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
+          apiKey: 'secret-key',
+          client: MockClient((http.Request request) async {
+            fail('unsupported filters must fail before network access');
+          }),
+        );
+        addTearDown(provider.close);
 
-      final ProviderBatchResult<VideoDiscoveryPage> result =
-          await provider.search(
-        const VideoDiscoveryRequest(
-          category: VideoDiscoveryCategory.movie,
-          query: 'Test',
-          genre: 'Not a TMDB genre',
-        ),
-      );
+        final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+            .search(
+              const VideoDiscoveryRequest(
+                category: VideoDiscoveryCategory.movie,
+                query: 'Test',
+                genre: 'Not a TMDB genre',
+              ),
+            );
 
-      expect(result.isTotalFailure, isTrue);
-      expect(
-        result.failures.single.kind,
-        ExternalProviderFailureKind.unsupported,
-      );
-    });
+        expect(result.isTotalFailure, isTrue);
+        expect(
+          result.failures.single.kind,
+          ExternalProviderFailureKind.unsupported,
+        );
+      },
+    );
 
-    test('search stops pagination when the local filter scan cap is reached',
-        () async {
-      int calls = 0;
-      final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
-        apiKey: 'secret-key',
-        client: MockClient((http.Request request) async {
-          calls++;
-          return http.Response(
-            jsonEncode(<String, Object?>{
-              'total_pages': 500,
-              'results': <Object?>[
-                _tmdbMovie(
-                  id: calls,
-                  title: 'Non-matching $calls',
-                  score: 8,
-                  genres: const <int>[16],
-                  countries: const <String>['US'],
-                ),
-              ],
-            }),
-            200,
-          );
-        }),
-      );
-      addTearDown(provider.close);
+    test(
+      'search stops pagination when the local filter scan cap is reached',
+      () async {
+        int calls = 0;
+        final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
+          apiKey: 'secret-key',
+          client: MockClient((http.Request request) async {
+            calls++;
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'total_pages': 500,
+                'results': <Object?>[
+                  _tmdbMovie(
+                    id: calls,
+                    title: 'Non-matching $calls',
+                    score: 8,
+                    genres: const <int>[16],
+                    countries: const <String>['US'],
+                  ),
+                ],
+              }),
+              200,
+            );
+          }),
+        );
+        addTearDown(provider.close);
 
-      final ProviderBatchResult<VideoDiscoveryPage> result =
-          await provider.search(
-        const VideoDiscoveryRequest(
-          category: VideoDiscoveryCategory.movie,
-          query: 'Test',
-          genre: 'Animation',
-          region: 'JP',
-        ),
-      );
+        final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+            .search(
+              const VideoDiscoveryRequest(
+                category: VideoDiscoveryCategory.movie,
+                query: 'Test',
+                genre: 'Animation',
+                region: 'JP',
+              ),
+            );
 
-      expect(calls, 20);
-      expect(result.items.single.items, isEmpty);
-      expect(result.items.single.hasMore, isFalse);
-    });
+        expect(calls, 20);
+        expect(result.items.single.items, isEmpty);
+        expect(result.items.single.hasMore, isFalse);
+      },
+    );
 
     test('accepts the provider-neutral Sci-Fi genre alias', () async {
       final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
@@ -528,18 +533,20 @@ void main() {
       );
       addTearDown(provider.close);
 
-      final ProviderBatchResult<VideoDiscoveryPage> result =
-          await provider.search(
-        const VideoDiscoveryRequest(
-          category: VideoDiscoveryCategory.movie,
-          query: 'Test',
-          genre: 'Sci-Fi',
-        ),
-      );
+      final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+          .search(
+            const VideoDiscoveryRequest(
+              category: VideoDiscoveryCategory.movie,
+              query: 'Test',
+              genre: 'Sci-Fi',
+            ),
+          );
 
       expect(result.failures, isEmpty);
       expect(
-          result.items.single.items.single.genres, contains('Science Fiction'));
+        result.items.single.items.single.genres,
+        contains('Science Fiction'),
+      );
     });
   });
 
@@ -548,58 +555,58 @@ void main() {
       late Map<String, Object?> variables;
       final AniListVideoDiscoveryProvider provider =
           AniListVideoDiscoveryProvider(
-        now: () => DateTime(2026, 8, 9),
-        client: MockClient((http.Request request) async {
-          final Map<String, Object?> body =
-              jsonDecode(request.body) as Map<String, Object?>;
-          variables = body['variables']! as Map<String, Object?>;
-          return http.Response(
-            jsonEncode(<String, Object?>{
-              'data': <String, Object?>{
-                'Page': <String, Object?>{
-                  'pageInfo': <String, Object?>{'hasNextPage': false},
-                  'media': <Object?>[
-                    <String, Object?>{
-                      'id': 7,
-                      'idMal': 70,
-                      'format': 'MOVIE',
-                      'title': <String, Object?>{
-                        'native': '劇場版テスト',
-                        'romaji': 'Gekijouban Test',
-                        'english': 'Test Movie',
-                      },
-                      'startDate': <String, Object?>{
-                        'year': 2026,
-                        'month': 7,
-                        'day': 1,
-                      },
-                      'averageScore': 80,
-                      'popularity': 1000,
-                      'genres': <String>['Action'],
-                      'coverImage': <String, Object?>{
-                        'large': 'https://img.test/cover.jpg',
-                      },
+            now: () => DateTime(2026, 8, 9),
+            client: MockClient((http.Request request) async {
+              final Map<String, Object?> body =
+                  jsonDecode(request.body) as Map<String, Object?>;
+              variables = body['variables']! as Map<String, Object?>;
+              return http.Response(
+                jsonEncode(<String, Object?>{
+                  'data': <String, Object?>{
+                    'Page': <String, Object?>{
+                      'pageInfo': <String, Object?>{'hasNextPage': false},
+                      'media': <Object?>[
+                        <String, Object?>{
+                          'id': 7,
+                          'idMal': 70,
+                          'format': 'MOVIE',
+                          'title': <String, Object?>{
+                            'native': '劇場版テスト',
+                            'romaji': 'Gekijouban Test',
+                            'english': 'Test Movie',
+                          },
+                          'startDate': <String, Object?>{
+                            'year': 2026,
+                            'month': 7,
+                            'day': 1,
+                          },
+                          'averageScore': 80,
+                          'popularity': 1000,
+                          'genres': <String>['Action'],
+                          'coverImage': <String, Object?>{
+                            'large': 'https://img.test/cover.jpg',
+                          },
+                        },
+                      ],
                     },
-                  ],
+                  },
+                }),
+                200,
+                headers: const <String, String>{
+                  'content-type': 'application/json; charset=utf-8',
                 },
-              },
+              );
             }),
-            200,
-            headers: const <String, String>{
-              'content-type': 'application/json; charset=utf-8',
-            },
           );
-        }),
-      );
       addTearDown(provider.close);
 
-      final ProviderBatchResult<VideoDiscoveryPage> result =
-          await provider.discover(
-        const VideoDiscoveryRequest(
-          category: VideoDiscoveryCategory.anime,
-          feed: VideoDiscoveryFeed.airing,
-        ),
-      );
+      final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+          .discover(
+            const VideoDiscoveryRequest(
+              category: VideoDiscoveryCategory.anime,
+              feed: VideoDiscoveryFeed.airing,
+            ),
+          );
 
       expect(variables['season'], 'SUMMER');
       expect(variables['seasonYear'], 2026);
@@ -617,52 +624,52 @@ void main() {
       late String query;
       final AniListVideoDiscoveryProvider provider =
           AniListVideoDiscoveryProvider(
-        client: MockClient((http.Request request) async {
-          final Map<String, Object?> body =
-              jsonDecode(request.body) as Map<String, Object?>;
-          query = body['query']! as String;
-          return http.Response(
-            jsonEncode(<String, Object?>{
-              'data': <String, Object?>{
-                'Page': <String, Object?>{
-                  'pageInfo': <String, Object?>{'hasNextPage': false},
-                  'media': <Object?>[
-                    <String, Object?>{
-                      'id': 9,
-                      'format': 'TV',
-                      'status': 'RELEASING',
-                      'title': <String, Object?>{'native': '放送中テスト'},
-                      'startDate': <String, Object?>{
-                        'year': 2026,
-                        'month': 7,
-                        'day': 4,
-                      },
-                      'endDate': <String, Object?>{
-                        'year': 2026,
-                        'month': 9,
-                        'day': 26,
-                      },
+            client: MockClient((http.Request request) async {
+              final Map<String, Object?> body =
+                  jsonDecode(request.body) as Map<String, Object?>;
+              query = body['query']! as String;
+              return http.Response(
+                jsonEncode(<String, Object?>{
+                  'data': <String, Object?>{
+                    'Page': <String, Object?>{
+                      'pageInfo': <String, Object?>{'hasNextPage': false},
+                      'media': <Object?>[
+                        <String, Object?>{
+                          'id': 9,
+                          'format': 'TV',
+                          'status': 'RELEASING',
+                          'title': <String, Object?>{'native': '放送中テスト'},
+                          'startDate': <String, Object?>{
+                            'year': 2026,
+                            'month': 7,
+                            'day': 4,
+                          },
+                          'endDate': <String, Object?>{
+                            'year': 2026,
+                            'month': 9,
+                            'day': 26,
+                          },
+                        },
+                      ],
                     },
-                  ],
+                  },
+                }),
+                200,
+                headers: const <String, String>{
+                  'content-type': 'application/json; charset=utf-8',
                 },
-              },
+              );
             }),
-            200,
-            headers: const <String, String>{
-              'content-type': 'application/json; charset=utf-8',
-            },
           );
-        }),
-      );
       addTearDown(provider.close);
 
-      final ProviderBatchResult<VideoDiscoveryPage> result =
-          await provider.search(
-        const VideoDiscoveryRequest(
-          category: VideoDiscoveryCategory.anime,
-          query: 'テスト',
-        ),
-      );
+      final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+          .search(
+            const VideoDiscoveryRequest(
+              category: VideoDiscoveryCategory.anime,
+              query: 'テスト',
+            ),
+          );
 
       expect(query, contains('status'));
       expect(query, contains('endDate { year month day }'));
@@ -679,23 +686,23 @@ void main() {
       late Map<String, Object?> variables;
       final AniListVideoDiscoveryProvider provider =
           AniListVideoDiscoveryProvider(
-        client: MockClient((http.Request request) async {
-          final Map<String, Object?> body =
-              jsonDecode(request.body) as Map<String, Object?>;
-          variables = body['variables']! as Map<String, Object?>;
-          return http.Response(
-            jsonEncode(<String, Object?>{
-              'data': <String, Object?>{
-                'Page': <String, Object?>{
-                  'pageInfo': <String, Object?>{'hasNextPage': false},
-                  'media': <Object?>[],
-                },
-              },
+            client: MockClient((http.Request request) async {
+              final Map<String, Object?> body =
+                  jsonDecode(request.body) as Map<String, Object?>;
+              variables = body['variables']! as Map<String, Object?>;
+              return http.Response(
+                jsonEncode(<String, Object?>{
+                  'data': <String, Object?>{
+                    'Page': <String, Object?>{
+                      'pageInfo': <String, Object?>{'hasNextPage': false},
+                      'media': <Object?>[],
+                    },
+                  },
+                }),
+                200,
+              );
             }),
-            200,
           );
-        }),
-      );
       addTearDown(provider.close);
 
       await provider.search(
@@ -709,124 +716,134 @@ void main() {
       expect(variables['genre'], 'Sci-Fi');
     });
 
-    test('rejects a TMDB-only composite genre instead of ignoring it',
-        () async {
-      final AniListVideoDiscoveryProvider provider =
-          AniListVideoDiscoveryProvider(
-        client: MockClient((http.Request request) async {
-          fail('unsupported genre must fail before network access');
-        }),
-      );
-      addTearDown(provider.close);
+    test(
+      'rejects a TMDB-only composite genre instead of ignoring it',
+      () async {
+        final AniListVideoDiscoveryProvider provider =
+            AniListVideoDiscoveryProvider(
+              client: MockClient((http.Request request) async {
+                fail('unsupported genre must fail before network access');
+              }),
+            );
+        addTearDown(provider.close);
 
-      final ProviderBatchResult<VideoDiscoveryPage> result =
-          await provider.search(
-        const VideoDiscoveryRequest(
-          category: VideoDiscoveryCategory.anime,
-          query: 'Test',
-          genre: 'Sci-Fi & Fantasy',
-        ),
-      );
+        final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+            .search(
+              const VideoDiscoveryRequest(
+                category: VideoDiscoveryCategory.anime,
+                query: 'Test',
+                genre: 'Sci-Fi & Fantasy',
+              ),
+            );
 
-      expect(result.isTotalFailure, isTrue);
-      expect(
-        result.failures.single.kind,
-        ExternalProviderFailureKind.unsupported,
-      );
-    });
+        expect(result.isTotalFailure, isTrue);
+        expect(
+          result.failures.single.kind,
+          ExternalProviderFailureKind.unsupported,
+        );
+      },
+    );
   });
 
   group('VideoDiscoveryService', () {
-    test('catalog selection excludes AniList search but preserves its feed',
-        () async {
-      final _FakeProvider mal = _FakeProvider(
-        id: 'mal',
-        priority: 1,
-        response: ProviderBatchResult<VideoDiscoveryPage>.success(
-          <VideoDiscoveryPage>[
-            VideoDiscoveryPage(
-              items: const <VideoDiscoveryItem>[], page: 1, hasMore: false),
-          ],
-        ),
-      );
-      final _FakeProvider anilist = _FakeProvider(
-        id: 'anilist',
-        priority: 2,
-        response: ProviderBatchResult<VideoDiscoveryPage>.success(
-          <VideoDiscoveryPage>[
-            VideoDiscoveryPage(
-              items: const <VideoDiscoveryItem>[], page: 1, hasMore: false),
-          ],
-        ),
-      );
-      final VideoDiscoveryService service = VideoDiscoveryService(
-        providers: <VideoDiscoveryProvider>[mal, anilist],
-        searchProviderIds: <String>{'mal'},
-      );
-      addTearDown(service.close);
-      await service.load(const VideoDiscoveryRequest(query: 'Anime'));
-      expect(mal.searchCalls, 1);
-      expect(anilist.searchCalls, 0);
-      await service.load(const VideoDiscoveryRequest());
-      expect(anilist.discoverCalls, 1);
-    });
-
-    test('onProgress reports the fast provider before the slow one returns',
-        () async {
-      ProviderBatchResult<VideoDiscoveryPage> only(String id, String title) =>
-          ProviderBatchResult<VideoDiscoveryPage>.success(
+    test(
+      'catalog selection excludes AniList search but preserves its feed',
+      () async {
+        final _FakeProvider mal = _FakeProvider(
+          id: 'mal',
+          priority: 1,
+          response: ProviderBatchResult<VideoDiscoveryPage>.success(
             <VideoDiscoveryPage>[
               VideoDiscoveryPage(
-                items: <VideoDiscoveryItem>[
-                  _item(provider: id, id: id, title: title, year: 2026),
-                ],
+                items: const <VideoDiscoveryItem>[],
                 page: 1,
                 hasMore: false,
               ),
             ],
-          );
-      final Completer<void> slowGate = Completer<void>();
-      final VideoDiscoveryService service = VideoDiscoveryService(
-        providers: <VideoDiscoveryProvider>[
-          _FakeProvider(
-            id: 'slow',
-            priority: 1,
-            response: only('mal', 'Slow Title'),
-            gate: slowGate.future,
           ),
-          _FakeProvider(
-            id: 'fast',
-            priority: 2,
-            response: only('tmdb', 'Fast Title'),
+        );
+        final _FakeProvider anilist = _FakeProvider(
+          id: 'anilist',
+          priority: 2,
+          response: ProviderBatchResult<VideoDiscoveryPage>.success(
+            <VideoDiscoveryPage>[
+              VideoDiscoveryPage(
+                items: const <VideoDiscoveryItem>[],
+                page: 1,
+                hasMore: false,
+              ),
+            ],
           ),
-        ],
-      );
-      addTearDown(service.close);
-      final List<List<String>> progress = <List<String>>[];
-      final Future<ProviderBatchResult<VideoDiscoveryPage>> done = service.load(
-        const VideoDiscoveryRequest(query: 'x'),
-        onProgress: (ProviderBatchResult<VideoDiscoveryPage> partial) =>
-            progress.add(<String>[
-          for (final VideoDiscoveryPage page in partial.items)
-            for (final VideoDiscoveryItem item in page.items)
-              item.reference.title,
-        ]),
-      );
-      await Future<void>.delayed(Duration.zero);
-      expect(progress, <List<String>>[
-        <String>['Fast Title'],
-      ]);
-      slowGate.complete();
-      final ProviderBatchResult<VideoDiscoveryPage> result = await done;
-      expect(progress, hasLength(1), reason: '最后一个来源到齐走返回值，不再回调');
-      expect(
-        <String>[
+        );
+        final VideoDiscoveryService service = VideoDiscoveryService(
+          providers: <VideoDiscoveryProvider>[mal, anilist],
+          searchProviderIds: <String>{'mal'},
+        );
+        addTearDown(service.close);
+        await service.load(const VideoDiscoveryRequest(query: 'Anime'));
+        expect(mal.searchCalls, 1);
+        expect(anilist.searchCalls, 0);
+        await service.load(const VideoDiscoveryRequest());
+        expect(anilist.discoverCalls, 1);
+      },
+    );
+
+    test(
+      'onProgress reports the fast provider before the slow one returns',
+      () async {
+        ProviderBatchResult<VideoDiscoveryPage> only(String id, String title) =>
+            ProviderBatchResult<VideoDiscoveryPage>.success(
+              <VideoDiscoveryPage>[
+                VideoDiscoveryPage(
+                  items: <VideoDiscoveryItem>[
+                    _item(provider: id, id: id, title: title, year: 2026),
+                  ],
+                  page: 1,
+                  hasMore: false,
+                ),
+              ],
+            );
+        final Completer<void> slowGate = Completer<void>();
+        final VideoDiscoveryService service = VideoDiscoveryService(
+          providers: <VideoDiscoveryProvider>[
+            _FakeProvider(
+              id: 'slow',
+              priority: 1,
+              response: only('mal', 'Slow Title'),
+              gate: slowGate.future,
+            ),
+            _FakeProvider(
+              id: 'fast',
+              priority: 2,
+              response: only('tmdb', 'Fast Title'),
+            ),
+          ],
+        );
+        addTearDown(service.close);
+        final List<List<String>> progress = <List<String>>[];
+        final Future<ProviderBatchResult<VideoDiscoveryPage>> done = service
+            .load(
+              const VideoDiscoveryRequest(query: 'x'),
+              onProgress: (ProviderBatchResult<VideoDiscoveryPage> partial) =>
+                  progress.add(<String>[
+                    for (final VideoDiscoveryPage page in partial.items)
+                      for (final VideoDiscoveryItem item in page.items)
+                        item.reference.title,
+                  ]),
+            );
+        await Future<void>.delayed(Duration.zero);
+        expect(progress, <List<String>>[
+          <String>['Fast Title'],
+        ]);
+        slowGate.complete();
+        final ProviderBatchResult<VideoDiscoveryPage> result = await done;
+        expect(progress, hasLength(1), reason: '最后一个来源到齐走返回值，不再回调');
+        expect(<String>[
           for (final VideoDiscoveryItem item in result.items.single.items)
             item.reference.title,
-        ],
-        unorderedEquals(<String>['Slow Title', 'Fast Title']),
-      );
-    });
+        ], unorderedEquals(<String>['Slow Title', 'Fast Title']));
+      },
+    );
 
     test('preserves successful items when another provider fails', () async {
       final _FakeProvider success = _FakeProvider(
@@ -836,12 +853,7 @@ void main() {
           <VideoDiscoveryPage>[
             VideoDiscoveryPage(
               items: <VideoDiscoveryItem>[
-                _item(
-                  provider: 'tmdb',
-                  id: '1',
-                  title: 'Movie',
-                  year: 2025,
-                ),
+                _item(provider: 'tmdb', id: '1', title: 'Movie', year: 2025),
               ],
               page: 1,
               hasMore: false,
@@ -865,104 +877,111 @@ void main() {
         providers: <VideoDiscoveryProvider>[success, failure],
       );
 
-      final ProviderBatchResult<VideoDiscoveryPage> result =
-          await service.load(const VideoDiscoveryRequest());
+      final ProviderBatchResult<VideoDiscoveryPage> result = await service.load(
+        const VideoDiscoveryRequest(),
+      );
 
       expect(result.isPartial, isTrue);
       expect(result.items.single.items.single.reference.title, 'Movie');
       expect(result.failures.single.providerId, 'failure');
     });
 
-    test('reuses page one from a non-paging supplement in later windows',
-        () async {
-      final _FakeProvider paged = _FakeProvider(
-        id: 'paged',
-        priority: 1,
-        supportsPaging: true,
-        response: ProviderBatchResult<VideoDiscoveryPage>.success(
-          <VideoDiscoveryPage>[
-            VideoDiscoveryPage(
-                items: const <VideoDiscoveryItem>[], page: 2, hasMore: false),
-          ],
-        ),
-      );
-      final _FakeProvider supplement = _FakeProvider(
-        id: 'supplement',
-        priority: 2,
-        supportsPaging: false,
-        response: ProviderBatchResult<VideoDiscoveryPage>.success(
-          <VideoDiscoveryPage>[
-            VideoDiscoveryPage(
-                items: const <VideoDiscoveryItem>[], page: 1, hasMore: false),
-          ],
-        ),
-      );
-      final VideoDiscoveryService service = VideoDiscoveryService(
-        providers: <VideoDiscoveryProvider>[paged, supplement],
-      );
+    test(
+      'reuses page one from a non-paging supplement in later windows',
+      () async {
+        final _FakeProvider paged = _FakeProvider(
+          id: 'paged',
+          priority: 1,
+          supportsPaging: true,
+          response: ProviderBatchResult<VideoDiscoveryPage>.success(
+            <VideoDiscoveryPage>[
+              VideoDiscoveryPage(
+                items: const <VideoDiscoveryItem>[],
+                page: 2,
+                hasMore: false,
+              ),
+            ],
+          ),
+        );
+        final _FakeProvider supplement = _FakeProvider(
+          id: 'supplement',
+          priority: 2,
+          supportsPaging: false,
+          response: ProviderBatchResult<VideoDiscoveryPage>.success(
+            <VideoDiscoveryPage>[
+              VideoDiscoveryPage(
+                items: const <VideoDiscoveryItem>[],
+                page: 1,
+                hasMore: false,
+              ),
+            ],
+          ),
+        );
+        final VideoDiscoveryService service = VideoDiscoveryService(
+          providers: <VideoDiscoveryProvider>[paged, supplement],
+        );
 
-      await service.load(
-        const VideoDiscoveryRequest(query: 'test', page: 2),
-      );
+        await service.load(const VideoDiscoveryRequest(query: 'test', page: 2));
 
-      expect(paged.searchCalls, 1);
-      expect(supplement.searchCalls, 1);
-    });
+        expect(paged.searchCalls, 1);
+        expect(supplement.searchCalls, 1);
+      },
+    );
 
-    test('global page two consumes provider page-one tails before page two',
-        () async {
-      final _PagedFakeProvider first = _PagedFakeProvider(
-        id: 'first',
-        priority: 1,
-        pages: <int, List<VideoDiscoveryItem>>{
-          1: <VideoDiscoveryItem>[
-            _item(provider: 'tmdb', id: '1', title: 'A1', year: 2025),
-            _item(provider: 'tmdb', id: '2', title: 'A2', year: 2025),
-          ],
-          2: <VideoDiscoveryItem>[
-            _item(provider: 'tmdb', id: '3', title: 'A3', year: 2025),
-          ],
-        },
-      );
-      final _PagedFakeProvider second = _PagedFakeProvider(
-        id: 'second',
-        priority: 2,
-        pages: <int, List<VideoDiscoveryItem>>{
-          1: <VideoDiscoveryItem>[
-            _item(provider: 'bangumi', id: '11', title: 'B1', year: 2025),
-            _item(provider: 'bangumi', id: '12', title: 'B2', year: 2025),
-          ],
-          2: <VideoDiscoveryItem>[
-            _item(provider: 'bangumi', id: '13', title: 'B3', year: 2025),
-          ],
-        },
-      );
-      final VideoDiscoveryService service = VideoDiscoveryService(
-        providers: <VideoDiscoveryProvider>[first, second],
-      );
+    test(
+      'global page two consumes provider page-one tails before page two',
+      () async {
+        final _PagedFakeProvider first = _PagedFakeProvider(
+          id: 'first',
+          priority: 1,
+          pages: <int, List<VideoDiscoveryItem>>{
+            1: <VideoDiscoveryItem>[
+              _item(provider: 'tmdb', id: '1', title: 'A1', year: 2025),
+              _item(provider: 'tmdb', id: '2', title: 'A2', year: 2025),
+            ],
+            2: <VideoDiscoveryItem>[
+              _item(provider: 'tmdb', id: '3', title: 'A3', year: 2025),
+            ],
+          },
+        );
+        final _PagedFakeProvider second = _PagedFakeProvider(
+          id: 'second',
+          priority: 2,
+          pages: <int, List<VideoDiscoveryItem>>{
+            1: <VideoDiscoveryItem>[
+              _item(provider: 'bangumi', id: '11', title: 'B1', year: 2025),
+              _item(provider: 'bangumi', id: '12', title: 'B2', year: 2025),
+            ],
+            2: <VideoDiscoveryItem>[
+              _item(provider: 'bangumi', id: '13', title: 'B3', year: 2025),
+            ],
+          },
+        );
+        final VideoDiscoveryService service = VideoDiscoveryService(
+          providers: <VideoDiscoveryProvider>[first, second],
+        );
 
-      final ProviderBatchResult<VideoDiscoveryPage> pageOne =
-          await service.load(
-        const VideoDiscoveryRequest(pageSize: 2),
-      );
-      final ProviderBatchResult<VideoDiscoveryPage> pageTwo =
-          await service.load(
-        const VideoDiscoveryRequest(page: 2, pageSize: 2),
-      );
+        final ProviderBatchResult<VideoDiscoveryPage> pageOne = await service
+            .load(const VideoDiscoveryRequest(pageSize: 2));
+        final ProviderBatchResult<VideoDiscoveryPage> pageTwo = await service
+            .load(const VideoDiscoveryRequest(page: 2, pageSize: 2));
 
-      expect(
-        pageOne.items.single.items
-            .map((VideoDiscoveryItem item) => item.reference.title),
-        <String>['A1', 'B1'],
-      );
-      expect(
-        pageTwo.items.single.items
-            .map((VideoDiscoveryItem item) => item.reference.title),
-        <String>['A2', 'B2'],
-      );
-      expect(first.requestedPages, <int>[1, 1, 2]);
-      expect(second.requestedPages, <int>[1, 1, 2]);
-    });
+        expect(
+          pageOne.items.single.items.map(
+            (VideoDiscoveryItem item) => item.reference.title,
+          ),
+          <String>['A1', 'B1'],
+        );
+        expect(
+          pageTwo.items.single.items.map(
+            (VideoDiscoveryItem item) => item.reference.title,
+          ),
+          <String>['A2', 'B2'],
+        );
+        expect(first.requestedPages, <int>[1, 1, 2]);
+        expect(second.requestedPages, <int>[1, 1, 2]);
+      },
+    );
 
     test('MAL cross identity is the primary discovery detail source', () async {
       final VideoMetadataWork malWork = VideoMetadataWork(
@@ -978,7 +997,9 @@ void main() {
         providers: const <VideoDiscoveryProvider>[],
         metadataProviders: <VideoMetadataProvider>[
           _FakeMetadataProvider(
-              kind: VideoMetadataProviderKind.mal, work: malWork),
+            kind: VideoMetadataProviderKind.mal,
+            work: malWork,
+          ),
           _FakeMetadataProvider(
             kind: VideoMetadataProviderKind.anilist,
             work: VideoMetadataWork(
@@ -992,15 +1013,16 @@ void main() {
       );
       final VideoMetadataWork? result = await service.loadDetails(
         VideoDiscoveryItem(
-            reference: VideoMediaReference(
-          providerId: 'anilist',
-          mediaId: '1',
-          mediaKind: VideoMetadataMediaKind.tv,
-          discoveryCategory: VideoDiscoveryCategory.anime,
-          title: 'AniList title',
-          anilistId: 1,
-          externalIds: const <String, String>{'mal': '42'},
-        )),
+          reference: VideoMediaReference(
+            providerId: 'anilist',
+            mediaId: '1',
+            mediaKind: VideoMetadataMediaKind.tv,
+            discoveryCategory: VideoDiscoveryCategory.anime,
+            title: 'AniList title',
+            anilistId: 1,
+            externalIds: const <String, String>{'mal': '42'},
+          ),
+        ),
       );
       expect(result?.provider, VideoMetadataProviderKind.mal);
       expect(result?.title, 'MAL title');
@@ -1135,21 +1157,19 @@ void main() {
       });
     }
 
-    test(
-        'BUG-2795 details follow the metadata language: TMDB zh plot, '
+    test('BUG-2795 details follow the metadata language: TMDB zh plot, '
         'single-language genres, no duplicate cast', () async {
       VideoMetadataCredit voice(
         VideoMetadataCreditKind kind,
         String name,
         String role, {
         String? originalName,
-      }) =>
-          VideoMetadataCredit(
-            kind: kind,
-            person: VideoMetadataPerson(name: name, originalName: originalName),
-            character: VideoMetadataCharacter(name: role),
-            roleName: role,
-          );
+      }) => VideoMetadataCredit(
+        kind: kind,
+        person: VideoMetadataPerson(name: name, originalName: originalName),
+        character: VideoMetadataCharacter(name: role),
+        roleName: role,
+      );
       final VideoDiscoveryService service = VideoDiscoveryService(
         providers: const <VideoDiscoveryProvider>[],
         metadataLocale: 'zh-CN',
@@ -1226,79 +1246,83 @@ void main() {
         reason: 'MAL 罗马字与 TMDB 汉字名无法互证，不得把同一批声优追加第二遍',
       );
       expect(result?.title, 'FX战士久留美', reason: '标题与简介同一种资料语言');
-      expect(result?.aliases, contains('FX Senshi Kurumi-chan'),
-          reason: '被换下的 MAL 标题仍进别名池，下载搜索不能丢');
+      expect(
+        result?.aliases,
+        contains('FX Senshi Kurumi-chan'),
+        reason: '被换下的 MAL 标题仍进别名池，下载搜索不能丢',
+      );
     });
 
-    test('hydrates AniList details without probing a legacy Bangumi id',
-        () async {
-      final VideoMetadataWork anilistWork = VideoMetadataWork(
-        provider: VideoMetadataProviderKind.anilist,
-        kind: VideoMetadataMediaKind.tv,
-        title: 'Primary Anime',
-        year: 2026,
-        ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'anilist', value: '1', isDefault: true),
-        ],
-      );
-      final VideoMetadataWork bangumiWork = VideoMetadataWork(
-        provider: VideoMetadataProviderKind.bangumi,
-        kind: VideoMetadataMediaKind.tv,
-        title: '中文标题',
-        plot: 'Bangumi summary',
-        aliases: const <String>['Bangumi Alias'],
-        ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'bangumi', value: '2', isDefault: true),
-        ],
-        credits: <VideoMetadataCredit>[
-          VideoMetadataCredit(
-            kind: VideoMetadataCreditKind.voiceActor,
-            person: VideoMetadataPerson(name: 'Voice Actor'),
-          ),
-        ],
-      );
-      final VideoDiscoveryService service = VideoDiscoveryService(
-        providers: const <VideoDiscoveryProvider>[],
-        metadataProviders: <VideoMetadataProvider>[
-          _FakeMetadataProvider(
-            kind: VideoMetadataProviderKind.anilist,
-            work: anilistWork,
-          ),
-          _FakeMetadataProvider(
-            kind: VideoMetadataProviderKind.bangumi,
-            work: bangumiWork,
-          ),
-        ],
-      );
-      final VideoDiscoveryItem item = VideoDiscoveryItem(
-        reference: VideoMediaReference(
-          providerId: 'anilist',
-          mediaId: '1',
-          mediaKind: VideoMetadataMediaKind.tv,
-          discoveryCategory: VideoDiscoveryCategory.anime,
+    test(
+      'hydrates AniList details without probing a legacy Bangumi id',
+      () async {
+        final VideoMetadataWork anilistWork = VideoMetadataWork(
+          provider: VideoMetadataProviderKind.anilist,
+          kind: VideoMetadataMediaKind.tv,
           title: 'Primary Anime',
           year: 2026,
-          anilistId: 1,
-          bangumiId: 2,
-        ),
-        confirmedLookup: const VideoMetadataLookup(
-          provider: VideoMetadataProviderKind.anilist,
-          externalId: '1',
-          mediaKind: VideoMetadataMediaKind.tv,
-        ),
-      );
+          ids: const <VideoMetadataId>[
+            VideoMetadataId(type: 'anilist', value: '1', isDefault: true),
+          ],
+        );
+        final VideoMetadataWork bangumiWork = VideoMetadataWork(
+          provider: VideoMetadataProviderKind.bangumi,
+          kind: VideoMetadataMediaKind.tv,
+          title: '中文标题',
+          plot: 'Bangumi summary',
+          aliases: const <String>['Bangumi Alias'],
+          ids: const <VideoMetadataId>[
+            VideoMetadataId(type: 'bangumi', value: '2', isDefault: true),
+          ],
+          credits: <VideoMetadataCredit>[
+            VideoMetadataCredit(
+              kind: VideoMetadataCreditKind.voiceActor,
+              person: VideoMetadataPerson(name: 'Voice Actor'),
+            ),
+          ],
+        );
+        final VideoDiscoveryService service = VideoDiscoveryService(
+          providers: const <VideoDiscoveryProvider>[],
+          metadataProviders: <VideoMetadataProvider>[
+            _FakeMetadataProvider(
+              kind: VideoMetadataProviderKind.anilist,
+              work: anilistWork,
+            ),
+            _FakeMetadataProvider(
+              kind: VideoMetadataProviderKind.bangumi,
+              work: bangumiWork,
+            ),
+          ],
+        );
+        final VideoDiscoveryItem item = VideoDiscoveryItem(
+          reference: VideoMediaReference(
+            providerId: 'anilist',
+            mediaId: '1',
+            mediaKind: VideoMetadataMediaKind.tv,
+            discoveryCategory: VideoDiscoveryCategory.anime,
+            title: 'Primary Anime',
+            year: 2026,
+            anilistId: 1,
+            bangumiId: 2,
+          ),
+          confirmedLookup: const VideoMetadataLookup(
+            provider: VideoMetadataProviderKind.anilist,
+            externalId: '1',
+            mediaKind: VideoMetadataMediaKind.tv,
+          ),
+        );
 
-      final VideoMetadataWork? result = await service.loadDetails(item);
+        final VideoMetadataWork? result = await service.loadDetails(item);
 
-      expect(result?.provider, VideoMetadataProviderKind.anilist);
-      expect(result?.plot, isNull);
-      expect(result?.aliases, isEmpty);
-      expect(result?.credits, isEmpty);
-      expect(
-        result?.ids.map((VideoMetadataId id) => id.type),
-        <String>['anilist'],
-      );
-    });
+        expect(result?.provider, VideoMetadataProviderKind.anilist);
+        expect(result?.plot, isNull);
+        expect(result?.aliases, isEmpty);
+        expect(result?.credits, isEmpty);
+        expect(result?.ids.map((VideoMetadataId id) => id.type), <String>[
+          'anilist',
+        ]);
+      },
+    );
   });
 
   group('identity merge', () {
@@ -1332,73 +1356,61 @@ void main() {
     });
 
     test('does not merge conflicting ids from the same namespace', () {
-      final List<VideoDiscoveryItem> result = mergeVideoDiscoveryItems(
-        <VideoDiscoveryItem>[
-          _item(
-            provider: 'tmdb',
-            id: '1',
-            title: 'Same',
-            year: 2025,
-          ),
-          _item(
-            provider: 'tmdb',
-            id: '2',
-            title: 'Same',
-            year: 2025,
-          ),
-        ],
-        request: const VideoDiscoveryRequest(),
-      );
+      final List<VideoDiscoveryItem> result =
+          mergeVideoDiscoveryItems(<VideoDiscoveryItem>[
+            _item(provider: 'tmdb', id: '1', title: 'Same', year: 2025),
+            _item(provider: 'tmdb', id: '2', title: 'Same', year: 2025),
+          ], request: const VideoDiscoveryRequest());
 
       expect(result, hasLength(2));
     });
 
     test('does not weakly merge when the year is absent', () {
-      final List<VideoDiscoveryItem> result = mergeVideoDiscoveryItems(
-        <VideoDiscoveryItem>[
-          _item(provider: 'anilist', id: '1', title: 'Same'),
-          _item(provider: 'bangumi', id: '2', title: 'Same'),
-        ],
-        request: const VideoDiscoveryRequest(),
-      );
+      final List<VideoDiscoveryItem> result =
+          mergeVideoDiscoveryItems(<VideoDiscoveryItem>[
+            _item(provider: 'anilist', id: '1', title: 'Same'),
+            _item(provider: 'bangumi', id: '2', title: 'Same'),
+          ], request: const VideoDiscoveryRequest());
 
       expect(result, hasLength(2));
     });
 
-    test('merges a single-episode anime TV summary with the matching movie',
-        () {
-      final VideoMetadataWork bangumiWork = VideoMetadataWork(
-        provider: VideoMetadataProviderKind.bangumi,
-        kind: VideoMetadataMediaKind.tv,
-        title: '超时空辉夜姬！',
-        year: 2026,
-        episodeCount: 1,
-        ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'bangumi', value: '604826', isDefault: true),
-        ],
-      );
-      final VideoDiscoveryItem bangumi = VideoDiscoveryItem.fromMetadataWork(
-        work: bangumiWork,
-        discoveryCategory: VideoDiscoveryCategory.anime,
-      );
-      final VideoDiscoveryItem tmdb = _item(
-        provider: 'tmdb',
-        id: '1234',
-        title: '超时空辉夜姬!',
-        year: 2026,
-      );
+    test(
+      'merges a single-episode anime TV summary with the matching movie',
+      () {
+        final VideoMetadataWork bangumiWork = VideoMetadataWork(
+          provider: VideoMetadataProviderKind.bangumi,
+          kind: VideoMetadataMediaKind.tv,
+          title: '超时空辉夜姬！',
+          year: 2026,
+          episodeCount: 1,
+          ids: const <VideoMetadataId>[
+            VideoMetadataId(type: 'bangumi', value: '604826', isDefault: true),
+          ],
+        );
+        final VideoDiscoveryItem bangumi = VideoDiscoveryItem.fromMetadataWork(
+          work: bangumiWork,
+          discoveryCategory: VideoDiscoveryCategory.anime,
+        );
+        final VideoDiscoveryItem tmdb = _item(
+          provider: 'tmdb',
+          id: '1234',
+          title: '超时空辉夜姬!',
+          year: 2026,
+        );
 
-      final List<VideoDiscoveryItem> result = mergeVideoDiscoveryItems(
-        <VideoDiscoveryItem>[bangumi, tmdb],
-        request: const VideoDiscoveryRequest(query: '辉夜姬'),
-      );
+        final List<VideoDiscoveryItem> result = mergeVideoDiscoveryItems(
+          <VideoDiscoveryItem>[bangumi, tmdb],
+          request: const VideoDiscoveryRequest(query: '辉夜姬'),
+        );
 
-      expect(result, hasLength(1));
-      expect(result.single.reference.mediaKind, VideoMetadataMediaKind.movie);
-      expect(result.single.reference.providerId, 'tmdb');
-      expect(result.single.reference.tmdbId, 1234);
-      expect(result.single.reference.bangumiId, 604826);
-    });
+        expect(result, hasLength(1));
+        expect(result.single.reference.mediaKind, VideoMetadataMediaKind.movie);
+        expect(result.single.reference.providerId, 'tmdb');
+        expect(result.single.reference.tmdbId, 1234);
+        expect(result.single.reference.bangumiId, 604826);
+      },
+    );
 
     test('does not merge a multi-episode anime series into a movie', () {
       final VideoMetadataWork anilistWork = VideoMetadataWork(
@@ -1420,12 +1432,7 @@ void main() {
       final List<VideoDiscoveryItem> result = mergeVideoDiscoveryItems(
         <VideoDiscoveryItem>[
           anilist,
-          _item(
-            provider: 'tmdb',
-            id: '100',
-            title: 'Same title',
-            year: 2026,
-          ),
+          _item(provider: 'tmdb', id: '100', title: 'Same title', year: 2026),
         ],
         request: const VideoDiscoveryRequest(query: 'Same title'),
       );
@@ -1433,8 +1440,7 @@ void main() {
       expect(result, hasLength(2));
     });
 
-    test(
-        'an airing anime without an episode count is not absorbed by a '
+    test('an airing anime without an episode count is not absorbed by a '
         'same-title movie identity (BUG-2760)', () {
       // 放送中的 TV 动画搜索摘要常常没有集数；修前集数未知 = 聚合类型未知，
       // 同名同年的 TMDB 电影弱匹配把它并成一张「电影」卡，AI 下载按电影下整包。
@@ -1482,48 +1488,50 @@ void main() {
       expect(unknown, hasLength(1));
     });
 
-    test('a shared strong id merges even when one side omits the episode count',
-        () {
-      // 非对称字段：AniList 详情带 episodeCount，Bangumi/TMDB 搜索摘要不带。
-      // 标题与年份都对不上，只有共享的 anilist id 能把两条并成一张卡 ——
-      // 缺字段一侧推导出的聚合类型不得抢在强 ID 之前否决合并。
-      final VideoMetadataWork anilistWork = VideoMetadataWork(
-        provider: VideoMetadataProviderKind.anilist,
-        kind: VideoMetadataMediaKind.tv,
-        title: 'Solo Episode ONA',
-        year: 2026,
-        episodeCount: 1,
-        ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'anilist', value: '77', isDefault: true),
-        ],
-      );
-      final VideoDiscoveryItem anilist = VideoDiscoveryItem.fromMetadataWork(
-        work: anilistWork,
-        discoveryCategory: VideoDiscoveryCategory.anime,
-      );
-      final VideoMetadataWork bangumiWork = VideoMetadataWork(
-        provider: VideoMetadataProviderKind.bangumi,
-        kind: VideoMetadataMediaKind.tv,
-        title: '完全不同的中文标题',
-        ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'bangumi', value: '888', isDefault: true),
-          VideoMetadataId(type: 'anilist', value: '77'),
-        ],
-      );
-      final VideoDiscoveryItem bangumi = VideoDiscoveryItem.fromMetadataWork(
-        work: bangumiWork,
-        discoveryCategory: VideoDiscoveryCategory.anime,
-      );
+    test(
+      'a shared strong id merges even when one side omits the episode count',
+      () {
+        // 非对称字段：AniList 详情带 episodeCount，Bangumi/TMDB 搜索摘要不带。
+        // 标题与年份都对不上，只有共享的 anilist id 能把两条并成一张卡 ——
+        // 缺字段一侧推导出的聚合类型不得抢在强 ID 之前否决合并。
+        final VideoMetadataWork anilistWork = VideoMetadataWork(
+          provider: VideoMetadataProviderKind.anilist,
+          kind: VideoMetadataMediaKind.tv,
+          title: 'Solo Episode ONA',
+          year: 2026,
+          episodeCount: 1,
+          ids: const <VideoMetadataId>[
+            VideoMetadataId(type: 'anilist', value: '77', isDefault: true),
+          ],
+        );
+        final VideoDiscoveryItem anilist = VideoDiscoveryItem.fromMetadataWork(
+          work: anilistWork,
+          discoveryCategory: VideoDiscoveryCategory.anime,
+        );
+        final VideoMetadataWork bangumiWork = VideoMetadataWork(
+          provider: VideoMetadataProviderKind.bangumi,
+          kind: VideoMetadataMediaKind.tv,
+          title: '完全不同的中文标题',
+          ids: const <VideoMetadataId>[
+            VideoMetadataId(type: 'bangumi', value: '888', isDefault: true),
+            VideoMetadataId(type: 'anilist', value: '77'),
+          ],
+        );
+        final VideoDiscoveryItem bangumi = VideoDiscoveryItem.fromMetadataWork(
+          work: bangumiWork,
+          discoveryCategory: VideoDiscoveryCategory.anime,
+        );
 
-      final List<VideoDiscoveryItem> result = mergeVideoDiscoveryItems(
-        <VideoDiscoveryItem>[anilist, bangumi],
-        request: const VideoDiscoveryRequest(query: 'Solo Episode ONA'),
-      );
+        final List<VideoDiscoveryItem> result = mergeVideoDiscoveryItems(
+          <VideoDiscoveryItem>[anilist, bangumi],
+          request: const VideoDiscoveryRequest(query: 'Solo Episode ONA'),
+        );
 
-      expect(result, hasLength(1));
-      expect(result.single.reference.anilistId, 77);
-      expect(result.single.reference.bangumiId, 888);
-    });
+        expect(result, hasLength(1));
+        expect(result.single.reference.anilistId, 77);
+        expect(result.single.reference.bangumiId, 888);
+      },
+    );
 
     test('a shared strong id merges even when aggregation kinds disagree', () {
       // 强 ID 已经对上时，集数这类可选字段推导出的聚合类型无权把卡片拆成两张。
@@ -1642,10 +1650,7 @@ void main() {
           title: 'Three',
           year: 2025,
           bangumiId: 20,
-          externalIds: const <String, String>{
-            'anilist': '10',
-            'tmdb': '2',
-          },
+          externalIds: const <String, String>{'anilist': '10', 'tmdb': '2'},
         ),
       );
 
@@ -1718,9 +1723,9 @@ class _FakeProvider implements VideoDiscoveryProvider {
 
   @override
   VideoDiscoveryCapabilities get capabilities => VideoDiscoveryCapabilities(
-        supportsPaging: supportsPaging,
-        feeds: VideoDiscoveryFeed.values,
-      );
+    supportsPaging: supportsPaging,
+    feeds: VideoDiscoveryFeed.values,
+  );
 
   @override
   Future<ProviderBatchResult<VideoDiscoveryPage>> discover(
@@ -1763,31 +1768,27 @@ class _PagedFakeProvider implements VideoDiscoveryProvider {
   final List<int> requestedPages = <int>[];
 
   @override
-  VideoDiscoveryCapabilities get capabilities => VideoDiscoveryCapabilities(
-        feeds: VideoDiscoveryFeed.values,
-      );
+  VideoDiscoveryCapabilities get capabilities =>
+      VideoDiscoveryCapabilities(feeds: VideoDiscoveryFeed.values);
 
   @override
   Future<ProviderBatchResult<VideoDiscoveryPage>> discover(
     VideoDiscoveryRequest request,
   ) async {
     requestedPages.add(request.page);
-    return ProviderBatchResult<VideoDiscoveryPage>.success(
-      <VideoDiscoveryPage>[
-        VideoDiscoveryPage(
-          items: pages[request.page] ?? const <VideoDiscoveryItem>[],
-          page: request.page,
-          hasMore: pages.containsKey(request.page + 1),
-        ),
-      ],
-    );
+    return ProviderBatchResult<VideoDiscoveryPage>.success(<VideoDiscoveryPage>[
+      VideoDiscoveryPage(
+        items: pages[request.page] ?? const <VideoDiscoveryItem>[],
+        page: request.page,
+        hasMore: pages.containsKey(request.page + 1),
+      ),
+    ]);
   }
 
   @override
   Future<ProviderBatchResult<VideoDiscoveryPage>> search(
     VideoDiscoveryRequest request,
-  ) =>
-      discover(request);
+  ) => discover(request);
 
   @override
   void close() {}
@@ -1799,17 +1800,16 @@ Map<String, Object?> _tmdbMovie({
   required double score,
   required List<int> genres,
   required List<String> countries,
-}) =>
-    <String, Object?>{
-      'id': id,
-      'title': title,
-      'release_date': '2024-01-01',
-      'vote_average': score,
-      'vote_count': 100,
-      'popularity': score * 10,
-      'genre_ids': genres,
-      'origin_country': countries,
-    };
+}) => <String, Object?>{
+  'id': id,
+  'title': title,
+  'release_date': '2024-01-01',
+  'vote_average': score,
+  'vote_count': 100,
+  'popularity': score * 10,
+  'genre_ids': genres,
+  'origin_country': countries,
+};
 
 class _FakeMetadataProvider implements VideoMetadataProvider {
   _FakeMetadataProvider({required this.kind, required this.work});
@@ -1834,21 +1834,40 @@ class _FakeMetadataProvider implements VideoMetadataProvider {
   Future<List<VideoMetadataEpisode>> fetchEpisodes(
     VideoMetadataLookup lookup, {
     required int seasonNumber,
-  }) async =>
-      const <VideoMetadataEpisode>[];
+  }) async => const <VideoMetadataEpisode>[];
 
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
     VideoMetadataLookup lookup,
-  ) async =>
-      const <VideoMetadataSeason>[];
+  ) async => const <VideoMetadataSeason>[];
 
   @override
   Future<List<VideoMetadataWork>> search(
     VideoMetadataSearchRequest request,
-  ) async =>
-      <VideoMetadataWork>[work];
+  ) async => <VideoMetadataWork>[work];
 
   @override
   void close() {}
+}
+
+/// 用户自配、只勾了动漫域的 Nyaa RSS 搜索站（仓库已不内置 BT 搜索站；域门控
+/// 改由每个站自己的 `domains` 决定）。
+final RssSearchSiteConfig _animeOnlyRssSite = RssSearchSiteConfig(
+  id: 'nyaa',
+  name: 'Nyaa',
+  urlTemplate: 'https://nyaa.si/?page=rss&q={query}&c=1_0&f=0',
+  domains: const <RssSearchDomain>[RssSearchDomain.anime],
+);
+
+String _rssFeed({String? title, String? infoHash}) {
+  final String item = title == null
+      ? ''
+      : '<item><title>$title</title>'
+            '<link>https://nyaa.si/download/9.torrent</link>'
+            '<guid>https://nyaa.si/view/9</guid>'
+            '<nyaa:infoHash>$infoHash</nyaa:infoHash>'
+            '<nyaa:seeders>1</nyaa:seeders></item>';
+  return '<?xml version="1.0" encoding="UTF-8"?>'
+      '<rss version="2.0" xmlns:nyaa="https://nyaa.si/xmlns/nyaa"><channel>'
+      '$item</channel></rss>';
 }

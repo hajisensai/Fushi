@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
-import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/resource_search_queries.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
@@ -165,10 +165,9 @@ void main() {
       title: '标题',
       englishTitle: 'English',
     );
-    final VideoMetadataWork decoded =
-        decodeVideoMetadataWork(encodeVideoMetadataWork(
-      primary.copyWith(romajiTitle: 'Romaji'),
-    ));
+    final VideoMetadataWork decoded = decodeVideoMetadataWork(
+      encodeVideoMetadataWork(primary.copyWith(romajiTitle: 'Romaji')),
+    );
     expect(decoded.romajiTitle, 'Romaji');
     expect(decoded.englishTitle, 'English');
 
@@ -198,20 +197,19 @@ void main() {
     );
     // 列表条目只带原名：默认词只能是日文（用户截图里的状态）。
     expect(
-      preferredNyaaSearchQueries(
+      preferredResourceSearchQueries(
         VideoResourceSearchRequest(media: listReference),
       ),
       <String>['銀河特急 ミルキー☆サブウェイ 各駅停車劇場行き'],
     );
 
-    final VideoMediaReference detailed = listReference.withLeadingAliases(
-      <String?>[
-        'Ginga Tokkyū Milky☆Subway: Kakueki Teisha Gekijō Iki',
-        null,
-        'Milky☆Subway: The Galactic Limited Express - the Movie',
-        '银河特急 Milky☆Subway 各站停车前往剧场',
-      ],
-    );
+    final VideoMediaReference detailed = listReference
+        .withLeadingAliases(<String?>[
+          'Ginga Tokkyū Milky☆Subway: Kakueki Teisha Gekijō Iki',
+          null,
+          'Milky☆Subway: The Galactic Limited Express - the Movie',
+          '银河特急 Milky☆Subway 各站停车前往剧场',
+        ]);
     expect(detailed.aliases, <String>[
       'Ginga Tokkyū Milky☆Subway: Kakueki Teisha Gekijō Iki',
       'Milky☆Subway: The Galactic Limited Express - the Movie',
@@ -219,7 +217,9 @@ void main() {
     ]);
     expect(detailed.canonicalIdentityKey, listReference.canonicalIdentityKey);
     expect(
-      preferredNyaaSearchQueries(VideoResourceSearchRequest(media: detailed)),
+      preferredResourceSearchQueries(
+        VideoResourceSearchRequest(media: detailed),
+      ),
       <String>[
         'Ginga Tokkyū Milky☆Subway: Kakueki Teisha Gekijō Iki',
         '銀河特急 ミルキー☆サブウェイ 各駅停車劇場行き',
@@ -276,7 +276,7 @@ TmdbVideoMetadataProvider _provider(Map<String, Object?> detail) =>
     );
 
 http.Response _json(Object? value) => http.Response.bytes(
-      utf8.encode(jsonEncode(value)),
-      200,
-      headers: const <String, String>{'content-type': 'application/json'},
-    );
+  utf8.encode(jsonEncode(value)),
+  200,
+  headers: const <String, String>{'content-type': 'application/json'},
+);

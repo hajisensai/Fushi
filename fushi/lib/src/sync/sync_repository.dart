@@ -34,7 +34,8 @@ import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_engine/sync/collection_sync_baseline.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart'
     show kSyncWebHistoryPrefKey, readWebHistorySyncEnabled;
-export 'package:fushi_engine/sync/sync_channel_scope.dart' show SyncChannelScope;
+export 'package:fushi_engine/sync/sync_channel_scope.dart'
+    show SyncChannelScope;
 
 /// 触达一台 Fushi 同步服务器的一个候选地址。
 ///
@@ -95,26 +96,26 @@ class FushiClientUrl {
   final String? addressKind;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'url': url,
-        'enabled': enabled,
-        if (fingerprintSha256 != null) 'fingerprintSha256': fingerprintSha256,
-        if (deviceName != null) 'deviceName': deviceName,
-        if (token != null && token!.isNotEmpty) 'token': token,
-        if (hostId != null) 'hostId': hostId,
-        if (learned) 'learned': true,
-        if (addressKind != null) 'kind': addressKind,
-      };
+    'url': url,
+    'enabled': enabled,
+    if (fingerprintSha256 != null) 'fingerprintSha256': fingerprintSha256,
+    if (deviceName != null) 'deviceName': deviceName,
+    if (token != null && token!.isNotEmpty) 'token': token,
+    if (hostId != null) 'hostId': hostId,
+    if (learned) 'learned': true,
+    if (addressKind != null) 'kind': addressKind,
+  };
 
   factory FushiClientUrl.fromJson(Map<String, dynamic> json) => FushiClientUrl(
-        url: json['url'] as String,
-        enabled: json['enabled'] as bool? ?? true,
-        fingerprintSha256: json['fingerprintSha256'] as String?,
-        deviceName: json['deviceName'] as String?,
-        token: json['token'] as String?,
-        hostId: json['hostId'] as String?,
-        learned: json['learned'] as bool? ?? false,
-        addressKind: json['kind'] as String?,
-      );
+    url: json['url'] as String,
+    enabled: json['enabled'] as bool? ?? true,
+    fingerprintSha256: json['fingerprintSha256'] as String?,
+    deviceName: json['deviceName'] as String?,
+    token: json['token'] as String?,
+    hostId: json['hostId'] as String?,
+    learned: json['learned'] as bool? ?? false,
+    addressKind: json['kind'] as String?,
+  );
 
   /// 复制并覆盖部分字段（不可变更新）。`null` 入参保留原值；要显式清空请直接构造。
   FushiClientUrl copyWith({
@@ -126,17 +127,16 @@ class FushiClientUrl {
     String? hostId,
     bool? learned,
     String? addressKind,
-  }) =>
-      FushiClientUrl(
-        url: url ?? this.url,
-        enabled: enabled ?? this.enabled,
-        fingerprintSha256: fingerprintSha256 ?? this.fingerprintSha256,
-        deviceName: deviceName ?? this.deviceName,
-        token: token ?? this.token,
-        hostId: hostId ?? this.hostId,
-        learned: learned ?? this.learned,
-        addressKind: addressKind ?? this.addressKind,
-      );
+  }) => FushiClientUrl(
+    url: url ?? this.url,
+    enabled: enabled ?? this.enabled,
+    fingerprintSha256: fingerprintSha256 ?? this.fingerprintSha256,
+    deviceName: deviceName ?? this.deviceName,
+    token: token ?? this.token,
+    hostId: hostId ?? this.hostId,
+    learned: learned ?? this.learned,
+    addressKind: addressKind ?? this.addressKind,
+  );
 }
 
 /// BUG-1550：解析某个候选地址该用哪份凭据——地址行自带的 [FushiClientUrl.token]
@@ -172,7 +172,6 @@ class FushiFingerprintMismatchException implements Exception {
       'FushiFingerprintMismatchException($url: stored=$storedFingerprint '
       'incoming=$incomingFingerprint)';
 }
-
 
 /// 同步配置和缓存的持久化层（基于 Preferences 表）。
 ///
@@ -212,8 +211,7 @@ class SyncRepository {
       'sync_deletion_tombstones_baseline_ms';
   // 7c 视频刮削元数据增量拉取基线：本设备从该通道见过的最大 host updatedAt。
   // 设备本地：随备份到新设备会让它以为已见过、永远不全量拉。
-  static const _keyVideoMetadataSyncSinceMs =
-      'sync_video_metadata_since_ms';
+  static const _keyVideoMetadataSyncSinceMs = 'sync_video_metadata_since_ms';
   // 删除墓碑**推送**的因果基线（互联通道专用，与上面的消费基线镜像对称）：描述
   // 「本设备已把删除推给对端 host 到什么时刻」。deletedAt 晚于它的墓碑才需要推。
   //
@@ -316,9 +314,10 @@ class SyncRepository {
   // 故读写一律带 [SyncChannelScope]。
 
   Future<String?> getRootFolderId(SyncChannelScope scope) async {
-    final row = await (_db.select(_db.preferences)
-          ..where((t) => t.key.equals(scope.key(_keyRootFolderId))))
-        .getSingleOrNull();
+    final row =
+        await (_db.select(_db.preferences)
+              ..where((t) => t.key.equals(scope.key(_keyRootFolderId))))
+            .getSingleOrNull();
     return row?.value;
   }
 
@@ -328,34 +327,45 @@ class SyncRepository {
       await (_db.delete(_db.preferences)..where((t) => t.key.equals(key))).go();
       return;
     }
-    await _db.into(_db.preferences).insertOnConflictUpdate(
+    await _db
+        .into(_db.preferences)
+        .insertOnConflictUpdate(
           PreferencesCompanion.insert(key: key, value: id),
         );
   }
 
   Future<Map<String, String>> getFolderCache(SyncChannelScope scope) async {
-    final row = await (_db.select(_db.preferences)
-          ..where((t) => t.key.equals(scope.key(_keyFolderCache))))
-        .getSingleOrNull();
+    final row =
+        await (_db.select(_db.preferences)
+              ..where((t) => t.key.equals(scope.key(_keyFolderCache))))
+            .getSingleOrNull();
     if (row == null) return {};
     return Map<String, String>.from(
-        jsonDecode(row.value) as Map<String, dynamic>);
+      jsonDecode(row.value) as Map<String, dynamic>,
+    );
   }
 
   Future<void> setFolderCache(
-      SyncChannelScope scope, Map<String, String> cache) async {
-    await _db.into(_db.preferences).insertOnConflictUpdate(
+    SyncChannelScope scope,
+    Map<String, String> cache,
+  ) async {
+    await _db
+        .into(_db.preferences)
+        .insertOnConflictUpdate(
           PreferencesCompanion.insert(
-              key: scope.key(_keyFolderCache), value: jsonEncode(cache)),
+            key: scope.key(_keyFolderCache),
+            value: jsonEncode(cache),
+          ),
         );
   }
 
   Future<void> clearFolderCache(SyncChannelScope scope) async {
-    await (_db.delete(_db.preferences)
-          ..where((t) => t.key.isIn(<String>[
-                scope.key(_keyRootFolderId),
-                scope.key(_keyFolderCache),
-              ])))
+    await (_db.delete(_db.preferences)..where(
+          (t) => t.key.isIn(<String>[
+            scope.key(_keyRootFolderId),
+            scope.key(_keyFolderCache),
+          ]),
+        ))
         .go();
   }
 
@@ -387,9 +397,9 @@ class SyncRepository {
   ///
   /// 幂等：键已不存在时是 no-op。
   Future<void> migrateFolderCacheToPerChannel() async {
-    await (_db.delete(_db.preferences)
-          ..where(
-              (t) => t.key.isIn(<String>[_keyRootFolderId, _keyFolderCache])))
+    await (_db.delete(_db.preferences)..where(
+          (t) => t.key.isIn(<String>[_keyRootFolderId, _keyFolderCache]),
+        ))
         .go();
   }
 
@@ -484,7 +494,8 @@ class SyncRepository {
   /// 迁移：本槽位无值时回落解耦前的全局键（升级后第一轮不会因为「新键为空」而把
   /// 刚同步过的通道当成从未同步、立刻再跑一轮）。写侧只写本槽位。
   Future<int?> getLastSyncMs(SyncChannelScope scope) async {
-    final s = await _getStringOrNull(scope.key(_keyLastSyncMs)) ??
+    final s =
+        await _getStringOrNull(scope.key(_keyLastSyncMs)) ??
         await _getStringOrNull(_keyLastSyncMs);
     return s == null ? null : int.tryParse(s);
   }
@@ -515,8 +526,9 @@ class SyncRepository {
   /// 7c 视频刮削元数据增量拉取基线：上次从该通道见过的最大 host `updatedAt`
   /// （毫秒）。0 = 从未拉过（全量）。设备本地、按通道分槽。
   Future<int> getVideoMetadataSyncSinceMs(SyncChannelScope scope) async {
-    final String? s =
-        await _getStringOrNull(scope.key(_keyVideoMetadataSyncSinceMs));
+    final String? s = await _getStringOrNull(
+      scope.key(_keyVideoMetadataSyncSinceMs),
+    );
     return s == null ? 0 : int.tryParse(s) ?? 0;
   }
 
@@ -539,13 +551,14 @@ class SyncRepository {
   Future<int> getDeletionTombstonesBaselineMs(SyncChannelScope scope) async {
     final String? s =
         await _getStringOrNull(scope.key(_keyDeletionTombstonesBaselineMs)) ??
-            await _getStringOrNull(_keyDeletionTombstonesBaselineMs);
+        await _getStringOrNull(_keyDeletionTombstonesBaselineMs);
     return s == null ? 0 : int.tryParse(s) ?? 0;
   }
 
   Future<void> setDeletionTombstonesBaselineMs(
-          SyncChannelScope scope, int ms) =>
-      _setString(scope.key(_keyDeletionTombstonesBaselineMs), ms.toString());
+    SyncChannelScope scope,
+    int ms,
+  ) => _setString(scope.key(_keyDeletionTombstonesBaselineMs), ms.toString());
 
   /// 删除墓碑**推送**的因果基线（毫秒，互联通道专用）。本地墓碑 deletedAt 晚于它才
   /// 推给对端 host；早于它视为本设备已推过、不再重复请求。0 = 从未推送过。
@@ -555,8 +568,9 @@ class SyncRepository {
   /// （[getDeletionTombstonesBaselineMs]）也是同样的全局口径，两侧保持一致。
   /// 设备本地（[deviceLocalPrefKeys]），理由见键定义处注释。
   Future<int> getDeletionTombstonesPushBaselineMs() async {
-    final String? s =
-        await _getStringOrNull(_keyDeletionTombstonesPushBaselineMs);
+    final String? s = await _getStringOrNull(
+      _keyDeletionTombstonesPushBaselineMs,
+    );
     return s == null ? 0 : int.tryParse(s) ?? 0;
   }
 
@@ -572,18 +586,18 @@ class SyncRepository {
 
   Future<void> setDesktopCredentials(String? json) async {
     if (json == null) {
-      await (_db.delete(_db.preferences)
-            ..where((t) => t.key.equals(_keyDesktopCredentials)))
-          .go();
+      await (_db.delete(
+        _db.preferences,
+      )..where((t) => t.key.equals(_keyDesktopCredentials))).go();
       return;
     }
     await _setString(_keyDesktopCredentials, _encodeSecret(json));
   }
 
   Future<void> clearDesktopSession() async {
-    await (_db.delete(_db.preferences)
-          ..where((t) => t.key.equals(_keyDesktopCredentials)))
-        .go();
+    await (_db.delete(
+      _db.preferences,
+    )..where((t) => t.key.equals(_keyDesktopCredentials))).go();
   }
 
   // ── Backend type ───────────────────────────────────────────────────
@@ -623,8 +637,11 @@ class SyncRepository {
         // 的 URL，于是「云已配置」为真 → `hasDeletionPropagationChannel` 放行
         // 「从所有设备删除」→ 用户以为删干净了，实际没有任何云通道去发布墓碑。
         return present(await getDesktopCredentials()) ||
-            present(await getRootFolderId(
-                SyncChannelScope.forBackendType(SyncBackendType.googleDrive)));
+            present(
+              await getRootFolderId(
+                SyncChannelScope.forBackendType(SyncBackendType.googleDrive),
+              ),
+            );
       case SyncBackendType.webDav:
         return present(await getWebDavUrl());
       case SyncBackendType.ftp:
@@ -791,7 +808,10 @@ class SyncRepository {
     try {
       final Object? decoded = jsonDecode(raw);
       if (decoded is! List) return <String>{};
-      return <String>{for (final Object? e in decoded) if (e is String) e};
+      return <String>{
+        for (final Object? e in decoded)
+          if (e is String) e,
+      };
     } on FormatException {
       return <String>{};
     }
@@ -954,9 +974,9 @@ class SyncRepository {
   Future<String?> getWebDavUrl() => _getStringOrNull(_keyWebDavUrl);
   Future<void> setWebDavUrl(String? url) async {
     if (url == null) {
-      await (_db.delete(_db.preferences)
-            ..where((t) => t.key.equals(_keyWebDavUrl)))
-          .go();
+      await (_db.delete(
+        _db.preferences,
+      )..where((t) => t.key.equals(_keyWebDavUrl))).go();
       return;
     }
     await _setString(_keyWebDavUrl, url);
@@ -965,9 +985,9 @@ class SyncRepository {
   Future<String?> getWebDavUsername() => _getStringOrNull(_keyWebDavUsername);
   Future<void> setWebDavUsername(String? username) async {
     if (username == null) {
-      await (_db.delete(_db.preferences)
-            ..where((t) => t.key.equals(_keyWebDavUsername)))
-          .go();
+      await (_db.delete(
+        _db.preferences,
+      )..where((t) => t.key.equals(_keyWebDavUsername))).go();
       return;
     }
     await _setString(_keyWebDavUsername, username);
@@ -980,9 +1000,9 @@ class SyncRepository {
 
   Future<void> setWebDavPassword(String? password) async {
     if (password == null) {
-      await (_db.delete(_db.preferences)
-            ..where((t) => t.key.equals(_keyWebDavPassword)))
-          .go();
+      await (_db.delete(
+        _db.preferences,
+      )..where((t) => t.key.equals(_keyWebDavPassword))).go();
       return;
     }
     await _setString(_keyWebDavPassword, _encodeSecret(password));
@@ -1302,8 +1322,9 @@ class SyncRepository {
   /// 存储取舍：仓内没有系统安全存储插件（flutter_secure_storage 之类），与 iroh P2P
   /// 私钥同样落 app 私有目录下的偏好表，靠设备本地清单 + 凭据红线挡住备份 / 导出外带。
   Future<InterconnectDeviceKey> getOrCreateInterconnectDeviceKey() async {
-    final String? encoded =
-        await _getStringOrNull(_keyInterconnectDevicePrivateKey);
+    final String? encoded = await _getStringOrNull(
+      _keyInterconnectDevicePrivateKey,
+    );
     if (encoded != null && encoded.isNotEmpty) {
       try {
         return InterconnectDeviceKey.decodePrivateKey(_decodeSecret(encoded));
@@ -1439,10 +1460,9 @@ class SyncRepository {
   Future<void> removeJellyfinServer({
     required String serverUrl,
     required String userId,
-  }) =>
-      removeMediaServer(
-        JellyfinVideoClient.sourceIdFor(serverUrl: serverUrl, userId: userId),
-      );
+  }) => removeMediaServer(
+    JellyfinVideoClient.sourceIdFor(serverUrl: serverUrl, userId: userId),
+  );
 
   /// 过渡口径：**列表第一项**（多服务器化之前只有一台，「第一台」就是那一台）。
   /// 单远端源架构的消费端（home_video_page `_resolveJellyfinVideoClient`）在改成
@@ -1535,8 +1555,9 @@ class SyncRepository {
   /// 下一次用户编辑就会把刚学到的地址整份覆盖掉。bump 放在**唯一的写方法**
   /// [setFushiClientUrls] 里（与 [interconnectEnabledRevision] 同一范式），消费方
   /// 收到后重读真值。
-  static final ValueNotifier<int> fushiClientUrlsRevision =
-      ValueNotifier<int>(0);
+  static final ValueNotifier<int> fushiClientUrlsRevision = ValueNotifier<int>(
+    0,
+  );
 
   /// 候选列表「读-改-写」的进程级串行化：后台地址学习、链接配对各自读-改-写，
   /// 并发时后写者会把前者的结果（甚至用户刚删掉的 host 连同 token）写回来
@@ -1546,8 +1567,7 @@ class SyncRepository {
   Future<List<FushiClientUrl>> updateFushiClientUrls(
     List<FushiClientUrl> Function(List<FushiClientUrl> current) transform,
   ) {
-    final Future<List<FushiClientUrl>> result =
-        _urlsWriteChain.then((_) async {
+    final Future<List<FushiClientUrl>> result = _urlsWriteChain.then((_) async {
       final List<FushiClientUrl> before = await getFushiClientUrls();
       final List<FushiClientUrl> after = transform(before);
       if (!identical(after, before)) await setFushiClientUrls(after);
@@ -1584,13 +1604,15 @@ class SyncRepository {
     String? fingerprint,
     String? deviceName,
   }) {
-    final String? incomingFp =
-        (fingerprint != null && fingerprint.isNotEmpty) ? fingerprint : null;
+    final String? incomingFp = (fingerprint != null && fingerprint.isNotEmpty)
+        ? fingerprint
+        : null;
     // 读改写在 [updateFushiClientUrls] 的串行链里做：与后台地址学习、链接配对、
     // 设置页编辑互斥，谁都不会拿过期快照覆盖别人刚写的条目。
     return updateFushiClientUrls((List<FushiClientUrl> urls) {
-      final int existingIdx =
-          urls.indexWhere((FushiClientUrl u) => u.url == url);
+      final int existingIdx = urls.indexWhere(
+        (FushiClientUrl u) => u.url == url,
+      );
       if (existingIdx < 0) {
         return <FushiClientUrl>[
           ...urls,
@@ -1616,8 +1638,9 @@ class SyncRepository {
       }
       // 指纹处理：已存非空（且与新值归一化相等，否则上面已抛）→ 保留原存值，
       // 不被新写法（大小写/冒号差异）改写；已存为空 → 首次写入新指纹（http→https 升级）。
-      final String? nextFp =
-          (storedFp != null && storedFp.isNotEmpty) ? storedFp : incomingFp;
+      final String? nextFp = (storedFp != null && storedFp.isNotEmpty)
+          ? storedFp
+          : incomingFp;
       final FushiClientUrl upgraded = existing.copyWith(
         fingerprintSha256: nextFp,
         deviceName: deviceName,
@@ -1725,7 +1748,8 @@ class SyncRepository {
       if (fp == null || fp.isEmpty) return urls;
       cleared = true;
       // 显式构造而非 copyWith：copyWith 的 `?? this.x` 语义根本清不掉字段。
-      return <FushiClientUrl>[...urls]..[idx] = FushiClientUrl(
+      return <FushiClientUrl>[...urls]
+        ..[idx] = FushiClientUrl(
           url: existing.url,
           enabled: existing.enabled,
           deviceName: existing.deviceName,
@@ -1891,6 +1915,8 @@ class SyncRepository {
     // 都描述本机能力。跨设备恢复会携带明文凭据、无效绝对路径或错误 source id。
     'video_resource_torznab_config',
     'video_subtitle_opensubtitles_config',
+    // RSS 搜索站：与 Torznab 同类（第三方索引配置，模板可能带私有站 passkey）。
+    'resource_rss_sites',
     // 用户自配的 AI 提供商：条目里带 base64 的 API key，且本地推理服务（Ollama /
     // LM Studio）的地址是 `http://localhost:11434` 这种只对本机成立的端点。跨设备
     // 恢复既泄付费凭据又指向一台并不在跑的服务。功能映射按 provider id 指向它们，
@@ -1974,14 +2000,16 @@ class SyncRepository {
   }
 
   Future<String?> _getStringOrNull(String key) async {
-    final row = await (_db.select(_db.preferences)
-          ..where((t) => t.key.equals(key)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.preferences,
+    )..where((t) => t.key.equals(key))).getSingleOrNull();
     return row?.value;
   }
 
   Future<void> _setString(String key, String value) async {
-    await _db.into(_db.preferences).insertOnConflictUpdate(
+    await _db
+        .into(_db.preferences)
+        .insertOnConflictUpdate(
           PreferencesCompanion.insert(key: key, value: value),
         );
   }

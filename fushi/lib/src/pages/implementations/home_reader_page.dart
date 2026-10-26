@@ -33,7 +33,7 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
   /// 书架视图仍走 `mediaSource.buildHistoryPage()`——书 tab 支持切换来源
   /// （EPUB / PDF / 通用），页面类型由当前来源决定，壳不得硬编某一个实现。
   ///
-  /// 发现（nyaa / OPDS 等）与小说在线源（LNReader）的来源 / 扩展同时住在顶层
+  /// 发现（RSS 搜索站 / OPDS 等）与小说在线源（LNReader）的来源 / 扩展同时住在顶层
   /// 「浏览」模块与这里（2026-10-01 用户拍板加回库页子标签），两处是同一组组件。
   /// 各自过 iOS 合规门 / 平台宿主门；书 tab 存在即书模块开着。
   @override

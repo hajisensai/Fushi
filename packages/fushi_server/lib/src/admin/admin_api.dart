@@ -519,7 +519,7 @@ class AdminApi {
     return _json(<String, Object?>{'subscription': videoDownloadSubscriptionToWire(row)});
   }
 
-  // ── 资源索引器（内置源启停 + Torznab）─────────────────────────────────
+  // ── 资源索引器（RSS 搜索站 + Torznab）────────────────────────────────
 
   /// `providers` = 运行中 registry 实际可用的 provider id（与订阅能力位同源）；
   /// 互联 host 没起来时为 null。`applied`：保存会不会立刻作用到正在跑的 host。

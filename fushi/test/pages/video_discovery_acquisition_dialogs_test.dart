@@ -33,10 +33,9 @@ class _EmptyButLiveProvider implements VideoResourceProvider {
   @override
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
     VideoResourceSearchRequest request,
-  ) async =>
-      ProviderBatchResult<VideoResourceCandidate>.success(
-        const <VideoResourceCandidate>[],
-      );
+  ) async => ProviderBatchResult<VideoResourceCandidate>.success(
+    const <VideoResourceCandidate>[],
+  );
 
   @override
   Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate) async =>
@@ -60,63 +59,62 @@ class _ResourceCandidate extends VideoResourceCandidate {
 }
 
 VideoMediaReference _reference() => VideoMediaReference(
-      providerId: 'anilist',
-      mediaId: '100',
-      mediaKind: VideoMetadataMediaKind.tv,
-      discoveryCategory: VideoDiscoveryCategory.anime,
-      title: '测试动画',
-      originalTitle: 'テストアニメ',
-      aliases: const <String>['Test Anime'],
-      year: 2026,
-      anilistId: 100,
-    );
+  providerId: 'anilist',
+  mediaId: '100',
+  mediaKind: VideoMetadataMediaKind.tv,
+  discoveryCategory: VideoDiscoveryCategory.anime,
+  title: '测试动画',
+  originalTitle: 'テストアニメ',
+  aliases: const <String>['Test Anime'],
+  year: 2026,
+  anilistId: 100,
+);
 
 VideoDownloadJobRow _job({
   String lifecycle = VideoDownloadJobLifecycle.active,
   String stage = VideoDownloadJobStage.subtitle,
   String provider = 'anilist',
   String externalId = '100',
-}) =>
-    VideoDownloadJobRow(
-      jobId: 'job-1',
-      resourceProvider: 'nyaa:default',
-      selectedResourceId: 'release-1',
-      magnetUri: null,
-      resourceTitle: '[Group] 测试动画 - 03 [1080p]',
-      torrentHash: null,
-      metadataProvider: provider,
-      externalId: externalId,
-      mediaKind: 'tv',
-      discoveryCategory: 'anime',
-      title: '测试动画',
-      year: 2026,
-      season: 1,
-      coverUrl: null,
-      backendKind: 'embedded',
-      backendTaskId: null,
-      backendProfileId: null,
-      fingerprint: 'embedded-test',
-      category: 'fushi-video',
-      targetSourceId: null,
-      collectionId: null,
-      organizationPolicy: 'library',
-      subtitlePolicy: 'bestEffort',
-      observedSavePath: null,
-      targetRelativeRoot: null,
-      lifecycle: lifecycle,
-      stage: stage,
-      stageProgress: 0.5,
-      priority: 0,
-      attemptCount: 0,
-      maxAttempts: 3,
-      nextAttemptAt: null,
-      claimedBy: null,
-      claimExpiresAt: null,
-      lastError: null,
-      createdAt: 1,
-      updatedAt: 1,
-      completedAt: null,
-    );
+}) => VideoDownloadJobRow(
+  jobId: 'job-1',
+  resourceProvider: 'nyaa:default',
+  selectedResourceId: 'release-1',
+  magnetUri: null,
+  resourceTitle: '[Group] 测试动画 - 03 [1080p]',
+  torrentHash: null,
+  metadataProvider: provider,
+  externalId: externalId,
+  mediaKind: 'tv',
+  discoveryCategory: 'anime',
+  title: '测试动画',
+  year: 2026,
+  season: 1,
+  coverUrl: null,
+  backendKind: 'embedded',
+  backendTaskId: null,
+  backendProfileId: null,
+  fingerprint: 'embedded-test',
+  category: 'fushi-video',
+  targetSourceId: null,
+  collectionId: null,
+  organizationPolicy: 'library',
+  subtitlePolicy: 'bestEffort',
+  observedSavePath: null,
+  targetRelativeRoot: null,
+  lifecycle: lifecycle,
+  stage: stage,
+  stageProgress: 0.5,
+  priority: 0,
+  attemptCount: 0,
+  maxAttempts: 3,
+  nextAttemptAt: null,
+  claimedBy: null,
+  claimExpiresAt: null,
+  lastError: null,
+  createdAt: 1,
+  updatedAt: 1,
+  completedAt: null,
+);
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
@@ -124,16 +122,16 @@ void main() {
   test('严格订阅规则锁定所选 release 且只锁定有证据的语言', () {
     final StrictVideoSubscriptionFilter? nyaa =
         deriveStrictVideoSubscriptionFilter(
-      _ResourceCandidate(
-        providerId: 'nyaa',
-        providerInstanceId: 'nyaa',
-        remoteId: '1',
-        title: '[Group] Show - 03 [1080p]',
-        releaseGroup: 'Group',
-        resolution: '1080p',
-        trusted: true,
-      ),
-    );
+          _ResourceCandidate(
+            providerId: 'rss',
+            providerInstanceId: 'nyaa-rss',
+            remoteId: '1',
+            title: '[Group] Show - 03 [1080p]',
+            releaseGroup: 'Group',
+            resolution: '1080p',
+            trusted: true,
+          ),
+        );
 
     expect(nyaa, isNotNull);
     expect(nyaa!.json, contains('"strict":true'));
@@ -144,8 +142,8 @@ void main() {
     expect(
       deriveStrictVideoSubscriptionFilter(
         _ResourceCandidate(
-          providerId: 'nyaa',
-          providerInstanceId: 'nyaa',
+          providerId: 'rss',
+          providerInstanceId: 'nyaa-rss',
           remoteId: '2',
           title: 'unknown release',
         ),
@@ -155,29 +153,29 @@ void main() {
 
     final StrictVideoSubscriptionFilter? torznab =
         deriveStrictVideoSubscriptionFilter(
-      _ResourceCandidate(
-        providerId: 'torznab',
-        providerInstanceId: 'indexer',
-        remoteId: '3',
-        title: 'Show.S01E03.1080p.WEB-DL.Dual.Audio.HEVC-Group',
-        releaseGroup: 'Group',
-        resolution: '1080p',
-      ),
-    );
+          _ResourceCandidate(
+            providerId: 'torznab',
+            providerInstanceId: 'indexer',
+            remoteId: '3',
+            title: 'Show.S01E03.1080p.WEB-DL.Dual.Audio.HEVC-Group',
+            releaseGroup: 'Group',
+            resolution: '1080p',
+          ),
+        );
     expect(torznab, isNotNull);
     expect(torznab!.json, contains('"language":"Dual.Audio"'));
 
     final StrictVideoSubscriptionFilter? noLanguage =
         deriveStrictVideoSubscriptionFilter(
-      _ResourceCandidate(
-        providerId: 'torznab',
-        providerInstanceId: 'indexer',
-        remoteId: '4',
-        title: 'Show.S01E03.1080p.WEB-DL.HEVC-Group',
-        releaseGroup: 'Group',
-        resolution: '1080p',
-      ),
-    );
+          _ResourceCandidate(
+            providerId: 'torznab',
+            providerInstanceId: 'indexer',
+            remoteId: '4',
+            title: 'Show.S01E03.1080p.WEB-DL.HEVC-Group',
+            releaseGroup: 'Group',
+            resolution: '1080p',
+          ),
+        );
     expect(noLanguage!.json, isNot(contains('language')));
   });
 
@@ -265,17 +263,15 @@ void main() {
       isFalse,
     );
     expect(
-      isAttachableVideoDownloadJob(
-        _job(externalId: 'different'),
-        _reference(),
-      ),
+      isAttachableVideoDownloadJob(_job(externalId: 'different'), _reference()),
       isFalse,
     );
   });
 
   test('字幕安装遇到不同内容不覆盖并对相同内容保持幂等', () async {
-    final Directory root =
-        await Directory.systemTemp.createTemp('subtitle-safe');
+    final Directory root = await Directory.systemTemp.createTemp(
+      'subtitle-safe',
+    );
     addTearDown(() => root.delete(recursive: true));
     final VideoSubtitleDownload first = VideoSubtitleDownload(
       bytes: Uint8List.fromList(<int>[1, 2, 3]),
@@ -344,8 +340,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey<String>('video-resource-source')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('video-resource-source')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>('video-resource-subtitle-policy')),
       findsOneWidget,
@@ -384,7 +382,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final TextField query = tester.widget<TextField>(glassUnwrap<TextField>(find.byKey(const ValueKey<String>('video-resource-query'))),);
+    final TextField query = tester.widget<TextField>(
+      glassUnwrap<TextField>(
+        find.byKey(const ValueKey<String>('video-resource-query')),
+      ),
+    );
     expect(query.controller!.text, 'Test Anime');
     expect(find.widgetWithText(ActionChip, 'Test Anime'), findsOneWidget);
     expect(find.widgetWithText(ActionChip, 'テストアニメ'), findsOneWidget);
@@ -401,9 +403,7 @@ void main() {
         child: MaterialApp(
           home: VideoDiscoverySubscriptionPage(
             item: VideoDiscoveryItem(reference: _reference()),
-            registry: VideoResourceRegistry(
-              const <VideoResourceProvider>[],
-            ),
+            registry: VideoResourceRegistry(const <VideoResourceProvider>[]),
             sources: const <MediaSourceRow>[
               MediaSourceRow(
                 videoGroupingMode: 'series',
@@ -482,9 +482,9 @@ void main() {
         child: MaterialApp(
           home: VideoDiscoveryResourceSearchPage(
             item: VideoDiscoveryItem(reference: _reference()),
-            registry: VideoResourceRegistry(
-              <VideoResourceProvider>[_EmptyButLiveProvider()],
-            ),
+            registry: VideoResourceRegistry(<VideoResourceProvider>[
+              _EmptyButLiveProvider(),
+            ]),
             sources: const <MediaSourceRow>[],
             onSubmit: (VideoDiscoveryDownloadSelection selection) async {},
           ),
@@ -525,10 +525,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(t.anime_download_require_subs), findsWidgets);
-    expect(
-      find.textContaining(t.video_control_reject_required),
-      findsNothing,
-    );
+    expect(find.textContaining(t.video_control_reject_required), findsNothing);
   });
 
   testWidgets('零可用字幕来源时给配置引导', (WidgetTester tester) async {
@@ -575,8 +572,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(Scaffold), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('video-subtitle-target')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('video-subtitle-target')),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 }

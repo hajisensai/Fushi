@@ -36,7 +36,6 @@ import 'package:fushi/src/media/collections/collection_scrape_metadata_compat.da
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
-import 'package:fushi/src/media/video/anilist_client.dart' show AniListMedia;
 import 'package:fushi/src/media/video/cover_ui/episode_rename_confirm_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
@@ -54,7 +53,11 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
-import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/video_resource_search_launcher.dart';
+import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart'
+    show identityMediaReference;
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart'
+    show VideoDiscoveryItem;
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
 import 'package:fushi/src/pages/implementations/collection_relations_section.dart';
 import 'package:fushi/src/pages/implementations/collection_split_dialog.dart';
@@ -1656,13 +1659,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
-  /// 「相关作品 → 去下载」：预填关系边标题打开番剧下载对话框（搜番段）。
+  /// 「相关作品 → 去下载」：关系边只有标题（本地拆分产生的边不带外部元数据
+  /// 身份），预填标题打开资源搜索页的手动身份模式。
   void _downloadRelation(CollectionRelationRow relation) {
-    showAppDialog<void>(
-      context: context,
-      builder: (_) => AnimeDownloadDialog(
-        showTasks: false,
-        initialSearchQuery: relation.title,
+    final ProviderContainer? container = _maybeProviderContainer();
+    if (container == null) return;
+    unawaited(
+      openVideoResourceSearch(
+        context,
+        appModel: container.read(appProvider),
+        initialQuery: relation.title,
       ),
     );
   }
@@ -1671,8 +1677,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// （iOS 按 App Store 合规恒无，见 `store_compliance.dart`）。
   ///
   /// 判据问 [ModuleVisibility] 而不是直接判平台：本页的三个下载入口（集菜单
-  /// 「下载」、相关作品「去下载」、管理菜单「补齐缺集」）打开的都是番剧下载对话框，
-  /// 而它属于下载中心——模块关掉时那个页面本身已不可达，入口留着就是一个点了会把
+  /// 「下载」、相关作品「去下载」、管理菜单「补齐缺集」）打开的都是视频资源搜索页
+  /// （[openVideoResourceSearch]），而它属于下载中心——模块关掉时那个页面本身已不可达，入口留着就是一个点了会把
   /// 用户推进一条不存在流程的按钮。同域的 `home_page.dart` 早就按「页面不可达时
   /// 入口就不该渲染」处理（`_downloadsReachable`），这里补齐。
   ///
@@ -1730,22 +1736,51 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       parseVideoFilename(p.basename(slot.filename)).episode ??
       _episodeMetaByUid[slot.entryKey]?.episodeNumber;
 
-  /// 打开下载对话框（TODO-2485）：合集绑了 anilistId → 本地合成 [AniListMedia]
-  /// （id + 合集名，零网络）直达选种段并预填集号；未绑定 → 回落预填合集名的
-  /// 搜番段。[episodeNumber] null = 不按集过滤。
-  void _openDownloadDialog({required int? episodeNumber}) {
+  /// 打开资源搜索页（TODO-2485）：合集刮削出规范作品或绑了 anilistId → 用
+  /// [identityMediaReference] 拼出作品身份直接搜（[episodeNumber] 写进身份，资源
+  /// 检索按集收窄）；一个外部 id 都没有 → 预填合集名进手动身份模式（不造假身份）。
+  /// [episodeNumber] null = 整部。
+  Future<void> _openDownloadDialog({required int? episodeNumber}) async {
+    final ProviderContainer? container = _maybeProviderContainer();
+    if (container == null) return;
     final MediaCollectionRow collection = _collectionRow ?? widget.collection;
+    final VideoMetadataWorkRow? work = _canonicalWork;
     final int? anilistId = collection.anilistId;
-    showAppDialog<void>(
-      context: context,
-      builder: (_) => AnimeDownloadDialog(
-        showTasks: false,
-        initialMedia: anilistId == null
-            ? null
-            : AniListMedia(id: anilistId, romaji: collection.name),
-        initialEpisode: anilistId == null ? null : episodeNumber,
-        initialSearchQuery: anilistId == null ? collection.name : null,
-      ),
+    final Map<String, String> ids = <String, String>{
+      if (work != null)
+        for (final VideoMetadataProviderIdentityRow row
+            in await widget.database.getVideoMetadataProviderIdentities(
+              workId: work.id,
+            ))
+          row.provider.trim().toLowerCase(): row.externalId,
+      // 用户在合集里确认过的 AniList 绑定压过刮削快照。
+      if (anilistId != null) 'anilist': '$anilistId',
+    };
+    if (!mounted) return;
+    final String title = work?.title ?? _name;
+    final String? providerId = const <String>['anidb', 'anilist', 'tmdb']
+        .where((String provider) => ids[provider]?.trim().isNotEmpty ?? false)
+        .firstOrNull;
+    final VideoDiscoveryItem? item = providerId == null
+        ? null
+        : VideoDiscoveryItem(
+            reference: identityMediaReference(
+              providerId: providerId,
+              kind: work?.mediaType == 'movie'
+                  ? VideoMetadataMediaKind.movie
+                  : VideoMetadataMediaKind.tv,
+              externalIds: ids,
+              title: title,
+              originalTitle: work?.originalTitle,
+              year: work?.year,
+              episode: episodeNumber,
+            ),
+          );
+    await openVideoResourceSearch(
+      context,
+      appModel: container.read(appProvider),
+      item: item,
+      initialQuery: item == null ? collection.name : null,
     );
   }
 

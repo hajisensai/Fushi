@@ -16,7 +16,7 @@ import 'package:fushi_core/fushi_core.dart'
         FushiDatabase,
         VideoDownloadSubscriptionRow,
         VideoDownloadSubscriptionsCompanion;
-import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/resource_search_queries.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
@@ -25,14 +25,14 @@ import 'package:fushi_engine/media/video/download/video_media_reference_codec.da
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 
-/// 订阅行 `searchQuery` 的默认值：anime 走 Nyaa 首选搜索词（罗马字 / 日文优先），
+/// 订阅行 `searchQuery` 的默认值：anime 走种子站首选搜索词（罗马字 / 日文优先），
 /// 其它分类直接用标题。原为 `home_page.dart` 的私有 `_videoResourceSearchQuery`，
 /// 抽出供发现页本地订阅、host 远程订阅与后续 AI 下载流程共用。
 String videoResourceSubscriptionSearchQuery(VideoMediaReference reference) {
   if (reference.discoveryCategory != VideoDiscoveryCategory.anime) {
     return reference.title;
   }
-  final List<String> queries = preferredNyaaSearchQueries(
+  final List<String> queries = preferredResourceSearchQueries(
     VideoResourceSearchRequest(media: reference),
   );
   return queries.isEmpty ? reference.title : queries.first;

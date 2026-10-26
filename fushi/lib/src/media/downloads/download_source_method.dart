@@ -58,13 +58,14 @@ DownloadTransferMethod discoveryTransferMethodOf(DiscoveryPayloadKind kind) =>
       DiscoveryPayloadKind.httpFile => DownloadTransferMethod.direct,
     };
 
-/// 发现源条目是不是外部来源：内置发现源（真红小站 / Nyaa / 内置 AList …）是
-/// 第三方站点；用户自配的 OPDS / Audiobookshelf 是用户自己指定的服务器，不标。
-/// 源已不在注册表时按外部处理。
+/// 发现源条目是不是外部来源：内置发现源（真红小站 / 内置 AList …）与用户添加的
+/// RSS 搜索站是第三方站点；用户自配的 OPDS / Audiobookshelf 是用户自己指定的
+/// 服务器，不标（判据见 [MediaDiscoverySource.isExternalSite]）。源已不在注册表时
+/// 按外部处理。
 bool isExternalDiscoverySource(
   MediaDiscoveryService service,
   String sourceId,
-) => service.sourceById(sourceId)?.isUserConfigured != true;
+) => service.sourceById(sourceId)?.isExternalSite ?? true;
 
 /// 「外部来源」标签的图标（作品页 chip 与下载标签共用）。
 const IconData kExternalSourceIcon = FushiIcons.globe;

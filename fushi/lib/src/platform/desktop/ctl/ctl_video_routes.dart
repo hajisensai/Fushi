@@ -11,8 +11,8 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:fushi_engine/media/external_provider.dart'
     show ExternalProviderFailure, ProviderBatchResult;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
-import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart'
-    show preferredNyaaSearchQueries;
+import 'package:fushi_engine/media/torrent/resource_search_queries.dart'
+    show preferredResourceSearchQueries;
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart'
     show VideoResourceCandidate, VideoResourceSearchRequest;
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
@@ -684,7 +684,7 @@ class _VideoCtl {
     final VideoMediaReference media = item.reference;
     final String query =
         call.optString('q') ??
-        preferredNyaaSearchQueries(
+        preferredResourceSearchQueries(
           VideoResourceSearchRequest(media: media),
         ).firstOrNull ??
         media.title;

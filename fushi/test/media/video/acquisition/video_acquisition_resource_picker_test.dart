@@ -11,8 +11,8 @@ class _FakeCandidate extends VideoResourceCandidate {
   _FakeCandidate({
     required super.remoteId,
     required super.title,
-    super.providerId = 'nyaa',
-    super.providerInstanceId = 'nyaa',
+    super.providerId = 'rss',
+    super.providerInstanceId = 'nyaa-rss',
     super.providerPriority = 100,
     super.releaseGroup,
     super.resolution,
@@ -32,8 +32,10 @@ _FakeCandidate _episode(
   int seeders = 10,
   bool trusted = true,
   String? releaseGroup = '',
+  String providerId = 'rss',
 }) => _FakeCandidate(
   remoteId: 'r${_nextId++}',
+  providerId: providerId,
   title: '[$group] Show - ${episode.toString().padLeft(2, '0')} ($resolution)',
   releaseGroup: releaseGroup == '' ? group : releaseGroup,
   resolution: resolution,
@@ -137,10 +139,19 @@ void main() {
       ]);
     });
 
-    test('订阅模式剔除推不出严格规则的卡（nyaa 缺发布组）', () {
+    // RSS / Torznab 的订阅门槛是「至少一条严格版本规则」，标题里的分辨率就够；
+    // 推不出规则的只剩不支持严格订阅的来源（如已移除的内置源留下的旧条目）。
+    test('订阅模式剔除推不出严格规则的卡（来源不支持严格订阅）', () {
       final List<VideoResourceVersionGroup> groups =
           _groupsOf(<VideoResourceCandidate>[
-            _episode('Anon', '1080p', 1, seeders: 90, releaseGroup: null),
+            _episode(
+              'Anon',
+              '1080p',
+              1,
+              seeders: 90,
+              releaseGroup: null,
+              providerId: 'legacy',
+            ),
             _episode('SubsPlease', '1080p', 1, seeders: 50),
           ]);
       expect(groups, hasLength(2));
@@ -154,11 +165,11 @@ void main() {
     });
 
     test('订阅模式一张都推不出 → noSubscribableVersion，仍带可用分辨率', () {
-      final List<VideoResourceVersionGroup> groups =
-          _groupsOf(<VideoResourceCandidate>[
-            _episode('Anon', '1080p', 1, releaseGroup: null),
-            _episode('Anon2', '720p', 1, releaseGroup: null),
-          ]);
+      final List<VideoResourceVersionGroup>
+      groups = _groupsOf(<VideoResourceCandidate>[
+        _episode('Anon', '1080p', 1, releaseGroup: null, providerId: 'legacy'),
+        _episode('Anon2', '720p', 1, releaseGroup: null, providerId: 'legacy'),
+      ]);
       final VideoAcquisitionResourceOutcome outcome = filterResourceGroups(
         groups,
         mode: VideoAcquisitionMode.subscribe,
@@ -409,9 +420,11 @@ void main() {
     });
 
     test('订阅：推不出严格规则 → null；无集号 → startAfterEpisode 为 null', () {
+      // RSS / Torznab 订阅至少要一条版本证据（发布组 / 分辨率 / 片源 / 编码 /
+      // 语言）；标题里一条都抠不出来才推不出规则。
       final VideoResourceVersionGroup ungroupable = _single(
         <VideoResourceCandidate>[
-          _episode('Anon', '1080p', 1, releaseGroup: null),
+          _FakeCandidate(remoteId: 'u1', title: 'Show - 01'),
         ],
       );
       expect(

@@ -1,6 +1,6 @@
 // BUG-2794：资源搜索页（发现 → 搜索资源）端到端：
 // ① TMDB 卡片没有罗马字别名时，页面先经宿主端口补齐别名，再搜——搜索框预填词
-//    随之换成罗马字，Nyaa 同时补查日文原名；
+//    随之换成罗马字，RSS 搜索站同时补查日文原名；
 // ② 结果上方逐源显示「N 条（查询词 …）/ 失败原因」，成功但 0 条的源也在。
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,15 +11,14 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/external_provider.dart';
-import 'package:fushi_engine/media/torrent/nyaa_client.dart';
-import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/rss_search_provider.dart';
+import 'package:fushi_engine/media/torrent/rss_search_site.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 
-import '../torrent/nyaa_html_fixture.dart';
 import '../helpers/glass_unwrap.dart';
 
 class _TimeoutProvider implements VideoResourceProvider {
@@ -74,30 +73,39 @@ VideoDiscoveryItem _tmdbCard() => VideoDiscoveryItem(
   ),
 );
 
+const String _emptyRss =
+    '<?xml version="1.0"?><rss version="2.0"><channel><title>x</title></channel></rss>';
+
+String _rssWithOneRelease() =>
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<rss version="2.0" xmlns:nyaa="https://nyaa.si/xmlns/nyaa"><channel>'
+    '<item><title>[SubsPlease] Sousou no Frieren - 01 (1080p)</title>'
+    '<link>https://site.example/download/1.torrent</link>'
+    '<guid isPermaLink="true">https://site.example/view/1</guid>'
+    '<nyaa:infoHash>${'a' * 40}</nyaa:infoHash>'
+    '<nyaa:seeders>30</nyaa:seeders>'
+    '</item></channel></rss>';
+
+/// 用户自配的 RSS 搜索站（站名是用户起的，状态行按它显示）。
+final RssSearchSiteConfig _site = RssSearchSiteConfig(
+  id: 'site1',
+  name: '我的动漫站',
+  urlTemplate: 'https://site.example/rss?q={query}',
+  domains: const <RssSearchDomain>[RssSearchDomain.anime],
+);
+
 VideoResourceRegistry _registry(List<String> queries) =>
     VideoResourceRegistry(<VideoResourceProvider>[
-      NyaaVideoResourceProvider(
-        client: NyaaClient(
-          minRequestInterval: Duration.zero,
-          client: MockClient((http.Request request) async {
-            final String query = request.url.queryParameters['q']!;
-            queries.add(query);
-            if (!query.contains('Frieren')) {
-              return http.Response(kNyaaNoResultsHtml, 200);
-            }
-            return http.Response(
-              nyaaSearchHtml(<NyaaHtmlRow>[
-                NyaaHtmlRow(
-                  title: '[SubsPlease] Sousou no Frieren - 01 (1080p)',
-                  infoHash: 'a' * 40,
-                  id: '1',
-                  seeders: 30,
-                ),
-              ]),
-              200,
-            );
-          }),
-        ),
+      RssSearchProvider(
+        sites: <RssSearchSiteConfig>[_site],
+        client: MockClient((http.Request request) async {
+          final String query = request.url.queryParameters['q']!;
+          queries.add(query);
+          return http.Response(
+            query.contains('Frieren') ? _rssWithOneRelease() : _emptyRss,
+            200,
+          );
+        }),
       ),
       _TimeoutProvider(),
     ]);
@@ -142,7 +150,7 @@ String _statusText(WidgetTester tester, String providerId) {
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
-  testWidgets('没有罗马字的卡片：先补齐别名，Nyaa 用罗马字 + 日文原名各查一次', (
+  testWidgets('没有罗马字的卡片：先补齐别名，RSS 站用罗马字 + 日文原名各查一次', (
     WidgetTester tester,
   ) async {
     final List<String> queries = <String>[];
@@ -160,13 +168,17 @@ void main() {
 
     expect(resolveCalls, 1);
     // 预填词跟着换成补齐后的首选罗马字。
-    final TextField field = tester.widget<TextField>(glassUnwrap<TextField>(find.byKey(const ValueKey<String>('video-resource-query'))),);
+    final TextField field = tester.widget<TextField>(
+      glassUnwrap<TextField>(
+        find.byKey(const ValueKey<String>('video-resource-query')),
+      ),
+    );
     expect(field.controller!.text, 'Sousou no Frieren');
     expect(queries, <String>['Sousou no Frieren', '葬送のフリーレン']);
     expect(
-      _statusText(tester, kNyaaResourceProviderId),
+      _statusText(tester, rssSiteProviderId(_site.id)),
       t.video_resource_source_result(
-        name: 'Nyaa',
+        name: '我的动漫站',
         n: 1,
         queries: 'Sousou no Frieren 1 · 葬送のフリーレン 0',
       ),
@@ -187,7 +199,7 @@ void main() {
     );
   });
 
-  testWidgets('补齐不到罗马字时：Nyaa 如实显示「0 条（日文原名 0）」而不是隐形', (
+  testWidgets('补齐不到罗马字时：RSS 站如实显示「0 条（日文原名 0）」而不是隐形', (
     WidgetTester tester,
   ) async {
     final List<String> queries = <String>[];
@@ -199,8 +211,12 @@ void main() {
 
     expect(queries, <String>['葬送のフリーレン']);
     expect(
-      _statusText(tester, kNyaaResourceProviderId),
-      t.video_resource_source_result(name: 'Nyaa', n: 0, queries: '葬送のフリーレン 0'),
+      _statusText(tester, rssSiteProviderId(_site.id)),
+      t.video_resource_source_result(
+        name: '我的动漫站',
+        n: 0,
+        queries: '葬送のフリーレン 0',
+      ),
     );
   });
 

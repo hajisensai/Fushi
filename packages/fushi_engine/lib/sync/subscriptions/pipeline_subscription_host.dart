@@ -15,6 +15,8 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/torrent/rss_search_provider.dart';
+import 'package:fushi_engine/media/torrent/rss_search_site.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
@@ -58,29 +60,35 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
 
   bool get _supported => service != null;
 
-  /// 已注册（且未停用）的 provider id。内置源报裸 id（`nyaa` / `apibay` / `knaben`，
-  /// 订阅服务的在场校验也只看 `resourceProvider` 冒号前的裸 id）；Torznab 一个对象带
-  /// 多个 indexer，按 `torznab:<indexerId>` 逐个报，客户端据此判断能不能把自己那台
-  /// 机器上搜到的资源交给 host 订阅。
+  /// 已注册的 provider id，按可订阅的实例逐个报：Torznab 一个对象带多个 indexer，
+  /// 按 `torznab:<indexerId>` 报启用的；RSS 搜索站按 `rss:<siteId>` 报启用且勾了
+  /// 视频域的站（停用的不参与搜索，公布出去也订阅不到，BUG-2818）。客户端据此
+  /// 判断能不能把自己那台机器上搜到的资源交给 host 订阅。
   List<String> get availableProviderIds => <String>[
-        for (final VideoResourceProvider p in registry.providers)
-          if (!registry.disabledProviderIds.contains(p.id))
-            if (p is TorznabClient)
-              // 停用的索引器不参与搜索，公布出去也订阅不到（BUG-2818）。过滤
-              // 写在迭代源上：这里再嵌一层 collection-if 会吃掉下面的 else。
-              for (final TorznabIndexerConfig cfg
-                  in p.indexers.where((TorznabIndexerConfig c) => c.enabled))
-                '${p.id}:${cfg.id}'
-            else
-              p.id,
-      ];
+    for (final VideoResourceProvider p in registry.providers)
+      ..._instanceIdsOf(p),
+  ];
+
+  static List<String> _instanceIdsOf(VideoResourceProvider provider) =>
+      switch (provider) {
+        TorznabClient(:final List<TorznabIndexerConfig> indexers) => <String>[
+          for (final TorznabIndexerConfig cfg in indexers)
+            if (cfg.enabled) '${provider.id}:${cfg.id}',
+        ],
+        RssSearchProvider(:final List<RssSearchSiteConfig> videoSites) =>
+          <String>[
+            for (final RssSearchSiteConfig site in videoSites)
+              rssSiteProviderId(site.id),
+          ],
+        _ => <String>[provider.id],
+      };
 
   @override
   Future<Map<String, Object?>> capability() async => <String, Object?>{
-        'supported': _supported,
-        'backend': _supported ? backendName : 'none',
-        'providers': availableProviderIds,
-      };
+    'supported': _supported,
+    'backend': _supported ? backendName : 'none',
+    'providers': availableProviderIds,
+  };
 
   @override
   Future<List<VideoDownloadSubscriptionRow>> list() =>
@@ -92,16 +100,39 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
 
   @override
   Future<VideoDownloadSubscriptionRow> create(
-      HostSubscriptionCreateRequest request) async {
+    HostSubscriptionCreateRequest request,
+  ) async {
     if (!_supported) {
       throw const HostSubscriptionRejected(
-          409, 'unsupported', 'no torrent backend on this host');
+        409,
+        'unsupported',
+        'no torrent backend on this host',
+      );
+    }
+    if (isRemovedBuiltinVideoResourceProvider(request.resourceProvider)) {
+      throw HostSubscriptionRejected(
+        400,
+        'provider_removed',
+        'resource provider "${request.resourceProvider}" was removed; '
+            'choose an RSS search site; available: '
+            '${availableProviderIds.join(', ')}',
+      );
     }
     final String providerBase = request.resourceProvider.split(':').first;
-    final bool providerPresent = registry.providers.any(
-      (VideoResourceProvider p) =>
-          p.id == providerBase && !registry.disabledProviderIds.contains(p.id),
-    );
+    final bool providerPresent =
+        registry.providers.any(
+          (VideoResourceProvider p) => p.id == providerBase,
+        ) &&
+        // RSS 站是各设备各自配的：客户端搜到的 `rss:<siteId>` 在 host 上不一定有，
+        // 只认裸 id 会建出一条永远搜不到东西的订阅。
+        (providerBase != kRssResourceProviderId ||
+            !request.resourceProvider.contains(':') ||
+            rssProvidersHaveVideoSite(
+              registry.providers,
+              request.resourceProvider.substring(
+                request.resourceProvider.indexOf(':') + 1,
+              ),
+            ));
     if (!providerPresent) {
       throw HostSubscriptionRejected(
         400,
@@ -114,8 +145,8 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
     final int sourceId = await targetSourceId();
     final int now = DateTime.now().millisecondsSinceEpoch;
     final String id = request.subscriptionId ?? _deriveSubscriptionId(request);
-    final VideoDownloadSubscriptionRow? previous =
-        await db.getVideoDownloadSubscription(id);
+    final VideoDownloadSubscriptionRow? previous = await db
+        .getVideoDownloadSubscription(id);
     await db.upsertVideoDownloadSubscription(
       VideoDownloadSubscriptionsCompanion.insert(
         subscriptionId: id,
@@ -179,8 +210,9 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
         nextCheckAt: enabled ? Value<int?>(now) : const Value<int?>.absent(),
         // oneShot 完成位只在停用态合法（表级 CHECK）：重新启用必须同时清掉，
         // 否则写入直接被约束拒绝。
-        fulfilledAt:
-            enabled ? const Value<int?>(null) : const Value<int?>.absent(),
+        fulfilledAt: enabled
+            ? const Value<int?>(null)
+            : const Value<int?>.absent(),
         // 清掉租约，免得挂一条永远不会续的 claim。
         claimedBy: const Value<String?>(null),
         claimExpiresAt: const Value<int?>(null),
@@ -196,15 +228,22 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
     final VideoDownloadSubscriptionService? svc = service;
     if (svc == null) {
       throw const HostSubscriptionRejected(
-          409, 'unsupported', 'no torrent backend on this host');
+        409,
+        'unsupported',
+        'no torrent backend on this host',
+      );
     }
     final int now = DateTime.now().millisecondsSinceEpoch;
     if (subscriptionId != null) {
-      final VideoDownloadSubscriptionRow row =
-          await _requireRow(subscriptionId);
+      final VideoDownloadSubscriptionRow row = await _requireRow(
+        subscriptionId,
+      );
       if (!row.enabled) {
         throw const HostSubscriptionRejected(
-            409, 'disabled', 'subscription is disabled; enable it first');
+          409,
+          'disabled',
+          'subscription is disabled; enable it first',
+        );
       }
       await db.updateVideoDownloadSubscription(
         subscriptionId,
@@ -233,7 +272,8 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
 
   /// 一条订阅的逐集历史（季 / 集 / 发现时刻序）。本机管理面用，不在互联 wire 上。
   Future<List<VideoDownloadSubscriptionItemRow>> items(
-      String subscriptionId) async {
+    String subscriptionId,
+  ) async {
     await _requireRow(subscriptionId);
     return db.getVideoDownloadSubscriptionItems(subscriptionId);
   }
@@ -259,6 +299,9 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
         subtitlePolicy: edit.subtitlePolicy,
         targetSourceId: edit.targetSourceId,
         filterJson: edit.filterJson,
+        resourceProvider: edit.resourceProvider.present
+            ? Value<String>(edit.resourceProvider.value.trim())
+            : const Value<String>.absent(),
         nextCheckAt: Value<int?>(now),
         lastError: const Value<String?>(null),
         updatedAt: Value<int>(now),
@@ -273,12 +316,16 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
   }
 
   Future<VideoDownloadSubscriptionRow> _requireRow(
-      String subscriptionId) async {
-    final VideoDownloadSubscriptionRow? row =
-        await db.getVideoDownloadSubscription(subscriptionId);
+    String subscriptionId,
+  ) async {
+    final VideoDownloadSubscriptionRow? row = await db
+        .getVideoDownloadSubscription(subscriptionId);
     if (row == null) {
       throw const HostSubscriptionRejected(
-          404, 'not_found', 'unknown subscription');
+        404,
+        'not_found',
+        'unknown subscription',
+      );
     }
     return row;
   }
@@ -288,7 +335,10 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
     final int n = await db.deleteVideoDownloadSubscription(subscriptionId);
     if (n == 0) {
       throw const HostSubscriptionRejected(
-          404, 'not_found', 'unknown subscription');
+        404,
+        'not_found',
+        'unknown subscription',
+      );
     }
   }
 }
@@ -302,23 +352,36 @@ class VideoDownloadSubscriptionRuleEdit {
     this.subtitlePolicy = const Value<String>.absent(),
     this.targetSourceId = const Value<int?>.absent(),
     this.filterJson = const Value<String>.absent(),
+    this.resourceProvider = const Value<String>.absent(),
   }) {
     if (searchQuery.present && searchQuery.value.trim().isEmpty) {
       throw const FormatException('searchQuery must not be empty');
     }
-    final int? start =
-        startAfterEpisode.present ? startAfterEpisode.value : null;
+    final int? start = startAfterEpisode.present
+        ? startAfterEpisode.value
+        : null;
     if (start != null && start < 0) {
       throw const FormatException('startAfterEpisode must be >= 0');
     }
     if (subtitlePolicy.present &&
-        !kVideoDownloadSubscriptionSubtitlePolicies
-            .contains(subtitlePolicy.value)) {
+        !kVideoDownloadSubscriptionSubtitlePolicies.contains(
+          subtitlePolicy.value,
+        )) {
       throw const FormatException(
-          'subtitlePolicy must be none / bestEffort / required');
+        'subtitlePolicy must be none / bestEffort / required',
+      );
     }
     if (filterJson.present && jsonDecode(filterJson.value) is! Map) {
       throw const FormatException('filterJson must be a JSON object');
+    }
+    // 只开放「改选某个 RSS 搜索站」这一条换源路径（已移除的内置搜索站的旧订阅
+    // 靠它恢复）。别的换源会让已认领的任务与新来源的身份对不上，不在编辑面里。
+    if (resourceProvider.present) {
+      final String value = resourceProvider.value.trim();
+      final String prefix = '$kRssResourceProviderId:';
+      if (!value.startsWith(prefix) || value.length == prefix.length) {
+        throw const FormatException('resourceProvider must be rss:<siteId>');
+      }
     }
   }
 
@@ -328,12 +391,16 @@ class VideoDownloadSubscriptionRuleEdit {
   final Value<int?> targetSourceId;
   final Value<String> filterJson;
 
+  /// 改选的 RSS 搜索站（`rss:<siteId>`）；absent = 不换源。
+  final Value<String> resourceProvider;
+
   bool get isEmpty =>
       !searchQuery.present &&
       !startAfterEpisode.present &&
       !subtitlePolicy.present &&
       !targetSourceId.present &&
-      !filterJson.present;
+      !filterJson.present &&
+      !resourceProvider.present;
 }
 
 /// 订阅字幕策略的合法取值（与表列 / 创建请求同一组）。

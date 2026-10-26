@@ -3,7 +3,7 @@
 /// （`ai_media_acquisition_assistant.dart`），这里一行都不经 LLM。
 ///
 /// 三种后端各自复用该域已有的下载路径，不另起一套：
-///  * [DiscoveryAcquisitionBackend]：发现源（Nyaa / OPDS / AList / 资源站…），
+///  * [DiscoveryAcquisitionBackend]：发现源（RSS 搜索站 / OPDS / AList / 资源站…），
 ///    下载走发现页同一个 [startDiscoveryItemDownload]（torrent / 直链 → 自动入库）；
 ///  * [MihonMangaAcquisitionBackend]：已启用的 Mihon 漫画源，下载 = 加入书架 +
 ///    全部未锁章节进漫画下载队列（与作品页「下载全部」同一服务）；

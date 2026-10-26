@@ -27,6 +27,8 @@ import 'package:fushi_engine/sync/subscriptions/pipeline_subscription_host.dart'
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart'
+    show isRemovedBuiltinVideoResourceProvider;
 import 'package:fushi_engine/media/video/download/video_download_subscription_auto_disable.dart';
 import 'package:fushi/src/pages/implementations/remote_subscriptions_section.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscription_edit_dialog.dart';
@@ -231,6 +233,7 @@ class _VideoDownloadSubscriptionsPanelState
           context: context,
           subscription: subscription,
           sources: sources,
+          rssSites: appModel.prefsRepo.resourceRssSites,
         );
     if (result == null || !mounted) return;
     await _guard(
@@ -250,6 +253,10 @@ class _VideoDownloadSubscriptionsPanelState
           filterJson: result.filterJson == null
               ? const Value<String>.absent()
               : Value<String>(result.filterJson!),
+          // 来源已失效的旧订阅改选了 RSS 站才写（null = 没换源）。
+          resourceProvider: result.resourceProvider == null
+              ? const Value<String>.absent()
+              : Value<String>(result.resourceProvider!),
         ),
       ),
     );
@@ -800,6 +807,13 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
 
   bool get _isLegacy => subscription.organizationPolicy == 'legacy';
 
+  /// 绑在已移除的内置搜索站上、且能靠改选 RSS 站恢复的订阅。legacy 行不算：
+  /// 它们无论换什么源新调度器都不接（organizationPolicy 本身就不支持），照旧只
+  /// 显示 legacy 提示。
+  bool get _providerRemoved =>
+      !_isLegacy &&
+      isRemovedBuiltinVideoResourceProvider(subscription.resourceProvider);
+
   String _formatTime(int? milliseconds) {
     if (milliseconds == null) return t.download_subscription_never_checked;
     return FushiTimeFormat.dateHourMinute(
@@ -1080,7 +1094,25 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
               ),
             ),
           ],
-          if (_isLegacy) ...<Widget>[
+          // 绑在已移除的内置搜索站上：本地化说明 + 直接去改选 RSS 站（盖过
+          // 引擎写进 lastError 的英文原因与旧订阅提示）。
+          if (_providerRemoved) ...<Widget>[
+            const SizedBox(height: 10),
+            FushiInlineNotice(
+              key: ValueKey<String>(
+                'video-subscription-provider-removed-${subscription.subscriptionId}',
+              ),
+              severity: FushiNoticeSeverity.warning,
+              message: t.video_subscription_provider_removed,
+              actions: <Widget>[
+                if (onEdit != null)
+                  FushiTextButton(
+                    onPressed: onEdit,
+                    child: Text(t.video_subscription_provider_choose_rss),
+                  ),
+              ],
+            ),
+          ] else if (_isLegacy) ...<Widget>[
             const SizedBox(height: 8),
             Text(
               t.subscription_legacy_hint,

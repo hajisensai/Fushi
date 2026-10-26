@@ -171,10 +171,9 @@ import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi_engine/media/torrent/public_trackers.dart';
 import 'package:fushi_engine/utils/net/fake_ip_dns.dart';
 import 'package:fushi_torrent/fushi_torrent.dart' show FtSessionStatus;
-import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
-import 'package:fushi_engine/media/torrent/nyaa_client.dart';
+import 'package:fushi_engine/media/torrent/rss_search_provider.dart';
+import 'package:fushi_engine/media/torrent/rss_search_site.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
-import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_auto_disable.dart';
 import 'package:fushi/src/media/torrent/video_download_legacy_importer.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
@@ -195,13 +194,12 @@ import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/audiobookshelf_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
-import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
+import 'package:fushi/src/media/discovery/sources/rss_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/shinnku_discovery_source.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
-import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi_engine/media/torrent/torrent_memory.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
@@ -1164,6 +1162,8 @@ class AppModel with ChangeNotifier {
       // provider 干脆不进 registry。不重建 runtime，互联搬过来的字幕/索引器
       // 凭据要等到下次冷启动才生效（用户视角＝「同步了但还是搜不到字幕」）。
       await reloadVideoDownloadPipelineRuntime();
+      // RSS 搜索站同时也是发现源（勾了发现页域的站），注册表是构造期快照。
+      await reloadDiscoverySources();
       // 追番令牌可能换人：设置页与首页的状态行监听 statusRevision，不 bump 就
       // 一直显示导入前的账号/未连接。
       _mediaTrackingService?.notifyStatusChanged();
@@ -5492,7 +5492,7 @@ class AppModel with ChangeNotifier {
   // 读写走 [galgameRepo]。这里刻意不再有全局 getter/setter —— 留着一个全局值就会
   // 有人接回去用，然后两份真值慢慢漂开。
 
-  /// 下载发现链路（AniList / Nyaa / Torznab / Jimaku / OpenSubtitles）共用的
+  /// 下载发现链路（AniList / RSS 搜索站 / Torznab / Jimaku / OpenSubtitles）共用的
   /// client：全应用同一个代理出口 + 这条链路特有的 10s 建连超时。
   ///
   /// 没有独立的代理配置：出口由 `app_proxy.dart` 统一解析，用户手填值就是系统
@@ -5555,10 +5555,6 @@ class AppModel with ChangeNotifier {
   /// 番剧下载：qb 完成监听 + 自动入库服务（app 生命周期常驻；未配置时每 tick 空转）。
   AnimeDownloadService? _animeDownloadService;
   AnimeDownloadService? get animeDownloadService => _animeDownloadService;
-
-  AnimeDownloadSubscriptionStore? _animeDownloadSubscriptionStore;
-  AnimeDownloadSubscriptionStore? get animeDownloadSubscriptionStore =>
-      _animeDownloadSubscriptionStore;
 
   /// 漫画下载服务（懒建，app 生命周期常驻；设计稿 2026-09-12 §4）：在线章节 +
   /// mokuro.moe 整卷共用一张任务表、一个 worker。
@@ -5927,10 +5923,6 @@ class AppModel with ChangeNotifier {
   /// 已下载章节仍在这里，删除条目时也要按它清理。
   Directory get aidokuLibraryRoot =>
       Directory(path.join(databaseDirectory.path, 'aidoku'));
-
-  AnimeDownloadSubscriptionService? _animeDownloadSubscriptionService;
-  AnimeDownloadSubscriptionService? get animeDownloadSubscriptionService =>
-      _animeDownloadSubscriptionService;
 
   /// schema v78 的通用视频下载闭环。旧 JSON service 仅继续兼容本次启动后由旧
   /// 对话框新写入的计划；启动前已有 JSON 会先迁入这里并归档。
@@ -6486,11 +6478,11 @@ class AppModel with ChangeNotifier {
       kEmbeddedTorrentFastResumeDirName,
     );
 
-    // schema v78 cut-over 必须先于两个 JSON service 的首次 tick。每个 JSON 文件
+    // schema v78 cut-over 必须先于 JSON 计划 service 的首次 tick。每个 JSON 文件
     // 事务提交后才归档；崩溃重放依靠稳定 legacy id 幂等，不移动字幕 staging。
     await _importLegacyVideoDownloads(baseDir);
 
-    // 🔴 顺序不可调换：下面两个 service 的 `..start()` 会**立刻** tick →
+    // 🔴 顺序不可调换：下面计划 service 的 `..start()` 会**立刻** tick →
     // `_torrentBackendFor` → `_ensureEmbeddedTorrentHost()` → `open()` →
     // `restoreFromResume(restoreIds)` → 剪枝。计划 id 还没加载时那次剪枝的
     // keepIds 会是「空集合」，于是把用户**所有** `.resume` 删光 —— 目标功能
@@ -6526,18 +6518,6 @@ class AppModel with ChangeNotifier {
         }
         unawaited(_saveEmbeddedTorrentResume());
       },
-    )..start();
-    final AnimeDownloadSubscriptionStore subscriptionStore =
-        AnimeDownloadSubscriptionStore(baseDir: baseDir);
-    _animeDownloadSubscriptionStore = subscriptionStore;
-    _animeDownloadSubscriptionService = AnimeDownloadSubscriptionService(
-      store: subscriptionStore,
-      planStore: store,
-      configProvider: () =>
-          effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
-      backendFactory: _torrentBackendFor,
-      jimakuApiKeyProvider: () => prefsRepo.jimakuApiKey,
-      httpClientFactory: createDownloadHttpClient,
     )..start();
 
     // TODO-1961-a：上次会话留下的种子在这里接回来（续传 + 继续做种）。
@@ -6747,15 +6727,19 @@ class AppModel with ChangeNotifier {
     if (_videoDownloadPipelineService != null) return;
     final List<TorznabIndexerConfig> torznabIndexers =
         prefsRepo.videoResourceTorznabConfigs;
-    // 内置索引器一律按 kBuiltinVideoResourceSources 全表注册；「用不用」由 registry
-    // 的停用清单决定，而不是靠这里少建一个对象——否则设置页开关就得重启 app 才生效。
-    // Torznab 不同：没有启用的索引器它就不是一个源（保存索引器配置会重建整条
-    // 运行时），判据见 [torznabHasEnabledIndexer]（BUG-2818）。
+    final List<RssSearchSiteConfig> rssSites = prefsRepo.resourceRssSites;
+    // 不内置任何 BT 搜索站：资源来源只有用户自配的 RSS 搜索站与 Torznab。两者同一
+    // 约定——没有启用（且勾了视频域）的配置就不是一个源，不注册，免得订阅在场校验与
+    // host 能力位把「没配」报成「可用」（BUG-2818）。保存任一配置都经
+    // [reloadVideoDownloadPipelineRuntime] 重建整条运行时，所以开关即时生效。
     final List<VideoResourceProvider> resourceProviders =
         <VideoResourceProvider>[
-          for (final BuiltinVideoResourceSource source
-              in kBuiltinVideoResourceSources)
-            source.create(await createDownloadHttpClient()),
+          if (rssHasEnabledVideoSite(rssSites))
+            RssSearchProvider(
+              sites: rssSites,
+              client: await createDownloadHttpClient(),
+              closesClient: true,
+            ),
           if (torznabHasEnabledIndexer(torznabIndexers))
             TorznabClient(
               indexers: torznabIndexers,
@@ -6773,7 +6757,6 @@ class AppModel with ChangeNotifier {
         );
     final VideoResourceRegistry resources = VideoResourceRegistry(
       resourceProviders,
-      disabledProviderIds: videoResourceDisabledSourceIds,
     );
     final VideoSubtitleRegistry subtitles = VideoSubtitleRegistry(
       subtitleProviders,
@@ -7209,8 +7192,7 @@ class AppModel with ChangeNotifier {
   AudiobookMaterialService? _audiobookMaterialService;
 
   /// 发现页源注册表（懒建，app 生命周期常驻）。内置源在此登记；加源 = 加一个
-  /// adapter 实例。Sukebei（18+）默认不进「全部源」聚合，见
-  /// [discoveryDisabledSourceIds]。
+  /// adapter 实例。内置源可在「发现来源」里停用，见 [discoveryDisabledSourceIds]。
   ///
   /// **偏好未就绪时也必须能建**：发现页与「发现来源」设置区在初始化早期就可能
   /// 被构建（`_prefsRepo` 此时还是 null，[isPreferencesReady] 的存在本身就是
@@ -7240,32 +7222,6 @@ class AppModel with ChangeNotifier {
     return _mediaDiscoveryService = MediaDiscoveryService(
       sources: <MediaDiscoverySource>[
         CoreAudioDiscoverySource(httpClientFactory: createDownloadHttpClient),
-        NyaaDiscoverySource(
-          id: 'nyaa',
-          displayName: 'Nyaa',
-          priority: 10,
-          categoryByKind: const <DiscoveryMediaKind, String>{
-            // nyaa.si 分类：Literature=3_0 / Audio=2_0。
-            DiscoveryMediaKind.novel: '3_0',
-            DiscoveryMediaKind.audiobook: '2_0',
-          },
-          client: NyaaClient(),
-          // 每次请求按当前偏好取：源实例常驻，偏好可随时改。偏好未就绪
-          // （早一帧打开发现页）时用默认「全部」。
-          qualityFilter: () => NyaaQualityFilter.fromIndex(
-            isPreferencesReady ? prefsRepo.discoveryNyaaQualityFilter : 0,
-          ),
-        ),
-        NyaaDiscoverySource(
-          id: 'sukebei',
-          displayName: 'Sukebei',
-          priority: 15,
-          categoryByKind: const <DiscoveryMediaKind, String>{
-            // sukebei 分类：Art - Games=1_3（galgame 种子主阵地）。
-            DiscoveryMediaKind.game: '1_3',
-          },
-          client: NyaaClient(baseUrl: 'https://sukebei.nyaa.si'),
-        ),
         AListDiscoverySource(
           id: 'alist-erogame',
           displayName: 'erogame.space',
@@ -7288,6 +7244,16 @@ class AppModel with ChangeNotifier {
                 // 打通的地址，重建只会打断正在进行的浏览。
                 onCatalogUrlResolved: (Uri resolved) =>
                     unawaited(persistOpdsCatalogUrl(server.id, resolved)),
+              ),
+        // 用户自配的 RSS 搜索站：每个启用、且勾了发现页域（小说 / 有声书 / 漫画 /
+        // 游戏）的站展开成一个源，只支持关键词搜索。与视频资源搜索共用同一份
+        // `resource_rss_sites` 清单，改动经 [setResourceRssSites] 同时重建两边。
+        if (isPreferencesReady)
+          for (final RssSearchSiteConfig site in prefsRepo.resourceRssSites)
+            if (RssDiscoverySource.appliesTo(site))
+              RssDiscoverySource(
+                site: site,
+                httpClientFactory: createDownloadHttpClient,
               ),
         // 用户自配的 AList / OpenList 站点：同上，一条配置 = 一个源实例。
         if (isPreferencesReady)
@@ -7317,7 +7283,7 @@ class AppModel with ChangeNotifier {
   /// 重建发现源注册表：用户增删改 OPDS 服务器后必须调。
   ///
   /// 注册表是**构造期快照**（懒建后 app 生命周期常驻），不重建的话新加的服务器
-  /// 要等下次冷启动才出现——这正是视频域 [setVideoResourceSourceEnabled] 里
+  /// 要等下次冷启动才出现——这正是视频域 [setResourceRssSites] 里
   /// 「改完必须重建下载流水线运行时」踩过的同一个坑。
   ///
   /// 旧实例先 close 再丢弃，否则每改一次配置就漏一个 HTTP client。
@@ -7385,10 +7351,6 @@ class AppModel with ChangeNotifier {
       if (id.trim().isNotEmpty) id.trim(),
   };
 
-  /// 设置里停用的**内置**视频资源索引器 id（Nyaa / apibay / Knaben）。
-  Set<String> get videoResourceDisabledSourceIds =>
-      readVideoResourceDisabledSourceIds(prefsRepo);
-
   /// 开/关一个发现源。停用清单是逗号分隔的字符串，读写都只经这一个入口，
   /// 免得每个调用点各写一份 split/join。
   Future<void> setDiscoverySourceEnabled(String sourceId, bool enabled) async {
@@ -7398,17 +7360,15 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
-  /// 开/关一个内置视频资源索引器。改完必须重建下载流水线运行时——registry 的
-  /// 停用清单是构造期快照，不重建的话开关要等下次冷启动才生效。
-  Future<void> setVideoResourceSourceEnabled(
-    String sourceId,
-    bool enabled,
-  ) async {
-    await prefsRepo.setVideoResourceDisabledSources(
-      _toggleDisabledId(videoResourceDisabledSourceIds, sourceId, enabled),
-    );
+  /// 增删改 RSS 搜索站后的统一写回口：落偏好 → 重建下载流水线运行时（视频资源
+  /// registry 是构造期快照）→ 重建发现源注册表（勾了发现页域的站也是发现源）。
+  ///
+  /// 只经这一个入口，免得某个调用点只重建了一边——那样的表现是「视频里搜得到、
+  /// 发现页里却没有」或反过来。
+  Future<void> setResourceRssSites(Iterable<RssSearchSiteConfig> sites) async {
+    await prefsRepo.setResourceRssSites(sites);
     await reloadVideoDownloadPipelineRuntime();
-    notifyListeners();
+    await reloadDiscoverySources();
   }
 
   static String _toggleDisabledId(
@@ -9250,7 +9210,6 @@ class AppModel with ChangeNotifier {
     Duration? pipelineDrainTimeout,
   }) async {
     _animeDownloadService?.stop();
-    _animeDownloadSubscriptionService?.stop();
     _mangaDownloadService?.dispose();
     _mangaDownloadService = null;
     // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
@@ -9393,7 +9352,6 @@ class AppModel with ChangeNotifier {
     unawaited(TexthookerWsClientManager.instance.stop());
     unawaited(stopFushiApiServer());
     _animeDownloadService?.stop();
-    _animeDownloadSubscriptionService?.stop();
     _videoDownloadPipelineRuntimeWanted = false;
     unawaited(_disposeVideoDownloadPipelineRuntime());
     // 查字幕按需建的那套 registry 不属于下载管线（管线关着时它才存在），得单独收。
@@ -9585,7 +9543,8 @@ class AppModel with ChangeNotifier {
       prefsRepo.setSrsLocationKey(locationId, key);
 
   /// 首次同步 v2 是否已确认（设备本地；prefs 未装配时按未确认，不同步）。
-  bool get srsSync2MergeConfirmed => _prefsRepo?.srsSync2MergeConfirmed ?? false;
+  bool get srsSync2MergeConfirmed =>
+      _prefsRepo?.srsSync2MergeConfirmed ?? false;
   Future<void> setSrsSync2MergeConfirmed(bool value) =>
       prefsRepo.setSrsSync2MergeConfirmed(value);
   Future<void> setSrsReviewZoom(double value) =>

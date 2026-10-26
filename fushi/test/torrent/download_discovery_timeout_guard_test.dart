@@ -37,14 +37,9 @@ void main() {
 
     test('B. 消费方全部走常量，不留裸 Duration 超时', () {
       const List<String> consumers = <String>[
-        'lib/src/pages/implementations/anime_download_dialog.dart',
-        'lib/src/media/torrent/anime_download_subscription.dart',
-        // BUG-2079：NyaaClient 自己也是消费方——注册表路径
-        // （nyaa_discovery_source / nyaa_resource_provider）的调用点没有外层
-        // 超时，所以时限必须落在 client 上；同样不许在这里重新长出裸 20s。
-        '../packages/fushi_engine/lib/media/torrent/nyaa_client.dart',
-        // apibay / Knaben（BUG-2933）：原先没有总时限，挂住整轮资源搜索。
-        '../packages/fushi_engine/lib/media/torrent/public_video_index_client.dart',
+        // 用户自配的 RSS 搜索站（取代已移除的内置 Nyaa / apibay / Knaben，
+        // BUG-2933 的教训：没有总时限会挂住整轮资源搜索）。
+        '../packages/fushi_engine/lib/media/torrent/rss_search_provider.dart',
       ];
       // `.timeout(` 后面直接跟 Duration(...) 的写法即为漏网魔法数字。
       // `const` 可省，故设为可选——只匹配 `const Duration` 的正则会被

@@ -352,7 +352,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
     bool subscribed = false;
     List<VideoResourceCandidate> items = const <VideoResourceCandidate>[];
     // 剧集要详情定下载还是订阅；没有拉丁标题的条目要详情补罗马字 / 英文名，
-    // 否则 Nyaa 只能拿原名去搜（BUG-2794 / BUG-2854）。
+    // 否则资源搜索只能拿原名去搜（BUG-2794 / BUG-2854）。
     if (reference.mediaKind == VideoMetadataMediaKind.tv ||
         !reference.hasLatinTitle) {
       try {

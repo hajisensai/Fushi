@@ -43,8 +43,6 @@ import 'package:fushi/src/media/video/cover_ui/video_online_cover_picker.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/cover_ui/disc_format_badge.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
-import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
-    show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
 import 'package:fushi/src/media/video/video_home_layout.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/video/video_online_services_banner.dart';
@@ -715,9 +713,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   final ScrollController _recentRowController = ScrollController();
   final ScrollController _subscriptionRowController = ScrollController();
 
-  /// 「已更新未看」行的订阅表变更流；旧 JSON 订阅 store 走 [revision] 通知。
+  /// 「已更新未看」行的订阅表变更流。
   StreamSubscription<void>? _downloadSubscriptionsSub;
-  AnimeDownloadSubscriptionStore? _legacySubscriptionStore;
 
   @override
   void initState() {
@@ -755,17 +752,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         .listen(_onScrapePresentationChanged);
     _scrapeBatchWasBusy = widget.scrapeTaskController?.isBusy == true;
     widget.scrapeTaskController?.addListener(_onScrapeTaskBusyChanged);
-    // 「已更新未看」行：订阅增删（订阅面板）后重解析订阅→合集映射。新订阅表走
-    // Drift 流；旧 AniList JSON 订阅 store 没有表，用它的 revision 通知。入库落
-    // 合集那一步已由上面的合集表流覆盖，这里只补「订阅本身变了」。
+    // 「已更新未看」行：订阅增删（订阅面板）后重解析订阅→合集映射（Drift 流）。
+    // 入库落合集那一步已由上面的合集表流覆盖，这里只补「订阅本身变了」。
     // 只要「订阅变了」这个信号，不要行——所以走 *Changed（tableUpdates + 手写
     // controller）而不是裸 drift QueryStream：后者取消订阅时会排 Timer.run，
     // 页面 dispose 后它仍 pending，撞 widget 测试的 !timersPending（BUG-834）。
     _downloadSubscriptionsSub = appModelNoUpdate.database
         .watchVideoDownloadSubscriptionsChanged()
         .listen(_onCollectionTablesChanged);
-    _legacySubscriptionStore = appModelNoUpdate.animeDownloadSubscriptionStore
-      ?..revision.addListener(_onLegacySubscriptionStoreChanged);
     widget.libraryRefreshSignal?.addListener(_onLibraryRefreshRequested);
     // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
     // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
@@ -884,9 +878,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _watchProgressReloadDebounce?.cancel();
     _collectionTablesSub?.cancel();
     _downloadSubscriptionsSub?.cancel();
-    _legacySubscriptionStore?.revision.removeListener(
-      _onLegacySubscriptionStoreChanged,
-    );
     _collectionsReloadDebounce?.cancel();
     _scrapePresentationSub?.cancel();
     _scrapePresentationReloadDebounce?.cancel();
@@ -986,8 +977,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       if (mounted) _loadLibraryMapsKeepingInFlight();
     });
   }
-
-  void _onLegacySubscriptionStoreChanged() => _onCollectionTablesChanged(null);
 
   /// 刮削批次进行中，展示层表变化的整页重载最小间隔。
   ///
@@ -1363,8 +1352,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     };
     final Set<int> subscribedCollectionIds = await _loadSubscribedCollectionIds(
       db,
-      appModel,
-      collections,
     );
     // v68 附加图组：一次全表查询按归属分桶（hero 背景/logo、续播行横卡）。
     final Map<int, List<MediaImageRow>> imagesByCollection =
@@ -1409,15 +1396,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     });
   }
 
-  /// 「已更新未看」行的订阅→合集解析输入（新 Drift 订阅：条目→任务、元数据身份→
-  /// 刮削作品；旧 AniList JSON 订阅：anilistId），纯逻辑在
+  /// 「已更新未看」行的订阅→合集解析输入（Drift 订阅：条目→任务、元数据身份→
+  /// 刮削作品；旧 JSON 订阅启动时已迁进同一张表），纯逻辑在
   /// [subscribedVideoCollectionIds]。订阅数量是个位数到几十，逐订阅查条目/作品
   /// 身份的开销可忽略，不值得为它加全表 DAO。
-  Future<Set<int>> _loadSubscribedCollectionIds(
-    FushiDatabase db,
-    AppModel appModel,
-    List<MediaCollectionRow> collections,
-  ) async {
+  Future<Set<int>> _loadSubscribedCollectionIds(FushiDatabase db) async {
     final List<VideoDownloadSubscriptionRow> subscriptions = await db
         .getVideoDownloadSubscriptions();
     final Map<String, List<VideoDownloadSubscriptionItemRow>>
@@ -1443,18 +1426,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final List<VideoDownloadJobRow> jobs = subscriptions.isEmpty
         ? const <VideoDownloadJobRow>[]
         : await db.getVideoDownloadJobs();
-    final List<AnimeDownloadSubscription> legacy =
-        await appModel.animeDownloadSubscriptionStore?.loadAll() ??
-        const <AnimeDownloadSubscription>[];
     return subscribedVideoCollectionIds(
       subscriptions: subscriptions,
       itemsBySubscription: itemsBySubscription,
       jobs: jobs,
       collectionIdByProviderIdentity: collectionIdByProviderIdentity,
-      legacyAnilistIds: <int>[
-        for (final AnimeDownloadSubscription s in legacy) s.anilistId,
-      ],
-      collections: collections,
     );
   }
 

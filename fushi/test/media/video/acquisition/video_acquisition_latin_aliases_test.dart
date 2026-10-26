@@ -7,7 +7,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi_engine/media/external_provider.dart';
-import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/resource_search_queries.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_reducer.dart';
@@ -25,8 +25,8 @@ const String _english = 'FX Fighter Kurumi-chan';
 class _Resource extends VideoResourceCandidate {
   _Resource(String id, String title)
     : super(
-        providerId: 'nyaa',
-        providerInstanceId: 'nyaa',
+        providerId: 'rss',
+        providerInstanceId: 'nyaa-rss',
         providerPriority: 100,
         remoteId: id,
         title: title,
@@ -70,12 +70,13 @@ VideoMetadataWork _details({
 );
 
 /// 与生产同口径算 Nyaa 实际要发的查询词。
-List<String> _nyaaQueries(VideoMediaReference reference) => nyaaSearchQueries(
-  VideoResourceSearchRequest(
-    media: reference,
-    query: videoResourceSubscriptionSearchQuery(reference),
-  ),
-);
+List<String> _nyaaQueries(VideoMediaReference reference) =>
+    resourceSearchQueries(
+      VideoResourceSearchRequest(
+        media: reference,
+        query: videoResourceSubscriptionSearchQuery(reference),
+      ),
+    );
 
 const VideoAcquisitionDefaults _defaults = VideoAcquisitionDefaults(
   qualityPref: '1080p',
@@ -217,7 +218,9 @@ void main() {
         queryPresence: (_) async => VideoLibraryPresence.none,
         isSubscribed: (_) async => false,
         searchResources: (VideoResourceSearchRequest request) async {
-          searchedQueries[request.media!.mediaId] = nyaaSearchQueries(request);
+          searchedQueries[request.media!.mediaId] = resourceSearchQueries(
+            request,
+          );
           return ProviderBatchResult<VideoResourceCandidate>.success(
             const <VideoResourceCandidate>[],
           );

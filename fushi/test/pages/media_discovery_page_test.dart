@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
@@ -18,9 +19,10 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/utils.dart';
 import '../helpers/test_platform_services.dart';
-import '../torrent/nyaa_html_fixture.dart';
-import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
-import 'package:fushi_engine/media/torrent/nyaa_client.dart';
+import 'package:crypto/crypto.dart' as crypto;
+import 'package:fushi/src/media/discovery/sources/rss_discovery_source.dart';
+import 'package:fushi_engine/media/torrent/rss_search_provider.dart';
+import 'package:fushi_engine/media/torrent/rss_search_site.dart';
 
 /// 统一发现页的「不发请求」契约（BUG-1711）。
 ///
@@ -32,9 +34,8 @@ import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 ///
 /// 断言点全部落在**真实行为**上：源上的调用计数必须是 0，而不是只看文案。
 ///
-/// 后半部分是 Nyaa 小说源的做种排序 / 隐藏无人做种 / 隐藏疑似漫画 / 过滤三态
-/// （设计稿 `docs/specs/2026-09-08-nyaa-novel-discovery-filters.md`）：走真
-/// `NyaaDiscoverySource` + HTML fixture，偏好写穿到 Drift 内存库再回读。
+/// 后半部分是 RSS 搜索站小说源的做种排序 / 隐藏无人做种 / 隐藏疑似漫画：走真
+/// `RssDiscoverySource` + RSS fixture，偏好写穿到 Drift 内存库再回读。
 
 class _FakeSource extends MediaDiscoverySource {
   _FakeSource({
@@ -140,55 +141,79 @@ class _FakeAppModel extends AppModel {
   );
 }
 
-/// Nyaa 小说域一页结果：做种数 / 内容形态 / 行 class 交错，专供排序与过滤用例。
-const List<NyaaHtmlRow> _novelRows = <NyaaHtmlRow>[
-  // 小说，做种 50。
-  NyaaHtmlRow(
-    title: 'Re:ZERO v01-29 [Yen Press] [Stick]',
-    infoHash: 'a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1',
-    id: '1',
-    seeders: 50,
-    size: '300.0 MiB',
-    categoryId: '3_1',
-  ),
-  // 疑似漫画，做种 80（默认被藏）。
-  NyaaHtmlRow(
-    title: 'Sousou no Frieren v01-14 (Digital) (1r0n)',
-    infoHash: 'b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2',
-    id: '2',
-    seeders: 80,
-    size: '2.1 GiB',
-    categoryId: '3_1',
-  ),
-  // 死种小说（默认被藏）。
-  NyaaHtmlRow(
-    title: 'Dead Novel v01 EPUB',
-    infoHash: 'c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3',
-    id: '3',
-    size: '10.0 MiB',
-    categoryId: '3_1',
-  ),
-  // trusted 小说，做种 120——服务端给的顺序故意不按做种排，本地兜底得排上去。
-  NyaaHtmlRow(
-    title: 'Mushoku Tensei v01-26 [Yen Press] [Stick]',
-    infoHash: 'd4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4',
-    id: '4',
-    seeders: 120,
-    size: '350.0 MiB',
-    categoryId: '3_1',
-    trusted: true,
-  ),
-  // remake 小说，做种 5。
-  NyaaHtmlRow(
-    title: 'Remake Novel v01 EPUB',
-    infoHash: 'e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5',
-    id: '5',
-    seeders: 5,
-    size: '12.0 MiB',
-    categoryId: '3_1',
-    remake: true,
-  ),
-];
+/// RSS 搜索站小说域一页结果：做种数 / 内容形态 / trusted 交错，专供排序与过滤用例。
+const List<({String title, String id, int seeders, String size, bool trusted})>
+_novelRows =
+    <({String title, String id, int seeders, String size, bool trusted})>[
+      // 小说，做种 50。
+      (
+        title: 'Re:ZERO v01-29 [Yen Press] [Stick]',
+        id: '1',
+        seeders: 50,
+        size: '300.0 MiB',
+        trusted: false,
+      ),
+      // 疑似漫画，做种 80（默认被藏）。
+      (
+        title: 'Sousou no Frieren v01-14 (Digital) (1r0n)',
+        id: '2',
+        seeders: 80,
+        size: '2.1 GiB',
+        trusted: false,
+      ),
+      // 死种小说（默认被藏）。
+      (
+        title: 'Dead Novel v01 EPUB',
+        id: '3',
+        seeders: 0,
+        size: '10.0 MiB',
+        trusted: false,
+      ),
+      // trusted 小说，做种 120——服务端给的顺序故意不按做种排，本地兜底得排上去。
+      (
+        title: 'Mushoku Tensei v01-26 [Yen Press] [Stick]',
+        id: '4',
+        seeders: 120,
+        size: '350.0 MiB',
+        trusted: true,
+      ),
+      // 普通小说，做种 5。
+      (
+        title: 'Plain Novel v01 EPUB',
+        id: '5',
+        seeders: 5,
+        size: '12.0 MiB',
+        trusted: false,
+      ),
+    ];
+
+String _novelRss() {
+  final StringBuffer out = StringBuffer(
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<rss version="2.0" xmlns:nyaa="https://nyaa.si/xmlns/nyaa"><channel>',
+  );
+  for (final ({String title, String id, int seeders, String size, bool trusted})
+      row
+      in _novelRows) {
+    out.write(
+      '<item><title>${row.title}</title>'
+      '<link>https://site.example/download/${row.id}.torrent</link>'
+      '<guid isPermaLink="true">https://site.example/view/${row.id}</guid>'
+      '<nyaa:infoHash>${row.id * 40}</nyaa:infoHash>'
+      '<nyaa:seeders>${row.seeders}</nyaa:seeders>'
+      '<nyaa:size>${row.size}</nyaa:size>'
+      '<nyaa:trusted>${row.trusted ? 'Yes' : 'No'}</nyaa:trusted>'
+      '</item>',
+    );
+  }
+  out.write('</channel></rss>');
+  return out.toString();
+}
+
+/// RSS 条目的源内 id（解析器按 guid 的 SHA-1 记）。
+String _rssItemId(String rowId) => crypto.sha1
+    .convert(utf8.encode('https://site.example/view/$rowId'))
+    .toString();
 
 void main() {
   late _FakeSource searchOnly;
@@ -277,7 +302,9 @@ void main() {
 
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey<String>('discovery_source_pick_browsable')),
+        of: find.byKey(
+          const ValueKey<String>('discovery_source_pick_browsable'),
+        ),
         matching: find.text(t.discovery_source_capability_browsable),
       ),
       findsOneWidget,
@@ -338,7 +365,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    // 非种子源：做种 / 疑似漫画 / Nyaa 过滤三组控件一个都不该凭空出现。
+    // 非种子源：做种 / 疑似漫画两组控件一个都不该凭空出现。
     expect(
       find.byKey(const ValueKey<String>('discovery_filter_hide_zero_seeders')),
       findsNothing,
@@ -347,10 +374,6 @@ void main() {
       find.byKey(
         const ValueKey<String>('discovery_filter_hide_suspected_manga'),
       ),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('discovery_nyaa_filter_0')),
       findsNothing,
     );
   });
@@ -382,8 +405,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // 搜索框里也有 'WHITE ALBUM2'，断言必须限定在列表条目里，否则恒真。
-    final Finder folderItem =
-        find.widgetWithText(FushiListItem, 'WHITE ALBUM2');
+    final Finder folderItem = find.widgetWithText(
+      FushiListItem,
+      'WHITE ALBUM2',
+    );
     expect(site.searchCalls, 1);
     expect(folderItem, findsOneWidget);
     // 选中目录型源时已经 browse 过一次根目录，基线从这里取。
@@ -435,7 +460,9 @@ void main() {
     expect(
       find.descendant(
         of: row,
-        matching: find.byKey(const ValueKey<String>('download-source-external')),
+        matching: find.byKey(
+          const ValueKey<String>('download-source-external'),
+        ),
       ),
       findsOneWidget,
     );
@@ -490,7 +517,9 @@ void main() {
 
     expect(dead.browseCalls, 1);
     expect(
-        find.textContaining(t.discovery_sources_unavailable), findsOneWidget);
+      find.textContaining(t.discovery_sources_unavailable),
+      findsOneWidget,
+    );
     expect(find.text(t.discovery_empty), findsNothing);
   });
 
@@ -515,9 +544,7 @@ void main() {
   // 卷号，旧的两行 ellipsis 恰好把卷号切掉，「看不出是哪一卷」；副标题还原样
   // 露着 `2026-09-25T04:55:58.997Z`。断言落在渲染结果上：窄屏下书名段落
   // 没有被截断、卷号真的画出来了，日期是本地 yyyy-MM-dd 而非 ISO 原文。
-  testWidgets('窄屏长书名完整换行显示卷号，ISO 时间戳收成本地日期', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('窄屏长书名完整换行显示卷号，ISO 时间戳收成本地日期', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(360, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -565,10 +592,12 @@ void main() {
 
     for (final int volume in <int>[3, 2]) {
       final String text = '$series $volume';
-      final RenderParagraph title =
-          tester.renderObject<RenderParagraph>(find.text(text));
-      final double lineHeight =
-          title.getFullHeightForCaret(const TextPosition(offset: 0));
+      final RenderParagraph title = tester.renderObject<RenderParagraph>(
+        find.text(text),
+      );
+      final double lineHeight = title.getFullHeightForCaret(
+        const TextPosition(offset: 0),
+      );
       // 窄屏下确实折成了多于两行——旧的 maxLines: 2 在这里必然截断。
       expect(title.size.height, greaterThan(lineHeight * 2.5));
       expect(title.didExceedMaxLines, isFalse);
@@ -582,13 +611,11 @@ void main() {
     }
 
     final DateTime local = DateTime.parse(updated).toLocal();
-    final String localDate = '${local.year}-'
+    final String localDate =
+        '${local.year}-'
         '${local.month.toString().padLeft(2, '0')}-'
         '${local.day.toString().padLeft(2, '0')}';
-    expect(
-      find.text('Bookorbit · $localDate · 鬼影スパナ'),
-      findsNWidgets(2),
-    );
+    expect(find.text('Bookorbit · $localDate · 鬼影スパナ'), findsNWidgets(2));
     expect(find.textContaining('T04:55'), findsNothing);
   });
 
@@ -616,7 +643,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
     await tester.pumpAndSettle();
     expect(searchOnly.searchCalls, 1);
-    expect(find.widgetWithText(FushiListItem, 'search-only-hit'), findsOneWidget);
+    expect(
+      find.widgetWithText(FushiListItem, 'search-only-hit'),
+      findsOneWidget,
+    );
 
     // 回车立即搜，并吃掉尚未触发的防抖（不会过 350ms 再重复打一次）。
     await tester.enterText(
@@ -675,9 +705,7 @@ void main() {
 
   // PR #1707 审查：结果列表曾挂 PageStorageKey，非追加加载（新搜索 / 换来源）后的
   // 新列表会恢复上一轮的偏移，书 / 游戏两域同路由同 key 还会互串。
-  testWidgets('新一轮搜索的结果从顶部开始，不恢复上一轮列表的偏移', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('新一轮搜索的结果从顶部开始，不恢复上一轮列表的偏移', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(800, 700);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -690,8 +718,9 @@ void main() {
       find.byKey(const ValueKey<String>('discovery_source_pick_paged')),
     );
     await tester.pumpAndSettle();
-    final Finder results =
-        find.byKey(const ValueKey<String>('discovery-results-scroll'));
+    final Finder results = find.byKey(
+      const ValueKey<String>('discovery-results-scroll'),
+    );
     ScrollPosition position() => tester
         .state<ScrollableState>(
           find.descendant(of: results, matching: find.byType(Scrollable)),
@@ -712,9 +741,7 @@ void main() {
     expect(position().pixels, 0);
   });
 
-  testWidgets('部分来源失败：结果照常显示，横幅点名失败来源的展示名', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('部分来源失败：结果照常显示，横幅点名失败来源的展示名', (WidgetTester tester) async {
     final _FailingSource dead = _FailingSource();
     service = MediaDiscoveryService(
       sources: <MediaDiscoverySource>[searchOnly, dead],
@@ -729,16 +756,23 @@ void main() {
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(FushiListItem, 'search-only-hit'), findsOneWidget);
-    final Finder banner =
-        find.byKey(const ValueKey<String>('discovery_provider_warning'));
+    expect(
+      find.widgetWithText(FushiListItem, 'search-only-hit'),
+      findsOneWidget,
+    );
+    final Finder banner = find.byKey(
+      const ValueKey<String>('discovery_provider_warning'),
+    );
     expect(banner, findsOneWidget);
     expect(
       find.descendant(of: banner, matching: find.text('Dead')),
       findsOneWidget,
       reason: '印来源展示名，不是接线 id',
     );
-    expect(find.descendant(of: banner, matching: find.text('dead')), findsNothing);
+    expect(
+      find.descendant(of: banner, matching: find.text('dead')),
+      findsNothing,
+    );
   });
 
   testWidgets('唯一来源整个失败时可重试，重试真的重新请求', (WidgetTester tester) async {
@@ -764,11 +798,12 @@ void main() {
     expect(dead.browseCalls, 2);
   });
 
-  group('Nyaa 小说源：做种排序 / 隐藏无人做种 / 隐藏疑似漫画 / 过滤三态', () {
+  group('RSS 搜索站小说源：做种排序 / 隐藏无人做种 / 隐藏疑似漫画', () {
     late FushiDatabase db;
     late PreferencesRepository prefs;
     late Directory storeDir;
     late List<Uri> requests;
+    const String sourceId = 'rss:novel-site';
 
     setUp(() async {
       db = FushiDatabase.forTesting(
@@ -776,26 +811,23 @@ void main() {
       );
       prefs = PreferencesRepository(db);
       await prefs.loadFromDb();
-      storeDir = Directory.systemTemp.createTempSync('fushi_discovery_nyaa');
+      storeDir = Directory.systemTemp.createTempSync('fushi_discovery_rss');
       requests = <Uri>[];
-      final NyaaDiscoverySource nyaa = NyaaDiscoverySource(
-        id: 'nyaa',
-        displayName: 'Nyaa',
-        categoryByKind: const <DiscoveryMediaKind, String>{
-          DiscoveryMediaKind.novel: '3_0',
-        },
-        client: NyaaClient(
-          minRequestInterval: Duration.zero,
+      final RssDiscoverySource rss = RssDiscoverySource(
+        site: RssSearchSiteConfig(
+          id: 'novel-site',
+          name: 'Novel site',
+          urlTemplate: 'https://site.example/rss?q={query}',
+          domains: const <RssSearchDomain>[RssSearchDomain.novel],
+        ),
+        client: RssSearchClient(
           client: MockClient((http.Request request) async {
             requests.add(request.url);
-            return http.Response(nyaaSearchHtml(_novelRows), 200);
+            return http.Response(_novelRss(), 200);
           }),
         ),
-        // 与 app_model.dart 的装配同形：每次请求现读偏好。
-        qualityFilter: () =>
-            NyaaQualityFilter.fromIndex(prefs.discoveryNyaaQualityFilter),
       );
-      service = MediaDiscoveryService(sources: <MediaDiscoverySource>[nyaa]);
+      service = MediaDiscoveryService(sources: <MediaDiscoverySource>[rss]);
       appModel = _FakeAppModel(service)
         ..wireLocalAudioForTesting(
           prefsRepo: prefs,
@@ -810,8 +842,8 @@ void main() {
       if (storeDir.existsSync()) storeDir.deleteSync(recursive: true);
     });
 
-    /// 选 Nyaa 源并搜一次。
-    Future<void> searchNyaa(WidgetTester tester) async {
+    /// 选 RSS 站源并搜一次。
+    Future<void> searchRss(WidgetTester tester) async {
       // 结果行带下载方式 / 外部来源标签后更高：给足高度让五条结果都在视口里
       // （列表是懒构建的，视口外的行查不到）。
       tester.view.physicalSize = const Size(800, 1400);
@@ -819,7 +851,7 @@ void main() {
       addTearDown(tester.view.reset);
       await pumpPage(tester, kind: DiscoveryMediaKind.novel);
       await tester.tap(
-        find.byKey(const ValueKey<String>('discovery_source_pick_nyaa')),
+        find.byKey(const ValueKey<String>('discovery_source_pick_$sourceId')),
       );
       await tester.pumpAndSettle();
       await tester.enterText(
@@ -839,7 +871,7 @@ void main() {
       return fresh;
     }
 
-    testWidgets('默认藏死种与疑似漫画、源内按做种降序、徽标来自行 class', (
+    testWidgets('默认藏死种与疑似漫画、源内按做种降序、trusted 徽标来自 RSS 扩展字段', (
       WidgetTester tester,
     ) async {
       // 点开计数行后五条全显示：M3E 分段结果行（形状底 leading + 徽标行）比旧
@@ -848,30 +880,31 @@ void main() {
       // 破坏本用例「客户端过滤不重新请求」的断言；给足高度让五条同屏。
       await tester.binding.setSurfaceSize(const Size(800, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await searchNyaa(tester);
+      await searchRss(tester);
       expect(requests, hasLength(1));
-      expect(requests.single.queryParameters['c'], '3_0');
-      expect(requests.single.queryParameters['s'], 'seeders');
-      expect(requests.single.queryParameters['f'], '0');
+      expect(requests.single.queryParameters['q'], 'novel');
 
       // 三条可见：120 / 50 / 5 按做种降序（服务端给的原序是 50 在 120 前）。
       expect(item('Mushoku Tensei v01-26 [Yen Press] [Stick]'), findsOneWidget);
       expect(item('Re:ZERO v01-29 [Yen Press] [Stick]'), findsOneWidget);
-      expect(item('Remake Novel v01 EPUB'), findsOneWidget);
+      expect(item('Plain Novel v01 EPUB'), findsOneWidget);
       expect(
         tester.getTopLeft(item('Mushoku Tensei v01-26 [Yen Press] [Stick]')).dy,
-        lessThan(tester.getTopLeft(item('Re:ZERO v01-29 [Yen Press] [Stick]')).dy),
+        lessThan(
+          tester.getTopLeft(item('Re:ZERO v01-29 [Yen Press] [Stick]')).dy,
+        ),
       );
       expect(
         tester.getTopLeft(item('Re:ZERO v01-29 [Yen Press] [Stick]')).dy,
-        lessThan(tester.getTopLeft(item('Remake Novel v01 EPUB')).dy),
+        lessThan(tester.getTopLeft(item('Plain Novel v01 EPUB')).dy),
       );
       // 两条被藏。
       expect(item('Sousou no Frieren v01-14 (Digital) (1r0n)'), findsNothing);
       expect(item('Dead Novel v01 EPUB'), findsNothing);
       // 计数行：1 条无人做种 + 1 条疑似漫画。
-      final Finder notice =
-          find.byKey(const ValueKey<String>('discovery_hidden_reveal'));
+      final Finder notice = find.byKey(
+        const ValueKey<String>('discovery_hidden_reveal'),
+      );
       expect(notice, findsOneWidget);
       expect(
         find.textContaining(t.discovery_hidden_zero_seeders_count(n: 1)),
@@ -881,14 +914,14 @@ void main() {
         find.textContaining(t.discovery_hidden_suspected_manga_count(n: 1)),
         findsOneWidget,
       );
-      // 徽标：trusted 绿一枚、remake 红一枚。
+      // 徽标：trusted 绿一枚；RSS 没有 remake 标记。
       expect(
         find.byKey(const ValueKey<String>('discovery_badge_trusted')),
         findsOneWidget,
       );
       expect(
         find.byKey(const ValueKey<String>('discovery_badge_remake')),
-        findsOneWidget,
+        findsNothing,
       );
       // 两个 chip 默认选中；偏好默认值也是开。
       expect(
@@ -926,8 +959,8 @@ void main() {
         tester
             .widget<Opacity>(
               find.byKey(
-                const ValueKey<String>(
-                  'discovery_item_nyaa_https://nyaa.si/view/3',
+                ValueKey<String>(
+                  'discovery_item_${sourceId}_${_rssItemId('3')}',
                 ),
               ),
             )
@@ -938,8 +971,8 @@ void main() {
         tester
             .widget<Opacity>(
               find.byKey(
-                const ValueKey<String>(
-                  'discovery_item_nyaa_https://nyaa.si/view/4',
+                ValueKey<String>(
+                  'discovery_item_${sourceId}_${_rssItemId('4')}',
                 ),
               ),
             )
@@ -958,9 +991,10 @@ void main() {
     });
 
     testWidgets('两个开关写穿偏好并即时生效，切换不重新请求', (WidgetTester tester) async {
-      await searchNyaa(tester);
-      final Finder zeroChip =
-          find.byKey(const ValueKey<String>('discovery_filter_hide_zero_seeders'));
+      await searchRss(tester);
+      final Finder zeroChip = find.byKey(
+        const ValueKey<String>('discovery_filter_hide_zero_seeders'),
+      );
       final Finder mangaChip = find.byKey(
         const ValueKey<String>('discovery_filter_hide_suspected_manga'),
       );
@@ -1001,73 +1035,14 @@ void main() {
       expect(requests, hasLength(1), reason: '两个开关都是客户端过滤');
     });
 
-    testWidgets('Nyaa 过滤三态写穿偏好、透传 f 并重新请求', (WidgetTester tester) async {
-      await searchNyaa(tester);
-      for (final NyaaQualityFilter f in NyaaQualityFilter.values) {
+    testWidgets('不再有内置 BT 站的服务端过滤三态', (WidgetTester tester) async {
+      await searchRss(tester);
+      for (int index = 0; index < 3; index++) {
         expect(
-          find.byKey(ValueKey<String>('discovery_nyaa_filter_${f.index}')),
-          findsOneWidget,
+          find.byKey(ValueKey<String>('discovery_nyaa_filter_$index')),
+          findsNothing,
         );
       }
-      FushiSelectableChip chip(int index) => tester.widget<FushiSelectableChip>(
-            find.byKey(ValueKey<String>('discovery_nyaa_filter_$index')),
-          );
-      expect(chip(0).selected, isTrue);
-      expect(prefs.discoveryNyaaQualityFilter, 0);
-      expect(requests.last.queryParameters['f'], '0');
-
-      // 筛选行是单行横滑（四个域发现页同一口径），尾部的 chip 可能在屏外。
-      await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('discovery_nyaa_filter_2')),
-      );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('discovery_nyaa_filter_2')),
-      );
-      await tester.pumpAndSettle();
-      expect(prefs.discoveryNyaaQualityFilter, 2);
-      expect((await reloadPrefs()).discoveryNyaaQualityFilter, 2);
-      expect(chip(2).selected, isTrue);
-      expect(chip(0).selected, isFalse);
-      // 服务端参数：必须重新请求且带 f=2。
-      expect(requests, hasLength(2));
-      expect(requests.last.queryParameters['f'], '2');
-
-      // 筛选行是单行横滑（四个域发现页同一口径），尾部的 chip 可能在屏外。
-      await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('discovery_nyaa_filter_1')),
-      );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('discovery_nyaa_filter_1')),
-      );
-      await tester.pumpAndSettle();
-      expect(prefs.discoveryNyaaQualityFilter, 1);
-      expect(requests, hasLength(3));
-      expect(requests.last.queryParameters['f'], '1');
-
-      // 点已选中的档不重复请求。
-      // 筛选行是单行横滑（四个域发现页同一口径），尾部的 chip 可能在屏外。
-      await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('discovery_nyaa_filter_1')),
-      );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('discovery_nyaa_filter_1')),
-      );
-      await tester.pumpAndSettle();
-      expect(requests, hasLength(3));
-    });
-
-    test('app_model 装配：nyaa.si 源按当前偏好现读过滤三态', () {
-      final String source =
-          File('lib/src/models/app_model.dart').readAsStringSync();
-      expect(
-        source.contains('qualityFilter: () => NyaaQualityFilter.fromIndex('),
-        isTrue,
-        reason: '偏好可随时改而源实例常驻，必须按次读，不能构造时定死',
-      );
-      expect(
-        source.contains('prefsRepo.discoveryNyaaQualityFilter'),
-        isTrue,
-      );
     });
   });
 }
@@ -1087,15 +1062,14 @@ class _FailingSource extends MediaDiscoverySource {
 
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
-        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
-        supportsBrowse: true,
-      );
+    kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+    supportsBrowse: true,
+  );
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> search(
     DiscoveryRequest request,
-  ) async =>
-      throw StateError('down');
+  ) async => throw StateError('down');
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> browse(
@@ -1121,15 +1095,14 @@ class _EmptySource extends MediaDiscoverySource {
 
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
-        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
-        supportsBrowse: true,
-      );
+    kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+    supportsBrowse: true,
+  );
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> search(
     DiscoveryRequest request,
-  ) async =>
-      _page();
+  ) async => _page();
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> browse(
@@ -1170,9 +1143,9 @@ class _RecursiveSearchSource extends MediaDiscoverySource {
 
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
-        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
-        supportsBrowse: true,
-      );
+    kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+    supportsBrowse: true,
+  );
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> search(
@@ -1229,15 +1202,14 @@ class _PagedSource extends MediaDiscoverySource {
 
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
-        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
-        supportsBrowse: true,
-      );
+    kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+    supportsBrowse: true,
+  );
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> search(
     DiscoveryRequest request,
-  ) =>
-      browse(request);
+  ) => browse(request);
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> browse(

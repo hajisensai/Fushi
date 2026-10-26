@@ -41,29 +41,52 @@ void main() {
     );
     expect(source, contains('watchStatus: _watchVideoDiscoveryStatus'));
     expect(source, contains('onPlay: _openLocalVideoDiscoveryWork'));
-    expect(source, contains('VideoDiscoveryResourceSearchPage('));
     expect(source, contains('VideoDiscoverySubscriptionPage('));
     expect(source, contains('VideoDiscoverySubtitleSearchPage('));
 
-    final int resourceSearchStart =
-        source.indexOf('Future<void> _openVideoDiscoveryResourceSearch(');
-    final int subscriptionStart =
-        source.indexOf('Future<void> _openVideoDiscoverySubscription(');
-    final int subtitleSearchStart =
-        source.indexOf('Future<void> _openVideoDiscoverySubtitleSearch(');
+    final int resourceSearchStart = source.indexOf(
+      'Future<void> _openVideoDiscoveryResourceSearch(',
+    );
+    final int subscriptionStart = source.indexOf(
+      'Future<void> _openVideoDiscoverySubscription(',
+    );
+    final int subtitleSearchStart = source.indexOf(
+      'Future<void> _openVideoDiscoverySubtitleSearch(',
+    );
     expect(resourceSearchStart, isNonNegative);
     expect(subscriptionStart, greaterThan(resourceSearchStart));
     expect(subtitleSearchStart, greaterThan(subscriptionStart));
 
-    final String resourceSearch =
-        source.substring(resourceSearchStart, subscriptionStart);
-    final String subscription =
-        source.substring(subscriptionStart, subtitleSearchStart);
+    // 资源搜索页的装配只写一次，在 video_resource_search_launcher.dart（合集详情页、
+    // 作品图谱灰卡等入口共用）；首页这里只是委托过去并多给一个别名补齐端口。
+    final String homeResourceSearch = source.substring(
+      resourceSearchStart,
+      subscriptionStart,
+    );
+    expect(homeResourceSearch, contains('openVideoResourceSearch('));
+    expect(
+      homeResourceSearch,
+      contains('resolveAliases: _videoDiscoveryItemWithSearchAliases'),
+    );
+    final String launcher = File(
+      'lib/src/pages/implementations/video_resource_search_launcher.dart',
+    ).readAsStringSync();
+    final int launcherStart = launcher.indexOf(
+      'Future<void> openVideoResourceSearch(',
+    );
+    expect(launcherStart, isNonNegative);
+    final String resourceSearch = launcher.substring(launcherStart);
+    expect(resourceSearch, contains('VideoDiscoveryResourceSearchPage('));
+    final String subscription = source.substring(
+      subscriptionStart,
+      subtitleSearchStart,
+    );
     for (final String entryPoint in <String>[resourceSearch, subscription]) {
       final int pageConstruction = entryPoint.indexOf('Page(');
       final int submitCallback = entryPoint.indexOf('onSubmit:');
-      final int backendResolution =
-          entryPoint.indexOf('currentVideoDownloadBackendTarget()');
+      final int backendResolution = entryPoint.indexOf(
+        'currentVideoDownloadBackendTarget()',
+      );
       expect(pageConstruction, isNonNegative);
       expect(submitCallback, greaterThan(pageConstruction));
       expect(
@@ -77,8 +100,9 @@ void main() {
       'lib/src/pages/implementations/video_discovery_acquisition_dialogs.dart',
     ).readAsStringSync();
     expect(
-      RegExp(r'on VideoDownloadBackendUnavailable catch \(error\)')
-          .allMatches(dialogSource),
+      RegExp(
+        r'on VideoDownloadBackendUnavailable catch \(error\)',
+      ).allMatches(dialogSource),
       hasLength(1),
       reason: '提交下载时应在当前资源页展示内置引擎缺失的可操作原因',
     );
@@ -87,7 +111,7 @@ void main() {
     expect(source, contains('pipeline.attachSubtitleSelection('));
     // 入队 / 订阅落库形状已抽到 video_discovery_submit.dart（发现页与 AI 下载
     // 流程共用）：组合根只负责接线到这两个函数，落库语句钉在抽出的模块上。
-    expect(source, contains('enqueueLocalVideoDownload('));
+    expect(launcher, contains('enqueueLocalVideoDownload('));
     expect(source, contains('createLocalVideoDownloadSubscription('));
     final String submitSource = File(
       '../packages/fushi_engine/lib/media/video/download/video_discovery_submit.dart',
@@ -127,7 +151,8 @@ void main() {
     expect(
       domainSelectors.length,
       1,
-      reason: '资源首页必须先用**唯一**一个类型选择器选择内容域'
+      reason:
+          '资源首页必须先用**唯一**一个类型选择器选择内容域'
           '（形态可换，个数不能变）',
     );
     expect(source, contains('MediaDiscoveryPage('));

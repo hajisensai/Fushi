@@ -474,7 +474,7 @@ class DlsiteClient {
 
   /// 所有实例共用的「最近一个已占下的请求开始时刻」（同一站点，节奏跨实例）。
   ///
-  /// 只存时刻不存 Future，理由同 `NyaaClient`：完成态 Future 记住创建 zone，
+  /// 只存时刻不存 Future：完成态 Future 记住创建 zone，
   /// fake-async 测试里会挂死——所以**不能**用一条静态的 Future 队列尾巴去跨实例
   /// 排队。跨实例的串行靠 [_reserveSlot] 在同一个同步段里「先占坑、再等」。
   static DateTime? _lastRequestStart;
@@ -587,7 +587,7 @@ class DlsiteClient {
   /// 同一个同步段里完成（Dart 单线程，无 await 即不可打断），第二个并发调用看到
   /// 的已是第一个占掉的那一格，自己顺延一格。旧实现是「读 last → 睡 → 写 last」，
   /// 排队尾巴又是实例字段：两个实例并发时同时读到同一个 last、睡到同一时刻、一起
-  /// 发出，700ms 间隔形同虚设。同 `NyaaClient._waitForRequestSlot`。
+  /// 发出，700ms 间隔形同虚设。
   Future<void> _reserveSlot() async {
     // 不限速的实例（测试注入 zero）既不等也不占坑：它不该被别的实例的节奏拖住，
     // 也不该把共享时刻改回「现在」、让限速实例的预约失效。

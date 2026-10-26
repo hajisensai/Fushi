@@ -1,20 +1,21 @@
 import 'package:flutter/widgets.dart';
-import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/rss_search_site_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_items.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_values.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/media/torrent/rss_search_site.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 
 /// 视频外部提供方（`VideoExternalProviderSettingsSection` 的 jimaku /
-/// openSubtitles / subdl / builtinSources / torznab / downloadRouting 各 scope，
-/// 正文自绘 widget）在控制通道上的条目。
+/// openSubtitles / subdl / torznab / downloadRouting 各 scope，正文自绘 widget）
+/// 与「RSS 搜索站」设置区（`RssSearchSiteSettingsSection`）在控制通道上的条目。
 ///
 /// 写入全部走页面同一个 [AppVideoExternalSettingsStore]（同一组 AppModel /
 /// prefs 方法，含下载流水线运行时重建），字段校验走页面同一份
@@ -30,7 +31,7 @@ List<CtlBodyPage> buildCtlVideoProvidersBodyPages() => <CtlBodyPage>[
   _jimakuPage(),
   _openSubtitlesPage(),
   _subdlPage(),
-  _builtinSourcesPage(),
+  _rssSitesPage(),
   _torznabPage(),
   _downloadRoutingPage(),
 ];
@@ -308,22 +309,169 @@ CtlBodyPage _openSubtitlesPage() => CtlBodyPage(
 
 // ── 资源索引器 ────────────────────────────────────────────────────────────────
 
-CtlBodyPage _builtinSourcesPage() => CtlBodyPage(
-  breadcrumb: _servicesCrumb(t.video_builtin_sources_title),
+/// 模板里可能带私有站 passkey：列表只给 host，模板本身按凭据遮掉。
+Map<String, Object?> _rssRecord(RssSearchSiteConfig site) => <String, Object?>{
+  'id': site.id,
+  'name': site.name,
+  'host': site.buildSearchUri('q').host,
+  'urlTemplate': redactCtlSecret(site.urlTemplate),
+  'enabled': site.enabled,
+  'priority': site.priority,
+  'domains': <String>[
+    for (final RssSearchDomain domain in RssSearchDomain.values)
+      if (site.domains.contains(domain)) domain.name,
+  ].join(','),
+  'allowInsecureHttp': site.allowInsecureHttp,
+};
+
+List<RssSearchSiteConfig> _rssSites(SettingsContext c) =>
+    c.appModel.prefsRepo.resourceRssSites;
+
+Set<RssSearchDomain> _parseRssDomains(String raw) {
+  final Set<RssSearchDomain> domains = <RssSearchDomain>{};
+  for (final String name in raw.split(',')) {
+    if (name.trim().isEmpty) continue;
+    final RssSearchDomain? domain = RssSearchDomain.tryParse(name.trim());
+    if (domain == null) {
+      throw ArgumentError(
+        '未知的媒体域「$name」；可选：'
+        '${RssSearchDomain.values.map((RssSearchDomain d) => d.name).join('、')}',
+      );
+    }
+    domains.add(domain);
+  }
+  if (domains.isEmpty) throw ArgumentError('domains 至少选一个');
+  return domains;
+}
+
+/// 字段 → 站点配置（与设置页同一份校验）；不合法抛 [ArgumentError] 说明哪项错。
+RssSearchSiteConfig _buildRssSite({
+  required String id,
+  required String name,
+  required String urlTemplate,
+  required bool enabled,
+  required String priority,
+  required Set<RssSearchDomain> domains,
+  required bool allowInsecureHttp,
+}) {
+  if (name.trim().isEmpty) throw ArgumentError('name 不能为空');
+  final int? parsedPriority = int.tryParse(priority.trim());
+  if (parsedPriority == null) {
+    throw ArgumentError('priority 必须是整数，收到「$priority」');
+  }
+  final String? problem = rssSearchUrlTemplateError(
+    urlTemplate,
+    allowInsecureHttp: allowInsecureHttp,
+  );
+  if (problem != null) throw ArgumentError(problem);
+  return RssSearchSiteConfig(
+    id: id,
+    name: name.trim(),
+    urlTemplate: urlTemplate,
+    enabled: enabled,
+    priority: parsedPriority,
+    domains: domains,
+    allowInsecureHttp: allowInsecureHttp,
+  );
+}
+
+RssSearchSiteConfig _requireRssSite(SettingsContext c, String id) {
+  for (final RssSearchSiteConfig site in _rssSites(c)) {
+    if (site.id == id) return site;
+  }
+  throw ArgumentError('没有 id 为「$id」的 RSS 搜索站');
+}
+
+Future<void> _saveRssSites(
+  SettingsContext c,
+  List<RssSearchSiteConfig> sites,
+) => AppRssSearchSiteSettingsStore(c.appModel).saveSites(sites);
+
+const List<SettingsCliParam> _rssFields = <SettingsCliParam>[
+  SettingsCliParam('name', help: '站点名称', required: false),
+  SettingsCliParam(
+    'url_template',
+    help: '搜索地址模板，必须含 {query}（可选 {page}），如 $kRssSearchUrlTemplateExample',
+    required: false,
+    secret: true,
+  ),
+  SettingsCliParam(
+    'domains',
+    help: '逗号分隔的媒体域：anime,movie,tv,novel,audiobook,manga,game',
+    required: false,
+  ),
+  SettingsCliParam('enabled', help: 'true/false，默认 true', required: false),
+  SettingsCliParam('priority', help: '整数，默认 100（越小越先搜）', required: false),
+  SettingsCliParam(
+    'insecure_http',
+    help: 'true/false，允许明文 http 地址，默认 false',
+    required: false,
+  ),
+];
+
+CtlBodyPage _rssSitesPage() => CtlBodyPage(
+  breadcrumb: _servicesCrumb(t.video_rss_settings_title),
   visible: _resourcesVisible,
   items: <SettingsItem>[
-    for (final BuiltinVideoResourceSource source
-        in kBuiltinVideoResourceSources)
-      SettingsSwitchItem(
-        id: 'services.builtin_sources.cli.${source.id}',
-        title: source.displayName,
-        subtitle: source.hint(),
-        value: (SettingsContext c) =>
-            !c.appModel.videoResourceDisabledSourceIds.contains(source.id),
-        onChanged: (SettingsContext c, bool v) =>
-            _store(c).saveBuiltinSourceEnabled(source.id, v),
-        defaultValue: true,
+    SettingsCustomItem(
+      id: 'services.rss_sites.cli.sites',
+      builder: (SettingsContext _) => const SizedBox.shrink(),
+      searchTitle: t.video_rss_settings_title,
+      cliList: SettingsCliList(
+        fields: _rssFields,
+        list: (SettingsContext c) async => <Map<String, Object?>>[
+          for (final RssSearchSiteConfig site in _rssSites(c)) _rssRecord(site),
+        ],
+        add: (SettingsContext c, Map<String, String> fields) async {
+          if ((fields['url_template'] ?? '').trim().isEmpty) {
+            throw ArgumentError('缺少字段 url_template');
+          }
+          final RssSearchSiteConfig site = _buildRssSite(
+            id: newVideoExternalRecordId('rss'),
+            name: fields['name'] ?? '',
+            urlTemplate: fields['url_template']!,
+            enabled: _boolField(fields, 'enabled', true),
+            priority: fields['priority'] ?? '100',
+            domains: _parseRssDomains(fields['domains'] ?? ''),
+            allowInsecureHttp: _boolField(fields, 'insecure_http', false),
+          );
+          await _saveRssSites(c, <RssSearchSiteConfig>[..._rssSites(c), site]);
+          return _rssRecord(site);
+        },
+        update:
+            (SettingsContext c, String id, Map<String, String> fields) async {
+              final RssSearchSiteConfig old = _requireRssSite(c, id);
+              final String? domains = fields['domains'];
+              final RssSearchSiteConfig next = _buildRssSite(
+                id: old.id,
+                name: fields['name'] ?? old.name,
+                urlTemplate: fields['url_template'] ?? old.urlTemplate,
+                enabled: _boolField(fields, 'enabled', old.enabled),
+                priority: fields['priority'] ?? '${old.priority}',
+                domains: domains == null
+                    ? old.domains
+                    : _parseRssDomains(domains),
+                allowInsecureHttp: _boolField(
+                  fields,
+                  'insecure_http',
+                  old.allowInsecureHttp,
+                ),
+              );
+              await _saveRssSites(c, <RssSearchSiteConfig>[
+                for (final RssSearchSiteConfig site in _rssSites(c))
+                  site.id == id ? next : site,
+              ]);
+              return _rssRecord(next);
+            },
+        remove: (SettingsContext c, String id) async {
+          _requireRssSite(c, id);
+          await _saveRssSites(c, <RssSearchSiteConfig>[
+            for (final RssSearchSiteConfig site in _rssSites(c))
+              if (site.id != id) site,
+          ]);
+        },
       ),
+    ),
   ],
 );
 

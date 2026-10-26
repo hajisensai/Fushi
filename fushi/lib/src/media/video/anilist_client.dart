@@ -48,7 +48,7 @@ class AniListMedia {
 
   /// 界面展示用标题：日文原名 → 罗马字 → 英文 → id，与发现页 AniList 适配器
   /// （`native ?? romaji ?? english`）同口径。[displayTitle] 的罗马字优先是给
-  /// nyaa / Jimaku 搜索用的，不能拿来给人看——中文 / 日文界面会整页罗马字。
+  /// BT 资源 / Jimaku 搜索用的，不能拿来给人看——中文 / 日文界面会整页罗马字。
   String get nativeFirstTitle => (native?.isNotEmpty ?? false)
       ? native!
       : (romaji?.isNotEmpty ?? false)

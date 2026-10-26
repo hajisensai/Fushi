@@ -55,7 +55,7 @@ const int kAiRankMaxCandidates = 30;
 
 /// 查询词扩展的用途：决定提示词里对「站点」的描述。
 enum AiSearchPurpose {
-  /// torrent 索引站（Nyaa / Torznab）：发布名多为罗马字 + 英文，偶有日文。
+  /// torrent 索引站（RSS 搜索站 / Torznab）：发布名多为罗马字 + 英文，偶有日文。
   torrent,
 
   /// 字幕站（Jimaku / OpenSubtitles）：条目名多为罗马字 / 英文 / 日文。

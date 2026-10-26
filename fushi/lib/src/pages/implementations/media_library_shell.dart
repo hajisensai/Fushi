@@ -18,7 +18,7 @@ enum MediaLibraryViewKind {
   /// 已入库条目（书架 / 媒体库）。
   library,
 
-  /// 内容发现（书：nyaa / OPDS 等发现源；漫画：AniList 趋势 / 来源热门行 /
+  /// 内容发现（书：RSS 搜索站 / OPDS 等发现源；漫画：AniList 趋势 / 来源热门行 /
   /// 「浏览来源」节）。与「浏览 › 发现」同一组生产发现页。
   discover,
 

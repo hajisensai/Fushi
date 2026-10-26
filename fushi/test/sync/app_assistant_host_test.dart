@@ -45,7 +45,9 @@ void main() {
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
-  Future<(FushiSyncServer, String)> startHost(VideoAcquisitionAssistantHost? host) async {
+  Future<(FushiSyncServer, String)> startHost(
+    VideoAcquisitionAssistantHost? host,
+  ) async {
     final FushiSyncServer server = FushiSyncServer(
       syncDataDir: p.join(tmp.path, 'sync'),
       port: 0,
@@ -74,8 +76,7 @@ void main() {
     return session.views.firstWhere(test).timeout(const Duration(seconds: 10));
   }
 
-  test(
-      '能力位：就绪 → 宣告 videoAcquire；缺 AI 指派 → supported=false + reason；'
+  test('能力位：就绪 → 宣告 videoAcquire；缺 AI 指派 → supported=false + reason；'
       '老 host 没有能力位 → unsupported', () async {
     String? blocker;
     final _HostPorts ports = _HostPorts();
@@ -142,10 +143,10 @@ void main() {
     final HostAssistantTarget target = (await c.probeUrl(url))!;
     final RemoteVideoAcquisitionSession session =
         await RemoteVideoAcquisitionSession.open(
-      client: c,
-      target: target,
-      locale: 'ja-JP',
-    );
+          client: c,
+          target: target,
+          locale: 'ja-JP',
+        );
     addTearDown(session.dispose);
     expect(ports.opened, <String>['ja-JP'], reason: 'AI 解析按手机的语言写提示词');
     expect(session.view.stage, VideoAcquisitionStage.idle);
@@ -173,11 +174,7 @@ void main() {
         );
     expect(summary.say.args['releaseGroup'], 'Group');
     expect(summary.say.args['count'], 3);
-    expect(
-      asked.workActions,
-      isNotEmpty,
-      reason: '作品操作条（换一部 / 整个系列）也要过线',
-    );
+    expect(asked.workActions, isNotEmpty, reason: '作品操作条（换一部 / 整个系列）也要过线');
 
     await session.confirm();
     final VideoAcquisitionView done = await viewWhere(
@@ -209,12 +206,12 @@ void main() {
     final HostAssistantTarget target = (await c.probeUrl(url))!;
     final RemoteVideoAcquisitionSession session =
         await RemoteVideoAcquisitionSession.open(
-      client: c,
-      target: target,
-      locale: 'zh-CN',
-      retryDelay: const Duration(milliseconds: 50),
-      longPollWait: const Duration(seconds: 1),
-    );
+          client: c,
+          target: target,
+          locale: 'zh-CN',
+          retryDelay: const Duration(milliseconds: 50),
+          longPollWait: const Duration(seconds: 1),
+        );
     addTearDown(session.dispose);
 
     await server.stop();
@@ -316,15 +313,19 @@ void main() {
       now: () => now,
     );
     addTearDown(sessions.dispose);
-    final String a = (await sessions.open(
-      kHostAssistantFeatureVideoAcquire,
-      locale: 'zh-CN',
-    ))['id']! as String;
+    final String a =
+        (await sessions.open(
+              kHostAssistantFeatureVideoAcquire,
+              locale: 'zh-CN',
+            ))['id']!
+            as String;
     now = now.add(const Duration(minutes: 1));
-    final String b = (await sessions.open(
-      kHostAssistantFeatureVideoAcquire,
-      locale: 'zh-CN',
-    ))['id']! as String;
+    final String b =
+        (await sessions.open(
+              kHostAssistantFeatureVideoAcquire,
+              locale: 'zh-CN',
+            ))['id']!
+            as String;
     now = now.add(const Duration(minutes: 1));
     await sessions.open(kHostAssistantFeatureVideoAcquire, locale: 'zh-CN');
     expect(await sessions.read(a), isNull, reason: '最久没碰的 a 被挤掉');
@@ -348,7 +349,8 @@ class _HostPorts {
   final List<String> calls = <String>[];
   int released = 0;
 
-  VideoAcquisitionAssistantHost host({String? Function()? blocker}) => VideoAcquisitionAssistantHost(
+  VideoAcquisitionAssistantHost host({String? Function()? blocker}) =>
+      VideoAcquisitionAssistantHost(
         videoAcquireBlocker: () async => blocker?.call(),
         openVideoAcquisition: (String locale) async {
           opened.add(locale);
@@ -357,56 +359,55 @@ class _HostPorts {
       );
 
   VideoAcquisitionService _service() => VideoAcquisitionService(
-        defaults: const VideoAcquisitionDefaults(
-          qualityPref: '1080p',
-          subtitleLanguagePref: 'ja',
-          sources: <VideoAcquisitionSource>[
-            VideoAcquisitionSource(id: 1, label: 'Videos'),
-          ],
-          defaultSourceId: 1,
-          locale: 'zh-CN',
-        ),
-        ports: VideoAcquisitionPorts(
-          searchWorks: (VideoDiscoveryRequest request) async =>
-              ProviderBatchResult<
-                  VideoDiscoveryPage>.success(<VideoDiscoveryPage>[
+    defaults: const VideoAcquisitionDefaults(
+      qualityPref: '1080p',
+      subtitleLanguagePref: 'ja',
+      sources: <VideoAcquisitionSource>[
+        VideoAcquisitionSource(id: 1, label: 'Videos'),
+      ],
+      defaultSourceId: 1,
+      locale: 'zh-CN',
+    ),
+    ports: VideoAcquisitionPorts(
+      searchWorks: (VideoDiscoveryRequest request) async =>
+          ProviderBatchResult<VideoDiscoveryPage>.success(<VideoDiscoveryPage>[
             VideoDiscoveryPage(
               items: <VideoDiscoveryItem>[_finishedShow()],
               page: 1,
               hasMore: false,
             ),
           ]),
-          loadDetails: (VideoDiscoveryItem item) async => item.metadataWork,
-          loadFranchise: (_) async => null,
-          queryPresence: (_) async => VideoLibraryPresence.none,
-          isSubscribed: (_) async => false,
-          searchResources: (_) async =>
-              ProviderBatchResult<VideoResourceCandidate>.success(
+      loadDetails: (VideoDiscoveryItem item) async => item.metadataWork,
+      loadFranchise: (_) async => null,
+      queryPresence: (_) async => VideoLibraryPresence.none,
+      isSubscribed: (_) async => false,
+      searchResources: (_) async =>
+          ProviderBatchResult<VideoResourceCandidate>.success(
             <VideoResourceCandidate>[
               _Candidate(1),
               _Candidate(2),
               _Candidate(3),
             ],
           ),
-          parseIntent: (VideoAcquisitionIntentQuery query) async {
-            parsed.add(query.utterance);
-            return const VideoAcquisitionIntent(
-              VideoAcquisitionIntentKind.provide,
-              VideoAcquisitionIntentPatch(workQueries: <String>['Show']),
-            );
-          },
-          decideIdentity: (_) async => null,
-          persistPreference: (VideoAcquisitionPreference p, String v) async =>
-              calls.add('persist:${p.name}=$v'),
-          setSeriesSubtitleLanguage: (_, String code) async =>
-              calls.add('setSeriesSubtitleLanguage:$code'),
-          submitDownload: (VideoAcquisitionSubmitDownloadEffect effect) async {
-            calls.add('submitDownload:${effect.plan.picks.length}');
-            return effect.plan.picks.length;
-          },
-          submitSubscription: (_) async => calls.add('submitSubscription'),
-        ),
-      );
+      parseIntent: (VideoAcquisitionIntentQuery query) async {
+        parsed.add(query.utterance);
+        return const VideoAcquisitionIntent(
+          VideoAcquisitionIntentKind.provide,
+          VideoAcquisitionIntentPatch(workQueries: <String>['Show']),
+        );
+      },
+      decideIdentity: (_) async => null,
+      persistPreference: (VideoAcquisitionPreference p, String v) async =>
+          calls.add('persist:${p.name}=$v'),
+      setSeriesSubtitleLanguage: (_, String code) async =>
+          calls.add('setSeriesSubtitleLanguage:$code'),
+      submitDownload: (VideoAcquisitionSubmitDownloadEffect effect) async {
+        calls.add('submitDownload:${effect.plan.picks.length}');
+        return effect.plan.picks.length;
+      },
+      submitSubscription: (_) async => calls.add('submitSubscription'),
+    ),
+  );
 }
 
 VideoDiscoveryItem _finishedShow() {
@@ -434,15 +435,15 @@ VideoDiscoveryItem _finishedShow() {
 
 class _Candidate extends VideoResourceCandidate {
   _Candidate(int episode)
-      : super(
-          providerId: 'nyaa',
-          providerInstanceId: 'nyaa',
-          remoteId: 'r$episode',
-          title: '[Group] Show - ${episode.toString().padLeft(2, '0')} (1080p)',
-          providerPriority: 100,
-          releaseGroup: 'Group',
-          resolution: '1080p',
-          trusted: true,
-          seeders: 10,
-        );
+    : super(
+        providerId: 'rss',
+        providerInstanceId: 'nyaa-rss',
+        remoteId: 'r$episode',
+        title: '[Group] Show - ${episode.toString().padLeft(2, '0')} (1080p)',
+        providerPriority: 100,
+        releaseGroup: 'Group',
+        resolution: '1080p',
+        trusted: true,
+        seeders: 10,
+      );
 }

@@ -14,7 +14,7 @@
 /// 注意本机若开着 fake-ip 代理，直接对这些域名发 BEP 15 握手会全部超时（DNS 被
 /// 解析成 198.18.x.x），那是环境问题，不能当成 tracker 已死的证据。
 ///
-/// 索引器专属 tracker（如 nyaa 的 `nyaa.tracker.wf`）不进这里，由各 client 自己
+/// 索引器专属 tracker 不进这里，由各 client 自己
 /// 拼在最前面。
 const List<String> kPublicTrackers = <String>[
   // 仓库原有（保留）。
@@ -43,4 +43,15 @@ const List<String> kPublicTrackers = <String>[
   'udp://tracker.ducks.party:1984/announce',
   'udp://tracker.bittor.pw:1337/announce',
   'udp://tracker.auctor.tv:6969/announce',
+];
+
+/// Nyaa 磁链 tracker 列表：站点专属 tracker 排最前，后面跟内置公开兜底集
+/// [kPublicTrackers]。nyaa 自己的 tracker 只覆盖本站种子，公开的那批才是
+/// 「站点 tracker 挂了/种子已从本站下架」时还能连上 peer 的那条路。
+///
+/// 仓库已不内置 Nyaa 搜索；引擎里它只用于存量 provider 为 `nyaa` 的下载任务
+/// （只存了 info hash、没存磁链）离线拼磁链续下。
+const List<String> kNyaaTrackers = <String>[
+  'http://nyaa.tracker.wf:7777/announce',
+  ...kPublicTrackers,
 ];

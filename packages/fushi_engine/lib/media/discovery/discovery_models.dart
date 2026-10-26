@@ -16,7 +16,7 @@ import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 enum DiscoveryMediaKind { novel, audiobook, game, manga }
 
 /// 条目将来会产出的 payload 形态。源在**列表阶段**就已知自己产什么
-/// （nyaa 恒 torrent、AList/shinnku 恒 http），UI 拿到条目即可分流下载动作：
+/// （RSS 搜索站恒 torrent、AList/shinnku 恒 http），UI 拿到条目即可分流下载动作：
 /// torrent 走既有 torrent 后端（`pushGenericMagnet` 链路），http 走
 /// `DiscoveryDownloadQueue`——不需要先 resolve 再分流。
 enum DiscoveryPayloadKind { torrent, httpFile }
@@ -37,7 +37,7 @@ final class DiscoveryTorrentPayload extends DiscoveryPayload {
 
 /// 已在 add 之前解析、并且只允许下载其中一部分文件的 `.torrent` payload。
 ///
-/// 普通 Nyaa 搜索仍用 [DiscoveryTorrentPayload]；CoreAudio 的 TMW 合集必须用
+/// 普通磁链结果仍用 [DiscoveryTorrentPayload]；CoreAudio 的 TMW 合集必须用
 /// 本类型，避免一个“卷”点击退化成整颗合集下载。选择意图与 metainfo 一起交给
 /// durable 下载管线，重启后仍能重新应用文件优先级。
 final class DiscoverySelectedTorrentPayload extends DiscoveryPayload {
@@ -163,10 +163,10 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
   /// 列表条目上：图片磁盘缓存只按 URL 记键，不落请求头。
   final Map<String, String>? coverHeaders;
 
-  /// 外部详情页（nyaa view 页、shinnku 条目页）；「在浏览器打开」动作用。
+  /// 外部详情页（种子站详情页、shinnku 条目页）；「在浏览器打开」动作用。
   final String? detailUrl;
 
-  /// 源特定的一句话标注（sukebei 的 `trusted`、平台标签等），原样展示，
+  /// 源特定的一句话标注（平台标签等），原样展示，
   /// 不参与任何逻辑。
   ///
   /// BUG-1910：游戏的「生肉/熟肉/手机」**不再**走这里 —— 见 [gameLocalization]。
@@ -178,7 +178,7 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
   /// （「原样展示，不参与任何逻辑」——注释自陈），既没法筛，对非中文用户还是一串
   /// 看不懂的字。按显示名筛选是本仓刚刚修过的反模式（BUG-1906 的导出范围）。
   ///
-  /// null = **该源没有给出这个信息**（sukebei / AList 的条目就是 null），
+  /// null = **该源没有给出这个信息**（RSS 搜索站 / AList 的条目就是 null），
   /// 不是「未汉化」。UI 必须为它保留一个可见的「未标注」档，否则用户在聚合搜索里
   /// 一按筛选就把这两个源整个滤没了。
   final DiscoveryGameLocalization? gameLocalization;
@@ -186,25 +186,24 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
   /// false 表示该来源只支持展示/辨认，当前下载模块没有可执行 payload。
   final bool isDownloadable;
 
-  /// 源内分类 id（nyaa `categoryId`，如 `3_1` = Literature English-translated）；
+  /// 源内分类 id（RSS 条目的站内分类原文）；
   /// 源不给分类时为 null。
   final String? category;
 
-  /// 源标记的 trusted 发布（nyaa HTML 行 class `success`）。
+  /// 源标记的 trusted 发布（RSS 扩展字段里的 trusted 标记）。
   final bool trusted;
 
-  /// 源标记的 remake（nyaa HTML 行 class `danger`）。nyaa 的行颜色只有一种，
-  /// remake 会盖掉 trusted——两者同真在 HTML 路径上不会出现。
+  /// 源标记的 remake。目前没有源会给出它（保留字段，徽标照常渲染）。
   final bool remake;
 
   /// 标题/体积推断出的内容形态，见 [DiscoveryContentHint]。默认 [DiscoveryContentHint.none]
-  /// = 源没跑分类器（非 nyaa 小说域、OPDS、直链源）。
+  /// = 源没跑分类器（非 RSS 小说域、OPDS、直链源）。
   final DiscoveryContentHint contentHint;
 }
 
-/// 资源条目的内容形态提示：Nyaa Literature（`3_x`）里轻小说与扫图漫画、同人志
+/// 资源条目的内容形态提示：公共种子站的文学类目里轻小说与扫图漫画、同人志
 /// 图包混放，站方没有「小说 vs 漫画」维度，只能靠标题命名规范 + 体积推断
-/// （`nyaa_literature_classifier.dart`）。
+/// （app 侧 `literature_title_classifier.dart`）。
 ///
 /// 这是**提示**不是事实：发现页默认只隐藏 [manga] 档，[undecided] 保留显示，
 /// 用户随时能一键显示被隐藏的条目。

@@ -231,8 +231,8 @@ VideoDiscoveryItem _finishedShow() {
 class _Candidate extends VideoResourceCandidate {
   _Candidate(int episode)
     : super(
-        providerId: 'nyaa',
-        providerInstanceId: 'nyaa',
+        providerId: 'rss',
+        providerInstanceId: 'nyaa-rss',
         remoteId: 'r$episode',
         title: '[Group] Show - ${episode.toString().padLeft(2, '0')} (1080p)',
         providerPriority: 100,

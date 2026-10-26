@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
-import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
@@ -43,7 +42,6 @@ class VideoExternalSettingsSnapshot {
     this.subdlApiKey = '',
     this.subdlEnabled = true,
     this.ajattEnabled = true,
-    this.disabledBuiltinSourceIds = const <String>{},
     this.pathMappings = const <VideoDownloadBackendPathMappingConfig>[],
     this.managedVideoSources = const <ManagedVideoSourceOption>[],
     this.targetSourceId,
@@ -75,9 +73,6 @@ class VideoExternalSettingsSnapshot {
   /// 默认 true（没填任何 key 的用户唯一能用的源）。
   final bool ajattEnabled;
 
-  /// 用户停用的内置资源索引器 id（[kBuiltinVideoResourceSources] 的子集）。
-  /// 装的是「停用」而不是「启用」：新内置源上线即默认参与，不需要迁移写入。
-  final Set<String> disabledBuiltinSourceIds;
   final List<VideoDownloadBackendPathMappingConfig> pathMappings;
   final List<ManagedVideoSourceOption> managedVideoSources;
   final int? targetSourceId;
@@ -101,9 +96,6 @@ abstract interface class VideoExternalSettingsStore {
   Future<void> saveSubdlEnabled(bool enabled);
 
   Future<void> saveAjattEnabled(bool enabled);
-
-  /// 开/关一个内置资源索引器（[kBuiltinVideoResourceSources] 里的 id）。
-  Future<void> saveBuiltinSourceEnabled(String sourceId, bool enabled);
 
   Future<void> savePathMappings(
     List<VideoDownloadBackendPathMappingConfig> mappings,
@@ -163,7 +155,6 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
       subdlApiKey: appModel.videoSubtitleSubdlApiKey,
       subdlEnabled: appModel.videoSubtitleSubdlEnabled,
       ajattEnabled: appModel.videoSubtitleAjattEnabled,
-      disabledBuiltinSourceIds: appModel.videoResourceDisabledSourceIds,
       pathMappings: appModel.prefsRepo.videoDownloadBackendPathMappings,
       managedVideoSources: sources,
       targetSourceId: target,
@@ -211,10 +202,6 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
       appModel.setVideoSubtitleAjattEnabled(enabled);
 
   @override
-  Future<void> saveBuiltinSourceEnabled(String sourceId, bool enabled) =>
-      appModel.setVideoResourceSourceEnabled(sourceId, enabled);
-
-  @override
   Future<void> savePathMappings(
     List<VideoDownloadBackendPathMappingConfig> mappings,
   ) => appModel.prefsRepo.setVideoDownloadBackendPathMappings(mappings);
@@ -246,9 +233,7 @@ enum VideoExternalProviderScope {
   subdl,
   subtitlePreferences,
 
-  /// 资源索引器：随包内置来源开关 + Torznab 索引器。
-  resourceSources,
-  builtinSources,
+  /// Torznab 索引器（RSS 搜索站有自己的设置区 `RssSearchSiteSettingsSection`）。
   torznab,
 
   /// 下载落盘管道：下载后端路径映射 + 下载目标视频来源。不是在线服务，留在
@@ -297,7 +282,6 @@ class _VideoExternalProviderSettingsSectionState
   String _subdlApiKey = '';
   bool _subdlEnabled = true;
   bool _ajattEnabled = true;
-  Set<String> _disabledBuiltinSources = const <String>{};
   String _suggestedBackendProfileId = '';
   Timer? _torznabSaveDebounce;
   Timer? _openSubtitlesSaveDebounce;
@@ -367,7 +351,6 @@ class _VideoExternalProviderSettingsSectionState
         _subdlApiKey = snapshot.subdlApiKey;
         _subdlEnabled = snapshot.subdlEnabled;
         _ajattEnabled = snapshot.ajattEnabled;
-        _disabledBuiltinSources = snapshot.disabledBuiltinSourceIds;
         _suggestedBackendProfileId = snapshot.suggestedBackendProfileId;
         _loading = false;
       });
@@ -947,58 +930,6 @@ class _VideoExternalProviderSettingsSectionState
     );
   }
 
-  /// 随应用内置、零配置的资源来源，逐个可停用。
-  ///
-  /// 用户打开这一区只看到「Torznab（空）」，合理推论是「这个 app 自己没有任何
-  /// 来源」——但动漫一直在搜内置 Nyaa，电影/剧集一直在搜内置公共索引器。行是从
-  /// [kBuiltinVideoResourceSources] 遍历出来的（同一张表也用来构造 provider），
-  /// 所以「设置里列的」与「真去搜的」不可能对不上。
-  ///
-  /// 开关与「发现来源」区渲染同一个 [SourceToggleList]：两处都是「一组零配置内置
-  /// 源按 id 记停用」，没有第二种形状的理由。
-  Widget _builtinSourcesBlock(ThemeData theme) {
-    return Column(
-      key: const ValueKey<String>('video-builtin-sources'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        _sectionHeading(
-          theme,
-          t.video_builtin_sources_title,
-          t.video_builtin_sources_hint,
-          icon: FushiIcons.verified,
-        ),
-        SourceToggleList(
-          keyPrefix: 'video-builtin-source',
-          rows: <SourceToggleRow>[
-            for (final BuiltinVideoResourceSource source
-                in kBuiltinVideoResourceSources)
-              SourceToggleRow(
-                id: source.id,
-                title: source.displayName,
-                subtitle: source.hint(),
-                enabled: !_disabledBuiltinSources.contains(source.id),
-              ),
-          ],
-          onChanged: (String sourceId, bool enabled) async {
-            setState(() {
-              final Set<String> next = <String>{..._disabledBuiltinSources};
-              if (enabled) {
-                next.remove(sourceId);
-              } else {
-                next.add(sourceId);
-              }
-              _disabledBuiltinSources = next;
-            });
-            await _save(
-              (VideoExternalSettingsStore store) =>
-                  store.saveBuiltinSourceEnabled(sourceId, enabled),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
   /// 把整段落到与普通设置行同一条 16px 左右基线上，正文吃满剩下的宽度。
   ///
   /// 这一段此前三种行各有一套左右边界：输入框自己缩到 480；`SwitchListTile`
@@ -1066,14 +997,8 @@ class _VideoExternalProviderSettingsSectionState
         _ajattFields(),
         _subtitleLanguageField(),
       ],
-      VideoExternalProviderScope.builtinSources => <Widget>[
-        _builtinSourcesBlock(theme),
-      ],
       VideoExternalProviderScope.torznab => _torznabBlocks(theme),
       VideoExternalProviderScope.subtitleSources => _subtitleSourceBlocks(
-        theme,
-      ),
-      VideoExternalProviderScope.resourceSources => _resourceSourceBlocks(
         theme,
       ),
       // 上面已提前返回分组形态。
@@ -1091,15 +1016,6 @@ class _VideoExternalProviderSettingsSectionState
         ],
       ),
     );
-  }
-
-  /// 资源索引器：内置来源开关 + Torznab 索引器。
-  List<Widget> _resourceSourceBlocks(ThemeData theme) {
-    return <Widget>[
-      _builtinSourcesBlock(theme),
-      const FushiDividerControl(height: 32),
-      ..._torznabBlocks(theme),
-    ];
   }
 
   List<Widget> _torznabBlocks(ThemeData theme) {
@@ -1184,8 +1100,9 @@ class _VideoExternalProviderSettingsSectionState
                 else
                   Padding(
                     padding: EdgeInsets.symmetric(
-                      horizontal:
-                          FushiDesignTokens.of(context).spacing.rowHorizontal,
+                      horizontal: FushiDesignTokens.of(
+                        context,
+                      ).spacing.rowHorizontal,
                       vertical: 10,
                     ),
                     child: _targetSourceField(theme),

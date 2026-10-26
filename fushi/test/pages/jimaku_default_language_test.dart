@@ -1,63 +1,29 @@
-import 'dart:convert';
-
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
-import 'package:material_ui/material_ui.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi_engine/media/torrent/anime_download_config.dart';
-import 'package:fushi_engine/media/torrent/nyaa_client.dart';
-import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 
 import '../helpers/test_platform_services.dart';
-import '../helpers/glass_unwrap.dart';
 
 /// 「设置 → 视频 → 字幕 → 默认字幕语言」的生效链路专项测试
 /// （`settings_schema_coverage_test` 的 `kCoveredElsewhere` 指向本文件）。
 ///
 /// 该设置本身只是一个偏好；它的「生效」不在 reader CSS / 主题树里，而是在三个
 /// Jimaku 界面打开时的**语言预选**上——没有该系列的语言记忆时用它兜底。故用
-/// 三层咬住：偏好往返 → AppModel 归一（含仓库未就绪的回退）→ 番剧下载对话框
-/// 真的按它预选语言 chip。
+/// 三层咬住：偏好往返 → AppModel 归一（含仓库未就绪的回退）→ 字幕工作台宿主
+/// （[AppSubtitleWorkbenchHost]，Jimaku 界面的语言预选都经它）真的拿它兜底。
 FushiDatabase _testDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
-
-const AniListMedia _kMedia = AniListMedia(
-  id: 1,
-  romaji: 'Test Anime',
-  native: 'テスト・アニメ',
-  episodes: 12,
-);
-
-const NyaaTorrent _kTorrent = NyaaTorrent(
-  title: '[Group] Test Anime - 01 [1080p]',
-  torrentUrl: 'https://nyaa.si/download/1.torrent',
-  pageUrl: 'https://nyaa.si/view/1',
-  infoHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-  seeders: 100,
-  leechers: 1,
-  downloads: 1000,
-  sizeText: '1.4 GiB',
-  sizeBytes: 1503238553,
-  categoryId: '1_2',
-  trusted: false,
-  remake: false,
-  pubDate: null,
-);
 
 /// 只替换偏好读取与 HTTP 的 AppModel 替身：语言预选走的仍是生产代码路径。
 class _FakeAppModel extends AppModel {
   _FakeAppModel({required this.defaultLanguage})
-      : super(testPlatformServices());
+    : super(testPlatformServices());
 
   final String defaultLanguage;
 
@@ -67,48 +33,15 @@ class _FakeAppModel extends AppModel {
   @override
   String get jimakuDefaultLanguage => defaultLanguage;
 
-  // 以下两项只为让对话框能渲染（未 initialise 的 AppModel 读 prefsRepo 会抛）。
-  @override
-  QbConnectionConfig? get qbConnectionConfig => const QbConnectionConfig(
-        backend: QbConnectionConfig.backendQbittorrent,
-        baseUrl: 'http://127.0.0.1:1',
-      );
+  /// 每系列的语言记忆（与默认语言是两张独立的表）。
+  Map<String, String> seriesLanguages = const <String, String>{};
 
   @override
-  bool get torrentUploadIntroShown => true;
-
-  // BT 前的 P2P 说明不在这些用例的范围里。
-  @override
-  bool get p2pDownloadNoticeDismissed => true;
-
-  @override
-  Future<http.Client> createDownloadHttpClient() async =>
-      MockClient((http.Request req) async {
-        final String url = req.url.toString();
-        if (url.contains('/entries/search')) {
-          return http.Response.bytes(
-            utf8.encode(jsonEncode(<Map<String, Object>>[
-              <String, Object>{'id': 7, 'name': 'Test Anime'},
-            ])),
-            200,
-          );
-        }
-        if (url.contains('/files')) {
-          return http.Response.bytes(
-            utf8.encode(jsonEncode(<Map<String, Object>>[
-              <String, Object>{
-                'name': 'Test Anime - 01.zh.srt',
-                'url': 'https://jimaku.cc/f/1.srt',
-              },
-            ])),
-            200,
-          );
-        }
-        return http.Response('', 404);
-      });
+  Map<String, String> get jimakuPreferredLanguages => seriesLanguages;
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
   });
@@ -146,12 +79,18 @@ void main() {
 
   group('AppModel 归一', () {
     test('空 / 空白 → null（= 不限），有值 → 原码', () {
-      expect(_FakeAppModel(defaultLanguage: '').jimakuDefaultLanguageOrNull,
-          isNull);
-      expect(_FakeAppModel(defaultLanguage: '   ').jimakuDefaultLanguageOrNull,
-          isNull);
-      expect(_FakeAppModel(defaultLanguage: 'ja').jimakuDefaultLanguageOrNull,
-          'ja');
+      expect(
+        _FakeAppModel(defaultLanguage: '').jimakuDefaultLanguageOrNull,
+        isNull,
+      );
+      expect(
+        _FakeAppModel(defaultLanguage: '   ').jimakuDefaultLanguageOrNull,
+        isNull,
+      );
+      expect(
+        _FakeAppModel(defaultLanguage: 'ja').jimakuDefaultLanguageOrNull,
+        'ja',
+      );
     });
 
     test('偏好仓库未就绪 → 回退「不限」而不是抛', () {
@@ -162,49 +101,27 @@ void main() {
     });
   });
 
-  // 两个语言各起一个 testWidgets：同一棵树里二次 pumpWidget 会复用
-  // AnimeDownloadDialog 的 State（不重跑 initState），预选是 initState 里定的。
-  testWidgets('番剧下载对话框：默认语言=中文 → 预选中文', (WidgetTester tester) async {
-    await _pumpDialog(tester, 'zh');
-    expect(_chipSelected(tester, '中文'), isTrue);
-    expect(_chipSelected(tester, t.video_jimaku_language_all), isFalse);
+  group('字幕工作台宿主兜底', () {
+    test('该系列没有记忆 → 用默认语言', () {
+      final AppSubtitleWorkbenchHost host = AppSubtitleWorkbenchHost(
+        _FakeAppModel(defaultLanguage: 'zh'),
+      );
+      expect(host.preferredLanguageFor('series:1'), 'zh');
+    });
+
+    test('默认语言=不限 → null（跟随视频语言）', () {
+      final AppSubtitleWorkbenchHost host = AppSubtitleWorkbenchHost(
+        _FakeAppModel(defaultLanguage: ''),
+      );
+      expect(host.preferredLanguageFor('series:1'), isNull);
+    });
+
+    test('该系列有记忆 → 记忆压过默认语言', () {
+      final _FakeAppModel model = _FakeAppModel(defaultLanguage: 'zh')
+        ..seriesLanguages = const <String, String>{'series:1': 'ja'};
+      final AppSubtitleWorkbenchHost host = AppSubtitleWorkbenchHost(model);
+      expect(host.preferredLanguageFor('series:1'), 'ja');
+      expect(host.preferredLanguageFor('series:2'), 'zh');
+    });
   });
-
-  testWidgets('番剧下载对话框：默认语言=不限 → 预选全部', (WidgetTester tester) async {
-    await _pumpDialog(tester, '');
-    expect(_chipSelected(tester, t.video_jimaku_language_all), isTrue);
-    expect(_chipSelected(tester, '中文'), isFalse);
-  });
-}
-
-Future<void> _pumpDialog(WidgetTester tester, String language) async {
-  await tester.pumpWidget(ProviderScope(
-    overrides: <Override>[
-      appProvider
-          .overrideWith((Ref ref) => _FakeAppModel(defaultLanguage: language)),
-    ],
-    child: TranslationProvider(
-      child: MaterialApp(
-        home: Scaffold(
-          body: AnimeDownloadDialog(
-            embedded: true,
-            debugInitialMedia: _kMedia,
-            debugInitialTorrent: _kTorrent,
-          ),
-        ),
-      ),
-    ),
-  ));
-  await tester.pumpAndSettle();
-  // 触发一次字幕搜索，语言选择器才会出现（它依赖搜到的条目）。
-  await tester.tap(find.byIcon(FushiIcons.search).last);
-  await tester.pumpAndSettle();
-}
-
-bool _chipSelected(WidgetTester tester, String label) {
-  final Iterable<ChoiceChip> chips = tester
-      .widgetList<ChoiceChip>(glassUnwrapAll<ChoiceChip>(find.byType(ChoiceChip)))
-      .where((ChoiceChip c) => (c.label as Text).data == label);
-  expect(chips, isNotEmpty, reason: '语言 chip「$label」应存在');
-  return chips.first.selected;
 }

@@ -1,6 +1,5 @@
 import 'package:http/http.dart' as http;
 
-import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi/src/media/video/airing_calendar_cache.dart';
 import 'package:fushi/src/media/video/airing_discovery_mapping.dart'
     show anilistIdOfVideoDownloadSubscription;
@@ -77,21 +76,15 @@ Future<AiringCalendarSnapshot> loadAiringCalendarWeek(
 ) async {
   final List<MediaCollectionRow> collections = await appModel.database
       .getAllMediaCollections();
-  final AnimeDownloadSubscriptionStore? store =
-      appModel.animeDownloadSubscriptionStore;
-  final List<AnimeDownloadSubscription> subscriptions = store == null
-      ? const <AnimeDownloadSubscription>[]
-      : await store.loadAll();
   final Set<int> libraryIds = <int>{
     for (final MediaCollectionRow c in collections)
       if (c.anilistId != null) c.anilistId!,
   };
-  // 订阅有两套存储：旧版番剧订阅 + 发现页订阅表（从日历点进详情页订阅写的是后者）。
-  // 只认前者 = 刚订阅的番照样不显示「订阅中」。
+  // 订阅只认发现页订阅表（从日历点进详情页订阅写的就是它；旧 JSON 番剧订阅启动
+  // 时已迁进同一张表）。
   final List<VideoDownloadSubscriptionRow> discoverySubscriptions =
       await appModel.database.getVideoDownloadSubscriptions();
   final Set<int> subscribedIds = <int>{
-    for (final AnimeDownloadSubscription s in subscriptions) s.anilistId,
     for (final VideoDownloadSubscriptionRow row in discoverySubscriptions)
       ?anilistIdOfVideoDownloadSubscription(row),
   };

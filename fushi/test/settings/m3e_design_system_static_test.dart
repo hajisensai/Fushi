@@ -1123,12 +1123,6 @@ class AnotherPopupPart {
       'lib/src/pages/implementations/subtitle_search_panel.dart':
           'Online subtitle search panel lists downloadable subtitle files as '
           'transient video-subsystem content rows.',
-      'lib/src/pages/implementations/anime_download_dialog.dart':
-          'Anime download dialog lists Nyaa torrent candidates (release group / '
-          'resolution / seeders / subtitle-coverage badges) and per-episode '
-          'Jimaku subtitle rows plus a download-task list as transient '
-          'video-subsystem content — the same reviewed content exception '
-          'class as the sibling jimaku_subtitle_dialog / jimaku_batch_dialog.',
       // texthooker_page（Hook 控制台）的豁免已于 2026-10-06 M3E 重做时收口：未读
       // 计数胶囊改用共享 FushiFilledButton.tonal（xs），文件里不再有裸圆角 / 裸字号。
       // 批量刮削对话框（PR#387）已随「刮削自动化」删除——刮削不再由用户点按钮
@@ -1460,10 +1454,6 @@ class AnotherPopupPart {
         'surfaceContainerLowest',
         'surfaceContainerHigh',
         'surfaceContainerHighest',
-      },
-      'lib/src/pages/implementations/anime_download_dialog.dart': <String>{
-        'VisualDensity.compact',
-        'fontSize:',
       },
       // BUG-2187 重设计后预览区改用的 token：SegmentedButton 的紧凑密度与
       // 预览进度条的 tonal 轨道底色，都是「预览studio 展示的样例控件」而非页面
@@ -1800,19 +1790,6 @@ class AnotherPopupPart {
       _containsForbiddenChrome(shaderDialog, 'ListTile('),
       isFalse,
       reason: 'the Anime4K preset picker must stay a shared MD3 row',
-    );
-
-    // 番剧下载对话框：豁免通篇讲内容行，开关不在其中。
-    final String animeDownload = File(
-      'lib/src/pages/implementations/anime_download_dialog.dart',
-    ).readAsStringSync();
-    expect(animeDownload, contains('AdaptiveSettingsSwitchRow('));
-    expect(
-      _containsForbiddenChrome(animeDownload, 'SwitchListTile('),
-      isFalse,
-      reason:
-          'anime_download_dialog is allowlisted for content rows; a '
-          'settings toggle must go through the shared MD3 switch row',
     );
   });
 

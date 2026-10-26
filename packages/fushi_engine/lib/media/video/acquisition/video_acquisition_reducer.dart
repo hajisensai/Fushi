@@ -838,7 +838,7 @@ VideoAcquisitionReduction _onDetailsLoaded(
   final VideoAcquisitionState next = state.copyWith(
     stage: VideoAcquisitionStage.collectingSlots,
     // 资源搜索 / 订阅都按这份身份走：搜索列表项的别名可能只有元数据的风格化
-    // 写法（TMDB `FX Senshi KURUMICHAN`，Nyaa 0 条），用详情的罗马字 / 英文名
+    // 写法（TMDB `FX Senshi KURUMICHAN`，种子站 0 条），用详情的罗马字 / 英文名
     // 补齐——与资源搜索页的别名补齐端口同一条判据（BUG-2794 / BUG-2854）。
     chosenItem: item.withReference(item.reference.withWorkLatinTitles(work)),
     work: work,

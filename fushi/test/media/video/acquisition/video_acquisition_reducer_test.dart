@@ -13,8 +13,8 @@ class _FakeResource extends VideoResourceCandidate {
   _FakeResource({
     required super.remoteId,
     required super.title,
-    super.providerId = 'nyaa',
-    super.providerInstanceId = 'nyaa',
+    super.providerId = 'rss',
+    super.providerInstanceId = 'nyaa-rss',
     super.providerPriority = 100,
     super.releaseGroup,
     super.resolution,
@@ -1073,7 +1073,7 @@ void main() {
           );
       expect(summary.say.args['releaseGroup'], 'Grp');
       expect(summary.say.args['resolution'], '1080p');
-      expect(summary.say.args['provider'], 'nyaa');
+      expect(summary.say.args['provider'], 'rss');
       expect(summary.say.args['count'], 2);
       expect(summary.say.args['batch'], isFalse);
       expect(summary.say.args['seeders'], 50);
@@ -1142,11 +1142,14 @@ void main() {
       expect(s.state.stage, VideoAcquisitionStage.resolvingResources);
       s.feed(
         VideoAcquisitionResourcesLoadedEvent(<VideoResourceCandidate>[
+          // RSS / Torznab 有分辨率就能订阅；推不出规则的只剩不支持严格订阅的来源
+          // （已移除内置源留下的旧条目）。
           _FakeResource(
             remoteId: 'x',
             title: 'Show - 01 (1080p)',
             resolution: '1080p',
             seeders: 10,
+            providerId: 'legacy',
           ),
         ]),
       );
@@ -1218,7 +1221,7 @@ void main() {
       );
       for (final Map<String, Object?> c in candidates) {
         expect(c['resolution'], '1080p');
-        expect(c['provider'], 'nyaa');
+        expect(c['provider'], 'rss');
         expect(c['seeders'], 50);
         expect(c['count'], 2);
         expect(c['batch'], isFalse);
@@ -1258,7 +1261,7 @@ void main() {
           'total',
         }),
       );
-      expect(alt.args['provider'], 'nyaa');
+      expect(alt.args['provider'], 'rss');
       expect(alt.args['seeders'], 50);
       expect(alt.args['count'], 2);
       expect(alt.args['batch'], isFalse);

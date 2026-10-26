@@ -18,8 +18,8 @@ class _Resource extends VideoResourceCandidate {
     super.seeders = 10,
   }) : super(
          resolution: '1080p',
-         providerId: 'nyaa',
-         providerInstanceId: 'nyaa',
+         providerId: 'rss',
+         providerInstanceId: 'nyaa-rss',
          providerPriority: 100,
          trusted: true,
        );

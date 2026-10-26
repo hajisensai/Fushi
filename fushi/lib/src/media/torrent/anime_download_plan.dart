@@ -128,7 +128,7 @@ class AnimeDownloadPlan {
   /// AniList 封面 URL；null = 无。
   final String? coverUrl;
 
-  /// 种子标题（Nyaa 显示名）。
+  /// 种子标题（BT 搜索结果的显示名）。
   final String torrentTitle;
 
   /// 推给 qBittorrent 的 URL（magnet 或 .torrent URL）。
@@ -196,8 +196,8 @@ class AnimeDownloadPlan {
 
   /// [subtitles] 里的暂存字幕还没按视频内嵌字幕轨对过时间轴。
   ///
-  /// 由产出暂存字幕的一方置 true：下载完成时 resolver 按包内文件名配上的，以及订阅
-  /// 在发现期就下好的（`AnimeDownloadSubscriptionService`）。视频**真正下载完成**
+  /// 由产出暂存字幕的一方置 true：下载完成时 resolver 按包内文件名配上的，以及旧
+  /// 订阅服务（已删除）在发现期就下好、残留在旧计划里的。视频**真正下载完成**
   /// 那一轮看到它为 true 才对齐、随即清掉——「边下边播」提前入库那一轮视频还残缺
   /// （稀疏文件已存在但内容没下完），抽参考轨只会读到半截，所以那一轮不对、留着。
   /// 旧计划缺字段时默认 false（不补对齐，与此前行为一致）。
@@ -346,31 +346,38 @@ AnimeDownloadPlan? decodeAnimeDownloadPlan(Map<dynamic, dynamic> raw) {
       id: id,
       createdAtMs: raw['createdAtMs'] is int ? raw['createdAtMs'] as int : 0,
       anilistId: raw['anilistId'] is int ? raw['anilistId'] as int : null,
-      seriesTitle:
-          raw['seriesTitle'] is String ? raw['seriesTitle'] as String : '',
+      seriesTitle: raw['seriesTitle'] is String
+          ? raw['seriesTitle'] as String
+          : '',
       coverUrl: raw['coverUrl'] is String ? raw['coverUrl'] as String : null,
-      torrentTitle:
-          raw['torrentTitle'] is String ? raw['torrentTitle'] as String : '',
+      torrentTitle: raw['torrentTitle'] is String
+          ? raw['torrentTitle'] as String
+          : '',
       magnet: raw['magnet'] is String ? raw['magnet'] as String : '',
-      qbCategory:
-          raw['qbCategory'] is String ? raw['qbCategory'] as String : '',
+      qbCategory: raw['qbCategory'] is String
+          ? raw['qbCategory'] as String
+          : '',
       subtitles: subtitles,
       status: raw['status'] is String && (raw['status'] as String).isNotEmpty
           ? raw['status'] as String
           : AnimeDownloadPlan.statusDownloading,
-      failReason:
-          raw['failReason'] is String ? raw['failReason'] as String : null,
-      collectionId:
-          raw['collectionId'] is int ? raw['collectionId'] as int : null,
+      failReason: raw['failReason'] is String
+          ? raw['failReason'] as String
+          : null,
+      collectionId: raw['collectionId'] is int
+          ? raw['collectionId'] as int
+          : null,
       importedEarly: raw['importedEarly'] == true,
       importInProgress: raw['importInProgress'] == true,
       // 缺字段（老计划）→ 视频（既有番剧计划行为不变）。
-      contentKind: raw['contentKind'] is String &&
+      contentKind:
+          raw['contentKind'] is String &&
               (raw['contentKind'] as String).isNotEmpty
           ? raw['contentKind'] as String
           : AnimeDownloadPlan.kindVideo,
-      jimakuEntryId:
-          raw['jimakuEntryId'] is int ? raw['jimakuEntryId'] as int : null,
+      jimakuEntryId: raw['jimakuEntryId'] is int
+          ? raw['jimakuEntryId'] as int
+          : null,
       jimakuEntryName: raw['jimakuEntryName'] is String
           ? raw['jimakuEntryName'] as String
           : null,
@@ -380,19 +387,22 @@ AnimeDownloadPlan? decodeAnimeDownloadPlan(Map<dynamic, dynamic> raw) {
       // 缺字段（老计划）→ 字幕在选种时就下好了：有暂存条目即 resolved，否则 none。
       // 绝不能落成 pending，否则老计划会在完成时被当成「还没取字幕」再取一遍，
       // 把用户已有的暂存/sidecar 搅乱。
-      subtitleStatus: raw['subtitleStatus'] is String &&
+      subtitleStatus:
+          raw['subtitleStatus'] is String &&
               (raw['subtitleStatus'] as String).isNotEmpty
           ? raw['subtitleStatus'] as String
           : (subtitles.isEmpty
-              ? AnimeDownloadPlan.subtitleNone
-              : AnimeDownloadPlan.subtitleResolved),
-      subtitleNote:
-          raw['subtitleNote'] is String ? raw['subtitleNote'] as String : null,
+                ? AnimeDownloadPlan.subtitleNone
+                : AnimeDownloadPlan.subtitleResolved),
+      subtitleNote: raw['subtitleNote'] is String
+          ? raw['subtitleNote'] as String
+          : null,
       // 缺字段（BUG-1696 之前的计划）→ 0 次尝试。对已经是 unavailable 的老计划，
       // 这意味着它们会在下一轮 tick 立刻获得**一次**重试机会，之后照 backoff 走。
       // 这正是想要的：那批计划就是被旧的「取不到就算了」卡住的。
-      subtitleAttempts:
-          raw['subtitleAttempts'] is int ? raw['subtitleAttempts'] as int : 0,
+      subtitleAttempts: raw['subtitleAttempts'] is int
+          ? raw['subtitleAttempts'] as int
+          : 0,
       subtitleLastAttemptAtMs: raw['subtitleLastAttemptAtMs'] is int
           ? raw['subtitleLastAttemptAtMs'] as int
           : null,

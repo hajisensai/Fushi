@@ -15,7 +15,7 @@ import 'package:fushi_torrent/fushi_torrent.dart';
 ///   的 savePath 仍指着旧根，只认单根会让它们整批从下载页消失。
 /// - [addTorrent] 只接受 magnet 链接与本地 .torrent 文件路径；
 ///   http(s) .torrent URL 是外接 qb 的能力，内置引擎的选种链路
-///   （Nyaa）本来就产 magnet，不为不存在的调用方加下载器。
+///   （RSS 搜索站 / Torznab 的磁链条目）本来就产 magnet，不为不存在的调用方加下载器。
 /// - firstLastPiecePrio：libtorrent 无 add 期开关（元数据未就绪无从提优），
 ///   记入 [_pendingFirstLast]，在每次 [listTorrents] 轮询时补应用 ——
 ///   上层服务本就以 20s tick 轮询，无需额外定时器。

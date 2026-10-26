@@ -1,4 +1,4 @@
-/// 下载发现链路（AniList / Nyaa / Torznab / Jimaku / OpenSubtitles）的超时常量。
+/// 下载发现链路（AniList / RSS 搜索站 / Torznab / Jimaku / OpenSubtitles）的超时常量。
 ///
 /// 这条链路**没有自己的代理配置**：出口与全应用其它公网出站一样，由
 /// `utils/net/app_proxy.dart` 统一解析（本机/局域网直连 > 用户手填 > env >
@@ -10,7 +10,7 @@
 /// 迁移归并后删除。本文件只剩这条链路特有的两档超时。
 library;
 
-/// 下载网络链路（AniList / Nyaa / Jimaku）单次请求的**整体**超时上限。
+/// 下载网络链路（AniList / RSS 搜索站 / Jimaku）单次请求的**整体**超时上限。
 ///
 /// 这三家都在墙外，用户常挂代理（自动模式还要先解析系统代理再建隧道），
 /// 握手 + TLS + 代理转发叠起来轻松超过十几秒。旧值 20s 是按直连拍的，代理下

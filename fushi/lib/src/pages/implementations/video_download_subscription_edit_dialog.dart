@@ -2,6 +2,11 @@ import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi_engine/media/torrent/rss_search_provider.dart'
+    show kRssResourceProviderId, rssSiteProviderId;
+import 'package:fushi_engine/media/torrent/rss_search_site.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart'
+    show isRemovedBuiltinVideoResourceProvider;
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadSubtitlePolicy;
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart'
@@ -11,7 +16,9 @@ import 'package:fushi_core/fushi_core.dart'
     show MediaSourceRow, VideoDownloadSubscriptionRow;
 
 /// 编辑订阅的**窄面**结果。来源身份（resourceProvider / fingerprint / backend*）
-/// 刻意不可编辑——任务复用判据按它们认（同一集再派一份新任务）。版本规则里只开放
+/// 刻意不可编辑——任务复用判据按它们认（同一集再派一份新任务）。唯一例外是绑在
+/// 已移除的内置搜索站上的旧订阅：它永远搜不到东西，只能改选一个 RSS 搜索站
+/// （[resourceProvider]）。版本规则里只开放
 /// 用户真正要换的几项：字幕组、分辨率、标题包含 / 排除关键词（「换字幕组很费劲」，
 /// 以前只能删了重订）。改规则只影响还没认领的集：已下载 / 在途的集按逻辑集键
 /// 认领过，不会因为换组再派一份。
@@ -22,7 +29,11 @@ class VideoDownloadSubscriptionEdit {
     required this.subtitlePolicy,
     required this.targetSourceId,
     this.filterJson,
+    this.resourceProvider,
   });
+
+  /// 改选的 RSS 搜索站（`rss:<siteId>`）；**null = 不换源，宿主不得写这一列**。
+  final String? resourceProvider;
 
   final String searchQuery;
 
@@ -66,9 +77,9 @@ List<String> videoSubscriptionFilterValues(String rawJson, String key) {
 
 /// **纯函数**：把输入框里「逗号 / 顿号分隔」的多个值拆成去重列表。
 List<String> splitVideoSubscriptionList(String text) => <String>{
-      for (final String part in text.split(RegExp(r'[,，、]')))
-        if (part.trim().isNotEmpty) part.trim(),
-    }.toList(growable: false);
+  for (final String part in text.split(RegExp(r'[,，、]')))
+    if (part.trim().isNotEmpty) part.trim(),
+}.toList(growable: false);
 
 /// **纯函数**：只改版本规则里「编辑订阅」管得着的四项（字幕组 / 分辨率 / 标题包含 /
 /// 标题排除），其余规则（strict、trusted、编码、语言、分类 …）原样保留。空列表 =
@@ -109,23 +120,28 @@ Future<VideoDownloadSubscriptionEdit?> showVideoDownloadSubscriptionEditDialog({
   required BuildContext context,
   required VideoDownloadSubscriptionRow subscription,
   required List<MediaSourceRow> sources,
-}) =>
-    showAppDialog<VideoDownloadSubscriptionEdit>(
-      context: context,
-      builder: (BuildContext _) => _SubscriptionEditDialog(
-        subscription: subscription,
-        sources: sources,
-      ),
-    );
+  List<RssSearchSiteConfig> rssSites = const <RssSearchSiteConfig>[],
+}) => showAppDialog<VideoDownloadSubscriptionEdit>(
+  context: context,
+  builder: (BuildContext _) => _SubscriptionEditDialog(
+    subscription: subscription,
+    sources: sources,
+    rssSites: rssSites,
+  ),
+);
 
 class _SubscriptionEditDialog extends StatefulWidget {
   const _SubscriptionEditDialog({
     required this.subscription,
     required this.sources,
+    required this.rssSites,
   });
 
   final VideoDownloadSubscriptionRow subscription;
   final List<MediaSourceRow> sources;
+
+  /// 本机配置的 RSS 搜索站（只列启用且勾了视频域的，见 [_rssChoices]）。
+  final List<RssSearchSiteConfig> rssSites;
 
   @override
   State<_SubscriptionEditDialog> createState() =>
@@ -133,20 +149,35 @@ class _SubscriptionEditDialog extends StatefulWidget {
 }
 
 class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
-  late final TextEditingController _queryController =
-      TextEditingController(text: widget.subscription.searchQuery);
+  late final TextEditingController _queryController = TextEditingController(
+    text: widget.subscription.searchQuery,
+  );
   late final TextEditingController _startAfterController =
       TextEditingController(
-    text: widget.subscription.startAfterEpisode?.toString() ?? '',
-  );
-  late VideoDownloadSubtitlePolicy _subtitlePolicy = VideoDownloadSubtitlePolicy
-          .values
+        text: widget.subscription.startAfterEpisode?.toString() ?? '',
+      );
+  late VideoDownloadSubtitlePolicy _subtitlePolicy =
+      VideoDownloadSubtitlePolicy.values
           .asNameMap()[widget.subscription.subtitlePolicy] ??
       VideoDownloadSubtitlePolicy.bestEffort;
 
   /// 当前选中的目标来源。初值就是订阅原本的绑定（哪怕它此刻不可用），绝不回落到
   /// 「列表里的第一个」——见 [VideoDownloadSubscriptionEdit.targetSourceId]。
   late int? _sourceId = widget.subscription.targetSourceId;
+
+  /// 订阅绑在已移除的内置搜索站上（永远搜不到，只能改选 RSS 站）。
+  late final bool _providerRemoved = isRemovedBuiltinVideoResourceProvider(
+    widget.subscription.resourceProvider,
+  );
+
+  /// 改选的 RSS 站 provider id（`rss:<siteId>`）；null = 不换源。
+  String? _rssProvider;
+
+  /// 可改选的站：启用且勾了视频域（与订阅检查的「站在场」判据同一口径）。
+  late final List<RssSearchSiteConfig> _rssChoices = <RssSearchSiteConfig>[
+    for (final RssSearchSiteConfig site in widget.rssSites)
+      if (site.appliesToVideo(null)) site,
+  ];
 
   late final TextEditingController _groupController = TextEditingController(
     text: videoSubscriptionFilterValues(
@@ -156,11 +187,11 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
   );
   late final TextEditingController _resolutionController =
       TextEditingController(
-    text: videoSubscriptionFilterValues(
-      widget.subscription.filterJson,
-      'resolution',
-    ).join(', '),
-  );
+        text: videoSubscriptionFilterValues(
+          widget.subscription.filterJson,
+          'resolution',
+        ).join(', '),
+      );
   late final TextEditingController _includeController = TextEditingController(
     text: videoSubscriptionFilterValues(
       widget.subscription.filterJson,
@@ -217,28 +248,28 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
     return edited == normalizedOriginal ? null : edited;
   }
 
-  /// Nyaa 订阅的服务端硬规则：必须指定字幕组，且有分辨率或画质规则（见订阅服务的
-  /// `_SubscriptionFilter.parse`）。只在用户改了规则时才校验——没动的旧订阅照常保存。
-  bool get _isNyaa =>
-      widget.subscription.resourceProvider.split(':').first == 'nyaa';
+  /// 保存后生效的 provider（改选了 RSS 站就是它）。
+  String get _effectiveProvider =>
+      _rssProvider ?? widget.subscription.resourceProvider;
 
-  String? get _groupError {
-    if (_editedFilterJson == null || !_isNyaa) return null;
-    return splitVideoSubscriptionList(_groupController.text).isEmpty
-        ? t.subscription_edit_rule_required
-        : null;
-  }
-
-  String? get _resolutionError {
-    if (_editedFilterJson == null || !_isNyaa) return null;
-    final bool hasQuality = videoSubscriptionFilterValues(
-      widget.subscription.filterJson,
-      'quality',
-    ).isNotEmpty;
-    return splitVideoSubscriptionList(_resolutionController.text).isEmpty &&
-            !hasQuality
-        ? t.subscription_edit_rule_required
-        : null;
+  /// RSS / Torznab 订阅的服务端硬规则：至少一条版本规则（字幕组 / 分辨率 / 画质 /
+  /// 片源 / 编码 / 语言，见订阅服务的 `_SubscriptionFilter.parse`）。只在用户改了
+  /// 规则或换了源时校验——没动的旧订阅照常保存。
+  String? get _versionRuleError {
+    if (_editedFilterJson == null && _rssProvider == null) return null;
+    final String base = _effectiveProvider.split(':').first;
+    if (base != kRssResourceProviderId && base != 'torznab') return null;
+    final String filter = widget.subscription.filterJson;
+    final bool hasOtherRule =
+        <String>['quality', 'source', 'codec', 'language', 'languages'].any(
+          (String key) => videoSubscriptionFilterValues(filter, key).isNotEmpty,
+        );
+    final bool hasEditableRule =
+        splitVideoSubscriptionList(_groupController.text).isNotEmpty ||
+        splitVideoSubscriptionList(_resolutionController.text).isNotEmpty;
+    return hasOtherRule || hasEditableRule
+        ? null
+        : t.subscription_edit_rule_required;
   }
 
   /// 起始集的解析结果：`(ok, value)`。空串合法（= 不限）；其余必须是 >= 0 的整数。
@@ -258,8 +289,7 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
       _queryController.text.trim().isNotEmpty &&
       _sourceId != null &&
       _parsedStartAfter.$1 &&
-      _groupError == null &&
-      _resolutionError == null;
+      _versionRuleError == null;
 
   void _save() {
     if (!_canSave) return;
@@ -269,12 +299,51 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
         startAfterEpisode: _parsedStartAfter.$2,
         subtitlePolicy: _subtitlePolicy,
         // 没动过就传 null（宿主据此不写这一列）。
-        targetSourceId:
-            _sourceId == widget.subscription.targetSourceId ? null : _sourceId,
+        targetSourceId: _sourceId == widget.subscription.targetSourceId
+            ? null
+            : _sourceId,
         filterJson: _editedFilterJson,
+        resourceProvider: _rssProvider,
       ),
     );
   }
+
+  /// 来源已失效的旧订阅：说明 + 改选 RSS 站的下拉（本机还没有可选的站时说明
+  /// 先去设置里添加）。
+  List<Widget> _removedProviderSection(FushiDesignTokens tokens) => <Widget>[
+    FushiInlineNotice(
+      key: const ValueKey<String>('subscription-edit-provider-removed'),
+      severity: FushiNoticeSeverity.warning,
+      message: _rssChoices.isEmpty
+          ? '${t.video_subscription_provider_removed} '
+                '${t.video_subscription_provider_no_rss_site}'
+          : t.video_subscription_provider_removed,
+    ),
+    SizedBox(height: tokens.spacing.gap),
+    if (_rssChoices.isNotEmpty) ...<Widget>[
+      FushiDropdownButtonFormField<String>(
+        key: const ValueKey<String>('subscription-edit-rss-site'),
+        initialValue: _rssProvider,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: t.video_subscription_provider_choose_rss,
+        ),
+        items: <DropdownMenuItem<String>>[
+          for (final RssSearchSiteConfig site in _rssChoices)
+            DropdownMenuItem<String>(
+              value: rssSiteProviderId(site.id),
+              child: Text(
+                site.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+        onChanged: (String? value) => setState(() => _rssProvider = value),
+      ),
+      SizedBox(height: tokens.spacing.gap),
+    ],
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -303,43 +372,43 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
                 ),
               ),
               SizedBox(height: tokens.spacing.card),
+              if (_providerRemoved) ..._removedProviderSection(tokens),
               FushiTextFieldControl(
                 key: const ValueKey<String>('subscription-edit-query'),
                 controller: _queryController,
-                decoration: InputDecoration(
-                  labelText: t.video_jimaku_query,
-                ),
+                decoration: InputDecoration(labelText: t.video_jimaku_query),
                 maxLines: 1,
                 onChanged: (_) => setState(() {}),
               ),
               SizedBox(height: tokens.spacing.gap),
               for (final (Key, TextEditingController, String, String?) field
                   in <(Key, TextEditingController, String, String?)>[
-                (
-                  const ValueKey<String>('subscription-edit-release-group'),
-                  _groupController,
-                  t.subscription_edit_release_group,
-                  _groupError,
-                ),
-                (
-                  const ValueKey<String>('subscription-edit-resolution'),
-                  _resolutionController,
-                  t.subscription_edit_resolution,
-                  _resolutionError,
-                ),
-                (
-                  const ValueKey<String>('subscription-edit-title-include'),
-                  _includeController,
-                  t.subscription_edit_title_include,
-                  null,
-                ),
-                (
-                  const ValueKey<String>('subscription-edit-title-exclude'),
-                  _excludeController,
-                  t.subscription_edit_title_exclude,
-                  null,
-                ),
-              ]) ...<Widget>[
+                    (
+                      const ValueKey<String>('subscription-edit-release-group'),
+                      _groupController,
+                      t.subscription_edit_release_group,
+                      // 「至少一条版本规则」挂在第一个规则框上（分辨率框不重复报）。
+                      _versionRuleError,
+                    ),
+                    (
+                      const ValueKey<String>('subscription-edit-resolution'),
+                      _resolutionController,
+                      t.subscription_edit_resolution,
+                      null,
+                    ),
+                    (
+                      const ValueKey<String>('subscription-edit-title-include'),
+                      _includeController,
+                      t.subscription_edit_title_include,
+                      null,
+                    ),
+                    (
+                      const ValueKey<String>('subscription-edit-title-exclude'),
+                      _excludeController,
+                      t.subscription_edit_title_exclude,
+                      null,
+                    ),
+                  ]) ...<Widget>[
                 FushiTextFieldControl(
                   key: field.$1,
                   controller: field.$2,

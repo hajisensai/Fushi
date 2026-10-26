@@ -21,11 +21,8 @@ import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/download_save_root.dart'
     show sourceIncomingCategoryPath;
 import 'package:fushi_engine/media/torrent/magnet_utils.dart';
-import 'package:fushi_engine/media/torrent/nyaa_client.dart' show kNyaaTrackers;
 import 'package:fushi_engine/media/torrent/public_trackers.dart'
-    show kPublicTrackers;
-import 'package:fushi_engine/media/torrent/public_video_index_provider.dart'
-    show kApibayResourceProviderId, kKnabenResourceProviderId;
+    show kNyaaTrackers, kPublicTrackers;
 import 'package:fushi_engine/media/torrent/torrent_add_coordinator.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
@@ -976,7 +973,7 @@ class VideoDownloadPipelineService {
   /// 此刻任务已经完成并落库，端口抛的异常只记日志、不回滚任务——下载本身是
   /// 成功的，补救入口（任务面板的「配对」）仍在。
   final Future<void> Function(DiscoveryMediaKind kind, List<String> paths)?
-      onDownloadOnlyCompleted;
+  onDownloadOnlyCompleted;
 
   /// 手动任务 .torrent 元数据的落盘目录（`<jobId>.torrent`）。null 时手动
   /// 任务只接受磁力链接。
@@ -1816,10 +1813,11 @@ class VideoDownloadPipelineService {
     final int? target = subscription?.targetSourceId;
     if (target == null) return 0;
     final List<VideoDownloadJobRow> jobs = <VideoDownloadJobRow>[];
-    for (final String jobId in await database.getVideoDownloadSubscriptionJobIds(
-      subscriptionId,
-    )) {
-      final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
+    for (final String jobId
+        in await database.getVideoDownloadSubscriptionJobIds(subscriptionId)) {
+      final VideoDownloadJobRow? job = await database.getVideoDownloadJob(
+        jobId,
+      );
       if (job != null) jobs.add(job);
     }
     return _releaseCompletedSeeds(
@@ -1992,8 +1990,7 @@ class VideoDownloadPipelineService {
   /// 分类只在**投递**新种子时决定落点（[TorrentBackend.addTorrent]），不参与认领。
   static Future<List<TorrentSnapshot>> _listBackendTorrentsForJobs(
     TorrentBackend backend,
-  ) =>
-      backend.listTorrents();
+  ) => backend.listTorrents();
 
   /// 在 [backend] 里按 info hash 找任务行记的那颗种子；不在返回 null。
   static Future<TorrentSnapshot?> _findBackendTorrent(
@@ -2002,8 +1999,9 @@ class VideoDownloadPipelineService {
   ) async {
     final String id = torrentId.trim().toLowerCase();
     if (id.isEmpty) return null;
-    final List<TorrentSnapshot> snapshots =
-        await _listBackendTorrentsForJobs(backend);
+    final List<TorrentSnapshot> snapshots = await _listBackendTorrentsForJobs(
+      backend,
+    );
     for (final TorrentSnapshot snapshot in snapshots) {
       if (snapshot.hash.toLowerCase() == id) return snapshot;
     }
@@ -2186,7 +2184,8 @@ class VideoDownloadPipelineService {
       final int now = _now().millisecondsSinceEpoch;
       // 刮削阶段只有「资料源暂时不可用」可重试；其余（映射不回来源、待确认…）
       // 重试也不会变，交给人处理。
-      final bool scrapeNeedsHuman = job.stage == VideoDownloadJobStage.scrape &&
+      final bool scrapeNeedsHuman =
+          job.stage == VideoDownloadJobStage.scrape &&
           error is! VideoDownloadScrapeProviderUnavailable;
       if (scrapeNeedsHuman || !retryable) {
         await _markNeedsAttention(
@@ -2583,22 +2582,13 @@ class VideoDownloadPipelineService {
     if (job.resourceProvider == kManualVideoDownloadResourceProvider) {
       return _resolveManualMetainfoPayload(job);
     }
-    // 公共索引器（nyaa/apibay/knaben）的 payload 就是「info hash + 该索引器的
-    // 固定 tracker 集」拼出来的磁链——那是任务行里**已有数据的纯函数**，压根
-    // 不需要网络（BUG-1866）。此前它只是重搜失败后的兜底，正常路径先拿完整
-    // 发布名回索引器全文搜：nyaa 对
-    // `[Airota&VCB-Studio] Gekijouban … BDRip [MOVIE]` 这种串必然搜不中，于是
-    // 每次重启/重试都要先把一个还活着的资源误报成 notFound、再被兜底捞回来。
-    // 把纯函数摆到联网之前，这条误报就没有产生的余地了。
-    //
-    // 与联网重搜的差别只在 tracker 与 `dn` 编码，info hash 一定相同：nyaa 与
-    // apibay 联网走的也是同一份常量 tracker（`NyaaTorrent.magnet` /
-    // `buildPublicVideoIndexMagnet`），完全等价；**Knaben 例外**——它的 API 直接
-    // 给 `magnetUrl`，联网时原样透传，离线路径统一换成
-    // `kPublicTrackers`，可能丢掉 knaben 自带的少量 tracker。公共
-    // tracker + DHT 足以补齐，用一条必然发生的 notFound 误报换它不划算。
-    // 真正必须重搜的只剩私有 Torznab：它的 .torrent 走临时凭据 URL，不落库。
-    final TorrentMagnetPayload? offline = _publicIndexerMagnetPayload(job);
+    // 已移除的内置公共索引器（nyaa/apibay/knaben）留下的存量任务：payload 就是
+    // 「info hash + 该索引器的固定 tracker 集」拼出来的磁链——任务行里**已有数据的
+    // 纯函数**，不需要网络（BUG-1866）。这些 provider 已不在 registry 里，联网重搜
+    // 必然 notFound，所以这条离线路径是它们续下 / 重试的唯一出路。用户自配的
+    // RSS 搜索站与 Torznab 不走这里：它们可能是私有站（DHT 关闭、需 .torrent
+    // 凭据），没落库磁链时回原站重搜。
+    final TorrentMagnetPayload? offline = _legacyIndexerMagnetPayload(job);
     if (offline != null) {
       await _persistResolvedMagnet(job, offline.magnetUri);
       return offline;
@@ -2613,6 +2603,7 @@ class VideoDownloadPipelineService {
         media: _mediaReference(job),
         query: job.resourceTitle ?? job.title,
         season: job.season,
+        providerInstanceId: _providerInstanceOf(job.resourceProvider),
       ),
     );
     // 重搜成功解析出的磁链写回任务行：下次重启/重试不再吃索引器可用性。
@@ -2622,22 +2613,18 @@ class VideoDownloadPipelineService {
     return payload;
   }
 
-  /// 公共索引器任务的离线磁链：`magnet:?xt=urn:btih:<hash>` + 该索引器的固定
-  /// tracker 集。私有 Torznab（DHT 关闭、需 .torrent 凭据）返回 null，由调用方
-  /// 回索引器重搜，保持原失败语义。
+  /// 已移除内置索引器任务的离线磁链：`magnet:?xt=urn:btih:<hash>` + 该索引器的
+  /// 固定 tracker 集（nyaa 带站点 tracker，apibay/knaben 用公开兜底集）。其它
+  /// provider 返回 null，由调用方回索引器重搜，保持原失败语义。
   ///
   /// 只认 40 位 v1 hash：BT v2 的 64 位 hash 要走 `urn:btmh:`，拿它拼 `btih`
-  /// 只会得到一个谁也认不出的磁链，宁可退回重搜。
-  TorrentMagnetPayload? _publicIndexerMagnetPayload(VideoDownloadJobRow job) {
+  /// 只会得到一个谁也认不出的磁链。
+  TorrentMagnetPayload? _legacyIndexerMagnetPayload(VideoDownloadJobRow job) {
     final String provider = job.resourceProvider;
-    bool isProvider(String id) => provider == id || provider.startsWith('$id:');
-    final List<String>? trackers = isProvider('nyaa')
+    if (!isRemovedBuiltinVideoResourceProvider(provider)) return null;
+    final List<String> trackers = provider.split(':').first == 'nyaa'
         ? kNyaaTrackers
-        : isProvider(kApibayResourceProviderId) ||
-              isProvider(kKnabenResourceProviderId)
-        ? kPublicTrackers
-        : null;
-    if (trackers == null) return null;
+        : kPublicTrackers;
     final String hash = (job.torrentHash ?? job.selectedResourceId)
         .toLowerCase();
     if (!RegExp(r'^[0-9a-f]{40}$').hasMatch(hash)) return null;
@@ -2650,6 +2637,13 @@ class VideoDownloadPipelineService {
       magnet.write('&tr=${Uri.encodeQueryComponent(tracker)}');
     }
     return TorrentMagnetPayload(magnetUri: magnet.toString(), torrentId: hash);
+  }
+
+  /// 持久化 provider id（`rss:<siteId>`）冒号后的实例 id；裸 id 为 null。
+  static String? _providerInstanceOf(String providerId) {
+    final int colon = providerId.indexOf(':');
+    if (colon < 0 || colon == providerId.length - 1) return null;
+    return providerId.substring(colon + 1);
   }
 
   Future<void> _persistResolvedMagnet(
@@ -4361,8 +4355,9 @@ class VideoDownloadPipelineService {
   Future<void> _notifyDownloadOnlyCompleted(VideoDownloadJobRow job) async {
     final Future<void> Function(DiscoveryMediaKind, List<String>)? hook =
         onDownloadOnlyCompleted;
-    final DiscoveryMediaKind? kind =
-        downloadOnlyKindOfOrganizationPolicy(job.organizationPolicy);
+    final DiscoveryMediaKind? kind = downloadOnlyKindOfOrganizationPolicy(
+      job.organizationPolicy,
+    );
     if (hook == null || kind == null) return;
     final List<VideoDownloadJobFileRow> rows = await database
         .getVideoDownloadJobFiles(job.jobId);
@@ -4768,8 +4763,7 @@ class VideoDownloadPipelineService {
   /// 平手取列表里先出现的行）。旧行没记体积时按 0 参与比较。
   static VideoDownloadJobFileRow? _mainMovieRow(
     List<VideoDownloadJobFileRow> files,
-  ) =>
-      mainMovieDownloadFile(files);
+  ) => mainMovieDownloadFile(files);
 
   /// 并列正片的入库标题（BUG-2007）：优先文件名解析出的标题（剥字幕组/分辨率
   /// 噪音）；解析为空、与主片标题相同或与其他并列正片撞名时退回整理后文件名。

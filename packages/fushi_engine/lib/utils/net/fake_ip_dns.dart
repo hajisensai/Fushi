@@ -7,7 +7,7 @@
 /// 代理内核。TCP 经代理照常可达，但很多代理节点不转发 UDP——于是 BT 里只能走 UDP 的
 /// 两条找 peer 途径同时断掉：
 ///  - DHT 引导点（`router.bittorrent.com` 等）被解析成假地址，路由表冷启动永远 0 节点；
-///  - `udp://` tracker（nyaa 种子五条里四条是 UDP）同理全部超时。
+///  - `udp://` tracker（公共种子的 tracker 多数是 UDP）同理全部超时。
 /// 任务表现为永远 0 peer，且没有任何报错。
 ///
 /// 实测（2026-10-04，本机 Clash Verge TUN）：同一进程里 DHT 引导点走域名 0 节点，

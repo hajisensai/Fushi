@@ -13,89 +13,74 @@ void main() {
     int? collectionId,
     String? metadataProvider,
     String? externalId,
-  }) =>
-      VideoDownloadSubscriptionRow(
-        subscriptionId: id,
-        resourceProvider: 'nyaa',
-        metadataProvider: metadataProvider,
-        externalId: externalId,
-        mediaKind: 'tv',
-        title: 'Show $id',
-        searchQuery: 'Show $id',
-        filterJson: '{}',
-        mode: 'ongoing',
-        backendKind: 'embedded',
-        fingerprint: 'fp-$id',
-        collectionId: collectionId,
-        organizationPolicy: 'library',
-        subtitlePolicy: 'bestEffort',
-        enabled: true,
-        retryCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      );
+  }) => VideoDownloadSubscriptionRow(
+    subscriptionId: id,
+    resourceProvider: 'nyaa',
+    metadataProvider: metadataProvider,
+    externalId: externalId,
+    mediaKind: 'tv',
+    title: 'Show $id',
+    searchQuery: 'Show $id',
+    filterJson: '{}',
+    mode: 'ongoing',
+    backendKind: 'embedded',
+    fingerprint: 'fp-$id',
+    collectionId: collectionId,
+    organizationPolicy: 'library',
+    subtitlePolicy: 'bestEffort',
+    enabled: true,
+    retryCount: 0,
+    createdAt: now,
+    updatedAt: now,
+  );
 
   VideoDownloadSubscriptionItemRow item(
     String subscriptionId,
     String key, {
     String? jobId,
-  }) =>
-      VideoDownloadSubscriptionItemRow(
-        id: key.hashCode,
-        subscriptionId: subscriptionId,
-        logicalItemKey: key,
-        resourceProvider: 'nyaa',
-        selectedResourceId: 'r-$key',
-        title: key,
-        jobId: jobId,
-        status: 'processed',
-        discoveredAt: now,
-        updatedAt: now,
-      );
+  }) => VideoDownloadSubscriptionItemRow(
+    id: key.hashCode,
+    subscriptionId: subscriptionId,
+    logicalItemKey: key,
+    resourceProvider: 'nyaa',
+    selectedResourceId: 'r-$key',
+    title: key,
+    jobId: jobId,
+    status: 'processed',
+    discoveredAt: now,
+    updatedAt: now,
+  );
 
   VideoDownloadJobRow job(
     String id, {
     int? collectionId,
     String? metadataProvider,
     String? externalId,
-  }) =>
-      VideoDownloadJobRow(
-        jobId: id,
-        resourceProvider: 'nyaa',
-        selectedResourceId: 'r-$id',
-        metadataProvider: metadataProvider,
-        externalId: externalId,
-        mediaKind: 'tv',
-        title: 'Job $id',
-        backendKind: 'embedded',
-        fingerprint: 'fp-$id',
-        collectionId: collectionId,
-        organizationPolicy: 'library',
-        subtitlePolicy: 'bestEffort',
-        lifecycle: 'completed',
-        stage: 'complete',
-        stageProgress: 1,
-        priority: 0,
-        attemptCount: 0,
-        maxAttempts: 3,
-        createdAt: now,
-        updatedAt: now,
-      );
-
-  MediaCollectionRow collection(int id, {int? anilistId}) => MediaCollectionRow(
-        origin: 'user',
-        organizeAliases: '',
-        id: id,
-        name: 'C$id',
-        collectionType: 'collection',
-        sortOrder: 0,
-        createdAt: now,
-        orderUpdatedAt: 0,
-        anilistId: anilistId,
-      );
+  }) => VideoDownloadJobRow(
+    jobId: id,
+    resourceProvider: 'nyaa',
+    selectedResourceId: 'r-$id',
+    metadataProvider: metadataProvider,
+    externalId: externalId,
+    mediaKind: 'tv',
+    title: 'Job $id',
+    backendKind: 'embedded',
+    fingerprint: 'fp-$id',
+    collectionId: collectionId,
+    organizationPolicy: 'library',
+    subtitlePolicy: 'bestEffort',
+    lifecycle: 'completed',
+    stage: 'complete',
+    stageProgress: 1,
+    priority: 0,
+    attemptCount: 0,
+    maxAttempts: 3,
+    createdAt: now,
+    updatedAt: now,
+  );
 
   group('subscribedVideoCollectionIds', () {
-    test('五条路径取并集：直绑 / 条目→任务 / 身份→任务 / 身份→作品 / 旧 anilistId', () {
+    test('四条路径取并集：直绑 / 条目→任务 / 身份→任务 / 身份→作品', () {
       final Set<int> ids = subscribedVideoCollectionIds(
         subscriptions: <VideoDownloadSubscriptionRow>[
           sub('direct', collectionId: 1),
@@ -131,30 +116,18 @@ void main() {
         collectionIdByProviderIdentity: <String, int>{
           providerIdentityKey('anidb', '77'): 3,
         },
-        legacyAnilistIds: <int>[500],
-        collections: <MediaCollectionRow>[
-          collection(1),
-          collection(2),
-          collection(3),
-          collection(4, anilistId: 500),
-          collection(5, anilistId: 999),
-          collection(6),
-          collection(7),
-        ],
       );
-      expect(ids, <int>{1, 2, 3, 4, 6});
+      expect(ids, <int>{1, 2, 3, 6});
     });
 
     test('没有订阅 → 空集（首页整行隐藏的前置条件）', () {
       expect(
         subscribedVideoCollectionIds(
           subscriptions: const <VideoDownloadSubscriptionRow>[],
-          itemsBySubscription: const <String,
-              List<VideoDownloadSubscriptionItemRow>>{},
+          itemsBySubscription:
+              const <String, List<VideoDownloadSubscriptionItemRow>>{},
           jobs: const <VideoDownloadJobRow>[],
           collectionIdByProviderIdentity: const <String, int>{},
-          legacyAnilistIds: const <int>[],
-          collections: <MediaCollectionRow>[collection(1, anilistId: 500)],
         ),
         isEmpty,
       );
@@ -163,20 +136,20 @@ void main() {
 
   group('selectVideoSubscriptionUpdate', () {
     VideoSeriesPlaybackState unwatched() => const VideoSeriesPlaybackState(
-          lastWatchedAtMs: 0,
-          positionMs: 0,
-          completed: false,
-        );
+      lastWatchedAtMs: 0,
+      positionMs: 0,
+      completed: false,
+    );
     VideoSeriesPlaybackState completed(int at) => VideoSeriesPlaybackState(
-          lastWatchedAtMs: at,
-          positionMs: 0,
-          completed: true,
-        );
+      lastWatchedAtMs: at,
+      positionMs: 0,
+      completed: true,
+    );
     VideoSeriesPlaybackState watching(int at) => VideoSeriesPlaybackState(
-          lastWatchedAtMs: at,
-          positionMs: 60_000,
-          completed: false,
-        );
+      lastWatchedAtMs: at,
+      positionMs: 60_000,
+      completed: false,
+    );
 
     test('全看完 → null（不占行）', () {
       expect(

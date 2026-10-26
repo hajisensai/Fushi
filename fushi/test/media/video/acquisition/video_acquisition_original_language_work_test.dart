@@ -25,8 +25,8 @@ class _Resource extends VideoResourceCandidate {
     : super(
         remoteId: 'r${_nextId++}',
         title: title,
-        providerId: 'nyaa',
-        providerInstanceId: 'nyaa',
+        providerId: 'rss',
+        providerInstanceId: 'nyaa-rss',
         providerPriority: 100,
         trusted: false,
       );

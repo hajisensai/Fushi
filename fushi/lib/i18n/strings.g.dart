@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 168776 (9928 per locale)
+/// Strings: 168674 (9922 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -633,45 +633,22 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get ai_web_knowledge_wikipedia_en => 'Wikipedia (English)';
   String get ai_web_knowledge_wikipedia_ja => 'Wikipedia (日本語)';
   String get ai_web_knowledge_wikipedia_zh => 'Wikipedia (中文)';
-  String get anime_download_back => 'Back';
-  String get anime_download_batch => 'Batch';
-  String get anime_download_category_all => 'All';
-  String get anime_download_category_english => 'English-translated';
-  String get anime_download_category_non_english => 'Non-English';
-  String get anime_download_category_raw => 'Raw';
   String get anime_download_delete => 'Delete';
-  String anime_download_episode_count({required Object count}) => 'EP ${count}';
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  String get anime_download_filter_single => 'Single episodes';
   String get anime_download_generic_download => 'Download';
   String get anime_download_generic_hint => 'Magnet link';
-  String get anime_download_generic_title =>
-      'Paste a link (books, videos, anything)';
   String get anime_download_include_subs => 'Include subtitles';
-  String get anime_download_kind_auto => 'Auto';
-  String get anime_download_kind_book => 'Book';
   String get anime_download_kind_video => 'Video';
   String get anime_download_magnet_invalid => 'Invalid magnet link';
-  String get anime_download_no_results => 'No results';
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'The service responded successfully but returned 0 items. Query: ${query}; filters: ${filters}. Try another title or loosen the filters.';
   String get anime_download_no_subs => 'No subs';
   String get anime_download_no_tasks => 'No download tasks yet';
-  String get anime_download_nyaa_query => 'Nyaa search terms';
   String get anime_download_play_now => 'Play while downloading';
   String get anime_download_play_now_fail =>
       'Not ready yet (metadata pending or connection failed) — try again later';
   String get anime_download_play_now_ok =>
       'Imported — open it from the video library to play while downloading';
-  String get anime_download_push => 'Push download';
   String get anime_download_push_failed => 'Failed to push to qBittorrent';
   String get anime_download_pushed =>
       'Pushed — it will be imported automatically once finished';
-  String get anime_download_refresh => 'Refresh';
   String get anime_download_relocate => 'Rename / move';
   String anime_download_relocate_engine_failed({required Object reason}) =>
       'Failed, nothing changed: ${reason}';
@@ -688,42 +665,20 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get anime_download_relocate_rename_title => 'Rename file';
   String get anime_download_require_subs => 'Subtitles required';
   String get anime_download_retry => 'Retry';
-  String get anime_download_search => 'Search';
-  String get anime_download_search_error_proxy_hint =>
-      'If the site cannot be reached directly, configure a network proxy in download settings.';
-  String get anime_download_search_failed =>
-      'Search failed or timed out. Tap retry.';
-  String get anime_download_search_hint => 'Anime title';
   String get anime_download_search_start_hint =>
       'Search a title above - torrents and subtitles are matched automatically. Downloads are not limited to video: books, manga, audiobooks and games are imported too.';
-  String get anime_download_sort_date => 'Published';
-  String get anime_download_sort_seeders => 'Seeders';
   String get anime_download_sort_size => 'Size';
   String get anime_download_store_unavailable =>
       'Download plan storage is unavailable';
   String get anime_download_streaming_ready =>
       'In library · download continues';
-  String get anime_download_subs_badge => 'Subs';
-  String get anime_download_subs_deferred =>
-      'Subtitles are matched after download, from the pack\'s actual files';
-  String get anime_download_subs_episodes_unverified =>
-      'Episode numbers are not verified against this pack - subtitles may come from another season.';
-  String get anime_download_subs_failed => 'Subtitle search failed. Tap retry.';
-  String get anime_download_subs_need_key =>
-      'Enter a Jimaku API key above to search subtitles.';
   String get anime_download_subs_pending =>
       'Subtitles: pending until download completes';
   String get anime_download_subs_retrying =>
       'Subtitles: not up yet — will retry automatically';
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'No subtitle entry matches season ${season} of this pack - not auto-selected. Pick one manually if you want it anyway.';
   String get anime_download_subs_unmatched =>
       'Subtitles: no match for this pack';
-  String get anime_download_tasks => 'Download tasks';
-  String get anime_download_title => 'Anime download';
   String get anime_download_trusted => 'Trusted';
-  String get anime_download_trusted_only => 'Trusted only';
-  String get anime_download_unfiltered => 'No Trusted filter';
   String get anki_action_open_settings => 'Open settings';
   String get anki_allow_duplicates => 'Allow duplicates';
   String get anki_allow_duplicates_hint =>
@@ -3258,9 +3213,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get discovery_kind_manga => 'Manga';
   String get discovery_kind_novel => 'Novels';
   String get discovery_load_more => 'Load more';
-  String get discovery_nyaa_filter_all => 'All';
-  String get discovery_nyaa_filter_no_remakes => 'No remakes';
-  String get discovery_nyaa_filter_trusted_only => 'Trusted only';
   String get discovery_opds_add => 'Add OPDS server';
   String get discovery_opds_allow_http => 'Allow plain HTTP';
   String get discovery_opds_allow_http_hint =>
@@ -3490,8 +3442,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'This content comes from a third-party site. It is not provided or hosted by Fushi.';
   String get download_status_cancelled => 'Cancelled';
   String get download_status_queued => 'Queued';
-  String download_subscription_after_episode({required Object episode}) =>
-      'After episode ${episode}';
   String get download_subscription_check_all => 'Check all';
   String get download_subscription_check_now => 'Check now';
   String download_subscription_choice_hint({
@@ -3504,22 +3454,16 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
     required Object resolution,
   }) =>
       'Download the whole ${group} · ${resolution} batch once. A batch has no next episode to follow.';
-  String get download_subscription_created =>
-      'Download queued and subscription created';
   String get download_subscription_delete => 'Delete subscription';
   String download_subscription_delete_confirm({required Object title}) =>
       'Delete the subscription for ${title}? Downloaded tasks are kept.';
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
-  String get download_subscription_download_and_create =>
-      'Download and subscribe';
   String get download_subscription_empty_body =>
       'In Discover, choose a single-episode release and use Download and subscribe.';
   String get download_subscription_empty_title => 'No subscriptions yet';
   String download_subscription_last_checked({required Object time}) =>
       'Last checked: ${time}';
-  String download_subscription_latest_episode({required Object episode}) =>
-      'Latest queued: episode ${episode}';
   String get download_subscription_never_checked => 'Never checked';
   String get download_subscription_running_hint =>
       'Fushi checks enabled subscriptions every 15 minutes while the app is running.';
@@ -11978,6 +11922,27 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get usage_stats_enabled => 'Share usage statistics';
   String get usage_stats_enabled_hint =>
       'Once a day, sends an install ID (derived from this device, unchanged after reinstalling), the app version, platform, update channel, app language, CPU architecture, OS major version and install source (e.g. app store or installer) to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored — only the country or region it resolves to is kept. When you attach device info to feedback, the install ID is sent with it.';
+  String get video_acquisition_channel_library => 'Media library';
+  String get video_acquisition_channel_media_server => 'Media servers';
+  String get video_acquisition_channel_online_source => 'Online sources';
+  String get video_acquisition_channel_torrent => 'BT search';
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  String get video_acquisition_media_server_configure => 'Add server';
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  String get video_acquisition_results_empty => 'No matches found';
+  String get video_acquisition_section_title => 'Where to get it';
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
   String get video_air_season_autumn => 'Fall';
   String get video_air_season_spring => 'Spring';
   String get video_air_season_summer => 'Summer';
@@ -12068,15 +12033,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_bottom_seek_back_label => '−10s';
   String get video_bottom_seek_forward => 'Forward 10s';
   String get video_bottom_seek_forward_label => '+10s';
-  String get video_builtin_apibay_hint =>
-      'Movies and TV shows. Public index, no account needed.';
-  String get video_builtin_knaben_hint =>
-      'Movies and TV shows. Aggregates several public indexers.';
-  String get video_builtin_nyaa_hint =>
-      'Anime only. Movies and TV shows are covered by the two public indexers below.';
-  String get video_builtin_sources_hint =>
-      'Ship with the app: no account, no API key. Turn one off to keep it out of resource searches.';
-  String get video_builtin_sources_title => 'Built-in sources';
   String video_chapter_n({required Object n}) => 'Chapter ${n}';
   String get video_chapters => 'Chapters';
   String get video_chapters_empty => 'No chapters';
@@ -12794,8 +12750,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'The file for 『${title}』 could not be found. Its location may have changed, or the drive may not be connected. You can re-import it, or remove this entry.';
   String get video_resource_missing_reimport => 'Re-import';
   String get video_resource_missing_title => 'Video unavailable';
-  String get video_resource_no_provider_hint =>
-      'This search had no provider to query. Re-enable a built-in source, or add a Torznab indexer, under Settings, Downloads, External resource and subtitle providers.';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   String get video_resource_no_provider_title =>
       'No resource indexer configured';
   String video_resource_query_failed({required Object query}) =>
@@ -12812,6 +12768,33 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   }) => '${name}: ${n} results (${queries})';
   String video_resource_source_skipped({required Object name}) =>
       '${name}: not searched (this source can\'t handle the query)';
+  String get video_rss_add => 'Add RSS site';
+  String get video_rss_domains => 'Use for';
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  String get video_rss_domains_required => 'Pick at least one';
+  String get video_rss_edit_title => 'Edit RSS site';
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  String get video_rss_empty_title => 'No BT search source yet';
+  String get video_rss_name => 'Name';
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  String get video_rss_settings_title => 'RSS search sites';
+  String get video_rss_test => 'Test search';
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  String get video_rss_test_query => 'Test keywords';
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  String get video_rss_url_required => 'Enter the search URL template';
+  String get video_rss_url_template => 'Search URL template';
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   String video_runtime_minutes({required Object n}) => '${n} min';
   String video_scrape_ai_confidence({required Object percent}) =>
       'AI confidence ${percent}%';
@@ -13513,6 +13496,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Subtitles in English and many other languages for movies and TV, matched by IMDb / TMDB id. A free API key is required; downloads count toward an anonymous daily limit per IP.';
   String video_subscription_group_release_count({required Object count}) =>
       '${count} releases';
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   String get video_subtitle_adjust_collapse => 'Collapse';
   String get video_subtitle_adjust_expand => 'Expand';
   String get video_subtitle_adjust_title => 'Subtitle adjustments';
@@ -15076,57 +15064,21 @@ class _StringsAr extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Wikipedia (中文)';
   @override
-  String get anime_download_back => 'رجوع';
-  @override
-  String get anime_download_batch => 'دفعة';
-  @override
-  String get anime_download_category_all => 'الكل';
-  @override
-  String get anime_download_category_english => 'مترجم للإنجليزية';
-  @override
-  String get anime_download_category_non_english => 'غير إنجليزي';
-  @override
-  String get anime_download_category_raw => 'بدون ترجمة';
-  @override
   String get anime_download_delete => 'حذف';
-  @override
-  String anime_download_episode_count({required Object count}) =>
-      'حلقة ${count}';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => 'تحميل';
   @override
   String get anime_download_generic_hint => 'رابط مغناطيسي';
   @override
-  String get anime_download_generic_title => 'لصق رابط (كتب، فيديوهات، أي شيء)';
-  @override
   String get anime_download_include_subs => 'تضمين الترجمات';
-  @override
-  String get anime_download_kind_auto => 'تلقائي';
-  @override
-  String get anime_download_kind_book => 'كتاب';
   @override
   String get anime_download_kind_video => 'فيديو';
   @override
   String get anime_download_magnet_invalid => 'رابط مغناطيسي غير صالح';
   @override
-  String get anime_download_no_results => 'لا توجد نتائج';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'استجابت الخدمة بنجاح لكن أعادت 0 عناصر. الاستعلام: ${query}؛ المرشحات: ${filters}. جرّب عنواناً آخر أو خفف المرشحات.';
-  @override
   String get anime_download_no_subs => 'بدون ترجمات';
   @override
   String get anime_download_no_tasks => 'لا توجد مهام تحميل بعد';
-  @override
-  String get anime_download_nyaa_query => 'عبارات بحث Nyaa';
   @override
   String get anime_download_play_now => 'تشغيل أثناء التحميل';
   @override
@@ -15136,14 +15088,10 @@ class _StringsAr extends _StringsEn {
   String get anime_download_play_now_ok =>
       'تم الاستيراد — افتحه من مكتبة الفيديو للتشغيل أثناء التحميل';
   @override
-  String get anime_download_push => 'إرسال التحميل';
-  @override
   String get anime_download_push_failed => 'فشل الإرسال إلى qBittorrent';
   @override
   String get anime_download_pushed =>
       'تم الإرسال — سيتم استيراده تلقائياً عند الانتهاء';
-  @override
-  String get anime_download_refresh => 'تحديث';
   @override
   String get anime_download_relocate => 'إعادة تسمية / نقل';
   @override
@@ -15172,22 +15120,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get anime_download_retry => 'إعادة المحاولة';
   @override
-  String get anime_download_search => 'بحث';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      'إذا تعذر الوصول إلى الموقع مباشرة، قم بتكوين وكيل شبكة في إعدادات التحميل.';
-  @override
-  String get anime_download_search_failed =>
-      'فشل البحث أو انتهت مهلته. اضغط إعادة المحاولة.';
-  @override
-  String get anime_download_search_hint => 'عنوان الأنمي';
-  @override
   String get anime_download_search_start_hint =>
       'ابحث عن عنوان أعلاه - يتم مطابقة التورنت والترجمات تلقائياً. التحميلات لا تقتصر على الفيديو: الكتب والمانغا والكتب الصوتية والألعاب يتم استيرادها أيضاً.';
-  @override
-  String get anime_download_sort_date => 'تاريخ النشر';
-  @override
-  String get anime_download_sort_seeders => 'الرافعون';
   @override
   String get anime_download_sort_size => 'الحجم';
   @override
@@ -15195,40 +15129,15 @@ class _StringsAr extends _StringsEn {
   @override
   String get anime_download_streaming_ready => 'في المكتبة · التحميل مستمر';
   @override
-  String get anime_download_subs_badge => 'ترجمات';
-  @override
-  String get anime_download_subs_deferred =>
-      'تُطابق الترجمات بعد التحميل من الملفات الفعلية للحزمة';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      'أرقام الحلقات غير مؤكدة لهذه الحزمة - قد تكون الترجمات من موسم آخر.';
-  @override
-  String get anime_download_subs_failed =>
-      'فشل البحث عن الترجمات. اضغط إعادة المحاولة.';
-  @override
-  String get anime_download_subs_need_key =>
-      'أدخل مفتاح API لـ Jimaku أعلاه للبحث عن الترجمات.';
-  @override
   String get anime_download_subs_pending =>
       'الترجمات: في الانتظار حتى اكتمال التحميل';
   @override
   String get anime_download_subs_retrying =>
       'الترجمات: غير متاحة بعد — ستتم إعادة المحاولة تلقائياً';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'لا يوجد إدخال ترجمة يطابق الموسم ${season} لهذه الحزمة - لم يتم اختيارها تلقائياً. اختر واحدة يدوياً إن أردت.';
-  @override
   String get anime_download_subs_unmatched => 'الترجمات: لا تطابق لهذه الحزمة';
   @override
-  String get anime_download_tasks => 'مهام التحميل';
-  @override
-  String get anime_download_title => 'تحميل الأنمي';
-  @override
   String get anime_download_trusted => 'موثوق';
-  @override
-  String get anime_download_trusted_only => 'الموثوقون فقط';
-  @override
-  String get anime_download_unfiltered => 'بدون مرشح الموثوق';
   @override
   String get anki_action_open_settings => 'فتح الإعدادات';
   @override
@@ -19467,12 +19376,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get discovery_load_more => 'تحميل المزيد';
   @override
-  String get discovery_nyaa_filter_all => 'الكل';
-  @override
-  String get discovery_nyaa_filter_no_remakes => 'بدون إعادة إصدار';
-  @override
-  String get discovery_nyaa_filter_trusted_only => 'الموثوق فقط';
-  @override
   String get discovery_opds_add => 'إضافة خادم OPDS';
   @override
   String get discovery_opds_allow_http => 'السماح بـ HTTP غير المشفّر';
@@ -19859,9 +19762,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get download_status_queued => 'في قائمة الانتظار';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      'بعد الحلقة ${episode}';
-  @override
   String get download_subscription_check_all => 'فحص الكل';
   @override
   String get download_subscription_check_now => 'فحص الآن';
@@ -19878,9 +19778,6 @@ class _StringsAr extends _StringsEn {
   }) =>
       'نزّل الدفعة الكاملة ${group} · ${resolution} مرة واحدة. الدفعة ليس لها حلقة تالية لمتابعتها.';
   @override
-  String get download_subscription_created =>
-      'تم وضع التحميل في قائمة الانتظار وإنشاء الاشتراك';
-  @override
   String get download_subscription_delete => 'حذف الاشتراك';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -19889,8 +19786,6 @@ class _StringsAr extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create => 'تحميل واشتراك';
-  @override
   String get download_subscription_empty_body =>
       'في الاكتشاف، اختر إصداراً أحادي الحلقة واستخدم تحميل واشتراك.';
   @override
@@ -19898,9 +19793,6 @@ class _StringsAr extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       'آخر فحص: ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      'آخر حلقة في القائمة: الحلقة ${episode}';
   @override
   String get download_subscription_never_checked => 'لم يتم الفحص مطلقاً';
   @override
@@ -34439,6 +34331,43 @@ class _StringsAr extends _StringsEn {
   String get usage_stats_enabled_hint =>
       'مرة واحدة يوميًا، يرسل معرّف تثبيت (مشتقًا من هذا الجهاز، ولا يتغيّر عند إعادة التثبيت) وإصدار التطبيق والمنصة وقناة التحديث ولغة التطبيق وبنية المعالج والإصدار الرئيسي لنظام التشغيل ومصدر التثبيت (مثل متجر التطبيقات أو المثبّت) إلى fushi.moe لنتمكن من إحصاء المستخدمين النشطين. لا تُضمَّن أي بيانات عن الحساب أو المكتبة أو القراءة، ولا يُخزَّن عنوان IP الخاص بك، بل يُحفَظ فقط البلد أو المنطقة المستنتجة منه. عند إرفاق معلومات الجهاز بالملاحظات، يُرسَل معرّف التثبيت معها.';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => 'خريف';
   @override
   String get video_air_season_spring => 'ربيع';
@@ -34584,20 +34513,6 @@ class _StringsAr extends _StringsEn {
   String get video_bottom_seek_forward => 'تقديم 10 ثوانٍ';
   @override
   String get video_bottom_seek_forward_label => '+10 ث';
-  @override
-  String get video_builtin_apibay_hint =>
-      'أفلام ومسلسلات تلفزيونية. فهرس عام، لا يحتاج حساب.';
-  @override
-  String get video_builtin_knaben_hint =>
-      'أفلام ومسلسلات تلفزيونية. يجمع عدة مُفهرسات عامة.';
-  @override
-  String get video_builtin_nyaa_hint =>
-      'أنمي فقط. الأفلام والمسلسلات يغطيها المُفهرسان العامان أدناه.';
-  @override
-  String get video_builtin_sources_hint =>
-      'مضمّنة مع التطبيق: لا حساب ولا مفتاح API. أوقف أحدها لاستبعاده من بحث الموارد.';
-  @override
-  String get video_builtin_sources_title => 'المصادر المدمجة';
   @override
   String video_chapter_n({required Object n}) => 'الفصل ${n}';
   @override
@@ -35815,8 +35730,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_resource_missing_title => 'الفيديو غير متوفر';
   @override
-  String get video_resource_no_provider_hint =>
-      'لم يكن لهذا البحث مزوّد للاستعلام. أعد تفعيل مصدر مدمج أو أضف مُفهرس Torznab من الإعدادات، التحميلات، مزوّدو الموارد والترجمات الخارجية.';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title => 'لم يتم تكوين مُفهرس موارد';
   @override
@@ -35837,6 +35752,53 @@ class _StringsAr extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}: لم يُبحث فيه (لا يستطيع هذا المصدر معالجة الاستعلام)';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -37024,6 +36986,14 @@ class _StringsAr extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '${count} إصدار';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => 'طيّ';
   @override
@@ -39146,58 +39116,21 @@ class _StringsDe extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Wikipedia (中文)';
   @override
-  String get anime_download_back => 'Zurück';
-  @override
-  String get anime_download_batch => 'Sammelpaket';
-  @override
-  String get anime_download_category_all => 'Alle';
-  @override
-  String get anime_download_category_english => 'Englisch übersetzt';
-  @override
-  String get anime_download_category_non_english => 'Nicht-Englisch';
-  @override
-  String get anime_download_category_raw => 'Roh';
-  @override
   String get anime_download_delete => 'Löschen';
-  @override
-  String anime_download_episode_count({required Object count}) =>
-      'Folge ${count}';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => 'Herunterladen';
   @override
   String get anime_download_generic_hint => 'Magnet-Link';
   @override
-  String get anime_download_generic_title =>
-      'Link einfügen (Bücher, Videos, alles)';
-  @override
   String get anime_download_include_subs => 'Untertitel einschließen';
-  @override
-  String get anime_download_kind_auto => 'Automatisch';
-  @override
-  String get anime_download_kind_book => 'Buch';
   @override
   String get anime_download_kind_video => 'Video';
   @override
   String get anime_download_magnet_invalid => 'Ungültiger Magnet-Link';
   @override
-  String get anime_download_no_results => 'Keine Ergebnisse';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'Der Dienst hat erfolgreich geantwortet, aber 0 Ergebnisse zurückgegeben. Abfrage: ${query}; Filter: ${filters}. Versuchen Sie einen anderen Titel oder lockern Sie die Filter.';
-  @override
   String get anime_download_no_subs => 'Keine Untertitel';
   @override
   String get anime_download_no_tasks => 'Noch keine Download-Aufgaben';
-  @override
-  String get anime_download_nyaa_query => 'Nyaa-Suchbegriffe';
   @override
   String get anime_download_play_now => 'Während des Downloads abspielen';
   @override
@@ -39207,15 +39140,11 @@ class _StringsDe extends _StringsEn {
   String get anime_download_play_now_ok =>
       'Importiert – öffne es aus der Videobibliothek, um es während des Downloads abzuspielen';
   @override
-  String get anime_download_push => 'Download übertragen';
-  @override
   String get anime_download_push_failed =>
       'Übertragung an qBittorrent fehlgeschlagen';
   @override
   String get anime_download_pushed =>
       'Übertragen – wird nach Abschluss automatisch importiert';
-  @override
-  String get anime_download_refresh => 'Aktualisieren';
   @override
   String get anime_download_relocate => 'Umbenennen / verschieben';
   @override
@@ -39244,22 +39173,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get anime_download_retry => 'Erneut versuchen';
   @override
-  String get anime_download_search => 'Suchen';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      'Wenn die Seite nicht direkt erreichbar ist, konfiguriere einen Netzwerk-Proxy in den Download-Einstellungen.';
-  @override
-  String get anime_download_search_failed =>
-      'Suche fehlgeschlagen oder Zeitüberschreitung. Tippe auf „Erneut versuchen".';
-  @override
-  String get anime_download_search_hint => 'Anime-Titel';
-  @override
   String get anime_download_search_start_hint =>
       'Suche oben nach einem Titel – Torrents und Untertitel werden automatisch zugeordnet. Downloads sind nicht auf Videos beschränkt: Bücher, Manga, Hörbücher und Spiele werden ebenfalls importiert.';
-  @override
-  String get anime_download_sort_date => 'Veröffentlicht';
-  @override
-  String get anime_download_sort_seeders => 'Seeder';
   @override
   String get anime_download_sort_size => 'Größe';
   @override
@@ -39269,41 +39184,16 @@ class _StringsDe extends _StringsEn {
   String get anime_download_streaming_ready =>
       'In der Bibliothek · Download läuft weiter';
   @override
-  String get anime_download_subs_badge => 'Untertitel';
-  @override
-  String get anime_download_subs_deferred =>
-      'Untertitel werden nach dem Download anhand der tatsächlichen Dateien des Pakets zugeordnet';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      'Episodennummern sind für dieses Paket nicht verifiziert – Untertitel können aus einer anderen Staffel stammen.';
-  @override
-  String get anime_download_subs_failed =>
-      'Untertitelsuche fehlgeschlagen. Tippe auf „Erneut versuchen".';
-  @override
-  String get anime_download_subs_need_key =>
-      'Gib oben einen Jimaku-API-Schlüssel ein, um Untertitel zu suchen.';
-  @override
   String get anime_download_subs_pending =>
       'Untertitel: ausstehend bis Download abgeschlossen';
   @override
   String get anime_download_subs_retrying =>
       'Untertitel: noch nicht verfügbar – wird automatisch erneut versucht';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'Kein Untertiteleintrag passt zu Staffel ${season} dieses Pakets – nicht automatisch ausgewählt. Wählen Sie manuell, wenn Sie es trotzdem möchten.';
-  @override
   String get anime_download_subs_unmatched =>
       'Untertitel: keine Übereinstimmung für dieses Paket';
   @override
-  String get anime_download_tasks => 'Download-Aufgaben';
-  @override
-  String get anime_download_title => 'Anime-Download';
-  @override
   String get anime_download_trusted => 'Vertrauenswürdig';
-  @override
-  String get anime_download_trusted_only => 'Nur vertrauenswürdige';
-  @override
-  String get anime_download_unfiltered => 'Kein Vertrauensfilter';
   @override
   String get anki_action_open_settings => 'Einstellungen öffnen';
   @override
@@ -43607,12 +43497,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get discovery_load_more => 'Mehr laden';
   @override
-  String get discovery_nyaa_filter_all => 'Alle';
-  @override
-  String get discovery_nyaa_filter_no_remakes => 'Keine Remakes';
-  @override
-  String get discovery_nyaa_filter_trusted_only => 'Nur vertrauenswürdig';
-  @override
   String get discovery_opds_add => 'OPDS-Server hinzufügen';
   @override
   String get discovery_opds_allow_http => 'Unverschlüsseltes HTTP erlauben';
@@ -44010,9 +43894,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get download_status_queued => 'In Warteschlange';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      'Nach Episode ${episode}';
-  @override
   String get download_subscription_check_all => 'Alle prüfen';
   @override
   String get download_subscription_check_now => 'Jetzt prüfen';
@@ -44029,9 +43910,6 @@ class _StringsDe extends _StringsEn {
   }) =>
       'Das gesamte Paket ${group} · ${resolution} einmal herunterladen. Ein Paket hat keine nächste Folge, der man folgen könnte.';
   @override
-  String get download_subscription_created =>
-      'Download in Warteschlange und Abonnement erstellt';
-  @override
   String get download_subscription_delete => 'Abonnement löschen';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -44040,9 +43918,6 @@ class _StringsDe extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create =>
-      'Herunterladen und abonnieren';
-  @override
   String get download_subscription_empty_body =>
       'Wähle unter „Entdecken" eine Einzelepisoden-Veröffentlichung und verwende „Herunterladen und abonnieren".';
   @override
@@ -44050,9 +43925,6 @@ class _StringsDe extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       'Zuletzt geprüft: ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      'Zuletzt eingereiht: Episode ${episode}';
   @override
   String get download_subscription_never_checked => 'Noch nie geprüft';
   @override
@@ -58830,6 +58702,43 @@ class _StringsDe extends _StringsEn {
   String get usage_stats_enabled_hint =>
       'Sendet einmal täglich eine aus diesem Gerät abgeleitete Installations-ID (bleibt bei Neuinstallation gleich), die App-Version, die Plattform, den Update-Kanal, die App-Sprache, die CPU-Architektur, die Hauptversion des Betriebssystems und die Installationsquelle (z. B. App-Store oder Installer) an fushi.moe, damit wir aktive Nutzer zählen können. Konto-, Bibliotheks- oder Lesedaten sind nicht enthalten, und deine IP-Adresse wird nicht gespeichert – nur das daraus ermittelte Land bzw. die Region. Wenn du Feedback Geräteinformationen anhängst, wird die Installations-ID mitgesendet.';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => 'Herbst';
   @override
   String get video_air_season_spring => 'Frühling';
@@ -58974,20 +58883,6 @@ class _StringsDe extends _StringsEn {
   String get video_bottom_seek_forward => '10 s vor';
   @override
   String get video_bottom_seek_forward_label => '+10s';
-  @override
-  String get video_builtin_apibay_hint =>
-      'Filme und Serien. Öffentlicher Index, kein Konto erforderlich.';
-  @override
-  String get video_builtin_knaben_hint =>
-      'Filme und Serien. Bündelt mehrere öffentliche Indexer.';
-  @override
-  String get video_builtin_nyaa_hint =>
-      'Nur Anime. Filme und Serien werden von den beiden öffentlichen Indexern unten abgedeckt.';
-  @override
-  String get video_builtin_sources_hint =>
-      'Mit der App mitgeliefert: kein Konto, kein API-Schlüssel. Deaktivieren, um sie aus Ressourcensuchen auszuschließen.';
-  @override
-  String get video_builtin_sources_title => 'Integrierte Quellen';
   @override
   String video_chapter_n({required Object n}) => 'Kapitel ${n}';
   @override
@@ -60225,8 +60120,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_resource_missing_title => 'Video nicht verfügbar';
   @override
-  String get video_resource_no_provider_hint =>
-      'Diese Suche hatte keinen Anbieter zum Abfragen. Aktivieren Sie eine integrierte Quelle erneut oder fügen Sie einen Torznab-Indexer unter Einstellungen, Downloads, Externe Ressourcen- und Untertitelanbieter hinzu.';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title =>
       'Kein Ressourcen-Indexer konfiguriert';
@@ -60249,6 +60144,53 @@ class _StringsDe extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}: nicht durchsucht (diese Quelle kann die Anfrage nicht verarbeiten)';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -61463,6 +61405,14 @@ class _StringsDe extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '${count} Veröffentlichungen';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => 'Einklappen';
   @override
@@ -63603,57 +63553,21 @@ class _StringsEs extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Wikipedia (中文)';
   @override
-  String get anime_download_back => 'Atrás';
-  @override
-  String get anime_download_batch => 'Lote';
-  @override
-  String get anime_download_category_all => 'Todos';
-  @override
-  String get anime_download_category_english => 'Traducido al inglés';
-  @override
-  String get anime_download_category_non_english => 'No inglés';
-  @override
-  String get anime_download_category_raw => 'Sin traducir';
-  @override
   String get anime_download_delete => 'Eliminar';
-  @override
-  String anime_download_episode_count({required Object count}) => 'EP ${count}';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => 'Descargar';
   @override
   String get anime_download_generic_hint => 'Enlace magnet';
   @override
-  String get anime_download_generic_title =>
-      'Pegar un enlace (libros, vídeos, cualquier cosa)';
-  @override
   String get anime_download_include_subs => 'Incluir subtítulos';
-  @override
-  String get anime_download_kind_auto => 'Auto';
-  @override
-  String get anime_download_kind_book => 'Libro';
   @override
   String get anime_download_kind_video => 'Vídeo';
   @override
   String get anime_download_magnet_invalid => 'Enlace magnet no válido';
   @override
-  String get anime_download_no_results => 'Sin resultados';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'El servicio respondió exitosamente pero devolvió 0 elementos. Consulta: ${query}; filtros: ${filters}. Intente otro título o relaje los filtros.';
-  @override
   String get anime_download_no_subs => 'Sin subtítulos';
   @override
   String get anime_download_no_tasks => 'Aún no hay tareas de descarga';
-  @override
-  String get anime_download_nyaa_query => 'Términos de búsqueda en Nyaa';
   @override
   String get anime_download_play_now => 'Reproducir mientras descarga';
   @override
@@ -63663,14 +63577,10 @@ class _StringsEs extends _StringsEn {
   String get anime_download_play_now_ok =>
       'Importado — ábralo desde la biblioteca de vídeos para reproducir mientras descarga';
   @override
-  String get anime_download_push => 'Enviar descarga';
-  @override
   String get anime_download_push_failed => 'No se pudo enviar a qBittorrent';
   @override
   String get anime_download_pushed =>
       'Enviado — se importará automáticamente al finalizar';
-  @override
-  String get anime_download_refresh => 'Actualizar';
   @override
   String get anime_download_relocate => 'Renombrar / mover';
   @override
@@ -63699,22 +63609,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get anime_download_retry => 'Reintentar';
   @override
-  String get anime_download_search => 'Buscar';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      'Si no puede acceder al sitio directamente, configure un proxy de red en los ajustes de descarga.';
-  @override
-  String get anime_download_search_failed =>
-      'La búsqueda falló o se agotó el tiempo. Toque reintentar.';
-  @override
-  String get anime_download_search_hint => 'Título del anime';
-  @override
   String get anime_download_search_start_hint =>
       'Busque un título arriba — los torrents y subtítulos se emparejan automáticamente. Las descargas no se limitan a vídeo: libros, manga, audiolibros y juegos también se importan.';
-  @override
-  String get anime_download_sort_date => 'Publicado';
-  @override
-  String get anime_download_sort_seeders => 'Seeders';
   @override
   String get anime_download_sort_size => 'Tamaño';
   @override
@@ -63724,41 +63620,16 @@ class _StringsEs extends _StringsEn {
   String get anime_download_streaming_ready =>
       'En biblioteca · descarga continúa';
   @override
-  String get anime_download_subs_badge => 'Subs';
-  @override
-  String get anime_download_subs_deferred =>
-      'Los subtítulos se emparejan después de la descarga, desde los archivos reales del pack';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      'Los números de episodio no están verificados para este pack — los subtítulos pueden ser de otra temporada.';
-  @override
-  String get anime_download_subs_failed =>
-      'La búsqueda de subtítulos falló. Toque reintentar.';
-  @override
-  String get anime_download_subs_need_key =>
-      'Introduzca una clave API de Jimaku arriba para buscar subtítulos.';
-  @override
   String get anime_download_subs_pending =>
       'Subtítulos: pendientes hasta que la descarga se complete';
   @override
   String get anime_download_subs_retrying =>
       'Subtítulos: aún no disponibles — reintentando automáticamente';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'Ninguna entrada de subtítulos coincide con la temporada ${season} de este pack — no seleccionado automáticamente. Elija uno manualmente si lo desea.';
-  @override
   String get anime_download_subs_unmatched =>
       'Subtítulos: sin coincidencia para este pack';
   @override
-  String get anime_download_tasks => 'Tareas de descarga';
-  @override
-  String get anime_download_title => 'Descarga de anime';
-  @override
   String get anime_download_trusted => 'De confianza';
-  @override
-  String get anime_download_trusted_only => 'Solo de confianza';
-  @override
-  String get anime_download_unfiltered => 'Sin filtro de confianza';
   @override
   String get anki_action_open_settings => 'Abrir ajustes';
   @override
@@ -68076,12 +67947,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get discovery_load_more => 'Cargar más';
   @override
-  String get discovery_nyaa_filter_all => 'Todos';
-  @override
-  String get discovery_nyaa_filter_no_remakes => 'Sin remakes';
-  @override
-  String get discovery_nyaa_filter_trusted_only => 'Solo de confianza';
-  @override
   String get discovery_opds_add => 'Añadir servidor OPDS';
   @override
   String get discovery_opds_allow_http => 'Permitir HTTP sin cifrar';
@@ -68482,9 +68347,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get download_status_queued => 'En cola';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      'Después del episodio ${episode}';
-  @override
   String get download_subscription_check_all => 'Verificar todos';
   @override
   String get download_subscription_check_now => 'Verificar ahora';
@@ -68501,9 +68363,6 @@ class _StringsEs extends _StringsEn {
   }) =>
       'Descargar todo el lote de ${group} · ${resolution} una vez. Un lote no tiene un siguiente episodio que seguir.';
   @override
-  String get download_subscription_created =>
-      'Descarga en cola y suscripción creada';
-  @override
   String get download_subscription_delete => 'Eliminar suscripción';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -68512,9 +68371,6 @@ class _StringsEs extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create =>
-      'Descargar y suscribirse';
-  @override
   String get download_subscription_empty_body =>
       'En Descubrir, elija un episodio individual y use Descargar y suscribirse.';
   @override
@@ -68522,9 +68378,6 @@ class _StringsEs extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       'Última verificación: ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      'Último en cola: episodio ${episode}';
   @override
   String get download_subscription_never_checked => 'Nunca verificado';
   @override
@@ -83325,6 +83178,43 @@ class _StringsEs extends _StringsEn {
   String get usage_stats_enabled_hint =>
       'Una vez al día, envía a fushi.moe un ID de instalación derivado de este dispositivo (no cambia al reinstalar), la versión de la app, la plataforma, el canal de actualizaciones, el idioma de la app, la arquitectura de CPU, la versión principal del sistema y el origen de instalación (p. ej. tienda o instalador) para que podamos contar los usuarios activos. No incluye datos de la cuenta, la biblioteca ni la lectura, y tu dirección IP no se guarda: solo se conserva el país o región que se deduce de ella. Si adjuntas información del dispositivo a un comentario, el ID de instalación se envía con él.';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => 'Otoño';
   @override
   String get video_air_season_spring => 'Primavera';
@@ -83469,20 +83359,6 @@ class _StringsEs extends _StringsEn {
   String get video_bottom_seek_forward => 'Adelante 10 s';
   @override
   String get video_bottom_seek_forward_label => '+10s';
-  @override
-  String get video_builtin_apibay_hint =>
-      'Películas y series de TV. Índice público, sin cuenta necesaria.';
-  @override
-  String get video_builtin_knaben_hint =>
-      'Películas y series de TV. Agrega varios indexadores públicos.';
-  @override
-  String get video_builtin_nyaa_hint =>
-      'Solo anime. Películas y series de TV están cubiertas por los dos indexadores públicos de abajo.';
-  @override
-  String get video_builtin_sources_hint =>
-      'Incluidas con la app: sin cuenta, sin clave API. Desactive una para mantenerla fuera de las búsquedas de recursos.';
-  @override
-  String get video_builtin_sources_title => 'Fuentes integradas';
   @override
   String video_chapter_n({required Object n}) => 'Capítulo ${n}';
   @override
@@ -84725,8 +84601,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_resource_missing_title => 'Vídeo no disponible';
   @override
-  String get video_resource_no_provider_hint =>
-      'Esta búsqueda no tuvo proveedor para consultar. Reactive una fuente integrada, o añada un indexador Torznab, en Ajustes, Descargas, Proveedores externos de recursos y subtítulos.';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title =>
       'Sin indexador de recursos configurado';
@@ -84749,6 +84625,53 @@ class _StringsEs extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}: no se buscó (esta fuente no puede procesar la consulta)';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -85972,6 +85895,14 @@ class _StringsEs extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '${count} lanzamientos';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => 'Contraer';
   @override
@@ -88113,57 +88044,21 @@ class _StringsFr extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Wikipédia (中文)';
   @override
-  String get anime_download_back => 'Retour';
-  @override
-  String get anime_download_batch => 'Lot';
-  @override
-  String get anime_download_category_all => 'Tout';
-  @override
-  String get anime_download_category_english => 'Traduit en anglais';
-  @override
-  String get anime_download_category_non_english => 'Non anglais';
-  @override
-  String get anime_download_category_raw => 'Brut';
-  @override
   String get anime_download_delete => 'Supprimer';
-  @override
-  String anime_download_episode_count({required Object count}) => 'ÉP ${count}';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => 'Télécharger';
   @override
   String get anime_download_generic_hint => 'Lien magnet';
   @override
-  String get anime_download_generic_title =>
-      'Coller un lien (livres, vidéos, tout)';
-  @override
   String get anime_download_include_subs => 'Inclure les sous-titres';
-  @override
-  String get anime_download_kind_auto => 'Auto';
-  @override
-  String get anime_download_kind_book => 'Livre';
   @override
   String get anime_download_kind_video => 'Vidéo';
   @override
   String get anime_download_magnet_invalid => 'Lien magnet invalide';
   @override
-  String get anime_download_no_results => 'Aucun résultat';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'Le service a répondu avec succès mais a renvoyé 0 résultat. Requête : ${query} ; filtres : ${filters}. Essayez un autre titre ou élargissez les filtres.';
-  @override
   String get anime_download_no_subs => 'Pas de sous-titres';
   @override
   String get anime_download_no_tasks => 'Aucune tâche de téléchargement';
-  @override
-  String get anime_download_nyaa_query => 'Termes de recherche Nyaa';
   @override
   String get anime_download_play_now => 'Lire pendant le téléchargement';
   @override
@@ -88173,14 +88068,10 @@ class _StringsFr extends _StringsEn {
   String get anime_download_play_now_ok =>
       'Importé — ouvrez-le depuis la vidéothèque pour lire pendant le téléchargement';
   @override
-  String get anime_download_push => 'Envoyer le téléchargement';
-  @override
   String get anime_download_push_failed => 'Échec de l\'envoi vers qBittorrent';
   @override
   String get anime_download_pushed =>
       'Envoyé — il sera importé automatiquement une fois terminé';
-  @override
-  String get anime_download_refresh => 'Actualiser';
   @override
   String get anime_download_relocate => 'Renommer / déplacer';
   @override
@@ -88210,22 +88101,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get anime_download_retry => 'Réessayer';
   @override
-  String get anime_download_search => 'Rechercher';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      'Si le site n\'est pas accessible directement, configurez un proxy réseau dans les paramètres de téléchargement.';
-  @override
-  String get anime_download_search_failed =>
-      'Recherche échouée ou expirée. Appuyez sur Réessayer.';
-  @override
-  String get anime_download_search_hint => 'Titre d\'anime';
-  @override
   String get anime_download_search_start_hint =>
       'Recherchez un titre ci-dessus — les torrents et sous-titres sont associés automatiquement. Les téléchargements ne sont pas limités aux vidéos : livres, manga, livres audio et jeux sont aussi importés.';
-  @override
-  String get anime_download_sort_date => 'Date de publication';
-  @override
-  String get anime_download_sort_seeders => 'Sources';
   @override
   String get anime_download_sort_size => 'Taille';
   @override
@@ -88235,41 +88112,16 @@ class _StringsFr extends _StringsEn {
   String get anime_download_streaming_ready =>
       'Dans la bibliothèque · téléchargement en cours';
   @override
-  String get anime_download_subs_badge => 'Sous-titres';
-  @override
-  String get anime_download_subs_deferred =>
-      'Les sous-titres sont associés après le téléchargement, à partir des fichiers du pack';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      'Les numéros d\'épisodes ne sont pas vérifiés pour ce pack — les sous-titres peuvent provenir d\'une autre saison.';
-  @override
-  String get anime_download_subs_failed =>
-      'Recherche de sous-titres échouée. Appuyez sur Réessayer.';
-  @override
-  String get anime_download_subs_need_key =>
-      'Entrez une clé API Jimaku ci-dessus pour rechercher des sous-titres.';
-  @override
   String get anime_download_subs_pending =>
       'Sous-titres : en attente de la fin du téléchargement';
   @override
   String get anime_download_subs_retrying =>
       'Sous-titres : pas encore disponibles — nouvelle tentative automatique';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'Aucune entrée de sous-titres ne correspond à la saison ${season} de ce pack — non sélectionné automatiquement. Choisissez-en un manuellement si vous le souhaitez.';
-  @override
   String get anime_download_subs_unmatched =>
       'Sous-titres : aucune correspondance pour ce pack';
   @override
-  String get anime_download_tasks => 'Tâches de téléchargement';
-  @override
-  String get anime_download_title => 'Téléchargement d\'anime';
-  @override
   String get anime_download_trusted => 'Fiable';
-  @override
-  String get anime_download_trusted_only => 'Fiables uniquement';
-  @override
-  String get anime_download_unfiltered => 'Pas de filtre Fiable';
   @override
   String get anki_action_open_settings => 'Ouvrir les réglages';
   @override
@@ -92613,12 +92465,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get discovery_load_more => 'Charger plus';
   @override
-  String get discovery_nyaa_filter_all => 'Tous';
-  @override
-  String get discovery_nyaa_filter_no_remakes => 'Sans remakes';
-  @override
-  String get discovery_nyaa_filter_trusted_only => 'De confiance uniquement';
-  @override
   String get discovery_opds_add => 'Ajouter un serveur OPDS';
   @override
   String get discovery_opds_allow_http => 'Autoriser le HTTP en clair';
@@ -93019,9 +92865,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get download_status_queued => 'En file d\'attente';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      'Après l\'épisode ${episode}';
-  @override
   String get download_subscription_check_all => 'Vérifier tout';
   @override
   String get download_subscription_check_now => 'Vérifier maintenant';
@@ -93038,9 +92881,6 @@ class _StringsFr extends _StringsEn {
   }) =>
       'Télécharger une fois tout le lot ${group} · ${resolution}. Un lot n\'a pas d\'épisode suivant à suivre.';
   @override
-  String get download_subscription_created =>
-      'Téléchargement en file d\'attente et abonnement créé';
-  @override
   String get download_subscription_delete => 'Supprimer l\'abonnement';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -93049,9 +92889,6 @@ class _StringsFr extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create =>
-      'Télécharger et s\'abonner';
-  @override
   String get download_subscription_empty_body =>
       'Dans Découvrir, choisissez une sortie d\'épisode unique et utilisez Télécharger et s\'abonner.';
   @override
@@ -93059,9 +92896,6 @@ class _StringsFr extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       'Dernière vérification : ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      'Dernier mis en file : épisode ${episode}';
   @override
   String get download_subscription_never_checked => 'Jamais vérifié';
   @override
@@ -107894,6 +107728,43 @@ class _StringsFr extends _StringsEn {
   String get usage_stats_enabled_hint =>
       'Une fois par jour, envoie à fushi.moe un identifiant d’installation dérivé de cet appareil (inchangé après réinstallation), la version de l’app, la plateforme, le canal de mise à jour, la langue de l’app, l’architecture du processeur, la version majeure du système et la source d’installation (boutique ou installateur, par ex.) afin de compter les utilisateurs actifs. Aucune donnée de compte, de bibliothèque ou de lecture n’est incluse, et votre adresse IP n’est pas conservée : seul le pays ou la région qui en découle est gardé. Si vous joignez les informations de l’appareil à un retour, l’identifiant d’installation est envoyé avec.';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => 'Automne';
   @override
   String get video_air_season_spring => 'Printemps';
@@ -108038,20 +107909,6 @@ class _StringsFr extends _StringsEn {
   String get video_bottom_seek_forward => 'Avancer de 10 s';
   @override
   String get video_bottom_seek_forward_label => '+10s';
-  @override
-  String get video_builtin_apibay_hint =>
-      'Films et séries TV. Index public, pas de compte nécessaire.';
-  @override
-  String get video_builtin_knaben_hint =>
-      'Films et séries TV. Agrège plusieurs indexeurs publics.';
-  @override
-  String get video_builtin_nyaa_hint =>
-      'Anime uniquement. Les films et séries TV sont couverts par les deux indexeurs publics ci-dessous.';
-  @override
-  String get video_builtin_sources_hint =>
-      'Fournies avec l\'application : pas de compte, pas de clé API. Désactivez-en une pour l\'exclure des recherches de ressources.';
-  @override
-  String get video_builtin_sources_title => 'Sources intégrées';
   @override
   String video_chapter_n({required Object n}) => 'Chapitre ${n}';
   @override
@@ -109300,8 +109157,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_resource_missing_title => 'Vidéo indisponible';
   @override
-  String get video_resource_no_provider_hint =>
-      'Cette recherche n\'avait aucun fournisseur. Réactivez une source intégrée, ou ajoutez un indexeur Torznab, sous Paramètres, Téléchargements, Fournisseurs de ressources et sous-titres externes.';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title =>
       'Aucun indexeur de ressources configuré';
@@ -109324,6 +109181,53 @@ class _StringsFr extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name} : non recherché (cette source ne peut pas traiter la requête)';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -110555,6 +110459,14 @@ class _StringsFr extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '${count} sorties';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => 'Réduire';
   @override
@@ -112700,57 +112612,21 @@ class _StringsId extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Wikipedia (中文)';
   @override
-  String get anime_download_back => 'Kembali';
-  @override
-  String get anime_download_batch => 'Massal';
-  @override
-  String get anime_download_category_all => 'Semua';
-  @override
-  String get anime_download_category_english => 'Terjemahan Inggris';
-  @override
-  String get anime_download_category_non_english => 'Non-Inggris';
-  @override
-  String get anime_download_category_raw => 'Mentah';
-  @override
   String get anime_download_delete => 'Hapus';
-  @override
-  String anime_download_episode_count({required Object count}) => 'Ep ${count}';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => 'Unduh';
   @override
   String get anime_download_generic_hint => 'Tautan magnet';
   @override
-  String get anime_download_generic_title =>
-      'Tempel tautan (buku, video, apa saja)';
-  @override
   String get anime_download_include_subs => 'Sertakan subtitle';
-  @override
-  String get anime_download_kind_auto => 'Otomatis';
-  @override
-  String get anime_download_kind_book => 'Buku';
   @override
   String get anime_download_kind_video => 'Video';
   @override
   String get anime_download_magnet_invalid => 'Tautan magnet tidak valid';
   @override
-  String get anime_download_no_results => 'Tidak ada hasil';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'Layanan merespons dengan sukses tetapi mengembalikan 0 item. Kueri: ${query}; filter: ${filters}. Coba judul lain atau longgarkan filter.';
-  @override
   String get anime_download_no_subs => 'Tanpa subtitle';
   @override
   String get anime_download_no_tasks => 'Belum ada tugas unduhan';
-  @override
-  String get anime_download_nyaa_query => 'Kata kunci pencarian Nyaa';
   @override
   String get anime_download_play_now => 'Putar sambil mengunduh';
   @override
@@ -112760,14 +112636,10 @@ class _StringsId extends _StringsEn {
   String get anime_download_play_now_ok =>
       'Diimpor — buka dari pustaka video untuk memutar sambil mengunduh';
   @override
-  String get anime_download_push => 'Kirim unduhan';
-  @override
   String get anime_download_push_failed => 'Gagal mengirim ke qBittorrent';
   @override
   String get anime_download_pushed =>
       'Terkirim — akan diimpor otomatis setelah selesai';
-  @override
-  String get anime_download_refresh => 'Segarkan';
   @override
   String get anime_download_relocate => 'Ganti nama / pindah';
   @override
@@ -112796,22 +112668,8 @@ class _StringsId extends _StringsEn {
   @override
   String get anime_download_retry => 'Coba lagi';
   @override
-  String get anime_download_search => 'Cari';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      'Jika situs tidak bisa dijangkau langsung, atur proksi jaringan di pengaturan unduhan.';
-  @override
-  String get anime_download_search_failed =>
-      'Pencarian gagal atau waktu habis. Ketuk coba lagi.';
-  @override
-  String get anime_download_search_hint => 'Judul anime';
-  @override
   String get anime_download_search_start_hint =>
       'Cari judul di atas - torrent dan subtitle dicocokkan secara otomatis. Unduhan tidak terbatas pada video: buku, manga, buku audio, dan game juga diimpor.';
-  @override
-  String get anime_download_sort_date => 'Diterbitkan';
-  @override
-  String get anime_download_sort_seeders => 'Seeder';
   @override
   String get anime_download_sort_size => 'Ukuran';
   @override
@@ -112821,41 +112679,16 @@ class _StringsId extends _StringsEn {
   String get anime_download_streaming_ready =>
       'Di perpustakaan · unduhan berlanjut';
   @override
-  String get anime_download_subs_badge => 'Sub';
-  @override
-  String get anime_download_subs_deferred =>
-      'Subtitle dicocokkan setelah unduhan, dari file aktual paket';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      'Nomor episode belum diverifikasi terhadap paket ini - subtitle mungkin berasal dari musim lain.';
-  @override
-  String get anime_download_subs_failed =>
-      'Pencarian subtitle gagal. Ketuk coba lagi.';
-  @override
-  String get anime_download_subs_need_key =>
-      'Masukkan kunci API Jimaku di atas untuk mencari subtitle.';
-  @override
   String get anime_download_subs_pending =>
       'Subtitle: menunggu sampai unduhan selesai';
   @override
   String get anime_download_subs_retrying =>
       'Subtitle: belum tersedia — akan mencoba ulang secara otomatis';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'Tidak ada entri subtitle yang cocok dengan musim ${season} dari paket ini - tidak dipilih otomatis. Pilih satu secara manual jika tetap ingin.';
-  @override
   String get anime_download_subs_unmatched =>
       'Subtitle: tidak ada kecocokan untuk paket ini';
   @override
-  String get anime_download_tasks => 'Tugas unduhan';
-  @override
-  String get anime_download_title => 'Unduhan anime';
-  @override
   String get anime_download_trusted => 'Terpercaya';
-  @override
-  String get anime_download_trusted_only => 'Hanya terpercaya';
-  @override
-  String get anime_download_unfiltered => 'Tanpa filter Terpercaya';
   @override
   String get anki_action_open_settings => 'Buka pengaturan';
   @override
@@ -117120,12 +116953,6 @@ class _StringsId extends _StringsEn {
   @override
   String get discovery_load_more => 'Muat lebih banyak';
   @override
-  String get discovery_nyaa_filter_all => 'Semua';
-  @override
-  String get discovery_nyaa_filter_no_remakes => 'Tanpa remake';
-  @override
-  String get discovery_nyaa_filter_trusted_only => 'Hanya tepercaya';
-  @override
   String get discovery_opds_add => 'Tambah server OPDS';
   @override
   String get discovery_opds_allow_http => 'Izinkan HTTP polos';
@@ -117517,9 +117344,6 @@ class _StringsId extends _StringsEn {
   @override
   String get download_status_queued => 'Dalam antrean';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      'Setelah episode ${episode}';
-  @override
   String get download_subscription_check_all => 'Periksa semua';
   @override
   String get download_subscription_check_now => 'Periksa sekarang';
@@ -117535,9 +117359,6 @@ class _StringsId extends _StringsEn {
   }) =>
       'Unduh seluruh batch ${group} · ${resolution} sekali. Batch tidak memiliki episode berikutnya untuk diikuti.';
   @override
-  String get download_subscription_created =>
-      'Unduhan diantrean dan langganan dibuat';
-  @override
   String get download_subscription_delete => 'Hapus langganan';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -117546,9 +117367,6 @@ class _StringsId extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create =>
-      'Unduh dan berlangganan';
-  @override
   String get download_subscription_empty_body =>
       'Di Jelajahi, pilih rilis satu episode dan gunakan Unduh dan berlangganan.';
   @override
@@ -117556,9 +117374,6 @@ class _StringsId extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       'Terakhir diperiksa: ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      'Terbaru diantrean: episode ${episode}';
   @override
   String get download_subscription_never_checked => 'Belum pernah diperiksa';
   @override
@@ -132203,6 +132018,43 @@ class _StringsId extends _StringsEn {
   String get usage_stats_enabled_hint =>
       'Sekali sehari, mengirim ID instalasi yang diturunkan dari perangkat ini (tetap sama setelah instal ulang), versi aplikasi, platform, kanal pembaruan, bahasa aplikasi, arsitektur CPU, versi utama sistem operasi, dan sumber instalasi (misalnya toko aplikasi atau penginstal) ke fushi.moe agar kami dapat menghitung pengguna aktif. Tidak ada data akun, pustaka, atau bacaan yang disertakan, dan alamat IP Anda tidak disimpan — hanya negara atau wilayah yang ditentukan darinya. Saat Anda melampirkan info perangkat ke masukan, ID instalasi ikut dikirim.';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => 'Musim gugur';
   @override
   String get video_air_season_spring => 'Musim semi';
@@ -132349,20 +132201,6 @@ class _StringsId extends _StringsEn {
   String get video_bottom_seek_forward => 'Maju 10d';
   @override
   String get video_bottom_seek_forward_label => '+10d';
-  @override
-  String get video_builtin_apibay_hint =>
-      'Film dan acara TV. Indeks publik, tidak perlu akun.';
-  @override
-  String get video_builtin_knaben_hint =>
-      'Film dan acara TV. Mengagregasi beberapa indexer publik.';
-  @override
-  String get video_builtin_nyaa_hint =>
-      'Hanya anime. Film dan acara TV dicakup oleh dua indexer publik di bawah.';
-  @override
-  String get video_builtin_sources_hint =>
-      'Dikirimkan bersama aplikasi: tanpa akun, tanpa kunci API. Nonaktifkan satu untuk mengecualikannya dari pencarian sumber daya.';
-  @override
-  String get video_builtin_sources_title => 'Sumber bawaan';
   @override
   String video_chapter_n({required Object n}) => 'Bab ${n}';
   @override
@@ -133595,8 +133433,8 @@ class _StringsId extends _StringsEn {
   @override
   String get video_resource_missing_title => 'Video tidak tersedia';
   @override
-  String get video_resource_no_provider_hint =>
-      'Pencarian ini tidak memiliki penyedia untuk dikueri. Aktifkan kembali sumber bawaan, atau tambahkan indexer Torznab, di Pengaturan, Unduhan, Penyedia sumber daya dan subtitle eksternal.';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title =>
       'Tidak ada indexer sumber daya yang dikonfigurasi';
@@ -133619,6 +133457,53 @@ class _StringsId extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}: tidak dicari (sumber ini tidak dapat menangani kueri)';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -134815,6 +134700,14 @@ class _StringsId extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '${count} rilis';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => 'Ciutkan';
   @override
@@ -136950,57 +136843,21 @@ class _StringsIt extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Wikipedia (中文)';
   @override
-  String get anime_download_back => 'Indietro';
-  @override
-  String get anime_download_batch => 'Lotto';
-  @override
-  String get anime_download_category_all => 'Tutti';
-  @override
-  String get anime_download_category_english => 'Tradotto in inglese';
-  @override
-  String get anime_download_category_non_english => 'Non inglese';
-  @override
-  String get anime_download_category_raw => 'Grezzo';
-  @override
   String get anime_download_delete => 'Elimina';
-  @override
-  String anime_download_episode_count({required Object count}) => 'EP ${count}';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => 'Download';
   @override
   String get anime_download_generic_hint => 'Link magnet';
   @override
-  String get anime_download_generic_title =>
-      'Incolla un link (libri, video, qualsiasi cosa)';
-  @override
   String get anime_download_include_subs => 'Includi sottotitoli';
-  @override
-  String get anime_download_kind_auto => 'Automatico';
-  @override
-  String get anime_download_kind_book => 'Libro';
   @override
   String get anime_download_kind_video => 'Video';
   @override
   String get anime_download_magnet_invalid => 'Link magnet non valido';
   @override
-  String get anime_download_no_results => 'Nessun risultato';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'Il servizio ha risposto con successo ma ha restituito 0 elementi. Query: ${query}; filtri: ${filters}. Prova un altro titolo o allenta i filtri.';
-  @override
   String get anime_download_no_subs => 'Nessun sottotitolo';
   @override
   String get anime_download_no_tasks => 'Nessun download in corso';
-  @override
-  String get anime_download_nyaa_query => 'Termini di ricerca Nyaa';
   @override
   String get anime_download_play_now => 'Riproduci durante il download';
   @override
@@ -137010,14 +136867,10 @@ class _StringsIt extends _StringsEn {
   String get anime_download_play_now_ok =>
       'Importato — aprilo dalla libreria video per riprodurlo durante il download';
   @override
-  String get anime_download_push => 'Invia download';
-  @override
   String get anime_download_push_failed => 'Invio a qBittorrent non riuscito';
   @override
   String get anime_download_pushed =>
       'Inviato — verrà importato automaticamente al termine';
-  @override
-  String get anime_download_refresh => 'Aggiorna';
   @override
   String get anime_download_relocate => 'Rinomina / sposta';
   @override
@@ -137047,22 +136900,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get anime_download_retry => 'Riprova';
   @override
-  String get anime_download_search => 'Cerca';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      'Se il sito non è raggiungibile direttamente, configura un proxy di rete nelle impostazioni di download.';
-  @override
-  String get anime_download_search_failed =>
-      'Ricerca fallita o scaduta. Tocca Riprova.';
-  @override
-  String get anime_download_search_hint => 'Titolo anime';
-  @override
   String get anime_download_search_start_hint =>
       'Cerca un titolo sopra — torrent e sottotitoli vengono abbinati automaticamente. I download non si limitano ai video: anche libri, manga, audiolibri e giochi vengono importati.';
-  @override
-  String get anime_download_sort_date => 'Pubblicazione';
-  @override
-  String get anime_download_sort_seeders => 'Seed';
   @override
   String get anime_download_sort_size => 'Dimensione';
   @override
@@ -137072,41 +136911,16 @@ class _StringsIt extends _StringsEn {
   String get anime_download_streaming_ready =>
       'In libreria · il download continua';
   @override
-  String get anime_download_subs_badge => 'Sub';
-  @override
-  String get anime_download_subs_deferred =>
-      'I sottotitoli vengono abbinati dopo il download, dai file effettivi del pacchetto';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      'I numeri degli episodi non sono verificati per questo pacchetto — i sottotitoli potrebbero provenire da un\'altra stagione.';
-  @override
-  String get anime_download_subs_failed =>
-      'Ricerca sottotitoli fallita. Tocca Riprova.';
-  @override
-  String get anime_download_subs_need_key =>
-      'Inserisci una chiave API Jimaku sopra per cercare i sottotitoli.';
-  @override
   String get anime_download_subs_pending =>
       'Sottotitoli: in attesa del completamento del download';
   @override
   String get anime_download_subs_retrying =>
       'Sottotitoli: non ancora disponibili — nuovo tentativo automatico';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'Nessuna voce sottotitoli corrisponde alla stagione ${season} di questo pacchetto — non selezionata automaticamente. Scegline una manualmente se la vuoi comunque.';
-  @override
   String get anime_download_subs_unmatched =>
       'Sottotitoli: nessuna corrispondenza per questo pacchetto';
   @override
-  String get anime_download_tasks => 'Attività di download';
-  @override
-  String get anime_download_title => 'Download anime';
-  @override
   String get anime_download_trusted => 'Affidabile';
-  @override
-  String get anime_download_trusted_only => 'Solo affidabili';
-  @override
-  String get anime_download_unfiltered => 'Nessun filtro Affidabili';
   @override
   String get anki_action_open_settings => 'Apri impostazioni';
   @override
@@ -141399,12 +141213,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get discovery_load_more => 'Carica altri';
   @override
-  String get discovery_nyaa_filter_all => 'Tutti';
-  @override
-  String get discovery_nyaa_filter_no_remakes => 'Senza remake';
-  @override
-  String get discovery_nyaa_filter_trusted_only => 'Solo affidabili';
-  @override
   String get discovery_opds_add => 'Aggiungi server OPDS';
   @override
   String get discovery_opds_allow_http => 'Consenti HTTP in chiaro';
@@ -141801,9 +141609,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get download_status_queued => 'In coda';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      'Dopo l\'episodio ${episode}';
-  @override
   String get download_subscription_check_all => 'Controlla tutto';
   @override
   String get download_subscription_check_now => 'Controlla ora';
@@ -141820,9 +141625,6 @@ class _StringsIt extends _StringsEn {
   }) =>
       'Scarica una sola volta l\'intero lotto ${group} · ${resolution}. Un lotto non ha un episodio successivo da seguire.';
   @override
-  String get download_subscription_created =>
-      'Download in coda e abbonamento creato';
-  @override
   String get download_subscription_delete => 'Elimina abbonamento';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -141831,8 +141633,6 @@ class _StringsIt extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create => 'Scarica e abbonati';
-  @override
   String get download_subscription_empty_body =>
       'In Scopri, scegli un\'uscita a episodio singolo e usa Scarica e abbonati.';
   @override
@@ -141840,9 +141640,6 @@ class _StringsIt extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       'Ultimo controllo: ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      'Ultimo in coda: episodio ${episode}';
   @override
   String get download_subscription_never_checked => 'Mai controllato';
   @override
@@ -156592,6 +156389,43 @@ class _StringsIt extends _StringsEn {
   String get usage_stats_enabled_hint =>
       'Una volta al giorno invia a fushi.moe un ID di installazione derivato da questo dispositivo (invariato dopo la reinstallazione), la versione dell\'app, la piattaforma, il canale di aggiornamento, la lingua dell\'app, l\'architettura della CPU, la versione principale del sistema e l\'origine dell\'installazione (es. store o programma di installazione), così possiamo contare gli utenti attivi. Non sono inclusi dati dell\'account, della libreria o di lettura, e il tuo indirizzo IP non viene memorizzato: si conserva solo il paese o la regione che ne deriva. Se alleghi le informazioni sul dispositivo a un feedback, l\'ID di installazione viene inviato insieme.';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => 'Autunno';
   @override
   String get video_air_season_spring => 'Primavera';
@@ -156735,20 +156569,6 @@ class _StringsIt extends _StringsEn {
   String get video_bottom_seek_forward => 'Avanti 10s';
   @override
   String get video_bottom_seek_forward_label => '+10s';
-  @override
-  String get video_builtin_apibay_hint =>
-      'Film e serie TV. Indice pubblico, nessun account necessario.';
-  @override
-  String get video_builtin_knaben_hint =>
-      'Film e serie TV. Aggrega diversi indexer pubblici.';
-  @override
-  String get video_builtin_nyaa_hint =>
-      'Solo anime. Film e serie TV sono coperti dai due indexer pubblici sotto.';
-  @override
-  String get video_builtin_sources_hint =>
-      'Incluse nell\'app: nessun account, nessuna chiave API. Disattivane una per escluderla dalle ricerche di risorse.';
-  @override
-  String get video_builtin_sources_title => 'Fonti integrate';
   @override
   String video_chapter_n({required Object n}) => 'Capitolo ${n}';
   @override
@@ -157982,8 +157802,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_resource_missing_title => 'Video non disponibile';
   @override
-  String get video_resource_no_provider_hint =>
-      'Questa ricerca non aveva un provider da interrogare. Riabilita una fonte integrata, o aggiungi un indexer Torznab, in Impostazioni, Download, Provider di risorse e sottotitoli esterni.';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title =>
       'Nessun indexer di risorse configurato';
@@ -158006,6 +157826,53 @@ class _StringsIt extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}: non cercato (questa fonte non può gestire la query)';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -159217,6 +159084,14 @@ class _StringsIt extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '${count} uscite';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => 'Comprimi';
   @override
@@ -161332,56 +161207,21 @@ class _StringsJa extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Wikipedia (中文)';
   @override
-  String get anime_download_back => '戻る';
-  @override
-  String get anime_download_batch => '一括';
-  @override
-  String get anime_download_category_all => 'すべて';
-  @override
-  String get anime_download_category_english => '英語翻訳';
-  @override
-  String get anime_download_category_non_english => '英語以外';
-  @override
-  String get anime_download_category_raw => '生';
-  @override
   String get anime_download_delete => '削除';
-  @override
-  String anime_download_episode_count({required Object count}) => '${count} 話';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => 'ダウンロード';
   @override
   String get anime_download_generic_hint => 'マグネットリンク';
   @override
-  String get anime_download_generic_title => 'リンクを貼り付け（書籍、動画など何でも）';
-  @override
   String get anime_download_include_subs => '字幕を含める';
-  @override
-  String get anime_download_kind_auto => '自動';
-  @override
-  String get anime_download_kind_book => '書籍';
   @override
   String get anime_download_kind_video => '動画';
   @override
   String get anime_download_magnet_invalid => '無効なマグネットリンク';
   @override
-  String get anime_download_no_results => '結果なし';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'サービスは正常に応答しましたが、0件でした。クエリ: ${query}; フィルター: ${filters}。別のタイトルを試すか、フィルターを緩めてください。';
-  @override
   String get anime_download_no_subs => '字幕なし';
   @override
   String get anime_download_no_tasks => 'ダウンロードタスクはまだありません';
-  @override
-  String get anime_download_nyaa_query => 'Nyaa 検索語';
   @override
   String get anime_download_play_now => 'ダウンロード中に再生';
   @override
@@ -161391,13 +161231,9 @@ class _StringsJa extends _StringsEn {
   String get anime_download_play_now_ok =>
       'インポートしました — 動画ライブラリから開いてダウンロード中に再生できます';
   @override
-  String get anime_download_push => 'ダウンロードを転送';
-  @override
   String get anime_download_push_failed => 'qBittorrent への転送に失敗しました';
   @override
   String get anime_download_pushed => '転送しました — 完了後に自動的にインポートされます';
-  @override
-  String get anime_download_refresh => '更新';
   @override
   String get anime_download_relocate => '名前変更 / 移動';
   @override
@@ -161426,22 +161262,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get anime_download_retry => '再試行';
   @override
-  String get anime_download_search => '検索';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      'サイトに直接アクセスできない場合、ダウンロード設定でネットワークプロキシを設定してください。';
-  @override
-  String get anime_download_search_failed =>
-      '検索が失敗またはタイムアウトしました。再試行をタップしてください。';
-  @override
-  String get anime_download_search_hint => 'アニメタイトル';
-  @override
   String get anime_download_search_start_hint =>
       '上でタイトルを検索 — torrent と字幕が自動的にマッチングされます。ダウンロードは動画に限りません：書籍、漫画、オーディオブック、ゲームもインポートされます。';
-  @override
-  String get anime_download_sort_date => '公開日';
-  @override
-  String get anime_download_sort_seeders => 'シーダー';
   @override
   String get anime_download_sort_size => 'サイズ';
   @override
@@ -161449,36 +161271,13 @@ class _StringsJa extends _StringsEn {
   @override
   String get anime_download_streaming_ready => 'ライブラリに追加済み · ダウンロード継続中';
   @override
-  String get anime_download_subs_badge => '字幕';
-  @override
-  String get anime_download_subs_deferred => '字幕はダウンロード後にパックの実際のファイルからマッチされます';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      'エピソード番号はこのパックに対して未検証です - 別のシーズンの字幕の可能性があります。';
-  @override
-  String get anime_download_subs_failed => '字幕検索に失敗しました。再試行をタップしてください。';
-  @override
-  String get anime_download_subs_need_key =>
-      '字幕を検索するには、上に Jimaku API キーを入力してください。';
-  @override
   String get anime_download_subs_pending => '字幕: ダウンロード完了まで保留';
   @override
   String get anime_download_subs_retrying => '字幕: まだ未公開 — 自動的にリトライします';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'シーズン${season}に一致する字幕エントリがありません - 自動選択されませんでした。それでも必要な場合は手動で選択してください。';
-  @override
   String get anime_download_subs_unmatched => '字幕: このパックに一致なし';
   @override
-  String get anime_download_tasks => 'ダウンロードタスク';
-  @override
-  String get anime_download_title => 'アニメダウンロード';
-  @override
   String get anime_download_trusted => '信頼済み';
-  @override
-  String get anime_download_trusted_only => '信頼済みのみ';
-  @override
-  String get anime_download_unfiltered => 'Trustedフィルターなし';
   @override
   String get anki_action_open_settings => '設定を開く';
   @override
@@ -165597,12 +165396,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get discovery_load_more => 'もっと読み込む';
   @override
-  String get discovery_nyaa_filter_all => 'すべて';
-  @override
-  String get discovery_nyaa_filter_no_remakes => 'remake を除外';
-  @override
-  String get discovery_nyaa_filter_trusted_only => '信頼済みのみ';
-  @override
   String get discovery_opds_add => 'OPDS サーバーを追加';
   @override
   String get discovery_opds_allow_http => '平文 HTTP を許可';
@@ -165981,9 +165774,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get download_status_queued => 'キュー待ち';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      '第${episode}話以降';
-  @override
   String get download_subscription_check_all => 'すべてチェック';
   @override
   String get download_subscription_check_now => '今すぐチェック';
@@ -165998,8 +165788,6 @@ class _StringsJa extends _StringsEn {
     required Object resolution,
   }) => '${group} · ${resolution} のバッチ全体を一度にダウンロードします。バッチには追いかける次のエピソードはありません。';
   @override
-  String get download_subscription_created => 'ダウンロードをキューに追加し、サブスクリプションを作成しました';
-  @override
   String get download_subscription_delete => '購読を削除';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -166008,8 +165796,6 @@ class _StringsJa extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create => 'ダウンロードして購読';
-  @override
   String get download_subscription_empty_body =>
       '発見ページで単話リリースを選び、「ダウンロードして購読」を使ってください。';
   @override
@@ -166017,9 +165803,6 @@ class _StringsJa extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       '最終チェック: ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      '最新キュー: 第${episode}話';
   @override
   String get download_subscription_never_checked => '未チェック';
   @override
@@ -180166,6 +179949,43 @@ class _StringsJa extends _StringsEn {
   String get usage_stats_enabled_hint =>
       '1 日 1 回、この端末から導出したインストール ID（再インストールしても変わりません）・アプリのバージョン・プラットフォーム・更新チャネル・アプリの表示言語・CPU アーキテクチャ・OS のメジャーバージョン・インストール元（ストアやインストーラーなど）を fushi.moe に送信し、アクティブユーザー数の集計に使います。アカウント・ライブラリ・読書内容は含まれず、IP アドレスも保存しません（そこから判定した国・地域のみ記録します）。フィードバックにデバイス情報を添付すると、インストール ID も一緒に送信されます。';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => '秋';
   @override
   String get video_air_season_spring => '春';
@@ -180306,17 +180126,6 @@ class _StringsJa extends _StringsEn {
   String get video_bottom_seek_forward => '10 秒進む';
   @override
   String get video_bottom_seek_forward_label => '+10秒';
-  @override
-  String get video_builtin_apibay_hint => '映画とテレビ番組。公開インデックス、アカウント不要。';
-  @override
-  String get video_builtin_knaben_hint => '映画とテレビ番組。複数の公開インデクサーを集約。';
-  @override
-  String get video_builtin_nyaa_hint => 'アニメのみ。映画とテレビ番組は下の2つの公開インデクサーでカバーされます。';
-  @override
-  String get video_builtin_sources_hint =>
-      'アプリに同梱：アカウントもAPIキーも不要。オフにするとリソース検索から除外されます。';
-  @override
-  String get video_builtin_sources_title => '組み込みソース';
   @override
   String video_chapter_n({required Object n}) => 'チャプター ${n}';
   @override
@@ -181490,8 +181299,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_resource_missing_title => '動画が利用できません';
   @override
-  String get video_resource_no_provider_hint =>
-      'この検索にはクエリ先のプロバイダーがありませんでした。組み込みソースを再有効化するか、設定 → ダウンロード → 外部リソース・字幕プロバイダーでTorznabインデクサーを追加してください。';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title => 'リソースインデクサーが未設定';
   @override
@@ -181513,6 +181322,53 @@ class _StringsJa extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}: 検索しませんでした（このソースはこのクエリを処理できません）';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -182647,6 +182503,14 @@ class _StringsJa extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '${count}リリース';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => '折りたたむ';
   @override
@@ -184699,56 +184563,21 @@ class _StringsKo extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Wikipedia (中文)';
   @override
-  String get anime_download_back => '뒤로';
-  @override
-  String get anime_download_batch => '일괄';
-  @override
-  String get anime_download_category_all => '전체';
-  @override
-  String get anime_download_category_english => '영어 번역';
-  @override
-  String get anime_download_category_non_english => '영어 외';
-  @override
-  String get anime_download_category_raw => '무자막';
-  @override
   String get anime_download_delete => '삭제';
-  @override
-  String anime_download_episode_count({required Object count}) => '${count}화';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => '다운로드';
   @override
   String get anime_download_generic_hint => '마그넷 링크';
   @override
-  String get anime_download_generic_title => '링크 붙여넣기 (도서, 동영상 등)';
-  @override
   String get anime_download_include_subs => '자막 포함';
-  @override
-  String get anime_download_kind_auto => '자동';
-  @override
-  String get anime_download_kind_book => '도서';
   @override
   String get anime_download_kind_video => '동영상';
   @override
   String get anime_download_magnet_invalid => '유효하지 않은 마그넷 링크';
   @override
-  String get anime_download_no_results => '결과 없음';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      '서비스가 정상 응답했지만 0개의 항목을 반환했습니다. 쿼리: ${query}; 필터: ${filters}. 다른 제목을 시도하거나 필터를 완화하세요.';
-  @override
   String get anime_download_no_subs => '자막 없음';
   @override
   String get anime_download_no_tasks => '다운로드 작업이 없습니다';
-  @override
-  String get anime_download_nyaa_query => 'Nyaa 검색어';
   @override
   String get anime_download_play_now => '다운로드하면서 재생';
   @override
@@ -184758,13 +184587,9 @@ class _StringsKo extends _StringsEn {
   String get anime_download_play_now_ok =>
       '가져오기 완료 — 동영상 라이브러리에서 열어 다운로드하면서 재생하세요';
   @override
-  String get anime_download_push => '다운로드 전송';
-  @override
   String get anime_download_push_failed => 'qBittorrent로 전송 실패';
   @override
   String get anime_download_pushed => '전송 완료 — 완료되면 자동으로 가져옵니다';
-  @override
-  String get anime_download_refresh => '새로고침';
   @override
   String get anime_download_relocate => '이름 변경 / 이동';
   @override
@@ -184793,21 +184618,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get anime_download_retry => '재시도';
   @override
-  String get anime_download_search => '검색';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      '사이트에 직접 접속할 수 없는 경우 다운로드 설정에서 네트워크 프록시를 구성하세요.';
-  @override
-  String get anime_download_search_failed => '검색 실패 또는 시간 초과. 재시도를 탭하세요.';
-  @override
-  String get anime_download_search_hint => '애니메이션 제목';
-  @override
   String get anime_download_search_start_hint =>
       '위에서 제목을 검색하세요 - 토렌트와 자막이 자동으로 매칭됩니다. 다운로드는 동영상에 국한되지 않으며 도서, 만화, 오디오북, 게임도 가져올 수 있습니다.';
-  @override
-  String get anime_download_sort_date => '게시일';
-  @override
-  String get anime_download_sort_seeders => '시더';
   @override
   String get anime_download_sort_size => '크기';
   @override
@@ -184815,36 +184627,13 @@ class _StringsKo extends _StringsEn {
   @override
   String get anime_download_streaming_ready => '라이브러리에 있음 · 다운로드 계속 중';
   @override
-  String get anime_download_subs_badge => '자막';
-  @override
-  String get anime_download_subs_deferred => '자막은 다운로드 후 팩의 실제 파일에서 매칭됩니다';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      '에피소드 번호가 이 팩과 검증되지 않았습니다 - 자막이 다른 시즌의 것일 수 있습니다.';
-  @override
-  String get anime_download_subs_failed => '자막 검색 실패. 재시도를 탭하세요.';
-  @override
-  String get anime_download_subs_need_key =>
-      '자막을 검색하려면 위에 Jimaku API 키를 입력하세요.';
-  @override
   String get anime_download_subs_pending => '자막: 다운로드 완료 대기 중';
   @override
   String get anime_download_subs_retrying => '자막: 아직 올라오지 않음 — 자동으로 재시도합니다';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      '이 팩의 시즌 ${season}과 일치하는 자막 항목이 없습니다 - 자동 선택되지 않았습니다. 그래도 원하면 수동으로 선택하세요.';
-  @override
   String get anime_download_subs_unmatched => '자막: 이 팩과 일치하는 항목 없음';
   @override
-  String get anime_download_tasks => '다운로드 작업';
-  @override
-  String get anime_download_title => '애니메이션 다운로드';
-  @override
   String get anime_download_trusted => '신뢰됨';
-  @override
-  String get anime_download_trusted_only => '신뢰된 항목만';
-  @override
-  String get anime_download_unfiltered => '신뢰 필터 없음';
   @override
   String get anki_action_open_settings => '설정 열기';
   @override
@@ -188963,12 +188752,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get discovery_load_more => '더 보기';
   @override
-  String get discovery_nyaa_filter_all => '전체';
-  @override
-  String get discovery_nyaa_filter_no_remakes => '리메이크 제외';
-  @override
-  String get discovery_nyaa_filter_trusted_only => '신뢰할 수 있는 항목만';
-  @override
   String get discovery_opds_add => 'OPDS 서버 추가';
   @override
   String get discovery_opds_allow_http => '일반 HTTP 허용';
@@ -189345,9 +189128,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get download_status_queued => '대기 중';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      '${episode}화 이후';
-  @override
   String get download_subscription_check_all => '모두 확인';
   @override
   String get download_subscription_check_now => '지금 확인';
@@ -189362,8 +189142,6 @@ class _StringsKo extends _StringsEn {
     required Object resolution,
   }) => '${group} · ${resolution} 전체 묶음을 한 번 다운로드합니다. 묶음에는 따라갈 다음 에피소드가 없습니다.';
   @override
-  String get download_subscription_created => '다운로드 대기열에 추가 및 구독 생성됨';
-  @override
   String get download_subscription_delete => '구독 삭제';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -189372,8 +189150,6 @@ class _StringsKo extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create => '다운로드 및 구독';
-  @override
   String get download_subscription_empty_body =>
       '탐색에서 단편 에피소드 릴리스를 선택하고 다운로드 및 구독을 사용하세요.';
   @override
@@ -189381,9 +189157,6 @@ class _StringsKo extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       '마지막 확인: ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      '최근 대기열: ${episode}화';
   @override
   String get download_subscription_never_checked => '확인한 적 없음';
   @override
@@ -203567,6 +203340,43 @@ class _StringsKo extends _StringsEn {
   String get usage_stats_enabled_hint =>
       '하루에 한 번 이 기기에서 파생된 설치 ID(재설치해도 바뀌지 않음), 앱 버전, 플랫폼, 업데이트 채널, 앱 언어, CPU 아키텍처, OS 주 버전, 설치 경로(앱 스토어·설치 프로그램 등)를 fushi.moe로 보내 활성 사용자 수를 집계합니다. 계정, 라이브러리, 읽기 데이터는 포함되지 않으며 IP 주소도 저장하지 않으며, 이를 통해 판별한 국가/지역만 기록합니다. 피드백에 기기 정보를 첨부하면 설치 ID도 함께 전송됩니다.';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => '가을';
   @override
   String get video_air_season_spring => '봄';
@@ -203707,18 +203517,6 @@ class _StringsKo extends _StringsEn {
   String get video_bottom_seek_forward => '10초 앞으로';
   @override
   String get video_bottom_seek_forward_label => '+10초';
-  @override
-  String get video_builtin_apibay_hint => '영화 및 TV 프로그램. 공개 인덱스, 계정 불필요.';
-  @override
-  String get video_builtin_knaben_hint => '영화 및 TV 프로그램. 여러 공개 인덱서를 통합합니다.';
-  @override
-  String get video_builtin_nyaa_hint =>
-      '애니메이션 전용. 영화 및 TV 프로그램은 아래 두 공개 인덱서에서 다룹니다.';
-  @override
-  String get video_builtin_sources_hint =>
-      '앱에 내장: 계정이나 API 키 불필요. 하나를 끄면 리소스 검색에서 제외됩니다.';
-  @override
-  String get video_builtin_sources_title => '내장 소스';
   @override
   String video_chapter_n({required Object n}) => '챕터 ${n}';
   @override
@@ -204901,8 +204699,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_resource_missing_title => '동영상을 사용할 수 없음';
   @override
-  String get video_resource_no_provider_hint =>
-      '이 검색에 쿼리할 제공자가 없습니다. 설정 > 다운로드 > 외부 리소스 및 자막 제공자에서 내장 소스를 다시 활성화하거나 Torznab 인덱서를 추가하세요.';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title => '리소스 인덱서가 설정되지 않았습니다';
   @override
@@ -204923,6 +204721,53 @@ class _StringsKo extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}: 검색하지 않음(이 소스는 해당 검색어를 처리할 수 없음)';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -206066,6 +205911,14 @@ class _StringsKo extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '${count}개 릴리스';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => '접기';
   @override
@@ -208166,58 +208019,21 @@ class _StringsNl extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Wikipedia (中文)';
   @override
-  String get anime_download_back => 'Terug';
-  @override
-  String get anime_download_batch => 'Batch';
-  @override
-  String get anime_download_category_all => 'Alles';
-  @override
-  String get anime_download_category_english => 'Engels vertaald';
-  @override
-  String get anime_download_category_non_english => 'Niet-Engels';
-  @override
-  String get anime_download_category_raw => 'Raw';
-  @override
   String get anime_download_delete => 'Verwijderen';
-  @override
-  String anime_download_episode_count({required Object count}) =>
-      'Afl. ${count}';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => 'Downloaden';
   @override
   String get anime_download_generic_hint => 'Magnetlink';
   @override
-  String get anime_download_generic_title =>
-      'Plak een link (boeken, video\'s, alles)';
-  @override
   String get anime_download_include_subs => 'Ondertitels toevoegen';
-  @override
-  String get anime_download_kind_auto => 'Automatisch';
-  @override
-  String get anime_download_kind_book => 'Boek';
   @override
   String get anime_download_kind_video => 'Video';
   @override
   String get anime_download_magnet_invalid => 'Ongeldige magnetlink';
   @override
-  String get anime_download_no_results => 'Geen resultaten';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'De service reageerde succesvol maar gaf 0 items terug. Zoekopdracht: ${query}; filters: ${filters}. Probeer een andere titel of versoepl de filters.';
-  @override
   String get anime_download_no_subs => 'Geen ondertitels';
   @override
   String get anime_download_no_tasks => 'Nog geen downloadtaken';
-  @override
-  String get anime_download_nyaa_query => 'Nyaa zoektermen';
   @override
   String get anime_download_play_now => 'Afspelen tijdens downloaden';
   @override
@@ -208227,15 +208043,11 @@ class _StringsNl extends _StringsEn {
   String get anime_download_play_now_ok =>
       'Geïmporteerd — open het vanuit de videobibliotheek om af te spelen tijdens het downloaden';
   @override
-  String get anime_download_push => 'Download doorsturen';
-  @override
   String get anime_download_push_failed =>
       'Doorsturen naar qBittorrent mislukt';
   @override
   String get anime_download_pushed =>
       'Doorgestuurd — wordt automatisch geïmporteerd na voltooiing';
-  @override
-  String get anime_download_refresh => 'Vernieuwen';
   @override
   String get anime_download_relocate => 'Hernoemen / verplaatsen';
   @override
@@ -208264,22 +208076,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get anime_download_retry => 'Opnieuw';
   @override
-  String get anime_download_search => 'Zoeken';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      'Als de site niet direct bereikbaar is, stel dan een netwerkproxy in bij de downloadinstellingen.';
-  @override
-  String get anime_download_search_failed =>
-      'Zoeken mislukt of verlopen. Tik op opnieuw.';
-  @override
-  String get anime_download_search_hint => 'Animetitel';
-  @override
   String get anime_download_search_start_hint =>
       'Zoek hierboven op titel — torrents en ondertitels worden automatisch gekoppeld. Downloads zijn niet beperkt tot video: boeken, manga, luisterboeken en games worden ook geïmporteerd.';
-  @override
-  String get anime_download_sort_date => 'Gepubliceerd';
-  @override
-  String get anime_download_sort_seeders => 'Seeders';
   @override
   String get anime_download_sort_size => 'Grootte';
   @override
@@ -208289,41 +208087,16 @@ class _StringsNl extends _StringsEn {
   String get anime_download_streaming_ready =>
       'In bibliotheek · download gaat door';
   @override
-  String get anime_download_subs_badge => 'Subs';
-  @override
-  String get anime_download_subs_deferred =>
-      'Ondertitels worden na het downloaden gekoppeld, aan de hand van de daadwerkelijke bestanden';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      'Afleveringsnummers zijn niet geverifieerd tegen dit pakket — ondertitels kunnen van een ander seizoen komen.';
-  @override
-  String get anime_download_subs_failed =>
-      'Ondertitels zoeken mislukt. Tik op opnieuw.';
-  @override
-  String get anime_download_subs_need_key =>
-      'Voer hierboven een Jimaku API-sleutel in om ondertitels te zoeken.';
-  @override
   String get anime_download_subs_pending =>
       'Ondertitels: wachtend tot download voltooid';
   @override
   String get anime_download_subs_retrying =>
       'Ondertitels: nog niet beschikbaar — wordt automatisch opnieuw geprobeerd';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'Geen ondertitelitem komt overeen met seizoen ${season} van dit pakket — niet automatisch geselecteerd. Kies er handmatig een als je het toch wilt.';
-  @override
   String get anime_download_subs_unmatched =>
       'Ondertitels: geen match voor dit pakket';
   @override
-  String get anime_download_tasks => 'Downloadtaken';
-  @override
-  String get anime_download_title => 'Anime downloaden';
-  @override
   String get anime_download_trusted => 'Vertrouwd';
-  @override
-  String get anime_download_trusted_only => 'Alleen vertrouwd';
-  @override
-  String get anime_download_unfiltered => 'Geen Vertrouwd-filter';
   @override
   String get anki_action_open_settings => 'Instellingen openen';
   @override
@@ -212612,12 +212385,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get discovery_load_more => 'Meer laden';
   @override
-  String get discovery_nyaa_filter_all => 'Alles';
-  @override
-  String get discovery_nyaa_filter_no_remakes => 'Geen remakes';
-  @override
-  String get discovery_nyaa_filter_trusted_only => 'Alleen vertrouwd';
-  @override
   String get discovery_opds_add => 'OPDS-server toevoegen';
   @override
   String get discovery_opds_allow_http => 'Onversleutelde HTTP toestaan';
@@ -213012,9 +212779,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get download_status_queued => 'In wachtrij';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      'Na aflevering ${episode}';
-  @override
   String get download_subscription_check_all => 'Alles controleren';
   @override
   String get download_subscription_check_now => 'Nu controleren';
@@ -213031,9 +212795,6 @@ class _StringsNl extends _StringsEn {
   }) =>
       'Download de hele batch ${group} · ${resolution} één keer. Een batch heeft geen volgende aflevering om te volgen.';
   @override
-  String get download_subscription_created =>
-      'Download in wachtrij en abonnement aangemaakt';
-  @override
   String get download_subscription_delete => 'Abonnement verwijderen';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -213042,9 +212803,6 @@ class _StringsNl extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create =>
-      'Downloaden en abonneren';
-  @override
   String get download_subscription_empty_body =>
       'Kies in Ontdekken een afzonderlijke aflevering en gebruik Downloaden en abonneren.';
   @override
@@ -213052,9 +212810,6 @@ class _StringsNl extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       'Laatst gecontroleerd: ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      'Laatst in wachtrij: aflevering ${episode}';
   @override
   String get download_subscription_never_checked => 'Nooit gecontroleerd';
   @override
@@ -227768,6 +227523,43 @@ class _StringsNl extends _StringsEn {
   String get usage_stats_enabled_hint =>
       'Stuurt één keer per dag een van dit apparaat afgeleide installatie-ID (blijft gelijk na herinstallatie), de app-versie, het platform, het updatekanaal, de app-taal, de CPU-architectuur, de hoofdversie van het besturingssysteem en de installatiebron (bijv. app-winkel of installatieprogramma) naar fushi.moe, zodat we actieve gebruikers kunnen tellen. Er worden geen account-, bibliotheek- of leesgegevens meegestuurd en je IP-adres wordt niet opgeslagen; alleen het daaruit afgeleide land of de regio wordt bewaard. Als je apparaatinformatie aan feedback toevoegt, wordt de installatie-ID meegestuurd.';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => 'Herfst';
   @override
   String get video_air_season_spring => 'Lente';
@@ -227912,20 +227704,6 @@ class _StringsNl extends _StringsEn {
   String get video_bottom_seek_forward => '10s vooruit';
   @override
   String get video_bottom_seek_forward_label => '+10s';
-  @override
-  String get video_builtin_apibay_hint =>
-      'Films en tv-series. Openbare index, geen account nodig.';
-  @override
-  String get video_builtin_knaben_hint =>
-      'Films en tv-series. Aggregeert meerdere openbare indexers.';
-  @override
-  String get video_builtin_nyaa_hint =>
-      'Alleen anime. Films en tv-series worden gedekt door de twee onderstaande openbare indexers.';
-  @override
-  String get video_builtin_sources_hint =>
-      'Meegeleverd met de app: geen account, geen API-sleutel. Schakel er een uit om deze buiten resource-zoekopdrachten te houden.';
-  @override
-  String get video_builtin_sources_title => 'Ingebouwde bronnen';
   @override
   String video_chapter_n({required Object n}) => 'Hoofdstuk ${n}';
   @override
@@ -229157,8 +228935,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_resource_missing_title => 'Video niet beschikbaar';
   @override
-  String get video_resource_no_provider_hint =>
-      'Deze zoekopdracht had geen provider om te bevragen. Schakel een ingebouwde bron opnieuw in, of voeg een Torznab-indexer toe, via Instellingen, Downloads, Externe resource- en ondertitelproviders.';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title =>
       'Geen resource-indexer geconfigureerd';
@@ -229181,6 +228959,53 @@ class _StringsNl extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}: niet doorzocht (deze bron kan de zoekopdracht niet verwerken)';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -230388,6 +230213,14 @@ class _StringsNl extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '${count} releases';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => 'Inklappen';
   @override
@@ -232525,57 +232358,21 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Wikipedia (中文)';
   @override
-  String get anime_download_back => 'Voltar';
-  @override
-  String get anime_download_batch => 'Lote';
-  @override
-  String get anime_download_category_all => 'Todos';
-  @override
-  String get anime_download_category_english => 'Traduzido para inglês';
-  @override
-  String get anime_download_category_non_english => 'Não inglês';
-  @override
-  String get anime_download_category_raw => 'Sem legenda';
-  @override
   String get anime_download_delete => 'Excluir';
-  @override
-  String anime_download_episode_count({required Object count}) => 'EP ${count}';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => 'Download';
   @override
   String get anime_download_generic_hint => 'Link magnet';
   @override
-  String get anime_download_generic_title =>
-      'Cole um link (livros, vídeos, qualquer coisa)';
-  @override
   String get anime_download_include_subs => 'Incluir legendas';
-  @override
-  String get anime_download_kind_auto => 'Automático';
-  @override
-  String get anime_download_kind_book => 'Livro';
   @override
   String get anime_download_kind_video => 'Vídeo';
   @override
   String get anime_download_magnet_invalid => 'Link magnet inválido';
   @override
-  String get anime_download_no_results => 'Sem resultados';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'O serviço respondeu com sucesso mas retornou 0 itens. Consulta: ${query}; filtros: ${filters}. Tente outro título ou reduza os filtros.';
-  @override
   String get anime_download_no_subs => 'Sem legendas';
   @override
   String get anime_download_no_tasks => 'Nenhuma tarefa de download ainda';
-  @override
-  String get anime_download_nyaa_query => 'Termos de busca no Nyaa';
   @override
   String get anime_download_play_now => 'Assistir durante o download';
   @override
@@ -232585,14 +232382,10 @@ class _StringsPtBr extends _StringsEn {
   String get anime_download_play_now_ok =>
       'Importado — abra pela biblioteca de vídeos para assistir durante o download';
   @override
-  String get anime_download_push => 'Enviar download';
-  @override
   String get anime_download_push_failed => 'Falha ao enviar para o qBittorrent';
   @override
   String get anime_download_pushed =>
       'Enviado — será importado automaticamente quando terminar';
-  @override
-  String get anime_download_refresh => 'Atualizar';
   @override
   String get anime_download_relocate => 'Renomear / mover';
   @override
@@ -232621,22 +232414,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get anime_download_retry => 'Tentar novamente';
   @override
-  String get anime_download_search => 'Buscar';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      'Se o site não pode ser acessado diretamente, configure um proxy de rede nas configurações de download.';
-  @override
-  String get anime_download_search_failed =>
-      'Busca falhou ou expirou. Toque em tentar novamente.';
-  @override
-  String get anime_download_search_hint => 'Título do anime';
-  @override
   String get anime_download_search_start_hint =>
       'Busque um título acima — torrents e legendas são combinados automaticamente. Downloads não se limitam a vídeo: livros, mangás, audiobooks e jogos também são importados.';
-  @override
-  String get anime_download_sort_date => 'Publicação';
-  @override
-  String get anime_download_sort_seeders => 'Seeders';
   @override
   String get anime_download_sort_size => 'Tamanho';
   @override
@@ -232646,41 +232425,16 @@ class _StringsPtBr extends _StringsEn {
   String get anime_download_streaming_ready =>
       'Na biblioteca · download continua';
   @override
-  String get anime_download_subs_badge => 'Legendas';
-  @override
-  String get anime_download_subs_deferred =>
-      'Legendas são combinadas após o download, a partir dos arquivos reais do pacote';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      'Números de episódio não verificados contra este pacote - as legendas podem ser de outra temporada.';
-  @override
-  String get anime_download_subs_failed =>
-      'Busca de legendas falhou. Toque em tentar novamente.';
-  @override
-  String get anime_download_subs_need_key =>
-      'Insira uma chave de API Jimaku acima para buscar legendas.';
-  @override
   String get anime_download_subs_pending =>
       'Legendas: pendente até o download concluir';
   @override
   String get anime_download_subs_retrying =>
       'Legendas: ainda não disponíveis — tentará novamente automaticamente';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'Nenhuma entrada de legenda corresponde à temporada ${season} deste pacote - não selecionada automaticamente. Escolha uma manualmente se desejar.';
-  @override
   String get anime_download_subs_unmatched =>
       'Legendas: sem correspondência para este pacote';
   @override
-  String get anime_download_tasks => 'Tarefas de download';
-  @override
-  String get anime_download_title => 'Download de anime';
-  @override
   String get anime_download_trusted => 'Confiável';
-  @override
-  String get anime_download_trusted_only => 'Apenas confiáveis';
-  @override
-  String get anime_download_unfiltered => 'Sem filtro de Confiável';
   @override
   String get anki_action_open_settings => 'Abrir configurações';
   @override
@@ -236984,12 +236738,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get discovery_load_more => 'Carregar mais';
   @override
-  String get discovery_nyaa_filter_all => 'Todos';
-  @override
-  String get discovery_nyaa_filter_no_remakes => 'Sem remakes';
-  @override
-  String get discovery_nyaa_filter_trusted_only => 'Somente confiáveis';
-  @override
   String get discovery_opds_add => 'Adicionar servidor OPDS';
   @override
   String get discovery_opds_allow_http => 'Permitir HTTP sem criptografia';
@@ -237386,9 +237134,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get download_status_queued => 'Na fila';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      'Após episódio ${episode}';
-  @override
   String get download_subscription_check_all => 'Verificar todos';
   @override
   String get download_subscription_check_now => 'Verificar agora';
@@ -237405,9 +237150,6 @@ class _StringsPtBr extends _StringsEn {
   }) =>
       'Baixe o lote completo de ${group} — ${resolution} uma vez. Um lote não tem próximo episódio para acompanhar.';
   @override
-  String get download_subscription_created =>
-      'Download enfileirado e assinatura criada';
-  @override
   String get download_subscription_delete => 'Excluir assinatura';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -237416,8 +237158,6 @@ class _StringsPtBr extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create => 'Baixar e assinar';
-  @override
   String get download_subscription_empty_body =>
       'Em Descobrir, escolha um lançamento de episódio único e use Baixar e assinar.';
   @override
@@ -237425,9 +237165,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       'Última verificação: ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      'Último enfileirado: episódio ${episode}';
   @override
   String get download_subscription_never_checked => 'Nunca verificado';
   @override
@@ -252173,6 +251910,43 @@ class _StringsPtBr extends _StringsEn {
   String get usage_stats_enabled_hint =>
       'Uma vez por dia, envia ao fushi.moe um ID de instalação derivado deste dispositivo (não muda ao reinstalar), a versão do app, a plataforma, o canal de atualização, o idioma do app, a arquitetura da CPU, a versão principal do sistema e a origem da instalação (ex.: loja ou instalador) para que possamos contar os usuários ativos. Nenhum dado de conta, biblioteca ou leitura é incluído, e seu endereço IP não é armazenado — só o país ou região deduzido dele é guardado. Ao anexar informações do dispositivo a um feedback, o ID de instalação é enviado junto.';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => 'Outono';
   @override
   String get video_air_season_spring => 'Primavera';
@@ -252317,20 +252091,6 @@ class _StringsPtBr extends _StringsEn {
   String get video_bottom_seek_forward => 'Avançar 10s';
   @override
   String get video_bottom_seek_forward_label => '+10s';
-  @override
-  String get video_builtin_apibay_hint =>
-      'Filmes e séries de TV. Índice público, sem necessidade de conta.';
-  @override
-  String get video_builtin_knaben_hint =>
-      'Filmes e séries de TV. Agrega vários indexadores públicos.';
-  @override
-  String get video_builtin_nyaa_hint =>
-      'Apenas anime. Filmes e séries de TV são cobertos pelos dois indexadores públicos abaixo.';
-  @override
-  String get video_builtin_sources_hint =>
-      'Vêm com o app: sem conta, sem chave de API. Desative uma para mantê-la fora das buscas de recursos.';
-  @override
-  String get video_builtin_sources_title => 'Fontes integradas';
   @override
   String video_chapter_n({required Object n}) => 'Capítulo ${n}';
   @override
@@ -253572,8 +253332,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_resource_missing_title => 'Vídeo indisponível';
   @override
-  String get video_resource_no_provider_hint =>
-      'Esta busca não tinha provedor para consultar. Reative uma fonte integrada ou adicione um indexador Torznab em Configurações, Downloads, Provedores externos de recursos e legendas.';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title =>
       'Nenhum indexador de recursos configurado';
@@ -253596,6 +253356,53 @@ class _StringsPtBr extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}: não pesquisada (esta fonte não consegue processar a consulta)';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -254813,6 +254620,14 @@ class _StringsPtBr extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '${count} lançamentos';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => 'Recolher';
   @override
@@ -256949,58 +256764,21 @@ class _StringsRu extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Википедия (中文)';
   @override
-  String get anime_download_back => 'Назад';
-  @override
-  String get anime_download_batch => 'Пакет';
-  @override
-  String get anime_download_category_all => 'Все';
-  @override
-  String get anime_download_category_english => 'Англ. перевод';
-  @override
-  String get anime_download_category_non_english => 'Не английский';
-  @override
-  String get anime_download_category_raw => 'Без перевода';
-  @override
   String get anime_download_delete => 'Удалить';
-  @override
-  String anime_download_episode_count({required Object count}) =>
-      'Серия ${count}';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => 'Скачать';
   @override
   String get anime_download_generic_hint => 'Magnet-ссылка';
   @override
-  String get anime_download_generic_title =>
-      'Вставьте ссылку (книги, видео, что угодно)';
-  @override
   String get anime_download_include_subs => 'Включить субтитры';
-  @override
-  String get anime_download_kind_auto => 'Авто';
-  @override
-  String get anime_download_kind_book => 'Книга';
   @override
   String get anime_download_kind_video => 'Видео';
   @override
   String get anime_download_magnet_invalid => 'Недействительная magnet-ссылка';
   @override
-  String get anime_download_no_results => 'Нет результатов';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'Сервис ответил успешно, но вернул 0 результатов. Запрос: ${query}; фильтры: ${filters}. Попробуйте другое название или ослабьте фильтры.';
-  @override
   String get anime_download_no_subs => 'Без субтитров';
   @override
   String get anime_download_no_tasks => 'Загрузок пока нет';
-  @override
-  String get anime_download_nyaa_query => 'Поисковый запрос Nyaa';
   @override
   String get anime_download_play_now => 'Воспроизвести во время загрузки';
   @override
@@ -257010,14 +256788,10 @@ class _StringsRu extends _StringsEn {
   String get anime_download_play_now_ok =>
       'Импортировано — откройте из видеотеки для воспроизведения во время загрузки';
   @override
-  String get anime_download_push => 'Отправить загрузку';
-  @override
   String get anime_download_push_failed => 'Не удалось отправить в qBittorrent';
   @override
   String get anime_download_pushed =>
       'Отправлено — будет автоматически импортировано после завершения';
-  @override
-  String get anime_download_refresh => 'Обновить';
   @override
   String get anime_download_relocate => 'Переименовать / переместить';
   @override
@@ -257046,22 +256820,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get anime_download_retry => 'Повторить';
   @override
-  String get anime_download_search => 'Поиск';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      'Если сайт недоступен напрямую, настройте сетевой прокси в параметрах загрузки.';
-  @override
-  String get anime_download_search_failed =>
-      'Поиск не удался или превышено время ожидания. Нажмите «Повторить».';
-  @override
-  String get anime_download_search_hint => 'Название аниме';
-  @override
   String get anime_download_search_start_hint =>
       'Введите название выше — торренты и субтитры подбираются автоматически. Загрузки не ограничены видео: книги, манга, аудиокниги и игры тоже импортируются.';
-  @override
-  String get anime_download_sort_date => 'Дата публикации';
-  @override
-  String get anime_download_sort_seeders => 'Раздающие';
   @override
   String get anime_download_sort_size => 'Размер';
   @override
@@ -257071,41 +256831,16 @@ class _StringsRu extends _StringsEn {
   String get anime_download_streaming_ready =>
       'В библиотеке · загрузка продолжается';
   @override
-  String get anime_download_subs_badge => 'Субтитры';
-  @override
-  String get anime_download_subs_deferred =>
-      'Субтитры подбираются после загрузки, по фактическим файлам пакета';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      'Номера эпизодов не проверены для этого пакета — субтитры могут быть от другого сезона.';
-  @override
-  String get anime_download_subs_failed =>
-      'Поиск субтитров не удался. Нажмите «Повторить».';
-  @override
-  String get anime_download_subs_need_key =>
-      'Введите API-ключ Jimaku выше для поиска субтитров.';
-  @override
   String get anime_download_subs_pending =>
       'Субтитры: ожидание завершения загрузки';
   @override
   String get anime_download_subs_retrying =>
       'Субтитры: ещё не загружены — повторная попытка автоматически';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'Нет субтитров для сезона ${season} этого пакета — не выбрано автоматически. Выберите вручную, если хотите.';
-  @override
   String get anime_download_subs_unmatched =>
       'Субтитры: совпадений для этого пакета не найдено';
   @override
-  String get anime_download_tasks => 'Задачи загрузки';
-  @override
-  String get anime_download_title => 'Загрузка аниме';
-  @override
   String get anime_download_trusted => 'Проверенный';
-  @override
-  String get anime_download_trusted_only => 'Только проверенные';
-  @override
-  String get anime_download_unfiltered => 'Без фильтра «Доверенные»';
   @override
   String get anki_action_open_settings => 'Открыть настройки';
   @override
@@ -261391,12 +261126,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get discovery_load_more => 'Загрузить ещё';
   @override
-  String get discovery_nyaa_filter_all => 'Все';
-  @override
-  String get discovery_nyaa_filter_no_remakes => 'Без ремейков';
-  @override
-  String get discovery_nyaa_filter_trusted_only => 'Только доверенные';
-  @override
   String get discovery_opds_add => 'Добавить сервер OPDS';
   @override
   String get discovery_opds_allow_http => 'Разрешить обычный HTTP';
@@ -261790,9 +261519,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get download_status_queued => 'В очереди';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      'После серии ${episode}';
-  @override
   String get download_subscription_check_all => 'Проверить все';
   @override
   String get download_subscription_check_now => 'Проверить сейчас';
@@ -261809,9 +261535,6 @@ class _StringsRu extends _StringsEn {
   }) =>
       'Скачать весь пакет ${group} · ${resolution} один раз. У пакета нет следующей серии, за которой можно следить.';
   @override
-  String get download_subscription_created =>
-      'Загрузка добавлена в очередь и подписка создана';
-  @override
   String get download_subscription_delete => 'Удалить подписку';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -261820,9 +261543,6 @@ class _StringsRu extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create =>
-      'Скачать и подписаться';
-  @override
   String get download_subscription_empty_body =>
       'В разделе «Обнаружение» выберите выпуск одной серии и нажмите «Скачать и подписаться».';
   @override
@@ -261830,9 +261550,6 @@ class _StringsRu extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       'Последняя проверка: ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      'Последняя в очереди: серия ${episode}';
   @override
   String get download_subscription_never_checked => 'Не проверялось';
   @override
@@ -276551,6 +276268,43 @@ class _StringsRu extends _StringsEn {
   String get usage_stats_enabled_hint =>
       'Раз в день отправляет на fushi.moe идентификатор установки, полученный из данных этого устройства (не меняется при переустановке), версию приложения, платформу, канал обновлений, язык приложения, архитектуру процессора, основную версию ОС и источник установки (например, магазин приложений или установщик), чтобы мы могли посчитать активных пользователей. Данные аккаунта, библиотеки и чтения не передаются, ваш IP-адрес не сохраняется — сохраняется только определённая по нему страна или регион. Если вы прикладываете к отзыву сведения об устройстве, идентификатор установки отправляется вместе с ним.';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => 'Осень';
   @override
   String get video_air_season_spring => 'Весна';
@@ -276694,20 +276448,6 @@ class _StringsRu extends _StringsEn {
   String get video_bottom_seek_forward => 'Вперёд на 10 с';
   @override
   String get video_bottom_seek_forward_label => '+10с';
-  @override
-  String get video_builtin_apibay_hint =>
-      'Фильмы и сериалы. Публичный индекс, аккаунт не нужен.';
-  @override
-  String get video_builtin_knaben_hint =>
-      'Фильмы и сериалы. Агрегирует несколько публичных индексаторов.';
-  @override
-  String get video_builtin_nyaa_hint =>
-      'Только аниме. Фильмы и сериалы покрываются двумя публичными индексаторами ниже.';
-  @override
-  String get video_builtin_sources_hint =>
-      'Встроены в приложение: без аккаунта, без API-ключа. Отключите источник, чтобы исключить его из поиска ресурсов.';
-  @override
-  String get video_builtin_sources_title => 'Встроенные источники';
   @override
   String video_chapter_n({required Object n}) => 'Глава ${n}';
   @override
@@ -277945,8 +277685,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_resource_missing_title => 'Видео недоступно';
   @override
-  String get video_resource_no_provider_hint =>
-      'Для этого поиска не нашлось провайдера. Включите встроенный источник или добавьте Torznab-индексатор в разделе Настройки, Загрузки, Внешние провайдеры ресурсов и субтитров.';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title =>
       'Индексатор ресурсов не настроен';
@@ -277969,6 +277709,53 @@ class _StringsRu extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}: поиск не выполнялся (этот источник не может обработать запрос)';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -279181,6 +278968,14 @@ class _StringsRu extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       'Выпусков: ${count}';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => 'Свернуть';
   @override
@@ -281316,58 +281111,21 @@ class _StringsTh extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Wikipedia (中文)';
   @override
-  String get anime_download_back => 'ย้อนกลับ';
-  @override
-  String get anime_download_batch => 'แบทช์';
-  @override
-  String get anime_download_category_all => 'ทั้งหมด';
-  @override
-  String get anime_download_category_english => 'แปลภาษาอังกฤษ';
-  @override
-  String get anime_download_category_non_english => 'ไม่ใช่ภาษาอังกฤษ';
-  @override
-  String get anime_download_category_raw => 'ไม่มีซับ';
-  @override
   String get anime_download_delete => 'ลบ';
-  @override
-  String anime_download_episode_count({required Object count}) =>
-      'ตอน ${count}';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => 'ดาวน์โหลด';
   @override
   String get anime_download_generic_hint => 'ลิงก์ Magnet';
   @override
-  String get anime_download_generic_title =>
-      'วางลิงก์ (หนังสือ, วิดีโอ, อะไรก็ได้)';
-  @override
   String get anime_download_include_subs => 'รวมคำบรรยาย';
-  @override
-  String get anime_download_kind_auto => 'อัตโนมัติ';
-  @override
-  String get anime_download_kind_book => 'หนังสือ';
   @override
   String get anime_download_kind_video => 'วิดีโอ';
   @override
   String get anime_download_magnet_invalid => 'ลิงก์ Magnet ไม่ถูกต้อง';
   @override
-  String get anime_download_no_results => 'ไม่พบผลลัพธ์';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'บริการตอบกลับสำเร็จแต่ส่งคืน 0 รายการ คำค้น: ${query}; ตัวกรอง: ${filters} ลองชื่ออื่นหรือผ่อนคลายตัวกรอง';
-  @override
   String get anime_download_no_subs => 'ไม่มีซับ';
   @override
   String get anime_download_no_tasks => 'ยังไม่มีงานดาวน์โหลด';
-  @override
-  String get anime_download_nyaa_query => 'คำค้นหา Nyaa';
   @override
   String get anime_download_play_now => 'เล่นระหว่างดาวน์โหลด';
   @override
@@ -281377,14 +281135,10 @@ class _StringsTh extends _StringsEn {
   String get anime_download_play_now_ok =>
       'นำเข้าแล้ว — เปิดจากคลังวิดีโอเพื่อเล่นระหว่างดาวน์โหลด';
   @override
-  String get anime_download_push => 'ส่งงานดาวน์โหลด';
-  @override
   String get anime_download_push_failed => 'ส่งไปยัง qBittorrent ล้มเหลว';
   @override
   String get anime_download_pushed =>
       'ส่งแล้ว — จะนำเข้าอัตโนมัติเมื่อเสร็จสิ้น';
-  @override
-  String get anime_download_refresh => 'รีเฟรช';
   @override
   String get anime_download_relocate => 'เปลี่ยนชื่อ / ย้าย';
   @override
@@ -281413,22 +281167,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get anime_download_retry => 'ลองอีกครั้ง';
   @override
-  String get anime_download_search => 'ค้นหา';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      'หากเข้าถึงเว็บไซต์โดยตรงไม่ได้ ให้ตั้งค่าพร็อกซีเครือข่ายในการตั้งค่าดาวน์โหลด';
-  @override
-  String get anime_download_search_failed =>
-      'ค้นหาล้มเหลวหรือหมดเวลา แตะเพื่อลองอีกครั้ง';
-  @override
-  String get anime_download_search_hint => 'ชื่ออนิเมะ';
-  @override
   String get anime_download_search_start_hint =>
       'ค้นหาชื่อด้านบน - ทอร์เรนต์และคำบรรยายจะถูกจับคู่อัตโนมัติ ดาวน์โหลดไม่จำกัดเฉพาะวิดีโอ: หนังสือ, มังงะ, หนังสือเสียง และเกมก็นำเข้าได้เช่นกัน';
-  @override
-  String get anime_download_sort_date => 'วันที่เผยแพร่';
-  @override
-  String get anime_download_sort_seeders => 'ผู้ปล่อย';
   @override
   String get anime_download_sort_size => 'ขนาด';
   @override
@@ -281437,39 +281177,14 @@ class _StringsTh extends _StringsEn {
   @override
   String get anime_download_streaming_ready => 'ในคลัง · ดาวน์โหลดต่อ';
   @override
-  String get anime_download_subs_badge => 'ซับ';
-  @override
-  String get anime_download_subs_deferred =>
-      'คำบรรยายจะถูกจับคู่หลังดาวน์โหลด จากไฟล์จริงของแพ็ค';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      'หมายเลขตอนไม่ได้ตรวจสอบกับแพ็คนี้ — คำบรรยายอาจมาจากซีซันอื่น';
-  @override
-  String get anime_download_subs_failed =>
-      'ค้นหาคำบรรยายล้มเหลว แตะเพื่อลองอีกครั้ง';
-  @override
-  String get anime_download_subs_need_key =>
-      'กรอกคีย์ API ของ Jimaku ด้านบนเพื่อค้นหาคำบรรยาย';
-  @override
   String get anime_download_subs_pending => 'คำบรรยาย: รอจนกว่าดาวน์โหลดเสร็จ';
   @override
   String get anime_download_subs_retrying =>
       'คำบรรยาย: ยังไม่พร้อม — จะลองใหม่โดยอัตโนมัติ';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'ไม่มีรายการคำบรรยายที่ตรงกับซีซัน ${season} ของแพ็คนี้ — ไม่ได้เลือกอัตโนมัติ เลือกด้วยตนเองหากต้องการ';
-  @override
   String get anime_download_subs_unmatched => 'คำบรรยาย: ไม่พบที่ตรงกับแพ็คนี้';
   @override
-  String get anime_download_tasks => 'งานดาวน์โหลด';
-  @override
-  String get anime_download_title => 'ดาวน์โหลดอนิเมะ';
-  @override
   String get anime_download_trusted => 'เชื่อถือได้';
-  @override
-  String get anime_download_trusted_only => 'เฉพาะที่เชื่อถือได้';
-  @override
-  String get anime_download_unfiltered => 'ไม่มีตัวกรอง Trusted';
   @override
   String get anki_action_open_settings => 'เปิดการตั้งค่า';
   @override
@@ -285695,12 +285410,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get discovery_load_more => 'โหลดเพิ่มเติม';
   @override
-  String get discovery_nyaa_filter_all => 'ทั้งหมด';
-  @override
-  String get discovery_nyaa_filter_no_remakes => 'ไม่รวมรีเมก';
-  @override
-  String get discovery_nyaa_filter_trusted_only => 'เฉพาะที่เชื่อถือได้';
-  @override
   String get discovery_opds_add => 'เพิ่มเซิร์ฟเวอร์ OPDS';
   @override
   String get discovery_opds_allow_http => 'อนุญาต HTTP แบบไม่เข้ารหัส';
@@ -286091,9 +285800,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get download_status_queued => 'อยู่ในคิว';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      'หลังตอนที่ ${episode}';
-  @override
   String get download_subscription_check_all => 'ตรวจสอบทั้งหมด';
   @override
   String get download_subscription_check_now => 'ตรวจสอบตอนนี้';
@@ -286109,9 +285815,6 @@ class _StringsTh extends _StringsEn {
   }) =>
       'ดาวน์โหลดชุด ${group} · ${resolution} ทั้งชุดหนึ่งครั้ง ชุดไม่มีตอนถัดไปให้ติดตาม';
   @override
-  String get download_subscription_created =>
-      'เข้าคิวดาวน์โหลดและสร้างการติดตามแล้ว';
-  @override
   String get download_subscription_delete => 'ลบการติดตาม';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -286120,8 +285823,6 @@ class _StringsTh extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create => 'ดาวน์โหลดและติดตาม';
-  @override
   String get download_subscription_empty_body =>
       'ในหน้าค้นพบ เลือกรีลีสตอนเดียวแล้วใช้ดาวน์โหลดและติดตาม';
   @override
@@ -286129,9 +285830,6 @@ class _StringsTh extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       'ตรวจสอบล่าสุด: ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      'ตอนล่าสุดที่เข้าคิว: ตอนที่ ${episode}';
   @override
   String get download_subscription_never_checked => 'ยังไม่เคยตรวจสอบ';
   @override
@@ -300670,6 +300368,43 @@ class _StringsTh extends _StringsEn {
   String get usage_stats_enabled_hint =>
       'วันละครั้ง จะส่ง ID การติดตั้งที่สร้างจากอุปกรณ์นี้ (ไม่เปลี่ยนแม้ติดตั้งใหม่) เวอร์ชันแอป แพลตฟอร์ม ช่องทางอัปเดต ภาษาของแอป สถาปัตยกรรม CPU เวอร์ชันหลักของระบบปฏิบัติการ และแหล่งที่ติดตั้ง (เช่น สโตร์หรือตัวติดตั้ง)ไปยัง fushi.moe เพื่อนับจำนวนผู้ใช้ที่ใช้งานอยู่ ไม่มีข้อมูลบัญชี คลัง หรือการอ่าน และไม่จัดเก็บที่อยู่ IP ของคุณ (เก็บเพียงประเทศหรือภูมิภาคที่ระบุได้จากที่อยู่นั้น) เมื่อคุณแนบข้อมูลอุปกรณ์ไปกับความคิดเห็น ID การติดตั้งจะถูกส่งไปด้วย';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => 'ฤดูใบไม้ร่วง';
   @override
   String get video_air_season_spring => 'ฤดูใบไม้ผลิ';
@@ -300813,20 +300548,6 @@ class _StringsTh extends _StringsEn {
   String get video_bottom_seek_forward => 'เดินหน้า 10 วินาที';
   @override
   String get video_bottom_seek_forward_label => '+10 วิ';
-  @override
-  String get video_builtin_apibay_hint =>
-      'ภาพยนตร์และรายการทีวี ดัชนีสาธารณะ ไม่ต้องมีบัญชี';
-  @override
-  String get video_builtin_knaben_hint =>
-      'ภาพยนตร์และรายการทีวี รวบรวมจากตัวจัดทำดัชนีสาธารณะหลายแห่ง';
-  @override
-  String get video_builtin_nyaa_hint =>
-      'อนิเมะเท่านั้น ภาพยนตร์และรายการทีวีรองรับโดยตัวจัดทำดัชนีสาธารณะด้านล่าง';
-  @override
-  String get video_builtin_sources_hint =>
-      'มาพร้อมกับแอป: ไม่ต้องมีบัญชี ไม่ต้องมีคีย์ API ปิดเพื่อไม่ให้ปรากฏในการค้นหาทรัพยากร';
-  @override
-  String get video_builtin_sources_title => 'แหล่งข้อมูลในตัว';
   @override
   String video_chapter_n({required Object n}) => 'บทที่ ${n}';
   @override
@@ -302042,8 +301763,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_resource_missing_title => 'วิดีโอไม่พร้อมใช้งาน';
   @override
-  String get video_resource_no_provider_hint =>
-      'การค้นหานี้ไม่มีผู้ให้บริการที่จะสอบถาม เปิดใช้แหล่งในตัวอีกครั้ง หรือเพิ่มตัวจัดทำดัชนี Torznab ในการตั้งค่า > ดาวน์โหลด > ผู้ให้บริการทรัพยากรและคำบรรยายภายนอก';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title =>
       'ยังไม่ได้ตั้งค่าตัวจัดทำดัชนีทรัพยากร';
@@ -302066,6 +301787,53 @@ class _StringsTh extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}: ไม่ได้ค้นหา (แหล่งนี้จัดการคำค้นนี้ไม่ได้)';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -303246,6 +303014,14 @@ class _StringsTh extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '${count} รายการ';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => 'ย่อ';
   @override
@@ -305371,57 +305147,21 @@ class _StringsTr extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Wikipedia (中文)';
   @override
-  String get anime_download_back => 'Geri';
-  @override
-  String get anime_download_batch => 'Toplu';
-  @override
-  String get anime_download_category_all => 'Tümü';
-  @override
-  String get anime_download_category_english => 'İngilizce altyazılı';
-  @override
-  String get anime_download_category_non_english => 'İngilizce dışı';
-  @override
-  String get anime_download_category_raw => 'Ham';
-  @override
   String get anime_download_delete => 'Sil';
-  @override
-  String anime_download_episode_count({required Object count}) => 'BL ${count}';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => 'İndir';
   @override
   String get anime_download_generic_hint => 'Magnet bağlantısı';
   @override
-  String get anime_download_generic_title =>
-      'Bağlantı yapıştır (kitap, video, herhangi bir şey)';
-  @override
   String get anime_download_include_subs => 'Altyazıları dahil et';
-  @override
-  String get anime_download_kind_auto => 'Otomatik';
-  @override
-  String get anime_download_kind_book => 'Kitap';
   @override
   String get anime_download_kind_video => 'Video';
   @override
   String get anime_download_magnet_invalid => 'Geçersiz magnet bağlantısı';
   @override
-  String get anime_download_no_results => 'Sonuç yok';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'Hizmet başarılı yanıt verdi ancak 0 öğe döndürdü. Sorgu: ${query}; filtreler: ${filters}. Başka bir başlık deneyin veya filtreleri gevşetin.';
-  @override
   String get anime_download_no_subs => 'Altyazı yok';
   @override
   String get anime_download_no_tasks => 'Henüz indirme görevi yok';
-  @override
-  String get anime_download_nyaa_query => 'Nyaa arama terimleri';
   @override
   String get anime_download_play_now => 'İndirirken oynat';
   @override
@@ -305431,14 +305171,10 @@ class _StringsTr extends _StringsEn {
   String get anime_download_play_now_ok =>
       'İçe aktarıldı — indirirken oynatmak için video kütüphanesinden açın';
   @override
-  String get anime_download_push => 'İndirmeyi aktar';
-  @override
   String get anime_download_push_failed => 'qBittorrent\'a aktarılamadı';
   @override
   String get anime_download_pushed =>
       'Aktarıldı — tamamlandığında otomatik olarak içe aktarılacak';
-  @override
-  String get anime_download_refresh => 'Yenile';
   @override
   String get anime_download_relocate => 'Yeniden adlandır / taşı';
   @override
@@ -305467,22 +305203,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get anime_download_retry => 'Tekrar dene';
   @override
-  String get anime_download_search => 'Ara';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      'Siteye doğrudan erişilemiyorsa indirme ayarlarında bir ağ proxy\'si yapılandırın.';
-  @override
-  String get anime_download_search_failed =>
-      'Arama başarısız veya zaman aşımına uğradı. Tekrar denemek için dokunun.';
-  @override
-  String get anime_download_search_hint => 'Anime başlığı';
-  @override
   String get anime_download_search_start_hint =>
       'Yukarıda bir başlık arayın — torrentler ve altyazılar otomatik olarak eşleştirilir. İndirmeler videoyla sınırlı değildir: kitaplar, manga, sesli kitaplar ve oyunlar da içe aktarılır.';
-  @override
-  String get anime_download_sort_date => 'Yayınlanma';
-  @override
-  String get anime_download_sort_seeders => 'Gönderenler';
   @override
   String get anime_download_sort_size => 'Boyut';
   @override
@@ -305492,41 +305214,16 @@ class _StringsTr extends _StringsEn {
   String get anime_download_streaming_ready =>
       'Kütüphanede · indirme devam ediyor';
   @override
-  String get anime_download_subs_badge => 'Altyazı';
-  @override
-  String get anime_download_subs_deferred =>
-      'Altyazılar indirme sonrasında, paketin gerçek dosyalarından eşleştirilir';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      'Bölüm numaraları bu pakete göre doğrulanmadı — altyazılar başka bir sezondan olabilir.';
-  @override
-  String get anime_download_subs_failed =>
-      'Altyazı araması başarısız. Tekrar denemek için dokunun.';
-  @override
-  String get anime_download_subs_need_key =>
-      'Altyazı aramak için yukarıya bir Jimaku API anahtarı girin.';
-  @override
   String get anime_download_subs_pending =>
       'Altyazılar: indirme tamamlanana kadar bekliyor';
   @override
   String get anime_download_subs_retrying =>
       'Altyazılar: henüz hazır değil — otomatik olarak tekrar denenecek';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'Bu paketin ${season} sezonuyla eşleşen altyazı girişi yok — otomatik seçilmedi. Yine de istiyorsanız manuel olarak birini seçin.';
-  @override
   String get anime_download_subs_unmatched =>
       'Altyazılar: bu paket için eşleşme yok';
   @override
-  String get anime_download_tasks => 'İndirme görevleri';
-  @override
-  String get anime_download_title => 'Anime indirme';
-  @override
   String get anime_download_trusted => 'Güvenilir';
-  @override
-  String get anime_download_trusted_only => 'Yalnızca güvenilir';
-  @override
-  String get anime_download_unfiltered => 'Güvenilir filtresi yok';
   @override
   String get anki_action_open_settings => 'Ayarları aç';
   @override
@@ -309794,12 +309491,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get discovery_load_more => 'Daha fazla yükle';
   @override
-  String get discovery_nyaa_filter_all => 'Tümü';
-  @override
-  String get discovery_nyaa_filter_no_remakes => 'Yeniden yapımlar hariç';
-  @override
-  String get discovery_nyaa_filter_trusted_only => 'Yalnızca güvenilir';
-  @override
   String get discovery_opds_add => 'OPDS sunucusu ekle';
   @override
   String get discovery_opds_allow_http => 'Şifresiz HTTP\'ye izin ver';
@@ -310191,9 +309882,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get download_status_queued => 'Sıraya alındı';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      'Bölüm ${episode} sonrası';
-  @override
   String get download_subscription_check_all => 'Tümünü kontrol et';
   @override
   String get download_subscription_check_now => 'Şimdi kontrol et';
@@ -310210,9 +309898,6 @@ class _StringsTr extends _StringsEn {
   }) =>
       '${group} · ${resolution} paketinin tamamını bir kez indirin. Bir paketin takip edilecek sonraki bölümü yoktur.';
   @override
-  String get download_subscription_created =>
-      'İndirme sıraya alındı ve abonelik oluşturuldu';
-  @override
   String get download_subscription_delete => 'Aboneliği sil';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -310221,8 +309906,6 @@ class _StringsTr extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create => 'İndir ve abone ol';
-  @override
   String get download_subscription_empty_body =>
       'Keşfet\'te tekli bölüm yayını seçin ve İndir ve abone ol\'u kullanın.';
   @override
@@ -310230,9 +309913,6 @@ class _StringsTr extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       'Son kontrol: ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      'En son sıraya alınan: bölüm ${episode}';
   @override
   String get download_subscription_never_checked => 'Hiç kontrol edilmedi';
   @override
@@ -324889,6 +324569,43 @@ class _StringsTr extends _StringsEn {
   String get usage_stats_enabled_hint =>
       'Günde bir kez bu cihazdan türetilen bir kurulum kimliğini (yeniden yüklemede değişmez), uygulama sürümünü, platformu, güncelleme kanalını, uygulama dilini, CPU mimarisini, işletim sisteminin ana sürümünü ve kurulum kaynağını (ör. uygulama mağazası veya yükleyici) fushi.moe\'ya göndererek aktif kullanıcıları saymamızı sağlar. Hesap, kitaplık veya okuma verisi içermez ve IP adresiniz saklanmaz; yalnızca ondan belirlenen ülke veya bölge tutulur. Geri bildirime cihaz bilgisi eklediğinizde kurulum kimliği de birlikte gönderilir.';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => 'Sonbahar';
   @override
   String get video_air_season_spring => 'İlkbahar';
@@ -325030,20 +324747,6 @@ class _StringsTr extends _StringsEn {
   String get video_bottom_seek_forward => '10 sn ileri';
   @override
   String get video_bottom_seek_forward_label => '+10sn';
-  @override
-  String get video_builtin_apibay_hint =>
-      'Filmler ve TV dizileri. Herkese açık dizin, hesap gerekmez.';
-  @override
-  String get video_builtin_knaben_hint =>
-      'Filmler ve TV dizileri. Birden fazla herkese açık dizinleyiciyi toplar.';
-  @override
-  String get video_builtin_nyaa_hint =>
-      'Yalnızca anime. Filmler ve TV dizileri aşağıdaki iki herkese açık dizinleyici tarafından kapsanır.';
-  @override
-  String get video_builtin_sources_hint =>
-      'Uygulamayla birlikte gelir: hesap veya API anahtarı gerekmez. Kaynak aramalarından çıkarmak için birini kapatın.';
-  @override
-  String get video_builtin_sources_title => 'Yerleşik kaynaklar';
   @override
   String video_chapter_n({required Object n}) => 'Bölüm ${n}';
   @override
@@ -326268,8 +325971,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_resource_missing_title => 'Video kullanılamıyor';
   @override
-  String get video_resource_no_provider_hint =>
-      'Bu aramanın sorgu yapacak bir sağlayıcısı yoktu. Ayarlar, İndirmeler, Harici kaynak ve altyazı sağlayıcıları bölümünden yerleşik bir kaynağı yeniden etkinleştirin veya bir Torznab dizinleyicisi ekleyin.';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title =>
       'Kaynak dizinleyici yapılandırılmadı';
@@ -326292,6 +325995,53 @@ class _StringsTr extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}: aranmadı (bu kaynak sorguyu işleyemiyor)';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -327493,6 +327243,14 @@ class _StringsTr extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '${count} yayın';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => 'Daralt';
   @override
@@ -329623,58 +329381,21 @@ class _StringsVi extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => 'Wikipedia (中文)';
   @override
-  String get anime_download_back => 'Quay lại';
-  @override
-  String get anime_download_batch => 'Trọn bộ';
-  @override
-  String get anime_download_category_all => 'Tất cả';
-  @override
-  String get anime_download_category_english => 'Dịch tiếng Anh';
-  @override
-  String get anime_download_category_non_english => 'Không phải tiếng Anh';
-  @override
-  String get anime_download_category_raw => 'Nguyên bản';
-  @override
   String get anime_download_delete => 'Xóa';
-  @override
-  String anime_download_episode_count({required Object count}) =>
-      'Tập ${count}';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => 'Tải xuống';
   @override
   String get anime_download_generic_hint => 'Liên kết magnet';
   @override
-  String get anime_download_generic_title =>
-      'Dán liên kết (sách, video, bất kỳ)';
-  @override
   String get anime_download_include_subs => 'Bao gồm phụ đề';
-  @override
-  String get anime_download_kind_auto => 'Tự động';
-  @override
-  String get anime_download_kind_book => 'Sách';
   @override
   String get anime_download_kind_video => 'Video';
   @override
   String get anime_download_magnet_invalid => 'Liên kết magnet không hợp lệ';
   @override
-  String get anime_download_no_results => 'Không có kết quả';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) =>
-      'Dịch vụ phản hồi thành công nhưng trả về 0 kết quả. Truy vấn: ${query}; bộ lọc: ${filters}. Thử tiêu đề khác hoặc nới lỏng bộ lọc.';
-  @override
   String get anime_download_no_subs => 'Không có phụ đề';
   @override
   String get anime_download_no_tasks => 'Chưa có tác vụ tải xuống';
-  @override
-  String get anime_download_nyaa_query => 'Từ khóa tìm kiếm Nyaa';
   @override
   String get anime_download_play_now => 'Phát trong khi tải';
   @override
@@ -329684,13 +329405,9 @@ class _StringsVi extends _StringsEn {
   String get anime_download_play_now_ok =>
       'Đã nhập — mở từ thư viện video để phát trong khi tải';
   @override
-  String get anime_download_push => 'Đẩy tải xuống';
-  @override
   String get anime_download_push_failed => 'Không thể đẩy đến qBittorrent';
   @override
   String get anime_download_pushed => 'Đã đẩy — sẽ tự động nhập khi hoàn tất';
-  @override
-  String get anime_download_refresh => 'Làm mới';
   @override
   String get anime_download_relocate => 'Đổi tên / di chuyển';
   @override
@@ -329719,22 +329436,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get anime_download_retry => 'Thử lại';
   @override
-  String get anime_download_search => 'Tìm kiếm';
-  @override
-  String get anime_download_search_error_proxy_hint =>
-      'Nếu không thể truy cập trang web trực tiếp, hãy cấu hình proxy mạng trong cài đặt tải xuống.';
-  @override
-  String get anime_download_search_failed =>
-      'Tìm kiếm thất bại hoặc hết thời gian. Nhấn thử lại.';
-  @override
-  String get anime_download_search_hint => 'Tên anime';
-  @override
   String get anime_download_search_start_hint =>
       'Tìm kiếm tên ở trên - torrent và phụ đề được tự động khớp. Không giới hạn ở video: sách, truyện tranh, sách nói và trò chơi cũng được nhập.';
-  @override
-  String get anime_download_sort_date => 'Ngày đăng';
-  @override
-  String get anime_download_sort_seeders => 'Người chia sẻ';
   @override
   String get anime_download_sort_size => 'Kích thước';
   @override
@@ -329744,41 +329447,16 @@ class _StringsVi extends _StringsEn {
   String get anime_download_streaming_ready =>
       'Trong thư viện · tải xuống tiếp tục';
   @override
-  String get anime_download_subs_badge => 'Phụ đề';
-  @override
-  String get anime_download_subs_deferred =>
-      'Phụ đề được ghép sau khi tải xong, từ các tệp thực tế của gói';
-  @override
-  String get anime_download_subs_episodes_unverified =>
-      'Số tập chưa được xác minh với gói này - phụ đề có thể từ mùa khác.';
-  @override
-  String get anime_download_subs_failed =>
-      'Tìm kiếm phụ đề thất bại. Nhấn thử lại.';
-  @override
-  String get anime_download_subs_need_key =>
-      'Nhập khóa API Jimaku ở trên để tìm kiếm phụ đề.';
-  @override
   String get anime_download_subs_pending =>
       'Phụ đề: đang chờ tải xuống hoàn tất';
   @override
   String get anime_download_subs_retrying =>
       'Phụ đề: chưa có — sẽ tự động thử lại';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      'Không có mục phụ đề nào khớp mùa ${season} của gói này - không tự động chọn. Chọn thủ công nếu bạn vẫn muốn.';
-  @override
   String get anime_download_subs_unmatched =>
       'Phụ đề: không tìm thấy kết quả phù hợp cho gói này';
   @override
-  String get anime_download_tasks => 'Tác vụ tải xuống';
-  @override
-  String get anime_download_title => 'Tải xuống anime';
-  @override
   String get anime_download_trusted => 'Tin cậy';
-  @override
-  String get anime_download_trusted_only => 'Chỉ nguồn tin cậy';
-  @override
-  String get anime_download_unfiltered => 'Không có bộ lọc Tin cậy';
   @override
   String get anki_action_open_settings => 'Mở cài đặt';
   @override
@@ -334034,12 +333712,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get discovery_load_more => 'Tải thêm';
   @override
-  String get discovery_nyaa_filter_all => 'Tất cả';
-  @override
-  String get discovery_nyaa_filter_no_remakes => 'Không có bản làm lại';
-  @override
-  String get discovery_nyaa_filter_trusted_only => 'Chỉ nguồn tin cậy';
-  @override
   String get discovery_opds_add => 'Thêm máy chủ OPDS';
   @override
   String get discovery_opds_allow_http => 'Cho phép HTTP không mã hóa';
@@ -334433,9 +334105,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get download_status_queued => 'Đang chờ';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      'Sau tập ${episode}';
-  @override
   String get download_subscription_check_all => 'Kiểm tra tất cả';
   @override
   String get download_subscription_check_now => 'Kiểm tra ngay';
@@ -334452,9 +334121,6 @@ class _StringsVi extends _StringsEn {
   }) =>
       'Tải toàn bộ lô ${group} · ${resolution} một lần. Một lô không có tập tiếp theo để theo dõi.';
   @override
-  String get download_subscription_created =>
-      'Đã xếp hàng tải xuống và tạo đăng ký';
-  @override
   String get download_subscription_delete => 'Xóa đăng ký';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -334463,9 +334129,6 @@ class _StringsVi extends _StringsEn {
   String get download_subscription_disabled_enable_first =>
       'This subscription is disabled. Enable it first.';
   @override
-  String get download_subscription_download_and_create =>
-      'Tải xuống và đăng ký';
-  @override
   String get download_subscription_empty_body =>
       'Trong Khám phá, chọn bản phát hành tập đơn và sử dụng Tải xuống và đăng ký.';
   @override
@@ -334473,9 +334136,6 @@ class _StringsVi extends _StringsEn {
   @override
   String download_subscription_last_checked({required Object time}) =>
       'Kiểm tra lần cuối: ${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      'Tập mới nhất đã xếp hàng: tập ${episode}';
   @override
   String get download_subscription_never_checked => 'Chưa kiểm tra';
   @override
@@ -349078,6 +348738,43 @@ class _StringsVi extends _StringsEn {
   String get usage_stats_enabled_hint =>
       'Mỗi ngày một lần, gửi ID cài đặt được tạo từ thiết bị này (không đổi khi cài lại), phiên bản ứng dụng, nền tảng, kênh cập nhật, ngôn ngữ ứng dụng, kiến trúc CPU, phiên bản chính của hệ điều hành và nguồn cài đặt (ví dụ cửa hàng ứng dụng hoặc trình cài đặt) đến fushi.moe để chúng tôi đếm số người dùng hoạt động. Không bao gồm dữ liệu tài khoản, thư viện hay nội dung đọc, và địa chỉ IP của bạn không được lưu — chỉ giữ quốc gia hoặc khu vực suy ra từ nó. Khi bạn đính kèm thông tin thiết bị vào phản hồi, ID cài đặt sẽ được gửi kèm.';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => 'Thu';
   @override
   String get video_air_season_spring => 'Xuân';
@@ -349222,20 +348919,6 @@ class _StringsVi extends _StringsEn {
   String get video_bottom_seek_forward => 'Tới 10 giây';
   @override
   String get video_bottom_seek_forward_label => '+10s';
-  @override
-  String get video_builtin_apibay_hint =>
-      'Phim và chương trình truyền hình. Chỉ mục công khai, không cần tài khoản.';
-  @override
-  String get video_builtin_knaben_hint =>
-      'Phim và chương trình truyền hình. Tổng hợp nhiều trình lập chỉ mục công khai.';
-  @override
-  String get video_builtin_nyaa_hint =>
-      'Chỉ dành cho anime. Phim và chương trình truyền hình được phục vụ bởi hai trình lập chỉ mục công khai bên dưới.';
-  @override
-  String get video_builtin_sources_hint =>
-      'Đi kèm ứng dụng: không cần tài khoản, không cần khóa API. Tắt một nguồn để loại khỏi tìm kiếm tài nguyên.';
-  @override
-  String get video_builtin_sources_title => 'Nguồn tích hợp';
   @override
   String video_chapter_n({required Object n}) => 'Chương ${n}';
   @override
@@ -350461,8 +350144,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_resource_missing_title => 'Video không khả dụng';
   @override
-  String get video_resource_no_provider_hint =>
-      'Tìm kiếm này không có nhà cung cấp để truy vấn. Bật lại nguồn tích hợp hoặc thêm trình lập chỉ mục Torznab trong Cài đặt, Tải xuống, Nhà cung cấp tài nguyên và phụ đề bên ngoài.';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title =>
       'Chưa cấu hình trình lập chỉ mục tài nguyên';
@@ -350485,6 +350168,53 @@ class _StringsVi extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}: chưa tìm (nguồn này không xử lý được truy vấn)';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -351677,6 +351407,14 @@ class _StringsVi extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '${count} phát hành';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => 'Thu gọn';
   @override
@@ -353743,54 +353481,21 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => '维基百科（中文）';
   @override
-  String get anime_download_back => '返回';
-  @override
-  String get anime_download_batch => '合集';
-  @override
-  String get anime_download_category_all => '全部';
-  @override
-  String get anime_download_category_english => '英译';
-  @override
-  String get anime_download_category_non_english => '非英译';
-  @override
-  String get anime_download_category_raw => '生肉';
-  @override
   String get anime_download_delete => '删除';
-  @override
-  String anime_download_episode_count({required Object count}) => '${count} 集';
-  @override
-  String anime_download_filter_episode({required Object n}) => '仅第 ${n} 集';
-  @override
-  String get anime_download_filter_single => '单集';
   @override
   String get anime_download_generic_download => '下载';
   @override
   String get anime_download_generic_hint => '磁力链接';
   @override
-  String get anime_download_generic_title => '粘贴链接下载';
-  @override
   String get anime_download_include_subs => '附带字幕';
-  @override
-  String get anime_download_kind_auto => '自动';
-  @override
-  String get anime_download_kind_book => '书';
   @override
   String get anime_download_kind_video => '视频';
   @override
   String get anime_download_magnet_invalid => '磁力链接无效';
   @override
-  String get anime_download_no_results => '无结果';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) => '服务已正常响应，但按当前条件返回 0 条。查询：${query}；筛选：${filters}。请尝试别名或放宽筛选。';
-  @override
   String get anime_download_no_subs => '无字幕';
   @override
   String get anime_download_no_tasks => '暂无下载任务';
-  @override
-  String get anime_download_nyaa_query => 'Nyaa 查询词';
   @override
   String get anime_download_play_now => '边下边播';
   @override
@@ -353798,13 +353503,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anime_download_play_now_ok => '已入库，可从视频库打开边下边播';
   @override
-  String get anime_download_push => '推送下载';
-  @override
   String get anime_download_push_failed => '推送到 qBittorrent 失败';
   @override
   String get anime_download_pushed => '已推送，下载完成后自动入库';
-  @override
-  String get anime_download_refresh => '刷新';
   @override
   String get anime_download_relocate => '重命名 / 移动';
   @override
@@ -353832,19 +353533,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anime_download_retry => '重试';
   @override
-  String get anime_download_search => '搜索';
-  @override
-  String get anime_download_search_error_proxy_hint => '站点无法直连时，可在下载设置中配置网络代理。';
-  @override
-  String get anime_download_search_failed => '搜索失败或超时，请点重试';
-  @override
-  String get anime_download_search_hint => '番剧名';
-  @override
   String get anime_download_search_start_hint => '在上方搜索作品名，视频会自动匹配字幕。';
-  @override
-  String get anime_download_sort_date => '发布时间';
-  @override
-  String get anime_download_sort_seeders => '做种数';
   @override
   String get anime_download_sort_size => '体积';
   @override
@@ -353852,34 +353541,13 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anime_download_streaming_ready => '已入库 · 下载继续';
   @override
-  String get anime_download_subs_badge => '字幕';
-  @override
-  String get anime_download_subs_deferred => '字幕将在下载完成后按包内实际文件配对';
-  @override
-  String get anime_download_subs_episodes_unverified => '集号未与该整季包核对，字幕可能来自别的季。';
-  @override
-  String get anime_download_subs_failed => '字幕搜索失败，请点重试';
-  @override
-  String get anime_download_subs_need_key => '在上方填写 Jimaku API key 后可搜字幕';
-  @override
   String get anime_download_subs_pending => '字幕：待下载完成后配对';
   @override
   String get anime_download_subs_retrying => '字幕：还没上传，稍后自动重试';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      '没有字幕条目对得上该种子的第 ${season} 季，已不自动选中。要用的话请手动选一条。';
-  @override
   String get anime_download_subs_unmatched => '字幕：未匹配到（可手动补）';
   @override
-  String get anime_download_tasks => '下载任务';
-  @override
-  String get anime_download_title => '番剧下载';
-  @override
   String get anime_download_trusted => '可信';
-  @override
-  String get anime_download_trusted_only => '仅可信';
-  @override
-  String get anime_download_unfiltered => '未启用 Trusted 筛选';
   @override
   String get anki_action_open_settings => '去设置';
   @override
@@ -357776,12 +357444,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get discovery_load_more => '加载更多';
   @override
-  String get discovery_nyaa_filter_all => '全部';
-  @override
-  String get discovery_nyaa_filter_no_remakes => '排除转载';
-  @override
-  String get discovery_nyaa_filter_trusted_only => '仅信任发布者';
-  @override
   String get discovery_opds_add => '添加 OPDS 服务器';
   @override
   String get discovery_opds_allow_http => '允许明文 HTTP';
@@ -358141,9 +357803,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get download_status_queued => '排队中';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      '第 ${episode} 集之后';
-  @override
   String get download_subscription_check_all => '全部检查';
   @override
   String get download_subscription_check_now => '立即检查';
@@ -358158,8 +357817,6 @@ class _StringsZhCn extends _StringsEn {
     required Object resolution,
   }) => '一次性下载 ${group} · ${resolution} 整包。合集没有可追的下一集。';
   @override
-  String get download_subscription_created => '已加入下载并创建订阅';
-  @override
   String get download_subscription_delete => '删除订阅';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -358167,17 +357824,12 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get download_subscription_disabled_enable_first => '订阅已停用，请先启用';
   @override
-  String get download_subscription_download_and_create => '下载并订阅';
-  @override
   String get download_subscription_empty_body => '在“发现”中选择一个单集发布，然后使用“下载并订阅”。';
   @override
   String get download_subscription_empty_title => '还没有订阅';
   @override
   String download_subscription_last_checked({required Object time}) =>
       '上次检查：${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      '最近加入：第 ${episode} 集';
   @override
   String get download_subscription_never_checked => '尚未检查';
   @override
@@ -371577,6 +371229,43 @@ class _StringsZhCn extends _StringsEn {
   String get usage_stats_enabled_hint =>
       '每天一次向 fushi.moe 发送由本机派生的安装 ID（重装不变）、应用版本、平台、更新通道、界面语言、CPU 架构、系统大版本和安装来源（如应用商店或安装包），用于统计活跃用户。不包含账户、书库或阅读内容，也不保存你的 IP 地址，只记录据此判断的国家或地区。提交反馈并附带设备信息时，安装 ID 会随反馈一起发送。';
   @override
+  String get video_acquisition_channel_library => '媒体库';
+  @override
+  String get video_acquisition_channel_media_server => '媒体服务器';
+  @override
+  String get video_acquisition_channel_online_source => '在线源';
+  @override
+  String get video_acquisition_channel_torrent => 'BT 搜索';
+  @override
+  String get video_acquisition_library_empty => '媒体库里还没有这部作品';
+  @override
+  String get video_acquisition_load_failed => '这个渠道加载失败';
+  @override
+  String get video_acquisition_media_server_configure => '添加服务器';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      '还没有配置媒体服务器，可在设置里添加 Jellyfin / Emby / Plex';
+  @override
+  String get video_acquisition_online_source_configure => '管理扩展';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      '还没有启用的 Aniyomi 在线源，安装扩展后即可在这里搜索';
+  @override
+  String get video_acquisition_results_empty => '没有找到匹配的结果';
+  @override
+  String get video_acquisition_section_title => '获取途径';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} 个来源查询失败';
+  @override
+  String get video_acquisition_torrent_add_site => '添加 RSS 搜索站';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '找到 ${count} 条资源';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      '还没有 BT 搜索站，添加 RSS 搜索站后即可搜索资源';
+  @override
   String get video_air_season_autumn => '秋';
   @override
   String get video_air_season_spring => '春';
@@ -371708,17 +371397,6 @@ class _StringsZhCn extends _StringsEn {
   String get video_bottom_seek_forward => '前进 10 秒';
   @override
   String get video_bottom_seek_forward_label => '+10s';
-  @override
-  String get video_builtin_apibay_hint => '电影与剧集。公共索引，无需账号。';
-  @override
-  String get video_builtin_knaben_hint => '电影与剧集。聚合多家公共索引器。';
-  @override
-  String get video_builtin_nyaa_hint => '仅动漫。电影与剧集由下面两个公共索引器覆盖。';
-  @override
-  String get video_builtin_sources_hint =>
-      '随应用内置：无需账号，无需 API key。关闭后该来源不再参与资源搜索。';
-  @override
-  String get video_builtin_sources_title => '内置来源';
   @override
   String video_chapter_n({required Object n}) => '章节 ${n}';
   @override
@@ -372807,8 +372485,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get video_resource_missing_title => '视频无法访问';
   @override
-  String get video_resource_no_provider_hint =>
-      '本次搜索没有可用的来源。请到 设置 → 下载 → 外部资源与字幕来源 重新启用内置来源，或添加 Torznab 索引器。';
+  String get video_resource_no_provider_rss_hint =>
+      '本次搜索没有可用的来源。请到 设置 › 在线服务 › 资源索引器 添加 RSS 搜索站或 Torznab 索引器。';
   @override
   String get video_resource_no_provider_title => '未配置资源索引器';
   @override
@@ -372829,6 +372507,50 @@ class _StringsZhCn extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}：未参与（该来源无法搜索这个查询词）';
+  @override
+  String get video_rss_add => '添加 RSS 站';
+  @override
+  String get video_rss_domains => '适用媒体';
+  @override
+  String get video_rss_domains_hint => '动画、电影、剧集参与视频资源搜索与订阅；其余出现在发现页的来源里。';
+  @override
+  String get video_rss_domains_required => '至少选一项';
+  @override
+  String get video_rss_edit_title => '编辑 RSS 站';
+  @override
+  String get video_rss_empty_hint =>
+      '可以直接在这里添加 RSS 搜索站：简单，但结果较少，不能排序和翻页；也可以自建 Jackett / Prowlarr，在「Torznab 索引器」里接入，搜索更完整。';
+  @override
+  String get video_rss_empty_title => '还没有 BT 搜索来源';
+  @override
+  String get video_rss_name => '名称';
+  @override
+  String get video_rss_settings_hint =>
+      '通过种子站的 RSS 搜索订阅源来搜索。Fushi 不内置任何站点，请自行添加你常用的站。';
+  @override
+  String get video_rss_settings_title => 'RSS 搜索站';
+  @override
+  String get video_rss_test => '测试搜索';
+  @override
+  String video_rss_test_failed({required Object reason}) => '搜索失败：${reason}';
+  @override
+  String get video_rss_test_query => '测试关键词';
+  @override
+  String video_rss_test_result({required Object n}) => '搜到 ${n} 条';
+  @override
+  String get video_rss_url_invalid => '不是有效的 http(s) 地址（不能带用户名或 # 片段）';
+  @override
+  String get video_rss_url_missing_query => '模板里必须有 {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      '已拦截明文 HTTP：请改用 HTTPS，或在下方允许不安全的 HTTP';
+  @override
+  String get video_rss_url_required => '请填写搜索地址模板';
+  @override
+  String get video_rss_url_template => '搜索地址模板';
+  @override
+  String get video_rss_url_template_hint =>
+      '在关键词的位置写 {query}；站点支持翻页时可加 {page}。';
   @override
   String video_runtime_minutes({required Object n}) => '${n} 分钟';
   @override
@@ -373914,6 +373636,12 @@ class _StringsZhCn extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '共 ${count} 个发布';
+  @override
+  String get video_subscription_provider_choose_rss => '改选 RSS 站';
+  @override
+  String get video_subscription_provider_no_rss_site => '请先在设置里添加 RSS 搜索站。';
+  @override
+  String get video_subscription_provider_removed => '来源已失效，请改选 RSS 站';
   @override
   String get video_subtitle_adjust_collapse => '收起';
   @override
@@ -375862,55 +375590,21 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get ai_web_knowledge_wikipedia_zh => '維基百科（中文）';
   @override
-  String get anime_download_back => '返回';
-  @override
-  String get anime_download_batch => '合集';
-  @override
-  String get anime_download_category_all => '全部';
-  @override
-  String get anime_download_category_english => '英譯';
-  @override
-  String get anime_download_category_non_english => '非英譯';
-  @override
-  String get anime_download_category_raw => '生肉';
-  @override
   String get anime_download_delete => '刪除';
-  @override
-  String anime_download_episode_count({required Object count}) => '${count} 集';
-  @override
-  String anime_download_filter_episode({required Object n}) =>
-      'Episode ${n} only';
-  @override
-  String get anime_download_filter_single => 'Single episodes';
   @override
   String get anime_download_generic_download => '下載';
   @override
   String get anime_download_generic_hint => '磁力連結';
   @override
-  String get anime_download_generic_title => '貼上連結下載（書、影片等）';
-  @override
   String get anime_download_include_subs => '附帶字幕';
-  @override
-  String get anime_download_kind_auto => '自動';
-  @override
-  String get anime_download_kind_book => '書';
   @override
   String get anime_download_kind_video => '影片';
   @override
   String get anime_download_magnet_invalid => '磁力連結無效';
   @override
-  String get anime_download_no_results => '無結果';
-  @override
-  String anime_download_no_results_detail({
-    required Object query,
-    required Object filters,
-  }) => '服務已正常響應，但按當前條件返回 0 條。查詢：${query}；篩選：${filters}。請嘗試別名或放寬篩選。';
-  @override
   String get anime_download_no_subs => '無字幕';
   @override
   String get anime_download_no_tasks => '暫無下載任務';
-  @override
-  String get anime_download_nyaa_query => 'Nyaa 查詢詞';
   @override
   String get anime_download_play_now => '邊下邊播';
   @override
@@ -375918,13 +375612,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anime_download_play_now_ok => '已入庫，可從影片庫打開邊下邊播';
   @override
-  String get anime_download_push => '推送下載';
-  @override
   String get anime_download_push_failed => '推送到 qBittorrent 失敗';
   @override
   String get anime_download_pushed => '已推送，下載完成後自動入庫';
-  @override
-  String get anime_download_refresh => '重新整理';
   @override
   String get anime_download_relocate => '重命名 / 移動';
   @override
@@ -375952,20 +375642,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anime_download_retry => '重試';
   @override
-  String get anime_download_search => '搜索';
-  @override
-  String get anime_download_search_error_proxy_hint => '站點無法直連時，可在下載設定中配置網路代理。';
-  @override
-  String get anime_download_search_failed => '搜索失敗或超時，請點重試';
-  @override
-  String get anime_download_search_hint => '番劇名';
-  @override
   String get anime_download_search_start_hint =>
       '在上方搜索作品名，自動匹配種子與字幕。下載不限影片：書籍、漫畫、有聲書、遊戲也會自動入庫。';
-  @override
-  String get anime_download_sort_date => '發布時間';
-  @override
-  String get anime_download_sort_seeders => '做種數';
   @override
   String get anime_download_sort_size => '體積';
   @override
@@ -375973,34 +375651,13 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anime_download_streaming_ready => '已入庫 · 下載繼續';
   @override
-  String get anime_download_subs_badge => '字幕';
-  @override
-  String get anime_download_subs_deferred => '字幕將在下載完成後按包內實際檔案配對';
-  @override
-  String get anime_download_subs_episodes_unverified => '集號未與該整季包核對，字幕可能來自別的季。';
-  @override
-  String get anime_download_subs_failed => '字幕搜索失敗，請點重試';
-  @override
-  String get anime_download_subs_need_key => '在上方填寫 Jimaku API key 後可搜字幕';
-  @override
   String get anime_download_subs_pending => '字幕：待下載完成後配對';
   @override
   String get anime_download_subs_retrying => '字幕：還沒上傳，稍後自動重試';
   @override
-  String anime_download_subs_season_mismatch({required Object season}) =>
-      '沒有字幕條目對得上該種子的第 ${season} 季，已不自動選中。要用的話請手動選一條。';
-  @override
   String get anime_download_subs_unmatched => '字幕：未匹配到（可手動補）';
   @override
-  String get anime_download_tasks => '下載任務';
-  @override
-  String get anime_download_title => '番劇下載';
-  @override
   String get anime_download_trusted => '可信';
-  @override
-  String get anime_download_trusted_only => '僅可信';
-  @override
-  String get anime_download_unfiltered => '未啟用 Trusted 篩選';
   @override
   String get anki_action_open_settings => '去設定';
   @override
@@ -380022,12 +379679,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get discovery_load_more => '加載更多';
   @override
-  String get discovery_nyaa_filter_all => '全部';
-  @override
-  String get discovery_nyaa_filter_no_remakes => '排除轉載';
-  @override
-  String get discovery_nyaa_filter_trusted_only => '僅信任發佈者';
-  @override
   String get discovery_opds_add => '新增 OPDS 伺服器';
   @override
   String get discovery_opds_allow_http => '允許明文 HTTP';
@@ -380390,9 +380041,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get download_status_queued => '排隊中';
   @override
-  String download_subscription_after_episode({required Object episode}) =>
-      '第 ${episode} 集之後';
-  @override
   String get download_subscription_check_all => '全部檢查';
   @override
   String get download_subscription_check_now => '立即檢查';
@@ -380407,8 +380055,6 @@ class _StringsZhHk extends _StringsEn {
     required Object resolution,
   }) => '一次性下載 ${group} · ${resolution} 整包。合集沒有可追的下一集。';
   @override
-  String get download_subscription_created => '已加入下載並創建訂閱';
-  @override
   String get download_subscription_delete => '刪除訂閱';
   @override
   String download_subscription_delete_confirm({required Object title}) =>
@@ -380416,17 +380062,12 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get download_subscription_disabled_enable_first => '訂閱已停用，請先啟用';
   @override
-  String get download_subscription_download_and_create => '下載並訂閱';
-  @override
   String get download_subscription_empty_body => '在“發現”中選擇一個單集發布，然後使用“下載並訂閱”。';
   @override
   String get download_subscription_empty_title => '還沒有訂閱';
   @override
   String download_subscription_last_checked({required Object time}) =>
       '上次檢查：${time}';
-  @override
-  String download_subscription_latest_episode({required Object episode}) =>
-      '最近加入：第 ${episode} 集';
   @override
   String get download_subscription_never_checked => '尚未檢查';
   @override
@@ -394233,6 +393874,43 @@ class _StringsZhHk extends _StringsEn {
   String get usage_stats_enabled_hint =>
       '每天一次向 fushi.moe 傳送由本機衍生的安裝 ID（重新安裝不變）、應用程式版本、平台、更新通道、介面語言、CPU 架構、系統主要版本和安裝來源（如應用程式商店或安裝程式），用於統計活躍用戶。不包含帳戶、書庫或閱讀內容，也不保存你的 IP 位址，只記錄據此判斷的國家或地區。提交回饋並附帶裝置資訊時，安裝 ID 會隨回饋一併傳送。';
   @override
+  String get video_acquisition_channel_library => 'Media library';
+  @override
+  String get video_acquisition_channel_media_server => 'Media servers';
+  @override
+  String get video_acquisition_channel_online_source => 'Online sources';
+  @override
+  String get video_acquisition_channel_torrent => 'BT search';
+  @override
+  String get video_acquisition_library_empty => 'Not in your library yet';
+  @override
+  String get video_acquisition_load_failed => 'Couldn\'t load this channel';
+  @override
+  String get video_acquisition_media_server_configure => 'Add server';
+  @override
+  String get video_acquisition_media_server_unconfigured =>
+      'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+  @override
+  String get video_acquisition_online_source_configure => 'Manage extensions';
+  @override
+  String get video_acquisition_online_source_unconfigured =>
+      'No Aniyomi sources enabled. Install an extension to search online sources.';
+  @override
+  String get video_acquisition_results_empty => 'No matches found';
+  @override
+  String get video_acquisition_section_title => 'Where to get it';
+  @override
+  String video_acquisition_sources_partial_failed({required Object count}) =>
+      '${count} sources failed';
+  @override
+  String get video_acquisition_torrent_add_site => 'Add RSS search site';
+  @override
+  String video_acquisition_torrent_found({required Object count}) =>
+      '${count} resources found';
+  @override
+  String get video_acquisition_torrent_unconfigured =>
+      'No BT search sites yet. Add an RSS search site to search for resources.';
+  @override
   String get video_air_season_autumn => '秋';
   @override
   String get video_air_season_spring => '春';
@@ -394369,17 +394047,6 @@ class _StringsZhHk extends _StringsEn {
   String get video_bottom_seek_forward => '前進 10 秒';
   @override
   String get video_bottom_seek_forward_label => '+10s';
-  @override
-  String get video_builtin_apibay_hint => '電影與劇集。公共索引，無需賬號。';
-  @override
-  String get video_builtin_knaben_hint => '電影與劇集。聚合多家公共索引器。';
-  @override
-  String get video_builtin_nyaa_hint => '僅動漫。電影與劇集由下面兩個公共索引器覆蓋。';
-  @override
-  String get video_builtin_sources_hint =>
-      '隨應用內置：無需賬號，無需 API key。關閉後該來源不再參與資源搜索。';
-  @override
-  String get video_builtin_sources_title => '內置來源';
   @override
   String video_chapter_n({required Object n}) => '章節 ${n}';
   @override
@@ -395518,8 +395185,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_resource_missing_title => '影片無法訪問';
   @override
-  String get video_resource_no_provider_hint =>
-      '本次搜索沒有可用的來源。請到 設定 → 下載 → 外部資源與字幕來源 重新啟用內置來源，或添加 Torznab 索引器。';
+  String get video_resource_no_provider_rss_hint =>
+      'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
   @override
   String get video_resource_no_provider_title => '未配置資源索引器';
   @override
@@ -395540,6 +395207,53 @@ class _StringsZhHk extends _StringsEn {
   @override
   String video_resource_source_skipped({required Object name}) =>
       '${name}：未參與（該來源無法搜尋這個查詢詞）';
+  @override
+  String get video_rss_add => 'Add RSS site';
+  @override
+  String get video_rss_domains => 'Use for';
+  @override
+  String get video_rss_domains_hint =>
+      'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+  @override
+  String get video_rss_domains_required => 'Pick at least one';
+  @override
+  String get video_rss_edit_title => 'Edit RSS site';
+  @override
+  String get video_rss_empty_hint =>
+      'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+  @override
+  String get video_rss_empty_title => 'No BT search source yet';
+  @override
+  String get video_rss_name => 'Name';
+  @override
+  String get video_rss_settings_hint =>
+      'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+  @override
+  String get video_rss_settings_title => 'RSS search sites';
+  @override
+  String get video_rss_test => 'Test search';
+  @override
+  String video_rss_test_failed({required Object reason}) =>
+      'Search failed: ${reason}';
+  @override
+  String get video_rss_test_query => 'Test keywords';
+  @override
+  String video_rss_test_result({required Object n}) => 'Found ${n} results';
+  @override
+  String get video_rss_url_invalid =>
+      'Not a valid http(s) address (no user name or # fragment)';
+  @override
+  String get video_rss_url_missing_query => 'The template must contain {query}';
+  @override
+  String get video_rss_url_needs_http_optin =>
+      'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+  @override
+  String get video_rss_url_required => 'Enter the search URL template';
+  @override
+  String get video_rss_url_template => 'Search URL template';
+  @override
+  String get video_rss_url_template_hint =>
+      'Put {query} where the keywords go; add {page} if the site can page through results.';
   @override
   String video_runtime_minutes({required Object n}) => '${n} min';
   @override
@@ -396641,6 +396355,14 @@ class _StringsZhHk extends _StringsEn {
   @override
   String video_subscription_group_release_count({required Object count}) =>
       '共 ${count} 個發布';
+  @override
+  String get video_subscription_provider_choose_rss => 'Choose RSS site';
+  @override
+  String get video_subscription_provider_no_rss_site =>
+      'Add an RSS search site in Settings first.';
+  @override
+  String get video_subscription_provider_removed =>
+      'Source no longer available. Choose an RSS site instead.';
   @override
   String get video_subtitle_adjust_collapse => '收起';
   @override
@@ -398537,67 +398259,32 @@ extension on _StringsEn {
         return 'Wikipedia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipedia (中文)';
-      case 'anime_download_back':
-        return 'Back';
-      case 'anime_download_batch':
-        return 'Batch';
-      case 'anime_download_category_all':
-        return 'All';
-      case 'anime_download_category_english':
-        return 'English-translated';
-      case 'anime_download_category_non_english':
-        return 'Non-English';
-      case 'anime_download_category_raw':
-        return 'Raw';
       case 'anime_download_delete':
         return 'Delete';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => 'EP ${count}';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'Download';
       case 'anime_download_generic_hint':
         return 'Magnet link';
-      case 'anime_download_generic_title':
-        return 'Paste a link (books, videos, anything)';
       case 'anime_download_include_subs':
         return 'Include subtitles';
-      case 'anime_download_kind_auto':
-        return 'Auto';
-      case 'anime_download_kind_book':
-        return 'Book';
       case 'anime_download_kind_video':
         return 'Video';
       case 'anime_download_magnet_invalid':
         return 'Invalid magnet link';
-      case 'anime_download_no_results':
-        return 'No results';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'The service responded successfully but returned 0 items. Query: ${query}; filters: ${filters}. Try another title or loosen the filters.';
       case 'anime_download_no_subs':
         return 'No subs';
       case 'anime_download_no_tasks':
         return 'No download tasks yet';
-      case 'anime_download_nyaa_query':
-        return 'Nyaa search terms';
       case 'anime_download_play_now':
         return 'Play while downloading';
       case 'anime_download_play_now_fail':
         return 'Not ready yet (metadata pending or connection failed) — try again later';
       case 'anime_download_play_now_ok':
         return 'Imported — open it from the video library to play while downloading';
-      case 'anime_download_push':
-        return 'Push download';
       case 'anime_download_push_failed':
         return 'Failed to push to qBittorrent';
       case 'anime_download_pushed':
         return 'Pushed — it will be imported automatically once finished';
-      case 'anime_download_refresh':
-        return 'Refresh';
       case 'anime_download_relocate':
         return 'Rename / move';
       case 'anime_download_relocate_engine_failed':
@@ -398623,55 +398310,22 @@ extension on _StringsEn {
         return 'Subtitles required';
       case 'anime_download_retry':
         return 'Retry';
-      case 'anime_download_search':
-        return 'Search';
-      case 'anime_download_search_error_proxy_hint':
-        return 'If the site cannot be reached directly, configure a network proxy in download settings.';
-      case 'anime_download_search_failed':
-        return 'Search failed or timed out. Tap retry.';
-      case 'anime_download_search_hint':
-        return 'Anime title';
       case 'anime_download_search_start_hint':
         return 'Search a title above - torrents and subtitles are matched automatically. Downloads are not limited to video: books, manga, audiobooks and games are imported too.';
-      case 'anime_download_sort_date':
-        return 'Published';
-      case 'anime_download_sort_seeders':
-        return 'Seeders';
       case 'anime_download_sort_size':
         return 'Size';
       case 'anime_download_store_unavailable':
         return 'Download plan storage is unavailable';
       case 'anime_download_streaming_ready':
         return 'In library · download continues';
-      case 'anime_download_subs_badge':
-        return 'Subs';
-      case 'anime_download_subs_deferred':
-        return 'Subtitles are matched after download, from the pack\'s actual files';
-      case 'anime_download_subs_episodes_unverified':
-        return 'Episode numbers are not verified against this pack - subtitles may come from another season.';
-      case 'anime_download_subs_failed':
-        return 'Subtitle search failed. Tap retry.';
-      case 'anime_download_subs_need_key':
-        return 'Enter a Jimaku API key above to search subtitles.';
       case 'anime_download_subs_pending':
         return 'Subtitles: pending until download completes';
       case 'anime_download_subs_retrying':
         return 'Subtitles: not up yet — will retry automatically';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'No subtitle entry matches season ${season} of this pack - not auto-selected. Pick one manually if you want it anyway.';
       case 'anime_download_subs_unmatched':
         return 'Subtitles: no match for this pack';
-      case 'anime_download_tasks':
-        return 'Download tasks';
-      case 'anime_download_title':
-        return 'Anime download';
       case 'anime_download_trusted':
         return 'Trusted';
-      case 'anime_download_trusted_only':
-        return 'Trusted only';
-      case 'anime_download_unfiltered':
-        return 'No Trusted filter';
       case 'anki_action_open_settings':
         return 'Open settings';
       case 'anki_allow_duplicates':
@@ -402254,12 +401908,6 @@ extension on _StringsEn {
         return 'Novels';
       case 'discovery_load_more':
         return 'Load more';
-      case 'discovery_nyaa_filter_all':
-        return 'All';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'No remakes';
-      case 'discovery_nyaa_filter_trusted_only':
-        return 'Trusted only';
       case 'discovery_opds_add':
         return 'Add OPDS server';
       case 'discovery_opds_allow_http':
@@ -402590,8 +402238,6 @@ extension on _StringsEn {
         return 'Cancelled';
       case 'download_status_queued':
         return 'Queued';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => 'After episode ${episode}';
       case 'download_subscription_check_all':
         return 'Check all';
       case 'download_subscription_check_now':
@@ -402602,8 +402248,6 @@ extension on _StringsEn {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             'Download the whole ${group} · ${resolution} batch once. A batch has no next episode to follow.';
-      case 'download_subscription_created':
-        return 'Download queued and subscription created';
       case 'download_subscription_delete':
         return 'Delete subscription';
       case 'download_subscription_delete_confirm':
@@ -402611,17 +402255,12 @@ extension on _StringsEn {
             'Delete the subscription for ${title}? Downloaded tasks are kept.';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'Download and subscribe';
       case 'download_subscription_empty_body':
         return 'In Discover, choose a single-episode release and use Download and subscribe.';
       case 'download_subscription_empty_title':
         return 'No subscriptions yet';
       case 'download_subscription_last_checked':
         return ({required Object time}) => 'Last checked: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) =>
-            'Latest queued: episode ${episode}';
       case 'download_subscription_never_checked':
         return 'Never checked';
       case 'download_subscription_running_hint':
@@ -415231,6 +414870,38 @@ extension on _StringsEn {
         return 'Share usage statistics';
       case 'usage_stats_enabled_hint':
         return 'Once a day, sends an install ID (derived from this device, unchanged after reinstalling), the app version, platform, update channel, app language, CPU architecture, OS major version and install source (e.g. app store or installer) to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored — only the country or region it resolves to is kept. When you attach device info to feedback, the install ID is sent with it.';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return 'Fall';
       case 'video_air_season_spring':
@@ -415340,16 +415011,6 @@ extension on _StringsEn {
         return 'Forward 10s';
       case 'video_bottom_seek_forward_label':
         return '+10s';
-      case 'video_builtin_apibay_hint':
-        return 'Movies and TV shows. Public index, no account needed.';
-      case 'video_builtin_knaben_hint':
-        return 'Movies and TV shows. Aggregates several public indexers.';
-      case 'video_builtin_nyaa_hint':
-        return 'Anime only. Movies and TV shows are covered by the two public indexers below.';
-      case 'video_builtin_sources_hint':
-        return 'Ship with the app: no account, no API key. Turn one off to keep it out of resource searches.';
-      case 'video_builtin_sources_title':
-        return 'Built-in sources';
       case 'video_chapter_n':
         return ({required Object n}) => 'Chapter ${n}';
       case 'video_chapters':
@@ -416375,8 +416036,8 @@ extension on _StringsEn {
         return 'Re-import';
       case 'video_resource_missing_title':
         return 'Video unavailable';
-      case 'video_resource_no_provider_hint':
-        return 'This search had no provider to query. Re-enable a built-in source, or add a Torznab indexer, under Settings, Downloads, External resource and subtitle providers.';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'No resource indexer configured';
       case 'video_resource_query_failed':
@@ -416395,6 +416056,46 @@ extension on _StringsEn {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: not searched (this source can\'t handle the query)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -417388,6 +417089,12 @@ extension on _StringsEn {
         return 'Subtitles in English and many other languages for movies and TV, matched by IMDb / TMDB id. A free API key is required; downloads count toward an anonymous daily limit per IP.';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count} releases';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return 'Collapse';
       case 'video_subtitle_adjust_expand':
@@ -419157,67 +418864,32 @@ extension on _StringsAr {
         return 'Wikipedia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipedia (中文)';
-      case 'anime_download_back':
-        return 'رجوع';
-      case 'anime_download_batch':
-        return 'دفعة';
-      case 'anime_download_category_all':
-        return 'الكل';
-      case 'anime_download_category_english':
-        return 'مترجم للإنجليزية';
-      case 'anime_download_category_non_english':
-        return 'غير إنجليزي';
-      case 'anime_download_category_raw':
-        return 'بدون ترجمة';
       case 'anime_download_delete':
         return 'حذف';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => 'حلقة ${count}';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'تحميل';
       case 'anime_download_generic_hint':
         return 'رابط مغناطيسي';
-      case 'anime_download_generic_title':
-        return 'لصق رابط (كتب، فيديوهات، أي شيء)';
       case 'anime_download_include_subs':
         return 'تضمين الترجمات';
-      case 'anime_download_kind_auto':
-        return 'تلقائي';
-      case 'anime_download_kind_book':
-        return 'كتاب';
       case 'anime_download_kind_video':
         return 'فيديو';
       case 'anime_download_magnet_invalid':
         return 'رابط مغناطيسي غير صالح';
-      case 'anime_download_no_results':
-        return 'لا توجد نتائج';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'استجابت الخدمة بنجاح لكن أعادت 0 عناصر. الاستعلام: ${query}؛ المرشحات: ${filters}. جرّب عنواناً آخر أو خفف المرشحات.';
       case 'anime_download_no_subs':
         return 'بدون ترجمات';
       case 'anime_download_no_tasks':
         return 'لا توجد مهام تحميل بعد';
-      case 'anime_download_nyaa_query':
-        return 'عبارات بحث Nyaa';
       case 'anime_download_play_now':
         return 'تشغيل أثناء التحميل';
       case 'anime_download_play_now_fail':
         return 'غير جاهز بعد (بيانات معلقة أو فشل الاتصال) — حاول لاحقاً';
       case 'anime_download_play_now_ok':
         return 'تم الاستيراد — افتحه من مكتبة الفيديو للتشغيل أثناء التحميل';
-      case 'anime_download_push':
-        return 'إرسال التحميل';
       case 'anime_download_push_failed':
         return 'فشل الإرسال إلى qBittorrent';
       case 'anime_download_pushed':
         return 'تم الإرسال — سيتم استيراده تلقائياً عند الانتهاء';
-      case 'anime_download_refresh':
-        return 'تحديث';
       case 'anime_download_relocate':
         return 'إعادة تسمية / نقل';
       case 'anime_download_relocate_engine_failed':
@@ -419242,55 +418914,22 @@ extension on _StringsAr {
         return 'الترجمات مطلوبة';
       case 'anime_download_retry':
         return 'إعادة المحاولة';
-      case 'anime_download_search':
-        return 'بحث';
-      case 'anime_download_search_error_proxy_hint':
-        return 'إذا تعذر الوصول إلى الموقع مباشرة، قم بتكوين وكيل شبكة في إعدادات التحميل.';
-      case 'anime_download_search_failed':
-        return 'فشل البحث أو انتهت مهلته. اضغط إعادة المحاولة.';
-      case 'anime_download_search_hint':
-        return 'عنوان الأنمي';
       case 'anime_download_search_start_hint':
         return 'ابحث عن عنوان أعلاه - يتم مطابقة التورنت والترجمات تلقائياً. التحميلات لا تقتصر على الفيديو: الكتب والمانغا والكتب الصوتية والألعاب يتم استيرادها أيضاً.';
-      case 'anime_download_sort_date':
-        return 'تاريخ النشر';
-      case 'anime_download_sort_seeders':
-        return 'الرافعون';
       case 'anime_download_sort_size':
         return 'الحجم';
       case 'anime_download_store_unavailable':
         return 'مخزن خطة التحميل غير متاح';
       case 'anime_download_streaming_ready':
         return 'في المكتبة · التحميل مستمر';
-      case 'anime_download_subs_badge':
-        return 'ترجمات';
-      case 'anime_download_subs_deferred':
-        return 'تُطابق الترجمات بعد التحميل من الملفات الفعلية للحزمة';
-      case 'anime_download_subs_episodes_unverified':
-        return 'أرقام الحلقات غير مؤكدة لهذه الحزمة - قد تكون الترجمات من موسم آخر.';
-      case 'anime_download_subs_failed':
-        return 'فشل البحث عن الترجمات. اضغط إعادة المحاولة.';
-      case 'anime_download_subs_need_key':
-        return 'أدخل مفتاح API لـ Jimaku أعلاه للبحث عن الترجمات.';
       case 'anime_download_subs_pending':
         return 'الترجمات: في الانتظار حتى اكتمال التحميل';
       case 'anime_download_subs_retrying':
         return 'الترجمات: غير متاحة بعد — ستتم إعادة المحاولة تلقائياً';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'لا يوجد إدخال ترجمة يطابق الموسم ${season} لهذه الحزمة - لم يتم اختيارها تلقائياً. اختر واحدة يدوياً إن أردت.';
       case 'anime_download_subs_unmatched':
         return 'الترجمات: لا تطابق لهذه الحزمة';
-      case 'anime_download_tasks':
-        return 'مهام التحميل';
-      case 'anime_download_title':
-        return 'تحميل الأنمي';
       case 'anime_download_trusted':
         return 'موثوق';
-      case 'anime_download_trusted_only':
-        return 'الموثوقون فقط';
-      case 'anime_download_unfiltered':
-        return 'بدون مرشح الموثوق';
       case 'anki_action_open_settings':
         return 'فتح الإعدادات';
       case 'anki_allow_duplicates':
@@ -422875,12 +422514,6 @@ extension on _StringsAr {
         return 'روايات';
       case 'discovery_load_more':
         return 'تحميل المزيد';
-      case 'discovery_nyaa_filter_all':
-        return 'الكل';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'بدون إعادة إصدار';
-      case 'discovery_nyaa_filter_trusted_only':
-        return 'الموثوق فقط';
       case 'discovery_opds_add':
         return 'إضافة خادم OPDS';
       case 'discovery_opds_allow_http':
@@ -423211,8 +422844,6 @@ extension on _StringsAr {
         return 'ملغى';
       case 'download_status_queued':
         return 'في قائمة الانتظار';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => 'بعد الحلقة ${episode}';
       case 'download_subscription_check_all':
         return 'فحص الكل';
       case 'download_subscription_check_now':
@@ -423223,8 +422854,6 @@ extension on _StringsAr {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             'نزّل الدفعة الكاملة ${group} · ${resolution} مرة واحدة. الدفعة ليس لها حلقة تالية لمتابعتها.';
-      case 'download_subscription_created':
-        return 'تم وضع التحميل في قائمة الانتظار وإنشاء الاشتراك';
       case 'download_subscription_delete':
         return 'حذف الاشتراك';
       case 'download_subscription_delete_confirm':
@@ -423232,17 +422861,12 @@ extension on _StringsAr {
             'حذف اشتراك ${title}؟ مهام التحميل يتم الاحتفاظ بها.';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'تحميل واشتراك';
       case 'download_subscription_empty_body':
         return 'في الاكتشاف، اختر إصداراً أحادي الحلقة واستخدم تحميل واشتراك.';
       case 'download_subscription_empty_title':
         return 'لا توجد اشتراكات بعد';
       case 'download_subscription_last_checked':
         return ({required Object time}) => 'آخر فحص: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) =>
-            'آخر حلقة في القائمة: الحلقة ${episode}';
       case 'download_subscription_never_checked':
         return 'لم يتم الفحص مطلقاً';
       case 'download_subscription_running_hint':
@@ -435843,6 +435467,38 @@ extension on _StringsAr {
         return 'مشاركة إحصاءات الاستخدام';
       case 'usage_stats_enabled_hint':
         return 'مرة واحدة يوميًا، يرسل معرّف تثبيت (مشتقًا من هذا الجهاز، ولا يتغيّر عند إعادة التثبيت) وإصدار التطبيق والمنصة وقناة التحديث ولغة التطبيق وبنية المعالج والإصدار الرئيسي لنظام التشغيل ومصدر التثبيت (مثل متجر التطبيقات أو المثبّت) إلى fushi.moe لنتمكن من إحصاء المستخدمين النشطين. لا تُضمَّن أي بيانات عن الحساب أو المكتبة أو القراءة، ولا يُخزَّن عنوان IP الخاص بك، بل يُحفَظ فقط البلد أو المنطقة المستنتجة منه. عند إرفاق معلومات الجهاز بالملاحظات، يُرسَل معرّف التثبيت معها.';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return 'خريف';
       case 'video_air_season_spring':
@@ -435953,16 +435609,6 @@ extension on _StringsAr {
         return 'تقديم 10 ثوانٍ';
       case 'video_bottom_seek_forward_label':
         return '+10 ث';
-      case 'video_builtin_apibay_hint':
-        return 'أفلام ومسلسلات تلفزيونية. فهرس عام، لا يحتاج حساب.';
-      case 'video_builtin_knaben_hint':
-        return 'أفلام ومسلسلات تلفزيونية. يجمع عدة مُفهرسات عامة.';
-      case 'video_builtin_nyaa_hint':
-        return 'أنمي فقط. الأفلام والمسلسلات يغطيها المُفهرسان العامان أدناه.';
-      case 'video_builtin_sources_hint':
-        return 'مضمّنة مع التطبيق: لا حساب ولا مفتاح API. أوقف أحدها لاستبعاده من بحث الموارد.';
-      case 'video_builtin_sources_title':
-        return 'المصادر المدمجة';
       case 'video_chapter_n':
         return ({required Object n}) => 'الفصل ${n}';
       case 'video_chapters':
@@ -436987,8 +436633,8 @@ extension on _StringsAr {
         return 'إعادة استيراد';
       case 'video_resource_missing_title':
         return 'الفيديو غير متوفر';
-      case 'video_resource_no_provider_hint':
-        return 'لم يكن لهذا البحث مزوّد للاستعلام. أعد تفعيل مصدر مدمج أو أضف مُفهرس Torznab من الإعدادات، التحميلات، مزوّدو الموارد والترجمات الخارجية.';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'لم يتم تكوين مُفهرس موارد';
       case 'video_resource_query_failed':
@@ -437007,6 +436653,46 @@ extension on _StringsAr {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: لم يُبحث فيه (لا يستطيع هذا المصدر معالجة الاستعلام)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -438001,6 +437687,12 @@ extension on _StringsAr {
         return 'ترجمات بالإنجليزية ولغات أخرى كثيرة للأفلام والمسلسلات، تُطابَق بمعرّف IMDb / TMDB. يلزم مفتاح API مجاني؛ وتُحتسب التنزيلات ضمن حد يومي مجهول لكل IP.';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count} إصدار';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return 'طيّ';
       case 'video_subtitle_adjust_expand':
@@ -439773,67 +439465,32 @@ extension on _StringsDe {
         return 'Wikipedia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipedia (中文)';
-      case 'anime_download_back':
-        return 'Zurück';
-      case 'anime_download_batch':
-        return 'Sammelpaket';
-      case 'anime_download_category_all':
-        return 'Alle';
-      case 'anime_download_category_english':
-        return 'Englisch übersetzt';
-      case 'anime_download_category_non_english':
-        return 'Nicht-Englisch';
-      case 'anime_download_category_raw':
-        return 'Roh';
       case 'anime_download_delete':
         return 'Löschen';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => 'Folge ${count}';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'Herunterladen';
       case 'anime_download_generic_hint':
         return 'Magnet-Link';
-      case 'anime_download_generic_title':
-        return 'Link einfügen (Bücher, Videos, alles)';
       case 'anime_download_include_subs':
         return 'Untertitel einschließen';
-      case 'anime_download_kind_auto':
-        return 'Automatisch';
-      case 'anime_download_kind_book':
-        return 'Buch';
       case 'anime_download_kind_video':
         return 'Video';
       case 'anime_download_magnet_invalid':
         return 'Ungültiger Magnet-Link';
-      case 'anime_download_no_results':
-        return 'Keine Ergebnisse';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'Der Dienst hat erfolgreich geantwortet, aber 0 Ergebnisse zurückgegeben. Abfrage: ${query}; Filter: ${filters}. Versuchen Sie einen anderen Titel oder lockern Sie die Filter.';
       case 'anime_download_no_subs':
         return 'Keine Untertitel';
       case 'anime_download_no_tasks':
         return 'Noch keine Download-Aufgaben';
-      case 'anime_download_nyaa_query':
-        return 'Nyaa-Suchbegriffe';
       case 'anime_download_play_now':
         return 'Während des Downloads abspielen';
       case 'anime_download_play_now_fail':
         return 'Noch nicht bereit (Metadaten ausstehend oder Verbindung fehlgeschlagen) – versuche es später erneut';
       case 'anime_download_play_now_ok':
         return 'Importiert – öffne es aus der Videobibliothek, um es während des Downloads abzuspielen';
-      case 'anime_download_push':
-        return 'Download übertragen';
       case 'anime_download_push_failed':
         return 'Übertragung an qBittorrent fehlgeschlagen';
       case 'anime_download_pushed':
         return 'Übertragen – wird nach Abschluss automatisch importiert';
-      case 'anime_download_refresh':
-        return 'Aktualisieren';
       case 'anime_download_relocate':
         return 'Umbenennen / verschieben';
       case 'anime_download_relocate_engine_failed':
@@ -439859,55 +439516,22 @@ extension on _StringsDe {
         return 'Untertitel erforderlich';
       case 'anime_download_retry':
         return 'Erneut versuchen';
-      case 'anime_download_search':
-        return 'Suchen';
-      case 'anime_download_search_error_proxy_hint':
-        return 'Wenn die Seite nicht direkt erreichbar ist, konfiguriere einen Netzwerk-Proxy in den Download-Einstellungen.';
-      case 'anime_download_search_failed':
-        return 'Suche fehlgeschlagen oder Zeitüberschreitung. Tippe auf „Erneut versuchen".';
-      case 'anime_download_search_hint':
-        return 'Anime-Titel';
       case 'anime_download_search_start_hint':
         return 'Suche oben nach einem Titel – Torrents und Untertitel werden automatisch zugeordnet. Downloads sind nicht auf Videos beschränkt: Bücher, Manga, Hörbücher und Spiele werden ebenfalls importiert.';
-      case 'anime_download_sort_date':
-        return 'Veröffentlicht';
-      case 'anime_download_sort_seeders':
-        return 'Seeder';
       case 'anime_download_sort_size':
         return 'Größe';
       case 'anime_download_store_unavailable':
         return 'Download-Plan-Speicher ist nicht verfügbar';
       case 'anime_download_streaming_ready':
         return 'In der Bibliothek · Download läuft weiter';
-      case 'anime_download_subs_badge':
-        return 'Untertitel';
-      case 'anime_download_subs_deferred':
-        return 'Untertitel werden nach dem Download anhand der tatsächlichen Dateien des Pakets zugeordnet';
-      case 'anime_download_subs_episodes_unverified':
-        return 'Episodennummern sind für dieses Paket nicht verifiziert – Untertitel können aus einer anderen Staffel stammen.';
-      case 'anime_download_subs_failed':
-        return 'Untertitelsuche fehlgeschlagen. Tippe auf „Erneut versuchen".';
-      case 'anime_download_subs_need_key':
-        return 'Gib oben einen Jimaku-API-Schlüssel ein, um Untertitel zu suchen.';
       case 'anime_download_subs_pending':
         return 'Untertitel: ausstehend bis Download abgeschlossen';
       case 'anime_download_subs_retrying':
         return 'Untertitel: noch nicht verfügbar – wird automatisch erneut versucht';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'Kein Untertiteleintrag passt zu Staffel ${season} dieses Pakets – nicht automatisch ausgewählt. Wählen Sie manuell, wenn Sie es trotzdem möchten.';
       case 'anime_download_subs_unmatched':
         return 'Untertitel: keine Übereinstimmung für dieses Paket';
-      case 'anime_download_tasks':
-        return 'Download-Aufgaben';
-      case 'anime_download_title':
-        return 'Anime-Download';
       case 'anime_download_trusted':
         return 'Vertrauenswürdig';
-      case 'anime_download_trusted_only':
-        return 'Nur vertrauenswürdige';
-      case 'anime_download_unfiltered':
-        return 'Kein Vertrauensfilter';
       case 'anki_action_open_settings':
         return 'Einstellungen öffnen';
       case 'anki_allow_duplicates':
@@ -443517,12 +443141,6 @@ extension on _StringsDe {
         return 'Romane';
       case 'discovery_load_more':
         return 'Mehr laden';
-      case 'discovery_nyaa_filter_all':
-        return 'Alle';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'Keine Remakes';
-      case 'discovery_nyaa_filter_trusted_only':
-        return 'Nur vertrauenswürdig';
       case 'discovery_opds_add':
         return 'OPDS-Server hinzufügen';
       case 'discovery_opds_allow_http':
@@ -443854,8 +443472,6 @@ extension on _StringsDe {
         return 'Abgebrochen';
       case 'download_status_queued':
         return 'In Warteschlange';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => 'Nach Episode ${episode}';
       case 'download_subscription_check_all':
         return 'Alle prüfen';
       case 'download_subscription_check_now':
@@ -443866,8 +443482,6 @@ extension on _StringsDe {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             'Das gesamte Paket ${group} · ${resolution} einmal herunterladen. Ein Paket hat keine nächste Folge, der man folgen könnte.';
-      case 'download_subscription_created':
-        return 'Download in Warteschlange und Abonnement erstellt';
       case 'download_subscription_delete':
         return 'Abonnement löschen';
       case 'download_subscription_delete_confirm':
@@ -443875,17 +443489,12 @@ extension on _StringsDe {
             'Das Abonnement für ${title} löschen? Heruntergeladene Aufgaben bleiben erhalten.';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'Herunterladen und abonnieren';
       case 'download_subscription_empty_body':
         return 'Wähle unter „Entdecken" eine Einzelepisoden-Veröffentlichung und verwende „Herunterladen und abonnieren".';
       case 'download_subscription_empty_title':
         return 'Noch keine Abonnements';
       case 'download_subscription_last_checked':
         return ({required Object time}) => 'Zuletzt geprüft: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) =>
-            'Zuletzt eingereiht: Episode ${episode}';
       case 'download_subscription_never_checked':
         return 'Noch nie geprüft';
       case 'download_subscription_running_hint':
@@ -456526,6 +456135,38 @@ extension on _StringsDe {
         return 'Nutzungsstatistiken teilen';
       case 'usage_stats_enabled_hint':
         return 'Sendet einmal täglich eine aus diesem Gerät abgeleitete Installations-ID (bleibt bei Neuinstallation gleich), die App-Version, die Plattform, den Update-Kanal, die App-Sprache, die CPU-Architektur, die Hauptversion des Betriebssystems und die Installationsquelle (z. B. App-Store oder Installer) an fushi.moe, damit wir aktive Nutzer zählen können. Konto-, Bibliotheks- oder Lesedaten sind nicht enthalten, und deine IP-Adresse wird nicht gespeichert – nur das daraus ermittelte Land bzw. die Region. Wenn du Feedback Geräteinformationen anhängst, wird die Installations-ID mitgesendet.';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return 'Herbst';
       case 'video_air_season_spring':
@@ -456636,16 +456277,6 @@ extension on _StringsDe {
         return '10 s vor';
       case 'video_bottom_seek_forward_label':
         return '+10s';
-      case 'video_builtin_apibay_hint':
-        return 'Filme und Serien. Öffentlicher Index, kein Konto erforderlich.';
-      case 'video_builtin_knaben_hint':
-        return 'Filme und Serien. Bündelt mehrere öffentliche Indexer.';
-      case 'video_builtin_nyaa_hint':
-        return 'Nur Anime. Filme und Serien werden von den beiden öffentlichen Indexern unten abgedeckt.';
-      case 'video_builtin_sources_hint':
-        return 'Mit der App mitgeliefert: kein Konto, kein API-Schlüssel. Deaktivieren, um sie aus Ressourcensuchen auszuschließen.';
-      case 'video_builtin_sources_title':
-        return 'Integrierte Quellen';
       case 'video_chapter_n':
         return ({required Object n}) => 'Kapitel ${n}';
       case 'video_chapters':
@@ -457675,8 +457306,8 @@ extension on _StringsDe {
         return 'Erneut importieren';
       case 'video_resource_missing_title':
         return 'Video nicht verfügbar';
-      case 'video_resource_no_provider_hint':
-        return 'Diese Suche hatte keinen Anbieter zum Abfragen. Aktivieren Sie eine integrierte Quelle erneut oder fügen Sie einen Torznab-Indexer unter Einstellungen, Downloads, Externe Ressourcen- und Untertitelanbieter hinzu.';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'Kein Ressourcen-Indexer konfiguriert';
       case 'video_resource_query_failed':
@@ -457695,6 +457326,46 @@ extension on _StringsDe {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: nicht durchsucht (diese Quelle kann die Anfrage nicht verarbeiten)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -458689,6 +458360,12 @@ extension on _StringsDe {
         return 'Untertitel auf Englisch und in vielen anderen Sprachen für Filme und Serien, zugeordnet über IMDb-/TMDB-ID. Ein kostenloser API-Schlüssel ist erforderlich; Downloads zählen zu einem anonymen Tageslimit pro IP.';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count} Veröffentlichungen';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return 'Einklappen';
       case 'video_subtitle_adjust_expand':
@@ -460463,67 +460140,32 @@ extension on _StringsEs {
         return 'Wikipedia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipedia (中文)';
-      case 'anime_download_back':
-        return 'Atrás';
-      case 'anime_download_batch':
-        return 'Lote';
-      case 'anime_download_category_all':
-        return 'Todos';
-      case 'anime_download_category_english':
-        return 'Traducido al inglés';
-      case 'anime_download_category_non_english':
-        return 'No inglés';
-      case 'anime_download_category_raw':
-        return 'Sin traducir';
       case 'anime_download_delete':
         return 'Eliminar';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => 'EP ${count}';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'Descargar';
       case 'anime_download_generic_hint':
         return 'Enlace magnet';
-      case 'anime_download_generic_title':
-        return 'Pegar un enlace (libros, vídeos, cualquier cosa)';
       case 'anime_download_include_subs':
         return 'Incluir subtítulos';
-      case 'anime_download_kind_auto':
-        return 'Auto';
-      case 'anime_download_kind_book':
-        return 'Libro';
       case 'anime_download_kind_video':
         return 'Vídeo';
       case 'anime_download_magnet_invalid':
         return 'Enlace magnet no válido';
-      case 'anime_download_no_results':
-        return 'Sin resultados';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'El servicio respondió exitosamente pero devolvió 0 elementos. Consulta: ${query}; filtros: ${filters}. Intente otro título o relaje los filtros.';
       case 'anime_download_no_subs':
         return 'Sin subtítulos';
       case 'anime_download_no_tasks':
         return 'Aún no hay tareas de descarga';
-      case 'anime_download_nyaa_query':
-        return 'Términos de búsqueda en Nyaa';
       case 'anime_download_play_now':
         return 'Reproducir mientras descarga';
       case 'anime_download_play_now_fail':
         return 'Aún no está listo (metadatos pendientes o conexión fallida) — inténtelo más tarde';
       case 'anime_download_play_now_ok':
         return 'Importado — ábralo desde la biblioteca de vídeos para reproducir mientras descarga';
-      case 'anime_download_push':
-        return 'Enviar descarga';
       case 'anime_download_push_failed':
         return 'No se pudo enviar a qBittorrent';
       case 'anime_download_pushed':
         return 'Enviado — se importará automáticamente al finalizar';
-      case 'anime_download_refresh':
-        return 'Actualizar';
       case 'anime_download_relocate':
         return 'Renombrar / mover';
       case 'anime_download_relocate_engine_failed':
@@ -460548,55 +460190,22 @@ extension on _StringsEs {
         return 'Subtítulos requeridos';
       case 'anime_download_retry':
         return 'Reintentar';
-      case 'anime_download_search':
-        return 'Buscar';
-      case 'anime_download_search_error_proxy_hint':
-        return 'Si no puede acceder al sitio directamente, configure un proxy de red en los ajustes de descarga.';
-      case 'anime_download_search_failed':
-        return 'La búsqueda falló o se agotó el tiempo. Toque reintentar.';
-      case 'anime_download_search_hint':
-        return 'Título del anime';
       case 'anime_download_search_start_hint':
         return 'Busque un título arriba — los torrents y subtítulos se emparejan automáticamente. Las descargas no se limitan a vídeo: libros, manga, audiolibros y juegos también se importan.';
-      case 'anime_download_sort_date':
-        return 'Publicado';
-      case 'anime_download_sort_seeders':
-        return 'Seeders';
       case 'anime_download_sort_size':
         return 'Tamaño';
       case 'anime_download_store_unavailable':
         return 'El almacenamiento del plan de descarga no está disponible';
       case 'anime_download_streaming_ready':
         return 'En biblioteca · descarga continúa';
-      case 'anime_download_subs_badge':
-        return 'Subs';
-      case 'anime_download_subs_deferred':
-        return 'Los subtítulos se emparejan después de la descarga, desde los archivos reales del pack';
-      case 'anime_download_subs_episodes_unverified':
-        return 'Los números de episodio no están verificados para este pack — los subtítulos pueden ser de otra temporada.';
-      case 'anime_download_subs_failed':
-        return 'La búsqueda de subtítulos falló. Toque reintentar.';
-      case 'anime_download_subs_need_key':
-        return 'Introduzca una clave API de Jimaku arriba para buscar subtítulos.';
       case 'anime_download_subs_pending':
         return 'Subtítulos: pendientes hasta que la descarga se complete';
       case 'anime_download_subs_retrying':
         return 'Subtítulos: aún no disponibles — reintentando automáticamente';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'Ninguna entrada de subtítulos coincide con la temporada ${season} de este pack — no seleccionado automáticamente. Elija uno manualmente si lo desea.';
       case 'anime_download_subs_unmatched':
         return 'Subtítulos: sin coincidencia para este pack';
-      case 'anime_download_tasks':
-        return 'Tareas de descarga';
-      case 'anime_download_title':
-        return 'Descarga de anime';
       case 'anime_download_trusted':
         return 'De confianza';
-      case 'anime_download_trusted_only':
-        return 'Solo de confianza';
-      case 'anime_download_unfiltered':
-        return 'Sin filtro de confianza';
       case 'anki_action_open_settings':
         return 'Abrir ajustes';
       case 'anki_allow_duplicates':
@@ -464198,12 +463807,6 @@ extension on _StringsEs {
         return 'Novelas';
       case 'discovery_load_more':
         return 'Cargar más';
-      case 'discovery_nyaa_filter_all':
-        return 'Todos';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'Sin remakes';
-      case 'discovery_nyaa_filter_trusted_only':
-        return 'Solo de confianza';
       case 'discovery_opds_add':
         return 'Añadir servidor OPDS';
       case 'discovery_opds_allow_http':
@@ -464534,8 +464137,6 @@ extension on _StringsEs {
         return 'Cancelado';
       case 'download_status_queued':
         return 'En cola';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => 'Después del episodio ${episode}';
       case 'download_subscription_check_all':
         return 'Verificar todos';
       case 'download_subscription_check_now':
@@ -464546,8 +464147,6 @@ extension on _StringsEs {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             'Descargar todo el lote de ${group} · ${resolution} una vez. Un lote no tiene un siguiente episodio que seguir.';
-      case 'download_subscription_created':
-        return 'Descarga en cola y suscripción creada';
       case 'download_subscription_delete':
         return 'Eliminar suscripción';
       case 'download_subscription_delete_confirm':
@@ -464555,17 +464154,12 @@ extension on _StringsEs {
             '¿Eliminar la suscripción de ${title}? Las tareas descargadas se conservan.';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'Descargar y suscribirse';
       case 'download_subscription_empty_body':
         return 'En Descubrir, elija un episodio individual y use Descargar y suscribirse.';
       case 'download_subscription_empty_title':
         return 'Aún no hay suscripciones';
       case 'download_subscription_last_checked':
         return ({required Object time}) => 'Última verificación: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) =>
-            'Último en cola: episodio ${episode}';
       case 'download_subscription_never_checked':
         return 'Nunca verificado';
       case 'download_subscription_running_hint':
@@ -477200,6 +476794,38 @@ extension on _StringsEs {
         return 'Compartir estadísticas de uso';
       case 'usage_stats_enabled_hint':
         return 'Una vez al día, envía a fushi.moe un ID de instalación derivado de este dispositivo (no cambia al reinstalar), la versión de la app, la plataforma, el canal de actualizaciones, el idioma de la app, la arquitectura de CPU, la versión principal del sistema y el origen de instalación (p. ej. tienda o instalador) para que podamos contar los usuarios activos. No incluye datos de la cuenta, la biblioteca ni la lectura, y tu dirección IP no se guarda: solo se conserva el país o región que se deduce de ella. Si adjuntas información del dispositivo a un comentario, el ID de instalación se envía con él.';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return 'Otoño';
       case 'video_air_season_spring':
@@ -477311,16 +476937,6 @@ extension on _StringsEs {
         return 'Adelante 10 s';
       case 'video_bottom_seek_forward_label':
         return '+10s';
-      case 'video_builtin_apibay_hint':
-        return 'Películas y series de TV. Índice público, sin cuenta necesaria.';
-      case 'video_builtin_knaben_hint':
-        return 'Películas y series de TV. Agrega varios indexadores públicos.';
-      case 'video_builtin_nyaa_hint':
-        return 'Solo anime. Películas y series de TV están cubiertas por los dos indexadores públicos de abajo.';
-      case 'video_builtin_sources_hint':
-        return 'Incluidas con la app: sin cuenta, sin clave API. Desactive una para mantenerla fuera de las búsquedas de recursos.';
-      case 'video_builtin_sources_title':
-        return 'Fuentes integradas';
       case 'video_chapter_n':
         return ({required Object n}) => 'Capítulo ${n}';
       case 'video_chapters':
@@ -478348,8 +477964,8 @@ extension on _StringsEs {
         return 'Reimportar';
       case 'video_resource_missing_title':
         return 'Vídeo no disponible';
-      case 'video_resource_no_provider_hint':
-        return 'Esta búsqueda no tuvo proveedor para consultar. Reactive una fuente integrada, o añada un indexador Torznab, en Ajustes, Descargas, Proveedores externos de recursos y subtítulos.';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'Sin indexador de recursos configurado';
       case 'video_resource_query_failed':
@@ -478368,6 +477984,46 @@ extension on _StringsEs {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: no se buscó (esta fuente no puede procesar la consulta)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -479362,6 +479018,12 @@ extension on _StringsEs {
         return 'Subtítulos en inglés y muchos otros idiomas para películas y series, emparejados por ID de IMDb / TMDB. Se requiere una clave de API gratuita; las descargas cuentan para un límite diario anónimo por IP.';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count} lanzamientos';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return 'Contraer';
       case 'video_subtitle_adjust_expand':
@@ -481137,67 +480799,32 @@ extension on _StringsFr {
         return 'Wikipédia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipédia (中文)';
-      case 'anime_download_back':
-        return 'Retour';
-      case 'anime_download_batch':
-        return 'Lot';
-      case 'anime_download_category_all':
-        return 'Tout';
-      case 'anime_download_category_english':
-        return 'Traduit en anglais';
-      case 'anime_download_category_non_english':
-        return 'Non anglais';
-      case 'anime_download_category_raw':
-        return 'Brut';
       case 'anime_download_delete':
         return 'Supprimer';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => 'ÉP ${count}';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'Télécharger';
       case 'anime_download_generic_hint':
         return 'Lien magnet';
-      case 'anime_download_generic_title':
-        return 'Coller un lien (livres, vidéos, tout)';
       case 'anime_download_include_subs':
         return 'Inclure les sous-titres';
-      case 'anime_download_kind_auto':
-        return 'Auto';
-      case 'anime_download_kind_book':
-        return 'Livre';
       case 'anime_download_kind_video':
         return 'Vidéo';
       case 'anime_download_magnet_invalid':
         return 'Lien magnet invalide';
-      case 'anime_download_no_results':
-        return 'Aucun résultat';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'Le service a répondu avec succès mais a renvoyé 0 résultat. Requête : ${query} ; filtres : ${filters}. Essayez un autre titre ou élargissez les filtres.';
       case 'anime_download_no_subs':
         return 'Pas de sous-titres';
       case 'anime_download_no_tasks':
         return 'Aucune tâche de téléchargement';
-      case 'anime_download_nyaa_query':
-        return 'Termes de recherche Nyaa';
       case 'anime_download_play_now':
         return 'Lire pendant le téléchargement';
       case 'anime_download_play_now_fail':
         return 'Pas encore prêt (métadonnées en attente ou connexion échouée) — réessayez plus tard';
       case 'anime_download_play_now_ok':
         return 'Importé — ouvrez-le depuis la vidéothèque pour lire pendant le téléchargement';
-      case 'anime_download_push':
-        return 'Envoyer le téléchargement';
       case 'anime_download_push_failed':
         return 'Échec de l\'envoi vers qBittorrent';
       case 'anime_download_pushed':
         return 'Envoyé — il sera importé automatiquement une fois terminé';
-      case 'anime_download_refresh':
-        return 'Actualiser';
       case 'anime_download_relocate':
         return 'Renommer / déplacer';
       case 'anime_download_relocate_engine_failed':
@@ -481223,55 +480850,22 @@ extension on _StringsFr {
         return 'Sous-titres requis';
       case 'anime_download_retry':
         return 'Réessayer';
-      case 'anime_download_search':
-        return 'Rechercher';
-      case 'anime_download_search_error_proxy_hint':
-        return 'Si le site n\'est pas accessible directement, configurez un proxy réseau dans les paramètres de téléchargement.';
-      case 'anime_download_search_failed':
-        return 'Recherche échouée ou expirée. Appuyez sur Réessayer.';
-      case 'anime_download_search_hint':
-        return 'Titre d\'anime';
       case 'anime_download_search_start_hint':
         return 'Recherchez un titre ci-dessus — les torrents et sous-titres sont associés automatiquement. Les téléchargements ne sont pas limités aux vidéos : livres, manga, livres audio et jeux sont aussi importés.';
-      case 'anime_download_sort_date':
-        return 'Date de publication';
-      case 'anime_download_sort_seeders':
-        return 'Sources';
       case 'anime_download_sort_size':
         return 'Taille';
       case 'anime_download_store_unavailable':
         return 'Le stockage du plan de téléchargement est indisponible';
       case 'anime_download_streaming_ready':
         return 'Dans la bibliothèque · téléchargement en cours';
-      case 'anime_download_subs_badge':
-        return 'Sous-titres';
-      case 'anime_download_subs_deferred':
-        return 'Les sous-titres sont associés après le téléchargement, à partir des fichiers du pack';
-      case 'anime_download_subs_episodes_unverified':
-        return 'Les numéros d\'épisodes ne sont pas vérifiés pour ce pack — les sous-titres peuvent provenir d\'une autre saison.';
-      case 'anime_download_subs_failed':
-        return 'Recherche de sous-titres échouée. Appuyez sur Réessayer.';
-      case 'anime_download_subs_need_key':
-        return 'Entrez une clé API Jimaku ci-dessus pour rechercher des sous-titres.';
       case 'anime_download_subs_pending':
         return 'Sous-titres : en attente de la fin du téléchargement';
       case 'anime_download_subs_retrying':
         return 'Sous-titres : pas encore disponibles — nouvelle tentative automatique';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'Aucune entrée de sous-titres ne correspond à la saison ${season} de ce pack — non sélectionné automatiquement. Choisissez-en un manuellement si vous le souhaitez.';
       case 'anime_download_subs_unmatched':
         return 'Sous-titres : aucune correspondance pour ce pack';
-      case 'anime_download_tasks':
-        return 'Tâches de téléchargement';
-      case 'anime_download_title':
-        return 'Téléchargement d\'anime';
       case 'anime_download_trusted':
         return 'Fiable';
-      case 'anime_download_trusted_only':
-        return 'Fiables uniquement';
-      case 'anime_download_unfiltered':
-        return 'Pas de filtre Fiable';
       case 'anki_action_open_settings':
         return 'Ouvrir les réglages';
       case 'anki_allow_duplicates':
@@ -484880,12 +484474,6 @@ extension on _StringsFr {
         return 'Romans';
       case 'discovery_load_more':
         return 'Charger plus';
-      case 'discovery_nyaa_filter_all':
-        return 'Tous';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'Sans remakes';
-      case 'discovery_nyaa_filter_trusted_only':
-        return 'De confiance uniquement';
       case 'discovery_opds_add':
         return 'Ajouter un serveur OPDS';
       case 'discovery_opds_allow_http':
@@ -485219,8 +484807,6 @@ extension on _StringsFr {
         return 'Annulé';
       case 'download_status_queued':
         return 'En file d\'attente';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => 'Après l\'épisode ${episode}';
       case 'download_subscription_check_all':
         return 'Vérifier tout';
       case 'download_subscription_check_now':
@@ -485231,8 +484817,6 @@ extension on _StringsFr {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             'Télécharger une fois tout le lot ${group} · ${resolution}. Un lot n\'a pas d\'épisode suivant à suivre.';
-      case 'download_subscription_created':
-        return 'Téléchargement en file d\'attente et abonnement créé';
       case 'download_subscription_delete':
         return 'Supprimer l\'abonnement';
       case 'download_subscription_delete_confirm':
@@ -485240,17 +484824,12 @@ extension on _StringsFr {
             'Supprimer l\'abonnement pour ${title} ? Les tâches téléchargées sont conservées.';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'Télécharger et s\'abonner';
       case 'download_subscription_empty_body':
         return 'Dans Découvrir, choisissez une sortie d\'épisode unique et utilisez Télécharger et s\'abonner.';
       case 'download_subscription_empty_title':
         return 'Aucun abonnement';
       case 'download_subscription_last_checked':
         return ({required Object time}) => 'Dernière vérification : ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) =>
-            'Dernier mis en file : épisode ${episode}';
       case 'download_subscription_never_checked':
         return 'Jamais vérifié';
       case 'download_subscription_running_hint':
@@ -497888,6 +497467,38 @@ extension on _StringsFr {
         return 'Partager les statistiques d’utilisation';
       case 'usage_stats_enabled_hint':
         return 'Une fois par jour, envoie à fushi.moe un identifiant d’installation dérivé de cet appareil (inchangé après réinstallation), la version de l’app, la plateforme, le canal de mise à jour, la langue de l’app, l’architecture du processeur, la version majeure du système et la source d’installation (boutique ou installateur, par ex.) afin de compter les utilisateurs actifs. Aucune donnée de compte, de bibliothèque ou de lecture n’est incluse, et votre adresse IP n’est pas conservée : seul le pays ou la région qui en découle est gardé. Si vous joignez les informations de l’appareil à un retour, l’identifiant d’installation est envoyé avec.';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return 'Automne';
       case 'video_air_season_spring':
@@ -497999,16 +497610,6 @@ extension on _StringsFr {
         return 'Avancer de 10 s';
       case 'video_bottom_seek_forward_label':
         return '+10s';
-      case 'video_builtin_apibay_hint':
-        return 'Films et séries TV. Index public, pas de compte nécessaire.';
-      case 'video_builtin_knaben_hint':
-        return 'Films et séries TV. Agrège plusieurs indexeurs publics.';
-      case 'video_builtin_nyaa_hint':
-        return 'Anime uniquement. Les films et séries TV sont couverts par les deux indexeurs publics ci-dessous.';
-      case 'video_builtin_sources_hint':
-        return 'Fournies avec l\'application : pas de compte, pas de clé API. Désactivez-en une pour l\'exclure des recherches de ressources.';
-      case 'video_builtin_sources_title':
-        return 'Sources intégrées';
       case 'video_chapter_n':
         return ({required Object n}) => 'Chapitre ${n}';
       case 'video_chapters':
@@ -499037,8 +498638,8 @@ extension on _StringsFr {
         return 'Réimporter';
       case 'video_resource_missing_title':
         return 'Vidéo indisponible';
-      case 'video_resource_no_provider_hint':
-        return 'Cette recherche n\'avait aucun fournisseur. Réactivez une source intégrée, ou ajoutez un indexeur Torznab, sous Paramètres, Téléchargements, Fournisseurs de ressources et sous-titres externes.';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'Aucun indexeur de ressources configuré';
       case 'video_resource_query_failed':
@@ -499057,6 +498658,46 @@ extension on _StringsFr {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name} : non recherché (cette source ne peut pas traiter la requête)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -500052,6 +499693,12 @@ extension on _StringsFr {
         return 'Sous-titres en anglais et dans de nombreuses autres langues pour films et séries, associés par identifiant IMDb / TMDB. Une clé API gratuite est requise ; les téléchargements comptent dans une limite quotidienne anonyme par IP.';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count} sorties';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return 'Réduire';
       case 'video_subtitle_adjust_expand':
@@ -501824,67 +501471,32 @@ extension on _StringsId {
         return 'Wikipedia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipedia (中文)';
-      case 'anime_download_back':
-        return 'Kembali';
-      case 'anime_download_batch':
-        return 'Massal';
-      case 'anime_download_category_all':
-        return 'Semua';
-      case 'anime_download_category_english':
-        return 'Terjemahan Inggris';
-      case 'anime_download_category_non_english':
-        return 'Non-Inggris';
-      case 'anime_download_category_raw':
-        return 'Mentah';
       case 'anime_download_delete':
         return 'Hapus';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => 'Ep ${count}';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'Unduh';
       case 'anime_download_generic_hint':
         return 'Tautan magnet';
-      case 'anime_download_generic_title':
-        return 'Tempel tautan (buku, video, apa saja)';
       case 'anime_download_include_subs':
         return 'Sertakan subtitle';
-      case 'anime_download_kind_auto':
-        return 'Otomatis';
-      case 'anime_download_kind_book':
-        return 'Buku';
       case 'anime_download_kind_video':
         return 'Video';
       case 'anime_download_magnet_invalid':
         return 'Tautan magnet tidak valid';
-      case 'anime_download_no_results':
-        return 'Tidak ada hasil';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'Layanan merespons dengan sukses tetapi mengembalikan 0 item. Kueri: ${query}; filter: ${filters}. Coba judul lain atau longgarkan filter.';
       case 'anime_download_no_subs':
         return 'Tanpa subtitle';
       case 'anime_download_no_tasks':
         return 'Belum ada tugas unduhan';
-      case 'anime_download_nyaa_query':
-        return 'Kata kunci pencarian Nyaa';
       case 'anime_download_play_now':
         return 'Putar sambil mengunduh';
       case 'anime_download_play_now_fail':
         return 'Belum siap (metadata tertunda atau koneksi gagal) — coba lagi nanti';
       case 'anime_download_play_now_ok':
         return 'Diimpor — buka dari pustaka video untuk memutar sambil mengunduh';
-      case 'anime_download_push':
-        return 'Kirim unduhan';
       case 'anime_download_push_failed':
         return 'Gagal mengirim ke qBittorrent';
       case 'anime_download_pushed':
         return 'Terkirim — akan diimpor otomatis setelah selesai';
-      case 'anime_download_refresh':
-        return 'Segarkan';
       case 'anime_download_relocate':
         return 'Ganti nama / pindah';
       case 'anime_download_relocate_engine_failed':
@@ -501910,55 +501522,22 @@ extension on _StringsId {
         return 'Subtitle diperlukan';
       case 'anime_download_retry':
         return 'Coba lagi';
-      case 'anime_download_search':
-        return 'Cari';
-      case 'anime_download_search_error_proxy_hint':
-        return 'Jika situs tidak bisa dijangkau langsung, atur proksi jaringan di pengaturan unduhan.';
-      case 'anime_download_search_failed':
-        return 'Pencarian gagal atau waktu habis. Ketuk coba lagi.';
-      case 'anime_download_search_hint':
-        return 'Judul anime';
       case 'anime_download_search_start_hint':
         return 'Cari judul di atas - torrent dan subtitle dicocokkan secara otomatis. Unduhan tidak terbatas pada video: buku, manga, buku audio, dan game juga diimpor.';
-      case 'anime_download_sort_date':
-        return 'Diterbitkan';
-      case 'anime_download_sort_seeders':
-        return 'Seeder';
       case 'anime_download_sort_size':
         return 'Ukuran';
       case 'anime_download_store_unavailable':
         return 'Penyimpanan rencana unduhan tidak tersedia';
       case 'anime_download_streaming_ready':
         return 'Di perpustakaan · unduhan berlanjut';
-      case 'anime_download_subs_badge':
-        return 'Sub';
-      case 'anime_download_subs_deferred':
-        return 'Subtitle dicocokkan setelah unduhan, dari file aktual paket';
-      case 'anime_download_subs_episodes_unverified':
-        return 'Nomor episode belum diverifikasi terhadap paket ini - subtitle mungkin berasal dari musim lain.';
-      case 'anime_download_subs_failed':
-        return 'Pencarian subtitle gagal. Ketuk coba lagi.';
-      case 'anime_download_subs_need_key':
-        return 'Masukkan kunci API Jimaku di atas untuk mencari subtitle.';
       case 'anime_download_subs_pending':
         return 'Subtitle: menunggu sampai unduhan selesai';
       case 'anime_download_subs_retrying':
         return 'Subtitle: belum tersedia — akan mencoba ulang secara otomatis';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'Tidak ada entri subtitle yang cocok dengan musim ${season} dari paket ini - tidak dipilih otomatis. Pilih satu secara manual jika tetap ingin.';
       case 'anime_download_subs_unmatched':
         return 'Subtitle: tidak ada kecocokan untuk paket ini';
-      case 'anime_download_tasks':
-        return 'Tugas unduhan';
-      case 'anime_download_title':
-        return 'Unduhan anime';
       case 'anime_download_trusted':
         return 'Terpercaya';
-      case 'anime_download_trusted_only':
-        return 'Hanya terpercaya';
-      case 'anime_download_unfiltered':
-        return 'Tanpa filter Terpercaya';
       case 'anki_action_open_settings':
         return 'Buka pengaturan';
       case 'anki_allow_duplicates':
@@ -505550,12 +505129,6 @@ extension on _StringsId {
         return 'Novel';
       case 'discovery_load_more':
         return 'Muat lebih banyak';
-      case 'discovery_nyaa_filter_all':
-        return 'Semua';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'Tanpa remake';
-      case 'discovery_nyaa_filter_trusted_only':
-        return 'Hanya tepercaya';
       case 'discovery_opds_add':
         return 'Tambah server OPDS';
       case 'discovery_opds_allow_http':
@@ -505887,8 +505460,6 @@ extension on _StringsId {
         return 'Dibatalkan';
       case 'download_status_queued':
         return 'Dalam antrean';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => 'Setelah episode ${episode}';
       case 'download_subscription_check_all':
         return 'Periksa semua';
       case 'download_subscription_check_now':
@@ -505899,8 +505470,6 @@ extension on _StringsId {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             'Unduh seluruh batch ${group} · ${resolution} sekali. Batch tidak memiliki episode berikutnya untuk diikuti.';
-      case 'download_subscription_created':
-        return 'Unduhan diantrean dan langganan dibuat';
       case 'download_subscription_delete':
         return 'Hapus langganan';
       case 'download_subscription_delete_confirm':
@@ -505908,17 +505477,12 @@ extension on _StringsId {
             'Hapus langganan untuk ${title}? Tugas yang sudah diunduh tetap ada.';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'Unduh dan berlangganan';
       case 'download_subscription_empty_body':
         return 'Di Jelajahi, pilih rilis satu episode dan gunakan Unduh dan berlangganan.';
       case 'download_subscription_empty_title':
         return 'Belum ada langganan';
       case 'download_subscription_last_checked':
         return ({required Object time}) => 'Terakhir diperiksa: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) =>
-            'Terbaru diantrean: episode ${episode}';
       case 'download_subscription_never_checked':
         return 'Belum pernah diperiksa';
       case 'download_subscription_running_hint':
@@ -518529,6 +518093,38 @@ extension on _StringsId {
         return 'Bagikan statistik penggunaan';
       case 'usage_stats_enabled_hint':
         return 'Sekali sehari, mengirim ID instalasi yang diturunkan dari perangkat ini (tetap sama setelah instal ulang), versi aplikasi, platform, kanal pembaruan, bahasa aplikasi, arsitektur CPU, versi utama sistem operasi, dan sumber instalasi (misalnya toko aplikasi atau penginstal) ke fushi.moe agar kami dapat menghitung pengguna aktif. Tidak ada data akun, pustaka, atau bacaan yang disertakan, dan alamat IP Anda tidak disimpan — hanya negara atau wilayah yang ditentukan darinya. Saat Anda melampirkan info perangkat ke masukan, ID instalasi ikut dikirim.';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return 'Musim gugur';
       case 'video_air_season_spring':
@@ -518639,16 +518235,6 @@ extension on _StringsId {
         return 'Maju 10d';
       case 'video_bottom_seek_forward_label':
         return '+10d';
-      case 'video_builtin_apibay_hint':
-        return 'Film dan acara TV. Indeks publik, tidak perlu akun.';
-      case 'video_builtin_knaben_hint':
-        return 'Film dan acara TV. Mengagregasi beberapa indexer publik.';
-      case 'video_builtin_nyaa_hint':
-        return 'Hanya anime. Film dan acara TV dicakup oleh dua indexer publik di bawah.';
-      case 'video_builtin_sources_hint':
-        return 'Dikirimkan bersama aplikasi: tanpa akun, tanpa kunci API. Nonaktifkan satu untuk mengecualikannya dari pencarian sumber daya.';
-      case 'video_builtin_sources_title':
-        return 'Sumber bawaan';
       case 'video_chapter_n':
         return ({required Object n}) => 'Bab ${n}';
       case 'video_chapters':
@@ -519674,8 +519260,8 @@ extension on _StringsId {
         return 'Impor ulang';
       case 'video_resource_missing_title':
         return 'Video tidak tersedia';
-      case 'video_resource_no_provider_hint':
-        return 'Pencarian ini tidak memiliki penyedia untuk dikueri. Aktifkan kembali sumber bawaan, atau tambahkan indexer Torznab, di Pengaturan, Unduhan, Penyedia sumber daya dan subtitle eksternal.';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'Tidak ada indexer sumber daya yang dikonfigurasi';
       case 'video_resource_query_failed':
@@ -519694,6 +519280,46 @@ extension on _StringsId {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: tidak dicari (sumber ini tidak dapat menangani kueri)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -520687,6 +520313,12 @@ extension on _StringsId {
         return 'Subtitel dalam bahasa Inggris dan banyak bahasa lain untuk film dan TV, dicocokkan dengan ID IMDb / TMDB. Kunci API gratis diperlukan; unduhan dihitung terhadap batas harian anonim per IP.';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count} rilis';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return 'Ciutkan';
       case 'video_subtitle_adjust_expand':
@@ -522459,67 +522091,32 @@ extension on _StringsIt {
         return 'Wikipedia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipedia (中文)';
-      case 'anime_download_back':
-        return 'Indietro';
-      case 'anime_download_batch':
-        return 'Lotto';
-      case 'anime_download_category_all':
-        return 'Tutti';
-      case 'anime_download_category_english':
-        return 'Tradotto in inglese';
-      case 'anime_download_category_non_english':
-        return 'Non inglese';
-      case 'anime_download_category_raw':
-        return 'Grezzo';
       case 'anime_download_delete':
         return 'Elimina';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => 'EP ${count}';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'Download';
       case 'anime_download_generic_hint':
         return 'Link magnet';
-      case 'anime_download_generic_title':
-        return 'Incolla un link (libri, video, qualsiasi cosa)';
       case 'anime_download_include_subs':
         return 'Includi sottotitoli';
-      case 'anime_download_kind_auto':
-        return 'Automatico';
-      case 'anime_download_kind_book':
-        return 'Libro';
       case 'anime_download_kind_video':
         return 'Video';
       case 'anime_download_magnet_invalid':
         return 'Link magnet non valido';
-      case 'anime_download_no_results':
-        return 'Nessun risultato';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'Il servizio ha risposto con successo ma ha restituito 0 elementi. Query: ${query}; filtri: ${filters}. Prova un altro titolo o allenta i filtri.';
       case 'anime_download_no_subs':
         return 'Nessun sottotitolo';
       case 'anime_download_no_tasks':
         return 'Nessun download in corso';
-      case 'anime_download_nyaa_query':
-        return 'Termini di ricerca Nyaa';
       case 'anime_download_play_now':
         return 'Riproduci durante il download';
       case 'anime_download_play_now_fail':
         return 'Non ancora pronto (metadati in attesa o connessione fallita) — riprova più tardi';
       case 'anime_download_play_now_ok':
         return 'Importato — aprilo dalla libreria video per riprodurlo durante il download';
-      case 'anime_download_push':
-        return 'Invia download';
       case 'anime_download_push_failed':
         return 'Invio a qBittorrent non riuscito';
       case 'anime_download_pushed':
         return 'Inviato — verrà importato automaticamente al termine';
-      case 'anime_download_refresh':
-        return 'Aggiorna';
       case 'anime_download_relocate':
         return 'Rinomina / sposta';
       case 'anime_download_relocate_engine_failed':
@@ -522545,55 +522142,22 @@ extension on _StringsIt {
         return 'Sottotitoli richiesti';
       case 'anime_download_retry':
         return 'Riprova';
-      case 'anime_download_search':
-        return 'Cerca';
-      case 'anime_download_search_error_proxy_hint':
-        return 'Se il sito non è raggiungibile direttamente, configura un proxy di rete nelle impostazioni di download.';
-      case 'anime_download_search_failed':
-        return 'Ricerca fallita o scaduta. Tocca Riprova.';
-      case 'anime_download_search_hint':
-        return 'Titolo anime';
       case 'anime_download_search_start_hint':
         return 'Cerca un titolo sopra — torrent e sottotitoli vengono abbinati automaticamente. I download non si limitano ai video: anche libri, manga, audiolibri e giochi vengono importati.';
-      case 'anime_download_sort_date':
-        return 'Pubblicazione';
-      case 'anime_download_sort_seeders':
-        return 'Seed';
       case 'anime_download_sort_size':
         return 'Dimensione';
       case 'anime_download_store_unavailable':
         return 'L\'archivio del piano di download non è disponibile';
       case 'anime_download_streaming_ready':
         return 'In libreria · il download continua';
-      case 'anime_download_subs_badge':
-        return 'Sub';
-      case 'anime_download_subs_deferred':
-        return 'I sottotitoli vengono abbinati dopo il download, dai file effettivi del pacchetto';
-      case 'anime_download_subs_episodes_unverified':
-        return 'I numeri degli episodi non sono verificati per questo pacchetto — i sottotitoli potrebbero provenire da un\'altra stagione.';
-      case 'anime_download_subs_failed':
-        return 'Ricerca sottotitoli fallita. Tocca Riprova.';
-      case 'anime_download_subs_need_key':
-        return 'Inserisci una chiave API Jimaku sopra per cercare i sottotitoli.';
       case 'anime_download_subs_pending':
         return 'Sottotitoli: in attesa del completamento del download';
       case 'anime_download_subs_retrying':
         return 'Sottotitoli: non ancora disponibili — nuovo tentativo automatico';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'Nessuna voce sottotitoli corrisponde alla stagione ${season} di questo pacchetto — non selezionata automaticamente. Scegline una manualmente se la vuoi comunque.';
       case 'anime_download_subs_unmatched':
         return 'Sottotitoli: nessuna corrispondenza per questo pacchetto';
-      case 'anime_download_tasks':
-        return 'Attività di download';
-      case 'anime_download_title':
-        return 'Download anime';
       case 'anime_download_trusted':
         return 'Affidabile';
-      case 'anime_download_trusted_only':
-        return 'Solo affidabili';
-      case 'anime_download_unfiltered':
-        return 'Nessun filtro Affidabili';
       case 'anki_action_open_settings':
         return 'Apri impostazioni';
       case 'anki_allow_duplicates':
@@ -526193,12 +525757,6 @@ extension on _StringsIt {
         return 'Romanzi';
       case 'discovery_load_more':
         return 'Carica altri';
-      case 'discovery_nyaa_filter_all':
-        return 'Tutti';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'Senza remake';
-      case 'discovery_nyaa_filter_trusted_only':
-        return 'Solo affidabili';
       case 'discovery_opds_add':
         return 'Aggiungi server OPDS';
       case 'discovery_opds_allow_http':
@@ -526530,8 +526088,6 @@ extension on _StringsIt {
         return 'Annullato';
       case 'download_status_queued':
         return 'In coda';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => 'Dopo l\'episodio ${episode}';
       case 'download_subscription_check_all':
         return 'Controlla tutto';
       case 'download_subscription_check_now':
@@ -526542,8 +526098,6 @@ extension on _StringsIt {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             'Scarica una sola volta l\'intero lotto ${group} · ${resolution}. Un lotto non ha un episodio successivo da seguire.';
-      case 'download_subscription_created':
-        return 'Download in coda e abbonamento creato';
       case 'download_subscription_delete':
         return 'Elimina abbonamento';
       case 'download_subscription_delete_confirm':
@@ -526551,17 +526105,12 @@ extension on _StringsIt {
             'Eliminare l\'abbonamento per ${title}? I download già effettuati vengono mantenuti.';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'Scarica e abbonati';
       case 'download_subscription_empty_body':
         return 'In Scopri, scegli un\'uscita a episodio singolo e usa Scarica e abbonati.';
       case 'download_subscription_empty_title':
         return 'Nessun abbonamento';
       case 'download_subscription_last_checked':
         return ({required Object time}) => 'Ultimo controllo: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) =>
-            'Ultimo in coda: episodio ${episode}';
       case 'download_subscription_never_checked':
         return 'Mai controllato';
       case 'download_subscription_running_hint':
@@ -539194,6 +538743,38 @@ extension on _StringsIt {
         return 'Condividi statistiche di utilizzo';
       case 'usage_stats_enabled_hint':
         return 'Una volta al giorno invia a fushi.moe un ID di installazione derivato da questo dispositivo (invariato dopo la reinstallazione), la versione dell\'app, la piattaforma, il canale di aggiornamento, la lingua dell\'app, l\'architettura della CPU, la versione principale del sistema e l\'origine dell\'installazione (es. store o programma di installazione), così possiamo contare gli utenti attivi. Non sono inclusi dati dell\'account, della libreria o di lettura, e il tuo indirizzo IP non viene memorizzato: si conserva solo il paese o la regione che ne deriva. Se alleghi le informazioni sul dispositivo a un feedback, l\'ID di installazione viene inviato insieme.';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return 'Autunno';
       case 'video_air_season_spring':
@@ -539305,16 +538886,6 @@ extension on _StringsIt {
         return 'Avanti 10s';
       case 'video_bottom_seek_forward_label':
         return '+10s';
-      case 'video_builtin_apibay_hint':
-        return 'Film e serie TV. Indice pubblico, nessun account necessario.';
-      case 'video_builtin_knaben_hint':
-        return 'Film e serie TV. Aggrega diversi indexer pubblici.';
-      case 'video_builtin_nyaa_hint':
-        return 'Solo anime. Film e serie TV sono coperti dai due indexer pubblici sotto.';
-      case 'video_builtin_sources_hint':
-        return 'Incluse nell\'app: nessun account, nessuna chiave API. Disattivane una per escluderla dalle ricerche di risorse.';
-      case 'video_builtin_sources_title':
-        return 'Fonti integrate';
       case 'video_chapter_n':
         return ({required Object n}) => 'Capitolo ${n}';
       case 'video_chapters':
@@ -540341,8 +539912,8 @@ extension on _StringsIt {
         return 'Reimporta';
       case 'video_resource_missing_title':
         return 'Video non disponibile';
-      case 'video_resource_no_provider_hint':
-        return 'Questa ricerca non aveva un provider da interrogare. Riabilita una fonte integrata, o aggiungi un indexer Torznab, in Impostazioni, Download, Provider di risorse e sottotitoli esterni.';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'Nessun indexer di risorse configurato';
       case 'video_resource_query_failed':
@@ -540361,6 +539932,46 @@ extension on _StringsIt {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: non cercato (questa fonte non può gestire la query)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -541355,6 +540966,12 @@ extension on _StringsIt {
         return 'Sottotitoli in inglese e in molte altre lingue per film e serie TV, abbinati tramite ID IMDb / TMDB. È richiesta una chiave API gratuita; i download contano per un limite giornaliero anonimo per IP.';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count} uscite';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return 'Comprimi';
       case 'video_subtitle_adjust_expand':
@@ -543124,67 +542741,32 @@ extension on _StringsJa {
         return 'Wikipedia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipedia (中文)';
-      case 'anime_download_back':
-        return '戻る';
-      case 'anime_download_batch':
-        return '一括';
-      case 'anime_download_category_all':
-        return 'すべて';
-      case 'anime_download_category_english':
-        return '英語翻訳';
-      case 'anime_download_category_non_english':
-        return '英語以外';
-      case 'anime_download_category_raw':
-        return '生';
       case 'anime_download_delete':
         return '削除';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => '${count} 話';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'ダウンロード';
       case 'anime_download_generic_hint':
         return 'マグネットリンク';
-      case 'anime_download_generic_title':
-        return 'リンクを貼り付け（書籍、動画など何でも）';
       case 'anime_download_include_subs':
         return '字幕を含める';
-      case 'anime_download_kind_auto':
-        return '自動';
-      case 'anime_download_kind_book':
-        return '書籍';
       case 'anime_download_kind_video':
         return '動画';
       case 'anime_download_magnet_invalid':
         return '無効なマグネットリンク';
-      case 'anime_download_no_results':
-        return '結果なし';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'サービスは正常に応答しましたが、0件でした。クエリ: ${query}; フィルター: ${filters}。別のタイトルを試すか、フィルターを緩めてください。';
       case 'anime_download_no_subs':
         return '字幕なし';
       case 'anime_download_no_tasks':
         return 'ダウンロードタスクはまだありません';
-      case 'anime_download_nyaa_query':
-        return 'Nyaa 検索語';
       case 'anime_download_play_now':
         return 'ダウンロード中に再生';
       case 'anime_download_play_now_fail':
         return 'まだ準備できていません（メタデータ取得中または接続失敗）— 後で再試行してください';
       case 'anime_download_play_now_ok':
         return 'インポートしました — 動画ライブラリから開いてダウンロード中に再生できます';
-      case 'anime_download_push':
-        return 'ダウンロードを転送';
       case 'anime_download_push_failed':
         return 'qBittorrent への転送に失敗しました';
       case 'anime_download_pushed':
         return '転送しました — 完了後に自動的にインポートされます';
-      case 'anime_download_refresh':
-        return '更新';
       case 'anime_download_relocate':
         return '名前変更 / 移動';
       case 'anime_download_relocate_engine_failed':
@@ -543209,55 +542791,22 @@ extension on _StringsJa {
         return '字幕が必要です';
       case 'anime_download_retry':
         return '再試行';
-      case 'anime_download_search':
-        return '検索';
-      case 'anime_download_search_error_proxy_hint':
-        return 'サイトに直接アクセスできない場合、ダウンロード設定でネットワークプロキシを設定してください。';
-      case 'anime_download_search_failed':
-        return '検索が失敗またはタイムアウトしました。再試行をタップしてください。';
-      case 'anime_download_search_hint':
-        return 'アニメタイトル';
       case 'anime_download_search_start_hint':
         return '上でタイトルを検索 — torrent と字幕が自動的にマッチングされます。ダウンロードは動画に限りません：書籍、漫画、オーディオブック、ゲームもインポートされます。';
-      case 'anime_download_sort_date':
-        return '公開日';
-      case 'anime_download_sort_seeders':
-        return 'シーダー';
       case 'anime_download_sort_size':
         return 'サイズ';
       case 'anime_download_store_unavailable':
         return 'ダウンロードプランストレージが利用できません';
       case 'anime_download_streaming_ready':
         return 'ライブラリに追加済み · ダウンロード継続中';
-      case 'anime_download_subs_badge':
-        return '字幕';
-      case 'anime_download_subs_deferred':
-        return '字幕はダウンロード後にパックの実際のファイルからマッチされます';
-      case 'anime_download_subs_episodes_unverified':
-        return 'エピソード番号はこのパックに対して未検証です - 別のシーズンの字幕の可能性があります。';
-      case 'anime_download_subs_failed':
-        return '字幕検索に失敗しました。再試行をタップしてください。';
-      case 'anime_download_subs_need_key':
-        return '字幕を検索するには、上に Jimaku API キーを入力してください。';
       case 'anime_download_subs_pending':
         return '字幕: ダウンロード完了まで保留';
       case 'anime_download_subs_retrying':
         return '字幕: まだ未公開 — 自動的にリトライします';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'シーズン${season}に一致する字幕エントリがありません - 自動選択されませんでした。それでも必要な場合は手動で選択してください。';
       case 'anime_download_subs_unmatched':
         return '字幕: このパックに一致なし';
-      case 'anime_download_tasks':
-        return 'ダウンロードタスク';
-      case 'anime_download_title':
-        return 'アニメダウンロード';
       case 'anime_download_trusted':
         return '信頼済み';
-      case 'anime_download_trusted_only':
-        return '信頼済みのみ';
-      case 'anime_download_unfiltered':
-        return 'Trustedフィルターなし';
       case 'anki_action_open_settings':
         return '設定を開く';
       case 'anki_allow_duplicates':
@@ -546826,12 +546375,6 @@ extension on _StringsJa {
         return '小説';
       case 'discovery_load_more':
         return 'もっと読み込む';
-      case 'discovery_nyaa_filter_all':
-        return 'すべて';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'remake を除外';
-      case 'discovery_nyaa_filter_trusted_only':
-        return '信頼済みのみ';
       case 'discovery_opds_add':
         return 'OPDS サーバーを追加';
       case 'discovery_opds_allow_http':
@@ -547161,8 +546704,6 @@ extension on _StringsJa {
         return 'キャンセル済み';
       case 'download_status_queued':
         return 'キュー待ち';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => '第${episode}話以降';
       case 'download_subscription_check_all':
         return 'すべてチェック';
       case 'download_subscription_check_now':
@@ -547173,8 +546714,6 @@ extension on _StringsJa {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             '${group} · ${resolution} のバッチ全体を一度にダウンロードします。バッチには追いかける次のエピソードはありません。';
-      case 'download_subscription_created':
-        return 'ダウンロードをキューに追加し、サブスクリプションを作成しました';
       case 'download_subscription_delete':
         return '購読を削除';
       case 'download_subscription_delete_confirm':
@@ -547182,16 +546721,12 @@ extension on _StringsJa {
             '「${title}」の購読を削除しますか？ダウンロード済みのタスクは保持されます。';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'ダウンロードして購読';
       case 'download_subscription_empty_body':
         return '発見ページで単話リリースを選び、「ダウンロードして購読」を使ってください。';
       case 'download_subscription_empty_title':
         return 'サブスクリプションはまだありません';
       case 'download_subscription_last_checked':
         return ({required Object time}) => '最終チェック: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) => '最新キュー: 第${episode}話';
       case 'download_subscription_never_checked':
         return '未チェック';
       case 'download_subscription_running_hint':
@@ -559759,6 +559294,38 @@ extension on _StringsJa {
         return '利用統計を送信';
       case 'usage_stats_enabled_hint':
         return '1 日 1 回、この端末から導出したインストール ID（再インストールしても変わりません）・アプリのバージョン・プラットフォーム・更新チャネル・アプリの表示言語・CPU アーキテクチャ・OS のメジャーバージョン・インストール元（ストアやインストーラーなど）を fushi.moe に送信し、アクティブユーザー数の集計に使います。アカウント・ライブラリ・読書内容は含まれず、IP アドレスも保存しません（そこから判定した国・地域のみ記録します）。フィードバックにデバイス情報を添付すると、インストール ID も一緒に送信されます。';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return '秋';
       case 'video_air_season_spring':
@@ -559868,16 +559435,6 @@ extension on _StringsJa {
         return '10 秒進む';
       case 'video_bottom_seek_forward_label':
         return '+10秒';
-      case 'video_builtin_apibay_hint':
-        return '映画とテレビ番組。公開インデックス、アカウント不要。';
-      case 'video_builtin_knaben_hint':
-        return '映画とテレビ番組。複数の公開インデクサーを集約。';
-      case 'video_builtin_nyaa_hint':
-        return 'アニメのみ。映画とテレビ番組は下の2つの公開インデクサーでカバーされます。';
-      case 'video_builtin_sources_hint':
-        return 'アプリに同梱：アカウントもAPIキーも不要。オフにするとリソース検索から除外されます。';
-      case 'video_builtin_sources_title':
-        return '組み込みソース';
       case 'video_chapter_n':
         return ({required Object n}) => 'チャプター ${n}';
       case 'video_chapters':
@@ -560893,8 +560450,8 @@ extension on _StringsJa {
         return '再インポート';
       case 'video_resource_missing_title':
         return '動画が利用できません';
-      case 'video_resource_no_provider_hint':
-        return 'この検索にはクエリ先のプロバイダーがありませんでした。組み込みソースを再有効化するか、設定 → ダウンロード → 外部リソース・字幕プロバイダーでTorznabインデクサーを追加してください。';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'リソースインデクサーが未設定';
       case 'video_resource_query_failed':
@@ -560913,6 +560470,46 @@ extension on _StringsJa {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: 検索しませんでした（このソースはこのクエリを処理できません）';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -561905,6 +561502,12 @@ extension on _StringsJa {
         return '映画やドラマ向けの英語などの多言語字幕を、IMDb / TMDB の ID で照合します。無料の API キーが必要です。ダウンロードは IP ごとの匿名の 1 日あたりの上限に数えられます。';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count}リリース';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return '折りたたむ';
       case 'video_subtitle_adjust_expand':
@@ -563660,67 +563263,32 @@ extension on _StringsKo {
         return 'Wikipedia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipedia (中文)';
-      case 'anime_download_back':
-        return '뒤로';
-      case 'anime_download_batch':
-        return '일괄';
-      case 'anime_download_category_all':
-        return '전체';
-      case 'anime_download_category_english':
-        return '영어 번역';
-      case 'anime_download_category_non_english':
-        return '영어 외';
-      case 'anime_download_category_raw':
-        return '무자막';
       case 'anime_download_delete':
         return '삭제';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => '${count}화';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return '다운로드';
       case 'anime_download_generic_hint':
         return '마그넷 링크';
-      case 'anime_download_generic_title':
-        return '링크 붙여넣기 (도서, 동영상 등)';
       case 'anime_download_include_subs':
         return '자막 포함';
-      case 'anime_download_kind_auto':
-        return '자동';
-      case 'anime_download_kind_book':
-        return '도서';
       case 'anime_download_kind_video':
         return '동영상';
       case 'anime_download_magnet_invalid':
         return '유효하지 않은 마그넷 링크';
-      case 'anime_download_no_results':
-        return '결과 없음';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            '서비스가 정상 응답했지만 0개의 항목을 반환했습니다. 쿼리: ${query}; 필터: ${filters}. 다른 제목을 시도하거나 필터를 완화하세요.';
       case 'anime_download_no_subs':
         return '자막 없음';
       case 'anime_download_no_tasks':
         return '다운로드 작업이 없습니다';
-      case 'anime_download_nyaa_query':
-        return 'Nyaa 검색어';
       case 'anime_download_play_now':
         return '다운로드하면서 재생';
       case 'anime_download_play_now_fail':
         return '아직 준비되지 않았습니다 (메타데이터 대기 중 또는 연결 실패) — 나중에 다시 시도하세요';
       case 'anime_download_play_now_ok':
         return '가져오기 완료 — 동영상 라이브러리에서 열어 다운로드하면서 재생하세요';
-      case 'anime_download_push':
-        return '다운로드 전송';
       case 'anime_download_push_failed':
         return 'qBittorrent로 전송 실패';
       case 'anime_download_pushed':
         return '전송 완료 — 완료되면 자동으로 가져옵니다';
-      case 'anime_download_refresh':
-        return '새로고침';
       case 'anime_download_relocate':
         return '이름 변경 / 이동';
       case 'anime_download_relocate_engine_failed':
@@ -563745,55 +563313,22 @@ extension on _StringsKo {
         return '자막 필요';
       case 'anime_download_retry':
         return '재시도';
-      case 'anime_download_search':
-        return '검색';
-      case 'anime_download_search_error_proxy_hint':
-        return '사이트에 직접 접속할 수 없는 경우 다운로드 설정에서 네트워크 프록시를 구성하세요.';
-      case 'anime_download_search_failed':
-        return '검색 실패 또는 시간 초과. 재시도를 탭하세요.';
-      case 'anime_download_search_hint':
-        return '애니메이션 제목';
       case 'anime_download_search_start_hint':
         return '위에서 제목을 검색하세요 - 토렌트와 자막이 자동으로 매칭됩니다. 다운로드는 동영상에 국한되지 않으며 도서, 만화, 오디오북, 게임도 가져올 수 있습니다.';
-      case 'anime_download_sort_date':
-        return '게시일';
-      case 'anime_download_sort_seeders':
-        return '시더';
       case 'anime_download_sort_size':
         return '크기';
       case 'anime_download_store_unavailable':
         return '다운로드 계획 저장소를 사용할 수 없습니다';
       case 'anime_download_streaming_ready':
         return '라이브러리에 있음 · 다운로드 계속 중';
-      case 'anime_download_subs_badge':
-        return '자막';
-      case 'anime_download_subs_deferred':
-        return '자막은 다운로드 후 팩의 실제 파일에서 매칭됩니다';
-      case 'anime_download_subs_episodes_unverified':
-        return '에피소드 번호가 이 팩과 검증되지 않았습니다 - 자막이 다른 시즌의 것일 수 있습니다.';
-      case 'anime_download_subs_failed':
-        return '자막 검색 실패. 재시도를 탭하세요.';
-      case 'anime_download_subs_need_key':
-        return '자막을 검색하려면 위에 Jimaku API 키를 입력하세요.';
       case 'anime_download_subs_pending':
         return '자막: 다운로드 완료 대기 중';
       case 'anime_download_subs_retrying':
         return '자막: 아직 올라오지 않음 — 자동으로 재시도합니다';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            '이 팩의 시즌 ${season}과 일치하는 자막 항목이 없습니다 - 자동 선택되지 않았습니다. 그래도 원하면 수동으로 선택하세요.';
       case 'anime_download_subs_unmatched':
         return '자막: 이 팩과 일치하는 항목 없음';
-      case 'anime_download_tasks':
-        return '다운로드 작업';
-      case 'anime_download_title':
-        return '애니메이션 다운로드';
       case 'anime_download_trusted':
         return '신뢰됨';
-      case 'anime_download_trusted_only':
-        return '신뢰된 항목만';
-      case 'anime_download_unfiltered':
-        return '신뢰 필터 없음';
       case 'anki_action_open_settings':
         return '설정 열기';
       case 'anki_allow_duplicates':
@@ -567362,12 +566897,6 @@ extension on _StringsKo {
         return '소설';
       case 'discovery_load_more':
         return '더 보기';
-      case 'discovery_nyaa_filter_all':
-        return '전체';
-      case 'discovery_nyaa_filter_no_remakes':
-        return '리메이크 제외';
-      case 'discovery_nyaa_filter_trusted_only':
-        return '신뢰할 수 있는 항목만';
       case 'discovery_opds_add':
         return 'OPDS 서버 추가';
       case 'discovery_opds_allow_http':
@@ -567698,8 +567227,6 @@ extension on _StringsKo {
         return '취소됨';
       case 'download_status_queued':
         return '대기 중';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => '${episode}화 이후';
       case 'download_subscription_check_all':
         return '모두 확인';
       case 'download_subscription_check_now':
@@ -567710,8 +567237,6 @@ extension on _StringsKo {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             '${group} · ${resolution} 전체 묶음을 한 번 다운로드합니다. 묶음에는 따라갈 다음 에피소드가 없습니다.';
-      case 'download_subscription_created':
-        return '다운로드 대기열에 추가 및 구독 생성됨';
       case 'download_subscription_delete':
         return '구독 삭제';
       case 'download_subscription_delete_confirm':
@@ -567719,16 +567244,12 @@ extension on _StringsKo {
             '${title}에 대한 구독을 삭제하시겠습니까? 다운로드된 작업은 유지됩니다.';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return '다운로드 및 구독';
       case 'download_subscription_empty_body':
         return '탐색에서 단편 에피소드 릴리스를 선택하고 다운로드 및 구독을 사용하세요.';
       case 'download_subscription_empty_title':
         return '아직 구독이 없습니다';
       case 'download_subscription_last_checked':
         return ({required Object time}) => '마지막 확인: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) => '최근 대기열: ${episode}화';
       case 'download_subscription_never_checked':
         return '확인한 적 없음';
       case 'download_subscription_running_hint':
@@ -580300,6 +579821,38 @@ extension on _StringsKo {
         return '사용 통계 보내기';
       case 'usage_stats_enabled_hint':
         return '하루에 한 번 이 기기에서 파생된 설치 ID(재설치해도 바뀌지 않음), 앱 버전, 플랫폼, 업데이트 채널, 앱 언어, CPU 아키텍처, OS 주 버전, 설치 경로(앱 스토어·설치 프로그램 등)를 fushi.moe로 보내 활성 사용자 수를 집계합니다. 계정, 라이브러리, 읽기 데이터는 포함되지 않으며 IP 주소도 저장하지 않으며, 이를 통해 판별한 국가/지역만 기록합니다. 피드백에 기기 정보를 첨부하면 설치 ID도 함께 전송됩니다.';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return '가을';
       case 'video_air_season_spring':
@@ -580409,16 +579962,6 @@ extension on _StringsKo {
         return '10초 앞으로';
       case 'video_bottom_seek_forward_label':
         return '+10초';
-      case 'video_builtin_apibay_hint':
-        return '영화 및 TV 프로그램. 공개 인덱스, 계정 불필요.';
-      case 'video_builtin_knaben_hint':
-        return '영화 및 TV 프로그램. 여러 공개 인덱서를 통합합니다.';
-      case 'video_builtin_nyaa_hint':
-        return '애니메이션 전용. 영화 및 TV 프로그램은 아래 두 공개 인덱서에서 다룹니다.';
-      case 'video_builtin_sources_hint':
-        return '앱에 내장: 계정이나 API 키 불필요. 하나를 끄면 리소스 검색에서 제외됩니다.';
-      case 'video_builtin_sources_title':
-        return '내장 소스';
       case 'video_chapter_n':
         return ({required Object n}) => '챕터 ${n}';
       case 'video_chapters':
@@ -581439,8 +580982,8 @@ extension on _StringsKo {
         return '다시 가져오기';
       case 'video_resource_missing_title':
         return '동영상을 사용할 수 없음';
-      case 'video_resource_no_provider_hint':
-        return '이 검색에 쿼리할 제공자가 없습니다. 설정 > 다운로드 > 외부 리소스 및 자막 제공자에서 내장 소스를 다시 활성화하거나 Torznab 인덱서를 추가하세요.';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return '리소스 인덱서가 설정되지 않았습니다';
       case 'video_resource_query_failed':
@@ -581459,6 +581002,46 @@ extension on _StringsKo {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: 검색하지 않음(이 소스는 해당 검색어를 처리할 수 없음)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -582450,6 +582033,12 @@ extension on _StringsKo {
         return '영화와 TV용 영어 및 여러 언어의 자막을 IMDb / TMDB ID로 매칭합니다. 무료 API 키가 필요하며, 다운로드는 IP당 익명 일일 한도에 포함됩니다.';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count}개 릴리스';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return '접기';
       case 'video_subtitle_adjust_expand':
@@ -584216,67 +583805,32 @@ extension on _StringsNl {
         return 'Wikipedia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipedia (中文)';
-      case 'anime_download_back':
-        return 'Terug';
-      case 'anime_download_batch':
-        return 'Batch';
-      case 'anime_download_category_all':
-        return 'Alles';
-      case 'anime_download_category_english':
-        return 'Engels vertaald';
-      case 'anime_download_category_non_english':
-        return 'Niet-Engels';
-      case 'anime_download_category_raw':
-        return 'Raw';
       case 'anime_download_delete':
         return 'Verwijderen';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => 'Afl. ${count}';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'Downloaden';
       case 'anime_download_generic_hint':
         return 'Magnetlink';
-      case 'anime_download_generic_title':
-        return 'Plak een link (boeken, video\'s, alles)';
       case 'anime_download_include_subs':
         return 'Ondertitels toevoegen';
-      case 'anime_download_kind_auto':
-        return 'Automatisch';
-      case 'anime_download_kind_book':
-        return 'Boek';
       case 'anime_download_kind_video':
         return 'Video';
       case 'anime_download_magnet_invalid':
         return 'Ongeldige magnetlink';
-      case 'anime_download_no_results':
-        return 'Geen resultaten';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'De service reageerde succesvol maar gaf 0 items terug. Zoekopdracht: ${query}; filters: ${filters}. Probeer een andere titel of versoepl de filters.';
       case 'anime_download_no_subs':
         return 'Geen ondertitels';
       case 'anime_download_no_tasks':
         return 'Nog geen downloadtaken';
-      case 'anime_download_nyaa_query':
-        return 'Nyaa zoektermen';
       case 'anime_download_play_now':
         return 'Afspelen tijdens downloaden';
       case 'anime_download_play_now_fail':
         return 'Nog niet gereed (metadata wordt opgehaald of verbinding mislukt) — probeer het later opnieuw';
       case 'anime_download_play_now_ok':
         return 'Geïmporteerd — open het vanuit de videobibliotheek om af te spelen tijdens het downloaden';
-      case 'anime_download_push':
-        return 'Download doorsturen';
       case 'anime_download_push_failed':
         return 'Doorsturen naar qBittorrent mislukt';
       case 'anime_download_pushed':
         return 'Doorgestuurd — wordt automatisch geïmporteerd na voltooiing';
-      case 'anime_download_refresh':
-        return 'Vernieuwen';
       case 'anime_download_relocate':
         return 'Hernoemen / verplaatsen';
       case 'anime_download_relocate_engine_failed':
@@ -584302,55 +583856,22 @@ extension on _StringsNl {
         return 'Ondertitels vereist';
       case 'anime_download_retry':
         return 'Opnieuw';
-      case 'anime_download_search':
-        return 'Zoeken';
-      case 'anime_download_search_error_proxy_hint':
-        return 'Als de site niet direct bereikbaar is, stel dan een netwerkproxy in bij de downloadinstellingen.';
-      case 'anime_download_search_failed':
-        return 'Zoeken mislukt of verlopen. Tik op opnieuw.';
-      case 'anime_download_search_hint':
-        return 'Animetitel';
       case 'anime_download_search_start_hint':
         return 'Zoek hierboven op titel — torrents en ondertitels worden automatisch gekoppeld. Downloads zijn niet beperkt tot video: boeken, manga, luisterboeken en games worden ook geïmporteerd.';
-      case 'anime_download_sort_date':
-        return 'Gepubliceerd';
-      case 'anime_download_sort_seeders':
-        return 'Seeders';
       case 'anime_download_sort_size':
         return 'Grootte';
       case 'anime_download_store_unavailable':
         return 'Downloadplanopslag is niet beschikbaar';
       case 'anime_download_streaming_ready':
         return 'In bibliotheek · download gaat door';
-      case 'anime_download_subs_badge':
-        return 'Subs';
-      case 'anime_download_subs_deferred':
-        return 'Ondertitels worden na het downloaden gekoppeld, aan de hand van de daadwerkelijke bestanden';
-      case 'anime_download_subs_episodes_unverified':
-        return 'Afleveringsnummers zijn niet geverifieerd tegen dit pakket — ondertitels kunnen van een ander seizoen komen.';
-      case 'anime_download_subs_failed':
-        return 'Ondertitels zoeken mislukt. Tik op opnieuw.';
-      case 'anime_download_subs_need_key':
-        return 'Voer hierboven een Jimaku API-sleutel in om ondertitels te zoeken.';
       case 'anime_download_subs_pending':
         return 'Ondertitels: wachtend tot download voltooid';
       case 'anime_download_subs_retrying':
         return 'Ondertitels: nog niet beschikbaar — wordt automatisch opnieuw geprobeerd';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'Geen ondertitelitem komt overeen met seizoen ${season} van dit pakket — niet automatisch geselecteerd. Kies er handmatig een als je het toch wilt.';
       case 'anime_download_subs_unmatched':
         return 'Ondertitels: geen match voor dit pakket';
-      case 'anime_download_tasks':
-        return 'Downloadtaken';
-      case 'anime_download_title':
-        return 'Anime downloaden';
       case 'anime_download_trusted':
         return 'Vertrouwd';
-      case 'anime_download_trusted_only':
-        return 'Alleen vertrouwd';
-      case 'anime_download_unfiltered':
-        return 'Geen Vertrouwd-filter';
       case 'anki_action_open_settings':
         return 'Instellingen openen';
       case 'anki_allow_duplicates':
@@ -587949,12 +587470,6 @@ extension on _StringsNl {
         return 'Romans';
       case 'discovery_load_more':
         return 'Meer laden';
-      case 'discovery_nyaa_filter_all':
-        return 'Alles';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'Geen remakes';
-      case 'discovery_nyaa_filter_trusted_only':
-        return 'Alleen vertrouwd';
       case 'discovery_opds_add':
         return 'OPDS-server toevoegen';
       case 'discovery_opds_allow_http':
@@ -588285,8 +587800,6 @@ extension on _StringsNl {
         return 'Geannuleerd';
       case 'download_status_queued':
         return 'In wachtrij';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => 'Na aflevering ${episode}';
       case 'download_subscription_check_all':
         return 'Alles controleren';
       case 'download_subscription_check_now':
@@ -588297,8 +587810,6 @@ extension on _StringsNl {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             'Download de hele batch ${group} · ${resolution} één keer. Een batch heeft geen volgende aflevering om te volgen.';
-      case 'download_subscription_created':
-        return 'Download in wachtrij en abonnement aangemaakt';
       case 'download_subscription_delete':
         return 'Abonnement verwijderen';
       case 'download_subscription_delete_confirm':
@@ -588306,17 +587817,12 @@ extension on _StringsNl {
             'Het abonnement voor ${title} verwijderen? Gedownloade taken worden bewaard.';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'Downloaden en abonneren';
       case 'download_subscription_empty_body':
         return 'Kies in Ontdekken een afzonderlijke aflevering en gebruik Downloaden en abonneren.';
       case 'download_subscription_empty_title':
         return 'Nog geen abonnementen';
       case 'download_subscription_last_checked':
         return ({required Object time}) => 'Laatst gecontroleerd: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) =>
-            'Laatst in wachtrij: aflevering ${episode}';
       case 'download_subscription_never_checked':
         return 'Nooit gecontroleerd';
       case 'download_subscription_running_hint':
@@ -600944,6 +600450,38 @@ extension on _StringsNl {
         return 'Gebruiksstatistieken delen';
       case 'usage_stats_enabled_hint':
         return 'Stuurt één keer per dag een van dit apparaat afgeleide installatie-ID (blijft gelijk na herinstallatie), de app-versie, het platform, het updatekanaal, de app-taal, de CPU-architectuur, de hoofdversie van het besturingssysteem en de installatiebron (bijv. app-winkel of installatieprogramma) naar fushi.moe, zodat we actieve gebruikers kunnen tellen. Er worden geen account-, bibliotheek- of leesgegevens meegestuurd en je IP-adres wordt niet opgeslagen; alleen het daaruit afgeleide land of de regio wordt bewaard. Als je apparaatinformatie aan feedback toevoegt, wordt de installatie-ID meegestuurd.';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return 'Herfst';
       case 'video_air_season_spring':
@@ -601054,16 +600592,6 @@ extension on _StringsNl {
         return '10s vooruit';
       case 'video_bottom_seek_forward_label':
         return '+10s';
-      case 'video_builtin_apibay_hint':
-        return 'Films en tv-series. Openbare index, geen account nodig.';
-      case 'video_builtin_knaben_hint':
-        return 'Films en tv-series. Aggregeert meerdere openbare indexers.';
-      case 'video_builtin_nyaa_hint':
-        return 'Alleen anime. Films en tv-series worden gedekt door de twee onderstaande openbare indexers.';
-      case 'video_builtin_sources_hint':
-        return 'Meegeleverd met de app: geen account, geen API-sleutel. Schakel er een uit om deze buiten resource-zoekopdrachten te houden.';
-      case 'video_builtin_sources_title':
-        return 'Ingebouwde bronnen';
       case 'video_chapter_n':
         return ({required Object n}) => 'Hoofdstuk ${n}';
       case 'video_chapters':
@@ -602091,8 +601619,8 @@ extension on _StringsNl {
         return 'Opnieuw importeren';
       case 'video_resource_missing_title':
         return 'Video niet beschikbaar';
-      case 'video_resource_no_provider_hint':
-        return 'Deze zoekopdracht had geen provider om te bevragen. Schakel een ingebouwde bron opnieuw in, of voeg een Torznab-indexer toe, via Instellingen, Downloads, Externe resource- en ondertitelproviders.';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'Geen resource-indexer geconfigureerd';
       case 'video_resource_query_failed':
@@ -602111,6 +601639,46 @@ extension on _StringsNl {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: niet doorzocht (deze bron kan de zoekopdracht niet verwerken)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -603106,6 +602674,12 @@ extension on _StringsNl {
         return 'Ondertitels in het Engels en vele andere talen voor films en tv, gematcht op IMDb-/TMDB-id. Een gratis API-sleutel is vereist; downloads tellen mee voor een anonieme dagelijkse limiet per IP.';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count} releases';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return 'Inklappen';
       case 'video_subtitle_adjust_expand':
@@ -604880,67 +604454,32 @@ extension on _StringsPtBr {
         return 'Wikipedia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipedia (中文)';
-      case 'anime_download_back':
-        return 'Voltar';
-      case 'anime_download_batch':
-        return 'Lote';
-      case 'anime_download_category_all':
-        return 'Todos';
-      case 'anime_download_category_english':
-        return 'Traduzido para inglês';
-      case 'anime_download_category_non_english':
-        return 'Não inglês';
-      case 'anime_download_category_raw':
-        return 'Sem legenda';
       case 'anime_download_delete':
         return 'Excluir';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => 'EP ${count}';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'Download';
       case 'anime_download_generic_hint':
         return 'Link magnet';
-      case 'anime_download_generic_title':
-        return 'Cole um link (livros, vídeos, qualquer coisa)';
       case 'anime_download_include_subs':
         return 'Incluir legendas';
-      case 'anime_download_kind_auto':
-        return 'Automático';
-      case 'anime_download_kind_book':
-        return 'Livro';
       case 'anime_download_kind_video':
         return 'Vídeo';
       case 'anime_download_magnet_invalid':
         return 'Link magnet inválido';
-      case 'anime_download_no_results':
-        return 'Sem resultados';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'O serviço respondeu com sucesso mas retornou 0 itens. Consulta: ${query}; filtros: ${filters}. Tente outro título ou reduza os filtros.';
       case 'anime_download_no_subs':
         return 'Sem legendas';
       case 'anime_download_no_tasks':
         return 'Nenhuma tarefa de download ainda';
-      case 'anime_download_nyaa_query':
-        return 'Termos de busca no Nyaa';
       case 'anime_download_play_now':
         return 'Assistir durante o download';
       case 'anime_download_play_now_fail':
         return 'Ainda não está pronto (metadados pendentes ou conexão falhou) — tente novamente depois';
       case 'anime_download_play_now_ok':
         return 'Importado — abra pela biblioteca de vídeos para assistir durante o download';
-      case 'anime_download_push':
-        return 'Enviar download';
       case 'anime_download_push_failed':
         return 'Falha ao enviar para o qBittorrent';
       case 'anime_download_pushed':
         return 'Enviado — será importado automaticamente quando terminar';
-      case 'anime_download_refresh':
-        return 'Atualizar';
       case 'anime_download_relocate':
         return 'Renomear / mover';
       case 'anime_download_relocate_engine_failed':
@@ -604966,55 +604505,22 @@ extension on _StringsPtBr {
         return 'Legendas obrigatórias';
       case 'anime_download_retry':
         return 'Tentar novamente';
-      case 'anime_download_search':
-        return 'Buscar';
-      case 'anime_download_search_error_proxy_hint':
-        return 'Se o site não pode ser acessado diretamente, configure um proxy de rede nas configurações de download.';
-      case 'anime_download_search_failed':
-        return 'Busca falhou ou expirou. Toque em tentar novamente.';
-      case 'anime_download_search_hint':
-        return 'Título do anime';
       case 'anime_download_search_start_hint':
         return 'Busque um título acima — torrents e legendas são combinados automaticamente. Downloads não se limitam a vídeo: livros, mangás, audiobooks e jogos também são importados.';
-      case 'anime_download_sort_date':
-        return 'Publicação';
-      case 'anime_download_sort_seeders':
-        return 'Seeders';
       case 'anime_download_sort_size':
         return 'Tamanho';
       case 'anime_download_store_unavailable':
         return 'Armazenamento de planos de download indisponível';
       case 'anime_download_streaming_ready':
         return 'Na biblioteca · download continua';
-      case 'anime_download_subs_badge':
-        return 'Legendas';
-      case 'anime_download_subs_deferred':
-        return 'Legendas são combinadas após o download, a partir dos arquivos reais do pacote';
-      case 'anime_download_subs_episodes_unverified':
-        return 'Números de episódio não verificados contra este pacote - as legendas podem ser de outra temporada.';
-      case 'anime_download_subs_failed':
-        return 'Busca de legendas falhou. Toque em tentar novamente.';
-      case 'anime_download_subs_need_key':
-        return 'Insira uma chave de API Jimaku acima para buscar legendas.';
       case 'anime_download_subs_pending':
         return 'Legendas: pendente até o download concluir';
       case 'anime_download_subs_retrying':
         return 'Legendas: ainda não disponíveis — tentará novamente automaticamente';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'Nenhuma entrada de legenda corresponde à temporada ${season} deste pacote - não selecionada automaticamente. Escolha uma manualmente se desejar.';
       case 'anime_download_subs_unmatched':
         return 'Legendas: sem correspondência para este pacote';
-      case 'anime_download_tasks':
-        return 'Tarefas de download';
-      case 'anime_download_title':
-        return 'Download de anime';
       case 'anime_download_trusted':
         return 'Confiável';
-      case 'anime_download_trusted_only':
-        return 'Apenas confiáveis';
-      case 'anime_download_unfiltered':
-        return 'Sem filtro de Confiável';
       case 'anki_action_open_settings':
         return 'Abrir configurações';
       case 'anki_allow_duplicates':
@@ -608613,12 +608119,6 @@ extension on _StringsPtBr {
         return 'Romances';
       case 'discovery_load_more':
         return 'Carregar mais';
-      case 'discovery_nyaa_filter_all':
-        return 'Todos';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'Sem remakes';
-      case 'discovery_nyaa_filter_trusted_only':
-        return 'Somente confiáveis';
       case 'discovery_opds_add':
         return 'Adicionar servidor OPDS';
       case 'discovery_opds_allow_http':
@@ -608949,8 +608449,6 @@ extension on _StringsPtBr {
         return 'Cancelado';
       case 'download_status_queued':
         return 'Na fila';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => 'Após episódio ${episode}';
       case 'download_subscription_check_all':
         return 'Verificar todos';
       case 'download_subscription_check_now':
@@ -608961,8 +608459,6 @@ extension on _StringsPtBr {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             'Baixe o lote completo de ${group} — ${resolution} uma vez. Um lote não tem próximo episódio para acompanhar.';
-      case 'download_subscription_created':
-        return 'Download enfileirado e assinatura criada';
       case 'download_subscription_delete':
         return 'Excluir assinatura';
       case 'download_subscription_delete_confirm':
@@ -608970,17 +608466,12 @@ extension on _StringsPtBr {
             'Excluir a assinatura de ${title}? Tarefas já baixadas são mantidas.';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'Baixar e assinar';
       case 'download_subscription_empty_body':
         return 'Em Descobrir, escolha um lançamento de episódio único e use Baixar e assinar.';
       case 'download_subscription_empty_title':
         return 'Nenhuma assinatura ainda';
       case 'download_subscription_last_checked':
         return ({required Object time}) => 'Última verificação: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) =>
-            'Último enfileirado: episódio ${episode}';
       case 'download_subscription_never_checked':
         return 'Nunca verificado';
       case 'download_subscription_running_hint':
@@ -621602,6 +621093,38 @@ extension on _StringsPtBr {
         return 'Compartilhar estatísticas de uso';
       case 'usage_stats_enabled_hint':
         return 'Uma vez por dia, envia ao fushi.moe um ID de instalação derivado deste dispositivo (não muda ao reinstalar), a versão do app, a plataforma, o canal de atualização, o idioma do app, a arquitetura da CPU, a versão principal do sistema e a origem da instalação (ex.: loja ou instalador) para que possamos contar os usuários ativos. Nenhum dado de conta, biblioteca ou leitura é incluído, e seu endereço IP não é armazenado — só o país ou região deduzido dele é guardado. Ao anexar informações do dispositivo a um feedback, o ID de instalação é enviado junto.';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return 'Outono';
       case 'video_air_season_spring':
@@ -621712,16 +621235,6 @@ extension on _StringsPtBr {
         return 'Avançar 10s';
       case 'video_bottom_seek_forward_label':
         return '+10s';
-      case 'video_builtin_apibay_hint':
-        return 'Filmes e séries de TV. Índice público, sem necessidade de conta.';
-      case 'video_builtin_knaben_hint':
-        return 'Filmes e séries de TV. Agrega vários indexadores públicos.';
-      case 'video_builtin_nyaa_hint':
-        return 'Apenas anime. Filmes e séries de TV são cobertos pelos dois indexadores públicos abaixo.';
-      case 'video_builtin_sources_hint':
-        return 'Vêm com o app: sem conta, sem chave de API. Desative uma para mantê-la fora das buscas de recursos.';
-      case 'video_builtin_sources_title':
-        return 'Fontes integradas';
       case 'video_chapter_n':
         return ({required Object n}) => 'Capítulo ${n}';
       case 'video_chapters':
@@ -622750,8 +622263,8 @@ extension on _StringsPtBr {
         return 'Reimportar';
       case 'video_resource_missing_title':
         return 'Vídeo indisponível';
-      case 'video_resource_no_provider_hint':
-        return 'Esta busca não tinha provedor para consultar. Reative uma fonte integrada ou adicione um indexador Torznab em Configurações, Downloads, Provedores externos de recursos e legendas.';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'Nenhum indexador de recursos configurado';
       case 'video_resource_query_failed':
@@ -622770,6 +622283,46 @@ extension on _StringsPtBr {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: não pesquisada (esta fonte não consegue processar a consulta)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -623764,6 +623317,12 @@ extension on _StringsPtBr {
         return 'Legendas em inglês e em muitos outros idiomas para filmes e séries, associadas pelo ID do IMDb / TMDB. É necessária uma chave de API gratuita; os downloads contam para um limite diário anônimo por IP.';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count} lançamentos';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return 'Recolher';
       case 'video_subtitle_adjust_expand':
@@ -625535,67 +625094,32 @@ extension on _StringsRu {
         return 'Википедия (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Википедия (中文)';
-      case 'anime_download_back':
-        return 'Назад';
-      case 'anime_download_batch':
-        return 'Пакет';
-      case 'anime_download_category_all':
-        return 'Все';
-      case 'anime_download_category_english':
-        return 'Англ. перевод';
-      case 'anime_download_category_non_english':
-        return 'Не английский';
-      case 'anime_download_category_raw':
-        return 'Без перевода';
       case 'anime_download_delete':
         return 'Удалить';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => 'Серия ${count}';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'Скачать';
       case 'anime_download_generic_hint':
         return 'Magnet-ссылка';
-      case 'anime_download_generic_title':
-        return 'Вставьте ссылку (книги, видео, что угодно)';
       case 'anime_download_include_subs':
         return 'Включить субтитры';
-      case 'anime_download_kind_auto':
-        return 'Авто';
-      case 'anime_download_kind_book':
-        return 'Книга';
       case 'anime_download_kind_video':
         return 'Видео';
       case 'anime_download_magnet_invalid':
         return 'Недействительная magnet-ссылка';
-      case 'anime_download_no_results':
-        return 'Нет результатов';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'Сервис ответил успешно, но вернул 0 результатов. Запрос: ${query}; фильтры: ${filters}. Попробуйте другое название или ослабьте фильтры.';
       case 'anime_download_no_subs':
         return 'Без субтитров';
       case 'anime_download_no_tasks':
         return 'Загрузок пока нет';
-      case 'anime_download_nyaa_query':
-        return 'Поисковый запрос Nyaa';
       case 'anime_download_play_now':
         return 'Воспроизвести во время загрузки';
       case 'anime_download_play_now_fail':
         return 'Ещё не готово (ожидание метаданных или ошибка подключения) — попробуйте позже';
       case 'anime_download_play_now_ok':
         return 'Импортировано — откройте из видеотеки для воспроизведения во время загрузки';
-      case 'anime_download_push':
-        return 'Отправить загрузку';
       case 'anime_download_push_failed':
         return 'Не удалось отправить в qBittorrent';
       case 'anime_download_pushed':
         return 'Отправлено — будет автоматически импортировано после завершения';
-      case 'anime_download_refresh':
-        return 'Обновить';
       case 'anime_download_relocate':
         return 'Переименовать / переместить';
       case 'anime_download_relocate_engine_failed':
@@ -625621,55 +625145,22 @@ extension on _StringsRu {
         return 'Требуются субтитры';
       case 'anime_download_retry':
         return 'Повторить';
-      case 'anime_download_search':
-        return 'Поиск';
-      case 'anime_download_search_error_proxy_hint':
-        return 'Если сайт недоступен напрямую, настройте сетевой прокси в параметрах загрузки.';
-      case 'anime_download_search_failed':
-        return 'Поиск не удался или превышено время ожидания. Нажмите «Повторить».';
-      case 'anime_download_search_hint':
-        return 'Название аниме';
       case 'anime_download_search_start_hint':
         return 'Введите название выше — торренты и субтитры подбираются автоматически. Загрузки не ограничены видео: книги, манга, аудиокниги и игры тоже импортируются.';
-      case 'anime_download_sort_date':
-        return 'Дата публикации';
-      case 'anime_download_sort_seeders':
-        return 'Раздающие';
       case 'anime_download_sort_size':
         return 'Размер';
       case 'anime_download_store_unavailable':
         return 'Хранилище плана загрузки недоступно';
       case 'anime_download_streaming_ready':
         return 'В библиотеке · загрузка продолжается';
-      case 'anime_download_subs_badge':
-        return 'Субтитры';
-      case 'anime_download_subs_deferred':
-        return 'Субтитры подбираются после загрузки, по фактическим файлам пакета';
-      case 'anime_download_subs_episodes_unverified':
-        return 'Номера эпизодов не проверены для этого пакета — субтитры могут быть от другого сезона.';
-      case 'anime_download_subs_failed':
-        return 'Поиск субтитров не удался. Нажмите «Повторить».';
-      case 'anime_download_subs_need_key':
-        return 'Введите API-ключ Jimaku выше для поиска субтитров.';
       case 'anime_download_subs_pending':
         return 'Субтитры: ожидание завершения загрузки';
       case 'anime_download_subs_retrying':
         return 'Субтитры: ещё не загружены — повторная попытка автоматически';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'Нет субтитров для сезона ${season} этого пакета — не выбрано автоматически. Выберите вручную, если хотите.';
       case 'anime_download_subs_unmatched':
         return 'Субтитры: совпадений для этого пакета не найдено';
-      case 'anime_download_tasks':
-        return 'Задачи загрузки';
-      case 'anime_download_title':
-        return 'Загрузка аниме';
       case 'anime_download_trusted':
         return 'Проверенный';
-      case 'anime_download_trusted_only':
-        return 'Только проверенные';
-      case 'anime_download_unfiltered':
-        return 'Без фильтра «Доверенные»';
       case 'anki_action_open_settings':
         return 'Открыть настройки';
       case 'anki_allow_duplicates':
@@ -629275,12 +628766,6 @@ extension on _StringsRu {
         return 'Ранобэ';
       case 'discovery_load_more':
         return 'Загрузить ещё';
-      case 'discovery_nyaa_filter_all':
-        return 'Все';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'Без ремейков';
-      case 'discovery_nyaa_filter_trusted_only':
-        return 'Только доверенные';
       case 'discovery_opds_add':
         return 'Добавить сервер OPDS';
       case 'discovery_opds_allow_http':
@@ -629612,8 +629097,6 @@ extension on _StringsRu {
         return 'Отменено';
       case 'download_status_queued':
         return 'В очереди';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => 'После серии ${episode}';
       case 'download_subscription_check_all':
         return 'Проверить все';
       case 'download_subscription_check_now':
@@ -629624,8 +629107,6 @@ extension on _StringsRu {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             'Скачать весь пакет ${group} · ${resolution} один раз. У пакета нет следующей серии, за которой можно следить.';
-      case 'download_subscription_created':
-        return 'Загрузка добавлена в очередь и подписка создана';
       case 'download_subscription_delete':
         return 'Удалить подписку';
       case 'download_subscription_delete_confirm':
@@ -629633,17 +629114,12 @@ extension on _StringsRu {
             'Удалить подписку на ${title}? Загруженные задачи сохранятся.';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'Скачать и подписаться';
       case 'download_subscription_empty_body':
         return 'В разделе «Обнаружение» выберите выпуск одной серии и нажмите «Скачать и подписаться».';
       case 'download_subscription_empty_title':
         return 'Подписок пока нет';
       case 'download_subscription_last_checked':
         return ({required Object time}) => 'Последняя проверка: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) =>
-            'Последняя в очереди: серия ${episode}';
       case 'download_subscription_never_checked':
         return 'Не проверялось';
       case 'download_subscription_running_hint':
@@ -642267,6 +641743,38 @@ extension on _StringsRu {
         return 'Отправлять статистику использования';
       case 'usage_stats_enabled_hint':
         return 'Раз в день отправляет на fushi.moe идентификатор установки, полученный из данных этого устройства (не меняется при переустановке), версию приложения, платформу, канал обновлений, язык приложения, архитектуру процессора, основную версию ОС и источник установки (например, магазин приложений или установщик), чтобы мы могли посчитать активных пользователей. Данные аккаунта, библиотеки и чтения не передаются, ваш IP-адрес не сохраняется — сохраняется только определённая по нему страна или регион. Если вы прикладываете к отзыву сведения об устройстве, идентификатор установки отправляется вместе с ним.';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return 'Осень';
       case 'video_air_season_spring':
@@ -642378,16 +641886,6 @@ extension on _StringsRu {
         return 'Вперёд на 10 с';
       case 'video_bottom_seek_forward_label':
         return '+10с';
-      case 'video_builtin_apibay_hint':
-        return 'Фильмы и сериалы. Публичный индекс, аккаунт не нужен.';
-      case 'video_builtin_knaben_hint':
-        return 'Фильмы и сериалы. Агрегирует несколько публичных индексаторов.';
-      case 'video_builtin_nyaa_hint':
-        return 'Только аниме. Фильмы и сериалы покрываются двумя публичными индексаторами ниже.';
-      case 'video_builtin_sources_hint':
-        return 'Встроены в приложение: без аккаунта, без API-ключа. Отключите источник, чтобы исключить его из поиска ресурсов.';
-      case 'video_builtin_sources_title':
-        return 'Встроенные источники';
       case 'video_chapter_n':
         return ({required Object n}) => 'Глава ${n}';
       case 'video_chapters':
@@ -643413,8 +642911,8 @@ extension on _StringsRu {
         return 'Импортировать заново';
       case 'video_resource_missing_title':
         return 'Видео недоступно';
-      case 'video_resource_no_provider_hint':
-        return 'Для этого поиска не нашлось провайдера. Включите встроенный источник или добавьте Torznab-индексатор в разделе Настройки, Загрузки, Внешние провайдеры ресурсов и субтитров.';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'Индексатор ресурсов не настроен';
       case 'video_resource_query_failed':
@@ -643433,6 +642931,46 @@ extension on _StringsRu {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: поиск не выполнялся (этот источник не может обработать запрос)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -644427,6 +643965,12 @@ extension on _StringsRu {
         return 'Субтитры на английском и многих других языках для фильмов и сериалов, сопоставляются по ID IMDb / TMDB. Нужен бесплатный API-ключ; загрузки учитываются в анонимном суточном лимите на IP-адрес.';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => 'Выпусков: ${count}';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return 'Свернуть';
       case 'video_subtitle_adjust_expand':
@@ -646196,67 +645740,32 @@ extension on _StringsTh {
         return 'Wikipedia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipedia (中文)';
-      case 'anime_download_back':
-        return 'ย้อนกลับ';
-      case 'anime_download_batch':
-        return 'แบทช์';
-      case 'anime_download_category_all':
-        return 'ทั้งหมด';
-      case 'anime_download_category_english':
-        return 'แปลภาษาอังกฤษ';
-      case 'anime_download_category_non_english':
-        return 'ไม่ใช่ภาษาอังกฤษ';
-      case 'anime_download_category_raw':
-        return 'ไม่มีซับ';
       case 'anime_download_delete':
         return 'ลบ';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => 'ตอน ${count}';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'ดาวน์โหลด';
       case 'anime_download_generic_hint':
         return 'ลิงก์ Magnet';
-      case 'anime_download_generic_title':
-        return 'วางลิงก์ (หนังสือ, วิดีโอ, อะไรก็ได้)';
       case 'anime_download_include_subs':
         return 'รวมคำบรรยาย';
-      case 'anime_download_kind_auto':
-        return 'อัตโนมัติ';
-      case 'anime_download_kind_book':
-        return 'หนังสือ';
       case 'anime_download_kind_video':
         return 'วิดีโอ';
       case 'anime_download_magnet_invalid':
         return 'ลิงก์ Magnet ไม่ถูกต้อง';
-      case 'anime_download_no_results':
-        return 'ไม่พบผลลัพธ์';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'บริการตอบกลับสำเร็จแต่ส่งคืน 0 รายการ คำค้น: ${query}; ตัวกรอง: ${filters} ลองชื่ออื่นหรือผ่อนคลายตัวกรอง';
       case 'anime_download_no_subs':
         return 'ไม่มีซับ';
       case 'anime_download_no_tasks':
         return 'ยังไม่มีงานดาวน์โหลด';
-      case 'anime_download_nyaa_query':
-        return 'คำค้นหา Nyaa';
       case 'anime_download_play_now':
         return 'เล่นระหว่างดาวน์โหลด';
       case 'anime_download_play_now_fail':
         return 'ยังไม่พร้อม (กำลังรอเมตาดาต้าหรือการเชื่อมต่อล้มเหลว) — ลองอีกครั้งภายหลัง';
       case 'anime_download_play_now_ok':
         return 'นำเข้าแล้ว — เปิดจากคลังวิดีโอเพื่อเล่นระหว่างดาวน์โหลด';
-      case 'anime_download_push':
-        return 'ส่งงานดาวน์โหลด';
       case 'anime_download_push_failed':
         return 'ส่งไปยัง qBittorrent ล้มเหลว';
       case 'anime_download_pushed':
         return 'ส่งแล้ว — จะนำเข้าอัตโนมัติเมื่อเสร็จสิ้น';
-      case 'anime_download_refresh':
-        return 'รีเฟรช';
       case 'anime_download_relocate':
         return 'เปลี่ยนชื่อ / ย้าย';
       case 'anime_download_relocate_engine_failed':
@@ -646282,55 +645791,22 @@ extension on _StringsTh {
         return 'ต้องมีคำบรรยาย';
       case 'anime_download_retry':
         return 'ลองอีกครั้ง';
-      case 'anime_download_search':
-        return 'ค้นหา';
-      case 'anime_download_search_error_proxy_hint':
-        return 'หากเข้าถึงเว็บไซต์โดยตรงไม่ได้ ให้ตั้งค่าพร็อกซีเครือข่ายในการตั้งค่าดาวน์โหลด';
-      case 'anime_download_search_failed':
-        return 'ค้นหาล้มเหลวหรือหมดเวลา แตะเพื่อลองอีกครั้ง';
-      case 'anime_download_search_hint':
-        return 'ชื่ออนิเมะ';
       case 'anime_download_search_start_hint':
         return 'ค้นหาชื่อด้านบน - ทอร์เรนต์และคำบรรยายจะถูกจับคู่อัตโนมัติ ดาวน์โหลดไม่จำกัดเฉพาะวิดีโอ: หนังสือ, มังงะ, หนังสือเสียง และเกมก็นำเข้าได้เช่นกัน';
-      case 'anime_download_sort_date':
-        return 'วันที่เผยแพร่';
-      case 'anime_download_sort_seeders':
-        return 'ผู้ปล่อย';
       case 'anime_download_sort_size':
         return 'ขนาด';
       case 'anime_download_store_unavailable':
         return 'พื้นที่จัดเก็บแผนดาวน์โหลดไม่พร้อมใช้งาน';
       case 'anime_download_streaming_ready':
         return 'ในคลัง · ดาวน์โหลดต่อ';
-      case 'anime_download_subs_badge':
-        return 'ซับ';
-      case 'anime_download_subs_deferred':
-        return 'คำบรรยายจะถูกจับคู่หลังดาวน์โหลด จากไฟล์จริงของแพ็ค';
-      case 'anime_download_subs_episodes_unverified':
-        return 'หมายเลขตอนไม่ได้ตรวจสอบกับแพ็คนี้ — คำบรรยายอาจมาจากซีซันอื่น';
-      case 'anime_download_subs_failed':
-        return 'ค้นหาคำบรรยายล้มเหลว แตะเพื่อลองอีกครั้ง';
-      case 'anime_download_subs_need_key':
-        return 'กรอกคีย์ API ของ Jimaku ด้านบนเพื่อค้นหาคำบรรยาย';
       case 'anime_download_subs_pending':
         return 'คำบรรยาย: รอจนกว่าดาวน์โหลดเสร็จ';
       case 'anime_download_subs_retrying':
         return 'คำบรรยาย: ยังไม่พร้อม — จะลองใหม่โดยอัตโนมัติ';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'ไม่มีรายการคำบรรยายที่ตรงกับซีซัน ${season} ของแพ็คนี้ — ไม่ได้เลือกอัตโนมัติ เลือกด้วยตนเองหากต้องการ';
       case 'anime_download_subs_unmatched':
         return 'คำบรรยาย: ไม่พบที่ตรงกับแพ็คนี้';
-      case 'anime_download_tasks':
-        return 'งานดาวน์โหลด';
-      case 'anime_download_title':
-        return 'ดาวน์โหลดอนิเมะ';
       case 'anime_download_trusted':
         return 'เชื่อถือได้';
-      case 'anime_download_trusted_only':
-        return 'เฉพาะที่เชื่อถือได้';
-      case 'anime_download_unfiltered':
-        return 'ไม่มีตัวกรอง Trusted';
       case 'anki_action_open_settings':
         return 'เปิดการตั้งค่า';
       case 'anki_allow_duplicates':
@@ -649914,12 +649390,6 @@ extension on _StringsTh {
         return 'นิยาย';
       case 'discovery_load_more':
         return 'โหลดเพิ่มเติม';
-      case 'discovery_nyaa_filter_all':
-        return 'ทั้งหมด';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'ไม่รวมรีเมก';
-      case 'discovery_nyaa_filter_trusted_only':
-        return 'เฉพาะที่เชื่อถือได้';
       case 'discovery_opds_add':
         return 'เพิ่มเซิร์ฟเวอร์ OPDS';
       case 'discovery_opds_allow_http':
@@ -650250,8 +649720,6 @@ extension on _StringsTh {
         return 'ยกเลิกแล้ว';
       case 'download_status_queued':
         return 'อยู่ในคิว';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => 'หลังตอนที่ ${episode}';
       case 'download_subscription_check_all':
         return 'ตรวจสอบทั้งหมด';
       case 'download_subscription_check_now':
@@ -650262,8 +649730,6 @@ extension on _StringsTh {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             'ดาวน์โหลดชุด ${group} · ${resolution} ทั้งชุดหนึ่งครั้ง ชุดไม่มีตอนถัดไปให้ติดตาม';
-      case 'download_subscription_created':
-        return 'เข้าคิวดาวน์โหลดและสร้างการติดตามแล้ว';
       case 'download_subscription_delete':
         return 'ลบการติดตาม';
       case 'download_subscription_delete_confirm':
@@ -650271,17 +649737,12 @@ extension on _StringsTh {
             'ลบการติดตาม ${title}? งานที่ดาวน์โหลดแล้วจะยังคงอยู่';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'ดาวน์โหลดและติดตาม';
       case 'download_subscription_empty_body':
         return 'ในหน้าค้นพบ เลือกรีลีสตอนเดียวแล้วใช้ดาวน์โหลดและติดตาม';
       case 'download_subscription_empty_title':
         return 'ยังไม่มีการติดตาม';
       case 'download_subscription_last_checked':
         return ({required Object time}) => 'ตรวจสอบล่าสุด: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) =>
-            'ตอนล่าสุดที่เข้าคิว: ตอนที่ ${episode}';
       case 'download_subscription_never_checked':
         return 'ยังไม่เคยตรวจสอบ';
       case 'download_subscription_running_hint':
@@ -662889,6 +662350,38 @@ extension on _StringsTh {
         return 'ส่งสถิติการใช้งาน';
       case 'usage_stats_enabled_hint':
         return 'วันละครั้ง จะส่ง ID การติดตั้งที่สร้างจากอุปกรณ์นี้ (ไม่เปลี่ยนแม้ติดตั้งใหม่) เวอร์ชันแอป แพลตฟอร์ม ช่องทางอัปเดต ภาษาของแอป สถาปัตยกรรม CPU เวอร์ชันหลักของระบบปฏิบัติการ และแหล่งที่ติดตั้ง (เช่น สโตร์หรือตัวติดตั้ง)ไปยัง fushi.moe เพื่อนับจำนวนผู้ใช้ที่ใช้งานอยู่ ไม่มีข้อมูลบัญชี คลัง หรือการอ่าน และไม่จัดเก็บที่อยู่ IP ของคุณ (เก็บเพียงประเทศหรือภูมิภาคที่ระบุได้จากที่อยู่นั้น) เมื่อคุณแนบข้อมูลอุปกรณ์ไปกับความคิดเห็น ID การติดตั้งจะถูกส่งไปด้วย';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return 'ฤดูใบไม้ร่วง';
       case 'video_air_season_spring':
@@ -663000,16 +662493,6 @@ extension on _StringsTh {
         return 'เดินหน้า 10 วินาที';
       case 'video_bottom_seek_forward_label':
         return '+10 วิ';
-      case 'video_builtin_apibay_hint':
-        return 'ภาพยนตร์และรายการทีวี ดัชนีสาธารณะ ไม่ต้องมีบัญชี';
-      case 'video_builtin_knaben_hint':
-        return 'ภาพยนตร์และรายการทีวี รวบรวมจากตัวจัดทำดัชนีสาธารณะหลายแห่ง';
-      case 'video_builtin_nyaa_hint':
-        return 'อนิเมะเท่านั้น ภาพยนตร์และรายการทีวีรองรับโดยตัวจัดทำดัชนีสาธารณะด้านล่าง';
-      case 'video_builtin_sources_hint':
-        return 'มาพร้อมกับแอป: ไม่ต้องมีบัญชี ไม่ต้องมีคีย์ API ปิดเพื่อไม่ให้ปรากฏในการค้นหาทรัพยากร';
-      case 'video_builtin_sources_title':
-        return 'แหล่งข้อมูลในตัว';
       case 'video_chapter_n':
         return ({required Object n}) => 'บทที่ ${n}';
       case 'video_chapters':
@@ -664033,8 +663516,8 @@ extension on _StringsTh {
         return 'นำเข้าใหม่';
       case 'video_resource_missing_title':
         return 'วิดีโอไม่พร้อมใช้งาน';
-      case 'video_resource_no_provider_hint':
-        return 'การค้นหานี้ไม่มีผู้ให้บริการที่จะสอบถาม เปิดใช้แหล่งในตัวอีกครั้ง หรือเพิ่มตัวจัดทำดัชนี Torznab ในการตั้งค่า > ดาวน์โหลด > ผู้ให้บริการทรัพยากรและคำบรรยายภายนอก';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'ยังไม่ได้ตั้งค่าตัวจัดทำดัชนีทรัพยากร';
       case 'video_resource_query_failed':
@@ -664053,6 +663536,46 @@ extension on _StringsTh {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: ไม่ได้ค้นหา (แหล่งนี้จัดการคำค้นนี้ไม่ได้)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -665046,6 +664569,12 @@ extension on _StringsTh {
         return 'คำบรรยายภาษาอังกฤษและอีกหลายภาษาสำหรับภาพยนตร์และซีรีส์ จับคู่ด้วย IMDb / TMDB id ต้องใช้ API key ฟรี การดาวน์โหลดนับรวมในขีดจำกัดรายวันแบบไม่ระบุตัวตนต่อ IP';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count} รายการ';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return 'ย่อ';
       case 'video_subtitle_adjust_expand':
@@ -666815,67 +666344,32 @@ extension on _StringsTr {
         return 'Wikipedia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipedia (中文)';
-      case 'anime_download_back':
-        return 'Geri';
-      case 'anime_download_batch':
-        return 'Toplu';
-      case 'anime_download_category_all':
-        return 'Tümü';
-      case 'anime_download_category_english':
-        return 'İngilizce altyazılı';
-      case 'anime_download_category_non_english':
-        return 'İngilizce dışı';
-      case 'anime_download_category_raw':
-        return 'Ham';
       case 'anime_download_delete':
         return 'Sil';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => 'BL ${count}';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'İndir';
       case 'anime_download_generic_hint':
         return 'Magnet bağlantısı';
-      case 'anime_download_generic_title':
-        return 'Bağlantı yapıştır (kitap, video, herhangi bir şey)';
       case 'anime_download_include_subs':
         return 'Altyazıları dahil et';
-      case 'anime_download_kind_auto':
-        return 'Otomatik';
-      case 'anime_download_kind_book':
-        return 'Kitap';
       case 'anime_download_kind_video':
         return 'Video';
       case 'anime_download_magnet_invalid':
         return 'Geçersiz magnet bağlantısı';
-      case 'anime_download_no_results':
-        return 'Sonuç yok';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'Hizmet başarılı yanıt verdi ancak 0 öğe döndürdü. Sorgu: ${query}; filtreler: ${filters}. Başka bir başlık deneyin veya filtreleri gevşetin.';
       case 'anime_download_no_subs':
         return 'Altyazı yok';
       case 'anime_download_no_tasks':
         return 'Henüz indirme görevi yok';
-      case 'anime_download_nyaa_query':
-        return 'Nyaa arama terimleri';
       case 'anime_download_play_now':
         return 'İndirirken oynat';
       case 'anime_download_play_now_fail':
         return 'Henüz hazır değil (meta veri bekleniyor veya bağlantı başarısız) — daha sonra tekrar deneyin';
       case 'anime_download_play_now_ok':
         return 'İçe aktarıldı — indirirken oynatmak için video kütüphanesinden açın';
-      case 'anime_download_push':
-        return 'İndirmeyi aktar';
       case 'anime_download_push_failed':
         return 'qBittorrent\'a aktarılamadı';
       case 'anime_download_pushed':
         return 'Aktarıldı — tamamlandığında otomatik olarak içe aktarılacak';
-      case 'anime_download_refresh':
-        return 'Yenile';
       case 'anime_download_relocate':
         return 'Yeniden adlandır / taşı';
       case 'anime_download_relocate_engine_failed':
@@ -666901,55 +666395,22 @@ extension on _StringsTr {
         return 'Altyazı gerekli';
       case 'anime_download_retry':
         return 'Tekrar dene';
-      case 'anime_download_search':
-        return 'Ara';
-      case 'anime_download_search_error_proxy_hint':
-        return 'Siteye doğrudan erişilemiyorsa indirme ayarlarında bir ağ proxy\'si yapılandırın.';
-      case 'anime_download_search_failed':
-        return 'Arama başarısız veya zaman aşımına uğradı. Tekrar denemek için dokunun.';
-      case 'anime_download_search_hint':
-        return 'Anime başlığı';
       case 'anime_download_search_start_hint':
         return 'Yukarıda bir başlık arayın — torrentler ve altyazılar otomatik olarak eşleştirilir. İndirmeler videoyla sınırlı değildir: kitaplar, manga, sesli kitaplar ve oyunlar da içe aktarılır.';
-      case 'anime_download_sort_date':
-        return 'Yayınlanma';
-      case 'anime_download_sort_seeders':
-        return 'Gönderenler';
       case 'anime_download_sort_size':
         return 'Boyut';
       case 'anime_download_store_unavailable':
         return 'İndirme planı depolama alanı kullanılamıyor';
       case 'anime_download_streaming_ready':
         return 'Kütüphanede · indirme devam ediyor';
-      case 'anime_download_subs_badge':
-        return 'Altyazı';
-      case 'anime_download_subs_deferred':
-        return 'Altyazılar indirme sonrasında, paketin gerçek dosyalarından eşleştirilir';
-      case 'anime_download_subs_episodes_unverified':
-        return 'Bölüm numaraları bu pakete göre doğrulanmadı — altyazılar başka bir sezondan olabilir.';
-      case 'anime_download_subs_failed':
-        return 'Altyazı araması başarısız. Tekrar denemek için dokunun.';
-      case 'anime_download_subs_need_key':
-        return 'Altyazı aramak için yukarıya bir Jimaku API anahtarı girin.';
       case 'anime_download_subs_pending':
         return 'Altyazılar: indirme tamamlanana kadar bekliyor';
       case 'anime_download_subs_retrying':
         return 'Altyazılar: henüz hazır değil — otomatik olarak tekrar denenecek';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'Bu paketin ${season} sezonuyla eşleşen altyazı girişi yok — otomatik seçilmedi. Yine de istiyorsanız manuel olarak birini seçin.';
       case 'anime_download_subs_unmatched':
         return 'Altyazılar: bu paket için eşleşme yok';
-      case 'anime_download_tasks':
-        return 'İndirme görevleri';
-      case 'anime_download_title':
-        return 'Anime indirme';
       case 'anime_download_trusted':
         return 'Güvenilir';
-      case 'anime_download_trusted_only':
-        return 'Yalnızca güvenilir';
-      case 'anime_download_unfiltered':
-        return 'Güvenilir filtresi yok';
       case 'anki_action_open_settings':
         return 'Ayarları aç';
       case 'anki_allow_duplicates':
@@ -670549,12 +670010,6 @@ extension on _StringsTr {
         return 'Romanlar';
       case 'discovery_load_more':
         return 'Daha fazla yükle';
-      case 'discovery_nyaa_filter_all':
-        return 'Tümü';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'Yeniden yapımlar hariç';
-      case 'discovery_nyaa_filter_trusted_only':
-        return 'Yalnızca güvenilir';
       case 'discovery_opds_add':
         return 'OPDS sunucusu ekle';
       case 'discovery_opds_allow_http':
@@ -670885,8 +670340,6 @@ extension on _StringsTr {
         return 'İptal edildi';
       case 'download_status_queued':
         return 'Sıraya alındı';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => 'Bölüm ${episode} sonrası';
       case 'download_subscription_check_all':
         return 'Tümünü kontrol et';
       case 'download_subscription_check_now':
@@ -670897,8 +670350,6 @@ extension on _StringsTr {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             '${group} · ${resolution} paketinin tamamını bir kez indirin. Bir paketin takip edilecek sonraki bölümü yoktur.';
-      case 'download_subscription_created':
-        return 'İndirme sıraya alındı ve abonelik oluşturuldu';
       case 'download_subscription_delete':
         return 'Aboneliği sil';
       case 'download_subscription_delete_confirm':
@@ -670906,17 +670357,12 @@ extension on _StringsTr {
             '${title} aboneliği silinsin mi? İndirilen görevler korunur.';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'İndir ve abone ol';
       case 'download_subscription_empty_body':
         return 'Keşfet\'te tekli bölüm yayını seçin ve İndir ve abone ol\'u kullanın.';
       case 'download_subscription_empty_title':
         return 'Henüz abonelik yok';
       case 'download_subscription_last_checked':
         return ({required Object time}) => 'Son kontrol: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) =>
-            'En son sıraya alınan: bölüm ${episode}';
       case 'download_subscription_never_checked':
         return 'Hiç kontrol edilmedi';
       case 'download_subscription_running_hint':
@@ -683533,6 +682979,38 @@ extension on _StringsTr {
         return 'Kullanım istatistiklerini paylaş';
       case 'usage_stats_enabled_hint':
         return 'Günde bir kez bu cihazdan türetilen bir kurulum kimliğini (yeniden yüklemede değişmez), uygulama sürümünü, platformu, güncelleme kanalını, uygulama dilini, CPU mimarisini, işletim sisteminin ana sürümünü ve kurulum kaynağını (ör. uygulama mağazası veya yükleyici) fushi.moe\'ya göndererek aktif kullanıcıları saymamızı sağlar. Hesap, kitaplık veya okuma verisi içermez ve IP adresiniz saklanmaz; yalnızca ondan belirlenen ülke veya bölge tutulur. Geri bildirime cihaz bilgisi eklediğinizde kurulum kimliği de birlikte gönderilir.';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return 'Sonbahar';
       case 'video_air_season_spring':
@@ -683644,16 +683122,6 @@ extension on _StringsTr {
         return '10 sn ileri';
       case 'video_bottom_seek_forward_label':
         return '+10sn';
-      case 'video_builtin_apibay_hint':
-        return 'Filmler ve TV dizileri. Herkese açık dizin, hesap gerekmez.';
-      case 'video_builtin_knaben_hint':
-        return 'Filmler ve TV dizileri. Birden fazla herkese açık dizinleyiciyi toplar.';
-      case 'video_builtin_nyaa_hint':
-        return 'Yalnızca anime. Filmler ve TV dizileri aşağıdaki iki herkese açık dizinleyici tarafından kapsanır.';
-      case 'video_builtin_sources_hint':
-        return 'Uygulamayla birlikte gelir: hesap veya API anahtarı gerekmez. Kaynak aramalarından çıkarmak için birini kapatın.';
-      case 'video_builtin_sources_title':
-        return 'Yerleşik kaynaklar';
       case 'video_chapter_n':
         return ({required Object n}) => 'Bölüm ${n}';
       case 'video_chapters':
@@ -684679,8 +684147,8 @@ extension on _StringsTr {
         return 'Yeniden içe aktar';
       case 'video_resource_missing_title':
         return 'Video kullanılamıyor';
-      case 'video_resource_no_provider_hint':
-        return 'Bu aramanın sorgu yapacak bir sağlayıcısı yoktu. Ayarlar, İndirmeler, Harici kaynak ve altyazı sağlayıcıları bölümünden yerleşik bir kaynağı yeniden etkinleştirin veya bir Torznab dizinleyicisi ekleyin.';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'Kaynak dizinleyici yapılandırılmadı';
       case 'video_resource_query_failed':
@@ -684699,6 +684167,46 @@ extension on _StringsTr {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: aranmadı (bu kaynak sorguyu işleyemiyor)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -685694,6 +685202,12 @@ extension on _StringsTr {
         return 'Filmler ve diziler için İngilizce ve diğer birçok dilde altyazı, IMDb / TMDB kimliğiyle eşleştirilir. Ücretsiz bir API anahtarı gerekir; indirmeler IP başına anonim günlük sınıra sayılır.';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count} yayın';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return 'Daralt';
       case 'video_subtitle_adjust_expand':
@@ -687464,67 +686978,32 @@ extension on _StringsVi {
         return 'Wikipedia (日本語)';
       case 'ai_web_knowledge_wikipedia_zh':
         return 'Wikipedia (中文)';
-      case 'anime_download_back':
-        return 'Quay lại';
-      case 'anime_download_batch':
-        return 'Trọn bộ';
-      case 'anime_download_category_all':
-        return 'Tất cả';
-      case 'anime_download_category_english':
-        return 'Dịch tiếng Anh';
-      case 'anime_download_category_non_english':
-        return 'Không phải tiếng Anh';
-      case 'anime_download_category_raw':
-        return 'Nguyên bản';
       case 'anime_download_delete':
         return 'Xóa';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => 'Tập ${count}';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return 'Tải xuống';
       case 'anime_download_generic_hint':
         return 'Liên kết magnet';
-      case 'anime_download_generic_title':
-        return 'Dán liên kết (sách, video, bất kỳ)';
       case 'anime_download_include_subs':
         return 'Bao gồm phụ đề';
-      case 'anime_download_kind_auto':
-        return 'Tự động';
-      case 'anime_download_kind_book':
-        return 'Sách';
       case 'anime_download_kind_video':
         return 'Video';
       case 'anime_download_magnet_invalid':
         return 'Liên kết magnet không hợp lệ';
-      case 'anime_download_no_results':
-        return 'Không có kết quả';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            'Dịch vụ phản hồi thành công nhưng trả về 0 kết quả. Truy vấn: ${query}; bộ lọc: ${filters}. Thử tiêu đề khác hoặc nới lỏng bộ lọc.';
       case 'anime_download_no_subs':
         return 'Không có phụ đề';
       case 'anime_download_no_tasks':
         return 'Chưa có tác vụ tải xuống';
-      case 'anime_download_nyaa_query':
-        return 'Từ khóa tìm kiếm Nyaa';
       case 'anime_download_play_now':
         return 'Phát trong khi tải';
       case 'anime_download_play_now_fail':
         return 'Chưa sẵn sàng (đang chờ metadata hoặc kết nối thất bại) — thử lại sau';
       case 'anime_download_play_now_ok':
         return 'Đã nhập — mở từ thư viện video để phát trong khi tải';
-      case 'anime_download_push':
-        return 'Đẩy tải xuống';
       case 'anime_download_push_failed':
         return 'Không thể đẩy đến qBittorrent';
       case 'anime_download_pushed':
         return 'Đã đẩy — sẽ tự động nhập khi hoàn tất';
-      case 'anime_download_refresh':
-        return 'Làm mới';
       case 'anime_download_relocate':
         return 'Đổi tên / di chuyển';
       case 'anime_download_relocate_engine_failed':
@@ -687550,55 +687029,22 @@ extension on _StringsVi {
         return 'Yêu cầu phụ đề';
       case 'anime_download_retry':
         return 'Thử lại';
-      case 'anime_download_search':
-        return 'Tìm kiếm';
-      case 'anime_download_search_error_proxy_hint':
-        return 'Nếu không thể truy cập trang web trực tiếp, hãy cấu hình proxy mạng trong cài đặt tải xuống.';
-      case 'anime_download_search_failed':
-        return 'Tìm kiếm thất bại hoặc hết thời gian. Nhấn thử lại.';
-      case 'anime_download_search_hint':
-        return 'Tên anime';
       case 'anime_download_search_start_hint':
         return 'Tìm kiếm tên ở trên - torrent và phụ đề được tự động khớp. Không giới hạn ở video: sách, truyện tranh, sách nói và trò chơi cũng được nhập.';
-      case 'anime_download_sort_date':
-        return 'Ngày đăng';
-      case 'anime_download_sort_seeders':
-        return 'Người chia sẻ';
       case 'anime_download_sort_size':
         return 'Kích thước';
       case 'anime_download_store_unavailable':
         return 'Bộ nhớ kế hoạch tải xuống không khả dụng';
       case 'anime_download_streaming_ready':
         return 'Trong thư viện · tải xuống tiếp tục';
-      case 'anime_download_subs_badge':
-        return 'Phụ đề';
-      case 'anime_download_subs_deferred':
-        return 'Phụ đề được ghép sau khi tải xong, từ các tệp thực tế của gói';
-      case 'anime_download_subs_episodes_unverified':
-        return 'Số tập chưa được xác minh với gói này - phụ đề có thể từ mùa khác.';
-      case 'anime_download_subs_failed':
-        return 'Tìm kiếm phụ đề thất bại. Nhấn thử lại.';
-      case 'anime_download_subs_need_key':
-        return 'Nhập khóa API Jimaku ở trên để tìm kiếm phụ đề.';
       case 'anime_download_subs_pending':
         return 'Phụ đề: đang chờ tải xuống hoàn tất';
       case 'anime_download_subs_retrying':
         return 'Phụ đề: chưa có — sẽ tự động thử lại';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            'Không có mục phụ đề nào khớp mùa ${season} của gói này - không tự động chọn. Chọn thủ công nếu bạn vẫn muốn.';
       case 'anime_download_subs_unmatched':
         return 'Phụ đề: không tìm thấy kết quả phù hợp cho gói này';
-      case 'anime_download_tasks':
-        return 'Tác vụ tải xuống';
-      case 'anime_download_title':
-        return 'Tải xuống anime';
       case 'anime_download_trusted':
         return 'Tin cậy';
-      case 'anime_download_trusted_only':
-        return 'Chỉ nguồn tin cậy';
-      case 'anime_download_unfiltered':
-        return 'Không có bộ lọc Tin cậy';
       case 'anki_action_open_settings':
         return 'Mở cài đặt';
       case 'anki_allow_duplicates':
@@ -691190,12 +690636,6 @@ extension on _StringsVi {
         return 'Tiểu thuyết';
       case 'discovery_load_more':
         return 'Tải thêm';
-      case 'discovery_nyaa_filter_all':
-        return 'Tất cả';
-      case 'discovery_nyaa_filter_no_remakes':
-        return 'Không có bản làm lại';
-      case 'discovery_nyaa_filter_trusted_only':
-        return 'Chỉ nguồn tin cậy';
       case 'discovery_opds_add':
         return 'Thêm máy chủ OPDS';
       case 'discovery_opds_allow_http':
@@ -691526,8 +690966,6 @@ extension on _StringsVi {
         return 'Đã hủy';
       case 'download_status_queued':
         return 'Đang chờ';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => 'Sau tập ${episode}';
       case 'download_subscription_check_all':
         return 'Kiểm tra tất cả';
       case 'download_subscription_check_now':
@@ -691538,8 +690976,6 @@ extension on _StringsVi {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             'Tải toàn bộ lô ${group} · ${resolution} một lần. Một lô không có tập tiếp theo để theo dõi.';
-      case 'download_subscription_created':
-        return 'Đã xếp hàng tải xuống và tạo đăng ký';
       case 'download_subscription_delete':
         return 'Xóa đăng ký';
       case 'download_subscription_delete_confirm':
@@ -691547,17 +690983,12 @@ extension on _StringsVi {
             'Xóa đăng ký cho ${title}? Các tác vụ đã tải được giữ lại.';
       case 'download_subscription_disabled_enable_first':
         return 'This subscription is disabled. Enable it first.';
-      case 'download_subscription_download_and_create':
-        return 'Tải xuống và đăng ký';
       case 'download_subscription_empty_body':
         return 'Trong Khám phá, chọn bản phát hành tập đơn và sử dụng Tải xuống và đăng ký.';
       case 'download_subscription_empty_title':
         return 'Chưa có đăng ký nào';
       case 'download_subscription_last_checked':
         return ({required Object time}) => 'Kiểm tra lần cuối: ${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) =>
-            'Tập mới nhất đã xếp hàng: tập ${episode}';
       case 'download_subscription_never_checked':
         return 'Chưa kiểm tra';
       case 'download_subscription_running_hint':
@@ -704171,6 +703602,38 @@ extension on _StringsVi {
         return 'Chia sẻ thống kê sử dụng';
       case 'usage_stats_enabled_hint':
         return 'Mỗi ngày một lần, gửi ID cài đặt được tạo từ thiết bị này (không đổi khi cài lại), phiên bản ứng dụng, nền tảng, kênh cập nhật, ngôn ngữ ứng dụng, kiến trúc CPU, phiên bản chính của hệ điều hành và nguồn cài đặt (ví dụ cửa hàng ứng dụng hoặc trình cài đặt) đến fushi.moe để chúng tôi đếm số người dùng hoạt động. Không bao gồm dữ liệu tài khoản, thư viện hay nội dung đọc, và địa chỉ IP của bạn không được lưu — chỉ giữ quốc gia hoặc khu vực suy ra từ nó. Khi bạn đính kèm thông tin thiết bị vào phản hồi, ID cài đặt sẽ được gửi kèm.';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return 'Thu';
       case 'video_air_season_spring':
@@ -704282,16 +703745,6 @@ extension on _StringsVi {
         return 'Tới 10 giây';
       case 'video_bottom_seek_forward_label':
         return '+10s';
-      case 'video_builtin_apibay_hint':
-        return 'Phim và chương trình truyền hình. Chỉ mục công khai, không cần tài khoản.';
-      case 'video_builtin_knaben_hint':
-        return 'Phim và chương trình truyền hình. Tổng hợp nhiều trình lập chỉ mục công khai.';
-      case 'video_builtin_nyaa_hint':
-        return 'Chỉ dành cho anime. Phim và chương trình truyền hình được phục vụ bởi hai trình lập chỉ mục công khai bên dưới.';
-      case 'video_builtin_sources_hint':
-        return 'Đi kèm ứng dụng: không cần tài khoản, không cần khóa API. Tắt một nguồn để loại khỏi tìm kiếm tài nguyên.';
-      case 'video_builtin_sources_title':
-        return 'Nguồn tích hợp';
       case 'video_chapter_n':
         return ({required Object n}) => 'Chương ${n}';
       case 'video_chapters':
@@ -705314,8 +704767,8 @@ extension on _StringsVi {
         return 'Nhập lại';
       case 'video_resource_missing_title':
         return 'Video không khả dụng';
-      case 'video_resource_no_provider_hint':
-        return 'Tìm kiếm này không có nhà cung cấp để truy vấn. Bật lại nguồn tích hợp hoặc thêm trình lập chỉ mục Torznab trong Cài đặt, Tải xuống, Nhà cung cấp tài nguyên và phụ đề bên ngoài.';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return 'Chưa cấu hình trình lập chỉ mục tài nguyên';
       case 'video_resource_query_failed':
@@ -705334,6 +704787,46 @@ extension on _StringsVi {
       case 'video_resource_source_skipped':
         return ({required Object name}) =>
             '${name}: chưa tìm (nguồn này không xử lý được truy vấn)';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -706328,6 +705821,12 @@ extension on _StringsVi {
         return 'Phụ đề tiếng Anh và nhiều ngôn ngữ khác cho phim và TV, khớp theo id IMDb / TMDB. Cần API key miễn phí; lượt tải được tính vào giới hạn hằng ngày ẩn danh theo IP.';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '${count} phát hành';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return 'Thu gọn';
       case 'video_subtitle_adjust_expand':
@@ -708078,67 +707577,32 @@ extension on _StringsZhCn {
         return 'Wikipedia（日本語）';
       case 'ai_web_knowledge_wikipedia_zh':
         return '维基百科（中文）';
-      case 'anime_download_back':
-        return '返回';
-      case 'anime_download_batch':
-        return '合集';
-      case 'anime_download_category_all':
-        return '全部';
-      case 'anime_download_category_english':
-        return '英译';
-      case 'anime_download_category_non_english':
-        return '非英译';
-      case 'anime_download_category_raw':
-        return '生肉';
       case 'anime_download_delete':
         return '删除';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => '${count} 集';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => '仅第 ${n} 集';
-      case 'anime_download_filter_single':
-        return '单集';
       case 'anime_download_generic_download':
         return '下载';
       case 'anime_download_generic_hint':
         return '磁力链接';
-      case 'anime_download_generic_title':
-        return '粘贴链接下载';
       case 'anime_download_include_subs':
         return '附带字幕';
-      case 'anime_download_kind_auto':
-        return '自动';
-      case 'anime_download_kind_book':
-        return '书';
       case 'anime_download_kind_video':
         return '视频';
       case 'anime_download_magnet_invalid':
         return '磁力链接无效';
-      case 'anime_download_no_results':
-        return '无结果';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            '服务已正常响应，但按当前条件返回 0 条。查询：${query}；筛选：${filters}。请尝试别名或放宽筛选。';
       case 'anime_download_no_subs':
         return '无字幕';
       case 'anime_download_no_tasks':
         return '暂无下载任务';
-      case 'anime_download_nyaa_query':
-        return 'Nyaa 查询词';
       case 'anime_download_play_now':
         return '边下边播';
       case 'anime_download_play_now_fail':
         return '暂不可提前入库（元数据未就绪或连接失败），稍后再试';
       case 'anime_download_play_now_ok':
         return '已入库，可从视频库打开边下边播';
-      case 'anime_download_push':
-        return '推送下载';
       case 'anime_download_push_failed':
         return '推送到 qBittorrent 失败';
       case 'anime_download_pushed':
         return '已推送，下载完成后自动入库';
-      case 'anime_download_refresh':
-        return '刷新';
       case 'anime_download_relocate':
         return '重命名 / 移动';
       case 'anime_download_relocate_engine_failed':
@@ -708161,55 +707625,22 @@ extension on _StringsZhCn {
         return '必须有字幕';
       case 'anime_download_retry':
         return '重试';
-      case 'anime_download_search':
-        return '搜索';
-      case 'anime_download_search_error_proxy_hint':
-        return '站点无法直连时，可在下载设置中配置网络代理。';
-      case 'anime_download_search_failed':
-        return '搜索失败或超时，请点重试';
-      case 'anime_download_search_hint':
-        return '番剧名';
       case 'anime_download_search_start_hint':
         return '在上方搜索作品名，视频会自动匹配字幕。';
-      case 'anime_download_sort_date':
-        return '发布时间';
-      case 'anime_download_sort_seeders':
-        return '做种数';
       case 'anime_download_sort_size':
         return '体积';
       case 'anime_download_store_unavailable':
         return '下载计划存储不可用';
       case 'anime_download_streaming_ready':
         return '已入库 · 下载继续';
-      case 'anime_download_subs_badge':
-        return '字幕';
-      case 'anime_download_subs_deferred':
-        return '字幕将在下载完成后按包内实际文件配对';
-      case 'anime_download_subs_episodes_unverified':
-        return '集号未与该整季包核对，字幕可能来自别的季。';
-      case 'anime_download_subs_failed':
-        return '字幕搜索失败，请点重试';
-      case 'anime_download_subs_need_key':
-        return '在上方填写 Jimaku API key 后可搜字幕';
       case 'anime_download_subs_pending':
         return '字幕：待下载完成后配对';
       case 'anime_download_subs_retrying':
         return '字幕：还没上传，稍后自动重试';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            '没有字幕条目对得上该种子的第 ${season} 季，已不自动选中。要用的话请手动选一条。';
       case 'anime_download_subs_unmatched':
         return '字幕：未匹配到（可手动补）';
-      case 'anime_download_tasks':
-        return '下载任务';
-      case 'anime_download_title':
-        return '番剧下载';
       case 'anime_download_trusted':
         return '可信';
-      case 'anime_download_trusted_only':
-        return '仅可信';
-      case 'anime_download_unfiltered':
-        return '未启用 Trusted 筛选';
       case 'anki_action_open_settings':
         return '去设置';
       case 'anki_allow_duplicates':
@@ -711752,12 +711183,6 @@ extension on _StringsZhCn {
         return '小说';
       case 'discovery_load_more':
         return '加载更多';
-      case 'discovery_nyaa_filter_all':
-        return '全部';
-      case 'discovery_nyaa_filter_no_remakes':
-        return '排除转载';
-      case 'discovery_nyaa_filter_trusted_only':
-        return '仅信任发布者';
       case 'discovery_opds_add':
         return '添加 OPDS 服务器';
       case 'discovery_opds_allow_http':
@@ -712082,8 +711507,6 @@ extension on _StringsZhCn {
         return '已取消';
       case 'download_status_queued':
         return '排队中';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => '第 ${episode} 集之后';
       case 'download_subscription_check_all':
         return '全部检查';
       case 'download_subscription_check_now':
@@ -712094,24 +711517,18 @@ extension on _StringsZhCn {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             '一次性下载 ${group} · ${resolution} 整包。合集没有可追的下一集。';
-      case 'download_subscription_created':
-        return '已加入下载并创建订阅';
       case 'download_subscription_delete':
         return '删除订阅';
       case 'download_subscription_delete_confirm':
         return ({required Object title}) => '删除“${title}”的订阅吗？已创建的下载任务会保留。';
       case 'download_subscription_disabled_enable_first':
         return '订阅已停用，请先启用';
-      case 'download_subscription_download_and_create':
-        return '下载并订阅';
       case 'download_subscription_empty_body':
         return '在“发现”中选择一个单集发布，然后使用“下载并订阅”。';
       case 'download_subscription_empty_title':
         return '还没有订阅';
       case 'download_subscription_last_checked':
         return ({required Object time}) => '上次检查：${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) => '最近加入：第 ${episode} 集';
       case 'download_subscription_never_checked':
         return '尚未检查';
       case 'download_subscription_running_hint':
@@ -724595,6 +724012,38 @@ extension on _StringsZhCn {
         return '发送使用统计';
       case 'usage_stats_enabled_hint':
         return '每天一次向 fushi.moe 发送由本机派生的安装 ID（重装不变）、应用版本、平台、更新通道、界面语言、CPU 架构、系统大版本和安装来源（如应用商店或安装包），用于统计活跃用户。不包含账户、书库或阅读内容，也不保存你的 IP 地址，只记录据此判断的国家或地区。提交反馈并附带设备信息时，安装 ID 会随反馈一起发送。';
+      case 'video_acquisition_channel_library':
+        return '媒体库';
+      case 'video_acquisition_channel_media_server':
+        return '媒体服务器';
+      case 'video_acquisition_channel_online_source':
+        return '在线源';
+      case 'video_acquisition_channel_torrent':
+        return 'BT 搜索';
+      case 'video_acquisition_library_empty':
+        return '媒体库里还没有这部作品';
+      case 'video_acquisition_load_failed':
+        return '这个渠道加载失败';
+      case 'video_acquisition_media_server_configure':
+        return '添加服务器';
+      case 'video_acquisition_media_server_unconfigured':
+        return '还没有配置媒体服务器，可在设置里添加 Jellyfin / Emby / Plex';
+      case 'video_acquisition_online_source_configure':
+        return '管理扩展';
+      case 'video_acquisition_online_source_unconfigured':
+        return '还没有启用的 Aniyomi 在线源，安装扩展后即可在这里搜索';
+      case 'video_acquisition_results_empty':
+        return '没有找到匹配的结果';
+      case 'video_acquisition_section_title':
+        return '获取途径';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} 个来源查询失败';
+      case 'video_acquisition_torrent_add_site':
+        return '添加 RSS 搜索站';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '找到 ${count} 条资源';
+      case 'video_acquisition_torrent_unconfigured':
+        return '还没有 BT 搜索站，添加 RSS 搜索站后即可搜索资源';
       case 'video_air_season_autumn':
         return '秋';
       case 'video_air_season_spring':
@@ -724704,16 +724153,6 @@ extension on _StringsZhCn {
         return '前进 10 秒';
       case 'video_bottom_seek_forward_label':
         return '+10s';
-      case 'video_builtin_apibay_hint':
-        return '电影与剧集。公共索引，无需账号。';
-      case 'video_builtin_knaben_hint':
-        return '电影与剧集。聚合多家公共索引器。';
-      case 'video_builtin_nyaa_hint':
-        return '仅动漫。电影与剧集由下面两个公共索引器覆盖。';
-      case 'video_builtin_sources_hint':
-        return '随应用内置：无需账号，无需 API key。关闭后该来源不再参与资源搜索。';
-      case 'video_builtin_sources_title':
-        return '内置来源';
       case 'video_chapter_n':
         return ({required Object n}) => '章节 ${n}';
       case 'video_chapters':
@@ -725728,8 +725167,8 @@ extension on _StringsZhCn {
         return '重新导入';
       case 'video_resource_missing_title':
         return '视频无法访问';
-      case 'video_resource_no_provider_hint':
-        return '本次搜索没有可用的来源。请到 设置 → 下载 → 外部资源与字幕来源 重新启用内置来源，或添加 Torznab 索引器。';
+      case 'video_resource_no_provider_rss_hint':
+        return '本次搜索没有可用的来源。请到 设置 › 在线服务 › 资源索引器 添加 RSS 搜索站或 Torznab 索引器。';
       case 'video_resource_no_provider_title':
         return '未配置资源索引器';
       case 'video_resource_query_failed':
@@ -725747,6 +725186,46 @@ extension on _StringsZhCn {
         }) => '${name}：${n} 条（${queries}）';
       case 'video_resource_source_skipped':
         return ({required Object name}) => '${name}：未参与（该来源无法搜索这个查询词）';
+      case 'video_rss_add':
+        return '添加 RSS 站';
+      case 'video_rss_domains':
+        return '适用媒体';
+      case 'video_rss_domains_hint':
+        return '动画、电影、剧集参与视频资源搜索与订阅；其余出现在发现页的来源里。';
+      case 'video_rss_domains_required':
+        return '至少选一项';
+      case 'video_rss_edit_title':
+        return '编辑 RSS 站';
+      case 'video_rss_empty_hint':
+        return '可以直接在这里添加 RSS 搜索站：简单，但结果较少，不能排序和翻页；也可以自建 Jackett / Prowlarr，在「Torznab 索引器」里接入，搜索更完整。';
+      case 'video_rss_empty_title':
+        return '还没有 BT 搜索来源';
+      case 'video_rss_name':
+        return '名称';
+      case 'video_rss_settings_hint':
+        return '通过种子站的 RSS 搜索订阅源来搜索。Fushi 不内置任何站点，请自行添加你常用的站。';
+      case 'video_rss_settings_title':
+        return 'RSS 搜索站';
+      case 'video_rss_test':
+        return '测试搜索';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => '搜索失败：${reason}';
+      case 'video_rss_test_query':
+        return '测试关键词';
+      case 'video_rss_test_result':
+        return ({required Object n}) => '搜到 ${n} 条';
+      case 'video_rss_url_invalid':
+        return '不是有效的 http(s) 地址（不能带用户名或 # 片段）';
+      case 'video_rss_url_missing_query':
+        return '模板里必须有 {query}';
+      case 'video_rss_url_needs_http_optin':
+        return '已拦截明文 HTTP：请改用 HTTPS，或在下方允许不安全的 HTTP';
+      case 'video_rss_url_required':
+        return '请填写搜索地址模板';
+      case 'video_rss_url_template':
+        return '搜索地址模板';
+      case 'video_rss_url_template_hint':
+        return '在关键词的位置写 {query}；站点支持翻页时可加 {page}。';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} 分钟';
       case 'video_scrape_ai_confidence':
@@ -726735,6 +726214,12 @@ extension on _StringsZhCn {
         return '为电影与剧集提供英文及多语种字幕，按 IMDb / TMDB id 匹配。需要免费 API key；下载按 IP 计匿名每日额度。';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '共 ${count} 个发布';
+      case 'video_subscription_provider_choose_rss':
+        return '改选 RSS 站';
+      case 'video_subscription_provider_no_rss_site':
+        return '请先在设置里添加 RSS 搜索站。';
+      case 'video_subscription_provider_removed':
+        return '来源已失效，请改选 RSS 站';
       case 'video_subtitle_adjust_collapse':
         return '收起';
       case 'video_subtitle_adjust_expand':
@@ -728459,67 +727944,32 @@ extension on _StringsZhHk {
         return 'Wikipedia（日本語）';
       case 'ai_web_knowledge_wikipedia_zh':
         return '維基百科（中文）';
-      case 'anime_download_back':
-        return '返回';
-      case 'anime_download_batch':
-        return '合集';
-      case 'anime_download_category_all':
-        return '全部';
-      case 'anime_download_category_english':
-        return '英譯';
-      case 'anime_download_category_non_english':
-        return '非英譯';
-      case 'anime_download_category_raw':
-        return '生肉';
       case 'anime_download_delete':
         return '刪除';
-      case 'anime_download_episode_count':
-        return ({required Object count}) => '${count} 集';
-      case 'anime_download_filter_episode':
-        return ({required Object n}) => 'Episode ${n} only';
-      case 'anime_download_filter_single':
-        return 'Single episodes';
       case 'anime_download_generic_download':
         return '下載';
       case 'anime_download_generic_hint':
         return '磁力連結';
-      case 'anime_download_generic_title':
-        return '貼上連結下載（書、影片等）';
       case 'anime_download_include_subs':
         return '附帶字幕';
-      case 'anime_download_kind_auto':
-        return '自動';
-      case 'anime_download_kind_book':
-        return '書';
       case 'anime_download_kind_video':
         return '影片';
       case 'anime_download_magnet_invalid':
         return '磁力連結無效';
-      case 'anime_download_no_results':
-        return '無結果';
-      case 'anime_download_no_results_detail':
-        return ({required Object query, required Object filters}) =>
-            '服務已正常響應，但按當前條件返回 0 條。查詢：${query}；篩選：${filters}。請嘗試別名或放寬篩選。';
       case 'anime_download_no_subs':
         return '無字幕';
       case 'anime_download_no_tasks':
         return '暫無下載任務';
-      case 'anime_download_nyaa_query':
-        return 'Nyaa 查詢詞';
       case 'anime_download_play_now':
         return '邊下邊播';
       case 'anime_download_play_now_fail':
         return '暫不可提前入庫（元數據未就緒或連接失敗），稍後再試';
       case 'anime_download_play_now_ok':
         return '已入庫，可從影片庫打開邊下邊播';
-      case 'anime_download_push':
-        return '推送下載';
       case 'anime_download_push_failed':
         return '推送到 qBittorrent 失敗';
       case 'anime_download_pushed':
         return '已推送，下載完成後自動入庫';
-      case 'anime_download_refresh':
-        return '重新整理';
       case 'anime_download_relocate':
         return '重命名 / 移動';
       case 'anime_download_relocate_engine_failed':
@@ -728542,55 +727992,22 @@ extension on _StringsZhHk {
         return '必須有字幕';
       case 'anime_download_retry':
         return '重試';
-      case 'anime_download_search':
-        return '搜索';
-      case 'anime_download_search_error_proxy_hint':
-        return '站點無法直連時，可在下載設定中配置網路代理。';
-      case 'anime_download_search_failed':
-        return '搜索失敗或超時，請點重試';
-      case 'anime_download_search_hint':
-        return '番劇名';
       case 'anime_download_search_start_hint':
         return '在上方搜索作品名，自動匹配種子與字幕。下載不限影片：書籍、漫畫、有聲書、遊戲也會自動入庫。';
-      case 'anime_download_sort_date':
-        return '發布時間';
-      case 'anime_download_sort_seeders':
-        return '做種數';
       case 'anime_download_sort_size':
         return '體積';
       case 'anime_download_store_unavailable':
         return '下載計劃存儲不可用';
       case 'anime_download_streaming_ready':
         return '已入庫 · 下載繼續';
-      case 'anime_download_subs_badge':
-        return '字幕';
-      case 'anime_download_subs_deferred':
-        return '字幕將在下載完成後按包內實際檔案配對';
-      case 'anime_download_subs_episodes_unverified':
-        return '集號未與該整季包核對，字幕可能來自別的季。';
-      case 'anime_download_subs_failed':
-        return '字幕搜索失敗，請點重試';
-      case 'anime_download_subs_need_key':
-        return '在上方填寫 Jimaku API key 後可搜字幕';
       case 'anime_download_subs_pending':
         return '字幕：待下載完成後配對';
       case 'anime_download_subs_retrying':
         return '字幕：還沒上傳，稍後自動重試';
-      case 'anime_download_subs_season_mismatch':
-        return ({required Object season}) =>
-            '沒有字幕條目對得上該種子的第 ${season} 季，已不自動選中。要用的話請手動選一條。';
       case 'anime_download_subs_unmatched':
         return '字幕：未匹配到（可手動補）';
-      case 'anime_download_tasks':
-        return '下載任務';
-      case 'anime_download_title':
-        return '番劇下載';
       case 'anime_download_trusted':
         return '可信';
-      case 'anime_download_trusted_only':
-        return '僅可信';
-      case 'anime_download_unfiltered':
-        return '未啟用 Trusted 篩選';
       case 'anki_action_open_settings':
         return '去設定';
       case 'anki_allow_duplicates':
@@ -732147,12 +731564,6 @@ extension on _StringsZhHk {
         return '小說';
       case 'discovery_load_more':
         return '加載更多';
-      case 'discovery_nyaa_filter_all':
-        return '全部';
-      case 'discovery_nyaa_filter_no_remakes':
-        return '排除轉載';
-      case 'discovery_nyaa_filter_trusted_only':
-        return '僅信任發佈者';
       case 'discovery_opds_add':
         return '新增 OPDS 伺服器';
       case 'discovery_opds_allow_http':
@@ -732477,8 +731888,6 @@ extension on _StringsZhHk {
         return '已取消';
       case 'download_status_queued':
         return '排隊中';
-      case 'download_subscription_after_episode':
-        return ({required Object episode}) => '第 ${episode} 集之後';
       case 'download_subscription_check_all':
         return '全部檢查';
       case 'download_subscription_check_now':
@@ -732489,24 +731898,18 @@ extension on _StringsZhHk {
       case 'download_subscription_choice_hint_batch':
         return ({required Object group, required Object resolution}) =>
             '一次性下載 ${group} · ${resolution} 整包。合集沒有可追的下一集。';
-      case 'download_subscription_created':
-        return '已加入下載並創建訂閱';
       case 'download_subscription_delete':
         return '刪除訂閱';
       case 'download_subscription_delete_confirm':
         return ({required Object title}) => '刪除“${title}”的訂閱嗎？已創建的下載任務會保留。';
       case 'download_subscription_disabled_enable_first':
         return '訂閱已停用，請先啟用';
-      case 'download_subscription_download_and_create':
-        return '下載並訂閱';
       case 'download_subscription_empty_body':
         return '在“發現”中選擇一個單集發布，然後使用“下載並訂閱”。';
       case 'download_subscription_empty_title':
         return '還沒有訂閱';
       case 'download_subscription_last_checked':
         return ({required Object time}) => '上次檢查：${time}';
-      case 'download_subscription_latest_episode':
-        return ({required Object episode}) => '最近加入：第 ${episode} 集';
       case 'download_subscription_never_checked':
         return '尚未檢查';
       case 'download_subscription_running_hint':
@@ -745056,6 +744459,38 @@ extension on _StringsZhHk {
         return '傳送使用統計';
       case 'usage_stats_enabled_hint':
         return '每天一次向 fushi.moe 傳送由本機衍生的安裝 ID（重新安裝不變）、應用程式版本、平台、更新通道、介面語言、CPU 架構、系統主要版本和安裝來源（如應用程式商店或安裝程式），用於統計活躍用戶。不包含帳戶、書庫或閱讀內容，也不保存你的 IP 位址，只記錄據此判斷的國家或地區。提交回饋並附帶裝置資訊時，安裝 ID 會隨回饋一併傳送。';
+      case 'video_acquisition_channel_library':
+        return 'Media library';
+      case 'video_acquisition_channel_media_server':
+        return 'Media servers';
+      case 'video_acquisition_channel_online_source':
+        return 'Online sources';
+      case 'video_acquisition_channel_torrent':
+        return 'BT search';
+      case 'video_acquisition_library_empty':
+        return 'Not in your library yet';
+      case 'video_acquisition_load_failed':
+        return 'Couldn\'t load this channel';
+      case 'video_acquisition_media_server_configure':
+        return 'Add server';
+      case 'video_acquisition_media_server_unconfigured':
+        return 'No media servers yet. Add Jellyfin, Emby or Plex in settings.';
+      case 'video_acquisition_online_source_configure':
+        return 'Manage extensions';
+      case 'video_acquisition_online_source_unconfigured':
+        return 'No Aniyomi sources enabled. Install an extension to search online sources.';
+      case 'video_acquisition_results_empty':
+        return 'No matches found';
+      case 'video_acquisition_section_title':
+        return 'Where to get it';
+      case 'video_acquisition_sources_partial_failed':
+        return ({required Object count}) => '${count} sources failed';
+      case 'video_acquisition_torrent_add_site':
+        return 'Add RSS search site';
+      case 'video_acquisition_torrent_found':
+        return ({required Object count}) => '${count} resources found';
+      case 'video_acquisition_torrent_unconfigured':
+        return 'No BT search sites yet. Add an RSS search site to search for resources.';
       case 'video_air_season_autumn':
         return '秋';
       case 'video_air_season_spring':
@@ -745165,16 +744600,6 @@ extension on _StringsZhHk {
         return '前進 10 秒';
       case 'video_bottom_seek_forward_label':
         return '+10s';
-      case 'video_builtin_apibay_hint':
-        return '電影與劇集。公共索引，無需賬號。';
-      case 'video_builtin_knaben_hint':
-        return '電影與劇集。聚合多家公共索引器。';
-      case 'video_builtin_nyaa_hint':
-        return '僅動漫。電影與劇集由下面兩個公共索引器覆蓋。';
-      case 'video_builtin_sources_hint':
-        return '隨應用內置：無需賬號，無需 API key。關閉後該來源不再參與資源搜索。';
-      case 'video_builtin_sources_title':
-        return '內置來源';
       case 'video_chapter_n':
         return ({required Object n}) => '章節 ${n}';
       case 'video_chapters':
@@ -746189,8 +745614,8 @@ extension on _StringsZhHk {
         return '重新導入';
       case 'video_resource_missing_title':
         return '影片無法訪問';
-      case 'video_resource_no_provider_hint':
-        return '本次搜索沒有可用的來源。請到 設定 → 下載 → 外部資源與字幕來源 重新啟用內置來源，或添加 Torznab 索引器。';
+      case 'video_resource_no_provider_rss_hint':
+        return 'This search had no source to query. Add an RSS search site or a Torznab indexer under Settings › Online services › Resource indexers.';
       case 'video_resource_no_provider_title':
         return '未配置資源索引器';
       case 'video_resource_query_failed':
@@ -746208,6 +745633,46 @@ extension on _StringsZhHk {
         }) => '${name}：${n} 條（${queries}）';
       case 'video_resource_source_skipped':
         return ({required Object name}) => '${name}：未參與（該來源無法搜尋這個查詢詞）';
+      case 'video_rss_add':
+        return 'Add RSS site';
+      case 'video_rss_domains':
+        return 'Use for';
+      case 'video_rss_domains_hint':
+        return 'Anime, movies and TV join video resource search and subscriptions; the others appear as sources on the Discover page.';
+      case 'video_rss_domains_required':
+        return 'Pick at least one';
+      case 'video_rss_edit_title':
+        return 'Edit RSS site';
+      case 'video_rss_empty_hint':
+        return 'Add an RSS search site here: simple, but results are fewer and cannot be sorted or paged. Or run Jackett / Prowlarr yourself and connect it under Torznab indexers for more complete search.';
+      case 'video_rss_empty_title':
+        return 'No BT search source yet';
+      case 'video_rss_name':
+        return 'Name';
+      case 'video_rss_settings_hint':
+        return 'Search torrent sites through their RSS search feeds. Fushi ships no sites: add the ones you use yourself.';
+      case 'video_rss_settings_title':
+        return 'RSS search sites';
+      case 'video_rss_test':
+        return 'Test search';
+      case 'video_rss_test_failed':
+        return ({required Object reason}) => 'Search failed: ${reason}';
+      case 'video_rss_test_query':
+        return 'Test keywords';
+      case 'video_rss_test_result':
+        return ({required Object n}) => 'Found ${n} results';
+      case 'video_rss_url_invalid':
+        return 'Not a valid http(s) address (no user name or # fragment)';
+      case 'video_rss_url_missing_query':
+        return 'The template must contain {query}';
+      case 'video_rss_url_needs_http_optin':
+        return 'Plain HTTP is blocked: use HTTPS, or allow insecure HTTP below';
+      case 'video_rss_url_required':
+        return 'Enter the search URL template';
+      case 'video_rss_url_template':
+        return 'Search URL template';
+      case 'video_rss_url_template_hint':
+        return 'Put {query} where the keywords go; add {page} if the site can page through results.';
       case 'video_runtime_minutes':
         return ({required Object n}) => '${n} min';
       case 'video_scrape_ai_confidence':
@@ -747198,6 +746663,12 @@ extension on _StringsZhHk {
         return '為電影與劇集提供英文及多語種字幕，按 IMDb / TMDB id 匹配。需要免費 API key；下載按 IP 計匿名每日額度。';
       case 'video_subscription_group_release_count':
         return ({required Object count}) => '共 ${count} 個發布';
+      case 'video_subscription_provider_choose_rss':
+        return 'Choose RSS site';
+      case 'video_subscription_provider_no_rss_site':
+        return 'Add an RSS search site in Settings first.';
+      case 'video_subscription_provider_removed':
+        return 'Source no longer available. Choose an RSS site instead.';
       case 'video_subtitle_adjust_collapse':
         return '收起';
       case 'video_subtitle_adjust_expand':

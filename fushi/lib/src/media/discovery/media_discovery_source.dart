@@ -1,4 +1,4 @@
-/// 发现源契约：一个源 = 一个本类实现（nyaa / AList 站 / shinnku / Mihon 适配…）。
+/// 发现源契约：一个源 = 一个本类实现（RSS 搜索站 / AList 站 / shinnku / Mihon 适配…）。
 ///
 /// 加源零框架改动：实现本类 + 在组装点注册进 `MediaDiscoveryService` 即可。
 /// 失败语义沿用全仓统一的 `ProviderBatchResult` / `ExternalProviderFailure`
@@ -28,10 +28,13 @@ abstract class MediaDiscoverySource {
   /// 在开关区关掉只影响聚合扇出（自配区仍显示「启用」、单选仍能用），在自配区
   /// 关掉则源直接离开注册表，把停用清单里那条 id 永久留成再没有 UI 能清的垃圾。
   ///
-  /// 这条分界与视频域一致：`preferences_repository.dart` 的
-  /// `video_resource_disabled_sources` 注释同样写着「自配 Torznab 各自带 enabled，
-  /// 不进这里」。
+  /// 这条分界与视频域一致：RSS 搜索站 / Torznab 配置各自带 `enabled`。
   bool get isUserConfigured => false;
+
+  /// 条目来自第三方站点（下载前要给「外部来源」标签与游戏资源风险说明）。默认 =
+  /// 内置源；用户自配的源里，自己的服务器（OPDS / AList / Audiobookshelf）不算，
+  /// 但用户添加的公共种子站（RSS 搜索站）仍是第三方，覆写为 true。
+  bool get isExternalSite => !isUserConfigured;
 
   DiscoveryCapabilities get capabilities;
 

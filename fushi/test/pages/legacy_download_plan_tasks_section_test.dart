@@ -9,7 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
-import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/legacy_download_plan_tasks_section.dart';
 import 'package:fushi/src/models/app_model.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -59,9 +59,7 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             home: Scaffold(
-              body: AnimeDownloadDialog(
-                embedded: true,
-                tasksOnly: true,
+              body: LegacyDownloadPlanTasksSection(
                 tasksBuilder: (_, tasks) {
                   onTasks(tasks);
                   return const SizedBox.shrink();

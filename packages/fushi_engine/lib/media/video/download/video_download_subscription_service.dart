@@ -6,6 +6,8 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/metadata/credential_redaction.dart';
+import 'package:fushi_engine/media/torrent/rss_search_provider.dart'
+    show kRssResourceProviderId, rssProvidersHaveVideoSite;
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
@@ -23,7 +25,7 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 typedef VideoDownloadSubscriptionEnqueue =
     Future<String> Function(VideoDownloadEnqueueRequest request);
 
-// Nyaa's upstream RESULTS_PER_PAGE default is 75. Keeping the subscription
+// Common torrent-site RSS feeds return 75 results per page. Keeping the subscription
 // window aligned lets a 75-item first page continue instead of being mistaken
 // for a short page.
 const int _subscriptionResourcePageSize = 75;
@@ -48,6 +50,21 @@ class VideoDownloadSubscriptionConfigurationError implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// 订阅行 `lastError` 里「来源已移除」的固定文案（UI 也可直接用
+/// `isRemovedBuiltinVideoResourceProvider(row.resourceProvider)` 判，不必比字符串）。
+const String kVideoDownloadSubscriptionProviderRemovedMessage =
+    'The resource provider of this subscription was removed; '
+    'choose an RSS search site';
+
+/// 订阅绑定的是已从仓库移除的内置搜索站（nyaa / apibay / knaben）。不迁移：
+/// 用户须改选自己添加的 RSS 搜索站。它是配置错误的一种（UI 已有的配置错误
+/// 呈现照常生效），但永远不会自愈，所以重试间隔直接取上限、不打任何网络请求。
+class VideoDownloadSubscriptionProviderRemovedError
+    extends VideoDownloadSubscriptionConfigurationError {
+  const VideoDownloadSubscriptionProviderRemovedError()
+    : super(kVideoDownloadSubscriptionProviderRemovedMessage);
 }
 
 /// v78 订阅调度器。
@@ -381,6 +398,11 @@ class VideoDownloadSubscriptionService {
     VideoDownloadSubscriptionRow subscription,
   ) async {
     _ensureLeaseHeld();
+    // 先于其它校验：已移除来源的旧行可能还有别的历史缺陷（如没有 discoveryCategory），
+    // 用户该看到的是「来源已移除、请改选 RSS 站」，不是那些次要错误。
+    if (isRemovedBuiltinVideoResourceProvider(subscription.resourceProvider)) {
+      throw const VideoDownloadSubscriptionProviderRemovedError();
+    }
     _validateSubscription(subscription);
     final List<VideoDownloadSubscriptionItemRow> existingItems = await database
         .getVideoDownloadSubscriptionItems(subscription.subscriptionId);
@@ -410,6 +432,18 @@ class VideoDownloadSubscriptionService {
     )) {
       throw const VideoDownloadSubscriptionConfigurationError(
         'The selected resource provider is not configured on this device',
+      );
+    }
+    final String? selectedInstance = _providerInstance(selectedProvider);
+    if (providerBase == kRssResourceProviderId &&
+        selectedInstance != null &&
+        !rssProvidersHaveVideoSite(
+          resourceRegistry.providers,
+          selectedInstance,
+        )) {
+      // 站被删 / 停用 / 取消了视频域：照搜只会「成功 0 条」，订阅静默停摆。
+      throw const VideoDownloadSubscriptionConfigurationError(
+        'The selected RSS search site is not configured on this device',
       );
     }
     final _SubscriptionFilter filter = _SubscriptionFilter.parse(
@@ -543,6 +577,8 @@ class VideoDownloadSubscriptionService {
         season: season,
         page: page,
         limit: _subscriptionResourcePageSize,
+        // 订阅绑在 `rss:<siteId>` 上时只搜那一个站，不把用户配的每个站都打一遍。
+        providerInstanceId: _providerInstance(selectedProvider),
       );
       final List<ProviderBatchResult<VideoResourceCandidate>> batches =
           await Future.wait(
@@ -889,10 +925,15 @@ class VideoDownloadSubscriptionService {
     VideoDownloadSubscriptionRow subscription,
     Object error,
   ) {
+    final int maximum = const Duration(hours: 6).inMilliseconds;
+    // 来源已移除不会自愈：直接按上限隔开，lastError 一直挂着「请改选 RSS 站」，
+    // 而不是 15 分钟、30 分钟……地反复改写同一条错误。
+    if (error is VideoDownloadSubscriptionProviderRemovedError) {
+      return Duration(milliseconds: maximum);
+    }
     final int exponent = subscription.retryCount.clamp(0, 5);
     final int multiplier = 1 << exponent;
     int milliseconds = checkInterval.inMilliseconds * multiplier;
-    final int maximum = const Duration(hours: 6).inMilliseconds;
     if (milliseconds > maximum) milliseconds = maximum;
     if (error is ExternalProviderFailure && error.retryAfter != null) {
       final int requested = error.retryAfter!.inMilliseconds;
@@ -984,7 +1025,7 @@ class _SubscriptionFilter {
     final bool? trusted = _optionalBool(decoded, 'trusted');
     final bool? trustedOnly = _optionalBool(decoded, 'trustedOnly');
     // 用户在「编辑订阅」里填的标题关键词（包含全部 / 一个都不含），不算版本证据：
-    // 下面「Nyaa / Torznab 至少要有一条版本规则」的门不认它们。
+    // 下面「RSS 搜索站 / Torznab 至少要有一条版本规则」的门不认它们。
     final List<String> titleIncludes = _filterValues(
       decoded,
       kVideoSubscriptionTitleIncludeKey,
@@ -993,15 +1034,8 @@ class _SubscriptionFilter {
       decoded,
       kVideoSubscriptionTitleExcludeKey,
     );
-    if (providerBase == 'nyaa' &&
-        (releaseGroups.isEmpty ||
-            (resolutions.isEmpty && qualities.isEmpty) ||
-            (trusted == null && trustedOnly == null))) {
-      throw const VideoDownloadSubscriptionConfigurationError(
-        'Nyaa subscriptions require release group, resolution, and trust rules',
-      );
-    }
-    if (providerBase == 'torznab' &&
+    // 种子站发布名又脏又多，没有任何版本规则的订阅会把同一集的几十个版本全下回来。
+    if ((providerBase == 'torznab' || providerBase == kRssResourceProviderId) &&
         releaseGroups.isEmpty &&
         resolutions.isEmpty &&
         qualities.isEmpty &&
@@ -1009,7 +1043,7 @@ class _SubscriptionFilter {
         codecs.isEmpty &&
         languages.isEmpty) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'Torznab subscriptions require at least one strict version rule',
+        'RSS and Torznab subscriptions require at least one strict version rule',
       );
     }
     return _SubscriptionFilter(
@@ -1091,7 +1125,7 @@ class _SubscriptionFilter {
 
 VideoMediaReference _mediaReference(VideoDownloadSubscriptionRow subscription) {
   // v94（BUG-2003）：优先入队快照，保留日文原名、罗马字别名和外部身份。
-  // Nyaa 轮询使用持久化的 searchQuery，别名仅供未指定查询时选默认词。订阅列
+  // 资源轮询使用持久化的 searchQuery，别名仅供未指定查询时选默认词。订阅列
   // （title/year/season/kind）仍是流程真值。旧行（NULL 快照）走修前重建。
   final VideoMediaReference? stored = decodeVideoMediaReference(
     subscription.identityJson,
@@ -1153,9 +1187,6 @@ VideoDiscoveryCategory _discoveryCategory(
   final String? raw = subscription.discoveryCategory;
   for (final VideoDiscoveryCategory value in VideoDiscoveryCategory.values) {
     if (value.name == raw) return value;
-  }
-  if (_providerBase(subscription.resourceProvider) == 'nyaa') {
-    return VideoDiscoveryCategory.anime;
   }
   return _mediaKind(subscription.mediaKind) == VideoMetadataMediaKind.movie
       ? VideoDiscoveryCategory.movie
@@ -1271,6 +1302,12 @@ int _compareLogicalItemKeys(String left, String right) {
   if (left == 'movie') return right == 'movie' ? 0 : -1;
   if (right == 'movie') return 1;
   return left.compareTo(right);
+}
+
+String? _providerInstance(String providerId) {
+  final int colon = providerId.indexOf(':');
+  if (colon < 0 || colon == providerId.length - 1) return null;
+  return providerId.substring(colon + 1).trim();
 }
 
 String _providerBase(String providerId) =>

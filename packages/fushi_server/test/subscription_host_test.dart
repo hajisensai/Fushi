@@ -1,8 +1,8 @@
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
-import 'package:fushi_engine/media/torrent/nyaa_client.dart';
-import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/rss_search_provider.dart';
+import 'package:fushi_engine/media/torrent/rss_search_site.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
@@ -11,6 +11,7 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart';
 import 'package:fushi_engine/sync/subscriptions/pipeline_subscription_host.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:test/test.dart';
 
 /// host 侧订阅：后端四元组 / 落地源由 host 覆写，provider 在场校验，启停/删除。
@@ -23,10 +24,15 @@ void main() {
 
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    registry = VideoResourceRegistry(<NyaaVideoResourceProvider>[
-      NyaaVideoResourceProvider(
-        client: NyaaClient(client: http.Client()),
-        closesClient: true,
+    registry = VideoResourceRegistry(<RssSearchProvider>[
+      RssSearchProvider(
+        sites: <RssSearchSiteConfig>[
+          _site('nyaa-rss'),
+          // 停用的站 / 只勾了非视频域的站不参与订阅，能力位不报。
+          _site('off', enabled: false),
+          _site('books', domains: <RssSearchDomain>[RssSearchDomain.novel]),
+        ],
+        client: _emptyRss(),
       ),
     ]);
     target = VideoDownloadBackendTarget(
@@ -60,7 +66,7 @@ void main() {
   });
 
   HostSubscriptionCreateRequest req(
-          {String provider = 'nyaa:nyaa.si', String? id}) =>
+          {String provider = 'rss:nyaa-rss', String? id}) =>
       HostSubscriptionCreateRequest(
         title: 'Frieren',
         searchQuery: 'Frieren 1080p',
@@ -78,7 +84,7 @@ void main() {
     final Map<String, Object?> cap = await host.capability();
     expect(cap['supported'], isTrue);
     expect(cap['backend'], 'embedded');
-    expect(cap['providers'], <String>['nyaa']);
+    expect(cap['providers'], <String>['rss:nyaa-rss']);
   });
 
   test('create：后端四元组与落地源用 host 自己的，客户端字段原样落库', () async {
@@ -117,8 +123,33 @@ void main() {
           .having((HostSubscriptionRejected e) => e.reason, 'reason',
               'provider_unavailable')
           .having((HostSubscriptionRejected e) => e.message, 'message',
-              contains('nyaa'))),
+              contains('rss:nyaa-rss'))),
     );
+  });
+
+  test('create：host 上没有 / 已停用的 RSS 站 → provider_unavailable（不建永远搜不到的订阅）', () async {
+    for (final String provider in <String>['rss:elsewhere', 'rss:off', 'rss:books']) {
+      await expectLater(
+        host.create(req(provider: provider)),
+        throwsA(isA<HostSubscriptionRejected>().having(
+            (HostSubscriptionRejected e) => e.reason, 'reason', 'provider_unavailable')),
+        reason: provider,
+      );
+    }
+    expect(await host.list(), isEmpty);
+  });
+
+  test('create：已移除的内置源（nyaa / apibay / knaben）→ provider_removed', () async {
+    for (final String provider in <String>['nyaa', 'nyaa:nyaa.si', 'apibay:apibay.org', 'knaben']) {
+      await expectLater(
+        host.create(req(provider: provider)),
+        throwsA(isA<HostSubscriptionRejected>()
+            .having((HostSubscriptionRejected e) => e.reason, 'reason', 'provider_removed')
+            .having((HostSubscriptionRejected e) => e.status, 'status', 400)),
+        reason: provider,
+      );
+    }
+    expect(await host.list(), isEmpty);
   });
 
   test('create：Torznab indexer 按 torznab:<id> 报可用', () async {
@@ -145,7 +176,7 @@ void main() {
       service: service,
     );
     expect((await h.capability())['providers'],
-        <String>['nyaa', 'torznab:jackett']);
+        <String>['rss:nyaa-rss', 'torznab:jackett']);
   });
 
   test('capability：停用的 Torznab indexer 不公布，其它 provider 照报（BUG-2818）', () async {
@@ -175,7 +206,7 @@ void main() {
       backendName: 'embedded',
       service: service,
     );
-    expect((await h.capability())['providers'], <String>['nyaa', 'torznab:on']);
+    expect((await h.capability())['providers'], <String>['rss:nyaa-rss', 'torznab:on']);
   });
 
   test('setEnabled / delete：未知 id 404；停用清租约、启用重排期', () async {
@@ -225,3 +256,20 @@ void main() {
     );
   });
 }
+
+RssSearchSiteConfig _site(
+  String id, {
+  bool enabled = true,
+  List<RssSearchDomain> domains = const <RssSearchDomain>[RssSearchDomain.anime],
+}) =>
+    RssSearchSiteConfig(
+      id: id,
+      name: id,
+      urlTemplate: 'https://$id.example/rss?q={query}',
+      enabled: enabled,
+      domains: domains,
+    );
+
+/// 不出网：任何搜索都回一个结构有效、没有条目的 RSS。
+MockClient _emptyRss() => MockClient((http.Request request) async =>
+    http.Response('<?xml version="1.0"?><rss version="2.0"><channel><title>x</title></channel></rss>', 200));

@@ -1,5 +1,5 @@
 /// 下载模式资源候选的「版本」聚类（纯函数，参照 RSS-Subtitle-Manager 的
-/// Nyaa 版本选择器）：几十条发布流水账 → 少数几张「发布组 › 清晰度」版本卡。
+/// 旧版本选择器）：几十条发布流水账 → 少数几张「发布组 › 清晰度」版本卡。
 ///
 /// 订阅模式已有按订阅生效单位的聚合（`groupVideoSubscriptionCandidates`，
 /// BUG-1590）；本模块服务**下载模式**：用户最终要挑的是一条具体发布，聚类只
@@ -193,7 +193,7 @@ int _byEpisodeAsc(VideoResourceCandidate a, VideoResourceCandidate b) {
 ///
 /// 相关度必须是主键，不能上来就按做种数排：`VideoResourceRegistry` 在返回前专门跑过
 /// `rankVideoResourcesByRelevance`（按季号/标题贴合度），它存在的全部理由就是
-/// 「Nyaa 只做模糊词匹配，搜 "xxx 2" 会被做种更多的 S1/S3 压在前面」。组间再按做种数
+/// 「种子站只做模糊词匹配，搜 "xxx 2" 会被做种更多的 S1/S3 压在前面」。组间再按做种数
 /// 重排等于把那个已修的 bug 原样放回主路径——用户搜第二季，第一季的版本卡回到第一位。
 /// 做种数退为**同等相关度内**的次级信号。
 List<VideoResourceVersionGroup> buildVideoResourceVersionGroups(

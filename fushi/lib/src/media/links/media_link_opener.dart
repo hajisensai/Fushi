@@ -21,7 +21,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
     show AiMediaAcquisitionDomain;
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/video_resource_search_launcher.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart'
     show OnlineSourcesDomain;
 import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
@@ -29,7 +29,8 @@ import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart
 /// 「未入库」灰卡的「去搜」：交给各模块**已有**的获取入口，标题预填。返回 null =
 /// 本平台 / 本配置没有可用入口（灰卡就只是灰卡，不渲染一个点了没去处的按钮）。
 ///
-/// - 视频合集 / 单个视频：番剧下载对话框（与合集详情页「相关作品 › 去下载」同一个），
+/// - 视频合集 / 单个视频：视频资源搜索页（[openVideoResourceSearch]，与合集详情页
+///   「相关作品 › 去下载」同一个；灰卡只有标题，进手动身份模式），
 ///   门是「浏览」模块开着——该模块的 `availableOn` 已委托 `StoreRestrictedCapability`，
 ///   iOS 上恒关；
 /// - 书 / 游戏：发现页同一个「AI 下载」入口（[discoveryAiAcquireAction]），合规门
@@ -46,10 +47,10 @@ ValueChanged<String>? mediaLinkSearchAction({
     case MediaLinkKind.videoEpisode:
       if (!appModel.moduleVisibility.isEnabled(ModuleId.browse)) return null;
       return (String title) => unawaited(
-        showAppDialog<void>(
-          context: context,
-          builder: (_) =>
-              AnimeDownloadDialog(showTasks: false, initialSearchQuery: title),
+        openVideoResourceSearch(
+          context,
+          appModel: ref.read(appProvider),
+          initialQuery: title,
         ),
       );
     case MediaLinkKind.book:

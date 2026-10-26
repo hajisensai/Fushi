@@ -3,18 +3,17 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:fushi_engine/media/external_provider.dart';
-import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
-import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
-import 'package:fushi_engine/media/torrent/public_video_index_provider.dart';
+import 'package:fushi_engine/media/torrent/rss_search_provider.dart';
+import 'package:fushi_engine/media/torrent/rss_search_site.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 
-/// 只记录「有没有被问到」的替身。域门控与停用清单的正确性只能这样测：
-/// 停用必须是**不参与查询**，而不是「查了再把结果丢掉」——后者照样打网络请求，
-/// 失败照样进 failures 吓用户。
+/// 只记录「有没有被问到」的替身。域门控的正确性只能这样测：不适用的源必须是
+/// **不参与查询**，而不是「查了再把结果丢掉」——后者照样打网络请求，失败照样进
+/// failures 吓用户。
 class _RecordingProvider implements VideoResourceProvider {
   _RecordingProvider(this.id, this.categories, {this.priority = 0});
 
@@ -61,148 +60,135 @@ VideoResourceSearchRequest _request(VideoDiscoveryCategory? category) =>
             ),
     );
 
+RssSearchSiteConfig _site(String id, List<RssSearchDomain> domains) =>
+    RssSearchSiteConfig(
+      id: id,
+      name: id,
+      urlTemplate: 'https://$id.example/rss?q={query}',
+      domains: domains,
+    );
+
 void main() {
-  late _RecordingProvider nyaa;
-  late _RecordingProvider apibay;
-  late _RecordingProvider knaben;
-  late _RecordingProvider torznab;
+  group('provider 自报域（VideoResourceProvider.categories）', () {
+    late _RecordingProvider animeOnly;
+    late _RecordingProvider liveAction;
+    late _RecordingProvider torznab;
 
-  List<VideoResourceProvider> providers() => <VideoResourceProvider>[
-        nyaa,
-        apibay,
-        knaben,
-        torznab,
-      ];
+    List<VideoResourceProvider> providers() => <VideoResourceProvider>[
+      animeOnly,
+      liveAction,
+      torznab,
+    ];
 
-  setUp(() {
-    nyaa = _RecordingProvider(
-      kNyaaResourceProviderId,
-      const <VideoDiscoveryCategory>{VideoDiscoveryCategory.anime},
-      priority: 100,
-    );
-    apibay = _RecordingProvider(
-      kApibayResourceProviderId,
-      const <VideoDiscoveryCategory>{
-        VideoDiscoveryCategory.movie,
-        VideoDiscoveryCategory.tv,
-      },
-      priority: 200,
-    );
-    knaben = _RecordingProvider(
-      kKnabenResourceProviderId,
-      const <VideoDiscoveryCategory>{
-        VideoDiscoveryCategory.movie,
-        VideoDiscoveryCategory.tv,
-      },
-      priority: 210,
-    );
-    // 空集 = 不限域（用户自配的 Torznab：搜什么由他填的分类决定）。
-    torznab = _RecordingProvider(
-      'torznab',
-      const <VideoDiscoveryCategory>{},
-      priority: 10,
-    );
-  });
-
-  test('anime only reaches nyaa and the unrestricted torznab', () async {
-    await VideoResourceRegistry(providers())
-        .search(_request(VideoDiscoveryCategory.anime));
-    expect(nyaa.searchCalls, 1);
-    expect(torznab.searchCalls, 1);
-    expect(apibay.searchCalls, 0);
-    expect(knaben.searchCalls, 0);
-  });
-
-  test('movies reach the public indexers but never nyaa', () async {
-    await VideoResourceRegistry(providers())
-        .search(_request(VideoDiscoveryCategory.movie));
-    expect(apibay.searchCalls, 1);
-    expect(knaben.searchCalls, 1);
-    expect(torznab.searchCalls, 1);
-    expect(nyaa.searchCalls, 0);
-  });
-
-  test('tv reaches the public indexers but never nyaa', () async {
-    await VideoResourceRegistry(providers())
-        .search(_request(VideoDiscoveryCategory.tv));
-    expect(apibay.searchCalls, 1);
-    expect(knaben.searchCalls, 1);
-    expect(nyaa.searchCalls, 0);
-  });
-
-  test('a request with no media identity only reaches unrestricted providers',
-      () async {
-    // 与 id 白名单时代逐字一致：那时 anime 为 false，Nyaa 同样不进。
-    await VideoResourceRegistry(providers()).search(_request(null));
-    expect(torznab.searchCalls, 1);
-    expect(nyaa.searchCalls, 0);
-    expect(apibay.searchCalls, 0);
-    expect(knaben.searchCalls, 0);
-  });
-
-  test('a disabled source is never queried at all', () async {
-    final ProviderBatchResult<VideoResourceCandidate> result =
-        await VideoResourceRegistry(
-      providers(),
-      disabledProviderIds: <String>{kApibayResourceProviderId},
-    ).search(_request(VideoDiscoveryCategory.movie));
-    expect(apibay.searchCalls, 0);
-    expect(knaben.searchCalls, 1);
-    // 停用一家不等于「没有来源」：另一家答了，空态判据必须仍是普通空结果。
-    expect(result.hasNoActiveProvider, isFalse);
-  });
-
-  test('disabling every applicable source yields the no-provider state',
-      () async {
-    final ProviderBatchResult<VideoResourceCandidate> result =
-        await VideoResourceRegistry(
-      providers(),
-      disabledProviderIds: <String>{
-        kApibayResourceProviderId,
-        kKnabenResourceProviderId,
+    setUp(() {
+      animeOnly = _RecordingProvider(
+        'anime-only',
+        const <VideoDiscoveryCategory>{VideoDiscoveryCategory.anime},
+        priority: 100,
+      );
+      liveAction = _RecordingProvider(
+        'live-action',
+        const <VideoDiscoveryCategory>{
+          VideoDiscoveryCategory.movie,
+          VideoDiscoveryCategory.tv,
+        },
+        priority: 200,
+      );
+      // 空集 = 不限域（用户自配的 Torznab：搜什么由他填的分类决定）。
+      torznab = _RecordingProvider(
         'torznab',
-      },
-    ).search(_request(VideoDiscoveryCategory.movie));
-    expect(apibay.searchCalls, 0);
-    expect(knaben.searchCalls, 0);
-    expect(torznab.searchCalls, 0);
-    // PR#896 的空态：0 成功 0 失败 = 「没有来源可问」，不是「没搜到」。
-    expect(result.hasNoActiveProvider, isTrue);
-  });
-
-  group('builtin source table', () {
-    test('every descriptor id matches the provider it constructs', () {
-      // 这张表同时驱动 provider 构造和设置页开关行。id 一旦与 provider.id 漂开，
-      // 停用清单就写不进去：开关看着关了，搜索照样打网络。
-      for (final BuiltinVideoResourceSource source
-          in kBuiltinVideoResourceSources) {
-        final VideoResourceProvider provider = source.create(
-          MockClient((http.Request request) async => http.Response('', 200)),
-        );
-        expect(
-          provider.id,
-          source.id,
-          reason: 'descriptor ${source.id} builds provider ${provider.id}',
-        );
-        provider.close();
-      }
+        const <VideoDiscoveryCategory>{},
+        priority: 10,
+      );
     });
 
-    test('ids are unique and cover nyaa plus both public indexers', () {
-      final List<String> ids = <String>[
-        for (final BuiltinVideoResourceSource source
-            in kBuiltinVideoResourceSources)
-          source.id,
-      ];
-      expect(ids.toSet(), hasLength(ids.length));
-      expect(
-        ids,
-        containsAll(<String>[
-          kNyaaResourceProviderId,
-          kApibayResourceProviderId,
-          kKnabenResourceProviderId,
-        ]),
+    test('anime 只问声明了 anime 的源与不限域的源', () async {
+      await VideoResourceRegistry(
+        providers(),
+      ).search(_request(VideoDiscoveryCategory.anime));
+      expect(animeOnly.searchCalls, 1);
+      expect(torznab.searchCalls, 1);
+      expect(liveAction.searchCalls, 0);
+    });
+
+    test('movie / tv 不问只声明 anime 的源', () async {
+      await VideoResourceRegistry(
+        providers(),
+      ).search(_request(VideoDiscoveryCategory.movie));
+      await VideoResourceRegistry(
+        providers(),
+      ).search(_request(VideoDiscoveryCategory.tv));
+      expect(liveAction.searchCalls, 2);
+      expect(torznab.searchCalls, 2);
+      expect(animeOnly.searchCalls, 0);
+    });
+
+    test('没有作品身份的请求只问不限域的源', () async {
+      await VideoResourceRegistry(providers()).search(_request(null));
+      expect(torznab.searchCalls, 1);
+      expect(animeOnly.searchCalls, 0);
+      expect(liveAction.searchCalls, 0);
+    });
+
+    test('没有任何源适用：0 成功 0 失败 = 「没有来源可问」（PR#896 的空态）', () async {
+      final ProviderBatchResult<VideoResourceCandidate> result =
+          await VideoResourceRegistry(<VideoResourceProvider>[
+            animeOnly,
+          ]).search(_request(VideoDiscoveryCategory.movie));
+      expect(animeOnly.searchCalls, 0);
+      expect(result.hasNoActiveProvider, isTrue);
+    });
+  });
+
+  group('RSS 搜索站按每个站自己勾的域参与（仓库不再内置任何 BT 搜索站）', () {
+    late List<Uri> requests;
+    late VideoResourceRegistry registry;
+
+    setUp(() {
+      requests = <Uri>[];
+      registry = VideoResourceRegistry(<VideoResourceProvider>[
+        RssSearchProvider(
+          sites: <RssSearchSiteConfig>[
+            _site('anime', <RssSearchDomain>[RssSearchDomain.anime]),
+            _site('films', <RssSearchDomain>[
+              RssSearchDomain.movie,
+              RssSearchDomain.tv,
+            ]),
+            _site('books', <RssSearchDomain>[RssSearchDomain.novel]),
+          ],
+          client: MockClient((http.Request request) async {
+            requests.add(request.url);
+            return http.Response(
+              '<rss version="2.0"><channel></channel></rss>',
+              200,
+            );
+          }),
+        ),
+      ]);
+      addTearDown(registry.close);
+    });
+
+    Set<String> hosts() => requests.map((Uri u) => u.host).toSet();
+
+    test('anime 只打勾了动漫的站', () async {
+      final VideoResourceSearchResult result = await registry.search(
+        _request(VideoDiscoveryCategory.anime),
       );
+      expect(hosts(), <String>{'anime.example'});
+      expect(
+        result.sources.map((VideoResourceSourceReport r) => r.providerId),
+        <String>['rss:anime'],
+      );
+    });
+
+    test('movie 只打勾了电影的站；只勾小说的站从不进视频搜索', () async {
+      await registry.search(_request(VideoDiscoveryCategory.movie));
+      expect(hosts(), <String>{'films.example'});
+    });
+
+    test('纯关键词搜索：所有勾了视频域的站都参与', () async {
+      await registry.search(_request(null));
+      expect(hosts(), <String>{'anime.example', 'films.example'});
     });
   });
 }

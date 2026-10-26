@@ -33,17 +33,17 @@ class _Candidate extends VideoResourceCandidate {
     String group = 'VCB-Studio',
     int seeders = 10,
   }) : super(
-          providerId: 'nyaa',
-          providerInstanceId: 'nyaa.si',
-          remoteId: remoteId,
-          title: title,
-          releaseGroup: group,
-          resolution: '1080p',
-          category: '1_3',
-          trusted: true,
-          seeders: seeders,
-          providerPriority: 1,
-        );
+         providerId: 'rss',
+         providerInstanceId: 'nyaa-rss',
+         remoteId: remoteId,
+         title: title,
+         releaseGroup: group,
+         resolution: '1080p',
+         category: '1_3',
+         trusted: true,
+         seeders: seeders,
+         providerPriority: 1,
+       );
 }
 
 class _Provider implements VideoResourceProvider {
@@ -52,7 +52,7 @@ class _Provider implements VideoResourceProvider {
   final List<VideoResourceCandidate> candidates;
 
   @override
-  String get id => 'nyaa';
+  String get id => 'rss';
 
   @override
   int get priority => 1;
@@ -63,8 +63,7 @@ class _Provider implements VideoResourceProvider {
   @override
   Future<ProviderBatchResult<VideoResourceCandidate>> search(
     VideoResourceSearchRequest request,
-  ) async =>
-      ProviderBatchResult<VideoResourceCandidate>.success(candidates);
+  ) async => ProviderBatchResult<VideoResourceCandidate>.success(candidates);
 
   @override
   Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate) async =>
@@ -75,15 +74,15 @@ class _Provider implements VideoResourceProvider {
 }
 
 VideoMediaReference _media() => VideoMediaReference(
-      providerId: 'tmdb',
-      mediaId: '77777',
-      mediaKind: VideoMetadataMediaKind.tv,
-      discoveryCategory: VideoDiscoveryCategory.anime,
-      title: 'Shoujo Kageki Revue Starlight',
-      year: 2018,
-      season: 1,
-      externalIds: <String, String>{'tmdb': '77777'},
-    );
+  providerId: 'tmdb',
+  mediaId: '77777',
+  mediaKind: VideoMetadataMediaKind.tv,
+  discoveryCategory: VideoDiscoveryCategory.anime,
+  title: 'Shoujo Kageki Revue Starlight',
+  year: 2018,
+  season: 1,
+  externalIds: <String, String>{'tmdb': '77777'},
+);
 
 const MediaSourceRow _source = MediaSourceRow(
   videoGroupingMode: 'series',
@@ -108,43 +107,42 @@ void main() {
     bool submit = true,
   }) async {
     VideoDiscoverySubscriptionSelection? submitted;
-    await tester.pumpWidget(TranslationProvider(
-      child: MaterialApp(
-        home: Scaffold(
-          body: VideoResourceSearchSurface(
-            pageMode: true,
-            initialItem: VideoDiscoveryItem(reference: _media()),
-            registry: VideoResourceRegistry(
-              <VideoResourceProvider>[_Provider(candidates)],
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: VideoResourceSearchSurface(
+              pageMode: true,
+              initialItem: VideoDiscoveryItem(reference: _media()),
+              registry: VideoResourceRegistry(<VideoResourceProvider>[
+                _Provider(candidates),
+              ]),
+              sources: const <MediaSourceRow>[_source],
+              onSubscriptionSubmit:
+                  (VideoDiscoverySubscriptionSelection selection) async {
+                    submitted = selection;
+                  },
             ),
-            sources: const <MediaSourceRow>[_source],
-            onSubscriptionSubmit:
-                (VideoDiscoverySubscriptionSelection selection) async {
-              submitted = selection;
-            },
           ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text(rowTitle));
     await tester.pumpAndSettle();
     if (submit) {
-      await tester
-          .tap(find.byKey(const ValueKey<String>('video-subscription-submit')));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-subscription-submit')),
+      );
       await tester.pumpAndSettle();
     }
     return submitted;
   }
 
   List<VideoResourceCandidate> twoRules() => <VideoResourceCandidate>[
-        _Candidate(remoteId: 'batch', title: _batchTitle),
-        _Candidate(
-          remoteId: 'ep5',
-          title: _episodeTitle,
-          group: 'SubsPlease',
-        ),
-      ];
+    _Candidate(remoteId: 'batch', title: _batchTitle),
+    _Candidate(remoteId: 'ep5', title: _episodeTitle, group: 'SubsPlease'),
+  ];
 
   testWidgets('选中整包时说明是一次性下载，且不给起始集号', (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 900));
@@ -173,8 +171,11 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    final VideoDiscoverySubscriptionSelection? batch =
-        await subscribeTo(tester, twoRules(), _batchTitle);
+    final VideoDiscoverySubscriptionSelection? batch = await subscribeTo(
+      tester,
+      twoRules(),
+      _batchTitle,
+    );
     expect(batch, isNotNull);
     expect(batch!.batchRelease, isTrue);
     expect(
@@ -183,8 +184,11 @@ void main() {
       reason: '整包没有起点，带出去只会让一次性订阅显示一个无意义的集号',
     );
 
-    final VideoDiscoverySubscriptionSelection? episode =
-        await subscribeTo(tester, twoRules(), _episodeTitle);
+    final VideoDiscoverySubscriptionSelection? episode = await subscribeTo(
+      tester,
+      twoRules(),
+      _episodeTitle,
+    );
     expect(episode, isNotNull);
     expect(episode!.batchRelease, isFalse, reason: '单集发布仍然按追更订阅');
     expect(episode.startAfterEpisode, 5);
@@ -194,19 +198,24 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    // 同组同清晰度：整包与单集聚合成一行，代表条是做种更多的整包。
+    // 同一条严格规则（RSS 规则还锁标题里的片源 / 编码，两条标题要带同样的
+    // 证据）：整包与单集聚合成一行，代表条是做种更多的整包。
     final List<VideoResourceCandidate> mixed = <VideoResourceCandidate>[
       _Candidate(remoteId: 'batch', title: _batchTitle, seeders: 99),
       _Candidate(
         remoteId: 'ep5',
-        title: '[DMG&MakariHoshiyume&VCB-Studio] Shoujo Kageki Revue '
-            'Starlight - 05 [1080p]',
+        title:
+            '[DMG&MakariHoshiyume&VCB-Studio] Shoujo Kageki Revue '
+            'Starlight - 05 10-bit 1080p HEVC BDRip',
         seeders: 3,
       ),
     ];
 
-    final VideoDiscoverySubscriptionSelection? submitted =
-        await subscribeTo(tester, mixed, _batchTitle);
+    final VideoDiscoverySubscriptionSelection? submitted = await subscribeTo(
+      tester,
+      mixed,
+      _batchTitle,
+    );
 
     expect(submitted, isNotNull);
     expect(

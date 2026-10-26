@@ -50,6 +50,8 @@ class InterconnectServiceConfigSnapshot {
     'video_subtitle_subdl_api_key',
     'video_subtitle_subdl_enabled',
     'video_resource_torznab_config',
+    // RSS 搜索站与 Torznab 同类：用户配好的 BT 搜索来源在他另一台设备上也该能搜。
+    'resource_rss_sites',
   };
 
   static final Map<String, String> _defaultRawValues = <String, String>{
@@ -67,6 +69,7 @@ class InterconnectServiceConfigSnapshot {
     'video_subtitle_subdl_api_key': PrefCodec.encode(''),
     'video_subtitle_subdl_enabled': PrefCodec.encode(true),
     'video_resource_torznab_config': PrefCodec.encode(''),
+    'resource_rss_sites': PrefCodec.encode(''),
   };
 
   /// Raw [PrefCodec] values, kept raw so the client does not double-encode
@@ -77,12 +80,10 @@ class InterconnectServiceConfigSnapshot {
   factory InterconnectServiceConfigSnapshot.fromPreferences(
     Map<String, String> allPreferences,
   ) {
-    return InterconnectServiceConfigSnapshot._(
-      <String, String>{
-        for (final String key in sharedPreferenceKeys)
-          key: allPreferences[key] ?? _defaultRawValues[key]!,
-      },
-    );
+    return InterconnectServiceConfigSnapshot._(<String, String>{
+      for (final String key in sharedPreferenceKeys)
+        key: allPreferences[key] ?? _defaultRawValues[key]!,
+    });
   }
 
   factory InterconnectServiceConfigSnapshot.fromJson(
@@ -107,9 +108,9 @@ class InterconnectServiceConfigSnapshot {
   }
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'schemaVersion': schemaVersion,
-        'preferences': preferences,
-      };
+    'schemaVersion': schemaVersion,
+    'preferences': preferences,
+  };
 
   /// Applies only changed allowlisted rows. Returns the number of rows changed.
   ///

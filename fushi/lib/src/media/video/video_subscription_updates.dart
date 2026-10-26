@@ -1,6 +1,5 @@
 import 'package:fushi_core/fushi_core.dart'
     show
-        MediaCollectionRow,
         VideoDownloadJobRow,
         VideoDownloadSubscriptionItemRow,
         VideoDownloadSubscriptionRow;
@@ -28,19 +27,16 @@ import 'package:fushi/src/media/video/video_home_layout.dart';
 ///   （与订阅服务 `_managedEpisodeKeys` 同口径：条目 `jobId` 因任务删除被
 ///   setNull 后仍能靠身份找回）；
 /// * 订阅的元数据身份 → 刮削作品 → 合集（[collectionIdByProviderIdentity] 由
-///   调用方按订阅逐条查好，键 `'$provider|$externalId'`）；
-/// * 旧链路：订阅 `anilistId` → `MediaCollections.anilistId` 直绑。
+///   调用方按订阅逐条查好，键 `'$provider|$externalId'`）。
 ///
 /// **不看 `enabled`**：暂停/已完成（oneShot fulfilled）的订阅仍是「订阅过的作品」，
 /// 已下载未看的集数照样该出现在这一行。
 Set<int> subscribedVideoCollectionIds({
   required List<VideoDownloadSubscriptionRow> subscriptions,
   required Map<String, List<VideoDownloadSubscriptionItemRow>>
-      itemsBySubscription,
+  itemsBySubscription,
   required List<VideoDownloadJobRow> jobs,
   required Map<String, int> collectionIdByProviderIdentity,
-  required Iterable<int> legacyAnilistIds,
-  required Iterable<MediaCollectionRow> collections,
 }) {
   final Set<int> out = <int>{};
   final Map<String, int> collectionByJob = <String, int>{
@@ -72,14 +68,6 @@ Set<int> subscribedVideoCollectionIds({
       final String key = providerIdentityKey(provider, externalId);
       out.addAll(collectionsByJobIdentity[key] ?? const <int>{});
       if (collectionIdByProviderIdentity[key] case final int cid) out.add(cid);
-    }
-  }
-  final Set<int> anilist = legacyAnilistIds.toSet();
-  if (anilist.isNotEmpty) {
-    for (final MediaCollectionRow c in collections) {
-      if (c.anilistId case final int id when anilist.contains(id)) {
-        out.add(c.id);
-      }
     }
   }
   return out;

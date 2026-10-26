@@ -70,7 +70,7 @@ void main() {
       title: 'Show $id',
       searchQuery: 'Show $id 1080p',
       mediaKind: mode == 'oneShot' ? 'movie' : 'tv',
-      resourceProvider: 'nyaa',
+      resourceProvider: 'fake',
       subscriptionId: id,
       mode: mode,
       filterJson:
@@ -254,13 +254,44 @@ void main() {
       throwsFormatException,
     );
     expect(VideoDownloadSubscriptionRuleEdit().isEmpty, isTrue);
+    // 换源只开放「改选 RSS 站」一条路（已移除内置源的旧订阅靠它恢复）。
+    for (final String bad in <String>['rss', 'rss:', 'torznab:x', 'nyaa']) {
+      expect(
+        () => VideoDownloadSubscriptionRuleEdit(
+          resourceProvider: Value<String>(bad),
+        ),
+        throwsFormatException,
+        reason: bad,
+      );
+    }
+    expect(
+      VideoDownloadSubscriptionRuleEdit(
+        resourceProvider: const Value<String>('rss:site1'),
+      ).isEmpty,
+      isFalse,
+    );
+  });
+
+  test('update：改选 RSS 站写 resourceProvider，其余来源身份不动', () async {
+    await create('a');
+    final VideoDownloadSubscriptionRow before = (await db
+        .getVideoDownloadSubscription('a'))!;
+    final VideoDownloadSubscriptionRow row = await host.update(
+      'a',
+      VideoDownloadSubscriptionRuleEdit(
+        resourceProvider: const Value<String>('rss:site1'),
+      ),
+    );
+    expect(row.resourceProvider, 'rss:site1');
+    expect(row.fingerprint, before.fingerprint);
+    expect(row.searchQuery, before.searchQuery);
   });
 }
 
 /// 永远搜不到资源的 provider：让订阅服务真跑一轮检查、又不联网。
 class _EmptyResources implements VideoResourceProvider {
   @override
-  String get id => 'nyaa';
+  String get id => 'fake';
   @override
   int get priority => 100;
   @override
