@@ -94,6 +94,10 @@ SettingsDestination buildFloatingBallDestination() {
                 value: FloatingBallTapAction.screenOcr,
                 label: t.floating_ball_action_screen_ocr,
               ),
+              SettingsSegmentOption<FloatingBallTapAction>(
+                value: FloatingBallTapAction.ai,
+                label: t.floating_ball_action_ai,
+              ),
             ],
             selected: (SettingsContext c) => _prefs(c).floatingBallTapAction,
             onChanged: (SettingsContext c, FloatingBallTapAction value) async {
@@ -307,6 +311,7 @@ String _buttonLabel(FloatingBallScope scope, String id) {
       FloatingBallGlobalAction.switchProfile =>
         t.floating_ball_action_switch_profile,
       FloatingBallGlobalAction.feedback => t.feedback_title,
+      FloatingBallGlobalAction.ai => t.floating_ball_action_ai,
     };
   }
   if (scope == FloatingBallScope.reader) {
@@ -345,6 +350,7 @@ IconData _buttonIcon(FloatingBallScope scope, String id) {
       FloatingBallGlobalAction.sync => FushiIcons.sync,
       FloatingBallGlobalAction.switchProfile => FushiIcons.profiles,
       FloatingBallGlobalAction.feedback => FushiIcons.forum,
+      FloatingBallGlobalAction.ai => FushiIcons.aiAssistant,
     };
   }
   if (scope == FloatingBallScope.reader) {

@@ -172,7 +172,7 @@ void main() {
     expect(
       svc,
       contains(
-        'TAP_ACTIONS = Arrays.asList(ACTION_CLIPBOARD, ACTION_SCREEN_OCR)',
+        'TAP_ACTIONS = Arrays.asList(ACTION_CLIPBOARD, ACTION_SCREEN_OCR, ACTION_AI)',
       ),
     );
     final int start = svc.indexOf('protected void setupDragListener()');

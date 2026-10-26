@@ -39,6 +39,8 @@ import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/ai/agent/ai_agent_ui_context.dart';
+import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart';
@@ -71,6 +73,9 @@ final ValueNotifier<bool> pendingCameraOcr = ValueNotifier<bool>(false);
 
 /// Android 系统球「立即同步」：Fushi 已被拉到前台，等 app 就绪后跑一轮同步。
 final ValueNotifier<bool> pendingSync = ValueNotifier<bool>(false);
+
+/// 系统球「AI」：Fushi 已被拉到前台，等 app 就绪后打开 AI 浮层（spec §6.4）。
+final ValueNotifier<bool> pendingOpenAi = ValueNotifier<bool>(false);
 
 /// Android 系统球「切换配置」：Fushi 已被拉到前台，等 app 就绪后弹出配置选择。
 final ValueNotifier<bool> pendingProfileSwitch = ValueNotifier<bool>(false);
@@ -126,6 +131,7 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   FloatingBallGlobalAction.switchProfile.storageValue:
       t.floating_ball_action_switch_profile,
   FloatingBallGlobalAction.feedback.storageValue: t.feedback_title,
+  FloatingBallGlobalAction.ai.storageValue: t.floating_ball_action_ai,
   'open_app': t.floating_ball_action_open_app,
   'close': t.floating_ball_action_close,
   'ball': t.reader_floating_ball,
@@ -157,6 +163,7 @@ IconData floatingBallGlobalActionIcon(FloatingBallGlobalAction action) =>
       FloatingBallGlobalAction.sync => FushiIcons.sync,
       FloatingBallGlobalAction.switchProfile => FushiIcons.profiles,
       FloatingBallGlobalAction.feedback => FushiIcons.forum,
+      FloatingBallGlobalAction.ai => FushiIcons.aiAssistant,
     };
 
 /// 「关闭悬浮球」按钮的图标（应用内 / 应用外同一颗）。
@@ -438,6 +445,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingOpenLookupPage.addListener(_onChanged);
     pendingCameraOcr.addListener(_onChanged);
     pendingSync.addListener(_onChanged);
+    pendingOpenAi.addListener(_onChanged);
     pendingProfileSwitch.addListener(_onChanged);
     pendingSystemOcrSetup.addListener(_onChanged);
     feedbackWindowCaptureActive.addListener(_onChanged);
@@ -454,6 +462,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           onOpenLookupPage: () => pendingOpenLookupPage.value = true,
           onOpenCameraOcr: () => pendingCameraOcr.value = true,
           onOpenSync: () => pendingSync.value = true,
+          onOpenAi: () => pendingOpenAi.value = true,
           onOpenProfileSwitch: () => pendingProfileSwitch.value = true,
           // 没有宿主时回 null：原生退回「拉起 Fushi 再选」。
           onProfileMenu: () async => _current?._systemBallProfileMenu(),
@@ -496,6 +505,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingOpenLookupPage.removeListener(_onChanged);
     pendingCameraOcr.removeListener(_onChanged);
     pendingSync.removeListener(_onChanged);
+    pendingOpenAi.removeListener(_onChanged);
     pendingProfileSwitch.removeListener(_onChanged);
     pendingSystemOcrSetup.removeListener(_onChanged);
     feedbackWindowCaptureActive.removeListener(_onChanged);
@@ -620,10 +630,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       ))
         if (FloatingBallGlobalAction.fromStorage(id)
             case final FloatingBallGlobalAction action
-            when floatingBallSystemActionAvailable(
-              action,
-              lookupModuleEnabled: lookupModuleEnabled,
-            ))
+            when (action != FloatingBallGlobalAction.ai || _aiModuleEnabled) &&
+                floatingBallSystemActionAvailable(
+                  action,
+                  lookupModuleEnabled: lookupModuleEnabled,
+                ))
           action.storageValue,
     ];
     final Map<String, String> labels = floatingBallNativeLabels();
@@ -660,99 +671,100 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         generation != _systemGeneration ||
         !prefs.floatingBallSystem ||
         _systemBallClosed;
-    final Future<void> run = () async {
-      // 用户在系统球上点过关闭、而当时主引擎不在（没收到推送）：按「自动恢复」
-      // 处理——含应用外时这次起球就是「打开 Fushi 自动恢复」（还在后台则等回到
-      // 前台）；否则按开关把球拉起来就违背了用户刚做的事，改为把开关关掉。
-      //
-      // 这个标记是一次性的（Android 读即清，见 FloatingBallService
-      // .takeClosedByUser）：拿到它的那一代就必须处理，不论自己是否已被新一代
-      // 取代——过期代丢掉 true，下一代读到的只剩 false，会把球重新拉起来。
-      final bool closedByUser =
-          await FloatingBallChannel.takeSystemBallClosedByUser();
-      if (closedByUser) {
-        if (!prefs.floatingBallAutoRestore.restoresSystem) {
-          _systemSignature = null;
-          if (prefs.floatingBallSystem) {
-            await prefs.setFloatingBallSystem(false);
-          }
-          return;
-        }
-        if (!_foreground) {
-          _systemSignature = null;
-          _systemBallClosed = true;
-          return;
-        }
-      }
-      // 桌面原生窗口不加载图标字体：图标画成已着色的 PNG、球面带原图、位置由
-      // Dart 持久化后交给它。
-      final bool desktop = isDesktopSystemBallPlatform;
-      final Map<String, Uint8List>? iconImages = desktop
-          ? <String, Uint8List>{
-              ...await renderFloatingBallIconPngs(
-                floatingBallNativeIconData(),
-                Color(
-                  colors['onButtonContainer'] ??
-                      colors['onSurface'] ??
-                      0xFF1D1B20,
-                ),
-              ),
-              // 展开态球上的 ×：与按钮图标不同色（onPrimary）。
-              ...await renderFloatingBallIconPngs(const <String, IconData>{
-                kFloatingBallNativeBallCloseKey: kFloatingBallCloseIcon,
-              }, Color(colors['onBallOpen'] ?? 0xFFFFFFFF)),
+    final Future<void> run =
+        () async {
+          // 用户在系统球上点过关闭、而当时主引擎不在（没收到推送）：按「自动恢复」
+          // 处理——含应用外时这次起球就是「打开 Fushi 自动恢复」（还在后台则等回到
+          // 前台）；否则按开关把球拉起来就违背了用户刚做的事，改为把开关关掉。
+          //
+          // 这个标记是一次性的（Android 读即清，见 FloatingBallService
+          // .takeClosedByUser）：拿到它的那一代就必须处理，不论自己是否已被新一代
+          // 取代——过期代丢掉 true，下一代读到的只剩 false，会把球重新拉起来。
+          final bool closedByUser =
+              await FloatingBallChannel.takeSystemBallClosedByUser();
+          if (closedByUser) {
+            if (!prefs.floatingBallAutoRestore.restoresSystem) {
+              _systemSignature = null;
+              if (prefs.floatingBallSystem) {
+                await prefs.setFloatingBallSystem(false);
+              }
+              return;
             }
-          : null;
-      // 球面 = 主题 primaryContainer 上的吉祥物（主题一变配色进签名、重新合成）。
-      final Uint8List? ballImage = desktop
-          ? await renderFloatingBallFacePng(
-              Color(colors['ballContainer'] ?? 0xFFEADDFF),
-              // 「图标跟随主题色」开着时吉祥物跟随强调色（ballOpen = primary，
-              // 墨水屏 surface）；关着始终原图。
-              accent: tintMascot
-                  ? Color(colors['ballOpen'] ?? 0xFF6750A4)
-                  : null,
-            )
-          : null;
-      // 调 start 之前唯一一道门：此前的 await 只产出本地数据（图标、球面），
-      // 过期代多做完它们不留任何痕迹，逐个 await 设门只是重复同一个判断。
-      if (stale()) return;
-      // 先定显隐再起球：原生按它决定新球首帧显不显示（Fushi 在前台起球时不闪
-      // 一下）。原生跨起停保留这个值。
-      final bool yields = _systemBallYields();
-      await FloatingBallChannel.setAppForeground(yields);
-      if (stale()) return;
-      final bool started = await FloatingBallChannel.startSystemBall(
-        actions: actions,
-        labels: labels,
-        icons: icons,
-        colors: colors,
-        animate: animate,
-        showLabels: showLabels,
-        showOpenApp: showOpenApp,
-        tapAction: tapAction,
-        ocrLanguage: kFloatingBallOcrLanguage,
-        iconImages: iconImages,
-        ballImage: ballImage,
-        dock: desktop ? prefs.floatingBallSystemDock : null,
-        fraction: desktop ? prefs.floatingBallSystemVerticalFraction : null,
-      );
-      // 起的过程中被更新的决定取代：结果归新一代处理（关了开关的那一代已经发过
-      // stop，消息按序到原生，这颗球不会留下）。签名更不能记：记了之后同样配置
-      // 的下一次起球会被当成「已下发」跳过，开关开着却没有球。
-      if (stale()) return;
-      // 起不来（Android 没权限 / 桌面建窗失败）：不记签名，下次同步再试。
-      _systemSignature = started ? signature : null;
-      if (started) {
-        _sentSystemBallYield = yields;
-        // 起球途中前后台 / 开关变过：按此刻的值补发。
-        _pushSystemBallYield();
-      }
-    }().whenComplete(() {
-      // 本代收尾（成功 / 失败 / 提前返回）：不再是在途目标。已被新一代取代时
-      // 在途目标归新一代，不动。
-      if (generation == _systemGeneration) _systemPendingSignature = null;
-    });
+            if (!_foreground) {
+              _systemSignature = null;
+              _systemBallClosed = true;
+              return;
+            }
+          }
+          // 桌面原生窗口不加载图标字体：图标画成已着色的 PNG、球面带原图、位置由
+          // Dart 持久化后交给它。
+          final bool desktop = isDesktopSystemBallPlatform;
+          final Map<String, Uint8List>? iconImages = desktop
+              ? <String, Uint8List>{
+                  ...await renderFloatingBallIconPngs(
+                    floatingBallNativeIconData(),
+                    Color(
+                      colors['onButtonContainer'] ??
+                          colors['onSurface'] ??
+                          0xFF1D1B20,
+                    ),
+                  ),
+                  // 展开态球上的 ×：与按钮图标不同色（onPrimary）。
+                  ...await renderFloatingBallIconPngs(const <String, IconData>{
+                    kFloatingBallNativeBallCloseKey: kFloatingBallCloseIcon,
+                  }, Color(colors['onBallOpen'] ?? 0xFFFFFFFF)),
+                }
+              : null;
+          // 球面 = 主题 primaryContainer 上的吉祥物（主题一变配色进签名、重新合成）。
+          final Uint8List? ballImage = desktop
+              ? await renderFloatingBallFacePng(
+                  Color(colors['ballContainer'] ?? 0xFFEADDFF),
+                  // 「图标跟随主题色」开着时吉祥物跟随强调色（ballOpen = primary，
+                  // 墨水屏 surface）；关着始终原图。
+                  accent: tintMascot
+                      ? Color(colors['ballOpen'] ?? 0xFF6750A4)
+                      : null,
+                )
+              : null;
+          // 调 start 之前唯一一道门：此前的 await 只产出本地数据（图标、球面），
+          // 过期代多做完它们不留任何痕迹，逐个 await 设门只是重复同一个判断。
+          if (stale()) return;
+          // 先定显隐再起球：原生按它决定新球首帧显不显示（Fushi 在前台起球时不闪
+          // 一下）。原生跨起停保留这个值。
+          final bool yields = _systemBallYields();
+          await FloatingBallChannel.setAppForeground(yields);
+          if (stale()) return;
+          final bool started = await FloatingBallChannel.startSystemBall(
+            actions: actions,
+            labels: labels,
+            icons: icons,
+            colors: colors,
+            animate: animate,
+            showLabels: showLabels,
+            showOpenApp: showOpenApp,
+            tapAction: tapAction,
+            ocrLanguage: kFloatingBallOcrLanguage,
+            iconImages: iconImages,
+            ballImage: ballImage,
+            dock: desktop ? prefs.floatingBallSystemDock : null,
+            fraction: desktop ? prefs.floatingBallSystemVerticalFraction : null,
+          );
+          // 起的过程中被更新的决定取代：结果归新一代处理（关了开关的那一代已经发过
+          // stop，消息按序到原生，这颗球不会留下）。签名更不能记：记了之后同样配置
+          // 的下一次起球会被当成「已下发」跳过，开关开着却没有球。
+          if (stale()) return;
+          // 起不来（Android 没权限 / 桌面建窗失败）：不记签名，下次同步再试。
+          _systemSignature = started ? signature : null;
+          if (started) {
+            _sentSystemBallYield = yields;
+            // 起球途中前后台 / 开关变过：按此刻的值补发。
+            _pushSystemBallYield();
+          }
+        }().whenComplete(() {
+          // 本代收尾（成功 / 失败 / 提前返回）：不再是在途目标。已被新一代取代时
+          // 在途目标归新一代，不动。
+          if (generation == _systemGeneration) _systemPendingSignature = null;
+        });
     debugLatestSystemBallSync = run;
     unawaited(run);
   }
@@ -918,6 +930,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         // 同步的结果、冲突裁决与重新登录提示都在主窗里给：先把主窗唤到前台。
         await target.bringMainWindowToFront();
         await _manualSync();
+      case 'ai':
+        // AI 浮层在主窗里：先唤到前台再开（与同步同一语义）。
+        await target.bringMainWindowToFront();
+        await _openAi(null);
       case 'switch_profile':
         // 用户正在别的程序里：在球旁弹原生配置菜单、原地切，不唤起主窗。
         await _desktopSwitchProfile(anchor);
@@ -1126,6 +1142,16 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     });
   }
 
+  /// 系统球「AI」：app 就绪后打开 AI 浮层（操作目录要用已初始化的 AppModel）。
+  void _flushOpenAi() {
+    if (!pendingOpenAi.value) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!pendingOpenAi.value) return;
+      pendingOpenAi.value = false;
+      unawaited(_openAi(null));
+    });
+  }
+
   /// 系统球「切换配置」：app 就绪后弹出配置选择（配置列表要用已初始化的数据库）。
   void _flushProfileSwitch() {
     if (!pendingProfileSwitch.value) return;
@@ -1163,6 +1189,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   }
 
   // ── 全局按钮 ────────────────────────────────────────────────────────
+
+  /// 「AI」模块开着（关掉时球上不出 AI 按钮，spec §6.4）。
+  bool get _aiModuleEnabled =>
+      ref.read(appProvider).moduleVisibility.isEnabled(ModuleId.ai);
 
   BuildContext? get _navigatorContext =>
       ref.read(appProvider).navigatorKey.currentContext;
@@ -1306,6 +1336,14 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       await desktopSystemBallActionTarget.bringMainWindowToFront();
       _toast(t.floating_ball_profile_switch_failed);
     }
+  }
+
+  /// AI：在当前页上方弹 AI 浮层，带上场景给的上下文（spec §6.4）。没指派提供商时
+  /// [openAiAgent] 只引导去设置、不发请求。
+  Future<void> _openAi(FloatingBallSceneSnapshot? scene) async {
+    final BuildContext? ctx = _navigatorContext;
+    if (ctx == null) return;
+    await openAiAgent(ctx, uiContext: aiAgentUiContextFromScene(scene));
   }
 
   /// 反馈：截下当前页面再打开反馈中心。原生窗口快照会拍到球，截图期间球由
@@ -1512,6 +1550,12 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           label: t.feedback_title,
           onPressed: () => unawaited(_openFeedback()),
         ),
+        FloatingBallGlobalAction.ai => ReaderHeaderAction(
+          key: const ValueKey<String>('floating_ball_action_ai'),
+          icon: floatingBallGlobalActionIcon(action),
+          label: t.floating_ball_action_ai,
+          onPressed: () => unawaited(_openAi(_registry.current)),
+        ),
       };
 
   /// 勾选的按钮 id → 此刻能显示的动作：全局按钮看平台能力，专属按钮看页面此刻
@@ -1523,6 +1567,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final FloatingBallGlobalAction? global =
         FloatingBallGlobalAction.fromStorage(id);
     if (global == null) return scene.actions[id];
+    if (global == FloatingBallGlobalAction.ai && !_aiModuleEnabled) return null;
     return floatingBallGlobalActionAvailable(global)
         ? _globalAction(global)
         : null;
@@ -1543,6 +1588,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _flushOpenLookupPage(appModel);
     _flushCameraOcr();
     _flushSync();
+    _flushOpenAi();
     _flushProfileSwitch();
     _flushSystemOcrSetup();
 

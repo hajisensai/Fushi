@@ -52,6 +52,7 @@ final class FloatingBallChannel {
     static final String METHOD_OPEN_CAMERA_OCR = "openCameraOcr";
     /** 原生 → Dart：系统球「立即同步」，Fushi 已被拉到前台，请跑一轮同步。 */
     static final String METHOD_OPEN_SYNC = "openSync";
+    static final String METHOD_OPEN_AI = "openAi";
     /** 原生 → Dart：系统球「切换配置」，Fushi 已被拉到前台，请弹出配置选择。 */
     static final String METHOD_OPEN_PROFILE_SWITCH = "openProfileSwitch";
     /** 原生 → Dart：系统球「切换配置」要在球旁弹菜单，请回配置列表 {@code [{id, label, checked}]}。 */
@@ -81,6 +82,8 @@ final class FloatingBallChannel {
 
     /** 同 {@link #pendingOpenLookupPage}，排的是系统球「立即同步」。只在主线程读写。 */
     private static boolean pendingSync = false;
+    /** 同 {@link #pendingOpenLookupPage}，排的是系统球「AI」。只在主线程读写。 */
+    private static boolean pendingOpenAi = false;
     /** 同 {@link #pendingOpenLookupPage}，排的是系统球「切换配置」。只在主线程读写。 */
     private static boolean pendingProfileSwitch = false;
     /** 同 {@link #pendingOpenLookupPage}，排的是「打开系统 OCR 配置」。只在主线程读写。 */
@@ -207,6 +210,24 @@ final class FloatingBallChannel {
         } catch (RuntimeException e) {
             Log.w(TAG, "openSync could not be delivered; queued", e);
             pendingSync = true;
+        }
+    }
+
+    /**
+     * 系统球「AI」：主引擎在就直接推 {@code openAi}（Fushi 随后被拉到前台，Dart 打开
+     * AI 浮层）；不在就排队，由冷启动的 Dart 经 {@code takePendingOpenAi} 来取。主线程调用。
+     */
+    static void requestOpenAi() {
+        MethodChannel ch = channel;
+        if (ch == null) {
+            pendingOpenAi = true;
+            return;
+        }
+        try {
+            ch.invokeMethod(METHOD_OPEN_AI, null);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "openAi could not be delivered; queued", e);
+            pendingOpenAi = true;
         }
     }
 
@@ -470,6 +491,12 @@ final class FloatingBallChannel {
             case "takePendingSync": {
                 boolean pending = pendingSync;
                 pendingSync = false;
+                result.success(pending);
+                return;
+            }
+            case "takePendingOpenAi": {
+                boolean pending = pendingOpenAi;
+                pendingOpenAi = false;
                 result.success(pending);
                 return;
             }

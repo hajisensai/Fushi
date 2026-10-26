@@ -151,6 +151,11 @@ class FloatingBallChannel {
   static Future<bool> takePendingSync() async =>
       await _invoke<bool>('takePendingSync') ?? false;
 
+  /// 同 [takePendingSync]，排的是 Android 系统球「AI」（Fushi 已被拉到前台，
+  /// app 就绪后打开 AI 浮层）。
+  static Future<bool> takePendingOpenAi() async =>
+      await _invoke<bool>('takePendingOpenAi') ?? false;
+
   /// 取走（并清掉）原生系统球「切换配置」排队的请求（同
   /// [takePendingOpenLookupPage]：主引擎不在时原生先把 Fushi 拉起来再排队）。
   static Future<bool> takePendingProfileSwitch() async =>
@@ -258,6 +263,7 @@ class FloatingBallChannel {
   ///  - `openLookupPage`（Android 系统球「查词」，Fushi 已被拉到前台）→ [onOpenLookupPage]；
   ///  - `openCameraOcr`（Android 系统球「拍照查词」，Fushi 已被拉到前台）→ [onOpenCameraOcr]；
   ///  - `openSync`（Android 系统球「立即同步」，Fushi 已被拉到前台）→ [onOpenSync]；
+  ///  - `openAi`（Android 系统球「AI」，Fushi 已被拉到前台）→ [onOpenAi]；
   ///  - `openProfileSwitch`（Android 系统球「切换配置」，Fushi 已被拉到前台）→
   ///    [onOpenProfileSwitch]；
   ///  - `getProfileMenu`（Android 系统球「切换配置」要在球旁弹配置菜单）→
@@ -289,6 +295,7 @@ class FloatingBallChannel {
     void Function()? onOpenLookupPage,
     void Function()? onOpenCameraOcr,
     void Function()? onOpenSync,
+    void Function()? onOpenAi,
     void Function()? onOpenProfileSwitch,
     Future<List<Map<String, Object?>>?> Function()? onProfileMenu,
     Future<String> Function(int id)? onSwitchProfileTo,
@@ -316,6 +323,8 @@ class FloatingBallChannel {
           onOpenCameraOcr?.call();
         case 'openSync':
           onOpenSync?.call();
+        case 'openAi':
+          onOpenAi?.call();
         case 'openProfileSwitch':
           onOpenProfileSwitch?.call();
         case 'getProfileMenu':
@@ -362,6 +371,7 @@ class FloatingBallChannel {
       if (await takePendingOpenLookupPage()) onOpenLookupPage?.call();
       if (await takePendingCameraOcr()) onOpenCameraOcr?.call();
       if (await takePendingSync()) onOpenSync?.call();
+      if (await takePendingOpenAi()) onOpenAi?.call();
       if (await takePendingProfileSwitch()) onOpenProfileSwitch?.call();
       if (await takePendingSystemOcrSetup()) onOpenSystemOcrSetup?.call();
       return;
