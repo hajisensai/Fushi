@@ -32,6 +32,7 @@ workspace:
   - packages/fushi_corpus
   - packages/fushi_dictionary
   - packages/fushi_engine
+  - packages/fushi_ffi_view
   - packages/fushi_music
   - packages/fushi_server
   - packages/fushi_p2p

@@ -217,6 +217,10 @@ dependencies:
   window_manager: ^0.5.1
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.4.2
+  # Pointer.asTypedList 的唯一入口（绕开 Dart JIT 去优化物化视图的崩溃，见包内注释）。
+  fushi_ffi_view:
+    path: ../packages/fushi_ffi_view
+
 dev_dependencies:
   # BUG-3003: native hot-restart regression waits for worker IsolateExit events.
   vm_service: ^15.1.0

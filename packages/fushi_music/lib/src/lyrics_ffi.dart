@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import 'fushi_music_library.dart';
 import 'lyric_timeline.dart';
@@ -88,7 +89,12 @@ typedef _Bin2Dart =
     );
 
 typedef _Bin1C =
-    Int32 Function(Pointer<Uint8>, Size, Pointer<Pointer<Uint8>>, Pointer<Size>);
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
 typedef _Bin1Dart =
     int Function(Pointer<Uint8>, int, Pointer<Pointer<Uint8>>, Pointer<Size>);
 
@@ -186,7 +192,7 @@ class _LyricsBindings {
     final int rc = body(arena, out, len);
     final Uint8List bytes = out.value == nullptr
         ? Uint8List(0)
-        : Uint8List.fromList(out.value.asTypedList(len.value));
+        : Uint8List.fromList(out.value.asTypedListOutOfLine(len.value));
     if (out.value != nullptr) _lib.freeBytes(out.value, len.value);
     return (status: rc, bytes: bytes);
   });
@@ -194,7 +200,7 @@ class _LyricsBindings {
 
 Pointer<Uint8> _copyIn(Uint8List bytes, Allocator alloc) {
   final Pointer<Uint8> p = alloc<Uint8>(bytes.isEmpty ? 1 : bytes.length);
-  p.asTypedList(bytes.length).setAll(0, bytes);
+  p.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
   return p;
 }
 

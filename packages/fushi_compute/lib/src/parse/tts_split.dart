@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 
@@ -139,12 +140,16 @@ final class TtsSplitNative {
       final Pointer<Uint16> readingPtr = (block + readingAt).cast<Uint16>();
       final Pointer<Uint16> poolPtr = (block + poolAt).cast<Uint16>();
 
-      final Uint16List textUnits = textPtr.asTypedList(length);
+      final Uint16List textUnits = textPtr.asTypedListOutOfLine(length);
       for (int i = 0; i < length; i++) {
         textUnits[i] = text.codeUnitAt(i);
       }
-      final Int64List rubyFields = rubyPtr.asTypedList(rubies.length * 4);
-      final Uint16List readingUnits = readingPtr.asTypedList(readingsLength);
+      final Int64List rubyFields = rubyPtr.asTypedListOutOfLine(
+        rubies.length * 4,
+      );
+      final Uint16List readingUnits = readingPtr.asTypedListOutOfLine(
+        readingsLength,
+      );
       int readingCursor = 0;
       for (int k = 0; k < rubies.length; k++) {
         final TtsSplitRuby ruby = rubies[k];
@@ -157,7 +162,7 @@ final class TtsSplitNative {
           readingUnits[readingCursor++] = reading.codeUnitAt(i);
         }
       }
-      final Int64List breakValues = breakPtr.asTypedList(breakCount);
+      final Int64List breakValues = breakPtr.asTypedListOutOfLine(breakCount);
       breakValues.setAll(0, blockEnds);
       breakValues.setAll(blockEnds.length, sceneBreaks);
 
@@ -184,8 +189,8 @@ final class TtsSplitNative {
         );
       }
       final int count = countPtr.value;
-      final Int32List records = recordPtr.asTypedList(count * 4);
-      final Uint16List pool = poolPtr.asTypedList(poolLengthPtr.value);
+      final Int32List records = recordPtr.asTypedListOutOfLine(count * 4);
+      final Uint16List pool = poolPtr.asTypedListOutOfLine(poolLengthPtr.value);
       return List<TtsSplitSegment>.generate(count, (int k) {
         final int start = records[k * 4];
         final int end = records[k * 4 + 1];

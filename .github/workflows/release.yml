@@ -1888,7 +1888,8 @@ jobs:
     - name: Run unit tests (main app, file shard ${{ matrix.part }}/4)
       if: matrix.part != 'checks'
       working-directory: fushi
-      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.part }}/4 --exclude-tags golden
+      # faster-testing 的三个参数与原因见 main.yml 同名步骤。
+      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.part }}/4 --exclude-tags golden --experimental-faster-testing --concurrency=1 --max-suites-per-run=400
 
     # 逐 suite 耗时（tool/update_suite_timings.dart 的输入），见 main.yml 同名步骤。
     - name: Upload test event log

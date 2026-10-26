@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 
@@ -96,7 +97,7 @@ FfcTorrentInspection ffcInspectTorrentMetainfo(Uint8List bytes) {
   final Pointer<Pointer<Uint8>> outPtr = calloc<Pointer<Uint8>>();
   final Pointer<Size> outLen = calloc<Size>();
   try {
-    input.asTypedList(bytes.length).setAll(0, bytes);
+    input.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
     final int status = bindings.inspect(input, bytes.length, outPtr, outLen);
     if (status != FfcStatus.ok) {
       throw StateError(
@@ -118,7 +119,7 @@ FfcTorrentInspection ffcInspectTorrentMetainfo(Uint8List bytes) {
 }
 
 FfcTorrentInspection _decode(Pointer<Uint8> out, int length) {
-  final Uint8List raw = out.asTypedList(length);
+  final Uint8List raw = out.asTypedListOutOfLine(length);
   final ByteData header = ByteData.sublistView(raw, 0, _headerBytes);
   int word(int at) => header.getUint32(at, Endian.little);
   final int outcome = word(0);
@@ -167,7 +168,9 @@ Uint16List _pool(Pointer<Uint8> out, Uint8List raw, int start) {
   final int units = (raw.length - start) ~/ 2;
   if (units == 0) return Uint16List(0);
   if ((out.address + start) % 2 == 0) {
-    return Pointer<Uint16>.fromAddress(out.address + start).asTypedList(units);
+    return Pointer<Uint16>.fromAddress(
+      out.address + start,
+    ).asTypedListOutOfLine(units);
   }
   return Uint8List.fromList(
     raw.sublist(start, start + units * 2),

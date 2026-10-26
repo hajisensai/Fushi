@@ -551,14 +551,23 @@ jobs:
         name: fushi-test-native-linux-x64
         path: native
     # flutter_tester 原生崩溃（SIGSEGV 等）时留 core dump，失败时由下面的 backtrace 步骤打
-    # 全线程原生栈，看是哪个原生库（PR #2422 撤回 faster-testing 时根因就卡在没有这份栈）。
+    # 全线程原生栈，看是哪个原生库。
     - name: Enable core dumps
       run: sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p
+    # --experimental-faster-testing：本片所有 suite 编成一个 dill、在同一个 flutter_tester
+    # 里各起一个轻量 engine，省掉逐文件串行编译（每文件 1.4–2.3 s），单片 32–46 min → 14–17 min。
+    # * PR #2422 时它随机 SIGSEGV（exit 245），根因是 Dart VM 的 JIT 去优化把分配下沉的
+    #   Pointer.asTypedList 视图物化成错地址；本仓一律经 package:fushi_ffi_view 建视图绕开
+    #   （守卫 fushi/test/build/ffi_typed_list_view_guard_test.dart）。
+    # * --concurrency=1：轻量 engine 共用 flutter_tester 唯一的 UI 线程，并发只会让同步重活的
+    #   suite 饿死邻居、撞 30 s 超时（默认并发 2 时 8 片里 5 片因此红），换不来并行。
+    # * --max-suites-per-run=400：一片拆成 3 个 flutter test 进程，泄漏的定时器 / 句柄不至于
+    #   在一个进程里累积到拖垮后半程。
     - name: Run unit tests (main app, file shard ${{ matrix.shard }}/4)
       working-directory: fushi
       run: |
         ulimit -c unlimited
-        dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden
+        dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden --experimental-faster-testing --concurrency=1 --max-suites-per-run=400
     - name: Native backtrace of a crashed flutter_tester
       if: failure()
       shell: bash

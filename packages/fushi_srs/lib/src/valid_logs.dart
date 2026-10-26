@@ -7,6 +7,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import 'algorithm.dart';
 import 'day.dart';
@@ -160,7 +161,9 @@ SrsMemoryInput srsCollectMemoryInput(
   final Pointer<Size> outLen = calloc<Size>();
   final Pointer<Pointer<Char>> error = calloc<Pointer<Char>>();
   try {
-    final Int64List c = ints.asTypedList(n == 0 ? 1 : n * _memoryColumnWords);
+    final Int64List c = ints.asTypedListOutOfLine(
+      n == 0 ? 1 : n * _memoryColumnWords,
+    );
     final ByteData bits = ByteData(8);
     int f64(double v) {
       bits.setFloat64(0, v, Endian.little);
@@ -202,7 +205,7 @@ SrsMemoryInput srsCollectMemoryInput(
     if (out == nullptr) throw FormatException(_takeError(lib, error));
     final int len = outLen.value;
     try {
-      return _decodeMemoryInput(out.asTypedList(len));
+      return _decodeMemoryInput(out.asTypedListOutOfLine(len));
     } finally {
       lib.bindings.ffsrs_free_bytes(out, len);
     }
