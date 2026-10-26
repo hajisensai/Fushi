@@ -9,9 +9,14 @@ class AdaptiveNavPeekEntry {
     this.cover,
     this.subtitle,
     this.progress,
+    this.icon,
   });
 
   final String title;
+
+  /// 没有封面时（以及列表式一行前面）画的图标；null = 模块图标。设置分类、
+  /// 网页这类每行是不同东西的目的地用它区分。
+  final IconData? icon;
 
   /// 封面；null = 画模块图标占位。
   final ImageProvider? cover;
@@ -514,7 +519,7 @@ class _NavRailPeekContent extends StatelessWidget {
                           entry: entry,
                           label: value.resumeLabel ?? t.home_continue,
                           showCover: !value.listLayout,
-                          fallbackIcon: item.icon,
+                          fallbackIcon: entry.icon ?? item.icon,
                           onOpen: () => onOpenEntry(entry),
                         ),
                       if (value.recent.isNotEmpty) ...<Widget>[
@@ -530,7 +535,7 @@ class _NavRailPeekContent extends StatelessWidget {
                           for (final AdaptiveNavPeekEntry e in value.recent)
                             _NavPeekListRow(
                               entry: e,
-                              fallbackIcon: item.icon,
+                              fallbackIcon: e.icon ?? item.icon,
                               onOpen: () => onOpenEntry(e),
                             )
                         else
@@ -584,7 +589,12 @@ class _NavRailPeekContent extends StatelessWidget {
                                                         aspectRatio:
                                                             aspects[starts[r] +
                                                                 j],
-                                                        fallbackIcon: item.icon,
+                                                        fallbackIcon:
+                                                            value
+                                                                .recent[starts[r] +
+                                                                    j]
+                                                                .icon ??
+                                                            item.icon,
                                                         onOpen: () => onOpenEntry(
                                                           value
                                                               .recent[starts[r] +
