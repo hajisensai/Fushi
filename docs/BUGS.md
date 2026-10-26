@@ -861,9 +861,11 @@
 | [BUG-3519](bugs/BUG-3519-epub-image-index-cache-windows-replace-race.md) | ✅ | ✅ | Windows 上多个 isolate 同时读写同一本书的插图表缓存：读撞 errno 32、替换撞 errno 5 |
 > 共 3149 条。点号进各自文件。
 > 共 3150 条。点号进各自文件。
+> 共 3151 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3654](bugs/BUG-3654-linux-wpe-click-pointerup-button-mask.md) | ✅ | ✅ | Linux 漫画阅读器 OCR 文字无法点击查词 |
 | [BUG-3653](bugs/BUG-3653-linux-wpe-resize-stride-crash.md) | ✅ | ✅ | Linux 漫画页面出现条纹，调整窗口大小时阅读器崩溃 |
 | [BUG-3652](bugs/BUG-3652-linux-wpe-borrowed-pixels-refcount.md) | ✅ | ✅ | Linux 漫画阅读器释放 WPE 借用像素缓冲区后崩溃 |
 | [BUG-3518](bugs/BUG-3518-ios-audio-lane-page-bleed.md) | ✅ | ✅ | iOS 竖排翻页：有声书当前句窄条越出页尾、画进下一页页顶 |
