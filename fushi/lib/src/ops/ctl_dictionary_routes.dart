@@ -131,8 +131,10 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
       }
       if (kanjiPosition != null) {
         // 「汉字」分区重排同一入口：混合词典只写 kanjiOrder，纯 kanji 词典写 order。
-        final Dictionary current =
-            resolveCtlDictionary(model.dictionaries, target.name);
+        final Dictionary current = resolveCtlDictionary(
+          model.dictionaries,
+          target.name,
+        );
         await model.updateKanjiSectionOrder(
           ctlReorderDictionaries(
             model.kanjiSectionDictionaries,

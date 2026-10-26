@@ -680,7 +680,7 @@ class AgentSession {
         true,
       );
     }
-    final String encoded = _encodeResult(result.data);
+    final String encoded = result.userPreview ?? _encodeResult(result.data);
     entry
       ..status = AgentEntryStatus.done
       ..actionId = result.actionId

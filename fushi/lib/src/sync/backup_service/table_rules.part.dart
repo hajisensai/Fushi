@@ -351,6 +351,9 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // v124：AI 整理记录（本机做过哪些整理、供撤销），设备本地。
   'library_organize_runs': BackupTableRule.deviceLocal(),
   'library_organize_changes': BackupTableRule.deviceLocal(),
+  // v136：AI 助手对话与操作记录，设备本地，见 2026-10-26 设计稿 §5.3。
+  'ai_agent_sessions': BackupTableRule.deviceLocal(),
+  'ai_agent_actions': BackupTableRule.deviceLocal(),
   // v128：内置浏览器标签页会话 / 最近关闭 / 下载记录，设备本地。
   'web_browser_session_tabs': BackupTableRule.deviceLocal(),
   'web_browser_closed_tabs': BackupTableRule.deviceLocal(),

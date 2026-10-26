@@ -43,7 +43,7 @@
 - reader source：`fushi/lib/src/media/sources/reader_fushi_source.dart`（`ReaderFushiSource`）。
 - 阅读器 JS/CSS：`fushi/lib/src/reader/`（17 个 JS/CSS 注入封装，`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.fushiReader`（2026-08 终局清算已改名；`hoshiCaret`/`__hoshi*` 等其余 hoshi 前缀运行时符号待后续批次）。
 - 全局状态：`fushi/lib/src/models/app_model.dart`（`AppModel`，初始化流程 + 子系统委托核心，改前先理解）。
-- Drift 数据库：`packages/fushi_core/lib/src/database/database.dart` 和 `tables.dart`（schema v135，118 张表，WAL；音乐表在同目录 `music_tables.dart`，音乐刮削三表在 `music_scrape_tables.dart`，OP/ED 声纹缓存在 `theme_song_span_tables.dart`，人物聚合 / 原作进度对应点在 `people_tables.dart`，游戏台词（v134）在 `galgame_text_line_tables.dart`）。
+- Drift 数据库：`packages/fushi_core/lib/src/database/database.dart` 和 `tables.dart`（schema v136，120 张表，WAL；音乐表在同目录 `music_tables.dart`，音乐刮削三表在 `music_scrape_tables.dart`，OP/ED 声纹缓存在 `theme_song_span_tables.dart`，人物聚合 / 原作进度对应点在 `people_tables.dart`，游戏台词（v134）在 `galgame_text_line_tables.dart`；AI 助手对话 / 操作记录（v136）在 `tables.dart`）。
 - 词典：Dart 封装 `packages/fushi_dictionary/lib/src/engine/fushidicts.dart` + FFI 绑定 `lib/src/ffi/fushidicts_ffi_bindings.dart`；C++ 引擎源码全在 `native/fushidicts/`（包内已无 C++），`fushidicts_external/` 是 vendored 第三方，上游同步基线见 `native/fushidicts/UPSTREAM.md`。
 - 有声书 / ASR：`packages/fushi_audio/` + `fushi/lib/src/media/audiobook/`；设备端转录算法在上游 [`hajisensai/fushi-subtitles`](https://github.com/hajisensai/fushi-subtitles)，**改 ASR 算法一律去那个仓库改，本仓只改装配与 UI**。七处 git 依赖钉同一 sha、`archive` override + 兼容补丁、`asr_host.dart` 装配点与 isolate 边界、token 时间 sidecar 等见 [docs/agent/asr-assembly.md](docs/agent/asr-assembly.md)。
 - 互联/同步：`fushi/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）；远程可达、hostId 归组、选路与配对票据规则见 [docs/agent/subsystem-map.md](docs/agent/subsystem-map.md)。
@@ -61,7 +61,7 @@
 - **渲染后端五端全线 Impeller，不保留 Skia 回退（所有者 2026-10-24 拍板，`docs/specs/2026-10-23-music-module-design.md` D13）**：Windows runner 钉 `ImpellerSwitch::Enabled`（合成器内 HDR 的 Impeller 移植在 `ci/patches/flutter-engine/<版本>/engine-impeller-hdr.patch`），Android 无任何 `--enable-impeller=false`（含 `:popup` 热引擎，BUG-2790 改走 TLHC），iOS / macOS / Linux 用引擎默认。渲染问题按根因在 Impeller 上修，禁止新增关 Impeller 的开关、manifest / plist 键或启动参数。
 - 状态管理 Riverpod；音频 just_audio（桌面经 just_audio_media_kit）；录音 record 6.0.0；视频播放走 **media_kit**（third_party vendored 全套）+ youtube_explode_dart。
 - torrent 走内部包 `packages/fushi_torrent`（libtorrent 2.x C ABI FFI，native 在 `native/fushi_torrent/`；Windows 预编译 DLL / macOS arm64 静态 dylib（`Contents/Frameworks`；macOS 版只出 Apple Silicon，不再支持 Intel Mac）/ Android arm64 `.so` / Linux 静态链 `.so`（copy-if-present）随包，缺失时回退外接 qBittorrent；iOS 无内置引擎）。
-- 主存储是 Drift SQLite（`FushiDatabase`，schema v135），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
+- 主存储是 Drift SQLite（`FushiDatabase`，schema v136），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
 - EPUB 阅读器走 reader_fushi 实现（见仓库地图）。`reader_ttu` key、`setTtu*` 方法、`ttu_*` i18n 只是旧数据兼容残留，不代表还有 TTU 阅读器；没有迁移方案别随手改这些持久化 key。（旧文档提过的 `ttuBookId` 列在当前 schema 已不存在，只活在迁移阶梯里。）
 - 旧 TTU 迁移代码已移除（develop `90c37b472`：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 均已删除）；只剩上述命名残留作旧数据兼容。阅读器渲染/交互问题按 reader_fushi 路径修，不要去上游 ttu fork 仓库改。
 - 词典导入/查询核心走 `hoshidicts` C++ FFI；格式 UI 或旧 Dart format 类不一定是真实导入路径。

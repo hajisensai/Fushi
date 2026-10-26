@@ -283,6 +283,7 @@ class FushiOpSpec {
     this.confirm = false,
     this.undoable = false,
     this.inProcessOnly = false,
+    this.sensitiveResult = false,
   });
 
   /// 点分域名（`video.subtitle.search`），稳定，可做持久化 key。
@@ -309,6 +310,9 @@ class FushiOpSpec {
 
   /// 只在进程内有意义（`ui.ask_choice`、`nav.open`）：不进 HTTP / CLI。
   final bool inProcessOnly;
+
+  /// 结果含一次性凭据（配对票据等）：AI 前端只给用户看，不交给模型。
+  final bool sensitiveResult;
 
   /// AI 执行前要不要用户点确认：不可逆，或声明了强制确认。
   bool get needsConfirmation => risk == OpRisk.irreversible || confirm;
@@ -340,6 +344,7 @@ class FushiOpSpec {
     if (confirm) 'confirm': true,
     if (undoable) 'undoable': true,
     if (inProcessOnly) 'inProcessOnly': true,
+    if (sensitiveResult) 'sensitiveResult': true,
     'params': <Map<String, Object?>>[
       for (final OpParam p in params) p.toJson(),
     ],
@@ -356,6 +361,7 @@ class FushiOpSpec {
     confirm: json['confirm'] == true,
     undoable: json['undoable'] == true,
     inProcessOnly: json['inProcessOnly'] == true,
+    sensitiveResult: json['sensitiveResult'] == true,
     params: <OpParam>[
       for (final Object? p in (json['params'] as List<Object?>? ?? const []))
         if (p is Map<String, Object?>) OpParam.fromJson(p),
@@ -377,6 +383,7 @@ class FushiOp {
     this.availability,
     this.undo,
     this.inProcessOnly = false,
+    this.sensitiveResult = false,
   });
 
   final String id;
@@ -388,6 +395,7 @@ class FushiOp {
   final bool needsUi;
   final bool confirm;
   final bool inProcessOnly;
+  final bool sensitiveResult;
 
   /// 平台 / 合规 / 模块开关 / 前置条件。null = 恒可用。
   final OpAvailability Function()? availability;
@@ -409,6 +417,7 @@ class FushiOp {
     confirm: confirm,
     undoable: undo != null,
     inProcessOnly: inProcessOnly,
+    sensitiveResult: sensitiveResult,
   );
 }
 
@@ -427,6 +436,7 @@ class OpDescription {
     this.confirm = false,
     this.availability,
     this.undo,
+    this.sensitiveResult = false,
   });
 
   final String id;
@@ -441,6 +451,9 @@ class OpDescription {
   final OpAvailability Function()? availability;
   final OpUndo? undo;
 
+  /// 见 [FushiOpSpec.sensitiveResult]。
+  final bool sensitiveResult;
+
   String get routeKey => '$method $pattern';
 
   FushiOp bind(CtlRoute route) => FushiOp(
@@ -454,5 +467,6 @@ class OpDescription {
     confirm: confirm,
     availability: availability,
     undo: undo,
+    sensitiveResult: sensitiveResult,
   );
 }

@@ -66,8 +66,7 @@ List<CtlBodyPage> buildCtlTrackingBodyPages() => <CtlBodyPage>[
           params: const <SettingsCliParam>[
             SettingsCliParam(
               'token',
-              help:
-                  'Bangumi 个人访问令牌（在 ${BangumiApiClient.accessTokenUrl} 生成）',
+              help: 'Bangumi 个人访问令牌（在 ${BangumiApiClient.accessTokenUrl} 生成）',
               secret: true,
             ),
           ],
@@ -148,9 +147,13 @@ List<CtlBodyPage> buildCtlTrackingBodyPages() => <CtlBodyPage>[
           fields: const <SettingsCliParam>[
             SettingsCliParam(
               'media_type',
-              help: '本地条目类型：video | video_collection | book | game（见 local_targets）',
+              help:
+                  '本地条目类型：video | video_collection | book | game（见 local_targets）',
             ),
-            SettingsCliParam('media_key', help: '本地条目 key（见 local_targets 的 key 列）'),
+            SettingsCliParam(
+              'media_key',
+              help: '本地条目 key（见 local_targets 的 key 列）',
+            ),
             SettingsCliParam('subject_id', help: 'Bangumi 条目 id（见 search）'),
             SettingsCliParam(
               'subject_name',
@@ -260,9 +263,7 @@ Future<Object?> _addMapping(
   final List<MediaTrackingLocalTarget> targets =
       await loadMediaTrackingLocalTargets(c.appModel.database);
   final MediaTrackingLocalTarget? target = targets
-      .where(
-        (MediaTrackingLocalTarget t) => t.type == type && t.key == key,
-      )
+      .where((MediaTrackingLocalTarget t) => t.type == type && t.key == key)
       .firstOrNull;
   if (target == null) {
     throw ArgumentError('没有本地条目 ${type.value}:$key（见 local_targets）');
@@ -288,8 +289,7 @@ Future<Object?> _addMapping(
     offset = int.tryParse(rawOffset);
     if (offset == null) throw ArgumentError('progress_offset 必须是整数');
   }
-  final String subjectName =
-      (fields['subject_name'] ?? '').trim().isNotEmpty
+  final String subjectName = (fields['subject_name'] ?? '').trim().isNotEmpty
       ? fields['subject_name']!.trim()
       : (await _service(c).getSubject(subjectId)).displayName;
   final MediaTrackingSyncResult sync = await _service(c)

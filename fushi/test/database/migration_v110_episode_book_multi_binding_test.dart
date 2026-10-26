@@ -128,7 +128,7 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 135);
+      expect(migrated.schemaVersion, 136);
 
       // 既有行与 id、绑定、子表引用原样。
       final List<VideoMetadataEpisodeRow> episodes =

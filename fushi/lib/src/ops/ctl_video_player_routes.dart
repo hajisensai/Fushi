@@ -14,8 +14,7 @@ import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/src/mining/video_mine_queue.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi/src/ops/ctl_dictionary_json.dart'
-    show buildCtlMineFields;
+import 'package:fushi/src/ops/ctl_dictionary_json.dart' show buildCtlMineFields;
 import 'package:fushi/src/ops/ctl_video_player_support.dart';
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/storage/app_paths.dart';

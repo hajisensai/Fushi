@@ -36,7 +36,9 @@ List<CtlRoute> buildLibraryOrganizeCtlRoutesFor({
 }) {
   return <CtlRoute>[
     CtlRoute.post(kLibraryOrganizeCtlRoot, (CtlCall call) async {
-      final CollectionShelfDomain domain = _domain(call.requireString('domain'));
+      final CollectionShelfDomain domain = _domain(
+        call.requireString('domain'),
+      );
       if (isReadonly?.call() ?? false) {
         throw const CtlFailure.rejected('数据已迁移到新版，旧版处于只读状态');
       }
@@ -55,7 +57,8 @@ List<CtlRoute> buildLibraryOrganizeCtlRoutesFor({
         }
         await p.setLibraryOrganizeConsented(true);
       }
-      final LibraryOrganizeService service = serviceOverride?.call() ??
+      final LibraryOrganizeService service =
+          serviceOverride?.call() ??
           LibraryOrganizeService(
             db: database(),
             settings: p,
@@ -80,8 +83,10 @@ List<CtlRoute> buildLibraryOrganizeCtlRoutesFor({
         'runs': <Object?>[
           for (final ({
                 LibraryOrganizeRunRow run,
-                List<LibraryOrganizeChangeRow> changes
-              }) h in await loadLibraryOrganizeHistory(database(), limit: limit))
+                List<LibraryOrganizeChangeRow> changes,
+              })
+              h
+              in await loadLibraryOrganizeHistory(database(), limit: limit))
             <String, Object?>{
               'id': h.run.id,
               'domain': h.run.domain,

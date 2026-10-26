@@ -12,8 +12,7 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_import.dart';
-import 'package:fushi/src/ops/ctl_data_wire.dart'
-    show parseBackupImportPreset;
+import 'package:fushi/src/ops/ctl_data_wire.dart' show parseBackupImportPreset;
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'

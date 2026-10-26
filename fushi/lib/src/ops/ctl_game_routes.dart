@@ -24,8 +24,7 @@ import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi/src/ops/ctl_dictionary_json.dart'
-    show buildCtlMineFields;
+import 'package:fushi/src/ops/ctl_dictionary_json.dart' show buildCtlMineFields;
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';

@@ -108,8 +108,22 @@ class AiAgentToolbox implements AgentToolbox {
       }
       return AgentToolResult.error('internal', '$error');
     }
+    final Object? modelData = spec.sensitiveResult
+        ? const <String, Object?>{
+            'ok': true,
+            'note':
+                'The result contains a one-time credential; it was shown to the user and withheld from you.',
+          }
+        : result.result;
+    final String? userPreview = spec.sensitiveResult
+        ? _preview(result.result)
+        : null;
     if (spec.risk == OpRisk.read) {
-      return AgentToolResult.ok(result.result, taskId: _taskId(result.result));
+      return AgentToolResult.ok(
+        modelData,
+        taskId: _taskId(result.result),
+        userPreview: userPreview,
+      );
     }
     final int actionId = await _record(
       invocation,
@@ -118,12 +132,21 @@ class AiAgentToolbox implements AgentToolbox {
       undo: result.undo,
     );
     return AgentToolResult.ok(
-      result.result,
+      modelData,
       actionId: result.undo == null ? null : '$actionId',
       before: result.undo?.before,
       after: result.undo?.after,
       taskId: _taskId(result.result),
+      userPreview: userPreview,
     );
+  }
+
+  static String _preview(Object? data) {
+    try {
+      return const JsonEncoder.withIndent('  ').convert(data);
+    } on JsonUnsupportedObjectError {
+      return '$data';
+    }
   }
 
   Future<int> _record(

@@ -894,10 +894,7 @@ List<CtlRoute> _downloadRoutes(OpContext context) => <CtlRoute>[
 
 // ── 媒体服务器 ───────────────────────────────────────────────────────
 
-Future<MediaServerBrowser> _browserFor(
-  OpContext context,
-  String id,
-) async {
+Future<MediaServerBrowser> _browserFor(OpContext context, String id) async {
   final AppModel appModel = context.appModel;
   if (!appModel.moduleVisibility.isEnabled(ModuleId.video)) {
     throw const CtlFailure.rejected('视频模块已关闭');

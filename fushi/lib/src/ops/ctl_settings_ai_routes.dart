@@ -19,9 +19,7 @@ import 'package:fushi/src/ops/op_context.dart';
 ///
 /// 提供商 id 与设置页「添加提供商」同形（`ai-<微秒>`）；删一家同时
 /// `withoutProvider` 清掉指向它的指派（含默认），与设置页 `_delete` 同一条纪律。
-List<CtlRoute> buildSettingsAiCtlRoutes(
-  OpContext context,
-) => <CtlRoute>[
+List<CtlRoute> buildSettingsAiCtlRoutes(OpContext context) => <CtlRoute>[
   CtlRoute.get('/api/admin/ai/presets', (CtlCall call) async => _listPresets()),
   CtlRoute.get(
     '/api/admin/ai/providers',
@@ -57,8 +55,7 @@ List<CtlRoute> buildSettingsAiCtlRoutes(
   ),
 ];
 
-PreferencesRepository _prefs(OpContext context) =>
-    context.appModel.prefsRepo;
+PreferencesRepository _prefs(OpContext context) => context.appModel.prefsRepo;
 
 Map<String, Object?> _listPresets() => <String, Object?>{
   'presets': <Map<String, Object?>>[
@@ -183,9 +180,9 @@ Future<Object?> _updateProvider(OpContext context, CtlCall call) async {
   }
   final AiProviderConfig updated = updateCtlAiProvider(
     target,
-    name: call.optString('name'),
+    name: _clearableString(call, 'name'),
     baseUrl: call.optString('baseUrl'),
-    model: call.optString('model'),
+    model: _clearableString(call, 'model'),
     protocol: _protocolOf(call),
     reasoning: _reasoningOf(call),
     enabled: call.optBool('enabled'),
@@ -198,6 +195,15 @@ Future<Object?> _updateProvider(OpContext context, CtlCall call) async {
       provider.id == target.id ? updated : provider,
   ]);
   return _providerResult(context, '已更新', updated);
+}
+
+/// 可以清空的字符串字段：body 里显式给了空串 = 清空（[CtlCall.optString] 把空串当
+/// 「没给」，那样原本为空的名称 / 模型一旦填过就再也写不回空——AI 撤销「改提供商」
+/// 时要能原样写回）。没给这个键返回 null（不改）。
+String? _clearableString(CtlCall call, String name) {
+  final Object? raw = call.body[name];
+  if (raw is String) return raw.trim();
+  return call.optString(name);
 }
 
 Future<Object?> _deleteProvider(OpContext context, CtlCall call) async {

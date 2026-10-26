@@ -80,9 +80,7 @@ List<CtlRoute> buildAiAgentCtlRoutes(OpContext context) {
         'sessionId': agent?.id,
         'running': controller.running,
         'tokens': agent?.totalTokens ?? 0,
-        'entries': <Object?>[
-          for (final AgentEntry e in entries) e.toJson(),
-        ],
+        'entries': <Object?>[for (final AgentEntry e in entries) e.toJson()],
         if (confirm != null)
           'pending': <String, Object?>{'kind': 'confirm', 'entryId': confirm},
         if (choice != null)
@@ -118,12 +116,12 @@ List<CtlRoute> buildAiAgentCtlRoutes(OpContext context) {
         limit: call.optInt('limit') ?? 50,
       );
       return <String, Object?>{
-        'actions': <Object?>[for (final AiAgentActionRow r in rows) _actionJson(r)],
+        'actions': <Object?>[
+          for (final AiAgentActionRow r in rows) _actionJson(r),
+        ],
       };
     }),
-    CtlRoute.post('/api/admin/ai/agent/actions/:id/undo', (
-      CtlCall call,
-    ) async {
+    CtlRoute.post('/api/admin/ai/agent/actions/:id/undo', (CtlCall call) async {
       final AiAgentController controller = AiAgentController.headless(context);
       try {
         final AgentUndoResult result = await controller.toolbox.undo(

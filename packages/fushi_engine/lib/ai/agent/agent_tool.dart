@@ -99,6 +99,7 @@ class AgentToolResult {
     this.before,
     this.after,
     this.taskId,
+    this.userPreview,
   }) : errorCode = null,
        errorMessage = null;
 
@@ -107,7 +108,8 @@ class AgentToolResult {
       actionId = null,
       before = null,
       after = null,
-      taskId = null;
+      taskId = null,
+      userPreview = null;
 
   /// 可 JSON 编码的结果（交给模型前包进不可信数据块）。
   final Object? data;
@@ -121,6 +123,10 @@ class AgentToolResult {
 
   /// 长任务 id（`task.get` / `task.wait` 用）。
   final String? taskId;
+
+  /// 只给用户看的结果（对话里折叠显示）；非空时 [data] 是交给模型的脱敏版本
+  /// （一次性凭据类结果，见 `FushiOpSpec.sensitiveResult`）。
+  final String? userPreview;
 
   final String? errorCode;
   final String? errorMessage;

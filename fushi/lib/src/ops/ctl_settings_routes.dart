@@ -859,10 +859,7 @@ _requireListEntry(OpContext context, CtlCall call) {
   return (settings: settings, entry: entry, list: list);
 }
 
-Future<Object?> _listSettingItems(
-  OpContext context,
-  CtlCall call,
-) async {
+Future<Object?> _listSettingItems(OpContext context, CtlCall call) async {
   final ({SettingsContext settings, _SettingEntry entry, SettingsCliList list})
   target = _requireListEntry(context, call);
   final List<Map<String, Object?>> items = await target.list.list(
@@ -895,10 +892,7 @@ Future<Object?> _addSettingItem(OpContext context, CtlCall call) async {
   };
 }
 
-Future<Object?> _updateSettingItem(
-  OpContext context,
-  CtlCall call,
-) async {
+Future<Object?> _updateSettingItem(OpContext context, CtlCall call) async {
   final ({SettingsContext settings, _SettingEntry entry, SettingsCliList list})
   target = _requireListEntry(context, call);
   final Future<Object?> Function(SettingsContext, String, Map<String, String>)?
@@ -924,10 +918,7 @@ Future<Object?> _updateSettingItem(
   };
 }
 
-Future<Object?> _removeSettingItem(
-  OpContext context,
-  CtlCall call,
-) async {
+Future<Object?> _removeSettingItem(OpContext context, CtlCall call) async {
   if (call.optBool('confirm') != true) {
     throw const CtlFailure.badRequest('删除记录需要 confirm=true');
   }
@@ -1165,11 +1156,7 @@ ProfileRow _resolveProfile(ProfileUiState state, String ref) {
   throw CtlFailure.notFound('没有 Profile「$ref」');
 }
 
-Map<String, Object?> _profileResult(
-  OpContext context,
-  String action,
-  int id,
-) {
+Map<String, Object?> _profileResult(OpContext context, String action, int id) {
   final ProfileUiState state = _profileState(context);
   return <String, Object?>{
     'action': action,
@@ -1191,10 +1178,7 @@ Future<Object?> _listProfiles(OpContext context) async {
   };
 }
 
-Future<Object?> _activateProfile(
-  OpContext context,
-  CtlCall call,
-) async {
+Future<Object?> _activateProfile(OpContext context, CtlCall call) async {
   final ProfileViewModel viewModel = await _profileViewModel(context);
   final ProfileRow target = _resolveProfile(
     _profileState(context),
@@ -1241,10 +1225,14 @@ Future<Object?> _copyProfile(OpContext context, CtlCall call) async {
   };
   await viewModel.copyProfile(source.id, name);
   final ProfileUiState after = _profileState(context);
-  final ProfileRow created = after.profiles.firstWhere(
-    (ProfileRow profile) => !before.contains(profile.id),
-    orElse: () => source,
-  );
+  final ProfileRow? created = after.profiles
+      .where((ProfileRow profile) => !before.contains(profile.id))
+      .firstOrNull;
+  // 找不到新建的那份就如实报错：回退成源 Profile 会让调用方（撤销「删掉复制出的
+  // 那份」）把源 Profile 当成复制结果删掉。
+  if (created == null) {
+    throw CtlFailure.conflict('复制「${source.name}」后没找到新建的 Profile');
+  }
   return _profileResult(context, '已复制为', created.id);
 }
 
@@ -1377,10 +1365,7 @@ Future<Object?> _listProfileBindings(OpContext context) async {
 
 /// `scope` = media（键 = `ProfileMediaKind`）/ language（键 = BCP-47，按
 /// [normalizeLanguageBinding] 归一）；body `profile` = id / 名字 / none（解绑）。
-Future<Object?> _setProfileBinding(
-  OpContext context,
-  CtlCall call,
-) async {
+Future<Object?> _setProfileBinding(OpContext context, CtlCall call) async {
   final String scope = call.params['scope']!.trim().toLowerCase();
   final String key = call.params['key']!;
   final String target = call.requireString('profile');
