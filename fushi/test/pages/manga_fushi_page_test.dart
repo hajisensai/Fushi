@@ -625,7 +625,9 @@ void main() {
   // 从当前页开始跑，右上角浮标显示进度（对齐 Mangatan / Chimahon）。
   testWidgets('已识别的卷：右上角平铺「重新识别本卷」（换引擎重跑的唯一入口），不给「识别本卷」',
       (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(600, 1000);
+    // 宽到能放下全部右上角动作（含最低优先级的「问 AI」；窄时它最先收进「⋯」，
+    // 见 test/widgets/ai_agent_ask_top_bar_action_test.dart）。
+    tester.view.physicalSize = const Size(800, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -678,7 +680,7 @@ void main() {
     await tester.pump();
     expect(ocrService.folderRequests, 0, reason: '已识别的卷不自动重排');
 
-    // 600dp 下右上角放得下全部动作：默认展开、不画「⋯」。
+    // 800dp 下右上角放得下全部动作：默认展开、不画「⋯」。
     expect(find.byKey(const ValueKey<String>('manga_chrome_overflow')),
         findsNothing,
         reason: '空间够时右上角动作默认全部平铺，不收进「⋯」');

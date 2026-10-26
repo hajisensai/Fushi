@@ -77,7 +77,11 @@ class ProfileRepository {
   Future<int> createProfile(String name) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final id = await _db.insertProfile(
-      ProfilesCompanion.insert(name: name, createdAt: now, updatedAt: now),
+      ProfilesCompanion.insert(
+        name: name,
+        createdAt: now,
+        updatedAt: now,
+      ),
     );
     return id;
   }
@@ -114,28 +118,24 @@ class ProfileRepository {
     final ankiSettings = await _ankiRepo.loadSettings();
     final ankiMap = ProfileKeys.ankiSettingsToMap(ankiSettings);
     for (final entry in ankiMap.entries) {
-      entries.add(
-        ProfileSettingsCompanion.insert(
-          profileId: profileId,
-          category: ProfileKeys.categoryAnki,
-          key: entry.key,
-          value: entry.value,
-        ),
-      );
+      entries.add(ProfileSettingsCompanion.insert(
+        profileId: profileId,
+        category: ProfileKeys.categoryAnki,
+        key: entry.key,
+        value: entry.value,
+      ));
     }
 
     // ALL Drift prefs (excluding app-state keys)
     final allPrefs = await _db.getAllPrefs();
     for (final entry in allPrefs.entries) {
       if (ProfileKeys.isExcludedPref(entry.key)) continue;
-      entries.add(
-        ProfileSettingsCompanion.insert(
-          profileId: profileId,
-          category: ProfileKeys.categoryPref,
-          key: entry.key,
-          value: entry.value,
-        ),
-      );
+      entries.add(ProfileSettingsCompanion.insert(
+        profileId: profileId,
+        category: ProfileKeys.categoryPref,
+        key: entry.key,
+        value: entry.value,
+      ));
     }
 
     // TODO-1077: dictionary enable-list / order / source / language visibility
@@ -143,17 +143,15 @@ class ProfileRepository {
     // were previously shared across all profiles. Snapshot one row per
     // dictionary (key = dictionary name) into the dedicated
     // [ProfileKeys.categoryDictionaryMeta] category so they follow the profile.
-    final List<DictionaryMetaRow> dictRows = await _db
-        .getAllDictionaryMetadata();
+    final List<DictionaryMetaRow> dictRows =
+        await _db.getAllDictionaryMetadata();
     for (final DictionaryMetaRow row in dictRows) {
-      entries.add(
-        ProfileSettingsCompanion.insert(
-          profileId: profileId,
-          category: ProfileKeys.categoryDictionaryMeta,
-          key: row.name,
-          value: _encodeDictionaryMeta(row),
-        ),
-      );
+      entries.add(ProfileSettingsCompanion.insert(
+        profileId: profileId,
+        category: ProfileKeys.categoryDictionaryMeta,
+        key: row.name,
+        value: _encodeDictionaryMeta(row),
+      ));
     }
 
     await _db.replaceProfileSettings(profileId, entries);
@@ -185,10 +183,8 @@ class ProfileRepository {
           prefMap[row.key] = row.value;
         case ProfileKeys.categoryDictionaryMeta:
           hasDictMeta = true;
-          final DictionaryMetadataCompanion? companion = _decodeDictionaryMeta(
-            row.key,
-            row.value,
-          );
+          final DictionaryMetadataCompanion? companion =
+              _decodeDictionaryMeta(row.key, row.value);
           // Defensive: a single corrupt row degrades gracefully (skipped)
           // instead of aborting the whole profile-apply (mirrors the Anki
           // fieldMappings try/catch, HBK-AUDIT-043).
@@ -213,9 +209,8 @@ class ProfileRepository {
     // rows (the prune loop below already skips excluded keys) — so drop them
     // from the restore map here. Same single source of truth as snapshot/prune:
     // [ProfileKeys.isExcludedPref].
-    prefMap.removeWhere(
-      (String key, String _) => ProfileKeys.isExcludedPref(key),
-    );
+    prefMap
+        .removeWhere((String key, String _) => ProfileKeys.isExcludedPref(key));
 
     // Wrap DB writes in transaction for consistency
     await _db.transaction(() async {
@@ -253,10 +248,10 @@ class ProfileRepository {
       if (hasDictMeta) {
         final Map<String, DictionaryMetaRow> liveDictRows =
             <String, DictionaryMetaRow>{
-              for (final DictionaryMetaRow r
-                  in await _db.getAllDictionaryMetadata())
-                r.name: r,
-            };
+          for (final DictionaryMetaRow r
+              in await _db.getAllDictionaryMetadata())
+            r.name: r,
+        };
         for (final MapEntry<String, DictionaryMetadataCompanion> entry
             in dictMetaMap.entries) {
           final DictionaryMetadataCompanion companion = entry.value;
@@ -295,9 +290,8 @@ class ProfileRepository {
       // the version key itself, whose recursion guard skips re-bumping, so this
       // does NOT double-count. prefs_version is excluded from profile snapshots,
       // so it is neither pruned above nor present in prefMap.
-      final String? rawVersion = await _db.getPref(
-        PreferencesRepository.prefsVersionKey,
-      );
+      final String? rawVersion =
+          await _db.getPref(PreferencesRepository.prefsVersionKey);
       final int nextVersion =
           (rawVersion == null ? 0 : PrefCodec.decode<int>(rawVersion, 0)) + 1;
       await _db.setPref(
@@ -318,14 +312,12 @@ class ProfileRepository {
     final newId = await createProfile(newName);
     final sourceSettings = await _db.getProfileSettings(sourceId);
     final copies = sourceSettings
-        .map(
-          (s) => ProfileSettingsCompanion.insert(
-            profileId: newId,
-            category: s.category,
-            key: s.key,
-            value: s.value,
-          ),
-        )
+        .map((s) => ProfileSettingsCompanion.insert(
+              profileId: newId,
+              category: s.category,
+              key: s.key,
+              value: s.value,
+            ))
         .toList();
     await _db.replaceProfileSettings(newId, copies);
     return newId;
@@ -478,9 +470,8 @@ class ProfileRepository {
       await snapshotCurrentSettings(profileId);
     }
 
-    final List<ProfileSettingRow> rows = await _db.getProfileSettings(
-      profileId,
-    );
+    final List<ProfileSettingRow> rows =
+        await _db.getProfileSettings(profileId);
 
     final List<ProfileSettingEntry> settings = <ProfileSettingEntry>[];
     for (final ProfileSettingRow row in rows) {
@@ -489,18 +480,16 @@ class ProfileRepository {
           _isCredentialOrDeviceLocalPref(row.key)) {
         continue;
       }
-      settings.add(
-        ProfileSettingEntry(
+      settings.add(ProfileSettingEntry(
+        category: row.category,
+        key: row.key,
+        value: _exportFontPathStrippedValue(
           category: row.category,
           key: row.key,
-          value: _exportFontPathStrippedValue(
-            category: row.category,
-            key: row.key,
-            value: row.value,
-            fontsRootDirectory: fontsRootDirectory,
-          ),
+          value: row.value,
+          fontsRootDirectory: fontsRootDirectory,
         ),
-      );
+      ));
     }
 
     return encodeProfileDocument(
@@ -532,10 +521,8 @@ class ProfileRepository {
   /// 字体配置的持久化 key（与 backup_service 同一组值；那边因 const 上下文
   /// 保留字面量并由 `db_source_pref_key_test` 锁一致）。这里经单一真相编码器
   /// [dbSourcePrefKey] 生成，不再硬编码 `src:reader_fushi:` 格式。
-  static final String _fontCatalogPrefKey = dbSourcePrefKey(
-    kReaderSourcePersistedKey,
-    'font_catalog',
-  );
+  static final String _fontCatalogPrefKey =
+      dbSourcePrefKey(kReaderSourcePersistedKey, 'font_catalog');
   static final List<String> _legacyFontPrefKeys = <String>[
     dbSourcePrefKey(kReaderSourcePersistedKey, 'custom_fonts'),
     dbSourcePrefKey(kReaderSourcePersistedKey, 'app_ui_fonts'),
@@ -574,14 +561,12 @@ class ProfileRepository {
       case ProfileImportMode.overwrite:
         if (targetProfileId == null) {
           throw ProfileImportException(
-            'overwrite mode requires targetProfileId',
-          );
+              'overwrite mode requires targetProfileId');
         }
         final ProfileRow? target = await _db.getProfileById(targetProfileId);
         if (target == null) {
           throw ProfileImportException(
-            'overwrite target $targetProfileId not found',
-          );
+              'overwrite target $targetProfileId not found');
         }
         await _db.replaceProfileSettings(
           targetProfileId,
@@ -638,9 +623,8 @@ class ProfileRepository {
         if (e.key is String && e.value is String)
           e.key as String: e.value as String,
     });
-    final bool unchanged = kDictKanjiPartSettingKeys.every(
-      (String key) => liveMap[key] == wanted[key],
-    );
+    final bool unchanged = kDictKanjiPartSettingKeys
+        .every((String key) => liveMap[key] == wanted[key]);
     if (unchanged) return null;
     return jsonEncode(<String, dynamic>{
       for (final MapEntry<dynamic, dynamic> e in liveMap.entries)
@@ -654,16 +638,13 @@ class ProfileRepository {
   /// not abort the whole profile-apply (mirrors [ProfileKeys] Anki parsing,
   /// HBK-AUDIT-043). [name] is the profile_settings key (dictionary name / PK).
   DictionaryMetadataCompanion? _decodeDictionaryMeta(
-    String name,
-    String value,
-  ) {
+      String name, String value) {
     try {
       final dynamic decoded = jsonDecode(value);
       if (decoded is! Map) return null;
       final Object? rawOrder = decoded['order'];
-      final int order = rawOrder is int
-          ? rawOrder
-          : int.tryParse('$rawOrder') ?? 0;
+      final int order =
+          rawOrder is int ? rawOrder : int.tryParse('$rawOrder') ?? 0;
       String asString(Object? v, String fallback) => v is String ? v : fallback;
       return DictionaryMetadataCompanion(
         name: Value(name),
@@ -671,23 +652,18 @@ class ProfileRepository {
         order: Value(order),
         type: Value(asString(decoded['type'], 'term')),
         metadataJson: Value(asString(decoded['metadataJson'], '{}')),
-        hiddenLanguagesJson: Value(
-          asString(decoded['hiddenLanguagesJson'], '[]'),
-        ),
-        collapsedLanguagesJson: Value(
-          asString(decoded['collapsedLanguagesJson'], '[]'),
-        ),
+        hiddenLanguagesJson:
+            Value(asString(decoded['hiddenLanguagesJson'], '[]')),
+        collapsedLanguagesJson:
+            Value(asString(decoded['collapsedLanguagesJson'], '[]')),
         // 旧快照没有这个键 → '[]' = 全部「继承」= 与 BUG-2158 之前的行为一致。
-        expandedLanguagesJson: Value(
-          asString(decoded['expandedLanguagesJson'], '[]'),
-        ),
+        expandedLanguagesJson:
+            Value(asString(decoded['expandedLanguagesJson'], '[]')),
         // null（未指定）是合法值，不能像上面几个那样塞空串默认值——空串会让
         // effectiveSourceLanguage 的「非空即用户指定」判据失真。
-        languageOverride: Value(
-          decoded['languageOverride'] is String
-              ? decoded['languageOverride'] as String
-              : null,
-        ),
+        languageOverride: Value(decoded['languageOverride'] is String
+            ? decoded['languageOverride'] as String
+            : null),
       );
     } catch (_) {
       return null;
@@ -698,9 +674,8 @@ class ProfileRepository {
   /// 一个库）。它是「先查有没有、没有就建 Default」：两路并发（视图模型首次加载 +
   /// 控制通道 / AI 的 reload）会都看见空表、都去建，第二路撞 `profiles.name` 唯一
   /// 约束（BUG-3784）。并发调用合并到同一次。
-  static final Expando<Future<void>> _ensuringDefault = Expando<Future<void>>(
-    'ensureDefaultProfile',
-  );
+  static final Expando<Future<void>> _ensuringDefault =
+      Expando<Future<void>>('ensureDefaultProfile');
 
   Future<void> ensureDefaultProfile() {
     final Future<void>? running = _ensuringDefault[_db];
