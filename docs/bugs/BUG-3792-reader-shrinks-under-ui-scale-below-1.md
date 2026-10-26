@@ -1,4 +1,4 @@
-## BUG-3783 · reader-shrinks-under-ui-scale-below-1
+## BUG-3792 · reader-shrinks-under-ui-scale-below-1
 - **报告**：2026-10-26（用户：群里安卓用户截图「歌词模式用不了」，补充「点进去歌词模式和有声书都这样」；所有者平板 Xiaomi Pad 5 / Android 17 上自装的 Fushi 同样复现）
 - **真实性**：✅ 真 bug。现象：阅读器（含有声书正文与歌词模式覆盖层）整页按「界面大小」比例 s 缩在左上角（平板 90% → 0.9、用户 80% → 0.8），右 / 下外圈露出路由层形状背景。真机 `dumpsys activity top`：`FlutterView` 2560×1600，而 Flutter 下发的 WebView 容器 `FlutterMutatorView` 只有 2304×1439，即 Flutter 侧整页按 0.9 倍布局。根因：
   - `fushi/lib/src/utils/components/shelf_cover_material.dart:840` `LibraryShapeBackdrop` 是不带 `fit` 的 `Stack`，经路由层 `FushiPageBackdrop`（`fushi/lib/src/utils/adaptive/fushi_page_backdrop.dart:29`，10-25 「背景整个应用都加」）垫在每一页外面后，页面从路由拿到的紧约束被放松成宽松约束。
