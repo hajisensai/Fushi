@@ -312,6 +312,7 @@ class InAppWebView {
   // Skip pixel readback - when using zero-copy EGL texture mode, we don't need
   // to read pixels back to CPU. This improves performance and avoids GL context issues.
   void SetSkipPixelReadback(bool skip) { skip_pixel_readback_ = skip; }
+  void SetUsePixelBufferTexture(bool use) { use_pixel_buffer_texture_ = use; }
 
   // Frame available callback (called when new frame is ready)
   void SetOnFrameAvailable(std::function<void()> callback);
@@ -527,6 +528,7 @@ class InAppWebView {
   // Flag to skip pixel readback when using zero-copy EGL texture mode
   // When true, OnExportDmaBuf won't call ReadPixelsFromEglImage
   bool skip_pixel_readback_ = false;
+  bool use_pixel_buffer_texture_ = false;
 
   // View dimensions
   int width_ = 800;

@@ -116,6 +116,9 @@ CustomPlatformView::CustomPlatformView(FlBinaryMessenger* messenger,
     debugLog("CustomPlatformView: using GL texture (hardware accelerated)");
   } else {
     texture_ = FL_TEXTURE(inappwebview_texture_new(webview_.get()));
+#ifdef HAVE_WPE_PLATFORM
+    webview_->SetUsePixelBufferTexture(true);
+#endif
     debugLog("CustomPlatformView: using pixel buffer texture (software)");
   }
 
