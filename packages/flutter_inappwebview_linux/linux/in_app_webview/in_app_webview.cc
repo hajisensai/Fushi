@@ -554,6 +554,10 @@ InAppWebView::~InAppWebView() {
     g_signal_handler_disconnect(wpe_view_, buffer_rendered_handler_);
     buffer_rendered_handler_ = 0;
   }
+  if (wpe_view_ != nullptr && buffers_changed_handler_ != 0) {
+    g_signal_handler_disconnect(wpe_view_, buffers_changed_handler_);
+    buffers_changed_handler_ = 0;
+  }
   // Note: scale_changed_handler_ is connected to gtk_window_, not wpe_view_
   if (gtk_window_ != nullptr && scale_changed_handler_ != 0) {
     g_signal_handler_disconnect(gtk_window_, scale_changed_handler_);
@@ -864,6 +868,14 @@ void InAppWebView::InitWebView(const InAppWebViewCreationParams& params) {
         auto* self = static_cast<InAppWebView*>(user_data);
         self->OnWpePlatformBufferRendered(buffer);
       }), this);
+  buffers_changed_handler_ = g_signal_connect(
+      wpe_view_, "buffers-changed",
+      G_CALLBACK(+[](WPEView* view, WPEBuffer** buffers, guint count,
+                     gpointer user_data) {
+        auto* self = static_cast<InAppWebView*>(user_data);
+        self->OnWpePlatformBuffersChanged(buffers, count);
+      }),
+      this);
   
   // Get toplevel for size management (need this before setting scale)
   wpe_toplevel_ = wpe_view_get_toplevel(wpe_view_);
@@ -1355,6 +1367,82 @@ void InAppWebView::OnExportDmaBuf(::wpe_fdo_egl_exported_image* image) {
 #endif
 
 #ifdef HAVE_WPE_PLATFORM
+void InAppWebView::SetUsePixelBufferTexture(bool use) {
+  WPEBuffer* buffer_to_release = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(wpe_buffer_mutex_);
+    use_pixel_buffer_texture_ = use;
+    if (!use) {
+      return;
+    }
+
+    buffer_to_release = current_buffer_;
+    current_buffer_ = nullptr;
+    current_buffer_width_ = 0;
+    current_buffer_height_ = 0;
+
+    if (current_egl_image_ != nullptr && egl_display_ != nullptr) {
+      static PFNEGLDESTROYIMAGEKHRPROC eglDestroyImageKHR = nullptr;
+      if (eglDestroyImageKHR == nullptr) {
+        eglDestroyImageKHR =
+            (PFNEGLDESTROYIMAGEKHRPROC)eglGetProcAddress("eglDestroyImageKHR");
+      }
+      if (eglDestroyImageKHR != nullptr) {
+        eglDestroyImageKHR(static_cast<EGLDisplay>(egl_display_),
+                           static_cast<EGLImageKHR>(current_egl_image_));
+      }
+      current_egl_image_ = nullptr;
+    }
+  }
+
+  if (buffer_to_release != nullptr && wpe_view_ != nullptr) {
+    wpe_view_buffer_released(wpe_view_, buffer_to_release);
+  }
+}
+
+void InAppWebView::OnWpePlatformBuffersChanged(gpointer buffers_data,
+                                              guint count) {
+  auto** buffers = static_cast<WPEBuffer**>(buffers_data);
+  WPEBuffer* buffer_to_release = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(wpe_buffer_mutex_);
+    bool current_buffer_is_configured = false;
+    for (guint i = 0; current_buffer_ != nullptr && i < count; ++i) {
+      if (buffers != nullptr && buffers[i] == current_buffer_) {
+        current_buffer_is_configured = true;
+        break;
+      }
+    }
+
+    // A resize can replace the whole pool without first delivering another
+    // frame. Retire the held buffer before WPE destroys buffers omitted from
+    // the new pool (count == 0 means every buffer is being retired).
+    if (current_buffer_ != nullptr && !current_buffer_is_configured) {
+      buffer_to_release = current_buffer_;
+      current_buffer_ = nullptr;
+      current_buffer_width_ = 0;
+      current_buffer_height_ = 0;
+
+      if (current_egl_image_ != nullptr && egl_display_ != nullptr) {
+        static PFNEGLDESTROYIMAGEKHRPROC eglDestroyImageKHR = nullptr;
+        if (eglDestroyImageKHR == nullptr) {
+          eglDestroyImageKHR =
+              (PFNEGLDESTROYIMAGEKHRPROC)eglGetProcAddress("eglDestroyImageKHR");
+        }
+        if (eglDestroyImageKHR != nullptr) {
+          eglDestroyImageKHR(static_cast<EGLDisplay>(egl_display_),
+                             static_cast<EGLImageKHR>(current_egl_image_));
+        }
+        current_egl_image_ = nullptr;
+      }
+    }
+  }
+
+  if (buffer_to_release != nullptr && wpe_view_ != nullptr) {
+    wpe_view_buffer_released(wpe_view_, buffer_to_release);
+  }
+}
+
 void InAppWebView::OnWpePlatformBufferRendered(WPEBuffer* buffer) {
   if (buffer == nullptr) {
     return;
@@ -1376,6 +1464,7 @@ void InAppWebView::OnWpePlatformBufferRendered(WPEBuffer* buffer) {
   
   WPEBuffer* previous_buffer = nullptr;
   bool buffer_handled = false;
+  bool release_buffer_after_copy = false;
   
   // Track EGL import failures to avoid repeated attempts
   // Static because if EGL fails once, it will likely keep failing (e.g., no GPU)
@@ -1404,12 +1493,13 @@ void InAppWebView::OnWpePlatformBufferRendered(WPEBuffer* buffer) {
     // Check buffer type to determine best rendering path
     bool is_dma_buf = WPE_IS_BUFFER_DMA_BUF(buffer);
     bool is_shm = WPE_IS_BUFFER_SHM(buffer);
+    const bool use_pixel_buffer_texture = use_pixel_buffer_texture_;
     
     // === Priority 1: Try EGL image import (zero-copy, best performance) ===
     // Visible WPEPlatform views use a pixel-buffer texture because their EGL
     // images are not reliably sampleable from Flutter's Impeller context.
     // Headless views have no Flutter texture and retain the EGL import path.
-    if (!use_pixel_buffer_texture_ && egl_display_ != nullptr && is_dma_buf &&
+    if (!use_pixel_buffer_texture && egl_display_ != nullptr && is_dma_buf &&
         !egl_import_failed_permanently) {
       GError* error = nullptr;
       void* egl_image = wpe_buffer_import_to_egl_image(buffer, &error);
@@ -1439,32 +1529,28 @@ void InAppWebView::OnWpePlatformBufferRendered(WPEBuffer* buffer) {
         guint stride = wpe_buffer_shm_get_stride(shm_buffer);
         WPEPixelFormat format = wpe_buffer_shm_get_format(shm_buffer);
         
-        gsize size;
-        const uint8_t* pixels = static_cast<const uint8_t*>(g_bytes_get_data(data, &size));
-        
-        if (pixels != nullptr && size > 0) {
-          // Store in pixel buffer for software rendering
+        gsize size = 0;
+        const uint8_t* pixels =
+            static_cast<const uint8_t*>(g_bytes_get_data(data, &size));
+        const size_t row_bytes = static_cast<size_t>(buf_width) * 4;
+        const size_t required_source_size =
+            buf_height == 0
+                ? 0
+                : static_cast<size_t>(stride) * (buf_height - 1) + row_bytes;
+
+        if (pixels != nullptr && buf_height > 0 && stride >= row_bytes &&
+            size >= required_source_size &&
+            format == WPE_PIXEL_FORMAT_ARGB8888) {
           size_t write_idx = write_buffer_index_.load(std::memory_order_relaxed);
           auto& pixel_buffer = pixel_buffers_[write_idx];
-          
-          if (pixel_buffer.data.size() != size) {
-            pixel_buffer.data.resize(size);
-          }
-          memcpy(pixel_buffer.data.data(), pixels, size);
-          
-          // WPE SHM buffers use ARGB8888 format (BGRA in memory on little-endian)
-          // Flutter expects RGBA8888, so we need to convert
-          // ConvertARGB32ToRGBA handles the BGRA -> RGBA conversion
-          if (format == WPE_PIXEL_FORMAT_ARGB8888) {
-            ConvertARGB32ToRGBA(pixel_buffer.data.data(),    // source (in-place)
-                                pixel_buffer.data.data(),    // destination (in-place)
-                                buf_width, buf_height,
-                                stride);
-          }
-          
+
+          pixel_buffer.data.resize(row_bytes * buf_height);
+          ConvertARGB32ToRGBA(pixels, pixel_buffer.data.data(), buf_width,
+                              buf_height, stride);
+
           pixel_buffer.width = buf_width;
           pixel_buffer.height = buf_height;
-          
+
           // Swap buffers
           {
             std::lock_guard<std::mutex> swap_lock(buffer_swap_mutex_);
@@ -1484,43 +1570,40 @@ void InAppWebView::OnWpePlatformBufferRendered(WPEBuffer* buffer) {
     // This is a fallback for DMA-BUF when EGL failed but GBM device is available
     if (!buffer_handled) {
       GError* error = nullptr;
+      // WPE returns a borrowed GBytes owned by the buffer; copy from it using
+      // the actual row stride before releasing the rendered buffer.
       GBytes* pixels = wpe_buffer_import_to_pixels(buffer, &error);
       if (pixels != nullptr) {
-        gsize size;
+        gsize size = 0;
         const uint8_t* data = static_cast<const uint8_t*>(g_bytes_get_data(pixels, &size));
-        
-        // Store in pixel buffer for software rendering
-        size_t write_idx = write_buffer_index_.load(std::memory_order_relaxed);
-        auto& pixel_buffer = pixel_buffers_[write_idx];
-        
-        if (pixel_buffer.data.size() != size) {
-          pixel_buffer.data.resize(size);
-        }
-        memcpy(pixel_buffer.data.data(), data, size);
-        
-        // GBM pixel import also returns ARGB8888, convert to RGBA
-        uint32_t stride = buf_width * 4;
-        ConvertARGB32ToRGBA(pixel_buffer.data.data(),
-                            pixel_buffer.data.data(),
-                            buf_width, buf_height,
-                            stride);
-        
-        pixel_buffer.width = buf_width;
-        pixel_buffer.height = buf_height;
-        
-        // Swap buffers
-        {
-          std::lock_guard<std::mutex> swap_lock(buffer_swap_mutex_);
-          read_buffer_index_.store(write_idx, std::memory_order_release);
-          write_buffer_index_.store((write_idx + 1) % kNumBuffers, std::memory_order_relaxed);
-        }
+        const size_t row_bytes = static_cast<size_t>(buf_width) * 4;
+        if (data != nullptr && buf_height > 0 && size % buf_height == 0) {
+          const size_t source_stride = size / buf_height;
+          if (source_stride >= row_bytes) {
+            size_t write_idx =
+                write_buffer_index_.load(std::memory_order_relaxed);
+            auto& pixel_buffer = pixel_buffers_[write_idx];
 
-        // wpe_buffer_import_to_pixels() returns a borrowed GBytes owned by
-        // WPEBuffer (WPEPlatform GIR transfer-ownership="none"). We copied
-        // its data above; unref'ing it here corrupts the buffer's refcount.
-        current_buffer_width_ = buf_width;
-        current_buffer_height_ = buf_height;
-        buffer_handled = true;
+            pixel_buffer.data.resize(row_bytes * buf_height);
+            ConvertARGB32ToRGBA(data, pixel_buffer.data.data(), buf_width,
+                                buf_height, source_stride);
+
+            pixel_buffer.width = buf_width;
+            pixel_buffer.height = buf_height;
+
+            // Swap buffers
+            {
+              std::lock_guard<std::mutex> swap_lock(buffer_swap_mutex_);
+              read_buffer_index_.store(write_idx, std::memory_order_release);
+              write_buffer_index_.store((write_idx + 1) % kNumBuffers,
+                                        std::memory_order_relaxed);
+            }
+
+            current_buffer_width_ = buf_width;
+            current_buffer_height_ = buf_height;
+            buffer_handled = true;
+          }
+        }
       } else {
         if (error != nullptr) {
           g_clear_error(&error);
@@ -1532,16 +1615,27 @@ void InAppWebView::OnWpePlatformBufferRendered(WPEBuffer* buffer) {
       debugLog("ERROR: No rendering method succeeded!");
     }
     
-    // Store reference to current buffer - we keep it until the NEXT frame arrives
-    // This ensures the EGL image's backing DMA-BUF memory stays valid
-    current_buffer_ = buffer;
+    if (use_pixel_buffer_texture) {
+      // The frame was copied to owned packed RGBA storage above, so release
+      // the WPE buffer now instead of retaining a borrowed pointer across
+      // resize/buffers-changed events.
+      current_buffer_ = nullptr;
+      release_buffer_after_copy = true;
+    } else {
+      // The EGL image is consumed by Flutter after this callback; retain the
+      // borrowed WPE buffer until the next frame or buffers-changed signal.
+      current_buffer_ = buffer;
+    }
   }
   
   // Release the PREVIOUS buffer now that we have a new one
   // The previous EGL image has been destroyed and we have a new frame,
   // so it's safe to let WPE reuse the old buffer's memory
-  if (previous_buffer != nullptr && wpe_view_ != nullptr && WPE_IS_BUFFER(previous_buffer)) {
+  if (previous_buffer != nullptr && wpe_view_ != nullptr) {
     wpe_view_buffer_released(wpe_view_, previous_buffer);
+  }
+  if (release_buffer_after_copy && wpe_view_ != nullptr) {
+    wpe_view_buffer_released(wpe_view_, buffer);
   }
   
   if (buffer_handled && on_frame_available_) {

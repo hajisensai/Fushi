@@ -312,7 +312,7 @@ class InAppWebView {
   // Skip pixel readback - when using zero-copy EGL texture mode, we don't need
   // to read pixels back to CPU. This improves performance and avoids GL context issues.
   void SetSkipPixelReadback(bool skip) { skip_pixel_readback_ = skip; }
-  void SetUsePixelBufferTexture(bool use) { use_pixel_buffer_texture_ = use; }
+  void SetUsePixelBufferTexture(bool use);
 
   // Frame available callback (called when new frame is ready)
   void SetOnFrameAvailable(std::function<void()> callback);
@@ -484,6 +484,7 @@ class InAppWebView {
   uint32_t current_buffer_width_ = 0;     // Width of current buffer
   uint32_t current_buffer_height_ = 0;    // Height of current buffer
   gulong buffer_rendered_handler_ = 0;    // Signal handler ID for buffer-rendered
+  gulong buffers_changed_handler_ = 0;    // Signal handler ID for buffers-changed
   gulong scale_changed_handler_ = 0;      // Signal handler ID for notify::scale-factor
   mutable std::mutex wpe_buffer_mutex_;   // Mutex for thread-safe buffer access
 #endif
@@ -686,6 +687,7 @@ class InAppWebView {
   // === WPEPlatform buffer rendering callback ===
   // Called when a new frame buffer is rendered by WPEView
   void OnWpePlatformBufferRendered(WPEBuffer* buffer);
+  void OnWpePlatformBuffersChanged(gpointer buffers, guint count);
 #endif
 
   // DOM fullscreen request handler (called from WPE backend)
