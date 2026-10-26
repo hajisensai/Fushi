@@ -9,25 +9,39 @@
 """
 import sys; sys.stdout.reconfigure(encoding="utf-8")
 import argparse, sqlite3, os, re, json, html, base64, io, collections
+from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote_plus
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser()
 ap.add_argument('--data-root', required=True, help='Fushi 数据根目录（含 support/）')
-ap.add_argument('--out', default=os.path.join(HERE, 'data.js'))
 args = ap.parse_args()
+# 输出固定写在脚本旁（.gitignore 已排除），不接受外部路径。
+OUT = os.path.join(HERE, 'data.js')
+SUPPORT = Path(args.data_root).resolve() / 'support'
+if not SUPPORT.is_dir():
+    sys.exit(f'找不到 {SUPPORT}：--data-root 应指向 Fushi 数据根目录')
 
-def snapshot(path: str) -> sqlite3.Connection:
-    """只读打开并整库拷进内存：不锁正在运行的 app，WAL 里未合并的页也带上。"""
-    src = sqlite3.connect(f'file:{path}?mode=ro', uri=True)
+def snapshot(name: str) -> sqlite3.Connection:
+    """只读打开 support/<name> 并整库拷进内存：不锁正在运行的 app，WAL 里未合并的页也带上。
+
+    库名只取固定白名单；URI 由 Path.as_uri() 生成（路径里的 ? # % 等被转义），
+    外部输入拼不进 URI 参数。
+    """
+    if name not in ('srs.db', 'fushi.db'):
+        raise ValueError(name)
+    db = SUPPORT / name
+    if not db.is_file():
+        sys.exit(f'找不到 {db}')
+    src = sqlite3.connect(db.as_uri() + '?mode=ro', uri=True)
     mem = sqlite3.connect(':memory:')
     src.backup(mem)
     src.close()
     return mem
 
-srs = snapshot(os.path.join(args.data_root, 'support', 'srs.db'))
-app = snapshot(os.path.join(args.data_root, 'support', 'fushi.db'))
+srs = snapshot('srs.db')
+app = snapshot('fushi.db')
 Q = lambda c, s, a=(): c.execute(s, a).fetchall()
 KINDS = ('video', 'book', 'manga', 'game', 'music', 'audiobook', 'lyrics')
 
@@ -220,5 +234,5 @@ for w in sorted(works.values(), key=lambda x: x['id']):
 for w in sorted(out_works, key=lambda x: -x['n']):
     print(f"{w['n']:4d} {w['kind']:6s} {'img ' if w['img'] else '--- '}{w['title']}")
 print('cards', len(cards), 'works', len(out_works), 'kind guessed', dict(unresolved))
-with open(args.out, 'w', encoding='utf-8') as fh:
+with open(OUT, 'w', encoding='utf-8') as fh:
     fh.write('window.STARFIELD_DATA=' + json.dumps({'works': out_works, 'cards': cards, 'source': 'srs'}, ensure_ascii=False) + ';')
