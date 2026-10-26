@@ -19,11 +19,14 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
 class AdminServer {
+  /// [api]：与远端 AI 助手共用的那一份 admin API（`serve` 里建一份，两边状态一致，
+  /// 例如模型下载中的去重）；不给就自建。
   AdminServer({
     required this.ctx,
     required this.token,
     this.securityContext,
-  }) : _api = AdminApi(ctx);
+    AdminApi? api,
+  }) : _api = api ?? AdminApi(ctx);
 
   final AdminContext ctx;
   final String token;

@@ -2213,21 +2213,43 @@ extension _ReaderChrome on _ReaderFushiPageState {
     return h > 0 ? '$h:$mmss' : mmss;
   }
 
+  /// AI 助手的阅读器上下文（当前书和位置，spec §6.4）：悬浮球场景与顶栏「问 AI」
+  /// 共用这一份。
+  Map<String, Object?> _readerAiContext() {
+    final AudiobookPlayerController? audio = _audiobookController;
+    final int pct = (_lastProgressValue.clamp(0.0, 1.0) * 100).round();
+    return <String, Object?>{
+      'itemKind': 'book',
+      'itemId': _bookUid ?? widget.bookKey,
+      'itemTitle': _book?.title,
+      'position': 'chapter ${_currentChapter + 1} · $pct%',
+      if (audio != null && audio.isPlaying)
+        'audiobookPosition': _formatAiContextDuration(audio.globalPosition),
+    };
+  }
+
+  /// 顶栏「问 AI」（D4 ③）：两种顶栏都排在「更多」槽之后——悬浮顶栏
+  /// （[FushiFloatingTopBar.overflow]，最低优先级：宽度够平铺、不够最先收进
+  /// 「⋯」），经典顶栏恒在 ⋮ 菜单里（该顶栏的 overflowActions 体系）。AI 模块关着
+  /// 时不出（`isAiModuleEnabled`，守卫 `ai_module_gate_guard_test`）。
+  List<ReaderHeaderAction> _askAiHeaderActions() => <ReaderHeaderAction>[
+    if (_hasEverLoaded && isAiModuleEnabled(appModel.moduleVisibility))
+      ReaderHeaderAction(
+        key: kAiAgentAskKey,
+        icon: kAiAgentAskIcon,
+        label: aiAgentAskLabel,
+        onPressed: () => openAiAgentForPage(
+          context,
+          scene: 'reader',
+          read: _readerAiContext,
+        ),
+      ),
+  ];
+
   Widget _buildReaderFloatingBallScene() {
     return FloatingBallScene(
       scope: FloatingBallScope.reader,
-      aiContext: () {
-        final AudiobookPlayerController? audio = _audiobookController;
-        final int pct = (_lastProgressValue.clamp(0.0, 1.0) * 100).round();
-        return <String, Object?>{
-          'itemKind': 'book',
-          'itemId': _bookUid ?? widget.bookKey,
-          'itemTitle': _book?.title,
-          'position': 'chapter ${_currentChapter + 1} · $pct%',
-          if (audio != null && audio.isPlaying)
-            'audiobookPosition': _formatAiContextDuration(audio.globalPosition),
-        };
-      },
+      aiContext: _readerAiContext,
       pinnedIds: <String>[
         if (_hasEverLoaded && _toolbarsHidden) ...<String>[
           for (final ReaderControlItem item in kReaderToolbarsTakeoverItems)
@@ -3218,8 +3240,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
               _readerControlAction(ReaderControlItem.modeToggle),
           ],
           trailing: _readerControlActionsIn(ReaderControlSlot.topRight),
-          // 布局的「更多」槽（2026-10 精简：中频按钮）恒在 ⋮ 菜单。
-          overflowActions: _overflowControlActions(),
+          // 布局的「更多」槽（2026-10 精简：中频按钮）恒在 ⋮ 菜单；「问 AI」排最后。
+          overflowActions: <ReaderHeaderAction>[
+            ..._overflowControlActions(),
+            ..._askAiHeaderActions(),
+          ],
         ),
       ),
     );
@@ -3272,6 +3297,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
             ),
             overflow: <FushiToolbarItem>[
               for (final ReaderHeaderAction a in _overflowControlActions())
+                _toolbarItem(a),
+              // 「问 AI」最低优先级：放得下才平铺，空间不够最先收进「⋯」。
+              for (final ReaderHeaderAction a in _askAiHeaderActions())
                 _toolbarItem(a),
             ],
             colors: _floatingToolbarColors(),

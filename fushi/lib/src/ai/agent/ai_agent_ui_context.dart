@@ -14,11 +14,24 @@ AgentUiContext aiAgentUiContextFromScene(FloatingBallSceneSnapshot? scene) {
     FloatingBallScope.system => 'system',
     _ => 'general',
   };
+  return aiAgentUiContextFromMap(sceneName, scene?.aiContext);
+}
+
+/// 页面键值 → AI 助手的界面上下文（悬浮球与各页顶栏「问 AI」共用这一份归一）。
+///
+/// [read] 是页面的上下文求值（与 [FloatingBallScene.aiContext] 同形）：`page` /
+/// `itemKind` / `itemId` / `itemTitle` / `position` 落进对应字段，其余键原样进
+/// [AgentUiContext.extra]。求值抛错（页面正在卸载等）按没有上下文处理——不让一个
+/// 按钮因此点不开。
+AgentUiContext aiAgentUiContextFromMap(
+  String scene,
+  Map<String, Object?> Function()? read,
+) {
   final Map<String, Object?> raw = <String, Object?>{};
   try {
-    raw.addAll(scene?.aiContext?.call() ?? const <String, Object?>{});
+    raw.addAll(read?.call() ?? const <String, Object?>{});
   } on Object {
-    // 页面求值失败（正在卸载等）：不带上下文也能用，不让一个按钮点不开。
+    // 页面求值失败：不带上下文也能用。
   }
   String? text(String key) {
     final Object? value = raw.remove(key);
@@ -28,7 +41,7 @@ AgentUiContext aiAgentUiContextFromScene(FloatingBallSceneSnapshot? scene) {
   }
 
   return AgentUiContext(
-    scene: sceneName,
+    scene: scene,
     page: text('page'),
     itemKind: text('itemKind'),
     itemId: text('itemId'),

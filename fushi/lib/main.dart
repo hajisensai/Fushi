@@ -4,6 +4,8 @@ import 'dart:ui' show AppExitResponse, PlatformDispatcher;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/ai/agent/ai_agent_entry.dart'
+    show openAiAgentFromShortcut;
 import 'package:fushi/src/corpus/corpus_origin_navigation.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi_corpus/fushi_corpus.dart' show CorpusHit;
@@ -2904,6 +2906,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                             focusNavigationEnabled:
                                 appModel.experimentalFocusNavigationEnabled,
                             registry: appModel.shortcutRegistry,
+                            // 全局快捷键「呼出 AI 助手」（D4 ②，默认 Ctrl+J / ⌘J）：
+                            // AI 模块关着时不认领。
+                            openAiAssistant: () =>
+                                openAiAgentFromShortcut(appModel),
 
                             // BUG-1349（第二处根因）：焦点导航层（FushiFocusRoot 的
                             // fallbackNode）必须在全局导航层**之内**。键事件沿焦点树

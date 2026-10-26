@@ -12,6 +12,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     show Consumer, WidgetRef;
+import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
@@ -6650,7 +6651,23 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           ? t.manga_series_chapters_action
           : t.manga_reader_page_grid,
       status: ready ? _buildChromeStatus() : null,
-      actions: plan.top,
+      // 「问 AI」（D4 ③）排在右上角动作的最后 = 最低优先级：宽度够平铺，不够
+      // 最先收进「⋯」（[MangaReaderTopBar] 按列表从尾部收）。AI 模块关着时不出。
+      actions: <MangaChromeAction>[
+        ...plan.top,
+        if (ready && isAiModuleEnabled(appModel.moduleVisibility))
+          MangaChromeAction(
+            key: kAiAgentAskKey,
+            icon: kAiAgentAskIcon,
+            label: aiAgentAskLabel,
+            slot: MangaChromeSlot.top,
+            onPressed: () => openAiAgentForPage(
+              context,
+              scene: 'manga',
+              read: _mangaAiContext,
+            ),
+          ),
+      ],
       overflowActions: plan.overflow,
     );
   }

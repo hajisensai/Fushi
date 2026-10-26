@@ -407,6 +407,12 @@ enum ShortcutAction {
   // window_manager）。global scope、桌面（Win/macOS/Linux）生效、移动端 no-op
   // （无桌面窗）。默认键盘 F11。
   globalToggleFullscreen(ShortcutScope.global, 'global_toggle_fullscreen'),
+  // 呼出 AI 助手浮层（spec `docs/specs/2026-10-26-ai-operations-agent-design.md`
+  // D4 ②）：执行体在 wrapWithGlobalNavigation（键盘 / 手柄 / 鼠标三通道），带上
+  // 当前悬浮球场景的上下文调 `openAiAgent`；AI 模块关着时不消费、照常冒泡。阅读器 /
+  // 漫画 / 视频 / 首页都不认领它，解析到也交回 app 根（与 F11 同一条路）。默认桌面
+  // Ctrl+J（macOS ⌘J），手柄留空。
+  globalOpenAiAssistant(ShortcutScope.global, 'global_open_ai_assistant'),
 
   // 「唤出上下文菜单（右键菜单）」的**按钮归属声明**。它不进任何执行回调表——菜单的
   // 执行体分散在各卡片 / 各媒体表面自己的 `showMenu`，本动作只回答一件事：这次按下的

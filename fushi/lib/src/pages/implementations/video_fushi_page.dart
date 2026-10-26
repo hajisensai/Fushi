@@ -1,3 +1,5 @@
+import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -9703,7 +9705,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         : lastTopRightSegment && _webMode
         ? _webPageBarEntries(desktop: desktop)
         : const <VideoBarEntry>[];
-    if (items.isEmpty && folded.isEmpty && disc.isEmpty) {
+    final List<VideoBarEntry> askAi = lastTopRightSegment
+        ? _askAiBarEntries(desktop: desktop)
+        : const <VideoBarEntry>[];
+    if (items.isEmpty && folded.isEmpty && disc.isEmpty && askAi.isEmpty) {
       return const SizedBox.shrink();
     }
 
@@ -9768,6 +9773,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               cluster: VideoBarCluster.start,
               child: buttonFor(item),
             ),
+          ...askAi,
           ...folded,
         ],
       );
@@ -9780,6 +9786,39 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           : EdgeInsets.zero,
       child: buttonGroup(),
     );
+  }
+
+  /// 右上角按钮组的「问 AI」（D4 ③）：本页的顶栏动作体系是 [VideoControlBar]
+  /// （按 [VideoBarEntry.priority] 收进组尾「⋯」，不是 FushiFloatingTopBar），
+  /// 优先级 5 低于全部布局按钮（最冷门的逐帧是 10）= 空间不够时最先收起。上下文
+  /// 与悬浮球同一个 [_videoAiContext]。AI 模块关着时不出。
+  List<VideoBarEntry> _askAiBarEntries({required bool desktop}) {
+    if (!isAiModuleEnabled(appModel.moduleVisibility)) {
+      return const <VideoBarEntry>[];
+    }
+    void run() =>
+        openAiAgentForPage(context, scene: 'video', read: _videoAiContext);
+    return <VideoBarEntry>[
+      VideoBarEntry(
+        priority: 5,
+        menuAction: VideoBarMenuAction(
+          icon: kAiAgentAskIcon,
+          label: aiAgentAskLabel,
+          onSelected: run,
+        ),
+        child: FushiTooltip(
+          message: aiAgentAskLabel,
+          child: KeyedSubtree(
+            key: kAiAgentAskKey,
+            child: _chromeIconButton(
+              icon: kAiAgentAskIcon,
+              desktop: desktop,
+              onPressed: run,
+            ),
+          ),
+        ),
+      ),
+    ];
   }
 
   String get _clipExportTooltip {

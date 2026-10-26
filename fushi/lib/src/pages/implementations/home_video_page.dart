@@ -1,3 +1,4 @@
+import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'dart:async' show StreamSubscription, Timer, unawaited;
@@ -8173,6 +8174,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           busy: _headerRefreshBusy,
           onTap: _headerRefreshBusy ? null : _refreshFromHeader,
         ),
+      // 「问 AI」（D4 ③）：最低优先级，宽度不够时最先收进「⋯」；AI 模块关着
+      // 时为空。
+      ...aiAgentAskHeaderActions(
+        context,
+        visibility: ref.read(appProvider).moduleVisibility,
+        page: 'video_library',
+      ),
     ];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {

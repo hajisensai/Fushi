@@ -16,10 +16,24 @@ import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/ai/agent/ai_agent_controller.dart';
+import 'package:fushi/src/ai/agent/ai_agent_conversation_controller.dart';
+import 'package:fushi/src/ai/agent/remote_ai_agent_session.dart';
+import 'package:fushi/src/sync/interconnect_assistant_client.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/sync/assistant/host_assistant.dart';
+import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dart'
+    show
+        kHostAssistantReasonDisabled,
+        kHostAssistantReasonNoProvider,
+        kHostAssistantReasonNotReady;
 import 'package:fushi/src/ai/agent/ai_agent_in_process_ops.dart';
+import 'package:fushi/src/ocr/screen_text_capture.dart'
+    show screenTextCaptureSupported;
 import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
+import 'package:fushi/src/pages/implementations/ai_agent_screen_text.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show fushiFloatingPillDecoration;
@@ -44,13 +58,9 @@ Future<void> openAiAgent(
   BuildContext context, {
   AgentUiContext? uiContext,
 }) async {
-  final AiAgentController? controller = AiAgentController.instanceOrNull;
-  if (controller == null) return;
-  if (!controller.hasProvider) {
-    await _guideToProviderSettings(context);
-    return;
-  }
-  if (!context.mounted) return;
+  final AiAgentConversationController? controller =
+      await _resolveAiAgentConversation(context);
+  if (controller == null || !context.mounted) return;
   if (MediaQuery.sizeOf(context).width >= kAiAgentSidePanelBreakpoint) {
     await _showSidePanel(context, controller, uiContext);
     return;
@@ -78,18 +88,131 @@ Future<void> pushAiAgentPage(
   BuildContext context, {
   AgentUiContext? uiContext,
 }) async {
-  final AiAgentController? controller = AiAgentController.instanceOrNull;
-  if (controller == null) return;
-  if (!controller.hasProvider) {
-    await _guideToProviderSettings(context);
-    return;
-  }
-  if (!context.mounted) return;
+  final AiAgentConversationController? controller =
+      await _resolveAiAgentConversation(context);
+  if (controller == null || !context.mounted) return;
   await Navigator.of(context).push<void>(
     MaterialPageRoute<void>(
       builder: (BuildContext _) =>
           AiAgentPage(controller: controller, uiContext: uiContext),
     ),
+  );
+}
+
+/// 本机还是远端（spec §6.5）——**只在这里决定**，[openAiAgent] / [pushAiAgentPage]
+/// 共用：
+///
+/// - 本机给「AI 助手」指派了提供商 → 本机会话；
+/// - 否则「下载执行设备」（与 AI 下视频远端同一个设置）指向一台已配对设备、且它
+///   宣告了 `agent` → 整场会话交给它跑（复用正在用的那场，浮层 / 整页不丢对话）；
+/// - 那台设备连不上 / 开不了 → 如实报原因，**不**退回本机；
+/// - 都没有 → 保持现状：引导去「设置 › 模型 › LLM」，不发任何请求。
+Future<AiAgentConversationController?> _resolveAiAgentConversation(
+  BuildContext context,
+) async {
+  final AiAgentController? local = AiAgentController.instanceOrNull;
+  if (local == null) return null;
+  if (local.hasProvider) return local;
+  final opContext = appOpContext;
+  final String url =
+      opContext?.appModel.prefsRepo.downloadExecutionHostUrl ?? '';
+  if (opContext == null || url.isEmpty) {
+    await _guideToProviderSettings(context);
+    return null;
+  }
+  final SyncRepository repo = SyncRepository(opContext.appModel.database);
+  // 解绑 / 停用了那台设备：偏好停在死地址上，按「没设执行设备」处理（与下载
+  // 入口 resolveDownloadExecution 同一判据）。
+  final FushiClientUrl? paired = interconnectPeerRepresentativeOf(
+    await repo.getFushiClientUrls(),
+    url,
+  );
+  if (!context.mounted) return null;
+  if (paired == null) {
+    await _guideToProviderSettings(context);
+    return null;
+  }
+  final RemoteAiAgentSession? existing = RemoteAiAgentSession.active;
+  if (existing != null && existing.isUsable && existing.target.baseUrl == url) {
+    return existing;
+  }
+  existing?.dispose();
+  final String deviceLabel = paired.deviceName ?? url;
+  final InterconnectAssistantClient client = InterconnectAssistantClient(
+    repo: repo,
+  );
+  final HostAssistantTarget? target = await client.probeUrl(url);
+  if (!context.mounted) return null;
+  if (target == null) {
+    _showAiAgentMessage(
+      context,
+      t.ai_agent_remote_unreachable(device: deviceLabel),
+    );
+    return null;
+  }
+  if (!target.supports(kHostAssistantFeatureAgent)) {
+    _showAiAgentMessage(
+      context,
+      _remoteBlockedText(
+        target.label,
+        target.reasonFor(kHostAssistantFeatureAgent),
+      ),
+    );
+    return null;
+  }
+  try {
+    final RemoteAiAgentSession session = await RemoteAiAgentSession.open(
+      client: client,
+      target: target,
+      locale: opContext.appModel.appLocale.toLanguageTag(),
+    );
+    if (!context.mounted) {
+      session.dispose();
+      return null;
+    }
+    RemoteAiAgentSession.active = session;
+    return session;
+  } on HostAssistantException catch (error) {
+    if (context.mounted) {
+      _showAiAgentMessage(
+        context,
+        error.code == 'http_409'
+            ? _remoteBlockedText(
+                target.label,
+                error.detail ?? kHostAssistantReasonNotReady,
+              )
+            : t.ai_agent_remote_unreachable(device: target.label),
+      );
+    }
+    return null;
+  } on Object {
+    if (context.mounted) {
+      _showAiAgentMessage(
+        context,
+        t.ai_agent_remote_unreachable(device: target.label),
+      );
+    }
+    return null;
+  }
+}
+
+String _remoteBlockedText(String device, String reason) => switch (reason) {
+  kHostAssistantReasonNoProvider => t.ai_agent_remote_no_provider(
+    device: device,
+  ),
+  kHostAssistantReasonNotReady => t.ai_agent_remote_not_ready(device: device),
+  kHostAssistantReasonDisabled => t.ai_agent_remote_disabled(device: device),
+  _ => t.ai_agent_remote_unsupported(device: device),
+};
+
+void _showAiAgentMessage(BuildContext context, String message) {
+  final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
+  if (messenger == null) {
+    FushiToast.show(msg: message);
+    return;
+  }
+  messenger.showSnackBar(
+    FushiSnackBar(content: Text(message), duration: const Duration(seconds: 6)),
   );
 }
 
@@ -122,7 +245,7 @@ Future<void> _guideToProviderSettings(BuildContext context) async {
 
 Future<void> _showSidePanel(
   BuildContext context,
-  AiAgentController controller,
+  AiAgentConversationController controller,
   AgentUiContext? uiContext,
 ) {
   return showGeneralDialog<void>(
@@ -195,7 +318,7 @@ Future<void> _showSidePanel(
 class AiAgentPage extends StatelessWidget {
   const AiAgentPage({required this.controller, this.uiContext, super.key});
 
-  final AiAgentController controller;
+  final AiAgentConversationController controller;
   final AgentUiContext? uiContext;
 
   @override
@@ -231,7 +354,7 @@ class AiAgentConversation extends StatefulWidget {
     super.key,
   });
 
-  final AiAgentController controller;
+  final AiAgentConversationController controller;
 
   /// 打开时所在的页面 / 条目（悬浮球按场景带上，spec §6.4），随每句话注入。
   final AgentUiContext? uiContext;
@@ -241,6 +364,11 @@ class AiAgentConversation extends StatefulWidget {
 
   /// 「展开成整页」；null = 已是整页。
   final VoidCallback? onExpand;
+
+  /// 此刻挂着几个对话界面（浮层 / 侧栏 / 整页）。全局快捷键据此不再叠开第二层
+  /// （见 `openAiAgentFromShortcut`）。
+  static int get openCount => _openCount;
+  static int _openCount = 0;
 
   @override
   State<AiAgentConversation> createState() => _AiAgentConversationState();
@@ -257,19 +385,23 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   /// 正在撤销的条目（按钮转圈、防连点）。
   final Set<String> _undoing = <String>{};
 
-  AiAgentController get _controller => widget.controller;
+  /// 「附上屏幕文字」（§6.4）：附上的文字只跟下一句走。
+  final AiAgentScreenTextAttachment _screenText = AiAgentScreenTextAttachment();
+
+  AiAgentConversationController get _controller => widget.controller;
 
   @override
   void initState() {
     super.initState();
+    AiAgentConversation._openCount++;
     _controller.addListener(_onChanged);
-    _controller.host.pending.addListener(_onChanged);
   }
 
   @override
   void dispose() {
+    AiAgentConversation._openCount--;
+    _screenText.dispose();
     _controller.removeListener(_onChanged);
-    _controller.host.pending.removeListener(_onChanged);
     _input.dispose();
     _inputFocus.dispose();
     _scroll.dispose();
@@ -299,7 +431,13 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     if (text.isEmpty || _controller.running) return;
     _input.clear();
     try {
-      await _controller.send(text, context: _activeContext);
+      await _controller.send(
+        text,
+        context: aiAgentContextWithScreenText(
+          _activeContext,
+          _screenText.take(),
+        ),
+      );
     } on StateError {
       if (mounted) await _guideToProviderSettings(context);
     }
@@ -334,13 +472,14 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final AgentSession? session = _controller.session;
-    final List<AgentEntry> entries = session?.entries ?? const <AgentEntry>[];
+    final List<AgentEntry> entries = _controller.entries;
     return Column(
       children: <Widget>[
-        if (widget.compact) _compactHeader(context, session),
-        if (!widget.compact && session != null && session.undoableCount > 0)
-          _summaryBar(context, session),
+        if (widget.compact) _compactHeader(context),
+        if (!widget.compact && _controller.executorLabel != null)
+          _executorBar(context),
+        if (!widget.compact && _controller.undoableCount > 0)
+          _summaryBar(context),
         Expanded(
           child: ListView(
             key: const ValueKey<String>('ai-agent-transcript'),
@@ -373,10 +512,11 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   }
 
   bool get _awaitingUser =>
-      _controller.host.awaitingConfirm || _controller.host.awaitingChoice;
+      _controller.awaitingConfirm || _controller.awaitingChoice;
 
-  Widget _compactHeader(BuildContext context, AgentSession? session) {
-    final int undoable = session?.undoableCount ?? 0;
+  Widget _compactHeader(BuildContext context) {
+    final int undoable = _controller.undoableCount;
+    final String? executor = _controller.executorLabel;
     return Padding(
       padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 8, 0),
       child: Row(
@@ -384,10 +524,23 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
           const FushiIcon(FushiIcons.aiAssistant, size: 20),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              t.ai_agent_title,
-              style: context.fushiType.titleMediumEmphasized,
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  t.ai_agent_title,
+                  style: context.fushiType.titleMediumEmphasized,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (executor != null)
+                  Text(
+                    t.ai_video_acquire_remote_executor(device: executor),
+                    key: const ValueKey<String>('ai-agent-executor'),
+                    style: Theme.of(context).textTheme.bodySmall,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
             ),
           ),
           if (undoable > 0)
@@ -416,7 +569,28 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     );
   }
 
-  Widget _summaryBar(BuildContext context, AgentSession session) {
+  /// 整页：远端执行时在顶部写明「在 <设备> 上执行」。
+  Widget _executorBar(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        0,
+      ),
+      child: Text(
+        t.ai_video_acquire_remote_executor(
+          device: _controller.executorLabel ?? '',
+        ),
+        key: const ValueKey<String>('ai-agent-executor'),
+        style: Theme.of(context).textTheme.bodyMedium,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  Widget _summaryBar(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -429,15 +603,15 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
         children: <Widget>[
           Expanded(
             child: Text(
-              '${t.ai_agent_session_summary(n: '${session.undoableCount}')}'
-              ' · ${t.ai_agent_tokens(n: '${session.totalTokens}')}',
+              '${t.ai_agent_session_summary(n: '${_controller.undoableCount}')}'
+              ' · ${t.ai_agent_tokens(n: '${_controller.totalTokens}')}',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
           FushiTextButton(
             key: const ValueKey<String>('ai-agent-undo-all'),
             onPressed: () => unawaited(_undoAll()),
-            child: Text(t.ai_agent_undo_all(n: '${session.undoableCount}')),
+            child: Text(t.ai_agent_undo_all(n: '${_controller.undoableCount}')),
           ),
           FushiIconButtonControl(
             key: const ValueKey<String>('ai-agent-new-session'),
@@ -583,6 +757,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
             : '',
     };
     final bool undoing = _undoing.contains(entry.id);
+    final bool taskRunning = entry.taskState == 'running';
     return FushiStaggeredEntrance(
       index: 0,
       child: Padding(
@@ -591,41 +766,61 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
           key: ValueKey<String>('ai-agent-tool-${entry.id}'),
           padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 4, 8),
           pressScale: false,
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              FushiIcon(icon, size: 18, color: color),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      entry.toolName ?? '',
-                      style: text.labelLarge,
-                      overflow: TextOverflow.ellipsis,
+              Row(
+                children: <Widget>[
+                  FushiIcon(icon, size: 18, color: color),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          entry.toolName ?? '',
+                          style: text.labelLarge,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (status.isNotEmpty)
+                          Text(
+                            status,
+                            style: text.bodySmall,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
                     ),
-                    if (status.isNotEmpty)
-                      Text(
-                        status,
-                        style: text.bodySmall,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                  ],
-                ),
+                  ),
+                  if (entry.resultPreview != null || entry.arguments.isNotEmpty)
+                    FushiIconButtonControl(
+                      tooltip: t.ai_agent_details,
+                      onPressed: () => unawaited(_showDetails(context, entry)),
+                      icon: const FushiIcon(FushiIcons.info, size: 18),
+                    ),
+                  if (entry.canUndo)
+                    FushiTextButton(
+                      key: ValueKey<String>('ai-agent-undo-${entry.id}'),
+                      onPressed: undoing ? null : () => unawaited(_undo(entry)),
+                      child: Text(t.ai_agent_undo),
+                    ),
+                ],
               ),
-              if (entry.resultPreview != null || entry.arguments.isNotEmpty)
-                FushiIconButtonControl(
-                  tooltip: t.ai_agent_details,
-                  onPressed: () => unawaited(_showDetails(context, entry)),
-                  icon: const FushiIcon(FushiIcons.info, size: 18),
-                ),
-              if (entry.canUndo)
-                FushiTextButton(
-                  key: ValueKey<String>('ai-agent-undo-${entry.id}'),
-                  onPressed: undoing ? null : () => unawaited(_undo(entry)),
-                  child: Text(t.ai_agent_undo),
-                ),
+              // 长任务还在跑：卡片底部一条不定进度条，结束后自动续一轮（spec §6.1）。
+              AnimatedSize(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                child: taskRunning
+                    ? Padding(
+                        padding: const EdgeInsetsDirectional.only(
+                          top: 6,
+                          end: 8,
+                        ),
+                        child: FushiLinearProgressIndicator(
+                          key: ValueKey<String>('ai-agent-task-${entry.id}'),
+                        ),
+                      )
+                    : const SizedBox(width: double.infinity),
+              ),
             ],
           ),
         ),
@@ -661,7 +856,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     final bool irreversible = entry.risk == AgentToolRisk.irreversible;
     final bool pending =
         entry.status == AgentEntryStatus.pending &&
-        _controller.host.awaitingConfirm &&
+        _controller.awaitingConfirm &&
         identical(_lastPending(AgentEntryKind.confirm), entry);
     return FushiStaggeredEntrance(
       index: 0,
@@ -708,12 +903,12 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                   children: <Widget>[
                     FushiFilledButton(
                       key: const ValueKey<String>('ai-agent-confirm-approve'),
-                      onPressed: () => _controller.host.answerConfirm(true),
+                      onPressed: () => _controller.answerConfirm(true),
                       child: Text(t.ai_agent_confirm_approve),
                     ),
                     FushiTextButton(
                       key: const ValueKey<String>('ai-agent-confirm-decline'),
-                      onPressed: () => _controller.host.answerConfirm(false),
+                      onPressed: () => _controller.answerConfirm(false),
                       child: Text(t.ai_agent_confirm_decline),
                     ),
                   ],
@@ -737,7 +932,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     final TextTheme text = Theme.of(context).textTheme;
     final bool pending =
         entry.status == AgentEntryStatus.pending &&
-        _controller.host.awaitingChoice &&
+        _controller.awaitingChoice &&
         identical(_lastPending(AgentEntryKind.choice), entry);
     String labelOf(String? id) {
       for (final AgentChoiceOption o in entry.options) {
@@ -769,13 +964,13 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                             ? option.label
                             : '${option.label} · ${option.detail}',
                       ),
-                      onPressed: () => _controller.host.answerChoice(option.id),
+                      onPressed: () => _controller.answerChoice(option.id),
                     ),
                   FushiActionChipControl(
                     key: const ValueKey<String>('ai-agent-choice-cancel'),
                     avatar: const FushiIcon(FushiIcons.close, size: 16),
                     label: Text(t.ai_agent_choice_cancel),
-                    onPressed: () => _controller.host.answerChoice(null),
+                    onPressed: () => _controller.answerChoice(null),
                   ),
                 ],
               )
@@ -793,8 +988,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   }
 
   AgentEntry? _lastPending(AgentEntryKind kind) {
-    final List<AgentEntry> entries =
-        _controller.session?.entries ?? const <AgentEntry>[];
+    final List<AgentEntry> entries = _controller.entries;
     for (int i = entries.length - 1; i >= 0; i--) {
       if (entries[i].kind == kind) return entries[i];
     }
@@ -810,6 +1004,17 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
         reason: aiFailureText(entry.text),
       ),
       AgentStopCode.cancelled => t.ai_agent_stop_cancelled,
+      kAiAgentRemoteUnavailableCode => t.ai_agent_remote_lost,
+      AgentStopCode.taskFinished =>
+        entry.status == AgentEntryStatus.done
+            ? t.ai_agent_task_done(
+                op: entry.toolName ?? '',
+                summary: entry.text,
+              )
+            : t.ai_agent_task_failed(
+                op: entry.toolName ?? '',
+                summary: entry.text,
+              ),
       _ => entry.text,
     };
     return FushiStaggeredEntrance(
@@ -839,6 +1044,12 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     final String? contextTitle = uiContext?.itemTitle ?? uiContext?.page;
     final Widget row = Row(
       children: <Widget>[
+        // 浮层 / 侧栏才有：截图时把面板藏掉就露出下面的页面；整页外壳下面也是
+        // 不透明路由，截不到别的。
+        if (widget.compact && screenTextCaptureSupported) ...<Widget>[
+          AiAgentScreenTextButton(attachment: _screenText, enabled: !running),
+          SizedBox(width: tokens.spacing.gap / 2),
+        ],
         Expanded(
           child: DecoratedBox(
             decoration: BoxDecoration(
@@ -895,6 +1106,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
+        AiAgentScreenTextChip(attachment: _screenText),
         if (contextTitle != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 6, left: 4),

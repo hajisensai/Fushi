@@ -205,6 +205,12 @@ void main() {
       });
     });
 
+    test('sync run 未知冲突策略 400', () async {
+      await expect400('/api/admin/sync/run', <String, Object?>{
+        'conflicts': 'local',
+      });
+    });
+
     test('storage migrate：相对路径 / 缺 confirm 都 400（dryRun 不要 confirm）', () async {
       await expect400('/api/admin/storage/migrate', <String, Object?>{
         'path': 'rel/dir',

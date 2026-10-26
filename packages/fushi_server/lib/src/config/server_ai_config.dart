@@ -219,9 +219,10 @@ class ServerAiSettings implements AiSettingsSource {
     return provider == null ? const <AiProviderConfig>[] : <AiProviderConfig>[provider];
   }
 
-  /// 那一家只指派给「AI 下载」「视频字幕 AI 校对」，以及打开了 `library_organize` 时的
-  /// 「AI 整理库」：服务端没有刮削 AI 识别 / 补字幕重排等其它 AI 功能的装配，不设默认
-  /// 提供商，免得以后新接一个功能时被静默带上。
+  /// 那一家只指派给「AI 下载」「视频字幕 AI 校对」「AI 助手」（远端会话，工具集是
+  /// 服务端自己描述的 admin 操作，见 `agent_host.dart`），以及打开了
+  /// `library_organize` 时的「AI 整理库」：服务端没有刮削 AI 识别 / 补字幕重排等其它
+  /// AI 功能的装配，不设默认提供商，免得以后新接一个功能时被静默带上。
   @override
   AiFeatureAssignments get aiFeatureAssignments {
     final ServerAiConfig? config = _config();
@@ -230,6 +231,7 @@ class ServerAiSettings implements AiSettingsSource {
       providerIdByFeature: <AiFeature, String>{
         AiFeature.acquire: kServerAiProviderId,
         AiFeature.subtitleProofread: kServerAiProviderId,
+        AiFeature.agent: kServerAiProviderId,
         if (config!.libraryOrganize) AiFeature.libraryOrganize: kServerAiProviderId,
       },
     );

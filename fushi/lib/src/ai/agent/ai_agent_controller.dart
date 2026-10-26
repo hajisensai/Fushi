@@ -13,6 +13,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 
+import 'package:fushi/src/ai/agent/ai_agent_conversation_controller.dart';
 import 'package:fushi/src/ai/agent/ai_agent_in_process_ops.dart';
 import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
 import 'package:fushi/src/ops/app_op_context.dart';
@@ -81,7 +82,8 @@ class AiAgentUiHost implements AgentHost {
 
 /// 一场进行中的 AI 助手对话 + 它的存档。整页与浮层拿同一个对象，展开 / 收回
 /// 都不丢对话（spec §6.4）。
-class AiAgentController extends ChangeNotifier {
+class AiAgentController extends ChangeNotifier
+    implements AiAgentConversationController {
   AiAgentController._({
     required this.database,
     required this.settings,
@@ -90,7 +92,10 @@ class AiAgentController extends ChangeNotifier {
     DateTime Function()? clock,
   }) : _opContext = opContext,
        _llmFactory = llmFactory,
-       _clock = clock ?? DateTime.now;
+       _clock = clock ?? DateTime.now {
+    // 待答卡片的变化也通知监听者（[AiAgentConversationController] 的约定）。
+    host.pending.addListener(notifyListeners);
+  }
 
   /// app 内唯一实例（需要 [appOpContext] 已登记）。
   static AiAgentController? _instance;
@@ -148,7 +153,33 @@ class AiAgentController extends ChangeNotifier {
 
   bool get hasProvider => resolveAiAgentProvider(settings) != null;
 
+  @override
   bool get running => _session?.running ?? false;
+
+  @override
+  List<AgentEntry> get entries => _session?.entries ?? const <AgentEntry>[];
+
+  @override
+  int get undoableCount => _session?.undoableCount ?? 0;
+
+  @override
+  int get totalTokens => _session?.totalTokens ?? 0;
+
+  @override
+  bool get awaitingConfirm => host.awaitingConfirm;
+
+  @override
+  bool get awaitingChoice => host.awaitingChoice;
+
+  @override
+  void answerConfirm(bool approved) => host.answerConfirm(approved);
+
+  @override
+  void answerChoice(String? id) => host.answerChoice(id);
+
+  /// 本机执行。
+  @override
+  String? get executorLabel => null;
 
   AiAgentToolbox get toolbox => _toolbox ??= AiAgentToolbox(
     invoker: _invoker ??= buildInProcessOpInvoker(
@@ -206,6 +237,7 @@ class AiAgentController extends ChangeNotifier {
 
   /// 说一句话。没指派提供商时抛 `StateError('ai_agent_no_provider')`——调用方
   /// 在此之前已经用 [hasProvider] 引导用户去设置，这里是兜底，不发请求。
+  @override
   Future<void> send(String text, {AgentUiContext? context}) async {
     final AgentSession session = ensureSession(scene: context?.scene ?? _scene);
     unawaited(_pruneOnce());
@@ -216,12 +248,14 @@ class AiAgentController extends ChangeNotifier {
     }
   }
 
+  @override
   void cancel() {
     _session?.cancel();
     host.cancelPending();
   }
 
   /// 开一场新对话（旧的已在存档里）。
+  @override
   Future<void> newSession() async {
     cancel();
     await _save();
@@ -252,6 +286,7 @@ class AiAgentController extends ChangeNotifier {
     return true;
   }
 
+  @override
   Future<AgentUndoResult> undoEntry(String entryId) async {
     final AgentSession? session = _session;
     if (session == null) {
@@ -262,6 +297,7 @@ class AiAgentController extends ChangeNotifier {
     return result;
   }
 
+  @override
   Future<List<AgentUndoResult>> undoAll() async {
     final AgentSession? session = _session;
     if (session == null) return const <AgentUndoResult>[];
@@ -337,6 +373,7 @@ class AiAgentController extends ChangeNotifier {
 
   @override
   void dispose() {
+    host.pending.removeListener(notifyListeners);
     cancel();
     _detach();
     _toolbox?.dispose();

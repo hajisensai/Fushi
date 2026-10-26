@@ -41,8 +41,11 @@ void main() {
 
   test('AI 助手会话面（手机把一句话交给电脑办）接到 server，且首页与 host 共用同一份装配', () {
     final String model = read('lib/src/models/app_model.dart');
-    expect(model,
-        contains('assistantFactory: () => createVideoAcquisitionAssistantHost(this)'));
+    expect(model, contains('assistantFactory: () => createAppAssistantHost(this)'));
+    // 组合 provider：AI 下视频与 AI 助手并存，AI 下视频仍是首页同一份装配。
+    final String assembly = read('lib/src/ai/agent/ai_agent_assistant_host.dart');
+    expect(assembly, contains('createVideoAcquisitionAssistantHost('));
+    expect(assembly, contains('createAppAgentAssistantHost(appModel)'));
     final String controller = read('lib/src/sync/fushi_server_controller.dart');
     expect(controller, contains('assistant: _assistantFactory?.call()'));
     final String home = read('lib/src/pages/implementations/home_page.dart');

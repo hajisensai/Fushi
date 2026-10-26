@@ -31,6 +31,8 @@ import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart';
+import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
@@ -46,6 +48,8 @@ import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/admin/admin_ops.dart';
+import 'package:fushi_server/src/agent_host.dart';
 import 'package:fushi_server/src/assistant_host.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/download_host.dart';
@@ -118,6 +122,10 @@ class HeadlessHost {
 
   /// 运行中的互联 server（未启动为 null）；admin API 经它进程内代调互联接口。
   FushiSyncServer? get syncServer => _server;
+
+  /// 进程内调 admin API 的入口（`serve` 建好 admin API 后接上）。远端 AI 助手会话的
+  /// 工具集就是服务端描述的 admin 操作，没接上时能力位报 `not_ready`。
+  AdminDispatch? adminDispatch;
   LanAdvertiser? _advertiser;
   InterconnectP2pRuntime? _p2p;
   MangaOcrServiceImpl? _ocrService;
@@ -310,7 +318,15 @@ class HeadlessHost {
       prefs: prefs,
       // 「AI 下视频」助手会话：手机把下载执行设备设成服务端时整场在这里跑。没配
       // `ai:` 段时能力位如实报 no_provider（路由照挂，客户端好区分「不懂」与「没配」）。
-      assistant: createServerAssistantHost(config: () => config, prefs: prefs, db: db, downloads: downloads),
+      // 另有整场「AI 助手」会话（feature `agent`）：工具集是服务端自己描述的 admin
+      // 操作，模型同样来自 `ai:` 段，记账与撤销落服务端库。
+      assistant: CompositeHostAssistantProvider(<String, HostAssistantProvider>{
+        // 第一个放 AI 下视频：老客户端只认顶层 reason，它取第一个 feature 的。
+        kHostAssistantFeatureVideoAcquire:
+            createServerAssistantHost(config: () => config, prefs: prefs, db: db, downloads: downloads),
+        kHostAssistantFeatureAgent:
+            createServerAgentAssistantHost(config: () => config, db: db, dispatch: () => adminDispatch),
+      }),
       // 互联查词 / 查词历史 / 词典媒体：装了词典引擎才接线。
       remoteLookupService: dictionaries.available ? ServerRemoteLookupService(dictionaries) : null,
       historyService: dictionaries.available ? ServerRemoteHistoryService(db) : null,

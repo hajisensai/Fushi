@@ -203,6 +203,14 @@ class ShortcutDefaults {
     // co-active 组内 F11 未被占用；手柄留空（gamepad 键在 home/global 组已被翻页/
     // 返回占用，用户可自绑）。移动端无窗口全屏语义，执行体在移动端 no-op。
     ShortcutAction.globalToggleFullscreen: _kb([_key(LogicalKeyboardKey.f11)]),
+    // 呼出 AI 助手（D4 ②）：Ctrl+J（macOS 经 Ctrl→Meta 成 ⌘J）。Ctrl+K 已是
+    // homeFocusSearch；Ctrl+J 在**所有** scope 的桌面 / macOS 默认表里都没被占用
+    // （阅读器 / 漫画 / 视频页先解析自己的 scope，同键会把它吃掉，故按全表核，
+    // 守卫 `global_open_ai_assistant_shortcut_test`）。Ctrl+Shift+Space 没选：中文
+    // 输入法里 Shift+Space 是全半角切换，组合键易被 IME 截走。手柄留空。
+    ShortcutAction.globalOpenAiAssistant: _kb([
+      _key(LogicalKeyboardKey.keyJ, {ModifierKey.ctrl}),
+    ]),
     // 右键菜单的默认绑定 = 鼠标右键（DOM button 2），与改造前各处硬绑
     // `onSecondaryTap*` 的行为逐字一致。键盘/手柄留空：菜单是**位置型**动作
     // （要一个 globalPosition 作锚点），键盘触发没有锚点可用。

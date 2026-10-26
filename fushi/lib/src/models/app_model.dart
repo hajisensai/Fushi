@@ -259,7 +259,8 @@ import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.d
         isDuplicateDiscoveryAudiobookContent;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/sync/app_download_host.dart';
-import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart';
+import 'package:fushi/src/ai/agent/ai_agent_assistant_host.dart'
+    show createAppAssistantHost;
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
@@ -783,8 +784,9 @@ class AppModel with ChangeNotifier {
     downloadsFactory: () => appDownloadHost,
     subscriptionsFactory: () => appDownloadHost.subscriptions,
     // AI 助手会话：手机经互联把「下载 xxx」交给本机，用本机的 AI 指派 / 资源
-    // 搜索 / 下载管线办（装配与首页对话页入口同一份）。
-    assistantFactory: () => createVideoAcquisitionAssistantHost(this),
+    // 搜索 / 下载管线办（装配与首页对话页入口同一份）；另有整场 AI 助手会话
+    // （feature `agent`，工具集是本机的操作目录，记账与撤销落本机）。
+    assistantFactory: () => createAppAssistantHost(this),
     // 对端点名「给这个视频补字幕」：与刮削后自动补同一个服务（运行时随下载管线
     // 起停，每次现取）。
     videoSubtitleBackfill: (String videoId, {String? language}) =>
