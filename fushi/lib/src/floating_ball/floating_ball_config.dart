@@ -209,7 +209,13 @@ enum FloatingBallGlobalAction {
   /// 反馈：截下当前画面后打开反馈中心（与首页顶栏的反馈按钮同一个入口
   /// `openFeedbackCenter`）。只在应用内球上：截图截的是 Fushi 自己的页面，应用外
   /// 球浮在别的程序上，截不到也没有页面可附。
-  feedback('feedback');
+  feedback('feedback'),
+
+  /// AI 助手（spec `docs/specs/2026-10-26-ai-operations-agent-design.md` §6.4）：
+  /// 应用内球在当前页上方弹 AI 浮层（手机半屏面板 / 桌面靠边侧栏），按场景带上
+  /// 当前书 / 视频 / 页面作上下文；应用外球把 Fushi 唤到前台再开浮层。AI 模块关着
+  /// 时宿主不出这颗按钮；没指派提供商时照常出，点了引导去设置、不发请求。
+  ai('ai');
 
   const FloatingBallGlobalAction(this.storageValue);
 
@@ -227,6 +233,8 @@ enum FloatingBallGlobalAction {
   ///   查词窗，与「查词」重复。
   bool onByDefaultIn(FloatingBallScope scope) {
     if (this == sync || this == switchProfile) return false;
+    // AI：四个应用内场景默认放进按钮组，应用外球默认不勾（spec §6.4）。
+    if (this == ai) return scope != FloatingBallScope.system;
     if (scope == FloatingBallScope.system) return true;
     if (scope.isMediaScene) return this == lookup || this == feedback;
     return this != popupLookup;
@@ -281,6 +289,7 @@ enum FloatingBallGlobalAction {
         FloatingBallGlobalAction.sync => true,
         FloatingBallGlobalAction.switchProfile => true,
         FloatingBallGlobalAction.feedback => false,
+        FloatingBallGlobalAction.ai => true,
       };
     }
     return availableOn(isAndroid: isAndroid, isIOS: isIOS);
@@ -298,7 +307,10 @@ enum FloatingBallTapAction {
   clipboard('clipboard'),
 
   /// 直接截屏识字。
-  screenOcr('screen_ocr');
+  screenOcr('screen_ocr'),
+
+  /// 直接打开 AI 助手（spec §6.4）：Fushi 被拉到前台并打开 AI 浮层。
+  ai('ai');
 
   const FloatingBallTapAction(this.storageValue);
 

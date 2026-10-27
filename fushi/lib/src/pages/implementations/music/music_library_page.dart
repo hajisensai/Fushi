@@ -374,7 +374,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
               ),
             ),
             SizedBox(height: tokens.spacing.gap),
-            if (_scanning) const LinearProgressIndicator(),
+            if (_scanning) const FushiLinearProgressIndicator(),
             Expanded(
               child: snap == null
                   ? const FushiLoadingView()

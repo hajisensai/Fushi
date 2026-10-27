@@ -83,7 +83,7 @@ void main() {
 
     final String body = methodBody(
       'Widget _buildVideoSideActionRail(',
-      'Widget _buildSideLockButton(',
+      'List<VideoControlItem> _immersiveRailItems(',
     );
     // gate 一行可能被 dart format 折行，故只断言并列条件都在 gate 块里出现。
     // BUG-284：rail 显隐判据从 `!controlsVisible` 收紧为 `(!controlsVisible &&

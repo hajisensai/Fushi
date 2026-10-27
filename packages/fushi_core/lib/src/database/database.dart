@@ -51,6 +51,7 @@ part 'database_music.part.dart';
 part 'database_music_scrape.part.dart';
 part 'database_theme_song_spans.part.dart';
 part 'database_people.part.dart';
+part 'database_ai_agent.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
@@ -846,6 +847,8 @@ void _requireOneVideoMetadataOwner({
   PersonIdentityBridges,
   AdaptationProgressAnchors,
   GalgameTextLines,
+  AiAgentSessions,
+  AiAgentActions,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -865,7 +868,8 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMusicScrape,
         _FushiDbThemeSongSpans,
         _FushiDbPeople,
-        _FushiDbGalgameTextLines {
+        _FushiDbGalgameTextLines,
+        _FushiDbAiAgent {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -886,12 +890,12 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 135;
+  int get schemaVersion => 136;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
-  /// `chapter_key`、内置浏览器五张表。正常阶梯在 `from < 128` 调；并行迁移史
-  /// 修补（user_version 129–131 却缺这些产物的库）再调一次。
+  /// `chapter_key`、内置浏览器五张表。两条并行迁移史争用 v125–v131，onUpgrade
+  /// 对 `from < 132` 的库一律调它（见 onUpgrade 里该段的说明）。
   Future<void> _ensureV125ToV128Artifacts(Migrator m) async {
     {
       // v125（SRS 写入路径读放大）：idx_srs_field_edits_profile_register（同步冲突角标的
@@ -2505,12 +2509,20 @@ class FushiDatabase extends _$FushiDatabase
               await m.createTable(libraryOrganizeChanges);
             }
           }
-          if (from < 128) {
-            // v125–v128（SRS 索引 / 墓碑 published_at / 书签定位列 / 内置浏览器五张表），
-            // 四步全部幂等，收在 _ensureV125ToV128Artifacts。
+          // v125–v131 是两条并行迁移史争用过的版本号（同 BUG-2335 / v97 的教训）：
+          // develop 用 v125–v128 给了 SRS 索引 / 墓碑 published_at / 书签列 / 内置浏览器
+          // 五张表；音乐 / 作品图谱分支（PR #2534）合入前在自己的阶梯上把 v125–v131 用给了
+          // media_links / 音乐表 / 主题曲区间 / mined_sentences 定位列，合入时整体后移到
+          // v129–v135。同一个库可能在两条阶梯之间来回被打开过，user_version 落在 125–131
+          // 时无法判断走的是哪一条、缺的是哪一侧（develop 的 125–128 产物，或分支在
+          // 128→131 时跳过的 media_links / 音乐表 / 主题曲区间）。所以这一段一律按
+          // `from < 132` 补跑两侧的全部产物——每步都先判表 / 列 / 索引是否已存在，对按本
+          // 阶梯正常走过来的库是空操作；mined_sentences 定位列由下面的 v132 补。
+          if (from < 132) {
+            // v125–v128，四步全部幂等，收在 _ensureV125ToV128Artifacts。
             await _ensureV125ToV128Artifacts(m);
           }
-          if (from < 129) {
+          if (from < 132) {
             // v129（跨模块作品图谱，docs/specs/2026-10-24-cross-media-links.md）：
             // media_links——本地条目之间的连接（手动连接 + 推断建议 + 否决墓碑），
             // 随互联同步与备份走。幂等守卫同 v119。
@@ -2518,7 +2530,7 @@ class FushiDatabase extends _$FushiDatabase
               await m.createTable(mediaLinks);
             }
           }
-          if (from < 130) {
+          if (from < 132) {
             // v130（音乐模块 P0，docs/specs/2026-10-23-music-module-design.md §10）：
             // 曲库目录 / 署名 / 歌词缓存 / MV 绑定 / 光盘来源 / 歌单 / 播放流十张新表。
             // 纯建表、不动既有数据；幂等守卫同 v119。
@@ -2540,23 +2552,13 @@ class FushiDatabase extends _$FushiDatabase
             }
             await _ensureMusicIndexes();
           }
-          if (from < 131) {
+          if (from < 132) {
             // v131（作品图谱 L2，docs/specs/2026-10-24-cross-media-links.md §2）：
             // video_theme_song_spans——OP / ED 声纹比对结果的按集缓存（设备本地、纯缓存）。
             // 纯建表；幂等守卫同 v119。
             if (!await _tableExists('video_theme_song_spans')) {
               await m.createTable(videoThemeSongSpans);
             }
-          }
-          if (from >= 129 && from < 132) {
-            // 并行迁移史修补（同 BUG-2335 / v97 的教训）：音乐 / 作品图谱分支（PR #2534）
-            // 合入前在自己的阶梯上把 v125–v131 用给了 media_links / 音乐表 / 主题曲区间 /
-            // mined_sentences 定位列等，合入 develop 时整体后移到 v129–v135。用那条分支
-            // 构建打开过的库 user_version 落在 129–131，会跳过 develop 的 v125–v128
-            // （SRS 索引、墓碑 published_at、书签列、内置浏览器五张表）。这里补跑一遍；
-            // 四步都是幂等的，对按本阶梯正常走到 129–131 的库是空操作。分支自己的表
-            // 那条库里已有，缺的（v132–v135 的产物）由下面各步的幂等守卫补齐。
-            await _ensureV125ToV128Artifacts(m);
           }
           if (from < 132) {
             // v132（卡片「回到出处」，docs/specs/2026-10-24-cross-media-links.md §4）：
@@ -2630,6 +2632,22 @@ class FushiDatabase extends _$FushiDatabase
               }
             }
           }
+          if (from < 136) {
+            // v136（AI 助手，docs/specs/2026-10-26-ai-operations-agent-design.md §5.3 /
+            // D3 / D5）：ai_agent_sessions（对话存档）/ ai_agent_actions（操作记录）。
+            // 设备本地（同 library_organize_*：不同步、不进备份、不分 Profile）。
+            // 纯建表 + 索引；幂等守卫同 v119。
+            for (final TableInfo<Table, Object?> table
+                in <TableInfo<Table, Object?>>[
+              aiAgentSessions,
+              aiAgentActions,
+            ]) {
+              if (!await _tableExists(table.actualTableName)) {
+                await m.createTable(table);
+              }
+            }
+            await _ensureAiAgentIndexes();
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -2646,6 +2664,7 @@ class FushiDatabase extends _$FushiDatabase
           await _ensureProfileUidIndex();
           await _ensureSrsIndexes();
           await _ensureMusicIndexes();
+          await _ensureAiAgentIndexes();
         },
         beforeOpen: (details) async {
           // Second, belt-and-suspenders downgrade guard. drift calls beforeOpen

@@ -1115,12 +1115,25 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                     ),
                     onTap: () async {
                       Navigator.of(context).pop();
-                      await widget.onJumpSection(entry.index, entry.fragment);
                       final AudioCue? first = ctrl == null
                           ? null
                           : _entryStartCue(ctrl, i);
-                      if (ctrl != null && first != null) {
-                        await ctrl.skipToCue(first, manualTarget: true);
+                      if (ctrl == null || first == null) {
+                        await widget.onJumpSection(entry.index, entry.fragment);
+                        return;
+                      }
+                      // BUG-3796：跳章 + 定音频是一次操作。跳章在飞期间音频还在旧章往下播，
+                      // 换句就解除手动导航护栏；新章一落地按旧章的句子判跨章，把 reader 拽回
+                      // 旧章（回弹）。先登记「音频马上由本处定位」，在那次 seek 发出前不发
+                      // 自动跨章；seek 由本处负责跳章，也不再替它发一次。
+                      ctrl.holdCrossChapterUntilCallerSeek();
+                      try {
+                        await widget.onJumpSection(entry.index, entry.fragment);
+                      } finally {
+                        await ctrl.skipToCue(
+                          first,
+                          callerPositionsReader: true,
+                        );
                       }
                     },
                   );

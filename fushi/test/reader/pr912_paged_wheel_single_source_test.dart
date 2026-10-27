@@ -41,6 +41,7 @@ void main() {
           reason: '正文引擎必须拼常量本体，而不是自己再写一份');
 
       final String spread = buildSpreadPageHtml(
+        navigationGeneration: 1,
         leftUrl: 'fushi.local/l.png',
         rightUrl: 'fushi.local/r.png',
         swipeDistThreshold: 44,
@@ -76,6 +77,7 @@ void main() {
 
     test('spread 生产 HTML 真跑：四条触摸板判据 + 主轴抖动余量（行为级）', () {
       final String html = buildSpreadPageHtml(
+        navigationGeneration: 1,
         leftUrl: 'fushi.local/l.png',
         rightUrl: 'fushi.local/r.png',
         swipeDistThreshold: 44,

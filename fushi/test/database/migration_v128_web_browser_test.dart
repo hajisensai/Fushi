@@ -46,7 +46,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 135);
+    expect(migrated.schemaVersion, 136);
     expect((await migrated.getAllMediaCollections()).single.name, 'Keep');
     await migrated.recordWebBrowserVisit(
       url: 'https://example.com/',
@@ -86,7 +86,7 @@ void main() {
         'started_at',
       ]),
     );
-    expect(probe.select('PRAGMA user_version').first.values.first, 135);
+    expect(probe.select('PRAGMA user_version').first.values.first, 136);
     // 重跑：表已存在时 _tableExists 守卫让整步 no-op，数据保留。
     probe.execute('PRAGMA user_version = 127');
     probe.dispose();
@@ -143,7 +143,100 @@ void main() {
         columnsOf(probe, 'collection_member_tombstones'),
         contains('published_at'),
       );
-      expect(probe.select('PRAGMA user_version').first.values.first, 135);
+      expect(probe.select('PRAGMA user_version').first.values.first, 136);
     });
   }
+
+  // 反方向：库先被 develop 构建升到 125–128，再被合并前的分支构建（schemaVersion
+  // 131）打开——分支阶梯在 from=128 时只跑自己的 v129–v131，跳过了它的 v125–v128
+  // （media_links / 音乐表 / 主题曲区间），版本号却写成 131。升级必须补齐分支产物。
+  test('并行史 user_version=131 缺分支的 media_links / 音乐表 / 主题曲区间：升级补齐', () async {
+    const List<String> branchTables = <String>[
+      'media_links',
+      'music_tracks',
+      'music_albums',
+      'music_artists',
+      'music_track_credits',
+      'music_lyrics',
+      'music_videos',
+      'music_disc_sources',
+      'music_playlists',
+      'music_playlist_entries',
+      'music_play_events',
+      'video_theme_song_spans',
+    ];
+    final Directory dir = Directory.systemTemp.createTempSync(
+      'branch_parallel_131',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final String path = '${dir.path}/test.db';
+    final FushiDatabase db = FushiDatabase.atFile(path, isMainProcess: false);
+    await db.createMediaCollection('Keep');
+    await db.close();
+
+    final sqlite.Database raw = sqlite.sqlite3.open(path);
+    expect(tablesOf(raw), containsAll(branchTables));
+    raw.execute('PRAGMA foreign_keys = OFF');
+    for (final String t in branchTables.reversed) {
+      raw.execute('DROP TABLE $t');
+    }
+    raw.execute('PRAGMA user_version = 131');
+    raw.dispose();
+
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      path,
+      isMainProcess: false,
+    );
+    expect((await migrated.getAllMediaCollections()).single.name, 'Keep');
+    await migrated.close();
+
+    final sqlite.Database probe = sqlite.sqlite3.open(path);
+    addTearDown(probe.dispose);
+    expect(tablesOf(probe), containsAll(branchTables));
+    expect(probe.select('PRAGMA user_version').first.values.first, 136);
+  });
+
+  // 次要变体：分支构建写成 125–127 后被 develop 构建（schemaVersion 128）升到 128，
+  // develop 的 v125 SRS 索引从没建过；升级必须补齐。
+  test('并行史 user_version=128 缺 v125 SRS 索引：升级补齐', () async {
+    const List<String> srsIndexes = <String>[
+      'idx_srs_field_edits_profile_register',
+      'idx_srs_notes_cache_type',
+      'idx_srs_notes_cache_pending',
+    ];
+    Set<String> indexesOf(sqlite.Database raw) => <String>{
+      for (final sqlite.Row row in raw.select(
+        "SELECT name FROM sqlite_master WHERE type='index'",
+      ))
+        row['name'] as String,
+    };
+    final Directory dir = Directory.systemTemp.createTempSync(
+      'srs_index_parallel_128',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final String path = '${dir.path}/test.db';
+    final FushiDatabase db = FushiDatabase.atFile(path, isMainProcess: false);
+    await db.createMediaCollection('Keep');
+    await db.close();
+
+    final sqlite.Database raw = sqlite.sqlite3.open(path);
+    final Set<String> present = indexesOf(raw).intersection(srsIndexes.toSet());
+    for (final String index in present) {
+      raw.execute('DROP INDEX $index');
+    }
+    raw.execute('PRAGMA user_version = 128');
+    raw.dispose();
+
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      path,
+      isMainProcess: false,
+    );
+    expect((await migrated.getAllMediaCollections()).single.name, 'Keep');
+    await migrated.close();
+
+    final sqlite.Database probe = sqlite.sqlite3.open(path);
+    addTearDown(probe.dispose);
+    expect(indexesOf(probe), containsAll(present));
+    expect(probe.select('PRAGMA user_version').first.values.first, 136);
+  });
 }

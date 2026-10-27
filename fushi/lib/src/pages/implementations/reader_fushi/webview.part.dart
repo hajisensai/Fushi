@@ -2354,18 +2354,15 @@ updateLive: function(patch) {
           // navigationGeneration。代次缺失/失配一律不能完成当前 restore，更不能
           // 消费当前代 pending。
           callback: (List<dynamic> args) {
-            if (args.length < 2 || args[1] is! num) {
-              debugPrint('[ReaderFushi] onRestoreComplete missing generation');
-              return;
-            }
-            final num rawGeneration = args[1] as num;
-            if (!rawGeneration.isFinite ||
-                rawGeneration != rawGeneration.toInt()) {
-              debugPrint('[ReaderFushi] onRestoreComplete invalid generation');
+            final int? generation = readerReportedNavigationGeneration(args, 1);
+            if (generation == null) {
+              debugPrint(
+                '[ReaderFushi] onRestoreComplete missing/invalid generation',
+              );
               return;
             }
             _acceptRestoreComplete(
-              reportedGeneration: rawGeneration.toInt(),
+              reportedGeneration: generation,
               perfSnapshot: args.first,
             );
           },
@@ -2844,7 +2841,26 @@ updateLive: function(patch) {
 
         controller.addJavaScriptHandler(
           handlerName: 'spreadReady',
-          callback: (_) {
+          // args[0] = spread 文档装载时冻结的导航代际（buildSpreadPageHtml）。
+          callback: (List<dynamic> args) {
+            // BUG-3796：与 onRestoreComplete 同一判据——代际缺失 / 不是当前导航的一律
+            // 丢弃。旧实现不带代际：被新导航顶掉的 spread 文档晚到的就绪消息会把**当前**
+            // 在飞导航判成完成（清兜底计时、摘遮罩、complete(true)），真正的回执反而
+            // 失去兜底。
+            final int? generation = readerReportedNavigationGeneration(args, 0);
+            if (!mounted ||
+                generation == null ||
+                !isCurrentReaderRestoreCompletion(
+                  reportedGeneration: generation,
+                  currentGeneration: _navigateGeneration,
+                  expectedGeneration: _restoreExpectedGeneration,
+                )) {
+              debugPrint(
+                '[ReaderFushi] stale spreadReady: reported=$generation '
+                'current=$_navigateGeneration',
+              );
+              return;
+            }
             _isNavigatingToChapter = false;
             _restoreInFlight = false;
             if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
@@ -2871,6 +2887,12 @@ updateLive: function(patch) {
               _reapplyChromeInsetsAfterFirstLoad();
               // TODO-700 T3：spread 内容就绪确定性落焦到正文（门控见 helper）。
               _focusOwnership.reclaim(FocusReclaimCause.contentReady);
+              // BUG-3796：spread 就绪就是这次导航的落地回执，与 _onRestoreComplete 同样
+              // 通知有声书控制器（解除跨章守卫、按当前位置重算 cue）。
+              _audiobookController?.notifySectionRestoreCompleted(
+                currentReaderSection: _currentChapter,
+                success: true,
+              );
             }
           },
         );
@@ -3005,12 +3027,14 @@ updateLive: function(patch) {
           // 引擎层根治（packages/flutter_inappwebview_windows：主框架已注入 2xx
           // 时按成功走 onLoadStop），此处不再做事后补偿；下面是真实加载失败处理。
           if (_restoreExpectedGeneration != _navigateGeneration) return;
-          _isNavigatingToChapter = false;
-          _restoreInFlight = false;
-          if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-            _restoreCompleter!.complete(false);
-          }
-          _restoreCompleter = null;
+          // BUG-3796：只认**当前导航那份文档**的失败（与 onLoadStop 的陈旧判据同口径：
+          // 比路径）。被新导航顶掉的旧加载报的 abort 不是当前导航的结局，拿它收尾会把
+          // 正在飞的那次导航（及它持有的有声书跨章守卫）一起错杀。
+          if (!_isCurrentChapterDocumentUrl(request.url.toString())) return;
+          // 主框架加载失败 = 这次导航的 restore 回执永远不会来。走统一中止收尾
+          // [_failNavigation]（含跨章守卫解除）；旧的手写四行只解开导航态，守卫要白等
+          // 8s content-ready 兜底计时器才放（BUG-3796）。
+          _failNavigation();
         }
       },
       onConsoleMessage: (controller, msg) {
@@ -3138,6 +3162,11 @@ updateLive: function(patch) {
         generation == _lyricsDocumentLoadGeneration &&
         generation == _lyricsLoadGeneration;
   }
+
+  /// [url] 是否就是当前导航目标章的那份文档（只比路径，与 `onLoadStop` 的陈旧判据
+  /// 同一口径）。
+  bool _isCurrentChapterDocumentUrl(String url) =>
+      Uri.parse(url).path == Uri.parse(_chapterUrl(_currentChapter)).path;
 
   Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
     // BUG-1280（平台分叉守卫）：spread 独立文档绝不注入正文引擎。

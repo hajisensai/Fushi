@@ -18,7 +18,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
-import 'package:fushi_engine/media/torrent/builtin_video_resource_providers.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/torrent/bt_site_providers.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host_client.dart';
@@ -172,8 +173,8 @@ class ServerDownloadHost implements HostDownloadHost {
     }
     await downloadRoot.create(recursive: true);
     _sourceId = await _ensureDownloadSource();
-    // 资源索引器：与 app 同一张内置表 + 同一个 Torznab 偏好键（同一张 preferences 表），
-    // 停用清单同源。订阅服务的在场校验看它，客户端搜到的 provider id 才对得上。
+    // 资源索引器：与 app 同一份用户 BT 站清单 + 同一个 Torznab 偏好键（同一张
+    // preferences 表）。订阅服务的在场校验看它，客户端搜到的 provider id 才对得上。
     _startPipeline(_buildRegistry());
     engineLog.logDiagnostic(
       'ServerDownloadHost',
@@ -216,7 +217,7 @@ class ServerDownloadHost implements HostDownloadHost {
 
   Future<void> _reloadOps = Future<void>.value();
 
-  /// 资源索引器配置（Torznab 清单 / 内置源停用清单）改完后调：按偏好重建 registry，
+  /// 资源索引器配置（Torznab 清单 / 用户 BT 站清单）改完后调：按偏好重建 registry，
   /// 对正在跑的 host 立即生效，与 app `reloadVideoDownloadPipelineRuntime` 同一形态
   /// ——registry 是构造期快照，管线与订阅服务都持有它，只能整套换新。
   ///
@@ -252,6 +253,14 @@ class ServerDownloadHost implements HostDownloadHost {
     _startPipeline(_buildRegistry());
     if (oldRegistry != null) unawaited(oldPipeline.stop().whenComplete(oldRegistry.close));
     engineLog.logDiagnostic('ServerDownloadHost', 'resource indexers reloaded: ${availableResourceProviderIds.join(', ')}');
+    // 因「没有可用 BT 站」暂停的订阅：来源变了就唤醒重查（不 await——重查要联网搜，
+    // 不该拖住保存请求；新服务被下一次重载 dispose 时它自己收手）。
+    final VideoDownloadSubscriptionService? fresh = _subscriptionService;
+    if (fresh != null) {
+      unawaited(fresh.wakeBtSiteMissingSubscriptions().catchError(
+            (Object e, StackTrace st) => engineLog.log('ServerDownloadHost.wakeBtSiteMissingSubscriptions', e, st),
+          ));
+    }
   }
 
   /// 内置引擎 session 懒建（幂等）；库/端口失败 → null，调用方报 ActionRequired。
@@ -283,22 +292,45 @@ class ServerDownloadHost implements HostDownloadHost {
     return host;
   }
 
+  /// 按偏好建 registry：用户 BT 站（Fushi 不内置任何站点）+ Torznab。
+  ///
+  /// 保持同步：订阅面的 getter（[subscriptions] / [availableResourceProviderIds]）在
+  /// 后端没起来时也要现取一份 registry。逐站点用引擎的单站工厂
+  /// `createBtSiteResourceProvider`（与 `createBtSiteResourceProviders` 同一判据、同一
+  /// 优先级编号），client 只给真正注册的站点建，所有权交给 provider（registry.close 关）。
   VideoResourceRegistry _buildRegistry() {
     final List<TorznabIndexerConfig> torznab = readTorznabIndexerConfigs(
       prefs,
       onDecodeError: (Object e, StackTrace st) =>
           engineLog.log('ServerDownloadHost.torznabConfig', e, st),
     );
-    return VideoResourceRegistry(
-      <VideoResourceProvider>[
-        for (final BuiltinVideoResourceProviderSpec spec in kBuiltinVideoResourceProviderSpecs)
-          spec.create(createAppHttpIoClient()),
-        // 没有启用的索引器就不注册（判据与 app 同一处，见 torznabHasEnabledIndexer，BUG-2818）。
-        if (torznabHasEnabledIndexer(torznab))
-          TorznabClient(indexers: torznab, client: createAppHttpIoClient(), closesClient: true),
-      ],
-      disabledProviderIds: readVideoResourceDisabledSourceIds(prefs),
+    final List<BtSiteConfig> sites = readBtSiteConfigs(
+      prefs,
+      onDecodeError: (Object e, StackTrace st) => engineLog.log('ServerDownloadHost.btSiteConfig', e, st),
     );
+    final List<VideoResourceProvider> btProviders = <VideoResourceProvider>[];
+    int index = 0;
+    for (final BtSiteConfig site in sites) {
+      if (!site.enabled || site.effectiveVideoCategories.isEmpty) continue;
+      final VideoResourceProvider? provider = createBtSiteResourceProvider(site, createAppHttpIoClient(), index: index++);
+      if (provider != null) btProviders.add(provider);
+    }
+    return VideoResourceRegistry(<VideoResourceProvider>[
+      ...btProviders,
+      // 没有启用的索引器就不注册（判据与 app 同一处，见 torznabHasEnabledIndexer，BUG-2818）。
+      if (torznabHasEnabledIndexer(torznab))
+        TorznabClient(indexers: torznab, client: createAppHttpIoClient(), closesClient: true),
+    ]);
+  }
+
+  /// 当前 registry 里实际注册的用户 BT 站 id（启用且对至少一个视频域生效的站点；
+  /// WebUI 标「生效中」用）。
+  List<String> get activeBtSiteIds {
+    final VideoResourceRegistry registry = (_subscriptions ??= _buildSubscriptionHost()).registry;
+    return <String>[
+      for (final VideoResourceProvider provider in registry.providers)
+        if (isBtSiteProviderId(provider.id) && provider.id.contains(':')) provider.id.substring(provider.id.indexOf(':') + 1),
+    ];
   }
 
   PipelineSubscriptionHost _buildSubscriptionHost() => PipelineSubscriptionHost(

@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
@@ -152,6 +153,18 @@ class _FakeTorrentBackend implements TorrentBackend {
 class _FakeAppModel extends AppModel {
   _FakeAppModel(this._httpHandler) : super(testPlatformServices());
 
+  // Fushi 不内置 BT 站：番剧选种走用户添加的 Nyaa 式站点。
+  @override
+  List<BtSiteConfig> get btSites => <BtSiteConfig>[
+    BtSiteConfig(
+      id: 'test-anime-site',
+      baseUrl: Uri.parse('https://nyaa.si'),
+      format: BtSiteFormat.nyaa,
+      domains: const <BtSiteDomain>{BtSiteDomain.anime},
+      nyaaCategories: const <BtSiteDomain, String>{BtSiteDomain.anime: '1_0'},
+    ),
+  ];
+
   final Future<http.Response> Function(http.Request request) _httpHandler;
   final _MemPlanStore store = _MemPlanStore();
 
@@ -181,6 +194,14 @@ class _FakeAppModel extends AppModel {
   @override
   Future<http.Client> createDownloadHttpClient() async =>
       MockClient(_httpHandler);
+}
+
+/// 用户还没添加任何 BT 站。
+class _NoBtSiteAppModel extends _FakeAppModel {
+  _NoBtSiteAppModel(super.httpHandler);
+
+  @override
+  List<BtSiteConfig> get btSites => const <BtSiteConfig>[];
 }
 
 void main() {
@@ -256,6 +277,31 @@ void main() {
         <String>['ネイティブ'],
       );
     });
+  });
+
+  testWidgets('没有 BT 站：不发请求，结果区引导去添加 BT 站', (
+    WidgetTester tester,
+  ) async {
+    int requests = 0;
+    final _FakeAppModel appModel = _NoBtSiteAppModel((http.Request req) async {
+      requests++;
+      return http.Response(kNyaaNoResultsHtml, 200);
+    });
+    await pumpDialog(tester, appModel);
+    await tester.tap(find.byTooltip(t.anime_download_search).first);
+    await tester.pumpAndSettle();
+
+    expect(requests, 0, reason: 'Fushi 不内置任何 BT 站，没有站点就不发请求');
+    expect(
+      find.byKey(const ValueKey<String>('anime-download-bt-site-missing')),
+      findsOneWidget,
+    );
+    expect(find.text(t.bt_site_missing_status), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('anime-download-open-bt-sites')),
+      findsOneWidget,
+    );
+    expect(find.text(t.anime_download_no_results), findsNothing);
   });
 
   testWidgets('Nyaa 搜索网络错误：展示真实异常串 + 代理提示 + 去设置', (WidgetTester tester) async {

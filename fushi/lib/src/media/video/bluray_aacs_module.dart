@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:ffi/ffi.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_configuration.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 import 'package:path/path.dart' as p;
 
 /// The bundled `native/fushi_aacs` module that libbluray loads as libaacs.
@@ -81,14 +82,14 @@ final class _FfiBlurayAacsModule implements BlurayAacsModule {
         ? nullptr
         : calloc<Uint8>(16);
     try {
-      id.asTypedList(20).setAll(0, discId);
+      id.asTypedListOutOfLine(20).setAll(0, discId);
       if (volumeUniqueKey != null) {
-        key.asTypedList(16).setAll(0, volumeUniqueKey);
+        key.asTypedListOutOfLine(16).setAll(0, volumeUniqueKey);
       }
       _setDiscKey(id, key);
     } finally {
       if (key != nullptr) {
-        key.asTypedList(16).fillRange(0, 16, 0);
+        key.asTypedListOutOfLine(16).fillRange(0, 16, 0);
         calloc.free(key);
       }
       calloc.free(id);

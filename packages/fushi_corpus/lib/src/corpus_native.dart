@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import 'corpus_models.dart';
 import 'fushi_corpus_library.dart';
@@ -286,7 +287,7 @@ final class FushiCorpusIndex {
       try {
         if (len.value == 0) return null;
         return decodeCorpusDocument(
-          Uint8List.fromList(out.value.asTypedList(len.value)),
+          Uint8List.fromList(out.value.asTypedListOutOfLine(len.value)),
         );
       } finally {
         _native._lib.freeBytes(out.value, len.value);
@@ -342,7 +343,7 @@ final class FushiCorpusIndex {
     final int status = call(out, len, arena);
     if (status != FcorpStatus.ok) throw FushiCorpusException(op, status);
     try {
-      return utf8.decode(out.value.asTypedList(len.value));
+      return utf8.decode(out.value.asTypedListOutOfLine(len.value));
     } finally {
       _native._lib.freeBytes(out.value, len.value);
     }
@@ -373,7 +374,7 @@ List<({int start, int end})> splitCorpusSentences(
     }
     try {
       final ByteData data = ByteData.sublistView(
-        out.value.asTypedList(len.value),
+        out.value.asTypedListOutOfLine(len.value),
       );
       final int n = data.getUint32(0, Endian.little);
       return <({int start, int end})>[
@@ -468,7 +469,7 @@ CorpusDocument decodeCorpusDocument(Uint8List bytes) {
 Pointer<Uint8> _copy(Arena arena, Uint8List bytes) {
   // 至少分配 1 字节：空数据也传有效指针（原生侧 null 只在长度为 0 时才合法，这里统一不传 null）。
   final Pointer<Uint8> p = arena<Uint8>(bytes.isEmpty ? 1 : bytes.length);
-  p.asTypedList(bytes.length).setAll(0, bytes);
+  p.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
   return p;
 }
 

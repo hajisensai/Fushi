@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import 'fushi_music_library.dart';
 
@@ -230,7 +231,7 @@ class AudioCdReader {
     final Pointer<Uint8> bytes = outPtr.value;
     if (len == 0 || bytes == nullptr) return Uint8List(0);
     try {
-      return Uint8List.fromList(bytes.asTypedList(len));
+      return Uint8List.fromList(bytes.asTypedListOutOfLine(len));
     } finally {
       _lib.freeBytes(bytes, len);
     }
@@ -269,7 +270,7 @@ class AudioCdReader {
     final Pointer<Pointer<Uint8>> outPtr = calloc<Pointer<Uint8>>();
     final Pointer<Size> outLen = calloc<Size>();
     try {
-      input.asTypedList(path.length).setAll(0, path);
+      input.asTypedListOutOfLine(path.length).setAll(0, path);
       final int rc = _read(input, path.length, outPtr, outLen);
       if (rc != FfmStatus.ok) throw AudioCdReadException(device, rc);
       return decodeAudioCdInfo(_take(outPtr, outLen));
@@ -289,8 +290,8 @@ class AudioCdReader {
     final Pointer<Pointer<Uint8>> outPtr = calloc<Pointer<Uint8>>();
     final Pointer<Size> outLen = calloc<Size>();
     try {
-      a.asTypedList(toc.length).setAll(0, toc);
-      b.asTypedList(text.length).setAll(0, text);
+      a.asTypedListOutOfLine(toc.length).setAll(0, toc);
+      b.asTypedListOutOfLine(text.length).setAll(0, text);
       final int rc = _fromRaw(a, toc.length, b, text.length, outPtr, outLen);
       if (rc != FfmStatus.ok) {
         throw FormatException('not a valid CD TOC (status $rc)');

@@ -10,7 +10,7 @@ Fushi 通过「互联」配对后，把这些活丢给它：
 | 漫画整卷 OCR | `/api/manga_ocr/*` | 客户端上传卷，服务端跑 ONNX 检测+识别，回传 mokuro |
 | 字幕识别（ASR） | `/api/jobs`（kind=`asr`） | 客户端上传音轨或指定 host 视频，服务端转录成 SRT + token 时间轴 |
 | 代下载 | `/api/downloads` | 内置 libtorrent 引擎或外接 qBittorrent，落 `<data>/documents/downloads` 后自动入库。能力位 `kinds` = `video` / `novel` / `manga` / `audiobook`：非视频整包走引擎发现导入执行器按域入库（小说 EPUB / 文本转 EPUB、漫画 cbz/zip 图包、有声书正文+字幕+音频对齐）。**不收游戏**（服务端没有游戏库，投了 400）；小说包里的 **PDF** 不能导入（要 app 的 pdfrx 栅格化），任务以 `unsupportedOnThisHost` 挡下；cbr / cb7 / rar 需要服务端有 7-Zip（`FUSHI_7ZA` 或 PATH 上的 `7z` / `7za`），否则 `archiveToolMissing` |
-| 内容订阅 | `/api/subscriptions` | 订阅在 host 上创建、由 host 周期检查（Nyaa / apibay / Knaben / Torznab）并投进自己的下载管线；客户端发现页可选「运行在 host」 |
+| 内容订阅 | `/api/subscriptions` | 订阅在 host 上创建、由 host 周期检查（用户添加的 BT 站 / Torznab）并投进自己的下载管线；客户端发现页可选「运行在 host」 |
 | 配置文件（Profile）寄存 | `/api/interconnect/profile`（GET / PUT，仅 TLS） | 设备「互联 → 上传配置」把配置方案推到服务端寄存，另一台设备「下载配置」拉走；服务端只寄存不应用。默认关（`profile_transfer`） |
 | WebUI / admin API | `http(s)://<host>:38780/` | 状态、配对 PIN、库根管理、上传、任务、下载、模型、设置、日志 |
 
@@ -221,8 +221,8 @@ app 客户端都只发这两个值，旧版 admin 把未知值静默当 movie，
 export FUSHI_HOST_URL=https://127.0.0.1:38765   # 或 --interconnect <url>
 export FUSHI_HOST_PASSWORD=<host token>          # 或 --password <token>（互联设置里的密码）
 
-fushi_server ctl dl add --torrent https://nyaa.si/download/1498115.torrent --list-files
-fushi_server ctl dl add --torrent https://nyaa.si/download/1498115.torrent \
+fushi_server ctl dl add --torrent https://example.com/download/1498115.torrent --list-files
+fushi_server ctl dl add --torrent https://example.com/download/1498115.torrent \
     --select 'Doraemon Movie 10 \(1989\)' --title 'ドラえもん のび太の日本誕生' \
     --year 1989 --provider tmdb --external-id <TMDB 电影 id>
 fushi_server ctl dl                      # 任务列表
@@ -271,7 +271,11 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 | `GET jobs` / `DELETE jobs/<id>` | 互联任务（ASR 等） |
 | `GET|POST downloads` / `POST downloads/<id>/cancel|retry` / `DELETE downloads/<id>` | 代下载 |
 | `GET|POST subscriptions` / `POST subscriptions/check` / `POST subscriptions/<id>/enable|check` / `DELETE subscriptions/<id>` | 内容订阅（WebUI 只按搜索词建；客户端发现页建的带完整作品身份） |
-| `GET|PUT resource-indexers` | 资源索引器：内置源启停（`builtin: {nyaa: true, apibay: false, …}`）+ Torznab indexer 清单（`torznab: [{id?, name, endpoint, apiKey?, clearApiKey?, enabled, priority, allowInsecureHttp, categories}]`，整表替换）。API key 不回显（只报 `apiKeySet`），留空沿用同 id 旧值；endpoint 带 `?apikey=` 自动拆出。任一条非法整个请求 400、不落半截。保存后下载管线与订阅服务按新 registry 立即重启（torrent 后端不动），响应的 `providers` 即新的订阅能力位 |
+| `GET|PUT resource-indexers` | 资源索引器：GET 返回用户 BT 站列表（`btSites: [{id, name, host, displayName, domains, effectiveDomains, enabled, allowInsecureHttp, active}]`，只回显主机名，地址整串与站点接口格式不出境）+ Torznab indexer 清单；PUT 只改 Torznab（旧的 `builtin` 键已无内置源可开关，带了回 400）。Torznab indexer 清单（`torznab: [{id?, name, endpoint, apiKey?, clearApiKey?, enabled, priority, allowInsecureHttp, categories}]`，整表替换）。API key 不回显（只报 `apiKeySet`），留空沿用同 id 旧值；endpoint 带 `?apikey=` 自动拆出。任一条非法整个请求 400、不落半截。保存后下载管线与订阅服务按新 registry 立即重启（torrent 后端不动），响应的 `providers` 即新的订阅能力位 |
+| `POST resource-indexers/bt-sites` | 添加 BT 站：`{url, name?, domains?, enabled?, allowInsecureHttp?}`（`domains` 取 `anime` / `movie` / `tv` / `novel` / `audiobook` / `manga` / `game`，省略 = 全部）。服务端先自动检测站点，认得出才保存；认不出回 422 `{error, reason: unrecognized}`，超时 `timedOut`，地址非法 `invalidUrl`，明文 HTTP 未放行 `insecureHttp`。响应 = GET 的整份结果 + `site`（刚加的那条） |
+| `PUT resource-indexers/bt-sites/<id>` | 改 BT 站：`{name?, domains?, enabled?, allowInsecureHttp?, url?}`，只改带了的字段；带非空 `url` 即换地址、重新检测（认不出 422、不改） |
+| `POST resource-indexers/bt-sites/<id>/reprobe` | 按已存地址重新检测（站点改版后用） |
+| `DELETE resource-indexers/bt-sites/<id>` | 删除 BT 站；订阅改由同类其它站点接手，没有可用站点时暂停，加了站点后自动唤醒 |
 | `GET models` / `POST models/pull {model}` | ASR 各语言 + OCR 模型状态 / 后台拉取 |
 | `GET|PUT settings` | 配置读写（下节「远程访问三项」） |
 | `GET profiles` / `POST profiles/<id>/share` / `DELETE profiles/<id>` | 寄存的配置文件 + 开关状态 / 指定对端拉取时交出哪一份 / 删除（下节） |
@@ -426,7 +430,7 @@ fushi_server dict rm <词典名> [--json]
 - 不做游戏串流：`/api/game-stream/*` 恒回 `501 {"error":"unsupported","feature":"gameStream"}`，`/api/capabilities` 报 `gameStream: false`。
 - 不做浸入式制卡（`mineImmersion` 回错误）与「在 Anki 里打开」/ 笔记类型编辑 / 媒体去重；查词结果不带词条发音（`lookupAudio` 恒空）。
 - 不做查词发音：本地音频库（`/api/library/localaudio`）同词典包一样只做存储中转——客户端推上来的库落 `<data_dir>/support/local_audio_<n>.db`、登记进 `preferences` 表的 `local_audio_dbs`（与 app 同键同形），其它客户端可列出 / 拉取 / 删除；服务端自己不播发音。
-- 不做发现页 UI：host 的订阅由客户端发现页（带作品身份）或 WebUI（只按搜索词）创建；host 自己搜 Nyaa / apibay / Knaben / Torznab（Torznab indexer 与停用清单读同一张 `preferences` 表的 `video_resource_torznab_config` / `video_resource_disabled_sources`，与 app 同一编码；在 WebUI「订阅」页的「资源索引器」卡片编辑，保存即生效；不能经互联「配置文件」设——Torznab 配置含 API key，出境时按凭据剔除，服务端寄存的配置文件也不应用到自己身上）。
+- 不做发现页 UI：host 的订阅由客户端发现页（带作品身份）或 WebUI（只按搜索词）创建；host 自己搜用户添加的 BT 站与 Torznab（Fushi 不内置任何 BT 站；BT 站与 Torznab indexer 读同一张 `preferences` 表的 `resource_bt_sites` / `video_resource_torznab_config`，与 app 同一编码；旧的内置源停用清单键已冻结、不再读写；在 WebUI「订阅」页的「资源索引器」卡片编辑，保存即生效；不能经互联「配置文件」设——Torznab 配置含 API key，出境时按凭据剔除，服务端寄存的配置文件也不应用到自己身上）。
 - 漫画根只认 `.mokuro` 卷与纯页图目录：cbz / cbr / cb7 / pdf 暂不扫描（压缩包导入器还在 app 侧、rar 需外部 7-Zip），这类文件仍走客户端导入。
 - 书 / 漫画根的对账只认本服务端扫描认领过的书：客户端上传 / 手动导入的同名书、以及升级前源文件就已删掉的存量书，不会因源文件消失被回收（见「扫描对账」）。
 

@@ -58,22 +58,25 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
 
   bool get _supported => service != null;
 
-  /// 已注册（且未停用）的 provider id。内置源报裸 id（`nyaa` / `apibay` / `knaben`，
-  /// 订阅服务的在场校验也只看 `resourceProvider` 冒号前的裸 id）；Torznab 一个对象带
-  /// 多个 indexer，按 `torznab:<indexerId>` 逐个报，客户端据此判断能不能把自己那台
-  /// 机器上搜到的资源交给 host 订阅。
-  List<String> get availableProviderIds => <String>[
+  /// 已注册的 provider id。用户 BT 站报**格式名**（`nyaa` / `apibay` / `knaben`）：
+  /// 客户端搜到的资源记的是它自己那台设备上的站点 id（`nyaa:<客户端 siteId>`），
+  /// host 上没有同 id 的站点，按格式解析到 host 自己的同格式站点
+  /// （`VideoResourceRegistry.resolveProvider`），所以能力位只需说「有这种格式」。
+  /// Torznab 一个对象带多个 indexer，按 `torznab:<indexerId>` 逐个报，客户端据此
+  /// 判断能不能把自己那台机器上搜到的资源交给 host 订阅。
+  List<String> get availableProviderIds => <String>{
         for (final VideoResourceProvider p in registry.providers)
-          if (!registry.disabledProviderIds.contains(p.id))
-            if (p is TorznabClient)
+          if (isBtSiteProviderId(p.id))
+            p.id.split(':').first
+          else if (p is TorznabClient)
               // 停用的索引器不参与搜索，公布出去也订阅不到（BUG-2818）。过滤
               // 写在迭代源上：这里再嵌一层 collection-if 会吃掉下面的 else。
               for (final TorznabIndexerConfig cfg
                   in p.indexers.where((TorznabIndexerConfig c) => c.enabled))
                 '${p.id}:${cfg.id}'
-            else
-              p.id,
-      ];
+          else
+            p.id,
+      }.toList();
 
   @override
   Future<Map<String, Object?>> capability() async => <String, Object?>{
@@ -97,11 +100,8 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
       throw const HostSubscriptionRejected(
           409, 'unsupported', 'no torrent backend on this host');
     }
-    final String providerBase = request.resourceProvider.split(':').first;
-    final bool providerPresent = registry.providers.any(
-      (VideoResourceProvider p) =>
-          p.id == providerBase && !registry.disabledProviderIds.contains(p.id),
-    );
+    final bool providerPresent =
+        registry.resolveProvider(request.resourceProvider) != null;
     if (!providerPresent) {
       throw HostSubscriptionRejected(
         400,

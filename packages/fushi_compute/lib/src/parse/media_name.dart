@@ -1,6 +1,8 @@
 import 'dart:ffi';
 import 'dart:typed_data';
 
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
+
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
 
@@ -96,8 +98,8 @@ final class Utf16BatchBuffer implements Finalizable {
     }
     units = _units.reserve(total * 2).cast<Uint16>();
     lens = _lens.reserve(values.length * 4).cast<Uint32>();
-    final Uint16List unitView = units.asTypedList(total);
-    final Uint32List lenView = lens.asTypedList(values.length);
+    final Uint16List unitView = units.asTypedListOutOfLine(total);
+    final Uint32List lenView = lens.asTypedListOutOfLine(values.length);
     int offset = 0;
     for (int i = 0; i < values.length; i++) {
       final String value = values[i];
@@ -212,7 +214,7 @@ final class MediaNameNative implements Finalizable {
         'ffc_parse_filename_trailing_season_batch failed with status $status',
       );
     }
-    final Int32List out = seasonOut.asTypedList(needed);
+    final Int32List out = seasonOut.asTypedListOutOfLine(needed);
     return <FfcTrailingSeason?>[
       for (int i = 0; i < texts.length; i++)
         out[i * 3] < 0
@@ -257,7 +259,7 @@ final class MediaNameNative implements Finalizable {
     final Pointer<Uint8> ptr = _outPtr.value;
     final int len = _outLen.value;
     try {
-      return _decode(ptr.asTypedList(len));
+      return _decode(ptr.asTypedListOutOfLine(len));
     } finally {
       _compute.freeBytes(ptr, len);
     }

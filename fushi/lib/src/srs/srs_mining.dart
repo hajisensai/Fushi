@@ -986,6 +986,14 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
 
   // ------------------------------------------------------------ 打开笔记
 
+  /// BUG-3790：笔记住在 Fushi 复习里，界面不能再说「Anki」。
+  @override
+  MinedNoteHome get minedNoteHome => MinedNoteHome.fushiReview;
+
+  /// 打开走装配处注入的复习笔记打开器；没注入就打不开。
+  @override
+  bool get canOpenMinedNote => _openNote != null;
+
   @override
   Future<bool> openNoteInAnki(int noteId) async {
     final SrsNoteOpener? open = _openNote;

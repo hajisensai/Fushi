@@ -2,8 +2,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/media/metadata/bangumi_api_client.dart'
-    show parseBangumiSubjectUrl;
+import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
@@ -16,7 +15,8 @@ import 'package:fushi/utils.dart';
 /// 两个源用分段切换（[BookScrapeSource]）：Bangumi 书籍条目（`filter.type=[1]`）与 DLsite
 /// 音声 / 漫画 / 小说作品。默认 Bangumi——DLsite 的搜索含成人向作品，不混进普通书搜索；
 /// 预填词里认得出 DLsite 编号时默认切到 DLsite 并只填编号（直取）。选中候选后下载其封面
-/// 到临时文件并经 `Navigator.pop(file)` 返回给调用方（书籍编辑对话框把它当作新的封面
+/// 到临时文件并经 `Navigator.pop(file)` 返回给调用方（候选解析与下载都经
+/// [BookMetadataScrapeFacade]，书架页的写回也经它）（书籍编辑对话框把它当作新的封面
 /// override，走既有 `setOverrideThumbnailFromMediaItem` 落地——不新增任何存储路径）。
 ///
 /// 返回 `null` = 用户取消 / 未选。
@@ -60,6 +60,9 @@ class BookCoverScrapeDialog extends StatefulWidget {
 class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   late final TextEditingController _queryCtrl;
   late final BookMetadataScraper _scraper;
+
+  /// 候选解析与封面下载都经门面（与 `fushi_cli book` 同一个方法）。
+  late final BookMetadataScrapeFacade _facade;
   late BookScrapeSource _source;
 
   List<BookScrapeCandidate> _results = const <BookScrapeCandidate>[];
@@ -82,6 +85,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     _source = source;
     _queryCtrl = TextEditingController(text: query);
     _scraper = widget.scraperOverride ?? BookMetadataScraper();
+    _facade = BookMetadataScrapeFacade(scraper: _scraper);
     // 首帧后按预填标题自动搜一次。
     WidgetsBinding.instance.addPostFrameCallback((_) => _search());
   }
@@ -104,7 +108,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     List<BookScrapeCandidate> results = const <BookScrapeCandidate>[];
     Object? failure;
     try {
-      results = await _resolveCandidates(keyword);
+      results = await _facade.search(source: _source, query: keyword);
     } catch (e, stack) {
       // BUG-1176：失败要有出口。界面出可见失败行，原始原因落错误日志（用户可在
       // 「错误日志」页查看/上传），不静默塌缩成空列表。
@@ -131,60 +135,6 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     return status == null ? t.scrape_reason_network : t.scrape_reason_server;
   }
 
-  /// 关键词 → 候选。添加/修改 Bangumi 映射：贴条目 URL = 按 id 直取（跳过关键词
-  /// 搜索）；纯数字既可能是 id 也可能是书名（如《1984》）——搜索 + id 直取并列，
-  /// 直取命中置顶、按 subjectId 去重；其余走关键词搜索。
-  Future<List<BookScrapeCandidate>> _resolveCandidates(String keyword) async {
-    if (_source == BookScrapeSource.dlsite) return _resolveDlsite(keyword);
-    final String? mappedSubjectId = parseBangumiSubjectUrl(keyword);
-    if (mappedSubjectId != null) {
-      final BookScrapeCandidate? candidate =
-          await _scraper.fetchById(mappedSubjectId);
-      return candidate == null
-          ? const <BookScrapeCandidate>[]
-          : <BookScrapeCandidate>[candidate];
-    }
-    if (RegExp(r'^\d+$').hasMatch(keyword)) {
-      final List<BookScrapeCandidate> searched = await _scraper.search(keyword);
-      BookScrapeCandidate? direct;
-      try {
-        direct = await _scraper.fetchById(keyword);
-      } catch (e) {
-        // 界面上静默：这是尽力而为的第二路，本分支上方那次关键词搜索（未 guard）
-        // 失败才会冒泡成可见失败态，所以这里吞掉不会让任何真失败消失。仍落诊断
-        // 日志，否则「数字关键词结果时多时少」无从查起。
-        direct = null;
-        ErrorLogService.instance.logDiagnostic(
-          'BookCoverScrapeDialog.fetchById',
-          'numeric keyword direct fetch failed: $e',
-        );
-      }
-      if (direct == null) return searched;
-      final String directId = direct.subjectId;
-      return <BookScrapeCandidate>[
-        direct,
-        ...searched.where((BookScrapeCandidate c) => c.subjectId != directId),
-      ];
-    }
-    return _scraper.search(keyword);
-  }
-
-  /// DLsite：贴作品页 URL / 编号 → 直取；其余按名搜音声 / 漫画 / 小说。
-  Future<List<BookScrapeCandidate>> _resolveDlsite(String keyword) async {
-    final DlsiteWorkId? id =
-        DlsiteWorkId.tryParse(keyword) ??
-        (keyword.contains('dlsite.com') ? DlsiteWorkId.findIn(keyword) : null);
-    if (id != null) {
-      final BookScrapeCandidate? candidate = await _scraper.fetchDlsiteById(
-        id.value,
-      );
-      return candidate == null
-          ? const <BookScrapeCandidate>[]
-          : <BookScrapeCandidate>[candidate];
-    }
-    return _scraper.searchDlsite(keyword);
-  }
-
   void _selectSource(BookScrapeSource source) {
     if (source == _source) return;
     setState(() {
@@ -202,7 +152,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     File? file;
     Object? failure;
     try {
-      file = await downloadImageToTempFile(candidate.coverUrl);
+      file = await _facade.downloadCover(candidate);
     } catch (e, stack) {
       // 下载失败必须可见 + 可查：toast 给「失败了 + 大概因为什么」，原始原因进日志。
       ErrorLogService.instance.log('BookCoverScrapeDialog.download', e, stack);

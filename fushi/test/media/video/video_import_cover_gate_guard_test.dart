@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
+
 String _slice(String source, String startMarker, String endMarker) {
   final int start = source.indexOf(startMarker);
   expect(start, isNonNegative, reason: 'missing source marker: $startMarker');
@@ -10,10 +12,18 @@ String _slice(String source, String startMarker, String endMarker) {
   return source.substring(start, end);
 }
 
+/// 按顺序在「掩注释 + 折叠空白」后的语料上找各步：`dart format` tall style
+/// 会把实参折到下一行（如 `markAutoFrameAfterWrite(` 换行 `candidateUid,`），
+/// 钉的是调用顺序而不是换行位置；折行带出的尾逗号（`,)`）同样归一掉。
+/// 注释里的同名文字不算数。
 void _expectOrdered(String source, List<String> markers) {
+  final String code = compactCode(source).replaceAll(',)', ')');
   int previous = -1;
-  for (final String marker in markers) {
-    final int current = source.indexOf(marker, previous + 1);
+  for (final String rawMarker in markers) {
+    final String marker = rawMarker
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll(',)', ')');
+    final int current = code.indexOf(marker, previous + 1);
     expect(
       current,
       greaterThan(previous),
@@ -28,8 +38,9 @@ void main() {
   late String mainSource;
 
   setUpAll(() {
-    dialogSource =
-        File('lib/src/media/video/video_import_dialog.dart').readAsStringSync();
+    dialogSource = File(
+      'lib/src/media/video/video_import_dialog.dart',
+    ).readAsStringSync();
     mainSource = File('lib/main.dart').readAsStringSync();
   });
 
@@ -93,20 +104,32 @@ void main() {
       '_commitAutoFrameCoverWrite(',
     ]);
 
+    // 流媒体导入的落库本体在门面 StreamVideoUrlImporter.importUrl（对话框与控制通道
+    // 共用）；对话框的 _importStreamUrl 只经门面动手。
     final String stream = _slice(
       dialogSource,
-      'Future<void> _importStreamUrl(',
+      'Future<StreamVideoUrlImport> importUrl(',
       'Future<String?> _resolveYoutubeImportCover(',
     );
     _expectOrdered(stream, <String>[
       '_runVideoImportCoverMutation(',
-      '_uniqueBookUid(',
+      'uniqueVideoBookUid(',
       '_admitAutoFrameCoverWrite(',
       '_resolveYoutubeImportCover(',
       'saveVideoBook(',
       '_commitAutoFrameCoverWrite(',
     ]);
     expect(stream, contains('downloadCover: coverMetaStore != null'));
+    final String dialogStream = _slice(
+      dialogSource,
+      'Future<void> _importStreamUrl(',
+      'void _handleDialogDrop(',
+    );
+    expect(
+      compactCode(dialogStream),
+      contains('StreamVideoUrlImporter(widget.repo).importUrl('),
+    );
+    expect(dialogStream, isNot(contains('saveVideoBook(')));
   });
 
   test('YouTube 受保护或 maintenance 路径只取标题、不派生封面文件', () {

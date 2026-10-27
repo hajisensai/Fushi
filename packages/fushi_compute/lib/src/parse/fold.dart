@@ -1,6 +1,8 @@
 import 'dart:ffi';
 import 'dart:typed_data';
 
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
+
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
 
@@ -114,7 +116,7 @@ final class AudioTextFoldNative implements Finalizable {
   void _copyIn(String text) {
     final int length = text.length;
     _ensureCapacity(length);
-    final Uint16List units = _input.asTypedList(length);
+    final Uint16List units = _input.asTypedListOutOfLine(length);
     for (int i = 0; i < length; i++) {
       units[i] = text.codeUnitAt(i);
     }
@@ -142,7 +144,7 @@ final class AudioTextFoldNative implements Finalizable {
     if (text.isEmpty) return '';
     final int n = _run(text, withStarts: false);
     if (n == 0) return '';
-    return String.fromCharCodes(_output.asTypedList(n));
+    return String.fromCharCodes(_output.asTypedListOutOfLine(n));
   }
 
   /// [text] 的归一化文本，以及每个输出 UTF-16 码元对应**输入码点起始码元下标**
@@ -153,8 +155,8 @@ final class AudioTextFoldNative implements Finalizable {
     final int n = _run(text, withStarts: true);
     if (n == 0) return (text: '', starts: Uint32List(0));
     return (
-      text: String.fromCharCodes(_output.asTypedList(n)),
-      starts: Uint32List.fromList(_starts.asTypedList(n)),
+      text: String.fromCharCodes(_output.asTypedListOutOfLine(n)),
+      starts: Uint32List.fromList(_starts.asTypedListOutOfLine(n)),
     );
   }
 
@@ -187,9 +189,9 @@ final class AudioTextFoldNative implements Finalizable {
     }
     final int n = _outLen.value;
     return (
-      text: n == 0 ? '' : String.fromCharCodes(_output.asTypedList(n)),
-      offsets: Uint32List.fromList(_starts.asTypedList(n)),
-      ends: Uint32List.fromList(_ends.asTypedList(n)),
+      text: n == 0 ? '' : String.fromCharCodes(_output.asTypedListOutOfLine(n)),
+      offsets: Uint32List.fromList(_starts.asTypedListOutOfLine(n)),
+      ends: Uint32List.fromList(_ends.asTypedListOutOfLine(n)),
       total: _total.value,
     );
   }
@@ -207,7 +209,7 @@ final class AudioTextFoldNative implements Finalizable {
     }
     if (length == 0) return (text: '', pieceStarts: pieceStarts);
     _ensureCapacity(length);
-    final Uint16List units = _input.asTypedList(length);
+    final Uint16List units = _input.asTypedListOutOfLine(length);
     // 第 k 段在输入里的起点；先暂存进 pieceStarts，过界后原地换成输出起点。
     int cursor = 0;
     for (int k = 0; k < count; k++) {
@@ -231,7 +233,7 @@ final class AudioTextFoldNative implements Finalizable {
       throw StateError('ffc_parse_fold_audio_utf16 failed with status $status');
     }
     final int n = _outLen.value;
-    final Uint32List starts = _starts.asTypedList(n);
+    final Uint32List starts = _starts.asTypedListOutOfLine(n);
     // 输出 starts 单调不减：第 k 段的输出起点 = 第一个 starts ≥ 段输入起点的下标。
     int lo = 0;
     for (int k = 0; k < count; k++) {
@@ -248,7 +250,7 @@ final class AudioTextFoldNative implements Finalizable {
       pieceStarts[k] = lo;
     }
     return (
-      text: n == 0 ? '' : String.fromCharCodes(_output.asTypedList(n)),
+      text: n == 0 ? '' : String.fromCharCodes(_output.asTypedListOutOfLine(n)),
       pieceStarts: pieceStarts,
     );
   }

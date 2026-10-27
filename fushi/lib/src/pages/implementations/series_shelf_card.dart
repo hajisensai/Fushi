@@ -15,7 +15,7 @@ import 'package:fushi/utils.dart';
 /// 展开），没有材质时（墨水屏 / 测试）退回叠层。封面上**不压任何角标**（用户：
 /// 「全部都不用角标设计」）：原左上「N 册」、右上「系列」、标签 chip、底边进度条
 /// 全部进封面下的 [ShelfCardMeta]——标题一行 + 副行 [subtitle]（调用方拼「N 卷 ·
-/// 读到第 X 卷 · #标签」）+ 合集阅读进度条。悬停抬升 / 按压下沉走共享
+/// 读到第 X 卷」，标签在副行尾部）+ 合集阅读进度条。悬停抬升 / 按压下沉走共享
 /// [FushiHoverLift]（内含 [FushiPressScale]），多选勾选圈与选中罩由
 /// [ShelfCoverSelection] 画在最前那本封面上，与散书卡同规格。
 class SeriesShelfCard extends StatelessWidget {
@@ -33,6 +33,7 @@ class SeriesShelfCard extends StatelessWidget {
     this.onLongPress,
     this.onSecondaryTap,
     this.subtitle,
+    this.tags = const <ShelfMetaTag>[],
     this.progress,
     super.key,
   });
@@ -66,8 +67,11 @@ class SeriesShelfCard extends StatelessWidget {
   final VoidCallback? onSecondaryTap;
 
   /// 封面下副行；null = `series_item_count`（「N 项」）。书架传「N 卷 · 读到第
-  /// X 卷 · #标签」。
+  /// X 卷」。
   final String? subtitle;
+
+  /// 合集的用户标签，排在副行尾部（[ShelfMetaTags]）。
+  final List<ShelfMetaTag> tags;
 
   /// 合集阅读进度 0–1（副行下的进度条）；null = 不画进度条（仍占位）。
   final double? progress;
@@ -127,6 +131,9 @@ class SeriesShelfCard extends StatelessWidget {
                         subtitle: subtitle ?? t.series_item_count(n: itemCount),
                         progress: progressValue,
                         completed: progressValue != null && progressValue >= 1,
+                        trailing: tags.isEmpty
+                            ? null
+                            : ShelfMetaTags(tags: tags),
                       ),
                     ),
                   ],

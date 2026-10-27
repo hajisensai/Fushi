@@ -34,9 +34,14 @@ pub const PROTOCOL: u32 = 1;
 /// 能读本版本写出的数据所需的最低读者版本（设计 §8）。
 pub const MIN_READER: u32 = 1;
 
-/// 切段上限（设计 §6.2）：64 KB 未压缩或 2000 条，先到为准。
-pub const SEGMENT_MAX_OPS: usize = 2000;
-pub const SEGMENT_MAX_BYTES: usize = 64 * 1024;
+/// 切段目标（设计 §6.2）：按**压缩后**的体积算，一段约 4 MB。哑存储上一次请求的固定开销远大于传几 MB 的
+/// 时间，段越少首次提交 / 新设备追赶越快；增量同步每轮只有几条操作，本来就只出一个小段，由小段合并（§7.1）收拢。
+pub const SEGMENT_TARGET_BYTES: u64 = 4 * 1024 * 1024;
+/// 每段条数上限：只是解码内存的保险（真实复习压缩后每条几十字节，4 MB 约十万条）。
+pub const SEGMENT_MAX_OPS: u64 = 250_000;
+/// 估算压缩体积的小块：块内一起压、块间各自压，求和是整段一起压的上界（块越大越准，也越费内存）。
+const CHUNK_OPS: usize = 4096;
+const CHUNK_RAW: usize = 256 * 1024;
 
 pub type Chain = [u8; 32];
 pub const CHAIN_ZERO: Chain = [0; 32];
@@ -312,24 +317,72 @@ pub fn open(bytes: &[u8], public: &[u8; 32], key: Option<&CollectionKey>) -> Res
     Ok(Segment { header, ops })
 }
 
-/// 按设计 §6.2 的上限把待上传的操作切成段区间（下标区间，左闭右开）。
-pub fn split_ranges(ops: &[Op]) -> Vec<(usize, usize)> {
-    let mut out = Vec::new();
-    let mut start = 0;
-    let mut bytes = 0usize;
-    for (i, op) in ops.iter().enumerate() {
-        let size = op.payload.len() + 24;
-        if i > start && (i - start >= SEGMENT_MAX_OPS || bytes + size > SEGMENT_MAX_BYTES) {
-            out.push((start, i));
-            start = i;
-            bytes = 0;
+/// 一组操作打成段体后压缩出来的字节数（不含段头、签名、加密开销，那些是每段几十字节的常数）。
+pub fn compressed_len(ops: &[Op]) -> u64 {
+    ruzstd::encoding::compress_to_vec(&write_body(ops)[..], ruzstd::encoding::CompressionLevel::Fastest).len() as u64
+}
+
+/// 按设计 §6.2 的目标把一台设备连续 seq 的操作流式切成段：逐条 [Splitter::push]，最后 [Splitter::finish] 得到
+/// `(first, last, 压缩后体积估计)`。不必把整段操作攒在内存里——首次提交几十万条也只占一个小块的内存。
+///
+/// 切点只落在小块边界上；体积估计是各小块单独压缩之和（上界），所以真实段不超过 [SEGMENT_TARGET_BYTES]。
+#[derive(Default)]
+pub struct Splitter {
+    chunk: Vec<Op>,
+    chunk_raw: usize,
+    cur: Option<(u64, u64, u64)>,
+    out: Vec<(u64, u64, u64)>,
+}
+
+impl Splitter {
+    pub fn new() -> Splitter {
+        Splitter::default()
+    }
+
+    pub fn push(&mut self, op: Op) {
+        let raw = op.payload.len() + 24;
+        if !self.chunk.is_empty() && (self.chunk.len() >= CHUNK_OPS || self.chunk_raw + raw > CHUNK_RAW) {
+            self.flush_chunk();
         }
-        bytes += size;
+        self.chunk_raw += raw;
+        self.chunk.push(op);
     }
-    if start < ops.len() {
-        out.push((start, ops.len()));
+
+    fn flush_chunk(&mut self) {
+        let (Some(head), Some(tail)) = (self.chunk.first(), self.chunk.last()) else { return };
+        let (first, last, n) = (head.id.seq, tail.id.seq, self.chunk.len() as u64);
+        let bytes = compressed_len(&self.chunk);
+        match &mut self.cur {
+            Some((a, b, s)) if *s + bytes <= SEGMENT_TARGET_BYTES && *b - *a + 1 + n <= SEGMENT_MAX_OPS => {
+                *b = last;
+                *s += bytes;
+            }
+            cur => {
+                if let Some(done) = cur.replace((first, last, bytes)) {
+                    self.out.push(done);
+                }
+            }
+        }
+        self.chunk.clear();
+        self.chunk_raw = 0;
     }
-    out
+
+    pub fn finish(mut self) -> Vec<(u64, u64, u64)> {
+        self.flush_chunk();
+        if let Some(done) = self.cur.take() {
+            self.out.push(done);
+        }
+        self.out
+    }
+}
+
+/// 一次性切一组操作（[Splitter] 的便捷形）。
+pub fn split_ranges(ops: &[Op]) -> Vec<(u64, u64, u64)> {
+    let mut s = Splitter::new();
+    for op in ops {
+        s.push(op.clone());
+    }
+    s.finish()
 }
 
 // ---------------------------------------------------------------- head
@@ -583,12 +636,54 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn split_respects_both_limits() {
+    fn split_covers_every_op_contiguously_and_small_batches_stay_one_segment() {
         let ops = ops_for(Id([1; 16]), 4500);
         let r = split_ranges(&ops);
-        assert!(r.iter().all(|(a, b)| b - a <= SEGMENT_MAX_OPS));
-        assert_eq!(r.first().unwrap().0, 0);
-        assert_eq!(r.last().unwrap().1, 4500);
+        // 几千条小操作压缩后远不到目标：一段。
+        assert_eq!(r.len(), 1);
+        assert_eq!((r[0].0, r[0].1), (1, 4500));
+        assert!(r[0].2 > 0);
+        assert!(split_ranges(&[]).is_empty());
+    }
+
+    #[test]
+    fn split_cuts_by_compressed_size() {
+        // 不可压缩的大载荷：每条 ~100 KB，目标 4 MB → 每段约 40 条，每段估计都不超过目标。
+        let dev = Id([2; 16]);
+        let deps = Arc::new(Vv::new());
+        let mut x: u64 = 0x9e37_79b9_7f4a_7c15;
+        let ops: Vec<Op> = (1..=200u64)
+            .map(|seq| {
+                let payload: Vec<u8> = (0..100_000)
+                    .map(|_| {
+                        x ^= x << 13;
+                        x ^= x >> 7;
+                        x ^= x << 17;
+                        x as u8
+                    })
+                    .collect();
+                Op {
+                    id: OpId { device: dev, seq },
+                    hlc: Hlc { wall: seq as i64, logical: 0, device: dev },
+                    deps: deps.clone(),
+                    kind: 9999,
+                    schema: SCHEMA,
+                    payload: payload.into(),
+                    purged: false,
+                }
+            })
+            .collect();
+        let r = split_ranges(&ops);
+        assert!(r.len() >= 4 && r.len() <= 6, "{r:?}");
+        let mut next = 1;
+        for &(a, b, bytes) in &r {
+            assert_eq!(a, next);
+            assert!(bytes <= SEGMENT_TARGET_BYTES, "{bytes}");
+            let (_, packed) = pack(Id::ZERO, &ops[(a - 1) as usize..b as usize], CHAIN_ZERO, &DeviceKey::generate(), None).unwrap();
+            assert!((packed.len() as u64) < SEGMENT_TARGET_BYTES + 4096, "{}", packed.len());
+            next = b + 1;
+        }
+        assert_eq!(next, 201);
     }
 }
 
@@ -629,5 +724,43 @@ mod size_tests {
         let (_, bytes) = pack(Id::ZERO, &ops, CHAIN_ZERO, &DeviceKey::generate(), None).unwrap();
         let per = bytes.len() / ops.len();
         assert!(per <= 40, "{per} bytes per review after compression");
+        // 体积估计（小块各自压缩之和）是上界，且不离谱。
+        let est = compressed_len(&ops);
+        assert!(est as usize + 512 >= bytes.len() && (est as usize) < bytes.len() * 2, "{est} vs {}", bytes.len());
+    }
+
+    /// 首次提交的量级：20 万条复习切出来只有几段（旧上限 64 KB / 2000 条时是上百段），每段都在目标以内。
+    #[test]
+    fn a_large_first_commit_is_a_handful_of_segments() {
+        let dev = Id::new_v7(1_700_000_000_000);
+        let deps = Arc::new(Vv::new());
+        let cards: Vec<Id> = (0..5000).map(|i| Id::new_v7(1_600_000_000_000 + i)).collect();
+        let mut s = Splitter::new();
+        let n = 200_000u64;
+        for seq in 1..=n {
+            let at = 1_700_000_000_000 + seq as i64 * 9_000;
+            let log = crate::sync2::op::LogBody {
+                id: Key::Uuid(Id::new_v7(at as u64)),
+                card: Key::Uuid(cards[(seq * 7919 % 5000) as usize]),
+                rating: Some(1 + (seq % 4) as i64),
+                at,
+                dur: 3_000 + (seq as i64 * 37) % 9_000,
+                ..sample_log()
+            };
+            s.push(Op {
+                id: OpId { device: dev, seq },
+                hlc: Hlc { wall: at, logical: 0, device: dev },
+                deps: deps.clone(),
+                kind: KIND_LOG,
+                schema: SCHEMA,
+                payload: Body::Log(log).encode().into(),
+                purged: false,
+            });
+        }
+        let r = s.finish();
+        assert!(r.len() <= 4, "{} segments", r.len());
+        assert_eq!(r.first().unwrap().0, 1);
+        assert_eq!(r.last().unwrap().1, n);
+        assert!(r.iter().all(|&(_, _, b)| b <= SEGMENT_TARGET_BYTES));
     }
 }

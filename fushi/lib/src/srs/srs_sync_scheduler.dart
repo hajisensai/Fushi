@@ -33,6 +33,8 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi/src/sync/dropbox_sync_backend.dart';
+import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
 import 'package:fushi/utils.dart' show ErrorLogService;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
@@ -79,6 +81,15 @@ typedef SrsSyncRunner =
       SrsLocationKey? locationKey,
     });
 
+/// [backend] 上同时在途的写 / 删上限（[SrsAssetLocationStore.maxConcurrentWrites]）：Dropbox 同一命名空间的并发写会
+/// 互相锁冲突（429 `too_many_write_operations`），逐个写；其余后端不限，由一轮同步的并发上限决定。
+int? srsMaxConcurrentWritesOf(SyncAssetStore backend) {
+  final SyncAssetStore inner = backend is ObfuscatingSyncBackend
+      ? backend.inner
+      : backend;
+  return inner is DropboxSyncBackend ? 1 : null;
+}
+
 /// 生产实现：现有同步后端上的 v2 集合根（`fushi-srs/<profileUid>/v2/`）跑一轮同步 v2。[directoryKey] 就是
 /// 这个位置的稳定身份（本机按它记每个位置传到了哪）。
 Future<SrsSync2Report> srsDefaultSyncRunner(
@@ -92,6 +103,7 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
     location: SrsAssetLocationStore(
       store: backend,
       profileUid: store.profileUid,
+      maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
     ),
     locationId: directoryKey,
     nowMs: () => store.now().$1,
@@ -127,7 +139,11 @@ Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   SrsMediaCipher? cipher,
 }) => srsSyncMedia(
   cipher: cipher,
-  location: SrsAssetLocationStore(store: backend, profileUid: store.profileUid),
+  location: SrsAssetLocationStore(
+    store: backend,
+    profileUid: store.profileUid,
+    maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
+  ),
   store: store,
   mediaRoot: mediaRoot,
   legacy: srsLegacyMediaReader(backend, store.profileUid),

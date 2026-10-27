@@ -1,3 +1,4 @@
+import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'dart:async' show StreamSubscription, Timer, unawaited;
@@ -41,6 +42,7 @@ import 'package:fushi/src/media/detail/media_detail_kit.dart'
     show MediaDetailResumeFab;
 import 'package:fushi/src/media/video/cover_ui/video_online_cover_picker.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
+import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
 import 'package:fushi/src/media/video/cover_ui/disc_format_badge.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
@@ -2132,7 +2134,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   };
 
   /// 原盘规格角标（BD / UHD / DVD，多盘 `BD ×3`）。2026-10-25 库页材质定版后封面上
-  /// 不再压角标，它与用户标签色点一起进封面下副行的尾部（[_videoCardMeta] 的
+  /// 不再压角标，它与文件规格角标、用户标签一起进封面下副行的尾部（[_videoCardMeta] 的
   /// `discBadge`）。成员里没有原盘标题时返回 null（不占位）——纯字符串判据，普通
   /// 视频卡不会多挂一个 widget。
   Widget? _discFormatBadge({
@@ -6216,7 +6218,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 2026-10-25 材质定版：封面上不压任何角标（原「新」/「第 N 集」/ 云 / 标签
   /// chip / 底边进度条），信息全进封面下的 [_videoCardMeta]：[secondaryText] 是
   /// 副行，[cloudBadge] 变成副行前导 ☁，[progressFraction] 画在副行下的进度条，
-  /// [tags]（BUG-1808）是副行尾部的色点。
+  /// [tags]（BUG-1808）是副行尾部的「色点 + 标签名」。
   Widget _buildRowMediaCard({
     required Key cardKey,
     required FushiFocusId focusId,
@@ -8173,6 +8175,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           busy: _headerRefreshBusy,
           onTap: _headerRefreshBusy ? null : _refreshFromHeader,
         ),
+      // 「问 AI」（D4 ③）：最低优先级，宽度不够时最先收进「⋯」；AI 模块关着
+      // 时为空。
+      ...aiAgentAskHeaderActions(
+        context,
+        visibility: ref.read(appProvider).moduleVisibility,
+        page: 'video_library',
+      ),
     ];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
@@ -10313,6 +10322,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 ),
                 memberPaths: <String>[book.videoPath],
               ),
+              // 原盘的规格由原盘角标说（BD / UHD），不再对盘目录跑 ffprobe。
+              specsPath: isDiscMemberPath(book.videoPath)
+                  ? null
+                  : book.videoPath,
             ),
           ),
         ],
@@ -10455,10 +10468,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   ///
   /// 封面上不再压任何角标（用户：「全部都不用角标设计」）——集数、续看位置、
   /// 远端 / 下载态都进 [subtitle]，远端用前导 ☁ 图标，下载中 / 已看进度画在
-  /// [progress]。用户标签（BUG-1808）收成副行尾部的小色点（[_VideoTagDots]，
-  /// 悬停 / 长按看全名），不占封面。墙卡与横滚卡共用这一份，行高见
-  /// [_videoCardTextBlock]。原盘规格角标（[_discFormatBadge]）同样排在副行尾部、
-  /// 标签色点之前。
+  /// [progress]。用户标签（BUG-1808）收成副行尾部的「色点 + 标签名」
+  /// （[ShelfMetaTags]，悬停 / 长按看全部），不占封面。墙卡与横滚卡共用这一份，行高见
+  /// [_videoCardTextBlock]。原盘角标（[_discFormatBadge]）与文件规格角标
+  /// （[specsPath] → [VideoSpecsBadgeStrip]：4K / HDR10 / 5.1·7.1）同样排在副行
+  /// 尾部、标签之前。
   Widget _videoCardMeta({
     required String title,
     String? subtitle,
@@ -10468,9 +10482,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     bool completed = false,
     List<_VideoTagChip> tags = const <_VideoTagChip>[],
     Widget? discBadge,
+    String? specsPath,
     Key? key,
   }) {
-    final Widget? tagDots = tags.isEmpty ? null : _VideoTagDots(tags: tags);
+    final List<Widget> trailing = <Widget>[
+      ?discBadge,
+      if (specsPath != null && specsPath.isNotEmpty)
+        Flexible(
+          child: IgnorePointer(
+            child: VideoSpecsBadgeStrip(
+              service: ref.read(videoSpecsProvider),
+              filePath: specsPath,
+            ),
+          ),
+        ),
+      if (tags.isNotEmpty) Flexible(child: ShelfMetaTags(tags: tags)),
+    ];
     return ShelfCardMeta(
       key: key,
       title: title,
@@ -10479,18 +10506,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       tone: tone,
       progress: progress,
       completed: completed,
-      trailing: discBadge == null
-          ? tagDots
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                discBadge,
-                if (tagDots != null) ...<Widget>[
-                  const SizedBox(width: 4),
-                  tagDots,
-                ],
-              ],
-            ),
+      trailing: trailing.isEmpty
+          ? null
+          : Row(mainAxisSize: MainAxisSize.min, spacing: 4, children: trailing),
     );
   }
 
@@ -10854,62 +10872,4 @@ class _RemoteVideoDownloadPlan {
     receivedBytes: receivedBytes,
     totalBytes: totalBytes ?? video.sizeBytes,
   );
-}
-
-/// 视频卡副行尾部的用户标签色点（BUG-1808）：最多 3 个，超出补「+N」。封面上
-/// 不再压标签 chip（2026-10-25「全部都不用角标设计」），标签仍一眼可见；全名进
-/// tooltip 与无障碍语义。
-class _VideoTagDots extends StatelessWidget {
-  const _VideoTagDots({required this.tags});
-
-  final List<_VideoTagChip> tags;
-
-  @override
-  Widget build(BuildContext context) {
-    const int maxVisible = 3;
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool eink = isEinkTheme(context);
-    final List<_VideoTagChip> visible = tags.take(maxVisible).toList();
-    final int overflow = tags.length - visible.length;
-    final String names = tags.map((_VideoTagChip c) => c.label).join(' · ');
-    return FushiTooltip(
-      message: names,
-      child: Semantics(
-        label: names,
-        child: Padding(
-          padding: const EdgeInsetsDirectional.only(start: 4),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              for (final _VideoTagChip chip in visible)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 2),
-                  child: SizedBox.square(
-                    dimension: 7,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: eink
-                            ? cs.onSurface
-                            : (chip.color ?? cs.onSurfaceVariant),
-                      ),
-                    ),
-                  ),
-                ),
-              if (overflow > 0)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 2),
-                  child: Text(
-                    '+$overflow',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }

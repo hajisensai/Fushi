@@ -56,7 +56,7 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
     只被 `test/lookup` 的定向测试擦肩而过，红直接进了 develop（TODO-2745）。
 - **`flutter analyze` 全量在 push 前必跑一次，且只在最后跑一次**（含 test 目录）——CI 把 warning 当致命，省这一步只会在 CI 上浪费一轮；但它每次要 2–3 分钟（实测 125–171 s，不含排队）、一个 3.4–4 GB 的 analysis server，开发中改一处就全量跑一遍、批量合并时逐分支各跑一遍都是白烧（2026-10-25 用户拍板：开发中用 `dart analyze <改动文件>`，全量留到 push 前 / 集成结果上一次）。租约上 analyze 是轻量任务：不占测试槽位、不排队，只记 4.5 GB 内存预算（[heavy-lease.md](heavy-lease.md)）。
 - **分支 draft PR**：全量 analyze 绿即可 push（2026-10-02 起推送门只有 analyze；定向测试在开发中按需跑，不是推送前置条件）；守卫与全量 test 由 CI 兜底（真单测门是 **Build Release APK 的 Run unit tests**，不是 Build and Test）。声明「修好了」的真机复测门槛**不变**（[integration-testing.md](integration-testing.md)）。
-- **合入 `develop`**：integration owner 本地全量 analyze + 定向 test + 「目录枚举型守卫」整批；**不再本地跑全量 test**（用户 2026-09-06 拍板：`dart run tool/flutter_test_failures.dart` 全量 / 裸 `flutter test` 全量一律不跑，全量只由 PR CI 兜底）。别 `| tail` 吞退出码；重叠跑会互抢 `sqlite3.dll`，见下节。
+- **合入 `develop`**：integration owner 本地全量 analyze + 定向 test + 「目录枚举型守卫」整批；**不再本地跑全量 test**（用户 2026-09-06 拍板：`dart run tool/flutter_test_failures.dart` 全量 / 裸 `flutter test` 全量一律不跑，全量只由 PR CI 兜底）。真要跑全量 / 成片目录时走跨机分流 `dart tool/dist_test.dart --config=D:/fushi-dist/workers.local.json`（2026-10-27 用户拍板，见根 `CLAUDE.md`「验证」），不单机裸跑。别 `| tail` 吞退出码；重叠跑会互抢 `sqlite3.dll`，见下节。
 
 ## 并发伪红判别
 

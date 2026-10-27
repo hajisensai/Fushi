@@ -98,7 +98,9 @@ void main() {
     });
 
     test('BUG-3573：kanji-enable / kanji-disable / kanji-order 只动汉字部分', () {
-      final CtlRequestSpec on = _build('dict', 'kanji-enable', <String>['現代新国語辞典']);
+      final CtlRequestSpec on = _build('dict', 'kanji-enable', <String>[
+        '現代新国語辞典',
+      ]);
       expect(on.method, 'PUT');
       expect(
         on.path,
@@ -125,7 +127,10 @@ void main() {
         throwsA(isA<CtlUsageError>()),
       );
       // 单本回显：混合词典带上汉字部分的开关，普通词典不多一个字。
-      final String Function(Object?) render = _spec('dict', 'kanji-enable').render!;
+      final String Function(Object?) render = _spec(
+        'dict',
+        'kanji-enable',
+      ).render!;
       expect(
         render(<String, Object?>{
           'displayName': 'M',

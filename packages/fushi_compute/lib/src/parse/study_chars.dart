@@ -1,6 +1,8 @@
 import 'dart:ffi';
 import 'dart:typed_data';
 
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
+
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
 
@@ -80,7 +82,7 @@ final class StudyCharsNative implements Finalizable {
     final int length = text.length;
     if (length == 0) return (count: count, inWord: inWord);
     final Pointer<Uint16> buffer = _buffer.reserve(length * 2).cast<Uint16>();
-    final Uint16List units = buffer.asTypedList(length);
+    final Uint16List units = buffer.asTypedListOutOfLine(length);
     for (int i = 0; i < length; i++) {
       units[i] = text.codeUnitAt(i);
     }
@@ -110,12 +112,12 @@ final class StudyCharsNative implements Finalizable {
       textBytes + offsetBytes + n * 8,
     );
     final Pointer<Uint16> unitsPtr = base.cast<Uint16>();
-    final Uint16List units = unitsPtr.asTypedList(length);
+    final Uint16List units = unitsPtr.asTypedListOutOfLine(length);
     for (int i = 0; i < length; i++) {
       units[i] = text.codeUnitAt(i);
     }
     final Pointer<Uint32> offsetsPtr = (base + textBytes).cast<Uint32>();
-    offsetsPtr.asTypedList(n).setAll(0, offsets);
+    offsetsPtr.asTypedListOutOfLine(n).setAll(0, offsets);
     final Pointer<Uint64> outPtr = (base + textBytes + offsetBytes)
         .cast<Uint64>();
     final int status = _prefixes(unitsPtr, length, offsetsPtr, n, outPtr);
@@ -124,6 +126,6 @@ final class StudyCharsNative implements Finalizable {
         'ffc_parse_study_char_prefixes failed with status $status',
       );
     }
-    return List<int>.of(outPtr.asTypedList(n));
+    return List<int>.of(outPtr.asTypedListOutOfLine(n));
   }
 }

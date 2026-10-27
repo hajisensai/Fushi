@@ -18,7 +18,12 @@ enum HomeDashboardPanel {
   /// 默认判据（见 `home_srs_panel.dart` 的 `resolveHomeSrsPanelVisible`）：复习
   /// 模块开着，且（挖词目标 = Fushi 复习 或 库里已有复习卡）。制卡仍发 Anki、也
   /// 没有复习卡的存量用户首页不多这一栏（用户拍板：老用户不提醒）。
-  srsReview('srs_review');
+  srsReview('srs_review'),
+
+  /// AI 助手入口条（spec 2026-10-26 D4 ①）：点了打开 AI 浮层。默认判据（见
+  /// `home_ai_agent_panel.dart` 的 `resolveHomeAiAgentPanelVisible`）：AI 模块开着且
+  /// 给「AI 助手」指派了可用的提供商。
+  aiAgent('ai_agent');
 
   const HomeDashboardPanel(this.id);
 

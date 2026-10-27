@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 
@@ -234,3 +235,32 @@ List<MangaCookie> browserCookiesForSite(
       ),
     )
     .toList(growable: false);
+
+/// 把扩展送来的站点 cookie 写进一个 WebView 的 cookie 存储（视频站点的 WebView2 环境、
+/// app 内浏览器的环境共用这一份写法）。逐条写、单条失败不中断（WebView2 会拒个别属性
+/// 组合）；返回写成功的条数。
+Future<int> writeBrowserSiteCookies(
+  CookieManager manager,
+  Iterable<BrowserSiteCookie> cookies,
+) async {
+  int written = 0;
+  for (final BrowserSiteCookie cookie in cookies) {
+    try {
+      final bool ok = await manager.setCookie(
+        url: WebUri.uri(cookie.originUrl),
+        name: cookie.name,
+        value: cookie.value,
+        path: cookie.path,
+        // host-only cookie 不能带 domain：带了就变成覆盖全部子域的域 cookie。
+        domain: cookie.hostOnly ? null : cookie.canonicalDomain,
+        expiresDate: cookie.expiresAt,
+        isSecure: cookie.secure,
+        isHttpOnly: cookie.httpOnly,
+      );
+      if (ok) written++;
+    } catch (_) {
+      // 单条写不进去：见方法注释。
+    }
+  }
+  return written;
+}

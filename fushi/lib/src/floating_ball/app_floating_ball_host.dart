@@ -39,6 +39,8 @@ import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/ai/agent/ai_agent_ui_context.dart';
+import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart';
@@ -71,6 +73,9 @@ final ValueNotifier<bool> pendingCameraOcr = ValueNotifier<bool>(false);
 
 /// Android 系统球「立即同步」：Fushi 已被拉到前台，等 app 就绪后跑一轮同步。
 final ValueNotifier<bool> pendingSync = ValueNotifier<bool>(false);
+
+/// 系统球「AI」：Fushi 已被拉到前台，等 app 就绪后打开 AI 浮层（spec §6.4）。
+final ValueNotifier<bool> pendingOpenAi = ValueNotifier<bool>(false);
 
 /// Android 系统球「切换配置」：Fushi 已被拉到前台，等 app 就绪后弹出配置选择。
 final ValueNotifier<bool> pendingProfileSwitch = ValueNotifier<bool>(false);
@@ -126,6 +131,7 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   FloatingBallGlobalAction.switchProfile.storageValue:
       t.floating_ball_action_switch_profile,
   FloatingBallGlobalAction.feedback.storageValue: t.feedback_title,
+  FloatingBallGlobalAction.ai.storageValue: t.floating_ball_action_ai,
   'open_app': t.floating_ball_action_open_app,
   'close': t.floating_ball_action_close,
   'ball': t.reader_floating_ball,
@@ -157,6 +163,7 @@ IconData floatingBallGlobalActionIcon(FloatingBallGlobalAction action) =>
       FloatingBallGlobalAction.sync => FushiIcons.sync,
       FloatingBallGlobalAction.switchProfile => FushiIcons.profiles,
       FloatingBallGlobalAction.feedback => FushiIcons.forum,
+      FloatingBallGlobalAction.ai => FushiIcons.aiAssistant,
     };
 
 /// 「关闭悬浮球」按钮的图标（应用内 / 应用外同一颗）。
@@ -438,6 +445,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingOpenLookupPage.addListener(_onChanged);
     pendingCameraOcr.addListener(_onChanged);
     pendingSync.addListener(_onChanged);
+    pendingOpenAi.addListener(_onChanged);
     pendingProfileSwitch.addListener(_onChanged);
     pendingSystemOcrSetup.addListener(_onChanged);
     feedbackWindowCaptureActive.addListener(_onChanged);
@@ -454,6 +462,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           onOpenLookupPage: () => pendingOpenLookupPage.value = true,
           onOpenCameraOcr: () => pendingCameraOcr.value = true,
           onOpenSync: () => pendingSync.value = true,
+          onOpenAi: () => pendingOpenAi.value = true,
           onOpenProfileSwitch: () => pendingProfileSwitch.value = true,
           // 没有宿主时回 null：原生退回「拉起 Fushi 再选」。
           onProfileMenu: () async => _current?._systemBallProfileMenu(),
@@ -496,6 +505,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingOpenLookupPage.removeListener(_onChanged);
     pendingCameraOcr.removeListener(_onChanged);
     pendingSync.removeListener(_onChanged);
+    pendingOpenAi.removeListener(_onChanged);
     pendingProfileSwitch.removeListener(_onChanged);
     pendingSystemOcrSetup.removeListener(_onChanged);
     feedbackWindowCaptureActive.removeListener(_onChanged);
@@ -620,10 +630,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       ))
         if (FloatingBallGlobalAction.fromStorage(id)
             case final FloatingBallGlobalAction action
-            when floatingBallSystemActionAvailable(
-              action,
-              lookupModuleEnabled: lookupModuleEnabled,
-            ))
+            when (action != FloatingBallGlobalAction.ai || _aiModuleEnabled) &&
+                floatingBallSystemActionAvailable(
+                  action,
+                  lookupModuleEnabled: lookupModuleEnabled,
+                ))
           action.storageValue,
     ];
     final Map<String, String> labels = floatingBallNativeLabels();
@@ -918,6 +929,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         // 同步的结果、冲突裁决与重新登录提示都在主窗里给：先把主窗唤到前台。
         await target.bringMainWindowToFront();
         await _manualSync();
+      case 'ai':
+        // AI 浮层在主窗里：先唤到前台再开（与同步同一语义）。
+        await target.bringMainWindowToFront();
+        await _openAi(null);
       case 'switch_profile':
         // 用户正在别的程序里：在球旁弹原生配置菜单、原地切，不唤起主窗。
         await _desktopSwitchProfile(anchor);
@@ -1126,6 +1141,16 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     });
   }
 
+  /// 系统球「AI」：app 就绪后打开 AI 浮层（操作目录要用已初始化的 AppModel）。
+  void _flushOpenAi() {
+    if (!pendingOpenAi.value) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!pendingOpenAi.value) return;
+      pendingOpenAi.value = false;
+      unawaited(_openAi(null));
+    });
+  }
+
   /// 系统球「切换配置」：app 就绪后弹出配置选择（配置列表要用已初始化的数据库）。
   void _flushProfileSwitch() {
     if (!pendingProfileSwitch.value) return;
@@ -1163,6 +1188,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   }
 
   // ── 全局按钮 ────────────────────────────────────────────────────────
+
+  /// 「AI」模块开着（关掉时球上不出 AI 按钮，spec §6.4）。
+  bool get _aiModuleEnabled =>
+      ref.read(appProvider).moduleVisibility.isEnabled(ModuleId.ai);
 
   BuildContext? get _navigatorContext =>
       ref.read(appProvider).navigatorKey.currentContext;
@@ -1306,6 +1335,14 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       await desktopSystemBallActionTarget.bringMainWindowToFront();
       _toast(t.floating_ball_profile_switch_failed);
     }
+  }
+
+  /// AI：在当前页上方弹 AI 浮层，带上场景给的上下文（spec §6.4）。没指派提供商时
+  /// [openAiAgent] 只引导去设置、不发请求。
+  Future<void> _openAi(FloatingBallSceneSnapshot? scene) async {
+    final BuildContext? ctx = _navigatorContext;
+    if (ctx == null) return;
+    await openAiAgent(ctx, uiContext: aiAgentUiContextFromScene(scene));
   }
 
   /// 反馈：截下当前页面再打开反馈中心。原生窗口快照会拍到球，截图期间球由
@@ -1512,6 +1549,12 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           label: t.feedback_title,
           onPressed: () => unawaited(_openFeedback()),
         ),
+        FloatingBallGlobalAction.ai => ReaderHeaderAction(
+          key: const ValueKey<String>('floating_ball_action_ai'),
+          icon: floatingBallGlobalActionIcon(action),
+          label: t.floating_ball_action_ai,
+          onPressed: () => unawaited(_openAi(_registry.current)),
+        ),
       };
 
   /// 勾选的按钮 id → 此刻能显示的动作：全局按钮看平台能力，专属按钮看页面此刻
@@ -1523,6 +1566,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final FloatingBallGlobalAction? global =
         FloatingBallGlobalAction.fromStorage(id);
     if (global == null) return scene.actions[id];
+    if (global == FloatingBallGlobalAction.ai && !_aiModuleEnabled) return null;
     return floatingBallGlobalActionAvailable(global)
         ? _globalAction(global)
         : null;
@@ -1543,6 +1587,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _flushOpenLookupPage(appModel);
     _flushCameraOcr();
     _flushSync();
+    _flushOpenAi();
     _flushProfileSwitch();
     _flushSystemOcrSetup();
 

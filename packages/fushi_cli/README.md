@@ -28,13 +28,13 @@ fushi_cli quit              # 落库后退出 app（与关窗口同一条路径�
 | `video` | 作品与刮削（含 `video confirm` 回答待确认候选）、播放器音量 / 音轨 / 主副字幕、字幕导入 / OCR / 转录 / 对轴、在线字幕立即补 / 手动搜 / 点名下载（`video sub-fetch` / `sub-search` / `sub-get`）、字幕位置、着色器、制卡与暂存队列、片段导出、长任务、生成日语字幕（`video subtitle-gen` / `video subtitle-glossary`） |
 | `game`（仅 Windows） | 游戏库管理与刮削、启动 / 附着 / 停止、文本线程与当前台词、音轨与补录、分阶段能力状态、制卡、内嵌查词模式与截图校准 |
 
-app 侧路由在 `fushi/lib/src/platform/desktop/ctl/ctl_*.dart`，CLI 侧命令在 `lib/src/commands/*_commands.dart`；
+app 侧路由在 `fushi/lib/src/ops/ctl_*.dart`，CLI 侧命令在 `lib/src/commands/*_commands.dart`；
 每条路由都调用 app 里 UI 按钮背后的同一个方法，不另写业务逻辑。破坏性操作（删除、恢复备份、覆盖）必须加
 `--yes`；需要用户同意的上传 / LLM 处理用显式参数（`--consent-upload` / `--consent-llm`）表态，不在 app 里弹框；
 凭据只经 stdin 或环境变量传入。长任务立即返回任务 id，用对应的 `job` / `task get --wait` 查进度、`cancel` 取消，
 进入写盘阶段后拒绝取消。
 
-**新增 UI 操作必须同时接 ctl 路由与 CLI 命令**：`fushi/test/platform/desktop/ctl/ctl_cli_route_coverage_guard_test.dart`
+**新增 UI 操作必须同时接 ctl 路由与 CLI 命令**：`fushi/test/ops/ctl_cli_route_coverage_guard_test.dart`
 双向钉死「每条路由都有 CLI 命令、每条 CLI 请求都落到路由」；设置页动作由
 `fushi/test/settings/settings_cli_action_coverage_test.dart` 要求声明 CLI 入口。
 

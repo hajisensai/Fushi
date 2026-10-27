@@ -5,6 +5,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/ai_agent_history_page.dart';
+import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/src/pages/implementations/ai_interconnect_host_row.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
@@ -263,6 +265,34 @@ SettingsDestination buildAiDestination() {
       // 导入后自动整理的开关（设备本地，默认关；副标题就是「会发送什么」的完整说明，
       // 用户亲手打开即同意——不另弹模态框）+ 整理记录（按次 / 按处撤销、允许再次
       // 建议被拒绝的分组）。
+      // AI 助手（spec 2026-10-26）：打开对话 + 操作记录（过了会话也能撤销）。
+      SettingsSection(
+        id: 'ai.agent',
+        title: t.ai_feature_agent,
+        items: <SettingsItem>[
+          SettingsActionItem(
+            id: 'ai.agent_open',
+            title: t.ai_agent_title,
+            subtitle: t.ai_feature_agent_summary,
+            icon: FushiIcons.aiAssistant,
+            cli: const SettingsCliAction.unsupported(
+              '对话页只在界面里开；命令行用 fushi_cli ai ask "<一句话>"',
+            ),
+            onTap: (SettingsContext c) => pushAiAgentPage(c.context),
+          ),
+          SettingsActionItem(
+            id: 'ai.agent_history',
+            title: t.ai_agent_history_title,
+            subtitle: t.ai_agent_history_summary,
+            icon: FushiIcons.history,
+            cli: const SettingsCliAction.unsupported(
+              '操作记录只在界面里看；命令行用 fushi_cli ai log / fushi_cli ai undo <id>',
+            ),
+            onTap: (SettingsContext c) =>
+                openAiAgentHistoryPage(c.context, c.appModel),
+          ),
+        ],
+      ),
       SettingsSection(
         id: 'ai.library_organize',
         title: t.ai_feature_library_organize,

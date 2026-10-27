@@ -1,3 +1,5 @@
+import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -749,6 +751,8 @@ String buildSpreadPageHtml({
   required int swipeDistThreshold,
   required int swipeFastDistThreshold,
   required int swipeFastVelocity,
+  // BUG-3796：本次导航的代际，随 spreadReady 回报，Dart 侧据此丢弃晚到的旧文档就绪消息。
+  required int navigationGeneration,
   String keyBridgeScript = '',
   // 折叠屏书本姿态：两页之间让出的铰链缝（逻辑像素，fushiHingeGutterPx）。0 = 无缝。
   double gutterPx = 0,
@@ -852,7 +856,7 @@ $kPagedWheelGestureHelperJs
   function signalReady(){
     if (signaled) return;
     signaled = true;
-    window.flutter_inappwebview.callHandler('spreadReady');
+    window.flutter_inappwebview.callHandler('spreadReady', $navigationGeneration);
   }
   // TODO-1229：等两张整页图 decode 完（或 error）再发 spreadReady，让跨章冷却窗
   // 重锚对齐图片真实可见时刻，避免大图 decode 期间冷却窗过早过期被残余滚轮二次跨章。
