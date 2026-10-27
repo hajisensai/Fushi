@@ -239,16 +239,21 @@ void main() {
         );
         result('播放器设置按钮出现', hasButton);
         await settle(5000);
-        // 失败页是另一条问题（YouTube 的 themeRefresh 改址把首个主框架导航中止成
-        // 「connection was stopped」，失败页留在已成功的新文档上），本探针只记录、不判红。
-        log(
-          'NOTE 失败页盖在 WebView 上=${tab.error != null} ${tab.error?.description ?? ''}',
+        // 失败页：YouTube 的 themeRefresh 改址曾把被顶掉的首个导航报成
+        // 「connection was stopped」盖在新文档上（BUG-3856，已修）。
+        result(
+          '没有失败页盖在已加载的页面上 ${tab.error?.description ?? ''}',
+          tab.error == null,
         );
-        if (tab.error != null) {
-          // 取证继续：清掉失败页，让指针打到 WebView 上（失败页本身另记）。
-          tab.setError(null);
-          await settle(800);
-        }
+        result(
+          '扩展播放器菜单按钮出现',
+          await waitFor(
+            () async =>
+                await js('!!document.getElementById("fushi-player-btn")') ==
+                true,
+            timeout: const Duration(seconds: 30),
+          ),
+        );
 
         // WebView widget 在 Flutter 里的全局矩形 → CSS px 的换算。
         final Finder webFinder = find.byType(InAppWebView);
