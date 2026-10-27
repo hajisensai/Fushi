@@ -2450,6 +2450,20 @@ class AppModel with ChangeNotifier {
     );
   }
 
+  /// 查词结果顶部下拉是否清空查询（见 [PreferencesRepository.lookupPagePullToClear]）。
+  /// 偏好还没装好（测试替身没跑 initialise）时按默认值——与
+  /// [librarySentencesEnabled] 同一纪律，判据放在 getter 自己身上。
+  bool get lookupPagePullToClear => _prefsRepo?.lookupPagePullToClear ?? true;
+  Future<void> setLookupPagePullToClear(bool value) =>
+      prefsRepo.setLookupPagePullToClear(value);
+
+  /// 进入查词页 / 清空查询时是否自动弹软键盘（见
+  /// [PreferencesRepository.lookupPageAutoShowKeyboard]）。未初始化按默认值，同上。
+  bool get lookupPageAutoShowKeyboard =>
+      _prefsRepo?.lookupPageAutoShowKeyboard ?? true;
+  Future<void> setLookupPageAutoShowKeyboard(bool value) =>
+      prefsRepo.setLookupPageAutoShowKeyboard(value);
+
   /// 查词页按「返回上一级」（默认 Esc）是否最小化主窗（桌面；见
   /// [PreferencesRepository.lookupPageEscapeMinimizesWindow]）。
   bool get lookupPageEscapeMinimizesWindow =>

@@ -314,9 +314,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true，D-L2）：查词弹窗「我库里的例句」区块（作品图谱 L4）。关掉时弹窗不渲染、
   // 也不再往语料库喂入（索引留在本机，再开时增量补齐）。常量 [kLibrarySentencesEnabledPrefKey]。
   'lookup_library_sentences',
+  // bool（默认 true = 原行为）：进入查词页（导航点「查词」）以及清空查询后自动
+  // 聚焦搜索框、弹出软键盘（反馈 cczhbM7ZOI）。关掉后只有用户点搜索框才弹。
+  'lookup_page_auto_show_keyboard',
   // bool（默认 false，桌面端）：查词页按「返回上一级」直接最小化主窗（一键收窗
   // 回到之前的程序），不走关弹窗 → 清查询的阶梯。
   'lookup_page_escape_minimizes_window',
+  // bool（默认 true = 原行为）：查词结果滚到顶后继续下拉 = 清空查询、回到搜索
+  // 历史（反馈 3D-JH966Kr）。关掉后下拉不再清空。
+  'lookup_page_pull_to_clear',
   'low_memory_mode',
   // String（`MangaBackground.key`，默认 `black`）：页图周围留白的底色。
   'manga_background',
