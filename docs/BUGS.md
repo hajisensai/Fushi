@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3411 条。点号进各自文件。
+> 共 3412 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3808](bugs/BUG-3808-mdx-placeholder-title-collision.md) | ✅ | ✅ | 无标题 mdx 都被当成同一本「Title (No HTML code allowed)」 |
 | [BUG-3807](bugs/BUG-3807-stale-ctrl-wheel-zoom.md) | ✅ | ✅ | Ctrl 抬起落在 WebView2 后字幕列表滚轮变成缩放字号 |
 | [BUG-3806](bugs/BUG-3806-settings-textfield-stale-after-profile-switch.md) | ✅ | ✅ | 切换 Profile 后设置输入框仍显示上一个 Profile 的值 |
 | [BUG-3805](bugs/BUG-3805-reader-arrow-reversed-binding-overridden.md) | ✅ | ✅ | 方向键改绑成相反翻页方向仍被阅读方向校正覆盖 |
