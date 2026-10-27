@@ -226,7 +226,12 @@ class SitePreviewCursor {
           animation: Listenable.merge(<Listenable>[_position, _press]),
           builder: (BuildContext context, Widget? child) => CustomPaint(
             size: Size.infinite,
-            painter: _CursorPainter(_position.value, _press.value),
+            // 位置记的是全局坐标；Overlay 不一定贴着窗口左上（app 自绘标题栏下方才是
+            // Navigator），画之前换回 Overlay 自己的坐标，否则指针整体偏一个标题栏高。
+            painter: _CursorPainter(
+              _position.value - _overlayOrigin(),
+              _press.value,
+            ),
           ),
         ),
       ),
@@ -243,7 +248,15 @@ class SitePreviewCursor {
     return cursor;
   }
 
+  /// 位置（全局逻辑坐标）。
   Offset get position => _position.value;
+
+  Offset _overlayOrigin() {
+    final RenderObject? box = _overlay.context.findRenderObject();
+    return box is RenderBox && box.hasSize
+        ? box.localToGlobal(Offset.zero)
+        : Offset.zero;
+  }
 
   /// 把指针条目挪回最上层（新弹出的弹窗 / 路由会压住它）。
   void raise() {

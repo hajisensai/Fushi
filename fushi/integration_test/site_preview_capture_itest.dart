@@ -310,6 +310,7 @@ Future<void> _mineFromPopup(
 ) async {
   final int before = anki.notes.length;
   final Offset? target = await _mineButtonCenter(popup);
+  debugPrint('[site-preview] mine button target=$target');
   if (target != null) {
     await cursor.moveTo(tester, target);
     await cursor.click(
@@ -560,7 +561,7 @@ Future<void> _sceneVideo(_Ctx c) async {
   expect(wordRect, isNotNull, reason: '字幕上应能定位到「$word」');
   // 弹窗按被点字的真实字形框定位（钩子默认锚点是固定占位矩形）。
   final Rect anchor = _paragraphCharRect(tester, word, 0)!;
-  await cursor.moveTo(tester, anchor.center + const Offset(4, 6));
+  await cursor.moveTo(tester, anchor.center);
   final Stopwatch clickAt = Stopwatch();
   await cursor.click(
     tester,
@@ -729,10 +730,7 @@ Future<void> _sceneAudiobook(_Ctx c) async {
   await _hold(tester, const Duration(milliseconds: 500));
 
   final Map<String, Object?> pt = await targetPoint();
-  await cursor.moveTo(
-    tester,
-    _webViewToGlobal(tester, webView, pt) + const Offset(4, 6),
-  );
+  await cursor.moveTo(tester, _webViewToGlobal(tester, webView, pt));
   final Stopwatch clickAt = Stopwatch();
   await cursor.click(
     tester,
@@ -895,7 +893,7 @@ Future<void> _sceneManga(_Ctx c) async {
   final Map<String, Object?> pt = await targetPoint();
   await cursor.moveTo(
     tester,
-    _webViewToGlobal(tester, webView.first, pt) + const Offset(4, 6),
+    _webViewToGlobal(tester, webView.first, pt),
     duration: const Duration(milliseconds: 900),
   );
   final Stopwatch clickAt = Stopwatch();
@@ -957,7 +955,17 @@ Future<void> _sceneGal(_Ctx c) async {
   );
   final PhysicalRect rect = await _resizeClient(tester, _kSceneSize);
   await _hold(tester, const Duration(milliseconds: 1500));
-  final Rect charRect = _StandInGamePage.charRect(geo, index, _kSceneSize);
+  // 字格几何按替身页自己的尺寸算，再换成全局坐标：页面在 app 自绘标题栏下方，
+  // 不是从窗口左上开始。
+  final RenderBox pageBox = tester.renderObject<RenderBox>(
+    find.byType(_StandInGamePage),
+  );
+  final Rect charRect = _StandInGamePage.charRect(
+    geo,
+    index,
+    pageBox.size,
+  ).shift(pageBox.localToGlobal(Offset.zero));
+  debugPrint('[site-preview] gal char rect=$charRect page=${pageBox.size}');
   void lookupWord() => lookup.lookup(
     SrsCardLookupRequest(
       term: lookupQueryFromIndex(text, index),
@@ -989,7 +997,7 @@ Future<void> _sceneGal(_Ctx c) async {
   tl.playAudio(_demoPath(line['voice']! as String));
   // 等这句语音念完一大半再点词。
   await _hold(tester, const Duration(milliseconds: 2600));
-  await cursor.moveTo(tester, charRect.center + const Offset(4, 6));
+  await cursor.moveTo(tester, charRect.center);
   final Stopwatch clickAt = Stopwatch();
   await cursor.click(
     tester,
