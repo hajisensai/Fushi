@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_sync.dart';
 import 'package:path/path.dart' as p;
 
@@ -214,12 +215,55 @@ class LeaderboardStore {
     await tmp.rename(target.path);
   }
 
-  /// 删除本机账户文件（服务端账户不受影响）。
+  /// 自己的公开资料（昵称 / 头像路径 / 可见性…，即 `LeaderboardSelf.toJson()`）的本机
+  /// 缓存：`profile_<id>.self.json`。冷启动时首页头像先画它，不必等 `/v1/me` 联网回来
+  /// （反馈 hDfesbQvxB：iOS 冷启动网络还没就绪，`me()` 超时，头像整个进程空白）。
+  /// 只含服务端公开给自己的字段，不含钥匙；与账户文件同目录、同样不进备份。
+  File get selfCacheFile => File(
+    p.join(supportRoot.path, 'leaderboard', 'profile_$profileId.self.json'),
+  );
+
+  /// 读缓存的自己；不存在 / 坏了 / 不是 [accountId] 这个账户的返回 null（坏文件记日志，
+  /// 当没有缓存——下次联网成功会覆盖它）。
+  Future<LeaderboardSelf?> readSelf({required String accountId}) async {
+    final File f = selfCacheFile;
+    if (!await f.exists()) return null;
+    try {
+      final Object? decoded = jsonDecode(await f.readAsString());
+      if (decoded is! Map<Object?, Object?>) {
+        throw const FormatException('not a JSON object');
+      }
+      final LeaderboardSelf self = LeaderboardSelf.fromJson(
+        decoded.cast<String, dynamic>(),
+      );
+      return self.account.id == accountId ? self : null;
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log(
+        'LeaderboardStore.readSelf',
+        'corrupt leaderboard self cache for profile $profileId '
+            '(${e.runtimeType}); ignored',
+        st,
+      );
+      return null;
+    }
+  }
+
+  /// 原子写缓存的自己（同 [write]：临时文件 + rename）。
+  Future<void> writeSelf(LeaderboardSelf self) async {
+    final File target = selfCacheFile;
+    await target.parent.create(recursive: true);
+    final File tmp = File('${target.path}.tmp');
+    await tmp.writeAsString(jsonEncode(self.toJson()), flush: true);
+    await tmp.rename(target.path);
+  }
+
+  /// 删除本机账户文件与资料缓存（服务端账户不受影响）。退出后不留上一个账户的头像。
   Future<void> delete() async {
-    final File f = file;
-    if (await f.exists()) await f.delete();
-    final File tmp = File('${f.path}.tmp');
-    if (await tmp.exists()) await tmp.delete();
+    for (final File f in <File>[file, selfCacheFile]) {
+      if (await f.exists()) await f.delete();
+      final File tmp = File('${f.path}.tmp');
+      if (await tmp.exists()) await tmp.delete();
+    }
   }
 
   static Future<void> _restrictToOwner(String path) async {

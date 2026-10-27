@@ -741,6 +741,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Sentences from your library':
       'test/pages/popup_settings_injection_memo_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
+  // 查词页两个开关（反馈 3D-JH966Kr / cczhbM7ZOI）：生效点在 HomeDictionaryPage
+  // （结果顶部下拉是否清空、导航点进 / 清空后是否聚焦搜索框），开 / 关两态都有
+  // 真 widget 行为断言。
+  'lookup/Pull down at the top to clear the search':
+      'test/pages/home_dictionary_lookup_page_toggles_test.dart',
+  'lookup/Focus search when opening Lookup':
+      'test/pages/home_dictionary_lookup_page_toggles_test.dart',
   // 弹出查词 / 浏览器扩展弹窗的独立尺寸：生效点是有效尺寸解析（解锁前跟随
   // app 内共享值、解锁后用自身宽高），由 AppModel 接线测试咬住；窗口真尺寸要
   // 原生弹出窗 / 扩展宿主，widget 测不到。

@@ -98,6 +98,27 @@ bool mineToastShown(
   MineToastStatus.addedWithWarning || MineToastStatus.failed => true,
 };
 
+/// 制卡结果通知「该不该说」的**唯一裁决点**（反馈 3aFpRYC6a1 / jYEPxVSrts /
+/// iH6RY1kqQn：关了开关后阅读器、弹窗内提示、视频 OSD 仍在说）。
+///
+/// 制卡结果有三个说出口，全部先问这里：
+/// * 底部 toast —— [FushiToast.showMine]；
+/// * 查词弹窗按钮旁的就地提示 —— `MineFailureNotice.settle`（重复 / 失败原因随回包
+///   交给 popup.js，被裁掉时回包标 `hostReported`、去掉 `message`，弹窗不再说）；
+/// * 视频页左上角 OSD —— `_showMineOsd`（视频页禁止 import toast，见文件头）。
+///
+/// 住在这个文件而不是 `fushi_toast.dart`，理由同文件头：视频页要用它。
+/// 各 entry point 拿到 `AppModel` 后经 [filter] 装上读偏好的闭包
+/// （`AppModel.mineNoticeShown` → [mineToastShown]）；没装时一律说（存量行为）。
+abstract final class MineNotices {
+  static bool Function(MineToastStatus status) filter = _showEvery;
+
+  static bool _showEvery(MineToastStatus status) => true;
+
+  /// 这一类制卡结果此刻该不该告诉用户。闭包每次现读偏好，设置页改完立即生效。
+  static bool shown(MineToastStatus status) => filter(status);
+}
+
 /// 把 [MineToastStatus] 映射成 toast 的 (背景色, 前景色, 图标)。用固定 Material 色阶
 /// （绿/橙/红/蓝）而非主题取色，保证四态在任意主题下都语义清晰、对比达标；也让无
 /// BuildContext 的降级路径（独立弹窗 Activity）能直接复用同一配色。

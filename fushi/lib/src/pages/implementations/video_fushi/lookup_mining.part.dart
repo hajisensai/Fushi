@@ -1169,11 +1169,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 居中、更大、停留更久，区别于音量/亮度小角标，避免用户「制卡了没反馈」。
     // describeMineOutcome 早就算出了 status，此前只被拿去选 prominent 布尔、颜色
     // 整个丢掉，于是视频页制卡成功与失败长得一模一样。透传语义即可对齐其它入口。
-    _showOsd(
-      described.message,
-      prominent: true,
-      severity: mineToastSeverity(described.status),
-    );
+    // 经 _showMineOsd 过「制卡提示」开关（关掉成功 / 重复提示后不再弹）。
+    _showMineOsd(described.message, described.status);
     return result;
   }
 

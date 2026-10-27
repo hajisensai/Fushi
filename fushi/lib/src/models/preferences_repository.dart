@@ -1518,6 +1518,27 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 查词结果滚到顶后继续下拉 = 清空查询、回到搜索历史。默认 ON（原行为）；用户
+  /// 往上翻结果时常顶到头被甩回历史（反馈 3D-JH966Kr），关掉后下拉什么都不做。
+  bool get lookupPagePullToClear =>
+      getPref('lookup_page_pull_to_clear', defaultValue: true) as bool;
+
+  Future<void> setLookupPagePullToClear(bool value) async {
+    await setPref('lookup_page_pull_to_clear', value);
+    notifyListeners();
+  }
+
+  /// 进入查词页（导航点「查词」）与查询被清空时，是否自动聚焦搜索框（移动端随之
+  /// 弹出软键盘，BUG-2687 的有意行为）。默认 ON；键盘在小屏上占掉大半屏（反馈
+  /// cczhbM7ZOI），关掉后只有用户自己点搜索框才弹。显式「聚焦搜索框」热键不受影响。
+  bool get lookupPageAutoShowKeyboard =>
+      getPref('lookup_page_auto_show_keyboard', defaultValue: true) as bool;
+
+  Future<void> setLookupPageAutoShowKeyboard(bool value) async {
+    await setPref('lookup_page_auto_show_keyboard', value);
+    notifyListeners();
+  }
+
   bool get isFirstTimeSetup =>
       getPref('first_time_setup', defaultValue: true) as bool;
 

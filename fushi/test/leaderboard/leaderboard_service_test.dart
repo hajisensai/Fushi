@@ -22,6 +22,11 @@ import 'package:image/image.dart' as img;
 class _FakeServer {
   final List<http.Request> requests = <http.Request>[];
   String accountId = 'ServerAccount001';
+  String nickname = 'N';
+  String? avatar;
+
+  /// `/v1/me` 永不回（模拟 iOS 冷启动网络还没就绪：请求超时）。
+  bool hangMe = false;
   final Set<String> shelfWorks = <String>{};
   bool failShelf = false;
 
@@ -67,9 +72,9 @@ class _FakeServer {
 
   Map<String, dynamic> _self() => <String, dynamic>{
     'id': accountId,
-    'nickname': 'N',
+    'nickname': nickname,
     'discriminator': 7,
-    'avatar': null,
+    'avatar': avatar,
     'visibility': 'public',
     'createdAt': 1,
     'shelfCount': shelfCount,
@@ -91,7 +96,10 @@ class _FakeServer {
     if (path == '/v1/me' && r.method == 'DELETE') {
       return _json(<String, dynamic>{'ok': true});
     }
-    if (path == '/v1/me') return _json(_self());
+    if (path == '/v1/me') {
+      if (hangMe) return Completer<http.Response>().future;
+      return _json(_self());
+    }
     if (path == '/v1/me/avatar') {
       return _json(<String, dynamic>{'avatar': '/img/avatars/x.jpg'});
     }
@@ -400,6 +408,129 @@ void main() {
     await s.signOutLocally();
     expect(server.requests, isEmpty);
     expect(await store().read(), isNull);
+  });
+
+  group('自己资料的本机缓存（反馈 hDfesbQvxB：iOS 冷启动首页头像空白）', () {
+    test('冷启动：load 读出上次的昵称 / 头像，不等网络；selfFresh=false', () async {
+      server.avatar = '/img/avatars/me.jpg';
+      final LeaderboardService first = service();
+      await first.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      expect(first.selfFresh, isTrue);
+      expect(store().selfCacheFile.existsSync(), isTrue);
+
+      // 重启：网络还没就绪（/v1/me 挂死）。
+      server
+        ..requests.clear()
+        ..hangMe = true;
+      final LeaderboardService cold = service();
+      int notified = 0;
+      cold.addListener(() => notified++);
+      await cold.load();
+      expect(server.requests, isEmpty, reason: 'load 只读本机文件');
+      expect(cold.status, LeaderboardStatus.active);
+      expect(cold.self, isNotNull, reason: '冷启动就要有头像可画');
+      expect(cold.self!.account.avatar, '/img/avatars/me.jpg');
+      expect(cold.self!.account.nickname, 'N');
+      expect(cold.selfFresh, isFalse, reason: '缓存不是新鲜值，首页仍要刷新');
+      expect(notified, greaterThan(0), reason: 'load 完成要通知，首页据此重建');
+    });
+
+    test('刷新回来覆盖缓存：内存与文件都换成服务端新值', () async {
+      final LeaderboardService first = service();
+      await first.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+
+      server
+        ..nickname = 'Renamed'
+        ..avatar = '/img/avatars/new.jpg';
+      final LeaderboardService cold = service();
+      await cold.load();
+      expect(cold.self!.account.nickname, 'N');
+      await cold.refreshSelf();
+      expect(cold.selfFresh, isTrue);
+      expect(cold.self!.account.nickname, 'Renamed');
+
+      final LeaderboardService again = service();
+      await again.load();
+      expect(again.self!.account.nickname, 'Renamed');
+      expect(again.self!.account.avatar, '/img/avatars/new.jpg');
+    });
+
+    test('改资料 / 换头像同样写缓存', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      server.avatar = '/img/avatars/x.jpg';
+      await s.setAvatarFromFile('/whatever.png');
+      final LeaderboardService again = service();
+      await again.load();
+      expect(again.self!.account.avatar, '/img/avatars/x.jpg');
+    });
+
+    test('退出删缓存：下次冷启动不显示上一个账户的头像', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      await s.signOutLocally();
+      expect(store().selfCacheFile.existsSync(), isFalse);
+      final LeaderboardService again = service();
+      await again.load();
+      expect(again.self, isNull);
+    });
+
+    test('缓存属于别的账户（换号后残留）时不用', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      await store().writeSelf(
+        LeaderboardSelf.fromJson(<String, dynamic>{
+          'id': 'SomeoneElse',
+          'nickname': 'X',
+          'discriminator': 1,
+          'visibility': 'public',
+          'createdAt': 1,
+        }),
+      );
+      final LeaderboardService again = service();
+      await again.load();
+      expect(again.status, LeaderboardStatus.active);
+      expect(again.self, isNull);
+    });
+
+    test('缓存文件坏了：当没有缓存，账户照常可用', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      store().selfCacheFile.writeAsStringSync('{not json');
+      final LeaderboardService again = service();
+      await again.load();
+      expect(again.status, LeaderboardStatus.active);
+      expect(again.self, isNull);
+    });
+
+    test('请求在飞时退出：迟到的资料不落回内存、也不重新写出缓存', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      server.hangMe = true;
+      final LeaderboardService cold = service();
+      await cold.load();
+      server.hangMe = false;
+      final Future<LeaderboardSelf> inFlight = cold.refreshSelf();
+      await cold.signOutLocally();
+      await inFlight;
+      expect(cold.self, isNull);
+      expect(store().selfCacheFile.existsSync(), isFalse);
+    });
+
+    test('首页头像：有缓存也要在 load 后联网刷新一次（判 selfFresh 不判 self）', () {
+      // _HomeAvatarPill 是私有组件，且 load 的真实文件 IO 在 widget 测试的
+      // fakeAsync 里不推进；这里钉它的判据：旧写法 `self != null` 遇到缓存就永远
+      // 不刷新，昵称 / 头像会一直停在上次。
+      final String src = File(
+        'lib/src/pages/implementations/home_dashboard_page.dart',
+      ).readAsStringSync();
+      final int start = src.indexOf('void _maybeRefreshSelf(');
+      expect(start, greaterThan(0));
+      final String body = src.substring(start, src.indexOf('\n  }', start));
+      expect(body, contains('service.selfFresh'));
+      expect(body, isNot(contains('service.self != null')));
+      expect(body, contains('LeaderboardStatus.active'));
+    });
   });
 
   test('Profile 隔离：不同 Profile 读写各自的文件', () async {

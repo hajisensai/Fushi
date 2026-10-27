@@ -230,6 +230,39 @@ SettingsDestination buildLookupDestination() {
             },
             defaultValue: true,
           ),
+          // 反馈 3D-JH966Kr：查词页结果顶部下拉 = 清空查询回到历史。默认开（原行为），
+          // 往上翻结果顶到头被甩回历史的用户可以关掉。
+          SettingsSwitchItem(
+            id: 'lookup.page_pull_to_clear',
+            title: t.lookup_page_pull_to_clear,
+            subtitle: t.lookup_page_pull_to_clear_hint,
+            icon: FushiIcons.arrowDown,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lookupPagePullToClear,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setLookupPagePullToClear(value);
+              settingsContext.refresh();
+            },
+            defaultValue: true,
+          ),
+          // 反馈 cczhbM7ZOI：进入查词页 / 清空查询时自动弹键盘（BUG-2687 的有意行为）。
+          // 默认开（原行为）；关掉后只有点搜索框才聚焦 / 弹键盘。桌面上同一判据管
+          // 「自动聚焦」，所以不按平台隐藏。
+          SettingsSwitchItem(
+            id: 'lookup.page_auto_show_keyboard',
+            title: t.lookup_page_auto_show_keyboard,
+            subtitle: t.lookup_page_auto_show_keyboard_hint,
+            icon: FushiIcons.keyboard,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lookupPageAutoShowKeyboard,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setLookupPageAutoShowKeyboard(
+                value,
+              );
+              settingsContext.refresh();
+            },
+            defaultValue: true,
+          ),
           // TODO-861②（移植 Hoshi `07b5c09`）：扫描非日文文本。关闭后选区/查词遇非
           // 日文码点即停（不吃相邻拉丁词/数字）。默认 true = 现状，向后兼容。开着的
           // 阅读器经 notifyReaderSettingsChanged → updateLive 热更新

@@ -191,9 +191,10 @@ extension _ReaderMining on _ReaderFushiPageState {
           '(lookupCue=null, sentenceRange=${_cachedSentenceRange != null}, '
           'draftSentences=${_miningDraft.length}).',
         );
-        FushiToast.show(
-            msg: t.card_mined_without_sentence_audio,
-            severity: ToastSeverity.warning);
+        FushiToast.showMine(
+          msg: t.card_mined_without_sentence_audio,
+          status: MineToastStatus.addedWithWarning,
+        );
       }
     }
 
@@ -206,13 +207,13 @@ extension _ReaderMining on _ReaderFushiPageState {
             : 'sentence audio export failed: $sentenceAudioFailure',
         StackTrace.current,
       );
-      FushiToast.show(
+      FushiToast.showMine(
         msg: t.card_export_failed_detail(
           reason: sentenceAudioFailure == null
               ? 'sentence audio export failed'
               : 'sentence audio export failed: $sentenceAudioFailure',
         ),
-        severity: ToastSeverity.error,
+        status: MineToastStatus.failed,
       );
       return (context: null, cleanup: cleanupSentenceAudioTempDir);
     }
@@ -395,9 +396,9 @@ extension _ReaderMining on _ReaderFushiPageState {
       unawaited(_recordMinedSentence(fields, miningContext, outcome.noteId));
     }
     if (described.success) {
-      FushiToast.show(
-          msg: described.message,
-          severity: mineToastSeverity(described.status));
+      // 制卡结果一律走 showMine：它过「制卡提示」开关（反馈 iH6RY1kqQn——此前这里
+      // 直接 FushiToast.show，关掉「制卡成功提示」后阅读时照样弹）。
+      FushiToast.showMine(msg: described.message, status: described.status);
       // TODO-270 F/G：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，
       // 两端在同一事件归零、不漂移）。下一次查词从空草稿重新累积。
       _miningDraft.clear();
@@ -443,9 +444,7 @@ extension _ReaderMining on _ReaderFushiPageState {
     // 卡片不计入统计（不是新制一张），成功仍保留「最新可改」第三态、带回同一 noteId。
     final described = describeMineOutcome(outcome, overwrite: true);
     if (described.success) {
-      FushiToast.show(
-          msg: described.message,
-          severity: mineToastSeverity(described.status));
+      FushiToast.showMine(msg: described.message, status: described.status);
       return MinePopupResult.mined(outcome);
     }
     return MinePopupResult.failed(outcome, message: described.message);
@@ -473,9 +472,10 @@ extension _ReaderMining on _ReaderFushiPageState {
     if (context.sentence.trim().isEmpty) {
       debugPrint('[mine-diag] empty sentence: no sentence captured for this '
           'selection (JS sentence extraction returned empty or no selection).');
-      FushiToast.show(
-          msg: t.card_mined_no_sentence_captured,
-          severity: ToastSeverity.warning);
+      FushiToast.showMine(
+        msg: t.card_mined_no_sentence_captured,
+        status: MineToastStatus.addedWithWarning,
+      );
       return;
     }
 
@@ -495,9 +495,10 @@ extension _ReaderMining on _ReaderFushiPageState {
     if (!AnkiHandlebarOptions.anyFieldConsumesSentence(fieldMappings)) {
       debugPrint('[mine-diag] sentence non-empty but no field maps {sentence}/'
           '{cue-sentence}; card will have an empty sentence field.');
-      FushiToast.show(
-          msg: t.card_mined_unmapped_sentence_field,
-          severity: ToastSeverity.warning);
+      FushiToast.showMine(
+        msg: t.card_mined_unmapped_sentence_field,
+        status: MineToastStatus.addedWithWarning,
+      );
       return;
     }
 
@@ -506,9 +507,10 @@ extension _ReaderMining on _ReaderFushiPageState {
         !AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(fieldMappings)) {
       debugPrint('[mine-diag] sentence audio attached but no field maps '
           '{sentence-audio}; the audio will not land on the card.');
-      FushiToast.show(
-          msg: t.card_mined_unmapped_sentence_audio_field,
-          severity: ToastSeverity.warning);
+      FushiToast.showMine(
+        msg: t.card_mined_unmapped_sentence_audio_field,
+        status: MineToastStatus.addedWithWarning,
+      );
     }
   }
 

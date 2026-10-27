@@ -218,8 +218,10 @@ void main() {
       expect(
         compactCode(source),
         contains(
+          // 走 showMine（addedWithWarning：关掉「制卡成功提示」也照样弹）。
           compactCode(
-              'FushiToast.show(msg: t.card_mined_without_sentence_audio,'),
+              'FushiToast.showMine(msg: t.card_mined_without_sentence_audio,'
+              ' status: MineToastStatus.addedWithWarning,'),
         ),
         reason:
             'A card created with audio files present but no resolvable sentence '
