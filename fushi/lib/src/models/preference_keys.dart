@@ -41,6 +41,10 @@ const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
+  // bool（默认 false）：本机当互联 host 时，是否允许已配对设备经 `/api/assistant`
+  // 远程使用 AI 助手（会用本机的 AI 指派、调本机操作目录）。与服务端
+  // `ai.agent_for_peers` 同一判据：默认关、用户在设置里亲手打开（设备本地）。
+  'ai_agent_for_peers',
   // 「哪个功能用哪家 AI」的映射。不含凭据，但跟着 ai_providers 一起设备本地：
   // providers 不跨设备，映射跨过去只会指向一个不存在的 id。
   'ai_feature_providers',

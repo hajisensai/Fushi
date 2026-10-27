@@ -1892,6 +1892,14 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     final WebBrowserTab? findTab = active != null && active.findOpen
         ? active
         : null;
+    final List<Widget> statusBars = <Widget>[
+      for (final WebBrowserFeature f in _features)
+        if (f.statusBar(context) case final Widget bar)
+          KeyedSubtree(
+            key: ValueKey<String>('web-browser-status-${f.id}'),
+            child: bar,
+          ),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -1900,6 +1908,16 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
             key: ValueKey<String>('web-browser-find-${findTab.id}'),
             tab: findTab,
           ),
+        // 功能的进行中状态（可取消）：出现 / 消失走尺寸动画，时长取 FushiMotion。
+        AnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          alignment: Alignment.topCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: statusBars,
+          ),
+        ),
         Expanded(
           child: Stack(
             fit: StackFit.expand,

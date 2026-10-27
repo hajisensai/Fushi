@@ -657,6 +657,11 @@ Future<Object?> _getSetting(OpContext context, CtlCall call) async {
   return _settingJson(entry, settings);
 }
 
+/// 控制通道（`fushi_cli config set`、AI 助手的 `settings.set`）能不能写这一行：
+/// [SettingsSwitchItem.uiOnly] 的授权开关只能在设置页里亲手拨。
+bool isCtlWritableSettingItem(SettingsItem? item) =>
+    !(item is SettingsSwitchItem && item.uiOnly);
+
 Future<Object?> _setSetting(OpContext context, CtlCall call) async {
   final SettingsContext settings = _settingsContext(context);
   final _SettingEntry entry = _requireSettingEntry(
@@ -668,6 +673,9 @@ Future<Object?> _setSetting(OpContext context, CtlCall call) async {
   final String raw = '$rawValue';
   if (!entry.visible && !entry.offPage) {
     throw CtlFailure.rejected('设置项「${entry.key}」在当前平台 / 模块 / 状态下不可见，设置页里也改不了');
+  }
+  if (!isCtlWritableSettingItem(entry.item)) {
+    throw CtlFailure.rejected('「${entry.title}」是授权开关，只能在设置页里亲手改');
   }
   if (entry.isSecret && (call.optString('source') ?? 'argv') == 'argv') {
     throw CtlFailure.badRequest(

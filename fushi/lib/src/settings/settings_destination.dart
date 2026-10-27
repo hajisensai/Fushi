@@ -638,10 +638,16 @@ class SettingsSwitchItem extends SettingsItem {
     super.video,
     this.defaultValue,
     this.enabled,
+    this.uiOnly = false,
   });
 
   final SettingsSwitchGetter value;
   final SettingsSwitchChanged onChanged;
+
+  /// 只能在设置页里亲手拨：控制通道（`fushi_cli config set` 与 AI 助手的
+  /// `settings.set`）读得到、写不进去。只给**授权类**开关用（例如「允许已配对设备
+  /// 使用 AI 助手」）——这种开关要是 AI 自己能拨，「用户显式打开」就不成立了。
+  final bool uiOnly;
 
   /// 渲染时求值的可交互性；null / 返回 true = 可操作，false = 置灰禁用（值照旧显示）。
   ///

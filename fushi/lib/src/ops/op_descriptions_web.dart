@@ -44,7 +44,12 @@ List<OpDescription> _describeBrowserOps(
         'Open a web address in the built-in browser (full-screen page; brings '
         'the main window forward). Text that is not an address is searched '
         'with the current search engine. Navigation only: the page content is '
-        'not returned.',
+        'not returned. Loading an address sends a request to that site, which '
+        'cannot be taken back, so the user confirms the address first.',
+    // 浏览器立即请求模型给的地址（路径 / query 里可以夹带模型看到的任何数据），
+    // 这一下出站撤销不了：按 spec §5.2「把数据发给已指派 LLM 以外的第三方」定成
+    // irreversible，确认卡片写明地址、用户点了才打开。
+    risk: OpRisk.irreversible,
     availability: web,
     params: const <OpParam>[
       OpParam.string(
