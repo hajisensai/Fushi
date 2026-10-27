@@ -10,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_archive_extractor.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
@@ -502,9 +503,10 @@ abstract final class MangaArchiveImporter {
             archivePath,
             epubExtraction.path,
           );
-          if (!_isPureImageEpub(book)) {
-            throw const MangaImportException(
-              'EPUB contains readable text pages and is not a pure image manga',
+          final String? rejection = _pureImageEpubRejection(book);
+          if (rejection != null) {
+            throw MangaImportException(
+              'EPUB is not a pure image manga: $rejection',
             );
           }
           await _copyEpubPages(book, staging);
@@ -872,6 +874,7 @@ abstract final class MangaArchiveImporter {
         }
       }
       if (imageCount == 0) {
+        _logEpubRejection(archivePath, 'no image entries in the archive');
         return false;
       }
       // 中央目录看完就关：下面的整包解析自己再开一次文件。
@@ -884,8 +887,13 @@ abstract final class MangaArchiveImporter {
         archivePath,
         extraction.path,
       );
-      return _isPureImageEpub(book);
-    } catch (_) {
+      final String? rejection = _pureImageEpubRejection(book);
+      if (rejection != null) _logEpubRejection(archivePath, rejection);
+      return rejection == null;
+    } catch (e) {
+      // OjZ-K53WBY：此前这里静默 false，用户只看到「不是漫画」，反馈里没有任何
+      // 可定位的线索（解析失败？哪一页有文字？哪张图扩展名不认？）。
+      _logEpubRejection(archivePath, 'probe failed: $e');
       return false;
     } finally {
       opened?.close();
@@ -896,26 +904,44 @@ abstract final class MangaArchiveImporter {
     }
   }
 
-  static bool _isPureImageEpub(EpubBook book) {
+  static bool _isPureImageEpub(EpubBook book) =>
+      _pureImageEpubRejection(book) == null;
+
+  /// 纯图片 EPUB 判定的**否决理由**（null = 是纯图片漫画）。与 [_isPureImageEpub]
+  /// 同一判据，只是把「为什么不是」说出来，供诊断日志用（OjZ-K53WBY）。
+  static String? _pureImageEpubRejection(EpubBook book) {
     final List<int> contentChapters = <int>[
       for (int index = 0; index < book.chapters.length; index++)
         if (book.chapters[index].linear && !book.chapters[index].isNav) index,
     ];
-    if (contentChapters.isEmpty) return false;
+    if (contentChapters.isEmpty) {
+      return 'no linear non-nav spine chapters '
+          '(${book.chapters.length} chapters total)';
+    }
     for (final int index in contentChapters) {
-      if (!book.isImageOnlyChapter(index)) return false;
+      final String chapterHref = book.chapters[index].href;
+      if (!book.isImageOnlyChapter(index)) {
+        return 'chapter #$index $chapterHref is not image-only (has text)';
+      }
       final List<String> refs = book.chapterImageSrcs(index);
-      if (refs.isEmpty) return false;
+      if (refs.isEmpty) return 'chapter #$index $chapterHref has no image';
       for (final String ref in refs) {
-        final String href = resolveImageHref(book.chapters[index].href, ref);
-        if (!kMangaImageExtensions.contains(
-          p.extension(normalizeHref(href)).toLowerCase(),
-        )) {
-          return false;
+        final String href = resolveImageHref(chapterHref, ref);
+        final String extension = p.extension(normalizeHref(href)).toLowerCase();
+        if (!kMangaImageExtensions.contains(extension)) {
+          return 'chapter #$index $chapterHref references non-page image '
+              '$href (extension "$extension")';
         }
       }
     }
-    return true;
+    return null;
+  }
+
+  static void _logEpubRejection(String archivePath, String reason) {
+    engineLog.logDiagnostic(
+      'MangaArchiveImporter',
+      'EPUB not recognised as image manga: ${p.basename(archivePath)}: $reason',
+    );
   }
 
   static Future<void> _copyEpubPages(EpubBook book, Directory staging) async {
