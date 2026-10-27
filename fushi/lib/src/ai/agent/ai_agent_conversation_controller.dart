@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatImage;
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
