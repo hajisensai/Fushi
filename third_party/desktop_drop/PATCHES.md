@@ -12,6 +12,13 @@ tracked, diffable source. Pointed at by `fushi/pubspec.yaml` dependency_override
    it, drag-import shows the forbidden cursor app-wide after opening/closing a
    reader/video/lookup WebView2. Guarded by
    `fushi/test/media/drag_drop/desktop_drop_reinit_test.dart`.
+   BUOxDR9WIJ (2026-10-27) adds a read-only `status` method (is a target still
+   registered on the view HWND, is it still ours, last `RegisterDragDrop`
+   HRESULT, register count, process elevation). A real-app probe
+   (`fushi/integration_test/desktop_drop_registration_probe_itest.dart`) showed
+   the registration is NOT lost across local video / composition WebView2 /
+   window-hosted WebView2 open+close, so the app now verifies via `status` on
+   every page-route pop and re-registers only when it is really gone (logged).
 
 2. TODO-1306 — drag a URL (browser address bar / hyperlink) to import it as a
    stream video. Upstream only extracts file paths on all three desktop platforms,

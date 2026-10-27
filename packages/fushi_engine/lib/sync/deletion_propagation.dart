@@ -129,6 +129,43 @@ bool tombstoneAppliesTo({
 }) =>
     presentSinceAt == null || deletedAt > presentSinceAt;
 
+/// 「把本端这条推给对端」是否被对端的删除墓碑否决（反馈 Et3pmRzo0k）。
+///
+/// 自动同步的内容推送是「本端有 ∧ 对端无 → 推过去」。对端「无」有两种完全不同的来历：
+/// 对端从来没有过，或者对端**有过、被「从所有设备删除」删掉了**。后者推过去等于替用户
+/// 撤销那次删除——对端导入时还会顺手清掉自己的墓碑（重新入库的通用语义），删除意图就此
+/// 蒸发，连带第三台设备也收不到。
+///
+/// 判据与删除确认候选完全同源（[tombstoneAppliesTo]）：[peerTombstones] 里 [mediaTypes]
+/// 任一种对 [itemKeys] 任一个键有墓碑，且该墓碑管得着本端这条（本端存在起始时刻
+/// [presentSinceAt] 早于删除，或时刻未知）→ 否决。删除**之后**才在本端重新加入的条目
+/// （[presentSinceAt] >= deletedAt）不被否决：那是一次新的加入意图，推过去、让对端清掉
+/// 旧墓碑才是对的。
+///
+/// 多个 [mediaTypes]：同一身份可能被不同种类的墓碑覆盖（有声书与它的 EPUB 共享 bookKey，
+/// 删书会连带删掉有声书却只立 `book` 墓碑）。多个 [itemKeys]：同一本书在对端可能按别名
+/// 落地（见 `aliasPeerBookTombstones`）。
+bool peerTombstoneVetoesPush({
+  required DeletionTombstoneEntries peerTombstones,
+  required Iterable<String> mediaTypes,
+  required Iterable<String> itemKeys,
+  required int? presentSinceAt,
+}) {
+  for (final String mt in mediaTypes) {
+    final Map<String, int>? byKey = peerTombstones[mt];
+    if (byKey == null) continue;
+    for (final String key in itemKeys) {
+      final int? deletedAt = byKey[key];
+      if (deletedAt == null) continue;
+      if (tombstoneAppliesTo(
+          deletedAt: deletedAt, presentSinceAt: presentSinceAt)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /// 纯函数：给定两端删除墓碑与两端当前在库条目，算出双向删除传播候选。
 ///
 /// - **deleteRemote**：本地有删除墓碑 ∧ 远端仍在库 → 用户可选「远端也删」。

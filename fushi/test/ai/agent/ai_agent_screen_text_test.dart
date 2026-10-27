@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -40,6 +41,12 @@ class _FakeOcr implements SystemOcrPlatform {
 }
 
 final Uint8List _png = Uint8List.fromList(<int>[1, 2, 3]);
+
+/// 1×1 透明 PNG：chip 缩略图要能真解码。
+final Uint8List _realPng = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA'
+  '60e6kgAAAABJRU5ErkJggg==',
+);
 
 void main() {
   group('captureScreenText（截屏 → OCR → 全文）', () {
@@ -86,6 +93,46 @@ void main() {
         )).status,
         ScreenTextCaptureStatus.empty,
       );
+    });
+
+    test('要图：截图缩过后随结果带回；不要图不带', () async {
+      final ScreenTextCaptureResult withImage = await captureScreenText(
+        keepImage: true,
+        capture: () async => _png,
+        shrink: (Uint8List png) async => Uint8List.fromList(<int>[9]),
+        ocr: _FakeOcr(lines: <String>['字']),
+      );
+      expect(withImage.status, ScreenTextCaptureStatus.ok);
+      expect(withImage.image, <int>[9]);
+
+      final ScreenTextCaptureResult without = await captureScreenText(
+        capture: () async => _png,
+        ocr: _FakeOcr(lines: <String>['字']),
+      );
+      expect(without.image, isNull);
+    });
+
+    test('本平台没有系统 OCR：不识字，只带回截图', () async {
+      final ScreenTextCaptureResult result = await captureScreenText(
+        keepImage: true,
+        recognize: false,
+        capture: () async => _png,
+        shrink: (Uint8List png) async => png,
+        ocr: _FakeOcr(error: Exception('不该被调用')),
+      );
+      expect(result.status, ScreenTextCaptureStatus.unavailable);
+      expect(result.image, _png);
+    });
+
+    test('OCR 没认出字时截图照样带回', () async {
+      final ScreenTextCaptureResult result = await captureScreenText(
+        keepImage: true,
+        capture: () async => _png,
+        shrink: (Uint8List png) async => png,
+        ocr: _FakeOcr(),
+      );
+      expect(result.status, ScreenTextCaptureStatus.empty);
+      expect(result.image, _png);
     });
 
     test('系统 OCR 不可用时带原因（模型没就绪要带用户去配模型）', () async {
@@ -143,10 +190,11 @@ void main() {
     ) async {
       final AiAgentScreenTextAttachment attachment =
           AiAgentScreenTextAttachment(
-            capture: () async => const ScreenTextCaptureResult(
-              ScreenTextCaptureStatus.ok,
-              text: 'こんにちは',
-            ),
+            capture: ({bool keepImage = false, bool recognize = true}) async =>
+                const ScreenTextCaptureResult(
+                  ScreenTextCaptureStatus.ok,
+                  text: 'こんにちは',
+                ),
           );
       addTearDown(attachment.dispose);
       await tester.pumpWidget(
@@ -160,10 +208,10 @@ void main() {
       expect(find.text(t.ai_agent_screen_text_chip(n: '5')), findsOneWidget);
 
       // 发送：文字只跟这一句走，取走即清。
-      expect(attachment.take(), 'こんにちは');
+      expect(attachment.take().text, 'こんにちは');
       await tester.pumpAndSettle();
       expect(find.byKey(kAiAgentScreenTextChipKey), findsNothing);
-      expect(attachment.take(), isNull);
+      expect(attachment.take().text, isNull);
 
       // 再附一次，点 chip 的删除。
       await tester.tap(find.byKey(kAiAgentAttachScreenTextKey));
@@ -179,7 +227,7 @@ void main() {
       bool? offstageDuringCapture;
       final AiAgentScreenTextAttachment attachment =
           AiAgentScreenTextAttachment(
-            capture: () async {
+            capture: ({bool keepImage = false, bool recognize = true}) async {
               offstageDuringCapture = panelRoute?.offstage;
               return const ScreenTextCaptureResult(
                 ScreenTextCaptureStatus.ok,
@@ -222,6 +270,108 @@ void main() {
       expect(offstageDuringCapture, isTrue, reason: '截图时 AI 面板不能在画面里');
       expect(panelRoute!.offstage, isFalse, reason: '截完要把面板放回来');
       expect(find.byKey(kAiAgentScreenTextChipKey), findsOneWidget);
+    });
+
+    testWidgets('模型能收图：截图另起一颗 chip，可单独删；发送时一起取走', (WidgetTester tester) async {
+      bool? askedForImage;
+      final AiAgentScreenTextAttachment attachment =
+          AiAgentScreenTextAttachment(
+            capture: ({bool keepImage = false, bool recognize = true}) async {
+              askedForImage = keepImage;
+              return ScreenTextCaptureResult(
+                ScreenTextCaptureStatus.ok,
+                text: '台词',
+                image: _realPng,
+              );
+            },
+          );
+      addTearDown(attachment.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                AiAgentScreenTextChip(attachment: attachment),
+                AiAgentScreenTextButton(
+                  attachment: attachment,
+                  keepImage: true,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(kAiAgentAttachScreenTextKey));
+      await tester.pumpAndSettle();
+      expect(askedForImage, isTrue);
+      expect(find.byKey(kAiAgentScreenImageChipKey), findsOneWidget);
+      expect(find.byKey(kAiAgentScreenTextChipKey), findsOneWidget);
+
+      attachment.clearImage();
+      await tester.pumpAndSettle();
+      expect(find.byKey(kAiAgentScreenImageChipKey), findsNothing);
+      expect(find.byKey(kAiAgentScreenTextChipKey), findsOneWidget);
+
+      await tester.tap(find.byKey(kAiAgentAttachScreenTextKey));
+      await tester.pumpAndSettle();
+      final AiAgentScreenAttachments taken = attachment.take();
+      expect(taken.text, '台词');
+      expect(taken.image, _realPng);
+      expect(aiAgentImagesFor(taken.image), hasLength(1));
+      expect(aiAgentImagesFor(null), isEmpty);
+    });
+
+    testWidgets('模型不能收图：只附文字，截图不留', (WidgetTester tester) async {
+      final AiAgentScreenTextAttachment attachment =
+          AiAgentScreenTextAttachment(
+            capture: ({bool keepImage = false, bool recognize = true}) async =>
+                ScreenTextCaptureResult(
+                  ScreenTextCaptureStatus.ok,
+                  text: '台词',
+                  image: keepImage ? _realPng : null,
+                ),
+          );
+      addTearDown(attachment.dispose);
+      await tester.pumpWidget(
+        MaterialApp(home: Scaffold(body: controls(attachment))),
+      );
+      await tester.tap(find.byKey(kAiAgentAttachScreenTextKey));
+      await tester.pumpAndSettle();
+      expect(attachment.image, isNull);
+      expect(find.byKey(kAiAgentScreenImageChipKey), findsNothing);
+    });
+
+    testWidgets('点文字 chip 能手改：改了就用改后的，清空等于不附', (WidgetTester tester) async {
+      final AiAgentScreenTextAttachment attachment =
+          AiAgentScreenTextAttachment(
+            capture: ({bool keepImage = false, bool recognize = true}) async =>
+                const ScreenTextCaptureResult(
+                  ScreenTextCaptureStatus.ok,
+                  text: '撹乱さ才ている',
+                ),
+          );
+      addTearDown(attachment.dispose);
+      await tester.pumpWidget(
+        MaterialApp(home: Scaffold(body: controls(attachment))),
+      );
+      await tester.tap(find.byKey(kAiAgentAttachScreenTextKey));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(kAiAgentScreenTextChipKey));
+      await tester.pumpAndSettle();
+      expect(find.text(t.ai_agent_screen_text_edit_title), findsWidgets);
+      await tester.enterText(find.byType(EditableText).last, '  撹乱されている  ');
+      await tester.tap(find.text(t.dialog_ok).last);
+      await tester.pumpAndSettle();
+      expect(attachment.text, '撹乱されている');
+      expect(find.text(t.ai_agent_screen_text_chip(n: '7')), findsOneWidget);
+
+      attachment.editText('   ');
+      await tester.pumpAndSettle();
+      expect(attachment.text, isNull);
+      expect(find.byKey(kAiAgentScreenTextChipKey), findsNothing);
     });
   });
 }

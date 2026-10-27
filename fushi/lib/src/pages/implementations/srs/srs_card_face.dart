@@ -468,17 +468,67 @@ NavigationActionPolicy srsCardNavigationPolicy(
 }
 
 /// [keys] 的卡面键盘桥脚本（每次换内容后注入；生成器自带幂等守卫）。
+///
+/// 挂在 `window` 捕获阶段，并由外壳 `<head>` 先于卡片内容装好（[srsCardShellHtml]）：
+/// 卡片模板（导入的 Lapis 等）自己的 keydown 监听在它之后，截不走翻面 / 评分键
+/// （OO3O-3ljda：macOS 上点过卡面后 WKWebView 持有 first responder，按键只剩这条桥）。
 String srsCardFaceBridgeScript(List<String> keys) => webViewKeyBridgeScript(
   handlerName: _kSrsBridgeHandler,
   keys: keys,
   forwardRepeats: false,
   stopPropagation: true,
+  listenOnWindow: true,
 );
+
+/// 卡面按键诊断回调（[kSrsCardKeyDiagScript]）。
+const String kSrsKeyDiagHandler = 'onSrsKeyDiag';
+
+/// 卡面按键取证（OO3O-3ljda）：翻面键（空格 / Enter）在页面里按下、却没被键盘桥接走时，
+/// 在松开那一刻报一次原因——`editable`（焦点在输入框 / contenteditable，桥按设计放行）、
+/// `composing`（IME 组字中）、`missed`（桥没接走：键表里没有 / 弹窗模态让位等）。被桥正常
+/// 接走（`defaultPrevented`）不报。页面里根本收不到 keydown（first responder 不在
+/// WebView 上）时这里什么都不报，宿主侧的焦点日志补那一半。
+const String kSrsCardKeyDiagScript = r'''
+(function(){
+  if (window.__fushiSrsKeyDiag) return;
+  window.__fushiSrsKeyDiag = true;
+  var last = null;
+  function watched(e){ return e && (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter'); }
+  window.addEventListener('keydown', function(e){
+    if (!watched(e) || e.repeat) return;
+    var t = e.target;
+    var tag = t && t.tagName ? t.tagName.toUpperCase() : '';
+    last = { code: e.code, ev: e, bubbled: false,
+      editable: tag === 'INPUT' || tag === 'TEXTAREA' || !!(t && t.isContentEditable),
+      composing: !!e.isComposing, target: tag };
+  }, true);
+  window.addEventListener('keydown', function(e){
+    if (last && last.ev === e) last.bubbled = true;
+  }, false);
+  window.addEventListener('keyup', function(e){
+    var k = last;
+    last = null;
+    if (!k || !watched(e) || e.code !== k.code) return;
+    if (k.ev.defaultPrevented) return;
+    var reason = k.composing ? 'composing' : k.editable ? 'editable' : 'missed';
+    try {
+      window.flutter_inappwebview.callHandler('onSrsKeyDiag',
+        JSON.stringify({ code: k.code, reason: reason, target: k.target, bubbled: k.bubbled }));
+    } catch (err) {}
+  }, true);
+})();
+''';
 
 /// 复习页的卡面键盘桥脚本。
 final String srsReviewKeyBridgeScript = srsCardFaceBridgeScript(
   kSrsReviewBridgeKeys,
 );
+
+/// [keys] 对应的卡面键盘桥脚本（复习页那份只生成一次）。
+String srsCardFaceBridgeScriptFor(List<String> keys) =>
+    identical(keys, kSrsReviewBridgeKeys)
+    ? srsReviewKeyBridgeScript
+    : srsCardFaceBridgeScript(keys);
 
 String _cssColor(Color c) =>
     '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
@@ -567,10 +617,13 @@ bool get srsCardUsesThemedScrollbar => !(isIOSPlatform || isMacOSPlatform);
 /// 播放按钮配色变量，以及 [themedScrollbar] 时的细滚动条。[appearanceCss] 是外观设置
 /// 注入的 `--fushi-srs-*` 变量与 @font-face（见 srs_card_appearance.dart），排在最后，
 /// 同名变量以它为准。
+///
+/// [background] 为 null 时 html/body 透明：WebView 本身也是透明的，透出复习页背景，
+/// 卡片 CSS 自己不铺底色（或写 `transparent`）时就不会再叠一层宿主底色。
 @visibleForTesting
 String srsCardThemeCss({
   required bool dark,
-  required Color background,
+  required Color? background,
   required Color foreground,
   required Color accent,
   required Color onAccent,
@@ -580,7 +633,7 @@ String srsCardThemeCss({
     ':root{color-scheme:${dark ? 'dark' : 'light'};'
     '--fushi-srs-accent:${_cssColor(accent)};'
     '--fushi-srs-on-accent:${_cssColor(onAccent)};}'
-    'html,body{background:${_cssColor(background)};'
+    'html,body{background:${background == null ? 'transparent' : _cssColor(background)};'
     'color:${_cssColor(foreground)};}'
     '${themedScrollbar ? srsCardScrollbarCss(foreground) : ''}'
     '$appearanceCss';
@@ -747,6 +800,8 @@ const String kSrsCardShellScript = r'''
     window.onUpdateHook = [];
     window.onShownHook = [];
     stopMedia(r);
+    // 卡面根之外还在响的（脱离文档的 new Audio()、shadow root 里的）：自动播放闸门记着。
+    if (window.__fushiSrsStopAllMedia) window.__fushiSrsStopAllMedia();
     useStyles(refs);
     setClasses(classes);
     r.innerHTML = html;
@@ -765,10 +820,18 @@ const String kSrsCardShellScript = r'''
 /// 卡面外壳页：只在 WebView 创建（以及 renderer 死亡重建）时加载一次，内容随后由
 /// [srsCardSetCardScript] / [srsCardSetThemeScript] 原地换。
 @visibleForTesting
-String srsCardShellHtml({required String themeCss, required String classes}) {
+///
+/// [bridgeScript]：卡面的键盘桥（[srsCardFaceBridgeScript]），排在一切卡片内容之前装好，
+/// 连同按键取证脚本（[kSrsCardKeyDiagScript]）。
+String srsCardShellHtml({
+  required String themeCss,
+  required String classes,
+  String bridgeScript = '',
+}) {
   final String cls = classes.isEmpty ? 'card' : 'card $classes';
   return '<!doctype html><html><head><meta charset="utf-8">'
       '<meta name="viewport" content="width=device-width, initial-scale=1">'
+      '${bridgeScript.isEmpty ? '' : '<script>$bridgeScript</script><script>$kSrsCardKeyDiagScript</script>'}'
       '<style>html,body{margin:0;padding:0;}'
       'body{padding:16px;box-sizing:border-box;}</style>'
       '<style id="fushi-theme-css">$themeCss</style>'
@@ -966,13 +1029,14 @@ class SrsCardFaceDocument {
     this.bodyStyles = const <String>[],
     this.autoplayMedia = true,
     this.hostScript = '',
+    this.bridgeScript = '',
   });
 
   /// 由一面卡与主题算出（媒体引用改写、`lang` 包裹都在这里做）。
   factory SrsCardFaceDocument.of(
     SrsCardFace face, {
     required bool dark,
-    required Color background,
+    required Color? background,
     required Color foreground,
     required Color accent,
     required Color onAccent,
@@ -988,6 +1052,7 @@ class SrsCardFaceDocument {
     );
     return SrsCardFaceDocument(
       hostScript: hostScript,
+      bridgeScript: srsCardFaceBridgeScriptFor(face.bridgeKeys),
       themeCss: srsCardThemeCss(
         dark: dark,
         background: background,
@@ -1042,6 +1107,9 @@ class SrsCardFaceDocument {
   /// 设计系统样式覆盖的判定脚本：覆盖关着时外壳里连脚本都没有（零注入）。
   final String hostScript;
 
+  /// 卡面的键盘桥脚本（写进外壳 `<head>`，见 [srsCardShellHtml]）。
+  final String bridgeScript;
+
   /// 这张卡用到的全部样式（注册表项）：笔记类型 CSS 在前，正文样式在后。
   List<SrsCardStyle> get styles => <SrsCardStyle>[
     if (cardCss.isNotEmpty) SrsCardStyle.of('t', cardCss),
@@ -1075,8 +1143,11 @@ class SrsCardFaceDocument {
       '$cardId\u0000$showingAnswer\u0000$autoplayMedia\u0000'
       '${styles.map((SrsCardStyle s) => s.hash).join(',')}\u0000$bodyHtml';
 
-  String get shellHtml =>
-      srsCardShellHtml(themeCss: themeCss, classes: classes);
+  String get shellHtml => srsCardShellHtml(
+    themeCss: themeCss,
+    classes: classes,
+    bridgeScript: bridgeScript,
+  );
 }
 
 /// 外壳与「该显示什么」之间的同步：外壳就绪（首次 onLoadStop）前只记下最后一次
@@ -1415,7 +1486,9 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
   return SrsCardFaceDocument.of(
     face,
     dark: dark,
-    background: scheme.surface,
+    // Fushi 卡的底色是外观配色（自定义强调色时与页面背景不同），由宿主铺；其它卡片
+    // 类型对齐 Anki：底色归卡片 CSS，宿主不铺，模板写透明就透出复习页背景。
+    background: fushi ? scheme.surface : null,
     foreground: scheme.onSurface,
     accent: scheme.primary,
     onAccent: scheme.onPrimary,
@@ -1522,7 +1595,33 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     afterRebuild: () {
       if (mounted) setState(() {});
     },
+    // 死亡 / 重建进随反馈上传的诊断日志（缺省只 debugPrint，release 里看不到）。
+    reporter: (String surface, String message) => ErrorLogService.instance
+        .logDiagnostic('SrsWebCardFace.death', '$surface: $message'),
   );
+
+  /// 这面卡报过几次「翻面键没被桥接走」（[kSrsCardKeyDiagScript]）；封顶免得刷满诊断日志。
+  int _keyDiagReports = 0;
+  static const int _kMaxKeyDiagReports = 5;
+
+  /// 这面卡建过几次平台视图（正常一生只建一次；死亡重建 / 结构变动会再建）。
+  int _viewsCreated = 0;
+
+  /// 进程里此刻活着的卡面 WebView State 数（诊断用）。
+  static int _liveFaces = 0;
+
+  /// 平台视图建了第二次及以后时留一条诊断（含卡面身份与存活数）：卡面应当整段复习
+  /// 复用同一个平台视图，反复重建就是卡顿与 `installLookup` 打进死通道的来源（O1yqRPUyut）。
+  void _noteViewCreated() {
+    _viewsCreated++;
+    if (_viewsCreated == 1) return;
+    ErrorLogService.instance.logDiagnostic(
+      'SrsWebCardFace.lifecycle',
+      'platform view created #$_viewsCreated for ${widget.face.cardId} '
+          '(lookup=${_lookup != null}, liveFaces=$_liveFaces, '
+          'epoch=${_deathGuard.epoch})',
+    );
+  }
 
   /// 上一次算文档用的输入与结果：复习页换一张卡要重建这面卡 4~5 次（忙碌态开 / 新卡 /
   /// 忙碌态关 / 补算预览），每次 didUpdateWidget 与 build 都要文档；输入没变就原样复用，
@@ -1618,6 +1717,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   @override
   void initState() {
     super.initState();
+    _liveFaces++;
     // 外观改动（定制页里拖滑块 / 切开关）即时下发：只换主题部分，卡片脚本不重跑。
     ref.listenManual<SrsCardAppearance>(srsCardAppearanceProvider, (_, _) {
       if (mounted) _sync.update(_document(context));
@@ -1646,6 +1746,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
 
   @override
   void dispose() {
+    _liveFaces--;
     _lookup?.unregister(this);
     if (identical(SrsWebCardFace.debugController, _controller)) {
       SrsWebCardFace.debugController = null;
@@ -1694,6 +1795,9 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     try {
       if (!_lookupInstalled) {
         await controller.evaluateJavascript(source: _lookupInstallScript);
+        // 注入期间平台视图换了（死亡重建 / 卡面卸载）：这只 controller 的通道已经没了，
+        // 新视图自己的 onLoadStop 会重装。
+        if (!mounted || !identical(_controller, controller)) return;
         _lookupInstalled = true;
       }
       await controller.evaluateJavascript(source: _lookupGateScript());
@@ -1852,10 +1956,9 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
 
   Future<void> _injectBridge(InAppWebViewController controller) async {
     try {
+      // 外壳 `<head>` 已装好桥；这里重放只刷新键表（脚本幂等，listener 只装一次）。
       await controller.evaluateJavascript(
-        source: identical(widget.face.bridgeKeys, kSrsReviewBridgeKeys)
-            ? srsReviewKeyBridgeScript
-            : srsCardFaceBridgeScript(widget.face.bridgeKeys),
+        source: srsCardFaceBridgeScriptFor(widget.face.bridgeKeys),
       );
       await controller.evaluateJavascript(source: kSrsCardLinkScript);
       if (widget.face.onImageTap != null) {
@@ -1893,7 +1996,9 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
           javaScriptEnabled: true,
           supportZoom: false,
           disableContextMenu: true,
-          transparentBackground: false,
+          // 透明：卡片底色只来自主题 CSS（[srsCardThemeCss]）与卡片 CSS，模板写透明时
+          // 透出复习页背景，而不是平台视图自己的白底。
+          transparentBackground: true,
           // 卡面媒体经拦截器 / 自定义 scheme 从 SrsMediaStore 供字节（见 srs_card_media.dart）。
           useShouldInterceptRequest: true,
           resourceCustomSchemes: const <String>[kSrsMediaScheme],
@@ -1932,6 +2037,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
         onWebViewCreated: (InAppWebViewController controller) {
           _controller = controller;
           _sync.detach();
+          _noteViewCreated();
           assert(() {
             SrsWebCardFace.debugController = controller;
             return true;
@@ -1941,6 +2047,20 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             callback: (List<dynamic> arguments) {
               final Object? token = arguments.isEmpty ? null : arguments.first;
               if (token is String && mounted) widget.face.onBridgeKey(token);
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsKeyDiagHandler,
+            callback: (List<dynamic> arguments) {
+              final Object? info = arguments.isEmpty ? null : arguments.first;
+              if (info is String && _keyDiagReports < _kMaxKeyDiagReports) {
+                _keyDiagReports++;
+                ErrorLogService.instance.logDiagnostic(
+                  'SrsWebCardFace.keyNotBridged',
+                  '${widget.face.cardId}: $info',
+                );
+              }
               return null;
             },
           );
@@ -2099,8 +2219,17 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
                 ),
       ),
     );
-    if (_lookup == null || !hostOwnsWebViewHoverLookup) return webView;
-    return Listener(onPointerHover: _onHostHover, child: webView);
+    // 平台视图上方的结构恒定：宿主悬停腿的 Listener 始终在，只按平台决定接不接回调，
+    // **不随查词作用域变**。以前「没作用域就不包 Listener」：作用域在 null ↔ 非 null 间切换
+    // （原生 Fushi 卡面的释义 WebView 正面在 Offstage 预热、无作用域，翻面后有）时根 widget
+    // 类型一变，element 整棵重建、平台视图被销毁重建——macOS 上每张卡两次（翻面一次、换卡
+    // 一次），重建前刚发出的取词注入打进已销毁的通道（O1yqRPUyut：`installLookup`
+    // MissingPluginException，channel 号每张卡 +2，复习卡顿）。没有作用域时 [_onHostHover]
+    // 自己 no-op。
+    return Listener(
+      onPointerHover: hostOwnsWebViewHoverLookup ? _onHostHover : null,
+      child: webView,
+    );
   }
 }
 

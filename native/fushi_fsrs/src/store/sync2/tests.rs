@@ -79,10 +79,7 @@ impl Device {
             }
         }
         let out: Value = serde_json::from_str(&self.core.sync2_ingest(P, &fetched, None, now).unwrap()).unwrap();
-        let (segs, upto) = self.core.sync2_outbox(P, location, None).unwrap();
-        for (path, bytes) in segs {
-            bucket.0.insert(path, bytes);
-        }
+        let upto = self.upload_all(bucket, location);
         let (path, bytes, _, obsolete) = self.core.sync2_head(P, location, upto, now).unwrap();
         bucket.0.insert(path, bytes);
         for name in obsolete {
@@ -91,6 +88,26 @@ impl Device {
         // 与生产同一节奏：版本向量变了且到期才重算（测试里间隔为 0 = 变了就算）。
         self.core.sync2_digest_due(P, now, Some(0)).unwrap();
         out
+    }
+
+    /// 与生产同一节奏的分批发件：取一批 → 全部写进 [bucket] → 确认 → 还有就再取。返回写 head 用的水位。
+    pub fn upload_all(&self, bucket: &mut Bucket, location: &str) -> u64 {
+        use super::transport::{OUTBOX_BATCH_BYTES, OUTBOX_BATCH_SEGMENTS};
+        loop {
+            let batch = self.core.sync2_outbox(P, location, None, OUTBOX_BATCH_BYTES, OUTBOX_BATCH_SEGMENTS).unwrap();
+            if batch.files.is_empty() {
+                return batch.upto;
+            }
+            for (path, bytes) in batch.files {
+                bucket.0.insert(path, bytes);
+            }
+            let (accepted, mark) = self.core.sync2_outbox_ack(P, location, &batch.segments).unwrap();
+            assert!(accepted);
+            assert_eq!(mark, batch.upto);
+            if !batch.more {
+                return mark;
+            }
+        }
     }
 
     pub fn rows(&self, sql: &str) -> Vec<Vec<String>> {
@@ -576,6 +593,97 @@ fn purge_erases_content_everywhere_and_keeps_the_chain_valid() {
         checked += 1;
     }
     assert!(checked >= 2);
+}
+
+/// 笔记 N1 现在投影里的（字段键 → 值），`deleted` 的 NULL 也列出来。
+fn note_fields(d: &Device) -> BTreeMap<String, String> {
+    d.rows("SELECT field_key, json_extract(json, '$.v') FROM srs_field_edits WHERE entity_id = 'N1' ORDER BY field_key")
+        .into_iter()
+        .skip(1)
+        .map(|r| (r[0].clone(), r[1].clone()))
+        .collect()
+}
+
+/// 清除之后又把同一条笔记导回来（BUG：删牌组选「永久删除」→ 重导 apkg，笔记 ID 由来源 guid 派生、仍是被清除
+/// 的那个 ID）：作者见过清除的新内容是复活，照常落投影并传到别的设备；与清除并发的迟到旧内容照样清掉；
+/// 再清除一次照样清干净。以前「实体清除过 → 之后到的内容操作一律清除」，导回来的笔记只剩空壳，每次再导入都
+/// 计「已更新」却什么也看不见。
+#[test]
+fn content_written_after_seeing_a_purge_revives_the_entity_everywhere() {
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![edit("note", "N1", "f/x", json!("old text")), edit("note", "N1", "tags", json!(["old"]))]);
+    a.sync(&mut bucket, "loc", T0);
+    b.sync(&mut bucket, "loc", T0);
+    // b 离线改了一下（与 a 的清除并发、清除之后才到）。
+    b.apply(T0 + 1, vec![edit("note", "N1", "f/y", json!("stale concurrent"))]);
+    a.core.sync2_purge(P, "note", "N1", T0 + 2).unwrap();
+    // a 在清除之后把它导回来：清删除标记、写回内容与标签。
+    a.apply(
+        T0 + 3,
+        vec![
+            edit("note", "N1", "deleted", Value::Null),
+            edit("note", "N1", "f/x", json!("imported again")),
+            edit("note", "N1", "tags", json!(["back"])),
+        ],
+    );
+    let want: BTreeMap<String, String> = [("deleted", "NULL"), ("f/x", "imported again"), ("tags", "[\"back\"]")]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+    assert_eq!(note_fields(&a), want, "revived locally");
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 4);
+        b.sync(&mut bucket, "loc", T0 + 4);
+    }
+    for d in [&a, &b] {
+        assert_eq!(note_fields(d), want, "revived content reached every device; the stale concurrent edit is gone");
+        let raw = d.rows(
+            "SELECT COUNT(*) FROM sync2_ops WHERE instr(payload, CAST('old text' AS BLOB)) > 0 \
+             OR instr(payload, CAST('stale concurrent' AS BLOB)) > 0",
+        );
+        assert_eq!(raw[1][0], "0", "content the purge saw (or raced with) stays erased");
+        assert!(d.core.sync2_conflicts(P).unwrap().as_array().unwrap().is_empty());
+    }
+    assert_eq!(projection(&a), projection(&b));
+    // 第三台新设备从位置上完整收下：结论一样（判据只看因果，与收到的顺序无关）。
+    let c = Device::new("c");
+    c.sync(&mut bucket, "loc", T0 + 5);
+    assert_eq!(projection(&c), projection(&a));
+
+    // 再清除一次：复活的内容同样清掉。
+    b.core.sync2_purge(P, "note", "N1", T0 + 6).unwrap();
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 7);
+        b.sync(&mut bucket, "loc", T0 + 7);
+    }
+    for d in [&a, &b] {
+        let left: Vec<String> = note_fields(d).into_keys().collect();
+        assert_eq!(left, vec!["deleted".to_owned()]);
+        let raw = d.rows("SELECT COUNT(*) FROM sync2_ops WHERE instr(payload, CAST('imported again' AS BLOB)) > 0");
+        assert_eq!(raw[1][0], "0");
+    }
+}
+
+/// 修复之前执行过的清除只在 `sync2_purged` 里有标记、索引里没有清除操作：第一次碰到时从日志补索引，之后
+/// 照样按因果判（老库里被清除过的笔记重导也能复活）。
+#[test]
+fn purge_recorded_before_the_index_existed_is_backfilled_from_the_log() {
+    let a = Device::new("a");
+    a.apply(T0, vec![edit("note", "N1", "f/x", json!("old text"))]);
+    a.core.sync2_purge(P, "note", "N1", T0 + 1).unwrap();
+    {
+        let w = a.core.writer().unwrap();
+        let n = w.execute("DELETE FROM sync2_ent_ops WHERE what = '#purge'", []).unwrap();
+        assert_eq!(n, 1, "the purge op is indexed");
+    }
+    a.apply(T0 + 2, vec![edit("note", "N1", "deleted", Value::Null), edit("note", "N1", "f/x", json!("imported again"))]);
+    let want: BTreeMap<String, String> =
+        [("deleted", "NULL"), ("f/x", "imported again")].into_iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect();
+    assert_eq!(note_fields(&a), want);
+    let idx = a.rows("SELECT COUNT(*) FROM sync2_ent_ops WHERE what = '#purge' AND entity = 'N1'");
+    assert_eq!(idx[1][0], "1", "backfilled");
 }
 
 /// 时间线（设计 §10.2）：恢复到某时刻 = 追加补偿操作；恢复后各端一致；恢复本身可以再恢复回去。
@@ -1391,4 +1499,173 @@ fn ingest_session_requires_begin_and_a_stable_identity() {
     a.core.sync2_rotate(P, T0 + 1).unwrap();
     assert!(a.core.sync2_ingest_batch(P, &[], None, T0 + 2).is_err());
     assert!(a.core.sync2_ingest_finish(P, T0 + 2).is_err(), "a failed batch drops the session");
+}
+
+/// 反馈 8TaOy2i-lL / BUG-3809：一个库文件里的多个 profile 共用 `srs_field_edits`（主键只有 `id`），
+/// 修改记录 ID 由 dot `(writer, seq)` 派生、不含 profile。v2 之前 Dart 的写入者每台设备一个
+/// （`<deviceId>#<incarnation>`）、序号却按 profile 各记各的，新 profile 从 seq 1 起写就撞上老 profile 的
+/// 同 ID 行（导入 APKG 整批回滚）。v2 起本机写入的 dot 由 Rust 按「该 profile 的本机身份」重新分配（每个
+/// profile 一个随机 v7 设备 ID），Dart 给的 w / s / id 一律不读。这里钉住：老 profile 留着旧写入者 1..N 的
+/// 行（已迁移成操作），新 profile 带同一组旧 dot 的草稿写入照样全部落库、ID 与老 profile 不相交，老 profile 不动。
+#[test]
+fn second_profile_writes_never_reuse_another_profiles_edit_ids() {
+    const Q: &str = "0193a1b2-0000-7000-8000-00000000cafe";
+    let a = Device::new("profiles");
+    let legacy_writer = "11111111-2222-4333-8444-555555555555#1";
+    let legacy_row = |profile: &str, entity: &str, s: i64| {
+        let id = crate::registers::edit_id(legacy_writer, s);
+        let x = json!({
+            "ctx": {"vv": {}}, "e": entity, "f": format!("f/{s}"), "hlc": format!("{s}:0:{legacy_writer}"),
+            "id": id, "k": "note", "p": profile, "s": s, "ts": "wall", "v": "old", "w": legacy_writer,
+        });
+        (id, x)
+    };
+    {
+        let w = a.core.writer().unwrap();
+        for s in 1..=3 {
+            let (id, x) = legacy_row(P, "NA", s);
+            w.execute(
+                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
+                 VALUES (?1, ?2, 'note', 'NA', ?3, ?4, ?5, ?6)",
+                rusqlite::params![id, P, format!("f/{s}"), legacy_writer, s, x.to_string()],
+            )
+            .unwrap();
+        }
+        // 前提：主键跨 profile 全局唯一——v2 之前的写法（照搬 Dart 给的 ID 落库）在这里就是用户看到的 UNIQUE 失败。
+        let (id, x) = legacy_row(Q, "NQ", 1);
+        let err = w
+            .execute(
+                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
+                 VALUES (?1, ?2, 'note', 'NQ', 'f/1', ?3, 1, ?4)",
+                rusqlite::params![id, Q, legacy_writer, x.to_string()],
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("UNIQUE constraint failed: srs_field_edits.id"), "{err}");
+    }
+    a.core.sync2_migrate(P, T0, None).unwrap();
+    let ids_of = |profile: &str| a.rows(&format!("SELECT id, writer_id FROM srs_field_edits WHERE profile_uid = '{profile}' ORDER BY id"));
+    let p_rows = ids_of(P);
+    assert_eq!(p_rows.len(), 4, "header + 3 legacy rows: {p_rows:?}");
+
+    // 新 profile：草稿带的就是 v2 之前 Dart 会给的那组 dot（同一旧写入者、序号从 1 起）——ID 与老 profile 的完全相同。
+    let input: Vec<Value> = (1..=3)
+        .map(|s| {
+            let (_, mut x) = legacy_row(Q, "NQ", s);
+            x["v"] = json!("new");
+            json!({"e": {"t": "edit", "x": x}, "note": "NQ"})
+        })
+        .collect();
+    let r: Value = serde_json::from_str(&a.core.sync2_apply_local(Q, T0 + 1, &Value::Array(input).to_string()).unwrap()).unwrap();
+    assert_eq!(r["landed"], json!([true, true, true]), "{r}");
+
+    let q_rows = ids_of(Q);
+    assert_eq!(q_rows.len(), 4, "header + 3 rows: {q_rows:?}");
+    let device = |profile: &str| a.core.sync2_status(profile).unwrap()["device"].as_str().unwrap().to_owned();
+    let q_device = device(Q);
+    assert_ne!(q_device, device(P), "each profile has its own local identity");
+    for row in q_rows.iter().skip(1) {
+        assert_eq!(row[1], q_device, "dot reassigned to the profile's own device: {row:?}");
+        assert!(!p_rows.iter().skip(1).any(|x| x[0] == row[0]), "edit id {} reused across profiles", row[0]);
+    }
+    assert_eq!(ids_of(P), p_rows, "old profile untouched");
+}
+
+/// 分批发件（反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）：20 万条小操作的积压——每批字节 / 段数有上限（峰值与积压
+/// 总量无关），每批确认后水位前进；上传中途断掉的那一轮之后，下一轮从水位接着发，不重发已确认的批。
+#[test]
+fn a_huge_backlog_is_sent_in_bounded_batches_and_resumes_from_the_watermark() {
+    use super::transport::{OUTBOX_BATCH_BYTES, OUTBOX_BATCH_SEGMENTS};
+    use crate::sync2::segment::SEGMENT_TARGET_BYTES;
+    const N: i64 = 200_000;
+    let a = Device::new("backlog");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck)]);
+    for chunk in 0..(N / 2000) {
+        let events: Vec<Value> = (0..2000)
+            .map(|i| {
+                let n = chunk * 2000 + i;
+                // 一条小编辑（复习的回放代价与本测试无关，只要操作条数）；散列值不让整批压成几个字节。
+                edit("note", &format!("N{n}"), "f/x", json!(blake3::hash(&n.to_le_bytes()).to_hex().to_string()))
+            })
+            .collect();
+        a.apply(T0 + chunk, events);
+    }
+
+    // 1) 默认预算把整份积压发到一个位置：每批都在上限内，段不重不漏。
+    let mut probe = Bucket::default();
+    let (mut batches, mut seen) = (0usize, BTreeMap::<u64, u64>::new());
+    loop {
+        let b = a.core.sync2_outbox(P, "probe", None, OUTBOX_BATCH_BYTES, OUTBOX_BATCH_SEGMENTS).unwrap();
+        if b.files.is_empty() {
+            break;
+        }
+        batches += 1;
+        let bytes: u64 = b.files.iter().map(|f| f.1.len() as u64).sum();
+        assert!(b.files.len() <= OUTBOX_BATCH_SEGMENTS);
+        // 段体积估计（各小块分别压缩之和）对不可压缩的内容不是严格上界，实测超出 < 0.3%：每段留 1/64 余量。
+        let slack = SEGMENT_TARGET_BYTES / 64;
+        assert!(b.files.iter().all(|f| (f.1.len() as u64) < SEGMENT_TARGET_BYTES + slack));
+        assert!(b.files.len() == 1 || bytes <= OUTBOX_BATCH_BYTES + slack * b.files.len() as u64, "batch of {bytes} bytes");
+        for &(f, l) in &b.segments {
+            assert!(seen.insert(f, l).is_none(), "segment {f}-{l} sent twice");
+        }
+        for (p, x) in b.files {
+            probe.0.insert(p, x);
+        }
+        let (ok, mark) = a.core.sync2_outbox_ack(P, "probe", &b.segments).unwrap();
+        assert!(ok);
+        assert_eq!(mark, b.upto);
+        if !b.more {
+            break;
+        }
+    }
+    let segs: Vec<(u64, u64)> = a.rows("SELECT first, last FROM sync2_segments ORDER BY first")[1..]
+        .iter()
+        .map(|r| (r[0].parse().unwrap(), r[1].parse().unwrap()))
+        .collect();
+    assert!(segs.len() >= 3, "{} segments", segs.len());
+    assert_eq!(seen.into_iter().collect::<Vec<_>>(), segs);
+    eprintln!("{} segments in {batches} default-budget batches", segs.len());
+
+    // 2) 另一个位置一段一批：第一批确认，第二批上传失败（没确认）——下一轮从第二批接着发，第一批不再发。
+    let mut bucket = Bucket::default();
+    let mut puts: BTreeMap<String, usize> = BTreeMap::new();
+    let first = a.core.sync2_outbox(P, "loc", None, OUTBOX_BATCH_BYTES, 1).unwrap();
+    assert!(first.more);
+    for (p, x) in first.files {
+        *puts.entry(p.clone()).or_default() += 1;
+        bucket.0.insert(p, x);
+    }
+    assert_eq!(a.core.sync2_outbox_ack(P, "loc", &first.segments).unwrap(), (true, first.upto));
+    let failed = a.core.sync2_outbox(P, "loc", None, OUTBOX_BATCH_BYTES, 1).unwrap();
+    assert_ne!(failed.segments, first.segments, "watermark advanced after the first ack");
+    drop(failed.files); // 上传中途断网：这一批没写成，也没确认。
+    let resumed = a.core.sync2_outbox(P, "loc", None, OUTBOX_BATCH_BYTES, 1).unwrap();
+    assert_eq!(resumed.segments, failed.segments, "resume from the watermark, not from scratch");
+    assert!(resumed.segments[0].0 > first.segments[0].1);
+    // 认不出的段（切法已变）不算数：水位不动。
+    assert_eq!(a.core.sync2_outbox_ack(P, "loc", &[(999_999_999, 999_999_999)]).unwrap(), (false, first.upto));
+    loop {
+        let b = a.core.sync2_outbox(P, "loc", None, OUTBOX_BATCH_BYTES, 1).unwrap();
+        if b.files.is_empty() {
+            break;
+        }
+        for (p, x) in b.files {
+            *puts.entry(p.clone()).or_default() += 1;
+            bucket.0.insert(p, x);
+        }
+        a.core.sync2_outbox_ack(P, "loc", &b.segments).unwrap();
+        if !b.more {
+            break;
+        }
+    }
+    assert!(puts.values().all(|n| *n == 1), "no confirmed segment uploaded twice: {puts:?}");
+    // 收尾：写 head，新设备从这个位置收齐全部 20 万条。
+    a.sync(&mut bucket, "loc", T0 + DAY);
+    let c = Device::new("backlogc");
+    c.sync(&mut bucket, "loc", T0 + DAY);
+    let count = |d: &Device| d.rows("SELECT COUNT(*) FROM srs_field_edits")[1][0].parse::<i64>().unwrap();
+    assert!(count(&a) >= N);
+    assert_eq!(count(&c), count(&a));
+    assert_eq!(a.digest(), c.digest());
 }

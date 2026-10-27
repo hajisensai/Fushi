@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:fushi/src/shortcuts/platform_modifier_state.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import '../../helpers/glass_unwrap.dart';
@@ -290,6 +291,80 @@ void main() {
       await tester.pump();
       expect(tapped, isNotNull);
       expect(tapped!.startMs, 4000);
+    });
+
+    testWidgets(
+        'xlzGuK5YmD: opens on the remembered tab and reports tab switches',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'alpha line'),
+        _cue(1, 2000, 3000, 'beta favorite'),
+      ]);
+      final List<VideoSubtitleListFilter> reported =
+          <VideoSubtitleListFilter>[];
+      Widget panel(VideoSubtitleListFilter initial) => _wrap(
+            VideoSubtitleJumpPanel(
+              key: ValueKey<VideoSubtitleListFilter>(initial),
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onClose: () {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (AudioCue cue) => cue.text.contains('favorite'),
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+              width: 520,
+              initialFilter: initial,
+              onFilterChanged: reported.add,
+            ),
+          );
+
+      // 上次停在「收藏」：重开直接是收藏页签，不必先进「全部」再切。
+      await tester.pumpWidget(panel(VideoSubtitleListFilter.favorites));
+      await tester.pumpAndSettle();
+      expect(find.text('beta favorite'), findsOneWidget);
+      expect(find.text('alpha line'), findsNothing);
+      expect(reported, isEmpty, reason: '恢复初值不是一次用户切换');
+
+      await tester.tap(find.text(t.video_subtitle_filter_all));
+      await tester.pumpAndSettle();
+      expect(find.text('alpha line'), findsOneWidget);
+      expect(reported, <VideoSubtitleListFilter>[VideoSubtitleListFilter.all]);
+
+      // 上次停在「全部」：即使有收藏也开「全部」（不按「有收藏就开收藏」硬判）。
+      await tester.pumpWidget(panel(VideoSubtitleListFilter.all));
+      await tester.pumpAndSettle();
+      expect(find.text('alpha line'), findsOneWidget);
+      expect(find.text('beta favorite'), findsOneWidget);
+    });
+
+    test('xlzGuK5YmD: persisted tab name round-trips, unknown falls back to all',
+        () {
+      for (final VideoSubtitleListFilter f in VideoSubtitleListFilter.values) {
+        expect(videoSubtitleListFilterFromName(f.name), f);
+      }
+      expect(videoSubtitleListFilterFromName(null), VideoSubtitleListFilter.all);
+      expect(
+        videoSubtitleListFilterFromName('bogus'),
+        VideoSubtitleListFilter.all,
+      );
+      for (final String page in <String>[
+        'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+        'lib/src/pages/implementations/web_video_fushi_page.dart',
+      ]) {
+        final String src = File(page).readAsStringSync();
+        expect(src, contains('initialFilter: videoSubtitleListFilterFromName('),
+            reason: '$page 必须用记住的页签打开列表');
+        expect(src, contains('.setVideoSubtitleListFilter('),
+            reason: '$page 必须把页签切换落盘');
+      }
+      // 持久化值冻结：改枚举名会让老用户的记忆失效。
+      expect(VideoSubtitleListFilter.favorites.name, 'favorites');
+      expect(VideoSubtitleListFilter.all.name, 'all');
     });
 
     testWidgets('row has no card-selection checkbox', (
@@ -1742,6 +1817,49 @@ void main() {
       await tester.tap(find.byIcon(FushiIcons.textDecrease));
       await tester.pump();
       expect(changes, <int>[2, 1], reason: 'A- 报回档位 1');
+    });
+
+    testWidgets(
+        'stale Ctrl (key-up lost to WebView2) does not turn the wheel into '
+        'font zoom; a real Ctrl still zooms (feedback TpKspDUst7)',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+      final List<int> changes = <int>[];
+      bool platformCtrlDown = false;
+      debugPlatformZoomModifierQuery = () => platformCtrlDown;
+      addTearDown(() => debugPlatformZoomModifierQuery = null);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) => true,
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        initialFontScaleIndex: 1,
+        onFontScaleIndexChanged: changes.add,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      // Flutter 看到了 Ctrl 按下，但抬起落在别处：缓存卡在「按下」。
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      final Offset row = tester.getCenter(find.text('x'));
+      final TestPointer pointer = TestPointer(1, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(pointer.hover(row));
+      await tester.sendEventToBinding(pointer.scroll(const Offset(0, -100)));
+      await tester.pump();
+      expect(changes, isEmpty, reason: '平台说 Ctrl 没按：不能缩字号');
+
+      platformCtrlDown = true;
+      await tester.sendEventToBinding(pointer.scroll(const Offset(0, -100)));
+      await tester.pump();
+      expect(changes, <int>[2], reason: '真按着 Ctrl：照常放大');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     });
 
     // ── BUG-879：字幕列表行 Shift-悬停查词（与画面字幕对称）─────────────────

@@ -27,6 +27,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_key_rotation.dart';
+import 'package:fushi_engine/ai/ai_model_pricing.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -515,6 +516,79 @@ class _AiProviderSettingsSectionState
         ),
         SettingsSectionFooter(t.ai_provider_api_keys_summary),
         AdaptiveSettingsSection(
+          title: t.ai_provider_pricing,
+          children: <Widget>[
+            for (final (
+                  String id,
+                  String label,
+                  double? value,
+                  AiModelPricing Function(double?) apply,
+                )
+                in <
+                  (String, String, double?, AiModelPricing Function(double?))
+                >[
+                  (
+                    'input',
+                    t.ai_provider_price_input,
+                    draft.pricing.inputPerMillion,
+                    (double? v) =>
+                        draft.pricing.copyWith(inputPerMillion: () => v),
+                  ),
+                  (
+                    'output',
+                    t.ai_provider_price_output,
+                    draft.pricing.outputPerMillion,
+                    (double? v) =>
+                        draft.pricing.copyWith(outputPerMillion: () => v),
+                  ),
+                  (
+                    'cache-read',
+                    t.ai_provider_price_cache_read,
+                    draft.pricing.cacheReadPerMillion,
+                    (double? v) =>
+                        draft.pricing.copyWith(cacheReadPerMillion: () => v),
+                  ),
+                  (
+                    'cache-write',
+                    t.ai_provider_price_cache_write,
+                    draft.pricing.cacheWritePerMillion,
+                    (double? v) =>
+                        draft.pricing.copyWith(cacheWritePerMillion: () => v),
+                  ),
+                ])
+              field(
+                _textField(
+                  key: ValueKey<String>('ai-provider-$index-price-$id'),
+                  label: label,
+                  initialValue: _priceText(value),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  // 空 / 非数字 / 负数一律按没填（与配置解析同口径）。
+                  onChanged: (String text) => _update(
+                    index,
+                    draft.copyWith(pricing: apply(parseAiPrice(text))),
+                  ),
+                ),
+              ),
+            field(
+              _textField(
+                key: ValueKey<String>('ai-provider-$index-price-currency'),
+                label: t.ai_provider_price_currency,
+                initialValue: draft.pricing.currency,
+                hintText: kAiDefaultPricingCurrency,
+                onChanged: (String text) => _update(
+                  index,
+                  draft.copyWith(
+                    pricing: draft.pricing.copyWith(currency: text),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        SettingsSectionFooter(t.ai_provider_pricing_summary),
+        AdaptiveSettingsSection(
           children: <Widget>[
             KeyedSubtree(
               key: ValueKey<String>('ai-provider-$index-protocol'),
@@ -597,6 +671,14 @@ class _AiProviderSettingsSectionState
                   ),
                 ),
               ),
+            ),
+            AdaptiveSettingsSwitchRow(
+              key: ValueKey<String>('ai-provider-$index-accepts-images'),
+              title: t.ai_provider_accepts_images,
+              subtitle: t.ai_provider_accepts_images_summary,
+              value: draft.acceptsImages,
+              onChanged: (bool value) =>
+                  _update(index, draft.copyWith(acceptsImages: value)),
             ),
             AdaptiveSettingsSwitchRow(
               key: ValueKey<String>('ai-provider-$index-allow-http'),
@@ -1330,6 +1412,14 @@ class _AiProviderSettingsSectionState
       : effort.storageKey;
 }
 
+/// 单价输入框的初值：没填为空，整数不带「.0」。
+String _priceText(double? value) {
+  if (value == null) return '';
+  return value == value.truncateToDouble()
+      ? value.toStringAsFixed(0)
+      : '$value';
+}
+
 /// 一条提供商的编辑中状态。
 ///
 /// baseUrl 以**原始字符串**保存：`Uri` 解析不了的中间态（用户刚打到 `htt`）也必须
@@ -1348,6 +1438,8 @@ class _AiProviderDraft {
     required this.allowInsecureHttp,
     required this.requestsPerMinute,
     this.toolCallingOverride = AiToolCallingOverride.followPreset,
+    this.pricing = const AiModelPricing(),
+    this.acceptsImages = false,
   });
 
   factory _AiProviderDraft.fromConfig(AiProviderConfig config) =>
@@ -1364,6 +1456,8 @@ class _AiProviderDraft {
         allowInsecureHttp: config.allowInsecureHttp,
         requestsPerMinute: config.requestsPerMinute,
         toolCallingOverride: config.toolCallingOverride,
+        pricing: config.pricing,
+        acceptsImages: config.acceptsImages,
       );
 
   /// 选了一家预设后的新草稿。
@@ -1411,6 +1505,12 @@ class _AiProviderDraft {
   /// 端点不稳定时用户可以强制关（走 JSON 降级），或对预设标成不支持的端点强制开。
   final AiToolCallingOverride toolCallingOverride;
 
+  /// 模型单价（见 [AiProviderConfig.pricing]）。
+  final AiModelPricing pricing;
+
+  /// 所配模型能收图（见 [AiProviderConfig.acceptsImages]）。
+  final bool acceptsImages;
+
   String get presetDisplayName =>
       aiProviderPresetById(presetId)?.displayName ?? presetId;
 
@@ -1428,6 +1528,8 @@ class _AiProviderDraft {
     bool? allowInsecureHttp,
     int? requestsPerMinute,
     AiToolCallingOverride? toolCallingOverride,
+    AiModelPricing? pricing,
+    bool? acceptsImages,
   }) => _AiProviderDraft(
     id: id,
     presetId: presetId,
@@ -1441,6 +1543,8 @@ class _AiProviderDraft {
     allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
     requestsPerMinute: requestsPerMinute ?? this.requestsPerMinute,
     toolCallingOverride: toolCallingOverride ?? this.toolCallingOverride,
+    pricing: pricing ?? this.pricing,
+    acceptsImages: acceptsImages ?? this.acceptsImages,
   );
 
   /// 有效即返回配置，否则 null。
@@ -1467,6 +1571,8 @@ class _AiProviderDraft {
         allowInsecureHttp: allowInsecureHttp,
         requestsPerMinute: requestsPerMinute < 0 ? 0 : requestsPerMinute,
         toolCallingOverride: toolCallingOverride,
+        pricing: pricing,
+        acceptsImages: acceptsImages,
       );
     } on ArgumentError {
       return null;

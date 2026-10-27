@@ -96,7 +96,10 @@
 `src/lib.rs`（输入校验、线程池、作答时排程的天数搜索、C ABI）与 `src/rwkv/small/`、`src/rwkv/slots.rs`
 是 Fushi 新写的。小模型的来源：JSchoreels/anki-rwkv release `small-model-sm40-2026-10-19`
 （包 `sm40v2-package.zip`，SHA-256 `9bc1e3e4040ce9693f230e905abb5c925b1102f787424b9059543ae900f1e2a2`），按包内
-INTEGRATION.md 与 `reference/small_model_recurrent.py` 实现；不含发布包的代码。权重与测试向量不入库，
+INTEGRATION.md 与 `reference/small_model_recurrent.py` 实现；不含发布包的代码。2026-10-27 起用的权重换成
+同架构重训的 release `small-model-sm56-2026-10-24`（包 `sm56-package.zip`，SHA-256
+`7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a`；`architecture.json` 与参考代码
+与 sm40v2 逐字节相同，代码无需改动）。权重与测试向量不入库，
 许可作者尚未声明（2026-10-20 核对：仓库 license 为空），Fushi 只在用户启用时从作者的 release 下载。
 
 ## 黄金值（tests/fixtures/）

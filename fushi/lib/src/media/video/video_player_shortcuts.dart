@@ -99,6 +99,9 @@ class VideoPlayerShortcutActions {
     required this.toggleFavoriteSentence,
     required this.replayCurrentSubtitle,
     required this.replayPreviousSubtitle,
+    required this.copyCurrentSubtitle,
+    required this.copyCurrentSecondarySubtitle,
+    required this.toggleLoopCurrentSubtitle,
     required this.previousChapter,
     required this.nextChapter,
     required this.openSubtitleAlign,
@@ -185,6 +188,13 @@ class VideoPlayerShortcutActions {
   /// 重播上一句（TODO-378，BUG-287）：纯句子跳转到上一条 cue 起点并播放，不退化回退。
   final VoidCallback replayPreviousSubtitle;
 
+  /// 复制当前台词（_Eb0txdN4H）：主字幕 / 副字幕正在显示的那句写进剪贴板。
+  final VoidCallback copyCurrentSubtitle;
+  final VoidCallback copyCurrentSecondarySubtitle;
+
+  /// 循环当前句开关（Ix4j5SKUth）：开着时自然播过句尾就回到句首，再按关闭。
+  final VoidCallback toggleLoopCurrentSubtitle;
+
   /// 内封章节上/下一章（TODO-424）：seek 到相邻章起点，无章节时 no-op。
   final VoidCallback previousChapter;
   final VoidCallback nextChapter;
@@ -247,6 +257,9 @@ const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
   ShortcutAction.videoNextSubtitle,
   ShortcutAction.videoReplayCurrentSubtitle,
   ShortcutAction.videoReplayPreviousSubtitle,
+  ShortcutAction.videoCopyCurrentSubtitle,
+  ShortcutAction.videoCopyCurrentSecondarySubtitle,
+  ShortcutAction.videoToggleLoopCurrentSubtitle,
   // 章节
   ShortcutAction.videoPreviousChapter,
   ShortcutAction.videoNextChapter,
@@ -328,6 +341,11 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoToggleFavoriteSentence: actions.toggleFavoriteSentence,
     ShortcutAction.videoReplayCurrentSubtitle: actions.replayCurrentSubtitle,
     ShortcutAction.videoReplayPreviousSubtitle: actions.replayPreviousSubtitle,
+    ShortcutAction.videoCopyCurrentSubtitle: actions.copyCurrentSubtitle,
+    ShortcutAction.videoCopyCurrentSecondarySubtitle:
+        actions.copyCurrentSecondarySubtitle,
+    ShortcutAction.videoToggleLoopCurrentSubtitle:
+        actions.toggleLoopCurrentSubtitle,
     ShortcutAction.videoPreviousChapter: actions.previousChapter,
     ShortcutAction.videoNextChapter: actions.nextChapter,
     ShortcutAction.videoOpenSubtitleAlign: actions.openSubtitleAlign,

@@ -248,10 +248,10 @@ void main() {
     );
     expect(
       find.byType(AdaptiveSettingsSwitchRow),
-      findsNWidgets(10),
+      findsNWidgets(11),
       reason:
-          '常用开关（卡片内容 2 + 制卡提示 2 + 标签 4）与 Anki 分组的批量制卡 + 落地设备'
-          '直接可见，维护开关属于独立子页',
+          '常用开关（卡片内容 2 + 制卡提示 2 + 标签 4）与 Anki 分组的批量制卡 + '
+          '连不上时暂存 + 落地设备直接可见，维护开关属于独立子页',
     );
     for (final String notice in <String>[
       'Show mining confirmations',
@@ -267,6 +267,14 @@ void main() {
       find.widgetWithText(AdaptiveSettingsSwitchRow, 'Batch mining'),
       findsOneWidget,
       reason: '批量制卡不受「Anki 已配置」门控：连不上 Anki 时正需要它',
+    );
+    expect(
+      find.widgetWithText(
+        AdaptiveSettingsSwitchRow,
+        'Hold cards when Anki is unreachable',
+      ),
+      findsOneWidget,
+      reason: '「连不上时暂存」同样不受「Anki 已配置」门控',
     );
     expect(find.byType(AdaptiveSettingsSliderRow), findsNothing);
     expect(

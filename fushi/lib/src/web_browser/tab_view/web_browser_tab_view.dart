@@ -1311,6 +1311,20 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
                 url == null ? null : Uri.tryParse(url.toString()),
               );
               unawaited(_syncNavigation(controller, url));
+              final Uri? pageUrl = url == null
+                  ? null
+                  : Uri.tryParse(url.toString());
+              for (final WebBrowserFeature f in widget.host.features) {
+                try {
+                  f.onUrlChanged(context, _tab, controller, pageUrl);
+                } catch (e, s) {
+                  ErrorLogService.instance.log(
+                    'WebBrowserFeature(${f.id}).onUrlChanged',
+                    e,
+                    s,
+                  );
+                }
+              }
             },
         onReceivedError:
             (

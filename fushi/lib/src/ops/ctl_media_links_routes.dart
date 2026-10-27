@@ -6,6 +6,8 @@ import 'package:fushi_engine/media/people/person_identity.dart';
 
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/links/media_link_inference_host.dart';
+import 'package:fushi/src/media/links/media_link_manual.dart';
+import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/people/person_directory.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -18,6 +20,8 @@ import 'package:fushi/src/ops/op_context.dart';
 /// UI 按钮背后的同一个方法，不另写业务逻辑：
 /// - 列出 = 详情页「同一作品」区块的 [loadMediaLinkViews]；
 /// - 接受 / 不相关 = 建议卡片两键背后的 `confirmMediaLink` / `removeMediaLink`；
+/// - 关联作品 = 详情页「关联作品」对话框背后的 [writeManualMediaLink]，候选 = 同一对话框
+///   的 [loadMediaLinkCandidates]；移除关联 = 已确认卡片长按「移除关联」的 `removeMediaLink`；
 /// - 查找相关作品 = 同一按钮的 [mediaLinkInferCallback]（「作品图谱」AI 已指派时会发
 ///   AI 请求，否则只跑确定性规则；MAL / Wikidata 查询照常联网）；
 /// - 人物 = 人物页的 [loadPersonGraph] / [loadPersonPage] / [decidePersonIdentity] /
@@ -37,8 +41,8 @@ List<CtlRoute> buildMediaLinksCtlRoutes(OpContext context) {
   }
 
   /// 端点所在模块关掉时拒绝（详情页本就进不去）。
-  void requireEndpointModule(MediaLinkEndpoint e) {
-    final List<ModuleId> modules = switch (e.kind) {
+  void requireKindModule(MediaLinkKind kind) {
+    final List<ModuleId> modules = switch (kind) {
       MediaLinkKind.book => <ModuleId>[ModuleId.books, ModuleId.manga],
       MediaLinkKind.audiobook => <ModuleId>[ModuleId.listening, ModuleId.books],
       MediaLinkKind.videoCollection ||
@@ -48,28 +52,32 @@ List<CtlRoute> buildMediaLinksCtlRoutes(OpContext context) {
       MediaLinkKind.musicTrack => <ModuleId>[ModuleId.music],
     };
     if (!modules.any(app().moduleVisibility.isEnabled)) {
-      throw CtlFailure.rejected('${e.kind.dbValue} 所在模块已在设置里关闭');
+      throw CtlFailure.rejected('${kind.dbValue} 所在模块已在设置里关闭');
     }
   }
 
-  Future<MediaLinkEndpoint> localEndpoint(CtlCall call) async {
-    final MediaLinkEndpoint self = parseMediaLinkEndpoint(
-      call.params['endpoint'] ?? '',
-    );
-    requireEndpointModule(self);
-    final MediaLinkEntry entry = await resolveMediaLinkEntry(db(), self);
+  Future<MediaLinkEndpoint> requireInLibrary(MediaLinkEndpoint e) async {
+    requireKindModule(e.kind);
+    final MediaLinkEntry entry = await resolveMediaLinkEntry(db(), e);
     if (!entry.inLibrary) {
-      throw CtlFailure.notFound('本机库里没有 ${mediaLinkEndpointWire(self)}');
+      throw CtlFailure.notFound('本机库里没有 ${mediaLinkEndpointWire(e)}');
     }
-    return self;
+    return e;
   }
+
+  Future<MediaLinkEndpoint> localEndpoint(CtlCall call) =>
+      requireInLibrary(parseMediaLinkEndpoint(call.params['endpoint'] ?? ''));
 
   /// 在 [self] 的连接里找另一端是 body `other`（可再按 `relation` 收窄）的那一条。
-  Future<MediaLinkView> pickLink(MediaLinkEndpoint self, CtlCall call) async {
+  Future<MediaLinkView> pickLink(
+    MediaLinkEndpoint self,
+    CtlCall call, {
+    String? relation,
+  }) async {
     final MediaLinkEndpoint other = parseMediaLinkEndpoint(
       call.requireString('other'),
     );
-    final String? relation = call.optString('relation');
+    relation ??= call.optString('relation');
     final List<MediaLinkView> hits = <MediaLinkView>[
       for (final MediaLinkView v in await loadMediaLinkViews(db(), self))
         if (v.other.endpoint.kind == other.kind &&
@@ -92,6 +100,40 @@ List<CtlRoute> buildMediaLinksCtlRoutes(OpContext context) {
   }
 
   return <CtlRoute>[
+    CtlRoute.get(kMediaLinkCandidatesCtlRoot, (CtlCall call) async {
+      final String kindRaw = call.requireString('kind');
+      final MediaLinkKind? kind = MediaLinkKind.tryParse(kindRaw);
+      if (kind == null) {
+        throw CtlFailure.badRequest(
+          'kind 只能是 '
+          '${MediaLinkKind.values.map((MediaLinkKind k) => k.dbValue).join(' / ')}'
+          '：$kindRaw',
+        );
+      }
+      requireKindModule(kind);
+      final String? search = call.optString('search');
+      final int limit = call.optInt('limit') ?? 50;
+      if (limit <= 0) throw const CtlFailure.badRequest('limit 必须是正整数');
+      final List<MediaLinkEntry> matched = <MediaLinkEntry>[
+        for (final MediaLinkEntry e in await loadMediaLinkCandidates(
+          db(),
+          kind,
+        ))
+          if (search == null ||
+              matchesMediaSearch(query: search, titles: <String>[e.title]))
+            e,
+      ];
+      return <String, Object?>{
+        'total': matched.length,
+        'items': <Map<String, Object?>>[
+          for (final MediaLinkEntry e in matched.take(limit))
+            <String, Object?>{
+              'endpoint': mediaLinkEndpointWire(e.endpoint),
+              'title': e.title,
+            },
+        ],
+      };
+    }),
     CtlRoute.get('$kMediaLinksCtlRoot/:endpoint', (CtlCall call) async {
       final MediaLinkEndpoint self = await localEndpoint(call);
       final String state = call.optString('state') ?? 'all';
@@ -137,6 +179,85 @@ List<CtlRoute> buildMediaLinksCtlRoutes(OpContext context) {
           ...mediaLinkViewJson(view),
           'state': MediaLinkState.removed.name,
         },
+      };
+    }),
+    CtlRoute.post('$kMediaLinksCtlRoot/:endpoint/add', (CtlCall call) async {
+      requireWritable();
+      final MediaLinkEndpoint self = await localEndpoint(call);
+      final MediaLinkEndpoint other = await requireInLibrary(
+        parseMediaLinkEndpoint(call.requireString('other')),
+      );
+      if (other.kind == self.kind && other.key == self.key) {
+        throw const CtlFailure.badRequest('不能把条目关联到它自己');
+      }
+      final String relationRaw = call.requireString('relation');
+      final MediaLinkRelation? relation = MediaLinkRelation.tryParse(
+        relationRaw,
+      );
+      if (relation == null || !kMediaLinkPickableRelations.contains(relation)) {
+        throw CtlFailure.badRequest(
+          'relation 只能是 '
+          '${kMediaLinkPickableRelations.map((MediaLinkRelation r) => r.dbValue).join(' / ')}'
+          '：$relationRaw',
+        );
+      }
+      if (relation == MediaLinkRelation.themeSong &&
+          !mediaLinkThemeSongCompatible(self.kind, other.kind)) {
+        throw const CtlFailure.badRequest(
+          'theme_song 要一端是音乐（music_track / music_album）、一端是视频'
+          '（video_collection / video_episode）；其余组合用 same_work',
+        );
+      }
+      final String? selfIs = call.optString('selfIs');
+      if (relation == MediaLinkRelation.adaptation &&
+          selfIs != 'original' &&
+          selfIs != 'adaptation') {
+        throw const CtlFailure.badRequest(
+          'adaptation 要用 selfIs 说明方向：original（本条是原作）/ adaptation（本条是改编）',
+        );
+      }
+      final String? roleRaw = call.optString('role');
+      final ThemeSongRole? role = roleRaw == null
+          ? ThemeSongRole.op
+          : ThemeSongRole.tryParse(roleRaw);
+      if (role == null || !kMediaLinkPickableThemeSongRoles.contains(role)) {
+        throw CtlFailure.badRequest('role 只能是 op / ed / insert：$roleRaw');
+      }
+      final int at = DateTime.now().millisecondsSinceEpoch;
+      final ManualMediaLinkWrite written = await writeManualMediaLink(
+        db(),
+        self: self,
+        target: other,
+        relation: relation,
+        selfIsOriginal: selfIs != 'adaptation',
+        themeSongRole: role,
+        episodeRange: call.optString('episodes') ?? '',
+        at: at,
+      );
+      return <String, Object?>{
+        'link': mediaLinkViewJson(
+          await pickLink(self, call, relation: relation.dbValue),
+        ),
+        'writtenAt': at,
+        'previous': written.previous?.toJson(),
+      };
+    }),
+    CtlRoute.post('$kMediaLinksCtlRoot/:endpoint/remove', (CtlCall call) async {
+      requireWritable();
+      final MediaLinkEndpoint self = await localEndpoint(call);
+      final MediaLinkView view = await pickLink(self, call);
+      if (view.state != MediaLinkState.confirmed) {
+        throw const CtlFailure.conflict('这条是建议，不是确认的关联（用 links.reject 否决）');
+      }
+      final int at = DateTime.now().millisecondsSinceEpoch;
+      await db().removeMediaLink(view.id, at: at);
+      return <String, Object?>{
+        'link': <String, Object?>{
+          ...mediaLinkViewJson(view),
+          'state': MediaLinkState.removed.name,
+        },
+        'writtenAt': at,
+        'previous': view.row.toJson(),
       };
     }),
     CtlRoute.post('$kMediaLinksCtlRoot/:endpoint/infer', (CtlCall call) async {
@@ -277,6 +398,10 @@ mediaLinkInferOverride;
 
 /// 作品图谱路由根（`/:endpoint`）。
 const String kMediaLinksCtlRoot = '/api/admin/links';
+
+/// 手动关联候选（某种类的本机条目）路由。不挂在 [kMediaLinksCtlRoot] 下：那里第一段
+/// 是端点。
+const String kMediaLinkCandidatesCtlRoot = '/api/admin/link-candidates';
 
 /// 人物路由根。
 const String kPeopleCtlRoot = '/api/admin/people';

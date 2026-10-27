@@ -47,11 +47,13 @@ Map<String, Object?> _episode(
   int episode = 2,
   int? positionTicks,
   bool hasSubtitles = false,
+  int? mediaSourceCount,
 }) => _item(
   id,
   'Episode',
   name: 'The Pilot',
   extra: <String, Object?>{
+    'MediaSourceCount': ?mediaSourceCount,
     'SeriesId': 'series-1',
     'SeriesName': series,
     'SeasonId': 'season-1',
@@ -475,7 +477,13 @@ void main() {
         final _Router r = _Router(
           (_) => _page(<Map<String, Object?>>[
             _episode('ep1', season: 1, episode: 1),
-            _episode('ep2', season: 1, episode: 2, hasSubtitles: true),
+            _episode(
+              'ep2',
+              season: 1,
+              episode: 2,
+              hasSubtitles: true,
+              mediaSourceCount: 2,
+            ),
           ], total: 26),
         );
 
@@ -492,10 +500,17 @@ void main() {
         expect(q['SeasonId'], 'season-1');
         expect(q['StartIndex'], '24');
         expect(q['Limit'], '100');
-        expect(q['Fields'], 'ProductionYear');
-        expect(q['Fields'], isNot(contains('MediaSources')));
+        // MediaSourceCount 只是计数，点名它给集卡提示多版本（mxYhpVcwOX）；
+        // 重字段 MediaSources 仍不带（BUG-1891）。
+        expect(q['Fields']!.split(','), <String>[
+          'ProductionYear',
+          'MediaSourceCount',
+        ]);
 
         expect(page.items, hasLength(2));
+        expect(page.items[0].versionCount, isNull, reason: '服务器不报 = 不知道');
+        expect(page.items[1].versionCount, 2);
+        expect(page.items[1].knownVersionCount, 2);
         expect(page.items[0].type, MediaServerItemType.episode);
         expect(page.items[0].episodeCode, 'S01E01');
         expect(page.items[0].seriesId, 'series-1');
@@ -803,11 +818,13 @@ void main() {
         reason: '服务器页比客户端页大：把关会漏掉一部分，一发多要些少往返',
       );
       expect(r.seen[1].url.queryParameters['StartIndex'], '0');
-      expect(
-        page.items.map((MediaServerItem i) => i.id).toList(),
-        <String>['Movie0', 'Movie1', 'Series0', 'Series1', 'Series2'],
-        reason: '最后一发服务器页把关后全收，允许略多于 limit',
-      );
+      expect(page.items.map((MediaServerItem i) => i.id).toList(), <String>[
+        'Movie0',
+        'Movie1',
+        'Series0',
+        'Series1',
+        'Series2',
+      ], reason: '最后一发服务器页把关后全收，允许略多于 limit');
       expect(page.totalCount, 5);
       expect(page.startIndex, 0);
       expect(page.nextStartIndex, 5);

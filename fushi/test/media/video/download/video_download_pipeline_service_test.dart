@@ -2187,6 +2187,110 @@ void main() {
   });
 
   test(
+      'a pack with a sibling work imports it as its own collection, outside the '
+      'job collection (kg41f2PGdC)', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'sibling-work-import-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.import,
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    const String sequelDir = '[VCB-Studio] Yama no Susume Next Summit [1080p]';
+    // 本作分集有集号；同包续作是「剧集任务 + video + 无集号」（整理器的并列作品）。
+    final List<List<Object?>> rows = <List<Object?>>[
+      // rel, season, episode, index
+      <Object?>['Show/Season 01/Show - S01E01.mkv', 1, 1, 0],
+      <Object?>['Show/Season 01/Show - S01E02.mkv', 1, 2, 1],
+      <Object?>[
+        'Show/$sequelDir/Yama no Susume Next Summit [01].mkv',
+        null,
+        null,
+        2,
+      ],
+      <Object?>[
+        'Show/$sequelDir/Yama no Susume Next Summit [02].mkv',
+        null,
+        null,
+        3,
+      ],
+    ];
+    for (final List<Object?> row in rows) {
+      final String rel = row[0]! as String;
+      await environment.database.upsertVideoDownloadJobFile(
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: jobId,
+          backendFileIndex: Value<int?>(row[3]! as int),
+          originalRelativePath: rel,
+          currentRelativePath: rel,
+          finalAbsolutePath: Value<String?>(
+            p.joinAll(<String>[environment.root.path, ...rel.split('/')]),
+          ),
+          kind: const Value<String>('video'),
+          season: Value<int?>(row[1] as int?),
+          episode: Value<int?>(row[2] as int?),
+          sizeBytes: const Value<int?>(100),
+          status: const Value<String>(VideoDownloadJobFileStatus.organized),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    }
+
+    environment.service.wake();
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+
+    final VideoDownloadJobRow job =
+        (await environment.database.getVideoDownloadJob(jobId))!;
+    final List<VideoBookRow> books = await environment.database.allVideoBooks();
+    expect(books, hasLength(4));
+    final Map<String, String> uidByName = <String, String>{
+      for (final VideoBookRow book in books)
+        p.basename(book.videoPath): book.bookUid,
+    };
+    final Set<String> jobMembers = <String>{
+      for (final MediaCollectionItemRow item
+          in await environment.database.getCollectionItems(job.collectionId!))
+        item.entryKey,
+    };
+    // 任务合集只含本作两集，续作不冒充本作分集。
+    expect(jobMembers, <String>{
+      uidByName['Show - S01E01.mkv']!,
+      uidByName['Show - S01E02.mkv']!,
+    });
+    // 续作按源目录单独成合集。
+    final MediaCollectionRow sequel =
+        (await environment.database.getAllMediaCollections()).singleWhere(
+      (MediaCollectionRow c) => c.name == sequelDir,
+    );
+    expect(
+      <String>{
+        for (final MediaCollectionItemRow item
+            in await environment.database.getCollectionItems(sequel.id))
+          item.entryKey,
+      },
+      <String>{
+        uidByName['Yama no Susume Next Summit [01].mkv']!,
+        uidByName['Yama no Susume Next Summit [02].mkv']!,
+      },
+    );
+    expect(
+      (await environment.database.getVideoDownloadJobFiles(jobId))
+          .map((VideoDownloadJobFileRow f) => f.status)
+          .toSet(),
+      <String>{VideoDownloadJobFileStatus.imported},
+    );
+  });
+
+  test(
       'movie subtitle search only targets the main movie; sibling standalone '
       'movies wait for their own identities (BUG-2007)', () async {
     final Uint8List subtitleBytes = Uint8List.fromList(<int>[49, 10, 50, 10]);

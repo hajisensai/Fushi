@@ -276,7 +276,7 @@ extension _VideoAdvancedMining on _VideoFushiPageState {
                 startDeltaMs: startDeltaMs,
                 endDeltaMs: endDeltaMs,
               )
-            : Future<bool>.value(false),
+            : Future<RangePlayback?>.value(),
         stopPreview: () async {
           if (identical(_controller, controller)) {
             await controller.stopPlayRange();

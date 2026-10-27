@@ -12,7 +12,9 @@ part of '../reader_fushi_page.dart';
 ///
 /// 显隐：没跳转过不画；有历史时，刚跳转 / 返回 / 前进后亮 [_flashDuration]，
 /// 之后只在用户唤出 chrome 时随顶栏出现；× 清空历史。歌词模式下胶囊挂在歌词
-/// 覆盖层的歌词区顶部（覆盖层本身就是常驻 chrome），正文点换算成对应句跳音频。
+/// 覆盖层歌词区的底边、紧贴底栏上方，歌词矩形为它让出一条带子、不压歌词行（反馈
+/// 0AwuVqrNFn，见 [kLyricsNavigationAccessoryBand]；覆盖层本身就是常驻 chrome），
+/// 正文点换算成对应句跳音频。
 extension _ReaderJumpBack on _ReaderFushiPageState {
   /// 同一次用户动作里「正文跳转 → 音频跟着动」的最长间隔。
   static const Duration _sameGestureWindow = Duration(seconds: 2);
@@ -285,8 +287,12 @@ extension _ReaderJumpBack on _ReaderFushiPageState {
     return '${(shown * 100).toStringAsFixed(1)}%';
   }
 
-  /// 胶囊本体（正文态与歌词态共用）。
-  Widget _jumpHistoryPill({required bool visible}) {
+  /// 胶囊本体（正文态与歌词态共用）。[from] 是滑入来向：正文态挂顶部（up），
+  /// 歌词态挂在底栏上方（down）。
+  Widget _jumpHistoryPill({
+    required bool visible,
+    AxisDirection from = AxisDirection.up,
+  }) {
     final ReaderJumpPoint? back = _jumpHistory.backTarget;
     final ReaderJumpPoint? forward = _jumpHistory.forwardTarget;
     return FushiJumpHistoryPill(
@@ -297,6 +303,7 @@ extension _ReaderJumpBack on _ReaderFushiPageState {
       onForward: () => unawaited(_jumpHistoryForward()),
       onClear: _clearJumpHistory,
       colors: _lyricsMode ? null : _floatingToolbarColors(),
+      from: from,
     );
   }
 

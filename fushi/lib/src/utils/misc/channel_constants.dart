@@ -45,6 +45,12 @@ abstract final class FushiChannels {
   /// `SystemProxyChannel.java`，Dart 门面 `android_system_proxy.dart`。
   static const MethodChannel systemProxy =
       MethodChannel('$_prefix/system_proxy');
+
+  /// 上次进程退出原因（`ActivityManager.getHistoricalProcessExitReasons`）与
+  /// `onTrimMemory` 记录。原生侧 `ProcessExitChannel.java`，Dart 门面
+  /// `lib/src/diagnostics/previous_exit_log.dart`。
+  static const MethodChannel processExit =
+      MethodChannel('$_prefix/process_exit');
   static const MethodChannel screenBrightness =
       MethodChannel('$_prefix/screen_brightness');
   static const MethodChannel selectionActions =

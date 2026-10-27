@@ -694,51 +694,142 @@ class EpubParser {
 
   // ── Cover ──────────────────────────────────────────────────────────────────
 
+  /// 书的封面**图片**（extractDir 相对 href），找不到可用的光栅图时为 null。
+  ///
+  /// Yg_v6Tnmc0：封面声明经常指向的不是图片而是一页 XHTML / SVG——EPUB 2 的
+  /// `<meta name="cover">` 指到封面页 id、`<guide><reference type="cover">` 本来
+  /// 就是页面、日系固定版式把 JPEG 包在 `<svg><image xlink:href>` 里。旧实现只
+  /// 查 manifest id、不看 media-type，把 xhtml/svg 原样当封面返回，书架拿它当
+  /// 图片解码 → 没封面。这里的契约是**结果必须是光栅图**：候选按声明优先级
+  /// 逐个过 [_coverImageFrom]，图片直接用，XHTML / SVG 页取其中第一张引用到的
+  /// 光栅图（`<img src>` / `<svg><image href>` / CSS 背景，相对该页解析）。
+  /// 纯矢量 SVG（没有引用任何光栅图）书架画不了（无 SVG 解码器），跳过并落到
+  /// 下一个候选，最后兜底 manifest 里第一张光栅图。
   static String? _parseCoverHref(
     XmlDocument opf,
     Map<String, _ManifestItem> manifest,
     String opfDir,
     String extractDir,
   ) {
+    final Map<String, _ManifestItem> byPath = <String, _ManifestItem>{};
+    for (final _ManifestItem item in manifest.values) {
+      final String? abs = _resolveWithinExtract(opfDir, item.href, extractDir);
+      if (abs != null) byPath[_pathKey(abs)] = item;
+    }
+    final List<String> candidates = <String>[];
+    void addHref(String href) {
+      final String? abs = _resolveWithinExtract(opfDir, href, extractDir);
+      if (abs != null) candidates.add(abs);
+    }
+
     // EPUB 3: manifest item with properties="cover-image"
     for (final _ManifestItem item in manifest.values) {
       if (item.properties != null && item.properties!.contains('cover-image')) {
-        return _itemRelHref(item, opfDir, extractDir);
+        addHref(item.href);
       }
     }
-    // EPUB 2: <meta name="cover" content="cover-id"/>
+    // EPUB 2: <meta name="cover" content="cover-id"/>（content 偶尔写成 href）
     for (final XmlElement meta in _elements(opf, 'meta')) {
-      if (meta.getAttribute('name')?.toLowerCase() == 'cover') {
-        final String? coverId = meta.getAttribute('content');
-        if (coverId != null && manifest.containsKey(coverId)) {
-          return _itemRelHref(manifest[coverId]!, opfDir, extractDir);
-        }
-      }
+      if (meta.getAttribute('name')?.toLowerCase() != 'cover') continue;
+      final String content = meta.getAttribute('content')?.trim() ?? '';
+      if (content.isEmpty) continue;
+      final _ManifestItem? item = manifest[content];
+      addHref(item != null ? item.href : _decodeHrefPath(content));
     }
-    // Fallback: first image resource
+    // EPUB 2: <guide><reference type="cover" href="cover.xhtml"/>
+    for (final XmlElement ref in _elements(opf, 'reference')) {
+      if (ref.getAttribute('type')?.toLowerCase() != 'cover') continue;
+      final String href = (ref.getAttribute('href') ?? '')
+          .split('#')
+          .first
+          .trim();
+      if (href.isNotEmpty) addHref(_decodeHrefPath(href));
+    }
+
+    final Set<String> tried = <String>{};
+    for (final String candidate in candidates) {
+      if (!tried.add(_pathKey(candidate))) continue;
+      final String? image = _coverImageFrom(
+        candidate,
+        byPath,
+        extractDir,
+        depth: 0,
+      );
+      if (image != null) return _relHref(image, extractDir);
+    }
+    // Fallback: first raster image resource
     for (final _ManifestItem item in manifest.values) {
-      if (item.mediaType.startsWith('image/')) {
-        return _itemRelHref(item, opfDir, extractDir);
+      if (!_isRasterMediaType(item.mediaType)) continue;
+      final String? abs = _resolveWithinExtract(opfDir, item.href, extractDir);
+      if (abs != null && File(abs).existsSync()) {
+        return _relHref(abs, extractDir);
       }
     }
     return null;
   }
 
-  static String? _itemRelHref(
-    _ManifestItem item,
-    String opfDir,
-    String extractDir,
-  ) {
-    // BUG-1218：封面 href 同样保留真实大小写，否则大小写敏感平台上取不到封面文件。
-    final String? absPath = _resolveWithinExtract(
-      opfDir,
-      item.href,
-      extractDir,
-    );
-    if (absPath == null) {
+  /// manifest 路径查表键（Windows / macOS 文件系统不分大小写，EPUB 内部引用
+  /// 大小写也常与 manifest 不一致）。
+  static String _pathKey(String absPath) =>
+      p.normalize(absPath).replaceAll('\\', '/').toLowerCase();
+
+  /// [absPath] 指向的封面候选落到一张存在的光栅图（绝对路径），落不到为 null。
+  /// XHTML / SVG 页最多再跟一层（页里引用了另一份 SVG 再引用 JPEG）。
+  static String? _coverImageFrom(
+    String absPath,
+    Map<String, _ManifestItem> byPath,
+    String extractDir, {
+    required int depth,
+  }) {
+    final File file = File(absPath);
+    if (!file.existsSync()) return null;
+    final String mediaType =
+        byPath[_pathKey(absPath)]?.mediaType ?? fallbackMimeType(absPath);
+    if (_isRasterMediaType(mediaType)) return absPath;
+    final bool isPage =
+        isHtmlMediaType(mediaType) ||
+        mediaType.toLowerCase() == 'image/svg+xml';
+    if (!isPage || depth > 1) return null;
+    final List<String> refs;
+    try {
+      refs = EpubChapterScanner.instance
+          .scan(
+            normalizeSelfClosingRawTextTags(_readText(file)),
+            EpubScanRequest.imageRefs,
+          )
+          .imageRefs!;
+    } on FormatException {
       return null;
     }
-    return _relHref(absPath, extractDir);
+    final String pageDir = p.dirname(absPath);
+    for (final String raw in refs) {
+      final String ref = raw.trim();
+      if (ref.isEmpty || ref.startsWith('data:') || ref.contains('://')) {
+        continue;
+      }
+      final String base = ref.split('#').first.split('?').first;
+      if (base.isEmpty) continue;
+      final String? target = _resolveWithinExtract(
+        pageDir,
+        _decodeHrefPath(base),
+        extractDir,
+      );
+      if (target == null) continue;
+      final String? image = _coverImageFrom(
+        target,
+        byPath,
+        extractDir,
+        depth: depth + 1,
+      );
+      if (image != null) return image;
+    }
+    return null;
+  }
+
+  /// 书架能直接解码的图片（SVG 不算：书架没有 SVG 解码器）。
+  static bool _isRasterMediaType(String mediaType) {
+    final String type = mediaType.toLowerCase();
+    return type.startsWith('image/') && type != 'image/svg+xml';
   }
 
   // ── TOC ────────────────────────────────────────────────────────────────────

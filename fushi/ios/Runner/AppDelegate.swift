@@ -1,4 +1,5 @@
 import CoreText
+import MetricKit
 import UIKit
 import UserNotifications
 import Flutter
@@ -131,6 +132,9 @@ final class FushiRemotePush {
     // （flutter_local_notifications 的本地通知），我们的远程推送在下面两个 override 里
     // 先认领。必须在 didFinishLaunching 返回前设好，冷启动的那次点击才收得到。
     UNUserNotificationCenter.current().delegate = self
+    // MetricKit 崩溃诊断：系统在下次启动后交付上次的 MXCrashDiagnostic，落盘给 Dart
+    // previous_exit_log.dart 摘要进错误日志（Dart 接不到的原生崩溃 / 被系统杀）。
+    FushiCrashDiagnostics.shared.start()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -653,5 +657,66 @@ final class FushiRemotePush {
     let task = ankiMobileMediaBackgroundTask
     ankiMobileMediaBackgroundTask = .invalid
     UIApplication.shared.endBackgroundTask(task)
+  }
+}
+
+/// MetricKit 崩溃诊断订阅（iOS 14+；本工程最低 15.1，iOS 15 起系统在下次启动后交付上次
+/// 的诊断）。每条 `MXCrashDiagnostic` 的 JSON 落到 `Documents/metrickit/`（与 path_provider
+/// 的 getApplicationDocumentsDirectory 同一目录），由 Dart `previous_exit_log.dart` 摘要
+/// （异常类型 / 信号 / 终止原因 / 崩溃线程前若干帧）进错误日志后删除。单条截到 256 KB，
+/// 目录只留最近 10 条，不让诊断无界堆积。
+final class FushiCrashDiagnostics: NSObject, MXMetricManagerSubscriber {
+  static let shared = FushiCrashDiagnostics()
+
+  private static let maxBytes = 256 * 1024
+  private static let maxFiles = 10
+
+  func start() {
+    MXMetricManager.shared.add(self)
+  }
+
+  func didReceive(_ payloads: [MXDiagnosticPayload]) {
+    guard
+      let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+    else { return }
+    let dir = docs.appendingPathComponent("metrickit", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    for payload in payloads {
+      for crash in payload.crashDiagnostics ?? [] {
+        var data = crash.jsonRepresentation()
+        if data.count > FushiCrashDiagnostics.maxBytes {
+          // 调用树太大：只留元数据（异常类型 / 码 / 信号 / 终止原因），仍是合法 JSON。
+          let meta: [String: Any] = [
+            "appVersion": crash.applicationVersion,
+            "exceptionType": crash.exceptionType?.intValue ?? -1,
+            "exceptionCode": crash.exceptionCode?.intValue ?? -1,
+            "signal": crash.signal?.intValue ?? -1,
+            "terminationReason": crash.terminationReason ?? "",
+            "virtualMemoryRegionInfo": crash.virtualMemoryRegionInfo ?? "",
+            "callStackTreeDropped": data.count,
+          ]
+          data =
+            (try? JSONSerialization.data(withJSONObject: ["diagnosticMetaData": meta]))
+            ?? Data()
+        }
+        let stamp = Int(payload.timeStampEnd.timeIntervalSince1970 * 1000)
+        let name = "crash-\(stamp)-\(UUID().uuidString.prefix(8)).json"
+        try? data.write(to: dir.appendingPathComponent(name), options: .atomic)
+      }
+    }
+    prune(dir)
+  }
+
+  private func prune(_ dir: URL) {
+    guard
+      let files = try? FileManager.default.contentsOfDirectory(
+        at: dir, includingPropertiesForKeys: nil)
+    else { return }
+    let sorted = files.filter { $0.pathExtension == "json" }
+      .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    if sorted.count <= FushiCrashDiagnostics.maxFiles { return }
+    for url in sorted.prefix(sorted.count - FushiCrashDiagnostics.maxFiles) {
+      try? FileManager.default.removeItem(at: url)
+    }
   }
 }

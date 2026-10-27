@@ -86,6 +86,12 @@ SettingsDestination buildCardCreationDestination() {
         hasRevealTarget: true,
       ),
       SettingsBodySearchEntry(
+        id: 'card_creation.anki.queue_undelivered_mines',
+        visible: _ankiOnly(),
+        title: t.anki_queue_undelivered_mines_title,
+        hasRevealTarget: true,
+      ),
+      SettingsBodySearchEntry(
         id: 'card_creation.anki.pending_mine_landing',
         visible: _ankiOnly(),
         title: t.anki_pending_mine_landing_title,
@@ -537,6 +543,7 @@ List<AnkiSectionRow> ankiSectionRowsFor(SettingsContext c) {
           AnkiSectionRow.backupImport,
       ],
       AnkiSectionRow.batchMining,
+      AnkiSectionRow.queueUndelivered,
       AnkiSectionRow.pendingLanding,
     ],
     AnkiSectionRow.pendingMines,

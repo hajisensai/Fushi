@@ -19,6 +19,42 @@ void main() {
       );
     });
 
+    // BUG-3811（反馈 XDtB1kYT0C）：Windows 备份合并到 Android。POSIX 上 `\` 是普通
+    // 文件名字符，保留源分隔符 = `/data/.../audiobooks\d4515d05\a.m4b` 这一个不存在
+    // 的文件名，音频永远解析不到。
+    test('a Windows source path rebased onto a POSIX root uses only "/"', () {
+      expect(
+        rebasePath(
+          r'C:\Users\u\AppData\Roaming\fushi\audiobooks\d4515d05\a.m4b',
+          r'C:\Users\u\AppData\Roaming\fushi\audiobooks',
+          '/data/user/0/app.fushi/app_flutter/audiobooks',
+        ),
+        '/data/user/0/app.fushi/app_flutter/audiobooks/d4515d05/a.m4b',
+      );
+    });
+
+    test('a mixed-separator Windows source path onto a POSIX root', () {
+      expect(
+        rebasePath(r'C:\Old\fushi_books\Bk/OEBPS\cover.jpg',
+            r'C:\Old\fushi_books', '/new/fushi_books/'),
+        '/new/fushi_books/Bk/OEBPS/cover.jpg',
+      );
+    });
+
+    test('a Windows target keeps the source sub-path bytes verbatim', () {
+      // Windows 两种分隔符都认；不改字节 = DataRootMigrator 等同机调用方零变化。
+      expect(
+        rebasePath(r'C:\Old\fushi_books\Bk/f.epub', r'C:\Old\fushi_books',
+            r'D:\New\fushi_books'),
+        r'D:\New\fushi_books\Bk/f.epub',
+      );
+      expect(
+        rebasePath('/old/audiobooks/u1/a.mp3', '/old/audiobooks',
+            r'D:\New\audiobooks'),
+        r'D:\New\audiobooks/u1/a.mp3',
+      );
+    });
+
     test('returns the path unchanged when it is not under the old root', () {
       expect(
         rebasePath('/somewhere/else/x.epub', '/old/app/fushi_books',

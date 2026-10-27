@@ -108,6 +108,10 @@ class SrsImportReport {
   /// 「不合并笔记模板」时因结构不同另建的笔记类型（来源名字）。
   final List<String> noteTypesDuplicated = <String>[];
 
+  /// 先前导入过、后来在本机删掉，这次恢复的笔记类型（来源名字）。它的笔记一并按「恢复」导回
+  /// （计入 [notesRestored]）。
+  final List<String> noteTypesRestored = <String>[];
+
   /// 不含排程：来源里学过 / 暂停过、本次作为新卡导入的卡片数。
   int cardsResetToNew = 0;
 
@@ -185,6 +189,7 @@ class SrsImportReport {
     'options': options.toJson(),
     'noteTypesUpdated': noteTypesUpdated,
     'noteTypesDuplicated': noteTypesDuplicated,
+    'noteTypesRestored': noteTypesRestored,
     'cardsResetToNew': cardsResetToNew,
     'reviewLogsSkipped': reviewLogsSkipped,
     'deckPresetsSkipped': deckPresetsSkipped,

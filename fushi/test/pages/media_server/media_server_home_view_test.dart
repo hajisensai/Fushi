@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
@@ -341,5 +342,72 @@ void main() {
     await tester.pumpAndSettle();
     expect(played, hasLength(1), reason: '海报墙里的电影先进详情，不直接播');
     expect(find.byType(MediaServerDetailView), findsOneWidget);
+  });
+
+  testWidgets('a-XEzglLaq：继续观看卡点按续播，长按 / 右键出菜单「继续播放 / 打开详情」', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final List<MediaServerPlayRequest> played = <MediaServerPlayRequest>[];
+    browser.libraries.add(shows);
+    browser.resume.addAll(
+      fakeEpisodes(seriesId: 's1', seasonId: 'sea1', seasonNumber: 1, count: 2),
+    );
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: MediaServerHomeView(
+              session: MediaServerSession(
+                browser: browser,
+                play: (BuildContext _, MediaServerPlayRequest request) =>
+                    played.add(request),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Finder card = find.byKey(
+      ValueKey<String>('${browser.serverId}-home-continue-card-sea1-ep2'),
+    );
+    final Finder resumeItem = find.byKey(
+      const ValueKey<String>('media-server-continue-menu-resume'),
+    );
+    final Finder detailsItem = find.byKey(
+      const ValueKey<String>('media-server-continue-menu-details'),
+    );
+
+    // 长按：只出菜单，不播、不跳。
+    await tester.longPress(card);
+    await tester.pumpAndSettle();
+    expect(played, isEmpty);
+    expect(find.byType(MediaServerDetailView), findsNothing);
+    expect(find.text(t.media_server_continue_menu_resume), findsOneWidget);
+    expect(find.text(t.media_server_continue_menu_details), findsOneWidget);
+
+    // 「继续播放」= 点按同义：从这一集续播，同伴是这一行。
+    await tester.tap(resumeItem);
+    await tester.pumpAndSettle();
+    expect(played, hasLength(1));
+    expect(played.single.info.id, 'sea1-ep2');
+    expect(resumeItem, findsNothing, reason: '选完菜单收起');
+
+    // 右键同一菜单；「打开详情」进所属剧的详情（选中这一集的季），不播。
+    await tester.tap(card, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(detailsItem);
+    await tester.pumpAndSettle();
+    expect(played, hasLength(1), reason: '打开详情不播');
+    final MediaServerDetailView detail = tester.widget<MediaServerDetailView>(
+      find.byType(MediaServerDetailView),
+    );
+    expect(detail.item.id, 's1');
+    expect(detail.item.type, MediaServerItemType.series);
+    expect(detail.initialSeasonId, 'sea1');
   });
 }

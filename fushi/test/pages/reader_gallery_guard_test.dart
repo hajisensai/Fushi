@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-723: source-scan guards that anchor the illustration gallery wiring so a
 /// future refactor cannot silently drop the bottom-bar entry or introduce a
 /// second image-zoom / chapter-navigation path. Behaviour (real thumbnail
@@ -66,12 +68,12 @@ void main() {
     // book.images），但清单仍是 EpubBook.images 这一份：阅读器经
     // _loadBookImagesOffUiIsolate 在后台算好后 adoptImages 回填、返回的就是
     // book.images（盘上缓存存的也是它的结果），不是第二份枚举。
+    // 空白无关、且限定在 _openGallery 体内：钉「插图册清单 = 后台装载 book 的结果」，
+    // 不钉 dart format 是否把实参拆行。
     expect(
-      RegExp(
-        r'final List<EpubImageRef> images =\s*'
-        // `dart format` 可能把实参折到下一行。
-        r'await _loadBookImagesOffUiIsolate\(\s*book,',
-      ).hasMatch(src),
+      compactCode(methodBody(src, 'Future<void> _openGallery()')).contains(
+        'finalList<EpubImageRef>images=await_loadBookImagesOffUiIsolate(book,',
+      ),
       isTrue,
       reason: '插图册的清单必须来自 _loadBookImagesOffUiIsolate(book, …)',
     );

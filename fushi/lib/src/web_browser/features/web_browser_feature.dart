@@ -3,7 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 
-/// 浏览器的可插拔功能（「用 Fushi 播放」、YouTube 字幕查词、阅读模式、整页注音、
+/// 浏览器的可插拔功能（「用 Fushi 播放」、YouTube 字幕查词、阅读模式、
 /// 学习统计……）。浏览页只认这个接口：每个功能一个实现类，装配点只有
 /// `web_browser_features.dart` 的 [buildWebBrowserFeatures]，浏览页不为某个功能
 /// 写特判。
@@ -29,6 +29,15 @@ abstract class WebBrowserFeature {
     InAppWebViewController controller,
     Uri? url,
   ) async {}
+
+  /// 主框架地址变了（`onUpdateVisitedHistory`：含单页应用 pushState 换页，那种换页不触发
+  /// [onLoadStop]）。[context] 是标签页自己的，可用来推页面。
+  void onUrlChanged(
+    BuildContext context,
+    WebBrowserTab tab,
+    InAppWebViewController controller,
+    Uri? url,
+  ) {}
 
   /// 标签页成为 / 不再是前台标签页（统计计时、暂停注入等用）。
   void onTabActiveChanged(WebBrowserTab tab, {required bool active}) {}

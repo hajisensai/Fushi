@@ -1574,21 +1574,30 @@ mod tests {
         }
         let query = json!({"t":"field","f":"front","v":"x"});
         let deadline = std::time::Instant::now() + one * 4;
-        let (mut worst, mut calls) = (Duration::ZERO, 0usize);
+        let mut waits: Vec<Duration> = Vec::new();
         while std::time::Instant::now() < deadline {
             let t = std::time::Instant::now();
             assert_eq!(corpus_needs_json(addr, &query), json!({"ok":{"all":false,"names":[1]}}));
-            worst = worst.max(t.elapsed());
-            calls += 1;
+            waits.push(t.elapsed());
         }
+        // Judge on p99, not the single worst call: a lock wait would make nearly
+        // every call that overlaps a match block for up to a whole match (p99 far
+        // above one/2), while one scheduler preemption on a busy CI runner — other
+        // tests share the binary — must not fail the gate (macOS run 40489530665:
+        // one outlier among 8471 calls).
+        waits.sort();
+        let calls = waits.len();
+        let worst = waits.last().copied().unwrap_or(Duration::ZERO);
+        let p99 = waits.get(calls.saturating_sub(1) * 99 / 100).copied().unwrap_or(Duration::ZERO);
         stop.store(true, Ordering::Release);
         let rounds = bg.join().unwrap();
         ffsrs_search_corpus_free(corpus);
-        eprintln!("corpus_needs worst {worst:?} over {calls} calls; one match {one:?}; {rounds} background rounds");
+        eprintln!("corpus_needs p99 {p99:?} worst {worst:?} over {calls} calls; one match {one:?}; {rounds} background rounds");
         assert!(rounds >= 2, "background match did not keep the lock busy ({rounds} rounds)");
+        assert!(calls >= 100, "too few corpus_needs calls ({calls}) to judge a p99");
         assert!(
-            worst < one / 2,
-            "corpus_needs waited {worst:?} (one match = {one:?}, {calls} calls, {rounds} rounds)"
+            p99 < one / 2,
+            "corpus_needs p99 waited {p99:?} (worst {worst:?}, one match = {one:?}, {calls} calls, {rounds} rounds)"
         );
     }
 }

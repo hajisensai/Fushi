@@ -1,0 +1,9 @@
+## BUG-3823 · 复习同步拉入的变更又触发一轮本机推送，库页横幅反复弹出、内容上下挪
+- **报告**：2026-10-27（用户：应用内反馈 I1Bg6uMZ32「srs 同步好像会强制刷新界面」+ 录屏；关联 VNz9dsLeIy）
+- **真实性**：✅ 真 bug（沿代码路径确认）。录屏是 Android 平板书架页下拉同步：常规同步横幅「同步阅读数据 (11/11)」之后又出现复习同步那一行「同步卡片媒体」，横幅在叠放工具区里一行行出现 / 收起，书架正文跟着整体下移 / 上移，看起来像整页被刷新。书架页本身不订阅任何 SRS provider——「整页刷新」的观感来自横幅反复出现，而复习同步一轮之后**又自动多跑一轮**是本 bug：
+  - 同步拉进别的设备的变更时调度器调 `onDataChanged`（`fushi/lib/src/srs/srs_sync_scheduler.dart:543-549`），运行时把它接到 `bumpRevision`（旧 `fushi/lib/src/srs/srs_app_runtime.dart:74,148`），即 `srsRevisionProvider++`；
+  - 本机推送 `SrsLocalPush` 监听的正是这个修订号（旧 `srs_app_runtime.dart:90-92`，`ref.listen<int>(srsRevisionProvider, … localPush.trigger())`），于是拉入的变更 5 秒后又触发一轮 `_pushInterconnect`（互联通道 + 本机 host 目录各一轮），复习同步横幅再弹一次。这一轮没有东西要推：拉入那一轮在 ingest 之后已经把本机待发的操作一起发出（`packages/fushi_engine/lib/srs/sync2/srs_sync2_round.dart` 第 3 步 outbox）。
+  - 委托方怀疑的「`srs_providers.dart` 里 watch 修订号的列表整体重建」不是录屏现象的来源：那几个 FutureProvider 在依赖变化时保留旧值（牌组列表按 `data.isLoading && !data.hasValue` 才切转圈，`srs_deck_list_page.dart:507`），而且书架页根本不 watch 它们。没有实际变更的轮次本来就不递增修订号（`srs_sync_scheduler.dart:543` 的条件），已加测试钉住。
+- **[x] ① 已修复** — 提交 `fix(srs): pulled sync changes no longer trigger a local push`。修订号仍是唯一的界面刷新信号，但每一跳带来源：`SrsRevisionOrigin`（`fushi/lib/src/srs/srs_providers.dart`）在同步拉入时递增并记下那一跳的值，`listenSrsLocalWrites` 只在本机写入的那一跳调推送。运行时调度器的 `onDataChanged` 改接 `_bumpPulledRevision`；自动优化应用新参数仍走本机写入那条（要推给别的设备）。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_revision_origin_test.dart`（ProviderContainer：拉入让订阅方重读但不触发推送、本机写入夹在拉入之间也不漏；运行时接线源码守卫）；`fushi/test/srs/srs_sync_scheduler_test.dart`「拉进别的设备的变更才报数据变动；之后没有新数据的轮次不报」（两台真实 store 经同一目录同步）。
+- **备注**：未做「按受影响的卡组 / 卡失效」：牌组列表的计数是整库一次读出的（`deckSummaries`），任何一张卡的评分都会改它，拆成按牌组的 provider 要动 store 接口，而录屏里的跳动不来自它，收益不足以支撑。仍会出现的跳动：常规同步本身（含复习后置步骤）一轮里横幅照样出现一次并推开书架正文——那是同步横幅放在叠放工具区、工具区高度随横幅变化的布局问题，不属于本条；`profile 关联` 采用目录里已有 uid 时 `ref.invalidate(srsStoreProvider)` 重开 store 仍会让 SRS 页重读一次（一次性，铁律 E 需要）。未在真机复测。

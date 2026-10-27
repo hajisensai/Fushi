@@ -122,6 +122,42 @@ void main() {
     expect(again, merged);
   });
 
+  test('浏览器播不了的观看页：只有 Netflix /watch/ 自动交给播放页', () {
+    // 2026-10-27 用户：Netflix 在浏览器里黑屏、卡，要再点「用 Fushi 播放」。
+    expect(
+      webBrowserWatchPageNeedsPlayer(
+        Uri.parse('https://www.netflix.com/watch/81915938?trackId=1'),
+      ),
+      isTrue,
+    );
+    expect(
+      webBrowserWatchPageNeedsPlayer(Uri.parse('https://netflix.com/watch/1')),
+      isTrue,
+    );
+    // 浏览 / 详情页（预告片）是在选集，不交。
+    expect(webBrowserWatchPageNeedsPlayer(netflix), isFalse);
+    expect(
+      webBrowserWatchPageNeedsPlayer(
+        Uri.parse('https://www.netflix.com/title/81915938'),
+      ),
+      isFalse,
+    );
+    // YouTube 在浏览器里播得了：照旧按钮交接，不自动跳。
+    expect(
+      webBrowserWatchPageNeedsPlayer(
+        Uri.parse('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+      ),
+      isFalse,
+    );
+    expect(
+      webBrowserWatchPageNeedsPlayer(
+        Uri.parse('https://evilnetflix.com/watch/1'),
+      ),
+      isFalse,
+    );
+    expect(webBrowserWatchPageNeedsPlayer(null), isFalse);
+  });
+
   group('「用 Fushi 播放」扩到任意网页', () {
     Future<List<WebBrowserAction>> actionsFor(
       WidgetTester tester,

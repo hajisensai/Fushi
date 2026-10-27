@@ -3254,12 +3254,65 @@ class _AdaptiveSettingsTextFieldState extends State<AdaptiveSettingsTextField> {
     'settings-textfield-${identityHashCode(this)}',
   );
 
+  // [initialValue] 形态下组件自持控制器，让外部值变化（切换 Profile、异步加载完成）
+  // 能反映到输入框里。此前把 initialValue 直接交给 [FushiTextField]，值只在控制器
+  // 创建时灌一次：制卡设置切 Profile 后标签框仍显示上一个 Profile 的值，用户在旧值
+  // 上继续编辑就写错了新 Profile（反馈 XyTPrbdKSZ）。只在输入框没有焦点时同步，
+  // 迟到的异步保存不会冲掉正在输入的内容。
+  TextEditingController? _ownController;
+  FocusNode? _ownFocusNode;
+
+  FocusNode? get _focusNode => widget.focusNode ?? _ownFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncOwnership();
+  }
+
+  @override
+  void didUpdateWidget(AdaptiveSettingsTextField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncOwnership();
+    final TextEditingController? own = _ownController;
+    final String? value = widget.initialValue;
+    if (own != null &&
+        value != null &&
+        value != oldWidget.initialValue &&
+        value != own.text &&
+        !(_focusNode?.hasFocus ?? false)) {
+      own.text = value;
+    }
+  }
+
+  /// 按当前参数决定是否自持控制器 / 焦点节点（调用方给了就用调用方的）。
+  void _syncOwnership() {
+    if (widget.controller == null) {
+      _ownController ??= TextEditingController(text: widget.initialValue);
+    } else {
+      _ownController?.dispose();
+      _ownController = null;
+    }
+    if (widget.focusNode == null) {
+      _ownFocusNode ??= FocusNode();
+    } else {
+      _ownFocusNode?.dispose();
+      _ownFocusNode = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _ownController?.dispose();
+    _ownFocusNode?.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FushiTextField(
-      controller: widget.controller,
-      focusNode: widget.focusNode,
-      initialValue: widget.initialValue,
+      controller: widget.controller ?? _ownController,
+      focusNode: _focusNode,
       hintText: widget.hintText,
       labelText: widget.labelText,
       obscureText: widget.obscureText,

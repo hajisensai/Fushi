@@ -398,6 +398,12 @@ class ShortcutDefaults {
     // video_fushi_page.dart，故空绑定不是死通道。
     ShortcutAction.videoLookupNextWord: const ShortcutBindingSet(),
     ShortcutAction.videoLookupPrevWord: const ShortcutBindingSet(),
+    // 循环当前句开关（Ix4j5SKUth）：默认空绑定，用户自配（见 shortcut_action）。
+    ShortcutAction.videoToggleLoopCurrentSubtitle: const ShortcutBindingSet(),
+    // 复制当前台词主 / 副（_Eb0txdN4H）：默认空绑定，用户自配（见 shortcut_action）。
+    ShortcutAction.videoCopyCurrentSubtitle: const ShortcutBindingSet(),
+    ShortcutAction.videoCopyCurrentSecondarySubtitle:
+        const ShortcutBindingSet(),
     // 漫画：默认键位与 reader 同构（PageDown/右/下/空格 前进），左右方向键的最终
     // 朝向再由 resolveMangaArrowPageTurn 按跨页方向（日漫默认 rtl）校正，所以这里
     // 存的是**页序语义**而非物理方向。

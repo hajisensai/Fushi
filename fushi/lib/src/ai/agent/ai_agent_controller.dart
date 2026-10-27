@@ -154,6 +154,10 @@ class AiAgentController extends ChangeNotifier
   bool get hasProvider => resolveAiAgentProvider(settings) != null;
 
   @override
+  bool get acceptsImages =>
+      resolveAiAgentProvider(settings)?.acceptsImages ?? false;
+
+  @override
   bool get running => _session?.running ?? false;
 
   @override
@@ -164,6 +168,12 @@ class AiAgentController extends ChangeNotifier
 
   @override
   int get totalTokens => _session?.totalTokens ?? 0;
+
+  @override
+  AiChatUsage get usage => _session?.usage ?? const AiChatUsage();
+
+  @override
+  Map<String, double> get cost => _session?.cost ?? const <String, double>{};
 
   @override
   bool get awaitingConfirm => host.awaitingConfirm;
@@ -238,11 +248,15 @@ class AiAgentController extends ChangeNotifier
   /// 说一句话。没指派提供商时抛 `StateError('ai_agent_no_provider')`——调用方
   /// 在此之前已经用 [hasProvider] 引导用户去设置，这里是兜底，不发请求。
   @override
-  Future<void> send(String text, {AgentUiContext? context}) async {
+  Future<void> send(
+    String text, {
+    AgentUiContext? context,
+    List<AiChatImage> images = const <AiChatImage>[],
+  }) async {
     final AgentSession session = ensureSession(scene: context?.scene ?? _scene);
     unawaited(_pruneOnce());
     try {
-      await session.send(text, context: context);
+      await session.send(text, context: context, images: images);
     } finally {
       await _save();
     }

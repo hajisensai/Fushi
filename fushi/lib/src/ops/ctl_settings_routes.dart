@@ -22,6 +22,7 @@ import 'package:fushi/src/ops/ctl_settings_values.dart';
 import 'package:fushi/src/ops/ctl_settings_wire.dart';
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/profile/language_binding.dart';
+import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/settings/settings_actions.dart'
@@ -1330,11 +1331,25 @@ Future<Object?> _deleteProfile(OpContext context, CtlCall call) async {
   if (state.profiles.length <= 1) {
     throw const CtlFailure.rejected('至少要保留一个 Profile');
   }
-  await viewModel.deleteProfile(target.id);
+  // 连带删掉它在 srs.db 里的复习数据与媒体目录（先自动备份，备份失败则整体不删；反馈 8TaOy2i-lL）。
+  final ProfileDeletionOutcome? outcome;
+  try {
+    outcome = await viewModel.deleteProfile(target.id);
+  } on ProfileDeletionBackupException catch (e) {
+    throw CtlFailure.rejected('复习数据备份失败，未删除「${target.name}」：${e.cause}');
+  }
   final ProfileUiState after = _profileState(context);
+  final ProfileDeletionImpact impact =
+      outcome?.impact ?? const ProfileDeletionImpact.none();
   return <String, Object?>{
     'deleted': <String, Object?>{'id': target.id, 'name': target.name},
     'activeProfileId': after.activeProfileId,
+    'srs': <String, Object?>{
+      'notes': impact.srsNotes,
+      'cards': impact.srsCards,
+      'reviews': impact.srsReviews,
+      'backup': outcome?.backupPath,
+    },
   };
 }
 
