@@ -751,7 +751,7 @@ String buildSpreadPageHtml({
   required int swipeDistThreshold,
   required int swipeFastDistThreshold,
   required int swipeFastVelocity,
-  // BUG-3796：本次导航的代际，随 spreadReady 回报，Dart 侧据此丢弃晚到的旧文档就绪消息。
+  // BUG-3798：本次导航的代际，随 spreadReady 回报，Dart 侧据此丢弃晚到的旧文档就绪消息。
   required int navigationGeneration,
   String keyBridgeScript = '',
   // 折叠屏书本姿态：两页之间让出的铰链缝（逻辑像素，fushiHingeGutterPx）。0 = 无缝。

@@ -579,7 +579,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// 解析后落在目录页）：既没有 `_beginNavigation`，也就没有 restore 回执
   /// （[_onRestoreComplete]）、没有中止收尾（[_failNavigation]）、连 content-ready
   /// 兜底计时都没有武装。持有有声书跨章守卫的调用方（[_handleCueCrossChapter]）
-  /// 必须据此自己释放守卫——否则守卫等的那条回执永远不会来（BUG-3796）。
+  /// 必须据此自己释放守卫——否则守卫等的那条回执永远不会来（BUG-3798）。
   /// `true` 之后的结局（回执 / 中止）由导航自身负责通知控制器。
   Future<bool> _navigateToChapter(
     int index, {

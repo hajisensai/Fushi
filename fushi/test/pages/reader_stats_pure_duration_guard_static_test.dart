@@ -172,7 +172,7 @@ void main() {
         '\n  /// 播放指定 cue 单句后暂停',
       );
       final int jumpIdx = skipToCue.indexOf('onExplicitCueJump?.call(cue);');
-      // BUG-3796：物理 seek 收敛到 _seekPlatformForExplicitSeek（登记平台在途窗口）。
+      // BUG-3798：物理 seek 收敛到 _seekPlatformForExplicitSeek（登记平台在途窗口）。
       final int seekIdx = skipToCue.indexOf('_seekPlatformForExplicitSeek(');
       expect(
         jumpIdx,

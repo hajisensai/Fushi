@@ -432,13 +432,13 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 显式 seek 的目标句（[skipToCue] 才有；按位置 seek 为 null）。抑制窗期间它是
   /// 「音频要去哪一句」的权威值——[notifySectionRestoreCompleted] 在平台 seek 尚未
-  /// 返回时据它判跨章，而不是拿 seek 前的旧位置重算（BUG-3796）。
+  /// 返回时据它判跨章，而不是拿 seek 前的旧位置重算（BUG-3798）。
   AudioCue? _explicitSeekTargetCue;
 
   /// 当前显式 seek 的平台操作（已下发、平台尚未返回）的编号；null = 没有在途操作。
   /// 期间 `_player.position` / `currentIndex` 仍可能是 seek 前的值（just_audio 只
   /// 乐观更新位置、不更新文件下标；桌面后端连位置都可能晚到），任何「按当前位置
-  /// 重算 cue」都会解析出旧句（BUG-3796）。
+  /// 重算 cue」都会解析出旧句（BUG-3798）。
   ///
   /// 用编号而不是计数：窗口只属于**最新**那次显式 seek。平台的 seek 回执可能永远
   /// 不来——just_audio 0.9.42 Android 端 `AudioPlayer.java` 只在进入 STATE_READY
@@ -455,12 +455,12 @@ class AudiobookPlayerController extends ChangeNotifier {
       _explicitSeekPlatformPending;
 
   /// 调用方已宣布「音频马上由我 [skipToCue] 定位、reader 也由我跳章」（有声书面板
-  /// 「章节」tab），在那次 seek 发出前不得按旧位置发自动跨章（BUG-3796）。
+  /// 「章节」tab），在那次 seek 发出前不得按旧位置发自动跨章（BUG-3798）。
   bool _crossChapterHeldForCallerSeek = false;
 
   /// 跨章守卫持住期间发生过显式跳句（[skipToCue]）：那次跳句的跨章判定被守卫挡下，
   /// 由守卫所属导航的落地回执（[notifySectionRestoreCompleted]）补判一次。旧实现靠
-  /// 跳句时无条件清守卫来「立刻判」，代价是提前放掉 reader 在飞导航的守卫（BUG-3796）。
+  /// 跳句时无条件清守卫来「立刻判」，代价是提前放掉 reader 在飞导航的守卫（BUG-3798）。
   bool _crossChapterDeferredToReceipt = false;
 
   /// 落定容差（毫秒）：位置到达 `targetMs - 容差` 即视为 seek 落定，
@@ -1255,7 +1255,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 守卫放下后 notifySectionRestoreCompleted 会负责恢复。
     // 显式 seek 的平台操作在途：位置仍是 seek 前的，不得清抑制窗、不得按位置重算
     // （否则重算出 seek 前那一句并据此跨章——面板跳章时新章文档载入正是在这个窗口里
-    // 重灌 cue，BUG-3796）。与守卫期间同样只换列表、保住当前句；seek 返回后由
+    // 重灌 cue，BUG-3798）。与守卫期间同样只换列表、保住当前句；seek 返回后由
     // [skipToCue] 写入目标句、由 seek 之后的位置落定。
     if (_chapterTransition || _explicitSeekPlatformPending) {
       // 当前句保留，但它的下标必须指向**新**列表：下标仍指旧列表时，落地回执的
@@ -1505,7 +1505,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _manualReaderOverrideCue = null;
     _stopAtPositionMs = null;
     _returnToPosition = null;
-    // BUG-3796：不清跨章守卫——它属于 reader 侧在飞的导航（见 [skipToCue]）。
+    // BUG-3798：不清跨章守卫——它属于 reader 侧在飞的导航（见 [skipToCue]）。
     _currentCue = null;
     _currentCueIndex = -1;
     _beginExplicitSeek(fileIndex, positionMs);
@@ -1553,7 +1553,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _manualReaderOverrideCue = null;
     _stopAtPositionMs = null;
     _returnToPosition = null;
-    // BUG-3796：不清跨章守卫——它属于 reader 侧在飞的导航（见 [skipToCue]）。
+    // BUG-3798：不清跨章守卫——它属于 reader 侧在飞的导航（见 [skipToCue]）。
     _currentCue = null;
     _currentCueIndex = -1;
     _beginExplicitSeek(fileIndex, 0);
@@ -1646,7 +1646,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _explicitSeekTargetCue = null;
   }
 
-  /// BUG-3796：「跳章 + 定音频」组合操作（有声书面板「章节」tab）的第一步。
+  /// BUG-3798：「跳章 + 定音频」组合操作（有声书面板「章节」tab）的第一步。
   ///
   /// 调用方接着先手动跳章、再 [skipToCue]（`callerPositionsReader: true`）。跳章在飞
   /// 期间音频仍在旧章往下播：换句会解除手动导航护栏（[_manualReaderOverrideCue] 只护
@@ -1701,13 +1701,13 @@ class AudiobookPlayerController extends ChangeNotifier {
       mappedPosition.audioFileIndex,
       positionMs,
     );
-    // BUG-3796：这里**不碰**跨章守卫。守卫属于 reader 侧仍在飞的那次导航，只能由它的
+    // BUG-3798：这里**不碰**跨章守卫。守卫属于 reader 侧仍在飞的那次导航，只能由它的
     // 落地回执 / 中止信号释放；旧实现在此无条件清掉，跨章导航还没落地就恢复了 cue
     // 推进与跨章判定。守卫持住时下面的 _maybeEmitCrossChapter 早退，落地回执
     // （notifySectionRestoreCompleted）会按本次目标句再判一次跨章。
     // 按身份而不是对象引用找目标句：seek 在途期间 reader 可能重灌了一份新对象的
     // cue 列表（新章文档载入），引用比较找不到就会退回「按当前位置重算」，而 seek
-    // 刚返回时文件下标的平台事件可能还没到，重算出 seek 前那一句（BUG-3796）。
+    // 刚返回时文件下标的平台事件可能还没到，重算出 seek 前那一句（BUG-3798）。
     final int idx = _chapterCues.indexWhere((AudioCue c) => _isSameCue(c, cue));
     if (idx >= 0) {
       // 权威写入目标 cue（不依赖瞬态 position）；保持 _explicitSeekInFlight=true，
@@ -1744,10 +1744,10 @@ class AudiobookPlayerController extends ChangeNotifier {
     final int targetMs = _clampToKnownDuration(startPosition.positionMs);
     _beginExplicitSeek(startPosition.audioFileIndex, targetMs);
     await _seekPlatformForExplicitSeek(startPosition.audioFileIndex, targetMs);
-    // BUG-3796：单句试听同样不得放掉 reader 在飞跨章导航的守卫（见 [skipToCue]）。
+    // BUG-3798：单句试听同样不得放掉 reader 在飞跨章导航的守卫（见 [skipToCue]）。
     // 按身份而不是对象引用找目标句：seek 在途期间 reader 可能重灌了一份新对象的
     // cue 列表（新章文档载入），引用比较找不到就会退回「按当前位置重算」，而 seek
-    // 刚返回时文件下标的平台事件可能还没到，重算出 seek 前那一句（BUG-3796）。
+    // 刚返回时文件下标的平台事件可能还没到，重算出 seek 前那一句（BUG-3798）。
     final int idx = _chapterCues.indexWhere((AudioCue c) => _isSameCue(c, cue));
     if (idx >= 0) {
       _currentCueIndex = idx;
@@ -1973,7 +1973,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       // 下一句又跳回当前句 / 上一句乱跳」。暂停时一律抑制瞬态、保留权威 cue、
       // 不清旗；待用户按播放、首帧真实到达 target 后再走下面的正常落定逻辑。
       if (!_player.playing) return;
-      // BUG-3796：只认 seek **之后**产生的位置。平台操作返回前的 tick 报的是 seek 前
+      // BUG-3798：只认 seek **之后**产生的位置。平台操作返回前的 tick 报的是 seek 前
       // 的旧位置——向后 seek 时旧位置本就高于目标，「位置 ≥ 目标 − 容差」会把它误判成
       // 已到位，清旗后按旧位置重算，把权威目标句覆盖回 seek 前那一句（跨文件时连旧章
       // 一起，触发跨章回弹）。
@@ -2257,7 +2257,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 待 reader 收尾置 setImageChapterPauseActive(false) 后由落到目标章的导航正常清。
     if (_imageChapterPauseActive) return;
     _chapterTransition = false;
-    // BUG-3796：显式 seek 已下发、平台还没返回时，`_player.position` /
+    // BUG-3798：显式 seek 已下发、平台还没返回时，`_player.position` /
     // `currentIndex` 仍可能是 seek 前的值。此刻按位置重算会解析出 seek 前那一句，
     // 再拿它判跨章 = 把刚落到新章的 reader 拽回旧章（面板「章节」tab 跳章回弹）。
     // 抑制窗保留到 seek 自己落定；跨章只按本次 seek 的目标句判。

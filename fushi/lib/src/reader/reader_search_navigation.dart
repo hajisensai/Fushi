@@ -37,7 +37,7 @@ bool isCurrentReaderRestoreCompletion({
 ///
 /// 代际是文档装载时冻结在页面里的整数；缺失、非数字、非有限值或带小数一律返回
 /// null——调用方必须把 null 当「不属于任何导航」丢弃，绝不能当作当前导航完成
-/// （BUG-3796：晚到的旧 spread 文档就绪消息曾不带代际，被直接当成当前导航落地）。
+/// （BUG-3798：晚到的旧 spread 文档就绪消息曾不带代际，被直接当成当前导航落地）。
 int? readerReportedNavigationGeneration(List<dynamic> args, int index) {
   if (index < 0 || args.length <= index) return null;
   final Object? raw = args[index];

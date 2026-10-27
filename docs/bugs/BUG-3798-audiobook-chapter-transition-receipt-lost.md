@@ -1,4 +1,4 @@
-## BUG-3796 · audiobook-chapter-transition-receipt-lost
+## BUG-3798 · audiobook-chapter-transition-receipt-lost
 - **报告**：2026-10-27（来源：第三方 PR #2544 描述的「跨章守卫卡住、cue / 高亮冻结」；该 PR 的自愈判据未采纳，见备注）
 - **真实性**：✅ 真 bug（沿代码路径验证，未真机复现）。有声书跨章守卫 `_chapterTransition`（`fushi/lib/src/media/audiobook/audiobook_controller.dart` `_maybeEmitCrossChapter` 竖起）的契约是「只由这次导航的结局释放」：落地回执 `_onRestoreComplete → notifySectionRestoreCompleted`，或中止收尾 `_failNavigation → abortChapterTransition`。develop `bf6d664351` 上有三条导航结局不发信号：
   1. **永久卡死**：`fushi/lib/src/pages/implementations/reader_fushi/navigation.part.dart:588 / :591 / :607`（`_navigateToChapter` 的三处早退）静默 `return`——被拒时没有 `_beginNavigation`，也就没有 restore 回执、没有 `_failNavigation`、连 content-ready 兜底计时都没武装；持守卫的 `fushi/lib/src/pages/implementations/reader_fushi/audiobook.part.dart:917`（`_handleCueCrossChapter`）await 完就走，守卫永久 true，`_updateCurrentCue` / `setChapterCues` 全部早退直到重开书。可达路径：`_handleCueCrossChapter` 只在**重定向前**判目录页（`audiobook.part.dart:872`），`_navigateToChapter` 在 `_resolveNavChapter` 重定向**后**再判一次（`:606`）——开「图片合并」时，被吸收的单图片章若后接目录页（典型：封面图 → 目录），跨章目标经重定向落到目录页即被拒。

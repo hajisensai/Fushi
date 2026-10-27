@@ -274,7 +274,7 @@ void main() {
       expect(guarded, contains('isCurrentReaderRestoreCompletion('));
       expect(guarded, contains('reportedGeneration: reportedGeneration,'));
       expect(webview, contains('navigationGeneration: gen,'));
-      // BUG-3796：代际解析收敛到 readerReportedNavigationGeneration（spreadReady 共用）。
+      // BUG-3798：代际解析收敛到 readerReportedNavigationGeneration（spreadReady 共用）。
       expect(
         webview,
         contains('readerReportedNavigationGeneration(args, 1)'),

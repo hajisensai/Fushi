@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
-/// 跨章守卫的释放判据（PR #2544 的症状场景，BUG-3796 的修法）。
+/// 跨章守卫的释放判据（PR #2544 的症状场景，BUG-3798 的修法）。
 ///
 /// 症状（PR #2544 真机报告）：ch.89 从有声书面板「章节」tab 跳章后，音频已往前走了
 /// 9 分钟、高亮仍冻在章首，reader 停在 section 91、cue 不再推进。
@@ -12,7 +12,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 /// PR #2544 原本的修法是「守卫期间 reader 当前章 == cue 所属章就自愈放守卫」。这个
 /// 判据不成立：reader 的 `_beginNavigation`（`reader_fushi/navigation.part.dart`）在
 /// 导航**一开始**就同步写 `_currentChapter = chapter`，等式在落地回执到来前就成立，
-/// 会把还在飞的导航的守卫提前放掉。BUG-3796 改为找出回执为什么不来并修掉
+/// 会把还在飞的导航的守卫提前放掉。BUG-3798 改为找出回执为什么不来并修掉
 /// （导航被拒不发信号 / 加载失败不走统一中止 / spread 就绪不带代际 / 显式 seek
 /// 无条件清守卫 / 面板跳章回弹），守卫只由**真实的落地回执或明确的中止 / 取消信号**
 /// 释放。本文件在同一症状场景下钉住这一点。

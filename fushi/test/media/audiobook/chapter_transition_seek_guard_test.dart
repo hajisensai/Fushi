@@ -9,7 +9,7 @@ import 'package:just_audio_platform_interface/just_audio_platform_interface.dart
 
 import '../../helpers/source_guard.dart';
 
-/// BUG-3796（控制器侧两条）：
+/// BUG-3798（控制器侧两条）：
 ///
 /// ② 显式跳句（[AudiobookPlayerController.skipToCue] / `playCueOnce`）在 seek 之后
 ///    无条件 `_chapterTransition = false`，把 reader 侧**仍在飞**的跨章导航的守卫提前

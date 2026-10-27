@@ -6,7 +6,7 @@ import 'package:fushi/src/reader/reader_search_navigation.dart';
 import '../../helpers/source_guard.dart';
 import '../../pages/reader_fushi_page_source_corpus.dart';
 
-/// BUG-3796：有声书跨章守卫 `_chapterTransition` 只能由「这次导航的结局」释放——
+/// BUG-3798：有声书跨章守卫 `_chapterTransition` 只能由「这次导航的结局」释放——
 /// 落地回执（`_onRestoreComplete` → `notifySectionRestoreCompleted`）或明确的
 /// 中止 / 取消信号（`_failNavigation` → `abortChapterTransition`、
 /// `cancelChapterTransition`）。本文件钉住此前三条**结局不发信号**的路径：

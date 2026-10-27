@@ -3178,7 +3178,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         stack,
       );
       debugPrint('[ReaderFushi] reloadWithCurrentSettings failed: $e');
-      // BUG-3796：重载已经递增了导航代际（上一代在飞导航的回执此后一律判旧丢弃），
+      // BUG-3798：重载已经递增了导航代际（上一代在飞导航的回执此后一律判旧丢弃），
       // 装载又失败 = 这一代的回执也永远不会来。走统一中止收尾，连同有声书跨章守卫
       // 一起释放；旧的手写收尾只解开 restore 态，守卫要白等 8s 兜底计时器。
       _failNavigation();
