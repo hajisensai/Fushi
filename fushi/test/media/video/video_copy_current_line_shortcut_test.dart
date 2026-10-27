@@ -3,9 +3,7 @@
 // 钉四件事：① 取句判据（正在显示的那几句 → 句间空隙回落 → 都没有不写剪贴板）；
 // ② 两个动作在所有平台默认空绑定；③ 用户绑键后经注册表解析到动作、再经动作表派发到
 // 执行体；④ 视频页把两个回调接到真实的复制执行体（主取 activeCues、副取 secondaryActiveCues）。
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
-import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_current_line_copy.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
@@ -194,6 +192,7 @@ VideoPlayerShortcutActions _actions(List<String> log) {
     replayPreviousSubtitle: noop,
     copyCurrentSubtitle: () => log.add('copy-primary'),
     copyCurrentSecondarySubtitle: () => log.add('copy-secondary'),
+    toggleLoopCurrentSubtitle: noop,
     previousChapter: noop,
     nextChapter: noop,
     openSubtitleAlign: noop,

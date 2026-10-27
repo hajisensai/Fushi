@@ -517,6 +517,14 @@ enum ShortcutAction {
     ShortcutScope.video,
     'video_copy_current_secondary_subtitle',
   ),
+  // 循环当前句开关（Ix4j5SKUth）：按一下开始反复播放当前句（自然播过句尾就回句首），
+  // 再按一下关闭、继续往下播；开着时画面上常驻一枚循环标记。默认**空绑定**：反馈人
+  // 提议的 Ctrl+R 与「重播当前句」R 太近、易误触，留给用户自配。执行体在
+  // video_player_shortcuts，状态归 VideoPlayerController.loopCurrentCue。
+  videoToggleLoopCurrentSubtitle(
+    ShortcutScope.video,
+    'video_toggle_loop_current_subtitle',
+  ),
   // 内封章节上/下一章（TODO-424，默认 PageUp / PageDown）：seek 到相邻章起点，无章节
   // 时 no-op。与「上/下一句字幕」(Ctrl+←/→) 正交——后者按字幕 cue，这里按容器章节。
   videoPreviousChapter(ShortcutScope.video, 'video_previous_chapter'),

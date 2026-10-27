@@ -204,6 +204,7 @@ void main() {
         replayPreviousSubtitle: noop,
         copyCurrentSubtitle: noop,
         copyCurrentSecondarySubtitle: noop,
+        toggleLoopCurrentSubtitle: noop,
         previousChapter: noop,
         nextChapter: noop,
         openSubtitleAlign: noop,

@@ -228,6 +228,7 @@ class _Rig {
       replayPreviousSubtitle: _noop,
       copyCurrentSubtitle: _noop,
       copyCurrentSecondarySubtitle: _noop,
+      toggleLoopCurrentSubtitle: _noop,
       previousChapter: _noop,
       nextChapter: _noop,
       openSubtitleAlign: _noop,

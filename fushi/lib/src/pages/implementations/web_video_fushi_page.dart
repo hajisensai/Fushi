@@ -1500,6 +1500,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       // 复制当前台词（_Eb0txdN4H）；网页视频页没有副字幕轨（副字幕遮蔽同为 noop）。
       copyCurrentSubtitle: _copyCurrentSubtitle,
       copyCurrentSecondarySubtitle: noop,
+      // 循环当前句依赖本地播放器的位置 tick 回绕，网页视频页（WebView 播放）不支持。
+      toggleLoopCurrentSubtitle: noop,
       previousChapter: noop,
       nextChapter: noop,
       openSubtitleAlign: noop,

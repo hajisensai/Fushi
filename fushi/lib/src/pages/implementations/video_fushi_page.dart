@@ -235,6 +235,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_chrome_hit_test.dart';
 import 'package:fushi/src/media/video/video_current_line_copy.dart';
+import 'package:fushi/src/media/video/video_loop_cue_badge.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
@@ -8210,6 +8211,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _runWhenImmersiveAllowsShortcuts(_copyCurrentSubtitle),
       copyCurrentSecondarySubtitle: () =>
           _runWhenImmersiveAllowsShortcuts(_copyCurrentSecondarySubtitle),
+      // 循环当前句开关（Ix4j5SKUth，默认空绑定）：状态在画面右上角常驻标记上可见。
+      toggleLoopCurrentSubtitle: () =>
+          _runWhenImmersiveAllowsShortcuts(_toggleLoopCurrentCue),
       // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
       // 无章节时 controller no-op。与跳句同范式（BUG-2030）：只续命、不唤起；章节**面板**
       // 里点条目仍 poke（那是指针交互，见 [_buildChapterSidePanel]）。
@@ -11410,6 +11414,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 重播）都改走 [_keepControlsAliveIfVisible]，隐藏态一律不唤起；收藏这处更进一步，
     // 连续命都不需要（它压根不动播放位置）。
     await _toggleFavoriteCueForVideo(cue);
+  }
+
+  /// 「循环当前句」开 / 关（Ix4j5SKUth）。状态归 [VideoPlayerController.loopCurrentCue]，
+  /// 开着时画面上常驻 [VideoLoopCueBadge]（[_buildLoopCueBadgeOverlay]）。没有字幕时
+  /// 不开（开了也无句可循环），给出提示。
+  void _toggleLoopCurrentCue() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final bool next = !controller.loopCurrentCue;
+    if (next && controller.cues.isEmpty) {
+      _showOsd(t.no_sentence_selected, severity: ToastSeverity.error);
+      return;
+    }
+    controller.setLoopCurrentCue(next);
   }
 
   /// 重播当前句：回到本句开头**并起播**（Dbd86l4kA-：暂停态按重播也开始播放；

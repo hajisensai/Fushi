@@ -50,6 +50,7 @@ VideoPlayerShortcutActions _recordingVideoActions(List<String> log) {
     replayPreviousSubtitle: () => record('replayPreviousSubtitle'),
     copyCurrentSubtitle: () => record('copyCurrentSubtitle'),
     copyCurrentSecondarySubtitle: () => record('copyCurrentSecondarySubtitle'),
+    toggleLoopCurrentSubtitle: () => record('toggleLoopCurrentSubtitle'),
     previousChapter: () => record('previousChapter'),
     nextChapter: () => record('nextChapter'),
     openSubtitleAlign: () => record('openSubtitleAlign'),
