@@ -365,7 +365,7 @@ void main() {
         'MainDefinition': _kGlossary,
         'Glossary': _kGlossary,
         'Sentence': _kSentence,
-        'SentenceFurigana': _kFurigana,
+        'ExpressionFurigana': _kFurigana,
         'Picture': _kPicture,
         'ExpressionAudio': '[sound:a.mp3]',
         'IsSentenceCard': 'x',
@@ -377,7 +377,7 @@ void main() {
       expect(_key('srs-field-preview-MainDefinition'), findsOneWidget);
       expect(_key('srs-field-input-MainDefinition'), findsNothing);
       expect(_key('srs-field-input-Sentence'), findsOneWidget);
-      expect(_key('srs-furigana-SentenceFurigana-0'), findsOneWidget);
+      expect(_key('srs-furigana-ExpressionFurigana-0'), findsOneWidget);
       expect(_key('srs-image-Picture-0'), findsOneWidget);
       expect(_key('srs-sound-ExpressionAudio-0'), findsOneWidget);
       // Fushi 卡片按卡面区块分组。
@@ -621,12 +621,12 @@ void main() {
     final _Env env = await _open(tester);
     final String note = await _fushiNote(tester, env.store, <String, String>{
       'Expression': '通う',
-      'SentenceFurigana': _kFurigana,
+      'ExpressionFurigana': _kFurigana,
     });
     await _pumpEditor(tester, env, note);
     expect(find.text('としょかん'), findsOneWidget, reason: '读音画在基字上方');
 
-    await tester.tap(_key('srs-furigana-SentenceFurigana-1'));
+    await tester.tap(_key('srs-furigana-ExpressionFurigana-1'));
     await _settle(tester, rounds: 6);
     await tester.enterText(find.byType(EditableText).last, 'としょ');
     await tester.testTextInput.receiveAction(TextInputAction.done);
@@ -634,7 +634,7 @@ void main() {
     expect(find.text('としょ'), findsOneWidget);
     await _save(tester);
     expect(
-      await _field(tester, env.store, note, 'SentenceFurigana'),
+      await _field(tester, env.store, note, 'ExpressionFurigana'),
       '毎日[まいにち] 図書館[としょ]に<b>通[かよ]って</b>います',
     );
     await _unmount(tester);

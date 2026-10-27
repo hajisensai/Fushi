@@ -24,13 +24,8 @@ enum FushiCardBlock {
   /// 图片。
   picture(<String>['Picture']),
 
-  /// 例句（带注音）+ 例句翻译 + 例句音频。
-  sentence(<String>[
-    'SentenceFurigana',
-    'Sentence',
-    'SentenceTranslation',
-    'SentenceAudio',
-  ]),
+  /// 例句 + 例句翻译 + 例句音频。
+  sentence(<String>['Sentence', 'SentenceTranslation', 'SentenceAudio']),
 
   /// 释义区：选中文本、释义图片、主释义、全部释义。
   definitions(<String>[
@@ -74,6 +69,10 @@ const List<String> kFushiCardSwitchFields = <String>[
 
 /// 只辅助其它区块、不单独成块的字段（音调分类给音调着色；提示只在正面）。
 const List<String> kFushiCardAuxFields = <String>['PitchCategories', 'Hint'];
+
+/// 为与 Lapis 同名同序留在笔记类型里、但卡面不读的字段（例句注音句由所有者 2026-10-28
+/// 拍板删除：例句只显示 `Sentence` 自带的注音）。
+const List<String> kFushiCardUnusedFields = <String>['SentenceFurigana'];
 
 /// 释义区单独渲染用的背面子模板：取自背面模板（[kFushiCardBackTemplate]）的释义区与脚本，
 /// 根节点多一个 `fc-defs-only` 类（样式表据此取消双栏网格）。Fushi 复习页的混合渲染里，

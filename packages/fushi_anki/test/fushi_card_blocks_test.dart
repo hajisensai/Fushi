@@ -36,6 +36,7 @@ void main() {
       for (final FushiCardBlock b in kFushiCardBackBlocks) ...b.fields,
       ...kFushiCardSwitchFields,
       ...kFushiCardAuxFields,
+      ...kFushiCardUnusedFields,
     ];
     expect(all.toSet().length, all.length, reason: 'no field in two blocks');
     expect(all.toSet(), FushiCardNoteType.fields.toSet());

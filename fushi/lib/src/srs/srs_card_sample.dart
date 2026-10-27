@@ -69,7 +69,6 @@ Map<String, String> srsSampleCardFields() => <String, String>{
   'ExpressionFurigana': '通[かよ]う',
   'ExpressionReading': 'かよう',
   'Sentence': '毎日のように図書館に<b>通って</b>いる。',
-  'SentenceFurigana': '毎日[まいにち]のように 図書館[としょかん]に<b>通[かよ]って</b>いる。',
   'SentenceTranslation': '几乎每天都去图书馆。',
   'Picture': _samplePicture,
   'MainDefinition': kSrsSampleMainDefinition,
