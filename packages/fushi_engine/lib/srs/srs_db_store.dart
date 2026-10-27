@@ -1033,16 +1033,32 @@ class SrsDbStore implements SrsSync2Host {
   };
 
   @override
-  Future<Map<String, Object?>> sync2Ingest(
+  Future<void> sync2IngestBegin() =>
+      runExclusive(() => _sync2(const <String, Object?>{'op': 'ingest_begin'}));
+
+  @override
+  Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
-  }) => runExclusive(() async {
+  }) => _sync2IngestStep(<String, Object?>{
+    'op': 'ingest_batch',
+    'key': keyHex,
+  }, segments);
+
+  @override
+  Future<Map<String, Object?>> sync2IngestFinish() =>
+      _sync2IngestStep(const <String, Object?>{'op': 'ingest_finish'});
+
+  /// 收段会话的一步（收一批 / 收尾换身份）：写锁里跑，投影变化接进本机缓存。
+  Future<Map<String, Object?>> _sync2IngestStep(
+    Map<String, Object?> request, [
+    List<Uint8List> segments = const <Uint8List>[],
+  ]) => runExclusive(() async {
     late Map<String, Object?> r;
     await _transactionOrReload(() async {
       r = await _sync2(<String, Object?>{
-        'op': 'ingest',
+        ...request,
         'now': now().$1,
-        'key': keyHex,
       }, blobs: segments);
       final List<String> landed = _absorbProjection(r);
       if (landed.isNotEmpty ||

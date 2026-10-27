@@ -36,6 +36,8 @@ pub struct SrsCore {
     legacy_open: AtomicBool,
     /// 库文件路径（[SrsCore::read_session] 另开只读连接用）。
     path: PathBuf,
+    /// 正在进行的分批收段会话（[SrsCore::sync2_ingest_begin]）；None = 没有。
+    ingest_session: Mutex<Option<sync2::transport::IngestSession>>,
 }
 
 /// 一条独立的只读连接 + 一个读事务（[SrsCore::read_session]）：整段读取看到开会话那一刻的快照，
@@ -145,6 +147,7 @@ impl SrsCore {
             reader: Mutex::new(Some(reader)),
             legacy_open: AtomicBool::new(false),
             path: path.to_path_buf(),
+            ingest_session: Mutex::new(None),
         })
     }
 

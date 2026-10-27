@@ -31,11 +31,19 @@ abstract interface class SrsSync2Host {
     List<Uint8List> blobs = const <Uint8List>[],
   });
 
-  /// 收段：写锁里 ingest，投影变化接进本机缓存。返回内核的 ingest 结果。
-  Future<Map<String, Object?>> sync2Ingest(
+  /// 开一个分批收段会话（覆盖上一轮没收尾的）。本机身份的段在会话里跨批累积分叉点，换身份推到
+  /// [sync2IngestFinish]（内核 `sync2_ingest_begin`），所以分叉判定与一次收完完全相同、与怎么分批无关。
+  Future<void> sync2IngestBegin();
+
+  /// 会话里收一批：写锁里 ingest，远端操作投递并提交，投影变化接进本机缓存。返回内核这一批的结果（`fork`
+  /// 恒为 false）。
+  Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
   });
+
+  /// 收尾：累积出分叉点就换身份；返回同形结果（`fork`、重签发带来的投影变化）。
+  Future<Map<String, Object?>> sync2IngestFinish();
 }
 
 /// 状态摘要最多多久重算一次（版本向量没变就不算）。
@@ -185,53 +193,51 @@ Future<SrsSync2Report> srsSync2Round({
   final Map<String, Object?> plan = (await host.sync2Command(<String, Object?>{
     'op': 'plan',
   }, blobs: heads)).map;
-  // 本机身份的段（只用来比链找分叉点）整批放进第一次收：分叉点要在同一次 ingest 里看全。
-  final List<String> own = <String>[];
-  final List<String> others = <String>[];
-  for (final Object? f in (plan['fetch'] as List?) ?? const <Object?>[]) {
-    final Map<String, Object?> e = (f! as Map).cast<String, Object?>();
-    (e['own'] == true ? own : others).addAll(<String>[
-      for (final Object? name in (e['files'] as List?) ?? const <Object?>[])
+  // 本机身份的段只用来比链找分叉点：内核在收段会话里跨批累积、收尾才换身份（[SrsSync2Host.sync2IngestBegin]），
+  // 所以它们和别的段一样受字节预算约束。
+  final List<String> wanted = <String>[
+    for (final Object? f in (plan['fetch'] as List?) ?? const <Object?>[])
+      for (final Object? name
+          in ((f! as Map)['files'] as List?) ?? const <Object?>[])
         name! as String,
-    ]);
-  }
-  final List<String> wanted = <String>[...own, ...others];
+  ];
   // 分批拉、分批收（首次同步一台老设备可能是几千个段）：每批独立提交，中途断网 / 被杀 / 关库都只丢在途
   // 那一批（已收的进了本机投影或因果缓冲，plan 下一轮不再要它们）；写锁每批只占一小会儿，复习写入不被
-  // 整轮挡住；返回给 Dart 的投影变化也按批解析，不会一次把几十万条事件压在 UI isolate 上。
-  int done = 0;
-  onFetchProgress?.call(0, wanted.length);
-  bool first = true;
-  await for (final SrsFetchedBatch batch in srsFetchInBatches(
-    wanted,
-    fetch: location.get,
-    budgetBytes: ingestBudgetBytes,
-    concurrency: fetchConcurrency,
-    pinned: own.length,
-  )) {
-    // head 指向的段暂时还列不到（最终一致）的不在 batch.segments 里：这一轮跳过，下一轮再来。
-    if (batch.segments.isNotEmpty || (first && plan['fork'] == true)) {
-      final Map<String, Object?> r = await host.sync2Ingest(
-        batch.segments,
-        keyHex: keyHex,
-      );
-      report.applied += (r['applied'] as int?) ?? 0;
-      report.pending = (r['pending'] as int?) ?? 0;
-      report.fork = report.fork || r['fork'] == true;
-      report.changed =
-          report.changed ||
-          ((r['events'] as List?)?.isNotEmpty ?? false) ||
-          ((r['replayed'] as List?)?.isNotEmpty ?? false) ||
-          ((r['changed'] as List?)?.isNotEmpty ?? false);
-      report.errors.addAll(<String>[
-        for (final Object? x in (r['errors'] as List?) ?? const <Object?>[])
-          '$x',
-      ]);
+  // 整轮挡住；返回给 Dart 的投影变化也按批解析，不会一次把几十万条事件压在 UI isolate 上。中途收手不收尾：
+  // 分叉点可能还没看全，不换身份，下一轮 plan 照样再要本机身份的段。
+  void absorb(Map<String, Object?> r) {
+    report.applied += (r['applied'] as int?) ?? 0;
+    report.pending = (r['pending'] as int?) ?? 0;
+    report.fork = report.fork || r['fork'] == true;
+    report.changed =
+        report.changed ||
+        ((r['events'] as List?)?.isNotEmpty ?? false) ||
+        ((r['replayed'] as List?)?.isNotEmpty ?? false) ||
+        ((r['changed'] as List?)?.isNotEmpty ?? false);
+    report.errors.addAll(<String>[
+      for (final Object? x in (r['errors'] as List?) ?? const <Object?>[]) '$x',
+    ]);
+  }
+
+  if (wanted.isNotEmpty) {
+    int done = 0;
+    onFetchProgress?.call(0, wanted.length);
+    await host.sync2IngestBegin();
+    await for (final SrsFetchedBatch batch in srsFetchInBatches(
+      wanted,
+      fetch: location.get,
+      budgetBytes: ingestBudgetBytes,
+      concurrency: fetchConcurrency,
+    )) {
+      // head 指向的段暂时还列不到（最终一致）的不在 batch.segments 里：这一轮跳过，下一轮再来。
+      if (batch.segments.isNotEmpty) {
+        absorb(await host.sync2IngestBatch(batch.segments, keyHex: keyHex));
+      }
+      done += batch.covered;
+      onFetchProgress?.call(done, wanted.length);
+      if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
     }
-    first = false;
-    done += batch.covered;
-    onFetchProgress?.call(done, wanted.length);
-    if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
+    absorb(await host.sync2IngestFinish());
   }
 
   // 3. 发件：先段、后 head。
@@ -305,8 +311,9 @@ class SrsFetchedBatch {
 }
 
 /// 按原顺序读 [paths]，同时最多 [concurrency] 个在途，按实际读到的字节切批：一批累计到 [budgetBytes] 就不再开
-/// 新的读、等在途的读完后交出这一批（在途的读完之前不知道多大，所以一批最多超出预算 [concurrency] 个文件），消费方收完再开下一批（同一时刻内存里只有一批）。前 [pinned] 个路径无视
-/// 预算全进第一批。每批至少一个路径，所以单个超过预算的文件自成一批；[paths] 为空时也交出一个空批。
+/// 新的读、等在途的读完后交出这一批（在途的读完之前不知道多大，所以一批最多超出预算 [concurrency] 个文件），
+/// 消费方收完再开下一批（同一时刻内存里只有一批）。每批至少一个路径，所以单个超过预算的文件自成一批；
+/// [paths] 为空时也交出一个空批。
 /// 任一读失败：不再开新的，等在途的跑完后抛出第一个错误（与 [srsRunPooled] 一致）。消费方中途停止监听，
 /// 当前批读完后就不再读。
 Stream<SrsFetchedBatch> srsFetchInBatches(
@@ -314,7 +321,6 @@ Stream<SrsFetchedBatch> srsFetchInBatches(
   required Future<Uint8List?> Function(String path) fetch,
   required int budgetBytes,
   int concurrency = kSrsSync2Concurrency,
-  int pinned = 0,
 }) async* {
   assert(budgetBytes > 0 && concurrency > 0);
   int next = 0;
@@ -327,7 +333,7 @@ Stream<SrsFetchedBatch> srsFetchInBatches(
     Future<void> worker() async {
       while (error == null &&
           next < paths.length &&
-          (next == start || next < pinned || bytes < budgetBytes)) {
+          (next == start || bytes < budgetBytes)) {
         final int i = next++;
         try {
           final Uint8List? b = await fetch(paths[i]);

@@ -1261,3 +1261,134 @@ fn delete_concurrent_with_tag_change_resolves_either_way() {
         assert_eq!(projection(&a), projection(&b));
     }
 }
+
+/// 分批收段（`ingest_begin` / `ingest_batch` / `ingest_finish`，Dart 侧按字节预算切批）与一次收完对拍：同一份
+/// 初始库、同一组段字节，分叉点、冻结点、重签发的操作与最终投影都一样。本机身份的段散在不同批里、且后到的那批
+/// 才含更早的分叉点——批内各自换身份会挑错分叉点（4 而不是 2），换身份也会早于其它设备的操作投递。
+#[test]
+fn batched_ingest_session_matches_one_shot_ingest() {
+    let deck = super::config::default_deck_id(P);
+    let a = Device::new("a");
+    let mut home = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
+    a.sync(&mut home, "loc", T0);
+    // twin1 在 a 的 seq 2 处拷走，twin2 在 seq 4 处拷走；各自往只有自己看得见的位置发旧身份的段。
+    let twin1 = Device::copy_of(&a, "twin1");
+    a.apply(T0 + 10, vec![review("ra1", "C", T0 + 10, 3, "learn"), edit("note", "N1", "f/x", json!("a1"))]);
+    let twin2 = Device::copy_of(&a, "twin2");
+    a.apply(T0 + 20, vec![review("ra2", "C", T0 + 20, 3, "review"), edit("note", "N1", "f/y", json!("a2"))]);
+    twin1.apply(T0 + 30, vec![review("rt1", "C", T0 + 30, 4, "learn")]);
+    twin2.apply(T0 + 40, vec![review("rt2", "C", T0 + 40, 2, "review")]);
+    let mut b1 = Bucket::default();
+    let mut b2 = Bucket::default();
+    twin1.sync(&mut b1, "loc1", T0 + 50);
+    twin2.sync(&mut b2, "loc2", T0 + 50);
+    // 两台普通设备，看过 a 的早期操作后各写一些。
+    let mut others = home.clone();
+    let o1 = Device::new("o1");
+    let o2 = Device::new("o2");
+    o1.sync(&mut others, "loc", T0 + 60);
+    o1.apply(T0 + 61, vec![review("r-o1", "C", T0 + 61, 3, "review"), edit("note", "N1", "f/z", json!("o1"))]);
+    o1.sync(&mut others, "loc", T0 + 62);
+    o2.apply(T0 + 63, vec![edit("note", "N2", "f/x", json!("o2"))]);
+    o2.sync(&mut others, "loc", T0 + 64);
+
+    let segs = |b: &Bucket| -> Vec<Vec<u8>> {
+        b.0.iter().filter(|(k, _)| k.contains("/seg-")).map(|(_, v)| v.clone()).collect()
+    };
+    let heads: Vec<Vec<u8>> = others
+        .0
+        .iter()
+        .filter(|(k, _)| k.rsplit('/').next().and_then(crate::sync2::segment::parse_head_file_name).is_some())
+        .map(|(_, v)| v.clone())
+        .collect();
+    let own1 = segs(&b1);
+    let own2 = segs(&b2);
+    let remote = segs(&others);
+    assert!(!own1.is_empty() && !own2.is_empty() && remote.len() >= 2);
+
+    let one = Device::copy_of(&a, "one");
+    let many = Device::copy_of(&a, "many");
+    for d in [&one, &many] {
+        d.core.sync2_identity(P, T0 + 70).unwrap();
+        d.core.sync2_plan(P, &heads).unwrap();
+    }
+    let all: Vec<Vec<u8>> = own1.iter().chain(&own2).chain(&remote).cloned().collect();
+    let r1: Value = serde_json::from_str(&one.core.sync2_ingest(P, &all, None, T0 + 80).unwrap()).unwrap();
+    assert_eq!(r1["fork"], json!(true), "{r1}");
+
+    // 批次：twin2 的段（分叉点 4）→ 各远端段各一批 → twin1 的段（分叉点 2）。
+    let mut batches: Vec<Vec<Vec<u8>>> = vec![own2.clone()];
+    batches.extend(remote.iter().map(|s| vec![s.clone()]));
+    batches.push(own1.clone());
+    many.core.sync2_ingest_begin(P).unwrap();
+    let mut applied = 0;
+    for b in &batches {
+        let r: Value = serde_json::from_str(&many.core.sync2_ingest_batch(P, b, None, T0 + 80).unwrap()).unwrap();
+        assert_eq!(r["fork"], json!(false), "rotation is deferred to finish: {r}");
+        assert_eq!(r["errors"], json!([]), "{r}");
+        applied += r["applied"].as_u64().unwrap();
+    }
+    let rn: Value = serde_json::from_str(&many.core.sync2_ingest_finish(P, T0 + 80).unwrap()).unwrap();
+    assert_eq!(rn["fork"], json!(true), "{rn}");
+    assert_eq!(applied, r1["applied"].as_u64().unwrap());
+    assert!(many.core.sync2_ingest_finish(P, T0 + 80).is_err(), "the session is consumed");
+
+    // 旧身份冻结在同一个分叉点（2 = twin1 拷走时的 seq）。
+    let old = a.core.sync2_status(P).unwrap()["device"].as_str().unwrap().to_owned();
+    let frozen = |d: &Device| {
+        d.rows(&format!(
+            "SELECT lower(hex(device)), applied FROM sync2_devices WHERE profile_uid = '{P}' AND frozen = 1"
+        ))
+    };
+    assert_eq!(frozen(&one), frozen(&many));
+    assert_eq!(frozen(&one).len(), 2, "exactly the old identity is frozen: {:?}", frozen(&one));
+    assert_eq!(frozen(&one)[1][1], "2", "frozen at twin1's copy point: {:?}", frozen(&one));
+    // 投影与重签发的操作（新身份是随机的，换成占位后比）。
+    let norm = |d: &Device| {
+        let new = d.core.sync2_status(P).unwrap()["device"].as_str().unwrap().to_owned();
+        assert_ne!(new, old);
+        let mut rows = projection(d);
+        rows.extend(d.rows(&format!(
+            "SELECT o.seq, o.kind, lower(hex(o.payload)) FROM sync2_ops o JOIN sync2_self s ON s.profile_uid = o.profile_uid AND s.device = o.device              WHERE o.profile_uid = '{P}' ORDER BY o.seq"
+        )));
+        // 重签发的修改记录 ID 由写入者（新身份）派生：换成占位后去掉 ID、排序再比。
+        let mut out: Vec<String> = rows
+            .into_iter()
+            .map(|r| {
+                let r: Vec<String> = r.into_iter().map(|c| c.replace(&new, "NEW")).collect();
+                match serde_json::from_str::<Value>(r.last().unwrap()) {
+                    Ok(Value::Object(mut m)) if m.get("w") == Some(&json!("NEW")) => {
+                        m.remove("id");
+                        Value::Object(m).to_string()
+                    }
+                    _ => format!("{r:?}"),
+                }
+            })
+            .collect();
+        out.sort();
+        out
+    };
+    assert_eq!(norm(&one), norm(&many));
+    // 反例：每批各自一次收完（批内就换身份）会挑错分叉点——对拍确实区分得出。
+    let naive = Device::copy_of(&a, "naive");
+    naive.core.sync2_identity(P, T0 + 70).unwrap();
+    naive.core.sync2_plan(P, &heads).unwrap();
+    for b in &batches {
+        naive.core.sync2_ingest(P, b, None, T0 + 80).unwrap();
+    }
+    assert_ne!(frozen(&naive), frozen(&one), "per-batch rotation freezes at the wrong point");
+}
+
+/// 会话边界：没开会话就收批 / 收尾报错；会话期间本机换了身份，收批报错且会话作废。
+#[test]
+fn ingest_session_requires_begin_and_a_stable_identity() {
+    let a = Device::new("a");
+    a.core.sync2_identity(P, T0).unwrap();
+    assert!(a.core.sync2_ingest_batch(P, &[], None, T0).is_err());
+    assert!(a.core.sync2_ingest_finish(P, T0).is_err());
+    a.core.sync2_ingest_begin(P).unwrap();
+    a.core.sync2_rotate(P, T0 + 1).unwrap();
+    assert!(a.core.sync2_ingest_batch(P, &[], None, T0 + 2).is_err());
+    assert!(a.core.sync2_ingest_finish(P, T0 + 2).is_err(), "a failed batch drops the session");
+}

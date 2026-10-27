@@ -155,31 +155,6 @@ void main() {
       expect(seen, paths.length);
     });
 
-    test('pinned：前若干个无视预算全进第一批', () async {
-      final _Sized st = _Sized(<String, int?>{
-        'o1': 10,
-        'o2': 10,
-        'o3': 10,
-        'x': 1,
-        'y': 1,
-      });
-      final List<SrsFetchedBatch> out = await _collect(
-        srsFetchInBatches(
-          <String>['o1', 'o2', 'o3', 'x', 'y'],
-          fetch: st.get,
-          budgetBytes: 5,
-          concurrency: 2,
-          pinned: 3,
-        ),
-      );
-      expect(out.first.covered, greaterThanOrEqualTo(3));
-      expect(out.first.segments.take(3).map((Uint8List x) => x.length), <int>[
-        10,
-        10,
-        10,
-      ]);
-    });
-
     test('读不到的路径计进 covered、不进 segments；空输入交出一个空批', () async {
       final _Sized st = _Sized(<String, int?>{'a': 1, 'b': null, 'c': 1});
       final List<SrsFetchedBatch> out = await _collect(
@@ -353,6 +328,92 @@ void main() {
         expect(await b.inner.note(n), isNotNull);
       }
     });
+
+    /// 先在空位置上跑一轮让握手写下 `meta.json`（位置上一有数据、没有它就不同步）。
+    Future<void> writeMeta(SrsMemoryLocationStore loc) => srsSync2Round(
+      host: _ScriptedHost(own: const <String>[], others: const <String>[]),
+      location: loc,
+      locationId: 'loc',
+      nowMs: () => 0,
+    );
+
+    test('本机身份的段远超预算也按预算分批；会话 begin → 各批 → finish，分叉在收尾才报', () async {
+      const int seg = 10;
+      const int budget = 15;
+      final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+      final List<String> own = <String>[
+        for (int i = 0; i < 8; i++) 'devices/SELF/seg-own-$i.bin',
+      ];
+      final List<String> others = <String>[
+        for (int i = 0; i < 4; i++) 'devices/O/seg-o-$i.bin',
+      ];
+      await writeMeta(loc);
+      for (final String p in <String>[...own, ...others]) {
+        loc.files[p] = Uint8List(seg);
+      }
+      final _ScriptedHost host = _ScriptedHost(own: own, others: others);
+      for (final int conc in <int>[1, 3]) {
+        host.steps.clear();
+        host.batchSizes.clear();
+        final List<(int, int)> progress = <(int, int)>[];
+        final SrsSync2Report r = await srsSync2Round(
+          host: host,
+          location: loc,
+          locationId: 'loc',
+          nowMs: () => 0,
+          ingestBudgetBytes: budget,
+          fetchConcurrency: conc,
+          onFetchProgress: (int done, int total) => progress.add((done, total)),
+        );
+        expect(r.error, isNull);
+        expect(r.fork, isTrue, reason: 'fork comes from finish');
+        expect(host.steps.first, 'begin');
+        expect(host.steps.last, 'finish');
+        expect(host.steps.where((String x) => x == 'begin').length, 1);
+        expect(host.steps.where((String x) => x == 'finish').length, 1);
+        // 本机身份的 8 个段（80 字节）不再整批塞进第一批。
+        for (final List<int> b in host.batchSizes) {
+          final int bytes = b.fold(0, (int s, int x) => s + x);
+          expect(bytes, lessThan(budget + conc * seg), reason: 'conc=$conc');
+        }
+        expect(host.batchSizes.length, greaterThan(2));
+        expect(
+          host.batchSizes.fold(0, (int s, List<int> b) => s + b.length),
+          own.length + others.length,
+        );
+        expect(progress.last, (12, 12));
+        for (int i = 1; i < progress.length; i++) {
+          expect(progress[i].$1, greaterThan(progress[i - 1].$1));
+        }
+      }
+    });
+
+    test('中途收手不收尾：分叉点可能没看全，不换身份', () async {
+      final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+      final List<String> own = <String>[
+        for (int i = 0; i < 4; i++) 'devices/SELF/seg-own-$i.bin',
+      ];
+      await writeMeta(loc);
+      for (final String p in own) {
+        loc.files[p] = Uint8List(10);
+      }
+      final _ScriptedHost host = _ScriptedHost(
+        own: own,
+        others: const <String>[],
+      );
+      final SrsSync2Report r = await srsSync2Round(
+        host: host,
+        location: loc,
+        locationId: 'loc',
+        nowMs: () => 0,
+        ingestBudgetBytes: 1,
+        fetchConcurrency: 1,
+        shouldStop: () => true,
+      );
+      expect(r.error, kSrsSync2Stopped);
+      expect(r.fork, isFalse);
+      expect(host.steps, <String>['begin', 'batch']);
+    });
   });
 }
 
@@ -373,11 +434,77 @@ class _CountingHost implements SrsSync2Host {
   }) => inner.sync2Command(request, blobs: blobs);
 
   @override
-  Future<Map<String, Object?>> sync2Ingest(
+  Future<void> sync2IngestBegin() => inner.sync2IngestBegin();
+
+  @override
+  Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
   }) {
     ingestSizes.add(segments.length);
-    return inner.sync2Ingest(segments, keyHex: keyHex);
+    return inner.sync2IngestBatch(segments, keyHex: keyHex);
+  }
+
+  @override
+  Future<Map<String, Object?>> sync2IngestFinish() => inner.sync2IngestFinish();
+}
+
+/// 只回答一轮同步要的命令的假内核：plan 让拉 [own]（本机身份）与 [others] 两组段，记下收段会话的每一步。
+class _ScriptedHost implements SrsSync2Host {
+  _ScriptedHost({required this.own, required this.others});
+
+  final List<String> own;
+  final List<String> others;
+
+  /// 'begin' / 'batch:<字节数>' / 'finish'，按调用顺序。
+  final List<String> steps = <String>[];
+  final List<List<int>> batchSizes = <List<int>>[];
+
+  @override
+  String get profileUid => kProfile;
+
+  @override
+  Future<SrsSync2Result> sync2Command(
+    Map<String, Object?> request, {
+    List<Uint8List> blobs = const <Uint8List>[],
+  }) async => switch (request['op']) {
+    'identity' => const SrsSync2Result(<String, Object?>{
+      'collection': 'c1',
+      'device': 'SELF',
+    }, <(String, Uint8List)>[]),
+    'plan' => SrsSync2Result(<String, Object?>{
+      'fetch': <Object?>[
+        <String, Object?>{'device': 'SELF', 'files': own, 'own': true},
+        <String, Object?>{'device': 'O', 'files': others, 'own': false},
+      ],
+      'fork': true,
+    }, const <(String, Uint8List)>[]),
+    'outbox' => const SrsSync2Result(<String, Object?>{
+      'upto': 0,
+    }, <(String, Uint8List)>[]),
+    'head' => const SrsSync2Result(<String, Object?>{
+      'gen': 0,
+      'delete': <Object?>[],
+    }, <(String, Uint8List)>[]),
+    _ => const SrsSync2Result(<String, Object?>{}, <(String, Uint8List)>[]),
+  };
+
+  @override
+  Future<void> sync2IngestBegin() async => steps.add('begin');
+
+  @override
+  Future<Map<String, Object?>> sync2IngestBatch(
+    List<Uint8List> segments, {
+    String? keyHex,
+  }) async {
+    steps.add('batch');
+    batchSizes.add(<int>[for (final Uint8List s in segments) s.length]);
+    return <String, Object?>{'applied': segments.length, 'fork': false};
+  }
+
+  @override
+  Future<Map<String, Object?>> sync2IngestFinish() async {
+    steps.add('finish');
+    return <String, Object?>{'applied': 0, 'fork': true};
   }
 }
