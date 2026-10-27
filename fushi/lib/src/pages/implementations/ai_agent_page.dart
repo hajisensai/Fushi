@@ -1142,7 +1142,8 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   }
 }
 
-/// 候选卡里的一个选项：整行宽、标签可换行（最多 3 行）、说明另起一行。
+/// 候选卡里的一个选项：整行宽、标签与说明完整换行**不截断**（文件名之间常只差
+/// 结尾几个字，截掉就分不清；超长无空格的串按字符折行，不会横向溢出）。
 class _AgentChoiceOptionTile extends StatelessWidget {
   const _AgentChoiceOptionTile({
     required this.option,
@@ -1167,7 +1168,7 @@ class _AgentChoiceOptionTile extends StatelessWidget {
         : scheme.surfaceContainerHigh;
     final Color foreground = glass && !eink ? apple.label : scheme.onSurface;
     final String? detail = option.detail;
-    final BorderRadius radius = BorderRadius.circular(16);
+    const BorderRadius radius = FushiM3eShape.cardRadius;
     return FushiPressScale(
       child: Material(
         color: fill,
@@ -1191,15 +1192,11 @@ class _AgentChoiceOptionTile extends StatelessWidget {
                 children: <Widget>[
                   Text(
                     option.label,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
                     style: text.bodyMedium?.copyWith(color: foreground),
                   ),
                   if (detail != null && detail.isNotEmpty)
                     Text(
                       detail,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                       style: text.labelSmall?.copyWith(
                         color: glass && !eink
                             ? apple.secondaryLabel
