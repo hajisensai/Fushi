@@ -174,7 +174,7 @@ void main() {
     expect(await state(), MediaLinkState.confirmed);
   });
 
-  // BUG-3802：AI 只能接受 / 否决 / 推断建议，用户点名「把 A 和 B 关联起来」时没有任何
+  // BUG-3854：AI 只能接受 / 否决 / 推断建议，用户点名「把 A 和 B 关联起来」时没有任何
   // 操作能做到（详情页「关联作品」对话框背后的手动连接从没进操作目录）。
   group('手动关联（links.candidates / links.add / links.remove）', () {
     int later() => DateTime.now().millisecondsSinceEpoch + 60000;

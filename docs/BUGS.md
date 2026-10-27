@@ -37,6 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3854](bugs/BUG-3854-ai-cannot-link-works.md) | ✅ | ✅ | 内置 AI 助手怎么都做不到「关联作品」 |
 | [BUG-3853](bugs/BUG-3853-collection-longpress-haptic.md) | ✅ | ✅ | collection-longpress-haptic |
 | [BUG-3852](bugs/BUG-3852-web-browser-tab-strip-caption-row-and-exit.md) | ✅ | ✅ | web-browser-tab-strip-caption-row-and-exit |
 | [BUG-3851](bugs/BUG-3851-qbittorrent-52-session-cookie.md) | ✅ | ✅ | qBittorrent 5.2+ 会话 cookie 改名后外接登录失败 |
@@ -89,7 +90,6 @@
 | [BUG-3804](bugs/BUG-3804-remote-collection-subtitle-episode-index.md) | ✅ | ✅ | 互联合集连播第 2 集起拿不到主机选定的外挂字幕 |
 | [BUG-3803](bugs/BUG-3803-browser-ext-popup-wheel-bubbles.md) | ✅ | ✅ | 扩展查词弹窗里滚轮冒泡到宿主页（b 站调音量） |
 | [BUG-3802](bugs/BUG-3802-feedback-reply-notice-persists.md) | ✅ | ✅ | 反馈回复提示条常驻不消失、遮挡提交按钮 |
-| [BUG-3802](bugs/BUG-3802-ai-cannot-link-works.md) | ✅ | ✅ | 内置 AI 助手怎么都做不到「关联作品」 |
 | [BUG-3801](bugs/BUG-3801-netflix-browser-blackscreen-relogin.md) | ✅ | ✅ | Windows 浏览器里看 Netflix 黑屏卡顿，「用 Fushi 播放」要重新登录且要点两次 |
 | [BUG-3800](bugs/BUG-3800-floating-ball-switch-profile-label.md) | ✅ | ✅ | 悬浮球切换配置按钮文案被换成配置名 |
 | [BUG-3799](bugs/BUG-3799-kavita-cache-download-semantics-empty.md) | ✅ | ✅ | Kavita 缓存 / 下载两态是空的：阅读即永久入库、移除下载只翻标记 |

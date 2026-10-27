@@ -1,4 +1,4 @@
-## BUG-3802 · 内置 AI 助手怎么都做不到「关联作品」
+## BUG-3854 · 内置 AI 助手怎么都做不到「关联作品」
 - **报告**：2026-10-27（用户：群聊反馈，让 AI 把《向山进发》的特典 CD 与动画关联，「怎么都做不到」）
 - **真实性**：✅ 真 bug（沿真实代码路径确认）。AI 能调的作品图谱操作只有 `links.list` / `links.accept` / `links.reject` / `links.infer`（`fushi/lib/src/ops/op_descriptions_media_links.dart`、`fushi/lib/src/ops/ctl_media_links_routes.dart`），全是围着**推断出的建议**转的：
   - 详情页「关联作品」对话框背后的手动连接（`upsertManualMediaLink`，`fushi/lib/src/media/links/media_link_editor_dialog.dart` 的 `_pick`）从来没进操作目录，用户点名「把 A 和 B 关联起来」时没有任何操作能写；
