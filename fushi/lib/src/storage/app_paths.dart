@@ -673,4 +673,9 @@ class AppPaths {
   /// 旧版复习自动备份根 `<documents>/srs_backups`（只剩升级后 30 天的清理在用）。
   static Future<Directory> srsBackupsDirectory() =>
       documentsSubdirectory('srs_backups');
+
+  /// 删 Profile 前自动做的复习数据备份 `<documents>/srs_profile_backups`（`.fushisrs`，撤销途径；
+  /// 不进旧备份的 30 天清理，见 `srs_profile_cleanup.dart`）。
+  static Future<Directory> srsProfileBackupsDirectory() =>
+      documentsSubdirectory('srs_profile_backups');
 }

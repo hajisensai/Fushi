@@ -727,6 +727,12 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
     let s = |k: &str| req.get(k).and_then(Value::as_str).ok_or_else(|| format!("sync2: missing {k}"));
     let i = |k: &str| req.get(k).and_then(Value::as_i64).ok_or_else(|| format!("sync2: missing {k}"));
     let parse = |t: String| serde_json::from_str::<Value>(&t).map_err(|e| e.to_string());
+    // 不针对单个 profile 的命令（store/profile_data.rs：找无主数据用）。
+    match s("op")? {
+        "profile_uids" => return c.profile_uids(),
+        "orphan_sweep_done" => return c.orphan_sweep_done(i("now")?),
+        _ => {}
+    }
     let profile = s("profile")?;
     Ok(match s("op")? {
         "identity" => c.sync2_identity(profile, i("now")?)?,
@@ -776,6 +782,9 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
             None => c.sync2_digest(profile)?,
         },
         "status" => c.sync2_status(profile)?,
+        // 删 profile 的级联清理（store/profile_data.rs）：确认框的规模、一个事务里删光本机数据。
+        "profile_footprint" => c.profile_footprint(profile)?,
+        "profile_purge" => c.profile_purge(profile)?,
         "conflicts" => c.sync2_conflicts(profile)?,
         "resolve" => c.sync2_resolve(profile, s("conflict")?, req["delete"] == Value::Bool(true), i("now")?)?,
         "purge" => c.sync2_purge(profile, s("kind")?, s("entity")?, i("now")?)?,

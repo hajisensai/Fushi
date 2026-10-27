@@ -456,6 +456,13 @@ pub(crate) struct IngestSession {
     fork_at: Option<u64>,
 }
 
+impl IngestSession {
+    /// 这个会话收的是不是 [profile] 的段（删 profile 时作废它，store/profile_data.rs）。
+    pub(crate) fn belongs_to(&self, profile: &str) -> bool {
+        self.profile == profile
+    }
+}
+
 /// 收一批段（不换身份）：远端操作投递进投影 / 缓冲，返回应用条数；本机身份的段只比链，把分叉点（第一处不同的
 /// 前一个 seq）取最小累积进 [fork_at]。
 #[allow(clippy::too_many_arguments)]
