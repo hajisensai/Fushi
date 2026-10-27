@@ -609,6 +609,8 @@ public class MainActivity extends AudioServiceActivity {
         SystemOcrChannel.registerWith(flutterEngine, this);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
         SystemProxyChannel.registerWith(flutterEngine, getApplicationContext());
+        // 上次进程退出原因 + onTrimMemory 记录（Dart previous_exit_log.dart 启动时读一次）。
+        ProcessExitChannel.registerWith(flutterEngine, getApplicationContext());
         MigrationChannelHandler.registerWith(flutterEngine, getApplicationContext());
         DownloadKeepAliveService.registerWith(flutterEngine, getApplicationContext());
         // 全局悬浮球（系统常驻球 + 截屏 OCR）。传 Activity：申请悬浮窗权限 / 发起截屏确认

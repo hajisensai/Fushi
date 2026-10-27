@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_platform/fushi_platform.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
 
 class DesktopLifecycleService implements PlatformLifecycleService {
@@ -47,6 +48,7 @@ class DesktopLifecycleService implements PlatformLifecycleService {
       await Process.start(executable, args, mode: ProcessStartMode.detached);
     }
     // 新进程已成功 spawn（未抛错）→ 走与 exitApp 相同的退出闸门。
+    PreviousExitLog.markCleanExit();
     await WindowsNativePreExit.prepareForExit(WindowsExitReason.windowClose);
     exit(0);
   }
@@ -78,6 +80,7 @@ class DesktopLifecycleService implements PlatformLifecycleService {
 
   @override
   Future<void> exitApp() async {
+    PreviousExitLog.markCleanExit();
     await WindowsNativePreExit.prepareForExit(WindowsExitReason.windowClose);
     exit(0);
   }

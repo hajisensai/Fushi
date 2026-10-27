@@ -302,6 +302,9 @@ class ErrorLogService extends ChangeNotifier
   /// 把它经 FFI 透传给 native；[init] 未跑完（极早期）时返回 `''`，native 视为禁用。
   String get importStepBreadcrumbDir => _appDir?.path ?? '';
 
+  /// 面包屑 / 会话标记所在的应用文档目录；[init] 跑完前为 null。
+  Directory? get appDirectory => _appDir;
+
   void markImportStart(String detail) {
     try {
       _breadcrumbFile?.writeAsStringSync('[${DateTime.now()}] $detail',
