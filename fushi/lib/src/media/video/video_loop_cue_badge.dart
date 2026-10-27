@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -49,7 +50,7 @@ class VideoLoopCueBadge extends StatelessWidget {
           ),
       child: !active
           ? const SizedBox.shrink(key: ValueKey<String>('video-loop-cue-off'))
-          : Tooltip(
+          : FushiTooltip(
               key: const ValueKey<String>('video-loop-cue-badge'),
               message: tooltip,
               child: Semantics(
@@ -77,10 +78,7 @@ class VideoLoopCueBadge extends StatelessWidget {
                               color: textColor,
                             ),
                             const SizedBox(width: 6),
-                            Text(
-                              label,
-                              style: TextStyle(color: textColor, fontSize: 13),
-                            ),
+                            Text(label, style: TextStyle(color: textColor)),
                           ],
                         ),
                       ),
