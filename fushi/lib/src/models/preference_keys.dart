@@ -528,6 +528,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // video_resource_torznab_config 同样归类：PrefRedactionPolicy.sensitiveKeys +
   // deviceLocalPrefKeys + 互联服务配置同步。
   'resource_bt_sites',
+  // 旧内置 BT 站 → 用户 BT 站一次性升级迁移的已跑标记（'migrated' / 'fresh'，见引擎
+  // bt_site_legacy_migration.dart）。描述本安装，设备本地（deviceLocalPrefKeys）：
+  // 不进 Profile 快照 / 备份，恢复备份也不重判——新装用户恢复后不会被塞进旧内置站。
+  'resource_bt_sites_legacy_migrated',
   'reverse_navigation_bar',
   'reverse_reader_bottom_bar',
   // BUG-2100 沙箱重定位台账：上次启动时的两个数据根。根变了（iOS 每次更新都会换
@@ -744,8 +748,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_remote_control_layout',
   'video_remote_subtitle',
   // 旧「内置视频资源索引器」停用清单（逗号分隔）。内置 BT 站已整体移除（用户
-  // 自己添加 BT 站，见 resource_bt_sites），存量键冻结、不再读写；留在这里只为
-  // 键名不被别的功能复用。
+  // 自己添加 BT 站，见 resource_bt_sites），存量键冻结、不再写；只有一次性升级迁移
+  // （引擎 bt_site_legacy_migration.dart）读它决定迁出站点的启停。留在这里也为键名
+  // 不被别的功能复用。
   'video_resource_disabled_sources',
   'video_resource_torznab_config',
   'video_respect_ass_style',

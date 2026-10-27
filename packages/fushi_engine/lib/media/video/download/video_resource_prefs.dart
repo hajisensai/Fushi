@@ -1,6 +1,7 @@
 /// 视频资源索引器的设备本地偏好（Torznab indexer 清单）的**读侧单一入口**
 /// （用户 BT 站清单见 `bt_site_config.dart`；旧的内置源停用清单
-/// `video_resource_disabled_sources` 已冻结、不再读写——内置源已不存在）：
+/// `video_resource_disabled_sources` 已冻结、不再写，只由 `bt_site_legacy_migration.dart`
+/// 的一次性升级迁移读取——内置源已不存在）：
 /// app 的 `PreferencesRepository` 与无头服务端的 `ServerPrefs` 都是 [PrefStore]，读同一张 `preferences` 表，解码规则只能有一份。
 library;
 
