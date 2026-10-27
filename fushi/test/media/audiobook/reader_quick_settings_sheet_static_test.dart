@@ -92,12 +92,35 @@ void main() {
       contains('_buildThemeSelectorSection()'),
       reason: 'TODO-802：主题选择器并入 layout 子页（外观组已删）',
     );
-    // 实参折不折行只是格式，钉去空白后的调用。
+    // layout schema 行可能先赋给局部变量再放进 children，按空白无关的代码形态
+    // 匹配调用，并要求它真的进了渲染树（直接内联或经局部变量）。
+    final String compactLayoutDetail = compactCode(layoutDetailSource);
+    final RegExpMatch? layoutContentCall = RegExp(
+      r'(?:final(?:Widget)?(\w+)=)?_buildReaderGroupContent\(ReaderGroup\.layout,',
+    ).firstMatch(compactLayoutDetail);
     expect(
-      compactCode(layoutDetailSource),
-      contains('_buildReaderGroupContent(ReaderGroup.layout,'),
+      layoutContentCall,
+      isNotNull,
       reason: 'layout 子页详情渲染 layout schema 行',
     );
+    final String? layoutContentLocal = layoutContentCall!.group(1);
+    if (layoutContentLocal != null) {
+      expect(
+        compactLayoutDetail,
+        contains('children:<Widget>['),
+        reason: 'layout 子页详情以 Column children 组装各 section',
+      );
+      final String childrenTail = compactLayoutDetail.substring(
+        compactLayoutDetail.indexOf('children:<Widget>['),
+      );
+      expect(
+        RegExp(
+          '[\\[,]${RegExp.escape(layoutContentLocal)},',
+        ).hasMatch(childrenTail),
+        isTrue,
+        reason: 'layout schema 行赋给局部变量后必须放进 children 渲染',
+      );
+    }
     expect(
       layoutDetailSource,
       contains('_buildBookCssEditorSection()'),
