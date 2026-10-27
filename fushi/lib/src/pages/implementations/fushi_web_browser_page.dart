@@ -9,7 +9,6 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart';
-import 'package:fushi/src/media/manga/web/web_comic_reader_launch.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_address_bar.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.dart';
@@ -57,19 +56,18 @@ import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab_host.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tabs_controller.dart';
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
+import 'package:fushi/src/media/video/web_video_sites.dart'
+    show webVideoSitesAvailable;
+import 'package:fushi/src/web_browser/web_browser_site_launch.dart';
 import 'package:fushi/src/web_browser/web_browser_sites.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/web_browser/web_browser_suggestions.dart';
 
 export 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.dart';
 
 /// 站点书签（偏好 `web_browser_sites`），入口页与新标签页起始页共用同一份解析。
 List<WebBrowserSite> _loadWebBrowserSites(AppModel appModel) =>
-    parseWebBrowserSites(
-      appModel.prefsRepo.webBrowserSitesJson,
-      presets: webBrowserPresetSites(
-        mangaAvailable: webComicReaderActionAvailable(),
-      ),
-    );
+    parseWebBrowserSites(appModel.prefsRepo.webBrowserSitesJson);
 
 /// 全屏浏览页（[FushiWebBrowserPage]）的路由：所有推浏览页的入口（入口页、视频站点
 /// 入口）都经这一处建路由。
@@ -124,6 +122,19 @@ class _FushiWebBrowserHomePageState
   void initState() {
     super.initState();
     _sites = _loadWebBrowserSites(_appModel);
+    unawaited(_settleLegacyVideoSites());
+  }
+
+  /// 旧「视频站点」子页的自加站点并进来（一次性，见 [settleLegacyVideoSites]）。
+  Future<void> _settleLegacyVideoSites() async {
+    final List<WebBrowserSite> merged = await settleLegacyVideoSites(
+      _appModel.prefsRepo,
+      sitesJson: _appModel.prefsRepo.webBrowserSitesJson,
+      writeSitesJson: _appModel.prefsRepo.setWebBrowserSitesJson,
+    );
+    if (mounted && merged.length != _sites.length) {
+      setState(() => _sites = merged);
+    }
   }
 
   @override
@@ -193,6 +204,18 @@ class _FushiWebBrowserHomePageState
     if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));
   }
 
+  /// 点站点：标了「用播放页打开」且本平台有播放页就进播放页，否则进浏览器。
+  Future<void> _openSite(WebBrowserSite site) async {
+    if (!webBrowserSiteOpensInPlayer(site)) return _open(site.url);
+    _addressFocus.unfocus();
+    await openInWebVideoPlayer(
+      context,
+      url: site.url,
+      title: site.name,
+      repo: VideoBookRepository(_appModel.database),
+    );
+  }
+
   Future<void> _saveSites(List<WebBrowserSite> next) async {
     setState(() => _sites = next);
     await _appModel.prefsRepo.setWebBrowserSitesJson(
@@ -234,7 +257,16 @@ class _FushiWebBrowserHomePageState
       allowEmpty: true,
     );
     if (name == null) return null;
-    return WebBrowserSite(name: name.isEmpty ? url.host : name, url: url);
+    return WebBrowserSite(
+      name: name.isEmpty ? url.host : name,
+      url: url,
+      openInPlayer:
+          previous?.openInPlayer ??
+          webBrowserSiteDefaultsToPlayer(
+            url,
+            playerAvailable: webVideoSitesAvailable(),
+          ),
+    );
   }
 
   Future<void> _addSite() async {
@@ -249,12 +281,23 @@ class _FushiWebBrowserHomePageState
     await _saveSites(replaceWebBrowserSite(_sites, site, next));
   }
 
-  /// 长按 / 右键站点：编辑或移除。
+  /// 长按 / 右键站点：切换打开方式（只在有播放页的平台）、编辑或移除。
   Future<void> _siteActions(WebBrowserSite site) async {
     final _SiteAction? action = await showFushiChoiceDialog<_SiteAction>(
       context: context,
       title: site.name,
       options: <FushiChoiceOption<_SiteAction>>[
+        if (webVideoSitesAvailable())
+          FushiChoiceOption<_SiteAction>(
+            value: _SiteAction.togglePlayer,
+            label: site.openInPlayer
+                ? t.web_browser_site_open_in_browser
+                : t.web_browser_site_open_in_player,
+            subtitle: site.openInPlayer
+                ? null
+                : t.web_browser_site_open_in_player_hint,
+            icon: site.openInPlayer ? FushiIcons.globe : FushiIcons.playCircle,
+          ),
         FushiChoiceOption<_SiteAction>(
           value: _SiteAction.edit,
           label: t.web_browser_site_edit,
@@ -269,6 +312,14 @@ class _FushiWebBrowserHomePageState
     );
     if (!mounted) return;
     switch (action) {
+      case _SiteAction.togglePlayer:
+        await _saveSites(
+          replaceWebBrowserSite(
+            _sites,
+            site,
+            site.copyWith(openInPlayer: !site.openInPlayer),
+          ),
+        );
       case _SiteAction.edit:
         await _editSite(site);
       case _SiteAction.remove:
@@ -379,7 +430,7 @@ class _FushiWebBrowserHomePageState
                 fushiStaggeredItemBuilder(
                   (BuildContext context, int i) => _WebBrowserSiteTile(
                     site: _sites[i],
-                    onOpen: () => unawaited(_open(_sites[i].url)),
+                    onOpen: () => unawaited(_openSite(_sites[i])),
                     onActions: () => unawaited(_siteActions(_sites[i])),
                   ),
                 ),
@@ -413,7 +464,7 @@ class _FushiWebBrowserHomePageState
 }
 
 /// 站点卡片长按 / 右键菜单的动作。
-enum _SiteAction { edit, remove }
+enum _SiteAction { togglePlayer, edit, remove }
 
 /// 入口页与新标签页起始页共用的站点卡片。
 class _WebBrowserSiteTile extends StatelessWidget {
@@ -462,11 +513,30 @@ class _WebBrowserSiteTile extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          Text(
-            name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: tokens.type.listTitle,
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listTitle,
+                ),
+              ),
+              // 点开进播放页的站点：标题后挂一个播放图标（只在有播放页的平台）。
+              if (webBrowserSiteOpensInPlayer(site))
+                FushiTooltip(
+                  message: t.web_browser_site_opens_in_player,
+                  child: FushiIcon(
+                    FushiIcons.playCircle,
+                    key: ValueKey<String>(
+                      'web-browser-site-player-${site.url}',
+                    ),
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 2),
           Text(
@@ -897,7 +967,14 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     if (tab == null || url == null) return;
     final List<WebBrowserSite> sites = addWebBrowserSite(
       _loadWebBrowserSites(_appModel),
-      WebBrowserSite(name: tab.displayTitle, url: url),
+      WebBrowserSite(
+        name: tab.displayTitle,
+        url: url,
+        openInPlayer: webBrowserSiteDefaultsToPlayer(
+          url,
+          playerAvailable: webVideoSitesAvailable(),
+        ),
+      ),
     );
     await _appModel.prefsRepo.setWebBrowserSitesJson(
       encodeWebBrowserSites(sites),
@@ -1760,7 +1837,16 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
           itemBuilder: fushiStaggeredItemBuilder(
             (BuildContext context, int i) => _WebBrowserSiteTile(
               site: sites[i],
-              onOpen: () => _navigate(sites[i].url, tab: tab),
+              onOpen: () => webBrowserSiteOpensInPlayer(sites[i])
+                  ? unawaited(
+                      openInWebVideoPlayer(
+                        context,
+                        url: sites[i].url,
+                        title: sites[i].name,
+                        repo: VideoBookRepository(_appModel.database),
+                      ),
+                    )
+                  : _navigate(sites[i].url, tab: tab),
             ),
           ),
         ),

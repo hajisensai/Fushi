@@ -1053,6 +1053,11 @@ void main() {
     await tester.longPress(localCard);
     await tester.pumpAndSettle();
     expect(action, findsOneWidget);
+    // 1f2ddbc5d9 起条目菜单是可滚动的分组对话框（FushiDialogFrame 内
+    // SingleChildScrollView，高度封顶屏高 82%）；800×600 测试窗里这一项排在
+    // 视口外，用户要滚过去才点得到——先滚进视口再点，否则 tap 落空。
+    await tester.ensureVisible(action);
+    await tester.pumpAndSettle();
 
     await tester.runAsync(() async {
       await tester.tap(action);

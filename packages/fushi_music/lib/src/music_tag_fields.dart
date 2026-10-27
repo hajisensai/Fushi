@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import 'fushi_music_library.dart';
 
@@ -48,7 +49,12 @@ final class MusicTagWriteException implements Exception {
 }
 
 typedef _ReadC =
-    Int32 Function(Pointer<Uint8>, Size, Pointer<Pointer<Uint8>>, Pointer<Size>);
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
 typedef _ReadDart =
     int Function(Pointer<Uint8>, int, Pointer<Pointer<Uint8>>, Pointer<Size>);
 typedef _WriteC = Int32 Function(Pointer<Uint8>, Size, Pointer<Uint8>, Size);
@@ -62,8 +68,9 @@ Uint8List encodeMusicTagFields(Map<MusicTagField, String> fields) {
   void str(String s) {
     final List<int> bytes = utf8.encode(s);
     b.add(
-      (ByteData(4)..setUint32(0, bytes.length, Endian.little)).buffer
-          .asUint8List(),
+      (ByteData(
+        4,
+      )..setUint32(0, bytes.length, Endian.little)).buffer.asUint8List(),
     );
     b.add(bytes);
   }
@@ -126,7 +133,8 @@ class MusicTagFieldsIo {
       _instance ??= MusicTagFieldsIo._(FushiMusic.instance);
 
   /// 显式库（测试 / harness）。
-  factory MusicTagFieldsIo.forLibrary(FushiMusic lib) => MusicTagFieldsIo._(lib);
+  factory MusicTagFieldsIo.forLibrary(FushiMusic lib) =>
+      MusicTagFieldsIo._(lib);
 
   /// 读出文件主标签的白名单字段（没有的字段不出现）。
   Map<MusicTagField, String> read(String path) {
@@ -135,14 +143,16 @@ class MusicTagFieldsIo {
     final Pointer<Pointer<Uint8>> outPtr = calloc<Pointer<Uint8>>();
     final Pointer<Size> outLen = calloc<Size>();
     try {
-      pathPtr.asTypedList(p.length).setAll(0, p);
+      pathPtr.asTypedListOutOfLine(p.length).setAll(0, p);
       final int rc = _read(pathPtr, p.length, outPtr, outLen);
       if (rc != FfmStatus.ok) throw MusicTagWriteException(path, rc);
       final int len = outLen.value;
       final Pointer<Uint8> bytes = outPtr.value;
       if (len == 0 || bytes == nullptr) return <MusicTagField, String>{};
       try {
-        return decodeMusicTagFields(Uint8List.fromList(bytes.asTypedList(len)));
+        return decodeMusicTagFields(
+          Uint8List.fromList(bytes.asTypedListOutOfLine(len)),
+        );
       } finally {
         _lib.freeBytes(bytes, len);
       }
@@ -160,8 +170,8 @@ class MusicTagFieldsIo {
     final Pointer<Uint8> pathPtr = malloc<Uint8>(p.isEmpty ? 1 : p.length);
     final Pointer<Uint8> kvPtr = malloc<Uint8>(kv.isEmpty ? 1 : kv.length);
     try {
-      pathPtr.asTypedList(p.length).setAll(0, p);
-      kvPtr.asTypedList(kv.length).setAll(0, kv);
+      pathPtr.asTypedListOutOfLine(p.length).setAll(0, p);
+      kvPtr.asTypedListOutOfLine(kv.length).setAll(0, kv);
       final int rc = _write(pathPtr, p.length, kvPtr, kv.length);
       if (rc != FfmStatus.ok) throw MusicTagWriteException(path, rc);
     } finally {

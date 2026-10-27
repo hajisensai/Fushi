@@ -4,7 +4,7 @@ import 'package:path/path.dart' as p;
 import '../ctl_commands.dart';
 import 'settings_ops_commands.dart' show plexLoginCommands, syncCompareCommands;
 
-/// data 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_data_routes.dart`）：
+/// data 域命令（app 侧路由见 `fushi/lib/src/ops/ctl_data_routes.dart`）：
 /// 备份、云同步、下载中心、媒体服务器、互联对端、存储。
 const List<CtlCommandGroup> dataCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
@@ -554,8 +554,24 @@ String _renderSyncLs(Object? data) {
 }
 
 void _configureSyncRun(ArgParser parser) {
-  parser.addFlag('wait', negatable: false, help: '等同步跑完再返回结果');
+  parser
+    ..addFlag('wait', negatable: false, help: '等同步跑完再返回结果')
+    ..addOption(
+      'conflicts',
+      allowed: kSyncConflictPolicies,
+      help:
+          '同步中途的冲突不弹窗、按策略裁决：keep-local（保留本机）| keep-remote（采用对端）| '
+          'newest（较新的一侧）| ask（不裁决，返回冲突清单，隐含 --wait）；缺省在 app 里弹窗',
+    );
 }
+
+/// `sync run --conflicts` 的取值（app 侧 `SyncConflictPolicy.wire`）。
+const List<String> kSyncConflictPolicies = <String>[
+  'keep-local',
+  'keep-remote',
+  'newest',
+  'ask',
+];
 
 /// 同步通道名（app 侧 `SyncAssetChannelScope` 的取值；`sync ls` 列出本机已启用的）。
 const List<String> _syncChannelNames = <String>['cloud', 'interconnect'];
@@ -579,14 +595,37 @@ CtlRequestSpec _syncRun(CtlCommandContext c) {
     body: <String, Object?>{
       if (channels.isNotEmpty) 'channels': channels.toSet().toList(),
       if (c.flag('wait')) 'wait': true,
+      if (c.option('conflicts') != null) 'conflicts': c.option('conflicts'),
     },
   );
 }
 
 String _renderSyncRun(Object? data) {
   if (data is! Map) return renderCtlJson(data);
-  if (data['started'] == true) return '已开始同步（进度与结果在 app 里显示；sync ls 查看状态）';
-  return '同步结束：${data['outcome']}';
+  if (data['started'] == true) {
+    return data['conflictPolicy'] == null
+        ? '已开始同步（进度与结果在 app 里显示；sync ls 查看状态）'
+        : '已开始同步，冲突按 ${data['conflictPolicy']} 裁决（sync ls 查看状态）';
+  }
+  final Object? conflicts = data['conflicts'];
+  if (conflicts is! Map) return '同步结束：${data['outcome']}';
+  String rows(Object? list) => renderCtlTable(list, const <(String, String)>[
+    ('类型', 'type'),
+    ('标题', 'title'),
+    ('保留', 'kept'),
+    ('本机更新', 'localUpdatedAt'),
+    ('对端更新', 'remoteUpdatedAt'),
+    ('原因', 'error'),
+  ], empty: '（无）');
+  final Object? unresolved = conflicts['unresolved'];
+  final bool pending = unresolved is List && unresolved.isNotEmpty;
+  return <String>[
+    '同步结束：${data['outcome']}（冲突策略 ${conflicts['policy']}）',
+    '已裁决的冲突：\n${rows(conflicts['resolved'])}',
+    if (pending)
+      '未解决的冲突（下一轮同步仍会报；可 sync run --conflicts keep-local|keep-remote|newest 重跑）：\n'
+          '${rows(unresolved)}',
+  ].join('\n');
 }
 
 // ── dl ───────────────────────────────────────────────────────────────

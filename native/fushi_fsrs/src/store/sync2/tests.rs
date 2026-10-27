@@ -746,6 +746,100 @@ fn small_own_segments_are_compacted_and_old_files_deleted_after_everyone_acks() 
     assert_eq!(a.digest(), c.digest());
 }
 
+/// 首次提交（迁移了一大批旧数据 / 攒了很久没同步）：按压缩后体积切段，几万条操作只是一个文件，新设备一轮收齐。
+#[test]
+fn a_large_first_commit_uploads_a_handful_of_files() {
+    let a = Device::new("big");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck)]);
+    for batch in 0..6 {
+        let events: Vec<Value> = (0..1000)
+            .map(|i| {
+                let n = batch * 1000 + i;
+                review(&format!("r{n}"), &format!("C{}", n % 400), T0 + n * 60_000, 1 + n % 4, "review")
+            })
+            .collect();
+        a.apply(T0 + batch, events);
+    }
+    let mut bucket = Bucket::default();
+    a.sync(&mut bucket, "loc", T0 + DAY);
+    // 这 6000 条未压缩约 1.5 MB：旧上限（64 KB 未压缩 / 2000 条）下是二十多个段；现在是一个。
+    assert_eq!(segment_files(&bucket, &a), 1);
+    let c = Device::new("bigc");
+    c.sync(&mut bucket, "loc", T0 + DAY);
+    assert_eq!(projection(&a), projection(&c));
+    assert_eq!(a.digest(), c.digest());
+}
+
+/// 升级前切的老段（体积未知，记 0）：下一轮补算体积、按层合并，位置上换成少数几个大段，新设备照样收齐。
+#[test]
+fn pre_upgrade_small_segments_are_sized_and_compacted() {
+    let a = Device::new("old");
+    let b = Device::new("oldb");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck)]);
+    let events: Vec<Value> = (0..300).map(|n| review(&format!("r{n}"), &format!("C{}", n % 30), T0 + n * 60_000, 1 + n % 4, "learn")).collect();
+    a.apply(T0 + 1, events);
+    // 模拟老版本：每条操作切成一段、体积未知；已经全部传到位置上，B 也收过了。
+    let top: i64 = a.core.sync2_status(P).unwrap()["nextSeq"].as_i64().unwrap() - 1;
+    let dev = a.core.sync2_identity(P, T0).unwrap()["device"].as_str().unwrap().to_owned();
+    {
+        let w = a.core.writer().unwrap();
+        w.execute("DELETE FROM sync2_segments", []).unwrap();
+        for seq in 1..=top {
+            w.execute(
+                "INSERT INTO sync2_segments (profile_uid, device, first, last, bytes) \
+                 SELECT ?1, device, ?2, ?2, 0 FROM sync2_self WHERE profile_uid = ?1",
+                rusqlite::params![P, seq],
+            )
+            .unwrap();
+        }
+    }
+    let mut bucket = Bucket::default();
+    // 第一轮：这些老段照原样上传（合并只动已经切好的段，传过的才登记重传 / 待删）。
+    a.sync(&mut bucket, "loc", T0 + DAY);
+    b.sync(&mut bucket, "loc", T0 + DAY);
+    let rows = |d: &Device| d.rows("SELECT COUNT(*) FROM sync2_segments")[1][0].parse::<usize>().unwrap();
+    assert!(rows(&a) < 10, "{} segments after compaction", rows(&a));
+    assert!(a.rows("SELECT COUNT(*) FROM sync2_segments WHERE bytes = 0")[1][0] == "0");
+    // B ack 之后，位置上只剩合并后的段。
+    a.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    b.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    a.sync(&mut bucket, "loc", T0 + 3 * DAY);
+    assert_eq!(segment_files(&bucket, &a), rows(&a), "{dev}");
+    let c = Device::new("oldc");
+    c.sync(&mut bucket, "loc", T0 + 3 * DAY);
+    assert_eq!(projection(&a), projection(&c));
+    assert_eq!(projection(&a), projection(&b));
+}
+
+/// 新设备追赶两台互相同步过很多轮的设备：两台的操作因果上交错（每轮都依赖对方上一轮），一次收齐、顺序正确。
+#[test]
+fn a_new_device_catches_up_a_long_causally_interleaved_history_in_one_round() {
+    let a = Device::new("pa");
+    let b = Device::new("pb");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck)]);
+    for i in 0..120 {
+        let at = T0 + i * 600_000;
+        a.apply(at, vec![edit("note", "N1", "f/x", json!(format!("a{i}"))), review(&format!("ra{i}"), "C", at, 3, "review")]);
+        a.sync(&mut bucket, "loc", at);
+        b.sync(&mut bucket, "loc", at);
+        b.apply(at + 1, vec![edit("note", "N1", "f/x", json!(format!("b{i}"))), review(&format!("rb{i}"), "C", at + 1, 2, "review")]);
+        b.sync(&mut bucket, "loc", at + 1);
+        a.sync(&mut bucket, "loc", at + 1);
+    }
+    let c = Device::new("pc");
+    let started = std::time::Instant::now();
+    let r = c.sync(&mut bucket, "loc", T0 + 99 * DAY);
+    assert_eq!(r["pending"], json!(0), "everything delivered in one round: {r}");
+    assert_eq!(projection(&a), projection(&c));
+    assert_eq!(a.state("C"), c.state("C"));
+    assert_eq!(a.digest(), c.digest());
+    assert!(started.elapsed().as_secs() < 60, "{:?}", started.elapsed());
+}
+
 #[test]
 fn backup_snapshot_keeps_server_times_of_legacy_edits() {
     let a = Device::new("st");

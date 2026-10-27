@@ -164,6 +164,44 @@ Future<bool> refreshPersonWikidataBridges(
   );
 }
 
+// ── 「同一人」裁决 ─────────────────────────────────────────────────
+
+/// 人物页「可能是同一人」的「是同一人 / 不是」（[same]）：两个人各取代表节点（首条
+/// 本地记录），写一条 manual 桥（否决 = 墓碑，之后不再建议这一对）。人物页与控制
+/// 通道都只调它。返回写下的那一对节点。
+Future<(String, String)> decidePersonIdentity(
+  FushiDatabase db,
+  PersonCluster self,
+  PersonCluster other, {
+  required bool same,
+  DateTime Function() now = DateTime.now,
+}) async {
+  final (String, String) pair = (
+    self.records.first.node,
+    other.records.first.node,
+  );
+  await db.setManualPersonBridge(
+    pair.$1,
+    pair.$2,
+    same: same,
+    at: now().millisecondsSinceEpoch,
+  );
+  return pair;
+}
+
+/// 人物页「取消合并」：把一对手动合并（[PersonPageData.manualPairs] 的一项）改成
+/// 否决墓碑。
+Future<void> unmergePersonPair(
+  FushiDatabase db,
+  (String, String) pair, {
+  DateTime Function() now = DateTime.now,
+}) => db.setManualPersonBridge(
+  pair.$1,
+  pair.$2,
+  same: false,
+  at: now().millisecondsSinceEpoch,
+);
+
 // ── 人物页明细 ─────────────────────────────────────────────────────
 
 /// 一个可点开的作品端点 + 卡片上的图（本地路径 / URL 二选一，可都空）。

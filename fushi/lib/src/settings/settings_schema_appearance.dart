@@ -562,6 +562,12 @@ SettingsItem _homePanelModeItem(HomeDashboardPanel panel) {
       FushiIcons.repeat,
       ModuleId.srs,
     ),
+    HomeDashboardPanel.aiAgent => (
+      t.ai_agent_title,
+      t.home_panel_ai_agent_hint,
+      FushiIcons.aiAssistant,
+      ModuleId.ai,
+    ),
   };
   return SettingsSegmentedItem<HomeDashboardPanelMode>(
     id: 'appearance.home_panel.${panel.id}',

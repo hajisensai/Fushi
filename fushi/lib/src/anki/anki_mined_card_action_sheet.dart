@@ -11,7 +11,8 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogHeroIcon, FushiHeroTone;
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart' show FushiListItem;
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiListItem;
 
 /// BUG-1040：把「一段期间内让查词弹窗让位」的执行权交回宿主页面的钩子。
 ///
@@ -187,7 +188,10 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
         icon: FushiIcons.ankiCard,
         tone: FushiHeroTone.primary,
       ),
-      title: Text(t.anki_mined_card_title),
+      title: Text(switch (widget.repo.minedNoteHome) {
+        MinedNoteHome.anki => t.anki_mined_card_title,
+        MinedNoteHome.fushiReview => t.anki_mined_card_title_review,
+      }),
       content: SizedBox(
         width: width,
         child: Column(
@@ -239,7 +243,7 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
                                 : () => _runOverwrite(note.noteId),
                           ),
                           FushiIconButtonControl(
-                            tooltip: t.anki_mined_action_view,
+                            tooltip: _viewLabel(widget.repo),
                             icon: const FushiIcon(FushiIcons.openInNew),
                             onPressed: _busy
                                 ? null
@@ -350,7 +354,10 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
     setState(() => _busy = false);
     if (!ok) {
       FushiToast.show(
-        msg: t.anki_note_open_failed,
+        msg: switch (widget.repo.minedNoteHome) {
+          MinedNoteHome.anki => t.anki_note_open_failed,
+          MinedNoteHome.fushiReview => t.anki_note_open_failed_review,
+        },
         severity: ToastSeverity.error,
       );
     }
@@ -434,10 +441,16 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_close),
         ),
-        FushiTextButton(
-          onPressed: _busy ? null : _openInAnki,
-          child: Text(t.anki_note_viewer_open_in_anki),
-        ),
+        // BUG-3790：按钮说的是卡真正住的地方（Anki / Fushi 复习）；后端打不开
+        // （远端制卡、AnkiMobile 等）就不出这颗按钮。
+        if (widget.repo.canOpenMinedNote)
+          FushiTextButton(
+            onPressed: _busy ? null : _openInAnki,
+            child: Text(switch (widget.repo.minedNoteHome) {
+              MinedNoteHome.anki => t.anki_note_viewer_open_in_anki,
+              MinedNoteHome.fushiReview => t.anki_note_viewer_open_in_review,
+            }),
+          ),
         FushiFilledButton(
           onPressed: _busy ? null : _overwrite,
           child: Text(t.anki_mined_action_overwrite),
@@ -445,6 +458,15 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
       ],
     );
   }
+}
+
+/// 已有卡行尾「查看」按钮的提示：能打开时说去哪打开（BUG-3790），打不开只说查看。
+String _viewLabel(BaseAnkiRepository repo) {
+  if (!repo.canOpenMinedNote) return t.anki_mined_action_view_only;
+  return switch (repo.minedNoteHome) {
+    MinedNoteHome.anki => t.anki_mined_action_view,
+    MinedNoteHome.fushiReview => t.anki_mined_action_view_review,
+  };
 }
 
 /// Shared original-note field UI for source review and the existing viewer.

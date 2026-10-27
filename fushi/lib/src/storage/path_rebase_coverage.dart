@@ -133,6 +133,14 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.notAPath, '成员键与合集快照 JSON，无路径。'),
   PathRebaseColumn('LibraryOrganizeChanges', 'source', PathRebaseKind.notAPath,
       '`rule` / `ai` 来源标记，不是来源路径。'),
+  // v136 AI 助手对话存档与操作记录（设备本地历史记录）：JSON 是当时的对话 / 参数 /
+  // 撤销载荷快照，不是供重开的路径引用，数据根迁移不改写。
+  PathRebaseColumn('AiAgentSessions', 'payloadJson', PathRebaseKind.notAPath,
+      '整场对话 JSON 快照，历史记录，无路径引用。'),
+  PathRebaseColumn('AiAgentActions', 'argsJson', PathRebaseKind.notAPath,
+      '操作参数 JSON 快照（记录当时调用了什么），不是路径引用。'),
+  PathRebaseColumn('AiAgentActions', 'undoPayloadJson',
+      PathRebaseKind.notAPath, '撤销载荷 JSON（操作前的值快照），不是路径引用。'),
   PathRebaseColumn('MediaLinks', 'source', PathRebaseKind.notAPath,
       '作品图谱连接来源（manual / mal / ai …），不是来源路径。'),
   PathRebaseColumn('MediaOpenHistory', 'mediaSource', PathRebaseKind.notAPath,

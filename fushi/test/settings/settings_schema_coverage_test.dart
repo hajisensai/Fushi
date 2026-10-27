@@ -542,6 +542,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Secondary: reveal when paused or hovered':
       'test/media/video/video_subtitle_hide_hover_reveal_test.dart'
       '（⑫ 主 / 副显形开关各管各的层）',
+  // 沉浸锁定 + 字幕遮蔽中点画面显示当前句：生效点在播放页点画面抬起（要真播放器与
+  // 沉浸锁），harness 无适用探针。判据纯函数与 overlay 显形句柄由专项测试咬住，页面
+  // 接线由源码守卫咬住。
+  'video/Tap picture to show subtitles':
+      'test/media/video/video_immersive_tap_reveal_test.dart'
+      '（判据四条件 + 句柄显示 / 遮回 / 换句遮回）；页面接线见 '
+      'test/pages/video_immersive_tap_reveal_wiring_guard_test.dart',
   // BUG-3314：暂停时识别画面文字的范围（所有视频 / 仅图片字幕 / 关闭）。写 prefsRepo
   // （changed=true），生效点在播放页暂停 OCR 覆盖层的识别门——要真播放器暂停、截帧
   // 与 OCR 引擎，harness 无适用探针；由专项测试咬住判据（图形字幕必识别、文字字幕在屏
@@ -644,6 +651,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Font kerning (vertical)':
       'test/reader/reader_content_styles_test.dart',
   'reading/VPAL (vertical alt)': 'test/reader/reader_content_styles_test.dart',
+  // 首页「AI 助手」条显示档：显隐判据与持久化在专项测试里钉死。
+  'appearance/AI assistant': 'test/pages/home_ai_agent_panel_test.dart',
+  // 悬浮球「AI」按钮：默认勾选 / 平台可用 / 场景上下文在专项测试里钉死。
+  'floatingBall/AI': 'test/floating_ball/floating_ball_ai_action_test.dart',
   'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
   'reading/Spread mode': 'test/epub/epub_spread_map_test.dart',
@@ -1557,9 +1568,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 「生成日语字幕」任务挑识别器时（视频页面板 / 合集页 / 桌面 CLI 都经
   // AppVideoSubtitleService，没给显式值就取这两个偏好），harness 里没有起任务。
   'models/Segmentation':
-      'test/platform/desktop/ctl/ctl_video_subtitle_routes_test.dart（没给 segmenter 用设置里的值）',
+      'test/ops/ctl_video_subtitle_routes_test.dart（没给 segmenter 用设置里的值）',
   'models/MOSS backend':
-      'test/platform/desktop/ctl/ctl_video_subtitle_routes_test.dart（没给 mossBackend 用设置里的值）',
+      'test/ops/ctl_video_subtitle_routes_test.dart（没给 mossBackend 用设置里的值）',
   'ai/Default quality':
       'test/settings/ai_video_download_settings_test.dart + '
       'test/ai/ai_video_acquisition_preferences_test.dart',

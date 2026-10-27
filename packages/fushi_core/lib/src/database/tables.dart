@@ -3520,6 +3520,76 @@ class LibraryOrganizeChanges extends Table {
   IntColumn get undoneAt => integer().nullable()();
 }
 
+// ── ai_agent_sessions / ai_agent_actions（AI 助手，schema v136）──────────────
+// spec `docs/specs/2026-10-26-ai-operations-agent-design.md` §5.3 / D3 / D5：AI 助手的
+// 对话存档与它做过的操作记录，供「操作记录」页与撤销用。与 library_organize_* 同一口径：
+// **设备本地**——不同步、不进备份、不分 Profile；本机按期限清理（D5 对话存档 30 天），
+// 清理只删记录与快照，不动已生效的改动。
+
+/// AI 助手的一场对话（整场序列化成 [payloadJson]）。
+@DataClassName('AiAgentSessionRow')
+class AiAgentSessions extends Table {
+  /// 会话 id（调用方生成）。
+  TextColumn get id => text()();
+
+  /// 首句用户话截断，调用方给。
+  TextColumn get title => text()();
+
+  /// `general` | `reader` | `manga` | `video` | `system`。
+  TextColumn get scene => text()();
+
+  /// 整场会话 JSON（调用方序列化，已剔除凭据）。
+  TextColumn get payloadJson => text()();
+
+  IntColumn get totalTokens => integer().withDefault(const Constant(0))();
+
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{id};
+}
+
+/// AI 助手执行过的一次操作（§5.3）。
+@DataClassName('AiAgentActionRow')
+class AiAgentActions extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// `ai_agent_sessions.id`。**没有外键**：会话存档按期限删掉后，操作记录仍可保留到
+  /// 自己的期限；设备本地表在覆盖恢复后原样回灌，外键也会打断回灌。
+  TextColumn get sessionId => text()();
+
+  /// 操作目录 id（如 `settings.set`）。
+  TextColumn get opId => text()();
+
+  /// 参数 JSON（调用方已剔除凭据）。
+  TextColumn get argsJson => text()();
+
+  /// `read` | `write` | `irreversible`。
+  TextColumn get risk => text()();
+
+  /// `auto`（可逆、直接执行）| `user`（用户点了确认）。
+  TextColumn get confirmation => text()();
+
+  /// `ok` 或错误短码。
+  TextColumn get resultCode => text()();
+
+  /// 撤销载荷 JSON；NULL = 不可撤销。
+  TextColumn get undoPayloadJson => text().nullable()();
+
+  /// 给人看的改前 / 改后。
+  TextColumn get beforeText => text().nullable()();
+  TextColumn get afterText => text().nullable()();
+
+  IntColumn get createdAt => integer()();
+
+  /// 撤销时刻；NULL = 未撤销。
+  IntColumn get undoneAt => integer().nullable()();
+
+  /// `done` | `superseded` | `failed`；NULL = 未撤销。
+  TextColumn get undoStatus => text().nullable()();
+}
+
 // ── web_browser_*（内置浏览器，schema v128）────────────────────────────
 // 历史 / 书签（含文件夹）随备份走、经聚合快照跨端同步（删除写 sync_deletion_tombstones，
 // 种类 `webhistory` / `webbookmark`）；标签页会话、最近关闭、下载记录是**设备本地**：

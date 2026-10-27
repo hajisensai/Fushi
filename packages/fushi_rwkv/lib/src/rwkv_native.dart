@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import 'fushi_rwkv_library.dart';
 import 'rwkv_rows.dart';
@@ -316,7 +317,7 @@ class RwkvNativeModel implements Finalizable {
     final _Bindings b = _of(library ?? FushiRwkv.instance);
     final Pointer<Uint8> buffer = malloc<Uint8>(weights.length);
     try {
-      buffer.asTypedList(weights.length).setAll(0, weights);
+      buffer.asTypedListOutOfLine(weights.length).setAll(0, weights);
       final Pointer<Void> handle = b.modelLoad(buffer, weights.length);
       if (handle == nullptr) throw b.error(-3);
       final int kindCode = b.modelKind(handle);
@@ -401,10 +402,10 @@ class RwkvNativeRuntime implements Finalizable {
     final Pointer<Uint8> input = malloc<Uint8>(n * kFrwkvReviewSize + 1);
     final Pointer<Float> out = output ? malloc<Float>(n + 1) : nullptr;
     try {
-      input.asTypedList(n * kFrwkvReviewSize).setAll(0, rows.bytes);
+      input.asTypedListOutOfLine(n * kFrwkvReviewSize).setAll(0, rows.bytes);
       final int code = call(_handle, input, n, out);
       if (code < 0) throw _b.error(code);
-      return output ? Float32List.fromList(out.asTypedList(n)) : null;
+      return output ? Float32List.fromList(out.asTypedListOutOfLine(n)) : null;
     } finally {
       malloc.free(input);
       if (out != nullptr) malloc.free(out);
@@ -421,8 +422,8 @@ class RwkvNativeRuntime implements Finalizable {
     final Pointer<Uint8> input = malloc<Uint8>(n * kFrwkvReviewSize + 1);
     final Pointer<Uint64> tagBuffer = malloc<Uint64>(n + 1);
     try {
-      input.asTypedList(n * kFrwkvReviewSize).setAll(0, rows.bytes);
-      tagBuffer.asTypedList(n).setAll(0, tags);
+      input.asTypedListOutOfLine(n * kFrwkvReviewSize).setAll(0, rows.bytes);
+      tagBuffer.asTypedListOutOfLine(n).setAll(0, tags);
       _b.check(_b.append(_handle, input, tagBuffer, n));
     } finally {
       malloc
@@ -456,13 +457,13 @@ class RwkvNativeRuntime implements Finalizable {
     final Pointer<Float> scores = malloc<Float>(n + 1);
     final Pointer<Uint8> found = malloc<Uint8>(n + 1);
     try {
-      ids.asTypedList(n).setAll(0, cardIds);
-      vs.asTypedList(n).setAll(0, versions);
+      ids.asTypedListOutOfLine(n).setAll(0, cardIds);
+      vs.asTypedListOutOfLine(n).setAll(0, versions);
       final int code = _b.scoresLookup(_handle, ids, vs, n, scores, found);
       if (code < 0) throw _b.error(code);
       return RwkvScoreLookup(
-        Float32List.fromList(scores.asTypedList(n)),
-        Uint8List.fromList(found.asTypedList(n)),
+        Float32List.fromList(scores.asTypedListOutOfLine(n)),
+        Uint8List.fromList(found.asTypedListOutOfLine(n)),
       );
     } finally {
       malloc
@@ -490,11 +491,11 @@ class RwkvNativeRuntime implements Finalizable {
     final Pointer<Int64> anchors = malloc<Int64>(n + 1);
     final Pointer<Float> out = malloc<Float>(n + 1);
     try {
-      input.asTypedList(n * kFrwkvReviewSize).setAll(0, rows.bytes);
-      vs.asTypedList(n).setAll(0, versions);
-      anchors.asTypedList(n).setAll(0, anchorsMs);
+      input.asTypedListOutOfLine(n * kFrwkvReviewSize).setAll(0, rows.bytes);
+      vs.asTypedListOutOfLine(n).setAll(0, versions);
+      anchors.asTypedListOutOfLine(n).setAll(0, anchorsMs);
       _b.check(_b.scoresUpdate(_handle, input, vs, anchors, n, out));
-      return Float32List.fromList(out.asTypedList(n));
+      return Float32List.fromList(out.asTypedListOutOfLine(n));
     } finally {
       malloc
         ..free(input)
@@ -520,7 +521,7 @@ class RwkvNativeRuntime implements Finalizable {
     final int n = cardIds.length;
     final Pointer<Int64> ids = malloc<Int64>(n + 1);
     try {
-      ids.asTypedList(n).setAll(0, cardIds);
+      ids.asTypedListOutOfLine(n).setAll(0, cardIds);
       final int code = _b.scoresRemove(_handle, ids, n);
       if (code < 0) throw _b.error(code);
       return code;
@@ -542,7 +543,7 @@ class RwkvNativeRuntime implements Finalizable {
     final Pointer<Float> r = malloc<Float>(4);
     try {
       input
-          .asTypedList(kFrwkvReviewSize)
+          .asTypedListOutOfLine(kFrwkvReviewSize)
           .setAll(0, answer.bytes.sublist(0, kFrwkvReviewSize));
       final int code = _b.nextIntervals(
         _handle,
@@ -554,8 +555,8 @@ class RwkvNativeRuntime implements Finalizable {
       );
       if (code < 0) throw _b.error(code);
       return RwkvIntervals(
-        List<int>.of(days.asTypedList(4)),
-        List<double>.of(r.asTypedList(4)),
+        List<int>.of(days.asTypedListOutOfLine(4)),
+        List<double>.of(r.asTypedListOutOfLine(4)),
       );
     } finally {
       malloc
@@ -574,7 +575,7 @@ class RwkvNativeRuntime implements Finalizable {
       final int code = _b.snapshot(_handle, bytes, len);
       if (code < 0) throw _b.error(code);
       final Uint8List copy = Uint8List.fromList(
-        bytes.value.asTypedList(len.value),
+        bytes.value.asTypedListOutOfLine(len.value),
       );
       _b.freeBytes(bytes.value, len.value);
       return copy;
@@ -590,7 +591,7 @@ class RwkvNativeRuntime implements Finalizable {
     _alive();
     final Pointer<Uint8> input = malloc<Uint8>(snapshot.length + 1);
     try {
-      input.asTypedList(snapshot.length).setAll(0, snapshot);
+      input.asTypedListOutOfLine(snapshot.length).setAll(0, snapshot);
       _b.check(_b.restore(_handle, input, snapshot.length));
     } finally {
       malloc.free(input);

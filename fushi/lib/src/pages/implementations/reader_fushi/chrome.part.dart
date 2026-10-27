@@ -940,7 +940,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) {
       FushiToast.show(
-          msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
+        msg: t.reader_image_file_unavailable,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     await runImageAction(ImageAction.save, file);
@@ -993,8 +995,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
                 onLongPress: isWindowsPlatform
                     ? null
                     : () => unawaited(
-                          showImageActionsSheet(routeContext, file: file),
-                        ),
+                        showImageActionsSheet(routeContext, file: file),
+                      ),
               ),
             ),
           ),
@@ -1716,7 +1718,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
           .itemsIn(ReaderControlSlot.overflow)
           .contains(ReaderControlItem.modeToggle);
 
-  /// 「更多」溢出菜单里的动作（布局的 overflow 槽，减去被提到常驻位的模式键）。
+  /// 「更多」溢出菜单里的动作（布局的 overflow 槽，减去被提到常驻位的模式键），
+  /// 末尾是「问 AI」（最低优先级：悬浮顶栏放得下才平铺、空间不够最先收进「⋯」；
+  /// 经典顶栏恒在 ⋮ 菜单最后）。两种顶栏都只从这里取，不各自拼接。
   List<ReaderHeaderAction> _overflowControlActions() => <ReaderHeaderAction>[
     for (final ReaderControlItem item in _renderableControlsIn(
       ReaderControlSlot.overflow,
@@ -1724,6 +1728,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       if (item != ReaderControlItem.title &&
           !(item == ReaderControlItem.modeToggle && _modeTogglePromoted))
         _readerControlAction(item),
+    ..._askAiHeaderActions(),
   ];
 
   /// 按钮的功能分组（M3E button group 的组间留白）：0 导航类 / 1 阅读与工具类 /
@@ -2203,9 +2208,51 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 顶栏和底栏被关掉时球接管它们：[kReaderToolbarsTakeoverItems]（返回 / 设置 /
   /// 开回栏）不看勾选固定在球上，歌词模式再加模式切换键（顶栏在歌词模式也强制
   /// 保留它：那是回正文最直接的入口）；宿主据此不给「关闭悬浮球」。
+  /// 悬浮球 AI 上下文用的 mm:ss（超过一小时为 h:mm:ss）。
+  String _formatAiContextDuration(Duration d) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    final int h = d.inHours;
+    final String mmss = '${two(d.inMinutes % 60)}:${two(d.inSeconds % 60)}';
+    return h > 0 ? '$h:$mmss' : mmss;
+  }
+
+  /// AI 助手的阅读器上下文（当前书和位置，spec §6.4）：悬浮球场景与顶栏「问 AI」
+  /// 共用这一份。
+  Map<String, Object?> _readerAiContext() {
+    final AudiobookPlayerController? audio = _audiobookController;
+    final int pct = (_lastProgressValue.clamp(0.0, 1.0) * 100).round();
+    return <String, Object?>{
+      'itemKind': 'book',
+      'itemId': _bookUid ?? widget.bookKey,
+      'itemTitle': _book?.title,
+      'position': 'chapter ${_currentChapter + 1} · $pct%',
+      if (audio != null && audio.isPlaying)
+        'audiobookPosition': _formatAiContextDuration(audio.globalPosition),
+    };
+  }
+
+  /// 顶栏「问 AI」（D4 ③）：两种顶栏都排在「更多」槽之后——悬浮顶栏
+  /// （[FushiFloatingTopBar.overflow]，最低优先级：宽度够平铺、不够最先收进
+  /// 「⋯」），经典顶栏恒在 ⋮ 菜单里（该顶栏的 overflowActions 体系）。AI 模块关着
+  /// 时不出（`isAiModuleEnabled`，守卫 `ai_module_gate_guard_test`）。
+  List<ReaderHeaderAction> _askAiHeaderActions() => <ReaderHeaderAction>[
+    if (_hasEverLoaded && isAiModuleEnabled(appModel.moduleVisibility))
+      ReaderHeaderAction(
+        key: kAiAgentAskKey,
+        icon: kAiAgentAskIcon,
+        label: aiAgentAskLabel,
+        onPressed: () => openAiAgentForPage(
+          context,
+          scene: 'reader',
+          read: _readerAiContext,
+        ),
+      ),
+  ];
+
   Widget _buildReaderFloatingBallScene() {
     return FloatingBallScene(
       scope: FloatingBallScope.reader,
+      aiContext: _readerAiContext,
       pinnedIds: <String>[
         if (_hasEverLoaded && _toolbarsHidden) ...<String>[
           for (final ReaderControlItem item in kReaderToolbarsTakeoverItems)
@@ -3196,7 +3243,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
               _readerControlAction(ReaderControlItem.modeToggle),
           ],
           trailing: _readerControlActionsIn(ReaderControlSlot.topRight),
-          // 布局的「更多」槽（2026-10 精简：中频按钮）恒在 ⋮ 菜单。
+          // 布局的「更多」槽（2026-10 精简：中频按钮）恒在 ⋮ 菜单；「问 AI」排最后。
           overflowActions: _overflowControlActions(),
         ),
       ),

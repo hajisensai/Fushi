@@ -3,7 +3,7 @@ import 'package:args/args.dart';
 import '../ctl_commands.dart';
 import 'settings_ops_commands.dart' show ankiSyncClientCommands;
 
-/// dictionary 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_dictionary_routes.dart`）。
+/// dictionary 域命令（app 侧路由见 `fushi/lib/src/ops/ctl_dictionary_routes.dart`）。
 ///
 /// - `fushi_cli dict …`：词典仓库（列出 / 开关 / 排序 / 删除 / 导入 / 在线更新）与结构化查词。
 /// - `fushi_cli anki …`：Anki 状态、牌组 / 笔记类型、制卡、查重、同步。
@@ -385,10 +385,11 @@ CtlRequestSpec _buildDictKanjiEnable(CtlCommandContext c) => CtlRequestSpec.put(
   body: const <String, Object?>{'kanjiEnabled': true},
 );
 
-CtlRequestSpec _buildDictKanjiDisable(CtlCommandContext c) => CtlRequestSpec.put(
-  _dictPath(c.joinedRest(0, 'name')),
-  body: const <String, Object?>{'kanjiEnabled': false},
-);
+CtlRequestSpec _buildDictKanjiDisable(CtlCommandContext c) =>
+    CtlRequestSpec.put(
+      _dictPath(c.joinedRest(0, 'name')),
+      body: const <String, Object?>{'kanjiEnabled': false},
+    );
 
 CtlRequestSpec _buildDictOrder(CtlCommandContext c) =>
     _buildDictPositionPut(c, 'position');

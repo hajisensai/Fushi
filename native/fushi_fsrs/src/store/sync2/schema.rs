@@ -197,3 +197,6 @@ CREATE TABLE IF NOT EXISTS sync2_legacy (
   PRIMARY KEY (profile_uid, device)
 ) WITHOUT ROWID;
 "#;
+
+/// V6：本机切段点的压缩后体积估计（字节；0 = 未知，升级前切的老段）。
+pub const V6: &str = "ALTER TABLE sync2_segments ADD COLUMN bytes INTEGER NOT NULL DEFAULT 0;";

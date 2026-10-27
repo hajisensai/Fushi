@@ -785,6 +785,7 @@ void main() {
           DiscoveryMediaKind.novel: '3_0',
         },
         client: NyaaClient(
+          baseUrl: 'https://nyaa.si',
           minRequestInterval: Duration.zero,
           client: MockClient((http.Request request) async {
             requests.add(request.url);

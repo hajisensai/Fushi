@@ -16,6 +16,9 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
 ///   其它平台 / 未激活时 no-op）。
 /// - 已完成的下载任务还在被删来源根下做种：经 [videoDownloadPipeline] 把这些种子
 ///   从下载后端摘掉（不删文件），否则用户删掉旧目录后引擎会在原处重下（BUG-2776）。
+/// - 音乐曲目行不挂来源外键：先把这个根下的曲目软删（与扫描器「文件已不在」同一
+///   方法），否则删掉音乐扫描根会在曲库里留下孤儿曲目，之后重扫也清不掉
+///   （BUG-3785）。非音乐来源下没有曲目，这一步是空操作。
 Future<void> removeSourceLibrary({
   required FushiDatabase database,
   required PreferencesRepository prefs,
@@ -24,6 +27,11 @@ Future<void> removeSourceLibrary({
   bool disableVideoDownloadSubscriptions = false,
   VideoDownloadPipelineService? videoDownloadPipeline,
 }) async {
+  await database.softDeleteMissingMusicTracks(
+    sourceId: sourceId,
+    seenTrackUids: const <String>{},
+    deletedAt: DateTime.now().millisecondsSinceEpoch,
+  );
   await database.deleteMediaSource(
     sourceId,
     migrateVideoDownloadsTo: migrateVideoDownloadsTo,

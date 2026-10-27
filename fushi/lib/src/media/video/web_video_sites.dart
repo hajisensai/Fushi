@@ -1,4 +1,5 @@
-// 视频库「在线源 › 网站」：Netflix / YouTube 这类网页视频站的入口。
+// 网页视频站在 Fushi 播放页里的入口：浏览器站点表里标了「用播放页打开」的站点、浏览页
+// 的「用 Fushi 播放」按钮（`web_browser_site_launch.dart`）都走这里。
 //
 // 站点本身不是一本书：点入口就在原生播放器页的网页档里打开站点（选人 / 选剧 / 选集都是
 // 站点自己的页面），不落库。真正播起某一集（进播放器档）时，这一集才按规范化的播放页
@@ -21,7 +22,8 @@ import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/webview/untrusted_page_urls.dart';
 
-/// 用户自己加的网站（JSON 数组，`[{title, url}]`）。预置站点不存这里。
+/// 旧「视频站点」子页里用户自己加的网站（JSON 数组，`[{title, url}]`）。2026-10-26 并进
+/// 浏览器站点表后只剩迁移读取（`settleLegacyVideoSites`，读完清空）。
 const String kWebVideoSitesPrefKey = 'video_web_sites';
 
 /// 站点入口的伪书 id 前缀：只活在打开的页面里（[webVideoSiteRow]），从不写库。
@@ -44,16 +46,11 @@ class WebVideoSite {
   int get hashCode => Object.hash(title, url);
 }
 
-/// 预置站点（不可删）。
-const List<WebVideoSite> kWebVideoPresetSites = <WebVideoSite>[
-  WebVideoSite(title: 'Netflix', url: 'https://www.netflix.com/browse'),
-  WebVideoSite(title: 'YouTube', url: 'https://www.youtube.com/'),
-];
-
-/// 「网站」分区在不在：网页档只在 Windows 上有（站点自己的播放器 + WebView2）。
+/// 本平台有没有播放页的网页档（站点自己的播放器 + WebView2，只有 Windows）。拿已知
+/// 视频站当探针问同一个判据 [shouldOpenInWebVideoPlayer]。
 bool webVideoSitesAvailable({TargetPlatform? platform}) =>
     shouldOpenInWebVideoPlayer(
-      kWebVideoPresetSites.first.url,
+      'https://www.netflix.com/browse',
       platform: platform,
     );
 
@@ -83,16 +80,6 @@ List<WebVideoSite> decodeWebVideoSites(Object? raw) {
 
 String encodeWebVideoSites(List<WebVideoSite> sites) =>
     jsonEncode(<Object>[for (final WebVideoSite s in sites) s.toJson()]);
-
-/// 地址栏里随手输的地址：补 `https://`，不是 http(s) / 没有 host 返回 null。
-String? normalizeWebVideoSiteInput(String input) {
-  String s = input.trim();
-  if (s.isEmpty) return null;
-  if (!s.contains('://')) s = 'https://$s';
-  final Uri? uri = Uri.tryParse(s);
-  if (uri == null || !isPlayableStreamUrl(s)) return null;
-  return uri.toString();
-}
 
 /// 没给名字时的站名：去掉 `www.` 的 host。
 String webVideoSiteDefaultTitle(String url) {

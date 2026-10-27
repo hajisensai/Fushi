@@ -701,6 +701,48 @@ Map<String, SyncChoice> defaultSyncCompareChoices(
   return choices;
 }
 
+/// 按跨通道裁决簿 [decided]（见 [SyncCompareDialog.decisions]）定本通道的选择：先取
+/// [defaultSyncCompareChoices]，再用簿上前一条通道已裁决过的书覆盖。返回调整后的选择与
+/// **仍要裁决的冲突书名**（[decided] 为 null 时 = 全部冲突书）。冲突弹窗与非交互裁决器
+/// （`sync_conflict_decider.dart`）共用这一份规则。
+({Map<String, SyncChoice> choices, Set<String> undecided})
+seedSyncCompareChoices(
+  List<SyncCompareEntry> entries,
+  Map<String, SyncChoice>? decided,
+) {
+  final Map<String, SyncChoice> choices = defaultSyncCompareChoices(entries);
+  final Set<String> undecided = <String>{};
+  for (final SyncCompareEntry e in entries) {
+    final SyncChoice? prior = e.bookKey == null ? null : decided?[e.bookKey!];
+    if (prior == null) {
+      if (e.hasConflict) undecided.add(e.title);
+      continue;
+    }
+    switch (prior) {
+      case SyncChoice.skip:
+      case SyncChoice.useLocal:
+        // 「跳过」两端都不动；「用本地」是用户点名要本机这份，对哪条通道
+        // 都成立——推过去就是。
+        choices[e.title] = prior;
+      case SyncChoice.useRemote:
+        // 用户采纳的是**前一条通道**的远端，本机现在就是那个值。本通道
+        // 的远端若自己也动过（只远端动 / 双方都动），那是用户从没见过的第
+        // 三个值——按簿把本机推过去等于把它盖掉，正是本轮要消灭的倒灌
+        // （PC 既是互联 host 又往云盘导出：选了云盘的旧值，host 自己更新
+        // 的进度就这么没了）。只有本通道判「远端没动」时才沿用；真分叉照
+        // 旧弹给用户看。
+        final bool remoteMoved =
+            e.hasConflict || e.autoDirection == SyncDirection.importFromTtu;
+        if (!remoteMoved) {
+          choices[e.title] = SyncChoice.useLocal;
+        } else if (e.hasConflict) {
+          undecided.add(e.title);
+        }
+    }
+  }
+  return (choices: choices, undecided: undecided);
+}
+
 /// [applySyncCompareChoices] 的结果。
 class SyncCompareApplyResult {
   const SyncCompareApplyResult({required this.applied, required this.errors});
@@ -1154,42 +1196,13 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       final data = await loadSyncCompareData(widget.db, widget.backend);
       final entries = data.books;
       final dicts = data.dicts;
-      final choices = defaultSyncCompareChoices(entries);
       // 跨通道裁决簿：前一条通道已裁决过的书直接沿用（见 [SyncCompareDialog
-      // .decisions]）。
+      // .decisions] 与 [seedSyncCompareChoices]）。
       final Map<String, SyncChoice>? decided = widget.decisions;
-      bool allDecided = decided != null;
-      if (decided != null) {
-        for (final e in entries) {
-          final SyncChoice? prior =
-              e.bookKey == null ? null : decided[e.bookKey!];
-          if (prior == null) {
-            if (e.hasConflict) allDecided = false;
-            continue;
-          }
-          switch (prior) {
-            case SyncChoice.skip:
-            case SyncChoice.useLocal:
-              // 「跳过」两端都不动；「用本地」是用户点名要本机这份，对哪条通道
-              // 都成立——推过去就是。
-              choices[e.title] = prior;
-            case SyncChoice.useRemote:
-              // 用户采纳的是**前一条通道**的远端，本机现在就是那个值。本通道
-              // 的远端若自己也动过（只远端动 / 双方都动），那是用户从没见过的第
-              // 三个值——按簿把本机推过去等于把它盖掉，正是本轮要消灭的倒灌
-              // （PC 既是互联 host 又往云盘导出：选了云盘的旧值，host 自己更新
-              // 的进度就这么没了）。只有本通道判「远端没动」时才沿用；真分叉照
-              // 旧弹给用户看。
-              final bool remoteMoved = e.hasConflict ||
-                  e.autoDirection == SyncDirection.importFromTtu;
-              if (!remoteMoved) {
-                choices[e.title] = SyncChoice.useLocal;
-              } else if (e.hasConflict) {
-                allDecided = false;
-              }
-          }
-        }
-      }
+      final ({Map<String, SyncChoice> choices, Set<String> undecided}) seeded =
+          seedSyncCompareChoices(entries, decided);
+      final choices = seeded.choices;
+      final bool allDecided = decided != null && seeded.undecided.isEmpty;
       if (mounted) {
         setState(() {
           _entries = entries;

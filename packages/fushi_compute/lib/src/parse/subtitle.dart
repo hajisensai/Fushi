@@ -1,6 +1,8 @@
 import 'dart:ffi';
 import 'dart:typed_data';
 
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
+
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
 
@@ -219,8 +221,8 @@ final class SubtitleParseNative implements Finalizable {
     }
     final Pointer<Uint16> buffer = _buffer.reserve(length * 2).cast<Uint16>();
     final Pointer<Uint32> ends = _ends.reserve(count * 4).cast<Uint32>();
-    final Uint16List units = buffer.asTypedList(length);
-    final Uint32List endView = ends.asTypedList(count);
+    final Uint16List units = buffer.asTypedListOutOfLine(length);
+    final Uint32List endView = ends.asTypedListOutOfLine(count);
     int at = 0;
     for (int k = 0; k < count; k++) {
       final String text = texts[k];
@@ -263,7 +265,7 @@ final class SubtitleParseNative implements Finalizable {
     final int length = text.length;
     final Pointer<Uint16> buffer = _buffer.reserve(length * 2).cast<Uint16>();
     if (length > 0) {
-      final Uint16List units = buffer.asTypedList(length);
+      final Uint16List units = buffer.asTypedListOutOfLine(length);
       for (int i = 0; i < length; i++) {
         units[i] = text.codeUnitAt(i);
       }
@@ -280,7 +282,7 @@ final class SubtitleParseNative implements Finalizable {
 /// 一次原生解析交出的结果字节块（布局见 subtitle.rs 文件头）。用完必须 [free]。
 final class SubtitleNativeResult {
   SubtitleNativeResult._(this._compute, this._ptr, this._length) {
-    final Uint8List all = _ptr.asTypedList(_length);
+    final Uint8List all = _ptr.asTypedListOutOfLine(_length);
     final ByteData header = all.buffer.asByteData(all.offsetInBytes, 16);
     kind = header.getUint32(0, Endian.little);
     final int dataLength = header.getUint32(4, Endian.little);
@@ -292,7 +294,7 @@ final class SubtitleNativeResult {
     }
     _pool = Pointer<Uint16>.fromAddress(
       _ptr.address + poolOffset,
-    ).asTypedList(poolUnits);
+    ).asTypedListOutOfLine(poolUnits);
   }
 
   final FushiCompute _compute;

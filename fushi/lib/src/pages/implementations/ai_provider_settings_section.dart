@@ -570,6 +570,34 @@ class _AiProviderSettingsSectionState
                 ),
               ),
             ),
+            KeyedSubtree(
+              key: ValueKey<String>('ai-provider-$index-tool-calling'),
+              child: AdaptiveSettingsRow(
+                title: t.ai_provider_tool_calling,
+                trailing: _AiChoiceButton(
+                  semanticLabel: t.ai_provider_tool_calling,
+                  labels: <String>[
+                    for (final AiToolCallingOverride o
+                        in AiToolCallingOverride.values)
+                      switch (o) {
+                        AiToolCallingOverride.followPreset =>
+                          t.ai_provider_tool_calling_auto,
+                        AiToolCallingOverride.forceOn =>
+                          t.ai_provider_tool_calling_on,
+                        AiToolCallingOverride.forceOff =>
+                          t.ai_provider_tool_calling_off,
+                      },
+                  ],
+                  selectedIndex: draft.toolCallingOverride.index,
+                  onChanged: (int value) => _update(
+                    index,
+                    draft.copyWith(
+                      toolCallingOverride: AiToolCallingOverride.values[value],
+                    ),
+                  ),
+                ),
+              ),
+            ),
             AdaptiveSettingsSwitchRow(
               key: ValueKey<String>('ai-provider-$index-allow-http'),
               title: t.ai_provider_allow_http,
@@ -1008,6 +1036,7 @@ class _AiProviderSettingsSectionState
     AiFeature.subtitleProofread => FushiIcons.edit,
     AiFeature.cloudTranscription => FushiIcons.subtitles,
     AiFeature.mediaLinks => FushiIcons.aiAssistant,
+    AiFeature.agent => FushiIcons.aiAssistant,
   };
 
   // ---------------------------------------------------------------------------
@@ -1263,6 +1292,7 @@ class _AiProviderSettingsSectionState
     AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread,
     AiFeature.cloudTranscription => t.ai_feature_cloud_transcription,
     AiFeature.mediaLinks => t.ai_feature_media_links,
+    AiFeature.agent => t.ai_feature_agent,
   };
 
   String _featureSummary(AiFeature feature) => switch (feature) {
@@ -1282,6 +1312,7 @@ class _AiProviderSettingsSectionState
     AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread_summary,
     AiFeature.cloudTranscription => t.ai_feature_cloud_transcription_summary,
     AiFeature.mediaLinks => t.ai_feature_media_links_summary,
+    AiFeature.agent => t.ai_feature_agent_summary,
   };
 
   /// 协议名是 wire 事实（各家 API 文档里的原名），不翻译。
@@ -1316,6 +1347,7 @@ class _AiProviderDraft {
     required this.enabled,
     required this.allowInsecureHttp,
     required this.requestsPerMinute,
+    this.toolCallingOverride = AiToolCallingOverride.followPreset,
   });
 
   factory _AiProviderDraft.fromConfig(AiProviderConfig config) =>
@@ -1331,6 +1363,7 @@ class _AiProviderDraft {
         enabled: config.enabled,
         allowInsecureHttp: config.allowInsecureHttp,
         requestsPerMinute: config.requestsPerMinute,
+        toolCallingOverride: config.toolCallingOverride,
       );
 
   /// 选了一家预设后的新草稿。
@@ -1374,6 +1407,10 @@ class _AiProviderDraft {
   /// 每分钟请求上限；0 = 不限（见 [AiProviderConfig.requestsPerMinute]）。
   final int requestsPerMinute;
 
+  /// AI 助手的 tool calling 能力覆盖（spec 2026-10-26 §7.2）：本地模型 / 部分兼容
+  /// 端点不稳定时用户可以强制关（走 JSON 降级），或对预设标成不支持的端点强制开。
+  final AiToolCallingOverride toolCallingOverride;
+
   String get presetDisplayName =>
       aiProviderPresetById(presetId)?.displayName ?? presetId;
 
@@ -1390,6 +1427,7 @@ class _AiProviderDraft {
     bool? enabled,
     bool? allowInsecureHttp,
     int? requestsPerMinute,
+    AiToolCallingOverride? toolCallingOverride,
   }) => _AiProviderDraft(
     id: id,
     presetId: presetId,
@@ -1402,6 +1440,7 @@ class _AiProviderDraft {
     enabled: enabled ?? this.enabled,
     allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
     requestsPerMinute: requestsPerMinute ?? this.requestsPerMinute,
+    toolCallingOverride: toolCallingOverride ?? this.toolCallingOverride,
   );
 
   /// 有效即返回配置，否则 null。
@@ -1427,6 +1466,7 @@ class _AiProviderDraft {
         enabled: enabled,
         allowInsecureHttp: allowInsecureHttp,
         requestsPerMinute: requestsPerMinute < 0 ? 0 : requestsPerMinute,
+        toolCallingOverride: toolCallingOverride,
       );
     } on ArgumentError {
       return null;

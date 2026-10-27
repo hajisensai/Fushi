@@ -12,16 +12,17 @@ void main() {
 
   group('AudiobookPlayerController cue seek mapping', () {
     test(
-        'returns null for an invalid audio file index instead of falling back to the start',
-        () {
-      final ms = AudiobookPlayerController.positionMsForCueForTesting(
-        audioFileIndex: 3,
-        startMs: 1250,
-        audioFileCount: 1,
-      );
+      'returns null for an invalid audio file index instead of falling back to the start',
+      () {
+        final ms = AudiobookPlayerController.positionMsForCueForTesting(
+          audioFileIndex: 3,
+          startMs: 1250,
+          audioFileCount: 1,
+        );
 
-      expect(ms, isNull);
-    });
+        expect(ms, isNull);
+      },
+    );
 
     test('uses per-file cue positions for valid multi-file cues', () {
       final ms = AudiobookPlayerController.positionMsForCueForTesting(
@@ -33,37 +34,46 @@ void main() {
       expect(ms, 1250);
     });
 
-    test('next cue prefers the tracked cue index over a stale player position',
-        () {
-      final List<AudioCue> cues = [
-        _cue(0),
-        _cue(1000),
-        _cue(2000),
-        _cue(3000),
-      ];
+    test(
+      'next cue prefers the tracked cue index over a stale player position',
+      () {
+        final List<AudioCue> cues = [
+          _cue(0),
+          _cue(1000),
+          _cue(2000),
+          _cue(3000),
+        ];
 
-      final int? nextIndex = AudiobookPlayerController.nextCueIndexForTesting(
-        cues: cues,
-        currentCueIndex: 2,
-        positionMs: 0,
-      );
+        final int? nextIndex = AudiobookPlayerController.nextCueIndexForTesting(
+          cues: cues,
+          currentCueIndex: 2,
+          positionMs: 0,
+        );
 
-      expect(nextIndex, 3);
-    });
+        expect(nextIndex, 3);
+      },
+    );
 
-    test('prev cue: with a current cue jumps to the immediately previous one',
-        () {
-      final List<AudioCue> cues = [_cue(0), _cue(1000), _cue(2000), _cue(3000)];
+    test(
+      'prev cue: with a current cue jumps to the immediately previous one',
+      () {
+        final List<AudioCue> cues = [
+          _cue(0),
+          _cue(1000),
+          _cue(2000),
+          _cue(3000),
+        ];
 
-      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
-        cues: cues,
-        currentCueIndex: 2,
-        currentCue: cues[2],
-        positionMs: 2100,
-      );
+        final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
+          cues: cues,
+          currentCueIndex: 2,
+          currentCue: cues[2],
+          positionMs: 2100,
+        );
 
-      expect(prev, 1);
-    });
+        expect(prev, 1);
+      },
+    );
 
     test('prev cue: at the first cue returns null (chapter boundary)', () {
       final List<AudioCue> cues = [_cue(0), _cue(1000)];
@@ -78,8 +88,7 @@ void main() {
       expect(prev, isNull);
     });
 
-    test(
-        'prev cue: in a gap (no current cue) jumps to the last cue started '
+    test('prev cue: in a gap (no current cue) jumps to the last cue started '
         'before now', () {
       // _cue(n) spans [n, n+500]; position 1700 falls in the gap after cue 1
       // ([1000,1500]) and before cue 2 starts (2000), so "previous" is index 1.
@@ -119,8 +128,7 @@ void main() {
       expect(prev, isNull);
     });
 
-    test(
-        'prev cue: a current cue absent from the list falls through to the '
+    test('prev cue: a current cue absent from the list falls through to the '
         'position search', () {
       // currentCue is set but its fragmentId is not in cues and the tracked
       // index is stale (-1): the faithful fallthrough must use the position
@@ -138,40 +146,21 @@ void main() {
       expect(prev, 1);
     });
 
-    // 反馈 XUBiOO8VML / lPEaXxZNhn：「上一句」按音乐播放器习惯，听进当前句超过
-    // 阈值先回当前句开头，句首附近再按才去上一句。
-    test('prev cue: past the restart threshold replays the current cue', () {
+    // BUG-3791：「上一句」恒跳前一条，不因已播进当前句多久而改成回本句开头。
+    test('prev cue: deep into a long current cue still goes back one', () {
       final List<AudioCue> cues = [_cue(0), _cue(10000), _cue(20000)];
-      const int t = AudiobookPlayerController.prevCueRestartThresholdMs;
 
       final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
         cues: cues,
         currentCueIndex: 1,
         currentCue: cues[1],
-        positionMs: 10000 + t + 1,
-      );
-
-      expect(prev, 1);
-    });
-
-    test('prev cue: right after restarting, pressing again goes back one',
-        () {
-      final List<AudioCue> cues = [_cue(0), _cue(10000), _cue(20000)];
-      const int t = AudiobookPlayerController.prevCueRestartThresholdMs;
-
-      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
-        cues: cues,
-        currentCueIndex: 1,
-        currentCue: cues[1],
-        positionMs: 10000 + t,
+        positionMs: 18000,
       );
 
       expect(prev, 0);
     });
 
-    test(
-        'prev cue: in the silence after the current cue ended, replays that '
-        'cue', () {
+    test('prev cue: in the silence after the current cue goes back one', () {
       // cue 1 spans [10000, 10500]; the highlight stays on it during the gap.
       final List<AudioCue> cues = [_cue(0), _cue(10000), _cue(20000)];
 
@@ -182,11 +171,10 @@ void main() {
         positionMs: 15000,
       );
 
-      expect(prev, 1);
+      expect(prev, 0);
     });
 
-    test('prev cue: first cue past the threshold replays it (no chapter hop)',
-        () {
+    test('prev cue: deep into the first cue is a chapter boundary', () {
       final List<AudioCue> cues = [_cue(0), _cue(10000)];
 
       final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
@@ -196,22 +184,7 @@ void main() {
         positionMs: 5000,
       );
 
-      expect(prev, 0);
-    });
-
-    test('prev cue: position from another audio file never triggers restart',
-        () {
-      final List<AudioCue> cues = [_cue(0), _cue(10000), _cue(20000)];
-
-      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
-        cues: cues,
-        currentCueIndex: 1,
-        currentCue: cues[1],
-        positionMs: 50000,
-        audioFileIndex: 1,
-      );
-
-      expect(prev, 0);
+      expect(prev, isNull);
     });
 
     test('all-book cue lookup does not collapse duplicate selectors', () {
@@ -235,8 +208,9 @@ void main() {
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
-      final File audioFile =
-          File('${Directory.systemTemp.path}/fushi-audiobook-load-test.mp3');
+      final File audioFile = File(
+        '${Directory.systemTemp.path}/fushi-audiobook-load-test.mp3',
+      );
       if (!audioFile.existsSync()) {
         audioFile.writeAsBytesSync(const <int>[0]);
       }
@@ -244,10 +218,9 @@ void main() {
         if (audioFile.existsSync()) audioFile.deleteSync();
       });
 
-      await controller.load(
-        audiobook: _audiobook(),
-        audioFiles: <File>[audioFile],
-      ).timeout(const Duration(milliseconds: 200));
+      await controller
+          .load(audiobook: _audiobook(), audioFiles: <File>[audioFile])
+          .timeout(const Duration(milliseconds: 200));
 
       expect(platform.player?.loadCalls ?? 0, 0);
     });
@@ -273,10 +246,7 @@ void main() {
       });
 
       await controller
-          .load(
-            audiobook: _audiobook(),
-            audioFiles: audioFiles,
-          )
+          .load(audiobook: _audiobook(), audioFiles: audioFiles)
           .timeout(const Duration(milliseconds: 200));
 
       expect(platform.player?.loadCalls ?? 0, 0);
@@ -287,8 +257,9 @@ void main() {
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
-      final File audioFile =
-          File('${Directory.systemTemp.path}/fushi-audiobook-skip-test.mp3');
+      final File audioFile = File(
+        '${Directory.systemTemp.path}/fushi-audiobook-skip-test.mp3',
+      );
       if (!audioFile.existsSync()) {
         audioFile.writeAsBytesSync(const <int>[0]);
       }
@@ -381,11 +352,7 @@ void main() {
   });
 }
 
-AudioCue _cue(
-  int startMs, {
-  int? id,
-  String? fragmentId,
-}) {
+AudioCue _cue(int startMs, {int? id, String? fragmentId}) {
   return AudioCue()
     ..id = id
     ..bookKey = 'book'
@@ -408,8 +375,9 @@ Audiobook _audiobook() {
 }
 
 _HangingJustAudioPlatform _installHangingAudioPlatform({bool ready = false}) {
-  const MethodChannel audioSessionChannel =
-      MethodChannel('com.ryanheise.audio_session');
+  const MethodChannel audioSessionChannel = MethodChannel(
+    'com.ryanheise.audio_session',
+  );
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(audioSessionChannel, (_) async => null);
   addTearDown(() {
@@ -526,7 +494,7 @@ class _HangingAudioPlayer extends AudioPlayerPlatform {
 
   @override
   Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
+  setAutomaticallyWaitsToMinimizeStalling(
     SetAutomaticallyWaitsToMinimizeStallingRequest request,
   ) async {
     return SetAutomaticallyWaitsToMinimizeStallingResponse();
@@ -534,7 +502,7 @@ class _HangingAudioPlayer extends AudioPlayerPlatform {
 
   @override
   Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
+  setCanUseNetworkResourcesForLiveStreamingWhilePaused(
     SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
   ) async {
     return SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();

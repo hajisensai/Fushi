@@ -83,7 +83,7 @@ class MusicNowPlayingBar extends ConsumerWidget {
                     style: context.fushiType.bodySmall,
                   ),
                   const SizedBox(height: 4),
-                  LinearProgressIndicator(value: progress, minHeight: 2),
+                  FushiLinearProgressIndicator(value: progress, minHeight: 2),
                 ],
               ),
             ),

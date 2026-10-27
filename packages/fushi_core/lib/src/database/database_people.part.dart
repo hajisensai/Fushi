@@ -100,6 +100,51 @@ mixin _FushiDbPeople on _$FushiDatabase {
     );
   }
 
+  /// 两节点之间的 manual 桥（含墓碑；两端按 [setManualPersonBridge] 同一规则规范化）。
+  Future<PersonIdentityBridgeRow?> manualPersonBridge(String a, String b) {
+    final bool ordered = a.compareTo(b) <= 0;
+    final String subject = ordered ? a : b;
+    final String object = ordered ? b : a;
+    return (select(personIdentityBridges)..where(
+          (PersonIdentityBridges t) =>
+              t.subject.equals(subject) &
+              t.object.equals(object) &
+              t.source.equals(PersonIdentityBridgeSource.manual),
+        ))
+        .getSingleOrNull();
+  }
+
+  /// [setManualPersonBridge] 的反向（撤销「确认 / 否决同一人」）：把这一对的 manual
+  /// 桥恢复成 [previous]（执行前读到的行，原样写回 `createdAt` / `deletedAt`）；
+  /// [previous] 为 null = 执行前没有这一行，删掉。
+  Future<void> restoreManualPersonBridge(
+    String a,
+    String b, {
+    required PersonIdentityBridgeRow? previous,
+  }) {
+    final bool ordered = a.compareTo(b) <= 0;
+    final String subject = ordered ? a : b;
+    final String object = ordered ? b : a;
+    if (previous == null) {
+      return (delete(personIdentityBridges)..where(
+            (PersonIdentityBridges t) =>
+                t.subject.equals(subject) &
+                t.object.equals(object) &
+                t.source.equals(PersonIdentityBridgeSource.manual),
+          ))
+          .go();
+    }
+    return into(personIdentityBridges).insertOnConflictUpdate(
+      PersonIdentityBridgesCompanion.insert(
+        subject: subject,
+        object: object,
+        source: PersonIdentityBridgeSource.manual,
+        createdAt: previous.createdAt,
+        deletedAt: Value<int?>(previous.deletedAt),
+      ),
+    );
+  }
+
   // ── 人物图的原料（视频 / 音乐）──────────────────────────────────
 
   /// 视频侧全部人物行（只取名字类字段由调用方决定；表本身不大）。

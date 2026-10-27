@@ -129,6 +129,7 @@ public class FloatingBallService extends BaseFloatingService {
     static final String ACTION_CAMERA_OCR = "camera_ocr";
     static final String ACTION_SYNC = "sync";
     static final String ACTION_SWITCH_PROFILE = "switch_profile";
+    static final String ACTION_AI = "ai";
     static final String ACTION_OPEN_APP = "open_app";
     static final String ACTION_CLOSE = "close";
 
@@ -136,10 +137,10 @@ public class FloatingBallService extends BaseFloatingService {
     private static final List<String> CONFIGURABLE_ACTIONS =
             Arrays.asList(
                     ACTION_LOOKUP, ACTION_POPUP_LOOKUP, ACTION_CLIPBOARD, ACTION_SCREEN_OCR,
-                    ACTION_CAMERA_OCR, ACTION_SYNC, ACTION_SWITCH_PROFILE);
+                    ACTION_CAMERA_OCR, ACTION_SYNC, ACTION_SWITCH_PROFILE, ACTION_AI);
 
     /** 收起态点球可以直接执行的动作（Dart FloatingBallTapAction 同一组 id）。 */
-    static final List<String> TAP_ACTIONS = Arrays.asList(ACTION_CLIPBOARD, ACTION_SCREEN_OCR);
+    static final List<String> TAP_ACTIONS = Arrays.asList(ACTION_CLIPBOARD, ACTION_SCREEN_OCR, ACTION_AI);
 
     /** labels 里可选的通知标题键（原生不维护 17 种语言，缺省回退英文）。 */
     static final String LABEL_NOTIFICATION = "notification";
@@ -1182,6 +1183,12 @@ public class FloatingBallService extends BaseFloatingService {
             case ACTION_SWITCH_PROFILE:
                 showProfileMenu();
                 break;
+            case ACTION_AI:
+                // AI 助手要用主进程的完整 AppModel（操作目录、数据库、导航）：与同步
+                // 同样先排请求再把 Fushi 拉到前台，由 Dart 打开 AI 浮层。
+                FloatingBallChannel.requestOpenAi();
+                BackgroundActivityLauncher.bringAppToFront(this);
+                break;
             case ACTION_OPEN_APP:
                 BackgroundActivityLauncher.bringAppToFront(this);
                 break;
@@ -1308,6 +1315,7 @@ public class FloatingBallService extends BaseFloatingService {
             case ACTION_CAMERA_OCR: return "Photo lookup";
             case ACTION_SYNC: return "Sync now";
             case ACTION_SWITCH_PROFILE: return "Switch profile";
+            case ACTION_AI: return "AI";
             case ACTION_OPEN_APP: return "Open Fushi";
             case ACTION_CLOSE: return "Close";
             case LABEL_BALL: return "Floating ball";

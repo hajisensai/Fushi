@@ -50,6 +50,9 @@ class InterconnectServiceConfigSnapshot {
     'video_subtitle_subdl_api_key',
     'video_subtitle_subdl_enabled',
     'video_resource_torznab_config',
+    // 用户 BT 站：与 Torznab 同一类「资源索引器的外部服务身份」，主设备配好、
+    // 子设备同样能搜。
+    'resource_bt_sites',
   };
 
   static final Map<String, String> _defaultRawValues = <String, String>{
@@ -67,6 +70,7 @@ class InterconnectServiceConfigSnapshot {
     'video_subtitle_subdl_api_key': PrefCodec.encode(''),
     'video_subtitle_subdl_enabled': PrefCodec.encode(true),
     'video_resource_torznab_config': PrefCodec.encode(''),
+    'resource_bt_sites': PrefCodec.encode(''),
   };
 
   /// Raw [PrefCodec] values, kept raw so the client does not double-encode

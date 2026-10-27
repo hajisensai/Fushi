@@ -124,7 +124,12 @@ void main() {
     test('端到端：风格化罗马字 0 条时英文名那一查交出结果', () async {
       final List<String> queries = <String>[];
       final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
+        siteId: 'nyaa-test',
+        categoryByDomain: const <VideoDiscoveryCategory, String>{
+          VideoDiscoveryCategory.anime: '1_0',
+        },
         client: NyaaClient(
+          baseUrl: 'https://nyaa.si',
           minRequestInterval: Duration.zero,
           client: _nyaaServer(queries),
         ),

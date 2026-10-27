@@ -10,6 +10,7 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
@@ -78,6 +79,8 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     this.onControlLayoutChanged,
     this.customActionBindings,
     this.onCustomActionBindingsChanged,
+    this.immersiveControlLayout,
+    this.onImmersiveControlLayoutChanged,
     this.qualityOptionCount = 0,
     this.qualityCurrentLabel,
     this.onOpenQuality,
@@ -229,6 +232,14 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   /// 改绑「快捷键 N」后落盘 + 实时生效。null = 编辑器不提供改绑入口。
   final Future<void> Function(VideoCustomActionBindings bindings)?
       onCustomActionBindingsChanged;
+
+  /// 沉浸布局（锁定后屏幕左右侧栏的按钮）当前值，活值 getter。null = 宿主不提供沉浸
+  /// 布局编辑（编辑器行不出现，设置页回落 AppModel 读写）。
+  final VideoImmersiveControlLayout Function()? immersiveControlLayout;
+
+  /// 改沉浸布局后落盘 + 实时生效；null 参数 = 恢复默认（回到按普通布局派生）。
+  final Future<void> Function(VideoImmersiveControlLayout? layout)?
+      onImmersiveControlLayoutChanged;
 
   // ── HLS 画质入口（仅特定流出现）─────────────────────────────────────────
   final int qualityOptionCount;

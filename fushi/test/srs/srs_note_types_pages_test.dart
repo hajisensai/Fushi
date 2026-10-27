@@ -16,6 +16,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_type_editor_page.da
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_field_catalog.dart' show srsFieldDisplayName;
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_visual_template.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -55,6 +56,7 @@ Future<void> _pumpPage(
   required SrsDbStore store,
   required bool apple,
   required Widget page,
+  Widget Function(BuildContext, SrsCardFace)? faceBuilder,
 }) async {
   tester.view.physicalSize = const Size(1100, 1400);
   tester.view.devicePixelRatio = 1;
@@ -66,8 +68,9 @@ Future<void> _pumpPage(
         appProvider.overrideWith((Ref ref) => appModel),
         srsStoreProvider.overrideWith((Ref ref) async => store),
         srsCardFaceBuilderProvider.overrideWithValue(
-          (BuildContext context, SrsCardFace face) =>
-              SrsPlainCardFace(face: face),
+          faceBuilder ??
+              (BuildContext context, SrsCardFace face) =>
+                  SrsPlainCardFace(face: face),
         ),
       ],
       child: TranslationProvider(
@@ -89,6 +92,27 @@ Future<void> _pumpPage(
     ),
   );
   await _settle(tester);
+}
+
+/// 计数卡面：每次 initState（= 卡面被新建一次）加一。
+int _faceInits = 0;
+
+class _CountingFace extends StatefulWidget {
+  const _CountingFace();
+
+  @override
+  State<_CountingFace> createState() => _CountingFaceState();
+}
+
+class _CountingFaceState extends State<_CountingFace> {
+  @override
+  void initState() {
+    super.initState();
+    _faceInits++;
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.expand();
 }
 
 Future<void> _unmount(WidgetTester tester) async {
@@ -396,6 +420,152 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('[$ds] 内置 Lapis 类型：概览卡、开关字段折叠组、模板行副标题列出正面字段', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsNoteTypeEditorPage(noteTypeId: store.lapisNoteTypeId),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-note-type-overview')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-note-type-flag-fields')),
+        findsOneWidget,
+      );
+      final SrsNoteTypeView lapis = (await _db(
+        tester,
+        () => store.noteType(store.lapisNoteTypeId),
+      ))!;
+      final SrsTemplateDef tpl = lapis.templates.first;
+      final List<SrsFieldDef> front = srsFieldsShownOnSide(lapis, tpl.front);
+      expect(front, isNotEmpty);
+      final Finder row = find.byKey(
+        ValueKey<String>('srs-note-type-template-${tpl.name}'),
+      );
+      expect(row, findsOneWidget);
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.textContaining(srsFieldDisplayName(front.first)),
+        ),
+        findsWidgets,
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 编辑页：没被任何模板引用的新字段带「未上卡面」标签', (WidgetTester tester) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsNoteTypeEditorPage(noteTypeId: nt),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-note-type-field-unused-Front')),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-note-type-add-field')),
+      );
+      await _settle(tester);
+      await _submitTextDialog(tester, 'Extra');
+      expect(
+        find.byKey(const ValueKey<String>('srs-note-type-field-unused-Extra')),
+        findsOneWidget,
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] Lapis 模板编辑页可视化 tab：内置类型出内置说明而不是转换说明', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final SrsNoteTypeView lapis = (await _db(
+        tester,
+        () => store.noteType(store.lapisNoteTypeId),
+      ))!;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsTemplateEditorPage(
+          noteTypeId: store.lapisNoteTypeId,
+          templateId: lapis.templates.first.id,
+        ),
+      );
+      final Finder note = find.byKey(
+        const ValueKey<String>('srs-visual-builtin-note'),
+      );
+      expect(note, findsOneWidget);
+      expect(
+        (tester.widget(note) as Text).data,
+        t.srs_visual_builtin_other_note,
+      );
+      expect(find.text(t.srs_visual_builtin_title), findsOneWidget);
+      expect(find.text(t.srs_visual_convert_title), findsNothing);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 模板编辑器：正面改成语法错误再改回，卡面不被拆掉重建', (
+      WidgetTester tester,
+    ) async {
+      _faceInits = 0;
+      final SrsDbStore store = await _openStore(tester);
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      final SrsNoteTypeView v = (await _db(tester, () => store.noteType(nt)))!;
+      await _db(
+        tester,
+        () => store.createNote(
+          noteTypeId: nt,
+          fieldsById: <String, String>{
+            v.fields[0].id: '猫',
+            v.fields[1].id: 'cat',
+          },
+        ),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        faceBuilder: (BuildContext context, SrsCardFace face) =>
+            const _CountingFace(),
+        page: SrsTemplateEditorPage(
+          noteTypeId: nt,
+          templateId: v.templates.single.id,
+          initialTab: SrsTemplateEditorTab.front,
+        ),
+      );
+      expect(_faceInits, 1);
+      // 引用不存在的字段：模板渲染报错（与「未知字段报错不保存」同一错误路径）。
+      await tester.enterText(find.byType(EditableText).first, '{{Nope}}');
+      await tester.pump(const Duration(milliseconds: 250));
+      await _settle(tester);
+      expect(
+        find.textContaining(t.srs_note_types_template_error(error: '').trim()),
+        findsWidgets,
+        reason: '确实进了错误态',
+      );
+      await tester.enterText(find.byType(EditableText).first, '{{Back}}');
+      await tester.pump(const Duration(milliseconds: 250));
+      await _settle(tester);
+      expect(_faceInits, 1, reason: '错误态只盖提示层，卡面不拆');
+      await _unmount(tester);
+    });
+
     testWidgets('[$ds] 字段说明：内置字段显示人话名字与内置说明；自建字段写说明保存写库、编辑页字段行显示', (
       WidgetTester tester,
     ) async {
@@ -553,6 +723,30 @@ void main() {
       await _unmount(tester);
     });
   }
+
+  test('srsFieldsShownOnSide：条件段不算、过滤器算、按出现位置排序', () async {
+    final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore();
+    addTearDown(db.close);
+    final String nt = await store.createStockNoteType(
+      SrsStockNoteType.basic,
+      'B',
+    );
+    final SrsNoteTypeView v = (await store.noteType(nt))!;
+    final String a = v.fields[0].id;
+    final String b = v.fields[1].id;
+    expect(
+      srsFieldsShownOnSide(
+        v,
+        '{{#fld:$a}}x{{/fld:$a}}{{furigana:fld:$b}}{{fld:$a}}',
+      ).map((SrsFieldDef x) => x.id),
+      <String>[b, a],
+    );
+    expect(
+      srsFieldsShownOnSide(v, '{{#fld:$a}}x{{/fld:$a}}'),
+      isEmpty,
+      reason: '只有条件段 = 没显示',
+    );
+  });
 
   testWidgets('[Apple] 牌组列表的「笔记类型」入口打开管理页', (WidgetTester tester) async {
     final SrsDbStore store = await _openStore(tester);

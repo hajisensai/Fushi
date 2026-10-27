@@ -9,6 +9,7 @@ import 'dart:ffi' as ffi;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../ffi/fushi_fsrs_library.dart';
 import 'srs_rows.dart';
@@ -396,7 +397,7 @@ final class SrsCore {
   void legacyPage(String table, Uint8List page) => using((Arena arena) {
     final (ffi.Pointer<ffi.Uint8> t, int tn) = _utf8(arena, table);
     final ffi.Pointer<ffi.Uint8> p = arena(page.isEmpty ? 1 : page.length);
-    p.asTypedList(page.length).setAll(0, page);
+    p.asTypedListOutOfLine(page.length).setAll(0, page);
     final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
     err.value = ffi.nullptr;
     _check(_b, _b.legacyPage(_h, t, tn, p, page.length, err), err);
@@ -445,7 +446,9 @@ final class SrsCore {
     err.value = ffi.nullptr;
     _check(b, f(h, s, sn, pp, encoded.length, out, outLen, err), err);
     final int len = outLen.value;
-    final Uint8List bytes = Uint8List.fromList(out.value.asTypedList(len));
+    final Uint8List bytes = Uint8List.fromList(
+      out.value.asTypedListOutOfLine(len),
+    );
     b._freeBytes(out.value, len);
     final (int _, List<List<Object?>> rows) = srsDecodeRows(bytes);
     final List<String> names = rows.first.cast<String>();
@@ -487,7 +490,9 @@ final class SrsCore {
           err,
         );
         final int len = outLen.value;
-        final Uint8List bytes = Uint8List.fromList(out.value.asTypedList(len));
+        final Uint8List bytes = Uint8List.fromList(
+          out.value.asTypedListOutOfLine(len),
+        );
         _b._freeBytes(out.value, len);
         return bytes;
       });
@@ -544,7 +549,9 @@ final class SrsCore {
     err.value = ffi.nullptr;
     _check(_b, _b.sync2(_h, rq, rqn, bp, framed.length, out, outLen, err), err);
     final int len = outLen.value;
-    final Uint8List bytes = Uint8List.fromList(out.value.asTypedList(len));
+    final Uint8List bytes = Uint8List.fromList(
+      out.value.asTypedListOutOfLine(len),
+    );
     _b._freeBytes(out.value, len);
     return SrsSync2Result.decode(bytes);
   });
@@ -574,7 +581,9 @@ final class SrsCore {
       err,
     );
     final int len = outLen.value;
-    final Uint8List bytes = Uint8List.fromList(out.value.asTypedList(len));
+    final Uint8List bytes = Uint8List.fromList(
+      out.value.asTypedListOutOfLine(len),
+    );
     _b._freeBytes(out.value, len);
     return bytes;
   });
@@ -606,7 +615,9 @@ final class SrsCore {
       err,
     );
     final int len = outLen.value;
-    final Uint8List bytes = Uint8List.fromList(out.value.asTypedList(len));
+    final Uint8List bytes = Uint8List.fromList(
+      out.value.asTypedListOutOfLine(len),
+    );
     _b._freeBytes(out.value, len);
     return bytes;
   });
@@ -690,7 +701,7 @@ final class SrsCore {
     final ffi.Pointer<ffi.Int64> a = arena<ffi.Int64>(
       args.isEmpty ? 1 : args.length,
     );
-    a.asTypedList(args.isEmpty ? 1 : args.length).setAll(0, args);
+    a.asTypedListOutOfLine(args.isEmpty ? 1 : args.length).setAll(0, args);
     final ffi.Pointer<ffi.Pointer<ffi.Uint8>> out = arena();
     final ffi.Pointer<ffi.Size> outLen = arena();
     final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
@@ -701,7 +712,9 @@ final class SrsCore {
       err,
     );
     final int len = outLen.value;
-    final Uint8List bytes = Uint8List.fromList(out.value.asTypedList(len));
+    final Uint8List bytes = Uint8List.fromList(
+      out.value.asTypedListOutOfLine(len),
+    );
     _b._freeBytes(out.value, len);
     return bytes;
   });
@@ -717,7 +730,7 @@ final class SrsCore {
 
   static ffi.Pointer<ffi.Uint8> _copy(Arena arena, Uint8List bytes) {
     final ffi.Pointer<ffi.Uint8> p = arena(bytes.isEmpty ? 1 : bytes.length);
-    p.asTypedList(bytes.length).setAll(0, bytes);
+    p.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
     return p;
   }
 
@@ -730,7 +743,7 @@ final class SrsCore {
   static (ffi.Pointer<ffi.Uint8>, int) _utf8(Arena arena, String s) {
     final Uint8List b = utf8.encode(s);
     final ffi.Pointer<ffi.Uint8> p = arena(b.isEmpty ? 1 : b.length);
-    p.asTypedList(b.length).setAll(0, b);
+    p.asTypedListOutOfLine(b.length).setAll(0, b);
     return (p, b.length);
   }
 

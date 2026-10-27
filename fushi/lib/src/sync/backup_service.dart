@@ -649,6 +649,10 @@ const List<String> _deviceLocalTables = <String>[
   // 恢复后对不上的记录只是撤销时找不到目标，不会误删。
   'library_organize_changes',
   'library_organize_runs',
+  // v136：AI 助手对话与操作记录，设备本地，见 2026-10-26 设计稿 §5.3。无外键（操作
+  // 记录的 session_id 是逻辑引用），删除 / 回灌顺序无约束。
+  'ai_agent_actions',
+  'ai_agent_sessions',
   // v128：内置浏览器的标签页会话 / 最近关闭 / 下载记录（下载记录带本机落盘路径）。
   'web_browser_session_tabs',
   'web_browser_closed_tabs',
@@ -693,6 +697,8 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'video_download_subscription_items',
   'library_organize_runs',
   'library_organize_changes',
+  'ai_agent_sessions',
+  'ai_agent_actions',
   'web_browser_session_tabs',
   'web_browser_closed_tabs',
   'web_browser_downloads',

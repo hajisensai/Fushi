@@ -506,10 +506,9 @@ void main() {
       expect(
         browser,
         contains(
-          'presets:webBrowserPresetSites(mangaAvailable:'
-          'webComicReaderActionAvailable(),),',
+          'parseWebBrowserSites(appModel.prefsRepo.webBrowserSitesJson)',
         ),
-        reason: 'iOS 上不预置任何漫画站。',
+        reason: '浏览器不预置任何站点（含漫画站），iOS 上自然也没有漫画来源。',
       );
       expect(browser, isNot(contains('Platform.isIOS')));
       final String adapter = compactCode(

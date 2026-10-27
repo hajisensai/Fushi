@@ -10,6 +10,9 @@ import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:fushi/src/media/video/discovery/video_work_acquisition_controller.dart';
+import 'package:fushi/src/pages/implementations/discovery/video_work_acquisition_section.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/media/video/airing_calendar_loader.dart';
@@ -68,6 +71,11 @@ typedef VideoDiscoveryAction =
 typedef VideoDiscoveryDetailLoader =
     Future<VideoDiscoveryDetailData> Function(VideoDiscoveryItem item);
 
+/// 为一部作品装配「获取途径」四渠道的后端（[VideoWorkAcquisitionController]）。
+/// 合规门 / 模块门关掉的渠道不放进返回列表，面板上整组不出现。
+typedef VideoWorkAcquisitionBackendsBuilder =
+    List<VideoAcquisitionChannelBackend> Function(VideoDiscoveryItem item);
+
 typedef VideoDiscoveryStatusWatch =
     Stream<VideoDiscoveryAcquisitionState> Function(
       VideoMediaReference reference,
@@ -93,9 +101,19 @@ class VideoDiscoveryActions {
     this.onAiAcquire,
     this.detailsUpdates,
     this.loadAiringCalendar,
+    this.acquisitionChannels,
   });
 
   final VideoDiscoveryDetailLoader? loadDetails;
+
+  /// 「获取途径」面板的渠道装配（媒体库 / 在线源 / BT 搜索 / 媒体服务器）。null =
+  /// 宿主没接（widget 测试 / 旧宿主）：详情页不出面板，hero 的「搜索资源」照旧
+  /// 直接走 [onSearchResource]。接了之后「搜索资源」改为跳到面板，BT 搜索是面板
+  /// 里的一组。
+  ///
+  /// 生产必须传**方法 tear-off**（同一实例的 tear-off 相等）：详情页按 `!=` 判断
+  /// 要不要重建面板，闭包字面量每次 build 都不相等，会让面板每次重建都重查。
+  final VideoWorkAcquisitionBackendsBuilder? acquisitionChannels;
 
   /// 详情数据源有了更好的数据时发事件（例如后台刚下好动画 → TMDB 交叉索引，
   /// 资料语言的简介这时才拿得到）：详情页与发现页 Hero 收到后各重取一次
@@ -209,6 +227,10 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
   late Future<VideoDiscoveryDetailData> _detailsFuture;
   Stream<VideoDiscoveryAcquisitionState>? _statusStream;
   StreamSubscription<void>? _detailsUpdates;
+  VideoWorkAcquisitionController? _acquisition;
+  final GlobalKey _acquisitionKey = GlobalKey(
+    debugLabel: 'video-discovery-acquisition',
+  );
 
   @override
   void initState() {
@@ -216,6 +238,39 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     _detailsFuture = _loadDetails();
     _statusStream = _watchStatus();
     _listenDetailsUpdates();
+    _rebuildAcquisition();
+  }
+
+  /// 按当前作品重建「获取途径」控制器并让四个渠道同时开查。
+  void _rebuildAcquisition() {
+    _acquisition?.dispose();
+    final VideoWorkAcquisitionBackendsBuilder? builder =
+        widget.actions.acquisitionChannels;
+    if (builder == null) {
+      _acquisition = null;
+      return;
+    }
+    final VideoWorkAcquisitionController controller =
+        VideoWorkAcquisitionController(
+          reference: widget.item.reference,
+          backends: builder(widget.item),
+        );
+    _acquisition = controller;
+    unawaited(controller.loadAll());
+  }
+
+  /// hero「搜索资源」在接了获取面板时的落点：滚到面板。
+  void _revealAcquisition() {
+    final BuildContext? target = _acquisitionKey.currentContext;
+    if (target == null) return;
+    unawaited(
+      FushiFocusScroll.ensureVisible(
+        target,
+        alignment: 0,
+        duration: fushiMotionDuration(context, FushiMotion.long),
+        curve: FushiMotion.standard,
+      ),
+    );
   }
 
   /// 数据源变好（如交叉索引后台就绪）时原地重取：FutureBuilder 换 future 时
@@ -231,6 +286,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
   @override
   void dispose() {
     unawaited(_detailsUpdates?.cancel());
+    _acquisition?.dispose();
     super.dispose();
   }
 
@@ -253,6 +309,11 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
       widget.actions.detailsUpdates,
     )) {
       _listenDetailsUpdates();
+    }
+    if (itemChanged ||
+        oldWidget.actions.acquisitionChannels !=
+            widget.actions.acquisitionChannels) {
+      _rebuildAcquisition();
     }
   }
 
@@ -360,17 +421,37 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                                           child: _buildOverview(details),
                                         ),
                                       ),
+                                    ],
+                                    // 获取途径与详情资料无关：资料加载失败时照样给出。
+                                    if (_acquisition
+                                        case final VideoWorkAcquisitionController
+                                            acquisition)
+                                      SliverToBoxAdapter(
+                                        child: FushiStaggeredEntrance(
+                                          index: 1,
+                                          child: Padding(
+                                            padding: EdgeInsets.only(
+                                              top: tokens.spacing.section,
+                                            ),
+                                            child: VideoWorkAcquisitionSection(
+                                              key: _acquisitionKey,
+                                              controller: acquisition,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    if (!snapshot.hasError) ...<Widget>[
                                       if (details.people.isNotEmpty)
                                         SliverToBoxAdapter(
                                           child: FushiStaggeredEntrance(
-                                            index: 1,
+                                            index: 2,
                                             child: _buildPeople(details.people),
                                           ),
                                         ),
                                       if (details.related.isNotEmpty)
                                         SliverToBoxAdapter(
                                           child: FushiStaggeredEntrance(
-                                            index: 2,
+                                            index: 3,
                                             child: _buildRelated(
                                               details.related,
                                             ),
@@ -474,10 +555,17 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     // 去重门是「同后端指纹 + 同 info hash」即同一个种子），限制只存在于这颗
     // 按钮的 disabled 上。用户「感觉下的源不对劲，想再下一个，但是下不了，只能
     // 取消或者等下载结束」——那是个纯 UI 造出来的死局。
-    final VoidCallback? onSearchResource =
-        widget.actions.onSearchResource == null
+    // 接了获取面板时「搜索资源」跳到面板（BT 搜索是其中一组），否则照旧直进 BT
+    // 资源搜索。
+    final bool acquisitionPanel = _acquisition != null;
+    final VoidCallback? onSearchResource = acquisitionPanel
+        ? _revealAcquisition
+        : widget.actions.onSearchResource == null
         ? null
         : () => unawaited(widget.actions.onSearchResource!(context, item));
+    final String resourceLabel = acquisitionPanel
+        ? t.video_acquisition_section_title
+        : t.video_discovery_resource_search;
     const Key resourceKey = ValueKey<String>('video-discovery-search-resource');
     final Widget primary = playPrimary
         ? MediaDetailPrimaryButton(
@@ -492,7 +580,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
         : MediaDetailPrimaryButton(
             buttonKey: resourceKey,
             icon: FushiIcons.search,
-            label: t.video_discovery_resource_search,
+            label: resourceLabel,
             progress: state.isBusy ? -1 : null,
             onPressed: onSearchResource,
           );
@@ -520,7 +608,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           MediaDetailSecondaryButton(
             buttonKey: resourceKey,
             icon: FushiIcons.search,
-            label: t.video_discovery_resource_search,
+            label: resourceLabel,
             onPressed: onSearchResource,
           ),
         _buildSubscribeButton(item, state),

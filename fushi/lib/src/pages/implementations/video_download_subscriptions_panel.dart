@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
@@ -29,6 +30,9 @@ import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_auto_disable.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart'
+    show isVideoSubscriptionBtSiteMissingError;
+import 'package:fushi/src/pages/implementations/bt_site_settings_route.dart';
 import 'package:fushi/src/pages/implementations/remote_subscriptions_section.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscription_edit_dialog.dart';
 import 'package:fushi/src/sync/app_download_host.dart' show AppSubscriptionHost;
@@ -1091,6 +1095,28 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
             Text(
               t.subscription_legacy_hint,
               style: type.bodySmall.copyWith(color: cs.onSurfaceVariant),
+            ),
+          ] else if (isVideoSubscriptionBtSiteMissingError(
+            lastError,
+          )) ...<Widget>[
+            const SizedBox(height: 10),
+            // 没有可用 BT 站而暂停：不显示引擎的英文标记，给去添加的入口。
+            // 用户加完站点后 setBtSites 会唤醒这些订阅。
+            FushiInlineNotice(
+              key: ValueKey<String>(
+                'video-subscription-bt-site-missing-${subscription.subscriptionId}',
+              ),
+              severity: FushiNoticeSeverity.warning,
+              message: t.bt_site_missing_status,
+              actions: <Widget>[
+                FushiTextButton(
+                  key: ValueKey<String>(
+                    'video-subscription-bt-site-open-${subscription.subscriptionId}',
+                  ),
+                  onPressed: () => unawaited(pushBtSiteSettingsPage(context)),
+                  child: Text(t.bt_site_open_settings_action),
+                ),
+              ],
             ),
           ] else if (lastError != null && lastError.isNotEmpty) ...<Widget>[
             const SizedBox(height: 10),

@@ -16,6 +16,10 @@ import 'dart:math';
 /// 会话能力名：AI 下视频。
 const String kHostAssistantFeatureVideoAcquire = 'videoAcquire';
 
+/// 会话能力名：AI 助手（spec `docs/specs/2026-10-26-ai-operations-agent-design.md`
+/// §6.5）——整场 agent 会话在 host 上跑，工具集是 host 自己描述的那部分操作。
+const String kHostAssistantFeatureAgent = 'agent';
+
 /// host 上跑着的一场对话。
 abstract interface class HostAssistantSession {
   /// 单调递增；快照每变一次 +1。客户端长轮询按它判断「有没有新东西」。

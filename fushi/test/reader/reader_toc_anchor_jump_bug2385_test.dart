@@ -5,6 +5,8 @@ import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-2385：目录条目的 `#fragment`（章内锚）此前在压平时被丢掉，于是「一个 xhtml
 /// 装整卷、目录靠锚点分节」的书里，同一章下的每一条目录项都只跳到章首。
 void main() {
@@ -64,7 +66,11 @@ void main() {
         contains(
             'await _jumpToChapterAnchor(link.chapterIndex, link.fragment);'));
     expect(chrome, contains('await _jumpToChapterAnchor(index, fragment);'));
-    expect(sheet, contains('toc[i].fragment,'),
-        reason: '目录行必须把自己的锚点交给跳转，否则修复只是半条');
+    // 钉去空白后的整个调用：实参折不折行只是格式，锚点必须作为第二实参交给跳转。
+    expect(
+      compactCode(sheet),
+      contains('awaitwidget.onJumpSection(toc[i].index,toc[i].fragment'),
+      reason: '目录行必须把自己的锚点交给跳转，否则修复只是半条',
+    );
   });
 }

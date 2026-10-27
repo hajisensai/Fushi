@@ -6,6 +6,8 @@ import 'dart:convert';
 
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
+import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart'
+    show kHostAssistantReasonsKey;
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:http/http.dart' as http;
@@ -17,6 +19,7 @@ class HostAssistantTarget {
     required this.deviceName,
     required this.features,
     this.reason,
+    this.reasons = const <String, String>{},
     this.fingerprintSha256,
   });
 
@@ -29,11 +32,20 @@ class HostAssistantTarget {
   /// 开不了时 host 给的短码（`no_provider` / `not_ready` / `disabled`）；老 host 根本
   /// 没有 `assistant` 能力位时是 [kHostAssistantReasonUnsupported]。
   final String? reason;
+
+  /// 按 feature 的不可用短码（host 宣告多种会话时：AI 下视频能开、AI 助手没指派
+  /// 提供商…）。老 host 没有这个字段。
+  final Map<String, String> reasons;
   final String? fingerprintSha256;
 
   String get label => deviceName ?? baseUrl;
 
   bool supports(String feature) => features.contains(feature);
+
+  /// [feature] 开不了的原因：先看按 feature 的短码，再退回顶层 [reason]；都没有
+  /// （老 host 只宣告了别的 feature）按 [kHostAssistantReasonUnsupported]。
+  String reasonFor(String feature) =>
+      reasons[feature] ?? reason ?? kHostAssistantReasonUnsupported;
 }
 
 /// 老 host（没有 `assistant` 能力位）的本地短码。
@@ -135,6 +147,7 @@ class InterconnectAssistantClient {
           );
         }
         final Object? features = assistant['features'];
+        final Object? reasons = assistant[kHostAssistantReasonsKey];
         return HostAssistantTarget(
           baseUrl: candidate.url,
           deviceName: candidate.deviceName,
@@ -142,6 +155,12 @@ class InterconnectAssistantClient {
               ? features.map((Object? f) => '$f').toList(growable: false)
               : const <String>[],
           reason: assistant['reason']?.toString(),
+          reasons: reasons is Map
+              ? <String, String>{
+                  for (final MapEntry<Object?, Object?> e in reasons.entries)
+                    '${e.key}': '${e.value}',
+                }
+              : const <String, String>{},
           fingerprintSha256: candidate.fingerprintSha256,
         );
       } catch (_) {
