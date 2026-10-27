@@ -11,6 +11,16 @@ import '../models/dictionary_entry.dart';
 import '../models/dictionary_search_result.dart';
 import 'transform_description_i18n.dart';
 
+/// BCP-47 标签是否为中文（`zh` / `zh-Hans` / `zh_CN` / `zh-Hant-TW` / `yue`…）。
+/// 查词按中文处理（简体 → 繁體回落）的唯一判据；null/空串/无法识别一律 false，
+/// 宁可不回落也不去动日语等其它语言的查询。
+bool isChineseLanguageTag(String? tag) {
+  final String lower = (tag ?? '').trim().toLowerCase();
+  if (lower.isEmpty) return false;
+  final String primary = lower.split(RegExp('[-_]')).first;
+  return primary == 'zh' || primary == 'yue' || primary == 'cmn';
+}
+
 /// 弹窗上的一枚词形变化标签：变形名（`-て`）+ 该变形的语法说明。
 typedef DeinflectionTag = ({String name, String description});
 

@@ -28,11 +28,12 @@
     "native/fushidicts/fushidicts_external/utfcpp/LICENSE": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
     "native/fushidicts/fushidicts_external/xxHash/LICENSE": "6ffedbc0f7878612d2b23589f1ff2ab15633e1df7963a5d9fc750ec5500c7e7a",
     "native/fushidicts/fushidicts_external/zstd/LICENSE": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8",
+    "native/fushidicts/fushidicts_src/text_processor/OPENCC_LICENSE": "b534e465949558eec2597b04f5092b5e161236a68dfbfd04d547592ac3964308",
     "native/galgame_hook/third_party/locale_emulator/LICENSE-GPL.txt": "c53a65c2fd561c87eaabf1072ef5dcab8653042bc15308465f52413585eb6271",
     "native/galgame_hook/third_party/locale_emulator/LICENSE-LGPL.txt": "ea8af5e789cb2d4e9b10bce3874982ade163b749b6bfbdb32e2df21c4d106de1",
     "native/galgame_hook/third_party/lunahook/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "native/galgame_hook/third_party/minhook/LICENSE.txt": "2bfff5fa29fc5d1cb2745acfaad9d930e983f5c8dd97e0ec5735d9199cf8f416",
-    "native/third_party_licenses/manifest.json": "7d8aa48066615072b7b0c8b960c61c55bd80758059725360e2079d738ca37e89",
+    "native/third_party_licenses/manifest.json": "827b97866902b9adf4b0bb83ea18dcf9c4befa58c20acc32a8582b38fdf58d7c",
     "native/third_party_licenses/texts/boost-1.91.0-LICENSE_1_0.txt": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
     "native/third_party_licenses/texts/cdda/libcdio-2.3.0-COPYING": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
     "native/third_party_licenses/texts/cdda/libcdio-paranoia-10.2+2.0.2-COPYING": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
@@ -4158,6 +4159,12 @@
       "file": "fa9c6f92f021db0f.txt",
       "packages": [
         "dom_smoothie"
+      ]
+    },
+    {
+      "file": "fb531487f666909d.txt",
+      "packages": [
+        "OpenCC"
       ]
     },
     {
@@ -10940,6 +10947,26 @@
         "6aed14a798714567.txt",
         "f59f5a78193597e0.txt"
       ]
+    },
+    {
+      "name": "OpenCC",
+      "version": "9b16591a",
+      "license": "Apache-2.0",
+      "origin": [
+        "native/fushidicts"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "fb531487f666909d.txt"
+      ],
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "note": "Simplified->traditional character table (STCharacters + TWVariants + HKVariants) generated into fushidicts_src/text_processor/opencc_st_data.* for the Chinese lookup fallback."
     },
     {
       "name": "opencore-amr",

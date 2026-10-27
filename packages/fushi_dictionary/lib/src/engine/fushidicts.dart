@@ -163,6 +163,9 @@ const String kBackgroundTokenizeIsolateName = 'fushi-dict-tokenize';
 @visibleForTesting
 String? debugLastBackgroundTokenizeIsolate;
 
+/// 与 fushidicts_ffi.cpp 的 `kLookupFlagChineseSimpToTrad` 同值。
+const int _lookupFlagChineseSimpToTrad = 1;
+
 // ── main wrapper class ──────────────────────────────────────────────
 
 class FushiDicts {
@@ -950,6 +953,11 @@ class FushiDicts {
   // [frequencyDictionary]+[frequencyOrder] 指定按某 freq 词典升/降序（在
   // max_results 截断之前生效）；[primaryReading] 让 reading 精确匹配者排最前
   //（Yomitan 内链语义）。当前无设置 UI 消费方，管道先行。
+  //
+  // [chineseSimpToTrad]：查询语言为中文时置 true，引擎在原查询之外额外试简体 → 繁體
+  // 拼写（OpenCC 全部候选 + 台/港字形，一简多繁全展开、由词典认真词），让按繁體建索引
+  // 的词典命中简体查询；原形结果照常在、同长度时排在前面。引擎语言无关，由调用方按
+  // 内容/查词来源语言声明；默认 false，日语等其它语言的查询一字不变。
   List<FushiLookupResult> lookup(
     String text, {
     int maxResults = defaultMaxResults,
@@ -957,6 +965,7 @@ class FushiDicts {
     String? frequencyDictionary,
     FushiLookupFrequencyOrder frequencyOrder = FushiLookupFrequencyOrder.auto,
     String? primaryReading,
+    bool chineseSimpToTrad = false,
   }) =>
       _lookupWith(
         _bindings!,
@@ -967,6 +976,7 @@ class FushiDicts {
         frequencyDictionary: frequencyDictionary,
         frequencyOrder: frequencyOrder,
         primaryReading: primaryReading,
+        chineseSimpToTrad: chineseSimpToTrad,
       );
 
   /// 同步路径（[lookup]）与后台查词共用的一次原生 lookup（同一份封送与转换）。
@@ -979,6 +989,7 @@ class FushiDicts {
     String? frequencyDictionary,
     FushiLookupFrequencyOrder frequencyOrder = FushiLookupFrequencyOrder.auto,
     String? primaryReading,
+    bool chineseSimpToTrad = false,
   }) {
     final bool useOptions = frequencyDictionary != null ||
         frequencyOrder != FushiLookupFrequencyOrder.auto ||
@@ -987,10 +998,13 @@ class FushiDicts {
     final fd = (frequencyDictionary ?? '').toNativeUtf8(allocator: calloc);
     final pr = (primaryReading ?? '').toNativeUtf8(allocator: calloc);
     try {
-      final r = useOptions
-          ? bindings.lookupWithOptions(handle, tp, maxResults, scanLength, fd,
-              frequencyOrder.index, pr)
-          : bindings.lookup(handle, tp, maxResults, scanLength);
+      final r = chineseSimpToTrad
+          ? bindings.lookupWithFlags(handle, tp, maxResults, scanLength, fd,
+              frequencyOrder.index, pr, _lookupFlagChineseSimpToTrad)
+          : useOptions
+              ? bindings.lookupWithOptions(handle, tp, maxResults, scanLength,
+                  fd, frequencyOrder.index, pr)
+              : bindings.lookup(handle, tp, maxResults, scanLength);
 
       final rPtr = calloc<FfiLookupResults>();
       rPtr.ref = r;

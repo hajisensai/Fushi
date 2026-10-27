@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -9,7 +10,21 @@ struct TextVariant {
 };
 
 namespace text_processor {
-std::vector<TextVariant> process(const std::string& src);
+/// [chinese_simp_to_trad]：查询语言为中文时才置 true，额外产出「简体 → 繁體」拼写
+/// （OpenCC STCharacters 全部候选 + 台/港字形，见 simplified_to_traditional_variants），
+/// 让按繁體建索引的词典也能命中简体查询。原形变体照常保留，繁體是额外的变体，所以
+/// 「我们」能命中更长的「我們」，而不是只在原文零结果时才回落。默认 false：非中文
+/// （日语的汉字大量有简体形）查询的变体集与耗时都与此前逐字节一致。
+std::vector<TextVariant> process(const std::string& src, bool chinese_simp_to_trad = false);
+
+/// 一次中文查词每个文本变体最多展开的繁體拼写数。
+inline constexpr std::size_t kMaxChineseTraditionalVariants = 16;
+
+/// 简体 → 繁體的全部拼写（逐字取 OpenCC 候选做组合，一简多繁全展开：头发 →
+/// 頭發 / 頭髮；按候选序号和从小到大截到 [max_variants] 个，首选项组合排第一）。
+/// 不含与 [text] 相同的那一个；不含表内字符时返回空、不分配。单独导出供测试断言。
+std::vector<std::u32string> simplified_to_traditional_variants(
+    const std::u32string& text, std::size_t max_variants = kMaxChineseTraditionalVariants);
 
 /// 谚文预合成音节 → Hangul 兼容字母序列（复合字母拆到简单字母：ㅘ → ㅗㅏ，
 /// ㄺ → ㄹㄱ）。非谚文字符原样透传。ko.json 的 transform 表就写在这个字母域里，

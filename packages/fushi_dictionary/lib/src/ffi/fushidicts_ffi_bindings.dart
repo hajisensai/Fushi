@@ -214,6 +214,17 @@ typedef _LookupWithOptionsDart = FfiLookupResults Function(
     int freqOrder,
     Pointer<Utf8> primaryReading);
 
+// 带 flags 的 lookup（bit0 = 中文简→繁回落）；老导出签名不动。
+typedef _LookupWithFlagsDart = FfiLookupResults Function(
+    Pointer<Void> handle,
+    Pointer<Utf8> text,
+    int maxResults,
+    int scanLength,
+    Pointer<Utf8> freqDict,
+    int freqOrder,
+    Pointer<Utf8> primaryReading,
+    int flags);
+
 typedef _FreeLookupResultsDart = void Function(Pointer<FfiLookupResults> r);
 
 typedef _GetStylesDart = FfiDictStyles Function(Pointer<Void> handle);
@@ -305,6 +316,10 @@ class FushidictsFfiBindings {
         FfiLookupResults Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32,
             Pointer<Utf8>, Int32, Pointer<Utf8>),
         _LookupWithOptionsDart>('fushidicts_lookup_with_options');
+    lookupWithFlags = _lib.lookupFunction<
+        FfiLookupResults Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32,
+            Pointer<Utf8>, Int32, Pointer<Utf8>, Int32),
+        _LookupWithFlagsDart>('fushidicts_lookup_with_flags');
     freeLookupResults = _lib.lookupFunction<
         Void Function(Pointer<FfiLookupResults>),
         _FreeLookupResultsDart>('fushidicts_free_lookup_results');
@@ -361,6 +376,7 @@ class FushidictsFfiBindings {
   late final _FreeQueryResultDart freeQueryResult;
   late final _LookupDart lookup;
   late final _LookupWithOptionsDart lookupWithOptions;
+  late final _LookupWithFlagsDart lookupWithFlags;
   late final _FreeLookupResultsDart freeLookupResults;
   late final _GetStylesDart getStyles;
   late final _FreeStylesDart freeStyles;

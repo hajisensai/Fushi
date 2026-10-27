@@ -151,7 +151,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   // 候选前缀由词边界感知的扫描器生成（对齐 Yomitan searchResolution）：
   // 空格分词语言不在单词中间切断，CJK 仍逐码点。详见 scan/word_scan.hpp。
   for (const std::string& search_str : scan_candidates(lookup_string, scan_length)) {
-    auto processor_results = text_processor::process(search_str);
+    auto processor_results = text_processor::process(search_str, options.chinese_simp_to_trad);
     for (auto& variant : processor_results) {
       auto deinflection_results = deinflector_.deinflect(variant.text);
 
