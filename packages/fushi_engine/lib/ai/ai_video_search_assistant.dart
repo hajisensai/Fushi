@@ -37,11 +37,9 @@ typedef AiProviderResolver = AiProviderConfig? Function();
 typedef AiClientFactory = AiChatClient Function();
 
 /// 从偏好里解析视频搜索辅助的提供商。调用方须先确认偏好已就绪。
-AiProviderConfig? resolveVideoSearchAiProvider(AiSettingsSource prefs) =>
-    prefs.aiFeatureAssignments.resolve(
-      AiFeature.videoSearch,
-      prefs.aiProviders,
-    );
+AiProviderConfig? resolveVideoSearchAiProvider(AiSettingsSource prefs) => prefs
+    .aiFeatureAssignments
+    .resolve(AiFeature.videoSearch, prefs.aiProviders);
 
 /// 单条 AI 备选查询词的最大长度；再长就不是搜索词而是段落了。
 const int kAiSearchQueryMaxLength = 80;

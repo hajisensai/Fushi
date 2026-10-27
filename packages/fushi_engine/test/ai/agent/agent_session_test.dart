@@ -4,12 +4,16 @@ import 'dart:convert';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_model_pricing.dart';
 import 'package:test/test.dart';
 
 /// 回放固定回合的 stub 模型；记下每次收到的消息与工具。
 class _StubLlm implements AgentLlm {
-  _StubLlm(List<AiChatTurn> turns, {this.supportsTools = true})
-    : _turns = Queue<AiChatTurn>.of(turns);
+  _StubLlm(
+    List<AiChatTurn> turns, {
+    this.supportsTools = true,
+    this.pricing = const AiModelPricing(),
+  }) : _turns = Queue<AiChatTurn>.of(turns);
 
   final Queue<AiChatTurn> _turns;
   final List<List<AiChatMessage>> requests = <List<AiChatMessage>>[];
@@ -17,6 +21,9 @@ class _StubLlm implements AgentLlm {
 
   @override
   final bool supportsTools;
+
+  @override
+  final AiModelPricing pricing;
 
   @override
   Future<AiChatTurn> chat(
@@ -477,18 +484,51 @@ void main() {
     expect(session.entries.last.text, 'empty_response');
   });
 
-  test('token 预算用完就停', () async {
+  test('token 不设上限：用量与费用逐轮累计，并随存档往返', () async {
     final AgentSession session = _session(
-      _StubLlm(<AiChatTurn>[
-        _call('settings.get', <String, Object?>{'id': 'subtitle.size'}),
-        _reply('不该走到这里'),
-      ]),
+      _StubLlm(
+        <AiChatTurn>[
+          _call('settings.get', <String, Object?>{'id': 'subtitle.size'}),
+          _reply('20'),
+        ],
+        pricing: const AiModelPricing(
+          inputPerMillion: 3,
+          outputPerMillion: 15,
+          currency: 'cny',
+        ),
+      ),
       _Toolbox(),
       _Host(),
-      limits: const AgentLimits(maxSessionTokens: 10),
     );
     await session.send('读');
-    expect(session.entries.last.errorCode, AgentStopCode.tokenBudget);
+    expect(session.entries.last.kind, AgentEntryKind.assistant);
+    expect(session.usage.inputTokens, 20);
+    expect(session.usage.outputTokens, 10);
+    expect(session.totalTokens, 30);
+    // 两轮各 10 输入 + 5 输出：2 × (10×3 + 5×15) / 1e6。
+    expect(session.cost.keys, <String>['CNY']);
+    expect(session.cost['CNY'], closeTo(2 * 105 / 1000000, 1e-12));
+
+    final AgentSession restored = AgentSession.fromJson(
+      jsonDecode(jsonEncode(session.toJson())) as Map<String, Object?>,
+      llm: _StubLlm(const <AiChatTurn>[]),
+      toolbox: _Toolbox(),
+      host: _Host(),
+    );
+    expect(restored.cost['CNY'], closeTo(2 * 105 / 1000000, 1e-12));
+    expect(restored.totalTokens, 30);
+  });
+
+  test('没填单价：只记 token，不记费用', () async {
+    final AgentSession session = _session(
+      _StubLlm(<AiChatTurn>[_reply('好')]),
+      _Toolbox(),
+      _Host(),
+    );
+    await session.send('嗨');
+    expect(session.totalTokens, 15);
+    expect(session.cost, isEmpty);
+    expect(session.toJson().containsKey('cost'), isFalse);
   });
 
   test('存档往返：条目、历史、已加载工具、用量；在途条目按失败收尾', () async {
