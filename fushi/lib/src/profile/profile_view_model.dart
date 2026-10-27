@@ -10,7 +10,9 @@ import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/srs/srs_profile_cleanup.dart';
 
 /// Serializes Profile application with temporary draft persistence.
 ///
@@ -139,8 +141,10 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   ProfileViewModel(
     this._repo,
     this._onProfileApplied,
-    this._profileDraftCoordinator,
-  ) : super(const ProfileUiState()) {
+    this._profileDraftCoordinator, {
+    ProfileDeletionCascade? deletionCascade,
+  })  : _deletionCascade = deletionCascade,
+        super(const ProfileUiState()) {
     _load();
     // BUG-3148：别处（互联下载 / 对端上传入站）写进 profiles 表的新配置，列表要跟着
     // 刷新，不必等重启。只重读列表本身——激活 id 与绑定的切换都经本类，不受影响。
@@ -169,6 +173,9 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   final ProfileRepository _repo;
   final Future<void> Function() _onProfileApplied;
   final ProfileDraftCoordinator _profileDraftCoordinator;
+
+  /// 删 Profile 时连带清理的、主库外键级联管不到的数据（复习数据在 srs.db）；null = 不清（测试）。
+  final ProfileDeletionCascade? _deletionCascade;
 
   Future<T> _whileInvalidatingProfileDrafts<T>(
     Future<T> Function() action,
@@ -327,8 +334,27 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     state = state.copyWith(profiles: await _repo.getAllProfiles());
   }
 
-  Future<void> deleteProfile(int id) => _profileDraftCoordinator
+  /// 删掉 [id] 会连带删掉的数据规模（确认框用）。
+  Future<ProfileDeletionImpact> deletionImpact(int id) async {
+    final ProfileDeletionCascade? cascade = _deletionCascade;
+    if (cascade == null) return const ProfileDeletionImpact.none();
+    final ProfileRow? target = _profileById(await _repo.getAllProfiles(), id);
+    if (target == null) return const ProfileDeletionImpact.none();
+    return cascade.impactOf(target);
+  }
+
+  /// 删 Profile，连带它在 srs.db 里的复习数据与媒体目录（反馈 8TaOy2i-lL）：先备份（失败抛
+  /// [ProfileDeletionBackupException]，什么都不删），再删 `profiles` 行（主库外键级联其余），最后清复习数据。
+  /// 只剩一个 Profile 或 [id] 不存在时不删，返回 null。
+  Future<ProfileDeletionOutcome?> deleteProfile(int id) =>
+      _profileDraftCoordinator
           ._runProfileMutation((_ProfileDraftMutation mutation) async {
+        final List<ProfileRow> before = await _repo.getAllProfiles();
+        final ProfileRow? target = _profileById(before, id);
+        if (target == null || before.length <= 1) return null;
+        final ProfileDeletionCleanup? cleanup =
+            await _deletionCascade?.prepare(target);
+
         // This repository read must happen after acquiring the same lock used
         // by switch/create/Save. State may still describe the previous Profile
         // while an earlier switch has already updated the repository.
@@ -345,7 +371,31 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
         if (deletesActiveProfile && activeId != previousActiveId) {
           await _onProfileApplied();
         }
+        // 行删掉、当前 Profile 已切走之后再清：被删的若是当前 Profile，它的副本此刻才不再被界面使用。
+        await cleanup?.run();
+        return ProfileDeletionOutcome(
+          impact: cleanup?.impact ?? const ProfileDeletionImpact.none(),
+          backupPath: cleanup?.backupPath,
+        );
       });
+
+  /// 一次性存量扫描：清掉 srs.db 里不属于任何现存 Profile 的复习数据（先备份；扫完记标记，之后不再扫）。
+  /// 进 Profile 管理时调用。失败时标记不写（下次进来再扫），错误照常抛给调用方。返回清掉的无主 uid 数。
+  Future<int> sweepOrphanProfileData() async {
+    final ProfileDeletionCascade? cascade = _deletionCascade;
+    if (cascade == null) return 0;
+    return _profileDraftCoordinator._runProfileMutation(
+      (_ProfileDraftMutation _) async =>
+          cascade.sweepOrphans(await _repo.getAllProfiles()),
+    );
+  }
+
+  static ProfileRow? _profileById(List<ProfileRow> profiles, int id) {
+    for (final ProfileRow p in profiles) {
+      if (p.id == id) return p;
+    }
+    return null;
+  }
 
   Future<void> setMediaTypeBinding(
       ProfileMediaKind mediaType, int? profileId) async {
@@ -475,7 +525,12 @@ final profileViewModelProvider =
     await ReaderFushiSource.readerSettings?.refreshFromDb();
   }
 
-  return ProfileViewModel(repo, onApplied, profileDraftCoordinator);
+  return ProfileViewModel(
+    repo,
+    onApplied,
+    profileDraftCoordinator,
+    deletionCascade: srsProfileCleanupFor(ref),
+  );
 });
 
 /// 另一个进程 / engine 改过偏好（[AppModel.refreshPrefCacheIfChanged] 返回 true）后，
