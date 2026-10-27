@@ -49,6 +49,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
@@ -1055,13 +1056,21 @@ class JellyfinApi {
   /// Jellyfin 兼容层只认 `X-Emby-Authorization`——缺它直接 400
   /// "X-Emby-Authorization is missing"（BUG-2254）。两家对未知头都宽容，
   /// 双发是在不引入服务器类型探测的前提下唯一同时覆盖两族的写法。
+  ///
+  /// `Client` / `Device` / `Version` 报本应用的真实身份（[mediaServerClientIdentity]：
+  /// 产品名 Fushi、本机设备名、应用版本）。此前一直写死旧品牌 `Client="Hibiki",
+  /// Device="Hibiki", Version="1.0"`（AL8qJr6yr-）：服务器后台看到的是一个不存在的
+  /// 客户端名，按客户端名放行的服务器也认不出这是谁。[identity] 只给测试注入。
   static String authHeaderFor([
     String? accessToken,
     String deviceId = kLegacyDeviceId,
-  ]) =>
-      'MediaBrowser Client="Hibiki", Device="Hibiki", '
-      'DeviceId="$deviceId", Version="1.0"'
-      '${accessToken == null ? '' : ', Token="$accessToken"'}';
+    MediaServerClientIdentity? identity,
+  ]) {
+    final MediaServerClientIdentity id = identity ?? mediaServerClientIdentity;
+    return 'MediaBrowser Client="${id.product}", Device="${id.deviceName}", '
+        'DeviceId="$deviceId", Version="${id.version}"'
+        '${accessToken == null ? '' : ', Token="$accessToken"'}';
+  }
 
   Map<String, String> get _headers => <String, String>{
     'Authorization': authHeaderFor(accessToken, deviceId),
@@ -1699,7 +1708,7 @@ class JellyfinApi {
     int? maxStreamingBitrate,
     int? maxWidth,
   }) => <String, Object?>{
-    'Name': 'Hibiki',
+    'Name': kMediaServerClientProduct,
     'MaxStreamingBitrate': maxStreamingBitrate ?? kUnlimitedBitrate,
     'MaxStaticBitrate': kUnlimitedBitrate,
     'MusicStreamingTranscodingBitrate': 320000,
