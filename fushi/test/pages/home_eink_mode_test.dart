@@ -551,7 +551,8 @@ void main() {
         contains('Border(top: BorderSide(color: scheme.outline))'),
       );
       final String sync = read('lib/src/sync/sync_progress_banner.dart');
-      expect(sync, contains('einkSafeProgressValue(context, p?.fraction)'));
+      // 常规同步与复习同步两条进度共用一个 _bar(fraction:)，墨水屏归零在那一处。
+      expect(sync, contains('einkSafeProgressValue(context, fraction)'));
     });
   });
 }

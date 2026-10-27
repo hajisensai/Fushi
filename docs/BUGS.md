@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3796](bugs/BUG-3796-windows-nav-switch-freeze-a11y-reparent.md) | ✅ | ✅ | windows-nav-switch-freeze-a11y-reparent |
+| [BUG-3796](bugs/BUG-3796-srs-deleted-tagged-note-stuck-pending.md) | ✅ | ✅ | 带标签的已删笔记一直挂在「等你决定的笔记」里，确认删除也消不掉 |
 | [BUG-3795](bugs/BUG-3795-web-browser-overflow-menu-gap.md) | ✅ | ✅ | web-browser-overflow-menu-gap |
 | [BUG-3794](bugs/BUG-3794-web-video-site-floating-ball-unclickable.md) | ✅ | ✅ | web-video-site-floating-ball-unclickable |
 | [BUG-3793](bugs/BUG-3793-web-video-site-backdrop-covers-underlay.md) | ✅ | ✅ | web-video-site-backdrop-covers-underlay |

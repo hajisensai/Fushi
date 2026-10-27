@@ -772,11 +772,14 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     // 片段通道驱动它（先单词音频、再片段）。
     final String? clip = srsVideoSources(picture).firstOrNull;
     if (clip != null) {
+      // 尺寸与图片同一套规则：宽版式左栏常见比例铺满栏宽、超过高度上限等比缩小。
       return SrsCardVideoClip(
         key: const ValueKey<String>('srs-fushi-picture'),
         name: clip,
         maxWidth: maxWidth,
         maxHeight: maxHeight,
+        fillWidth: limits.fillWidth,
+        maxFillHeight: limits.maxFillHeight,
         radius: s.tokens.radiusSmall,
       );
     }
@@ -1566,10 +1569,8 @@ class _AudioButton extends StatelessWidget {
   }
 }
 
-/// 铺满栏宽的图片比例范围（宽 / 高）：视频截图 16:9、4:3、方图都在内；竖长书封、超宽
-/// 横幅铺满会过高 / 过扁，照旧限高完整显示。
-const double kSrsPictureFillMinAspect = 0.9;
-const double kSrsPictureFillMaxAspect = 2.5;
+// 铺满栏宽的比例范围 [kSrsPictureFillMinAspect] / [kSrsPictureFillMaxAspect] 与尺寸规则
+// [srsCardMediaBoxSize] 在 srs_card_video_clip.dart（图片与视频片段共用）。
 
 /// 铺满的图片最高占卡面视口高度的比例。
 const double kSrsPictureFillMaxViewportFraction = 0.4;
@@ -1710,6 +1711,10 @@ class _MediaImageState extends ConsumerState<_MediaImage>
   /// 解码出的宽 / 高；未知（还没解码 / 失败）时 null。
   double? _aspect;
 
+  /// 图片加载失败（本机没有这个文件——媒体还没同步过来——或解码失败）：画同尺寸的
+  /// 「图片未同步」占位，而不是零尺寸空盒（那样与「卡本来没图」分不出来）。
+  bool _failed = false;
+
   late final SrsCardVideoChannel _channel = ref.read(
     srsCardVideoChannelProvider,
   );
@@ -1761,26 +1766,36 @@ class _MediaImageState extends ConsumerState<_MediaImage>
       _unlisten();
       _provider = srsCardImageProvider(widget.name, store);
       _aspect = null;
+      _failed = false;
     }
     return _provider;
   }
 
-  /// 只在铺满模式下解析尺寸（决定铺不铺满）；同一 provider 只解析一次。
+  /// 解析图片：拿尺寸（铺满模式据此决定铺不铺满）、发现加载失败；同一 provider 只解析
+  /// 一次（与 [Image] 共用图片缓存里的同一条流，不额外解码）。
   void _resolve(BuildContext context, ImageProvider<Object> provider) {
-    if (!widget.fillWidth || _stream != null) return;
+    if (_stream != null) return;
     final ImageStream stream = provider.resolve(
       createLocalImageConfiguration(context),
     );
-    final ImageStreamListener listener = ImageStreamListener((
-      ImageInfo info,
-      bool _,
-    ) {
-      final double w = info.image.width.toDouble();
-      final double h = info.image.height.toDouble();
-      info.dispose();
-      if (!mounted || h <= 0) return;
-      setState(() => _aspect = w / h);
-    }, onError: (Object _, StackTrace? _) {});
+    final ImageStreamListener listener = ImageStreamListener(
+      (ImageInfo info, bool _) {
+        final double w = info.image.width.toDouble();
+        final double h = info.image.height.toDouble();
+        info.dispose();
+        if (!mounted || h <= 0) return;
+        // 动图每帧都会回调：比例没变就不重建。
+        final double aspect = w / h;
+        if (aspect == _aspect && !_failed) return;
+        setState(() {
+          _aspect = aspect;
+          _failed = false;
+        });
+      },
+      onError: (Object _, StackTrace? _) {
+        if (mounted && !_failed) setState(() => _failed = true);
+      },
+    );
     stream.addListener(listener);
     _stream = stream;
     _listener = listener;
@@ -1793,6 +1808,26 @@ class _MediaImageState extends ConsumerState<_MediaImage>
       ref.watch(srsMediaStoreProvider).valueOrNull,
     );
     if (provider != null) _resolve(context, provider);
+    if (provider != null && _failed) {
+      return LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints c) =>
+            SrsCardMediaMissing(
+              key: const ValueKey<String>('srs-fushi-picture-missing'),
+              kind: SrsCardMediaKind.image,
+              size: srsCardMediaBoxSize(
+                aspect: kSrsCardMediaFallbackAspect,
+                maxWidth: math.min(
+                  widget.maxWidth ?? double.infinity,
+                  c.maxWidth,
+                ),
+                maxHeight: widget.maxHeight ?? 220,
+                fillWidth: widget.fillWidth,
+                maxFillHeight: widget.maxFillHeight,
+              ),
+              radius: radius,
+            ),
+      );
+    }
     final double? aspect = _aspect;
     final bool fill =
         widget.fillWidth &&
@@ -1830,17 +1865,17 @@ class _MediaImageState extends ConsumerState<_MediaImage>
           // 铺满：按原比例定高；超过 [maxFillHeight] 就整张等比缩小到这个高度（不裁切），
           // 靠左对齐卡片边缘。
           ? LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints c) {
-                final double natural = c.maxWidth / aspect;
-                final double cap = widget.maxFillHeight ?? double.infinity;
-                return natural > cap
-                    ? SizedBox(width: cap * aspect, height: cap, child: image)
-                    : SizedBox(
-                        width: c.maxWidth,
-                        height: natural,
-                        child: image,
-                      );
-              },
+              builder: (BuildContext context, BoxConstraints c) =>
+                  SizedBox.fromSize(
+                    size: srsCardMediaBoxSize(
+                      aspect: aspect,
+                      maxWidth: c.maxWidth,
+                      maxHeight: widget.maxHeight ?? 220,
+                      fillWidth: true,
+                      maxFillHeight: widget.maxFillHeight,
+                    ),
+                    child: image,
+                  ),
             )
           : ConstrainedBox(
               constraints: BoxConstraints(

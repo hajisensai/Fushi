@@ -382,7 +382,11 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 4（同步 v2）：已删笔记也存 media_refs（以前写空串）。被删笔记的媒体要保留 90 天、过期后才回收
   /// （设计 §10.5），两边都靠这一列找到它们；老库已删笔记的这一列是空的，升级时重算一遍。
-  static const int _kCacheRevision = 4;
+  ///
+  /// 5（BUG-3796）：srs_notes_cache.pending_decision 的推导改了——标签 OR-Set 的合成 `tags` 行不再被当成
+  /// 「与删除并发的修改」。老库里每条带标签的已删笔记都被错标成待裁决（挂在冲突中心「等你决定的笔记」里，
+  /// 「确认删除」也消不掉），升级时把标着待裁决的笔记重算一遍。
+  static const int _kCacheRevision = 5;
   int _cacheRevision = _kCacheRevision;
 
   /// 有效复习投影要重算的卡（缓存刷新写过 / 隐藏的卡、脏卡、重建与升级时的全部卡）：[_flushCachesNow]
@@ -1029,16 +1033,32 @@ class SrsDbStore implements SrsSync2Host {
   };
 
   @override
-  Future<Map<String, Object?>> sync2Ingest(
+  Future<void> sync2IngestBegin() =>
+      runExclusive(() => _sync2(const <String, Object?>{'op': 'ingest_begin'}));
+
+  @override
+  Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
-  }) => runExclusive(() async {
+  }) => _sync2IngestStep(<String, Object?>{
+    'op': 'ingest_batch',
+    'key': keyHex,
+  }, segments);
+
+  @override
+  Future<Map<String, Object?>> sync2IngestFinish() =>
+      _sync2IngestStep(const <String, Object?>{'op': 'ingest_finish'});
+
+  /// 收段会话的一步（收一批 / 收尾换身份）：写锁里跑，投影变化接进本机缓存。
+  Future<Map<String, Object?>> _sync2IngestStep(
+    Map<String, Object?> request, [
+    List<Uint8List> segments = const <Uint8List>[],
+  ]) => runExclusive(() async {
     late Map<String, Object?> r;
     await _transactionOrReload(() async {
       r = await _sync2(<String, Object?>{
-        'op': 'ingest',
+        ...request,
         'now': now().$1,
-        'key': keyHex,
       }, blobs: segments);
       final List<String> landed = _absorbProjection(r);
       if (landed.isNotEmpty ||
@@ -1973,6 +1993,12 @@ class SrsDbStore implements SrsSync2Host {
       }
       if (_cacheRevision < 3) {
         _dirtyNotes.addAll(await entityIds(SrsEntityKind.note));
+        await _flushCaches();
+      }
+      if (_cacheRevision < 5) {
+        _dirtyNotes.addAll(<String>[
+          for (final SrsNoteCacheRow n in await notesPendingDecision()) n.id,
+        ]);
         await _flushCaches();
       }
       _cacheRevision = _kCacheRevision;

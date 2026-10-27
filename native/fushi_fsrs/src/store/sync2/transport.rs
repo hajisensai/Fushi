@@ -449,6 +449,112 @@ fn deliver(c: &Connection, profile: &str, incoming: Vec<(Op, Chain)>, now: i64, 
     Ok(applied_n)
 }
 
+/// 分批收段会话（[SrsCore::sync2_ingest_begin]）：开会话时的本机身份与跨批累积的分叉点。
+pub(crate) struct IngestSession {
+    profile: String,
+    device: Id,
+    fork_at: Option<u64>,
+}
+
+/// 收一批段（不换身份）：远端操作投递进投影 / 缓冲，返回应用条数；本机身份的段只比链，把分叉点（第一处不同的
+/// 前一个 seq）取最小累积进 [fork_at]。
+#[allow(clippy::too_many_arguments)]
+fn ingest_segments(
+    c: &Connection,
+    profile: &str,
+    local: &Local,
+    segments: &[Vec<u8>],
+    key: Option<[u8; 32]>,
+    now: i64,
+    t: &mut Touched,
+    errors: &mut Vec<String>,
+    fork_at: &mut Option<u64>,
+) -> Result<usize, String> {
+    let ck = key.map(CollectionKey);
+    let mut incoming: Vec<(Op, Chain)> = Vec::new();
+    for bytes in segments {
+        let header = match segment::peek_header(bytes) {
+            Ok(h) => h,
+            Err(e) => {
+                errors.push(e.to_string());
+                continue;
+            }
+        };
+        if header.collection != local.collection {
+            continue;
+        }
+        let public: Option<Vec<u8>> = c
+            .query_row(
+                "SELECT public FROM sync2_devices WHERE profile_uid = ?1 AND device = ?2",
+                params![profile, header.device.0.to_vec()],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(sql)?
+            .flatten();
+        // 自己身份的段：同一把钥匙签的（数据目录被复制）才可能是本机身份的另一个安装，只拿来比链找分叉点。
+        let public: [u8; 32] = if header.device == local.device {
+            local.key.public()
+        } else {
+            match public.and_then(|p| <[u8; 32]>::try_from(p).ok()) {
+                Some(p) => p,
+                None => {
+                    errors.push(format!("segment from unknown device {}", header.device.text()));
+                    continue;
+                }
+            }
+        };
+        let seg = match segment::open(bytes, &public, ck.as_ref()) {
+            Ok(s) => s,
+            Err(e) => {
+                errors.push(format!("{}: {e}", header.device.text()));
+                continue;
+            }
+        };
+        if header.device == local.device {
+            // 同一身份、签名也对（同一把钥匙 = 数据目录被复制）：逐条比链，第一处不同之前是共同前缀。
+            let mut chain = seg.header.prev_chain;
+            for op in &seg.ops {
+                chain = chain_next(&chain, op);
+                let ours = chain_at(c, profile, &local.device, op.id.seq)?;
+                if ours != Some(chain) {
+                    let k = op.id.seq - 1;
+                    *fork_at = Some(fork_at.map_or(k, |f| f.min(k)));
+                    break;
+                }
+            }
+            continue;
+        }
+        let mut chain = seg.header.prev_chain;
+        for op in seg.ops {
+            chain = chain_next(&chain, &op);
+            incoming.push((op, chain));
+        }
+    }
+    deliver(c, profile, incoming, now, t)
+}
+
+/// 收段命令的返回（重放受影响的卡、数缓冲）。
+fn ingest_result(c: &Connection, profile: &str, t: Touched, applied: usize, errors: Vec<String>, fork: bool) -> Result<String, String> {
+    let replayed = replay_touched(c, &t)?;
+    let pending: i64 = c
+        .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1", [profile], |r| r.get(0))
+        .map_err(sql)?;
+    Ok(json!({
+        "events": t.events,
+        "dominated": t.dominated,
+        "replayed": replayed,
+        "applied": applied,
+        "pending": pending,
+        "errors": errors,
+        "fork": fork,
+        "diagnostics": t.diagnostics,
+        "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+        "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+    })
+    .to_string())
+}
+
 // 本机身份分叉（设计 §7.3）：换新身份，把旧身份 seq > [keep] 的本机操作撤出投影、以新身份重签发
 /// （内容不变），旧身份冻结在 [keep]（之后它的远端操作按普通设备收）。
 pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &mut Touched) -> Result<(), String> {
@@ -708,96 +814,93 @@ impl SrsCore {
     /// 收段：每项是一个段文件的字节（任意顺序、可重复）。校验（签名 / 链 / 解密）、按设备连续前缀 + 因果
     /// 满足才应用；不满足的进缓冲等下一轮。返回
     /// `{"events":[落进投影的事件], "dominated":[..], "replayed":[..], "applied":n, "pending":n, "errors":[..], "fork":bool}`。
+    ///
+    /// 一次收完；同一轮要分几批收（字节预算）时用 [SrsCore::sync2_ingest_begin] / [SrsCore::sync2_ingest_batch] /
+    /// [SrsCore::sync2_ingest_finish]，分叉判定与换身份和把全部批次拼成一次调用这里相同。
     pub fn sync2_ingest(&self, profile: &str, segments: &[Vec<u8>], key: Option<[u8; 32]>, now: i64) -> Result<String, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
-            let ck = key.map(CollectionKey);
             let mut t = Touched::default();
             let mut errors = Vec::new();
             let mut fork_at: Option<u64> = None;
-            let mut incoming: Vec<(Op, Chain)> = Vec::new();
-            for bytes in segments {
-                let header = match segment::peek_header(bytes) {
-                    Ok(h) => h,
-                    Err(e) => {
-                        errors.push(e.to_string());
-                        continue;
-                    }
-                };
-                if header.collection != local.collection {
-                    continue;
-                }
-                let public: Option<Vec<u8>> = c
-                    .query_row(
-                        "SELECT public FROM sync2_devices WHERE profile_uid = ?1 AND device = ?2",
-                        params![profile, header.device.0.to_vec()],
-                        |r| r.get(0),
-                    )
-                    .optional()
-                    .map_err(sql)?
-                    .flatten();
-                // 自己身份的段：同一把钥匙签的（数据目录被复制）才可能是本机身份的另一个安装，只拿来比链找分叉点。
-                let public: [u8; 32] = if header.device == local.device {
-                    local.key.public()
-                } else {
-                    match public.and_then(|p| <[u8; 32]>::try_from(p).ok()) {
-                        Some(p) => p,
-                        None => {
-                            errors.push(format!("segment from unknown device {}", header.device.text()));
-                            continue;
-                        }
-                    }
-                };
-                let seg = match segment::open(bytes, &public, ck.as_ref()) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        errors.push(format!("{}: {e}", header.device.text()));
-                        continue;
-                    }
-                };
-                if header.device == local.device {
-                    // 同一身份、签名也对（同一把钥匙 = 数据目录被复制）：逐条比链，第一处不同之前是共同前缀。
-                    let mut chain = seg.header.prev_chain;
-                    for op in &seg.ops {
-                        chain = chain_next(&chain, op);
-                        let ours = chain_at(c, profile, &local.device, op.id.seq)?;
-                        if ours != Some(chain) {
-                            let k = op.id.seq - 1;
-                            fork_at = Some(fork_at.map_or(k, |f| f.min(k)));
-                            break;
-                        }
-                    }
-                    continue;
-                }
-                let mut chain = seg.header.prev_chain;
-                for op in seg.ops {
-                    chain = chain_next(&chain, &op);
-                    incoming.push((op, chain));
-                }
-            }
-            let applied_n = deliver(c, profile, incoming, now, &mut t)?;
-            let fork = fork_at.is_some();
+            let applied_n = ingest_segments(c, profile, &local, segments, key, now, &mut t, &mut errors, &mut fork_at)?;
             if let Some(k) = fork_at {
                 rotate(c, profile, k, now, &mut t)?;
             }
-            let replayed = replay_touched(c, &t)?;
-            let pending: i64 = c
-                .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1", [profile], |r| r.get(0))
-                .map_err(sql)?;
-            Ok(json!({
-                "events": t.events,
-                "dominated": t.dominated,
-                "replayed": replayed,
-                "applied": applied_n,
-                "pending": pending,
-                "errors": errors,
-                "fork": fork,
-                "diagnostics": t.diagnostics,
-                "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-                "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-            })
-            .to_string())
+            ingest_result(c, profile, t, applied_n, errors, fork_at.is_some())
+        })
+    }
+
+    /// 开一个分批收段会话（覆盖掉上一轮没收尾的）。之后每批 [SrsCore::sync2_ingest_batch]，最后
+    /// [SrsCore::sync2_ingest_finish]。
+    ///
+    /// 为什么要会话：本机身份的段（数据目录被复制、另一个安装在用同一身份）只用来比链找分叉点，分叉点是**全部**
+    /// 这类段里第一处不同的最小值；换身份（[rotate]）又要在**全部**远端操作都投递之后做（重签发的因果上下文按
+    /// 那时已应用的版本向量截断）。两者都要看全一轮，所以分叉点跨批累积在这里（状态归内核），换身份推到收尾。
+    pub fn sync2_ingest_begin(&self, profile: &str) -> Result<Value, String> {
+        let w = self.writer()?;
+        let local = Local::load(&w, profile)?.ok_or("sync2 not initialised for this profile")?;
+        *self.ingest_session.lock().map_err(|_| "ingest session poisoned")? =
+            Some(IngestSession { profile: profile.to_owned(), device: local.device, fork_at: None });
+        Ok(json!({}))
+    }
+
+    /// 会话里收一批：远端设备的操作照常投递并提交；本机身份的段只比链、把分叉点累积进会话，不换身份
+    /// （返回的 `fork` 恒为 false，换身份见 [SrsCore::sync2_ingest_finish]）。会话期间本机身份变了（别处换过身份）
+    /// 就作废会话并报错：之后的本机段已不能按同一身份比链。
+    pub fn sync2_ingest_batch(&self, profile: &str, segments: &[Vec<u8>], key: Option<[u8; 32]>, now: i64) -> Result<String, String> {
+        let w = self.writer()?;
+        let mut guard = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
+        let (device, prior) = match guard.as_ref() {
+            Some(s) if s.profile == profile => (s.device, s.fork_at),
+            _ => return Err("sync2 ingest: no ingest session for this profile".to_owned()),
+        };
+        let out = in_savepoint(&w, |c| {
+            let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+            if local.device != device {
+                return Err("sync2 ingest: local identity changed during the ingest session".to_owned());
+            }
+            let mut t = Touched::default();
+            let mut errors = Vec::new();
+            let mut fork_at = prior;
+            let applied_n = ingest_segments(c, profile, &local, segments, key, now, &mut t, &mut errors, &mut fork_at)?;
+            let r = ingest_result(c, profile, t, applied_n, errors, false)?;
+            Ok((r, fork_at))
+        });
+        match out {
+            Ok((r, fork_at)) => {
+                if let Some(s) = guard.as_mut() {
+                    s.fork_at = fork_at;
+                }
+                Ok(r)
+            }
+            Err(e) => {
+                *guard = None;
+                Err(e)
+            }
+        }
+    }
+
+    /// 收尾：会话里累积出分叉点就换身份（与一次收完时同一个分叉点、同样在全部投递之后）。返回与
+    /// [SrsCore::sync2_ingest] 同形（`applied` 为 0：操作都在各批里投递过了）。会话期间本机身份变了：不换。
+    pub fn sync2_ingest_finish(&self, profile: &str, now: i64) -> Result<String, String> {
+        let w = self.writer()?;
+        let session = {
+            let mut guard = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
+            match guard.take() {
+                Some(s) if s.profile == profile => s,
+                _ => return Err("sync2 ingest: no ingest session for this profile".to_owned()),
+            }
+        };
+        in_savepoint(&w, |c| {
+            let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+            let mut t = Touched::default();
+            let fork_at = session.fork_at.filter(|_| local.device == session.device);
+            if let Some(k) = fork_at {
+                rotate(c, profile, k, now, &mut t)?;
+            }
+            ingest_result(c, profile, t, 0, Vec::new(), fork_at.is_some())
         })
     }
 

@@ -45,6 +45,8 @@ pub struct SrsCore {
     /// 开过的只读会话（弱引用）：[SrsCore::close] 逐个关掉还没结束的。只在持读锁时登记，close 先拿
     /// 读锁，所以不会漏掉一个正在开的会话。
     sessions: Mutex<Vec<Weak<ReadSession>>>,
+    /// 正在进行的分批收段会话（[SrsCore::sync2_ingest_begin]）；None = 没有。
+    ingest_session: Mutex<Option<sync2::transport::IngestSession>>,
 }
 
 /// 一条独立的只读连接 + 一个读事务（[SrsCore::read_session]）：整段读取看到开会话那一刻的快照，
@@ -164,6 +166,7 @@ impl SrsCore {
             legacy_open: AtomicBool::new(false),
             path: path.to_path_buf(),
             sessions: Mutex::new(Vec::new()),
+            ingest_session: Mutex::new(None),
         })
     }
 
