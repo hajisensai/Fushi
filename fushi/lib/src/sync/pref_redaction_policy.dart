@@ -96,6 +96,8 @@ abstract final class PrefRedactionPolicy {
     // 必须显式点名。两者也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
     'video_resource_torznab_config',
     'video_subtitle_opensubtitles_config',
+    // 同形：用户 BT 站清单，地址里可能带站点 passkey。也在 deviceLocalPrefKeys 中。
+    'resource_bt_sites',
     // AI 提供商清单：每条里带 base64 的 API key，键名本身没有 api_key/token 形状，
     // 必须显式点名，否则备份/Profile 分享时会把用户的付费 key 旁路带出设备。
     'ai_providers',

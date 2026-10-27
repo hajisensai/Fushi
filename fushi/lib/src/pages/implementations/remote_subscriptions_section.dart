@@ -12,6 +12,8 @@ import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart'
+    show isVideoSubscriptionBtSiteMissingError;
 
 class RemoteSubscriptionsSection extends ConsumerStatefulWidget {
   const RemoteSubscriptionsSection({super.key});
@@ -168,7 +170,12 @@ class _RemoteSubscriptionsSectionState
                     sub.resourceProvider,
                     sub.mode,
                     if (counts.isNotEmpty) counts,
-                    if (sub.lastError != null) sub.lastError!,
+                    // 对端因没有 BT 站暂停：显示本地化提示而不是引擎标记。不给
+                    // 跳设置入口——要加站点的是那台 host，不是本机。
+                    if (isVideoSubscriptionBtSiteMissingError(sub.lastError))
+                      t.bt_site_missing_status
+                    else if (sub.lastError != null)
+                      sub.lastError!,
                   ].join(' · '),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,

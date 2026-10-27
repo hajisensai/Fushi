@@ -6,6 +6,7 @@ import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart';
@@ -24,8 +25,16 @@ void main() {
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     registry = VideoResourceRegistry(<NyaaVideoResourceProvider>[
+      // 用户添加的 Nyaa 式站点；默认请求用旧内置源的持久化 id（nyaa:nyaa.si），
+      // 经 registry.resolveProvider 解析到这个同格式站点。
       NyaaVideoResourceProvider(
-        client: NyaaClient(client: http.Client()),
+        client: NyaaClient(
+            baseUrl: 'https://bt.example.com', client: http.Client()),
+        siteId: 'site1',
+        categoryByDomain: const <VideoDiscoveryCategory, String>{
+          VideoDiscoveryCategory.anime: '1_2',
+          VideoDiscoveryCategory.tv: '4_1',
+        },
         closesClient: true,
       ),
     ]);

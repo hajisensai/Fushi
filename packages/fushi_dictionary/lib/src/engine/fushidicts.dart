@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 import 'package:meta/meta.dart';
 
 import '../ffi/fushidicts_ffi_bindings.dart';
@@ -50,7 +51,7 @@ String _utf8OrEmpty(Pointer<Utf8> p) {
     while (bytes[len] != 0) {
       len++;
     }
-    return utf8.decode(bytes.asTypedList(len), allowMalformed: true);
+    return utf8.decode(bytes.asTypedListOutOfLine(len), allowMalformed: true);
   }
 }
 
@@ -685,7 +686,7 @@ class FushiDicts {
     final Pointer<Pointer<Uint8>> out = calloc<Pointer<Uint8>>();
     final Pointer<Int32> outLen = calloc<Int32>();
     try {
-      final Uint8List view = input.asTypedList(total);
+      final Uint8List view = input.asTypedListOutOfLine(total);
       final ByteData data = ByteData.sublistView(view);
       data.setUint32(0, encoded.length, Endian.little);
       int at = 4;
@@ -706,7 +707,7 @@ class FushiDicts {
         throw StateError('fushidicts_corpus_terms failed ($status)');
       }
       try {
-        return Uint8List.fromList(out.value.asTypedList(outLen.value));
+        return Uint8List.fromList(out.value.asTypedListOutOfLine(outLen.value));
       } finally {
         fns.freeBytes(out.value);
       }
@@ -1179,7 +1180,7 @@ class FushiDicts {
     // 至少分配 1 字节：空串也传一个有效指针，原生侧 nullptr 只表示非法调用。
     final Pointer<Uint8> tp = calloc<Uint8>(bytes.isEmpty ? 1 : bytes.length);
     try {
-      tp.asTypedList(bytes.length).setAll(0, bytes);
+      tp.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
       final r = bindings.tokenize(
         handle,
         tp,
@@ -1276,7 +1277,7 @@ class FushiDicts {
       try {
         Uint8List? bytes;
         if (r.size > 0 && r.data != nullptr) {
-          bytes = Uint8List.fromList(r.data.asTypedList(r.size));
+          bytes = Uint8List.fromList(r.data.asTypedListOutOfLine(r.size));
         } else if (r.size > 0 && r.data == nullptr) {
           // HBK-AUDIT-100: native kept the real size but data is NULL — this is
           // an allocation failure (malloc returned NULL for a large media

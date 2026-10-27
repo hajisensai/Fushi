@@ -14,6 +14,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:fushi_engine/media/audio_cd/audio_cd_disc.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 const int _genericRead = 0x80000000;
 const int _fileShareReadWrite = 0x3;
@@ -102,7 +103,7 @@ class WindowsAudioCdDrive {
     final Pointer<Uint8> out = arena<Uint8>(_tocBytes);
     final int got = _ioctl(nullptr, 0, out, _tocBytes, arena);
     if (got < 0) throw const AudioCdException('Cannot read the disc TOC');
-    return parseCdromToc(Uint8List.fromList(out.asTypedList(got)));
+    return parseCdromToc(Uint8List.fromList(out.asTypedListOutOfLine(got)));
   });
 
   /// 从 [lba] 起读 [count] 个原始扇区的 PCM。驱动报错返回 null（由调用方
@@ -110,7 +111,7 @@ class WindowsAudioCdDrive {
   Uint8List? readSectors(int lba, int count) => using((Arena arena) {
     final Pointer<Uint8> info = arena<Uint8>(_rawReadInfoBytes);
     // RAW_READ_INFO { LARGE_INTEGER DiskOffset; ULONG SectorCount; TRACK_MODE_TYPE TrackMode; }
-    ByteData.sublistView(info.asTypedList(_rawReadInfoBytes))
+    ByteData.sublistView(info.asTypedListOutOfLine(_rawReadInfoBytes))
       ..setInt64(0, lba * _cookedSectorBytes, Endian.little)
       ..setUint32(8, count, Endian.little)
       ..setUint32(12, _trackModeCdda, Endian.little);
@@ -124,7 +125,7 @@ class WindowsAudioCdDrive {
       arena,
       code: _ioctlCdromRawRead,
     );
-    return got < 0 ? null : Uint8List.fromList(out.asTypedList(got));
+    return got < 0 ? null : Uint8List.fromList(out.asTypedListOutOfLine(got));
   });
 
   int _ioctl(

@@ -73,6 +73,9 @@ dependencies:
   sqlite3: ">=3.4.0 <4.0.0"
   xml: ^6.3.0
   youtube_explode_dart: ^2.3.6
+  # Pointer.asTypedList 的唯一入口（绕开 Dart JIT 去优化物化视图的崩溃，见包内注释）。
+  fushi_ffi_view:
+    path: ../fushi_ffi_view
 
 dev_dependencies:
   lints: ^2.0.0

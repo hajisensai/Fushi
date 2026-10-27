@@ -237,31 +237,34 @@ class SrsAdaptiveSections extends StatelessWidget {
           );
         }
         final double half = tokens.spacing.gap * 0.75;
+        // 两栏各自滚动：页头（返回键）不跟任何一栏收起，见 [FushiPinnedPageChromeScope]。
         return FushiEntranceScope(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Expanded(
-                flex: primaryFlex,
-                child: FocusTraversalGroup(
-                  child: column(
-                    primary,
-                    padding(tokens.spacing.page, half),
-                    key: primaryPaneKey,
+          child: FushiPinnedPageChromeScope(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(
+                  flex: primaryFlex,
+                  child: FocusTraversalGroup(
+                    child: column(
+                      primary,
+                      padding(tokens.spacing.page, half),
+                      key: primaryPaneKey,
+                    ),
                   ),
                 ),
-              ),
-              Expanded(
-                flex: secondaryFlex,
-                child: FocusTraversalGroup(
-                  child: column(
-                    secondary,
-                    padding(half, tokens.spacing.page),
-                    key: secondaryPaneKey,
+                Expanded(
+                  flex: secondaryFlex,
+                  child: FocusTraversalGroup(
+                    child: column(
+                      secondary,
+                      padding(half, tokens.spacing.page),
+                      key: secondaryPaneKey,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

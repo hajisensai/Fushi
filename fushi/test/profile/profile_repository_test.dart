@@ -87,6 +87,21 @@ Future<Map<String, DictionaryMetaRow>> _dictByName(FushiDatabase db) async {
 }
 
 void main() {
+  test('BUG-3784：两个仓储实例并发 ensureDefaultProfile 只建一个 Default、不撞唯一约束', () async {
+    final FushiDatabase db = await _openDb();
+    // 视图模型首次加载与控制通道 / AI 的 reload 各拿一个实例，同时跑。
+    await Future.wait(<Future<void>>[
+      _repo(db).ensureDefaultProfile(),
+      _repo(db).ensureDefaultProfile(),
+      _repo(db).ensureDefaultProfile(),
+    ]);
+    final List<ProfileRow> profiles = await db.getAllProfiles();
+    expect(profiles.map((ProfileRow p) => p.name), <String>['Default']);
+    // 合并只管在途的那次：跑完之后再调照常重新检查（不缓存结果）。
+    await _repo(db).ensureDefaultProfile();
+    expect(await db.getAllProfiles(), hasLength(1));
+  });
+
   group('ProfileRepository orchestration', () {
     test('snapshot + apply round-trips non-excluded prefs', () async {
       final db = await _openDb();

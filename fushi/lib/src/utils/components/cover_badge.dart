@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -78,13 +79,7 @@ class CoverBadge extends StatelessWidget {
             if (icon != null) const SizedBox(width: 4),
             Text(
               label!,
-              style:
-                  (Theme.of(context).textTheme.labelSmall ?? const TextStyle())
-                      .copyWith(
-                        fontWeight: FontWeight.w600,
-                        height: 1.25,
-                        color: foreground,
-                      ),
+              style: coverBadgeLabelStyle(context).copyWith(color: foreground),
             ),
           ],
         ],
@@ -93,6 +88,18 @@ class CoverBadge extends StatelessWidget {
     return badge;
   }
 }
+
+/// 文字角标的字样（不含颜色）：labelSmall w600、行高 1.25。
+TextStyle coverBadgeLabelStyle(BuildContext context) =>
+    (Theme.of(context).textTheme.labelSmall ?? const TextStyle()).copyWith(
+      fontWeight: FontWeight.w600,
+      height: 1.25,
+    );
+
+/// 纯文字 [CoverBadge] 的高度（一行字 + 上下各 3 的内边距），随文字缩放。
+/// 需要「只排一行角标、放不下的不显示」的宿主拿它定行高。
+double coverBadgeLabelHeight(BuildContext context) =>
+    textLineHeight(context, coverBadgeLabelStyle(context)) + 6;
 
 /// 封面角标的底色：墨水屏纯黑、Apple 黑@0.55（无模糊的圆盘 / 圆钮也够对比）、MD3
 /// inverseSurface@0.85。压在封面上的其它角标（下载进度圆盘等）也取这一份。

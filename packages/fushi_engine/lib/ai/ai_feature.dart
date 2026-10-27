@@ -124,7 +124,16 @@ enum AiFeature {
   /// 候选（标题对得上但没有共享 id 的跨模块条目）交 AI 判是否同一作品、关系与方向。
   /// AI 只按候选下标回结论，不产生任何 id；结论一律写成建议，用户确认后才算事实。
   /// 只在用户点「查找相关作品」时发请求。
-  mediaLinks;
+  mediaLinks,
+
+  /// AI 助手（spec `docs/specs/2026-10-26-ai-operations-agent-design.md`）：用户用一句
+  /// 话让 AI 代办 app 里的操作（下扩展 / 视频 / 字幕、调设置、处理刮削与冲突）。
+  /// AI 只能调用操作目录里的操作（与 UI 按钮、`fushi_cli` 同一个 handler）。规则是
+  /// **写操作必须可回滚**（`fushi/CLAUDE.md` §13，所有者 2026-10-26 拍板）：可撤销的
+  /// 直接执行并记进本机操作记录，不可逆的与装扩展（D9）先出确认卡片，表态参数模型
+  /// 填不出来。只在用户在 AI 页 / 浮层里说话时发请求；没指派提供商时入口可见、点了
+  /// 引导去设置。
+  agent;
 
   /// 没显式指派时是否跟随默认提供商（见 [cloudTranscription]）。
   bool get followsDefaultProvider => this != AiFeature.cloudTranscription;

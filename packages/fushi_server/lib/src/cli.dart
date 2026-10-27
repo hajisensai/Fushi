@@ -27,6 +27,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart'
     show asrAudioProfileForJob, parseAsrAudioProfile;
 import 'package:fushi_server/src/config/server_ai_config.dart';
+import 'package:fushi_server/src/admin/admin_api.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/admin_server.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
@@ -312,12 +313,17 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
     startedAt: DateTime.now(),
     pruneOverride: prune,
   );
+  // 远端 AI 助手（feature `agent`）的工具集 = 服务端描述的 admin 操作，进程内调这一份
+  // admin API（与 WebUI 同一份，不依赖 admin 端口开没开）。
+  final AdminApi adminApi = AdminApi(adminCtx);
+  host.adminDispatch = adminApi.handle;
   AdminServer? admin;
   if (rt.config.adminPort > 0) {
     admin = AdminServer(
       ctx: adminCtx,
       token: rt.config.adminToken!,
       securityContext: host.securityContext,
+      api: adminApi,
     );
     try {
       await admin.start();

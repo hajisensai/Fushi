@@ -8,6 +8,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:fushi_engine/srs/srs_builtin.dart' show kSrsBuiltinFushiCardKey;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -290,8 +291,12 @@ class _SrsVisualTemplatePanelState extends State<SrsVisualTemplatePanel> {
     );
   }
 
+  /// 代码写的模板：说明它为什么不是可视化的、生成之后会怎样。内置类型（Lapis / Fushi 卡片）
+  /// 不是「来自 Anki 或旧版本」——它们用了可视化块表达不了的卡型开关与脚本，没改过就随应用
+  /// 更新；这里要说清楚生成并保存后就脱离内置版本（Fushi 卡片还会失去原生卡面）。
   Widget _convertCard(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final String? builtin = widget.type.builtinKey;
     return FushiCard(
       key: const ValueKey<String>('srs-visual-convert'),
       tone: FushiCardTone.secondary,
@@ -299,11 +304,24 @@ class _SrsVisualTemplatePanelState extends State<SrsVisualTemplatePanel> {
         crossAxisAlignment: CrossAxisAlignment.start,
         spacing: tokens.spacing.gap,
         children: <Widget>[
-          Text(t.srs_visual_convert_title, style: context.fushiType.titleSmall),
-          Text(t.srs_visual_convert_body, style: context.fushiType.bodyMedium),
-          if (widget.type.builtinKey != null)
+          Text(
+            builtin == null
+                ? t.srs_visual_convert_title
+                : t.srs_visual_builtin_title,
+            style: context.fushiType.titleSmall,
+          ),
+          Text(
+            builtin == null
+                ? t.srs_visual_convert_body
+                : t.srs_visual_builtin_body,
+            style: context.fushiType.bodyMedium,
+          ),
+          if (builtin != null)
             Text(
-              t.srs_visual_convert_builtin_note,
+              builtin == kSrsBuiltinFushiCardKey
+                  ? t.srs_visual_builtin_fushi_note
+                  : t.srs_visual_builtin_other_note,
+              key: const ValueKey<String>('srs-visual-builtin-note'),
               style: context.fushiType.bodySmall,
             ),
           Align(

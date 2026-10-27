@@ -255,7 +255,21 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('https://a.example'), findsOneWidget);
-    expect(find.text(t.web_browser_permission_request_allow), findsOneWidget);
+    // 按行断言：摄像头记住了允许；受保护内容没记住，但生效决定是默认允许。
+    for (final String row in <String>['camera', 'protectedContent']) {
+      expect(
+        find.descendant(
+          of: find.byKey(
+            ValueKey<String>(
+              'web_browser_site_settings_https://a.example_$row',
+            ),
+          ),
+          matching: find.text(t.web_browser_permission_request_allow),
+        ),
+        findsOneWidget,
+      );
+    }
+    expect(find.text(t.web_browser_permission_request_allow), findsNWidgets(2));
 
     await tester.tap(
       find.byKey(

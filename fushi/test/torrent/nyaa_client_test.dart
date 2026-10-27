@@ -128,6 +128,7 @@ NyaaClient _clientWith(
   Duration minRequestInterval = Duration.zero,
 }) =>
     NyaaClient(
+      baseUrl: 'https://nyaa.si',
       client: MockClient(handler),
       requestTimeout: requestTimeout ?? kDownloadDiscoveryTimeout,
       minRequestInterval: minRequestInterval,
@@ -745,8 +746,10 @@ void main() {
       // anime_download_subscription / anime_download_dialog 的调用点外层就是
       // kDownloadDiscoveryTimeout，内层更紧等于替它们偷偷回退 BUG-1141。
       // 注入 MockClient 只为避免建真 IO client；被测的是默认参数值本身。
-      final NyaaClient client =
-          NyaaClient(client: MockClient((_) async => http.Response('', 200)));
+      final NyaaClient client = NyaaClient(
+        baseUrl: 'https://nyaa.si',
+        client: MockClient((_) async => http.Response('', 200)),
+      );
       expect(client.requestTimeout, kDownloadDiscoveryTimeout);
       expect(client.minRequestInterval, kNyaaMinRequestInterval);
       expect(kNyaaMinRequestInterval, const Duration(seconds: 2));

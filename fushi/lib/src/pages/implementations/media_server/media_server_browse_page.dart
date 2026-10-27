@@ -24,6 +24,31 @@ export 'package:fushi/src/pages/implementations/media_server/media_server_server
 export 'package:fushi/src/pages/implementations/media_server/media_server_session.dart'
     show MediaServerPlayHandler, MediaServerPlayRequest;
 
+/// 媒体服务器播放出口的生产缺省：根 Navigator push
+/// `VideoFushiPage.neutralizedRemote`。分区页与发现详情页「获取途径」的媒体服务器
+/// 渠道共用这一份，播放页的剧集面板口径不会分叉。返回的 Future 在播放页退回来时完成。
+Future<void> pushMediaServerPlayer(
+  BuildContext context,
+  MediaServerPlayRequest request, {
+  required VideoBookRepository repo,
+}) async {
+  await Navigator.of(context, rootNavigator: true).push<void>(
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => VideoFushiPage.neutralizedRemote(
+        info: request.info,
+        repo: repo,
+        client: request.browser.playbackClient,
+        // 与 home_video_page._openRemote 同口径：多于一个成员才建剧集面板。
+        remoteCollectionMembers: request.hasCollection ? request.members : null,
+        initialEpisodeIndex: request.hasCollection
+            ? request.initialIndex
+            : null,
+      ),
+    ),
+  );
+}
+
 /// 视频页「媒体服务器」分区：服务器列表 → 服务器首页 → 库网格 / 搜索 / 详情 → 播放。
 ///
 /// 前三层是**分区内**的嵌套 [Navigator]：切到别的分区再切回来栈原样保留（壳把本页
@@ -108,23 +133,7 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
       await injected(context, request);
       return;
     }
-    await Navigator.of(context, rootNavigator: true).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => VideoFushiPage.neutralizedRemote(
-          info: request.info,
-          repo: widget.repo,
-          client: request.browser.playbackClient,
-          // 与 home_video_page._openRemote 同口径：多于一个成员才建剧集面板。
-          remoteCollectionMembers: request.hasCollection
-              ? request.members
-              : null,
-          initialEpisodeIndex: request.hasCollection
-              ? request.initialIndex
-              : null,
-        ),
-      ),
-    );
+    await pushMediaServerPlayer(context, request, repo: widget.repo);
   }
 
   void _openSettings() {

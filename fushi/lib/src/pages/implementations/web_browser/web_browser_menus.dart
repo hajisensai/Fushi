@@ -112,10 +112,10 @@ Future<void> showWebBrowserMenu({
   } else {
     final RenderBox button =
         (anchor ?? context).findRenderObject()! as RenderBox;
-    final Offset topLeft = button.localToGlobal(
-      Offset(0, button.size.height),
-      ancestor: overlay,
-    );
+    // 锚点就是按钮自己的矩形：showFushiMenu 自己把菜单排在锚点下沿（放不下翻到
+    // 上沿）。旧写法把锚点整体下移了一个按钮高，菜单和按钮之间空出一截（2026-10-26
+    // 用户截图「三个点出来的和上面有很大的空隙」）。
+    final Offset topLeft = button.localToGlobal(Offset.zero, ancestor: overlay);
     position = RelativeRect.fromRect(
       topLeft & button.size,
       Offset.zero & overlay.size,

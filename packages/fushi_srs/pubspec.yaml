@@ -16,6 +16,9 @@ dependencies:
   # Rust 计算内核（硬依赖，纯 Dart FFI）：确定性 ID 的 SHA-1 / SHA-256、同步文件摘要。
   fushi_compute:
     path: ../fushi_compute
+  # Pointer.asTypedList 的唯一入口（绕开 Dart JIT 去优化物化视图的崩溃，见包内注释）。
+  fushi_ffi_view:
+    path: ../fushi_ffi_view
 
 dev_dependencies:
   test: ^1.24.0

@@ -3,18 +3,20 @@ import 'dart:io';
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
+import 'ai_agent_commands.dart';
 import 'settings_commands.dart' show readCtlSecretFromStdin;
 
 /// `ai` 命令组：AI（大语言模型）提供商增删改、连接探测、功能指派。
 ///
-/// app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_settings_ai_routes.dart`，
+/// app 侧路由见 `fushi/lib/src/ops/ctl_settings_ai_routes.dart`，
 /// 读写与「设置 › 模型 › LLM」同一对偏好。API Key 只收 `--key-stdin` /
 /// `--key-from-env`，不收命令行明文；应答里只回显末 4 位。
 const List<CtlCommandGroup> settingsAiCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'ai',
-    summary: 'AI 提供商与功能指派',
+    summary: 'AI 提供商与功能指派；AI 助手（ask / undo / log）',
     commands: <CtlCommandSpec>[
+      ...aiAgentCommands,
       CtlCommandSpec(
         name: 'presets',
         summary: '列出内置提供商预设（add 用它的 id）',

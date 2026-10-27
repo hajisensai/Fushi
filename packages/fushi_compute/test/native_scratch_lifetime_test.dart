@@ -18,6 +18,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_compute/src/native_scratch.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 import 'package:test/test.dart';
 
 const int _probeBytes = 64 << 20;
@@ -85,7 +86,7 @@ void _scratchChild(List<Object> args) {
   final ReceivePort release = ReceivePort();
   final NativeScratch scratch = NativeScratch();
   final Pointer<Uint8> ptr = scratch.reserve(bytes);
-  ptr.asTypedList(_pageSize).fillRange(0, _pageSize, 0x5a);
+  ptr.asTypedListOutOfLine(_pageSize).fillRange(0, _pageSize, 0x5a);
   reply.send(<Object>[ptr.address, release.sendPort]);
   release.first.then((_) {
     release.close();

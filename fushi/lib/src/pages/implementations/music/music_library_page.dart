@@ -380,7 +380,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
               key: const ValueKey<String>('music-sync-progress'),
               margin: EdgeInsets.only(bottom: tokens.spacing.gap),
             ),
-            if (_scanning) const LinearProgressIndicator(),
+            if (_scanning) const FushiLinearProgressIndicator(),
             Expanded(
               child: snap == null
                   ? const FushiLoadingView()

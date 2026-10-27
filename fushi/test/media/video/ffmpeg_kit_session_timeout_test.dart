@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:ffmpeg_kit_next_flutter/return_code.dart';
 import 'package:ffmpeg_kit_next_flutter/session.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -38,10 +39,16 @@ void main() {
     final FfmpegRunResult result = await pending;
     expect(result.isSuccess, isFalse);
     expect(result.returnCode, isNull);
-    expect(result.output, contains('start'),
-        reason: 'output 必须指明卡在启动阶段，旧实现恒为空串');
-    expect(cancelled, isFalse,
-        reason: '拿不到 session 就没有 sessionId，不能退化成无参 cancel 误杀并发会话（BUG-905）');
+    expect(
+      result.output,
+      contains('start'),
+      reason: 'output 必须指明卡在启动阶段，旧实现恒为空串',
+    );
+    expect(
+      cancelled,
+      isFalse,
+      reason: '拿不到 session 就没有 sessionId，不能退化成无参 cancel 误杀并发会话（BUG-905）',
+    );
   });
 
   test('启动超时取 min(主预算, startTimeout)：主预算更短时由它说话', () async {
@@ -151,43 +158,60 @@ void main() {
   });
 
   group('观察式会话（BUG-3102）：按统计回调的进度判活', () {
-    test('一直推进就不判卡死，总耗时远超窗口也照常收尾', () async {
-      final List<Duration> seen = <Duration>[];
-      final FfmpegRunResult result = await runKitFfmpegWatchedSession(
-        start: (
-          void Function() onComplete,
-          void Function(double timeMs) onTime,
-        ) async {
-          unawaited(() async {
-            for (int i = 1; i <= 6; i++) {
-              await Future<void>.delayed(const Duration(milliseconds: 40));
-              onTime(i * 1000.0);
-            }
-            onComplete();
-          }());
-          return _FakeSession(sessionId: 5, returnCode: 0);
-        },
-        watch: FfmpegWatch(
-          stallTimeout: const Duration(milliseconds: 100),
-          onProgress: seen.add,
-        ),
-        executable: 'ffmpeg-kit',
-        cancelSession: (int id) async => fail('不该取消一直在推进的会话'),
-      );
-      expect(result.returnCode, 0);
-      expect(seen.last, const Duration(seconds: 6));
+    // 虚拟时钟跑：40 ms 一跳 vs 100 ms 窗口的余量只有 60 ms，墙钟下 CI 机器一抖
+    // （faster-testing 多 suite 同进程）就会被看门狗误判卡死。
+    test('一直推进就不判卡死，总耗时远超窗口也照常收尾', () {
+      fakeAsync((FakeAsync async) {
+        final DateTime t0 = DateTime(2026);
+        final List<Duration> seen = <Duration>[];
+        final List<int> cancelled = <int>[];
+        FfmpegRunResult? result;
+        unawaited(
+          runKitFfmpegWatchedSession(
+            start:
+                (
+                  void Function() onComplete,
+                  void Function(double timeMs) onTime,
+                ) async {
+                  unawaited(() async {
+                    for (int i = 1; i <= 6; i++) {
+                      await Future<void>.delayed(
+                        const Duration(milliseconds: 40),
+                      );
+                      onTime(i * 1000.0);
+                    }
+                    onComplete();
+                  }());
+                  return _FakeSession(sessionId: 5, returnCode: 0);
+                },
+            watch: FfmpegWatch(
+              stallTimeout: const Duration(milliseconds: 100),
+              onProgress: seen.add,
+            ),
+            executable: 'ffmpeg-kit',
+            cancelSession: (int id) async => cancelled.add(id),
+            clock: () => t0.add(async.elapsed),
+          ).then((FfmpegRunResult r) => result = r),
+        );
+        async.elapse(const Duration(seconds: 1));
+        expect(cancelled, isEmpty, reason: '不该取消一直在推进的会话');
+        expect(result, isNotNull);
+        expect(result!.returnCode, 0);
+        expect(seen.last, const Duration(seconds: 6));
+      });
     });
 
     test('进度停住：只精确取消本次 session，返回卡死标记', () async {
       final List<int> cancelledIds = <int>[];
       final FfmpegRunResult result = await runKitFfmpegWatchedSession(
-        start: (
-          void Function() onComplete,
-          void Function(double timeMs) onTime,
-        ) async {
-          onTime(1000);
-          return _FakeSession(sessionId: 9);
-        },
+        start:
+            (
+              void Function() onComplete,
+              void Function(double timeMs) onTime,
+            ) async {
+              onTime(1000);
+              return _FakeSession(sessionId: 9);
+            },
         watch: const FfmpegWatch(stallTimeout: Duration(milliseconds: 80)),
         executable: 'ffmpeg-kit',
         cancelSession: (int id) async => cancelledIds.add(id),
@@ -201,11 +225,11 @@ void main() {
       final Completer<void> cancel = Completer<void>();
       final List<int> cancelledIds = <int>[];
       final Future<FfmpegRunResult> pending = runKitFfmpegWatchedSession(
-        start: (
-          void Function() onComplete,
-          void Function(double timeMs) onTime,
-        ) async =>
-            _FakeSession(sessionId: 3),
+        start:
+            (
+              void Function() onComplete,
+              void Function(double timeMs) onTime,
+            ) async => _FakeSession(sessionId: 3),
         watch: FfmpegWatch(
           stallTimeout: const Duration(minutes: 5),
           cancel: cancel.future,

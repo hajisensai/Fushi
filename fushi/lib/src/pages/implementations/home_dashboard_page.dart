@@ -31,6 +31,7 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
+import 'package:fushi/src/pages/implementations/home_ai_agent_panel.dart';
 import 'package:fushi/src/pages/implementations/home_srs_panel.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
@@ -1911,6 +1912,10 @@ class _HomeDashboardPageState
               onOpenDecks: () => _goToTab(HomeTab.srs),
               onStartReview: _startSrsReview,
             )
+          : null,
+    HomeDashboardPanel.aiAgent =>
+      ref.watch(homeAiAgentPanelVisibleProvider)
+          ? const HomeAiAgentPanel(key: ValueKey<String>('home-ai-agent-card'))
           : null,
   };
 

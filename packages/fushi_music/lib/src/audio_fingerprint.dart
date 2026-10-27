@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import 'fushi_music_library.dart';
 
@@ -207,7 +208,7 @@ class AudioFingerprinter {
     final Pointer<Pointer<Uint8>> outPtr = calloc<Pointer<Uint8>>();
     final Pointer<Size> outLen = calloc<Size>();
     try {
-      if (pcm.isNotEmpty) input.asTypedList(pcm.length).setAll(0, pcm);
+      if (pcm.isNotEmpty) input.asTypedListOutOfLine(pcm.length).setAll(0, pcm);
       final int rc = _compute(
         input,
         pcm.length,
@@ -222,7 +223,9 @@ class AudioFingerprinter {
       if (len == 0 || bytes == nullptr) return Uint32List(0);
       try {
         final Uint32List out = Uint32List(len ~/ 4);
-        final ByteData view = ByteData.sublistView(bytes.asTypedList(len));
+        final ByteData view = ByteData.sublistView(
+          bytes.asTypedListOutOfLine(len),
+        );
         for (int i = 0; i < out.length; i++) {
           out[i] = view.getUint32(i * 4, Endian.little);
         }
@@ -247,7 +250,7 @@ class AudioFingerprinter {
     final Pointer<Size> outLen = calloc<Size>();
     try {
       if (fingerprint.isNotEmpty) {
-        input.asTypedList(fingerprint.length).setAll(0, fingerprint);
+        input.asTypedListOutOfLine(fingerprint.length).setAll(0, fingerprint);
       }
       final int rc = _encode(input, fingerprint.length, outPtr, outLen);
       if (rc != FfmStatus.ok) throw AudioFingerprintFormatError(rc);
@@ -255,7 +258,7 @@ class AudioFingerprinter {
       final Pointer<Uint8> bytes = outPtr.value;
       if (len == 0 || bytes == nullptr) return '';
       try {
-        return String.fromCharCodes(bytes.asTypedList(len));
+        return String.fromCharCodes(bytes.asTypedListOutOfLine(len));
       } finally {
         _lib.freeBytes(bytes, len);
       }
@@ -294,9 +297,10 @@ class AudioFingerprinter {
         : malloc<Uint32>(haystack.length);
     final Pointer<_FfmFpMatch> out = calloc<_FfmFpMatch>();
     try {
-      if (needle.isNotEmpty) n.asTypedList(needle.length).setAll(0, needle);
+      if (needle.isNotEmpty)
+        n.asTypedListOutOfLine(needle.length).setAll(0, needle);
       if (haystack.isNotEmpty) {
-        h.asTypedList(haystack.length).setAll(0, haystack);
+        h.asTypedListOutOfLine(haystack.length).setAll(0, haystack);
       }
       final int minItems = (minMatch.inMicroseconds / 1000 / itemMs).ceil();
       final int rc = _align(

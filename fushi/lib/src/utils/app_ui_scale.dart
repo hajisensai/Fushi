@@ -178,18 +178,26 @@ class FushiAppUiScaleNeutralizer extends StatelessWidget {
         final Size canvas = constraints.biggest; // 祖先给的缩放画布 (view/s)
         final Size view = canvas * s; // 还原真实视口
         final MediaQueryData mq = MediaQuery.of(context);
-        return FittedBox(
-          fit: BoxFit.fill,
-          alignment: Alignment.topLeft,
-          child: SizedBox.fromSize(
-            size: view,
-            child: MediaQuery(
-              data: _scaleMediaQuery(mq, s), // ×s 还原真实 size/inset
-              child: _AppUiScaleScope(
-                scale: FushiAppUiScale.defaultScale, // 子树视角:净缩放=1
-                // 本层把 MediaQuery 几何 ×s 还原，窗口量 = 本层量 ÷ s × 祖先系数。
-                mediaQueryToWindow: parentToWindow / s,
-                child: child,
+        // 外层 SizedBox 把本层钉成画布（与 [FushiAppUiScale] 同理，BUG-3773）：页面
+        // 路由经 FushiPageBackdrop → LibraryShapeBackdrop（不带 fit 的 Stack）拿到的
+        // 是宽松约束，RenderFittedBox 会缩成子树尺寸 view、变换比例退化成 1——界面
+        // 缩放 < 1 时整页按 s 倍缩在左上角，外圈露出下层路由（阅读器 / 歌词模式
+        // 「不能全屏」）。
+        return SizedBox.fromSize(
+          size: canvas,
+          child: FittedBox(
+            fit: BoxFit.fill,
+            alignment: Alignment.topLeft,
+            child: SizedBox.fromSize(
+              size: view,
+              child: MediaQuery(
+                data: _scaleMediaQuery(mq, s), // ×s 还原真实 size/inset
+                child: _AppUiScaleScope(
+                  scale: FushiAppUiScale.defaultScale, // 子树视角:净缩放=1
+                  // 本层把 MediaQuery 几何 ×s 还原，窗口量 = 本层量 ÷ s × 祖先系数。
+                  mediaQueryToWindow: parentToWindow / s,
+                  child: child,
+                ),
               ),
             ),
           ),

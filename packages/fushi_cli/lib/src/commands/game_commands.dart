@@ -6,7 +6,7 @@ import 'package:args/args.dart';
 import '../ctl_commands.dart';
 
 /// game 域命令（Galgame Hook，仅 Windows；app 侧路由见
-/// `fushi/lib/src/platform/desktop/ctl/ctl_game_routes.dart`）：启动 / 附着 / 停止
+/// `fushi/lib/src/ops/ctl_game_routes.dart`）：启动 / 附着 / 停止
 /// 捕获、文本线程与当前台词、对当前台词制卡、逐级能力阶段。
 const List<CtlCommandGroup> gameCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(

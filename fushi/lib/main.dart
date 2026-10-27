@@ -4,6 +4,8 @@ import 'dart:ui' show AppExitResponse, PlatformDispatcher;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/ai/agent/ai_agent_entry.dart'
+    show openAiAgentFromShortcut;
 import 'package:fushi/src/corpus/corpus_origin_navigation.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi_corpus/fushi_corpus.dart' show CorpusHit;
@@ -105,10 +107,11 @@ import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
 import 'package:fushi/src/media/import/external_book.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart'
     show DuplicateChoice;
-import 'package:fushi/src/platform/desktop/ctl/ctl_library_entries.dart';
-import 'package:fushi/src/platform/desktop/ctl/ctl_library_import.dart';
-import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
-import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_routes.dart';
+import 'package:fushi/src/ops/ctl_library_entries.dart';
+import 'package:fushi/src/ops/app_op_context.dart';
+import 'package:fushi/src/ops/ctl_library_import.dart';
+import 'package:fushi/src/ops/op_context.dart';
+import 'package:fushi/src/ops/op_routes.dart';
 import 'package:fushi_cli/fushi_cli.dart' show CtlOpenResult, CtlServer;
 import 'package:fushi/src/platform/app_shortcuts.dart';
 import 'package:fushi/src/platform/app_shortcut_router.dart';
@@ -1036,6 +1039,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (Platform.isWindows) {
       _systemThemeChannel.setMethodCallHandler(_handleSystemThemeChannel);
     }
+    registerAppOpContext(
+      OpContext(
+        ref: ref,
+        focusMainWindow: _isDesktop ? _focusMainWindowForCtl : null,
+        ingestExternalVideo: _ingestExternalVideo,
+      ),
+    );
     if (_isDesktop) {
       unawaited(_startCtlServer());
     }
@@ -1950,13 +1960,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           DesktopLookupService.instance.triggerLookup(word);
         },
         quitApp: _flushAndExitForWindowClose,
-        routes: buildDesktopCtlRoutes(
-          DesktopCtlContext(
-            ref: ref,
-            focusMainWindow: _focusMainWindowForCtl,
-            ingestExternalVideo: _ingestExternalVideo,
-          ),
-        ),
+        routes: buildOpRoutes(appOpContext!),
       ),
     );
     if (!mounted) {
@@ -2902,6 +2906,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                             focusNavigationEnabled:
                                 appModel.experimentalFocusNavigationEnabled,
                             registry: appModel.shortcutRegistry,
+                            // 全局快捷键「呼出 AI 助手」（D4 ②，默认 Ctrl+J / ⌘J）：
+                            // AI 模块关着时不认领。
+                            openAiAssistant: () =>
+                                openAiAgentFromShortcut(appModel),
 
                             // BUG-1349（第二处根因）：焦点导航层（FushiFocusRoot 的
                             // fallbackNode）必须在全局导航层**之内**。键事件沿焦点树

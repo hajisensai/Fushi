@@ -289,6 +289,8 @@ void main() {
         tester,
         answer: true,
         size: size,
+        // 词频明细区（srs-fushi-frequency）只在不聚合时出现。
+        appearance: const SrsCardAppearance(aggregateFrequency: false),
         fields: _fields(<String, String>{
           'ExpressionAudio': '[sound:word.mp3]',
           'SentenceAudio': '[sound:sentence.mp3]',
@@ -411,6 +413,66 @@ void main() {
       expect(find.byKey(ValueKey<String>(k)), findsNothing, reason: k);
     }
     expect(find.byKey(const ValueKey<String>('srs-fushi-term')), findsOne);
+  });
+
+  group('词频聚合', () {
+    final Map<String, String> freq = <String, String>{
+      'FreqSort': '1840',
+      'Frequency':
+          '<ul><li>JPDB: 100</li><li>JPDB: 2000</li><li>BCCWJ: 5</li></ul>',
+    };
+    const ValueKey<String> detail = ValueKey<String>('srs-fushi-frequency');
+    const ValueKey<String> aggregate = ValueKey<String>(
+      'srs-fushi-frequency-aggregate',
+    );
+
+    testWidgets('聚合且 FreqSort 有值：只有读音行平均值，没有明细区', (WidgetTester tester) async {
+      await pump(
+        tester,
+        answer: true,
+        fields: _fields(freq),
+        appearance: const SrsCardAppearance(aggregateFrequency: true),
+      );
+      expect(find.byKey(aggregate), findsOne);
+      expect(find.byKey(detail), findsNothing);
+    });
+
+    testWidgets('不聚合：只有明细区，同词典两个值合成一个 chip', (WidgetTester tester) async {
+      await pump(
+        tester,
+        answer: true,
+        fields: _fields(freq),
+        appearance: const SrsCardAppearance(aggregateFrequency: false),
+      );
+      expect(find.byKey(detail), findsOne);
+      expect(find.byKey(aggregate), findsNothing);
+      final Finder texts = find.descendant(
+        of: find.byKey(detail),
+        matching: find.byType(Text),
+      );
+      final List<String> all = tester
+          .widgetList<Text>(texts)
+          .map((Text w) => w.data ?? w.textSpan?.toPlainText() ?? '')
+          .toList();
+      expect(all.where((String s) => s.contains('JPDB')), hasLength(1));
+      expect(all.singleWhere((String s) => s.contains('JPDB')), contains(', '));
+    });
+
+    testWidgets('关了「显示词频」：两者都没有', (WidgetTester tester) async {
+      for (final bool agg in <bool>[true, false]) {
+        await pump(
+          tester,
+          answer: true,
+          fields: _fields(freq),
+          appearance: SrsCardAppearance(
+            showFrequency: false,
+            aggregateFrequency: agg,
+          ),
+        );
+        expect(find.byKey(aggregate), findsNothing, reason: 'agg=$agg');
+        expect(find.byKey(detail), findsNothing, reason: 'agg=$agg');
+      }
+    });
   });
 
   testWidgets('点击卡：Enter（焦点确认）在词条与例句之间切换', (WidgetTester tester) async {

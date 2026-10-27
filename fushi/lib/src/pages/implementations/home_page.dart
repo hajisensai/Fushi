@@ -103,7 +103,20 @@ import 'package:fushi/src/pages/implementations/video_library_shell.dart';
 import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
     show maybeShowBrowseMovedNotice;
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
-    show MediaServerEntry;
+    show MediaServerEntry, pushMediaServerPlayer;
+import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart'
+    show MediaServerSession, MediaServerPlayRequest;
+import 'package:fushi/src/media/video/discovery/video_work_acquisition_backends.dart';
+import 'package:fushi/src/media/video/discovery/video_work_acquisition_controller.dart';
+import 'package:fushi/src/media/video/online/video_online_sources_gate.dart'
+    show isVideoOnlineSourcesAvailable;
+import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart'
+    show MihonExtensionsPage;
+import 'package:fushi/src/settings/settings_detail_page.dart'
+    show SettingsDetailPage;
+import 'package:fushi/src/settings/settings_schema_services.dart'
+    show buildServicesDestination;
+import 'package:fushi/src/settings/video_resource_site_settings_link.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart'
     show MediaServerConfig;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart'
@@ -2073,7 +2086,7 @@ class _HomePageState extends BasePageState<HomePage>
                 const RecommendedPackDownloadMiniBar(),
               if (visibility.isEnabled(ModuleId.listening))
                 const NowListeningMiniBar(),
-                const MusicNowPlayingBar(),
+              const MusicNowPlayingBar(),
             ],
           ),
         ),
@@ -2348,7 +2361,95 @@ class _HomePageState extends BasePageState<HomePage>
           : null,
       // 发现页「今日放送」小模块：与完整放送日历页同一条取数路径。
       loadAiringCalendar: _loadAiringCalendarWeek,
+      // 作品详情页「获取途径」四渠道（方法 tear-off：详情页按 != 判重建）。
+      acquisitionChannels: _videoWorkAcquisitionBackends,
     );
+  }
+
+  /// 作品详情页「获取途径」的生产装配。合规门在这里决定传不传某个渠道：
+  /// 在线源过 [isVideoOnlineSourcesAvailable]（onlineVideoSource + Mihon 宿主），
+  /// BT 搜索过 [StoreRestrictedCapability.downloads]，关掉的渠道整组不出现。
+  List<VideoAcquisitionChannelBackend> _videoWorkAcquisitionBackends(
+    VideoDiscoveryItem item,
+  ) {
+    return <VideoAcquisitionChannelBackend>[
+      LibraryAcquisitionBackend(
+        find: (VideoMediaReference reference) =>
+            _findLibraryAcquisitionHit(item),
+      ),
+      if (isVideoOnlineSourcesAvailable)
+        OnlineSourceAcquisitionBackend(
+          targets: () =>
+              mihonAnimeAcquisitionTargets(appModelNoUpdate.animeMihonManager),
+          configure: (BuildContext context) =>
+              Navigator.of(context, rootNavigator: true).push<void>(
+                adaptivePageRoute<void>(
+                  context: context,
+                  builder: (_) => MihonExtensionsPage(
+                    manager: appModelNoUpdate.animeMihonManager,
+                  ),
+                ),
+              ),
+        ),
+      if (StoreRestrictedCapability.downloads.isAvailable)
+        TorrentAcquisitionBackend(
+          registry: () => appModelNoUpdate.videoResourceRegistry,
+          openSearch: (BuildContext context) =>
+              _openVideoDiscoveryResourceSearch(context, item),
+          configure: openVideoResourceSiteSettings,
+        ),
+      MediaServerAcquisitionBackend(
+        sessions: _mediaServerAcquisitionSessions,
+        configure: (BuildContext context) =>
+            Navigator.of(context, rootNavigator: true).push<void>(
+              adaptivePageRoute<void>(
+                context: context,
+                builder: (_) =>
+                    SettingsDetailPage(destination: buildServicesDestination()),
+              ),
+            ),
+      ),
+    ];
+  }
+
+  /// 媒体库渠道：与详情页「已在库 / 播放」同一个解析 [_resolveLocalDiscoveryTarget]，
+  /// 命中点开 = [_openLocalVideoDiscoveryWork]（与 hero 的「播放」同一条路径）。
+  Future<VideoAcquisitionHit?> _findLibraryAcquisitionHit(
+    VideoDiscoveryItem item,
+  ) async {
+    final _LocalDiscoveryTarget? target = await _resolveLocalDiscoveryTarget(
+      item.reference,
+    );
+    if (target == null) return null;
+    String title = target.work?.title ?? item.reference.title;
+    final int? collectionId = target.collectionId;
+    if (target.work == null && collectionId != null) {
+      for (final MediaCollectionRow row
+          in await appModelNoUpdate.database.getAllMediaCollections()) {
+        if (row.id == collectionId) title = row.name;
+      }
+    }
+    return VideoAcquisitionHit(
+      id: target.work?.bookUid ?? 'collection-$collectionId',
+      title: title,
+      subtitle: t.video_discovery_in_library,
+      open: (BuildContext context) =>
+          _openLocalVideoDiscoveryWork(context, item),
+    );
+  }
+
+  /// 媒体服务器渠道的会话：与视频页「媒体服务器」分区同一份服务器清单与播放出口。
+  Future<List<MediaServerSession>> _mediaServerAcquisitionSessions() async {
+    final List<MediaServerEntry> entries = await _loadMediaServerEntries();
+    return <MediaServerSession>[
+      for (final MediaServerEntry entry in entries)
+        MediaServerSession(
+          browser: entry.browser,
+          library: entry.library,
+          play: (BuildContext context, MediaServerPlayRequest request) =>
+              pushMediaServerPlayer(context, request, repo: _videoRepository),
+        ),
+    ];
   }
 
   /// 放送日历取数端口（[VideoDiscoveryActions.loadAiringCalendar]）：读的是
@@ -3712,7 +3813,7 @@ class _HomePageState extends BasePageState<HomePage>
         appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient
             ? GameStreamLibraryPage(services: _gameStreamLibraryServices)
             : const HomeGamePage(),
-      HomeTab.web => WebHubPage(videoRepo: _videoRepository),
+      HomeTab.web => const WebHubPage(),
       HomeTab.srs => const SrsDeckListPage(),
       HomeTab.settings =>
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统

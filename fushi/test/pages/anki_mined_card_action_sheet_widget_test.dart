@@ -28,6 +28,10 @@ class _FakeRepo extends BaseAnkiRepository {
   @override
   Future<Map<String, String>?> noteFields(int noteId) async => fields;
 
+  // 实现了按 id 打开，按 BUG-3790 的契约同时声明可打开（否则按钮不出）。
+  @override
+  bool get canOpenMinedNote => true;
+
   @override
   Future<bool> openNoteInAnki(int noteId) async {
     openedNoteId = noteId;

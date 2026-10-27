@@ -85,7 +85,12 @@ bool srsFushiBlockVisible(
     FushiCardBlock.picture => a.showPicture && any(block.fields),
     FushiCardBlock.sentence => srsFieldFilled(fields['Sentence']),
     FushiCardBlock.definitions => any(block.fields),
-    FushiCardBlock.frequency => a.showFrequency && any(block.fields),
+    // 跟随查词的「词频聚合」：聚合且有平均值（FreqSort）时只在读音行显示平均值，
+    // 不出明细区；否则出按词典合并的明细区。两者永不同时出现（模板同一规则）。
+    FushiCardBlock.frequency =>
+      a.showFrequency &&
+          any(block.fields) &&
+          !(a.aggregateFrequency && srsFieldFilled(fields['FreqSort'])),
     FushiCardBlock.source => a.showSource && any(block.fields),
   };
 }
@@ -651,10 +656,15 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
             style: s,
             color: srsPitchColor(srsPitchType(p, morae, cats), dark: s.dark),
           ),
-        // 下方「词频」区已列出各词典频次时不再重复显示排序频次。
-        if (srsFieldFilled(f['FreqSort']) &&
+        // 平均词频（聚合）：关了「显示词频」不出；下方明细区在时不重复。
+        if (s.appearance.showFrequency &&
+            srsFieldFilled(f['FreqSort']) &&
             !srsFushiBlockVisible(FushiCardBlock.frequency, f, s.appearance))
-          _Chip(text: srsPlainText(f['FreqSort']!), style: s),
+          _Chip(
+            key: const ValueKey<String>('srs-fushi-frequency-aggregate'),
+            text: srsPlainText(f['FreqSort']!),
+            style: s,
+          ),
       ],
     );
   }
@@ -916,11 +926,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           key: const ValueKey<String>('srs-fushi-frequency'),
           label: labels.frequency,
           style: s,
+          // 明细按词典合并（同一词典的多个值合成一项，与查词弹窗分组一致）。
           child: Wrap(
             spacing: 6,
             runSpacing: 6,
             children: <Widget>[
-              for (final String item in srsListItems(f['Frequency']!))
+              for (final String item in srsFrequencyGroups(f['Frequency']!))
                 _Chip(text: item, style: s),
             ],
           ),
@@ -1480,7 +1491,7 @@ class SrsPitchGraph extends StatelessWidget {
 }
 
 class _Chip extends StatelessWidget {
-  const _Chip({required this.text, required this.style, this.color});
+  const _Chip({super.key, required this.text, required this.style, this.color});
 
   final String text;
   final _SrsCardStyle style;

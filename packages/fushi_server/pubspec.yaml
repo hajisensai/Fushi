@@ -32,6 +32,10 @@ dependencies:
     path: ../fushi_dictionary
   fushi_engine:
     path: ../fushi_engine
+  # 操作目录（FushiOp / OpDescription / OpInvoker，纯 Dart）：服务端用它描述自己的
+  # admin 操作，给远端 AI 助手会话当工具集（spec 2026-10-26 §6.5 / D8）。
+  fushi_cli:
+    path: ../fushi_cli
   fushi_platform:
     path: ../fushi_platform
   # 与 fushi/pubspec.yaml 钉同一 sha；fushi_asr_onnx_ffi 是纯 Dart FFI 的 ONNX Runtime

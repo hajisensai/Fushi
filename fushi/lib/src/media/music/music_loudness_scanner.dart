@@ -11,6 +11,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io' show ProcessException;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -174,7 +175,20 @@ class MusicLoudnessScanner extends ChangeNotifier {
           .listMusicTracksNeedingLoudnessScan(limit: 50);
       if (batch.isEmpty) break;
       for (final MusicTrackRow track in batch) {
-        final MusicLoudnessMeasurement? m = await _measure(track);
+        final MusicLoudnessMeasurement? m;
+        try {
+          m = await _measure(track);
+        } on ProcessException catch (e) {
+          // FFmpeg 本身起不来（没装 / 捆绑件缺失或损坏）：FFmpeg 后端契约是把
+          // ProcessException 抛给调用方处置。这不是这一首的问题——不能把曲目记成
+          // 「已扫描」（装好 FFmpeg 后就再也不会测），也不能让异常逃出 schedule()
+          // （三个调用点都是 unawaited，逃出去就是未处理的异步错误、设置页也看不到原因）。
+          // 记下原因、整轮停下，曲目保持待测。
+          _lastError = describeFfmpegProcessException(e);
+          debugPrint('[music-loudness] $_lastError');
+          notifyListeners();
+          return;
+        }
         await db.writeMusicTrackLoudness(
           track.trackUid,
           gain: m?.replayGainDb,

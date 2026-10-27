@@ -221,6 +221,21 @@ SettingsDestination buildVideoDestination() {
                 },
             defaultValue: VideoImmersiveMode.fallback,
           ),
+          // 沉浸锁定 + 字幕遮蔽中点画面任意处显示当前句（默认开）。判据见
+          // `videoImmersiveTapRevealsSubtitle`；点击时现读偏好，不需要宿主双写。
+          SettingsSwitchItem(
+            id: 'video.playback.immersive_tap_reveal',
+            title: t.video_setting_immersive_tap_reveal,
+            subtitle: t.video_setting_immersive_tap_reveal_hint,
+            icon: FushiIcons.touch,
+            video: VideoPlacement(group: VideoGroup.playback, order: 72),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoImmersiveTapReveal,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoImmersiveTapReveal(value);
+            },
+            defaultValue: true,
+          ),
           // 底部细进度条：控制条淡出后在视频最下方留一条主题色细线（B 站 / YouTube
           // 同款）。纯 pref、**默认关**——控制条淡出本身就是「把画面让干净」，常亮的
           // 细线会把这个意图撤回一半；要的人在这里开。
@@ -1700,6 +1715,38 @@ SettingsDestination buildVideoDestination() {
             cli: const SettingsCliAction.tap(),
             onTap: (SettingsContext settingsContext) async {
               await resetVideoControlLayoutDual(settingsContext);
+            },
+          ),
+          // 沉浸布局（锁定后屏幕左右侧栏的按钮）：编辑器只在播放中出现，重置走
+          // 同一小节。
+          SettingsCustomItem(
+            id: 'video.player.immersive_controls_editor',
+            visible: (SettingsContext settingsContext) =>
+                videoHostVisible(settingsContext) &&
+                videoQuickSettingsHostOf(
+                      settingsContext,
+                    )?.immersiveControlLayout !=
+                    null,
+            video: VideoPlacement(
+              group: VideoGroup.controls,
+              order: 22,
+              section: t.video_control_immersive_layout_title,
+            ),
+            cliValue: videoImmersiveControlLayoutCli,
+            builder: buildVideoImmersiveControlLayoutEditor,
+          ),
+          SettingsActionItem(
+            id: 'video.controls.reset_immersive_layout',
+            title: t.video_control_reset_immersive_layout,
+            icon: FushiIcons.restart,
+            video: VideoPlacement(
+              group: VideoGroup.controls,
+              order: 24,
+              section: t.video_control_immersive_layout_title,
+            ),
+            cli: const SettingsCliAction.tap(),
+            onTap: (SettingsContext settingsContext) async {
+              await resetVideoImmersiveControlLayoutDual(settingsContext);
             },
           ),
           // 播放器里直达快捷键设置并定位到「视频」分域：播放快捷键（F 全屏 / M 静音……）
