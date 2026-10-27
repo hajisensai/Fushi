@@ -329,7 +329,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     Clipboard.setData(ClipboardData(text: text));
     _showOsd(
       t.copied_to_clipboard,
-      icon: Icons.copy,
+      icon: FushiIcons.copy,
       severity: ToastSeverity.success,
     );
   }
