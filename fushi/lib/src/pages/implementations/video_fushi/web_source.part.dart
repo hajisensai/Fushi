@@ -204,6 +204,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     session.nav.addListener(_syncWebAddress);
     _rebuild(() {
       _webSession = session;
+      _webLoginImport ??= _createWebLoginImport();
       _webPlatform = platform;
       _controller = controller;
       _pendingController = null;
@@ -1047,12 +1048,12 @@ extension _VideoWebSource on _VideoFushiPageState {
             child: _buildWebPageBar(),
           ),
           // 「从浏览器导入登录」的等待状态条（可取消），贴在网页工具条下面。
-          if (_webLoginImport case final BrowserLoginImport import)
+          if (_webLoginImport case final WebVideoLoginImport import)
             Positioned(
               left: 0,
               right: 0,
               top: _kVideoWebPageBarHeight,
-              child: BrowserLoginImportStatusBar(import: import),
+              child: WebVideoLoginImportStatusBar(controller: import),
             ),
           // 网页档也要看得到短提示（登录导入等）：播放器档的 OSD 层挂在控制条里，这里补一层。
           Positioned(
@@ -1122,17 +1123,11 @@ extension _VideoWebSource on _VideoFushiPageState {
                 ),
               ),
               const SizedBox(width: 4),
-              FushiIconButtonControl(
-                key: const ValueKey<String>('video-web-login-import'),
-                tooltip: t.web_video_login_import,
-                icon: FushiIcon(
-                  (_webLoginImport?.waiting ?? false)
-                      ? FushiIcons.sync
-                      : FushiIcons.login,
-                ),
-                onPressed: _beginWebLoginImport,
-              ),
-              const SizedBox(width: 4),
+              if (_webLoginImport
+                  case final WebVideoLoginImport import) ...<Widget>[
+                WebVideoLoginImportButton(controller: import),
+                const SizedBox(width: 4),
+              ],
               if (_webPageHasVideo) ...<Widget>[
                 FushiFilledButton.tonalIcon(
                   key: const ValueKey<String>('video-web-player-open'),
@@ -1162,33 +1157,21 @@ extension _VideoWebSource on _VideoFushiPageState {
   /// 当前站点、在系统浏览器里打开它，Fushi 浏览器扩展把该站 cookie 送来，写进视频的
   /// WebView2 环境（[importWebVideoBrowserCookies]）后刷新本页，登记随即结束（之后扩展
   /// 再送一律被拒，不会每次打开该站都灌一批、刷一次页）。等待时网页工具条下有可取消的
-  /// 状态条。
-  void _beginWebLoginImport() {
-    final WebVideoSession? session = _webSession;
-    if (session == null) return;
-    final String current = session.nav.value.url;
-    final Uri? page = Uri.tryParse(
-      current.isNotEmpty ? current : session.pageUrl,
-    );
-    if (page == null || page.host.isEmpty) return;
-    BrowserLoginImport? import = _webLoginImport;
-    if (import == null) {
-      final BrowserLoginImport created = BrowserLoginImport(
-        write: importWebVideoBrowserCookies,
-        onImported: _onWebLoginImported,
-        onFailed: () => _showOsd(
-          t.login_import_write_failed,
-          icon: FushiIcons.login,
-          severity: ToastSeverity.error,
-        ),
-      );
-      // 工具条按钮图标与状态条跟着阶段变。
-      created.addListener(() => _rebuild(() {}));
-      _rebuild(() => _webLoginImport = created);
-      import = created;
-    }
-    unawaited(import.begin(page));
-  }
+  /// 状态条。按钮 / 状态条 / 站点选择都在 [WebVideoLoginImport]，这里只接线。
+  WebVideoLoginImport _createWebLoginImport() => WebVideoLoginImport(
+    urls: () {
+      final WebVideoSession? session = _webSession;
+      if (session == null) return null;
+      return (currentUrl: session.nav.value.url, pageUrl: session.pageUrl);
+    },
+    write: importWebVideoBrowserCookies,
+    onImported: _onWebLoginImported,
+    onFailed: () => _showOsd(
+      t.login_import_write_failed,
+      icon: FushiIcons.login,
+      severity: ToastSeverity.error,
+    ),
+  );
 
   void _onWebLoginImported(int written) {
     final WebVideoSession? session = _webSession;

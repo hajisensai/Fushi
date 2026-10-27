@@ -362,6 +362,31 @@ void main() {
       }, caller: OpCaller.model);
       expect(admin.requests, hasLength(2));
     });
+
+    test('用户自己调用带 tracker 的磁力：server.download.add 照常转发，不要求确认', () async {
+      final _FakeAdmin admin = _FakeAdmin();
+      final OpInvoker invoker = OpInvoker(
+        buildServerAdminOpCatalog(() => admin.handle),
+      );
+      const String withTracker =
+          'magnet:?xt=$btih&tr=udp://tracker.example:1337/announce';
+      await invoker.invoke('server.download.add', <String, Object?>{
+        'magnet': withTracker,
+        'title': 'Work',
+      });
+      expect(admin.requests, <String>['POST /api/admin/downloads']);
+      expect(admin.bodies.last['magnet'], withTracker);
+
+      // 同一条磁力换成模型调用：仍拒、不碰 admin API。
+      await expectLater(
+        invoker.invoke('server.download.add', <String, Object?>{
+          'magnet': withTracker,
+          'title': 'Work',
+        }, caller: OpCaller.model),
+        throwsA(isA<CtlFailure>()),
+      );
+      expect(admin.requests, hasLength(1));
+    });
   });
 
   group('ServerAgentToolbox', () {
