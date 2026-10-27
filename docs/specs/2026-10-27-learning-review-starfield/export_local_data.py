@@ -5,13 +5,11 @@
 
 用法：python export_local_data.py --data-root "<Fushi 数据根目录>"
 （数据根下应有 support/fushi.db 与 support/srs.db；app 运行中也可读，走只读 backup。）
-依赖：Pillow。
 """
 import sys; sys.stdout.reconfigure(encoding="utf-8")
-import argparse, sqlite3, os, re, json, html, base64, io, collections
+import argparse, sqlite3, os, re, json, html, collections
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote_plus
-from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser()
@@ -97,12 +95,6 @@ def parse_link(misc: str) -> dict | None:
 
 # 视频库：uid → (路径, 封面)；书库：bookKey/uid → (标题, 封面)
 videos = {u: (p, cv) for u, p, cv in Q(app, 'select book_uid, video_path, cover_path from video_books')}
-ecols = [r[1] for r in Q(app, 'pragma table_info(epub_books)')]
-books = {}
-for row in Q(app, 'select * from epub_books'):
-    r = dict(zip(ecols, row))
-    for k in ('uid', 'book_key', 'title'):
-        if r.get(k): books[r[k]] = r
 
 def clean_title(t: str) -> str:
     t = t.replace('_', ' ')
@@ -195,44 +187,11 @@ for nid, tags_json, created in notes:
                   'loc': ' '.join(loc), 'ep': misc[:80] if not link else '', 'sent': text(f.get('Sentence')),
                   't': int(created), 'stab': st, 'reps': reps or 0})
 
-def find_poster(w):
-    if w['title'].startswith('出处不明') or w['title'] == '（无出处）':
-        return None
-    vp = None
-    if w['uid'] and w['uid'] in videos:
-        vp, cover = videos[w['uid']]
-    else:
-        cover = None
-        for u, (p, cv) in videos.items():
-            if w['title'] and w['title'] in u:
-                vp, cover = p, cv; break
-    if vp:
-        d = os.path.dirname(vp)
-        for _ in range(3):
-            for n in ('poster.jpg', 'poster.png', 'folder.jpg', 'cover.jpg'):
-                if os.path.isfile(os.path.join(d, n)): return os.path.join(d, n)
-            d = os.path.dirname(d)
-    if cover and os.path.isfile(cover): return cover
-    b = books.get(w['title']) or next((r for t, r in books.items() if isinstance(t, str) and w['title'] and (t.startswith(w['title']) or w['title'].startswith(t)) and len(t) > 2), None)
-    if b and b.get('cover_path'):
-        for base in (b.get('extract_dir') or '', ''):
-            p = os.path.join(base, b['cover_path'])
-            if os.path.isfile(p): return p
-    return None
-
-def encode(path):
-    im = Image.open(path).convert('RGB'); W, H = 320, 480
-    r = max(W / im.width, H / im.height); im = im.resize((round(im.width * r), round(im.height * r)), Image.LANCZOS)
-    l, t = (im.width - W) // 2, (im.height - H) // 2; im = im.crop((l, t, l + W, t + H))
-    buf = io.BytesIO(); im.save(buf, 'JPEG', quality=80)
-    return 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
-
 out_works = []
 for w in sorted(works.values(), key=lambda x: x['id']):
-    p = find_poster(w)
-    out_works.append({'id': w['id'], 'title': w['title'], 'kind': w['kind'], 'n': w['n'], 'img': encode(p) if p else None})
+    out_works.append({'id': w['id'], 'title': w['title'], 'kind': w['kind'], 'n': w['n']})
 for w in sorted(out_works, key=lambda x: -x['n']):
-    print(f"{w['n']:4d} {w['kind']:6s} {'img ' if w['img'] else '--- '}{w['title']}")
+    print(f"{w['n']:4d} {w['kind']:6s} {w['title']}")
 print('cards', len(cards), 'works', len(out_works), 'kind guessed', dict(unresolved))
 with open(OUT, 'w', encoding='utf-8') as fh:
     fh.write('window.STARFIELD_DATA=' + json.dumps({'works': out_works, 'cards': cards, 'source': 'srs'}, ensure_ascii=False) + ';')
