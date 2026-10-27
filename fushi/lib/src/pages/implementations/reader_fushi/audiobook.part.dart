@@ -758,7 +758,6 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _syncLyricsOverlayCue(controller, forceReveal: lyricsForceReveal);
     }
 
-
     final AudioCue? cue = controller.currentCue;
     if (cue != null) {
       final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
@@ -914,7 +913,15 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // AudiobookBridge.highlight(fromChapterStart)）。图片章停留序列若已在目标宿主上
     // 停留 + 揭遮罩过（被吸收图片章场景），不再二次触发。
     _audioChapterArrivalSection = pausedOnTarget ? -1 : newSection;
-    await _navigateToChapter(newSection, charOffset: studyOffset);
+    // BUG-3796：守卫是为这次导航竖的，它的正常解除靠导航的 restore 回执 /
+    // 中止收尾。导航被拒（目标经图片合并重定向后落在目录页、WebView / 书已失效）时
+    // 两者都不会发生，连 content-ready 兜底都没武装——这里不放，守卫就永久卡 true：
+    // cue 冻结在旧句、高亮不再跟随、上下句拿冻结索引算目标。被拒即「本次跨章请求
+    // 已取消」的明确信号，由发起方当场释放。
+    if (!await _navigateToChapter(newSection, charOffset: studyOffset)) {
+      _audioChapterArrivalSection = -1;
+      _audiobookController?.cancelChapterTransition();
+    }
   }
 
   /// 消费 [_audioChapterArrivalSection]：仅当目标章已经落地（不在恢复中、当前章就是
