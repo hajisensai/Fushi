@@ -6,17 +6,23 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
-/// 空闲自动制卡（`web_mine_idle.dart`）给用户看的状态：跑的期间是进度，结束后留一枚
-/// 结果胶囊直到用户关掉（人不在电脑前，Toast 早过期了，回来要能看到发生过什么）。
+/// 制卡队列重放给用户看的状态（手动点「制作队列中的卡片」与空闲自动制卡共用）：跑的期间是
+/// 进度，结束后留一枚结果胶囊直到用户关掉（空闲时人不在电脑前，Toast 早过期了；全屏时顶栏
+/// 标题也看不到）。
 sealed class WebMineAutoStatus {
   const WebMineAutoStatus();
 }
 
-/// 正在静音重放：已处理 [done] / 共 [total]。
+/// 正在重放：已处理 [done] / 共 [total]；[auto] = 空闲自动制卡（文案提示「有操作即暂停」）。
 final class WebMineAutoRunning extends WebMineAutoStatus {
-  const WebMineAutoRunning({required this.done, required this.total});
+  const WebMineAutoRunning({
+    required this.done,
+    required this.total,
+    this.auto = true,
+  });
   final int done;
   final int total;
+  final bool auto;
 }
 
 /// 一轮结束：成功 [ok]、失败 [failed]；[remaining] > 0 = 用户回来让位、余下的留在队列。
@@ -25,10 +31,12 @@ final class WebMineAutoFinished extends WebMineAutoStatus {
     required this.ok,
     required this.failed,
     required this.remaining,
+    this.auto = true,
   });
   final int ok;
   final int failed;
   final int remaining;
+  final bool auto;
 }
 
 /// 静音录音起不来（系统不支持 process loopback / 找不到 WebView2 进程），本轮跳过——
@@ -78,19 +86,25 @@ class WebMineAutoStatusChip extends StatelessWidget {
   Widget _chip(BuildContext context, WebMineAutoStatus s) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final (IconData icon, String text, bool dismissible) = switch (s) {
-      WebMineAutoRunning(:final int done, :final int total) => (
-        FushiIcons.ankiCard,
-        t.web_video_mine_auto_running(done: done, total: total),
-        false,
-      ),
+      WebMineAutoRunning(:final int done, :final int total, :final bool auto) =>
+        (
+          FushiIcons.ankiCard,
+          auto
+              ? t.web_video_mine_auto_running(done: done, total: total)
+              : t.web_video_mine_queue_running(done: done, total: total),
+          false,
+        ),
       WebMineAutoFinished(
         :final int ok,
         :final int failed,
         :final int remaining,
+        :final bool auto,
       ) =>
         (
           failed > 0 ? FushiIcons.warning : FushiIcons.check,
-          remaining > 0
+          !auto
+              ? t.web_video_mine_queue_finished(ok: ok, failed: failed)
+              : remaining > 0
               ? t.web_video_mine_auto_paused(
                   ok: ok,
                   failed: failed,

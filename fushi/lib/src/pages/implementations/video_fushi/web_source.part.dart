@@ -225,6 +225,16 @@ extension _VideoWebSource on _VideoFushiPageState {
     unawaited(_refreshFavoritedCueCache());
     unawaited(_refreshStagedMineCount());
     if (Platform.isWindows) _startWebMineIdle();
+    final WebMineReturnState? restore = widget.webReturnState;
+    if (restore != null) {
+      // 制卡重放换回来的：用户重放前的选择就是「亲手选过的」，不让每集首次的语言偏好盖掉。
+      _webSubtitleUserChosen = true;
+      _webAudioUserChosen = true;
+      _webPendingRestore = restore;
+      _webPendingRestoreDeadline = DateTime.now().add(
+        const Duration(seconds: 30),
+      );
+    }
     // 站点入口还没有书：进度 / 观看统计等播起某一集落库后再接（[_bindWebEpisode]）。
     if (_webBoundEpisodeUrl == null) {
       controller.rebindWebBook(null);
@@ -274,6 +284,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       });
     }
     _checkWebPendingTrackCapture();
+    _applyWebPendingRestore(state);
     _maybeRequestDefaultSiteTrack();
     _syncWebAudioTracks(state);
     _syncWebNetflixMetadata(state);
@@ -1302,6 +1313,7 @@ extension _VideoWebSource on _VideoFushiPageState {
   /// 逐句重放落卡（[WebVideoFushiPage.autoRunMineQueue]）。[idle] = 空闲自动制卡的交接：
   /// 那边静音跑、有输入即让位，跑完换回本页（[WebVideoFushiPage.returnHostingAfterMining]）。
   Future<void> _runWebMineQueue({bool idle = false}) async {
+    final WebVideoPlaybackState? state = _webSession?.lastState;
     await _controller?.flushPosition();
     if (!context.mounted) return;
     await Navigator.of(context).pushReplacement(
@@ -1312,10 +1324,67 @@ extension _VideoWebSource on _VideoFushiPageState {
           repo: widget.repo,
           hosting: WebVideoHosting.builtin,
           autoRunMineQueue: true,
-          returnHostingAfterMining: idle ? WebVideoHosting.windowed : null,
+          // 手动 / 空闲都回到本页（重放前的集 / 轨 / 位置一并带过去、再带回来）。
+          returnHostingAfterMining: WebVideoHosting.windowed,
+          idleAutoMining: idle,
+          mineReturnState: state == null ? null : WebMineReturnState.of(state),
         ),
       ),
     );
+  }
+
+  /// 每拍站点状态到来时把 [_webPendingRestore] 对齐一次（动作之间至少隔 1 秒，等站点报回）。
+  void _applyWebPendingRestore(WebVideoPlaybackState state) {
+    final WebMineReturnState? want = _webPendingRestore;
+    if (want == null) return;
+    final DateTime now = DateTime.now();
+    if (now.isAfter(_webPendingRestoreDeadline ?? now)) {
+      _webPendingRestore = null;
+      return;
+    }
+    if (!state.hasVideo) return;
+    final WebMineRestorePlan plan = planWebMineRestore(want, state);
+    if (webMineRestoreDone(plan)) {
+      _webPendingRestore = null;
+      return;
+    }
+    final DateTime? last = _webLastRestoreActionAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 1)) {
+      return;
+    }
+    _webLastRestoreActionAt = now;
+    final WebVideoSession? session = _webSession;
+    final String? href = plan.navigateHref;
+    if (href != null) {
+      if (_webRestoreNavigated || session == null) return;
+      _webRestoreNavigated = true;
+      unawaited(session.loadUrl(href));
+      return;
+    }
+    final String? text = plan.selectTextTrack;
+    if (text != null) {
+      if (text.isEmpty) {
+        _selectWebTrack(null);
+        unawaited(
+          session?.evaluate("window.__fushiWebVideo.selectNetflixTrack('')"),
+        );
+      } else {
+        final WebVideoSiteTrack? track = state.siteTracks
+            .where((WebVideoSiteTrack t) => t.id == text)
+            .firstOrNull;
+        if (track != null) _requestWebSiteTrack(track, byUser: true);
+      }
+    }
+    final String? audio = plan.selectAudioTrack;
+    final VideoPlayerController? controller = _controller;
+    if (audio != null && controller != null) {
+      final AudioTrack? track = controller.audioTracks
+          .where((AudioTrack t) => t.id == audio)
+          .firstOrNull;
+      if (track != null) unawaited(controller.selectAudioTrack(track));
+    }
+    final int? seek = plan.seekMs;
+    if (seek != null && controller != null) unawaited(controller.seekMs(seek));
   }
 
   /// 空闲判定：用户在播放器档里暂停了、队列非空、整机 2 分钟没输入 → 交接到内置档。

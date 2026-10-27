@@ -282,11 +282,19 @@
     }
     return false;
   }
+  // 空串 = 关掉站点字幕（选 none 轨）：制卡重放期间截帧不能带字幕，结束后原样还回去。
   function selectNetflixTrack(trackId) {
     var p = nfPlayer();
     if (!p) return false;
     try {
-      return selectTrackIn(p.getTimedTextTrackList() || [], trackId, function (t) { p.setTimedTextTrack(t); });
+      var list = p.getTimedTextTrackList() || [];
+      if (trackId === '') {
+        for (var i = 0; i < list.length; i++) {
+          if (list[i] && list[i].isNoneTrack) { p.setTimedTextTrack(list[i]); return true; }
+        }
+        return false;
+      }
+      return selectTrackIn(list, trackId, function (t) { p.setTimedTextTrack(t); });
     } catch (_) {}
     return false;
   }

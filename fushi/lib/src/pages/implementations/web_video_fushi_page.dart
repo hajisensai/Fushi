@@ -47,6 +47,7 @@ import 'package:fushi/src/mining/web_mine_idle.dart';
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/src/mining/web_mine_replay.dart';
 import 'package:fushi/src/media/video/web_mine_auto_status.dart';
+import 'package:fushi/src/media/video/web_mine_return_state.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
@@ -103,15 +104,24 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     this.autoRunMineQueue = false,
     this.hosting,
     this.returnHostingAfterMining,
+    this.idleAutoMining = false,
+    this.mineReturnState,
     super.key,
   });
 
   /// 打开后画面一就绪就自动跑本书的制卡队列（4K 窗口宿主档「切到内置档制卡」的交接）。
   final bool autoRunMineQueue;
 
-  /// 非 null = 本页是**空闲自动制卡**的交接（窗口宿主档 / 原生播放器页帧不可截，空闲时
-  /// 换到内置档静音重放）：这一轮按自动制卡跑（有输入即让位），跑完 / 让位后原地换回这一档。
+  /// 非 null = 本页是制卡交接（窗口宿主档 / 原生播放器页帧不可截，换到内置档重放）：跑完 /
+  /// 停止 / 让位后原地换回这一档，并把 [mineReturnState] 带回去。
   final WebVideoHosting? returnHostingAfterMining;
+
+  /// 交接的这一轮是**空闲自动制卡**（有输入即让位、只用静音录音）；false = 用户点的。
+  final bool idleAutoMining;
+
+  /// 重放前用户的播放状态（站点字幕轨 / 音轨 / 位置）。交接页：重放按其中的音轨录音，结束后
+  /// 带回原档；非交接页（被换回来的那一页）：画面就绪后原样恢复。见 [WebMineReturnState]。
+  final WebMineReturnState? mineReturnState;
 
   /// 宿主档；null = 读用户偏好 [kWebVideoHostingPrefKey]（缺省内置档）。见 [WebVideoHosting]。
   final WebVideoHosting? hosting;
@@ -144,6 +154,8 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     bool autoRunMineQueue = false,
     WebVideoHosting? hosting,
     WebVideoHosting? returnHostingAfterMining,
+    bool idleAutoMining = false,
+    WebMineReturnState? mineReturnState,
   }) => FushiAppUiScaleNeutralizer(
     child: WebVideoFushiPage(
       bookUid: bookUid,
@@ -151,6 +163,8 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
       autoRunMineQueue: autoRunMineQueue,
       hosting: hosting,
       returnHostingAfterMining: returnHostingAfterMining,
+      idleAutoMining: idleAutoMining,
+      mineReturnState: mineReturnState,
     ),
   );
 
@@ -375,6 +389,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 开跑那一刻直接让位。
   bool _autoYieldRequested = false;
 
+  /// 本轮重放前用户的状态（交接页取 [WebVideoFushiPage.mineReturnState]，原页取开跑时的快照）。
+  WebMineReturnState? _replayOrigin;
+
+  /// 待恢复的播放状态：画面就绪后由 [_applyPendingRestore] 逐拍对齐（站点轨清单可能晚到）。
+  WebMineReturnState? _pendingRestore;
+  DateTime? _pendingRestoreDeadline;
+  DateTime? _lastRestoreActionAt;
+  bool _restoreNavigated = false;
+
   /// 真机钩子收集：非 null 时每句重放抓到的媒体都记一份（只在 debugRunMineQueue 内）。
   List<WebMineReplayCapture>? _debugCaptures;
 
@@ -594,6 +617,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _userScripts = scripts;
     });
     if (Platform.isWindows) _startIdleScheduler();
+    // 被制卡交接换回来的这一页：画面就绪后把重放前的集 / 轨 / 位置还原。
+    if (widget.returnHostingAfterMining == null) {
+      _beginRestore(widget.mineReturnState);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _seedWarmPopup());
   }
 
@@ -697,6 +724,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         ),
       );
     }
+    _applyPendingRestore(state);
     _maybeAutoRunMineQueue();
   }
 
@@ -881,7 +909,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (!widget.autoRunMineQueue || _autoRunTriggered || _mineRunning) return;
     if (_minePending == 0 || !(_state?.hasVideo ?? false)) return;
     _autoRunTriggered = true;
-    unawaited(_runMineQueue(auto: widget.returnHostingAfterMining != null));
+    unawaited(_runMineQueue(auto: widget.idleAutoMining));
   }
 
   // ── 空闲自动制卡（web_mine_idle.dart）──────────────────────────────────
@@ -895,7 +923,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     _idleScheduler = scheduler;
     scheduler.start();
     // 空闲交接打开的本页：这一轮从打开起就算自动制卡，交接途中来了输入也要让位。
-    if (widget.returnHostingAfterMining != null) scheduler.adoptRun();
+    if (widget.idleAutoMining) scheduler.adoptRun();
   }
 
   /// 用户已暂停（本页没在播）、队列非空、画面就绪；交接页自己的那一轮由
@@ -919,6 +947,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           hosting: WebVideoHosting.builtin,
           autoRunMineQueue: true,
           returnHostingAfterMining: WebVideoHosting.windowed,
+          idleAutoMining: true,
+          mineReturnState: _currentReturnState(),
         ),
       );
       return;
@@ -933,18 +963,16 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       return;
     }
     _autoYieldRequested = true;
-    final WebVideoHosting? back = widget.returnHostingAfterMining;
-    if (back != null && !_autoRunTriggered) {
+    if (widget.idleAutoMining && !_autoRunTriggered) {
       _autoRunTriggered = true;
-      _idleScheduler?.runFinished();
-      unawaited(_reopen(hosting: back));
+      _finishMining(auto: true, status: null);
     }
   }
 
-  /// 自动制卡的一轮结束：交接页换回原档（胶囊会随页消失，改发 Toast），否则留胶囊。
-  /// [status] null = 没东西可做（队列已空），不打扰用户。
-  void _finishAutoMining(WebMineAutoStatus? status) {
-    _idleScheduler?.runFinished();
+  /// 一轮重放结束（手动 / 自动都走这里）：交接页换回原档并带回重放前的状态（胶囊会随页消失，
+  /// 改发 Toast）；原页留结果胶囊。[status] null = 没东西可做（队列已空），不打扰用户。
+  void _finishMining({required bool auto, required WebMineAutoStatus? status}) {
+    if (auto) _idleScheduler?.runFinished();
     final WebVideoHosting? back = widget.returnHostingAfterMining;
     if (back == null) {
       if (mounted && status != null) setState(() => _autoStatus = status);
@@ -953,18 +981,110 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     switch (status) {
       case WebMineAutoFinished(:final int ok, :final int failed):
         FushiToast.show(
-          msg: t.web_video_mine_auto_finished(ok: ok, failed: failed),
+          msg: auto
+              ? t.web_video_mine_auto_finished(ok: ok, failed: failed)
+              : t.web_video_mine_queue_finished(ok: ok, failed: failed),
         );
       case WebMineAutoUnavailable():
         FushiToast.show(msg: t.web_video_mine_auto_unavailable);
       case WebMineAutoRunning() || null:
         break;
     }
-    unawaited(_reopen(hosting: back));
+    unawaited(
+      _reopen(
+        hosting: back,
+        mineReturnState: widget.mineReturnState ?? _replayOrigin,
+      ),
+    );
   }
 
-  /// 空闲交接页：WebView 控制器一建好（浏览器进程已在、站点还没播起来）就开静音采集，
-  /// 之后 Chromium 新建的音频会话一出现就被压低。起不来就放弃这一轮、换回原档。
+  /// 当前播放状态的快照（站点还没报状态时 null）。
+  WebMineReturnState? _currentReturnState() {
+    final WebVideoPlaybackState? state = _state;
+    return state == null ? null : WebMineReturnState.of(state);
+  }
+
+  /// 站点字幕轨：空串 = 关掉（glue 选 none 轨）。
+  Future<void> _selectSiteTextTrack(String id) =>
+      _js('window.__fushiWebVideo.selectNetflixTrack(${jsonEncode(id)})');
+
+  Future<void> _selectSiteAudioTrack(String id) =>
+      _js('window.__fushiWebVideo.selectNetflixAudioTrack(${jsonEncode(id)})');
+
+  /// 每句重放前把站点调成「录音用」的样子：字幕轨关掉（截帧不带字幕——CSS 藏字幕层之外再兜
+  /// 一道，站点换了字幕层类名也不漏），音轨对齐用户重放前在听的那条（整页导航 / 交接后站点会
+  /// 按账号默认重选）。
+  Future<void> _prepareSiteForReplay() async {
+    await _setNativeSubtitlesHidden(true);
+    final WebVideoPlaybackState? state = _state;
+    if (state == null) return;
+    if (state.siteTrackCurrent.isNotEmpty) await _selectSiteTextTrack('');
+    final String audio = _replayOrigin?.siteAudioTrack ?? '';
+    if (audio.isEmpty ||
+        audio == state.siteAudioTrackCurrent ||
+        !state.siteAudioTracks.any((WebVideoSiteTrack t) => t.id == audio)) {
+      return;
+    }
+    await _selectSiteAudioTrack(audio);
+    // 切音轨要重新缓冲：等站点报回新音轨再开录（最多 3 秒，超时照录，warning 里看得到）。
+    final DateTime until = DateTime.now().add(const Duration(seconds: 3));
+    while (mounted && DateTime.now().isBefore(until)) {
+      if (_state?.siteAudioTrackCurrent == audio) return;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+  }
+
+  /// 原页一轮结束：把重放前的集 / 轨 / 位置原样还回去（[_applyPendingRestore] 逐拍对齐）。
+  void _beginRestore(WebMineReturnState? want) {
+    if (want == null) return;
+    _pendingRestore = want;
+    _pendingRestoreDeadline = DateTime.now().add(const Duration(seconds: 30));
+    _lastRestoreActionAt = null;
+    _restoreNavigated = false;
+    final WebVideoPlaybackState? state = _state;
+    if (state != null) _applyPendingRestore(state);
+  }
+
+  /// 每拍站点状态到来时对齐一次（动作之间至少隔 1 秒，等站点把上一个动作报回来）。
+  void _applyPendingRestore(WebVideoPlaybackState state) {
+    final WebMineReturnState? want = _pendingRestore;
+    if (want == null || _mineRunning) return;
+    final DateTime now = DateTime.now();
+    if (now.isAfter(_pendingRestoreDeadline ?? now)) {
+      _pendingRestore = null;
+      return;
+    }
+    if (!state.hasVideo) return;
+    final WebMineRestorePlan plan = planWebMineRestore(want, state);
+    if (webMineRestoreDone(plan)) {
+      _pendingRestore = null;
+      return;
+    }
+    final DateTime? last = _lastRestoreActionAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 1)) {
+      return;
+    }
+    _lastRestoreActionAt = now;
+    final String? href = plan.navigateHref;
+    if (href != null) {
+      if (_restoreNavigated) return;
+      _restoreNavigated = true;
+      unawaited(
+        _web?.loadUrl(urlRequest: URLRequest(url: WebUri(href))) ??
+            Future<void>.value(),
+      );
+      return;
+    }
+    final String? text = plan.selectTextTrack;
+    if (text != null) unawaited(_selectSiteTextTrack(text));
+    final String? audio = plan.selectAudioTrack;
+    if (audio != null) unawaited(_selectSiteAudioTrack(audio));
+    final int? seek = plan.seekMs;
+    if (seek != null) unawaited(_seekMs(seek));
+  }
+
+  /// 制卡交接页：WebView 控制器一建好（浏览器进程已在、站点还没播起来）就开静音采集，
+  /// 之后 Chromium 新建的音频会话一出现就被压低（站点自动播放不外放）。
   Future<void> _preStartSilentAudio() async {
     final LoopbackGalAudioSource silent = LoopbackGalAudioSource(
       userDataFolder: WebVideoFushiPage.capturableUserDataFolder(),
@@ -981,9 +1101,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         'silent pre-start failed: ${silent.lastStartError}',
       );
       _noteSilentStartFailure(silent.lastStartError);
-      if (!_autoRunTriggered && !_mineRunning) {
+      // 手动交接照跑（开跑时退回整机混音）；只有空闲自动这一轮整轮放弃、换回原档。
+      if (widget.idleAutoMining && !_autoRunTriggered && !_mineRunning) {
         _autoRunTriggered = true;
-        _finishAutoMining(const WebMineAutoUnavailable());
+        _finishMining(auto: true, status: const WebMineAutoUnavailable());
       }
       return;
     }
@@ -1042,6 +1163,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       if (_videoKey == row.videoKey && (_state?.hasVideo ?? false)) {
         // 画面就绪可能早于 onLoadStop；开录前再挂一次（页面侧按 style id 幂等）。
         await _setPlayerChromeHidden(true);
+        await _prepareSiteForReplay();
         return true;
       }
       await Future<void>.delayed(const Duration(milliseconds: 250));
@@ -1057,17 +1179,14 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       return;
     }
     // 交接页的输入可能早于这一轮（adoptRun 已记下），只有原页的新一轮才清零。
-    if (auto && widget.returnHostingAfterMining == null) {
+    if (auto && !widget.idleAutoMining) {
       _autoYieldRequested = false;
     }
     final List<WebMineQueueRow> rows = await _mineQueue.pending(widget.bookUid);
     if (!mounted) return;
     if (rows.isEmpty) {
-      if (auto) {
-        _finishAutoMining(null);
-      } else {
-        FushiToast.show(msg: t.web_video_mine_queue_empty);
-      }
+      if (!auto) FushiToast.show(msg: t.web_video_mine_queue_empty);
+      _finishMining(auto: auto, status: null);
       return;
     }
     // 先起音频再接管页面：静音模式在握手返回前就把会话压低了，之后的 seek / 播放不出声。
@@ -1079,14 +1198,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     }
     if (audio == null) {
       _noteSilentStartFailure(_silentStartError);
-      _finishAutoMining(const WebMineAutoUnavailable());
+      _finishMining(auto: true, status: const WebMineAutoUnavailable());
       return;
     }
     final LoopbackGalAudioSource loopback = audio.source;
     final PcmFormat? format = audio.format;
     int ok = 0;
     int failed = 0;
-    int? resumePos;
+    _replayOrigin = widget.mineReturnState ?? _currentReturnState();
+    _pendingRestore = null;
     // try 紧跟在采集起好之后：之后任何一步抛出，finally 都会停采集（还原会话音量）、
     // 复位运行态。
     try {
@@ -1095,15 +1215,17 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         _mineAuto = auto;
         _mineStopRequested = auto && _autoYieldRequested;
         _mineProgress = (done: 0, total: rows.length);
-        if (auto) {
-          _autoStatus = WebMineAutoRunning(done: 0, total: rows.length);
-        }
+        _autoStatus = WebMineAutoRunning(
+          done: 0,
+          total: rows.length,
+          auto: auto,
+        );
       });
-      resumePos = _state?.positionMs;
       unawaited(_watchTracker?.stop());
       if (_popup.hasVisiblePopup) _popNestedPopupAt(0);
-      // 封面不带站点控制栏（Dart 驱动的 seek/pause 会让控件浮出来）。
+      // 封面不带站点控制栏（Dart 驱动的 seek/pause 会让控件浮出来）；字幕轨关掉、音轨对齐。
       await _setPlayerChromeHidden(true);
+      await _prepareSiteForReplay();
       final String tempDir = (await getTemporaryDirectory()).path;
       final MiningMediaCompression compression = MiningMediaCompression.resolve(
         imageTier: _appModel.miningImageQuality,
@@ -1148,41 +1270,40 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         if (mounted) {
           setState(() {
             _mineProgress = (done: ok + failed, total: rows.length);
-            if (auto) {
-              _autoStatus = WebMineAutoRunning(
-                done: ok + failed,
-                total: rows.length,
-              );
-            }
+            _autoStatus = WebMineAutoRunning(
+              done: ok + failed,
+              total: rows.length,
+              auto: auto,
+            );
           });
         }
       }
     } finally {
-      // 先停采集（native 随即把压低的会话音量还原），再还原播放位置。
+      // 先停采集（native 随即把压低的会话音量还原），再还原站点外观与播放状态。
       await loopback.stop();
       await _setPlayerChromeHidden(false);
+      await _setNativeSubtitlesHidden(_hideNativeSubtitles);
       if (mounted) {
         setState(() {
           _mineRunning = false;
           _mineAuto = false;
           _mineProgress = null;
         });
-        if (resumePos != null) unawaited(_seekMs(resumePos));
+        // 原页：集 / 字幕轨 / 音轨 / 位置原样还回去；交接页把它带回原档（[_finishMining]）。
+        if (widget.returnHostingAfterMining == null) {
+          _beginRestore(_replayOrigin);
+        }
         unawaited(_refreshMinePending());
       }
     }
-    if (auto) {
-      _finishAutoMining(
-        WebMineAutoFinished(
-          ok: ok,
-          failed: failed,
-          remaining: rows.length - ok - failed,
-        ),
-      );
-      return;
-    }
-    FushiToast.show(
-      msg: t.web_video_mine_queue_finished(ok: ok, failed: failed),
+    _finishMining(
+      auto: auto,
+      status: WebMineAutoFinished(
+        ok: ok,
+        failed: failed,
+        remaining: rows.length - ok - failed,
+        auto: auto,
+      ),
     );
   }
 
@@ -1476,6 +1597,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     required WebVideoHosting hosting,
     bool autoRunMineQueue = false,
     WebVideoHosting? returnHostingAfterMining,
+    bool idleAutoMining = false,
+    WebMineReturnState? mineReturnState,
   }) async {
     if (!mounted) return;
     final bool nativePage =
@@ -1490,6 +1613,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
             ? VideoFushiPage.neutralized(
                 bookUid: widget.bookUid,
                 repo: widget.repo,
+                webReturnState: mineReturnState,
               )
             : WebVideoFushiPage.neutralized(
                 bookUid: widget.bookUid,
@@ -1497,6 +1621,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                 hosting: hosting,
                 autoRunMineQueue: autoRunMineQueue,
                 returnHostingAfterMining: returnHostingAfterMining,
+                idleAutoMining: idleAutoMining,
+                mineReturnState: mineReturnState,
               ),
       ),
     );
@@ -2035,7 +2161,12 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   }
 
   void _openBuiltinForMining() => unawaited(
-    _reopen(hosting: WebVideoHosting.builtin, autoRunMineQueue: true),
+    _reopen(
+      hosting: WebVideoHosting.builtin,
+      autoRunMineQueue: true,
+      returnHostingAfterMining: WebVideoHosting.windowed,
+      mineReturnState: _currentReturnState(),
+    ),
   );
 
   /// M3E 顶栏：黑带里的两枚浮动胶囊，挂载时从上方弹入（[VideoM3eChromeSlide]，
@@ -2540,7 +2671,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
               _webViewUrl = url?.toString() ?? _webViewUrl,
       onLoadStop: (InAppWebViewController controller, WebUri? url) {
         _webViewUrl = url?.toString() ?? _webViewUrl;
-        unawaited(_setNativeSubtitlesHidden(_hideNativeSubtitles));
+        unawaited(
+          _setNativeSubtitlesHidden(_hideNativeSubtitles || _mineRunning),
+        );
         // BUG-2260：队列换集走 loadUrl 整页重载，上一份文档里的 chrome 隐藏 <style> 随之消失，
         // 之后每张卡都带控制条/分级提示。隐藏态归 Dart 所有，新文档就绪时按 _mineRunning 重挂。
         unawaited(_setPlayerChromeHidden(_mineRunning));

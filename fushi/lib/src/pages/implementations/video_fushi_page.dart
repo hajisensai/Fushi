@@ -189,6 +189,7 @@ import 'package:fushi/src/media/video/underlay_composition.dart'
         releaseUnderlayComposition,
         underlayCompositionSupported;
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/media/video/web_mine_return_state.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart'
     show
         WebVideoHosting,
@@ -731,6 +732,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     this.discLaunchCover,
     this.discLaunchOrigin,
     this.webSite,
+    this.webReturnState,
     this.remoteDisc,
     super.key,
   }) : remoteInfo = null,
@@ -757,6 +759,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
        discLaunchCover = null,
        discLaunchOrigin = null,
        webSite = null,
+       webReturnState = null,
        remoteDisc = null,
        playlistCollectionId = null;
 
@@ -801,6 +804,10 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 播起某一集时这一集才落库、本页身份换成它（web_source.part.dart `_bindWebEpisode`）。
   final WebVideoSite? webSite;
 
+  /// 网页档：制卡队列在内置档重放完换回本页时带回的重放前状态（站点字幕轨 / 音轨 / 位置），
+  /// 画面就绪后原样恢复（web_source.part.dart `_applyWebPendingRestore`）。
+  final WebMineReturnState? webReturnState;
+
   /// 流式原盘会话（远端原盘第二期）：盘在已配对 host 上，libmpv 经 HTTP 读它。只与
   /// [openBlurayMenu] 一起用（入口 [neutralizedRemoteDisc]）；本机没有这张盘的库行，
   /// 会话里的标题不绑定库行、不写进度。
@@ -829,6 +836,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     ImageProvider? discLaunchCover,
     Rect? discLaunchOrigin,
     WebVideoSite? webSite,
+    WebMineReturnState? webReturnState,
   }) => FushiAppUiScaleNeutralizer(
     child: VideoFushiPage(
       bookUid: bookUid,
@@ -845,6 +853,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       discLaunchCover: discLaunchCover,
       discLaunchOrigin: discLaunchOrigin,
       webSite: webSite,
+      webReturnState: webReturnState,
     ),
   );
 
@@ -2311,6 +2320,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 选择带到下一集，所以整个页面会话有效。
   bool _webSubtitleUserChosen = false;
   bool _webAudioUserChosen = false;
+
+  /// 待恢复的重放前状态（[VideoFushiPage.webReturnState]）；逐拍对齐，见 `_applyWebPendingRestore`。
+  WebMineReturnState? _webPendingRestore;
+  DateTime? _webPendingRestoreDeadline;
+  DateTime? _webLastRestoreActionAt;
+  bool _webRestoreNavigated = false;
   String? _webAudioAutoVideoKey;
 
   /// 当前选中的是站点的图片字幕：Fushi 叠层画不了，站点自己的字幕层要显示出来。

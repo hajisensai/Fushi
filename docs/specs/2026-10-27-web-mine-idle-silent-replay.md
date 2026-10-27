@@ -116,3 +116,14 @@ process loopback 需要 Windows 10 build 20348+（消费版即 Windows 11）；�
 - 被遮挡 / 最小化的 Fushi 窗口里重放的截帧行为未验证（用户空闲时窗口状态不受我们控制）。
 - 极端崩溃场景下其它 WebView2 应用的音量残留，见上。未实测 Chromium 的 WASAPI 输出是否带 `AUDCLNT_STREAMFLAGS_NOPERSIST`（若带，残留问题本身不存在）。
 - native 采集是进程单例、不带引用计数：同来源二次 Start 复用、任一方 Stop 即停。现有换页路径（交接页先 stop 再换页）不会撞上。
+
+## 用户实测反馈修复（2026-10-27，PR #2578 分支 debug 版实测）
+
+| 现象 | 根因 | 修法 |
+|---|---|---|
+| 截帧带字幕 | 截帧走 CDP `Page.captureScreenshot`（截页面渲染结果，含站点 DOM 字幕层）；站点字幕只按用户的「隐藏站点字幕」开关藏，重放期间没有强制，且只靠 CSS 类名 | 每句开录前 `_prepareSiteForReplay`：强制 `setNativeSubtitlesHidden(true)`，并把 Netflix 字幕轨切到 none（glue `selectNetflixTrack('')`，类名变了也不漏）；整页导航后、`onLoadStop` 时按 `_hideNativeSubtitles \|\| _mineRunning` 重挂 |
+| 字幕轨 / 音轨被改 | 每次换档（原生页 → 内置档 → 回来）都是站点整页重载：Netflix 按账号默认重选轨；内置档从不对齐用户原来的轨（录的可能是另一条音轨） | 重放前记 `WebMineReturnState`（集、站点字幕轨、音轨、位置）；重放按原音轨录音；结束（跑完 / 停止 / 让位）后由纯函数 `planWebMineRestore` 逐拍对齐、原样恢复，回到原生页时标成「用户亲手选过」，不被每集首次的语言偏好盖掉 |
+| 制完卡不退出 | 手动交接（原生页 / 窗口档 → 内置档）没有回程；回程也不 seek（Netflix 按被重放改过的服务器书签起播） | 手动与空闲两条交接都带 `returnHostingAfterMining` + `mineReturnState`，结束后换回原档并恢复集 / 轨 / 位置；原页内跑完也走同一恢复 |
+| 进行中没有提示 | 进度只画在顶栏标题里，全屏时顶栏不存在 | 状态胶囊手动路径也显示（「制卡中 3/10」，结束留结果）；胶囊在画面叠层里，全屏可见 |
+
+钉住：`test/media/video/web_mine_return_state_test.dart`（规划函数 + 接线守卫）。未在真机复测这四条。
