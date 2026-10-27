@@ -1909,8 +1909,9 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
             tab: findTab,
           ),
         // 功能的进行中状态（可取消）：出现 / 消失走尺寸动画，时长取 FushiMotion。
-        AnimatedSize(
+        FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
           alignment: Alignment.topCenter,
           child: Column(
             mainAxisSize: MainAxisSize.min,
