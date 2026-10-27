@@ -1238,7 +1238,16 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 否则 _updateCurrentCue 被 guard 挡住，_currentCue 卡 null，
     // 守卫放下后第一次 tick 会匹配到 cue[0] 导致进度清零。
     // 守卫放下后 notifySectionRestoreCompleted 会负责恢复。
-    if (_chapterTransition) return;
+    if (_chapterTransition) {
+      // 当前句保留，但它的下标必须指向**新**列表：下标仍指旧列表时，落地回执的
+      // 重算会把新列表里同下标的那句判成「cue 未变」而早退，高亮停在旧章那一句
+      // （PR #2544 的「换 cue 列表后高亮冻结」场景）。
+      final AudioCue? kept = _currentCue;
+      _currentCueIndex = kept == null
+          ? -1
+          : _chapterCues.indexWhere((AudioCue c) => _isSameCue(c, kept));
+      return;
+    }
     // 换 cue 列表是上下文边界：任何挂起的显式 seek 抑制窗都失效，必须复位，
     // 否则下面的 _updateCurrentCue 重算会被旗挡住、_currentCue 卡 null（W-2）。
     _clearExplicitSeekSuppression();

@@ -101,21 +101,32 @@ void main() {
         reason: '新列表属于 reader 当前章也不是落地证据',
       );
       expect(controller.currentCue?.text, 'old');
+
+      // 落地回执到了：按新列表重算，当前句换成新章的那一句。守卫期间换列表时
+      // _currentCueIndex 若仍指旧列表的下标，会与新列表同下标的句子「撞号」，
+      // 重算被判成「cue 未变」而早退，高亮永远停在旧章那一句。
+      controller.notifySectionRestoreCompleted(
+        currentReaderSection: 91,
+        success: true,
+      );
+      controller.debugUpdateCueForPosition(5100);
+      expect(controller.currentCue?.text, 'new');
     });
   });
 
   group('装配：面板「章节」tab 跳章与定音频是一次操作', () {
     test('reader_audiobook_panel 先暂挂自动跨章，跳章后由本处 seek', () {
+      // 去空白比较：调用点会被 dart format 折行。
       final String panel = File(
         'lib/src/reader/reader_audiobook_panel.dart',
-      ).readAsStringSync();
+      ).readAsStringSync().replaceAll(RegExp(r'\s+'), '');
       final int hold = panel.indexOf('ctrl.holdCrossChapterUntilCallerSeek();');
       final int jump = panel.indexOf(
-        'await widget.onJumpSection(entry.index, entry.fragment);',
+        'awaitwidget.onJumpSection(entry.index,entry.fragment);',
         hold,
       );
       final int seek = panel.indexOf(
-        'await ctrl.skipToCue(first, callerPositionsReader: true);',
+        'awaitctrl.skipToCue(first,callerPositionsReader:true,);',
         jump,
       );
       expect(hold, isNonNegative, reason: '跳章在飞期间按旧章位置判出的跨章就是回弹');
