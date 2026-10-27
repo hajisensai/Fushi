@@ -1392,3 +1392,72 @@ fn ingest_session_requires_begin_and_a_stable_identity() {
     assert!(a.core.sync2_ingest_batch(P, &[], None, T0 + 2).is_err());
     assert!(a.core.sync2_ingest_finish(P, T0 + 2).is_err(), "a failed batch drops the session");
 }
+
+/// 反馈 8TaOy2i-lL / BUG-3801：一个库文件里的多个 profile 共用 `srs_field_edits`（主键只有 `id`），
+/// 修改记录 ID 由 dot `(writer, seq)` 派生、不含 profile。v2 之前 Dart 的写入者每台设备一个
+/// （`<deviceId>#<incarnation>`）、序号却按 profile 各记各的，新 profile 从 seq 1 起写就撞上老 profile 的
+/// 同 ID 行（导入 APKG 整批回滚）。v2 起本机写入的 dot 由 Rust 按「该 profile 的本机身份」重新分配（每个
+/// profile 一个随机 v7 设备 ID），Dart 给的 w / s / id 一律不读。这里钉住：老 profile 留着旧写入者 1..N 的
+/// 行（已迁移成操作），新 profile 带同一组旧 dot 的草稿写入照样全部落库、ID 与老 profile 不相交，老 profile 不动。
+#[test]
+fn second_profile_writes_never_reuse_another_profiles_edit_ids() {
+    const Q: &str = "0193a1b2-0000-7000-8000-00000000cafe";
+    let a = Device::new("profiles");
+    let legacy_writer = "11111111-2222-4333-8444-555555555555#1";
+    let legacy_row = |profile: &str, entity: &str, s: i64| {
+        let id = crate::registers::edit_id(legacy_writer, s);
+        let x = json!({
+            "ctx": {"vv": {}}, "e": entity, "f": format!("f/{s}"), "hlc": format!("{s}:0:{legacy_writer}"),
+            "id": id, "k": "note", "p": profile, "s": s, "ts": "wall", "v": "old", "w": legacy_writer,
+        });
+        (id, x)
+    };
+    {
+        let w = a.core.writer().unwrap();
+        for s in 1..=3 {
+            let (id, x) = legacy_row(P, "NA", s);
+            w.execute(
+                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
+                 VALUES (?1, ?2, 'note', 'NA', ?3, ?4, ?5, ?6)",
+                rusqlite::params![id, P, format!("f/{s}"), legacy_writer, s, x.to_string()],
+            )
+            .unwrap();
+        }
+        // 前提：主键跨 profile 全局唯一——v2 之前的写法（照搬 Dart 给的 ID 落库）在这里就是用户看到的 UNIQUE 失败。
+        let (id, x) = legacy_row(Q, "NQ", 1);
+        let err = w
+            .execute(
+                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
+                 VALUES (?1, ?2, 'note', 'NQ', 'f/1', ?3, 1, ?4)",
+                rusqlite::params![id, Q, legacy_writer, x.to_string()],
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("UNIQUE constraint failed: srs_field_edits.id"), "{err}");
+    }
+    a.core.sync2_migrate(P, T0, None).unwrap();
+    let ids_of = |profile: &str| a.rows(&format!("SELECT id, writer_id FROM srs_field_edits WHERE profile_uid = '{profile}' ORDER BY id"));
+    let p_rows = ids_of(P);
+    assert_eq!(p_rows.len(), 4, "header + 3 legacy rows: {p_rows:?}");
+
+    // 新 profile：草稿带的就是 v2 之前 Dart 会给的那组 dot（同一旧写入者、序号从 1 起）——ID 与老 profile 的完全相同。
+    let input: Vec<Value> = (1..=3)
+        .map(|s| {
+            let (_, mut x) = legacy_row(Q, "NQ", s);
+            x["v"] = json!("new");
+            json!({"e": {"t": "edit", "x": x}, "note": "NQ"})
+        })
+        .collect();
+    let r: Value = serde_json::from_str(&a.core.sync2_apply_local(Q, T0 + 1, &Value::Array(input).to_string()).unwrap()).unwrap();
+    assert_eq!(r["landed"], json!([true, true, true]), "{r}");
+
+    let q_rows = ids_of(Q);
+    assert_eq!(q_rows.len(), 4, "header + 3 rows: {q_rows:?}");
+    let device = |profile: &str| a.core.sync2_status(profile).unwrap()["device"].as_str().unwrap().to_owned();
+    let q_device = device(Q);
+    assert_ne!(q_device, device(P), "each profile has its own local identity");
+    for row in q_rows.iter().skip(1) {
+        assert_eq!(row[1], q_device, "dot reassigned to the profile's own device: {row:?}");
+        assert!(!p_rows.iter().skip(1).any(|x| x[0] == row[0]), "edit id {} reused across profiles", row[0]);
+    }
+    assert_eq!(ids_of(P), p_rows, "old profile untouched");
+}
