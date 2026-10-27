@@ -275,9 +275,10 @@ DashboardVideoProgress dashboardVideoContinueProgress({
 /// Profile 开了排行榜账户时）；没开账户时退回当前 Profile 名的首字圆。点击打开
 /// 排行榜（账户页在那里）。
 ///
-/// 排行榜服务只在本 Profile 已开账户时才有 `self`；开了账户但本进程还没联网取过
-/// 时补一次 [LeaderboardService.refreshSelf]（反馈中心同款做法）。失败不打扰用户
-/// （头像退回首字圆即可），但照常记进 [ErrorLogService]，不吞异常。
+/// 排行榜服务只在本 Profile 已开账户时才有 `self`：冷启动先是上次的本机缓存（头像
+/// 立刻可见），本进程还没联网取过时补一次 [LeaderboardService.refreshSelf]（反馈中心
+/// 同款做法）。失败不打扰用户（头像留在缓存 / 首字圆），但照常记进
+/// [ErrorLogService]，不吞异常。
 ///
 /// Profile 名跟着库走：`profiles` 表（改名 / 导入 / 删除）或 `preferences` 表
 /// （切换激活 Profile 写 `active_profile_id`）一有写入就重读一次，名字真变了才
@@ -342,11 +343,15 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
     }
   }
 
+  /// 每次 build 都判一次：服务的 [LeaderboardService.load] 是异步的，读完账户文件前
+  /// status 恒为 disabled，读完会通知、本组件随之重建，那时才真正发起刷新。冷启动时
+  /// `self` 已是本机缓存（先把头像画出来），但仍要联网取一次最新值——所以判据是
+  /// [LeaderboardService.selfFresh] 而不是 `self != null`（反馈 hDfesbQvxB）。
   void _maybeRefreshSelf(LeaderboardService service) {
-    if (_selfRequested || service.self != null) return;
+    if (_selfRequested || service.selfFresh) return;
     if (service.status != LeaderboardStatus.active) return;
     _selfRequested = true;
-    // 失败时头像退回首字圆（self 仍为 null），只记日志、不打扰用户。
+    // 失败时头像留在缓存（没缓存就是首字圆），只记日志、不打扰用户。
     unawaited(
       service.refreshSelf().then<void>(
         (LeaderboardSelf _) {},

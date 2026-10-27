@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' show Rect, Size;
 
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
@@ -37,6 +38,15 @@ class FakeAdvancedMiningHost {
   final List<List<int>> previewCalls = <List<int>>[];
   int stopCalls = 0;
   bool previewResult = true;
+
+  /// 每次成功起播交回的句柄（按顺序）；测试调 `finish` 模拟「这段播完了」。
+  final List<RangePlayback> playbacks = <RangePlayback>[];
+
+  /// 非 null 时 preview 卡在这里，模拟起播（seek → play）还在途。
+  Completer<void>? previewGate;
+
+  /// true = 像有声书片段播放器那样，播完才从 preview 返回（返回的句柄已结束）。
+  bool previewEndsBeforeReturn = false;
 
   /// 一句 1 秒：区间 = 第一句起 → 最后一句止（未加偏移）。
   static const int sentenceStartMs = 723400;
@@ -127,9 +137,21 @@ class FakeAdvancedMiningHost {
     },
     preview: (int s, int e) async {
       previewCalls.add(<int>[s, e]);
-      return previewResult;
+      final Completer<void>? gate = previewGate;
+      if (gate != null) await gate.future;
+      if (!previewResult) return null;
+      final RangePlayback playback = RangePlayback();
+      playbacks.add(playback);
+      if (previewEndsBeforeReturn) playback.finish(RangePlaybackEnd.reachedEnd);
+      return playback;
     },
-    stopPreview: () async => stopCalls++,
+    stopPreview: () async {
+      stopCalls++;
+      // 像真宿主一样：停止就是把还在放的那段以「打断」收尾。
+      for (final RangePlayback p in playbacks) {
+        p.finish(RangePlaybackEnd.interrupted);
+      }
+    },
   );
 
   AdvancedMiningVideoImageSection video({

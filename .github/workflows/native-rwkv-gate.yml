@@ -19,7 +19,7 @@
 #     （fushi_rwkv 是 app 的硬依赖，见 fushi/test/build/fushi_rwkv_hard_dependency_guard_test.dart），
 #     这里不重复；不碰发布路径（全程只读，不上传产物）；不跑 tools/oracle。
 #   * 权重不入库：fetch_model.sh 按钉死 URL 下载大模型权重（~11 MB）与小模型发布包
-#     （sm40v2-package.zip，权重 + 黄金向量）并校验 SHA-256，actions/cache 的 key 带两者的哈希。
+#     （sm56-package.zip，权重 + 黄金向量）并校验 SHA-256，actions/cache 的 key 带两者的哈希。
 #     缺失时测试直接失败（不会静默跳过）。
 #
 # ── 退出码纪律 ────────────────────────────────────────────────────────────────────
@@ -45,9 +45,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # 与 fetch_model.sh 钉的两个 SHA-256 一致：大模型权重、小模型（SM40）发布包。任一变化都换缓存。
+  # 与 fetch_model.sh 钉的两个 SHA-256 一致：大模型权重、小模型（SM56）发布包。任一变化都换缓存。
   RWKV_MODEL_SHA256: 749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec
-  RWKV_SMALL_PACKAGE_SHA256: 9bc1e3e4040ce9693f230e905abb5c925b1102f787424b9059543ae900f1e2a2
+  RWKV_SMALL_PACKAGE_SHA256: 7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a
 
 jobs:
   rust-tests:

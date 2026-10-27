@@ -199,6 +199,44 @@ void main() {
     await tester.pump(const Duration(milliseconds: 10));
   });
 
+  // 不学外语的用户：欢迎步选「只看书、看番、听书」，功能步里查词 / 制卡预先取消，
+  // 走完向导时查词、制卡、复习三个模块都关，词典 / 制卡 / 复习相关步骤一个不出。
+  testWidgets('只看媒体：查词 / 制卡 / 复习模块关，相关步骤全部跳过', (WidgetTester tester) async {
+    final _HostAppModel app = await _pumpWizard(tester);
+    expect(find.text(t.onboarding_purpose_title), findsOneWidget);
+    await tester.tap(find.text(t.onboarding_purpose_media_title));
+    await _settle(tester);
+
+    await tester.tap(find.text(t.onboarding_action_next));
+    await _settle(tester);
+    expect(find.text(t.onboarding_features_title), findsOneWidget);
+    bool tileSelected(String title) => tester
+        .widgetList<OnboardingFeatureTile>(find.byType(OnboardingFeatureTile))
+        .firstWhere((OnboardingFeatureTile tile) => tile.title == title)
+        .selected;
+    expect(tileSelected(t.settings_destination_card_creation), isFalse);
+    expect(tileSelected(t.onboarding_feature_pack), isFalse);
+    expect(tileSelected(t.onboarding_feature_books), isTrue);
+
+    final List<String> rest = await _nextUntil(
+      tester,
+      t.onboarding_finish_title,
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    expect(app.moduleEnabled(ModuleId.lookup), isFalse);
+    expect(app.moduleEnabled(ModuleId.cardCreation), isFalse);
+    expect(app.moduleEnabled(ModuleId.srs), isFalse);
+    expect(app.moduleEnabled(ModuleId.books), isTrue);
+    expect(rest, isNot(contains(t.onboarding_step_pack_title)));
+    expect(rest, isNot(contains(t.onboarding_review_method_title)));
+    expect(rest, isNot(contains(t.onboarding_srs_title)));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 10));
+  });
+
   // 反馈 VtbEJzUEYL：功能步「接下来配置」一节落在视口外，用户看不到就按了下一步。
   // 正文下方还有没看到的内容时，主按钮是「往下看」：按一下往下翻、不换步；翻到底
   // 才变回「下一步」。

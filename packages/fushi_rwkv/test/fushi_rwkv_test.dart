@@ -30,11 +30,11 @@ File _modelFile(String name) {
 /// 小模型 int8 权重：从发布包里解出来落到临时文件（worker 按路径加载）。
 File _smallWeights() {
   final Archive zip = ZipDecoder().decodeBytes(
-    _modelFile('sm40v2-package.zip').readAsBytesSync(),
+    _modelFile('sm56-package.zip').readAsBytesSync(),
   );
-  final ArchiveFile entry = zip.findFile('sm40v2/weights.int8.bin')!;
+  final ArchiveFile entry = zip.findFile('sm56/weights.int8.bin')!;
   final File out = File(
-    '${Directory.systemTemp.createTempSync('fushi_rwkv').path}/sm40.int8.bin',
+    '${Directory.systemTemp.createTempSync('fushi_rwkv').path}/sm56.int8.bin',
   )..writeAsBytesSync(entry.content as List<int>);
   return out;
 }

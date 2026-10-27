@@ -1010,6 +1010,216 @@ void main() {
     );
   });
 
+  group('multi-directory packs (kg41f2PGdC)', () {
+    VideoOrganizationRequest request({int defaultSeason = 1}) =>
+        VideoOrganizationRequest(
+          torrentId: 'hash',
+          title: '向山进发',
+          year: 2013,
+          kind: VideoOrganizationKind.episodic,
+          defaultSeasonNumber: defaultSeason,
+          sourceRoot: _localRoot,
+          pathMapping: VideoDownloadPathMapping(
+            remoteRoot: '/library',
+            localRoot: _localRoot,
+          ),
+        );
+
+    List<TorrentFileEntry> entries(List<String> names) => <TorrentFileEntry>[
+      for (int i = 0; i < names.length; i++)
+        TorrentFileEntry(name: names[i], size: 100, progress: 1, index: i),
+    ];
+
+    const String vcb = '[VCB-Studio] Yama no Susume';
+
+    test('a sequel directory without a season number no longer collides with '
+        'the base work and is kept as a sibling work', () {
+      // 用户原包：本作与续作各自一个目录，文件名都只有 [01]，没有季号。旧口径
+      // 两边都落 `S01E01`，整条任务 `organization target collision` 硬失败。
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+        request(),
+        entries(<String>[
+          '$vcb/$vcb [Ma10p_1080p]/$vcb [01][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb [Ma10p_1080p]/$vcb [02][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb Next Summit [Ma10p_1080p]/'
+              '$vcb Next Summit [01][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb Next Summit [Ma10p_1080p]/'
+              '$vcb Next Summit [02][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb [Ma10p_1080p]/SPs/$vcb [NCOP][Ma10p_1080p].mkv',
+        ]),
+      );
+      final Map<int, VideoOrganizationFilePlan> byIndex =
+          <int, VideoOrganizationFilePlan>{
+            for (final VideoOrganizationFilePlan file in plan.files)
+              file.backendFileIndex: file,
+          };
+
+      // 基础作品（系列名是续作系列名的词前缀）沿用任务默认季。
+      expect(
+        byIndex[0]!.targetRelativePath,
+        '向山进发 (2013)/Season 01/向山进发 (2013) - S01E01.mkv',
+      );
+      expect(
+        byIndex[1]!.targetRelativePath,
+        '向山进发 (2013)/Season 01/向山进发 (2013) - S01E02.mkv',
+      );
+      expect(byIndex[0]!.siblingWork, isFalse);
+      // 续作：镜像源目录、不编季集号、不冒充本作分集。
+      for (final int index in <int>[2, 3]) {
+        final VideoOrganizationFilePlan file = byIndex[index]!;
+        expect(file.siblingWork, isTrue);
+        expect(file.seasonNumber, isNull);
+        expect(file.episodeNumber, isNull);
+        expect(
+          file.targetRelativePath,
+          startsWith('向山进发 (2013)/$vcb Next Summit [Ma10p_1080p]/'),
+        );
+      }
+      expect(
+        byIndex[2]!.targetRelativePath,
+        endsWith('$vcb Next Summit [01][Ma10p_1080p][x265_flac].mkv'),
+      );
+      // 特典照旧进 Extras。
+      expect(byIndex[4]!.targetRelativePath, contains('/Extras/'));
+      expect(byIndex[4]!.siblingWork, isFalse);
+      // 所有目标唯一（不覆盖）。
+      expect(
+        plan.files
+            .map((VideoOrganizationFilePlan f) => f.targetRelativePath)
+            .toSet(),
+        hasLength(plan.files.length),
+      );
+    });
+
+    test('English ordinal season directories (Second / Third Season) merge '
+        'into the same work by season instead of becoming sibling works', () {
+      // VCB 合集包完整形态：本作 + Second Season + Third Season + Next Summit。
+      // BUG-3816 时解析器不认英文序数词季名，Second/Third 目录只能当并列作品；
+      // 现在它们按季并进同一作品（Next Summit 没有季号 token，仍是并列作品）。
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+        request(),
+        entries(<String>[
+          '$vcb/$vcb [Ma10p_1080p]/$vcb [01][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb [Ma10p_1080p]/$vcb [02][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb Second Season [Ma10p_1080p]/'
+              '$vcb Second Season [01][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb Second Season [Ma10p_1080p]/'
+              '$vcb Second Season [02][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb Third Season [Ma10p_1080p]/'
+              '$vcb Third Season [01][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb Next Summit [Ma10p_1080p]/'
+              '$vcb Next Summit [01][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb [Ma10p_1080p]/SPs/$vcb [NCOP][Ma10p_1080p].mkv',
+        ]),
+      );
+      final Map<int, VideoOrganizationFilePlan> byIndex =
+          <int, VideoOrganizationFilePlan>{
+            for (final VideoOrganizationFilePlan file in plan.files)
+              file.backendFileIndex: file,
+          };
+      expect(
+        <String>[for (int i = 0; i <= 4; i++) byIndex[i]!.targetRelativePath],
+        <String>[
+          '向山进发 (2013)/Season 01/向山进发 (2013) - S01E01.mkv',
+          '向山进发 (2013)/Season 01/向山进发 (2013) - S01E02.mkv',
+          '向山进发 (2013)/Season 02/向山进发 (2013) - S02E01.mkv',
+          '向山进发 (2013)/Season 02/向山进发 (2013) - S02E02.mkv',
+          '向山进发 (2013)/Season 03/向山进发 (2013) - S03E01.mkv',
+        ],
+      );
+      for (int i = 0; i <= 4; i++) {
+        expect(byIndex[i]!.siblingWork, isFalse, reason: 'index $i');
+      }
+      expect(byIndex[5]!.siblingWork, isTrue);
+      expect(byIndex[6]!.targetRelativePath, contains('/Extras/'));
+      expect(
+        plan.files
+            .map((VideoOrganizationFilePlan f) => f.targetRelativePath)
+            .toSet(),
+        hasLength(plan.files.length),
+      );
+    });
+
+    test('"Season Two" style season directories supply the season number', () {
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+        request(),
+        entries(<String>[
+          'Show Complete/Season One/Show - 01.mkv',
+          'Show Complete/Season Two/Show - 01.mkv',
+        ]),
+      );
+      expect(
+        plan.files.map((VideoOrganizationFilePlan f) => f.targetRelativePath),
+        <String>[
+          '向山进发 (2013)/Season 01/向山进发 (2013) - S01E01.mkv',
+          '向山进发 (2013)/Season 02/向山进发 (2013) - S02E01.mkv',
+        ],
+      );
+    });
+
+    test('season directories inside a pack supply the season number', () {
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+        request(),
+        entries(<String>[
+          'Show Complete/Season 1/Show - 01.mkv',
+          'Show Complete/Season 1/Show - 02.mkv',
+          'Show Complete/Season 2/Show - 01.mkv',
+          'Show Complete/Season 2/Show - 02.mkv',
+        ]),
+      );
+      expect(
+        plan.files.map((VideoOrganizationFilePlan f) => f.targetRelativePath),
+        <String>[
+          '向山进发 (2013)/Season 01/向山进发 (2013) - S01E01.mkv',
+          '向山进发 (2013)/Season 01/向山进发 (2013) - S01E02.mkv',
+          '向山进发 (2013)/Season 02/向山进发 (2013) - S02E01.mkv',
+          '向山进发 (2013)/Season 02/向山进发 (2013) - S02E02.mkv',
+        ],
+      );
+      expect(
+        plan.files.any((VideoOrganizationFilePlan f) => f.siblingWork),
+        isFalse,
+      );
+    });
+
+    test('a single-directory torrent keeps the job season (no directory '
+        'season override)', () {
+      // 发布根名带尾数（`Show 2`）时季语义由任务身份决定，单目录种子旧行为不变。
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+        request(defaultSeason: 1),
+        entries(<String>[
+          '[Grp] Show 2 [1080p]/[Grp] Show - 01 [1080p].mkv',
+          '[Grp] Show 2 [1080p]/[Grp] Show - 02 [1080p].mkv',
+        ]),
+      );
+      expect(
+        plan.files.map((VideoOrganizationFilePlan f) => f.seasonNumber),
+        <int?>[1, 1],
+      );
+    });
+
+    test('directories of the same series without a unique base still fail '
+        'explicitly instead of guessing', () {
+      // 两个目录系列名相同、互不为前缀：判不出谁是本作，宁可显式失败也不猜。
+      expect(
+        () => const VideoDownloadOrganizer().plan(
+          request(),
+          entries(<String>[
+            'Pack/[A] Show [1080p]/[A] Show - 01 [1080p].mkv',
+            'Pack/[B] Show [720p]/[B] Show - 01 [720p].mkv',
+          ]),
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (FormatException error) => error.message,
+            'message',
+            contains('organization target collision'),
+          ),
+        ),
+      );
+    });
+  });
+
   test(
     'unparseable episodic filename blocks before backend mutation',
     () async {

@@ -281,6 +281,10 @@ add_fushi_test(simple_dict_css_test simple_dict_css_test.cpp
 # the fallback, and a ../ href must not escape the dictionary directory.
 add_fushi_test(mdx_linked_css_name_test mdx_linked_css_name_test.cpp
     "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+# MdxBuilder's "Title (No HTML code allowed)" placeholder means "no title":
+# untitled .mdx files import under their file stems instead of colliding.
+add_fushi_test(mdx_placeholder_title_test mdx_placeholder_title_test.cpp
+    "${FUSHI_ROOT}/fushidicts_external/libdeflate")
 # Scripts referenced by a bare <script src> sit next to the .mdx, not in the
 # .mdd; they must join the media store so assets have ONE fetch-by-name channel.
 add_fushi_test(mdx_sibling_script_media_test mdx_sibling_script_media_test.cpp

@@ -9040,6 +9040,10 @@ const __fushiPopupWheelListener = (e) => {
     const inExtensionContentScript =
         typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
     if (!scroller && inExtensionContentScript) return;
+    // 反馈 UIF7NkYCjL：弹窗里的滚轮一律不许冒泡到宿主页。下面几条早退（Ctrl 缩放、
+    // 横滚、祖先自己能滚、词条导航 blocked）只是「不接管滚动」，事件却会继续冒到站点——
+    // b 站播放器在祖先上监听 wheel 调音量。只截传播、不 preventDefault，原生滚动照常。
+    if (scroller && inExtensionContentScript) e.stopPropagation();
     // 词条导航先于一切滚动处理判定（否则 ctrlKey 早退会吃掉 Ctrl 系绑定）。只有
     // 焦点真的移动了（返回 'moved'）才吞掉事件：单词条 / 已到首尾时返回 'blocked'，
     // 这一帧继续走下面的正常滚动，弹窗不会「按住 Alt 就滚不动」。作用域判据由上面

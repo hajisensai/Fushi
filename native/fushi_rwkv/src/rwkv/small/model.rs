@@ -2,8 +2,8 @@
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
 //! Fushi: the small RWKV network ("w64", JSchoreels/anki-rwkv release
-//! `small-model-sm40-2026-10-19`, package sm40v2) and its batched replay /
-//! query engine.
+//! `small-model-sm56-2026-10-24`, package sm56; same architecture as
+//! sm40v2) and its batched replay / query engine.
 //!
 //! The executable spec is the package's NumPy reference
 //! (`reference/small_model_recurrent.py`, `RecurrentModel.step`) and

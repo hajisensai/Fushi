@@ -39,6 +39,7 @@ const List<String> _ankiOnlyEntries = <String>[
   'card_creation.anki.fetch',
   'card_creation.anki.create_lapis',
   'card_creation.anki.batch_mining',
+  'card_creation.anki.queue_undelivered_mines',
   'card_creation.anki.pending_mine_landing',
   'card_creation.anki.pending_mines',
   'card_creation.anki.deck',
@@ -61,6 +62,7 @@ const List<String> _ankiUnconditional = <String>[
   'card_creation.anki.fetch',
   'card_creation.anki.create_lapis',
   'card_creation.anki.batch_mining',
+  'card_creation.anki.queue_undelivered_mines',
   'card_creation.anki.pending_mine_landing',
   'card_creation.anki.pending_mines',
 ];

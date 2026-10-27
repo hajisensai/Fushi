@@ -99,6 +99,8 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
     t.srs_import_report_presets_skipped(n: r.deckPresetsSkipped),
   if (r.noteTypesUpdated > 0)
     t.srs_import_report_notetypes_updated(n: r.noteTypesUpdated),
+  for (final String name in r.noteTypesRestored)
+    t.srs_import_report_notetypes_restored(name: name),
   for (final String name in r.noteTypesDuplicated)
     t.srs_import_report_notetypes_duplicated(name: name),
   if (r.reviewLogsImported > 0)

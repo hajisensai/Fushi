@@ -65,9 +65,19 @@ int _fakePauseTorrent(
   return 1;
 }
 
+int _fakeSetTorrentUploadBlocked(
+    Pointer<Void> session, Pointer<Char> infoHash, int blocked) {
+  _calls.add('ht_set_torrent_upload_blocked('
+      '${infoHash.cast<Utf8>().toDartString()},$blocked)');
+  return 1;
+}
+
 /// [withUploadControl] = false 精确复刻「Dart 更新了、随包预编译 DLL 还是旧的」
 /// 部署形态（查不到 ht_set_unchoke_slots / ht_pause_torrent）。
-FushiTorrentBindings _fakeBindings({required bool withUploadControl}) {
+FushiTorrentBindings _fakeBindings({
+  required bool withUploadControl,
+  bool withTorrentUploadBlock = true,
+}) {
   Pointer<T> lookup<T extends NativeType>(String symbol) {
     switch (symbol) {
       case 'ht_session_create':
@@ -105,6 +115,15 @@ FushiTorrentBindings _fakeBindings({required bool withUploadControl}) {
           _fakePauseTorrent,
           0,
         ).cast<T>();
+      case 'ht_set_torrent_upload_blocked':
+        if (!withUploadControl || !withTorrentUploadBlock) {
+          throw ArgumentError("Failed to lookup symbol '$symbol'");
+        }
+        return Pointer.fromFunction<
+            Int Function(Pointer<Void>, Pointer<Char>, Int)>(
+          _fakeSetTorrentUploadBlocked,
+          0,
+        ).cast<T>();
     }
     throw ArgumentError("Failed to lookup symbol '$symbol'");
   }
@@ -112,9 +131,15 @@ FushiTorrentBindings _fakeBindings({required bool withUploadControl}) {
   return FushiTorrentBindings.fromLookup(lookup);
 }
 
-EmbeddedTorrentHost _host({required bool withUploadControl}) {
-  final EmbeddedTorrentEngine engine = EmbeddedTorrentEngine.fromBindings(
-      _fakeBindings(withUploadControl: withUploadControl));
+EmbeddedTorrentHost _host({
+  required bool withUploadControl,
+  bool withTorrentUploadBlock = true,
+}) {
+  final EmbeddedTorrentEngine engine =
+      EmbeddedTorrentEngine.fromBindings(_fakeBindings(
+    withUploadControl: withUploadControl,
+    withTorrentUploadBlock: withTorrentUploadBlock,
+  ));
   final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(engine);
   expect(session, isNotNull);
   return EmbeddedTorrentHost.forTesting(
@@ -229,6 +254,91 @@ void main() {
       host.sweepUploadPolicy();
       host.sweepUploadPolicy();
       expect(_calls.length, after, reason: '无状态变化不应再发 FFI');
+    });
+  });
+
+  group('fRmEhU4XIK：分享率按整个生命周期算，下载中达标也停上传', () {
+    const QbConnectionConfig cfg = QbConnectionConfig(
+      uploadEnabled: true,
+      seedRatioLimit: 1.3,
+    );
+
+    test('靶心：下载中分享率达标 → 单种子停上传，绝不 pause（继续下载）', () {
+      final EmbeddedTorrentHost host = _host(withUploadControl: true);
+      host.setUploadPolicy(cfg);
+      _torrentsJson = '['
+          '${_torrent(id: 'hit', finished: false, uploaded: 130, downloaded: 100)},'
+          '${_torrent(id: 'low', finished: false, uploaded: 129, downloaded: 100)}'
+          ']';
+      host.sweepUploadPolicy();
+
+      expect(_calls, contains('ht_set_torrent_upload_blocked(hit,1)'),
+          reason: '下载阶段触碰分享率上限也必须停上传');
+      expect(_calls, contains('ht_set_torrent_upload_blocked(low,0)'),
+          reason: '首轮对每个种子下发真实意图（清掉随 fastResume 复活的限速）');
+      expect(
+          _calls.where((String c) => c.startsWith('ht_pause_torrent')), isEmpty,
+          reason: '下载中的种子绝不 pause（那会掐死下载）');
+    });
+
+    test('上限调高后解除截停；状态不变不重复下发', () {
+      final EmbeddedTorrentHost host = _host(withUploadControl: true);
+      host.setUploadPolicy(cfg);
+      _torrentsJson = '['
+          '${_torrent(id: 'hit', finished: false, uploaded: 130, downloaded: 100)}'
+          ']';
+      host.sweepUploadPolicy();
+      _calls.clear();
+      host.sweepUploadPolicy();
+      expect(
+          _calls.where(
+              (String c) => c.startsWith('ht_set_torrent_upload_blocked')),
+          isEmpty,
+          reason: '每 tick 幂等');
+
+      host.setUploadPolicy(const QbConnectionConfig(
+        uploadEnabled: true,
+        seedRatioLimit: 2.0,
+      ));
+      expect(_calls, contains('ht_set_torrent_upload_blocked(hit,0)'));
+    });
+
+    test('下载完成时已达上限：直接 pause 停做种', () {
+      final EmbeddedTorrentHost host = _host(withUploadControl: true);
+      host.setUploadPolicy(cfg);
+      _torrentsJson = '['
+          '${_torrent(id: 'done', finished: true, uploaded: 140, downloaded: 100)}'
+          ']';
+      host.sweepUploadPolicy();
+      expect(_calls, contains('ht_pause_torrent(done,1)'));
+    });
+
+    test('总开关关：会话级 unchoke=0 已覆盖，不逐种子截停', () {
+      final EmbeddedTorrentHost host = _host(withUploadControl: true);
+      host.setUploadPolicy(const QbConnectionConfig(seedRatioLimit: 1.3));
+      _torrentsJson = '['
+          '${_torrent(id: 'dl', finished: false, uploaded: 500, downloaded: 100)}'
+          ']';
+      host.sweepUploadPolicy();
+      expect(_calls, isNot(contains('ht_set_torrent_upload_blocked(dl,1)')));
+      expect(_calls, contains('ht_set_unchoke_slots(0)'));
+    });
+
+    test('DLL 缺 ht_set_torrent_upload_blocked：下载阶段不动作，做种照常 pause', () {
+      final EmbeddedTorrentHost host =
+          _host(withUploadControl: true, withTorrentUploadBlock: false);
+      host.setUploadPolicy(cfg);
+      _torrentsJson = '['
+          '${_torrent(id: 'dl', finished: false, uploaded: 500, downloaded: 100)},'
+          '${_torrent(id: 'up', finished: true, uploaded: 500, downloaded: 100)}'
+          ']';
+      host.sweepUploadPolicy();
+      expect(
+          _calls.where(
+              (String c) => c.startsWith('ht_set_torrent_upload_blocked')),
+          isEmpty);
+      expect(_calls, contains('ht_pause_torrent(up,1)'));
+      expect(_calls, isNot(contains('ht_pause_torrent(dl,1)')));
     });
   });
 

@@ -98,7 +98,7 @@ const List<String> kWebBrowserDeviceLocalPrefKeys = <String>[
   kWebBrowserForceDarkPref,
   kWebBrowserDesktopModeDefaultPref,
   kWebBrowserRestoreTabsPref,
-  // features/furigana（整页注音 / 生词高亮开关）。
+  // 已删除的「整页注音」「生词高亮」开关：不再读写，存量值仍不进备份 / 同步。
   'web_browser_furigana',
   'web_browser_known_words',
   // web_browser_sites.dart（当前搜索引擎、自定义引擎）。

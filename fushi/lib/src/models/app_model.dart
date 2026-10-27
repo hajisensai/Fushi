@@ -22,6 +22,8 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
+    show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
@@ -1595,6 +1597,18 @@ class AppModel with ChangeNotifier {
   bool lookupChineseSimpToTradFor(String? requested) =>
       isChineseLanguageTag(effectiveLookupLanguage(requested: requested));
 
+  /// 进入一个游戏时登记查词来源语言：[gameLanguage] 是游戏卡上声明的语言
+  /// （`GalgameEntry.language`），未声明 / 不在库里落全局默认。hook 台词没有任何语言
+  /// 声明可读，所以查词语言只能由本机按游戏条目决定——本机启动（库页 / 游戏首页）与
+  /// host 开串流共用这一处；串流不接受接收端声明，也不沿用上一个媒体页留下的
+  /// [currentLookupLanguage]。
+  void enterGameLookupLanguage(String? gameLanguage) {
+    currentLookupLanguage = resolveContentLanguage(
+      explicit: gameLanguage,
+      globalDefault: defaultContentLanguage,
+    );
+  }
+
   /// [dictRepo] 是否已经赋值。
   ///
   /// 它是 late 字段，而 `_databaseOpened = true` 发生在它被赋值**之前**，所以
@@ -1618,6 +1632,7 @@ class AppModel with ChangeNotifier {
           showMediaNotification: () => showMediaNotification,
           floatingLyricStyle: _appLevelFloatingLyricStyle,
           floatingLyricVisibleLines: () => floatingLyricVisibleLines,
+          audioJumpThresholdSec: () => audiobookJumpThresholdSec,
           floatingLyricClickLookup: () => floatingLyricClickLookup,
           onFloatingLyricLookup: (String text, int index, Rect? wordRect) {
             // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
@@ -2449,6 +2464,20 @@ class AppModel with ChangeNotifier {
       focusSearch: focusSearch,
     );
   }
+
+  /// 查词结果顶部下拉是否清空查询（见 [PreferencesRepository.lookupPagePullToClear]）。
+  /// 偏好还没装好（测试替身没跑 initialise）时按默认值——与
+  /// [librarySentencesEnabled] 同一纪律，判据放在 getter 自己身上。
+  bool get lookupPagePullToClear => _prefsRepo?.lookupPagePullToClear ?? true;
+  Future<void> setLookupPagePullToClear(bool value) =>
+      prefsRepo.setLookupPagePullToClear(value);
+
+  /// 进入查词页 / 清空查询时是否自动弹软键盘（见
+  /// [PreferencesRepository.lookupPageAutoShowKeyboard]）。未初始化按默认值，同上。
+  bool get lookupPageAutoShowKeyboard =>
+      _prefsRepo?.lookupPageAutoShowKeyboard ?? true;
+  Future<void> setLookupPageAutoShowKeyboard(bool value) =>
+      prefsRepo.setLookupPageAutoShowKeyboard(value);
 
   /// 查词页按「返回上一级」（默认 Esc）是否最小化主窗（桌面；见
   /// [PreferencesRepository.lookupPageEscapeMinimizesWindow]）。
@@ -3733,6 +3762,12 @@ class AppModel with ChangeNotifier {
       /// Prepare entities that may be repeatedly used at runtime.
       _packageInfo = await PackageInfo.fromPlatform();
       _mediaTrackingAppVersion = _packageInfo.version;
+      // 媒体服务器认证头的客户端身份（产品名 / 本机设备名 / 应用版本，
+      // AL8qJr6yr-）：之后所有 Jellyfin / Emby 请求都按它报。
+      mediaServerClientIdentity = await resolveMediaServerClientIdentity(
+        platformServices.deviceInfo,
+        version: _packageInfo.version,
+      );
 
       debugPrint('[Fushi] init: directories (early, needed for DB)');
       // TODO-1260：这一步内部解析数据根（含对自定义数据根盘的 stat）。盘掉线时最易 hang，
@@ -5176,6 +5211,12 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleListTapLookup(bool value) =>
       prefsRepo.setVideoSubtitleListTapLookup(value);
 
+  /// 视频字幕列表上次打开的页签名（xlzGuK5YmD，`VideoSubtitleListFilter.name`）。
+  String get videoSubtitleListFilter => prefsRepo.videoSubtitleListFilter;
+
+  Future<void> setVideoSubtitleListFilter(String value) =>
+      prefsRepo.setVideoSubtitleListFilter(value);
+
   /// 视频字幕列表行字号档位（BUG-878，落 Drift preferences，默认 1=1.0x）。
   int get videoSubtitleListFontScaleIndex =>
       prefsRepo.videoSubtitleListFontScaleIndex;
@@ -5204,16 +5245,11 @@ class AppModel with ChangeNotifier {
 
   bool get videoDiscLaunchAnimation => prefsRepo.videoDiscLaunchAnimation;
 
-  /// 作品图谱 L2：OP / ED 自动跳过 / 角落曲名（落 Drift preferences）。
+  /// 作品图谱 L2：OP / ED 自动跳过（落 Drift preferences）。
   bool get videoThemeSongAutoSkip => prefsRepo.videoThemeSongAutoSkip;
 
   Future<void> setVideoThemeSongAutoSkip(bool value) =>
       prefsRepo.setVideoThemeSongAutoSkip(value);
-
-  bool get videoThemeSongNowPlaying => prefsRepo.videoThemeSongNowPlaying;
-
-  Future<void> setVideoThemeSongNowPlaying(bool value) =>
-      prefsRepo.setVideoThemeSongNowPlaying(value);
 
   Future<void> setVideoDiscLaunchAnimation(bool value) =>
       prefsRepo.setVideoDiscLaunchAnimation(value);
@@ -6436,6 +6472,20 @@ class AppModel with ChangeNotifier {
   /// 默认下载根（未解析完成前为空串）。
   String get downloadDefaultSaveRoot => _downloadDefaultSaveRoot ?? '';
 
+  /// 解析并记下默认下载根 `<documents>/anime_downloads/content`。幂等。
+  ///
+  /// 与下载中心（[startAnimeDownloadService]）解耦：那条服务只在「浏览」模块启用时
+  /// 才起（iOS 上恒不可用），而 iOS 照样能从用户自配服务器「下载到本机」，
+  /// 落点不能依赖它有没有跑过（[discoveryDownloadDirFor]）。
+  Future<String> _resolveDownloadDefaultSaveRoot() async {
+    final String? known = _downloadDefaultSaveRoot;
+    if (known != null) return known;
+    final Directory baseDir = await AppPaths.documentsSubdirectory(
+      'anime_downloads',
+    );
+    return _downloadDefaultSaveRoot = path.join(baseDir.path, 'content');
+  }
+
   /// 已保存的下载根配置（空串 = 用默认根）。
   ///
   /// 走 `_prefsRepo?`（而非 `prefsRepo` 的 `!`）：设置区块能在 AppModel 尚未
@@ -6537,8 +6587,7 @@ class AppModel with ChangeNotifier {
     // TODO-1961：配置目录不可写/建不出时**回退默认根并记下原因**（设置页显示警告），
     // 绝不静默把下载丢进一个写不进去的目录。默认根本身不预检——它是既有行为，
     // 首次 add 时 prepareCategory 会建，失败路径与改动前逐字节一致。
-    final String defaultSaveRoot = path.join(baseDir.path, 'content');
-    _downloadDefaultSaveRoot = defaultSaveRoot;
+    final String defaultSaveRoot = await _resolveDownloadDefaultSaveRoot();
     String configuredRoot = prefsRepo.downloadSaveRoot.trim();
     if (configuredRoot.isNotEmpty) {
       final DownloadSaveRootIssue? issue = await checkDownloadSaveRoot(
@@ -7701,11 +7750,13 @@ class AppModel with ChangeNotifier {
   /// 发现页下载的落盘目录（与 torrent 同根：用户配置的下载根 → 默认根
   /// [downloadDefaultSaveRoot]，再按媒体域分子目录）。
   ///
-  /// 不再自造 documents 派生点：默认根由 [startAnimeDownloadService] 在
-  /// initialise 期唯一计算（UI 可达发现页时必已就绪），这里只消费。
-  String discoveryDownloadDirFor(DiscoveryMediaKind kind) {
+  /// 默认根与下载中心共用 [_resolveDownloadDefaultSaveRoot] 这一个派生点，但**不**
+  /// 依赖下载中心已启动：iOS 没有下载中心却可以从用户自配服务器下载，「浏览」模块
+  /// 关掉的桌面 / Android 同理；以前读的是只在下载中心启动时才赋值的字段，这些情况下
+  /// 根是空串，落点退化成相对路径 `discovery/<kind>`，任务永远失败。
+  Future<String> discoveryDownloadDirFor(DiscoveryMediaKind kind) async {
     String root = prefsRepo.downloadSaveRoot.trim();
-    if (root.isEmpty) root = downloadDefaultSaveRoot;
+    if (root.isEmpty) root = await _resolveDownloadDefaultSaveRoot();
     return path.join(root, 'discovery', kind.name);
   }
 
@@ -8739,11 +8790,11 @@ class AppModel with ChangeNotifier {
     await setScreenWakelock(enable: false, source: 'closeMedia');
     // Returning to the home/menu shell: restore both system bars.
     await setHomeShellSystemUiMode();
-    // TODO-1275 / BUG-361: returning to the home shell — restore desktop_drop's
-    // Windows OS drop registration in case an opened reader/video/lookup
-    // WebView2 usurped it, so drag-import works again after any media was
-    // opened. No-op off Windows / when desktop_drop lacks the reinitialize patch.
-    await DesktopDropReinitializer.reinitialize();
+    // TODO-1275 / BUG-361 / BUOxDR9WIJ: returning to the home shell — verify
+    // desktop_drop's Windows OS drop registration and re-register only if it
+    // is really gone (logged as a diagnostic). Page routes are also covered by
+    // DesktopDropRouteObserver; this keeps the non-route media close path.
+    await DesktopDropReinitializer.verifyAndRepair('closeMedia');
     await mediaSource.onSourceExit(appModel: this, ref: ref);
 
     await audioCtrl.audioHandler?.stop();
@@ -9067,6 +9118,10 @@ class AppModel with ChangeNotifier {
   bool get audiobookBackgroundPlay => prefsRepo.audiobookBackgroundPlay;
   Future<void> setAudiobookBackgroundPlay({required bool value}) =>
       prefsRepo.setAudiobookBackgroundPlay(value: value);
+
+  int get audiobookJumpThresholdSec => prefsRepo.audiobookJumpThresholdSec;
+  Future<void> setAudiobookJumpThresholdSec(int value) =>
+      prefsRepo.setAudiobookJumpThresholdSec(value);
 
   bool get audiobookAutoTranscribe => prefsRepo.audiobookAutoTranscribe;
   Future<void> setAudiobookAutoTranscribe({required bool value}) =>
@@ -10585,14 +10640,19 @@ class AppModel with ChangeNotifier {
   /// 每次请求实时判定（默认关）。
   void _configureGameStreamLibrary() {
     if (!Platform.isWindows) return;
+    final FushiGameStreamLibraryHost library = FushiGameStreamLibraryHost(
+      loadGames: () => galgameRepo.load(),
+      isLaunchEnabled: () => prefsRepo.gameStreamRemoteLaunchEnabled,
+      service: () => syncServerController.gameStreamService,
+      startStream: syncServerController.startLaunchedGameStream,
+    );
     syncServerController.configureGameStreamLibrary(
-      FushiGameStreamLibraryHost(
-        loadGames: () => galgameRepo.load(),
-        isLaunchEnabled: () => prefsRepo.gameStreamRemoteLaunchEnabled,
-        service: () => syncServerController.gameStreamService,
-        startStream: syncServerController.startLaunchedGameStream,
-      ),
+      library,
       miningFactory: createGameStreamMiningAdapter,
+      // 串流查词的语言归 host：每次开串流按这场会话的游戏条目登记。
+      onStreamStarting: ({String? gameId}) async => enterGameLookupLanguage(
+        await library.streamGameLanguage(gameId: gameId),
+      ),
     );
   }
 
@@ -11237,10 +11297,8 @@ class AppModel with ChangeNotifier {
             MineToastStatus status,
           })
           described = describeMineOutcome(outcome);
-          FushiToast.show(
-            msg: described.message,
-            severity: mineToastSeverity(described.status),
-          );
+          // 制卡结果走 showMine：过「制卡提示」开关。
+          FushiToast.showMine(msg: described.message, status: described.status);
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);
           FushiToast.show(

@@ -14,6 +14,7 @@
 
 pub mod ffi;
 pub mod rows;
+mod profile_data;
 mod projections;
 pub mod schema;
 pub mod sync2;

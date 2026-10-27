@@ -205,6 +205,9 @@ class SyncRepository {
   // 互联通道专属的自动同步开关（反馈 5nWEirdCs2）；迁移规则见
   // [isInterconnectAutoSyncEnabled]。与 [_keyAutoSync] 同为行为开关，随备份恢复。
   static const _keyInterconnectAutoSync = 'interconnect_sync_auto';
+  // 复习（SRS）数据的自动同步开关（反馈 VNz9dsLeIy，默认开）；见 [isSrsAutoSyncEnabled]。
+  // 行为开关，随备份恢复（与上面两个自动同步开关同类）。
+  static const _keySrsAutoSync = 'srs_sync_auto';
   static const _keyLastSyncMs = 'sync_last_sync_ms';
   static const _keyCollectionsBaselineMs = 'sync_collections_baseline_ms';
   // 删除墓碑消费的因果基线：描述「本设备见过远端删除标记到什么时刻」。远端墓碑
@@ -473,6 +476,16 @@ class SyncRepository {
 
   Future<void> setInterconnectAutoSyncEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectAutoSync, v);
+
+  /// 复习（SRS）数据的自动同步（反馈 VNz9dsLeIy，默认开）。关掉后复习数据不再在后台同步：常规同步
+  /// 通道之后的复习步骤、本机写入后的推送、互联快速通道（已配对设备有新数据立刻同步）、本机作为主机
+  /// 收到写入后的同步都不跑；只剩牌组列表「立即同步」、AnkiConnect `sync` 与进入复习页的节流同步
+  /// （`srs_sync_scheduler.dart`）。只管复习数据，书 / 视频进度等常规同步不受影响。
+  Future<bool> isSrsAutoSyncEnabled() =>
+      _db.getPrefTyped<bool>(_keySrsAutoSync, true);
+
+  Future<void> setSrsAutoSyncEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keySrsAutoSync, v);
 
   /// 「与 Hoshi/ッツ 共享 Google Drive」开关。默认关（老用户云端数据留在隐藏
   /// appDataFolder 原地不动）。
@@ -1794,7 +1807,7 @@ class SyncRepository {
     // 「同步浏览历史」是这台设备的隐私许可：从另一台设备恢复备份不得替这台设备
     // 打开浏览轨迹外流。
     kSyncWebHistoryPrefKey,
-    // app 内浏览器的版式 / 行为偏好（标签页样式、侧边栏开合、整页注音……）：
+    // app 内浏览器的版式 / 行为偏好（标签页样式、侧边栏开合……）：
     // 按这台设备的屏幕与习惯调，唯一清单在 web_browser_prefs.dart。
     ...kWebBrowserDeviceLocalPrefKeys,
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，

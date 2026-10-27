@@ -1,0 +1,14 @@
+## BUG-3819 · 云同步删除墓碑阶段逐条 GET 全部远端标记，单阶段 200 s+
+- **报告**：2026-10-27（用户：应用内反馈 SDbJAx1Db6 的附带日志；该反馈主诉是游戏内嵌套查词，本条只是日志里顺带暴露的问题，不关闭该反馈）
+- **真实性**：✅ 真 bug。日志 `SyncRunReport.timing` 六轮 `deletionTombstones=196693–236138ms`（整轮云同步 204–250 s），并有 121 条 `deletion tombstone "favoritesentence__…json" unreadable: HandshakeException: Connection terminated during handshake`。根因 `fushi/lib/src/sync/sync_orchestrator.dart:1311–1316`（修复前 `syncDeletionTombstones`，base `cd7c9a975f`）：`listChildren(__tombstones__)` 后对**每一个**逐条标记 `await _backend.getJsonAsset(e.id)` 顺序串行，每条一次独立 HTTPS 往返；标记永不 GC（同函数文档「不自动 GC 远端标记」），所以每轮成本 = 2 + N 次往返且 N 只增不减（用户收藏句删除墓碑几百条）。读失败没有预算：连接坏掉时剩下每条都要再撞一次 TLS 握手、各记一条错。没有重复下载以外的问题（无重试 / 无额外超时），慢纯粹是「每轮逐条全量读」。
+- **[x] ① 已修复** — 读侧改成粗粒度对象（`packages/fushi_engine/lib/sync/deletion_tombstone_bundle.dart` 新增 + `sync_orchestrator.dart` `syncDeletionTombstones` 重写读段）：
+  - 每台设备只写自己那份合并清单 `__tombstones__/_bundles/tombstones-<deviceId>.json`（单写者，无丢更新；内容不变不重写）。清单装本机全部墓碑 + 本机读过的逐条标记及其列目录时的内容指纹 `AssetEntry.revision`。
+  - 消费：读 `_bundles/` 下全部清单（每设备 1 次 GET）；逐条标记若「同名 + 同指纹」已在任一清单里 ⇒ 免 GET（内容已由清单携带，指纹一变就重读）。
+  - 每轮至多读 200 条未覆盖的逐条标记（`kDeletionTombstoneMarkerReadsPerRound`），传输失败到 3 次（`kDeletionTombstoneReadFailureBudget`）就停读；推迟 / 失败一律按不完整观测处理，不推进消费基线（BUG-1934 不变式保持）。
+  - 旧格式兼容：旧客户端写的逐条标记照读；新墓碑仍**同时**写逐条标记，旧客户端照常消费；旧客户端列目录跳过子文件夹，看不到 `_bundles/`。内容不合法的逐条标记按指纹记进清单 `malformed`，同一份坏文件不再每轮重下。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/deletion_tombstone_bundle_round_trips_test.dart`（计数假远端 + `FakeAssetStore(reportRevisions: true)`，6 例）；回归 `deletion_tombstone_partial_read_test.dart` / `deletion_tombstone_rearm_orchestrator_test.dart` / `srt_book_tombstone_sync_test.dart` 同跑 26/26 绿。变异：去掉「同名同指纹免读」判据 → 稳态与新设备两例变红（+4 -2）。
+  - 往返次数前后对比（`getJsonAsset` 计数）：300 条旧标记——修复前**每轮 300**；修复后第 1 轮 200（上限）、第 2 轮 101（剩 100 + 自己清单 1）、第 3 轮起**每轮 1**。另一台新设备在已有清单时首轮即 **1**（修复前 50 条即 50）。连接全断时修复前 N 次握手失败，修复后 **3** 次即停。
+- **备注**：
+  - 未验证：真实 Drive / WebDAV 上的耗时（只在计数假远端上量了往返次数，没量真机秒数）；对端用旧客户端写入新标记时，新客户端需要读一次它才能记入指纹。
+  - FTP / SFTP 不给可靠内容指纹（`AssetEntry.revision == null`，见 `sync_asset_store.dart` 注释），这两个后端仍每轮逐条读（有上限与失败预算），刻意不拿秒级 mtime+size 冒充指纹。
+  - `deviceId` 为空（测试 / 未配置）时只读不写清单。

@@ -114,7 +114,7 @@ void main() {
     test('换集就绪后开录前再挂一次（画面就绪可能早于 onLoadStop）', () {
       final int start = page.indexOf('Future<bool> _navigateForMining(');
       expect(start, greaterThanOrEqualTo(0));
-      final int end = page.indexOf('Future<void> _runMineQueue()', start);
+      final int end = page.indexOf('Future<void> _runMineQueue(', start);
       expect(end, greaterThan(start));
       expect(
           page.substring(start, end).contains('_setPlayerChromeHidden(true)'),

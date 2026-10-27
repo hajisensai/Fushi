@@ -28,6 +28,10 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
   /// 保护，抄漏任何一处都是真事故（泄漏临时目录 / 续传验证器失效 / socket 不回收）。
   ///
   /// [id] 必须已经过 [_rejectUnsafeAssetId]。
+  ///
+  /// [vetoPush]（可选）：PUT 落盘前的删除墓碑闸门（反馈 Et3pmRzo0k，见
+  /// [_peerPushVetoed]）。返回 true → 409，body 照读照丢（让推送方干净地收到状态码，
+  /// 而不是半途被断开的连接），不导入，host 墓碑原样保留。
   Future<shelf.Response> _serveAssetPackage(
     shelf.Request request,
     String method, {
@@ -39,6 +43,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
     required Future<File> Function() export,
     required Future<void> Function(File tmp) import,
     required Future<void> Function() delete,
+    Future<bool> Function()? vetoPush,
   }) async {
     switch (method) {
       case 'GET':
@@ -66,6 +71,9 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
         return serveFileWithRange(file, request, etag: etag);
 
       case 'PUT':
+        if (vetoPush != null && await vetoPush()) {
+          return _peerPushVetoedResponse(request);
+        }
         final Directory tmpDir = await Directory.systemTemp.createTemp(
           tempPrefix,
         );
@@ -98,6 +106,41 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       default:
         return shelf.Response(405);
     }
+  }
+
+  /// 对端推送是否被 host 的同步删除墓碑否决（反馈 Et3pmRzo0k）。
+  ///
+  /// 对端「本端有 ∧ host 无」就推，而 host「无」可能正是某台设备「从所有设备删除」的
+  /// 结果；host 入库路径会把重新入库当新的加入意图、清掉墓碑，于是一次推送就静默撤销
+  /// 了那次删除。这里在导入前把关：推送方经 [kPeerPushPresentSinceHeader] 报来的本端
+  /// 存在起始时刻晚于删除才放行（删后重新加入），早于或缺失（旧版 client）一律拒收。
+  ///
+  /// host 未实现 [PeerPushDeletionGate]（测试 fake）→ 不把关，行为与旧版一致。
+  Future<bool> _peerPushVetoed(
+    shelf.Request request, {
+    required List<SyncTombstoneKind> kinds,
+    required String itemKey,
+  }) async {
+    final Object? svc = _libraryService;
+    if (svc is! PeerPushDeletionGate) return false;
+    final int? presentSinceAt = int.tryParse(
+      _interconnectHeaderValue(request, kPeerPushPresentSinceHeader) ?? '',
+    );
+    return svc.vetoesPeerPush(
+      kinds: kinds,
+      itemKey: itemKey,
+      presentSinceAt: presentSinceAt,
+    );
+  }
+
+  /// [_peerPushVetoed] 否决后的响应：先把 body 读完丢掉再回 409。不读就回，推送方
+  /// 还在 `addStream` 时连接被关，看到的是 socket 错误而不是这条可读的拒收原因。
+  Future<shelf.Response> _peerPushVetoedResponse(shelf.Request request) async {
+    await request.read().drain<void>();
+    return shelf.Response(
+      409,
+      body: 'Deleted on all devices; push rejected to keep the deletion',
+    );
   }
 
   Future<shelf.Response> _handleLibraryDictionaries(
@@ -255,6 +298,13 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
             0,
       ),
       delete: () => svc.deleteBook(bookId),
+      // host 对推来的书按 `sanitizeTtuFilename(<URL 书名>)` 派生 bookKey（tmp 文件名即
+      // URL 书名，EpubImporter / 漫画包导入同此），墓碑也按这个键记。
+      vetoPush: () => _peerPushVetoed(
+        request,
+        kinds: const <SyncTombstoneKind>[SyncTombstoneKind.book],
+        itemKey: sanitizeTtuFilename(bookId),
+      ),
     );
   }
 
@@ -668,6 +718,17 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       export: () => svc.exportAudiobook(bookKey),
       import: (File tmp) => svc.importAudiobook(tmp, bookKeyOverride: bookKey),
       delete: () => svc.deleteAudiobook(bookKey),
+      // 有声书与 EPUB 共享 bookKey：删书（只立 `book` 墓碑）会连带删掉 host 上的有声书，
+      // 推回来的有声书包会在 host 落成一条无书可绑的孤儿。纯字幕书身份是 uid，同一端点。
+      vetoPush: () => _peerPushVetoed(
+        request,
+        kinds: const <SyncTombstoneKind>[
+          SyncTombstoneKind.audiobook,
+          SyncTombstoneKind.srtbook,
+          SyncTombstoneKind.book,
+        ],
+        itemKey: bookKey,
+      ),
     );
   }
 }

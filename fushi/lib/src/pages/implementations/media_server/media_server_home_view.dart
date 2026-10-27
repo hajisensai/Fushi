@@ -524,19 +524,31 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
       rowHeight: mediaServerContinueCardHeight(context),
       itemBuilder: (BuildContext context, int index) {
         final MediaServerItem item = items[index];
-        return MediaServerContinueCard(
-          key: ValueKey<String>('$storageKey-card-${item.id}'),
-          browser: _browser,
-          item: item,
-          focusId: FushiFocusId('$storageKey-card-${item.id}'),
-          onTap: () => resumeMediaServerItem(
-            context,
-            widget.session,
-            item,
-            siblings: items,
+        // 菜单要锚在这张卡上：行的 itemBuilder 拿到的是列表 sliver 的 context
+        // （render object 是 sliver，不是卡），所以在卡外包一层 Builder 取卡自己的。
+        return Builder(
+          builder: (BuildContext context) => MediaServerContinueCard(
+            key: ValueKey<String>('$storageKey-card-${item.id}'),
+            browser: _browser,
+            item: item,
+            focusId: FushiFocusId('$storageKey-card-${item.id}'),
+            onTap: () => resumeMediaServerItem(
+              context,
+              widget.session,
+              item,
+              siblings: items,
+            ),
+            // 长按 / 右键：菜单给「继续播放 / 打开详情」（a-XEzglLaq：想从这里
+            // 去看同一部的其它集）。点按仍直接续播。
+            onLongPress: () => unawaited(
+              showMediaServerContinueMenu(
+                context,
+                widget.session,
+                item,
+                siblings: items,
+              ),
+            ),
           ),
-          onLongPress: () =>
-              openMediaServerItemDetail(context, widget.session, item),
         );
       },
     );

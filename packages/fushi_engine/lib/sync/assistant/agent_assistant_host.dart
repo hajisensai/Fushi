@@ -314,6 +314,8 @@ class AgentAssistantHostSession implements HostAssistantSession {
       ],
       'running': _session.running,
       'tokens': _session.totalTokens,
+      'usage': _session.usage.toJson(),
+      if (_session.cost.isNotEmpty) 'cost': _session.cost,
       'undoable': _session.undoableCount,
       if (pendingKind != null && pendingEntry != null)
         'pending': <String, Object?>{

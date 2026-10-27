@@ -95,6 +95,11 @@ bool get hostOwnsWebViewHoverLookup => isMacOSPlatform;
 /// 存活、用户随时可能在设置里改键」的宿主，必须靠这条才能让改键立即生效——旧版
 /// 键表闭包在首次注入时冻结，改键后 WebView 持焦期间仍按老键位响应。
 ///
+/// [listenOnWindow] 为 true 时键盘监听挂在 `window` 捕获阶段（DOM 派发的第一站）而不是
+/// `document`：页面里有不受宿主控制的脚本（复习卡面的模板脚本）也挂了 keydown 并
+/// stopPropagation 时，挂在 document 上的桥会被它截走。配合「桥在页面脚本之前注册」才
+/// 完整（复习卡面把桥写进外壳 `<head>`）。
+///
 /// [installMouseListeners] 为 true 时额外装 `mousedown`/`auxclick`/`contextmenu`
 /// 监听。默认 false：只用键盘的宿主生成的脚本里完全不含鼠标块（零行为变化）。
 /// 注意它与 [mouseButtons] 是否为空**无关**——弹窗要在「用户当前没绑鼠标键、之后
@@ -114,6 +119,7 @@ String webViewKeyBridgeScript({
   bool deferToPopupModal = false,
   bool forwardRepeats = true,
   bool stopPropagation = false,
+  bool listenOnWindow = false,
 }) {
   // 空键表 + 不装鼠标监听**是合法的**：脚本每次注入都覆盖 window 上的 token 表，
   // 宿主靠「注入空 spec」来清掉热槽 WebView 上残留的旧表（弹窗跨查词长期存活）。
@@ -141,6 +147,9 @@ String webViewKeyBridgeScript({
   const String modalGuard =
       '\n    if ((window.__fushiPopupModalDepth || 0) > 0) return;';
   final String popupModalGuard = deferToPopupModal ? modalGuard : '';
+  // window 捕获阶段是 DOM 派发的第一站：先于文档里任何（含页面自己挂在 window 捕获阶段、
+  // 注册得比桥晚的）监听拿到按键，页面脚本的 stopPropagation 拦不住它。
+  final String keyTarget = listenOnWindow ? 'window' : 'document';
   final String propagationGuard = stopPropagation
       ? '\n    e.stopImmediatePropagation();'
       : '';
@@ -183,7 +192,7 @@ String webViewKeyBridgeScript({
     if (e.code && e.code !== e.key) out.push(mods + e.code);
     return out;
   }
-  document.addEventListener('keydown', function(e) {
+  $keyTarget.addEventListener('keydown', function(e) {
     if (!e) return;
     if (e.isComposing) return;$repeatGuard$popupModalGuard
     var t = e.target;

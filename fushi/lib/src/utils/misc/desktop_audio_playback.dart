@@ -62,10 +62,39 @@ class AudioActivationQueue {
 /// backend, initialised in main.dart). Mirrors the Android native MediaPlayer
 /// used for the dictionary popup "play pronunciation" button — both local files
 /// and remote URLs (Forvo / JapanesePod, etc.).
+/// just_audio 在本平台走 media_kit 后端（`main.dart` 的 `JustAudioMediaKit.ensureInitialized()`
+/// 用缺省参数：只接管 Windows / Linux），其余平台走 just_audio 自带的原生实现
+/// （Android ExoPlayer、iOS / macOS AVPlayer）。
+///
+/// 两种后端的 `AudioPlayer.play()` **Future 语义不同**，这是平台契约，不是特例：
+/// - media_kit：平台 `play` 请求一被接受就返回，`play()` 很快完成。
+/// - 原生：just_audio 原生侧把这次 `play` 的结果挂起（Android `AudioPlayer.java` 的
+///   `playResult`、darwin `AudioPlayer.m` 的 `_playResult`），直到**暂停 / 播完 / 释放**才
+///   回复——`play()` 的 Future 覆盖整段播放（just_audio README：`await player.play()`
+///   = 播放并等它结束）。
+bool get justAudioUsesMediaKitBackend => Platform.isWindows || Platform.isLinux;
+
 class DesktopAudioPlayback {
   const DesktopAudioPlayback._();
 
-  static final AudioPlayer _player = AudioPlayer();
+  static AudioPlayer _player = AudioPlayer();
+
+  /// `_player.play()` 的 Future 是否覆盖整段播放（见 [justAudioUsesMediaKitBackend]）。
+  static bool _playFutureSpansPlayback = !justAudioUsesMediaKitBackend;
+
+  /// 测试钩子：换成假播放器（[playFutureSpansPlayback] 模拟后端的 `play()` 语义），
+  /// 重置串行队列；[skipWarmUp] 跳过冷启动预热（它要 path_provider 与真实设备）。
+  @visibleForTesting
+  static void debugReset({
+    required AudioPlayer player,
+    required bool playFutureSpansPlayback,
+    bool skipWarmUp = true,
+  }) {
+    _player = player;
+    _playFutureSpansPlayback = playFutureSpansPlayback;
+    _activation = AudioActivationQueue();
+    _warmUpQueued = skipWarmUp;
+  }
 
   /// Serializes every operation that changes the shared [_player]'s platform
   /// activation (`stop` ↔ `load` ↔ `play`). The single shared player keeps one
@@ -96,7 +125,7 @@ class DesktopAudioPlayback {
   /// moment the native play request is accepted (`_sendPlayRequest` →
   /// `await platform.play()`, L997), not when playback ends. So the body
   /// settles once activation is stable, while the clip keeps playing.
-  static final AudioActivationQueue _activation = AudioActivationQueue();
+  static AudioActivationQueue _activation = AudioActivationQueue();
 
   /// 是否已把冷启动预热排进 [_activation] 队列，避免重复入队（幂等）。
   static bool _warmUpQueued = false;
@@ -271,13 +300,37 @@ class DesktopAudioPlayback {
           );
           return false;
         }
-        // play() also toggles platform activation (_setPlatformActive(true) in
-        // just_audio's play() else-branch), so it MUST be awaited inside this
-        // serial body — not fire-and-forget — to keep that activation from
-        // interleaving with the next cycle. It returns once the native play
-        // request is accepted (playCompleter), not when the clip ends, so the
-        // caller is not blocked for the clip duration.
-        await _player.play();
+        // play() can also toggle platform activation (_setPlatformActive(true)
+        // in just_audio's play() else-branch). On the media_kit backend its
+        // Future settles once the play request is accepted, so it is awaited
+        // inside this serial body (BUG-342: activation must not escape).
+        //
+        // On the native backends (ExoPlayer / AVPlayer) the very same Future
+        // only settles when playback pauses / completes / is released — it
+        // spans the whole clip. Awaiting it here held the serial queue for the
+        // clip's full length: a stop() (card change / flip / leaving review)
+        // queued behind it could not run, the old clip played to its end and
+        // the next card's audio only started afterwards (N-JACNGS-K /
+        // MljlXfzZzL). There load() has already activated the platform
+        // (preload), so play() only sends the play request (_sendPlayRequest
+        // branch) — nothing left to serialize, and the request is ordered on
+        // the platform channel before any later stop. The playback's end is
+        // observed by [playFileToEnd] via playerStateStream; failures still
+        // reach the error log.
+        final Future<void> play = _player.play();
+        if (_playFutureSpansPlayback) {
+          unawaited(
+            play.catchError((Object e, StackTrace stack) {
+              ErrorLogService.instance.log(
+                'DesktopAudioPlayback.$tag',
+                e,
+                stack,
+              );
+            }),
+          );
+        } else {
+          await play;
+        }
         return true;
       } catch (e, stack) {
         ErrorLogService.instance.log('DesktopAudioPlayback.$tag', e, stack);
@@ -286,13 +339,26 @@ class DesktopAudioPlayback {
     });
   }
 
+  /// stop 在队列里排队超过这个时长就留一条诊断：stop 只该排在一次 stop→load→play
+  /// 周期之后（毫秒级），排得久说明有周期把队列占住了（原生后端曾经把整段播放
+  /// 留在队列里，换卡停不下上一张卡的音频）。只是取证阈值，不影响行为。
+  static const Duration _slowStopReport = Duration(milliseconds: 750);
+
   static Future<void> stop() {
     // Preempt first (synchronously) so any playback cycle still queued/loading
     // sees a newer generation and bails before activating; then enqueue the
     // real stop so it runs serially on the same chain (no interleaving with a
     // load/play already past its check).
     _activation.preempt();
+    final Stopwatch queued = Stopwatch()..start();
     return _activation.run<void>(() async {
+      queued.stop();
+      if (queued.elapsed > _slowStopReport) {
+        ErrorLogService.instance.logDiagnostic(
+          'DesktopAudioPlayback.stop',
+          'stop waited ${queued.elapsedMilliseconds}ms behind a playback cycle',
+        );
+      }
       try {
         await _player.stop();
       } catch (_) {

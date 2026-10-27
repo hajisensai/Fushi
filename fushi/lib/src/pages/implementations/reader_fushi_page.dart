@@ -107,6 +107,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart' show KavitaProgress;
@@ -138,6 +139,7 @@ import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/reader_resource_sanitizer.dart';
 import 'package:fushi/src/reader/reader_exit_flush.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/srs/srs_sync_progress.dart' show srsSyncProgress;
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_restore_anchor.dart';
 import 'package:fushi/src/reader/reader_source_locator.dart';
@@ -4923,23 +4925,24 @@ $liveConfigJs
   bool get supportsSentenceAudioPreview => true;
 
   @override
-  Future<bool> onPreviewSentenceAudio() => _previewMiningSentenceAudio();
+  Future<bool> onPreviewSentenceAudio() async =>
+      await _previewMiningSentenceAudio() != null;
 
   /// 试听 [_miningSentenceAudioClip] 给出的区间（带「高级制卡」的起止偏移）——与写卡
-  /// 同一个函数求值，听到的就是会压出来的。
-  Future<bool> _previewMiningSentenceAudio({
+  /// 同一个函数求值，听到的就是会压出来的。没有区间返回 null；否则返回片段播放的句柄
+  /// （播完 / 被打断时完成，高级制卡的试听按钮据此复位，FDN66-xurt）。
+  Future<RangePlayback?> _previewMiningSentenceAudio({
     int startDeltaMs = 0,
     int endDeltaMs = 0,
   }) async {
     final AudiobookPlayerController? controller = _audiobookController;
-    if (controller == null) return false;
+    if (controller == null) return null;
     final AudioPlaybackRange? clip = _miningSentenceAudioClip(
       startDeltaMs: startDeltaMs,
       endDeltaMs: endDeltaMs,
     );
-    if (clip == null || clip.endMs <= clip.startMs) return false;
-    await controller.playRange(clip);
-    return true;
+    if (clip == null || clip.endMs <= clip.startMs) return null;
+    return controller.playRange(clip);
   }
 
   @override

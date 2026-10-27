@@ -852,6 +852,22 @@ class EmbeddedTorrentSession {
     }
   }
 
+  /// 底层库是否支持单种子停上传（[setTorrentUploadBlocked]）。老 DLL 为 false。
+  bool get supportsTorrentUploadBlock => _b.hasTorrentUploadBlock;
+
+  /// 单种子停止上传、继续下载（fRmEhU4XIK）。[blocked] true = 上传限到
+  /// libtorrent 下限 1 B/s，false = 清除单种子上传限速。库不支持返回 false。
+  bool setTorrentUploadBlocked(String infoHash, {required bool blocked}) {
+    if (isClosed || !_b.hasTorrentUploadBlock) return false;
+    final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
+    try {
+      return _b.ht_set_torrent_upload_blocked(_session, id, blocked ? 1 : 0) ==
+          1;
+    } finally {
+      malloc.free(id);
+    }
+  }
+
   /// 添加磁力链接。
   FtAddResult addMagnet(
     String magnetUri, {

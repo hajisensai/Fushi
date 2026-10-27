@@ -11,8 +11,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:intl/intl.dart' show Intl, NumberFormat;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/ai/agent/ai_agent_controller.dart';
@@ -36,12 +39,14 @@ import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dar
 import 'package:fushi/src/pages/implementations/ai_agent_screen_text.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show fushiFloatingPillDecoration;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// 侧栏 / 浮层判宽阈值：宽于它的窗口用靠边侧栏，窄的用底部半屏面板。
 const double kAiAgentSidePanelBreakpoint = 840;
@@ -431,13 +436,15 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     final String text = _input.text.trim();
     if (text.isEmpty || _controller.running) return;
     _input.clear();
+    final AiAgentScreenAttachments attached = _screenText.take();
     try {
       await _controller.send(
         text,
-        context: aiAgentContextWithScreenText(
-          _activeContext,
-          _screenText.take(),
-        ),
+        context: aiAgentContextWithScreenText(_activeContext, attached.text),
+        // 截图只在模型能收图时附上；发送前模型换成了不能收图的，图就不发。
+        images: _controller.acceptsImages
+            ? aiAgentImagesFor(attached.image)
+            : const [],
       );
     } on StateError {
       if (mounted) await _guideToProviderSettings(context);
@@ -479,7 +486,8 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
         if (widget.compact) _compactHeader(context),
         if (!widget.compact && _controller.executorLabel != null)
           _executorBar(context),
-        if (!widget.compact && _controller.undoableCount > 0)
+        if (!widget.compact &&
+            (_controller.undoableCount > 0 || _controller.totalTokens > 0))
           _summaryBar(context),
         Expanded(
           child: ListView(
@@ -541,6 +549,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                     style: Theme.of(context).textTheme.bodySmall,
                     overflow: TextOverflow.ellipsis,
                   ),
+                ?_usageText(context, Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),
@@ -591,8 +600,11 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     );
   }
 
+  /// 整页顶部：本场改动数 + 用量 / 费用，「全部撤销」与「新对话」。
   Widget _summaryBar(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final int undoable = _controller.undoableCount;
+    final TextStyle? style = Theme.of(context).textTheme.bodyMedium;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
@@ -603,17 +615,25 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
       child: Row(
         children: <Widget>[
           Expanded(
-            child: Text(
-              '${t.ai_agent_session_summary(n: '${_controller.undoableCount}')}'
-              ' · ${t.ai_agent_tokens(n: '${_controller.totalTokens}')}',
-              style: Theme.of(context).textTheme.bodyMedium,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (undoable > 0)
+                  Text(
+                    t.ai_agent_session_summary(n: '$undoable'),
+                    style: style,
+                  ),
+                ?_usageText(context, style),
+              ],
             ),
           ),
-          FushiTextButton(
-            key: const ValueKey<String>('ai-agent-undo-all'),
-            onPressed: () => unawaited(_undoAll()),
-            child: Text(t.ai_agent_undo_all(n: '${_controller.undoableCount}')),
-          ),
+          if (undoable > 0)
+            FushiTextButton(
+              key: const ValueKey<String>('ai-agent-undo-all'),
+              onPressed: () => unawaited(_undoAll()),
+              child: Text(t.ai_agent_undo_all(n: '$undoable')),
+            ),
           FushiIconButtonControl(
             key: const ValueKey<String>('ai-agent-new-session'),
             tooltip: t.ai_agent_new_session,
@@ -623,6 +643,42 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
             icon: const FushiIcon(FushiIcons.add),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 本场用量：「12,345 tokens · 约 $0.0123」，悬停 / 长按看输入 / 输出 / 缓存分项。
+  /// 还没发过请求时为 null。费用只在执行设备的提供商填了单价时出现。
+  Widget? _usageText(BuildContext context, TextStyle? style) {
+    final int total = _controller.totalTokens;
+    if (total <= 0) return null;
+    final String locale = Intl.getCurrentLocale();
+    final NumberFormat count = NumberFormat.decimalPattern(locale);
+    final AiChatUsage usage = _controller.usage;
+    final List<String> parts = <String>[
+      t.ai_agent_tokens(n: count.format(total)),
+      for (final MapEntry<String, double> cost in _controller.cost.entries)
+        t.ai_agent_cost(
+          amount: NumberFormat.simpleCurrency(
+            locale: locale,
+            name: cost.key,
+            // 一场对话常常不到一分钱：小额多留几位，不显示成 $0.00。
+            decimalDigits: cost.value < 1 ? 4 : 2,
+          ).format(cost.value),
+        ),
+    ];
+    return FushiTooltip(
+      message: t.ai_agent_usage_breakdown(
+        input: count.format(usage.inputTokens ?? 0),
+        output: count.format(usage.outputTokens ?? 0),
+        cacheRead: count.format(usage.cacheReadTokens ?? 0),
+        cacheWrite: count.format(usage.cacheWriteTokens ?? 0),
+      ),
+      child: Text(
+        parts.join(' · '),
+        key: const ValueKey<String>('ai-agent-usage'),
+        style: style?.copyWith(color: fushiNeutralSecondaryForeground(context)),
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -652,11 +708,6 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Text(
-              t.ai_agent_empty_examples,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
           ],
         ),
       ),
@@ -664,7 +715,12 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   }
 
   Widget _entry(BuildContext context, AgentEntry entry) => switch (entry.kind) {
-    AgentEntryKind.user => _bubble(context, entry.text, fromUser: true),
+    AgentEntryKind.user => _bubble(
+      context,
+      entry.text,
+      fromUser: true,
+      withImage: entry.imageCount > 0,
+    ),
     AgentEntryKind.assistant => _bubble(context, entry.text, fromUser: false),
     AgentEntryKind.toolCall => _toolCard(context, entry),
     AgentEntryKind.confirm => _confirmCard(context, entry),
@@ -673,8 +729,14 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   };
 
   /// 聊天气泡（与「AI 下视频」同一套配色：MD3 primaryContainer / surfaceContainerHigh，
-  /// Apple 强调色 / secondaryFill，墨水屏描边）。
-  Widget _bubble(BuildContext context, String text, {required bool fromUser}) {
+  /// Apple 强调色 / secondaryFill，墨水屏描边）。模型的回复按 Markdown 渲染（模型
+  /// 几乎都用 `**粗体**` / 列表 / 引用排版），用户自己说的话原样显示。
+  Widget _bubble(
+    BuildContext context,
+    String text, {
+    required bool fromUser,
+    bool withImage = false,
+  }) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool glass = isGlassDesign(context);
     final bool eink = isEinkTheme(context);
@@ -717,18 +779,47 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                   horizontal: 14,
                   vertical: 9,
                 ),
-                child: SelectableText(
-                  text,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: foreground,
-                    height: 1.35,
-                  ),
-                ),
+                child: fromUser
+                    ? _userText(context, text, foreground, withImage)
+                    : AiAgentMarkdown(text: text, color: foreground),
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _userText(
+    BuildContext context,
+    String text,
+    Color foreground,
+    bool withImage,
+  ) {
+    final TextTheme theme = Theme.of(context).textTheme;
+    final Widget body = SelectableText(
+      text,
+      style: theme.bodyLarge?.copyWith(color: foreground, height: 1.35),
+    );
+    if (!withImage) return body;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiIcon(FushiIcons.image, size: 14, color: foreground),
+            const SizedBox(width: 4),
+            Text(
+              t.ai_agent_message_image_attached,
+              style: theme.labelMedium?.copyWith(color: foreground),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        body,
+      ],
     );
   }
 
@@ -958,14 +1049,12 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                 spacing: 8,
                 runSpacing: 8,
                 children: <Widget>[
+                  // 选项是整行可换行的条目而不是 chip：chip 只排一行，字幕文件名、
+                  // 作品名这类长标签会被裁掉右半截、看不出区别。
                   for (final AgentChoiceOption option in entry.options)
-                    FushiActionChipControl(
+                    _AgentChoiceOptionTile(
                       key: ValueKey<String>('ai-agent-choice-${option.id}'),
-                      label: Text(
-                        option.detail == null
-                            ? option.label
-                            : '${option.label} · ${option.detail}',
-                      ),
+                      option: option,
                       onPressed: () => _controller.answerChoice(option.id),
                     ),
                   FushiActionChipControl(
@@ -1036,56 +1125,72 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     );
   }
 
-  /// 输入栏（上下文 chip + 输入胶囊 + 发送 / 停止）。
+  /// 输入栏（上下文 chip + 输入框 + 发送 / 停止）。
+  ///
+  /// MD3 下是**一层**悬浮面板：chip、输入框、按钮都直接放在面板上，输入框不再另套
+  /// 一层不同底色的圆角框（面板套面板显得臃肿），按钮贴底对齐（多行输入时不悬在
+  /// 中间）。Apple / 墨水屏没有外层面板，输入框自己带底色 / 描边。
   Widget _composer(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool glass = isGlassDesign(context);
+    final bool eink = isEinkTheme(context);
+    final bool panel = !glass && !eink;
     final bool running = _controller.running;
+    final bool acceptsImages = _controller.acceptsImages;
     final AgentUiContext? uiContext = _activeContext;
-    final String? contextTitle = uiContext?.itemTitle ?? uiContext?.page;
+    final String? contextTitle =
+        uiContext?.itemTitle ?? _contextPageLabel(uiContext?.page);
+    final Widget field = FushiTextFieldControl(
+      key: const ValueKey<String>('ai-agent-input'),
+      controller: _input,
+      focusNode: _inputFocus,
+      enabled: !running,
+      autofocus: true,
+      minLines: 1,
+      maxLines: 4,
+      textInputAction: TextInputAction.send,
+      onSubmitted: (_) => unawaited(_send()),
+      style: Theme.of(context).textTheme.bodyLarge,
+      decoration: InputDecoration(
+        hintText: t.ai_agent_input_hint,
+        border: InputBorder.none,
+        filled: false,
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: panel ? 8 : 20,
+          vertical: 14,
+        ),
+      ),
+    );
     final Widget row = Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: <Widget>[
         // 浮层 / 侧栏才有：截图时把面板藏掉就露出下面的页面；整页外壳下面也是
         // 不透明路由，截不到别的。
-        if (widget.compact && screenTextCaptureSupported) ...<Widget>[
-          AiAgentScreenTextButton(attachment: _screenText, enabled: !running),
-          SizedBox(width: tokens.spacing.gap / 2),
-        ],
-        Expanded(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: isEinkTheme(context)
-                  ? scheme.surface
-                  : scheme.surfaceContainerHigh,
-              borderRadius: FushiBorderRadius.dialog,
-              border: isEinkTheme(context)
-                  ? Border.all(color: scheme.onSurface)
-                  : null,
-            ),
-            child: FushiTextFieldControl(
-              key: const ValueKey<String>('ai-agent-input'),
-              controller: _input,
-              focusNode: _inputFocus,
-              enabled: !running,
-              autofocus: true,
-              minLines: 1,
-              maxLines: 4,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => unawaited(_send()),
-              style: Theme.of(context).textTheme.bodyLarge,
-              decoration: InputDecoration(
-                hintText: t.ai_agent_input_hint,
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 14,
-                ),
-              ),
-            ),
+        if (widget.compact &&
+            (screenTextCaptureSupported || acceptsImages)) ...<Widget>[
+          AiAgentScreenTextButton(
+            attachment: _screenText,
+            enabled: !running,
+            keepImage: acceptsImages,
           ),
+          if (!panel) SizedBox(width: tokens.spacing.gap / 2),
+        ] else if (panel)
+          const SizedBox(width: 12),
+        Expanded(
+          child: panel
+              ? field
+              : DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: eink ? scheme.surface : scheme.surfaceContainerHigh,
+                    borderRadius: FushiBorderRadius.dialog,
+                    border: eink ? Border.all(color: scheme.onSurface) : null,
+                  ),
+                  child: field,
+                ),
         ),
-        SizedBox(width: tokens.spacing.gap),
+        SizedBox(width: panel ? 4 : tokens.spacing.gap),
         if (running)
           FushiIconButtonControl(
             key: const ValueKey<String>('ai-agent-stop'),
@@ -1108,16 +1213,27 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        AiAgentScreenTextChip(attachment: _screenText),
-        if (contextTitle != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6, left: 4),
-            child: FushiInputChip(
-              key: const ValueKey<String>('ai-agent-context-chip'),
-              label: Text(t.ai_agent_context_chip(title: contextTitle)),
-              onDeleted: () => setState(() => _contextDropped = true),
-            ),
+        Padding(
+          padding: panel
+              ? const EdgeInsets.fromLTRB(6, 4, 6, 0)
+              : EdgeInsets.zero,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              AiAgentScreenTextChip(attachment: _screenText),
+              if (contextTitle != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2, left: 4),
+                  child: FushiInputChip(
+                    key: const ValueKey<String>('ai-agent-context-chip'),
+                    label: Text(t.ai_agent_context_chip(title: contextTitle)),
+                    onDeleted: () => setState(() => _contextDropped = true),
+                  ),
+                ),
+            ],
           ),
+        ),
         row,
       ],
     );
@@ -1127,17 +1243,168 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
       tokens.spacing.page,
       tokens.spacing.gap + bottomSafeInsetOf(context),
     );
-    if (glass || isEinkTheme(context)) {
-      return Padding(padding: outer, child: body);
-    }
+    if (!panel) return Padding(padding: outer, child: body);
     return Padding(
       padding: outer,
       child: DecoratedBox(
         decoration: fushiFloatingPillDecoration(
           context,
-          color: scheme.surfaceContainer,
+          color: scheme.surfaceContainerHigh,
+          shape: const RoundedRectangleBorder(
+            borderRadius: FushiBorderRadius.dialog,
+          ),
         ),
-        child: Padding(padding: const EdgeInsets.all(6), child: body),
+        child: Padding(padding: const EdgeInsets.all(4), child: body),
+      ),
+    );
+  }
+
+  /// 上下文 chip 里的页面名：库页页头「问 AI」给的是内部页面键，换成用户看得懂
+  /// 的页面标题；认不出的键原样显示。
+  static String? _contextPageLabel(String? page) => switch (page) {
+    null => null,
+    'books' => t.books,
+    'manga_library' => t.manga_library,
+    'video_library' => t.nav_video,
+    'games_library' => t.nav_game,
+    final String other => other,
+  };
+}
+
+/// 模型回复的 Markdown 渲染（粗体 / 列表 / 引用 / 代码 / 链接）。可选中复制；
+/// 链接在外部浏览器打开。字号、行高与用户气泡一致，颜色跟随气泡前景色。
+class AiAgentMarkdown extends StatelessWidget {
+  const AiAgentMarkdown({required this.text, required this.color, super.key});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme theme = Theme.of(context).textTheme;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextStyle? body = theme.bodyLarge?.copyWith(
+      color: color,
+      height: 1.35,
+    );
+    return MarkdownBody(
+      data: text,
+      selectable: true,
+      // flutter_markdown 0.6.23 在 selectable 时会无条件解引用
+      // onSelectionChanged!，不传则选中文本即崩（TODO-966，与更新日志页同一约定）。
+      onSelectionChanged:
+          (
+            String? text,
+            TextSelection selection,
+            SelectionChangedCause? cause,
+          ) {},
+      onTapLink: (String _, String? href, String _) {
+        final Uri? uri = href == null ? null : Uri.tryParse(href);
+        if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
+          return;
+        }
+        unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
+      },
+      // 只给要改的样式：flutter_markdown 自己把它并到回退样式表上（回退样式表
+      // 读的是 LegacyDesignCompatibility 桥出来的旧主题），这里不必碰旧 SDK 类型。
+      styleSheet: MarkdownStyleSheet(
+        p: body,
+        listBullet: body,
+        strong: const TextStyle(fontWeight: FontWeight.w700),
+        em: const TextStyle(fontStyle: FontStyle.italic),
+        a: TextStyle(color: color, decoration: TextDecoration.underline),
+        h1: theme.titleLarge?.copyWith(color: color),
+        h2: theme.titleMedium?.copyWith(color: color),
+        h3: theme.titleSmall?.copyWith(color: color),
+        code: theme.bodyMedium?.copyWith(
+          color: color,
+          fontFamily: 'monospace',
+          backgroundColor: scheme.surfaceContainerHighest,
+        ),
+        codeblockDecoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: FushiBorderRadius.card,
+        ),
+        blockquote: body,
+        blockquoteDecoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(color: scheme.outlineVariant, width: 3),
+          ),
+        ),
+        blockquotePadding: const EdgeInsets.only(left: 10),
+        pPadding: EdgeInsets.zero,
+        blockSpacing: 8,
+      ),
+    );
+  }
+}
+
+/// 候选卡里的一个选项：整行宽、标签与说明完整换行**不截断**（文件名之间常只差
+/// 结尾几个字，截掉就分不清；超长无空格的串按字符折行，不会横向溢出）。
+class _AgentChoiceOptionTile extends StatelessWidget {
+  const _AgentChoiceOptionTile({
+    required this.option,
+    required this.onPressed,
+    super.key,
+  });
+
+  final AgentChoiceOption option;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme text = Theme.of(context).textTheme;
+    final bool eink = isEinkTheme(context);
+    final bool glass = isGlassDesign(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final Color fill = eink
+        ? scheme.surface
+        : glass
+        ? apple.secondaryFill
+        : scheme.surfaceContainerHigh;
+    final Color foreground = glass && !eink ? apple.label : scheme.onSurface;
+    final String? detail = option.detail;
+    const BorderRadius radius = FushiM3eShape.cardRadius;
+    return FushiPressScale(
+      child: Material(
+        color: fill,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: eink ? BorderSide(color: scheme.outline) : BorderSide.none,
+        ),
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onPressed,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: 48,
+              minWidth: double.infinity,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    option.label,
+                    style: text.bodyMedium?.copyWith(color: foreground),
+                  ),
+                  if (detail != null && detail.isNotEmpty)
+                    Text(
+                      detail,
+                      style: text.labelSmall?.copyWith(
+                        color: glass && !eink
+                            ? apple.secondaryLabel
+                            : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

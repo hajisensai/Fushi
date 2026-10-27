@@ -319,11 +319,27 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
         if (_isUploadableLocalVideo(v)) v,
     ]..sort((VideoBookRow a, VideoBookRow b) => a.bookUid.compareTo(b.bookUid));
 
+    // 删除意图先于推送（反馈 Et3pmRzo0k，同 [_syncBooksContentLive]）：host 上被「从
+    // 所有设备删除」、本机删除前就有的视频不推（host 无此行，推了就是复活并清掉
+    // host 墓碑）。读墓碑失败 → 本轮不推。
+    final DeletionTombstoneEntries? hostTombstones =
+        await _loadHostPushVetoTombstones(report, backend, 'live push videos');
+    if (hostTombstones == null) return;
+
     final Map<String, List<String>?> sidecarDirCache =
         <String, List<String>?>{};
     final List<({VideoBookRow row, File file, bool pushVideo})> toPush =
         <({VideoBookRow row, File file, bool pushVideo})>[];
     for (final VideoBookRow v in localVideos) {
+      if (!hostByUid.containsKey(v.bookUid) &&
+          _hostVetoesPush(
+            hostTombstones,
+            kinds: const <SyncTombstoneKind>[SyncTombstoneKind.video],
+            itemKeys: <String>[v.bookUid],
+            presentSinceAt: v.localAddedAt,
+          )) {
+        continue;
+      }
       if (!hasLocalMediaFileSync(v.videoPath)) {
         report.errors.add(
           'live push video "${v.title}": local file missing: ${v.videoPath}',
@@ -368,6 +384,7 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
             v.bookUid,
             item.file,
             title: v.title,
+            presentSinceAt: v.localAddedAt,
             onProgress: (double f, [int? b]) => _emit(
               SyncPhase.videos,
               itemIndex: index,

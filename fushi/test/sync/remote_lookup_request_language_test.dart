@@ -1,15 +1,24 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
+import 'package:fushi/src/sync/game_stream_library_host.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi_engine/models/content_language.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -253,15 +262,15 @@ void main() {
       );
     });
 
-    test('游戏串流查词：每次查词现读本端语言并随请求发给 host', () async {
-      final List<Map<String, dynamic>> bodies = <Map<String, dynamic>>[];
-      String? language = 'zh-TW';
+    // 遥控 / 串流：被查的内容在 host 上播放，查词语言归 host，请求方无权声明。
+    test('游戏串流查词：请求体从不带接收端语言（语言归 host）', () async {
+      Map<String, dynamic>? body;
       final InterconnectGameStreamDictionaryLookup lookup =
           InterconnectGameStreamDictionaryLookup(
             repo: repo,
             peer: host,
             httpClient: MockClient((http.Request request) async {
-              bodies.add(jsonDecode(request.body) as Map<String, dynamic>);
+              body = jsonDecode(request.body) as Map<String, dynamic>;
               // 回包带指纹，免得客户端再去问样式端点。
               return http.Response.bytes(
                 utf8.encode(
@@ -278,53 +287,136 @@ void main() {
                 },
               );
             }),
-            lookupLanguage: () => language,
           );
       await lookup.searchDictionary(
         term: '头发',
         wildcards: false,
         maximumTerms: 20,
       );
-      language = null;
-      await lookup.searchDictionary(
-        term: '头发',
-        wildcards: false,
-        maximumTerms: 20,
-      );
-      expect(bodies.first[kRemoteLookupLanguageField], 'zh-TW');
-      expect(bodies.last.containsKey(kRemoteLookupLanguageField), isFalse);
+      expect(body!['term'], '头发');
+      expect(body!.containsKey(kRemoteLookupLanguageField), isFalse);
     });
 
-    test('游戏串流查词：没注入语言来源 ⇒ 请求体不带语言（旧行为）', () async {
-      Map<String, dynamic>? body;
-      final InterconnectGameStreamDictionaryLookup lookup =
-          InterconnectGameStreamDictionaryLookup(
-            repo: repo,
-            peer: host,
-            httpClient: MockClient((http.Request request) async {
-              body = jsonDecode(request.body) as Map<String, dynamic>;
-              return http.Response.bytes(
-                utf8.encode(
-                  jsonEncode(<String, dynamic>{
-                    'type': 'dictionaryResult',
-                    'result': null,
-                    'dictionaryStylesRevision': 'r',
-                    'dictionaryStyles': <String, String>{},
-                  }),
-                ),
-                200,
-                headers: const <String, String>{
-                  'content-type': 'application/json; charset=utf-8',
-                },
-              );
-            }),
-          );
-      await lookup.searchDictionary(
-        term: '头发',
-        wildcards: false,
-        maximumTerms: 20,
+    test('遥控 / 串流接收端源码不再读本机查词语言发给 host', () {
+      // 回归钉：4a1d9b57ab 曾把接收端本机（常是上次读书留下的残留）语言发给电脑，
+      // 电脑据此关掉简体 → 繁體回落。这些文件里出现本机查词语言即视为回退。
+      const List<String> files = <String>[
+        'lib/src/pages/implementations/video_remote_page.dart',
+        'lib/src/pages/implementations/game_stream_join_page.dart',
+        'lib/src/pages/implementations/game_stream_library_page.dart',
+        'lib/src/pages/implementations/game_stream_session_opener.dart',
+        'lib/src/sync/game_stream_client.dart',
+        'lib/src/sync/sync_settings_schema.dart',
+      ];
+      for (final String path in files) {
+        final String source = File(path).readAsStringSync();
+        expect(
+          source.contains('effectiveLookupLanguage') ||
+              source.contains('currentLookupLanguage') ||
+              source.contains('readLookupLanguage') ||
+              RegExp(r'\blanguage:\s*_lookupLanguage').hasMatch(source),
+          isFalse,
+          reason: '$path 不得把接收端本机查词语言发给 host',
+        );
+      }
+    });
+
+    test('本机启动游戏的两条入口都按游戏卡登记查词语言', () {
+      // 游戏首页的启动曾漏了这一步，查词沿用上一个媒体页留下的残留语言。
+      const List<String> files = <String>[
+        'lib/src/pages/implementations/games_library_page.dart',
+        'lib/src/pages/implementations/galgame_home_page.dart',
+      ];
+      for (final String path in files) {
+        final String source = File(path).readAsStringSync();
+        expect(
+          source.contains('enterGameLookupLanguage(game.language)'),
+          isTrue,
+          reason: '$path 启动游戏时必须登记该游戏的查词语言',
+        );
+      }
+    });
+  });
+
+  group('host 按串流会话的游戏条目判查词语言', () {
+    late FushiRemoteGameStreamService service;
+    late ValueNotifier<GalHookSessionState> hook;
+
+    setUp(() {
+      service = FushiRemoteGameStreamService(sessionIdGenerator: () => 'sid');
+      hook = ValueNotifier<GalHookSessionState>(const GalHookSessionState());
+    });
+    tearDown(() {
+      service.dispose();
+      hook.dispose();
+    });
+
+    GalgameEntry game(String id, {String? language}) => GalgameEntry(
+      id: id,
+      name: 'Game $id',
+      exePath: 'C:/games/$id/$id.exe',
+      workdir: 'C:/games/$id',
+      language: language,
+      addedAt: DateTime(2026),
+    );
+
+    FushiGameStreamLibraryHost library(List<GalgameEntry> games) =>
+        FushiGameStreamLibraryHost(
+          loadGames: () async => games,
+          isLaunchEnabled: () => true,
+          service: () => service,
+          startStream:
+              ({
+                required int hwnd,
+                required GameStreamVideoSettings settings,
+                required String gameId,
+                required String gameTitle,
+                required String launchId,
+              }) async => service.createSession(
+                windowId: 'hwnd:$hwnd',
+                gameId: gameId,
+                launchId: launchId,
+              ),
+          readHookState: () => hook.value,
+          hookChanges: hook,
+        );
+
+    final List<GalgameEntry> games = <GalgameEntry>[
+      game('ja', language: 'ja'),
+      game('zh', language: 'zh-CN'),
+      game('none'),
+    ];
+
+    test('远程启动：按会话 gameId 取该游戏卡的语言', () async {
+      final FushiGameStreamLibraryHost host = library(games);
+      expect(await host.streamGameLanguage(gameId: 'zh'), 'zh-CN');
+      expect(await host.streamGameLanguage(gameId: 'ja'), 'ja');
+      expect(await host.streamGameLanguage(gameId: 'none'), isNull);
+      expect(await host.streamGameLanguage(gameId: 'missing'), isNull);
+    });
+
+    test('本机对运行中的游戏开串流：按 Hook 会话的 exe 取游戏卡语言', () async {
+      final FushiGameStreamLibraryHost host = library(games);
+      expect(await host.streamGameLanguage(), isNull);
+      hook.value = GalHookSessionState(
+        phase: GalHookSessionPhase.running,
+        launchExe: games[1].exePath,
+        boundWindow: const ExternalWindowInfo(hwnd: 7, title: 'ZH'),
       );
-      expect(body!.containsKey(kRemoteLookupLanguageField), isFalse);
+      expect(await host.streamGameLanguage(), 'zh-CN');
+    });
+
+    test('中文游戏 ⇒ host 判中文（开简体 → 繁體回落），与接收端语言无关', () async {
+      final String? zh = await library(games).streamGameLanguage(gameId: 'zh');
+      expect(
+        isChineseLanguageTag(resolveContentLanguage(explicit: zh)),
+        isTrue,
+      );
+      final String? ja = await library(games).streamGameLanguage(gameId: 'ja');
+      expect(
+        isChineseLanguageTag(resolveContentLanguage(explicit: ja)),
+        isFalse,
+      );
     });
   });
 }

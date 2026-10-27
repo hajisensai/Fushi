@@ -41,6 +41,64 @@
 | [BUG-3803](bugs/BUG-3803-srs-profile-link-silent-keep.md) | ✅ | ✅ | 多台设备同名 profile 静默不关联、冲突只闪 toast |
 | [BUG-3802](bugs/BUG-3802-srs-media-sync-full-reconcile-every-round.md) | ✅ | ✅ | 复习媒体同步每轮全量对账（媒体同步慢） |
 | [BUG-3801](bugs/BUG-3801-srs-sync-self-wake-loop.md) | ✅ | ✅ | 复习同步自己唤醒自己无限循环（同步时卡顿、一直在重载） |
+> 共 3458 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3854](bugs/BUG-3854-ai-cannot-link-works.md) | ✅ | ✅ | 内置 AI 助手怎么都做不到「关联作品」 |
+| [BUG-3853](bugs/BUG-3853-collection-longpress-haptic.md) | ✅ | ✅ | collection-longpress-haptic |
+| [BUG-3852](bugs/BUG-3852-web-browser-tab-strip-caption-row-and-exit.md) | ✅ | ✅ | web-browser-tab-strip-caption-row-and-exit |
+| [BUG-3851](bugs/BUG-3851-qbittorrent-52-session-cookie.md) | ✅ | ✅ | qBittorrent 5.2+ 会话 cookie 改名后外接登录失败 |
+| [BUG-3850](bugs/BUG-3850-video-theme-song-hints-removed.md) | ✅ | ✅ | 已删的「跳过片头」按钮换了个实现又回来了，外加 OP 期间「♪ 曲名 · 在音乐库打开」角标，按用户决定两个提示都删 |
+| [BUG-3849](bugs/BUG-3849-srs-outbox-batched-resume.md) | ✅ | ✅ | SRS 同步 v2 发件一次性全量进内存、断点整份重传、推送失败不退避 |
+| [BUG-3848](bugs/BUG-3848-srs-apkg-reimport-after-delete.md) | ✅ | ✅ | 删牌组与笔记类型后重导 apkg：0 new / restored / updated 但浏览、复习、笔记类型页全为空 |
+| [BUG-3847](bugs/BUG-3847-srs-rate-next-card-frame-drops.md) | ✅ | ✅ | SRS 评分后下一张卡掉帧：评分叫醒被盖住的牌组列表 + 卡面无关重建 |
+| [BUG-3846](bugs/BUG-3846-desktop-drop-forbidden-after-video.md) | 🚧 | ✅ | Windows 看完视频后拖书进窗口显示禁止光标 |
+| [BUG-3845](bugs/BUG-3845-manga-epub-import-rejection-silent.md) | 🚧 | ✅ | 漫画导入 EPUB 失败且不留原因 |
+| [BUG-3844](bugs/BUG-3844-epub-svg-cover-page.md) | ✅ | ✅ | EPUB 封面声明指向 XHTML / SVG 封面页时书架没有封面 |
+| [BUG-3843](bugs/BUG-3843-torrent-ratio-limit-lifetime.md) | ✅ | ✅ | BT 分享率上限只在做种阶段截停，下载中上传不受限 |
+| [BUG-3842](bugs/BUG-3842-video-loop-current-line-toggle.md) | ✅ | ✅ | 视频页没有「循环当前句」开关，精听只能反复按重播 |
+| [BUG-3841](bugs/BUG-3841-video-copy-current-line-shortcut.md) | ✅ | ✅ | 视频页没有「复制当前台词」快捷键，只能开字幕列表逐行点 |
+| [BUG-3840](bugs/BUG-3840-video-subtitle-list-remember-tab.md) | ✅ | ✅ | 视频字幕栏每次都从「全部」页签打开，不记得上次停在「收藏」 |
+| [BUG-3839](bugs/BUG-3839-video-replay-cue-autoplay.md) | ✅ | ✅ | 视频暂停时「重播当前句 / 重播上一句」只跳到句首不起播 |
+| [BUG-3838](bugs/BUG-3838-video-jump-pill-hover-flicker.md) | ✅ | ✅ | Windows 视频页「返回跳转前位置」胶囊在鼠标停在边缘时持续闪烁、上下抖动 |
+| [BUG-3837](bugs/BUG-3837-video-seek-thumbnail-under-subtitle.md) | ✅ | ✅ | 进度条悬停缩略图被字幕挡住 |
+| [BUG-3836](bugs/BUG-3836-video-long-press-speed-badge-stuck.md) | ✅ | ✅ | 长按倍速后徽章一直停在画面上，直到重开视频 |
+| [BUG-3835](bugs/BUG-3835-leaderboard-avatar-blank-on-cold-start.md) | ✅ | ✅ | iOS 冷启动首页左上头像空白，打开排行榜 / 反馈页后才出现 |
+| [BUG-3834](bugs/BUG-3834-mine-notice-switch-bypassed.md) | ✅ | ✅ | 关掉制卡成功 / 重复提示后，阅读器、弹窗就地提示与视频 OSD 仍在弹 |
+| [BUG-3833](bugs/BUG-3833-lookup-page-pull-clear-and-keyboard-toggles.md) | ✅ | ✅ | 查词页：结果顶部下拉回到历史、进入自动弹键盘不可关，键盘无收起手段 |
+| [BUG-3832](bugs/BUG-3832-srs-interconnect-sync-crash.md) | ✅ | ✅ | 小米设备 SRS 互联同步 / 复习记录 / 导入卡片时闪退（Dart 日志无栈） |
+| [BUG-3831](bugs/BUG-3831-native-exit-reason-logging.md) | ✅ | ✅ | 原生崩溃 / 被系统杀的进程没有任何日志（反馈分诊约一半闪退卡在 Dart 日志无栈） |
+| [BUG-3830](bugs/BUG-3830-audiobook-paused-explicit-skip-no-follow.md) | ✅ | ✅ | 有声书暂停时显式跳句阅读器视口不跟随 |
+| [BUG-3829](bugs/BUG-3829-audiobook-jump-pill-threshold-and-lyrics-placement.md) | ✅ | ✅ | 有声书返回原位置胶囊阈值过小且歌词模式压住歌词 |
+| [BUG-3828](bugs/BUG-3828-srs-macos-space-after-card-click.md) | ✅ | ✅ | macOS 点过卡面后空格不翻面（键盘桥可被卡片脚本截走 + 加取证） |
+| [BUG-3827](bugs/BUG-3827-srs-card-face-webview-recreated-per-flip.md) | ✅ | ✅ | macOS 复习每次翻面 / 换卡都重建卡面 WebView（installLookup 打进死通道、卡顿） |
+| [BUG-3826](bugs/BUG-3826-srs-native-audio-queue-blocks-stop.md) | ✅ | ✅ | 复习换卡后上一张音频不停（原生 just_audio play() 占住串行队列） |
+| [BUG-3825](bugs/BUG-3825-lyrics-follow-breaks-without-touch.md) | ✅ | ✅ | 歌词模式没碰屏幕也会自动对齐中断、弹出「跟随音频」 |
+| [BUG-3824](bugs/BUG-3824-srs-auto-sync-toggle.md) | ✅ | ✅ | 设置 › 同步加「自动同步复习数据」开关（复习数据后台同步无法单独关闭） |
+| [BUG-3823](bugs/BUG-3823-srs-sync-pull-triggers-push.md) | ✅ | ✅ | 复习同步拉入的变更又触发一轮本机推送，库页横幅反复弹出、内容上下挪 |
+| [BUG-3822](bugs/BUG-3822-emby-auth-header-legacy-brand.md) | ✅ | ✅ | Emby/Jellyfin 认证头仍报旧品牌 Hibiki，添加服务器失败日志无请求轨迹 |
+| [BUG-3821](bugs/BUG-3821-media-server-episode-version-pick.md) | ✅ | ✅ | 媒体服务器：继续观看卡要能去详情，非续播集播放前要能选版本 |
+| [BUG-3820](bugs/BUG-3820-english-ordinal-season-dirs.md) | ✅ | ✅ | 视频解析器不认 Second Season / Season Two 等英文序数季名，合集包续季目录判不出季号 |
+| [BUG-3819](bugs/BUG-3819-cloud-tombstone-per-marker-round-trips.md) | ✅ | ✅ | 云同步删除墓碑阶段逐条 GET 全部远端标记，单阶段 200 s+ |
+| [BUG-3818](bugs/BUG-3818-profile-delete-srs-cascade.md) | ✅ | ✅ | 删 Profile 后 srs.db 里该 uid 的复习数据与媒体目录残留（无主副本） |
+| [BUG-3817](bugs/BUG-3817-video-delete-work-leaves-extras.md) | ✅ | ✅ | 删除动漫只删正片：特典与其余下载资源残留在目录 |
+| [BUG-3816](bugs/BUG-3816-download-organize-multi-work-pack-collision.md) | ✅ | ✅ | 下载整理：多作品合集包续作目录无季号撞名整任务失败 |
+| [BUG-3815](bugs/BUG-3815-interconnect-push-resurrects-host-deleted-book.md) | ✅ | ✅ | 互联客户端把主机「从所有设备删除」的书推回主机并清掉删除墓碑 |
+| [BUG-3814](bugs/BUG-3814-advanced-mining-preview-button-stuck-after-end.md) | ✅ | ✅ | 高级制卡试听播完后按钮停在「停止」，下一次点击只是停止 |
+| [BUG-3813](bugs/BUG-3813-cloud-audiobook-sync-iterates-all-books.md) | ✅ | ✅ | 云同步有声书阶段逐本遍历全部书（含漫画）且收尾阶段无进度，最后一本像卡死 |
+| [BUG-3812](bugs/BUG-3812-feedback-attach-shot-shows-failed-while-uploading.md) | ✅ | ✅ | 反馈详情追加截图上传中就显示「没上传成功+重试」，反馈人以为第一下必定失败 |
+| [BUG-3811](bugs/BUG-3811-cross-platform-merge-audiobook-backslash-paths.md) | ✅ | ✅ | Windows 备份合并到 Android 后，EPUB 配对有声书不跟字幕、进度归零 |
+| [BUG-3810](bugs/BUG-3810-remote-audio-direct-url-treated-as-json.md) | ✅ | ✅ | 英语查词时直接返回音频的自定义 URL 音源（uapis.cn / GPT-SoVITS /tts）没有声音 |
+| [BUG-3809](bugs/BUG-3809-srs-cross-profile-field-edit-id-collision.md) | 🚧 | ✅ | 空 Profile 导入 APKG 撞 srs_field_edits.id 主键；删 Profile 后 SRS 数据残留 |
+| [BUG-3808](bugs/BUG-3808-mdx-placeholder-title-collision.md) | ✅ | ✅ | 无标题 mdx 都被当成同一本「Title (No HTML code allowed)」 |
+| [BUG-3807](bugs/BUG-3807-stale-ctrl-wheel-zoom.md) | ✅ | ✅ | Ctrl 抬起落在 WebView2 后字幕列表滚轮变成缩放字号 |
+| [BUG-3806](bugs/BUG-3806-settings-textfield-stale-after-profile-switch.md) | ✅ | ✅ | 切换 Profile 后设置输入框仍显示上一个 Profile 的值 |
+| [BUG-3805](bugs/BUG-3805-reader-arrow-reversed-binding-overridden.md) | ✅ | ✅ | 方向键改绑成相反翻页方向仍被阅读方向校正覆盖 |
+| [BUG-3804](bugs/BUG-3804-remote-collection-subtitle-episode-index.md) | ✅ | ✅ | 互联合集连播第 2 集起拿不到主机选定的外挂字幕 |
+| [BUG-3803](bugs/BUG-3803-browser-ext-popup-wheel-bubbles.md) | ✅ | ✅ | 扩展查词弹窗里滚轮冒泡到宿主页（b 站调音量） |
+| [BUG-3802](bugs/BUG-3802-feedback-reply-notice-persists.md) | ✅ | ✅ | 反馈回复提示条常驻不消失、遮挡提交按钮 |
+| [BUG-3801](bugs/BUG-3801-netflix-browser-blackscreen-relogin.md) | ✅ | ✅ | Windows 浏览器里看 Netflix 黑屏卡顿，「用 Fushi 播放」要重新登录且要点两次 |
 | [BUG-3800](bugs/BUG-3800-floating-ball-switch-profile-label.md) | ✅ | ✅ | 悬浮球切换配置按钮文案被换成配置名 |
 | [BUG-3799](bugs/BUG-3799-kavita-cache-download-semantics-empty.md) | ✅ | ✅ | Kavita 缓存 / 下载两态是空的：阅读即永久入库、移除下载只翻标记 |
 | [BUG-3798](bugs/BUG-3798-audiobook-chapter-transition-receipt-lost.md) | ✅ | ✅ | audiobook-chapter-transition-receipt-lost |

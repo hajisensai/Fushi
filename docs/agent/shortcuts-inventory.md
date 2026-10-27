@@ -1,5 +1,16 @@
 # Fushi 快捷键清单（TODO-048a 统计）
 
+> **2026-10-27 增补（视频页，反馈 Dbd86l4kA- / _Eb0txdN4H / Ix4j5SKUth）：**
+>
+> - 「重播当前句」`videoReplayCurrentSubtitle`（R / 手柄 LT）与「重播上一句」
+>   `videoReplayPreviousSubtitle`（Shift+R）**一律起播**：暂停态按下也开始播放
+>   （`VideoPlayerController.playFromCue` / `playFromPreviousCue`）。「上一句 / 下一句字幕」
+>   仍只跳不播。浏览器扩展「重播本句」同口径。
+> - 新增 `videoCopyCurrentSubtitle` / `videoCopyCurrentSecondarySubtitle`（复制当前台词，
+>   主 / 副字幕）与 `videoToggleLoopCurrentSubtitle`（循环当前句开关），三者**默认空绑定**，
+>   在快捷键设置页与屏幕自定义按钮里由用户自配（反馈提议的 Ctrl+C / Ctrl+Shift+C / Ctrl+R
+>   不设为默认）。
+
 > ⚠️ **2026-08-02 增补：「返回上一级」已统一，本文与之冲突的行以本段为准。**
 >
 > Esc / Alt+← / 手柄 B 现在全部绑在**唯一一个**可改键动作

@@ -914,14 +914,24 @@ int watchFeedbackUnseen(WidgetRef ref) => ref.watch(
   feedbackServiceProvider.select((FeedbackService s) => s.unseenCount),
 );
 
+/// 反馈回复提示条停留多久后自动收起。
+const Duration kFeedbackReplyNoticeDuration = Duration(seconds: 6);
+
 /// 开发者有新回复 / 改了状态时的应用内提示（snackbar，带「查看」直达反馈中心）。
 /// [context] 要在导航之下（有 ScaffoldMessenger）；找不到就静默放弃——红点照常亮。
+///
+/// 这是被动的「有新进展」提醒，不是要用户拍板的决定：显式 `persist: false`，
+/// 到 [kFeedbackReplyNoticeDuration] 自己收起。带动作的 SnackBar 默认常驻，
+/// 曾经一直钉在底部、挡住反馈页的提交按钮（反馈 eiFcN3DZQ3）；错过了也无妨，
+/// 入口按钮上的未读红点照常亮。
 void showFeedbackReplyNotice(BuildContext context, int count) {
   final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
   if (messenger == null || count <= 0) return;
   messenger.showSnackBar(
     FushiSnackBar(
       key: const ValueKey<String>('feedback-reply-notice'),
+      persist: false,
+      duration: kFeedbackReplyNoticeDuration,
       content: Text(t.feedback_reply_notice(n: count)),
       action: SnackBarAction(
         label: t.feedback_reply_notice_open,

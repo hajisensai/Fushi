@@ -199,6 +199,49 @@ class FushiDesktopTitleBar extends StatefulWidget {
     }
   }
 
+  /// 页面把自己的控件（浏览器的横向标签栏）画进标题行时登记的 owner。有 owner
+  /// 时标题行左侧不再是整条拖动区：除窗口按钮组（及 macOS 红绿灯留位）外整行
+  /// 不吃指针，命中落到下面页面画在同一高度的控件上；拖动由页面自己在空白处
+  /// 挂 `DragToMoveArea` 负责（Chrome / Edge 标签栏空白处拖窗）。与配色同一套
+  /// owner 语义，页面一般用 [FushiTitleBarPassthroughScope]。
+  static final Set<Object> _captionPassthroughOwners = <Object>{};
+  static final ValueNotifier<bool> _captionPassthrough = ValueNotifier<bool>(
+    false,
+  );
+
+  /// 是否有页面接管了标题行（测试与页面布局读）。
+  static ValueListenable<bool> get captionPassthrough => _captionPassthrough;
+
+  static void setCaptionPassthrough({
+    required Object owner,
+    required bool enabled,
+  }) {
+    final bool changed = enabled
+        ? _captionPassthroughOwners.add(owner)
+        : _captionPassthroughOwners.remove(owner);
+    if (!changed) return;
+    void publish() =>
+        _captionPassthrough.value = _captionPassthroughOwners.isNotEmpty;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => publish());
+    } else {
+      publish();
+    }
+  }
+
+  /// 接管标题行的页面必须让开的左右宽度：macOS 左侧系统红绿灯留位；
+  /// Windows / Linux 右侧 MD3 窗口按钮组 + 组右侧页边。未装自绘顶栏时为零。
+  static EdgeInsets captionReservedInsets(BuildContext context) {
+    if (!_isEnabled) return EdgeInsets.zero;
+    if (_hostIsMacOS) {
+      return const EdgeInsets.only(left: _kTrafficLightsReserve);
+    }
+    return EdgeInsets.only(
+      right: _kCaptionGroupWidth + FushiDesignTokens.of(context).spacing.page,
+    );
+  }
+
   /// 自绘顶栏此刻占的高度（未装自绘顶栏 / 内容全屏收起时为 0）。页面要把背景
   /// 延伸到顶栏底下时，用它算画布；随 [visibleHeightListenable] 变化。
   static double get visibleHeight =>
@@ -469,7 +512,20 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
                           left: 0,
                           right: 0,
                           height: FushiDesktopTitleBar.height,
-                          child: _buildCaptionRow(context, page, null),
+                          child: ValueListenableBuilder<bool>(
+                            valueListenable:
+                                FushiDesktopTitleBar._captionPassthrough,
+                            builder:
+                                (
+                                  BuildContext context,
+                                  bool passthrough,
+                                  Widget? _,
+                                ) => _buildCaptionRow(
+                                  context,
+                                  page,
+                                  passthrough: passthrough,
+                                ),
+                          ),
                         ),
                     ],
                   );
@@ -503,11 +559,14 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
 
   /// 顶栏本体。底色 / 前景优先取页面上报的 [FushiTitleBarColors]（阅读器纸色），
   /// 没有上报时用根主题。
+  ///
+  /// [passthrough]：有页面把控件画进了标题行（[FushiDesktopTitleBar.setCaptionPassthrough]），
+  /// 此时底色层与左侧拖动区都不吃指针，只有窗口按钮组仍是命中目标。
   Widget _buildCaptionRow(
     BuildContext context,
-    FushiTitleBarColors? page,
-    Widget? _,
-  ) {
+    FushiTitleBarColors? page, {
+    required bool passthrough,
+  }) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     // 页面上报色可能带透明度，先叠到 surface 上再用——结果恒不透明，不靠上报方
     // 自觉。
@@ -521,13 +580,15 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
     final bool trafficLights = FushiDesktopTitleBar._hostIsMacOS;
     return Container(
       height: FushiDesktopTitleBar.height,
-      color: captionFill,
+      // 底色是不透明命中层（ColoredBox），接管模式下改由不吃指针的底层画。
+      color: passthrough ? null : captionFill,
       // 页面上报了延伸背景（歌词模式）：在底色之上画同一张背景的顶部一截。
       child: Stack(
         fit: StackFit.expand,
         // 窗口按钮背后的柔光可以画出标题行（向下渐隐到 0），不裁。
         clipBehavior: Clip.none,
         children: <Widget>[
+          if (passthrough) IgnorePointer(child: ColoredBox(color: captionFill)),
           // 透明标题行浮在页面背景（如详情页 fanart）上时，窗口按钮背后垫一团
           // 无硬边的柔光保证可读：右上角起的径向渐变，压扁成椭圆，边缘处
           // 不透明度已降到 0。只给 Windows 那组按钮（macOS 红绿灯是系统画的）。
@@ -575,42 +636,51 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
                 ? const SizedBox.shrink()
                 : FushiTitleBarBackdropView(backdrop: backdrop),
           ),
-          _buildCaptionControls(trafficLights, page),
+          _buildCaptionControls(trafficLights, page, passthrough: passthrough),
         ],
       ),
     );
   }
 
-  Widget _buildCaptionControls(bool trafficLights, FushiTitleBarColors? page) {
+  Widget _buildCaptionControls(
+    bool trafficLights,
+    FushiTitleBarColors? page, {
+    required bool passthrough,
+  }) {
     return Row(
       children: <Widget>[
         // 系统红绿灯画在原生标题栏视图里，浮在这块留位之上。
         if (trafficLights) const SizedBox(width: _kTrafficLightsReserve),
-        Expanded(
-          child: DragToMoveArea(
-            // 拖动区必须撑满整条标题栏高度：去掉标题文字后 Row 里只剩无高度的
-            // 占位（SizedBox 宽 / Spacer），Row 会塌成 0 高，命中测试永远落不进
-            // DragToMoveArea，顶栏就拖不动了（2026-10-04 用户报）。
-            child: SizedBox.expand(
-              child: Row(
-                children: <Widget>[
-                  SizedBox(
-                    width: trafficLights
-                        ? math.max(
-                            0,
-                            widget.leadingInset - _kTrafficLightsReserve,
-                          )
-                        : widget.leadingInset,
-                  ),
-                  // 顶部控制条只做拖动区 + 窗口按钮，不显示页面标题（用户
-                  // 2026-10-04）；页面自己的大标题 / 顶栏负责标题。[title] 仍
-                  // 保留在参数里，供无障碍窗口名等后续用途。
-                  const Spacer(),
-                ],
+        // 接管模式：这一段留给页面画在下面的控件（标签栏），本层不放任何命中
+        // 目标；页面自己在空白处挂拖动区。
+        if (passthrough)
+          const Expanded(child: SizedBox.shrink())
+        else
+          Expanded(
+            child: DragToMoveArea(
+              // 拖动区必须撑满整条标题栏高度：去掉标题文字后 Row 里只剩无高度的
+              // 占位（SizedBox 宽 / Spacer），Row 会塌成 0 高，命中测试永远落不进
+              // DragToMoveArea，顶栏就拖不动了（2026-10-04 用户报）。
+              child: SizedBox.expand(
+                child: Row(
+                  children: <Widget>[
+                    SizedBox(
+                      width: trafficLights
+                          ? math.max(
+                              0,
+                              widget.leadingInset - _kTrafficLightsReserve,
+                            )
+                          : widget.leadingInset,
+                    ),
+                    // 顶部控制条只做拖动区 + 窗口按钮，不显示页面标题（用户
+                    // 2026-10-04）；页面自己的大标题 / 顶栏负责标题。[title] 仍
+                    // 保留在参数里，供无障碍窗口名等后续用途。
+                    const Spacer(),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
         if (!trafficLights) ...<Widget>[
           // M3E 窗口按钮组：三枚小号 standard 图标按钮收进一枚 tonal 胶囊；
           // 右缘与页面浮动页头的动作组同一条页边（[FushiSpacingTokens.page]），
@@ -685,6 +755,11 @@ const double _kCaptionButtonHeight = 24;
 const double _kCaptionButtonGap = 2;
 const double _kCaptionGroupPadding = 2;
 const double _kCaptionGlyphSize = 10;
+
+/// 三枚窗口按钮组的总宽（组内边距 + 三个命中区），见 [_FushiCaptionButtonGroup]。
+const double _kCaptionGroupWidth =
+    2 * (_kCaptionGroupPadding - _kCaptionButtonGap / 2) +
+    3 * (_kCaptionButtonWidth + _kCaptionButtonGap);
 
 /// M3E 窗口按钮组：一枚半透明 tonal 胶囊（与页面浮动页头的动作组同一种
 /// 「胶囊里一排 standard 图标按钮」形态，只是压成标题行的高度）。
@@ -1396,6 +1471,64 @@ class _FushiTitleBarColorScopeState extends State<FushiTitleBarColorScope> {
     _coverAnimation?.removeStatusListener(_onCoverStatus);
     FushiDesktopTitleBar.setPageColors(owner: this, colors: null);
     FushiDesktopTitleBar.setPageBackdrop(owner: this, backdrop: null);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _publish();
+    return widget.child;
+  }
+}
+
+/// 页面声明「我把控件画进了标题行」：[enabled] 为真且本页没被别的整页盖住时
+/// 登记 [FushiDesktopTitleBar.setCaptionPassthrough]，被盖住 / dispose 时撤回
+/// （与 [FushiTitleBarColorScope] 同一套撤回语义，盖在上面的页面拿回整条拖动区）。
+class FushiTitleBarPassthroughScope extends StatefulWidget {
+  const FushiTitleBarPassthroughScope({
+    required this.enabled,
+    required this.child,
+    super.key,
+  });
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  State<FushiTitleBarPassthroughScope> createState() =>
+      _FushiTitleBarPassthroughScopeState();
+}
+
+class _FushiTitleBarPassthroughScopeState
+    extends State<FushiTitleBarPassthroughScope> {
+  Animation<double>? _coverAnimation;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final Animation<double>? next = ModalRoute.of(context)?.secondaryAnimation;
+    if (identical(next, _coverAnimation)) return;
+    _coverAnimation?.removeStatusListener(_onCoverStatus);
+    _coverAnimation = next;
+    _coverAnimation?.addStatusListener(_onCoverStatus);
+  }
+
+  void _onCoverStatus(AnimationStatus _) => _publish();
+
+  void _publish() {
+    final bool covered =
+        (_coverAnimation?.status ?? AnimationStatus.dismissed) !=
+        AnimationStatus.dismissed;
+    FushiDesktopTitleBar.setCaptionPassthrough(
+      owner: this,
+      enabled: widget.enabled && !covered,
+    );
+  }
+
+  @override
+  void dispose() {
+    _coverAnimation?.removeStatusListener(_onCoverStatus);
+    FushiDesktopTitleBar.setCaptionPassthrough(owner: this, enabled: false);
     super.dispose();
   }
 

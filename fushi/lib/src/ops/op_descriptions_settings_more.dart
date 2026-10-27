@@ -180,7 +180,9 @@ List<OpDescription> _profileOps(OpDescribeKit kit) => <OpDescription>[
     method: 'DELETE',
     pattern: '/api/admin/profiles/:id',
     summary:
-        'Delete a profile and all its settings (at least one must remain). '
+        'Delete a profile, all its settings and its local review (SRS) data '
+        '(at least one must remain). The review data is backed up to a '
+        '.fushisrs file first; if that backup fails nothing is deleted. '
         'Cannot be undone.',
     risk: OpRisk.irreversible,
     params: <OpParam>[

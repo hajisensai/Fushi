@@ -65,7 +65,8 @@ import 'package:fushi_engine/sync/remote_lookup_routes.dart';
 import 'package:fushi_engine/sync/srs_change_feed.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show fushiDebugPrint, mimeTypeForFilePath;
+    show SyncTombstoneKind, fushiDebugPrint, mimeTypeForFilePath;
+import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:meta/meta.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;

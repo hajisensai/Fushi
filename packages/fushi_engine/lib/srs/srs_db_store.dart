@@ -456,6 +456,9 @@ class SrsDbStore implements SrsSync2Host {
     _writeTail = mine.future;
     try {
       if (prev != null) await prev;
+      // 排队期间前面那位把副本作废了（写失败重读也失败 / [retire]）：排着的也不再写。
+      final StateError? retired = _unusable;
+      if (retired != null) throw retired;
       return await runZoned(
         body,
         zoneValues: <Object, Object>{_writeZoneKey: this},
@@ -465,6 +468,18 @@ class SrsDbStore implements SrsSync2Host {
       if (identical(_writeTail, mine.future)) _writeTail = null;
     }
   }
+
+  /// 这个 profile 被删除：等本副本在途的写入做完，在独占区里跑 [body]（删它的数据），之后本副本作废——
+  /// 还排着的、以后再来的写入一律明确失败（[_unusable]），不会把行写回一个已删的 uid。[body] 失败也作废。
+  Future<T> retire<T>(Future<T> Function() body) => runExclusive(() async {
+    try {
+      return await body();
+    } finally {
+      _unusable ??= StateError(
+        'SRS store is unusable: profile $profileUid was deleted',
+      );
+    }
+  });
 
   /// 大批量写入（Anki 迁移 / .apkg 导入）期间暂停这条连接的 WAL 自动 checkpoint，结束后
   /// 恢复原值并 checkpoint 一次。

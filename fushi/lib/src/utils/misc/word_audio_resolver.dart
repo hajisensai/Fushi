@@ -10,6 +10,8 @@ import 'package:fushi/src/sync/fushi_remote_lookup_client.dart'
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart'
     show LocalAudioUnavailableError;
+import 'package:fushi/src/utils/misc/word_audio_cache.dart'
+    show cacheWordAudioBytes, sniffWordAudioExtension;
 import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 弱网下的连接超时上限：从 5s 放宽到 8s，减少慢握手被误判为失败（TODO-1057）。
@@ -50,6 +52,34 @@ typedef AudioSourceListFetcher = Future<List<String>> Function(String url);
 typedef AudioSourceListEntry = ({String name, String url});
 typedef AudioSourceEntryListFetcher =
     Future<List<AudioSourceListEntry>> Function(String url);
+
+/// 把远端源直接回的音频字节落盘，返回本地文件路径（默认 [cacheWordAudioBytes]）。
+typedef RemoteAudioBytesCache =
+    Future<String> Function(Uint8List bytes, String fileExt);
+
+/// 远端源可达、回了 2xx，但响应既不是音频也不是 Yomitan `audioSourceList` JSON。
+/// 只作错误日志的诊断载荷（带 Content-Type 与开头字节），不往上抛。
+class UnrecognizedRemoteAudioResponse implements Exception {
+  UnrecognizedRemoteAudioResponse({
+    required this.contentType,
+    required Uint8List bytes,
+  }) : byteLength = bytes.length,
+       head = bytes
+           .take(16)
+           .map((int b) => b.toRadixString(16).padLeft(2, '0'))
+           .join(' ');
+
+  final String? contentType;
+  final int byteLength;
+
+  /// 响应开头至多 16 字节的十六进制，便于从日志判断它到底是什么。
+  final String head;
+
+  @override
+  String toString() =>
+      'UnrecognizedRemoteAudioResponse(contentType: ${contentType ?? '-'}, '
+      'bytes: $byteLength, head: $head)';
+}
 
 /// 「选择音频源」菜单里的一项：哪个已配置源（[sourceIndex] 是它在
 /// `audioSourceConfigs` 里的下标）、该源内的变体名（远端列表条目名，可空）、
@@ -588,31 +618,26 @@ class WordAudioResolver {
   /// [defaultFetchAudioSourceList] 的带名版本：保留 `audioSources[].name`，供
   /// 「选择音频源」菜单区分同一源的多个变体。错误语义与它完全一致（它就是本
   /// 函数的投影）。
+  ///
+  /// 远端源有两种响应形态（对齐 Yomitan 的「Custom URL」与「Custom URL (JSON)」）：
+  /// - 响应本身就是音频（`Content-Type: audio/*` 或音频魔数，如 uapis.cn 词典发音、
+  ///   GPT-SoVITS `/tts`）：字节经 [cacheAudioBytes] 落盘，返回一条指向本地文件的
+  ///   条目——复用这一次请求的字节，播放端不再请求第二遍；
+  /// - 响应是 `audioSourceList` JSON：按列表展开。
+  ///
+  /// 两种都不是（可达、2xx，但格式认不出）记一条「格式不认识」的错误日志并当空
+  /// 结果返回——**不** rethrow，因为服务器是通的，计入 host 冷却会把格式问题误判
+  /// 成死源（BUG：直返音频的源被当 JSON 解析失败后冷却，永远没声音）。
   static Future<List<AudioSourceListEntry>> defaultFetchAudioSourceEntries(
-    String url,
-  ) async {
+    String url, {
+    RemoteAudioBytesCache cacheAudioBytes = cacheWordAudioBytes,
+  }) async {
+    final Response<List<int>> response;
     try {
-      final Response<dynamic> response = await _dio.get<dynamic>(url);
-      final dynamic body = response.data is String
-          ? jsonDecode(response.data as String)
-          : response.data;
-      if (body is! Map) return const <AudioSourceListEntry>[];
-
-      final dynamic sources = body['audioSources'];
-      if (body['type'] != 'audioSourceList' || sources is! List) {
-        return const <AudioSourceListEntry>[];
-      }
-
-      return sources
-          .whereType<Map>()
-          .map(
-            (source) => (
-              name: source['name']?.toString() ?? '',
-              url: source['url']?.toString() ?? '',
-            ),
-          )
-          .where((entry) => entry.url.isNotEmpty)
-          .toList(growable: false);
+      response = await _dio.get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
     } catch (e, stack) {
       // TODO-1265 根因修：`badResponse`＝服务器**可达**并回了一个非 2xx（最典型是 404
       // ——「这个源没有这个词的发音」），与 200 空 audioSources 语义完全相同，只是端点
@@ -646,5 +671,59 @@ class WordAudioResolver {
       // 仅剩连接级失败（不可达/超时/DNS）走到这里——正是 BUG-488 要冷却的死源。
       rethrow;
     }
+
+    final Uint8List bytes = Uint8List.fromList(response.data ?? const <int>[]);
+    if (bytes.isEmpty) return const <AudioSourceListEntry>[];
+    final String? contentType = response.headers.value(
+      Headers.contentTypeHeader,
+    );
+    final String? audioExt = sniffWordAudioExtension(
+      bytes,
+      contentType: contentType,
+    );
+    if (audioExt != null) {
+      return <AudioSourceListEntry>[
+        (name: '', url: await cacheAudioBytes(bytes, audioExt)),
+      ];
+    }
+    final List<AudioSourceListEntry>? entries = parseAudioSourceListBody(bytes);
+    if (entries != null) return entries;
+    final String host = Uri.tryParse(url)?.host ?? '';
+    ErrorLogService.instance.log(
+      t.audio_source_unrecognized_response(host: host.isEmpty ? url : host),
+      UnrecognizedRemoteAudioResponse(contentType: contentType, bytes: bytes),
+      StackTrace.current,
+    );
+    return const <AudioSourceListEntry>[];
+  }
+
+  /// 把响应体按 Yomitan `audioSourceList` JSON 解析。是合法 JSON 就返回条目（不是
+  /// `audioSourceList` 形状 / 列表为空 = 该源没有这个词的发音，返回空列表）；
+  /// **不是 JSON** 返回 null，交调用方按「格式不认识」处理。
+  @visibleForTesting
+  static List<AudioSourceListEntry>? parseAudioSourceListBody(Uint8List bytes) {
+    final Object? body;
+    try {
+      body = jsonDecode(utf8.decode(bytes));
+    } on FormatException {
+      return null;
+    }
+    if (body is! Map) return const <AudioSourceListEntry>[];
+
+    final Object? sources = body['audioSources'];
+    if (body['type'] != 'audioSourceList' || sources is! List) {
+      return const <AudioSourceListEntry>[];
+    }
+
+    return sources
+        .whereType<Map>()
+        .map(
+          (Map source) => (
+            name: source['name']?.toString() ?? '',
+            url: source['url']?.toString() ?? '',
+          ),
+        )
+        .where((AudioSourceListEntry entry) => entry.url.isNotEmpty)
+        .toList(growable: false);
   }
 }

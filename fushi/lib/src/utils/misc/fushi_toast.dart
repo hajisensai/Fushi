@@ -27,17 +27,25 @@ abstract final class FushiToast {
   static set navigatorKey(GlobalKey<NavigatorState> key) =>
       _toastNavigatorKey = key;
 
-  /// 制卡结果 toast 的用户开关（[mineToastShown] 的接线点）。各 entry point 在拿到
-  /// `AppModel` 后装上读偏好的闭包（`PreferencesRepository.mineNoticeShown`）；没装时
-  /// 一律弹（存量行为）。闭包每次现读偏好，设置页改完立即生效。
-  static bool Function(MineToastStatus status) mineNoticeFilter =
-      _showEveryMineNotice;
+  /// 制卡结果通知的用户开关（[mineToastShown] 的接线点）。各 entry point 在拿到
+  /// `AppModel` 后装上读偏好的闭包（`AppModel.mineNoticeShown`）；没装时一律弹
+  /// （存量行为）。闭包每次现读偏好，设置页改完立即生效。
+  ///
+  /// 真值住在 [MineNotices.filter]——toast 之外还有弹窗就地提示与视频 OSD 两个出口，
+  /// 三处问同一个裁决点；这里只是转发，保留 entry point 的既有接线写法。
+  static bool Function(MineToastStatus status) get mineNoticeFilter =>
+      MineNotices.filter;
 
-  static bool _showEveryMineNotice(MineToastStatus status) => true;
+  static set mineNoticeFilter(bool Function(MineToastStatus status) filter) =>
+      MineNotices.filter = filter;
 
   /// [severity] 决定前置图标与图标的语义色（见 [ToastSeverity]）；底色恒为主题的
   /// 浮条色，不再整块铺饱和色。显式传 [backgroundColor] / [textColor] 仍然优先
   /// ——少数调用点（如 tag chip 透传自身颜色）不是语义着色。
+  ///
+  /// **制卡结果（成功 / 重复 / 制卡中 / 待发 / 失败）不许走这里**，一律
+  /// [showMine]——这里不过「制卡提示」开关（守卫
+  /// `test/anki/mine_notice_single_exit_guard_test.dart`）。
   static void show({
     required String msg,
     Toast toastLength = Toast.LENGTH_SHORT,

@@ -8,7 +8,8 @@
 ///
 /// 工具结果、网页、扩展名一律当不可信数据，包进 `<untrusted_data>` 再给模型。
 /// 每轮最多 [AgentLimits.maxToolCallsPerTurn] 次工具调用；同一工具同一参数连错
-/// [AgentLimits.maxRepeatedFailures] 次就停下报告；会话 token 超预算也停下报告。
+/// [AgentLimits.maxRepeatedFailures] 次就停下报告。会话 token 不设上限，只累计用量
+/// 与费用（[AgentSession.usage] / [AgentSession.cost]）给界面显示。
 library;
 
 import 'dart:async';
@@ -16,6 +17,7 @@ import 'dart:convert';
 
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_model_pricing.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_reply_json.dart';
 
@@ -23,6 +25,9 @@ import 'package:fushi_engine/ai/ai_reply_json.dart';
 abstract interface class AgentLlm {
   /// 提供商支不支持原生 tool calling；不支持时走「只回一个 JSON 动作」降级协议。
   bool get supportsTools;
+
+  /// 当前模型的单价（每轮用量按它折算进会话费用）；没填单价 = 空 [AiModelPricing]。
+  AiModelPricing get pricing;
 
   Future<AiChatTurn> chat(
     List<AiChatMessage> messages,
@@ -41,6 +46,9 @@ class AiClientAgentLlm implements AgentLlm {
   bool get supportsTools => provider.supportsToolCalling;
 
   @override
+  AiModelPricing get pricing => provider.pricing;
+
+  @override
   Future<AiChatTurn> chat(
     List<AiChatMessage> messages,
     List<AiChatToolSpec> tools,
@@ -52,14 +60,10 @@ class AgentLimits {
   const AgentLimits({
     this.maxToolCallsPerTurn = 25,
     this.maxRepeatedFailures = 2,
-    this.maxSessionTokens = 400000,
   });
 
   final int maxToolCallsPerTurn;
   final int maxRepeatedFailures;
-
-  /// 单会话 token 预算（输入 + 输出 + 缓存读写）；0 = 不限。
-  final int maxSessionTokens;
 }
 
 /// 界面上下文（spec §6.2）：「这个视频」「这本书」= 当前页面 / 条目。
@@ -153,6 +157,7 @@ class AgentEntry {
     this.selected,
     this.taskId,
     this.taskState,
+    this.imageCount = 0,
   });
 
   final String id;
@@ -177,6 +182,9 @@ class AgentEntry {
   /// 长任务 id（执行结果里带的）；[taskState] = `running` / `done` / `failed`。
   String? taskId;
   String? taskState;
+
+  /// 用户这句附带的图片张数（界面标「附图」用；图片本身不进存档）。
+  final int imageCount;
 
   bool get canUndo =>
       kind == AgentEntryKind.toolCall &&
@@ -206,6 +214,7 @@ class AgentEntry {
     if (selected != null) 'selected': selected,
     if (taskId != null) 'taskId': taskId,
     if (taskState != null) 'taskState': taskState,
+    if (imageCount > 0) 'images': imageCount,
   };
 
   static AgentEntry fromJson(Map<String, Object?> json) {
@@ -247,6 +256,7 @@ class AgentEntry {
       selected: json['selected'] as String?,
       taskId: json['taskId'] as String?,
       taskState: json['taskState'] as String?,
+      imageCount: (json['images'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -255,6 +265,8 @@ class AgentEntry {
 abstract final class AgentStopCode {
   static const String toolLimit = 'tool_limit';
   static const String repeatedFailure = 'repeated_failure';
+
+  /// 旧版有单会话 token 上限，停下时记这个码；上限已删除，只为渲染旧存档保留。
   static const String tokenBudget = 'token_budget';
   static const String llmError = 'llm_error';
   static const String cancelled = 'cancelled';
@@ -315,6 +327,7 @@ class AgentSession {
     List<AiChatMessage>? history,
     Set<String>? loadedTools,
     AiChatUsage? usage,
+    Map<String, double>? cost,
   }) : _llm = llm,
        _toolbox = toolbox,
        _host = host,
@@ -322,7 +335,8 @@ class AgentSession {
        entries = entries ?? <AgentEntry>[],
        _history = history ?? <AiChatMessage>[],
        _loadedTools = loadedTools ?? <String>{},
-       _usage = usage ?? const AiChatUsage();
+       _usage = usage ?? const AiChatUsage(),
+       _cost = cost ?? <String, double>{};
 
   final String id;
   final AgentLimits limits;
@@ -341,6 +355,10 @@ class AgentSession {
   final Set<String> _loadedTools;
 
   AiChatUsage _usage;
+
+  /// 币种 → 累计费用。每轮按当时模型的单价折算后累加：中途换了提供商 / 改了单价，
+  /// 已发生的费用不跟着重算；不同币种分开记。
+  final Map<String, double> _cost;
   bool _running = false;
   bool _cancelled = false;
   int _seq = 0;
@@ -354,6 +372,9 @@ class AgentSession {
 
   /// 本会话累计 token 用量（spec §11「费用」）。
   AiChatUsage get usage => _usage;
+
+  /// 本会话累计费用（币种 → 金额）；没填单价的轮次不计，全没填时为空。
+  Map<String, double> get cost => Map<String, double>.unmodifiable(_cost);
 
   int get totalTokens =>
       (_usage.inputTokens ?? 0) +
@@ -372,7 +393,15 @@ class AgentSession {
   }
 
   /// 用户说一句话，跑完这一轮（模型可能连调多个工具）。
-  Future<void> send(String text, {AgentUiContext? context}) async {
+  ///
+  /// [images] 随这句一起发给模型（视觉模型才该给，调用方按提供商的
+  /// `acceptsImages` 判断）；留在本场历史里，后续追问还能看到同一张图，但不进
+  /// 存档（[agentMessageToJson] 不存图片）。
+  Future<void> send(
+    String text, {
+    AgentUiContext? context,
+    List<AiChatImage> images = const <AiChatImage>[],
+  }) async {
     if (_running) throw StateError('上一轮还没结束');
     final String trimmed = text.trim();
     if (trimmed.isEmpty) return;
@@ -385,12 +414,13 @@ class AgentSession {
           kind: AgentEntryKind.user,
           createdAt: _now(),
           text: trimmed,
+          imageCount: images.length,
         ),
       );
       final String contextBlock = context == null
           ? ''
           : '\n\n<ui_context>${jsonEncode(context.toJson())}</ui_context>';
-      _history.add(AiChatMessage.user('$trimmed$contextBlock'));
+      _history.add(AiChatMessage.user('$trimmed$contextBlock', images: images));
       await _runTurn();
     } finally {
       _running = false;
@@ -517,10 +547,6 @@ class AgentSession {
     final Map<String, int> failures = <String, int>{};
     while (true) {
       if (_cancelled) return _stop(AgentStopCode.cancelled);
-      if (limits.maxSessionTokens > 0 &&
-          totalTokens >= limits.maxSessionTokens) {
-        return _stop(AgentStopCode.tokenBudget);
-      }
       final List<AgentToolSpec> tools = _currentTools();
       final AiChatTurn turn;
       try {
@@ -1073,6 +1099,16 @@ class AgentSession {
       cacheReadTokens: sum(_usage.cacheReadTokens, usage.cacheReadTokens),
       cacheWriteTokens: sum(_usage.cacheWriteTokens, usage.cacheWriteTokens),
     );
+    final AiModelPricing pricing = _llm.pricing;
+    final double? cost = pricing.costOf(
+      inputTokens: usage.inputTokens ?? 0,
+      outputTokens: usage.outputTokens ?? 0,
+      cacheReadTokens: usage.cacheReadTokens ?? 0,
+      cacheWriteTokens: usage.cacheWriteTokens ?? 0,
+    );
+    if (cost != null) {
+      _cost[pricing.currency] = (_cost[pricing.currency] ?? 0) + cost;
+    }
   }
 
   AgentEntry? _entry(String id) {
@@ -1115,6 +1151,7 @@ class AgentSession {
     ],
     'loadedTools': _loadedTools.toList(),
     'usage': _usage.toJson(),
+    if (_cost.isNotEmpty) 'cost': _cost,
   };
 
   static AgentSession fromJson(
@@ -1149,6 +1186,7 @@ class AgentSession {
         json['usage'] as Map? ?? const <String, Object?>{},
       ),
     ),
+    cost: agentCostFromJson(json['cost']),
   );
 }
 
@@ -1226,3 +1264,11 @@ class _SessionSkillContext implements AgentSkillContext {
   @override
   bool get cancelled => _session._cancelled;
 }
+
+/// 会话费用（币种 → 金额）的 JSON 读口：存档与远端会话视图共用。
+Map<String, double> agentCostFromJson(Object? raw) => <String, double>{
+  if (raw is Map)
+    for (final MapEntry<Object?, Object?> e in raw.entries)
+      if (e.value is num && (e.value as num).isFinite)
+        '${e.key}': (e.value as num).toDouble(),
+};

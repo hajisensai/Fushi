@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/video/dvd/dvd_library_title.dart'
     show ensureDvdTitleInLibrary;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_input.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_bar.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_focus_host.dart';
@@ -189,6 +190,7 @@ import 'package:fushi/src/media/video/underlay_composition.dart'
         releaseUnderlayComposition,
         underlayCompositionSupported;
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/media/video/web_mine_return_state.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart'
     show
         WebVideoHosting,
@@ -223,6 +225,8 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
         youtubeVideoIdOrNull;
 import 'package:fushi/src/media/video/video_resource_check.dart';
 import 'package:fushi/src/media/video/video_long_press_speed_badge.dart';
+import 'package:fushi/src/media/video/video_long_press_session_detector.dart';
+import 'package:fushi/src/media/video/video_jump_pill_hover.dart';
 import 'package:fushi/src/media/video/video_double_tap_center_action.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_seek_indicator_label.dart';
@@ -231,6 +235,8 @@ import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_chrome_hit_test.dart';
+import 'package:fushi/src/media/video/video_current_line_copy.dart';
+import 'package:fushi/src/media/video/video_loop_cue_badge.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
@@ -309,8 +315,7 @@ import 'package:fushi/src/media/video/subtitle_word_sweep.dart';
 import 'package:fushi/src/media/video/video_chapter_markers.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
-import 'package:fushi/src/media/video/theme_song/video_theme_song_overlay.dart';
-import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
+import 'package:fushi/src/media/video/theme_song/video_theme_song_tracker.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show isLocalVideoFilePath;
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
@@ -391,12 +396,13 @@ import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/video_mine_queue.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/mining/web_mine_idle.dart' show WebMineIdleScheduler;
 import 'package:fushi/src/mining/web_mine_queue_store.dart'
     show WebMineQueueStore, decodeWebMineFields;
 import 'package:fushi/src/media/video/video_mine_queue_dialog.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
-    show adaptivePageRoute;
+    show adaptivePageRoute, adaptiveSegmentedButton;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show einkSafeDuration, isEinkTheme;
 import 'package:fushi/src/utils/app_ui_scale.dart';
@@ -730,6 +736,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     this.discLaunchCover,
     this.discLaunchOrigin,
     this.webSite,
+    this.webBackToBrowser = false,
+    this.webReturnState,
     this.remoteDisc,
     super.key,
   }) : remoteInfo = null,
@@ -756,6 +764,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
        discLaunchCover = null,
        discLaunchOrigin = null,
        webSite = null,
+       webBackToBrowser = false,
+       webReturnState = null,
        remoteDisc = null,
        playlistCollectionId = null;
 
@@ -800,6 +810,15 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 播起某一集时这一集才落库、本页身份换成它（web_source.part.dart `_bindWebEpisode`）。
   final WebVideoSite? webSite;
 
+  /// 本页是 app 内浏览器「用 Fushi 播放」交接过来的：返回直接关掉本页、回到浏览器里原来的
+  /// 站点页，不再一级一级退到本页自己的网页档（带地址栏和关闭钮的那份）——用户是在浏览器里
+  /// 选的集，本页网页档只是同一站点的第二份浏览器（BUG-3801）。
+  final bool webBackToBrowser;
+
+  /// 网页档：制卡队列在内置档重放完换回本页时带回的重放前状态（站点字幕轨 / 音轨 / 位置），
+  /// 画面就绪后原样恢复（web_source.part.dart `_applyWebPendingRestore`）。
+  final WebMineReturnState? webReturnState;
+
   /// 流式原盘会话（远端原盘第二期）：盘在已配对 host 上，libmpv 经 HTTP 读它。只与
   /// [openBlurayMenu] 一起用（入口 [neutralizedRemoteDisc]）；本机没有这张盘的库行，
   /// 会话里的标题不绑定库行、不写进度。
@@ -828,6 +847,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     ImageProvider? discLaunchCover,
     Rect? discLaunchOrigin,
     WebVideoSite? webSite,
+    bool webBackToBrowser = false,
+    WebMineReturnState? webReturnState,
   }) => FushiAppUiScaleNeutralizer(
     child: VideoFushiPage(
       bookUid: bookUid,
@@ -844,6 +865,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       discLaunchCover: discLaunchCover,
       discLaunchOrigin: discLaunchOrigin,
       webSite: webSite,
+      webBackToBrowser: webBackToBrowser,
+      webReturnState: webReturnState,
     ),
   );
 
@@ -1164,7 +1187,14 @@ abstract class VideoFushiTestHooks {
   /// 在字幕句 [sentence] 的第 [graphemeIndex] 个字上发起查词——与字幕 overlay 点字
   /// 走同一条 `_lookupAt`（暂停、清草稿、锚 cue、推弹窗），供「调整上下文 → 确认
   /// 制卡」这类要真弹窗的取证测试用（禁坐标点击）。
-  Future<void> debugLookupAt(String sentence, int graphemeIndex);
+  ///
+  /// [anchor] 是被点字的全局矩形，弹窗按它定位；不传时用固定占位矩形（只验查词链路、
+  /// 不关心弹窗落点的测试）。官网录屏传真实字形框，弹窗才落在字旁边。
+  Future<void> debugLookupAt(
+    String sentence,
+    int graphemeIndex, {
+    Rect? anchor,
+  });
 
   /// 播放器当前音量真值（0..100），滚轮门控取证用（不经 HUD 推断）。
   double? get debugVolume;
@@ -1582,11 +1612,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final _RestartHideTimerSignal _restartHideTimerSignal =
       _RestartHideTimerSignal();
 
-  /// 控制条「⋯」溢出菜单开着时为 true：两端 fork 的 `holdVisible` 订阅它，开着期间
-  /// 指针离开（桌面：菜单路由的 barrier 盖住控制条，media_kit 的 MouseRegion 立刻
-  /// onExit）与自动隐藏 Timer 都不再收起控制条——否则菜单锚定的「⋯」按钮连同整条
-  /// 控制条在菜单弹出的同一帧消失。菜单关闭后放开，控制条按 hover 重新倒计时。
-  final ValueNotifier<bool> _controlsHeldByMenu = ValueNotifier<bool>(false);
+  /// 「按住控制条」：两端 fork 的 `holdVisible` 订阅它，为 true 期间指针离开（桌面：
+  /// 盖在控制条上的东西让 media_kit 的 MouseRegion 立刻 onExit）与自动隐藏 Timer 都
+  /// 不再收起控制条；放开后控制条按 hover 重新倒计时。唯一写入点 [_syncControlsHold]，
+  /// 由下面两个来源合成：
+  /// - [_controlsHoldMenuOpen]：「⋯」溢出菜单开着——菜单路由的 barrier 盖住控制条，
+  ///   否则菜单锚定的「⋯」按钮连同整条控制条在菜单弹出的同一帧消失；
+  /// - [_controlsHoldJumpPill]：鼠标停在「返回跳转前位置」胶囊上（qUeubxE-fM）——胶囊
+  ///   盖在控制条之上，不按住就会「收起 → 胶囊移开 → 重新显示 → 胶囊回来」自激振荡。
+  final ValueNotifier<bool> _controlsHeld = ValueNotifier<bool>(false);
+  bool _controlsHoldMenuOpen = false;
+  bool _controlsHoldJumpPill = false;
 
   static const double _volumeStep = 5.0;
 
@@ -1897,8 +1933,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _controller?.seekMs(positionMs);
 
   @override
-  Future<void> debugLookupAt(String sentence, int graphemeIndex) =>
-      _lookupAt(sentence, graphemeIndex, const Rect.fromLTWH(240, 200, 24, 24));
+  Future<void> debugLookupAt(
+    String sentence,
+    int graphemeIndex, {
+    Rect? anchor,
+  }) => _lookupAt(
+    sentence,
+    graphemeIndex,
+    anchor ?? const Rect.fromLTWH(240, 200, 24, 24),
+  );
 
   @override
   double? get debugVolume => _controller?.volume;
@@ -2310,6 +2353,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 选择带到下一集，所以整个页面会话有效。
   bool _webSubtitleUserChosen = false;
   bool _webAudioUserChosen = false;
+
+  /// 待恢复的重放前状态（[VideoFushiPage.webReturnState]）；逐拍对齐，见 `_applyWebPendingRestore`。
+  WebMineReturnState? _webPendingRestore;
+  DateTime? _webPendingRestoreDeadline;
+  DateTime? _webLastRestoreActionAt;
+  bool _webRestoreNavigated = false;
   String? _webAudioAutoVideoKey;
 
   /// 当前选中的是站点的图片字幕：Fushi 叠层画不了，站点自己的字幕层要显示出来。
@@ -2327,6 +2376,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 已向站点要过、还没回执的 Netflix metadata id（回执只认这里面的）。
   final Set<String> _webNetflixMetaInFlight = <String>{};
 
+  /// 要失败过的 Netflix metadata id → 失败时页面上的 videoKey。同一个视频文档里不再要（页面
+  /// 条件没变，再要还是失败）；换了视频文档（重新加载 / 换集）再要一次。旧实现失败一次本页
+  /// 永久放弃，选集 / 封面就一直没有（BUG-3801）。
+  final Map<String, String> _webNetflixMetaFailedAt = <String, String>{};
+
   /// 剧集面板（[_episodes]）里每一集对应的站点播放地址。
   List<String> _webEpisodeUrls = const <String>[];
 
@@ -2338,6 +2392,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   late final WebMineQueueStore _webMineQueue = WebMineQueueStore(
     appModel.database,
   );
+
+  /// 网页档的空闲自动制卡：用户暂停后离开电脑，换到内置档静音重放队列，跑完换回本页
+  /// （`web_mine_idle.dart`；仅 Windows）。
+  WebMineIdleScheduler? _webMineIdle;
 
   /// 站点 WebView 的稳定身份：视频区 Stack 里有无 `<video>` 两种布局之间不重建它。
   final GlobalKey _webSurfaceKey = GlobalKey(debugLabel: 'video-web-surface');
@@ -2452,6 +2510,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 跳转 / 返回 / 前进后的 6 秒闪现窗口。
   final ValueNotifier<bool> _videoJumpPillFlashing = ValueNotifier<bool>(false);
+
+  /// 鼠标是否停在胶囊上（qUeubxE-fM）：悬停期间胶囊布局冻结在 [_videoJumpPillLayout]。
+  final ValueNotifier<bool> _videoJumpPillHovered = ValueNotifier<bool>(false);
+
+  /// 胶囊上一帧实际用的布局（悬停开始时的那一帧即冻结值）。
+  VideoJumpPillLayout? _videoJumpPillLayout;
   Timer? _videoJumpFlashTimer;
 
   /// 鼠标当前是否悬停在右 / 左浮动学习按钮 rail 上（BUG-283）。
@@ -4677,10 +4741,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               ),
             ),
           );
+          // 与取流同一个主机侧集序号：合集连播里 [index] 是合集内位置，每个成员
+          // 在主机上都是单视频（恒 0）；传 [index] 主机必回 404，第 2 集起永远
+          // 拿不到主机选定的外挂字幕（反馈 XmUBLYR1Ut，BUG-3615 漏的客户端一半）。
           await client.getRemoteVideoSubtitle(
             info.id,
             subtitle,
-            episodeIndex: index,
+            episodeIndex: streamEpisodeIndex,
             onProgress: (double progress) {
               // TODO-1213：字幕下载确定性进度 → 加载态显进度条 + 百分比。
               if (!mounted) return;
@@ -6534,7 +6601,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _remoteDiscBufferingNoticeNotifier.dispose();
     _mediaKitControlsVisible.dispose();
     _restartHideTimerSignal.dispose();
-    _controlsHeldByMenu.dispose();
+    _controlsHeld.dispose();
+    _videoJumpPillHovered.dispose();
     _videoControlsVisible.dispose();
     _videoJumpFlashTimer?.cancel();
     _videoJumpHistoryRevision.dispose();
@@ -8185,6 +8253,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       replayPreviousSubtitle: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_replayPreviousCueAndKeepControls()),
       ),
+      // 复制当前台词主 / 副（_Eb0txdN4H，默认空绑定）：不动播放、不唤控制条。
+      copyCurrentSubtitle: () =>
+          _runWhenImmersiveAllowsShortcuts(_copyCurrentSubtitle),
+      copyCurrentSecondarySubtitle: () =>
+          _runWhenImmersiveAllowsShortcuts(_copyCurrentSecondarySubtitle),
+      // 循环当前句开关（Ix4j5SKUth，默认空绑定）：状态在画面右上角常驻标记上可见。
+      toggleLoopCurrentSubtitle: () =>
+          _runWhenImmersiveAllowsShortcuts(_toggleLoopCurrentCue),
       // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
       // 无章节时 controller no-op。与跳句同范式（BUG-2030）：只续命、不唤起；章节**面板**
       // 里点条目仍 poke（那是指针交互，见 [_buildChapterSidePanel]）。
@@ -8954,10 +9030,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 「⋯」菜单开 / 关（[VideoControlBar.onMenuOpenChanged]）：开着期间按住控制条
-  /// （[_controlsHeldByMenu] → fork `holdVisible`），菜单锚定的按钮不随自动隐藏消失。
+  /// （[_controlsHeld] → fork `holdVisible`），菜单锚定的按钮不随自动隐藏消失。
   void _onVideoBarMenuOpenChanged(bool open) {
     if (!mounted) return;
-    _controlsHeldByMenu.value = open;
+    _controlsHoldMenuOpen = open;
+    _syncControlsHold();
+  }
+
+  /// [_controlsHeld] 的唯一写入点：任一来源要求按住即按住。
+  void _syncControlsHold() {
+    _controlsHeld.value = _controlsHoldMenuOpen || _controlsHoldJumpPill;
   }
 
   /// MD3 Expressive chrome 是否生效（Apple 设计系统之外的一切，含墨水屏）。
@@ -10105,7 +10187,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         );
         break;
       case VideoControlItem.replayCue:
-        // 与快捷键 videoReplayCurrentSubtitle 同一实现（回到本句开头、只播这一句，
+        // 与快捷键 videoReplayCurrentSubtitle 同一实现（回到本句开头并起播，
         // 续命控制条）。
         unawaited(_replayCurrentCueAndKeepControls());
         break;
@@ -11381,18 +11463,35 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     await _toggleFavoriteCueForVideo(cue);
   }
 
+  /// 「循环当前句」开 / 关（Ix4j5SKUth）。状态归 [VideoPlayerController.loopCurrentCue]，
+  /// 开着时画面上常驻 [VideoLoopCueBadge]（[_buildLoopCueBadgeOverlay]）。没有字幕时
+  /// 不开（开了也无句可循环），给出提示。
+  void _toggleLoopCurrentCue() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final bool next = !controller.loopCurrentCue;
+    if (next && controller.cues.isEmpty) {
+      _showOsd(t.no_sentence_selected, severity: ToastSeverity.error);
+      return;
+    }
+    controller.setLoopCurrentCue(next);
+  }
+
+  /// 重播当前句：回到本句开头**并起播**（Dbd86l4kA-：暂停态按重播也开始播放；
+  /// 只跳不播的是「上 / 下一句字幕」）。
   Future<void> _replayCurrentCueAndKeepControls() async {
     final AudioCue? cue = _currentCueForAction();
     if (cue == null) return;
     _keepControlsAliveIfVisible();
-    await _controller?.skipToCue(cue);
+    await _controller?.playFromCue(cue);
   }
 
   /// 重播上一句（TODO-378，BUG-287）：跳到上一条 cue 起点并播放，**不**退化成回退几秒
-  /// （走纯 [VideoPlayerController.skipToPrevCue]，与底栏「上一句」按钮同语义）。
+  /// （定位判据与底栏「上一句」按钮的 [VideoPlayerController.skipToPrevCue] 相同，
+  /// 区别只在本动作一定起播，Dbd86l4kA-）。
   Future<void> _replayPreviousCueAndKeepControls() async {
     _keepControlsAliveIfVisible();
-    await _controller?.skipToPrevCue();
+    await _controller?.playFromPreviousCue();
   }
 
   /// 弹快捷倍速浮层（TODO-438）：有按钮触发源时锚定 speed 按钮、按其槽位自适应方向

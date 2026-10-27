@@ -162,6 +162,14 @@ class EmbeddedTorrentHost {
   /// 已下发的 per-torrent 暂停状态（做种超限/关上传时停止做种用）。
   final Map<String, bool> _appliedPaused = <String, bool>{};
 
+  /// 已下发的单种子「上传截停」状态（fRmEhU4XIK：分享率按整个生命周期算，
+  /// 下载途中达标也停上传、继续下载）。键缺失 = 本会话尚未下发：该限速会随
+  /// fastResume 落盘，启动后首轮 sweep 必须对每个种子重新下发真实意图。
+  final Map<String, bool> _appliedUploadBlocked = <String, bool>{};
+
+  /// 老 DLL 缺 `ht_set_torrent_upload_blocked` 时只记一次日志。
+  bool _loggedTorrentUploadBlockUnsupported = false;
+
   /// TODO-2481/2482：用户显式暂停的种子（infohash 小写）。与策略暂停
   /// [_appliedPaused] 分开记：[sweepUploadPolicy] 对这里的种子整体跳过，
   /// 不得替用户 resume。
@@ -951,9 +959,10 @@ class EmbeddedTorrentHost {
   ///   [EmbeddedTorrentSession.setUnchokeSlots] 清零（不给任何 peer unchoke
   ///   槽位 = 停止上传 payload；我们的下载请求是协议消息，不受影响）。开 →
   ///   还原为用户的 maxUploadSlots（未设则 libtorrent 默认）。
-  ///   下载中种子的「不上传」只会由总开关触发（policy 对下载中恒 allow），
-  ///   所以会话级开关足以覆盖，无需 per-torrent 原语。
-  /// - **per-torrent**：做种（isFinished）超时/分享率达标/总开关关 →
+  /// - **per-torrent 停上传**（fRmEhU4XIK）：总开关开、但分享率（整个生命周期
+  ///   累计）或做种时长达到上限 → [EmbeddedTorrentSession.setTorrentUploadBlocked]
+  ///   ——下载中的种子也照停上传、继续下载；条件解除 → 清除。
+  /// - **per-torrent 暂停**：做种（isFinished）超时/分享率达标/总开关关 →
   ///   [EmbeddedTorrentSession.pauseTorrent]（数据已完整，暂停只停做种，
   ///   与 qb 到达分享率后暂停同语义）；条件解除 → resume。
   ///   **绝不 pause 未完成的种子**（那才是真的掐死下载）。
@@ -1009,7 +1018,6 @@ class EmbeddedTorrentHost {
         // TODO-2481：用户显式暂停的种子策略整体跳过 —— 既不重复 pause，
         // 也绝不替用户 resume（否则下一 tick 就把用户按下的暂停偷偷抢回）。
         if (_userPaused.contains(t.id)) continue;
-        if (!t.isFinished) continue;
         final bool allow = shouldAllowUpload(
           _uploadConfig,
           TorrentUploadMetrics(
@@ -1019,6 +1027,14 @@ class EmbeddedTorrentHost {
             seedingElapsedMs: _seedingElapsedMs(t, nowMs),
           ),
         );
+        // fRmEhU4XIK：上限（分享率 / 做种时长）触发 = 单种子停上传。总开关
+        // 关时会话级 unchoke=0 已经覆盖，不再逐种子下发；下载中的种子只能
+        // 走这条（绝不 pause），已完成的种子另外 pause 停做种。
+        changed += _applyTorrentUploadBlocked(
+          t.id,
+          blocked: _uploadConfig.uploadEnabled && !allow,
+        );
+        if (!t.isFinished) continue;
         final bool wantPaused = !allow;
         if (_appliedPaused[t.id] != wantPaused) {
           if (_session.pauseTorrent(t.id, pause: wantPaused)) {
@@ -1029,6 +1045,8 @@ class EmbeddedTorrentHost {
       }
       // 清理已移除种子的残留状态。
       _appliedPaused.removeWhere((String k, bool v) => !live.contains(k));
+      _appliedUploadBlocked
+          .removeWhere((String k, bool v) => !live.contains(k));
       final int pausedBefore = _userPaused.length;
       _userPaused.removeWhere((String k) => !live.contains(k));
       // TODO-2526：awaiting 记录的种子出现在 live 里 = 用户本会话把它重新
@@ -1054,6 +1072,25 @@ class EmbeddedTorrentHost {
       // 执行——协议门控只依赖用户策略，不能被 native 的旧 paused 状态误导。
       reconcileNetworkDiscoveryState();
     }
+  }
+
+  /// 单种子上传截停的幂等下发（仅状态变化时跨 FFI）。返回改变数（0/1）。
+  /// 老 DLL 无该原语时整体不动作并记一次日志：下载阶段达标的种子继续上传，
+  /// 做种阶段仍由 pause 截停。
+  int _applyTorrentUploadBlocked(String id, {required bool blocked}) {
+    if (_appliedUploadBlocked[id] == blocked) return 0;
+    if (!_session.supportsTorrentUploadBlock) {
+      if (!_loggedTorrentUploadBlockUnsupported) {
+        _loggedTorrentUploadBlockUnsupported = true;
+        fushiDebugPrint('[torrent] per-torrent upload block skipped: bundled '
+            'DLL lacks ht_set_torrent_upload_blocked (ratio limit only stops '
+            'seeding, not uploads during download)');
+      }
+      return 0;
+    }
+    if (!_session.setTorrentUploadBlocked(id, blocked: blocked)) return 0;
+    _appliedUploadBlocked[id] = blocked;
+    return 1;
   }
 
   static bool _setEquals(Set<String> a, Set<String> b) {

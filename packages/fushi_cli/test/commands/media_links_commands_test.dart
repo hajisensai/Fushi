@@ -27,7 +27,7 @@ void main() {
     }
     expect(
       <String>[for (final CtlCommandSpec s in _group('links').commands) s.name],
-      <String>['ls', 'accept', 'reject', 'infer'],
+      <String>['ls', 'accept', 'reject', 'find', 'add', 'remove', 'infer'],
     );
     expect(
       <String>[
@@ -80,6 +80,115 @@ void main() {
       'relation': 'adaptation',
     });
     expect(() => _build('links', 'accept', <String>['book:x']), _usageError());
+  });
+
+  test('find：种类 + 标题查候选端点；种类不认识 / --limit 非法报用法错', () {
+    final CtlRequestSpec find = _build('links', 'find', <String>[
+      'music_album',
+      'ヤマノススメ',
+      '特典',
+      '--limit',
+      '5',
+    ]);
+    expect(find.method, 'GET');
+    expect(find.path, '/api/admin/link-candidates');
+    expect(find.query, <String, String>{
+      'kind': 'music_album',
+      'search': 'ヤマノススメ 特典',
+      'limit': '5',
+    });
+    expect(_build('links', 'find', <String>['game']).query, <String, String>{
+      'kind': 'game',
+    });
+    expect(() => _build('links', 'find', <String>['anime']), _usageError());
+    expect(
+      () => _build('links', 'find', <String>['game', '--limit', '0']),
+      _usageError(),
+    );
+    expect(
+      _render('links', 'find', <String, Object?>{
+        'total': 1,
+        'items': <Object?>[
+          <String, Object?>{'endpoint': 'music_album:a1', 'title': '特典CD'},
+        ],
+      }),
+      allOf(contains('music_album:a1'), contains('特典CD')),
+    );
+  });
+
+  test('add：关系必填、adaptation 要 --self-is；remove 同 reject 的形状', () {
+    final CtlRequestSpec add = _build('links', 'add', <String>[
+      'music_album:a1',
+      'video_collection:3',
+      '--relation',
+      'same_work',
+    ]);
+    expect(add.method, 'POST');
+    expect(
+      add.path,
+      '/api/admin/links/${Uri.encodeComponent('music_album:a1')}/add',
+    );
+    expect(add.body, <String, Object?>{
+      'other': 'video_collection:3',
+      'relation': 'same_work',
+    });
+    final CtlRequestSpec song = _build('links', 'add', <String>[
+      'music_track:t1',
+      'video_collection:3',
+      '--relation',
+      'theme_song',
+      '--role',
+      'ed',
+      '--episodes',
+      '1-12',
+    ]);
+    expect(song.body, <String, Object?>{
+      'other': 'video_collection:3',
+      'relation': 'theme_song',
+      'role': 'ed',
+      'episodes': '1-12',
+    });
+    expect(
+      _build('links', 'add', <String>[
+        'book:原作',
+        'video_collection:3',
+        '--relation',
+        'adaptation',
+        '--self-is',
+        'original',
+      ]).body,
+      <String, Object?>{
+        'other': 'video_collection:3',
+        'relation': 'adaptation',
+        'selfIs': 'original',
+      },
+    );
+    expect(
+      () => _build('links', 'add', <String>[
+        'book:原作',
+        'video_collection:3',
+        '--relation',
+        'adaptation',
+      ]),
+      _usageError(),
+    );
+    expect(
+      () => _build('links', 'add', <String>[
+        'book:原作',
+        'video_collection:3',
+        '--relation',
+        'soundtrack',
+      ]),
+      throwsA(isA<ArgParserException>()),
+    );
+
+    final CtlRequestSpec remove = _build('links', 'remove', <String>[
+      'book:原作',
+      'game:g1',
+    ]);
+    expect(remove.method, 'POST');
+    expect(remove.path, endsWith('/remove'));
+    expect(remove.body, <String, Object?>{'other': 'game:g1'});
   });
 
   test('infer：POST 到端点的 infer', () {

@@ -662,6 +662,14 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       if (id == null) {
         return shelf.Response(400, body: 'Invalid video id');
       }
+      // 删除墓碑闸门（反馈 Et3pmRzo0k，同 [_peerPushVetoed]）：视频身份 = bookUid。
+      if (await _peerPushVetoed(
+        request,
+        kinds: const <SyncTombstoneKind>[SyncTombstoneKind.video],
+        itemKey: id,
+      )) {
+        return _peerPushVetoedResponse(request);
+      }
       final String title = _decodeHeaderValue(request, kVideoTitleHeader) ?? id;
       final String? fileName = _decodeHeaderValue(
         request,

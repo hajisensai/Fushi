@@ -672,7 +672,7 @@ List<CtlRoute> _downloadRoutes(OpContext context) => <CtlRoute>[
             (throw const CtlFailure.conflict('数据库还没就绪，稍后再试'));
         final bool added = queue.enqueue(
           item,
-          destinationDir: appModel.discoveryDownloadDirFor(kind),
+          destinationDir: await appModel.discoveryDownloadDirFor(kind),
         );
         final DiscoveryDownloadTask? task = queue.pendingTask(item);
         final String? jobId = task == null

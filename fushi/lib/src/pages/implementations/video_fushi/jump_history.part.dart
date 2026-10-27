@@ -141,13 +141,30 @@ extension _VideoJumpBack on _VideoFushiPageState {
     _onVideoJumpHistoryChanged();
   }
 
+  /// 鼠标进 / 出胶囊（qUeubxE-fM）。悬停开始那一帧控制条可见时，把悬停算作控制条
+  /// 活跃：按住控制条（[_controlsHoldJumpPill]），并唤回 media_kit 在鼠标落上胶囊那一刻
+  /// 已经 onExit 收起的控制条（MouseTracker 先发 exit 再发 enter，按住来得比收起晚一拍）。
+  /// 闪现态（控制条本就隐藏）只冻结胶囊，不把控制条唤出来。
+  void _onVideoJumpPillHoverChanged(bool hovering) {
+    if (!mounted) return;
+    _videoJumpPillHovered.value = hovering;
+    final bool hold =
+        hovering && videoJumpPillHoverHoldsControls(_videoJumpPillLayout);
+    if (hold == _controlsHoldJumpPill) return;
+    _controlsHoldJumpPill = hold;
+    _syncControlsHold();
+    if (hold) _pokeControlsVisible();
+  }
+
   /// controls builder Stack 里的胶囊层：顶部居中；控制条显示时坐在顶栏下方（与顶部锚
   /// 字幕避让顶栏同一几何 [_subtitleControlsTopReserve]），控制条收起时贴顶。
+  /// 鼠标悬停期间位置与显隐冻结（[resolveVideoJumpPillLayout]，qUeubxE-fM）。
   Widget _buildVideoJumpHistoryPillOverlay() {
     return ListenableBuilder(
       listenable: Listenable.merge(<Listenable>[
         _videoJumpHistoryRevision,
         _videoJumpPillFlashing,
+        _videoJumpPillHovered,
         _videoControlsVisible,
         _miniSurface,
         _immersiveLocked,
@@ -160,28 +177,41 @@ extension _VideoJumpBack on _VideoFushiPageState {
           return const SizedBox.shrink();
         }
         final bool chromeShown = _videoControlsVisible.value;
-        final double top = chromeShown
-            ? _subtitleControlsTopReserve()
-            : _videoTopBarMargin().top + 8;
+        final VideoJumpPillLayout layout = resolveVideoJumpPillLayout(
+          hovered: _videoJumpPillHovered.value,
+          frozen: _videoJumpPillLayout,
+          live: VideoJumpPillLayout(
+            top: chromeShown
+                ? _subtitleControlsTopReserve()
+                : _videoTopBarMargin().top + 8,
+            visible: chromeShown || _videoJumpPillFlashing.value,
+            chromeShown: chromeShown,
+          ),
+        );
+        _videoJumpPillLayout = layout;
         final int? back = _videoJumpHistory.backTarget;
         final int? forward = _videoJumpHistory.forwardTarget;
         return AnimatedPositioned(
           key: const ValueKey<String>('video_jump_history_pill'),
           duration: fushiMotionDuration(context, FushiMotion.medium),
           curve: FushiMotion.standard,
-          top: top,
+          top: layout.top,
           left: 0,
           right: 0,
           child: RepaintBoundary(
-            child: FushiJumpHistoryPill(
-              visible: chromeShown || _videoJumpPillFlashing.value,
-              backLabel: back == null ? null : formatJumpHistoryTime(back),
-              forwardLabel: forward == null
-                  ? null
-                  : formatJumpHistoryTime(forward),
-              onBack: () => unawaited(_walkVideoJumpHistory(forward: false)),
-              onForward: () => unawaited(_walkVideoJumpHistory(forward: true)),
-              onClear: _clearVideoJumpHistory,
+            child: VideoHoverHoldRegion(
+              onHoverChanged: _onVideoJumpPillHoverChanged,
+              child: FushiJumpHistoryPill(
+                visible: layout.visible,
+                backLabel: back == null ? null : formatJumpHistoryTime(back),
+                forwardLabel: forward == null
+                    ? null
+                    : formatJumpHistoryTime(forward),
+                onBack: () => unawaited(_walkVideoJumpHistory(forward: false)),
+                onForward: () =>
+                    unawaited(_walkVideoJumpHistory(forward: true)),
+                onClear: _clearVideoJumpHistory,
+              ),
             ),
           ),
         );

@@ -1488,11 +1488,16 @@ class InterconnectSyncBackend extends SyncBackend
   /// additive：没改过名就一个 header 都不发，旧 host 对未知 header 一律静默忽略
   /// （`_serveAssetPackage` 的 PUT 分支从头到尾只读 body），所以对旧 host 零影响、
   /// 不需要任何版本协商。
+  ///
+  /// [presentSinceAt]：本机开始拥有这本书的时刻（`localAddedAt`），经
+  /// [kPeerPushPresentSinceHeader] 交 host 的删除墓碑闸门裁决（反馈 Et3pmRzo0k）；
+  /// host 否决时回 409，这里照常经 [WebDavOps.checkStatus] 抛给调用方记错误。
   Future<void> putRemoteBook(
     String title,
     File file, {
     String? displayTitle,
     int displayTitleAt = 0,
+    int? presentSinceAt,
     SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
@@ -1503,6 +1508,7 @@ class InterconnectSyncBackend extends SyncBackend
     final int length = await file.length();
     req.headers.set('Content-Type', 'application/epub+zip');
     req.headers.set('Content-Length', '$length');
+    _setPresentSinceHeader(req.headers, presentSinceAt);
     if (displayTitle != null &&
         displayTitle.isNotEmpty &&
         displayTitle != title) {
@@ -1998,6 +2004,17 @@ class InterconnectSyncBackend extends SyncBackend
     return jsonDecode(await _readBodyBounded(res));
   }
 
+  /// 推送请求带上本机存在起始时刻（[kPeerPushPresentSinceHeader]）。时刻未知（null）
+  /// 就不发——host 按「未报」处理，与旧版 client 同一判据，不编造时刻。
+  static void _setPresentSinceHeader(HttpHeaders headers, int? presentSinceAt) {
+    if (presentSinceAt == null) return;
+    setInterconnectHeader(
+      headers,
+      kPeerPushPresentSinceHeader,
+      '$presentSinceAt',
+    );
+  }
+
   /// GET 对端 host 当前删除墓碑清单（显式确认式删除传播，host→client 消费方向）。
   /// 老 host 无 `/api/tombstones` 端点返回 404 时优雅降级返回 null（调用方跳过删除墓碑
   /// 消费，绝不因老 server 缺端点崩溃，与 [getRemoteCollectionManifest] 同纪律）。
@@ -2143,9 +2160,11 @@ class InterconnectSyncBackend extends SyncBackend
   }
 
   /// 把本地 [file] 推送到对端 host，导入 bookKey 为 [bookKey] 的有声书。
+  /// [presentSinceAt] 同 [putRemoteBook]（删除墓碑闸门，反馈 Et3pmRzo0k）。
   Future<void> putRemoteAudiobook(
     String bookKey,
     File file, {
+    int? presentSinceAt,
     SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
@@ -2156,6 +2175,7 @@ class InterconnectSyncBackend extends SyncBackend
     final int length = await file.length();
     req.headers.set('Content-Type', 'application/octet-stream');
     req.headers.set('Content-Length', '$length');
+    _setPresentSinceHeader(req.headers, presentSinceAt);
     int sent = 0;
     await req.addStream(
       file.openRead().map((List<int> chunk) {
@@ -2351,11 +2371,13 @@ class InterconnectSyncBackend extends SyncBackend
   /// 把本地视频 [file] 上传到对端 host，注册成 bookUid 为 [id] 的视频（client→host，
   /// syncVideoFiles 开关驱动的 live push）。[title] 与原始文件名经 URL-encode 走 header
   /// （HTTP header 只收 ASCII，日文标题/文件名必须编码）。流式发送、不整块读进内存
-  /// （视频 GB 级），进度经 [onProgress] 上报。
+  /// （视频 GB 级），进度经 [onProgress] 上报。[presentSinceAt] 同 [putRemoteBook]
+  /// （删除墓碑闸门，反馈 Et3pmRzo0k）。
   Future<void> putRemoteVideo(
     String id,
     File file, {
     required String title,
+    int? presentSinceAt,
     SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
@@ -2367,6 +2389,7 @@ class InterconnectSyncBackend extends SyncBackend
     final String baseName = file.path.split(RegExp(r'[/\\]')).last;
     req.headers.set('Content-Type', 'application/octet-stream');
     req.headers.set('Content-Length', '$length');
+    _setPresentSinceHeader(req.headers, presentSinceAt);
     setInterconnectHeader(
       req.headers,
       kVideoTitleHeader,

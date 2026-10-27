@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -27,6 +28,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -921,6 +923,14 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   /// 工具栏「后退」：与系统返回同一条阶梯（[webBrowserBackStep]），退到头就离开
   /// 浏览页——桌面没有系统返回键，这是鼠标离开浏览器的入口。
   void _backOrLeave() => unawaited(Navigator.of(context).maybePop());
+
+  /// 「退出浏览器」：不走后退阶梯（那要先退完网页历史），直接离开浏览页回到
+  /// 入口——标签页留在会话里，下次进来照旧。
+  void _exitBrowser() {
+    if (!mounted) return;
+    Navigator.of(context).pop();
+  }
+
   void _goForward() => unawaited(_tabs.activeTab?.controller?.goForward());
 
   void _reload() {
@@ -1412,6 +1422,12 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
           label: t.web_browser_menu_settings,
           onSelected: () => unawaited(_openSettings()),
         ),
+        WebBrowserMenuItem(
+          id: 'exit',
+          icon: FushiIcons.exitToApp,
+          label: t.web_browser_exit,
+          onSelected: _exitBrowser,
+        ),
       ]),
     ];
   }
@@ -1502,6 +1518,26 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   );
 
   // ── 构建：chrome ─────────────────────────────────────────────────────
+
+  /// 横向标签栏底色（与 [WebBrowserTabStrip] 自身一致；进标题行时整行同色）。
+  Color _tabStripColor(BuildContext context) => isGlassDesign(context)
+      ? appleColorsOf(context).groupedBackground
+      : Theme.of(context).colorScheme.surface;
+
+  /// 桌面自绘标题栏下，宽屏横向标签栏直接占标题栏那一行（Chrome / Edge 式），
+  /// 不再在空着的标题行下面另起一行。网页全屏、工具栏收成迷你条时退回原排法
+  /// （标题行仍是整条拖动区）。
+  bool _tabStripInCaption(
+    BuildContext context,
+    WebBrowserShellLayout layout,
+    Size size,
+  ) {
+    if (!FushiDesktopTitleBar.isEnabled) return false;
+    if (layout != WebBrowserShellLayout.topStrip) return false;
+    if (_tabs.activeTab?.fullscreen ?? false) return false;
+    if (_collapseAllowed(layout, size) && _collapse.collapsed) return false;
+    return MediaQuery.paddingOf(context).top > 0;
+  }
 
   Color _barColor(BuildContext context) => isGlassDesign(context)
       ? appleColorsOf(context).secondaryGroupedBackground
@@ -1607,6 +1643,12 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     final bool sidebar = layout == WebBrowserShellLayout.sidebar;
     final bool sidebarShown = overlaySidebar ? _drawerOpen : _sidebarOpen;
     final List<Widget> leading = <Widget>[
+      _iconButton(
+        key: const ValueKey<String>('web-browser-exit'),
+        icon: FushiIcons.exitToApp,
+        tooltip: t.web_browser_exit,
+        onTap: _exitBrowser,
+      ),
       if (sidebar)
         _iconButton(
           key: const ValueKey<String>('web-browser-sidebar-toggle'),
@@ -1966,6 +2008,12 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     final bool sidebar = layout == WebBrowserShellLayout.sidebar;
     final bool pushOpen = sidebar && !overlaySidebar && _sidebarOpen;
     final bool drawerOpen = sidebar && overlaySidebar && _drawerOpen;
+    final bool inCaption = _tabStripInCaption(context, layout, size);
+    final double captionTop = MediaQuery.paddingOf(context).top;
+    // 标签栏进了标题行：这一行要盖住标题栏让位高度（32），标签栏本身 36。
+    final double stripHeight = inCaption
+        ? math.max(kWebBrowserTabStripHeight, captionTop)
+        : kWebBrowserTabStripHeight;
 
     final Widget chrome = fullscreen
         ? const SizedBox(width: double.infinity)
@@ -1979,18 +2027,30 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
                 duration: duration,
                 curve: FushiMotion.standard,
                 height: layout == WebBrowserShellLayout.topStrip
-                    ? kWebBrowserTabStripHeight
+                    ? stripHeight
                     : 0,
                 child: ClipRect(
                   child: OverflowBox(
                     alignment: Alignment.bottomCenter,
-                    minHeight: kWebBrowserTabStripHeight,
-                    maxHeight: kWebBrowserTabStripHeight,
+                    minHeight: stripHeight,
+                    maxHeight: stripHeight,
                     child: _hiddenUnless(
                       layout == WebBrowserShellLayout.topStrip,
-                      WebBrowserTabStrip(
-                        tabs: _tabs.tabs,
-                        callbacks: _tabCallbacks,
+                      ColoredBox(
+                        color: _tabStripColor(context),
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: WebBrowserTabStrip(
+                            tabs: _tabs.tabs,
+                            callbacks: _tabCallbacks,
+                            inCaption: inCaption,
+                            captionInsets: inCaption
+                                ? FushiDesktopTitleBar.captionReservedInsets(
+                                    context,
+                                  )
+                                : EdgeInsets.zero,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -2008,10 +2068,15 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        // 标题栏让位垫块。标签栏进了标题行时高度归零（那一行由标签栏自己占），
+        // 节点本身恒在：增删它会让下面带 WebView 的子树错配重挂。
         if (!fullscreen)
           ColoredBox(
             color: _barColor(context),
-            child: SafeArea(bottom: false, child: const SizedBox.shrink()),
+            child: SizedBox(
+              width: double.infinity,
+              height: inCaption ? 0 : captionTop,
+            ),
           ),
         ClipRect(
           child: FushiAnimatedSize(
@@ -2192,70 +2257,75 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
           : _buildWide(context, layout, size),
     );
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
-    return PopScope(
-      // 系统返回 / 侧滑 / Esc：先关查词弹窗与临时层，再退网页历史，都退到头
-      // 才离开浏览页。
-      canPop: _backStep == WebBrowserBackStep.leavePage,
-      onPopInvokedWithResult: (bool didPop, Object? _) {
-        if (!didPop) _onBackBlocked();
-      },
-      child: Focus(
-        debugLabel: 'web-browser-shortcuts',
-        canRequestFocus: false,
-        skipTraversal: true,
-        onKeyEvent: _onKeyEvent,
-        child: SrsCardLookupHost(
-          controller: _lookup,
-          // 制卡来源：调用时现读前台标签页（无痕页返回 null，卡片不带来源）。
-          cardSource: () {
-            final WebBrowserTab? active = _tabs.activeTab;
-            final WebBrowserCardSource? source = active == null
-                ? null
-                : webBrowserCardSourceOf(active);
-            return source == null
-                ? null
-                : (title: source.title, url: source.url);
-          },
-          child: Material(
-            color: bg,
-            child: Semantics(
-              label: tab == null || tab.displayTitle.isEmpty
-                  ? t.web_browser_title
-                  : tab.displayTitle,
-              container: true,
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  body,
-                  IgnorePointer(
-                    ignoring: !_gridOpen,
-                    child: AnimatedSwitcher(
-                      duration: duration,
-                      switchInCurve: FushiMotion.enter,
-                      switchOutCurve: FushiMotion.exit,
-                      transitionBuilder:
-                          (Widget child, Animation<double> animation) =>
-                              FadeTransition(
-                                opacity: fushiUnitClamped(animation),
-                                child: ScaleTransition(
-                                  scale: Tween<double>(
-                                    begin: 0.96,
-                                    end: 1,
-                                  ).animate(animation),
-                                  child: child,
+    // 标签栏画进了标题行：让标题栏把那一段命中让给标签栏。标签网格盖满整页时
+    // 收回，空白标题行照旧能拖窗。
+    return FushiTitleBarPassthroughScope(
+      enabled: !_gridOpen && _tabStripInCaption(context, layout, size),
+      child: PopScope(
+        // 系统返回 / 侧滑 / Esc：先关查词弹窗与临时层，再退网页历史，都退到头
+        // 才离开浏览页。
+        canPop: _backStep == WebBrowserBackStep.leavePage,
+        onPopInvokedWithResult: (bool didPop, Object? _) {
+          if (!didPop) _onBackBlocked();
+        },
+        child: Focus(
+          debugLabel: 'web-browser-shortcuts',
+          canRequestFocus: false,
+          skipTraversal: true,
+          onKeyEvent: _onKeyEvent,
+          child: SrsCardLookupHost(
+            controller: _lookup,
+            // 制卡来源：调用时现读前台标签页（无痕页返回 null，卡片不带来源）。
+            cardSource: () {
+              final WebBrowserTab? active = _tabs.activeTab;
+              final WebBrowserCardSource? source = active == null
+                  ? null
+                  : webBrowserCardSourceOf(active);
+              return source == null
+                  ? null
+                  : (title: source.title, url: source.url);
+            },
+            child: Material(
+              color: bg,
+              child: Semantics(
+                label: tab == null || tab.displayTitle.isEmpty
+                    ? t.web_browser_title
+                    : tab.displayTitle,
+                container: true,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    body,
+                    IgnorePointer(
+                      ignoring: !_gridOpen,
+                      child: AnimatedSwitcher(
+                        duration: duration,
+                        switchInCurve: FushiMotion.enter,
+                        switchOutCurve: FushiMotion.exit,
+                        transitionBuilder:
+                            (Widget child, Animation<double> animation) =>
+                                FadeTransition(
+                                  opacity: fushiUnitClamped(animation),
+                                  child: ScaleTransition(
+                                    scale: Tween<double>(
+                                      begin: 0.96,
+                                      end: 1,
+                                    ).animate(animation),
+                                    child: child,
+                                  ),
                                 ),
-                              ),
-                      child: _gridOpen
-                          ? WebBrowserTabGrid(
-                              tabs: _tabs.tabs,
-                              callbacks: _tabCallbacks,
-                              thumbnails: _thumbnails,
-                              onDone: () => setState(() => _gridOpen = false),
-                            )
-                          : const SizedBox.shrink(),
+                        child: _gridOpen
+                            ? WebBrowserTabGrid(
+                                tabs: _tabs.tabs,
+                                callbacks: _tabCallbacks,
+                                thumbnails: _thumbnails,
+                                onDone: () => setState(() => _gridOpen = false),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
