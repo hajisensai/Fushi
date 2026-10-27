@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3439 条。点号进各自文件。
+> 共 3440 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3836](bugs/BUG-3836-srs-apkg-reimport-after-delete.md) | ✅ | ✅ | 删牌组与笔记类型后重导 apkg：0 new / restored / updated 但浏览、复习、笔记类型页全为空 |
 | [BUG-3835](bugs/BUG-3835-leaderboard-avatar-blank-on-cold-start.md) | ✅ | ✅ | iOS 冷启动首页左上头像空白，打开排行榜 / 反馈页后才出现 |
 | [BUG-3834](bugs/BUG-3834-mine-notice-switch-bypassed.md) | ✅ | ✅ | 关掉制卡成功 / 重复提示后，阅读器、弹窗就地提示与视频 OSD 仍在弹 |
 | [BUG-3833](bugs/BUG-3833-lookup-page-pull-clear-and-keyboard-toggles.md) | ✅ | ✅ | 查词页：结果顶部下拉回到历史、进入自动弹键盘不可关，键盘无收起手段 |

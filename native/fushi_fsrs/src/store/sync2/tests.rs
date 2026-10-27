@@ -578,6 +578,97 @@ fn purge_erases_content_everywhere_and_keeps_the_chain_valid() {
     assert!(checked >= 2);
 }
 
+/// 笔记 N1 现在投影里的（字段键 → 值），`deleted` 的 NULL 也列出来。
+fn note_fields(d: &Device) -> BTreeMap<String, String> {
+    d.rows("SELECT field_key, json_extract(json, '$.v') FROM srs_field_edits WHERE entity_id = 'N1' ORDER BY field_key")
+        .into_iter()
+        .skip(1)
+        .map(|r| (r[0].clone(), r[1].clone()))
+        .collect()
+}
+
+/// 清除之后又把同一条笔记导回来（BUG：删牌组选「永久删除」→ 重导 apkg，笔记 ID 由来源 guid 派生、仍是被清除
+/// 的那个 ID）：作者见过清除的新内容是复活，照常落投影并传到别的设备；与清除并发的迟到旧内容照样清掉；
+/// 再清除一次照样清干净。以前「实体清除过 → 之后到的内容操作一律清除」，导回来的笔记只剩空壳，每次再导入都
+/// 计「已更新」却什么也看不见。
+#[test]
+fn content_written_after_seeing_a_purge_revives_the_entity_everywhere() {
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![edit("note", "N1", "f/x", json!("old text")), edit("note", "N1", "tags", json!(["old"]))]);
+    a.sync(&mut bucket, "loc", T0);
+    b.sync(&mut bucket, "loc", T0);
+    // b 离线改了一下（与 a 的清除并发、清除之后才到）。
+    b.apply(T0 + 1, vec![edit("note", "N1", "f/y", json!("stale concurrent"))]);
+    a.core.sync2_purge(P, "note", "N1", T0 + 2).unwrap();
+    // a 在清除之后把它导回来：清删除标记、写回内容与标签。
+    a.apply(
+        T0 + 3,
+        vec![
+            edit("note", "N1", "deleted", Value::Null),
+            edit("note", "N1", "f/x", json!("imported again")),
+            edit("note", "N1", "tags", json!(["back"])),
+        ],
+    );
+    let want: BTreeMap<String, String> = [("deleted", "NULL"), ("f/x", "imported again"), ("tags", "[\"back\"]")]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+    assert_eq!(note_fields(&a), want, "revived locally");
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 4);
+        b.sync(&mut bucket, "loc", T0 + 4);
+    }
+    for d in [&a, &b] {
+        assert_eq!(note_fields(d), want, "revived content reached every device; the stale concurrent edit is gone");
+        let raw = d.rows(
+            "SELECT COUNT(*) FROM sync2_ops WHERE instr(payload, CAST('old text' AS BLOB)) > 0 \
+             OR instr(payload, CAST('stale concurrent' AS BLOB)) > 0",
+        );
+        assert_eq!(raw[1][0], "0", "content the purge saw (or raced with) stays erased");
+        assert!(d.core.sync2_conflicts(P).unwrap().as_array().unwrap().is_empty());
+    }
+    assert_eq!(projection(&a), projection(&b));
+    // 第三台新设备从位置上完整收下：结论一样（判据只看因果，与收到的顺序无关）。
+    let c = Device::new("c");
+    c.sync(&mut bucket, "loc", T0 + 5);
+    assert_eq!(projection(&c), projection(&a));
+
+    // 再清除一次：复活的内容同样清掉。
+    b.core.sync2_purge(P, "note", "N1", T0 + 6).unwrap();
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 7);
+        b.sync(&mut bucket, "loc", T0 + 7);
+    }
+    for d in [&a, &b] {
+        let left: Vec<String> = note_fields(d).into_keys().collect();
+        assert_eq!(left, vec!["deleted".to_owned()]);
+        let raw = d.rows("SELECT COUNT(*) FROM sync2_ops WHERE instr(payload, CAST('imported again' AS BLOB)) > 0");
+        assert_eq!(raw[1][0], "0");
+    }
+}
+
+/// 修复之前执行过的清除只在 `sync2_purged` 里有标记、索引里没有清除操作：第一次碰到时从日志补索引，之后
+/// 照样按因果判（老库里被清除过的笔记重导也能复活）。
+#[test]
+fn purge_recorded_before_the_index_existed_is_backfilled_from_the_log() {
+    let a = Device::new("a");
+    a.apply(T0, vec![edit("note", "N1", "f/x", json!("old text"))]);
+    a.core.sync2_purge(P, "note", "N1", T0 + 1).unwrap();
+    {
+        let w = a.core.writer().unwrap();
+        let n = w.execute("DELETE FROM sync2_ent_ops WHERE what = '#purge'", []).unwrap();
+        assert_eq!(n, 1, "the purge op is indexed");
+    }
+    a.apply(T0 + 2, vec![edit("note", "N1", "deleted", Value::Null), edit("note", "N1", "f/x", json!("imported again"))]);
+    let want: BTreeMap<String, String> =
+        [("deleted", "NULL"), ("f/x", "imported again")].into_iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect();
+    assert_eq!(note_fields(&a), want);
+    let idx = a.rows("SELECT COUNT(*) FROM sync2_ent_ops WHERE what = '#purge' AND entity = 'N1'");
+    assert_eq!(idx[1][0], "1", "backfilled");
+}
+
 /// 时间线（设计 §10.2）：恢复到某时刻 = 追加补偿操作；恢复后各端一致；恢复本身可以再恢复回去。
 #[test]
 fn timeline_restore_compensates_and_can_itself_be_undone() {

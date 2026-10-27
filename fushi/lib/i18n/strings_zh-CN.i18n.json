@@ -7159,6 +7159,7 @@
   "srs_import_report_media_missing": "有 $n 个被引用的媒体文件不在包里",
   "srs_import_report_notes": "笔记：新增 $added，更新 $updated，未改动 $skipped",
   "srs_import_report_notetypes_duplicated": "笔记模板「$name」与本机的不一致，已另存为一个新模板",
+  "srs_import_report_notetypes_restored": "恢复之前删除的笔记模板「$name」",
   "srs_import_report_notetypes_updated": "更新笔记模板：$n 个",
   "srs_import_report_presets_skipped": "未导入牌组预设：$n 个（新牌组使用默认设置）",
   "srs_import_report_removed": "来源里删掉的 $n 个字段 / 模板在本机保留",
