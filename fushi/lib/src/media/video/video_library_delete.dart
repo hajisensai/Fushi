@@ -67,7 +67,7 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
   Future<void> Function()? afterDeleteBeforeReclaim,
 }) async {
   // 删的是一整部作品时，它名下不在合集里的附属行（本地特典 / 下载整理出的附件）
-  // 跟着一起删，否则正片没了、特典行和特典文件原样留下（fuQcFmZZxb / BUG-3802）。
+  // 跟着一起删，否则正片没了、特典行和特典文件原样留下（fuQcFmZZxb / BUG-3817）。
   // 「只删本机副本、成员行保留」（removeFromCollections: false）的作品仍在，不扩。
   final List<String> requested = bookUids.toList(growable: false);
   final List<String> targetUids = removeFromCollections

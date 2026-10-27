@@ -1,4 +1,4 @@
-## BUG-3801 · 下载整理：多作品合集包续作目录无季号撞名整任务失败
+## BUG-3816 · 下载整理：多作品合集包续作目录无季号撞名整任务失败
 - **报告**：2026-10-26（用户反馈 kg41f2PGdC，Windows：下载「向山进发」VCB-Studio 合集包，整理报 `organization target collision: 向山进发 (2013)/Season 01/向山进发 (2013) - S01E01.mkv`，本作 `[..] Yama no Susume [Ma10p_1080p]/[..][01]..mkv` 与续作 `[..] Yama no Susume Next Summit [Ma10p_1080p]/[..][01]..mkv` 抢同一目标，整条任务 needsAttention）
 - **真实性**：✅ 真 bug。根因两层：
   1. 季号只看文件名：`packages/fushi_engine/lib/media/video/download/video_download_organizer.dart:207-213`（修前）`parseVideoFilename(_segments(file.name).last)`，季号 `parsed.season ?? request.defaultSeasonNumber`。合集包把季 / 续作放在各自目录里、文件名只写 `[01]`，目录上的季信息（`Season 2/`、`S02`、`2nd Season`、尾部裸数字，即 `parseVideoPath` 已有的 BUG-1543 规则）整理器一条都不看，全部落进默认季。

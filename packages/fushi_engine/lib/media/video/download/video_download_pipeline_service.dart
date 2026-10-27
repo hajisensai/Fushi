@@ -609,7 +609,7 @@ Future<void> deletePersistedVideoDownloadJob({
 }
 
 /// 删完一条任务的文件后，自下而上回收这些文件所在、**已经变空**的目录
-/// （fuQcFmZZxb / BUG-3802：整理器建的 `<作品>/Season 01/`、`<作品>/Extras/…`、
+/// （fuQcFmZZxb / BUG-3817：整理器建的 `<作品>/Season 01/`、`<作品>/Extras/…`、
 /// 种子原目录在文件删光后整棵空壳留在来源里）。
 ///
 /// 只删空目录：`Directory.delete()` 不带 recursive，目录里还有任何东西（用户自己
@@ -728,7 +728,7 @@ Future<void> reconcileVideoDownloadJobsAfterLocalDelete({
     // 持有它，等人处理）：最常见的是文件已入库、刮削待确认 / 失败停在这里。用户把
     // 它的视频全删了，本身就是对「这条任务怎么处理」的回答——此前只认终态，这类
     // 任务只被标 skipped，非视频资源（扫图 / CD / 字体）与目录永远留在盘上
-    // （fuQcFmZZxb / BUG-3802）。active 仍绝不整删：worker 可能正在落文件。
+    // （fuQcFmZZxb / BUG-3817）。active 仍绝不整删：worker 可能正在落文件。
     final bool terminal =
         job.lifecycle == VideoDownloadJobLifecycle.completed ||
         job.lifecycle == VideoDownloadJobLifecycle.cancelled ||
