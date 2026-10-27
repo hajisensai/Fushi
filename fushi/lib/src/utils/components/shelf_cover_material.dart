@@ -981,6 +981,10 @@ class ShelfMetaTags extends StatelessWidget {
 
 /// 卡片标题：最多 [maxLines] 行，放不下时桌面悬停显示全名（与 [ShelfCardFooter]
 /// 同一套溢出提示）。
+///
+/// 恒占满 [maxLines] 行高：短标题只排一行时也留出其余行，同一网格行里副行与
+/// 进度条才落在同一条基线上（否则单行标题的卡片底部整体上移、与两行标题的卡片
+/// 错位）。占位用同字体的空行撑高，行高与真实排版一致，不靠估算值。
 class ShelfTitleLine extends StatelessWidget {
   const ShelfTitleLine({
     required this.title,
@@ -995,7 +999,7 @@ class ShelfTitleLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ShelfTitleOverflowTooltip(
+    final Widget text = ShelfTitleOverflowTooltip(
       title: title,
       style: style,
       maxLines: maxLines,
@@ -1005,6 +1009,19 @@ class ShelfTitleLine extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: style,
       ),
+    );
+    if (maxLines <= 1) return text;
+    return Stack(
+      children: <Widget>[
+        ExcludeSemantics(
+          child: Text(
+            '\n' * (maxLines - 1),
+            maxLines: maxLines,
+            style: style.copyWith(color: const Color(0x00000000)),
+          ),
+        ),
+        text,
+      ],
     );
   }
 }
