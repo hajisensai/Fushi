@@ -4677,10 +4677,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               ),
             ),
           );
+          // 与取流同一个主机侧集序号：合集连播里 [index] 是合集内位置，每个成员
+          // 在主机上都是单视频（恒 0）；传 [index] 主机必回 404，第 2 集起永远
+          // 拿不到主机选定的外挂字幕（反馈 XmUBLYR1Ut，BUG-3615 漏的客户端一半）。
           await client.getRemoteVideoSubtitle(
             info.id,
             subtitle,
-            episodeIndex: index,
+            episodeIndex: streamEpisodeIndex,
             onProgress: (double progress) {
               // TODO-1213：字幕下载确定性进度 → 加载态显进度条 + 百分比。
               if (!mounted) return;
