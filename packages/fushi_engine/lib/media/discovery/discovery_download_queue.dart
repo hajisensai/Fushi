@@ -140,6 +140,9 @@ class DiscoveryDownloadTask {
   /// 目标文件已存在、跳过了下载（重试重导场景仍会走导入）。
   bool skippedDownload = false;
 
+  /// 随附文件（字幕 / EPUB）中实际落盘成功的路径；入库时与主文件一并分类。
+  List<String> companionPaths = const <String>[];
+
   /// 取消请求标记：running 中被 cancel 时置位，收尾按 cancelled 归类。
   bool _cancelRequested = false;
 
@@ -305,6 +308,7 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
     task.totalBytes = null;
     task.importOutcome = null;
     task.skippedDownload = false;
+    task.companionPaths = const <String>[];
     task._cancelRequested = false;
   }
 
@@ -365,6 +369,8 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
       }
       task.filePath = file.path;
       if (task._cancelRequested) throw const _DiscoveryDownloadCancelled();
+      task.companionPaths = await _fetchCompanions(task, http);
+      if (task._cancelRequested) throw const _DiscoveryDownloadCancelled();
 
       try {
         final DiscoveryImportOutcome outcome = await _importer(task, file);
@@ -381,11 +387,45 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
     _finish(task, error: failure, retryable: failureRetryable);
   }
 
+  /// 随附文件（字幕 / EPUB）：小文件，下不下来就跳过，不让它拖垮主文件。
+  Future<List<String>> _fetchCompanions(
+    DiscoveryDownloadTask task,
+    DiscoveryHttpPayload payload,
+  ) async {
+    final List<String> paths = <String>[];
+    for (final DiscoveryCompanionFile companion in payload.companions) {
+      final File destination = File(
+        '${task.destinationDir}${Platform.pathSeparator}'
+        '${sanitizeDiscoveryFileName(companion.fileName)}',
+      );
+      try {
+        if (!await destination.exists()) {
+          await _download(
+            task,
+            DiscoveryHttpPayload(
+              url: companion.url,
+              headers: companion.headers,
+              fileName: companion.fileName,
+            ),
+            destination,
+            trackProgress: false,
+          );
+        }
+        paths.add(destination.path);
+      } catch (_) {
+        // 随附文件是锦上添花；用户取消由调用方在返回后检查。
+      }
+      if (task._cancelRequested) break;
+    }
+    return paths;
+  }
+
   Future<File> _download(
     DiscoveryDownloadTask task,
     DiscoveryHttpPayload payload,
-    File destination,
-  ) async {
+    File destination, {
+    bool trackProgress = true,
+  }) async {
     final DiscoveryDownloadOpen open;
     HttpClient? client;
     if (_openOverride != null) {
@@ -407,6 +447,7 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
         // Content-Length 兜住（连接提前断 → HttpException，走瞬时重试）。
         sizeHint: payload.sizeBytes,
         onProgress: (int received, int? total) {
+          if (!trackProgress) return;
           task.receivedBytes = received;
           task.totalBytes = total;
           _notifyProgress();

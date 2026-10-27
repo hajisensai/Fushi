@@ -2330,6 +2330,56 @@ abstract final class PendingMineStatus {
   static const String landed = 'landed';
 }
 
+/// 字幕书与远端（流式）音频的绑定（schema v137）。
+///
+/// 目前只有 Audiobookshelf：一本 [SrtBooks] 的音频不在本机磁盘上，而是在用户自己的
+/// 服务器上按需流式播放。**不**把 `abs://…` 塞进 `srt_books.audio_paths_json`——那一列
+/// 有二十多个消费者（删除判据、数据根迁移、路径重定位、互联音频包、断链检测）都把它当
+/// 本机绝对路径，塞进去会让它们静默出错。字幕书本身保持「只有字幕」的形态（音频路径
+/// 恒为空），音频来源记在这里；没有绑定行的字幕书走原来的本地路径，行为完全不变。
+///
+/// 设备本地：[serverConfigId] 指向本机设置里的服务器配置，对别的设备没有意义，不进
+/// 备份 / 同步（与 `pending_mine_queue` 同列于 backup 的 device-local 清单）。
+/// 与 `srt_books` 之间没有外键（项目惯例：逻辑外键），删除字幕书时在
+/// `deleteSrtBookByUid` 的同一事务里清掉本行。
+@DataClassName('RemoteAudioBindingRow')
+class RemoteAudioBindings extends Table {
+  /// 绑定的 [SrtBooks.uid]；一本字幕书至多一条绑定。
+  TextColumn get srtBookUid => text()();
+
+  /// 远端协议：目前恒为 `audiobookshelf`。
+  TextColumn get provider => text()();
+
+  /// 本机设置里的服务器配置 id。
+  TextColumn get serverConfigId => text()();
+
+  /// 服务器上的条目 id。
+  TextColumn get itemId => text()();
+
+  /// 播客单集 id；null = 有声书条目本身。
+  TextColumn get episodeId => text().nullable()();
+
+  /// 音轨表 JSON：`[{ino, startOffsetMs, durationMs, mime, size, filename}]`。同时是
+  /// 服务器重扫后「音轨变了没」的指纹：变了就要按新偏移重切字幕时间轴。
+  TextColumn get tracksJson => text()();
+
+  /// 字幕从哪来：`local`（用户选的本机文件）或 `server:<ino>`（服务器条目里的文件）。
+  TextColumn get subtitleOrigin => text().withDefault(const Constant('local'))();
+
+  /// 毫秒。
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  /// 本机最后一次真的听过 / 拖过这本书的时刻（毫秒）；null = 本机从没写过进度。
+  /// 开书时拿它和服务器进度的 `lastUpdate` 比，决定谁的位置更新。**不能复用
+  /// [updatedAt]**：重切字幕、改字幕来源也会刷新 [updatedAt]，那样会把「改过绑定」
+  /// 误判成「本机后听的」，别的设备的新进度就被本机旧位置盖掉。
+  IntColumn get localProgressAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {srtBookUid};
+}
+
 @DataClassName('VideoDownloadJobRow')
 class VideoDownloadJobs extends Table {
   /// 调用方生成的稳定任务 id；不能用自增 id 充当跨崩溃幂等键。

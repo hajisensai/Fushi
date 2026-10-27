@@ -5,6 +5,7 @@ import 'dart:ui' show AppLifecycleState;
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -103,8 +104,23 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   List<File> get audioFiles => _audioFiles;
 
+  /// 远端（流式）音频接缝；本机书为 null。非空时 [audioFiles] 只是撑下标的占位文件，
+  /// **读音频内容一律走 [trackInputFor]**，不要碰 `audioFiles[i].path`。
+  AudiobookRemotePlayback? _remotePlayback;
+  AudiobookRemotePlayback? get remotePlayback => _remotePlayback;
+  bool get isRemoteAudio => _remotePlayback != null;
+
+  /// 第 [fileIndex] 个音频文件交给 ffmpeg 等外部进程读取时的输入：本机书是文件路径，
+  /// 远端书是地址 + 现取的鉴权头（令牌临近过期会先刷新）。
+  Future<AudiobookTrackInput> trackInputFor(int fileIndex) async {
+    final AudiobookRemotePlayback? remote = _remotePlayback;
+    if (remote != null) return remote.trackInput(fileIndex);
+    return AudiobookTrackInput(input: _audioFiles[fileIndex].path);
+  }
+
   AudioPlayer? _clipPlayer;
   StreamSubscription<PlayerState>? _clipStateSub;
+  StreamSubscription<Duration>? _clipPositionSub;
 
   /// playCueOnce 用：播放到当前音频文件内此 ms 后自动暂停；null = 不限制。
   int? _stopAtPositionMs;
@@ -814,6 +830,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 是否正在播放。
   bool get isPlaying => _player.playing;
 
+  /// 当前位置：第几个音频文件、文件内毫秒（含激活落点的瞬态修正）。远端书的进度
+  /// 同步用它换算全书真实秒数。
+  ({int fileIndex, int positionMs}) get currentFilePosition =>
+      _effectiveFilePosition;
+
   /// 当前全局播放位置。
   Duration get position =>
       Duration(milliseconds: _effectiveFilePosition.positionMs);
@@ -999,10 +1020,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// [audioSources] 非空时用它代替按 [audioFiles] 建的文件源（TTS 朗读：每句一个
   /// 按需合成的流式源），两者必须一一对应——[audioFiles] 仍是制卡切句子音频时读的
   /// 本地路径。
+  ///
+  /// [remotePlayback] 非空 = 远端（流式）书：[audioFiles] 是占位文件，[audioSources]
+  /// 由它提供，句子回放与制卡取音频走它（见 [trackInputFor]）。
   Future<void> load({
     required Audiobook audiobook,
     required List<File> audioFiles,
     List<AudioSource>? audioSources,
+    AudiobookRemotePlayback? remotePlayback,
     bool initialFollowAudio = true,
     int initialDelayMs = 0,
     double initialSpeed = 1.0,
@@ -1023,6 +1048,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     try {
       _audiobook = audiobook;
       _audioFiles = audioFiles;
+      _remotePlayback = remotePlayback;
+      _rebuildFileDurations();
       // Follow audio / delay / speed 状态由调用方从持久层读出传入；不触发
       // persist 回调 —— 载入不是用户操作，又把同值写回 Hive 就是循环。
       followAudio.value = initialFollowAudio;
@@ -1316,9 +1343,18 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// [audiobookFileDurationsFromCues] 一份：持久化的全书毫秒按它编码，换字幕时
   /// 仓库层按同一口径换算进度（BUG-3197），两处口径漂开就会错位。
   void _rebuildFileDurations() {
-    _fileDurationsMs = audiobookFileDurationsFromCues(_allBookCues);
+    // 流式书没有字幕时推不出文件时长：用服务器给的音轨时长，整本进度条才走得动。
+    // 规则只在 [audiobookPositionDurationsMs] 写一次，仓库层换字幕时用同一条换算。
+    _fileDurationsMs = _positionDurationsFor(_allBookCues);
     _sectionFirstCueCache.clear();
   }
+
+  List<int> _positionDurationsFor(Iterable<AudioCue> cues) =>
+      audiobookPositionDurationsMs(
+        cues,
+        remoteTrackDurationsMs:
+            _remotePlayback?.trackDurationsMs ?? const <int>[],
+      );
 
   // ── 播放控制 API ───────────────────────────────────────────────────────────
 
@@ -2849,7 +2885,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 实测结论）。两份 cue 推出的文件时长相同（没换字幕 / 只改文本）时是空操作。
   Future<void> reencodeStoppedPositionForCues(List<AudioCue> cues) async {
     final List<int> previous = _fileDurationsMs;
-    final List<int> next = audiobookFileDurationsFromCues(cues);
+    final List<int> next = _positionDurationsFor(cues);
     if (listEquals(previous, next)) return;
     setAllBookCues(cues);
     final String? uid = _audiobook?.bookKey;
@@ -2872,7 +2908,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 也就不去打扰阅读器按章节灌的 cue。
   bool adoptReplacedBookCues(List<AudioCue> cues) {
     if (cues.isEmpty) return false;
-    if (listEquals(_fileDurationsMs, audiobookFileDurationsFromCues(cues))) {
+    if (listEquals(_fileDurationsMs, _positionDurationsFor(cues))) {
       return false;
     }
     setAllBookCues(cues);
@@ -2961,6 +2997,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     imagePauseSec.dispose();
     _clipStateSub?.cancel();
     _clipStateSub = null;
+    _clipPositionSub?.cancel();
+    _clipPositionSub = null;
   }
 
   Future<void> playRange(AudioPlaybackRange range) async {
@@ -2982,13 +3020,21 @@ class AudiobookPlayerController extends ChangeNotifier {
     final AudioPlayer clip = AudioPlayer();
     _clipPlayer = clip;
 
-    await clip.setAudioSource(
-      ClippingAudioSource(
-        child: AudioSource.file(_audioFiles[range.audioFileIndex].path),
-        start: Duration(milliseconds: range.startMs),
-        end: Duration(milliseconds: range.endMs),
-      ),
-    );
+    final AudiobookRemotePlayback? remote = _remotePlayback;
+    if (remote == null) {
+      await clip.setAudioSource(
+        ClippingAudioSource(
+          child: AudioSource.file(_audioFiles[range.audioFileIndex].path),
+          start: Duration(milliseconds: range.startMs),
+          end: Duration(milliseconds: range.endMs),
+        ),
+      );
+    } else {
+      // 流式源不能交给 ClippingAudioSource（它只认 UriAudioSource）：整轨装进临时播放
+      // 器，seek 到句首，再盯着位置在句尾停下。
+      await clip.setAudioSource(remote.buildTrackSource(range.audioFileIndex));
+      await clip.seek(Duration(milliseconds: range.startMs));
+    }
     await clip.setSpeed(_player.speed);
 
     _clipStateSub?.cancel();
@@ -2997,6 +3043,14 @@ class AudiobookPlayerController extends ChangeNotifier {
         stopClip();
       }
     });
+    _clipPositionSub?.cancel();
+    _clipPositionSub = null;
+    if (remote != null) {
+      final Duration end = Duration(milliseconds: range.endMs);
+      _clipPositionSub = clip.positionStream.listen((Duration position) {
+        if (position >= end) stopClip();
+      });
+    }
 
     await clip.play();
   }
@@ -3004,6 +3058,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   Future<void> stopClip({bool resumeMain = true}) async {
     _clipStateSub?.cancel();
     _clipStateSub = null;
+    _clipPositionSub?.cancel();
+    _clipPositionSub = null;
     final AudioPlayer? old = _clipPlayer;
     if (old != null) {
       _clipPlayer = null;

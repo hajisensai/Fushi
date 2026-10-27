@@ -1,3 +1,4 @@
+// ignore_for_file: experimental_member_use
 import 'dart:async';
 import 'dart:io';
 
@@ -9,8 +10,11 @@ import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:just_audio/just_audio.dart'
+    show AudioSource, StreamAudioResponse, StreamAudioSource;
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
 /// TODO-291 阶段2 行为守卫：[AudiobookSession] 是进程级常驻控制器持有者。
@@ -716,6 +720,148 @@ void main() {
         reason: 'the live controller adopts the new cues before any stop, so '
             'periodic writes are encoded with the new per-file durations');
   });
+
+  group('remote (streaming) audio', () {
+    Future<(AudiobookSession, _FakePlatform, _StubRemote)> startRemote() async {
+      final _FakePlatform platform = installPlatform();
+      final AudiobookSession session = makeSession();
+      addTearDown(session.dispose);
+      final _StubRemote remote = _StubRemote();
+      await session.start(
+        info: SessionBookInfo(
+          bookKey: 'r',
+          audiobook: ab('r'),
+          title: 'Remote',
+          mediaIdentifier: 'fushi://book/r',
+        ),
+        audioFiles: remote.placeholderFiles,
+        prefs: prefs(),
+        persist: persist(),
+        remote: remote,
+      );
+      return (session, platform, remote);
+    }
+
+    test('start(remote): 控制器标记为远端，音源来自接缝，占位文件撑住下标', () async {
+      final (AudiobookSession session, _FakePlatform platform, _StubRemote r) =
+          await startRemote();
+      final AudiobookPlayerController c = session.controller!;
+      expect(c.isRemoteAudio, isTrue);
+      expect(c.remotePlayback, same(r));
+      expect(c.audioFiles, same(r.placeholderFiles));
+      // load 用 preload:false，平台播放器在第一次真要播时才建：播一下激活它。
+      await c.play();
+      await pumpEventQueue();
+      final AudioSourceMessage loaded =
+          platform.players.first.lastLoad!.audioSourceMessage;
+      expect(loaded, isA<ConcatenatingAudioSourceMessage>());
+      expect(
+        (loaded as ConcatenatingAudioSourceMessage).children,
+        hasLength(2),
+        reason: '一轨一个流式源，不是按占位路径建的文件源',
+      );
+    });
+
+    test('trackInputFor：远端书走接缝（地址 + 鉴权头），本机书是文件路径', () async {
+      final (AudiobookSession session, _, _StubRemote _) = await startRemote();
+      final AudiobookTrackInput remoteInput = await session.controller!
+          .trackInputFor(1);
+      expect(remoteInput.input, 'https://abs.example/f1');
+      expect(remoteInput.headers['Authorization'], 'Bearer t');
+      expect(remoteInput.isRemote, isTrue);
+
+      final AudiobookSession local = await startedSession('local');
+      final AudiobookPlayerController lc = local.controller!;
+      expect(lc.isRemoteAudio, isFalse);
+      final AudiobookTrackInput localInput = await lc.trackInputFor(0);
+      expect(localInput.input, lc.audioFiles.first.path);
+      expect(localInput.headers, isEmpty);
+    });
+
+    test('起会话后把播放器接给远端接缝（进度同步用），位置 / 播放状态可读', () async {
+      final (AudiobookSession session, _, _StubRemote r) = await startRemote();
+      await pumpEventQueue();
+      final RemotePlaybackHost host = r.attached!;
+      expect(host.isPlaying(), isFalse);
+      expect(host.filePosition(), (fileIndex: 0, positionMs: 0));
+      int notified = 0;
+      void listener() => notified++;
+      host.addListener(listener);
+      await session.controller!.setSpeed(1.5);
+      expect(notified, greaterThan(0), reason: '控制器变化会通知到接缝挂的监听');
+      host.removeListener(listener);
+      final int before = notified;
+      await session.controller!.setSpeed(1.0);
+      expect(notified, before, reason: '摘掉监听后不再通知');
+      expect(session.controller!.currentFilePosition.fileIndex, 0);
+    });
+
+    test('接缝 attach 失败（离线）不影响开书，会话照常可用', () async {
+      final _FakePlatform platform = installPlatform();
+      expect(platform, isNotNull);
+      final AudiobookSession session = makeSession();
+      addTearDown(session.dispose);
+      final _StubRemote remote = _StubRemote()..attachThrows = true;
+      final AudiobookPlayerController? controller = await session.start(
+        info: SessionBookInfo(
+          bookKey: 'offline',
+          audiobook: ab('offline'),
+          title: 'Offline',
+          mediaIdentifier: 'fushi://book/offline',
+        ),
+        audioFiles: remote.placeholderFiles,
+        prefs: prefs(),
+        persist: persist(),
+        remote: remote,
+      );
+      await pumpEventQueue();
+      expect(controller, isNotNull);
+      expect(session.isActive, isTrue);
+    });
+
+    test('stop() 释放接缝，且只释放一次', () async {
+      final (AudiobookSession session, _, _StubRemote r) = await startRemote();
+      await session.stop();
+      expect(r.released, 1);
+      await session.stop();
+      expect(r.released, 1);
+    });
+
+    test('playRange(远端)：播流式源并 seek 到句首，而不是 ClippingAudioSource', () async {
+      final (AudiobookSession session, _FakePlatform platform, _StubRemote _) =
+          await startRemote();
+      final AudiobookPlayerController c = session.controller!;
+      // play() 要等播放结束才返回，假平台永远不会结束：不 await。
+      unawaited(
+        c.playRange(
+          const AudioPlaybackRange(audioFileIndex: 1, startMs: 500, endMs: 900),
+        ),
+      );
+      await pumpEventQueue();
+      // 主播放器还没激活（preload:false），所以唯一的平台播放器就是句子回放的临时播放器。
+      expect(platform.players, hasLength(1));
+      final _FakePlayer clip = platform.players.single;
+      expect(
+        clip.lastLoad!.audioSourceMessage,
+        isNot(isA<ClippingAudioSourceMessage>()),
+      );
+      expect(clip.seeks, contains(const Duration(milliseconds: 500)));
+      await c.stopClip(resumeMain: false);
+    });
+
+    test('playRange(远端)：越界下标与空区间直接忽略', () async {
+      final (AudiobookSession session, _FakePlatform platform, _StubRemote _) =
+          await startRemote();
+      final AudiobookPlayerController c = session.controller!;
+      await c.playRange(
+        const AudioPlaybackRange(audioFileIndex: 5, startMs: 0, endMs: 900),
+      );
+      await c.playRange(
+        const AudioPlaybackRange(audioFileIndex: 0, startMs: 900, endMs: 900),
+      );
+      expect(platform.players, isEmpty, reason: '没有为无效区间建临时播放器');
+    });
+  });
 }
 
 class _FakeReader implements ReaderAudiobookView {
@@ -750,11 +896,15 @@ class _FakeReader implements ReaderAudiobookView {
 
 class _FakePlatform extends JustAudioPlatform {
   _FakePlayer? player;
+
+  /// 按创建顺序记下的全部播放器（第 0 个是主播放器，之后是句子回放的临时播放器）。
+  final List<_FakePlayer> players = <_FakePlayer>[];
   Completer<void>? disposeGate;
   Completer<void> disposeStarted = Completer<void>();
   @override
   Future<AudioPlayerPlatform> init(InitRequest request) async {
     player = _FakePlayer(request.id);
+    players.add(player!);
     return player!;
   }
 
@@ -777,6 +927,8 @@ class _FakePlatform extends JustAudioPlatform {
 
 class _FakePlayer extends AudioPlayerPlatform {
   _FakePlayer(super.id);
+  LoadRequest? lastLoad;
+  final List<Duration?> seeks = <Duration?>[];
   final StreamController<PlaybackEventMessage> _events =
       StreamController<PlaybackEventMessage>.broadcast();
 
@@ -798,6 +950,7 @@ class _FakePlayer extends AudioPlayerPlatform {
 
   @override
   Future<LoadResponse> load(LoadRequest request) async {
+    lastLoad = request;
     emit(request.initialPosition?.inMilliseconds ?? 0,
         ProcessingStateMessage.ready,
         playing: false);
@@ -810,6 +963,7 @@ class _FakePlayer extends AudioPlayerPlatform {
   Future<PlayResponse> play(PlayRequest request) async => PlayResponse();
   @override
   Future<SeekResponse> seek(SeekRequest request) async {
+    seeks.add(request.position);
     emit(request.position?.inMilliseconds ?? 0, ProcessingStateMessage.ready,
         playing: false);
     return SeekResponse();
@@ -867,4 +1021,57 @@ class _FakePlayer extends AudioPlayerPlatform {
     if (!_events.isClosed) await _events.close();
     return DisposeResponse();
   }
+}
+
+class _StubRemote implements AudiobookRemotePlayback {
+  int released = 0;
+  RemotePlaybackHost? attached;
+  bool attachThrows = false;
+
+  @override
+  int get trackCount => 2;
+
+  @override
+  List<int> get trackDurationsMs => const <int>[];
+
+  @override
+  final List<File> placeholderFiles = <File>[
+    File('abs-remote/a.mp3'),
+    File('abs-remote/b.mp3'),
+  ];
+
+  @override
+  List<AudioSource> buildSources() => <AudioSource>[
+    for (int i = 0; i < trackCount; i++) buildTrackSource(i),
+  ];
+
+  @override
+  AudioSource buildTrackSource(int index) => _StubStreamSource(index);
+
+  @override
+  Future<AudiobookTrackInput> trackInput(int index) async =>
+      AudiobookTrackInput(
+        input: 'https://abs.example/f$index',
+        headers: const <String, String>{'Authorization': 'Bearer t'},
+      );
+
+  @override
+  Future<void> attach(RemotePlaybackHost host) async {
+    attached = host;
+    if (attachThrows) throw StateError('server unreachable');
+  }
+
+  @override
+  Future<void> release() async => released++;
+}
+
+/// 假平台从不真去拉数据，所以流式源的 request 不会被调用。
+class _StubStreamSource extends StreamAudioSource {
+  _StubStreamSource(this.index) : super(tag: 'stub:$index');
+
+  final int index;
+
+  @override
+  Future<StreamAudioResponse> request([int? start, int? end]) =>
+      throw UnimplementedError('fake platform never fetches');
 }

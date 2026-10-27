@@ -187,6 +187,8 @@ import 'package:fushi_engine/media/video/download/video_download_subscription_au
 import 'package:fushi/src/media/torrent/video_download_legacy_importer.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_importer.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart'
+    show AudiobookshelfApi;
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart'
     show AudiobookshelfTokens;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
@@ -198,6 +200,9 @@ import 'package:fushi/src/media/discovery/import/discovery_import_production.dar
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobookshelf_api_registry.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobookshelf_remote_playback.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
@@ -7354,8 +7359,8 @@ class AppModel with ChangeNotifier {
             if (server.enabled && server.isSignedIn)
               AudiobookshelfDiscoverySource(
                 config: server,
-                onTokensChanged: (AudiobookshelfTokens tokens) =>
-                    persistAudiobookshelfTokens(server.id, tokens),
+                // 共享实例：与书库里的 ABS 标签页、流式播放共用同一份轮换中的令牌。
+                sharedApi: audiobookshelfApis.apiFor(server),
               ),
       ],
     );
@@ -7402,6 +7407,7 @@ class AppModel with ChangeNotifier {
     Iterable<AudiobookshelfServerConfig> servers,
   ) async {
     await prefsRepo.setDiscoveryAudiobookshelfServers(servers);
+    audiobookshelfApis.retainOnly(prefsRepo.discoveryAudiobookshelfServers);
     await reloadDiscoverySources();
   }
 
@@ -7415,6 +7421,53 @@ class AppModel with ChangeNotifier {
               ? server.copyWith(catalogUrl: catalogUrl)
               : server,
       ]);
+
+  /// 每台 Audiobookshelf 服务器一个共享协议层实例（令牌轮换不能被多个实例踩）。
+  /// 其它地方要访问 ABS 一律经它借，见 [AudiobookshelfApiRegistry]。
+  AudiobookshelfApiRegistry get audiobookshelfApis => _audiobookshelfApis ??=
+      AudiobookshelfApiRegistry(persistTokens: persistAudiobookshelfTokens);
+  AudiobookshelfApiRegistry? _audiobookshelfApis;
+
+  /// 字幕书的远端音频绑定 → 可播放的流式接缝；服务器配置已删 / 已登出 / 不是
+  /// Audiobookshelf 时返回 null（调用方当作「没有可播放的音频」）。
+  AudiobookRemotePlayback? remotePlaybackFor(RemoteAudioBinding binding) {
+    if (binding.provider != RemoteAudioBinding.providerAudiobookshelf) {
+      return null;
+    }
+    for (final AudiobookshelfServerConfig server
+        in prefsRepo.discoveryAudiobookshelfServers) {
+      if (server.id != binding.serverConfigId) continue;
+      final AudiobookshelfApi? api = audiobookshelfApis.apiFor(server);
+      return api == null
+          ? null
+          : AudiobookshelfRemotePlayback(
+              api: api,
+              binding: binding,
+              deviceId: () => SyncRepository(database).getOrCreateDeviceId(),
+              onPushed: (int nowMs) async {
+                final RemoteAudioBindingRepository bindings =
+                    RemoteAudioBindingRepository(database);
+                final RemoteAudioBinding? latest = await bindings.get(
+                  binding.srtBookUid,
+                );
+                if (latest != null) {
+                  await bindings.save(latest.copyWith(localProgressAt: nowMs));
+                }
+              },
+              onSyncError: (String what, Object error) =>
+                  ErrorLogService.instance.log(
+                    'AudiobookshelfProgress.$what',
+                    error,
+                    StackTrace.current,
+                  ),
+            );
+    }
+    return null;
+  }
+
+  /// 起会话用的解析器：本机书照旧，绑在服务器上的字幕书走流式。
+  AudiobookSessionLauncher newAudiobookSessionLauncher() =>
+      AudiobookSessionLauncher(database, remoteResolver: remotePlaybackFor);
 
   /// 协议层刷新令牌后的持久化：refresh token 每次刷新都轮换，不写回的话下次冷
   /// 启动拿的是已作废的旧值，宽限期一过就只能重新登录。
@@ -9061,9 +9114,7 @@ class AppModel with ChangeNotifier {
     String bookKey,
   ) async {
     await initialiseAudioHandler();
-    final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(
-      database,
-    );
+    final AudiobookSessionLauncher launcher = newAudiobookSessionLauncher();
     final AudiobookSessionStartRequest? req = await launcher.resolve(bookKey);
     if (req == null) {
       return BackgroundListenResult.noAudio;
@@ -9080,6 +9131,7 @@ class AppModel with ChangeNotifier {
         persist: req.persist,
         // 灌全书 cue：后台听书无 reader 喂 cue，否则悬浮窗推空串（TODO-354 根因②）。
         cues: req.cues,
+        remote: req.remote,
       );
       if (controller == null) return BackgroundListenResult.loadFailed;
     } catch (e, stack) {
@@ -9581,6 +9633,7 @@ class AppModel with ChangeNotifier {
     _discoveryDownloadKeepAlive = null;
     _discoveryDownloadQueue?.dispose();
     _discoveryDownloadQueue = null;
+    _audiobookshelfApis?.close();
     _mediaDiscoveryService?.close();
     _mediaDiscoveryService = null;
     _mihonManager?.dispose();

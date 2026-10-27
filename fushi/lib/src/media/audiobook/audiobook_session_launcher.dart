@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -12,9 +13,15 @@ import 'package:fushi_core/fushi_core.dart';
 ///
 /// 返回 null = 该书没有可播放的有声书 / 字幕书（无记录或无音频文件），调用方据此提示。
 class AudiobookSessionLauncher {
-  AudiobookSessionLauncher(this._db);
+  AudiobookSessionLauncher(this._db, {this.remoteResolver});
 
   final FushiDatabase _db;
+
+  /// 把字幕书的远端音频绑定变成可播放的接缝（找服务器配置 + 共享协议层实例）。
+  /// 为空或返回 null（服务器已删 / 已登出）时，没有本机音频的字幕书照旧判为「没有
+  /// 可播放的音频」。
+  final AudiobookRemotePlayback? Function(RemoteAudioBinding binding)?
+  remoteResolver;
 
   /// 解析一本书的会话启动材料。优先 Audiobook 记录，回退 SrtBook（与 reader
   /// `_resolveAudioSlot` 同序）。
@@ -28,6 +35,7 @@ class AudiobookSessionLauncher {
         source.audiobook,
         source.audioFiles,
         bookKey,
+        remote: source.remote,
       );
     }
     return _resolveAudiobook(source.audiobook, source.audioFiles, bookKey);
@@ -58,7 +66,22 @@ class AudiobookSessionLauncher {
       audioPaths: srtBook.audioPaths,
       audioRoot: srtBook.audioRoot,
     );
-    if (audioFiles.isEmpty) return null;
+    if (audioFiles.isEmpty) {
+      // 本机没有音频：看是不是绑在服务器上的流式书（本机有音频的书永远走上面的老路，
+      // 远端绑定只在「没有本机音频」时才起作用）。
+      final AudiobookRemotePlayback? remote = await _resolveRemote(srtBook.uid);
+      if (remote == null) return null;
+      return _SessionSource(
+        audiobook: Audiobook()
+          ..bookKey = srtBook.uid
+          ..alignmentFormat = 'srt'
+          ..alignmentPath = srtBook.srtPath,
+        audioFiles: remote.placeholderFiles,
+        positionKey: srtBook.uid,
+        srtBook: srtBook,
+        remote: remote,
+      );
+    }
     return _SessionSource(
       audiobook: Audiobook()
         ..bookKey = srtBook.uid
@@ -70,6 +93,16 @@ class AudiobookSessionLauncher {
       positionKey: srtBook.uid,
       srtBook: srtBook,
     );
+  }
+
+  Future<AudiobookRemotePlayback?> _resolveRemote(String srtBookUid) async {
+    final AudiobookRemotePlayback? Function(RemoteAudioBinding)? resolver =
+        remoteResolver;
+    if (resolver == null) return null;
+    final RemoteAudioBinding? binding = await RemoteAudioBindingRepository(
+      _db,
+    ).get(srtBookUid);
+    return binding == null ? null : resolver(binding);
   }
 
   Future<AudiobookSessionStartRequest?> _resolveAudiobook(
@@ -115,8 +148,9 @@ class AudiobookSessionLauncher {
     SrtBook srtBook,
     Audiobook synthetic,
     List<File> audioFiles,
-    String statsMediaKey,
-  ) async {
+    String statsMediaKey, {
+    AudiobookRemotePlayback? remote,
+  }) async {
     final AudiobookRepository repo = AudiobookRepository(_db);
     final String key = srtBook.uid;
     final SessionPrefs prefs = await _readPrefs(repo, key);
@@ -150,6 +184,7 @@ class AudiobookSessionLauncher {
       prefs: prefs,
       persist: persist,
       cues: cues,
+      remote: remote,
     );
   }
 
@@ -276,12 +311,16 @@ class _SessionSource {
     required this.audioFiles,
     required this.positionKey,
     this.srtBook,
+    this.remote,
   });
 
   final Audiobook audiobook;
   final List<File> audioFiles;
   final String positionKey;
   final SrtBook? srtBook;
+
+  /// 非空 = 音频在服务器上流式播放，[audioFiles] 是占位文件。
+  final AudiobookRemotePlayback? remote;
 }
 
 class AudiobookSessionStartRequest {
@@ -291,12 +330,17 @@ class AudiobookSessionStartRequest {
     required this.prefs,
     required this.persist,
     this.cues = const <AudioCue>[],
+    this.remote,
   });
 
   final SessionBookInfo info;
   final List<File> audioFiles;
   final SessionPrefs prefs;
   final SessionPersistCallbacks persist;
+
+  /// 非空 = 远端（流式）书：[audioFiles] 是占位文件，播放与制卡取音频走它。起会话时
+  /// 原样传给 `AudiobookSession.start(remote:)`。
+  final AudiobookRemotePlayback? remote;
 
   bool get isSrtBookSource => info.isSrtBookSource;
 

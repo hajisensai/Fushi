@@ -65,7 +65,12 @@ class DiscoveryImportExecutor {
     DiscoveryDownloadTask task,
     File file,
   ) =>
-      importFile(task.item.kind, file);
+      task.companionPaths.isEmpty
+          ? importFile(task.item.kind, file)
+          : importPaths(task.item.kind, <String>[
+              file.path,
+              ...task.companionPaths,
+            ]);
 
   /// torrent 整包入口：对一组已就位的绝对路径分类入库（torrent 下载完成后
   /// `AnimeDownloadService` 调这里）。

@@ -65,6 +65,9 @@ void main() {
       'lib/src/pages/implementations/media_server/media_server_server_list_view.dart',
       'lib/src/pages/implementations/media_server/media_server_home_view.dart',
       'lib/src/pages/implementations/media_server/media_server_detail_view.dart',
+      // 书库 Audiobookshelf 标签页：封面网格 + 「继续收听」行与条目 / 播客单集详情。
+      'lib/src/pages/implementations/audiobookshelf/audiobookshelf_library_view.dart',
+      'lib/src/pages/implementations/audiobookshelf/audiobookshelf_item_page.dart',
       'lib/src/pages/implementations/video_discovery_page.dart',
       'lib/src/media/online/online_source_browse_page.dart',
       'lib/src/media/manga/discovery/manga_discovery_page.dart',

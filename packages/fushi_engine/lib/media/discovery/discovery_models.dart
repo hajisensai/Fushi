@@ -58,6 +58,19 @@ final class DiscoverySelectedTorrentPayload extends DiscoveryPayload {
   final bool importAfterDownload;
 }
 
+/// [DiscoveryHttpPayload.companions] 的一项。
+final class DiscoveryCompanionFile {
+  const DiscoveryCompanionFile({
+    required this.url,
+    required this.fileName,
+    this.headers = const <String, String>{},
+  });
+
+  final String url;
+  final String fileName;
+  final Map<String, String> headers;
+}
+
 /// HTTP 直链：交给 HTTP 下载队列。
 final class DiscoveryHttpPayload extends DiscoveryPayload {
   const DiscoveryHttpPayload({
@@ -65,9 +78,14 @@ final class DiscoveryHttpPayload extends DiscoveryPayload {
     this.headers = const <String, String>{},
     this.fileName,
     this.sizeBytes,
+    this.companions = const <DiscoveryCompanionFile>[],
   });
 
   final String url;
+
+  /// 与主文件一起下到同一目录、入库时和主文件一并分类的随附文件（字幕 / 正文 EPUB）。
+  /// 尽力而为：随附文件下不下来不影响主文件。
+  final List<DiscoveryCompanionFile> companions;
 
   /// 该直链要求的额外请求头（Referer/UA 防盗链等）。
   final Map<String, String> headers;
