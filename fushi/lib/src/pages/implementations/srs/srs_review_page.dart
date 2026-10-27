@@ -16,7 +16,8 @@ library;
 
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show FlutterView, ViewFocusDirection, ViewFocusState;
+import 'dart:ui'
+    show FlutterView, ViewFocusDirection, ViewFocusEvent, ViewFocusState;
 
 import 'package:flutter/gestures.dart'
     show
@@ -143,7 +144,8 @@ const double _kZoomStep = 0.1;
 const double _kZoomMin = 0.6;
 const double _kZoomMax = 2.0;
 
-class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
+class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
+    with WidgetsBindingObserver {
   /// 卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）：原生区按倍率放大文字，WebView
   /// 走页面 `zoom`（随主题样式原地更新，不重放卡片）。持久化为偏好，下次打开沿用。
   void _setZoom(double value) {
@@ -240,6 +242,36 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     if (view != null) SrsReviewPage.requestNativeViewFocus(view);
   }
 
+  /// 本页焦点取证（OO3O-3ljda：macOS 上点过卡面后空格失灵）：Flutter 焦点离开 / 回到本页、
+  /// 窗口视图焦点变化各记一条，封顶 [_kMaxFocusReports] 条免得刷满诊断日志。与卡面的
+  /// `SrsWebCardFace.keyNotBridged`（页面收到了键却没交回）合起来能分清键落在了哪一层。
+  int _focusReports = 0;
+  static const int _kMaxFocusReports = 12;
+  bool? _lastPageFocus;
+
+  void _reportFocus(String what) {
+    if (_focusReports >= _kMaxFocusReports) return;
+    _focusReports++;
+    ErrorLogService.instance.logDiagnostic(
+      'SrsReviewPage.focus',
+      '$what (primary=${FocusManager.instance.primaryFocus?.debugLabel})',
+    );
+  }
+
+  void _onPageFocusChanged() {
+    final bool has = _focusNode.hasFocus;
+    if (_lastPageFocus == has) return;
+    final bool first = _lastPageFocus == null;
+    _lastPageFocus = has;
+    if (first && has) return;
+    _reportFocus(has ? 'page focus regained' : 'page focus lost');
+  }
+
+  @override
+  void didChangeViewFocus(ViewFocusEvent event) {
+    _reportFocus('view ${event.viewId} ${event.state.name}');
+  }
+
   /// 下一帧结束后 [_reclaim]（换卡后卡面先 build 完）。`addPostFrameCallback` 本身不排帧，
   /// 树静止时要 [WidgetsBinding.ensureVisualUpdate] 把帧要出来（BUG-1168）。
   void _reclaimAfterFrame(FocusReclaimCause cause) {
@@ -257,6 +289,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   void initState() {
     super.initState();
     _audio = SrsCardAudioSequencer(ref.read(srsCardAudioOutputProvider));
+    WidgetsBinding.instance.addObserver(this);
+    _focusNode.addListener(_onPageFocusChanged);
     // 正在复习：自动优化让路（在跑的那一轮立即取消，见 srs_optimization_scheduler.dart）。
     srsActiveReviewSessions.value++;
     unawaited(_start());
@@ -265,6 +299,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   @override
   void dispose() {
     srsActiveReviewSessions.value--;
+    WidgetsBinding.instance.removeObserver(this);
+    _focusNode.removeListener(_onPageFocusChanged);
     _lookup.dispose();
     srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
     _focusNode.dispose();
