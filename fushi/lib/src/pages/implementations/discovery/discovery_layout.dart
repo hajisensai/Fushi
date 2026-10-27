@@ -6,12 +6,14 @@
 /// 「查看全部」网格页 / 详情页。数据、请求、缓存、合规门都留在各页，这里只吃
 /// 纯值（标题 / 文案 / ImageProvider / 封面 widget / 回调）。
 ///
-/// 两套设计系统各自像原生：
-/// - MD3 Expressive：封面 16 圆角、Hero 28 圆角（Expressive 大圆角卡）、按压
-///   状态层 + 轻微下沉（[FushiCard] 自带）；
-/// - Apple 26：封面 12（桌面 10）、Hero 24（桌面 16）——Apple TV / App Store 的
-///   内容卡是**实色**（不是玻璃），只有压在 Hero 上的主按钮是白底 prominent 玻璃
-///   （`overImage`）。
+/// 封面卡与库页同款（2026-10-25 定版）：[ShelfCoverFrame] 封面吃页面外层的
+/// [ShelfCoverMaterialScope] 材质（视频光面海报 / 漫画光面书皮），标题副行是
+/// [ShelfCardMeta]，封面上不压角标；两套设计系统的分派都在 [ShelfCoverFrame] 里。
+///
+/// Hero 两套设计系统各自像原生：
+/// - MD3 Expressive：Hero 28 圆角（Expressive 大圆角卡）；
+/// - Apple 26：Hero 24（桌面 16）——Apple TV / App Store 的内容卡是**实色**（不是
+///   玻璃），只有压在 Hero 上的主按钮是白底 prominent 玻璃（`overImage`）。
 ///
 /// 结构恒定：任何一处都不按设计系统增删父包装层，只换参数（见 `_elements.contains`
 /// 断言的教训）。
@@ -29,13 +31,21 @@ import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/utils/components/fushi_carousel.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 
-/// 封面槽向：竖版海报 2:3 / 横版剧照 16:9。
+/// 书 / 漫画封面的宽高比：与书架书卡封面区同一口径（约 1:1.42，见
+/// `kShelfBookCardAspectRatio` 的推导——那个常量是**整张卡槽**的比例，封面区
+/// 本身是 1:1.42）。
+const double kDiscoveryBookCoverAspectRatio = 1 / 1.42;
+
+/// 封面槽向：竖版海报 2:3 / 书封 1:1.42 / 方形专辑 1:1 / 横版剧照 16:9。
 enum DiscoveryCoverShape {
   portrait(2 / 3),
+  book(kDiscoveryBookCoverAspectRatio),
+  square(1),
   landscape(16 / 9);
 
   const DiscoveryCoverShape(this.aspectRatio);
@@ -64,27 +74,6 @@ BorderRadius discoveryHeroRadius(BuildContext context) {
   }
   return BorderRadius.circular(28);
 }
-
-/// 封面卡标题样式：MD3 listTitle；Apple 同字号 w600（App Store 卡片标题）。
-TextStyle _cardTitleStyle(BuildContext context) {
-  final TextStyle base = FushiDesignTokens.of(context).type.listTitle;
-  return isGlassDesign(context)
-      ? base.copyWith(fontWeight: FontWeight.w600)
-      : base;
-}
-
-/// 封面卡次行（年份 · 类型 · 来源）样式。
-TextStyle _cardMetaStyle(BuildContext context) {
-  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-  return tokens.type.metadata.copyWith(
-    color: isGlassDesign(context)
-        ? appleColorsOf(context).secondaryLabel
-        : tokens.surfaces.onVariant,
-  );
-}
-
-/// 封面与文字之间的间距。
-const double _kCardTextGap = 8;
 
 /// 统一的封面占位：分组底色 + 居中单色图标（无封面 / 加载失败 / 骨架共用）。
 class DiscoveryCoverPlaceholder extends StatelessWidget {
@@ -147,20 +136,26 @@ class DiscoveryImageCover extends StatelessWidget {
   }
 }
 
-/// 发现页统一封面卡：圆角封面（角标压在右上）+ 封面下方标题 / 次行。
+/// 发现页统一封面卡：库页同款（2026-10-25 定版）——[shelfCoverCard] 透明卡壳 +
+/// [ShelfCoverFrame] 封面 + [ShelfCardMeta] 标题（两行）/ 副行。
 ///
-/// 卡片本身是透明底的 [FushiCard]：点击 / 长按 / 焦点（[focusId]，Enter 激活）/
-/// 按压下沉 / 状态层都由它提供；视觉上是 Apple TV / Google TV 的「封面 + 下方
-/// 文字」磁贴，而不是一块包着封面的色卡。宽度由父级给（横滑行 / 网格），高度
-/// 用 [DiscoveryCoverCard.extentFor] 预先算好，横滑行与网格因此不会因大字体溢出。
+/// 材质由页面外层的 [ShelfCoverMaterialScope] 决定（视频 = 光面海报、漫画 = 光面
+/// 书皮）；没有 Scope 或墨水屏时 [ShelfCoverFrame] 退回 MD3 / Apple 各自的描边
+/// 封面框，两套设计系统都由它分派。封面上**不压任何角标**：评分 / 语言等原角标
+/// 信息并进副行（[subtitle]，可带 [leadingIcon]）。
+///
+/// 点击 / 长按 / 焦点（[focusId]，Enter 激活）/ 按压下沉由卡壳（[FushiCard]）
+/// 提供；悬停抬升 + 加深投影 + 扫光来自 [FushiHoverLift] 与材质，与库页同一套，
+/// 不另立动效。宽度由父级给（横滑行 / 网格），高度用 [DiscoveryCoverCard.extentFor]
+/// 预先算好（文字块随 textScaler 走，大字体不溢出，BUG-1527）。
 class DiscoveryCoverCard extends StatelessWidget {
   const DiscoveryCoverCard({
     required this.title,
     required this.cover,
     this.subtitle,
+    this.leadingIcon,
     this.shape = DiscoveryCoverShape.portrait,
-    this.badges = const <Widget>[],
-    this.titleMaxLines = 2,
+    this.titleMaxLines = kShelfCardMetaTitleLines,
     this.onTap,
     this.onLongPress,
     this.focusId,
@@ -169,114 +164,70 @@ class DiscoveryCoverCard extends StatelessWidget {
 
   final String title;
 
-  /// 次行（年份 · 类型 · 评分 / 来源名）；null 不占位。
+  /// 副行（评分 · 年份 · 类型 / 来源名）；null 时副行留空但仍占位（同一网格
+  /// 行高一致，与库页 [ShelfCardMeta] 同一纪律）。
   final String? subtitle;
 
-  /// 封面内容（[DiscoveryImageCover]，或漫画来源自带的封面 widget）。
+  /// 副行前导图标（如评分的星）。
+  final IconData? leadingIcon;
+
+  /// 封面内容（[DiscoveryImageCover]，或来源自带的封面 widget）。由
+  /// [ShelfCoverFrame] 裁圆角、铺满，封面 widget 自己不要再裁。
   final Widget cover;
 
   final DiscoveryCoverShape shape;
-
-  /// 压在封面右上角的角标（一般是 [CoverBadge]：评分 / 语言 / 状态）。
-  final List<Widget> badges;
 
   final int titleMaxLines;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final FushiFocusId? focusId;
 
-  /// 给定卡宽时整张卡的高度：封面（按 [shape]）+ 间距 + 标题行 + 次行。
+  /// 给定卡宽时整张卡的高度：封面（按 [shape]）+ [ShelfCardMeta] 文字块。
   ///
-  /// 文字高度按当前排版与 textScaler 实测，不压进固定宽高比——大字体下标题
-  /// 不会被裁、横滑行也不会溢出（BUG-1527 那一类）。
+  /// 文字块高度按当前排版与 textScaler 实测（[ShelfCardMeta.heightFor]，库页同一
+  /// 口径），不压进固定宽高比——大字体下标题不会被裁、横滑行也不会溢出。
   static double extentFor(
     BuildContext context, {
     required double width,
     DiscoveryCoverShape shape = DiscoveryCoverShape.portrait,
-    int titleMaxLines = 2,
-    bool hasSubtitle = true,
+    int titleMaxLines = kShelfCardMetaTitleLines,
   }) {
-    double measure(String text, TextStyle style) {
-      final TextPainter painter = TextPainter(
-        text: TextSpan(text: text, style: style),
-        textDirection: Directionality.of(context),
-        textScaler: MediaQuery.textScalerOf(context),
-        maxLines: titleMaxLines,
-      )..layout();
-      final double height = painter.height;
-      painter.dispose();
-      return height;
-    }
-
-    final String titleProbe = List<String>.filled(
-      titleMaxLines < 1 ? 1 : titleMaxLines,
-      '国M',
-    ).join('\n');
-    double text = measure(titleProbe, _cardTitleStyle(context));
-    if (hasSubtitle) text += measure('2026 · ★ 8.4', _cardMetaStyle(context));
-    return (width / shape.aspectRatio + _kCardTextGap + text + 4)
+    return (width / shape.aspectRatio +
+            ShelfCardMeta.heightFor(context, titleLines: titleMaxLines))
         .ceilToDouble();
   }
 
   @override
   Widget build(BuildContext context) {
-    final BorderRadius radius = discoveryCoverRadius(context);
     final String? meta = subtitle?.trim();
-    return FushiCard(
-      padding: EdgeInsets.zero,
-      color: Colors.transparent,
-      borderRadius: radius,
-      focusId: focusId,
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          AspectRatio(
-            aspectRatio: shape.aspectRatio,
-            child: ClipRRect(
-              borderRadius: radius,
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  cover,
-                  PositionedDirectional(
-                    top: 6,
-                    end: 6,
-                    child: Wrap(spacing: 4, runSpacing: 4, children: badges),
-                  ),
-                ],
-              ),
+    return FushiHoverLift(
+      builder: (BuildContext context, bool _) => shelfCoverCard(
+        focusId: focusId,
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            AspectRatio(
+              aspectRatio: shape.aspectRatio,
+              child: ShelfCoverFrame(child: cover),
             ),
-          ),
-          const SizedBox(height: _kCardTextGap),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: Text(
-              title,
-              maxLines: titleMaxLines,
-              overflow: TextOverflow.ellipsis,
-              style: _cardTitleStyle(context),
+            ShelfCardMeta(
+              title: title,
+              subtitle: meta == null || meta.isEmpty ? null : meta,
+              leadingIcon: meta == null || meta.isEmpty ? null : leadingIcon,
+              titleMaxLines: titleMaxLines,
             ),
-          ),
-          if (meta != null && meta.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Text(
-                meta,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: _cardMetaStyle(context),
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-/// 骨架卡：与 [DiscoveryCoverCard] 同几何的静态占位（封面块 + 两条文字条）。
+/// 骨架卡：与 [DiscoveryCoverCard] 同几何的静态占位（封面块 + 两条文字条），
+/// 封面圆角取 [shelfCoverRadius]（有材质时即材质外轮廓），数据到达时版面不跳。
 ///
 /// M3E 闪光是**有界**的（[FushiSkeletonShimmer] 扫三轮就停）：常驻的重复动画会
 /// 让 `pumpAndSettle` 永不收敛；墨水屏 / 减弱动态效果下不扫。
@@ -290,7 +241,8 @@ class DiscoverySkeletonCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final BorderRadius radius = discoveryCoverRadius(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final BorderRadius radius = shelfCoverRadius(context);
     // M3E：文字条是 [FushiSkeleton] 胶囊，整卡外包一层有界闪光（扫三轮停）。
     Widget line(double widthFactor) =>
         FushiSkeleton.line(widthFactor: widthFactor, height: 10);
@@ -307,7 +259,8 @@ class DiscoverySkeletonCard extends StatelessWidget {
                 child: const DiscoveryCoverPlaceholder(showIcon: false),
               ),
             ),
-            const SizedBox(height: _kCardTextGap + 2),
+            // 与 [ShelfCardMeta] 顶部间距同值。
+            SizedBox(height: tokens.spacing.gap * 1.25 + 2),
             line(0.86),
             const SizedBox(height: 6),
             line(0.5),
@@ -317,6 +270,12 @@ class DiscoverySkeletonCard extends StatelessWidget {
     );
   }
 }
+
+/// 横滑行的悬停留白：卡片悬停放大（[FushiHoverLift]）后上下各多出的高度再加
+/// 4px 投影余量。横滑列表视口按它上下留白，抬升的卡与加深的投影不被行的裁切边
+/// 吃掉（与媒体服务器横滚行同一算法）。
+double discoveryShelfLiftHeadroom(double cardHeight) =>
+    shelfHoverLiftHeadroom(cardHeight);
 
 /// Hero 背景：图（横图铺满 / 竖图模糊垫底 + 尾侧完整前景 / 自带封面 widget）+
 /// 可读性渐变。[DiscoveryHeroBanner] 与发现详情页的 hero 共用这一份，渐变配方
@@ -748,8 +707,7 @@ class DiscoveryCoverGrid extends StatelessWidget {
     required this.itemCount,
     required this.itemBuilder,
     this.shape = DiscoveryCoverShape.portrait,
-    this.titleMaxLines = 2,
-    this.hasSubtitle = true,
+    this.titleMaxLines = kShelfCardMetaTitleLines,
     this.padding,
     super.key,
   });
@@ -758,7 +716,6 @@ class DiscoveryCoverGrid extends StatelessWidget {
   final IndexedWidgetBuilder itemBuilder;
   final DiscoveryCoverShape shape;
   final int titleMaxLines;
-  final bool hasSubtitle;
 
   /// null = 左右页边距、上 gap、下 card。
   final EdgeInsetsGeometry? padding;
@@ -791,29 +748,30 @@ class DiscoveryCoverGrid extends StatelessWidget {
           return SliverGrid(
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
-              mainAxisSpacing: gap,
+              // 封面即卡片没有卡底：行间比列间多留半档，标题与下一排封面
+              // 之间留得开（与库页网格同一口径）。
+              mainAxisSpacing: gap + tokens.spacing.gap / 2,
               crossAxisSpacing: gap,
               mainAxisExtent: DiscoveryCoverCard.extentFor(
                 context,
                 width: width,
                 shape: shape,
                 titleMaxLines: titleMaxLines,
-                hasSubtitle: hasSubtitle,
               ),
             ),
             // 2026-10 动效重做：逐项错峰淡入（与 [fushiStaggeredItemBuilder] 同一
             // 包法；调用方已自行包 [FushiStaggeredEntrance] 的原样放行，不叠两层）。
             // 进场窗口 [FushiEntranceScope] 由调用方在结果到达处给，这里不内置——
             // 骨架网格与结果网格同位复用时，内置窗口会在骨架期就关掉。
-            delegate: SliverChildBuilderDelegate(
-              (BuildContext context, int index) {
-                final Widget child = itemBuilder(context, index);
-                return child is FushiStaggeredEntrance
-                    ? child
-                    : FushiStaggeredEntrance(index: index, child: child);
-              },
-              childCount: itemCount,
-            ),
+            delegate: SliverChildBuilderDelegate((
+              BuildContext context,
+              int index,
+            ) {
+              final Widget child = itemBuilder(context, index);
+              return child is FushiStaggeredEntrance
+                  ? child
+                  : FushiStaggeredEntrance(index: index, child: child);
+            }, childCount: itemCount),
           );
         },
       ),
@@ -823,23 +781,26 @@ class DiscoveryCoverGrid extends StatelessWidget {
 
 /// 「查看全部」整页：顶栏标题 + [DiscoveryCoverGrid]。横滑行只展示一屏的条目，
 /// 点行头「查看全部」推这一页看整组。
+///
+/// 这是一条新路由，读不到发现页外层的 [ShelfCoverMaterialScope]，所以条目材质
+/// 由调用方显式传 [material]（与来源发现页同一种）。
 class DiscoveryGridPage extends StatelessWidget {
   const DiscoveryGridPage({
     required this.title,
     required this.itemCount,
     required this.itemBuilder,
+    required this.material,
     this.shape = DiscoveryCoverShape.portrait,
-    this.titleMaxLines = 2,
-    this.hasSubtitle = true,
+    this.titleMaxLines = kShelfCardMetaTitleLines,
     super.key,
   });
 
   final String title;
   final int itemCount;
   final IndexedWidgetBuilder itemBuilder;
+  final ShelfCoverMaterial material;
   final DiscoveryCoverShape shape;
   final int titleMaxLines;
-  final bool hasSubtitle;
 
   /// 推一页「查看全部」。
   static Future<void> open(
@@ -847,9 +808,9 @@ class DiscoveryGridPage extends StatelessWidget {
     required String title,
     required int itemCount,
     required IndexedWidgetBuilder itemBuilder,
+    required ShelfCoverMaterial material,
     DiscoveryCoverShape shape = DiscoveryCoverShape.portrait,
-    int titleMaxLines = 2,
-    bool hasSubtitle = true,
+    int titleMaxLines = kShelfCardMetaTitleLines,
   }) {
     return Navigator.push<void>(
       context,
@@ -859,9 +820,9 @@ class DiscoveryGridPage extends StatelessWidget {
           title: title,
           itemCount: itemCount,
           itemBuilder: itemBuilder,
+          material: material,
           shape: shape,
           titleMaxLines: titleMaxLines,
-          hasSubtitle: hasSubtitle,
         ),
       ),
     );
@@ -873,19 +834,21 @@ class DiscoveryGridPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: fushiPageBackgroundColor(context),
       appBar: FushiAppBar(title: Text(title)),
-      body: CustomScrollView(
-        slivers: <Widget>[
-          FushiEntranceScope(
-            child: DiscoveryCoverGrid(
-              itemCount: itemCount,
-              itemBuilder: itemBuilder,
-              shape: shape,
-              titleMaxLines: titleMaxLines,
-              hasSubtitle: hasSubtitle,
+      body: ShelfCoverMaterialScope(
+        material: material,
+        child: CustomScrollView(
+          slivers: <Widget>[
+            FushiEntranceScope(
+              child: DiscoveryCoverGrid(
+                itemCount: itemCount,
+                itemBuilder: itemBuilder,
+                shape: shape,
+                titleMaxLines: titleMaxLines,
+              ),
             ),
-          ),
-          SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.section)),
-        ],
+            SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.section)),
+          ],
+        ),
       ),
     );
   }

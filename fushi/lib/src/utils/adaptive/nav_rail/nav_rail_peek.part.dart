@@ -63,10 +63,14 @@ class AdaptiveNavPeekData {
 /// [AdaptiveNavItem.peek]：MD3 侧栏悬停速览卡的数据源。
 @immutable
 class AdaptiveNavPeek {
-  const AdaptiveNavPeek({required this.load});
+  const AdaptiveNavPeek({required this.load, this.coverMaterial});
 
   /// 每次卡片对这一项打开时调用（同一项 30 秒内复用上次结果）。
   final Future<AdaptiveNavPeekData> Function() load;
+
+  /// 这一分区封面的库页条目材质（书 / 漫画光面书皮、视频光面海报、游戏卡盒；
+  /// 用户 2026-10-26）。速览卡的封面都是小图，走材质简化档；null = 旧圆角框。
+  final ShelfCoverMaterial? coverMaterial;
 }
 
 /// 第一次悬停到速览卡弹出的延迟：鼠标只是路过侧栏不弹。卡已打开时在图标间
@@ -510,7 +514,7 @@ class _NavRailPeekContent extends StatelessWidget {
                       ),
                     );
                   }
-                  return Column(
+                  final Widget body = Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
@@ -549,69 +553,66 @@ class _NavRailPeekContent extends StatelessWidget {
                                   BuildContext context,
                                   List<double> aspects,
                                 ) => LayoutBuilder(
-                                  builder:
-                                      (
-                                        BuildContext context,
-                                        BoxConstraints box,
-                                      ) {
-                                        final List<List<double>> rows =
-                                            navPeekRecentLayout(
-                                              aspects: aspects,
-                                              maxWidth: box.maxWidth,
-                                            );
-                                        final List<int> starts = <int>[0];
-                                        for (final List<double> row in rows) {
-                                          starts.add(starts.last + row.length);
-                                        }
-                                        return Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          spacing: kNavPeekRecentGap,
-                                          children: <Widget>[
-                                            for (
-                                              int r = 0;
-                                              r < rows.length;
-                                              r++
-                                            )
-                                              Row(
-                                                spacing: kNavPeekRecentGap,
-                                                children: <Widget>[
-                                                  for (
-                                                    int j = 0;
-                                                    j < rows[r].length;
-                                                    j++
-                                                  )
-                                                    SizedBox(
-                                                      width: rows[r][j],
-                                                      child: _NavPeekRecent(
-                                                        entry: value
-                                                            .recent[starts[r] + j],
-                                                        aspectRatio:
-                                                            aspects[starts[r] +
-                                                                j],
-                                                        fallbackIcon:
-                                                            value
-                                                                .recent[starts[r] +
-                                                                    j]
-                                                                .icon ??
-                                                            item.icon,
-                                                        onOpen: () => onOpenEntry(
-                                                          value
-                                                              .recent[starts[r] +
-                                                              j],
-                                                        ),
-                                                      ),
-                                                    ),
-                                                ],
-                                              ),
-                                          ],
+                                  builder: (BuildContext context, BoxConstraints box) {
+                                    final List<List<double>> rows =
+                                        navPeekRecentLayout(
+                                          aspects: aspects,
+                                          maxWidth: box.maxWidth,
                                         );
-                                      },
+                                    final List<int> starts = <int>[0];
+                                    for (final List<double> row in rows) {
+                                      starts.add(starts.last + row.length);
+                                    }
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      spacing: kNavPeekRecentGap,
+                                      children: <Widget>[
+                                        for (int r = 0; r < rows.length; r++)
+                                          Row(
+                                            spacing: kNavPeekRecentGap,
+                                            children: <Widget>[
+                                              for (
+                                                int j = 0;
+                                                j < rows[r].length;
+                                                j++
+                                              )
+                                                SizedBox(
+                                                  width: rows[r][j],
+                                                  child: _NavPeekRecent(
+                                                    entry: value
+                                                        .recent[starts[r] + j],
+                                                    aspectRatio:
+                                                        aspects[starts[r] + j],
+                                                    fallbackIcon:
+                                                        value
+                                                            .recent[starts[r] +
+                                                                j]
+                                                            .icon ??
+                                                        item.icon,
+                                                    onOpen: () => onOpenEntry(
+                                                      value.recent[starts[r] +
+                                                          j],
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                      ],
+                                    );
+                                  },
                                 ),
                           ),
                       ],
                     ],
                   );
+                  final ShelfCoverMaterial? material = item.peek?.coverMaterial;
+                  return material == null
+                      ? body
+                      : ShelfCoverMaterialScope(
+                          material: material,
+                          child: body,
+                        );
                 },
           ),
         ],
@@ -620,7 +621,9 @@ class _NavRailPeekContent extends StatelessWidget {
   }
 }
 
-/// 速览卡里的封面：没有封面时画模块图标占位。
+/// 速览卡里的封面：没有封面时画模块图标占位。分区给了材质
+/// （[AdaptiveNavPeek.coverMaterial]）时走材质简化档（圆角 + 内描边 + 轻
+/// 光泽），否则 / 墨水屏下保留 [radius] 圆角框。
 class _NavPeekCover extends StatelessWidget {
   const _NavPeekCover({
     required this.image,
@@ -647,19 +650,26 @@ class _NavPeekCover extends StatelessWidget {
       ),
     );
     final ImageProvider? provider = image;
+    final Widget cover = provider == null
+        ? placeholder
+        : Image(
+            image: provider,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            errorBuilder: (_, _, _) => placeholder,
+          );
+    if (shelfCoverMaterialOf(context) != null) {
+      return AspectRatio(
+        aspectRatio: aspectRatio,
+        child: ShelfCoverFrame(
+          density: ShelfCoverDensity.compact,
+          child: cover,
+        ),
+      );
+    }
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
-      child: AspectRatio(
-        aspectRatio: aspectRatio,
-        child: provider == null
-            ? placeholder
-            : Image(
-                image: provider,
-                fit: BoxFit.cover,
-                gaplessPlayback: true,
-                errorBuilder: (_, _, _) => placeholder,
-              ),
-      ),
+      child: AspectRatio(aspectRatio: aspectRatio, child: cover),
     );
   }
 }

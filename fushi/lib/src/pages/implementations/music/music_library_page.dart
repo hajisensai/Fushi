@@ -31,6 +31,7 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -465,45 +466,55 @@ class _AlbumGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<MusicAlbumRow> albums = snapshot.albums;
-    return FushiEntranceScope(
-      child: GridView.builder(
-        padding: withBottomSafeInset(
-          context,
-          EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            tokens.spacing.gap,
-            tokens.spacing.page,
-            tokens.spacing.section,
-          ),
-        ),
-        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 200,
-          mainAxisSpacing: tokens.spacing.gap * 1.5,
-          crossAxisSpacing: tokens.spacing.gap * 1.5,
-          childAspectRatio: 0.74,
-        ),
-        itemCount: albums.length + serverAlbums.length,
-        itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
-          if (i >= albums.length) {
-            final MusicServerAlbumRef ref = serverAlbums[i - albums.length];
-            return MusicServerAlbumCard(
-              key: ValueKey<String>(
-                'music-server-album-${ref.browser.serverId}-${ref.album.id}',
+    // 专辑一律是方形「唱片」材质（用户 2026-10-26 拍板）；行高按新卡算
+    // （[musicAlbumGridDelegate]：方形封面 + ShelfCardMeta 文字块）。
+    return ShelfCoverMaterialScope(
+      material: ShelfCoverMaterial.glossyAlbum,
+      child: FushiEntranceScope(
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) =>
+              GridView.builder(
+                padding: withBottomSafeInset(
+                  context,
+                  EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    tokens.spacing.gap,
+                    tokens.spacing.page,
+                    tokens.spacing.section,
+                  ),
+                ),
+                gridDelegate: musicAlbumGridDelegate(
+                  context,
+                  constraints.maxWidth,
+                ),
+                itemCount: albums.length + serverAlbums.length,
+                itemBuilder: fushiStaggeredItemBuilder((
+                  BuildContext context,
+                  int i,
+                ) {
+                  if (i >= albums.length) {
+                    final MusicServerAlbumRef ref =
+                        serverAlbums[i - albums.length];
+                    return MusicServerAlbumCard(
+                      key: ValueKey<String>(
+                        'music-server-album-${ref.browser.serverId}-${ref.album.id}',
+                      ),
+                      browser: ref.browser,
+                      album: ref.album,
+                    );
+                  }
+                  final MusicAlbumRow album = albums[i];
+                  return _AlbumCard(
+                    key: ValueKey<String>('music-album-${album.albumUid}'),
+                    album: album,
+                    tracks: snapshot.tracksOfAlbum(album.albumUid),
+                    embeddedCoverPath: snapshot.embeddedCoverPathOf(album),
+                    disc: snapshot.discOf(album),
+                    onTap: () => onOpen(album),
+                  );
+                }),
               ),
-              browser: ref.browser,
-              album: ref.album,
-            );
-          }
-          final MusicAlbumRow album = albums[i];
-          return _AlbumCard(
-            key: ValueKey<String>('music-album-${album.albumUid}'),
-            album: album,
-            tracks: snapshot.tracksOfAlbum(album.albumUid),
-            embeddedCoverPath: snapshot.embeddedCoverPathOf(album),
-            disc: snapshot.discOf(album),
-            onTap: () => onOpen(album),
-          );
-        }),
+        ),
       ),
     );
   }
@@ -556,61 +567,48 @@ class _AlbumCard extends ConsumerWidget {
             bitDepth: first.bitDepth,
             bitrateKbps: first.bitrate,
           );
+    // 方形「唱片」材质卡（材质由网格外的 Scope 给）：封面上不压角标（用户
+    // 2026-10-25），光盘规格徽标（CD / DVD / BD）进副行尾部，与视频库原盘卡同位。
     final Widget card = FushiHoverLift(
-      builder: (BuildContext context, bool hovering) => FushiPressScale(
-        child: InkWell(
-          borderRadius: FushiDesignTokens.of(context).radii.cardRadius,
-          onTap: onTap,
-          onLongPress: disc == null
-              ? null
-              : () {
-                  final RenderObject? box = context.findRenderObject();
-                  if (box is! RenderBox) return;
-                  _showDiscMenu(
-                    context,
-                    ref,
-                    box.localToGlobal(box.size.center(Offset.zero)),
-                  );
-                },
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    MusicCover(
-                      coverPath: album.coverPath,
-                      embeddedFromPath: embeddedCoverPath,
-                    ),
-                    if (disc != null)
-                      Positioned(
-                        left: 6,
-                        top: 6,
-                        child: IgnorePointer(child: MusicDiscBadge(disc: disc)),
-                      ),
-                  ],
+      builder: (BuildContext context, bool _) => shelfCoverCard(
+        onTap: onTap,
+        onLongPress: disc == null
+            ? null
+            : () {
+                final RenderObject? box = context.findRenderObject();
+                if (box is! RenderBox) return;
+                _showDiscMenu(
+                  context,
+                  ref,
+                  box.localToGlobal(box.size.center(Offset.zero)),
+                );
+              },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            AspectRatio(
+              aspectRatio: kShelfAlbumAspectRatio,
+              child: ShelfCoverFrame(
+                child: MusicCover(
+                  coverPath: album.coverPath,
+                  embeddedFromPath: embeddedCoverPath,
                 ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                album.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: context.fushiType.titleSmallEmphasized,
-              ),
-              Text(
-                <String>[
-                  album.albumArtistCredit ?? t.music_artist_unknown,
-                  if (badge.isNotEmpty) badge,
-                  if (disc != null && tracks.isEmpty) t.music_disc_not_imported,
-                ].join(' · '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: context.fushiType.bodySmall,
-              ),
-            ],
-          ),
+            ),
+            ShelfCardMeta(
+              key: ValueKey<String>('music-album-meta-${album.albumUid}'),
+              title: album.title,
+              subtitle: <String>[
+                album.albumArtistCredit ?? t.music_artist_unknown,
+                if (badge.isNotEmpty) badge,
+                if (disc != null && tracks.isEmpty) t.music_disc_not_imported,
+              ].join(' · '),
+              trailing: disc == null
+                  ? null
+                  : IgnorePointer(child: MusicDiscBadge(disc: disc)),
+            ),
+          ],
         ),
       ),
     );

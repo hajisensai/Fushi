@@ -18,6 +18,9 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show ShelfCoverFrame;
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -661,7 +664,8 @@ class _GridTile extends StatelessWidget {
   }
 }
 
-/// 封面缩略图（圆角 20）；没有封面画 primaryContainer 底 + 视频图标。
+/// 封面缩略图：光面海报材质简化档（用户 2026-10-26：圆角 + 内描边 + 轻光泽，
+/// 无投影）；没有封面画 primaryContainer 底 + 视频图标。墨水屏退回描边框。
 class _CoverThumb extends StatelessWidget {
   const _CoverThumb({required this.cover, required this.size});
 
@@ -673,30 +677,34 @@ class _CoverThumb extends StatelessWidget {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final ImageProvider? image = cover;
     final int cache = (size * MediaQuery.devicePixelRatioOf(context)).round();
-    return ClipRRect(
-      borderRadius: FushiM3eShape.cardRadius,
-      child: SizedBox.square(
-        dimension: size,
-        child: image == null
-            ? ColoredBox(
-                color: cs.primaryContainer,
-                child: Center(
-                  child: FushiIcon(
-                    FushiIcons.video,
-                    size: size * 0.45,
-                    color: cs.onPrimaryContainer,
+    return SizedBox.square(
+      dimension: size,
+      child: ShelfCoverMaterialScope(
+        material: ShelfCoverMaterial.glossyPoster,
+        child: ShelfCoverFrame(
+          density: ShelfCoverDensity.compact,
+          backgroundColor: cs.primaryContainer,
+          child: image == null
+              ? ColoredBox(
+                  color: cs.primaryContainer,
+                  child: Center(
+                    child: FushiIcon(
+                      FushiIcons.video,
+                      size: size * 0.45,
+                      color: cs.onPrimaryContainer,
+                    ),
                   ),
+                )
+              : Image(
+                  image: ResizeImage.resizeIfNeeded(cache, null, image),
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.medium,
+                  gaplessPlayback: true,
+                  errorBuilder:
+                      (BuildContext context, Object error, StackTrace? stack) =>
+                          ColoredBox(color: cs.primaryContainer),
                 ),
-              )
-            : Image(
-                image: ResizeImage.resizeIfNeeded(cache, null, image),
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.medium,
-                gaplessPlayback: true,
-                errorBuilder:
-                    (BuildContext context, Object error, StackTrace? stack) =>
-                        ColoredBox(color: cs.primaryContainer),
-              ),
+        ),
       ),
     );
   }

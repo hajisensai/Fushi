@@ -10,6 +10,7 @@ import 'package:fushi/src/pages/implementations/stat_day_reset_hour_dialog.dart'
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
@@ -24,7 +25,8 @@ import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 /// [cover]：媒体封面（书架 / 视频库 / 游戏库同一条封面解析链
 /// `resolveMediaCoverImage`）。三个域的「按媒体」列表都给每行一个固定 2:3
 /// 封面槽（Niratan「Book Ranking」同款）：有封面画封面，没有 / 加载失败画
-/// [icon] 占位，整列左缘对齐。
+/// [icon] 占位，整列左缘对齐。[source] 决定封面槽的材质（[statCoverMaterialOf]），
+/// 三个域页面都显式传。
 Widget buildStatMediaRow(
   BuildContext context, {
   required IconData icon,
@@ -32,6 +34,7 @@ Widget buildStatMediaRow(
   required String meta,
   required String trailing,
   String? collectionName,
+  StatSourceKind source = StatSourceKind.book,
   String? meta2,
   ImageProvider? cover,
   VoidCallback? onTap,
@@ -47,7 +50,7 @@ Widget buildStatMediaRow(
     onLongPress: onDelete,
     child: Row(
       children: <Widget>[
-        buildStatCoverSlot(context, icon: icon, cover: cover),
+        buildStatCoverSlot(context, icon: icon, source: source, cover: cover),
         SizedBox(width: tokens.spacing.gap),
         Expanded(
           child: Column(
@@ -130,16 +133,29 @@ const double kStatMediaCoverWidth = 40;
 /// 会话行封面槽宽（会话行是 compact 列表项，槽比「按媒体」行窄一号）。
 const double kStatSessionCoverWidth = 32;
 
+/// 统计来源对应的库页条目材质：书 / 漫画光面书皮、视频光面海报、游戏透明
+/// 卡盒、音乐方形唱片（与各库页同一套，用户 2026-10-26）。
+ShelfCoverMaterial statCoverMaterialOf(StatSourceKind source) =>
+    switch (source) {
+      StatSourceKind.book => ShelfCoverMaterial.glossyBook,
+      StatSourceKind.video => ShelfCoverMaterial.glossyPoster,
+      StatSourceKind.game => ShelfCoverMaterial.gameCase,
+      StatSourceKind.music => ShelfCoverMaterial.glossyAlbum,
+    };
+
 /// 统计行的定宽 2:3 封面槽：有封面画封面，没有 / 加载失败画 [icon] 占位，
 /// 所以同一列里有封面、没封面的行左缘对齐。「按媒体」行与会话行共用这一个，
 /// 别在两处各搭一遍（占位 / 失败回退 / 圆角三处口径要一致）。
+///
+/// 封面框走 [source] 域材质的简化档（[ShelfCoverDensity.compact]：圆角 +
+/// 内描边 + 轻光泽，无投影 / 扫光）；墨水屏退回描边框。
 Widget buildStatCoverSlot(
   BuildContext context, {
   required IconData icon,
+  required StatSourceKind source,
   ImageProvider? cover,
   double width = kStatMediaCoverWidth,
 }) {
-  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   // 无封面占位：中性填充 + 次级前景色的单色图标（与排行榜封面占位同口径），
   // 不用主色图标——一列里一半行亮着强调色会抢掉右侧主值的视线。
   final Widget placeholder = Center(
@@ -149,20 +165,23 @@ Widget buildStatCoverSlot(
       color: fushiNeutralSecondaryForeground(context),
     ),
   );
-  return ClipRRect(
-    borderRadius: tokens.radii.chipRadius,
-    child: Container(
-      width: width,
-      height: width * 1.4,
-      color: fushiNeutralBlockColor(context),
-      child: cover == null
-          ? placeholder
-          : Image(
-              image: cover,
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              errorBuilder: (_, __, ___) => placeholder,
-            ),
+  return SizedBox(
+    width: width,
+    height: width * 1.4,
+    child: ShelfCoverMaterialScope(
+      material: statCoverMaterialOf(source),
+      child: ShelfCoverFrame(
+        density: ShelfCoverDensity.compact,
+        backgroundColor: fushiNeutralBlockColor(context),
+        child: cover == null
+            ? placeholder
+            : Image(
+                image: cover,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => placeholder,
+              ),
+      ),
     ),
   );
 }

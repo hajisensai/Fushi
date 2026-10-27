@@ -34,6 +34,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -456,50 +457,42 @@ class MediaDetailChipView extends StatelessWidget {
 // hero
 // ---------------------------------------------------------------------------
 
-/// 2:3 封面卡：M3E 卡档圆角 20 + level2 投影（Apple 12 圆角、柔投影；墨水屏描边）。
+/// 详情页封面卡：与库页同一个 [ShelfCoverFrame]（2026-10-25 库页定版「条目
+/// 材质」）。[material] 非 null 时内部包 [ShelfCoverMaterialScope]，书 / 漫画 =
+/// 光面书皮、视频 = 光面海报、游戏 = 透明卡盒，与该条目在库页上的样子一致；
+/// null 退回无材质的封面框（墨水屏下材质也整体退场，走描边框）。
+///
+/// 尺寸恒为 [width] × `width / aspectRatio`：材质只画在这个盒子里（接触阴影探出
+/// 底边几像素、不参与布局），hero 的排版不随材质变。
 class MediaDetailCoverFrame extends StatelessWidget {
   const MediaDetailCoverFrame({
     required this.child,
     required this.width,
     this.aspectRatio = 2 / 3,
+    this.material,
     super.key,
   });
 
   final Widget child;
   final double width;
 
-  /// 宽 / 高；视频横版缩略图可传 16 / 9。
+  /// 宽 / 高；视频横版缩略图可传 16 / 9，游戏卡盒传 [kShelfGameCaseAspectRatio]。
   final double aspectRatio;
+
+  /// 封面的条目材质；null = 不套材质。
+  final ShelfCoverMaterial? material;
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool apple = isGlassDesign(context);
-    final bool eink = isEinkTheme(context);
-    final BorderRadius radius = apple
-        ? const BorderRadius.all(Radius.circular(12))
-        : FushiM3eShape.cardRadius;
-    return SizedBox(
+    final Widget frame = SizedBox(
       width: width,
       height: width / aspectRatio,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: radius,
-          color: cs.surfaceContainerHighest,
-          border: eink ? Border.all(color: cs.outline) : null,
-          boxShadow: eink
-              ? null
-              : <BoxShadow>[
-                  BoxShadow(
-                    color: cs.shadow.withValues(alpha: 0.22),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-        ),
-        child: ClipRRect(borderRadius: radius, child: child),
-      ),
+      child: ShelfCoverFrame(child: child),
     );
+    final ShelfCoverMaterial? m = material;
+    return m == null
+        ? frame
+        : ShelfCoverMaterialScope(material: m, child: frame);
   }
 }
 
@@ -536,6 +529,7 @@ class MediaDetailHero extends StatelessWidget {
     super.key,
     this.cover,
     this.coverAspectRatio = 2 / 3,
+    this.coverMaterial,
     this.backdrop,
     this.backdropKey,
     this.backdropBlur = 28,
@@ -553,6 +547,9 @@ class MediaDetailHero extends StatelessWidget {
   /// 封面内容（各域自己的取图组件）；null = 不放封面卡。
   final Widget? cover;
   final double coverAspectRatio;
+
+  /// 封面卡的条目材质（见 [MediaDetailCoverFrame.material]）；null = 不套材质。
+  final ShelfCoverMaterial? coverMaterial;
 
   /// 背景图（fanart 优先，没有就传封面——模糊后垫底）。
   final ImageProvider? backdrop;
@@ -637,6 +634,7 @@ class MediaDetailHero extends StatelessWidget {
             key: const ValueKey<String>('media-detail-cover'),
             width: coverAspectRatio < 1 ? 208 : 320,
             aspectRatio: coverAspectRatio,
+            material: coverMaterial,
             child: cover,
           ),
         ),
@@ -651,6 +649,7 @@ class MediaDetailHero extends StatelessWidget {
     return MediaDetailCompactHero(
       cover: cover,
       coverAspectRatio: coverAspectRatio,
+      coverMaterial: coverMaterial,
       heading: _buildHeading(
         context,
         centered: false,
@@ -787,6 +786,7 @@ class MediaDetailCompactHero extends StatelessWidget {
     super.key,
     this.cover,
     this.coverAspectRatio = 2 / 3,
+    this.coverMaterial,
     this.coverKey = const ValueKey<String>('media-detail-cover'),
     this.actions,
     this.footer,
@@ -797,6 +797,9 @@ class MediaDetailCompactHero extends StatelessWidget {
   /// 封面内容（不含外框，由这里套 [MediaDetailCoverFrame]）；null = 不放封面。
   final Widget? cover;
   final double coverAspectRatio;
+
+  /// 封面卡的条目材质（见 [MediaDetailCoverFrame.material]）；null = 不套材质。
+  final ShelfCoverMaterial? coverMaterial;
   final Key coverKey;
   final Widget? actions;
   final Widget? footer;
@@ -837,6 +840,7 @@ class MediaDetailCompactHero extends StatelessWidget {
                     key: coverKey,
                     width: coverWidth,
                     aspectRatio: coverAspectRatio,
+                    material: coverMaterial,
                     child: cover,
                   ),
                 ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -486,6 +487,7 @@ class _LnReaderNovelDetailPageState
     final bool readBusy = _opening && !_shelfActionRunning;
     final bool shelfBusy = _opening && _shelfActionRunning;
     return OnlineWorkHeader(
+      coverMaterial: ShelfCoverMaterial.glossyBook,
       cover: LnReaderCover(
         url: novel?.cover ?? widget.item.cover,
         site: widget.plugin.site,

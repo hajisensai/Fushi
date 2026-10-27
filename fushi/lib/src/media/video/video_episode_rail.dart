@@ -9,6 +9,9 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show ShelfCoverFrame;
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
@@ -659,14 +662,26 @@ class _EpisodeCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ImageProvider? cover = entry.cover;
-    if (cover == null) return _placeholder();
-    // 16:9 横槽走朝向自适应（v68 收口）：刮到的剧照天然合槽直接铺满；没刮过的集
-    // （2:3 刮削海报 / 方图）模糊垫底 + contain 完整显示。此前这里是全域唯一还在
-    // 裸 `BoxFit.cover` 硬裁的封面消费点——竖版海报被裁成中间一条（BUG-1299 同病）。
-    return PortraitCoverImage(
-      image: cover,
-      landscapeSlot: true,
-      errorBuilder: (BuildContext _) => _placeholder(),
+    // 剧照套光面海报横版材质（用户 2026-10-26）。集卡自己有选中外框、放大与
+    // 投影（上面的 [AnimatedScale] / [AnimatedContainer]），这里只取材质的
+    // 简化档——光泽 + 内描边，不再叠第二层投影 / 扫光。墨水屏退回描边框。
+    return ShelfCoverMaterialScope(
+      material: ShelfCoverMaterial.glossyPoster,
+      child: ShelfCoverFrame(
+        density: ShelfCoverDensity.compact,
+        backgroundColor: colorScheme.surfaceContainerHighest,
+        // 16:9 横槽走朝向自适应（v68 收口）：刮到的剧照天然合槽直接铺满；没刮
+        // 过的集（2:3 刮削海报 / 方图）模糊垫底 + contain 完整显示。此前这里是
+        // 全域唯一还在裸 `BoxFit.cover` 硬裁的封面消费点——竖版海报被裁成中间
+        // 一条（BUG-1299 同病）。
+        child: cover == null
+            ? _placeholder()
+            : PortraitCoverImage(
+                image: cover,
+                landscapeSlot: true,
+                errorBuilder: (BuildContext _) => _placeholder(),
+              ),
+      ),
     );
   }
 

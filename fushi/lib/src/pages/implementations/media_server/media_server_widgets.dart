@@ -148,7 +148,7 @@ double mediaServerRowCardHeight(BuildContext context) =>
 /// 悬停抬升（[FushiHoverLift]）放大后上下各多出的高度：横滚行的列表视口按它
 /// 上下留白，抬升的卡与加深的投影不被行的裁切边吃掉。
 double mediaServerLiftHeadroom(double cardHeight) =>
-    cardHeight * (kFushiHoverLiftScale - 1) / 2 + 4;
+    shelfHoverLiftHeadroom(cardHeight);
 
 /// 服务器的类型（只为图标 / 类型名区分；契约本身不分类型）。Plex 的 serverId
 /// 以 `plex:` 起头；Jellyfin 实现一套双吃 Jellyfin / Emby / 飞牛，统归一类。

@@ -11,6 +11,7 @@ import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_novel_detail_page.dart';
 import 'package:fushi/src/media/online/online_source_browse_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
@@ -147,6 +148,10 @@ class _LnReaderCatalog extends OnlineSourceCatalog<LnReaderNovelItem> {
 
   @override
   String titleOf(LnReaderNovelItem item) => item.name;
+
+  /// 小说 = 光面书皮（与书架同材质）。
+  @override
+  ShelfCoverMaterial get coverMaterial => ShelfCoverMaterial.glossyBook;
 
   @override
   Widget buildCover(BuildContext context, LnReaderNovelItem item) =>

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -341,7 +342,10 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       ),
       child: MediaDetailCompactHero(
         cover: _buildCover(context, game),
-        coverAspectRatio: 3 / 4,
+        // 与游戏库同一个透明卡盒（1:1.6）；比原 3:4 稍高，紧凑 hero 的封面行
+        // 顶对齐、高度随内容，不撑破排版。
+        coverAspectRatio: kShelfGameCaseAspectRatio,
+        coverMaterial: ShelfCoverMaterial.gameCase,
         heading: _heroInfo(context, game),
         actions: _heroActions(context, game),
         footer: summary == null || summary.isEmpty

@@ -18,14 +18,31 @@ import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 ///   0.5px 内描边；
 /// - [glossyPoster]：视频库——光面海报：6dp 圆角、没有书脊，光泽同书；
 /// - [gameCase]：游戏库——透明卡盒：10dp 圆角、4px 半透明塑料外圈 + 左上盒面
-///   反光，封面在 6dp 内窗里居中裁切。
+///   反光，封面在 6dp 内窗里居中裁切；
+/// - [glossyAlbum]：音乐专辑——方形「唱片」：8dp 圆角、1:1（[kShelfAlbumAspectRatio]），
+///   斜向光泽比海报略亮 + 顶边 1px 高光 + 0.5px 内描边，多张同海报的右上叠层
+///   （用户 2026-10-26 拍板，专辑网格与专辑详情用）。
+///
+/// 16:9 剧照型封面（剧集缩略图 / 横版卡）直接用 [glossyPoster]：材质的光泽、
+/// 扫光、接触阴影全部按封面实际尺寸画，没有写死 2:3 几何，调用方给
+/// [kShelfLandscapeAspectRatio] 的盒子即可。列表行小缩略图（40–60 宽）用
+/// `ShelfCoverFrame(density: ShelfCoverDensity.compact)`（[ShelfCoverDensity]）。
 ///
 /// 三者悬停都是同一道柔光慢扫（[ShelfCoverSheen]），底下一团接触阴影
 /// （[ShelfContactShadow]）；封面上**不压任何角标**（用户 2026-10-25：「全部
 /// 都不用角标设计」）——类型 / 卷数 / 集数 / 远端 / 下载 / 状态一律进封面下的
 /// 副行（[ShelfCardMeta]）。墨水屏不走材质（[shelfCoverMaterialOf] 返回 null），
 /// 保留描边封面框。
-enum ShelfCoverMaterial { glossyBook, glossyPoster, gameCase }
+enum ShelfCoverMaterial { glossyBook, glossyPoster, gameCase, glossyAlbum }
+
+/// 封面框的密度（用户 2026-10-26 拍板）。由**调用点**决定、同一调用点恒定，
+/// 不随主题 / 尺寸自动切换：
+/// - [regular]：库页网格卡——完整材质（投影、接触阴影、悬停扫光、扇形 / 叠层）；
+/// - [compact]：列表行里 40–60 宽的小缩略图——只保留材质的圆角、内描边与轻
+///   光泽；不画投影 / 接触阴影（小尺寸下糊成一团）、不画悬停扫光、不画扇形 /
+///   叠层（`stackedCovers` / `stackedBehind` 被忽略），也不画勾选圈（列表行的
+///   多选信号由行本身给，40px 封面放不下勾选圈）；选中罩照常。
+enum ShelfCoverDensity { regular, compact }
 
 /// 给子树里的封面框（[ShelfCoverFrame]）指定材质。库页在网格外包一层即可。
 class ShelfCoverMaterialScope extends InheritedWidget {
@@ -50,7 +67,7 @@ ShelfCoverMaterial? shelfCoverMaterialOf(BuildContext context) {
   return scope.material;
 }
 
-/// 材质的外轮廓圆角：书 2/3（书脊侧更方）、海报 6、卡盒 10。
+/// 材质的外轮廓圆角：书 2/3（书脊侧更方）、海报 6、卡盒 10、专辑 8。
 BorderRadius shelfMaterialRadius(ShelfCoverMaterial material) {
   switch (material) {
     case ShelfCoverMaterial.glossyBook:
@@ -62,6 +79,8 @@ BorderRadius shelfMaterialRadius(ShelfCoverMaterial material) {
       return const BorderRadius.all(Radius.circular(6));
     case ShelfCoverMaterial.gameCase:
       return const BorderRadius.all(Radius.circular(10));
+    case ShelfCoverMaterial.glossyAlbum:
+      return const BorderRadius.all(Radius.circular(8));
   }
 }
 
@@ -75,6 +94,23 @@ const BorderRadius kShelfGameCaseWindowRadius = BorderRadius.all(
 
 /// 游戏卡盒的竖长比例（宽 / 高 ≈ 1:1.6）。
 const double kShelfGameCaseAspectRatio = 1 / 1.6;
+
+/// 专辑「唱片」材质的比例（方形）。
+const double kShelfAlbumAspectRatio = 1;
+
+/// 16:9 剧照型封面（配 [ShelfCoverMaterial.glossyPoster]）的比例。
+const double kShelfLandscapeAspectRatio = 16 / 9;
+
+/// 书皮 / 卡盒材质悬停时封面面在放大之外再整体上抬的距离（逻辑 px）。
+const double kShelfMaterialHoverRise = 4;
+
+/// 横滑行为悬停留出的上下余量：[FushiHoverLift] 放大溢出的 (scale-1)/2，再加
+/// 材质上抬 [kShelfMaterialHoverRise]（同时兜住加深的投影）。上抬发生在放大
+/// 变换**内部**，所以实际位移是 rise × scale。只算放大的行会把书皮顶边截平约
+/// 4px（首页「继续」行实测）。各横滑行一律用它，不各自手写。
+double shelfHoverLiftHeadroom(double cardHeight) =>
+    cardHeight * (kFushiHoverLiftScale - 1) / 2 +
+    kShelfMaterialHoverRise * kFushiHoverLiftScale;
 
 /// 材质条目的投影：静止就有（书 / 海报 / 卡盒都是「立在桌面上」的实物），
 /// 悬停时抬得更高、更散。
@@ -108,6 +144,9 @@ Duration shelfSheenDuration(BuildContext context) =>
 /// [ShelfCoverFrame] 的单张封面与 [ShelfCoverPile] 叠在后面的那几张共用这一份，
 /// 所以扇形 / 叠层里每一本都是同样的实物质感。[overlay] 画在材质之上、扫光之下
 /// （选中罩 / 勾选圈 / 加载层），[dim] 是后层压暗（0–1）。
+///
+/// [compact] = 简化档（[ShelfCoverDensity.compact]）：只留外轮廓、光泽与内描边，
+/// 不画投影与扫光，[lifted] 被忽略。
 class ShelfMaterialSurface extends StatelessWidget {
   const ShelfMaterialSurface({
     required this.material,
@@ -116,6 +155,7 @@ class ShelfMaterialSurface extends StatelessWidget {
     this.overlay = const <Widget>[],
     this.dim = 0,
     this.lifted = false,
+    this.compact = false,
     super.key,
   });
 
@@ -125,6 +165,7 @@ class ShelfMaterialSurface extends StatelessWidget {
   final List<Widget> overlay;
   final double dim;
   final bool lifted;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -205,12 +246,15 @@ class ShelfMaterialSurface extends StatelessWidget {
       );
     }
 
+    final bool raised = lifted && !compact;
     return AnimatedContainer(
       duration: fushiMotionDuration(context, FushiMotion.medium),
       curve: FushiMotion.standard,
       decoration: BoxDecoration(
         borderRadius: radius,
-        boxShadow: shelfMaterialShadows(dark: dark, lifted: lifted),
+        boxShadow: compact
+            ? const <BoxShadow>[]
+            : shelfMaterialShadows(dark: dark, lifted: raised),
       ),
       child: Stack(
         fit: StackFit.expand,
@@ -218,12 +262,13 @@ class ShelfMaterialSurface extends StatelessWidget {
           body,
           if (material == ShelfCoverMaterial.gameCase)
             IgnorePointer(child: _GlossLayer(material: material)),
-          IgnorePointer(
-            child: ClipRRect(
-              borderRadius: radius,
-              child: ShelfCoverSheen(active: lifted),
+          if (!compact)
+            IgnorePointer(
+              child: ClipRRect(
+                borderRadius: radius,
+                child: ShelfCoverSheen(active: raised),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -231,7 +276,8 @@ class ShelfMaterialSurface extends StatelessWidget {
 }
 
 /// 静态光泽：书 = 左缘书脊阴影 + 一线高光 + 斜向淡光；海报 = 斜向淡光 + 顶边
-/// 1px 高光；卡盒 = 左上盒面反光。三者都有 0.5px 内描边。
+/// 1px 高光；专辑 = 同海报但光泽略亮；卡盒 = 左上盒面反光。都有 0.5px 内描边。
+/// 渐变全部按 [Alignment] / 比例取值，任意宽高比（含 16:9）都按实际尺寸铺满。
 class _GlossLayer extends StatelessWidget {
   const _GlossLayer({required this.material});
 
@@ -272,29 +318,9 @@ class _GlossLayer extends StatelessWidget {
           ],
         );
       case ShelfCoverMaterial.glossyPoster:
-        return Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            _diagonalGloss(0.08),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: radius,
-                border: Border(
-                  top: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
-                ),
-              ),
-            ),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: radius,
-                border: Border.all(
-                  color: Colors.black.withValues(alpha: 0.14),
-                  width: 0.5,
-                ),
-              ),
-            ),
-          ],
-        );
+        return _sheetGloss(radius, gloss: 0.08, topHighlight: 0.18);
+      case ShelfCoverMaterial.glossyAlbum:
+        return _sheetGloss(radius, gloss: 0.11, topHighlight: 0.22);
       case ShelfCoverMaterial.gameCase:
         return DecoratedBox(
           decoration: BoxDecoration(
@@ -313,6 +339,37 @@ class _GlossLayer extends StatelessWidget {
         );
     }
   }
+
+  /// 海报 / 专辑共用的「一张光面纸」：斜向淡光 + 顶边 1px 高光 + 0.5px 内描边。
+  static Widget _sheetGloss(
+    BorderRadius radius, {
+    required double gloss,
+    required double topHighlight,
+  }) => Stack(
+    fit: StackFit.expand,
+    children: <Widget>[
+      _diagonalGloss(gloss),
+      DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          border: Border(
+            top: BorderSide(
+              color: Colors.white.withValues(alpha: topHighlight),
+            ),
+          ),
+        ),
+      ),
+      DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          border: Border.all(
+            color: Colors.black.withValues(alpha: 0.14),
+            width: 0.5,
+          ),
+        ),
+      ),
+    ],
+  );
 
   static Widget _diagonalGloss(double alpha) => DecoratedBox(
     decoration: BoxDecoration(
@@ -500,7 +557,7 @@ double shelfFanMaxDegrees({
 ///   4px。角度不写死：按封面几何反推（[shelfFanMaxDegrees]），最远那本悬停时
 ///   外角最多探出格子 [kShelfFanOverhang]（落在卡片内边距里），不压旁边的
 ///   卡、不出屏幕（2026-10-25 用户「克制一点，别出界、别和侧边重叠太多」）；
-/// - 海报 = 碟盒式叠层：最多 3 季往右上各错开 4px、越往后越暗，悬停时散开到
+/// - 海报 / 专辑 = 碟盒式叠层：最多 3 季往右上各错开 4px、越往后越暗，悬停时散开到
 ///   7px / 6px。
 ///
 /// [front] 是最前面那本的完整内容（含选中罩 / 勾选圈等 overlay），其余只画封面。
@@ -526,7 +583,9 @@ class ShelfCoverPile extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool lifted = FushiHoverLift.liftedOf(context);
     final Duration duration = fushiMotionDuration(context, FushiMotion.long);
-    final bool stack = material == ShelfCoverMaterial.glossyPoster;
+    final bool stack =
+        material == ShelfCoverMaterial.glossyPoster ||
+        material == ShelfCoverMaterial.glossyAlbum;
     final List<Widget> back = behind
         .take(stack ? 2 : 3)
         .toList(growable: false);
@@ -598,7 +657,10 @@ class ShelfCoverPile extends StatelessWidget {
                 left: (w - itemW) / 2,
                 bottom: 0,
                 child: AnimatedSlide(
-                  offset: Offset(0, lifted ? -4 / itemH : 0),
+                  offset: Offset(
+                    0,
+                    lifted ? -kShelfMaterialHoverRise / itemH : 0,
+                  ),
                   duration: duration,
                   curve: FushiMotion.standard,
                   child: AnimatedRotation(
@@ -617,7 +679,10 @@ class ShelfCoverPile extends StatelessWidget {
               left: (w - itemW) / 2,
               bottom: 0,
               child: AnimatedSlide(
-                offset: Offset(0, lifted ? -4 / itemH : 0),
+                offset: Offset(
+                  0,
+                  lifted ? -kShelfMaterialHoverRise / itemH : 0,
+                ),
                 duration: duration,
                 curve: FushiMotion.standard,
                 child: surface(front, overlay: frontOverlay),

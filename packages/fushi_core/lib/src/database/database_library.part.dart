@@ -599,16 +599,20 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     MediaKind kind,
     String entryKey,
   ) async {
-    final Set<String> mangaKeys = <String>{};
-    for (final EpubBookRow row in await (select(epubBooks)
-          ..where((t) => t.format.equals(BookFormat.manga.dbValue)))
-        .get()) {
-      if (row.uid.isNotEmpty) mangaKeys.add(row.uid);
-      mangaKeys.add(row.bookKey);
-    }
+    final bool isManga = (await _mangaEntryKeys()).contains(entryKey);
+    return getMediaCollectionsInDomain(
+      collectionShelfDomainOf(kind, isManga: isManga),
+    );
+  }
+
+  /// 属于库页域 [target] 的全部合集（任一成员落在该域即算），排序同
+  /// [getAllMediaCollections]；空合集不列出。「加入合集」候选与「管理合集」页共用。
+  Future<List<MediaCollectionRow>> getMediaCollectionsInDomain(
+    CollectionShelfDomain target,
+  ) async {
+    final Set<String> mangaKeys = await _mangaEntryKeys();
     CollectionShelfDomain domainOf(MediaKind k, String key) =>
         collectionShelfDomainOf(k, isManga: mangaKeys.contains(key));
-    final CollectionShelfDomain target = domainOf(kind, entryKey);
     final Set<int> inDomain = <int>{};
     for (final MediaCollectionItemRow item in await getAllCollectionItems()) {
       final MediaKind? memberKind = MediaKind.tryParse(item.mediaType);
@@ -622,6 +626,19 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         if (inDomain.contains(c.id)) c,
     ];
   }
+
+  /// 漫画格式 epub 行的成员键（uid 与旧 bookKey 都收），供按域分书 / 漫画。
+  Future<Set<String>> _mangaEntryKeys() async {
+    final Set<String> mangaKeys = <String>{};
+    for (final EpubBookRow row in await (select(epubBooks)
+          ..where((t) => t.format.equals(BookFormat.manga.dbValue)))
+        .get()) {
+      if (row.uid.isNotEmpty) mangaKeys.add(row.uid);
+      mangaKeys.add(row.bookKey);
+    }
+    return mangaKeys;
+  }
+
 
   Future<MediaCollectionRow?> getMediaCollectionById(int id) =>
       (select(mediaCollections)..where((t) => t.id.equals(id)))

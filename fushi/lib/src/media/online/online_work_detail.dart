@@ -20,6 +20,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -67,7 +68,12 @@ class OnlineWorkHeader extends StatelessWidget {
     this.backdrop,
     this.overline,
     this.extra,
+    this.coverMaterial,
   });
+
+  /// 封面卡的条目材质（与该域库页一致：小说 / 漫画 = 光面书皮、视频 = 光面
+  /// 海报），由各域作品页传；null = 不套材质。
+  final ShelfCoverMaterial? coverMaterial;
 
   /// 封面内容（各域自己的取图组件）；外面统一套 2:3 封面卡。
   final Widget cover;
@@ -147,6 +153,7 @@ class OnlineWorkHeader extends StatelessWidget {
     return MediaDetailHero(
       title: title,
       cover: cover,
+      coverMaterial: coverMaterial,
       backdrop: backdrop,
       overline: overline,
       chips: allChips,

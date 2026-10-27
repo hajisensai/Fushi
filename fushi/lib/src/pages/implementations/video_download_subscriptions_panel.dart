@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:material_ui/material_ui.dart';
@@ -856,20 +857,25 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
       opacity: subscription.enabled ? 1 : 0.45,
       duration: motion.effectsDefault.duration,
       curve: motion.effectsDefault.curve,
-      child: ClipRRect(
-        borderRadius: FushiM3eShape.smallRadius,
-        child: SizedBox(
-          width: width,
-          height: height,
-          // 与放送日历同一处理：占位底色走设计令牌，且 errorBuilder 必须给 ——
-          // PortraitCoverImage 加载失败会返回 SizedBox.shrink()，不给就是封面
-          // 404 / 断网留一个空洞。
-          child: url.isEmpty
-              ? placeholder
-              : PortraitCoverImage(
-                  image: AppCachedHttpImage(url),
-                  errorBuilder: (_) => placeholder,
-                ),
+      // 列表行小图：光面海报材质简化档（用户 2026-10-26），与放送日历同款。
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: ShelfCoverMaterialScope(
+          material: ShelfCoverMaterial.glossyPoster,
+          child: ShelfCoverFrame(
+            density: ShelfCoverDensity.compact,
+            backgroundColor: FushiDesignTokens.of(context).surfaces.group,
+            // 与放送日历同一处理：占位底色走设计令牌，且 errorBuilder 必须给 ——
+            // PortraitCoverImage 加载失败会返回 SizedBox.shrink()，不给就是封面
+            // 404 / 断网留一个空洞。
+            child: url.isEmpty
+                ? placeholder
+                : PortraitCoverImage(
+                    image: AppCachedHttpImage(url),
+                    errorBuilder: (_) => placeholder,
+                  ),
+          ),
         ),
       ),
     );

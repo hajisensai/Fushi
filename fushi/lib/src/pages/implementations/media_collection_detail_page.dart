@@ -9,6 +9,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
@@ -56,6 +57,13 @@ import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
+    show
+        DialogActionGroup,
+        DialogDangerAction,
+        DialogListAction,
+        MediaItemDialogFrame,
+        showMediaItemActions;
 import 'package:fushi/src/pages/implementations/collection_relations_section.dart';
 import 'package:fushi/src/pages/implementations/collection_split_dialog.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -2065,6 +2073,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       backdrop: _heroBackdrop,
       backdropIndex: _heroBackdropIndex,
       cover: _heroCover,
+      coverMaterial: ShelfCoverMaterial.glossyPoster,
       logo: _heroLogo,
       title: _canonicalWork?.title ?? _name,
       // 读屏与测试按合集名找 logo。
@@ -2653,18 +2662,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     }
   }
 
-  /// 集卡上下文菜单（右键 / 触摸长按原地松手）。坐标经 Overlay `globalToLocal`
-  /// 消掉 FushiAppUiScale 缩放（BUG-781 同族纪律）。管理能力从旧管理列表的行内
+  /// 集卡上下文菜单（右键 / 触摸长按原地松手）。管理能力从旧管理列表的行内
   /// 按钮收进本菜单（拖拽排序仍是直接拖卡）。
+  ///
+  /// 容器走 [showMediaItemActions]，与库页卡片同一套：右键在指针处弹右键菜单
+  /// （锚点由 [FushiReorderableGrid] 在同步派发期间经 `activeContextMenuAnchor`
+  /// 给出），触摸长按弹抽屉 / 对话框。此前一律 `showFushiMenu` 小菜单，右键与长按
+  /// 长得一样。菜单必须在第一个 await 之前弹出，才读得到锚点。
   Future<void> _showEpisodeMenu(
     CollectionEpisodeSlot episode,
     Offset globalPosition,
   ) async {
-    final RenderObject? overlay = Overlay.of(
-      context,
-    ).context.findRenderObject();
-    if (overlay is! RenderBox) return;
-    final Offset anchor = overlay.globalToLocal(globalPosition);
     // 这一集在本机已有原始文件（流媒体 / 远端行的 videoPath 是 URL，不算）：下载
     // 本集对它没有意义，换成「打开文件位置」。纯函数判据，不吃 IO。
     final VideoBookRow? local = episode.local;
@@ -2684,100 +2692,109 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         local != null &&
         widget.remote?.deleteLocalCopy != null &&
         _peerCopyKeys.contains(local.bookUid);
-    final _EpisodeMenuAction? action = await showFushiMenu<_EpisodeMenuAction>(
-      context: context,
-      position: RelativeRect.fromRect(
-        Rect.fromPoints(anchor, anchor),
-        Offset.zero & overlay.size,
-      ),
-      items: <PopupMenuEntry<_EpisodeMenuAction>>[
-        if (canDownloadToDevice)
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.downloadToDevice,
-            child: _menuItemRow(
-              FushiIcons.cloudDownload,
-              t.remote_video_download,
-            ),
-          ),
-        if (taskId != null && downloads!.canPause(taskId))
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.pauseDownload,
-            child: _menuItemRow(FushiIcons.pause, t.download_task_pause),
-          ),
-        if (taskId != null && downloads!.canRestart(taskId))
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.resumeDownload,
-            child: _menuItemRow(FushiIcons.play, t.download_task_resume),
-          ),
-        if (taskId != null && downloads!.canCancel(taskId))
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.cancelDownload,
-            child: _menuItemRow(
-              FushiIcons.close,
-              t.interconnect_download_cancel,
-            ),
-          ),
-        if (_downloadsAvailable && !hasLocalFiles)
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.download,
-            child: _menuItemRow(
-              FushiIcons.download,
-              t.collection_episode_download,
-            ),
-          ),
-        // 「打开文件位置」：与视频库卡同一条动作、同一份文案；移动端没有文件管理器
-        // 契约（[currentRevealHost] 为 null），整条不出。
-        if (hasLocalFiles && currentRevealHost() != null)
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.openFileLocation,
-            child: _menuItemRow(
-              FushiIcons.folderOpen,
-              t.media_file_location_open,
-            ),
-          ),
-        // v95：完整技术规格（音轨/字幕轨在集卡上放不下，只能进弹窗）。
-        // 仅本地文件有——远端占位集探不了。
-        if (episode.local != null && widget.videoSpecs != null)
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.mediaInfo,
-            child: _menuItemRow(FushiIcons.info, t.video_specs_title),
-          ),
-        // 「清除观看进度」：只对本地行且确有观看痕迹的集出现（远端占位集的进度
-        // 归 host，本地没得清）。用户误点开下一集又退出后，「继续看」会被钉在那一集
-        // （BUG-1542 的最近播放锚点），这条动作让它回到上一集看完后的下一集。
-        if (episode.local case final VideoBookRow local
-            when videoBookHasWatchTrace(local))
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.clearWatchProgress,
-            child: _menuItemRow(
-              FushiIcons.restart,
-              t.video_watch_progress_clear,
-            ),
-          ),
-        // 集级 UserVerified（Shoko）：把这个文件钉到规范作品的某一季某一集，之后
-        // 每次刮削都保留。只对本地文件、且合集已刮出剧集作品时出现。
-        if (episode.local != null && _canonicalWork?.mediaType == 'tv')
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.pinEpisode,
-            child: _menuItemRow(
-              FushiIcons.pin,
-              t.collection_episode_link_manual,
-            ),
-          ),
-        PopupMenuItem<_EpisodeMenuAction>(
-          value: _EpisodeMenuAction.removeFromCollection,
-          child: _menuItemRow(FushiIcons.linkOff, t.collection_remove_member),
-        ),
-        if (canDeleteLocalCopy)
-          PopupMenuItem<_EpisodeMenuAction>(
-            value: _EpisodeMenuAction.deleteLocalCopy,
-            child: _menuItemRow(
-              FushiIcons.delete,
-              t.collection_episode_local_copy_delete,
-            ),
-          ),
-      ],
-    );
+    final _EpisodeMenuAction? action =
+        await showMediaItemActions<_EpisodeMenuAction>(
+          context: context,
+          builder: (BuildContext menuContext) {
+            void pick(_EpisodeMenuAction value) =>
+                Navigator.pop(menuContext, value);
+            return MediaItemDialogFrame(
+              title: _episodeDisplayTitle(episode),
+              showLaunchAction: false,
+              listActions: <DialogListAction>[
+                if (canDownloadToDevice)
+                  DialogListAction(
+                    label: t.remote_video_download,
+                    icon: FushiIcons.cloudDownload,
+                    group: DialogActionGroup.content,
+                    onPressed: () => pick(_EpisodeMenuAction.downloadToDevice),
+                  ),
+                if (taskId != null && downloads!.canPause(taskId))
+                  DialogListAction(
+                    label: t.download_task_pause,
+                    icon: FushiIcons.pause,
+                    group: DialogActionGroup.content,
+                    onPressed: () => pick(_EpisodeMenuAction.pauseDownload),
+                  ),
+                if (taskId != null && downloads!.canRestart(taskId))
+                  DialogListAction(
+                    label: t.download_task_resume,
+                    icon: FushiIcons.play,
+                    group: DialogActionGroup.content,
+                    onPressed: () => pick(_EpisodeMenuAction.resumeDownload),
+                  ),
+                if (taskId != null && downloads!.canCancel(taskId))
+                  DialogListAction(
+                    label: t.interconnect_download_cancel,
+                    icon: FushiIcons.close,
+                    group: DialogActionGroup.content,
+                    onPressed: () => pick(_EpisodeMenuAction.cancelDownload),
+                  ),
+                if (_downloadsAvailable && !hasLocalFiles)
+                  DialogListAction(
+                    label: t.collection_episode_download,
+                    icon: FushiIcons.download,
+                    group: DialogActionGroup.content,
+                    onPressed: () => pick(_EpisodeMenuAction.download),
+                  ),
+                // 「打开文件位置」：与视频库卡同一条动作、同一份文案；移动端没有文件管理器
+                // 契约（[currentRevealHost] 为 null），整条不出。
+                if (hasLocalFiles && currentRevealHost() != null)
+                  DialogListAction(
+                    label: t.media_file_location_open,
+                    icon: FushiIcons.folderOpen,
+                    group: DialogActionGroup.organize,
+                    onPressed: () => pick(_EpisodeMenuAction.openFileLocation),
+                  ),
+                // v95：完整技术规格（音轨/字幕轨在集卡上放不下，只能进弹窗）。
+                // 仅本地文件有——远端占位集探不了。
+                if (episode.local != null && widget.videoSpecs != null)
+                  DialogListAction(
+                    label: t.video_specs_title,
+                    icon: FushiIcons.info,
+                    group: DialogActionGroup.content,
+                    onPressed: () => pick(_EpisodeMenuAction.mediaInfo),
+                  ),
+                // 「清除观看进度」：只对本地行且确有观看痕迹的集出现（远端占位集的进度
+                // 归 host，本地没得清）。用户误点开下一集又退出后，「继续看」会被钉在那一集
+                // （BUG-1542 的最近播放锚点），这条动作让它回到上一集看完后的下一集。
+                if (episode.local case final VideoBookRow local
+                    when videoBookHasWatchTrace(local))
+                  DialogListAction(
+                    label: t.video_watch_progress_clear,
+                    icon: FushiIcons.restart,
+                    group: DialogActionGroup.progress,
+                    onPressed: () =>
+                        pick(_EpisodeMenuAction.clearWatchProgress),
+                  ),
+                // 集级 UserVerified（Shoko）：把这个文件钉到规范作品的某一季某一集，之后
+                // 每次刮削都保留。只对本地文件、且合集已刮出剧集作品时出现。
+                if (episode.local != null && _canonicalWork?.mediaType == 'tv')
+                  DialogListAction(
+                    label: t.collection_episode_link_manual,
+                    icon: FushiIcons.pin,
+                    group: DialogActionGroup.organize,
+                    onPressed: () => pick(_EpisodeMenuAction.pinEpisode),
+                  ),
+                DialogListAction(
+                  label: t.collection_remove_member,
+                  icon: FushiIcons.linkOff,
+                  group: DialogActionGroup.organize,
+                  onPressed: () =>
+                      pick(_EpisodeMenuAction.removeFromCollection),
+                ),
+              ],
+              dangerActions: <DialogDangerAction>[
+                if (canDeleteLocalCopy)
+                  DialogDangerAction(
+                    label: t.collection_episode_local_copy_delete,
+                    icon: FushiIcons.delete,
+                    onPressed: () => pick(_EpisodeMenuAction.deleteLocalCopy),
+                  ),
+              ],
+            );
+          },
+        );
     if (!mounted) return;
     switch (action) {
       case _EpisodeMenuAction.downloadToDevice:
@@ -3002,20 +3019,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     if (!saved || !mounted) return;
     FushiToast.show(msg: t.video_work_locked_fields_saved);
     await _reload();
-  }
-
-  /// 菜单项「图标 + 文字」行。2026-10 体验优化：文字包 [Flexible] + 省略号，
-  /// 长译文（德 / 俄等）在窄菜单里不再横向溢出。
-  Widget _menuItemRow(IconData icon, String label) {
-    return Row(
-      children: <Widget>[
-        FushiIcon(icon, size: 20),
-        const SizedBox(width: 12),
-        Flexible(
-          child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-        ),
-      ],
-    );
   }
 
   PreferredSizeWidget _buildAppBar() {

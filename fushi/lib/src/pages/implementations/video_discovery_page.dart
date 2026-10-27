@@ -19,6 +19,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiFloatingChromeOverlay,
         FushiFloatingChromeScope;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 
 /// Aggregated discovery port consumed by the page. Implementations may fan a
 /// request out to TMDB and AniList, but the UI receives one redacted
@@ -496,18 +497,22 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     // 不在外壳里时 [FushiFloatingChromeOverlay] 退化成原来的竖排。
     final bool floating = FushiFloatingChromeScope.maybeOf(context) != null;
     final Widget body = _buildBody();
-    return DesktopContentLayout(
-      kind: DesktopContentKind.readerShelf,
-      child: FushiFloatingChromeOverlay(
-        chrome: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            if (_headerVisible) _buildHeader(),
-            _buildControls(),
-          ],
+    // 库页材质（2026-10-25 定版）：视频发现的卡片与视频库同为光面海报。
+    return ShelfCoverMaterialScope(
+      material: ShelfCoverMaterial.glossyPoster,
+      child: DesktopContentLayout(
+        kind: DesktopContentKind.readerShelf,
+        child: FushiFloatingChromeOverlay(
+          chrome: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (_headerVisible) _buildHeader(),
+              _buildControls(),
+            ],
+          ),
+          child: floating ? body : DiscoveryScrollTopFade(child: body),
         ),
-        child: floating ? body : DiscoveryScrollTopFade(child: body),
       ),
     );
   }
@@ -1302,6 +1307,7 @@ class _DiscoveryShelf extends StatelessWidget {
         context,
         title: title,
         itemCount: items.length,
+        material: ShelfCoverMaterial.glossyPoster,
         itemBuilder: (BuildContext context, int index) => _DiscoveryMediaCard(
           item: items[index],
           landscape: false,
@@ -1336,8 +1342,8 @@ class _DiscoveryShelf extends StatelessWidget {
   }
 }
 
-/// 发现卡：共享 [DiscoveryCoverCard]（封面 + 下方标题 / 年份·类型），评分压在
-/// 封面右上角的 [CoverBadge]。
+/// 发现卡：共享 [DiscoveryCoverCard]（光面海报 + 下方标题 / 副行）。封面上不压
+/// 角标：评分带星进副行最前（「★ 8.4 · 2026 · 动画」）。
 class _DiscoveryMediaCard extends StatelessWidget {
   const _DiscoveryMediaCard({
     required this.item,
@@ -1364,18 +1370,11 @@ class _DiscoveryMediaCard extends StatelessWidget {
       key: ValueKey<String>('video-discovery-card-$stableId'),
       focusId: FushiFocusId('video-discovery-card-$stableId'),
       title: item.reference.title,
-      subtitle: _metadata(),
+      subtitle: _metadata(score),
+      leadingIcon: score == null ? null : Icons.star_rounded,
       shape: shape,
       titleMaxLines: landscape ? 1 : 2,
       onTap: onTap,
-      badges: <Widget>[
-        if (score != null)
-          CoverBadge(
-            icon: Icons.star_rounded,
-            iconSize: 12,
-            label: score.toStringAsFixed(1),
-          ),
-      ],
       cover: DiscoveryImageCover(
         image: image,
         shape: shape,
@@ -1384,7 +1383,8 @@ class _DiscoveryMediaCard extends StatelessWidget {
     );
   }
 
-  String _metadata() => <String>[
+  String _metadata(double? score) => <String>[
+    if (score != null) score.toStringAsFixed(1),
     if (item.reference.year != null) '${item.reference.year}',
     _videoDiscoveryCategoryLabel(item.reference.discoveryCategory),
   ].join(' · ');

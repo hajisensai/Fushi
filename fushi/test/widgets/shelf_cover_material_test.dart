@@ -228,6 +228,199 @@ void main() {
     expect(shadow().lifted, isTrue);
   });
 
+  testWidgets('专辑唱片材质：8dp 圆角、1:1、多张走右上叠层', (WidgetTester tester) async {
+    expect(kShelfAlbumAspectRatio, 1);
+    expect(
+      shelfMaterialRadius(ShelfCoverMaterial.glossyAlbum),
+      const BorderRadius.all(Radius.circular(8)),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 150,
+              child: AspectRatio(
+                aspectRatio: kShelfAlbumAspectRatio,
+                child: ShelfCoverMaterialScope(
+                  material: ShelfCoverMaterial.glossyAlbum,
+                  child: ShelfCoverFrame(
+                    stackedCovers: <Widget>[cover('b'), cover('c')],
+                    child: cover('a'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.byType(ShelfMaterialSurface), findsNWidgets(3));
+    expect(find.byType(AnimatedRotation), findsNothing);
+    expect(find.byType(ShelfContactShadow), findsOneWidget);
+    final BuildContext ctx = tester.element(
+      find.byKey(const ValueKey<String>('cover-a')),
+    );
+    expect(
+      shelfCoverRadius(ctx),
+      shelfMaterialRadius(ShelfCoverMaterial.glossyAlbum),
+    );
+    final Size front = tester.getSize(find.byType(ShelfMaterialSurface).last);
+    expect(front.width, closeTo(front.height, 0.01));
+  });
+
+  testWidgets('简化档：无接触阴影 / 投影 / 扫光 / 叠层 / 勾选圈，悬停不抬', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      harness(
+        Center(
+          child: SizedBox(
+            width: 44,
+            height: 62,
+            child: ShelfCoverSelection(
+              selectionMode: true,
+              selected: true,
+              child: FushiHoverLift(
+                builder: (BuildContext _, bool __) => ShelfCoverFrame(
+                  density: ShelfCoverDensity.compact,
+                  stackedCovers: <Widget>[cover('b'), cover('c')],
+                  child: cover('a'),
+                ),
+              ),
+            ),
+          ),
+        ),
+        material: ShelfCoverMaterial.glossyBook,
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.byType(ShelfMaterialSurface), findsOneWidget);
+    expect(find.byType(ShelfCoverPile), findsNothing);
+    expect(find.byType(ShelfContactShadow), findsNothing);
+    expect(find.byType(ShelfCoverSheen), findsNothing);
+    expect(find.byKey(const ValueKey<String>('cover-b')), findsNothing);
+    expect(find.byType(ShelfSelectionCheck), findsNothing);
+    expect(find.byType(ShelfSelectedOverlay), findsOneWidget);
+    final ShelfMaterialSurface surface = tester.widget<ShelfMaterialSurface>(
+      find.byType(ShelfMaterialSurface),
+    );
+    expect(surface.compact, isTrue);
+    BoxDecoration decoration() =>
+        tester
+                .widget<AnimatedContainer>(
+                  find.descendant(
+                    of: find.byType(ShelfMaterialSurface),
+                    matching: find.byType(AnimatedContainer),
+                  ),
+                )
+                .decoration!
+            as BoxDecoration;
+    expect(decoration().boxShadow, isEmpty);
+    // 圆角 / 内描边仍在：外轮廓取材质圆角。
+    expect(
+      decoration().borderRadius,
+      shelfMaterialRadius(ShelfCoverMaterial.glossyBook),
+    );
+
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(find.byType(ShelfMaterialSurface)));
+    await tester.pumpAndSettle();
+    expect(find.byType(ShelfCoverSheen), findsNothing);
+    expect(decoration().boxShadow, isEmpty);
+  });
+
+  testWidgets('简化档没有材质 scope 时也不画叠层与投影', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      harness(
+        ShelfCoverFrame(
+          density: ShelfCoverDensity.compact,
+          stackedBehind: cover('b'),
+          child: cover('a'),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey<String>('cover-b')), findsNothing);
+    expect(find.byType(ShelfMaterialSurface), findsNothing);
+  });
+
+  testWidgets('默认档仍画投影（简化档对照）', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      harness(
+        ShelfCoverFrame(child: cover('a')),
+        material: ShelfCoverMaterial.glossyBook,
+      ),
+    );
+    final AnimatedContainer box = tester.widget<AnimatedContainer>(
+      find.descendant(
+        of: find.byType(ShelfMaterialSurface),
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
+    expect((box.decoration! as BoxDecoration).boxShadow, isNotEmpty);
+    expect(find.byType(ShelfCoverSheen), findsOneWidget);
+  });
+
+  for (final double width in <double>[60, 160, 320]) {
+    testWidgets('16:9 剧照（海报材质横版）宽 $width 不溢出、按实际尺寸铺满', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: width,
+                child: AspectRatio(
+                  aspectRatio: kShelfLandscapeAspectRatio,
+                  child: ShelfCoverMaterialScope(
+                    material: ShelfCoverMaterial.glossyPoster,
+                    child: FushiHoverLift(
+                      builder: (BuildContext _, bool __) =>
+                          ShelfCoverFrame(child: cover('a')),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      final Size surface = tester.getSize(find.byType(ShelfMaterialSurface));
+      expect(surface.width, closeTo(width, 0.01));
+      expect(surface.height, closeTo(width * 9 / 16, 0.01));
+      expect(find.byType(ShelfContactShadow), findsOneWidget);
+      // 接触阴影随封面宽度走（1.07 倍），不按 2:3 写死。
+      final Size shadow = tester.getSize(
+        find.descendant(
+          of: find.byType(ShelfContactShadow),
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+      expect(shadow.width, closeTo(width * 1.07, 0.01));
+      // 悬停扫光在横版里同样铺满封面、不溢出。
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+      await mouse.moveTo(tester.getCenter(find.byType(ShelfMaterialSurface)));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getSize(find.byType(ShelfCoverSheen)),
+        Size(width, width * 9 / 16),
+      );
+      await tester.pumpAndSettle();
+    });
+  }
+
   testWidgets('文字块：副行承接角标信息，错误语气用 error 色', (WidgetTester tester) async {
     await tester.pumpWidget(
       harness(

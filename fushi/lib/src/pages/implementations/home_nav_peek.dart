@@ -35,6 +35,7 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/cover_image.dart' show resizedFileImage;
 import 'package:fushi/utils.dart' show adaptivePageRoute, t;
@@ -119,6 +120,7 @@ AdaptiveNavPeek homeNavPeekFor(
     case HomeTab.books:
     case HomeTab.manga:
       return AdaptiveNavPeek(
+        coverMaterial: ShelfCoverMaterial.glossyBook,
         load: () async => (await _loadBooks(
           ref: ref,
           appModel: appModel,
@@ -127,6 +129,7 @@ AdaptiveNavPeek homeNavPeekFor(
       );
     case HomeTab.video:
       return AdaptiveNavPeek(
+        coverMaterial: ShelfCoverMaterial.glossyPoster,
         load: () async => (await _loadVideos(
           appModel: appModel,
           repo: videoRepo(),
@@ -135,6 +138,7 @@ AdaptiveNavPeek homeNavPeekFor(
       );
     case HomeTab.games:
       return AdaptiveNavPeek(
+        coverMaterial: ShelfCoverMaterial.gameCase,
         load: () async => (await _loadGames(
           appModel: appModel,
           open: () => goToTab(HomeTab.games),

@@ -59,6 +59,7 @@ import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -746,7 +747,6 @@ class _HomeDashboardPageState
   /// 单栏封面高 [_kContinueCoverHeight]，双栏按主列宽放大
   /// （[dashboardRowCoverHeight]）。
   static const double _kContinueCoverHeight = 132;
-  static const double _kContinueCoverAspect = 2 / 3;
 
   /// 侧栏「最近添加」最多几条：侧栏只给一眼「新进了什么」，完整列表在各库页。
   static const int _kRecentLimit = 4;
@@ -2085,6 +2085,7 @@ class _HomeDashboardPageState
         ),
         coverHeight: coverHeight,
         landscapeCover: landscape,
+        material: _continueMaterial(entry),
         eyebrow: recent > 0
             ? formatActivityRelativeTime(recent, DateTime.now())
             : null,
@@ -2255,6 +2256,7 @@ class _HomeDashboardPageState
         children: <Widget>[
           for (final _ContinueEntry e in visible)
             HomeRecentTile(
+              material: _continueMaterial(e),
               cover: _continueCover(tokens, appModel, e),
               title: _continueDisplayTitle(e),
               subtitle: '${_kindLabel(e.kind)} · '
@@ -2280,7 +2282,7 @@ class _HomeDashboardPageState
     // 卡片自身尺寸不变；不能改用 Clip.none：懒加载 cacheExtent 里已构建的卡会画到
     // 行外。卡高 = 封面 + 标题块。
     final double cardHeight = coverHeight + homeCoverTitleBlockHeight(context);
-    final double liftHeadroom = cardHeight * (kFushiHoverLiftScale - 1) / 2;
+    final double liftHeadroom = shelfHoverLiftHeadroom(cardHeight);
     final double liftSideRoom =
         coverHeight * kHomeLandscapeCoverAspect * (kFushiHoverLiftScale - 1) /
         2;
@@ -2331,11 +2333,16 @@ class _HomeDashboardPageState
       child: HomeCoverOrientationProbe(
         image: image,
         builder: (BuildContext context, bool landscape) {
+          final ShelfCoverMaterial material = _continueMaterial(entry);
+          // 游戏是卡盒（1:1.6）：与书 / 视频同高、略窄，一排封面顶底仍齐。
+          final double portraitAspect = homeContinuePortraitAspect(material);
           final Size slot = homeContinueCoverSize(
-            portraitWidth: coverHeight * _kContinueCoverAspect,
+            portraitWidth: coverHeight * portraitAspect,
             landscape: landscape,
+            portraitAspect: portraitAspect,
           );
           return HomeContinueCoverCard(
+            material: material,
             cover: _continueCover(
               tokens,
               appModel,
@@ -2356,6 +2363,15 @@ class _HomeDashboardPageState
       ),
     );
   }
+
+  /// 「继续」卡的条目材质（与库页同一套，首页一行混排所以逐卡选）：书 / 漫画 /
+  /// 字幕书 = 光面书皮、视频 = 光面海报、游戏 = 透明卡盒。
+  ShelfCoverMaterial _continueMaterial(_ContinueEntry entry) =>
+      switch (entry.kind) {
+        MediaKind.video => ShelfCoverMaterial.glossyPoster,
+        MediaKind.game => ShelfCoverMaterial.gameCase,
+        MediaKind.epub || MediaKind.srt => ShelfCoverMaterial.glossyBook,
+      };
 
   /// 卡的显示名（读屏标签 / 悬停提示 / 无封面兜底）：合集成员显示合集名（非合集
   /// 上下文拼合集名的老规则），远端条目缀设备名标明来源。
