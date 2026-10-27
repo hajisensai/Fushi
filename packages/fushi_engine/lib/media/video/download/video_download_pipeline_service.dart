@@ -484,7 +484,9 @@ bool _hasUserFileSelection(Iterable<VideoDownloadJobFileRow> rows) => rows.any(
 
 /// Deletes the durable half of a job independently of the active pipeline.
 /// Only exact file/link paths recorded by this job are removed; directories
-/// are deliberately never deleted recursively, and a backend-reported relative
+/// are deliberately never deleted recursively (only directories those files
+/// leave empty are pruned, see [pruneEmptyVideoDownloadDirectories]), and a
+/// backend-reported relative
 /// path is only used when it provably resolves inside the observed save path.
 ///
 /// Files are removed before their library rows, and a library row only goes
@@ -577,6 +579,12 @@ Future<void> deletePersistedVideoDownloadJob({
         );
       }
     }
+    if (localSaveRoot != null) {
+      await pruneEmptyVideoDownloadDirectories(
+        paths: managedPaths,
+        root: localSaveRoot,
+      );
+    }
     final Set<String> removedNormalized = removedPaths
         .map(normalizeVideoPath)
         .toSet();
@@ -597,6 +605,41 @@ Future<void> deletePersistedVideoDownloadJob({
   await database.deleteVideoDownloadJob(job.jobId);
   if (undeleted.isNotEmpty) {
     throw VideoDownloadJobFilesNotDeleted(List<String>.unmodifiable(undeleted));
+  }
+}
+
+/// 删完一条任务的文件后，自下而上回收这些文件所在、**已经变空**的目录
+/// （fuQcFmZZxb / BUG-3802：整理器建的 `<作品>/Season 01/`、`<作品>/Extras/…`、
+/// 种子原目录在文件删光后整棵空壳留在来源里）。
+///
+/// 只删空目录：`Directory.delete()` 不带 recursive，目录里还有任何东西（用户自己
+/// 放的文件、别的任务的文件）就抛错、就此停手，这一支不再往上走。只在 [root]
+/// **之内**动，[root] 本身（受管来源根 / 下载保存根）永远保留。best-effort：回收
+/// 失败只少删空目录，不影响任务删除。
+Future<void> pruneEmptyVideoDownloadDirectories({
+  required Iterable<String> paths,
+  required String root,
+}) async {
+  final String normalizedRoot = p.normalize(p.absolute(root));
+  // 已删掉（或本来就不存在）的目录：别的路径再走到这里时直接往上，不必重试。
+  // 非空目录**不**记：它可能只是因为兄弟空目录还没轮到才非空，后面的路径删完
+  // 兄弟后会再试一次。
+  final Set<String> gone = <String>{};
+  for (final String path in paths) {
+    String directory = p.dirname(p.normalize(p.absolute(path)));
+    while (p.isWithin(normalizedRoot, directory)) {
+      final String key = platformPathKey(directory);
+      if (!gone.contains(key)) {
+        try {
+          final Directory entry = Directory(directory);
+          if (await entry.exists()) await entry.delete();
+        } on FileSystemException {
+          break;
+        }
+        gone.add(key);
+      }
+      directory = p.dirname(directory);
+    }
   }
 }
 
@@ -681,10 +724,16 @@ Future<void> reconcileVideoDownloadJobsAfterLocalDelete({
       deletedKeys,
     );
     if (hit.isEmpty) continue;
+    // 「不在跑」的任务才可能整删。needsAttention 与 failed 同属停泊态（没有 worker
+    // 持有它，等人处理）：最常见的是文件已入库、刮削待确认 / 失败停在这里。用户把
+    // 它的视频全删了，本身就是对「这条任务怎么处理」的回答——此前只认终态，这类
+    // 任务只被标 skipped，非视频资源（扫图 / CD / 字体）与目录永远留在盘上
+    // （fuQcFmZZxb / BUG-3802）。active 仍绝不整删：worker 可能正在落文件。
     final bool terminal =
         job.lifecycle == VideoDownloadJobLifecycle.completed ||
         job.lifecycle == VideoDownloadJobLifecycle.cancelled ||
-        job.lifecycle == VideoDownloadJobLifecycle.failed;
+        job.lifecycle == VideoDownloadJobLifecycle.failed ||
+        job.lifecycle == VideoDownloadJobLifecycle.needsAttention;
     final Set<int> hitIds = <int>{for (final f in hit) f.id};
     final List<VideoDownloadJobFileRow> videoRows = <VideoDownloadJobFileRow>[
       for (final VideoDownloadJobFileRow file in files)
