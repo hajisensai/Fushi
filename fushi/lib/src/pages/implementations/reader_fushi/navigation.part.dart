@@ -1030,6 +1030,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         '${webViewKeyBridgeScript(handlerName: 'onSpreadKey', keys: spreadKeyBridgeTokens(appModel.shortcutRegistry))}\n${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}';
 
     final String html = buildSpreadPageHtml(
+      // 调用方 [_navigateToSpread] 已在 [_beginNavigation] 里递增代际。
+      navigationGeneration: _navigateGeneration,
       leftUrl: leftUrl,
       rightUrl: rightUrl,
       swipeDistThreshold: swipeThresholds.dist,

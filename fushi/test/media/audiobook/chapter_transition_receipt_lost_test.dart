@@ -1,4 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+    show buildSpreadPageHtml;
+import 'package:fushi/src/reader/reader_search_navigation.dart';
 
 import '../../helpers/source_guard.dart';
 import '../../pages/reader_fushi_page_source_corpus.dart';
@@ -124,6 +127,73 @@ void main() {
       final String afterLoad = body.substring(load);
       expect(containsIdentifierCall(afterLoad, '_failNavigation'), isTrue);
       expect(afterLoad.contains('_restoreInFlight = false;'), isFalse);
+    });
+  });
+  group('④ spread 就绪回报带代际，旧文档晚到的就绪不算当前导航完成', () {
+    test('spread 文档把装载时的导航代际随 spreadReady 回报', () {
+      final String html = buildSpreadPageHtml(
+        navigationGeneration: 42,
+        leftUrl: 'l.png',
+        rightUrl: 'r.png',
+        swipeDistThreshold: 44,
+        swipeFastDistThreshold: 22,
+        swipeFastVelocity: 300,
+      );
+      expect(html, contains("callHandler('spreadReady', 42)"));
+      expect(html.contains("callHandler('spreadReady')"), isFalse);
+    });
+
+    test('代际解析：缺失 / 非数字 / 非整数一律不属于任何导航', () {
+      expect(readerReportedNavigationGeneration(<dynamic>[7], 0), 7);
+      expect(readerReportedNavigationGeneration(<dynamic>[7.0], 0), 7);
+      expect(readerReportedNavigationGeneration(<dynamic>[], 0), isNull);
+      expect(readerReportedNavigationGeneration(<dynamic>['7'], 0), isNull);
+      expect(readerReportedNavigationGeneration(<dynamic>[7.5], 0), isNull);
+      expect(
+        readerReportedNavigationGeneration(<dynamic>[double.nan], 0),
+        isNull,
+      );
+      expect(readerReportedNavigationGeneration(<dynamic>[null, 3], 1), 3);
+      // 旧文档代际 3、当前导航代际 4：不是当前导航的回执。
+      expect(
+        isCurrentReaderRestoreCompletion(
+          reportedGeneration: 3,
+          currentGeneration: 4,
+          expectedGeneration: 4,
+        ),
+        isFalse,
+      );
+    });
+
+    test('spreadReady 处理器先核代际再收尾，并把落地通知有声书控制器', () {
+      final String source = maskComments(corpus);
+      final int start = source.indexOf("handlerName: 'spreadReady',");
+      expect(start, isNonNegative);
+      final int callback = source.indexOf('callback:', start);
+      final String handler = balancedBlockFrom(source, callback);
+      final int parse = handler.indexOf(
+        'readerReportedNavigationGeneration(args, 0)',
+      );
+      final int gate = handler.indexOf('isCurrentReaderRestoreCompletion(');
+      final int unwind = handler.indexOf('_restoreInFlight = false;');
+      expect(parse, isNonNegative);
+      expect(gate, greaterThan(parse));
+      expect(unwind, greaterThan(gate), reason: '核过代际才能结束当前导航');
+      expect(
+        handler.indexOf('notifySectionRestoreCompleted('),
+        greaterThan(unwind),
+        reason: 'spread 就绪是这次导航的落地回执，必须解除跨章守卫',
+      );
+    });
+
+    test('_loadSpreadPage 把当前代际交给 spread 文档', () {
+      final String body = maskComments(
+        methodBody(corpus, 'Future<void> _loadSpreadPage('),
+      );
+      expect(
+        compactCode(body),
+        contains(compactCode('navigationGeneration: _navigateGeneration,')),
+      );
     });
   });
 }

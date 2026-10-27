@@ -14,7 +14,10 @@ class _RecordingSeekController extends AudiobookPlayerController {
   AudioCue? requestedCue;
 
   @override
-  Future<void> skipToCue(AudioCue cue) async {
+  Future<void> skipToCue(
+    AudioCue cue, {
+    bool callerPositionsReader = false,
+  }) async {
     requestedCue = cue;
   }
 }
