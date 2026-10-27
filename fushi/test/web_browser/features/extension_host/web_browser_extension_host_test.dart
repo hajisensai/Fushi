@@ -176,7 +176,7 @@ void main() {
               'Missing filename/content',
             );
           }
-          return FushiExtensionApiResponse.json(<String, dynamic>{
+          return const FushiExtensionApiResponse.json(<String, dynamic>{
             'tracks': <Object?>[],
             'fonts': <Object?>[
               <String, Object?>{'id': 'f1'},
@@ -298,7 +298,7 @@ void main() {
       feature = WebBrowserExtensionHostFeature(
         storage: WebBrowserExtensionStorage(prefs: prefs),
         api: (String path, Map<String, dynamic> body) async =>
-            FushiExtensionApiResponse.json(<String, dynamic>{'ok': true}),
+            const FushiExtensionApiResponse.json(<String, dynamic>{'ok': true}),
         lookup: null,
         videoActivity: activity,
         loadParts: () async => const WebBrowserExtensionBundleParts(
