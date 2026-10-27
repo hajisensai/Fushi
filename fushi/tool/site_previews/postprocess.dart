@@ -4,7 +4,7 @@
 //
 // - overview-<页>.png（物理分辨率）→ <官网>/public/overview/<页>.jpg，1440×900
 // - <场景>.timeline.json + 无声录屏 → <官网>/public/preview/<场景>.mp4（1280×720、
-//   H.264 + AAC、faststart，按时间线把媒体原声混进去）与 <场景>-poster.jpg
+//   H.264 + AAC、faststart；尺寸取时间线的 outWidth/outHeight，漫画是竖版，按时间线把媒体原声混进去）与 <场景>-poster.jpg
 //
 // 只用 PATH 上的 ffmpeg。--dry-run 只打印要执行的命令。
 import 'dart:convert';
@@ -77,7 +77,7 @@ Map<String, String> _parseArgs(List<String> args) {
   return out;
 }
 
-/// 一段场景：缩放到 1280×720，按时间线混入原声，出 mp4 与封面帧。
+/// 一段场景：缩放到录制时的逻辑尺寸（默认 1280×720），按时间线混入原声，出 mp4 与封面帧。
 Future<void> _encodePreview(
   String scene,
   File timelineFile,
@@ -94,6 +94,9 @@ Future<void> _encodePreview(
   final int trimStartMs = (tl['trimStartMs'] as int?) ?? 0;
   final int? trimEndMs = tl['trimEndMs'] as int?;
   final int posterMs = (tl['posterMs'] as int?) ?? trimStartMs;
+  // 成片尺寸 = 录制时的逻辑客户区（漫画是竖版）；旧时间线没写就按 16:9。
+  final int outW = (tl['outWidth'] as int?) ?? _kPreviewWidth;
+  final int outH = (tl['outHeight'] as int?) ?? _kPreviewHeight;
 
   final List<String> args = <String>[
     '-ss',
@@ -102,8 +105,15 @@ Future<void> _encodePreview(
     '-i',
     video,
   ];
+  // 剪辑点（录制时间轴，毫秒）：查词等待等不进成片的段落，画面与混音同步剪掉。
+  final List<String> cuts = <String>[
+    for (final Object? c in (tl['cuts'] as List<Object?>? ?? <Object?>[]))
+      _betweenExpr(c! as List<Object?>, trimStartMs),
+  ];
+  final String keep = cuts.isEmpty ? '' : "not(${cuts.join('+')})";
   final List<String> filters = <String>[
-    '[0:v]scale=$_kPreviewWidth:$_kPreviewHeight:flags=lanczos,'
+    '[0:v]fps=30,scale=$outW:$outH:flags=lanczos,'
+        '${keep.isEmpty ? '' : "select='$keep',setpts=N/30/TB,"}'
         'format=yuv420p[v]',
   ];
   final List<String> mixInputs = <String>[];
@@ -131,7 +141,9 @@ Future<void> _encodePreview(
     filters.add(
       '${mixInputs.join()}amix=inputs=${mixInputs.length}'
       // 原声比画面短：补静音到无穷，-shortest 再按画面长度截断。
-      ':normalize=0:duration=longest,apad[a]',
+      ':normalize=0:duration=longest,'
+      '${keep.isEmpty ? '' : "aselect='$keep',asetpts=N/SR/TB,"}'
+      'apad[a]',
     );
   }
   final String outMp4 = '${outDir.path}/$scene.mp4';
@@ -165,12 +177,17 @@ Future<void> _encodePreview(
     '-frames:v',
     '1',
     '-vf',
-    'scale=$_kPreviewWidth:$_kPreviewHeight:flags=lanczos',
+    'scale=$outW:$outH:flags=lanczos',
     '-q:v',
     '4',
     '${outDir.path}/$scene-poster.jpg',
   ], dryRun);
 }
+
+/// 一个剪辑点 [fromMs, toMs]（录制时间轴）→ 成片时间轴上的 between(t,a,b)。
+String _betweenExpr(List<Object?> cut, int trimStartMs) =>
+    'between(t,${_sec((cut[0]! as int) - trimStartMs)},'
+    '${_sec((cut[1]! as int) - trimStartMs)})';
 
 String _sec(int ms) => (ms / 1000).toStringAsFixed(3);
 

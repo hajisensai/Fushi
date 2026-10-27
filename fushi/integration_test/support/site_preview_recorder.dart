@@ -108,14 +108,18 @@ PhysicalRect? findOwnMainWindowClientRect() {
 
 /// 一段 ffmpeg ddagrab 录屏。[stop] 经 stdin 发 `q` 让 ffmpeg 正常收尾（写完 moov）。
 class SitePreviewRecording {
-  SitePreviewRecording._(this._process, this.output, this._log, this.startedAt);
+  SitePreviewRecording._(this._process, this.output, this._log);
 
   final Process _process;
   final File output;
   final StringBuffer _log;
 
-  /// 发出 ffmpeg 命令的时刻；场景时间线（音轨对齐）以它为零点。
-  final DateTime startedAt;
+  /// 录屏第一帧对应的墙钟时刻；场景时间线（剪辑点、音轨对齐）以它为零点。
+  ///
+  /// 不能取「发出 ffmpeg 命令」那一刻：ddagrab 起来要几百毫秒，零点早了，后期的剪辑点
+  /// 与混音就整体错位这么一段（实测剪辑剪到了等待之后、空白卡留在了成片里）。所以用
+  /// ffmpeg 自报的进度反推：第一次读到 `frame=N` 时，第一帧在 N/fps 秒之前。
+  late final DateTime startedAt;
 
   /// 在 [rect] 上开录，[fps] 帧率，输出无损级 H.264（后期再缩放 / 压缩）。
   static Future<SitePreviewRecording> start({
@@ -129,6 +133,8 @@ class SitePreviewRecording {
     final Process process = await Process.start('ffmpeg', <String>[
       '-hide_banner',
       '-y',
+      '-stats_period',
+      '0.05',
       '-f',
       'lavfi',
       '-i',
@@ -139,32 +145,45 @@ class SitePreviewRecording {
       'libx264',
       '-preset',
       'veryfast',
+      // 关掉编码预读：进度里的 frame= 才等于已采集帧数，零点反推才准（带预读时
+      // 报数落后几十帧，零点偏晚、剪辑点整体偏早，成片里还剩空白卡）。
+      '-tune',
+      'zerolatency',
       '-crf',
       '12',
       '-pix_fmt',
       'yuv420p',
       output.path,
     ]);
-    process.stderr
-        .transform(utf8.decoder)
-        .listen((String s) => log.write(s), onError: (_) {});
-    process.stdout.drain<void>().ignore();
     final SitePreviewRecording rec = SitePreviewRecording._(
       process,
       output,
       log,
-      DateTime.now(),
     );
-    // ddagrab 起来要几百毫秒；等它真开始出帧（stderr 打出 frame= 进度）再返回，
-    // 免得场景前几步没录进去。
+    final RegExp progress = RegExp(r'frame=\s*(\d+)');
+    bool anchored = false;
+    process.stderr.transform(utf8.decoder).listen((String s) {
+      log.write(s);
+      if (anchored) return;
+      final RegExpMatch? m = progress.firstMatch(s);
+      final int frames = m == null ? 0 : int.parse(m.group(1)!);
+      if (frames < 1) return;
+      anchored = true;
+      rec.startedAt = DateTime.now().subtract(
+        Duration(microseconds: frames * 1000000 ~/ fps),
+      );
+    }, onError: (_) {});
+    process.stdout.drain<void>().ignore();
+    // 等 ffmpeg 真开始出帧再返回：零点定下来之前的场景动作没有时间可记。
     final Stopwatch sw = Stopwatch()..start();
-    while (!log.toString().contains('frame=') && sw.elapsed.inSeconds < 10) {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+    while (!anchored && sw.elapsed.inSeconds < 10) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
     }
-    debugPrint(
-      '[site-preview] recording ${output.path} rect=$r '
-      'ready=${log.toString().contains('frame=')}',
-    );
+    if (!anchored) {
+      process.kill();
+      throw StateError('ffmpeg ddagrab 10 秒内没有出帧：$log');
+    }
+    debugPrint('[site-preview] recording ${output.path} rect=$r');
     return rec;
   }
 
@@ -368,6 +387,14 @@ class SitePreviewTimeline {
       'fromMs': fromMs,
       if (durationMs != null) 'durationMs': durationMs,
     });
+  }
+
+  /// 后期剪掉录制时间轴上 [fromMs, toMs) 这段（画面与混音同步剪）。
+  void cut(int fromMs, int toMs) {
+    if (toMs <= fromMs) return;
+    final List<Object> cuts = (extra['cuts'] as List<Object>?) ?? <Object>[];
+    cuts.add(<int>[fromMs, toMs]);
+    extra['cuts'] = cuts;
   }
 
   /// 截断最后一条仍在播放的音频到此刻（例如查词时视频暂停）。

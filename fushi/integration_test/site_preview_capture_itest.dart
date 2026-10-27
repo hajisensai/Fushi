@@ -35,6 +35,8 @@ import 'package:fushi/src/media/video/video_import_dialog.dart'
     show singleVideoBookUid;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_tab.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
+    show DictionaryPopupLayer;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebView, DictionaryPopupWebViewState;
 import 'package:fushi/src/pages/implementations/home_page.dart' show HomePage;
@@ -69,6 +71,9 @@ const String _kOnly = String.fromEnvironment('SITE_PREVIEW_ONLY');
 
 /// 录屏场景的窗口客户区（逻辑像素）；官网成片就是这个比例。
 const Size _kSceneSize = Size(1280, 720);
+
+/// 漫画场景的客户区：单张竖版页（约 0.7 宽高比）加顶上一点余量，不留大黑边。
+const Size _kMangaSceneSize = Size(760, 1000);
 
 /// 「App 全貌」截图的客户区（逻辑像素），与官网 <img width/height> 一致。
 const Size _kOverviewSize = Size(1440, 900);
@@ -200,6 +205,84 @@ Future<DictionaryPopupWebViewState?> _waitPopupWithEntries(
     }
   }
   return null;
+}
+
+/// 录制前先把同一个词查一遍再关掉：查词缓存与弹窗 WebView 热槽都热好，录进去的那次
+/// 点击一按就出词条——冷启动时弹窗要先建 WebView、跑首查，画面上会先空白一会儿。
+Future<void> _prewarmLookup(
+  WidgetTester tester,
+  String what,
+  Future<void> Function() lookup, {
+  Future<void> Function()? close,
+}) async {
+  final Stopwatch sw = Stopwatch()..start();
+  await lookup();
+  final DictionaryPopupWebViewState? popup = await _waitPopupWithEntries(
+    tester,
+  );
+  expect(popup, isNotNull, reason: '$what 预热查词应出词条');
+  debugPrint('[site-preview] $what prewarm lookup ${sw.elapsedMilliseconds}ms');
+  await _hold(tester, const Duration(milliseconds: 600));
+  if (close != null) {
+    await close();
+  } else {
+    // 走弹窗右上角 × 的同一条关闭汇聚点（onPop(0) 清整栈）。Escape 在视频页上
+    // 不稳定（实测一次没关掉，预热弹窗挂在成片开头）。
+    for (final DictionaryPopupLayer layer
+        in tester
+            .widgetList<DictionaryPopupLayer>(
+              find.byType(DictionaryPopupLayer, skipOffstage: false),
+            )
+            .toList()
+            .reversed) {
+      layer.onClose?.call();
+    }
+  }
+  await _hold(tester, const Duration(milliseconds: 1200));
+  debugPrint(
+    '[site-preview] $what prewarm closed; layers='
+    '${find.byType(DictionaryPopupLayer, skipOffstage: false).evaluate().length}',
+  );
+}
+
+/// 录制中的那次查词：等词条出现，并把「点下 → 词条出现」这段等待记成剪辑点。
+///
+/// 所有者 2026-10-27：成片里弹窗要一点就出，可以剪辑——后期剪掉这段，画面上点下去
+/// 下一帧就是词条（冷查时的空白卡 / 检索中 / 未找到这些过渡帧一并剪掉）。
+Future<DictionaryPopupWebViewState?> _timedPopup(
+  WidgetTester tester,
+  String what,
+  Stopwatch sinceClick,
+  SitePreviewTimeline tl,
+) async {
+  final DictionaryPopupWebViewState? popup = await _waitPopupWithEntries(
+    tester,
+  );
+  // DOM 里有词条不等于画完：后续词条还在往里排（实测游戏段剪辑点后仍有 0.4 秒
+  // 在逐条长出来）。等内容高度与词条数连续稳定，再留一点淡入时间才接回画面。
+  if (popup != null) {
+    String last = '';
+    int stable = 0;
+    final Stopwatch settle = Stopwatch()..start();
+    while (stable < 3 && settle.elapsed.inMilliseconds < 2500) {
+      final String now =
+          '${await popup.debugEval("(()=>{const r=window.__fushiRoot||document;"
+          "const s=document.scrollingElement||document.documentElement;"
+          "return r.querySelectorAll('.entry').length+':'+s.scrollHeight;})()")}';
+      stable = now == last ? stable + 1 : 0;
+      last = now;
+      await _hold(tester, const Duration(milliseconds: 80));
+    }
+  }
+  await _hold(tester, const Duration(milliseconds: 200));
+  final int entriesAt = _sinceStart(tl.recording);
+  final int clickAt = entriesAt - sinceClick.elapsedMilliseconds;
+  tl.cut(clickAt + 120, entriesAt);
+  debugPrint(
+    '[site-preview] $what lookup->entries ${sinceClick.elapsedMilliseconds}ms '
+    '(cut ${clickAt + 120}..$entriesAt)',
+  );
+  return popup;
 }
 
 /// 弹窗里第一个词条的「+」制卡钮中心（全局逻辑坐标）。
@@ -375,12 +458,15 @@ class _Ctx {
     SitePreviewTimeline tl,
     SitePreviewCursor cursor, {
     required int posterMs,
+    Size outSize = _kSceneSize,
   }) async {
     final int code = await rec.stop();
     cursor.dispose();
     expect(code, 0, reason: '$scene 录屏 ffmpeg 应正常收尾');
     tl.extra['posterMs'] = posterMs;
     tl.extra['trimStartMs'] = 300;
+    tl.extra['outWidth'] = outSize.width.round();
+    tl.extra['outHeight'] = outSize.height.round();
     await tl.write(File(p.join(out.path, '$scene.timeline.json')));
   }
 }
@@ -389,7 +475,7 @@ int _sinceStart(SitePreviewRecording rec) =>
     DateTime.now().difference(rec.startedAt).inMilliseconds;
 
 /// 视频：字幕上点「大好き」→ 弹窗 → + 制卡。
-Future<void> _sceneVideo(_Ctx c, PhysicalRect rect) async {
+Future<void> _sceneVideo(_Ctx c) async {
   final WidgetTester tester = c.tester;
   final Map<String, Object?> demo = _demoJson();
   final Map<String, Object?> preset =
@@ -434,6 +520,13 @@ Future<void> _sceneVideo(_Ctx c, PhysicalRect rect) async {
         hooks().debugCueCount > 0,
     what: '视频页就绪',
   );
+  final PhysicalRect rect = await _resizeClient(tester, _kSceneSize);
+  await hooks().debugPause();
+  await _prewarmLookup(
+    tester,
+    'video',
+    () => hooks().debugLookupAt(sentence, charIndex),
+  );
   await hooks().debugPause();
   final int playFrom = (cueStart - 3200).clamp(0, 1 << 30);
   await hooks().debugSeekMs(playFrom);
@@ -468,12 +561,19 @@ Future<void> _sceneVideo(_Ctx c, PhysicalRect rect) async {
   // 弹窗按被点字的真实字形框定位（钩子默认锚点是固定占位矩形）。
   final Rect anchor = _paragraphCharRect(tester, word, 0)!;
   await cursor.moveTo(tester, anchor.center + const Offset(4, 6));
+  final Stopwatch clickAt = Stopwatch();
   await cursor.click(
     tester,
-    onDown: () => hooks().debugLookupAt(sentence, charIndex, anchor: anchor),
+    onDown: () {
+      clickAt.start();
+      return hooks().debugLookupAt(sentence, charIndex, anchor: anchor);
+    },
   );
-  final DictionaryPopupWebViewState? popup = await _waitPopupWithEntries(
+  final DictionaryPopupWebViewState? popup = await _timedPopup(
     tester,
+    'video',
+    clickAt,
+    tl,
   );
   expect(popup, isNotNull, reason: '视频查词弹窗应出词条');
   final int posterMs = _sinceStart(rec) + 1200;
@@ -486,7 +586,7 @@ Future<void> _sceneVideo(_Ctx c, PhysicalRect rect) async {
 }
 
 /// 阅读 + 有声书：朗读几句、句子高亮，点「わたしたち」→ 弹窗 → + 制卡。
-Future<void> _sceneAudiobook(_Ctx c, PhysicalRect rect) async {
+Future<void> _sceneAudiobook(_Ctx c) async {
   final WidgetTester tester = c.tester;
   final Map<String, Object?> book =
       _demoJson()['book']! as Map<String, Object?>;
@@ -579,6 +679,29 @@ Future<void> _sceneAudiobook(_Ctx c, PhysicalRect rect) async {
     timeout: const Duration(seconds: 40),
     what: '有声书控制器挂上',
   );
+  final PhysicalRect rect = await _resizeClient(tester, _kSceneSize);
+  await _hold(tester, const Duration(milliseconds: 1500));
+  final Finder webView = find.byKey(const ValueKey<String>('fushi_webview'));
+  final Future<dynamic> Function(String)? eval =
+      ReaderFushiPage.debugEvaluateJavascript;
+  Future<Map<String, Object?>> targetPoint() async {
+    final Object? raw = await eval!(_textPointJs(target, 0));
+    expect(raw, isNotNull, reason: '正文里应能定位到「$target」');
+    return jsonDecode('$raw') as Map<String, Object?>;
+  }
+
+  Future<void> clickTarget(Map<String, Object?> pt) async => eval!(
+    _dispatchClickJs(
+      (pt['x']! as num).toDouble(),
+      (pt['y']! as num).toDouble(),
+    ),
+  );
+  await _prewarmLookup(
+    tester,
+    'audiobook',
+    () async => clickTarget(await targetPoint()),
+  );
+  await ctrl()!.pause();
   await ctrl()!.skipToCueIndex(0);
   await _hold(tester, const Duration(milliseconds: 1500));
 
@@ -605,27 +728,24 @@ Future<void> _sceneAudiobook(_Ctx c, PhysicalRect rect) async {
   tl.stopAudio();
   await _hold(tester, const Duration(milliseconds: 500));
 
-  final Finder webView = find.byKey(const ValueKey<String>('fushi_webview'));
-  final Future<dynamic> Function(String)? eval =
-      ReaderFushiPage.debugEvaluateJavascript;
-  final Object? raw = await eval!(_textPointJs(target, 0));
-  expect(raw, isNotNull);
-  final Map<String, Object?> pt = jsonDecode('$raw') as Map<String, Object?>;
+  final Map<String, Object?> pt = await targetPoint();
   await cursor.moveTo(
     tester,
     _webViewToGlobal(tester, webView, pt) + const Offset(4, 6),
   );
+  final Stopwatch clickAt = Stopwatch();
   await cursor.click(
     tester,
-    onDown: () async => eval(
-      _dispatchClickJs(
-        (pt['x']! as num).toDouble(),
-        (pt['y']! as num).toDouble(),
-      ),
-    ),
+    onDown: () async {
+      clickAt.start();
+      await clickTarget(pt);
+    },
   );
-  final DictionaryPopupWebViewState? popup = await _waitPopupWithEntries(
+  final DictionaryPopupWebViewState? popup = await _timedPopup(
     tester,
+    'audiobook',
+    clickAt,
+    tl,
   );
   expect(popup, isNotNull, reason: '阅读器查词弹窗应出词条');
   final int posterMs = _sinceStart(rec) + 1200;
@@ -638,7 +758,7 @@ Future<void> _sceneAudiobook(_Ctx c, PhysicalRect rect) async {
 }
 
 /// 漫画：点 OCR 气泡里的「お正月」→ 弹窗 → + 制卡。
-Future<void> _sceneManga(_Ctx c, PhysicalRect rect) async {
+Future<void> _sceneManga(_Ctx c) async {
   final WidgetTester tester = c.tester;
   final Object? ocr = jsonDecode(
     File(_demoPath('manga/ocr.json')).readAsStringSync(),
@@ -728,7 +848,39 @@ Future<void> _sceneManga(_Ctx c, PhysicalRect rect) async {
         .isNotEmpty,
     what: '漫画阅读页就绪',
   );
+  // 竖版单页：窗口按页面比例开，16:9 会在页两侧留出大片黑边。
+  final PhysicalRect rect = await _resizeClient(tester, _kMangaSceneSize);
   await _hold(tester, const Duration(milliseconds: 2500));
+  final dynamic reader = tester.state(find.byType(MangaFushiPage));
+  final Finder webView = find.descendant(
+    of: find.byType(MangaFushiPage),
+    matching: find.byType(InAppWebView),
+  );
+  // 「お正月」在 .ocr-char 拼出的文字里的第一个字。
+  Future<Map<String, Object?>> targetPoint() async {
+    final Object? raw =
+        await reader.debugEvaluateJavascript('''JSON.stringify((() => {
+    const cs = Array.from(document.querySelectorAll('.ocr-char'));
+    const s = cs.map(e => e.textContent).join('');
+    const i = s.indexOf('お正月');
+    if (i < 0) return null;
+    const r = cs[i].getBoundingClientRect();
+    return {x: r.left + r.width / 2, y: r.top + r.height / 2};
+  })())''')
+            as Object?;
+    expect(raw, isNotNull, reason: 'OCR 字格里应能定位到「お正月」');
+    return jsonDecode('$raw') as Map<String, Object?>;
+  }
+
+  Future<void> tapTarget(Map<String, Object?> pt) async =>
+      reader.debugEvaluateJavascript(
+        'window.__mangaBarrierTapAt(${pt['x']}, ${pt['y']})',
+      );
+  await _prewarmLookup(
+    tester,
+    'manga',
+    () async => tapTarget(await targetPoint()),
+  );
 
   final (
     SitePreviewRecording rec,
@@ -737,47 +889,42 @@ Future<void> _sceneManga(_Ctx c, PhysicalRect rect) async {
   ) = await c.begin(
     'manga',
     rect,
-    const Offset(1150, 620),
+    Offset(_kMangaSceneSize.width - 90, _kMangaSceneSize.height - 140),
   );
   await _hold(tester, const Duration(milliseconds: 900));
-  final dynamic reader = tester.state(find.byType(MangaFushiPage));
-  final Finder webView = find.descendant(
-    of: find.byType(MangaFushiPage),
-    matching: find.byType(InAppWebView),
-  );
-  // 「お正月」在 .ocr-char 拼出的文字里的第一个字。
-  final Object? raw =
-      await reader.debugEvaluateJavascript('''JSON.stringify((() => {
-    const cs = Array.from(document.querySelectorAll('.ocr-char'));
-    const s = cs.map(e => e.textContent).join('');
-    const i = s.indexOf('お正月');
-    if (i < 0) return null;
-    const r = cs[i].getBoundingClientRect();
-    return {x: r.left + r.width / 2, y: r.top + r.height / 2};
-  })())''')
-          as Object?;
-  expect(raw, isNotNull);
-  final Map<String, Object?> pt = jsonDecode('$raw') as Map<String, Object?>;
+  final Map<String, Object?> pt = await targetPoint();
   await cursor.moveTo(
     tester,
     _webViewToGlobal(tester, webView.first, pt) + const Offset(4, 6),
     duration: const Duration(milliseconds: 900),
   );
+  final Stopwatch clickAt = Stopwatch();
   await cursor.click(
     tester,
-    onDown: () async => reader.debugEvaluateJavascript(
-      'window.__mangaBarrierTapAt(${pt['x']}, ${pt['y']})',
-    ),
+    onDown: () async {
+      clickAt.start();
+      await tapTarget(pt);
+    },
   );
-  final DictionaryPopupWebViewState? popup = await _waitPopupWithEntries(
+  final DictionaryPopupWebViewState? popup = await _timedPopup(
     tester,
+    'manga',
+    clickAt,
+    tl,
   );
   expect(popup, isNotNull, reason: '漫画查词弹窗应出词条');
   final int posterMs = _sinceStart(rec) + 1200;
   await _hold(tester, const Duration(milliseconds: 2600));
   await _mineFromPopup(tester, cursor, popup!, c.anki);
   await _hold(tester, const Duration(milliseconds: 2400));
-  await c.end('manga', rec, tl, cursor, posterMs: posterMs);
+  await c.end(
+    'manga',
+    rec,
+    tl,
+    cursor,
+    posterMs: posterMs,
+    outSize: _kMangaSceneSize,
+  );
   c.nav.pop();
   await _hold(tester, const Duration(seconds: 1));
 }
@@ -786,7 +933,7 @@ Future<void> _sceneManga(_Ctx c, PhysicalRect rect) async {
 ///
 /// 真游戏里的卡片是贴在游戏窗口上的原生 WebView2 窗口，测试复现不了；所有者
 /// 2026-10-27 说过游戏段「只需要换一下弹窗」——画面用 demo 截图，弹窗是真的。
-Future<void> _sceneGal(_Ctx c, PhysicalRect rect) async {
+Future<void> _sceneGal(_Ctx c) async {
   final WidgetTester tester = c.tester;
   final Map<String, Object?> gal = _demoJson()['gal']! as Map<String, Object?>;
   final Map<String, Object?> line =
@@ -808,7 +955,26 @@ Future<void> _sceneGal(_Ctx c, PhysicalRect rect) async {
       ),
     ),
   );
+  final PhysicalRect rect = await _resizeClient(tester, _kSceneSize);
   await _hold(tester, const Duration(milliseconds: 1500));
+  final Rect charRect = _StandInGamePage.charRect(geo, index, _kSceneSize);
+  void lookupWord() => lookup.lookup(
+    SrsCardLookupRequest(
+      term: lookupQueryFromIndex(text, index),
+      anchor: charRect,
+      sentence: text,
+    ),
+  );
+  // 卡面查词宿主的弹窗热槽要两轮才热透（实测只预热一轮时，录制中那次仍先空白、
+  // 再出「检索中」、最后才出词条）。
+  for (int round = 0; round < 2; round++) {
+    await _prewarmLookup(
+      tester,
+      'gal#$round',
+      () async => lookupWord(),
+      close: () async => lookup.closeTop(),
+    );
+  }
 
   final (
     SitePreviewRecording rec,
@@ -823,22 +989,20 @@ Future<void> _sceneGal(_Ctx c, PhysicalRect rect) async {
   tl.playAudio(_demoPath(line['voice']! as String));
   // 等这句语音念完一大半再点词。
   await _hold(tester, const Duration(milliseconds: 2600));
-  final Rect charRect = _StandInGamePage.charRect(geo, index, _kSceneSize);
   await cursor.moveTo(tester, charRect.center + const Offset(4, 6));
+  final Stopwatch clickAt = Stopwatch();
   await cursor.click(
     tester,
     onDown: () async {
-      lookup.lookup(
-        SrsCardLookupRequest(
-          term: lookupQueryFromIndex(text, index),
-          anchor: charRect,
-          sentence: text,
-        ),
-      );
+      clickAt.start();
+      lookupWord();
     },
   );
-  final DictionaryPopupWebViewState? popup = await _waitPopupWithEntries(
+  final DictionaryPopupWebViewState? popup = await _timedPopup(
     tester,
+    'gal',
+    clickAt,
+    tl,
   );
   expect(popup, isNotNull, reason: '游戏查词弹窗应出词条');
   final int posterMs = _sinceStart(rec) + 1200;
@@ -989,11 +1153,10 @@ void main() {
         expect(_kDemo, isNotEmpty, reason: '录屏需要 SITE_PREVIEW_DEMO');
         await _importDemoDictionaries(appModel);
         await configureFakeAnkiConnect(tester, anki);
-        final PhysicalRect rect = await _resizeClient(tester, _kSceneSize);
-        if (_wants('video')) await _sceneVideo(c, rect);
-        if (_wants('manga')) await _sceneManga(c, rect);
-        if (_wants('gal')) await _sceneGal(c, rect);
-        if (_wants('audiobook')) await _sceneAudiobook(c, rect);
+        if (_wants('video')) await _sceneVideo(c);
+        if (_wants('manga')) await _sceneManga(c);
+        if (_wants('gal')) await _sceneGal(c);
+        if (_wants('audiobook')) await _sceneAudiobook(c);
       }
       debugPrint(
         '[site-preview] done notes=${anki.notes.length} errors=${errors.length}',

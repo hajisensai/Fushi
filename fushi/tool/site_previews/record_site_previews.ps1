@@ -71,9 +71,9 @@ $scale = [SitePreview.Native]::GetDpiForSystem() / 96.0
 $screenW = [SitePreview.Native]::GetSystemMetrics(0)
 $screenH = [SitePreview.Native]::GetSystemMetrics(1)
 $needW = [int][Math]::Ceiling(1440 * $scale) + 80
-$needH = [int][Math]::Ceiling(900 * $scale) + 120
+$needH = [int][Math]::Ceiling(1000 * $scale) + 120
 if ($screenW -lt $needW -or $screenH -lt $needH) {
-  throw "主显示器 ${screenW}x${screenH}（缩放 $scale）放不下 1440x900 逻辑像素的全貌窗口"
+  throw "主显示器 ${screenW}x${screenH}（缩放 $scale）放不下 1440x900（全貌）/ 760x1000（漫画）逻辑像素的录制窗口"
 }
 $env:FUSHI_TEST_TOPMOST = "40,40,$([int](1280 * $scale)),$([int](720 * $scale))"
 
