@@ -225,6 +225,7 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
 import 'package:fushi/src/media/video/video_resource_check.dart';
 import 'package:fushi/src/media/video/video_long_press_speed_badge.dart';
 import 'package:fushi/src/media/video/video_long_press_session_detector.dart';
+import 'package:fushi/src/media/video/video_jump_pill_hover.dart';
 import 'package:fushi/src/media/video/video_double_tap_center_action.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_seek_indicator_label.dart';
@@ -1584,11 +1585,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final _RestartHideTimerSignal _restartHideTimerSignal =
       _RestartHideTimerSignal();
 
-  /// 控制条「⋯」溢出菜单开着时为 true：两端 fork 的 `holdVisible` 订阅它，开着期间
-  /// 指针离开（桌面：菜单路由的 barrier 盖住控制条，media_kit 的 MouseRegion 立刻
-  /// onExit）与自动隐藏 Timer 都不再收起控制条——否则菜单锚定的「⋯」按钮连同整条
-  /// 控制条在菜单弹出的同一帧消失。菜单关闭后放开，控制条按 hover 重新倒计时。
-  final ValueNotifier<bool> _controlsHeldByMenu = ValueNotifier<bool>(false);
+  /// 「按住控制条」：两端 fork 的 `holdVisible` 订阅它，为 true 期间指针离开（桌面：
+  /// 盖在控制条上的东西让 media_kit 的 MouseRegion 立刻 onExit）与自动隐藏 Timer 都
+  /// 不再收起控制条；放开后控制条按 hover 重新倒计时。唯一写入点 [_syncControlsHold]，
+  /// 由下面两个来源合成：
+  /// - [_controlsHoldMenuOpen]：「⋯」溢出菜单开着——菜单路由的 barrier 盖住控制条，
+  ///   否则菜单锚定的「⋯」按钮连同整条控制条在菜单弹出的同一帧消失；
+  /// - [_controlsHoldJumpPill]：鼠标停在「返回跳转前位置」胶囊上（qUeubxE-fM）——胶囊
+  ///   盖在控制条之上，不按住就会「收起 → 胶囊移开 → 重新显示 → 胶囊回来」自激振荡。
+  final ValueNotifier<bool> _controlsHeld = ValueNotifier<bool>(false);
+  bool _controlsHoldMenuOpen = false;
+  bool _controlsHoldJumpPill = false;
 
   static const double _volumeStep = 5.0;
 
@@ -2454,6 +2461,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 跳转 / 返回 / 前进后的 6 秒闪现窗口。
   final ValueNotifier<bool> _videoJumpPillFlashing = ValueNotifier<bool>(false);
+
+  /// 鼠标是否停在胶囊上（qUeubxE-fM）：悬停期间胶囊布局冻结在 [_videoJumpPillLayout]。
+  final ValueNotifier<bool> _videoJumpPillHovered = ValueNotifier<bool>(false);
+
+  /// 胶囊上一帧实际用的布局（悬停开始时的那一帧即冻结值）。
+  VideoJumpPillLayout? _videoJumpPillLayout;
   Timer? _videoJumpFlashTimer;
 
   /// 鼠标当前是否悬停在右 / 左浮动学习按钮 rail 上（BUG-283）。
@@ -6539,7 +6552,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _remoteDiscBufferingNoticeNotifier.dispose();
     _mediaKitControlsVisible.dispose();
     _restartHideTimerSignal.dispose();
-    _controlsHeldByMenu.dispose();
+    _controlsHeld.dispose();
+    _videoJumpPillHovered.dispose();
     _videoControlsVisible.dispose();
     _videoJumpFlashTimer?.cancel();
     _videoJumpHistoryRevision.dispose();
@@ -8959,10 +8973,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 「⋯」菜单开 / 关（[VideoControlBar.onMenuOpenChanged]）：开着期间按住控制条
-  /// （[_controlsHeldByMenu] → fork `holdVisible`），菜单锚定的按钮不随自动隐藏消失。
+  /// （[_controlsHeld] → fork `holdVisible`），菜单锚定的按钮不随自动隐藏消失。
   void _onVideoBarMenuOpenChanged(bool open) {
     if (!mounted) return;
-    _controlsHeldByMenu.value = open;
+    _controlsHoldMenuOpen = open;
+    _syncControlsHold();
+  }
+
+  /// [_controlsHeld] 的唯一写入点：任一来源要求按住即按住。
+  void _syncControlsHold() {
+    _controlsHeld.value = _controlsHoldMenuOpen || _controlsHoldJumpPill;
   }
 
   /// MD3 Expressive chrome 是否生效（Apple 设计系统之外的一切，含墨水屏）。

@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3423 条。点号进各自文件。
+> 共 3424 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3820](bugs/BUG-3820-video-jump-pill-hover-flicker.md) | ✅ | ✅ | Windows 视频页「返回跳转前位置」胶囊在鼠标停在边缘时持续闪烁、上下抖动 |
 | [BUG-3819](bugs/BUG-3819-video-seek-thumbnail-under-subtitle.md) | ✅ | ✅ | 进度条悬停缩略图被字幕挡住 |
 | [BUG-3818](bugs/BUG-3818-video-long-press-speed-badge-stuck.md) | ✅ | ✅ | 长按倍速后徽章一直停在画面上，直到重开视频 |
 | [BUG-3817](bugs/BUG-3817-video-delete-work-leaves-extras.md) | ✅ | ✅ | 删除动漫只删正片：特典与其余下载资源残留在目录 |
