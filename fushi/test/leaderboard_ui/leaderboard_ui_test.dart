@@ -1484,6 +1484,12 @@ void main() {
       isEmpty,
       reason: '先确认',
     );
+    // 解绑后页面再 refreshSelf 一次：资料缓存写完才通知，等到这次通知再收尾，
+    // 免得 tearDown 删临时目录时撞上仍开着的缓存文件（Windows）。
+    int notified = 0;
+    void onNotify() => notified++;
+    service.addListener(onNotify);
+    addTearDown(() => service.removeListener(onNotify));
     await tester.tap(
       find
           .descendant(
@@ -1492,7 +1498,8 @@ void main() {
           )
           .last,
     );
-    await settle(tester);
+    await settleIo(tester, () => notified > 0);
+    expect(notified, greaterThan(0), reason: '解绑后刷新了自己（资料缓存已落盘）');
     expect(
       server.requests
           .where((http.Request r) => r.method == 'DELETE')

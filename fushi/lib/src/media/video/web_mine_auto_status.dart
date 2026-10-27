@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -147,7 +148,7 @@ class WebMineAutoStatusChip extends StatelessWidget {
             if (dismissible) ...<Widget>[
               const SizedBox(width: 4),
               FushiPressScale(
-                child: IconButton(
+                child: FushiIconButtonControl(
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                   iconSize: 18,
                   color: cs.onInverseSurface,
