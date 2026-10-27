@@ -1880,14 +1880,17 @@ class _MediaImageState extends ConsumerState<_MediaImage>
                   errorBuilder: (_, _, _) => const SizedBox.shrink(),
                 ),
         );
+    // 无论有没有垫底层都是同一个 Stack：各层以 key 在兄弟间对位，旧层从「独占」变成
+    // 「垫底」、新层从「叠在上面」变成「独占」时元素与已解出的画面原样保留。若单层时直接
+    // 返回 KeyedSubtree、双层时才包 Stack，父节点类型一变旧层就被卸载重建，垫底的只是又
+    // 一个从零解码的新实例，闪空照旧。
     Widget picture({BoxFit? fit}) {
       final int? prev = _prevRestart;
-      if (prev == null) return layer(_restart, fit, signal: false);
       return Stack(
         fit: StackFit.passthrough,
         children: <Widget>[
-          layer(prev, fit, signal: false),
-          layer(_restart, fit, signal: true),
+          if (prev != null) layer(prev, fit, signal: false),
+          layer(_restart, fit, signal: prev != null),
         ],
       );
     }
