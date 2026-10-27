@@ -653,6 +653,8 @@
   "anki_pending_mines_status_sending": "전송 중",
   "anki_pending_mines_title": "보류 카드",
   "anki_pending_mines_unreachable": "지금은 Anki에 연결할 수 없습니다. 남은 카드는 대기열에 유지됩니다.",
+  "anki_queue_undelivered_mines_hint": "When Anki can't be reached, save the card to Pending cards and send it later instead of reporting a failure",
+  "anki_queue_undelivered_mines_title": "Hold cards when Anki is unreachable",
   "anki_refresh_hint": "Anki에서 덱이나 노트 유형을 만들거나 이름을 바꾼 뒤 여기를 눌러 새로고침하세요.",
   "anki_reposition_aggregate": "여러 사전 결합",
   "anki_reposition_aggregate_harmonic": "조화 평균",

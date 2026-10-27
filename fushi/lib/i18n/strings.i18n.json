@@ -653,6 +653,8 @@
   "anki_pending_mines_status_sending": "Sending",
   "anki_pending_mines_title": "Pending cards",
   "anki_pending_mines_unreachable": "Anki can't be reached right now. The remaining cards stay in the queue.",
+  "anki_queue_undelivered_mines_hint": "When Anki can't be reached, save the card to Pending cards and send it later instead of reporting a failure",
+  "anki_queue_undelivered_mines_title": "Hold cards when Anki is unreachable",
   "anki_refresh_hint": "After creating or renaming a deck or note type in Anki, tap here to refresh.",
   "anki_reposition_aggregate": "Combine multiple dictionaries",
   "anki_reposition_aggregate_harmonic": "Harmonic mean",

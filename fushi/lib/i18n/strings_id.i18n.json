@@ -653,6 +653,8 @@
   "anki_pending_mines_status_sending": "Mengirim",
   "anki_pending_mines_title": "Kartu tertunda",
   "anki_pending_mines_unreachable": "Anki tidak dapat dijangkau saat ini. Kartu yang tersisa tetap di antrean.",
+  "anki_queue_undelivered_mines_hint": "When Anki can't be reached, save the card to Pending cards and send it later instead of reporting a failure",
+  "anki_queue_undelivered_mines_title": "Hold cards when Anki is unreachable",
   "anki_refresh_hint": "Setelah membuat atau mengganti nama dek atau tipe catatan di Anki, ketuk di sini untuk menyegarkan.",
   "anki_reposition_aggregate": "Gabungkan beberapa kamus",
   "anki_reposition_aggregate_harmonic": "Rata-rata harmonik",

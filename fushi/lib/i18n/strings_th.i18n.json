@@ -653,6 +653,8 @@
   "anki_pending_mines_status_sending": "กำลังส่ง",
   "anki_pending_mines_title": "การ์ดที่รอส่ง",
   "anki_pending_mines_unreachable": "เชื่อมต่อ Anki ไม่ได้ในขณะนี้ การ์ดที่เหลือยังอยู่ในคิว",
+  "anki_queue_undelivered_mines_hint": "When Anki can't be reached, save the card to Pending cards and send it later instead of reporting a failure",
+  "anki_queue_undelivered_mines_title": "Hold cards when Anki is unreachable",
   "anki_refresh_hint": "หลังสร้างหรือเปลี่ยนชื่อเด็คหรือชนิดโน้ตใน Anki แล้ว ให้แตะที่นี่เพื่อรีเฟรช",
   "anki_reposition_aggregate": "รวมหลายพจนานุกรม",
   "anki_reposition_aggregate_harmonic": "ค่าเฉลี่ยฮาร์มอนิก",

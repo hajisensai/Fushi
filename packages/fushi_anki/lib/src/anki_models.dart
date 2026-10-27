@@ -239,6 +239,7 @@ class AnkiSettings {
     this.repositionRareFirst = false,
     this.autoRepositionEnabled = false,
     this.batchMiningEnabled = false,
+    this.queueUndeliveredMinesEnabled = false,
     this.useAnkiSyncClient = false,
     this.autoLaunchAnkiDesktop = false,
     this.ankiDesktopExecutable = '',
@@ -315,6 +316,9 @@ class AnkiSettings {
     autoRepositionEnabled: json['autoRepositionEnabled'] as bool? ?? false,
     // 缺键 = 老装置：制卡照旧直接送 Anki。
     batchMiningEnabled: json['batchMiningEnabled'] as bool? ?? false,
+    // 缺键 = 一律关：连不上 Anki 时照旧报失败，不再静默攒进待发队列。
+    queueUndeliveredMinesEnabled:
+        json['queueUndeliveredMinesEnabled'] as bool? ?? false,
     useAnkiSyncClient: json['useAnkiSyncClient'] as bool? ?? false,
     // 缺键 = 老装置：启动 Fushi 不会凭空多拉起一个程序。
     autoLaunchAnkiDesktop: json['autoLaunchAnkiDesktop'] as bool? ?? false,
@@ -463,6 +467,10 @@ class AnkiSettings {
   /// 给「每张卡都要切到 AnkiMobile」的 iOS、切 app 很慢的墨水屏准备。默认关。
   final bool batchMiningEnabled;
 
+  /// 连不上 Anki（确定没送到）时把卡存进待发队列，之后自动 / 手动补发；关时照原样
+  /// 报失败。默认关：用户 2026-10-27 拍板——不该在用户不知情时攒一堆待发卡片。
+  final bool queueUndeliveredMinesEnabled;
+
   /// 用「Anki 同步客户端」后端：不经 AnkiConnect，由 Fushi 写本地库再同步到
   /// AnkiWeb / 自建 Anki 同步服务器（本机要带 `fushi-anki-sync`，目前只有桌面）。
   /// 默认关。
@@ -574,6 +582,7 @@ class AnkiSettings {
     bool? repositionRareFirst,
     bool? autoRepositionEnabled,
     bool? batchMiningEnabled,
+    bool? queueUndeliveredMinesEnabled,
     bool? useAnkiSyncClient,
     bool? autoLaunchAnkiDesktop,
     String? ankiDesktopExecutable,
@@ -633,6 +642,8 @@ class AnkiSettings {
     repositionRareFirst: repositionRareFirst ?? this.repositionRareFirst,
     autoRepositionEnabled: autoRepositionEnabled ?? this.autoRepositionEnabled,
     batchMiningEnabled: batchMiningEnabled ?? this.batchMiningEnabled,
+    queueUndeliveredMinesEnabled:
+        queueUndeliveredMinesEnabled ?? this.queueUndeliveredMinesEnabled,
     useAnkiSyncClient: useAnkiSyncClient ?? this.useAnkiSyncClient,
     autoLaunchAnkiDesktop: autoLaunchAnkiDesktop ?? this.autoLaunchAnkiDesktop,
     ankiDesktopExecutable: ankiDesktopExecutable ?? this.ankiDesktopExecutable,
@@ -678,6 +689,7 @@ class AnkiSettings {
     'repositionRareFirst': repositionRareFirst,
     'autoRepositionEnabled': autoRepositionEnabled,
     'batchMiningEnabled': batchMiningEnabled,
+    'queueUndeliveredMinesEnabled': queueUndeliveredMinesEnabled,
     'useAnkiSyncClient': useAnkiSyncClient,
     'autoLaunchAnkiDesktop': autoLaunchAnkiDesktop,
     'ankiDesktopExecutable': ankiDesktopExecutable,

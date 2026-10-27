@@ -653,6 +653,8 @@
   "anki_pending_mines_status_sending": "جارٍ الإرسال",
   "anki_pending_mines_title": "البطاقات المعلّقة",
   "anki_pending_mines_unreachable": "لا يمكن الوصول إلى Anki حاليًا. تبقى البطاقات المتبقية في قائمة الانتظار.",
+  "anki_queue_undelivered_mines_hint": "When Anki can't be reached, save the card to Pending cards and send it later instead of reporting a failure",
+  "anki_queue_undelivered_mines_title": "Hold cards when Anki is unreachable",
   "anki_refresh_hint": "بعد إنشاء أو إعادة تسمية مجموعة أو نوع ملاحظة في Anki، انقر هنا للتحديث.",
   "anki_reposition_aggregate": "دمج عدة قواميس",
   "anki_reposition_aggregate_harmonic": "المتوسط التوافقي",
