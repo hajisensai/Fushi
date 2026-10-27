@@ -272,11 +272,10 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   /// 最近玩过的前 4 个游戏（按 lastPlayedMs 倒序）。
   List<GalgameEntry> get _recentlyPlayed {
     final List<GalgameEntry> played =
-        _games.where((GalgameEntry g) => g.lastPlayedMs > 0).toList()
-          ..sort(
-            (GalgameEntry a, GalgameEntry b) =>
-                b.lastPlayedMs.compareTo(a.lastPlayedMs),
-          );
+        _games.where((GalgameEntry g) => g.lastPlayedMs > 0).toList()..sort(
+          (GalgameEntry a, GalgameEntry b) =>
+              b.lastPlayedMs.compareTo(a.lastPlayedMs),
+        );
     return played.take(4).toList();
   }
 
@@ -297,9 +296,11 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       final GalgameEntry current = _random ?? _games.first;
       GalgameEntry next = current;
       // 库里 >1 个游戏时保证换到不同的一个。
-      for (int i = 0;
-          i < 8 && next.id == current.id && _games.length > 1;
-          i++) {
+      for (
+        int i = 0;
+        i < 8 && next.id == current.id && _games.length > 1;
+        i++
+      ) {
         next = _games[math.Random().nextInt(_games.length)];
       }
       _random = next;
@@ -311,6 +312,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   Future<void> _launchGame(GalgameEntry game) async {
     if (_launching) return;
     _launching = true;
+    // 与库页同一处登记：查词语言跟这个游戏卡声明的语言走，不沿用上一个媒体页的残留。
+    _appModel.enterGameLookupLanguage(game.language);
     try {
       if (!Platform.isWindows) {
         FushiToast.show(
@@ -338,7 +341,9 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       // TODO-2936：应用语言级 / 「游戏」媒体类型的 Profile 绑定（非致命、与启动并行）。
       // 语言取该游戏卡上用户指定的 `galgames.language`（hook 文本无语言声明可读）。
       unawaited(
-        ref.read(profileViewModelProvider.notifier).autoApplyBinding(
+        ref
+            .read(profileViewModelProvider.notifier)
+            .autoApplyBinding(
               languageTag: game.language,
               mediaType: ProfileMediaKind.game,
               restoreFallback: true,
@@ -383,8 +388,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
             GalHookLaunchOutcome.running => ToastSeverity.success,
             GalHookLaunchOutcome.degradedLoopback => ToastSeverity.warning,
             GalHookLaunchOutcome.failed ||
-            GalHookLaunchOutcome.windowMissing =>
-              ToastSeverity.error,
+            GalHookLaunchOutcome.windowMissing => ToastSeverity.error,
             // message 为 null 时根本不播报，这里走不到。
             GalHookLaunchOutcome.superseded => ToastSeverity.neutral,
           },
@@ -502,10 +506,10 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                     _gameStreamBusy
                         ? t.game_stream_busy
                         : _gameStreamStarted
-                            ? (_gameStreamDevice == null
-                                ? t.game_stream_stop
-                                : '${t.game_stream_stop} · ${t.game_stream_connected}: $_gameStreamDevice')
-                            : t.game_stream_start,
+                        ? (_gameStreamDevice == null
+                              ? t.game_stream_stop
+                              : '${t.game_stream_stop} · ${t.game_stream_connected}: $_gameStreamDevice')
+                        : t.game_stream_start,
                   ),
                 ),
             ],
@@ -627,80 +631,80 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
             context: context,
             removeTop: true,
             child: CustomScrollView(
-            slivers: <Widget>[
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                  page,
-                  tokens.spacing.rowVertical + chromeTop,
-                  page,
-                  tokens.spacing.card,
-                ),
-                sliver: SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      _buildKpiStrip(context),
-                      if (hero != null) ...<Widget>[
-                        SizedBox(height: tokens.spacing.card),
-                        FushiStaggeredEntrance(
-                          index: 4,
-                          child: _buildHero(context, hero),
-                        ),
-                      ],
-                      if (recent.isNotEmpty) ...<Widget>[
-                        SizedBox(height: tokens.spacing.card),
-                        FushiStaggeredEntrance(
-                          index: 5,
-                          child: _buildRecentRow(context, recent),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              if (wide)
+              slivers: <Widget>[
                 SliverPadding(
-                  padding: EdgeInsets.symmetric(horizontal: page),
-                  sliver: SliverCrossAxisGroup(
-                    slivers: <Widget>[
-                      SliverCrossAxisExpanded(
-                        flex: 2,
-                        sliver: SliverPadding(
-                          padding: EdgeInsetsDirectional.only(
-                            end: tokens.spacing.card,
-                          ),
-                          sliver: SliverToBoxAdapter(
-                            child: random ?? const SizedBox.shrink(),
-                          ),
-                        ),
-                      ),
-                      SliverCrossAxisExpanded(
-                        flex: 3,
-                        sliver: SliverMainAxisGroup(slivers: timeline),
-                      ),
-                    ],
+                  padding: EdgeInsets.fromLTRB(
+                    page,
+                    tokens.spacing.rowVertical + chromeTop,
+                    page,
+                    tokens.spacing.card,
                   ),
-                )
-              else ...<Widget>[
-                if (random != null)
-                  SliverPadding(
-                    padding: EdgeInsets.fromLTRB(
-                      page,
-                      0,
-                      page,
-                      tokens.spacing.card,
+                  sliver: SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        _buildKpiStrip(context),
+                        if (hero != null) ...<Widget>[
+                          SizedBox(height: tokens.spacing.card),
+                          FushiStaggeredEntrance(
+                            index: 4,
+                            child: _buildHero(context, hero),
+                          ),
+                        ],
+                        if (recent.isNotEmpty) ...<Widget>[
+                          SizedBox(height: tokens.spacing.card),
+                          FushiStaggeredEntrance(
+                            index: 5,
+                            child: _buildRecentRow(context, recent),
+                          ),
+                        ],
+                      ],
                     ),
-                    sliver: SliverToBoxAdapter(child: random),
                   ),
-                SliverPadding(
-                  padding: EdgeInsets.symmetric(horizontal: page),
-                  sliver: SliverMainAxisGroup(slivers: timeline),
+                ),
+                if (wide)
+                  SliverPadding(
+                    padding: EdgeInsets.symmetric(horizontal: page),
+                    sliver: SliverCrossAxisGroup(
+                      slivers: <Widget>[
+                        SliverCrossAxisExpanded(
+                          flex: 2,
+                          sliver: SliverPadding(
+                            padding: EdgeInsetsDirectional.only(
+                              end: tokens.spacing.card,
+                            ),
+                            sliver: SliverToBoxAdapter(
+                              child: random ?? const SizedBox.shrink(),
+                            ),
+                          ),
+                        ),
+                        SliverCrossAxisExpanded(
+                          flex: 3,
+                          sliver: SliverMainAxisGroup(slivers: timeline),
+                        ),
+                      ],
+                    ),
+                  )
+                else ...<Widget>[
+                  if (random != null)
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(
+                        page,
+                        0,
+                        page,
+                        tokens.spacing.card,
+                      ),
+                      sliver: SliverToBoxAdapter(child: random),
+                    ),
+                  SliverPadding(
+                    padding: EdgeInsets.symmetric(horizontal: page),
+                    sliver: SliverMainAxisGroup(slivers: timeline),
+                  ),
+                ],
+                SliverToBoxAdapter(
+                  child: SizedBox(height: tokens.spacing.section),
                 ),
               ],
-              SliverToBoxAdapter(
-                child: SizedBox(height: tokens.spacing.section),
-              ),
-            ],
             ),
           ),
         );
@@ -788,8 +792,10 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     final FushiTypography type = context.fushiType;
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context) && !eink;
-    final FushiCardColors? toneColors =
-        fushiCardToneColors(context, FushiCardTone.primary);
+    final FushiCardColors? toneColors = fushiCardToneColors(
+      context,
+      FushiCardTone.primary,
+    );
     final Color onTone = toneColors?.onContainer ?? cs.onSurface;
     final bool hasPlayed = game.lastPlayedMs > 0;
     final String statusLabel = game.playStatus == GalgamePlayStatus.playing
@@ -800,8 +806,9 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         '${t.game_stat_last_played}  ${_formatDay(game.lastPlayedMs)}',
       '${t.game_stat_total_time}  ${formatStatTime(game.totalPlaySeconds * 1000)}',
     ];
-    final TextStyle heroTitleStyle =
-        type.headlineSmallEmphasized.copyWith(color: onTone);
+    final TextStyle heroTitleStyle = type.headlineSmallEmphasized.copyWith(
+      color: onTone,
+    );
     final TextStyle metaStyle = type.bodyMedium.tabular.copyWith(
       color: onTone.withValues(alpha: 0.78),
     );
@@ -906,19 +913,20 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                 itemCount: recent.length,
                 separatorBuilder: (BuildContext _, int __) =>
                     const SizedBox(width: 12),
-                itemBuilder: fushiStaggeredItemBuilder(
-                  (BuildContext context, int i) {
-                    final GalgameEntry g = recent[i];
-                    return SizedBox(
-                      width: _kRecentTileWidth,
-                      child: _RecentCoverTile(
-                        game: g,
-                        onTap: () => unawaited(_launchGame(g)),
-                        focusId: FushiFocusId('game-recent-${g.id}'),
-                      ),
-                    );
-                  },
-                ),
+                itemBuilder: fushiStaggeredItemBuilder((
+                  BuildContext context,
+                  int i,
+                ) {
+                  final GalgameEntry g = recent[i];
+                  return SizedBox(
+                    width: _kRecentTileWidth,
+                    child: _RecentCoverTile(
+                      game: g,
+                      onTap: () => unawaited(_launchGame(g)),
+                      focusId: FushiFocusId('game-recent-${g.id}'),
+                    ),
+                  );
+                }),
               ),
             ),
           ),
@@ -991,12 +999,15 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   Widget _buildRandomCard(BuildContext context, GalgameEntry game) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiTypography type = context.fushiType;
-    final FushiCardColors? toneColors =
-        fushiCardToneColors(context, FushiCardTone.secondary);
+    final FushiCardColors? toneColors = fushiCardToneColors(
+      context,
+      FushiCardTone.secondary,
+    );
     final Color onTone = toneColors?.onContainer ?? cs.onSurface;
     final List<String> tags = game.tags.take(3).toList();
-    final TextStyle cardTitleStyle =
-        type.titleMediumEmphasized.copyWith(color: onTone);
+    final TextStyle cardTitleStyle = type.titleMediumEmphasized.copyWith(
+      color: onTone,
+    );
     return FushiCard(
       tone: FushiCardTone.secondary,
       padding: const EdgeInsets.all(12),
@@ -1074,8 +1085,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     final List<ActivityEventRow> filtered = _timelineFilter == null
         ? _timelineRows
         : _timelineRows
-            .where((ActivityEventRow r) => r.eventType == _timelineFilter)
-            .toList();
+              .where((ActivityEventRow r) => r.eventType == _timelineFilter)
+              .toList();
     final List<ActivityDateGroup> groups = aggregateActivityEvents(filtered);
     final DateTime now = DateTime.now();
     final String todayKey = FushiTimeFormat.dayKey(now);
@@ -1131,9 +1142,9 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                 itemCount: g.entries.length,
                 itemBuilder: (BuildContext context, int i) =>
                     FushiStaggeredEntrance(
-                  index: 8 + i,
-                  child: _buildTimelineEntry(context, g, i, now),
-                ),
+                      index: 8 + i,
+                      child: _buildTimelineEntry(context, g, i, now),
+                    ),
               ),
             ],
           ),
@@ -1183,8 +1194,9 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       entry: game,
       rawTitle: entry.title,
     );
-    final TextStyle timelineTitleStyle =
-        type.bodyLargeEmphasized.copyWith(color: cs.onSurface);
+    final TextStyle timelineTitleStyle = type.bodyLargeEmphasized.copyWith(
+      color: cs.onSurface,
+    );
     return FushiGroupedListItem(
       index: index,
       count: group.entries.length,
@@ -1260,10 +1272,10 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
 
   /// 活动条 → 对应的库内游戏。新事件按 id，旧事件兼容 exePath / 标题快照。
   GalgameEntry? _gameForActivity(ActivityEntry entry) => findGalgameForActivity(
-        _games,
-        mediaKey: entry.mediaKey,
-        title: entry.title,
-      );
+    _games,
+    mediaKey: entry.mediaKey,
+    title: entry.title,
+  );
 
   String _actionWord(String eventType) {
     switch (eventType) {
@@ -1297,7 +1309,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
 /// 「最近玩过」封面行：单张宽度、封面高（卡盒 1:1.6，与游戏库同形）与整行高
 /// （封面 + 两行标题 + 上下留给悬停抬升 / 焦点环 / 接触阴影的余量）。
 const double _kRecentTileWidth = 120;
-const double _kRecentCoverHeight = _kRecentTileWidth / kShelfGameCaseAspectRatio;
+const double _kRecentCoverHeight =
+    _kRecentTileWidth / kShelfGameCaseAspectRatio;
 const double _kRecentRowHeight = _kRecentCoverHeight + 68;
 
 /// 游戏首页的封面框：与游戏库同一个透明卡盒材质（2026-10-25 库页定版；墨水屏
@@ -1359,18 +1372,22 @@ class _GameCoverPlaceholder extends StatelessWidget {
     for (final int unit in game.id.codeUnits) {
       seed = (seed * 31 + unit) & 0x3fffffff;
     }
-    final FushiCardColors? colors =
-        fushiCardToneColors(context, _tones[seed % _tones.length]);
+    final FushiCardColors? colors = fushiCardToneColors(
+      context,
+      _tones[seed % _tones.length],
+    );
     final Color background = colors?.container ?? cs.surface;
     final Color foreground = colors?.onContainer ?? cs.onSurface;
     final String name = game.displayName.trim();
-    final String initial =
-        name.isEmpty ? '' : name.characters.first.toUpperCase();
+    final String initial = name.isEmpty
+        ? ''
+        : name.characters.first.toUpperCase();
     return ColoredBox(
       color: background,
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final bool showBadge = initial.isNotEmpty &&
+          final bool showBadge =
+              initial.isNotEmpty &&
               constraints.maxWidth.isFinite &&
               constraints.maxWidth >= 72;
           return Stack(
@@ -1424,13 +1441,13 @@ class _StatusPill extends StatelessWidget {
     final Color background = eink
         ? Colors.transparent
         : apple
-            ? appleColorsOf(context).accent
-            : cs.primary;
+        ? appleColorsOf(context).accent
+        : cs.primary;
     final Color foreground = eink
         ? cs.onSurface
         : apple
-            ? Colors.white
-            : cs.onPrimary;
+        ? Colors.white
+        : cs.onPrimary;
     return DecoratedBox(
       decoration: ShapeDecoration(
         color: background,

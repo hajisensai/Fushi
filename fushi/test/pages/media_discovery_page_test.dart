@@ -118,7 +118,7 @@ class _FakeAppModel extends AppModel {
   DiscoveryDownloadQueue get discoveryDownloadQueue => _queue;
 
   @override
-  String discoveryDownloadDirFor(DiscoveryMediaKind kind) =>
+  Future<String> discoveryDownloadDirFor(DiscoveryMediaKind kind) async =>
       '${Directory.systemTemp.path}/fushi-discovery-test/${kind.name}';
 
   bool gameNoticeDismissed = false;

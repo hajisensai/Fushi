@@ -44,6 +44,10 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_platform/fushi_platform.dart';
 
+/// Runs before a game stream session opens. [gameId] is the library id of a
+/// remotely launched game, or null when the host streams its running game.
+typedef GameStreamStartingCallback = Future<void> Function({String? gameId});
+
 /// Result of a [FushiSyncServerController.start] attempt, so the caller (the
 /// settings toggle) can surface the right message while a headless app-init
 /// start can just log a failure.
@@ -246,16 +250,25 @@ class FushiSyncServerController extends ChangeNotifier {
 
   FushiGameStreamMiningAdapter Function()? _gameStreamMiningFactory;
   GameStreamLibraryHost? _gameStreamLibrary;
+  GameStreamStartingCallback? _onGameStreamStarting;
 
   /// Windows host library for receivers ("launch from library, then stream").
   /// [miningFactory] builds the same Anki adapter the workbench button uses,
   /// so a remotely launched stream mines exactly like a local one.
+  ///
+  /// [onStreamStarting] runs on every stream start (remote launch and a local
+  /// "stream the running game") before the session is opened, so the host can
+  /// register the streamed game's lookup language before any receiver lookup
+  /// arrives. Receivers never declare it: the looked-up lines come from the
+  /// host's game.
   void configureGameStreamLibrary(
     GameStreamLibraryHost? library, {
     FushiGameStreamMiningAdapter Function()? miningFactory,
+    GameStreamStartingCallback? onStreamStarting,
   }) {
     _gameStreamLibrary = library;
     _gameStreamMiningFactory = miningFactory;
+    _onGameStreamStarting = onStreamStarting;
     _gameStreamService?.library = library;
   }
 
@@ -312,6 +325,7 @@ class FushiSyncServerController extends ChangeNotifier {
       _detachGameStreamTexthooker();
       throw StateError('游戏会话已变化，请重新开启串流');
     }
+    await _onGameStreamStarting?.call(gameId: gameId);
     _gameStreamHwnd = hwnd;
     _gameStreamHookStartedAt = hook.sessionStartedAt;
     _attachGameStreamTexthooker();

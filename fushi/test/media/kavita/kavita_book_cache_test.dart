@@ -2,6 +2,7 @@
 // 从不清理（`cachedBookKeys()` 没有调用方），「移除下载」只把标记翻回去、文件与书架
 // 条目都还在。这里钉住真正的两态：缓存有上限按最近使用淘汰、可一键清理；移除下载
 // 真删本地书；删之前未同步的进度先推，推不出去就保留。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -45,6 +46,10 @@ class _Server {
   int? serverModifiedAt;
   final List<int> pushedPages = <int>[];
 
+  /// 非 null 时推进度请求先完成 [pushStarted]，再等它放行（模拟推送卡在网络上）。
+  Completer<void>? gate;
+  final Completer<void> pushStarted = Completer<void>();
+
   KavitaApi api() => KavitaApi(
     serverUrl: 'https://kavita.example.com',
     apiKey: 'K',
@@ -68,6 +73,9 @@ class _Server {
         );
       }
       if (r.url.path == '/api/Reader/progress') {
+        if (!pushStarted.isCompleted) pushStarted.complete();
+        final Completer<void>? g = gate;
+        if (g != null) await g.future;
         pushedPages.add(
           (jsonDecode(r.body) as Map<String, Object?>)['pageNum']! as int,
         );
@@ -101,13 +109,14 @@ void main() {
   KavitaBookService service({
     _Server? server,
     int cacheLimit = kKavitaCachedBookLimit,
+    Duration pushTimeout = const Duration(seconds: 2),
   }) => KavitaBookService(
     db: db,
     tempRoot: tmp,
     deleteBook: deleteBook,
     apiFor: server == null ? null : (String _) => server.api(),
     cacheLimit: cacheLimit,
-    pushTimeout: const Duration(seconds: 2),
+    pushTimeout: pushTimeout,
     nowMs: () => _now,
   );
 
@@ -142,6 +151,164 @@ void main() {
     }
     return row;
   }
+
+  /// 经 Kavita 页「阅读」已在本地的一章（只走查找 + 记使用，不下载）。
+  Future<String> openExisting(KavitaBookService svc, int chapterId) =>
+      svc.openOrImport(
+        serverConfigId: 'srv',
+        api: _Server().api(),
+        series: const KavitaSeries(
+          id: 477,
+          name: 'n',
+          libraryId: 5,
+          format: KavitaFormat.epub,
+          pages: 12,
+          pagesRead: 0,
+        ),
+        chapter: KavitaChapter.fromJson(<String, Object?>{
+          'id': chapterId,
+          'volumeId': 4146,
+          'pages': 12,
+        }),
+      );
+
+  // 回归（合并 0bca48cbb6 审查）：删书原语连带删书签 / 单书 CSS / 有声书配对等
+  // 只在本机的用户数据；自动淘汰曾在用户打开第 9 本时把它们静默删掉。
+  group('user data is never auto-evicted', () {
+    Future<void> addBookmark(EpubBookRow row) => db
+        .into(db.bookmarks)
+        .insert(
+          BookmarksCompanion.insert(
+            bookUid: row.uid,
+            sectionIndex: 1,
+            normCharOffset: 0,
+            label: 'mark',
+            createdAt: 1,
+          ),
+        );
+
+    test('copies with bookmarks / custom css / audiobook are kept and do not '
+        'count toward the limit', () async {
+      final EpubBookRow marked = await insertBook(
+        'Marked',
+        _binding(1, lastOpenedAt: 1),
+      );
+      await addBookmark(marked);
+      final EpubBookRow styled = await insertBook(
+        'Styled',
+        _binding(2, lastOpenedAt: 2),
+      );
+      await db
+          .into(db.bookCustomCss)
+          .insert(
+            BookCustomCssCompanion.insert(
+              bookUid: styled.uid,
+              relativePath: 'style.css',
+              updatedAt: 1,
+              content: const Value('p{}'),
+            ),
+          );
+      await insertBook('Narrated', _binding(3, lastOpenedAt: 3));
+      await db
+          .into(db.audiobooks)
+          .insert(
+            AudiobooksCompanion.insert(
+              bookKey: 'Narrated',
+              alignmentFormat: 'srt',
+              alignmentPath: '/x/a.srt',
+            ),
+          );
+      await insertBook('Plain1', _binding(4, lastOpenedAt: 4));
+      await insertBook('Plain2', _binding(5, lastOpenedAt: 5));
+
+      final KavitaCacheCleanup result = await service(
+        cacheLimit: 1,
+      ).trimCache();
+      expect(deleted, <String>['Plain1'], reason: '只淘汰没有用户数据的缓存副本');
+      expect(result.removed, 1);
+      for (final String key in <String>['Marked', 'Styled', 'Narrated']) {
+        expect(await db.getEpubBook(key), isNotNull, reason: key);
+      }
+      expect(
+        await (db.select(
+          db.bookmarks,
+        )..where((t) => t.bookUid.equals(marked.uid))).get(),
+        hasLength(1),
+        reason: '书签不能随自动淘汰消失',
+      );
+      expect(await service().cachedBookKeys(), <String>['Plain2']);
+    });
+
+    test('clearCache leaves copies with user data alone', () async {
+      final EpubBookRow marked = await insertBook('Marked', _binding(1));
+      await addBookmark(marked);
+      await insertBook('Plain', _binding(2));
+      final KavitaCacheCleanup result = await service().clearCache();
+      expect(result.removed, 1);
+      expect(deleted, <String>['Plain']);
+      expect(await db.getEpubBook('Marked'), isNotNull);
+    });
+  });
+
+  // 回归（合并 0bca48cbb6 审查）：淘汰在锁内拍一次快照后逐本删，每本推进度最长等
+  // 8 秒；期间用户打开 / 下载的书仍按旧快照被删。
+  group('eviction vs. concurrent open / pin', () {
+    Future<_Server> blockedVictim() async {
+      final _Server server = _Server()..gate = Completer<void>();
+      // Victim 有未同步进度（本地第 7 章，基线第 2 章）→ 删前要推，推送被卡住。
+      await insertBook(
+        'Victim',
+        _binding(1, lastOpenedAt: 1, lastPushedPage: 2),
+        localSection: 7,
+      );
+      await insertBook('Newer', _binding(2, lastOpenedAt: 500));
+      return server;
+    }
+
+    KavitaBookService slowService(_Server server) => service(
+      server: server,
+      cacheLimit: 1,
+      pushTimeout: const Duration(seconds: 30),
+    );
+
+    test('a copy opened while its progress is pushed is not deleted', () async {
+      final _Server server = await blockedVictim();
+      final KavitaBookService svc = slowService(server);
+      final Future<KavitaCacheCleanup> trimming = svc.trimCache();
+      await server.pushStarted.future;
+      // 淘汰卡在推 Victim 的进度上；用户此时经 Kavita 页打开 Victim。
+      expect(await openExisting(svc, 1), 'Victim');
+      server.gate!.complete();
+      await trimming;
+      expect(await db.getEpubBook('Victim'), isNotNull, reason: '正在打开的书不能被删');
+      expect(deleted, <String>['Newer'], reason: '按最新使用重新排位，删的是另一本');
+    });
+
+    test('a copy pinned while its progress is pushed is not deleted', () async {
+      final _Server server = await blockedVictim();
+      final KavitaBookService svc = slowService(server);
+      final Future<KavitaCacheCleanup> trimming = svc.trimCache();
+      await server.pushStarted.future;
+      expect(await svc.pin('Victim'), isTrue);
+      server.gate!.complete();
+      final KavitaCacheCleanup result = await trimming;
+      expect(await db.getEpubBook('Victim'), isNotNull, reason: '已下载的书不能被删');
+      expect((await svc.bindingFor('Victim'))!.cachedOnly, isFalse);
+      expect(result.removed, 0);
+      expect(deleted, isEmpty);
+    });
+
+    test('opening another copy is not blocked by a slow push', () async {
+      final _Server server = await blockedVictim();
+      final KavitaBookService svc = slowService(server);
+      final Future<KavitaCacheCleanup> trimming = svc.trimCache();
+      await server.pushStarted.future;
+      // 推送仍卡着（gate 未放行）时打开别的书照样立即返回。
+      expect(await openExisting(svc, 2), 'Newer');
+      server.gate!.complete();
+      await trimming;
+    });
+  });
 
   group('trimCache', () {
     test(
