@@ -440,6 +440,26 @@ class VideoDownloadJobFilesNotDeleted implements Exception {
       'deleted: ${paths.map(p.basename).join(', ')}';
 }
 
+/// 剧集任务里的**同包并列作品**行（kg41f2PGdC，见
+/// [VideoOrganizationFilePlan.siblingWork]）：合集包里另一部作品的正片。
+///
+/// 编码是「剧集任务（非 legacy）的 `kind: 'video'` 行、没有集号」——不另立 kind：
+/// `video_download_job_files.kind` 有 CHECK 约束，而受管剧集任务里整理器只给认出
+/// 集号的正片写 `video`（认不出的一律进 Extras 成 `extra`），所以「剧集 + video +
+/// 无集号」此前不可能出现，语义唯一。它仍是 `video`，删除对账「任务的视频是否全
+/// 没了」照旧把它算进去：只删本作不会把同种子里还在库的并列作品连坐删掉。
+///
+/// 下游据此分流：导入阶段按目录单独建合集、不进任务合集；字幕阶段不拿任务身份
+/// 给它配字幕；刮削只认任务合集。
+bool isVideoDownloadSiblingWorkRow(
+  VideoDownloadJobRow job,
+  VideoDownloadJobFileRow row,
+) =>
+    job.mediaKind == VideoMetadataMediaKind.tv.name &&
+    job.organizationPolicy != 'legacy' &&
+    row.kind == 'video' &&
+    row.episode == null;
+
 /// 「下载时跳过特典」自动取消选择的文件行：`selected: false` + `kind: 'extra'`。
 ///
 /// 整理阶段写 `kind: 'extra'` 的行都是选中的（只排布选中文件），手动选卷写的
@@ -464,7 +484,9 @@ bool _hasUserFileSelection(Iterable<VideoDownloadJobFileRow> rows) => rows.any(
 
 /// Deletes the durable half of a job independently of the active pipeline.
 /// Only exact file/link paths recorded by this job are removed; directories
-/// are deliberately never deleted recursively, and a backend-reported relative
+/// are deliberately never deleted recursively (only directories those files
+/// leave empty are pruned, see [pruneEmptyVideoDownloadDirectories]), and a
+/// backend-reported relative
 /// path is only used when it provably resolves inside the observed save path.
 ///
 /// Files are removed before their library rows, and a library row only goes
@@ -557,6 +579,12 @@ Future<void> deletePersistedVideoDownloadJob({
         );
       }
     }
+    if (localSaveRoot != null) {
+      await pruneEmptyVideoDownloadDirectories(
+        paths: managedPaths,
+        root: localSaveRoot,
+      );
+    }
     final Set<String> removedNormalized = removedPaths
         .map(normalizeVideoPath)
         .toSet();
@@ -577,6 +605,41 @@ Future<void> deletePersistedVideoDownloadJob({
   await database.deleteVideoDownloadJob(job.jobId);
   if (undeleted.isNotEmpty) {
     throw VideoDownloadJobFilesNotDeleted(List<String>.unmodifiable(undeleted));
+  }
+}
+
+/// 删完一条任务的文件后，自下而上回收这些文件所在、**已经变空**的目录
+/// （fuQcFmZZxb / BUG-3802：整理器建的 `<作品>/Season 01/`、`<作品>/Extras/…`、
+/// 种子原目录在文件删光后整棵空壳留在来源里）。
+///
+/// 只删空目录：`Directory.delete()` 不带 recursive，目录里还有任何东西（用户自己
+/// 放的文件、别的任务的文件）就抛错、就此停手，这一支不再往上走。只在 [root]
+/// **之内**动，[root] 本身（受管来源根 / 下载保存根）永远保留。best-effort：回收
+/// 失败只少删空目录，不影响任务删除。
+Future<void> pruneEmptyVideoDownloadDirectories({
+  required Iterable<String> paths,
+  required String root,
+}) async {
+  final String normalizedRoot = p.normalize(p.absolute(root));
+  // 已删掉（或本来就不存在）的目录：别的路径再走到这里时直接往上，不必重试。
+  // 非空目录**不**记：它可能只是因为兄弟空目录还没轮到才非空，后面的路径删完
+  // 兄弟后会再试一次。
+  final Set<String> gone = <String>{};
+  for (final String path in paths) {
+    String directory = p.dirname(p.normalize(p.absolute(path)));
+    while (p.isWithin(normalizedRoot, directory)) {
+      final String key = platformPathKey(directory);
+      if (!gone.contains(key)) {
+        try {
+          final Directory entry = Directory(directory);
+          if (await entry.exists()) await entry.delete();
+        } on FileSystemException {
+          break;
+        }
+        gone.add(key);
+      }
+      directory = p.dirname(directory);
+    }
   }
 }
 
@@ -661,10 +724,16 @@ Future<void> reconcileVideoDownloadJobsAfterLocalDelete({
       deletedKeys,
     );
     if (hit.isEmpty) continue;
+    // 「不在跑」的任务才可能整删。needsAttention 与 failed 同属停泊态（没有 worker
+    // 持有它，等人处理）：最常见的是文件已入库、刮削待确认 / 失败停在这里。用户把
+    // 它的视频全删了，本身就是对「这条任务怎么处理」的回答——此前只认终态，这类
+    // 任务只被标 skipped，非视频资源（扫图 / CD / 字体）与目录永远留在盘上
+    // （fuQcFmZZxb / BUG-3802）。active 仍绝不整删：worker 可能正在落文件。
     final bool terminal =
         job.lifecycle == VideoDownloadJobLifecycle.completed ||
         job.lifecycle == VideoDownloadJobLifecycle.cancelled ||
-        job.lifecycle == VideoDownloadJobLifecycle.failed;
+        job.lifecycle == VideoDownloadJobLifecycle.failed ||
+        job.lifecycle == VideoDownloadJobLifecycle.needsAttention;
     final Set<int> hitIds = <int>{for (final f in hit) f.id};
     final List<VideoDownloadJobFileRow> videoRows = <VideoDownloadJobFileRow>[
       for (final VideoDownloadJobFileRow file in files)
@@ -3361,8 +3430,12 @@ class VideoDownloadPipelineService {
         VideoDownloadJobFilesCompanion(
           targetRelativePath: Value<String?>(file.targetRelativePath),
           finalAbsolutePath: Value<String?>(file.finalLocalPath),
+          // 同包并列作品也是 `video`，靠「无集号」区分（见
+          // [isVideoDownloadSiblingWorkRow]）。
           kind: Value<String>(
-            file.targetRelativePath.contains('/Extras/') ? 'extra' : 'video',
+            file.targetRelativePath.contains('/Extras/') && !file.siblingWork
+                ? 'extra'
+                : 'video',
           ),
           season: Value<int?>(file.seasonNumber),
           episode: Value<int?>(file.episodeNumber),
@@ -3488,6 +3561,9 @@ class VideoDownloadPipelineService {
     bool anyInstalled = false;
     for (final VideoDownloadJobFileRow file in files) {
       if (movieMain != null && file.id != movieMain.id) continue;
+      // 同包并列作品（kg41f2PGdC）同理：任务身份不是它的身份，按任务身份搜到的
+      // 只会是本作的字幕。
+      if (isVideoDownloadSiblingWorkRow(job, file)) continue;
       final List<VideoDownloadJobSubtitleRow> existing = await database
           .getVideoDownloadJobSubtitles(job.jobId);
       final VideoDownloadJobSubtitleRow? prior = existing
@@ -4208,7 +4284,12 @@ class VideoDownloadPipelineService {
     final Map<int, String> bookUidByFileId = <int, String>{};
     int? collectionId;
     if (job.mediaKind == VideoMetadataMediaKind.tv.name) {
-      final List<PlaylistEntry> entries = files
+      // 同包并列作品（kg41f2PGdC）不进任务合集，见 [_importSiblingWorks]。
+      final List<VideoDownloadJobFileRow> episodes = <VideoDownloadJobFileRow>[
+        for (final VideoDownloadJobFileRow file in files)
+          if (!isVideoDownloadSiblingWorkRow(job, file)) file,
+      ];
+      final List<PlaylistEntry> entries = episodes
           .map(
             (VideoDownloadJobFileRow file) => PlaylistEntry(
               title: _episodeTitle(job.title, file),
@@ -4232,8 +4313,8 @@ class VideoDownloadPipelineService {
       collectionId = result.collectionId;
       await _videoRepository.reorderDownloadedCollectionEpisodes(collectionId);
       _ensureLeaseHeld();
-      for (int index = 0; index < files.length; index++) {
-        bookUidByFileId[files[index].id] = result.episodeUids[index];
+      for (int index = 0; index < episodes.length; index++) {
+        bookUidByFileId[episodes[index].id] = result.episodeUids[index];
       }
       if (result.createdEpisodeUids.isNotEmpty) {
         await _videoRepository.recordVideoImportActivity(
@@ -4243,10 +4324,14 @@ class VideoDownloadPipelineService {
         await _publishSubscriptionEpisodeUpdates(
           job: job,
           collectionId: collectionId,
-          files: files,
+          files: episodes,
           result: result,
         );
       }
+      await _importSiblingWorks(<VideoDownloadJobFileRow>[
+        for (final VideoDownloadJobFileRow file in files)
+          if (isVideoDownloadSiblingWorkRow(job, file)) file,
+      ], source);
     } else {
       // 多部电影一个种子（BUG-2007）：organize 已把够体量的并列正片保成
       // `kind: 'video'`，这里逐部入库。主片（最大文件，与组织器抬正片同判据）
@@ -4351,6 +4436,48 @@ class VideoDownloadPipelineService {
       return;
     }
     await _advance(job, VideoDownloadJobStage.scrape, nowAt: now);
+  }
+
+  /// 合集包里的并列作品（[isVideoDownloadSiblingWorkRow]，kg41f2PGdC）入库：
+  /// 每个源目录单独建一个合集（合集名 = 目录名，与 BUG-2007 并列正片「不做有损
+  /// 重命名」同口径），**不进**任务作品的合集，也不挂任务身份——它们的规范身份
+  /// 留给媒体库的自动识别 / 人工确认，任务的刮削只认任务合集。行状态由调用方
+  /// 与本作分集一起标 imported。
+  Future<void> _importSiblingWorks(
+    List<VideoDownloadJobFileRow> siblings,
+    MediaSourceRow? source,
+  ) async {
+    if (siblings.isEmpty) return;
+    final Map<String, List<VideoDownloadJobFileRow>> byDirectory =
+        <String, List<VideoDownloadJobFileRow>>{};
+    for (final VideoDownloadJobFileRow row in siblings) {
+      (byDirectory[p.dirname(row.finalAbsolutePath!)] ??=
+              <VideoDownloadJobFileRow>[])
+          .add(row);
+    }
+    for (final MapEntry<String, List<VideoDownloadJobFileRow>> group
+        in byDirectory.entries) {
+      _ensureLeaseHeld();
+      final List<VideoDownloadJobFileRow> rows = group.value.toList()
+        ..sort(
+          (VideoDownloadJobFileRow a, VideoDownloadJobFileRow b) => p
+              .basename(a.finalAbsolutePath!)
+              .compareTo(p.basename(b.finalAbsolutePath!)),
+        );
+      await _videoRepository.importSplitPlaylist(
+        collectionName: p.basename(group.key),
+        entries: <PlaylistEntry>[
+          for (final VideoDownloadJobFileRow row in rows)
+            PlaylistEntry(
+              title: p.basenameWithoutExtension(row.finalAbsolutePath!),
+              path: row.finalAbsolutePath!,
+              positionMs: 0,
+            ),
+        ],
+        sourceId: source?.id,
+        reuseExistingPaths: true,
+      );
+    }
   }
 
   /// 从持久化发现身份恢复 MAL/TMDB lookup（手动任务另认显式 AniDB），保留旧行
