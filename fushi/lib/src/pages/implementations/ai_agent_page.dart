@@ -36,6 +36,7 @@ import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dar
 import 'package:fushi/src/pages/implementations/ai_agent_screen_text.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show fushiFloatingPillDecoration;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -958,14 +959,12 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                 spacing: 8,
                 runSpacing: 8,
                 children: <Widget>[
+                  // 选项是整行可换行的条目而不是 chip：chip 只排一行，字幕文件名、
+                  // 作品名这类长标签会被裁掉右半截、看不出区别。
                   for (final AgentChoiceOption option in entry.options)
-                    FushiActionChipControl(
+                    _AgentChoiceOptionTile(
                       key: ValueKey<String>('ai-agent-choice-${option.id}'),
-                      label: Text(
-                        option.detail == null
-                            ? option.label
-                            : '${option.label} · ${option.detail}',
-                      ),
+                      option: option,
                       onPressed: () => _controller.answerChoice(option.id),
                     ),
                   FushiActionChipControl(
@@ -1138,6 +1137,80 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
           color: scheme.surfaceContainer,
         ),
         child: Padding(padding: const EdgeInsets.all(6), child: body),
+      ),
+    );
+  }
+}
+
+/// 候选卡里的一个选项：整行宽、标签可换行（最多 3 行）、说明另起一行。
+class _AgentChoiceOptionTile extends StatelessWidget {
+  const _AgentChoiceOptionTile({
+    required this.option,
+    required this.onPressed,
+    super.key,
+  });
+
+  final AgentChoiceOption option;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme text = Theme.of(context).textTheme;
+    final bool eink = isEinkTheme(context);
+    final bool glass = isGlassDesign(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final Color fill = eink
+        ? scheme.surface
+        : glass
+        ? apple.secondaryFill
+        : scheme.surfaceContainerHigh;
+    final Color foreground = glass && !eink ? apple.label : scheme.onSurface;
+    final String? detail = option.detail;
+    final BorderRadius radius = BorderRadius.circular(16);
+    return FushiPressScale(
+      child: Material(
+        color: fill,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: eink ? BorderSide(color: scheme.outline) : BorderSide.none,
+        ),
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onPressed,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: 48,
+              minWidth: double.infinity,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    option.label,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.bodyMedium?.copyWith(color: foreground),
+                  ),
+                  if (detail != null && detail.isNotEmpty)
+                    Text(
+                      detail,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.labelSmall?.copyWith(
+                        color: glass && !eink
+                            ? apple.secondaryLabel
+                            : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
