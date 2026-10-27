@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_search_navigation.dart';
 
 void main() {
   test('VN shell builds and contains the object + restore + deps', () {
@@ -147,28 +148,51 @@ void main() {
     ).readAsStringSync();
     final String callback = _extractRestoreHandlerCallback(webview);
 
-    expect(
-      RegExp(
-        r'args\.length\s*<\s*2\s*\|\|\s*args\[1\]\s+is!\s+num',
-      ).hasMatch(callback),
-      isTrue,
-      reason: 'Dart handler must reject a missing/non-numeric generation',
+    // The generation (args[1]) is parsed by the single shared validator that
+    // spreadReady also uses (BUG-3796); a null result must return before the
+    // restore gate is entered.
+    final int parse = callback.indexOf(
+      'final int? generation = readerReportedNavigationGeneration(args, 1);',
     );
     expect(
-      callback.contains('rawGeneration.isFinite') &&
-          callback.contains('rawGeneration != rawGeneration.toInt()'),
-      isTrue,
-      reason: 'Dart handler must reject non-finite/fractional generations',
+      parse,
+      greaterThanOrEqualTo(0),
+      reason: 'Dart handler must validate args[1] with the shared parser',
     );
+    final int rejectNull = callback.indexOf('if (generation == null) {');
+    final int accept = callback.indexOf('_acceptRestoreComplete(');
+    expect(rejectNull, greaterThan(parse));
+    expect(
+      _extractBraceBlockAt(callback, rejectNull).contains('return;'),
+      isTrue,
+      reason: 'an invalid generation must not reach the restore gate',
+    );
+    expect(accept, greaterThan(rejectNull));
     expect(
       RegExp(
         r'_acceptRestoreComplete\(\s*'
-        r'reportedGeneration:\s*rawGeneration\.toInt\(\),\s*'
+        r'reportedGeneration:\s*generation,\s*'
         r'perfSnapshot:\s*args\.first,\s*\)',
       ).hasMatch(callback),
       isTrue,
       reason: 'only the validated generation may enter the restore gate',
     );
+    // The validator itself rejects missing / non-numeric / non-finite /
+    // fractional generations (what the old inline checks did).
+    expect(readerReportedNavigationGeneration(<dynamic>['perf'], 1), isNull);
+    expect(
+      readerReportedNavigationGeneration(<dynamic>['perf', '7'], 1),
+      isNull,
+    );
+    expect(
+      readerReportedNavigationGeneration(<dynamic>['perf', double.infinity], 1),
+      isNull,
+    );
+    expect(
+      readerReportedNavigationGeneration(<dynamic>['perf', 7.5], 1),
+      isNull,
+    );
+    expect(readerReportedNavigationGeneration(<dynamic>['perf', 7.0], 1), 7);
 
     final String navigation = File(
       'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
