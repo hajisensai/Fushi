@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 168759 (9927 per locale)
+/// Strings: 168793 (9929 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -7802,7 +7802,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get nav_home => 'Home';
   String get nav_lookup => 'Lookup';
   String get nav_music => 'Music';
+  String get nav_peek_categories => 'Categories';
   String get nav_peek_decks => 'Decks';
+  String get nav_peek_dictionaries => 'Dictionaries';
   String get nav_peek_open => 'Open';
   String get nav_peek_recent => 'Recent';
   String get nav_section_library => 'Library';
@@ -27201,7 +27203,11 @@ class _StringsAr extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => 'Categories';
+  @override
   String get nav_peek_decks => 'Decks';
+  @override
+  String get nav_peek_dictionaries => 'Dictionaries';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -51501,7 +51507,11 @@ class _StringsDe extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => 'Categories';
+  @override
   String get nav_peek_decks => 'Decks';
+  @override
+  String get nav_peek_dictionaries => 'Dictionaries';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -75977,7 +75987,11 @@ class _StringsEs extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => 'Categories';
+  @override
   String get nav_peek_decks => 'Decks';
+  @override
+  String get nav_peek_dictionaries => 'Dictionaries';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -100531,7 +100545,11 @@ class _StringsFr extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => 'Categories';
+  @override
   String get nav_peek_decks => 'Decks';
+  @override
+  String get nav_peek_dictionaries => 'Dictionaries';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -124921,7 +124939,11 @@ class _StringsId extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => 'Categories';
+  @override
   String get nav_peek_decks => 'Decks';
+  @override
+  String get nav_peek_dictionaries => 'Dictionaries';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -149263,7 +149285,11 @@ class _StringsIt extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => 'Categories';
+  @override
   String get nav_peek_decks => 'Decks';
+  @override
+  String get nav_peek_dictionaries => 'Dictionaries';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -173084,7 +173110,11 @@ class _StringsJa extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => 'カテゴリ';
+  @override
   String get nav_peek_decks => 'デッキ';
+  @override
+  String get nav_peek_dictionaries => '辞書';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -196473,7 +196503,11 @@ class _StringsKo extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => '카테고리';
+  @override
   String get nav_peek_decks => '덱';
+  @override
+  String get nav_peek_dictionaries => '사전';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -220435,7 +220469,11 @@ class _StringsNl extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => 'Categories';
+  @override
   String get nav_peek_decks => 'Decks';
+  @override
+  String get nav_peek_dictionaries => 'Dictionaries';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -244840,7 +244878,11 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => 'Categories';
+  @override
   String get nav_peek_decks => 'Decks';
+  @override
+  String get nav_peek_dictionaries => 'Dictionaries';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -269219,7 +269261,11 @@ class _StringsRu extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => 'Categories';
+  @override
   String get nav_peek_decks => 'Decks';
+  @override
+  String get nav_peek_dictionaries => 'Dictionaries';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -293408,7 +293454,11 @@ class _StringsTh extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => 'Categories';
+  @override
   String get nav_peek_decks => 'Decks';
+  @override
+  String get nav_peek_dictionaries => 'Dictionaries';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -317585,7 +317635,11 @@ class _StringsTr extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => 'Categories';
+  @override
   String get nav_peek_decks => 'Decks';
+  @override
+  String get nav_peek_dictionaries => 'Dictionaries';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -341796,7 +341850,11 @@ class _StringsVi extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => 'Categories';
+  @override
   String get nav_peek_decks => 'Decks';
+  @override
+  String get nav_peek_dictionaries => 'Dictionaries';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -364883,7 +364941,11 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get nav_music => '音乐';
   @override
+  String get nav_peek_categories => '分类';
+  @override
   String get nav_peek_decks => '牌组';
+  @override
+  String get nav_peek_dictionaries => '词典';
   @override
   String get nav_peek_open => '打开';
   @override
@@ -387267,7 +387329,11 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get nav_music => 'Music';
   @override
+  String get nav_peek_categories => '分類';
+  @override
   String get nav_peek_decks => '牌組';
+  @override
+  String get nav_peek_dictionaries => '詞典';
   @override
   String get nav_peek_open => 'Open';
   @override
@@ -408884,8 +408950,12 @@ extension on _StringsEn {
         return 'Lookup';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'Categories';
       case 'nav_peek_decks':
         return 'Decks';
+      case 'nav_peek_dictionaries':
+        return 'Dictionaries';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -429497,8 +429567,12 @@ extension on _StringsAr {
         return 'بحث';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'Categories';
       case 'nav_peek_decks':
         return 'Decks';
+      case 'nav_peek_dictionaries':
+        return 'Dictionaries';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -450161,8 +450235,12 @@ extension on _StringsDe {
         return 'Nachschlagen';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'Categories';
       case 'nav_peek_decks':
         return 'Decks';
+      case 'nav_peek_dictionaries':
+        return 'Dictionaries';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -470835,8 +470913,12 @@ extension on _StringsEs {
         return 'Consultar';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'Categories';
       case 'nav_peek_decks':
         return 'Decks';
+      case 'nav_peek_dictionaries':
+        return 'Dictionaries';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -491519,8 +491601,12 @@ extension on _StringsFr {
         return 'Recherche';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'Categories';
       case 'nav_peek_decks':
         return 'Decks';
+      case 'nav_peek_dictionaries':
+        return 'Dictionaries';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -512172,8 +512258,12 @@ extension on _StringsId {
         return 'Cari Kata';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'Categories';
       case 'nav_peek_decks':
         return 'Decks';
+      case 'nav_peek_dictionaries':
+        return 'Dictionaries';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -532822,8 +532912,12 @@ extension on _StringsIt {
         return 'Ricerca';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'Categories';
       case 'nav_peek_decks':
         return 'Decks';
+      case 'nav_peek_dictionaries':
+        return 'Dictionaries';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -553420,8 +553514,12 @@ extension on _StringsJa {
         return '辞書';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'カテゴリ';
       case 'nav_peek_decks':
         return 'デッキ';
+      case 'nav_peek_dictionaries':
+        return '辞書';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -573955,8 +574053,12 @@ extension on _StringsKo {
         return '단어 찾기';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return '카테고리';
       case 'nav_peek_decks':
         return '덱';
+      case 'nav_peek_dictionaries':
+        return '사전';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -594574,8 +594676,12 @@ extension on _StringsNl {
         return 'Opzoeken';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'Categories';
       case 'nav_peek_decks':
         return 'Decks';
+      case 'nav_peek_dictionaries':
+        return 'Dictionaries';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -615232,8 +615338,12 @@ extension on _StringsPtBr {
         return 'Consultar';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'Categories';
       case 'nav_peek_decks':
         return 'Decks';
+      case 'nav_peek_dictionaries':
+        return 'Dictionaries';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -635894,8 +636004,12 @@ extension on _StringsRu {
         return 'Поиск';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'Categories';
       case 'nav_peek_decks':
         return 'Decks';
+      case 'nav_peek_dictionaries':
+        return 'Dictionaries';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -656521,8 +656635,12 @@ extension on _StringsTh {
         return 'ค้นคำ';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'Categories';
       case 'nav_peek_decks':
         return 'Decks';
+      case 'nav_peek_dictionaries':
+        return 'Dictionaries';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -677161,8 +677279,12 @@ extension on _StringsTr {
         return 'Ara';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'Categories';
       case 'nav_peek_decks':
         return 'Decks';
+      case 'nav_peek_dictionaries':
+        return 'Dictionaries';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -697793,8 +697915,12 @@ extension on _StringsVi {
         return 'Tra từ';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return 'Categories';
       case 'nav_peek_decks':
         return 'Decks';
+      case 'nav_peek_dictionaries':
+        return 'Dictionaries';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
@@ -718283,8 +718409,12 @@ extension on _StringsZhCn {
         return '查词';
       case 'nav_music':
         return '音乐';
+      case 'nav_peek_categories':
+        return '分类';
       case 'nav_peek_decks':
         return '牌组';
+      case 'nav_peek_dictionaries':
+        return '词典';
       case 'nav_peek_open':
         return '打开';
       case 'nav_peek_recent':
@@ -738706,8 +738836,12 @@ extension on _StringsZhHk {
         return '查詞';
       case 'nav_music':
         return 'Music';
+      case 'nav_peek_categories':
+        return '分類';
       case 'nav_peek_decks':
         return '牌組';
+      case 'nav_peek_dictionaries':
+        return '詞典';
       case 'nav_peek_open':
         return 'Open';
       case 'nav_peek_recent':
