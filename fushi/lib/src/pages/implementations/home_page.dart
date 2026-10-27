@@ -1799,7 +1799,11 @@ class _HomePageState extends BasePageState<HomePage>
       contextOf: () => context,
       videoRepo: () => _videoRepository,
       goToTab: _selectTabFromNav,
-      openDownloads: () => _openBrowseTab(BrowseTab.downloads),
+      // 与其它下载端口同走 _popToBrowseTab：先判可达、再回到 home 这一层路由
+      // （peek 也可能在 pushed 页上被唤起），只切 tab 会停在原页面上。
+      openDownloads: () {
+        _popToBrowseTab(BrowseTab.downloads);
+      },
     ),
   );
 
