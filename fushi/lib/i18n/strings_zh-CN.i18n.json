@@ -10027,6 +10027,7 @@
   "web_browser_error_timeout_body": "网站响应时间过长，请稍后重试。",
   "web_browser_error_timeout_title": "连接超时",
   "web_browser_error_title": "无法打开此网页",
+  "web_browser_exit": "退出浏览器",
   "web_browser_find_close": "关闭查找",
   "web_browser_find_hint": "在页面中查找",
   "web_browser_find_next": "下一个",

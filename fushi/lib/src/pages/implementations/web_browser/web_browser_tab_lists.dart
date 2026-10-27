@@ -20,6 +20,7 @@ import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_favicon.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 import 'package:fushi/utils.dart' show HorizontalDragScrollable;
+import 'package:window_manager/window_manager.dart' show DragToMoveArea;
 
 /// 侧边栏 / 顶部标签栏 / 标签页网格共用的标签操作。
 @immutable
@@ -137,15 +138,23 @@ Widget _tabGestures({
 // ── 顶部标签栏 ─────────────────────────────────────────────────────────
 
 /// 地址栏上方一排 36dp 横向标签：宽度自适应（120..220）、放不下时横向滚动、末尾 +。
+///
+/// 桌面自绘标题栏下（[inCaption]）它就是标题栏那一行（Chrome / Edge 式）：
+/// 左右让开窗口按钮 / 红绿灯（[captionInsets]），标签之外的空白处拖动窗口
+/// （双击最大化，与原标题行一致）。
 class WebBrowserTabStrip extends StatelessWidget {
   const WebBrowserTabStrip({
     required this.tabs,
     required this.callbacks,
+    this.inCaption = false,
+    this.captionInsets = EdgeInsets.zero,
     super.key,
   });
 
   final List<WebBrowserTab> tabs;
   final WebBrowserTabCallbacks callbacks;
+  final bool inCaption;
+  final EdgeInsets captionInsets;
 
   static const double minTabWidth = 120;
   static const double maxTabWidth = 220;
@@ -158,14 +167,16 @@ class WebBrowserTabStrip extends StatelessWidget {
       color: isGlassDesign(context)
           ? appleColorsOf(context).groupedBackground
           : Theme.of(context).colorScheme.surface,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8).add(captionInsets),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints box) {
-          final double avail = box.maxWidth - 40;
+          // 标题栏模式在 + 后至少留一段拖动空白（标签再多也拖得动窗口）。
+          final double dragReserve = inCaption ? _kCaptionDragReserve : 0;
+          final double avail = box.maxWidth - 40 - dragReserve;
           final double width = tabs.isEmpty
               ? maxTabWidth
               : (avail / tabs.length).clamp(minTabWidth, maxTabWidth);
-          return Row(
+          final Widget row = Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
               Flexible(
@@ -198,6 +209,22 @@ class WebBrowserTabStrip extends StatelessWidget {
                 padding: const EdgeInsets.all(6),
                 onTap: callbacks.onNewTab,
               ),
+              SizedBox(width: dragReserve),
+            ],
+          );
+          if (!inCaption) return row;
+          // 拖动区垫在整行底下：Row 的空白（含 + 后的保留段）不吃命中，落到这里；
+          // 标签与按钮照常在上层接住点击。
+          return Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              const Positioned.fill(
+                child: DragToMoveArea(
+                  key: ValueKey<String>('web-browser-strip-drag'),
+                  child: SizedBox.expand(),
+                ),
+              ),
+              row,
             ],
           );
         },
@@ -205,6 +232,9 @@ class WebBrowserTabStrip extends StatelessWidget {
     );
   }
 }
+
+/// 标题栏模式下标签栏末尾至少保留的拖窗空白。
+const double _kCaptionDragReserve = 48;
 
 class _StripTab extends StatelessWidget {
   const _StripTab({required this.tab, required this.callbacks});

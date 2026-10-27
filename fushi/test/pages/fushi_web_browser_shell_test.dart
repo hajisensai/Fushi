@@ -22,6 +22,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi/src/web_browser/data/memory_web_browser_store.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
@@ -256,6 +257,120 @@ void main() {
     expect(byKey('web-browser-strip-tab-${tab.id}'), findsOneWidget);
     expect(byKey('web-browser-bookmarks'), findsOneWidget, reason: '书签移到顶栏按钮');
     expect(tester.getRect(byKey('stub-webview')).left, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('桌面自绘标题栏：顶部标签栏并进标题行、与窗口按钮同一行；退出按钮一键回到入口', (
+    WidgetTester tester,
+  ) async {
+    final List<String> windowCalls = <String>[];
+    const MethodChannel windowManager = MethodChannel('window_manager');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      windowManager,
+      (MethodCall call) async {
+        windowCalls.add(call.method);
+        return call.method.startsWith('is') ? false : null;
+      },
+    );
+    final TargetPlatform Function() savedHost =
+        FushiDesktopTitleBar.debugHostPlatform;
+    FushiDesktopTitleBar.debugIsEnabled = true;
+    FushiDesktopTitleBar.debugHostPlatform = () => TargetPlatform.windows;
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        windowManager,
+        null,
+      );
+      FushiDesktopTitleBar.debugIsEnabled = false;
+      FushiDesktopTitleBar.debugHostPlatform = savedHost;
+    });
+    await setWebBrowserTabStyle(
+      appModel.prefsRepo,
+      WebBrowserTabStyle.topStrip,
+    );
+
+    const Size size = Size(1280, 720);
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: overrides(),
+        child: TranslationProvider(
+          child: MaterialApp(
+            builder: (BuildContext context, Widget? child) =>
+                FushiDesktopTitleBar(
+                  title: const SizedBox.shrink(),
+                  child: child!,
+                ),
+            home: const FushiWebBrowserHomePage(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Example'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FushiWebBrowserPage), findsOneWidget);
+
+    // 标签栏占标题栏那一行：标签与窗口按钮竖向重叠，地址栏紧贴其下，中间不再
+    // 空着一整条标题行。
+    final WebBrowserTab tab = page(tester).tabsController.activeTab!;
+    final Rect stripTab = tester.getRect(
+      byKey('web-browser-strip-tab-${tab.id}'),
+    );
+    final Rect close = tester.getRect(
+      find.byKey(FushiDesktopTitleBar.closeButtonKey),
+    );
+    expect(stripTab.top, lessThan(FushiDesktopTitleBar.height));
+    expect(stripTab.bottom, greaterThan(close.top));
+    expect(
+      tester.getRect(byKey('web-browser-toolbar')).top,
+      lessThanOrEqualTo(kWebBrowserTabStripHeight),
+      reason: '地址栏直接接在标题行（标签栏）下面',
+    );
+    // 标签栏让开右侧窗口按钮组。
+    final Rect add = tester.getRect(byKey('web-browser-strip-new-tab'));
+    expect(add.right, lessThan(close.left - 100));
+    expect(FushiDesktopTitleBar.captionPassthrough.value, isTrue);
+
+    // 标题行里的标签栏真能点（标题栏不再把这段整条吞成拖动区）……
+    await tester.tap(byKey('web-browser-strip-new-tab'));
+    await tester.pumpAndSettle();
+    expect(page(tester).tabsController.length, 2);
+    // ……空白处仍能拖窗，窗口按钮照常可用。
+    await tester.drag(byKey('web-browser-strip-drag'), const Offset(40, 0));
+    await tester.pumpAndSettle();
+    expect(windowCalls, contains('startDragging'));
+    await tester.tap(find.byKey(FushiDesktopTitleBar.closeButtonKey));
+    await tester.pumpAndSettle();
+    expect(windowCalls, contains('close'));
+
+    // 退出按钮不走网页后退阶梯，一键离开浏览页；标题行交还给整条拖动区。
+    await tester.tap(byKey('web-browser-exit'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FushiWebBrowserPage), findsNothing);
+    expect(find.text('Example'), findsOneWidget);
+    expect(FushiDesktopTitleBar.captionPassthrough.value, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('⋯ 菜单里有「退出浏览器」，点了直接回到入口页', (WidgetTester tester) async {
+    await pumpApp(
+      tester,
+      const Size(360, 780),
+      const FushiWebBrowserHomePage(),
+    );
+    await tester.tap(find.text('Example'));
+    await tester.pumpAndSettle();
+    await tester.tap(byKey('web-browser-more'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text(t.web_browser_exit).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.web_browser_exit).last);
+    await tester.pumpAndSettle();
+    expect(find.byType(FushiWebBrowserPage), findsNothing);
+    expect(find.text('Example'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
