@@ -1323,7 +1323,7 @@ class AiAgentMarkdown extends StatelessWidget {
         ),
         codeblockDecoration: BoxDecoration(
           color: scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: FushiBorderRadius.card,
         ),
         blockquote: body,
         blockquoteDecoration: BoxDecoration(

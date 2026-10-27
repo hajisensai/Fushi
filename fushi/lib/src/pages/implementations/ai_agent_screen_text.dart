@@ -285,7 +285,7 @@ class AiAgentScreenTextChip extends StatelessWidget {
             FushiInputChip(
               key: kAiAgentScreenImageChipKey,
               avatar: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: FushiBorderRadius.chip,
                 child: Image.memory(
                   image,
                   width: 24,
