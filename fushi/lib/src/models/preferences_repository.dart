@@ -5617,6 +5617,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 本机当互联 host 时，是否允许已配对设备远程使用 AI 助手（`/api/assistant` 的
+  /// `agent` feature）。默认关，与服务端 `ai.agent_for_peers` 同一判据：远端会话会用
+  /// 本机的 AI 指派、调本机操作目录，比配对本身给的权限多，只能由用户在设置页打开。
+  bool get aiAgentForPeers =>
+      getPref('ai_agent_for_peers', defaultValue: false) as bool;
+
+  Future<void> setAiAgentForPeers(bool value) =>
+      setPref('ai_agent_for_peers', value);
+
   /// AI 整理库「导入后自动整理」（spec docs/specs/2026-10-20-ai-library-organize-design.md
   /// §10.2）。默认关：按量计费，绝不静默开启。
   bool get libraryOrganizeAuto =>

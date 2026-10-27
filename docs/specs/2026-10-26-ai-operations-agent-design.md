@@ -314,7 +314,10 @@ AI 助手是 IO 和编排代码，按「Rust 胖核心」规则留在 Dart（不
 - **不可逆操作不强制带表态参数**：路由本身没有 `confirm` 的不可逆操作照样只出确认卡片；确认由 AI 运行时按描述强制，模型改不了。
 - **SRS 冲突「保留」**：撤销需要 Rust 胖核心的「重开冲突」命令，暂为不可逆（选「删除」可撤销）。
 - **恢复备份**：路由不在恢复前自动快照，仍为不可逆。
-- **服务端远端执行默认关**：已配对设备经 AI 能调到一部分 admin 操作，比配对本来给的权限多，所以服务端要在 `ai.agent_for_peers` 显式打开；app 当 host 时照常可用（配对设备是同一用户的设备）。
+- **远端执行默认关（服务端与 app 同一判据）**：已配对设备经 AI 能调到 host 的操作，比配对本来给的权限多，所以服务端要在 `ai.agent_for_peers` 显式打开；app 当 host 时同样默认关，用户在「设置 › 模型 › LLM › AI 助手」打开「允许已配对设备使用 AI 助手」（设备本地偏好 `ai_agent_for_peers`）。这是授权开关，`SettingsSwitchItem.userOnly`：AI 自己的 `settings.set` 写不进去，设置页与 `fushi_cli` 照常（2026-10-27 审查修正：原先 app 侧默认放行）。
+- **向模型给的地址发请求 = 不可撤销的出站**（2026-10-27 审查）：路径 / query 能夹带模型看到的任何数据，撤销收不回，按 §5.2「把数据发给第三方」处理。`web.open` 定为 `irreversible`；`url.import`（直链会让 ffmpeg 请求该地址抽封面帧）与 `settings.ai.provider.add`（新提供商的地址随后会收到探测与对话）加 `confirm: true`、仍可撤销。`url.probe` 保持 read：只对 YouTube 地址联网且只发往 YouTube（youtube_explode 只取 videoId），直链不联网。棘轮守卫按参数名扫地址类参数，新操作带地址参数却不先确认会变红（豁免表写明理由）。
+- **带凭据服务的地址模型不可写**（2026-10-27 审查）：qBittorrent / AnkiConnect / OpenSubtitles / 网络代理 / OPDS / AList / Audiobookshelf / Jellyfin / Plex / Torznab 等，改地址会把已存的密码 / token 发去新地址。判据按结构自动枚举（`fushi/lib/src/ops/ctl_settings_credential_endpoints.dart`：同一配置里有凭据项 + 名字像地址或 URL 键盘的项；记录列表的地址字段；带凭据配置里动作的地址参数），路由按 `CtlCall.fromModel`（只由 `OpInvoker` 以 `OpCaller.model` 调用时置位，模型填不出来）拒；设置页、`fushi_cli`、撤销照常。守卫 `fushi/test/ops/ctl_settings_credential_endpoint_guard_test.dart` 对枚举出的每一项实调路由。机密值本身同样按 `fromModel` 兜底拒写。
+- **服务端磁力链接的地址参数**（2026-10-27 审查）：`server.download.add` 拒绝带 `tr=` / `ws=` / `xs=` / `as=` / `x.pe=`（含 `tr.1` 编号写法）的磁力，带地址的走 `server.download.add-with-trackers`（`confirm: true`、仍可撤销，确认卡片显示完整链接）。不做「已知 tracker」白名单：服务端这层没有可信列表，按主机放行也挡不住 `udp://known:1337/announce?<数据>`；纯 DHT 磁力照常直接执行。
 - **歌单**：只读（仓储没有写方法，UI 也没有）。
 
 ### 12.3 顺带修掉的问题

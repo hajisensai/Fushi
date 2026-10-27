@@ -291,6 +291,19 @@ SettingsDestination buildAiDestination() {
             onTap: (SettingsContext c) =>
                 openAiAgentHistoryPage(c.context, c.appModel),
           ),
+          // 本机当互联 host 时远端 AI 助手的门（与服务端 ai.agent_for_peers 同一判据）：
+          // 默认关；授权开关只能在这里亲手拨，控制通道 / AI 自己写不进去（userOnly）。
+          SettingsSwitchItem(
+            id: 'ai.agent_for_peers',
+            title: t.ai_agent_peer_access,
+            subtitle: t.ai_agent_peer_access_hint,
+            icon: FushiIcons.devices,
+            userOnly: true,
+            value: (SettingsContext c) => c.appModel.prefsRepo.aiAgentForPeers,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setAiAgentForPeers(value),
+            defaultValue: false,
+          ),
         ],
       ),
       SettingsSection(

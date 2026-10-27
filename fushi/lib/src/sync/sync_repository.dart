@@ -1906,6 +1906,9 @@ class SyncRepository {
     'ai_feature_providers',
     // 多 key 轮换的冷却记录：按本机 key 的指纹索引，换台设备全是悬空记录。
     'ai_key_health',
+    // 「允许已配对设备远程使用 AI 助手」：授权的是这台机器的 AI 指派与操作目录，
+    // 只对点它的那台设备成立；漂过去会让另一台设备静默对配对设备开放。
+    'ai_agent_for_peers',
     // 音乐输出设备与独占模式描述的是这台机器的声卡 / DAC：别的设备上同名设备不存在，
     // 独占在另一台机器上会让别的程序静默无声。
     'music_audio_device',

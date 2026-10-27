@@ -1596,6 +1596,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 新入库的）。
   'ai/Organize with AI after import':
       'test/media/collections/library_organize_runner_test.dart',
+  // 允许已配对设备使用 AI 助手：生效点是互联 host 的 /api/assistant agent 门（harness
+  // 里没有互联服务器）。专项测试咬住「关着 → disabled、不建模型」与控制通道写不进去。
+  'ai/Let paired devices use the AI assistant':
+      'test/sync/app_agent_assistant_host_test.dart + '
+      'test/settings/ai_agent_peer_access_setting_test.dart',
   // 联网资料内置站开关：生效点是 AI 下视频 / 视频识别构造 WebKnowledgeClient 时读的
   // 站点集合，harness 里没有那条链路。窄测试咬住写穿 + 空集不回落默认，客户端
   // 测试咬住「只请求传入的站点」。

@@ -133,6 +133,30 @@ void main() {
     expect(roundTrip.toJson(), del.toJson());
   });
 
+  test('模型调用在 CtlCall 上带 fromModel（参数填不出来），用户调用不带', () async {
+    final OpInvoker invoker = OpInvoker(
+      OpCatalog.build(routes(), descriptions),
+    );
+    await invoker.invoke('things.set', <String, Object?>{
+      'key': 'a',
+      'value': 1,
+    }, caller: OpCaller.model);
+    await invoker.invoke('things.set', <String, Object?>{
+      'key': 'a',
+      'value': 2,
+    });
+    expect(calls.map((CtlCall c) => c.fromModel), <bool>[true, false]);
+    // 模型想自己塞一个同名参数：未知参数 400，进不了 body。
+    expect(
+      () => invoker.invoke('things.set', <String, Object?>{
+        'key': 'a',
+        'value': 3,
+        'fromModel': false,
+      }, caller: OpCaller.model),
+      throwsA(isA<CtlFailure>()),
+    );
+  });
+
   test('invoker 代入路径参数、类型转换并抓撤销快照', () async {
     final OpInvoker invoker = OpInvoker(
       OpCatalog.build(routes(), descriptions),

@@ -88,10 +88,15 @@ void main() {
     return (await catalog[invocation.op.id]!.undo!.revert(payload)).status;
   }
 
-  test('url 域两条路由都在目录里：probe 只读、import 可撤销', () {
+  test('url 域两条路由都在目录里：probe 只读、import 可撤销且先确认', () {
+    // probe 只对 YouTube 联网、只发往 YouTube（直链不联网，见 ctl_url_import_routes_test）。
     expect(catalog['url.probe']!.risk, OpRisk.read);
+    expect(catalog['url.probe']!.spec.needsConfirmation, isFalse);
     expect(catalog['url.import']!.risk, OpRisk.write);
     expect(catalog['url.import']!.undo, isNotNull);
+    // 导入直链会让 ffmpeg 请求模型给的地址抽封面帧，那一下出站撤销不了。
+    expect(catalog['url.import']!.confirm, isTrue);
+    expect(catalog['url.import']!.spec.needsConfirmation, isTrue);
   });
 
   test('导入 → 撤销删掉刚建的条目；之前已有的条目不受影响', () async {
