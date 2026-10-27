@@ -1188,7 +1188,14 @@ abstract class VideoFushiTestHooks {
   /// 在字幕句 [sentence] 的第 [graphemeIndex] 个字上发起查词——与字幕 overlay 点字
   /// 走同一条 `_lookupAt`（暂停、清草稿、锚 cue、推弹窗），供「调整上下文 → 确认
   /// 制卡」这类要真弹窗的取证测试用（禁坐标点击）。
-  Future<void> debugLookupAt(String sentence, int graphemeIndex);
+  ///
+  /// [anchor] 是被点字的全局矩形，弹窗按它定位；不传时用固定占位矩形（只验查词链路、
+  /// 不关心弹窗落点的测试）。官网录屏传真实字形框，弹窗才落在字旁边。
+  Future<void> debugLookupAt(
+    String sentence,
+    int graphemeIndex, {
+    Rect? anchor,
+  });
 
   /// 播放器当前音量真值（0..100），滚轮门控取证用（不经 HUD 推断）。
   double? get debugVolume;
@@ -1927,8 +1934,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _controller?.seekMs(positionMs);
 
   @override
-  Future<void> debugLookupAt(String sentence, int graphemeIndex) =>
-      _lookupAt(sentence, graphemeIndex, const Rect.fromLTWH(240, 200, 24, 24));
+  Future<void> debugLookupAt(
+    String sentence,
+    int graphemeIndex, {
+    Rect? anchor,
+  }) => _lookupAt(
+    sentence,
+    graphemeIndex,
+    anchor ?? const Rect.fromLTWH(240, 200, 24, 24),
+  );
 
   @override
   double? get debugVolume => _controller?.volume;
