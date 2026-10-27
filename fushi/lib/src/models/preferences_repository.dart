@@ -23,6 +23,7 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
+import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
@@ -431,6 +432,23 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAudiobookBackgroundPlay({required bool value}) async {
     await setPref('audiobook_background_play', value);
+    notifyListeners();
+  }
+
+  /// 有声书「返回原位置」跳转距离（秒）：显式音频 seek 挪动至少这么远才进跳转回退
+  /// 历史（反馈 0AwuVqrNFn）。没写过取出厂默认 2 分钟；存值归到 15 秒–30 分钟间最近
+  /// 的档位。普通偏好：随 Profile 快照与备份走（不是设备本地）。
+  int get audiobookJumpThresholdSec {
+    final Object? stored = getPref('audiobook_jump_threshold_sec');
+    if (stored is num) return normalizeAudiobookJumpThresholdSec(stored);
+    return kAudiobookJumpThresholdSecDefault;
+  }
+
+  Future<void> setAudiobookJumpThresholdSec(int value) async {
+    await setPref(
+      'audiobook_jump_threshold_sec',
+      normalizeAudiobookJumpThresholdSec(value),
+    );
     notifyListeners();
   }
 
@@ -1500,6 +1518,27 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 查词结果滚到顶后继续下拉 = 清空查询、回到搜索历史。默认 ON（原行为）；用户
+  /// 往上翻结果时常顶到头被甩回历史（反馈 3D-JH966Kr），关掉后下拉什么都不做。
+  bool get lookupPagePullToClear =>
+      getPref('lookup_page_pull_to_clear', defaultValue: true) as bool;
+
+  Future<void> setLookupPagePullToClear(bool value) async {
+    await setPref('lookup_page_pull_to_clear', value);
+    notifyListeners();
+  }
+
+  /// 进入查词页（导航点「查词」）与查询被清空时，是否自动聚焦搜索框（移动端随之
+  /// 弹出软键盘，BUG-2687 的有意行为）。默认 ON；键盘在小屏上占掉大半屏（反馈
+  /// cczhbM7ZOI），关掉后只有用户自己点搜索框才弹。显式「聚焦搜索框」热键不受影响。
+  bool get lookupPageAutoShowKeyboard =>
+      getPref('lookup_page_auto_show_keyboard', defaultValue: true) as bool;
+
+  Future<void> setLookupPageAutoShowKeyboard(bool value) async {
+    await setPref('lookup_page_auto_show_keyboard', value);
+    notifyListeners();
+  }
+
   bool get isFirstTimeSetup =>
       getPref('first_time_setup', defaultValue: true) as bool;
 
@@ -1843,6 +1882,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoSubtitleListTapLookup(bool value) async {
     await setPref('video_subtitle_list_tap_lookup', value);
+    notifyListeners();
+  }
+
+  /// 视频字幕列表上次打开的页签（xlzGuK5YmD）：`VideoSubtitleListFilter.name`
+  /// （`all` / `favorites`），默认 `all`。下次打开列表恢复到它，跨开关 / 跨重启记住。
+  String get videoSubtitleListFilter =>
+      getPref('video_subtitle_list_filter', defaultValue: 'all') as String;
+
+  Future<void> setVideoSubtitleListFilter(String value) async {
+    await setPref('video_subtitle_list_filter', value);
     notifyListeners();
   }
 

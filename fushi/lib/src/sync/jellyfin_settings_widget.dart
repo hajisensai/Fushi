@@ -32,6 +32,7 @@ import 'package:http/http.dart' as http;
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/sync/jellyfin_connect_trace.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -117,6 +118,59 @@ Future<JellyfinServerConfig> signInJellyfinServer(
   required String username,
   required String password,
   http.Client Function()? httpClientFactory,
+}) => _traced(
+  stage: 'signIn',
+  typedUrl: url,
+  httpClientFactory: httpClientFactory,
+  run: (http.Client Function() tracedFactory) => _signInJellyfinServer(
+    syncRepo,
+    url: url,
+    username: username,
+    password: password,
+    httpClientFactory: tracedFactory,
+  ),
+);
+
+/// 添加服务器 / 添加线路失败时把这次尝试的请求轨迹（各探测端点与认证请求的状态码，
+/// 不含任何凭据，见 [JellyfinConnectTrace]）写进诊断日志，再把原异常原样抛给页面
+/// （AL8qJr6yr-）。地址 / 用户名为空这类输入错误不是连接问题，不记。
+Future<T> _traced<T>({
+  required String stage,
+  required String typedUrl,
+  required http.Client Function()? httpClientFactory,
+  required Future<T> Function(http.Client Function() tracedFactory) run,
+}) async {
+  final JellyfinConnectTrace trace = JellyfinConnectTrace();
+  try {
+    return await run(
+      () => trace.wrap(httpClientFactory?.call() ?? createAppHttpIoClient()),
+    );
+  } on ArgumentError {
+    rethrow;
+  } on JellyfinRouteExistsException {
+    rethrow;
+  } on Object catch (error, stack) {
+    // 进错误日志（落盘、随反馈上传）：这是用户当场看到的失败，重启后再提反馈也
+    // 要还在。
+    ErrorLogService.instance.log(
+      'JellyfinConnect.$stage',
+      trace.describe(
+        stage: stage,
+        typedUrl: JellyfinApi.normalizeServerUrl(typedUrl),
+        error: error,
+      ),
+      stack,
+    );
+    rethrow;
+  }
+}
+
+Future<JellyfinServerConfig> _signInJellyfinServer(
+  SyncRepository syncRepo, {
+  required String url,
+  required String username,
+  required String password,
+  required http.Client Function() httpClientFactory,
 }) async {
   final String typedUrl = JellyfinApi.normalizeServerUrl(url);
   final String user = username.trim();
@@ -203,6 +257,23 @@ Future<JellyfinServerConfig> addJellyfinRoute(
   JellyfinServerConfig config,
   String rawUrl, {
   http.Client Function()? httpClientFactory,
+}) => _traced(
+  stage: 'addRoute',
+  typedUrl: rawUrl,
+  httpClientFactory: httpClientFactory,
+  run: (http.Client Function() tracedFactory) => _addJellyfinRoute(
+    syncRepo,
+    config,
+    rawUrl,
+    httpClientFactory: tracedFactory,
+  ),
+);
+
+Future<JellyfinServerConfig> _addJellyfinRoute(
+  SyncRepository syncRepo,
+  JellyfinServerConfig config,
+  String rawUrl, {
+  required http.Client Function() httpClientFactory,
 }) async {
   final String url = JellyfinApi.normalizeServerUrl(rawUrl);
   if (url.isEmpty) throw ArgumentError('线路地址不能为空');

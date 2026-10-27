@@ -176,6 +176,15 @@ std::string get_attribute(const std::string& xml, const std::string& attr_name) 
   return xml.substr(pos, end - pos);
 }
 
+// True when a header Title carries no real name: blank, or the literal
+// placeholder MdxBuilder writes when the author left the title field empty.
+bool is_placeholder_mdx_title(const std::string& title) {
+  const auto first = title.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos) return true;
+  const auto last = title.find_last_not_of(" \t\r\n");
+  return title.compare(first, last - first + 1, "Title (No HTML code allowed)") == 0;
+}
+
 struct KeyEntry {
   uint64_t record_offset;
   std::string headword;
@@ -244,6 +253,11 @@ ContainerIndex parse_container_index(const uint8_t* data, size_t size) {
   pos += 4;  // adler32
 
   result.title = get_attribute(header_text, "Title");
+  // MdxBuilder 不填标题时写进头部的是占位文本「Title (No HTML code allowed)」，
+  // 不是空串：导入端「标题为空才用文件名」的回退不触发，多本无标题 mdx 全部撞成
+  // 同一本词典，后导入的被当重复跳过（反馈 cto-U3CIS_）。占位标题与空白标题都
+  // 等同于没有标题，交给调用方按文件名命名。
+  if (is_placeholder_mdx_title(result.title)) result.title.clear();
 
   // MDD (`<Library_Data …>`) keys are file paths and are ALWAYS UTF-16LE; only
   // MDX (`<Dictionary …>`) text honours the Encoding attribute. Writers such as

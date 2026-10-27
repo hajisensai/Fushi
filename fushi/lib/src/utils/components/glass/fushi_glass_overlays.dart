@@ -3634,9 +3634,16 @@ class _FushiSnackBarCloseButton extends StatelessWidget {
       onPressed: () => ScaffoldMessenger.of(
         context,
       ).hideCurrentSnackBar(reason: SnackBarClosedReason.dismiss),
+      // 显式取提示条底色上的前景色：MD3 提示条底是 inverseSurface，按钮默认
+      // 的 onSurfaceVariant 与它同深浅，深色 / 自定义主题下 × 几乎看不见
+      // （反馈 eiFcN3DZQ3）。与原生 showCloseIcon 同口径。
       icon: FushiIcon(
         glass ? CupertinoIcons.xmark : FushiIcons.close,
         size: glass ? 17 : 20,
+        color: glass
+            ? appleColorsOf(context).secondaryLabel
+            : SnackBarTheme.of(context).closeIconColor ??
+                  Theme.of(context).colorScheme.onInverseSurface,
       ),
     );
   }

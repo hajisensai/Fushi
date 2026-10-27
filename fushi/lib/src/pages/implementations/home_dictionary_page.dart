@@ -5,7 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart' show Clipboard, KeyDownEvent, KeyEvent;
+import 'package:flutter/services.dart'
+    show Clipboard, KeyDownEvent, KeyEvent, SystemChannels;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
@@ -144,7 +145,7 @@ class HomeDictionaryPage extends BaseTabPage {
 }
 
 class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
-    with DictionaryPageMixin
+    with DictionaryPageMixin, WidgetsBindingObserver
     implements HomeDictionarySearchDebug {
   @override
   AppModel get mixinAppModel => appModel;
@@ -238,9 +239,60 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// await 失败路径）。生产路径仍 fire-and-forget，不改变行为。
   Future<void>? _lastDispatchedSearch;
 
+  /// 软键盘此刻是否弹着（移动端，窗口底部 viewInsets > 0）。由
+  /// [didChangeMetrics] 维护：Scaffold 会把 body 的 viewInsets 抹成 0，本页读
+  /// `MediaQuery.viewInsetsOf` 拿不到，必须看 View 本身。
+  bool _softKeyboardVisible = false;
+
+  bool _readSoftKeyboardVisible() {
+    return (View.maybeOf(context)?.viewInsets.bottom ?? 0) > 0;
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (!mounted) return;
+    final bool visible = _readSoftKeyboardVisible();
+    if (visible == _softKeyboardVisible) return;
+    setState(() => _softKeyboardVisible = visible);
+  }
+
+  /// 搜索栏尾部「收起键盘」的显示判据（反馈 cczhbM7ZOI）：只在触屏平台、搜索框
+  /// 持焦且软键盘真的弹着时出现——此前收键盘只能点一块不聚焦的空白（查词页几乎没有），
+  /// 返回键又会清空查询或退出 app。
+  bool get _showsHideKeyboardButton {
+    final TargetPlatform platform = Theme.of(context).platform;
+    if (platform != TargetPlatform.android && platform != TargetPlatform.iOS) {
+      return false;
+    }
+    return _softKeyboardVisible && _searchFocusNode.hasFocus;
+  }
+
+  /// 只收键盘、不交焦点：与提交后收键盘（BUG-2686）同一理由——unfocus 会被
+  /// FushiFocusRoot 的被动修复把焦点还回搜索框，键盘又弹一次。再点一下框
+  /// （EditableText.requestKeyboard）键盘就回来。
+  void _hideSoftKeyboard() {
+    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
+  }
+
+  Widget _buildHideKeyboardButton() {
+    return FushiStaggeredEntrance(
+      key: const ValueKey<String>('home_dictionary_hide_keyboard_entrance'),
+      index: 0,
+      child: FushiIconButton(
+        key: const ValueKey<String>('home_dictionary_hide_keyboard_button'),
+        tooltip: t.lookup_page_hide_keyboard,
+        icon: FushiIcons.keyboard,
+        onTap: _hideSoftKeyboard,
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // 挂载时键盘可能已经弹着（从别的输入框切过来），补读一次初值。
+    WidgetsBinding.instance.addPostFrameCallback((_) => didChangeMetrics());
     appModelNoUpdate.dictionarySearchAgainNotifier.addListener(_searchAgain);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
@@ -485,6 +537,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.focusSignal?.removeListener(_consumeFocusRequest);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
     _searchFocusNode.removeListener(_onFocusChanged);
@@ -551,9 +604,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   bool get _hasActiveQuery => _controller.text.isNotEmpty;
 
+  /// 清空查询并把用户送回搜索框（键盘随之弹起，BUG-2687）——除非用户在查词设置里
+  /// 关掉了「自动弹出键盘」（反馈 cczhbM7ZOI）：那时只清空，焦点与键盘原样不动。
+  /// 导航点进查词（[DictionaryFocusIntent.clearQuery]）、结果顶部下拉、返回键清空都
+  /// 经过这里，所以一个判据管住全部「替用户弹键盘」的路径；显式热键「聚焦搜索框」
+  /// （keepQuery / selectQuery）不经过这里，照常聚焦。
   void _clearSearch() {
     _resetQuery();
-    _focusSearchField();
+    if (appModel.lookupPageAutoShowKeyboard) _focusSearchField();
   }
 
   /// 清掉查询串、结果与扫描状态（不碰焦点）。[_clearSearch] 清完把用户送回
@@ -577,6 +635,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   }
 
   void _clearSearchFromResultPull() {
+    // 反馈 3D-JH966Kr：往上翻结果顶到头会被甩回搜索历史——查词设置里可关。
+    if (!appModel.lookupPagePullToClear) return;
     // TODO-931：常驻热槽使 entries 永不空，可见性判据改用 hasVisiblePopup（隐藏热槽不算）。
     if (_popup.hasVisiblePopup || _popup.isSearchingUi) return;
     _clearSearch();
@@ -957,32 +1017,28 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                 // MD3：SearchBar 尾部一枚 tonal 圆钮直达词典管理（导入 / 排序 /
                 // 启用），收进搜索栏的 trailing 槽（48 触控区，按钮本体 40）。
                 // 墨水屏不铺 tonal 底。Apple 下没有这枚钮（与原来一致）。
-                trailing: glass
-                    ? const <Widget>[]
-                    : <Widget>[
-                        FushiIconButton(
-                          key: const ValueKey<String>(
-                            'home_dictionary_manage_button',
-                          ),
-                          tooltip: t.dictionaries,
-                          icon: FushiIcons.dictionary,
-                          backgroundColor: isEinkTheme(context)
-                              ? null
-                              : Theme.of(
-                                  context,
-                                ).colorScheme.secondaryContainer,
-                          enabledColor: isEinkTheme(context)
-                              ? null
-                              : Theme.of(
-                                  context,
-                                ).colorScheme.onSecondaryContainer,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 40,
-                            height: 40,
-                          ),
-                          onTap: appModel.showDictionaryMenu,
-                        ),
-                      ],
+                trailing: <Widget>[
+                  if (_showsHideKeyboardButton) _buildHideKeyboardButton(),
+                  if (!glass)
+                    FushiIconButton(
+                      key: const ValueKey<String>(
+                        'home_dictionary_manage_button',
+                      ),
+                      tooltip: t.dictionaries,
+                      icon: FushiIcons.dictionary,
+                      backgroundColor: isEinkTheme(context)
+                          ? null
+                          : Theme.of(context).colorScheme.secondaryContainer,
+                      enabledColor: isEinkTheme(context)
+                          ? null
+                          : Theme.of(context).colorScheme.onSecondaryContainer,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 40,
+                        height: 40,
+                      ),
+                      onTap: appModel.showDictionaryMenu,
+                    ),
+                ],
               ),
             ),
           ),

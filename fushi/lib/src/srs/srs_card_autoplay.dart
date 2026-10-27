@@ -453,15 +453,26 @@ const String kSrsCardAutoplayGateScript = r'''
     try { return new DOMException(msg, 'NotAllowedError'); }
     catch (e) { var err = new Error(msg); err.name = 'NotAllowedError'; return err; }
   }
+  // 页面里开过播的媒体（含不进文档的 `new Audio()`、shadow root 里的）：换卡 / 翻面时由
+  // `__fushiSrsStopAllMedia` 一起停掉。换内容只能停到文档里那棵卡面根下的元素，脱离文档
+  // 的那些会接着响到播完（N-JACNGS-K：换卡后上一张的音频不停）。
+  var sounding = typeof Set === 'function' ? new Set() : null;
+  function track(el){ if (sounding && isMedia(el)) sounding.add(el); }
   var proto = window.HTMLMediaElement && window.HTMLMediaElement.prototype;
   if (proto && typeof proto.play === 'function') {
     var nativePlay = proto.play;
     proto.play = function(){
       if (blocked()) return Promise.reject(refusal());
       permit(this);
+      track(this);
       return nativePlay.apply(this, arguments);
     };
   }
+  window.__fushiSrsStopAllMedia = function(){
+    if (!sounding) return;
+    sounding.forEach(function(el){ try { el.pause(); } catch (e) {} });
+    sounding.clear();
+  };
   var autoplayProp = proto && Object.getOwnPropertyDescriptor(proto, 'autoplay');
   if (autoplayProp && autoplayProp.set && autoplayProp.configurable) {
     Object.defineProperty(proto, 'autoplay', {
@@ -522,12 +533,17 @@ const String kSrsCardAutoplayGateScript = r'''
   }
   function onPlay(e){
     var el = e && e.target;
-    if (!isMedia(el) || !blocked()) return;
-    if ((permitted && permitted.has(el)) || nativeControlsByUser(el)) return;
+    if (!isMedia(el)) return;
+    if (!blocked() || (permitted && permitted.has(el)) || nativeControlsByUser(el)) {
+      track(el);
+      return;
+    }
     try { el.pause(); } catch (err) {}
   }
   function onStop(e){
-    if (permitted && e && isMedia(e.target)) permitted['delete'](e.target);
+    if (!e || !isMedia(e.target)) return;
+    if (permitted) permitted['delete'](e.target);
+    if (sounding) sounding['delete'](e.target);
   }
   function watchRoot(root){
     if (!root || typeof root.addEventListener !== 'function') return;

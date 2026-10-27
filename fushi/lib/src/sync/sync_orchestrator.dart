@@ -23,6 +23,7 @@ import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/deletion_tombstone_bundle.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
@@ -183,6 +184,17 @@ bool isReservedSyncFolderName(String name) =>
     // 待发制卡跨设备中转（见 PendingMineRelay）：不是书；当成书列出来，用户在对比
     // 弹窗里一「删远端书」就连认领带待落的卡一起删了。
     name == PendingMineRelay.namespace;
+
+/// 云墓碑消费每轮至多 GET 多少条**未被合并清单覆盖**的逐条标记（SDbJAx1Db6）。
+///
+/// 稳态下逐条标记几乎全被清单按指纹覆盖、一条都不读；这个上限只在「新设备首次同步 /
+/// 旧客户端一次写了大批标记」时生效，把一次性的大批读摊到几轮，单轮耗时有上界。超出的
+/// 推迟到下轮，本轮按不完整观测处理（不推进消费基线，BUG-1934）。
+const int kDeletionTombstoneMarkerReadsPerRound = 200;
+
+/// 云墓碑消费每轮容忍的传输层读失败（抛 / 读回 null）次数，到了就停读剩下的逐条标记。
+/// 连接已坏（TLS 握手连环失败）时继续逐条撞只会把整轮拖长，剩下的下轮再读。
+const int kDeletionTombstoneReadFailureBudget = 3;
 
 /// One sync item judged a genuine fork (both sides moved off the common-ancestor
 /// baseline) and therefore skipped instead of auto-resolved. Carries everything
@@ -648,6 +660,16 @@ class SyncOrchestrator {
     );
   }
 
+  /// 宣告进入一个没有条目计数（或计数尚未算出）的阶段：`itemTotal == 0` 让 UI 只显示
+  /// 阶段名并画不确定进度条。
+  ///
+  /// 进度行一直显示**最后一次** tick，直到整轮结束（`syncProgress` 不会自己清）。
+  /// 一个阶段若不发 tick，界面就停在上一阶段最后一本书上——反馈里「最后一本像卡死」
+  /// 的那 10–20 秒，正是有声书阶段之后统计 / 合集 / 墓碑这串收尾步骤在静默跑
+  /// （DRXb43v3fA / y3tzvcnrPU）。每个会走网络的阶段开工前都要发这一下。
+  void _emitPhaseStart(SyncPhase phase) =>
+      _emit(phase, itemIndex: 0, itemTotal: 0);
+
   /// One meter for the whole run: per-file byte counts fold into its running
   /// total, so the rate carries across files and phases instead of restarting.
   final TransferRateMeter _rateMeter = TransferRateMeter();
@@ -842,6 +864,7 @@ class SyncOrchestrator {
     // 这里遍历本地 VideoBooks 推/拉 lastPositionMs，让「立即同步」一次把书+视频
     // 进度都同步。
     if (isInterconnect) {
+      _emitPhaseStart(SyncPhase.readingData);
       await _syncBookProgressLive(report, b);
       mark('bookProgressLive');
       await _syncVideoProgressLive(report, b);
@@ -854,6 +877,7 @@ class SyncOrchestrator {
       // 互联无 per-device 快照文件、不依赖 deviceId：host 单份权威快照，client GET →
       // 并集折叠 → 写回本地 → PUT 回 host（host 再 MAX/并集折叠进自己 DB）。
       if (syncStats || syncFavorites || syncWebHistory) {
+        _emitPhaseStart(SyncPhase.statistics);
         await _syncAggregateLive(report, b);
       }
     }
@@ -867,6 +891,7 @@ class SyncOrchestrator {
     if (!isInterconnect &&
         (syncStats || syncWebHistory) &&
         deviceId.isNotEmpty) {
+      _emitPhaseStart(SyncPhase.statistics);
       await _syncAggregate(report);
     }
     mark('aggregate');
@@ -878,6 +903,7 @@ class SyncOrchestrator {
     //   __collections__ 资产（互联 backend 的资产层是 live 端点适配，语义不同）。
     // 两条通道调用同一 CollectionSyncEngine.merge / applyCollectionLocalChanges，
     // 成员并集 + 移出/删除墓碑 + 手动序整合集 LWW，仅通道不同。
+    _emitPhaseStart(SyncPhase.collections);
     if (isInterconnect) {
       await _syncCollectionsLive(report, b);
       // 标签紧跟合集之后：合集标签按合集自然键解析，要先让合集行落地。
@@ -895,6 +921,7 @@ class SyncOrchestrator {
     // 删除传播墓碑（显式确认式）：发布本机未发布删除标记 + 消费远端标记算 deleteLocal
     // 候选（塞 report，UI 弹逐条确认）。放合集之后、冷却戳之前：本地在库键此刻最稳定，
     // 且中断则下轮重跑。基线不在此推进（见 syncDeletionTombstones 文档）。
+    _emitPhaseStart(SyncPhase.deletions);
     if (isInterconnect) {
       await _syncDeletionTombstonesLive(report, b);
     } else {
@@ -906,6 +933,7 @@ class SyncOrchestrator {
     // 错误，不打断本轮——卡都还在各自设备的本地队列里，下一轮再传。
     final PendingMineRelay? relay = pendingMineRelay;
     if (relay != null) {
+      _emitPhaseStart(SyncPhase.pendingMines);
       try {
         final PendingMineRelayReport r = await relay.run(b);
         report.pendingMinesReceived += r.received;
@@ -1259,19 +1287,24 @@ class SyncOrchestrator {
       final SyncRepository repo = SyncRepository(_db);
       final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
 
-      // ── 发布：本机未发布墓碑 → 远端标记 ──
+      // ── 发布：本机未发布墓碑 → 远端逐条标记（旧客户端只认它）+ 并入本机合并清单 ──
+      // 本机全部（逐条发布语义的）墓碑都进自己的清单：清单是读侧的粗粒度对象，对端
+      // 一次 GET 就拿到本机的全部删除，不用逐条读本机发布过的标记（SDbJAx1Db6）。
       final List<SyncDeletionTombstoneRow> localRows = await _db
           .getSyncDeletionTombstones();
+      final List<SyncDeletionTombstoneRow> ownRows =
+          <SyncDeletionTombstoneRow>[];
       for (final SyncDeletionTombstoneRow row in localRows) {
-        if (row.remotePublishedAt != 0) continue;
         // v128：浏览器历史 / 书签的墓碑只随聚合快照走，不发布逐条标记（一次「清除浏览
-        // 数据」可能上千条，且没有逐条确认语义）。
+        // 数据」可能上千条，且没有逐条确认语义），也不进清单。
         if (SyncTombstoneKind.tryParse(
               row.mediaType,
             )?.propagatesViaAggregateSnapshotOnly ??
             false) {
           continue;
         }
+        ownRows.add(row);
+        if (row.remotePublishedAt != 0) continue;
         await _backend.putJsonAsset(
           ns,
           deletionTombstoneAssetName(row.mediaType, row.itemKey),
@@ -1284,22 +1317,123 @@ class SyncOrchestrator {
         );
       }
 
-      // ── 消费：读远端标记 → deleteLocal 候选（过基线守卫）──
+      // ── 消费：读合并清单 + 未被清单覆盖的逐条标记 → deleteLocal 候选（过基线守卫）──
       // itemKey → deletedAt（同资产多标记取较新；理论上主键唯一，防御性取 max）。
       final DeletionTombstoneEntries remoteTombstones =
           <String, Map<String, int>>{};
-      // 本轮是否**完整**观测了远端标记集合：列出来了却没读成 marker 的每一条都置假。
-      // 基线的语义是「已复核到此时刻的删除」，只有完整观测撑得起这句话（BUG-1934，
-      // 见下方推进点的长注释）。
+      void addRemote(String mediaType, String itemKey, int deletedAt) {
+        final Map<String, int> byKey = remoteTombstones.putIfAbsent(
+          mediaType,
+          () => <String, int>{},
+        );
+        final int? prev = byKey[itemKey];
+        if (prev == null || deletedAt > prev) byKey[itemKey] = deletedAt;
+      }
+
+      // 本轮是否**完整**观测了远端标记集合：列出来了却没读成的每一条（含清单、含因上限
+      // 推迟到下轮的逐条标记）都置假。基线的语义是「已复核到此时刻的删除」，只有完整
+      // 观测撑得起这句话（BUG-1934，见下方推进点的长注释）。
       bool scanComplete = true;
+      // 本轮传输层读失败次数（抛 / 读回 null）。到 [kDeletionTombstoneReadFailureBudget]
+      // 就停读剩下的逐条标记：连接已坏时继续逐条撞握手只会把整轮拖到几分钟（SDbJAx1Db6
+      // 日志里一轮几十条 HandshakeException），剩下的下轮再读。
+      int readFailures = 0;
       final List<AssetEntry> children = await _backend.listChildren(ns);
+
+      // 1) 合并清单：`_bundles/` 下每台设备一个对象。
+      AssetEntry? bundlesDir;
+      for (final AssetEntry e in children) {
+        if (e.isFolder && e.name == kDeletionTombstoneBundlesFolder) {
+          bundlesDir = e;
+          break;
+        }
+      }
+      final String ownBundleName = deviceId.isEmpty
+          ? ''
+          : deletionTombstoneBundleNameFor(deviceId);
+      DeletionTombstoneBundle? ownPrev;
+      // 自己那份清单列出来了却没读成：本轮不重写它（否则会用残缺内容覆盖掉里面记着的
+      // 逐条标记指纹，下轮又要全量重读）。
+      bool ownBundleWritable = true;
+      final List<DeletionTombstoneBundle> bundles = <DeletionTombstoneBundle>[];
+      if (bundlesDir != null) {
+        for (final AssetEntry b in await _backend.listChildren(bundlesDir.id)) {
+          if (b.isFolder) continue;
+          final bool isOwn = b.name == ownBundleName;
+          Object? json;
+          try {
+            json = await _backend.getJsonAsset(b.id);
+            if (json == null) {
+              report.noteError(
+                'deletion tombstone bundle "${b.name}" unreadable',
+                'empty response',
+              );
+            }
+          } catch (err) {
+            json = null;
+            report.noteError(
+              'deletion tombstone bundle "${b.name}" unreadable',
+              err,
+            );
+          }
+          if (json == null) {
+            scanComplete = false;
+            readFailures++;
+            if (isOwn) ownBundleWritable = false;
+            continue;
+          }
+          final DeletionTombstoneBundle? parsed =
+              DeletionTombstoneBundle.tryParse(json);
+          if (parsed == null) {
+            // 永久坏文件（同逐条标记的 malformed 口径：不扣基线）。自己的那份坏了就由
+            // 本轮重写覆盖。
+            report.noteError(
+              'deletion tombstone bundle "${b.name}" malformed',
+              'skipped',
+            );
+            continue;
+          }
+          bundles.add(parsed);
+          if (isOwn) ownPrev = parsed;
+          for (final DeletionTombstoneBundleEntry t in parsed.entries.values) {
+            addRemote(t.mediaType, t.itemKey, t.deletedAt);
+          }
+        }
+      }
+      final DeletionTombstoneBundle ownNext =
+          ownPrev?.copy() ?? DeletionTombstoneBundle();
+      for (final SyncDeletionTombstoneRow row in ownRows) {
+        ownNext.add(
+          row.mediaType,
+          row.itemKey,
+          row.deletedAt,
+          assetName: deletionTombstoneAssetName(row.mediaType, row.itemKey),
+        );
+      }
+
+      // 2) 逐条标记（旧格式 / 旧客户端写的）：同名 + 同内容指纹已在某份清单里的免读；
+      // 其余逐个 GET，每轮至多 [kDeletionTombstoneMarkerReadsPerRound] 条。
+      final Map<String, Set<String>> covered = deletionTombstoneBundleCoverage(
+        bundles,
+      );
+      int markerReads = 0;
+      int deferred = 0;
       for (final AssetEntry e in children) {
         if (e.isFolder) continue;
+        final String? rev = e.revision;
+        if (rev != null && (covered[e.name]?.contains(rev) ?? false)) continue;
+        if (markerReads >= kDeletionTombstoneMarkerReadsPerRound ||
+            readFailures >= kDeletionTombstoneReadFailureBudget) {
+          deferred++;
+          continue;
+        }
+        markerReads++;
         Object? json;
         try {
           json = await _backend.getJsonAsset(e.id);
         } catch (err) {
           scanComplete = false;
+          readFailures++;
           report.noteError('deletion tombstone "${e.name}" unreadable', err);
           continue;
         }
@@ -1309,6 +1443,7 @@ class SyncOrchestrator {
           // .getJsonAsset] 就是这样吞 SyncBackendError 的）。两种都不是「已观测」，
           // 按不完整处理——静默 continue 会让后者变成一次无声的永久压制。
           scanComplete = false;
+          readFailures++;
           report.noteError(
             'deletion tombstone "${e.name}" unreadable',
             'empty response',
@@ -1319,20 +1454,50 @@ class SyncOrchestrator {
         if (parsed == null) {
           // 读到了但内容不合法（截断上传 / 非本协议文件）。这是**永久**状态，重试不会
           // 变好，故不置 scanComplete=false（否则基线被一个坏文件永久钉死，用户每轮
-          // 重看同一批确认框）。只如实记一条，别再静默丢。
+          // 重看同一批确认框）。如实记一条；有指纹就记进清单，同一份坏内容不再每轮重下。
           report.noteError(
             'deletion tombstone "${e.name}" malformed',
             'skipped',
           );
+          if (rev != null) ownNext.malformed[e.name] = rev;
           continue;
         }
-        final Map<String, int> byKey = remoteTombstones.putIfAbsent(
-          parsed.mediaType,
-          () => <String, int>{},
+        addRemote(parsed.mediaType, parsed.itemKey, parsed.deletedAt);
+        if (rev != null) {
+          ownNext.add(
+            parsed.mediaType,
+            parsed.itemKey,
+            parsed.deletedAt,
+            assetName: e.name,
+            revision: rev,
+          );
+        }
+      }
+      if (deferred > 0) {
+        scanComplete = false;
+        report.errors.add(
+          'deletion tombstones: $deferred marker(s) deferred to next sync '
+          '(per-round read cap $kDeletionTombstoneMarkerReadsPerRound, '
+          'read failures $readFailures)',
         );
-        final int? prev = byKey[parsed.itemKey];
-        if (prev == null || parsed.deletedAt > prev) {
-          byKey[parsed.itemKey] = parsed.deletedAt;
+      }
+
+      // 3) 写回本机清单（内容没变不写）。失败只记错误，不影响本轮消费。
+      if (ownBundleName.isNotEmpty &&
+          ownBundleWritable &&
+          !(ownPrev != null && ownNext.sameContentAs(ownPrev)) &&
+          (ownNext.entries.isNotEmpty || ownNext.malformed.isNotEmpty)) {
+        try {
+          final String dirId =
+              bundlesDir?.id ??
+              await _backend.ensureFolder(ns, kDeletionTombstoneBundlesFolder);
+          await _backend.putJsonAsset(
+            dirId,
+            ownBundleName,
+            ownNext.toJson(deviceId),
+          );
+        } catch (err) {
+          report.noteError('deletion tombstone bundle write', err);
         }
       }
 
@@ -1858,41 +2023,31 @@ class SyncOrchestrator {
   /// book's folder. A book with a local audiobook absent remotely is pushed;
   /// a remote package for a local book without audiobook is left untouched for
   /// explicit manual download flows.
+  ///
+  /// 这条通道是 upload-only，所以**工作集只由本地 DB 决定**：本端确有完整有声书
+  /// （Audiobooks + SrtBooks 行在、音频文件没断链）的书（DRXb43v3fA / y3tzvcnrPU）。
+  /// 此前循环遍历 `getAllEpubBooks()` 全表——漫画与没有有声书的书也在这张表里——
+  /// 每本都发一次「有声书 (k/N)」进度、每本都无条件 `ensureBookFolder` +
+  /// 两次 `findAsset`（Drive 上每本最多三次网络往返），算出的 `hasLocal` 却只在
+  /// 最后决定传不传。于是 1 本有声书显示成「有声书 (k/全部书数)」、逐本走过漫画，
+  /// 远端慢时整段像卡死。远端状态只对工作集里的书才需要问。
   Future<void> syncAudiobookPackages(String root, SyncRunReport report) async {
-    // A real "files transferred" denominator would need a findAsset network
-    // round-trip per book before the loop; instead progress is keyed on the
-    // book scan (k/N books), with the large pull/push fraction blended into the
-    // current book's slot. The bar still advances monotonically.
-    final List<EpubBookRow> books = await _db.getAllEpubBooks();
-    final int total = books.length;
+    // 立刻换掉上一阶段最后一本书的进度行：建工作集要读 DB 与探音频文件。
+    _emitPhaseStart(SyncPhase.audiobooks);
+    final List<({EpubBookRow book, SrtBookRow srt})> work =
+        await _localAudiobookPushSet(report);
+    final int total = work.length;
     for (int i = 0; i < total; i++) {
-      final EpubBookRow book = books[i];
+      final EpubBookRow book = work[i].book;
+      final SrtBookRow srt = work[i].srt;
       _emit(
         SyncPhase.audiobooks,
         itemIndex: i,
         itemTotal: total,
         title: book.title,
       );
-      // BUG-619 / TODO-1329: skip empty-key books. bookKey == the sanitized
-      // title, so an empty key means ensureBookFolder would collapse onto the
-      // sync root and scatter the .fushiaudio package into fushi-data/ instead
-      // of the per-book folder. (requireBookFolderName is the precise backstop.)
-      if (book.bookKey.isEmpty) continue;
       File? tmp;
       try {
-        final String bookKey = book.bookKey;
-        final AudiobookRow? ab = await _db.getAudiobookByBookKey(bookKey);
-        final SrtBookRow? srt = await _db.getSrtBookByBookKey(bookKey);
-        // 只看行在不在会把音频已断链的有声书打成零音频包推上云，之后远端「已有」，
-        // 这本书永远不再补传（与互联 BUG-2551 同判据）。
-        final bool hasLocal =
-            ab != null &&
-            srt != null &&
-            await audiobookAudioIsIntact(
-              audioPathsJson: ab.audioPathsJson,
-              audioRoot: ab.audioRoot,
-            );
-
         final String folderId = await _backend.ensureBookFolder(
           bookTitle: book.title,
           rootFolderId: root,
@@ -1902,35 +2057,71 @@ class SyncOrchestrator {
         final AssetEntry? existing =
             await _backend.findAsset(folderId, kSyncAudiobookAssetName) ??
             await _backend.findAsset(folderId, kLegacySyncAudiobookAssetName);
+        if (existing != null) continue;
 
-        if (hasLocal && existing == null) {
-          tmp = _tmpFile('.fushiaudio');
-          await _packages.exportAudioDatabasePackage(
-            bookKey: bookKey,
-            srtBookUid: srt.uid,
-            outputFile: tmp,
-          );
-          await _backend.putAsset(
-            folderId,
-            kSyncAudiobookAssetName,
-            tmp,
-            onProgress: (double f, [int? b]) => _emit(
-              SyncPhase.audiobooks,
-              itemIndex: i,
-              itemTotal: total,
-              title: book.title,
-              fileFraction: f,
-              fileBytes: b,
-            ),
-          );
-          report.audiobooksExported++;
-        }
+        tmp = _tmpFile('.fushiaudio');
+        await _packages.exportAudioDatabasePackage(
+          bookKey: book.bookKey,
+          srtBookUid: srt.uid,
+          outputFile: tmp,
+        );
+        await _backend.putAsset(
+          folderId,
+          kSyncAudiobookAssetName,
+          tmp,
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.audiobooks,
+            itemIndex: i,
+            itemTotal: total,
+            title: book.title,
+            fileFraction: f,
+            fileBytes: b,
+          ),
+        );
+        report.audiobooksExported++;
       } catch (e) {
         report.noteError('audiobook "${book.title}"', e);
       } finally {
         _safeDelete(tmp);
       }
     }
+  }
+
+  /// [syncAudiobookPackages] 的工作集：本地书架上确有完整有声书、可以打包上传的书，
+  /// 按 `getAllEpubBooks()` 的顺序。纯本地判定，不碰远端。
+  ///
+  /// - 空 bookKey 的书排除（BUG-619 / TODO-1329：bookKey == 规范化标题，空 key 会让
+  ///   `ensureBookFolder` 塌到同步根，把包撒进 fushi-data/）。
+  /// - 只看行在不在会把音频已断链的有声书打成零音频包推上云，之后远端「已有」，
+  ///   这本书永远不再补传（与互联 BUG-2551 同判据），所以还要探音频文件。
+  Future<List<({EpubBookRow book, SrtBookRow srt})>> _localAudiobookPushSet(
+    SyncRunReport report,
+  ) async {
+    final Map<String, AudiobookRow> audiobookByKey = <String, AudiobookRow>{
+      for (final AudiobookRow ab in await _db.getAllAudiobooks())
+        if (ab.bookKey.isNotEmpty) ab.bookKey: ab,
+    };
+    final List<({EpubBookRow book, SrtBookRow srt})> work =
+        <({EpubBookRow book, SrtBookRow srt})>[];
+    if (audiobookByKey.isEmpty) return work;
+    for (final EpubBookRow book in await _db.getAllEpubBooks()) {
+      final AudiobookRow? ab = audiobookByKey[book.bookKey];
+      if (ab == null) continue;
+      try {
+        final SrtBookRow? srt = await _db.getSrtBookByBookKey(book.bookKey);
+        if (srt == null) continue;
+        if (!await audiobookAudioIsIntact(
+          audioPathsJson: ab.audioPathsJson,
+          audioRoot: ab.audioRoot,
+        )) {
+          continue;
+        }
+        work.add((book: book, srt: srt));
+      } catch (e) {
+        report.noteError('audiobook "${book.title}"', e);
+      }
+    }
+    return work;
   }
 
   /// Deletes per-book metadata/cover files that spilled directly into the sync

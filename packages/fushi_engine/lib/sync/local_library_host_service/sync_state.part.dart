@@ -227,4 +227,33 @@ mixin _LocalLibraryHostSyncState
           (mediaType: r.mediaType, itemKey: r.itemKey, deletedAt: r.deletedAt),
     ];
   }
+
+  /// 对端推送导入的删除墓碑闸门（反馈 Et3pmRzo0k，见 [PeerPushDeletionGate]）。
+  ///
+  /// 只读 host 自己的 `sync_deletion_tombstones`——host 本机「从所有设备删除」与对端经
+  /// DELETE 端点推来的删除（`deleteBook` / `deleteAudiobook` / `deleteVideo` 写的墓碑）
+  /// 都落在这张表里，正是 `/api/tombstones` 下发给各端的那一份。
+  @override
+  Future<bool> vetoesPeerPush({
+    required List<SyncTombstoneKind> kinds,
+    required String itemKey,
+    required int? presentSinceAt,
+  }) async {
+    final DeletionTombstoneEntries own = <String, Map<String, int>>{};
+    for (final SyncTombstoneKind kind in kinds) {
+      own[kind.dbValue] = <String, int>{
+        for (final SyncDeletionTombstoneRow r
+            in await _db.getSyncDeletionTombstonesOfType(kind.dbValue))
+          r.itemKey: r.deletedAt,
+      };
+    }
+    return peerTombstoneVetoesPush(
+      peerTombstones: own,
+      mediaTypes: <String>[
+        for (final SyncTombstoneKind k in kinds) k.dbValue,
+      ],
+      itemKeys: <String>[itemKey],
+      presentSinceAt: presentSinceAt,
+    );
+  }
 }

@@ -759,6 +759,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _syncLyricsOverlayCue(controller, forceReveal: lyricsForceReveal);
     }
 
+    // 反馈 yk2XDOGh-H：显式跳句（上一句 / 下一句 / 快捷键 / 音量键）落定的那一次通知，
+    // 暂停中也 reveal。一次性：每次通知都读并清掉，被动更新不受影响（BUG-2961）。
+    final bool navigationReveal = controller.consumeExplicitNavigationReveal();
     final AudioCue? cue = controller.currentCue;
     if (cue != null) {
       final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
@@ -784,7 +787,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           resolvedIsNav: _book?.isChapterNav(realChapter) ?? false,
         );
         if (cueChapter != null && navTarget >= 0) {
-          if (controller.shouldRevealCurrentCue && !_restoreInFlight) {
+          if ((controller.shouldRevealCurrentCue || navigationReveal) &&
+              !_restoreInFlight) {
             // TODO-746: land on the cue's real in-chapter position instead of
             // the default progress=0.0 → restoreProgress(0) → scrollToChapterStart
             // six-fold clear (the "slides to chapter 1" symptom). cueChapter is a
@@ -818,7 +822,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     }
     final bool forceReveal =
         lyricsForceReveal || controller.consumeForceReveal();
-    final bool reveal = forceReveal || controller.shouldRevealCurrentCue;
+    final bool reveal =
+        forceReveal || navigationReveal || controller.shouldRevealCurrentCue;
     // TODO-724：仅当图片暂停开启（imagePauseSec>0）时，cue 推进跨过插图才把视口
     // 滚到插图（配合 Dart 的 triggerImagePause 暂停让用户看见）。imagePauseSec=0
     // 时图片暂停关闭，绝不滚图，否则视口会无预兆跳到不知哪张图（用户报告症状）。
@@ -1032,7 +1037,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       await _navigateToChapter(targetSec);
       return;
     }
-    await controller.skipToCue(targetCues.first);
+    // 章首 / 章尾的上一句 / 下一句：同样是显式句子导航，暂停中也让正文跟到目标章
+    // 的那一句（反馈 yk2XDOGh-H）。
+    await controller.skipToCue(targetCues.first, revealReader: true);
   }
 
   /// BUG-1107（断点 B·幻象字数）：显式跳句（[AudiobookPlayerController.skipToCue]

@@ -1,0 +1,11 @@
+## BUG-3838 · Windows 视频页「返回跳转前位置」胶囊在鼠标停在边缘时持续闪烁、上下抖动
+- **报告**：2026-10-27（用户：应用内反馈 qUeubxE-fM，Windows 3.0.1-debug.21088，附录屏）
+- **真实性**：✅ 真 bug（沿代码路径确认，并在 widget 测试里用真实 MouseTracker 复现出同一条自激环；未在 Windows 真机复测）。
+  - `fushi/lib/src/pages/implementations/video_fushi/jump_history.part.dart:162-177`（修前）胶囊的 `top` 与 `visible` 都直接取 `_videoControlsVisible`；胶囊挂在控件 Stack 里、盖在 media_kit 桌面控制条的 `MouseRegion` 之上（`third_party/media_kit_video/.../material_desktop.dart:1015-1030`）。
+  - 鼠标落到胶囊上 → Stack 命中停在胶囊、控制条那层 `onExit` → `visible = false` → 胶囊淡出并上移（`_subtitleControlsTopReserve()` → `_videoTopBarMargin().top + 8`），`FushiChromeReveal` 隐藏态 `IgnorePointer` → 鼠标落回控制条那层 `onEnter` → 重新显示 → 胶囊回到鼠标下 → 再 `onExit`……鼠标不动也循环；`controls_visibility.part.dart:120` `_setCursorHidden(!visible && …)` 随之切光标，与「光标一闪一闪」吻合。
+- **[x] ① 已修复** — 胶囊悬停算作控制条活跃：
+  - fork 已有的 `holdVisible` 从「只给 ⋯ 菜单用」改为多来源合成：`_controlsHeldByMenu` 改名 `_controlsHeld`，唯一写入点 `_syncControlsHold()` = 菜单开着 ‖ 鼠标停在胶囊上（`video_fushi_page.dart`）。
+  - 新增 `fushi/lib/src/media/video/video_jump_pill_hover.dart`：`VideoHoverHoldRegion`（只在子树真实命中时算悬停；悬停中被卸载补发一次 false——`MouseRegion` 被移除时不发 onExit）、`resolveVideoJumpPillLayout`（悬停期间胶囊位置 / 显隐冻结在悬停开始那一帧）、`videoJumpPillHoverHoldsControls`（只有悬停开始时控制条可见才按住，闪现态不把隐藏的控制条唤出）。
+  - `_onVideoJumpPillHoverChanged` 按住控制条后再唤回一次：MouseTracker 先发 exit 再发 enter，按住比控制条那层 onExit 收起晚一拍，唤回让最终帧保持可见。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_jump_pill_hover_test.dart`：同构几何（控制条 MouseRegion + 跟随可见性的胶囊）+ 真实鼠标停住，先证明修前结构显隐翻转 >4 次，再证明修后零翻转、控制条保持可见、移开后放开；纯函数与 `VideoHoverHoldRegion` 卸载补发；页面接线源码守卫。`fushi/test/pages/video_controls_menu_hold_guard_test.dart` 跟随改名。变异：让 `resolveVideoJumpPillLayout` 不冻结 → 纯函数用例红（同构几何用例仍绿：按住控制条本身已足以止住振荡，冻结负责闪现态不移位）。
+- **备注**：未在 Windows 真机复测原始录屏路径。悬停在胶囊上期间控制条不会自动隐藏（与「⋯」菜单开着时同一语义），移开后按 hover 重新倒计时。

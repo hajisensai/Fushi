@@ -30,13 +30,12 @@ void main() {
   KeyDownEvent keyDown(
     LogicalKeyboardKey key,
     ui.KeyEventDeviceType deviceType,
-  ) =>
-      KeyDownEvent(
-        physicalKey: const PhysicalKeyboardKey(0),
-        logicalKey: key,
-        timeStamp: Duration.zero,
-        deviceType: deviceType,
-      );
+  ) => KeyDownEvent(
+    physicalKey: const PhysicalKeyboardKey(0),
+    logicalKey: key,
+    timeStamp: Duration.zero,
+    deviceType: deviceType,
+  );
 
   group('resolveReaderSpaceOverride', () {
     test('有声书激活 + 无修饰 Space → 播放/暂停', () {
@@ -111,7 +110,7 @@ void main() {
           key: LogicalKeyboardKey.arrowLeft,
           modifiers: const <ModifierKey>{},
           rtl: false,
-          boundAction: ShortcutAction.readerPageForward,
+          boundAction: ShortcutAction.readerPageBackward,
         ),
         ShortcutAction.readerPageBackward,
       );
@@ -123,7 +122,7 @@ void main() {
           key: LogicalKeyboardKey.arrowLeft,
           modifiers: const <ModifierKey>{},
           rtl: true,
-          boundAction: ShortcutAction.readerPageForward,
+          boundAction: ShortcutAction.readerPageBackward,
         ),
         ShortcutAction.readerPageForward,
       );
@@ -154,7 +153,7 @@ void main() {
             key: LogicalKeyboardKey.arrowLeft,
             modifiers: const <ModifierKey>{ModifierKey.ctrl},
             rtl: rtl,
-            boundAction: ShortcutAction.readerPageForward,
+            boundAction: ShortcutAction.readerPageBackward,
           ),
           isNull,
         );
@@ -198,7 +197,7 @@ void main() {
           key: LogicalKeyboardKey.arrowLeft,
           modifiers: const <ModifierKey>{},
           rtl: false,
-          boundAction: ShortcutAction.readerPageForward,
+          boundAction: ShortcutAction.readerPageBackward,
           reverse: false,
         ),
         ShortcutAction.readerPageBackward,
@@ -211,7 +210,7 @@ void main() {
           key: LogicalKeyboardKey.arrowLeft,
           modifiers: const <ModifierKey>{},
           rtl: false,
-          boundAction: ShortcutAction.readerPageForward,
+          boundAction: ShortcutAction.readerPageBackward,
           reverse: true,
         ),
         ShortcutAction.readerPageForward,
@@ -234,7 +233,7 @@ void main() {
           key: LogicalKeyboardKey.arrowLeft,
           modifiers: const <ModifierKey>{},
           rtl: true,
-          boundAction: ShortcutAction.readerPageForward,
+          boundAction: ShortcutAction.readerPageBackward,
           reverse: false,
         ),
         ShortcutAction.readerPageForward,
@@ -267,7 +266,7 @@ void main() {
           key: LogicalKeyboardKey.arrowLeft,
           modifiers: const <ModifierKey>{},
           rtl: true,
-          boundAction: ShortcutAction.readerPageForward,
+          boundAction: ShortcutAction.readerPageBackward,
           reverse: true,
         ),
         ShortcutAction.readerPageBackward,
@@ -411,7 +410,7 @@ void main() {
           key: LogicalKeyboardKey.process,
           modifiers: const <ModifierKey>{},
           rtl: true,
-          boundAction: ShortcutAction.readerPageForward,
+          boundAction: ShortcutAction.readerPageBackward,
           physicalKey: PhysicalKeyboardKey.arrowLeft,
         ),
         ShortcutAction.readerPageForward,
@@ -460,7 +459,7 @@ void main() {
           key: LogicalKeyboardKey.process,
           modifiers: const <ModifierKey>{ModifierKey.ctrl},
           rtl: true,
-          boundAction: ShortcutAction.readerPageForward,
+          boundAction: ShortcutAction.readerPageBackward,
           physicalKey: PhysicalKeyboardKey.arrowLeft,
         ),
         isNull,
@@ -541,6 +540,37 @@ void main() {
         ),
         ShortcutAction.readerPageForward,
       );
+    });
+
+    test('用户把右键改绑成上一页 / 左键改绑成下一页 → 让出，尊重相反方向的绑定', () {
+      // 反馈 aiRZmYl5zS：此前只判「是不是翻页动作」，右键绑「上一页」仍按阅读方向
+      // 改回「下一页」。改成相反方向是明确意图，不能被阅读方向校正覆盖。
+      for (final bool rtl in <bool>[true, false]) {
+        for (final bool reverse in <bool>[true, false]) {
+          expect(
+            resolveReaderArrowPageTurn(
+              key: LogicalKeyboardKey.arrowRight,
+              modifiers: const <ModifierKey>{},
+              rtl: rtl,
+              boundAction: ShortcutAction.readerPageBackward,
+              reverse: reverse,
+            ),
+            isNull,
+            reason: 'rtl=$rtl reverse=$reverse',
+          );
+          expect(
+            resolveReaderArrowPageTurn(
+              key: LogicalKeyboardKey.arrowLeft,
+              modifiers: const <ModifierKey>{},
+              rtl: rtl,
+              boundAction: ShortcutAction.readerPageForward,
+              reverse: reverse,
+            ),
+            isNull,
+            reason: 'rtl=$rtl reverse=$reverse',
+          );
+        }
+      }
     });
 
     test('[假绿·前提已证伪] IME process + 物理键但已改绑非翻页 → 仍让出(null)', () {

@@ -5,6 +5,7 @@ import 'dart:ui' show Size;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_stats.dart';
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
 import 'package:fushi/src/media/video/video_audio_output_recovery.dart';
@@ -563,6 +564,19 @@ class VideoPlayerController extends ChangeNotifier
   /// 测试注入：[replayCue] 的起播出口（生产为 null，走真 [play]）。无 [_player] 的
   /// 纯单测里 [play] 是 no-op，靠它断言「重播确实起播了」。
   Future<void> Function()? _replayPlayOverride;
+
+  /// 「循环当前句」模式（Ix4j5SKUth）：开着时，**自然播放**越过当前句句尾就回到它的
+  /// 句首接着播，再切一次关闭。是模式而不是「钉死某一句」：用户自己跳到别的句（上 /
+  /// 下一句、点列表、拖进度条），循环的就是新进入的那句。
+  final ValueNotifier<bool> _loopCurrentCue = ValueNotifier<bool>(false);
+
+  /// 循环的武装目标：播放位置**落在句内**时记下的那句下标。只有它越过句尾才回绕。
+  ///
+  /// 任何一次显式 seek（[_noteSeekIssued]：[seekMs] / [_rawSeekMs] / [notifyExternalSeek]，
+  /// 以及进度条开始拖动的 [clearSeekTargetSnap]）都先撤掉武装——否则从句内 seek 到句后，
+  /// 下一拍「位置已越过句尾」会被误判成自然播完、把人拽回原句；回绕自己也走
+  /// [skipToCue]，于是落回句首、真正进入句内才重新武装，滞后的旧位置 tick 不会连发回绕。
+  int? _loopArmedCueIndex;
   int? _lastSubtitleEndPauseCueIndex;
 
   /// 「只播这一句就停」的一次性目标 cue 下标（[replayCue] 置，句尾停下即消耗）；
@@ -586,7 +600,14 @@ class VideoPlayerController extends ChangeNotifier
   /// 留白、A/V 偏移与用户的毫秒级起止微调，句尾判定接不住任意毫秒。判定点在位置
   /// 回调 [updateCueForPosition]（与句尾暂停同一个时钟），用的是调和过 seek 在途的
   /// 位置，刚 seek 回起点时滞后的旧位置不会把它误判成「已到终点」。
+  ///
+  /// 只经 [_endPlayRange] 作废（与 [_playRange] 一起），两者不会各走各的。
   int? _oneShotHoldUntilMs;
+
+  /// 与 [_oneShotHoldUntilMs] 同生同灭的结果句柄：[playRangeMs] 交给调用方，这段播到
+  /// 终点（[_maybeStopAtPlayRangeEnd] / 媒体播完）或被作废（seek / 换片 / 停止 / 被下一段
+  /// 顶掉 / 销毁）时由 [_endPlayRange] 完成（FDN66-xurt：试听按钮据此复位）。
+  RangePlayback? _playRange;
 
   /// 当前启用的 mpv 着色器绝对路径（[load] 复用 / [applyShaders] 实时切换）。
   List<String> _shaderPaths = <String>[];
@@ -1246,6 +1267,8 @@ class VideoPlayerController extends ChangeNotifier
   /// 登记一次已发出的 seek：计数 +1，并记下目标等它落地（见 [_pendingSeekLandingMs]）。
   int _noteSeekIssued(int targetMs) {
     _seekGeneration++;
+    // 显式 seek 撤掉「循环当前句」的武装（见 [_loopArmedCueIndex]）。
+    _loopArmedCueIndex = null;
     // 用户 seek 也是显式播放控制意图（见 [remoteControlRevision]）；句尾自动停下的
     // 落点 seek 不是（见 [_automaticSubtitleEndHold]）。
     if (!_automaticSubtitleEndHold) _remoteControlRevision++;
@@ -2316,6 +2339,7 @@ class VideoPlayerController extends ChangeNotifier
       _oneShotHoldCueIndex = shift(_oneShotHoldCueIndex);
       _lastSubtitleEndPauseCueIndex = shift(_lastSubtitleEndPauseCueIndex);
       _seekTargetCueIndex = shift(_seekTargetCueIndex);
+      _loopArmedCueIndex = shift(_loopArmedCueIndex);
       _activeCueIndices = <int>[
         for (final int index in _activeCueIndices) shift(index)!,
       ];
@@ -2582,8 +2606,10 @@ class VideoPlayerController extends ChangeNotifier
     // 同理复位一次性「只播这一句就停」请求与句尾防重复停记号：两者都是**旧 _cues 的
     // 下标**，对新列表已无意义，留着会让新片的某句被无缘无故停一次。
     _oneShotHoldCueIndex = null;
-    _oneShotHoldUntilMs = null;
+    _endPlayRange(RangePlaybackEnd.interrupted);
     _lastSubtitleEndPauseCueIndex = null;
+    // 循环武装是旧列表的下标（模式本身保留，新列表里进入的句子照样循环）。
+    _loopArmedCueIndex = null;
     // 主字幕换了：给 Lua 脚本的镜像轨跟着重挂（没装脚本时零开销）。
     _scheduleLuaSubtitleMirrorSync();
     if (_cues.isNotEmpty) onCuesReplaced?.call(_cues);
@@ -4116,8 +4142,10 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   void _handleCompletedChanged(bool completed) {
-    if (isBlurayNavigationSession) return;
     if (!completed) return;
+    // 终点落在片尾之后（或贴着片尾、位置回调没来得及越过）时，媒体播完就是这段播完。
+    _endPlayRange(RangePlaybackEnd.reachedEnd);
+    if (isBlurayNavigationSession) return;
     if (_completedFiredForLoad) return;
     _completedFiredForLoad = true;
     _onCompleted?.call();
@@ -4310,8 +4338,16 @@ class VideoPlayerController extends ChangeNotifier
     final int? untilMs = _oneShotHoldUntilMs;
     if (untilMs == null || positionMs < untilMs) return;
     if (!_isPlayingForSubtitleEnd()) return;
-    _oneShotHoldUntilMs = null;
+    _endPlayRange(RangePlaybackEnd.reachedEnd);
     unawaited(_runSubtitleEndHold(_subtitleEndHoldPauseOverride ?? pause));
+  }
+
+  /// [playRangeMs] 的唯一收尾点：作废终点，并以 [reason] 完成交给调用方的句柄。
+  void _endPlayRange(RangePlaybackEnd reason) {
+    _oneShotHoldUntilMs = null;
+    final RangePlayback? playback = _playRange;
+    _playRange = null;
+    playback?.finish(reason);
   }
 
   void _syncCueForPosition(int posMs, {required bool persistPosition}) {
@@ -4395,6 +4431,17 @@ class VideoPlayerController extends ChangeNotifier
       final AudioCue cue = _cues[_currentCueIndex];
       _pauseAndSeekForSubtitleEnd(cue, _currentCueIndex);
       return;
+    }
+    // Ix4j5SKUth：循环当前句——武装的那句被自然播过句尾就回到它的句首（一次性「播完
+    // 就停」的 hold 优先，它已在上面返回或在 gap 路径停下）。
+    if (_shouldLoopCurrentCue(effectiveMs)) {
+      _rewindLoopCue(_cues[_currentCueIndex]);
+      return;
+    }
+    if (idx >= 0 &&
+        effectiveMs >= _cues[idx].startMs &&
+        effectiveMs <= _cues[idx].endMs) {
+      _loopArmedCueIndex = idx;
     }
 
     // TODO-1312：主字幕活动集（重叠 cue 全渲染）= 时间上区间覆盖 effective 的所有 cue，
@@ -4616,6 +4663,9 @@ class VideoPlayerController extends ChangeNotifier
   /// 保护由 [notifyExternalSeek] 承载（见其注释）。
   void clearSeekTargetSnap() {
     _clearSeekTargetSnap();
+    // 进度条开始拖动：之后的 seek 在 fork 内部直发、不经 [_noteSeekIssued]，循环武装
+    // 在这里撤（见 [_loopArmedCueIndex]）。
+    _loopArmedCueIndex = null;
   }
 
   /// 外部 seek（media_kit 进度条拖动 / 点击，绕过 [seekMs] 直接 `player.seek`）**落点**通知：
@@ -5729,6 +5779,38 @@ class VideoPlayerController extends ChangeNotifier
     unawaited(_runSubtitleEndHold(_subtitleEndHoldPauseOverride ?? pause));
   }
 
+  /// 「循环当前句」是否开着（Ix4j5SKUth，见 [_loopCurrentCue]）。
+  bool get loopCurrentCue => _loopCurrentCue.value;
+
+  /// 只在循环开关翻转时通知（画面上的循环标记订阅它，不必跟着每个位置 tick 重建）。
+  ValueListenable<bool> get loopCurrentCueListenable => _loopCurrentCue;
+
+  /// 开 / 关「循环当前句」。武装目标随播放位置一直在跟踪（与模式开关无关），所以
+  /// 句中开启，这一句播完就开始回绕。
+  void setLoopCurrentCue(bool enabled) {
+    if (_loopCurrentCue.value == enabled) return;
+    _loopCurrentCue.value = enabled;
+    notifyListeners();
+  }
+
+  /// 武装的那句正被**播放中**越过句尾（[_loopArmedCueIndex] 只在位置落在句内时置、
+  /// 显式 seek 即撤，故这里不会把 seek 跳走误判成播完）。
+  bool _shouldLoopCurrentCue(int effectiveMs) {
+    if (!_loopCurrentCue.value) return false;
+    final int current = _currentCueIndex;
+    if (current < 0 || current >= _cues.length) return false;
+    if (_loopArmedCueIndex != current) return false;
+    if (_holdEnabledForCue(current)) return false;
+    if (effectiveMs <= _cues[current].endMs) return false;
+    return _isPlayingForSubtitleEnd();
+  }
+
+  /// 回到 [cue] 句首接着播。走 [skipToCue]（前导余量 + cue-snap 与跳句同一套），
+  /// 以「自动」身份登记，不计入遥控修订号（与句尾自动停下同口径）。
+  void _rewindLoopCue(AudioCue cue) {
+    unawaited(_runSubtitleEndHold(() => skipToCue(cue)));
+  }
+
   bool _shouldHoldAtSubtitleEnd(int nextCueIndex, int effectiveMs) {
     if (nextCueIndex < 0) return false;
     if (_currentCueIndex < 0 || _currentCueIndex >= _cues.length) {
@@ -5802,7 +5884,7 @@ class VideoPlayerController extends ChangeNotifier
     _clearSeekTargetSnap();
     // 用户主动改变播放位置 = 放弃「只播这一句就停」的意图（[_oneShotHoldCueIndex]）。
     _oneShotHoldCueIndex = null;
-    _oneShotHoldUntilMs = null;
+    _endPlayRange(RangePlaybackEnd.interrupted);
     _beginPlainSeekInFlight(clampedMs);
     final int token = _noteSeekIssued(clampedMs);
     // 权威同步：直接按目标位置算一次字幕（不经 tick 的位置调和），gap 则立即清空。
@@ -5825,7 +5907,7 @@ class VideoPlayerController extends ChangeNotifier
     // [replayCue] 是唯一例外——它在本方法**之后**才置自己的一次性 hold，与
     // [skipToCue] 置 [_seekTargetCueIndex] 的顺序契约完全同构，故不会被自清。
     _oneShotHoldCueIndex = null;
-    _oneShotHoldUntilMs = null;
+    _endPlayRange(RangePlaybackEnd.interrupted);
     final int clampedMs = positionMs.clamp(0, 1 << 30);
     final int token = _noteSeekIssued(clampedMs);
     _applyHrSeekDemuxerOffsetFor(clampedMs);
@@ -6007,17 +6089,28 @@ class VideoPlayerController extends ChangeNotifier
   /// 用户的起止微调，见 [_oneShotHoldUntilMs]），而 [replayCue] 只能停在 cue 边界。
   /// 顺序与 [replayCue] 同构：先 [seekMs]（它会作废上一次的一次性 hold），再挂本次
   /// 终点，再起播。用户中途 seek / 换片即放弃；[stopPlayRange] 显式停止。
-  Future<void> playRangeMs(int startMs, int endMs) async {
-    if (endMs <= startMs) return;
+  ///
+  /// 起播后即返回一个 [RangePlayback]：这段播到终点（或媒体播完）时以
+  /// [RangePlaybackEnd.reachedEnd] 完成，被 seek / 换片 / [stopPlayRange] / 下一次
+  /// [playRangeMs] / [dispose] 作废时以 [RangePlaybackEnd.interrupted] 完成。调用方
+  /// 的「正在试听」状态必须跟它走（FDN66-xurt）。空区间返回已结束的句柄、不起播。
+  Future<RangePlayback> playRangeMs(int startMs, int endMs) async {
+    if (endMs <= startMs) {
+      return RangePlayback.ended(RangePlaybackEnd.reachedEnd);
+    }
+    // seekMs 经 [_endPlayRange] 把上一段（若还在）以 interrupted 收尾。
     await seekMs(startMs);
+    final RangePlayback playback = RangePlayback();
     _oneShotHoldUntilMs = endMs;
+    _playRange = playback;
     await (_replayPlayOverride ?? play).call();
+    return playback;
   }
 
   /// 停止 [playRangeMs] 起的试听：作废终点并暂停。只 pause 不作废的话，用户之后自然
   /// 续播会在那个旧终点被莫名停一次。
   Future<void> stopPlayRange() async {
-    _oneShotHoldUntilMs = null;
+    _endPlayRange(RangePlaybackEnd.interrupted);
     await pause();
   }
 
@@ -6146,6 +6239,28 @@ class VideoPlayerController extends ChangeNotifier
     );
     if (prev == null) return;
     await skipToCue(_cues[prev]);
+  }
+
+  /// 「重播当前句」：跳到 [cue] 起点**并起播**（Dbd86l4kA-，所有者 2026-10-27 拍板：
+  /// 重播类动作一律起播；单纯「跳到上 / 下一句」[skipToCue] / [skipToPrevCue] /
+  /// [skipToNextCue] 保持当前播放 / 暂停态不变）。与查词浮层的 [replayCue] 不同：
+  /// 不挂「播到句尾就停」的一次性 hold，播完照常往下走。
+  Future<void> playFromCue(AudioCue cue) async {
+    await skipToCue(cue);
+    await (_replayPlayOverride ?? play).call();
+  }
+
+  /// 「重播上一句」：按 [skipToPrevCue] 的判据定位上一句，跳到其起点并起播
+  /// （Dbd86l4kA-，见 [playFromCue]）。已是第一句时 no-op，不起播。
+  Future<void> playFromPreviousCue() async {
+    if (_cues.isEmpty) return;
+    final int? prev = prevCueIndexFor(
+      cues: _cues,
+      positionMs: effectiveSubtitleClockMs,
+      anchorIndex: _seekTargetCueIndex,
+    );
+    if (prev == null) return;
+    await playFromCue(_cues[prev]);
   }
 
   /// 跳上一句字幕。无 cue 时退化成回退 [seekSeconds] 秒（当回退键，让用户跨过没字幕的
@@ -6380,6 +6495,8 @@ class VideoPlayerController extends ChangeNotifier
   @override
   void dispose() {
     _loadToken++;
+    _endPlayRange(RangePlaybackEnd.interrupted);
+    _loopCurrentCue.dispose();
     _discJavaRuntimeProbe?.cancel();
     _discJavaRuntimeProbe = null;
     _discObservedPlayer = null;

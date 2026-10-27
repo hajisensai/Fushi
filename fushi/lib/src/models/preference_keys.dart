@@ -93,6 +93,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool：有声书导入时音频「引用原文件」而不是复制进应用目录（两个导入对话框
   // 共用）。默认 false。见 PreferencesRepository.audiobookImportReferenceOriginal。
   'audiobook_import_reference_original',
+  // int 秒（15..1800，默认 120）：有声书「返回原位置」跳转距离——显式音频 seek 挪动
+  // 至少这么远才进跳转回退历史（反馈 0AwuVqrNFn）。普通偏好，随 Profile / 备份走。
+  'audiobook_jump_threshold_sec',
   // String（JSON 数组）：有声书素材库目录（绝对路径）。库里放按作品身份命名的
   // 字幕/正文文件，下载完成后据此自动配齐「正文 + 字幕 + 音频」。见
   // media/audiobook/audiobook_material_library.dart。
@@ -314,9 +317,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true，D-L2）：查词弹窗「我库里的例句」区块（作品图谱 L4）。关掉时弹窗不渲染、
   // 也不再往语料库喂入（索引留在本机，再开时增量补齐）。常量 [kLibrarySentencesEnabledPrefKey]。
   'lookup_library_sentences',
+  // bool（默认 true = 原行为）：进入查词页（导航点「查词」）以及清空查询后自动
+  // 聚焦搜索框、弹出软键盘（反馈 cczhbM7ZOI）。关掉后只有用户点搜索框才弹。
+  'lookup_page_auto_show_keyboard',
   // bool（默认 false，桌面端）：查词页按「返回上一级」直接最小化主窗（一键收窗
   // 回到之前的程序），不走关弹窗 → 清查询的阶梯。
   'lookup_page_escape_minimizes_window',
+  // bool（默认 true = 原行为）：查词结果滚到顶后继续下拉 = 清空查询、回到搜索
+  // 历史（反馈 3D-JH966Kr）。关掉后下拉不再清空。
+  'lookup_page_pull_to_clear',
   'low_memory_mode',
   // String（`MangaBackground.key`，默认 `black`）：页图周围留白的底色。
   'manga_background',
@@ -795,6 +804,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_backfill_after_scrape',
   'video_subtitle_blur',
   'video_subtitle_list_auto_scroll',
+  // string（默认 all）：字幕列表上次打开的页签（VideoSubtitleListFilter.name，
+  // all / favorites），下次打开恢复（反馈 xlzGuK5YmD）。
+  'video_subtitle_list_filter',
   'video_subtitle_list_font_scale_index',
   // bool（默认 true）：字幕列表里点字幕文字是否查词；关掉后点哪里都只跳到该句
   // （手机上列表旁的查词弹窗太扁，多数人只拿列表跳转，群反馈 GbN9MoKDCQ）。

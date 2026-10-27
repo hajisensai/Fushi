@@ -22,6 +22,8 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
+    show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
@@ -1618,6 +1620,7 @@ class AppModel with ChangeNotifier {
           showMediaNotification: () => showMediaNotification,
           floatingLyricStyle: _appLevelFloatingLyricStyle,
           floatingLyricVisibleLines: () => floatingLyricVisibleLines,
+          audioJumpThresholdSec: () => audiobookJumpThresholdSec,
           floatingLyricClickLookup: () => floatingLyricClickLookup,
           onFloatingLyricLookup: (String text, int index, Rect? wordRect) {
             // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
@@ -2449,6 +2452,20 @@ class AppModel with ChangeNotifier {
       focusSearch: focusSearch,
     );
   }
+
+  /// 查词结果顶部下拉是否清空查询（见 [PreferencesRepository.lookupPagePullToClear]）。
+  /// 偏好还没装好（测试替身没跑 initialise）时按默认值——与
+  /// [librarySentencesEnabled] 同一纪律，判据放在 getter 自己身上。
+  bool get lookupPagePullToClear => _prefsRepo?.lookupPagePullToClear ?? true;
+  Future<void> setLookupPagePullToClear(bool value) =>
+      prefsRepo.setLookupPagePullToClear(value);
+
+  /// 进入查词页 / 清空查询时是否自动弹软键盘（见
+  /// [PreferencesRepository.lookupPageAutoShowKeyboard]）。未初始化按默认值，同上。
+  bool get lookupPageAutoShowKeyboard =>
+      _prefsRepo?.lookupPageAutoShowKeyboard ?? true;
+  Future<void> setLookupPageAutoShowKeyboard(bool value) =>
+      prefsRepo.setLookupPageAutoShowKeyboard(value);
 
   /// 查词页按「返回上一级」（默认 Esc）是否最小化主窗（桌面；见
   /// [PreferencesRepository.lookupPageEscapeMinimizesWindow]）。
@@ -3733,6 +3750,12 @@ class AppModel with ChangeNotifier {
       /// Prepare entities that may be repeatedly used at runtime.
       _packageInfo = await PackageInfo.fromPlatform();
       _mediaTrackingAppVersion = _packageInfo.version;
+      // 媒体服务器认证头的客户端身份（产品名 / 本机设备名 / 应用版本，
+      // AL8qJr6yr-）：之后所有 Jellyfin / Emby 请求都按它报。
+      mediaServerClientIdentity = await resolveMediaServerClientIdentity(
+        platformServices.deviceInfo,
+        version: _packageInfo.version,
+      );
 
       debugPrint('[Fushi] init: directories (early, needed for DB)');
       // TODO-1260：这一步内部解析数据根（含对自定义数据根盘的 stat）。盘掉线时最易 hang，
@@ -5175,6 +5198,12 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoSubtitleListTapLookup(bool value) =>
       prefsRepo.setVideoSubtitleListTapLookup(value);
+
+  /// 视频字幕列表上次打开的页签名（xlzGuK5YmD，`VideoSubtitleListFilter.name`）。
+  String get videoSubtitleListFilter => prefsRepo.videoSubtitleListFilter;
+
+  Future<void> setVideoSubtitleListFilter(String value) =>
+      prefsRepo.setVideoSubtitleListFilter(value);
 
   /// 视频字幕列表行字号档位（BUG-878，落 Drift preferences，默认 1=1.0x）。
   int get videoSubtitleListFontScaleIndex =>
@@ -8739,11 +8768,11 @@ class AppModel with ChangeNotifier {
     await setScreenWakelock(enable: false, source: 'closeMedia');
     // Returning to the home/menu shell: restore both system bars.
     await setHomeShellSystemUiMode();
-    // TODO-1275 / BUG-361: returning to the home shell — restore desktop_drop's
-    // Windows OS drop registration in case an opened reader/video/lookup
-    // WebView2 usurped it, so drag-import works again after any media was
-    // opened. No-op off Windows / when desktop_drop lacks the reinitialize patch.
-    await DesktopDropReinitializer.reinitialize();
+    // TODO-1275 / BUG-361 / BUOxDR9WIJ: returning to the home shell — verify
+    // desktop_drop's Windows OS drop registration and re-register only if it
+    // is really gone (logged as a diagnostic). Page routes are also covered by
+    // DesktopDropRouteObserver; this keeps the non-route media close path.
+    await DesktopDropReinitializer.verifyAndRepair('closeMedia');
     await mediaSource.onSourceExit(appModel: this, ref: ref);
 
     await audioCtrl.audioHandler?.stop();
@@ -9067,6 +9096,10 @@ class AppModel with ChangeNotifier {
   bool get audiobookBackgroundPlay => prefsRepo.audiobookBackgroundPlay;
   Future<void> setAudiobookBackgroundPlay({required bool value}) =>
       prefsRepo.setAudiobookBackgroundPlay(value: value);
+
+  int get audiobookJumpThresholdSec => prefsRepo.audiobookJumpThresholdSec;
+  Future<void> setAudiobookJumpThresholdSec(int value) =>
+      prefsRepo.setAudiobookJumpThresholdSec(value);
 
   bool get audiobookAutoTranscribe => prefsRepo.audiobookAutoTranscribe;
   Future<void> setAudiobookAutoTranscribe({required bool value}) =>
@@ -11237,10 +11270,8 @@ class AppModel with ChangeNotifier {
             MineToastStatus status,
           })
           described = describeMineOutcome(outcome);
-          FushiToast.show(
-            msg: described.message,
-            severity: mineToastSeverity(described.status),
-          );
+          // 制卡结果走 showMine：过「制卡提示」开关。
+          FushiToast.showMine(msg: described.message, status: described.status);
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);
           FushiToast.show(

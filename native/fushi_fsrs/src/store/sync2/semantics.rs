@@ -7,7 +7,10 @@
 //!   共存时，不自动判输赢：这条删除先**扣住**（不进投影，实体保持可见、可复习），生成冲突项；用户选
 //!   「删除」或「保留」= 追加一条因果覆盖双方的新写入，冲突自然消失、各设备结论一致。
 //! - **彻底清除**：`Purge{entity}` 让每台设备把本机日志里该实体的内容载荷换成哈希（骨架与链不变），删掉
-//!   投影里的内容，并重写自己写过的、含这些操作的段。之后再到的同实体内容操作一到就清除。
+//!   投影里的内容，并重写自己写过的、含这些操作的段。之后再到的同实体内容操作里，**没见过这条清除的**
+//!   （与清除并发、或写在清除之前迟到的）一到就清除；**因果上在清除之后的**（作者已经见过清除，例如用户
+//!   清除后又把同一份 apkg 导回来——笔记 ID 由来源 guid 派生，必然是同一个 ID）是新内容，照常落投影。
+//!   判据只看因果（`op.saw(purge)`），各设备收到同一批操作结论一致；清除可以再来一次，覆盖它见过的复活。
 
 use std::collections::BTreeSet;
 
@@ -358,11 +361,60 @@ pub(crate) fn should_hold(conn: &Connection, profile: &str, kind: &str, entity: 
 
 // ---------------------------------------------------------------- 彻底清除
 
-pub(crate) fn is_purged(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Result<bool, String> {
+fn is_purged(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Result<bool, String> {
     conn.prepare_cached("SELECT 1 FROM sync2_purged WHERE profile_uid = ?1 AND kind = ?2 AND entity = ?3")
         .map_err(sql)?
         .exists(params![profile, kind, entity])
         .map_err(sql)
+}
+
+/// 碰过这个实体的 `Purge` 操作（索引里 `what = '#purge'`）。
+///
+/// 这个索引是后加的：之前执行过的清除只在 `sync2_purged` 里留了「已清除」、不知道是哪条操作。遇到这种
+/// （有清除标记、索引里却没有清除操作）就把日志里全部 `Purge` 操作补进索引一次（同一事务里；清除操作很少，
+/// 补完之后不再走这条路）。补完仍找不到（日志被截断等）→ 返回 `None`：调用方按旧语义整体视为已清除。
+fn purges_of(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Result<Option<Vec<OpId>>, String> {
+    if !is_purged(conn, profile, kind, entity)? {
+        return Ok(Some(Vec::new()));
+    }
+    let find = |conn: &Connection| -> Result<Vec<OpId>, String> {
+        Ok(ops_of(conn, profile, kind, entity)?.into_iter().filter(|(_, w)| w == "#purge").map(|(o, _)| o).collect())
+    };
+    let found = find(conn)?;
+    if !found.is_empty() {
+        return Ok(Some(found));
+    }
+    backfill_purge_index(conn, profile)?;
+    let found = find(conn)?;
+    Ok(if found.is_empty() { None } else { Some(found) })
+}
+
+/// 把日志里的 `Purge` 操作补进实体 → 操作索引（见 [purges_of]）。可重放（INSERT OR IGNORE）。
+fn backfill_purge_index(conn: &Connection, profile: &str) -> Result<(), String> {
+    let ids: Vec<(Vec<u8>, i64)> = conn
+        .prepare_cached("SELECT device, seq FROM sync2_ops WHERE profile_uid = ?1 AND kind = ?2 AND purged = 0")
+        .map_err(sql)?
+        .query_map(params![profile, i64::from(crate::sync2::op::KIND_PURGE)], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    for (d, s) in ids {
+        let id = OpId { device: Id(d.try_into().map_err(|_| "bad device".to_string())?), seq: s as u64 };
+        let Some(op) = load_op(conn, profile, &id)? else { continue };
+        if let Ok(Body::Purge { kind, entity }) = op.body() {
+            index(conn, profile, kind.wire(), &entity.text(), &id, "#purge")?;
+        }
+    }
+    Ok(())
+}
+
+/// 这条刚到的内容操作要不要当场清除：实体被清除过，且这条操作**没见过**其中某一次清除（与清除并发 /
+/// 在清除之前写的迟到操作）。见过全部清除的操作是清除之后的新内容（复活），照常落投影。
+pub(crate) fn purged_for(conn: &Connection, profile: &str, kind: &str, entity: &str, op: &Op) -> Result<bool, String> {
+    Ok(match purges_of(conn, profile, kind, entity)? {
+        None => true,
+        Some(ps) => ps.iter().any(|p| !op.saw(p)),
+    })
 }
 
 /// 把一条操作的载荷换成哈希（本机日志里）；是本设备写的就记下要重写的段。
@@ -391,33 +443,71 @@ pub(crate) fn purge_op(conn: &Connection, profile: &str, id: &OpId, own: Option<
 }
 
 /// 执行一条 `Purge{kind, entity}`：内容操作换成骨架、投影里的内容删掉（`deleted` 寄存器保留）。
-pub(crate) fn purge_entity(conn: &Connection, profile: &str, kind: EntKind, entity: &str, own: &Id, t: &mut Touched) -> Result<(), String> {
+///
+/// 只清这条清除**没见过**之后的操作：因果上在它之后的操作（作者见过它，见 [purged_for]）不动——
+/// 因果投递下它们本不会早于清除到达，这里按同一判据写，重放顺序怎样都得同一个结果。
+pub(crate) fn purge_entity(conn: &Connection, profile: &str, kind: EntKind, entity: &str, purge: &Op, own: &Id, t: &mut Touched) -> Result<(), String> {
     conn.prepare_cached("INSERT OR IGNORE INTO sync2_purged (profile_uid, kind, entity) VALUES (?1, ?2, ?3)")
         .map_err(sql)?
         .execute(params![profile, kind.wire(), entity])
         .map_err(sql)?;
+    index(conn, profile, kind.wire(), entity, &purge.id, "#purge")?;
+    // 清除之后的操作（复活）：它们的投影行与标签添加点留着。
+    let mut after: BTreeSet<(Vec<u8>, i64)> = BTreeSet::new();
     for (id, w) in ops_of(conn, profile, kind.wire(), entity)? {
-        if w == "deleted" || w == "#log" {
+        if w == "deleted" || w == "#log" || w == "#purge" || id == purge.id {
             continue;
+        }
+        if let Some(x) = load_op(conn, profile, &id)? {
+            if x.saw(&purge.id) {
+                after.insert((id.device.0.to_vec(), id.seq as i64));
+                continue;
+            }
         }
         purge_op(conn, profile, &id, Some(own))?;
     }
-    let gone: Vec<String> = conn
-        .prepare_cached("SELECT id FROM srs_field_edits WHERE entity_kind = ?1 AND entity_id = ?2 AND field_key != 'deleted'")
+    // 投影行：对应的操作（sync2_edit_ops）在清除之后的留下；其余（含没有操作映射的合成标签行）删掉。
+    let gone: Vec<(String, Option<Vec<u8>>, Option<i64>)> = conn
+        .prepare_cached(
+            "SELECT f.id, m.device, m.seq FROM srs_field_edits f LEFT JOIN sync2_edit_ops m ON m.edit_id = f.id \
+             WHERE f.entity_kind = ?1 AND f.entity_id = ?2 AND f.field_key != 'deleted'",
+        )
         .map_err(sql)?
-        .query_map(params![kind.wire(), entity], |r| r.get(0))
+        .query_map(params![kind.wire(), entity], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
-    for id in gone {
+    for (id, d, s) in gone {
+        if let (Some(d), Some(s)) = (d, s) {
+            if after.contains(&(d, s)) {
+                continue;
+            }
+        }
         conn.prepare_cached("DELETE FROM srs_field_edits WHERE id = ?1").map_err(sql)?.execute([&id]).map_err(sql)?;
         t.dominated.push(id);
     }
     if kind == EntKind::Note {
-        conn.prepare_cached("DELETE FROM sync2_tag_adds WHERE profile_uid = ?1 AND note = ?2")
+        let adds: Vec<(Vec<u8>, i64)> = conn
+            .prepare_cached("SELECT DISTINCT device, seq FROM sync2_tag_adds WHERE profile_uid = ?1 AND note = ?2")
             .map_err(sql)?
-            .execute(params![profile, entity])
+            .query_map(params![profile, entity], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
             .map_err(sql)?;
+        let mut kept = false;
+        for (d, s) in adds {
+            if after.contains(&(d.clone(), s)) {
+                kept = true;
+                continue;
+            }
+            conn.prepare_cached("DELETE FROM sync2_tag_adds WHERE profile_uid = ?1 AND note = ?2 AND device = ?3 AND seq = ?4")
+                .map_err(sql)?
+                .execute(params![profile, entity, d, s])
+                .map_err(sql)?;
+        }
+        if kept {
+            refresh_tags_row(conn, profile, entity, t)?;
+        }
     }
     t.entities_changed.insert((kind.wire().to_owned(), entity.to_owned()));
     t.purged.insert((kind.wire().to_owned(), entity.to_owned()));

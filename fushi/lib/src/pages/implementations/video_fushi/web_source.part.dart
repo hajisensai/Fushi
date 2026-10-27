@@ -1286,12 +1286,12 @@ extension _VideoWebSource on _VideoFushiPageState {
         .mineImmersion(payload);
     switch (res.result) {
       case 'success':
-        _showOsd(
+        _showMineOsd(
           t.card_exported(deck: res.deckName ?? ''),
-          severity: ToastSeverity.success,
+          MineToastStatus.added,
         );
       case 'duplicate':
-        _showOsd(t.card_duplicate, severity: ToastSeverity.warning);
+        _showMineOsd(t.card_duplicate, MineToastStatus.duplicate);
       default:
         throw StateError(res.message ?? res.detail ?? res.result);
     }

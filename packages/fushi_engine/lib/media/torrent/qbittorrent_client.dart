@@ -14,18 +14,24 @@ String normalizeQbBaseUrl(String raw) {
   return base;
 }
 
-/// 从 `set-cookie` 响应头提取 `SID=<token>`。纯函数，容错：没有 SID 返回 null。
+/// 从 `set-cookie` 响应头提取 qBittorrent 会话 cookie，返回可原样回传的
+/// `<名>=<值>` 对。纯函数，容错：没有会话 cookie 返回 null。
+///
+/// cookie 名随版本变：4.1~5.1 叫 `SID`；5.2 起把 WebUI 端口拼进名字
+/// （`QBT_SID_<端口>`，同机多实例不再互相顶掉会话）。名字只能从响应里读，
+/// 不能按配置的地址猜端口——反代 / 端口映射后对外端口与 qb 自己的端口不同。
 ///
 /// `package:http` 会把多个 `Set-Cookie` 头用 `, ` 连成一个字符串，所以这里按
-/// 边界正则找 `SID=`，兼容多 cookie 串与属性尾巴（`; path=/` 等）。
-String? extractSidCookie(String? setCookieHeader) {
+/// 边界正则找，兼容多 cookie 串与属性尾巴（`; path=/` 等）。
+String? extractSessionCookie(String? setCookieHeader) {
   if (setCookieHeader == null || setCookieHeader.isEmpty) return null;
   final RegExpMatch? match = RegExp(
-    r'(?:^|[\s,;])SID=([^;,\s]+)',
+    r'(?:^|[\s,;])((?:QBT_SID_\d+)|SID)=([^;,\s]+)',
   ).firstMatch(setCookieHeader);
-  final String? sid = match?.group(1);
-  if (sid == null || sid.isEmpty) return null;
-  return sid;
+  final String? name = match?.group(1);
+  final String? value = match?.group(2);
+  if (name == null || value == null || value.isEmpty) return null;
+  return '$name=$value';
 }
 
 /// 「无返回体的动作接口成功了吗」——同时覆盖 qBittorrent 4.1~5.1 与 5.2+。
@@ -359,7 +365,7 @@ List<TorrentFilePriority>? parseQbFilePriorities(String body) {
 /// qBittorrent WebUI API v2 客户端（qBittorrent v4.1+）。
 ///
 /// 认证模型：`POST /api/v2/auth/login`（form + 强制 `Referer` 头）拿
-/// `SID` cookie，之后所有请求带 `Cookie: SID=<token>`；遇 403（会话过期）
+/// 会话 cookie（`SID` / 5.2+ 的 `QBT_SID_<端口>`），之后所有请求原样带回；遇 403（会话过期）
 /// 自动重新登录一次并重试该请求。所有网络方法容错：异常/失败一律返回
 /// null / false / 空列表，绝不抛。
 class QBittorrentClient {
@@ -379,7 +385,7 @@ class QBittorrentClient {
   final http.Client _client;
   final Duration requestTimeout;
 
-  /// 当前会话 cookie；null = 尚未登录或已失效。
+  /// 当前会话 cookie（`<名>=<值>`，见 [extractSessionCookie]）；null = 尚未登录或已失效。
   String? _sid;
 
   /// qBittorrent 开着「对本地主机的客户端跳过身份验证」时，登录接口仍校验
@@ -393,7 +399,7 @@ class QBittorrentClient {
   String? get lastFailure => _lastFailure;
   String? _lastFailure;
 
-  /// 登录并缓存 SID cookie。成功返回 true；凭据错误/网络异常返回 false
+  /// 登录并缓存会话 cookie。成功返回 true；凭据错误/网络异常返回 false
   /// （原因落 [lastFailure]）。
   Future<bool> login() async {
     _sid = null;
@@ -409,9 +415,10 @@ class QBittorrentClient {
         _lastFailure = failure;
         return false;
       }
-      _sid = extractSidCookie(res.headers['set-cookie']);
+      _sid = extractSessionCookie(res.headers['set-cookie']);
       if (_sid == null) {
-        _lastFailure = 'login ok but no SID cookie in response';
+        _lastFailure =
+            'login ok but no session cookie (SID / QBT_SID_<port>) in response';
         return false;
       }
       _lastFailure = null;
@@ -841,7 +848,7 @@ class QBittorrentClient {
     return _anonymousOk;
   }
 
-  /// 发一次裸请求（带 SID cookie 与 Referer）。
+  /// 发一次裸请求（带会话 cookie 与 Referer）。
   Future<http.Response> _send(
     String method,
     String path, {
@@ -856,7 +863,7 @@ class QBittorrentClient {
     }
     final Map<String, String> headers = <String, String>{
       'Referer': baseUrl,
-      if (_sid != null) 'Cookie': 'SID=$_sid',
+      if (_sid != null) 'Cookie': _sid!,
     };
     if (method == 'POST') {
       if (torrentBytes != null) {

@@ -1196,6 +1196,8 @@
     seekTo(st.cues[i].startMs);
     return true;
   }
+  // 重播本句：回句首**并起播**（Dbd86l4kA-，与 App 视频页同口径：重播类动作一律起播，
+  // 只跳不播的是上一句 / 下一句）。
   function shortcutReplay() {
     if (!st.cues.length) return false;
     var now = videoTimeMs();
@@ -1203,6 +1205,13 @@
     if (idx < 0) idx = lastCueStartBefore(now);
     if (idx < 0) return false;
     seekTo(st.cues[idx].startMs);
+    var v = videoEl();
+    if (v && v.paused) {
+      try {
+        var played = v.play();
+        if (played && typeof played.catch === 'function') played.catch(function () {});
+      } catch (_) {}
+    }
     return true;
   }
   function shortcutOffset(deltaMs) {

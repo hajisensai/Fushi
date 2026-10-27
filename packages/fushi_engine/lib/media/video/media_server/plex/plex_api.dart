@@ -27,6 +27,8 @@ import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
+import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
+    show kMediaServerClientProduct;
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
@@ -41,7 +43,8 @@ class PlexClientInfo {
     this.deviceName = kPlexProduct,
   }) : _platform = platform;
 
-  static const String kPlexProduct = 'Fushi';
+  /// 与 Jellyfin / Emby 认证头同一个产品名（[kMediaServerClientProduct]）。
+  static const String kPlexProduct = kMediaServerClientProduct;
 
   final String clientIdentifier;
   final String product;

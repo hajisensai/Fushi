@@ -683,8 +683,21 @@ class FeedbackService extends ChangeNotifier {
   /// 和同一个待传目录（「重试上传」与「追加截图」两个按钮可以同时按），排成一队依次跑。
   final Map<String, Future<void>> _attachChains = <String, Future<void>>{};
 
+  /// 反馈 id → 链上排着 / 正在跑的附件操作个数（见 [attachInFlight]）。
+  final Map<String, int> _attachBusy = <String, int>{};
+
+  /// 这条反馈有附件操作排着或正在跑（[addScreenshots] / [retryPending] / [addVideo] 的上传段）。
+  ///
+  /// [pendingSlots] 同时装着「正在传」与「上次传失败」两种槽位（追加截图是先落盘进待传、
+  /// 再上传）：只有本值为 false 时，待传槽位才是真的「没传上去」。界面拿它区分「正在上传」
+  /// 与「上传失败，重试」——不区分时，追加截图上传的那一两秒里就显示「没上传成功 + 重试」，
+  /// 反馈人以为第一下必定失败（#aiRZmYl5zS）。
+  bool attachInFlight(String id) => (_attachBusy[id] ?? 0) > 0;
+
   /// 把 [task] 接到反馈 [id] 的附件操作链末尾；前一个失败不影响后一个。
   Future<T> _serialAttach<T>(String id, Future<T> Function() task) {
+    _attachBusy[id] = (_attachBusy[id] ?? 0) + 1;
+    notifyListeners();
     final Future<void> previous = _attachChains[id] ?? Future<void>.value();
     final Future<T> result = previous.then<T>((_) => task());
     // 链尾只管「轮到下一个」：结果与异常照常交给调用方 [result]。
@@ -696,6 +709,13 @@ class FeedbackService extends ChangeNotifier {
     unawaited(
       tail.then<void>((_) {
         if (identical(_attachChains[id], tail)) _attachChains.remove(id);
+        final int left = (_attachBusy[id] ?? 1) - 1;
+        if (left > 0) {
+          _attachBusy[id] = left;
+        } else {
+          _attachBusy.remove(id);
+        }
+        notifyListeners();
       }),
     );
     return result;

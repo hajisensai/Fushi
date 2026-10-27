@@ -101,10 +101,183 @@ namespace fushi
 
   namespace
   {
+    // 崩溃摘要（反馈 WkL9BvD7Z9 等「Dart 日志无栈」）：minidump 不随反馈上传（太大、含
+    // 内存），但一行「异常码 / 模块+偏移 / 线程 / 栈前若干帧」足够分诊。追加进
+    // crashdumps\crash_summary.log，下次启动由 Dart previous_exit_log.dart 读出折进错误
+    // 日志后清空。全部用静态缓冲：崩溃 filter 里不碰堆，栈溢出（0xC00000FD）时也不再
+    // 吃本就见底的线程栈。
+    wchar_t g_summary_line[2048];
+    char g_summary_utf8[4096];
+
+    size_t AppendHexW(wchar_t* buf, size_t pos, size_t cap, unsigned long long v)
+    {
+      static const wchar_t kDigits[] = L"0123456789abcdef";
+      wchar_t tmp[17];
+      int n = 0;
+      do {
+        tmp[n++] = kDigits[v & 0xf];
+        v >>= 4;
+      } while (v != 0 && n < 16);
+      if (pos + 2 + n >= cap) return pos;
+      buf[pos++] = L'0';
+      buf[pos++] = L'x';
+      for (int i = n - 1; i >= 0; --i) buf[pos++] = tmp[i];
+      buf[pos] = L'\0';
+      return pos;
+    }
+
+    size_t AppendTextW(wchar_t* buf, size_t pos, size_t cap, const wchar_t* s)
+    {
+      while (*s && pos + 1 < cap) buf[pos++] = *s++;
+      buf[pos] = L'\0';
+      return pos;
+    }
+
+    // 「模块名+0x偏移」（模块名只取文件名，不带含用户名的完整路径）。
+    size_t AppendModuleOffsetW(wchar_t* buf, size_t pos, size_t cap,
+      unsigned long long address)
+    {
+      HMODULE module = nullptr;
+      if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        reinterpret_cast<LPCWSTR>(address), &module) && module != nullptr) {
+        wchar_t path[MAX_PATH];
+        const DWORD len = GetModuleFileNameW(module, path, MAX_PATH);
+        const wchar_t* name = path;
+        if (len > 0 && len < MAX_PATH) {
+          for (DWORD i = 0; i < len; ++i) {
+            if (path[i] == L'\\' || path[i] == L'/') name = path + i + 1;
+          }
+        } else {
+          name = L"?";
+        }
+        pos = AppendTextW(buf, pos, cap, name);
+        pos = AppendTextW(buf, pos, cap, L"+");
+        return AppendHexW(buf, pos, cap,
+          address - reinterpret_cast<unsigned long long>(module));
+      }
+      pos = AppendTextW(buf, pos, cap, L"?");
+      return AppendHexW(buf, pos, cap, address);
+    }
+
+#if defined(_M_X64)
+    // 从异常上下文 unwind 出前若干帧（只用 ntdll 的 RtlLookupFunctionEntry /
+    // RtlVirtualUnwind，零堆分配）。读坏栈时 SEH 兜住，只是少几帧。
+    size_t AppendBacktraceW(wchar_t* buf, size_t pos, size_t cap,
+      const CONTEXT* start)
+    {
+      static CONTEXT ctx;
+      ctx = *start;
+      __try {
+        for (int frame = 0; frame < 10 && ctx.Rip != 0; ++frame) {
+          pos = AppendTextW(buf, pos, cap, frame == 0 ? L" frames=" : L",");
+          pos = AppendModuleOffsetW(buf, pos, cap, ctx.Rip);
+          DWORD64 image_base = 0;
+          PRUNTIME_FUNCTION fn = RtlLookupFunctionEntry(ctx.Rip, &image_base,
+            nullptr);
+          if (fn == nullptr) {
+            // 叶函数：返回地址就在栈顶。
+            ctx.Rip = *reinterpret_cast<DWORD64*>(ctx.Rsp);
+            ctx.Rsp += 8;
+          } else {
+            PVOID handler_data = nullptr;
+            DWORD64 establisher = 0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, image_base, ctx.Rip, fn, &ctx,
+              &handler_data, &establisher, nullptr);
+          }
+        }
+      } __except (EXCEPTION_EXECUTE_HANDLER) {
+        pos = AppendTextW(buf, pos, cap, L",<unwind failed>");
+      }
+      return pos;
+    }
+#endif
+
+    void AppendCrashSummary(EXCEPTION_POINTERS* ep, DWORD thread_id,
+      const wchar_t* dump_path)
+    {
+      if (ep == nullptr || ep->ExceptionRecord == nullptr) return;
+      wchar_t* line = g_summary_line;
+      const size_t cap = sizeof(g_summary_line) / sizeof(wchar_t);
+      size_t pos = 0;
+      line[0] = L'\0';
+      SYSTEMTIME st;
+      GetLocalTime(&st);
+      wchar_t stamp[32];
+      size_t sp = 0;
+      sp += AppendDecW(stamp + sp, st.wYear, 4); stamp[sp++] = L'-';
+      sp += AppendDecW(stamp + sp, st.wMonth, 2); stamp[sp++] = L'-';
+      sp += AppendDecW(stamp + sp, st.wDay, 2); stamp[sp++] = L' ';
+      sp += AppendDecW(stamp + sp, st.wHour, 2); stamp[sp++] = L':';
+      sp += AppendDecW(stamp + sp, st.wMinute, 2); stamp[sp++] = L':';
+      sp += AppendDecW(stamp + sp, st.wSecond, 2);
+      stamp[sp] = L'\0';
+      pos = AppendTextW(line, pos, cap, L"time=");
+      pos = AppendTextW(line, pos, cap, stamp);
+      const EXCEPTION_RECORD* rec = ep->ExceptionRecord;
+      pos = AppendTextW(line, pos, cap, L" code=");
+      pos = AppendHexW(line, pos, cap, rec->ExceptionCode);
+      pos = AppendTextW(line, pos, cap, L" at=");
+      pos = AppendModuleOffsetW(line, pos, cap,
+        reinterpret_cast<unsigned long long>(rec->ExceptionAddress));
+      if (rec->ExceptionCode == EXCEPTION_ACCESS_VIOLATION &&
+        rec->NumberParameters >= 2) {
+        const ULONG_PTR op = rec->ExceptionInformation[0];
+        pos = AppendTextW(line, pos, cap,
+          op == 0 ? L" av=read@" : (op == 1 ? L" av=write@" : L" av=exec@"));
+        pos = AppendHexW(line, pos, cap, rec->ExceptionInformation[1]);
+      }
+      pos = AppendTextW(line, pos, cap, L" thread=");
+      wchar_t tid[16];
+      tid[AppendDecW(tid, thread_id, 1)] = L'\0';
+      pos = AppendTextW(line, pos, cap, tid);
+#if defined(_M_X64)
+      if (ep->ContextRecord != nullptr) {
+        pos = AppendBacktraceW(line, pos, cap, ep->ContextRecord);
+      }
+#endif
+      pos = AppendTextW(line, pos, cap, L" dump=");
+      if (dump_path != nullptr && dump_path[0] != L'\0') {
+        const wchar_t* name = dump_path;
+        for (const wchar_t* c = dump_path; *c; ++c) {
+          if (*c == L'\\') name = c + 1;
+        }
+        pos = AppendTextW(line, pos, cap, name);
+      } else {
+        pos = AppendTextW(line, pos, cap, L"<not written>");
+      }
+      // 行尾 CRLF 用字符数组拼，不写成以反斜杠开头的宽字符串字面量：路径字面量守卫
+      // （wgc_capture_logging_guard_test，防 MSVC C4129 吞分隔符）只放行转义的 L"\\。
+      static constexpr wchar_t kCrlf[] = {L'\r', L'\n', L'\0'};
+      pos = AppendTextW(line, pos, cap, kCrlf);
+
+      wchar_t log_path[MAX_PATH];
+      if (!ResolveCrashDumpDirectory(log_path)) return;
+      size_t lp = wcsnlen(log_path, MAX_PATH);
+      if (!AppendSegmentW(log_path, &lp, L"\\crash_summary.log")) return;
+      const int bytes = WideCharToMultiByte(CP_UTF8, 0, line,
+        static_cast<int>(pos), g_summary_utf8, sizeof(g_summary_utf8), nullptr,
+        nullptr);
+      if (bytes <= 0) return;
+      HANDLE file = CreateFileW(log_path, FILE_APPEND_DATA, FILE_SHARE_READ,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+      if (file == INVALID_HANDLE_VALUE) return;
+      DWORD written = 0;
+      WriteFile(file, g_summary_utf8, static_cast<DWORD>(bytes), &written,
+        nullptr);
+      CloseHandle(file);
+    }
+
     LONG WINAPI WriteDumpFilter(EXCEPTION_POINTERS* exception_pointers)
     {
-      WriteProcessMinidump(L"hibiki", GetCurrentThreadId(), exception_pointers,
-        nullptr);
+      static wchar_t dump_path[MAX_PATH];
+      dump_path[0] = L'\0';
+      const DWORD thread_id = GetCurrentThreadId();
+      if (!WriteProcessMinidump(L"hibiki", thread_id, exception_pointers,
+        dump_path)) {
+        dump_path[0] = L'\0';
+      }
+      AppendCrashSummary(exception_pointers, thread_id, dump_path);
 
       // 链回前一个 filter（Flutter engine 上报等），保留其行为。
       if (g_previous_filter) {

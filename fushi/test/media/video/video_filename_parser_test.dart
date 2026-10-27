@@ -106,6 +106,50 @@ void main() {
     });
   });
 
+  group('parseVideoPath：英文序数词季名目录（kg41f2PGdC / BUG-3816 遗留）', () {
+    const String vcb = '[VCB-Studio] Yama no Susume';
+
+    test('Second / Third Season 目录给季号（文件名只有 [01]）', () {
+      // 文件名不带季名的形态：季号只能来自目录。
+      expect(
+        parseVideoPath(
+          '/pack/$vcb Second Season [Ma10p_1080p]/01.mkv',
+        ).season,
+        2,
+      );
+      expect(
+        parseVideoPath(
+          '/pack/$vcb Third Season [Ma10p_1080p]/01.mkv',
+        ).season,
+        3,
+      );
+    });
+
+    test('Season Two 目录 / 大小写 / 点分隔都认', () {
+      expect(parseVideoPath('/v/Show Season Two/Show - 03.mkv').season, 2);
+      expect(parseVideoPath('/v/Show THIRD SEASON/Show - 03.mkv').season, 3);
+      expect(parseVideoPath('/v/Show.second.season/Show - 03.mkv').season, 2);
+    });
+
+    test('文件名自带 Second Season：季号来自文件名，系列名去掉季名', () {
+      final VideoNameInfo info = parseVideoPath(
+        '/pack/$vcb Second Season [Ma10p_1080p]/'
+        '$vcb Second Season [05][Ma10p_1080p][x265_flac].mkv',
+      );
+      expect(info.series, 'Yama no Susume');
+      expect(info.season, 2);
+      expect(info.episode, 5);
+    });
+
+    test('负样本：不在 Season 词组里的序数词不算季', () {
+      expect(
+        parseVideoPath('/v/Second Chance/Second Chance - 03.mkv').season,
+        isNull,
+      );
+      expect(parseVideoPath('/v/Two Seasons Later/Ep - 03.mkv').season, isNull);
+    });
+  });
+
   group('G10 第二步：parseVideoFilename 是 FilenameParser.parse 的窄化适配', () {
     test('括号集数 [11]（旧引擎解不出、刮削引擎能）→ 分组/刮削同解', () {
       final VideoNameInfo info = parseVideoFilename(

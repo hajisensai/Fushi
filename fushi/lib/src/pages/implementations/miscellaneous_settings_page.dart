@@ -186,6 +186,12 @@ class _MiscellaneousSettingsBodyState
     // 依赖且在 Android/Windows 均有实现，覆盖两个平台。
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.image,
+      // BUG-3601 复查（WkL9BvD7Z9）：file_picker 8.x 安卓对 image/* 默认在**裸线程**
+      // 里做 JPEG 重压缩（FileUtils.compressImage）——往公共 Pictures 目录建临时
+      // 文件，Android 9/10 未授予运行时 WRITE_EXTERNAL_STORAGE 时抛 IOException 被包成
+      // RuntimeException、decodeStream 返回 null 时 NPE，都直接杀进程且 Dart 零日志。
+      // 我们自己的裁剪链路已按 appIconSourceMaxPixels 封顶，不需要它压缩。
+      allowCompression: false,
     );
     if (result == null) return;
     final String? pickedPath = result.files.first.path;

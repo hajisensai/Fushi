@@ -348,6 +348,54 @@ void bumpSrsRevision(WidgetRef ref) {
   ref.read(srsRevisionProvider.notifier).state++;
 }
 
+/// [srsRevisionProvider] 每一跳的来源：本机写入，还是同步从别的设备拉进来的变更。
+///
+/// 两种都要让界面重读，但只有本机写入需要再推给别的设备（反馈 I1Bg6uMZ32）：以前同步拉入的变更也
+/// 递增同一个修订号，而本机推送（`SrsLocalPush`）监听的正是它——拉进来的数据 5 秒后又触发一轮推送
+/// 同步，复习同步横幅再弹一次、库页内容跟着上下挪，且这轮推送什么也不用推（拉入那一轮已经把本机
+/// 待发的操作一并发出）。修订号单调递增，记下同步那一跳的值即可在监听处分辨，不需要另一条信号。
+class SrsRevisionOrigin {
+  int? _pulledRevision;
+
+  /// 同步拉入了变更：递增修订号让界面重读，并记下这一跳来自同步。
+  void bumpPulled(StateController<int> revision) {
+    final int next = revision.state + 1;
+    _pulledRevision = next;
+    revision.state = next;
+  }
+
+  /// [revision] 这一跳是不是本机写入（不是 [bumpPulled] 递增出来的）。
+  bool isLocalWrite(int revision) => revision != _pulledRevision;
+}
+
+/// 只在本机写入时调 [onLocalWrite]（同步拉入的变更不算，见 [SrsRevisionOrigin]）。
+void listenSrsLocalWrites(
+  Ref ref,
+  SrsRevisionOrigin origin,
+  void Function() onLocalWrite,
+) {
+  ref.listen<int>(srsRevisionProvider, (int? previous, int next) {
+    if (origin.isLocalWrite(next)) onLocalWrite();
+  });
+}
+
+/// 本机复习数据有变动、但**不要求**列表 / 计数此刻重读的信号（单调递增）：复习页里的评分 /
+/// 撤销 / 搁置等。只有互联快速通道订阅它（`srs_app_runtime.dart`，去抖后推一轮）。
+///
+/// 复习页压在牌组列表 / 首页之上，那些页面此刻看不见；以前每评一张卡都发
+/// [srsRevisionProvider]，被盖住的牌组列表随之整库重算一遍计数（[SrsDbStore.deckSummaries]）、
+/// 整页重建两三次，正撞在下一张卡上屏与进场动画的那几帧上（BUG：评分后下一张卡掉帧）。
+/// 进复习页的三个入口（牌组列表、首页复习条、导航速览）都在复习页返回时发一次
+/// [bumpSrsRevision]，列表回到屏上时照样是新的。
+final StateProvider<int> srsLocalWriteProvider = StateProvider<int>(
+  (Ref ref) => 0,
+);
+
+/// 复习页的写操作后调用：只通知互联推送（见 [srsLocalWriteProvider]）。
+void bumpSrsLocalWrite(WidgetRef ref) {
+  ref.read(srsLocalWriteProvider.notifier).state++;
+}
+
 /// 删牌组的执行与进度（BUG-3543 的分块删除）：app 级，不随牌组列表页销毁。
 ///
 /// 以前进度 notifier 与「删完重读」都挂在牌组列表页的 State 上；复习 tab 不常驻，删除途中

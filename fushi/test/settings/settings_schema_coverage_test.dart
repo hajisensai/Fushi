@@ -741,6 +741,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Sentences from your library':
       'test/pages/popup_settings_injection_memo_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
+  // 查词页两个开关（反馈 3D-JH966Kr / cczhbM7ZOI）：生效点在 HomeDictionaryPage
+  // （结果顶部下拉是否清空、导航点进 / 清空后是否聚焦搜索框），开 / 关两态都有
+  // 真 widget 行为断言。
+  'lookup/Pull down at the top to clear the search':
+      'test/pages/home_dictionary_lookup_page_toggles_test.dart',
+  'lookup/Focus search when opening Lookup':
+      'test/pages/home_dictionary_lookup_page_toggles_test.dart',
   // 弹出查词 / 浏览器扩展弹窗的独立尺寸：生效点是有效尺寸解析（解锁前跟随
   // app 内共享值、解锁后用自身宽高），由 AppModel 接线测试咬住；窗口真尺寸要
   // 原生弹出窗 / 扩展宿主，widget 测不到。
@@ -971,6 +978,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'system/P2P (torrent) proxy':
       'test/torrent/download_http_client_proxy_test.dart',
   'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
+  // 复习数据的自动同步（反馈 VNz9dsLeIy）：写 srs_sync_auto，生效点是 SrsSyncScheduler 的几个
+  // 自动触发口（常规同步后置步骤 / 互联快速通道 / 本机写入后推送 / host 收到写入）；harness 里没有
+  // 复习同步在跑，专项测试咬住「关掉后各自动口不跑、手动与进复习页照跑」。
+  'syncBackup/Auto-sync review data': 'test/srs/srs_sync_scheduler_test.dart',
   'syncBackup/Sync statistics': 'test/sync/sync_gating_test.dart',
   // 设备级「同步浏览历史」：生效点是聚合快照按族裁剪（云 / 互联 client / host 三条路径）。
   'syncBackup/Sync browsing history':

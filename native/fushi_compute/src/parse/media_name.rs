@@ -81,6 +81,8 @@ struct Patterns {
     bare_trailing_episode: JsRegex,
     cn_season: JsRegex,
     ordinal_season: JsRegex,
+    word_ordinal_season: JsRegex,
+    season_cardinal_word: JsRegex,
     season_episode_block: JsRegex,
     season_word: JsRegex,
     s_token: JsRegex,
@@ -153,6 +155,16 @@ fn patterns() -> &'static Patterns {
         bare_trailing_episode: JsRegex::cs(r"(?:^|\s)(0\d{1,2}|\d{2})\s*$"),
         cn_season: JsRegex::cs(r"第\s*([0-9零一二两三四五六七八九十]{1,3})\s*[季期]"),
         ordinal_season: JsRegex::ci(r"(\d{1,2})\s*(?:st|nd|rd|th)\s*Season"),
+        // 英文序数词季名（kg41f2PGdC / BUG-3816 遗留）：`Second Season` / `Season Two`。
+        // 只在与 `Season` 直接相连的词组里认——裸 `Second` / `Two` 是标题常见词。
+        word_ordinal_season: JsRegex::ci(concat!(
+            r"(?:^|[\s._-])(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)",
+            r"[\s._]+Season(?=$|[\s._-])",
+        )),
+        season_cardinal_word: JsRegex::ci(concat!(
+            r"(?:^|[\s._-])Season[\s._]+(one|two|three|four|five|six|seven|eight|nine|ten)",
+            r"(?=$|[\s._-])",
+        )),
         season_episode_block: JsRegex::ci(concat!(
             r"^(?:",
             r"第\s*([0-9零一二两三四五六七八九十]{1,3})\s*[季期]",
@@ -231,6 +243,25 @@ fn patterns() -> &'static Patterns {
 
 fn group_text<'a>(m: &Match, text: &'a [u16], index: usize) -> Option<&'a [u16]> {
     m.text(text, index)
+}
+
+/// 英文序数词 / 基数词（1–10，大小写不敏感）→ 数值；只服务于 `Season` 词组规则。
+fn english_number_word(word: &[u16]) -> Option<i64> {
+    let lower: String = String::from_utf16_lossy(word).to_ascii_lowercase();
+    let n = match lower.as_str() {
+        "first" | "one" => 1,
+        "second" | "two" => 2,
+        "third" | "three" => 3,
+        "fourth" | "four" => 4,
+        "fifth" | "five" => 5,
+        "sixth" | "six" => 6,
+        "seventh" | "seven" => 7,
+        "eighth" | "eight" => 8,
+        "ninth" | "nine" => 9,
+        "tenth" | "ten" => 10,
+        _ => return None,
+    };
+    Some(n)
 }
 
 fn group_int(m: &Match, text: &[u16], index: usize) -> i64 {
@@ -658,6 +689,15 @@ fn parse_title_text(p: &Patterns, raw: &[u16], st: &mut State, env: &ParseEnv) -
         text = extract_first(text, &p.cn_season, |m, t| {
             st.season = parse_cn_numeral(p, group_text(m, t, 1).expect("group"))
         });
+    }
+    if st.season.is_none() {
+        for re in [&p.word_ordinal_season, &p.season_cardinal_word] {
+            if st.season.is_none() {
+                text = extract_first(text, re, |m, t| {
+                    st.season = english_number_word(group_text(m, t, 1).expect("group"))
+                });
+            }
+        }
     }
     for re in [
         &p.ordinal_season,
@@ -1103,6 +1143,51 @@ mod tests {
             Some("Lilith-Raws")
         );
         assert_eq!(r.resolution.as_ref().map(s).as_deref(), Some("1080p"));
+    }
+
+    /// kg41f2PGdC / BUG-3816 遗留：英文序数词 / 基数词季名。
+    #[test]
+    fn english_ordinal_season_words() {
+        let cases: [(&str, &str, Option<i64>, Option<i64>); 11] = [
+            (
+                "[VCB-Studio] Yama no Susume Second Season [01][Ma10p_1080p][x265_flac].mkv",
+                "Yama no Susume",
+                Some(2),
+                Some(1),
+            ),
+            (
+                "[VCB-Studio] Yama no Susume Third Season [Ma10p_1080p]",
+                "Yama no Susume",
+                Some(3),
+                None,
+            ),
+            ("Show THIRD SEASON - 05.mkv", "Show", Some(3), Some(5)),
+            ("Show.second.season.07.mkv", "Show", Some(2), Some(7)),
+            ("Show Season Two - 03.mkv", "Show", Some(2), Some(3)),
+            ("Show season ten - 01.mkv", "Show", Some(10), Some(1)),
+            ("Show First Season [12].mkv", "Show", Some(1), Some(12)),
+            // 既有规则不变：数字序数仍由 ordinal_season 认。
+            ("Show 2nd Season - 04.mkv", "Show", Some(2), Some(4)),
+            // 不在 `Season` 词组里的序数词 / 基数词不算季。
+            ("Second Chance - 01.mkv", "Second Chance", None, Some(1)),
+            (
+                "Two Seasons Later - 02.mkv",
+                "Two Seasons Later",
+                None,
+                Some(2),
+            ),
+            (
+                "The Seasoned Second - 03.mkv",
+                "The Seasoned Second",
+                None,
+                Some(3),
+            ),
+        ];
+        for (input, title, season, episode) in cases {
+            let r = parse_name(&w(input), &env());
+            assert_eq!(s(&r.title), title, "title of {input}");
+            assert_eq!((r.season, r.episode), (season, episode), "{input}");
+        }
     }
 
     #[test]
