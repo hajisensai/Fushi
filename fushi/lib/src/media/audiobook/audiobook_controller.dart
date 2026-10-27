@@ -888,10 +888,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
     _clearExplicitSeekSuppression();
     _beginExplicitSeek(target.fileIndex, target.offsetMs);
-    await _player.seek(
-      Duration(milliseconds: target.offsetMs),
-      index: target.fileIndex,
-    );
+    await _seekPlatformForExplicitSeek(target.fileIndex, target.offsetMs);
     notifyListeners();
   }
 
@@ -1482,7 +1479,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _currentCueIndex = -1;
     _beginExplicitSeek(fileIndex, positionMs);
     try {
-      await _player.seek(Duration(milliseconds: positionMs), index: fileIndex);
+      await _seekPlatformForExplicitSeek(fileIndex, positionMs);
     } catch (_) {
       if (_explicitSeekTargetFileIndex == fileIndex &&
           _explicitSeekTargetMs == positionMs) {
@@ -1530,14 +1527,16 @@ class AudiobookPlayerController extends ChangeNotifier {
     _currentCueIndex = -1;
     _beginExplicitSeek(fileIndex, 0);
     try {
-      await _player
-          .setAudioSource(
-            ConcatenatingAudioSource(children: audioSources),
-            initialIndex: fileIndex,
-            initialPosition: Duration.zero,
-            preload: false,
-          )
-          .timeout(const Duration(seconds: 60));
+      await _awaitPlatformForExplicitSeek<Duration?>(
+        () => _player
+            .setAudioSource(
+              ConcatenatingAudioSource(children: audioSources),
+              initialIndex: fileIndex,
+              initialPosition: Duration.zero,
+              preload: false,
+            )
+            .timeout(const Duration(seconds: 60)),
+      );
     } catch (_) {
       if (_explicitSeekTargetFileIndex == fileIndex &&
           _explicitSeekTargetMs == 0) {
@@ -1584,13 +1583,18 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   /// 下发显式 seek 并登记「平台尚未返回」窗口（见 [_explicitSeekPlatformPending]）。
-  Future<void> _seekPlatformForExplicitSeek(
-    int fileIndex,
-    int positionMs,
-  ) async {
+  Future<void> _seekPlatformForExplicitSeek(int fileIndex, int positionMs) =>
+      _awaitPlatformForExplicitSeek<void>(
+        () =>
+            _player.seek(Duration(milliseconds: positionMs), index: fileIndex),
+      );
+
+  /// 显式 seek 的平台操作（seek / 整列换源）一律经这里：窗口期间产生的位置都是
+  /// 操作之前的，不能作为「已到位」的证据（见 [_updateCurrentCue]）。
+  Future<T> _awaitPlatformForExplicitSeek<T>(Future<T> Function() op) async {
     _explicitSeekPlatformPending++;
     try {
-      await _player.seek(Duration(milliseconds: positionMs), index: fileIndex);
+      return await op();
     } finally {
       _explicitSeekPlatformPending--;
     }
@@ -1930,6 +1934,11 @@ class AudiobookPlayerController extends ChangeNotifier {
       // 下一句又跳回当前句 / 上一句乱跳」。暂停时一律抑制瞬态、保留权威 cue、
       // 不清旗；待用户按播放、首帧真实到达 target 后再走下面的正常落定逻辑。
       if (!_player.playing) return;
+      // BUG-3796：只认 seek **之后**产生的位置。平台操作返回前的 tick 报的是 seek 前
+      // 的旧位置——向后 seek 时旧位置本就高于目标，「位置 ≥ 目标 − 容差」会把它误判成
+      // 已到位，清旗后按旧位置重算，把权威目标句覆盖回 seek 前那一句（跨文件时连旧章
+      // 一起，触发跨章回弹）。
+      if (_explicitSeekPlatformPending > 0) return;
       if (reachedExplicitSeekTargetForTesting(
         currentFileIndex: _player.currentIndex ?? 0,
         posMs: posMs,

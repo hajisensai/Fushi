@@ -164,6 +164,66 @@ void main() {
       }
     });
   });
+
+  group('⑦ 显式 seek「已到位」只认 seek 之后产生的位置', () {
+    test('向后 seek：平台返回前回报的旧位置不算到位，返回后到目标才算', () async {
+      final _Harness h = await _Harness.create(bookCues());
+      await h.controller.play();
+      // 正在播第 5 章第 3 句（2500ms），用户跳回第 1 句（0ms）。
+      h.controller.debugUpdateCueForPosition(2500);
+      expect(h.controller.currentCue?.startMs, 2000);
+      final AudioCue target = h.cue(file: 0, startMs: 0);
+
+      h.platform.player!.holdSeeks();
+      final Future<void> skip = h.controller.skipToCue(target);
+      await pumpEventQueue();
+      // 平台还没执行 seek，tick 报的仍是 seek 前的位置：2500 ≥ 0 − 容差。
+      h.controller.debugUpdateCueForPosition(2500);
+      expect(
+        h.controller.explicitSeekInFlightForTesting,
+        isTrue,
+        reason: 'seek 前产生的位置不是到位证据（旧判据只看数值，会在这里误判）',
+      );
+
+      h.platform.player!.releaseSeeks();
+      await skip;
+      await pumpEventQueue();
+      expect(
+        h.controller.currentCue,
+        same(target),
+        reason: '向后 seek 期间的旧位置不得把权威目标句覆盖回 seek 前那一句',
+      );
+      expect(h.controller.explicitSeekInFlightForTesting, isTrue);
+
+      // seek 之后平台报到目标附近：判到位、清旗、cue 照常跟随。
+      h.controller.debugUpdateCueForPosition(50);
+      expect(h.controller.explicitSeekInFlightForTesting, isFalse);
+      expect(h.controller.currentCue, same(target));
+      h.controller.debugUpdateCueForPosition(1200);
+      expect(h.controller.currentCue?.startMs, 1000);
+    });
+
+    test('前向 seek：原行为不变（返回后未到目标不放、到目标即放）', () async {
+      final _Harness h = await _Harness.create(bookCues());
+      await h.controller.play();
+      h.controller.debugUpdateCueForPosition(100);
+      final AudioCue target = h.cue(file: 0, startMs: 2000);
+
+      await h.controller.skipToCue(target);
+      await pumpEventQueue();
+      h.controller.debugUpdateCueForPosition(100);
+      expect(h.controller.explicitSeekInFlightForTesting, isTrue);
+      expect(h.controller.currentCue, same(target));
+
+      h.controller.debugUpdateCueForPosition(1800);
+      expect(
+        h.controller.explicitSeekInFlightForTesting,
+        isFalse,
+        reason: '目标 − 容差以内即到位（BUG-061 原判据）',
+      );
+      expect(h.controller.currentCue?.startMs, 1000);
+    });
+  });
 }
 
 class _Harness {
