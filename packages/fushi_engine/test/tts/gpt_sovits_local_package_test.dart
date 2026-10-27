@@ -201,6 +201,8 @@ void main() {
       expect(spec.executable, p.join(dir.path, 'runtime', 'python.exe'));
       expect(spec.arguments, <String>[
         '-I',
+        '-X',
+        'utf8',
         'api_v2.py',
         '-a',
         '127.0.0.1',
