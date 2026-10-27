@@ -9407,7 +9407,7 @@
   "video_setting_torrent_natpmp": "Mappage de ports NAT-PMP",
   "video_setting_torrent_section_antileech": "Anti-leech",
   "video_setting_torrent_section_session": "Session",
-  "video_setting_torrent_seed_ratio_hint": "Arrêter l'envoi quand le ratio envoyé/téléchargé atteint cette valeur. 0 = illimité.",
+  "video_setting_torrent_seed_ratio_lifetime_hint": "Stop uploading once uploaded/downloaded reaches this — counted over the torrent's whole lifetime, including uploads while it is still downloading (downloading continues). 0 = unlimited.",
   "video_setting_torrent_seed_ratio_limit": "Limite de ratio de seed",
   "video_setting_torrent_seed_time_hint": "Arrêter l'envoi après cette durée de seeding. 0 = illimité.",
   "video_setting_torrent_seed_time_limit": "Limite de temps de seed (minutes)",

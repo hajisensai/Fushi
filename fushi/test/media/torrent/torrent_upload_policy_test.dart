@@ -74,6 +74,19 @@ void main() {
           isFalse);
     });
 
+    test('fRmEhU4XIK: ratio counts the whole lifetime — reaching it while '
+        'still downloading stops upload too', () {
+      // 旧版下载阶段恒 allow：用户设 1.3，最终分享率远超 1.3。
+      expect(
+          shouldAllowUpload(
+              cfg, _m(seeding: false, uploaded: 2000, downloaded: 1000)),
+          isFalse);
+      expect(
+          shouldAllowUpload(
+              cfg, _m(seeding: false, uploaded: 1999, downloaded: 1000)),
+          isTrue);
+    });
+
     test('downloaded==0 → ratio undefined, do not stop on ratio', () {
       expect(shouldAllowUpload(cfg, _m(uploaded: 5000, downloaded: 0)), isTrue);
     });
