@@ -323,6 +323,31 @@ void main() {
     expect(config.algorithm.memoryAlgorithm, SrsAlgorithm.fsrs7);
   });
 
+  test('deleteRetired 删掉退役权重（大模型、SM40）与标记，留下当前权重', () async {
+    final Directory dir = Directory.systemTemp.createTempSync('rwkv_models');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final SrsRwkvModels models = SrsRwkvModels(dir: dir);
+    final List<File> retired = <File>[
+      for (final String name in kSrsRwkvRetiredWeightsNames) ...<File>[
+        File('${dir.path}/$name')..writeAsStringSync('old'),
+        File('${dir.path}/$name.verified')..writeAsStringSync('old'),
+      ],
+    ];
+    expect(kSrsRwkvRetiredWeightsNames, contains('sm40_weights.int8.bin'));
+    expect(
+      kSrsRwkvRetiredWeightsNames,
+      isNot(contains(kSrsRwkvSmallWeightsName)),
+    );
+    models.weightsFile.writeAsStringSync('current');
+
+    await models.deleteRetired();
+
+    for (final File f in retired) {
+      expect(f.existsSync(), isFalse, reason: f.path);
+    }
+    expect(models.weightsFile.existsSync(), isTrue);
+  });
+
   group('日志 → 回放行', () {
     test('按时间排序、card_type 与 elapsed 按上游规则；重置之前的丢弃', () async {
       final _Fixture f = await _Fixture.create();

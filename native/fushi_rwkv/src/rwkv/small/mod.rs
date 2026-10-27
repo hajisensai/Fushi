@@ -2,9 +2,10 @@
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
 //! Fushi: runtime for the small RWKV model (331,511 parameters, d_model 64,
-//! JSchoreels/anki-rwkv release `small-model-sm40-2026-10-19`, package
-//! sm40v2). Not upstream code: written for Fushi from the package's
-//! INTEGRATION.md and NumPy reference.
+//! JSchoreels/anki-rwkv release `small-model-sm56-2026-10-24`, package
+//! sm56). Not upstream code: written for Fushi from the INTEGRATION.md and
+//! NumPy reference of package sm40v2; sm56 retrains the same architecture
+//! (identical `architecture.json` and reference code, new weights).
 //!
 //! It shares the input side with the big model unchanged (the 92 features of
 //! [FeatureState], ID codes and all; the model ignores feature 22) and keeps

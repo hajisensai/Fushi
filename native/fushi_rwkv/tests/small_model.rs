@@ -1,7 +1,7 @@
 // Copyright: Fushi contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
-//! 小模型（SM40）对拍：发布包 `sm40v2-package.zip` 里的 NumPy 参考实现黄金值
+//! 小模型（SM56）对拍：发布包 `sm56-package.zip` 里的 NumPy 参考实现黄金值
 //! （`testvectors/user_{4676,1745}.npz`，两位 benchmark 用户、14,403 行，f32 / int8 两种权重），
 //! 逐行比对 p_imm、p_rating、标签时刻与 6 个扫描时刻的 p_curve，容差 1e-5（包自己的验收标准）。
 //! 另测：块边界不影响结果、快照续跑逐位相同、int8 / int4 状态在超长历史上有界。
@@ -90,7 +90,7 @@ fn zip_entries(bytes: &[u8]) -> HashMap<String, Vec<u8>> {
 fn package_file(name: &str) -> Vec<u8> {
     let entries = zip_entries(small_package());
     entries
-        .get(&format!("sm40v2/{name}"))
+        .get(&format!("sm56/{name}"))
         .unwrap_or_else(|| panic!("{name} missing from the package"))
         .clone()
 }

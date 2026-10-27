@@ -1,7 +1,8 @@
 /// RWKV 权重的按需下载与校验。
 ///
-/// 只用 SM40 小模型（331,511 参数，int4 状态每卡约 2.9 KB）：在真实复习记录上比上游大模型
-/// （2,762,884 参数，int8 状态每卡约 25.7 KB）还略准，大模型已移除（2026-10-21）。权重不随包，
+/// 只用小模型（331,511 参数，int4 状态每卡约 2.9 KB）：SM40 在真实复习记录上已比上游大模型
+/// （2,762,884 参数，int8 状态每卡约 25.7 KB）还略准，大模型已移除（2026-10-21）；2026-10-27
+/// 换成同架构重训的 SM56（新权重，旧快照按权重指纹被拒、自动全量重放一次）。权重不随包，
 /// 用户启用时从作者的 GitHub release 下载；钉 URL + 字节数 + SHA-256（作者可以替换同名资产，所以
 /// 只认哈希），与 native/fushi_rwkv/fetch_model.* 同源。
 library;
@@ -32,25 +33,29 @@ class SrsRwkvModelFile implements DownloadableModelFile {
   final String sha256;
 }
 
-/// 小模型发布包（JSchoreels/anki-rwkv release small-model-sm40-2026-10-19，与 fushi_rwkv
+/// 小模型发布包（JSchoreels/anki-rwkv release small-model-sm56-2026-10-24，与 fushi_rwkv
 /// `SMALL_MODEL_PACKAGE_SHA256` 一致）。
 const SrsRwkvModelFile kSrsRwkvSmallPackage = SrsRwkvModelFile(
-  fileName: 'sm40v2-package.zip',
+  fileName: 'sm56-package.zip',
   url:
-      'https://github.com/JSchoreels/anki-rwkv/releases/download/small-model-sm40-2026-10-19/sm40v2-package.zip',
-  expectedBytes: 5582672,
-  sha256: '9bc1e3e4040ce9693f230e905abb5c925b1102f787424b9059543ae900f1e2a2',
+      'https://github.com/JSchoreels/anki-rwkv/releases/download/small-model-sm56-2026-10-24/sm56-package.zip',
+  expectedBytes: 5581795,
+  sha256: '7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a',
 );
 
 /// 从小模型包里解出来用的 int8 权重（包内 `manifest.json` 记的哈希）。
-const String kSrsRwkvSmallWeightsEntry = 'sm40v2/weights.int8.bin';
-const String kSrsRwkvSmallWeightsName = 'sm40_weights.int8.bin';
+const String kSrsRwkvSmallWeightsEntry = 'sm56/weights.int8.bin';
+const String kSrsRwkvSmallWeightsName = 'sm56_weights.int8.bin';
 const int kSrsRwkvSmallWeightsBytes = 436391;
 const String kSrsRwkvSmallWeightsSha256 =
-    '6196c5fadd611827123102563639393fdcea99bfca83e3fb336fae1cd4bfc7c8';
+    '479b3e2bc6a1c900ba8a4a45d629965c6df2a20cc8ff294583f5aeaeea3b4fdd';
 
-/// 已移除的大模型以前下载到的文件名（[SrsRwkvModels.deleteRetired] 清理用）。
-const String kSrsRwkvRetiredLargeWeightsName = 'RWKV_trained_on_5000_10000.bin';
+/// 以前下载过、现在不再用的权重文件名（[SrsRwkvModels.deleteRetired] 清理用）：已移除的大模型
+/// （约 11 MB），以及被 SM56 取代的 SM40 小模型权重。
+const List<String> kSrsRwkvRetiredWeightsNames = <String>[
+  'RWKV_trained_on_5000_10000.bin',
+  'sm40_weights.int8.bin',
+];
 
 /// 下载或校验失败。
 class SrsRwkvModelException implements Exception {
@@ -126,13 +131,13 @@ class SrsRwkvModels {
     ).writeAsString(kSrsRwkvSmallWeightsSha256, flush: true);
   }
 
-  /// 删掉以前选过大模型时下载的权重（约 11 MB）；没有就什么也不做。
+  /// 删掉 [kSrsRwkvRetiredWeightsNames] 里以前下载的权重与校验标记；没有就什么也不做。
   Future<void> deleteRetired() async {
-    final File weights = File(
-      p.join(dir.path, kSrsRwkvRetiredLargeWeightsName),
-    );
-    for (final File f in <File>[weights, _marker(weights)]) {
-      if (await f.exists()) await f.delete();
+    for (final String name in kSrsRwkvRetiredWeightsNames) {
+      final File weights = File(p.join(dir.path, name));
+      for (final File f in <File>[weights, _marker(weights)]) {
+        if (await f.exists()) await f.delete();
+      }
     }
   }
 }

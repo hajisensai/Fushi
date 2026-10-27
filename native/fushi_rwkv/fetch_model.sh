@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 下载 RWKV-Instant 权重到 native/fushi_rwkv/model/ 并校验 SHA-256。
 #   大模型 RWKV_trained_on_5000_10000.bin（~11 MB，AGPL，见 UPSTREAM.md）
-#   小模型发布包 sm40v2-package.zip（~5.6 MB：weights.int8.bin / weights.f32.bin / 黄金测试向量；
+#   小模型发布包 sm56-package.zip（~5.6 MB：weights.int8.bin / weights.f32.bin / 黄金测试向量；
 #   许可尚未声明，见 README.md「小模型」）
 # 都不入库。
 #
@@ -57,5 +57,5 @@ fetch_pinned "$BIG" 749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1
   "https://raw.githubusercontent.com/JSchoreels/anki/0dd75c5f8fa4ea3543f5a3559870e8aea047bf80/qt/aqt/rwkv_inference/$BIG"
 
 # 小模型：GitHub release 资产；SHA-256 同 src/lib.rs 的 SMALL_MODEL_PACKAGE_SHA256。
-fetch_pinned sm40v2-package.zip 9bc1e3e4040ce9693f230e905abb5c925b1102f787424b9059543ae900f1e2a2 \
-  "https://github.com/JSchoreels/anki-rwkv/releases/download/small-model-sm40-2026-10-19/sm40v2-package.zip"
+fetch_pinned sm56-package.zip 7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a \
+  "https://github.com/JSchoreels/anki-rwkv/releases/download/small-model-sm56-2026-10-24/sm56-package.zip"
