@@ -42,6 +42,7 @@ Future<void> openGameStreamSession({
   ValueChanged<GameStreamVideoSettings>? onSettingsChanged,
   GameStreamLookupLayout lookupLayout = const GameStreamLookupLayout(),
   ValueChanged<GameStreamLookupLayout>? onLookupLayoutChanged,
+  String? Function()? lookupLanguage,
 }) async {
   final NavigatorState navigator = Navigator.of(context);
   final String requestedClientId = clientId ?? gameStreamReceiverClientId;
@@ -66,6 +67,7 @@ Future<void> openGameStreamSession({
       lookupClient: InterconnectGameStreamDictionaryLookup(
         repo: repository,
         peer: peer,
+        lookupLanguage: lookupLanguage,
       ),
       streamClient: client,
       clientId: activeClientId,

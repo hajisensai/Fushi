@@ -8305,10 +8305,27 @@ class AppModel with ChangeNotifier {
     int? overrideMaximumTerms,
     bool useCache = true,
     bool allowRemoteLookup = true,
+  }) => _searchDictionaryInLanguage(
+    searchTerm: searchTerm,
+    searchWithWildcards: searchWithWildcards,
+    overrideMaximumTerms: overrideMaximumTerms,
+    useCache: useCache,
+    allowRemoteLookup: allowRemoteLookup,
+  );
+
+  /// [searchDictionary] 的本体，多一个 [lookupLanguage]：替对端查词时传对端声明的查词
+  /// 语言（见 [effectiveLookupLanguage]）；本机查词为 null，按本机当前查词语言。
+  ///
+  /// 不把 [lookupLanguage] 加到公开的 [searchDictionary] 上：那是测试替身普遍覆写的
+  /// 面，加参数会让全部替身失配。只有同库的 [_AppModelRemoteLookupService] 用它。
+  Future<DictionarySearchResult> _searchDictionaryInLanguage({
+    required String searchTerm,
+    required bool searchWithWildcards,
+    int? overrideMaximumTerms,
+    bool useCache = true,
+    bool allowRemoteLookup = true,
     String? lookupLanguage,
   }) async {
-    // [lookupLanguage]：替对端查词时传对端声明的查词语言（见
-    // [effectiveLookupLanguage]）；本机查词传 null，按本机当前查词语言。
     searchTerm = normalizeSearchTerm(
       searchTerm,
       emojiRegex: _emojiRegex,
@@ -12169,17 +12186,26 @@ class _AppModelRemoteLookupService
     required int maximumTerms,
     String? language,
   }) async {
-    final DictionarySearchResult source = await _appModel.searchDictionary(
-      searchTerm: term,
-      searchWithWildcards: wildcards,
-      overrideMaximumTerms: maximumTerms,
-      lookupLanguage: language,
-      // 浏览器 Shift 与 Side Panel 都会在同一词上反复落点。禁用结果缓存会在 FFI
-      // 原始结果已命中时仍重复构造 DictionaryEntry 和 popupJson（冷后每次仍需数十
-      // 毫秒）；词典/排序/隐藏项设置的所有写路径都会统一清该缓存，因此这里安全复用。
-      useCache: true,
-      allowRemoteLookup: false,
-    );
+    // 浏览器 Shift 与 Side Panel 都会在同一词上反复落点。禁用结果缓存会在 FFI
+    // 原始结果已命中时仍重复构造 DictionaryEntry 和 popupJson（冷后每次仍需数十
+    // 毫秒）；词典/排序/隐藏项设置的所有写路径都会统一清该缓存，因此这里安全复用。
+    // 不带语言的旧请求仍走公开的 [AppModel.searchDictionary]（行为与此前逐字相同）。
+    final DictionarySearchResult source = language == null
+        ? await _appModel.searchDictionary(
+            searchTerm: term,
+            searchWithWildcards: wildcards,
+            overrideMaximumTerms: maximumTerms,
+            useCache: true,
+            allowRemoteLookup: false,
+          )
+        : await _appModel._searchDictionaryInLanguage(
+            searchTerm: term,
+            searchWithWildcards: wildcards,
+            overrideMaximumTerms: maximumTerms,
+            useCache: true,
+            allowRemoteLookup: false,
+            lookupLanguage: language,
+          );
     if (source.entries.isEmpty) return null;
     // scrollPosition 是 DictionarySearchResult 唯一的可变字段。远端传输复用缓存内容，
     // 但不能把本地历史/页面滚动位置的对象别名暴露给远端 record/full-result 调用方。

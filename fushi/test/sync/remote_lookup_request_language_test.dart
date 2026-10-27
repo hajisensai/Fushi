@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
+import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -250,6 +251,80 @@ void main() {
         (await sentBody('  ')).containsKey(kRemoteLookupLanguageField),
         isFalse,
       );
+    });
+
+    test('游戏串流查词：每次查词现读本端语言并随请求发给 host', () async {
+      final List<Map<String, dynamic>> bodies = <Map<String, dynamic>>[];
+      String? language = 'zh-TW';
+      final InterconnectGameStreamDictionaryLookup lookup =
+          InterconnectGameStreamDictionaryLookup(
+            repo: repo,
+            peer: host,
+            httpClient: MockClient((http.Request request) async {
+              bodies.add(jsonDecode(request.body) as Map<String, dynamic>);
+              // 回包带指纹，免得客户端再去问样式端点。
+              return http.Response.bytes(
+                utf8.encode(
+                  jsonEncode(<String, dynamic>{
+                    'type': 'dictionaryResult',
+                    'result': null,
+                    'dictionaryStylesRevision': 'r',
+                    'dictionaryStyles': <String, String>{},
+                  }),
+                ),
+                200,
+                headers: const <String, String>{
+                  'content-type': 'application/json; charset=utf-8',
+                },
+              );
+            }),
+            lookupLanguage: () => language,
+          );
+      await lookup.searchDictionary(
+        term: '头发',
+        wildcards: false,
+        maximumTerms: 20,
+      );
+      language = null;
+      await lookup.searchDictionary(
+        term: '头发',
+        wildcards: false,
+        maximumTerms: 20,
+      );
+      expect(bodies.first[kRemoteLookupLanguageField], 'zh-TW');
+      expect(bodies.last.containsKey(kRemoteLookupLanguageField), isFalse);
+    });
+
+    test('游戏串流查词：没注入语言来源 ⇒ 请求体不带语言（旧行为）', () async {
+      Map<String, dynamic>? body;
+      final InterconnectGameStreamDictionaryLookup lookup =
+          InterconnectGameStreamDictionaryLookup(
+            repo: repo,
+            peer: host,
+            httpClient: MockClient((http.Request request) async {
+              body = jsonDecode(request.body) as Map<String, dynamic>;
+              return http.Response.bytes(
+                utf8.encode(
+                  jsonEncode(<String, dynamic>{
+                    'type': 'dictionaryResult',
+                    'result': null,
+                    'dictionaryStylesRevision': 'r',
+                    'dictionaryStyles': <String, String>{},
+                  }),
+                ),
+                200,
+                headers: const <String, String>{
+                  'content-type': 'application/json; charset=utf-8',
+                },
+              );
+            }),
+          );
+      await lookup.searchDictionary(
+        term: '头发',
+        wildcards: false,
+        maximumTerms: 20,
+      );
+      expect(body!.containsKey(kRemoteLookupLanguageField), isFalse);
     });
   });
 }

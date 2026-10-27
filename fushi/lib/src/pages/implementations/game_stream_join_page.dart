@@ -28,6 +28,7 @@ class GameStreamJoinPage extends StatefulWidget {
     required this.writeSettings,
     this.readLookupLayout,
     this.writeLookupLayout,
+    this.readLookupLanguage,
     super.key,
   });
 
@@ -41,6 +42,10 @@ class GameStreamJoinPage extends StatefulWidget {
   final GameStreamLookupLayout Function()? readLookupLayout;
   final Future<void> Function(GameStreamLookupLayout layout)?
   writeLookupLayout;
+
+  /// 本设备的查词语言（生产接 `AppModel.effectiveLookupLanguage`），随串流查词发给
+  /// host；null = 不带，host 按自己的查词语言。
+  final String? Function()? readLookupLanguage;
 
   @override
   State<GameStreamJoinPage> createState() => _GameStreamJoinPageState();
@@ -131,6 +136,7 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
             ? null
             : (GameStreamLookupLayout next) =>
                   unawaited(widget.writeLookupLayout!(next)),
+        lookupLanguage: widget.readLookupLanguage,
       );
     } on GameStreamLeaveError catch (error) {
       if (mounted) {
