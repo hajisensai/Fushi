@@ -485,10 +485,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
                 data: _lyricsPlayerData(ctrl),
                 callbacks: _lyricsPlayerCallbacks(ctrl),
                 onHtmlThemeChanged: _applyLyricsHtmlTheme,
-                // 跳转回退胶囊：覆盖层常驻 chrome，有历史就显示。
+                // 跳转回退胶囊：覆盖层常驻 chrome，有历史就显示；坐在底栏上方
+                // 让出的带子里，从下往上滑入（反馈 0AwuVqrNFn）。
                 navigationAccessory: _jumpHistory.isEmpty
                     ? null
-                    : _jumpHistoryPill(visible: true),
+                    : _jumpHistoryPill(visible: true, from: AxisDirection.down),
               );
             },
           ),

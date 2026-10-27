@@ -1618,6 +1618,7 @@ class AppModel with ChangeNotifier {
           showMediaNotification: () => showMediaNotification,
           floatingLyricStyle: _appLevelFloatingLyricStyle,
           floatingLyricVisibleLines: () => floatingLyricVisibleLines,
+          audioJumpThresholdSec: () => audiobookJumpThresholdSec,
           floatingLyricClickLookup: () => floatingLyricClickLookup,
           onFloatingLyricLookup: (String text, int index, Rect? wordRect) {
             // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
@@ -9067,6 +9068,10 @@ class AppModel with ChangeNotifier {
   bool get audiobookBackgroundPlay => prefsRepo.audiobookBackgroundPlay;
   Future<void> setAudiobookBackgroundPlay({required bool value}) =>
       prefsRepo.setAudiobookBackgroundPlay(value: value);
+
+  int get audiobookJumpThresholdSec => prefsRepo.audiobookJumpThresholdSec;
+  Future<void> setAudiobookJumpThresholdSec(int value) =>
+      prefsRepo.setAudiobookJumpThresholdSec(value);
 
   bool get audiobookAutoTranscribe => prefsRepo.audiobookAutoTranscribe;
   Future<void> setAudiobookAutoTranscribe({required bool value}) =>

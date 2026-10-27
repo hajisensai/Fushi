@@ -1,8 +1,8 @@
 import 'package:fushi/src/utils/misc/jump_history.dart';
 
-/// 视频播放位置要挪多远才算「跳转」（进回退历史）：与有声书
-/// `AudiobookPlayerController.audioJumpThresholdMs` 同一口径。逐句切换、几秒的
-/// 修正不算；快进快退（±N 秒）是步进，调用方根本不报。
+/// 视频播放位置要挪多远才算「跳转」（进回退历史）。逐句切换、几秒的修正不算；快进
+/// 快退（±N 秒）是步进，调用方根本不报。有声书的阈值已改成可设置、默认 2 分钟（反馈
+/// 0AwuVqrNFn，见 `audiobook_jump_threshold.dart`）；视频这边没有对应反馈，仍是 15 秒。
 const int kVideoJumpThresholdMs = 15000;
 
 /// 同一处的判据：落点相差不到 1 秒视为同一位置（连点同一句 / 同一章不重复压栈）。

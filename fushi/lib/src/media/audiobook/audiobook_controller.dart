@@ -5,6 +5,7 @@ import 'dart:ui' show AppLifecycleState;
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -395,19 +396,41 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 大跨度音频跳转回调：一次显式 seek（拖进度 / 系统媒体控件拖动 / 点句播放 /
   /// 章节定位，即 [seekGlobalMs] / [seekMs] / [skipToCue] 三个漏斗）要把全书位置
-  /// 挪动至少 [audioJumpThresholdMs] 时，在物理 seek **之前**带上出发点的全书
+  /// 挪动至少 [audioJumpThresholdSec] 时，在物理 seek **之前**带上出发点的全书
   /// 毫秒触发。reader 借此把出发点压进「跳转回退」历史。快进快退
   /// （[seekRelative]）是步进不是跳转，不报；逐句切换跨度小于阈值，自然不报。
   void Function(int fromGlobalMs)? onBeforeAudioJump;
 
-  /// 音频移动多远才算「跳转」：逐句、几秒的修正不进回退历史。
-  static const int audioJumpThresholdMs = 15000;
+  /// 音频移动多远才算「跳转」（秒）：逐句、几秒的修正、没听清往回拖一小段都不进回退
+  /// 历史。读的是设置「阅读 › 有声书 › 返回原位置的跳转距离」的实时值（会话注入闭包，
+  /// 见 AudiobookSession），未注入时取出厂默认 2 分钟（反馈 0AwuVqrNFn：旧值写死
+  /// 15 秒，往回拖一分钟也弹返回胶囊）。
+  int Function() audioJumpThresholdSec = _defaultAudioJumpThresholdSec;
+
+  static int _defaultAudioJumpThresholdSec() =>
+      kAudiobookJumpThresholdSecDefault;
+
+  /// 从全书 [fromGlobalMs] 挪到 [targetGlobalMs] 是否构成一次进回退历史的「跳转」
+  /// （阈值 [thresholdSec] 先夹进合理区间）。
+  static bool isAudioJump({
+    required int fromGlobalMs,
+    required int targetGlobalMs,
+    required int thresholdSec,
+  }) =>
+      (targetGlobalMs - fromGlobalMs).abs() >=
+      normalizeAudiobookJumpThresholdSec(thresholdSec) * 1000;
 
   void _reportAudioJump(int targetGlobalMs) {
     final void Function(int)? listener = onBeforeAudioJump;
     if (listener == null) return;
     final int fromMs = globalPosition.inMilliseconds;
-    if ((targetGlobalMs - fromMs).abs() < audioJumpThresholdMs) return;
+    if (!isAudioJump(
+      fromGlobalMs: fromMs,
+      targetGlobalMs: targetGlobalMs,
+      thresholdSec: audioJumpThresholdSec(),
+    )) {
+      return;
+    }
     listener(fromMs);
   }
 
