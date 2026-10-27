@@ -1794,7 +1794,7 @@ class SyncRepository {
     // 「同步浏览历史」是这台设备的隐私许可：从另一台设备恢复备份不得替这台设备
     // 打开浏览轨迹外流。
     kSyncWebHistoryPrefKey,
-    // app 内浏览器的版式 / 行为偏好（标签页样式、侧边栏开合、整页注音……）：
+    // app 内浏览器的版式 / 行为偏好（标签页样式、侧边栏开合……）：
     // 按这台设备的屏幕与习惯调，唯一清单在 web_browser_prefs.dart。
     ...kWebBrowserDeviceLocalPrefKeys,
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，

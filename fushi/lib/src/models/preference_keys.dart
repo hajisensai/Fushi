@@ -832,7 +832,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'web_browser_desktop_mode_default',
   // bool（默认 false）：浏览器网页深色模式（web_browser_prefs.dart，设备本地）。
   'web_browser_force_dark',
-  // bool：浏览器整页注音开关（features/furigana，设备本地）。
+  // bool：已删除的浏览器「整页注音」开关（2026-10-27 用户要求移除）。存量键冻结、
+  // 不再读写；留在这里只为键名不被别的功能复用。
   'web_browser_furigana',
   // bool：已删除的浏览器「生词高亮」开关（2026-10-27 用户要求移除）。存量键冻结、
   // 不再读写；留在这里只为键名不被别的功能复用。
