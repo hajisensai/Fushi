@@ -2327,6 +2327,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 已向站点要过、还没回执的 Netflix metadata id（回执只认这里面的）。
   final Set<String> _webNetflixMetaInFlight = <String>{};
 
+  /// 要失败过的 Netflix metadata id → 失败时页面上的 videoKey。同一个视频文档里不再要（页面
+  /// 条件没变，再要还是失败）；换了视频文档（重新加载 / 换集）再要一次。旧实现失败一次本页
+  /// 永久放弃，选集 / 封面就一直没有（BUG-3801）。
+  final Map<String, String> _webNetflixMetaFailedAt = <String, String>{};
+
   /// 剧集面板（[_episodes]）里每一集对应的站点播放地址。
   List<String> _webEpisodeUrls = const <String>[];
 

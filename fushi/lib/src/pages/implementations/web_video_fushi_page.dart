@@ -242,6 +242,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 宿主档（`_init` 从参数 / 偏好解析）。窗口宿主档下 WebView2 自己绘制：Flutter 叠层
   /// 画不到它上面，字幕层走页面 DOM、查词走顶层窗口、制卡只入队。
   WebVideoHosting _hosting = WebVideoHosting.builtin;
+
+  /// 本页站点（登录 cookie 进出都按它的 host）；环境准备好之前为 null。
+  Uri? _siteUri;
   bool get _windowed => _hosting == WebVideoHosting.windowed;
 
   /// 软件 DRM 垫片只在可捕获的内置档有意义；窗口宿主档就是为硬件 DRM 开的。
@@ -473,6 +476,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       return true;
     }());
     _mineStopRequested = true;
+    // 本页里登录的站点会话抄回 app 内浏览器（登录入口主要在浏览器，BUG-3801）。
+    final Uri? site = _siteUri;
+    if (site != null) unawaited(syncWebVideoLoginToBrowser(site));
     if (_ownsGlobalLookupOnHidden &&
         identical(
           GlobalLookupController.instance.onHidden,
@@ -543,7 +549,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         ? await WebVideoFushiPage.windowedEnvironment()
         : await WebVideoFushiPage.capturableEnvironment();
     if (!mounted) return;
-    if (_windowed) await _copyLoginCookiesFromBuiltin(uri);
+    _siteUri = uri;
+    // 两档都抄：内置档是制卡队列重放的宿主，只抄窗口档时它永远拿不到浏览器 / 播放页里的
+    // 登录态，点「制作队列中的卡片」就落到站点登录页（BUG-3801）。
+    await _copyLoginCookiesFromBuiltin(uri);
     if (!mounted) return;
     unawaited(_refreshFavoriteCache());
     unawaited(_refreshMinePending());
@@ -1206,8 +1215,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     await _syncDomSubtitleTrack();
   }
 
-  /// 窗口宿主档用独立环境（浏览器参数不同 → 独立 user data folder → 独立 cookie 罐）：把内置档
-  /// 已登录的站点 cookie 复制过来，用户不用登录两次。尽力而为，失败只记日志（站点会要求登录）。
+  /// 两档各用独立环境（浏览器参数不同 → 独立 user data folder → 独立 cookie 罐）：把其它视频
+  /// 环境与 app 内浏览器已登录的站点 cookie 复制到本页环境（[kWebVideoLoginCookieSources]，
+  /// 本页自己那份跳过），用户不用登录两次。尽力而为，失败只记日志（站点会要求登录）。
   Future<void> _copyLoginCookiesFromBuiltin(Uri uri) async {
     final WebViewEnvironment? to = _env;
     if (to == null) return;

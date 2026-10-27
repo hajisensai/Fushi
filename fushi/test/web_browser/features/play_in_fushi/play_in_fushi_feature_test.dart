@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/web_browser/features/play_in_fushi/play_in_fushi_feature.dart';
 import 'package:fushi/src/web_browser/features/play_in_fushi/youtube_watch_page.dart';
@@ -105,8 +107,59 @@ void main() {
     });
   });
 
-  test('暂停脚本只暂停在播的 video', () {
-    expect(kWebBrowserPauseVideosScript, contains('querySelectorAll("video")'));
-    expect(kWebBrowserPauseVideosScript, contains('.pause()'));
+  test('按住脚本：暂停在播的媒体并拦之后的 play；解除脚本摘掉同一个监听', () {
+    expect(
+      kWebBrowserHoldMediaScript,
+      contains('querySelectorAll("video,audio")'),
+    );
+    expect(kWebBrowserHoldMediaScript, contains('.pause()'));
+    // 捕获阶段拦 play：交接时 <video> 还没建 / 退回选集页后预告片自动播（BUG-3801）。
+    expect(
+      kWebBrowserHoldMediaScript,
+      contains('addEventListener("play",window.__fushiMediaHold,true)'),
+    );
+    expect(
+      kWebBrowserReleaseMediaScript,
+      contains('removeEventListener("play",h,true)'),
+    );
+  });
+
+  testWidgets('播放页（含 pushReplacement 换上来的制卡页）都关掉才算回到浏览器', (
+    WidgetTester tester,
+  ) async {
+    final GlobalKey<NavigatorState> nav = GlobalKey<NavigatorState>();
+    late BuildContext browserContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: nav,
+        home: Builder(
+          builder: (BuildContext context) {
+            browserContext = context;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    bool back = false;
+    unawaited(
+      nav.currentState!
+          .push<void>(
+            MaterialPageRoute<void>(builder: (_) => const Text('player')),
+          )
+          .then((_) {}),
+    );
+    await tester.pumpAndSettle();
+    unawaited(untilRouteIsCurrent(browserContext).then((_) => back = true));
+    // 播放页换成制卡页：浏览器仍被盖着。
+    unawaited(
+      nav.currentState!.pushReplacement<void, void>(
+        MaterialPageRoute<void>(builder: (_) => const Text('mining')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(back, isFalse);
+    nav.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(back, isTrue);
   });
 }

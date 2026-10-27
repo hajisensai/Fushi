@@ -729,8 +729,8 @@ extension _VideoWebSource on _VideoFushiPageState {
     return url.substring('https://www.netflix.com/watch/'.length);
   }
 
-  /// 正在看的这一集有 metadata 就用（剧集面板 / 章节），没有就向站点要一次（每个 id 一次；失败
-  /// 只记日志，面板没有剧集）。
+  /// 正在看的这一集有 metadata 就用（剧集面板 / 章节），没有就向站点要（每个 id 在途只一次；
+  /// 失败记日志，换了视频文档再要，见 [_webNetflixMetaFailedAt]）。
   void _syncWebNetflixMetadata(WebVideoPlaybackState state) {
     final String? watchId = _webNetflixWatchId(state.href);
     if (watchId == null) return;
@@ -739,7 +739,14 @@ extension _VideoWebSource on _VideoFushiPageState {
       _applyWebNetflixMetadata(meta, watchId, state.durationMs);
       return;
     }
-    if (!state.hasVideo || !_webNetflixMetaRequested.add(watchId)) return;
+    if (!state.hasVideo || _webNetflixMetaInFlight.contains(watchId)) return;
+    final String? failedAt = _webNetflixMetaFailedAt[watchId];
+    if (failedAt != null) {
+      if (failedAt == state.videoKey) return;
+      _webNetflixMetaFailedAt.remove(watchId);
+    } else if (!_webNetflixMetaRequested.add(watchId)) {
+      return;
+    }
     _webNetflixMetaInFlight.add(watchId);
     unawaited(
       _webSession?.evaluate(
@@ -752,13 +759,20 @@ extension _VideoWebSource on _VideoFushiPageState {
     // 回执来自页面（不可信）：只认本页确实发出过、还没回的那个 id，且原文里真有这一集
     // ——否则页面可以随手投一份伪造的剧集 / 剧照 / 片头标记给任意 id。
     if (!_webNetflixMetaInFlight.remove(movieId)) return;
-    if (!mounted || text == null) return;
+    if (!mounted) return;
+    void failed() => _webNetflixMetaFailedAt[movieId] =
+        _webSession?.lastState?.videoKey ?? '';
+    if (text == null) {
+      failed();
+      return;
+    }
     final NetflixTitleMetadata? meta = parseNetflixMetadata(text);
     if (meta != null && !meta.describes(movieId)) {
       ErrorLogService.instance.log(
         'VideoFushi.web',
         'netflix metadata $movieId: response does not contain that episode',
       );
+      failed();
       return;
     }
     if (meta == null) {
@@ -766,6 +780,7 @@ extension _VideoWebSource on _VideoFushiPageState {
         'VideoFushi.web',
         'netflix metadata $movieId: unrecognised shape',
       );
+      failed();
       return;
     }
     _webNetflixMeta[movieId] = meta;
@@ -779,6 +794,8 @@ extension _VideoWebSource on _VideoFushiPageState {
         : _webNetflixWatchId(state.href);
     if (watchId != null && _webNetflixMeta[watchId] == meta) {
       _applyWebNetflixMetadata(meta, watchId, state!.durationMs);
+      // 封面 / 真名补全原本只在下一份快照触发：暂停时 metadata 到了也立刻补（BUG-3801）。
+      if (_webPlayerMode) unawaited(_bindWebEpisode(state));
     }
   }
 
