@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3423 条。点号进各自文件。
+> 共 3424 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3820](bugs/BUG-3820-lyrics-follow-breaks-without-touch.md) | ✅ | ✅ | 歌词模式没碰屏幕也会自动对齐中断、弹出「跟随音频」 |
 | [BUG-3819](bugs/BUG-3819-srs-auto-sync-toggle.md) | ✅ | ✅ | 设置 › 同步加「自动同步复习数据」开关（复习数据后台同步无法单独关闭） |
 | [BUG-3818](bugs/BUG-3818-srs-sync-pull-triggers-push.md) | ✅ | ✅ | 复习同步拉入的变更又触发一轮本机推送，库页横幅反复弹出、内容上下挪 |
 | [BUG-3817](bugs/BUG-3817-video-delete-work-leaves-extras.md) | ✅ | ✅ | 删除动漫只删正片：特典与其余下载资源残留在目录 |
