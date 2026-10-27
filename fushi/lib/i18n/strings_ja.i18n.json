@@ -7162,6 +7162,7 @@
   "srs_import_report_media_missing": "$n referenced media files are missing from the package",
   "srs_import_report_notes": "Notes: $added added, $updated updated, $skipped unchanged",
   "srs_import_report_notetypes_duplicated": "Note type “$name” differs from the one here and was imported as a separate note type",
+  "srs_import_report_notetypes_restored": "Restored previously deleted note type “$name”",
   "srs_import_report_notetypes_updated": "Note types updated: $n",
   "srs_import_report_presets_skipped": "Deck presets not imported: $n (new decks use the default settings)",
   "srs_import_report_removed": "$n fields or templates deleted in the source are kept here",

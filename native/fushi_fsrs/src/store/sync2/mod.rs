@@ -436,7 +436,7 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
         Body::TagOrder { note, tags } => {
             let n = note.text();
             semantics::index(conn, profile, "note", &n, &op.id, "#tag")?;
-            if semantics::is_purged(conn, profile, "note", &n)? {
+            if semantics::purged_for(conn, profile, "note", &n, op)? {
                 semantics::purge_op(conn, profile, &op.id, Some(&self_device(conn, profile)?))?;
                 return Ok(());
             }
@@ -446,7 +446,7 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
         Body::TagAdd { note, tag } | Body::TagRemove { note, tag } => {
             let n = note.text();
             semantics::index(conn, profile, "note", &n, &op.id, "#tag")?;
-            if semantics::is_purged(conn, profile, "note", &n)? {
+            if semantics::purged_for(conn, profile, "note", &n, op)? {
                 semantics::purge_op(conn, profile, &op.id, Some(&self_device(conn, profile)?))?;
                 return Ok(());
             }
@@ -460,7 +460,7 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
         }
         Body::Purge { kind, entity } => {
             let own = self_device(conn, profile)?;
-            semantics::purge_entity(conn, profile, kind, &entity.text(), &own, t)?;
+            semantics::purge_entity(conn, profile, kind, &entity.text(), op, &own, t)?;
         }
         Body::Checkpoint { name, reason } => {
             conn.prepare_cached(
@@ -566,6 +566,12 @@ fn project_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i6
     // 标签是 OR-Set：整列表的 `tags` 写入（迁移进来的旧记录）按「添加其中每个标签」并入。迁移时也要做：
     // 合成行替换掉旧的 `tags` 行，各设备收到同一批操作后结果相同。
     if e.kind == EntKind::Note && e.key == "tags" {
+        // 整列表标签同样是内容：没见过清除的迟到写入当场清除（以前这条分支在清除判断之前，被清除笔记的
+        // 标签照样并回来）。
+        if project && semantics::purged_for(conn, profile, "note", &ent, op)? {
+            semantics::purge_op(conn, profile, &op.id, Some(&self_device(conn, profile)?))?;
+            return Ok(());
+        }
         if let Ok(Value::Array(xs)) = serde_json::from_str::<Value>(&e.value) {
             let tags: Vec<String> = xs.iter().filter_map(Value::as_str).map(str::to_owned).collect();
             for x in &tags {
@@ -580,7 +586,7 @@ fn project_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i6
     if !project {
         return Ok(());
     }
-    if e.key != "deleted" && semantics::is_purged(conn, profile, e.kind.wire(), &ent)? {
+    if e.key != "deleted" && semantics::purged_for(conn, profile, e.kind.wire(), &ent, op)? {
         semantics::purge_op(conn, profile, &op.id, Some(&self_device(conn, profile)?))?;
         return Ok(());
     }

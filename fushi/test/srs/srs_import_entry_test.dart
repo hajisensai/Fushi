@@ -16,6 +16,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import '../../../packages/fushi_engine/test/srs/apkg/apkg_test_support.dart';
@@ -172,6 +173,40 @@ void main() {
     );
     expect(again.notesAdded, 0);
     expect(again.notesSkipped, 1);
+  });
+
+  test('删掉笔记类型后重导：笔记类型恢复、笔记计恢复且看得见，报告写出恢复的笔记类型', () async {
+    final File file = File('${tmp.path}/deck.apkg')..writeAsBytesSync(_apkg());
+    await runSrsAnkiImport(
+      store: store,
+      media: media,
+      file: file,
+      zstdDecompress: (Uint8List b) => null,
+    );
+    final String ntId = SrsIds.noteType(kSrsTestProfile, _kBasic);
+    await store.deleteNoteType(ntId);
+    expect(await store.listNotes(), isEmpty);
+
+    final SrsImportReport report = await runSrsAnkiImport(
+      store: store,
+      media: media,
+      file: file,
+      zstdDecompress: (Uint8List b) => null,
+    );
+    expect(report.notesAdded, 0);
+    expect(report.notesRestored, 1);
+    expect(report.noteTypesRestored, <String>['Basic']);
+    expect(<String>[
+      for (final SrsNoteTypeView v in await store.noteTypes()) v.id,
+    ], contains(ntId));
+    expect(await store.listNotes(), hasLength(1));
+    expect(
+      srsImportReportLines(report),
+      containsAll(<String>[
+        t.srs_import_report_restored(n: 1),
+        t.srs_import_report_notetypes_restored(name: 'Basic'),
+      ]),
+    );
   });
 
   test('带 FSRS 参数导入：报告写明已改用 RWKV；「继续用 FSRS」只切回仍自己管参数的 RWKV 牌组', () async {
