@@ -31,6 +31,20 @@ class KavitaApiRegistry {
     return api;
   }
 
+  /// 按服务器配置 id 在 [servers] 里找可用（启用且有 key）的那台并取协议层；
+  /// 服务器已删除 / 停用时返回 null。
+  KavitaApi? apiForServerId(
+    Iterable<KavitaServerConfig> servers,
+    String serverConfigId,
+  ) {
+    for (final KavitaServerConfig config in servers) {
+      if (config.id == serverConfigId && config.isUsable) {
+        return apiFor(config);
+      }
+    }
+    return null;
+  }
+
   /// 只保留 [configs] 里仍存在的服务器的实例，其余关闭（用户删了服务器）。
   void retainOnly(Iterable<KavitaServerConfig> configs) {
     final Set<String> keep = <String>{

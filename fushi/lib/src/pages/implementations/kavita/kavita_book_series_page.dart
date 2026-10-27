@@ -1,9 +1,10 @@
-/// Kavita EPUB 系列详情：章（文件）列表，每章可「阅读」（流式打开：下载到缓存后
-/// 入库阅读）或「下载」（固定为长期保留）。
+/// Kavita EPUB 系列详情：章（文件）列表，每章可「阅读」（下载成缓存副本后入库阅读，
+/// 缓存有上限、按最近使用淘汰）或「下载」（持久副本）。
 ///
-/// 打开 = [KavitaBookService.openOrImport]（已在本地就不重复下载）；下载 = 打开 +
-/// [KavitaBookService.pin]。下载入口受 `StoreRestrictedCapability.downloads` 管（iOS
-/// 隐藏），阅读不受限。
+/// 打开 = [KavitaBookService.openOrImport]（已在本地就不重复下载）+ 打开后
+/// [KavitaBookService.trimCache]；下载 = 打开 + [KavitaBookService.pin]；移除下载 =
+/// [KavitaBookService.removeDownload]（真删本地文件与书架条目）。下载 / 移除下载入口
+/// 受 `StoreRestrictedCapability.downloads` 管（iOS 隐藏），阅读不受限。
 library;
 
 import 'dart:async';
@@ -12,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_book_binding.dart';
 import 'package:fushi/src/media/kavita/kavita_book_service.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
@@ -59,9 +61,12 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
   Future<KavitaBookService> _ensureService() async {
     final KavitaBookService? existing = _service;
     if (existing != null) return existing;
+    final AppModel appModel = ref.read(appProvider);
     final KavitaBookService created = KavitaBookService(
-      db: ref.read(appProvider).database,
+      db: appModel.database,
       tempRoot: await getTemporaryDirectory(),
+      apiFor: (String serverConfigId) => KavitaApiRegistry.instance
+          .apiForServerId(appModel.prefsRepo.kavitaServers, serverConfigId),
     );
     return _service = created;
   }
@@ -161,6 +166,7 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
     final String? bookKey = await _ensureLocal(chapter);
     if (bookKey == null || !mounted) return;
     unawaited(_refreshBound());
+    unawaited(_trimCache(keep: bookKey));
     final AppModel appModel = ref.read(appProvider);
     final MediaItem? item = await ReaderFushiSource.instance
         .mediaItemForBookKey(bookKey);
@@ -181,16 +187,58 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
     if (mounted) await _refreshBound();
   }
 
-  Future<void> _removeDownload(String bookKey) async {
-    final KavitaBookService service = await _ensureService();
-    await service.unpin(bookKey);
+  /// 「阅读」刚产生 / 用到一份缓存副本：把缓存收回上限（不挡开书，失败只记日志）。
+  Future<void> _trimCache({required String keep}) async {
+    try {
+      final KavitaBookService service = await _ensureService();
+      await service.trimCache(keep: keep);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('KavitaBookSeries.trimCache', error, stack);
+    }
     if (mounted) await _refreshBound();
+  }
+
+  Future<void> _removeDownload(String bookKey) async {
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
+        key: const ValueKey<String>('kavita-remove-download-confirm'),
+        title: Text(t.kavita_book_remove_download),
+        content: Text(t.kavita_book_remove_download_confirm),
+        actions: <Widget>[
+          FushiTextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(t.kavita_book_cancel),
+          ),
+          FushiTextButton(
+            key: const ValueKey<String>('kavita-remove-download-ok'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(t.kavita_book_remove_download),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final KavitaBookService service = await _ensureService();
+    final KavitaLocalRemoval outcome = await service.removeDownload(bookKey);
+    if (!mounted) return;
+    final String? message = switch (outcome) {
+      KavitaLocalRemoval.removed => null,
+      KavitaLocalRemoval.keptUnsynced => t.kavita_book_remove_download_kept,
+      KavitaLocalRemoval.failed => t.kavita_book_remove_download_failed,
+    };
+    if (message != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(FushiSnackBar(content: Text(message)));
+    }
+    await _refreshBound();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.series.displayName)),
+      appBar: FushiAppBar(title: Text(widget.series.displayName)),
       body: _body(),
     );
   }
@@ -252,7 +300,7 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
       subtitle: status.isEmpty ? null : Text(status),
       onTap: busy ? null : () => unawaited(_read(chapter)),
       trailing: busy
-          ? TextButton(
+          ? FushiTextButton(
               onPressed: () => _tokens[chapter.id]?.cancel(),
               child: Text(t.kavita_book_cancel),
             )
@@ -260,18 +308,18 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 if (canDownload && pinned)
-                  IconButton(
+                  FushiIconButtonControl(
                     tooltip: t.kavita_book_remove_download,
                     icon: const FushiIcon(FushiIcons.downloadDone),
                     onPressed: () => unawaited(_removeDownload(local.bookKey)),
                   )
                 else if (canDownload)
-                  IconButton(
+                  FushiIconButtonControl(
                     tooltip: t.kavita_book_download,
                     icon: const FushiIcon(FushiIcons.download),
                     onPressed: () => unawaited(_download(chapter)),
                   ),
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: t.kavita_book_open,
                   icon: const FushiIcon(FushiIcons.books),
                   onPressed: () => unawaited(_read(chapter)),

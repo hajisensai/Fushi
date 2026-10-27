@@ -1,4 +1,5 @@
-/// 「Kavita 服务器」设置区：用户自配 Kavita 服务器增删改 + 连接测试。
+/// 「Kavita 服务器」设置区：用户自配 Kavita 服务器增删改 + 连接测试，以及
+/// 「阅读」产生的 EPUB 缓存副本的一键清理（[KavitaBookService.clearCache]）。
 ///
 /// 结构照抄 `audiobookshelf_server_settings_section.dart`（草稿态 + 600ms 防抖落盘
 /// + dispose 时 flush），但凭据更简单：只有一把长期 API key，没有令牌轮换，所以
@@ -13,6 +14,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/discovery/discovery_server_probes.dart'
     show DiscoveryProbeOutcome;
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
+import 'package:fushi/src/media/kavita/kavita_book_service.dart';
 import 'package:fushi/src/media/kavita/kavita_connect_probe.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -42,6 +44,49 @@ class _KavitaServerSettingsSectionState
 
   final Map<String, _ProbeState> _probes = <String, _ProbeState>{};
 
+  /// 本机缓存副本数；null = 还没数过。
+  int? _cachedBookCount;
+  bool _clearingCache = false;
+
+  KavitaBookService _bookService(AppModel appModel) => KavitaBookService(
+    db: appModel.database,
+    apiFor: (String serverConfigId) => KavitaApiRegistry.instance
+        .apiForServerId(appModel.prefsRepo.kavitaServers, serverConfigId),
+  );
+
+  Future<void> _countCachedBooks(AppModel appModel) async {
+    try {
+      final int count = (await _bookService(appModel).cachedBookKeys()).length;
+      if (mounted) setState(() => _cachedBookCount = count);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('KavitaServerSettings.count', error, stack);
+    }
+  }
+
+  Future<void> _clearCachedBooks(AppModel appModel) async {
+    setState(() => _clearingCache = true);
+    KavitaCacheCleanup? result;
+    try {
+      result = await _bookService(appModel).clearCache();
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('KavitaServerSettings.clear', error, stack);
+    }
+    if (!mounted) return;
+    setState(() => _clearingCache = false);
+    await _countCachedBooks(appModel);
+    if (!mounted || result == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      FushiSnackBar(
+        content: Text(
+          result.keptUnsynced > 0
+              ? '${t.kavita_book_cache_cleared(count: result.removed)}  '
+                    '${t.kavita_book_cache_kept_unsynced(count: result.keptUnsynced)}'
+              : t.kavita_book_cache_cleared(count: result.removed),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     final bool pending = _saveDebounce?.isActive ?? false;
@@ -62,7 +107,9 @@ class _KavitaServerSettingsSectionState
             in appModel.prefsRepo.kavitaServers)
           KavitaDraft.fromConfig(config),
       ];
+      unawaited(_countCachedBooks(appModel));
     }
+    final int cachedCount = _cachedBookCount ?? 0;
 
     return Padding(
       padding: EdgeInsets.symmetric(
@@ -91,6 +138,31 @@ class _KavitaServerSettingsSectionState
               ),
               icon: const Icon(FushiIcons.add),
               label: Text(t.kavita_server_add),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            t.kavita_book_cache_hint(limit: kKavitaCachedBookLimit),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FushiOutlinedButton.icon(
+              key: const ValueKey<String>('kavita-book-cache-clear'),
+              onPressed: _clearingCache || cachedCount == 0
+                  ? null
+                  : () => unawaited(_clearCachedBooks(appModel)),
+              icon: _clearingCache
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(FushiIcons.deleteSweep),
+              label: Text('${t.kavita_book_cache_clear} ($cachedCount)'),
             ),
           ),
         ],
