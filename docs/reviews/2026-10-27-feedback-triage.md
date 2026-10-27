@@ -118,13 +118,13 @@ WAs3SVn59k、tv1FP2-Bz5、8ArlVa3BBQ、E52FUMdbR6、DhGxajW4C7、kEAgATi1LF、q9
 | BUG | 反馈 | 处理 |
 |---|---|---|
 | 3818 | 8TaOy2i-lL | 删 Profile 级联清 srs.db 里该 uid 的复习数据与媒体目录 |
-| 3819 | SDbJAx1Db6 | 云同步删除墓碑改整包读写，不再逐条 GET（诊断余量：真机耗时待新日志） |
+| 3819 | SDbJAx1Db6 | 云同步删除墓碑读侧改成整包清单，稳态每轮 1 次往返（原先每条标记一次 GET） |
 | 3820 | kg41f2PGdC 遗留 | Rust 解析器认英文序数季名（Second Season / Season Two），续季并进同合集 |
 | 3821 | a-XEzglLaq / mxYhpVcwOX | 媒体服务器非续播集播放前选版本，继续观看卡可进详情 |
 | 3822 | — | Emby / Jellyfin 认证头改报 Fushi；添加服务器失败留请求轨迹 |
 | 3823 | I1Bg6uMZ32 / VNz9dsLeIy | 同步拉入的变更不再触发本机推送，库页横幅不再反复弹 |
 | 3824 | VNz9dsLeIy 等 | 设置 › 同步加「自动同步复习数据」开关 |
-| 3825 | 0rvPl6s6tR | 歌词跟随中断只认用户输入；加诊断 |
+| 3825 | 0rvPl6s6tR | 歌词「手动滚动」只认真实用户输入，不再无故断开跟随 |
 | 3826 | N-JACNGS-K / MljlXfzZzL | 原生 just_audio `play()` 占住串行队列，换卡后上一张音频不停 |
 | 3827 | O1yqRPUyut | macOS 卡面 WebView 每次翻面重建 |
 | 3828 | OO3O-3ljda | macOS 空格键桥挂到窗口捕获阶段 + 取证（诊断，需 macOS 真机确认） |
