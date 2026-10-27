@@ -15,6 +15,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/ops/ctl_settings_ai_routes.dart';
 import 'package:fushi/src/ops/ctl_settings_body_items.dart';
+import 'package:fushi/src/ops/ctl_settings_credential_endpoints.dart';
 import 'package:fushi/src/ops/ctl_settings_model_routes.dart';
 import 'package:fushi/src/ops/ctl_settings_task_routes.dart';
 import 'package:fushi/src/ops/ctl_settings_values.dart';
@@ -567,6 +568,9 @@ Map<String, Object?> _settingJson(
     'value': value,
     'display': display,
     if (entry.isSecret) 'redacted': true,
+    // 告诉 AI 这一项它改不了（只能指引用户去改），免得白调一次 settings.set。
+    if (entry.item != null && !isModelWritableSetting(entry.key, entry.item))
+      'userOnly': true,
     if (options != null) 'options': options,
     if (min != null) 'min': min,
     if (max != null) 'max': max,
@@ -657,12 +661,68 @@ Future<Object?> _getSetting(OpContext context, CtlCall call) async {
   return _settingJson(entry, settings);
 }
 
-/// 控制通道（`fushi_cli config set`、AI 助手的 `settings.set`）能不能写这一行：
-/// [SettingsSwitchItem.uiOnly] 的授权开关只能在设置页里亲手拨。
-bool isCtlWritableSettingItem(SettingsItem? item) =>
-    !(item is SettingsSwitchItem && item.uiOnly);
+/// 模型（AI 助手的 `settings.set`）能不能写这一行：
+/// - [SettingsSwitchItem.userOnly] 的授权开关只能由用户拨；
+/// - 带凭据服务的地址（[ctlCredentialEndpoints]）：改了就把已存凭据发去新地址；
+/// - 机密项本身（spec §10：AI 不读写凭据）。
+/// 用户自己（设置页、`fushi_cli`、撤销）不受影响。
+bool isModelWritableSetting(
+  String key,
+  SettingsItem? item, {
+  CtlCredentialEndpoints? endpoints,
+}) {
+  if (item is SettingsSwitchItem && item.userOnly) return false;
+  if (item is SettingsTextItem &&
+      isCtlSecretSetting(key, declaredSecret: item.secret)) {
+    return false;
+  }
+  return !(endpoints ?? ctlCredentialEndpoints()).valueKeys.contains(key);
+}
+
+/// 模型写带凭据服务的地址：在路由入口、建设置索引之前就拒（只看 key 与 body，
+/// 与可见性无关——不可见的项模型同样不该改）。用户调用直接放过。
+///
+/// - 值设置项（`settings.set`）：key 在 [CtlCredentialEndpoints.valueKeys]；
+/// - 记录列表修改 / 动作：给了 [CtlCredentialEndpoints.listFields] /
+///   [CtlCredentialEndpoints.actionParams] 里的字段（`args` 对象里或铺在 body 顶层）。
+void refuseModelCredentialEndpointWrite(
+  CtlCall call, {
+  required CtlCredentialEndpointWrite kind,
+}) {
+  if (!call.fromModel) return;
+  final String key = call.params['key'] ?? '';
+  final CtlCredentialEndpoints endpoints = ctlCredentialEndpoints();
+  final Set<String>? locked = switch (kind) {
+    CtlCredentialEndpointWrite.value =>
+      endpoints.valueKeys.contains(key) ? const <String>{'value'} : null,
+    CtlCredentialEndpointWrite.listItem => endpoints.listFields[key],
+    CtlCredentialEndpointWrite.action => endpoints.actionParams[key],
+  };
+  if (locked == null) return;
+  final Object? args = call.body['args'];
+  final Set<String> given = <String>{
+    ...call.body.keys,
+    if (args is Map) ...args.keys.map((Object? k) => '$k'),
+  };
+  final List<String> hit = kind == CtlCredentialEndpointWrite.value
+      ? const <String>['value']
+      : given.where(locked.contains).toList();
+  if (hit.isEmpty) return;
+  throw CtlFailure.rejected(
+    '「$key」${kind == CtlCredentialEndpointWrite.value ? '' : '的 ${hit.join(' / ')}'}'
+    '是带凭据服务的地址：改了会把已存的凭据发去新地址，AI 不能改，请用户在设置页或 '
+    'fushi_cli 里改',
+  );
+}
+
+/// [refuseModelCredentialEndpointWrite] 守的是哪种写入。
+enum CtlCredentialEndpointWrite { value, listItem, action }
 
 Future<Object?> _setSetting(OpContext context, CtlCall call) async {
+  refuseModelCredentialEndpointWrite(
+    call,
+    kind: CtlCredentialEndpointWrite.value,
+  );
   final SettingsContext settings = _settingsContext(context);
   final _SettingEntry entry = _requireSettingEntry(
     _buildSettingIndex(settings),
@@ -674,8 +734,11 @@ Future<Object?> _setSetting(OpContext context, CtlCall call) async {
   if (!entry.visible && !entry.offPage) {
     throw CtlFailure.rejected('设置项「${entry.key}」在当前平台 / 模块 / 状态下不可见，设置页里也改不了');
   }
-  if (!isCtlWritableSettingItem(entry.item)) {
-    throw CtlFailure.rejected('「${entry.title}」是授权开关，只能在设置页里亲手改');
+  if (call.fromModel && !isModelWritableSetting(entry.key, entry.item)) {
+    throw CtlFailure.rejected(
+      '「${entry.title}」只能由用户自己改（授权开关 / 凭据 / 带凭据服务的地址：'
+      '改地址会把已存的凭据发去新地址）；请用户在设置页或 fushi_cli 里改',
+    );
   }
   if (entry.isSecret && (call.optString('source') ?? 'argv') == 'argv') {
     throw CtlFailure.badRequest(
@@ -824,6 +887,10 @@ Map<String, String> _cliArgs(
 
   collect(call.body['args'], secret: false);
   final Object? secrets = call.body['secrets'];
+  if (secrets is Map && secrets.isNotEmpty && call.fromModel) {
+    // spec §10：AI 不写凭据。操作目录本来就不给模型 secrets 参数，这里再兜一层。
+    throw const CtlFailure.rejected('凭据只能由用户自己填，AI 不能写');
+  }
   if (secrets is Map && secrets.isNotEmpty) {
     final String source = call.optString('secretSource') ?? 'argv';
     if (source != 'stdin' && source != 'env') {
@@ -901,6 +968,10 @@ Future<Object?> _addSettingItem(OpContext context, CtlCall call) async {
 }
 
 Future<Object?> _updateSettingItem(OpContext context, CtlCall call) async {
+  refuseModelCredentialEndpointWrite(
+    call,
+    kind: CtlCredentialEndpointWrite.listItem,
+  );
   final ({SettingsContext settings, _SettingEntry entry, SettingsCliList list})
   target = _requireListEntry(context, call);
   final Future<Object?> Function(SettingsContext, String, Map<String, String>)?
@@ -994,6 +1065,10 @@ Future<Object?> _resetSetting(OpContext context, CtlCall call) async {
 /// 确认由 confirm=true 给出，**不在主窗口上弹任何对话框**；只是打开界面的
 /// 动作返回 422 并指向对应命令。
 Future<Object?> _runSetting(OpContext context, CtlCall call) async {
+  refuseModelCredentialEndpointWrite(
+    call,
+    kind: CtlCredentialEndpointWrite.action,
+  );
   final SettingsContext settings = _settingsContext(context);
   final _SettingEntry entry = _requireSettingEntry(
     _buildSettingIndex(settings),

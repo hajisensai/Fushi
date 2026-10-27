@@ -17,14 +17,14 @@ void main() {
     expect(item().defaultValue, isFalse);
   });
 
-  test('授权开关只能在设置页拨：控制通道（含 AI 的 settings.set）写不进去', () {
-    expect(item().uiOnly, isTrue);
-    expect(isCtlWritableSettingItem(item()), isFalse);
+  test('授权开关只能由用户拨：AI 的 settings.set 写不进去', () {
+    expect(item().userOnly, isTrue);
+    expect(isModelWritableSetting(item().id, item()), isFalse);
     // 普通开关照旧可写。
     final SettingsSwitchItem ordinary = buildAiDestination().sections
         .expand((SettingsSection s) => s.items)
         .whereType<SettingsSwitchItem>()
-        .firstWhere((SettingsSwitchItem i) => !i.uiOnly);
-    expect(isCtlWritableSettingItem(ordinary), isTrue);
+        .firstWhere((SettingsSwitchItem i) => !i.userOnly);
+    expect(isModelWritableSetting(ordinary.id, ordinary), isTrue);
   });
 }
