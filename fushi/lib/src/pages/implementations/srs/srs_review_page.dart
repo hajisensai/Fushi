@@ -1733,26 +1733,37 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             left: 0,
             right: 0,
             bottom: 0,
-            child: _SrsHeightReporter(
-              onHeight: _onBottomBarHeight,
-              child: SafeArea(
-                top: false,
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    tokens.spacing.page,
-                    tokens.spacing.gap * 1.5,
-                    tokens.spacing.page,
-                    tokens.spacing.gap * 1.5,
-                  ),
-                  child: _withBottomReplay(
-                    context,
-                    AnimatedSwitcher(
-                      duration: fushiMotionDuration(context, FushiMotion.short),
-                      switchInCurve: FushiMotion.enter,
-                      switchOutCurve: FushiMotion.exit,
-                      child: _showingAnswer
-                          ? _buildRatingRow(context)
-                          : _buildShowAnswer(context),
+            // 底栏整条（按钮之间、四周留白、底部安全区）归底栏，点按不穿到下面的卡面：
+            // 原生 Fushi 卡面铺在底栏背后，穿过去会被 SrsBlankTapRegion 当成点卡面空白、
+            // 切换悬浮顶栏（按偏一点评分按钮就弹顶栏）；整面 WebView 卡面停在底栏上沿，
+            // 这条本来就点不到卡面——两条路径同一口径。
+            child: Listener(
+              key: const ValueKey<String>('srs-review-bottom-bar'),
+              behavior: HitTestBehavior.opaque,
+              child: _SrsHeightReporter(
+                onHeight: _onBottomBarHeight,
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.spacing.page,
+                      tokens.spacing.gap * 1.5,
+                      tokens.spacing.page,
+                      tokens.spacing.gap * 1.5,
+                    ),
+                    child: _withBottomReplay(
+                      context,
+                      AnimatedSwitcher(
+                        duration: fushiMotionDuration(
+                          context,
+                          FushiMotion.short,
+                        ),
+                        switchInCurve: FushiMotion.enter,
+                        switchOutCurve: FushiMotion.exit,
+                        child: _showingAnswer
+                            ? _buildRatingRow(context)
+                            : _buildShowAnswer(context),
+                      ),
                     ),
                   ),
                 ),
