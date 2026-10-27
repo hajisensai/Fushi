@@ -841,6 +841,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'web_browser_custom_search_engines',
   // bool（默认 false）：浏览器新标签页默认桌面版网页（web_browser_prefs.dart，设备本地）。
   'web_browser_desktop_mode_default',
+  // string（JSON 对象）：app 内浏览器运行扩展脚本时的 chrome.storage.local
+  // （features/extension_host/web_browser_extension_storage.dart，设备本地）。
+  'web_browser_extension_storage',
   // bool（默认 false）：浏览器网页深色模式（web_browser_prefs.dart，设备本地）。
   'web_browser_force_dark',
   // bool：已删除的浏览器「整页注音」开关（2026-10-27 用户要求移除）。存量键冻结、
@@ -861,7 +864,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'web_browser_sites',
   // string（sidebar / topStrip，默认 sidebar）：浏览器宽窗口标签页样式（web_browser_prefs.dart，设备本地）。
   'web_browser_tab_style',
-  // bool（默认 true）：浏览器 YouTube 页内可点字幕（features/youtube_subtitles，设备本地）。
+  // 已删除的「YouTube 页内可点字幕」开关（由扩展宿主取代）：不再读写，只为键名不被复用。
   'web_browser_youtube_subtitles',
   // bool（默认 true）：网页漫画章末二维码广告页剔除（判定在 native/fushi_web_core 的 comic_ad）。
   'web_comic_ad_filter',

@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
+import 'package:fushi/src/web_browser/features/extension_host/web_browser_video_activity.dart';
 import 'package:fushi/src/web_browser/features/study/web_study_script.dart';
 import 'package:fushi/src/web_browser/features/study/web_study_session.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
@@ -62,12 +63,18 @@ class StudyClockWebPort implements WebStudyClockPort {
 /// 每个标签页一个会话；前台标签页 / app 前台 / 页面可见 / 日文页 / 有交互五条同时
 /// 成立才走表。无痕标签页不计。
 class WebBrowserStudyFeature extends WebBrowserFeature {
-  WebBrowserStudyFeature({required WebStudyClockFactory clockFactory})
-    : _clockFactory = clockFactory {
+  WebBrowserStudyFeature({
+    required WebStudyClockFactory clockFactory,
+    this.videoActivity,
+  }) : _clockFactory = clockFactory {
     _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
+    videoActivity?.addListener(_onVideoActivity);
   }
 
   final WebStudyClockFactory _clockFactory;
+
+  /// 网页视频在播的登记处（扩展宿主推样本）；在播的标签页阅读计时让位。
+  final WebBrowserVideoActivity? videoActivity;
   final Map<String, WebStudySession> _sessions = <String, WebStudySession>{};
   late final AppLifecycleListener _lifecycle;
   bool _appForeground = true;
@@ -86,11 +93,18 @@ class WebBrowserStudyFeature extends WebBrowserFeature {
     }
   }
 
-  WebStudySession _sessionOf(WebBrowserTab tab) =>
-      _sessions[tab.id] ??= WebStudySession(
-        incognito: tab.incognito,
-        clockFactory: _clockFactory,
-      )..setAppForeground(_appForeground);
+  void _onVideoActivity() {
+    final WebBrowserVideoActivity? activity = videoActivity;
+    if (activity == null) return;
+    for (final MapEntry<String, WebStudySession> e in _sessions.entries) {
+      e.value.setVideoPlaying(activity.isPlaying(e.key));
+    }
+  }
+
+  WebStudySession _sessionOf(WebBrowserTab tab) => _sessions[tab.id] ??=
+      WebStudySession(incognito: tab.incognito, clockFactory: _clockFactory)
+        ..setAppForeground(_appForeground)
+        ..setVideoPlaying(videoActivity?.isPlaying(tab.id) ?? false);
 
   @override
   void onWebViewCreated(WebBrowserTab tab, InAppWebViewController controller) {
@@ -143,6 +157,7 @@ class WebBrowserStudyFeature extends WebBrowserFeature {
 
   @override
   void dispose() {
+    videoActivity?.removeListener(_onVideoActivity);
     _lifecycle.dispose();
     for (final WebStudySession s in _sessions.values) {
       s.detach();

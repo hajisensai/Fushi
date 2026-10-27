@@ -46,6 +46,8 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store_provider.dart';
+import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_host_feature.dart';
+import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_settings_page.dart';
 import 'package:fushi/src/web_browser/features/study/web_card_source.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/features/web_browser_features.dart';
@@ -697,7 +699,11 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     _tabStyle = webBrowserTabStyle(prefs);
     _sidebarOpen = webBrowserSidebarOpen(prefs);
     _features = <WebBrowserFeature>[
-      ...buildWebBrowserFeatures(ref),
+      ...buildWebBrowserFeatures(
+        ref,
+        lookup: _lookup,
+        openExtensionSettings: _openExtensionSettings,
+      ),
       _ShortcutKeyBridge(
         registry: _appModel.shortcutRegistry,
         onToken: _onBridgeToken,
@@ -723,6 +729,24 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     _addressFocus.addListener(_rebuild);
     _lookup.addListener(_rebuild);
     unawaited(_restore());
+  }
+
+  /// 扩展「扩展设置」（播放器菜单、报错 toast）：app 原生的扩展设置页。
+  void _openExtensionSettings() {
+    if (!mounted) return;
+    final WebBrowserExtensionHostFeature? host = _features
+        .whereType<WebBrowserExtensionHostFeature>()
+        .firstOrNull;
+    if (host == null) return;
+    unawaited(
+      Navigator.of(context).push(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (BuildContext _) =>
+              WebBrowserExtensionSettingsPage(feature: host),
+        ),
+      ),
+    );
   }
 
   Future<void> _restore() async {
@@ -1962,23 +1986,92 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
           ),
         ),
         Expanded(
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              for (final WebBrowserTab tab in _tabs.tabs)
-                if (_tabs.isLive(tab) || identical(tab, active))
-                  Offstage(
-                    key: ValueKey<String>('web-browser-tab-${tab.id}'),
-                    offstage: !identical(tab, active),
-                    child: TickerMode(
-                      enabled: identical(tab, active),
-                      child: _buildTabBody(context, tab),
+          child: _withSidePanel(
+            context,
+            active,
+            Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                for (final WebBrowserTab tab in _tabs.tabs)
+                  if (_tabs.isLive(tab) || identical(tab, active))
+                    Offstage(
+                      key: ValueKey<String>('web-browser-tab-${tab.id}'),
+                      offstage: !identical(tab, active),
+                      child: TickerMode(
+                        enabled: identical(tab, active),
+                        child: _buildTabBody(context, tab),
+                      ),
                     ),
-                  ),
-            ],
+              ],
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  /// 功能侧栏（[WebBrowserFeature.sidePanel]）：宽（≥ 720dp）排在网页右侧 360dp，
+  /// 窄窗口是盖住网页下半部的底部抽屉。网页本体的子树位置恒定（侧栏增删不重挂
+  /// WebView，否则平台视图会重载）。全屏看视频时不出侧栏。
+  Widget _withSidePanel(
+    BuildContext context,
+    WebBrowserTab? active,
+    Widget pages,
+  ) {
+    Widget? panel;
+    if (active != null && !active.fullscreen) {
+      for (final WebBrowserFeature f in _features) {
+        panel = f.sidePanel(context, active);
+        if (panel != null) break;
+      }
+    }
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        final bool wide = box.maxWidth >= 720;
+        final Duration d = fushiMotionDuration(context, FushiMotion.medium);
+        final double panelWidth = wide ? 360 : box.maxWidth;
+        final double panelHeight = wide ? box.maxHeight : box.maxHeight * 0.45;
+        final bool open = panel != null;
+        return Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            AnimatedPadding(
+              duration: d,
+              curve: FushiMotion.standard,
+              padding: EdgeInsetsDirectional.only(
+                end: wide && open ? panelWidth : 0,
+              ),
+              child: pages,
+            ),
+            AnimatedPositionedDirectional(
+              duration: d,
+              curve: FushiMotion.standard,
+              end: wide ? (open ? 0 : -panelWidth) : 0,
+              top: wide
+                  ? 0
+                  : (open ? box.maxHeight - panelHeight : box.maxHeight),
+              width: panelWidth,
+              height: panelHeight,
+              child: AnimatedSwitcher(
+                duration: d,
+                switchInCurve: FushiMotion.enter,
+                switchOutCurve: FushiMotion.exit,
+                child: panel == null
+                    ? const SizedBox.shrink()
+                    : ClipRRect(
+                        key: const ValueKey<String>('web-browser-side-panel'),
+                        borderRadius: wide
+                            ? BorderRadius.zero
+                            : const BorderRadius.vertical(
+                                top: Radius.circular(24),
+                              ),
+                        child: panel,
+                      ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
