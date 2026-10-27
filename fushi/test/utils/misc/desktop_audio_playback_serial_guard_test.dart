@@ -234,9 +234,20 @@ void main() {
       // be awaited within the run body. The first-round mistake —
       // unawaited(_player.play()) — let activation escape the boundary and is
       // explicitly forbidden here.
-      expect(flat, contains('await _player.play()'),
-          reason: 'play() must be awaited inside the serial run body so its '
-              '_setPlatformActive(true) stays within the activation boundary');
+      // On the media_kit backend (the BUG-342 surface) play()'s Future settles
+      // once the request is accepted and is awaited in the body. Native
+      // backends' play() Future spans the whole clip and must NOT hold the
+      // queue (N-JACNGS-K) — covered behaviourally by
+      // desktop_audio_playback_native_play_future_test.dart.
+      expect(flat, contains('final Future<void> play = _player.play();'));
+      expect(
+          RegExp(r'if \(_playFutureSpansPlayback\) \{[\s\S]*?\} else \{ '
+                  r'await play; \}')
+              .hasMatch(flat),
+          isTrue,
+          reason: 'play() must be awaited inside the serial run body on the '
+              'media_kit backend so its _setPlatformActive(true) stays within '
+              'the activation boundary');
       expect(flat, isNot(contains('unawaited(_player.play())')),
           reason: 'fire-and-forget play() re-opens the interleaving leak path');
     });
