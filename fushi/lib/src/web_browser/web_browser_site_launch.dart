@@ -20,12 +20,14 @@ bool webBrowserSiteOpensInPlayer(
 
 /// 在 Fushi 播放页（Windows 网页播放器）打开 [url]：站点自己的页面用来登录、选剧、
 /// 选集，播起某一集才切到播放器并落成一本书。拿不到底层合成时播放页自己退回 app 内
-/// 浏览器（见 `web_source.part.dart`）。
+/// 浏览器（见 `web_source.part.dart`）。[backToBrowser]：从 app 内浏览器交接过来的，播放页
+/// 按返回直接回浏览器（[VideoFushiPage.webBackToBrowser]）。
 Future<void> openInWebVideoPlayer(
   BuildContext context, {
   required Uri url,
   required String title,
   required VideoBookRepository repo,
+  bool backToBrowser = false,
 }) {
   final WebVideoSite site = WebVideoSite(
     title: title.trim().isEmpty ? webVideoSiteDefaultTitle('$url') : title,
@@ -39,6 +41,7 @@ Future<void> openInWebVideoPlayer(
         bookUid: row.bookUid,
         repo: repo,
         webSite: site,
+        webBackToBrowser: backToBrowser,
       ),
     ),
   );

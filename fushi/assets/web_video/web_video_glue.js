@@ -306,22 +306,43 @@
       return String(d.BUILD_IDENTIFIER || '');
     } catch (_) { return ''; }
   }
+  // 候选接口按序试：Netflix 网站现在走 `memberapi/release`；旧的按 build id 拼的路径对现网返回
+  // 502（2026-10-27 用户日志 `netflix metadata … failed: HTTP 502`，BUG-3801），留作退路。
+  function netflixMetadataUrls(id) {
+    var urls = ['/nq/website/memberapi/release/metadata?movieid=' + id];
+    var build = netflixBuildId();
+    if (build) {
+      urls.push('/nq/website/memberapi/' + encodeURIComponent(build) + '/metadata?movieid=' + id);
+    }
+    return urls;
+  }
   function fetchNetflixMetadata(movieId) {
     var id = String(movieId || '').replace(/\D/g, '');
-    var build = netflixBuildId();
-    if (!id || !build) {
-      post({ type: 'nfMeta', movieId: id, ok: false, err: build ? 'no movie id' : 'no build id' });
+    if (!id) {
+      post({ type: 'nfMeta', movieId: id, ok: false, err: 'no movie id' });
       return false;
     }
-    var url = '/nq/website/memberapi/' + encodeURIComponent(build) + '/metadata?movieid=' + id;
-    try {
+    var urls = netflixMetadataUrls(id);
+    var errors = [];
+    function attempt(i) {
+      if (i >= urls.length) {
+        post({ type: 'nfMeta', movieId: id, ok: false, err: errors.join('; ') });
+        return;
+      }
+      var url = urls[i];
       fetch(url, { credentials: 'include' })
         .then(function (r) {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.text();
         })
         .then(function (text) { post({ type: 'nfMeta', movieId: id, ok: true, text: text }); })
-        .catch(function (e) { post({ type: 'nfMeta', movieId: id, ok: false, err: String(e && e.message || e) }); });
+        .catch(function (e) {
+          errors.push(url.split('?')[0] + ' ' + String(e?.message || e));
+          attempt(i + 1);
+        });
+    }
+    try {
+      attempt(0);
     } catch (e) {
       post({ type: 'nfMeta', movieId: id, ok: false, err: String(e) });
       return false;

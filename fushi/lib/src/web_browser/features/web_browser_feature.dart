@@ -30,6 +30,15 @@ abstract class WebBrowserFeature {
     Uri? url,
   ) async {}
 
+  /// 主框架地址变了（`onUpdateVisitedHistory`：含单页应用 pushState 换页，那种换页不触发
+  /// [onLoadStop]）。[context] 是标签页自己的，可用来推页面。
+  void onUrlChanged(
+    BuildContext context,
+    WebBrowserTab tab,
+    InAppWebViewController controller,
+    Uri? url,
+  ) {}
+
   /// 标签页成为 / 不再是前台标签页（统计计时、暂停注入等用）。
   void onTabActiveChanged(WebBrowserTab tab, {required bool active}) {}
 
