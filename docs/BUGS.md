@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3421 条。点号进各自文件。
+> 共 3424 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3820](bugs/BUG-3820-srs-macos-space-after-card-click.md) | ✅ | ✅ | macOS 点过卡面后空格不翻面（键盘桥可被卡片脚本截走 + 加取证） |
+| [BUG-3819](bugs/BUG-3819-srs-card-face-webview-recreated-per-flip.md) | ✅ | ✅ | macOS 复习每次翻面 / 换卡都重建卡面 WebView（installLookup 打进死通道、卡顿） |
+| [BUG-3818](bugs/BUG-3818-srs-native-audio-queue-blocks-stop.md) | ✅ | ✅ | 复习换卡后上一张音频不停（原生 just_audio play() 占住串行队列） |
 | [BUG-3817](bugs/BUG-3817-video-delete-work-leaves-extras.md) | ✅ | ✅ | 删除动漫只删正片：特典与其余下载资源残留在目录 |
 | [BUG-3816](bugs/BUG-3816-download-organize-multi-work-pack-collision.md) | ✅ | ✅ | 下载整理：多作品合集包续作目录无季号撞名整任务失败 |
 | [BUG-3815](bugs/BUG-3815-interconnect-push-resurrects-host-deleted-book.md) | ✅ | ✅ | 互联客户端把主机「从所有设备删除」的书推回主机并清掉删除墓碑 |
