@@ -309,8 +309,7 @@ import 'package:fushi/src/media/video/subtitle_word_sweep.dart';
 import 'package:fushi/src/media/video/video_chapter_markers.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
-import 'package:fushi/src/media/video/theme_song/video_theme_song_overlay.dart';
-import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
+import 'package:fushi/src/media/video/theme_song/video_theme_song_tracker.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show isLocalVideoFilePath;
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';

@@ -1896,22 +1896,13 @@ class PreferencesRepository extends ChangeNotifier
   bool get videoDiscLaunchAnimation =>
       getPref('video_disc_launch_animation', defaultValue: true) as bool;
 
-  /// 作品图谱 L2：进入识别出的片头 / 片尾时自动跳过（默认关：识别是推断，默认只给
-  /// 按钮，让用户自己决定）。
+  /// 作品图谱 L2：进入识别出的片头 / 片尾时自动跳过（默认关：识别是推断，让用户
+  /// 自己决定开不开）。
   bool get videoThemeSongAutoSkip =>
       getPref('video_theme_song_auto_skip', defaultValue: false) as bool;
 
   Future<void> setVideoThemeSongAutoSkip(bool value) async {
     await setPref('video_theme_song_auto_skip', value);
-    notifyListeners();
-  }
-
-  /// 作品图谱 L2：OP / ED 期间角落显示「♪ 曲名 · 在音乐库打开」（默认开）。
-  bool get videoThemeSongNowPlaying =>
-      getPref('video_theme_song_now_playing', defaultValue: true) as bool;
-
-  Future<void> setVideoThemeSongNowPlaying(bool value) async {
-    await setPref('video_theme_song_now_playing', value);
     notifyListeners();
   }
 

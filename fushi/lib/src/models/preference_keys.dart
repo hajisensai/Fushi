@@ -817,11 +817,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_subdl_enabled',
   // bool（默认 false）：播放器底栏时间显示「剩余时长」而不是「已播时长」。
   // 点按底栏时间切换（MD3 Expressive chrome），跨设备。
-  // bool：作品图谱 L2 的 OP / ED。auto_skip（默认 false）= 进入识别出的片头 / 片尾
-  // 时自动跳到段尾；now_playing（默认 true）= OP / ED 期间左上角显示「♪ 曲名 · 在
-  // 音乐库打开」。
+  // bool（默认 false）：作品图谱 L2，进入识别出的片头 / 片尾时自动跳到段尾。
+  // （曾有的 `video_theme_song_now_playing` 曲名角标开关随角标一起删了，BUG-3801；
+  // 旧库残留行无人读。）
   'video_theme_song_auto_skip',
-  'video_theme_song_now_playing',
   'video_time_display_remaining',
   'video_youtube_quality_height',
   // bool（默认 true）：浏览器手机上滚动时收起工具栏（web_browser_prefs.dart，设备本地）。

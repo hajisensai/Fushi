@@ -519,14 +519,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Open disc menu by default':
       'test/media/video/disc/disc_session_entry_test.dart'
       '（resolveDiscPrimaryKind：设置关 = 主按钮直接播正片）',
-  // 作品图谱 L2 两项（OP / ED 声纹识别后的播放行为）。写 prefsRepo（changed=true），
-  // 生效点在视频页覆盖层的状态机：harness 里没有带识别结果的正在播放的视频。
+  // 作品图谱 L2（OP / ED 声纹识别后自动跳过）。写 prefsRepo（changed=true），
+  // 生效点在视频页的状态机：harness 里没有带识别结果的正在播放的视频。
   'video/Skip intros and credits automatically':
-      'test/media/video/video_theme_song_overlay_test.dart'
+      'test/media/video/video_theme_song_tracker_test.dart'
       '（VideoThemeSongTracker：开关每次现读，只在刚进段 3 s 内自动跳一次）',
-  'video/Show the theme song title':
-      'test/media/video/video_theme_song_overlay_test.dart'
-      '（VideoThemeSongOverlay.showNowPlaying：关掉只剩跳过按钮）',
   'video/Auto-align downloaded subtitles':
       'test/media/video/embedded_reference_subtitle_sync_test.dart'
       '（gatedAutomaticSubtitleAligner：开关每次现读）',

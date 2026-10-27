@@ -279,6 +279,41 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
         return true;
       });
 
+  /// 把一条连接恢复成某次写入（[upsertManualMediaLink] / [removeMediaLink]）之前的
+  /// 快照，撤销 AI 的「关联作品」/「移除关联」用。只有当前行仍是那次写入留下的
+  /// （`updatedAt == writtenAt`）才恢复，否则返回 false（用户之后又动过，不覆盖）。
+  /// [previous] 为 null = 写入前没有这一行：写墓碑而不删行——行可能已同步到对端，
+  /// 物理删除会被 LWW 同步拉回来。恢复也是一次新动作，`updatedAt` 必须大于 [writtenAt]。
+  Future<bool> restoreMediaLinkSnapshot(
+    MediaLinkId id, {
+    required int writtenAt,
+    MediaLinkRow? previous,
+    int? at,
+  }) => transaction(() async {
+    final MediaLinkRow? row = await mediaLinkById(id);
+    if (row == null || row.updatedAt != writtenAt) return false;
+    final int now = at ?? DateTime.now().millisecondsSinceEpoch;
+    final int stamp = now > writtenAt ? now : writtenAt + 1;
+    await (update(mediaLinks)..where((t) => _mediaLinkIdIs(t, id))).write(
+      previous == null
+          ? MediaLinksCompanion(
+              deletedAt: Value<int?>(stamp),
+              updatedAt: Value<int>(stamp),
+            )
+          : MediaLinksCompanion(
+              role: Value<String?>(previous.role),
+              episodeRange: Value<String?>(previous.episodeRange),
+              source: Value<String>(previous.source),
+              confidence: Value<double?>(previous.confidence),
+              isUserConfirmed: Value<bool>(previous.isUserConfirmed),
+              reason: Value<String?>(previous.reason),
+              deletedAt: Value<int?>(previous.deletedAt),
+              updatedAt: Value<int>(stamp),
+            ),
+    );
+    return true;
+  });
+
   /// 把对端一行（键已换算成本机键）按 LWW 并入。**只在结果与本机不同时写库**，
   /// 返回是否改了（表变更观察者会被无变化的写自激）。
   Future<bool> mergeRemoteMediaLink(MediaLinkRow remote) => transaction(
