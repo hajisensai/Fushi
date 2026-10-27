@@ -251,7 +251,7 @@ void main() {
       contains(
         'DiscoveryDownloadInlineStatus(key:ValueKey<String>('
         "'abs-download-status-\${_resourceIdFor(episode)}'),"
-        'queue:_appModel.discoveryDownloadQueue,sourceId:_sourceId,'
+        'queue:ref.read(discoveryDownloadQueueProvider),sourceId:_sourceId,'
         'itemId:_resourceIdFor(episode),',
       ),
     );

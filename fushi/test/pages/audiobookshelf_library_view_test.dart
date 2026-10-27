@@ -7,8 +7,8 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/models.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
+import 'package:fushi/src/media/discovery/discovery_download_inline_status.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_library_view.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -19,24 +19,6 @@ import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
-
-import '../helpers/test_platform_services.dart';
-
-/// 详情页就地显示下载状态（监听 `discoveryDownloadQueue`）：给它一条真队列，
-/// payload 永不解析——测试不点下载，只要页面能渲染。
-class _QueueAppModel extends AppModel {
-  _QueueAppModel() : super(testPlatformServices());
-
-  @override
-  DiscoveryDownloadQueue get discoveryDownloadQueue => _queue;
-
-  late final DiscoveryDownloadQueue _queue = DiscoveryDownloadQueue(
-    resolvePayload: (DiscoveryResourceItem item) =>
-        Completer<DiscoveryPayload>().future,
-    importer: (DiscoveryDownloadTask task, File file) async =>
-        const DiscoveryImportOutcome(),
-  );
-}
 
 Map<String, Object?> _libItem(
   String id,
@@ -221,10 +203,17 @@ void main() {
       client: MockClient(server.handle),
     );
     addTearDown(api.close);
-    final AppModel appModel = _QueueAppModel();
+    // 条目页的行内下载状态只读这条队列；其余依赖都经 apiFor 注入，不构造 AppModel。
+    final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
+      resolvePayload: (DiscoveryResourceItem item) =>
+          Completer<DiscoveryPayload>().future,
+      importer: (DiscoveryDownloadTask task, File file) async =>
+          const DiscoveryImportOutcome(),
+    );
+    addTearDown(queue.dispose);
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[appProvider.overrideWith((_) => appModel)],
+        overrides: [discoveryDownloadQueueProvider.overrideWithValue(queue)],
         child: TranslationProvider(
           child: MaterialApp(
             home: Scaffold(
