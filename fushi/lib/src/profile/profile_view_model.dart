@@ -25,6 +25,12 @@ class ProfileDraftCoordinator {
 
   Object get draftScope => _draftScope;
 
+  /// 正在切换去的目标配置（乐观标签）。它挂在这个跨重建存活的协调器上而不是视图
+  /// 模型里：切换的应用回调会失效 `ankiRepositoryProvider`，整个视图模型随之重建，
+  /// 新实例从零开始；目标放在这里，新旧实例都读得到、也都收得到清除通知。
+  final ValueNotifier<ProfileRow?> pendingSwitchTarget =
+      ValueNotifier<ProfileRow?>(null);
+
   void invalidateDrafts() {
     _draftScope = Object();
   }
@@ -103,6 +109,7 @@ class ProfileUiState {
     this.mediaTypeBindings = const {},
     this.languageBindings = const {},
     this.isLoading = false,
+    this.pendingProfile,
   });
   final List<ProfileRow> profiles;
   final int activeProfileId;
@@ -114,12 +121,29 @@ class ProfileUiState {
   final Map<String, int> languageBindings;
   final bool isLoading;
 
+  /// 切换已发起、尚未结束时的目标配置；展示用，不代表已落库的激活配置。
+  final ProfileRow? pendingProfile;
+
   ProfileRow? get activeProfile {
     for (final p in profiles) {
       if (p.id == activeProfileId) return p;
     }
     return profiles.isNotEmpty ? profiles.first : null;
   }
+
+  /// 悬浮球「切换配置」胶囊等要展示的配置：切换中是目标配置（切换要做快照、应用、
+  /// 重载词典，是秒级的，期间不能还显示旧配置名），否则是激活配置；装载中为 null。
+  ProfileRow? get displayProfile =>
+      pendingProfile ?? (isLoading ? null : activeProfile);
+
+  ProfileUiState withPendingProfile(ProfileRow? pending) => ProfileUiState(
+        profiles: profiles,
+        activeProfileId: activeProfileId,
+        mediaTypeBindings: mediaTypeBindings,
+        languageBindings: languageBindings,
+        isLoading: isLoading,
+        pendingProfile: pending,
+      );
 
   ProfileUiState copyWith({
     List<ProfileRow>? profiles,
@@ -134,6 +158,7 @@ class ProfileUiState {
         mediaTypeBindings: mediaTypeBindings ?? this.mediaTypeBindings,
         languageBindings: languageBindings ?? this.languageBindings,
         isLoading: isLoading ?? this.isLoading,
+        pendingProfile: pendingProfile,
       );
 }
 
@@ -144,7 +169,13 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     this._profileDraftCoordinator, {
     ProfileDeletionCascade? deletionCascade,
   })  : _deletionCascade = deletionCascade,
-        super(const ProfileUiState()) {
+        super(
+          ProfileUiState(
+            pendingProfile: _profileDraftCoordinator.pendingSwitchTarget.value,
+          ),
+        ) {
+    _profileDraftCoordinator.pendingSwitchTarget
+        .addListener(_onPendingSwitchTargetChanged);
     _load();
     // BUG-3148：别处（互联下载 / 对端上传入站）写进 profiles 表的新配置，列表要跟着
     // 刷新，不必等重启。只重读列表本身——激活 id 与绑定的切换都经本类，不受影响。
@@ -155,6 +186,13 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   StreamSubscription<void>? _profilesChanged;
 
+  void _onPendingSwitchTargetChanged() {
+    if (!mounted) return;
+    state = state.withPendingProfile(
+      _profileDraftCoordinator.pendingSwitchTarget.value,
+    );
+  }
+
   Future<void> _refreshProfileList() async {
     final List<ProfileRow> profiles = await _repo.getAllProfiles();
     if (!mounted) return;
@@ -164,6 +202,8 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   @override
   void dispose() {
     _profilesChanged?.cancel();
+    _profileDraftCoordinator.pendingSwitchTarget
+        .removeListener(_onPendingSwitchTargetChanged);
     _repo.snapshotCurrentSettings(state.activeProfileId).catchError((Object e) {
       debugPrint('[profile] snapshot on dispose failed: $e');
     });
@@ -194,6 +234,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
       activeProfileId: activeId,
       mediaTypeBindings: bindings,
       languageBindings: languageBindings,
+      pendingProfile: _profileDraftCoordinator.pendingSwitchTarget.value,
     );
   }
 
@@ -275,11 +316,26 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   /// 用户手动切换：这是新的「自己选的配置」，作废绑定留下的回退点。清回退点与
   /// 切换在同一把锁里，不会被并发的绑定应用夹在中间。
-  Future<void> switchProfile(int profileId) => _profileDraftCoordinator
+  Future<void> switchProfile(int profileId) async {
+    // 乐观标签：用户一点选就显示目标配置名，不等排队 / 快照 / 应用这些秒级步骤。
+    ProfileRow? target;
+    for (final ProfileRow p in state.profiles) {
+      if (p.id == profileId) target = p;
+    }
+    final ValueNotifier<ProfileRow?> pending =
+        _profileDraftCoordinator.pendingSwitchTarget;
+    if (target != null) pending.value = target;
+    try {
+      await _profileDraftCoordinator
           ._runProfileMutation((_ProfileDraftMutation mutation) async {
         await _repo.setFallbackProfileId(null);
         await _switchLocked(mutation, profileId);
       });
+    } finally {
+      // 成功：激活 id 已是目标；失败：已回滚——两种都回到读激活配置。
+      if (identical(pending.value, target)) pending.value = null;
+    }
+  }
 
   /// 切换激活配置的本体；只能在配置变更锁里调用（[mutation] 就是那把锁的凭据）。
   Future<void> _switchLocked(
@@ -287,10 +343,21 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     int profileId,
   ) async {
     mutation.invalidateDrafts();
-    await _repo.snapshotCurrentSettings(state.activeProfileId);
+    final int previousActiveId = state.activeProfileId;
+    await _repo.snapshotCurrentSettings(previousActiveId);
     await _repo.setActiveProfileId(profileId);
-    await _repo.applyProfile(profileId);
+    // 激活 id 一落库就同步给 UI（悬浮球「切换配置」胶囊等读 activeProfile.name 的
+    // 地方）。applyProfile + 刷新偏好 / 词典是秒级重活，等它们跑完才更新 state 的话，
+    // 胶囊会在整个切换期间一直显示旧配置名（从默认配置切出去就是「默认配置」）。
     state = state.copyWith(activeProfileId: profileId);
+    try {
+      await _repo.applyProfile(profileId);
+    } catch (_) {
+      // 应用失败：激活 id 与实时设置回到切换前，别让 UI 停在没真正生效的配置上。
+      await _repo.setActiveProfileId(previousActiveId);
+      if (mounted) state = state.copyWith(activeProfileId: previousActiveId);
+      rethrow;
+    }
     await _onProfileApplied();
   }
 
