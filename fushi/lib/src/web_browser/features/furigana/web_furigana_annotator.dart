@@ -1,34 +1,14 @@
-/// 整页注音 + 已知词高亮的纯逻辑层（无 Flutter / 无 WebView，可直接单测）。
+/// 整页注音的纯逻辑层（无 Flutter / 无 WebView，可直接单测）。
 ///
 /// 数据流：页内脚本把一批可见文本节点的文字一次 `callHandler` 送上来 →
 /// [WebFuriganaAnnotator.annotate] 用**阅读器 / 浏览器扩展同一个分词器**
 /// （`JapaneseLanguage.textsToWordsWithReadingsInBackground`：一次 FFI 切完整批，
-/// 跑在后台 isolate）切词取读音 → 已知词状态整批查一次（[WebKnownWordLookup]）→
-/// 每段文字回一份紧凑的词序列（[encodeWebFuriganaToken]），页内脚本据此替换文本节点。
+/// 跑在后台 isolate）切词取读音 → 每段文字回一份紧凑的词序列
+/// （[encodeWebFuriganaToken]），页内脚本据此替换文本节点。
 ///
 /// 这里不另造分词：切分规则、读音全部来自词典引擎；本文件只做「读音怎么落到汉字上」
-/// （[alignFurigana]）、「哪些词值得上色」（[isKnownWordCandidate]）与批处理切分。
+/// （[alignFurigana]）与批处理切分。
 library;
-
-/// 一个词在复习（SRS）里的状态，决定页面上的着色。
-enum WebKnownWordStatus {
-  /// 不参与着色（助词、纯假名短词、引擎没认出的字）。
-  none(0),
-
-  /// 复习库里没有：生词。
-  unknown(1),
-
-  /// 有卡但还在学（新卡 / 学习中 / 重学）。
-  learning(2),
-
-  /// 复习中（或已暂停）：已知词，不上色。
-  known(3);
-
-  const WebKnownWordStatus(this.wire);
-
-  /// 交给页内脚本的状态码。
-  final int wire;
-}
 
 /// 注音的一段：[base] 是正文片段，[ruby] 是它上方的读音（空串 = 这段不注音，送假名等）。
 typedef WebRubyPart = ({String base, String ruby});
@@ -39,17 +19,8 @@ typedef WebFuriganaTokenizer =
       List<String> texts,
     );
 
-/// 已知词状态的整批查询：键是词的表层形（与 [WebFuriganaAnnotator] 送进去的一致），
-/// 返回里缺席的词按 [WebKnownWordStatus.unknown] 处理。
-typedef WebKnownWordLookup =
-    Future<Map<String, WebKnownWordStatus>> Function(Set<String> surfaces);
-
 /// 一个注音后的词（编码前的形态）。
-typedef WebFuriganaToken = ({
-  String text,
-  WebKnownWordStatus status,
-  List<WebRubyPart>? ruby,
-});
+typedef WebFuriganaToken = ({String text, List<WebRubyPart>? ruby});
 
 /// 一批里单段文字的上限（码元）。超过的段原样不注音（页内脚本也按同一上限过滤）。
 const int kWebFuriganaMaxItemChars = 4000;
@@ -59,7 +30,6 @@ const int kWebFuriganaMaxBatchItems = 80;
 const int kWebFuriganaMaxBatchChars = 12000;
 
 final RegExp _kanji = RegExp(r'[㐀-䶿一-鿿豈-﫿々〆ヶ]');
-final RegExp _katakanaRun = RegExp(r'^[ァ-ヺー]+$');
 final RegExp _kanaOnly = RegExp(r'^[ぁ-ゖァ-ヺー]+$');
 
 /// 是否含汉字（含「々」等汉字类记号）。只有含汉字的词才注音。
@@ -170,14 +140,6 @@ List<WebRubyPart>? _alignRuns(
   return out;
 }
 
-/// 这个词值得按已知 / 生词着色吗：引擎认出了它（有读音），并且含汉字或是 ≥2 字的
-/// 片假名词（外来语）；助词、纯平假名短词不着色——否则整页都是「生词」。
-bool isKnownWordCandidate(String text, String reading) {
-  if (reading.isEmpty || text.trim().isEmpty) return false;
-  if (containsKanji(text)) return true;
-  return text.length >= 2 && _katakanaRun.hasMatch(text);
-}
-
 /// 把一批段的长度切成若干次分词调用（每组 ≤ [maxItems] 段、≤ [maxChars] 字；单段超过
 /// [maxChars] 时独占一组）。返回各组的段下标。
 List<List<int>> splitWebFuriganaBatches(
@@ -203,40 +165,27 @@ List<List<int>> splitWebFuriganaBatches(
   return out;
 }
 
-/// 编码给页内脚本：`[text]` / `[text, status]` / `[text, status, [base, rt, base, rt…]]`。
+/// 编码给页内脚本：`[text]` / `[text, [base, rt, base, rt…]]`。
 List<Object> encodeWebFuriganaToken(WebFuriganaToken token) {
   final List<WebRubyPart>? ruby = token.ruby;
-  if (ruby != null) {
-    return <Object>[
-      token.text,
-      token.status.wire,
-      <String>[
-        for (final WebRubyPart p in ruby) ...<String>[p.base, p.ruby],
-      ],
-    ];
-  }
-  if (token.status != WebKnownWordStatus.none) {
-    return <Object>[token.text, token.status.wire];
-  }
-  return <Object>[token.text];
+  if (ruby == null) return <Object>[token.text];
+  return <Object>[
+    token.text,
+    <String>[
+      for (final WebRubyPart p in ruby) ...<String>[p.base, p.ruby],
+    ],
+  ];
 }
 
 /// 整批注音。永不抛给页内脚本：分词失败的段回空列表（脚本见到空列表就不动那个节点）。
 class WebFuriganaAnnotator {
-  WebFuriganaAnnotator({required this.tokenizer, this.knownWords});
+  WebFuriganaAnnotator({required this.tokenizer});
 
   final WebFuriganaTokenizer tokenizer;
 
-  /// null = 复习模块关着：不着色，只注音。
-  final WebKnownWordLookup? knownWords;
-
   /// [texts] 与返回等长、按序对应；每段是编码好的词序列（见 [encodeWebFuriganaToken]）。
-  /// 相邻的不注音、不着色的词合并成一段，减少回传与页内建节点的数量。
-  Future<List<List<List<Object>>>> annotate(
-    List<String> texts, {
-    required bool furigana,
-    required bool highlight,
-  }) async {
+  /// 相邻的不注音的词合并成一段，减少回传与页内建节点的数量。
+  Future<List<List<List<Object>>>> annotate(List<String> texts) async {
     final List<List<({String text, String reading})>?> segmented =
         List<List<({String text, String reading})>?>.filled(texts.length, null);
     final List<int> lengths = <int>[
@@ -256,38 +205,15 @@ class WebFuriganaAnnotator {
       }
     }
 
-    final WebKnownWordLookup? lookup = highlight ? knownWords : null;
-    Map<String, WebKnownWordStatus> statuses =
-        const <String, WebKnownWordStatus>{};
-    if (lookup != null) {
-      final Set<String> candidates = <String>{
-        for (final List<({String text, String reading})>? segs in segmented)
-          if (segs != null)
-            for (final ({String text, String reading}) s in segs)
-              if (isKnownWordCandidate(s.text, s.reading)) s.text,
-      };
-      if (candidates.isNotEmpty) statuses = await lookup(candidates);
-    }
-
     return <List<List<Object>>>[
       for (final List<({String text, String reading})>? segs in segmented)
-        segs == null
-            ? const <List<Object>>[]
-            : _encodeSegments(
-                segs,
-                furigana: furigana,
-                highlight: lookup != null,
-                statuses: statuses,
-              ),
+        segs == null ? const <List<Object>>[] : _encodeSegments(segs),
     ];
   }
 
   static List<List<Object>> _encodeSegments(
-    List<({String text, String reading})> segs, {
-    required bool furigana,
-    required bool highlight,
-    required Map<String, WebKnownWordStatus> statuses,
-  }) {
+    List<({String text, String reading})> segs,
+  ) {
     final List<List<Object>> out = <List<Object>>[];
     final StringBuffer plain = StringBuffer();
     void flushPlain() {
@@ -297,21 +223,15 @@ class WebFuriganaAnnotator {
     }
 
     for (final ({String text, String reading}) s in segs) {
-      final WebKnownWordStatus status =
-          highlight && isKnownWordCandidate(s.text, s.reading)
-          ? statuses[s.text] ?? WebKnownWordStatus.unknown
-          : WebKnownWordStatus.none;
-      final List<WebRubyPart>? ruby = furigana && !_kanaOnly.hasMatch(s.text)
-          ? alignFurigana(s.text, s.reading)
-          : null;
-      if (ruby == null && status == WebKnownWordStatus.none) {
+      final List<WebRubyPart>? ruby = _kanaOnly.hasMatch(s.text)
+          ? null
+          : alignFurigana(s.text, s.reading);
+      if (ruby == null) {
         plain.write(s.text);
         continue;
       }
       flushPlain();
-      out.add(
-        encodeWebFuriganaToken((text: s.text, status: status, ruby: ruby)),
-      );
+      out.add(encodeWebFuriganaToken((text: s.text, ruby: ruby)));
     }
     flushPlain();
     return out;

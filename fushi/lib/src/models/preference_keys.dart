@@ -834,7 +834,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'web_browser_force_dark',
   // bool：浏览器整页注音开关（features/furigana，设备本地）。
   'web_browser_furigana',
-  // bool：浏览器生词高亮开关（features/furigana，设备本地）。
+  // bool：已删除的浏览器「生词高亮」开关（2026-10-27 用户要求移除）。存量键冻结、
+  // 不再读写；留在这里只为键名不被别的功能复用。
   'web_browser_known_words',
   // bool（默认 true）：浏览器重启后恢复上次的标签页（web_browser_prefs.dart，设备本地）。
   'web_browser_restore_tabs',

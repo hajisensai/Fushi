@@ -10,34 +10,6 @@ const String kWebFuriganaHandler = 'fushiFuriganaAnnotate';
 const int kWebFuriganaPageBatchItems = kWebFuriganaMaxBatchItems;
 const int kWebFuriganaPageBatchChars = kWebFuriganaMaxBatchChars;
 
-/// 注音 / 着色的页内配置（Dart → JS）。
-class WebFuriganaPageConfig {
-  const WebFuriganaPageConfig({
-    required this.furigana,
-    required this.highlight,
-    this.unknownColor = '#3b82f6',
-    this.learningColor = '#f59e0b',
-  });
-
-  final bool furigana;
-  final bool highlight;
-
-  /// 生词下划线颜色（CSS 颜色串）。
-  final String unknownColor;
-
-  /// 学习中词的底色（CSS 颜色串，脚本按 28% 混透明）。
-  final String learningColor;
-
-  bool get enabled => furigana || highlight;
-
-  Map<String, Object> toJson() => <String, Object>{
-    'furigana': furigana,
-    'highlight': highlight,
-    'unknownColor': unknownColor,
-    'learningColor': learningColor,
-  };
-}
-
 /// 页内注音机制（幂等安装，装上后只认 `window.__fushiFurigana.configure`）。
 ///
 /// - 只处理**可见附近**的文本：首次全树走一遍，把含日文的文本节点的父元素交给一个
@@ -45,7 +17,7 @@ class WebFuriganaPageConfig {
 ///   排队；
 /// - 攒批：同一时刻只有一批在途，一批 ≤ [kWebFuriganaPageBatchItems] 段、
 ///   ≤ [kWebFuriganaPageBatchChars] 字，一次 `callHandler` 送给 Dart（Dart 侧一次分词
-///   FFI + 一次已知词查询），回来后整批替换再发下一批；
+///   FFI），回来后整批替换再发下一批；
 /// - 动态内容：`MutationObserver` 看新增节点（去抖 200ms），新节点同样经视口门进队；
 ///   本脚本自己插入的 `span.fushi-furi` 不再处理；
 /// - 关掉 / 换配置：把所有 `span.fushi-furi` 还原成原文文本节点再按新配置重来。
@@ -66,10 +38,10 @@ const String _kWebFuriganaInstallTemplate = r'''
     RT:1,RP:1,RUBY:1,CODE:1,KBD:1,SAMP:1,SVG:1,svg:1,CANVAS:1,TEMPLATE:1,
     IFRAME:1,BUTTON:1};
   var JA = /[぀-ヿ㐀-鿿豈-﫿々]/;
-  var cfg = {furigana: false, highlight: false};
+  var enabled = false;
   var version = 0, queue = [], queued = new WeakSet(), observed = new WeakSet();
   var io = null, mo = null, inflight = false, pending = [], moTimer = 0;
-  function on(){ return cfg.furigana || cfg.highlight; }
+  function on(){ return enabled; }
   function okParent(el){
     for (var n = el; n && n !== document.documentElement; n = n.parentNode) {
       if (n.nodeType !== 1) continue;
@@ -128,26 +100,17 @@ const String _kWebFuriganaInstallTemplate = r'''
   function text(s){ return document.createTextNode(s); }
   function render(span, tokens){
     for (var i = 0; i < tokens.length; i++) {
-      var tok = tokens[i], st = tok[1] | 0, parts = tok[2];
-      var cls = st === 1 ? 'fushi-tok fushi-tok-u' :
-        st === 2 ? 'fushi-tok fushi-tok-l' : '';
-      if (!parts && !cls) { span.appendChild(text(tok[0])); continue; }
-      var w = document.createElement('span');
-      if (cls) w.className = cls;
-      if (parts) {
-        for (var j = 0; j + 1 < parts.length; j += 2) {
-          if (!parts[j + 1]) { w.appendChild(text(parts[j])); continue; }
-          var r = document.createElement('ruby');
-          r.appendChild(text(parts[j]));
-          var rt = document.createElement('rt');
-          rt.textContent = parts[j + 1];
-          r.appendChild(rt);
-          w.appendChild(r);
-        }
-      } else {
-        w.textContent = tok[0];
+      var tok = tokens[i], parts = tok[1];
+      if (!parts) { span.appendChild(text(tok[0])); continue; }
+      for (var j = 0; j + 1 < parts.length; j += 2) {
+        if (!parts[j + 1]) { span.appendChild(text(parts[j])); continue; }
+        var r = document.createElement('ruby');
+        r.appendChild(text(parts[j]));
+        var rt = document.createElement('rt');
+        rt.textContent = parts[j + 1];
+        r.appendChild(rt);
+        span.appendChild(r);
       }
-      span.appendChild(w);
     }
   }
   function apply(nodes, texts, res){
@@ -177,8 +140,7 @@ const String _kWebFuriganaInstallTemplate = r'''
     if (!nodes.length) return;
     inflight = true;
     var mine = version;
-    bridge.callHandler('@HANDLER@', {texts: texts,
-        furigana: cfg.furigana, highlight: cfg.highlight}).then(function(res){
+    bridge.callHandler('@HANDLER@', {texts: texts}).then(function(res){
       if (mine !== version) return;
       inflight = false;
       if (res && res.length === nodes.length) apply(nodes, texts, res);
@@ -198,19 +160,12 @@ const String _kWebFuriganaInstallTemplate = r'''
       if (s.parentNode) s.parentNode.replaceChild(text(plain(s)), s);
     }
   }
-  function style(c){
-    var el = document.getElementById('fushi-furigana-css');
-    if (!el) {
-      el = document.createElement('style');
-      el.id = 'fushi-furigana-css';
-      (document.head || document.documentElement).appendChild(el);
-    }
-    el.textContent =
-      '.fushi-furi rt{font-size:.5em;line-height:1;}' +
-      '.fushi-tok-u{text-decoration:underline dotted ' + c.unknownColor +
-      ';text-decoration-thickness:2px;text-underline-offset:.22em;}' +
-      '.fushi-tok-l{background-color:color-mix(in srgb,' + c.learningColor +
-      ' 28%,transparent);border-radius:2px;}';
+  function style(){
+    if (document.getElementById('fushi-furigana-css')) return;
+    var el = document.createElement('style');
+    el.id = 'fushi-furigana-css';
+    el.textContent = '.fushi-furi rt{font-size:.5em;line-height:1;}';
+    (document.head || document.documentElement).appendChild(el);
   }
   function configure(c){
     version++;
@@ -220,9 +175,9 @@ const String _kWebFuriganaInstallTemplate = r'''
     io = null; mo = null; inflight = false; pending = []; queue = [];
     queued = new WeakSet(); observed = new WeakSet();
     unwrapAll();
-    cfg = {furigana: !!c.furigana, highlight: !!c.highlight};
+    enabled = !!c.enabled;
     if (!on() || !document.body) return;
-    style(c);
+    style();
     io = new IntersectionObserver(onIntersect,
       {rootMargin: '100% 0px 100% 0px'});
     mo = new MutationObserver(onMutations);
@@ -233,15 +188,14 @@ const String _kWebFuriganaInstallTemplate = r'''
 })();
 ''';
 
-/// 安装（幂等）并按 [config] 重新配置；关掉时还原页面原文。
-String webFuriganaConfigureInvocation(WebFuriganaPageConfig config) =>
+/// 安装（幂等）并按 [enabled] 重新配置；关掉时还原页面原文。
+String webFuriganaConfigureInvocation({required bool enabled}) =>
     '${webFuriganaInstallSource()}\n'
-    'window.__fushiFurigana.configure(${jsonEncode(config.toJson())});';
+    'window.__fushiFurigana.configure('
+    '${jsonEncode(<String, Object>{'enabled': enabled})});';
 
-/// 解析页内脚本送来的一批（`{texts: [...], furigana, highlight}`）；形状不对返回 null。
-({List<String> texts, bool furigana, bool highlight})? parseWebFuriganaRequest(
-  List<dynamic> args,
-) {
+/// 解析页内脚本送来的一批（`{texts: [...]}`）；形状不对返回 null。
+List<String>? parseWebFuriganaRequest(List<dynamic> args) {
   if (args.isEmpty || args.first is! Map) return null;
   final Map<dynamic, dynamic> body = args.first as Map<dynamic, dynamic>;
   final Object? raw = body['texts'];
@@ -251,9 +205,5 @@ String webFuriganaConfigureInvocation(WebFuriganaPageConfig config) =>
     if (t is! String) return null;
     texts.add(t);
   }
-  return (
-    texts: texts,
-    furigana: body['furigana'] == true,
-    highlight: body['highlight'] == true,
-  );
+  return texts;
 }
