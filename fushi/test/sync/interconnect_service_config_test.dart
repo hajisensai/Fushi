@@ -71,8 +71,13 @@ void main() {
       await db.getAllPrefs(),
     );
 
-    expect(snapshot.preferences.keys,
-        InterconnectServiceConfigSnapshot.sharedPreferenceKeys);
+    // 只出白名单里的键；凭据 / 配置清单在 host 上没有行时整个键不下发
+    // （缺键 = 不改子设备，见下面的 resource_bt_sites 用例）。
+    expect(
+      snapshot.preferences.keys,
+      everyElement(isIn(InterconnectServiceConfigSnapshot.sharedPreferenceKeys)),
+    );
+    expect(snapshot.preferences, isNot(contains('resource_bt_sites')));
     expect(snapshot.preferences['jimaku_api_key'],
         PrefCodec.encode('jimaku-secret'));
     // 现行外部服务身份跟着用户的设备走；退役的视频刮削凭据与本机入站
@@ -114,13 +119,13 @@ void main() {
     expect(snapshot.preferences, isNot(contains('download_save_root')));
   });
 
-  test('missing host rows materialize defaults so clearing propagates', () {
+  test('missing host rows of plain settings materialize defaults', () {
     final InterconnectServiceConfigSnapshot snapshot =
         InterconnectServiceConfigSnapshot.fromPreferences(
       const <String, String>{},
     );
 
-    expect(snapshot.preferences['jimaku_api_key'], PrefCodec.encode(''));
+    expect(snapshot.preferences['jimaku_enabled'], PrefCodec.encode(true));
     expect(
       snapshot.preferences[kVideoMetadataAniDbClientNamePref],
       PrefCodec.encode(''),
@@ -137,6 +142,89 @@ void main() {
       snapshot.preferences['manga_online_catalog_enabled'],
       PrefCodec.encode(true),
     );
+  });
+
+  test('凭据 / 配置清单缺行 = host 从没配过：整个键不下发（含跟随令牌的账号名）', () {
+    final InterconnectServiceConfigSnapshot snapshot =
+        InterconnectServiceConfigSnapshot.fromPreferences(
+      const <String, String>{},
+    );
+
+    for (final String key in <String>[
+      'resource_bt_sites',
+      'video_resource_torznab_config',
+      'video_subtitle_opensubtitles_config',
+      'qb_connection_config',
+      'jimaku_api_key',
+      'video_subtitle_subdl_api_key',
+      'video_scraper_tmdb_api_key',
+      kBangumiAccessTokenPref,
+      kBangumiAccountNamePref,
+    ]) {
+      expect(snapshot.preferences, isNot(contains(key)), reason: key);
+    }
+  });
+
+  group('resource_bt_sites 导入', () {
+    final String childSites = PrefCodec.encode(
+      '[{"id":"btchild","url":"https://child.example","format":"nyaa"}]',
+    );
+
+    Future<InterconnectServiceConfigSnapshot> viaWire(
+      Map<String, String> hostRows,
+    ) async =>
+        InterconnectServiceConfigSnapshot.fromJson(
+          InterconnectServiceConfigSnapshot.fromPreferences(hostRows).toJson(),
+        );
+
+    test('host 缺键（旧版本 host / 从没配过）：子设备的 BT 站保持不变', () async {
+      await db.setPref('resource_bt_sites', childSites);
+      final InterconnectServiceConfigSnapshot snapshot =
+          await viaWire(const <String, String>{});
+      await snapshot.applyTo(db);
+      expect(await db.getPref('resource_bt_sites'), childSites);
+    });
+
+    test('旧版本 host 的载荷里根本没有这个键：子设备保持不变', () async {
+      await db.setPref('resource_bt_sites', childSites);
+      final InterconnectServiceConfigSnapshot snapshot =
+          InterconnectServiceConfigSnapshot.fromJson(<String, Object?>{
+        'schemaVersion': 1,
+        'preferences': <String, Object?>{
+          'jimaku_api_key': PrefCodec.encode('k'),
+        },
+      });
+      await snapshot.applyTo(db);
+      expect(await db.getPref('resource_bt_sites'), childSites);
+    });
+
+    test('host 显式清空（空数组）：子设备随之清空', () async {
+      await db.setPref('resource_bt_sites', childSites);
+      final String cleared = PrefCodec.encode('[]');
+      final InterconnectServiceConfigSnapshot snapshot =
+          await viaWire(<String, String>{'resource_bt_sites': cleared});
+      await snapshot.applyTo(db);
+      expect(await db.getPref('resource_bt_sites'), cleared);
+    });
+
+    test('host 有值：覆盖子设备', () async {
+      await db.setPref('resource_bt_sites', childSites);
+      final String hostSites = PrefCodec.encode(
+        '[{"id":"nyaa.si","url":"https://nyaa.si","format":"nyaa"}]',
+      );
+      final InterconnectServiceConfigSnapshot snapshot =
+          await viaWire(<String, String>{'resource_bt_sites': hostSites});
+      await snapshot.applyTo(db);
+      expect(await db.getPref('resource_bt_sites'), hostSites);
+    });
+  });
+
+  test('Bangumi 账号名跟令牌成对：令牌有行而名字缺行时名字按空值下发', () {
+    final InterconnectServiceConfigSnapshot snapshot =
+        InterconnectServiceConfigSnapshot.fromPreferences(<String, String>{
+      kBangumiAccessTokenPref: PrefCodec.encode('tok'),
+    });
+    expect(snapshot.preferences[kBangumiAccountNamePref], PrefCodec.encode(''));
   });
 
   test('client ignores unknown fields and applies only changed rows', () async {
