@@ -1,20 +1,42 @@
 // Books 库里的 Audiobookshelf 标签页：库与条目、只有电子书的条目不列、「继续收听」、分页、
 // 搜索、加载失败可重试、切换媒体库、点封面进详情页（书 / 播客）。假服务器 + 真组件。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/models.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_library_view.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
+
+import '../helpers/test_platform_services.dart';
+
+/// 详情页就地显示下载状态（监听 `discoveryDownloadQueue`）：给它一条真队列，
+/// payload 永不解析——测试不点下载，只要页面能渲染。
+class _QueueAppModel extends AppModel {
+  _QueueAppModel() : super(testPlatformServices());
+
+  @override
+  DiscoveryDownloadQueue get discoveryDownloadQueue => _queue;
+
+  late final DiscoveryDownloadQueue _queue = DiscoveryDownloadQueue(
+    resolvePayload: (DiscoveryResourceItem item) =>
+        Completer<DiscoveryPayload>().future,
+    importer: (DiscoveryDownloadTask task, File file) async =>
+        const DiscoveryImportOutcome(),
+  );
+}
 
 Map<String, Object?> _libItem(
   String id,
@@ -199,8 +221,10 @@ void main() {
       client: MockClient(server.handle),
     );
     addTearDown(api.close);
+    final AppModel appModel = _QueueAppModel();
     await tester.pumpWidget(
       ProviderScope(
+        overrides: <Override>[appProvider.overrideWith((_) => appModel)],
         child: TranslationProvider(
           child: MaterialApp(
             home: Scaffold(
