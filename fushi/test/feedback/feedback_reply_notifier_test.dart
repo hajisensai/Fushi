@@ -198,7 +198,15 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text(t.feedback_reply_notice(n: 2)), findsOneWidget);
     expect(find.text(t.feedback_reply_notice_open), findsOneWidget);
-    ScaffoldMessenger.of(ctx).clearSnackBars();
+    // 反馈 eiFcN3DZQ3：被动提醒不能常驻挡住底部按钮——到时自己收起，也不补常驻
+    // 提示条才有的关闭按钮。
+    expect(
+      find.byKey(const ValueKey<String>('fushi-snackbar-close')),
+      findsNothing,
+    );
+    await tester.pump(kFeedbackReplyNoticeDuration);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text(t.feedback_reply_notice(n: 2)), findsNothing);
   });
 
   Future<void> waitForRequests(int n) async {
