@@ -765,10 +765,42 @@ std::vector<std::u32string> text_processor::simplified_to_traditional_variants(c
   return out;
 }
 
+namespace {
+using VariantMap = std::map<std::u32string, int, std::less<>>;
+
+void keep_min_steps(VariantMap& map, std::u32string text, int steps) {
+  auto [it, inserted] = map.try_emplace(std::move(text), steps);
+  if (!inserted && steps < it->second) it->second = steps;
+}
+
+VariantMap apply_processor(const TextProcessor& processor, const VariantMap& variants) {
+  VariantMap next;
+  for (const auto& [variant, steps] : variants) {
+    for (int option : processor.options) {
+      auto processed = processor.process(variant, option);
+      const int new_steps = (processed == variant) ? steps : steps + 1;
+      keep_min_steps(next, std::move(processed), new_steps);
+    }
+  }
+  return next;
+}
+
+// 对每个已有变体追加其繁體拼写（steps + 1）；原形变体原样保留。
+VariantMap expand_simplified_to_traditional(const VariantMap& variants) {
+  VariantMap next = variants;
+  for (const auto& [variant, steps] : variants) {
+    for (auto& traditional : text_processor::simplified_to_traditional_variants(variant)) {
+      keep_min_steps(next, std::move(traditional), steps + 1);
+    }
+  }
+  return next;
+}
+}  // namespace
+
 // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/translator.js#L564
 std::vector<TextVariant> text_processor::process(const std::string& src, bool chinese_simp_to_trad) {
   std::u32string text = utf8::utf8to32(src);
-  std::map<std::u32string, int> variants = {{text, 0}};
+  VariantMap variants = {{text, 0}};
 
   auto all_processors = get_japanese_processors();
   auto en_processors = get_english_processors();
@@ -787,34 +819,14 @@ std::vector<TextVariant> text_processor::process(const std::string& src, bool ch
   auto ko_processors = get_korean_processors();
   all_processors.insert(all_processors.end(), ko_processors.begin(), ko_processors.end());
   for (const auto& processor : all_processors) {
-    std::map<std::u32string, int> next;
-
-    for (const auto& [variant, steps] : variants) {
-      for (int option : processor.options) {
-        auto processed = processor.process(variant, option);
-        int new_steps = (processed == variant) ? steps : steps + 1;
-
-        auto [it, inserted] = next.try_emplace(processed, new_steps);
-        if (!inserted && new_steps < it->second) {
-          it->second = new_steps;
-        }
-      }
-    }
-    variants = std::move(next);
+    variants = apply_processor(processor, variants);
   }
 
   // 简体 → 繁體只在调用方声明查询语言为中文时展开（引擎无语言路由，由 LookupOptions
   // 传入；非中文查询的变体集与此前逐字节一致）。挂在链尾、对每个已有变体展开：原形
   // 变体始终保留，繁體拼写是额外多出的若干个（steps + 1，同长度时排在原形之后）。
   if (chinese_simp_to_trad) {
-    std::map<std::u32string, int> next = variants;
-    for (const auto& [variant, steps] : variants) {
-      for (auto& traditional : simplified_to_traditional_variants(variant)) {
-        auto [it, inserted] = next.try_emplace(std::move(traditional), steps + 1);
-        if (!inserted && steps + 1 < it->second) it->second = steps + 1;
-      }
-    }
-    variants = std::move(next);
+    variants = expand_simplified_to_traditional(variants);
   }
 
   return variants |

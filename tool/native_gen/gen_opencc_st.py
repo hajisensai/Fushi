@@ -33,6 +33,7 @@ from __future__ import annotations
 import hashlib
 import sys
 import urllib.request
+from collections.abc import Iterator
 from pathlib import Path
 
 OPENCC_COMMIT = "9b16591a0d065f5e1121620733721436e83c206f"
@@ -80,6 +81,37 @@ def single_codepoint(s: str) -> bool:
     return len(s) == 1
 
 
+def push_candidate(out: list[str], ch: str) -> None:
+    if single_codepoint(ch) and ch not in out:
+        out.append(ch)
+
+
+def variant_forms(ch: str, variant_maps: tuple[dict[str, list[str]], ...]) -> Iterator[str]:
+    for variants in variant_maps:
+        yield from variants.get(ch, [])
+
+
+def candidates_for_simplified(
+    values: list[str], variant_maps: tuple[dict[str, list[str]], ...]
+) -> list[str]:
+    out: list[str] = []
+    for value in values:
+        push_candidate(out, value)
+    for value in tuple(out):  # snapshot: push_candidate grows `out`
+        for v in variant_forms(value, variant_maps):
+            push_candidate(out, v)
+    return out
+
+
+def candidates_for_variant_only(
+    key: str, variant_maps: tuple[dict[str, list[str]], ...]
+) -> list[str]:
+    out = [key]
+    for v in variant_forms(key, variant_maps):
+        push_candidate(out, v)
+    return out
+
+
 def build_candidates(
     st: dict[str, list[str]],
     tw: dict[str, list[str]],
@@ -87,38 +119,21 @@ def build_candidates(
 ) -> list[tuple[int, list[int]]]:
     """Simplified code point -> ordered traditional candidates (see module doc)."""
     variant_maps = (tw, hk)
-    result: dict[str, list[str]] = {}
-
-    def push(out: list[str], ch: str) -> None:
-        if single_codepoint(ch) and ch not in out:
-            out.append(ch)
-
-    for key, values in st.items():
-        if not single_codepoint(key):
-            continue
-        out: list[str] = []
-        for value in values:
-            push(out, value)
-        for value in list(out):
-            for variants in variant_maps:
-                for v in variants.get(value, []):
-                    push(out, v)
-        result[key] = out
+    result = {
+        key: candidates_for_simplified(values, variant_maps)
+        for key, values in st.items()
+        if single_codepoint(key)
+    }
     for variants in variant_maps:
         for key in variants:
-            if not single_codepoint(key) or key in result:
-                continue
-            out = [key]
-            for other in variant_maps:
-                for v in other.get(key, []):
-                    push(out, v)
-            result[key] = out
+            if single_codepoint(key) and key not in result:
+                result[key] = candidates_for_variant_only(key, variant_maps)
 
-    pairs: list[tuple[int, list[int]]] = []
-    for key, out in result.items():
-        if out == [key] or not out:
-            continue
-        pairs.append((ord(key), [ord(c) for c in out]))
+    pairs = [
+        (ord(key), [ord(c) for c in out])
+        for key, out in result.items()
+        if out and out != [key]
+    ]
     pairs.sort()
     return pairs
 

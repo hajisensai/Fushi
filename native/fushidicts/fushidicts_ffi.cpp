@@ -829,11 +829,12 @@ LookupOptions make_lookup_options(const LookupOptionArgs& args) {
   if (args.freq_dict && args.freq_dict[0] != '\0') {
     options.frequency_dictionary = std::string(args.freq_dict);
   }
+  using enum LookupFrequencyOrder;
   switch (args.freq_order) {
-    case 1: options.frequency_order = LookupFrequencyOrder::Ascending; break;
-    case 2: options.frequency_order = LookupFrequencyOrder::Descending; break;
-    case 3: options.frequency_order = LookupFrequencyOrder::Disabled; break;
-    default: options.frequency_order = LookupFrequencyOrder::Auto; break;
+    case 1: options.frequency_order = Ascending; break;
+    case 2: options.frequency_order = Descending; break;
+    case 3: options.frequency_order = Disabled; break;
+    default: options.frequency_order = Auto; break;
   }
   if (args.primary_reading && args.primary_reading[0] != '\0') {
     options.primary_reading = std::string(args.primary_reading);
@@ -869,7 +870,8 @@ FUSHI_EXPORT
 FfiLookupResults fushidicts_lookup_with_flags(void* handle, const char* text, int32_t max_results,
                                               int32_t scan_length, const char* freq_dict, int32_t freq_order,
                                               const char* primary_reading, int32_t flags) {
-  return ffi_guard("fushidicts_lookup_with_flags", [&]() -> FfiLookupResults {
+  return ffi_guard("fushidicts_lookup_with_flags", [handle, text, max_results, scan_length, freq_dict, freq_order,
+                                                    primary_reading, flags] {
     return lookup_with_option_args(handle, text, max_results, scan_length,
                                    LookupOptionArgs{freq_dict, freq_order, primary_reading, flags});
   });

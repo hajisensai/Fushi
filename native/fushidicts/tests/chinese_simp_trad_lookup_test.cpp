@@ -17,7 +17,8 @@
 //
 // Usage: chinese_simp_trad_lookup_test (no args) -> exit 0 PASS, non-zero FAIL.
 #include <algorithm>
-#include <cstdio>
+#include <memory>
+#include <print>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -36,7 +37,7 @@ namespace {
 struct Failures {
   int count = 0;
   void fail(std::string_view msg) {
-    std::fprintf(stderr, "FAIL: %.*s\n", static_cast<int>(msg.size()), msg.data());
+    std::println(stderr, "FAIL: {}", msg);
     ++count;
   }
   void expect(bool ok, std::string_view msg) {
@@ -46,7 +47,7 @@ struct Failures {
 
 const TextVariant* find_variant(const std::vector<TextVariant>& vs, std::string_view text) {
   const auto it = std::ranges::find_if(vs, [text](const TextVariant& v) { return v.text == text; });
-  return it == vs.end() ? nullptr : &*it;
+  return it == vs.end() ? nullptr : std::to_address(it);
 }
 
 std::vector<std::string> spellings(std::string_view simplified) {
@@ -131,7 +132,7 @@ std::vector<LookupResult> lookup_zh(const Lookup& lookup, const std::string& tex
 
 const LookupResult* find_result(const std::vector<LookupResult>& rs, std::string_view expression) {
   const auto it = std::ranges::find_if(rs, [expression](const LookupResult& r) { return r.term.expression == expression; });
-  return it == rs.end() ? nullptr : &*it;
+  return it == rs.end() ? nullptr : std::to_address(it);
 }
 
 bool write_dict(Failures& f, const std::string& title, const std::vector<SimpleEntry>& entries, DictionaryQuery& q) {
@@ -193,6 +194,6 @@ int main() {
   check_spellings(f);
   check_process_gating(f);
   check_end_to_end(f);
-  std::fprintf(stderr, "chinese_simp_trad_lookup_test: %s\n", f.count ? "FAILED" : "PASSED");
+  std::println(stderr, "chinese_simp_trad_lookup_test: {}", f.count ? "FAILED" : "PASSED");
   return f.count ? 1 : 0;
 }
