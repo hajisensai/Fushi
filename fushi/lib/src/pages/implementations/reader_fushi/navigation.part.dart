@@ -1583,6 +1583,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         // 同/跨 section 的保留/失效决策交回 repo.save。
         charOffset: saveArgs.charOffset,
       );
+      // Kavita 绑定书：位置落库后转发给进度同步（防抖上报；非绑定书为 null）。
+      _kavitaSync?.onPositionSaved(section);
     } catch (e, stack) {
       // fail-open：本次位置未落盘（后续 debounce/flush 会重试），补日志便于诊断。
       ErrorLogService.instance.log('ReaderFushi._persistPosition', e, stack);

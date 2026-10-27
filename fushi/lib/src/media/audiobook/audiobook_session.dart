@@ -7,6 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
@@ -193,6 +194,7 @@ class AudiobookSession extends ChangeNotifier {
     required SessionPersistCallbacks persist,
     List<AudioCue> cues = const <AudioCue>[],
     List<AudioSource>? audioSources,
+    AudiobookRemotePlayback? remote,
     Future<void> Function()? onReleased,
   }) {
     return _enqueueLifecycle<AudiobookPlayerController?>(
@@ -203,6 +205,7 @@ class AudiobookSession extends ChangeNotifier {
         persist: persist,
         cues: cues,
         audioSources: audioSources,
+        remote: remote,
         onReleased: onReleased,
       ),
     );
@@ -215,8 +218,18 @@ class AudiobookSession extends ChangeNotifier {
     required SessionPersistCallbacks persist,
     required List<AudioCue> cues,
     List<AudioSource>? audioSources,
+    AudiobookRemotePlayback? remote,
     Future<void> Function()? onReleased,
   }) async {
+    // 远端书：流式音源与句子回放 / 制卡的取音频都由 [remote] 提供；它的释放串在
+    // 调用方的释放回调前面，会话结束（含加载失败）时一并收束。
+    if (remote != null) {
+      final Future<void> Function()? callerReleased = onReleased;
+      onReleased = () async {
+        await remote.release();
+        await callerReleased?.call();
+      };
+    }
     final AudiobookPlayerController? existing = _controller;
     // 同书复用只对录音有声书成立：同一本 EPUB 的录音有声书与 TTS 朗读是两种会话，
     // 互相顶替、或重新开始朗读时都必须重新加载。
@@ -245,7 +258,8 @@ class AudiobookSession extends ChangeNotifier {
       await controller.load(
         audiobook: info.audiobook,
         audioFiles: audioFiles,
-        audioSources: audioSources,
+        audioSources: audioSources ?? remote?.buildSources(),
+        remotePlayback: remote,
         initialFollowAudio: prefs.followAudio,
         initialDelayMs: prefs.delayMs,
         initialSpeed: prefs.speed,
@@ -274,6 +288,30 @@ class AudiobookSession extends ChangeNotifier {
     _book = info;
     _onReleased = onReleased;
     _watchStoredCues();
+
+    // 远端书：后台接上进度同步（开会话 / 续播 / 定期写回）。不 await——开书不能等
+    // 服务器；它的失败只记日志，绝不影响播放。
+    if (remote != null) {
+      unawaited(
+        remote
+            .attach(
+              RemotePlaybackHost(
+                isPlaying: () => controller.isPlaying,
+                filePosition: () => controller.currentFilePosition,
+                restoreTo: (int fileIndex, int positionMs) =>
+                    controller.restoreToFileOffset(
+                      fileIndex: fileIndex,
+                      positionMs: positionMs,
+                    ),
+                addListener: controller.addListener,
+                removeListener: controller.removeListener,
+              ),
+            )
+            .catchError((Object e, StackTrace stack) {
+              ErrorLogService.instance.log('AudiobookSession.remoteAttach', e, stack);
+            }),
+      );
+    }
 
     _subscribeControlStreams(controller);
     await _startBackgroundSurfaces(controller);

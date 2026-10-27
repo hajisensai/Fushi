@@ -432,6 +432,23 @@
       "note": "Variant-kanji table generated into fushidicts_src/text_processor/kanji_standardization_data.*."
     },
     {
+      "name": "OpenCC",
+      "version": "9b16591a",
+      "license": "Apache-2.0",
+      "component": "native/fushidicts",
+      "platforms": [
+        "android",
+        "ios",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "texts": [
+        "native/fushidicts/fushidicts_src/text_processor/OPENCC_LICENSE"
+      ],
+      "note": "Simplified->traditional character table (STCharacters + TWVariants + HKVariants) generated into fushidicts_src/text_processor/opencc_st_data.* for the Chinese lookup fallback."
+    },
+    {
       "name": "libtorrent",
       "version": "2.0.11",
       "license": "BSD-3-Clause",

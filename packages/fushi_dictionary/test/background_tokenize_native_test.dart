@@ -451,6 +451,10 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
           term('漢', 'かん', '', 'han (A)'),
           term('漢字', 'かんじ', '', 'kanji (A)'),
           for (int i = 0; i < 12; i++) term('語$i', 'ご', '', 'word $i (A)'),
+          // 中文简繁回落：只有繁體词头。
+          term('頭髮', 'tóufà', '', 'hair (A)'),
+          term('我', 'wǒ', '', 'I (A)'),
+          term('我們', 'wǒmen', '', 'we (A)'),
         ],
       });
       dictB = await importDict('BgLookupB', <String, Object>{
@@ -546,6 +550,84 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
         }
       }
       expect(debugLastBackgroundLookupIsolate, kBackgroundLookupIsolateName);
+    });
+
+    test('中文简繁回落：flag 经 FFI 到引擎，后台与同步同口径，关着时不命中', () async {
+      List<String> words(List<FushiLookupResult> rs) =>
+          rs.map((FushiLookupResult r) => r.term.expression).toList();
+
+      final List<FushiLookupResult> on = FushiDicts.instance.lookup(
+        '头发很长',
+        maxResults: 10,
+        chineseSimpToTrad: true,
+      );
+      // 一简多繁：发 → 發 / 髮，只取首选项会拼成不存在的「頭發」。
+      expect(words(on), contains('頭髮'));
+      expect(
+        on
+            .firstWhere((FushiLookupResult r) => r.term.expression == '頭髮')
+            .matched,
+        '头发',
+      );
+      expect(
+        words(FushiDicts.instance.lookup('头发很长', maxResults: 10)),
+        isNot(contains('頭髮')),
+      );
+      // 「我」原样就能命中，但更长的「我們」要排第一：回落不是零结果才触发。
+      expect(
+        FushiDicts.instance
+            .lookup('我们是', maxResults: 10, chineseSimpToTrad: true)
+            .first
+            .term
+            .expression,
+        '我們',
+      );
+      // 带词频选项时同样认 flag（选项与 flag 一起走 with_flags 导出）。
+      expect(
+        words(
+          FushiDicts.instance.lookup(
+            '头发',
+            maxResults: 10,
+            frequencyOrder: FushiLookupFrequencyOrder.disabled,
+            chineseSimpToTrad: true,
+          ),
+        ),
+        contains('頭髮'),
+      );
+
+      for (final bool zh in <bool>[true, false]) {
+        final FushiLookupRequest request = FushiLookupRequest(
+          text: '头发很长',
+          maxResults: 10,
+          chineseSimpToTrad: zh,
+        );
+        final FushiLookupOutcome outcome = (await FushiDicts.instance
+            .lookupInBackground(request))!;
+        final List<FushiLookupResult> sync = FushiDicts.instance.lookup(
+          '头发很长',
+          maxResults: 10,
+          chineseSimpToTrad: zh,
+        );
+        final DictionarySearchResult? expected = sync.isEmpty
+            ? null
+            : buildResultFromLookup(
+                searchTerm: request.text,
+                results: sync,
+                maximumTerms: 10,
+                dictionaryOrder: const <String>[],
+                hiddenDictionaries: const <String>{},
+              );
+        expect(
+          outcome.result?.entries.map((e) => e.word).toList() ?? <String>[],
+          expected?.entries.map((e) => e.word).toList() ?? <String>[],
+          reason: 'zh=$zh',
+        );
+        expect(
+          outcome.result?.entries.any((e) => e.word == '頭髮') ?? false,
+          zh,
+          reason: 'zh=$zh',
+        );
+      }
     });
 
     test('popupOnly 与旧同步路径同口径（popupJson + 全部结果的 bestLength）', () async {

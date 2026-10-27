@@ -121,6 +121,8 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
         return true;
       case OnlineMangaRuntimeKind.aidoku:
       case OnlineMangaRuntimeKind.interconnect:
+      // Kavita 条目在本机直连用户自己的服务器读，互联 host 不代读。
+      case OnlineMangaRuntimeKind.kavita:
         return false;
     }
   }

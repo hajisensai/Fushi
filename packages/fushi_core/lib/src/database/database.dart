@@ -849,6 +849,7 @@ void _requireOneVideoMetadataOwner({
   GalgameTextLines,
   AiAgentSessions,
   AiAgentActions,
+  RemoteAudioBindings,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -890,7 +891,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 136;
+  int get schemaVersion => 137;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2647,6 +2648,13 @@ class FushiDatabase extends _$FushiDatabase
               }
             }
             await _ensureAiAgentIndexes();
+          }
+          if (from < 137) {
+            // v137：字幕书与远端（流式）音频的绑定表。纯新增、无回填；幂等守卫，
+            // 迁移阶梯上按当前 Dart 定义已建过的库直接跳过。
+            if (!await _tableExists('remote_audio_bindings')) {
+              await m.createTable(remoteAudioBindings);
+            }
           }
         },
         onCreate: (m) async {

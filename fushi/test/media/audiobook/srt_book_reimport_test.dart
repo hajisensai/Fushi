@@ -93,6 +93,74 @@ void main() {
     return (await repo.findByUid(uid))!;
   }
 
+  Future<void> bindToServer(String uid) =>
+      RemoteAudioBindingRepository(db).save(
+        RemoteAudioBinding(
+          srtBookUid: uid,
+          provider: RemoteAudioBinding.providerAudiobookshelf,
+          serverConfigId: 'srv',
+          itemId: 'item_1',
+          tracks: const <RemoteAudioTrack>[
+            RemoteAudioTrack(ino: '1', startOffsetMs: 0, durationMs: 2000),
+            RemoteAudioTrack(ino: '2', startOffsetMs: 2000, durationMs: 8000),
+          ],
+          createdAt: 1,
+          updatedAt: 1,
+        ),
+      );
+
+  test('绑在服务器上、本机没有音频（流式播放）：整本时间轴按音轨切开', () async {
+    final File oldSrt = writeSubtitle('old.srt', <(String, String, String)>[
+      ('00:00:01,000', '00:00:01,500', '旧句'),
+    ]);
+    await seedBook(uid: 'srtbook_s', bookKey: '', srtPath: oldSrt.path);
+    await bindToServer('srtbook_s');
+    final File newSrt = writeSubtitle('new.srt', <(String, String, String)>[
+      ('00:00:03,000', '00:00:04,000', '第二轨里的句子'),
+    ]);
+
+    await reimportSrtBook(
+      db: db,
+      repo: repo,
+      uid: 'srtbook_s',
+      subtitlePath: newSrt.path,
+    );
+
+    final AudioCue cue = (await repo.cuesFor('srtbook_s')).single;
+    expect(cue.audioFileIndex, 1);
+    expect(cue.startMs, 1000);
+    expect(cue.endMs, 2000);
+  });
+
+  test('有绑定但本机有音频（播放走本机文件）：cue 原样，不按服务器音轨切', () async {
+    final File oldSrt = writeSubtitle('old.srt', <(String, String, String)>[
+      ('00:00:01,000', '00:00:01,500', '旧句'),
+    ]);
+    final File audio = writeAudio('local.mp3');
+    await seedBook(
+      uid: 'srtbook_l',
+      bookKey: '',
+      srtPath: oldSrt.path,
+      audioPaths: <String>[audio.path],
+    );
+    await bindToServer('srtbook_l');
+    final File newSrt = writeSubtitle('new.srt', <(String, String, String)>[
+      ('00:00:03,000', '00:00:04,000', '本机音频里的句子'),
+    ]);
+
+    await reimportSrtBook(
+      db: db,
+      repo: repo,
+      uid: 'srtbook_l',
+      subtitlePath: newSrt.path,
+    );
+
+    final AudioCue cue = (await repo.cuesFor('srtbook_l')).single;
+    expect(cue.audioFileIndex, 0);
+    expect(cue.startMs, 3000);
+    expect(cue.endMs, 4000);
+  });
+
   test('换字幕：cue 整组换掉且 srtPath 指向持久目录里的新文件', () async {
     final File oldSrt = writeSubtitle('old.srt', <(String, String, String)>[
       ('00:00:01,000', '00:00:02,000', '旧句一'),

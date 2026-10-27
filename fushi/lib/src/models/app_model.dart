@@ -52,6 +52,8 @@ import 'package:fushi/src/utils/misc/system_tts.dart'
     show systemTtsDictionaryLanguages;
 import 'package:fushi/creator.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_engine/models/content_language.dart'
+    show resolveContentLanguage;
 import 'package:fushi/media.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode;
@@ -132,6 +134,7 @@ import 'package:fushi/src/media/novel/online/lnreader_runtime.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_online_manga_host_reader.dart';
+import 'package:fushi/src/media/manga/kavita/kavita_library_adapter.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/web/web_comic_runtime_adapter.dart';
@@ -184,6 +187,8 @@ import 'package:fushi_engine/media/video/download/video_download_subscription_au
 import 'package:fushi/src/media/torrent/video_download_legacy_importer.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_importer.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart'
+    show AudiobookshelfApi;
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart'
     show AudiobookshelfTokens;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
@@ -195,6 +200,9 @@ import 'package:fushi/src/media/discovery/import/discovery_import_production.dar
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobookshelf_api_registry.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobookshelf_remote_playback.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
@@ -533,8 +541,9 @@ String buildSearchCacheKey({
   required String term,
   required int maxTerms,
   required int maxResults,
+  bool chineseSimpToTrad = false,
 }) {
-  return '${term.length}:$term/$maxTerms/$maxResults';
+  return '${term.length}:$term/$maxTerms/$maxResults${chineseSimpToTrad ? '/zh' : ''}';
 }
 
 /// [AppModel.searchDictionary] 本机部分的结局。
@@ -1563,6 +1572,17 @@ class AppModel with ChangeNotifier {
   /// 由各媒体页在进入/切换内容时写入（阅读器开书、视频页解析字幕语言、galgame
   /// 启动）；app 外查词（剪贴板/扩展）保持 null → 落到全局默认。
   String? currentLookupLanguage;
+
+  /// 当前查词是否按中文处理（引擎额外试简体 → 繁體变体，见 `FushiDicts.lookup` 的
+  /// `chineseSimpToTrad`）。语言取查词来源语言 [currentLookupLanguage]，缺省落到
+  /// 全局默认内容语言——与词头字体链同一套解析（[resolveContentLanguage]）。
+  /// 语言未知时为 false：不对日语等其它语言的查词做任何改动。
+  bool get lookupChineseSimpToTrad => isChineseLanguageTag(
+    resolveContentLanguage(
+      explicit: currentLookupLanguage,
+      globalDefault: defaultContentLanguage,
+    ),
+  );
 
   /// [dictRepo] 是否已经赋值。
   ///
@@ -5940,6 +5960,14 @@ class AppModel with ChangeNotifier {
             adFilterEnabled: () => prefsRepo.webComicAdFilter,
           ),
         );
+      // Kavita 同样五端可用，不碰 [mihonManager]；服务器配置每次现读偏好。
+      case OnlineMangaRuntimeKind.kavita:
+        return OnlineMangaLibraryService(
+          database: database,
+          rootDirectory: kavitaMangaLibraryRoot,
+          adapter: KavitaLibraryAdapter(servers: () => prefsRepo.kavitaServers),
+          updateFeed: updateFeedService,
+        );
     }
   }
 
@@ -5947,6 +5975,11 @@ class AppModel with ChangeNotifier {
   /// 新条目一律住 `fushi_books`，这里从不写东西）。目录名是持久化名，冻结。
   Directory get webComicLibraryRoot =>
       Directory(path.join(databaseDirectory.path, 'web_comic'));
+
+  /// Kavita 漫画书架条目的旧式落盘根（新条目住 `<fushi_books>/<bookKey>`，见
+  /// [OnlineMangaLibraryService.rootDirectory]）。
+  Directory get kavitaMangaLibraryRoot =>
+      Directory(path.join(databaseDirectory.path, 'kavita_manga'));
 
   /// 互联漫画源书架条目的本地落盘根（占位 manga.json、封面、章节页缓存）。
   ///
@@ -7326,8 +7359,8 @@ class AppModel with ChangeNotifier {
             if (server.enabled && server.isSignedIn)
               AudiobookshelfDiscoverySource(
                 config: server,
-                onTokensChanged: (AudiobookshelfTokens tokens) =>
-                    persistAudiobookshelfTokens(server.id, tokens),
+                // 共享实例：与书库里的 ABS 标签页、流式播放共用同一份轮换中的令牌。
+                sharedApi: audiobookshelfApis.apiFor(server),
               ),
       ],
     );
@@ -7374,6 +7407,7 @@ class AppModel with ChangeNotifier {
     Iterable<AudiobookshelfServerConfig> servers,
   ) async {
     await prefsRepo.setDiscoveryAudiobookshelfServers(servers);
+    audiobookshelfApis.retainOnly(prefsRepo.discoveryAudiobookshelfServers);
     await reloadDiscoverySources();
   }
 
@@ -7387,6 +7421,53 @@ class AppModel with ChangeNotifier {
               ? server.copyWith(catalogUrl: catalogUrl)
               : server,
       ]);
+
+  /// 每台 Audiobookshelf 服务器一个共享协议层实例（令牌轮换不能被多个实例踩）。
+  /// 其它地方要访问 ABS 一律经它借，见 [AudiobookshelfApiRegistry]。
+  AudiobookshelfApiRegistry get audiobookshelfApis => _audiobookshelfApis ??=
+      AudiobookshelfApiRegistry(persistTokens: persistAudiobookshelfTokens);
+  AudiobookshelfApiRegistry? _audiobookshelfApis;
+
+  /// 字幕书的远端音频绑定 → 可播放的流式接缝；服务器配置已删 / 已登出 / 不是
+  /// Audiobookshelf 时返回 null（调用方当作「没有可播放的音频」）。
+  AudiobookRemotePlayback? remotePlaybackFor(RemoteAudioBinding binding) {
+    if (binding.provider != RemoteAudioBinding.providerAudiobookshelf) {
+      return null;
+    }
+    for (final AudiobookshelfServerConfig server
+        in prefsRepo.discoveryAudiobookshelfServers) {
+      if (server.id != binding.serverConfigId) continue;
+      final AudiobookshelfApi? api = audiobookshelfApis.apiFor(server);
+      return api == null
+          ? null
+          : AudiobookshelfRemotePlayback(
+              api: api,
+              binding: binding,
+              deviceId: () => SyncRepository(database).getOrCreateDeviceId(),
+              onPushed: (int nowMs) async {
+                final RemoteAudioBindingRepository bindings =
+                    RemoteAudioBindingRepository(database);
+                final RemoteAudioBinding? latest = await bindings.get(
+                  binding.srtBookUid,
+                );
+                if (latest != null) {
+                  await bindings.save(latest.copyWith(localProgressAt: nowMs));
+                }
+              },
+              onSyncError: (String what, Object error) =>
+                  ErrorLogService.instance.log(
+                    'AudiobookshelfProgress.$what',
+                    error,
+                    StackTrace.current,
+                  ),
+            );
+    }
+    return null;
+  }
+
+  /// 起会话用的解析器：本机书照旧，绑在服务器上的字幕书走流式。
+  AudiobookSessionLauncher newAudiobookSessionLauncher() =>
+      AudiobookSessionLauncher(database, remoteResolver: remotePlaybackFor);
 
   /// 协议层刷新令牌后的持久化：refresh token 每次刷新都轮换，不写回的话下次冷
   /// 启动拿的是已作废的旧值，宽限期一过就只能重新登录。
@@ -8295,10 +8376,12 @@ class AppModel with ChangeNotifier {
   }) async {
     // maxTerms 与 maxResults 现在恒等（引擎上限已对齐词头预算），键格式保持不变以免
     // 旧键格式守卫漂移。
+    final bool simpToTrad = lookupChineseSimpToTrad;
     final String cacheKey = buildSearchCacheKey(
       term: searchTerm,
       maxTerms: effectiveMaxTerms,
       maxResults: effectiveMaxTerms,
+      chineseSimpToTrad: simpToTrad,
     );
     final DictionarySearchResult? cached = dictRepo.getCachedSearch(cacheKey);
     if (useCache && cached != null) {
@@ -8321,6 +8404,7 @@ class AppModel with ChangeNotifier {
             hiddenDictionaries: filters.hiddenDictionaryNames,
             dictionaryOrder: filters.termDictionaryOrder,
             ffiCacheMaxBytes: dictRepo.ffiLookupCacheBudgetBytes,
+            chineseSimpToTrad: simpToTrad,
           ),
         );
     // 后台关停（disposeInstance）时还没开始的请求以 superseded 结束：没有结果，也
@@ -9030,9 +9114,7 @@ class AppModel with ChangeNotifier {
     String bookKey,
   ) async {
     await initialiseAudioHandler();
-    final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(
-      database,
-    );
+    final AudiobookSessionLauncher launcher = newAudiobookSessionLauncher();
     final AudiobookSessionStartRequest? req = await launcher.resolve(bookKey);
     if (req == null) {
       return BackgroundListenResult.noAudio;
@@ -9049,6 +9131,7 @@ class AppModel with ChangeNotifier {
         persist: req.persist,
         // 灌全书 cue：后台听书无 reader 喂 cue，否则悬浮窗推空串（TODO-354 根因②）。
         cues: req.cues,
+        remote: req.remote,
       );
       if (controller == null) return BackgroundListenResult.loadFailed;
     } catch (e, stack) {
@@ -9550,6 +9633,7 @@ class AppModel with ChangeNotifier {
     _discoveryDownloadKeepAlive = null;
     _discoveryDownloadQueue?.dispose();
     _discoveryDownloadQueue = null;
+    _audiobookshelfApis?.close();
     _mediaDiscoveryService?.close();
     _mediaDiscoveryService = null;
     _mihonManager?.dispose();
@@ -12118,10 +12202,12 @@ class _AppModelRemoteLookupService
       }
       if (searchTerm.trim().isEmpty) return null;
 
+      final bool simpToTrad = _appModel.lookupChineseSimpToTrad;
       final String searchCacheKey = buildSearchCacheKey(
         term: searchTerm,
         maxTerms: maximumTerms,
         maxResults: maximumTerms,
+        chineseSimpToTrad: simpToTrad,
       );
       final Stopwatch? popupCacheWatch = startPhase();
       final DictionaryPopupCacheEntry? cachedPopup = _appModel.dictRepo
@@ -12174,6 +12260,7 @@ class _AppModelRemoteLookupService
               hiddenDictionaries: filters.hiddenDictionaryNames,
               dictionaryOrder: filters.termDictionaryOrder,
               ffiCacheMaxBytes: _appModel.dictRepo.ffiLookupCacheBudgetBytes,
+              chineseSimpToTrad: simpToTrad,
             ),
           );
       if (timing != null && outcome != null) {

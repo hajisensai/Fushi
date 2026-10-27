@@ -3,10 +3,12 @@
 #include <utf8.h>
 #include <utf8proc.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <span>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -14,6 +16,7 @@
 #include <utility>
 
 #include "kanji_standardization_data.h"
+#include "opencc_st_data.h"
 
 namespace {
 struct TextProcessor {
@@ -708,8 +711,62 @@ std::vector<TextProcessor> get_korean_processors() {
 }
 }
 
+namespace {
+// 简体码点 → OpenCC 候选（STCharacters 全部候选按上游顺序，再接台/港字形；生成器见
+// tool/native_gen/gen_opencc_st.py）。表外字符（已是繁體的字、假名、拉丁…）返回空。
+std::span<const char32_t> traditional_candidates(char32_t ch) {
+  const auto& table = opencc_st::kSimpToTrad;
+  // 表里最小的键在 CJK 区，ASCII / 假名等常见字符不用进二分。
+  if (ch < table.front().simplified) return {};
+  const auto it = std::ranges::lower_bound(table, ch, {}, &opencc_st::SimpToTrad::simplified);
+  if (it == table.end() || it->simplified != ch) return {};
+  return std::span<const char32_t>(opencc_st::kCandidates).subspan(it->first, it->count);
+}
+}
+
+std::vector<std::u32string> text_processor::simplified_to_traditional_variants(const std::u32string& text,
+                                                                               std::size_t max_variants) {
+  // 一简多繁（发 → 發/髮、干 → 幹/乾/干、后 → 後/后、里 → 裏/裡）只按首选项转会把
+  // 头发转成「頭發」、关系转成「關系」，词典永远对不上。这里把每个字的全部候选展开成
+  // 多个拼写，交给词典去认哪个是真词（头发 → 頭發 / 頭髮，只有 頭髮 命中）。
+  //
+  // 组合数随歧义字个数指数增长，所以按「各字所选候选的序号之和」从小到大保留前
+  // max_variants 个（首选项组合排第一）。逐字扩展、每步排序截断即可得到全局最优的
+  // 前 K 个：一个全局前 K 的组合，它的任何前缀在该步一定也在前 K 内。扫描是逐前缀
+  // 分别调用的，短前缀（真正的词）组合数小、不会被截断；只有很长、歧义字很多的前缀
+  // 才会丢掉排序靠后的拼写。
+  std::vector<std::pair<std::u32string, std::size_t>> combos;
+  bool any = false;
+  for (std::size_t i = 0; i < text.size(); ++i) {
+    const auto candidates = traditional_candidates(text[i]);
+    if (candidates.empty()) continue;
+    if (!any) {
+      combos.emplace_back(text, 0);
+      any = true;
+    }
+    std::vector<std::pair<std::u32string, std::size_t>> next;
+    next.reserve(combos.size() * candidates.size());
+    for (const auto& [combo, rank] : combos) {
+      for (std::size_t c = 0; c < candidates.size(); ++c) {
+        std::u32string extended = combo;
+        extended[i] = candidates[c];
+        next.emplace_back(std::move(extended), rank + c);
+      }
+    }
+    std::ranges::stable_sort(next, {}, &std::pair<std::u32string, std::size_t>::second);
+    if (next.size() > max_variants) next.resize(max_variants);
+    combos = std::move(next);
+  }
+  std::vector<std::u32string> out;
+  out.reserve(combos.size());
+  for (auto& [combo, rank] : combos) {
+    if (combo != text) out.push_back(std::move(combo));
+  }
+  return out;
+}
+
 // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/translator.js#L564
-std::vector<TextVariant> text_processor::process(const std::string& src) {
+std::vector<TextVariant> text_processor::process(const std::string& src, bool chinese_simp_to_trad) {
   std::u32string text = utf8::utf8to32(src);
   std::map<std::u32string, int> variants = {{text, 0}};
 
@@ -729,7 +786,6 @@ std::vector<TextVariant> text_processor::process(const std::string& src) {
   // 在链尾正好接住。
   auto ko_processors = get_korean_processors();
   all_processors.insert(all_processors.end(), ko_processors.begin(), ko_processors.end());
-
   for (const auto& processor : all_processors) {
     std::map<std::u32string, int> next;
 
@@ -742,6 +798,20 @@ std::vector<TextVariant> text_processor::process(const std::string& src) {
         if (!inserted && new_steps < it->second) {
           it->second = new_steps;
         }
+      }
+    }
+    variants = std::move(next);
+  }
+
+  // 简体 → 繁體只在调用方声明查询语言为中文时展开（引擎无语言路由，由 LookupOptions
+  // 传入；非中文查询的变体集与此前逐字节一致）。挂在链尾、对每个已有变体展开：原形
+  // 变体始终保留，繁體拼写是额外多出的若干个（steps + 1，同长度时排在原形之后）。
+  if (chinese_simp_to_trad) {
+    std::map<std::u32string, int> next = variants;
+    for (const auto& [variant, steps] : variants) {
+      for (auto& traditional : simplified_to_traditional_variants(variant)) {
+        auto [it, inserted] = next.try_emplace(std::move(traditional), steps + 1);
+        if (!inserted && steps + 1 < it->second) it->second = steps + 1;
       }
     }
     variants = std::move(next);

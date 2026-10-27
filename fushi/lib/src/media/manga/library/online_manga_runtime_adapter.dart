@@ -174,6 +174,52 @@ class InterconnectMangaPageRef extends OnlineMangaPageRef {
   final String? chapterDigest;
 }
 
+/// Kavita 服务器：服务器配置 id + Kavita chapterId + 页序（0 起）。
+///
+/// **不带**图片 URL：Kavita 的 `/api/Reader/image` 认 `apiKey` 查询参数，URL 本身
+/// 就是长期凭据，所以 [sourceUrl] 恒 null（它会被写进下载 sidecar），取图时再经
+/// 服务器配置现拼。
+class KavitaMangaPageRef extends OnlineMangaPageRef {
+  const KavitaMangaPageRef({
+    required super.index,
+    required this.serverConfigId,
+    required this.chapterId,
+    required this.page,
+  });
+
+  final String serverConfigId;
+  final int chapterId;
+
+  /// Kavita 侧页序（0 起，通常与 [index] 相同）。
+  final int page;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'index': index,
+    'serverConfigId': serverConfigId,
+    'chapterId': chapterId,
+    'page': page,
+  };
+
+  static KavitaMangaPageRef? fromJson(Map<String, Object?> json) {
+    final int? index = (json['index'] as num?)?.toInt();
+    final int? chapterId = (json['chapterId'] as num?)?.toInt();
+    final int? page = (json['page'] as num?)?.toInt();
+    final String serverConfigId = json['serverConfigId']?.toString() ?? '';
+    if (index == null ||
+        chapterId == null ||
+        page == null ||
+        serverConfigId.isEmpty) {
+      return null;
+    }
+    return KavitaMangaPageRef(
+      index: index,
+      serverConfigId: serverConfigId,
+      chapterId: chapterId,
+      page: page,
+    );
+  }
+}
+
 /// 把「某个在线漫画运行时」收成书架侧需要的几件事。
 ///
 /// 书架、作品页、下载服务和阅读器只跟这个契约打交道，因此加第三个运行时不需要

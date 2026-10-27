@@ -373,6 +373,7 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'music_scrape_meta': BackupTableRule.deviceLocal(),
   'music_metadata_raw_snapshots': BackupTableRule.deviceLocal(),
   'music_locked_fields': BackupTableRule.deviceLocal(),
+  'remote_audio_bindings': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]

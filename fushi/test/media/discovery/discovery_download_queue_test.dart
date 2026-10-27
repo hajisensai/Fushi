@@ -89,6 +89,60 @@ void main() {
     expect(queue.importedCount, 1);
   });
 
+  test('随附文件（字幕 / EPUB）与主文件一起落盘并记入任务；下不下来的跳过', () async {
+    final List<String> opened = <String>[];
+    final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
+      resolvePayload: (DiscoveryResourceItem item) async =>
+          const DiscoveryHttpPayload(
+            url: 'https://example.com/a.mp3',
+            fileName: 'a.mp3',
+            companions: <DiscoveryCompanionFile>[
+              DiscoveryCompanionFile(
+                url: 'https://example.com/a.srt',
+                fileName: 'a.srt',
+              ),
+              DiscoveryCompanionFile(
+                url: 'https://example.com/gone.epub',
+                fileName: 'a.epub',
+              ),
+            ],
+          ),
+      importer: (DiscoveryDownloadTask task, File file) async =>
+          const DiscoveryImportOutcome(importedCount: 1),
+      openOverride: (Uri uri, Map<String, String> headers) async {
+        opened.add(uri.path);
+        if (uri.path.endsWith('gone.epub')) {
+          return ResumableDownloadResponse.bytes(
+            statusCode: 404,
+            body: const <int>[],
+            headers: const <String, String>{},
+          );
+        }
+        return okBytes(utf8.encode(uri.path));
+      },
+    );
+    addTearDown(queue.dispose);
+
+    queue.enqueue(
+      DiscoveryResourceItem(
+        sourceId: 'src',
+        title: 't',
+        id: 'x',
+        kind: DiscoveryMediaKind.audiobook,
+        payloadKind: DiscoveryPayloadKind.httpFile,
+      ),
+      destinationDir: tempDir.path,
+    );
+    await _waitFor(() => queue.tasks.single.isFinished);
+
+    final DiscoveryDownloadTask task = queue.tasks.single;
+    expect(task.status, DiscoveryDownloadStatus.done);
+    expect(task.filePath, endsWith('a.mp3'));
+    expect(task.companionPaths, hasLength(1));
+    expect(task.companionPaths.single, endsWith('a.srt'));
+    expect(await File(task.companionPaths.single).readAsString(), '/a.srt');
+  });
+
   // BUG-2649：Calibre OPDS 的 `<link length>` 是库里原文件体积，下载时服务端
   // 把元数据写回 EPUB，实际字节数不同。目录体积只是提示，不能判 size mismatch。
   test('目录声称体积与实际不符：照常下完导入，不判完整性失败', () async {

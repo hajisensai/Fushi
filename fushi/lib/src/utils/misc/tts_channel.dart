@@ -463,6 +463,8 @@ class TtsChannel {
     String audioBitrate = '64k',
     // 有声书倍速制卡：句子音频按播放倍速变速不变调（`-af atempo`）；null / 1.0 原速。
     double? tempo,
+    // [inputPath] 是远端地址（流式有声书）时的鉴权头；本机文件留空。
+    Map<String, String> httpHeaders = const <String, String>{},
   }) {
     // 全平台一律 ffmpeg 裁剪：桌面 CliFfmpegBackend、移动端 KitFfmpegBackend
     // （resolveFfmpegBackend 按平台分流），消除原 Android 原生 Transformer +
@@ -476,6 +478,7 @@ class TtsChannel {
       audioChannels: audioChannels,
       audioBitrate: audioBitrate,
       tempo: tempo,
+      httpHeaders: httpHeaders,
     );
   }
 

@@ -106,6 +106,8 @@ abstract final class PrefRedactionPolicy {
     'discovery_opds_servers',
     // 同形：AList / OpenList 站点清单里的 base64 密码。
     'discovery_alist_sites',
+    // 同形：Kavita 服务器清单里的 base64 长期 API key。
+    'kavita_servers',
     // 同形：Audiobookshelf 服务器清单里的 base64 access / refresh token。
     'discovery_audiobookshelf_servers',
     // 同形：OpenSubsonic 服务器清单（服务器曲库）里的 base64 密码 / API key。

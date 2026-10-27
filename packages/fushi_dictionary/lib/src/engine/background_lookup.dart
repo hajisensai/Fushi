@@ -36,9 +36,17 @@ const int kDefaultLookupFfiCacheMaxBytes = 32 << 20;
 /// 码点（`lookup.cpp` 的 scan_window + `word_scan.cpp` 的 scan_candidates 只看窗口与
 /// 窗口后第一个码点，与 [FushiDicts.matchedLength] 同一份契约）。阅读器传进来的是
 /// 「光标到句尾」的整段余文，整串作键时同一位置的不同余文互相命中不了。
-String buildFfiLookupCacheKey({required String term, required int maxResults}) {
+///
+/// [chineseSimpToTrad] 为 true（查词语言为中文，引擎会额外试繁體变体）时键尾追加
+/// `/zh`：同一个词在中文 / 非中文语境下结果集不同，不能共用缓存。默认 false 时键与
+/// 此前逐字相同。
+String buildFfiLookupCacheKey({
+  required String term,
+  required int maxResults,
+  bool chineseSimpToTrad = false,
+}) {
   final String window = FushiDicts.scanWindowOf(term);
-  return '${window.length}:$window/$maxResults';
+  return '${window.length}:$window/$maxResults${chineseSimpToTrad ? '/zh' : ''}';
 }
 
 /// 粗估一次 FFI lookup 结果列表的常驻字节数（UTF-16 每字符 2 字节 + 每对象固定
@@ -94,6 +102,7 @@ class FushiLookupRequest {
     this.dictionaryOrder = const <String>[],
     this.ffiCacheMaxBytes = kDefaultLookupFfiCacheMaxBytes,
     this.supersedeLane,
+    this.chineseSimpToTrad = false,
   });
 
   /// 已清洗的查询串（交给引擎的就是它，结果的 searchTerm 也是它）。
@@ -121,6 +130,9 @@ class FushiLookupRequest {
   /// 非 null 时：同 lane 里还没开始执行的旧请求被本请求取代（见 [LookupJobScheduler]）。
   /// 只给自带代次检查、拿到被取代的空结果也无害的调用方用。
   final String? supersedeLane;
+
+  /// 查询语言为中文：引擎额外试简体 → 繁體拼写（原形结果照常在），原始结果缓存键带 `/zh`。
+  final bool chineseSimpToTrad;
 }
 
 /// 后台查词的产出。
@@ -180,6 +192,7 @@ FushiLookupOutcome _computeLookupOutcome({
   final String cacheKey = buildFfiLookupCacheKey(
     term: request.text,
     maxResults: request.maxResults,
+    chineseSimpToTrad: request.chineseSimpToTrad,
   );
   List<FushiLookupResult>? ffiResults = cache?.get(cacheKey);
   final int ffiCacheMicros = watch.elapsedMicroseconds;
@@ -203,6 +216,7 @@ FushiLookupOutcome _computeLookupOutcome({
       handle,
       request.text,
       maxResults: request.maxResults,
+      chineseSimpToTrad: request.chineseSimpToTrad,
     );
     ffiLookupMicros = watch.elapsedMicroseconds - lookupStart;
     if (ffiResults.isNotEmpty) {

@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:fushi_audio/src/audiobook/audiobook_model.dart';
 import 'package:fushi_audio/src/audiobook/audiobook_position_rebase.dart';
 import 'package:fushi_audio/src/audiobook/audiobook_repository.dart';
+import 'package:fushi_audio/src/audiobook/remote_audio_binding.dart';
 import 'package:fushi_audio/src/audiobook/srt_book_model.dart';
 import 'package:fushi_audio/src/audiobook/srt_book_repository.dart';
 import 'package:fushi_audio/src/parsers/srt_parser.dart';
@@ -206,6 +207,45 @@ void main() {
       uid: 'srtbook_1',
       cues: oldCues('srtbook_1', chapter: SrtParser.defaultChapter),
     );
+    // 第 2 个文件的第 30 秒。
+    await prefs.updatePositionMs(bookKey: 'srtbook_1', positionMs: 130000);
+
+    await srtRepo.saveCues(
+      uid: 'srtbook_1',
+      cues: newCues('srtbook_1', chapter: SrtParser.defaultChapter),
+    );
+
+    expect(await prefs.readPositionMs('srtbook_1'), 120000 + 30000);
+  });
+
+  test(
+      'streamed book without subtitle: adding one keeps the position encoded '
+      'with the server track durations', () async {
+    final SrtBookRepository srtRepo = SrtBookRepository(db);
+    final AudiobookRepository prefs = AudiobookRepository(db);
+    await srtRepo.save(SrtBook()
+      ..uid = 'srtbook_1'
+      ..title = 'Demo'
+      ..srtPath = ''
+      ..importedAt = 1);
+    // 纯听的流式书：没有 cue，控制器按服务器音轨时长（100s / 100s / 100s）编码。
+    await RemoteAudioBindingRepository(db).save(const RemoteAudioBinding(
+      srtBookUid: 'srtbook_1',
+      provider: RemoteAudioBinding.providerAudiobookshelf,
+      serverConfigId: 'srv',
+      itemId: 'item_1',
+      tracks: <RemoteAudioTrack>[
+        RemoteAudioTrack(ino: '1', startOffsetMs: 0, durationMs: 100000),
+        RemoteAudioTrack(ino: '2', startOffsetMs: 100000, durationMs: 100000),
+        RemoteAudioTrack(ino: '3', startOffsetMs: 200000, durationMs: 100000),
+      ],
+      createdAt: 1,
+      updatedAt: 1,
+    ));
+    expect(
+        audiobookPositionDurationsMs(const <AudioCue>[],
+            remoteTrackDurationsMs: <int>[100000, 100000, 100000]),
+        <int>[100000, 100000, 100000]);
     // 第 2 个文件的第 30 秒。
     await prefs.updatePositionMs(bookKey: 'srtbook_1', positionMs: 130000);
 

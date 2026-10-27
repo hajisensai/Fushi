@@ -84,12 +84,12 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 136);
+    expect(migrated.schemaVersion, 137);
     await migrated.customSelect('SELECT 1').get();
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 136);
+    expect(probe.select('PRAGMA user_version').first.values.first, 137);
     for (final String t in tables) {
       expect(columnsOf(probe, t), contains('local_added_at'), reason: t);
     }
@@ -126,7 +126,7 @@ void main() {
 
     final sqlite.Database probe2 = sqlite.sqlite3.open(path);
     addTearDown(probe2.dispose);
-    expect(probe2.select('PRAGMA user_version').first.values.first, 136);
+    expect(probe2.select('PRAGMA user_version').first.values.first, 137);
     expect(
       probe2.select('SELECT local_added_at FROM epub_books').first.values.first,
       9999,

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -189,8 +190,9 @@ class BrowserLoginImportStatusBar extends StatelessWidget {
       listenable: import,
       builder: (BuildContext context, Widget? _) {
         final String? host = import.pendingHost;
-        return AnimatedSize(
+        return FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
           alignment: Alignment.topCenter,
           child: host == null
               ? const SizedBox(width: double.infinity)

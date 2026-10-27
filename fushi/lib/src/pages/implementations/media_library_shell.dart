@@ -27,6 +27,10 @@ enum MediaLibraryViewKind {
   /// （BUG-1710）。
   browse,
 
+  /// Kavita 书籍库：用户自己服务器上的 EPUB（流式阅读 / 下载 / 进度同步）。
+  /// 仅在配置了可用 Kavita 服务器时出现。
+  kavita,
+
   /// 在线来源：已装扩展提供的在线源（与「浏览 › 来源」同一组件）。
   onlineSources,
 
@@ -37,6 +41,11 @@ enum MediaLibraryViewKind {
   /// 导入：本地扫描根 + 快速导入（漫画另有互联对端）。在线来源 / 扩展是上面
   /// 两个独立视图，不在这里。
   sources,
+
+  /// 用户自己的 Audiobookshelf 服务器：浏览书库 / 播客并流式播放（只在书域）。有
+  /// 已登录的服务器才出现，登录 / 登出时会在视图列表中间出现或消失，所以壳按
+  /// **kind** 而不是按下标记住选中项（见 `didUpdateWidget`）。
+  audiobookshelf,
 
   // 「设置」视图已移除（2026-10-09 用户拍板）：它只是全局「设置 › <本域>」分类的
   // 投影，与全局设置、阅读时的设置面板重复。各域设置一律从全局设置进入。
@@ -204,6 +213,41 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
   @override
   void didUpdateWidget(MediaLibraryShell oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final List<MediaLibraryViewKind> oldKinds = <MediaLibraryViewKind>[
+      for (final MediaLibraryViewSpec spec in oldWidget.views) spec.kind,
+    ];
+    final List<MediaLibraryViewKind> newKinds = <MediaLibraryViewKind>[
+      for (final MediaLibraryViewSpec spec in widget.views) spec.kind,
+    ];
+    if (!listEquals(oldKinds, newKinds)) {
+      // 视图集合变了（在线源下线、Audiobookshelf 登录 / 登出）：选中项和「访问过」
+      // 的保活集合都是下标，下标会随中间那一项的出现 / 消失整体错位，必须按 kind
+      // 重新定位到新列表里。
+      final MediaLibraryViewKind? currentKind = _currentIndex < oldKinds.length
+          ? oldKinds[_currentIndex]
+          : null;
+      final Set<MediaLibraryViewKind> visitedKinds = <MediaLibraryViewKind>{
+        for (final int i in _visited)
+          if (i < oldKinds.length) oldKinds[i],
+      };
+      final int current = currentKind == null
+          ? -1
+          : newKinds.indexOf(currentKind);
+      _visited.clear();
+      if (current < 0) {
+        // 当前视图没了：回到第一个。
+        _currentIndex = 0;
+        _visited.add(0);
+        return;
+      }
+      _currentIndex = current;
+      for (final MediaLibraryViewKind kind in visitedKinds) {
+        final int index = newKinds.indexOf(kind);
+        if (index >= 0) _visited.add(index);
+      }
+      _visited.add(current);
+      return;
+    }
     // 视图集合变短（例如某域的在线源被下线）时把选中项拉回合法范围。
     if (_currentIndex >= widget.views.length) {
       _currentIndex = 0;

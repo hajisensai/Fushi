@@ -1266,6 +1266,19 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   /// 应用内球（以及主引擎不在时被拉起的 Android 系统球）的切换配置：列出全部
   /// 配置、当前项打勾，点一项即切。点当前项或取消什么也不做。
+  /// 悬浮球「切换配置」按钮上的文案：当前激活配置名；还在装载 / 没有配置时用通用文案。
+  String _switchProfileLabel(ProfileUiState state) => state.isLoading
+      ? t.floating_ball_action_switch_profile
+      : state.activeProfile?.name ?? t.floating_ball_action_switch_profile;
+
+  /// 悬停提示 / 无障碍名：「切换配置（当前：<配置名>）」。
+  String _switchProfileTooltip(ProfileUiState state) {
+    final ProfileRow? active = state.isLoading ? null : state.activeProfile;
+    return active == null
+        ? t.floating_ball_action_switch_profile
+        : t.floating_ball_action_switch_profile_tooltip(name: active.name);
+  }
+
   Future<void> _switchProfile() async {
     final BuildContext? ctx = _navigatorContext;
     if (ctx == null) return;
@@ -1540,7 +1553,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         FloatingBallGlobalAction.switchProfile => ReaderHeaderAction(
           key: const ValueKey<String>('floating_ball_action_switch_profile'),
           icon: floatingBallGlobalActionIcon(action),
-          label: t.floating_ball_action_switch_profile,
+          // 按钮文案就是当前激活配置名；切换后 build 重跑，文案随之更新。
+          label: _switchProfileLabel(ref.watch(profileViewModelProvider)),
+          tooltip: _switchProfileTooltip(ref.watch(profileViewModelProvider)),
           onPressed: () => unawaited(_switchProfile()),
         ),
         FloatingBallGlobalAction.feedback => ReaderHeaderAction(

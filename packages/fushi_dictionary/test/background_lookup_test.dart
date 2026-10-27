@@ -242,6 +242,18 @@ void main() {
       expect(buildFfiLookupCacheKey(term: '図書館', maxResults: 10), '3:図書館/10');
     });
 
+    test('中文简繁回落开着时键尾带 /zh，关着时与旧格式逐字相同', () {
+      expect(buildFfiLookupCacheKey(term: '这个', maxResults: 8), '2:这个/8');
+      expect(
+        buildFfiLookupCacheKey(
+          term: '这个',
+          maxResults: 8,
+          chineseSimpToTrad: true,
+        ),
+        '2:这个/8/zh',
+      );
+    });
+
     test('只取扫描窗口：窗口外的余文不进键，代理对按一个码点计', () {
       final String head = '\u{2000B}' * 17;
       expect(
