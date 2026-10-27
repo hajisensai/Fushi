@@ -736,7 +736,7 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
       // container：球必须自成一个语义节点。不设时这条标注会往上冒、并进包住整个
       // app 的祖先节点（全局球与页面是根 Stack 的兄弟）——球一显隐 / 换场景，整棵
       // app 语义子树就在两个父节点间搬家，Windows 引擎的 AXTree 吃不下这种搬家，
-      // 更新失败后一路在坏树上改，最终堆损坏卡死 / 崩溃（BUG-3783）。
+      // 更新失败后一路在坏树上改，最终堆损坏卡死 / 崩溃（BUG-3796）。
       child: Semantics(
         container: true,
         button: true,

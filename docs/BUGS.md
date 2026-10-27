@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3387 条。点号进各自文件。
+> 共 3400 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3783](bugs/BUG-3783-windows-nav-switch-freeze-a11y-reparent.md) | ✅ | ✅ | windows-nav-switch-freeze-a11y-reparent |
-> 共 3399 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-3796](bugs/BUG-3796-windows-nav-switch-freeze-a11y-reparent.md) | ✅ | ✅ | windows-nav-switch-freeze-a11y-reparent |
 | [BUG-3795](bugs/BUG-3795-web-browser-overflow-menu-gap.md) | ✅ | ✅ | web-browser-overflow-menu-gap |
 | [BUG-3794](bugs/BUG-3794-web-video-site-floating-ball-unclickable.md) | ✅ | ✅ | web-video-site-floating-ball-unclickable |
 | [BUG-3793](bugs/BUG-3793-web-video-site-backdrop-covers-underlay.md) | ✅ | ✅ | web-video-site-backdrop-covers-underlay |
