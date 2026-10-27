@@ -25,8 +25,8 @@ bool isChineseLanguageTag(String? tag) {
 typedef DeinflectionTag = ({String name, String description});
 
 /// 词形变化链 → 弹窗标签序列。**这是全 app 唯一一处生成变形标签的地方**，
-/// 三条弹窗路径（[buildPopupJsonFromLookup] / `buildLookupEntriesJson` /
-/// 原生弹窗）和 C++ 的 `build_popup_json` 都必须走这套语义，不允许各自再拼。
+/// 两条弹窗路径（[buildPopupJsonFromLookup] / `buildLookupEntriesJson`）和 C++ 的
+/// `build_popup_json` 都必须走这套语义，不允许各自再拼。
 ///
 /// `trace` 是唯一真相：引擎每剥掉一层变形就往里压一个 [FushiTransformGroup]，
 /// 带着变形名和 `assets/transforms/<lang>.json` 里的语法说明。压栈顺序是**剥离

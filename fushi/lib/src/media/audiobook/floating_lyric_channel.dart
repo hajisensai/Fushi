@@ -6,8 +6,9 @@ import 'package:fushi/src/platform/floating_overlay_channel.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 /// 悬浮字幕点词。[wordRect] 是被点那个字的**屏幕逻辑 px** 矩形，查词卡据此锚定到
-/// 词而不是鼠标位置；native 没回传（Android 系统 overlay 走自己的 PopupDictActivity，
-/// 老 payload 也没有这些字段）时为 null，调用方回落光标锚定。
+/// 词而不是鼠标位置；native 没回传（Android 系统 overlay 点词直接拉起
+/// PopupDictFlutterActivity、不回这里，老 payload 也没有这些字段）时为 null，调用方回落
+/// 光标锚定。
 typedef FloatingLyricLookupHandler =
     void Function(String text, int index, Rect? wordRect);
 typedef FloatingLyricControlHandler = void Function();
@@ -82,7 +83,8 @@ bool floatingLyricVerticalTextOn(String operatingSystem) =>
 ///
 /// Three native back-ends share the same MethodChannel contract:
 /// - Android: a system overlay window ([FloatingLyricService]) drawn over
-///   other apps, with its own [PopupDictActivity] for tap lookup.
+///   other apps; a tap opens `PopupDictFlutterActivity` (the `:popup`
+///   Flutter popup) directly.
 /// - Windows: a standalone always-on-top layered window in the runner
 ///   (`windows/runner/floating_lyric_window.cpp`)，跑与 galgame hook 台词浮窗
 ///   **同一套富文本形态**：换行、滚动条、拖角改尺寸、鼠标穿透、一键透明、

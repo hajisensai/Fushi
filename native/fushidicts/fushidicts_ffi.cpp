@@ -484,10 +484,6 @@ static std::atomic<int32_t> g_live_handles{0};
 // handle_lifecycle_concurrency_test 场景 3 挂死在这里；libc++ / MSVC 的实现恰好不饿写者，
 // 所以只在 libstdc++ 平台——Linux 桌面 / 无头服务端——暴露）。改用下面这把写者优先锁：
 // 写者一排队新读者就等，在飞读者跑完后写者必然拿到锁；语义不再依赖各平台标准库的实现细节。
-//
-// 匿名命名空间（内部链接）：fushidicts_jni.cpp 有一个布局不同的同名结构体，两者的
-// 隐式成员函数若都以外部链接的弱符号导出，同进程里的两个 .so 可能被动态链接器解析到
-// 同一份实现上（ODR）。
 namespace {
 // 写者优先的读写锁（只实现 std::shared_lock / std::unique_lock 用到的 SharedMutex 子集）。
 // 写者只在加词典 / 变形表时出现，频率远低于查询，「写者连续排队饿读者」不是现实风险；

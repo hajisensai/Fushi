@@ -20,8 +20,8 @@
 ///
 /// **合规**：本服务**不**挂 `StoreRestrictedCapability.downloads`——互联对端漫画
 /// 在 iOS 是保留的在线源，改成必须下载后读，若下载被门挡住就是死路。Mihon
-/// 入口继续受 `onlineMangaSource` 门控（iOS 无入口）。唯一按运行时设门的是 Kavita
-/// （iOS 保留直读、下载走 `downloads` 能力），判据收在
+/// 入口继续受 `onlineMangaSource` 门控（iOS 无入口）。Kavita 按运行时问用户自配
+/// 服务器能力（直读与下载 iOS 都保留，2026-10-27 用户拍板），判据收在
 /// `online_manga_download_gate.dart`，[MangaDownloadService.enqueueChapter] 再判
 /// 一次兜住所有入队路径（作品页 / 阅读器 / 订阅自动下载 / 下载中心）。
 library;

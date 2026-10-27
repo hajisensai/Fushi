@@ -197,7 +197,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 20 个 Java 文件，包括：
 - `MainActivity.java` -- 主 Activity。
-- `PopupDictActivity.java` -- 弹窗词典 Activity。
+- `PopupDictFlutterActivity.kt` -- 弹窗词典 Activity（`:popup` 进程的 Flutter 弹窗，入口 `popupMain`）。
 - `FloatingDictService.java` / `FloatingLyricService.java` / `BaseFloatingService.java` -- 悬浮窗服务。
 - `DictAccessibilityService.java` -- 无障碍服务。
 - `AnkiChannelHandler.java` / `AnkiDroidHelper.java` -- AnkiDroid 集成。

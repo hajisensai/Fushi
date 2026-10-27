@@ -220,6 +220,13 @@ void main() {
         'limit': '3',
         'wildcards': 'true',
       });
+      // --lang：调用方查词语言随请求下发（中文会补查繁体变体）；缺省不发，按 app 当前语言。
+      final CtlRequestSpec zh = _build('dict', 'search', <String>[
+        '头发',
+        '--lang',
+        'zh-CN',
+      ]);
+      expect(zh.query, <String, String>{'term': '头发', 'language': 'zh-CN'});
       expect(
         () => _build('dict', 'search', <String>[]),
         throwsA(isA<CtlUsageError>()),
@@ -523,6 +530,10 @@ void main() {
       expect(
         _build('anki', 'mine', <String>['-w', '猫']).body,
         <String, Object?>{'word': '猫'},
+      );
+      expect(
+        _build('anki', 'mine', <String>['-w', '头发', '--lang', 'zh']).body,
+        <String, Object?>{'word': '头发', 'language': 'zh'},
       );
       expect(
         () => _build('anki', 'mine', <String>['-w', '猫', '--field', 'bad']),

@@ -219,30 +219,29 @@ void main() {
     },
   );
 
-  test(
-    'download gate: Kavita follows the downloads capability on iOS only',
-    () {
-      expect(
-        onlineMangaChapterDownloadsAvailable(
-          OnlineMangaRuntimeKind.kavita,
-          isIOS: true,
-        ),
-        isFalse,
-      );
-      expect(
-        onlineMangaChapterDownloadsAvailable(
-          OnlineMangaRuntimeKind.kavita,
-          isIOS: false,
-        ),
-        isTrue,
-      );
-      // 互联对端在 iOS 上必须仍可下载（下载服务文件头的合规说明）。
-      for (final OnlineMangaRuntimeKind kind in <OnlineMangaRuntimeKind>[
-        OnlineMangaRuntimeKind.interconnect,
-        OnlineMangaRuntimeKind.mihon,
-      ]) {
-        expect(onlineMangaChapterDownloadsAvailable(kind, isIOS: true), isTrue);
-      }
-    },
-  );
+  test('download gate: Kavita downloads stay available on iOS (user-configured '
+      'server, 2026-10-27)', () {
+    // 用户自己的服务器下载到本机是自有内容的离线副本，不是下载中心。
+    expect(
+      onlineMangaChapterDownloadsAvailable(
+        OnlineMangaRuntimeKind.kavita,
+        isIOS: true,
+      ),
+      isTrue,
+    );
+    expect(
+      onlineMangaChapterDownloadsAvailable(
+        OnlineMangaRuntimeKind.kavita,
+        isIOS: false,
+      ),
+      isTrue,
+    );
+    // 互联对端在 iOS 上必须仍可下载（下载服务文件头的合规说明）。
+    for (final OnlineMangaRuntimeKind kind in <OnlineMangaRuntimeKind>[
+      OnlineMangaRuntimeKind.interconnect,
+      OnlineMangaRuntimeKind.mihon,
+    ]) {
+      expect(onlineMangaChapterDownloadsAvailable(kind, isIOS: true), isTrue);
+    }
+  });
 }

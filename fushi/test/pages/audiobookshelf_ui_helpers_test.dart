@@ -199,7 +199,7 @@ void main() {
     test('它不挂在 iOS 受限的 externalDiscovery 门里（用户自己的服务器，同 Jellyfin）', () {
       final int entry = source.indexOf('if(absServers.isNotEmpty)');
       final int discover = source.indexOf(
-        'if(StoreRestrictedCapability.externalDiscovery.isAvailable)',
+        'if(StoreRestrictedCapability.externalDiscovery.isAvailable||',
       );
       expect(entry, greaterThan(0));
       expect(discover, greaterThan(0));

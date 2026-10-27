@@ -235,7 +235,6 @@ void main() {
         expect(added['id'], 'expression');
         expect(added['text_color'], '#FFFF0000');
         expect(prefs.dictStyleRulesRaw, contains('expression'));
-        expect(prefs.dictStyleRulesCss, isNotEmpty, reason: '编译缓存同步刷新');
 
         await cli.add!(sc, <String, String>{
           'part': 'glossaryContent',

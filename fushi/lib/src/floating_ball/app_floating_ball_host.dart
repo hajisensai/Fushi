@@ -671,99 +671,100 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         generation != _systemGeneration ||
         !prefs.floatingBallSystem ||
         _systemBallClosed;
-    final Future<void> run = () async {
-      // 用户在系统球上点过关闭、而当时主引擎不在（没收到推送）：按「自动恢复」
-      // 处理——含应用外时这次起球就是「打开 Fushi 自动恢复」（还在后台则等回到
-      // 前台）；否则按开关把球拉起来就违背了用户刚做的事，改为把开关关掉。
-      //
-      // 这个标记是一次性的（Android 读即清，见 FloatingBallService
-      // .takeClosedByUser）：拿到它的那一代就必须处理，不论自己是否已被新一代
-      // 取代——过期代丢掉 true，下一代读到的只剩 false，会把球重新拉起来。
-      final bool closedByUser =
-          await FloatingBallChannel.takeSystemBallClosedByUser();
-      if (closedByUser) {
-        if (!prefs.floatingBallAutoRestore.restoresSystem) {
-          _systemSignature = null;
-          if (prefs.floatingBallSystem) {
-            await prefs.setFloatingBallSystem(false);
-          }
-          return;
-        }
-        if (!_foreground) {
-          _systemSignature = null;
-          _systemBallClosed = true;
-          return;
-        }
-      }
-      // 桌面原生窗口不加载图标字体：图标画成已着色的 PNG、球面带原图、位置由
-      // Dart 持久化后交给它。
-      final bool desktop = isDesktopSystemBallPlatform;
-      final Map<String, Uint8List>? iconImages = desktop
-          ? <String, Uint8List>{
-              ...await renderFloatingBallIconPngs(
-                floatingBallNativeIconData(),
-                Color(
-                  colors['onButtonContainer'] ??
-                      colors['onSurface'] ??
-                      0xFF1D1B20,
-                ),
-              ),
-              // 展开态球上的 ×：与按钮图标不同色（onPrimary）。
-              ...await renderFloatingBallIconPngs(const <String, IconData>{
-                kFloatingBallNativeBallCloseKey: kFloatingBallCloseIcon,
-              }, Color(colors['onBallOpen'] ?? 0xFFFFFFFF)),
+    final Future<void> run =
+        () async {
+          // 用户在系统球上点过关闭、而当时主引擎不在（没收到推送）：按「自动恢复」
+          // 处理——含应用外时这次起球就是「打开 Fushi 自动恢复」（还在后台则等回到
+          // 前台）；否则按开关把球拉起来就违背了用户刚做的事，改为把开关关掉。
+          //
+          // 这个标记是一次性的（Android 读即清，见 FloatingBallService
+          // .takeClosedByUser）：拿到它的那一代就必须处理，不论自己是否已被新一代
+          // 取代——过期代丢掉 true，下一代读到的只剩 false，会把球重新拉起来。
+          final bool closedByUser =
+              await FloatingBallChannel.takeSystemBallClosedByUser();
+          if (closedByUser) {
+            if (!prefs.floatingBallAutoRestore.restoresSystem) {
+              _systemSignature = null;
+              if (prefs.floatingBallSystem) {
+                await prefs.setFloatingBallSystem(false);
+              }
+              return;
             }
-          : null;
-      // 球面 = 主题 primaryContainer 上的吉祥物（主题一变配色进签名、重新合成）。
-      final Uint8List? ballImage = desktop
-          ? await renderFloatingBallFacePng(
-              Color(colors['ballContainer'] ?? 0xFFEADDFF),
-              // 「图标跟随主题色」开着时吉祥物跟随强调色（ballOpen = primary，
-              // 墨水屏 surface）；关着始终原图。
-              accent: tintMascot
-                  ? Color(colors['ballOpen'] ?? 0xFF6750A4)
-                  : null,
-            )
-          : null;
-      // 调 start 之前唯一一道门：此前的 await 只产出本地数据（图标、球面），
-      // 过期代多做完它们不留任何痕迹，逐个 await 设门只是重复同一个判断。
-      if (stale()) return;
-      // 先定显隐再起球：原生按它决定新球首帧显不显示（Fushi 在前台起球时不闪
-      // 一下）。原生跨起停保留这个值。
-      final bool yields = _systemBallYields();
-      await FloatingBallChannel.setAppForeground(yields);
-      if (stale()) return;
-      final bool started = await FloatingBallChannel.startSystemBall(
-        actions: actions,
-        labels: labels,
-        icons: icons,
-        colors: colors,
-        animate: animate,
-        showLabels: showLabels,
-        showOpenApp: showOpenApp,
-        tapAction: tapAction,
-        ocrLanguage: kFloatingBallOcrLanguage,
-        iconImages: iconImages,
-        ballImage: ballImage,
-        dock: desktop ? prefs.floatingBallSystemDock : null,
-        fraction: desktop ? prefs.floatingBallSystemVerticalFraction : null,
-      );
-      // 起的过程中被更新的决定取代：结果归新一代处理（关了开关的那一代已经发过
-      // stop，消息按序到原生，这颗球不会留下）。签名更不能记：记了之后同样配置
-      // 的下一次起球会被当成「已下发」跳过，开关开着却没有球。
-      if (stale()) return;
-      // 起不来（Android 没权限 / 桌面建窗失败）：不记签名，下次同步再试。
-      _systemSignature = started ? signature : null;
-      if (started) {
-        _sentSystemBallYield = yields;
-        // 起球途中前后台 / 开关变过：按此刻的值补发。
-        _pushSystemBallYield();
-      }
-    }().whenComplete(() {
-      // 本代收尾（成功 / 失败 / 提前返回）：不再是在途目标。已被新一代取代时
-      // 在途目标归新一代，不动。
-      if (generation == _systemGeneration) _systemPendingSignature = null;
-    });
+            if (!_foreground) {
+              _systemSignature = null;
+              _systemBallClosed = true;
+              return;
+            }
+          }
+          // 桌面原生窗口不加载图标字体：图标画成已着色的 PNG、球面带原图、位置由
+          // Dart 持久化后交给它。
+          final bool desktop = isDesktopSystemBallPlatform;
+          final Map<String, Uint8List>? iconImages = desktop
+              ? <String, Uint8List>{
+                  ...await renderFloatingBallIconPngs(
+                    floatingBallNativeIconData(),
+                    Color(
+                      colors['onButtonContainer'] ??
+                          colors['onSurface'] ??
+                          0xFF1D1B20,
+                    ),
+                  ),
+                  // 展开态球上的 ×：与按钮图标不同色（onPrimary）。
+                  ...await renderFloatingBallIconPngs(const <String, IconData>{
+                    kFloatingBallNativeBallCloseKey: kFloatingBallCloseIcon,
+                  }, Color(colors['onBallOpen'] ?? 0xFFFFFFFF)),
+                }
+              : null;
+          // 球面 = 主题 primaryContainer 上的吉祥物（主题一变配色进签名、重新合成）。
+          final Uint8List? ballImage = desktop
+              ? await renderFloatingBallFacePng(
+                  Color(colors['ballContainer'] ?? 0xFFEADDFF),
+                  // 「图标跟随主题色」开着时吉祥物跟随强调色（ballOpen = primary，
+                  // 墨水屏 surface）；关着始终原图。
+                  accent: tintMascot
+                      ? Color(colors['ballOpen'] ?? 0xFF6750A4)
+                      : null,
+                )
+              : null;
+          // 调 start 之前唯一一道门：此前的 await 只产出本地数据（图标、球面），
+          // 过期代多做完它们不留任何痕迹，逐个 await 设门只是重复同一个判断。
+          if (stale()) return;
+          // 先定显隐再起球：原生按它决定新球首帧显不显示（Fushi 在前台起球时不闪
+          // 一下）。原生跨起停保留这个值。
+          final bool yields = _systemBallYields();
+          await FloatingBallChannel.setAppForeground(yields);
+          if (stale()) return;
+          final bool started = await FloatingBallChannel.startSystemBall(
+            actions: actions,
+            labels: labels,
+            icons: icons,
+            colors: colors,
+            animate: animate,
+            showLabels: showLabels,
+            showOpenApp: showOpenApp,
+            tapAction: tapAction,
+            ocrLanguage: kFloatingBallOcrLanguage,
+            iconImages: iconImages,
+            ballImage: ballImage,
+            dock: desktop ? prefs.floatingBallSystemDock : null,
+            fraction: desktop ? prefs.floatingBallSystemVerticalFraction : null,
+          );
+          // 起的过程中被更新的决定取代：结果归新一代处理（关了开关的那一代已经发过
+          // stop，消息按序到原生，这颗球不会留下）。签名更不能记：记了之后同样配置
+          // 的下一次起球会被当成「已下发」跳过，开关开着却没有球。
+          if (stale()) return;
+          // 起不来（Android 没权限 / 桌面建窗失败）：不记签名，下次同步再试。
+          _systemSignature = started ? signature : null;
+          if (started) {
+            _sentSystemBallYield = yields;
+            // 起球途中前后台 / 开关变过：按此刻的值补发。
+            _pushSystemBallYield();
+          }
+        }().whenComplete(() {
+          // 本代收尾（成功 / 失败 / 提前返回）：不再是在途目标。已被新一代取代时
+          // 在途目标归新一代，不动。
+          if (generation == _systemGeneration) _systemPendingSignature = null;
+        });
     debugLatestSystemBallSync = run;
     unawaited(run);
   }
@@ -1264,14 +1265,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     }
   }
 
-  /// 应用内球（以及主引擎不在时被拉起的 Android 系统球）的切换配置：列出全部
-  /// 配置、当前项打勾，点一项即切。点当前项或取消什么也不做。
-  /// 悬浮球「切换配置」按钮上的文案：当前激活配置名；还在装载 / 没有配置时用通用文案。
-  String _switchProfileLabel(ProfileUiState state) => state.isLoading
-      ? t.floating_ball_action_switch_profile
-      : state.activeProfile?.name ?? t.floating_ball_action_switch_profile;
-
-  /// 悬停提示 / 无障碍名：「切换配置（当前：<配置名>）」。
+  /// 悬停提示 / 无障碍名：「切换配置（当前：<配置名>）」；还在装载 / 没有配置时
+  /// 只说「切换配置」。
+  ///
+  /// 按钮的可见文案（标签胶囊）**始终**是「切换配置」：它说的是按下去做什么。
+  /// 把文案换成配置名会让按钮看不出是「切换」，当前配置名只放在这里。
   String _switchProfileTooltip(ProfileUiState state) {
     final ProfileRow? active = state.isLoading ? null : state.activeProfile;
     return active == null
@@ -1279,6 +1277,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         : t.floating_ball_action_switch_profile_tooltip(name: active.name);
   }
 
+  /// 应用内球（以及主引擎不在时被拉起的 Android 系统球）的切换配置：列出全部
+  /// 配置、当前项打勾，点一项即切。点当前项或取消什么也不做。
   Future<void> _switchProfile() async {
     final BuildContext? ctx = _navigatorContext;
     if (ctx == null) return;
@@ -1553,8 +1553,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         FloatingBallGlobalAction.switchProfile => ReaderHeaderAction(
           key: const ValueKey<String>('floating_ball_action_switch_profile'),
           icon: floatingBallGlobalActionIcon(action),
-          // 按钮文案就是当前激活配置名；切换后 build 重跑，文案随之更新。
-          label: _switchProfileLabel(ref.watch(profileViewModelProvider)),
+          // 文案说动作；当前配置名只进悬停提示（切换后 build 重跑，提示随之更新）。
+          label: t.floating_ball_action_switch_profile,
           tooltip: _switchProfileTooltip(ref.watch(profileViewModelProvider)),
           onPressed: () => unawaited(_switchProfile()),
         ),

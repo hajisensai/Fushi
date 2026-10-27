@@ -13,6 +13,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobookshelf_stream_service.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
+import 'package:fushi/src/media/discovery/discovery_download_inline_status.dart';
 import 'package:fushi/src/media/discovery/sources/audiobookshelf_discovery_source.dart';
 import 'package:fushi/src/media/downloads/download_start_result.dart';
 import 'package:fushi/src/models/store_compliance.dart';
@@ -76,10 +77,7 @@ class _AudiobookshelfItemPageState
       _progress[audiobookshelfProgressKey(widget.item.id, episodeId)];
 
   /// 标记已听完 / 未听完（元素为 null = 条目本身）。单条失败不挡其余。
-  Future<void> _mark(
-    List<String?> episodeIds, {
-    required bool finished,
-  }) async {
+  Future<void> _mark(List<String?> episodeIds, {required bool finished}) async {
     Object? failure;
     for (final String? episodeId in episodeIds) {
       try {
@@ -116,7 +114,11 @@ class _AudiobookshelfItemPageState
     final _EpisodeMark? choice = await showAppDialog<_EpisodeMark>(
       context: context,
       builder: (BuildContext dialogContext) => FushiAlertDialog(
-        title: Text(episode.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+        title: Text(
+          episode.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -135,7 +137,7 @@ class _AudiobookshelfItemPageState
                 finished ? _EpisodeMark.unfinished : _EpisodeMark.finished,
               ),
             ),
-            if (StoreRestrictedCapability.downloads.isAvailable)
+            if (userConfiguredServersAvailable)
               FushiListItem(
                 leading: const FushiIcon(FushiIcons.download),
                 title: Text(t.audiobookshelf_item_download),
@@ -171,28 +173,54 @@ class _AudiobookshelfItemPageState
   AppModel get _appModel => ref.read(appProvider);
 
   /// 下载整本书（zip）或一集音频，走发现页同一条直链队列（下完自动入库，没有字幕就
-  /// 留给「配对」）。令牌在队列真正开跑时才取（见 [AudiobookshelfDiscoverySource]）。
+  /// 留给「配对」）。这是用户自己服务器的离线副本，入口问
+  /// `userConfiguredServersAvailable` 而不是下载中心的 `downloads` 门（2026-10-27 用户
+  /// 拍板 iOS 也保留；iOS 上 ABS 源照常登记进发现源注册表，队列解析得到它）。
+  /// 令牌在队列真正开跑时才取（见 [AudiobookshelfDiscoverySource]）。
   Future<void> _download({AudiobookshelfEpisode? episode}) async {
+    showDownloadStartNotices(
+      await startDiscoveryItemDownload(
+        context: context,
+        appModel: _appModel,
+        item: _resourceFor(episode),
+      ),
+    );
+  }
+
+  /// 本条目（或一集）在下载队列里的身份：`sourceId + id` 与 [_download] 入队的
+  /// 那条逐字一致，行内状态（[DiscoveryDownloadInlineStatus]）靠它认出自己的任务。
+  String get _sourceId => audiobookshelfSourceIdFor(widget.server.id);
+
+  String _resourceIdFor(AudiobookshelfEpisode? episode) => episode == null
+      ? widget.item.id
+      : audiobookshelfEpisodeResourceId(widget.item.id, episode.id);
+
+  DiscoveryResourceItem _resourceFor(AudiobookshelfEpisode? episode) {
     final AudiobookshelfItem item = widget.item;
-    final DiscoveryResourceItem resource = DiscoveryResourceItem(
-      sourceId: audiobookshelfSourceIdFor(widget.server.id),
-      id: episode == null
-          ? item.id
-          : audiobookshelfEpisodeResourceId(item.id, episode.id),
+    return DiscoveryResourceItem(
+      sourceId: _sourceId,
+      id: _resourceIdFor(episode),
       title: episode == null ? item.title : '${item.title} - ${episode.title}',
       kind: DiscoveryMediaKind.audiobook,
       payloadKind: DiscoveryPayloadKind.httpFile,
       sizeBytes: episode == null ? item.sizeBytes : episode.track.sizeBytes,
       coverUrl: widget.api.coverUri(item.id).toString(),
     );
-    showDownloadStartNotices(
-      await startDiscoveryItemDownload(
-        context: context,
-        appModel: _appModel,
-        item: resource,
-      ),
-    );
   }
+
+  /// 下载的行内状态（排队 / 下载中 / 完成 / 失败 + 重试）：下载页的任务列表在 iOS
+  /// 上不存在（浏览模块不装配），所以进度必须就地可见；其它平台同样显示。
+  /// 直接监听同一条 `discoveryDownloadQueue`，不另存状态。
+  Widget _downloadStatus(
+    AudiobookshelfEpisode? episode, {
+    required WidgetBuilder idle,
+  }) => DiscoveryDownloadInlineStatus(
+    key: ValueKey<String>('abs-download-status-${_resourceIdFor(episode)}'),
+    queue: _appModel.discoveryDownloadQueue,
+    sourceId: _sourceId,
+    itemId: _resourceIdFor(episode),
+    idleBuilder: idle,
+  );
 
   bool get _isPodcast => widget.item.mediaType == 'podcast';
 
@@ -414,23 +442,28 @@ class _AudiobookshelfItemPageState
                                   icon: const FushiIcon(FushiIcons.play),
                                   label: Text(t.audiobookshelf_item_stream),
                                 ),
-                                if (StoreRestrictedCapability
-                                    .downloads
-                                    .isAvailable) ...<Widget>[
+                                if (userConfiguredServersAvailable) ...<Widget>[
                                   SizedBox(height: tokens.spacing.gap),
-                                  FushiTextButton.icon(
-                                    onPressed: _download,
-                                    icon: const FushiIcon(FushiIcons.download),
-                                    label: Text(t.audiobookshelf_item_download),
+                                  _downloadStatus(
+                                    null,
+                                    idle: (BuildContext context) =>
+                                        FushiTextButton.icon(
+                                          onPressed: _download,
+                                          icon: const FushiIcon(
+                                            FushiIcons.download,
+                                          ),
+                                          label: Text(
+                                            t.audiobookshelf_item_download,
+                                          ),
+                                        ),
                                   ),
                                 ],
                                 SizedBox(height: tokens.spacing.gap),
                                 _BookProgressRow(
                                   progress: _progressOf(null),
-                                  onToggle: (bool finished) => _mark(
-                                    <String?>[null],
-                                    finished: finished,
-                                  ),
+                                  onToggle: (bool finished) => _mark(<String?>[
+                                    null,
+                                  ], finished: finished),
                                 ),
                               ],
                             ),
@@ -471,6 +504,14 @@ class _AudiobookshelfItemPageState
                           onTap: () => _stream(detail, episode: episode),
                           onMenu: () =>
                               unawaited(_showEpisodeMenu(episodes, index)),
+                          // 单集下载从菜单触发；没有任务时不占位。
+                          downloadStatus: userConfiguredServersAvailable
+                              ? _downloadStatus(
+                                  episode,
+                                  idle: (BuildContext context) =>
+                                      const SizedBox.shrink(),
+                                )
+                              : null,
                         ),
                       ),
                     );
@@ -546,11 +587,15 @@ class _EpisodeRow extends StatelessWidget {
     required this.enabled,
     required this.onTap,
     required this.onMenu,
+    this.downloadStatus,
   });
 
   final int index;
   final int count;
   final AudiobookshelfEpisode episode;
+
+  /// 该集下载的行内状态（null = 本平台不提供下载）。
+  final Widget? downloadStatus;
   final AudiobookshelfMediaProgress? progress;
   final bool enabled;
   final VoidCallback onTap;
@@ -596,6 +641,7 @@ class _EpisodeRow extends StatelessWidget {
                       style: tokens.type.metadata,
                       maxLines: 1,
                     ),
+                  if (downloadStatus case final Widget status) status,
                 ],
               ),
             ),

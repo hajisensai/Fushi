@@ -277,6 +277,7 @@ void _configureDictSearch(ArgParser parser) {
   parser
     ..addOption('limit', abbr: 'n', help: '最多返回多少个词头（缺省 10）')
     ..addOption('max-meaning', help: '单条释义最多多少字（缺省不截断）')
+    ..addOption('lang', help: '查词语言（BCP-47，如 zh-CN；中文会补查繁体变体；缺省按 app 当前查词语言）')
     ..addFlag('wildcards', negatable: false, help: '启用通配符（* ?）');
 }
 
@@ -351,6 +352,7 @@ void _configureAnkiMine(ArgParser parser) {
     ..addOption('sentence', abbr: 's', help: '例句')
     ..addOption('glossary', help: '释义（HTML；缺省从词典拼）')
     ..addOption('source', help: '来源（URL / 标题，写进卡片的文档标题）')
+    ..addOption('lang', help: '查词语言（BCP-47，如 zh-CN；中文会补查繁体变体；缺省按 app 当前查词语言）')
     ..addMultiOption('field', help: '额外制卡字段 key=value（可重复）')
     ..addFlag('allow-duplicate', negatable: false, help: '已有同词卡片时仍新增')
     ..addFlag(
@@ -570,10 +572,12 @@ CtlRequestSpec _buildDictSearch(CtlCommandContext c) {
   final int? limit = c.intOption('limit');
   if (limit != null && limit < 1) throw const CtlUsageError('--limit 必须 ≥ 1');
   final int? maxMeaning = c.intOption('max-meaning');
+  final String? lang = c.option('lang');
   return CtlRequestSpec.get(
     '$_dictionaries/search',
     query: <String, String>{
       'term': term,
+      if (lang != null) 'language': lang,
       if (limit != null) 'limit': '$limit',
       if (maxMeaning != null) 'maxMeaningChars': '$maxMeaning',
       if (c.flag('wildcards')) 'wildcards': 'true',
@@ -834,10 +838,12 @@ CtlRequestSpec _buildAnkiMine(CtlCommandContext c) {
   final String? sentence = c.option('sentence');
   final String? glossary = c.option('glossary');
   final String? source = c.option('source');
+  final String? lang = c.option('lang');
   return CtlRequestSpec.post(
     '$_anki/mine',
     body: <String, Object?>{
       'word': word,
+      if (lang != null) 'language': lang,
       if (reading != null) 'reading': reading,
       if (sentence != null) 'sentence': sentence,
       if (glossary != null) 'glossary': glossary,

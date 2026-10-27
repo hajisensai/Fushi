@@ -891,7 +891,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 137;
+  int get schemaVersion => 138;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2654,6 +2654,24 @@ class FushiDatabase extends _$FushiDatabase
             // 迁移阶梯上按当前 Dart 定义已建过的库直接跳过。
             if (!await _tableExists('remote_audio_bindings')) {
               await m.createTable(remoteAudioBindings);
+            }
+          }
+          if (from < 138) {
+            // v138：remote_audio_bindings 加进度同步的两个基线时刻——
+            // server_progress_at（上次对齐时服务器的 lastUpdate，服务器时钟）与
+            // progress_synced_at（上次对齐的本机时刻，本机时钟）。续播判定从此不跨
+            // 两台机器的时钟比较。存量行两列 NULL = 从没对齐过（判定退回冲突规则，
+            // 与升级前行为一致）。幂等：v137 步按当前定义建表时已带这两列，跳过。
+            if (await _tableExists('remote_audio_bindings')) {
+              for (final GeneratedColumn<Object> column
+                  in <GeneratedColumn<Object>>[
+                remoteAudioBindings.serverProgressAt,
+                remoteAudioBindings.progressSyncedAt,
+              ]) {
+                if (!await _columnExists('remote_audio_bindings', column.name)) {
+                  await m.addColumn(remoteAudioBindings, column);
+                }
+              }
             }
           }
         },

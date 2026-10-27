@@ -10,6 +10,10 @@ import '../helpers/source_guard.dart';
 /// iOS 版按 App Store 审核指南剔除三类能力：内置外部发现源与各库页的发现视图、
 /// 在线漫画源宿主（Mihon / mokuro.moe）、下载中心。
 ///
+/// 用户自己填地址的服务器（OPDS / AList / Kavita / Audiobookshelf / 媒体服务器）
+/// **不在**这条边界里（2026-10-27 用户拍板，`userConfiguredServersAvailableOn`）：
+/// 守卫两头都钉——它们在 iOS 上可用，而内置源 / 扩展宿主 / 下载中心仍然受限。
+///
 /// 这组守卫钉的是**合规边界不会被悄悄改回来**。它比一般的行为测试更需要存在，
 /// 因为这条边界的失效是**静默**的：漏掉任何一处，本地五个平台照样全绿、CI 照样
 /// 全绿，代价要等到上架被拒才出现，而被拒的那一处从代码里根本看不出它本该属于
@@ -45,6 +49,37 @@ void main() {
           reason:
               '${capability.name} 只对 iOS 关闭，'
               '其余平台不走商店分发，不受这条边界约束。',
+        );
+      }
+    });
+
+    test('用户自配服务器在 iOS 上保留，且不是一类受限能力', () {
+      expect(userConfiguredServersAvailableOn(isIOS: true), isTrue);
+      expect(userConfiguredServersAvailableOn(isIOS: false), isTrue);
+      expect(
+        compactCode(read('lib/src/models/store_compliance.dart')),
+        contains(
+          'booluserConfiguredServersAvailableOn({requiredboolisIOS})=>true;',
+        ),
+        reason: '判据只写在 store_compliance.dart 这一处。',
+      );
+    });
+
+    test('内置源 / 扩展宿主 / 下载中心在 iOS 上仍然受限（放开用户服务器时不变）', () {
+      // 逐个点名，而不是只靠上面「遍历全部枚举值」：有人把某个值从枚举里删掉、
+      // 改成恒 true 的独立判据（照用户服务器那样「放开」）时，遍历测试照样绿。
+      for (final StoreRestrictedCapability capability
+          in <StoreRestrictedCapability>[
+            StoreRestrictedCapability.externalDiscovery,
+            StoreRestrictedCapability.onlineMangaSource,
+            StoreRestrictedCapability.onlineVideoSource,
+            StoreRestrictedCapability.onlineNovelSource,
+            StoreRestrictedCapability.downloads,
+          ]) {
+        expect(
+          capability.availableOn(isIOS: true),
+          isFalse,
+          reason: '${capability.name} 必须在 iOS 上继续缺席。',
         );
       }
     });
@@ -135,10 +170,14 @@ void main() {
       expect(
         reader,
         contains(
-          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable||'
+          'userServerDiscoverViewAvailable(appModel.mediaDiscoveryService,'
+          '_bookDiscoveryKinds,))'
           'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
         ),
-        reason: '书架「发现」视图必须挂在外部发现合规门后。',
+        reason:
+            '书架「发现」视图必须挂在外部发现合规门后；iOS 上只为用户自配服务器'
+            '（注册表此时只登记用户服务器源）出现。',
       );
       expect(
         reader,
@@ -164,10 +203,50 @@ void main() {
       expect(
         manga,
         contains(
-          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'finalboolbuiltInDiscover='
+          'StoreRestrictedCapability.externalDiscovery.isAvailable;',
+        ),
+        reason: '漫画内置发现源只问外部发现合规门。',
+      );
+      expect(
+        manga,
+        contains(
+          'if(builtInDiscover||userServerDiscover)'
           'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
         ),
-        reason: '漫画「发现」（AniList 榜单 / 来源热门 / mokuro.moe）必须挂在合规门后。',
+        reason: '漫画「发现」只有一个视图（BUG-1710），挂在合规门或用户服务器门后。',
+      );
+      expect(
+        manga,
+        contains(
+          'builder:(BuildContextcontext,Widgetnavigation)=>'
+          'builtInDiscover?Consumer(builder:(BuildContextcontext,WidgetRefref,Widget?_)=>'
+          'MangaDiscoveryPage(',
+        ),
+        reason: '漫画「发现」（AniList 榜单 / 来源热门 / mokuro.moe）只在合规门开时构建。',
+      );
+      expect(
+        manga,
+        contains(
+          'finalbooluserServerDiscover='
+          '!builtInDiscover&&ref.watch(appProvider.select((AppModelappModel)=>'
+          'userServerDiscoverViewAvailable(appModel.mediaDiscoveryService,'
+          '_userServerKinds,),),);',
+        ),
+        reason: 'iOS 的漫画发现视图只在没有内置源时、为用户服务器出现。',
+      );
+      expect(
+        manga,
+        contains(':MediaDiscoveryPage(kinds:_userServerKinds,'),
+        reason:
+            'iOS 的漫画发现视图只能是统一发现页（只列注册表里的用户服务器源），'
+            '不能是带 AniList 榜单 / Mihon 热门 / mokuro.moe 的 MangaDiscoveryPage。',
+      );
+      expect(
+        compactCode(
+          read('lib/src/media/discovery/user_server_discovery_view.dart'),
+        ),
+        contains('=>userConfiguredServersAvailable&&kinds.any('),
       );
       for (final String kind in <String>['onlineSources', 'extensions']) {
         expect(
@@ -238,11 +317,23 @@ void main() {
       const String discoverGate =
           'if(StoreRestrictedCapability.externalDiscovery.isAvailable)';
       expectAllGated(game, 'GameSection.discover,', discoverGate);
-      for (final String source in <String>[reader, manga]) {
+      {
+        const String entry =
+            'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,';
         expectAllGated(
-          source,
-          'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
-          discoverGate,
+          reader,
+          entry,
+          'if(StoreRestrictedCapability.externalDiscovery.isAvailable||'
+          'userServerDiscoverViewAvailable(appModel.mediaDiscoveryService,'
+          '_bookDiscoveryKinds,))',
+        );
+        // 漫画：恰一处发现入口（BUG-1710），过内置发现门或用户服务器门。
+        expect(entry.allMatches(manga).length, 1, reason: '漫画库页应恰有一处发现入口');
+        expect(
+          'if(builtInDiscover||userServerDiscover)$entry'
+              .allMatches(manga)
+              .length,
+          1,
         );
       }
       expectAllGated(
@@ -301,7 +392,7 @@ void main() {
       );
     });
 
-    test('发现源注册表在 iOS 上一个源都不登记', () {
+    test('发现源注册表在 iOS 上只登记用户自配服务器源，内置源一个都不登记', () {
       // 判据落在建注册表的那一处，而不是各个源自己判——源是列表字面量里的元素，
       // 逐个加判据只要漏掉一个就是漏掉一整个内容索引站。
       final String appModel = compactCode(
@@ -310,11 +401,89 @@ void main() {
       expect(
         appModel,
         contains(
-          'if(!StoreRestrictedCapability.externalDiscovery.isAvailable){'
+          'finalboolbuiltInSources='
+          'StoreRestrictedCapability.externalDiscovery.isAvailable;'
+          'finalbooluserServerSources='
+          'userConfiguredServersAvailable&&isPreferencesReady;'
           'return_mediaDiscoveryService=MediaDiscoveryService('
-          'sources:const<MediaDiscoverySource>[],);}',
+          'sources:<MediaDiscoverySource>['
+          'if(builtInSources)..._builtInDiscoverySources(),'
+          'if(userServerSources)..._userServerDiscoverySources(),],);',
         ),
-        reason: '空注册表必须在内置源列表**之前**返回。',
+        reason: '两类源分别过各自判据，且只在这一处组装。',
+      );
+      String body(String name) {
+        final int start = appModel.indexOf(
+          'List<MediaDiscoverySource>$name()=>',
+        );
+        expect(start, greaterThanOrEqualTo(0), reason: '找不到 $name');
+        return appModel.substring(start, appModel.indexOf('];', start));
+      }
+
+      final String builtIn = body('_builtInDiscoverySources');
+      final String userServers = body('_userServerDiscoverySources');
+      // 内置 / 预置源（含唯一的预置地址 erogame.space）与 BT 站只在内置那半边。
+      for (final String needle in <String>[
+        'CoreAudioDiscoverySource(',
+        'nyaaDiscoverySourcesForBtSites(',
+        "baseUrl:'https://alist.erogame.space'",
+        'ShinnkuDiscoverySource(',
+      ]) {
+        expect(builtIn, contains(needle));
+        expect(
+          userServers,
+          isNot(contains(needle)),
+          reason: '$needle 是内置源 / 种子索引，不得进 iOS 也登记的用户服务器半边。',
+        );
+      }
+      for (final String needle in <String>[
+        'OpdsDiscoverySource(',
+        'AListDiscoverySource.fromConfig(',
+        'AudiobookshelfDiscoverySource(',
+      ]) {
+        expect(userServers, contains(needle));
+        expect(builtIn, isNot(contains(needle)));
+      }
+      // 用户服务器半边不预填任何地址：源只从用户的偏好列表展开。
+      expect(userServers, isNot(contains('https://')));
+      expect(userServers, isNot(contains('http://')));
+    });
+
+    test('Kavita / Audiobookshelf 的下载到本机问用户服务器判据，不挂下载中心的门', () {
+      expect(
+        compactCode(
+          read('lib/src/media/manga/download/online_manga_download_gate.dart'),
+        ),
+        contains(
+          'OnlineMangaRuntimeKind.kavita=>isIOS==null?'
+          'userConfiguredServersAvailable:'
+          'userConfiguredServersAvailableOn(isIOS:isIOS),',
+        ),
+      );
+      expect(
+        compactCode(
+          read(
+            'lib/src/pages/implementations/kavita/kavita_book_series_page.dart',
+          ),
+        ),
+        contains('finalboolcanDownload=userConfiguredServersAvailable;'),
+      );
+      final String abs = compactCode(
+        read(
+          'lib/src/pages/implementations/audiobookshelf/'
+          'audiobookshelf_item_page.dart',
+        ),
+      );
+      expect(abs, isNot(contains('StoreRestrictedCapability.downloads')));
+      expect(
+        'if(userConfiguredServersAvailable)'.allMatches(abs).length,
+        2,
+        reason: '整本下载与单集下载两个入口都问用户服务器判据。',
+      );
+      // 下载中心本体（控制通道入队）仍挂 downloads 门。
+      expect(
+        compactCode(read('lib/src/ops/ctl_download_support.dart')),
+        contains('if(!StoreRestrictedCapability.downloads.isAvailable){'),
       );
     });
 
@@ -420,6 +589,51 @@ void main() {
         reason:
             '用 section 级 visible：分类正文 / 主从详情 / 设置搜索索引 '
             '三条渲染路径共用它，逐项写会漏掉搜索索引。',
+      );
+    });
+
+    test('用户自配服务器的设置页住常显的「媒体服务器」节，不在 iOS 隐藏的「资源」节', () {
+      final String schema = compactCode(
+        read('lib/src/settings/settings_schema_services.dart'),
+      );
+      final int resources = schema.indexOf("id:'services.resources'");
+      final int metadata = schema.indexOf("id:'services.metadata'");
+      final int media = schema.indexOf("id:'services.media'");
+      expect(resources, greaterThanOrEqualTo(0));
+      expect(metadata, greaterThan(resources));
+      expect(media, greaterThan(metadata));
+      final String resourcesSection = schema.substring(resources, metadata);
+      final String mediaSection = schema.substring(media);
+      for (final String id in <String>[
+        'services.opds_servers',
+        'services.alist_sites',
+        'services.kavita_servers',
+        'services.audiobookshelf_servers',
+      ]) {
+        expect(resourcesSection, isNot(contains("id:'$id'")), reason: id);
+        expect(mediaSection, contains("id:'$id'"), reason: id);
+      }
+      // 内置发现来源开关仍在 iOS 隐藏的「资源」节。
+      expect(resourcesSection, contains("id:'services.discovery_sources'"));
+      final String ctl = compactCode(
+        read('lib/src/ops/ctl_settings_body_discovery.dart'),
+      );
+      expect(
+        ctl,
+        contains(
+          'bool_userServersAvailable(SettingsContext_)=>'
+          'userConfiguredServersAvailable;',
+        ),
+      );
+      expect(
+        'visible:_userServersAvailable,'.allMatches(ctl).length,
+        3,
+        reason: 'OPDS / AList / ABS 三个控制通道页都问用户服务器判据。',
+      );
+      expect(
+        'visible:_discoveryAvailable,'.allMatches(ctl).length,
+        1,
+        reason: '只剩内置发现来源开关过外部发现门。',
       );
     });
 

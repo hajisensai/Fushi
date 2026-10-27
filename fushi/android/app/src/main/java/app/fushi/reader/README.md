@@ -6,8 +6,8 @@ This directory contains both Java and Kotlin files. The split is historical:
 
 - **Java (13 files + 4 constant classes):** Original activities, services, and
   channel handlers. All new Java code should match the existing style.
-- **Kotlin (3 files):** `PopupDictActivity.kt`, `PopupDbReader.kt`, and
-  `HoshiBridge.kt` — the standalone popup dictionary process and its JNI bridge.
+- **Kotlin:** newer files such as `PopupDictFlutterActivity.kt` /
+  `PopupEngineHolder.kt` (the `:popup` Flutter popup) and the screen-OCR helpers.
 
 **Convention for new files:** Use Kotlin. Java files are not being migrated
 proactively — migration only happens when a file needs significant rework for
@@ -36,11 +36,10 @@ Shared constants are centralized here:
 - `FloatingDictTile.java` — Quick-settings tile that toggles the dict overlay.
 - `FloatingDictPluginRegistrant.java` — Registers plugins for the floating engine.
 - `DictAccessibilityService.java` — Accessibility-based text lookup.
-- `PopupDictActivity.kt` — Standalone popup dictionary (`:popup` process, no
-  Flutter engine).
-- `PopupDbReader.kt` — Read-only SQLite access to the Drift DB from `:popup`.
-  Mirrors the Drift schema; guarded by `EXPECTED_SCHEMA_VERSION`.
-- `HoshiBridge.kt` — JNI bridge to the fushidicts C++ library.
+- `PopupDictFlutterActivity.kt` + `PopupEngineHolder.kt` — External lookup
+  popup (`:popup` process, warm Flutter engine running `popupMain`; lookups go
+  through the same Dart FFI path as the main app). The former native WebView
+  popup (`PopupDictActivity` / `PopupDbReader` / JNI bridge) has been removed.
 - `TtsChannelHandler.java` — TTS + audio extraction channel.
 - `AnkiChannelHandler.java` + `AnkiDroidHelper.java` — AnkiDroid API bridge.
 - `FushiFileProvider.java` — FileProvider for sharing exported files.
@@ -53,5 +52,3 @@ When changing any of the following, update both sides in the same change:
 | Native (this dir)        | Dart / Drift counterpart                         |
 |--------------------------|--------------------------------------------------|
 | `ChannelNames.java`      | `channel_constants.dart` (`FushiChannels`)      |
-| `PopupDbReader.kt` queries | Drift tables in `packages/fushi_core/.../tables.dart` |
-| `PopupDbReader.EXPECTED_SCHEMA_VERSION` | `FushiDatabase.schemaVersion` in `database.dart` |

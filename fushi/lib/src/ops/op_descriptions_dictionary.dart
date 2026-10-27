@@ -317,6 +317,12 @@ List<OpDescription> describeDictionaryOps(OpDescribeKit kit) => <OpDescription>[
         'maxMeaningChars',
         description: 'Clip each meaning to this many characters; 0 = no clip.',
       ),
+      OpParam.string(
+        'language',
+        description:
+            'Lookup language (BCP-47, e.g. zh-CN); Chinese also tries '
+            'traditional spellings. Default: the current lookup language.',
+      ),
     ],
   ),
 
@@ -388,6 +394,12 @@ List<OpDescription> describeDictionaryOps(OpDescribeKit kit) => <OpDescription>[
       OpParam.boolean(
         'lookup',
         description: 'Fill missing fields from the dictionaries; default true.',
+      ),
+      OpParam.string(
+        'language',
+        description:
+            'Lookup language (BCP-47, e.g. zh-CN); Chinese also tries '
+            'traditional spellings. Default: the current lookup language.',
       ),
       OpParam.boolean(
         'allowDuplicate',

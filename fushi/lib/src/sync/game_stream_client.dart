@@ -408,7 +408,9 @@ class InterconnectGameStreamDictionaryLookup
     http.Client? httpClient,
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
     Duration timeout = const Duration(seconds: 3),
-  }) : _lookup = FushiRemoteLookupClient(
+    String? Function()? lookupLanguage,
+  }) : _lookupLanguage = lookupLanguage,
+       _lookup = FushiRemoteLookupClient(
          repo: repo,
          onlyCandidate: peer,
          httpClient: httpClient,
@@ -419,6 +421,11 @@ class InterconnectGameStreamDictionaryLookup
        );
 
   final FushiRemoteLookupClient _lookup;
+
+  /// 本端（接收串流的设备）这次查词的语言，每次查词现读，随请求发给 host：host 按它
+  /// 决定是否开简体 → 繁體回落（见 `FushiRemoteLanguageLookupService`）。null 或返回
+  /// null = 不带语言，host 按自己的查词语言（旧行为）。
+  final String? Function()? _lookupLanguage;
 
   /// BUG-3425：查词与写卡都由 host 完成，但弹窗在本机渲染、Glossary 也在本机
   /// 导出——本机（iPad）往往一部词典都没有，`window.dictionaryStyles` 必须是
@@ -455,6 +462,7 @@ class InterconnectGameStreamDictionaryLookup
       term: term,
       wildcards: wildcards,
       maximumTerms: maximumTerms,
+      language: _lookupLanguage?.call(),
     );
     final Map<String, String>? hostStyles = _lookup.hostDictionaryStyles;
     if (hostStyles != null) {

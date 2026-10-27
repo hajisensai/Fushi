@@ -73,16 +73,32 @@ void main() {
   test(
     'streaming is not iOS-gated; platform checks stay out of kavita code',
     () {
-      // iOS 合规判据只在 store_compliance.dart 写一次；Kavita 流式是用户自己的服务器，
-      // 不进 StoreRestrictedCapability，所以这里不应出现任何平台判断。
+      // iOS 合规判据只在 store_compliance.dart 写一次；Kavita 是用户自己的服务器，
+      // 不进 StoreRestrictedCapability（2026-10-27 用户拍板：直读与下载到本机 iOS
+      // 都保留，问 userConfiguredServersAvailable），所以这里不应出现任何平台判断，
+      // 也不应挂任何受限能力的门。
       for (final File f in kavitaFiles()) {
         final String code = strip(f.readAsStringSync());
         expect(code, isNot(contains('Platform.isIOS')), reason: f.path);
+        expect(
+          code,
+          isNot(contains('StoreRestrictedCapability.')),
+          reason: f.path,
+        );
       }
       final String compliance = File(
         'lib/src/models/store_compliance.dart',
       ).readAsStringSync();
-      expect(compliance.toLowerCase(), isNot(contains('kavita')));
+      final int judgment = compliance.indexOf(
+        'bool userConfiguredServersAvailableOn(',
+      );
+      expect(judgment, greaterThan(0));
+      final int docStart = compliance.lastIndexOf('\n\n', judgment);
+      expect(
+        compliance.substring(docStart, judgment),
+        contains('Kavita'),
+        reason: 'Kavita 归在用户自配服务器判据下，而不是任何受限能力。',
+      );
     },
   );
 

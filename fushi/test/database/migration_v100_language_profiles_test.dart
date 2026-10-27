@@ -57,7 +57,7 @@ void main() {
           .read<int>('user_version'),
       upgraded.schemaVersion,
     );
-    expect(upgraded.schemaVersion, 137);
+    expect(upgraded.schemaVersion, 138);
 
     // 升级前就有的 Profile 与两类既有绑定原样还在（Never break userspace）。
     final List<ProfileRow> profiles = await upgraded.getAllProfiles();

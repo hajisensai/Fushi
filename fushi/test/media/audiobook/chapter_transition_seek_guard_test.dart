@@ -199,6 +199,85 @@ void main() {
       h.platform.player!.releaseSeeks();
     });
 
+    test('永不返回的 seek + 播放落到终态 completed：窗口关闭、cue 照常跟随位置', () async {
+      final _Harness h = await _Harness.create(bookCues());
+      await h.controller.play();
+      h.platform.player!.holdSeeks();
+      unawaited(h.controller.skipToCue(h.cue(file: 1, startMs: 0)));
+      await pumpEventQueue();
+      expect(h.controller.explicitSeekPlatformPendingForTesting, isTrue);
+      // Android just_audio：seek 落进 STATE_ENDED 时 seekResult 永远不回，之后也没有
+      // 新的 seek 意图。
+      h.platform.player!.emitCompleted(index: 1, ms: 1500);
+      await pumpEventQueue();
+      expect(
+        h.controller.explicitSeekPlatformPendingForTesting,
+        isFalse,
+        reason: '只靠 seek future 关窗时，这里会永久挂着，cue 跟随被一直压住',
+      );
+      expect(h.controller.explicitSeekInFlightForTesting, isFalse);
+      h.controller.debugUpdateCueForPosition(1500);
+      expect(h.controller.currentCue?.audioFileIndex, 1);
+      expect(h.controller.currentCue?.startMs, 1000);
+      h.platform.player!.releaseSeeks();
+    });
+
+    test('永不返回的 seek + 平台播放出错：窗口关闭', () async {
+      final _Harness h = await _Harness.create(bookCues());
+      await h.controller.play();
+      h.platform.player!.holdSeeks();
+      unawaited(h.controller.skipToCue(h.cue(file: 1, startMs: 0)));
+      await pumpEventQueue();
+      expect(h.controller.explicitSeekPlatformPendingForTesting, isTrue);
+      h.platform.player!.emitError();
+      await pumpEventQueue();
+      expect(h.controller.explicitSeekPlatformPendingForTesting, isFalse);
+      expect(h.controller.explicitSeekInFlightForTesting, isFalse);
+      h.platform.player!.releaseSeeks();
+    });
+
+    test('永不返回的 seek + stopPlayback：窗口关闭', () async {
+      final _Harness h = await _Harness.create(bookCues());
+      await h.controller.play();
+      h.platform.player!.holdSeeks();
+      unawaited(h.controller.skipToCue(h.cue(file: 1, startMs: 0)));
+      await pumpEventQueue();
+      expect(h.controller.explicitSeekPlatformPendingForTesting, isTrue);
+      await h.controller.stopPlayback();
+      expect(h.controller.explicitSeekPlatformPendingForTesting, isFalse);
+      expect(h.controller.explicitSeekInFlightForTesting, isFalse);
+      h.platform.player!.releaseSeeks();
+    });
+
+    test('暂停不关窗：暂停态平台仍会回执，提前关窗会让落地回执按 seek 前位置重算', () async {
+      final _Harness h = await _Harness.create(bookCues());
+      await h.controller.play();
+      h.platform.player!.holdSeeks();
+      final Future<void> skip = h.controller.skipToCue(
+        h.cue(file: 1, startMs: 0),
+      );
+      await pumpEventQueue();
+      await h.controller.pause();
+      await pumpEventQueue();
+      expect(h.controller.explicitSeekPlatformPendingForTesting, isTrue);
+      h.platform.player!.releaseSeeks();
+      await skip;
+      expect(h.controller.explicitSeekPlatformPendingForTesting, isFalse);
+    });
+
+    test('已在终态再发 seek：乐观事件里沿用的 completed 不得关掉新 seek 的窗口', () async {
+      final _Harness h = await _Harness.create(bookCues());
+      await h.controller.play();
+      h.platform.player!.emitCompleted(index: 1, ms: 2000);
+      await pumpEventQueue();
+      h.platform.player!.holdSeeks();
+      unawaited(h.controller.skipToCue(h.cue(file: 0, startMs: 0)));
+      await pumpEventQueue();
+      expect(h.controller.explicitSeekPlatformPendingForTesting, isTrue);
+      expect(h.controller.explicitSeekInFlightForTesting, isTrue);
+      h.platform.player!.releaseSeeks();
+    });
+
     test('seekMs（手动改位置）取代挂起的显式 seek 窗口', () async {
       final _Harness h = await _Harness.create(bookCues());
       h.platform.player!.holdSeeks();
@@ -476,10 +555,24 @@ class _FakeAudioPlayer extends AudioPlayerPlatform {
   /// 下一次 seek 抛错（平台 seek 失败）。
   void throwNextSeek() => _throwNextSeek = true;
 
-  void _emit(int ms) {
+  /// 平台落到 STATE_ENDED（整本播完）：Android 端此时不回挂起的 seek。
+  void emitCompleted({required int index, required int ms}) {
+    _index = index;
+    _emit(ms, state: ProcessingStateMessage.completed);
+  }
+
+  /// 平台播放出错（Android `onPlayerError`）：同样不回挂起的 seek。
+  void emitError() => _events.addError(PlatformException(code: 'source-error'));
+
+  void _emit(
+    int ms, {
+    ProcessingStateMessage state = ProcessingStateMessage.ready,
+  }) {
+    // 平台已被 stop / dispose 释放：真平台不会再推事件。
+    if (_events.isClosed) return;
     _events.add(
       PlaybackEventMessage(
-        processingState: ProcessingStateMessage.ready,
+        processingState: state,
         updateTime: DateTime.now(),
         updatePosition: Duration(milliseconds: ms),
         bufferedPosition: Duration(milliseconds: ms),
