@@ -1,4 +1,4 @@
-## BUG-3801 · 云同步有声书阶段逐本遍历全部书（含漫画）且收尾阶段无进度，最后一本像卡死
+## BUG-3813 · 云同步有声书阶段逐本遍历全部书（含漫画）且收尾阶段无进度，最后一本像卡死
 - **报告**：2026-10-25 / 2026-10-26（应用内反馈 y3tzvcnrPU：Android + Google Drive「每次同步到最后一本书都好长时间没反应」；DRXb43v3fA：macOS「只有 1 本有声书却显示有声书 0/4，逐本走过漫画，最后一本漫画卡 10–20 秒才完成」）
 - **真实性**：✅ 真 bug，两个根因叠加（基线 `4f66a48452`）：
   1. **有声书阶段的工作集是全表**：`fushi/lib/src/sync/sync_orchestrator.dart:1866-1867`（`syncAudiobookPackages`）以 `_db.getAllEpubBooks()` 为循环集合、`itemTotal = books.length`——漫画与无有声书的书都在 `EpubBooks` 表里；每本都在 `:1870` 发「同步有声书 (k/N)」，并在 `:1895-1904` 无条件 `ensureBookFolder` + 最多两次 `findAsset`（Drive 上每本最多 3 次网络往返）。`:1888` 算出的 `hasLocal` 只在 `:1906` 决定传不传，没有用来缩小工作集。而这条通道是 upload-only（远端独有包不自动拉），远端状态只对本端确有有声书的书才有意义。

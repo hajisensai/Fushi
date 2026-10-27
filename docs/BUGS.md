@@ -33,10 +33,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3412 条。点号进各自文件。
+> 共 3418 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3814](bugs/BUG-3814-advanced-mining-preview-button-stuck-after-end.md) | ✅ | ✅ | 高级制卡试听播完后按钮停在「停止」，下一次点击只是停止 |
+| [BUG-3813](bugs/BUG-3813-cloud-audiobook-sync-iterates-all-books.md) | ✅ | ✅ | 云同步有声书阶段逐本遍历全部书（含漫画）且收尾阶段无进度，最后一本像卡死 |
+| [BUG-3812](bugs/BUG-3812-feedback-attach-shot-shows-failed-while-uploading.md) | ✅ | ✅ | 反馈详情追加截图上传中就显示「没上传成功+重试」，反馈人以为第一下必定失败 |
+| [BUG-3811](bugs/BUG-3811-cross-platform-merge-audiobook-backslash-paths.md) | ✅ | ✅ | Windows 备份合并到 Android 后，EPUB 配对有声书不跟字幕、进度归零 |
+| [BUG-3810](bugs/BUG-3810-remote-audio-direct-url-treated-as-json.md) | ✅ | ✅ | 英语查词时直接返回音频的自定义 URL 音源（uapis.cn / GPT-SoVITS /tts）没有声音 |
+| [BUG-3809](bugs/BUG-3809-srs-cross-profile-field-edit-id-collision.md) | 🚧 | ✅ | 空 Profile 导入 APKG 撞 srs_field_edits.id 主键；删 Profile 后 SRS 数据残留 |
 | [BUG-3808](bugs/BUG-3808-mdx-placeholder-title-collision.md) | ✅ | ✅ | 无标题 mdx 都被当成同一本「Title (No HTML code allowed)」 |
 | [BUG-3807](bugs/BUG-3807-stale-ctrl-wheel-zoom.md) | ✅ | ✅ | Ctrl 抬起落在 WebView2 后字幕列表滚轮变成缩放字号 |
 | [BUG-3806](bugs/BUG-3806-settings-textfield-stale-after-profile-switch.md) | ✅ | ✅ | 切换 Profile 后设置输入框仍显示上一个 Profile 的值 |
@@ -45,36 +51,6 @@
 | [BUG-3803](bugs/BUG-3803-browser-ext-popup-wheel-bubbles.md) | ✅ | ✅ | 扩展查词弹窗里滚轮冒泡到宿主页（b 站调音量） |
 | [BUG-3802](bugs/BUG-3802-feedback-reply-notice-persists.md) | ✅ | ✅ | 反馈回复提示条常驻不消失、遮挡提交按钮 |
 | [BUG-3801](bugs/BUG-3801-qbittorrent-52-session-cookie.md) | ✅ | ✅ | qBittorrent 5.2+ 会话 cookie 改名后外接登录失败 |
-> 共 3405 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3801](bugs/BUG-3801-srs-cross-profile-field-edit-id-collision.md) | 🚧 | ✅ | 空 Profile 导入 APKG 撞 srs_field_edits.id 主键；删 Profile 后 SRS 数据残留 |
-> 共 3405 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3801](bugs/BUG-3801-remote-audio-direct-url-treated-as-json.md) | ✅ | ✅ | 英语查词时直接返回音频的自定义 URL 音源（uapis.cn / GPT-SoVITS /tts）没有声音 |
-> 共 3405 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3801](bugs/BUG-3801-cross-platform-merge-audiobook-backslash-paths.md) | ✅ | ✅ | Windows 备份合并到 Android 后，EPUB 配对有声书不跟字幕、进度归零 |
-> 共 3405 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3801](bugs/BUG-3801-feedback-attach-shot-shows-failed-while-uploading.md) | ✅ | ✅ | 反馈详情追加截图上传中就显示「没上传成功+重试」，反馈人以为第一下必定失败 |
-> 共 3405 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3801](bugs/BUG-3801-cloud-audiobook-sync-iterates-all-books.md) | ✅ | ✅ | 云同步有声书阶段逐本遍历全部书（含漫画）且收尾阶段无进度，最后一本像卡死 |
-> 共 3405 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3801](bugs/BUG-3801-advanced-mining-preview-button-stuck-after-end.md) | ✅ | ✅ | 高级制卡试听播完后按钮停在「停止」，下一次点击只是停止 |
 | [BUG-3800](bugs/BUG-3800-floating-ball-switch-profile-label.md) | ✅ | ✅ | 悬浮球切换配置按钮文案被换成配置名 |
 | [BUG-3799](bugs/BUG-3799-kavita-cache-download-semantics-empty.md) | ✅ | ✅ | Kavita 缓存 / 下载两态是空的：阅读即永久入库、移除下载只翻标记 |
 | [BUG-3798](bugs/BUG-3798-audiobook-chapter-transition-receipt-lost.md) | ✅ | ✅ | audiobook-chapter-transition-receipt-lost |

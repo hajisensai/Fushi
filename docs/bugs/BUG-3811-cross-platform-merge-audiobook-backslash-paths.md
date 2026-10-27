@@ -1,4 +1,4 @@
-## BUG-3801 · Windows 备份合并到 Android 后，EPUB 配对有声书不跟字幕、进度归零
+## BUG-3811 · Windows 备份合并到 Android 后，EPUB 配对有声书不跟字幕、进度归零
 - **报告**：2026-10-27（用户：应用内反馈 XDtB1kYT0C，Windows 3.0.1-debug.20797 导出 → Android 3.0.0-debug.20677 合并导入）
 - **真实性**：✅ 真 bug（读代码沿真实路径确认，手机端数据库未取到）。三段链路：
   1. **根因**：`fushi/lib/src/sync/backup_service.dart:165-180`（修前）`rebasePath` 把源路径的子路径原样切下来（`:179` `oldPath.substring(nrOld.length)`），保留了 Windows 的 `\`。合并导入第 6 步（`backup_service/restore.part.dart` `_rebaseAllPaths` → `path_rebase.part.dart:139-178`）把 `audiobooks` 行与配对的 `srtbook_epub_<bookKey>` 行都换成 `/data/.../audiobooks\d4515d05\x.m4b`——POSIX 上 `\` 是普通文件名字符，这是一个不存在的文件名；而随包文件按归档相对路径落在 `<audiobooks>/d4515d05/x.m4b`。两行全部断链。

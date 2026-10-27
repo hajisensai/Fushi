@@ -1,4 +1,4 @@
-## BUG-3801 · 空 Profile 导入 APKG 撞 srs_field_edits.id 主键；删 Profile 后 SRS 数据残留
+## BUG-3809 · 空 Profile 导入 APKG 撞 srs_field_edits.id 主键；删 Profile 后 SRS 数据残留
 - **报告**：2026-10-27（用户：应用内反馈 8TaOy2i-lL，Windows `3.0.1-debug.20797`，提交于 2026-10-24）
 - **真实性**：✅ 真 bug（两处）。
   - **现象 1（导入撞主键）**：所有 profile 共用一个 `srs.db`，`srs_field_edits` 主键只有 `id`（`native/fushi_fsrs/src/store/schema.rs:90-99`），修改记录 ID 由 dot 派生、不含 profile（`native/fushi_fsrs/src/registers.rs:205` `edit_id = uuid_v5("edit/{writer}/{seq}")`）。用户那版（同步 v2 之前）Dart 本机写入者是**每台设备一个**：`'$deviceId#$_incarnation'`（`deviceId` 来自全局 `SyncRepository.getOrCreateDeviceId()`，`fushi/lib/src/srs/srs_providers.dart:244`），而 `lastSeq` 存在**按 profile 分行**的 `srs_local_state` 里（旧 `packages/fushi_engine/lib/srs/srs_db_store.dart@5597af7cb1^:518`）。新 profile 的 `lastSeq` 从 0 起，第一条修改记录就是 `edit/<deviceId>#1/1`——正是老 profile 的第一条；旧 `_storeLocalBatch` 照搬 Dart 算的 ID 直接 `insert`（同文件 `@5597af7cb1^:1165`），于是整批回滚。

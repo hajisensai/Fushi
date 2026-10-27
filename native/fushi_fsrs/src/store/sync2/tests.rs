@@ -1393,7 +1393,7 @@ fn ingest_session_requires_begin_and_a_stable_identity() {
     assert!(a.core.sync2_ingest_finish(P, T0 + 2).is_err(), "a failed batch drops the session");
 }
 
-/// 反馈 8TaOy2i-lL / BUG-3801：一个库文件里的多个 profile 共用 `srs_field_edits`（主键只有 `id`），
+/// 反馈 8TaOy2i-lL / BUG-3809：一个库文件里的多个 profile 共用 `srs_field_edits`（主键只有 `id`），
 /// 修改记录 ID 由 dot `(writer, seq)` 派生、不含 profile。v2 之前 Dart 的写入者每台设备一个
 /// （`<deviceId>#<incarnation>`）、序号却按 profile 各记各的，新 profile 从 seq 1 起写就撞上老 profile 的
 /// 同 ID 行（导入 APKG 整批回滚）。v2 起本机写入的 dot 由 Rust 按「该 profile 的本机身份」重新分配（每个

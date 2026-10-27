@@ -850,7 +850,7 @@ void main() {
       await c.stopClip(resumeMain: false);
     });
 
-    // BUG-3801 / FDN66-xurt：片段的结局要交给调用方（高级制卡的试听按钮据此复位）。
+    // BUG-3814 / FDN66-xurt：片段的结局要交给调用方（高级制卡的试听按钮据此复位）。
     test('playRange 交回句柄：被 stopClip 收掉时以 interrupted 结束', () async {
       final (AudiobookSession session, _FakePlatform _, _StubRemote _) =
           await startRemote();

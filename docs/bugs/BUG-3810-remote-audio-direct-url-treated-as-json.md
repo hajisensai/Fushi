@@ -1,4 +1,4 @@
-## BUG-3801 · 英语查词时直接返回音频的自定义 URL 音源（uapis.cn / GPT-SoVITS /tts）没有声音
+## BUG-3810 · 英语查词时直接返回音频的自定义 URL 音源（uapis.cn / GPT-SoVITS /tts）没有声音
 - **报告**：2026-10-27（用户反馈 0-jh-OH5_0，Windows 3.0.0+19763：`https://uapis.cn/api/v1/dictionary/audio?word={term}` 与本机 GPT-SoVITS `http://127.0.0.1:9880/tts?text={term}&…&media_type=aac` 在 Yomitan 里能播，Fushi 提示无可用发音；错误日志 `Audio source error: FormatException: Unexpected character (at character 1) ID3…`）
 - **真实性**：✅ 真 bug。Yomitan 的自定义 URL 音源分两种：「Custom URL」（URL 本身回音频）与「Custom URL (JSON)」（回 `audioSourceList`）。Fushi 的 `AudioSourceConfig`（`fushi/lib/src/models/audio_source_config.dart`）只有一种 `remoteAudio`、不记响应类型，设置页也只有一个 URL 输入框，仓库里没有导入 Yomitan 音源设置的路径（无 `custom` / `custom-json` 处理），所以不存在「导入时类型被丢掉」——是解析端只认 JSON：
   - 根因 `fushi/lib/src/utils/misc/word_audio_resolver.dart:597`（修复前）`defaultFetchAudioSourceEntries` 把任何 2xx 响应体一律 `jsonDecode`，直返的 mp3（`ID3` 开头）/ ADTS aac 抛 `FormatException`；

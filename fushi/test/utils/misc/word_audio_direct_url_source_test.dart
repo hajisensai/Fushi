@@ -1,4 +1,4 @@
-// BUG-3801 回归：自定义远端音源有两种形态（Yomitan「Custom URL」直接回音频 /
+// BUG-3810 回归：自定义远端音源有两种形态（Yomitan「Custom URL」直接回音频 /
 // 「Custom URL (JSON)」回 audioSourceList），旧实现把所有响应当 JSON 解析：
 // 直返音频的源（uapis.cn 词典发音、GPT-SoVITS /tts）抛 FormatException → 被当
 // 死源计入 host 冷却 → 永远没声音。这里走真实的 defaultFetchAudioSourceEntries

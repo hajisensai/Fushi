@@ -388,7 +388,7 @@ void main() {
       expect(host.confirms, isEmpty);
     });
 
-    testWidgets('BUG-3801：试听播完按钮自动回到「试听」，再点一次就重新播', (
+    testWidgets('BUG-3814：试听播完按钮自动回到「试听」，再点一次就重新播', (
       WidgetTester tester,
     ) async {
       await open(tester, host.videoPage());

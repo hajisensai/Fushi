@@ -112,7 +112,7 @@ void main() {
     });
   });
 
-  // BUG-3801 / FDN66-xurt：区间播完要能被调用方观察到（试听按钮据此复位），否则
+  // BUG-3814 / FDN66-xurt：区间播完要能被调用方观察到（试听按钮据此复位），否则
   // 播完后按钮停在「停止」，下一次点击只是去停。
   group('VideoPlayerController.playRangeMs 的结果句柄', () {
     late VideoPlayerController c;

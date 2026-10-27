@@ -169,7 +169,7 @@ enum BackupCategory {
 ///   keeping the source's separators turned a Windows backup merged on Android
 ///   into `/data/.../audiobooks\<dir>\a.m4b` — ONE literal file name that never
 ///   exists — and every imported audiobook / book / font path silently failed
-///   to resolve (BUG-3801, feedback XDtB1kYT0C).
+///   to resolve (BUG-3811, feedback XDtB1kYT0C).
 /// - a Windows target (`\` in [newRoot]) keeps the source sub-path verbatim:
 ///   Windows accepts both separators, and leaving the bytes alone keeps
 ///   same-device callers (`DataRootMigrator`) byte-for-byte unchanged.

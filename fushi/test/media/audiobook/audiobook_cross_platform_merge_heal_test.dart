@@ -8,7 +8,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-/// BUG-3801（反馈 XDtB1kYT0C）：Windows 备份合并导入到 Android 后，EPUB 配对的
+/// BUG-3811（反馈 XDtB1kYT0C）：Windows 备份合并导入到 Android 后，EPUB 配对的
 /// 有声书「能出声但字幕不跟、进度归零」。
 ///
 /// 真实链路：合并导入的路径 rebase 保留了源设备的 `\`，`audiobooks` 行与配对的
