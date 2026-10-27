@@ -51,6 +51,12 @@
 | [BUG-3820](bugs/BUG-3820-lyrics-follow-breaks-without-touch.md) | ✅ | ✅ | 歌词模式没碰屏幕也会自动对齐中断、弹出「跟随音频」 |
 | [BUG-3819](bugs/BUG-3819-srs-auto-sync-toggle.md) | ✅ | ✅ | 设置 › 同步加「自动同步复习数据」开关（复习数据后台同步无法单独关闭） |
 | [BUG-3818](bugs/BUG-3818-srs-sync-pull-triggers-push.md) | ✅ | ✅ | 复习同步拉入的变更又触发一轮本机推送，库页横幅反复弹出、内容上下挪 |
+> 共 3423 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3819](bugs/BUG-3819-srs-interconnect-sync-crash.md) | ✅ | ✅ | 小米设备 SRS 互联同步 / 复习记录 / 导入卡片时闪退（Dart 日志无栈） |
+| [BUG-3818](bugs/BUG-3818-native-exit-reason-logging.md) | ✅ | ✅ | 原生崩溃 / 被系统杀的进程没有任何日志（反馈分诊约一半闪退卡在 Dart 日志无栈） |
 | [BUG-3817](bugs/BUG-3817-video-delete-work-leaves-extras.md) | ✅ | ✅ | 删除动漫只删正片：特典与其余下载资源残留在目录 |
 | [BUG-3816](bugs/BUG-3816-download-organize-multi-work-pack-collision.md) | ✅ | ✅ | 下载整理：多作品合集包续作目录无季号撞名整任务失败 |
 | [BUG-3815](bugs/BUG-3815-interconnect-push-resurrects-host-deleted-book.md) | ✅ | ✅ | 互联客户端把主机「从所有设备删除」的书推回主机并清掉删除墓碑 |
