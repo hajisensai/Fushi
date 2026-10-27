@@ -244,14 +244,6 @@ typedef _FreeKanjiResultsDart = void Function(Pointer<FfiKanjiResults> r);
 typedef _LookupPopupJsonDart = Pointer<Utf8> Function(Pointer<Void> handle,
     Pointer<Utf8> text, int maxResults, int scanLength, int maxTerms);
 
-typedef _LookupPopupJsonWithFlagsDart = Pointer<Utf8> Function(
-    Pointer<Void> handle,
-    Pointer<Utf8> text,
-    int maxResults,
-    int scanLength,
-    int maxTerms,
-    int flags);
-
 typedef _FreeStringDart = void Function(Pointer<Utf8> s);
 
 // [text] 是带长 UTF-8 缓冲（[textBytes] 字节，不靠结尾 NUL 定界）：Dart 字符串里
@@ -350,10 +342,6 @@ class FushidictsFfiBindings {
         Pointer<Utf8> Function(
             Pointer<Void>, Pointer<Utf8>, Int32, Int32, Int32),
         _LookupPopupJsonDart>('fushidicts_lookup_popup_json');
-    lookupPopupJsonWithFlags = _lib.lookupFunction<
-        Pointer<Utf8> Function(
-            Pointer<Void>, Pointer<Utf8>, Int32, Int32, Int32, Int32),
-        _LookupPopupJsonWithFlagsDart>('fushidicts_lookup_popup_json_with_flags');
     freeString =
         _lib.lookupFunction<Void Function(Pointer<Utf8>), _FreeStringDart>(
             'fushidicts_free_string');
@@ -397,7 +385,6 @@ class FushidictsFfiBindings {
   late final _QueryKanjiDart queryKanji;
   late final _FreeKanjiResultsDart freeKanjiResults;
   late final _LookupPopupJsonDart lookupPopupJson;
-  late final _LookupPopupJsonWithFlagsDart lookupPopupJsonWithFlags;
   late final _FreeStringDart freeString;
   late final _TokenizeDart tokenize;
   late final _FreeTokenizeResultDart freeTokenizeResult;

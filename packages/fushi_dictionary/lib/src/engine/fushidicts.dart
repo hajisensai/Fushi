@@ -954,9 +954,10 @@ class FushiDicts {
   // max_results 截断之前生效）；[primaryReading] 让 reading 精确匹配者排最前
   //（Yomitan 内链语义）。当前无设置 UI 消费方，管道先行。
   //
-  // [chineseSimpToTrad]：查询语言为中文时置 true，引擎额外试一个简体 → 繁體变体
-  //（OpenCC 单字表），让按繁體建索引的词典命中简体查询；原查询仍先试。引擎语言无关，
-  // 由调用方按内容/查词来源语言声明；默认 false，日语等其它语言的查询一字不变。
+  // [chineseSimpToTrad]：查询语言为中文时置 true，引擎在原查询之外额外试简体 → 繁體
+  // 拼写（OpenCC 全部候选 + 台/港字形，一简多繁全展开、由词典认真词），让按繁體建索引
+  // 的词典命中简体查询；原形结果照常在、同长度时排在前面。引擎语言无关，由调用方按
+  // 内容/查词来源语言声明；默认 false，日语等其它语言的查询一字不变。
   List<FushiLookupResult> lookup(
     String text, {
     int maxResults = defaultMaxResults,
@@ -1070,15 +1071,11 @@ class FushiDicts {
     int maxResults = defaultMaxResults,
     int scanLength = defaultScanLength,
     int maxTerms = 100,
-    bool chineseSimpToTrad = false,
   }) {
     final tp = text.toNativeUtf8(allocator: calloc);
     try {
-      final ptr = chineseSimpToTrad
-          ? _bindings!.lookupPopupJsonWithFlags(_handle!, tp, maxResults,
-              scanLength, maxTerms, _lookupFlagChineseSimpToTrad)
-          : _bindings!
-              .lookupPopupJson(_handle!, tp, maxResults, scanLength, maxTerms);
+      final ptr = _bindings!
+          .lookupPopupJson(_handle!, tp, maxResults, scanLength, maxTerms);
       if (ptr == nullptr) return '[]';
       try {
         // 容错解码：词典 popupJson 数据可能含非法 UTF-8 字节（非标准编码导入的

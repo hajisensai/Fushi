@@ -131,7 +131,7 @@ class FushiLookupRequest {
   /// 只给自带代次检查、拿到被取代的空结果也无害的调用方用。
   final String? supersedeLane;
 
-  /// 查询语言为中文：引擎额外试简体 → 繁體变体（原查询仍先试），原始结果缓存键带 `/zh`。
+  /// 查询语言为中文：引擎额外试简体 → 繁體拼写（原形结果照常在），原始结果缓存键带 `/zh`。
   final bool chineseSimpToTrad;
 }
 

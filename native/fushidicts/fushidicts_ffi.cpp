@@ -809,39 +809,60 @@ FfiLookupResults fushidicts_lookup(void* handle, const char* text, int32_t max_r
 // 2=Descending 3=Disabled；freq_dict / primary_reading 传 NULL 或空串 = 未设置。
 // 老导出 fushidicts_lookup 原样保留（Never break ABI），返回结构同一套，
 // 释放同走 fushidicts_free_lookup_results。
+// 查询标志位（fushidicts_lookup_with_flags）。
+// bit0：查询语言为中文，额外尝试简体 → 繁體拼写（见 LookupOptions::chinese_simp_to_trad）。
+// 老导出签名不动（Never break ABI），新增带 flags 的导出；未知位忽略。
+static constexpr int32_t kLookupFlagChineseSimpToTrad = 1;
+
+// 这些是 C++ 内部 helper：在 extern "C" 块里要显式切回 C++ 链接（返回 C++ 类型）。
+extern "C++" {
+namespace {
+struct LookupOptionArgs {
+  const char* freq_dict;
+  int32_t freq_order;
+  const char* primary_reading;
+  int32_t flags;
+};
+
+LookupOptions make_lookup_options(const LookupOptionArgs& args) {
+  LookupOptions options;
+  if (args.freq_dict && args.freq_dict[0] != '\0') {
+    options.frequency_dictionary = std::string(args.freq_dict);
+  }
+  switch (args.freq_order) {
+    case 1: options.frequency_order = LookupFrequencyOrder::Ascending; break;
+    case 2: options.frequency_order = LookupFrequencyOrder::Descending; break;
+    case 3: options.frequency_order = LookupFrequencyOrder::Disabled; break;
+    default: options.frequency_order = LookupFrequencyOrder::Auto; break;
+  }
+  if (args.primary_reading && args.primary_reading[0] != '\0') {
+    options.primary_reading = std::string(args.primary_reading);
+  }
+  options.chinese_simp_to_trad = (args.flags & kLookupFlagChineseSimpToTrad) != 0;
+  return options;
+}
+
+// with_options / with_flags 共用：查询类导出一律在共享锁下跑（与 add/remove 词典的
+// 独占锁互斥，见 FushidictsHandle::rw）。
+FfiLookupResults lookup_with_option_args(void* handle, const char* text, int32_t max_results,
+                                         int32_t scan_length, const LookupOptionArgs& args) {
+  auto* h = static_cast<FushidictsHandle*>(handle);
+  std::shared_lock lock(h->rw);
+  Lookup lookup(h->query, h->deinflector);
+  auto results = lookup.lookup(text, max_results, static_cast<size_t>(scan_length), make_lookup_options(args));
+  return marshal_lookup_results(results);
+}
+}  // namespace
+}  // extern "C++"
+
 FUSHI_EXPORT
 FfiLookupResults fushidicts_lookup_with_options(void* handle, const char* text, int32_t max_results,
                                                 int32_t scan_length, const char* freq_dict, int32_t freq_order,
                                                 const char* primary_reading) {
   return ffi_guard("fushidicts_lookup_with_options", [&]() -> FfiLookupResults {
-    auto* h = static_cast<FushidictsHandle*>(handle);
-    std::shared_lock lock(h->rw);
-    Lookup lookup(h->query, h->deinflector);
-    LookupOptions options;
-    if (freq_dict && freq_dict[0] != '\0') {
-      options.frequency_dictionary = std::string(freq_dict);
-    }
-    switch (freq_order) {
-      case 1: options.frequency_order = LookupFrequencyOrder::Ascending; break;
-      case 2: options.frequency_order = LookupFrequencyOrder::Descending; break;
-      case 3: options.frequency_order = LookupFrequencyOrder::Disabled; break;
-      default: options.frequency_order = LookupFrequencyOrder::Auto; break;
-    }
-    if (primary_reading && primary_reading[0] != '\0') {
-      options.primary_reading = std::string(primary_reading);
-    }
-    auto results = lookup.lookup(text, max_results, static_cast<size_t>(scan_length), options);
-    return marshal_lookup_results(results);
+    return lookup_with_option_args(handle, text, max_results, scan_length,
+                                   LookupOptionArgs{freq_dict, freq_order, primary_reading, 0});
   });
-}
-
-// 查询标志位（fushidicts_lookup_with_flags / fushidicts_lookup_popup_json_with_flags）。
-// bit0：查询语言为中文，额外尝试简体 → 繁體变体（见 LookupOptions::chinese_simp_to_trad）。
-// 老导出签名不动（Never break ABI），新增带 flags 的导出；未知位忽略。
-static constexpr int32_t kLookupFlagChineseSimpToTrad = 1;
-
-static void apply_lookup_flags(LookupOptions& options, int32_t flags) {
-  options.chinese_simp_to_trad = (flags & kLookupFlagChineseSimpToTrad) != 0;
 }
 
 FUSHI_EXPORT
@@ -849,24 +870,8 @@ FfiLookupResults fushidicts_lookup_with_flags(void* handle, const char* text, in
                                               int32_t scan_length, const char* freq_dict, int32_t freq_order,
                                               const char* primary_reading, int32_t flags) {
   return ffi_guard("fushidicts_lookup_with_flags", [&]() -> FfiLookupResults {
-    auto* h = static_cast<FushidictsHandle*>(handle);
-    Lookup lookup(h->query, h->deinflector);
-    LookupOptions options;
-    if (freq_dict && freq_dict[0] != '\0') {
-      options.frequency_dictionary = std::string(freq_dict);
-    }
-    switch (freq_order) {
-      case 1: options.frequency_order = LookupFrequencyOrder::Ascending; break;
-      case 2: options.frequency_order = LookupFrequencyOrder::Descending; break;
-      case 3: options.frequency_order = LookupFrequencyOrder::Disabled; break;
-      default: options.frequency_order = LookupFrequencyOrder::Auto; break;
-    }
-    if (primary_reading && primary_reading[0] != '\0') {
-      options.primary_reading = std::string(primary_reading);
-    }
-    apply_lookup_flags(options, flags);
-    auto results = lookup.lookup(text, max_results, static_cast<size_t>(scan_length), options);
-    return marshal_lookup_results(results);
+    return lookup_with_option_args(handle, text, max_results, scan_length,
+                                   LookupOptionArgs{freq_dict, freq_order, primary_reading, flags});
   });
 }
 
@@ -967,22 +972,6 @@ char* fushidicts_lookup_popup_json(void* handle, const char* text,
     Lookup lookup(h->query, h->deinflector);
     auto results = lookup.lookup(text, max_results,
                                  static_cast<size_t>(scan_length));
-    std::string json = build_popup_json(results, max_terms);
-    return dup(json);
-  });
-}
-
-FUSHI_EXPORT
-char* fushidicts_lookup_popup_json_with_flags(void* handle, const char* text,
-                                              int32_t max_results, int32_t scan_length,
-                                              int32_t max_terms, int32_t flags) {
-  return ffi_guard("fushidicts_lookup_popup_json_with_flags", [&]() -> char* {
-    auto* h = static_cast<FushidictsHandle*>(handle);
-    Lookup lookup(h->query, h->deinflector);
-    LookupOptions options;
-    apply_lookup_flags(options, flags);
-    auto results = lookup.lookup(text, max_results,
-                                 static_cast<size_t>(scan_length), options);
     std::string json = build_popup_json(results, max_terms);
     return dup(json);
   });
