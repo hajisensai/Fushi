@@ -9,6 +9,7 @@ import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show collectionDetailSortPrefKey, kCollectionDetailManualSortValue;
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 书籍合集详情页（[MediaCollectionGridDetailPage]）网格拖排 + 长按/右键上下文菜单
@@ -103,8 +104,13 @@ void main() {
     final Offset target = tester.getCenter(
       find.byKey(const ValueKey<String>('member-k3')),
     );
-    final TestGesture gesture = await tester.startGesture(start);
-    await tester.pump(const Duration(milliseconds: 600)); // 越过长按阈值
+    // 触屏长按现在直接弹菜单（与库页同一时机），拖排走鼠标按住即拖；触屏拖排
+    // 经菜单「排序」进入排序模式，见下方排序模式用例。
+    final TestGesture gesture = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
     await gesture.moveTo(Offset.lerp(start, target, 0.6)!);
     await tester.pump();
     await gesture.moveTo(target);
@@ -283,8 +289,11 @@ void main() {
     final Offset target = tester.getCenter(
       find.byKey(const ValueKey<String>('member-k5')),
     );
-    final TestGesture gesture = await tester.startGesture(start);
-    await tester.pump(const Duration(milliseconds: 600)); // 长按起拖
+    final TestGesture gesture = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
     await gesture.moveTo(Offset.lerp(start, target, 0.6)!);
     await tester.pump();
     await gesture.moveTo(target);
@@ -482,6 +491,120 @@ void main() {
     );
   });
 
+  group('长按与库页一致 + 触屏排序模式', () {
+    testWidgets('触屏长按到时即弹成员菜单（不等松手），菜单里有「排序」', (WidgetTester tester) async {
+      useDesktopView(tester);
+      final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
+      await tester.pumpWidget(wrapPage(s.col, s.db, onOpenMember: (_, __) {}));
+      await tester.pumpAndSettle();
+
+      final TestGesture press = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey<String>('member-k2'))),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump(const Duration(milliseconds: 400));
+      // 手指还按着：菜单已经出来。
+      expect(find.text(t.collection_remove_member), findsOneWidget);
+      expect(find.text(t.library_reorder_action), findsOneWidget);
+      await press.up();
+      await tester.pumpAndSettle();
+      expect(find.text(t.collection_remove_member), findsOneWidget);
+    });
+
+    testWidgets('菜单「排序」进入排序模式：触屏按住即拖、落盘，「完成」退出', (WidgetTester tester) async {
+      useDesktopView(tester);
+      final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
+      await tester.pumpWidget(wrapPage(s.col, s.db, onOpenMember: (_, __) {}));
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.byKey(const ValueKey<String>('member-k1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.library_reorder_action));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('library_reorder_bar')),
+        findsOneWidget,
+      );
+
+      final Offset start = tester.getCenter(
+        find.byKey(const ValueKey<String>('member-k1')),
+      );
+      final Offset target = tester.getCenter(
+        find.byKey(const ValueKey<String>('member-k3')),
+      );
+      final TestGesture gesture = await tester.startGesture(start);
+      await tester.pump(const Duration(milliseconds: 150));
+      await gesture.moveTo(Offset.lerp(start, target, 0.6)!);
+      await tester.pump();
+      await gesture.moveTo(target);
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        (await s.db.getCollectionItems(
+          s.col.id,
+        )).map((MediaCollectionItemRow r) => r.entryKey).toList(),
+        <String>['k2', 'k3', 'k1'],
+      );
+      expect(
+        find.text(t.collection_remove_member),
+        findsNothing,
+        reason: '排序模式下长按不弹菜单',
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('library_reorder_done')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('library_reorder_bar')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('成员菜单交给调用方构建时，「排序」入口指向本页', (WidgetTester tester) async {
+      useDesktopView(tester);
+      final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
+      VoidCallback? entry;
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            home: MediaCollectionGridDetailPage(
+              database: s.db,
+              collection: s.col,
+              memberCardBuilder: cardBuilder,
+              onShowMemberMenu:
+                  (
+                    String mediaType,
+                    String entryKey, {
+                    required VoidCallback onRemoveFromCollection,
+                  }) async {
+                    // 调用方（库页）用自己的 context 弹菜单：同步派发期间读到的
+                    // 必须是合集页的入口。
+                    entry = libraryReorderEntryOf(
+                      tester.element(find.byType(MaterialApp)),
+                    );
+                  },
+              onChanged: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.byKey(const ValueKey<String>('member-k2')));
+      await tester.pumpAndSettle();
+      expect(entry, isNotNull);
+      entry!();
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('library_reorder_bar')),
+        findsOneWidget,
+      );
+    });
+  });
+
   group('iPad 合集反馈（2026-10-18）', () {
     /// 四卷合集、默认排序（卷号，非手动序 → 走非拖排网格）。
     Future<({FushiDatabase db, MediaCollectionRow col})> seedSeries() async {
@@ -603,8 +726,11 @@ void main() {
       final Offset target = tester.getCenter(
         find.byKey(const ValueKey<String>('member-k3')),
       );
-      final TestGesture gesture = await tester.startGesture(start);
-      await tester.pump(const Duration(milliseconds: 600));
+      final TestGesture gesture = await tester.startGesture(
+        start,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
       await gesture.moveTo(Offset.lerp(start, target, 0.6)!);
       await tester.pump();
       await gesture.moveTo(target);

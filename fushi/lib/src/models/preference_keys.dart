@@ -35,6 +35,11 @@ const String kAnkiSettingsPrefKey = 'anki_settings';
 /// Profile 快照（ProfileKeys._excludedPrefPrefixes）。
 const String kSectionTabOrderPrefKeyPrefix = 'section_tab_order::';
 
+/// 库页「手动」排序的顺序（排序模式里拖出来的），后缀 = 库（`book` / `manga` /
+/// `video` / `game`），值是换行分隔的单元 tieKey（`encodeShelfManualOrder`）。
+/// 与页签顺序同族：设备本地，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
+const String kLibraryManualOrderPrefKeyPrefix = 'library_manual_order::';
+
 /// 查词弹窗「我库里的例句」开关（bool，默认 true：全在本机、不上传，所有者 D-L2）。
 const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
 
@@ -899,6 +904,7 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   // 设备本地状态，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
   'media_source_scan_index_',
   kSectionTabOrderPrefKeyPrefix,
+  kLibraryManualOrderPrefKeyPrefix,
   'src:',
   // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次
   // 后台检查完成的时刻。到期判据只读它，失败也照记（否则断网时每个 tick 都重试）。

@@ -169,6 +169,65 @@ void main() {
     });
   });
 
+  group('手动排序（排序模式拖出来的顺序）', () {
+    test('有名次按名次升序；没名次的排在前面、彼此按导入时间倒序', () {
+      final Map<String, int> ranks = <String, int>{'b': 0, 'a': 1};
+      int cmp(ShelfSortKey x, ShelfSortKey y) => compareShelfSortKeys(
+            x,
+            y,
+            ShelfSortMode.manual,
+            manualRanks: ranks,
+          );
+      expect(cmp(_key(tieKey: 'b'), _key(tieKey: 'a')), lessThan(0));
+      expect(
+        cmp(_key(tieKey: 'new', importedAt: 1), _key(tieKey: 'b')),
+        lessThan(0),
+        reason: '排好之后新导入的不沉底',
+      );
+      expect(
+        cmp(
+          _key(tieKey: 'n2', importedAt: 9),
+          _key(tieKey: 'n1', importedAt: 3),
+        ),
+        lessThan(0),
+      );
+    });
+
+    test('持久化往返保序，tieKey 里的逗号不切断', () {
+      const List<String> order = <String>['c1', 'a,b|x', 'k'];
+      final Map<String, int> ranks =
+          decodeShelfManualOrder(encodeShelfManualOrder(order));
+      expect(ranks, <String, int>{'c1': 0, 'a,b|x': 1, 'k': 2});
+      expect(decodeShelfManualOrder(''), isEmpty);
+    });
+
+    test('一次拖动：可见槽按新序回填，被筛掉的单元原位不动', () {
+      expect(
+        moveInShelfManualOrder(
+          all: <String>['a', 'h1', 'b', 'h2', 'c'],
+          visible: <String>['a', 'b', 'c'],
+          from: 0,
+          to: 2,
+        ),
+        <String>['b', 'h1', 'c', 'h2', 'a'],
+      );
+      expect(
+        moveInShelfManualOrder(
+          all: <String>['a', 'b'],
+          visible: <String>['a', 'b'],
+          from: 5,
+          to: 0,
+        ),
+        <String>['a', 'b'],
+        reason: '越界 from 原样返回',
+      );
+    });
+
+    test('fromName 认得 manual', () {
+      expect(ShelfSortMode.fromName('manual'), ShelfSortMode.manual);
+    });
+  });
+
   group('ShelfSortMode.fromName', () {
     test('已知名解析，未知/旧残留退默认 recent', () {
       expect(ShelfSortMode.fromName('title'), ShelfSortMode.title);

@@ -27,7 +27,11 @@ enum GalgameSortField {
   userRating('userRating'),
 
   /// 名称。
-  name('name');
+  name('name'),
+
+  /// 手动：用户在排序模式里拖出来的顺序（库页按合集 / 散卡单元排，见
+  /// `games_library_page` 的手动序）。条目级比较退回添加时间倒序，只作兜底。
+  manual('manual');
 
   const GalgameSortField(this.key);
 
@@ -228,6 +232,9 @@ int compareGalgameEntries(
     case GalgameSortField.added:
       final int c = a.addedAt.compareTo(b.addedAt);
       return c == 0 ? tie() : dir * c;
+    case GalgameSortField.manual:
+      final int c = b.addedAt.compareTo(a.addedAt);
+      return c == 0 ? tie() : c;
     case GalgameSortField.name:
       return dir * tie();
     case GalgameSortField.releaseDate:
