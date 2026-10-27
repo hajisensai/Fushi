@@ -10,6 +10,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show MethodChannel, PlatformException;
 import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_join_page.dart';
@@ -878,6 +879,24 @@ SettingsDestination buildInterconnectDestination() {
               ).setInterconnectAutoSyncEnabled(value);
             },
           ),
+          // 反馈 VNz9dsLeIy：复习数据自己的自动同步（默认开）。上面两个开关只管常规同步轮次，复习数据
+          // 另有几处后台触发（常规同步通道之后的复习步骤、复习后的推送、互联快速通道、本机作为主机收到
+          // 写入）——关掉这一项就只剩牌组列表「立即同步」与进复习页的节流同步。复习模块开着才显示。
+          SettingsSwitchItem(
+            id: 'sync.srs_auto_sync',
+            title: t.srs_sync_auto,
+            subtitle: t.srs_sync_auto_hint,
+            icon: FushiIcons.cloudSync,
+            visible: (SettingsContext ctx) =>
+                ctx.appModel.moduleVisibility.isEnabled(ModuleId.srs),
+            value: (SettingsContext ctx) => _syncSettings(ctx).srsAutoSync,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).srsAutoSync = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setSrsAutoSyncEnabled(value);
+            },
+          ),
         ],
       ),
       // 交给已配对设备：本机把某类工作整个甩给对端主机去做。两项都只有 client 角色
@@ -1317,6 +1336,9 @@ class _SyncSettingsState {
 
   /// 互联通道的自动同步（`interconnect.auto_sync`，默认开，反馈 5nWEirdCs2）。
   bool interconnectAutoSync = true;
+
+  /// 复习数据的自动同步（`sync.srs_auto_sync`，默认开，反馈 VNz9dsLeIy）。
+  bool srsAutoSync = true;
   bool syncStats = true;
   bool syncWebHistory = false;
   bool syncContent = false;
@@ -1440,6 +1462,7 @@ class _SyncSettingsState {
       interconnectEnabled = await _repo.isInterconnectEnabled();
       autoSync = await _repo.isAutoSyncEnabled();
       interconnectAutoSync = await _repo.isInterconnectAutoSyncEnabled();
+      srsAutoSync = await _repo.isSrsAutoSyncEnabled();
       syncStats = await _repo.isSyncStatsEnabled();
       syncWebHistory = await _repo.isWebHistorySyncEnabled();
       syncContent = await _repo.isSyncContentEnabled();

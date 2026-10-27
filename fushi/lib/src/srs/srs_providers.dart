@@ -348,6 +348,37 @@ void bumpSrsRevision(WidgetRef ref) {
   ref.read(srsRevisionProvider.notifier).state++;
 }
 
+/// [srsRevisionProvider] 每一跳的来源：本机写入，还是同步从别的设备拉进来的变更。
+///
+/// 两种都要让界面重读，但只有本机写入需要再推给别的设备（反馈 I1Bg6uMZ32）：以前同步拉入的变更也
+/// 递增同一个修订号，而本机推送（`SrsLocalPush`）监听的正是它——拉进来的数据 5 秒后又触发一轮推送
+/// 同步，复习同步横幅再弹一次、库页内容跟着上下挪，且这轮推送什么也不用推（拉入那一轮已经把本机
+/// 待发的操作一并发出）。修订号单调递增，记下同步那一跳的值即可在监听处分辨，不需要另一条信号。
+class SrsRevisionOrigin {
+  int? _pulledRevision;
+
+  /// 同步拉入了变更：递增修订号让界面重读，并记下这一跳来自同步。
+  void bumpPulled(StateController<int> revision) {
+    final int next = revision.state + 1;
+    _pulledRevision = next;
+    revision.state = next;
+  }
+
+  /// [revision] 这一跳是不是本机写入（不是 [bumpPulled] 递增出来的）。
+  bool isLocalWrite(int revision) => revision != _pulledRevision;
+}
+
+/// 只在本机写入时调 [onLocalWrite]（同步拉入的变更不算，见 [SrsRevisionOrigin]）。
+void listenSrsLocalWrites(
+  Ref ref,
+  SrsRevisionOrigin origin,
+  void Function() onLocalWrite,
+) {
+  ref.listen<int>(srsRevisionProvider, (int? previous, int next) {
+    if (origin.isLocalWrite(next)) onLocalWrite();
+  });
+}
+
 /// 删牌组的执行与进度（BUG-3543 的分块删除）：app 级，不随牌组列表页销毁。
 ///
 /// 以前进度 notifier 与「删完重读」都挂在牌组列表页的 State 上；复习 tab 不常驻，删除途中

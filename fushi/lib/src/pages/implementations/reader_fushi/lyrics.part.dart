@@ -1248,6 +1248,23 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             }
           },
         );
+        // 反馈 0rvPl6s6tR：歌词「手动滚动脱离跟随」的判据诊断（JS 侧每类 30 秒最多一次）。
+        // user-scroll = 有用户输入的 scroll 让歌词进了浏览态；ignored-scroll = 没有用户输入的
+        // scroll（迟到的程序化滚动 / 重排钳位），已不再打断跟随。随反馈日志上传，下次能看出跟随
+        // 中断时到底有没有用户输入、同时 app 在做什么（同步等在错误日志里有各自的记录）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onLyricsBrowseDiag',
+          callback: (List<dynamic> args) {
+            ErrorLogService.instance.logDiagnostic(
+              'ReaderFushi.lyrics.browse',
+              lyricsBrowseDiagLine(
+                args,
+                regularSyncRunning: syncInProgress.value,
+                srsSyncRunning: srsSyncProgress.value != null,
+              ),
+            );
+          },
+        );
         unawaited(_loadLyricsPage());
       },
       shouldInterceptRequest:

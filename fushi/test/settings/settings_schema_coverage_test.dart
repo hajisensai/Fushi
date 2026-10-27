@@ -971,6 +971,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'system/P2P (torrent) proxy':
       'test/torrent/download_http_client_proxy_test.dart',
   'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
+  // 复习数据的自动同步（反馈 VNz9dsLeIy）：写 srs_sync_auto，生效点是 SrsSyncScheduler 的几个
+  // 自动触发口（常规同步后置步骤 / 互联快速通道 / 本机写入后推送 / host 收到写入）；harness 里没有
+  // 复习同步在跑，专项测试咬住「关掉后各自动口不跑、手动与进复习页照跑」。
+  'syncBackup/Auto-sync review data': 'test/srs/srs_sync_scheduler_test.dart',
   'syncBackup/Sync statistics': 'test/sync/sync_gating_test.dart',
   // 设备级「同步浏览历史」：生效点是聚合快照按族裁剪（云 / 互联 client / host 三条路径）。
   'syncBackup/Sync browsing history':

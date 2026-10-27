@@ -7590,6 +7590,8 @@
   "srs_status_review_by_recall": "In review (RWKV)",
   "srs_status_review_in": "Review in $n days",
   "srs_status_suspended": "Suspended",
+  "srs_sync_auto": "Auto-sync review data",
+  "srs_sync_auto_hint": "Sync review data in the background after each regular sync, when a paired device has new review data, and shortly after you review. When off, review data only syncs when you tap Sync now in the deck list or open the Review tab (at most once a minute). Book and video progress sync is not affected",
   "srs_sync_awaiting_confirm": "Review data will sync after you confirm on the review page",
   "srs_sync_backend_unsupported": "The current sync service doesn't support syncing review data",
   "srs_sync_clock_skew": "Your system clock is off by more than 10 minutes. Review times follow the sync server instead.",
