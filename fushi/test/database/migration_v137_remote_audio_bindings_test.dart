@@ -84,7 +84,10 @@ void main() {
         'subtitle_origin',
         'created_at',
         'updated_at',
+        'local_progress_at',
       });
+      // 本机最后一次写进度的时刻：可空（null = 本机从没写过），与 updated_at 分开。
+      expect(columns['local_progress_at']!['notnull'], 0);
       expect(columns['srt_book_uid']!['pk'], 1);
       expect(columns['srt_book_uid']!['type'], 'TEXT');
       expect(columns['episode_id']!['notnull'], 0);

@@ -121,7 +121,7 @@ class _AudiobookshelfItemPageState
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            ListTile(
+            FushiListItem(
               leading: FushiIcon(
                 finished ? FushiIcons.visibilityOff : FushiIcons.check,
               ),
@@ -136,14 +136,14 @@ class _AudiobookshelfItemPageState
               ),
             ),
             if (StoreRestrictedCapability.downloads.isAvailable)
-              ListTile(
+              FushiListItem(
                 leading: const FushiIcon(FushiIcons.download),
                 title: Text(t.audiobookshelf_item_download),
                 onTap: () =>
                     Navigator.pop(dialogContext, _EpisodeMark.download),
               ),
             if (index < episodes.length - 1)
-              ListTile(
+              FushiListItem(
                 leading: const FushiIcon(FushiIcons.checklist),
                 title: Text(t.audiobookshelf_mark_finished_through),
                 onTap: () => Navigator.pop(dialogContext, _EpisodeMark.through),

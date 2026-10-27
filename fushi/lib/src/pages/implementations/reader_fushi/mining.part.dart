@@ -123,49 +123,60 @@ extension _ReaderMining on _ReaderFushiPageState {
       if (clip != null &&
           clip.audioFileIndex >= 0 &&
           clip.audioFileIndex < audioFiles.length) {
-        // 本机书 = 文件路径；流式书 = 服务器文件地址 + 现取的鉴权头（占位文件不存在，
-        // 绝不能直接读 `audioFiles[i].path`）。
-        final AudiobookTrackInput audioInput = await _audiobookController!
-            .trackInputFor(clip.audioFileIndex);
-        sentenceAudioTempDir =
-            Directory.systemTemp.createTempSync('fushi_mine_sentence_audio_');
-        // 句子音频容器与视频制卡保持同一平台规则：iOS 用 `.m4a`，让 AnkiMobile
-        // 把 localhost URL 当作可下载音频；桌面/Android 继续用 `.aac`（adts），避免
-        // 旧桌面 ffmpeg-min 缺 mp4/ipod/m4a muxer 时 exit -22（BUG-460 / BUG-644；统一 FFmpeg 已含）。
-        final String outputPath = p.join(
-          sentenceAudioTempDir.path,
-          'sentence.${immersionMiningAudioExtension()}',
-        );
         requestedSentenceAudioClip = true;
-        // TODO-1650 音频质量档：默认档 0（单声道 64k=现状），更高档立体声 128k/192k。
-        // TODO-970：句子音频已全平台统一走 ffmpeg（extractAudioSegment 不再有 Android
-        // 原生 Transformer + AacAdtsCueAudioRewriter 特例），两端都吃这个档。
-        final MiningMediaCompression mediaCompression =
-            MiningMediaCompression.resolve(
-          imageTier: appModel.miningImageQuality,
-          audioTier: appModel.miningAudioQuality,
-        );
-        // 倍速制卡：开关开着且有声书正以非 1× 播放时，句子音频按同一倍率变速不变调
-        // （`-af atempo`），卡片听感与阅读时一致。开关关 / 1× 时 tempo 为 null，走
-        // 与现状逐字节相同的参数表（[buildFfmpegAtempoFilter] 对 1.0 返回 null）。
-        // 读的是控制器当前实时倍速而非落库偏好：用户刚拨的倍速就是这次制卡的倍速。
-        final double? sentenceAudioTempo =
-            appModel.miningAudioFollowPlaybackSpeed
-                ? _audiobookController?.speed
-                : null;
-        sentenceAudioPath = await TtsChannel.instance.extractAudioSegment(
-          inputPath: audioInput.input,
-          httpHeaders: audioInput.headers,
-          startMs: clip.startMs,
-          endMs: clip.endMs,
-          outputPath: outputPath,
-          audioChannels: mediaCompression.audioChannels,
-          audioBitrate: mediaCompression.audioBitrate,
-          tempo: sentenceAudioTempo,
-          onFailure: (String summary) {
-            sentenceAudioFailure = summary;
-          },
-        );
+        // 本机书 = 文件路径；流式书 = 服务器文件地址 + 现取的鉴权头（占位文件不存在，
+        // 绝不能直接读 `audioFiles[i].path`）。流式书现取鉴权头可能失败（离线 / 令牌
+        // 刷新被拒）：句子音频是可选的，失败走下面「句子音频导出失败」的同一条提示，
+        // 卡片照常做出来，而不是整张卡一起抛掉。
+        AudiobookTrackInput? audioInput;
+        try {
+          audioInput = await _audiobookController!
+              .trackInputFor(clip.audioFileIndex);
+        } catch (e, stack) {
+          ErrorLogService.instance
+              .log('ReaderFushi.mineEntry.trackInput', e, stack);
+          sentenceAudioFailure = e.runtimeType.toString();
+        }
+        if (audioInput != null) {
+          sentenceAudioTempDir =
+              Directory.systemTemp.createTempSync('fushi_mine_sentence_audio_');
+          // 句子音频容器与视频制卡保持同一平台规则：iOS 用 `.m4a`，让 AnkiMobile
+          // 把 localhost URL 当作可下载音频；桌面/Android 继续用 `.aac`（adts），避免
+          // 旧桌面 ffmpeg-min 缺 mp4/ipod/m4a muxer 时 exit -22（BUG-460 / BUG-644；统一 FFmpeg 已含）。
+          final String outputPath = p.join(
+            sentenceAudioTempDir.path,
+            'sentence.${immersionMiningAudioExtension()}',
+          );
+          // TODO-1650 音频质量档：默认档 0（单声道 64k=现状），更高档立体声 128k/192k。
+          // TODO-970：句子音频已全平台统一走 ffmpeg（extractAudioSegment 不再有 Android
+          // 原生 Transformer + AacAdtsCueAudioRewriter 特例），两端都吃这个档。
+          final MiningMediaCompression mediaCompression =
+              MiningMediaCompression.resolve(
+            imageTier: appModel.miningImageQuality,
+            audioTier: appModel.miningAudioQuality,
+          );
+          // 倍速制卡：开关开着且有声书正以非 1× 播放时，句子音频按同一倍率变速不变调
+          // （`-af atempo`），卡片听感与阅读时一致。开关关 / 1× 时 tempo 为 null，走
+          // 与现状逐字节相同的参数表（[buildFfmpegAtempoFilter] 对 1.0 返回 null）。
+          // 读的是控制器当前实时倍速而非落库偏好：用户刚拨的倍速就是这次制卡的倍速。
+          final double? sentenceAudioTempo =
+              appModel.miningAudioFollowPlaybackSpeed
+                  ? _audiobookController?.speed
+                  : null;
+          sentenceAudioPath = await TtsChannel.instance.extractAudioSegment(
+            inputPath: audioInput.input,
+            httpHeaders: audioInput.headers,
+            startMs: clip.startMs,
+            endMs: clip.endMs,
+            outputPath: outputPath,
+            audioChannels: mediaCompression.audioChannels,
+            audioBitrate: mediaCompression.audioBitrate,
+            tempo: sentenceAudioTempo,
+            onFailure: (String summary) {
+              sentenceAudioFailure = summary;
+            },
+          );
+        }
       } else if (cue == null) {
         // TODO-811 visibility: audio files exist but neither a lookup cue /
         // sentence span nor a mergeable draft range resolved to a cue range (or

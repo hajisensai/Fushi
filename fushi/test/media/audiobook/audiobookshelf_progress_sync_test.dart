@@ -20,7 +20,11 @@ const List<RemoteAudioTrack> _tracks = <RemoteAudioTrack>[
   RemoteAudioTrack(ino: '11', startOffsetMs: 100000, durationMs: 200000),
 ];
 
-RemoteAudioBinding _binding({String? episodeId}) => RemoteAudioBinding(
+RemoteAudioBinding _binding({
+  String? episodeId,
+  int updatedAt = 0,
+  int? localProgressAt,
+}) => RemoteAudioBinding(
   srtBookUid: 'srtbook_1',
   provider: RemoteAudioBinding.providerAudiobookshelf,
   serverConfigId: 'srv',
@@ -28,7 +32,8 @@ RemoteAudioBinding _binding({String? episodeId}) => RemoteAudioBinding(
   episodeId: episodeId,
   tracks: _tracks,
   createdAt: 0,
-  updatedAt: 0,
+  updatedAt: updatedAt,
+  localProgressAt: localProgressAt,
 );
 
 /// 假播放器：测试直接改位置 / 播放状态，再触发监听。
@@ -39,10 +44,14 @@ class _FakeHost {
   final List<VoidCallback> listeners = <VoidCallback>[];
   final List<(int, int)> restores = <(int, int)>[];
 
+  /// 模拟服务器记的时长比本机实际解码出来的长：restoreTo 越界抛错。
+  bool restoreThrows = false;
+
   RemotePlaybackHost get host => RemotePlaybackHost(
     isPlaying: () => playing,
     filePosition: () => (fileIndex: fileIndex, positionMs: positionMs),
     restoreTo: (int i, int ms) async {
+      if (restoreThrows) throw RangeError.range(ms, 0, 1);
       restores.add((i, ms));
       fileIndex = i;
       positionMs = ms;
@@ -73,6 +82,13 @@ class _FakeServer {
   bool startPlayFails = false;
   bool patchFails = false;
 
+  /// 非空 = 服务器上有这条进度记录（GET /me/progress 应答它）。
+  Map<String, Object?>? storedProgress;
+
+  /// 非空 = 读进度 / 会话同步要等它放行（模拟请求在途）。
+  Completer<void>? progressGate;
+  Completer<void>? syncGate;
+
   List<_Call> to(String suffix) =>
       calls.where((c) => c.path.endsWith(suffix)).toList();
 
@@ -83,7 +99,14 @@ class _FakeServer {
     }
     // 读进度（GET）单独应答：这里没有「服务器进度记录」，续播退回会话给的位置。
     if (request.method == 'GET' && request.url.path.contains('/me/progress/')) {
-      return http.Response('not found', 404);
+      await progressGate?.future;
+      final Map<String, Object?>? stored = storedProgress;
+      if (stored == null) return http.Response('not found', 404);
+      return http.Response(
+        jsonEncode(stored),
+        200,
+        headers: <String, String>{'content-type': 'application/json'},
+      );
     }
     calls.add(_Call(request.method, request.url.path, body));
     if (request.url.path.contains('/play')) {
@@ -104,6 +127,7 @@ class _FakeServer {
       );
     }
     if (request.url.path.contains('/session/')) {
+      if (request.url.path.endsWith('/sync')) await syncGate?.future;
       return http.Response(syncStatus == 200 ? 'OK' : 'x', syncStatus);
     }
     if (request.url.path.contains('/me/progress/')) {
@@ -128,18 +152,20 @@ void main() {
   late AudiobookshelfProgressSync sync;
   VoidCallback? tick;
 
-  AudiobookshelfProgressSync build({String? episodeId}) =>
-      AudiobookshelfProgressSync(
-        api: _api(server),
-        binding: _binding(episodeId: episodeId),
-        deviceId: () async => 'dev-1',
-        now: () => clock,
-        timerFactory: (Duration interval, void Function() onTick) {
-          tick = onTick;
-          return Timer(const Duration(days: 1), () {});
-        },
-        onError: (String what, Object e) => errors.add(what),
-      );
+  AudiobookshelfProgressSync build({
+    String? episodeId,
+    RemoteAudioBinding? binding,
+  }) => AudiobookshelfProgressSync(
+    api: _api(server),
+    binding: binding ?? _binding(episodeId: episodeId),
+    deviceId: () async => 'dev-1',
+    now: () => clock,
+    timerFactory: (Duration interval, void Function() onTick) {
+      tick = onTick;
+      return Timer(const Duration(days: 1), () {});
+    },
+    onError: (String what, Object e) => errors.add(what),
+  );
 
   setUp(() {
     server = _FakeServer();
@@ -236,7 +262,7 @@ void main() {
       final _Call call = server.to('/sync').single;
       expect(call.path, '/api/session/sess_1/sync');
       expect(call.body['currentTime'], 120);
-      expect(call.body['timeListening'], 30);
+      expect(call.body['timeListened'], 30);
       expect(call.body['duration'], 300);
     });
 
@@ -254,7 +280,7 @@ void main() {
       await pumpEventQueue();
 
       final List<_Call> syncs = server.to('/sync');
-      expect(syncs.map((c) => c.body['timeListening']), <Object?>[30, 30]);
+      expect(syncs.map((c) => c.body['timeListened']), <Object?>[30, 30]);
       expect(syncs.map((c) => c.body['currentTime']), <Object?>[30, 60]);
     });
 
@@ -269,7 +295,7 @@ void main() {
       await pumpEventQueue();
 
       final _Call call = server.to('/sync').single;
-      expect(call.body['timeListening'], 12);
+      expect(call.body['timeListened'], 12);
       expect(call.body['currentTime'], 12);
     });
 
@@ -348,7 +374,7 @@ void main() {
       player.positionMs = 60000;
       tick!();
       await pumpEventQueue();
-      expect(server.to('/sync').last.body['timeListening'], 60);
+      expect(server.to('/sync').last.body['timeListened'], 60);
     });
   });
 
@@ -402,7 +428,7 @@ void main() {
       final _Call close = server.to('/close').single;
       expect(close.path, '/api/session/sess_1/close');
       expect(close.body['currentTime'], 8);
-      expect(close.body['timeListening'], 8);
+      expect(close.body['timeListened'], 8);
       expect(sync.hasSession, isFalse);
 
       advance(60);
@@ -446,6 +472,157 @@ void main() {
       await pumpEventQueue();
       expect(server.to('/close'), hasLength(1), reason: '这个会话没人认领，要补关');
       expect(slow.hasSession, isFalse);
+    });
+
+    test('开会话途中就 close：补关带关书那一刻的位置，且不先拿旧位置 PATCH', () async {
+      final Completer<void> gate = Completer<void>();
+      final AudiobookshelfApi api = AudiobookshelfApi(
+        serverUrl: Uri.parse('https://abs.example.com'),
+        providerId: 'abs-test',
+        tokens: const AudiobookshelfTokens(accessToken: 'a'),
+        client: MockClient((http.Request r) async {
+          if (r.url.path.contains('/play')) await gate.future;
+          return server.handle(r);
+        }),
+      );
+      server.serverPosition = 10;
+      final AudiobookshelfProgressSync slow = AudiobookshelfProgressSync(
+        api: api,
+        binding: _binding(),
+        deviceId: () async => 'dev-1',
+        timerFactory: (_, __) => Timer(const Duration(days: 1), () {}),
+      );
+      final Future<void> attaching = slow.attach(player.host);
+      await pumpEventQueue();
+      player.fileIndex = 1;
+      player.positionMs = 42000; // 全书 142s
+      await slow.close();
+      expect(server.calls.where((c) => c.method == 'PATCH'), isEmpty);
+      gate.complete();
+      await attaching;
+      await pumpEventQueue();
+      final _Call close = server.to('/close').single;
+      expect(close.body['currentTime'], 142, reason: '不能用会话里服务器的旧位置 10');
+    });
+  });
+
+  group('续播判定期间的竞态', () {
+    test('重切字幕刷新了 updatedAt：不算本机后听的，照样按服务器新进度续播', () async {
+      // 绑定刚因重切字幕被改过（updatedAt = 现在），但本机从没写过进度。
+      sync = build(binding: _binding(updatedAt: clock.millisecondsSinceEpoch));
+      server.storedProgress = <String, Object?>{
+        'currentTime': 150,
+        'duration': 300,
+        'lastUpdate': clock
+            .subtract(const Duration(hours: 1))
+            .millisecondsSinceEpoch,
+      };
+      await sync.attach(player.host);
+      expect(player.restores, <(int, int)>[(1, 50000)]);
+    });
+
+    test('本机开书前确实后听过（localProgressAt 新于服务器很多）→ 不跳', () async {
+      sync = build(
+        binding: _binding(localProgressAt: clock.millisecondsSinceEpoch),
+      );
+      server.storedProgress = <String, Object?>{
+        'currentTime': 150,
+        'duration': 300,
+        'lastUpdate': clock
+            .subtract(const Duration(hours: 1))
+            .millisecondsSinceEpoch,
+      };
+      await sync.attach(player.host);
+      expect(player.restores, isEmpty);
+    });
+
+    test('读服务器进度途中暂停：不推旧位置，判定完照样跳到服务器位置', () async {
+      server.progressGate = Completer<void>();
+      server.storedProgress = <String, Object?>{
+        'currentTime': 150,
+        'duration': 300,
+        'lastUpdate': clock.millisecondsSinceEpoch,
+      };
+      final Future<void> attaching = sync.attach(player.host);
+      await pumpEventQueue();
+      player.playing = true;
+      player.notify();
+      advance(3);
+      player.positionMs = 3000;
+      player.playing = false;
+      player.notify(); // 暂停：平时会立即同步
+      tick!();
+      await pumpEventQueue();
+      expect(server.to('/sync'), isEmpty);
+      expect(server.calls.where((c) => c.method == 'PATCH'), isEmpty);
+      server.progressGate!.complete();
+      await attaching;
+      expect(player.restores, <(int, int)>[(1, 50000)]);
+    });
+
+    test('暂停后再播的复查：跳转失败只记日志，不成未处理异常', () async {
+      await sync.attach(player.host);
+      player.playing = true;
+      player.notify();
+      advance(10);
+      player.positionMs = 10000;
+      player.playing = false;
+      player.notify(); // 暂停同步 → 记下本机位置 10s
+      await pumpEventQueue();
+      server.storedProgress = <String, Object?>{
+        'currentTime': 250,
+        'duration': 300,
+        'lastUpdate': clock.millisecondsSinceEpoch,
+      };
+      player.restoreThrows = true;
+      advance(120);
+      player.playing = true;
+      player.notify(); // 暂停够久 → 复查服务器
+      await pumpEventQueue();
+      expect(errors, contains('recheck'));
+    });
+  });
+
+  group('收听时长记账', () {
+    test('同步在途期间新攒的时长不被清掉，下次带上', () async {
+      await sync.attach(player.host);
+      player.playing = true;
+      player.notify();
+      advance(30);
+      player.positionMs = 30000;
+      server.syncGate = Completer<void>();
+      tick!(); // 发出 30s，在途
+      await pumpEventQueue();
+      advance(10);
+      player.positionMs = 40000;
+      player.playing = false;
+      player.notify(); // 在途期间又听了 10s 才暂停
+      server.syncGate!.complete();
+      server.syncGate = null;
+      await pumpEventQueue();
+      tick!();
+      await pumpEventQueue();
+      expect(server.to('/sync').map((c) => c.body['timeListened']), <Object?>[
+        30,
+        10,
+      ]);
+    });
+
+    test('close 等在途同步落定，同一段时长不算两次', () async {
+      await sync.attach(player.host);
+      player.playing = true;
+      player.notify();
+      advance(30);
+      player.positionMs = 30000;
+      server.syncGate = Completer<void>();
+      tick!();
+      await pumpEventQueue();
+      final Future<void> closing = sync.close();
+      await pumpEventQueue();
+      server.syncGate!.complete();
+      await closing;
+      expect(server.to('/sync').single.body['timeListened'], 30);
+      expect(server.to('/close').single.body['timeListened'], 0);
     });
   });
 }

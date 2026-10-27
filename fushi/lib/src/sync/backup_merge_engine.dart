@@ -2132,7 +2132,7 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'music_scrape_meta',
       'music_metadata_raw_snapshots',
       'music_locked_fields',
-      // v136：字幕书与远端音频的绑定。服务器配置 id 只在本机设置里有意义，合并进来
+      // v137：字幕书与远端音频的绑定。服务器配置 id 只在本机设置里有意义，合并进来
       // 只会造出指向不存在服务器的绑定。
       'remote_audio_bindings',
     ]);

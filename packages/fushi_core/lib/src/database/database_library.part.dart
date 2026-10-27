@@ -1792,14 +1792,14 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         // 见 deleteEpubBook）。
         await removeEntryFromAllCollections(MediaKind.srt, uid);
         await deleteTagAssignmentsForHost(TagHostKind.srt, uid);
-        // v119：远端音频绑定同事务清（逻辑外键，没有级联）。
+        // v137：远端音频绑定同事务清（逻辑外键，没有级联）。
         await (delete(remoteAudioBindings)
               ..where((t) => t.srtBookUid.equals(uid)))
             .go();
         return (delete(srtBooks)..where((t) => t.uid.equals(uid))).go();
       });
 
-  // ── remote audio bindings（v119，设备本地）─────────────────────────
+  // ── remote audio bindings（v137，设备本地）─────────────────────────
   Future<RemoteAudioBindingRow?> getRemoteAudioBinding(String srtBookUid) =>
       (select(remoteAudioBindings)
             ..where((t) => t.srtBookUid.equals(srtBookUid)))

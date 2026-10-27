@@ -397,7 +397,8 @@ void main() {
           jsonDecode(seen[0].body) as Map<String, Object?>;
       expect(body, <String, Object?>{
         'currentTime': 75.5,
-        'timeListening': 10,
+        // 服务端读 `timeListened`（PlaybackSessionManager.syncSession）。
+        'timeListened': 10,
         'duration': 1000,
       });
     });
@@ -423,7 +424,7 @@ void main() {
       );
     });
 
-    test('patchProgress：自己算 progress；播客带 episodeId', () async {
+    test('patchProgress：自己算 progress；播客带 episodeId；不带 isFinished', () async {
       late http.Request seen;
       final AudiobookshelfApi api = _api((http.Request request) async {
         seen = request;
@@ -440,7 +441,8 @@ void main() {
       final Map<String, Object?> body =
           jsonDecode(seen.body) as Map<String, Object?>;
       expect(body['progress'], 0.25);
-      expect(body['isFinished'], false);
+      // 补写位置不能带 isFinished:false：服务端会把「已听完」的记录当成取消听完并清零。
+      expect(body.containsKey('isFinished'), isFalse);
     });
 
     test('getProgress：404 = 还没有记录 → null', () async {
@@ -701,8 +703,8 @@ void main() {
           ],
         }),
       );
-      final Map<String, AudiobookshelfMediaProgress> all =
-          await api.allMediaProgress();
+      final Map<String, AudiobookshelfMediaProgress> all = await api
+          .allMediaProgress();
       expect(all['item_1']?.progress, 0.5);
       expect(all[audiobookshelfProgressKey('pod_1', 'ep_9')]?.isFinished, true);
     });

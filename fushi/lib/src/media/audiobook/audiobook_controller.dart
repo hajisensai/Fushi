@@ -1343,13 +1343,18 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// [audiobookFileDurationsFromCues] 一份：持久化的全书毫秒按它编码，换字幕时
   /// 仓库层按同一口径换算进度（BUG-3197），两处口径漂开就会错位。
   void _rebuildFileDurations() {
-    final List<int> fromCues = audiobookFileDurationsFromCues(_allBookCues);
     // 流式书没有字幕时推不出文件时长：用服务器给的音轨时长，整本进度条才走得动。
-    final List<int> remote =
-        _remotePlayback?.trackDurationsMs ?? const <int>[];
-    _fileDurationsMs = fromCues.isEmpty && remote.isNotEmpty ? remote : fromCues;
+    // 规则只在 [audiobookPositionDurationsMs] 写一次，仓库层换字幕时用同一条换算。
+    _fileDurationsMs = _positionDurationsFor(_allBookCues);
     _sectionFirstCueCache.clear();
   }
+
+  List<int> _positionDurationsFor(Iterable<AudioCue> cues) =>
+      audiobookPositionDurationsMs(
+        cues,
+        remoteTrackDurationsMs:
+            _remotePlayback?.trackDurationsMs ?? const <int>[],
+      );
 
   // ── 播放控制 API ───────────────────────────────────────────────────────────
 
@@ -2880,7 +2885,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 实测结论）。两份 cue 推出的文件时长相同（没换字幕 / 只改文本）时是空操作。
   Future<void> reencodeStoppedPositionForCues(List<AudioCue> cues) async {
     final List<int> previous = _fileDurationsMs;
-    final List<int> next = audiobookFileDurationsFromCues(cues);
+    final List<int> next = _positionDurationsFor(cues);
     if (listEquals(previous, next)) return;
     setAllBookCues(cues);
     final String? uid = _audiobook?.bookKey;
@@ -2903,7 +2908,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 也就不去打扰阅读器按章节灌的 cue。
   bool adoptReplacedBookCues(List<AudioCue> cues) {
     if (cues.isEmpty) return false;
-    if (listEquals(_fileDurationsMs, audiobookFileDurationsFromCues(cues))) {
+    if (listEquals(_fileDurationsMs, _positionDurationsFor(cues))) {
       return false;
     }
     setAllBookCues(cues);

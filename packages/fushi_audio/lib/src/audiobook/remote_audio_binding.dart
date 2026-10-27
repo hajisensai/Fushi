@@ -84,6 +84,7 @@ class RemoteAudioBinding {
     required this.updatedAt,
     this.episodeId,
     this.subtitleOrigin = subtitleOriginLocal,
+    this.localProgressAt,
   });
 
   static const String providerAudiobookshelf = 'audiobookshelf';
@@ -109,6 +110,11 @@ class RemoteAudioBinding {
   final int createdAt;
   final int updatedAt;
 
+  /// 本机最后一次真的听过 / 拖过的时刻（毫秒）；null = 本机从没写过进度。进度同步
+  /// 拿它判断本机与服务器谁的位置更新——不看 [updatedAt]，那个会被重切字幕等非进度
+  /// 写入刷新。
+  final int? localProgressAt;
+
   /// 各音轨在全书时间轴上的位置，喂给 [splitCuesAcrossTracks]。
   List<AudioTrackSpan> get spans => <AudioTrackSpan>[
     for (final RemoteAudioTrack t in tracks) t.span,
@@ -133,6 +139,7 @@ class RemoteAudioBinding {
     List<RemoteAudioTrack>? tracks,
     String? subtitleOrigin,
     int? updatedAt,
+    int? localProgressAt,
   }) => RemoteAudioBinding(
     srtBookUid: srtBookUid,
     provider: provider,
@@ -143,6 +150,7 @@ class RemoteAudioBinding {
     subtitleOrigin: subtitleOrigin ?? this.subtitleOrigin,
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    localProgressAt: localProgressAt ?? this.localProgressAt,
   );
 
   static String encodeTracks(List<RemoteAudioTrack> tracks) => jsonEncode(
@@ -181,6 +189,7 @@ class RemoteAudioBinding {
       subtitleOrigin: row.subtitleOrigin,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      localProgressAt: row.localProgressAt,
     );
   }
 
@@ -195,6 +204,7 @@ class RemoteAudioBinding {
         subtitleOrigin: Value<String>(subtitleOrigin),
         createdAt: createdAt,
         updatedAt: updatedAt,
+        localProgressAt: Value<int?>(localProgressAt),
       );
 }
 

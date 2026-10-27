@@ -74191,6 +74191,17 @@ class $RemoteAudioBindingsTable extends RemoteAudioBindings
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _localProgressAtMeta = const VerificationMeta(
+    'localProgressAt',
+  );
+  @override
+  late final GeneratedColumn<int> localProgressAt = GeneratedColumn<int>(
+    'local_progress_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     srtBookUid,
@@ -74202,6 +74213,7 @@ class $RemoteAudioBindingsTable extends RemoteAudioBindings
     subtitleOrigin,
     createdAt,
     updatedAt,
+    localProgressAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -74292,6 +74304,15 @@ class $RemoteAudioBindingsTable extends RemoteAudioBindings
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
+    if (data.containsKey('local_progress_at')) {
+      context.handle(
+        _localProgressAtMeta,
+        localProgressAt.isAcceptableOrUnknown(
+          data['local_progress_at']!,
+          _localProgressAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -74337,6 +74358,10 @@ class $RemoteAudioBindingsTable extends RemoteAudioBindings
         DriftSqlType.int,
         data['${effectivePrefix}updated_at'],
       )!,
+      localProgressAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}local_progress_at'],
+      ),
     );
   }
 
@@ -74373,6 +74398,12 @@ class RemoteAudioBindingRow extends DataClass
   /// 毫秒。
   final int createdAt;
   final int updatedAt;
+
+  /// 本机最后一次真的听过 / 拖过这本书的时刻（毫秒）；null = 本机从没写过进度。
+  /// 开书时拿它和服务器进度的 `lastUpdate` 比，决定谁的位置更新。**不能复用
+  /// [updatedAt]**：重切字幕、改字幕来源也会刷新 [updatedAt]，那样会把「改过绑定」
+  /// 误判成「本机后听的」，别的设备的新进度就被本机旧位置盖掉。
+  final int? localProgressAt;
   const RemoteAudioBindingRow({
     required this.srtBookUid,
     required this.provider,
@@ -74383,6 +74414,7 @@ class RemoteAudioBindingRow extends DataClass
     required this.subtitleOrigin,
     required this.createdAt,
     required this.updatedAt,
+    this.localProgressAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -74398,6 +74430,9 @@ class RemoteAudioBindingRow extends DataClass
     map['subtitle_origin'] = Variable<String>(subtitleOrigin);
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
+    if (!nullToAbsent || localProgressAt != null) {
+      map['local_progress_at'] = Variable<int>(localProgressAt);
+    }
     return map;
   }
 
@@ -74414,6 +74449,9 @@ class RemoteAudioBindingRow extends DataClass
       subtitleOrigin: Value(subtitleOrigin),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
+      localProgressAt: localProgressAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localProgressAt),
     );
   }
 
@@ -74432,6 +74470,7 @@ class RemoteAudioBindingRow extends DataClass
       subtitleOrigin: serializer.fromJson<String>(json['subtitleOrigin']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      localProgressAt: serializer.fromJson<int?>(json['localProgressAt']),
     );
   }
   @override
@@ -74447,6 +74486,7 @@ class RemoteAudioBindingRow extends DataClass
       'subtitleOrigin': serializer.toJson<String>(subtitleOrigin),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
+      'localProgressAt': serializer.toJson<int?>(localProgressAt),
     };
   }
 
@@ -74460,6 +74500,7 @@ class RemoteAudioBindingRow extends DataClass
     String? subtitleOrigin,
     int? createdAt,
     int? updatedAt,
+    Value<int?> localProgressAt = const Value.absent(),
   }) => RemoteAudioBindingRow(
     srtBookUid: srtBookUid ?? this.srtBookUid,
     provider: provider ?? this.provider,
@@ -74470,6 +74511,9 @@ class RemoteAudioBindingRow extends DataClass
     subtitleOrigin: subtitleOrigin ?? this.subtitleOrigin,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    localProgressAt: localProgressAt.present
+        ? localProgressAt.value
+        : this.localProgressAt,
   );
   RemoteAudioBindingRow copyWithCompanion(RemoteAudioBindingsCompanion data) {
     return RemoteAudioBindingRow(
@@ -74490,6 +74534,9 @@ class RemoteAudioBindingRow extends DataClass
           : this.subtitleOrigin,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      localProgressAt: data.localProgressAt.present
+          ? data.localProgressAt.value
+          : this.localProgressAt,
     );
   }
 
@@ -74504,7 +74551,8 @@ class RemoteAudioBindingRow extends DataClass
           ..write('tracksJson: $tracksJson, ')
           ..write('subtitleOrigin: $subtitleOrigin, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('localProgressAt: $localProgressAt')
           ..write(')'))
         .toString();
   }
@@ -74520,6 +74568,7 @@ class RemoteAudioBindingRow extends DataClass
     subtitleOrigin,
     createdAt,
     updatedAt,
+    localProgressAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -74533,7 +74582,8 @@ class RemoteAudioBindingRow extends DataClass
           other.tracksJson == this.tracksJson &&
           other.subtitleOrigin == this.subtitleOrigin &&
           other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.localProgressAt == this.localProgressAt);
 }
 
 class RemoteAudioBindingsCompanion
@@ -74547,6 +74597,7 @@ class RemoteAudioBindingsCompanion
   final Value<String> subtitleOrigin;
   final Value<int> createdAt;
   final Value<int> updatedAt;
+  final Value<int?> localProgressAt;
   final Value<int> rowid;
   const RemoteAudioBindingsCompanion({
     this.srtBookUid = const Value.absent(),
@@ -74558,6 +74609,7 @@ class RemoteAudioBindingsCompanion
     this.subtitleOrigin = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.localProgressAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   RemoteAudioBindingsCompanion.insert({
@@ -74570,6 +74622,7 @@ class RemoteAudioBindingsCompanion
     this.subtitleOrigin = const Value.absent(),
     required int createdAt,
     required int updatedAt,
+    this.localProgressAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : srtBookUid = Value(srtBookUid),
        provider = Value(provider),
@@ -74588,6 +74641,7 @@ class RemoteAudioBindingsCompanion
     Expression<String>? subtitleOrigin,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
+    Expression<int>? localProgressAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -74600,6 +74654,7 @@ class RemoteAudioBindingsCompanion
       if (subtitleOrigin != null) 'subtitle_origin': subtitleOrigin,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (localProgressAt != null) 'local_progress_at': localProgressAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -74614,6 +74669,7 @@ class RemoteAudioBindingsCompanion
     Value<String>? subtitleOrigin,
     Value<int>? createdAt,
     Value<int>? updatedAt,
+    Value<int?>? localProgressAt,
     Value<int>? rowid,
   }) {
     return RemoteAudioBindingsCompanion(
@@ -74626,6 +74682,7 @@ class RemoteAudioBindingsCompanion
       subtitleOrigin: subtitleOrigin ?? this.subtitleOrigin,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      localProgressAt: localProgressAt ?? this.localProgressAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -74660,6 +74717,9 @@ class RemoteAudioBindingsCompanion
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
+    if (localProgressAt.present) {
+      map['local_progress_at'] = Variable<int>(localProgressAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -74678,6 +74738,7 @@ class RemoteAudioBindingsCompanion
           ..write('subtitleOrigin: $subtitleOrigin, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('localProgressAt: $localProgressAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -125248,6 +125309,7 @@ typedef $$RemoteAudioBindingsTableCreateCompanionBuilder =
       Value<String> subtitleOrigin,
       required int createdAt,
       required int updatedAt,
+      Value<int?> localProgressAt,
       Value<int> rowid,
     });
 typedef $$RemoteAudioBindingsTableUpdateCompanionBuilder =
@@ -125261,6 +125323,7 @@ typedef $$RemoteAudioBindingsTableUpdateCompanionBuilder =
       Value<String> subtitleOrigin,
       Value<int> createdAt,
       Value<int> updatedAt,
+      Value<int?> localProgressAt,
       Value<int> rowid,
     });
 
@@ -125315,6 +125378,11 @@ class $$RemoteAudioBindingsTableFilterComposer
 
   ColumnFilters<int> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get localProgressAt => $composableBuilder(
+    column: $table.localProgressAt,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -125372,6 +125440,11 @@ class $$RemoteAudioBindingsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get localProgressAt => $composableBuilder(
+    column: $table.localProgressAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$RemoteAudioBindingsTableAnnotationComposer
@@ -125417,6 +125490,11 @@ class $$RemoteAudioBindingsTableAnnotationComposer
 
   GeneratedColumn<int> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get localProgressAt => $composableBuilder(
+    column: $table.localProgressAt,
+    builder: (column) => column,
+  );
 }
 
 class $$RemoteAudioBindingsTableTableManager
@@ -125471,6 +125549,7 @@ class $$RemoteAudioBindingsTableTableManager
                 Value<String> subtitleOrigin = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
+                Value<int?> localProgressAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RemoteAudioBindingsCompanion(
                 srtBookUid: srtBookUid,
@@ -125482,6 +125561,7 @@ class $$RemoteAudioBindingsTableTableManager
                 subtitleOrigin: subtitleOrigin,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                localProgressAt: localProgressAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -125495,6 +125575,7 @@ class $$RemoteAudioBindingsTableTableManager
                 Value<String> subtitleOrigin = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
+                Value<int?> localProgressAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RemoteAudioBindingsCompanion.insert(
                 srtBookUid: srtBookUid,
@@ -125506,6 +125587,7 @@ class $$RemoteAudioBindingsTableTableManager
                 subtitleOrigin: subtitleOrigin,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                localProgressAt: localProgressAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

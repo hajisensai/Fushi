@@ -414,21 +414,27 @@ class AudiobookshelfApi {
       uri('/api/session/${Uri.encodeComponent(sessionId)}/$action'),
       operation: 'session.$action',
       headers: const <String, String>{'Content-Type': 'application/json'},
+      // 字段名照服务端 `PlaybackSessionManager.syncSession` 读的 `timeListened`；
+      // 写错它服务器直接不落收听记录（时长为 0 时整条 return），位置照样更新、很难察觉。
       body: jsonEncode(<String, num>{
         'currentTime': currentTimeSeconds,
-        'timeListening': timeListenedSeconds,
+        'timeListened': timeListenedSeconds,
         'duration': durationSeconds,
       }),
     );
   }
 
   /// 没有开会话时直接写进度（离线补写、会话过期后的兜底）。
+  ///
+  /// [isFinished] 为 null 时**不带**这个字段：服务端收到显式 `false` 而原记录是
+  /// 「已听完」会把它当成「标为未听完」并清零进度，所以单纯补写位置绝不能发 false，
+  /// 让服务端按剩余时长自己判定。
   Future<void> patchProgress(
     String itemId, {
     String? episodeId,
     required double currentTimeSeconds,
     required double durationSeconds,
-    bool isFinished = false,
+    bool? isFinished,
   }) async {
     await _authorizedSend(
       'PATCH',
@@ -441,7 +447,7 @@ class AudiobookshelfApi {
         'progress': durationSeconds > 0
             ? (currentTimeSeconds / durationSeconds).clamp(0.0, 1.0)
             : 0.0,
-        'isFinished': isFinished,
+        if (isFinished != null) 'isFinished': isFinished,
       }),
     );
   }
@@ -482,8 +488,10 @@ class AudiobookshelfApi {
   /// 当前用户全部条目 / 单集的进度（`GET /api/me` 里的 `mediaProgress`）。
   /// 键见 [audiobookshelfProgressKey]。
   Future<Map<String, AudiobookshelfMediaProgress>> allMediaProgress() async {
-    final Object? me = await _getJson('/api/me', operation: 'me');
-    final Object? list = me is Map<String, Object?> ? me['mediaProgress'] : null;
+    final Object me = await _getJson('/api/me', operation: 'me');
+    final Object? list = me is Map<String, Object?>
+        ? me['mediaProgress']
+        : null;
     final Map<String, AudiobookshelfMediaProgress> out =
         <String, AudiobookshelfMediaProgress>{};
     if (list is List<Object?>) {

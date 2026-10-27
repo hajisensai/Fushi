@@ -238,8 +238,12 @@ class AudiobookPlayBar extends StatelessWidget {
   }
 }
 
+/// 迷你播放器按钮行下方留给进度线的那条带子（高度）。拖动命中区正好占满它：再高
+/// 就会盖住按钮行的下沿，点按钮底边会变成跳转进度。
+const double _kMiniPlayerScrubBandHeight = 14;
+
 /// 迷你播放器底边的进度线：点一下 / 横向拖动 = 在全书时间轴上定位，松手才 seek。
-/// 命中区比线本身高（线只有 3px），拖动期间显示拖到的位置而不是播放位置。
+/// 命中区是按钮行下方的整条留白带（线只有 3px），拖动期间显示拖到的位置而不是播放位置。
 class _ScrubbableProgress extends StatefulWidget {
   const _ScrubbableProgress({
     required this.controller,
@@ -288,10 +292,13 @@ class _ScrubbableProgressState extends State<_ScrubbableProgress> {
               _commit(_scrub ?? widget.fraction),
           onHorizontalDragCancel: () => setState(() => _scrub = null),
           child: SizedBox(
-            height: 20,
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: widget.child(_scrub ?? widget.fraction),
+            height: _kMiniPlayerScrubBandHeight,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: widget.child(_scrub ?? widget.fraction),
+              ),
             ),
           ),
         );
@@ -694,7 +701,12 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
         child: Stack(
           children: <Widget>[
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 8, 14),
+              padding: const EdgeInsets.fromLTRB(
+                10,
+                8,
+                8,
+                _kMiniPlayerScrubBandHeight,
+              ),
               child: Row(
                 children: <Widget>[
                   cover,
@@ -707,7 +719,7 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
             Positioned(
               left: 24,
               right: 24,
-              bottom: 2,
+              bottom: 0,
               child: _ScrubbableProgress(
                 controller: c,
                 fraction: fraction,

@@ -2330,7 +2330,7 @@ abstract final class PendingMineStatus {
   static const String landed = 'landed';
 }
 
-/// 字幕书与远端（流式）音频的绑定（schema v119）。
+/// 字幕书与远端（流式）音频的绑定（schema v137）。
 ///
 /// 目前只有 Audiobookshelf：一本 [SrtBooks] 的音频不在本机磁盘上，而是在用户自己的
 /// 服务器上按需流式播放。**不**把 `abs://…` 塞进 `srt_books.audio_paths_json`——那一列
@@ -2369,6 +2369,12 @@ class RemoteAudioBindings extends Table {
   /// 毫秒。
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
+
+  /// 本机最后一次真的听过 / 拖过这本书的时刻（毫秒）；null = 本机从没写过进度。
+  /// 开书时拿它和服务器进度的 `lastUpdate` 比，决定谁的位置更新。**不能复用
+  /// [updatedAt]**：重切字幕、改字幕来源也会刷新 [updatedAt]，那样会把「改过绑定」
+  /// 误判成「本机后听的」，别的设备的新进度就被本机旧位置盖掉。
+  IntColumn get localProgressAt => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {srtBookUid};

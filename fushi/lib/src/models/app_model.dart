@@ -7396,10 +7396,8 @@ class AppModel with ChangeNotifier {
 
   /// 每台 Audiobookshelf 服务器一个共享协议层实例（令牌轮换不能被多个实例踩）。
   /// 其它地方要访问 ABS 一律经它借，见 [AudiobookshelfApiRegistry]。
-  AudiobookshelfApiRegistry get audiobookshelfApis =>
-      _audiobookshelfApis ??= AudiobookshelfApiRegistry(
-        persistTokens: persistAudiobookshelfTokens,
-      );
+  AudiobookshelfApiRegistry get audiobookshelfApis => _audiobookshelfApis ??=
+      AudiobookshelfApiRegistry(persistTokens: persistAudiobookshelfTokens);
   AudiobookshelfApiRegistry? _audiobookshelfApis;
 
   /// 字幕书的远端音频绑定 → 可播放的流式接缝；服务器配置已删 / 已登出 / 不是
@@ -7425,12 +7423,15 @@ class AppModel with ChangeNotifier {
                   binding.srtBookUid,
                 );
                 if (latest != null) {
-                  await bindings.save(latest.copyWith(updatedAt: nowMs));
+                  await bindings.save(latest.copyWith(localProgressAt: nowMs));
                 }
               },
-              onSyncError: (String what, Object error) => ErrorLogService
-                  .instance
-                  .log('AudiobookshelfProgress.$what', error, StackTrace.current),
+              onSyncError: (String what, Object error) =>
+                  ErrorLogService.instance.log(
+                    'AudiobookshelfProgress.$what',
+                    error,
+                    StackTrace.current,
+                  ),
             );
     }
     return null;

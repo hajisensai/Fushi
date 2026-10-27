@@ -10,6 +10,7 @@ import 'audiobook_repository.dart';
 import 'audiobook_local_files.dart';
 import 'srt_book_model.dart';
 import 'audiobook_storage.dart';
+import 'remote_audio_binding.dart';
 import '../parsers/srt_parser.dart';
 
 /// [SrtBookRepository.delete] 的结果：删掉几行 + 用户原件的逐条删除结果。
@@ -441,10 +442,21 @@ class SrtBookRepository {
         final List<AudioCue> before = await cuesFor(uid);
         await _db.replaceCuesForBook(
             uid, cues.map(AudioCue.toCompanion).toList());
+        // 流式书没挂字幕时，控制器按服务器音轨时长编码进度（同一条规则
+        // [audiobookPositionDurationsMs]）；这里不按同一条换算，补字幕那一下就挪位。
+        final RemoteAudioBinding? binding =
+            await RemoteAudioBindingRepository(_db).get(uid);
+        final List<int> remoteDurations = <int>[
+          for (final RemoteAudioTrack t
+              in binding?.tracks ?? const <RemoteAudioTrack>[])
+            t.durationMs,
+        ];
         await AudiobookRepository(_db).rebaseStoredPositionForCueChange(
           positionKey: uid,
-          oldDurationsMs: audiobookFileDurationsFromCues(before),
-          newDurationsMs: audiobookFileDurationsFromCues(cues),
+          oldDurationsMs: audiobookPositionDurationsMs(before,
+              remoteTrackDurationsMs: remoteDurations),
+          newDurationsMs: audiobookPositionDurationsMs(cues,
+              remoteTrackDurationsMs: remoteDurations),
         );
       });
 

@@ -59,7 +59,7 @@ class AudiobookshelfProgressSync {
        _timerFactory = timerFactory ?? _periodicTimer,
        _onError = onError,
        _onPushed = onPushed,
-       _lastPushedAtMs = binding.updatedAt;
+       _localProgressAtOnOpen = binding.localProgressAt;
 
   final AudiobookshelfApi api;
   final RemoteAudioBinding binding;
@@ -71,7 +71,23 @@ class AudiobookshelfProgressSync {
 
   /// 一次同步成功后调用（落库本机最后写入时间，下次开书判断谁更新）。
   final Future<void> Function(int nowMs)? _onPushed;
-  int _lastPushedAtMs;
+
+  /// 开书**之前**本机最后一次写进度的时刻（null = 从没写过）。续播判定只认它：本次
+  /// 会话里刚听的几秒会被 [_stampLocalWrite] 落库，但不能反过来让本次判定误以为
+  /// 「本机比服务器新」。
+  final int? _localProgressAtOnOpen;
+
+  /// 续播判定（读服务器进度 + 开会话 + 决定跳不跳）还没做完。期间不往服务器推任何
+  /// 位置：推上去的是开书时的旧位置，会盖掉别的设备刚写的新进度，随后读回来的
+  /// 又是自己刚推的那条，续播就永远跳不过去了。
+  bool _resolving = false;
+
+  /// 在途的那次同步；[close] 先等它落定，免得同一段收听时长被算两次。
+  Future<void>? _inFlight;
+
+  /// [close] 时采样的最终位置；开会话途中就关书时，补关会话要带它而不是会话里的旧位置。
+  double? _finalPosition;
+  Duration _finalListened = Duration.zero;
   DateTime _attachedAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _pausedAt = DateTime.fromMillisecondsSinceEpoch(0);
   bool _checkingServer = false;
@@ -110,6 +126,7 @@ class AudiobookshelfProgressSync {
     host.addListener(_onHostChanged);
     _timer = _timerFactory(interval, () => unawaited(flush()));
 
+    _resolving = true;
     try {
       final AudiobookshelfMediaProgress? stored = await _readProgress();
       final AudiobookshelfPlaySession session = await api.startPlay(
@@ -118,7 +135,8 @@ class AudiobookshelfProgressSync {
         episodeId: binding.episodeId,
       );
       if (_closed) {
-        // 等会话的功夫书已经关了：别留一个无人收尾的服务器会话。
+        // 等会话的功夫书已经关了：用关书那一刻的位置把会话收尾（close() 在续播判定
+        // 完成前不发网络请求，最终位置只能经这里写上服务器）。
         unawaited(_closeQuietly(session));
         return;
       }
@@ -129,6 +147,8 @@ class AudiobookshelfProgressSync {
       );
     } catch (e) {
       _report('startPlay', e);
+    } finally {
+      _resolving = false;
     }
   }
 
@@ -148,18 +168,20 @@ class AudiobookshelfProgressSync {
     final RemotePlaybackHost? host = _host;
     if (host == null || _closed) return;
     if (host.isPlaying() &&
-        _now().difference(_attachedAt) > kAudiobookshelfResumeWhilePlayingWindow) {
+        _now().difference(_attachedAt) >
+            kAudiobookshelfResumeWhilePlayingWindow) {
       return;
     }
     if ((serverSeconds - _absoluteSeconds()).abs() <=
         kAudiobookshelfResumeJumpThresholdSeconds) {
       return;
     }
-    // 服务器那条比本机最后一次写入旧得多：本机后听的，别拿旧位置覆盖它。
+    // 服务器那条比本机（开书前）最后一次写入旧得多：本机后听的，别拿旧位置覆盖它。
+    final int? localAt = _localProgressAtOnOpen;
     if (lastUpdateMs != null &&
-        _lastPushedAtMs > binding.createdAt &&
+        localAt != null &&
         lastUpdateMs <
-            _lastPushedAtMs - kAudiobookshelfClockSkewTolerance.inMilliseconds) {
+            localAt - kAudiobookshelfClockSkewTolerance.inMilliseconds) {
       return;
     }
     await _jumpTo(serverSeconds);
@@ -190,6 +212,10 @@ class AudiobookshelfProgressSync {
           kAudiobookshelfResumeJumpThresholdSeconds) {
         await _jumpTo(stored.currentTimeSeconds);
       }
+    } catch (e) {
+      // 这里是 unawaited 调用的：不接住就成了未处理的异步异常。跳转失败（例如服务器
+      // 记的时长比本机实际解码出来的长，restoreTo 越界）照常记日志、不打断播放。
+      _report('recheck', e);
     } finally {
       _checkingServer = false;
     }
@@ -241,45 +267,65 @@ class AudiobookshelfProgressSync {
     if (!playing) {
       _pausedAt = _now();
       unawaited(flush());
-    } else if (_now().difference(_pausedAt) > kAudiobookshelfRecheckAfterPause) {
+    } else if (_now().difference(_pausedAt) >
+        kAudiobookshelfRecheckAfterPause) {
       unawaited(_recheckServer());
     }
   }
 
   /// 立即同步一次（定时器 / 暂停触发）。进行中的同步不重入。
-  Future<void> flush() async {
-    if (_flushing || _closed || _host == null) return;
+  Future<void> flush() {
+    if (_flushing || _closed || _resolving || _host == null) {
+      return Future<void>.value();
+    }
+    return _inFlight = _flushOnce();
+  }
+
+  Future<void> _flushOnce() async {
     _flushing = true;
     try {
       _accrue();
       final double position = _absoluteSeconds();
-      final double listened = _pendingListened.inMilliseconds / 1000;
+      final Duration listened = _pendingListened;
       final double? last = _lastSyncedPosition;
       // 没在听、位置也没动：不发无意义的请求。
-      if (listened <= 0 && last != null && (position - last).abs() < 1) return;
+      if (listened <= Duration.zero &&
+          last != null &&
+          (position - last).abs() < 1) {
+        return;
+      }
       // 先记「本机写过位置」再发：离线时发不出去，本机的位置也比服务器旧记录新。
-      if (_movedLocally(position, listened)) _stampLocalWrite();
+      if (_movedLocally(position, _seconds(listened))) _stampLocalWrite();
       await _send(position, listened);
     } finally {
       _flushing = false;
+      _inFlight = null;
     }
   }
 
-  Future<void> _send(double position, double listened) async {
+  static double _seconds(Duration d) => d.inMilliseconds / 1000;
+
+  /// 一次同步成功：只扣掉这次发出去的那段时长——请求在途期间新攒的不能一起清掉。
+  void _markSent(double position, Duration sent) {
+    _pendingListened -= sent;
+    if (_pendingListened < Duration.zero) _pendingListened = Duration.zero;
+    _lastSyncedPosition = position;
+  }
+
+  Future<void> _send(double position, Duration listened) async {
     final AudiobookshelfPlaySession? session = _session;
     try {
       if (session != null) {
         await api.syncSession(
           session.id,
           currentTimeSeconds: position,
-          timeListenedSeconds: listened,
+          timeListenedSeconds: _seconds(listened),
           durationSeconds: _durationSeconds,
         );
       } else {
         await _patch(position);
       }
-      _pendingListened = Duration.zero;
-      _lastSyncedPosition = position;
+      _markSent(position, listened);
       _reportedFailure = false;
     } on ExternalProviderFailure catch (failure) {
       if (failure.kind == ExternalProviderFailureKind.notFound &&
@@ -288,8 +334,7 @@ class AudiobookshelfProgressSync {
         _session = null;
         try {
           await _patch(position);
-          _pendingListened = Duration.zero;
-          _lastSyncedPosition = position;
+          _markSent(position, listened);
           return;
         } catch (e) {
           _report('patchProgress', e);
@@ -311,9 +356,13 @@ class AudiobookshelfProgressSync {
 
   /// 记下本机最后一次写位置的时间（落库），下次开书据此判断谁的位置更新。
   void _stampLocalWrite() {
-    _lastPushedAtMs = _now().millisecondsSinceEpoch;
+    final int nowMs = _now().millisecondsSinceEpoch;
     final Future<void> Function(int nowMs)? hook = _onPushed;
-    if (hook != null) unawaited(hook(_lastPushedAtMs).catchError((_) {}));
+    if (hook != null) {
+      unawaited(
+        hook(nowMs).catchError((Object e) => _onError?.call('stamp', e)),
+      );
+    }
   }
 
   Future<void> _patch(double position) => api.patchProgress(
@@ -331,27 +380,41 @@ class AudiobookshelfProgressSync {
     _timer?.cancel();
     _timer = null;
     host?.removeListener(_onHostChanged);
+    // 在途的同步先落定：它成功后会扣掉自己发出去的时长，否则下面再算一遍就重复了。
+    final Future<void>? inFlight = _inFlight;
+    if (inFlight != null) {
+      try {
+        await inFlight.timeout(const Duration(seconds: 8));
+      } on TimeoutException {
+        // 超时就按没发成处理：那段时长仍留在 _pendingListened 里由 close 带上。
+      }
+    }
     double? position;
-    double listened = 0;
+    Duration listened = Duration.zero;
     if (host != null) {
       _accrue();
       position = _absoluteSeconds();
-      listened = _pendingListened.inMilliseconds / 1000;
+      listened = _pendingListened;
     }
-    if (position != null && _movedLocally(position, listened)) {
+    if (position != null && _movedLocally(position, _seconds(listened))) {
       _stampLocalWrite();
     }
     _closed = true;
+    _finalPosition = position;
+    _finalListened = listened;
     final AudiobookshelfPlaySession? session = _session;
     _session = null;
-    if (position == null) return;
+    // 会话还没开出来（续播判定没做完）：此刻不知道服务器上是不是别的设备的新进度，
+    // 不推。attach 等到会话后会用 [_finalPosition] 收尾（见 [_closeQuietly]）；会话
+    // 开不出来（离线）时本机写入时间已经落库，下次开书照样以本机为准。
+    if (position == null || (_resolving && session == null)) return;
     try {
       if (session != null) {
         await api
             .closeSession(
               session.id,
               currentTimeSeconds: position,
-              timeListenedSeconds: listened,
+              timeListenedSeconds: _seconds(listened),
               durationSeconds: _durationSeconds,
             )
             .timeout(const Duration(seconds: 8));
@@ -367,11 +430,13 @@ class AudiobookshelfProgressSync {
     try {
       await api.closeSession(
         session.id,
-        currentTimeSeconds: session.currentTimeSeconds,
-        timeListenedSeconds: 0,
+        currentTimeSeconds: _finalPosition ?? session.currentTimeSeconds,
+        timeListenedSeconds: _seconds(_finalListened),
         durationSeconds: session.durationSeconds,
       );
-    } catch (_) {}
+    } catch (e) {
+      _report('close', e);
+    }
   }
 
   /// 同一串连续失败只报一次（离线时每 30 秒一次会刷屏）。
