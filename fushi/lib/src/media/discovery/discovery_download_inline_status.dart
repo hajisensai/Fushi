@@ -12,14 +12,25 @@
 /// [discoveryDownloadProgress]），两处说法逐字一致。
 library;
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart'
     show discoveryDownloadProgress, discoveryDownloadStatusLabel;
+import 'package:fushi/src/models/app_model.dart' show appProvider;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/engine_listenable.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:material_ui/material_ui.dart';
+
+/// 发现源直链下载队列（[AppModel.discoveryDownloadQueue]，惰性单例、生命周期随
+/// AppModel）。只在 widget 里读队列的页面经它取，而不是在 build 里直接读整个
+/// [appProvider]：页面的其余依赖都是注入的（如 Audiobookshelf 的 `apiFor`），测试
+/// 覆写这一个 provider 即可，不必构造整份 AppModel。
+final Provider<DiscoveryDownloadQueue> discoveryDownloadQueueProvider =
+    Provider<DiscoveryDownloadQueue>(
+      (Ref ref) => ref.read(appProvider).discoveryDownloadQueue,
+    );
 
 /// [tasks] 里 `sourceId + id` 对应资源**最近入队**的一条任务（含已结束的）；没有返回
 /// null。队列按入队顺序保存任务、重试是就地复活，所以「最后一条」就是当前该看的那条。

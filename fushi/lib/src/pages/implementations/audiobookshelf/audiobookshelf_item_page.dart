@@ -216,7 +216,7 @@ class _AudiobookshelfItemPageState
     required WidgetBuilder idle,
   }) => DiscoveryDownloadInlineStatus(
     key: ValueKey<String>('abs-download-status-${_resourceIdFor(episode)}'),
-    queue: _appModel.discoveryDownloadQueue,
+    queue: ref.read(discoveryDownloadQueueProvider),
     sourceId: _sourceId,
     itemId: _resourceIdFor(episode),
     idleBuilder: idle,

@@ -1,5 +1,6 @@
 // Books 库里的 Audiobookshelf 标签页：库与条目、只有电子书的条目不列、「继续收听」、分页、
 // 搜索、加载失败可重试、切换媒体库、点封面进详情页（书 / 播客）。假服务器 + 真组件。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,11 +8,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
+import 'package:fushi/src/media/discovery/discovery_download_inline_status.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_library_view.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
@@ -199,8 +203,17 @@ void main() {
       client: MockClient(server.handle),
     );
     addTearDown(api.close);
+    // 条目页的行内下载状态只读这条队列；其余依赖都经 apiFor 注入，不构造 AppModel。
+    final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
+      resolvePayload: (DiscoveryResourceItem item) =>
+          Completer<DiscoveryPayload>().future,
+      importer: (DiscoveryDownloadTask task, File file) async =>
+          const DiscoveryImportOutcome(),
+    );
+    addTearDown(queue.dispose);
     await tester.pumpWidget(
       ProviderScope(
+        overrides: [discoveryDownloadQueueProvider.overrideWithValue(queue)],
         child: TranslationProvider(
           child: MaterialApp(
             home: Scaffold(
@@ -250,10 +263,12 @@ void main() {
       },
     ];
     await pumpView(tester);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
     expect(
       tester
-          .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator))
+          .widget<FushiLinearProgressIndicator>(
+            find.byType(FushiLinearProgressIndicator),
+          )
           .value,
       0.5,
     );
