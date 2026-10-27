@@ -232,8 +232,14 @@ class GptSovitsInstallLayout {
   GptSovitsLaunchSpec launchSpec(int port) => GptSovitsLaunchSpec(
     executable: python,
     // 与官方 go-webui.bat 同一形态：-I 隔离用户 site-packages。
+    // `-I` 同时让 python 无视 PYTHON* 环境变量，所以 [LocalServiceProcess] 注入的
+    // PYTHONIOENCODING / PYTHONUTF8 在这里不生效：中文 Windows 上服务端 print / 写日志
+    // 用系统代码页，带中日文的请求直接 400（`'charmap' codec can't encode`），界面上只
+    // 看到「语音服务拒绝了这个句子」。`-X utf8` 是命令行开关，`-I` 下照样生效。
     arguments: <String>[
       '-I',
+      '-X',
+      'utf8',
       'api_v2.py',
       '-a',
       '127.0.0.1',
