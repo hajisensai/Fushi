@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3425 条。点号进各自文件。
+> 共 3428 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3824](bugs/BUG-3824-video-loop-current-line-toggle.md) | 🚧 | 🚧 | 视频页没有「循环当前句」开关，精听只能反复按重播 |
+| [BUG-3823](bugs/BUG-3823-video-copy-current-line-shortcut.md) | 🚧 | 🚧 | 视频页没有「复制当前台词」快捷键，只能开字幕列表逐行点 |
+| [BUG-3822](bugs/BUG-3822-video-subtitle-list-remember-tab.md) | 🚧 | 🚧 | 视频字幕栏每次都从「全部」页签打开，不记得上次停在「收藏」 |
 | [BUG-3821](bugs/BUG-3821-video-replay-cue-autoplay.md) | ✅ | ✅ | 视频暂停时「重播当前句 / 重播上一句」只跳到句首不起播 |
 | [BUG-3820](bugs/BUG-3820-video-jump-pill-hover-flicker.md) | ✅ | ✅ | Windows 视频页「返回跳转前位置」胶囊在鼠标停在边缘时持续闪烁、上下抖动 |
 | [BUG-3819](bugs/BUG-3819-video-seek-thumbnail-under-subtitle.md) | ✅ | ✅ | 进度条悬停缩略图被字幕挡住 |

@@ -2314,6 +2314,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         initialTapLookup: _appModel.videoSubtitleListTapLookup,
         onTapLookupChanged: (bool value) =>
             unawaited(_appModel.setVideoSubtitleListTapLookup(value)),
+        initialFilter: videoSubtitleListFilterFromName(
+          _appModel.videoSubtitleListFilter,
+        ),
+        onFilterChanged: (VideoSubtitleListFilter value) =>
+            unawaited(_appModel.setVideoSubtitleListFilter(value.name)),
         initialFontScaleIndex: _appModel.videoSubtitleListFontScaleIndex,
         onFontScaleIndexChanged: (int value) =>
             unawaited(_appModel.setVideoSubtitleListFontScaleIndex(value)),

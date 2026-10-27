@@ -293,6 +293,80 @@ void main() {
       expect(tapped!.startMs, 4000);
     });
 
+    testWidgets(
+        'xlzGuK5YmD: opens on the remembered tab and reports tab switches',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'alpha line'),
+        _cue(1, 2000, 3000, 'beta favorite'),
+      ]);
+      final List<VideoSubtitleListFilter> reported =
+          <VideoSubtitleListFilter>[];
+      Widget panel(VideoSubtitleListFilter initial) => _wrap(
+            VideoSubtitleJumpPanel(
+              key: ValueKey<VideoSubtitleListFilter>(initial),
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onClose: () {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (AudioCue cue) => cue.text.contains('favorite'),
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+              width: 520,
+              initialFilter: initial,
+              onFilterChanged: reported.add,
+            ),
+          );
+
+      // 上次停在「收藏」：重开直接是收藏页签，不必先进「全部」再切。
+      await tester.pumpWidget(panel(VideoSubtitleListFilter.favorites));
+      await tester.pumpAndSettle();
+      expect(find.text('beta favorite'), findsOneWidget);
+      expect(find.text('alpha line'), findsNothing);
+      expect(reported, isEmpty, reason: '恢复初值不是一次用户切换');
+
+      await tester.tap(find.text(t.video_subtitle_filter_all));
+      await tester.pumpAndSettle();
+      expect(find.text('alpha line'), findsOneWidget);
+      expect(reported, <VideoSubtitleListFilter>[VideoSubtitleListFilter.all]);
+
+      // 上次停在「全部」：即使有收藏也开「全部」（不按「有收藏就开收藏」硬判）。
+      await tester.pumpWidget(panel(VideoSubtitleListFilter.all));
+      await tester.pumpAndSettle();
+      expect(find.text('alpha line'), findsOneWidget);
+      expect(find.text('beta favorite'), findsOneWidget);
+    });
+
+    test('xlzGuK5YmD: persisted tab name round-trips, unknown falls back to all',
+        () {
+      for (final VideoSubtitleListFilter f in VideoSubtitleListFilter.values) {
+        expect(videoSubtitleListFilterFromName(f.name), f);
+      }
+      expect(videoSubtitleListFilterFromName(null), VideoSubtitleListFilter.all);
+      expect(
+        videoSubtitleListFilterFromName('bogus'),
+        VideoSubtitleListFilter.all,
+      );
+      for (final String page in <String>[
+        'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+        'lib/src/pages/implementations/web_video_fushi_page.dart',
+      ]) {
+        final String src = File(page).readAsStringSync();
+        expect(src, contains('initialFilter: videoSubtitleListFilterFromName('),
+            reason: '$page 必须用记住的页签打开列表');
+        expect(src, contains('.setVideoSubtitleListFilter('),
+            reason: '$page 必须把页签切换落盘');
+      }
+      // 持久化值冻结：改枚举名会让老用户的记忆失效。
+      expect(VideoSubtitleListFilter.favorites.name, 'favorites');
+      expect(VideoSubtitleListFilter.all.name, 'all');
+    });
+
     testWidgets('row has no card-selection checkbox', (
       WidgetTester tester,
     ) async {

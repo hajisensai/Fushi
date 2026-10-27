@@ -513,7 +513,17 @@ class VideoSubtitleListHitTester {
 /// 路径）。[classic] / [m3e] 显式钉死一种（经典行的几何守卫测试钉 [classic]）。
 enum VideoSubtitleListLayout { auto, m3e, classic }
 
+/// 字幕列表页签（全部 / 收藏）。[Enum.name] 是持久化值（偏好键
+/// `video_subtitle_list_filter`），冻结不改名。
 enum VideoSubtitleListFilter { all, favorites }
+
+/// 把持久化的页签名解析回 [VideoSubtitleListFilter]；未写过 / 认不出时回落 [all]。
+VideoSubtitleListFilter videoSubtitleListFilterFromName(String? name) {
+  for (final VideoSubtitleListFilter f in VideoSubtitleListFilter.values) {
+    if (f.name == name) return f;
+  }
+  return VideoSubtitleListFilter.all;
+}
 
 class VideoSubtitleJumpPanel extends StatefulWidget {
   const VideoSubtitleJumpPanel({
@@ -534,6 +544,8 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.onAutoScrollChanged,
     this.initialTapLookup = true,
     this.onTapLookupChanged,
+    this.initialFilter = VideoSubtitleListFilter.all,
+    this.onFilterChanged,
     this.initialFontScaleIndex = _kDefaultFontScaleIndex,
     this.onFontScaleIndexChanged,
     this.hoverAutoLookupEnabled = false,
@@ -594,6 +606,13 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
 
   /// 用户切换「点字幕查词」时回调，页面层落 Drift preferences（null 时纯本地切换）。
   final ValueChanged<bool>? onTapLookupChanged;
+
+  /// 打开列表时停在哪个页签（xlzGuK5YmD：记住上次打开的页签，下次打开恢复；不按
+  /// 「有收藏就开收藏」硬判）。
+  final VideoSubtitleListFilter initialFilter;
+
+  /// 用户切换页签时回调，页面层落 Drift preferences（null 时纯本地切换）。
+  final ValueChanged<VideoSubtitleListFilter>? onFilterChanged;
 
   /// 行字号档位初值（BUG-878）：面板内 [_fontScaleIndex] 以此为种子（seed 时 clamp 到
   /// [_kFontScaleSteps] 范围），用户 A+/A- 或 Ctrl+滚轮调节时回调 [onFontScaleIndexChanged]
@@ -722,7 +741,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     0,
     _kFontScaleSteps.length - 1,
   );
-  VideoSubtitleListFilter _filter = VideoSubtitleListFilter.all;
+  late VideoSubtitleListFilter _filter = widget.initialFilter;
 
   /// BUG-878：Ctrl / ⌘ 是否按住。按住时列表滚动物理改为 [NeverScrollableScrollPhysics]，
   /// 让 Ctrl+滚轮只缩字号而不同时滚动列表（裸滚轮仍正常滚列表，浏览器式缩放）。由
@@ -1367,14 +1386,18 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   void _setFilter(Set<VideoSubtitleListFilter> next) {
     if (next.isEmpty) return;
+    final VideoSubtitleListFilter picked = next.single;
+    if (picked == _filter) return;
     setState(() {
-      _filter = next.single;
+      _filter = picked;
       _hoveredIndex = -1;
       _lastScrolledIndex = -1;
       // 过滤集变 → visibleIndex 重排，旧 visibleIndex→key 映射作废（TODO-340）。
       _rowKeys.clear();
       _clearCueCaches();
     });
+    // xlzGuK5YmD：通知页面层记住这次的页签。
+    widget.onFilterChanged?.call(picked);
     _scheduleScrollToCurrentCue();
   }
 
