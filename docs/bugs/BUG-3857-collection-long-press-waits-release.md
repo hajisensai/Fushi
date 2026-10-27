@@ -1,4 +1,4 @@
-## BUG-3855 · collection-long-press-waits-release
+## BUG-3857 · collection-long-press-waits-release
 - **报告**：2026-10-28（用户：「合集内长按还要自己松手才能出抽屉，逻辑要和外面一样长按就自动出了不要另外写一套逻辑」；追加：「所有地方都要支持拖动排序，合集内外都要支持无论书还是视频」「游戏的逻辑也要一样」）
 - **真实性**：✅ 真 bug。合集详情页（书 / 漫画 / 游戏共用的 `MediaCollectionGridDetailPage` 与视频的 `MediaCollectionDetailPage`）走 `FushiReorderableGrid`，触屏长按同时承载「拿起拖拽」与「弹菜单」，只能等松手看有没有移动来消歧：`fushi/lib/src/utils/components/fushi_reorderable_grid.dart` 的 `_touchLongPressEnd` 在未移动时才调 `onContextMenu`。库页卡片走 `InkWell.onLongPress`，长按到时就出抽屉，两边时机不一致。
 - **[x] ① 已修复** — 长按统一为到时即弹菜单（`FushiReorderableGrid` 常态下 `onLongPressStart` 直接调 `onContextMenu`，触屏不再起拖）；触屏重排改由条目菜单里的「排序」进入排序模式（`fushi/lib/src/utils/components/library_reorder.dart`：页面 State 混入 `LibraryReorderHost`，`showMediaItemActions` 把入口带进菜单路由，`MediaItemDialogFrame` 统一补一项「排序」，所有条目菜单只一处接线），排序模式下按住 `kPressTimeout` 即拖，底部 `LibraryReorderBar`「完成」退出。书架 / 漫画库 / 视频库（系列墙与全部视频）/ 游戏库新增「手动」排序（`ShelfSortMode.manual` / `GalgameSortField.manual`，顺序存偏好 `library_manual_order::<库>`，合并语义 `moveInShelfManualOrder`），合集两页接同一套排序模式。

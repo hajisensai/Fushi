@@ -522,45 +522,50 @@ class MediaItemDialogFrame extends StatelessWidget {
   }
 
   /// 菜单从可排序的库页 / 合集页弹出时补上的「排序」（见 [LibraryReorderScope]）：
-  /// 关菜单后进入该页的排序模式。补完后的骨架包在入口为 null 的 scope 里，不会再补
-  /// 第二次。
-  Widget _withReorderAction(
+  /// 关菜单后进入该页的排序模式。
+  ///
+  /// 返回的是**只供本次 build 取数的值对象**，不挂进 widget 树：此前把补好动作的
+  /// 骨架当子 widget 再包一层，树里就有两个 [MediaItemDialogFrame]（外层还把自己的
+  /// [key] 原样传给内层，带 GlobalKey 的调用方会撞 key），按类型找骨架的调用方与
+  /// 测试全部失配。
+  MediaItemDialogFrame _withReorderAction(
     BuildContext context,
     VoidCallback onStartReorder,
-  ) => LibraryReorderScope(
-    onStartReorder: null,
-    child: MediaItemDialogFrame(
-      key: key,
-      title: title,
-      cover: cover,
-      author: author,
-      showLaunchAction: showLaunchAction,
-      launchLabel: launchLabel,
-      onLaunch: onLaunch,
-      quickActions: quickActions,
-      listActions: <DialogListAction>[
-        ...listActions,
-        DialogListAction(
-          label: t.library_reorder_action,
-          icon: FushiIcons.dragIndicator,
-          onPressed: () {
-            Navigator.pop(context);
-            onStartReorder();
-          },
-        ),
-      ],
-      dangerActions: dangerActions,
-      coverBackdrop: coverBackdrop,
-      coverMaterial: coverMaterial,
-    ),
+  ) => MediaItemDialogFrame(
+    title: title,
+    cover: cover,
+    author: author,
+    showLaunchAction: showLaunchAction,
+    launchLabel: launchLabel,
+    onLaunch: onLaunch,
+    quickActions: quickActions,
+    listActions: <DialogListAction>[
+      ...listActions,
+      DialogListAction(
+        label: t.library_reorder_action,
+        icon: FushiIcons.dragIndicator,
+        onPressed: () {
+          Navigator.pop(context);
+          onStartReorder();
+        },
+      ),
+    ],
+    dangerActions: dangerActions,
+    coverBackdrop: coverBackdrop,
+    coverMaterial: coverMaterial,
   );
 
   @override
   Widget build(BuildContext context) {
     final VoidCallback? onStartReorder = libraryReorderEntryOf(context);
-    if (onStartReorder != null) {
-      return _withReorderAction(context, onStartReorder);
-    }
+    final MediaItemDialogFrame frame = onStartReorder == null
+        ? this
+        : _withReorderAction(context, onStartReorder);
+    return frame._buildLayout(context);
+  }
+
+  /// 按 [MediaItemActionsHost] 给的容器形态排版（右键菜单 / 抽屉 / 对话框）。
+  Widget _buildLayout(BuildContext context) {
     final MediaItemActionsLayout layout = MediaItemActionsHost.layoutOf(
       context,
     );
