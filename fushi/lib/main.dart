@@ -75,6 +75,7 @@ import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
+import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudyClock;
@@ -613,6 +614,10 @@ void main([List<String> args = const <String>[]]) {
         // BUG-2588：把上次运行主线程停泵看门狗抓 hang dump 的记录折进错误日志（仅
         // Windows），让「卡死后强杀」在日志里与 native 崩溃分开、并指向可分享的 hang-*.dmp。
         HangWatchdogLog.foldIntoErrorLog(),
+        // 上次进程「怎么没的」：会话标记（全平台）+ Android ApplicationExitInfo /
+        // onTrimMemory、Windows 崩溃摘要、macOS .ips、iOS MetricKit 的摘要折进错误
+        // 日志，随反馈日志上传（Dart 接不到的原生崩溃 / 被系统杀）。
+        PreviousExitLog.foldIntoErrorLog(),
       ]);
 
       /// Initialise local file-based logging (mobile only).

@@ -37,6 +37,8 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
@@ -71,6 +73,23 @@ const String kSrsSyncStoreUnavailable = 'srs store unavailable';
 
 /// 升级到同步 v2 后还没确认过首次同步（设计 §13 第 5 条：首次 v2 同步弹窗确认一次，说明「并入、不覆盖」）。
 const String kSrsSyncAwaitingConfirm = 'srs first v2 sync not confirmed';
+
+/// 复习同步一轮的活动面包屑名（[ActivityBreadcrumb]）。
+const String kSrsSyncActivity = 'srs_sync';
+
+/// [SrsSyncScheduler.syncWithBackend] 的轮次统计：排队数、在跑数、被合并的请求数、连续
+/// 失败数与上次失败时刻。只用于诊断（面包屑 / 失败日志）。
+class SrsSyncRoundStats {
+  int queued = 0;
+  int running = 0;
+  int coalesced = 0;
+  int consecutiveFailures = 0;
+  DateTime? lastFailureAt;
+
+  String describe() =>
+      'queued=$queued running=$running coalesced=$coalesced '
+      'consecutiveFailures=$consecutiveFailures';
+}
 
 /// 已配对设备往本机 host 的 SRS 目录写入后，等这么久没有新写入再跑一次本机目录。
 /// 一轮客户端同步会连写探针 / 批次 / cursor 几个文件，去抖把它们并成一次。
@@ -473,10 +492,105 @@ class SrsSyncScheduler {
   /// 用一个已认证后端跑一轮（常规同步的通道后置步骤直接调它）。store 打不开（或调度器已卸下）
   /// 时这一轮没跑，报告带 [kSrsSyncStoreUnavailable]——「立即同步」据此如实报未同步，不算成功。
   /// [directoryKey] 缺省时按后端算（[directoryKeyOf]）。
+  ///
+  /// **排队中的同一请求合并**（反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）：本机推送（每答一张
+  /// 卡去抖 5 s 触发一次）、长轮询、进复习 tab、后置步骤都走这里；host 时断时续时每轮要先花
+  /// 数秒逐个探测死地址再失败，旧实现把每次触发都追加进 [_serially] 的 FIFO，队列越排越长、
+  /// 同一个后端在一轮长同步之后被连续重放。同一后端 + 同一 [directoryKey] 已有一轮**排着
+  /// 还没开跑**时直接复用它的 future：那一轮开跑时会看到此刻之前的全部本机改动，合并不丢数据。
+  /// 已经开跑的不复用（它可能已经过了取发件箱那一步）。
   Future<SrsSync2Report> syncWithBackend(
     SyncAssetStore backend, {
     String? directoryKey,
-  }) => _serially(() => _syncWithBackend(backend, directoryKey));
+  }) {
+    final (SyncAssetStore, String?) requestKey = (backend, directoryKey);
+    final Future<SrsSync2Report>? queued = _queuedRounds[requestKey];
+    if (queued != null) {
+      _roundStats.coalesced++;
+      return queued;
+    }
+    _roundStats.queued++;
+    late final Future<SrsSync2Report> round;
+    round = _serially(() {
+      if (identical(_queuedRounds[requestKey], round)) {
+        _queuedRounds.remove(requestKey);
+      }
+      _roundStats.queued--;
+      return _trackRound(
+        backend.runtimeType.toString(),
+        () => _syncWithBackend(backend, directoryKey),
+      );
+    });
+    _queuedRounds[requestKey] = round;
+    return round;
+  }
+
+  /// 排着还没开跑的 [syncWithBackend] 轮次（见其合并说明）。
+  final Map<(SyncAssetStore, String?), Future<SrsSync2Report>> _queuedRounds =
+      <(SyncAssetStore, String?), Future<SrsSync2Report>>{};
+
+  /// 轮次统计（诊断用）。
+  final SrsSyncRoundStats _roundStats = SrsSyncRoundStats();
+
+  @visibleForTesting
+  SrsSyncRoundStats get roundStats => _roundStats;
+
+  /// 一轮的取证：开跑时**同步**写活动面包屑（后端、排队数、连续失败数、RSS），阶段变化时
+  /// 覆写，跑完删掉——进程死在同步里（三次小米闪退都在补传积压期间、Dart 零日志），下次
+  /// 启动 [PreviousExitLog] 会报「上次进程在 srs_sync 进行中没了」+ 当时的阶段与内存。
+  /// 失败时把队列 / 失败计数 / 内存写进诊断段，随反馈上传。
+  Future<SrsSync2Report> _trackRound(
+    String backendLabel,
+    Future<SrsSync2Report> Function() body,
+  ) async {
+    final SrsSyncRoundStats stats = _roundStats;
+    stats.running++;
+    String describe(String stage) =>
+        'stage=$stage backend=$backendLabel ${stats.describe()} '
+        '${_memoryDescription()}';
+    SrsSyncStage? lastStage;
+    void onProgress() {
+      final SrsSyncStage? stage = srsSyncProgress.value?.stage;
+      if (stage == null || stage == lastStage) return;
+      lastStage = stage;
+      ActivityBreadcrumb.mark(kSrsSyncActivity, describe(stage.name));
+    }
+
+    ActivityBreadcrumb.mark(kSrsSyncActivity, describe('start'));
+    srsSyncProgress.addListener(onProgress);
+    try {
+      final SrsSync2Report report = await body();
+      if (report.error == null) {
+        stats.consecutiveFailures = 0;
+      } else {
+        _noteRoundFailure(describe, 'report error: ${report.error}');
+      }
+      return report;
+    } catch (e) {
+      _noteRoundFailure(describe, e);
+      rethrow;
+    } finally {
+      srsSyncProgress.removeListener(onProgress);
+      stats.running--;
+      ActivityBreadcrumb.clear(kSrsSyncActivity);
+    }
+  }
+
+  void _noteRoundFailure(String Function(String) describe, Object error) {
+    final DateTime now = _clock();
+    final DateTime? previous = _roundStats.lastFailureAt;
+    _roundStats
+      ..consecutiveFailures += 1
+      ..lastFailureAt = now;
+    ErrorLogService.instance.logDiagnostic(
+      'SrsSyncScheduler.roundFailed',
+      '${describe('failed')} previousFailureAt=${previous?.toIso8601String()}: '
+          '$error',
+    );
+  }
+
+  static String _memoryDescription() =>
+      'rss=${ProcessInfo.currentRss >> 20}MB maxRss=${ProcessInfo.maxRss >> 20}MB';
 
   Future<SrsSync2Report> _syncWithBackend(
     SyncAssetStore backend,

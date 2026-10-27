@@ -995,6 +995,9 @@ class _BookImportDialogState extends State<BookImportDialog>
     try {
       final FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.image,
+        // file_picker 安卓默认在裸线程里重压缩 image/*，Android 9/10 缺存储写权限
+        // 或解码失败时直接杀进程（BUG-3601 复查 / WkL9BvD7Z9），一律关掉。
+        allowCompression: false,
       );
       if (result == null || !mounted) return;
       final String? path = result.files.first.path;
