@@ -157,6 +157,37 @@ bool _showingAnswer(WidgetTester tester) => tester
     .face
     .showingAnswer;
 
+/// Windows 平台视图卡面的替身：自带 `autofocus` 焦点节点，指针按下即抢 Flutter 焦点
+/// （同 flutter_inappwebview_windows 的 custom_platform_view.dart）。
+class _PlatformViewLikeFace extends StatefulWidget {
+  const _PlatformViewLikeFace({required this.face});
+
+  final SrsCardFace face;
+
+  @override
+  State<_PlatformViewLikeFace> createState() => _PlatformViewLikeFaceState();
+}
+
+class _PlatformViewLikeFaceState extends State<_PlatformViewLikeFace> {
+  final FocusNode _node = FocusNode(debugLabel: 'fake-platform-view');
+
+  @override
+  void dispose() {
+    _node.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Focus(
+    autofocus: true,
+    focusNode: _node,
+    child: Listener(
+      onPointerDown: (PointerDownEvent _) => _node.requestFocus(),
+      child: SrsPlainCardFace(face: widget.face),
+    ),
+  );
+}
+
 /// 把段落写成 `*加粗*` 记号，便于断言强调落在哪。
 String _marks(List<SrsInline> segs) =>
     segs.map((SrsInline x) => x.bold ? '*${x.text}*' : x.text).join();
@@ -208,6 +239,104 @@ void main() {
       expect(_showingAnswer(tester), isTrue, reason: '评分后空格应翻面');
       await _unmount(tester);
     });
+  });
+
+  group('BUG-3855 纯键盘空格背卡：翻到答案面后空格 / 数字键仍生效', () {
+    // 整面卡面换成「带 autofocus 焦点节点、按下即 requestFocus」的替身，模拟 Windows
+    // 平台视图（custom_platform_view.dart 的 Focus(autofocus: true) + 指针按下抢焦）。
+    Widget platformViewLikeFace(BuildContext context, SrsCardFace face) {
+      return _PlatformViewLikeFace(face: face);
+    }
+
+    for (final bool native in <bool>[true, false]) {
+      for (final String before in <String>[
+        'none',
+        'clickShowAnswer',
+        'clickCard',
+      ]) {
+        testWidgets('native=$native before=$before：空格翻面→空格良好→空格翻面…', (
+          WidgetTester tester,
+        ) async {
+          final SrsDbStore store = await _openStore(tester);
+          for (final String w in <String>['区別', '飲む', '食べる', '読む']) {
+            if (native) {
+              await _addFushiCard(tester, store, <String, String>{
+                'Expression': w,
+                'MainDefinition': 'x',
+                'Sentence': '<b>$w</b>です',
+              });
+            } else {
+              await tester.runAsync(
+                () => store.createNote(
+                  noteTypeId: store.lapisNoteTypeId,
+                  fieldsById: <String, String>{
+                    srsLapisFieldId(kSrsTestProfile, 'Expression'): w,
+                    srsLapisFieldId(kSrsTestProfile, 'MainDefinition'): 'x',
+                  },
+                ),
+              );
+            }
+          }
+          await _pumpReview(
+            tester,
+            store: store,
+            overrides: <Override>[
+              srsCardFaceBuilderProvider.overrideWithValue(
+                platformViewLikeFace,
+              ),
+            ],
+          );
+          final Finder rate3 = find.byKey(const ValueKey<String>('srs-rate-3'));
+          bool answerShown() => rate3.evaluate().isNotEmpty;
+
+          if (before == 'clickShowAnswer') {
+            await tester.tap(
+              find.byKey(const ValueKey<String>('srs-show-answer')),
+            );
+            await _settle(tester);
+            expect(answerShown(), isTrue);
+          } else if (before == 'clickCard') {
+            final Rect card = tester.getRect(
+              find.byKey(const ValueKey<String>('srs-card-surface')),
+            );
+            await tester.tapAt(card.bottomCenter - const Offset(0, 30));
+            await _settle(tester);
+            expect(answerShown(), isFalse);
+          }
+
+          // 3 张卡 × (翻面 + 评分)：每一下空格都必须生效，焦点始终在本页子树里。
+          bool shown = answerShown();
+          for (int i = 0; i < 6; i++) {
+            await tester.sendKeyEvent(LogicalKeyboardKey.space);
+            await _settle(tester, rounds: 20);
+            shown = !shown;
+            expect(
+              answerShown(),
+              shown,
+              reason: '第 ${i + 1} 下空格应${shown ? '翻到答案面' : '评「良好」换到下一张问题面'}',
+            );
+            final FocusNode? primary = FocusManager.instance.primaryFocus;
+            final FocusNode page = FocusManager.instance.rootScope.descendants
+                .firstWhere((FocusNode n) => n.debugLabel == 'srs-review');
+            expect(
+              primary == page || page.descendants.contains(primary),
+              isTrue,
+              reason: '键盘焦点必须留在复习页子树里（实际：${primary?.debugLabel}）',
+            );
+          }
+          // 答案面上数字键评分同样生效。
+          if (!answerShown()) {
+            await tester.sendKeyEvent(LogicalKeyboardKey.space);
+            await _settle(tester, rounds: 20);
+          }
+          expect(answerShown(), isTrue);
+          await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+          await _settle(tester, rounds: 20);
+          expect(answerShown(), isFalse, reason: '答案面按 3 应评「良好」');
+          await _unmount(tester);
+        });
+      }
+    }
   });
 
   group('#17 底栏重播键单独一行、在评分按钮上方', () {
