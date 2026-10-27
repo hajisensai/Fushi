@@ -29,6 +29,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 
 /// 某一卷的插图表 + 文件解析（兄弟卷由页面层在 isolate 解析后提供）。
 class ReaderGalleryVolumeImages {
@@ -1213,7 +1214,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     final List<EpubImageRef> unlocked = _unlocked;
     final EpubImageRef? viewerRef = _viewerRef();
     return Scaffold(
-      backgroundColor: tokens.surfaces.page,
+      backgroundColor: fushiPageBackgroundColor(context),
       body: Focus(
         focusNode: _focusNode,
         autofocus: true,

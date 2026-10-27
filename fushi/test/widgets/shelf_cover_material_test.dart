@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -89,6 +91,93 @@ void main() {
         .widgetList<AnimatedRotation>(find.byType(AnimatedRotation))
         .map((AnimatedRotation r) => r.turns);
     expect(turns.where((double t) => t != 0), hasLength(3));
+  });
+
+  // 2026-10-25 用户：合集扇形「克制一点，别出界、别和侧边重叠太多」。
+  test('扇形角度上限按几何反推：转开后外角正好贴住允许的半宽', () {
+    const double w = 120;
+    const double itemW = w;
+    const double itemH = 150;
+    const double limit = w / 2 + w * kShelfFanOverhang;
+    final double deg = shelfFanMaxDegrees(
+      itemW: itemW,
+      itemH: itemH,
+      halfLimit: limit,
+    );
+    expect(deg, greaterThan(0));
+    expect(deg, lessThanOrEqualTo(kShelfFanMaxDegrees));
+    final double rad = deg * math.pi / 180;
+    expect(
+      itemW / 2 * math.cos(rad) + itemH * math.sin(rad),
+      moreOrLessEquals(limit, epsilon: 0.01),
+    );
+    // 没有余量时不转；宽到怎么转都放得下时封顶。
+    expect(
+      shelfFanMaxDegrees(itemW: itemW, itemH: itemH, halfLimit: itemW / 2),
+      0,
+    );
+    expect(
+      shelfFanMaxDegrees(itemW: 10, itemH: 10, halfLimit: 1000),
+      kShelfFanMaxDegrees,
+    );
+  });
+
+  testWidgets('合集最前那本与单本同大（用户：单本和合集大小不协调）', (WidgetTester tester) async {
+    Future<Size> frontSize(List<Widget>? behind) async {
+      await tester.pumpWidget(
+        harness(
+          ShelfCoverFrame(stackedCovers: behind, child: cover('a')),
+          material: ShelfCoverMaterial.glossyBook,
+        ),
+      );
+      return tester.getSize(
+        find
+            .ancestor(
+              of: find.byKey(const ValueKey<String>('cover-a')),
+              matching: find.byType(ShelfMaterialSurface),
+            )
+            .first,
+      );
+    }
+
+    final Size single = await frontSize(null);
+    final Size pile = await frontSize(<Widget>[cover('b'), cover('c')]);
+    expect(pile, single);
+  });
+
+  testWidgets('扇形悬停时最远那本也不超出格子允许的范围', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      harness(
+        FushiHoverLift(
+          builder: (BuildContext _, bool __) => ShelfCoverFrame(
+            stackedCovers: <Widget>[cover('b'), cover('c'), cover('d')],
+            child: cover('a'),
+          ),
+        ),
+        material: ShelfCoverMaterial.glossyBook,
+      ),
+    );
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.byType(ShelfCoverFrame)));
+    await tester.pumpAndSettle();
+    final Size slot = tester.getSize(find.byType(ShelfCoverPile));
+    final double maxDeg = tester
+        .widgetList<AnimatedRotation>(find.byType(AnimatedRotation))
+        .map((AnimatedRotation r) => (r.turns * 360).abs())
+        .reduce(math.max);
+    final Size item = tester.getSize(find.byType(ShelfMaterialSurface).first);
+    final double rad = maxDeg * math.pi / 180;
+    final double reach =
+        item.width / 2 * math.cos(rad) + item.height * math.sin(rad);
+    expect(maxDeg, greaterThan(0));
+    expect(
+      reach,
+      lessThanOrEqualTo(slot.width / 2 + slot.width * kShelfFanOverhang + 0.01),
+    );
   });
 
   testWidgets('海报多季是右上叠层：最多 3 季', (WidgetTester tester) async {

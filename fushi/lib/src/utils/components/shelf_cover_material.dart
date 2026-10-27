@@ -465,10 +465,41 @@ class ShelfContactShadow extends StatelessWidget {
 const double kShelfContactShadowHeight = 16;
 const double kShelfContactShadowDrop = 6;
 
+/// 扇形最远那本悬停时外角最多探出格子半宽的比例（相对格子宽度）。封面与
+/// 单本同大、铺满整格，这点探出落在卡片内边距里。
+const double kShelfFanOverhang = 0.08;
+
+/// 扇形角度上限（度），宽格子里也不转得更开。
+const double kShelfFanMaxDegrees = 8;
+
+/// 悬停时扇形相对静止角度的放大倍数。
+const double kShelfFanHoverScale = 1.25;
+
+/// 宽 [itemW]、高 [itemH] 的封面绕底边中点转 θ 后，外角离中线
+/// `itemW/2·cosθ + itemH·sinθ`；返回让它不超过 [halfLimit] 的最大 θ（度），
+/// 夹在 [0, [kShelfFanMaxDegrees]]。
+double shelfFanMaxDegrees({
+  required double itemW,
+  required double itemH,
+  required double halfLimit,
+}) {
+  final double a = itemW / 2;
+  final double b = itemH;
+  if (a <= 0 || b <= 0 || halfLimit <= a) return 0;
+  // a·cosθ + b·sinθ = r·sin(θ + φ)，φ = atan2(a, b)。
+  final double r = math.sqrt(a * a + b * b);
+  if (halfLimit >= r) return kShelfFanMaxDegrees;
+  final double phi = math.atan2(a, b);
+  final double theta = (math.asin(halfLimit / r) - phi) * 180 / math.pi;
+  return theta.clamp(0.0, kShelfFanMaxDegrees).toDouble();
+}
+
 /// 多本排列（系列 / 多季 / 多作）：[covers] 首个是最前面那本，其后依次往后。
 ///
-/// - 书 / 卡盒 = 扇形：最多 4 本，绕底部下方一点转开（-10° / -4° / 3° / 0°），
-///   悬停时角度放大 1.7 倍并整体抬 4px；
+/// - 书 / 卡盒 = 扇形：最多 4 本，绕底边中点转开，悬停时再转开一点并整体抬
+///   4px。角度不写死：按封面几何反推（[shelfFanMaxDegrees]），最远那本悬停时
+///   外角最多探出格子 [kShelfFanOverhang]（落在卡片内边距里），不压旁边的
+///   卡、不出屏幕（2026-10-25 用户「克制一点，别出界、别和侧边重叠太多」）；
 /// - 海报 = 碟盒式叠层：最多 3 季往右上各错开 4px、越往后越暗，悬停时散开到
 ///   7px / 6px。
 ///
@@ -503,11 +534,12 @@ class ShelfCoverPile extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints c) {
         final double w = c.maxWidth;
         final double h = c.maxHeight;
-        // 单本是满格；多本整体缩一点，给转开 / 错开留位置。
+        // 扇形的每一本都与单本同大、铺满整格（2026-10-25 用户「单本书和合集
+        // 大小不协调」：此前合集整体缩到 88–92%，比旁边的单本小一圈）；后面
+        // 几本藏在最前那本身后，只靠转开露出边角。海报叠层仍按错开步长让位。
         final double step = stack ? 4 : 0;
-        final double shrink = back.isEmpty ? 1 : 0.92;
-        final double itemW = stack ? w - step * back.length : w * shrink;
-        final double itemH = stack ? h - step * back.length : h * shrink;
+        final double itemW = stack ? w - step * back.length : w;
+        final double itemH = stack ? h - step * back.length : h;
         Widget surface(Widget child, {double dim = 0, List<Widget>? overlay}) =>
             SizedBox(
               width: itemW,
@@ -551,9 +583,16 @@ class ShelfCoverPile extends StatelessWidget {
             ),
           );
         } else {
-          const List<double> angles = <double>[3, -4, -10];
+          // 由近到远的相对角度（最远那本转得最开）；悬停时整体放大到几何上限。
+          const List<double> fractions = <double>[0.35, -0.5, -1];
+          final double hoverMax = shelfFanMaxDegrees(
+            itemW: itemW,
+            itemH: itemH,
+            halfLimit: w / 2 + w * kShelfFanOverhang,
+          );
+          final double restMax = hoverMax / kShelfFanHoverScale;
           for (int d = back.length; d >= 1; d--) {
-            final double deg = angles[d - 1] * (lifted ? 1.7 : 1);
+            final double deg = fractions[d - 1] * (lifted ? hoverMax : restMax);
             layers.add(
               Positioned(
                 left: (w - itemW) / 2,
@@ -564,7 +603,7 @@ class ShelfCoverPile extends StatelessWidget {
                   curve: FushiMotion.standard,
                   child: AnimatedRotation(
                     turns: deg / 360,
-                    alignment: const Alignment(0, 1.4),
+                    alignment: Alignment.bottomCenter,
                     duration: duration,
                     curve: FushiMotion.standard,
                     child: surface(back[d - 1]),
@@ -596,7 +635,7 @@ class ShelfCoverPile extends StatelessWidget {
               height: kShelfContactShadowHeight,
               child: ShelfContactShadow(
                 lifted: lifted,
-                widthFactor: back.isEmpty ? 1.07 : 1.35,
+                widthFactor: back.isEmpty ? 1.07 : 1.15,
               ),
             ),
             ...layers,

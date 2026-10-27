@@ -9,9 +9,14 @@ class AdaptiveNavPeekEntry {
     this.cover,
     this.subtitle,
     this.progress,
+    this.icon,
   });
 
   final String title;
+
+  /// 没有封面时（以及列表式一行前面）画的图标；null = 模块图标。设置分类、
+  /// 网页这类每行是不同东西的目的地用它区分。
+  final IconData? icon;
 
   /// 封面；null = 画模块图标占位。
   final ImageProvider? cover;
@@ -32,12 +37,25 @@ class AdaptiveNavPeekData {
   const AdaptiveNavPeekData({
     this.resume,
     this.recent = const <AdaptiveNavPeekEntry>[],
+    this.listLayout = false,
+    this.resumeLabel,
+    this.recentLabel,
   });
 
   final AdaptiveNavPeekEntry? resume;
 
   /// 最多画 4 个。
   final List<AdaptiveNavPeekEntry> recent;
+
+  /// true = 没有封面的目的地（复习的牌组）：「继续」不画封面，[recent] 画成
+  /// 「名称 + 副行」的列表，而不是一排只有图标占位、看不出是什么的封面。
+  final bool listLayout;
+
+  /// 「继续」卡上方的小字；null = 「继续」。
+  final String? resumeLabel;
+
+  /// [recent] 上方的小标题；null = 「最近」。
+  final String? recentLabel;
 
   bool get isEmpty => resume == null && recent.isEmpty;
 }
@@ -61,7 +79,7 @@ const Duration _kNavPeekCloseGrace = Duration(milliseconds: 260);
 /// 同一项的速览数据缓存多久。
 const Duration _kNavPeekCacheTtl = Duration(seconds: 30);
 
-const double _kNavPeekWidth = 320;
+const double _kNavPeekWidth = 360;
 const double _kNavPeekGap = 10;
 
 /// 收起 / 展开 rail 的格向速览卡登记自己：悬停进出与卡片定位都经它。
@@ -499,35 +517,98 @@ class _NavRailPeekContent extends StatelessWidget {
                       if (value.resume case final AdaptiveNavPeekEntry entry)
                         _NavPeekResume(
                           entry: entry,
-                          fallbackIcon: item.icon,
+                          label: value.resumeLabel ?? t.home_continue,
+                          showCover: !value.listLayout,
+                          fallbackIcon: entry.icon ?? item.icon,
                           onOpen: () => onOpenEntry(entry),
                         ),
                       if (value.recent.isNotEmpty) ...<Widget>[
                         const SizedBox(height: 12),
                         Text(
-                          t.nav_peek_recent,
+                          value.recentLabel ?? t.nav_peek_recent,
                           style: text.labelMedium?.copyWith(
                             color: colors.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 6),
-                        Row(
-                          children: <Widget>[
-                            for (int i = 0; i < 4; i++) ...<Widget>[
-                              if (i > 0) const SizedBox(width: 8),
-                              Expanded(
-                                child: i < value.recent.length
-                                    ? _NavPeekRecent(
-                                        entry: value.recent[i],
-                                        fallbackIcon: item.icon,
-                                        onOpen: () =>
-                                            onOpenEntry(value.recent[i]),
-                                      )
-                                    : const SizedBox.shrink(),
-                              ),
+                        if (value.listLayout)
+                          for (final AdaptiveNavPeekEntry e in value.recent)
+                            _NavPeekListRow(
+                              entry: e,
+                              fallbackIcon: e.icon ?? item.icon,
+                              onOpen: () => onOpenEntry(e),
+                            )
+                        else
+                          _NavPeekImageAspects(
+                            images: <ImageProvider?>[
+                              for (final AdaptiveNavPeekEntry e in value.recent)
+                                e.cover,
                             ],
-                          ],
-                        ),
+                            builder:
+                                (
+                                  BuildContext context,
+                                  List<double> aspects,
+                                ) => LayoutBuilder(
+                                  builder:
+                                      (
+                                        BuildContext context,
+                                        BoxConstraints box,
+                                      ) {
+                                        final List<List<double>> rows =
+                                            navPeekRecentLayout(
+                                              aspects: aspects,
+                                              maxWidth: box.maxWidth,
+                                            );
+                                        final List<int> starts = <int>[0];
+                                        for (final List<double> row in rows) {
+                                          starts.add(starts.last + row.length);
+                                        }
+                                        return Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          spacing: kNavPeekRecentGap,
+                                          children: <Widget>[
+                                            for (
+                                              int r = 0;
+                                              r < rows.length;
+                                              r++
+                                            )
+                                              Row(
+                                                spacing: kNavPeekRecentGap,
+                                                children: <Widget>[
+                                                  for (
+                                                    int j = 0;
+                                                    j < rows[r].length;
+                                                    j++
+                                                  )
+                                                    SizedBox(
+                                                      width: rows[r][j],
+                                                      child: _NavPeekRecent(
+                                                        entry: value
+                                                            .recent[starts[r] + j],
+                                                        aspectRatio:
+                                                            aspects[starts[r] +
+                                                                j],
+                                                        fallbackIcon:
+                                                            value
+                                                                .recent[starts[r] +
+                                                                    j]
+                                                                .icon ??
+                                                            item.icon,
+                                                        onOpen: () => onOpenEntry(
+                                                          value
+                                                              .recent[starts[r] +
+                                                              j],
+                                                        ),
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                          ],
+                                        );
+                                      },
+                                ),
+                          ),
                       ],
                     ],
                   );
@@ -545,11 +626,16 @@ class _NavPeekCover extends StatelessWidget {
     required this.image,
     required this.fallbackIcon,
     required this.radius,
+    this.aspectRatio = kNavPeekDefaultCoverAspect,
   });
 
   final ImageProvider? image;
   final IconData fallbackIcon;
   final double radius;
+
+  /// 封面框的宽高比：取封面图自己的比例（[_NavPeekImageAspects]），横版视频
+  /// 缩略图因此整张显示、不被裁成竖版。
+  final double aspectRatio;
 
   @override
   Widget build(BuildContext context) {
@@ -564,7 +650,7 @@ class _NavPeekCover extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: AspectRatio(
-        aspectRatio: 2 / 3,
+        aspectRatio: aspectRatio,
         child: provider == null
             ? placeholder
             : Image(
@@ -581,11 +667,19 @@ class _NavPeekCover extends StatelessWidget {
 class _NavPeekResume extends StatelessWidget {
   const _NavPeekResume({
     required this.entry,
+    required this.label,
+    required this.showCover,
     required this.fallbackIcon,
     required this.onOpen,
   });
 
   final AdaptiveNavPeekEntry entry;
+
+  /// 卡片上方的小字（「继续」/「开始复习」）。
+  final String label;
+
+  /// false = 没有封面的目的地（牌组），只画文字。
+  final bool showCover;
   final IconData fallbackIcon;
   final VoidCallback onOpen;
 
@@ -608,21 +702,33 @@ class _NavPeekResume extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  SizedBox(
-                    width: 56,
-                    child: _NavPeekCover(
-                      image: entry.cover,
-                      fallbackIcon: fallbackIcon,
-                      radius: 10,
+                  if (showCover) ...<Widget>[
+                    _NavPeekImageAspects(
+                      images: <ImageProvider?>[entry.cover],
+                      builder: (BuildContext context, List<double> aspects) {
+                        final double width = navPeekResumeCoverWidth(
+                          aspects.single,
+                        );
+                        return SizedBox(
+                          width: width,
+                          height: kNavPeekResumeCoverHeight,
+                          child: _NavPeekCover(
+                            image: entry.cover,
+                            fallbackIcon: fallbackIcon,
+                            radius: 10,
+                            aspectRatio: width / kNavPeekResumeCoverHeight,
+                          ),
+                        );
+                      },
                     ),
-                  ),
-                  const SizedBox(width: 12),
+                    const SizedBox(width: 12),
+                  ],
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Text(
-                          t.home_continue,
+                          label,
                           style: text.labelSmall?.copyWith(
                             color: colors.onSurfaceVariant,
                           ),
@@ -674,11 +780,13 @@ class _NavPeekResume extends StatelessWidget {
 class _NavPeekRecent extends StatelessWidget {
   const _NavPeekRecent({
     required this.entry,
+    required this.aspectRatio,
     required this.fallbackIcon,
     required this.onOpen,
   });
 
   final AdaptiveNavPeekEntry entry;
+  final double aspectRatio;
   final IconData fallbackIcon;
   final VoidCallback onOpen;
 
@@ -695,10 +803,25 @@ class _NavPeekRecent extends StatelessWidget {
               onTap: onOpen,
               child: MouseRegion(
                 cursor: SystemMouseCursors.click,
-                child: _NavPeekCover(
-                  image: entry.cover,
-                  fallbackIcon: fallbackIcon,
-                  radius: 10,
+                // 封面下写上名字：只有封面时看不出最近看的是哪部（2026-10-25
+                // 用户「媒体的话最近看的是什么」）。
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _NavPeekCover(
+                      image: entry.cover,
+                      fallbackIcon: fallbackIcon,
+                      radius: 10,
+                      aspectRatio: aspectRatio,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      entry.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -707,4 +830,219 @@ class _NavPeekRecent extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 列表式速览（[AdaptiveNavPeekData.listLayout]）的一行：模块图标 + 名称 +
+/// 副行（牌组的今日计数 / 「今日已完成」）。
+class _NavPeekListRow extends StatelessWidget {
+  const _NavPeekListRow({
+    required this.entry,
+    required this.fallbackIcon,
+    required this.onOpen,
+  });
+
+  final AdaptiveNavPeekEntry entry;
+  final IconData fallbackIcon;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final TextTheme text = Theme.of(context).textTheme;
+    return FushiPressScale(
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: FushiM3eShape.cardRadius,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onOpen,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              children: <Widget>[
+                FushiIcon(
+                  fallbackIcon,
+                  size: 18,
+                  color: colors.onSurfaceVariant,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    entry.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (entry.subtitle case final String subtitle) ...<Widget>[
+                  const SizedBox(width: 10),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    style: text.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 速览卡封面的默认宽高比（书封 2:3；封面图还没解出尺寸、或没有封面时用）。
+const double kNavPeekDefaultCoverAspect = 2 / 3;
+
+/// 「最近」一排封面之间的缝。
+const double kNavPeekRecentGap = 8;
+
+/// 「继续」条目封面的固定高度（宽度按封面比例算，见 [navPeekResumeCoverWidth]）。
+const double kNavPeekResumeCoverHeight = 100;
+
+/// 「继续」封面的宽度：固定高 [kNavPeekResumeCoverHeight] 乘封面比例，夹在
+/// 56–180 之间（横版视频缩略图整张显示，又不至于把标题挤没）。
+double navPeekResumeCoverWidth(double aspect) =>
+    (kNavPeekResumeCoverHeight * aspect).clamp(56.0, 180.0).toDouble();
+
+/// 「最近」封面的最低高度：一排挤下去低于它就换成两排（横版视频四张一排只有
+/// 四十来像素高，2026-10-25 用户「预览有点小，视频横屏看着难受」）。
+const double kNavPeekRecentMinHeight = 80;
+
+/// 「最近」封面的排布：返回若干排、每排各封面的宽度（条目按顺序依次填）。
+///
+/// - 所有封面**同一高度**、按各自比例整张显示（横版视频与竖版书封混排也不裁）；
+/// - 先试一排；一排铺满后高度低于 [kNavPeekRecentMinHeight] 就每排少放一张、
+///   依次往下排，直到够高（四张横版视频 → 2 × 2）；
+/// - 高度不超过「4 本竖版书封一排」的高度：条目少时不放大成巨图。
+List<List<double>> navPeekRecentLayout({
+  required List<double> aspects,
+  required double maxWidth,
+}) {
+  if (aspects.isEmpty || maxWidth <= 0) return const <List<double>>[];
+  final double cap =
+      (maxWidth - kNavPeekRecentGap * 3) / 4 / kNavPeekDefaultCoverAspect;
+  // 每排 perRow 张时，所有排共用的高度（各排铺满宽度时高度的最小值）。
+  double heightFor(int perRow) {
+    double height = cap;
+    for (int start = 0; start < aspects.length; start += perRow) {
+      final List<double> row = aspects.sublist(
+        start,
+        math.min(aspects.length, start + perRow),
+      );
+      final double sum = row.fold<double>(0, (double a, double b) => a + b);
+      final double usable = maxWidth - kNavPeekRecentGap * (row.length - 1);
+      height = math.min(height, usable / sum);
+    }
+    return height;
+  }
+
+  int perRow = aspects.length;
+  while (perRow > 1 && heightFor(perRow) < kNavPeekRecentMinHeight) {
+    perRow--;
+  }
+  final double height = heightFor(perRow);
+  return <List<double>>[
+    for (int start = 0; start < aspects.length; start += perRow)
+      <double>[
+        for (final double a in aspects.sublist(
+          start,
+          math.min(aspects.length, start + perRow),
+        ))
+          height * a,
+      ],
+  ];
+}
+
+/// 解出每张封面图自己的宽高比，交给 [builder]；没有封面、还没解出或解码失败
+/// 的位置给 [kNavPeekDefaultCoverAspect]。图换了（数据刷新）就重新解。
+class _NavPeekImageAspects extends StatefulWidget {
+  const _NavPeekImageAspects({required this.images, required this.builder});
+
+  final List<ImageProvider?> images;
+  final Widget Function(BuildContext context, List<double> aspects) builder;
+
+  @override
+  State<_NavPeekImageAspects> createState() => _NavPeekImageAspectsState();
+}
+
+class _NavPeekImageAspectsState extends State<_NavPeekImageAspects> {
+  final List<ImageStream?> _streams = <ImageStream?>[];
+  final List<ImageStreamListener?> _listeners = <ImageStreamListener?>[];
+  List<double> _aspects = const <double>[];
+  bool _resolved = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_resolved) _resolve();
+  }
+
+  @override
+  void didUpdateWidget(_NavPeekImageAspects oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!listEquals(oldWidget.images, widget.images)) _resolve();
+  }
+
+  @override
+  void dispose() {
+    _detach();
+    super.dispose();
+  }
+
+  void _detach() {
+    for (int i = 0; i < _streams.length; i++) {
+      final ImageStreamListener? listener = _listeners[i];
+      if (listener != null) _streams[i]?.removeListener(listener);
+    }
+    _streams.clear();
+    _listeners.clear();
+  }
+
+  void _resolve() {
+    _resolved = true;
+    _detach();
+    _aspects = <double>[
+      for (int i = 0; i < widget.images.length; i++) kNavPeekDefaultCoverAspect,
+    ];
+    final ImageConfiguration config = createLocalImageConfiguration(context);
+    for (int i = 0; i < widget.images.length; i++) {
+      final ImageProvider? image = widget.images[i];
+      if (image == null) {
+        _streams.add(null);
+        _listeners.add(null);
+        continue;
+      }
+      final int index = i;
+      final ImageStream stream = image.resolve(config);
+      final ImageStreamListener listener = ImageStreamListener((
+        ImageInfo info,
+        bool synchronousCall,
+      ) {
+        final double w = info.image.width.toDouble();
+        final double h = info.image.height.toDouble();
+        info.dispose();
+        if (!mounted || w <= 0 || h <= 0) return;
+        final double aspect = w / h;
+        if ((_aspects[index] - aspect).abs() < 0.001) return;
+        final List<double> next = List<double>.of(_aspects);
+        next[index] = aspect;
+        if (synchronousCall) {
+          _aspects = next;
+        } else {
+          setState(() => _aspects = next);
+        }
+      }, onError: (Object error, StackTrace? stack) {});
+      stream.addListener(listener);
+      _streams.add(stream);
+      _listeners.add(listener);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _aspects);
 }

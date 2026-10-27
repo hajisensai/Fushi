@@ -5372,6 +5372,14 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 最近打开的设置一级分类（JSON 字符串数组，最近的在前；见
+  /// `settings_recent_destinations.dart`）。空串 = 还没打开过。
+  String get settingsRecentDestinationsJson =>
+      getPref('settings_recent_destinations', defaultValue: '') as String;
+
+  Future<void> setSettingsRecentDestinationsJson(String value) =>
+      setPref('settings_recent_destinations', value);
+
   bool get mangaChromeFloating =>
       getPref('manga_chrome_floating', defaultValue: true) as bool;
 

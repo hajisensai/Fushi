@@ -20,6 +20,7 @@ import 'package:fushi_engine/media/video/acquisition/host_video_acquisition_asse
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 
 /// 详情页标题下方可复制的拉丁字母标题：罗马音在前、英文名在后，与展示标题 /
 /// 原名重复的（忽略大小写）不再列出。
@@ -337,7 +338,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     // 状态流只订阅一次（单订阅流 + 「watchStatus 只调一次」契约），hero 主按钮与
     // 状态行都从这一份状态取值。
     return Scaffold(
-      backgroundColor: tokens.surfaces.page,
+      backgroundColor: fushiPageBackgroundColor(context),
       body: StreamBuilder<VideoDiscoveryAcquisitionState>(
         stream: _statusStream,
         initialData: const VideoDiscoveryAcquisitionState(),

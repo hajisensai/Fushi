@@ -31,6 +31,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 
 /// 封面槽向：竖版海报 2:3 / 横版剧照 16:9。
 enum DiscoveryCoverShape {
@@ -870,7 +871,7 @@ class DiscoveryGridPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Scaffold(
-      backgroundColor: tokens.surfaces.page,
+      backgroundColor: fushiPageBackgroundColor(context),
       appBar: FushiAppBar(title: Text(title)),
       body: CustomScrollView(
         slivers: <Widget>[

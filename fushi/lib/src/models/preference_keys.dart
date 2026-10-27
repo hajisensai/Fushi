@@ -540,6 +540,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'screen_ocr.card_image',
   // bool：Android 截屏识字保持录屏会话、之后不再弹确认框（默认 false）。
   'screen_ocr.keep_capture_session',
+  // string（JSON 数组，最近的在前）：最近打开的设置一级分类（SettingsDestinationId.name），
+  // 首页侧栏「设置」速览卡读它（settings_recent_destinations.dart，设备本地）。
+  'settings_recent_destinations',
   // String：已废弃（2026-10-13 起合集一律是网格里的单个格子，「整行展开」rows
   // 模式已移除；旧值 rows / cards 都无人读取）。key 冻结保留，备份 / 旧数据兼容。
   'shelf_collection_layout',

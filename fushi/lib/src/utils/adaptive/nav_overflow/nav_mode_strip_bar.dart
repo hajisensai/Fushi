@@ -10,15 +10,23 @@ import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiBadgeControl;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 底栏原型「相机模式条」（[AdaptiveNavBarStyle] 同名值，设计稿 F5）。
 ///
 /// 借相机 App「照片 / 视频 / 人像」切换条：全部入口横排成一条带，纯图标，
-/// 当前项居中、图标背后是该项专属的 M3E 多边形（[navShapeOf]，与侧栏同一套），
-/// 其余缩小并按距离渐淡，两端渐隐暗示还有更多。名字只进 Tooltip 与 Semantics。
+/// 当前项图标背后是该项专属的 M3E 多边形（[navShapeOf]，与侧栏同一套），下方
+/// 一枚底标跟着高亮走。名字只进 Tooltip 与 Semantics。
 ///
-/// 横拨跟手平移；拖动过程中高亮实时落到「松手将会到达的那一项」，每换到新的
+/// 条带铺满胶囊宽度（2026-10-25 用户「像圆柱滚筒一样显示范围更宽、最左最右
+/// 不要留白」）：格宽 = 胶囊宽 ÷ 放得下的格数（[navModeStripSlotWidth]），全部
+/// 放得下时等分铺满、不滚动；放不下时条带跟着当前项滚，但首尾项贴住胶囊边、
+/// 两端不露空白（[navModeStripTrackOffset] 夹紧），只有那一侧还有项藏着时才
+/// 渐隐提示。
+///
+/// 横拨跟手；拖动过程中高亮实时落到「松手将会到达的那一项」，每换到新的
 /// 一项轻震一次，松手才吸附并跳转。高亮在两项之间移动是液态墨滴（前沿先走、
 /// 后沿后到，拉长时收细），落定后由圆变形成目标项的多边形。点邻居直接切过去。
 /// 墨水屏 / 减弱动态效果下高亮直接落位、不做墨滴与变形。
@@ -31,8 +39,9 @@ class NavModeStripBar extends StatefulWidget {
   State<NavModeStripBar> createState() => _NavModeStripBarState();
 }
 
-/// 一格的宽度（≥48dp 命中区），也是拖动换格的步长：拖过一格宽 = 换一项。
-const double _kSlotWidth = 52;
+/// 一格的最小宽度（≥48dp 命中区）。实际格宽按胶囊宽度均分
+/// （[navModeStripSlotWidth]），也是拖动换格的步长：拖过一格宽 = 换一项。
+const double _kMinSlotWidth = 52;
 
 /// 轻拨超过这个距离也至少换一格。
 const double _kMinFlick = 24;
@@ -42,6 +51,38 @@ const double _kIconSize = 24;
 
 /// 高亮多边形（与墨滴）的边长：比格子小一圈，留出相邻多边形之间的呼吸。
 const double _kShapeSize = 46;
+
+/// 底标（高亮下方的短横，沿用圆柱滚筒的底标）的尺寸与离胶囊底边的距离。
+const double _kMarkerWidth = 16;
+const double _kMarkerHeight = 3;
+const double _kMarkerBottom = 2;
+
+/// 两端渐隐带占胶囊宽度的比例（只在那一侧还有藏着的项时画）。
+const double _kEdgeFade = 0.16;
+
+/// 宽 [width] 的胶囊里放 [count] 项时的格宽：能放下的格数
+/// n = ⌊width / 52⌋（至少 1），项数不超过 n 时按项数等分铺满，否则按 n 等分
+/// （每格仍 ≥ 52，条带横拨滚动）。
+double navModeStripSlotWidth(double width, int count) {
+  if (count <= 0 || width <= 0) return _kMinSlotWidth;
+  final int fit = math.max(1, (width / _kMinSlotWidth).floor());
+  return width / math.min(fit, count);
+}
+
+/// 条带最左端相对胶囊左边的位移：想让第 [sel] 格（可为小数）居中、再加拖动
+/// 位移 [drag]，然后夹到 [width − 条带总宽, 0]——首尾项贴边，两端不留白；
+/// 全部放得下时恒为 0。
+double navModeStripTrackOffset({
+  required double width,
+  required int count,
+  required double sel,
+  required double drag,
+}) {
+  final double slot = navModeStripSlotWidth(width, count);
+  final double minOffset = math.min(0, width - count * slot);
+  final double centred = width / 2 - (sel * slot + slot / 2) + drag;
+  return centred.clamp(minOffset, 0.0).toDouble();
+}
 
 class _NavModeStripBarState extends State<NavModeStripBar>
     with TickerProviderStateMixin {
@@ -72,6 +113,8 @@ class _NavModeStripBarState extends State<NavModeStripBar>
   static const Curve _spring = FushiSpringCurve.spatialFast;
 
   NavOverflowSpec get spec => widget.spec;
+
+  double get _slot => navModeStripSlotWidth(spec.width, spec.indices.length);
 
   @override
   void initState() {
@@ -190,7 +233,7 @@ class _NavModeStripBarState extends State<NavModeStripBar>
   /// velocity = 0 预览，与真正松手同一套判据，预览与落点不会对不上（只有
   /// 甩动速度会在松手那一下多推一格）。
   int _releaseTarget(double drag, double velocity) {
-    int target = (_visualSel - drag / _kSlotWidth).round();
+    int target = (_visualSel - drag / _slot).round();
     if (target == _committed) {
       if (drag.abs() > _kMinFlick) {
         target = _committed - drag.sign.toInt();
@@ -219,7 +262,7 @@ class _NavModeStripBarState extends State<NavModeStripBar>
     final double dx = details.primaryDelta ?? details.delta.dx;
     final int last = spec.indices.length - 1;
     // 拨出两端时加阻尼，提示到头了。
-    final double projected = _visualSel - (_liveDrag + dx) / _kSlotWidth;
+    final double projected = _visualSel - (_liveDrag + dx) / _slot;
     final bool beyond = projected < -0.5 || projected > last + 0.5;
     setState(() => _liveDrag += beyond ? dx / 3 : dx);
     final int preview = _releaseTarget(_liveDrag, 0);
@@ -266,42 +309,57 @@ class _NavModeStripBarState extends State<NavModeStripBar>
     return SizedBox(
       width: spec.width,
       height: spec.height,
-      child: ShaderMask(
-        blendMode: BlendMode.dstIn,
-        shaderCallback: (Rect bounds) => const LinearGradient(
-          colors: <Color>[
-            Color(0x00000000),
-            Color(0xFF000000),
-            Color(0xFF000000),
-            Color(0x00000000),
-          ],
-          stops: <double>[0, 0.2, 0.8, 1],
-        ).createShader(bounds),
-        child: ClipRect(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onHorizontalDragStart: _onDragStart,
-            onHorizontalDragUpdate: _onDragUpdate,
-            onHorizontalDragEnd: _onDragEnd,
-            onHorizontalDragCancel: _onDragCancel,
-            child: AnimatedBuilder(
-              animation: Listenable.merge(<Listenable>[
-                _move,
-                _flow,
-                _presence,
-              ]),
-              builder: (BuildContext context, Widget? _) =>
-                  _buildTrack(context),
-            ),
+      child: ClipRect(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragStart: _onDragStart,
+          onHorizontalDragUpdate: _onDragUpdate,
+          onHorizontalDragEnd: _onDragEnd,
+          onHorizontalDragCancel: _onDragCancel,
+          child: AnimatedBuilder(
+            animation: Listenable.merge(<Listenable>[_move, _flow, _presence]),
+            builder: (BuildContext context, Widget? _) => _buildFaded(context),
           ),
         ),
       ),
     );
   }
 
+  /// 条带外包一层两端渐隐：只有那一侧还有项藏在胶囊外时才渐隐（藏得越多
+  /// 越淡，满一格封顶），首尾贴边时那一端完全不透明、不留白。
+  Widget _buildFaded(BuildContext context) {
+    final int count = spec.indices.length;
+    final double slot = _slot;
+    final double offset = navModeStripTrackOffset(
+      width: spec.width,
+      count: count,
+      sel: _visualSel,
+      drag: _visualDrag,
+    );
+    final double hiddenLeft = (-offset / slot).clamp(0.0, 1.0).toDouble();
+    final double hiddenRight = ((count * slot + offset - spec.width) / slot)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final Widget track = _buildTrack(context, offset);
+    if (hiddenLeft == 0 && hiddenRight == 0) return track;
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (Rect bounds) => LinearGradient(
+        colors: <Color>[
+          Color.fromRGBO(0, 0, 0, 1 - hiddenLeft),
+          const Color(0xFF000000),
+          const Color(0xFF000000),
+          Color.fromRGBO(0, 0, 0, 1 - hiddenRight),
+        ],
+        stops: const <double>[0, _kEdgeFade, 1 - _kEdgeFade, 1],
+      ).createShader(bounds),
+      child: track,
+    );
+  }
+
   /// 第 [slot] 格（可为小数）高亮方块在条带坐标里的矩形。
   Rect _shapeRect(double slot, double top) {
-    final double cx = slot * _kSlotWidth + _kSlotWidth / 2;
+    final double cx = slot * _slot + _slot / 2;
     final double cy = top + _kItemHeight / 2;
     return Rect.fromCenter(
       center: Offset(cx, cy),
@@ -310,16 +368,17 @@ class _NavModeStripBarState extends State<NavModeStripBar>
     );
   }
 
-  Widget _buildTrack(BuildContext context) {
+  Widget _buildTrack(BuildContext context, double offset) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final int count = spec.indices.length;
+    final double slot = _slot;
     final double sel = _visualSel;
     final double hl = _visualHl;
     final double presence = _presence.value.clamp(0.0, 1.0).toDouble();
 
-    final double offset =
-        spec.width / 2 - (sel * _kSlotWidth + _kSlotWidth / 2) + _visualDrag;
     final double top = (spec.height - _kItemHeight) / 2;
+    // 底标跟着高亮的视觉位置走（墨滴流动时一起滑，过冲同步）。
+    final double markerCenter = offset + hl * slot + slot / 2;
 
     // 流动中画液态墨滴；落定后由目标项的多边形接手（圆 → 多边形）。
     final Rect blob = _liquidRect(
@@ -366,11 +425,28 @@ class _NavModeStripBarState extends State<NavModeStripBar>
             ),
           ),
         ),
+        Positioned(
+          left: markerCenter - _kMarkerWidth / 2,
+          bottom: _kMarkerBottom,
+          width: _kMarkerWidth,
+          height: _kMarkerHeight,
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: presence,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.onTertiaryContainer.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          ),
+        ),
         for (int p = 0; p < count; p++)
           Positioned(
-            left: offset + p * _kSlotWidth,
+            left: offset + p * slot,
             top: top,
-            width: _kSlotWidth,
+            width: slot,
             height: _kItemHeight,
             child: _buildItem(
               position: p,
@@ -378,7 +454,7 @@ class _NavModeStripBarState extends State<NavModeStripBar>
               // 图标前景随高亮经过渐变：墨滴罩到哪项，哪项就换成选中前景色。
               expand:
                   (1 - (hl - p).abs()).clamp(0.0, 1.0).toDouble() * presence,
-              distance: (sel - _visualDrag / _kSlotWidth - p).abs(),
+              distance: (sel - _visualDrag / slot - p).abs(),
               scheme: scheme,
             ),
           ),
@@ -418,10 +494,11 @@ class _NavModeStripBarState extends State<NavModeStripBar>
       scheme.onTertiary,
       expand,
     )!;
-    // 邻居缩到 0.9、按离中线的距离渐淡（两端再由 ShaderMask 渐隐）。
+    // 邻居缩到 0.9、按离当前项的距离轻微渐淡（铺满整条，远处也看得清；
+    // 还藏着项的那一端再由 ShaderMask 渐隐）。
     final double scale = 0.9 + 0.1 * expand;
-    final double opacity = (1 - 0.25 * distance.clamp(0.0, 3.0))
-        .clamp(0.25, 1.0)
+    final double opacity = (1 - 0.12 * distance.clamp(0.0, 4.0))
+        .clamp(0.5, 1.0)
         .toDouble();
     final bool selected =
         position == _committed && spec.currentIndex == spec.indices[position];
@@ -430,10 +507,13 @@ class _NavModeStripBarState extends State<NavModeStripBar>
       opacity: math.max(opacity, expand),
       child: Transform.scale(
         scale: scale,
-        child: FushiIcon(
-          expand > 0.5 ? (item.selectedIcon ?? item.icon) : item.icon,
-          size: _kIconSize,
-          color: color,
+        child: FushiBadgeControl(
+          isLabelVisible: item.experimentalBadge,
+          child: FushiIcon(
+            expand > 0.5 ? (item.selectedIcon ?? item.icon) : item.icon,
+            size: _kIconSize,
+            color: color,
+          ),
         ),
       ),
     );

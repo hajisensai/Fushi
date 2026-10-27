@@ -3,29 +3,25 @@ enum AdaptiveNavBarStyle {
   /// 平铺：放得下全部平铺，放不下的收进最右的「更多」（原有形态）。
   flat('flat'),
 
-  /// 分页滑动：胶囊里每页 5 个，在底栏上左右滑翻页；按住约 0.3 秒拖选（可拖到
-  /// 边缘翻页）。查词仍是右下角固定的 FAB / 圆钮，不进分页（2026-10-17 用户
-  /// 「底部左边要分页右下角是查词」）。MD3 悬浮胶囊与 Apple 胶囊都支持。
-  pager('pager'),
-
-  // 以下三种是「放不下的入口怎么露出来」的交互原型（2026-10-23，设计稿见
+  // 以下两种是「放不下的入口怎么露出来」的交互原型（2026-10-23，设计稿见
   // fushi/build/bottom_nav_design/divergent.html），只接 MD3 悬浮胶囊；
-  // Apple 胶囊遇到它们按平铺画。实现见 `nav_overflow/`。
+  // Apple 胶囊遇到它们按分页滑动画。实现见 `nav_overflow/`。
+  //
+  // 「分页滑动」（pager）与「圆柱滚筒」（drum）两种 MD3 样式已于 2026-10-25
+  // 删除（用户：相机模式条吸收滚筒的宽视野与底标后，两者都砍掉）；落过库的
+  // 'pager' / 'drum' 经 [fromPref] 回落出厂默认。
 
   /// 拇指转盘：末格是刻度旋钮，按住升起半圆转盘，转到顶端指针松手跳转。
   dial('dial'),
 
-  /// 圆柱滚筒：全部目的地贴在横放的滚筒上，横拨浏览、点击跳转。
-  drum('drum'),
-
-  /// 相机模式条：当前项居中（图标 + 专属多边形），左右邻居渐隐延伸，横拨
-  /// 逐个切换。
+  /// 相机模式条：全部目的地铺满胶囊宽度（首尾贴边不留白），当前项是专属
+  /// 多边形 + 底标，放不下时跟手横拨、两端渐隐提示还有更多。
   modeStrip('mode_strip');
 
   /// 是否是 `nav_overflow/` 里的交互原型之一（只 MD3 悬浮胶囊画）。
   bool get isOverflowVariant => switch (this) {
-    flat || pager => false,
-    dial || drum || modeStrip => true,
+    flat => false,
+    dial || modeStrip => true,
   };
 
   const AdaptiveNavBarStyle(this.prefValue);
@@ -41,8 +37,8 @@ enum AdaptiveNavBarStyle {
   /// 落库的字符串（冻结，改名不改它）。
   final String prefValue;
 
-  /// 没写过（空串）与未知值（含原型期一度存在、已删掉的 launcher /
-  /// launcher_pager / shelf / fan）一律回落出厂默认 [defaultStyle]。
+  /// 没写过（空串）与未知值（含已删掉的 pager / drum，以及原型期一度存在的
+  /// launcher / launcher_pager / shelf / fan）一律回落出厂默认 [defaultStyle]。
   static AdaptiveNavBarStyle fromPref(String value) {
     for (final AdaptiveNavBarStyle style in values) {
       if (style.prefValue == value) return style;
