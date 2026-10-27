@@ -1690,6 +1690,22 @@ class AudiobookPlayerController extends ChangeNotifier {
     _explicitSeekTargetCue = null;
   }
 
+  /// 平台已进入「不会再回这次 seek」的状态（播放终态 completed / 播放出错 / stop）：
+  /// 关掉平台在途窗口与显式 seek 抑制窗，之后的位置 tick 照常驱动 cue 跟随。
+  ///
+  /// 窗口的关闭条件因此全部是结构性信号，不靠超时：just_audio 0.9.42 Android
+  /// `AudioPlayer.java` 只在 STATE_READY（`completeSeek`）或下一次 seek
+  /// （`abortSeek`）时回 seek 结果；不回的情形只有 STATE_ENDED、`onPlayerError`、
+  /// stop / dispose——前两种在这里由 playbackEvent 接住，stop / 换书 / dispose 由
+  /// 各自路径关窗，「更新的意图」由新的 seek / 翻页 / 换 cue 列表取代。暂停**不**关：
+  /// 暂停态 ExoPlayer 仍会进 READY 并回执，此刻提前关窗会让暂停期的章节落地回执按
+  /// seek 前的文件下标重算（BUG-3798）。
+  void _abandonUnansweredExplicitSeek() {
+    if (!_explicitSeekPlatformPending && !_explicitSeekInFlight) return;
+    _explicitSeekPlatformOp = null;
+    _clearExplicitSeekSuppression();
+  }
+
   /// BUG-3798：「跳章 + 定音频」组合操作（有声书面板「章节」tab）的第一步。
   ///
   /// 调用方接着先手动跳章、再 [skipToCue]（`callerPositionsReader: true`）。跳章在飞
@@ -1988,8 +2004,20 @@ class AudiobookPlayerController extends ChangeNotifier {
     _playingSub = _player.playingStream.listen((_) {
       notifyListeners();
     });
+    ProcessingState lastProcessingState = _player.processingState;
     _playbackErrorSub = _player.playbackEventStream.listen(
-      (_) {},
+      (PlaybackEvent event) {
+        // 播放**进入**终态（整本播完）：Android 端这次 seek 的回执永远不来（见
+        // [_explicitSeekPlatformOp]），而终态的位置就是平台的真实位置。只认进入
+        // 那一刻：已在终态时再发 seek，just_audio 的乐观事件仍带着旧的 completed，
+        // 不能拿它关掉新 seek 的窗口。
+        final ProcessingState previous = lastProcessingState;
+        lastProcessingState = event.processingState;
+        if (event.processingState == ProcessingState.completed &&
+            previous != ProcessingState.completed) {
+          _abandonUnansweredExplicitSeek();
+        }
+      },
       onError: (Object e, StackTrace stack) {
         ErrorLogService.instance.log(
           'AudiobookController.playbackEvent',
@@ -1999,6 +2027,9 @@ class AudiobookPlayerController extends ChangeNotifier {
               'pos=${_player.position.inMilliseconds}ms: $e',
           stack,
         );
+        // 播放出错：平台不会再回这次 seek（Android `onPlayerError` 不回 seekResult，
+        // 还会自行跳到下一个文件开头），目标已不可能按原样到达。
+        _abandonUnansweredExplicitSeek();
       },
     );
   }
@@ -2850,6 +2881,9 @@ class AudiobookPlayerController extends ChangeNotifier {
       pendingWrite = _enqueuePositionWrite(uid, sampledPosMs);
     }
 
+    // stop 之后平台不会再回在途的显式 seek（Android 只在 READY / 下一次 seek 回执），
+    // 窗口在这里关，不留给 dispose。
+    _abandonUnansweredExplicitSeek();
     // 即使持久层失败，也必须尽力停掉两个播放器；错误在资源收束后再抛。
     try {
       final Future<void> Function()? stopForTesting =

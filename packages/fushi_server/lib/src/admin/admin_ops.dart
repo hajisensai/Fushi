@@ -532,7 +532,12 @@ String _enc(Object? id) => Uri.encodeComponent('$id');
       final Map<String, Object?> body = Map<String, Object?>.of(call.body);
       final bool trusted =
           body.remove(kServerOpTrustMagnetAddressesGate) == true;
-      if (!trusted && magnetHasAddressParams('${body['magnet'] ?? ''}')) {
+      // 这道确认只约束**模型**发起的调用（spec §5.2：防的是模型自拼 tracker 把数据
+      // 带出去）。用户自己调用（`op call`、终端 flag）给的磁力就是用户的意图，照常
+      // 投递——与 WebUI / `fushi_server ctl` 直接 POST /api/admin/downloads 同一口径。
+      if (call.fromModel &&
+          !trusted &&
+          magnetHasAddressParams('${body['magnet'] ?? ''}')) {
         throw const CtlFailure.rejected(
           'magnet_has_addresses: the magnet carries tracker / web seed '
           'addresses; use server.download.add-with-trackers (the user '
