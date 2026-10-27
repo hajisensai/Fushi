@@ -23,6 +23,7 @@ import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/deletion_tombstone_bundle.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
@@ -183,6 +184,17 @@ bool isReservedSyncFolderName(String name) =>
     // 待发制卡跨设备中转（见 PendingMineRelay）：不是书；当成书列出来，用户在对比
     // 弹窗里一「删远端书」就连认领带待落的卡一起删了。
     name == PendingMineRelay.namespace;
+
+/// 云墓碑消费每轮至多 GET 多少条**未被合并清单覆盖**的逐条标记（SDbJAx1Db6）。
+///
+/// 稳态下逐条标记几乎全被清单按指纹覆盖、一条都不读；这个上限只在「新设备首次同步 /
+/// 旧客户端一次写了大批标记」时生效，把一次性的大批读摊到几轮，单轮耗时有上界。超出的
+/// 推迟到下轮，本轮按不完整观测处理（不推进消费基线，BUG-1934）。
+const int kDeletionTombstoneMarkerReadsPerRound = 200;
+
+/// 云墓碑消费每轮容忍的传输层读失败（抛 / 读回 null）次数，到了就停读剩下的逐条标记。
+/// 连接已坏（TLS 握手连环失败）时继续逐条撞只会把整轮拖长，剩下的下轮再读。
+const int kDeletionTombstoneReadFailureBudget = 3;
 
 /// One sync item judged a genuine fork (both sides moved off the common-ancestor
 /// baseline) and therefore skipped instead of auto-resolved. Carries everything
@@ -1275,19 +1287,24 @@ class SyncOrchestrator {
       final SyncRepository repo = SyncRepository(_db);
       final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
 
-      // ── 发布：本机未发布墓碑 → 远端标记 ──
+      // ── 发布：本机未发布墓碑 → 远端逐条标记（旧客户端只认它）+ 并入本机合并清单 ──
+      // 本机全部（逐条发布语义的）墓碑都进自己的清单：清单是读侧的粗粒度对象，对端
+      // 一次 GET 就拿到本机的全部删除，不用逐条读本机发布过的标记（SDbJAx1Db6）。
       final List<SyncDeletionTombstoneRow> localRows = await _db
           .getSyncDeletionTombstones();
+      final List<SyncDeletionTombstoneRow> ownRows =
+          <SyncDeletionTombstoneRow>[];
       for (final SyncDeletionTombstoneRow row in localRows) {
-        if (row.remotePublishedAt != 0) continue;
         // v128：浏览器历史 / 书签的墓碑只随聚合快照走，不发布逐条标记（一次「清除浏览
-        // 数据」可能上千条，且没有逐条确认语义）。
+        // 数据」可能上千条，且没有逐条确认语义），也不进清单。
         if (SyncTombstoneKind.tryParse(
               row.mediaType,
             )?.propagatesViaAggregateSnapshotOnly ??
             false) {
           continue;
         }
+        ownRows.add(row);
+        if (row.remotePublishedAt != 0) continue;
         await _backend.putJsonAsset(
           ns,
           deletionTombstoneAssetName(row.mediaType, row.itemKey),
@@ -1300,22 +1317,123 @@ class SyncOrchestrator {
         );
       }
 
-      // ── 消费：读远端标记 → deleteLocal 候选（过基线守卫）──
+      // ── 消费：读合并清单 + 未被清单覆盖的逐条标记 → deleteLocal 候选（过基线守卫）──
       // itemKey → deletedAt（同资产多标记取较新；理论上主键唯一，防御性取 max）。
       final DeletionTombstoneEntries remoteTombstones =
           <String, Map<String, int>>{};
-      // 本轮是否**完整**观测了远端标记集合：列出来了却没读成 marker 的每一条都置假。
-      // 基线的语义是「已复核到此时刻的删除」，只有完整观测撑得起这句话（BUG-1934，
-      // 见下方推进点的长注释）。
+      void addRemote(String mediaType, String itemKey, int deletedAt) {
+        final Map<String, int> byKey = remoteTombstones.putIfAbsent(
+          mediaType,
+          () => <String, int>{},
+        );
+        final int? prev = byKey[itemKey];
+        if (prev == null || deletedAt > prev) byKey[itemKey] = deletedAt;
+      }
+
+      // 本轮是否**完整**观测了远端标记集合：列出来了却没读成的每一条（含清单、含因上限
+      // 推迟到下轮的逐条标记）都置假。基线的语义是「已复核到此时刻的删除」，只有完整
+      // 观测撑得起这句话（BUG-1934，见下方推进点的长注释）。
       bool scanComplete = true;
+      // 本轮传输层读失败次数（抛 / 读回 null）。到 [kDeletionTombstoneReadFailureBudget]
+      // 就停读剩下的逐条标记：连接已坏时继续逐条撞握手只会把整轮拖到几分钟（SDbJAx1Db6
+      // 日志里一轮几十条 HandshakeException），剩下的下轮再读。
+      int readFailures = 0;
       final List<AssetEntry> children = await _backend.listChildren(ns);
+
+      // 1) 合并清单：`_bundles/` 下每台设备一个对象。
+      AssetEntry? bundlesDir;
+      for (final AssetEntry e in children) {
+        if (e.isFolder && e.name == kDeletionTombstoneBundlesFolder) {
+          bundlesDir = e;
+          break;
+        }
+      }
+      final String ownBundleName = deviceId.isEmpty
+          ? ''
+          : deletionTombstoneBundleNameFor(deviceId);
+      DeletionTombstoneBundle? ownPrev;
+      // 自己那份清单列出来了却没读成：本轮不重写它（否则会用残缺内容覆盖掉里面记着的
+      // 逐条标记指纹，下轮又要全量重读）。
+      bool ownBundleWritable = true;
+      final List<DeletionTombstoneBundle> bundles = <DeletionTombstoneBundle>[];
+      if (bundlesDir != null) {
+        for (final AssetEntry b in await _backend.listChildren(bundlesDir.id)) {
+          if (b.isFolder) continue;
+          final bool isOwn = b.name == ownBundleName;
+          Object? json;
+          try {
+            json = await _backend.getJsonAsset(b.id);
+            if (json == null) {
+              report.noteError(
+                'deletion tombstone bundle "${b.name}" unreadable',
+                'empty response',
+              );
+            }
+          } catch (err) {
+            json = null;
+            report.noteError(
+              'deletion tombstone bundle "${b.name}" unreadable',
+              err,
+            );
+          }
+          if (json == null) {
+            scanComplete = false;
+            readFailures++;
+            if (isOwn) ownBundleWritable = false;
+            continue;
+          }
+          final DeletionTombstoneBundle? parsed =
+              DeletionTombstoneBundle.tryParse(json);
+          if (parsed == null) {
+            // 永久坏文件（同逐条标记的 malformed 口径：不扣基线）。自己的那份坏了就由
+            // 本轮重写覆盖。
+            report.noteError(
+              'deletion tombstone bundle "${b.name}" malformed',
+              'skipped',
+            );
+            continue;
+          }
+          bundles.add(parsed);
+          if (isOwn) ownPrev = parsed;
+          for (final DeletionTombstoneBundleEntry t in parsed.entries.values) {
+            addRemote(t.mediaType, t.itemKey, t.deletedAt);
+          }
+        }
+      }
+      final DeletionTombstoneBundle ownNext =
+          ownPrev?.copy() ?? DeletionTombstoneBundle();
+      for (final SyncDeletionTombstoneRow row in ownRows) {
+        ownNext.add(
+          row.mediaType,
+          row.itemKey,
+          row.deletedAt,
+          assetName: deletionTombstoneAssetName(row.mediaType, row.itemKey),
+        );
+      }
+
+      // 2) 逐条标记（旧格式 / 旧客户端写的）：同名 + 同内容指纹已在某份清单里的免读；
+      // 其余逐个 GET，每轮至多 [kDeletionTombstoneMarkerReadsPerRound] 条。
+      final Map<String, Set<String>> covered = deletionTombstoneBundleCoverage(
+        bundles,
+      );
+      int markerReads = 0;
+      int deferred = 0;
       for (final AssetEntry e in children) {
         if (e.isFolder) continue;
+        final String? rev = e.revision;
+        if (rev != null && (covered[e.name]?.contains(rev) ?? false)) continue;
+        if (markerReads >= kDeletionTombstoneMarkerReadsPerRound ||
+            readFailures >= kDeletionTombstoneReadFailureBudget) {
+          deferred++;
+          continue;
+        }
+        markerReads++;
         Object? json;
         try {
           json = await _backend.getJsonAsset(e.id);
         } catch (err) {
           scanComplete = false;
+          readFailures++;
           report.noteError('deletion tombstone "${e.name}" unreadable', err);
           continue;
         }
@@ -1325,6 +1443,7 @@ class SyncOrchestrator {
           // .getJsonAsset] 就是这样吞 SyncBackendError 的）。两种都不是「已观测」，
           // 按不完整处理——静默 continue 会让后者变成一次无声的永久压制。
           scanComplete = false;
+          readFailures++;
           report.noteError(
             'deletion tombstone "${e.name}" unreadable',
             'empty response',
@@ -1335,20 +1454,50 @@ class SyncOrchestrator {
         if (parsed == null) {
           // 读到了但内容不合法（截断上传 / 非本协议文件）。这是**永久**状态，重试不会
           // 变好，故不置 scanComplete=false（否则基线被一个坏文件永久钉死，用户每轮
-          // 重看同一批确认框）。只如实记一条，别再静默丢。
+          // 重看同一批确认框）。如实记一条；有指纹就记进清单，同一份坏内容不再每轮重下。
           report.noteError(
             'deletion tombstone "${e.name}" malformed',
             'skipped',
           );
+          if (rev != null) ownNext.malformed[e.name] = rev;
           continue;
         }
-        final Map<String, int> byKey = remoteTombstones.putIfAbsent(
-          parsed.mediaType,
-          () => <String, int>{},
+        addRemote(parsed.mediaType, parsed.itemKey, parsed.deletedAt);
+        if (rev != null) {
+          ownNext.add(
+            parsed.mediaType,
+            parsed.itemKey,
+            parsed.deletedAt,
+            assetName: e.name,
+            revision: rev,
+          );
+        }
+      }
+      if (deferred > 0) {
+        scanComplete = false;
+        report.errors.add(
+          'deletion tombstones: $deferred marker(s) deferred to next sync '
+          '(per-round read cap $kDeletionTombstoneMarkerReadsPerRound, '
+          'read failures $readFailures)',
         );
-        final int? prev = byKey[parsed.itemKey];
-        if (prev == null || parsed.deletedAt > prev) {
-          byKey[parsed.itemKey] = parsed.deletedAt;
+      }
+
+      // 3) 写回本机清单（内容没变不写）。失败只记错误，不影响本轮消费。
+      if (ownBundleName.isNotEmpty &&
+          ownBundleWritable &&
+          !(ownPrev != null && ownNext.sameContentAs(ownPrev)) &&
+          (ownNext.entries.isNotEmpty || ownNext.malformed.isNotEmpty)) {
+        try {
+          final String dirId =
+              bundlesDir?.id ??
+              await _backend.ensureFolder(ns, kDeletionTombstoneBundlesFolder);
+          await _backend.putJsonAsset(
+            dirId,
+            ownBundleName,
+            ownNext.toJson(deviceId),
+          );
+        } catch (err) {
+          report.noteError('deletion tombstone bundle write', err);
         }
       }
 
