@@ -179,11 +179,10 @@ void main() {
               .map((Match match) => match.group(1)!.trim())
               .toList();
       expect(conditions.toSet(), <String>{
-        'StoreRestrictedCapability.externalDiscovery.isAvailable',
+        // 「发现」：内置发现源（外部发现合规门）或 iOS 上用户自配 OPDS / AList
+        // 服务器的发现视图（2026-10-27 用户拍板），同一个视图，不是按宿主分叉。
+        'builtInDiscover || userServerDiscover',
         'isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga)',
-        // iOS 上用户自配 OPDS / AList 服务器的发现视图（2026-10-27 用户拍板），
-        // 同样是合规门的一半，不是按宿主分叉。
-        'userServerDiscover',
       }, reason: '视图列表只许按合规门分叉；按平台/扩展宿主分叉一律不行');
       for (final String removed in <String>[
         'mangaSources',

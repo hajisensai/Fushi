@@ -203,17 +203,33 @@ void main() {
       expect(
         manga,
         contains(
-          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)'
+          'finalboolbuiltInDiscover='
+          'StoreRestrictedCapability.externalDiscovery.isAvailable;',
+        ),
+        reason: '漫画内置发现源只问外部发现合规门。',
+      );
+      expect(
+        manga,
+        contains(
+          'if(builtInDiscover||userServerDiscover)'
           'MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
         ),
-        reason: '漫画「发现」（AniList 榜单 / 来源热门 / mokuro.moe）必须挂在合规门后。',
+        reason: '漫画「发现」只有一个视图（BUG-1710），挂在合规门或用户服务器门后。',
+      );
+      expect(
+        manga,
+        contains(
+          'builder:(BuildContextcontext,Widgetnavigation)=>'
+          'builtInDiscover?Consumer(builder:(BuildContextcontext,WidgetRefref,Widget?_)=>'
+          'MangaDiscoveryPage(',
+        ),
+        reason: '漫画「发现」（AniList 榜单 / 来源热门 / mokuro.moe）只在合规门开时构建。',
       );
       expect(
         manga,
         contains(
           'finalbooluserServerDiscover='
-          '!StoreRestrictedCapability.externalDiscovery.isAvailable&&'
-          'ref.watch(appProvider.select((AppModelappModel)=>'
+          '!builtInDiscover&&ref.watch(appProvider.select((AppModelappModel)=>'
           'userServerDiscoverViewAvailable(appModel.mediaDiscoveryService,'
           '_userServerKinds,),),);',
         ),
@@ -221,13 +237,7 @@ void main() {
       );
       expect(
         manga,
-        contains(
-          'if(userServerDiscover)MediaLibraryViewSpec('
-          'kind:MediaLibraryViewKind.discover,handlesChromeInset:true,'
-          'label:t.library_view_discover,'
-          'builder:(BuildContextcontext,Widgetnavigation)=>'
-          'MediaDiscoveryPage(kinds:_userServerKinds,',
-        ),
+        contains(':MediaDiscoveryPage(kinds:_userServerKinds,'),
         reason:
             'iOS 的漫画发现视图只能是统一发现页（只列注册表里的用户服务器源），'
             '不能是带 AniList 榜单 / Mihon 热门 / mokuro.moe 的 MangaDiscoveryPage。',
@@ -317,10 +327,14 @@ void main() {
           'userServerDiscoverViewAvailable(appModel.mediaDiscoveryService,'
           '_bookDiscoveryKinds,))',
         );
-        // 漫画：两处发现入口，一处过内置发现门、一处过用户服务器门，没有第三处。
-        expect(entry.allMatches(manga).length, 2, reason: '漫画库页应恰有两处发现入口');
-        expect('$discoverGate$entry'.allMatches(manga).length, 1);
-        expect('if(userServerDiscover)$entry'.allMatches(manga).length, 1);
+        // 漫画：恰一处发现入口（BUG-1710），过内置发现门或用户服务器门。
+        expect(entry.allMatches(manga).length, 1, reason: '漫画库页应恰有一处发现入口');
+        expect(
+          'if(builtInDiscover||userServerDiscover)$entry'
+              .allMatches(manga)
+              .length,
+          1,
+        );
       }
       expectAllGated(
         video,

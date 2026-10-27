@@ -47,8 +47,10 @@ class MangaLibraryPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // 平台常量先短路：有内置发现源的平台不订阅 appModel，行为与原来一致。
+    final bool builtInDiscover =
+        StoreRestrictedCapability.externalDiscovery.isAvailable;
     final bool userServerDiscover =
-        !StoreRestrictedCapability.externalDiscovery.isAvailable &&
+        !builtInDiscover &&
         ref.watch(
           appProvider.select(
             (AppModel appModel) => userServerDiscoverViewAvailable(
@@ -68,37 +70,34 @@ class MangaLibraryPage extends ConsumerWidget {
           builder: (BuildContext context, Widget navigation) =>
               ReaderFushiHistoryPage(mangaOnly: true, navigation: navigation),
         ),
-        if (StoreRestrictedCapability.externalDiscovery.isAvailable)
+        // 「发现」只有一个视图：有内置发现源的平台是漫画发现页，iOS 上换成用户
+        // 自配服务器的统一发现页（两者互斥，不能各占一个 tab，BUG-1710 守卫）。
+        if (builtInDiscover || userServerDiscover)
           MediaLibraryViewSpec(
             kind: MediaLibraryViewKind.discover,
             // 发现页把自己的搜索 / 筛选行叠进浮动工具区，主滚动视图自己让位。
             handlesChromeInset: true,
             label: t.library_view_discover,
             // 「浏览来源」节经库页壳的 [MediaLibraryShellScope] 切到本页「来源」。
-            builder: (BuildContext context, Widget navigation) => Consumer(
-              builder: (BuildContext context, WidgetRef ref, Widget? _) =>
-                  MangaDiscoveryPage(
-                    navigation: navigation,
-                    onAiAcquire: discoveryAiAcquireAction(
-                      context: context,
-                      readAppModel: () => ref.read(appProvider),
-                      domain: AiMediaAcquisitionDomain.manga,
-                      domainLabel: t.manga_library,
-                      onlineDomain: OnlineSourcesDomain.manga,
-                    ),
-                  ),
-            ),
-          ),
-        if (userServerDiscover)
-          MediaLibraryViewSpec(
-            kind: MediaLibraryViewKind.discover,
-            handlesChromeInset: true,
-            label: t.library_view_discover,
             builder: (BuildContext context, Widget navigation) =>
-                MediaDiscoveryPage(
-                  kinds: _userServerKinds,
-                  navigation: navigation,
-                ),
+                builtInDiscover
+                ? Consumer(
+                    builder: (BuildContext context, WidgetRef ref, Widget? _) =>
+                        MangaDiscoveryPage(
+                          navigation: navigation,
+                          onAiAcquire: discoveryAiAcquireAction(
+                            context: context,
+                            readAppModel: () => ref.read(appProvider),
+                            domain: AiMediaAcquisitionDomain.manga,
+                            domainLabel: t.manga_library,
+                            onlineDomain: OnlineSourcesDomain.manga,
+                          ),
+                        ),
+                  )
+                : MediaDiscoveryPage(
+                    kinds: _userServerKinds,
+                    navigation: navigation,
+                  ),
           ),
         if (isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga))
           MediaLibraryViewSpec(
