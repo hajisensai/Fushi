@@ -4,7 +4,8 @@
 //! 写锁），读命令走读连接上的 WAL 快照，不被长写挡住。对象可以从任意线程 / isolate 调用。
 //!
 //! 关闭（[SrsCore::close]）与在途调用互斥：它先后拿读、写两把锁再丢掉连接，所以会等别的线程手上
-//! 的命令跑完；之后的命令一律报「已关闭」。结构体本身不随关闭释放（见 [ffi::ffsrs_store_close]）。
+//! 的命令跑完；之后的命令（含另开只读会话 [SrsCore::read_session]）一律报「已关闭」。C ABI 的句柄是
+//! 句柄表里的编号、调用期间握一份 `Arc`（见 [ffi]），结构体在最后一份引用放掉时释放。
 //!
 //! 只打开 `srs.db`、它的备份快照副本或自己生成的临时文件；绝不打开主库 `fushi.db`（同一进程里
 //! Drift 那份 SQLite 与这里自带的一份同开一个文件，会在 POSIX 平台上互相清掉文件锁）。
@@ -25,6 +26,9 @@ use rusqlite::types::Value;
 use rusqlite::{Connection, OpenFlags};
 
 const LEGACY_KEY: &str = "legacy_import";
+
+/// 已关闭的库上任何命令的错误文本（Dart 侧按它认「已关闭」）。
+pub(crate) const CLOSED: &str = "srs store is closed";
 
 pub struct SrsCore {
     // 字段按声明顺序析构：只读连接先关，写连接最后关。最后一个关闭的连接负责把 WAL 并回主文件
@@ -50,7 +54,7 @@ pub(crate) struct Conn<'a>(MutexGuard<'a, Option<Connection>>);
 impl<'a> Conn<'a> {
     fn of(guard: MutexGuard<'a, Option<Connection>>) -> Result<Self, String> {
         if guard.is_none() {
-            return Err("srs store is closed".to_string());
+            return Err(CLOSED.to_string());
         }
         Ok(Self(guard))
     }
@@ -490,7 +494,11 @@ impl SrsCore {
 
     /// 另开一条只读连接、开读事务并先读一次（快照在第一次读时才定下）：返回时快照已定，之后本库的
     /// 新写入都不在里面。备份读快照用（后台 isolate 里分页读二三十秒，不占读 / 写连接）。
+    ///
+    /// 开会话期间持读连接的锁：与 [SrsCore::close]（先拿读锁）互斥，库已关闭就报「已关闭」，不会按路径
+    /// 把关库后可能已被删换的库文件重新打开。会话开好之后与本对象无关，关库不结束它。
     pub fn read_session(&self) -> Result<ReadSession, String> {
+        let _open = self.reader()?;
         let conn = Connection::open_with_flags(
             &self.path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -563,6 +571,9 @@ mod tests {
         assert!(core.debug_query("SELECT 1", &[]).is_err());
         core.close();
         std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+        // 关库后另开只读会话同样报已关闭，不按路径把（已删掉的）库文件重新打开。
+        assert_eq!(core.read_session().err().as_deref(), Some(CLOSED));
+        assert!(!p.exists(), "read_session reopened srs.db after close");
     }
 
     #[test]
