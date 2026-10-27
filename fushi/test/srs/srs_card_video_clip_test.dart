@@ -11,6 +11,8 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart'
+    show SrsBlankTapRegion;
 import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
     show SrsPictureLimits, srsPictureLimits;
@@ -580,6 +582,59 @@ void main() {
       await tester.pump();
       expect(p.calls, <String>['volume:0.5', 'seek:0', 'play']);
       expect(find.byTooltip(t.srs_card_video_replay), findsOne);
+    });
+
+    testWidgets('点画面 / 全屏 / 重播都不算点卡面空白（不切换复习页悬浮顶栏）', (
+      WidgetTester tester,
+    ) async {
+      final List<String> blank = <String>[];
+      await tester.runAsync(() async {
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: TranslationProvider(
+              child: MaterialApp(
+                home: Scaffold(
+                  body: SrsBlankTapRegion(
+                    onTapEmpty: () => blank.add('empty'),
+                    tapTookLookup: () => false,
+                    child: const ColoredBox(
+                      key: ValueKey<String>('blank'),
+                      color: Color(0xFFFFFFFF),
+                      child: Center(
+                        child: SrsCardVideoClip(
+                          name: 'clip.webm',
+                          maxWidth: 300,
+                          maxHeight: 120,
+                          radius: 8,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pump();
+
+      for (final String key in <String>[
+        'srs-card-video-toggle',
+        'srs-card-video-replay',
+        'srs-card-video-expand',
+      ]) {
+        await tester.tap(find.byKey(ValueKey<String>(key)));
+        await tester.pump();
+        expect(blank, isEmpty, reason: key);
+      }
+      // 放大视图是对话框：关掉再点卡面空白，空白照常回报。
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pump();
+      expect(blank, <String>['empty']);
     });
 
     testWidgets('按视频比例缩放进约束', (WidgetTester tester) async {

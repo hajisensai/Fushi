@@ -1075,6 +1075,13 @@ class _SrsBlankTapRegionState extends State<SrsBlankTapRegion> {
           (target.onTap != null || target.onLongPress != null)) {
         return true;
       }
+      // 自报可点的控件：图标按钮（[FushiIconButton] 内层 InkWell 不进语义，命中路径上只有
+      // 外层的 `Semantics(button: true)`）、视频片段画面等。不认它们，点按钮 / 点视频会
+      // 被当成点空白，顺带切换悬浮顶栏。
+      if (target is RenderSemanticsAnnotations) {
+        final SemanticsProperties p = target.properties;
+        if (p.button == true || p.link == true || p.onTap != null) return true;
+      }
       if (target is RenderMetaData &&
           identical(target.metaData, _kSrsBlankTapExcluded)) {
         return true;
