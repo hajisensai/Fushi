@@ -8,7 +8,9 @@
 //! （`SrsCore.fromAddress`），拥有者关库时那边可能还在调用、甚至之后才调用。每次调用先在句柄表里
 //! 取出一份 `Arc<SrsCore>` 再干活，关库把它从表里摘掉：在途调用手上那份让结构体活到它跑完，之后
 //! 再来的调用查不到编号、报「已关闭」，最后一份引用放掉时结构体真正释放。编号单调递增不复用，
-//! 旧句柄不会误指到后来打开的库。线程安全，可在任意 isolate 上用。
+//! 旧句柄不会误指到后来打开的库。只读会话句柄（[ReadSessionHandle]）同理，另一张表；会话随所属的库
+//! 关闭而失效（连接关掉、之后报「已关闭」），表项留到 [ffsrs_store_read_end]。线程安全，可在任意
+//! isolate 上用。
 
 use std::ffi::{c_char, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -52,8 +54,36 @@ pub enum SrsCoreHandle {}
 /// 打开着的库：编号 → 共享引用。只在取 / 放引用的一瞬间持锁，命令本身不在锁里跑。
 static HANDLES: Mutex<BTreeMap<usize, Arc<SrsCore>>> = Mutex::new(BTreeMap::new());
 
-/// 下一个句柄编号（0 留给 NULL）。单调递增，不复用。
+/// 只读会话句柄的不透明类型：值是 [SESSIONS] 里的编号，从不解引用。
+pub enum ReadSessionHandle {}
+
+/// 没结束的只读会话：编号 → 共享引用（同 [HANDLES]，只在取 / 放引用时持锁）。
+static SESSIONS: Mutex<BTreeMap<usize, Arc<ReadSession>>> = Mutex::new(BTreeMap::new());
+
+/// 下一个句柄编号（0 留给 NULL；库与会话共用，单调递增，不复用）。
 static NEXT_HANDLE: AtomicUsize = AtomicUsize::new(1);
+
+fn sessions() -> std::sync::MutexGuard<'static, BTreeMap<usize, Arc<ReadSession>>> {
+    SESSIONS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// 跑一段带会话句柄的操作（已结束 / 从没开过 = 「已关闭」）。
+fn run_session(
+    session: *const ReadSessionHandle,
+    error_out: *mut *mut c_char,
+    body: impl FnOnce(&ReadSession) -> Result<(), String>,
+) -> i32 {
+    if session.is_null() {
+        set_error(error_out, "null srs handle");
+        return STORE_BAD_ARGUMENT;
+    }
+    let found = sessions().get(&(session as usize)).cloned();
+    let Some(s) = found else {
+        set_error(error_out, CLOSED);
+        return STORE_ERROR;
+    };
+    run(Arc::as_ptr(&s), error_out, body)
+}
 
 fn handles() -> std::sync::MutexGuard<'static, BTreeMap<usize, Arc<SrsCore>>> {
     // 锁里只有 BTreeMap 的增删查，不跑用户代码；就算哪次 panic 毒化了锁，表本身也完好。
@@ -277,7 +307,7 @@ pub extern "C" fn ffsrs_store_debug_query(
 #[no_mangle]
 pub extern "C" fn ffsrs_store_read_begin(
     core: *const SrsCoreHandle,
-    session_out: *mut *mut ReadSession,
+    session_out: *mut *mut ReadSessionHandle,
     error_out: *mut *mut c_char,
 ) -> i32 {
     if session_out.is_null() {
@@ -286,7 +316,9 @@ pub extern "C" fn ffsrs_store_read_begin(
     }
     run_core(core, error_out, |c| {
         let s = c.read_session()?;
-        unsafe { *session_out = Box::into_raw(Box::new(s)) };
+        let id = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
+        sessions().insert(id, s);
+        unsafe { *session_out = id as *mut ReadSessionHandle };
         Ok(())
     })
 }
@@ -294,7 +326,7 @@ pub extern "C" fn ffsrs_store_read_begin(
 /// 在只读会话的读事务里跑一条只读语句。参数页 / 结果编码同 [ffsrs_store_debug_query]。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_read_query(
-    session: *const ReadSession,
+    session: *const ReadSessionHandle,
     sql: *const u8,
     sql_len: usize,
     params: *const u8,
@@ -307,7 +339,7 @@ pub extern "C" fn ffsrs_store_read_query(
         set_error(error_out, "null out");
         return STORE_BAD_ARGUMENT;
     }
-    run(session, error_out, |r| {
+    run_session(session, error_out, |r| {
         let s = utf8(sql, sql_len)?;
         let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
         hand_out(r.query(s, &values)?, out, out_len);
@@ -315,12 +347,19 @@ pub extern "C" fn ffsrs_store_read_query(
     })
 }
 
-/// 结束只读会话（NULL 无操作）。之后句柄不可再用。
+/// 结束只读会话（NULL 无操作，重复结束无操作）：从表里摘掉、等在途查询跑完后回滚并关连接；之后经这个
+/// 句柄的查询报「已关闭」。
 #[no_mangle]
-pub extern "C" fn ffsrs_store_read_end(session: *mut ReadSession) {
-    if !session.is_null() {
-        let _ = catch_unwind(AssertUnwindSafe(|| unsafe { drop(Box::from_raw(session)) }));
+pub extern "C" fn ffsrs_store_read_end(session: *mut ReadSessionHandle) {
+    if session.is_null() {
+        return;
     }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let removed = sessions().remove(&(session as usize));
+        if let Some(s) = removed {
+            s.close();
+        }
+    }));
 }
 
 fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
@@ -867,12 +906,12 @@ mod tests {
         let mut out: *mut u8 = null_mut();
         let mut out_len: usize = 0;
         let mut flag: i32 = 0;
-        let mut session: *mut ReadSession = null_mut();
+        let mut session: *mut ReadSessionHandle = null_mut();
         let (o, ol, f, s) = (
             &mut out as *mut *mut u8,
             &mut out_len as *mut usize,
             &mut flag as *mut i32,
-            &mut session as *mut *mut ReadSession,
+            &mut session as *mut *mut ReadSessionHandle,
         );
         let sql: &[u8] = b"SELECT 1";
         let snap: &[u8] = b"snap.db";
@@ -997,6 +1036,83 @@ mod tests {
         let done: usize = workers.into_iter().map(|w| w.join().unwrap()).sum();
         assert!(done > 0);
         assert!(!alive(&weak));
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+    }
+
+    /// 经 C ABI：开会话 → 关库 → 会话查询报已关闭，库文件可改名 / 删除；read_end 之后同样报已关闭，
+    /// 重复 read_end 无操作。
+    #[test]
+    fn closing_the_store_invalidates_its_read_sessions() {
+        let p = temp("sessions");
+        let h = open(&p);
+        let mut session: *mut ReadSessionHandle = null_mut();
+        let mut err: *mut c_char = null_mut();
+        assert_eq!(ffsrs_store_read_begin(h, &mut session, &mut err), STORE_OK);
+        assert!(!session.is_null());
+        let sql: &[u8] = b"SELECT COUNT(*) FROM sqlite_master";
+        let query = |s: *const ReadSessionHandle| -> (i32, Option<String>) {
+            let mut out: *mut u8 = null_mut();
+            let mut out_len = 0usize;
+            let mut err: *mut c_char = null_mut();
+            let rc = ffsrs_store_read_query(s, sql.as_ptr(), sql.len(), null(), 0, &mut out, &mut out_len, &mut err);
+            if rc == STORE_OK {
+                crate::ffsrs_free_bytes(out, out_len);
+                (rc, None)
+            } else {
+                (rc, Some(take(err)))
+            }
+        };
+        assert_eq!(query(session), (STORE_OK, None));
+
+        ffsrs_store_close(h);
+        assert_eq!(query(session), (STORE_ERROR, Some(CLOSED.to_string())));
+        // 会话还没 read_end，但它的连接已经关了：库文件能改名、能删（Windows 下有打开的句柄就不行）。
+        let moved = p.with_file_name("srs.moved.db");
+        std::fs::rename(&p, &moved).unwrap();
+        std::fs::remove_file(&moved).unwrap();
+
+        ffsrs_store_read_end(session);
+        assert_eq!(query(session), (STORE_ERROR, Some(CLOSED.to_string())));
+        ffsrs_store_read_end(session);
+        assert!(sessions().get(&(session as usize)).is_none());
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+    }
+
+    /// 会话查询在途时关库：close 等那次查询跑完（不 UAF、不在查询中途关连接），之后的查询报已关闭。
+    #[test]
+    fn close_waits_for_an_in_flight_read_session_query() {
+        let p = temp("session_inflight");
+        let h = open(&p);
+        let mut session: *mut ReadSessionHandle = null_mut();
+        let mut err: *mut c_char = null_mut();
+        assert_eq!(ffsrs_store_read_begin(h, &mut session, &mut err), STORE_OK);
+        let entered = Arc::new(Barrier::new(2));
+        let worker = {
+            let entered = Arc::clone(&entered);
+            let id = session as usize;
+            std::thread::spawn(move || {
+                let mut err: *mut c_char = null_mut();
+                let rc = run_session(id as *const ReadSessionHandle, &mut err, |s| {
+                    let guard = s.conn.lock().unwrap();
+                    entered.wait();
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    guard
+                        .as_ref()
+                        .ok_or_else(|| "closed under the query".to_string())?
+                        .query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
+                        .map(|_| ())
+                        .map_err(|e| e.to_string())
+                });
+                (rc, if err.is_null() { None } else { Some(take(err)) })
+            })
+        };
+        entered.wait();
+        let t0 = std::time::Instant::now();
+        ffsrs_store_close(h);
+        assert!(t0.elapsed() >= std::time::Duration::from_millis(200), "close did not wait for the session query");
+        assert_eq!(worker.join().unwrap(), (STORE_OK, None));
+        std::fs::remove_file(&p).unwrap();
+        ffsrs_store_read_end(session);
         std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
     }
 }

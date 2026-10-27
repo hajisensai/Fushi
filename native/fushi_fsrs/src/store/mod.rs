@@ -4,7 +4,9 @@
 //! 写锁），读命令走读连接上的 WAL 快照，不被长写挡住。对象可以从任意线程 / isolate 调用。
 //!
 //! 关闭（[SrsCore::close]）与在途调用互斥：它先后拿读、写两把锁再丢掉连接，所以会等别的线程手上
-//! 的命令跑完；之后的命令（含另开只读会话 [SrsCore::read_session]）一律报「已关闭」。C ABI 的句柄是
+//! 的命令跑完；之后的命令（含另开只读会话 [SrsCore::read_session]）一律报「已关闭」。还没结束的只读
+//! 会话一并失效：在途的那次读跑完后连接随即关掉，之后经它的调用同样报「已关闭」——close 返回时
+//! 本对象打开过的 srs.db 连接一条不剩（Windows 下关库后文件可删可改名）。C ABI 的句柄是
 //! 句柄表里的编号、调用期间握一份 `Arc`（见 [ffi]），结构体在最后一份引用放掉时释放。
 //!
 //! 只打开 `srs.db`、它的备份快照副本或自己生成的临时文件；绝不打开主库 `fushi.db`（同一进程里
@@ -19,7 +21,7 @@ pub mod sync2;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::ops::{Deref, DerefMut};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
 use rusqlite::types::Value;
@@ -40,12 +42,17 @@ pub struct SrsCore {
     legacy_open: AtomicBool,
     /// 库文件路径（[SrsCore::read_session] 另开只读连接用）。
     path: PathBuf,
+    /// 开过的只读会话（弱引用）：[SrsCore::close] 逐个关掉还没结束的。只在持读锁时登记，close 先拿
+    /// 读锁，所以不会漏掉一个正在开的会话。
+    sessions: Mutex<Vec<Weak<ReadSession>>>,
 }
 
 /// 一条独立的只读连接 + 一个读事务（[SrsCore::read_session]）：整段读取看到开会话那一刻的快照，
-/// 不占 [SrsCore] 自己的读 / 写连接。析构即回滚并关闭。
+/// 不占 [SrsCore] 自己的读 / 写连接。[ReadSession::close]（或析构）回滚并关闭；所属的库关闭时也一并
+/// 关闭（[SrsCore::close]），之后的查询报「已关闭」。可以跨线程共享：连接在一把锁里，关闭会等在途查询跑完。
 pub struct ReadSession {
-    conn: Connection,
+    // `None` = 已关闭。
+    conn: Mutex<Option<Connection>>,
 }
 
 /// 打开着的一条连接（[SrsCore::reader] / [SrsCore::writer]），持有它就持有那把锁。
@@ -77,7 +84,14 @@ impl DerefMut for Conn<'_> {
 impl ReadSession {
     /// 在会话的读事务里跑一条只读语句；结果编码同 [SrsCore::debug_query]（首行是列名）。
     pub fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
-        query_rows(&self.conn, sql, params)
+        let conn = Conn::of(self.conn.lock().map_err(|_| "srs read session poisoned".to_string())?)?;
+        query_rows(&conn, sql, params)
+    }
+
+    /// 回滚读事务并关闭连接（幂等）。会等别的线程上在途的查询跑完；之后的查询报「已关闭」。
+    pub fn close(&self) {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner()).take();
+        drop(conn);
     }
 }
 
@@ -149,6 +163,7 @@ impl SrsCore {
             reader: Mutex::new(Some(reader)),
             legacy_open: AtomicBool::new(false),
             path: path.to_path_buf(),
+            sessions: Mutex::new(Vec::new()),
         })
     }
 
@@ -160,12 +175,18 @@ impl SrsCore {
         Conn::of(self.reader.lock().map_err(|_| "srs reader poisoned".to_string())?)
     }
 
-    /// 关闭两条连接（幂等）。先拿读锁再拿写锁，所以会等其它线程上在途的命令跑完，关闭返回时库文件
-    /// 已没有打开的句柄（覆盖恢复要删换 srs.db）。读连接先关、写连接最后关：最后关的连接负责把 WAL
-    /// 并回主文件并删掉 -wal。之后的命令一律报「已关闭」。
+    /// 关闭全部连接（幂等）：读连接、还没结束的只读会话、写连接。每一条都先拿它的锁再丢，所以会等
+    /// 其它线程上在途的命令 / 会话查询跑完，关闭返回时库文件已没有打开的句柄（覆盖恢复要删换
+    /// srs.db）。写连接最后关：最后关的连接负责把 WAL 并回主文件并删掉 -wal。之后的命令与会话查询
+    /// 一律报「已关闭」。
     pub fn close(&self) {
+        // 先关读连接：此后 read_session 报已关闭，下面拿到的会话清单就是全部。
         let reader = self.reader.lock().unwrap_or_else(|e| e.into_inner()).take();
         drop(reader);
+        let sessions = std::mem::take(&mut *self.sessions.lock().unwrap_or_else(|e| e.into_inner()));
+        for s in sessions.iter().filter_map(Weak::upgrade) {
+            s.close();
+        }
         let writer = self.writer.lock().unwrap_or_else(|e| e.into_inner()).take();
         drop(writer);
     }
@@ -497,7 +518,7 @@ impl SrsCore {
     ///
     /// 开会话期间持读连接的锁：与 [SrsCore::close]（先拿读锁）互斥，库已关闭就报「已关闭」，不会按路径
     /// 把关库后可能已被删换的库文件重新打开。会话开好之后与本对象无关，关库不结束它。
-    pub fn read_session(&self) -> Result<ReadSession, String> {
+    pub fn read_session(&self) -> Result<Arc<ReadSession>, String> {
         let _open = self.reader()?;
         let conn = Connection::open_with_flags(
             &self.path,
@@ -508,7 +529,11 @@ impl SrsCore {
         conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
         conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
             .map_err(|e| e.to_string())?;
-        Ok(ReadSession { conn })
+        let session = Arc::new(ReadSession { conn: Mutex::new(Some(conn)) });
+        let mut sessions = self.sessions.lock().map_err(|_| "srs sessions poisoned".to_string())?;
+        sessions.retain(|w| w.strong_count() > 0);
+        sessions.push(Arc::downgrade(&session));
+        Ok(session)
     }
 }
 
@@ -574,6 +599,52 @@ mod tests {
         // 关库后另开只读会话同样报已关闭，不按路径把（已删掉的）库文件重新打开。
         assert_eq!(core.read_session().err().as_deref(), Some(CLOSED));
         assert!(!p.exists(), "read_session reopened srs.db after close");
+    }
+
+    /// 关库让还没结束的只读会话失效：在途的会话查询跑完 close 才返回，之后会话查询报已关闭，
+    /// close 返回时库文件已无打开的连接（Windows 下可删 / 改名）。
+    #[test]
+    fn close_ends_open_read_sessions_and_releases_the_file() {
+        use std::sync::Barrier;
+        use std::time::Instant;
+
+        let p = temp("close_sessions");
+        let core = Arc::new(SrsCore::open(&p).unwrap());
+        let idle = core.read_session().unwrap();
+        let busy = core.read_session().unwrap();
+        let started = Arc::new(Barrier::new(2));
+        let worker = {
+            let (busy, started) = (Arc::clone(&busy), Arc::clone(&started));
+            std::thread::spawn(move || {
+                // 拿着会话的锁做一次慢读，close 必须等它。
+                let guard = busy.conn.lock().unwrap();
+                started.wait();
+                std::thread::sleep(Duration::from_millis(300));
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
+                    .unwrap()
+            })
+        };
+        started.wait();
+        let t0 = Instant::now();
+        core.close();
+        assert!(
+            t0.elapsed() >= Duration::from_millis(200),
+            "close returned while a read session query was still running"
+        );
+        assert!(worker.join().unwrap() > 0);
+        for s in [&idle, &busy] {
+            assert_eq!(s.query("SELECT 1", &[]).err().as_deref(), Some(CLOSED));
+        }
+        // 会话对象还活着，但连接都没了：库文件能改名、能删。
+        let moved = p.with_file_name("srs.moved.db");
+        std::fs::rename(&p, &moved).unwrap();
+        std::fs::remove_file(&moved).unwrap();
+        idle.close();
+        drop((idle, busy));
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
     }
 
     #[test]
