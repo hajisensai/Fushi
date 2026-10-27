@@ -465,6 +465,30 @@ void main() {
       expect((await service().bindingFor('D'))!.cachedOnly, isTrue);
     });
 
+    // 回归：确认框曾只说「进度留在服务器」，书签等本机数据却随书删掉。
+    test('hasLocalUserData reports what removal would delete', () async {
+      final EpubBookRow marked = await insertBook(
+        'Marked',
+        _binding(1, cachedOnly: false),
+      );
+      await db
+          .into(db.bookmarks)
+          .insert(
+            BookmarksCompanion.insert(
+              bookUid: marked.uid,
+              sectionIndex: 1,
+              normCharOffset: 0,
+              label: 'mark',
+              createdAt: 1,
+            ),
+          );
+      await insertBook('Bare', _binding(2, cachedOnly: false));
+
+      expect(await service().hasLocalUserData('Marked'), isTrue);
+      expect(await service().hasLocalUserData('Bare'), isFalse);
+      expect(await service().hasLocalUserData('Missing'), isFalse);
+    });
+
     test('non-Kavita books are refused', () async {
       await db.insertEpubBook(
         EpubBooksCompanion.insert(

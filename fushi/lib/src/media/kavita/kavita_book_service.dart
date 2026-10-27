@@ -386,6 +386,13 @@ class KavitaBookService {
     }
   }
 
+  /// 这本书是否带着「移除下载」会一并删掉的本机用户数据（书签 / 单书 CSS / 有声书或
+  /// 字幕配对 / 标签 / 合集）。确认框据此决定是否警告——不能只说「进度留在服务器」。
+  Future<bool> hasLocalUserData(String bookKey) async {
+    final EpubBookRow? row = await _db.getEpubBook(bookKey);
+    return row != null && await _hasUserData(row);
+  }
+
   /// 「移除下载」：用户显式删这本书（与书架单删同义，书签等随书删除）。本地进度推
   /// 不出去时不删，而是降回缓存副本（之后进度同步了，照常按上限淘汰或被一键清理
   /// 带走），返回 [KavitaLocalRemoval.keptUnsynced]。推进度期间本地位置又动了（正在
