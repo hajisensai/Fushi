@@ -229,6 +229,7 @@ class OpInvoker {
       path: path,
       params: pathParams,
       body: body,
+      fromModel: caller == OpCaller.model,
     );
   }
 

@@ -112,7 +112,7 @@ void main() {
     test('章节装载失败也经 _failNavigation 收口', () {
       final String body = methodBody(
         navigation,
-        'Future<void> _navigateToChapter(',
+        'Future<bool> _navigateToChapter(',
       );
       expect(containsIdentifierCall(body, '_failNavigation'), isTrue,
           reason: '装载抛错同样让回执永不到达，必须走同一收口点');

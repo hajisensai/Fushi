@@ -7,6 +7,10 @@ import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart'
+    show
+        VideoDownloadSubscriptionBtSiteMissing,
+        isVideoSubscriptionBtSiteMissingError;
 
 NyaaTorrent _torrent({
   required String hash,
@@ -469,6 +473,66 @@ void main() {
       expect(updated.lastError, contains('subtitle not yet available'));
       service.stop();
       service.checking.dispose();
+    });
+
+    test(
+        'BT 站配置变了：wakeBtSiteMissingSubscriptions 立即重查因缺站停住的订阅',
+        () async {
+      final AnimeDownloadSubscription subscription = _subscription();
+      await subscriptionStore.save(subscription);
+      final _FakeBackend backend = _FakeBackend();
+      bool hasSite = false;
+      int searches = 0;
+      final AnimeDownloadSubscriptionService service =
+          AnimeDownloadSubscriptionService(
+        store: subscriptionStore,
+        planStore: planStore,
+        configProvider: () => const QbConnectionConfig(),
+        backendFactory: (_) => backend,
+        search: (_) async {
+          searches++;
+          // 与真实 _searchNyaa 同一种失败：没有启用的 Nyaa 式动画站。
+          if (!hasSite) throw const VideoDownloadSubscriptionBtSiteMissing();
+          return <NyaaTorrent>[_torrent(hash: 'abc123', episode: 2)];
+        },
+      );
+
+      await service.checkSubscription(subscription.id);
+      final AnimeDownloadSubscription paused =
+          (await subscriptionStore.loadAll()).single;
+      expect(isVideoSubscriptionBtSiteMissingError(paused.lastError), isTrue);
+      expect(searches, 1);
+
+      // 用户添加了站点 → AppModel.setBtSites 调唤醒。
+      hasSite = true;
+      await service.wakeBtSiteMissingSubscriptions();
+
+      expect(searches, 2);
+      final AnimeDownloadSubscription resumed =
+          (await subscriptionStore.loadAll()).single;
+      expect(resumed.lastError, isNull);
+      expect(resumed.processedEpisodes, contains(2));
+      expect(await planStore.loadAll(), hasLength(1));
+    });
+
+    test('wakeBtSiteMissingSubscriptions 不碰没有缺站错误的订阅', () async {
+      await subscriptionStore.save(_subscription());
+      int searches = 0;
+      final AnimeDownloadSubscriptionService service =
+          AnimeDownloadSubscriptionService(
+        store: subscriptionStore,
+        planStore: planStore,
+        configProvider: () => const QbConnectionConfig(),
+        backendFactory: (_) => _FakeBackend(),
+        search: (_) async {
+          searches++;
+          return const <NyaaTorrent>[];
+        },
+      );
+
+      await service.wakeBtSiteMissingSubscriptions();
+
+      expect(searches, 0);
     });
   });
 }

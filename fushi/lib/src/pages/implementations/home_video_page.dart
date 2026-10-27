@@ -19,6 +19,9 @@ import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomeTab, homeShellTabNotifier;
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/pages/implementations/collection_management_page.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
+    show activeContextMenuAnchor;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -3935,6 +3938,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _buildCover(book),
         coverBackdrop: _coverBackdropFor(book.coverPath),
+        coverMaterial: ShelfCoverMaterial.glossyPoster,
         title: book.title,
         showLaunchAction: false,
         // 统一三库页卡菜单次序：重命名 → 封面/刮削 → 媒体特有 → 加入合集 →
@@ -5221,14 +5225,28 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           MediaImageKind.backdrop,
         ];
 
-  /// 竖排版主卡：整宽圆角 tonal 卡，上半 16:9 大图（左上「继续观看」标签），下面
-  /// 标题、副标题、进度条与「继续 · 第 N 集」/「详情」按钮。整卡点一下 = 主按钮。
+  /// 竖排版主卡：整宽圆角 tonal 卡，上半 16:9 剧照（光面海报横版材质，库页
+  /// 定版 2026-10-26：剧照上不压角标），下面「继续观看」眉标、标题、副标题
+  /// （远端条目前缀云图标）、进度条与「继续 · 第 N 集」/「详情」按钮。整卡点
+  /// 一下 = 主按钮。
   Widget _buildHomeHeroCard(_HomeHeroData hero, double contentWidth) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final TextTheme textTheme = Theme.of(context).textTheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ImageProvider? image = hero.image(overlay: false);
     final double progress = hero.progress ?? 0;
+    final bool eink = isEinkTheme(context);
+    final bool apple = isGlassDesign(context) && !eink;
+    final FushiAppleColors appleColors = appleColorsOf(context);
+    // 进度条与库页卡副行（[ShelfCardMeta]）同色：Apple 强调色 / MD3 primary，
+    // 轨道 tertiaryFill / surfaceContainerHighest；墨水屏黑白两段。
+    final Color progressFill = eink
+        ? cs.onSurface
+        : (apple ? appleColors.accent : cs.primary);
+    final Color progressTrack = eink
+        ? cs.surface
+        : (apple ? appleColors.tertiaryFill : cs.surfaceContainerHighest);
+    const double stillInset = 12;
     return FushiCard(
       key: hero.cardKey,
       focusId: hero.focusId,
@@ -5242,24 +5260,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          SizedBox(
-            height: videoHomeHeroStillHeight(contentWidth),
-            child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                _buildHomeHeroImage(image),
-                PositionedDirectional(
-                  top: 12,
-                  start: 12,
-                  child: CoverBadge(label: t.video_continue_watching),
-                ),
-                if (hero.cloud)
-                  const PositionedDirectional(
-                    top: 12,
-                    end: 12,
-                    child: CoverBadge(icon: FushiIcons.cloud),
-                  ),
-              ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              stillInset,
+              stillInset,
+              stillInset,
+              0,
+            ),
+            child: SizedBox(
+              height: videoHomeHeroStillHeight(contentWidth - stillInset * 2),
+              child: ShelfCoverFrame(child: _buildHomeHeroImage(image)),
             ),
           ),
           Padding(
@@ -5268,6 +5278,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
+                  t.video_continue_watching,
+                  style: textTheme.labelMedium?.copyWith(
+                    color: apple ? appleColors.secondaryLabel : cs.primary,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
                   hero.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -5275,14 +5294,28 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                if (hero.subtitle.isNotEmpty)
+                if (hero.subtitle.isNotEmpty || hero.cloud)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      hero.subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tokens.type.metadata,
+                    child: Row(
+                      children: <Widget>[
+                        if (hero.cloud) ...<Widget>[
+                          FushiIcon(
+                            FushiIcons.cloud,
+                            size: (tokens.type.metadata.fontSize ?? 12) + 2,
+                            color: tokens.type.metadata.color,
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Expanded(
+                          child: Text(
+                            hero.subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tokens.type.metadata,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 Padding(
@@ -5290,8 +5323,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   child: FushiLinearProgressIndicator(
                     value: progress.clamp(0.0, 1.0),
                     minHeight: 4,
-                    color: cs.primary,
-                    backgroundColor: tokens.surfaces.overlay,
+                    color: progressFill,
+                    backgroundColor: progressTrack,
                     borderRadius: const BorderRadius.all(Radius.circular(2)),
                   ),
                 ),
@@ -7039,18 +7072,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             children: <Widget>[
               SizedBox(
                 width: videoListRowCoverWidth(box.maxWidth),
+                // 列表行小缩略图走材质简化档（用户 2026-10-26）：圆角 + 内描边
+                // + 轻光泽，不画投影 / 扫光；选中罩随封面圆角裁切。
                 child: Stack(
                   fit: StackFit.expand,
                   children: <Widget>[
-                    _buildCover(book, poster: false, landscapeSlot: true),
+                    ShelfCoverFrame(
+                      density: ShelfCoverDensity.compact,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: <Widget>[
+                          _buildCover(book, poster: false, landscapeSlot: true),
+                          if (selected)
+                            const Positioned.fill(
+                              child: ShelfSelectedOverlay(),
+                            ),
+                        ],
+                      ),
+                    ),
                     if (_selectionMode)
                       Positioned(
                         top: 8,
                         left: 8,
                         child: ShelfSelectionCheck(selected: selected),
                       ),
-                    if (selected)
-                      const Positioned.fill(child: ShelfSelectedOverlay()),
                   ],
                 ),
               ),
@@ -7147,10 +7192,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: <Widget>[
-                    _buildRemoteVideoCover(
-                      video,
-                      poster: false,
-                      landscapeSlot: true,
+                    ShelfCoverFrame(
+                      density: ShelfCoverDensity.compact,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: <Widget>[
+                          _buildRemoteVideoCover(
+                            video,
+                            poster: false,
+                            landscapeSlot: true,
+                          ),
+                          if (selected)
+                            const Positioned.fill(
+                              child: ShelfSelectedOverlay(),
+                            ),
+                        ],
+                      ),
                     ),
                     if (_selectionMode)
                       Positioned(
@@ -7158,8 +7215,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         left: 8,
                         child: ShelfSelectionCheck(selected: selected),
                       ),
-                    if (selected)
-                      const Positioned.fill(child: ShelfSelectedOverlay()),
                   ],
                 ),
               ),
@@ -8129,6 +8184,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           selectionMode: _selectionMode,
           onToggleSelectionMode: _toggleSelectionMode,
           onTagsChanged: () => ref.invalidate(videoBookTagMapProvider),
+          onManageCollections: _openCollectionManagement,
         ),
       // 「番剧下载」不再占页头：它是下载子系统的入口，在「浏览 › 下载」页签
       // （browse_page）里有完整入口，视频库页头只留库管理动作。
@@ -8510,6 +8566,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _buildRemoteVideoCover(video),
         coverBackdrop: _remoteCoverProvider(video),
+        coverMaterial: ShelfCoverMaterial.glossyPoster,
         title: video.title,
         showLaunchAction: false,
         quickActions: <DialogQuickAction>[
@@ -9233,6 +9290,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 语义与合集详情页 AppBar 同源；删除支持「连同视频一起删」勾选（与详情页
   /// `onDeleteMembersMedia` 同一删除纪律）。
   Future<void> _showCollectionContextMenu(MediaCollectionRow collection) async {
+    // 右键锚点只在同步派发期间可读：先取下来，下面 await 取成员后仍弹在指针处。
+    final Offset? anchor = activeContextMenuAnchor;
     final VideoBookRepository repo = widget.repo;
     final AppModel appModel = ref.read(appProvider);
     final FushiDatabase db = appModel.database;
@@ -9267,9 +9326,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     return showCollectionContextDialog(
       context: context,
+      anchor: anchor,
       db: db,
       collection: collection,
       coverImage: coverImage,
+      coverMaterial: ShelfCoverMaterial.glossyPoster,
       leadingListActions: <DialogListAction>[
         if (discs.isNotEmpty)
           DialogListAction(
@@ -10126,6 +10187,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 打开合集详情页（Jellyfin 式）。有序成员从 [FushiDatabase.getCollectionItems] 解析，
   /// 点某集经 playlistCollectionId 进播放器带剧集面板/上下集/连播；写库后重载库页。
+  /// 「管理合集」页：视频库的全部合集，行动作复用本页的合集详情与合集菜单。
+  void _openCollectionManagement() {
+    Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => CollectionManagementPage(
+          database: ref.read(appProvider).database,
+          domain: CollectionShelfDomain.video,
+          onOpenCollection: _openCollectionDetail,
+          onShowCollectionMenu: _showCollectionContextMenu,
+        ),
+      ),
+    );
+  }
+
   void _openCollectionDetail(MediaCollectionRow collection) {
     final VideoBookRepository repo = widget.repo;
     final FushiDatabase db = ref.read(appProvider).database;

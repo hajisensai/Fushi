@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/pages/implementations/collection_management_page.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -1086,6 +1087,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         selectionMode: _selectionMode,
         onToggleSelectionMode: _toggleSelectionMode,
         onTagsChanged: () => ref.invalidate(bookTagMapProvider),
+        onManageCollections: _openCollectionManagement,
       ),
       // 单件导入入口已统一收敛到库页「导入」视图的快速导入区（书 / 漫画 / 视频 /
       // 游戏四域同位，2026-08-13 定案）；页头只在书架被**独立使用**（无导航壳、
@@ -1625,19 +1627,23 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       },
       child: Row(
         children: <Widget>[
-          SizedBox(
-            width: coverWidth,
-            height: coverWidth * 1.5,
-            child: ShelfCoverFrame(
-              child: FadeInImage(
-                imageErrorBuilder: (_, __, ___) =>
-                    _coverPlaceholderIcon(Icons.menu_book_outlined),
-                placeholder: MemoryImage(kTransparentImage),
-                image: mediaSource.getDisplayThumbnailFromMediaItem(
-                  appModel: appModel,
-                  item: hero,
+          // 与书架网格同一个光面书皮材质（网格的 Scope 只包 SliverGrid）。
+          ShelfCoverMaterialScope(
+            material: ShelfCoverMaterial.glossyBook,
+            child: SizedBox(
+              width: coverWidth,
+              height: coverWidth * 1.5,
+              child: ShelfCoverFrame(
+                child: FadeInImage(
+                  imageErrorBuilder: (_, __, ___) =>
+                      _coverPlaceholderIcon(Icons.menu_book_outlined),
+                  placeholder: MemoryImage(kTransparentImage),
+                  image: mediaSource.getDisplayThumbnailFromMediaItem(
+                    appModel: appModel,
+                    item: hero,
+                  ),
+                  fit: BoxFit.cover,
                 ),
-                fit: BoxFit.cover,
               ),
             ),
           ),
@@ -2454,15 +2460,19 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   }
 
   Future<void> _showCollectionContextMenu(MediaCollectionRow collection) async {
+    // 右键锚点只在同步派发期间可读：先取下来，下面 await 取封面后仍弹在指针处。
+    final Offset? anchor = activeContextMenuAnchor;
     final ImageProvider? coverImage = await _collectionMenuCoverImage(
       collection,
     );
     if (!mounted) return;
     return showCollectionContextDialog(
       context: context,
+      anchor: anchor,
       db: appModel.database,
       collection: collection,
       coverImage: coverImage,
+      coverMaterial: ShelfCoverMaterial.glossyBook,
       onOpenDetail: () => _openCollectionDetail(collection),
       onChanged: () {
         // 改名/删除影响折叠映射；标签影响行头 chip；删本体影响书架条目。
@@ -2478,6 +2488,25 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       deleteMembersStatisticsSubtitle: _statisticsSubtitle,
       deleteMembersDisclosure: buildDeletionDisclosure(
         target: DeletionDisclosureTarget.shelfBook,
+      ),
+    );
+  }
+
+  /// 「管理合集」页：本库页域（书架 / 漫画库）的全部合集，行动作复用本页的
+  /// 合集详情与合集菜单。
+  void _openCollectionManagement() {
+    Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => CollectionManagementPage(
+          database: appModel.database,
+          domain: _mangaOnly
+              ? CollectionShelfDomain.manga
+              : CollectionShelfDomain.books,
+          onOpenCollection: _openCollectionDetail,
+          onShowCollectionMenu: _showCollectionContextMenu,
+        ),
       ),
     );
   }

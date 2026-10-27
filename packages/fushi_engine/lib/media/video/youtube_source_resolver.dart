@@ -127,9 +127,12 @@ bool isYoutubeUrl(String url) {
   final Uri? u = Uri.tryParse(url.trim());
   if (u == null || !u.hasScheme) return false;
   final String host = u.host.toLowerCase();
-  return host.endsWith('youtube.com') ||
+  // 按域名边界比：裸 endsWith 会把 notyoutube.com 之类的别家主机认成 YouTube。
+  bool isDomainOrSub(String domain) =>
+      host == domain || host.endsWith('.$domain');
+  return isDomainOrSub('youtube.com') ||
       host == 'youtu.be' ||
-      host.endsWith('youtube-nocookie.com');
+      isDomainOrSub('youtube-nocookie.com');
 }
 
 /// 纯函数：从任意 YouTube URL 写法解出 canonical 11 位 videoId；无法解析返回 null。

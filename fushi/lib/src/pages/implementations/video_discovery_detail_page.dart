@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
@@ -20,6 +21,7 @@ import 'package:fushi_engine/media/video/acquisition/host_video_acquisition_asse
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 
 /// 详情页标题下方可复制的拉丁字母标题：罗马音在前、英文名在后，与展示标题 /
 /// 原名重复的（忽略大小写）不再列出。
@@ -337,7 +339,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     // 状态流只订阅一次（单订阅流 + 「watchStatus 只调一次」契约），hero 主按钮与
     // 状态行都从这一份状态取值。
     return Scaffold(
-      backgroundColor: tokens.surfaces.page,
+      backgroundColor: fushiPageBackgroundColor(context),
       body: StreamBuilder<VideoDiscoveryAcquisitionState>(
         stream: _statusStream,
         initialData: const VideoDiscoveryAcquisitionState(),
@@ -495,6 +497,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     final double? score = item.score;
     return MediaDetailHero(
       title: item.reference.title,
+      coverMaterial: ShelfCoverMaterial.glossyPoster,
       originalTitle: item.reference.originalTitle,
       backdrop: backdrop,
       backdropBlur: item.backdropUrl == null ? 28 : 16,
@@ -922,26 +925,30 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     // flutter#119355：同上，相关作品条也排除在页级选区之外。这里额外多一层
     // 理由——卡片本身是点击目标（pushReplacement 进下一部作品），把它变成可
     // 拖选的文本区只会让「按下拖一下」在导航与刷选区之间摇摆。
+    // 库页材质（2026-10-25 定版）：相关作品卡与视频库同为光面海报。
     return SelectionContainer.disabled(
-      child: DiscoveryShelf(
-        title: t.collection_related_title,
-        storageKey: 'video-discovery-related',
-        itemWidth: 140,
-        itemCount: related.length,
-        itemBuilder: (BuildContext context, int index) => _RelatedWorkCard(
-          item: related[index],
-          onTap: () {
-            Navigator.pushReplacement<void, void>(
-              context,
-              adaptivePageRoute<void>(
-                context: context,
-                builder: (_) => VideoDiscoveryDetailPage(
-                  item: related[index],
-                  actions: widget.actions,
+      child: ShelfCoverMaterialScope(
+        material: ShelfCoverMaterial.glossyPoster,
+        child: DiscoveryShelf(
+          title: t.collection_related_title,
+          storageKey: 'video-discovery-related',
+          itemWidth: 140,
+          itemCount: related.length,
+          itemBuilder: (BuildContext context, int index) => _RelatedWorkCard(
+            item: related[index],
+            onTap: () {
+              Navigator.pushReplacement<void, void>(
+                context,
+                adaptivePageRoute<void>(
+                  context: context,
+                  builder: (_) => VideoDiscoveryDetailPage(
+                    item: related[index],
+                    actions: widget.actions,
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -1005,17 +1012,10 @@ class _RelatedWorkCard extends StatelessWidget {
       key: ValueKey<String>('video-discovery-related-$stableId'),
       focusId: FushiFocusId('video-discovery-related-$stableId'),
       title: item.reference.title,
-      subtitle: _relatedMetadata(item),
-      titleMaxLines: 1,
+      subtitle: _relatedMetadata(item, score),
+      // 封面上不压角标：评分带星进副行最前。
+      leadingIcon: score == null ? null : FushiIcons.filled(FushiIcons.star),
       onTap: onTap,
-      badges: <Widget>[
-        if (score != null)
-          CoverBadge(
-            icon: FushiIcons.filled(FushiIcons.star),
-            iconSize: 12,
-            label: score.toStringAsFixed(1),
-          ),
-      ],
       cover: DiscoveryImageCover(
         image: _networkImage(item.posterUrl),
         placeholderIcon: FushiIcons.video,
@@ -1023,7 +1023,8 @@ class _RelatedWorkCard extends StatelessWidget {
     );
   }
 
-  String _relatedMetadata(VideoDiscoveryItem item) => <String>[
+  String _relatedMetadata(VideoDiscoveryItem item, double? score) => <String>[
+    if (score != null) score.toStringAsFixed(1),
     if (item.reference.year != null) '${item.reference.year}',
     item.reference.discoveryCategory.name,
   ].join(' · ');

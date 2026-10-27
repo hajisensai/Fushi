@@ -1317,6 +1317,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return buildStatMediaRow(
       context,
       icon: FushiIcons.books,
+      source: StatSourceKind.book,
       cover: item == null
           ? null
           : resolveMediaCoverImage(

@@ -36,6 +36,7 @@ void main() {
   const String rightUrl = 'fushi.local/OEBPS/img/right.png';
 
   String htmlWith({String keyBridgeScript = ''}) => buildSpreadPageHtml(
+        navigationGeneration: 1,
         leftUrl: leftUrl,
         rightUrl: rightUrl,
         swipeDistThreshold: 44,
@@ -62,6 +63,7 @@ void main() {
 
     test('横扫桥直连既有 onSwipe，阈值来自入参而非另立默认', () {
       final String html = buildSpreadPageHtml(
+        navigationGeneration: 1,
         leftUrl: leftUrl,
         rightUrl: rightUrl,
         swipeDistThreshold: 77,

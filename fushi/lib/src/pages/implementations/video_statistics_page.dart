@@ -604,6 +604,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     return buildStatMediaRow(
       context,
       icon: FushiIcons.video,
+      source: StatSourceKind.video,
       cover: resolveMediaCoverImage(
         kind: MediaKind.video,
         localPath: coverPath,

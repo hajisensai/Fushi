@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
@@ -644,7 +645,9 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     );
   }
 
-  /// 封面缩略图（2:3，与发现页卡片同一图源与占位形态）。
+  /// 封面缩略图（2:3，与发现页卡片同一图源与占位形态）。列表行小图走光面
+  /// 海报材质的简化档（用户 2026-10-26：圆角 + 内描边 + 轻光泽，无投影 /
+  /// 扫光）；墨水屏退回描边框。
   Widget _buildCover(FushiDesignTokens tokens, String? coverUrl) {
     const double width = 40;
     const double height = 60;
@@ -655,20 +658,24 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       color: tokens.surfaces.group,
       child: const FushiIcon(FushiIcons.video, size: 20),
     );
-    return ClipRRect(
-      borderRadius: FushiM3eShape.smallRadius,
-      child: SizedBox(
-        width: width,
-        height: height,
-        // errorBuilder 必须给：PortraitCoverImage 在加载失败时返回
-        // SizedBox.shrink()，不给就是封面 404 / 断网留一个 40×60 的空洞（上面那条
-        // 占位分支只在 url 为空串时才走）。
-        child: url.isEmpty
-            ? placeholder
-            : PortraitCoverImage(
-                image: AppCachedHttpImage(url),
-                errorBuilder: (_) => placeholder,
-              ),
+    return SizedBox(
+      width: width,
+      height: height,
+      child: ShelfCoverMaterialScope(
+        material: ShelfCoverMaterial.glossyPoster,
+        child: ShelfCoverFrame(
+          density: ShelfCoverDensity.compact,
+          backgroundColor: tokens.surfaces.group,
+          // errorBuilder 必须给：PortraitCoverImage 在加载失败时返回
+          // SizedBox.shrink()，不给就是封面 404 / 断网留一个 40×60 的空洞（上面
+          // 那条占位分支只在 url 为空串时才走）。
+          child: url.isEmpty
+              ? placeholder
+              : PortraitCoverImage(
+                  image: AppCachedHttpImage(url),
+                  errorBuilder: (_) => placeholder,
+                ),
+        ),
       ),
     );
   }

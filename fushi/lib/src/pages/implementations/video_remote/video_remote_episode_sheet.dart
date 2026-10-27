@@ -2,8 +2,6 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptiveModalSheet;
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
-    show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiListItem, FushiModalSheetFrame;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
@@ -11,6 +9,9 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show ShelfCoverFrame;
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
@@ -190,56 +191,61 @@ class _VideoRemoteEpisodeCover extends StatelessWidget {
     return SizedBox(
       width: _width,
       height: _height,
-      child: ClipRRect(
-        borderRadius: FushiM3eShape.smallRadius,
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            ColoredBox(color: scheme.containerOf(FushiTone.neutral)),
-            if (cover == null)
-              placeholder
-            else
-              Image(
-                // 按显示尺寸解码，长列表不会把整张剧照解进内存。
-                image: ResizeImage.resizeIfNeeded(
-                  (_width * dpr).round(),
-                  null,
-                  cover,
+      // 列表行小图：光面海报材质简化档（用户 2026-10-26：圆角 + 内描边 +
+      // 轻光泽，无投影 / 扫光）；墨水屏退回描边框。
+      child: ShelfCoverMaterialScope(
+        material: ShelfCoverMaterial.glossyPoster,
+        child: ShelfCoverFrame(
+          density: ShelfCoverDensity.compact,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              ColoredBox(color: scheme.containerOf(FushiTone.neutral)),
+              if (cover == null)
+                placeholder
+              else
+                Image(
+                  // 按显示尺寸解码，长列表不会把整张剧照解进内存。
+                  image: ResizeImage.resizeIfNeeded(
+                    (_width * dpr).round(),
+                    null,
+                    cover,
+                  ),
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  frameBuilder:
+                      (
+                        BuildContext context,
+                        Widget child,
+                        int? frame,
+                        bool wasSynchronouslyLoaded,
+                      ) {
+                        if (wasSynchronouslyLoaded) return child;
+                        return AnimatedOpacity(
+                          opacity: frame == null ? 0 : 1,
+                          duration: fushiMotionDuration(
+                            context,
+                            const Duration(milliseconds: 200),
+                          ),
+                          child: child,
+                        );
+                      },
+                  errorBuilder:
+                      (BuildContext context, Object _, StackTrace? __) =>
+                          placeholder,
                 ),
-                fit: BoxFit.cover,
-                gaplessPlayback: true,
-                frameBuilder:
-                    (
-                      BuildContext context,
-                      Widget child,
-                      int? frame,
-                      bool wasSynchronouslyLoaded,
-                    ) {
-                      if (wasSynchronouslyLoaded) return child;
-                      return AnimatedOpacity(
-                        opacity: frame == null ? 0 : 1,
-                        duration: fushiMotionDuration(
-                          context,
-                          const Duration(milliseconds: 200),
-                        ),
-                        child: child,
-                      );
-                    },
-                errorBuilder:
-                    (BuildContext context, Object _, StackTrace? __) =>
-                        placeholder,
-              ),
-            if (current)
-              ColoredBox(
-                color: scheme.scrim.withValues(alpha: 0.35),
-                child: Center(
-                  child: FushiIcon(
-                    FushiIcons.playCircle,
-                    color: scheme.onPrimary,
+              if (current)
+                ColoredBox(
+                  color: scheme.scrim.withValues(alpha: 0.35),
+                  child: Center(
+                    child: FushiIcon(
+                      FushiIcons.playCircle,
+                      color: scheme.onPrimary,
+                    ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

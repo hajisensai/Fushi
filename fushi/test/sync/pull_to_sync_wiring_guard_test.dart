@@ -28,19 +28,19 @@ void main() {
 
   final Map<String, ({String file, String signature})> pullEntries =
       <String, ({String file, String signature})>{
-    '书架': (
-      file: 'lib/src/pages/implementations/reader_history/remote.part.dart',
-      signature: 'Future<void> _pullToRefreshBooks() async {',
-    ),
-    '视频': (
-      file: 'lib/src/pages/implementations/home_video_page.dart',
-      signature: 'Future<void> _pullToRefresh() async {',
-    ),
-    '词典': (
-      file: 'lib/src/pages/implementations/home_dictionary_page.dart',
-      signature: 'Future<void> _pullToRefreshDictionary() async {',
-    ),
-  };
+        '书架': (
+          file: 'lib/src/pages/implementations/reader_history/remote.part.dart',
+          signature: 'Future<void> _pullToRefreshBooks() async {',
+        ),
+        '视频': (
+          file: 'lib/src/pages/implementations/home_video_page.dart',
+          signature: 'Future<void> _pullToRefresh() async {',
+        ),
+        '词典': (
+          file: 'lib/src/pages/implementations/home_dictionary_page.dart',
+          signature: 'Future<void> _pullToRefreshDictionary() async {',
+        ),
+      };
 
   pullEntries.forEach((String page, ({String file, String signature}) e) {
     test('$page页下拉刷新调用共享的 runManualSyncWithFeedback', () {
@@ -57,7 +57,8 @@ void main() {
       expect(
         body,
         contains('announceNotConfigured: false'),
-        reason: '没配同步后端的用户每次下拉都被弹一句「同步不可用」是纯噪音；'
+        reason:
+            '没配同步后端的用户每次下拉都被弹一句「同步不可用」是纯噪音；'
             '此时下拉应静默退化成纯列表刷新',
       );
       expect(
@@ -71,15 +72,17 @@ void main() {
       expect(
         read(e.file),
         isNot(contains('runManualFullSync(')),
-        reason: '同步 + 反馈只能有一份实现（manual_sync_ui.dart）：复制出去的那份迟早'
+        reason:
+            '同步 + 反馈只能有一份实现（manual_sync_ui.dart）：复制出去的那份迟早'
             '漏掉逐通道冲突呈现（写错端）或鉴权失效登出',
       );
     });
   });
 
   test('设置页「立即同步」与下拉同步走同一入口', () {
-    final String src =
-        read('lib/src/sync/sync_settings_schema/actions.part.dart');
+    final String src = read(
+      'lib/src/sync/sync_settings_schema/actions.part.dart',
+    );
     final String body = bodyAfter(src, 'Future<void> _syncNow() async {');
     expect(body, contains('runManualSyncWithFeedback('));
     expect(
@@ -108,17 +111,47 @@ void main() {
     ]) {
       expect(
         read(file),
-        contains(file.endsWith('reader_fushi_history_page.dart')
-            ? 'SyncProgressBanner(compact: _compactLibraryToolbar)'
-            : 'const SyncProgressBanner()'),
+        contains(
+          file.endsWith('reader_fushi_history_page.dart')
+              ? 'SyncProgressBanner(compact: _compactLibraryToolbar)'
+              : 'const SyncProgressBanner()',
+        ),
         reason: '$file 缺同步进度条：光一个 RefreshIndicator 转圈看不出跑到哪一步',
       );
     }
   });
 
+  test('其余库页 / 首页 / 复习页也挂同步进度条（复习同步一轮可能跑十几分钟）', () {
+    // 漫画书架复用 reader_fushi_history_page（上一条已钉）。这些页没有下拉同步，
+    // 但后台 / 「立即同步」/ 进复习 tab 触发的同步照样要看得见进度。
+    for (final String file in <String>[
+      'lib/src/pages/implementations/srs/srs_deck_list_page.dart',
+      'lib/src/pages/implementations/srs/srs_history_page.dart',
+      'lib/src/pages/implementations/music/music_library_page.dart',
+      'lib/src/pages/implementations/home_game_page.dart',
+      'lib/src/pages/implementations/home_dashboard_page.dart',
+    ]) {
+      expect(
+        read(file),
+        contains('SyncProgressBanner('),
+        reason: '$file 缺同步进度条：后台同步在跑时页面毫无反馈',
+      );
+    }
+  });
+
+  test('同步进度条也听复习同步的进度', () {
+    final String src = read('lib/src/sync/sync_progress_banner.dart');
+    expect(
+      src,
+      contains('srsSyncProgress'),
+      reason: '复习同步不经 syncInProgress，不听它就会出现「同步十几分钟、界面零反馈」',
+    );
+  });
+
   test('词典页查询结果屏不叠下拉刷新（手势与「清空查询」冲突）', () {
-    final String src =
-        read('lib/src/pages/implementations/home_dictionary_page.dart');
+    final String src = read(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    );
     final String body = bodyAfter(src, 'Widget _buildBody() {', span: 500);
     final int queryReturn = body.indexOf('return _buildQueryBody();');
     final int refreshStart = body.indexOf('RefreshIndicator(');
@@ -126,7 +159,8 @@ void main() {
     expect(
       refreshStart,
       greaterThan(queryReturn),
-      reason: '有活跃查询时必须在包 RefreshIndicator 之前就 return —— 结果屏的下拉'
+      reason:
+          '有活跃查询时必须在包 RefreshIndicator 之前就 return —— 结果屏的下拉'
           '已经是 _clearSearchFromResultPull（清空查询），两个手势不能抢',
     );
   });

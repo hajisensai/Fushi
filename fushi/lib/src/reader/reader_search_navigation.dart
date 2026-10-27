@@ -1,8 +1,4 @@
-enum ReaderSearchJumpAction {
-  navigate,
-  replacePending,
-  evaluateNow,
-}
+enum ReaderSearchJumpAction { navigate, replacePending, evaluateNow }
 
 /// Decides which DOM owns a book-search result.
 ///
@@ -37,6 +33,19 @@ bool isCurrentReaderRestoreCompletion({
     reportedGeneration == currentGeneration &&
     reportedGeneration == expectedGeneration;
 
+/// 从 JS 桥回调参数里取文档回报的导航代际（`args[index]`）。
+///
+/// 代际是文档装载时冻结在页面里的整数；缺失、非数字、非有限值或带小数一律返回
+/// null——调用方必须把 null 当「不属于任何导航」丢弃，绝不能当作当前导航完成
+/// （BUG-3798：晚到的旧 spread 文档就绪消息曾不带代际，被直接当成当前导航落地）。
+int? readerReportedNavigationGeneration(List<dynamic> args, int index) {
+  if (index < 0 || args.length <= index) return null;
+  final Object? raw = args[index];
+  if (raw is! num) return null;
+  if (!raw.isFinite || raw != raw.toInt()) return null;
+  return raw.toInt();
+}
+
 /// Last-write-wins queue for a precise locate bound to a navigation generation.
 ///
 /// Search results can be selected again after the logical current chapter has
@@ -46,10 +55,7 @@ bool isCurrentReaderRestoreCompletion({
 class ReaderPreciseLocateQueue {
   ({int generation, String js})? _pending;
 
-  void replace({
-    required int generation,
-    required String js,
-  }) {
+  void replace({required int generation, required String js}) {
     _pending = (generation: generation, js: js);
   }
 
@@ -61,10 +67,7 @@ class ReaderPreciseLocateQueue {
   ///
   /// A disposed/unavailable reader passes [canApply] as false; the request is
   /// still discarded so it can never leak into a later document.
-  String? consume({
-    required int generation,
-    required bool canApply,
-  }) {
+  String? consume({required int generation, required bool canApply}) {
     final ({int generation, String js})? pending = _pending;
     if (!canApply) {
       _pending = null;

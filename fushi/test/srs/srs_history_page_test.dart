@@ -16,6 +16,8 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_history_page.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_sync_progress.dart';
+import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -248,6 +250,46 @@ void main() {
         tester.getTopLeft(_checkpointRow(newer)).dy,
         lessThan(tester.getTopLeft(_checkpointRow(older)).dy),
         reason: '从新到旧',
+      );
+      expect(tester.takeException(), isNull);
+      await _close(tester, env);
+    });
+
+    testWidgets('[$ds] 同步在跑时状态卡说进行中与进度，不说「所有改动都已同步」', (
+      WidgetTester tester,
+    ) async {
+      addTearDown(() => srsSyncProgress.value = null);
+      final _Env env = await _open(tester);
+      await _pump(tester, env, apple: apple);
+      final Finder summary = find.byKey(
+        const ValueKey<String>('srs_timeline_status_summary'),
+      );
+      await _pumpUntil(tester, summary);
+      Finder inSummary(String text) =>
+          find.descendant(of: summary, matching: find.text(text));
+
+      const SrsSyncProgress running = SrsSyncProgress(
+        stage: SrsSyncStage.downloading,
+        done: 123,
+        total: 2048,
+      );
+      srsSyncProgress.value = running;
+      await tester.pump();
+      expect(inSummary(t.srs_timeline_syncing), findsOneWidget);
+      expect(inSummary(srsSyncProgressLine(running)), findsOneWidget);
+      expect(inSummary(t.srs_timeline_all_published), findsNothing);
+      // 页顶同步进度条同时亮出同一行进度。
+      expect(
+        find.byKey(const ValueKey<String>('sync-progress-banner-srs')),
+        findsOneWidget,
+      );
+
+      srsSyncProgress.value = null;
+      await _settle(tester, rounds: 6);
+      expect(inSummary(t.srs_timeline_syncing), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('sync-progress-banner-srs')),
+        findsNothing,
       );
       expect(tester.takeException(), isNull);
       await _close(tester, env);

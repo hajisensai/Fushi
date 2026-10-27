@@ -36,6 +36,9 @@ import 'package:fushi/src/media/media_search_text.dart' show matchesMediaSearch;
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show ShelfCoverFrame;
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
     show
         FushiSpring,
@@ -475,26 +478,17 @@ class _MaterialNavCluster extends StatelessWidget {
     );
   }
 
-  /// 分页滑动的一排（MD3 悬浮胶囊与 Apple 胶囊共用）：每页 [_kNavPageSize]
-  /// 格，底栏横滑翻页、长按拖选（见 [_NavPagedRow]）。不挂整条胶囊的滑动
-  /// 指示器，各格自己画选中态（MD3 药丸 / Apple lens，[glass]）。
-  /// 拖选落地：MD3 走 [onDragSelect]（宿主据此播模块切换转场），没接时退回
-  /// [onTap]；Apple 保持 iOS 标签栏的点按切换语义（同胶囊拖动 lens 的落地），
-  /// 一律走 [onTap]。
-  Widget _buildPagedRow(
-    BuildContext context,
-    double width,
-    List<int> indices, {
-    bool glass = false,
-  }) {
+  /// Apple 胶囊的分页滑动一排：每页 [_kNavPageSize] 格，底栏横滑翻页、长按
+  /// 拖选（见 [_NavPagedRow]）。不挂整条胶囊的滑动指示器，各格自己画 lens。
+  /// 拖选落地保持 iOS 标签栏的点按切换语义（同胶囊拖动 lens 的落地），一律走
+  /// [onTap]。MD3 的「分页滑动」样式已于 2026-10-25 删除，只剩 Apple 用它画
+  /// 没接 Apple 的原型样式（[_glassPagedFor]）。
+  Widget _buildPagedRow(BuildContext context, double width, List<int> indices) {
     final List<List<int>> pages = <List<int>>[
       for (int start = 0; start < indices.length; start += _kNavPageSize)
         indices.sublist(start, math.min(indices.length, start + _kNavPageSize)),
     ];
     final double cellWidth = width / _kNavPageSize;
-    final ValueChanged<int> dragSelect = glass
-        ? onTap
-        : (onDragSelect ?? onTap);
     return _NavPagedRow(
       pages: pages,
       currentIndex: currentIndex,
@@ -503,24 +497,18 @@ class _MaterialNavCluster extends StatelessWidget {
         i,
         cellWidth: cellWidth,
         looksSelected: looksSelected,
-        glassOwnLens: glass,
+        glassOwnLens: true,
       ),
-      onDragSelect: dragSelect,
+      onDragSelect: onTap,
     );
   }
 
-  /// 底栏是否按「分页滑动」画：偏好选了分页、且进胶囊的目的地多于一页。
-  /// 不多于 [_kNavPageSize] 个时与平铺同一排（MD3 / Apple 同一判据）。
-  bool _pagedFor(List<int> capsuleIndices) =>
-      barStyle == AdaptiveNavBarStyle.pager &&
-      capsuleIndices.length > _kNavPageSize;
-
-  /// Apple 胶囊版的分页判据：`nav_overflow/` 的交互原型（含出厂默认的相机
+  /// Apple 胶囊的分页判据：`nav_overflow/` 的交互原型（含出厂默认的相机
   /// 模式条）只接了 MD3，Apple 下一律回落分页滑动——它们改默认之前 Apple
-  /// 用户看到的就是分页，不让默认值变更把 Apple 底栏退回平铺。
+  /// 用户看到的就是分页，不让默认值变更把 Apple 底栏退回平铺。进胶囊的目的地
+  /// 不多于 [_kNavPageSize] 个时与平铺同一排。
   bool _glassPagedFor(List<int> capsuleIndices) =>
-      (barStyle == AdaptiveNavBarStyle.pager || barStyle.isOverflowVariant) &&
-      capsuleIndices.length > _kNavPageSize;
+      barStyle.isOverflowVariant && capsuleIndices.length > _kNavPageSize;
 
   /// Apple 设计系统（iOS 26）的悬浮标签栏本体：一枚放目的地的玻璃胶囊，
   /// [glassSearchIndex] 那一项拆成右侧的圆形玻璃钮。下滑最小化时胶囊收成
@@ -564,7 +552,7 @@ class _MaterialNavCluster extends StatelessWidget {
             _kGlassNavBarMinimizedWidth - 2 * _kGlassNavBarInnerPadding;
         final bool paged = _glassPagedFor(capsuleIndices);
         final Widget fullRow = paged
-            ? _buildPagedRow(context, innerFull, capsuleIndices, glass: true)
+            ? _buildPagedRow(context, innerFull, capsuleIndices)
             : Row(
                 children: <Widget>[
                   for (final int i in capsuleIndices)
@@ -791,9 +779,6 @@ class _MaterialNavCluster extends StatelessWidget {
       );
     }
     final double width = box.maxWidth;
-    if (_pagedFor(indices)) {
-      return _buildPagedRow(context, width, indices);
-    }
     if (this.barStyle.isOverflowVariant) {
       final ValueChanged<int> select = onDragSelect ?? onTap;
       return buildNavOverflowVariant(

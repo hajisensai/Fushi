@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/pages/implementations/collection_management_page.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -898,7 +899,9 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             context,
             ref: ref,
             onTagsChanged: () => ref.invalidate(gameTagMapProvider),
+            onManageCollections: _openCollectionManagement,
             tagManagePriority: 20,
+            collectionManagePriority: 19,
           ),
         ],
         FushiIconButton(
@@ -1742,6 +1745,40 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     return null;
   }
 
+  /// 合集上下文菜单（合集卡与「管理合集」页同一个）。
+  ///
+  /// **刻意不注入** onDeleteMembersMedia：游戏合集删除只解散容器、绝不连带删
+  /// 游戏（游戏本体是用户安装目录，从库移除走游戏卡菜单的「移除」；用户
+  /// 2026-07-28 拍板恢复此纯解散语义）。
+  Future<void> _showCollectionMenu(
+    MediaCollectionRow collection, {
+    ImageProvider? coverImage,
+  }) => showCollectionContextDialog(
+    context: context,
+    db: _appModel.database,
+    collection: collection,
+    coverImage: coverImage,
+    coverMaterial: ShelfCoverMaterial.gameCase,
+    onOpenDetail: () => _openCollectionDetail(collection),
+    onChanged: () => unawaited(_reload()),
+  );
+
+  /// 「管理合集」页：游戏库的全部合集，行动作复用本页的合集详情与合集菜单。
+  void _openCollectionManagement() {
+    Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => CollectionManagementPage(
+          database: _appModel.database,
+          domain: CollectionShelfDomain.games,
+          onOpenCollection: _openCollectionDetail,
+          onShowCollectionMenu: _showCollectionMenu,
+        ),
+      ),
+    );
+  }
+
   /// 合集折叠卡（2026-10-25 用户拍板，与书架合集格子同一套交互）：
   /// - 封面 = 成员前 4 作排成扇形（合集自设封面在最前，否则组内序首作）；
   /// - 副行 =「N 项 · 累计时长」，进度条 = 已通关成员占比（[galgameCollectionMeta]）；
@@ -1775,18 +1812,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     final ({String subtitle, double? progress, bool completed}) meta =
         galgameCollectionMeta(members);
     void openMenu() => unawaited(
-      showCollectionContextDialog(
-        context: context,
-        db: _appModel.database,
-        collection: collection,
+      _showCollectionMenu(
+        collection,
         coverImage: _collectionMenuCoverImage(group, collection),
-        onOpenDetail: () => _openCollectionDetail(collection),
-        onChanged: () => unawaited(_reload()),
       ),
     );
-    // **刻意不注入** onDeleteMembersMedia：游戏合集删除只解散容器、绝不连带删
-    // 游戏（游戏本体是用户安装目录，从库移除走游戏卡菜单的「移除」；用户
-    // 2026-07-28 拍板恢复此纯解散语义）。
     return CollectionDropTarget(
       key: ValueKey<String>('games_collection_card_${collection.id}'),
       borderRadius: shelfMaterialRadius(ShelfCoverMaterial.gameCase),
@@ -2257,6 +2287,7 @@ class _GameCard extends StatelessWidget {
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
         cover: _dialogCover(dialogContext),
         coverBackdrop: _dialogCoverBackdrop(),
+        coverMaterial: ShelfCoverMaterial.gameCase,
         title: game.displayName,
         showLaunchAction: false,
         quickActions: <DialogQuickAction>[
@@ -2632,13 +2663,19 @@ class _GameCard extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
                 child: Row(
                   children: <Widget>[
+                    // 列表行小缩略图：卡盒材质简化档（用户 2026-10-26）——
+                    // 只有圆角 + 外圈 + 轻光泽，不画投影 / 扫光。列表段不在
+                    // 网格的材质 Scope 里，这里就地给。
                     SizedBox(
                       width: wide ? 54 : 48,
                       child: AspectRatio(
                         aspectRatio: 3 / 4,
-                        child: ClipRRect(
-                          borderRadius: FushiM3eShape.smallRadius,
-                          child: GameCoverThumb(game: game),
+                        child: ShelfCoverMaterialScope(
+                          material: ShelfCoverMaterial.gameCase,
+                          child: ShelfCoverFrame(
+                            density: ShelfCoverDensity.compact,
+                            child: GameCoverThumb(game: game),
+                          ),
                         ),
                       ),
                     ),

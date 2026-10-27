@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:drift/drift.dart'
     show ResultSetImplementation, TableUpdate, TableUpdateQuery;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -1551,8 +1552,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                   self: (kind: MediaLinkKind.book, key: bookKey),
                   onOpen: (MediaLinkEntry e) =>
                       openMediaLinkEntry(context: context, ref: ref, entry: e),
-                  searchActionFor: (MediaLinkKind k) =>
-                      mediaLinkSearchAction(context: context, ref: ref, kind: k),
+                  searchActionFor: (MediaLinkKind k) => mediaLinkSearchAction(
+                    context: context,
+                    ref: ref,
+                    kind: k,
+                  ),
                   onInfer: mediaLinkInferCallback(
                     ref: ref,
                     self: (kind: MediaLinkKind.book, key: bookKey),
@@ -1834,6 +1838,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final OnlineMangaUnavailable? refreshError = _refreshError;
     return OnlineWorkHeader(
       cover: _buildCover(context),
+      coverMaterial: ShelfCoverMaterial.glossyBook,
       backdrop: _coverImageProvider(),
       overline: _subtitle(),
       title: _displayTitle,

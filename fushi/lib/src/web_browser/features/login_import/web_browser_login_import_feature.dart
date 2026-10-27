@@ -2,15 +2,14 @@ import 'dart:async';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
+import 'package:fushi/src/media/manga/cookie/browser_login_import.dart';
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
@@ -25,20 +24,37 @@ import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 ///
 /// 只在装得了浏览器扩展的平台（桌面）装配；无痕标签页不给（无痕 cookie 不落盘，
 /// 导进去也带不走）。
+///
+/// 登记 / 一次即结束 / 等待状态条 / 取消全在共用实现 [BrowserLoginImport] 里（漫画源
+/// 登录页、视频站点网页档同一份）；这里只决定 cookie 写到哪、写完刷新哪个标签页。
 class WebBrowserLoginImportFeature extends WebBrowserFeature {
   WebBrowserLoginImportFeature({
     Future<WebViewEnvironment?> Function()? environment,
     Future<bool> Function(Uri url)? openExternal,
+    Future<int> Function(List<BrowserSiteCookie> cookies)? writeCookies,
   }) : _environment = environment ?? MangaWebViewEnvironment.obtain,
-       _openExternal =
-           openExternal ??
-           ((Uri url) => launchUrl(url, mode: LaunchMode.externalApplication));
+       _writeCookiesOverride = writeCookies {
+    _import = BrowserLoginImport(
+      write: (List<BrowserSiteCookie> cookies) =>
+          (_writeCookiesOverride ?? _writeCookies)(cookies),
+      openExternal: openExternal == null
+          ? null
+          : (Uri url) async {
+              await openExternal(url);
+            },
+      onImported: _onImported,
+      onFailed: () => FushiToast.show(
+        msg: t.login_import_write_failed,
+        severity: ToastSeverity.error,
+      ),
+    );
+  }
 
   final Future<WebViewEnvironment?> Function() _environment;
-  final Future<bool> Function(Uri url) _openExternal;
-
-  BrowserCookieImportRequestHandle? _import;
-  String _lastSignature = '';
+  final Future<int> Function(List<BrowserSiteCookie> cookies)?
+  _writeCookiesOverride;
+  late final BrowserLoginImport _import;
+  WebBrowserTab? _target;
 
   @override
   String get id => 'login-import';
@@ -46,6 +62,12 @@ class WebBrowserLoginImportFeature extends WebBrowserFeature {
   @override
   bool get available =>
       browserExtensionSupportedOn(isDesktop: DesktopLookupService.isDesktop);
+
+  @override
+  Listenable get actionsChanged => _import;
+
+  /// 正在等扩展送回的站点（归一化 host）；没在等为 null。
+  String? get pendingHost => _import.pendingHost;
 
   @override
   List<WebBrowserAction> actions(BuildContext context, WebBrowserTab tab) {
@@ -66,74 +88,50 @@ class WebBrowserLoginImportFeature extends WebBrowserFeature {
     ];
   }
 
-  /// 登记 [url] 的站点并在系统浏览器打开它；扩展送回的 cookie 写进来后重载 [tab]。
+  @override
+  Widget? statusBar(BuildContext context) =>
+      _import.waiting ? BrowserLoginImportStatusBar(import: _import) : null;
+
+  /// 登记 [url] 的站点并在系统浏览器打开它；扩展送回的第一批本站 cookie 写进来后
+  /// 结束登记并重载 [tab]。
   @visibleForTesting
-  Future<void> begin(WebBrowserTab tab, Uri url) async {
-    final String host = BrowserCookieImportGate.normalizeHost(url.host);
-    _import?.end();
-    _lastSignature = '';
-    final BrowserCookieImportRequestHandle handle =
-        BrowserCookieImportGate.begin(host);
-    _import = handle;
-    // 句柄 end() 关闭 deliveries，订阅随之结束，不必另存。
-    handle.deliveries.listen(
-      (BrowserCookieDelivery delivery) =>
-          unawaited(_apply(tab, host, delivery)),
-    );
-    FushiToast.show(
-      msg: t.web_browser_login_import_waiting,
-      toastLength: Toast.LENGTH_LONG,
-      severity: ToastSeverity.info,
-    );
-    try {
-      await _openExternal(Uri(scheme: 'https', host: url.host, path: '/'));
-    } catch (e) {
-      ErrorLogService.instance.log('web_browser', 'login import open: $e');
-    }
+  Future<void> begin(WebBrowserTab tab, Uri url) {
+    _target = tab;
+    return _import.begin(url);
   }
 
-  Future<void> _apply(
-    WebBrowserTab tab,
-    String host,
-    BrowserCookieDelivery delivery,
-  ) async {
-    final List<BrowserSiteCookie> cookies = browserSiteCookiesForSite(
-      delivery.cookies,
-      host,
-    );
-    if (cookies.isEmpty) return;
-    // 扩展会在页面每次变化时重送同一批：内容没变就不再写、不再重载。
-    final String signature =
-        (cookies
-                .map(
-                  (BrowserSiteCookie c) => '${c.domain}|${c.name}=${c.value}',
-                )
-                .toList()
-              ..sort())
-            .join(';');
-    if (signature == _lastSignature) return;
-    _lastSignature = signature;
-    final CookieManager manager;
-    try {
-      manager = CookieManager.instance(
-        webViewEnvironment: await _environment(),
-      );
-    } catch (e) {
-      ErrorLogService.instance.log('web_browser', 'login import env: $e');
-      return;
-    }
-    final int written = await writeBrowserSiteCookies(manager, cookies);
-    if (written == 0) return;
+  /// 用户点了状态条上的「取消」。
+  void cancel() => _import.cancel();
+
+  void _onImported(int count) {
     FushiToast.show(
-      msg: t.web_browser_login_import_received(count: written),
+      msg: t.web_browser_login_import_received(count: count),
       severity: ToastSeverity.success,
     );
-    await tab.controller?.reload();
+    final WebBrowserTab? tab = _target;
+    _target = null;
+    unawaited(tab?.controller?.reload());
+  }
+
+  Future<int> _writeCookies(List<BrowserSiteCookie> cookies) async {
+    final CookieManager manager = CookieManager.instance(
+      webViewEnvironment: await _environment(),
+    );
+    return writeBrowserSiteCookies(manager, cookies);
+  }
+
+  @override
+  void onTabClosed(WebBrowserTab tab) {
+    // 要重载的标签页没了：登记也没有意义了。
+    if (identical(_target, tab)) {
+      _target = null;
+      cancel();
+    }
   }
 
   @override
   void dispose() {
-    _import?.end();
-    _import = null;
+    _target = null;
+    _import.dispose();
   }
 }

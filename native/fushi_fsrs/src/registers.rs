@@ -35,6 +35,12 @@ const SRS_NAMESPACE: &str = "6f1c8a2e-4b7d-5e3f-9a10-2d4c6e8f0b13";
 const KINDS: [&str; 5] = ["profile", "deck", "notetype", "note", "card"];
 
 const KEY_DELETED: &str = "deleted";
+
+/// 同步 v2 投影出的**合成**修改记录的写入者前缀（标签 OR-Set 每条笔记一行的 `sync2:tags:<笔记>`，见
+/// store/sync2/semantics.rs `tags_writer`）。合成行不是某个作者的一次写入，没有因果 dot（`s` 恒为 1、`ctx` 空）：
+/// 拿它和删除比「谁看见过谁」永远是「并发」。它与删除的并发由同步 v2 的扣住机制按底层 `#tag` 操作判定
+/// （semantics.rs `evaluate_holds`：并发就扣住删除进冲突中心，删除根本不落进投影），这里不再判它。
+pub(crate) const SYNTHETIC_WRITER_PREFIX: &str = "sync2:";
 const HISTORY_FROM: &str = "historyFrom/";
 
 // ---------------------------------------------------------------- 因果上下文
@@ -362,6 +368,10 @@ impl<'e, 'a> Entity<'e, 'a> {
                 continue;
             }
             for &c in &r.live {
+                // 合成行没有因果 dot，不参与（[SYNTHETIC_WRITER_PREFIX]）。
+                if self.edits[c].writer.starts_with(SYNTHETIC_WRITER_PREFIX) {
+                    continue;
+                }
                 if deletes.iter().any(|d| d.concurrent(&self.edits[c])) {
                     out.push(c);
                 }

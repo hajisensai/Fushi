@@ -1,7 +1,9 @@
 /// 原生 Fushi 卡面上的视频片段（视频制卡的 `<video class="fushi-inline-video">`）。
 ///
-/// - 打开即停在第一帧当封面（`play: false`），按视频比例缩放进 [SrsCardVideoClip.maxWidth]
-///   × [SrsCardVideoClip.maxHeight]，圆角裁切。
+/// - 打开即停在第一帧当封面（`play: false`），尺寸与卡面图片同一套规则
+///   （[srsCardMediaBoxSize]）：铺满模式下常见比例铺满栏宽、超过 [SrsCardVideoClip.maxFillHeight]
+///   就等比缩小；否则按视频比例缩放进 [SrsCardVideoClip.maxWidth] ×
+///   [SrsCardVideoClip.maxHeight]。圆角裁切。
 /// - **自己不自动播放**：片段自带句子音频，何时出声由复习页的音频序列决定——它经
 ///   [SrsCardVideoChannel] 找到挂在卡面上的这段片段，从头播到尾（与 WebView 卡面里
 ///   「先播单词音频、再从头播一次片段」同一顺序）。
@@ -10,7 +12,9 @@
 ///   就此停下」一致）。
 /// - 片段不带例句声音（例句音频是另一个文件）时，它是例句音频的陪播画面
 ///   （[SrsCardSentenceCompanion]）：例句音频开播时从头**静音**播，同一时刻只有一路声音。
-/// - 卸载 / 换片段时暂停并释放播放器；文件不存在时什么也不画。
+/// - 卸载 / 换片段时暂停并释放播放器；卡上引用了片段但本机文件不存在（媒体还没同步过来）
+///   或打不开时，画同尺寸的「视频未同步」占位（[SrsCardMediaMissing]），不再什么都不画——
+///   否则与「这张卡本来就没有视频」分不出来。
 ///
 /// 播放器经 [srsCardVideoPlayerFactoryProvider] 创建：生产是 media_kit（libmpv），
 /// widget 测试换假实现（测试里加载不了 libmpv）。
@@ -27,6 +31,7 @@ import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:material_ui/material_ui.dart';
@@ -160,6 +165,8 @@ class SrsCardVideoClip extends ConsumerStatefulWidget {
     required this.radius,
     this.maxWidth,
     this.maxHeight,
+    this.fillWidth = false,
+    this.maxFillHeight,
     super.key,
   });
 
@@ -169,8 +176,15 @@ class SrsCardVideoClip extends ConsumerStatefulWidget {
   /// 最大宽度；null = 只受父级约束。
   final double? maxWidth;
 
-  /// 最大高度；null = 220（与卡面图片同一默认）。
+  /// 最大高度；null = 220（与卡面图片同一默认）。不铺满时生效。
   final double? maxHeight;
+
+  /// 与卡面图片同一判据：比例在 [kSrsPictureFillMinAspect]–[kSrsPictureFillMaxAspect]
+  /// 之间时铺满父级宽度、按比例定高；超出范围退回 [maxHeight] 限高。
+  final bool fillWidth;
+
+  /// 铺满时的高度上限；按比例超过它就整段等比缩小。null = 不封顶。
+  final double? maxFillHeight;
 
   /// 圆角半径。
   final double radius;
@@ -179,8 +193,109 @@ class SrsCardVideoClip extends ConsumerStatefulWidget {
   ConsumerState<SrsCardVideoClip> createState() => _SrsCardVideoClipState();
 }
 
-/// 视频尺寸未知时（还没解出第一帧）按 16:9 占位。
-const double _kFallbackAspect = 16 / 9;
+/// 视频尺寸未知时（还没解出第一帧）按 16:9 占位；媒体缺失的占位框同样按它。
+const double kSrsCardMediaFallbackAspect = 16 / 9;
+const double _kFallbackAspect = kSrsCardMediaFallbackAspect;
+
+/// 铺满栏宽的卡面媒体（图片 / 视频片段）比例范围（宽 / 高）：视频截图 16:9、4:3、方图都在内；
+/// 竖长书封、超宽横幅铺满会过高 / 过扁，照旧限高完整显示。
+const double kSrsPictureFillMinAspect = 0.9;
+const double kSrsPictureFillMaxAspect = 2.5;
+
+/// 卡面媒体（图片 / 视频片段 / 缺失占位）按 [aspect] 的显示尺寸，图片与视频同一套规则：
+///
+/// - [fillWidth] 且比例在 [kSrsPictureFillMinAspect]–[kSrsPictureFillMaxAspect] 之间、
+///   [maxWidth] 有限：宽 = [maxWidth]、按比例定高；高超过 [maxFillHeight] 就整体等比缩小
+///   到这个高度。
+/// - 否则：在 [maxWidth] × [maxHeight] 内按比例取最大（[srsCardVideoClipSize]）。
+Size srsCardMediaBoxSize({
+  required double aspect,
+  required double maxWidth,
+  required double maxHeight,
+  bool fillWidth = false,
+  double? maxFillHeight,
+}) {
+  final bool fill =
+      fillWidth &&
+      maxWidth.isFinite &&
+      aspect >= kSrsPictureFillMinAspect &&
+      aspect <= kSrsPictureFillMaxAspect;
+  if (!fill) {
+    return srsCardVideoClipSize(
+      aspect: aspect,
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+    );
+  }
+  final double natural = maxWidth / aspect;
+  final double cap = maxFillHeight ?? double.infinity;
+  return natural > cap ? Size(cap * aspect, cap) : Size(maxWidth, natural);
+}
+
+/// 卡面媒体的种类（决定缺失占位的文案）。
+enum SrsCardMediaKind { image, video }
+
+/// 卡上引用了媒体、但本机没有这个文件（还没同步过来）或加载失败时的占位：与真实媒体
+/// 同尺寸的圆角框，破图图标 +「图片未同步」/「视频未同步」。
+class SrsCardMediaMissing extends StatelessWidget {
+  const SrsCardMediaMissing({
+    super.key,
+    required this.kind,
+    required this.size,
+    required this.radius,
+  });
+
+  final SrsCardMediaKind kind;
+
+  /// 占位框尺寸（按 [srsCardMediaBoxSize] 算，与媒体正常显示时同一套规则）。
+  final Size size;
+
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final String label = switch (kind) {
+      SrsCardMediaKind.image => t.srs_card_media_missing_image,
+      SrsCardMediaKind.video => t.srs_card_media_missing_video,
+    };
+    final Color fg = scheme.onContainerOf(FushiTone.neutral);
+    return Semantics(
+      label: label,
+      container: true,
+      child: ClipRRect(
+        borderRadius: BorderRadius.all(Radius.circular(radius)),
+        child: SizedBox.fromSize(
+          size: size,
+          child: ColoredBox(
+            color: scheme.containerOf(FushiTone.neutral),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: ExcludeSemantics(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      FushiIcon(FushiIcons.brokenImage, size: 28, color: fg),
+                      const SizedBox(height: 6),
+                      Text(
+                        label,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: fg),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// 片段在 [maxWidth] × [maxHeight] 内按 [aspect] 能放下的最大尺寸。
 @visibleForTesting
@@ -214,8 +329,11 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
   final List<StreamSubscription<Object?>> _subs =
       <StreamSubscription<Object?>>[];
 
-  /// 文件已确认存在（之前什么也不画）。
+  /// 文件已确认存在（确认前什么也不画）。
   bool _available = false;
+
+  /// 引用了片段但本机文件不存在 / 打不开：画「视频未同步」占位。
+  bool _missing = false;
   bool _playing = false;
   Size? _videoSize;
 
@@ -241,6 +359,7 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
     _teardown();
     setState(() {
       _available = false;
+      _missing = false;
       _playing = false;
       _videoSize = null;
     });
@@ -330,7 +449,10 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
         'open failed: $name: $e',
       );
       _teardown();
-      setState(() => _available = false);
+      setState(() {
+        _available = false;
+        _missing = true;
+      });
       _finishRun(false);
       return null;
     }
@@ -343,7 +465,12 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
     _channel.detach(name, this);
     if (_attachedName == name) _attachedName = null;
     _finishRun(false);
-    if (mounted && _available) setState(() => _available = false);
+    if (mounted) {
+      setState(() {
+        _available = false;
+        _missing = true;
+      });
+    }
   }
 
   void _finishRun(bool finished) {
@@ -472,7 +599,7 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
       final SrsCardVideoPlayer? player = _player;
       if (player != null) _logged('volume', () => player.setVolume(volume));
     });
-    if (!_available) return const SizedBox.shrink();
+    if (!_available && !_missing) return const SizedBox.shrink();
     final SrsCardVideoPlayer? player = _player;
     final Size? video = _videoSize;
     final double aspect = video == null || video.height <= 0
@@ -480,14 +607,24 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
         : video.width / video.height;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final Size size = srsCardVideoClipSize(
+        final Size size = srsCardMediaBoxSize(
           aspect: aspect,
           maxWidth: math.min(
             widget.maxWidth ?? double.infinity,
             constraints.maxWidth,
           ),
           maxHeight: widget.maxHeight ?? 220,
+          fillWidth: widget.fillWidth,
+          maxFillHeight: widget.maxFillHeight,
         );
+        if (_missing) {
+          return SrsCardMediaMissing(
+            key: const ValueKey<String>('srs-card-video-missing'),
+            kind: SrsCardMediaKind.video,
+            size: size,
+            radius: widget.radius,
+          );
+        }
         final Widget frame = ClipRRect(
           borderRadius: BorderRadius.all(Radius.circular(widget.radius)),
           child: SizedBox.fromSize(

@@ -386,7 +386,11 @@ void main() {
     ]) {
       final Finder finder = find.byKey(ValueKey<String>(key));
       expect(finder, findsOneWidget, reason: key);
-      expect(tester.widget<IconButton>(glassUnwrap<IconButton>(finder)).onPressed, isNull, reason: key);
+      expect(
+        tester.widget<IconButton>(glassUnwrap<IconButton>(finder)).onPressed,
+        isNull,
+        reason: key,
+      );
     }
     // 地址栏显示当前地址。
     expect(find.text('https://bookwalker.jp'), findsOneWidget);
@@ -426,14 +430,23 @@ void main() {
           BrowserCookieImportGate.pending;
       expect(request, isNotNull);
       expect(request!.host, 'bookwalker.jp');
-      // 按钮变禁用（不能重复登记），状态文字先是「还没收到」。
+      // 按钮变禁用（不能重复登记），下方是共用的可取消等待状态条。
       expect(
         tester
-            .widget<OutlinedButton>(glassUnwrap<OutlinedButton>(find.byKey(const ValueKey<String>('mihon_login_import_browser'))),)
+            .widget<OutlinedButton>(
+              glassUnwrap<OutlinedButton>(
+                find.byKey(
+                  const ValueKey<String>('mihon_login_import_browser'),
+                ),
+              ),
+            )
             .onPressed,
         isNull,
       );
-      expect(find.text(t.mihon_source_login_import_none), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('browser-login-import-waiting')),
+        findsOneWidget,
+      );
 
       // 扩展回传（含一条第三方域，必须被挡）。送达 → 写 jar 是真实文件 IO，
       // 整段放进 runAsync，fake zone 里等不到 dart:io 的完成事件。
@@ -452,6 +465,20 @@ void main() {
                   .toList(),
         );
         expect(accepted, isTrue);
+        // 一次登记只导一次：收下第一批就撤登记，同一 nonce 再送被拒。
+        expect(BrowserCookieImportGate.pending, isNull);
+        expect(
+          BrowserCookieImportGate.deliver(
+            nonce: request.nonce,
+            host: 'bookwalker.jp',
+            cookies: <BrowserSiteCookie>[
+              BrowserSiteCookie.fromJson(
+                _browserCookie('session', '.bookwalker.jp'),
+              )!,
+            ],
+          ),
+          isFalse,
+        );
       });
       // 写 jar 的每一步 IO 续体都排在 fake zone 里：与 tapDone 同一节奏，
       // 真实等待 + pump 交替，直到状态文字出现。

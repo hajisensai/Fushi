@@ -11,6 +11,8 @@ import 'package:fushi/src/models/preferences_repository.dart'
         kGameStreamLookupLayoutPrefKey,
         kGameStreamRemoteLaunchPrefKey,
         PreferencesRepository;
+import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart'
+    show kBtSitesLegacyMigrationPref;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
@@ -1893,6 +1895,9 @@ class SyncRepository {
     'video_subtitle_opensubtitles_config',
     // 用户 BT 站清单：与 Torznab 同类（第三方 indexer 地址，可能带 passkey）。
     'resource_bt_sites',
+    // 旧内置 BT 站迁移的已跑标记：描述本安装的一次性判定，随备份漂到新装设备会让
+    // 新设备跳过判定、漂回老设备会让它重跑，都不对。
+    kBtSitesLegacyMigrationPref,
     // 用户自配的 AI 提供商：条目里带 base64 的 API key，且本地推理服务（Ollama /
     // LM Studio）的地址是 `http://localhost:11434` 这种只对本机成立的端点。跨设备
     // 恢复既泄付费凭据又指向一台并不在跑的服务。功能映射按 provider id 指向它们，
@@ -1901,6 +1906,9 @@ class SyncRepository {
     'ai_feature_providers',
     // 多 key 轮换的冷却记录：按本机 key 的指纹索引，换台设备全是悬空记录。
     'ai_key_health',
+    // 「允许已配对设备远程使用 AI 助手」：授权的是这台机器的 AI 指派与操作目录，
+    // 只对点它的那台设备成立；漂过去会让另一台设备静默对配对设备开放。
+    'ai_agent_for_peers',
     // 音乐输出设备与独占模式描述的是这台机器的声卡 / DAC：别的设备上同名设备不存在，
     // 独占在另一台机器上会让别的程序静默无声。
     'music_audio_device',

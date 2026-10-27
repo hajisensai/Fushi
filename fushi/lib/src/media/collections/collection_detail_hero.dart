@@ -12,6 +12,7 @@ import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -378,6 +379,10 @@ class _HeroActionChip extends StatelessWidget {
 /// 首本封面在前，顶上露出两层「后面还有」（同一套 [kShelfCoverStackLift] 偏移、
 /// 左右内缩与阴影）。此前这里自绘「后两本左右错开 + 旋转」，后排封面的书名字与
 /// 角标从左上 / 右侧露出半截，看着像重影。没有封面时是 tonal 色块 + 合集图标。
+///
+/// 调用方给了 [ShelfCoverMaterialScope] 时走库页同款材质的多本排列（书 / 卡盒 =
+/// 扇形、海报 = 叠层，[ShelfCoverPile]），后几层用真实的后续成员封面；卡盒材质
+/// 下高度按 1:1.6 卡盒比例。
 class _StackedCovers extends StatelessWidget {
   const _StackedCovers({required this.covers, required this.width});
 
@@ -399,12 +404,18 @@ class _StackedCovers extends StatelessWidget {
             ),
           )
         : covers.first;
+    final ShelfCoverMaterial? material = shelfCoverMaterialOf(context);
+    final double coverHeight = material == ShelfCoverMaterial.gameCase
+        ? width / kShelfGameCaseAspectRatio
+        : width * 1.5;
     return SizedBox(
       width: width,
-      height: width * 1.5 + kShelfCoverStackLift,
+      height: coverHeight + kShelfCoverStackLift,
       child: ShelfCoverFrame(
         // Apple 叠层用「下一本」的模糊封面；MD3 / 墨水屏只画色块层。
         stackedBehind: covers.length > 1 ? covers[1] : const SizedBox.shrink(),
+        // 材质下：后续成员的真实封面（只有一本时就是单张，不叠空层）。
+        stackedCovers: covers.skip(1).toList(growable: false),
         child: front,
       ),
     );

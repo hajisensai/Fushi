@@ -16,12 +16,15 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/links/media_link_opener.dart';
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show mediaLinkCoverMaterial;
 import 'package:fushi/src/media/people/person_directory.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
@@ -451,8 +454,7 @@ class _WorkRail extends StatelessWidget {
   });
 
   static const double _cardWidth = 116;
-  static const double _imageHeight = 156;
-  static const double _textHeight = 72;
+  static const double _imageHeight = _cardWidth * 3 / 2;
 
   final String title;
   final List<_WorkCardData> cards;
@@ -471,7 +473,7 @@ class _WorkRail extends StatelessWidget {
           child: FushiSectionTitle('$title · ${cards.length}'),
         ),
         SizedBox(
-          height: _imageHeight + _textHeight + 8,
+          height: _imageHeight + ShelfCardMeta.heightFor(context) + 8,
           child: FushiEntranceScope(
             replayKey: cards.length,
             child: HorizontalDragScrollable(
@@ -505,71 +507,49 @@ class _WorkCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
     final MediaLinkEntry entry = data.link.entry;
     final ImageProvider? image = personImageOf(
       data.link.imagePath,
       data.link.imageUrl,
     );
-    final Widget placeholder = ColoredBox(
-      color: cs.surfaceContainerHighest,
-      child: Center(
-        child: FushiIcon(
-          mediaLinkKindIcon(entry.endpoint.kind),
-          size: 32,
-          color: cs.onSurfaceVariant,
-        ),
-      ),
+    final Widget placeholder = ShelfCoverPlaceholder(
+      icon: mediaLinkKindIcon(entry.endpoint.kind),
+      iconSize: 32,
     );
     final bool enabled = entry.inLibrary;
+    // 封面即卡片（与库页同一套材质，按作品种类逐卡选）；角色名 / 作品名进封面下
+    // 的文字块（[ShelfCardMeta]）。未入库的作品整卡变淡、不可点。
     return FushiHoverLift(
       enabled: enabled,
       builder: (BuildContext context, bool _) => SizedBox(
         width: _WorkRail._cardWidth,
-        child: FushiCard(
-          padding: EdgeInsets.zero,
+        child: shelfCoverCard(
           onTap: enabled ? () => onOpen(entry) : null,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              SizedBox(
-                width: _WorkRail._cardWidth,
-                height: _WorkRail._imageHeight,
-                child: Opacity(
-                  opacity: enabled ? 1 : 0.45,
-                  child: image == null
-                      ? placeholder
-                      : Image(
-                          image: image,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => placeholder,
-                        ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      data.primary,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.fushiType.labelLargeEmphasized,
+          child: Opacity(
+            opacity: enabled ? 1 : 0.45,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                SizedBox(
+                  width: _WorkRail._cardWidth,
+                  height: _WorkRail._imageHeight,
+                  child: ShelfCoverMaterialScope(
+                    material: mediaLinkCoverMaterial(entry.endpoint.kind),
+                    child: ShelfCoverFrame(
+                      child: image == null
+                          ? placeholder
+                          : Image(
+                              image: image,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => placeholder,
+                            ),
                     ),
-                    if (data.secondary case final String s)
-                      Text(
-                        s,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.fushiType.bodySmall.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+                ShelfCardMeta(title: data.primary, subtitle: data.secondary),
+              ],
+            ),
           ),
         ),
       ),

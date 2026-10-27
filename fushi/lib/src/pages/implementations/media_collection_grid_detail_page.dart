@@ -26,6 +26,8 @@ import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
 import 'package:fushi/src/media/collections/collection_shelf_row.dart'
     show unifiedShelfCardLayout;
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
+import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
+    show DialogListAction, MediaItemDialogFrame, showMediaItemActions;
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
     show kShelfBookCardAspectRatio;
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
@@ -169,10 +171,6 @@ class _MediaCollectionGridDetailPageState
   @override
   VoidCallback get detailOnChanged => widget.onChanged;
 
-  /// 当前**可见**成员行（memberCardBuilder 返回非空的子集，与 [_rows] 同序）。build
-  /// 时刷新；拖拽 onReorder 的 from/to 是这份列表的下标，用它把可见序回写进 [_rows]
-  /// 全表（孤儿行留原位），再一次落盘 sortIndex。
-  List<MediaCollectionItemRow> _visibleRows = const <MediaCollectionItemRow>[];
   bool _loading = true;
 
   /// 成员标题 / 导入时刻（四表现查，与一键整理同一份）。
@@ -421,13 +419,19 @@ class _MediaCollectionGridDetailPageState
     await _reload();
   }
 
-  /// 网格拖拽落序：from/to 是**可见**成员下标（[_visibleRows]）。先在可见序上应用
-  /// removeAt/insert，再用共享的 [mergeCollectionOrder] **保序合并**回 [_rows] 全表：
-  /// 可见槽按新可见序依次填入、孤儿行（当前不可见）留在原下标。落盘只需传可见序。
-  Future<void> _onReorder(int from, int to) async {
+  /// 网格拖拽落序：from/to 是**显示序** [arranged] 的下标（卷号 / 加入时间 /
+  /// 阅读时间排序下与 [_rows] 的手动序不同）。先在显示序上应用 removeAt/insert，
+  /// 再用共享的 [mergeCollectionOrder] **保序合并**回 [_rows] 全表：可见槽按新
+  /// 显示序依次填入、孤儿行（当前不可见）留在原下标；随后切到手动序展示。
+  Future<void> _onReorder(
+    List<CollectionMemberEntry> arranged,
+    int from,
+    int to,
+  ) async {
     if (from == to) return;
-    final List<MediaCollectionItemRow> visible =
-        List<MediaCollectionItemRow>.of(_visibleRows);
+    final List<MediaCollectionItemRow> visible = <MediaCollectionItemRow>[
+      for (final CollectionMemberEntry e in arranged) e.row,
+    ];
     if (from < 0 || from >= visible.length || to < 0 || to >= visible.length) {
       return;
     }
@@ -441,7 +445,7 @@ class _MediaCollectionGridDetailPageState
     );
     setState(() {
       _rows = next;
-      _visibleRows = visible;
+      _sort = CollectionMemberSort.manual;
     });
     await _persistSort(CollectionMemberSort.manual);
     await widget.database
@@ -452,7 +456,12 @@ class _MediaCollectionGridDetailPageState
     widget.onChanged();
   }
 
-  /// 长按（原地松手）/ 右键上下文菜单：移出合集 + 可选打开。
+  /// 长按（原地松手）/ 右键 / 「⋯」上下文菜单。
+  ///
+  /// 容器由 [showMediaItemActions] 按触发方式决定，与库页卡片同一套：右键（同步
+  /// 派发期间 [activeContextMenuAnchor] 非空）在指针处弹右键菜单，长按 / ⋯ /
+  /// 键盘手柄弹抽屉或对话框。调用方的共享菜单（[MediaCollectionGridDetailPage.onShowMemberMenu]）
+  /// 必须在第一个 await 之前弹出，才读得到锚点。
   Future<void> _showMemberMenu(
     MediaCollectionItemRow row,
     Offset globalPosition,
@@ -473,48 +482,30 @@ class _MediaCollectionGridDetailPageState
       if (mounted) await _reload();
       return;
     }
-    final RenderObject? overlay = Overlay.of(
-      context,
-    ).context.findRenderObject();
-    if (overlay is! RenderBox) return;
-    // BUG-781：[globalPosition] 是真实视口坐标，经 Overlay 的 RenderBox 换算到根
-    // Navigator Overlay 坐标系（吸收 FushiAppUiScale 的整体缩放）；scale=1 时逐像素等价。
-    final Offset anchor = overlay.globalToLocal(globalPosition);
-    final RelativeRect position = RelativeRect.fromRect(
-      Rect.fromPoints(anchor, anchor),
-      Offset.zero & overlay.size,
-    );
-    final _MemberMenuAction? action = await showFushiMenu<_MemberMenuAction>(
+    final void Function(String mediaType, String entryKey)? open =
+        widget.onOpenMember;
+    final _MemberMenuAction?
+    action = await showMediaItemActions<_MemberMenuAction>(
       context: context,
-      position: position,
-      items: <PopupMenuEntry<_MemberMenuAction>>[
-        if (widget.onOpenMember != null)
-          PopupMenuItem<_MemberMenuAction>(
-            value: _MemberMenuAction.open,
-            child: Row(
-              children: <Widget>[
-                const FushiIcon(FushiIcons.openInNew, size: 20),
-                const SizedBox(width: 12),
-                Text(t.collection_open),
-              ],
-            ),
+      builder: (BuildContext menuContext) => MediaItemDialogFrame(
+        title: _meta['${row.mediaType}|${row.entryKey}']?.title ?? row.entryKey,
+        showLaunchAction: open != null,
+        launchLabel: t.collection_open,
+        onLaunch: () => Navigator.pop(menuContext, _MemberMenuAction.open),
+        listActions: <DialogListAction>[
+          DialogListAction(
+            label: t.collection_remove_member,
+            icon: FushiIcons.removeCircle,
+            onPressed: () =>
+                Navigator.pop(menuContext, _MemberMenuAction.remove),
           ),
-        PopupMenuItem<_MemberMenuAction>(
-          value: _MemberMenuAction.remove,
-          child: Row(
-            children: <Widget>[
-              const FushiIcon(FushiIcons.removeCircle, size: 20),
-              const SizedBox(width: 12),
-              Text(t.collection_remove_member),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
     if (!mounted || action == null) return;
     switch (action) {
       case _MemberMenuAction.open:
-        widget.onOpenMember?.call(row.mediaType, row.entryKey);
+        open?.call(row.mediaType, row.entryKey);
       case _MemberMenuAction.remove:
         await _removeMember(row);
     }
@@ -725,9 +716,6 @@ class _MediaCollectionGridDetailPageState
         ),
       );
     }
-    _visibleRows = <MediaCollectionItemRow>[
-      for (final CollectionMemberEntry e in entries) e.row,
-    ];
     final List<CollectionMemberEntry> arranged = arrangeCollectionMembers(
       entries,
       sort: _sort,
@@ -796,13 +784,17 @@ class _MediaCollectionGridDetailPageState
             if (!identical(e, current))
               if (e.info?.cover case final Widget cover) cover,
         ];
+        // 任何排序下都可拖：拖一次即把当前显示顺序连同这次移动存为手动序
+        // （[_onReorder]）。此前只在「手动」下才进拖排网格，而默认排序是卷号，
+        // 没手动排过的合集一律拖不动、长按还弹菜单（用户实报「不能拖动排序」）。
         final bool canReorder =
-            _sort == CollectionMemberSort.manual &&
             !filtered &&
             !_selecting &&
             _viewMode == CollectionMemberViewMode.grid;
 
-        final Widget hero = CollectionDetailHeroCard(
+        // hero 叠层封面与成员卡同一套条目材质：按成员主类型（数量最多的那类）选。
+        final ShelfCoverMaterial? heroMaterial = _dominantCoverMaterial(_rows);
+        final Widget heroCard = CollectionDetailHeroCard(
           name: _name,
           memberCount: entries.length,
           finished: widget.memberInfoOf == null ? null : summary.finished,
@@ -819,6 +811,9 @@ class _MediaCollectionGridDetailPageState
                     widget.onOpenMember!(next.row.mediaType, next.row.entryKey),
           onEditTags: _editCollectionTags,
         );
+        final Widget hero = heroMaterial == null
+            ? heroCard
+            : ShelfCoverMaterialScope(material: heroMaterial, child: heroCard);
 
         final double available = constraints.maxWidth - hPad * 2;
         final double targetWidth = readerShelfGridExtentForLayout(
@@ -917,7 +912,7 @@ class _MediaCollectionGridDetailPageState
             ),
           );
         } else if (canReorder) {
-          // 手动序、无筛选：消缩放 2D 拖排网格（轻点 → 打开、按下 / 长按拖 → 重排、
+          // 无筛选：消缩放 2D 拖排网格（轻点 → 打开、按下 / 长按拖 → 重排、
           // 长按松手 / 右键 → 上下文菜单）。卡片包在 IgnorePointer 里，避免其内部
           // InkWell 的 long-press 与网格触摸拖拽争用手势竞技场。
           slivers.add(
@@ -932,7 +927,8 @@ class _MediaCollectionGridDetailPageState
                   mainAxisSpacing: spacing,
                   feedbackBorderRadius: FushiBorderRadius.card,
                   keyForIndex: (int i) => ValueKey<String>(arranged[i].key),
-                  onReorder: _onReorder,
+                  onReorder: (int from, int to) =>
+                      _onReorder(arranged, from, to),
                   onActivateItem: widget.onOpenMember == null
                       ? null
                       : (int i) => widget.onOpenMember!(
@@ -1422,6 +1418,21 @@ ShelfCoverMaterial? _coverMaterialFor(String mediaType) {
   }
 }
 
+/// 合集主类型的条目材质：成员里数量最多的媒体类型（并列取先出现的）经
+/// [_coverMaterialFor] 映射；没有成员 / 类型都不认识时为 null。
+ShelfCoverMaterial? _dominantCoverMaterial(List<MediaCollectionItemRow> rows) {
+  final Map<ShelfCoverMaterial, int> counts = <ShelfCoverMaterial, int>{};
+  ShelfCoverMaterial? best;
+  for (final MediaCollectionItemRow r in rows) {
+    final ShelfCoverMaterial? m = _coverMaterialFor(r.mediaType);
+    if (m == null) continue;
+    final int n = (counts[m] ?? 0) + 1;
+    counts[m] = n;
+    if (best == null || n > counts[best]!) best = m;
+  }
+  return best;
+}
+
 class _ViewModeToggle extends StatelessWidget {
   const _ViewModeToggle({required this.mode, required this.onChanged});
 
@@ -1515,7 +1526,7 @@ class _MemberGridTile extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool material = _hasCoverMaterial(context, child);
     return ContextMenuTrigger(
-      onInvoke: onMenu,
+      onInvoke: (Offset p) => runWithContextMenuAnchor(p, () => onMenu(p)),
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
@@ -1629,7 +1640,7 @@ class _MemberListRow extends StatelessWidget {
       ),
     );
     return ContextMenuTrigger(
-      onInvoke: onMenu,
+      onInvoke: (Offset p) => runWithContextMenuAnchor(p, () => onMenu(p)),
       child: Padding(
         padding: EdgeInsets.only(bottom: tokens.spacing.gap),
         child: Material(

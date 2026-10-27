@@ -69,7 +69,7 @@ void main() {
         reason: '本次 pending 必须绑定已经递增的 _navigateGeneration');
 
     final String navigate = slice(
-      'Future<void> _navigateToChapter(',
+      'Future<bool> _navigateToChapter(',
       'Future<bool> _navigateToChapterAndWait(',
     );
     final int beginIdx = navigate.indexOf('_beginNavigation(');
