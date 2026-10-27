@@ -5,6 +5,7 @@ import 'dart:ui' show Size;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_stats.dart';
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
 import 'package:fushi/src/media/video/video_audio_output_recovery.dart';
@@ -586,7 +587,14 @@ class VideoPlayerController extends ChangeNotifier
   /// 留白、A/V 偏移与用户的毫秒级起止微调，句尾判定接不住任意毫秒。判定点在位置
   /// 回调 [updateCueForPosition]（与句尾暂停同一个时钟），用的是调和过 seek 在途的
   /// 位置，刚 seek 回起点时滞后的旧位置不会把它误判成「已到终点」。
+  ///
+  /// 只经 [_endPlayRange] 作废（与 [_playRange] 一起），两者不会各走各的。
   int? _oneShotHoldUntilMs;
+
+  /// 与 [_oneShotHoldUntilMs] 同生同灭的结果句柄：[playRangeMs] 交给调用方，这段播到
+  /// 终点（[_maybeStopAtPlayRangeEnd] / 媒体播完）或被作废（seek / 换片 / 停止 / 被下一段
+  /// 顶掉 / 销毁）时由 [_endPlayRange] 完成（FDN66-xurt：试听按钮据此复位）。
+  RangePlayback? _playRange;
 
   /// 当前启用的 mpv 着色器绝对路径（[load] 复用 / [applyShaders] 实时切换）。
   List<String> _shaderPaths = <String>[];
@@ -2582,7 +2590,7 @@ class VideoPlayerController extends ChangeNotifier
     // 同理复位一次性「只播这一句就停」请求与句尾防重复停记号：两者都是**旧 _cues 的
     // 下标**，对新列表已无意义，留着会让新片的某句被无缘无故停一次。
     _oneShotHoldCueIndex = null;
-    _oneShotHoldUntilMs = null;
+    _endPlayRange(RangePlaybackEnd.interrupted);
     _lastSubtitleEndPauseCueIndex = null;
     // 主字幕换了：给 Lua 脚本的镜像轨跟着重挂（没装脚本时零开销）。
     _scheduleLuaSubtitleMirrorSync();
@@ -4116,8 +4124,10 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   void _handleCompletedChanged(bool completed) {
-    if (isBlurayNavigationSession) return;
     if (!completed) return;
+    // 终点落在片尾之后（或贴着片尾、位置回调没来得及越过）时，媒体播完就是这段播完。
+    _endPlayRange(RangePlaybackEnd.reachedEnd);
+    if (isBlurayNavigationSession) return;
     if (_completedFiredForLoad) return;
     _completedFiredForLoad = true;
     _onCompleted?.call();
@@ -4310,8 +4320,16 @@ class VideoPlayerController extends ChangeNotifier
     final int? untilMs = _oneShotHoldUntilMs;
     if (untilMs == null || positionMs < untilMs) return;
     if (!_isPlayingForSubtitleEnd()) return;
-    _oneShotHoldUntilMs = null;
+    _endPlayRange(RangePlaybackEnd.reachedEnd);
     unawaited(_runSubtitleEndHold(_subtitleEndHoldPauseOverride ?? pause));
+  }
+
+  /// [playRangeMs] 的唯一收尾点：作废终点，并以 [reason] 完成交给调用方的句柄。
+  void _endPlayRange(RangePlaybackEnd reason) {
+    _oneShotHoldUntilMs = null;
+    final RangePlayback? playback = _playRange;
+    _playRange = null;
+    playback?.finish(reason);
   }
 
   void _syncCueForPosition(int posMs, {required bool persistPosition}) {
@@ -5802,7 +5820,7 @@ class VideoPlayerController extends ChangeNotifier
     _clearSeekTargetSnap();
     // 用户主动改变播放位置 = 放弃「只播这一句就停」的意图（[_oneShotHoldCueIndex]）。
     _oneShotHoldCueIndex = null;
-    _oneShotHoldUntilMs = null;
+    _endPlayRange(RangePlaybackEnd.interrupted);
     _beginPlainSeekInFlight(clampedMs);
     final int token = _noteSeekIssued(clampedMs);
     // 权威同步：直接按目标位置算一次字幕（不经 tick 的位置调和），gap 则立即清空。
@@ -5825,7 +5843,7 @@ class VideoPlayerController extends ChangeNotifier
     // [replayCue] 是唯一例外——它在本方法**之后**才置自己的一次性 hold，与
     // [skipToCue] 置 [_seekTargetCueIndex] 的顺序契约完全同构，故不会被自清。
     _oneShotHoldCueIndex = null;
-    _oneShotHoldUntilMs = null;
+    _endPlayRange(RangePlaybackEnd.interrupted);
     final int clampedMs = positionMs.clamp(0, 1 << 30);
     final int token = _noteSeekIssued(clampedMs);
     _applyHrSeekDemuxerOffsetFor(clampedMs);
@@ -6007,17 +6025,28 @@ class VideoPlayerController extends ChangeNotifier
   /// 用户的起止微调，见 [_oneShotHoldUntilMs]），而 [replayCue] 只能停在 cue 边界。
   /// 顺序与 [replayCue] 同构：先 [seekMs]（它会作废上一次的一次性 hold），再挂本次
   /// 终点，再起播。用户中途 seek / 换片即放弃；[stopPlayRange] 显式停止。
-  Future<void> playRangeMs(int startMs, int endMs) async {
-    if (endMs <= startMs) return;
+  ///
+  /// 起播后即返回一个 [RangePlayback]：这段播到终点（或媒体播完）时以
+  /// [RangePlaybackEnd.reachedEnd] 完成，被 seek / 换片 / [stopPlayRange] / 下一次
+  /// [playRangeMs] / [dispose] 作废时以 [RangePlaybackEnd.interrupted] 完成。调用方
+  /// 的「正在试听」状态必须跟它走（FDN66-xurt）。空区间返回已结束的句柄、不起播。
+  Future<RangePlayback> playRangeMs(int startMs, int endMs) async {
+    if (endMs <= startMs) {
+      return RangePlayback.ended(RangePlaybackEnd.reachedEnd);
+    }
+    // seekMs 经 [_endPlayRange] 把上一段（若还在）以 interrupted 收尾。
     await seekMs(startMs);
+    final RangePlayback playback = RangePlayback();
     _oneShotHoldUntilMs = endMs;
+    _playRange = playback;
     await (_replayPlayOverride ?? play).call();
+    return playback;
   }
 
   /// 停止 [playRangeMs] 起的试听：作废终点并暂停。只 pause 不作废的话，用户之后自然
   /// 续播会在那个旧终点被莫名停一次。
   Future<void> stopPlayRange() async {
-    _oneShotHoldUntilMs = null;
+    _endPlayRange(RangePlaybackEnd.interrupted);
     await pause();
   }
 
@@ -6380,6 +6409,7 @@ class VideoPlayerController extends ChangeNotifier
   @override
   void dispose() {
     _loadToken++;
+    _endPlayRange(RangePlaybackEnd.interrupted);
     _discJavaRuntimeProbe?.cancel();
     _discJavaRuntimeProbe = null;
     _discObservedPlayer = null;

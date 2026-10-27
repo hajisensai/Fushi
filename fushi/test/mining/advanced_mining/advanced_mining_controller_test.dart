@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' show Rect;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_controller.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
@@ -368,6 +370,110 @@ void main() {
       expect(c.stillImageLoading, isFalse);
       c.setMosaicRegions(<MiningMosaicRegion>[a]);
       expect(c.buildOverrides().mosaic, isEmpty);
+    });
+  });
+
+  // BUG-3801 / FDN66-xurt：试听播完后按钮停在「停止」，下一次点击只是去停一段早已
+  // 结束的播放，要点两次才能再听。按钮必须跟宿主交回的句柄走。
+  group('试听按钮跟着那段播放的结局走', () {
+    test('播完自动复位；下一次点击是重新试听而不是停止', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      expect(await c.togglePreview(), isTrue);
+      expect(c.previewing, isTrue);
+
+      host.playbacks.single.finish(RangePlaybackEnd.reachedEnd);
+      await pumpEventQueue();
+      expect(c.previewing, isFalse, reason: '这段播完了，按钮回到「试听」');
+
+      // 改了句子间隔（偏移）后再听：一次点击就是重新起播。
+      c.nudgeAudioEdge(start: false, deltaMs: 250);
+      await pumpEventQueue();
+      expect(await c.togglePreview(), isTrue);
+      expect(host.previewCalls, hasLength(2));
+      expect(host.previewCalls.last, <int>[0, 250]);
+      expect(host.stopCalls, 0, reason: '第二次点击不能被当成「停止」吃掉');
+      expect(c.previewing, isTrue);
+    });
+
+    test('宿主播完才返回（有声书片段播放器）：返回时按钮即复位', () async {
+      host.previewEndsBeforeReturn = true;
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      expect(await c.togglePreview(), isTrue);
+      await pumpEventQueue();
+      expect(c.previewing, isFalse);
+    });
+
+    test('被宿主侧打断（seek / 换片）同样复位', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      await c.togglePreview();
+      host.playbacks.single.finish(RangePlaybackEnd.interrupted);
+      await pumpEventQueue();
+      expect(c.previewing, isFalse);
+    });
+
+    test('停掉的旧一段晚到的结局不复位新一段', () async {
+      // 这个宿主停止时不立刻收尾旧句柄，模拟「旧一段的结束晚于新一段起播才到」。
+      final List<RangePlayback> started = <RangePlayback>[];
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(
+          host.capabilities(
+            audio: AdvancedMiningAudioSection(
+              describe: (int s, int e) async =>
+                  const AdvancedMiningAudioWindow(startMs: 0, endMs: 1000),
+              preview: (int s, int e) async {
+                final RangePlayback p = RangePlayback();
+                started.add(p);
+                return p;
+              },
+              stopPreview: () async {},
+            ),
+          ),
+        ),
+      );
+      await c.togglePreview();
+      await c.togglePreview(); // 停
+      expect(c.previewing, isFalse);
+      await c.togglePreview(); // 新一段
+      expect(c.previewing, isTrue);
+      started.first.finish(RangePlaybackEnd.interrupted);
+      await pumpEventQueue();
+      expect(c.previewing, isTrue, reason: '旧一段的结局不归新一段管');
+      started.last.finish(RangePlaybackEnd.reachedEnd);
+      await pumpEventQueue();
+      expect(c.previewing, isFalse);
+    });
+
+    test('起播途中点了停止：起播落地后补停，按钮保持「试听」', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      host.previewGate = Completer<void>();
+      final Future<bool> starting = c.togglePreview();
+      await pumpEventQueue();
+      expect(c.previewing, isTrue);
+      await c.togglePreview(); // 停（起播还在途）
+      expect(c.previewing, isFalse);
+      expect(host.stopCalls, 1);
+      host.previewGate!.complete();
+      expect(await starting, isTrue);
+      await pumpEventQueue();
+      expect(host.stopCalls, 2, reason: '停止早于起播落地：宿主随后放出来的那段要补停');
+      expect(c.previewing, isFalse);
+    });
+
+    test('没有可试听的音频：如实返回 false，按钮复位', () async {
+      host.previewResult = false;
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      expect(await c.togglePreview(), isFalse);
+      expect(c.previewing, isFalse);
     });
   });
 }

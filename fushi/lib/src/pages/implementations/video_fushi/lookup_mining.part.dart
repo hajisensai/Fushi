@@ -125,8 +125,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
   /// （[_videoMiningAudioWindow]，含首尾留白、A/V 偏移），不再按 cue 边界放
   /// （BUG-3339：旧实现按 cue 边界 replayCue，试听比卡上的句子音频少了
   /// 首尾留白）。
-  Future<bool> _previewSentenceContextAudio() =>
-      _previewVideoMiningAudio(startDeltaMs: 0, endDeltaMs: 0);
+  Future<bool> _previewSentenceContextAudio() async =>
+      await _previewVideoMiningAudio(startDeltaMs: 0, endDeltaMs: 0) != null;
 
   /// 这张卡会写进去的句子音频区间（播放器轴），[startDeltaMs] / [endDeltaMs] 是高级制卡
   /// 的起止偏移。与 [_onMineEntryImpl] 走**同一对函数**（[_resolveVideoMiningRange] +
@@ -152,23 +152,23 @@ extension _VideoLookupMining on _VideoFushiPageState {
   }
 
   /// 本机播放器试听 [_videoMiningAudioWindow]：毫秒级起止，播到终点自动停
-  /// （[VideoPlayerController.playRangeMs]）。没有区间返回 false。
-  Future<bool> _previewVideoMiningAudio({
+  /// （[VideoPlayerController.playRangeMs]）。没有区间返回 null；否则返回这段的句柄
+  /// （播完 / 被打断时完成，高级制卡的试听按钮据此复位，FDN66-xurt）。
+  Future<RangePlayback?> _previewVideoMiningAudio({
     required int startDeltaMs,
     required int endDeltaMs,
   }) async {
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return false;
+    if (controller == null) return null;
     final AdvancedMiningAudioWindow? window = _videoMiningAudioWindow(
       controller,
       startDeltaMs: startDeltaMs,
       endDeltaMs: endDeltaMs,
     );
-    if (window == null) return false;
+    if (window == null) return null;
     // 试听挪了播放头：对话框关闭时要把它放回查词位置（见 [_closeAdvancedMiningSession]）。
     _advancedMiningSession?.previewed = true;
-    await controller.playRangeMs(window.startMs, window.endMs);
-    return true;
+    return controller.playRangeMs(window.startMs, window.endMs);
   }
 
   /// 制卡（覆写 [DictionaryPageMixin.onMineEntry]）：在词典 [fields]（已含单词

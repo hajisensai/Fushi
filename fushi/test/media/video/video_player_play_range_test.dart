@@ -4,7 +4,10 @@
 // 换片即作废；但终点是任意毫秒（含首尾留白、起止微调），不是 cue 边界。另两条易回归的
 // 线：刚 seek 回起点时滞后的旧位置不能被当成「已到终点」；区间内跨过的 cue 句尾不停。
 
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
@@ -102,8 +105,91 @@ void main() {
     });
 
     test('空区间不起播', () async {
-      await c.playRangeMs(2000, 2000);
+      final RangePlayback playback = await c.playRangeMs(2000, 2000);
       expect(actions, isEmpty);
+      expect(c.debugPlayRangeUntilMs, isNull);
+      expect(playback.isEnded, isTrue, reason: '没有可播的，句柄直接是结束态');
+    });
+  });
+
+  // BUG-3801 / FDN66-xurt：区间播完要能被调用方观察到（试听按钮据此复位），否则
+  // 播完后按钮停在「停止」，下一次点击只是去停。
+  group('VideoPlayerController.playRangeMs 的结果句柄', () {
+    late VideoPlayerController c;
+    late List<String> actions;
+
+    setUp(() {
+      c = VideoPlayerController();
+      actions = <String>[];
+      c.setCues(<AudioCue>[_cue(0, 1000, 2000), _cue(1, 2100, 3000)]);
+      c.debugSetSubtitleEndHoldHooksForTesting(
+        isPlaying: () => true,
+        onPause: () async => actions.add('pause'),
+        onSeek: (int positionMs) async => actions.add('seek:$positionMs'),
+        onPlay: () async => actions.add('play'),
+      );
+      c.debugSetIsPlayingForTesting(true);
+    });
+    tearDown(() => c.dispose());
+
+    Future<RangePlaybackEnd?> settled(RangePlayback p) async {
+      await Future<void>.delayed(Duration.zero);
+      if (!p.isEnded) return null;
+      return p.ended;
+    }
+
+    test('播到终点：句柄以 reachedEnd 完成（与那次自动暂停同一刻）', () async {
+      final RangePlayback p = await c.playRangeMs(1000, 2500);
+      c.debugUpdateCueForPosition(1010);
+      expect(await settled(p), isNull, reason: '区间内仍在播');
+      c.debugUpdateCueForPosition(2510);
+      expect(await settled(p), RangePlaybackEnd.reachedEnd);
+      expect(actions, <String>['play', 'pause']);
+    });
+
+    test(
+      'stopPlayRange / seek / 换片 / 跳句 / 下一段 / 销毁：句柄以 interrupted 完成',
+      () async {
+        final RangePlayback stopped = await c.playRangeMs(1000, 2500);
+        await c.stopPlayRange();
+        expect(await settled(stopped), RangePlaybackEnd.interrupted);
+
+        final RangePlayback seeked = await c.playRangeMs(1000, 2500);
+        await c.seekMs(5000);
+        expect(await settled(seeked), RangePlaybackEnd.interrupted);
+
+        final RangePlayback recued = await c.playRangeMs(1000, 2500);
+        c.setCues(<AudioCue>[_cue(0, 1000, 2000), _cue(1, 2100, 3000)]);
+        expect(await settled(recued), RangePlaybackEnd.interrupted);
+
+        final RangePlayback skipped = await c.playRangeMs(1000, 2500);
+        await c.skipToCue(c.cues.last);
+        expect(await settled(skipped), RangePlaybackEnd.interrupted);
+
+        final RangePlayback first = await c.playRangeMs(1000, 2500);
+        final RangePlayback second = await c.playRangeMs(1200, 2600);
+        expect(await settled(first), RangePlaybackEnd.interrupted);
+        expect(second.isEnded, isFalse, reason: '新一段不受上一段收尾影响');
+
+        final VideoPlayerController other = VideoPlayerController()
+          ..debugSetSubtitleEndHoldHooksForTesting(
+            isPlaying: () => true,
+            onPause: () async {},
+            onPlay: () async {},
+          );
+        final RangePlayback disposed = await other.playRangeMs(1000, 2500);
+        other.dispose();
+        expect(await settled(disposed), RangePlaybackEnd.interrupted);
+      },
+    );
+
+    test('媒体在终点前播完：句柄以 reachedEnd 完成', () async {
+      final StreamController<bool> completed = StreamController<bool>();
+      addTearDown(completed.close);
+      await c.debugAttachCompletedStreamForTesting(completed.stream);
+      final RangePlayback p = await c.playRangeMs(1000, 999999);
+      completed.add(true);
+      expect(await settled(p), RangePlaybackEnd.reachedEnd);
       expect(c.debugPlayRangeUntilMs, isNull);
     });
   });
