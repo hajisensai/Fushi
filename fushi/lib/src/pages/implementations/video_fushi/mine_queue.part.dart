@@ -155,6 +155,46 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
   /// 点开列表。两者都没有时零尺寸。只有角标本身吃点击（外层 [Align] 不命中空白处），
   /// 且不抢键盘焦点——播放页的快捷键焦点归属不因它变化。窗口与全屏共用（监听 notifier，
   /// 与 OSD 同源）。
+  /// 「循环当前句」常驻标记（Ix4j5SKUth）：右上角、与制卡队列角标同一锚点，角标在时
+  /// 让到它下面一格。点它关闭循环。
+  Widget _buildLoopCueBadgeOverlay(VideoPlayerController controller) {
+    return Positioned.fill(
+      child: SafeArea(
+        child: AnimatedBuilder(
+          animation: Listenable.merge(<Listenable>[
+            controller.loopCurrentCueListenable,
+            _minesInFlight,
+            _stagedMineCount,
+          ]),
+          builder: (BuildContext context, _) {
+            final bool mineBadgeShown =
+                _minesInFlight.value > 0 || _stagedMineCount.value > 0;
+            final ColorScheme cs = _videoChromeColorScheme(context);
+            return Align(
+              alignment: Alignment.topRight,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  right: 16,
+                  top:
+                      _videoButtonBarHeight +
+                      (mineBadgeShown ? 48 : 8) * _videoUiScale,
+                ),
+                child: VideoLoopCueBadge(
+                  active: controller.loopCurrentCue,
+                  label: t.video_loop_cue_badge_label,
+                  tooltip: t.video_loop_cue_badge_tooltip,
+                  onTap: () => controller.setLoopCurrentCue(false),
+                  surfaceColor: _osdSurfaceColor(cs),
+                  textColor: _osdTextColor(cs),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   Widget _buildMineQueueBadgeOverlay() {
     return Positioned.fill(
       child: SafeArea(

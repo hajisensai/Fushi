@@ -190,6 +190,12 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_replay_current_subtitle;
       case ShortcutAction.videoReplayPreviousSubtitle:
         return t.shortcut_action_video_replay_previous_subtitle;
+      case ShortcutAction.videoToggleLoopCurrentSubtitle:
+        return t.shortcut_action_video_toggle_loop_current_subtitle;
+      case ShortcutAction.videoCopyCurrentSubtitle:
+        return t.shortcut_action_video_copy_current_subtitle;
+      case ShortcutAction.videoCopyCurrentSecondarySubtitle:
+        return t.shortcut_action_video_copy_current_secondary_subtitle;
       case ShortcutAction.videoPreviousChapter:
         return t.shortcut_action_video_previous_chapter;
       case ShortcutAction.videoNextChapter:
@@ -434,6 +440,12 @@ extension ShortcutActionIcon on ShortcutAction {
         return FushiIcons.replay;
       case ShortcutAction.videoReplayPreviousSubtitle:
         return FushiIcons.replay5;
+      case ShortcutAction.videoToggleLoopCurrentSubtitle:
+        return FushiIcons.repeat;
+      case ShortcutAction.videoCopyCurrentSubtitle:
+        return FushiIcons.copy;
+      case ShortcutAction.videoCopyCurrentSecondarySubtitle:
+        return FushiIcons.copyAll;
 
       // 章节
       case ShortcutAction.videoPreviousChapter:

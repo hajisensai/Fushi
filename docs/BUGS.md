@@ -55,6 +55,17 @@
 | [BUG-3820](bugs/BUG-3820-english-ordinal-season-dirs.md) | ✅ | ✅ | 视频解析器不认 Second Season / Season Two 等英文序数季名，合集包续季目录判不出季号 |
 | [BUG-3819](bugs/BUG-3819-cloud-tombstone-per-marker-round-trips.md) | ✅ | ✅ | 云同步删除墓碑阶段逐条 GET 全部远端标记，单阶段 200 s+ |
 | [BUG-3818](bugs/BUG-3818-profile-delete-srs-cascade.md) | ✅ | ✅ | 删 Profile 后 srs.db 里该 uid 的复习数据与媒体目录残留（无主副本） |
+> 共 3428 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3824](bugs/BUG-3824-video-loop-current-line-toggle.md) | ✅ | ✅ | 视频页没有「循环当前句」开关，精听只能反复按重播 |
+| [BUG-3823](bugs/BUG-3823-video-copy-current-line-shortcut.md) | ✅ | ✅ | 视频页没有「复制当前台词」快捷键，只能开字幕列表逐行点 |
+| [BUG-3822](bugs/BUG-3822-video-subtitle-list-remember-tab.md) | ✅ | ✅ | 视频字幕栏每次都从「全部」页签打开，不记得上次停在「收藏」 |
+| [BUG-3821](bugs/BUG-3821-video-replay-cue-autoplay.md) | ✅ | ✅ | 视频暂停时「重播当前句 / 重播上一句」只跳到句首不起播 |
+| [BUG-3820](bugs/BUG-3820-video-jump-pill-hover-flicker.md) | ✅ | ✅ | Windows 视频页「返回跳转前位置」胶囊在鼠标停在边缘时持续闪烁、上下抖动 |
+| [BUG-3819](bugs/BUG-3819-video-seek-thumbnail-under-subtitle.md) | ✅ | ✅ | 进度条悬停缩略图被字幕挡住 |
+| [BUG-3818](bugs/BUG-3818-video-long-press-speed-badge-stuck.md) | ✅ | ✅ | 长按倍速后徽章一直停在画面上，直到重开视频 |
 | [BUG-3817](bugs/BUG-3817-video-delete-work-leaves-extras.md) | ✅ | ✅ | 删除动漫只删正片：特典与其余下载资源残留在目录 |
 | [BUG-3816](bugs/BUG-3816-download-organize-multi-work-pack-collision.md) | ✅ | ✅ | 下载整理：多作品合集包续作目录无季号撞名整任务失败 |
 | [BUG-3815](bugs/BUG-3815-interconnect-push-resurrects-host-deleted-book.md) | ✅ | ✅ | 互联客户端把主机「从所有设备删除」的书推回主机并清掉删除墓碑 |

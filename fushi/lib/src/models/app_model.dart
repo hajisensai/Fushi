@@ -5199,6 +5199,12 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleListTapLookup(bool value) =>
       prefsRepo.setVideoSubtitleListTapLookup(value);
 
+  /// 视频字幕列表上次打开的页签名（xlzGuK5YmD，`VideoSubtitleListFilter.name`）。
+  String get videoSubtitleListFilter => prefsRepo.videoSubtitleListFilter;
+
+  Future<void> setVideoSubtitleListFilter(String value) =>
+      prefsRepo.setVideoSubtitleListFilter(value);
+
   /// 视频字幕列表行字号档位（BUG-878，落 Drift preferences，默认 1=1.0x）。
   int get videoSubtitleListFontScaleIndex =>
       prefsRepo.videoSubtitleListFontScaleIndex;

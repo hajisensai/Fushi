@@ -804,6 +804,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_backfill_after_scrape',
   'video_subtitle_blur',
   'video_subtitle_list_auto_scroll',
+  // string（默认 all）：字幕列表上次打开的页签（VideoSubtitleListFilter.name，
+  // all / favorites），下次打开恢复（反馈 xlzGuK5YmD）。
+  'video_subtitle_list_filter',
   'video_subtitle_list_font_scale_index',
   // bool（默认 true）：字幕列表里点字幕文字是否查词；关掉后点哪里都只跳到该句
   // （手机上列表旁的查词弹窗太扁，多数人只拿列表跳转，群反馈 GbN9MoKDCQ）。

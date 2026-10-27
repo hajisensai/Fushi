@@ -25,6 +25,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_current_line_copy.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
@@ -1079,6 +1080,17 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     return true;
   }
 
+  /// 快捷键「复制当前台词」（_Eb0txdN4H，与视频页同口径）：正在显示的那句，句间
+  /// 空隙里回落到最近查词 / 当前句。
+  void _copyCurrentSubtitle() {
+    final String? text = videoCurrentLineCopyText(
+      activeCues: _controller.activeCues,
+      fallback: _controller.currentCue ?? _lastLookupCue,
+    );
+    if (text == null) return;
+    _appModel.copyToClipboard(text);
+  }
+
   // ── 查词（与视频页 `_lookupAt` 同步骤）──────────────────────────────────
 
   void _onControllerChanged() {
@@ -1477,11 +1489,19 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       cycleSecondarySubtitleObscure: noop,
       toggleSecondarySubtitleHide: noop,
       toggleFavoriteSentence: () => unawaited(_toggleFavoriteCurrent()),
+      // 重播类动作一律起播（Dbd86l4kA-，与本地视频页同口径）；只跳不播的是
+      // previousSubtitle / nextSubtitle。
       replayCurrentSubtitle: () {
         final AudioCue? cue = _controller.currentCue ?? _lastLookupCue;
-        if (cue != null) unawaited(_seekMs(cue.startMs));
+        if (cue != null) unawaited(_seekMs(cue.startMs).then((_) => _play()));
       },
-      replayPreviousSubtitle: () => unawaited(_seekToCueOffset(-1)),
+      replayPreviousSubtitle: () =>
+          unawaited(_seekToCueOffset(-1).then((_) => _play())),
+      // 复制当前台词（_Eb0txdN4H）；网页视频页没有副字幕轨（副字幕遮蔽同为 noop）。
+      copyCurrentSubtitle: _copyCurrentSubtitle,
+      copyCurrentSecondarySubtitle: noop,
+      // 循环当前句依赖本地播放器的位置 tick 回绕，网页视频页（WebView 播放）不支持。
+      toggleLoopCurrentSubtitle: noop,
       previousChapter: noop,
       nextChapter: noop,
       openSubtitleAlign: noop,
@@ -2311,6 +2331,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         initialTapLookup: _appModel.videoSubtitleListTapLookup,
         onTapLookupChanged: (bool value) =>
             unawaited(_appModel.setVideoSubtitleListTapLookup(value)),
+        initialFilter: videoSubtitleListFilterFromName(
+          _appModel.videoSubtitleListFilter,
+        ),
+        onFilterChanged: (VideoSubtitleListFilter value) =>
+            unawaited(_appModel.setVideoSubtitleListFilter(value.name)),
         initialFontScaleIndex: _appModel.videoSubtitleListFontScaleIndex,
         onFontScaleIndexChanged: (int value) =>
             unawaited(_appModel.setVideoSubtitleListFontScaleIndex(value)),
