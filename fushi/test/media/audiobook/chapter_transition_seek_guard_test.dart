@@ -165,6 +165,78 @@ void main() {
     });
   });
 
+  group('⑧ 平台 seek 在途窗口的生命周期', () {
+    test('平台 seek 抛错：finally 关窗', () async {
+      final _Harness h = await _Harness.create(bookCues());
+      h.platform.player!.throwNextSeek();
+      await expectLater(
+        h.controller.skipToCue(h.cue(file: 0, startMs: 0)),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(h.controller.explicitSeekPlatformPendingForTesting, isFalse);
+    });
+
+    test('一次永不返回的 seek 被下一次显式 seek 取代：窗口跟着最新那次关', () async {
+      final _Harness h = await _Harness.create(bookCues());
+      await h.controller.play();
+      // 第一次 seek 的回执永远不来（Android just_audio：dispose / 落 STATE_ENDED 都不回）。
+      h.platform.player!.holdSeeks();
+      unawaited(h.controller.skipToCue(h.cue(file: 0, startMs: 0)));
+      await pumpEventQueue();
+      expect(h.controller.explicitSeekPlatformPendingForTesting, isTrue);
+
+      final AudioCue next = h.cue(file: 0, startMs: 2000);
+      await h.controller.skipToCue(next);
+      await pumpEventQueue();
+      expect(
+        h.controller.explicitSeekPlatformPendingForTesting,
+        isFalse,
+        reason: '计数实现会被挂起的那次 seek 永久卡在 >0，cue 从此不再跟随',
+      );
+      h.controller.debugUpdateCueForPosition(2100);
+      expect(h.controller.explicitSeekInFlightForTesting, isFalse);
+      expect(h.controller.currentCue, same(next));
+      h.platform.player!.releaseSeeks();
+    });
+
+    test('seekMs（手动改位置）取代挂起的显式 seek 窗口', () async {
+      final _Harness h = await _Harness.create(bookCues());
+      h.platform.player!.holdSeeks();
+      unawaited(h.controller.skipToCue(h.cue(file: 0, startMs: 0)));
+      await pumpEventQueue();
+      expect(h.controller.explicitSeekPlatformPendingForTesting, isTrue);
+      await h.controller.seekMs(2500);
+      expect(h.controller.explicitSeekPlatformPendingForTesting, isFalse);
+      h.platform.player!.releaseSeeks();
+    });
+
+    test('seek 窗口内 reader 重灌 cue：不按 seek 前位置重算、不发旧章跨章', () async {
+      final _Harness h = await _Harness.create(bookCues());
+      final AudioCue target = h.cue(file: 1, startMs: 0);
+      h.controller.holdCrossChapterUntilCallerSeek();
+      h.controller.noteManualReaderNavigation();
+      h.readerSection = 9;
+      h.platform.player!.holdSeeks();
+      final Future<void> skip = h.controller.skipToCue(
+        target,
+        callerPositionsReader: true,
+      );
+      await pumpEventQueue();
+      // 新章文档载入：reader 重灌整书 cue（新对象），随后落地回执。
+      h.controller.setChapterCues(bookCues());
+      h.controller.notifySectionRestoreCompleted(
+        currentReaderSection: 9,
+        success: true,
+      );
+      expect(h.crossRequests, isEmpty);
+      h.platform.player!.releaseSeeks();
+      await skip;
+      await pumpEventQueue();
+      expect(h.crossRequests, isEmpty);
+      expect(h.controller.currentCue?.audioFileIndex, 1);
+    });
+  });
+
   group('⑦ 显式 seek「已到位」只认 seek 之后产生的位置', () {
     test('向后 seek：平台返回前回报的旧位置不算到位，返回后到目标才算', () async {
       final _Harness h = await _Harness.create(bookCues());
@@ -347,14 +419,21 @@ class _FakeAudioPlayer extends AudioPlayerPlatform {
   final StreamController<PlaybackEventMessage> _events =
       StreamController<PlaybackEventMessage>.broadcast();
   int _index = 0;
-  Completer<void>? _gate;
+  Completer<void>? _nextGate;
+  Completer<void>? _heldGate;
+  bool _throwNextSeek = false;
 
-  void holdSeeks() => _gate = Completer<void>();
+  /// 下一次 seek 挂起，直到 [releaseSeeks]（之后的 seek 照常返回）。
+  void holdSeeks() => _nextGate = Completer<void>();
 
   void releaseSeeks() {
-    _gate?.complete();
-    _gate = null;
+    (_heldGate ?? _nextGate)?.complete();
+    _heldGate = null;
+    _nextGate = null;
   }
+
+  /// 下一次 seek 抛错（平台 seek 失败）。
+  void throwNextSeek() => _throwNextSeek = true;
 
   void _emit(int ms) {
     _events.add(
@@ -389,8 +468,16 @@ class _FakeAudioPlayer extends AudioPlayerPlatform {
 
   @override
   Future<SeekResponse> seek(SeekRequest request) async {
-    final Completer<void>? gate = _gate;
-    if (gate != null) await gate.future;
+    if (_throwNextSeek) {
+      _throwNextSeek = false;
+      throw PlatformException(code: 'seek-failed');
+    }
+    final Completer<void>? gate = _nextGate;
+    if (gate != null) {
+      _nextGate = null;
+      _heldGate = gate;
+      await gate.future;
+    }
     _index = request.index ?? _index;
     _emit(request.position?.inMilliseconds ?? 0);
     return SeekResponse();
