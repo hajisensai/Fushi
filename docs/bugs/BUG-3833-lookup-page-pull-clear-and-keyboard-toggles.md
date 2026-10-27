@@ -1,4 +1,4 @@
-## BUG-3818 · 查词页：结果顶部下拉回到历史、进入自动弹键盘不可关，键盘无收起手段
+## BUG-3833 · 查词页：结果顶部下拉回到历史、进入自动弹键盘不可关，键盘无收起手段
 - **报告**：2026-10-24（用户反馈 3D-JH966Kr、cczhbM7ZOI，Android moto g 5G 2023：往上翻查词结果顶到头会被甩回搜索历史；一进查词页键盘就弹起占半屏，只能点很少的空白处收起，返回键又会清空查询或退出 app）。分诊 `docs/reviews/2026-10-27-feedback-triage.md` 第五节第 9 项，所有者 2026-10-27 批准推荐方案：两项都做成查词设置里的开关，默认保持现状。
 - **真实性**：✅ 行为真实存在，但两条都是**有意设计**而非缺陷（行号按基线 `cd7c9a975f`）：
   1. 结果 WebView 的顶部下拉（`kPopupTopPullReleaseJs` → `topPullReleased` 桥）无条件接到 `fushi/lib/src/pages/implementations/home_dictionary_page.dart:1904` `onTopPullReleased: _clearSearchFromResultPull` → `:579` `_clearSearchFromResultPull` → `_clearSearch`，清空查询回到历史，没有任何偏好可关。

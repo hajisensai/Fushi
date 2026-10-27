@@ -1,4 +1,4 @@
-## BUG-3820 · iOS 冷启动首页左上头像空白，打开排行榜 / 反馈页后才出现
+## BUG-3835 · iOS 冷启动首页左上头像空白，打开排行榜 / 反馈页后才出现
 - **报告**：2026-10-23（用户反馈 hDfesbQvxB，iPhone iOS 27.0.1，3.0.0+19763：冷启动后左上角头像是默认 / 空白，打开排行榜后才出现，之后到下次冷启动前都在；打开反馈菜单也会让它出现）。
 - **真实性**：✅ 真 bug（行号按基线 `1afad7995b`）。
   - 自己的资料（昵称 / 头像路径）只在内存：`fushi/lib/src/leaderboard/leaderboard_service.dart:167` `LeaderboardSelf? _self`，每次冷启动都是 null，只能等 `refreshSelf()`（`:401`）联网取 `/v1/me`。

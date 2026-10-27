@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3436 条。点号进各自文件。
+> 共 3439 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3835](bugs/BUG-3835-leaderboard-avatar-blank-on-cold-start.md) | ✅ | ✅ | iOS 冷启动首页左上头像空白，打开排行榜 / 反馈页后才出现 |
+| [BUG-3834](bugs/BUG-3834-mine-notice-switch-bypassed.md) | ✅ | ✅ | 关掉制卡成功 / 重复提示后，阅读器、弹窗就地提示与视频 OSD 仍在弹 |
+| [BUG-3833](bugs/BUG-3833-lookup-page-pull-clear-and-keyboard-toggles.md) | ✅ | ✅ | 查词页：结果顶部下拉回到历史、进入自动弹键盘不可关，键盘无收起手段 |
 | [BUG-3832](bugs/BUG-3832-srs-interconnect-sync-crash.md) | ✅ | ✅ | 小米设备 SRS 互联同步 / 复习记录 / 导入卡片时闪退（Dart 日志无栈） |
 | [BUG-3831](bugs/BUG-3831-native-exit-reason-logging.md) | ✅ | ✅ | 原生崩溃 / 被系统杀的进程没有任何日志（反馈分诊约一半闪退卡在 Dart 日志无栈） |
 | [BUG-3830](bugs/BUG-3830-audiobook-paused-explicit-skip-no-follow.md) | ✅ | ✅ | 有声书暂停时显式跳句阅读器视口不跟随 |
@@ -52,13 +55,6 @@
 | [BUG-3820](bugs/BUG-3820-english-ordinal-season-dirs.md) | ✅ | ✅ | 视频解析器不认 Second Season / Season Two 等英文序数季名，合集包续季目录判不出季号 |
 | [BUG-3819](bugs/BUG-3819-cloud-tombstone-per-marker-round-trips.md) | ✅ | ✅ | 云同步删除墓碑阶段逐条 GET 全部远端标记，单阶段 200 s+ |
 | [BUG-3818](bugs/BUG-3818-profile-delete-srs-cascade.md) | ✅ | ✅ | 删 Profile 后 srs.db 里该 uid 的复习数据与媒体目录残留（无主副本） |
-> 共 3424 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3820](bugs/BUG-3820-leaderboard-avatar-blank-on-cold-start.md) | ✅ | ✅ | iOS 冷启动首页左上头像空白，打开排行榜 / 反馈页后才出现 |
-| [BUG-3819](bugs/BUG-3819-mine-notice-switch-bypassed.md) | ✅ | ✅ | 关掉制卡成功 / 重复提示后，阅读器、弹窗就地提示与视频 OSD 仍在弹 |
-| [BUG-3818](bugs/BUG-3818-lookup-page-pull-clear-and-keyboard-toggles.md) | ✅ | ✅ | 查词页：结果顶部下拉回到历史、进入自动弹键盘不可关，键盘无收起手段 |
 | [BUG-3817](bugs/BUG-3817-video-delete-work-leaves-extras.md) | ✅ | ✅ | 删除动漫只删正片：特典与其余下载资源残留在目录 |
 | [BUG-3816](bugs/BUG-3816-download-organize-multi-work-pack-collision.md) | ✅ | ✅ | 下载整理：多作品合集包续作目录无季号撞名整任务失败 |
 | [BUG-3815](bugs/BUG-3815-interconnect-push-resurrects-host-deleted-book.md) | ✅ | ✅ | 互联客户端把主机「从所有设备删除」的书推回主机并清掉删除墓碑 |

@@ -1,4 +1,4 @@
-## BUG-3819 · 关掉制卡成功 / 重复提示后，阅读器、弹窗就地提示与视频 OSD 仍在弹
+## BUG-3834 · 关掉制卡成功 / 重复提示后，阅读器、弹窗就地提示与视频 OSD 仍在弹
 - **报告**：2026-10-24 ～ 10-26（反馈 iH6RY1kqQn Android 小米：「关闭制卡成功提示后仍然弹出」，补充「阅读时」；3aFpRYC6a1 / jYEPxVSrts Android vivo：「重复制卡提醒可关闭」，补充「关闭该功能依然会有提示」）。均为 `da9250e5bd`（制卡提示开关）之后的版本。
 - **真实性**：✅ 真 bug（行号按基线 `5eaf478963`）。`da9250e5bd` 只把开关挂在 `FushiToast.showMine`（`fushi/lib/src/utils/misc/fushi_toast.dart` `if (!mineNoticeFilter(status)) return;`），但制卡结果还有三条说出口不经过它：
   1. **阅读器**（iH6RY1kqQn「阅读时」）：`fushi/lib/src/pages/implementations/reader_fushi/mining.part.dart:398`（新制）与 `:446`（覆写）成功后直接 `FushiToast.show(msg: described.message, severity: mineToastSeverity(described.status))`，不过开关。同类：`floating_dict_page.dart:130`（悬浮词典）、`app_model.dart` 悬浮导出 `FloatingDict.ankiExport`。
