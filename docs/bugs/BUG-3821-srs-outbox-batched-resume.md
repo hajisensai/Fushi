@@ -15,7 +15,7 @@
   - Dart `packages/fushi_engine/test/srs/sync2/srs_sync2_ingest_batching_test.dart`「srsSync2Round 分批发件」：真 store，第二批 PUT 抛错 → 不写 head；下一轮续发、第一批不重发；另一台设备收齐。
   - `fushi/test/srs/srs_interconnect_watch_test.dart`：推送失败指数退避有上限、退避期触发合并、重置后按普通去抖；抛错同样退避。
   - `fushi/test/srs/srs_sync_scheduler_test.dart`：`autoPush` 互联一轮在 exclusive 里、本机目录在锁外、失败报 false；接线守卫（推送 / 长轮询走 `runExclusiveWithSync`、`onReachable` 与手动同步重置退避）。
-  - 变异：去掉 `sync2_outbox_ack` 里持久化水位的 `INSERT … uploaded` → Rust 续传测试红（见提交说明）。
+  - 变异（已做，已还原）：让 `sync2_outbox_ack` 不再持久化水位（`if mark > uploaded && false`）→ Rust 测试红，断言 `segment … sent twice`（下一批重发了已确认的第一批）。
 - **备注**：
   - 未在真机（小米 23116PN5BC）验证：没有那台设备与它 43 万条积压的数据；只在单测里用 20 万条积压验证批大小上限与续传。闪退是否因此消失仍要等下一次带退出原因（BUG-3818）的反馈确认。
   - 峰值内存 = 一批（≤ 8 MiB + 每段 < 1/64 余量）+ 正在打包那一段的解码操作（单段 ≤ `SEGMENT_MAX_OPS` = 25 万条）。后者是既有的单段上限，与积压总量无关，本次未动。
