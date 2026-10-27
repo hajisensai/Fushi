@@ -9976,6 +9976,7 @@
   "web_browser_error_timeout_body": "The site took too long to respond. Try again later.",
   "web_browser_error_timeout_title": "The connection timed out",
   "web_browser_error_title": "This page can't be reached",
+  "web_browser_exit": "Exit browser",
   "web_browser_find_close": "Close find bar",
   "web_browser_find_hint": "Find in page",
   "web_browser_find_next": "Next match",
