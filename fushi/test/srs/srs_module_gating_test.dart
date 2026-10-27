@@ -128,14 +128,17 @@ Future<_Harness> _pumpHome(
   return _Harness(appModel, prefsRepo);
 }
 
-/// 首页导航里「复习」入口：按名字找。默认底栏是相机模式条（#2462，只有当前项胶囊带
-/// 字）、收起侧栏纯图标（#2476），名字只保证进 tooltip 与语义，所以文字与 tooltip
-/// 两处都认；只认文字的话入口在而文字不画时会误判「没有入口」，「看不到」的断言也会
-/// 恒真。material_ui 的 Tooltip 不是 SDK 旧 Tooltip，`find.byTooltip` 认不到。
+/// 首页导航里「复习」入口：按名字找。默认底栏是相机模式条（#2462，纯图标）、收起
+/// 侧栏纯图标（#2476），名字只保证进 tooltip 与无障碍语义；收起侧栏里带速览卡的
+/// 目的地（#2543 起每个目的地都有）连 tooltip 都不叠——悬停弹的是速览卡，名称只在
+/// Semantics label 与卡片标题里。所以文字 / tooltip / 语义名三处都认；漏认任一处，
+/// 入口在而名字不画时会误判「没有入口」，「看不到」的断言也会恒真。material_ui 的
+/// Tooltip 不是 SDK 旧 Tooltip，`find.byTooltip` 认不到。
 Finder _srsNavEntry() => find.byWidgetPredicate(
   (Widget w) =>
       (w is Text && w.data == t.nav_srs) ||
-      (w is Tooltip && w.message == t.nav_srs),
+      (w is Tooltip && w.message == t.nav_srs) ||
+      (w is Semantics && w.properties.label == t.nav_srs),
 );
 
 Future<void> _settle(WidgetTester tester) async {
