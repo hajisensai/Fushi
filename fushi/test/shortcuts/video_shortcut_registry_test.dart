@@ -46,6 +46,8 @@ VideoPlayerShortcutActions _recordingActions(List<String> log) {
     toggleFavoriteSentence: () => log.add('toggleFavoriteSentence'),
     replayCurrentSubtitle: () => log.add('replayCurrentSubtitle'),
     replayPreviousSubtitle: () => log.add('replayPreviousSubtitle'),
+    copyCurrentSubtitle: () => log.add('copyCurrentSubtitle'),
+    copyCurrentSecondarySubtitle: () => log.add('copyCurrentSecondarySubtitle'),
     previousChapter: () => log.add('previousChapter'),
     nextChapter: () => log.add('nextChapter'),
     openSubtitleAlign: () => log.add('openSubtitleAlign'),

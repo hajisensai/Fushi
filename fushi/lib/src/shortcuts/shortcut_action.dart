@@ -508,6 +508,15 @@ enum ShortcutAction {
     ShortcutScope.video,
     'video_replay_previous_subtitle',
   ),
+  // 复制当前台词（_Eb0txdN4H）：主字幕 / 副字幕各一个动作（与遮蔽开关主副分立同一
+  // 体系），把画面上正在显示的那句写进剪贴板，省得开字幕列表再点。默认**空绑定**：
+  // Ctrl+C 在视频页没有占用，但默认占它会和用户的系统复制习惯（比如选中查词浮层里的
+  // 文字）抢键，留给用户自配。执行体在 video_player_shortcuts。
+  videoCopyCurrentSubtitle(ShortcutScope.video, 'video_copy_current_subtitle'),
+  videoCopyCurrentSecondarySubtitle(
+    ShortcutScope.video,
+    'video_copy_current_secondary_subtitle',
+  ),
   // 内封章节上/下一章（TODO-424，默认 PageUp / PageDown）：seek 到相邻章起点，无章节
   // 时 no-op。与「上/下一句字幕」(Ctrl+←/→) 正交——后者按字幕 cue，这里按容器章节。
   videoPreviousChapter(ShortcutScope.video, 'video_previous_chapter'),

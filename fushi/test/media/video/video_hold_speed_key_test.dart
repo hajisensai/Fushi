@@ -202,6 +202,8 @@ void main() {
         toggleFavoriteSentence: noop,
         replayCurrentSubtitle: noop,
         replayPreviousSubtitle: noop,
+        copyCurrentSubtitle: noop,
+        copyCurrentSecondarySubtitle: noop,
         previousChapter: noop,
         nextChapter: noop,
         openSubtitleAlign: noop,

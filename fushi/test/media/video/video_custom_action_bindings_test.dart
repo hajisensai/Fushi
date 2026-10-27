@@ -23,6 +23,8 @@ VideoPlayerShortcutActions _dummyActions() {
     nextSubtitle: noop,
     replayCurrentSubtitle: noop,
     replayPreviousSubtitle: noop,
+    copyCurrentSubtitle: noop,
+    copyCurrentSecondarySubtitle: noop,
     seekBackward: noop,
     seekForward: noop,
     toggleShaderCompare: noop,

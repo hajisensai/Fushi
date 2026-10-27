@@ -25,6 +25,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_current_line_copy.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
@@ -1079,6 +1080,17 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     return true;
   }
 
+  /// 快捷键「复制当前台词」（_Eb0txdN4H，与视频页同口径）：正在显示的那句，句间
+  /// 空隙里回落到最近查词 / 当前句。
+  void _copyCurrentSubtitle() {
+    final String? text = videoCurrentLineCopyText(
+      activeCues: _controller.activeCues,
+      fallback: _controller.currentCue ?? _lastLookupCue,
+    );
+    if (text == null) return;
+    _appModel.copyToClipboard(text);
+  }
+
   // ── 查词（与视频页 `_lookupAt` 同步骤）──────────────────────────────────
 
   void _onControllerChanged() {
@@ -1485,6 +1497,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       },
       replayPreviousSubtitle: () =>
           unawaited(_seekToCueOffset(-1).then((_) => _play())),
+      // 复制当前台词（_Eb0txdN4H）；网页视频页没有副字幕轨（副字幕遮蔽同为 noop）。
+      copyCurrentSubtitle: _copyCurrentSubtitle,
+      copyCurrentSecondarySubtitle: noop,
       previousChapter: noop,
       nextChapter: noop,
       openSubtitleAlign: noop,

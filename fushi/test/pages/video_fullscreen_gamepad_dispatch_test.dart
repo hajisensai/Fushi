@@ -226,6 +226,8 @@ class _Rig {
       toggleFavoriteSentence: _noop,
       replayCurrentSubtitle: _noop,
       replayPreviousSubtitle: _noop,
+      copyCurrentSubtitle: _noop,
+      copyCurrentSecondarySubtitle: _noop,
       previousChapter: _noop,
       nextChapter: _noop,
       openSubtitleAlign: _noop,

@@ -234,6 +234,7 @@ import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_chrome_hit_test.dart';
+import 'package:fushi/src/media/video/video_current_line_copy.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
@@ -8204,6 +8205,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       replayPreviousSubtitle: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_replayPreviousCueAndKeepControls()),
       ),
+      // 复制当前台词主 / 副（_Eb0txdN4H，默认空绑定）：不动播放、不唤控制条。
+      copyCurrentSubtitle: () =>
+          _runWhenImmersiveAllowsShortcuts(_copyCurrentSubtitle),
+      copyCurrentSecondarySubtitle: () =>
+          _runWhenImmersiveAllowsShortcuts(_copyCurrentSecondarySubtitle),
       // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
       // 无章节时 controller no-op。与跳句同范式（BUG-2030）：只续命、不唤起；章节**面板**
       // 里点条目仍 poke（那是指针交互，见 [_buildChapterSidePanel]）。
