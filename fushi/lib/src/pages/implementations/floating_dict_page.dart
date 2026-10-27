@@ -127,12 +127,9 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     );
     // 牌组名由后端随成功结果带回（outcome.deckName，BUG-1549）。
     final described = describeMineOutcome(outcome);
-    FushiToast.show(
-      msg: described.message,
-      // 制卡结果的语义已由 describeMineOutcome 算出（added/duplicate/failed），
-      // 这里只把它翻译成 toast 配色，不再另判一次。
-      severity: mineToastSeverity(described.status),
-    );
+    // 制卡结果的语义已由 describeMineOutcome 算出（added/duplicate/failed）；走
+    // showMine 才过「制卡提示」开关（popup_main 装了同一份偏好闭包）。
+    FushiToast.showMine(msg: described.message, status: described.status);
   }
 
   @override

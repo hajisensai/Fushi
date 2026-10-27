@@ -1,0 +1,14 @@
+## BUG-3819 · 关掉制卡成功 / 重复提示后，阅读器、弹窗就地提示与视频 OSD 仍在弹
+- **报告**：2026-10-24 ～ 10-26（反馈 iH6RY1kqQn Android 小米：「关闭制卡成功提示后仍然弹出」，补充「阅读时」；3aFpRYC6a1 / jYEPxVSrts Android vivo：「重复制卡提醒可关闭」，补充「关闭该功能依然会有提示」）。均为 `da9250e5bd`（制卡提示开关）之后的版本。
+- **真实性**：✅ 真 bug（行号按基线 `5eaf478963`）。`da9250e5bd` 只把开关挂在 `FushiToast.showMine`（`fushi/lib/src/utils/misc/fushi_toast.dart` `if (!mineNoticeFilter(status)) return;`），但制卡结果还有三条说出口不经过它：
+  1. **阅读器**（iH6RY1kqQn「阅读时」）：`fushi/lib/src/pages/implementations/reader_fushi/mining.part.dart:398`（新制）与 `:446`（覆写）成功后直接 `FushiToast.show(msg: described.message, severity: mineToastSeverity(described.status))`，不过开关。同类：`floating_dict_page.dart:130`（悬浮词典）、`app_model.dart` 悬浮导出 `FloatingDict.ankiExport`。
+  2. **查词弹窗就地提示**（3aFpRYC6a1 重复提示）：所有车道重复时返回 `MinePopupResult.failed(outcome, message: described.message)`（如 `dictionary_page_mixin.dart:621`），回包经 `mine_failure_notice.dart:65` `MineFailureNotice.settle` 原样交给 popup.js，`assets/popup/popup.js:5582` `reportMineFailure` 在按钮旁说「重复卡片，未导出。」——`settle` 只判「弹窗还在不在」，从不问开关。视频页重复回包不带 message，popup.js 还会退回通用「导出卡片失败」。
+  3. **视频页 OSD**：`video_fushi/lookup_mining.part.dart:1172` `_showOsd(described.message, prominent: true, severity: mineToastSeverity(...))`、`video_fushi/web_source.part.dart:1289/1294`（YouTube 后台制卡成功 / 重复）直接画 OSD。
+  - 委托方点名的其它位置核对结果：`video_remote_page.dart:1532` 已走 `showMine`（受开关管，不是缺口）；`error_log_service.dart:667` 是 `describeMineOutcome` 的重复分支返回值，不是出口；`anki_mined_card_action_sheet.dart:837` 是用户点 ✓ 后的「已有卡片」操作选择对话框（显式交互，不是提醒），`:119/145/356/376/678/705` 是卡片操作失败提示（失败恒说），均未改。
+- **[x] ① 已修复** — 本条提交（message 尾行 `Feedback: iH6RY1kqQn` / `3aFpRYC6a1` / `jYEPxVSrts`）：
+  - 唯一裁决点 `MineNotices`（`toast_severity.dart`：`filter` + `shown(status)`）；`FushiToast.mineNoticeFilter` 改成转发到它（entry point 接线写法不变）。三个出口都先问它：`FushiToast.showMine`（toast）、`MineFailureNotice.settle` / `reportUnseen`（弹窗就地提示与回流 toast）、视频页新增的 `_showMineOsd`（OSD；视频页禁 import toast，所以裁决点住在 `toast_severity.dart`）。
+  - `settle`：关掉「重复卡片提示」时重复回包去掉 `message`、标 `hostReported`（popup.js 什么都不画，连通用失败兜底也不画），`duplicate` 位保留（按钮照旧画 ✓）；失败（非重复）恒说。无需改 popup.js。
+  - 阅读器 / 悬浮词典 / 悬浮导出改走 `showMine`；阅读器制卡前的句子诊断与无句子音频提示（「卡片已创建，但…」）改为 `showMine(addedWithWarning)`（恒弹，语义不变），句子音频导出失败改为 `showMine(failed)`。视频页三处改走 `_showMineOsd`（YouTube 后台制卡结果随之变成突出 OSD，与 TODO-971 一致）。
+  - `addedWithWarning` / `failed` 恒弹按现有设计保留。
+- **[x] ② 已加自动化测试** — `fushi/test/anki/mine_notice_single_exit_guard_test.dart`：`settle` 行为 7 例（开 / 关 × 弹窗在 / 不在、无 message 的重复、失败恒说、`reportUnseen` 过开关）+ 源码守卫（`lib/` 下所有 `FushiToast.show(` / `_showOsd(` 调用的实参不得带制卡结果标记：`mineToastSeverity(` / `described.` / `MineToastStatus.` / `t.card_duplicate` 等，只豁免 `_showMineOsd` 本体；扫描面 > 300 次调用防恒绿）+ 三个出口都问 `MineNotices.shown` 的接线断言。同步更新了钉旧写法的守卫：`video_osd_card_created_alignment_guard_test`、`video_mining_context_guard_test`、`reader_mining_audio_guard_test`。
+- **备注**：未真机复测（Android 阅读器制卡 + 弹窗重复提示需要设备看一眼）。iH6RY1kqQn 的日志里没有制卡相关记录，「阅读时弹的是哪一条」按代码路径推断为阅读器成功 toast（缺口 1），未从日志核实。

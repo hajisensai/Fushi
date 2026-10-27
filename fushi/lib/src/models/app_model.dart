@@ -11251,10 +11251,8 @@ class AppModel with ChangeNotifier {
             MineToastStatus status,
           })
           described = describeMineOutcome(outcome);
-          FushiToast.show(
-            msg: described.message,
-            severity: mineToastSeverity(described.status),
-          );
+          // 制卡结果走 showMine：过「制卡提示」开关。
+          FushiToast.showMine(msg: described.message, status: described.status);
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);
           FushiToast.show(
