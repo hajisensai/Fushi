@@ -79,10 +79,7 @@ impl Device {
             }
         }
         let out: Value = serde_json::from_str(&self.core.sync2_ingest(P, &fetched, None, now).unwrap()).unwrap();
-        let (segs, upto) = self.core.sync2_outbox(P, location, None).unwrap();
-        for (path, bytes) in segs {
-            bucket.0.insert(path, bytes);
-        }
+        let upto = self.upload_all(bucket, location);
         let (path, bytes, _, obsolete) = self.core.sync2_head(P, location, upto, now).unwrap();
         bucket.0.insert(path, bytes);
         for name in obsolete {
@@ -91,6 +88,26 @@ impl Device {
         // 与生产同一节奏：版本向量变了且到期才重算（测试里间隔为 0 = 变了就算）。
         self.core.sync2_digest_due(P, now, Some(0)).unwrap();
         out
+    }
+
+    /// 与生产同一节奏的分批发件：取一批 → 全部写进 [bucket] → 确认 → 还有就再取。返回写 head 用的水位。
+    pub fn upload_all(&self, bucket: &mut Bucket, location: &str) -> u64 {
+        use super::transport::{OUTBOX_BATCH_BYTES, OUTBOX_BATCH_SEGMENTS};
+        loop {
+            let batch = self.core.sync2_outbox(P, location, None, OUTBOX_BATCH_BYTES, OUTBOX_BATCH_SEGMENTS).unwrap();
+            if batch.files.is_empty() {
+                return batch.upto;
+            }
+            for (path, bytes) in batch.files {
+                bucket.0.insert(path, bytes);
+            }
+            let (accepted, mark) = self.core.sync2_outbox_ack(P, location, &batch.segments).unwrap();
+            assert!(accepted);
+            assert_eq!(mark, batch.upto);
+            if !batch.more {
+                return mark;
+            }
+        }
     }
 
     pub fn rows(&self, sql: &str) -> Vec<Vec<String>> {
@@ -1551,4 +1568,104 @@ fn second_profile_writes_never_reuse_another_profiles_edit_ids() {
         assert!(!p_rows.iter().skip(1).any(|x| x[0] == row[0]), "edit id {} reused across profiles", row[0]);
     }
     assert_eq!(ids_of(P), p_rows, "old profile untouched");
+}
+
+/// 分批发件（反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）：20 万条小操作的积压——每批字节 / 段数有上限（峰值与积压
+/// 总量无关），每批确认后水位前进；上传中途断掉的那一轮之后，下一轮从水位接着发，不重发已确认的批。
+#[test]
+fn a_huge_backlog_is_sent_in_bounded_batches_and_resumes_from_the_watermark() {
+    use super::transport::{OUTBOX_BATCH_BYTES, OUTBOX_BATCH_SEGMENTS};
+    use crate::sync2::segment::SEGMENT_TARGET_BYTES;
+    const N: i64 = 200_000;
+    let a = Device::new("backlog");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck)]);
+    for chunk in 0..(N / 2000) {
+        let events: Vec<Value> = (0..2000)
+            .map(|i| {
+                let n = chunk * 2000 + i;
+                // 一条小编辑（复习的回放代价与本测试无关，只要操作条数）；散列值不让整批压成几个字节。
+                edit("note", &format!("N{n}"), "f/x", json!(blake3::hash(&n.to_le_bytes()).to_hex().to_string()))
+            })
+            .collect();
+        a.apply(T0 + chunk, events);
+    }
+
+    // 1) 默认预算把整份积压发到一个位置：每批都在上限内，段不重不漏。
+    let mut probe = Bucket::default();
+    let (mut batches, mut seen) = (0usize, BTreeMap::<u64, u64>::new());
+    loop {
+        let b = a.core.sync2_outbox(P, "probe", None, OUTBOX_BATCH_BYTES, OUTBOX_BATCH_SEGMENTS).unwrap();
+        if b.files.is_empty() {
+            break;
+        }
+        batches += 1;
+        let bytes: u64 = b.files.iter().map(|f| f.1.len() as u64).sum();
+        assert!(b.files.len() <= OUTBOX_BATCH_SEGMENTS);
+        // 段体积估计（各小块分别压缩之和）对不可压缩的内容不是严格上界，实测超出 < 0.3%：每段留 1/64 余量。
+        let slack = SEGMENT_TARGET_BYTES / 64;
+        assert!(b.files.iter().all(|f| (f.1.len() as u64) < SEGMENT_TARGET_BYTES + slack));
+        assert!(b.files.len() == 1 || bytes <= OUTBOX_BATCH_BYTES + slack * b.files.len() as u64, "batch of {bytes} bytes");
+        for &(f, l) in &b.segments {
+            assert!(seen.insert(f, l).is_none(), "segment {f}-{l} sent twice");
+        }
+        for (p, x) in b.files {
+            probe.0.insert(p, x);
+        }
+        let (ok, mark) = a.core.sync2_outbox_ack(P, "probe", &b.segments).unwrap();
+        assert!(ok);
+        assert_eq!(mark, b.upto);
+        if !b.more {
+            break;
+        }
+    }
+    let segs: Vec<(u64, u64)> = a.rows("SELECT first, last FROM sync2_segments ORDER BY first")[1..]
+        .iter()
+        .map(|r| (r[0].parse().unwrap(), r[1].parse().unwrap()))
+        .collect();
+    assert!(segs.len() >= 3, "{} segments", segs.len());
+    assert_eq!(seen.into_iter().collect::<Vec<_>>(), segs);
+    eprintln!("{} segments in {batches} default-budget batches", segs.len());
+
+    // 2) 另一个位置一段一批：第一批确认，第二批上传失败（没确认）——下一轮从第二批接着发，第一批不再发。
+    let mut bucket = Bucket::default();
+    let mut puts: BTreeMap<String, usize> = BTreeMap::new();
+    let first = a.core.sync2_outbox(P, "loc", None, OUTBOX_BATCH_BYTES, 1).unwrap();
+    assert!(first.more);
+    for (p, x) in first.files {
+        *puts.entry(p.clone()).or_default() += 1;
+        bucket.0.insert(p, x);
+    }
+    assert_eq!(a.core.sync2_outbox_ack(P, "loc", &first.segments).unwrap(), (true, first.upto));
+    let failed = a.core.sync2_outbox(P, "loc", None, OUTBOX_BATCH_BYTES, 1).unwrap();
+    assert_ne!(failed.segments, first.segments, "watermark advanced after the first ack");
+    drop(failed.files); // 上传中途断网：这一批没写成，也没确认。
+    let resumed = a.core.sync2_outbox(P, "loc", None, OUTBOX_BATCH_BYTES, 1).unwrap();
+    assert_eq!(resumed.segments, failed.segments, "resume from the watermark, not from scratch");
+    assert!(resumed.segments[0].0 > first.segments[0].1);
+    // 认不出的段（切法已变）不算数：水位不动。
+    assert_eq!(a.core.sync2_outbox_ack(P, "loc", &[(999_999_999, 999_999_999)]).unwrap(), (false, first.upto));
+    loop {
+        let b = a.core.sync2_outbox(P, "loc", None, OUTBOX_BATCH_BYTES, 1).unwrap();
+        if b.files.is_empty() {
+            break;
+        }
+        for (p, x) in b.files {
+            *puts.entry(p.clone()).or_default() += 1;
+            bucket.0.insert(p, x);
+        }
+        a.core.sync2_outbox_ack(P, "loc", &b.segments).unwrap();
+        if !b.more {
+            break;
+        }
+    }
+    assert!(puts.values().all(|n| *n == 1), "no confirmed segment uploaded twice: {puts:?}");
+    // 收尾：写 head，新设备从这个位置收齐全部 20 万条。
+    a.sync(&mut bucket, "loc", T0 + DAY);
+    let c = Device::new("backlogc");
+    c.sync(&mut bucket, "loc", T0 + DAY);
+    let count = |d: &Device| d.rows("SELECT COUNT(*) FROM srs_field_edits")[1][0].parse::<i64>().unwrap();
+    assert!(count(&a) >= N);
+    assert_eq!(count(&c), count(&a));
+    assert_eq!(a.digest(), c.digest());
 }

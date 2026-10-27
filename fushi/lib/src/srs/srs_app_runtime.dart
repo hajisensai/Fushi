@@ -24,6 +24,8 @@ import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart'
+    show SrsSync2Report;
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -175,17 +177,26 @@ class SrsAppRuntime {
   );
 
   /// 互联快速通道（srs_interconnect_watch.dart）：长轮询所连 host，有新数据立刻同步这一条通道。
+  ///
+  /// 与常规同步的互斥（反馈 XDV7Mzc2gw）：`ready`（`restoreAuth` 改单例后端的凭据 / 会话）与 `onChange` 的一轮
+  /// 都在 [runExclusiveWithSync] 里跑，和常规同步、推送串行。长轮询请求本身**不**拿锁：它一挂就是 25 s，拿锁
+  /// 会把常规同步挡住；它只读已解析好的会话发一个独立请求、不改共享状态（会话在锁里的 `ready` 之后才可能被
+  /// 常规同步换掉，换掉时这条请求失败，走 watcher 自己的退避重连）。
   late final SrsInterconnectWatcher interconnectWatch = SrsInterconnectWatcher(
     // 快速通道是自动同步：开关关着时不挂长轮询（watcher 空闲重查时会再问，打开后自动恢复）。
-    ready: () async =>
-        await _interconnectReady() && await sync.isAutoSyncEnabled(),
+    ready: () => runExclusiveWithSync(
+      () async => await _interconnectReady() && await sync.isAutoSyncEnabled(),
+    ),
     wait: InterconnectSyncBackend.instance.waitSrsChanges,
-    onChange: () async {
+    onChange: () => runExclusiveWithSync(() async {
       await sync.autoSyncWithBackend(InterconnectSyncBackend.instance);
-    },
+    }),
+    // host 重新可达：推送不必再等退避期满。
+    onReachable: () => localPush.resetBackoff(),
   );
 
   /// 本机变动后去抖推送：连着互联 host 就同步那条通道；本机自己是 host 就跑本机目录（唤醒连它的设备）。
+  /// 推送失败按指数退避（[SrsLocalPush]），不再每答一张卡就探测一轮死地址。
   late final SrsLocalPush localPush = SrsLocalPush(push: _pushInterconnect);
 
   Future<bool> _interconnectReady() async {
@@ -199,15 +210,18 @@ class SrsAppRuntime {
     return backend.isAuthenticated;
   }
 
-  Future<void> _pushInterconnect() async {
+  /// 返回互联这一步是否推成（[SrsLocalPush] 的退避依据）；失败照常记日志。
+  Future<bool> _pushInterconnect() async {
     try {
-      await sync.autoPush(
+      return await sync.autoPush(
         () async => await _interconnectReady()
             ? InterconnectSyncBackend.instance
             : null,
+        exclusive: runExclusiveWithSync,
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsAppRuntime.pushInterconnect', e, stack);
+      return false;
     }
   }
 
@@ -235,7 +249,11 @@ class SrsAppRuntime {
   late final SyncChannelPostRunHook _postRunHook = _postRun;
 
   Future<void> _postRun(SyncBackend backend) async {
-    await sync.autoSyncWithBackend(backend);
+    final SrsSync2Report? r = await sync.autoSyncWithBackend(backend);
+    // 常规同步经互联跑通了一轮：host 可达，推送不必再等退避期满。
+    if (backend is InterconnectSyncBackend && r != null && r.error == null) {
+      localPush.resetBackoff();
+    }
   }
 
   /// 本机开着互联服务时，客户端经互联写进来的同步目录（host 自己不是任何一条通道的客户端，
@@ -341,7 +359,7 @@ class SrsAppRuntime {
           return key.isEmpty ? null : key;
         },
         onSync: () => unawaited(
-          sync.syncNow().catchError((Object e, StackTrace stack) {
+          syncNow().catchError((Object e, StackTrace stack) {
             ErrorLogService.instance.log('SrsAnkiConnect.sync', e, stack);
             return const SrsSyncNowResult(ran: 0);
           }),
@@ -362,7 +380,11 @@ class SrsAppRuntime {
   }
 
   /// 牌组列表「立即同步」：对所有已认证通道跑一轮（结果区分没配置 / 失败 / 成功）。
-  Future<SrsSyncNowResult> syncNow() => sync.syncNow();
+  /// 用户手动同步也清掉推送的失败退避（用户明说「现在就同步」）。
+  Future<SrsSyncNowResult> syncNow() {
+    localPush.resetBackoff();
+    return sync.syncNow();
+  }
 
   void _onHomeTabChanged() {
     if (homeShellTabNotifier.value != HomeTab.srs) return;
