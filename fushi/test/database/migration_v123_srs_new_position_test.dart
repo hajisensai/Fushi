@@ -47,12 +47,12 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 137);
+    expect(migrated.schemaVersion, 138);
     await migrated.getAllTags();
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 137);
+    expect(probe.select('PRAGMA user_version').first.values.first, 138);
     expect(columnsOf(probe, 'srs_cards_cache'), contains('new_position'));
     expect(
       probe
@@ -77,7 +77,7 @@ void main() {
     await reopened.getAllTags();
     await reopened.close();
     final sqlite.Database probe2 = sqlite.sqlite3.open(path);
-    expect(probe2.select('PRAGMA user_version').first.values.first, 137);
+    expect(probe2.select('PRAGMA user_version').first.values.first, 138);
     expect(
       probe2
           .select("SELECT new_position FROM srs_cards_cache WHERE id = 'c1'")

@@ -24,6 +24,8 @@ RemoteAudioBinding _binding({
   String? episodeId,
   int updatedAt = 0,
   int? localProgressAt,
+  int? serverProgressAt,
+  int? progressSyncedAt,
 }) => RemoteAudioBinding(
   srtBookUid: 'srtbook_1',
   provider: RemoteAudioBinding.providerAudiobookshelf,
@@ -34,6 +36,8 @@ RemoteAudioBinding _binding({
   createdAt: 0,
   updatedAt: updatedAt,
   localProgressAt: localProgressAt,
+  serverProgressAt: serverProgressAt,
+  progressSyncedAt: progressSyncedAt,
 );
 
 /// 假播放器：测试直接改位置 / 播放状态，再触发监听。
@@ -85,6 +89,23 @@ class _FakeServer {
   /// 非空 = 服务器上有这条进度记录（GET /me/progress 应答它）。
   Map<String, Object?>? storedProgress;
 
+  /// 非空 = 服务器的时钟（与本机时钟无关）：会话同步 / 关闭 / 直接写进度成功时，
+  /// 像真服务器一样把这条进度记录改成推上来的位置、`lastUpdate` 取服务器此刻。
+  int Function()? serverNow;
+
+  /// 断网：任何请求都失败。
+  bool offline = false;
+
+  void _record(Map<String, Object?> body) {
+    final int Function()? now = serverNow;
+    if (now == null) return;
+    storedProgress = <String, Object?>{
+      'currentTime': body['currentTime'],
+      'duration': body['duration'],
+      'lastUpdate': now(),
+    };
+  }
+
   /// 非空 = 读进度 / 会话同步要等它放行（模拟请求在途）。
   Completer<void>? progressGate;
   Completer<void>? syncGate;
@@ -93,6 +114,7 @@ class _FakeServer {
       calls.where((c) => c.path.endsWith(suffix)).toList();
 
   Future<http.Response> handle(http.Request request) async {
+    if (offline) return http.Response('offline', 503);
     Map<String, Object?> body = const <String, Object?>{};
     if (request.body.isNotEmpty) {
       body = jsonDecode(request.body) as Map<String, Object?>;
@@ -128,10 +150,13 @@ class _FakeServer {
     }
     if (request.url.path.contains('/session/')) {
       if (request.url.path.endsWith('/sync')) await syncGate?.future;
+      if (syncStatus == 200) _record(body);
       return http.Response(syncStatus == 200 ? 'OK' : 'x', syncStatus);
     }
     if (request.url.path.contains('/me/progress/')) {
-      return patchFails ? http.Response('x', 500) : http.Response('OK', 200);
+      if (patchFails) return http.Response('x', 500);
+      _record(body);
+      return http.Response('OK', 200);
     }
     return http.Response('not found', 404);
   }
@@ -580,6 +605,197 @@ void main() {
       player.notify(); // 暂停够久 → 复查服务器
       await pumpEventQueue();
       expect(errors, contains('recheck'));
+    });
+  });
+
+  group('时钟偏差：两边各用各的时钟判断谁动过', () {
+    // 落库的三个进度时刻（模拟 remote_audio_bindings 那一行）。
+    int? localAt;
+    int? serverAt;
+    int? syncedAt;
+
+    setUp(() {
+      localAt = null;
+      serverAt = null;
+      syncedAt = null;
+    });
+
+    AudiobookshelfProgressSync open() => AudiobookshelfProgressSync(
+      api: _api(server),
+      binding: _binding(
+        localProgressAt: localAt,
+        serverProgressAt: serverAt,
+        progressSyncedAt: syncedAt,
+      ),
+      deviceId: () async => 'dev-1',
+      now: () => clock,
+      timerFactory: (Duration interval, void Function() onTick) {
+        tick = onTick;
+        return Timer(const Duration(days: 1), () {});
+      },
+      onError: (String what, Object e) => errors.add(what),
+      onPushed: (int ms) async => localAt = ms,
+      onSynced: (int server, int local) async {
+        serverAt = server;
+        syncedAt = local;
+      },
+    );
+
+    /// 本机从当前位置往后听 [seconds] 秒再暂停：暂停那一刻立即同步。
+    Future<void> listen(int seconds) async {
+      player.playing = true;
+      player.notify();
+      advance(seconds);
+      player.positionMs += seconds * 1000;
+      player.playing = false;
+      player.notify();
+      await pumpEventQueue();
+    }
+
+    test('推送成功后读回服务器那条：记下服务器时钟的 lastUpdate 与本机采样时刻', () async {
+      server.serverNow = () =>
+          clock.subtract(const Duration(minutes: 10)).millisecondsSinceEpoch;
+      final AudiobookshelfProgressSync s = open();
+      await s.attach(player.host);
+      await listen(30);
+      expect(server.storedProgress!['currentTime'], 30);
+      expect(serverAt, server.serverNow!(), reason: '基线是服务器时钟，不是本机时钟');
+      expect(syncedAt, clock.millisecondsSinceEpoch);
+      expect(localAt, syncedAt, reason: '推上去的就是这次采样，本机没有未推的进度');
+      await s.close();
+    });
+
+    test('推送与读回之间别的设备又写了：位置对不上，不当基线', () async {
+      server.serverNow = () => clock.millisecondsSinceEpoch;
+      final AudiobookshelfProgressSync s = AudiobookshelfProgressSync(
+        api: AudiobookshelfApi(
+          serverUrl: Uri.parse('https://abs.example.com'),
+          providerId: 'abs-test',
+          tokens: const AudiobookshelfTokens(accessToken: 'a'),
+          client: MockClient((http.Request r) async {
+            final http.Response response = await server.handle(r);
+            if (r.url.path.endsWith('/sync')) {
+              // 我们刚推完，别的设备紧接着写了 200s。
+              server.storedProgress = <String, Object?>{
+                'currentTime': 200,
+                'duration': 300,
+                'lastUpdate': clock.millisecondsSinceEpoch + 1,
+              };
+            }
+            return response;
+          }),
+        ),
+        binding: _binding(),
+        deviceId: () async => 'dev-1',
+        now: () => clock,
+        timerFactory: (Duration interval, void Function() onTick) {
+          tick = onTick;
+          return Timer(const Duration(days: 1), () {});
+        },
+        onSynced: (int server, int local) async {
+          serverAt = server;
+          syncedAt = local;
+        },
+      );
+      await s.attach(player.host);
+      await listen(30);
+      expect(server.to('/sync'), hasLength(1));
+      expect(serverAt, isNull);
+      expect(syncedAt, isNull);
+      await s.close();
+    });
+
+    test('本机时钟快 10 分钟：别的设备刚写的新进度照样跳过去', () async {
+      // 服务器时钟 = 本机时钟 - 10 分钟。
+      server.serverNow = () =>
+          clock.subtract(const Duration(minutes: 10)).millisecondsSinceEpoch;
+      final AudiobookshelfProgressSync first = open();
+      await first.attach(player.host);
+      await listen(30);
+      await first.close();
+      expect(serverAt, isNotNull);
+
+      // 一分钟后另一台设备听到了 150s。
+      advance(60);
+      server.storedProgress = <String, Object?>{
+        'currentTime': 150,
+        'duration': 300,
+        'lastUpdate': server.serverNow!(),
+      };
+      // 旧判定（跨时钟比）会把它当成「比本机最后一次写入旧 5 分钟以上」而忽略：
+      expect(
+        (server.storedProgress!['lastUpdate']! as int) <
+            localAt! - kAudiobookshelfClockSkewTolerance.inMilliseconds,
+        isTrue,
+      );
+
+      advance(60);
+      player.restores.clear();
+      final AudiobookshelfProgressSync second = open();
+      await second.attach(player.host);
+      expect(player.restores, <(int, int)>[(1, 50000)]);
+      await second.close();
+    });
+
+    test('本机时钟慢 10 分钟：离线听过的进度不被服务器上自己的旧记录盖掉', () async {
+      // 服务器时钟 = 本机时钟 + 10 分钟。
+      server.serverNow = () =>
+          clock.add(const Duration(minutes: 10)).millisecondsSinceEpoch;
+      final AudiobookshelfProgressSync first = open();
+      await first.attach(player.host);
+      await listen(30);
+      await first.close();
+      final int baseline = serverAt!;
+
+      // 断网听了一分钟：只记得下本机写入时间。
+      advance(60);
+      server.offline = true;
+      final AudiobookshelfProgressSync offline = open();
+      await offline.attach(player.host);
+      await listen(60);
+      await offline.close();
+      expect(player.positionMs, 90000);
+      expect(localAt! > syncedAt!, isTrue, reason: '本机有没推上去的进度');
+      expect(serverAt, baseline);
+
+      // 回到网上再开书：服务器上还是自己 30s 那条。
+      advance(60);
+      server.offline = false;
+      expect(server.storedProgress!['currentTime'], 30);
+      // 旧判定（服务器 lastUpdate 不比本机写入旧 5 分钟以上 → 以服务器为准）会跳回 30s：
+      expect(
+        (server.storedProgress!['lastUpdate']! as int) <
+            localAt! - kAudiobookshelfClockSkewTolerance.inMilliseconds,
+        isFalse,
+      );
+      player.restores.clear();
+      final AudiobookshelfProgressSync back = open();
+      await back.attach(player.host);
+      expect(player.restores, isEmpty);
+      await back.close();
+      expect(server.storedProgress!['currentTime'], 90, reason: '关书时把本机位置推上去');
+    });
+
+    test('两边都动过（冲突）：退回按时刻比的既有规则', () async {
+      // 上次对齐后本机又听过（localAt > syncedAt），服务器也被写过（lastUpdate > 基线）。
+      syncedAt = clock
+          .subtract(const Duration(hours: 2))
+          .millisecondsSinceEpoch;
+      serverAt = clock
+          .subtract(const Duration(hours: 2))
+          .millisecondsSinceEpoch;
+      localAt = clock.millisecondsSinceEpoch;
+      server.storedProgress = <String, Object?>{
+        'currentTime': 150,
+        'duration': 300,
+        'lastUpdate': clock
+            .subtract(const Duration(hours: 1))
+            .millisecondsSinceEpoch,
+      };
+      final AudiobookshelfProgressSync s = open();
+      await s.attach(player.host);
+      expect(player.restores, isEmpty, reason: '服务器那条比本机写入旧得多');
+      await s.close();
     });
   });
 

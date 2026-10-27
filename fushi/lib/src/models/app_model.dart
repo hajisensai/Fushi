@@ -7452,16 +7452,16 @@ class AppModel with ChangeNotifier {
               api: api,
               binding: binding,
               deviceId: () => SyncRepository(database).getOrCreateDeviceId(),
-              onPushed: (int nowMs) async {
-                final RemoteAudioBindingRepository bindings =
-                    RemoteAudioBindingRepository(database);
-                final RemoteAudioBinding? latest = await bindings.get(
-                  binding.srtBookUid,
-                );
-                if (latest != null) {
-                  await bindings.save(latest.copyWith(localProgressAt: nowMs));
-                }
-              },
+              // 两路回调会并发落库：只写各自的列，不读出整行再覆盖。
+              onPushed: (int nowMs) => RemoteAudioBindingRepository(
+                database,
+              ).updateProgressMarks(binding.srtBookUid, localProgressAt: nowMs),
+              onSynced: (int serverProgressAt, int syncedAt) =>
+                  RemoteAudioBindingRepository(database).updateProgressMarks(
+                    binding.srtBookUid,
+                    serverProgressAt: serverProgressAt,
+                    progressSyncedAt: syncedAt,
+                  ),
               onSyncError: (String what, Object error) =>
                   ErrorLogService.instance.log(
                     'AudiobookshelfProgress.$what',

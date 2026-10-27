@@ -2376,6 +2376,15 @@ class RemoteAudioBindings extends Table {
   /// 误判成「本机后听的」，别的设备的新进度就被本机旧位置盖掉。
   IntColumn get localProgressAt => integer().nullable()();
 
+  /// v138：本机最后一次与服务器进度一致时，服务器记的 `lastUpdate`（毫秒，**服务器
+  /// 时钟**）；null = 从没对齐过。开书时服务器 `lastUpdate` 比它新 = 别的设备写过。
+  /// 只和服务器给的时刻比，不和本机时钟比（两台机器的时钟差不进判定）。
+  IntColumn get serverProgressAt => integer().nullable()();
+
+  /// v138：本机最后一次与服务器进度一致的时刻（毫秒，**本机时钟**）；null = 从没对齐
+  /// 过。[localProgressAt] 比它新 = 本机有还没推上去的进度。
+  IntColumn get progressSyncedAt => integer().nullable()();
+
   @override
   Set<Column> get primaryKey => {srtBookUid};
 }
