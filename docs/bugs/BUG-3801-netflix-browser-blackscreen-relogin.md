@@ -6,4 +6,10 @@
   3. 点两次：浏览器进了 Netflix 观看页不会自动交给播放页，必须再手点「用 Fushi 播放」。
 - **[x] ① 已修复** — `copyWebVideoLoginCookies` 改为按 `kWebVideoLoginCookieSources` 依次从内置档与 app 内浏览器环境抄 cookie（浏览器后抄、同名覆盖，单个来源失败不挡其它）；`WebBrowserFeature` 新增 `onUrlChanged`（接 `onUpdateVisitedHistory`，覆盖 SPA pushState 换页），`PlayInFushiFeature` 在有播放页的平台、非无痕标签页进入 `webBrowserWatchPageNeedsPlayer`（Netflix `/watch/`）时自动交给播放页并让标签页退回上一页，同一地址每个标签页只自动交一次。
 - **[x] ② 已加自动化测试** — `fushi/test/web_browser/web_browser_site_player_test.dart`「浏览器播不了的观看页：只有 Netflix /watch/ 自动交给播放页」。
+- **追加（同日用户复测后）**：
+  - 制卡时没登录：内置档（制卡队列重放宿主）从不抄 cookie（`web_video_fushi_page.dart` 只在窗口档抄）→ 两档都抄；来源加上窗口宿主档。
+  - 播放页里登录后浏览器仍未登录 → `syncWebVideoLoginToBrowser` 播放页关掉时回抄浏览器，浏览器标签页回到前台时若新增了 cookie 就刷新。
+  - 后台双播：交接时只暂停一次（`<video>` 还没建、退回选集页后预告片自动播）→ 交接期间捕获阶段拦 `play`，播放页链路全关（含 pushReplacement 的制卡页）才放开（`untilRouteIsCurrent`）。
+  - 缺选集 / 缺封面：Netflix metadata `memberapi/<build>` 返回 502（用户日志），且失败一次本页永久放弃 → 先走 `memberapi/release`、旧路径兜底；失败按 videoKey 记，换视频文档再要；metadata 到达即补封面。
+  - 返回回到播放页自带网页档：浏览器交接的播放页 `webBackToBrowser`，返回直接回浏览器；网页 / 播放器改为同一个分段切换（`_buildWebModeToggle`），交接页不给关闭 X。
 - **备注**：cookie 跨环境复制与 WebView2 自动交接依赖真实 WebView2 / PlayReady，单测覆盖不到；未在真机复测 Netflix 登录态是否完整带过去（HttpOnly 的 `NetflixId` / `SecureNetflixId` 走 fork 的 CDP getCookies，与原内置档复制同一路径）。
