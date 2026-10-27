@@ -3005,12 +3005,14 @@ updateLive: function(patch) {
           // 引擎层根治（packages/flutter_inappwebview_windows：主框架已注入 2xx
           // 时按成功走 onLoadStop），此处不再做事后补偿；下面是真实加载失败处理。
           if (_restoreExpectedGeneration != _navigateGeneration) return;
-          _isNavigatingToChapter = false;
-          _restoreInFlight = false;
-          if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
-            _restoreCompleter!.complete(false);
-          }
-          _restoreCompleter = null;
+          // BUG-3796：只认**当前导航那份文档**的失败（与 onLoadStop 的陈旧判据同口径：
+          // 比路径）。被新导航顶掉的旧加载报的 abort 不是当前导航的结局，拿它收尾会把
+          // 正在飞的那次导航（及它持有的有声书跨章守卫）一起错杀。
+          if (!_isCurrentChapterDocumentUrl(request.url.toString())) return;
+          // 主框架加载失败 = 这次导航的 restore 回执永远不会来。走统一中止收尾
+          // [_failNavigation]（含跨章守卫解除）；旧的手写四行只解开导航态，守卫要白等
+          // 8s content-ready 兜底计时器才放（BUG-3796）。
+          _failNavigation();
         }
       },
       onConsoleMessage: (controller, msg) {
@@ -3138,6 +3140,11 @@ updateLive: function(patch) {
         generation == _lyricsDocumentLoadGeneration &&
         generation == _lyricsLoadGeneration;
   }
+
+  /// [url] 是否就是当前导航目标章的那份文档（只比路径，与 `onLoadStop` 的陈旧判据
+  /// 同一口径）。
+  bool _isCurrentChapterDocumentUrl(String url) =>
+      Uri.parse(url).path == Uri.parse(_chapterUrl(_currentChapter)).path;
 
   Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
     // BUG-1280（平台分叉守卫）：spread 独立文档绝不注入正文引擎。
