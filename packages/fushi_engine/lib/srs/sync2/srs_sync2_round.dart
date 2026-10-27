@@ -46,8 +46,8 @@ const Duration kSrsSync2DigestInterval = Duration(minutes: 10);
 /// 取值理由：段按压缩后体积切，单段上限 4 MiB（内核 `segment.rs` 的 `SEGMENT_TARGET_BYTES`），老版本写的段上限
 /// 64 KB。按段数分批（以前每批 128 段）在大段下一批能到 512 MB、整批跨 FFI 拷进内核再解压，移动端会被杀；按字节
 /// 切则与段多大无关。8 MiB 与旧设计「128 个 64 KB 段 ≈ 8 MB 一批」同量级：老段的批大小与进度粒度不变，大段一批
-/// 也至少两段。预算到了不再开新下载、只等在途的，所以一批的实际上界是
-/// 预算 + ([kSrsSync2Concurrency] − 1) × 单段上限（≈ 28 MiB），Dart 侧与内核各持一份也在百兆以内。
+/// 也至少两段。预算到了不再开新下载、只等在途的（读完之前不知道段多大），所以一批的实际上界是
+/// 预算 + [kSrsSync2Concurrency] × 单段上限（≈ 32 MiB），Dart 侧与内核各持一份也在百兆以内。
 const int kSrsSync2IngestBudgetBytes = 8 * 1024 * 1024;
 
 /// 调用方要求中途收手（库要关 / 调度器卸下）：已收的批次都已提交，下一轮接着拉。
@@ -104,7 +104,8 @@ class SrsSync2Report {
 /// 绝不降级成明文；本机刚开加密 → 这一轮把 `kdf` 写进 `meta.json`）；[archive] = 归档位置：只写不删（不清本机
 /// 的旧 head，设计 §10.3）。[onFetchProgress] 报下载 + 收进本机的段数（开拉前一次 `(0, 总数)`，之后每批一次）；
 /// [onUploadStart] 在开始发件时调一次；[shouldStop] 每批收完后问一次，为真就以 [kSrsSync2Stopped] 收手（已收的
-/// 批次都已提交）。[ingestBudgetBytes] 见 [kSrsSync2IngestBudgetBytes]。
+/// 批次都已提交）。[ingestBudgetBytes] 见 [kSrsSync2IngestBudgetBytes]；[fetchConcurrency] = 拉段时同时在途的
+/// 下载数。
 Future<SrsSync2Report> srsSync2Round({
   required SrsSync2Host host,
   required SrsLocationStore location,
@@ -116,6 +117,7 @@ Future<SrsSync2Report> srsSync2Round({
   void Function()? onUploadStart,
   bool Function()? shouldStop,
   int ingestBudgetBytes = kSrsSync2IngestBudgetBytes,
+  int fetchConcurrency = kSrsSync2Concurrency,
 }) async {
   final SrsSync2Report report = SrsSync2Report();
   // meta.json：协议版本与集合身份，创建后只读（§6.1）；加密握手（§9）以位置上的 kdf 为准。
@@ -204,6 +206,7 @@ Future<SrsSync2Report> srsSync2Round({
     wanted,
     fetch: location.get,
     budgetBytes: ingestBudgetBytes,
+    concurrency: fetchConcurrency,
     pinned: own.length,
   )) {
     // head 指向的段暂时还列不到（最终一致）的不在 batch.segments 里：这一轮跳过，下一轮再来。
@@ -302,7 +305,7 @@ class SrsFetchedBatch {
 }
 
 /// 按原顺序读 [paths]，同时最多 [concurrency] 个在途，按实际读到的字节切批：一批累计到 [budgetBytes] 就不再开
-/// 新的读、等在途的读完后交出这一批，消费方收完再开下一批（同一时刻内存里只有一批）。前 [pinned] 个路径无视
+/// 新的读、等在途的读完后交出这一批（在途的读完之前不知道多大，所以一批最多超出预算 [concurrency] 个文件），消费方收完再开下一批（同一时刻内存里只有一批）。前 [pinned] 个路径无视
 /// 预算全进第一批。每批至少一个路径，所以单个超过预算的文件自成一批；[paths] 为空时也交出一个空批。
 /// 任一读失败：不再开新的，等在途的跑完后抛出第一个错误（与 [srsRunPooled] 一致）。消费方中途停止监听，
 /// 当前批读完后就不再读。

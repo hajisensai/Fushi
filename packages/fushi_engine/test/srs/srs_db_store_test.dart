@@ -449,15 +449,25 @@ void main() {
   });
 
   test('首次同步分批拉段、分批收：进度逐批上报，中途收手已收的保留、下一轮补齐', () async {
-    final SrsDbStore a = await device('a');
     final List<String> notes = <String>[];
-    // 每建一条就同步一轮：a 在位置上留下多个段。
-    for (final String w in <String>['川', '山', '海', '空']) {
+    // 四台设备离线各建一条、再依次同步：位置上有多个段（同一台设备的小段会被分层合并成一个），彼此没有因果
+    // 依赖，任意分批都能各自应用。
+    final List<SrsDbStore> writers = <SrsDbStore>[];
+    for (final (String id, String w) in <(String, String)>[
+      ('a', '川'),
+      ('c', '山'),
+      ('d', '海'),
+      ('e', '空'),
+    ]) {
+      final SrsDbStore s = await device(id);
       notes.add(
-        await a.createNote(noteTypeId: a.lapisNoteTypeId, fieldsById: lapis(w)),
+        await s.createNote(noteTypeId: s.lapisNoteTypeId, fieldsById: lapis(w)),
       );
+      writers.add(s);
+    }
+    for (final SrsDbStore s in writers) {
       await srsSync2Round(
-        host: a,
+        host: s,
         location: loc,
         locationId: 'test',
         nowMs: () => t,
@@ -470,7 +480,8 @@ void main() {
       location: loc,
       locationId: 'test',
       nowMs: () => t,
-      ingestBatch: 1,
+      ingestBudgetBytes: 1,
+      fetchConcurrency: 1,
       onFetchProgress: (int done, int total) => progress.add((done, total)),
       shouldStop: () => progress.length >= 2,
     );
@@ -486,7 +497,8 @@ void main() {
       location: loc,
       locationId: 'test',
       nowMs: () => t,
-      ingestBatch: 1,
+      ingestBudgetBytes: 1,
+      fetchConcurrency: 1,
       onFetchProgress: (int done, int total) => progress.add((done, total)),
     );
     expect(rest.error, isNull);
