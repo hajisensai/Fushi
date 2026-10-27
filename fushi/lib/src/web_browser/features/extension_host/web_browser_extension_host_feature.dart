@@ -36,6 +36,9 @@ const String kWebBrowserExtensionHandler = 'fushiExt';
 ///
 /// 安全：整栈在页面主世界跑，但 chrome 垫片、桥、适配口都是闭包局部的；页面唯一看得到的
 /// `window.__fushiExtHost` 每个方法都先核对本会话密钥，Dart 侧同样只认带密钥的调用。
+/// 注意密钥只挡「顺手调用」，不是隔离边界：插件 JS 桥的 `callHandler` 在调用时现取全局
+/// `JSON.stringify` 序列化参数，页面换掉它就能读到密钥。所以开放给页内的每个 op 都要按
+/// 「任意网页可伪造」来设计（无痕不落统计、存储写入串行等都以此为前提）。
 class WebBrowserExtensionHostFeature extends WebBrowserFeature {
   WebBrowserExtensionHostFeature({
     required WebBrowserExtensionStorage storage,
@@ -291,6 +294,7 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
           final _ExtensionLookupSurface? s = _surfaces[tab.id];
           if (s != null && s.session) lookup?.closeAll();
         },
+        recordStudy: !tab.incognito,
         onStudySample: (Map<String, dynamic> sample) {
           if (tab.incognito) return;
           videoActivity.report(

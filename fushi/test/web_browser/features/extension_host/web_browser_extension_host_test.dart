@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -64,6 +65,34 @@ void main() {
         },
         computed: <String, Object? Function()>{'appLocale': () => 'ja'},
       );
+    });
+
+    test('并发写串行：真源键写入在途时另一次 set 的普通键不被旧快照盖掉', () async {
+      final Completer<void> gate = Completer<void>();
+      final WebBrowserExtensionStorage slow = WebBrowserExtensionStorage(
+        prefs: prefs,
+        bridged: <String, WebBrowserExtensionBridgedKey>{
+          'subtitlePauseOnLookup': (
+            read: () => appPause,
+            write: (Object? v) async {
+              await gate.future;
+              if (v is bool) appPause = v;
+            },
+          ),
+        },
+      );
+      final Future<Map<String, WebBrowserExtensionStorageChange>> first = slow
+          .set(<String, Object?>{'subtitlePauseOnLookup': false, 'a': 1});
+      final Future<Map<String, WebBrowserExtensionStorageChange>> second = slow
+          .set(<String, Object?>{'b': 2});
+      await Future<void>.delayed(Duration.zero);
+      gate.complete();
+      await Future.wait(<Future<Object?>>[first, second]);
+      expect(
+        jsonDecode(prefs.values[kWebBrowserExtensionStoragePref] as String),
+        <String, Object?>{'a': 1, 'b': 2},
+      );
+      expect(appPause, isFalse);
     });
 
     test('普通键落进设备本地偏好（JSON），只回存在的键', () async {
@@ -291,14 +320,20 @@ void main() {
     late WebBrowserExtensionHostFeature feature;
     late WebBrowserTab tab;
     late WebBrowserVideoActivity activity;
+    late List<String> apiPaths;
 
     setUp(() {
       prefs = _MemoryPrefs();
       activity = WebBrowserVideoActivity();
+      apiPaths = <String>[];
       feature = WebBrowserExtensionHostFeature(
         storage: WebBrowserExtensionStorage(prefs: prefs),
-        api: (String path, Map<String, dynamic> body) async =>
-            const FushiExtensionApiResponse.json(<String, dynamic>{'ok': true}),
+        api: (String path, Map<String, dynamic> body) async {
+          apiPaths.add(path);
+          return const FushiExtensionApiResponse.json(<String, dynamic>{
+            'ok': true,
+          });
+        },
         lookup: null,
         videoActivity: activity,
         loadParts: () async => const WebBrowserExtensionBundleParts(
@@ -400,6 +435,9 @@ void main() {
         },
       });
       expect(activity.isPlaying('t2'), isFalse);
+      expect(apiPaths, <String>[
+        FushiExtensionApiCore.studyPath,
+      ], reason: '无痕标签页的沉浸样本不落学习统计（只有 t1 那条进了核心）');
     });
   });
 

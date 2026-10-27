@@ -387,7 +387,7 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
       }
     }
     return Material(
-      color: scheme.surfaceContainerLow,
+      color: FushiDesignTokens.of(context).surfaces.group,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -421,7 +421,7 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
                   label: Text(trackLabel, overflow: TextOverflow.ellipsis),
                   onPressed: s == null || s.tracks.isEmpty ? null : _pickTrack,
                 ),
-                Tooltip(
+                FushiTooltip(
                   message: t.video_setting_av_delay,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -499,7 +499,7 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
         color: active ? scheme.secondaryContainer : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: FushiM3eShape.smallRadius,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

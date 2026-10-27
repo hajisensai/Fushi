@@ -7,7 +7,11 @@ import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
+import 'package:fushi/src/sync/fushi_api_server.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
+import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 
 /// [FushiExtensionApiCore] 契约：与 HTTP 无关的扩展端点核心。HTTP 外壳
 /// （`fushi_api_server_extension_endpoints_test.dart` 等）与 app 内浏览器（进程内直接调）
@@ -245,6 +249,43 @@ void main() {
       });
     });
 
+    test('HTTP 服务停服只清自建核心的候选；注入的共享核心（app 内浏览器也在用）不清', () async {
+      Future<String> searchHandle(FushiExtensionApiCore core) async {
+        final FushiExtensionApiResponse search = await core.handle(
+          '/api/subtitle/search',
+          <String, dynamic>{'query': 'x'},
+        );
+        return ((search.json!['candidates'] as List<dynamic>).single
+                as Map<String, dynamic>)['handle']
+            as String;
+      }
+
+      FushiApiServer server(FushiExtensionApiCore? core) => FushiApiServer(
+        port: 0,
+        lookupService: _NoLookup(),
+        tokenizer: (List<String> ts) async => <List<TokenizedSegment>>[
+          for (final String t in ts) <TokenizedSegment>[(text: t, reading: '')],
+        ],
+        subtitleRegistryProvider: registry,
+        extensionApiCore: core,
+      );
+
+      final FushiExtensionApiCore shared = FushiExtensionApiCore(
+        subtitleRegistryProvider: registry,
+      );
+      final String handle = await searchHandle(shared);
+      await server(shared).stop();
+      final FushiExtensionApiResponse fetch = await shared.handle(
+        '/api/subtitle/fetch',
+        <String, dynamic>{'handle': handle},
+      );
+      expect(
+        fetch.json!['ok'],
+        isTrue,
+        reason: '停 / 重启 HTTP 服务不得清掉 app 内浏览器正在用的候选',
+      );
+    });
+
     test('jimaku 旧路径限定 Jimaku 一家：只有 ajatt → no-api-key', () async {
       final FushiExtensionApiResponse res = await FushiExtensionApiCore(
         subtitleRegistryProvider: registry,
@@ -307,4 +348,19 @@ class _FakeProvider implements VideoSubtitleProvider {
 
   @override
   void close() {}
+}
+
+class _NoLookup implements FushiRemoteLookupService {
+  @override
+  Future<DictionarySearchResult?> searchDictionary({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+  }) async => null;
+
+  @override
+  Future<RemoteAudioLookup?> lookupAudio({
+    required String expression,
+    required String reading,
+  }) async => null;
 }

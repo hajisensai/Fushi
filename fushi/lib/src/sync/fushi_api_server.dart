@@ -186,6 +186,7 @@ class FushiApiServer {
        _srsApiProvider = srsApiProvider,
        _apiKey = apiKey,
        _accessPolicy = accessPolicy,
+       _ownsExtensionApi = extensionApiCore == null,
        _extensionApi =
            extensionApiCore ??
            FushiExtensionApiCore(
@@ -224,6 +225,9 @@ class FushiApiServer {
   // 弹窗尺寸 / 沉浸时间 sink、在线字幕 registry 供给器都在这里；未注入时对应端点 404
   // （旧 app / 配对 sync host 向后兼容）。app 内浏览器进程内直接调同一实例。
   final FushiExtensionApiCore _extensionApi;
+  // 核心是本 server 自建的（没注入）才归它管：停服时清候选缓存。注入的那份与 app 内
+  // 浏览器共用，停 / 重启 HTTP 服务不能把浏览器里「查字幕」搜到一半的候选清掉。
+  final bool _ownsExtensionApi;
   // BUG-3141：扩展查词弹窗 ☆/★ 收藏（POST `/api/extension/favorite`）。app 侧与 app 外
   // 浮窗的 favoriteEntry / favoriteCheck 两个桥同一份收藏读写。未注入时端点 404。
   final ExtensionFavoriteHandler? _onExtensionFavorite;
@@ -350,7 +354,7 @@ class FushiApiServer {
     await _stopAnkiConnectCompatListener();
     await _server?.close(force: true);
     _server = null;
-    _extensionApi.clearSubtitleCandidates();
+    if (_ownsExtensionApi) _extensionApi.clearSubtitleCandidates();
   }
 
   /// 网络层访问控制，先于 [_authMiddleware]、覆盖全部路径（含免密钥的音频文件 /

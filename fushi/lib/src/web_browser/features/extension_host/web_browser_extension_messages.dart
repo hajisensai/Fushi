@@ -8,6 +8,7 @@ class WebBrowserExtensionHostServices {
     required this.openOptions,
     required this.dismissLookup,
     this.onStudySample,
+    this.recordStudy = true,
   });
 
   /// 扩展后端核心（与 HTTP 服务器同一份实现，进程内直接调，不绕本机 HTTP）。
@@ -28,6 +29,10 @@ class WebBrowserExtensionHostServices {
 
   /// 沉浸时间样本到达（不论是否落库成功）：浏览器的阅读计时据此避让在播的视频。
   final void Function(Map<String, dynamic> sample)? onStudySample;
+
+  /// 沉浸时间是否落库。无痕标签页为 false：与网页阅读计时（`WebBrowserStudyFeature`
+  /// 无痕不计）同一条规矩，样本不进学习统计。
+  final bool recordStudy;
 }
 
 /// 宿主不支持的消息（Netflix 录制、批量剪辑、页内弹窗专用链路……留后续阶段）回这个：
@@ -118,6 +123,9 @@ Future<Map<String, Object?>> routeWebBrowserExtensionMessage(
         return <String, Object?>{'ok': false, 'error': 'no sample'};
       }
       s.onStudySample?.call(sample);
+      if (!s.recordStudy) {
+        return <String, Object?>{'ok': false, 'error': 'incognito'};
+      }
       final FushiExtensionApiResponse r = await s.api(
         FushiExtensionApiCore.studyPath,
         sample,

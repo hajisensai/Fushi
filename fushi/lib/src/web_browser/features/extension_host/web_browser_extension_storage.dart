@@ -53,6 +53,17 @@ class WebBrowserExtensionStorage {
   final Map<String, WebBrowserExtensionBridgedKey> _bridged;
   final Map<String, Object? Function()> _computed;
 
+  /// 写操作串行队尾。`set` 在「读 JSON → 改 → 写回」中间要 await 真源键的写入，
+  /// 两次写交错时后写回的那份会用旧快照盖掉先写的键（多标签页同时写、页内连发
+  /// set 都会撞上）；整段读改写排队执行，每次都基于上一次写完的结果。
+  Future<void> _writeTail = Future<void>.value();
+
+  Future<T> _serialized<T>(Future<T> Function() op) {
+    final Future<T> result = _writeTail.then((_) => op());
+    _writeTail = result.then<void>((_) {}, onError: (Object _) {});
+    return result;
+  }
+
   Map<String, Object?> _readStored() {
     final Object? raw = _prefs.getPref(
       kWebBrowserExtensionStoragePref,
@@ -104,6 +115,10 @@ class WebBrowserExtensionStorage {
   /// 写入；回实际变化了的键（值没变的不报，与 chrome 同语义）。
   Future<Map<String, WebBrowserExtensionStorageChange>> set(
     Map<String, Object?> items,
+  ) => _serialized(() => _set(items));
+
+  Future<Map<String, WebBrowserExtensionStorageChange>> _set(
+    Map<String, Object?> items,
   ) async {
     final Map<String, Object?> stored = _readStored();
     final Map<String, WebBrowserExtensionStorageChange> changes =
@@ -134,6 +149,10 @@ class WebBrowserExtensionStorage {
 
   /// 删键。真源键不能「删」（app 偏好总有值）——忽略。
   Future<Map<String, WebBrowserExtensionStorageChange>> remove(
+    List<String> keys,
+  ) => _serialized(() => _remove(keys));
+
+  Future<Map<String, WebBrowserExtensionStorageChange>> _remove(
     List<String> keys,
   ) async {
     final Map<String, Object?> stored = _readStored();
