@@ -8768,11 +8768,11 @@ class AppModel with ChangeNotifier {
     await setScreenWakelock(enable: false, source: 'closeMedia');
     // Returning to the home/menu shell: restore both system bars.
     await setHomeShellSystemUiMode();
-    // TODO-1275 / BUG-361: returning to the home shell — restore desktop_drop's
-    // Windows OS drop registration in case an opened reader/video/lookup
-    // WebView2 usurped it, so drag-import works again after any media was
-    // opened. No-op off Windows / when desktop_drop lacks the reinitialize patch.
-    await DesktopDropReinitializer.reinitialize();
+    // TODO-1275 / BUG-361 / BUOxDR9WIJ: returning to the home shell — verify
+    // desktop_drop's Windows OS drop registration and re-register only if it
+    // is really gone (logged as a diagnostic). Page routes are also covered by
+    // DesktopDropRouteObserver; this keeps the non-route media close path.
+    await DesktopDropReinitializer.verifyAndRepair('closeMedia');
     await mediaSource.onSourceExit(appModel: this, ref: ref);
 
     await audioCtrl.audioHandler?.stop();

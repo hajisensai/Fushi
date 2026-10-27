@@ -769,7 +769,7 @@ class _TorrentSettingsSectionState
                 id: 'downloads.video_setting_torrent_seed_ratio_limit',
                 label: t.video_setting_torrent_seed_ratio_limit,
                 initial: c.seedRatioLimit == 0 ? '' : '${c.seedRatioLimit}',
-                subtitle: t.video_setting_torrent_seed_ratio_hint,
+                subtitle: t.video_setting_torrent_seed_ratio_lifetime_hint,
                 keyboard: const TextInputType.numberWithOptions(decimal: true),
                 onChanged: (String v) => _commit(
                   (QbConnectionConfig c) =>

@@ -9432,7 +9432,7 @@
   "video_setting_torrent_natpmp": "NAT-PMP 端口映射",
   "video_setting_torrent_section_antileech": "反吸血",
   "video_setting_torrent_section_session": "會話設定",
-  "video_setting_torrent_seed_ratio_hint": "上傳/下載比值達到此值後停止上傳。0 = 不限。",
+  "video_setting_torrent_seed_ratio_lifetime_hint": "Stop uploading once uploaded/downloaded reaches this — counted over the torrent's whole lifetime, including uploads while it is still downloading (downloading continues). 0 = unlimited.",
   "video_setting_torrent_seed_ratio_limit": "做種分享率上限",
   "video_setting_torrent_seed_time_hint": "做種超過此時長後停止上傳。0 = 不限。",
   "video_setting_torrent_seed_time_limit": "做種時長上限（分鐘）",

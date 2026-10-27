@@ -9432,7 +9432,7 @@
   "video_setting_torrent_natpmp": "NAT-PMP 端口映射",
   "video_setting_torrent_section_antileech": "反吸血",
   "video_setting_torrent_section_session": "会话设置",
-  "video_setting_torrent_seed_ratio_hint": "上传/下载比值达到此值后停止上传。0 = 不限。",
+  "video_setting_torrent_seed_ratio_lifetime_hint": "上传量/下载量达到此值即停止上传——按种子整个生命周期累计，含下载过程中的上传（下载照常继续）。0 = 不限。",
   "video_setting_torrent_seed_ratio_limit": "做种分享率上限",
   "video_setting_torrent_seed_time_hint": "做种超过此时长后停止上传。0 = 不限。",
   "video_setting_torrent_seed_time_limit": "做种时长上限（分钟）",

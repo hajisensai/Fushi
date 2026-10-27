@@ -129,8 +129,10 @@ class QbConnectionConfig {
   /// 上传（host tick 在 Dart 侧执行）。仅内置引擎生效。
   final int seedTimeLimitMinutes;
 
-  /// 做种分享率上限（uploaded/downloaded，0 = 不限）。开启上传后，单个种子分享
-  /// 率达到该值即停止上传（host tick 在 Dart 侧执行）。仅内置引擎生效。
+  /// 分享率上限（uploaded/downloaded，0 = 不限）。开启上传后，单个种子分享率
+  /// **按整个生命周期累计**达到该值即停止上传——下载途中达到也停（继续下载），
+  /// 下载完成时已达到则直接停做种（fRmEhU4XIK；host tick 在 Dart 侧执行）。
+  /// 仅内置引擎生效；外接 qb 用 qb 自身的分享率设置，本字段不下发。
   final double seedRatioLimit;
 
   /// 内置引擎内存占用上限（MB，0 = 自动按物理内存推导）。libtorrent 不设限会

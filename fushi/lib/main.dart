@@ -105,6 +105,7 @@ import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dar
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
+import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
 import 'package:fushi/src/media/import/external_book.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart'
     show DuplicateChoice;
@@ -2800,6 +2801,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             feedbackRouteTransitions,
             // 阅读器靠它看见「整页路由盖住正文」（悬浮球打开反馈中心等），停表。
             appModel.routeObserver,
+            // 页面离场时核对 Windows 拖入注册、丢了才重注册并记诊断（BUOxDR9WIJ）。
+            desktopDropRouteObserver,
           ],
           home: home,
           locale: locale,

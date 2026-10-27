@@ -9432,7 +9432,7 @@
   "video_setting_torrent_natpmp": "Ánh xạ cổng NAT-PMP",
   "video_setting_torrent_section_antileech": "Chống leech",
   "video_setting_torrent_section_session": "Phiên",
-  "video_setting_torrent_seed_ratio_hint": "Ngừng tải lên khi tỷ lệ tải lên/tải xuống đạt mức này. 0 = không giới hạn.",
+  "video_setting_torrent_seed_ratio_lifetime_hint": "Stop uploading once uploaded/downloaded reaches this — counted over the torrent's whole lifetime, including uploads while it is still downloading (downloading continues). 0 = unlimited.",
   "video_setting_torrent_seed_ratio_limit": "Giới hạn tỷ lệ seed",
   "video_setting_torrent_seed_time_hint": "Ngừng tải lên sau khi seed trong thời gian này. 0 = không giới hạn.",
   "video_setting_torrent_seed_time_limit": "Giới hạn thời gian seed (phút)",
