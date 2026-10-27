@@ -786,6 +786,7 @@
   "audio_source_loopback_warning": "이 기기를 가리키고 있습니다 — 기기를 변경한 후 다시 지정하세요",
   "audio_source_request_error": "오디오 소스 요청 실패: ${detail}",
   "audio_source_timeout": "오디오 소스 시간 초과: \"${host}\" — 서버가 응답하지 않습니다. 나중에 다시 시도하거나 소스를 변경하세요",
+  "audio_source_unrecognized_response": "Audio source \"${host}\" returned neither audio nor a Yomitan audio source list — check the link, or whether the service is the right type",
   "audio_source_updated": "오디오 소스 업데이트됨",
   "audio_source_url_invalid": "링크는 http(s)여야 하며 단어 또는 읽기 자리표시자를 포함해야 합니다",
   "audio_unavailable": "오디오를 찾을 수 없습니다.",

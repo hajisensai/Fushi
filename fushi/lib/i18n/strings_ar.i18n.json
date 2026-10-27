@@ -786,6 +786,7 @@
   "audio_source_loopback_warning": "يشير إلى هذا الجهاز — أعد التوجيه بعد تبديل الأجهزة",
   "audio_source_request_error": "فشل طلب مصدر الصوت: ${detail}",
   "audio_source_timeout": "انتهت مهلة مصدر الصوت: \"${host}\" — الخادم لا يستجيب، حاول لاحقاً أو غيّر المصدر",
+  "audio_source_unrecognized_response": "Audio source \"${host}\" returned neither audio nor a Yomitan audio source list — check the link, or whether the service is the right type",
   "audio_source_updated": "تم تحديث مصدر الصوت",
   "audio_source_url_invalid": "يجب أن يكون الرابط http(s) ويحتوي على عنصر نائب للمصطلح أو القراءة",
   "audio_unavailable": "لم يتم العثور على صوت.",

@@ -786,6 +786,7 @@
   "audio_source_loopback_warning": "ชี้ไปที่อุปกรณ์นี้ — ให้เปลี่ยนเป้าหมายหลังสลับเครื่อง",
   "audio_source_request_error": "คำขอแหล่งเสียงล้มเหลว: ${detail}",
   "audio_source_timeout": "แหล่งเสียงหมดเวลา: \"${host}\" — เซิร์ฟเวอร์ไม่ตอบสนอง ลองอีกครั้งภายหลังหรือเปลี่ยนแหล่ง",
+  "audio_source_unrecognized_response": "Audio source \"${host}\" returned neither audio nor a Yomitan audio source list — check the link, or whether the service is the right type",
   "audio_source_updated": "อัปเดตแหล่งเสียงแล้ว",
   "audio_source_url_invalid": "ลิงก์ต้องเป็น http(s) และมีตัวยึดสำหรับคำศัพท์หรือคำอ่าน",
   "audio_unavailable": "ไม่พบเสียง",

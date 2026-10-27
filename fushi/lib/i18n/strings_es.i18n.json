@@ -786,6 +786,7 @@
   "audio_source_loopback_warning": "Apunta a este dispositivo — redirija después de cambiar de máquina",
   "audio_source_request_error": "Error en solicitud de fuente de audio: ${detail}",
   "audio_source_timeout": "Tiempo de espera de fuente de audio: \"${host}\" — servidor no responde, inténtalo más tarde o cambia la fuente",
+  "audio_source_unrecognized_response": "Audio source \"${host}\" returned neither audio nor a Yomitan audio source list — check the link, or whether the service is the right type",
   "audio_source_updated": "Fuente de audio actualizada",
   "audio_source_url_invalid": "El enlace debe ser http(s) y contener un marcador de término o lectura",
   "audio_unavailable": "No se encontró audio.",

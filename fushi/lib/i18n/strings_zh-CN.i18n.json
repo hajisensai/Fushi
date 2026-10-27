@@ -786,6 +786,7 @@
   "audio_source_loopback_warning": "指向本机地址，换机后需重新指向",
   "audio_source_request_error": "音频源请求失败：${detail}",
   "audio_source_timeout": "音频源超时：\"${host}\" — 服务器无响应，请稍后重试或更换音频源",
+  "audio_source_unrecognized_response": "音频源「${host}」返回的既不是音频，也不是 Yomitan 音频源列表 JSON——请检查链接或服务类型",
   "audio_source_updated": "已更新音频来源",
   "audio_source_url_invalid": "链接需为 http(s) 且含 term / reading 占位符",
   "audio_unavailable": "未找到音频。",

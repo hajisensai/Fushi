@@ -786,6 +786,7 @@
   "audio_source_loopback_warning": "Bu cihaza işaret ediyor — makine değiştirdikten sonra yeniden yönlendirin",
   "audio_source_request_error": "Ses kaynağı isteği başarısız: ${detail}",
   "audio_source_timeout": "Ses kaynağı zaman aşımı: \"${host}\" — sunucu yanıt vermiyor, daha sonra tekrar deneyin veya kaynağı değiştirin",
+  "audio_source_unrecognized_response": "Audio source \"${host}\" returned neither audio nor a Yomitan audio source list — check the link, or whether the service is the right type",
   "audio_source_updated": "Ses kaynağı güncellendi",
   "audio_source_url_invalid": "Bağlantı http(s) olmalı ve bir terim ya da okuma yer tutucusu içermelidir",
   "audio_unavailable": "Ses bulunamadı.",

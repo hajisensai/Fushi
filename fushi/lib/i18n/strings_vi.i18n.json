@@ -786,6 +786,7 @@
   "audio_source_loopback_warning": "Đang trỏ đến thiết bị này — hãy chỉnh lại sau khi đổi máy",
   "audio_source_request_error": "Yêu cầu nguồn âm thanh thất bại: ${detail}",
   "audio_source_timeout": "Hết thời gian nguồn âm thanh: \"${host}\" — máy chủ không phản hồi, thử lại sau hoặc thay đổi nguồn",
+  "audio_source_unrecognized_response": "Audio source \"${host}\" returned neither audio nor a Yomitan audio source list — check the link, or whether the service is the right type",
   "audio_source_updated": "Đã cập nhật nguồn âm thanh",
   "audio_source_url_invalid": "Liên kết phải là http(s) và chứa placeholder cho từ hoặc cách đọc",
   "audio_unavailable": "Không tìm thấy âm thanh.",

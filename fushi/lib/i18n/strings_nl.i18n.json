@@ -786,6 +786,7 @@
   "audio_source_loopback_warning": "Verwijst naar dit apparaat — wijzig het na het wisselen van apparaat",
   "audio_source_request_error": "Audiobron verzoek mislukt: ${detail}",
   "audio_source_timeout": "Audiobron time-out: \"${host}\" — server reageert niet, probeer later opnieuw of wijzig de bron",
+  "audio_source_unrecognized_response": "Audio source \"${host}\" returned neither audio nor a Yomitan audio source list — check the link, or whether the service is the right type",
   "audio_source_updated": "Audiobron bijgewerkt",
   "audio_source_url_invalid": "Link moet http(s) zijn en een term- of leeswijze-plaatshouder bevatten",
   "audio_unavailable": "Geen audio gevonden.",

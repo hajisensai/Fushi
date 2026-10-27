@@ -786,6 +786,7 @@
   "audio_source_loopback_warning": "Punta a questo dispositivo — reindirizza dopo aver cambiato macchina",
   "audio_source_request_error": "Richiesta sorgente audio fallita: ${detail}",
   "audio_source_timeout": "Timeout sorgente audio: \"${host}\" — server non risponde, riprova più tardi o cambia sorgente",
+  "audio_source_unrecognized_response": "Audio source \"${host}\" returned neither audio nor a Yomitan audio source list — check the link, or whether the service is the right type",
   "audio_source_updated": "Sorgente audio aggiornata",
   "audio_source_url_invalid": "Il link deve essere http(s) e contenere un segnaposto per il termine o la lettura",
   "audio_unavailable": "Nessun audio trovato.",
