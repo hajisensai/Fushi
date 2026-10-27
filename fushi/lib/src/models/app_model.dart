@@ -374,6 +374,7 @@ import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/sync/browser_extension_test_page.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
 import 'package:fushi/src/sync/fushi_api_server_manager.dart';
+import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -10737,6 +10738,27 @@ class AppModel with ChangeNotifier {
     _yomitanServerManager?.ankiConnectEndpoint = endpoint;
   }
 
+  FushiExtensionApiCore? _extensionApiCore;
+
+  // 扩展字体端点的真源（带下载去重 / 串行提交状态）：核心与 server 的字节 / 下载两路
+  // 共用一个实例。
+  late final BrowserExtensionFontCatalog _browserExtensionFontCatalog =
+      BrowserExtensionFontCatalog(this);
+
+  /// 浏览器扩展端点（YouTube 字幕 / 外挂字幕解析 / 在线字幕搜索下载 / 字体列表 /
+  /// 弹窗尺寸回写 / 视频沉浸时间）与 HTTP 无关的核心，懒建。Fushi API server 与
+  /// app 内浏览器共用这一个实例（在线字幕候选缓存挂在实例上，search→fetch 必须同一个）；
+  /// HTTP 服务没开时 app 内浏览器也直接 `extensionApiCore.handle(path, body)`。
+  FushiExtensionApiCore get extensionApiCore =>
+      _extensionApiCore ??= FushiExtensionApiCore(
+        // 「查字幕」：复用用户在 app 设置里配好的全部在线字幕来源，与视频页「找字幕」同一批。
+        subtitleRegistryProvider: subtitleSearchRegistry,
+        // 字体真源是 app 字体目录（与「自定义字体」页同一份）。
+        fontApi: _browserExtensionFontCatalog,
+        onExtensionPopupSize: _applyExtensionPopupSize,
+        onExtensionStudy: _ensureBrowserVideoStudyBridge().onSample,
+      );
+
   FushiApiServerManager _ensureYomitanManager() {
     final FushiApiServerManager? existing = _yomitanServerManager;
     if (existing != null) return existing;
@@ -10802,9 +10824,11 @@ class AppModel with ChangeNotifier {
       // 扩展字幕外观「字体」下拉框：字体真源是 app 字体目录（与「自定义字体」页
       // 同一份 font_catalog 偏好 + custom_fonts 目录），推荐字体下载也走页面同一套
       // FontDownloadService，扩展装的字体在 app 里立刻可用。
-      fontApi: BrowserExtensionFontCatalog(this),
+      fontApi: _browserExtensionFontCatalog,
       // 复习（SRS）扩展端点：模块开着时 SrsAppHost.current 非 null；关着时 404。
       srsApiProvider: () => SrsAppHost.current,
+      // 上面四个扩展端点依赖的同一份核心：server 与 app 内浏览器共用一个实例。
+      extensionApiCore: extensionApiCore,
       tokenizer: JapaneseLanguage.instance.textsToWordsWithReadingsInBackground,
     )..ankiConnectEndpoint = _srsAnkiConnectEndpoint;
   }
