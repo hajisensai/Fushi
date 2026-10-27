@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3422 条。点号进各自文件。
+> 共 3423 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3819](bugs/BUG-3819-epub-svg-cover-page.md) | ✅ | ✅ | EPUB 封面声明指向 XHTML / SVG 封面页时书架没有封面 |
 | [BUG-3818](bugs/BUG-3818-torrent-ratio-limit-lifetime.md) | ✅ | ✅ | BT 分享率上限只在做种阶段截停，下载中上传不受限 |
 | [BUG-3817](bugs/BUG-3817-video-delete-work-leaves-extras.md) | ✅ | ✅ | 删除动漫只删正片：特典与其余下载资源残留在目录 |
 | [BUG-3816](bugs/BUG-3816-download-organize-multi-work-pack-collision.md) | ✅ | ✅ | 下载整理：多作品合集包续作目录无季号撞名整任务失败 |
