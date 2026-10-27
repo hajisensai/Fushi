@@ -6,6 +6,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -127,6 +128,10 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   AudioPlayer? _clipPlayer;
+
+  /// 与 [_clipPlayer] 同生同灭的结果句柄（[playRange] 交给调用方）：片段播完 / 被停 /
+  /// 被下一段顶掉 / 播放器停止或销毁时由 [_finishClipPlayback] 完成（FDN66-xurt）。
+  RangePlayback? _clipPlayback;
   StreamSubscription<PlayerState>? _clipStateSub;
   StreamSubscription<Duration>? _clipPositionSub;
 
@@ -2841,6 +2846,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _invalidateReaderTransition();
     _resumeMainAfterClip = false;
     final AudioPlayer? clip = _clipPlayer;
+    _finishClipPlayback(RangePlaybackEnd.interrupted);
 
     Object? firstError;
     StackTrace? firstStack;
@@ -3041,15 +3047,23 @@ class AudiobookPlayerController extends ChangeNotifier {
     _clipStateSub = null;
     _clipPositionSub?.cancel();
     _clipPositionSub = null;
+    _finishClipPlayback(RangePlaybackEnd.interrupted);
   }
 
-  Future<void> playRange(AudioPlaybackRange range) async {
+  /// 用临时片段播放器只放 [range] 这一段。返回 null = 区间无效、没起播；否则返回这段的
+  /// [RangePlayback]：片段播到终点以 [RangePlaybackEnd.reachedEnd] 完成，被 [stopClip] /
+  /// 下一次 [playRange] / [stopPlayback] / 销毁收掉以 [RangePlaybackEnd.interrupted] 完成。
+  ///
+  /// 注意本方法 `await clip.play()`，而 just_audio 的 `play()` 要到播完 / 暂停 / 停止才
+  /// 返回——所以调用方拿到句柄时它多半已经结束；调用方的状态一律跟句柄走，不要拿「本
+  /// 方法返回了」当「开始播了」。
+  Future<RangePlayback?> playRange(AudioPlaybackRange range) async {
     if (range.audioFileIndex < 0 ||
         range.audioFileIndex >= _audioFiles.length) {
-      return;
+      return null;
     }
     if (range.endMs <= range.startMs) {
-      return;
+      return null;
     }
     final bool shouldResumeMain = _resumeMainAfterClip || _player.playing;
     await stopClip(resumeMain: false);
@@ -3061,6 +3075,8 @@ class AudiobookPlayerController extends ChangeNotifier {
 
     final AudioPlayer clip = AudioPlayer();
     _clipPlayer = clip;
+    final RangePlayback playback = RangePlayback();
+    _clipPlayback = playback;
 
     final AudiobookRemotePlayback? remote = _remotePlayback;
     if (remote == null) {
@@ -3082,7 +3098,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _clipStateSub?.cancel();
     _clipStateSub = clip.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
-        stopClip();
+        stopClip(reason: RangePlaybackEnd.reachedEnd);
       }
     });
     _clipPositionSub?.cancel();
@@ -3090,14 +3106,21 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (remote != null) {
       final Duration end = Duration(milliseconds: range.endMs);
       _clipPositionSub = clip.positionStream.listen((Duration position) {
-        if (position >= end) stopClip();
+        if (position >= end) stopClip(reason: RangePlaybackEnd.reachedEnd);
       });
     }
 
     await clip.play();
+    return playback;
   }
 
-  Future<void> stopClip({bool resumeMain = true}) async {
+  /// 停掉 [playRange] 起的片段；[reason] 是交给调用方句柄的结局（片段自己播到终点时
+  /// 由监听方传 [RangePlaybackEnd.reachedEnd]，其余一律算打断）。
+  Future<void> stopClip({
+    bool resumeMain = true,
+    RangePlaybackEnd reason = RangePlaybackEnd.interrupted,
+  }) async {
+    _finishClipPlayback(reason);
     _clipStateSub?.cancel();
     _clipStateSub = null;
     _clipPositionSub?.cancel();
@@ -3112,6 +3135,13 @@ class AudiobookPlayerController extends ChangeNotifier {
       _resumeMainAfterClip = false;
       unawaited(_activateMainPlayer());
     }
+  }
+
+  /// [playRange] 句柄的唯一收尾点。
+  void _finishClipPlayback(RangePlaybackEnd reason) {
+    final RangePlayback? playback = _clipPlayback;
+    _clipPlayback = null;
+    playback?.finish(reason);
   }
 }
 

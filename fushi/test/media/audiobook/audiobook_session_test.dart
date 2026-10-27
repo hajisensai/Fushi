@@ -11,6 +11,7 @@ import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:just_audio/just_audio.dart'
@@ -849,15 +850,36 @@ void main() {
       await c.stopClip(resumeMain: false);
     });
 
+    // BUG-3801 / FDN66-xurt：片段的结局要交给调用方（高级制卡的试听按钮据此复位）。
+    test('playRange 交回句柄：被 stopClip 收掉时以 interrupted 结束', () async {
+      final (AudiobookSession session, _FakePlatform _, _StubRemote _) =
+          await startRemote();
+      final AudiobookPlayerController c = session.controller!;
+      final Future<RangePlayback?> started = c.playRange(
+        const AudioPlaybackRange(audioFileIndex: 1, startMs: 500, endMs: 900),
+      );
+      await pumpEventQueue();
+      await c.stopClip(resumeMain: false);
+      final RangePlayback? playback = await started;
+      expect(playback, isNotNull);
+      expect(await playback!.ended, RangePlaybackEnd.interrupted);
+    });
+
     test('playRange(远端)：越界下标与空区间直接忽略', () async {
       final (AudiobookSession session, _FakePlatform platform, _StubRemote _) =
           await startRemote();
       final AudiobookPlayerController c = session.controller!;
-      await c.playRange(
-        const AudioPlaybackRange(audioFileIndex: 5, startMs: 0, endMs: 900),
+      expect(
+        await c.playRange(
+          const AudioPlaybackRange(audioFileIndex: 5, startMs: 0, endMs: 900),
+        ),
+        isNull,
       );
-      await c.playRange(
-        const AudioPlaybackRange(audioFileIndex: 0, startMs: 900, endMs: 900),
+      expect(
+        await c.playRange(
+          const AudioPlaybackRange(audioFileIndex: 0, startMs: 900, endMs: 900),
+        ),
+        isNull,
       );
       expect(platform.players, isEmpty, reason: '没有为无效区间建临时播放器');
     });

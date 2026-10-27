@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_manga_panels.dart';
@@ -385,6 +386,25 @@ void main() {
       expect(host.setContextCalls.last, <int>[1, 1]);
       expect(host.stopCalls, 1);
       expect(host.confirms, isEmpty);
+    });
+
+    testWidgets('BUG-3801：试听播完按钮自动回到「试听」，再点一次就重新播', (
+      WidgetTester tester,
+    ) async {
+      await open(tester, host.videoPage());
+      await tester.tap(find.byTooltip(t.popup_ctx_preview_audio).first);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip(t.popup_ctx_preview_stop), findsWidgets);
+
+      host.playbacks.single.finish(RangePlaybackEnd.reachedEnd);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip(t.popup_ctx_preview_stop), findsNothing);
+
+      await tester.tap(find.byTooltip(t.popup_ctx_preview_audio).first);
+      await tester.pumpAndSettle();
+      expect(host.previewCalls, hasLength(2), reason: '一次点击就重新试听');
+      expect(host.stopCalls, 0);
+      expect(find.byTooltip(t.popup_ctx_preview_stop), findsWidgets);
     });
 
     testWidgets('× 最外侧句 = 少要一句；中间句 = 删除线 + 恢复', (WidgetTester tester) async {
