@@ -383,7 +383,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 4（同步 v2）：已删笔记也存 media_refs（以前写空串）。被删笔记的媒体要保留 90 天、过期后才回收
   /// （设计 §10.5），两边都靠这一列找到它们；老库已删笔记的这一列是空的，升级时重算一遍。
   ///
-  /// 5（BUG-3796）：srs_notes_cache.pending_decision 的推导改了——标签 OR-Set 的合成 `tags` 行不再被当成
+  /// 5（BUG-3797）：srs_notes_cache.pending_decision 的推导改了——标签 OR-Set 的合成 `tags` 行不再被当成
   /// 「与删除并发的修改」。老库里每条带标签的已删笔记都被错标成待裁决（挂在冲突中心「等你决定的笔记」里，
   /// 「确认删除」也消不掉），升级时把标着待裁决的笔记重算一遍。
   static const int _kCacheRevision = 5;
