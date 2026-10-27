@@ -40,6 +40,8 @@ const Map<String, String> _kAllowed = <String, String>{
   'packages/fushi_engine/lib/srs/srs_db_store.dart': 'SRS 存储',
   'packages/fushi_engine/lib/srs/srs_legacy_store_migration.dart': '一次性搬迁',
   'packages/fushi_engine/lib/srs/srs_backup_merge.dart': '备份合并（新老两种来源）',
+  // 同步关联：本机 profile 并入所选 profile（改写后经 Rust 合并路径落库，SQL 跑在 srs.db 的连接上）。
+  'packages/fushi_engine/lib/srs/srs_profile_merge.dart': 'profile 并入',
   'packages/fushi_engine/lib/srs/srs_legacy_lapis_migration.dart': 'SRS 子系统',
   'packages/fushi_engine/lib/srs/srs_stats.dart': 'SRS 子系统',
   'packages/fushi_engine/lib/srs/srs_backup_snapshot.dart':
