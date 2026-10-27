@@ -178,7 +178,7 @@ Future<AudiobookshelfConnectOutcome> connectAudiobookshelfServer(
       if (status != null && !useApiKey && !status.supportsPasswordLogin) {
         return AudiobookshelfConnectOutcome(
           ok: false,
-          message: t.discovery_audiobookshelf_password_login_unavailable,
+          message: t.discovery_audiobookshelf_sso_only_hint,
           username: resolvedUser,
         );
       }

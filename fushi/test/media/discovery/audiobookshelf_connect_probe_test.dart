@@ -70,7 +70,7 @@ void main() {
     expect(outcome.ok, isFalse);
     expect(
       outcome.message,
-      t.discovery_audiobookshelf_password_login_unavailable,
+      t.discovery_audiobookshelf_sso_only_hint,
     );
     expect(paths, <String>['GET /status'], reason: '没有去撞限频的 /login');
   });
