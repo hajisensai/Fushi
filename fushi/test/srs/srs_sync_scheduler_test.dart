@@ -10,7 +10,9 @@ import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -1010,6 +1012,120 @@ void main() {
       expect((await inFlight).error, isNull);
       expect((await queued).error, kSrsSyncStoreUnavailable);
       expect(runs, 1, reason: '排队的一轮在库关着时不该跑');
+    });
+  });
+
+  group('轮次合并与取证（XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）', () {
+    late Directory crumbs;
+    setUp(() {
+      crumbs = Directory.systemTemp.createTempSync('srs_crumbs_');
+      ActivityBreadcrumb.directoryResolver = () => crumbs;
+    });
+    tearDown(() {
+      ActivityBreadcrumb.directoryResolver = () =>
+          ErrorLogService.instance.appDirectory;
+      crumbs.deleteSync(recursive: true);
+    });
+
+    File crumb() =>
+        File(p.join(crumbs.path, 'activity_$kSrsSyncActivity.breadcrumb'));
+
+    test('同一后端排队中的请求合并成一轮，已开跑的不复用', () async {
+      final Completer<void> gate = Completer<void>();
+      int runs = 0;
+      bool crumbDuringRun = false;
+      final SyncAssetStore backend = LocalDirectoryAssetStore(root);
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              runs++;
+              crumbDuringRun = crumb().existsSync();
+              if (runs == 1) await gate.future;
+              return SrsSync2Report();
+            },
+      );
+      // 第一轮开跑并卡在 gate；随后三次触发（本机推送 / 长轮询 / 进 tab）都排在它后面。
+      final Future<SrsSync2Report> first = s.syncWithBackend(backend);
+      await pumpEventQueue();
+      final Future<SrsSync2Report> a = s.syncWithBackend(backend);
+      final Future<SrsSync2Report> b = s.syncWithBackend(backend);
+      final Future<SrsSync2Report> c = s.syncWithBackend(backend);
+      expect(identical(a, b) && identical(b, c), isTrue);
+      expect(identical(first, a), isFalse, reason: '已开跑的一轮不能被复用');
+      expect(s.roundStats.coalesced, 2);
+      gate.complete();
+      await Future.wait(<Future<SrsSync2Report>>[first, a, b, c]);
+      expect(runs, 2, reason: '排队中的三次触发只跑一轮');
+      expect(crumbDuringRun, isTrue, reason: '跑的时候要有活动面包屑');
+      expect(crumb().existsSync(), isFalse, reason: '跑完删掉面包屑');
+      expect(s.roundStats.queued, 0);
+      expect(s.roundStats.running, 0);
+    });
+
+    test('失败轮次累计连续失败数；成功清零；面包屑不残留', () async {
+      int runs = 0;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async {
+          runs++;
+          if (runs <= 2) {
+            throw const SocketException('No reachable Fushi server address');
+          }
+          return 'k';
+        },
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async => SrsSync2Report(),
+      );
+      final SyncAssetStore backend = LocalDirectoryAssetStore(root);
+      await expectLater(
+        s.syncWithBackend(backend),
+        throwsA(isA<SocketException>()),
+      );
+      await expectLater(
+        s.syncWithBackend(backend),
+        throwsA(isA<SocketException>()),
+      );
+      expect(s.roundStats.consecutiveFailures, 2);
+      expect(s.roundStats.lastFailureAt, isNotNull);
+      expect(crumb().existsSync(), isFalse);
+      await s.syncWithBackend(backend);
+      expect(s.roundStats.consecutiveFailures, 0);
+    });
+
+    test('进程死在一轮里：下次启动折成 activityCrashRecovered（带阶段与内存）', () {
+      ActivityBreadcrumb.mark(
+        kSrsSyncActivity,
+        'stage=uploading backend=X queued=3 rss=812MB',
+      );
+      final List<ExitReportEntry> recovered = collectActivityBreadcrumbs(
+        crumbs,
+      );
+      expect(recovered, hasLength(1));
+      expect(recovered.single.severe, isTrue);
+      expect(recovered.single.source, kActivityCrashRecoveredSource);
+      expect(recovered.single.text, contains('srs_sync'));
+      expect(recovered.single.text, contains('stage=uploading'));
+      expect(crumb().existsSync(), isFalse);
     });
   });
 }
