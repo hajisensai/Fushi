@@ -39,13 +39,21 @@ void main() {
   // 反面例子，不剥的话守卫永远红。
   final String swift = maskComments(raw);
 
-  /// `FlutterAppDelegate` **确实实现**、因此可以安全 `super.` 的 Swift 调用名。
+  /// `FlutterAppDelegate` **确实实现**、因此可以安全 `super.` 的 Swift 选择子，
+  /// 按「调用名 + 第二个参数标签」认（Swift 把 `application:openURLs:` /
+  /// `application:openFile:` / `application:continueUserActivity:…` 都导入成同名
+  /// `application(...)`，只按调用名放行会把父类没实现的重载一起放过去）。
   ///
-  /// `application` 对应 ObjC 的 `application:openURLs:`（Swift 把
+  /// `application(_:open:)` 对应 ObjC 的 `application:openURLs:`（Swift 把
   /// `- (void)application:(NSApplication*)app openURLs:(NSArray<NSURL*>*)urls`
   /// 导入成 `application(_:open:)`），它是有实现的，转发给插件是对的。
-  const Map<String, String> allowedSupers = <String, String>{
-    'application': 'application:openURLs: —— FlutterAppDelegate 实现了，转发给插件',
+  final Map<RegExp, String> allowedSupers = <RegExp, String>{
+    RegExp(r'^application\([^,()]*,\s*open\s*:'):
+        'application:openURLs: —— FlutterAppDelegate 实现了，转发给插件',
+    RegExp(r'^applicationWillFinishLaunching\('):
+        'applicationWillFinishLaunching: —— FlutterAppDelegate 实现了',
+    RegExp(r'^applicationShouldTerminate\('):
+        'applicationShouldTerminate: —— FlutterAppDelegate 实现了',
   };
 
   test(
@@ -59,7 +67,8 @@ void main() {
       final List<String> offenders = <String>[];
       for (final RegExpMatch m in superCall.allMatches(swift)) {
         final String name = m.group(1)!;
-        if (allowedSupers.containsKey(name)) continue;
+        final String call = swift.substring(m.start + 'super.'.length);
+        if (allowedSupers.keys.any((RegExp ok) => ok.hasMatch(call))) continue;
         final int line =
             '\n'.allMatches(swift.substring(0, m.start)).length + 1;
         offenders.add('AppDelegate.swift:$line: super.$name(...)');
