@@ -65,6 +65,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3801](bugs/BUG-3801-feedback-attach-shot-shows-failed-while-uploading.md) | ✅ | ✅ | 反馈详情追加截图上传中就显示「没上传成功+重试」，反馈人以为第一下必定失败 |
+> 共 3405 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3801](bugs/BUG-3801-cloud-audiobook-sync-iterates-all-books.md) | ✅ | ✅ | 云同步有声书阶段逐本遍历全部书（含漫画）且收尾阶段无进度，最后一本像卡死 |
 | [BUG-3800](bugs/BUG-3800-floating-ball-switch-profile-label.md) | ✅ | ✅ | 悬浮球切换配置按钮文案被换成配置名 |
 | [BUG-3799](bugs/BUG-3799-kavita-cache-download-semantics-empty.md) | ✅ | ✅ | Kavita 缓存 / 下载两态是空的：阅读即永久入库、移除下载只翻标记 |
 | [BUG-3798](bugs/BUG-3798-audiobook-chapter-transition-receipt-lost.md) | ✅ | ✅ | audiobook-chapter-transition-receipt-lost |

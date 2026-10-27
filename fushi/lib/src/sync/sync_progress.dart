@@ -34,6 +34,23 @@ enum SyncPhase {
 
   /// Font files + font settings in the `__fonts__` namespace.
   fonts,
+
+  // ── 收尾阶段（DRXb43v3fA / y3tzvcnrPU）─────────────────────────────────
+  // 有声书 / 视频之后这几步都走网络、在 Drive 上合计可达十几秒。它们没有阶段名时
+  // 进度行停在上一阶段最后一本书上，用户看到的就是「最后一本卡死」。不拆条目：
+  // 只发 itemTotal 0 的阶段 tick（不确定进度条）。
+
+  /// Cross-device aggregate: statistics, favorites, web history.
+  statistics,
+
+  /// Collections plus what hangs off them (tags, media links, scraped metadata).
+  collections,
+
+  /// Deletion-propagation tombstones.
+  deletions,
+
+  /// Pending card-mining relay (`__pending_mines__`).
+  pendingMines,
 }
 
 /// One progress tick within a sync phase.
