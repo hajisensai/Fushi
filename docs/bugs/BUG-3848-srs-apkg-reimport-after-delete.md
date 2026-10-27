@@ -1,4 +1,4 @@
-## BUG-3836 · 删牌组与笔记类型后重导 apkg：0 new / restored / updated 但浏览、复习、笔记类型页全为空
+## BUG-3848 · 删牌组与笔记类型后重导 apkg：0 new / restored / updated 但浏览、复习、笔记类型页全为空
 - **报告**：2026-10-27（用户：所有者直报。截图：`Imported 日本語.apkg: 0 new, 3092 restored, 7854 updated, 0 unchanged`；牌组「日本語」0/0/0；笔记类型页只有 Fushi Card / Lapis，没有 Kiku）
 - **真实性**：✅ 真 bug，两个独立根因叠加（夹具包已复现：三种删牌组方式 + 删笔记类型后重导，笔记计「恢复」、6/6 张卡 hidden、笔记类型页不见、牌组 total=0；「永久删除」那条笔记恢复后字段为空）。
   1. **笔记类型的删除标记导入从不清**：`packages/fushi_engine/lib/srs/apkg/srs_apkg_import.dart:855`（`_mapInto`）把已删除的笔记类型当「已存在」，只按「较新时更新」改名字 / 模板，`deleted` 寄存器原样留着。笔记那边（`:1552`）已经会清自己的删除标记，计成 restored，但卡片缓存按 `packages/fushi_engine/lib/srs/srs_db_store.dart:2107`（`noteGone = n.deletedAt != null || t.deletedAt != null`）全部 hidden；笔记类型页按 `srs_db_store.dart:1440` 过滤掉删除态 → Kiku 不出现、浏览 / 复习 0。
