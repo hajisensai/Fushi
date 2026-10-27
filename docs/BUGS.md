@@ -33,10 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3404 条。点号进各自文件。
+> 共 3408 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3804](bugs/BUG-3804-srs-auto-reposition-freeze.md) | ✅ | ✅ | 制卡后自动重排卡死白屏、同步也卡 |
+| [BUG-3803](bugs/BUG-3803-srs-profile-link-silent-keep.md) | ✅ | ✅ | 多台设备同名 profile 静默不关联、冲突只闪 toast |
+| [BUG-3802](bugs/BUG-3802-srs-media-sync-full-reconcile-every-round.md) | ✅ | ✅ | 复习媒体同步每轮全量对账（媒体同步慢） |
+| [BUG-3801](bugs/BUG-3801-srs-sync-self-wake-loop.md) | ✅ | ✅ | 复习同步自己唤醒自己无限循环（同步时卡顿、一直在重载） |
 | [BUG-3800](bugs/BUG-3800-floating-ball-switch-profile-label.md) | ✅ | ✅ | 悬浮球切换配置按钮文案被换成配置名 |
 | [BUG-3799](bugs/BUG-3799-kavita-cache-download-semantics-empty.md) | ✅ | ✅ | Kavita 缓存 / 下载两态是空的：阅读即永久入库、移除下载只翻标记 |
 | [BUG-3798](bugs/BUG-3798-audiobook-chapter-transition-receipt-lost.md) | ✅ | ✅ | audiobook-chapter-transition-receipt-lost |

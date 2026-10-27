@@ -1392,3 +1392,44 @@ fn ingest_session_requires_begin_and_a_stable_identity() {
     assert!(a.core.sync2_ingest_batch(P, &[], None, T0 + 2).is_err());
     assert!(a.core.sync2_ingest_finish(P, T0 + 2).is_err(), "a failed batch drops the session");
 }
+
+/// 一轮什么都没变时不再写 head（反馈：每写一次 head 互联 host 就唤醒全部设备，空 head 让同步一轮接一轮不停）。
+#[test]
+fn unchanged_head_is_not_rewritten_until_content_changes_or_heartbeat() {
+    use super::transport::HeadWrite;
+    const HOUR: i64 = 3_600_000;
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let mut bucket = Bucket::default();
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck)]);
+    a.sync(&mut bucket, "loc", T0);
+    // 与生产（srs_sync2_round.dart）同序：发件 → 摘要 → head。
+    let write = |d: &Device, now: i64| -> HeadWrite {
+        let (_, upto) = d.core.sync2_outbox(P, "loc", None).unwrap();
+        d.core.sync2_digest_due(P, now, Some(0)).unwrap();
+        d.core.sync2_head_if_changed(P, "loc", upto, now, Some(6 * HOUR)).unwrap()
+    };
+    // 测试辅助的 sync 在 head 之后才算摘要：第一次按生产顺序写会带上新摘要。
+    if let HeadWrite::Written { path, bytes, .. } = write(&a, T0 + 500) {
+        bucket.0.insert(path, bytes);
+    }
+    // 内容没变 → 不写，指回上次的 head。
+    let last = match write(&a, T0 + 1000) {
+        HeadWrite::Unchanged { path } => path,
+        HeadWrite::Written { .. } => panic!("an unchanged head must not be rewritten"),
+    };
+    assert!(bucket.0.contains_key(&last), "points at the head already on the location: {last}");
+    // 本机有新操作 → 写。
+    a.apply(T0 + 2000, vec![edit("deck", &deck, "name", json!("Renamed"))]);
+    assert!(matches!(write(&a, T0 + 3000), HeadWrite::Written { .. }));
+    assert!(matches!(write(&a, T0 + 4000), HeadWrite::Unchanged { .. }));
+    // 收到别的设备的操作（ack 变了）→ 写，对方据此知道可以压缩 / 清理。
+    b.apply(T0 + 5000, vec![edit("note", "N1", "f/x", json!("b"))]);
+    b.sync(&mut bucket, "loc", T0 + 5000);
+    a.sync(&mut bucket, "loc", T0 + 6000);
+    assert!(matches!(write(&a, T0 + 6500), HeadWrite::Written { .. }), "the new ack (and its digest) is published");
+    assert!(matches!(write(&a, T0 + 7000), HeadWrite::Unchanged { .. }));
+    // 到了心跳期限照写（seenAt / 校时靠它刷新）。
+    assert!(matches!(write(&a, T0 + 6500 + 6 * HOUR), HeadWrite::Written { .. }));
+}

@@ -201,6 +201,14 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
       inner.listNewCards(deckName);
 
   @override
+  Future<Set<int>> newCardIdsIn(String deckName) =>
+      inner.newCardIdsIn(deckName);
+
+  @override
+  List<int> assignNewCardPositions(List<AnkiCardInfo> ordered) =>
+      inner.assignNewCardPositions(ordered);
+
+  @override
   Future<AnkiCardDueWriteResult> setNewCardPositions(
     List<AnkiCardDueUpdate> updates,
   ) => inner.setNewCardPositions(updates);

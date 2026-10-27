@@ -191,6 +191,62 @@ void main() {
     ];
   }
 
+  // 反馈「媒体同步那么慢」：媒体对账每轮都全量列远端媒体目录、逐个看本机文件、扫三遍笔记引用。
+  test('媒体对账：没有新操作进出的一轮跳过，有新笔记 / 到期 / 用户主动同步时照跑', () async {
+    DateTime now = DateTime(2026, 10, 28, 12);
+    int mediaRuns = 0;
+    final Directory media = Directory(p.join(root.path, '_media'))
+      ..createSync();
+    final Directory location = Directory(p.join(root.path, 'loc'))
+      ..createSync();
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(location));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:loc',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      readMediaRoot: () async => media,
+      clock: () => now,
+      mediaRunner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            Directory mediaRoot, {
+            SrsMediaCipher? cipher,
+          }) async {
+            mediaRuns++;
+            return SrsMediaSyncReport();
+          },
+    );
+    Future<void> round() async {
+      expect(
+        (await s.syncWithBackend(LocalDirectoryAssetStore(location))).error,
+        isNull,
+      );
+    }
+
+    await round();
+    expect(mediaRuns, 1, reason: '这个位置第一次：对账');
+    await round();
+    expect(mediaRuns, 1, reason: '什么都没变：跳过');
+    await store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '霧',
+      },
+    );
+    await round();
+    expect(mediaRuns, 2, reason: '发出了新笔记：它可能引用新媒体');
+    now = now.add(kSrsMediaReconcileInterval);
+    await round();
+    expect(mediaRuns, 3, reason: '到期：补上次没下载成的文件');
+    await s.syncNow();
+    expect(mediaRuns, 4, reason: '用户主动同步：全量对账');
+  });
+
   test('加密路径经调度器：注入的 runner / 媒体 runner 拿到本机密钥与封装，开加密生效后位置上没有明文', () async {
     // P2-8：调度器不再按 identical(runner, 默认实现) 区分测试注入；注入的实现收到的就是生产路径会用的密钥。
     final SrsLocationKey pending = await srsDeriveLocationKey(

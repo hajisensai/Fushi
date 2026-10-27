@@ -19,6 +19,7 @@ import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsNoteView;
 import 'package:test/test.dart';
 
 import 'support/srs_test_storage.dart';
@@ -63,8 +64,9 @@ class _Device {
   Future<SrsSync2Report> sync(LocalDirectoryAssetStore dir) async {
     final SrsProfileLinkOutcome link = await linker.link(dir, store);
     store = link.store;
-    if (link.unlinkedProfileName != null) {
-      unlinked.add(link.unlinkedProfileName!);
+    final List<SrsRemoteProfile>? choose = link.choose;
+    if (choose != null) {
+      unlinked.addAll(choose.map((SrsRemoteProfile c) => c.displayName));
     }
     final SrsSync2Report r = await _round(dir, store);
     if (r.error == null) await linker.publish(dir, store, 'interconnect:host');
@@ -168,6 +170,48 @@ void main() {
     expect(a.store.profileUid, aUid);
     expect(b.store.profileUid, bUid);
     expect(b.unlinked, contains('Default'));
+  });
+
+  // 反馈：电脑与 iPhone 各自随机生成 uid、都叫 Default、都有笔记，只弹一条「无法自动关联」toast 就没了下文。
+  test('两边都有笔记：用户在 B 上选 A 那份 → B 并入 A，两边看到全部笔记，B 的旧目录被清掉', () async {
+    final _Device a = await _Device.open('a');
+    final _Device b = await _Device.open('b');
+    final String snow = await a.addNote('雪');
+    await b.addNote('雨');
+    final String bOldUid = b.store.profileUid;
+    for (int i = 0; i < 2; i++) {
+      expect((await a.sync(dir)).error, isNull);
+      expect((await b.sync(dir)).error, isNull);
+    }
+    final SrsProfileLinkOutcome before = await b.linker.link(dir, b.store);
+    expect(before.choose?.map((SrsRemoteProfile c) => c.uid), <String>[
+      a.store.profileUid,
+    ]);
+    expect(before.localHasNotes, isTrue);
+
+    b.store = await b.linker.adopt(b.store, a.store.profileUid);
+    expect(b.store.profileUid, a.store.profileUid);
+    for (int i = 0; i < 3; i++) {
+      expect((await b.sync(dir)).error, isNull, reason: 'b $i');
+      expect((await a.sync(dir)).error, isNull, reason: 'a $i');
+    }
+    expect(await b.expressionOf(snow), '雪');
+    final Set<String> aWords = <String>{
+      for (final SrsNoteView? n in (await a.store.notes(<String>[
+        for (final SrsNoteCacheRow r in await a.store.listNotes()) r.id,
+      ])).values)
+        if (n != null)
+          n.field(srsLapisFieldId(a.store.profileUid, 'Expression')),
+    };
+    expect(aWords, containsAll(<String>['雪', '雨']), reason: 'B 的笔记并入后到了 A');
+    expect(
+      Directory('${root.path}/$kSrsSync2Namespace/$bOldUid').existsSync(),
+      isFalse,
+      reason: 'B 的旧 uid 目录只有它自己写过：清掉，别的设备不再把它当候选',
+    );
+    // 已经关联上：之后不再要选。
+    expect((await a.linker.link(dir, a.store)).choose, isNull);
+    expect((await b.linker.link(dir, b.store)).choose, isNull);
   });
 
   test('两边都只有内置行：只有一边采用，最终同一个 uid', () async {

@@ -231,21 +231,31 @@ class AnkiRepositionPlan {
       ordered.where((AnkiRepositionCard c) => c.rank != null).length;
   int get unranked => total - ranked;
 
-  /// 位置真的变了的卡数（全都没变就没必要写）。
+  /// 第 [i] 张卡要不要写：位置变了，或者它的旧位置根本没落过库
+  /// （[AnkiCardInfo.hasStoredPosition] 为 false，旧值只是临时编号）。
+  bool needsWrite(int i) =>
+      updates[i].due != previous[i].due || !ordered[i].card.hasStoredPosition;
+
+  /// 要写的卡数（0 = 没必要写）。写回只发这些卡，不重发没动的。
   int get changed {
     int n = 0;
     for (int i = 0; i < updates.length; i++) {
-      if (updates[i].due != previous[i].due) n++;
+      if (needsWrite(i)) n++;
     }
     return n;
   }
 }
 
+/// 给已按目标顺序排好的卡分配位置（与入参同序、严格递增）。生产实现是
+/// `BaseAnkiRepository.assignNewCardPositions`（后端决定连续编号还是稀疏最少移动）。
+typedef AnkiPositionAssigner = List<int> Function(List<AnkiCardInfo> ordered);
+
 /// 给 [cards] 排位置（纯函数）。
 ///
 /// 排序键：有 rank 的在前（rank 升序；[rareFirst] 时降序）→ 同 note 的多张卡
 /// 相邻（按 note 首次出现顺序）→ 同 note 内按模板序号。无 rank 的整体排末尾，
-/// 保持传入的相对顺序。位置从 [startPosition] 起连续编号。
+/// 保持传入的相对顺序。位置默认从 [startPosition] 起连续编号；给了
+/// [assignPositions] 就由它按排好的顺序分配（必须与入参同序、严格递增）。
 ///
 /// 稳定：同 rank 的 note 按传入顺序（调用方按旧 `due` 升序传入，于是同频词
 /// 保持用户原有次序，重排不会无谓打乱）。
@@ -254,6 +264,7 @@ AnkiRepositionPlan planCardPositions(
   List<AnkiRepositionCard> cards, {
   bool rareFirst = false,
   int startPosition = 1,
+  AnkiPositionAssigner? assignPositions,
 }) {
   final Map<int, int> noteOrder = <int, int>{};
   for (final AnkiRepositionCard c in cards) {
@@ -270,11 +281,23 @@ AnkiRepositionPlan planCardPositions(
     if (byNote != 0) return byNote;
     return a.card.ord.compareTo(b.card.ord);
   });
+  final List<int>? assigned = assignPositions?.call(<AnkiCardInfo>[
+    for (final AnkiRepositionCard c in ordered) c.card,
+  ]);
+  if (assigned != null && assigned.length != ordered.length) {
+    throw StateError(
+      'assignPositions returned ${assigned.length} positions '
+      'for ${ordered.length} cards',
+    );
+  }
   final List<AnkiCardDueUpdate> updates = <AnkiCardDueUpdate>[];
   final List<AnkiCardDueUpdate> previous = <AnkiCardDueUpdate>[];
   for (int i = 0; i < ordered.length; i++) {
     final AnkiCardInfo card = ordered[i].card;
-    updates.add(AnkiCardDueUpdate(cardId: card.cardId, due: startPosition + i));
+    updates.add(AnkiCardDueUpdate(
+      cardId: card.cardId,
+      due: assigned?[i] ?? startPosition + i,
+    ));
     previous.add(AnkiCardDueUpdate(cardId: card.cardId, due: card.due));
   }
   return AnkiRepositionPlan(

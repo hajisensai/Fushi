@@ -32,6 +32,12 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier;
+import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart'
+    show
+        SrsProfileConflictAdopt,
+        SrsProfileConflictChoice,
+        SrsProfileConflictKeepSeparate,
+        showSrsProfileConflictDialog;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_legacy_backup_cleanup.dart';
@@ -52,6 +58,8 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
   (Ref ref) {
     if (!ref.watch(srsModuleEnabledProvider)) return null;
     final AppModel app = ref.read(appProvider);
+    // 同步收进来的数据只刷新界面，不当成「本机有改动、要推送」：以前每拉到一次远端数据就 5 秒后再整轮同步一次。
+    int? syncRevision;
     final SrsAppRuntime runtime = SrsAppRuntime(
       app: app,
       readStore: () async {
@@ -72,6 +80,14 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
       },
       engine: () => ref.read(srsEngineProvider),
       bumpRevision: () => ref.read(srsRevisionProvider.notifier).state++,
+      bumpRevisionFromSync: () {
+        final StateController<int> revision = ref.read(
+          srsRevisionProvider.notifier,
+        );
+        final int next = revision.state + 1;
+        syncRevision = next;
+        revision.state = next;
+      },
       // 同步前的 profile 关联（铁律 E）：采用目录里已有的 uid 后按新身份重开 store。
       profileLinker: SrsDbProfileLinker(
         db: app.database,
@@ -83,14 +99,17 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
           ref.invalidate(srsStoreProvider);
           return ref.read(srsStoreProvider.future);
         },
+        mediaRoot: () async => SrsMediaStore.mediaRootFor(
+          await ref.read(srsSupportRootProvider)(),
+        ),
         onError: ErrorLogService.instance.log,
       ),
     );
-    // 本机复习数据有变动（本机写 / 同步进来）：去抖后经互联快速通道推一轮（设计 §6.3）。
-    ref.listen<int>(
-      srsRevisionProvider,
-      (int? previous, int next) => runtime.localPush.trigger(),
-    );
+    // 本机复习数据有变动：去抖后经互联快速通道推一轮（设计 §6.3）。同步收进来的那次递增不推。
+    ref.listen<int>(srsRevisionProvider, (int? previous, int next) {
+      if (next == syncRevision) return;
+      runtime.localPush.trigger();
+    });
     // RWKV 排程服务随模块常驻（store.rwkv 由它装配；对象很轻，重活按需启动）。
     ref.listen<AsyncValue<Object?>>(
       srsRwkvServiceProvider,
@@ -119,8 +138,10 @@ class SrsAppRuntime {
     required Future<SrsMediaStore?> Function() readMedia,
     required FsrsEngine? Function() engine,
     required void Function() bumpRevision,
+    void Function()? bumpRevisionFromSync,
     SrsProfileLinker? profileLinker,
   }) : _profileLinker = profileLinker,
+       _bumpRevisionFromSync = bumpRevisionFromSync ?? bumpRevision,
        _readStore = readStore,
        _readMedia = readMedia,
        _engine = engine,
@@ -131,6 +152,9 @@ class SrsAppRuntime {
   final Future<SrsMediaStore?> Function() _readMedia;
   final FsrsEngine? Function() _engine;
   final void Function() _bumpRevision;
+
+  /// 同步收进来的数据：刷新界面，但不触发 [localPush]。
+  final void Function() _bumpRevisionFromSync;
   final SrsProfileLinker? _profileLinker;
 
   late final SrsSyncScheduler sync = SrsSyncScheduler(
@@ -145,7 +169,7 @@ class SrsAppRuntime {
     localDirectories: _localDirectories,
     folderLocations: () async => app.srsFolderLocations,
     profileLinker: _profileLinker,
-    onDataChanged: _bumpRevision,
+    onDataChanged: _bumpRevisionFromSync,
     onNotice: _showSyncNotice,
     readMediaRoot: () async => (await _readMedia())?.root,
     // 库关着（备份恢复 / 数据根迁移 / 退出）时不开新一轮；重开后自动恢复。
@@ -348,6 +372,7 @@ class SrsAppRuntime {
 
   void _onHomeTabChanged() {
     if (homeShellTabNotifier.value != HomeTab.srs) return;
+    _maybeShowProfileConflict();
     unawaited(
       sync.syncThrottled().catchError((Object e, StackTrace stack) {
         ErrorLogService.instance.log('SrsAppRuntime.tabSync', e, stack);
@@ -375,16 +400,87 @@ class SrsAppRuntime {
   }
 
   void _showSyncNotice(SrsSyncNotice notice) {
-    FushiToast.show(
-      msg: switch (notice) {
-        SrsSyncNotice.backendUnsupported => t.srs_sync_backend_unsupported,
-        SrsSyncNotice.clockSkew => t.srs_sync_clock_skew,
-        SrsSyncNotice.profileNotLinked => t.srs_sync_profile_not_linked(
-          name: sync.lastUnlinkedProfile ?? '',
-        ),
-        SrsSyncNotice.awaitingConfirm => t.srs_sync_awaiting_confirm,
-      },
-      severity: ToastSeverity.warning,
-    );
+    final String msg;
+    switch (notice) {
+      case SrsSyncNotice.profileNotLinked:
+        // 冲突要用户拿主意，不是一闪而过的 toast：进复习页时弹窗（见 [_maybeShowProfileConflict]）。
+        _pendingConflict = sync.profileConflict;
+        _maybeShowProfileConflict();
+        return;
+      case SrsSyncNotice.backendUnsupported:
+        msg = t.srs_sync_backend_unsupported;
+      case SrsSyncNotice.clockSkew:
+        msg = t.srs_sync_clock_skew;
+      case SrsSyncNotice.awaitingConfirm:
+        msg = t.srs_sync_awaiting_confirm;
+    }
+    FushiToast.show(msg: msg, severity: ToastSeverity.warning);
+  }
+
+  /// 偏好：用户选了「保持分开」的 profile 冲突（[SrsProfileConflict.ignoreKey] 列表）。
+  static const String kIgnoredProfileConflictsPrefKey =
+      'srs_sync_ignored_profile_conflicts';
+
+  /// 检出、还没给用户看的 profile 冲突。
+  SrsProfileConflict? _pendingConflict;
+  bool _conflictDialogOpen = false;
+
+  List<String> _ignoredConflicts() {
+    if (!app.isPreferencesReady) return const <String>[];
+    final Object? raw = app.prefsRepo.getPref(kIgnoredProfileConflictsPrefKey);
+    return raw is List
+        ? <String>[for (final Object? x in raw) '$x']
+        : const <String>[];
+  }
+
+  /// 有待处理的冲突、用户此刻在复习页（在用复习时才打扰）、没被忽略过：弹窗。
+  void _maybeShowProfileConflict() {
+    final SrsProfileConflict? conflict = _pendingConflict;
+    if (conflict == null || _conflictDialogOpen) return;
+    if (_ignoredConflicts().contains(conflict.ignoreKey)) {
+      _pendingConflict = null;
+      return;
+    }
+    if (homeShellTabNotifier.value != HomeTab.srs) return;
+    final BuildContext? context = app.navigatorKey.currentContext;
+    if (context == null) return;
+    _pendingConflict = null;
+    _conflictDialogOpen = true;
+    unawaited(() async {
+      try {
+        final SrsProfileConflictChoice? choice =
+            await showSrsProfileConflictDialog(context, conflict);
+        switch (choice) {
+          case null:
+            // 稍后：下次进复习页（或这轮冲突判定过期重判）再问。
+            return;
+          case SrsProfileConflictKeepSeparate():
+            if (!app.isPreferencesReady) return;
+            await app.prefsRepo.setPref(
+              kIgnoredProfileConflictsPrefKey,
+              <String>[..._ignoredConflicts(), conflict.ignoreKey],
+            );
+          case SrsProfileConflictAdopt(:final String uid):
+            FushiToast.show(msg: t.srs_sync_profile_conflict_done);
+            try {
+              await sync.adoptProfile(uid);
+            } catch (e, stack) {
+              ErrorLogService.instance.log(
+                'SrsAppRuntime.adoptProfile',
+                e,
+                stack,
+              );
+              FushiToast.show(
+                msg: t.srs_sync_profile_conflict_failed,
+                severity: ToastSeverity.error,
+              );
+            }
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsAppRuntime.profileConflict', e, stack);
+      } finally {
+        _conflictDialogOpen = false;
+      }
+    }());
   }
 }

@@ -642,6 +642,14 @@ pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &
     Ok(())
 }
 
+/// [SrsCore::sync2_head_if_changed] 的结果。
+pub enum HeadWrite {
+    /// 写了新 head：`(相对路径, 字节, 代号, 可删的旧小段)`。
+    Written { path: String, bytes: Vec<u8>, gen: u64, obsolete: Vec<String> },
+    /// 内容与上次写出的相同、还没到期：没写，[path] 是上次写出的那个 head。
+    Unchanged { path: String },
+}
+
 impl SrsCore {
     /// 发件：本设备还没上传到 [location] 的段（文件相对路径 → 字节）。段切点在第一次发件时定下，
     /// 各位置拿到同样的段；[key] = 该位置开了加密时的集合密钥。返回 `(段, 发到的最大 seq)`。
@@ -691,6 +699,28 @@ impl SrsCore {
 
     /// 写 head（段都传完之后）：[upto] = 已传到该位置的最大 seq。返回 `(相对路径, 字节, gen)`。
     pub fn sync2_head(&self, profile: &str, location: &str, upto: u64, now: i64) -> Result<(String, Vec<u8>, u64, Vec<String>), String> {
+        match self.sync2_head_if_changed(profile, location, upto, now, None)? {
+            HeadWrite::Written { path, bytes, gen, obsolete } => Ok((path, bytes, gen, obsolete)),
+            HeadWrite::Unchanged { .. } => Err("sync2_head: unexpected unchanged".to_owned()),
+        }
+    }
+
+    /// 同 [sync2_head]，但 [skip_unchanged_ms] 给了时：这个位置上一次写出的 head 内容（[Head::content_sig]：
+    /// 发布的段、ack、摘要、名字）与现在相同、且写出不到这么久，就**不写**，返回上次那个 head 的路径。
+    ///
+    /// 每写一次 head 都会唤醒连着同一位置的全部设备（互联 host 的 `/api/srs/changes` 按 head 写入推进令牌，
+    /// 写 head 的设备自己也连着它）：一轮什么都没变也写，每台设备就被自己 / 彼此的空 head 无限唤醒（反馈：iPhone
+    /// 连着 Windows host 时复习同步一轮接一轮不停）。没变就不写，空转在下一轮停下。到了期限照写一次：别的设备
+    /// 显示的「最后在线」（`seenAt`）与校时靠它刷新。上次写出的 head 文件此刻还在不在位置上由调用方核对，不在就
+    /// 不带 [skip_unchanged_ms] 再调一次（上一轮写 head 之前断网 / 被别的设备清掉）。
+    pub fn sync2_head_if_changed(
+        &self,
+        profile: &str,
+        location: &str,
+        upto: u64,
+        now: i64,
+        skip_unchanged_ms: Option<i64>,
+    ) -> Result<HeadWrite, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let mut local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
@@ -703,13 +733,12 @@ impl SrsCore {
             let chain = chain_at(c, profile, &local.device, seq)?.ok_or("missing chain")?;
             let mut ack = applied_vv(c, profile)?;
             ack.set(local.device, 0);
-            local.head_gen += 1;
             let digest: Option<String> = c
                 .query_row("SELECT value FROM srs_meta WHERE key = ?1", [format!("sync2_digest/{profile}")], |r| r.get(0))
                 .optional()
                 .map_err(sql)?;
-            let head = Head {
-                gen: local.head_gen,
+            let mut head = Head {
+                gen: local.head_gen + 1,
                 protocol: segment::PROTOCOL,
                 min_reader: segment::MIN_READER,
                 collection: local.collection,
@@ -723,7 +752,41 @@ impl SrsCore {
                 at_ms: now,
                 name: local.name.clone(),
             };
+            let sig = head.content_sig();
+            let sig_key = format!("sync2_head_sig/{profile}/{location}");
+            // 清除改写过的段还等着这次 head 收账（下面删 sync2_rewrites）：照写，否则发件每轮都重传它们。
+            let rewrites_pending: bool = c
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sync2_rewrites WHERE profile_uid = ?1 AND location = ?2 AND first <= ?3)",
+                    params![profile, location, seq as i64],
+                    |r| r.get(0),
+                )
+                .map_err(sql)?;
+            if let (Some(max_age), false) = (skip_unchanged_ms, rewrites_pending) {
+                let last: Option<String> = c
+                    .query_row("SELECT value FROM srs_meta WHERE key = ?1", [&sig_key], |r| r.get(0))
+                    .optional()
+                    .map_err(sql)?;
+                // 值形如 `<内容签名>|<写出时刻>|<head 路径>`。
+                if let Some(last) = last {
+                    let mut parts = last.splitn(3, '|');
+                    if let (Some(s), Some(at), Some(path)) = (parts.next(), parts.next(), parts.next()) {
+                        let fresh = at.parse::<i64>().map_or(false, |at| now >= at && now - at < max_age);
+                        if s == sig && fresh {
+                            return Ok(HeadWrite::Unchanged { path: path.to_owned() });
+                        }
+                    }
+                }
+            }
+            local.head_gen += 1;
+            head.gen = local.head_gen;
             let bytes = head.encode(&local.key);
+            let path = format!("devices/{}/{}", local.device.text(), head.file_name());
+            c.execute(
+                "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![sig_key, format!("{sig}|{now}|{path}")],
+            )
+            .map_err(sql)?;
             local.save(c)?;
             c.execute(
                 "DELETE FROM sync2_rewrites WHERE profile_uid = ?1 AND location = ?2 AND first <= ?3",
@@ -739,7 +802,7 @@ impl SrsCore {
             .map_err(sql)?;
             // 新 head 已经不再引用合并掉的旧小段：可以删的（全部活跃设备都 ack 过了）一并交给 Dart 删。
             let obsolete = take_obsolete(c, &local, location)?;
-            Ok((format!("devices/{}/{}", local.device.text(), head.file_name()), bytes, head.gen, obsolete))
+            Ok(HeadWrite::Written { path, bytes, gen: head.gen, obsolete })
         })
     }
 

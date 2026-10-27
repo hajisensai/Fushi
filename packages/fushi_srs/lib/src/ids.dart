@@ -115,7 +115,16 @@ String newNoteGuid({Random? random}) {
 abstract final class SrsIds {
   /// 笔记：noteId = UUIDv5(NS, profileUid/note/guid)。Fushi 自建与 Anki 导入同一条规则。
   static String note(String profileUid, String guid) =>
-      uuidV5(srsNamespace, '$profileUid/note/$guid');
+      uuidV5(srsNamespace, _noteName(profileUid, guid));
+
+  static String _noteName(String profileUid, String guid) =>
+      '$profileUid/note/$guid';
+
+  /// 批量 [note]（一次 FFI），与逐个 [note] 逐值相同。
+  static List<String> notes(String profileUid, List<String> guids) =>
+      uuidV5Batch(<(String, String)>[
+        for (final String g in guids) (srsNamespace, _noteName(profileUid, g)),
+      ]);
 
   /// 笔记类型：noteTypeId = UUIDv5(NS, profileUid/notetype/ankiNum)。
   /// 内置笔记类型也走这一条（第六轮审查第 8 条）：它们的 ankiNum 是固定常量 [builtinNoteTypeAnkiNum]，
@@ -143,7 +152,17 @@ abstract final class SrsIds {
 
   /// 卡片：cardId = UUIDv5(noteId, templateId/clozeOrd)。普通模板 clozeOrd = 0。
   static String card(String noteId, String templateId, int clozeOrd) =>
-      uuidV5(noteId, '$templateId/$clozeOrd');
+      uuidV5(noteId, _cardName(templateId, clozeOrd));
+
+  static String _cardName(String templateId, int clozeOrd) =>
+      '$templateId/$clozeOrd';
+
+  /// 批量 [card]：每项 (noteId, templateId, clozeOrd)，一次 FFI，与逐个 [card] 逐值相同。
+  static List<String> cards(List<(String, String, int)> specs) =>
+      uuidV5Batch(<(String, String)>[
+        for (final (String note, String tpl, int ord) in specs)
+          (note, _cardName(tpl, ord)),
+      ]);
 
   /// 牌组：UUIDv5(NS, profileUid/deck/<规范全名>)，全名按「父::子」，每段去首尾空白。
   ///
@@ -187,6 +206,18 @@ abstract final class SrsIds {
   /// 从 Anki 导入的 revlog：UUIDv5(cardId, anki-revlog/<revlog id>)。
   static String importedRevlog(String cardId, int ankiRevlogId) =>
       uuidV5(cardId, 'anki-revlog/$ankiRevlogId');
+
+  /// 跨卡批量 [importedRevlog]：每项 (cardId, revlog id)，一次 FFI。
+  static List<String> importedRevlogsOf(List<(String, int)> specs) =>
+      uuidV5Batch(<(String, String)>[
+        for (final (String card, int id) in specs) (card, 'anki-revlog/$id'),
+      ]);
+
+  /// 跨卡批量 [importAnchor]：每项 (cardId, 锚点时刻)，一次 FFI。
+  static List<String> importAnchorsOf(List<(String, int)> specs) =>
+      uuidV5Batch(<(String, String)>[
+        for (final (String card, int at) in specs) (card, 'anki-anchor/$at'),
+      ]);
 
   /// 批量 [importedRevlog]（apkg 导入一张卡的整批 revlog，一次 FFI 调用）。
   static List<String> importedRevlogs(String cardId, List<int> ankiRevlogIds) =>

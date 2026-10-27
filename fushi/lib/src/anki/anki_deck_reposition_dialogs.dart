@@ -601,10 +601,12 @@ Future<bool> showAnkiRepositionPreviewDialog(
                             horizontal: 12, vertical: 8),
                         child: Row(
                           children: <Widget>[
+                            // 显示队列里的第几张，不是写进去的位置值：Fushi 复习
+                            // 的位置是带间隙的排序键（百万级），塞不进这一列，
+                            // 对用户也没有意义。Anki 连续编号时两者相同。
                             SizedBox(
                               width: 48,
-                              child:
-                                  Text('${plan.updates[i].due}', style: mono),
+                              child: Text('${i + 1}', style: mono),
                             ),
                             Expanded(
                               child: Text(

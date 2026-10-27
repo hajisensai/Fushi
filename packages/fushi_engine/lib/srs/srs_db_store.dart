@@ -3953,21 +3953,12 @@ class SrsDbStore implements SrsSync2Host {
   /// 搁置的：位置与它们无关），按 [compareNewCardOrder] 排好。笔记已删 / 类型缺失的卡跳过。
   /// 「按词频重排新卡」的取卡步，对应 AnkiConnect 的 `deck:… is:new` + `cardsInfo`。
   Future<List<SrsNewCardEntry>> newCardsInDeck(String deckFullName) async {
-    final SrsDeckTree tree = await deckTree();
-    final Set<String> sub = <String>{
-      for (final SrsDeckView d in tree.decks)
-        if (tree.fullName(d.id) == deckFullName) ...tree.subtree(d.id),
-    };
+    final Set<String> sub = await _deckSubtreeByFullName(deckFullName);
     if (sub.isEmpty) return const <SrsNewCardEntry>[];
     final List<SrsCardCacheRow> rows =
-        await (db.select(db.srsCardsCache)..where(
-                (c) =>
-                    c.profileUid.equals(profileUid) &
-                    c.deckId.isIn(sub) &
-                    c.hidden.equals(false) &
-                    c.queue.equals(SrsQueue.newCard.wire),
-              ))
-              .get()
+        await (db.select(
+            db.srsCardsCache,
+          )..where((c) => _visibleNewCardIn(c, sub))).get()
           ..sort(compareNewCardOrder);
     if (rows.isEmpty) return const <SrsNewCardEntry>[];
     final Map<String, SrsNoteView?> notesById = await notes(<String>[
@@ -4009,6 +4000,40 @@ class SrsDbStore implements SrsSync2Host {
     }
     return out;
   }
+
+  /// [deckFullName]（含子牌组）里此刻可见新卡的 cardId——[newCardsInDeck] 的只读 ID 版：
+  /// 不读笔记、不物化，供写回前重校验「还是不是新卡」。比 [newCardsInDeck] 宽（不排除笔记
+  /// 已删 / 类型缺失的卡）：它只用来过滤，真正写入时 [setNewCardPositions] 还会再校验一次。
+  Future<Set<String>> newCardIdsInDeck(String deckFullName) async {
+    final Set<String> sub = await _deckSubtreeByFullName(deckFullName);
+    if (sub.isEmpty) return const <String>{};
+    final $SrsCardsCacheTable t = db.srsCardsCache;
+    final List<TypedResult> rows =
+        await (db.selectOnly(t)
+              ..addColumns(<Expression<Object>>[t.id])
+              ..where(_visibleNewCardIn(t, sub)))
+            .get();
+    return <String>{for (final TypedResult r in rows) r.read(t.id)!};
+  }
+
+  /// 全名为 [deckFullName] 的牌组（同名的全部算上）及其子孙的 ID；没有为空。
+  Future<Set<String>> _deckSubtreeByFullName(String deckFullName) async {
+    final SrsDeckTree tree = await deckTree();
+    return <String>{
+      for (final SrsDeckView d in tree.decks)
+        if (tree.fullName(d.id) == deckFullName) ...tree.subtree(d.id),
+    };
+  }
+
+  /// 本 profile、牌组在 [decks] 里的可见新卡。
+  Expression<bool> _visibleNewCardIn(
+    $SrsCardsCacheTable c,
+    Set<String> decks,
+  ) =>
+      c.profileUid.equals(profileUid) &
+      c.deckId.isIn(decks) &
+      c.hidden.equals(false) &
+      c.queue.equals(SrsQueue.newCard.wire);
 
   /// 写新卡位置（cardId → 位置）：一个事务、一次发件箱批次，每张卡一条 `newPos` 修改记录
   /// （值没变的不写）。**只写此刻仍是可见新卡的那些**——学过的卡位置不起作用，写了只是

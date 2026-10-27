@@ -49,6 +49,10 @@ abstract interface class SrsSync2Host {
 /// 状态摘要最多多久重算一次（版本向量没变就不算）。
 const Duration kSrsSync2DigestInterval = Duration(minutes: 10);
 
+/// head 内容没变时最多隔多久仍写一次（别的设备显示的「最后在线」与本机校时靠它刷新）。没变的一轮不写 head、
+/// 也就不拿服务端时间（[SrsSync2Report.serverTimeMs] 为 null）。
+const Duration kSrsSync2HeadHeartbeat = Duration(hours: 6);
+
 /// 一次 ingest 收进本机的段字节预算（按实际下载到的字节累计，到了就切批）。
 ///
 /// 取值理由：段按压缩后体积切，单段上限 4 MiB（内核 `segment.rs` 的 `SEGMENT_TARGET_BYTES`），老版本写的段上限
@@ -261,18 +265,36 @@ Future<SrsSync2Report> srsSync2Round({
     'now': nowMs(),
     'minIntervalMs': kSrsSync2DigestInterval.inMilliseconds,
   });
-  final SrsSync2Result head = await host.sync2Command(<String, Object?>{
-    'op': 'head',
-    'location': progressId,
-    'upto': upto,
-    'now': nowMs(),
-  });
   final String self =
       (await host.sync2Command(<String, Object?>{
             'op': 'identity',
             'now': nowMs(),
           })).map['device']!
           as String;
+  // head 内容（发布的段、ack、摘要）与上次写到这个位置的相同就不写：每写一次 head 都会唤醒连着这个位置的全部设备
+  // （互联 host 按 head 写入推进长轮询令牌，写的设备自己也在等），空 head 让同步一轮接一轮不停。上次那个 head
+  // 此刻不在位置上（写 head 前断网 / 被清掉）就照写。
+  SrsSync2Result head = await host.sync2Command(<String, Object?>{
+    'op': 'head',
+    'location': progressId,
+    'upto': upto,
+    'now': nowMs(),
+    'skipUnchangedMs': kSrsSync2HeadHeartbeat.inMilliseconds,
+  });
+  if (head.map['unchanged'] == true) {
+    final String last = head.map['path']! as String;
+    final String lastName = last.substring(last.lastIndexOf('/') + 1);
+    final bool present = (await location.list(
+      'devices/$self',
+    )).any((SrsLocationEntry f) => f.name == lastName);
+    if (present) return report;
+    head = await host.sync2Command(<String, Object?>{
+      'op': 'head',
+      'location': progressId,
+      'upto': upto,
+      'now': nowMs(),
+    });
+  }
   String? written;
   for (final (String path, Uint8List bytes) in head.files) {
     await location.put(path, bytes);
