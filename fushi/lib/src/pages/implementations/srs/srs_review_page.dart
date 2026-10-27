@@ -27,6 +27,8 @@ import 'package:flutter/gestures.dart'
         PointerScrollEvent,
         PointerSignalEvent,
         kSecondaryMouseButton;
+import 'package:flutter/rendering.dart' show RenderProxyBox;
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -187,6 +189,13 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 点击是唯一的开关）。固定页头时不用它。
   bool _chromeShown = false;
 
+  /// 浮在卡面上的底栏（显示答案 / 评分 / 重播行，含底部安全区）的实测高度：整面
+  /// WebView 卡面停在它上沿，原生卡面把它当底部滚动内边距（见 [_buildCard]）。
+  double _bottomBarHeight = 0;
+
+  /// 同一高度的可监听版本，交给原生卡面（身份不变，不进卡面缓存键，见 [_cardFace]）。
+  final ValueNotifier<double> _bottomBarInset = ValueNotifier<double>(0);
+
   SrsCardDetail? _detail;
   SrsRenderedCard? _rendered;
   SrsAnswerPreview? _preview;
@@ -304,6 +313,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _lookup.dispose();
     srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
     _focusNode.dispose();
+    _bottomBarInset.dispose();
     super.dispose();
   }
 
@@ -1629,6 +1639,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
               fields: rendered!.fields,
               definitionsHtml: rendered.fushiCardDefinitions!,
               topInset: media.padding.top,
+              bottomInset: _bottomBarInset,
             ),
           )
         : faceBuilder(context, face);
@@ -1650,6 +1661,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       ref.watch(srsReviewImageSizeProvider),
     );
     final MediaQueryData media = MediaQuery.of(context);
+    // 原生 Fushi 卡面铺到底栏背后、把底栏高度当滚动内边距；整面 WebView 卡面滚不到底栏
+    // 下面，停在底栏上沿（与顶端让位浮动页头同一口径，见 [_cardScrollsUnderHeader]）。
+    final bool underBar = rendered?.fushiCardDefinitions != null;
     final Widget cardFace = _cardFace(
       context,
       detail: detail,
@@ -1664,74 +1678,83 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       controller: _lookup,
       // 弹窗整栈关掉：焦点回复习页（WebView / 弹窗拿走过 OS 焦点）。
       onClosed: () => _reclaim(FocusReclaimCause.overlayClosed),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      // 结构恒定（卡面与底栏都是 Stack 里的 Positioned，只换 bottom 值）：换卡在原生 /
+      // WebView 卡面间切换时不重挂卡面平台视图。卡面不画自己的底板、不留左右页边距，
+      // 透出路由层的形状背景并铺满正文；底栏浮在卡面上面。
+      child: Stack(
         children: <Widget>[
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              // Ctrl / ⌘ + 滚轮落在原生区（WebView 上的由页面脚本截下转来）：缩放卡面，
-              // 并认领这次滚轮，外层不再滚动。
-              child: Listener(
-                onPointerSignal: (PointerSignalEvent event) {
-                  if (event is! PointerScrollEvent) return;
-                  final HardwareKeyboard kb = HardwareKeyboard.instance;
-                  if (!kb.isControlPressed && !kb.isMetaPressed) return;
-                  GestureBinding.instance.pointerSignalResolver.register(
-                    event,
-                    (PointerSignalEvent e) =>
-                        _zoomWheel((e as PointerScrollEvent).scrollDelta.dy),
-                  );
-                },
-                child: FushiCard(
-                  key: const ValueKey<String>('srs-card-surface'),
-                  padding: EdgeInsets.zero,
-                  pressScale: false,
-                  // 结构恒定（卡面在 Stack 第一格）：读首张卡时建起的卡面平台视图出卡后
-                  // 原地复用，加载指示只是压在上面的第二格。
-                  child: Stack(
-                    fit: StackFit.passthrough,
-                    children: <Widget>[
-                      cardFace,
-                      IgnorePointer(
-                        child: AnimatedSwitcher(
-                          duration: fushiMotionDuration(
-                            context,
-                            FushiMotion.medium,
-                          ),
-                          switchInCurve: FushiMotion.enter,
-                          switchOutCurve: FushiMotion.exit,
-                          child: detail == null
-                              ? const FushiLoadingView(
-                                  key: ValueKey<String>('srs-card-loading'),
-                                )
-                              : const SizedBox.shrink(),
+          Positioned(
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: underBar ? 0 : _bottomBarHeight,
+            // Ctrl / ⌘ + 滚轮落在原生区（WebView 上的由页面脚本截下转来）：缩放卡面，
+            // 并认领这次滚轮，外层不再滚动。
+            child: Listener(
+              onPointerSignal: (PointerSignalEvent event) {
+                if (event is! PointerScrollEvent) return;
+                final HardwareKeyboard kb = HardwareKeyboard.instance;
+                if (!kb.isControlPressed && !kb.isMetaPressed) return;
+                GestureBinding.instance.pointerSignalResolver.register(
+                  event,
+                  (PointerSignalEvent e) =>
+                      _zoomWheel((e as PointerScrollEvent).scrollDelta.dy),
+                );
+              },
+              child: SizedBox.expand(
+                key: const ValueKey<String>('srs-card-surface'),
+                // 结构恒定（卡面在 Stack 第一格）：读首张卡时建起的卡面平台视图出卡后
+                // 原地复用，加载指示只是压在上面的第二格。
+                child: Stack(
+                  fit: StackFit.passthrough,
+                  children: <Widget>[
+                    cardFace,
+                    IgnorePointer(
+                      child: AnimatedSwitcher(
+                        duration: fushiMotionDuration(
+                          context,
+                          FushiMotion.medium,
                         ),
+                        switchInCurve: FushiMotion.enter,
+                        switchOutCurve: FushiMotion.exit,
+                        child: detail == null
+                            ? const FushiLoadingView(
+                                key: ValueKey<String>('srs-card-loading'),
+                              )
+                            : const SizedBox.shrink(),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                tokens.spacing.gap * 1.5,
-                tokens.spacing.page,
-                tokens.spacing.gap * 1.5,
-              ),
-              child: _withBottomReplay(
-                context,
-                AnimatedSwitcher(
-                  duration: fushiMotionDuration(context, FushiMotion.short),
-                  switchInCurve: FushiMotion.enter,
-                  switchOutCurve: FushiMotion.exit,
-                  child: _showingAnswer
-                      ? _buildRatingRow(context)
-                      : _buildShowAnswer(context),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _SrsHeightReporter(
+              onHeight: _onBottomBarHeight,
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    tokens.spacing.gap * 1.5,
+                    tokens.spacing.page,
+                    tokens.spacing.gap * 1.5,
+                  ),
+                  child: _withBottomReplay(
+                    context,
+                    AnimatedSwitcher(
+                      duration: fushiMotionDuration(context, FushiMotion.short),
+                      switchInCurve: FushiMotion.enter,
+                      switchOutCurve: FushiMotion.exit,
+                      child: _showingAnswer
+                          ? _buildRatingRow(context)
+                          : _buildShowAnswer(context),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -1739,6 +1762,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         ],
       ),
     );
+  }
+
+  void _onBottomBarHeight(double height) {
+    if (!mounted || (height - _bottomBarHeight).abs() < 0.5) return;
+    _bottomBarInset.value = height;
+    setState(() => _bottomBarHeight = height);
   }
 
   /// 底栏按钮的设计系统高度：MD3 = M3E 中号按钮（56），Apple = 50（大于 HIG 44 的 iOS
@@ -2121,5 +2150,39 @@ class SrsRatingButton extends StatelessWidget {
       enabled: onPressed != null,
       child: FushiTooltip(message: tooltip, child: button),
     );
+  }
+}
+
+/// 布局后回报子树高度（变了才报，排在本帧绘制之后）：复习页据此给浮动底栏让位。
+class _SrsHeightReporter extends SingleChildRenderObjectWidget {
+  const _SrsHeightReporter({required this.onHeight, required super.child});
+
+  final ValueChanged<double> onHeight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderSrsHeightReporter(onHeight);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderSrsHeightReporter renderObject,
+  ) => renderObject.onHeight = onHeight;
+}
+
+class _RenderSrsHeightReporter extends RenderProxyBox {
+  _RenderSrsHeightReporter(this.onHeight);
+
+  ValueChanged<double> onHeight;
+  double? _reported;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final double height = size.height;
+    if (height == _reported) return;
+    _reported = height;
+    // 布局阶段不能 setState：本帧收尾时再报（布局发生在帧内，帧后回调必然会跑）。
+    SchedulerBinding.instance.addPostFrameCallback((_) => onHeight(height));
   }
 }

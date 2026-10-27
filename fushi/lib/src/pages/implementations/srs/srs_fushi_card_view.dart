@@ -16,7 +16,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, defaultTargetPlatform;
 import 'package:flutter/rendering.dart' show RenderProxyBox;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -247,6 +248,7 @@ class SrsFushiCardView extends ConsumerStatefulWidget {
     required this.fields,
     required this.definitionsHtml,
     this.topInset = 0,
+    this.bottomInset,
   });
 
   /// 这面卡（cardId / 正反面 / 版式 / 按键桥）。[SrsCardFace.css] 是模板样式表，给释义 WebView 用。
@@ -261,6 +263,13 @@ class SrsFushiCardView extends ConsumerStatefulWidget {
   /// 卡面顶端被浮动页头盖住的高度（状态栏 + 页头）。卡面铺到页头底下，这段只作滚动
   /// 内边距：开头的内容从页头下沿开始，往下翻时滚进页头底下，页头收起后不留空带。
   final double topInset;
+
+  /// 卡面底端被浮在上面的底栏（显示答案 / 评分 / 重播）盖住的高度。与 [topInset] 同理：
+  /// 卡面铺到底栏背后，这段只作滚动内边距，末尾的内容能滚到底栏上沿以上。
+  ///
+  /// 用可监听值而不是 double：底栏随翻面 / 换卡变高变矮时只让卡面自己重排，复习页缓存的
+  /// 卡面 widget（见复习页 `_cardFace`）不必因此重建。null = 0。
+  final ValueListenable<double>? bottomInset;
 
   @override
   ConsumerState<SrsFushiCardView> createState() => _SrsFushiCardViewState();
@@ -313,15 +322,27 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     _channel.setSentenceAudio(this, _media.companionSentence);
   }
 
+  /// 底栏让位高度（[SrsFushiCardView.bottomInset]）。
+  double get _bottomInset => widget.bottomInset?.value ?? 0;
+
+  void _onBottomInset() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
     _declareSentenceAudio();
+    widget.bottomInset?.addListener(_onBottomInset);
   }
 
   @override
   void didUpdateWidget(SrsFushiCardView old) {
     super.didUpdateWidget(old);
+    if (old.bottomInset != widget.bottomInset) {
+      old.bottomInset?.removeListener(_onBottomInset);
+      widget.bottomInset?.addListener(_onBottomInset);
+    }
     _declareSentenceAudio();
     if (old.face.cardId != widget.face.cardId) {
       // 内容高度保留上一张的：页面只在高度变化时上报，新卡同高时不会再报。
@@ -335,6 +356,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
 
   @override
   void dispose() {
+    widget.bottomInset?.removeListener(_onBottomInset);
     _channel.clearSentenceAudio(this);
     _scroll.dispose();
     _selectionFocus.dispose();
@@ -407,11 +429,17 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           child: SrsNativeLookupRegion(
             key: _lookupRegion,
             child: ColoredBox(
-              color: scheme.surface,
+              // 跟随 app 主题时不铺底，透出复习页背景（与 WebView 外壳同一判据）。
+              color: srsCardPaintsOwnSurface(widget.face, a)
+                  ? scheme.surface
+                  : Colors.transparent,
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints c) {
                   if (c.maxHeight.isFinite) {
-                    _viewport = math.max(0, c.maxHeight - widget.topInset);
+                    _viewport = math.max(
+                      0,
+                      c.maxHeight - widget.topInset - _bottomInset,
+                    );
                   }
                   final bool wide = switch (widget.face.layout) {
                     SrsCardLayout.wide => true,
@@ -481,7 +509,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       child: SingleChildScrollView(
         key: const ValueKey<String>('srs-fushi-front'),
         controller: _scroll,
-        padding: EdgeInsets.all(s.pad).copyWith(top: s.pad + widget.topInset),
+        padding: EdgeInsets.all(
+          s.pad,
+        ).copyWith(top: s.pad + widget.topInset, bottom: s.pad + _bottomInset),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -1024,6 +1054,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         '.fc.fc-back.fc-defs-only{flex-direction:column;align-items:stretch;'
         'max-width:none;margin:0;}'
         '${wide ? '' : ':root{--fushi-srs-clamp:${(_viewport * 0.52).round()}px;}'}'
+        // 宽版式释义栏铺到底栏背后、页内自己滚：末尾留出底栏高度，最后一条能滚到底栏以上。
+        '${wide && _bottomInset > 0 ? 'html{padding-bottom:${_bottomInset.round()}px;}' : ''}'
         // 主词典通栏 + 其他词典分列，展开规则跟查词设置（srs_card_defs_layout.dart）。
         '${ref.watch(srsDefsLayoutCssProvider)}',
     hostScript: kSrsDefsLayoutScript,
@@ -1127,7 +1159,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     return SingleChildScrollView(
       key: const ValueKey<String>('srs-fushi-back-narrow'),
       controller: _scroll,
-      padding: EdgeInsets.only(top: widget.topInset, bottom: s.pad),
+      padding: EdgeInsets.only(
+        top: widget.topInset,
+        bottom: s.pad + _bottomInset,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -1175,9 +1210,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           width: leftWidth,
           child: SingleChildScrollView(
             controller: _scroll,
-            padding: EdgeInsets.all(
-              s.pad,
-            ).copyWith(top: s.pad + widget.topInset),
+            padding: EdgeInsets.all(s.pad).copyWith(
+              top: s.pad + widget.topInset,
+              bottom: s.pad + _bottomInset,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
