@@ -200,12 +200,19 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
   }
 
   Future<void> _removeDownload(String bookKey) async {
+    final KavitaBookService service = await _ensureService();
+    final bool hasUserData = await service.hasLocalUserData(bookKey);
+    if (!mounted) return;
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => FushiAlertDialog(
         key: const ValueKey<String>('kavita-remove-download-confirm'),
         title: Text(t.kavita_book_remove_download),
-        content: Text(t.kavita_book_remove_download_confirm),
+        content: Text(
+          hasUserData
+              ? t.kavita_book_remove_download_confirm_user_data
+              : t.kavita_book_remove_download_confirm,
+        ),
         actions: <Widget>[
           FushiTextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -220,7 +227,6 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
       ),
     );
     if (confirmed != true) return;
-    final KavitaBookService service = await _ensureService();
     final KavitaLocalRemoval outcome = await service.removeDownload(bookKey);
     if (!mounted) return;
     final String? message = switch (outcome) {

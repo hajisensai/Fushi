@@ -3984,6 +3984,7 @@
   "kavita_book_open": "阅读",
   "kavita_book_remove_download": "移除下载",
   "kavita_book_remove_download_confirm": "移除下载的副本？它会从本机书架移除，阅读进度保留在服务器上。",
+  "kavita_book_remove_download_confirm_user_data": "移除下载的副本？这本书在本机的书签、自定义 CSS、有声书或字幕配对、标签与合集只存在本机，会一并删除；阅读进度保留在服务器上。",
   "kavita_book_remove_download_failed": "移除下载失败",
   "kavita_book_remove_download_kept": "阅读进度没能同步到服务器，已保留为缓存副本",
   "kavita_books_empty": "此服务器上没有 EPUB 书籍",

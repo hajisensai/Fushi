@@ -1597,6 +1597,18 @@ class AppModel with ChangeNotifier {
   bool lookupChineseSimpToTradFor(String? requested) =>
       isChineseLanguageTag(effectiveLookupLanguage(requested: requested));
 
+  /// 进入一个游戏时登记查词来源语言：[gameLanguage] 是游戏卡上声明的语言
+  /// （`GalgameEntry.language`），未声明 / 不在库里落全局默认。hook 台词没有任何语言
+  /// 声明可读，所以查词语言只能由本机按游戏条目决定——本机启动（库页 / 游戏首页）与
+  /// host 开串流共用这一处；串流不接受接收端声明，也不沿用上一个媒体页留下的
+  /// [currentLookupLanguage]。
+  void enterGameLookupLanguage(String? gameLanguage) {
+    currentLookupLanguage = resolveContentLanguage(
+      explicit: gameLanguage,
+      globalDefault: defaultContentLanguage,
+    );
+  }
+
   /// [dictRepo] 是否已经赋值。
   ///
   /// 它是 late 字段，而 `_databaseOpened = true` 发生在它被赋值**之前**，所以
@@ -6460,6 +6472,20 @@ class AppModel with ChangeNotifier {
   /// 默认下载根（未解析完成前为空串）。
   String get downloadDefaultSaveRoot => _downloadDefaultSaveRoot ?? '';
 
+  /// 解析并记下默认下载根 `<documents>/anime_downloads/content`。幂等。
+  ///
+  /// 与下载中心（[startAnimeDownloadService]）解耦：那条服务只在「浏览」模块启用时
+  /// 才起（iOS 上恒不可用），而 iOS 照样能从用户自配服务器「下载到本机」，
+  /// 落点不能依赖它有没有跑过（[discoveryDownloadDirFor]）。
+  Future<String> _resolveDownloadDefaultSaveRoot() async {
+    final String? known = _downloadDefaultSaveRoot;
+    if (known != null) return known;
+    final Directory baseDir = await AppPaths.documentsSubdirectory(
+      'anime_downloads',
+    );
+    return _downloadDefaultSaveRoot = path.join(baseDir.path, 'content');
+  }
+
   /// 已保存的下载根配置（空串 = 用默认根）。
   ///
   /// 走 `_prefsRepo?`（而非 `prefsRepo` 的 `!`）：设置区块能在 AppModel 尚未
@@ -6561,8 +6587,7 @@ class AppModel with ChangeNotifier {
     // TODO-1961：配置目录不可写/建不出时**回退默认根并记下原因**（设置页显示警告），
     // 绝不静默把下载丢进一个写不进去的目录。默认根本身不预检——它是既有行为，
     // 首次 add 时 prepareCategory 会建，失败路径与改动前逐字节一致。
-    final String defaultSaveRoot = path.join(baseDir.path, 'content');
-    _downloadDefaultSaveRoot = defaultSaveRoot;
+    final String defaultSaveRoot = await _resolveDownloadDefaultSaveRoot();
     String configuredRoot = prefsRepo.downloadSaveRoot.trim();
     if (configuredRoot.isNotEmpty) {
       final DownloadSaveRootIssue? issue = await checkDownloadSaveRoot(
@@ -7725,11 +7750,13 @@ class AppModel with ChangeNotifier {
   /// 发现页下载的落盘目录（与 torrent 同根：用户配置的下载根 → 默认根
   /// [downloadDefaultSaveRoot]，再按媒体域分子目录）。
   ///
-  /// 不再自造 documents 派生点：默认根由 [startAnimeDownloadService] 在
-  /// initialise 期唯一计算（UI 可达发现页时必已就绪），这里只消费。
-  String discoveryDownloadDirFor(DiscoveryMediaKind kind) {
+  /// 默认根与下载中心共用 [_resolveDownloadDefaultSaveRoot] 这一个派生点，但**不**
+  /// 依赖下载中心已启动：iOS 没有下载中心却可以从用户自配服务器下载，「浏览」模块
+  /// 关掉的桌面 / Android 同理；以前读的是只在下载中心启动时才赋值的字段，这些情况下
+  /// 根是空串，落点退化成相对路径 `discovery/<kind>`，任务永远失败。
+  Future<String> discoveryDownloadDirFor(DiscoveryMediaKind kind) async {
     String root = prefsRepo.downloadSaveRoot.trim();
-    if (root.isEmpty) root = downloadDefaultSaveRoot;
+    if (root.isEmpty) root = await _resolveDownloadDefaultSaveRoot();
     return path.join(root, 'discovery', kind.name);
   }
 
@@ -10613,14 +10640,19 @@ class AppModel with ChangeNotifier {
   /// 每次请求实时判定（默认关）。
   void _configureGameStreamLibrary() {
     if (!Platform.isWindows) return;
+    final FushiGameStreamLibraryHost library = FushiGameStreamLibraryHost(
+      loadGames: () => galgameRepo.load(),
+      isLaunchEnabled: () => prefsRepo.gameStreamRemoteLaunchEnabled,
+      service: () => syncServerController.gameStreamService,
+      startStream: syncServerController.startLaunchedGameStream,
+    );
     syncServerController.configureGameStreamLibrary(
-      FushiGameStreamLibraryHost(
-        loadGames: () => galgameRepo.load(),
-        isLaunchEnabled: () => prefsRepo.gameStreamRemoteLaunchEnabled,
-        service: () => syncServerController.gameStreamService,
-        startStream: syncServerController.startLaunchedGameStream,
-      ),
+      library,
       miningFactory: createGameStreamMiningAdapter,
+      // 串流查词的语言归 host：每次开串流按这场会话的游戏条目登记。
+      onStreamStarting: ({String? gameId}) async => enterGameLookupLanguage(
+        await library.streamGameLanguage(gameId: gameId),
+      ),
     );
   }
 

@@ -698,8 +698,6 @@ SettingsDestination buildInterconnectDestination() {
                     ctx.appModel.prefsRepo.gameStreamLookupLayout,
                 writeLookupLayout:
                     ctx.appModel.prefsRepo.setGameStreamLookupLayout,
-                readLookupLanguage: () =>
-                    ctx.appModel.effectiveLookupLanguage(),
               ),
             ),
           ),

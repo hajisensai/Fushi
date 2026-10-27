@@ -3984,6 +3984,7 @@
   "kavita_book_open": "Read",
   "kavita_book_remove_download": "Remove download",
   "kavita_book_remove_download_confirm": "Remove the downloaded copy? It leaves the bookshelf on this device; reading progress stays on the server.",
+  "kavita_book_remove_download_confirm_user_data": "Remove the downloaded copy? Bookmarks, custom CSS, audiobook or subtitle pairing, tags and collections for this book exist only on this device and will be deleted too; reading progress stays on the server.",
   "kavita_book_remove_download_failed": "Could not remove the download",
   "kavita_book_remove_download_kept": "Reading progress could not be synced to the server, so the book was kept as a cached copy",
   "kavita_books_empty": "No EPUB books found on this server",
