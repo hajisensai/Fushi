@@ -211,11 +211,46 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
         if (localBookKeys.contains(key)) key,
     ];
 
-    final int total = diff.toPush.length + toPullAudioOnly.length;
+    // 删除意图先于推送（反馈 Et3pmRzo0k，同 [_syncBooksContentLive]）：host 上被「从
+    // 所有设备删除」的有声书——或它所属的书（删书只立 `book` 墓碑，却连带删掉 host 的
+    // 有声书）——本机删除前就有的那份不推。存在起始时刻取 srt 行的 localAddedAt：
+    // srt-backed 有声书推送必有 srt 行（下方缺了就跳过），删有声书 / 删书都连它一起删，
+    // 重新导入才会新建，正好是「本机这份从什么时候起有」。读墓碑失败 → 本轮不推
+    // （拉取照常）。
+    final List<({String key, SrtBookRow? srt})> toPush =
+        <({String key, SrtBookRow? srt})>[];
+    if (diff.toPush.isNotEmpty) {
+      final DeletionTombstoneEntries? hostTombstones =
+          await _loadHostPushVetoTombstones(
+            report,
+            backend,
+            'live push audiobooks',
+          );
+      if (hostTombstones != null) {
+        for (final String key in diff.toPush) {
+          final SrtBookRow? srt = await _db.getSrtBookByBookKey(key);
+          if (_hostVetoesPush(
+            hostTombstones,
+            kinds: const <SyncTombstoneKind>[
+              SyncTombstoneKind.audiobook,
+              SyncTombstoneKind.book,
+            ],
+            itemKeys: <String>[key],
+            presentSinceAt: srt?.localAddedAt,
+          )) {
+            continue;
+          }
+          toPush.add((key: key, srt: srt));
+        }
+      }
+    }
+
+    final int total = toPush.length + toPullAudioOnly.length;
     int index = 0;
 
     // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
-    for (final String key in diff.toPush) {
+    for (final ({String key, SrtBookRow? srt}) item in toPush) {
+      final String key = item.key;
       _emit(
         SyncPhase.audiobooks,
         itemIndex: index,
@@ -224,7 +259,7 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
       );
       File? tmp;
       try {
-        final SrtBookRow? srt = await _db.getSrtBookByBookKey(key);
+        final SrtBookRow? srt = item.srt;
         if (srt == null) {
           report.errors.add(
             'live push audiobook "$key": srtBook not found, skipping',
@@ -241,6 +276,7 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
         await backend.putRemoteAudiobook(
           key,
           tmp,
+          presentSinceAt: srt.localAddedAt,
           onProgress: (double f, [int? b]) => _emit(
             SyncPhase.audiobooks,
             itemIndex: index,

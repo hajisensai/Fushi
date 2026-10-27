@@ -140,6 +140,7 @@ abstract class _LocalLibraryHostBase
         FushiLibraryHostService,
         MangaLibraryHost,
         DeletionTombstoneHost,
+        PeerPushDeletionGate,
         VideoDeletionHost,
         VideoPlaybackSyncHost,
         VideoDanmakuKeyHost,

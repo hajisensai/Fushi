@@ -66,6 +66,74 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
     };
   }
 
+  /// 读 host 的删除墓碑，供本轮自动内容推送（书 / 有声书 / 视频）先过一遍删除意图
+  /// （反馈 Et3pmRzo0k）。
+  ///
+  /// 内容推送是「本端有 ∧ host 无 → 推」，而 host「无」可能正是某台设备「从所有设备
+  /// 删除」的结果。删除候选的消费（[_syncDeletionTombstonesLive]）排在整轮最后、还要等
+  /// 用户逐条确认，推送时本机那份旧副本一定还在——不先看墓碑就推，host 导入会顺手清掉
+  /// 自己的墓碑，删除意图在 host 与第三台设备上一起蒸发，本机也永远等不到那条确认。
+  /// 所以每个推送阶段开推之前都先读一次 host 墓碑，用 [_hostVetoesPush] 把「删除之前就
+  /// 在本机的那份」挡在推送清单外；删除之后才在本机重新加入的照推（时刻仲裁同删除
+  /// 候选，[peerTombstoneVetoesPush]）。
+  ///
+  /// 返回值三态：
+  /// * 墓碑表（可能为空）——正常；对端书键与本机不同的书已按别名换算到本机键
+  ///   （[aliasPeerBookTombstones]，与删除候选同一套）。
+  /// * 空表——老 host 没有 `/api/tombstones`（404）：它也就没有可守护的墓碑。
+  /// * `null`——读失败（异常已记进 [report]）。调用方**跳过本阶段推送**：不知道删除
+  ///   意图就推，正是本 bug；下一轮读到了再推，什么都不会丢。
+  Future<DeletionTombstoneEntries?> _loadHostPushVetoTombstones(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+    String phase,
+  ) async {
+    try {
+      final List<({String mediaType, String itemKey, int deletedAt})>? remote =
+          await backend.getRemoteDeletionTombstones();
+      final DeletionTombstoneEntries out = <String, Map<String, int>>{};
+      if (remote == null) return out;
+      for (final r in remote) {
+        final Map<String, int> byKey =
+            out.putIfAbsent(r.mediaType, () => <String, int>{});
+        final int? prev = byKey[r.itemKey];
+        if (prev == null || r.deletedAt > prev) byKey[r.itemKey] = r.deletedAt;
+      }
+      // 别名换算只看「本机有哪些键」，时刻在这里用不到（裁决在 _hostVetoesPush）。
+      final DeletionPresentEntries present = <String, Map<String, int?>>{
+        SyncTombstoneKind.book.dbValue: <String, int?>{
+          for (final EpubBookRow r in await _db.getAllEpubBooks())
+            r.bookKey: null,
+        },
+        SyncTombstoneKind.audiobook.dbValue: <String, int?>{
+          for (final AudiobookRow r in await _db.getAllAudiobooks())
+            r.bookKey: null,
+        },
+      };
+      aliasPeerBookTombstones(out, present,
+          peerToLocalBookKey: await _db.getPeerToLocalBookKeys());
+      return out;
+    } catch (e) {
+      report.noteError(
+          '$phase: host deletion tombstones unreadable, push skipped', e);
+      return null;
+    }
+  }
+
+  /// host 墓碑是否否决把本机这条推上去（见 [_loadHostPushVetoTombstones]）。
+  bool _hostVetoesPush(
+    DeletionTombstoneEntries hostTombstones, {
+    required List<SyncTombstoneKind> kinds,
+    required Iterable<String> itemKeys,
+    required int? presentSinceAt,
+  }) =>
+      peerTombstoneVetoesPush(
+        peerTombstones: hostTombstones,
+        mediaTypes: <String>[for (final SyncTombstoneKind k in kinds) k.dbValue],
+        itemKeys: itemKeys,
+        presentSinceAt: presentSinceAt,
+      );
+
   /// 删除墓碑同步（互联 host API 通道），**双向**：
   ///
   /// 1. 推送（client→host，[_pushDeletionTombstonesLive]）：把本机「从所有设备删除」

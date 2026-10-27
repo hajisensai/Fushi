@@ -42,6 +42,15 @@ const String kBookDisplayTitleHeader = 'X-Fushi-Book-Display-Title';
 /// 收下的一方按 LWW 平局处理（保留本机），见 `FushiDatabase.setPrefIfNewer`。
 const String kBookDisplayTitleAtHeader = 'X-Fushi-Book-Display-Title-At';
 
+// ── 推送方条目的存在起始时刻（反馈 Et3pmRzo0k）──────────────────────────────
+
+/// 书 / 有声书 / 视频 push 时，推送方本机**开始拥有**这条的时刻（毫秒十进制 ASCII，
+/// 取 `localAddedAt`）。host 拿它与自己的同步删除墓碑比（[PeerPushDeletionGate]）：
+/// 晚于删除 = 删后重新加入，放行并清墓碑；早于或缺失 = 推送方手里是删除前的旧副本，
+/// 409 拒收、墓碑保留。新 header，无改名前旧名；旧 client 不发 = 时刻未知 = 按「管得
+/// 着」处理（与删除确认候选的 null 语义一致）。
+const String kPeerPushPresentSinceHeader = 'X-Fushi-Present-Since';
+
 // ── 视频 / 字幕 push 的元数据 header ─────────────────────────────────────────
 
 /// `PUT /api/library/videos/<id>` 的视频标题（`Uri.encodeComponent` 编码）。
@@ -2852,6 +2861,29 @@ abstract interface class DeletionTombstoneHost {
   /// 拉取后与本地在库键求交、弹逐条确认删本地。纯读，无副作用。
   Future<List<({String mediaType, String itemKey, int deletedAt})>>
       listDeletionTombstones();
+}
+
+/// host 端「对端推送导入要过删除墓碑闸门」的**可选**能力（反馈 Et3pmRzo0k）。
+///
+/// 对端自动同步把「本端有 ∧ host 无」的书 / 有声书 / 视频推上来，而 host「无」可能正是
+/// 因为有人选了「从所有设备删除」。host 的入库路径（`insertEpubBook` / 有声书 / 视频
+/// upsert）一律把重新入库视为新的加入意图、顺手清掉自己的同步删除墓碑——这对 host
+/// 本机用户亲手重新导入是对的，对一次**推送**则等于让对端静默撤销别人的删除。
+///
+/// server 在 PUT 落盘前问一次：返回 true → 409、不导入、墓碑原样保留。判据是
+/// `peerTombstoneVetoesPush`（与删除确认候选同源的 `tombstoneAppliesTo`）：推送方报
+/// 来的本端存在起始时刻 [presentSinceAt]（[kPeerPushPresentSinceHeader]）晚于删除 →
+/// 是删后在推送方重新加入的新条目，放行；早于或未报（旧版 client）→ 否决。
+///
+/// 与主接口分开的理由同 [DeletionTombstoneHost]：不实现的 host（测试 fake / 无墓碑表
+/// 的实现）照旧直接导入。
+abstract interface class PeerPushDeletionGate {
+  /// [itemKey] 在 host 上是否有 [kinds] 任一种、且管得着推送方这条的同步删除墓碑。
+  Future<bool> vetoesPeerPush({
+    required List<SyncTombstoneKind> kinds,
+    required String itemKey,
+    required int? presentSinceAt,
+  });
 }
 
 /// host 端「删除视频」的**可选**能力（client→host 删除方向）。
