@@ -134,6 +134,7 @@ import 'package:fushi/src/media/novel/online/lnreader_runtime.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_online_manga_host_reader.dart';
+import 'package:fushi/src/media/manga/kavita/kavita_library_adapter.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/web/web_comic_runtime_adapter.dart';
@@ -5954,6 +5955,14 @@ class AppModel with ChangeNotifier {
             adFilterEnabled: () => prefsRepo.webComicAdFilter,
           ),
         );
+      // Kavita 同样五端可用，不碰 [mihonManager]；服务器配置每次现读偏好。
+      case OnlineMangaRuntimeKind.kavita:
+        return OnlineMangaLibraryService(
+          database: database,
+          rootDirectory: kavitaMangaLibraryRoot,
+          adapter: KavitaLibraryAdapter(servers: () => prefsRepo.kavitaServers),
+          updateFeed: updateFeedService,
+        );
     }
   }
 
@@ -5961,6 +5970,11 @@ class AppModel with ChangeNotifier {
   /// 新条目一律住 `fushi_books`，这里从不写东西）。目录名是持久化名，冻结。
   Directory get webComicLibraryRoot =>
       Directory(path.join(databaseDirectory.path, 'web_comic'));
+
+  /// Kavita 漫画书架条目的旧式落盘根（新条目住 `<fushi_books>/<bookKey>`，见
+  /// [OnlineMangaLibraryService.rootDirectory]）。
+  Directory get kavitaMangaLibraryRoot =>
+      Directory(path.join(databaseDirectory.path, 'kavita_manga'));
 
   /// 互联漫画源书架条目的本地落盘根（占位 manga.json、封面、章节页缓存）。
   ///

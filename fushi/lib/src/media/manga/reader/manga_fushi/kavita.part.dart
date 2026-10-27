@@ -1,0 +1,68 @@
+part of '../manga_fushi_page.dart';
+
+/// 漫画阅读器侧的 Kavita 进度同步接线：全部逻辑在
+/// `media/kavita/kavita_manga_sync.dart`，本扩展只负责拿到阅读器的上下文
+/// （服务器清单、冲突弹窗、换章 / 关书时机）。
+extension _MangaKavitaSyncExtension on _MangaFushiPageState {
+  /// 开章前调用：先收掉上一章的会话（限时 flush，不 await 网络），再为 Kavita
+  /// 条目的 [chapter] 建会话（拉取 + 决策，可能改写本地章进度）。非 Kavita 条目
+  /// 直接返回；任何失败只记日志，绝不影响开章。
+  Future<void> _attachKavitaMangaSync(
+    EpubBookRow row,
+    OnlineMangaLibraryEntry entry,
+    OnlineMangaChapter chapter,
+  ) async {
+    _closeKavitaMangaSync();
+    if (_sourceReviewActive || !KavitaMangaSyncSession.appliesTo(entry)) {
+      return;
+    }
+    try {
+      final KavitaMangaSyncSession? session =
+          await KavitaMangaSyncSession.attach(
+            db: appModel.database,
+            bookUid: row.uid,
+            entry: entry,
+            chapter: chapter,
+            servers: appModel.prefsRepo.kavitaServers,
+            apiFor: KavitaApiRegistry.instance.apiFor,
+            stamps: PrefKavitaMangaSyncStampStore(
+              read: () =>
+                  appModel.prefsRepo.getPref(
+                        kKavitaMangaSyncStatePref,
+                        defaultValue: '',
+                      )
+                      as String,
+              write: (String value) =>
+                  appModel.prefsRepo.setPref(kKavitaMangaSyncStatePref, value),
+            ),
+            promptConflict:
+                (KavitaProgress server, MangaChapterStateRow local) async {
+                  if (!mounted) return KavitaSyncAction.none;
+                  return showKavitaProgressConflictDialog(
+                    context,
+                    localSection: local.lastPage,
+                    serverSection: server.pageNum,
+                  );
+                },
+          );
+      if (!mounted) {
+        unawaited(session?.close());
+        return;
+      }
+      _kavitaMangaSync = session;
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('MangaFushiPage.attachKavitaSync', e, stack);
+    }
+  }
+
+  /// 章进度落库后转发给 Kavita 同步（防抖上报；非 Kavita 条目为空操作）。
+  void _reportKavitaMangaPage(String chapterKey, int page) =>
+      _kavitaMangaSync?.onPageSaved(chapterKey, page);
+
+  /// 收掉当前会话：限时 flush 待推进度后释放（不 await，内部吞错）。
+  void _closeKavitaMangaSync() {
+    final KavitaMangaSyncSession? session = _kavitaMangaSync;
+    _kavitaMangaSync = null;
+    if (session != null) unawaited(session.close());
+  }
+}

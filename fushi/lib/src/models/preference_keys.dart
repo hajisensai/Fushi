@@ -280,6 +280,13 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 本键出现之前「填了 key」即启用，默认 false 会让存量用户升级后失效。
   'jimaku_enabled',
   'jimaku_pref_langs',
+  // Kavita 漫画每章「上次成功同步」时刻（JSON 对象 `"<bookUid>|<chapterKey>" →
+  // epoch 毫秒`）。String，读写见 kavita_manga_sync.dart；设备本地，不含凭据。
+  'kavita_manga_sync_state',
+  // 用户自配的 Kavita 服务器清单（JSON 数组：id/name/url/apiKeyB64/enabled/
+  // allowInsecureHttp）。String，读写见 PreferencesRepository。apiKey 是长期凭据，
+  // 与 discovery_opds_servers 同隔离纪律。
+  'kavita_servers',
   'last_dictionary_update_at',
   'last_selected_deck',
   'last_selected_dictionary_format',
@@ -921,6 +928,8 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'music_acoustid_api_key',
   // 每条 OpenSubsonic 服务器记录里带 base64 的 passwordB64 / apiKeyB64。
   'music_subsonic_servers',
+  // 每条 Kavita 服务器记录里带 base64 的长期 API key。
+  'kavita_servers',
   'network_proxy_password',
   'network_proxy_username',
   // 每份朗读声音预设里 base64 的 secretsB64（API key / Bearer）。

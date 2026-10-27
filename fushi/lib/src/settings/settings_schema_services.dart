@@ -11,6 +11,7 @@ import 'package:fushi/src/pages/implementations/discovery_source_settings_sectio
 import 'package:fushi/src/pages/implementations/alist_site_settings_section.dart';
 import 'package:fushi/src/pages/implementations/bt_site_settings_section.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf_server_settings_section.dart';
+import 'package:fushi/src/pages/implementations/kavita/kavita_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/opds_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -522,6 +523,16 @@ SettingsDestination buildServicesDestination() {
             cliList: buildPlexCliList(),
             builder: (SettingsContext c) =>
                 _PlexSettingsLink(settingsContext: c),
+          ),
+          // Kavita 同 Audiobookshelf：用户自己的服务器，不属于外部发现源，iOS 也保留。
+          _servicePage(
+            id: 'services.kavita_servers',
+            title: t.kavita_settings_title,
+            status: (SettingsContext c) =>
+                c.appModel.prefsRepo.kavitaServers.isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            body: (SettingsContext c) => const KavitaServerSettingsSection(),
           ),
           SettingsNavigationItem(
             id: 'services.danmaku.configure',

@@ -7,6 +7,9 @@ import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
+import 'package:fushi/src/pages/implementations/kavita/kavita_books_view.dart';
+import 'package:fushi/src/pages/implementations/kavita/kavita_browse_page.dart'
+    show usableKavitaServers;
 import 'package:fushi/src/pages/implementations/library_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
@@ -58,6 +61,13 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
                 : FushiFloatingChromeInsetPadding(child: page);
           },
         ),
+        if (usableKavitaServers(appModel.prefsRepo.kavitaServers).isNotEmpty)
+          MediaLibraryViewSpec(
+            kind: MediaLibraryViewKind.kavita,
+            label: t.library_view_kavita,
+            builder: (BuildContext context, Widget navigation) =>
+                KavitaBooksView(navigation: navigation),
+          ),
         if (StoreRestrictedCapability.externalDiscovery.isAvailable)
           MediaLibraryViewSpec(
             kind: MediaLibraryViewKind.discover,

@@ -25,7 +25,11 @@ enum OnlineMangaRuntimeKind {
   /// 没有扩展包，`extensionPackage` 恒是 [kWebComicMangaPackage]、`sourceId` 是
   /// 站点 host，`seriesKey` 是站点规则推出的作品身份（推不出时 = 章节 URL）。
   /// 章节 `raw` 存章节页 URL、扫到的图、上下章链接与取图请求头。
-  web('web');
+  web('web'),
+
+  /// 用户自配的 Kavita 服务器（按章在线读 CBZ）。`extensionPackage` 恒是
+  /// `kKavitaMangaPackage`、`sourceId` = 服务器配置 id、`seriesKey` = Kavita seriesId。
+  kavita('kavita');
 
   const OnlineMangaRuntimeKind(this.wireValue);
 

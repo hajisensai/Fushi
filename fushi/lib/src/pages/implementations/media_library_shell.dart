@@ -27,6 +27,10 @@ enum MediaLibraryViewKind {
   /// （BUG-1710）。
   browse,
 
+  /// Kavita 书籍库：用户自己服务器上的 EPUB（流式阅读 / 下载 / 进度同步）。
+  /// 仅在配置了可用 Kavita 服务器时出现。
+  kavita,
+
   /// 在线来源：已装扩展提供的在线源（与「浏览 › 来源」同一组件）。
   onlineSources,
 
