@@ -349,17 +349,21 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     }
     _prefetch = () async {
       try {
+        SrsReviewPage.debugPhase?.call('prefetch:begin');
         final String? id = await store.nextCard(
           widget.deckId,
           exclude: <String>{currentCardId},
         );
+        SrsReviewPage.debugPhase?.call('prefetch:nextCard');
         if (id == null) return null;
         final SrsCardDetail? detail = await store.cardDetail(id);
+        SrsReviewPage.debugPhase?.call('prefetch:detail');
         if (detail == null) return null;
         final SrsRenderedCard? rendered = await store.renderCard(
           id,
           detail: detail,
         );
+        SrsReviewPage.debugPhase?.call('prefetch:render');
         // 卡面预处理（媒体改写、抽样式、样式哈希）趁出题间隙算好，换卡时全命中。
         if (rendered != null) {
           srsWarmCardFace(
@@ -370,6 +374,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
               ?rendered.fushiCardDefinitions,
             ],
           );
+          SrsReviewPage.debugPhase?.call('prefetch:warm');
         }
         return _PrefetchedCard(
           detail: detail,
@@ -502,6 +507,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     if (store == null) return;
     try {
       final SrsDeckSummary? sum = await _deckSummary();
+      SrsReviewPage.debugPhase?.call('deckSummary');
       final SrsDayContext day = await store.dayContext();
       final SrsAnswerPreview? preview = store.canSchedule
           ? await store.preview(cardId)
@@ -518,13 +524,18 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     }
   }
 
-  /// 本页里的写操作统一入口：串行、出错留痕、写完通知其它页重读。
+  /// 本页里的写操作统一入口：串行、出错留痕、写完通知互联推送。
+  ///
+  /// 只发 [bumpSrsLocalWrite]，不发 [bumpSrsRevision]：本页压在牌组列表 / 首页之上，叫醒它们
+  /// 就是每评一张卡整库重算一遍计数、把看不见的列表整页重建两三次，正撞在下一张卡上屏的那几帧
+  /// （实测 Windows debug：每次评分 1.5 s 内重建约 9500 个 element，其中约 7000 个是被盖住的
+  /// 牌组列表）。三个入口在本页返回时各发一次 [bumpSrsRevision]。
   Future<void> _guarded(String where, Future<void> Function() body) async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
       await body();
-      if (mounted) bumpSrsRevision(ref);
+      if (mounted) bumpSrsLocalWrite(ref);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsReviewPage.$where', e, stack);
       FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
@@ -666,6 +677,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     unawaited(
       _guarded('answer', () async {
         _answerClock.stop();
+        SrsReviewPage.debugPhase?.call('answer:begin');
         // 不把显示问题面时算的预览传进去：预览的时刻是出题那一刻，日志的发生时刻
         // 必须是现在（学习步长按分钟算，差几十秒就差一档）。
         final SrsReviewLog log = await store.answer(
@@ -676,6 +688,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             kSrsMaxAnswerDurationMs,
           ),
         );
+        SrsReviewPage.debugPhase?.call('answer:done');
         _undo.add(_UndoStep(cardId: detail.card.id, logId: log.id));
         _reviewedThisSession++;
         await _loadNext(usePrefetch: true);
@@ -1547,16 +1560,38 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     );
   }
 
-  Widget _buildCard(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // null = 首张卡还在读（[_buildBody]）：空卡面先建平台视图，上面压加载指示。
-    final SrsCardDetail? detail = _detail;
-    final SrsRenderedCard? rendered = _rendered;
-    final SrsCardFaceBuilder faceBuilder = ref.watch(
-      srsCardFaceBuilderProvider,
+  /// 上一次建好的卡面 widget 与建它用的输入（[_cardFace]）。
+  ({Object inputs, Widget face})? _faceCache;
+
+  /// 卡面 widget：输入没变时原样返回上一次的**同一个实例**，框架据此跳过整棵卡面子树的重建。
+  ///
+  /// 本页的 setState 大多与卡面无关（忙碌态开 / 关、计数与间隔预览补齐、媒体探测），以前每次都
+  /// 新建 [SrsCardFace] → 原生 Fushi 卡面 / 释义 WebView 整棵重建；换一张卡要重建三四遍，与下一张
+  /// 卡的进场动画抢同几帧。卡面自己订阅的主题 / 外观 / provider 变了，照样由它自己重建。
+  Widget _cardFace(
+    BuildContext context, {
+    required SrsCardDetail? detail,
+    required SrsRenderedCard? rendered,
+    required SrsCardFaceBuilder faceBuilder,
+    required String language,
+    required double zoom,
+    required String hostCss,
+    required MediaQueryData media,
+  }) {
+    final Object inputs = (
+      detail?.card.id,
+      detail?.noteType.builtinKey,
+      rendered,
+      _showingAnswer,
+      faceBuilder,
+      language,
+      zoom,
+      hostCss,
+      _autoplayEnabled,
+      media,
     );
-    final String language = ref.read(appProvider).defaultContentLanguage;
-    final double zoom = ref.watch(srsReviewZoomProvider);
+    final ({Object inputs, Widget face})? hit = _faceCache;
+    if (hit != null && hit.inputs == inputs) return hit.face;
     final SrsCardFace face = SrsCardFace(
       cardId: detail?.card.id ?? '',
       showingAnswer: _showingAnswer,
@@ -1573,7 +1608,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       onZoomWheel: _zoomWheel,
       onSourceLink: _openSource,
       // 「卡面图片大小」随主题原地下发（不重放卡片）；Fushi 卡片的原生图片读同一设置。
-      hostCss: srsReviewImageSizeCss(ref.watch(srsReviewImageSizeProvider)),
+      hostCss: hostCss,
       onImageTap: _viewCardImage,
       // 卡面页内自己出声的媒体（视频制卡的同步片段等）同样服从牌组的自动播放开关
       // （BUG-3546）；`[sound:]` 由 [_autoplayAudio] 按同一开关处理。
@@ -1581,7 +1616,50 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       onPlayAudio: _playNames,
       onTapEmpty: _onCardTapEmpty,
     );
+    // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
+    final Widget built = rendered?.fushiCardDefinitions != null
+        ? MediaQuery(
+            // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
+            data: media.copyWith(
+              textScaler: TextScaler.linear(media.textScaler.scale(1) * zoom),
+            ),
+            child: SrsFushiCardView(
+              key: const ValueKey<String>('srs-fushi-card-view'),
+              face: face,
+              fields: rendered!.fields,
+              definitionsHtml: rendered.fushiCardDefinitions!,
+              topInset: media.padding.top,
+            ),
+          )
+        : faceBuilder(context, face);
+    _faceCache = (inputs: inputs, face: built);
+    return built;
+  }
+
+  Widget _buildCard(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // null = 首张卡还在读（[_buildBody]）：空卡面先建平台视图，上面压加载指示。
+    final SrsCardDetail? detail = _detail;
+    final SrsRenderedCard? rendered = _rendered;
+    final SrsCardFaceBuilder faceBuilder = ref.watch(
+      srsCardFaceBuilderProvider,
+    );
+    final String language = ref.read(appProvider).defaultContentLanguage;
+    final double zoom = ref.watch(srsReviewZoomProvider);
+    final String hostCss = srsReviewImageSizeCss(
+      ref.watch(srsReviewImageSizeProvider),
+    );
     final MediaQueryData media = MediaQuery.of(context);
+    final Widget cardFace = _cardFace(
+      context,
+      detail: detail,
+      rendered: rendered,
+      faceBuilder: faceBuilder,
+      language: language,
+      zoom: zoom,
+      hostCss: hostCss,
+      media: media,
+    );
     return SrsCardLookupHost(
       controller: _lookup,
       // 弹窗整栈关掉：焦点回复习页（WebView / 弹窗拿走过 OS 焦点）。
@@ -1614,25 +1692,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                   child: Stack(
                     fit: StackFit.passthrough,
                     children: <Widget>[
-                      // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
-                      if (rendered?.fushiCardDefinitions != null)
-                        MediaQuery(
-                          // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
-                          data: media.copyWith(
-                            textScaler: TextScaler.linear(
-                              media.textScaler.scale(1) * zoom,
-                            ),
-                          ),
-                          child: SrsFushiCardView(
-                            key: const ValueKey<String>('srs-fushi-card-view'),
-                            face: face,
-                            fields: rendered!.fields,
-                            definitionsHtml: rendered.fushiCardDefinitions!,
-                            topInset: media.padding.top,
-                          ),
-                        )
-                      else
-                        faceBuilder(context, face),
+                      cardFace,
                       IgnorePointer(
                         child: AnimatedSwitcher(
                           duration: fushiMotionDuration(

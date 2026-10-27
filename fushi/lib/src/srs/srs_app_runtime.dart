@@ -92,6 +92,11 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
     // 本机写了复习数据：去抖后经互联快速通道推一轮（设计 §6.3）。同步拉进来的变更不触发
     // （反馈 I1Bg6uMZ32：拉入 → 修订号 +1 → 又推一轮同步，见 [SrsRevisionOrigin]）。
     listenSrsLocalWrites(ref, revisionOrigin, runtime.localPush.trigger);
+    // 复习页的评分 / 撤销等只发这个信号（不叫醒被盖住的列表，见 srsLocalWriteProvider）。
+    ref.listen<int>(
+      srsLocalWriteProvider,
+      (int? previous, int next) => runtime.localPush.trigger(),
+    );
     // RWKV 排程服务随模块常驻（store.rwkv 由它装配；对象很轻，重活按需启动）。
     ref.listen<AsyncValue<Object?>>(
       srsRwkvServiceProvider,
