@@ -33,10 +33,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3404 条。点号进各自文件。
+> 共 3410 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3806](bugs/BUG-3806-settings-textfield-stale-after-profile-switch.md) | ✅ | ✅ | 切换 Profile 后设置输入框仍显示上一个 Profile 的值 |
+| [BUG-3805](bugs/BUG-3805-reader-arrow-reversed-binding-overridden.md) | ✅ | ✅ | 方向键改绑成相反翻页方向仍被阅读方向校正覆盖 |
+| [BUG-3804](bugs/BUG-3804-remote-collection-subtitle-episode-index.md) | ✅ | ✅ | 互联合集连播第 2 集起拿不到主机选定的外挂字幕 |
+| [BUG-3803](bugs/BUG-3803-browser-ext-popup-wheel-bubbles.md) | ✅ | ✅ | 扩展查词弹窗里滚轮冒泡到宿主页（b 站调音量） |
+| [BUG-3802](bugs/BUG-3802-feedback-reply-notice-persists.md) | ✅ | ✅ | 反馈回复提示条常驻不消失、遮挡提交按钮 |
+| [BUG-3801](bugs/BUG-3801-qbittorrent-52-session-cookie.md) | ✅ | ✅ | qBittorrent 5.2+ 会话 cookie 改名后外接登录失败 |
 | [BUG-3800](bugs/BUG-3800-floating-ball-switch-profile-label.md) | ✅ | ✅ | 悬浮球切换配置按钮文案被换成配置名 |
 | [BUG-3799](bugs/BUG-3799-kavita-cache-download-semantics-empty.md) | ✅ | ✅ | Kavita 缓存 / 下载两态是空的：阅读即永久入库、移除下载只翻标记 |
 | [BUG-3798](bugs/BUG-3798-audiobook-chapter-transition-receipt-lost.md) | ✅ | ✅ | audiobook-chapter-transition-receipt-lost |
