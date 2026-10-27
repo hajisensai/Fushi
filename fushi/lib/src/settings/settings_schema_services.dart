@@ -193,10 +193,11 @@ SettingsDestination buildServicesDestination() {
       SettingsSection(
         id: 'services.resources',
         title: t.section_services_resources,
-        // iOS 上整节不渲染：BT 站、Torznab、发现来源、OPDS 服务器等配置的
-        // 全部消费端（发现页与下载中心）都已按 App Store 合规移除
+        // iOS 上整节不渲染：BT 站、Torznab、内置发现来源这些配置的全部消费端
+        // （内置发现源与下载中心）都已按 App Store 合规移除
         // （[StoreRestrictedCapability.externalDiscovery]），留着就是一组配了也
-        // 不会生效的字段。用 section 级 `visible` 而不是逐项加判据：三条渲染路径
+        // 不会生效的字段。用户自己的 OPDS / AList 服务器不在此节，住「媒体服务器」
+        // 节、iOS 也保留（2026-10-27 用户拍板，`userConfiguredServersAvailable`）。用 section 级 `visible` 而不是逐项加判据：三条渲染路径
         // （分类正文 / 主从详情 / 设置搜索索引）共用它，逐项写会漏掉搜索索引。
         visible: (_) => StoreRestrictedCapability.externalDiscovery.isAvailable,
         presentation: SettingsSectionPresentation.collapsed,
@@ -234,24 +235,6 @@ SettingsDestination buildServicesDestination() {
             title: t.discovery_sources_settings_title,
             status: (SettingsContext c) => t.settings_service_builtin,
             body: (SettingsContext c) => const DiscoverySourceSettingsSection(),
-          ),
-          _servicePage(
-            id: 'services.opds_servers',
-            title: t.discovery_opds_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.discoveryOpdsServers.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) => const OpdsServerSettingsSection(),
-          ),
-          _servicePage(
-            id: 'services.alist_sites',
-            title: t.discovery_alist_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.discoveryAListSites.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) => const AListSiteSettingsSection(),
           ),
         ],
       ),
@@ -514,7 +497,28 @@ SettingsDestination buildServicesDestination() {
             builder: (SettingsContext c) =>
                 _PlexSettingsLink(settingsContext: c),
           ),
-          // Kavita 同 Audiobookshelf：用户自己的服务器，不属于外部发现源，iOS 也保留。
+          // 以下四项都是用户自己填地址的服务器（同 Jellyfin / Plex）：浏览、阅读 /
+          // 串流与下载到本机都不属于 App Store 受限能力，iOS 也保留（2026-10-27 用户
+          // 拍板，判据 `userConfiguredServersAvailable`，见 store_compliance.dart）。
+          // 所以放在常显的这一节，而不是 iOS 上整节隐藏的「资源」里。
+          _servicePage(
+            id: 'services.opds_servers',
+            title: t.discovery_opds_settings_title,
+            status: (SettingsContext c) =>
+                c.appModel.prefsRepo.discoveryOpdsServers.isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            body: (SettingsContext c) => const OpdsServerSettingsSection(),
+          ),
+          _servicePage(
+            id: 'services.alist_sites',
+            title: t.discovery_alist_settings_title,
+            status: (SettingsContext c) =>
+                c.appModel.prefsRepo.discoveryAListSites.isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            body: (SettingsContext c) => const AListSiteSettingsSection(),
+          ),
           _servicePage(
             id: 'services.kavita_servers',
             title: t.kavita_settings_title,
@@ -524,9 +528,6 @@ SettingsDestination buildServicesDestination() {
                 : t.settings_service_configured,
             body: (SettingsContext c) => const KavitaServerSettingsSection(),
           ),
-          // Audiobookshelf 是用户自己的服务器（同 Jellyfin / Plex），流式播放不属于
-          // [StoreRestrictedCapability.externalDiscovery]：放在这一节而不是 iOS 上整节
-          // 隐藏的「资源」里，iOS 才配得了服务器。下载按钮另走 downloads 能力门。
           _servicePage(
             id: 'services.audiobookshelf_servers',
             title: t.discovery_audiobookshelf_settings_title,
