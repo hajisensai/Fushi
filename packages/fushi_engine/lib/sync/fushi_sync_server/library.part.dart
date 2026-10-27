@@ -126,7 +126,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
     final int? presentSinceAt = int.tryParse(
       _interconnectHeaderValue(request, kPeerPushPresentSinceHeader) ?? '',
     );
-    return (svc as PeerPushDeletionGate).vetoesPeerPush(
+    return svc.vetoesPeerPush(
       kinds: kinds,
       itemKey: itemKey,
       presentSinceAt: presentSinceAt,
