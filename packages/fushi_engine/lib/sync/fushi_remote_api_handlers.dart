@@ -205,22 +205,19 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   // BUG-1525：浏览器扩展只消费 popupJson + bestLength。若实现方提供窄快路径，
   // 不再先构造完整 DictionaryEntry（其中每条 glossary 都会额外 jsonEncode），再把
   // 同一份 FFI 结果遍历一次生成 popupJson。record=true 必须保留完整结果供历史使用。
-  if (popupOnly && !record && lookup is FushiRemotePopupLookupService) {
-    final FushiRemotePopupLookupService popupLookup =
-        lookup as FushiRemotePopupLookupService;
+  // 请求方的查词语言（可选）：中文 → host 开简体 → 繁體回落。缺省 = 旧行为，按 host
+  // 本机当前查词语言；旧 host 不认该字段，同样是旧行为。
+  final String? language = remoteLookupLanguageOf(body);
+  if (popupOnly && !record && hasPopupFastPath(lookup, language: language)) {
     final RemoteDictionaryPopupLookup? popup =
-        popupTiming != null && popupLookup is FushiRemoteTimedPopupLookupService
-            ? await popupLookup.searchDictionaryPopupWithTiming(
-                term: term,
-                wildcards: wildcards,
-                maximumTerms: maximumTerms,
-                timing: popupTiming,
-              )
-            : await popupLookup.searchDictionaryPopup(
-                term: term,
-                wildcards: wildcards,
-                maximumTerms: maximumTerms,
-              );
+        await searchRemoteDictionaryPopupForRequest(
+      lookup,
+      term: term,
+      wildcards: wildcards,
+      maximumTerms: maximumTerms,
+      language: language,
+      timing: popupTiming,
+    );
     return <String, dynamic>{
       'type': 'dictionaryResult',
       'result': popup == null
@@ -230,10 +227,12 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
       ...envelope,
     };
   }
-  final DictionarySearchResult? result = await lookup.searchDictionary(
+  final DictionarySearchResult? result = await searchRemoteDictionaryForRequest(
+    lookup,
     term: term,
     wildcards: wildcards,
     maximumTerms: maximumTerms,
+    language: language,
   );
   if (result != null && history != null && record) {
     history.recordHistory(result);

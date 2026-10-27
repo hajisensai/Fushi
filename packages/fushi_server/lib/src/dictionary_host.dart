@@ -213,14 +213,21 @@ class ServerDictionaryHost {
   /// 同一条链路——清洗 → FFI lookup（上限 = 词头预算）→ [buildResultFromLookup] +
   /// [buildPopupJsonFromLookup]（隐藏词典在源头剔除）→ 单汉字附汉字词典结果。
   /// 无结果返回 null。
-  DictionarySearchResult? search(String rawTerm, {required int maximumTerms}) {
+  ///
+  /// [chineseSimpToTrad]：请求方声明查词语言为中文时置 true（引擎额外试简体 → 繁體
+  /// 变体）。服务端没有「当前查词语言」，请求不带语言时为 false。
+  DictionarySearchResult? search(String rawTerm, {required int maximumTerms, bool chineseSimpToTrad = false}) {
     if (!_available) return null;
     final String term = normalizeServerSearchTerm(rawTerm);
     if (term.trim().isEmpty) return null;
     final List<FushiKanjiResult> kanji = isSingleKanjiTerm(term)
         ? FushiDicts.instance.queryKanji(term)
         : const <FushiKanjiResult>[];
-    final List<FushiLookupResult> results = FushiDicts.instance.lookup(term, maxResults: maximumTerms);
+    final List<FushiLookupResult> results = FushiDicts.instance.lookup(
+      term,
+      maxResults: maximumTerms,
+      chineseSimpToTrad: chineseSimpToTrad,
+    );
     if (results.isEmpty) {
       if (kanji.isEmpty) return null;
       return DictionarySearchResult(searchTerm: term, kanjiResults: kanji);
@@ -244,11 +251,15 @@ class ServerDictionaryHost {
   }
 
   /// 只要弹窗 JSON 的快路径（浏览器扩展 `popupOnly`），不物化 DictionaryEntry。
-  RemoteDictionaryPopupLookup? searchPopup(String rawTerm, {required int maximumTerms}) {
+  RemoteDictionaryPopupLookup? searchPopup(String rawTerm, {required int maximumTerms, bool chineseSimpToTrad = false}) {
     if (!_available) return null;
     final String term = normalizeServerSearchTerm(rawTerm);
     if (term.trim().isEmpty) return null;
-    final List<FushiLookupResult> results = FushiDicts.instance.lookup(term, maxResults: maximumTerms);
+    final List<FushiLookupResult> results = FushiDicts.instance.lookup(
+      term,
+      maxResults: maximumTerms,
+      chineseSimpToTrad: chineseSimpToTrad,
+    );
     if (results.isEmpty) return null;
     int bestLength = 0;
     for (final FushiLookupResult r in results) {
@@ -312,7 +323,11 @@ class ServerDictionaryHost {
 
 /// 互联查词 service：查词走 [ServerDictionaryHost]，单词音频服务端不提供
 /// （服务端不做查词发音，见 README；`/api/lookup/audio` 恒回「未命中」）。
-class ServerRemoteLookupService implements FushiRemoteLookupService, FushiRemotePopupLookupService {
+///
+/// 请求带了请求方查词语言（[FushiRemoteLanguageLookupService]）时按它决定是否开简体 →
+/// 繁體回落；不带语言 = 旧行为（不回落）。
+class ServerRemoteLookupService
+    implements FushiRemoteLookupService, FushiRemotePopupLookupService, FushiRemoteLanguageLookupService {
   ServerRemoteLookupService(this.dictionaries);
 
   final ServerDictionaryHost dictionaries;
@@ -330,6 +345,31 @@ class ServerRemoteLookupService implements FushiRemoteLookupService, FushiRemote
     required bool wildcards,
     required int maximumTerms,
   }) async => dictionaries.searchPopup(term, maximumTerms: maximumTerms);
+
+  @override
+  Future<DictionarySearchResult?> searchDictionaryInLanguage({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required String language,
+  }) async => dictionaries.search(
+    term,
+    maximumTerms: maximumTerms,
+    chineseSimpToTrad: isChineseLanguageTag(language),
+  );
+
+  @override
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupInLanguage({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required String language,
+    RemoteDictionaryPopupTiming? timing,
+  }) async => dictionaries.searchPopup(
+    term,
+    maximumTerms: maximumTerms,
+    chineseSimpToTrad: isChineseLanguageTag(language),
+  );
 
   @override
   Future<RemoteAudioLookup?> lookupAudio({required String expression, required String reading}) async => null;
