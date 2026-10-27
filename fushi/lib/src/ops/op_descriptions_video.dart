@@ -983,7 +983,9 @@ List<OpDescription> _describeSubtitleOps(
     pattern: '$_video/subtitle-search',
     summary:
         'Search online subtitle candidates for a scraped video without '
-        'downloading. Returns short ids (vs1…) for video.subtitle.download.',
+        'downloading. Returns short ids (vs1…) for video.subtitle.download; '
+        'a candidate with "mismatch" is for a different work (e.g. a TV episode '
+        'for a movie) and should not be offered.',
     availability: video,
     params: const <OpParam>[
       OpParam.string(
