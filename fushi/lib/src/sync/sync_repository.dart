@@ -11,6 +11,8 @@ import 'package:fushi/src/models/preferences_repository.dart'
         kGameStreamLookupLayoutPrefKey,
         kGameStreamRemoteLaunchPrefKey,
         PreferencesRepository;
+import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart'
+    show kBtSitesLegacyMigrationPref;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
@@ -1893,6 +1895,9 @@ class SyncRepository {
     'video_subtitle_opensubtitles_config',
     // 用户 BT 站清单：与 Torznab 同类（第三方 indexer 地址，可能带 passkey）。
     'resource_bt_sites',
+    // 旧内置 BT 站迁移的已跑标记：描述本安装的一次性判定，随备份漂到新装设备会让
+    // 新设备跳过判定、漂回老设备会让它重跑，都不对。
+    kBtSitesLegacyMigrationPref,
     // 用户自配的 AI 提供商：条目里带 base64 的 API key，且本地推理服务（Ollama /
     // LM Studio）的地址是 `http://localhost:11434` 这种只对本机成立的端点。跨设备
     // 恢复既泄付费凭据又指向一台并不在跑的服务。功能映射按 provider id 指向它们，
