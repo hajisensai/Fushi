@@ -236,7 +236,19 @@ mod tests {
         assert!(out["deleted"].as_i64().unwrap() >= out["rows"].as_i64().unwrap());
 
         let w = core.writer().unwrap();
-        for t in profile_tables(&w).unwrap() {
+        // 独立于被测的表清单：库里任何带 profile_uid 列的表。
+        let every: Vec<String> = w
+            .prepare(
+                "SELECT m.name FROM sqlite_master m WHERE m.type = 'table' \
+                 AND EXISTS (SELECT 1 FROM pragma_table_info(m.name) WHERE name = 'profile_uid')",
+            )
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(every.len() > 25, "{every:?}");
+        for t in every {
             let n: i64 = w.query_row(&format!("SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = ?1"), [P], |r| r.get(0)).unwrap();
             assert_eq!(n, 0, "{t} still has rows of the purged profile");
         }
