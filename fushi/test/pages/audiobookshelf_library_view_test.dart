@@ -250,10 +250,12 @@ void main() {
       },
     ];
     await pumpView(tester);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
     expect(
       tester
-          .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator))
+          .widget<FushiLinearProgressIndicator>(
+            find.byType(FushiLinearProgressIndicator),
+          )
           .value,
       0.5,
     );
