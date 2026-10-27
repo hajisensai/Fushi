@@ -5,6 +5,7 @@ import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
@@ -43,7 +44,9 @@ class AudiobookSession extends ChangeNotifier {
     required AudioControlStreams controlStreams,
     required FushiDatabase? Function() database,
     required Duration Function() studyIdleTimeout,
-  }) : _audioHandlerGetter = audioHandler,
+    int Function() audioJumpThresholdSec = _defaultAudioJumpThresholdSec,
+  }) : _audioJumpThresholdSec = audioJumpThresholdSec,
+       _audioHandlerGetter = audioHandler,
        _showFloatingLyric = showFloatingLyric,
        _showMediaNotification = showMediaNotification,
        _floatingLyricStyle = floatingLyricStyle,
@@ -55,6 +58,13 @@ class AudiobookSession extends ChangeNotifier {
        _controlStreams = controlStreams,
        _databaseGetter = database,
        _studyIdleTimeout = studyIdleTimeout;
+
+  /// 「返回原位置」跳转距离（秒，设置项 `listening.audiobook_jump_threshold`）。闭包
+  /// 注入、每次跳转读实时值：改设置对正在播的会话立即生效，不用重开书。
+  final int Function() _audioJumpThresholdSec;
+
+  static int _defaultAudioJumpThresholdSec() =>
+      kAudiobookJumpThresholdSecDefault;
 
   final FushiAudioHandler? Function() _audioHandlerGetter;
   final bool Function() _showFloatingLyric;
@@ -248,7 +258,8 @@ class AudiobookSession extends ChangeNotifier {
       await _stopInternal();
     }
 
-    final AudiobookPlayerController controller = AudiobookPlayerController();
+    final AudiobookPlayerController controller = AudiobookPlayerController()
+      ..audioJumpThresholdSec = _audioJumpThresholdSec;
     // BUG-2330：全书 cue 必须在 load **之前**灌进去——load 恢复保存位置时要靠
     // cue 推出的各文件时长把全书毫秒拆成（文件下标, 文件内偏移），否则多文件书
     // 只能裸 seek 进文件 0。setAllBookCues 不碰播放器，提前调无副作用；按位置解析

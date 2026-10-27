@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
@@ -163,6 +164,30 @@ List<SettingsSection> buildListeningSections() {
           onChanged: (SettingsContext settingsContext, bool value) {
             settingsContext.readerSource.toggleVolumeKeySentenceNavEnabled();
             notifyReaderSettingsChanged(settingsContext);
+          },
+        ),
+        // 反馈 0AwuVqrNFn：「返回原位置」胶囊的跳转距离。旧值写死 15 秒，没听清往回拖
+        // 一分钟也弹胶囊；出厂改 2 分钟、可在 15 秒–30 分钟间选。会话按闭包读实时值，
+        // 改完对正在播的书立即生效。
+        SettingsSegmentedItem<int>(
+          id: 'listening.audiobook_jump_threshold',
+          title: t.audiobook_jump_threshold,
+          subtitle: t.audiobook_jump_threshold_hint,
+          icon: FushiIcons.history,
+          dropdown: true,
+          defaultValue: kAudiobookJumpThresholdSecDefault,
+          options: <SettingsSegmentOption<int>>[
+            for (final int sec in kAudiobookJumpThresholdSecChoices)
+              SettingsSegmentOption<int>(
+                value: sec,
+                label: audiobookJumpThresholdLabel(sec),
+              ),
+          ],
+          selected: (SettingsContext settingsContext) =>
+              settingsContext.appModel.audiobookJumpThresholdSec,
+          onChanged: (SettingsContext settingsContext, int value) async {
+            await settingsContext.appModel.setAudiobookJumpThresholdSec(value);
+            settingsContext.refresh();
           },
         ),
       ],
@@ -562,6 +587,11 @@ List<SettingsSection> buildListeningSections() {
     ),
   ];
 }
+
+/// 跳转距离档位的显示文案：整分钟显示「N 分钟」，否则「N 秒」。
+String audiobookJumpThresholdLabel(int seconds) => seconds % 60 == 0
+    ? t.audiobook_jump_threshold_minutes(n: seconds ~/ 60)
+    : t.audiobook_jump_threshold_seconds(n: seconds);
 
 /// 悬浮字幕有原生后端（Android overlay / Windows 原生窗 / macOS NSPanel）且已开启。
 bool _floatingLyricOn(SettingsContext c) =>

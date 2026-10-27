@@ -23,6 +23,7 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
+import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
@@ -431,6 +432,23 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAudiobookBackgroundPlay({required bool value}) async {
     await setPref('audiobook_background_play', value);
+    notifyListeners();
+  }
+
+  /// 有声书「返回原位置」跳转距离（秒）：显式音频 seek 挪动至少这么远才进跳转回退
+  /// 历史（反馈 0AwuVqrNFn）。没写过取出厂默认 2 分钟；存值归到 15 秒–30 分钟间最近
+  /// 的档位。普通偏好：随 Profile 快照与备份走（不是设备本地）。
+  int get audiobookJumpThresholdSec {
+    final Object? stored = getPref('audiobook_jump_threshold_sec');
+    if (stored is num) return normalizeAudiobookJumpThresholdSec(stored);
+    return kAudiobookJumpThresholdSecDefault;
+  }
+
+  Future<void> setAudiobookJumpThresholdSec(int value) async {
+    await setPref(
+      'audiobook_jump_threshold_sec',
+      normalizeAudiobookJumpThresholdSec(value),
+    );
     notifyListeners();
   }
 

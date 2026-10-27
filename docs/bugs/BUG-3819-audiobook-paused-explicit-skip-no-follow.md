@@ -1,0 +1,12 @@
+## BUG-3819 · 有声书暂停时显式跳句阅读器视口不跟随
+- **报告**：2026-10-27（用户：应用内反馈 yk2XDOGh-H，Android 3.0.1-debug；设计项，所有者 2026-10-27 批准按分诊推荐实施）
+- **真实性**：✅ 真问题（沿代码路径确认，非设备复现）。暂停中按「下一句」，音频与高亮已到目标句，但目标句在下一页时视口不翻：
+  - `fushi/lib/src/media/audiobook/audiobook_controller.dart:2177`（修前）`shouldRevealCurrentCue` 要求 `_player.playing`——这是 BUG-2961 / BUG-2781 有意的「暂停态被动更新不拽视口」；
+  - `fushi/lib/src/pages/implementations/reader_fushi/audiobook.part.dart` `_onCueChanged` 只用 `consumeForceReveal() || shouldRevealCurrentCue` 决定 `AudiobookBridge.highlight(reveal:)`，显式跳句（`skipToCue` 漏斗，`audiobook_controller.dart:1730`）与被动进度更新走同一个判据，没有区分。
+  - 跨章：`skipToCue` 里 `_maybeEmitCrossChapter(cue)` 走 `hasPlayedOnce` 守卫（BUG-069），本会话没按过播放时暂停中跳到别章的句子，正文也不跟。
+- **[x] ① 已修复** — 显式句子导航单独放行一次 reveal，被动判据不动：
+  - `skipToCue` 新增 `revealReader`；`skipToPrevCue` / `skipToNextCue` / `skipByCues` / `skipToCueIndex` 与 reader 的章首章尾跨章跳句（`_handleBoundarySkip`）传 true。底栏按钮、快捷键、音量键句子导航、媒体通知上下一句、ctl 路由都汇聚到这几个入口。收藏 / 书签 / 跳章 / 跳转回退等按位置定位音频的调用方不传，行为不变。
+  - 控制器在当前句写成目标句的那一刻登记 `_explicitNavigationRevealCue`（跟随音频关、`callerPositionsReader` 时不登记）；reader `_onCueChanged` 每次通知读一次 `consumeExplicitNavigationReveal()`（只对目标句、只一次，读完即清），并入 `reveal`。目标在别章时 `_maybeEmitCrossChapter` 走 bypass（不看 `hasPlayedOnce`），跨章落地负责定位、登记随之作废；手动翻页（`noteManualReaderNavigation`）也作废登记，不会迟到地拽回。
+  - `shouldRevealCurrentCue` 不改：它同时决定「当前句拥有阅读位置」，暂停中放宽会让用户手翻的位置不落库。歌词覆盖层只读 `consumeForceReveal`，「跟随关」时的自由滚动不受影响。
+- **[x] ② 已加自动化测试** — `fushi/test/media/audiobook/audiobook_paused_explicit_skip_reveal_test.dart`：真实控制器 + 假音频后端，暂停中下一句 / 上一句 / 跳 N 句 / 跳到第 N 句各 reveal 目标句恰好一次；被动 cue 变化、不带 `revealReader` 的定位、跟随关都不 reveal；手动翻页作废登记；暂停且没按过播放时显式跳到别章的句子会跨章，非导航定位仍不跨章。三种 view mode 的判据由源码守卫钉住：reader 把显式导航 reveal 并进唯一的 `reveal` 参数交给桥，翻页 / 滚动（同一个分页脚本对象）与 VN 的 `highlightSentenceAudioCue` 只按 `reveal` 参数把目标句带进视口，不自己看播放态。
+- **备注**：未在真机上验证。三种 view mode（paginated / continuous / vn）没有逐个实机复测：Dart 侧判据与 view mode 无关（已测）；各模式 JS 按 `reveal` 翻页 / 滚动 / 翻屏的具体行为沿用播放中跟随的同一路径（已有 JS harness 覆盖，本次未改 JS），暂停中这条路径的实机翻页效果待设备复测。
