@@ -244,6 +244,36 @@ void main() {
     expect((await db.getReaderPosition(row.uid))!.sectionIndex, 3);
   });
 
+  test('in-section reading after the last push is not local movement: a newer '
+      'server chapter is adopted without asking', () async {
+    // 上次在第 3 章推成功；之后章内滚动把本地 updatedAt 推到 60 分钟后，另一台
+    // 设备推进到第 9 章。本地没离开第 3 章，不该弹冲突。
+    final EpubBookRow row = await insertBook(
+      meta: _binding(pushedAt: _base, pulledAt: _base, page: 3).encode(),
+      localSection: 3,
+      localAt: _base + 60 * _min,
+    );
+    final _Server server = _Server(pageNum: 9, modifiedAt: _base + 120 * _min);
+    bool prompted = false;
+    final KavitaEpubSyncSession? session = await attach(
+      row,
+      server,
+      prompt: (KavitaProgress s, ReaderPositionRow? l) async {
+        prompted = true;
+        return KavitaSyncAction.none;
+      },
+    );
+    expect(prompted, isFalse);
+    expect((await db.getReaderPosition(row.uid))!.sectionIndex, 9);
+    // 采用服务器后，一致页基线随之更新为 9（下次开书的判断依据）。
+    final KavitaBookBinding binding = KavitaBookBinding.tryParse(
+      (await db.getEpubBook('Book'))!.sourceMetadata,
+    )!;
+    expect(binding.lastPushedPage, 9);
+    await session!.close();
+    expect(server.pushedPages, isEmpty);
+  });
+
   test('conflict without a prompt keeps local and does not push', () async {
     final EpubBookRow row = await insertBook(
       meta: _binding(pushedAt: _base, pulledAt: _base).encode(),

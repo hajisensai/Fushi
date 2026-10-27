@@ -197,7 +197,7 @@ void main() {
               in OnlineMangaRuntimeKind.values)
             kind.wireValue,
         ],
-        <String>['mihon', 'aidoku', 'interconnect', 'kavita'],
+        <String>['mihon', 'aidoku', 'interconnect', 'web', 'kavita'],
       );
     });
 

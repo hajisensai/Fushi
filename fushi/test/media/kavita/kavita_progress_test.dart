@@ -17,12 +17,14 @@ KavitaSyncDecision _decide({
   int? localPage,
   int? localAt,
   int? lastSync,
+  int? syncedPage,
 }) => resolveKavitaProgress(
   serverPage: serverPage,
   serverModifiedAt: serverAt,
   localPage: localPage,
   localUpdatedAt: localAt,
   lastSyncAt: lastSync,
+  lastSyncedPage: syncedPage,
 );
 
 void main() {
@@ -112,6 +114,38 @@ void main() {
       expect(localNewer.action, KavitaSyncAction.conflict);
       expect(localNewer.preferred, KavitaSyncAction.pushLocal);
     });
+
+    test(
+      'local still on the last agreed page is not movement, however late its '
+      'updatedAt (in-section scroll / mark-read)',
+      () {
+        // 本机推完第 5 章后在章内又读了很久（updatedAt 远晚于基线），另一台设备
+        // 推进到第 8 章：本地没离开一致的那章，应采用服务器而不是弹冲突。
+        expect(
+          _decide(
+            serverPage: 8,
+            serverAt: 200 * _min,
+            localPage: 5,
+            localAt: 150 * _min,
+            lastSync: 10 * _min,
+            syncedPage: 5,
+          ).action,
+          KavitaSyncAction.adoptServer,
+        );
+        // 真离开了一致的页：仍是冲突。
+        expect(
+          _decide(
+            serverPage: 8,
+            serverAt: 200 * _min,
+            localPage: 6,
+            localAt: 150 * _min,
+            lastSync: 10 * _min,
+            syncedPage: 5,
+          ).action,
+          KavitaSyncAction.conflict,
+        );
+      },
+    );
 
     test('clock skew within tolerance is not evidence of movement', () {
       expect(
@@ -351,6 +385,14 @@ void main() {
         expect(seen?.pageNum, 9);
         expect(pushedPages(h.log), isEmpty);
         expect(sync.hasPending, isFalse);
+
+        // 没裁决就继续翻页：仍要先核对、仍被拒，不能在下一页悄悄覆盖服务器。
+        seen = null;
+        sync.reportPage(4);
+        async.elapse(const Duration(seconds: 11));
+        async.flushMicrotasks();
+        expect(seen?.pageNum, 9);
+        expect(pushedPages(h.log), isEmpty);
 
         // 用户选择保留本地 -> 标记已裁决 -> 再翻页即推。
         sync.markServerVerified();

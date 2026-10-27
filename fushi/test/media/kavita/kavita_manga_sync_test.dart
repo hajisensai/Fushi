@@ -242,6 +242,43 @@ void main() {
     expect(await localPage(), 4);
   });
 
+  test('local still on the last agreed page: a newer server page is adopted '
+      'without a conflict prompt (same-page saves are not movement)', () async {
+    // 本地上次与服务器在第 3 页一致；之后同页标已读等落库把 updatedAt 推到现在，
+    // 另一台设备读到第 8 页。本地没离开一致的页，不该弹冲突。
+    await setLocal(3);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await stamps.record(_uid, _chapterKey, now - 100 * _min, page: 3);
+    final _Server server = _Server(pageNum: 8, modifiedAt: now);
+    bool prompted = false;
+    final KavitaMangaSyncSession? session = await attach(
+      server,
+      prompt: (KavitaProgress s, MangaChapterStateRow l) async {
+        prompted = true;
+        return KavitaSyncAction.none;
+      },
+    );
+    expect(prompted, isFalse);
+    expect(session!.adoptedPage, 8);
+    expect(await localPage(), 8);
+    expect(stamps.stampOf(_uid, _chapterKey)?.page, 8);
+    await session.close();
+    expect(server.pushedPages, isEmpty);
+  });
+
+  test('pref stamp store keeps the agreed page across records', () async {
+    String stored = '';
+    final PrefKavitaMangaSyncStampStore store = PrefKavitaMangaSyncStampStore(
+      read: () => stored,
+      write: (String v) async => stored = v,
+    );
+    await store.record('a', '1', 10, page: 4);
+    expect(store.stampOf('a', '1'), (at: 10, page: 4));
+    // 拉取后两侧仍不一致（page 为 null）：只刷时刻，保留旧的页级基线。
+    await store.record('a', '1', 20);
+    expect(store.stampOf('a', '1'), (at: 20, page: 4));
+  });
+
   group('conflict asks the user', () {
     // 两侧都在上次同步之后动过、页号不同。
     Future<_Server> arrange() async {

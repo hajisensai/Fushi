@@ -178,6 +178,9 @@ class KavitaBookService {
   }
 
   /// 记一次进度交换（推 / 拉）后的绑定戳。
+  ///
+  /// [page] 是这次交换后两侧一致的页号（推出去的页 / 采用的服务器页 / 拉取时两侧
+  /// 相同的页），推与拉都记；拉取后两侧仍不一致时传 null，保留旧基线。
   Future<void> recordSync(
     String bookKey, {
     bool pushed = false,
@@ -193,7 +196,7 @@ class KavitaBookService {
       binding.copyWith(
         lastPushedAt: pushed ? now : null,
         lastPulledAt: pulled ? now : null,
-        lastPushedPage: pushed ? page : null,
+        lastPushedPage: page,
         bookScrollId: bookScrollId,
       ),
     );

@@ -135,13 +135,15 @@ class KavitaProgressSync {
           final KavitaProgress server = await _api.getProgress(
             target.chapterId,
           );
-          _serverVerified = true;
           if (_serverIsNewer(server, page)) {
+            // 保持未校验：在用户裁决（[markServerVerified]）之前，之后每次推送都
+            // 重新核对，绝不在下一次翻页时悄悄覆盖更新的服务器进度。
             _pendingPage = null;
             _pendingScrollId = null;
             onServerNewer?.call(server);
             return false;
           }
+          _serverVerified = true;
         }
         await _api.saveProgress(
           KavitaProgress(

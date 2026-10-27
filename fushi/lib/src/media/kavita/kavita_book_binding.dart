@@ -53,7 +53,10 @@ class KavitaBookBinding {
   /// 最近一次从服务器拉进度的本地时刻（epoch 毫秒）。
   final int? lastPulledAt;
 
-  /// 最近一次推给服务器的页号（脊柱页）；用来去重，避免原地踏步重复上报。
+  /// 最近一次两侧达成一致的页号（脊柱页）：推送成功、打开时采用服务器进度、或拉取时
+  /// 两侧本就相同。既用来去重（原地踏步不重复上报），也是打开时判断「本地动过没有」
+  /// 的页级基线（见 `resolveKavitaProgress` 的 `lastSyncedPage`）。JSON 键名沿用
+  /// `lastPushedPage`。
   final int? lastPushedPage;
 
   /// 最近一次与服务器交换的 `bookScrollId`（尽力而为的章内锚点）。

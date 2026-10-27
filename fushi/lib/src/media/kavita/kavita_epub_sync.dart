@@ -102,6 +102,8 @@ class KavitaEpubSyncSession {
         localPage: local?.sectionIndex,
         localUpdatedAt: local?.updatedAt,
         lastSyncAt: lastSync,
+        // 章内滚动也会刷新 updatedAt；本地仍停在上次一致的那章就不算动过。
+        lastSyncedPage: binding.lastPushedPage,
       );
       KavitaSyncAction action = decision.action;
       if (action == KavitaSyncAction.conflict) {
@@ -121,17 +123,21 @@ class KavitaEpubSyncSession {
             db,
           ).save(bookUid: row.uid, sectionIndex: page, normCharOffset: 0);
           lastPushedPage = page;
-          await store.recordSync(row.bookKey, pulled: true);
+          await store.recordSync(row.bookKey, pulled: true, page: page);
         case KavitaSyncAction.pushLocal:
           pushLocalNow = local != null;
           localPageToPush = local?.sectionIndex;
           await store.recordSync(row.bookKey, pulled: true);
         case KavitaSyncAction.none:
         case KavitaSyncAction.conflict:
-          if (local != null && local.sectionIndex == remote.pageNum) {
-            lastPushedPage = remote.pageNum;
-          }
-          await store.recordSync(row.bookKey, pulled: true);
+          final bool agreed =
+              local != null && local.sectionIndex == remote.pageNum;
+          if (agreed) lastPushedPage = remote.pageNum;
+          await store.recordSync(
+            row.bookKey,
+            pulled: true,
+            page: agreed ? remote.pageNum : null,
+          );
       }
     }
 

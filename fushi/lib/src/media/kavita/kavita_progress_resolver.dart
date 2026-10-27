@@ -58,12 +58,17 @@ class KavitaSyncDecision {
 /// - [localPage] / [localUpdatedAt]：本地进度页与更新时刻；本地从没读过时都为 null。
 /// - [lastSyncAt]：最近一次成功推/拉的本地时刻（取绑定里 `lastPushedAt`、
 ///   `lastPulledAt` 的较大者）；从没同步过为 null。
+/// - [lastSyncedPage]：最近一次两侧达成一致的页号（推成功 / 采用服务器 / 拉取时
+///   两侧相同）；未知为 null。本地页号仍等于它时，本地**没有**动过同步单位——
+///   [localUpdatedAt] 晚于基线只是因为同一页 / 同一章内的落库（EPUB 章内滚动、
+///   漫画标已读），不能算「本地推进过」，否则另一台设备一推进就会被误判成冲突。
 KavitaSyncDecision resolveKavitaProgress({
   required int? serverPage,
   required int? serverModifiedAt,
   required int? localPage,
   required int? localUpdatedAt,
   required int? lastSyncAt,
+  int? lastSyncedPage,
   int toleranceMs = kKavitaClockSkewToleranceMs,
 }) {
   final bool hasServer = serverModifiedAt != null && serverPage != null;
@@ -107,7 +112,9 @@ KavitaSyncDecision resolveKavitaProgress({
   }
 
   final bool serverMoved = server > lastSyncAt + toleranceMs;
-  final bool localMoved = local > lastSyncAt + toleranceMs;
+  final bool localMoved =
+      local > lastSyncAt + toleranceMs &&
+      (lastSyncedPage == null || localPage != lastSyncedPage);
   if (serverMoved && localMoved) {
     return KavitaSyncDecision(
       KavitaSyncAction.conflict,

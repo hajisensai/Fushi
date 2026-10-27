@@ -7,8 +7,8 @@
 ///
 /// 「上次成功同步时刻」没有现成列可放（`manga_chapter_states` 无此列，且不改
 /// schema），所以落在设备本地偏好 [kKavitaMangaSyncStatePref]（JSON：
-/// `"<bookUid>|<chapterKey>" → epoch 毫秒`），见 [KavitaMangaSyncStampStore]。它
-/// 不含任何凭据或 URL，只有书 uid、章 key 与时刻。
+/// `"<bookUid>|<chapterKey>" → {"at": epoch 毫秒, "page": 两侧一致的页}`），见
+/// [KavitaMangaSyncStampStore]。它不含任何凭据或 URL，只有书 uid、章 key、时刻与页号。
 ///
 /// 流程：
 /// 1. [KavitaMangaSyncSession.attach] 在阅读器读章进度**之前**调用：拉服务器进度 →
@@ -49,25 +49,40 @@ typedef KavitaMangaConflictPrompt =
       MangaChapterStateRow local,
     );
 
-/// 每章「上次成功同步」时刻的存取。
-abstract interface class KavitaMangaSyncStampStore {
-  int? lastSyncAt(String bookUid, String chapterKey);
+/// 一章的同步基线：上次成功同步的本地时刻 + 那时两侧一致的页（未知为 null）。
+typedef KavitaMangaSyncStamp = ({int at, int? page});
 
-  /// 记一次成功同步。实现不得抛错（同步路径上的记账失败不能影响阅读）。
-  Future<void> record(String bookUid, String chapterKey, int at);
+/// 每章「上次成功同步」基线的存取。
+abstract interface class KavitaMangaSyncStampStore {
+  KavitaMangaSyncStamp? stampOf(String bookUid, String chapterKey);
+
+  /// 记一次成功同步。[page] 是这次同步后两侧一致的页；拉取后两侧仍不一致时传
+  /// null，保留旧的页级基线。实现不得抛错（同步路径上的记账失败不能影响阅读）。
+  Future<void> record(String bookUid, String chapterKey, int at, {int? page});
 }
 
 /// 纯内存实现（测试 / 无偏好可用时）。
 class InMemoryKavitaMangaSyncStampStore implements KavitaMangaSyncStampStore {
-  final Map<String, int> stamps = <String, int>{};
+  final Map<String, KavitaMangaSyncStamp> stamps =
+      <String, KavitaMangaSyncStamp>{};
+
+  /// 只读时刻（测试 / 诊断用）。
+  int? lastSyncAt(String bookUid, String chapterKey) =>
+      stampOf(bookUid, chapterKey)?.at;
 
   @override
-  int? lastSyncAt(String bookUid, String chapterKey) =>
+  KavitaMangaSyncStamp? stampOf(String bookUid, String chapterKey) =>
       stamps[_stampKey(bookUid, chapterKey)];
 
   @override
-  Future<void> record(String bookUid, String chapterKey, int at) async {
-    stamps[_stampKey(bookUid, chapterKey)] = at;
+  Future<void> record(
+    String bookUid,
+    String chapterKey,
+    int at, {
+    int? page,
+  }) async {
+    final String key = _stampKey(bookUid, chapterKey);
+    stamps[key] = (at: at, page: page ?? stamps[key]?.page);
   }
 }
 
@@ -88,41 +103,71 @@ class PrefKavitaMangaSyncStampStore implements KavitaMangaSyncStampStore {
   final Future<void> Function(String value) _write;
   final int maxEntries;
 
-  Map<String, int> _load() {
+  Map<String, KavitaMangaSyncStamp> _load() {
     try {
       final Object? decoded = jsonDecode(_read());
-      if (decoded is! Map<String, Object?>) return <String, int>{};
-      return <String, int>{
-        for (final MapEntry<String, Object?> e in decoded.entries)
-          if (e.value is int) e.key: e.value! as int,
-      };
+      if (decoded is! Map<String, Object?>) {
+        return <String, KavitaMangaSyncStamp>{};
+      }
+      final Map<String, KavitaMangaSyncStamp> out =
+          <String, KavitaMangaSyncStamp>{};
+      for (final MapEntry<String, Object?> e in decoded.entries) {
+        final Object? value = e.value;
+        if (value is Map<String, Object?> && value['at'] is int) {
+          out[e.key] = (
+            at: value['at']! as int,
+            page: value['page'] is int ? value['page']! as int : null,
+          );
+        }
+      }
+      return out;
     } on Object {
-      return <String, int>{};
+      return <String, KavitaMangaSyncStamp>{};
     }
   }
 
-  @override
+  /// 只读时刻（测试 / 诊断用）。
   int? lastSyncAt(String bookUid, String chapterKey) =>
+      stampOf(bookUid, chapterKey)?.at;
+
+  @override
+  KavitaMangaSyncStamp? stampOf(String bookUid, String chapterKey) =>
       _load()[_stampKey(bookUid, chapterKey)];
 
   @override
-  Future<void> record(String bookUid, String chapterKey, int at) async {
+  Future<void> record(
+    String bookUid,
+    String chapterKey,
+    int at, {
+    int? page,
+  }) async {
     try {
-      final Map<String, int> stamps = _load();
-      stamps[_stampKey(bookUid, chapterKey)] = at;
+      final Map<String, KavitaMangaSyncStamp> stamps = _load();
+      final String key = _stampKey(bookUid, chapterKey);
+      stamps[key] = (at: at, page: page ?? stamps[key]?.page);
       if (stamps.length > maxEntries) {
-        final List<MapEntry<String, int>> sorted = stamps.entries.toList()
-          ..sort(
-            (MapEntry<String, int> a, MapEntry<String, int> b) =>
-                a.value.compareTo(b.value),
-          );
-        for (final MapEntry<String, int> e in sorted.take(
+        final List<MapEntry<String, KavitaMangaSyncStamp>> sorted =
+            stamps.entries.toList()..sort(
+              (
+                MapEntry<String, KavitaMangaSyncStamp> a,
+                MapEntry<String, KavitaMangaSyncStamp> b,
+              ) => a.value.at.compareTo(b.value.at),
+            );
+        for (final MapEntry<String, KavitaMangaSyncStamp> e in sorted.take(
           stamps.length - maxEntries,
         )) {
           stamps.remove(e.key);
         }
       }
-      await _write(jsonEncode(stamps));
+      await _write(
+        jsonEncode(<String, Object?>{
+          for (final MapEntry<String, KavitaMangaSyncStamp> e in stamps.entries)
+            e.key: <String, Object?>{
+              'at': e.value.at,
+              if (e.value.page != null) 'page': e.value.page,
+            },
+        }),
+      );
     } on Object {
       // 记账失败：下次开章按「从没同步过」比较，不影响阅读。
     }
@@ -233,7 +278,9 @@ class KavitaMangaSyncSession {
     int? lastPushedPage;
     bool pushLocalNow = false;
     int? adoptedPage;
-    int? lastSync = stamps.lastSyncAt(bookUid, chapterKey);
+    final KavitaMangaSyncStamp? stamp = stamps.stampOf(bookUid, chapterKey);
+    int? lastSync = stamp?.at;
+    int? syncedPage;
     if (remote != null) {
       final KavitaSyncDecision decision = resolveKavitaProgress(
         serverPage: remote.lastModifiedUtc == null ? null : remote.pageNum,
@@ -241,6 +288,8 @@ class KavitaMangaSyncSession {
         localPage: local?.lastPage,
         localUpdatedAt: local?.updatedAt,
         lastSyncAt: lastSync,
+        // 标已读等同页落库也会刷新 updatedAt；本地仍停在上次一致的页就不算动过。
+        lastSyncedPage: stamp?.page,
       );
       KavitaSyncAction action = decision.action;
       if (action == KavitaSyncAction.conflict) {
@@ -269,16 +318,18 @@ class KavitaMangaSyncSession {
           );
           adoptedPage = page;
           lastPushedPage = page;
+          syncedPage = page;
         case KavitaSyncAction.pushLocal:
           pushLocalNow = local != null;
         case KavitaSyncAction.none:
         case KavitaSyncAction.conflict:
           if (local != null && local.lastPage == remote.pageNum) {
             lastPushedPage = remote.pageNum;
+            syncedPage = remote.pageNum;
           }
       }
       lastSync = now();
-      await stamps.record(bookUid, chapterKey, lastSync);
+      await stamps.record(bookUid, chapterKey, lastSync, page: syncedPage);
     }
 
     final KavitaProgressSync sync = KavitaProgressSync(
@@ -297,7 +348,7 @@ class KavitaMangaSyncSession {
       serverVerified: remote != null,
       nowMs: now,
       onPushed: (int page, String? scrollId, int at) {
-        unawaited(stamps.record(bookUid, chapterKey, at));
+        unawaited(stamps.record(bookUid, chapterKey, at, page: page));
       },
     );
     final KavitaMangaSyncSession session = KavitaMangaSyncSession._(
