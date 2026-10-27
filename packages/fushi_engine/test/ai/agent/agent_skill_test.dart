@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_model_pricing.dart';
 import 'package:test/test.dart';
 
 class _Llm implements AgentLlm {
@@ -13,6 +14,9 @@ class _Llm implements AgentLlm {
 
   @override
   bool get supportsTools => true;
+
+  @override
+  AiModelPricing get pricing => const AiModelPricing();
 
   @override
   Future<AiChatTurn> chat(

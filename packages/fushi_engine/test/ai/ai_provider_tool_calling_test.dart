@@ -95,4 +95,17 @@ void main() {
       AiToolCallingOverride.forceOn,
     );
   });
+
+  test('「支持图片输入」：默认关、关着不落盘、往返保留、copyWith 保留', () {
+    final AiProviderConfig base = fromPreset('openai');
+    expect(base.acceptsImages, isFalse);
+    expect(base.toJson().containsKey('images'), isFalse);
+
+    final AiProviderConfig on = base.copyWith(acceptsImages: true);
+    final List<AiProviderConfig> back = decodeAiProviderConfigs(
+      encodeAiProviderConfigs(<AiProviderConfig>[on]),
+    );
+    expect(back.single.acceptsImages, isTrue);
+    expect(on.copyWith(model: 'x').acceptsImages, isTrue);
+  });
 }

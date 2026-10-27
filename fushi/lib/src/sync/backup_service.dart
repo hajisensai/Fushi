@@ -162,13 +162,25 @@ enum BackupCategory {
 /// Import rebases every stored path from the backup's recorded root to this
 /// device's matching root. Separators are normalized so `/` vs `\` differences
 /// between the compared strings don't defeat the prefix match.
+///
+/// Separator handling of the rebased sub-path follows the TARGET root:
+/// - a POSIX target ([newRoot] has no `\`) gets every `\` of the sub-path
+///   turned into `/`. On POSIX `\` is an ordinary file-name character, so
+///   keeping the source's separators turned a Windows backup merged on Android
+///   into `/data/.../audiobooks\<dir>\a.m4b` — ONE literal file name that never
+///   exists — and every imported audiobook / book / font path silently failed
+///   to resolve (BUG-3811, feedback XDtB1kYT0C).
+/// - a Windows target (`\` in [newRoot]) keeps the source sub-path verbatim:
+///   Windows accepts both separators, and leaving the bytes alone keeps
+///   same-device callers (`DataRootMigrator`) byte-for-byte unchanged.
+/// Derived from [newRoot] rather than `Platform`, so this stays a pure function
+/// with the same result on every host.
 String rebasePath(String oldPath, String oldRoot, String newRoot) {
   String stripTrailing(String s) =>
       (s.endsWith('/') || s.endsWith('\\')) ? s.substring(0, s.length - 1) : s;
-  // Normalize separators ONLY for the prefix comparison; the returned path
-  // keeps the source path's original separators (a POSIX backup restored on a
-  // POSIX host must not gain Windows separators just because p.join would, and
-  // vice-versa). So we slice the original oldPath rather than rebuild via join.
+  // Normalize separators for the prefix comparison. We slice the path rather
+  // than rebuild via p.join (which would apply the HOST's separator, not the
+  // target root's).
   final String nrOld = stripTrailing(oldRoot.replaceAll('\\', '/'));
   final String npOld = oldPath.replaceAll('\\', '/');
   if (npOld == nrOld) return stripTrailing(newRoot);
@@ -176,8 +188,11 @@ String rebasePath(String oldPath, String oldRoot, String newRoot) {
   // "/a/books". replaceAll preserves length, so nrOld.length indexes the
   // original oldPath correctly.
   if (!npOld.startsWith('$nrOld/')) return oldPath;
-  final String suffix = oldPath.substring(nrOld.length); // keeps leading sep
-  return stripTrailing(newRoot) + suffix;
+  final String target = stripTrailing(newRoot);
+  final bool posixTarget = !target.contains('\\');
+  final String suffix = (posixTarget ? npOld : oldPath)
+      .substring(nrOld.length); // keeps leading sep
+  return target + suffix;
 }
 
 /// Rebases every file-font `path` inside a persisted font-list JSON string

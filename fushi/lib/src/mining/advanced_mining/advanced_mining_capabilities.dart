@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' show Rect, Size;
 
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
@@ -100,8 +101,14 @@ class AdvancedMiningAudioSection {
   )
   describe;
 
-  /// 试听那段区间。返回 false = 没有可试听的音频。
-  final Future<bool> Function(int startDeltaMs, int endDeltaMs) preview;
+  /// 试听那段区间。返回 null = 没有可试听的音频；否则返回这次区间播放的句柄，它在
+  /// 这段**播完或被打断**时完成——对话框的「正在试听」只跟它走（FDN66-xurt：曾只在
+  /// 起播失败 / 显式停止时复位，播完后按钮停在「停止」，下一次点击只是去停）。
+  ///
+  /// 宿主可以起播后立即返回，也可以等播完才返回（有声书片段播放器即如此）；两种对话框
+  /// 都按句柄收尾。
+  final Future<RangePlayback?> Function(int startDeltaMs, int endDeltaMs)
+  preview;
 
   final Future<void> Function() stopPreview;
 

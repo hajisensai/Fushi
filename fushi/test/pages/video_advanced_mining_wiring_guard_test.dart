@@ -129,10 +129,11 @@ void main() {
       reason: '描述区间必须与写卡调同一对函数',
     );
     final String preview = maskComments(
-      methodBody(src, 'Future<bool> _previewVideoMiningAudio('),
+      methodBody(src, 'Future<RangePlayback?> _previewVideoMiningAudio('),
     );
     expect(preview, contains('_videoMiningAudioWindow('));
-    expect(preview, contains('controller.playRangeMs('));
+    // 交回区间播放的句柄：对话框的试听按钮在播完 / 被打断时据此复位（FDN66-xurt）。
+    expect(preview, contains('return controller.playRangeMs('));
     // 旧「调整上下文」试听也改走同一个最终区间（BUG-3350：曾按 cue 边界放、缺首尾留白）。
     expect(
       maskComments(

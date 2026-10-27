@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
 
 /// 网格单元内容构造器：返回**纯视觉**卡片内容（自身手势由本组件统一接管，
@@ -341,6 +342,11 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
     _touchPendingOriginal = original;
     _touchStartGlobal = d.globalPosition;
     _touchMoved = false;
+    // 长按一被识别就给触感（库页卡片 `InkWell.onLongPress` 走的同一个
+    // `Feedback.forLongPress`：Android 震动、iOS 重触感 + 点击音、桌面无）。
+    // 本网格用裸识别器、卡片又包在 IgnorePointer 里，不补这一下合集里长按就
+    // 完全没有触感，与外面的库页不一致。
+    Feedback.forLongPress(context);
   }
 
   void _touchLongPressMove(int original, LongPressMoveUpdateDetails d) {
@@ -480,9 +486,13 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
                 (TapGestureRecognizer instance) {
                   final FushiReorderGridActivate? activate =
                       widget.onActivateItem;
+                  // 与 `InkWell.onTap` 同一份 `Feedback.forTap`（Android 点击音）。
                   instance.onTap = activate == null
                       ? null
-                      : () => activate(original);
+                      : () {
+                          Feedback.forTap(context);
+                          activate(original);
+                        };
                 },
               ),
           // 鼠标等精确指针：按下即拖。
@@ -527,7 +537,10 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
                 },
               ),
         },
-        child: slot,
+        // 按压缩放 + 封面扫光脉冲（[FushiPressScale] 只旁观指针、不进竞技场）：
+        // 卡片包在 IgnorePointer 里，它自己那份按压反馈收不到指针，由这里代收；
+        // 脉冲经 [FushiPressScale.pulseOf] 透传给卡片里的封面扫光。
+        child: FushiPressScale(behavior: HitTestBehavior.opaque, child: slot),
       ),
     );
   }

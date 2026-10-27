@@ -553,6 +553,12 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     state = state.copyWith(settings: updated);
   }
 
+  Future<void> setQueueUndeliveredMinesEnabled(bool enabled) async {
+    final updated = await _repository.updateSettings(
+        (s) => s.copyWith(queueUndeliveredMinesEnabled: enabled));
+    state = state.copyWith(settings: updated);
+  }
+
   /// 打开/关闭去重的自动处理。默认关；打开后自动路径**仍然只做干跑并提示**，
   /// 要真删得由用户在确认弹窗里点，或另外打开 [setMediaDedupAutoDelete]。
   Future<void> setMediaDedupAutoEnabled(bool enabled) async {

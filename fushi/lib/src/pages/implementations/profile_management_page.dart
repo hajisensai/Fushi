@@ -9,6 +9,7 @@ import 'package:fushi_core/fushi_core.dart' show ProfileMediaKind;
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart'
@@ -55,6 +56,18 @@ class ProfileManagementBody extends ConsumerStatefulWidget {
 }
 
 class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
+  @override
+  void initState() {
+    super.initState();
+    // 一次性存量扫描：以前删 Profile 只删 profiles 行，留在 srs.db 里的无主复习数据在这里先备份再清掉
+    // （扫完记标记，之后进来是空操作）。失败进错误日志，下次进来再扫。
+    final ProfileViewModel vm = ref.read(profileViewModelProvider.notifier);
+    vm.sweepOrphanProfileData().catchError((Object e, StackTrace stack) {
+      ErrorLogService.instance.log('ProfileManagement.sweepOrphans', e, stack);
+      return 0;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -384,15 +397,43 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     int id,
     String name,
   ) async {
+    // 确认框写明会连带删掉的复习数据（srs.db 不在主库外键级联里，删 Profile 时由 Rust 一并清掉）。
+    final ProfileDeletionImpact impact = await vm.deletionImpact(id);
+    if (!mounted) return;
     final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => ProfileDeleteDialog(
         profileName: name,
+        impact: impact,
         onConfirm: () => Navigator.pop(ctx, true),
       ),
     );
-    if (confirmed == true) {
-      await vm.deleteProfile(id);
+    if (confirmed != true) return;
+    final ProfileDeletionOutcome? outcome;
+    try {
+      outcome = await vm.deleteProfile(id);
+    } on ProfileDeletionBackupException catch (e, stack) {
+      ErrorLogService.instance.log('ProfileManagement.deleteBackup', e, stack);
+      FushiToast.show(
+        msg: t.profile_delete_srs_backup_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ProfileManagement.delete', e, stack);
+      FushiToast.show(
+        msg: t.profile_delete_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    final String? backup = outcome?.backupPath;
+    if (backup != null) {
+      FushiToast.show(
+        msg: t.profile_delete_srs_backed_up(path: backup),
+        toastLength: Toast.LENGTH_LONG,
+        severity: ToastSeverity.success,
+      );
     }
   }
 
@@ -531,11 +572,15 @@ class ProfileDeleteDialog extends StatelessWidget {
   const ProfileDeleteDialog({
     required this.profileName,
     required this.onConfirm,
+    this.impact = const ProfileDeletionImpact.none(),
     super.key,
   });
 
   final String profileName;
   final VoidCallback onConfirm;
+
+  /// 会连带删掉的复习数据；有数据时正文多一段写明卡数、复习记录数与自动备份。
+  final ProfileDeletionImpact impact;
 
   @override
   Widget build(BuildContext context) {
@@ -565,9 +610,26 @@ class ProfileDeleteDialog extends StatelessWidget {
           tokens.spacing.card,
           tokens.spacing.card,
         ),
-        body: Text(
-          t.profile_confirm_delete(name: profileName),
-          style: tokens.type.listSubtitle,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              t.profile_confirm_delete(name: profileName),
+              style: tokens.type.listSubtitle,
+            ),
+            if (impact.hasSrsData) ...[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                t.profile_delete_srs_impact(
+                  cards: impact.srsCards,
+                  reviews: impact.srsReviews,
+                ),
+                key: const ValueKey<String>('profile_delete_srs_impact'),
+                style: tokens.type.listSubtitle,
+              ),
+            ],
+          ],
         ),
         footer: Wrap(
           alignment: WrapAlignment.end,

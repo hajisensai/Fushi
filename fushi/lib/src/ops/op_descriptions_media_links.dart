@@ -11,6 +11,8 @@ import 'package:fushi/src/ops/op_descriptions_library.dart'
 /// 撤销一律走数据层的**对称方法**，不删用户数据：
 /// - 接受建议 → `unconfirmMediaLink` 退回建议；
 /// - 「不相关」→ `restoreMediaLinkSuggestion` 清墓碑恢复成建议；
+/// - 关联作品 / 移除关联 → `restoreMediaLinkSnapshot` 把这一行恢复成执行前的快照
+///   （执行前没有这一行就写墓碑，不删行）；
 /// - 查找相关作品 → `discardMediaLinkSuggestion` 删掉这轮刚写入、用户还没处理过的
 ///   建议（不写墓碑：撤销推断不是否决，下次推断仍可再提）；
 /// - 确认 / 否决同一人 → `restoreManualPersonBridge` 把这一对的手动桥恢复成执行前
@@ -19,6 +21,32 @@ import 'package:fushi/src/ops/op_descriptions_library.dart'
 List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
   FushiDatabase db() => kit.context.appModel.database;
   return <OpDescription>[
+    const OpDescription(
+      id: 'links.candidates',
+      method: 'GET',
+      pattern: kMediaLinkCandidatesCtlRoot,
+      summary:
+          'Find local library items of one kind by title, to get the '
+          '<kind>:<key> endpoint that links.add / links.list need.',
+      params: <OpParam>[
+        OpParam.string(
+          'kind',
+          description: 'Item kind to search.',
+          required: true,
+          enumValues: <String>[
+            'book',
+            'audiobook',
+            'video_collection',
+            'video_episode',
+            'game',
+            'music_album',
+            'music_track',
+          ],
+        ),
+        OpParam.string('search', description: 'Title keyword.'),
+        OpParam.integer('limit', description: 'Max rows; default 50.'),
+      ],
+    ),
     const OpDescription(
       id: 'links.list',
       method: 'GET',
@@ -63,6 +91,67 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
         (MediaLinkId id) => db().restoreMediaLinkSuggestion(id),
         verb: 'restore',
       ),
+    ),
+    OpDescription(
+      id: 'links.add',
+      method: 'POST',
+      pattern: '$kMediaLinksCtlRoot/:endpoint/add',
+      summary:
+          'Link two library items as related works (same as "Link work" on '
+          'the detail page; the link is confirmed at once). Use this when the '
+          'user names the works to link: e.g. a bonus CD / soundtrack album '
+          'with its anime (same_work), a novel with its anime adaptation '
+          '(adaptation), an OP / ED song with the anime (theme_song). Look up '
+          'both endpoints with links.candidates first.',
+      risk: OpRisk.write,
+      params: const <OpParam>[
+        _endpointParam,
+        OpParam.string(
+          'other',
+          description: 'The item to link to, as <kind>:<key>.',
+          required: true,
+        ),
+        OpParam.string(
+          'relation',
+          description:
+              'adaptation = one is the source material of the other; '
+              'theme_song = a music track / album is an OP / ED / insert song '
+              'of a video (one side music, other side video); same_work = any '
+              'other "belongs to the same work" pairing.',
+          required: true,
+          enumValues: <String>['adaptation', 'same_work', 'theme_song'],
+        ),
+        OpParam.string(
+          'selfIs',
+          description:
+              'Required for adaptation: original = endpoint is the source '
+              'material, adaptation = endpoint is the adaptation.',
+          enumValues: <String>['original', 'adaptation'],
+        ),
+        OpParam.string(
+          'role',
+          description: 'theme_song only; default op.',
+          enumValues: <String>['op', 'ed', 'insert'],
+        ),
+        OpParam.string(
+          'episodes',
+          description:
+              'theme_song only: episodes the song is used in, e.g. 1-12 or '
+              '1-6,8; omit for all.',
+        ),
+      ],
+      undo: _snapshotUndo(db),
+    ),
+    OpDescription(
+      id: 'links.remove',
+      method: 'POST',
+      pattern: '$kMediaLinksCtlRoot/:endpoint/remove',
+      summary:
+          'Remove a confirmed link between two items (same as "Remove link" '
+          'on the detail page). For a pending suggestion use links.reject.',
+      risk: OpRisk.write,
+      params: _pickParams,
+      undo: _snapshotUndo(db),
     ),
     OpDescription(
       id: 'links.infer',
@@ -226,6 +315,42 @@ const List<OpParam> _pickParams = <OpParam>[
         'theme_song / soundtrack / same_work / cast.',
   ),
 ];
+
+/// 关联 / 移除关联的撤销：载荷是连接身份、这次写入的时刻与执行前的整行快照；
+/// 执行后用户又改过这一行（`updatedAt` 变了）就报 superseded。
+OpUndo _snapshotUndo(FushiDatabase Function() db) => opCustomUndo(
+  payloadOf: (CtlCall call, Map<String, Object?> before, Object? r) {
+    final Map<Object?, Object?> m = r is Map ? r : const {};
+    final Object? link = m['link'];
+    return <String, Object?>{
+      'id': link is Map ? link['id'] : null,
+      'other': link is Map && link['other'] is Map
+          ? (link['other'] as Map)['title']
+          : null,
+      'writtenAt': m['writtenAt'],
+      'previous': m['previous'],
+    };
+  },
+  describe: (Map<String, Object?> p) => '${p['other'] ?? ''}',
+  revert: (Map<String, Object?> payload) async {
+    final MediaLinkId? id = mediaLinkIdFromJson(payload['id']);
+    final Object? writtenAt = payload['writtenAt'];
+    if (id == null || writtenAt is! num) {
+      return const OpUndoOutcome.failed('撤销载荷缺连接身份');
+    }
+    final Object? previous = payload['previous'];
+    final bool restored = await db().restoreMediaLinkSnapshot(
+      id,
+      writtenAt: writtenAt.toInt(),
+      previous: previous is Map
+          ? MediaLinkRow.fromJson(Map<String, dynamic>.from(previous))
+          : null,
+    );
+    return restored
+        ? const OpUndoOutcome.done()
+        : const OpUndoOutcome.superseded();
+  },
+);
 
 /// 接受 / 否决的撤销：载荷是结果里那条连接的五元组身份，[inverse] 是数据层的对称
 /// 方法；它回 false（用户之后又处理过这条）就报 superseded。

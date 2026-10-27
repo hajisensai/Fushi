@@ -176,7 +176,7 @@ CtlBodyPage _commonPage() => CtlBodyPage(
     SettingsNumberItem(
       id: _id('seed_ratio_limit'),
       title: t.video_setting_torrent_seed_ratio_limit,
-      subtitle: t.video_setting_torrent_seed_ratio_hint,
+      subtitle: t.video_setting_torrent_seed_ratio_lifetime_hint,
       visible: _uploadVisible,
       min: 0,
       value: (SettingsContext c) => _cfg(c).seedRatioLimit,

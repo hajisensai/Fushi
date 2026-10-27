@@ -108,8 +108,6 @@ class GameStreamLibraryServices {
             lookupLayout: prefs.gameStreamLookupLayout,
             onLookupLayoutChanged: (GameStreamLookupLayout next) =>
                 unawaited(prefs.setGameStreamLookupLayout(next)),
-            // 本设备的查词语言随串流查词发给 host（中文时 host 开简体 → 繁體回落）。
-            lookupLanguage: () => appModel.effectiveLookupLanguage(),
           ),
       readSettings: () => prefs.gameStreamVideoSettings,
       writeSettings: prefs.setGameStreamVideoSettings,

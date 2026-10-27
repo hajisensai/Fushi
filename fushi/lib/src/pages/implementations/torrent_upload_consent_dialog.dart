@@ -134,7 +134,9 @@ class _TorrentUploadConsentDialogState
                     const TextInputType.numberWithOptions(decimal: true),
                 decoration: InputDecoration(
                   labelText: t.video_setting_torrent_seed_ratio_limit,
-                  hintText: t.video_setting_torrent_seed_ratio_hint,
+                  // 文案较长（写明含下载过程中的上传），放 helper 允许换行。
+                  helperText: t.video_setting_torrent_seed_ratio_lifetime_hint,
+                  helperMaxLines: 4,
                 ),
               ),
             ],

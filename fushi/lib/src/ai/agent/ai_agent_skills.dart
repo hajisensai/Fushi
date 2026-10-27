@@ -33,7 +33,8 @@ List<Map<String, Object?>> _list(Object? data, String key) =>
 /// - 每集先走与刮削后自动补同一条路（`video.subtitle.fetch`：搜 → 校验 → 落盘，
 ///   命中可靠的直接装；撤销 = 删掉这份字幕）。
 /// - 自动没装上但有候选的，汇总成一张选择卡让用户点（`video.subtitle.search` →
-///   `video.subtitle.download`）；用户点「都不是」就跳过。
+///   `video.subtitle.download`）；用户点「都不是」就跳过。搜索结果里标了
+///   `mismatch`（不是这部作品）的候选不进卡片——全是这种就按「没有候选」处理。
 /// - 一个候选都没有的，按 [asrFallback] 用设备端 ASR 生成（`video.subtitle.generate`，
 ///   要走 LLM 校对时会出确认卡片——那会把 ASR 文本发给提供商、按量计费）。
 class SubtitleFillSkill extends AiAgentAppSkill {
@@ -71,6 +72,12 @@ class SubtitleFillSkill extends AiAgentAppSkill {
               'Generate with on-device ASR when no online subtitle exists '
               '(default true).',
         },
+        'preferFormat': <String, Object?>{
+          'type': 'string',
+          'description':
+              'Preferred subtitle file format when the user names one, e.g. '
+              '"ass" or "srt": such candidates are listed first.',
+        },
       },
       'required': <String>['bookUids'],
     },
@@ -98,6 +105,15 @@ class SubtitleFillSkill extends AiAgentAppSkill {
     final List<String> generated = <String>[];
     final List<String> failed = <String>[];
     final List<String> missing = <String>[];
+    // 没有可挑候选的集为什么没有（给模型向用户如实解释）。
+    final Map<String, String> reasons = <String, String>{};
+    final String? preferFormat = switch ('${args['preferFormat'] ?? ''}'
+        .trim()
+        .toLowerCase()
+        .replaceFirst('.', '')) {
+      '' => null,
+      final String f => f,
+    };
     for (final String bookUid in bookUids) {
       if (context.cancelled) break;
       final AgentToolResult fetched = await context.call(
@@ -121,9 +137,33 @@ class SubtitleFillSkill extends AiAgentAppSkill {
         'video.subtitle.search',
         <String, Object?>{'bookUid': bookUid, 'language': ?language},
       );
-      final List<Map<String, Object?>> candidates = searched.isError
+      // 只给用户挑**可能是这部作品**的：搜索路由用与自动补同一道作品核对标出
+      // `mismatch`（如剧场版搜回 TV 版分集），那些自动补已经判过错，再拿出来让
+      // 用户逐条辨认毫无意义。
+      final List<Map<String, Object?>> found = searched.isError
           ? const <Map<String, Object?>>[]
           : _list(searched.data, 'candidates');
+      final List<Map<String, Object?>> candidates = <Map<String, Object?>>[
+        for (final Map<String, Object?> c in found)
+          if (c['mismatch'] == null) c,
+      ];
+      if (preferFormat != null) {
+        // 稳定排序：偏好格式的排前，其余保持来源顺序。
+        final List<Map<String, Object?>> preferred = <Map<String, Object?>>[
+          for (final Map<String, Object?> c in candidates)
+            if (_hasFormat(c, preferFormat)) c,
+        ];
+        candidates
+          ..removeWhere(preferred.contains)
+          ..insertAll(0, preferred);
+      }
+      if (candidates.isEmpty) {
+        final Map<String, Object?> fetchData = _map(fetched.data);
+        reasons[bookUid] = found.isNotEmpty
+            ? '${found.length} online candidates are for a different work '
+                  '(${found.first['mismatch']})'
+            : '${fetchData['detail'] ?? fetchData['outcome']}';
+      }
       if (candidates.isNotEmpty) {
         final String title = '${_map(searched.data)['title'] ?? bookUid}';
         final String? choice = await context.askChoice(
@@ -169,7 +209,15 @@ class SubtitleFillSkill extends AiAgentAppSkill {
       'alreadyHadOrSkipped': skipped,
       'noSubtitle': missing,
       'failed': failed,
+      'reasons': reasons,
     };
+  }
+
+  /// 候选文件名（或发布名）是不是 [format] 格式（`ass` / `srt` …）。
+  static bool _hasFormat(Map<String, Object?> candidate, String format) {
+    final String name = '${candidate['fileName'] ?? candidate['release'] ?? ''}'
+        .toLowerCase();
+    return name.endsWith('.$format');
   }
 }
 

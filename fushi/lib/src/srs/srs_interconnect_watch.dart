@@ -18,14 +18,19 @@ class SrsInterconnectWatcher {
     required Future<int?> Function(int? after) wait,
     required Future<bool> Function() ready,
     required Future<void> Function() onChange,
+    void Function()? onReachable,
     this.idleRecheck = const Duration(seconds: 20),
     this.unsupportedRecheck = const Duration(minutes: 10),
     this.maxBackoff = const Duration(minutes: 2),
   }) : _wait = wait,
        _ready = ready,
-       _onChange = onChange;
+       _onChange = onChange,
+       _onReachable = onReachable;
 
   final Future<int?> Function(int? after) _wait;
+
+  /// 长轮询成功回了一次（host 此刻可达）：app 据此清掉本机推送的失败退避（[SrsLocalPush.resetBackoff]）。
+  final void Function()? _onReachable;
   final Future<bool> Function() _ready;
   final Future<void> Function() _onChange;
   final Duration idleRecheck;
@@ -85,6 +90,7 @@ class SrsInterconnectWatcher {
         final int? t = await _wait(token);
         if (!_running) break;
         failures = 0;
+        _onReachable?.call();
         if (t == null) {
           await _sleep(unsupportedRecheck);
           continue;
@@ -119,24 +125,96 @@ class SrsInterconnectWatcher {
 }
 
 /// 本机变动后的去抖推送：[trigger] 每次本机复习数据变动调一次，静默 [debounce] 后跑 [push] 一次。
+///
+/// **失败退避**（反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）：[push] 返回 false 或抛错 = 这次没推成（host 不可达
+/// 等）。之后的触发至少等到退避期满才推：[backoffBase] 起每次失败翻倍、封顶 [maxBackoff]；期间的触发合并成到期
+/// 时的一次。以前每答一张卡（去抖 5 s）就对死地址探测一轮、每轮数秒，跟着用户答卡无限重复。[push] 成功、网络
+/// 恢复（长轮询重新连上）或用户手动同步时 [resetBackoff] 清零。退避期间本机改动不丢：数据在本机日志里，下一次
+/// 推送 / 常规同步 / 长轮询恢复后的补同步都会带上。同一时刻只有一次 [push] 在跑，跑的时候又来的触发在它结束后
+/// 再按规则排一次。
 class SrsLocalPush {
   SrsLocalPush({
-    required Future<void> Function() push,
+    required Future<bool> Function() push,
     this.debounce = const Duration(seconds: 5),
-  }) : _push = push;
+    this.backoffBase = const Duration(seconds: 30),
+    this.maxBackoff = const Duration(minutes: 10),
+    DateTime Function()? clock,
+  }) : _push = push,
+       _clock = clock ?? DateTime.now;
 
-  final Future<void> Function() _push;
+  final Future<bool> Function() _push;
   final Duration debounce;
+  final Duration backoffBase;
+  final Duration maxBackoff;
+  final DateTime Function() _clock;
   Timer? _timer;
   bool _disposed = false;
+  bool _running = false;
+  bool _again = false;
+  int _failures = 0;
+  DateTime? _blockedUntil;
+
+  /// 连续失败次数（测试 / 诊断读）。
+  int get failures => _failures;
+
+  /// 退避到期时刻；null = 没在退避。
+  DateTime? get blockedUntil => _blockedUntil;
 
   void trigger() {
     if (_disposed) return;
+    if (_running) {
+      _again = true;
+      return;
+    }
+    _schedule();
+  }
+
+  /// 网络恢复 / 用户手动同步：清掉退避；有待推的就按普通去抖重新排。
+  void resetBackoff() {
+    _failures = 0;
+    _blockedUntil = null;
+    if (_timer != null && !_disposed) _schedule();
+  }
+
+  void _schedule() {
     _timer?.cancel();
-    _timer = Timer(debounce, () {
+    Duration delay = debounce;
+    final DateTime? until = _blockedUntil;
+    if (until != null) {
+      final Duration left = until.difference(_clock());
+      if (left > delay) delay = left;
+    }
+    _timer = Timer(delay, () {
       _timer = null;
-      unawaited(_push().catchError((Object _) {}));
+      unawaited(_run());
     });
+  }
+
+  Future<void> _run() async {
+    if (_disposed) return;
+    _running = true;
+    bool ok;
+    try {
+      ok = await _push();
+    } on Object {
+      ok = false;
+    }
+    _running = false;
+    if (ok) {
+      _failures = 0;
+      _blockedUntil = null;
+    } else {
+      _failures++;
+      final int ms = min(
+        maxBackoff.inMilliseconds,
+        backoffBase.inMilliseconds * pow(2, min(_failures - 1, 20)).toInt(),
+      );
+      _blockedUntil = _clock().add(Duration(milliseconds: ms));
+    }
+    if (_again && !_disposed) {
+      _again = false;
+      _schedule();
+    }
   }
 
   void dispose() {

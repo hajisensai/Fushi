@@ -19,7 +19,7 @@ fn small_model() -> Model {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(small_package())).unwrap();
     let mut bytes = Vec::new();
     archive
-        .by_name("sm40v2/weights.int8.bin")
+        .by_name("sm56/weights.int8.bin")
         .unwrap()
         .read_to_end(&mut bytes)
         .unwrap();

@@ -1,0 +1,6 @@
+## BUG-3845 · 漫画导入 EPUB 失败且不留原因
+- **报告**：2026-10-25（用户：应用内反馈 OjZ-K53WBY「漫画导入 EPUB 格式失败，无论单个文件还是整个文件夹」，正文为空、没附日志，只有截图）
+- **真实性**：⚠️ 根因未定位（没有样本）。已证伪的方向：「SVG 包页图的 EPUB 判定漏掉」——每页 `<svg><image xlink:href>` 包 JPEG 的固定版式 EPUB 在旧代码上就能被 `MangaArchiveImporter.looksLikeImageArchive` 认成漫画（`fushi/test/epub/epub_svg_cover_and_manga_test.dart` 的 SVG 包图用例在修复前已经通过）。已找到但没修的一种失败形态：spine 直接是 SVG 内容文档（`image/svg+xml`）的 EPUB，`EpubParser._parseSpine`（`packages/fushi_engine/lib/epub/epub_parser.dart` `isHtmlMediaType` 过滤）把每一项都跳过，抛「no readable chapters」，书籍和漫画两条路都导不进去。不修的原因：阅读器按 `text/html` 才注入分页脚本，SVG 章节直接交给 WebView 会在阅读器里断，要连阅读器一起改并上真机验证，超出这次范围。
+- **[ ] ① 未修复** — 先补诊断：`packages/fushi_engine/lib/media/manga/manga_archive_importer.dart` 的 `_looksLikeImageEpub` 原来 `catch (_) { return false; }`、纯图片判定只回 bool，用户只看到「不是漫画」。现在否决理由（包里没有图片 / 解析异常原文 / 第几章、哪个 href 有文字 / 引用了不认的图片扩展名）经 `engineLog.logDiagnostic('MangaArchiveImporter', …)` 进 `ErrorLogService`，随反馈日志上传；真导入时抛出的 `MangaImportException` 也带上同一理由。
+- **[x] ② 已加自动化测试** — `fushi/test/epub/epub_svg_cover_and_manga_test.dart`「OjZ-K53WBY」组：SVG 包图页 → 认成漫画；SVG spine 文档 → 判不成，日志写明「no readable chapters」；含文字页 → 日志写明是哪一章。
+- **备注**：下一份带日志的反馈里搜 `EPUB not recognised as image manga` 就能定位。如果确认是 SVG spine 形态，修法是让解析器接收 SVG 内容文档、阅读器给 SVG 章节包一层 HTML 外壳。

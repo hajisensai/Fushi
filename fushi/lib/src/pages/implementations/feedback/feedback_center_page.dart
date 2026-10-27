@@ -59,9 +59,10 @@ class _FeedbackCenterPageState extends ConsumerState<FeedbackCenterPage> {
   void initState() {
     super.initState();
     unawaited(_refresh());
-    // 开发者入口看 /v1/me 的 role：已登录但还没拉过自己时补拉一次。
+    // 开发者入口看 /v1/me 的 role：已登录但本进程还没拉过自己时补拉一次（self 可能
+    // 只是冷启动读的本机缓存，role 以服务端为准）。
     final LeaderboardService board = ref.read(leaderboardServiceProvider);
-    if (board.status == LeaderboardStatus.active && board.self == null) {
+    if (board.status == LeaderboardStatus.active && !board.selfFresh) {
       unawaited(board.refreshSelf().then((_) {}, onError: (Object _) {}));
     }
   }

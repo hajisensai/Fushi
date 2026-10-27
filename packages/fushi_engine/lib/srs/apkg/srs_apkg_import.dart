@@ -257,6 +257,7 @@ class _NtMap {
     required this.fieldIds,
     required this.templateIdByOrd,
     this.conflict,
+    this.restored = false,
   });
 
   final String id;
@@ -266,6 +267,9 @@ class _NtMap {
   /// 按来源字段顺序（= notes.flds 的顺序）。
   final List<String> fieldIds;
   final Map<int, String> templateIdByOrd;
+
+  /// 本机这个笔记类型先前被删、这次导入把它恢复了：它的笔记一律按「恢复」导回（见 [_Importer._importNote]）。
+  final bool restored;
 
   /// 非 null = 不导入这个笔记类型的笔记（原因代码）。
   final String? conflict;
@@ -832,7 +836,11 @@ class _Importer {
         conflict: SrsImportIssueReason.noteTypeKindMismatch,
       );
     }
-    if (base != null && !options.mergeNoteTypes && !_equalSchema(base, src)) {
+    // 本机删掉了的那一个不另建副本：导入就是把它恢复回来（结构按来源合进去，见 [_mapInto]）。
+    if (base != null &&
+        base.deletedAt == null &&
+        !options.mergeNoteTypes &&
+        !_equalSchema(base, src)) {
       // 不合并：本机那一个不动，来源笔记类型另建一份。
       final int dupNum = _duplicateAnkiNum(src);
       final String dupId = SrsIds.noteType(profileUid, dupNum);
@@ -853,9 +861,14 @@ class _Importer {
         ? SrsNoteTypeKind.cloze
         : SrsNoteTypeKind.standard;
     final bool created = existing == null;
+    // 先前导入过、后来在本机被删：重新导入即恢复（与笔记 / 牌组同一条规则）。以前只按「已存在」走，
+    // 删除标记永远不清：笔记类型页里看不到，它的笔记全被当成「笔记类型已删」隐藏，浏览 / 复习都是 0。
+    // 恢复时名字、CSS、模板一律回到来源：本机的旧定义只是删除前的残留，不参与「较新时更新」的比较。
+    final bool restored = existing != null && existing.deletedAt != null;
     // 来源较新 / 总是 / 从不：只管名字、CSS、模板正文、已有项的名字与顺序。
     final bool update =
         existing == null ||
+        restored ||
         options.updateNoteTypes.shouldUpdate(
           localMs: _lastEditMs(existing.edits, _isNoteTypeContentKey, 0),
           sourceMs: src.mtimeSecs * 1000,
@@ -976,9 +989,13 @@ class _Importer {
       final String css = await _withMedia(src.css, includeStatic: true);
       if (view.css != css) edits[SrsFieldKeys.css] = css;
     }
+    if (restored) {
+      edits[SrsFieldKeys.deleted] = null;
+      report.noteTypesRestored.add(src.name);
+    }
     if (edits.isNotEmpty) {
       await store.editFields(SrsEntityKind.noteType, ntId, edits);
-      if (!created) report.noteTypesUpdated++;
+      if (!created && !restored) report.noteTypesUpdated++;
     }
     return _NtMap(
       id: ntId,
@@ -986,6 +1003,7 @@ class _Importer {
       isCloze: src.isCloze,
       fieldIds: fieldIds,
       templateIdByOrd: tmplByOrd,
+      restored: restored,
     );
   }
 
@@ -1549,7 +1567,12 @@ class _Importer {
     // 里删掉的笔记不留身份，再导入就是新加）。以前按「已存在、较新时更新」走，本机内容的
     // 修改时刻晚于来源 mod → 记为未改动，删除标记永远不清：牌组复活了、笔记仍是删除态，
     // 卡片留在删牌组时移去的默认牌组里且被隐藏。
-    final bool restored = existing != null && existing.deletedAt != null;
+    //
+    // 笔记类型这次被恢复的，它的笔记同样算恢复：删笔记类型时它们一并被删（[SrsNoteTypeStoreOps.deleteNoteType]），
+    // 先前的导入只清了笔记的删除标记、笔记类型仍是删除态，笔记还在、却因笔记类型已删全部隐藏（再导入时
+    // 「较新时更新」又算成已更新）——这些也要回到来源内容、卡片回到来源牌组。
+    final bool noteDeleted = existing != null && existing.deletedAt != null;
+    final bool restored = existing != null && (noteDeleted || nt.restored);
     final List<(_SrcCard, String)> cardIds = _cardIdsOf(nt, noteId, cards);
     bool update = false;
     if (isNew) {
@@ -1591,7 +1614,7 @@ class _Importer {
       // 恢复是少见路径，这里仍立即落库：恢复会改笔记的首选牌组 / 隐藏态，卡片缓存行（下面
       // 比较牌组用）要在它落库之后重读才是真值（没有自己牌组记录的卡跟着笔记走）。
       await store.editFields(SrsEntityKind.note, noteId, <String, Object?>{
-        SrsFieldKeys.deleted: null,
+        if (noteDeleted) SrsFieldKeys.deleted: null,
         for (final MapEntry<String, String> f in fields.entries)
           if (existing.field(f.key) != f.value)
             SrsFieldKeys.noteField(f.key): f.value,

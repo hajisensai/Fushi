@@ -148,6 +148,7 @@ void main() {
         'desktop_launch',
         'srs_mining_target',
         'batch_mining',
+        'queue_undelivered_mines',
         'pending_mine_landing',
         'fetch',
         'create_lapis',

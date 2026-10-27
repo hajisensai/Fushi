@@ -259,10 +259,11 @@ void main() {
       reason: '基类默认 false = 对话框拿不到 previewAudio 回调，试听按钮直接没了',
     );
     expect(
-      reader,
-      contains(
-        'Future<bool> onPreviewSentenceAudio() => _previewMiningSentenceAudio();',
-      ),
+      RegExp(
+        r'Future<bool> onPreviewSentenceAudio\(\) async =>\s*'
+        r'await _previewMiningSentenceAudio\(\) != null;',
+      ).hasMatch(reader),
+      isTrue,
     );
     expect(reader, contains('Future<void> onStopSentenceAudioPreview() async {'));
     // 真不变式：试听的区间与 `_prepareMiningContext` 喂给 ffmpeg 的是**同一个函数**
@@ -276,7 +277,7 @@ void main() {
     );
     expect(
       RegExp(
-        r'Future<bool> _previewMiningSentenceAudio\(\{[\s\S]{0,400}?'
+        r'Future<RangePlayback\?> _previewMiningSentenceAudio\(\{[\s\S]{0,400}?'
         r'_miningSentenceAudioClip\(',
       ).hasMatch(reader),
       isTrue,

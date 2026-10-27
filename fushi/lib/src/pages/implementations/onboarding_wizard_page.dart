@@ -185,6 +185,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   int _stepIndex = 0;
 
+  /// 欢迎步「用 Fushi 做什么」的当前选择（初值见 initState）。只改写 [_selected] 里
+  /// 学外语那几项，作为功能方格的预设；模块开关仍在离开功能选择步骤时统一写入。
+  OnboardingUsagePurpose _usagePurpose =
+      OnboardingUsagePurpose.languageLearning;
+
   /// 「复习方式」的当前选择（初值见 initState：用户此刻的真实状态，全新安装 = Fushi
   /// 复习）。点选即写偏好（[applyOnboardingReviewMethod]），跳过向导也不丢。
   OnboardingReviewMethod _reviewMethod = kOnboardingDefaultReviewMethod;
@@ -269,7 +274,13 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           ankiReady: _ankiReadyForFirstCard,
           reviewMethod: _reviewMethod,
           // 只在没有「复习方式」一步（制卡没勾）时用得上：模块开着就出介绍步骤。
-          srsEnabled: appModelNoUpdate.moduleVisibility.isEnabled(ModuleId.srs),
+          // 只看媒体时复习模块会在离开功能步时被关掉，介绍步骤也不该出。
+          srsEnabled:
+              onboardingSrsModuleOverride(
+                purpose: _usagePurpose,
+                selected: _selected,
+              ) ??
+              appModelNoUpdate.moduleVisibility.isEnabled(ModuleId.srs),
           systemPermissionsAvailable: _systemPermissions != null,
         );
 
@@ -355,6 +366,18 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       final OnboardingFeature? feature = onboardingFeatureOfModule(module);
       if (feature == null) continue;
       if (appModelNoUpdate.moduleEnabled(module)) _selected.add(feature);
+    }
+    _usagePurpose = onboardingUsagePurposeOf(
+      lookupModuleEnabled: appModelNoUpdate.moduleEnabled(ModuleId.lookup),
+      cardCreationModuleEnabled: appModelNoUpdate.moduleEnabled(
+        ModuleId.cardCreation,
+      ),
+    );
+    // 重开向导时上次选的是只看媒体：默认勾上的推荐包 / 制卡与复习也一并取消。
+    if (_usagePurpose == OnboardingUsagePurpose.mediaOnly) {
+      _replaceSelection(
+        onboardingSelectionForPurpose(_usagePurpose, _selected),
+      );
     }
     // 包目录进场收尾（删已导入的残包、搬旧命名的半截文件、按磁盘对齐阶段）。
     // 下载正在跑时 controller 整体跳过——那些都是在动同一批文件。
@@ -450,6 +473,16 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       final bool wanted = _selected.contains(feature);
       if (appModel.moduleEnabled(module) == wanted) continue;
       await appModel.setModuleEnabled(module, wanted);
+    }
+    // 复习模块没有方格：只看媒体（且没手动勾回制卡）时在这里关掉；其余情况交给
+    // 「复习方式」一步。
+    final bool? srsWanted = onboardingSrsModuleOverride(
+      purpose: _usagePurpose,
+      selected: _selected,
+    );
+    if (srsWanted != null &&
+        appModel.moduleEnabled(ModuleId.srs) != srsWanted) {
+      await appModel.setModuleEnabled(ModuleId.srs, srsWanted);
     }
     // 「至少保留一个导航模块」：用户之前在设置里关了首页、这里又把库页全取消，
     // 打开 app 就只剩设置。此时把首页开回来兜底（见 [isLastNavigationModule]）。
@@ -625,6 +658,23 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       // 复习库打不开时制卡照样回落默认（见 resolveSrsMiningDestination），只留痕。
       ErrorLogService.instance.log('onboarding.adoptFushiCard', e, stack);
     }
+  }
+
+  /// `_selected` 是 final 集合（多处持有引用），整体替换走原地清空再填。
+  void _replaceSelection(Set<OnboardingFeature> next) {
+    _selected
+      ..clear()
+      ..addAll(next);
+  }
+
+  /// 欢迎步的用途点选：按用途改写功能方格的预设（[onboardingSelectionForPurpose]）。
+  /// 不写偏好——模块开关仍在离开功能选择步骤时统一落盘。
+  void _selectUsagePurpose(OnboardingUsagePurpose purpose) {
+    if (_usagePurpose == purpose) return;
+    setState(() {
+      _usagePurpose = purpose;
+      _replaceSelection(onboardingSelectionForPurpose(purpose, _selected));
+    });
   }
 
   void _toggleFeature(OnboardingFeature feature) {
@@ -1666,6 +1716,17 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
               buildBrightnessSelector(settingsContext),
             ],
           ),
+        ),
+        // 语言之后再问用途：先让用户换成看得懂的界面语言。
+        SizedBox(height: tokens.spacing.section),
+        OnboardingSectionLabel(
+          title: t.onboarding_purpose_title,
+          hint: t.onboarding_purpose_hint,
+        ),
+        SizedBox(height: tokens.spacing.gap),
+        OnboardingUsagePurposeChooser(
+          purpose: _usagePurpose,
+          onSelect: _selectUsagePurpose,
         ),
       ],
     );
@@ -2792,6 +2853,47 @@ class OnboardingReviewMethodChooser extends StatelessWidget {
                   )
                 : const SizedBox(width: double.infinity),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 欢迎步的「用 Fushi 做什么」二选一：学外语 / 只看书、看番、听书。互斥单选，复用
+/// 功能选择页的 [OnboardingFeatureTile]（几何不随选中变化、选中走色块 + 勾选标记弹出），
+/// 与 [OnboardingReviewMethodChooser] 同款。纯展示：状态与预设在向导页里。
+class OnboardingUsagePurposeChooser extends StatelessWidget {
+  const OnboardingUsagePurposeChooser({
+    required this.purpose,
+    required this.onSelect,
+    super.key,
+  });
+
+  final OnboardingUsagePurpose purpose;
+  final ValueChanged<OnboardingUsagePurpose> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        OnboardingFeatureTile(
+          key: const ValueKey<String>('onboarding_purpose_learning'),
+          icon: FushiIcons.language,
+          title: t.onboarding_purpose_learning_title,
+          subtitle: t.onboarding_purpose_learning_desc,
+          selected: purpose == OnboardingUsagePurpose.languageLearning,
+          onToggle: () => onSelect(OnboardingUsagePurpose.languageLearning),
+        ),
+        SizedBox(height: tokens.spacing.gap),
+        OnboardingFeatureTile(
+          key: const ValueKey<String>('onboarding_purpose_media'),
+          icon: FushiIcons.books,
+          title: t.onboarding_purpose_media_title,
+          subtitle: t.onboarding_purpose_media_desc,
+          selected: purpose == OnboardingUsagePurpose.mediaOnly,
+          onToggle: () => onSelect(OnboardingUsagePurpose.mediaOnly),
         ),
       ],
     );

@@ -274,7 +274,7 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: native/fushi_rwkv/model
-        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-9bc1e3e4040ce9693f230e905abb5c925b1102f787424b9059543ae900f1e2a2
+        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a
     - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
       run: bash native/fushi_rwkv/fetch_model.sh
 

@@ -1,0 +1,13 @@
+## BUG-3835 · iOS 冷启动首页左上头像空白，打开排行榜 / 反馈页后才出现
+- **报告**：2026-10-23（用户反馈 hDfesbQvxB，iPhone iOS 27.0.1，3.0.0+19763：冷启动后左上角头像是默认 / 空白，打开排行榜后才出现，之后到下次冷启动前都在；打开反馈菜单也会让它出现）。
+- **真实性**：✅ 真 bug（行号按基线 `1afad7995b`）。
+  - 自己的资料（昵称 / 头像路径）只在内存：`fushi/lib/src/leaderboard/leaderboard_service.dart:167` `LeaderboardSelf? _self`，每次冷启动都是 null，只能等 `refreshSelf()`（`:401`）联网取 `/v1/me`。
+  - 首页 `fushi/lib/src/pages/implementations/home_dashboard_page.dart:345` `_maybeRefreshSelf` 在 `load()` 完成通知后确实会发起一次 `refreshSelf`（`load()` 末尾 `_notify()` 触发重建，委托方「载入前 status 恒 disabled 所以没刷」的假设**不成立**——那只是首帧的状态，load 完成后会重判）。真正的缺口在反馈日志里：`[2026-10-22 23:35:56] HomeAvatarPill.refreshSelf TimeoutException after 0:00:30: leaderboard GET /v1/me timed out`（同一时段 `HomePage.leaderboardSync` 的 `/v1/me` 也成片超时）——冷启动时网络还没就绪，这一次请求超时后 `:348` `_selfRequested = true` 把首页锁死在「已请求过」，整个进程不再取，头像一直是首字圆 / 空白；排行榜页、反馈中心各自再调 `refreshSelf` 成功后才出现，与用户描述完全一致。
+- **[x] ① 已修复** — 本条提交（message 尾行 `Feedback: hDfesbQvxB`）：
+  - `LeaderboardStore` 新增资料缓存 `<数据目录>/leaderboard/profile_<id>.self.json`（`readSelf` / `writeSelf`，原子写；只含服务端公开给自己的字段、不含钥匙；读到不属于当前 `accountId` 的或坏文件当没有）；`delete()` 一并删除，退出后不留上一个账户的头像。
+  - `LeaderboardService._load` 激活账户后先读缓存填 `self`，再 `_notify()`——冷启动首帧之后立刻有昵称和头像路径；头像图片本身走 `AppCachedHttpImage` 的磁盘缓存，离线也画得出来。
+  - 服务端回来的自己（`_adopt` / `refreshSelf` / `updateProfile` / `setAvatarFromFile`）统一经 `_adoptFreshSelf` 在写队列里落内存 + 写缓存 + 通知，并且只认发请求时的客户端仍是当前客户端（请求在飞时退出 / 换号，迟到的资料不落回、不重新写出缓存）。缓存写失败只影响下次冷启动，记日志不抛。
+  - 新增 `selfFresh`（本进程是否已从服务端取到）：首页 `_maybeRefreshSelf` 与反馈中心改判 `selfFresh` 而不是 `self != null`，有缓存时照样联网刷新一次，刷新回来通知重建。
+  - 取舍：首页那次刷新失败后仍不自动重试（不加重试 / 定时器）；有了缓存，失败时用户看到的是上一次的头像而不是空白。
+- **[x] ② 已加自动化测试** — `fushi/test/leaderboard/leaderboard_service_test.dart` 新 group「自己资料的本机缓存」8 例：冷启动 `/v1/me` 挂死时 load 不发请求、`self` 来自缓存且 `selfFresh=false`、load 完成有通知；刷新覆盖内存与文件；改头像写缓存；退出删缓存；别的账户的缓存不用；坏缓存当没有；请求在飞时退出不复活；首页 `_maybeRefreshSelf` 判 `selfFresh`（源码断言：私有组件 + load 的真实文件 IO 在 widget 测试 fakeAsync 里不推进）。
+- **备注**：未在 iOS 真机复测冷启动。首页刷新失败后本进程不再重试（同上取舍），后台同步里的 `/v1/me`（`_decideReset`）也没有顺带更新 `self`。

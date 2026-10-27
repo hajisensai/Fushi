@@ -63,8 +63,9 @@ bool isUndeliveredMineFailure(MineOutcome outcome) =>
 ///
 /// * 批量模式（[AnkiSettings.batchMiningEnabled]）：制卡一律冻结进队列，返回
 ///   [MineOutcome.queued]。
-/// * 否则照常交给 [inner]；若结果是「确定没送到」（[isUndeliveredMineFailure]），
-///   把这张卡冻结进队列，返回 [MineOutcome.queued] 而不是让它丢掉。
+/// * 否则照常交给 [inner]；若结果是「确定没送到」（[isUndeliveredMineFailure]）
+///   且用户打开了 [AnkiSettings.queueUndeliveredMinesEnabled]（默认关），把这张卡
+///   冻结进队列，返回 [MineOutcome.queued] 而不是让它丢掉；开关关着就原样报失败。
 /// * 一次直接制卡成功说明后端此刻可达，顺手触发一轮自动补发。
 ///
 /// 冻结必须在 [mineEntry] 返回前完成：调用方在它返回后就清理临时封面 / 句子音频。
@@ -113,7 +114,8 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
       rawPayloadJson: rawPayloadJson,
       context: context,
     );
-    if (isUndeliveredMineFailure(outcome)) {
+    if (settings.queueUndeliveredMinesEnabled &&
+        isUndeliveredMineFailure(outcome)) {
       return _enqueueOr(
         rawPayloadJson: rawPayloadJson,
         context: context,

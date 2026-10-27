@@ -89,7 +89,7 @@ void main() {
           expect(body['DeviceProfile'], isA<Map<String, Object?>>());
           final Map<String, Object?> profile =
               (body['DeviceProfile'] as Map).cast<String, Object?>();
-          expect(profile['Name'], 'Hibiki');
+          expect(profile['Name'], 'Fushi');
           expect(profile['DirectPlayProfiles'], hasLength(2));
           expect(profile['TranscodingProfiles'], isNotEmpty);
           expect(body.containsKey('MaxStreamingBitrate'), isFalse,

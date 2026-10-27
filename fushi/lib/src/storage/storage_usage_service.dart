@@ -488,6 +488,8 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
         'onboarding_tutorial',
         // 旧版复习自动备份（升级到同步 v2 后留 30 天自动清理，见 srs_legacy_backup_cleanup.dart）。
         'srs_backups',
+        // 删 Profile 前自动做的复习数据备份（撤销途径，BUG-3818）。
+        'srs_profile_backups',
       ],
       StorageCategoryId.ocrModels: <String>[],
     };

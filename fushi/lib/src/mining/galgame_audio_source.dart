@@ -46,7 +46,10 @@ class GalAudioSlice {
 ///
 /// native 侧（`fushi/windows/runner/audio_loopback_capture.cpp`）注册 `audio_loopback`
 /// MethodChannel，方法：
-///   - `start` -> `Map`：`{sampleRate, channels, bitsPerSample, isFloat}` 或 `{error}`。
+///   - `start` `{userDataFolder?, silent?}` -> `Map`：`{sampleRate, channels, bitsPerSample,
+///     isFloat}` 或 `{error, code}`。带 userDataFolder = 进程树模式（只录该 WebView2 环境
+///     浏览器进程树的声音）；silent 再把它的音频会话压到 -100 dB 不出扬声器、采集侧还原。
+///   - `restoreDucked` `{userDataFolder}` -> int：崩溃残留兜底（见 [restoreDuckedSessions]）。
 ///   - `stop` -> void。
 ///   - `grabRecent` `{backMs}` -> `Map`：`{pcm:Uint8List, sampleRate, channels,
 ///     bitsPerSample, isFloat}` 或 `{error}`。
@@ -54,25 +57,71 @@ class GalAudioSlice {
 /// native 缺失（未构建 / 非 Windows）时所有方法以 [MissingPluginException] /
 /// [PlatformException] 收敛为 null（调用方降级）。
 class LoopbackGalAudioSource implements GalAudioSource {
-  LoopbackGalAudioSource({MethodChannel? channel})
-    : _channel =
-          channel ?? const MethodChannel('app.fushi.reader/audio_loopback');
+  LoopbackGalAudioSource({
+    MethodChannel? channel,
+    this.userDataFolder,
+    this.silent = false,
+  }) : _channel = channel ?? kAudioLoopbackChannel;
+
+  static const MethodChannel kAudioLoopbackChannel = MethodChannel(
+    'app.fushi.reader/audio_loopback',
+  );
 
   final MethodChannel _channel;
 
+  /// 进程树模式的目标 WebView2 user data folder；null = 系统混音（galgame）。
+  final String? userDataFolder;
+
+  /// 进程树模式下不从扬声器出声（见类注释）。
+  final bool silent;
+
+  /// 最近一次 [start] 失败时 native 给的原因码（`target_not_found` / `unsupported` /
+  /// `busy` / `start_failed`；native 缺失为 `missing_plugin`）；成功为 null。
+  String? get lastStartError => _lastStartError;
+  String? _lastStartError;
+
+  Map<String, Object?>? get _startArgs {
+    final String? folder = userDataFolder;
+    if (folder == null) return null;
+    return <String, Object?>{'userDataFolder': folder, 'silent': silent};
+  }
+
   @override
   Future<PcmFormat?> start() async {
+    _lastStartError = null;
     try {
       final Map<Object?, Object?>? r = await _channel
-          .invokeMethod<Map<Object?, Object?>>('start');
+          .invokeMethod<Map<Object?, Object?>>('start', _startArgs);
       if (r == null || r['error'] != null) {
+        _lastStartError = (r?['code'] as String?) ?? 'start_failed';
         return null;
       }
       return _parseFormat(r);
     } on PlatformException {
+      _lastStartError = 'start_failed';
       return null;
     } on MissingPluginException {
+      _lastStartError = 'missing_plugin';
       return null;
+    }
+  }
+
+  /// 崩溃兜底：Windows 按可执行文件持久化会话音量，silent 采集没走到 [stop]（进程被杀）
+  /// 时该 WebView2 环境的声音会一直停在 -100 dB。把它进程树里音量被压低过的会话还原，
+  /// 返回还原数；native 缺失 / 找不到浏览器进程回 0。**别在 silent 采集期间调**。
+  static Future<int> restoreDuckedSessions(
+    String userDataFolder, {
+    MethodChannel channel = kAudioLoopbackChannel,
+  }) async {
+    try {
+      return await channel.invokeMethod<int>('restoreDucked', <String, Object?>{
+            'userDataFolder': userDataFolder,
+          }) ??
+          0;
+    } on PlatformException {
+      return 0;
+    } on MissingPluginException {
+      return 0;
     }
   }
 

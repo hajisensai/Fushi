@@ -45,4 +45,7 @@ public final class ChannelNames {
     // 系统代理（Wi-Fi 手动 / PAC / 全局 HTTP 代理）：Dart 出站代理自动模式读它，
     // 实现见 SystemProxyChannel，Dart 门面 android_system_proxy.dart。
     public static final String SYSTEM_PROXY = PREFIX + "/system_proxy";
+    // 上次进程退出原因 + onTrimMemory 记录：实现见 ProcessExitChannel，Dart 门面
+    // previous_exit_log.dart。
+    public static final String PROCESS_EXIT = PREFIX + "/process_exit";
 }

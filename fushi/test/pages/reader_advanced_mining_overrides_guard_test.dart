@@ -126,9 +126,10 @@ void main() {
     expect(sections, contains('setContext: onSetSentenceContextToDraft'));
     final String preview = bodyOf(
       corpus,
-      'Future<bool> _previewMiningSentenceAudio({',
+      'Future<RangePlayback?> _previewMiningSentenceAudio({',
     );
     expect(preview, contains('_miningSentenceAudioClip('));
-    expect(preview, contains('controller.playRange(clip)'));
+    // 交回片段播放的句柄：对话框的试听按钮在播完 / 被打断时据此复位（FDN66-xurt）。
+    expect(preview, contains('return controller.playRange(clip);'));
   });
 }

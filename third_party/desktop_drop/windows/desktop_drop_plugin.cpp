@@ -161,6 +161,12 @@ namespace {
         // WebView2 controller usurped it. Safe to call repeatedly.
         void Reinitialize();
 
+        // BUOxDR9WIJ: diagnostics snapshot of this window's OLE drop
+        // registration (is a target still registered, is it still ours, is the
+        // process elevated -- an elevated Fushi silently rejects Explorer drags
+        // through UIPI with the same forbidden cursor). Read-only.
+        flutter::EncodableMap Status() const;
+
         virtual ~DesktopDropTarget();
 
     private:
@@ -173,6 +179,12 @@ namespace {
         HWND window_handle_;
         LONG ref_count_;
         bool need_revoke_ole_initialize_;
+        // Window property OLE stores for the registered target right after our
+        // RegisterDragDrop succeeded; a later mismatch means someone else
+        // revoked / replaced it. last_register_result_ is that call's HRESULT.
+        HANDLE registered_prop_ = nullptr;
+        HRESULT last_register_result_ = E_PENDING;
+        int register_count_ = 0;
     };
 
     class DesktopDropPlugin : public flutter::Plugin {
@@ -239,6 +251,8 @@ namespace {
             if (call.method_name() == "reinitialize") {
                 Reinitialize();
                 result->Success();
+            } else if (call.method_name() == "status") {
+                result->Success(flutter::EncodableValue(Status()));
             } else {
                 result->NotImplemented();
             }
@@ -262,6 +276,40 @@ namespace {
         if (ret != 0) {
             std::cout << "RegisterDragDrop failed: " << ret << std::endl;
         }
+        last_register_result_ = ret;
+        register_count_ += 1;
+        registered_prop_ = ret == S_OK
+                ? GetPropW(window_handle_, L"OleDropTargetInterface")
+                : nullptr;
+    }
+
+    flutter::EncodableMap DesktopDropTarget::Status() const {
+        const HANDLE current = GetPropW(window_handle_, L"OleDropTargetInterface");
+        bool elevated = false;
+        HANDLE token = nullptr;
+        if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+            TOKEN_ELEVATION elevation{};
+            DWORD size = 0;
+            if (GetTokenInformation(token, TokenElevation, &elevation,
+                                    sizeof(elevation), &size)) {
+                elevated = elevation.TokenIsElevated != 0;
+            }
+            CloseHandle(token);
+        }
+        return flutter::EncodableMap{
+                {flutter::EncodableValue("registered"),
+                 flutter::EncodableValue(current != nullptr)},
+                {flutter::EncodableValue("ours"),
+                 flutter::EncodableValue(current != nullptr &&
+                                         current == registered_prop_)},
+                {flutter::EncodableValue("lastRegisterResult"),
+                 flutter::EncodableValue(
+                         static_cast<int32_t>(last_register_result_))},
+                {flutter::EncodableValue("registerCount"),
+                 flutter::EncodableValue(register_count_)},
+                {flutter::EncodableValue("elevated"),
+                 flutter::EncodableValue(elevated)},
+        };
     }
 
     void DesktopDropTarget::Reinitialize() {

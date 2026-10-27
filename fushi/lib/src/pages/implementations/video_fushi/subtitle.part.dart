@@ -3705,6 +3705,16 @@ extension _VideoSubtitle on _VideoFushiPageState {
                             onTapLookupChanged: (bool value) => unawaited(
                               appModel.setVideoSubtitleListTapLookup(value),
                             ),
+                            // xlzGuK5YmD：记住上次打开的页签（全部 / 收藏），下次恢复。
+                            initialFilter: videoSubtitleListFilterFromName(
+                              appModel.videoSubtitleListFilter,
+                            ),
+                            onFilterChanged: (VideoSubtitleListFilter value) =>
+                                unawaited(
+                                  appModel.setVideoSubtitleListFilter(
+                                    value.name,
+                                  ),
+                                ),
                             // BUG-878：行字号档位初值从 Drift preferences 读，A+/A- 或
                             // Ctrl+滚轮调节时落盘，跨开关 / 跨重启记住。
                             initialFontScaleIndex:

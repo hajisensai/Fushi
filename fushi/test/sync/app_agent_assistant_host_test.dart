@@ -23,6 +23,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_model_pricing.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
@@ -64,6 +65,9 @@ class _StubLlm implements AgentLlm {
 
   @override
   bool get supportsTools => true;
+
+  @override
+  AiModelPricing get pricing => const AiModelPricing();
 
   @override
   Future<AiChatTurn> chat(
@@ -238,74 +242,63 @@ void main() {
     }
   }
 
-  test(
-    '能力位：就绪 → 宣告 agent + 工具数；没指派 / 关了 AI / 没允许配对设备 / 未初始化 → '
-    '按 feature 报短码，不建模型',
-    () async {
-      final (_, String url) = await startHost(agentHost());
-      final HostAssistantTarget ready = (await client().probeUrl(url))!;
-      expect(ready.supports(kHostAssistantFeatureAgent), isTrue);
+  test('能力位：就绪 → 宣告 agent + 工具数；没指派 / 关了 AI / 没允许配对设备 / 未初始化 → '
+      '按 feature 报短码，不建模型', () async {
+    final (_, String url) = await startHost(agentHost());
+    final HostAssistantTarget ready = (await client().probeUrl(url))!;
+    expect(ready.supports(kHostAssistantFeatureAgent), isTrue);
 
-      bool llmBuilt = false;
-      for (final (AgentAssistantHost host, String reason)
-          in <(AgentAssistantHost, String)>[
-            (
-              agentHost(
-                providers: const <AiProviderConfig>[],
-                onLlm: () => llmBuilt = true,
-              ),
-              'no_provider',
+    bool llmBuilt = false;
+    for (final (AgentAssistantHost host, String reason)
+        in <(AgentAssistantHost, String)>[
+          (
+            agentHost(
+              providers: const <AiProviderConfig>[],
+              onLlm: () => llmBuilt = true,
             ),
-            (agentHost(aiEnabled: false), 'disabled'),
-            // 与服务端 ai.agent_for_peers 同一判据：用户没打开就不对配对设备开放。
-            (
-              agentHost(allowPeers: false, onLlm: () => llmBuilt = true),
-              'disabled',
-            ),
-            (agentHost(ready: false), 'not_ready'),
-          ]) {
-        final FushiSyncServer server = FushiSyncServer(
-          syncDataDir: p.join(tmp.path, 'sync-${identityHashCode(host)}'),
-          port: 0,
-          token: 'tok',
-          assistant: CompositeHostAssistantProvider(
-            <String, HostAssistantProvider>{kHostAssistantFeatureAgent: host},
+            'no_provider',
           ),
-        );
-        await server.start();
-        addTearDown(server.stop);
-        final String u = 'http://127.0.0.1:${server.port}';
-        await repo.setFushiClientUrls(<FushiClientUrl>[
-          FushiClientUrl(url: u, deviceName: 'PC'),
-        ]);
-        final HostAssistantTarget target = (await client().probeUrl(u))!;
-        expect(target.supports(kHostAssistantFeatureAgent), isFalse);
-        expect(target.reasonFor(kHostAssistantFeatureAgent), reason);
-        // 直接开会话同样被门挡住：409 + 同一个短码。
-        await expectLater(
-          RemoteAiAgentSession.open(
-            client: client(),
-            target: target,
-            locale: 'zh',
+          (agentHost(aiEnabled: false), 'disabled'),
+          // 与服务端 ai.agent_for_peers 同一判据：用户没打开就不对配对设备开放。
+          (
+            agentHost(allowPeers: false, onLlm: () => llmBuilt = true),
+            'disabled',
           ),
-          throwsA(
-            isA<HostAssistantException>()
-                .having(
-                  (HostAssistantException e) => e.code,
-                  'code',
-                  'http_409',
-                )
-                .having(
-                  (HostAssistantException e) => e.detail,
-                  'detail',
-                  reason,
-                ),
-          ),
-        );
-      }
-      expect(llmBuilt, isFalse);
-    },
-  );
+          (agentHost(ready: false), 'not_ready'),
+        ]) {
+      final FushiSyncServer server = FushiSyncServer(
+        syncDataDir: p.join(tmp.path, 'sync-${identityHashCode(host)}'),
+        port: 0,
+        token: 'tok',
+        assistant: CompositeHostAssistantProvider(
+          <String, HostAssistantProvider>{kHostAssistantFeatureAgent: host},
+        ),
+      );
+      await server.start();
+      addTearDown(server.stop);
+      final String u = 'http://127.0.0.1:${server.port}';
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: u, deviceName: 'PC'),
+      ]);
+      final HostAssistantTarget target = (await client().probeUrl(u))!;
+      expect(target.supports(kHostAssistantFeatureAgent), isFalse);
+      expect(target.reasonFor(kHostAssistantFeatureAgent), reason);
+      // 直接开会话同样被门挡住：409 + 同一个短码。
+      await expectLater(
+        RemoteAiAgentSession.open(
+          client: client(),
+          target: target,
+          locale: 'zh',
+        ),
+        throwsA(
+          isA<HostAssistantException>()
+              .having((HostAssistantException e) => e.code, 'code', 'http_409')
+              .having((HostAssistantException e) => e.detail, 'detail', reason),
+        ),
+      );
+    }
+    expect(llmBuilt, isFalse);
+  });
 
   test('一句话 → 写操作在电脑上执行并记进电脑的操作记录 → 手机撤销 → 电脑写回', () async {
     final (_, String url) = await startHost(

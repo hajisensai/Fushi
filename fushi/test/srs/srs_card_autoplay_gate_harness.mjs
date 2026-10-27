@@ -4,6 +4,8 @@
 // (WebView2) effectively has — and checks that every way a card page can make a
 // media element play is refused while the deck has autoplay off, that user
 // clicks / keys still play, and that nothing is refused while autoplay is on.
+// Also: the next card stops every page medium still sounding (N-JACNGS-K) and
+// the shell's key bridge beats card-script keydown listeners (OO3O-3ljda).
 // Payload is produced by srs_card_autoplay_gate_test.dart.
 //
 // Exit codes: 0 = all cases passed, 1 = a case failed, 77 = no Chrome.
@@ -145,14 +147,25 @@ async function launch() {
         await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
       }
     },
-    async pressEnter() {
+    async pressKeyA() {
       for (const type of ['keyDown', 'keyUp']) {
         await send('Input.dispatchKeyEvent', {
           type,
-          key: 'Enter',
-          code: 'Enter',
-          windowsVirtualKeyCode: 13,
-          text: type === 'keyDown' ? '\r' : undefined,
+          key: 'a',
+          code: 'KeyA',
+          windowsVirtualKeyCode: 65,
+          text: type === 'keyDown' ? 'a' : undefined,
+        });
+      }
+    },
+    async pressSpace() {
+      for (const type of ['keyDown', 'keyUp']) {
+        await send('Input.dispatchKeyEvent', {
+          type,
+          key: ' ',
+          code: 'Space',
+          windowsVirtualKeyCode: 32,
+          text: type === 'keyDown' ? ' ' : undefined,
         });
       }
     },
@@ -250,20 +263,22 @@ try {
   })()`);
   check(later.refused === 'NotAllowedError' && later.paused === true, `off: play() after the click dispatch is refused, got ${JSON.stringify(later)}`);
 
-  // Autoplay off: Enter on a focused button (keyboard user) plays.
+  // Autoplay off: a key press handled by the card's own script (keyboard
+  // user) plays. Not Enter / Space: the shell's key bridge owns those (they
+  // flip / rate the card and never reach the page).
   await driver.load(payload.shell);
   await driver.evaluate(`(async () => {
     ${payload.off}
     ${PRELUDE}
     const a = new Audio(SRC); host.appendChild(a); window.__a = a;
     const b = document.createElement('button'); b.textContent = 'play';
-    b.onclick = () => { a.play().catch(() => {}); };
+    b.onkeydown = (e) => { if (e.key === 'a') a.play().catch(() => {}); };
     host.appendChild(b); b.focus();
     return document.activeElement === b;
   })()`);
-  await driver.pressEnter();
+  await driver.pressKeyA();
   const keyed = await driver.evaluate(`(async () => { await new Promise((r) => setTimeout(r, 700)); return { paused: __a.paused }; })()`);
-  check(keyed.paused === false, `off: Enter -> play() must play, got ${JSON.stringify(keyed)}`);
+  check(keyed.paused === false, `off: key press -> play() must play, got ${JSON.stringify(keyed)}`);
 
   // Autoplay off: the native play button of <audio controls> (no page play()
   // call; the play event arrives after the gesture flag is reset).
@@ -282,6 +297,50 @@ try {
   await driver.click(box.x + 22, box.y + box.h / 2);
   const native = await driver.evaluate(`(async () => { await new Promise((r) => setTimeout(r, 700)); return { paused: __a.paused }; })()`);
   check(native.paused === false, `off: native controls play button must play, got ${JSON.stringify(native)}`);
+
+  // N-JACNGS-K: the next card (or the flip) stops every page medium still
+  // sounding — also ones the content swap cannot reach (a detached
+  // new Audio(), a shadow root), not only <audio> under the card root.
+  await driver.load(payload.shell);
+  const swapped = await driver.evaluate(`(async () => {
+    ${payload.on}
+    ${PRELUDE}
+    const inDoc = new Audio(SRC); document.getElementById('fushi-card-root').appendChild(inDoc);
+    const detached = new Audio(SRC); window.__keep = detached;
+    const h = document.createElement('div'); document.getElementById('fushi-card-root').appendChild(h);
+    const s = h.attachShadow({ mode: 'closed' }); s.innerHTML = '<audio src="' + SRC + '"></audio>';
+    const shadowed = s.firstChild;
+    for (const m of [inDoc, detached, shadowed]) m.play().catch(() => {});
+    await settle();
+    const before = [inDoc, detached, shadowed].map((m) => m.paused);
+    ${payload.next}
+    await settle();
+    return { before, after: [inDoc, detached, shadowed].map((m) => m.paused) };
+  })()`);
+  check(
+    JSON.stringify(swapped.before) === '[false,false,false]' &&
+      JSON.stringify(swapped.after) === '[true,true,true]',
+    `next card must stop all page media, got ${JSON.stringify(swapped)}`,
+  );
+
+  // OO3O-3ljda: the shell's key bridge (installed in <head>, before any card
+  // content) hands Space back to the host even when the card template's own
+  // script hooks keydown on window capture and stops propagation.
+  await driver.load(payload.shell);
+  await driver.evaluate(`(async () => {
+    window.__calls = [];
+    window.flutter_inappwebview = { callHandler: (n, a) => { window.__calls.push([n, a]); } };
+    ${payload.on}
+    window.addEventListener('keydown', (e) => { e.stopImmediatePropagation(); e.stopPropagation(); }, true);
+    document.addEventListener('keydown', (e) => { e.stopPropagation(); }, true);
+    return true;
+  })()`);
+  await driver.pressSpace();
+  const bridged = await driver.evaluate(`(async () => { await new Promise((r) => setTimeout(r, 100)); return window.__calls; })()`);
+  check(
+    bridged.some((c) => c[0] === 'onSrsReviewKey' && c[1] === 'Space'),
+    `Space must reach the host bridge despite card script listeners, got ${JSON.stringify(bridged)}`,
+  );
 } finally {
   driver.close();
 }

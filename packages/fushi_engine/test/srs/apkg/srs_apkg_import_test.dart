@@ -13,6 +13,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_purge.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
@@ -2330,4 +2331,194 @@ void main() {
       expect((await importInto(s, newCardsApkg())).newPositionsRepaired, 0);
     });
   });
+
+  group(
+    '删牌组 + 删笔记类型后重导同一个包（BUG：0 new / 3092 restored / 7854 updated，浏览 0 张）',
+    () {
+      /// 导入后、删除前的样子：每条笔记的字段、每张可见卡所在的牌组。
+      Future<(Map<String, Map<String, String>>, Map<String, String>)> snapshot(
+        SrsDbStore s,
+      ) async => (
+        <String, Map<String, String>>{
+          for (final SrsNoteCacheRow n in await s.listNotes())
+            n.id: Map<String, String>.of((await s.note(n.id))!.fields),
+        },
+        <String, String>{
+          for (final SrsCardCacheRow c in await s.allCardRows())
+            if (!c.hidden) c.id: c.deckId,
+        },
+      );
+
+      /// 删掉导入的全部顶层牌组（[mode]：保留卡片 / 连卡片删 / 连卡片删并彻底清除），再删两个笔记类型。
+      Future<void> deleteEverything(SrsDbStore s, String mode) async {
+        final SrsDeckTree tree = await s.deckTree();
+        for (final SrsDeckView d in tree.decks) {
+          if (d.id == s.defaultDeckId || tree.parentOf(d.id) != null) continue;
+          final List<String> gone = await s.deleteDeck(
+            d.id,
+            deleteCards: mode != 'move',
+          );
+          if (mode == 'purge') await srsPurgeNotesNow(s, gone);
+        }
+        t += 60000;
+        await s.deleteNoteType(basicNt(kProfile));
+        await s.deleteNoteType(clozeNt(kProfile));
+        t += 60000;
+        expect(await s.listNotes(), isEmpty);
+        expect(<String>[
+          for (final SrsNoteTypeView v in await s.noteTypes()) v.id,
+        ], isNot(contains(basicNt(kProfile))));
+      }
+
+      Future<void> expectBack(
+        SrsDbStore s,
+        Map<String, Map<String, String>> notes,
+        Map<String, String> deckOf,
+      ) async {
+        final Set<String> types = <String>{
+          for (final SrsNoteTypeView v in await s.noteTypes()) v.id,
+        };
+        expect(
+          types,
+          containsAll(<String>[basicNt(kProfile), clozeNt(kProfile)]),
+        );
+        expect(<String>{
+          for (final SrsNoteCacheRow n in await s.listNotes()) n.id,
+        }, notes.keys.toSet());
+        for (final MapEntry<String, Map<String, String>> e in notes.entries) {
+          expect(
+            (await s.note(e.key))!.fields,
+            e.value,
+            reason: 'note ${e.key}',
+          );
+        }
+        for (final MapEntry<String, String> e in deckOf.entries) {
+          final SrsCardCacheRow row = (await s.cardRow(e.key))!;
+          expect(row.hidden, isFalse, reason: 'card ${e.key} still hidden');
+          expect(row.deckId, e.value, reason: 'card ${e.key} not back in deck');
+        }
+        // 牌组列表（复习入口）里看得到这些卡。
+        int total = 0;
+        for (final SrsDeckSummary d in await s.deckSummaries()) {
+          if (d.depth == 0) total += d.totalCards;
+        }
+        expect(total, deckOf.length);
+      }
+
+      for (final String mode in <String>['move', 'cards', 'purge']) {
+        test('删除方式 $mode：笔记类型 / 笔记 / 卡片 / 牌组全部恢复并可见，计数为恢复', () async {
+          final SrsDbStore s = await openTestStore(
+            profileUid: kProfile,
+            deviceId: 'a',
+            now: () => t,
+          );
+          await importInto(s, legacyApkg(t));
+          final (
+            Map<String, Map<String, String>> notes,
+            Map<String, String> deckOf,
+          ) = await snapshot(
+            s,
+          );
+          expect(notes, hasLength(3));
+          await deleteEverything(s, mode);
+
+          // 用户的导入用默认选项（「较新时更新」）。
+          final SrsImportReport r = await importInto(
+            s,
+            legacyApkg(t),
+            options: const SrsAnkiImportOptions(),
+          );
+          expect(r.notesAdded, 0);
+          expect(r.notesRestored, notes.length);
+          expect(r.notesUpdated, 0);
+          expect(r.noteTypesRestored.toSet(), <String>{
+            'Basic (and reversed)',
+            'Cloze',
+          });
+          await expectBack(s, notes, deckOf);
+
+          // 再导入一次：都已恢复，不再计恢复 / 更新。
+          t += 60000;
+          final SrsImportReport again = await importInto(
+            s,
+            legacyApkg(t),
+            options: const SrsAnkiImportOptions(),
+          );
+          expect(again.notesRestored, 0);
+          expect(again.notesUpdated, 0);
+          expect(again.notesSkipped, notes.length);
+          expect(again.noteTypesRestored, isEmpty);
+          await expectBack(s, notes, deckOf);
+        });
+      }
+
+      test('旧版导入留下的残局（笔记删除标记已清、笔记类型仍删除、被清除的只剩空壳）：再导入一次即恢复', () async {
+        final SrsDbStore s = await openTestStore(
+          profileUid: kProfile,
+          deviceId: 'a',
+          now: () => t,
+        );
+        await importInto(s, legacyApkg(t));
+        final (
+          Map<String, Map<String, String>> notes,
+          Map<String, String> deckOf,
+        ) = await snapshot(
+          s,
+        );
+        await deleteEverything(s, 'purge');
+        // 旧版导入：只清了笔记的删除标记（被清除的笔记写回的内容又被当场清掉 → 空壳），笔记类型没恢复。
+        for (final String id in notes.keys) {
+          await s.editFields(SrsEntityKind.note, id, <String, Object?>{
+            SrsFieldKeys.deleted: null,
+          });
+        }
+        expect(await s.listNotes(), hasLength(notes.length));
+        expect(<String>[
+          for (final SrsNoteTypeView v in await s.noteTypes()) v.id,
+        ], isNot(contains(basicNt(kProfile))));
+
+        final SrsImportReport r = await importInto(
+          s,
+          legacyApkg(t),
+          options: const SrsAnkiImportOptions(),
+        );
+        expect(r.notesAdded, 0);
+        expect(r.notesRestored, notes.length);
+        expect(r.notesUpdated, 0);
+        await expectBack(s, notes, deckOf);
+      });
+
+      test('清除后重导的内容经同步到另一台设备：对端也看到恢复的笔记，旧删除不再盖掉它', () async {
+        final SrsDbStore a = await openTestStore(
+          profileUid: kProfile,
+          deviceId: 'a',
+          now: () => t,
+        );
+        final SrsDbStore b = await openTestStore(
+          profileUid: kProfile,
+          deviceId: 'b',
+          now: () => t,
+        );
+        await importInto(a, legacyApkg(t));
+        final (
+          Map<String, Map<String, String>> notes,
+          Map<String, String> deckOf,
+        ) = await snapshot(
+          a,
+        );
+        await syncAll(<SrsDbStore>[a, b]);
+        await deleteEverything(a, 'purge');
+        await syncAll(<SrsDbStore>[a, b]);
+        expect(await b.listNotes(), isEmpty);
+        await importInto(
+          a,
+          legacyApkg(t),
+          options: const SrsAnkiImportOptions(),
+        );
+        await syncAll(<SrsDbStore>[a, b]);
+        await expectBack(a, notes, deckOf);
+        await expectBack(b, notes, deckOf);
+      });
+    },
+  );
 }

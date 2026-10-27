@@ -10,7 +10,9 @@ import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
+import 'package:fushi/src/pages/implementations/media_server/media_server_version_picker.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeInset, FushiFloatingChromeScope;
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
@@ -77,6 +79,15 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
   /// 当前选中的版本在 [_versionItem] 的 [MediaServerItem.versions] 里的下标
   /// （按记住的选择解析；单版本 / 无版本 -1，版本区不显示）。
   int _versionIndex = -1;
+
+  /// 已查过版本表的集（集 id → 版本）：点集前查的、版本区取的都进这里。集卡按它
+  /// （没查过就按清单的 [MediaServerItem.versionCount]）显示「N 个版本」，再点同
+  /// 一集不再问服务器。换季不清（集 id 全局唯一）。
+  final Map<String, List<MediaServerVersion>> _episodeVersions =
+      <String, List<MediaServerVersion>>{};
+
+  /// 点集前的版本决定在途（查版本 / 版本对话框开着）：期间再点别的集不叠第二个。
+  bool _versionGateBusy = false;
   List<MediaServerItem> _seasons = const <MediaServerItem>[];
   String? _seasonId;
 
@@ -168,7 +179,10 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     try {
       final MediaServerItem detail = await _browser.itemDetail(episode.id);
       if (!mounted || generation != _generation) return;
-      setState(() => _showVersionsOf(detail));
+      setState(() {
+        _episodeVersions[detail.id] = detail.versions;
+        _showVersionsOf(detail);
+      });
     } catch (e) {
       debugPrint('[media-server] episode versions failed: $e');
     }
@@ -370,6 +384,39 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     unawaited(_reloadEpisodes());
   }
 
+  /// 点一集：有多个版本且记住的选择对不上时先选版本（mxYhpVcwOX），选完或不用
+  /// 选再播。[alwaysAsk]（集卡长按 / 右键）= 不管记没记住都让用户重选。
+  Future<void> _openEpisode(
+    MediaServerItem episode, {
+    bool alwaysAsk = false,
+  }) async {
+    if (_versionGateBusy) return;
+    _versionGateBusy = true;
+    final MediaServerVersionDecision decision;
+    try {
+      decision = await decideMediaServerVersionBeforePlay(
+        context: context,
+        browser: _browser,
+        item: episode,
+        knownVersions: _episodeVersions[episode.id],
+        alwaysAsk: alwaysAsk,
+      );
+    } finally {
+      _versionGateBusy = false;
+    }
+    if (!mounted) return;
+    setState(() {
+      if (decision.versions.isNotEmpty) {
+        _episodeVersions[episode.id] = decision.versions;
+      }
+      // 版本区正展示这一集：刚选的版本要在胶囊上跟上。
+      final MediaServerItem? shown = _versionItem;
+      if (shown != null && shown.id == episode.id) _showVersionsOf(shown);
+    });
+    if (!decision.proceed) return;
+    await _playEpisode(episode);
+  }
+
   Future<void> _playEpisode(MediaServerItem episode) async {
     await widget.session.playItem(context, episode, siblings: _episodes);
     // 播放页退回来：服务器上的断点 / 已看标记变了，原地重拉（BUG-3491）。
@@ -426,7 +473,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     }
     if (_episodes.isEmpty) return;
     final int index = _continueIndex;
-    unawaited(_playEpisode(index >= 0 ? _episodes[index] : _episodes.first));
+    unawaited(_openEpisode(index >= 0 ? _episodes[index] : _episodes.first));
   }
 
   /// 元信息 chip（与本地 `_heroChips` 同口径）：年份 / 全 N 话（剧）/ ★ 评分 /
@@ -840,34 +887,48 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     required bool isContinue,
   }) {
     final String duration = formatMediaServerDuration(episode.durationMs);
+    final int versionCount =
+        _episodeVersions[episode.id]?.length ?? episode.knownVersionCount ?? 0;
     final Widget card = FushiPressScale(
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          customBorder: RoundedRectangleBorder(
-            borderRadius: FushiM3eShape.cardRadius,
-          ),
-          canRequestFocus: false,
-          onTap: () => unawaited(_playEpisode(episode)),
-          child: CollectionEpisodeCard(
-            thumb: collectionEpisodeThumb(
-              context,
-              mediaServerCoverImage(
-                _browser,
-                episode,
-                kind: episode.hasThumb
-                    ? MediaServerImageKind.thumb
-                    : MediaServerImageKind.primary,
-              ),
+      // 长按 / 右键：重新选版本再播（记住过也问）。不支持多版本的服务器与点按同义。
+      // 右键走绑定表（ContextMenuTrigger），右键被别的动作占用时自动让位。
+      child: ContextMenuTrigger(
+        onInvoke: (Offset _) =>
+            unawaited(_openEpisode(episode, alwaysAsk: true)),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            customBorder: RoundedRectangleBorder(
+              borderRadius: FushiM3eShape.cardRadius,
             ),
-            number: '${episode.episodeNumber ?? index + 1}',
-            title: episode.name,
-            summary: episode.overview,
-            meta: <String>[if (duration.isNotEmpty) duration],
-            completed: episode.played,
-            positionMs: episode.positionMs,
-            progress: mediaServerProgress(episode),
-            isContinue: isContinue,
+            canRequestFocus: false,
+            onTap: () => unawaited(_openEpisode(episode)),
+            onLongPress: () =>
+                unawaited(_openEpisode(episode, alwaysAsk: true)),
+            child: CollectionEpisodeCard(
+              thumb: collectionEpisodeThumb(
+                context,
+                mediaServerCoverImage(
+                  _browser,
+                  episode,
+                  kind: episode.hasThumb
+                      ? MediaServerImageKind.thumb
+                      : MediaServerImageKind.primary,
+                ),
+              ),
+              number: '${episode.episodeNumber ?? index + 1}',
+              title: episode.name,
+              summary: episode.overview,
+              meta: <String>[
+                if (duration.isNotEmpty) duration,
+                if (versionCount > 1)
+                  t.media_server_version_count(n: versionCount),
+              ],
+              completed: episode.played,
+              positionMs: episode.positionMs,
+              progress: mediaServerProgress(episode),
+              isContinue: isContinue,
+            ),
           ),
         ),
       ),
@@ -878,7 +939,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
             actions: <Type, Action<Intent>>{
               ActivateIntent: CallbackAction<ActivateIntent>(
                 onInvoke: (_) {
-                  unawaited(_playEpisode(episode));
+                  unawaited(_openEpisode(episode));
                   return null;
                 },
               ),

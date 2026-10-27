@@ -48,6 +48,16 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
     );
   }
 
+  /// 制卡结果的 OSD 出口：先过「制卡提示」开关（[MineNotices.shown]，与底部制卡
+  /// toast 同一个裁决点），再按结果语义着色、突出显示
+  /// （TODO-971：制卡成功居中放大、停留更久）。视频页所有制卡结果（成功 / 重复 /
+  /// 待发）都从这里出，不许直接 [_showOsd]（守卫
+  /// `test/anki/mine_notice_single_exit_guard_test.dart`）。
+  void _showMineOsd(String message, MineToastStatus status) {
+    if (!MineNotices.shown(status)) return;
+    _showOsd(message, prominent: true, severity: mineToastSeverity(status));
+  }
+
   /// 音量上限（百分比）：随 controller 的 [VideoPlayerController.maxVolume]（mpv 配置
   /// 「音量上限」100 / 150 / 200；网页后端恒 100）。滑条、HUD、手势与持久化同一口径。
   double get _maxVideoVolume => _controller?.maxVolume ?? 100.0;

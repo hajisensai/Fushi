@@ -61,7 +61,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 重排隐藏 Timer），取代旧的「往视频区中心派合成 hover」——那会在 Flutter
       // MouseTracker 留下一条永不注销的假鼠标设备，退出播放器后一直悬停在库页中心卡上。
       wakeSignal: _restartHideTimerSignal,
-      holdVisible: _controlsHeldByMenu,
+      holdVisible: _controlsHeld,
       // TODO-565：进度条（seek bar）经 media_kit 内部 player.seek 绕过 controller 的
       // seekMs 统一清除点，用户开始拖动时清掉「主动跳转目标」快照——否则点字幕行后
       // 的在途 seek 宽限窗口内拖进度条到更早句，会被误 snap 回旧目标句。fork 的 seek
@@ -383,7 +383,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 时于控制条可见态续命隐藏 Timer，消除「按着按钮控制条却自动隐藏 → 手指落到画面
       // 误触」。仅移动 theme 需要（桌面走合成 hover 经 media_kit 自身 MouseRegion 续命）。
       restartHideTimerSignal: _restartHideTimerSignal,
-      holdVisible: _controlsHeldByMenu,
+      holdVisible: _controlsHeld,
       // TODO-565：进度条（seek bar）经 media_kit 内部 player.seek 绕过 controller 的
       // seekMs 统一清除点，用户开始拖动时清掉「主动跳转目标」快照——否则点字幕行后
       // 的在途 seek 宽限窗口内拖进度条到更早句，会被误 snap 回旧目标句。fork 的 seek

@@ -19,6 +19,7 @@
 library;
 
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart'
@@ -32,8 +33,12 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 /// 再长只会白白吃 token。
 const int kScreenTextMaxChars = 4000;
 
-/// 本平台能不能「附上屏幕文字」：要有系统 OCR（Android / iOS / macOS / Windows），
-/// Linux 没有系统 OCR 实现，不出按钮。
+/// 附给视觉模型的截图长边上限（像素）。4K 截图原样发一张就是几 MB base64、每轮
+/// 都要重发；各家视觉模型本来也会把图缩到 1.5k～2k 级别再看，1920 不丢可读性。
+const int kScreenImageMaxEdge = 1920;
+
+/// 本平台能不能识别屏幕文字：要有系统 OCR（Android / iOS / macOS / Windows）。
+/// Linux 没有系统 OCR 实现：AI 助手的模型能收图时仍出按钮、只附截图，否则不出。
 ///
 /// macOS 可用但有缺口：截图走 Flutter toImage，WKWebView（阅读器 EPUB 正文）截不到，
 /// 只能拿到 Flutter 自己画的界面文字（标题、字幕、列表等）。
@@ -65,7 +70,12 @@ enum ScreenTextCaptureStatus {
 
 @immutable
 class ScreenTextCaptureResult {
-  const ScreenTextCaptureResult(this.status, {this.text = '', this.reason});
+  const ScreenTextCaptureResult(
+    this.status, {
+    this.text = '',
+    this.reason,
+    this.image,
+  });
 
   final ScreenTextCaptureStatus status;
 
@@ -75,6 +85,10 @@ class ScreenTextCaptureResult {
   /// [ScreenTextCaptureStatus.unavailable] 时的原因（
   /// [kSystemOcrModelUnavailableReason] / [kSystemOcrLanguageUnavailableReason]）。
   final String? reason;
+
+  /// 截到的窗口图（PNG，已缩到 [kScreenImageMaxEdge] 以内）；只在调用方要图
+  /// （`keepImage`）且截图成功时有，与 [status]（文字识别的结局）无关。
+  final Uint8List? image;
 }
 
 /// 「截屏 → OCR → 全文」的函数形（UI 注入假实现做测试）。
@@ -82,11 +96,17 @@ typedef ScreenTextCapture = Future<ScreenTextCaptureResult> Function();
 
 /// 截当前窗口并识别出全文。调用方负责先把会挡住内容的自家浮层（AI 面板）藏掉。
 ///
-/// [capture] / [ocr] 是测试缝，默认分别是 [captureFeedbackScreenshot] 与
-/// [MethodChannelSystemOcr]。
+/// [keepImage]：连截图一起带回（发给视觉模型）。[recognize] 为 false 时不跑
+/// OCR（本平台没有系统 OCR），文字一栏按 [ScreenTextCaptureStatus.unavailable]。
+///
+/// [capture] / [ocr] / [shrink] 是测试缝，默认分别是 [captureFeedbackScreenshot]、
+/// [MethodChannelSystemOcr] 与 [shrinkScreenImage]。
 Future<ScreenTextCaptureResult> captureScreenText({
+  bool keepImage = false,
+  bool recognize = true,
   Future<Uint8List?> Function()? capture,
   SystemOcrPlatform? ocr,
+  Future<Uint8List> Function(Uint8List png)? shrink,
   String language = kFloatingBallOcrLanguage,
   int maxChars = kScreenTextMaxChars,
 }) async {
@@ -100,6 +120,24 @@ Future<ScreenTextCaptureResult> captureScreenText({
   if (png == null || png.isEmpty) {
     return const ScreenTextCaptureResult(ScreenTextCaptureStatus.failed);
   }
+  Uint8List? image;
+  if (keepImage) {
+    try {
+      image = await (shrink ?? shrinkScreenImage)(png);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'ai_agent.screen_image.shrink',
+        error,
+        stack,
+      );
+    }
+  }
+  if (!recognize) {
+    return ScreenTextCaptureResult(
+      ScreenTextCaptureStatus.unavailable,
+      image: image,
+    );
+  }
   final SystemOcrPageResult result;
   try {
     result = await (ocr ?? const MethodChannelSystemOcr()).recognize(
@@ -110,16 +148,63 @@ Future<ScreenTextCaptureResult> captureScreenText({
     return ScreenTextCaptureResult(
       ScreenTextCaptureStatus.unavailable,
       reason: error.reason,
+      image: image,
     );
   } on Object catch (error, stack) {
     ErrorLogService.instance.log('ai_agent.screen_text.ocr', error, stack);
-    return const ScreenTextCaptureResult(ScreenTextCaptureStatus.failed);
+    return ScreenTextCaptureResult(
+      ScreenTextCaptureStatus.failed,
+      image: image,
+    );
   }
   final String text = screenTextFromOcrLines(result.lines, maxChars: maxChars);
   if (text.isEmpty) {
-    return const ScreenTextCaptureResult(ScreenTextCaptureStatus.empty);
+    return ScreenTextCaptureResult(ScreenTextCaptureStatus.empty, image: image);
   }
-  return ScreenTextCaptureResult(ScreenTextCaptureStatus.ok, text: text);
+  return ScreenTextCaptureResult(
+    ScreenTextCaptureStatus.ok,
+    text: text,
+    image: image,
+  );
+}
+
+/// 截图缩到长边 [maxEdge] 以内再编回 PNG（引擎解码 / 编码，不占 Dart 堆做像素）；
+/// 本来就不大的原样返回。
+Future<Uint8List> shrinkScreenImage(
+  Uint8List png, {
+  int maxEdge = kScreenImageMaxEdge,
+}) async {
+  final ui.ImmutableBuffer buffer = await ui.ImmutableBuffer.fromUint8List(png);
+  final ui.ImageDescriptor descriptor = await ui.ImageDescriptor.encoded(
+    buffer,
+  );
+  final int width = descriptor.width;
+  final int height = descriptor.height;
+  if (width <= maxEdge && height <= maxEdge) {
+    descriptor.dispose();
+    buffer.dispose();
+    return png;
+  }
+  final double scale = maxEdge / (width > height ? width : height);
+  final ui.Codec codec = await descriptor.instantiateCodec(
+    targetWidth: (width * scale).round(),
+    targetHeight: (height * scale).round(),
+  );
+  try {
+    final ui.FrameInfo frame = await codec.getNextFrame();
+    try {
+      final ByteData? data = await frame.image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      return data == null ? png : data.buffer.asUint8List();
+    } finally {
+      frame.image.dispose();
+    }
+  } finally {
+    codec.dispose();
+    descriptor.dispose();
+    buffer.dispose();
+  }
 }
 
 /// 识别行 → 全文：按平台给的顺序一行一行拼（平台已按阅读顺序排好），去掉空行，

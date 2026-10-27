@@ -29,13 +29,22 @@ void main() {
     src = readVideoFushiSource();
   });
 
-  test('制卡成功 OSD 触发保留：_showOsd(described.message, prominent: true)', () {
-    // 只改定位、不动内容 / 触发：突出制卡提示仍走 prominent 变体。
+  test('制卡成功 OSD 触发保留：_showMineOsd → _showOsd(prominent: true)', () {
+    // 只改定位、不动内容 / 触发：突出制卡提示仍走 prominent 变体。制卡结果统一经
+    // _showMineOsd（先过「制卡提示」开关，反馈 iH6RY1kqQn），由它发 prominent OSD。
     expect(
-      compactCode(src)
-          .contains(compactCode('_showOsd(described.message, prominent: true,')),
+      compactCode(src).contains(
+        compactCode('_showMineOsd(described.message, described.status);'),
+      ),
       isTrue,
-      reason: '制卡成功提示必须仍走 prominent OSD（内容 / 触发不得改）',
+      reason: '制卡结果必须经 _showMineOsd 出（内容 / 触发不得改）',
+    );
+    expect(
+      compactCode(src).contains(
+        compactCode('_showOsd(message, prominent: true,'),
+      ),
+      isTrue,
+      reason: '制卡成功提示必须仍走 prominent OSD',
     );
   });
 

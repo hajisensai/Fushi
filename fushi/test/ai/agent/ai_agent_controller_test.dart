@@ -11,6 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_model_pricing.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
@@ -43,6 +44,9 @@ class _StubLlm implements AgentLlm {
 
   @override
   bool get supportsTools => true;
+
+  @override
+  AiModelPricing get pricing => const AiModelPricing();
 
   @override
   Future<AiChatTurn> chat(

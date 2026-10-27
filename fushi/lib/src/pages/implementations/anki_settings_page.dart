@@ -74,6 +74,7 @@ enum AnkiSectionRow {
   duplicateScope,
   backupImport,
   batchMining,
+  queueUndelivered,
   pendingLanding,
   pendingMines,
 }
@@ -544,15 +545,31 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           onChanged: (bool v) => vm.setBatchMiningEnabled(v),
         ),
       ),
+      AnkiSectionRow.queueUndelivered => SettingsSearchTarget(
+        id: 'card_creation.anki.queue_undelivered_mines',
+        child: AdaptiveSettingsSwitchRow(
+          icon: FushiIcons.cloudUpload,
+          showIcon: true,
+          title: t.anki_queue_undelivered_mines_title,
+          subtitle: t.anki_queue_undelivered_mines_hint,
+          value: settings.queueUndeliveredMinesEnabled,
+          onChanged: (bool v) => vm.setQueueUndeliveredMinesEnabled(v),
+        ),
+      ),
       AnkiSectionRow.pendingLanding => const SettingsSearchTarget(
         id: 'card_creation.anki.pending_mine_landing',
         child: PendingMineLandingSwitchRow(),
       ),
       // 待发制卡队列：不受「Anki 已配置」门控——恰恰是连不上 Anki 的时候卡会攒在
       // 这里。切到 Fushi 复习前攒下的待发卡片仍要发往 Anki：队列非空时照旧露出。
-      AnkiSectionRow.pendingMines => const SettingsSearchTarget(
+      // 批量制卡与「连不上时暂存」都关着（默认）时，新卡不会进队列：空队列不露出。
+      AnkiSectionRow.pendingMines => SettingsSearchTarget(
         id: 'card_creation.anki.pending_mines',
-        child: PendingMinesEntryRow(),
+        child: PendingMinesEntryRow(
+          hideWhenEmpty:
+              !settings.batchMiningEnabled &&
+              !settings.queueUndeliveredMinesEnabled,
+        ),
       ),
     };
   }

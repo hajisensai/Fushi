@@ -13,6 +13,7 @@ library;
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:fushi_engine/ai/ai_model_pricing.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart'
     show isSafeExternalProviderEndpoint;
 
@@ -332,6 +333,8 @@ class AiProviderConfig {
     this.allowInsecureHttp = false,
     this.requestsPerMinute = 0,
     this.toolCallingOverride = AiToolCallingOverride.followPreset,
+    this.pricing = const AiModelPricing(),
+    this.acceptsImages = false,
   }) : apiKeys = List<AiApiKey>.unmodifiable(
          apiKeys ??
              (apiKey.isEmpty
@@ -403,6 +406,12 @@ class AiProviderConfig {
       toolCallingOverride: AiToolCallingOverride.fromStorageKey(
         json['toolCalling'] as String?,
       ),
+      pricing: json['pricing'] is Map
+          ? AiModelPricing.fromJson(
+              Map<String, Object?>.from(json['pricing'] as Map),
+            )
+          : const AiModelPricing(),
+      acceptsImages: json['images'] as bool? ?? false,
     );
   }
 
@@ -450,6 +459,9 @@ class AiProviderConfig {
   /// 用户对原生 tool calling 的覆盖；判据一律问 [supportsToolCalling]。
   final AiToolCallingOverride toolCallingOverride;
 
+  /// 用户自填的模型单价（AI 助手按它累计对话费用）；没填 = 只显示 token 数。
+  final AiModelPricing pricing;
+
   /// 这家实际走不走原生 tool calling：用户强制开 / 关优先，否则跟随预设
   /// （[AiProviderPreset.supportsTools]）。presetId 认不出（来自更新的版本）时
   /// 按不支持处理——宁可降级成 JSON 动作，也不往不认识 `tools` 的端点上发。
@@ -458,6 +470,11 @@ class AiProviderConfig {
     AiToolCallingOverride.forceOff => false,
     AiToolCallingOverride.followPreset => preset?.supportsTools ?? false,
   };
+
+  /// 用户标明所配模型能收图（视觉模型）。能不能收图取决于具体模型而不是哪一家，
+  /// 预设猜不准，所以只认用户勾选；默认关——往纯文本模型发图会被直接拒。
+  /// AI 助手据此决定「附上屏幕」时要不要连截图一起发。
+  final bool acceptsImages;
 
   String get displayName => name.trim().isNotEmpty ? name.trim() : baseUrl.host;
 
@@ -490,6 +507,8 @@ class AiProviderConfig {
     bool? allowInsecureHttp,
     int? requestsPerMinute,
     AiToolCallingOverride? toolCallingOverride,
+    AiModelPricing? pricing,
+    bool? acceptsImages,
   }) => AiProviderConfig(
     id: id,
     presetId: presetId,
@@ -507,6 +526,8 @@ class AiProviderConfig {
     allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
     requestsPerMinute: requestsPerMinute ?? this.requestsPerMinute,
     toolCallingOverride: toolCallingOverride ?? this.toolCallingOverride,
+    pricing: pricing ?? this.pricing,
+    acceptsImages: acceptsImages ?? this.acceptsImages,
   );
 
   /// API Key 在 JSON 里 base64 存放：`apiKeys` 是完整有序列表（空白草稿不落盘），
@@ -542,6 +563,8 @@ class AiProviderConfig {
     // 跟随预设时不落盘：旧数据缺字段 = 跟随预设，两者同一口径。
     if (toolCallingOverride != AiToolCallingOverride.followPreset)
       'toolCalling': toolCallingOverride.storageKey,
+    if (!pricing.isEmpty) 'pricing': pricing.toJson(),
+    if (acceptsImages) 'images': true,
   };
 }
 

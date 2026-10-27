@@ -415,6 +415,109 @@ void main() {
       expect(host.steps, <String>['begin', 'batch']);
     });
   });
+
+  // 发件分批 + 水位续传（反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）：上传中途断掉，下一轮从已确认的水位接着发，
+  // 已确认的批次一个不重发；读者照样收齐。
+  group('srsSync2Round 分批发件', () {
+    Future<SrsDbStore> device(String id) async {
+      final SrsStorage st = await openTestSrsStorage();
+      return SrsDbStore.open(
+        db: st.db,
+        core: st.core,
+        profileUid: kProfile,
+        deviceId: id,
+        engine: FfiFsrsEngine.tryCreate(),
+      );
+    }
+
+    test('第二批上传失败：下一轮从水位续发，第一批不重发', () async {
+      final SrsDbStore a = await device('A');
+      final SrsMemoryLocationStore warmup = SrsMemoryLocationStore();
+      final List<String> notes = <String>[];
+      // 每轮只带一条笔记：本机切出三个小段（不到一层合并的个数，不会被合并）。
+      for (final String w in <String>['雪', '雨', '風']) {
+        notes.add(
+          await a.createNote(
+            noteTypeId: a.lapisNoteTypeId,
+            fieldsById: <String, String>{
+              srsLapisFieldId(kProfile, 'Expression'): w,
+            },
+          ),
+        );
+        final SrsSync2Report r = await srsSync2Round(
+          host: a,
+          location: warmup,
+          locationId: 'warmup',
+          nowMs: () => DateTime.now().millisecondsSinceEpoch,
+        );
+        expect(r.error, isNull);
+      }
+
+      final _FlakyLocation loc = _FlakyLocation(failSegmentPut: 2);
+      Future<SrsSync2Report> round() => srsSync2Round(
+        host: a,
+        location: loc,
+        locationId: 'loc',
+        nowMs: () => DateTime.now().millisecondsSinceEpoch,
+        outboxBudgetBytes: 1, // 每批一段
+      );
+      await expectLater(round(), throwsA(isA<StateError>()));
+      final List<String> firstRoundSegs = loc.segmentPuts.toList();
+      expect(firstRoundSegs, hasLength(1), reason: 'batch 1 written + acked');
+      expect(
+        loc.files.keys.where((String k) => k.contains('/head-')),
+        isEmpty,
+        reason: 'no head until every batch is up',
+      );
+
+      final SrsSync2Report ok = await round();
+      expect(ok.error, isNull);
+      expect(
+        loc.segmentPuts.where((String p) => p == firstRoundSegs.single),
+        hasLength(1),
+        reason: 'confirmed batch is not uploaded again',
+      );
+      expect(
+        loc.segmentPuts.toSet().length,
+        loc.segmentPuts.length,
+        reason: 'no segment uploaded twice',
+      );
+      expect(loc.segmentPuts.length, greaterThanOrEqualTo(3));
+
+      final SrsDbStore b = await device('B');
+      final SrsSync2Report rb = await srsSync2Round(
+        host: b,
+        location: loc,
+        locationId: 'loc',
+        nowMs: () => DateTime.now().millisecondsSinceEpoch,
+      );
+      expect(rb.error, isNull);
+      for (final String n in notes) {
+        expect(await b.note(n), isNotNull);
+      }
+    });
+  });
+}
+
+/// 第 [failSegmentPut] 次写段时抛错（模拟上传中途断网）的内存位置；记下每次写成的段。
+class _FlakyLocation extends SrsMemoryLocationStore {
+  _FlakyLocation({required this.failSegmentPut});
+
+  final int failSegmentPut;
+  int _segmentAttempts = 0;
+  final List<String> segmentPuts = <String>[];
+
+  @override
+  Future<void> put(String path, Uint8List bytes) async {
+    if (path.contains('/seg-')) {
+      _segmentAttempts++;
+      if (_segmentAttempts == failSegmentPut) {
+        throw StateError('network dropped mid-upload');
+      }
+      segmentPuts.add(path);
+    }
+    await super.put(path, bytes);
+  }
 }
 
 /// 记录每次 ingest 收了几个段的 host 包装。

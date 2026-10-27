@@ -1,0 +1,6 @@
+## BUG-3844 · EPUB 封面声明指向 XHTML / SVG 封面页时书架没有封面
+- **报告**：2026-10-26（用户：fushi-bot 代 shishamo 提交，反馈 Yg_v6Tnmc0；样本《冴えない彼女の育てかた2.epub》，开发者本机复现）
+- **真实性**：✅ 真 bug。根因：`packages/fushi_engine/lib/epub/epub_parser.dart` 的 `_parseCoverHref`（旧 :697-722）——EPUB 2 `<meta name="cover">` 分支只按 manifest id 查找、不看 media-type，指到 xhtml 封面页或 svg 文档也原样返回；`cover-image` 指到 `image/svg+xml` 同样原样返回；`<guide><reference type="cover">` 根本没看。书架 `ReaderFushiSource.resolveCoverFilePath`（`fushi/lib/src/media/sources/reader_fushi_source.dart:972`）把它当图片解码 → 没有封面。
+- **[x] ① 已修复** — `_parseCoverHref` 的契约改成「结果必须是存在的光栅图」：候选按 `cover-image` → `<meta name="cover">`（content 是 id 或 href）→ `<guide type="cover">` 排序，逐个过 `_coverImageFrom`：图片直接用；XHTML / SVG 页用原生章节扫描（`EpubChapterScanner` `imageRefs`，和阅读器同一条 `<img src>` / `<svg><image href>` / CSS 背景扫描）取第一张光栅图，相对该页解析，最多再跟一层 SVG。纯矢量 SVG（没有引用光栅图）书架画不了（没有 SVG 解码器），跳过并落到下一个候选，最后兜底 manifest 里第一张存在的光栅图。
+- **[x] ② 已加自动化测试** — `fushi/test/epub/epub_svg_cover_and_manga_test.dart`「Yg_v6Tnmc0」组：构造的最小 EPUB 覆盖 meta→SVG 封面页、cover-image→SVG 文档、guide→封面页（压过「第一张图」兜底）、纯矢量 SVG 封面回退。变异：换回旧 `_parseCoverHref` → 该组 4 条全红（实际得到 `cover.svg` / `aaa_first.png` 等）。
+- **备注**：没用原始样本验证（样本在群里，本机没有）；没在真机书架上看图，只验证了解析结果。已导入的书 `coverPath` 存在 DB 里，不会自动重算——要重新导入（或等后续封面重算入口）才会显示。

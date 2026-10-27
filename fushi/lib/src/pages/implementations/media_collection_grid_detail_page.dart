@@ -32,6 +32,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
     show kShelfBookCardAspectRatio;
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -1543,37 +1544,46 @@ class _MemberGridTile extends StatelessWidget {
             onLongPress: onLongPress,
             onMenu: onMenu,
           ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              _HoverableMemberCard(child: child),
-              if (selecting) ...<Widget>[
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: AnimatedContainer(
-                      duration: fushiMotionDuration(context, FushiMotion.short),
-                      decoration: BoxDecoration(
-                        borderRadius: tokens.radii.cardRadius,
-                        color: selected
-                            ? scheme.primary.withValues(alpha: 0.18)
-                            : Colors.transparent,
-                        border: Border.all(
-                          color: selected ? scheme.primary : Colors.transparent,
-                          width: 3,
+          // 卡片在 [_HoverableMemberCard] 里被 IgnorePointer 挡住，自己那份按压
+          // 缩放 / 封面扫光收不到指针，由本格代收（只旁观指针，不与 InkWell 抢）。
+          child: FushiPressScale(
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                _HoverableMemberCard(child: child),
+                if (selecting) ...<Widget>[
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: AnimatedContainer(
+                        duration: fushiMotionDuration(
+                          context,
+                          FushiMotion.short,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: tokens.radii.cardRadius,
+                          color: selected
+                              ? scheme.primary.withValues(alpha: 0.18)
+                              : Colors.transparent,
+                          border: Border.all(
+                            color: selected
+                                ? scheme.primary
+                                : Colors.transparent,
+                            width: 3,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: IgnorePointer(
-                    child: _SelectionMark(selected: selected),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: IgnorePointer(
+                      child: _SelectionMark(selected: selected),
+                    ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

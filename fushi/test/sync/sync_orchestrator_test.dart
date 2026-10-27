@@ -8,6 +8,7 @@ import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
@@ -755,6 +756,190 @@ void main() {
     });
   });
 
+  // DRXb43v3fA / y3tzvcnrPU：云通道有声书阶段曾遍历 getAllEpubBooks() 全表（漫画
+  // 也在表里），每本都发「有声书 (k/全部书数)」并各走 ensureBookFolder + findAsset
+  // 的网络往返；之后的收尾阶段又不发 tick，进度行停在最后一本书上像卡死。
+  group('audiobook phase work set (DRXb43v3fA / y3tzvcnrPU)', () {
+    SyncOrchestrator orch(
+      FushiDatabase db,
+      SyncBackend backend,
+      Directory tmp,
+      Directory audioRoot,
+      List<SyncProgress> events,
+    ) =>
+        SyncOrchestrator(
+          db: db,
+          backend: backend,
+          dictionaryResourceRoot: tmp,
+          audioDatabaseRoot: audioRoot,
+          tempDir: tmp,
+          syncStats: false,
+          syncAudioBookPosition: false,
+          syncContent: false,
+          syncMangaContent: false,
+          syncAudioBookFiles: true,
+          syncDictionary: false,
+          onProgress: events.add,
+        );
+
+    Future<void> insertBook(FushiDatabase db, String title) async {
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: title,
+        title: title,
+        epubPath: '/fake/$title.epub',
+        extractDir: '/fake/$title',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1,
+      ));
+    }
+
+    Future<void> insertAudiobook(
+      FushiDatabase db,
+      Directory audioRoot,
+      String key, {
+      required bool audioIntact,
+    }) async {
+      final File track = File('${audioRoot.path}/$key.mp3');
+      if (audioIntact) track.writeAsStringSync('audio');
+      final File align = File('${audioRoot.path}/$key.srt')
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n');
+      await db.upsertAudiobook(AudiobooksCompanion.insert(
+        bookKey: key,
+        audioRoot: Value(audioRoot.path),
+        audioPathsJson: Value(jsonEncode(<String>[track.path])),
+        alignmentFormat: 'srt',
+        alignmentPath: align.path,
+      ));
+      await db.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: 'srt-$key',
+        title: key,
+        audioRoot: Value(audioRoot.path),
+        audioPathsJson: Value(jsonEncode(<String>[track.path])),
+        srtPath: align.path,
+        importedAt: 1,
+        bookKey: Value(key),
+      ));
+      await db.replaceCuesForBook(key, <AudioCuesCompanion>[
+        AudioCuesCompanion.insert(
+          bookKey: key,
+          chapterHref: 'c.xhtml',
+          sentenceIndex: 0,
+          textFragmentId: 'f0',
+          cueText: 'hi',
+          startMs: 0,
+          endMs: 1000,
+          audioFileIndex: 0,
+        ),
+      ]);
+    }
+
+    List<SyncProgress> countedAudiobookTicks(List<SyncProgress> events) =>
+        events
+            .where((SyncProgress e) =>
+                e.phase == SyncPhase.audiobooks && e.itemTotal > 0)
+            .toList();
+
+    test('只遍历本端确有完整有声书的书：分母 = 工作集，漫画零网络往返', () async {
+      final _CountingSyncBackend backend =
+          _CountingSyncBackend(FakeAssetStore());
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final Directory audioRoot = Directory('${work.path}/audio')
+        ..createSync();
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // 反馈原样：3 本漫画 + 1 本有声书，外加一本音频已断链的有声书行。
+      await insertBook(db, 'Manga A');
+      await insertBook(db, 'AudioBook');
+      await insertBook(db, 'Manga B');
+      await insertBook(db, 'Broken');
+      await insertBook(db, 'Manga C');
+      await insertAudiobook(db, audioRoot, 'AudioBook', audioIntact: true);
+      await insertAudiobook(db, audioRoot, 'Broken', audioIntact: false);
+
+      final List<SyncProgress> events = <SyncProgress>[];
+      final SyncRunReport report = SyncRunReport();
+      await orch(db, backend, tmp, audioRoot, events)
+          .syncAudiobookPackages('root', report);
+
+      expect(report.errors, isEmpty, reason: report.errors.join(' | '));
+      expect(report.audiobooksExported, 1);
+      expect(backend.ensuredBookFolders, <String>['AudioBook'],
+          reason: '只有工作集里的书才该碰远端书文件夹');
+      expect(backend.findAssetCalls, 2, reason: '新名 + 旧名各问一次，仅这一本');
+      expect(backend.putAssetCalls, 1);
+
+      final List<SyncProgress> ticks = countedAudiobookTicks(events);
+      expect(ticks, isNotEmpty);
+      expect(ticks.map((SyncProgress e) => e.itemTotal).toSet(), <int>{1},
+          reason: '进度分母必须是真实工作集（1 本），不是全部书数');
+      expect(ticks.map((SyncProgress e) => e.title).toSet(), <String>{
+        'AudioBook',
+      });
+
+      // 第二轮：远端已有包 → 只问一次 find，不再上传。
+      final _CountingSyncBackend again = _CountingSyncBackend(backend.store);
+      final SyncRunReport second = SyncRunReport();
+      await orch(db, again, tmp, audioRoot, <SyncProgress>[])
+          .syncAudiobookPackages('root', second);
+      expect(second.audiobooksExported, 0);
+      expect(again.ensuredBookFolders, <String>['AudioBook']);
+      expect(again.findAssetCalls, 1);
+      expect(again.putAssetCalls, 0);
+    });
+
+    test('本端没有任何有声书：零网络往返，只发不计数的阶段 tick', () async {
+      final _CountingSyncBackend backend =
+          _CountingSyncBackend(FakeAssetStore());
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      for (final String t in <String>['Manga A', 'Manga B', 'Novel']) {
+        await insertBook(db, t);
+      }
+
+      final List<SyncProgress> events = <SyncProgress>[];
+      final SyncRunReport report = SyncRunReport();
+      await orch(db, backend, tmp, tmp, events)
+          .syncAudiobookPackages('root', report);
+
+      expect(backend.ensuredBookFolders, isEmpty);
+      expect(backend.findAssetCalls, 0);
+      expect(countedAudiobookTicks(events), isEmpty);
+      expect(
+        events.where((SyncProgress e) => e.phase == SyncPhase.audiobooks),
+        isNotEmpty,
+        reason: '阶段开工 tick 要换掉上一阶段最后一本书的进度行',
+      );
+    });
+
+    test('有声书之后的收尾阶段各自发 tick，进度行不停在最后一本书上', () async {
+      final _CountingSyncBackend backend =
+          _CountingSyncBackend(FakeAssetStore());
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      final List<SyncProgress> events = <SyncProgress>[];
+      await orch(db, backend, tmp, tmp, events).run();
+
+      final List<SyncPhase> phases =
+          events.map((SyncProgress e) => e.phase).toList();
+      final int audiobooksAt = phases.lastIndexOf(SyncPhase.audiobooks);
+      expect(audiobooksAt, isNonNegative);
+      final List<SyncPhase> tail = phases.sublist(audiobooksAt + 1);
+      expect(tail, containsAllInOrder(<SyncPhase>[
+        SyncPhase.collections,
+        SyncPhase.deletions,
+      ]));
+      expect(phases.last, isNot(SyncPhase.audiobooks));
+      for (final SyncPhase p in tail) {
+        expect(syncPhaseLabel(p), isNotEmpty);
+      }
+    });
+  });
+
   group('sync cooldown timestamp lifecycle (TODO-1332)', () {
     test(
         'run() records the cooldown timestamp only after a full sweep completes',
@@ -810,4 +995,39 @@ class _InterruptDuringDictBackend extends FakeSyncBackend {
   @override
   Future<String> ensureNamespace(String name) async => throw StateError(
       'sweep interrupted during dictionary phase (TODO-1332 test)');
+}
+
+/// [FakeSyncBackend] 变体（DRXb43v3fA / y3tzvcnrPU）：记下有声书阶段碰远端的次数。
+/// 真实后端（Drive）上这几个调用各是一次网络往返，所以次数就是延迟。
+class _CountingSyncBackend extends FakeSyncBackend {
+  _CountingSyncBackend(this.store) : super(store);
+
+  final FakeAssetStore store;
+  final List<String> ensuredBookFolders = <String>[];
+  int findAssetCalls = 0;
+  int putAssetCalls = 0;
+
+  @override
+  Future<String> ensureBookFolder({
+    required String bookTitle,
+    required String rootFolderId,
+    SyncCoverDataProvider? readCoverData,
+  }) {
+    ensuredBookFolders.add(bookTitle);
+    return super
+        .ensureBookFolder(bookTitle: bookTitle, rootFolderId: rootFolderId);
+  }
+
+  @override
+  Future<AssetEntry?> findAsset(String namespaceId, String name) {
+    findAssetCalls++;
+    return super.findAsset(namespaceId, name);
+  }
+
+  @override
+  Future<void> putAsset(String namespaceId, String name, File file,
+      {void Function(double progress)? onProgress}) {
+    putAssetCalls++;
+    return super.putAsset(namespaceId, name, file, onProgress: onProgress);
+  }
 }
