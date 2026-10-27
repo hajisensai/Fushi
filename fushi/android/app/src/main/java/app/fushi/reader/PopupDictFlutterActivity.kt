@@ -13,8 +13,8 @@ import io.flutter.embedding.android.FlutterActivityLaunchConfigs.BackgroundMode
 /**
  * Transparent FlutterActivity (in the :popup process) that hosts the warm
  * popup engine and renders the nested-capable Flutter PopupDictionaryPage for
- * external dictionary lookups. Replaces the old native PopupDictActivity for
- * the PROCESS_TEXT / SEND / TRANSLATE / fushi://lookup entry points.
+ * external dictionary lookups: the PROCESS_TEXT / SEND / TRANSLATE /
+ * fushi://lookup entry points.
  */
 class PopupDictFlutterActivity : FlutterActivity() {
     companion object {
@@ -99,8 +99,8 @@ class PopupDictFlutterActivity : FlutterActivity() {
          * flutter_inappwebview WebView inside the :popup process. Android forbids
          * two processes sharing one WebView data directory (crbug.com/558377), so
          * the :popup process must use a distinct suffix before any WebView is
-         * created — mirroring the legacy native PopupDictActivity. Must run before
-         * the engine renders, hence the first line of onCreate.
+         * created. Must run before the engine renders, hence the first line of
+         * onCreate.
          */
         private fun configureWebViewDataDir() {
             if (webViewDataDirConfigured) return
@@ -109,8 +109,8 @@ class PopupDictFlutterActivity : FlutterActivity() {
                 try {
                     WebView.setDataDirectorySuffix("popup")
                 } catch (e: IllegalStateException) {
-                    // Another :popup entry point (legacy PopupDictActivity) already
-                    // set the suffix in this process — same dir, safe to ignore.
+                    // WebView was already initialised in this process, so the
+                    // suffix can no longer be set; the process keeps its first one.
                 }
             }
         }

@@ -183,26 +183,6 @@ if(WIN32)
   )
 endif()
 
-# JNI bridge for Android Kotlin popup (only built on Android)
-if(ANDROID)
-  add_library(fushidicts_jni SHARED
-      fushidicts_jni.cpp
-  )
-
-  target_compile_features(fushidicts_jni PRIVATE
-      cxx_std_23
-  )
-
-  target_include_directories(fushidicts_jni PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/fushidicts_include
-  )
-
-  target_link_libraries(fushidicts_jni PRIVATE
-      fushidicts
-      log
-  )
-endif()
-
 # The Android app has a single externalNativeBuild entry (this file). The
 # Blu-ray libaacs ABI module (native/fushi_aacs) rides along so every ABI
 # split ships libfushi_aacs.so, whose soname libbluray opens as libaacs.so.0.

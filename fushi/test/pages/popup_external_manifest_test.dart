@@ -29,10 +29,9 @@ void main() {
     expect(flutterBlock, contains('android:launchMode="singleTop"'));
   });
 
-  test('legacy native PopupDictActivity no longer holds intent-filters', () {
+  test('the removed native PopupDictActivity is not declared any more', () {
+    // 原生 WebView 弹窗（含它独占的 JNI 查词入口）已删除；`:popup` 只剩 Flutter 弹窗。
     final String src = File(manifestPath).readAsStringSync();
-    final String nativeBlock = activityBlock(src, '.PopupDictActivity');
-    expect(nativeBlock, isNot(contains('<intent-filter>')),
-        reason: '原生 Activity 应失活（暂留定义，无 filter）');
+    expect(src, isNot(contains('android:name=".PopupDictActivity"')));
   });
 }

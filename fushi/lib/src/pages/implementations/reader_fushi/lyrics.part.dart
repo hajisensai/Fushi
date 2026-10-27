@@ -1409,7 +1409,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   /// the reader's screen centre, and [bringPendingLookupToFront] surfaces the
   /// main window (it is a no-op when already focused — TODO-341).
   ///
-  /// On Android the overlay launches its own `PopupDictActivity`, so this
+  /// On Android the overlay launches `PopupDictFlutterActivity` itself, so this
   /// handler is only exercised by the desktop back-end; on non-desktop hosts it
   /// is a no-op. It also no-ops when no usable word can be segmented.
   ///

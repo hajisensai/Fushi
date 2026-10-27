@@ -31,7 +31,6 @@ void main() {
     expect(cmake, contains('target_compile_features(fushidicts PUBLIC'));
     expect(cmake, contains('cxx_std_23'));
     expect(cmake, contains('target_compile_features(fushidicts_ffi PRIVATE'));
-    expect(cmake, contains('target_compile_features(fushidicts_jni PRIVATE'));
   });
 
   test('macOS Runner builds fushidicts and copies the dylib into Frameworks',

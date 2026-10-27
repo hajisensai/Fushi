@@ -1,7 +1,7 @@
 // BUG-2753：build_popup_json 的词头分组必须与 Dart 侧 lookupHeadwordKey /
 // soleExplicitReadings（packages/fushi_dictionary/lib/src/language/language.dart）
-// 同一口径。Android 系统划词弹窗（PopupDictActivity → nativeLookupJson）走的是
-// 这一份 C++ 实现。
+// 同一口径（C++ 侧经 FFI 导出 fushidicts_lookup_popup_json 对外；原 Android JNI 弹窗
+// 已删除）。
 //
 //   * MDX/StarDict/DSL 读音恒空：同表记只有一个显式读音 → 空读音行并入该卡，
 //     卡片读音取显式读音（即使空读音行先到）。

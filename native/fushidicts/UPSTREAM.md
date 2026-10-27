@@ -105,8 +105,8 @@
 - **多格式导入**（上游主线没有）：`fushidicts_src/mdx/`（MDX）、`fushidicts_src/stardict/`（StarDict）、`fushidicts_src/popup_json.cpp`（弹窗 JSON）、`fushidicts_src/scan/`（词边界感知扫描，对齐 Yomitan searchResolution）、`fushidicts_src/util/`。
 - **批量分词**（2026-10-19，上游没有）：`fushidicts_src/tokenize.cpp`（`fushidicts_include/fushidicts/tokenize.hpp`）——Dart `JapaneseLanguage.textToWords` 的逐位置最长匹配循环搬进原生，一次 FFI 切完整段（UTF-16 码元口径、句柄内匹配长度 LRU，`add_*_dict` / `load_transforms` 时清空）；`LookupOptions::materialize=false` 跳过截断后的 pitch 富化与释义解压（只给分词用）。新 FFI 导出 `fushidicts_tokenize` / `fushidicts_free_tokenize_result` / `fushidicts_match_length`。守卫 `tests/tokenize_batch_test.cpp`（旧 Dart 循环转写的参考实现逐段比对）。`fushidicts_tokenize` 收带长 UTF-8（`text, text_bytes`），正文里的 U+0000 不截断（HBK-AUDIT-007），守卫 `tests/tokenize_ffi_nul_test.cpp`（把 `fushidicts_ffi.cpp` 编进测试、经导出符号调用）。弹窗 JSON 拼装曾试过搬进原生，端到端比 Dart 慢（多一次 ~200 KB UTF-8 解码），已退回，仍由 Dart `buildPopupJsonFromLookup` 拼。
 - **安全上限**：导入/查询期的资源/尺寸上限加固。
-- **FFI / JNI 桥**：`fushidicts_ffi.cpp`（Dart FFI）+ `fushidicts_jni.cpp`（Android JNI）。**不用上游 `c-bindings` 分支**。
-  - 注意：`score` / `get_freq_value(s)_for_dict` / `Dictionary` 均为引擎内部符号，FFI/JNI 桥与 Dart binding 均未暴露——本批三处改动**不影响 FFI 签名**。
+- **FFI 桥**：`fushidicts_ffi.cpp`（Dart FFI，五端共用）。**不用上游 `c-bindings` 分支**。原 Android JNI 桥 `fushidicts_jni.cpp`（只服务已删除的原生弹窗 `PopupDictActivity`）已删除，Android `:popup` 进程走同一条 Dart FFI。
+  - 注意：`score` / `get_freq_value(s)_for_dict` / `Dictionary` 均为引擎内部符号，FFI 桥与 Dart binding 均未暴露——本批三处改动**不影响 FFI 签名**。
 - **额外吸收的 sibling commit**：`feb48f5`（`ImportResult.detected_type`，自动词典类型检测），非 origin/main 主线。
 
 ## 依赖差异
@@ -137,8 +137,8 @@ W9-7（2026-08-08）补完 W6 只改了外层目录、没动内部命名的部�
 | C ABI 导出前缀 `hoshidicts_*`（22 个函数） | `fushidicts_*` | `fushidicts_ffi.cpp`，Dart 绑定同步 |
 | CMake target/产物 `hoshidicts_ffi`（`hoshidicts_ffi.dll` / `libhoshidicts_ffi.{so,dylib}`） | `fushidicts_ffi`（`fushidicts_ffi.dll` / `libfushidicts_ffi.{so,dylib}`） | Windows/Linux/macOS/Android |
 | iOS 合并归档 `libhoshidicts_ffi_merged.a` | `libfushidicts_ffi_merged.a` | `merge_ios_archives.sh` |
-| CMake target `hoshidicts_jni`（`libhoshidicts_jni.so`） | `fushidicts_jni`（`libfushidicts_jni.so`） | Android popup JNI |
-| JNI 注册 `Java_app_hibiki_reader_HoshiBridge_*` | `Java_app_fushi_reader_FushiBridge_*` | Kotlin 侧为 `app.fushi.reader.FushiBridge`（P2-1 已改） |
+| CMake target `hoshidicts_jni`（`libhoshidicts_jni.so`） | `fushidicts_jni`（`libfushidicts_jni.so`） | Android popup JNI（后随原生弹窗一并删除） |
+| JNI 注册 `Java_app_hibiki_reader_HoshiBridge_*` | `Java_app_fushi_reader_FushiBridge_*` | 后随原生弹窗一并删除 |
 | 桥源文件 `hoshidicts_ffi.cpp` / `hoshidicts_jni.cpp` | `fushidicts_ffi.cpp` / `fushidicts_jni.cpp` | 仅这两个桥文件改名 |
 | 构建变量 `HOSHIDICTS_*`（CMake/xcconfig/脚本环境契约） | `FUSHIDICTS_*` | `AppInfo.xcconfig` / 两个 pbxproj / `build_fushidicts_ffi.sh` |
 | Dart 封装 `HoshiDicts` 及 `Hoshi*` 结果类 | `FushiDicts` / `Fushi*` | `packages/fushi_dictionary/lib/src/engine/fushidicts.dart` |
