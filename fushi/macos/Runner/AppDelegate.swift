@@ -21,14 +21,24 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
   private var systemTransparencyChannel: FlutterMethodChannel?
   private var systemTransparencyObserver: NSObjectProtocol?
 
+  /// ⚠️ 这些 override 里**不许调 `super.`**：`FlutterAppDelegate` 是纯 ObjC 的
+  /// `NSObject <NSApplicationDelegate, FlutterAppLifecycleProvider>`，它只实现了
+  /// `applicationWillFinishLaunching:` / `application:openURLs:` /
+  /// `applicationShouldTerminate:` 三个（见 FlutterAppDelegate.mm，方法表里就这 16 条）。
+  /// 其余 `NSApplicationDelegate` 方法它是**协议声明**、没有实现——`super.applicationDidBecomeActive(_:)`
+  /// 走 `objc_msgSendSuper2` 在父类找不到方法，就落到转发 → `-[AppDelegate
+  /// applicationDidBecomeActive:]: unrecognized selector` 的 NSInvalidArgumentException。
+  /// 插件生命周期事件也不需要我们转发：`FlutterAppLifecycleRegistrar` 自己就是
+  /// `NSApplicationDidBecomeActiveNotification` 等通知的观察者（FlutterAppLifecycleDelegate.mm），
+  /// 注册到它的插件照常收到事件。
   override func applicationDidResignActive(_ notification: Notification) {
     // 离开前台就把用户的输入法放回去：切的是系统全局输入源，留着会漏到别的 app。
     LookupImeLanguage.restore()
-    super.applicationDidResignActive(notification)
   }
 
   override func applicationDidBecomeActive(_ notification: Notification) {
-    super.applicationDidBecomeActive(notification)
+    // 上面那条 super 抛异常时这一行永远执行不到（异常在 super 就抛了），所以
+    // 「切回前台恢复查词输入法」此前从来没生效过——BUG-3856 的连带症状。
     if let tag = desiredLookupImeTag {
       LookupImeLanguage.setLanguage(tag)
     }
@@ -195,7 +205,8 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
     } else {
       NSLog("[Fushi] macOS Flutter controller unavailable; custom channels were not registered")
     }
-    super.applicationDidFinishLaunching(notification)
+    // 不调 super：FlutterAppDelegate 没实现 applicationDidFinishLaunching:（见本类
+    // applicationDidBecomeActive 上的说明）。
   }
 
   /// 系统设置「辅助功能 → 显示 → 降低透明度」：Dart 侧 `SystemTransparency`
@@ -490,7 +501,8 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
     desktopFloatingBall = nil
     floatingLyric?.destroy()
     floatingLyric = nil
-    super.applicationWillTerminate(notification)
+    // 不调 super：FlutterAppDelegate 没实现 applicationWillTerminate:（见
+    // applicationDidBecomeActive 上的说明）。
   }
 
   private func handleDataRootAccess(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
