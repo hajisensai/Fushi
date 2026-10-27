@@ -1091,6 +1091,72 @@ void main() {
       );
     });
 
+    test('English ordinal season directories (Second / Third Season) merge '
+        'into the same work by season instead of becoming sibling works', () {
+      // VCB 合集包完整形态：本作 + Second Season + Third Season + Next Summit。
+      // BUG-3816 时解析器不认英文序数词季名，Second/Third 目录只能当并列作品；
+      // 现在它们按季并进同一作品（Next Summit 没有季号 token，仍是并列作品）。
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+        request(),
+        entries(<String>[
+          '$vcb/$vcb [Ma10p_1080p]/$vcb [01][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb [Ma10p_1080p]/$vcb [02][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb Second Season [Ma10p_1080p]/'
+              '$vcb Second Season [01][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb Second Season [Ma10p_1080p]/'
+              '$vcb Second Season [02][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb Third Season [Ma10p_1080p]/'
+              '$vcb Third Season [01][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb Next Summit [Ma10p_1080p]/'
+              '$vcb Next Summit [01][Ma10p_1080p][x265_flac].mkv',
+          '$vcb/$vcb [Ma10p_1080p]/SPs/$vcb [NCOP][Ma10p_1080p].mkv',
+        ]),
+      );
+      final Map<int, VideoOrganizationFilePlan> byIndex =
+          <int, VideoOrganizationFilePlan>{
+            for (final VideoOrganizationFilePlan file in plan.files)
+              file.backendFileIndex: file,
+          };
+      expect(
+        <String>[for (int i = 0; i <= 4; i++) byIndex[i]!.targetRelativePath],
+        <String>[
+          '向山进发 (2013)/Season 01/向山进发 (2013) - S01E01.mkv',
+          '向山进发 (2013)/Season 01/向山进发 (2013) - S01E02.mkv',
+          '向山进发 (2013)/Season 02/向山进发 (2013) - S02E01.mkv',
+          '向山进发 (2013)/Season 02/向山进发 (2013) - S02E02.mkv',
+          '向山进发 (2013)/Season 03/向山进发 (2013) - S03E01.mkv',
+        ],
+      );
+      for (int i = 0; i <= 4; i++) {
+        expect(byIndex[i]!.siblingWork, isFalse, reason: 'index $i');
+      }
+      expect(byIndex[5]!.siblingWork, isTrue);
+      expect(byIndex[6]!.targetRelativePath, contains('/Extras/'));
+      expect(
+        plan.files
+            .map((VideoOrganizationFilePlan f) => f.targetRelativePath)
+            .toSet(),
+        hasLength(plan.files.length),
+      );
+    });
+
+    test('"Season Two" style season directories supply the season number', () {
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+        request(),
+        entries(<String>[
+          'Show Complete/Season One/Show - 01.mkv',
+          'Show Complete/Season Two/Show - 01.mkv',
+        ]),
+      );
+      expect(
+        plan.files.map((VideoOrganizationFilePlan f) => f.targetRelativePath),
+        <String>[
+          '向山进发 (2013)/Season 01/向山进发 (2013) - S01E01.mkv',
+          '向山进发 (2013)/Season 02/向山进发 (2013) - S02E01.mkv',
+        ],
+      );
+    });
+
     test('season directories inside a pack supply the season number', () {
       final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
         request(),
