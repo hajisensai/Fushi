@@ -79,7 +79,7 @@ const String kFushiCardBackTemplate = r'''<!--
   Fushi 卡片 · 背面。字段名与 Lapis 逐字一致；唯一的扩展字段 SentenceTranslation（为空时整块不出现）。
   版式按卡面宽度自适应：窄（手机）单栏、宽（≥720px，电脑 / 平板横屏）左栏词条 + 例句、右栏释义
   （宿主可用 fushi-srs-layout-wide / -narrow 强制）。
-  脚本只做四件事：音调图、释义按词典分组 / 去重、折叠与版式随外观 / 宽度更新、图片放大；脚本不跑时卡面照常可读。
+  脚本只做五件事：音调图、释义按词典分组 / 去重、词频明细按词典合并、折叠与版式随外观 / 宽度更新、图片放大；脚本不跑时卡面照常可读。
   音调解析与分类改写自 Lapis v1.7.0（donkuri/lapis，GPL-3.0）。
 -->
 <div class="fc fc-back" lang="ja">
@@ -300,6 +300,25 @@ const String kFushiCardBackTemplate = r'''<!--
       more.querySelector(".fc-more-count").textContent = String(count);
     }
 
+    /* ---------- 词频明细：同一词典的多个值（普通形 + 假名形等）合成一项 ----------
+       制卡写的是「一个值一个 <li>词典名: 值</li>」；按最后一个「: 」切出词典名（名字可带冒号）。
+       与原生卡面 srsFrequencyGroups、查词弹窗的分组一致。 */
+    function groupFrequency() {
+      var seen = {};
+      root.querySelectorAll(".fc-freq-list li").forEach(function (li) {
+        var text = li.textContent.trim();
+        var cut = text.lastIndexOf(": ");
+        if (cut <= 0 || cut + 2 >= text.length) return;
+        var dict = text.slice(0, cut).trim();
+        var value = text.slice(cut + 2).trim();
+        var first = seen[dict];
+        if (!first) { seen[dict] = { li: li, values: [value] }; return; }
+        if (!first.values.includes(value)) first.values.push(value);
+        first.li.textContent = dict + ": " + first.values.join(", ");
+        li.remove();
+      });
+    }
+
     /* ---------- 折叠与版式：随外观（全部释义默认展开）与卡面宽度更新 ----------
        默认：主释义展开；「全部释义」收起（没有主释义时展开）。其中的词典分组与查词弹窗同形：
        宽屏、只有一部词典、或宿主要求「默认展开」时展开；窄屏收成一列可折叠的词典标题，
@@ -388,7 +407,7 @@ const String kFushiCardBackTemplate = r'''<!--
       });
     }
 
-    [drawPitch, setUpGlossary, applyLayout, setUpLightbox].forEach(function (step) {
+    [drawPitch, setUpGlossary, groupFrequency, applyLayout, setUpLightbox].forEach(function (step) {
       try { step(); } catch (e) { if (window.console) console.error(e); }
     });
   })();
@@ -1222,6 +1241,14 @@ const String kFushiCardStylingCss = r'''/*
 .fushi-srs-hide-frequency .fc-meta-row--freq,
 .fushi-srs-hide-frequency .fc-back .fc-chip--freq,
 .fushi-srs-hide-source .fc-meta-row--source {
+  display: none;
+}
+
+/* 词频跟随查词的「词频聚合」（宿主类 fushi-srs-freq-aggregate）：聚合且有平均值时只留读音行的
+   平均值，否则只留按词典合并的明细区，两者不同时出现（与原生卡面同一规则）。宿主类挂在 body 与
+   卡面根节点上；Anki 里没有宿主类 = 明细。 */
+.fushi-srs-freq-aggregate .fc-back:has(.fc-reading-row .fc-chip--freq) .fc-meta-row--freq,
+body:not(.fushi-srs-freq-aggregate) .fc-back:has(.fc-meta-row--freq) .fc-reading-row .fc-chip--freq {
   display: none;
 }
 

@@ -1891,6 +1891,8 @@ class SyncRepository {
     // 都描述本机能力。跨设备恢复会携带明文凭据、无效绝对路径或错误 source id。
     'video_resource_torznab_config',
     'video_subtitle_opensubtitles_config',
+    // 用户 BT 站清单：与 Torznab 同类（第三方 indexer 地址，可能带 passkey）。
+    'resource_bt_sites',
     // 用户自配的 AI 提供商：条目里带 base64 的 API key，且本地推理服务（Ollama /
     // LM Studio）的地址是 `http://localhost:11434` 这种只对本机成立的端点。跨设备
     // 恢复既泄付费凭据又指向一台并不在跑的服务。功能映射按 provider id 指向它们，

@@ -152,9 +152,11 @@ void main() {
           src.indexOf('String get _clipExportTooltip', groupStart);
       expect(groupEnd, greaterThan(groupStart));
       final String group = src.substring(groupStart, groupEnd);
-      // 原盘会话的「主菜单 / 弹出菜单」条目（BUG-3229）也算组内内容。
+      // 原盘会话的「主菜单 / 弹出菜单」条目（BUG-3229）与「问 AI」（2026-10-26
+      // AI 助手顶栏入口）也算组内内容。
       expect(
-          RegExp(r'if \(items\.isEmpty && folded\.isEmpty && disc\.isEmpty\) \{\s*'
+          RegExp(r'if \(items\.isEmpty && folded\.isEmpty && disc\.isEmpty && '
+                  r'askAi\.isEmpty\) \{\s*'
                   r'return const SizedBox\.shrink\(\);')
               .hasMatch(group),
           isTrue,

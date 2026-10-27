@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
@@ -682,8 +683,13 @@ class ShelfCardMeta extends StatelessWidget {
   /// 已完成：进度条换完成色（tertiary / Apple 系统绿）。
   final bool completed;
 
-  /// 副行尾部的附加小部件（如下载百分比圆环）。
+  /// 副行尾部的附加小部件（原盘 / 规格角标、用户标签 [ShelfMetaTags] 等）。
+  ///
+  /// 最宽占副行的 [_kTrailingMaxFraction]，副行文字永远留得出地方；尾部自己要能
+  /// 在这个宽度内收住（标签名 ellipsis、规格角标放不下的整枚不显示）。
   final Widget? trailing;
+
+  static const double _kTrailingMaxFraction = 0.6;
 
   /// 文字块总高（随文字缩放）：标题 [titleLines] 行 + 副行 + 进度条 + 间距。
   static double heightFor(
@@ -775,26 +781,34 @@ class ShelfCardMeta extends StatelessWidget {
             style: titleStyle,
             maxLines: titleMaxLines,
           ),
-          Row(
-            children: <Widget>[
-              if (leadingIcon != null) ...<Widget>[
-                FushiIcon(
-                  leadingIcon!,
-                  size: (subStyle.fontSize ?? 11) + 1,
-                  color: tone == ShelfMetaTone.normal ? onSurface : toneColor,
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) => Row(
+              children: <Widget>[
+                if (leadingIcon != null) ...<Widget>[
+                  FushiIcon(
+                    leadingIcon!,
+                    size: (subStyle.fontSize ?? 11) + 1,
+                    color: tone == ShelfMetaTone.normal ? onSurface : toneColor,
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                Expanded(
+                  child: Text(
+                    subtitle ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: subStyle,
+                  ),
                 ),
-                const SizedBox(width: 4),
+                if (trailing != null)
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: constraints.maxWidth * _kTrailingMaxFraction,
+                    ),
+                    child: trailing,
+                  ),
               ],
-              Expanded(
-                child: Text(
-                  subtitle ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: subStyle,
-                ),
-              ),
-              if (trailing != null) trailing!,
-            ],
+            ),
           ),
           const SizedBox(height: _kProgressGap),
           SizedBox(
@@ -823,6 +837,78 @@ class ShelfCardMeta extends StatelessWidget {
                   ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 副行里的一枚用户标签：名字 + 标签色（null = 走中性色）。
+typedef ShelfMetaTag = ({String label, Color? color});
+
+/// 副行尾部的用户标签：标签色小圆点 + 标签名（与库页标签筛选条的 chip 同一读法，
+/// 不加 `#` 前缀——用户 2026-10-26：「#4⭐」太抽象）。最多显示 [maxVisible] 枚，
+/// 其余收成「+N」；名字放不下时 ellipsis，悬停 / 长按看全部标签名。
+class ShelfMetaTags extends StatelessWidget {
+  const ShelfMetaTags({required this.tags, this.maxVisible = 2, super.key});
+
+  final List<ShelfMetaTag> tags;
+  final int maxVisible;
+
+  @override
+  Widget build(BuildContext context) {
+    if (tags.isEmpty) return const SizedBox.shrink();
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool eink = isEinkTheme(context);
+    final bool apple = isGlassDesign(context) && !eink;
+    final Color muted = apple
+        ? appleColorsOf(context).secondaryLabel
+        : cs.onSurfaceVariant;
+    final TextStyle style = ShelfCardMeta._subStyle(
+      theme,
+    ).copyWith(color: muted);
+    final List<ShelfMetaTag> visible = tags.take(maxVisible).toList();
+    final int overflow = tags.length - visible.length;
+    final String names = tags.map((ShelfMetaTag tag) => tag.label).join(' · ');
+    return FushiTooltip(
+      message: names,
+      child: Semantics(
+        label: names,
+        child: ExcludeSemantics(
+          child: Padding(
+            padding: const EdgeInsetsDirectional.only(start: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                for (final (int i, ShelfMetaTag tag) in visible.indexed) ...[
+                  if (i > 0) const SizedBox(width: 6),
+                  SizedBox.square(
+                    dimension: 7,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: eink ? cs.onSurface : (tag.color ?? muted),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 3),
+                  Flexible(
+                    child: Text(
+                      tag.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: style,
+                    ),
+                  ),
+                ],
+                if (overflow > 0) ...[
+                  const SizedBox(width: 4),
+                  Text('+$overflow', style: style),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -866,9 +952,16 @@ class ShelfTitleLine extends StatelessWidget {
 /// 子树结构恒定（不画时形状层换成空盒，[child] 位置不变）：切换设计系统 / 墨水
 /// 屏时页面 State 不重建。
 class LibraryShapeBackdrop extends StatelessWidget {
-  const LibraryShapeBackdrop({required this.child, super.key});
+  const LibraryShapeBackdrop({
+    required this.child,
+    this.show = true,
+    super.key,
+  });
 
   final Widget child;
+
+  /// false = 本页不画形状（整页要透明的底层合成页，见 `FushiPageBackdrop`）。
+  final bool show;
 
   /// 当前主题下是否画形状（Material 设计系统且不是墨水屏）。
   static bool enabledOf(BuildContext context) =>
@@ -876,10 +969,15 @@ class LibraryShapeBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // passthrough：[child] 拿到的约束与本组件收到的完全一致。它被路由层
+    // （FushiPageBackdrop）垫在每一页下面，路由给页面的是**紧约束**（整屏）；
+    // Stack 默认的 loose 会把紧约束放松，根组件不是 Scaffold 的页面（按钮、
+    // 按内容定尺寸的 Material 等）就缩到左上角、不再铺满路由。
     return Stack(
+      fit: StackFit.passthrough,
       children: <Widget>[
         Positioned.fill(
-          child: enabledOf(context)
+          child: show && enabledOf(context)
               ? const _LibraryShapeLayer()
               : const SizedBox.shrink(),
         ),

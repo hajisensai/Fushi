@@ -3,7 +3,7 @@ import 'package:args/args.dart';
 import '../ctl_commands.dart';
 
 /// `fushi_cli video` 组里的播放页命令（app 侧路由见
-/// `fushi/lib/src/platform/desktop/ctl/ctl_video_player_routes.dart`）：音量 / 音轨 /
+/// `fushi/lib/src/ops/ctl_video_player_routes.dart`）：音量 / 音轨 /
 /// 主副字幕、字幕导入与生成（整轨 OCR / 语音转录 / 重定时 / 对轴）、对当前句制卡、
 /// 暂存制卡队列、片段导出与长任务查询 / 取消。全部作用于当前最上层的视频播放页
 /// （暂存队列可用 --book 指定别的视频）。

@@ -246,4 +246,47 @@ void main() {
     expect(sub.style?.color, Theme.of(ctx).colorScheme.error);
     expect(find.byType(FractionallySizedBox), findsOneWidget);
   });
+
+  testWidgets('副行标签：色点 + 名字，不加 # 前缀，超出收成 +N', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      harness(
+        const ShelfCardMeta(
+          title: '転生王女と天才令嬢の魔法革命',
+          subtitle: '读完',
+          trailing: ShelfMetaTags(
+            tags: <ShelfMetaTag>[
+              (label: '4⭐', color: Color(0xFF3F51B5)),
+              (label: '百合', color: null),
+              (label: '轻小说', color: Color(0xFFE91E63)),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('4⭐'), findsOneWidget);
+    expect(find.text('百合'), findsOneWidget);
+    expect(find.text('+1'), findsOneWidget);
+    expect(find.textContaining('#'), findsNothing, reason: '用户：「#4⭐」太抽象');
+    expect(find.text('读完'), findsOneWidget);
+  });
+
+  testWidgets('副行尾部最多占六成宽，状态文字始终留得出地方', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      harness(
+        const ShelfCardMeta(
+          title: 't',
+          subtitle: '继续看 第19集',
+          trailing: ShelfMetaTags(
+            tags: <ShelfMetaTag>[(label: '一个非常非常非常长的标签名字', color: null)],
+          ),
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    final double rowWidth = tester.getSize(find.byType(ShelfCardMeta)).width;
+    final double tagsWidth = tester.getSize(find.byType(ShelfMetaTags)).width;
+    expect(tagsWidth, lessThanOrEqualTo(rowWidth * 0.6 + 0.01));
+    expect(tester.getSize(find.text('继续看 第19集')).width, greaterThan(0));
+  });
 }

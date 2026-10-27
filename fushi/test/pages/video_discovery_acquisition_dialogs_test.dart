@@ -470,6 +470,12 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(t.video_resource_no_provider_title), findsOneWidget);
+    expect(find.text(t.bt_site_empty_hint), findsOneWidget);
+    // Fushi 不内置 BT 站：空态直接给去添加 BT 站的入口。
+    expect(
+      find.byKey(const ValueKey<String>('video-resource-open-bt-sites')),
+      findsOneWidget,
+    );
     expect(find.text(t.video_discovery_empty), findsNothing);
   });
 

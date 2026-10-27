@@ -403,7 +403,8 @@ mixin _LocalLibraryHostVideos
     if (row == null || row.videoPath.isEmpty) return null;
     final String? root = discRootForMemberPath(row.videoPath);
     if (root == null) return null;
-    final FileSystemEntityType type = FileSystemEntity.typeSync(root);
+    // 异步 stat：盘根可能在网络盘上，host 端点不在 isolate 上同步卡 IO（BUG-3756）。
+    final FileSystemEntityType type = await FileSystemEntity.type(root);
     return type == FileSystemEntityType.notFound ? null : root;
   }
 

@@ -9,6 +9,7 @@ import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
+import 'package:fushi/src/sync/sync_conflict_decider.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_message_dialog.dart';
@@ -197,6 +198,9 @@ String syncOutcomeLine(SyncRunOutcome o) {
 /// 全程不抛：错误都转成用户可读的 SnackBar。
 ///
 /// [onlyChannels] 透传给 [runManualFullSync]：缺省 null = 全部已启用通道。
+///
+/// [conflictDecider]：非交互裁决器（CLI / AI，见 `sync_conflict_decider.dart`）。给了就
+/// 不弹冲突窗，逐通道交给它按策略落地；null = 照旧弹窗让用户选。
 Future<ManualSyncOutcome> runManualSyncWithFeedback({
   required BuildContext context,
   required AppModel appModel,
@@ -204,6 +208,7 @@ Future<ManualSyncOutcome> runManualSyncWithFeedback({
   bool announceBusy = true,
   bool announceCompleted = true,
   Set<SyncAssetChannelScope>? onlyChannels,
+  SyncConflictDecider? conflictDecider,
 }) =>
     _runWithSyncFeedback(
       context: context,
@@ -211,6 +216,7 @@ Future<ManualSyncOutcome> runManualSyncWithFeedback({
       announceNotConfigured: announceNotConfigured,
       announceBusy: announceBusy,
       announceCompleted: announceCompleted,
+      conflictDecider: conflictDecider,
       run: () => runManualFullSync(
         onlyChannels: onlyChannels,
         db: appModel.database,
@@ -258,6 +264,32 @@ Future<ManualSyncOutcome> runAssetTransferWithFeedback({
       ),
     );
 
+/// 逐通道呈现冲突：用**各自通道的后端**（合并报告的冲突可能来自互联通道，用云后端
+/// 去 apply 会写错端），两条通道共用一本裁决簿。[decider] 非 null 时不弹窗、交给它落地。
+/// [mounted] 返回 false（页面已关）时停止弹窗；非交互裁决不看它。
+Future<void> _presentChannelConflicts(
+  AppModel appModel,
+  ManualSyncResult result,
+  SyncConflictDecider? decider, {
+  bool Function()? mounted,
+}) async {
+  final Map<String, SyncChoice> decisions = <String, SyncChoice>{};
+  for (final ManualSyncChannelReport channel in result.channelReports) {
+    if (channel.report.conflicts.isEmpty) continue;
+    if (decider == null && !(mounted?.call() ?? true)) return;
+    await appModel.syncConflictPrompter.present(
+      navigatorKey: appModel.navigatorKey,
+      db: appModel.database,
+      backend: channel.backend,
+      conflicts: channel.report.conflicts,
+      source: ConflictSource.manual,
+      inBook: appModel.isMediaOpen,
+      decisions: decisions,
+      decider: decider,
+    );
+  }
+}
+
 /// 「跑一轮同步 + 统一反馈」的共享外壳。[run] 决定这一轮**跑的是什么**（全量 sweep
 /// 还是一次资产传输），其余全部相同。
 ///
@@ -271,6 +303,7 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
   required bool announceNotConfigured,
   required bool announceBusy,
   required bool announceCompleted,
+  SyncConflictDecider? conflictDecider,
 }) async {
   // 重入 / 已在飞 guard：设置页整行是焦点目标（Activate 也会触发），且后台/开机
   // 自动同步可能已经持有 sweep 锁。两种情况下第二次触发都是 no-op —— 全局
@@ -281,7 +314,13 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
   }
   try {
     final ManualSyncResult result = await run();
-    if (!context.mounted) return result.outcome;
+    // 非交互裁决不依赖界面：页面已经关了也照样按策略落地，只是不再弹提示。
+    if (!context.mounted) {
+      if (conflictDecider != null) {
+        await _presentChannelConflicts(appModel, result, conflictDecider);
+      }
+      return result.outcome;
+    }
     switch (result.outcome) {
       case ManualSyncOutcome.notConfigured:
         if (announceNotConfigured) {
@@ -300,20 +339,12 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
         // 写错端。两条通道共用一本裁决簿：同一本书在两条通道上都分叉时用户只
         // 裁决一次，第二条通道直接按同一裁决应用、不再弹（用户报告 2026-09-22
         // 「点了立即同步还会继续弹」）。
-        final Map<String, SyncChoice> decisions = <String, SyncChoice>{};
-        for (final ManualSyncChannelReport channel in result.channelReports) {
-          if (channel.report.conflicts.isEmpty) continue;
-          if (!context.mounted) return result.outcome;
-          await appModel.syncConflictPrompter.present(
-            navigatorKey: appModel.navigatorKey,
-            db: appModel.database,
-            backend: channel.backend,
-            conflicts: channel.report.conflicts,
-            source: ConflictSource.manual,
-            inBook: appModel.isMediaOpen,
-            decisions: decisions,
-          );
-        }
+        await _presentChannelConflicts(
+          appModel,
+          result,
+          conflictDecider,
+          mounted: () => context.mounted,
+        );
     }
     return result.outcome;
   } on SyncChannelAuthError catch (e) {

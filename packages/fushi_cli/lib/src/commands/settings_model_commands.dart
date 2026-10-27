@@ -7,7 +7,7 @@ import 'settings_commands.dart' show readCtlSecretFromStdin;
 
 /// `models`（OCR / 语音转录 / 本机 GPT-SoVITS / 本机 Irodori-TTS 模型文件）与 `voice`（朗读声音）
 /// 两个命令组。app 侧路由见
-/// `fushi/lib/src/platform/desktop/ctl/ctl_settings_model_routes.dart`。
+/// `fushi/lib/src/ops/ctl_settings_model_routes.dart`。
 ///
 /// 下载是后台长任务：`models download` 立即返回，之后用 `models status` 看进度、
 /// `models cancel` 取消。

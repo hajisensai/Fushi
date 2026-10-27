@@ -171,10 +171,14 @@ import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi_engine/media/torrent/public_trackers.dart';
 import 'package:fushi_engine/utils/net/fake_ip_dns.dart';
 import 'package:fushi_torrent/fushi_torrent.dart' show FtSessionStatus;
-import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
+import 'package:fushi_engine/media/torrent/bt_site_providers.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
-import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_auto_disable.dart';
 import 'package:fushi/src/media/torrent/video_download_legacy_importer.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
@@ -232,6 +236,7 @@ import 'package:fushi_engine/media/video/video_path_migration.dart'
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
+import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
@@ -259,7 +264,8 @@ import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.d
         isDuplicateDiscoveryAudiobookContent;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/sync/app_download_host.dart';
-import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart';
+import 'package:fushi/src/ai/agent/ai_agent_assistant_host.dart'
+    show createAppAssistantHost;
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
@@ -783,8 +789,9 @@ class AppModel with ChangeNotifier {
     downloadsFactory: () => appDownloadHost,
     subscriptionsFactory: () => appDownloadHost.subscriptions,
     // AI 助手会话：手机经互联把「下载 xxx」交给本机，用本机的 AI 指派 / 资源
-    // 搜索 / 下载管线办（装配与首页对话页入口同一份）。
-    assistantFactory: () => createVideoAcquisitionAssistantHost(this),
+    // 搜索 / 下载管线办（装配与首页对话页入口同一份）；另有整场 AI 助手会话
+    // （feature `agent`，工具集是本机的操作目录，记账与撤销落本机）。
+    assistantFactory: () => createAppAssistantHost(this),
     // 对端点名「给这个视频补字幕」：与刮削后自动补同一个服务（运行时随下载管线
     // 起停，每次现取）。
     videoSubtitleBackfill: (String videoId, {String? language}) =>
@@ -5359,6 +5366,28 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoImmersiveMode(VideoImmersiveMode mode) =>
       prefsRepo.setVideoImmersiveMode(mode);
 
+  /// 沉浸锁定 + 字幕遮蔽中点画面显示当前句（默认开）。
+  bool get videoImmersiveTapReveal => prefsRepo.videoImmersiveTapReveal;
+
+  Future<void> setVideoImmersiveTapReveal(bool value) =>
+      prefsRepo.setVideoImmersiveTapReveal(value);
+
+  /// 沉浸布局存值（JSON，空串 = 没改过）。播放页存原值、按自己的当前普通布局派生。
+  String get videoImmersiveControlLayoutJson =>
+      prefsRepo.videoImmersiveControlLayoutJson;
+
+  /// 沉浸布局：没改过时按当前普通布局派生（锁按钮跟着普通布局走）。
+  VideoImmersiveControlLayout get videoImmersiveControlLayout =>
+      VideoImmersiveControlLayout.decode(
+        prefsRepo.videoImmersiveControlLayoutJson,
+        base: videoControlLayout,
+      );
+
+  /// 落盘沉浸布局；null = 恢复默认（清空存值，回到派生）。
+  Future<void> setVideoImmersiveControlLayout(
+    VideoImmersiveControlLayout? layout,
+  ) => prefsRepo.setVideoImmersiveControlLayoutJson(layout?.encode() ?? '');
+
   /// 截图去向（对话框 / 剪贴板 / 指定目录）与目录路径。
   VideoScreenshotDestination get videoScreenshotDestination =>
       prefsRepo.videoScreenshotDestination;
@@ -6538,6 +6567,14 @@ class AppModel with ChangeNotifier {
       backendFactory: _torrentBackendFor,
       jimakuApiKeyProvider: () => prefsRepo.jimakuApiKey,
       httpClientFactory: createDownloadHttpClient,
+      animeSiteProvider: () => prefsRepo.btSites
+          .where(
+            (BtSiteConfig site) =>
+                site.enabled &&
+                site.format == BtSiteFormat.nyaa &&
+                site.effectiveDomains.contains(BtSiteDomain.anime),
+          )
+          .firstOrNull,
     )..start();
 
     // TODO-1961-a：上次会话留下的种子在这里接回来（续传 + 继续做种）。
@@ -6747,15 +6784,16 @@ class AppModel with ChangeNotifier {
     if (_videoDownloadPipelineService != null) return;
     final List<TorznabIndexerConfig> torznabIndexers =
         prefsRepo.videoResourceTorznabConfigs;
-    // 内置索引器一律按 kBuiltinVideoResourceSources 全表注册；「用不用」由 registry
-    // 的停用清单决定，而不是靠这里少建一个对象——否则设置页开关就得重启 app 才生效。
-    // Torznab 不同：没有启用的索引器它就不是一个源（保存索引器配置会重建整条
-    // 运行时），判据见 [torznabHasEnabledIndexer]（BUG-2818）。
+    // 没有内置 BT 站：资源来源只有用户添加的 BT 站（每个启用站点一个 provider，
+    // 装配点在引擎 createBtSiteResourceProviders，与无头服务端同一份）和 Torznab。
+    // 改站点配置走 [setBtSites]，它会重建整条运行时。Torznab 没有启用的索引器
+    // 就不是一个源，判据见 [torznabHasEnabledIndexer]（BUG-2818）。
     final List<VideoResourceProvider> resourceProviders =
         <VideoResourceProvider>[
-          for (final BuiltinVideoResourceSource source
-              in kBuiltinVideoResourceSources)
-            source.create(await createDownloadHttpClient()),
+          ...await createBtSiteResourceProviders(
+            prefsRepo.btSites,
+            createDownloadHttpClient,
+          ),
           if (torznabHasEnabledIndexer(torznabIndexers))
             TorznabClient(
               indexers: torznabIndexers,
@@ -6773,7 +6811,6 @@ class AppModel with ChangeNotifier {
         );
     final VideoResourceRegistry resources = VideoResourceRegistry(
       resourceProviders,
-      disabledProviderIds: videoResourceDisabledSourceIds,
     );
     final VideoSubtitleRegistry subtitles = VideoSubtitleRegistry(
       subtitleProviders,
@@ -7240,32 +7277,18 @@ class AppModel with ChangeNotifier {
     return _mediaDiscoveryService = MediaDiscoveryService(
       sources: <MediaDiscoverySource>[
         CoreAudioDiscoverySource(httpClientFactory: createDownloadHttpClient),
-        NyaaDiscoverySource(
-          id: 'nyaa',
-          displayName: 'Nyaa',
-          priority: 10,
-          categoryByKind: const <DiscoveryMediaKind, String>{
-            // nyaa.si 分类：Literature=3_0 / Audio=2_0。
-            DiscoveryMediaKind.novel: '3_0',
-            DiscoveryMediaKind.audiobook: '2_0',
-          },
-          client: NyaaClient(),
-          // 每次请求按当前偏好取：源实例常驻，偏好可随时改。偏好未就绪
-          // （早一帧打开发现页）时用默认「全部」。
-          qualityFilter: () => NyaaQualityFilter.fromIndex(
-            isPreferencesReady ? prefsRepo.discoveryNyaaQualityFilter : 0,
+        // 用户添加的 BT 站：Nyaa 式站点按各自生效的发现域展开成发现源（一条
+        // 配置 = 一个源实例，停用的不登记，同 OPDS / AList 自配源）。没有内置站。
+        // 用户添加的 BT 站：Nyaa 式站点按各自生效的发现域展开成发现源（一条
+        // 配置 = 一个源实例，停用的不登记，同 OPDS / AList 自配源）。没有内置站。
+        if (isPreferencesReady)
+          ...nyaaDiscoverySourcesForBtSites(
+            prefsRepo.btSites,
+            // 每次请求按当前偏好取：源实例常驻，偏好可随时改。
+            qualityFilter: () => NyaaQualityFilter.fromIndex(
+              isPreferencesReady ? prefsRepo.discoveryNyaaQualityFilter : 0,
+            ),
           ),
-        ),
-        NyaaDiscoverySource(
-          id: 'sukebei',
-          displayName: 'Sukebei',
-          priority: 15,
-          categoryByKind: const <DiscoveryMediaKind, String>{
-            // sukebei 分类：Art - Games=1_3（galgame 种子主阵地）。
-            DiscoveryMediaKind.game: '1_3',
-          },
-          client: NyaaClient(baseUrl: 'https://sukebei.nyaa.si'),
-        ),
         AListDiscoverySource(
           id: 'alist-erogame',
           displayName: 'erogame.space',
@@ -7385,9 +7408,92 @@ class AppModel with ChangeNotifier {
       if (id.trim().isNotEmpty) id.trim(),
   };
 
-  /// 设置里停用的**内置**视频资源索引器 id（Nyaa / apibay / Knaben）。
-  Set<String> get videoResourceDisabledSourceIds =>
-      readVideoResourceDisabledSourceIds(prefsRepo);
+  /// 用户添加的 BT 站（偏好未就绪时为空）。
+  List<BtSiteConfig> get btSites =>
+      isPreferencesReady ? prefsRepo.btSites : const <BtSiteConfig>[];
+
+  /// 增删改 / 启停 / 重新检测 BT 站后的统一写回口：落偏好 → 重建下载流水线
+  /// 运行时（资源 provider 是构造期快照）→ 重建发现源注册表 → 唤醒因「没有
+  /// 可用 BT 站」暂停的订阅（新站点下一次检查立刻接上，不等节流间隔）。
+  Future<void> setBtSites(Iterable<BtSiteConfig> sites) async {
+    await prefsRepo.setBtSites(sites);
+    await reloadVideoDownloadPipelineRuntime();
+    await reloadDiscoverySources();
+    final VideoDownloadSubscriptionService? subscriptions =
+        _videoDownloadSubscriptionService;
+    if (subscriptions != null) {
+      unawaited(
+        subscriptions.wakeBtSiteMissingSubscriptions().catchError(
+          (Object error, StackTrace stack) => ErrorLogService.instance.log(
+            'AppModel.setBtSites.wake',
+            error,
+            stack,
+          ),
+        ),
+      );
+    }
+    notifyListeners();
+  }
+
+  /// 自动识别一个 BT 站地址是哪种站点（添加 / 重新检测）。失败抛
+  /// [BtSiteProbeException]，界面只显示中性提示。
+  Future<BtSiteProbeResult> detectBtSite(
+    String url, {
+    bool allowInsecureHttp = false,
+  }) async {
+    final http.Client client = await createDownloadHttpClient();
+    try {
+      return await probeBtSite(
+        url,
+        client: client,
+        allowInsecureHttp: allowInsecureHttp,
+      );
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 设置页「测试搜索」：用 [query] 在 [site] 上搜一次它生效的第一个视频域，返回
+  /// 条数；失败抛 [ExternalProviderFailure]（或底层异常）。站点没有生效的视频域
+  /// 时返回 null（只用于发现页的站点没有资源搜索可测）。
+  Future<int?> testBtSiteSearch(
+    BtSiteConfig site, {
+    String query = 'test',
+  }) async {
+    final http.Client client = await createDownloadHttpClient();
+    final VideoResourceProvider? provider = createBtSiteResourceProvider(
+      site.copyWith(enabled: true),
+      client,
+    );
+    if (provider == null) {
+      // 没有 provider 接手 client，就没人会关它。
+      client.close();
+      return null;
+    }
+    try {
+      final VideoDiscoveryCategory category = provider.categories.first;
+      final ProviderBatchResult<VideoResourceCandidate> result = await provider
+          .search(
+            VideoResourceSearchRequest(
+              query: query,
+              media: VideoMediaReference(
+                providerId: 'bt-site-test',
+                mediaId: 'bt-site-test',
+                mediaKind: category == VideoDiscoveryCategory.movie
+                    ? VideoMetadataMediaKind.movie
+                    : VideoMetadataMediaKind.tv,
+                discoveryCategory: category,
+                title: query,
+              ),
+              limit: 100,
+            ),
+          );
+      if (result.isTotalFailure) throw result.failures.first;
+      return result.items.length;
+    } finally {
+      provider.close();
+    }
+  }
 
   /// 开/关一个发现源。停用清单是逗号分隔的字符串，读写都只经这一个入口，
   /// 免得每个调用点各写一份 split/join。
@@ -7395,19 +7501,6 @@ class AppModel with ChangeNotifier {
     await prefsRepo.setDiscoveryDisabledSources(
       _toggleDisabledId(discoveryDisabledSourceIds, sourceId, enabled),
     );
-    notifyListeners();
-  }
-
-  /// 开/关一个内置视频资源索引器。改完必须重建下载流水线运行时——registry 的
-  /// 停用清单是构造期快照，不重建的话开关要等下次冷启动才生效。
-  Future<void> setVideoResourceSourceEnabled(
-    String sourceId,
-    bool enabled,
-  ) async {
-    await prefsRepo.setVideoResourceDisabledSources(
-      _toggleDisabledId(videoResourceDisabledSourceIds, sourceId, enabled),
-    );
-    await reloadVideoDownloadPipelineRuntime();
     notifyListeners();
   }
 
@@ -9536,8 +9629,11 @@ class AppModel with ChangeNotifier {
   );
 
   // 复习卡面外观（透传 prefsRepo）。可空读：prefs 未装配 = 模板默认外观。
-  SrsCardAppearance get srsCardAppearance =>
-      SrsCardAppearance.decode(_prefsRepo?.srsCardAppearance ?? '');
+  // 词频聚合不是卡面自己的设置，跟随查词的「词频聚合」叠上去（见
+  // SrsCardAppearance.aggregateFrequency）。
+  SrsCardAppearance get srsCardAppearance => SrsCardAppearance.decode(
+    _prefsRepo?.srsCardAppearance ?? '',
+  ).copyWith(aggregateFrequency: _prefsRepo?.harmonicFrequency ?? true);
   Future<void> setSrsCardAppearance(SrsCardAppearance appearance) =>
       prefsRepo.setSrsCardAppearance(appearance.encode());
 
@@ -9585,7 +9681,8 @@ class AppModel with ChangeNotifier {
       prefsRepo.setSrsLocationKey(locationId, key);
 
   /// 首次同步 v2 是否已确认（设备本地；prefs 未装配时按未确认，不同步）。
-  bool get srsSync2MergeConfirmed => _prefsRepo?.srsSync2MergeConfirmed ?? false;
+  bool get srsSync2MergeConfirmed =>
+      _prefsRepo?.srsSync2MergeConfirmed ?? false;
   Future<void> setSrsSync2MergeConfirmed(bool value) =>
       prefsRepo.setSrsSync2MergeConfirmed(value);
   Future<void> setSrsReviewZoom(double value) =>

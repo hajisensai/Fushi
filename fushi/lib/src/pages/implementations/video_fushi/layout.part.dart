@@ -23,7 +23,7 @@ extension _VideoSubtitleLanguage on _VideoFushiPageState {
 /// Video-layout / render-tree domain methods extracted via part-of (TODO-590
 /// batch16); shared private scope. Behaviour-preserving: every body is moved
 /// character-for-character with no edits — no `State.setState(...)` call lives in
-/// this block (only a doc comment in [_buildSideLockButton] mentions setState),
+/// this block (only doc comments mention setState),
 /// so no `_rebuild(...)` forwarder is needed; no `@override` member is moved, so
 /// no forwarder is needed; no host `static` member is referenced, so no
 /// `_VideoFushiPageState.`-qualification is required (unlike batch11/12). Every
@@ -31,7 +31,7 @@ extension _VideoSubtitleLanguage on _VideoFushiPageState {
 /// the shared private scope.
 ///
 /// This is the tail render-tree block: the contiguous run from [_buildVideoBody]
-/// through [_buildSideLockButton] (the last method in the file). It covers the
+/// through the subtitle drag-adjust helpers (end of the file). It covers the
 /// page body and the full media_kit-controls subtree that ride into the
 /// fullscreen route via the shared controls builder: the video body
 /// ([_buildVideoBody]), the controls wrappers and inner tree
@@ -40,8 +40,8 @@ extension _VideoSubtitleLanguage on _VideoFushiPageState {
 /// keep-alive helpers ([_railHoverKeepAlive] / [_lockButtonHoverKeepAlive] /
 /// [_buildVideoSideActionRail] / [_buildVideoSideRailFor] /
 /// [_mergeRailSafeAreaPadding]), the push-aside subtitle/episode side-panel
-/// layout ([_videoWithSubtitlePanel]) and the left side lock button
-/// ([_buildSideLockButton]).
+/// layout ([_videoWithSubtitlePanel]) and the immersive lock toggle button
+/// ([_buildLockToggleButton]).
 ///
 /// `build(BuildContext)` (the @override entry point) stays in the main shell — it
 /// only delegates to [_buildScaffold]. [_buildScaffold] / [_pageDropTarget] and
@@ -639,6 +639,9 @@ extension _VideoLayout on _VideoFushiPageState {
                                   .hoverLookupModifier,
                               onHoverChanged: _handleSubtitleHover,
                               hitTester: _subtitleHitTester,
+                              // 沉浸锁定态点画面显示 / 遮回当前句
+                              // （[_maybeToggleImmersiveSubtitleReveal]）。
+                              revealHandle: _subtitleRevealHandle,
                               // 字级选词光标环（videoEnterCaret，手柄/键盘查词）。
                               caretEntryIndex: _subtitleCaretEntry,
                               // BUG-2091：被查词在字幕上垫底色高亮（与阅读器正文查词
@@ -883,24 +886,18 @@ extension _VideoLayout on _VideoFushiPageState {
     );
   }
 
-  /// TODO-1287（沉浸模式退出按钮「不消失」）：把沉浸退出 chrome 包进与 [_buildSideLockButton]
-  /// **同款**的 2s 自动淡出门控，用于「沉浸锁被用户拖到侧边 rail 槽」这条渲染路径。
+  /// TODO-1287（沉浸模式退出按钮「不消失」）：沉浸锁定态整层侧栏（沉浸布局的左右两条，
+  /// 含锁按钮）共用的 2s 自动淡出门控。
   ///
-  /// 根因：沉浸态下若锁按钮落在 screenLeft / screenRight 槽（`lockOnSideRail`），
-  /// [_buildVideoSideActionRail] 走 [_buildVideoSideRailFor]`(immersiveOnly: true)` 把它渲染成
-  /// **裸 IconButton**，缺失 [_buildSideLockButton] 的可见性门控（[_lockButtonVisible] ||
-  /// [_lockButtonHovered] 决定显隐 + [AnimatedOpacity] 淡入淡出 + [IgnorePointer] 淡出后不拦
-  /// 点击）→ 无操作 2s 后仍常驻可见，用户报「沉浸模式按钮不会消失」。对比默认（非 on-rail）
-  /// 路径会 2s 自动淡出，这条路径缺的正是同一层门控。
+  /// 历史根因：锁按钮曾有「固定左侧解锁钮」与「拖到侧栏的锁」两条渲染路径，后者缺这层
+  /// 门控 → 无操作 2s 后仍常驻可见，用户报「沉浸模式按钮不会消失」。沉浸布局（2026-10-25）
+  /// 之后只剩一条路径：沉浸态所有按钮都在本 wrapper 里。
   ///
-  /// 修复（消除两条路径的特殊情况差异）：把 on-rail 沉浸退出 chrome 用本 wrapper 包一层，
-  /// 判据 / 时长 / 曲线 / hover 保活全部与 [_buildSideLockButton] 对齐——`_lockButtonVisible ||
-  /// _lockButtonHovered` 决定显隐、[_videoControlsTransitionDuration] + easeInOut 淡入淡出、
-  /// 淡出时 [IgnorePointer] 不拦点击（Esc / Shift+L 始终另有退出口，故淡出不会让用户失去退出
-  /// 入口），[_lockButtonHoverKeepAlive] 让鼠标悬在按钮上时顶住可见并续命淡出定时。`_pokeLockButton`
-  /// 由画面 hover（[_handleVideoControlsHover]）与本 wrapper 的 keep-alive 共同武装 2s 定时，
-  /// 与默认路径同源。仅桌面有 hover 语义；移动端无 hover，可见性回落到 [_lockButtonVisible]
-  /// 的画面点触唤起 + 2s 淡出（与默认锁按钮一致）。
+  /// `_lockButtonVisible || _lockButtonHovered` 决定显隐、[_videoControlsTransitionDuration] +
+  /// easeInOut 淡入淡出、淡出时 [IgnorePointer] 不拦点击（Esc / Shift+L 始终另有退出口，故
+  /// 淡出不会让用户失去退出入口），[_lockButtonHoverKeepAlive] 让鼠标悬在按钮上时顶住可见并
+  /// 续命淡出定时。`_pokeLockButton` 由画面 hover（[_handleVideoControlsHover]）、触屏点画面
+  /// （[_handleVideoPointerUp]）与本 wrapper 的 keep-alive 共同武装 2s 定时。
   Widget _withImmersiveLockAutoHide({required Widget child}) {
     return ListenableBuilder(
       listenable: Listenable.merge(<Listenable>[
@@ -930,19 +927,17 @@ extension _VideoLayout on _VideoFushiPageState {
   /// 固定顶栏行本身（[_topBarSlotGroup] → [_desktopControlsTheme] / [_mobileControlsTheme]
   /// 的 `topButtonBar`），此处只剩屏幕左 / 右两条浮条。
   Widget _buildVideoSideActionRail(VideoPlayerController controller) {
-    Widget right({bool immersiveOnly = false}) => _buildVideoSideRailFor(
+    Widget right() => _buildVideoSideRailFor(
       controller,
       VideoControlSlot.screenRight,
       Alignment.centerRight,
       const EdgeInsets.only(right: 12),
-      immersiveOnly: immersiveOnly,
     );
-    Widget left({bool immersiveOnly = false}) => _buildVideoSideRailFor(
+    Widget left() => _buildVideoSideRailFor(
       controller,
       VideoControlSlot.screenLeft,
       Alignment.centerLeft,
       const EdgeInsets.only(left: 12),
-      immersiveOnly: immersiveOnly,
     );
     return Positioned.fill(
       // rail 的显隐由「控制条可见」**或**「鼠标正悬在 rail 上」决定（BUG-283）：后者保证
@@ -957,6 +952,8 @@ extension _VideoLayout on _VideoFushiPageState {
           _subtitleListVisible,
           _episodeListVisible,
           _videoControlEditMode,
+          _controlLayoutNotifier,
+          _immersiveControlLayoutJson,
         ]),
         builder: (BuildContext context, __) {
           final bool controlsVisible = _videoControlsVisible.value;
@@ -965,24 +962,29 @@ extension _VideoLayout on _VideoFushiPageState {
             return const SizedBox.shrink();
           }
           if (_immersiveLocked.value) {
-            final bool lockOnSideRail =
-                _slotChipItems(
-                  VideoControlSlot.screenLeft,
-                ).contains(VideoControlItem.immersiveLock) ||
-                _slotChipItems(
-                  VideoControlSlot.screenRight,
-                ).contains(VideoControlItem.immersiveLock);
-            if (!lockOnSideRail) {
-              return Stack(children: <Widget>[_buildSideLockButton()]);
-            }
-            // TODO-1287：on-rail 沉浸锁按钮必须与默认 [_buildSideLockButton] 一样 2s 自动
-            // 淡出（此前这条路径渲染成裸 IconButton 常驻可见 → 用户报「沉浸模式按钮不会消失」）。
-            // 用 [_withImmersiveLockAutoHide] 包一层同款可见性门控，两条路径淡出行为归一。
+            // 沉浸锁定态：屏幕上只剩**沉浸布局**里的按钮（设计案
+            // docs/specs/2026-10-25-video-immersive-one-hand.md §3.2），与普通布局无关；
+            // 锁按钮恒在其中（模型必选）。整层与解锁口同一套 2s 淡出门控
+            // （[_withImmersiveLockAutoHide]，TODO-1287）：点画面唤出、无操作淡出。
+            // 这里不按 [VideoImmersiveMode] 过滤——按钮放了就能点，档位只管画面与按键。
+            final VideoImmersiveControlLayout immersive =
+                _immersiveControlLayout;
             return _withImmersiveLockAutoHide(
               child: Stack(
                 children: <Widget>[
-                  left(immersiveOnly: true),
-                  right(immersiveOnly: true),
+                  for (final VideoImmersiveSlot side
+                      in VideoImmersiveSlot.railSlots)
+                    _buildVideoSideRailFor(
+                      controller,
+                      side.controlSlot,
+                      side == VideoImmersiveSlot.screenLeft
+                          ? Alignment.centerLeft
+                          : Alignment.centerRight,
+                      side == VideoImmersiveSlot.screenLeft
+                          ? const EdgeInsets.only(left: 12)
+                          : const EdgeInsets.only(right: 12),
+                      items: _immersiveRailItems(immersive, side),
+                    ),
                 ],
               ),
             );
@@ -997,6 +999,20 @@ extension _VideoLayout on _VideoFushiPageState {
     );
   }
 
+  /// 沉浸布局 [side] 侧栏实际渲染的按钮（按用户排的顺序）。与普通侧栏同一道
+  /// [_shouldRenderControlItem]（网页档不支持的按钮照样不画）；锁按钮不受它影响。
+  List<VideoControlItem> _immersiveRailItems(
+    VideoImmersiveControlLayout layout,
+    VideoImmersiveSlot side,
+  ) {
+    return <VideoControlItem>[
+      for (final VideoImmersiveItem item in layout.itemsIn(side))
+        if (item == VideoImmersiveItem.immersiveLock ||
+            _shouldRenderControlItem(item.controlItem))
+          item.controlItem,
+    ];
+  }
+
   /// 单条浮动侧栏：渲染 [slot] 槽的学习按钮成一列圆形按钮，靠 [alignment] 贴边。
   /// 槽为空返回空白（不占位）。
   ///
@@ -1004,26 +1020,29 @@ extension _VideoLayout on _VideoFushiPageState {
   /// `Colors.black`/`Colors.white` 背景与图标、且 `IconButton` 不传 `iconSize` →
   /// 永远默认 24px、不随 appUiScale 缩放，也不随主题色变）。改为图标尺寸走
   /// [_videoControlIconSize]（base × [_videoUiScale]），背景 / 图标走
-  /// [_videoChromeColorScheme]（与侧边锁按钮 [_buildSideLockButton] 同源），让左 / 右
+  /// [_videoChromeColorScheme]（与侧边锁按钮 [_buildLockToggleButton] 同源），让左 / 右
   /// 浮动 rail 与底栏 / 顶栏 / 侧边锁按钮在缩放与配色上完全统一。
   Widget _buildVideoSideRailFor(
     VideoPlayerController controller,
     VideoControlSlot slot,
     AlignmentGeometry alignment,
     EdgeInsetsGeometry padding, {
-    bool immersiveOnly = false,
+    List<VideoControlItem>? items,
   }) {
     // TODO-399 decision 3b: rails render EVERY chip-renderable item the user
     // placed here (learning + transport/nav keys), not just the five learning
     // keys. Rails are pure custom overlays with no media_kit chrome, so adding
     // transport keys here never collides / doubles with the bottom bar.
-    final List<VideoControlItem> items = <VideoControlItem>[
-      for (final VideoControlItem item in _slotChipItems(slot))
-        if (!immersiveOnly || item == VideoControlItem.immersiveLock) item,
-    ];
-    if (items.isEmpty) return const SizedBox.shrink();
+    // 沉浸锁定态由调用方传入沉浸布局的按钮（[items]），不读普通布局。
+    final List<VideoControlItem> railItems = items ?? _slotChipItems(slot);
+    if (railItems.isEmpty) return const SizedBox.shrink();
 
     Widget buttonFor(VideoControlItem item) {
+      // 沉浸锁定态的锁按钮是唯一退出口：画成带圆底的解锁按钮（闭锁图标 + 「解锁」
+      // 提示），裸图标压在画面上不够醒目。
+      if (item == VideoControlItem.immersiveLock && _immersiveLocked.value) {
+        return _buildLockToggleButton(locked: true);
+      }
       final LayerLink? popoverLink = item == VideoControlItem.speed
           ? _controlPopoverLinkFor(slot, item)
           : null;
@@ -1082,9 +1101,9 @@ extension _VideoLayout on _VideoFushiPageState {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              for (final VideoControlItem item in items) ...<Widget>[
-                buttonFor(item),
-                if (item != items.last) const SizedBox(height: 8),
+              for (int i = 0; i < railItems.length; i++) ...<Widget>[
+                if (i > 0) const SizedBox(height: 8),
+                buttonFor(railItems[i]),
               ],
             ],
           ),
@@ -1216,108 +1235,42 @@ extension _VideoLayout on _VideoFushiPageState {
     );
   }
 
-  /// 视频左侧锁 / 解锁按钮（TODO-126，前身 TODO-101 左上角常驻解锁层 [_buildLockOverlay]）。
-  /// 移到**视频正左边、垂直居中**，像侧边锁：
-  ///   - 非沉浸态（[_immersiveLocked] 为 false）：图标显示**开着的锁** [Icons.lock_open_outlined]
-  ///     （未锁状态），点击进入沉浸（取代原 topButtonBar 里的锁按钮，TODO-101）。跟随 hover /
-  ///     tap 唤起、2s 自动淡出，不再占顶栏。
-  ///   - 沉浸态（true）：图标显示**关着的锁** [Icons.lock_outline]（已锁状态），点击退出沉浸。
-  ///     这是沉浸态下唯一常驻可见 chrome，作为清晰可发现的默认退出口；其余 chrome 全被抑制。
+  /// 锁 / 解锁按钮本体（带圆底，TODO-126 起的侧边锁样式）。沉浸锁定态侧栏里的锁按钮
+  /// 走这里（[_buildVideoSideRailFor]）——它是沉浸态唯一常驻可点的退出口，比裸图标醒目。
   ///
   /// 图标是**状态语义**（锁住=闭锁图标），与悬浮字幕锁 / OSD（[_toggleImmersiveLock] 里
   /// 锁定用 [Icons.lock_outline] / 解锁用 [Icons.lock_open_outlined]）/ Android FloatingLyricService
   /// / Windows floating_lyric_window 统一（TODO-153/BUG-216，原先反成「动作提示」语义=锁住却
   /// 显示开锁，与用户预期相反）。tooltip 仍是**动作语义**（锁住时「点击解锁」合理）。
   ///
-  /// 可见性走独立的 [_lockButtonVisible]（[_pokeLockButton] 唤回，不被锁 gate）：无操作 2s 后
-  /// 淡出（[AnimatedOpacity]），鼠标移动 / 触屏点画面唤回。淡出后 [IgnorePointer] 不拦点击，
-  /// 但 Esc / Shift+L 始终可解锁（守卫已钉）——故淡出不会让用户失去退出口。
-  ///
-  /// 它是 controls Stack 里独立的 [Positioned] 兄弟层（不在 gate `AdaptiveVideoControls`
-  /// 的 [IgnorePointer] 之内），故沉浸态下仍可点。可见性走 [ValueNotifier]，全屏路由也响应
-  /// （与字幕跳转面板 / OSD 同源，BUG-120）。
-  Widget _buildSideLockButton() {
+  /// 可见性不在这里：沉浸态整层侧栏由 [_withImmersiveLockAutoHide] 管（[_lockButtonVisible]
+  /// 2s 淡出、点画面 / 鼠标移动唤回）。淡出后不拦点击，但 Esc / Shift+L 始终可解锁（守卫
+  /// 已钉）——故淡出不会让用户失去退出口。
+  Widget _buildLockToggleButton({required bool locked}) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final bool apple = _appleChrome;
-    final double iconSize = _videoControlIconSize;
-    return Positioned(
-      left: 0,
-      top: 0,
-      bottom: 0,
-      child: SafeArea(
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: ValueListenableBuilder<bool>(
-            valueListenable: _immersiveLocked,
-            builder: (BuildContext _, bool locked, __) {
-              // TODO-388（BUG-294）：可见性 = 自动淡出 [_lockButtonVisible] **或** 鼠标正悬
-              // 在按钮上 [_lockButtonHovered]（与屏幕右侧 rail 的 _videoControlsVisible ||
-              // _railHovered 判据同款）。hover 期间永远顶住显示，根除「鼠标静止在按钮上、2s
-              // 定时器仍把它从光标正下方淡出」的消失 bug。
-              return ListenableBuilder(
-                listenable: Listenable.merge(<Listenable>[
-                  _lockButtonVisible,
-                  _lockButtonHovered,
-                ]),
-                builder: (BuildContext __, ___) {
-                  final bool visible =
-                      _lockButtonVisible.value || _lockButtonHovered.value;
-                  // TODO-435：与 media_kit 控制条同源的淡入淡出时长 + 曲线，
-                  // 让锁按钮与控制条一致地淡入淡出（旧实现 200ms + 默认 linear）。
-                  // BUG-1301：FadingChromeGate 统一门控——淡出后不可点且不可聚焦，
-                  // 根除焦点滞留在隐形锁按钮上画出空焦点框。
-                  return FadingChromeGate(
-                    visible: visible,
-                    duration: _videoControlsTransitionDuration,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      // hover 保活：鼠标进按钮置 [_lockButtonHovered]=true 顶住显示 +
-                      // [_pokeLockButton] 续命淡出定时器；移出置 false 回落到自然淡出。
-                      // 与屏幕右侧 rail 的 [_railHoverKeepAlive] 同款（用户要求「改成和屏幕
-                      // 右侧按钮一样」）。
-                      child: _lockButtonHoverKeepAlive(
-                        // Apple：锁钮是一枚透明液态玻璃圆钮 + 白色字形（玻璃垫在
-                        // 背后，Material 圆底换成透明只留裁切）；MD3 不变。
-                        child: VideoGlassSurface(
-                          enabled: apple,
-                          child: Material(
-                            // 锁按钮带自有 surface 圆底（非裸压 scrim），底色 / 图标
-                            // 仍按主题自配对；alpha 收敛进两档制的半透明档
-                            // （UI 巡检 PR-4，此前 0.55 独立一档）。
-                            color: apple
-                                ? Colors.transparent
-                                : cs.surface.withValues(
-                                    alpha: kVideoOverlayTranslucentAlpha,
-                                  ),
-                            shape: const CircleBorder(),
-                            clipBehavior: Clip.antiAlias,
-                            child: FushiIconButtonControl(
-                              tooltip: locked
-                                  ? t.video_immersive_unlock
-                                  : t.video_menu_lock,
-                              iconSize: iconSize,
-                              // TODO-604：与左 / 右侧浮条按钮、底 / 顶栏按钮统一用主题
-                              // 强调色 cs.primary（此前 cs.onSurface 中性前景看上去没吃主题色）。
-                              color: apple
-                                  ? videoChromeNeutralForeground
-                                  : cs.primary,
-                              // 状态语义（TODO-153/BUG-216）：锁住=闭锁图标、未锁=开锁图标。
-                              icon: FushiIcon(
-                                locked
-                                    ? Icons.lock_outline
-                                    : Icons.lock_open_outlined,
-                              ),
-                              onPressed: _toggleImmersiveLock,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
+    // Apple：锁钮是一枚透明液态玻璃圆钮 + 白色字形（玻璃垫在背后，Material 圆底换成
+    // 透明只留裁切）；MD3 不变。
+    return VideoGlassSurface(
+      enabled: apple,
+      child: Material(
+        // 锁按钮带自有 surface 圆底（非裸压 scrim），底色 / 图标仍按主题自配对；alpha
+        // 收敛进两档制的半透明档（UI 巡检 PR-4，此前 0.55 独立一档）。
+        color: apple
+            ? Colors.transparent
+            : cs.surface.withValues(alpha: kVideoOverlayTranslucentAlpha),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: FushiIconButtonControl(
+          tooltip: locked ? t.video_immersive_unlock : t.video_menu_lock,
+          iconSize: _videoControlIconSize,
+          // TODO-604：与左 / 右侧浮条按钮、底 / 顶栏按钮统一用主题强调色 cs.primary。
+          color: apple ? videoChromeNeutralForeground : cs.primary,
+          // 状态语义（TODO-153/BUG-216）：锁住=闭锁图标、未锁=开锁图标。
+          icon: FushiIcon(
+            locked ? Icons.lock_outline : Icons.lock_open_outlined,
           ),
+          onPressed: _toggleImmersiveLock,
         ),
       ),
     );

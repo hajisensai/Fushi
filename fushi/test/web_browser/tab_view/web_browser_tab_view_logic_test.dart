@@ -682,6 +682,39 @@ void main() {
       );
     });
 
+    test('受保护内容（Widevine）：PROTECTED_MEDIA_ID 映射成 protectedContent，不再整条拒绝', () {
+      expect(
+        webBrowserSitePermissionsFor(<PermissionResourceType>[
+          PermissionResourceType.PROTECTED_MEDIA_ID,
+        ]),
+        <WebBrowserSitePermission>[WebBrowserSitePermission.protectedContent],
+      );
+    });
+
+    test('受保护内容没记住时默认允许；显式阻止照样阻止；其它权限 ask 不变', () {
+      expect(
+        webBrowserEffectiveDecision(
+          WebBrowserSitePermission.protectedContent,
+          WebBrowserPermissionDecision.ask,
+        ),
+        WebBrowserPermissionDecision.allow,
+      );
+      expect(
+        webBrowserEffectiveDecision(
+          WebBrowserSitePermission.protectedContent,
+          WebBrowserPermissionDecision.block,
+        ),
+        WebBrowserPermissionDecision.block,
+      );
+      expect(
+        webBrowserEffectiveDecision(
+          WebBrowserSitePermission.camera,
+          WebBrowserPermissionDecision.ask,
+        ),
+        WebBrowserPermissionDecision.ask,
+      );
+    });
+
     test('合并决定：任一阻止 → 阻止；全允许 → 允许；否则问', () {
       expect(
         combineWebBrowserPermissionDecisions(<WebBrowserPermissionDecision>[

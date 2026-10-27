@@ -78,6 +78,16 @@ extension _VideoWebSource on _VideoFushiPageState {
         return;
       }
       _webUnderlayHeld = true;
+      // 站点画面从透明像素处透出来：本页的路由层页底（底色 + 角落形状）必须让开，
+      // 否则网页被整个盖住、看着像「加载不出来」。
+      // （initState 里同步调起本方法，路由只能在 await 之后取。）
+      final Route<Object?>? route = context.mounted
+          ? ModalRoute.of(context)
+          : null;
+      if (route != null) {
+        _webTransparentRoute = route;
+        setFushiPageRouteTransparent(route, true);
+      }
       await _initWebSource(row);
       return;
     }
@@ -124,6 +134,8 @@ extension _VideoWebSource on _VideoFushiPageState {
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _controlLayoutNotifier.value = appModel.videoControlLayout;
+    _immersiveControlLayoutJson.value =
+        appModel.videoImmersiveControlLayoutJson;
     _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
     _videoFitMode = appModel.videoFitMode;
     final WebVideoSession session = WebVideoSession(
@@ -1347,6 +1359,11 @@ extension _VideoWebSource on _VideoFushiPageState {
     _webSession?.dispose();
     _webAddressController.dispose();
     _webAddressFocus.dispose();
+    final Route<Object?>? transparentRoute = _webTransparentRoute;
+    if (transparentRoute != null) {
+      _webTransparentRoute = null;
+      setFushiPageRouteTransparent(transparentRoute, false);
+    }
     if (_webUnderlayHeld) {
       _webUnderlayHeld = false;
       unawaited(releaseUnderlayComposition());

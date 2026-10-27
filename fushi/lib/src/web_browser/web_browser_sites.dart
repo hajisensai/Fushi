@@ -4,16 +4,35 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 
 /// app 内浏览器（`FushiWebBrowserPage`）的一个站点书签。
+///
+/// 视频站点与浏览器站点是同一份表（用户 2026-10-26「这个站点和视频站点有什么关系？
+/// 有必要分开吗？」）：[openInPlayer] 为 true 的站点点开时进 Fushi 播放页（Windows 的
+/// 网页播放器，Netflix 硬件 DRM / Fushi 字幕层 / 每集落库），否则进普通浏览器标签页。
+/// 播放页只在 Windows 上有，其它平台忽略这个标记。
 @immutable
 class WebBrowserSite {
-  const WebBrowserSite({required this.name, required this.url});
+  const WebBrowserSite({
+    required this.name,
+    required this.url,
+    this.openInPlayer = false,
+  });
 
   final String name;
   final Uri url;
 
+  /// 点开时默认用播放页打开（只在有播放页的平台生效，见 `webVideoSitesAvailable`）。
+  final bool openInPlayer;
+
+  WebBrowserSite copyWith({bool? openInPlayer}) => WebBrowserSite(
+    name: name,
+    url: url,
+    openInPlayer: openInPlayer ?? this.openInPlayer,
+  );
+
   Map<String, Object?> toJson() => <String, Object?>{
     'name': name,
     'url': url.toString(),
+    if (openInPlayer) 'player': true,
   };
 
   static WebBrowserSite? fromJson(Object? json) {
@@ -21,52 +40,72 @@ class WebBrowserSite {
     final Uri? url = parseWebBrowserAddress(json['url']?.toString() ?? '');
     if (url == null) return null;
     final String name = json['name']?.toString().trim() ?? '';
-    return WebBrowserSite(name: name.isEmpty ? url.host : name, url: url);
+    return WebBrowserSite(
+      name: name.isEmpty ? url.host : name,
+      url: url,
+      openInPlayer: json['player'] == true,
+    );
   }
 
   @override
   bool operator ==(Object other) =>
-      other is WebBrowserSite && other.name == name && other.url == url;
+      other is WebBrowserSite &&
+      other.name == name &&
+      other.url == url &&
+      other.openInPlayer == openInPlayer;
 
   @override
-  int get hashCode => Object.hash(name, url);
+  int get hashCode => Object.hash(name, url, openInPlayer);
 }
 
-/// 预置的漫画站：只放正规 / 常见的站，不预置成人站。只在网页漫画能力可用时
-/// 预置（iOS 合规：不预置任何漫画来源，见 [webBrowserPresetSites]）。用户删光后
-/// 不会自动补回（偏好里存的是用户自己的表，空数组就是空）。
-final List<WebBrowserSite> kWebBrowserMangaPresetSites =
-    List<WebBrowserSite>.unmodifiable(<WebBrowserSite>[
-      WebBrowserSite(name: 'MangaDex', url: Uri.parse('https://mangadex.org/')),
-      WebBrowserSite(name: 'Komiic', url: Uri.parse('https://komiic.com/')),
-      WebBrowserSite(
-        name: '拷贝漫画',
-        url: Uri.parse('https://www.mangacopy.com/'),
-      ),
-      WebBrowserSite(
-        name: 'WEBTOON',
-        url: Uri.parse('https://www.webtoons.com/'),
-      ),
-    ]);
+/// 新加站点时「默认用播放页打开」的初值：不进播放页基本没法看的站（Netflix 要硬件
+/// DRM）默认开，其它站默认走浏览器。[playerAvailable] 由调用方按平台给。
+bool webBrowserSiteDefaultsToPlayer(Uri url, {required bool playerAvailable}) {
+  if (!playerAvailable) return false;
+  final String host = url.host.toLowerCase();
+  return host == 'netflix.com' || host.endsWith('.netflix.com');
+}
 
-/// 从没改过站点表时的预置：网页漫画能力可用（[mangaAvailable]）才预置漫画站，
-/// 否则空表。
-List<WebBrowserSite> webBrowserPresetSites({required bool mangaAvailable}) =>
-    mangaAvailable ? kWebBrowserMangaPresetSites : const <WebBrowserSite>[];
+/// 把旧「视频站点」子页里用户自己加的站点（[legacy]：`(名称, 地址)`）并进站点表，
+/// 一律标成用播放页打开；同地址已在表里的只把它标成播放页。
+List<WebBrowserSite> mergeLegacyVideoSites(
+  List<WebBrowserSite> sites,
+  Iterable<(String, String)> legacy,
+) {
+  final List<WebBrowserSite> out = <WebBrowserSite>[...sites];
+  for (final (String name, String rawUrl) in legacy) {
+    final Uri? url = parseWebBrowserAddress(rawUrl);
+    if (url == null) continue;
+    final int i = out.indexWhere(
+      (WebBrowserSite s) => s.url.toString() == url.toString(),
+    );
+    if (i >= 0) {
+      out[i] = out[i].copyWith(openInPlayer: true);
+    } else {
+      out.add(
+        WebBrowserSite(
+          name: name.trim().isEmpty ? url.host : name.trim(),
+          url: url,
+          openInPlayer: true,
+        ),
+      );
+    }
+  }
+  return List<WebBrowserSite>.unmodifiable(out);
+}
 
-/// 解析偏好里存的站点表；空串 = 从没改过 → [presets]；坏 JSON → [presets]。
-List<WebBrowserSite> parseWebBrowserSites(
-  String raw, {
-  required List<WebBrowserSite> presets,
-}) {
-  if (raw.trim().isEmpty) return presets;
+/// 解析偏好里存的站点表；空串（从没改过）/ 坏 JSON → 空表。
+///
+/// 不预置任何站点（用户 2026-10-26「浏览器的默认网页删掉」）：站点全是用户自己加的。
+List<WebBrowserSite> parseWebBrowserSites(String raw) {
+  if (raw.trim().isEmpty) return const <WebBrowserSite>[];
   final Object? decoded;
   try {
     decoded = jsonDecode(raw);
   } on FormatException {
-    return presets;
+    return const <WebBrowserSite>[];
   }
-  if (decoded is! List) return presets;
+  if (decoded is! List) return const <WebBrowserSite>[];
   return List<WebBrowserSite>.unmodifiable(<WebBrowserSite>[
     for (final Object? item in decoded) ?WebBrowserSite.fromJson(item),
   ]);

@@ -6,12 +6,15 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/stream_video_launch.dart';
+import 'package:fushi/src/media/video/url_stream_video.dart'
+    show isKnownWebPageVideoUrl;
 import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_browser/features/play_in_fushi/youtube_watch_page.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
+import 'package:fushi/src/web_browser/web_browser_site_launch.dart';
 import 'package:fushi/utils.dart';
 
 /// 暂停页面里所有在播的 `<video>`（交给 Fushi 播放器前调，免得两边同时出声）。
@@ -33,15 +36,24 @@ const String kWebBrowserPauseVideosScript =
 ///
 /// YouTube 流播放不属于 `StoreRestrictedCapability`（粘贴 YouTube 地址导入在 iOS
 /// 上照常可用），所以五端都装。
+///
+/// 有播放页的平台（Windows，[playerAvailable]）上，其它网页也给「用 Fushi 播放」：把当前
+/// 页面整页交给播放页（[openInWebVideoPlayer]，Netflix 硬件 DRM / Fushi 字幕层 / 每集
+/// 落库），接着在那里选集播放（用户 2026-10-26：视频站点与浏览器站点合成一份，进
+/// 播放页靠按钮而不是另开一个列表）。已知视频站（[isKnownWebPageVideoUrl]）放工具栏，
+/// 其它网页收在「⋯」里。无痕标签页不给：播放页用的是常规登录存储，还会把看过的集落库。
 class PlayInFushiFeature extends WebBrowserFeature {
   PlayInFushiFeature({
     required VideoBookRepository Function() repository,
     required int? Function() youtubeTargetHeight,
+    bool Function()? playerAvailable,
   }) : _repository = repository,
-       _youtubeTargetHeight = youtubeTargetHeight;
+       _youtubeTargetHeight = youtubeTargetHeight,
+       _playerAvailable = playerAvailable ?? webVideoSitesAvailable;
 
   final VideoBookRepository Function() _repository;
   final int? Function() _youtubeTargetHeight;
+  final bool Function() _playerAvailable;
 
   /// 正在起播的标签页（防连点）。
   final Set<String> _launching = <String>{};
@@ -52,7 +64,7 @@ class PlayInFushiFeature extends WebBrowserFeature {
   @override
   List<WebBrowserAction> actions(BuildContext context, WebBrowserTab tab) {
     final String? videoId = youtubeWatchVideoIdOf(tab.url);
-    if (videoId == null) return const <WebBrowserAction>[];
+    if (videoId == null) return _pageActions(context, tab);
     return <WebBrowserAction>[
       WebBrowserAction(
         id: 'play_in_fushi',
@@ -65,6 +77,56 @@ class PlayInFushiFeature extends WebBrowserFeature {
             : () => unawaited(_play(context, tab, videoId)),
       ),
     ];
+  }
+
+  /// 非 YouTube 观看页：整页交给播放页（只在有播放页的平台、非无痕、http(s)）。
+  List<WebBrowserAction> _pageActions(BuildContext context, WebBrowserTab tab) {
+    final Uri? url = tab.url;
+    if (tab.incognito ||
+        url == null ||
+        (url.scheme != 'http' && url.scheme != 'https') ||
+        url.host.isEmpty ||
+        !_playerAvailable()) {
+      return const <WebBrowserAction>[];
+    }
+    final bool videoSite = isKnownWebPageVideoUrl(url.toString());
+    return <WebBrowserAction>[
+      WebBrowserAction(
+        id: 'play_in_fushi',
+        icon: FushiIcons.playCircle,
+        label: t.web_browser_play_in_fushi,
+        placement: videoSite
+            ? WebBrowserActionPlacement.toolbar
+            : WebBrowserActionPlacement.menu,
+        priority: 80,
+        onPressed: _launching.contains(tab.id)
+            ? null
+            : () => unawaited(_openPage(context, tab, url)),
+      ),
+    ];
+  }
+
+  Future<void> _openPage(
+    BuildContext context,
+    WebBrowserTab tab,
+    Uri url,
+  ) async {
+    if (!_launching.add(tab.id)) return;
+    try {
+      await _pausePage(tab.controller);
+      if (!context.mounted) return;
+      await openInWebVideoPlayer(
+        context,
+        url: url,
+        title: webVideoSiteDefaultTitle(url.toString()),
+        repo: _repository(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('web_browser.play_in_fushi', e, stack);
+      FushiToast.show(msg: t.video_load_failed_generic);
+    } finally {
+      _launching.remove(tab.id);
+    }
   }
 
   Future<void> _play(

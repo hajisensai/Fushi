@@ -125,8 +125,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // PreferencesRepository。不存密码，只存令牌；refresh token 轮换后由
   // AppModel.persistAudiobookshelfTokens 写回。与 discovery_opds_servers 同隔离纪律。
   'discovery_audiobookshelf_servers',
-  // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
-  // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
+  // 发现页「全部源」聚合排除的内置源 id（逗号分隔，默认空）。String，读写见
+  // PreferencesRepository。用户 BT 站展开的发现源各自带 enabled，不进这里。
   'discovery_disabled_sources',
   // bool（默认 true）：发现页隐藏疑似漫画（`DiscoveryContentHint.manga`）的
   // 条目；undecided 保留。读写见 PreferencesRepository。
@@ -522,6 +522,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 只能设、不显示进度）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'reading_goal_weekly_chars',
   'remote_lookup_enabled',
+  // 用户自己添加的 BT 站清单（JSON 数组：id/name/url/enabled/domains/format/
+  // nyaaCategories/allowInsecureHttp，编码在引擎 bt_site_config.dart）。String，
+  // 读写见 PreferencesRepository.btSites。地址可能带站点 passkey → 与
+  // video_resource_torznab_config 同样归类：PrefRedactionPolicy.sensitiveKeys +
+  // deviceLocalPrefKeys + 互联服务配置同步。
+  'resource_bt_sites',
   'reverse_navigation_bar',
   'reverse_reader_bottom_bar',
   // BUG-2100 沙箱重定位台账：上次启动时的两个数据根。根变了（iOS 每次更新都会换
@@ -697,7 +703,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_download_skip_extras',
   'video_download_target_source_id',
   'video_fit_mode',
+  // String（VideoImmersiveControlLayout JSON，空串 = 没改过、按普通布局派生）：
+  // 沉浸锁定后屏幕左右侧栏的按钮排列。
+  'video_immersive_control_layout',
   'video_immersive_mode',
+  // bool（默认 true）：沉浸锁定 + 字幕遮蔽中点画面任意处显示当前句。
+  'video_immersive_tap_reveal',
   // int（默认 -1 = 自动）：互联远端视频画质档在 kInterconnectQualityPresets 里的
   // 下标。自动 = 局域网原画直传、走公网压到中档（interconnect_video_quality.dart）。
   'video_interconnect_quality_preset',
@@ -735,8 +746,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 手机字幕遥控器控制卡按钮布局 JSON（VideoRemoteControlLayout，v1 槽位表）。
   'video_remote_control_layout',
   'video_remote_subtitle',
-  // 用户停用的内置视频资源索引器 id（逗号分隔，默认空 = 全部启用）。
-  // 与 discovery_disabled_sources 同形；自配 Torznab 各自带 enabled，不进这里。
+  // 旧「内置视频资源索引器」停用清单（逗号分隔）。内置 BT 站已整体移除（用户
+  // 自己添加 BT 站，见 resource_bt_sites），存量键冻结、不再读写；留在这里只为
+  // 键名不被别的功能复用。
   'video_resource_disabled_sources',
   'video_resource_torznab_config',
   'video_respect_ass_style',

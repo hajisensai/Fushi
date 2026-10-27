@@ -82,10 +82,11 @@ free_mem_mb() {
         /^Pages (free|inactive|speculative):/ { gsub(/\./, "", $NF); n += $NF }
         END { printf "%d\n", n * ps / 1048576 }' ;;
     linux) awk '/^MemAvailable:/ { printf "%d\n", $2 / 1024 }' /proc/meminfo ;;
-    windows)
-      powershell.exe -NoProfile -NonInteractive -Command \
-        '[int]((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1024)' \
-        | tr -d '\r' ;;
+    # Git Bash's /proc/meminfo, filled by the msys runtime from the kernel's
+    # performance counters: MemFree is Windows' available memory (the same
+    # number as FreePhysicalMemory). Not WMI: under sshd a standard account
+    # is denied Get-CimInstance, which read as 0 and turned every batch busy.
+    windows) awk '/^MemFree:/ { printf "%d\n", $2 / 1024 }' /proc/meminfo ;;
     *) echo 0 ;;
   esac
 }

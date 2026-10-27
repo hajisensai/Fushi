@@ -32,7 +32,28 @@ fn chain_at(conn: &Connection, profile: &str, device: &Id, seq: u64) -> Result<O
         .transpose()
 }
 
-/// 本设备的切段点：还没切的本机操作按上限切成新段（切点一旦定下就不变，各位置拿到的是同样的段）。
+//// 本机 seq 闭区间 [first, last] 的操作逐条喂进切段器（不把整段攒在内存里）。
+fn split_seq_range(conn: &Connection, local: &Local, first: u64, last: u64) -> Result<Vec<(u64, u64, u64)>, String> {
+    let mut s = segment::Splitter::new();
+    for seq in first..=last {
+        s.push(load_op(conn, &local.profile, &OpId { device: local.device, seq })?.ok_or("missing local op")?);
+    }
+    Ok(s.finish())
+}
+
+/// 本机的切段点 `(first, last, 压缩后体积估计；0 = 未知)`，按 seq 升序。
+fn segments_of(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64, u64)>, String> {
+    conn.prepare_cached("SELECT first, last, bytes FROM sync2_segments WHERE profile_uid = ?1 AND device = ?2 ORDER BY first")
+        .map_err(sql)?
+        .query_map(params![local.profile, local.device.0.to_vec()], |r| {
+            Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64, r.get::<_, i64>(2)? as u64))
+        })
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)
+}
+
+/// 本设备的切段点：还没切的本机操作按体积目标切成新段（切点一旦定下就不变，各位置拿到的是同样的段）。
 fn cut_segments(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64)>, String> {
     let last_cut: u64 = conn
         .query_row(
@@ -43,55 +64,92 @@ fn cut_segments(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64)>, Str
         .map_err(sql)? as u64;
     let top = local.next_seq - 1;
     if top > last_cut {
-        let mut ops = Vec::new();
-        for seq in last_cut + 1..=top {
-            ops.push(load_op(conn, &local.profile, &OpId { device: local.device, seq })?.ok_or("missing local op")?);
-        }
-        for (a, b) in segment::split_ranges(&ops) {
+        for (a, b, bytes) in split_seq_range(conn, local, last_cut + 1, top)? {
             conn.execute(
-                "INSERT OR IGNORE INTO sync2_segments (profile_uid, device, first, last) VALUES (?1, ?2, ?3, ?4)",
-                params![local.profile, local.device.0.to_vec(), ops[a].id.seq as i64, ops[b - 1].id.seq as i64],
+                "INSERT OR IGNORE INTO sync2_segments (profile_uid, device, first, last, bytes) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![local.profile, local.device.0.to_vec(), a as i64, b as i64, bytes as i64],
             )
             .map_err(sql)?;
         }
     }
-    conn.prepare_cached("SELECT first, last FROM sync2_segments WHERE profile_uid = ?1 AND device = ?2 ORDER BY first")
-        .map_err(sql)?
-        .query_map(params![local.profile, local.device.0.to_vec()], |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64)))
-        .map_err(sql)?
-        .collect::<Result<_, _>>()
-        .map_err(sql)
+    Ok(segments_of(conn, local)?.into_iter().map(|(a, b, _)| (a, b)).collect())
 }
 
-/// 小段合并（设计 §7.1）：本机连续的小段（每段少于 [COMPACT_SMALL_OPS] 条）攒到 [COMPACT_MIN_RUN] 个以上，就按
-/// 段上限重新切成大段——同一 seq 区间、同样的操作、重新签名，名字随之变化。网盘上的文件数因此不随同步次数线性涨。
+/// 分层合并（设计 §7.1）：每轮同步切出的小段按体积分层（[COMPACT_BASE] 起每 [COMPACT_FANOUT] 倍一层），同层相邻
+/// 攒够 [COMPACT_FANOUT] 个就合成一个更高层的段——像二进制进位，本机的段数始终是「满段 + 每层不到几个」，每条
+/// 操作一生只被重写对数次。满段（≥ 目标一半）不再动。新设备 / 落后很多的设备因此只拉十几个文件，而不是上千个。
 ///
-/// 各位置上已经有旧小段的：合并后的大段登记成「要重传」（[sync2_rewrites]），旧小段登记成「待删」
-/// （[sync2_obsolete]）；待删的旧文件在新 head 写出、且所有活跃设备的 ack 都越过它之后才删（`sync2_head` 返回），
-/// 归档位置由 Dart 侧跳过删除。还没传过的位置直接拿合并后的段。
-const COMPACT_SMALL_OPS: u64 = 200;
-const COMPACT_MIN_RUN: usize = 16;
+/// 合并 = 同一 seq 区间、同样的操作按体积目标重新切、重新签名，名字随之变化。各位置上已经有旧段的：合并后的段
+/// 登记成「要重传」（[sync2_rewrites]），旧段登记成「待删」（[sync2_obsolete]）；待删的旧文件在新 head 写出、且
+/// 所有活跃设备的 ack 都越过它之后才删（`sync2_head` 返回），归档位置由 Dart 侧跳过删除。还没传过的位置直接拿
+/// 合并后的段。升级前切的老段体积未知（0），先补算再分层。
+const COMPACT_FANOUT: usize = 4;
+const COMPACT_BASE: u64 = 16 * 1024;
+const COMPACT_FULL: u64 = segment::SEGMENT_TARGET_BYTES / 2;
 
-fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
-    let segs: Vec<(u64, u64)> = conn
-        .prepare_cached("SELECT first, last FROM sync2_segments WHERE profile_uid = ?1 AND device = ?2 ORDER BY first")
-        .map_err(sql)?
-        .query_map(params![local.profile, local.device.0.to_vec()], |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64)))
-        .map_err(sql)?
-        .collect::<Result<_, _>>()
-        .map_err(sql)?;
-    // 连续的小段成一组（中间夹着大段就断开）。
-    let mut runs: Vec<Vec<(u64, u64)>> = Vec::new();
-    let mut cur: Vec<(u64, u64)> = Vec::new();
-    for s in segs {
-        if s.1 - s.0 + 1 < COMPACT_SMALL_OPS {
-            cur.push(s);
-        } else if !cur.is_empty() {
-            runs.push(std::mem::take(&mut cur));
+fn compact_tier(bytes: u64) -> u32 {
+    let mut t = 0;
+    let mut floor = COMPACT_BASE;
+    while bytes >= floor {
+        t += 1;
+        floor = floor.saturating_mul(COMPACT_FANOUT as u64);
+    }
+    t
+}
+
+/// 一组相邻的段（seq 首尾相接）与它们的体积之和。
+struct CompactGroup {
+    segs: Vec<(u64, u64)>,
+    bytes: u64,
+}
+
+/// 只看体积定出要合并的组（每组 ≥ 2 个相邻段），不读操作。
+fn compaction_plan(segs: &[(u64, u64, u64)]) -> Vec<CompactGroup> {
+    fn flush(stack: &mut Vec<CompactGroup>, merges: &mut Vec<CompactGroup>) {
+        merges.extend(stack.drain(..).filter(|g| g.segs.len() > 1));
+    }
+    let mut merges = Vec::new();
+    let mut stack: Vec<CompactGroup> = Vec::new();
+    for &(a, b, bytes) in segs {
+        if bytes >= COMPACT_FULL {
+            flush(&mut stack, &mut merges);
+            continue;
+        }
+        stack.push(CompactGroup { segs: vec![(a, b)], bytes });
+        while stack.len() >= COMPACT_FANOUT {
+            let n = stack.len();
+            let t = compact_tier(stack[n - 1].bytes);
+            if !stack[n - COMPACT_FANOUT..].iter().all(|g| compact_tier(g.bytes) == t) {
+                break;
+            }
+            let mut merged = CompactGroup { segs: Vec::new(), bytes: 0 };
+            for g in stack.drain(n - COMPACT_FANOUT..) {
+                merged.segs.extend(g.segs);
+                merged.bytes += g.bytes;
+            }
+            if merged.bytes >= COMPACT_FULL {
+                merges.push(merged);
+                flush(&mut stack, &mut merges);
+                break;
+            }
+            stack.push(merged);
         }
     }
-    if !cur.is_empty() {
-        runs.push(cur);
+    flush(&mut stack, &mut merges);
+    merges
+}
+
+fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
+    let mut segs = segments_of(conn, local)?;
+    // 升级前切的老段：补算体积（一次性；之后的段切的时候就记下了）。
+    for s in segs.iter_mut().filter(|s| s.2 == 0) {
+        let est: u64 = split_seq_range(conn, local, s.0, s.1)?.iter().map(|x| x.2).sum();
+        s.2 = est.max(1);
+        conn.execute(
+            "UPDATE sync2_segments SET bytes = ?4 WHERE profile_uid = ?1 AND device = ?2 AND first = ?3",
+            params![local.profile, local.device.0.to_vec(), s.0 as i64, s.2 as i64],
+        )
+        .map_err(sql)?;
     }
     let locations: Vec<(String, u64)> = conn
         .prepare_cached("SELECT location, uploaded FROM sync2_locations WHERE profile_uid = ?1")
@@ -100,20 +158,13 @@ fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
-    for run in runs.into_iter().filter(|r| r.len() >= COMPACT_MIN_RUN) {
-        let (first, last) = (run[0].0, run[run.len() - 1].1);
-        let mut ops = Vec::with_capacity((last - first + 1) as usize);
-        for seq in first..=last {
-            ops.push(load_op(conn, &local.profile, &OpId { device: local.device, seq })?.ok_or("missing local op")?);
-        }
-        let merged: Vec<(u64, u64)> = segment::split_ranges(&ops)
-            .into_iter()
-            .map(|(a, b)| (ops[a].id.seq, ops[b - 1].id.seq))
-            .collect();
-        if merged.len() >= run.len() {
+    for group in compaction_plan(&segs) {
+        let (first, last) = (group.segs[0].0, group.segs[group.segs.len() - 1].1);
+        let merged = split_seq_range(conn, local, first, last)?;
+        if merged.len() >= group.segs.len() {
             continue;
         }
-        for (a, b) in &run {
+        for (a, b) in &group.segs {
             let tag = segment::chain_tag(&chain_at(conn, &local.profile, &local.device, *b)?.ok_or("missing chain")?);
             let name = format!("devices/{}/{}", local.device.text(), segment::segment_file_name(*a, *b, &tag));
             for (loc, uploaded) in &locations {
@@ -132,10 +183,10 @@ fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
             params![local.profile, local.device.0.to_vec(), first as i64, last as i64],
         )
         .map_err(sql)?;
-        for (a, b) in &merged {
+        for (a, b, bytes) in &merged {
             conn.execute(
-                "INSERT INTO sync2_segments (profile_uid, device, first, last) VALUES (?1, ?2, ?3, ?4)",
-                params![local.profile, local.device.0.to_vec(), *a as i64, *b as i64],
+                "INSERT INTO sync2_segments (profile_uid, device, first, last, bytes) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![local.profile, local.device.0.to_vec(), *a as i64, *b as i64, *bytes as i64],
             )
             .map_err(sql)?;
             for (loc, uploaded) in &locations {
@@ -256,18 +307,149 @@ fn record_head(conn: &Connection, profile: &str, h: &Head) -> Result<(), String>
     Ok(())
 }
 
-/// 应用一条已校验、因果已满足的远端操作。
-fn apply_remote(conn: &Connection, profile: &str, op: &Op, chain: &Chain, now: i64, t: &mut Touched) -> Result<(), String> {
-    insert_op(conn, profile, op, chain, now)?;
-    conn.execute(
-        "UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = ?1 AND device = ?2",
-        params![profile, op.id.device.0.to_vec(), op.id.seq as i64, chain.to_vec()],
-    )
-    .map_err(sql)?;
-    project(conn, profile, op, now, true, t)
+//// 一条等着投递的远端操作：本轮刚收的（已解码）或缓冲表里留下的（原字节，用到才解码）。
+struct Held {
+    op: Option<Op>,
+    raw: Option<Vec<u8>>,
+    chain: Chain,
+    /// 已在 `sync2_pending` 里：投递 / 丢弃时要删那一行；没在的投递不了才写进去。
+    stored: bool,
 }
 
-/// 本机身份分叉（设计 §7.3）：换新身份，把旧身份 seq > [keep] 的本机操作撤出投影、以新身份重签发
+impl Held {
+    fn op(&mut self) -> Result<&Op, String> {
+        if self.op.is_none() {
+            let raw = self.raw.take().ok_or("pending op without bytes")?;
+            self.op = Some(Op::read(&mut Reader::new(&raw)).map_err(|e| e.to_string())?);
+        }
+        Ok(self.op.as_ref().expect("decoded"))
+    }
+}
+
+fn mark_fork(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
+    c.prepare_cached("UPDATE sync2_devices SET warning = 'fork' WHERE profile_uid = ?1 AND device = ?2")
+        .map_err(sql)?
+        .execute(params![profile, device.0.to_vec()])
+        .map_err(sql)?;
+    Ok(())
+}
+
+fn unstore(c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<(), String> {
+    c.prepare_cached("DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3")
+        .map_err(sql)?
+        .execute(params![profile, device.0.to_vec(), seq as i64])
+        .map_err(sql)?;
+    Ok(())
+}
+
+/// 因果投递：缓冲表里留着的 + 本轮刚收的 [incoming]（`(操作, 链值)`，任意顺序、可重复），按设备排成队，能接上的
+/// （seq = applied + 1、链接得上、依赖都已应用）就应用，直到哪个队首都动不了。投递不了的写进缓冲等下一轮。
+/// 返回应用条数。
+///
+/// 在内存里按设备排队：每一遍只看各设备的队首，整体是 O(操作数 + 遍数 × 设备数)。（逐遍重扫整张缓冲表在
+/// 新设备追赶两台互相同步过上千次的设备时是平方级的。）设备进度（`sync2_devices.applied / chain`）最后一次写。
+fn deliver(c: &Connection, profile: &str, incoming: Vec<(Op, Chain)>, now: i64, t: &mut Touched) -> Result<usize, String> {
+    let mut vv = applied_vv(c, profile)?;
+    let mut queues: BTreeMap<Id, BTreeMap<u64, Held>> = BTreeMap::new();
+    {
+        let mut stmt = c.prepare_cached("SELECT device, seq, op, chain FROM sync2_pending WHERE profile_uid = ?1").map_err(sql)?;
+        let mut q = stmt.query([profile]).map_err(sql)?;
+        while let Some(r) = q.next().map_err(sql)? {
+            let device = Id(r.get::<_, Vec<u8>>(0).map_err(sql)?.try_into().map_err(|_| "bad device")?);
+            let seq = r.get::<_, i64>(1).map_err(sql)? as u64;
+            let chain: Chain = r.get::<_, Vec<u8>>(3).map_err(sql)?.try_into().map_err(|_| "bad chain")?;
+            let held = Held { op: None, raw: Some(r.get(2).map_err(sql)?), chain, stored: true };
+            queues.entry(device).or_default().insert(seq, held);
+        }
+    }
+    for (op, chain) in incoming {
+        // 缓冲表里已有同一 (设备, seq) 的以它为准（与原先 INSERT OR IGNORE 一样）。
+        queues
+            .entry(op.id.device)
+            .or_default()
+            .entry(op.id.seq)
+            .or_insert(Held { op: Some(op), raw: None, chain, stored: false });
+    }
+    let mut chains: BTreeMap<Id, Chain> = BTreeMap::new();
+    let mut applied_n = 0usize;
+    loop {
+        let mut progress = false;
+        for (device, q) in queues.iter_mut() {
+            while let Some(mut entry) = q.first_entry() {
+                let seq = *entry.key();
+                let have = vv.get(device);
+                if seq <= have {
+                    // 已有：同一 seq 链值不同 = 那台设备的身份分叉了（它自己会换身份重签发）。
+                    let held = entry.remove();
+                    if chain_at(c, profile, device, seq)? != Some(held.chain) {
+                        mark_fork(c, profile, device)?;
+                    }
+                    if held.stored {
+                        unstore(c, profile, device, seq)?;
+                    }
+                    continue;
+                }
+                if seq != have + 1 {
+                    break;
+                }
+                let prev = match chains.get(device) {
+                    Some(p) => *p,
+                    None => chain_at(c, profile, device, seq - 1)?.unwrap_or(CHAIN_ZERO),
+                };
+                let held = entry.get_mut();
+                let chain = held.chain;
+                let op = held.op()?;
+                if chain_next(&prev, op) != chain {
+                    // 接不上本机已有的前缀：那台设备分叉过，这一支不收。
+                    mark_fork(c, profile, device)?;
+                    c.execute(
+                        "DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq >= ?3",
+                        params![profile, device.0.to_vec(), seq as i64],
+                    )
+                    .map_err(sql)?;
+                    q.clear();
+                    break;
+                }
+                if !op.deps.le(&vv) {
+                    break;
+                }
+                insert_op(c, profile, op, &chain, now)?;
+                project(c, profile, op, now, true, t)?;
+                if held.stored {
+                    unstore(c, profile, device, seq)?;
+                }
+                entry.remove();
+                vv.set(*device, seq);
+                chains.insert(*device, chain);
+                applied_n += 1;
+                progress = true;
+            }
+        }
+        if !progress {
+            break;
+        }
+    }
+    for (device, chain) in &chains {
+        c.prepare_cached("UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = ?1 AND device = ?2")
+            .map_err(sql)?
+            .execute(params![profile, device.0.to_vec(), vv.get(device) as i64, chain.to_vec()])
+            .map_err(sql)?;
+    }
+    for (device, q) in queues.iter_mut() {
+        for (seq, held) in q.iter_mut().filter(|(_, h)| !h.stored) {
+            let bytes = held.op()?.encode();
+            c.prepare_cached(
+                "INSERT OR IGNORE INTO sync2_pending (profile_uid, device, seq, op, chain) VALUES (?1, ?2, ?3, ?4, ?5)",
+            )
+            .map_err(sql)?
+            .execute(params![profile, device.0.to_vec(), *seq as i64, bytes, held.chain.to_vec()])
+            .map_err(sql)?;
+        }
+    }
+    Ok(applied_n)
+}
+
+// 本机身份分叉（设计 §7.3）：换新身份，把旧身份 seq > [keep] 的本机操作撤出投影、以新身份重签发
 /// （内容不变），旧身份冻结在 [keep]（之后它的远端操作按普通设备收）。
 pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &mut Touched) -> Result<(), String> {
     let old = Local::load(conn, profile)?.ok_or("no sync2 identity")?;
@@ -352,80 +534,6 @@ pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &
     }
     fresh.save(conn)?;
     Ok(())
-}
-
-/// 因果投递：反复扫缓冲，能接上的（seq = applied + 1、链接得上、依赖都已应用）就应用。返回应用条数。
-fn deliver(c: &Connection, profile: &str, now: i64, t: &mut Touched) -> Result<usize, String> {
-    let mut applied_n = 0usize;
-    loop {
-        let mut progress = false;
-        let vv = applied_vv(c, profile)?;
-        let rows: Vec<(Vec<u8>, i64, Vec<u8>, Vec<u8>)> = c
-            .prepare_cached("SELECT device, seq, op, chain FROM sync2_pending WHERE profile_uid = ?1 ORDER BY device, seq")
-            .map_err(sql)?
-            .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
-            .map_err(sql)?
-            .collect::<Result<_, _>>()
-            .map_err(sql)?;
-        let mut vv = vv;
-        for (dev, seq, opb, chb) in rows {
-            let device = Id(dev.clone().try_into().map_err(|_| "bad device")?);
-            let seq = seq as u64;
-            let have = vv.get(&device);
-            if seq <= have {
-                // 已有：同一 seq 链值不同 = 那台设备的身份分叉了（它自己会换身份重签发）。
-                if chain_at(c, profile, &device, seq)?.map(|x| x.to_vec()) != Some(chb.clone()) {
-                    c.execute(
-                        "UPDATE sync2_devices SET warning = 'fork' WHERE profile_uid = ?1 AND device = ?2",
-                        params![profile, dev],
-                    )
-                    .map_err(sql)?;
-                }
-                c.execute(
-                    "DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3",
-                    params![profile, dev, seq as i64],
-                )
-                .map_err(sql)?;
-                continue;
-            }
-            if seq != have + 1 {
-                continue;
-            }
-            let op = Op::read(&mut Reader::new(&opb)).map_err(|e| e.to_string())?;
-            let chain: Chain = chb.clone().try_into().map_err(|_| "bad chain")?;
-            let prev = chain_at(c, profile, &device, seq - 1)?.unwrap_or(CHAIN_ZERO);
-            if chain_next(&prev, &op) != chain {
-                // 接不上本机已有的前缀：那台设备分叉过，这一支不收。
-                c.execute(
-                    "UPDATE sync2_devices SET warning = 'fork' WHERE profile_uid = ?1 AND device = ?2",
-                    params![profile, dev],
-                )
-                .map_err(sql)?;
-                c.execute(
-                    "DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq >= ?3",
-                    params![profile, dev, seq as i64],
-                )
-                .map_err(sql)?;
-                continue;
-            }
-            if !op.deps.le(&vv) {
-                continue;
-            }
-            apply_remote(c, profile, &op, &chain, now, t)?;
-            c.execute(
-                "DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3",
-                params![profile, dev, seq as i64],
-            )
-            .map_err(sql)?;
-            vv.set(device, seq);
-            applied_n += 1;
-            progress = true;
-        }
-        if !progress {
-            break;
-        }
-    }
-    Ok(applied_n)
 }
 
 impl SrsCore {
@@ -608,6 +716,7 @@ impl SrsCore {
             let mut t = Touched::default();
             let mut errors = Vec::new();
             let mut fork_at: Option<u64> = None;
+            let mut incoming: Vec<(Op, Chain)> = Vec::new();
             for bytes in segments {
                 let header = match segment::peek_header(bytes) {
                     Ok(h) => h,
@@ -662,17 +771,12 @@ impl SrsCore {
                     continue;
                 }
                 let mut chain = seg.header.prev_chain;
-                for op in &seg.ops {
-                    chain = chain_next(&chain, op);
-                    c.prepare_cached(
-                        "INSERT OR IGNORE INTO sync2_pending (profile_uid, device, seq, op, chain) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    )
-                    .map_err(sql)?
-                    .execute(params![profile, op.id.device.0.to_vec(), op.id.seq as i64, op.encode(), chain.to_vec()])
-                    .map_err(sql)?;
+                for op in seg.ops {
+                    chain = chain_next(&chain, &op);
+                    incoming.push((op, chain));
                 }
             }
-            let applied_n = deliver(c, profile, now, &mut t)?;
+            let applied_n = deliver(c, profile, incoming, now, &mut t)?;
             let fork = fork_at.is_some();
             if let Some(k) = fork_at {
                 rotate(c, profile, k, now, &mut t)?;
@@ -928,6 +1032,7 @@ impl SrsCore {
                     rotate(c, profile, k, now, &mut t)?;
                 }
             }
+            let mut incoming: Vec<(Op, Chain)> = Vec::new();
             for (device, public, ops) in &runs {
                 c.execute(
                     "INSERT INTO sync2_devices (profile_uid, device, public, applied) VALUES (?1, ?2, ?3, 0) \
@@ -938,15 +1043,10 @@ impl SrsCore {
                 let mut chain = CHAIN_ZERO;
                 for op in ops {
                     chain = chain_next(&chain, op);
-                    c.prepare_cached(
-                        "INSERT OR IGNORE INTO sync2_pending (profile_uid, device, seq, op, chain) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    )
-                    .map_err(sql)?
-                    .execute(params![profile, device.0.to_vec(), op.id.seq as i64, op.encode(), chain.to_vec()])
-                    .map_err(sql)?;
+                    incoming.push((op.clone(), chain));
                 }
             }
-            let applied = deliver(c, profile, now, &mut t)?;
+            let applied = deliver(c, profile, incoming, now, &mut t)?;
             let replayed = replay_touched(c, &t)?;
             let pending: i64 = c
                 .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1", [profile], |r| r.get(0))
@@ -964,5 +1064,58 @@ impl SrsCore {
             })
             .to_string())
         })
+    }
+}
+
+#[cfg(test)]
+mod compaction_tests {
+    use super::*;
+
+    /// 模拟本机几千轮同步：每轮切出一个小段，按 [compaction_plan] 合并（合并后的体积按真实压缩更小估一点）。
+    /// 段数始终有界（满段之外每层不到几个），每字节一生被重写的次数是对数级。
+    #[test]
+    fn tiered_compaction_bounds_file_count_and_rewrites() {
+        let mut segs: Vec<(u64, u64, u64)> = Vec::new();
+        let (mut appended, mut rewritten, mut seq) = (0u64, 0u64, 0u64);
+        let mut max_small = 0usize;
+        for round in 0..5000u64 {
+            let size = 200 + (round * 7919) % 3000;
+            seq += 1 + round % 5;
+            let first = segs.last().map_or(1, |s| s.1 + 1);
+            segs.push((first, seq, size));
+            appended += size;
+            for g in compaction_plan(&segs) {
+                let (a, b) = (g.segs[0].0, g.segs[g.segs.len() - 1].1);
+                rewritten += g.bytes;
+                let merged = g.bytes * 9 / 10;
+                let i = segs.iter().position(|s| s.0 == a).unwrap();
+                let j = segs.iter().position(|s| s.1 == b).unwrap();
+                segs.splice(i..=j, [(a, b, merged)]);
+            }
+            // 首尾相接、覆盖 1..=seq。
+            let mut next = 1;
+            for s in &segs {
+                assert_eq!(s.0, next);
+                next = s.1 + 1;
+            }
+            assert_eq!(next, seq + 1);
+            max_small = max_small.max(segs.iter().filter(|s| s.2 < COMPACT_FULL).count());
+        }
+        // 满段以下共 tiers 层，每层最多攒 FANOUT - 1 个；体积估计按真实压缩缩小后偶有同层多出一两个。
+        let tiers = compact_tier(COMPACT_FULL - 1) as usize + 1;
+        assert!(max_small <= tiers * (COMPACT_FANOUT - 1) + 2, "{max_small} small segments at worst");
+        let amp = rewritten as f64 / appended as f64;
+        eprintln!("max small segments {max_small}, write amplification {amp:.2}");
+        assert!(amp <= 6.0, "write amplification {amp}");
+    }
+
+    #[test]
+    fn full_segments_are_never_merged() {
+        let segs = vec![(1, 10, COMPACT_FULL), (11, 20, 100), (21, 30, COMPACT_FULL), (31, 31, 100), (32, 32, 100), (33, 33, 100)];
+        assert!(compaction_plan(&segs).is_empty());
+        let segs = vec![(1, 1, 100), (2, 2, 100), (3, 3, 100), (4, 4, 100)];
+        let plan = compaction_plan(&segs);
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].segs, vec![(1, 1), (2, 2), (3, 3), (4, 4)]);
     }
 }

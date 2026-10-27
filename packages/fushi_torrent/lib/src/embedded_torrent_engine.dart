@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import 'ffi/fushi_torrent_bindings.dart';
 import 'native_json.dart';
@@ -204,7 +205,7 @@ class EmbeddedTorrentEngine {
       // Old bundled DLLs may surface localized WinSock/libtorrent messages in
       // the active Windows code page. Keep the ABI consumer tolerant while
       // the native serializer now guarantees valid UTF-8 for new builds.
-      return decodeNativeTorrentJsonBytes(bytes.asTypedList(length));
+      return decodeNativeTorrentJsonBytes(bytes.asTypedListOutOfLine(length));
     } finally {
       bindings.ht_free_string(p);
     }

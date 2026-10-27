@@ -1,3 +1,4 @@
+import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -7,7 +8,8 @@ import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 /// 的 `scaffoldBackgroundColor` 换成透明，让页面里默认底色的 [Scaffold] 透出形状。
 ///
 /// 用户 2026-10-25 拍板「背景整个应用都加」：由 [FushiBackdropPageTransitionsBuilder]
-/// 在路由层统一垫，不逐页改。底色仍画在本组件里，所以整条路由照旧是不透明的，
+/// 在路由层统一垫，不逐页改。持有底层合成的页经 [setFushiPageRouteTransparent]
+/// 整个让开。底色仍画在本组件里，所以整条路由照旧是不透明的，
 /// 转场时上下两页不会互相透出。自己指定了 `backgroundColor` 的页面（播放器、
 /// 阅读器等）照旧盖住形状。
 ///
@@ -22,8 +24,9 @@ class FushiPageBackdrop extends StatelessWidget {
 
   final Widget child;
 
-  /// [context] 是否在一层正在画形状的 [FushiPageBackdrop] 之内。对话框 / 底部
-  /// 面板挂在 Navigator 的 overlay 上、不在页面子树里，这里恒为 false。
+  /// [context] 所在页的页底是否已被 [FushiPageBackdrop] 换成透明：正在画形状，
+  /// 或整页经 [setFushiPageRouteTransparent] 让给底层合成。对话框 / 底部面板挂在
+  /// Navigator 的 overlay 上、不在页面子树里，这里恒为 false。
   static bool activeOf(BuildContext context) =>
       context
           .dependOnInheritedWidgetOfExactType<_FushiPageBackdropScope>()
@@ -32,18 +35,30 @@ class FushiPageBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool enabled = LibraryShapeBackdrop.enabledOf(context);
-    return ColoredBox(
-      color: enabled ? theme.scaffoldBackgroundColor : Colors.transparent,
-      child: LibraryShapeBackdrop(
-        child: Theme(
-          data: enabled
-              ? theme.copyWith(scaffoldBackgroundColor: Colors.transparent)
-              : theme,
-          child: _FushiPageBackdropScope(active: enabled, child: child),
-        ),
-      ),
+    final Route<Object?>? route = ModalRoute.of(context);
+    return ValueListenableBuilder<Set<Route<Object?>>>(
+      valueListenable: _transparentPageRoutes,
+      builder: (BuildContext context, Set<Route<Object?>> transparent, _) {
+        final ThemeData theme = Theme.of(context);
+        final bool seeThrough = route != null && transparent.contains(route);
+        final bool enabled =
+            !seeThrough && LibraryShapeBackdrop.enabledOf(context);
+        return ColoredBox(
+          color: enabled ? theme.scaffoldBackgroundColor : Colors.transparent,
+          child: LibraryShapeBackdrop(
+            show: !seeThrough,
+            child: Theme(
+              data: enabled || seeThrough
+                  ? theme.copyWith(scaffoldBackgroundColor: Colors.transparent)
+                  : theme,
+              child: _FushiPageBackdropScope(
+                active: enabled || seeThrough,
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -65,6 +80,39 @@ Color fushiPageBackgroundColor(BuildContext context) =>
     FushiPageBackdrop.activeOf(context)
     ? Colors.transparent
     : FushiDesignTokens.of(context).surfaces.page;
+
+/// 整页必须透明的路由（不画底色、不画形状）。
+final ValueNotifier<Set<Route<Object?>>> _transparentPageRoutes =
+    ValueNotifier<Set<Route<Object?>>>(<Route<Object?>>{});
+
+/// 让 [route] 的 [FushiPageBackdrop] 整个让开（[transparent] = true）或恢复。
+///
+/// 给底层合成用（`underlay_composition.dart`：窗口宿主档的 WebView2 子窗口垫在 Flutter
+/// 下面、从透明像素处透出来）：这一页的底色和角落形状一旦画出来，就把网页整个盖住——
+/// 2026-10-26 用户截图「加载不出来」，Netflix 登录页只剩一片底色和三块形状。只让开持有
+/// 底层合成的那一页，盖在它上面的其它页照旧不透明。
+///
+/// 页面 dispose 里恢复时树是锁着的，通知要等这一帧画完（与 underlay 归还同一做法）。
+void setFushiPageRouteTransparent(Route<Object?> route, bool transparent) {
+  final SchedulerBinding binding = SchedulerBinding.instance;
+  if (binding.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+    binding.addPostFrameCallback(
+      (Duration _) => _applyPageRouteTransparent(route, transparent),
+    );
+    return;
+  }
+  _applyPageRouteTransparent(route, transparent);
+}
+
+void _applyPageRouteTransparent(Route<Object?> route, bool transparent) {
+  final Set<Route<Object?>> current = _transparentPageRoutes.value;
+  if (current.contains(route) == transparent) return;
+  _transparentPageRoutes.value = <Route<Object?>>{
+    for (final Route<Object?> r in current)
+      if (r != route) r,
+    if (transparent) route,
+  };
+}
 
 /// 不透明的页面底色：[FushiPageBackdrop] 把脚手架底色换成了透明，需要「盖住」
 /// 内容的遮罩 / 渐隐改取这里（透明时退回 `colorScheme.surface`，与主题的脚手架

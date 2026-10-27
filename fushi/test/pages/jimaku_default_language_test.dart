@@ -10,6 +10,7 @@ import 'package:http/testing.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
@@ -58,6 +59,18 @@ const NyaaTorrent _kTorrent = NyaaTorrent(
 class _FakeAppModel extends AppModel {
   _FakeAppModel({required this.defaultLanguage})
       : super(testPlatformServices());
+
+  // Fushi 不内置 BT 站：番剧选种走用户添加的 Nyaa 式站点。
+  @override
+  List<BtSiteConfig> get btSites => <BtSiteConfig>[
+    BtSiteConfig(
+      id: 'test-anime-site',
+      baseUrl: Uri.parse('https://nyaa.si'),
+      format: BtSiteFormat.nyaa,
+      domains: const <BtSiteDomain>{BtSiteDomain.anime},
+      nyaaCategories: const <BtSiteDomain, String>{BtSiteDomain.anime: '1_0'},
+    ),
+  ];
 
   final String defaultLanguage;
 

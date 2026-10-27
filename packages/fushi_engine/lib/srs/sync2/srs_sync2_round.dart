@@ -9,6 +9,9 @@
 ///
 /// 写入纪律（§6.1）：先写段、再写 head；读者只认「head 引用的段都可读」的前缀，所以 head 先于段可见、上传
 /// 中断、列目录最终一致（Google Drive）都只会让这一轮少收一点，下一轮补齐。传输只经 [SrsLocationStore]。
+///
+/// 读写文件同时最多 [kSrsSync2Concurrency] 个在途：网盘每个请求的固定延迟远大于传输本身，逐个等是首次同步 /
+/// 新设备追赶慢的主因。段之间没有先后约束（读者按 seq 排、写者在全部段写完后才写 head），只有 head 要等段。
 library;
 
 import 'dart:typed_data';
@@ -125,41 +128,57 @@ Future<SrsSync2Report> srsSync2Round({
   // 传过的密文段，本机全部按当前密钥重传一遍（同名覆盖）。
   final String progressId = srsLocationProgressId(locationId, keyHex);
 
-  // 1. 全部设备的 head。
-  final List<Uint8List> heads = <Uint8List>[];
-  for (final SrsLocationEntry d in await location.list('devices')) {
-    if (!d.isFolder) continue;
-    int top = -1;
-    final List<String> names = <String>[];
-    final Map<String, int> genOf = <String, int>{};
-    for (final SrsLocationEntry f in await location.list('devices/${d.name}')) {
-      final int? g = _headGen(f.name);
-      if (g == null) continue;
-      genOf[f.name] = g;
-      if (g > top) top = g;
-    }
-    genOf.forEach((String n, int g) {
-      if (g == top) names.add(n);
-    });
-    for (final String n in names) {
-      final Uint8List? b = await location.get('devices/${d.name}/$n');
-      if (b != null) heads.add(b);
-    }
-  }
+  // 1. 全部设备的 head：每台设备取代号最大的（同一代号的都要）。
+  final List<String> deviceDirs = <String>[
+    for (final SrsLocationEntry d in await location.list('devices'))
+      if (d.isFolder) 'devices/${d.name}',
+  ];
+  final List<List<String>> headPaths = await srsRunPooled(
+    deviceDirs,
+    kSrsSync2Concurrency,
+    (String dir) async {
+      int top = -1;
+      final Map<String, int> genOf = <String, int>{};
+      for (final SrsLocationEntry f in await location.list(dir)) {
+        final int? g = _headGen(f.name);
+        if (g == null) continue;
+        genOf[f.name] = g;
+        if (g > top) top = g;
+      }
+      return <String>[
+        for (final MapEntry<String, int> e in genOf.entries)
+          if (e.value == top) '$dir/${e.key}',
+      ];
+    },
+  );
+  final List<Uint8List> heads = <Uint8List>[
+    for (final Uint8List? b in await srsRunPooled(
+      <String>[for (final List<String> p in headPaths) ...p],
+      kSrsSync2Concurrency,
+      location.get,
+    ))
+      ?b,
+  ];
 
   // 2. 定要拉的段 → 拉 → 收。
   final Map<String, Object?> plan = (await host.sync2Command(<String, Object?>{
     'op': 'plan',
   }, blobs: heads)).map;
-  final List<Uint8List> segments = <Uint8List>[];
-  for (final Object? f in (plan['fetch'] as List?) ?? const <Object?>[]) {
-    final Map<String, Object?> e = (f! as Map).cast<String, Object?>();
-    for (final Object? name in (e['files'] as List?) ?? const <Object?>[]) {
-      // head 指向的段暂时还列不到（最终一致）就这一轮跳过，下一轮再来。
-      final Uint8List? b = await location.get(name! as String);
-      if (b != null) segments.add(b);
-    }
-  }
+  final List<String> wanted = <String>[
+    for (final Object? f in (plan['fetch'] as List?) ?? const <Object?>[])
+      for (final Object? name
+          in ((f! as Map)['files'] as List?) ?? const <Object?>[])
+        name! as String,
+  ];
+  // head 指向的段暂时还列不到（最终一致）就这一轮跳过，下一轮再来。
+  final List<Uint8List> segments = <Uint8List>[
+    for (final Uint8List? b in await srsRunPooled(
+      wanted,
+      kSrsSync2Concurrency,
+      location.get,
+    ))
+      ?b,
+  ];
   if (segments.isNotEmpty || plan['fork'] == true) {
     final Map<String, Object?> r = await host.sync2Ingest(
       segments,
@@ -183,10 +202,12 @@ Future<SrsSync2Report> srsSync2Round({
     'location': progressId,
     'key': keyHex,
   });
-  for (final (String path, Uint8List bytes) in out.files) {
-    await location.put(path, bytes);
+  await srsRunPooled(out.files, kSrsSync2Concurrency, (
+    (String, Uint8List) f,
+  ) async {
+    await location.put(f.$1, f.$2);
     report.uploaded++;
-  }
+  });
   final int upto = (out.map['upto'] as int?) ?? 0;
   // 状态摘要随 head 发布（§4.5：同一版本向量下两台设备摘要不同 = 确定性 bug）。全库扫描，内核只在版本向量
   // 变了且离上次满 [kSrsSync2DigestInterval] 时才重算，读连接上算、不占写锁。
@@ -213,22 +234,23 @@ Future<SrsSync2Report> srsSync2Round({
     written = path.substring(path.lastIndexOf('/') + 1);
   }
   // 小段合并（§7.1）换下来的旧小段：新 head 已不再引用、全部活跃设备都 ack 过了。归档位置一个不删。
-  if (!archive) {
-    for (final Object? name
-        in (head.map['delete'] as List?) ?? const <Object?>[]) {
-      await location.delete(name! as String);
-    }
-  }
+  final List<String> stale = <String>[
+    if (!archive)
+      for (final Object? name
+          in (head.map['delete'] as List?) ?? const <Object?>[])
+        name! as String,
+  ];
 
   // 4. 本机两代以前的 head；顺便取服务端时间。
   final int gen = (head.map['gen'] as int?) ?? 0;
   for (final SrsLocationEntry f in await location.list('devices/$self')) {
     final int? g = _headGen(f.name);
     if (!archive && g != null && g < gen - 2) {
-      await location.delete('devices/$self/${f.name}');
+      stale.add('devices/$self/${f.name}');
     }
     if (f.name == written) report.serverTimeMs = f.modifiedAt;
   }
+  await srsRunPooled(stale, kSrsSync2Concurrency, location.delete);
   return report;
 }
 

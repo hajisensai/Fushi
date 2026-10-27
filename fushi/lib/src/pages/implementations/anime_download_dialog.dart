@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/pages/implementations/download_notice.dart';
+import 'package:fushi/src/pages/implementations/bt_site_settings_route.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -20,6 +21,7 @@ import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi_engine/media/torrent/download_timeouts.dart'
     show kDownloadDiscoveryTimeout;
 import 'package:fushi/src/media/torrent/download_relocate_service.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_task_display.dart';
@@ -364,6 +366,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// 选种搜索失败的真实错误串（异常 toString，如 HandshakeException / 超时），
   /// 错误态原样展示：站点被墙 / 代理未配时用户能看出是自己网络的问题。
   String? _torrentsErrorDetail;
+
+  /// 用户没有能搜动画的 BT 站：不发请求，结果区显示去添加 BT 站的引导。
+  bool _btSiteMissing = false;
   List<NyaaTorrent> _torrents = const <NyaaTorrent>[];
   int _torrentRequestGeneration = 0;
   NyaaClient? _activeNyaaClient;
@@ -618,15 +623,30 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   Future<void> _fetchTorrents() async {
     final String query = _nyaaQueryCtrl.text.trim();
     if (query.isEmpty) return;
+    final BtSiteConfig? site = _animeSite;
+    if (site == null) {
+      ++_torrentRequestGeneration;
+      _activeNyaaClient?.close();
+      _activeNyaaClient = null;
+      setState(() {
+        _btSiteMissing = true;
+        _loadingTorrents = false;
+        _torrentsLoaded = false;
+        _torrentsError = false;
+        _torrentsErrorDetail = null;
+      });
+      return;
+    }
     final _TorrentSearchSnapshot request = _TorrentSearchSnapshot(
       generation: ++_torrentRequestGeneration,
       query: query,
-      category: _category,
+      category: _requestCategory(site),
       trustedOnly: _trustedOnly,
     );
     _activeNyaaClient?.close();
     _activeNyaaClient = null;
     setState(() {
+      _btSiteMissing = false;
       _loadingTorrents = true;
       _torrentsLoaded = false;
       _torrentsError = false;
@@ -635,6 +655,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     NyaaClient? nyaa;
     try {
       nyaa = NyaaClient(
+        baseUrl: site.baseUrl.toString(),
         client: await ref.read(appProvider).createDownloadHttpClient(),
         minRequestInterval:
             widget.debugNyaaMinRequestInterval ?? kNyaaMinRequestInterval,
@@ -1011,6 +1032,35 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     if (media != null) await _fetchJimaku(media);
   }
 
+  /// 选种用的站点：用户 BT 站里第一个启用、能搜动画的 Nyaa 式站点（与番剧订阅
+  /// 服务 `animeSiteProvider` 同一选法）。Fushi 不内置任何 BT 站。
+  BtSiteConfig? get _animeSite => ref
+      .read(appProvider)
+      .btSites
+      .where(
+        (BtSiteConfig site) =>
+            site.enabled &&
+            site.format == BtSiteFormat.nyaa &&
+            site.effectiveDomains.contains(BtSiteDomain.anime),
+      )
+      .firstOrNull;
+
+  /// 分类条（全部 / 生肉 / 英译 / 非英译）是 `1_x` 动画子类，只有站点的动画分类
+  /// 正是大类 `1_0` 时才成立；其余站点一律用站点自己的动画分类。
+  static bool _subcategoriesApply(BtSiteConfig? site) =>
+      site?.nyaaCategories[BtSiteDomain.anime] == '1_0';
+
+  /// 实际请求（与订阅保存）用的分类号。
+  String _requestCategory(BtSiteConfig site) => _subcategoriesApply(site)
+      ? _category
+      : site.nyaaCategories[BtSiteDomain.anime]!;
+
+  /// 去添加 BT 站，回来后重搜一次。
+  Future<void> _openBtSiteSettings() async {
+    await pushBtSiteSettingsPage(context);
+    if (mounted && _selectedMedia != null) unawaited(_fetchTorrents());
+  }
+
   void _selectCategory(String category) {
     if (_category == category) return;
     setState(() => _category = category);
@@ -1155,7 +1205,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             seriesTitle: media.displayTitle,
             coverUrl: media.coverUrl,
             nyaaQuery: _nyaaQueryCtrl.text.trim(),
-            category: _category,
+            category: switch (_animeSite) {
+              final BtSiteConfig site => _requestCategory(site),
+              null => _category,
+            },
             trustedOnly: _trustedOnly,
             releaseGroup: releaseGroup,
             resolution: torrent.resolution,
@@ -1926,18 +1979,19 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           runSpacing: 4,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: <Widget>[
-            for (final (String id, String label) in <(String, String)>[
-              ('1_0', t.anime_download_category_all),
-              ('1_4', t.anime_download_category_raw),
-              ('1_2', t.anime_download_category_english),
-              ('1_3', t.anime_download_category_non_english),
-            ])
-              FushiChoiceChip(
-                label: Text(label),
-                visualDensity: VisualDensity.compact,
-                selected: _category == id,
-                onSelected: (_) => _selectCategory(id),
-              ),
+            if (_subcategoriesApply(_animeSite))
+              for (final (String id, String label) in <(String, String)>[
+                ('1_0', t.anime_download_category_all),
+                ('1_4', t.anime_download_category_raw),
+                ('1_2', t.anime_download_category_english),
+                ('1_3', t.anime_download_category_non_english),
+              ])
+                FushiChoiceChip(
+                  label: Text(label),
+                  visualDensity: VisualDensity.compact,
+                  selected: _category == id,
+                  onSelected: (_) => _selectCategory(id),
+                ),
             FushiFilterChip(
               label: Text(t.anime_download_trusted_only),
               visualDensity: VisualDensity.compact,
@@ -2013,6 +2067,23 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     if (_loadingTorrents) {
       return <Widget>[
         SliverToBoxAdapter(child: _buildResultsSkeleton(shrinkWrap: true)),
+      ];
+    }
+    if (_btSiteMissing) {
+      return <Widget>[
+        status(
+          FushiPlaceholderMessage(
+            key: const ValueKey<String>('anime-download-bt-site-missing'),
+            icon: FushiIcons.travelExplore,
+            message: t.bt_site_missing_status,
+            detail: t.bt_site_empty_hint,
+            action: FushiFilledButton.tonal(
+              key: const ValueKey<String>('anime-download-open-bt-sites'),
+              onPressed: () => unawaited(_openBtSiteSettings()),
+              child: Text(t.bt_site_open_settings_action),
+            ),
+          ),
+        ),
       ];
     }
     if (_torrentsError) {

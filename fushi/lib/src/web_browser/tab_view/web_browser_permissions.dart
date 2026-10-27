@@ -10,8 +10,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/web_browser/data/web_browser_site_settings.dart';
 
-/// 网页申请的平台权限资源 → 按站点记住的权限种类。认不出的资源（MIDI、DRM 设备
-/// 标识、传感器……）返回 null，一律拒绝，不弹框。
+/// 网页申请的平台权限资源 → 按站点记住的权限种类。认不出的资源（MIDI、传感器……）
+/// 返回 null，一律拒绝，不弹框。
 WebBrowserSitePermission? webBrowserSitePermissionFor(
   PermissionResourceType resource,
 ) {
@@ -29,6 +29,11 @@ WebBrowserSitePermission? webBrowserSitePermissionFor(
   }
   if (resource == PermissionResourceType.CLIPBOARD_READ) {
     return WebBrowserSitePermission.clipboard;
+  }
+  // Android WebView 起播 Widevine（EME `requestMediaKeySystemAccess`）前申请的资源；
+  // 拒了站点就拿不到许可证，加密视频整段放不了。
+  if (resource == PermissionResourceType.PROTECTED_MEDIA_ID) {
+    return WebBrowserSitePermission.protectedContent;
   }
   return null;
 }
@@ -89,6 +94,8 @@ String _labelFor(List<WebBrowserSitePermission> permissions) {
             t.web_browser_permission_request_notifications,
           WebBrowserSitePermission.clipboard =>
             t.web_browser_permission_request_clipboard,
+          WebBrowserSitePermission.protectedContent =>
+            t.web_browser_permission_request_protected_content,
           WebBrowserSitePermission.autoplay ||
           WebBrowserSitePermission.popups => p.name,
         },
@@ -166,7 +173,8 @@ Future<bool> resolveWebBrowserPermission({
   final WebBrowserPermissionDecision remembered =
       combineWebBrowserPermissionDecisions(
         permissions.map(
-          (WebBrowserSitePermission p) => settings.decision(origin, p),
+          (WebBrowserSitePermission p) =>
+              webBrowserEffectiveDecision(p, settings.decision(origin, p)),
         ),
       );
   switch (remembered) {

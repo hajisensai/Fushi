@@ -13,6 +13,12 @@ import 'package:fushi_engine/anki_sync/anki_box_landing.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart' show parseAsrAudioProfile;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
+import 'package:fushi_engine/media/torrent/torznab_client.dart' show TorznabIndexerConfig;
+import 'package:fushi_engine/media/video/download/video_resource_prefs.dart' show readTorznabIndexerConfigs;
+import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
+import 'package:fushi_engine/utils/net/app_http.dart' show createAppHttpIoClient;
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadPipelineActionRequired;
 import 'package:fushi_engine/media/source_library/book_library_prune.dart';
@@ -38,6 +44,7 @@ import 'package:fushi_server/src/library_scanner.dart';
 import 'package:fushi_server/src/native_libs.dart';
 import 'package:fushi_server/src/profile_hub.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 
@@ -59,14 +66,19 @@ Future<Map<String, dynamic>> _body(shelf.Request request) async {
 }
 
 class AdminApi {
-  AdminApi(this.ctx)
+  AdminApi(this.ctx, {http.Client Function()? btSiteProbeClient})
       : uploads = UploadStore(
           ledgerFile: File(p.join(ctx.paths.support.path, 'upload_ledger.json')),
           quotaBytes: ctx.config.uploadQuotaBytes,
-        );
+        ),
+        _btSiteProbeClient = btSiteProbeClient ?? createAppHttpIoClient;
 
   final AdminContext ctx;
   final UploadStore uploads;
+
+  /// 添加 / 重新检测 BT 站时探测用的 HTTP client 工厂（每次探测建一个、用完关）。
+  /// 生产走全应用代理装配；测试注入假站点。
+  final http.Client Function() _btSiteProbeClient;
 
   Future<shelf.Response> handle(shelf.Request request) async {
     final String method = request.method.toUpperCase();
@@ -158,6 +170,14 @@ class AdminApi {
         return _resourceIndexers();
       case ('PUT', '/api/admin/resource-indexers'):
         return _putResourceIndexers(await _body(request));
+      case ('POST', '/api/admin/resource-indexers/bt-sites'):
+        return _addBtSite(await _body(request));
+      case ('POST', _) when path.startsWith(_btSitesPrefix) && path.endsWith('/reprobe'):
+        return _reprobeBtSite(_segment(path, _btSitesPrefix, '/reprobe'));
+      case ('PUT', _) when path.startsWith(_btSitesPrefix):
+        return _updateBtSite(Uri.decodeComponent(path.substring(_btSitesPrefix.length)), await _body(request));
+      case ('DELETE', _) when path.startsWith(_btSitesPrefix):
+        return _removeBtSite(Uri.decodeComponent(path.substring(_btSitesPrefix.length)));
       case ('GET', '/api/admin/models'):
         return _models();
       case ('POST', '/api/admin/models/pull'):
@@ -238,6 +258,7 @@ class AdminApi {
   }
 
   static const String _hostProxyPrefix = '/api/admin/host/';
+  static const String _btSitesPrefix = '/api/admin/resource-indexers/bt-sites/';
 
   /// `/api/admin/host/<rest>` → 互联的 `/api/<rest>`，以 host 身份进程内调用。
   ///
@@ -504,29 +525,94 @@ class AdminApi {
     if (host == null) return _json(const <String, Object?>{'supported': false, 'subscriptions': <Object?>[]});
     final Map<String, Object?> cap = await host.capability();
     final Map<String, Map<String, int>> counts = await host.itemCounts();
+    final _ProviderLabels labels = _providerLabels();
     return _json(<String, Object?>{
       ...cap,
+      // WebUI 用的来源下拉（显示名，不暴露 BT 站接口格式；值见 [_adminProviderValue]）。
+      'providerOptions': labels.options,
       'subscriptions': <Object?>[
         for (final VideoDownloadSubscriptionRow r in await host.list())
-          videoDownloadSubscriptionToWire(r, itemCounts: counts[r.subscriptionId]),
+          <String, Object?>{
+            ...videoDownloadSubscriptionToWire(r, itemCounts: counts[r.subscriptionId]),
+            'resourceProviderLabel': labels.labelOf(r.resourceProvider),
+          },
       ],
     });
   }
 
   Future<shelf.Response> _createSubscription(Map<String, dynamic> body) async {
+    final Map<String, dynamic> request = Map<String, dynamic>.from(body);
+    final Object? provider = request['resourceProvider'];
+    if (provider is String) request['resourceProvider'] = _adminProviderValue(provider);
     final VideoDownloadSubscriptionRow row =
-        await _subscriptionsHost().create(HostSubscriptionCreateRequest.fromJson(body));
+        await _subscriptionsHost().create(HostSubscriptionCreateRequest.fromJson(request));
     return _json(<String, Object?>{'subscription': videoDownloadSubscriptionToWire(row)});
   }
 
-  // ── 资源索引器（内置源启停 + Torznab）─────────────────────────────────
+  static const String _btSiteOptionPrefix = 'bt-site:';
+
+  /// WebUI 下拉值 → 持久化 provider id：`bt-site:<siteId>` 换成该站点的 provider id
+  /// （下拉里不带接口格式）；其它值原样（`torznab:<id>`，以及 ctl 直接传的 provider id）。
+  String _adminProviderValue(String value) {
+    if (!value.startsWith(_btSiteOptionPrefix)) return value;
+    final String siteId = value.substring(_btSiteOptionPrefix.length);
+    for (final BtSiteConfig site in readBtSiteConfigs(ctx.host.prefs)) {
+      if (site.id == siteId) return site.providerId;
+    }
+    throw const FormatException('unknown BT site');
+  }
+
+  _ProviderLabels _providerLabels() {
+    final ServerDownloadHost? downloads = ctx.host.downloads;
+    final Map<String, BtSiteConfig> sites = <String, BtSiteConfig>{
+      for (final BtSiteConfig s in readBtSiteConfigs(ctx.host.prefs)) s.id: s,
+    };
+    final Map<String, String> torznabNames = <String, String>{
+      for (final TorznabIndexerConfig c in readTorznabIndexerConfigs(ctx.host.prefs)) c.id: c.name,
+    };
+    final List<String> activeSites = downloads?.activeBtSiteIds ?? const <String>[];
+    final VideoResourceRegistry? registry = downloads?.registry;
+    final List<Map<String, String>> options = <Map<String, String>>[
+      for (final String id in activeSites)
+        if (sites[id] case final BtSiteConfig site) <String, String>{'value': '$_btSiteOptionPrefix$id', 'label': site.displayName},
+      for (final String id in downloads?.availableResourceProviderIds ?? const <String>[])
+        if (id.startsWith('torznab:'))
+          <String, String>{'value': id, 'label': 'Torznab · ${torznabNames[id.substring('torznab:'.length)] ?? id.substring('torznab:'.length)}'},
+    ];
+    String? labelOf(String persisted) {
+      if (isBtSiteProviderId(persisted)) {
+        // 旧内置源 id 与已删站点按同一规则解析到当前站点（与订阅调度同一处判据）。
+        final String? resolved = registry?.resolveProvider(persisted)?.id;
+        if (resolved == null || !resolved.contains(':')) return null;
+        return sites[resolved.substring(resolved.indexOf(':') + 1)]?.displayName;
+      }
+      if (persisted.startsWith('torznab:')) {
+        final String id = persisted.substring('torznab:'.length);
+        return 'Torznab · ${torznabNames[id] ?? id}';
+      }
+      return persisted;
+    }
+
+    return _ProviderLabels(options, labelOf);
+  }
+
+  // ── 资源索引器（用户 BT 站 + Torznab）──────────────────────────────
 
   /// `providers` = 运行中 registry 实际可用的 provider id（与订阅能力位同源）；
   /// 互联 host 没起来时为 null。`applied`：保存会不会立刻作用到正在跑的 host。
-  shelf.Response _resourceIndexers() {
+  /// BT 站逐条带 `active`（是否在运行中的搜索面里；host 没起来时为 null）。
+  /// [site]：刚增改的那一条（BT 站路由回显用）。
+  shelf.Response _resourceIndexers({String? site}) {
     final ServerDownloadHost? downloads = ctx.host.downloads;
+    final Set<String>? active = downloads?.activeBtSiteIds.toSet();
+    final Map<String, Object?> settings = resourceIndexerSettingsToJson(ctx.host.prefs, activeBtSiteIds: active);
     return _json(<String, Object?>{
-      ...resourceIndexerSettingsToJson(ctx.host.prefs),
+      ...settings,
+      if (site != null)
+        'site': (settings['btSites']! as List<Object?>)
+            .cast<Map<String, Object?>>()
+            .where((Map<String, Object?> s) => s['id'] == site)
+            .firstOrNull,
       'providers': downloads?.availableResourceProviderIds,
       'applied': downloads != null,
     });
@@ -540,6 +626,175 @@ class AdminApi {
       // 对正在跑的 host 立即生效（registry 整套换新；没起来则下次 serve 启动时读到）。
       await ctx.host.downloads?.reloadResourceIndexers();
     }
+    return _resourceIndexers();
+  }
+
+  /// BT 站清单的读-改-写串行执行（探测在串行段外跑，可能要等十几秒）。
+  Future<void> _btSiteOps = Future<void>.value();
+
+  Future<T> _serialBtSites<T>(Future<T> Function() op) {
+    final Future<T> next = _btSiteOps.then((_) => op());
+    _btSiteOps = next.then<void>((_) {}, onError: (Object _) {});
+    return next;
+  }
+
+  /// 探测失败 → 422（站点问题，不是请求格式问题）。文案中性：不列举支持哪些站点 / 格式。
+  shelf.Response _probeFailed(BtSiteProbeError error) => _json(<String, Object?>{
+        'error': switch (error) {
+          BtSiteProbeError.invalidUrl => 'Invalid site address',
+          BtSiteProbeError.insecureHttp => 'Plain HTTP is not allowed for this address; use HTTPS or allow plain HTTP',
+          BtSiteProbeError.unrecognized => 'Unable to recognize this site',
+          BtSiteProbeError.timedOut => 'The site did not respond in time',
+        },
+        'reason': error.name,
+      }, status: 422);
+
+  Future<BtSiteProbeResult> _probe(String url, {required bool allowInsecureHttp}) async {
+    final http.Client client = _btSiteProbeClient();
+    try {
+      return await probeBtSite(url, client: client, allowInsecureHttp: allowInsecureHttp);
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 站点变了：对正在跑的 host 立即生效（registry 换新 + 唤醒「没有可用 BT 站」暂停的订阅）。
+  Future<void> _btSitesChanged() async => ctx.host.downloads?.reloadResourceIndexers();
+
+  static String? _optionalString(Map<String, dynamic> body, String key) {
+    final Object? v = body[key];
+    if (v == null) return null;
+    if (v is! String) throw FormatException('$key must be a string');
+    return v;
+  }
+
+  static bool? _optionalBool(Map<String, dynamic> body, String key) {
+    final Object? v = body[key];
+    if (v == null) return null;
+    if (v is! bool) throw FormatException('$key must be a boolean');
+    return v;
+  }
+
+  /// `POST bt-sites {url, name?, domains?, enabled?, allowInsecureHttp?}`：先探测，认得出
+  /// 才保存；`domains` 省略 = 全部媒体域。
+  Future<shelf.Response> _addBtSite(Map<String, dynamic> body) async {
+    final String url = (_optionalString(body, 'url') ?? '').trim();
+    if (url.isEmpty) throw const FormatException('url is required');
+    final String name = (_optionalString(body, 'name') ?? '').trim();
+    final Set<BtSiteDomain> domains =
+        body['domains'] == null ? BtSiteDomain.values.toSet() : parseBtSiteDomains(body['domains']);
+    final bool enabled = _optionalBool(body, 'enabled') ?? true;
+    final bool allowInsecureHttp = _optionalBool(body, 'allowInsecureHttp') ?? false;
+    final BtSiteProbeResult probe;
+    try {
+      probe = await _probe(url, allowInsecureHttp: allowInsecureHttp);
+    } on BtSiteProbeException catch (e) {
+      return _probeFailed(e.error);
+    }
+    final BtSiteConfig site = probe.applyTo(
+      id: newBtSiteId(),
+      name: name,
+      domains: domains,
+      enabled: enabled,
+      allowInsecureHttp: allowInsecureHttp,
+    );
+    await _serialBtSites(() async {
+      final List<BtSiteConfig> sites = readBtSiteConfigs(ctx.host.prefs);
+      await writeBtSiteConfigs(ctx.host.prefs, <BtSiteConfig>[...sites, site]);
+    });
+    await _btSitesChanged();
+    return _resourceIndexers(site: site.id);
+  }
+
+  BtSiteConfig _findBtSite(String id) {
+    for (final BtSiteConfig site in readBtSiteConfigs(ctx.host.prefs)) {
+      if (site.id == id) return site;
+    }
+    throw _BtSiteNotFound(id);
+  }
+
+  Future<void> _replaceBtSite(BtSiteConfig next) => _serialBtSites(() async {
+        final List<BtSiteConfig> sites = readBtSiteConfigs(ctx.host.prefs);
+        if (!sites.any((BtSiteConfig s) => s.id == next.id)) throw _BtSiteNotFound(next.id);
+        await writeBtSiteConfigs(ctx.host.prefs, <BtSiteConfig>[
+          for (final BtSiteConfig s in sites) s.id == next.id ? next : s,
+        ]);
+      });
+
+  /// `PUT bt-sites/<id> {name?, domains?, enabled?, allowInsecureHttp?, url?}`：只改带了的
+  /// 字段。带非空 `url`（用户换了地址）就重新探测，认得出才保存。
+  Future<shelf.Response> _updateBtSite(String id, Map<String, dynamic> body) async {
+    try {
+      final BtSiteConfig current = _findBtSite(id);
+      final String? name = _optionalString(body, 'name')?.trim();
+      final Set<BtSiteDomain>? domains = body['domains'] == null ? null : parseBtSiteDomains(body['domains']);
+      final bool? enabled = _optionalBool(body, 'enabled');
+      final bool allowInsecureHttp = _optionalBool(body, 'allowInsecureHttp') ?? current.allowInsecureHttp;
+      final String url = (_optionalString(body, 'url') ?? '').trim();
+      final BtSiteConfig next;
+      if (url.isNotEmpty) {
+        final BtSiteProbeResult probe;
+        try {
+          probe = await _probe(url, allowInsecureHttp: allowInsecureHttp);
+        } on BtSiteProbeException catch (e) {
+          return _probeFailed(e.error);
+        }
+        next = probe.applyTo(
+          id: current.id,
+          name: name ?? current.name,
+          domains: domains ?? current.domains,
+          enabled: enabled ?? current.enabled,
+          allowInsecureHttp: allowInsecureHttp,
+        );
+      } else {
+        // 关掉明文放行而地址仍是明文 → 构造期 ArgumentError → 400，不落库。
+        next = current.copyWith(name: name, domains: domains, enabled: enabled, allowInsecureHttp: allowInsecureHttp);
+      }
+      await _replaceBtSite(next);
+      await _btSitesChanged();
+      return _resourceIndexers(site: id);
+    } on _BtSiteNotFound {
+      return _err(404, 'unknown BT site');
+    }
+  }
+
+  /// `POST bt-sites/<id>/reprobe`：按已存地址重新检测（站点改版 / 换了分类之后用）。
+  Future<shelf.Response> _reprobeBtSite(String id) async {
+    try {
+      final BtSiteConfig current = _findBtSite(id);
+      final BtSiteProbeResult probe;
+      try {
+        probe = await _probe(current.baseUrl.toString(), allowInsecureHttp: current.allowInsecureHttp);
+      } on BtSiteProbeException catch (e) {
+        return _probeFailed(e.error);
+      }
+      await _replaceBtSite(probe.applyTo(
+        id: current.id,
+        name: current.name,
+        domains: current.domains,
+        enabled: current.enabled,
+        allowInsecureHttp: current.allowInsecureHttp,
+      ));
+      await _btSitesChanged();
+      return _resourceIndexers(site: id);
+    } on _BtSiteNotFound {
+      return _err(404, 'unknown BT site');
+    }
+  }
+
+  Future<shelf.Response> _removeBtSite(String id) async {
+    final bool removed = await _serialBtSites(() async {
+      final List<BtSiteConfig> sites = readBtSiteConfigs(ctx.host.prefs);
+      final List<BtSiteConfig> kept = <BtSiteConfig>[
+        for (final BtSiteConfig s in sites)
+          if (s.id != id) s,
+      ];
+      if (kept.length == sites.length) return false;
+      await writeBtSiteConfigs(ctx.host.prefs, kept);
+      return true;
+    });
+    if (!removed) return _err(404, 'unknown BT site');
+    await _btSitesChanged();
     return _resourceIndexers();
   }
 
@@ -847,6 +1102,7 @@ class AdminApi {
       allowInsecureHttp: flag('allowInsecureHttp'),
       webKnowledge: flag('webKnowledge'),
       libraryOrganize: flag('libraryOrganize'),
+      agentForPeers: flag('agentForPeers'),
     );
     // 只缺 key / 模型算「没配全」，照存；地址 / 预设层面的错误直接拒。
     final String? invalid = next.invalidReason();
@@ -1051,4 +1307,18 @@ class AdminApi {
     unawaited(anki.runNow());
     return _json(const <String, Object?>{'ok': true});
   }
+}
+
+class _BtSiteNotFound implements Exception {
+  const _BtSiteNotFound(this.id);
+
+  final String id;
+}
+
+/// 订阅来源的显示名（WebUI 下拉 + 列表「源」栏）。`labelOf` 返回 null = 当前没有能接手的来源。
+class _ProviderLabels {
+  const _ProviderLabels(this.options, this.labelOf);
+
+  final List<Map<String, String>> options;
+  final String? Function(String persistedProviderId) labelOf;
 }

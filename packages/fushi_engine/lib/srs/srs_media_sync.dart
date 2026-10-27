@@ -166,7 +166,7 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     for (final SrsLocationEntry e in await location.list(folder))
       if (!e.isFolder) e.name,
   };
-  for (final String name in wanted) {
+  Future<void> syncOne(String name) async {
     final File local = File(p.join(mediaRoot.path, name));
     final bool haveLocal = local.existsSync();
     final bool haveRemote = remote.contains(name);
@@ -176,7 +176,7 @@ Future<SrsMediaSyncReport> srsSyncMedia({
           : await legacy?.call(name);
       if (bytes == null) {
         report.missing.add(name);
-        continue;
+        return;
       }
       await mediaRoot.create(recursive: true);
       final File tmp = File('${local.path}.download');
@@ -192,6 +192,21 @@ Future<SrsMediaSyncReport> srsSyncMedia({
       report.uploaded++;
     }
   }
+
+  // 媒体是内容寻址的独立文件，彼此无先后：同时最多 [kSrsSync2Concurrency] 个在途（首次同步一个牌组上千个
+  // 图片 / 音频时，逐个等每个请求的固定延迟是主要耗时）。只差大小写的名字在不分大小写的文件系统上是同一个本机
+  // 文件，归成一组在同一个任务里依次处理（与原先逐个处理时的结果相同）。
+  final Map<String, List<String>> byFolded = <String, List<String>>{};
+  for (final String name in wanted) {
+    byFolded.putIfAbsent(name.toLowerCase(), () => <String>[]).add(name);
+  }
+  await srsRunPooled(byFolded.values.toList(), kSrsSync2Concurrency, (
+    List<String> names,
+  ) async {
+    for (final String name in names) {
+      await syncOne(name);
+    }
+  });
   if (!archive) {
     // 只删有正面证据的：被「删除已满保留期」的笔记引用、且不被任何存活引用。本机不认识的文件一律不删——
     // 它可能是别的设备新笔记的媒体，而本机还没收到那条笔记。
@@ -205,13 +220,16 @@ Future<SrsMediaSyncReport> srsSyncMedia({
       ))
         n.toLowerCase(),
     };
-    for (final String name in remote) {
-      final String k = name.toLowerCase();
-      if (expired.contains(k) && !live.contains(k)) {
-        await location.delete('$folder/$name');
-        report.deleted++;
-      }
-    }
+    final List<String> doomed = <String>[
+      for (final String name in remote)
+        if (expired.contains(name.toLowerCase()) &&
+            !live.contains(name.toLowerCase()))
+          name,
+    ];
+    await srsRunPooled(doomed, kSrsSync2Concurrency, (String name) async {
+      await location.delete('$folder/$name');
+      report.deleted++;
+    });
   }
   return report;
 }

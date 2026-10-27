@@ -277,4 +277,45 @@ void main() {
       hasLength(2),
     );
   });
+
+  test('BUG-3785：删音乐扫描根把它下面的曲目一起软删，不留孤儿；别的根不受影响', () async {
+    final int music = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'music',
+        mediaKind: 'music',
+        rootPath: p.join('C:', 'music'),
+        createdAt: 1,
+      ),
+    );
+    final int other = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'music2',
+        mediaKind: 'music',
+        rootPath: p.join('C:', 'music2'),
+        createdAt: 1,
+      ),
+    );
+    Future<void> track(String uid, int sourceId) => db
+        .into(db.musicTracks)
+        .insert(
+          MusicTracksCompanion.insert(
+            trackUid: uid,
+            sourceId: Value<int?>(sourceId),
+            path: '/music/$uid.flac',
+            title: uid,
+            fileMtimeAt: 1,
+            fileSize: 1,
+            addedAt: 1,
+          ),
+        );
+    await track('a', music);
+    await track('b', other);
+
+    await removeSourceLibrary(database: db, prefs: prefs, sourceId: music);
+
+    expect(
+      (await db.listMusicTracks()).map((MusicTrackRow t) => t.trackUid),
+      <String>['b'],
+    );
+  });
 }

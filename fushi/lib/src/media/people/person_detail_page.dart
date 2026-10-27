@@ -135,25 +135,13 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
     PersonSuggestion s, {
     required bool same,
   }) async {
-    final String a = self.records.first.node;
-    final String b = s.other.records.first.node;
-    await _db.setManualPersonBridge(
-      a,
-      b,
-      same: same,
-      at: DateTime.now().millisecondsSinceEpoch,
-    );
+    await decidePersonIdentity(_db, self, s.other, same: same);
     if (!mounted) return;
     _reload();
   }
 
   Future<void> _unmerge((String, String) pair) async {
-    await _db.setManualPersonBridge(
-      pair.$1,
-      pair.$2,
-      same: false,
-      at: DateTime.now().millisecondsSinceEpoch,
-    );
+    await unmergePersonPair(_db, pair);
     if (!mounted) return;
     _reload();
   }
@@ -371,9 +359,7 @@ class _PersonHeader extends StatelessWidget {
     final List<Widget> chips = <Widget>[
       for (final String scheme in PersonIdScheme.all)
         for (final String v in data.cluster.idsOf(scheme))
-          Chip(
-            label: Text('${personIdSchemeLabel(scheme)} $v'),
-          ),
+          FushiChip(label: Text('${personIdSchemeLabel(scheme)} $v')),
     ];
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),

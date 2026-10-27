@@ -339,6 +339,17 @@ class PersonGraph {
     return _clusterByRoot(root);
   }
 
+  /// 图里的全部人（每个至少含一条本地人物记录；纯外部 id 的连通块不算），按根节点
+  /// 排序。人物列表（控制通道 / AI 助手）用。
+  List<PersonCluster> get clusters {
+    final Set<String> roots = <String>{
+      for (final String node in _records.keys) ?_rootOf(node),
+    };
+    return <PersonCluster>[
+      for (final String root in roots.toList()..sort()) _clusterByRoot(root),
+    ];
+  }
+
   PersonCluster _clusterByRoot(String root) {
     final List<PersonRecord> records = <PersonRecord>[];
     final Set<String> ids = <String>{};

@@ -1,6 +1,8 @@
 import 'dart:ffi';
 import 'dart:typed_data';
 
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
+
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
 
@@ -102,7 +104,7 @@ final class FfcAvifAnimation implements Finalizable {
     }
     final _AvifAnimationBindings b = _AvifAnimationBindings.instance;
     final Pointer<Uint8> src = NativeScratch.input.reserve(bytes.length);
-    src.asTypedList(bytes.length).setAll(0, bytes);
+    src.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
     final NativeScratch slots = NativeScratch.fixed(8 + 6 * 4);
     final Pointer<Pointer<Void>> handleOut = slots.pointer.cast();
     final Pointer<Uint32> info = Pointer<Uint32>.fromAddress(
@@ -167,7 +169,11 @@ final class FfcAvifAnimation implements Finalizable {
         'fushi_compute ffc_image_avif_anim_next failed: $status',
       );
     }
-    return (index: meta[0], durationMs: meta[1], pixels: out.asTypedList(len));
+    return (
+      index: meta[0],
+      durationMs: meta[1],
+      pixels: out.asTypedListOutOfLine(len),
+    );
   }
 
   /// 立即释放原生解码器与输出槽（幂等）。之后 [nextFrame] 抛 [StateError]。

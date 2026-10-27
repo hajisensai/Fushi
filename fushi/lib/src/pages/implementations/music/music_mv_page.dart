@@ -770,7 +770,7 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
         children: <Widget>[
           Text(formatFushiPlaybackTime(_position)),
           Expanded(
-            child: Slider(
+            child: FushiSlider(
               value: _position.inMilliseconds.toDouble().clamp(
                 0,
                 max <= 0 ? 1 : max,

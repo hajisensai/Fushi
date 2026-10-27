@@ -1864,6 +1864,7 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   void initState() {
     super.initState();
     _progress.animation.addStatusListener(_onStatus);
+    _progress.animation.addListener(_onProgress);
   }
 
   /// 离 [point] 最近的拖选目标（按槽矩形中心的横向距离）。
@@ -1979,8 +1980,21 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   /// 触发，推到帧后再复核、再 setState。
   void _onStatus(AnimationStatus status) {
     if (status.isAnimating || !_sliding) return;
+    _land();
+  }
+
+  /// 墨滴**首次到达**终点（进度 ≥ 1）就交接，不等弹簧 `isDone`：默认容差
+  /// （位置与速度都 < 1e-3）要到约 0.53 s 才成立，而墨滴约 0.2 s 就已到位，
+  /// 中间整段静止空等，多边形迟迟不出（用户 2026-10-26「点完到达后还要等一下
+  /// 才显示出多边形」）。剩下的过冲由 [NavMorphShape] 自己的弹簧吸收。
+  void _onProgress() {
+    if (_sliding && _progress.value >= 1) _land();
+  }
+
+  void _land() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_sliding || _progress.animation.isAnimating) return;
+      if (!mounted || !_sliding) return;
+      if (_progress.value < 1 && _progress.animation.isAnimating) return;
       setState(() {
         _sliding = false;
         _from = null;
@@ -2043,6 +2057,7 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   @override
   void dispose() {
     _progress.animation.removeStatusListener(_onStatus);
+    _progress.animation.removeListener(_onProgress);
     _progress.dispose();
     _lift.dispose();
     _dragTick.dispose();
@@ -4108,9 +4123,12 @@ class _FushiNavTile extends StatelessWidget {
     final bool sliding =
         _SlidingIndicatorScope.maybeOf(context)?.sliding ?? false;
     final bool landed = selected && !sliding;
-    final Color fg = landed
+    // 新选中项一开始就朝 onPrimary 渐变（时长与墨滴滑行同量级），墨滴滑到
+    // 它底下时字形已经是反色。此前滑行中染成 primary，与 primary 墨滴同色，
+    // 图标整个被「纯色盖住」直到落定（用户 2026-10-26）。
+    final Color fg = selected
         ? (eink ? colors.surface : colors.onPrimary)
-        : (selected ? colors.primary : colors.onSurfaceVariant);
+        : colors.onSurfaceVariant;
     final IconData icon = selected
         ? (item.selectedIcon ?? item.icon)
         : item.icon;
@@ -4128,7 +4146,7 @@ class _FushiNavTile extends StatelessWidget {
           ),
           TweenAnimationBuilder<Color?>(
             tween: ColorTween(end: fg),
-            duration: fushiMotionDuration(context, FushiMotion.short),
+            duration: fushiMotionDuration(context, FushiMotion.medium),
             curve: FushiMotion.standard,
             builder: (BuildContext context, Color? color, Widget? _) =>
                 _maybeBadge(

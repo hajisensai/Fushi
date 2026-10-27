@@ -374,6 +374,37 @@ String srsMaskBold(String field) => srsKanaFree(
   ),
 );
 
+/// 词频字段（制卡写的是「一个值一个 `<li>词典名: 值</li>`」，与 Yomitan / Lapis 同形）→
+/// 按词典合并的显示项：同一词典的多个值（普通形 + 假名形等）合成 `词典名: 值1, 值2`，
+/// 与查词弹窗「词频聚合」关闭时的分组一致。词典名按**最后一个** `: ` 切（名字里可以带
+/// 冒号，值里不会有）；切不出词典名的项原样单列。顺序按词典第一次出现。
+List<String> srsFrequencyGroups(String html) {
+  final Map<String, List<String>> byDict = <String, List<String>>{};
+  final List<String> order = <String>[];
+  for (final String item in srsListItems(html)) {
+    final int cut = item.lastIndexOf(': ');
+    if (cut <= 0 || cut + 2 >= item.length) {
+      order.add('\u0000$item');
+      continue;
+    }
+    final String dict = item.substring(0, cut).trim();
+    final String value = item.substring(cut + 2).trim();
+    final List<String>? values = byDict[dict];
+    if (values == null) {
+      byDict[dict] = <String>[value];
+      order.add(dict);
+    } else if (!values.contains(value)) {
+      values.add(value);
+    }
+  }
+  return <String>[
+    for (final String key in order)
+      key.startsWith('\u0000')
+          ? key.substring(1)
+          : '$key: ${byDict[key]!.join(', ')}',
+  ];
+}
+
 /// `<li>` 列表 → 各项纯文本（词频字段等）；没有 `<li>` 时按行切。
 List<String> srsListItems(String html) {
   final List<String> items = <String>[
