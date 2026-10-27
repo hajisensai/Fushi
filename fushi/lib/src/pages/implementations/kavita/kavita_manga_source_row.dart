@@ -12,7 +12,8 @@ import 'package:fushi/utils.dart';
 ///
 /// 只有配了**可用**服务器（启用且有 API key）时才出现，否则整行不占位——没配
 /// Kavita 的用户不该看到一个点进去什么都没有的入口。Kavita 是用户自己的服务器，
-/// 与互联对端同类，不受商店合规边界约束，iOS 上照常提供。
+/// 与互联对端同类，属于用户自配服务器能力（`userConfiguredServersAvailable`，
+/// 2026-10-27 用户拍板），iOS 上照常提供。
 ///
 /// 监听 `prefsRepo`（`setKavitaServers` 会 `notifyListeners`）：在设置页加完服务器
 /// 回到本页即出现。

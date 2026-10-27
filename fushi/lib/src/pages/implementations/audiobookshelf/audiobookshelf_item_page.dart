@@ -76,10 +76,7 @@ class _AudiobookshelfItemPageState
       _progress[audiobookshelfProgressKey(widget.item.id, episodeId)];
 
   /// 标记已听完 / 未听完（元素为 null = 条目本身）。单条失败不挡其余。
-  Future<void> _mark(
-    List<String?> episodeIds, {
-    required bool finished,
-  }) async {
+  Future<void> _mark(List<String?> episodeIds, {required bool finished}) async {
     Object? failure;
     for (final String? episodeId in episodeIds) {
       try {
@@ -116,7 +113,11 @@ class _AudiobookshelfItemPageState
     final _EpisodeMark? choice = await showAppDialog<_EpisodeMark>(
       context: context,
       builder: (BuildContext dialogContext) => FushiAlertDialog(
-        title: Text(episode.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+        title: Text(
+          episode.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -135,7 +136,7 @@ class _AudiobookshelfItemPageState
                 finished ? _EpisodeMark.unfinished : _EpisodeMark.finished,
               ),
             ),
-            if (StoreRestrictedCapability.downloads.isAvailable)
+            if (userConfiguredServersAvailable)
               FushiListItem(
                 leading: const FushiIcon(FushiIcons.download),
                 title: Text(t.audiobookshelf_item_download),
@@ -171,7 +172,9 @@ class _AudiobookshelfItemPageState
   AppModel get _appModel => ref.read(appProvider);
 
   /// 下载整本书（zip）或一集音频，走发现页同一条直链队列（下完自动入库，没有字幕就
-  /// 留给「配对」）。令牌在队列真正开跑时才取（见 [AudiobookshelfDiscoverySource]）。
+  /// 留给「配对」）。这是用户自己服务器的离线副本，入口问
+  /// `userConfiguredServersAvailable` 而不是下载中心的 `downloads` 门（2026-10-27 用户
+  /// 拍板 iOS 也保留；iOS 上 ABS 源照常登记进发现源注册表，队列解析得到它）。令牌在队列真正开跑时才取（见 [AudiobookshelfDiscoverySource]）。
   Future<void> _download({AudiobookshelfEpisode? episode}) async {
     final AudiobookshelfItem item = widget.item;
     final DiscoveryResourceItem resource = DiscoveryResourceItem(
@@ -414,9 +417,7 @@ class _AudiobookshelfItemPageState
                                   icon: const FushiIcon(FushiIcons.play),
                                   label: Text(t.audiobookshelf_item_stream),
                                 ),
-                                if (StoreRestrictedCapability
-                                    .downloads
-                                    .isAvailable) ...<Widget>[
+                                if (userConfiguredServersAvailable) ...<Widget>[
                                   SizedBox(height: tokens.spacing.gap),
                                   FushiTextButton.icon(
                                     onPressed: _download,
@@ -427,10 +428,9 @@ class _AudiobookshelfItemPageState
                                 SizedBox(height: tokens.spacing.gap),
                                 _BookProgressRow(
                                   progress: _progressOf(null),
-                                  onToggle: (bool finished) => _mark(
-                                    <String?>[null],
-                                    finished: finished,
-                                  ),
+                                  onToggle: (bool finished) => _mark(<String?>[
+                                    null,
+                                  ], finished: finished),
                                 ),
                               ],
                             ),

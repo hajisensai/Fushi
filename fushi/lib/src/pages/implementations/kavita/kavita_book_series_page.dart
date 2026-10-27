@@ -2,8 +2,9 @@
 /// 入库阅读）或「下载」（固定为长期保留）。
 ///
 /// 打开 = [KavitaBookService.openOrImport]（已在本地就不重复下载）；下载 = 打开 +
-/// [KavitaBookService.pin]。下载入口受 `StoreRestrictedCapability.downloads` 管（iOS
-/// 隐藏），阅读不受限。
+/// [KavitaBookService.pin]。下载是用户自有内容的离线副本，问
+/// `userConfiguredServersAvailable`（不挂下载中心的 `downloads` 门；2026-10-27 用户
+/// 拍板 iOS 也保留），阅读不受限。
 library;
 
 import 'dart:async';
@@ -214,7 +215,7 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
         message: t.kavita_book_no_chapters,
       );
     }
-    final bool canDownload = StoreRestrictedCapability.downloads.isAvailable;
+    final bool canDownload = userConfiguredServersAvailable;
     return FushiEntranceScope(
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 8),

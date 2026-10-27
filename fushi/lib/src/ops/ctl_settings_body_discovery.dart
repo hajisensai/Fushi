@@ -12,8 +12,9 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 
-/// 「在线服务 › 资源」下四个逃生口页面（发现来源开关、OPDS 书目服务器、AList /
-/// OpenList 站点、Audiobookshelf 服务器）在控制通道上的条目。
+/// 四个逃生口页面在控制通道上的条目：「在线服务 › 资源」下的内置发现来源开关
+/// （iOS 不出），以及「在线服务 › 媒体服务器」下的 OPDS 书目服务器、AList /
+/// OpenList 站点、Audiobookshelf 服务器（用户自配服务器，iOS 也保留）。
 ///
 /// 读写走页面同一组 `AppModel` 写回口（`setDiscoverySourceEnabled` /
 /// `setDiscoveryOpdsServers` / `setDiscoveryAListSites` /
@@ -30,19 +31,19 @@ List<CtlBodyPage> buildCtlDiscoveryBodyPages() => <CtlBodyPage>[
     items: <SettingsItem>[_builtinSourcesList()],
   ),
   CtlBodyPage(
-    breadcrumb: _crumb(t.discovery_opds_settings_title),
-    visible: _discoveryAvailable,
+    breadcrumb: _mediaServersCrumb(t.discovery_opds_settings_title),
+    // 与 schema 一致：用户自配服务器住「媒体服务器」节，iOS 也保留。
+    visible: _userServersAvailable,
     items: <SettingsItem>[_opdsList(), _opdsTest()],
   ),
   CtlBodyPage(
-    breadcrumb: _crumb(t.discovery_alist_settings_title),
-    visible: _discoveryAvailable,
+    breadcrumb: _mediaServersCrumb(t.discovery_alist_settings_title),
+    visible: _userServersAvailable,
     items: <SettingsItem>[_alistList(), _alistTest()],
   ),
   CtlBodyPage(
     breadcrumb: _mediaServersCrumb(t.discovery_audiobookshelf_settings_title),
-    // 与 schema 一致：ABS 住在「媒体服务器」节，不受发现源的 iOS 合规门影响。
-    visible: _always,
+    visible: _userServersAvailable,
     items: <SettingsItem>[_absList(), _absSignIn(), _absSignOut(), _absTest()],
   ),
 ];
@@ -65,7 +66,8 @@ String _crumb(String leaf) =>
 String _mediaServersCrumb(String leaf) =>
     '${t.settings_destination_services} › ${t.video_library_media_servers} › $leaf';
 
-bool _always(SettingsContext _) => true;
+/// 用户自己填地址的服务器（OPDS / AList / ABS）：iOS 也保留（2026-10-27 用户拍板）。
+bool _userServersAvailable(SettingsContext _) => userConfiguredServersAvailable;
 
 /// 与 schema 里「资源」分组同一判据：iOS 合规版不登记任何发现源。
 bool _discoveryAvailable(SettingsContext _) =>

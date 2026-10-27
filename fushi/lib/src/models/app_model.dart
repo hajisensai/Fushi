@@ -7300,19 +7300,31 @@ class AppModel with ChangeNotifier {
     }
     cached?.close();
     _discoveryRegistryLacksPrefs = !isPreferencesReady;
-    // iOS 上一个源都不登记，内置的与用户自配 OPDS 的都不登记
-    // （[StoreRestrictedCapability.externalDiscovery]）。
+    // 两道判据分开登记（判据本身只写在 store_compliance.dart）：
+    //  * 内置 / 预置源与用户添加的 BT 站（种子索引，落地只有 torrent）过
+    //    [StoreRestrictedCapability.externalDiscovery]——iOS 上一个都不登记；
+    //  * 用户自己填地址的服务器（OPDS / AList 站点 / Audiobookshelf）过
+    //    [userConfiguredServersAvailable]——iOS 也登记（2026-10-27 用户拍板：
+    //    App Store 5.2.3 限制的是未授权第三方来源，连接用户自己的服务器不在此列）。
     //
-    // 仍然建一份**空**注册表而不是返回 null：设置页的「发现来源」开关区、停用
-    // 清单、发现页自身都无条件解引用本 getter，把合规边界做成一条空指针路径只会
-    // 换来一批 iOS 专属崩溃。空注册表让这些消费端自然渲染成「没有源」。
-    if (!StoreRestrictedCapability.externalDiscovery.isAvailable) {
-      return _mediaDiscoveryService = MediaDiscoveryService(
-        sources: const <MediaDiscoverySource>[],
-      );
-    }
+    // iOS 上没有用户服务器时注册表就是空的，而不是返回 null：设置页的「发现来源」
+    // 开关区、停用清单、发现页自身都无条件解引用本 getter，把合规边界做成一条
+    // 空指针路径只会换来一批 iOS 专属崩溃。空注册表让这些消费端自然渲染成「没有源」。
+    final bool builtInSources =
+        StoreRestrictedCapability.externalDiscovery.isAvailable;
+    final bool userServerSources =
+        userConfiguredServersAvailable && isPreferencesReady;
     return _mediaDiscoveryService = MediaDiscoveryService(
       sources: <MediaDiscoverySource>[
+        if (builtInSources) ..._builtInDiscoverySources(),
+        if (userServerSources) ..._userServerDiscoverySources(),
+      ],
+    );
+  }
+
+  /// 内置 / 预置发现源与用户添加的 BT 站（iOS 不登记，见 [mediaDiscoveryService]）。
+  List<MediaDiscoverySource> _builtInDiscoverySources() =>
+      <MediaDiscoverySource>[
         CoreAudioDiscoverySource(httpClientFactory: createDownloadHttpClient),
         // 用户添加的 BT 站：Nyaa 式站点按各自生效的发现域展开成发现源（一条
         // 配置 = 一个源实例，停用的不登记，同 OPDS / AList 自配源）。没有内置站。
@@ -7332,39 +7344,40 @@ class AppModel with ChangeNotifier {
           kinds: const <DiscoveryMediaKind>{DiscoveryMediaKind.game},
         ),
         ShinnkuDiscoverySource(),
+      ];
+
+  /// 用户自己填地址的服务器展开成的发现源（iOS 也登记，见 [mediaDiscoveryService]）。
+  /// 只在偏好就绪后调用。
+  List<MediaDiscoverySource> _userServerDiscoverySources() =>
+      <MediaDiscoverySource>[
         // 用户自配的 OPDS 服务器：**运行期**由偏好展开，一条配置 = 一个源
         // 实例。停用的条目直接不进注册表（而不是进了再靠停用清单挡）——
         // 源开关列表遍历的就是本注册表，两套「关掉」的语义并存只会让设置页
         // 出现一个既在清单里又被排除的幽灵条目。
-        if (isPreferencesReady)
-          for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
-            if (server.enabled)
-              OpdsDiscoverySource(
-                config: server,
-                // 用户填的是服务端根 / 网页地址、探测打通了真正的目录端点时
-                // 写回（BUG-3525）。只落偏好不重建注册表：本实例已在内存里记住
-                // 打通的地址，重建只会打断正在进行的浏览。
-                onCatalogUrlResolved: (Uri resolved) =>
-                    unawaited(persistOpdsCatalogUrl(server.id, resolved)),
-              ),
+        for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
+          if (server.enabled)
+            OpdsDiscoverySource(
+              config: server,
+              // 用户填的是服务端根 / 网页地址、探测打通了真正的目录端点时
+              // 写回（BUG-3525）。只落偏好不重建注册表：本实例已在内存里记住
+              // 打通的地址，重建只会打断正在进行的浏览。
+              onCatalogUrlResolved: (Uri resolved) =>
+                  unawaited(persistOpdsCatalogUrl(server.id, resolved)),
+            ),
         // 用户自配的 AList / OpenList 站点：同上，一条配置 = 一个源实例。
-        if (isPreferencesReady)
-          for (final AListSiteConfig site in prefsRepo.discoveryAListSites)
-            if (site.enabled) AListDiscoverySource.fromConfig(site),
+        for (final AListSiteConfig site in prefsRepo.discoveryAListSites)
+          if (site.enabled) AListDiscoverySource.fromConfig(site),
         // 用户自配的 Audiobookshelf 服务器：同上。未登录的不登记——那样的源每次
         // 浏览都必然以「未登录」失败，挂在来源下拉里只是一个必红的徽标。
-        if (isPreferencesReady)
-          for (final AudiobookshelfServerConfig server
-              in prefsRepo.discoveryAudiobookshelfServers)
-            if (server.enabled && server.isSignedIn)
-              AudiobookshelfDiscoverySource(
-                config: server,
-                // 共享实例：与书库里的 ABS 标签页、流式播放共用同一份轮换中的令牌。
-                sharedApi: audiobookshelfApis.apiFor(server),
-              ),
-      ],
-    );
-  }
+        for (final AudiobookshelfServerConfig server
+            in prefsRepo.discoveryAudiobookshelfServers)
+          if (server.enabled && server.isSignedIn)
+            AudiobookshelfDiscoverySource(
+              config: server,
+              // 共享实例：与书库里的 ABS 标签页、流式播放共用同一份轮换中的令牌。
+              sharedApi: audiobookshelfApis.apiFor(server),
+            ),
+      ];
 
   MediaDiscoveryService? _mediaDiscoveryService;
 

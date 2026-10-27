@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
@@ -28,15 +29,15 @@ import '../helpers/source_guard.dart';
 /// 来源 / 扩展 / 导入 / 设置）。
 
 MediaItem _item(String identifier, String sourceKey) => MediaItem(
-      mediaIdentifier: identifier,
-      title: identifier,
-      mediaTypeIdentifier: 'reader',
-      mediaSourceIdentifier: sourceKey,
-      position: 0,
-      duration: 1,
-      canDelete: false,
-      canEdit: true,
-    );
+  mediaIdentifier: identifier,
+  title: identifier,
+  mediaTypeIdentifier: 'reader',
+  mediaSourceIdentifier: sourceKey,
+  position: 0,
+  duration: 1,
+  canDelete: false,
+  canEdit: true,
+);
 
 void main() {
   final MediaItem manga1 = _item('m1', MangaFushiSource.kUniqueKey);
@@ -61,36 +62,52 @@ void main() {
     });
 
     test('两个书架互补：并集 = 全集，交集为空，没有条目凭空消失', () {
-      final List<MediaItem> normal =
-          filterShelfEntriesByMangaSplit(corpus, mangaOnly: false);
-      final List<MediaItem> mangaShelf =
-          filterShelfEntriesByMangaSplit(corpus, mangaOnly: true);
-      expect(normal.length + mangaShelf.length, corpus.length,
-          reason: '分流不得吞条目，也不得让条目同时出现在两个书架');
+      final List<MediaItem> normal = filterShelfEntriesByMangaSplit(
+        corpus,
+        mangaOnly: false,
+      );
+      final List<MediaItem> mangaShelf = filterShelfEntriesByMangaSplit(
+        corpus,
+        mangaOnly: true,
+      );
+      expect(
+        normal.length + mangaShelf.length,
+        corpus.length,
+        reason: '分流不得吞条目，也不得让条目同时出现在两个书架',
+      );
       expect(<MediaItem>{...normal, ...mangaShelf}, corpus.toSet());
       expect(normal.toSet().intersection(mangaShelf.toSet()), isEmpty);
     });
 
     test('空输入两侧都是空列表', () {
       expect(
-          filterShelfEntriesByMangaSplit(const <MediaItem>[], mangaOnly: false),
-          isEmpty);
+        filterShelfEntriesByMangaSplit(const <MediaItem>[], mangaOnly: false),
+        isEmpty,
+      );
       expect(
-          filterShelfEntriesByMangaSplit(const <MediaItem>[], mangaOnly: true),
-          isEmpty);
+        filterShelfEntriesByMangaSplit(const <MediaItem>[], mangaOnly: true),
+        isEmpty,
+      );
     });
 
-    testWidgets('漫画库页的书架视图接的是 mangaOnly: true 的书架实现（没接反）',
-        (WidgetTester tester) async {
+    testWidgets('漫画库页的书架视图接的是 mangaOnly: true 的书架实现（没接反）', (
+      WidgetTester tester,
+    ) async {
       // 只取 build 的产物，不真正挂载子树：整页依赖 DB / WebView / 一堆 provider，
       // 挂起来就成了「测环境」而不是测这条接线。漫画库页现在是视图壳
       // （书架 / 来源 / 设置），书架仍是其中一个视图——穿过壳取该视图的产物。
       Widget? built;
+      // 非 iOS 宿主上 build 不读 ref（用户服务器门先被平台常量短路），给一个
+      // 空 ProviderScope 只是满足 ConsumerWidget 的签名。
       await tester.pumpWidget(
-        Builder(builder: (BuildContext context) {
-          built = const MangaLibraryPage().build(context);
-          return const SizedBox.shrink();
-        }),
+        ProviderScope(
+          child: Consumer(
+            builder: (BuildContext context, WidgetRef ref, Widget? _) {
+              built = const MangaLibraryPage().build(context, ref);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
       );
       expect(built, isA<MediaLibraryShell>());
       final MediaLibraryShell shell = built! as MediaLibraryShell;
@@ -113,7 +130,9 @@ void main() {
         reason: 'BUG-1710：两个都叫「发现」的 tab 不得再并存',
       );
       final Widget shelf = shell.views.first.builder(
-          tester.element(find.byType(SizedBox)), const SizedBox.shrink());
+        tester.element(find.byType(SizedBox)),
+        const SizedBox.shrink(),
+      );
       expect(shelf, isA<ReaderFushiHistoryPage>());
       expect((shelf as ReaderFushiHistoryPage).mangaOnly, isTrue);
       // 「导入」视图必须是漫画来源页——本地扫描根 + 互联（在线来源是独立视图）。
@@ -124,7 +143,9 @@ void main() {
                   v.kind == MediaLibraryViewKind.sources,
             )
             .builder(
-                tester.element(find.byType(SizedBox)), const SizedBox.shrink()),
+              tester.element(find.byType(SizedBox)),
+              const SizedBox.shrink(),
+            ),
         isA<MangaSourcesPage>(),
       );
       // 反向锚：普通书架的默认值必须仍是 false，否则漫画会在两边都出现。
@@ -157,14 +178,13 @@ void main() {
               .allMatches(source)
               .map((Match match) => match.group(1)!.trim())
               .toList();
-      expect(
-        conditions.toSet(),
-        <String>{
-          'StoreRestrictedCapability.externalDiscovery.isAvailable',
-          'isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga)',
-        },
-        reason: '视图列表只许按合规门分叉；按平台/扩展宿主分叉一律不行',
-      );
+      expect(conditions.toSet(), <String>{
+        'StoreRestrictedCapability.externalDiscovery.isAvailable',
+        'isOnlineSourcesDomainAvailable(OnlineSourcesDomain.manga)',
+        // iOS 上用户自配 OPDS / AList 服务器的发现视图（2026-10-27 用户拍板），
+        // 同样是合规门的一半，不是按宿主分叉。
+        'userServerDiscover',
+      }, reason: '视图列表只许按合规门分叉；按平台/扩展宿主分叉一律不行');
       for (final String removed in <String>[
         'mangaSources',
         'mangaExtensions',
@@ -172,8 +192,9 @@ void main() {
         'settings',
       ]) {
         expect(
-          MediaLibraryViewKind.values
-              .map((MediaLibraryViewKind kind) => kind.name),
+          MediaLibraryViewKind.values.map(
+            (MediaLibraryViewKind kind) => kind.name,
+          ),
           isNot(contains(removed)),
           reason: '$removed 是四视图形态的残留 kind，必须随之删除，否则会被重新用上',
         );
