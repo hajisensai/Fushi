@@ -17,6 +17,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/utils.dart';
+import '../helpers/source_guard.dart';
 import '../helpers/test_platform_services.dart';
 import '../torrent/nyaa_html_fixture.dart';
 import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
@@ -277,7 +278,9 @@ void main() {
 
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey<String>('discovery_source_pick_browsable')),
+        of: find.byKey(
+          const ValueKey<String>('discovery_source_pick_browsable'),
+        ),
         matching: find.text(t.discovery_source_capability_browsable),
       ),
       findsOneWidget,
@@ -382,8 +385,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // 搜索框里也有 'WHITE ALBUM2'，断言必须限定在列表条目里，否则恒真。
-    final Finder folderItem =
-        find.widgetWithText(FushiListItem, 'WHITE ALBUM2');
+    final Finder folderItem = find.widgetWithText(
+      FushiListItem,
+      'WHITE ALBUM2',
+    );
     expect(site.searchCalls, 1);
     expect(folderItem, findsOneWidget);
     // 选中目录型源时已经 browse 过一次根目录，基线从这里取。
@@ -435,7 +440,9 @@ void main() {
     expect(
       find.descendant(
         of: row,
-        matching: find.byKey(const ValueKey<String>('download-source-external')),
+        matching: find.byKey(
+          const ValueKey<String>('download-source-external'),
+        ),
       ),
       findsOneWidget,
     );
@@ -471,6 +478,64 @@ void main() {
     await tester.pumpAndSettle();
     expect(appModel.gameNoticeDismissed, isTrue);
     expect(appModel.discoveryDownloadQueue.tasks, hasLength(1));
+
+    // 行内状态（与 Audiobookshelf 条目页同一个组件）：测试队列的 resolver 抛错 →
+    // 任务落 failed，行内显示失败原文与就地重试；任务已结束，下载按钮重新出现。
+    final DiscoveryDownloadTask task =
+        appModel.discoveryDownloadQueue.tasks.single;
+    expect(task.status, DiscoveryDownloadStatus.failed);
+    final Finder status = find.byKey(
+      ValueKey<String>('discovery_item_status_site_${task.item.id}'),
+    );
+    expect(
+      find.descendant(
+        of: status,
+        matching: find.byKey(
+          const ValueKey<String>('discovery-inline-status-failed'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: status,
+        matching: find.textContaining(t.manga_online_failed),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: status,
+        matching: find.byKey(
+          const ValueKey<String>('discovery-inline-status-retry'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(download, findsOneWidget, reason: '已结束的任务不再挡住下载按钮');
+
+    // 就地重试复活同一条任务（不新建行），再次失败仍留在行内。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery-inline-status-retry')),
+    );
+    await tester.pumpAndSettle();
+    expect(appModel.discoveryDownloadQueue.tasks, hasLength(1));
+    expect(task.status, DiscoveryDownloadStatus.failed);
+  });
+
+  test('发现页行不再用「排队中只转圈」：直链状态全交给行内组件', () {
+    final String page = compactCode(
+      File(
+        'lib/src/pages/implementations/media_discovery_page.dart',
+      ).readAsStringSync(),
+    );
+    expect(page, contains('DiscoveryDownloadInlineStatus('));
+    expect(
+      page,
+      isNot(contains(')||queue.isPending(entry)?constSizedBox(')),
+      reason: '排队 / 下载中的转圈由行内状态取代，只剩 torrent 解析中才转圈',
+    );
+    expect(page, contains('entry.isDownloadable&&!queue.isPending(entry)?'));
   });
 
   // BUG-1770：整源失败不得显示成「无结果」。失败徽标原先只挂在非空列表分支上，
@@ -490,7 +555,9 @@ void main() {
 
     expect(dead.browseCalls, 1);
     expect(
-        find.textContaining(t.discovery_sources_unavailable), findsOneWidget);
+      find.textContaining(t.discovery_sources_unavailable),
+      findsOneWidget,
+    );
     expect(find.text(t.discovery_empty), findsNothing);
   });
 
@@ -515,9 +582,7 @@ void main() {
   // 卷号，旧的两行 ellipsis 恰好把卷号切掉，「看不出是哪一卷」；副标题还原样
   // 露着 `2026-09-25T04:55:58.997Z`。断言落在渲染结果上：窄屏下书名段落
   // 没有被截断、卷号真的画出来了，日期是本地 yyyy-MM-dd 而非 ISO 原文。
-  testWidgets('窄屏长书名完整换行显示卷号，ISO 时间戳收成本地日期', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('窄屏长书名完整换行显示卷号，ISO 时间戳收成本地日期', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(360, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -565,10 +630,12 @@ void main() {
 
     for (final int volume in <int>[3, 2]) {
       final String text = '$series $volume';
-      final RenderParagraph title =
-          tester.renderObject<RenderParagraph>(find.text(text));
-      final double lineHeight =
-          title.getFullHeightForCaret(const TextPosition(offset: 0));
+      final RenderParagraph title = tester.renderObject<RenderParagraph>(
+        find.text(text),
+      );
+      final double lineHeight = title.getFullHeightForCaret(
+        const TextPosition(offset: 0),
+      );
       // 窄屏下确实折成了多于两行——旧的 maxLines: 2 在这里必然截断。
       expect(title.size.height, greaterThan(lineHeight * 2.5));
       expect(title.didExceedMaxLines, isFalse);
@@ -582,13 +649,11 @@ void main() {
     }
 
     final DateTime local = DateTime.parse(updated).toLocal();
-    final String localDate = '${local.year}-'
+    final String localDate =
+        '${local.year}-'
         '${local.month.toString().padLeft(2, '0')}-'
         '${local.day.toString().padLeft(2, '0')}';
-    expect(
-      find.text('Bookorbit · $localDate · 鬼影スパナ'),
-      findsNWidgets(2),
-    );
+    expect(find.text('Bookorbit · $localDate · 鬼影スパナ'), findsNWidgets(2));
     expect(find.textContaining('T04:55'), findsNothing);
   });
 
@@ -616,7 +681,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
     await tester.pumpAndSettle();
     expect(searchOnly.searchCalls, 1);
-    expect(find.widgetWithText(FushiListItem, 'search-only-hit'), findsOneWidget);
+    expect(
+      find.widgetWithText(FushiListItem, 'search-only-hit'),
+      findsOneWidget,
+    );
 
     // 回车立即搜，并吃掉尚未触发的防抖（不会过 350ms 再重复打一次）。
     await tester.enterText(
@@ -675,9 +743,7 @@ void main() {
 
   // PR #1707 审查：结果列表曾挂 PageStorageKey，非追加加载（新搜索 / 换来源）后的
   // 新列表会恢复上一轮的偏移，书 / 游戏两域同路由同 key 还会互串。
-  testWidgets('新一轮搜索的结果从顶部开始，不恢复上一轮列表的偏移', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('新一轮搜索的结果从顶部开始，不恢复上一轮列表的偏移', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(800, 700);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -690,8 +756,9 @@ void main() {
       find.byKey(const ValueKey<String>('discovery_source_pick_paged')),
     );
     await tester.pumpAndSettle();
-    final Finder results =
-        find.byKey(const ValueKey<String>('discovery-results-scroll'));
+    final Finder results = find.byKey(
+      const ValueKey<String>('discovery-results-scroll'),
+    );
     ScrollPosition position() => tester
         .state<ScrollableState>(
           find.descendant(of: results, matching: find.byType(Scrollable)),
@@ -712,9 +779,7 @@ void main() {
     expect(position().pixels, 0);
   });
 
-  testWidgets('部分来源失败：结果照常显示，横幅点名失败来源的展示名', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('部分来源失败：结果照常显示，横幅点名失败来源的展示名', (WidgetTester tester) async {
     final _FailingSource dead = _FailingSource();
     service = MediaDiscoveryService(
       sources: <MediaDiscoverySource>[searchOnly, dead],
@@ -729,16 +794,23 @@ void main() {
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(FushiListItem, 'search-only-hit'), findsOneWidget);
-    final Finder banner =
-        find.byKey(const ValueKey<String>('discovery_provider_warning'));
+    expect(
+      find.widgetWithText(FushiListItem, 'search-only-hit'),
+      findsOneWidget,
+    );
+    final Finder banner = find.byKey(
+      const ValueKey<String>('discovery_provider_warning'),
+    );
     expect(banner, findsOneWidget);
     expect(
       find.descendant(of: banner, matching: find.text('Dead')),
       findsOneWidget,
       reason: '印来源展示名，不是接线 id',
     );
-    expect(find.descendant(of: banner, matching: find.text('dead')), findsNothing);
+    expect(
+      find.descendant(of: banner, matching: find.text('dead')),
+      findsNothing,
+    );
   });
 
   testWidgets('唯一来源整个失败时可重试，重试真的重新请求', (WidgetTester tester) async {
@@ -840,9 +912,7 @@ void main() {
       return fresh;
     }
 
-    testWidgets('默认藏死种与疑似漫画、源内按做种降序、徽标来自行 class', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('默认藏死种与疑似漫画、源内按做种降序、徽标来自行 class', (WidgetTester tester) async {
       // 点开计数行后五条全显示：M3E 分段结果行（形状底 leading + 徽标行）比旧
       // ListTile 高，默认 800×600 下排在最末的死种落进视口下沿外的缓存区
       // （offstage）。不能靠滚动露出——滚近底部会触发自动翻页、多发请求，正好
@@ -861,7 +931,9 @@ void main() {
       expect(item('Remake Novel v01 EPUB'), findsOneWidget);
       expect(
         tester.getTopLeft(item('Mushoku Tensei v01-26 [Yen Press] [Stick]')).dy,
-        lessThan(tester.getTopLeft(item('Re:ZERO v01-29 [Yen Press] [Stick]')).dy),
+        lessThan(
+          tester.getTopLeft(item('Re:ZERO v01-29 [Yen Press] [Stick]')).dy,
+        ),
       );
       expect(
         tester.getTopLeft(item('Re:ZERO v01-29 [Yen Press] [Stick]')).dy,
@@ -871,8 +943,9 @@ void main() {
       expect(item('Sousou no Frieren v01-14 (Digital) (1r0n)'), findsNothing);
       expect(item('Dead Novel v01 EPUB'), findsNothing);
       // 计数行：1 条无人做种 + 1 条疑似漫画。
-      final Finder notice =
-          find.byKey(const ValueKey<String>('discovery_hidden_reveal'));
+      final Finder notice = find.byKey(
+        const ValueKey<String>('discovery_hidden_reveal'),
+      );
       expect(notice, findsOneWidget);
       expect(
         find.textContaining(t.discovery_hidden_zero_seeders_count(n: 1)),
@@ -960,8 +1033,9 @@ void main() {
 
     testWidgets('两个开关写穿偏好并即时生效，切换不重新请求', (WidgetTester tester) async {
       await searchNyaa(tester);
-      final Finder zeroChip =
-          find.byKey(const ValueKey<String>('discovery_filter_hide_zero_seeders'));
+      final Finder zeroChip = find.byKey(
+        const ValueKey<String>('discovery_filter_hide_zero_seeders'),
+      );
       final Finder mangaChip = find.byKey(
         const ValueKey<String>('discovery_filter_hide_suspected_manga'),
       );
@@ -1011,8 +1085,8 @@ void main() {
         );
       }
       FushiSelectableChip chip(int index) => tester.widget<FushiSelectableChip>(
-            find.byKey(ValueKey<String>('discovery_nyaa_filter_$index')),
-          );
+        find.byKey(ValueKey<String>('discovery_nyaa_filter_$index')),
+      );
       expect(chip(0).selected, isTrue);
       expect(prefs.discoveryNyaaQualityFilter, 0);
       expect(requests.last.queryParameters['f'], '0');
@@ -1058,17 +1132,15 @@ void main() {
     });
 
     test('app_model 装配：nyaa.si 源按当前偏好现读过滤三态', () {
-      final String source =
-          File('lib/src/models/app_model.dart').readAsStringSync();
+      final String source = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
       expect(
         source.contains('qualityFilter: () => NyaaQualityFilter.fromIndex('),
         isTrue,
         reason: '偏好可随时改而源实例常驻，必须按次读，不能构造时定死',
       );
-      expect(
-        source.contains('prefsRepo.discoveryNyaaQualityFilter'),
-        isTrue,
-      );
+      expect(source.contains('prefsRepo.discoveryNyaaQualityFilter'), isTrue);
     });
   });
 }
@@ -1088,15 +1160,14 @@ class _FailingSource extends MediaDiscoverySource {
 
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
-        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
-        supportsBrowse: true,
-      );
+    kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+    supportsBrowse: true,
+  );
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> search(
     DiscoveryRequest request,
-  ) async =>
-      throw StateError('down');
+  ) async => throw StateError('down');
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> browse(
@@ -1122,15 +1193,14 @@ class _EmptySource extends MediaDiscoverySource {
 
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
-        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
-        supportsBrowse: true,
-      );
+    kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+    supportsBrowse: true,
+  );
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> search(
     DiscoveryRequest request,
-  ) async =>
-      _page();
+  ) async => _page();
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> browse(
@@ -1171,9 +1241,9 @@ class _RecursiveSearchSource extends MediaDiscoverySource {
 
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
-        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
-        supportsBrowse: true,
-      );
+    kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+    supportsBrowse: true,
+  );
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> search(
@@ -1230,15 +1300,14 @@ class _PagedSource extends MediaDiscoverySource {
 
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
-        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
-        supportsBrowse: true,
-      );
+    kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+    supportsBrowse: true,
+  );
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> search(
     DiscoveryRequest request,
-  ) =>
-      browse(request);
+  ) => browse(request);
 
   @override
   Future<ProviderBatchResult<DiscoveryResultPage>> browse(
