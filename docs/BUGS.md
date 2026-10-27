@@ -33,10 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3453 条。点号进各自文件。
+> 共 3458 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3853](bugs/BUG-3853-collection-longpress-haptic.md) | ✅ | ✅ | collection-longpress-haptic |
+| [BUG-3852](bugs/BUG-3852-web-browser-tab-strip-caption-row-and-exit.md) | ✅ | ✅ | web-browser-tab-strip-caption-row-and-exit |
+| [BUG-3851](bugs/BUG-3851-qbittorrent-52-session-cookie.md) | ✅ | ✅ | qBittorrent 5.2+ 会话 cookie 改名后外接登录失败 |
+| [BUG-3850](bugs/BUG-3850-video-theme-song-hints-removed.md) | ✅ | ✅ | 已删的「跳过片头」按钮换了个实现又回来了，外加 OP 期间「♪ 曲名 · 在音乐库打开」角标，按用户决定两个提示都删 |
 | [BUG-3849](bugs/BUG-3849-srs-outbox-batched-resume.md) | ✅ | ✅ | SRS 同步 v2 发件一次性全量进内存、断点整份重传、推送失败不退避 |
 | [BUG-3848](bugs/BUG-3848-srs-apkg-reimport-after-delete.md) | ✅ | ✅ | 删牌组与笔记类型后重导 apkg：0 new / restored / updated 但浏览、复习、笔记类型页全为空 |
 | [BUG-3847](bugs/BUG-3847-srs-rate-next-card-frame-drops.md) | ✅ | ✅ | SRS 评分后下一张卡掉帧：评分叫醒被盖住的牌组列表 + 卡面无关重建 |
@@ -85,28 +89,8 @@
 | [BUG-3804](bugs/BUG-3804-remote-collection-subtitle-episode-index.md) | ✅ | ✅ | 互联合集连播第 2 集起拿不到主机选定的外挂字幕 |
 | [BUG-3803](bugs/BUG-3803-browser-ext-popup-wheel-bubbles.md) | ✅ | ✅ | 扩展查词弹窗里滚轮冒泡到宿主页（b 站调音量） |
 | [BUG-3802](bugs/BUG-3802-feedback-reply-notice-persists.md) | ✅ | ✅ | 反馈回复提示条常驻不消失、遮挡提交按钮 |
-| [BUG-3801](bugs/BUG-3801-qbittorrent-52-session-cookie.md) | ✅ | ✅ | qBittorrent 5.2+ 会话 cookie 改名后外接登录失败 |
-> 共 3405 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3801](bugs/BUG-3801-netflix-browser-blackscreen-relogin.md) | ✅ | ✅ | Windows 浏览器里看 Netflix 黑屏卡顿，「用 Fushi 播放」要重新登录且要点两次 |
-> 共 3405 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3801](bugs/BUG-3801-web-browser-tab-strip-caption-row-and-exit.md) | ✅ | ✅ | web-browser-tab-strip-caption-row-and-exit |
-> 共 3405 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3801](bugs/BUG-3801-collection-longpress-haptic.md) | ✅ | ✅ | collection-longpress-haptic |
-> 共 3406 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-3802](bugs/BUG-3802-ai-cannot-link-works.md) | ✅ | ✅ | 内置 AI 助手怎么都做不到「关联作品」 |
-| [BUG-3801](bugs/BUG-3801-video-theme-song-hints-removed.md) | ✅ | ✅ | 已删的「跳过片头」按钮换了个实现又回来了，外加 OP 期间「♪ 曲名 · 在音乐库打开」角标，按用户决定两个提示都删 |
+| [BUG-3801](bugs/BUG-3801-netflix-browser-blackscreen-relogin.md) | ✅ | ✅ | Windows 浏览器里看 Netflix 黑屏卡顿，「用 Fushi 播放」要重新登录且要点两次 |
 | [BUG-3800](bugs/BUG-3800-floating-ball-switch-profile-label.md) | ✅ | ✅ | 悬浮球切换配置按钮文案被换成配置名 |
 | [BUG-3799](bugs/BUG-3799-kavita-cache-download-semantics-empty.md) | ✅ | ✅ | Kavita 缓存 / 下载两态是空的：阅读即永久入库、移除下载只翻标记 |
 | [BUG-3798](bugs/BUG-3798-audiobook-chapter-transition-receipt-lost.md) | ✅ | ✅ | audiobook-chapter-transition-receipt-lost |

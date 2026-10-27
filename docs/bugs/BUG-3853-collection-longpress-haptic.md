@@ -1,4 +1,4 @@
-## BUG-3801 · collection-longpress-haptic
+## BUG-3853 · collection-longpress-haptic
 - **报告**：2026-10-27（用户：「合集内长按震动反馈没有而且和外部书架不一致视频也是，另外轻触和长按都要有那个柔和光面效果」）
 - **真实性**：✅ 真 bug，两条根因：
   1. 合集成员拖排网格（`media_collection_grid_detail_page.dart`，手动序无筛选时）与视频合集集卡网格（`media_collection_detail_page.dart` `_buildEpisodeGrid`）都走 `FushiReorderableGrid`，触摸长按是裸 `LongPressGestureRecognizer`（`fushi/lib/src/utils/components/fushi_reorderable_grid.dart` `_touchLongPressStart`），卡片整张包在 `IgnorePointer` 里。外面库页卡片走 `InkWell.onLongPress`，自带 `Feedback.forLongPress`（Android 震动 / iOS 重触感 + 点击音），网格这条路径一下都没有。轻点同理缺 `Feedback.forTap`。

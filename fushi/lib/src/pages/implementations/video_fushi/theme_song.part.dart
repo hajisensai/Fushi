@@ -2,7 +2,7 @@ part of '../video_fushi_page.dart';
 
 /// 作品图谱 L2（docs/specs/2026-10-24-cross-media-links.md §2）：本集识别出的 OP / ED
 /// → 可选自动跳过（默认关）、进度条上的段首 / 段尾刻度。画面上不出跳过按钮与曲名
-/// 角标（BUG-3801 按用户决定删除）。
+/// 角标（BUG-3850 按用户决定删除）。
 ///
 /// 数据：`video_theme_song_spans` 按集缓存（[loadThemeSongSpansForEpisode]）。缓存里
 /// 没有这一集时，排一次**只针对这一集**的识别（[ThemeSongDetector.detect]），识别完再读；

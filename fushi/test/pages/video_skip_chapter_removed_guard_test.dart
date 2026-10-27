@@ -9,7 +9,7 @@ import 'video_fushi_page_source_corpus.dart';
 /// 弹按钮、设置里无处关闭、影响看 OP/ED）。按章节名识别片头片尾 + 播放页右下角
 /// 跳过按钮这一整条链路不得再回来；章节面板、章节刻度与「下一章」本身保留。
 ///
-/// BUG-3801：作品图谱 L2 换了个名字（声纹识别 + `VideoThemeSongOverlay`）把跳过按钮
+/// BUG-3850：作品图谱 L2 换了个名字（声纹识别 + `VideoThemeSongOverlay`）把跳过按钮
 /// 带了回来，还加了 OP 期间左上角「♪ 曲名 · 在音乐库打开」角标——上面按符号名钉的
 /// 守卫一个都没拦住。两个提示一起删掉；这次再按**用户看得见的文案**钉一层：任何
 /// 名字的实现想再画「跳过片头 / 片尾」按钮都得先有这句文案。声纹识别出的 OP / ED
@@ -43,7 +43,7 @@ void main() {
     });
   });
 
-  group('BUG-3801 theme-song skip button and now-playing pill removed', () {
+  group('BUG-3850 theme-song skip button and now-playing pill removed', () {
     final String src = readVideoFushiSource();
 
     test('video page mounts no theme-song overlay', () {
@@ -84,7 +84,7 @@ void main() {
       expect(
         offenders,
         isEmpty,
-        reason: '跳过片头 / 片尾按钮与视频页曲名角标按用户决定删除（BUG-3218 / BUG-3801）',
+        reason: '跳过片头 / 片尾按钮与视频页曲名角标按用户决定删除（BUG-3218 / BUG-3850）',
       );
     });
 

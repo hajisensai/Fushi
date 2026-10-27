@@ -2,7 +2,7 @@
 /// docs/specs/2026-10-24-cross-media-links.md §2；默认关，设置里开）。
 ///
 /// 画面上**不出任何提示**：「跳过片头 / 片尾」按钮与 OP 期间的「♪ 曲名 · 在音乐库打开」
-/// 角标都按用户决定删掉了（BUG-3218 删过章节版跳过按钮；BUG-3801 删声纹版两个提示）。
+/// 角标都按用户决定删掉了（BUG-3218 删过章节版跳过按钮；BUG-3850 删声纹版两个提示）。
 /// 守卫 `test/pages/video_skip_chapter_removed_guard_test.dart`。
 ///
 /// 数据来自声纹识别的按集缓存（[loadThemeSongSpansForEpisode]）。[VideoThemeSongTracker]

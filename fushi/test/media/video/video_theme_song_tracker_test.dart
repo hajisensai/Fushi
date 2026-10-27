@@ -4,7 +4,7 @@ import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
 import 'package:fushi/src/media/video/theme_song/video_theme_song_tracker.dart';
 
 /// 视频页对声纹识别出的 OP / ED 的自动跳过（作品图谱 L2；跳过按钮与曲名角标已按
-/// BUG-3801 删除，守卫 `test/pages/video_skip_chapter_removed_guard_test.dart`）。
+/// BUG-3850 删除，守卫 `test/pages/video_skip_chapter_removed_guard_test.dart`）。
 ///
 /// 钉：① 开关关着什么都不做；② 自动跳过落点 = 段尾前 0.5 s，只在刚进段的 3 s 窗口
 /// 里触发一次，用户拖回段中不被再次弹走；③ 插入曲永不自动跳；④ 换源解绑旧源。

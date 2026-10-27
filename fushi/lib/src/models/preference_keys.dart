@@ -830,7 +830,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：播放器底栏时间显示「剩余时长」而不是「已播时长」。
   // 点按底栏时间切换（MD3 Expressive chrome），跨设备。
   // bool（默认 false）：作品图谱 L2，进入识别出的片头 / 片尾时自动跳到段尾。
-  // （曾有的 `video_theme_song_now_playing` 曲名角标开关随角标一起删了，BUG-3801；
+  // （曾有的 `video_theme_song_now_playing` 曲名角标开关随角标一起删了，BUG-3850；
   // 旧库残留行无人读。）
   'video_theme_song_auto_skip',
   'video_time_display_remaining',
