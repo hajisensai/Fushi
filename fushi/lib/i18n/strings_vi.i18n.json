@@ -668,6 +668,8 @@
   "anki_pending_mines_status_sending": "Đang gửi",
   "anki_pending_mines_title": "Thẻ chờ",
   "anki_pending_mines_unreachable": "Hiện không kết nối được Anki. Các thẻ còn lại vẫn ở trong hàng đợi.",
+  "anki_queue_undelivered_mines_hint": "When Anki can't be reached, save the card to Pending cards and send it later instead of reporting a failure",
+  "anki_queue_undelivered_mines_title": "Hold cards when Anki is unreachable",
   "anki_refresh_hint": "Sau khi tạo hoặc đổi tên bộ thẻ hay loại ghi chú trong Anki, nhấn vào đây để làm mới.",
   "anki_reposition_aggregate": "Kết hợp nhiều từ điển",
   "anki_reposition_aggregate_harmonic": "Trung bình điều hòa",

@@ -668,6 +668,8 @@
   "anki_pending_mines_status_sending": "发送中",
   "anki_pending_mines_title": "待发卡片",
   "anki_pending_mines_unreachable": "现在连不上 Anki，剩下的卡片继续留在队列里",
+  "anki_queue_undelivered_mines_hint": "连不上 Anki 时不报失败，而是把卡存进「待发卡片」稍后补发",
+  "anki_queue_undelivered_mines_title": "连不上 Anki 时暂存卡片",
   "anki_refresh_hint": "在 Anki 里新建或重命名牌组、笔记类型后，点此刷新。",
   "anki_reposition_aggregate": "多本词典复合方式",
   "anki_reposition_aggregate_harmonic": "调和平均",

@@ -93,6 +93,14 @@ CtlBodyPage _overviewPage() => CtlBodyPage(
       value: (SettingsContext c) => _cfg(c).batchMiningEnabled,
       onChanged: (SettingsContext c, bool v) => _vm(c).setBatchMiningEnabled(v),
     ),
+    SettingsSwitchItem(
+      id: _id('queue_undelivered_mines'),
+      title: t.anki_queue_undelivered_mines_title,
+      subtitle: t.anki_queue_undelivered_mines_hint,
+      value: (SettingsContext c) => _cfg(c).queueUndeliveredMinesEnabled,
+      onChanged: (SettingsContext c, bool v) =>
+          _vm(c).setQueueUndeliveredMinesEnabled(v),
+    ),
     _action(
       id: 'pending_mine_landing',
       title: t.anki_pending_mine_landing_title,

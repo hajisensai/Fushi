@@ -15,12 +15,17 @@ class _FakeBackend implements BaseAnkiRepository {
   _FakeBackend({
     List<MineOutcome>? outcomes,
     this.batchMining = false,
+    this.queueUndelivered = true,
     this.switchesApp = false,
     this.throwFor = const <String>{},
   }) : outcomes = outcomes ?? <MineOutcome>[];
 
   final List<MineOutcome> outcomes;
   final bool batchMining;
+
+  /// 「连不上 Anki 时暂存」开关；默认关的产品行为由单独的用例钉住，其余用例
+  /// 测的是开着时的队列语义。
+  final bool queueUndelivered;
   final bool switchesApp;
 
   /// 收到这些词时违约抛异常（MineOutcome 契约本是永不抛）。
@@ -36,8 +41,10 @@ class _FakeBackend implements BaseAnkiRepository {
   final List<String?> coverContents = <String?>[];
 
   @override
-  Future<AnkiSettings> loadSettings() async =>
-      AnkiSettings(batchMiningEnabled: batchMining);
+  Future<AnkiSettings> loadSettings() async => AnkiSettings(
+    batchMiningEnabled: batchMining,
+    queueUndeliveredMinesEnabled: queueUndelivered,
+  );
 
   @override
   bool get switchesAppPerNote => switchesApp;
@@ -138,6 +145,25 @@ void main() {
     expect(rows.single.status, PendingMineStatus.pending);
     final payload = await store.readPayload(rows.single.id);
     expect(utf8.decode(payload!.coverBytes!), 'cover-a');
+  });
+
+  test('「连不上时暂存」默认关：拒绝连接原样报失败，不入队', () async {
+    expect(const AnkiSettings().queueUndeliveredMinesEnabled, isFalse);
+    expect(
+      AnkiSettings.fromJson(
+        const <String, Object?>{},
+      ).queueUndeliveredMinesEnabled,
+      isFalse,
+    );
+    final _FakeBackend backend = _FakeBackend(
+      outcomes: <MineOutcome>[_refused()],
+      queueUndelivered: false,
+    );
+    final MineOutcome outcome = await mine(repoOver(backend), 'off');
+
+    expect(outcome.result, MineResult.error);
+    expect(outcome.errorCode, AnkiErrorCode.connectionRefused);
+    expect(await store.count(), 0);
   });
 
   test('请求可能已送达的失败（超时 / 未知）不入队，原样报失败', () async {

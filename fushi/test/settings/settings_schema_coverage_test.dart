@@ -888,6 +888,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 开着时制卡不碰后端、一律入队；行为由专项测试咬死。
   'cardCreation/Batch mining':
       'test/anki/pending_mining_anki_repository_test.dart (批量模式)',
+  // 连不上 Anki 时暂存卡片：同上写 AnkiSettings，故 changed=false。生效点同在待发
+  // 队列装饰器——默认关时拒绝连接原样报失败、开着才入队；行为由专项测试咬死。
+  'cardCreation/Hold cards when Anki is unreachable':
+      'test/anki/pending_mining_anki_repository_test.dart (连不上时暂存)',
   // issue #1949「启动 Fushi 时自动启动 Anki」：同上写 AnkiSettings，故 changed=false。
   // 生效点在 main() 启动后的 AnkiDesktopLauncher.autoLaunchOnStartup（拉起外部进程，
   // harness 里无从探测）；开关默认关 / 同步客户端后端与远程 AnkiConnect 不启动 /
