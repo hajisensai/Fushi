@@ -1,6 +1,8 @@
 /// 复习页混合渲染的释义页排版：主词典通栏在上、其他词典分列（与查词弹窗同一套最短列
 /// 瀑布流），展开规则也与查词弹窗同一套（列数 / 自动展开行数 / 折叠词典显示 / 词典管理里
-/// 逐本的三态：显式展开 > 显式折叠 > 继承）。
+/// 逐本的三态：显式展开 > 显式折叠 > 继承）；卡面外观「默认展开全部释义」开着时按
+/// 「折叠词典显示」关处理（逐本折叠的照样收起）。「其他词典」标题行尾有一个全部展开 /
+/// 全部收起按钮。
 ///
 /// 只作用于 Fushi 卡片混合渲染里单独进 WebView 的释义页（根节点 `.fc-defs-only`）；Anki
 /// 模板本身不动——原生渲染按「笔记类型 CSS 与内置模板逐字一致」判定，改模板会让库里已有
@@ -27,6 +29,8 @@ class SrsDefsLayoutConfig {
     this.expandedDictionaryNames = const <String>[],
     required this.mainLabel,
     required this.othersLabel,
+    required this.expandAllLabel,
+    required this.collapseAllLabel,
     required this.uiLanguageTag,
   });
 
@@ -49,6 +53,10 @@ class SrsDefsLayoutConfig {
 
   final String mainLabel;
   final String othersLabel;
+
+  /// 「其他词典」行尾全部展开 / 全部收起按钮的无障碍名与提示。
+  final String expandAllLabel;
+  final String collapseAllLabel;
 
   /// 界面语言（BCP 47）：标题 / 标记是界面文字，标上 `lang` 才走模板里对应语言的字体链
   /// （否则落在日文字体链上，简体「词」等字回落到别的字体、粗细对不上）。
@@ -76,6 +84,8 @@ final Provider<String> srsDefsLayoutCssProvider = Provider<String>(
               : const <String>[],
           mainLabel: t.srs_card_label_main_dictionary,
           othersLabel: t.srs_card_label_other_dictionaries,
+          expandAllLabel: t.srs_card_defs_expand_all,
+          collapseAllLabel: t.srs_card_defs_collapse_all,
           uiLanguageTag: LocaleSettings.currentLocale.languageTag,
         ),
       );
@@ -100,6 +110,8 @@ String srsDefsLayoutCss(SrsDefsLayoutConfig c) {
     ..write('--fushi-srs-dict-collapse:${c.collapseDictionaries ? 1 : 0};')
     ..write('--fushi-srs-label-main:${_cssString(c.mainLabel)};')
     ..write('--fushi-srs-label-others:${_cssString(c.othersLabel)};')
+    ..write('--fushi-srs-label-expand-all:${_cssString(c.expandAllLabel)};')
+    ..write('--fushi-srs-label-collapse-all:${_cssString(c.collapseAllLabel)};')
     ..write('--fushi-srs-ui-lang:${_cssString(c.uiLanguageTag)};}')
     // 其他词典：分区标题（不可折叠），下面分列。
     ..write(
@@ -107,6 +119,28 @@ String srsDefsLayoutCss(SrsDefsLayoutConfig c) {
       'min-height:0;padding:4px 4px 0;border:0;background:none;}',
     )
     ..write('.fushi-srs-defs-grid .fc-more>summary::after{display:none;}')
+    // 标题行尾的全部展开 / 收起：箭头与词典卡头同形（未全展开朝右、全部展开朝下）。
+    ..write(
+      '.fushi-srs-more-toggle{pointer-events:auto;flex:0 0 auto;margin-left:auto;'
+      'display:inline-flex;align-items:center;justify-content:center;'
+      'width:40px;height:40px;padding:0;border:0;border-radius:999px;'
+      'background:none;color:var(--fc-fg-muted);cursor:pointer;'
+      '-webkit-tap-highlight-color:transparent;}',
+    )
+    ..write(
+      '.fushi-srs-more-toggle::after{content:"";width:8px;height:8px;'
+      'margin-left:-4px;border-right:2px solid currentColor;'
+      'border-bottom:2px solid currentColor;transform:rotate(-45deg);'
+      'transition:transform 200ms cubic-bezier(0.2,0,0,1);opacity:0.8;}',
+    )
+    ..write(
+      '.fushi-srs-more-toggle--open::after{margin-left:0;margin-top:-4px;'
+      'transform:rotate(45deg);}',
+    )
+    ..write(
+      '@media (hover:hover){.fushi-srs-more-toggle:hover'
+      '{background:var(--fc-surface-1);color:var(--fc-fg);}}',
+    )
     ..write(
       '.fushi-srs-defs-grid .fc-more-title::before'
       '{content:var(--fushi-srs-label-others);}',
@@ -157,6 +191,9 @@ String srsDefsLayoutCss(SrsDefsLayoutConfig c) {
 /// 监听器先注册先跑。所以排版前先让模板把自己的布局键算到最新（`__fcApplyLayout`，键没变
 /// 时它不动开合），再读释义页根节点（`.fc-back`）上的 `__fcLayoutKey` 并入本脚本的键：
 /// 无论两边谁先跑，模板改过开合之后本脚本一定按自己的规则重排一次。
+///
+/// 「默认展开全部释义」（`.card.fushi-srs-gloss-expanded`）由模板换算进布局键首位
+/// （`e` / `c`），本脚本读同一个键：开着时与「折叠词典显示」关同样全部展开。
 ///
 /// 高度监听是全页单例（`window.__fushiSrsDefsObserver`）：脚本重新执行时先断开旧的，
 /// 每次排版先 `disconnect` 再只观察当前卡的分组，换卡后旧节点不再被持有。
@@ -239,6 +276,47 @@ const String kSrsDefsLayoutScript = r'''
     for (var n = 0; n < cols; n++) bottom = Math.max(bottom, col[n] - last[n]);
     list.style.height = bottom + 'px';
   }
+  function cssLabel(cs, name){
+    return cs.getPropertyValue(name).trim().replace(/^"|"$/g, '');
+  }
+  function allOpen(more){
+    var groups = more.querySelectorAll('.fc-dicts > .fc-dict');
+    for (var i = 0; i < groups.length; i++) if (!groups[i].open) return false;
+    return groups.length > 0;
+  }
+  // 「其他词典」标题行尾的全部展开 / 收起按钮：有一本没展开就全部展开，否则全部收起。
+  function syncToggle(more){
+    var btn = more.querySelector(':scope > summary > .fushi-srs-more-toggle');
+    if (!btn) return;
+    var all = allOpen(more);
+    var text = cssLabel(getComputedStyle(document.documentElement),
+      all ? '--fushi-srs-label-collapse-all' : '--fushi-srs-label-expand-all');
+    btn.classList.toggle('fushi-srs-more-toggle--open', all);
+    btn.setAttribute('aria-expanded', all ? 'true' : 'false');
+    btn.setAttribute('aria-label', text);
+    btn.title = text;
+  }
+  // 标题本身不可点（pointer-events:none），按钮单独接收点按；它在 summary 里，要拦掉
+  // details 的默认开合。
+  function ensureToggle(more, lang){
+    var summary = more.querySelector(':scope > summary');
+    if (!summary || summary.querySelector('.fushi-srs-more-toggle')) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'fushi-srs-more-toggle';
+    if (lang) btn.lang = lang;
+    btn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      ev.stopPropagation();
+      var open = !allOpen(more);
+      var groups = more.querySelectorAll('.fc-dicts > .fc-dict');
+      for (var i = 0; i < groups.length; i++) groups[i].open = open;
+      syncToggle(more);
+    });
+    summary.appendChild(btn);
+    // 逐本开合后同步按钮状态（toggle 不冒泡，捕获阶段收得到）。
+    more.addEventListener('toggle', function(){ syncToggle(more); }, true);
+  }
   function apply(){
     var obs = observer();
     if (obs) obs.disconnect();
@@ -256,8 +334,10 @@ const String kSrsDefsLayoutScript = r'''
     }
     var rows = num('--fushi-srs-dict-rows', 1);
     var configured = num('--fushi-srs-dict-cols', 1);
-    var lang = cs.getPropertyValue('--fushi-srs-ui-lang').trim().replace(/^"|"$/g, '');
-    var collapse = num('--fushi-srs-dict-collapse', 1) > 0;
+    var lang = cssLabel(cs, '--fushi-srs-ui-lang');
+    // 卡面外观「默认展开全部释义」开着 = 与「折叠词典显示」关同样全部展开。
+    var collapse = num('--fushi-srs-dict-collapse', 1) > 0 &&
+      String(fc.__fcLayoutKey || '').charAt(0) !== 'e';
     fc.classList.add('fushi-srs-defs-grid');
     var main = fc.querySelector('.fc-gloss--main');
     if (main) {
@@ -275,6 +355,7 @@ const String kSrsDefsLayoutScript = r'''
     var title = more.querySelector('.fc-more-title');
     if (title && lang) title.lang = lang;
     if (!more.open) more.open = true;
+    ensureToggle(more, lang);
     var list = more.querySelector('.fc-dicts');
     if (!list) return;
     var groups = list.querySelectorAll(':scope > .fc-dict');
@@ -298,6 +379,7 @@ const String kSrsDefsLayoutScript = r'''
       }
     }
     pack(list, groups, cols, lead);
+    syncToggle(more);
     if (obs) for (var o = 0; o < groups.length; o++) obs.observe(groups[o]);
   }
   window.__fushiSrsHostLayout = apply;

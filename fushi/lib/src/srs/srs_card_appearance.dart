@@ -68,7 +68,7 @@ class SrsCardAppearance {
     this.showTranslation = true,
     this.showFrequency = true,
     this.showSource = true,
-    this.glossaryExpanded = false,
+    this.glossaryExpanded = true,
     this.frontReading = false,
     this.frontFrequency = false,
     this.sentenceFurigana = false,
@@ -109,7 +109,8 @@ class SrsCardAppearance {
   final bool showFrequency;
   final bool showSource;
 
-  /// 「全部释义」默认展开（关 = 只展开主释义，其余收在「全部释义」里）。
+  /// 「全部释义」默认展开（关 = 只展开主释义，其余收在「全部释义」里；混合渲染的释义页
+  /// 改按查词设置的自动展开行数 / 折叠开关）。默认开（用户 2026-10-28 拍板）。
   final bool glossaryExpanded;
 
   /// 正面显示读音与音调。

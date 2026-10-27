@@ -6927,6 +6927,8 @@
   "srs_card_appearance_text_size": "Text size",
   "srs_card_appearance_title": "Fushi Card appearance",
   "srs_card_bury": "Bury until tomorrow",
+  "srs_card_defs_collapse_all": "すべて折りたたむ",
+  "srs_card_defs_expand_all": "すべて展開",
   "srs_card_edit_template": "Edit $name template",
   "srs_card_flag": "Flag",
   "srs_card_label_all_definitions": "All definitions",

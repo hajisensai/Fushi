@@ -75,7 +75,7 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   group('设置 → 注入', () {
-    test('默认外观：配色变量齐全、倍率为 1、只有统一词典样式类', () {
+    test('默认外观：配色变量齐全、倍率为 1、统一词典样式 + 全部释义默认展开', () {
       const SrsCardAppearance a = SrsCardAppearance();
       final String css = _css(a);
       for (final String v in <String>[
@@ -98,6 +98,7 @@ void main() {
       expect(css, isNot(contains('@font-face')));
       expect(srsCardAppearanceClasses(a).split(' ').toSet(), <String>{
         'fushi-srs-dict-unified',
+        'fushi-srs-gloss-expanded',
         'fushi-srs-freq-aggregate',
       });
     });
@@ -545,7 +546,8 @@ void main() {
           final String layout = size.width >= 840 ? 'wide' : 'narrow';
           expect(
             faceText(),
-            'face:$layout:back:fushi-srs-dict-unified fushi-srs-freq-aggregate',
+            'face:$layout:back:fushi-srs-gloss-expanded '
+            'fushi-srs-dict-unified fushi-srs-freq-aggregate',
           );
           expect(
             find.byKey(const ValueKey<String>('srs-card-preview-frame')),
@@ -592,7 +594,10 @@ void main() {
           tester.widget<AdaptiveSettingsSwitchRow>(unify).onChanged!(false);
           await tester.pump(const Duration(milliseconds: 300));
           expect(app.value.dictUnified, isFalse);
-          expect(faceText(), 'face:$layout:back:fushi-srs-freq-aggregate');
+          expect(
+            faceText(),
+            'face:$layout:back:fushi-srs-gloss-expanded fushi-srs-freq-aggregate',
+          );
 
           // 预览与复习页一样走 Fushi 卡片的混合渲染：上面的卡面是释义区 WebView。
           expect(
