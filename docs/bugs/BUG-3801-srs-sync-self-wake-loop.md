@@ -1,6 +1,6 @@
 ## BUG-3801 · 复习同步自己唤醒自己无限循环（同步时卡顿、一直在重载）
 - **报告**：2026-10-28（用户：iPhone 复习页一直挂「上传复习改动」，同步时卡、像一直在重载）
 - **真实性**：✅ 真 bug。一轮同步不管有没有新东西都写新 head、删两代前的旧 head（`packages/fushi_engine/lib/srs/sync2/srs_sync2_round.dart` 发 head 一段；Rust `native/fushi_fsrs/src/store/sync2/transport.rs` `sync2_head` 每次 `head_gen += 1`）；互联 host 对 `head-*` 的 PUT **和 DELETE** 都推进长轮询令牌（`packages/fushi_engine/lib/sync/fushi_sync_server.dart` `_reportClientWrite`）；客户端长轮询（`fushi/lib/src/srs/srs_interconnect_watch.dart` `_loop`）跑完一轮仍拿跑之前的令牌去等，被自己刚写的 head 立刻唤醒 → 再跑一轮 → 再写 head，单台客户端就无限循环。另：同步拉到远端数据后 `_onDataChanged` 递增 `srsRevisionProvider`，装配处把它当「本机有改动」5 秒后再整轮推一次（`fushi/lib/src/srs/srs_app_runtime.dart`）。
-- **[x] ① 已修复** — head 内容（段、ack、摘要、名字）与上次写到该位置的相同就不写（`sync2_head_if_changed` + `skipUnchangedMs`，6 小时心跳兜底 seenAt / 校时；上次的 head 不在位置上就补写）；host 只对 PUT 推进令牌；同步收进来的数据只刷新界面、不触发回推（`bumpRevisionFromSync`）。
+- **[x] ① 已修复**（4dc4c418ef）— head 内容（段、ack、摘要、名字）与上次写到该位置的相同就不写（`sync2_head_if_changed` + `skipUnchangedMs`，6 小时心跳兜底 seenAt / 校时；上次的 head 不在位置上就补写）；host 只对 PUT 推进令牌；同步收进来的数据只刷新界面、不触发回推（`bumpRevisionFromSync`）。
 - **[x] ② 已加自动化测试** — Rust `unchanged_head_is_not_rewritten_until_content_changes_or_heartbeat`（`native/fushi_fsrs/src/store/sync2/tests.rs`）；`packages/fushi_engine/test/srs/sync2/srs_sync2_round_test.dart`「没有新东西的一轮不写 head」；`packages/fushi_engine/test/sync/srs_change_feed_host_test.dart`。
 - **备注**：首页复习条改为只在首页真被看着（TickerMode）时订阅牌组计数（`fushi/lib/src/pages/implementations/home_srs_panel.dart` `homeSrsDeckListProvider`），看不见时同步 / 制卡不再重算整库计数。未在真机复测。
