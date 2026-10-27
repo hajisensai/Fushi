@@ -289,6 +289,51 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     return true;
   }
 
+  /// 快捷键「复制当前台词」（_Eb0txdN4H）：画面上正在显示的主字幕；句间空隙里回落到
+  /// 按播放位置解析出的那句（与收藏 / 重播同一判据 [_currentCueForAction]）。
+  void _copyCurrentSubtitle() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    _copyCurrentLineText(
+      videoCurrentLineCopyText(
+        activeCues: controller.activeCues,
+        fallback: _currentCueForAction(),
+      ),
+      emptyHint: t.no_sentence_selected,
+    );
+  }
+
+  /// 快捷键「复制当前副字幕台词」（_Eb0txdN4H）：同 [_copyCurrentSubtitle]，取副字幕轨，
+  /// 回落按副字幕自己的延迟解析。
+  void _copyCurrentSecondarySubtitle() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    _copyCurrentLineText(
+      videoCurrentLineCopyText(
+        activeCues: controller.secondaryActiveCues,
+        fallback: resolveMiningCueForPosition(
+          cues: controller.secondaryCues,
+          positionMs: controller.subtitleClockMs ?? 0,
+          delayMs: controller.effectiveSecondaryDelayMs,
+        ),
+      ),
+      emptyHint: t.video_secondary_subtitle_copy_empty,
+    );
+  }
+
+  void _copyCurrentLineText(String? text, {required String emptyHint}) {
+    if (text == null) {
+      _showOsd(emptyHint, severity: ToastSeverity.error);
+      return;
+    }
+    Clipboard.setData(ClipboardData(text: text));
+    _showOsd(
+      t.copied_to_clipboard,
+      icon: FushiIcons.copy,
+      severity: ToastSeverity.success,
+    );
+  }
+
   /// 字幕跳转列表面板某句是否已收藏（同步，读缓存 [_favoritedVideoSentences]）。
   bool _isCueFavorited(AudioCue cue) {
     final String text = cue.text.trim();

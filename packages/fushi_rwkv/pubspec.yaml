@@ -1,7 +1,7 @@
 name: fushi_rwkv
 resolution: workspace
 description: >-
-  native/fushi_rwkv（Rust RWKV-Instant 推理：大模型 / SM40 小模型，AGPL-3.0-or-later）的 FFI 绑定、
+  native/fushi_rwkv（Rust RWKV-Instant 推理：大模型 / SM56 小模型，AGPL-3.0-or-later）的 FFI 绑定、
   库定位与常驻 worker isolate。纯 Dart，不依赖 Flutter / 插件。硬依赖：库加载失败抛带原因的
   FushiRwkvUnavailableError，没有 Dart 回退实现。
 publish_to: none

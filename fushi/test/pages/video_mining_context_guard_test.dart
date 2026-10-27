@@ -355,10 +355,11 @@ void main() {
     // 成功消息仍由 describeMineOutcome 统一产出（含牌组名）。
     expect(mineImpl.contains('describeMineOutcome('), isTrue,
         reason: '制卡成功/覆盖消息须由 describeMineOutcome 统一产出（含 deck 名）。');
-    // 成功分支发出突出 OSD。
+    // 成功分支发出突出 OSD：经 _showMineOsd（先过「制卡提示」开关），它内部是
+    // prominent 变体（见 video_osd_card_created_alignment_guard_test）。
     expect(
       compactCode(mineImpl).contains(
-          compactCode('_showOsd(described.message, prominent: true,')),
+          compactCode('_showMineOsd(described.message, described.status);')),
       isTrue,
       reason: 'TODO-971：制卡成功须走突出 OSD（prominent: true），不再是易忽略的小角标。',
     );

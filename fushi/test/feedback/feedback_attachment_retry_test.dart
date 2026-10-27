@@ -2,6 +2,7 @@
 // 提交时传失败的截图 / 日志字节落盘留着，之后能手动重试；服务端明确拒收的丢弃；
 // 已提交的反馈能往空闲截图槽位追加截图；上次提交的联系方式单独存、清草稿不带走。
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -355,6 +356,71 @@ void main() {
     );
     expect(requests.first.bodyBytes, _bytes(7));
     expect(requests.last.bodyBytes, _bytes(8));
+  });
+
+  test('追加截图：上传进行中算「正在传」不算「没传上去」，传完 / 传失败才落定（#aiRZmYl5zS）', () async {
+    handler = (http.Request r) async {
+      if (r.url.path == '/v1/feedback') return created();
+      return _json(<String, dynamic>{'slot': 'x'}, 201);
+    };
+    final FeedbackService s = service();
+    await s.submit(
+      FeedbackDraft(
+        category: draft.category,
+        title: 't',
+        body: 'b',
+        includeLogs: false,
+      ),
+    );
+    expect(s.attachInFlight('abcdefghij'), isFalse);
+    Completer<void> gate = Completer<void>();
+    bool fail = false;
+    handler = (http.Request r) async {
+      await gate.future;
+      if (fail) return _json(<String, dynamic>{'error': 'x'}, 503);
+      return _json(<String, dynamic>{'slot': 'x'}, 201);
+    };
+    final List<bool> seen = <bool>[];
+    s.addListener(() => seen.add(s.attachInFlight('abcdefghij')));
+
+    // 成功：上传挂着时槽位已落盘进待传，但它是「正在传」。
+    final Future<FeedbackRetryResult> ok = s.addScreenshots(
+      'abcdefghij',
+      <Uint8List>[_bytes(7)],
+      usedSlots: <String>{'s0', 's1'},
+    );
+    expect(s.attachInFlight('abcdefghij'), isTrue);
+    while (requests.where((http.Request q) => q.method == 'PUT').isEmpty) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(s.pendingSlots('abcdefghij'), <String>{'s2'});
+    expect(s.attachInFlight('abcdefghij'), isTrue);
+    gate.complete();
+    final FeedbackRetryResult r = await ok;
+    await Future<void>.delayed(Duration.zero);
+    expect(r.uploaded, 1);
+    expect(r.remaining, 0);
+    expect(s.pendingSlots('abcdefghij'), isEmpty);
+    expect(s.attachInFlight('abcdefghij'), isFalse);
+    // 最后一次通知时已不在传：界面靠它收掉「正在上传」。
+    expect(seen.last, isFalse);
+
+    // 失败：上传结束后槽位留在待传、不再算在传——这时才是「没传上去，重试」。
+    gate = Completer<void>();
+    fail = true;
+    final Future<FeedbackRetryResult> bad = s.addScreenshots(
+      'abcdefghij',
+      <Uint8List>[_bytes(8)],
+      usedSlots: <String>{'s0', 's1'},
+    );
+    expect(s.attachInFlight('abcdefghij'), isTrue);
+    gate.complete();
+    final FeedbackRetryResult r2 = await bad;
+    await Future<void>.delayed(Duration.zero);
+    expect(r2.remaining, 1);
+    expect(s.pendingSlots('abcdefghij'), <String>{'s2'});
+    expect(s.attachInFlight('abcdefghij'), isFalse);
+    expect(seen.last, isFalse);
   });
 
   test('补传窗口：刚提交的可追加，24 小时前的不行', () async {

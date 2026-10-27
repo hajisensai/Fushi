@@ -140,6 +140,70 @@ const Set<OnboardingFeature> kOnboardingResourceFeatures = <OnboardingFeature>{
   OnboardingFeature.manualResources,
 };
 
+/// 欢迎步里的「用 Fushi 做什么」：不是人人都学外语，只看书 / 看番 / 听书的用户用不上
+/// 查词、制卡、复习这一整条链路。它只是下一步功能方格的**预设**，选完仍可逐项改。
+enum OnboardingUsagePurpose {
+  /// 学外语：查词 → 制卡 → 复习整条链路照常（出厂形态）。
+  languageLearning,
+
+  /// 只看书、看番、听书：预先取消 [kOnboardingLanguageLearningFeatures]，并关复习模块
+  /// （见 [onboardingSrsModuleOverride]）。
+  mediaOnly,
+}
+
+/// 只服务于学外语的勾选项：查词页、制卡两个模块 + 词典资源与制卡复习两项配置。
+/// 复习模块（`ModuleId.srs`）不出方格，单独由 [onboardingSrsModuleOverride] 处理。
+const Set<OnboardingFeature> kOnboardingLanguageLearningFeatures =
+    <OnboardingFeature>{
+      OnboardingFeature.lookup,
+      OnboardingFeature.cardCreation,
+      OnboardingFeature.recommendedPack,
+      OnboardingFeature.manualResources,
+      OnboardingFeature.anki,
+    };
+
+/// 选了 [purpose] 之后的勾选集。只动学外语那几项，其余（库页、字体、同步……）保留
+/// 用户已有的选择：
+/// - [OnboardingUsagePurpose.mediaOnly]：去掉 [kOnboardingLanguageLearningFeatures]；
+/// - [OnboardingUsagePurpose.languageLearning]：补回查词 / 制卡模块与出厂默认的
+///   配置能力（推荐包 + 制卡与复习），手动资源保持原样（它本来就默认不勾）。
+Set<OnboardingFeature> onboardingSelectionForPurpose(
+  OnboardingUsagePurpose purpose,
+  Set<OnboardingFeature> current,
+) => switch (purpose) {
+  OnboardingUsagePurpose.mediaOnly => current.difference(
+    kOnboardingLanguageLearningFeatures,
+  ),
+  OnboardingUsagePurpose.languageLearning => <OnboardingFeature>{
+    ...current,
+    OnboardingFeature.lookup,
+    OnboardingFeature.cardCreation,
+    ...kOnboardingDefaultCapabilities.intersection(
+      kOnboardingLanguageLearningFeatures,
+    ),
+  },
+};
+
+/// 用途的初值 = 用户此刻的状态：查词页和制卡两个模块**都关着**才算只看媒体（从设置
+/// 重开向导的老用户看到的是自己上次的选择）；全新安装两者默认开 → 学外语。
+OnboardingUsagePurpose onboardingUsagePurposeOf({
+  required bool lookupModuleEnabled,
+  required bool cardCreationModuleEnabled,
+}) => !lookupModuleEnabled && !cardCreationModuleEnabled
+    ? OnboardingUsagePurpose.mediaOnly
+    : OnboardingUsagePurpose.languageLearning;
+
+/// 复习模块在离开功能选择步骤时要不要被改写：只看媒体且制卡没勾 → `false`（关）；
+/// 其余返回 `null` = 不碰，交给「复习方式」一步（制卡勾着时它会出现并写入）。
+bool? onboardingSrsModuleOverride({
+  required OnboardingUsagePurpose purpose,
+  required Set<OnboardingFeature> selected,
+}) =>
+    purpose == OnboardingUsagePurpose.mediaOnly &&
+        !selected.contains(OnboardingFeature.cardCreation)
+    ? false
+    : null;
+
 /// 新手引导里「制卡后自动按词频重排」开关的初值：**开**。Fushi 复习路径（复习方式
 /// 一步）与 Anki 路径（Anki 步）各摆一颗，共用这一个初值与同一个设置
 /// （所有者 2026-10-20：「走新手教程那步的时候默认开启」）。

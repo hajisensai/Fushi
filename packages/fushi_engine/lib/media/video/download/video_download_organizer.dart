@@ -5,6 +5,8 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
 import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart'
+    show ParsedMediaName;
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:path/path.dart' as p;
@@ -39,6 +41,7 @@ class VideoOrganizationFilePlan {
     required this.finalLocalPath,
     this.seasonNumber,
     this.episodeNumber,
+    this.siblingWork = false,
   });
 
   final int backendFileIndex;
@@ -47,6 +50,12 @@ class VideoOrganizationFilePlan {
   final String finalLocalPath;
   final int? seasonNumber;
   final int? episodeNumber;
+
+  /// 合集包里**另一部作品**的正片（kg41f2PGdC）：与任务作品同目录结构并列、季号
+  /// 判不出、集号与任务作品重叠的续作目录（`Yama no Susume Next Summit [..]/[01]`）。
+  /// 它不属于任务确认的那个身份，不进 `Season XX`、也不是特典；按源目录结构镜像
+  /// 落位（与 BUG-2007 并列正片同口径），由导入阶段单独建合集。
+  final bool siblingWork;
 }
 
 class VideoOrganizationPlan {
@@ -187,11 +196,20 @@ class VideoDownloadOrganizer {
     final List<VideoOrganizationFilePlan> planned =
         <VideoOrganizationFilePlan>[];
     var recognizedEpisodes = 0;
+    final _PackSeasonLayout layout = kind == VideoOrganizationKind.episodic
+        ? _packSeasonLayout(<TorrentFileEntry>[
+            for (final TorrentFileEntry file in videoFiles)
+              if (!(classifyExtras &&
+                  _isExplicitExtra(file.name, sharedRoot: sharedRoot)))
+                file,
+          ], sharedRoot: sharedRoot)
+        : _PackSeasonLayout.empty;
     for (final TorrentFileEntry file in videoFiles) {
       final String extension = p.extension(file.name).toLowerCase();
       late final String relative;
       int? seasonNumber;
       int? episodeNumber;
+      final bool siblingWork = layout.siblingIndexes.contains(file.index);
       // 剧集与电影共用同一条 Extras 规则：认得出集号的进 Season 目录，其余
       // 一律镜像进 Extras（预告/特典/菜单等，BUG-1785），下游 `kind: 'extra'`
       // 已是既有概念。电影额外把最大文件抬成正片。
@@ -202,6 +220,7 @@ class VideoDownloadOrganizer {
       // 先按目录判正片/特典、再解析集号；顺序反过来就只能靠撞号事后发现，
       // 而**没撞上的那些会被静默改名成正片**——后者才是更贵的一半。
       if (kind == VideoOrganizationKind.episodic &&
+          !siblingWork &&
           !(classifyExtras &&
               _isExplicitExtra(file.name, sharedRoot: sharedRoot))) {
         final VideoNameInfo parsed = parseVideoFilename(
@@ -209,10 +228,22 @@ class VideoDownloadOrganizer {
         );
         episodeNumber = parsed.episode;
         if (episodeNumber != null) {
-          seasonNumber = parsed.season ?? request.defaultSeasonNumber;
+          // 季号证据的优先级：文件名 > 所在季目录（只在多目录合集包里取，见
+          // [_packSeasonLayout]）> 任务的默认季。
+          seasonNumber =
+              parsed.season ??
+              layout.directorySeasonByIndex[file.index] ??
+              request.defaultSeasonNumber;
         }
       }
-      if (episodeNumber != null) {
+      if (siblingWork) {
+        // 合集包里的并列作品：镜像源目录结构，不改名、不编季集号（见
+        // [VideoOrganizationFilePlan.siblingWork]）。源路径唯一 ⇒ 目标唯一。
+        relative = _portableJoin(<String>[
+          displayRoot,
+          ..._extraSegments(file.name, sharedRoot: sharedRoot),
+        ]);
+      } else if (episodeNumber != null) {
         recognizedEpisodes += 1;
         final String season = seasonNumber.toString().padLeft(2, '0');
         final String episode = episodeNumber.toString().padLeft(2, '0');
@@ -273,6 +304,7 @@ class VideoDownloadOrganizer {
           finalLocalPath: finalPath,
           seasonNumber: seasonNumber,
           episodeNumber: episodeNumber,
+          siblingWork: siblingWork,
         ),
       );
     }
@@ -400,6 +432,132 @@ class VideoDownloadOrganizer {
       return VideoOrganizationResult(ok: true, files: planned.files);
     });
   }
+
+  /// 多目录合集包的季布局（kg41f2PGdC）。[candidates] 是本趟会按集号解析的
+  /// 正片候选（已剔除显式特典）。
+  ///
+  /// 只看文件名的旧口径在「一个发布根下按季/按作品分目录」的合集包里必然撞名：
+  /// `Yama no Susume [..]/[01]` 与 `Yama no Susume Next Summit [..]/[01]` 文件名都
+  /// 没写季号，双双落到默认季的 `S01E01`，整条任务硬失败。这里按目录结构补两条
+  /// 证据，**都不是标题映射表**：
+  /// 1. **季目录**：正片分布在 ≥2 个父目录时，父目录名走与 [parseVideoPath]
+  ///    （BUG-1543）同一套规则（`Season 2` / `S02` / `第2季` / `2nd Season` / 尾部
+  ///    裸数字）给出季号。单目录种子不取——目录就是发布根，季语义由任务身份
+  ///    （默认季）决定，旧行为一字不变。
+  /// 2. **并列续作**：季号仍判不出的目录 ≥2 个且集号重叠时，按「系列名是否为
+  ///    其余目录系列名的词前缀」找**唯一**的基础作品（`Yama no Susume` 是
+  ///    `Yama no Susume Next Summit` 的前缀）。基础作品沿用默认季；其余目录是
+  ///    同包里的另一部作品，标 [VideoOrganizationFilePlan.siblingWork]。找不出唯一
+  ///    基础作品（目录名同系列、互不为前缀）就什么都不改，撞名照旧显式失败，
+  ///    绝不猜季号、更不覆盖。
+  static _PackSeasonLayout _packSeasonLayout(
+    List<TorrentFileEntry> candidates, {
+    required String? sharedRoot,
+  }) {
+    final Map<String, List<TorrentFileEntry>> groups =
+        <String, List<TorrentFileEntry>>{};
+    for (final TorrentFileEntry file in candidates) {
+      final List<String> segments = _segments(file.name);
+      if (segments.isEmpty) continue;
+      if (parseVideoFilename(segments.last).episode == null) continue;
+      final String key = segments
+          .sublist(0, segments.length - 1)
+          .join('/')
+          .toLowerCase();
+      (groups[key] ??= <TorrentFileEntry>[]).add(file);
+    }
+    if (groups.length < 2) return _PackSeasonLayout.empty;
+
+    final Map<int, int> directorySeason = <int, int>{};
+    final Map<String, List<TorrentFileEntry>> undetermined =
+        <String, List<TorrentFileEntry>>{};
+    groups.forEach((String key, List<TorrentFileEntry> files) {
+      final List<String> segments = _segments(files.first.name);
+      final String? parent = segments.length >= 2
+          ? segments[segments.length - 2]
+          : null;
+      // 共享发布根是所有文件共同的目录，它的名字不区分季。
+      final bool parentIsSharedRoot =
+          parent != null && segments.length == 2 && parent == sharedRoot;
+      final int? season = parent == null || parentIsSharedRoot
+          ? null
+          : _directorySeason(parent);
+      if (season != null) {
+        for (final TorrentFileEntry file in files) {
+          directorySeason[file.index] = season;
+        }
+        return;
+      }
+      final bool anyFilenameSeason = files.any(
+        (TorrentFileEntry file) =>
+            parseVideoFilename(_segments(file.name).last).season != null,
+      );
+      if (!anyFilenameSeason) undetermined[key] = files;
+    });
+
+    final Set<int> siblings = <int>{};
+    if (undetermined.length >= 2 && _episodesOverlap(undetermined.values)) {
+      final Map<String, String> seriesByGroup = <String, String>{
+        for (final MapEntry<String, List<TorrentFileEntry>> entry
+            in undetermined.entries)
+          entry.key: _seriesKey(entry.value.first.name),
+      };
+      final List<String> bases = <String>[
+        for (final MapEntry<String, String> entry in seriesByGroup.entries)
+          if (entry.value.isNotEmpty &&
+              seriesByGroup.entries.every(
+                (MapEntry<String, String> other) =>
+                    other.key == entry.key ||
+                    _isProperWordPrefix(entry.value, other.value),
+              ))
+            entry.key,
+      ];
+      if (bases.length == 1) {
+        for (final MapEntry<String, List<TorrentFileEntry>> entry
+            in undetermined.entries) {
+          if (entry.key == bases.single) continue;
+          for (final TorrentFileEntry file in entry.value) {
+            siblings.add(file.index);
+          }
+        }
+      }
+    }
+    return _PackSeasonLayout(
+      directorySeasonByIndex: directorySeason,
+      siblingIndexes: siblings,
+    );
+  }
+
+  /// 目录名里的季号（与 [parseVideoPath] 的目录回落同一判据）。
+  static int? _directorySeason(String directory) {
+    final ParsedMediaName parsed = FilenameParser.parse(directory);
+    return parsed.season ??
+        FilenameParser.takeTrailingNumericSeason(parsed.title)?.season;
+  }
+
+  static bool _episodesOverlap(Iterable<List<TorrentFileEntry>> groups) {
+    final Set<int> seen = <int>{};
+    for (final List<TorrentFileEntry> files in groups) {
+      final Set<int> episodes = <int>{
+        for (final TorrentFileEntry file in files)
+          if (parseVideoFilename(_segments(file.name).last).episode
+              case final int episode)
+            episode,
+      };
+      if (episodes.any(seen.contains)) return true;
+      seen.addAll(episodes);
+    }
+    return false;
+  }
+
+  /// 归一的系列名：文件名解析出的标题，转小写、压空白。
+  static String _seriesKey(String name) => parseVideoFilename(
+    _segments(name).last,
+  ).series.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+
+  /// [base] 是否是 [other] 的**真**词前缀（`a b` 之于 `a b c`；相等不算）。
+  static bool _isProperWordPrefix(String base, String other) =>
+      other.length > base.length && other.startsWith('$base ');
 
   static bool _isVideo(String value) => const <String>{
     '.3gp',
@@ -615,6 +773,23 @@ bool isVideoDownloadExtraFile(String relativePath, {String? sharedRoot}) =>
       relativePath,
       sharedRoot: sharedRoot,
     );
+
+/// [VideoDownloadOrganizer._packSeasonLayout] 的结果：按目录给出的季号证据 +
+/// 判成并列作品的文件（都按后端文件 index 记）。
+class _PackSeasonLayout {
+  const _PackSeasonLayout({
+    required this.directorySeasonByIndex,
+    required this.siblingIndexes,
+  });
+
+  static const _PackSeasonLayout empty = _PackSeasonLayout(
+    directorySeasonByIndex: <int, int>{},
+    siblingIndexes: <int>{},
+  );
+
+  final Map<int, int> directorySeasonByIndex;
+  final Set<int> siblingIndexes;
+}
 
 /// 一趟排布的产物：目标计划 + 认出的正片集数。
 ///

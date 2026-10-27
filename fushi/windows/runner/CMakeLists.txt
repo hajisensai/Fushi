@@ -101,7 +101,8 @@ target_link_libraries(${BINARY_NAME} PRIVATE d3d11 dxgi runtimeobject windowscod
 # galgame 一键制卡 A 阶段：audio_loopback_capture.cpp（WASAPI loopback 抓系统混音）。
 # IMMDeviceEnumerator / IAudioClient / IAudioCaptureClient 的 CLSID/IID 由 uuid.lib（MSVC
 # 默认链接）提供，CoCreateInstance 走已链接的 ole32；avrt 供将来 pro-audio 线程优先级用。
-target_link_libraries(${BINARY_NAME} PRIVATE avrt)
+# mmdevapi 提供 ActivateAudioInterfaceAsync（网页视频制卡的 process loopback）。
+target_link_libraries(${BINARY_NAME} PRIVATE avrt mmdevapi)
 # 剪切板面板背景逐像素透明（global_lookup_window composition 模式）：DirectComposition
 # 视觉树承载 WebView2 composition controller 的透明像素，dxguid 提供 DComp/DXGI IID。
 target_link_libraries(${BINARY_NAME} PRIVATE dcomp dxguid)

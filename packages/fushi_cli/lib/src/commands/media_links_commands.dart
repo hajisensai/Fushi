@@ -10,7 +10,7 @@ import '../ctl_commands.dart';
 const List<CtlCommandGroup> mediaLinksCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'links',
-    summary: '作品图谱：关联作品与建议（接受 / 不相关 / 查找相关作品）',
+    summary: '作品图谱：关联作品与建议（手动关联 / 接受 / 不相关 / 查找相关作品）',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
         name: 'ls',
@@ -34,6 +34,32 @@ const List<CtlCommandGroup> mediaLinksCommandGroups = <CtlCommandGroup>[
         usage: '<endpoint> <other>',
         configure: _configureRelation,
         build: _buildReject,
+        render: _renderDecision,
+      ),
+      CtlCommandSpec(
+        name: 'find',
+        summary: '按种类 + 标题查本机条目，给出 add / ls 要的端点',
+        usage: '<kind> [search...]',
+        configure: _configureLimit,
+        build: _buildFind,
+        render: _renderFind,
+      ),
+      CtlCommandSpec(
+        name: 'add',
+        summary:
+            '手动关联两个条目（恒为已确认）：--relation adaptation | same_work | theme_song；'
+            'adaptation 要 --self-is original | adaptation',
+        usage: '<endpoint> <other>',
+        configure: _configureAdd,
+        build: _buildAdd,
+        render: _renderDecision,
+      ),
+      CtlCommandSpec(
+        name: 'remove',
+        summary: '移除一条已确认的关联（建议用 reject）',
+        usage: '<endpoint> <other>',
+        configure: _configureRelation,
+        build: _buildRemove,
         render: _renderDecision,
       ),
       CtlCommandSpec(
@@ -83,6 +109,7 @@ const List<CtlCommandGroup> mediaLinksCommandGroups = <CtlCommandGroup>[
 ];
 
 const String _links = '/api/admin/links';
+const String _linkCandidates = '/api/admin/link-candidates';
 const String _people = '/api/admin/people';
 
 /// 端点种类（`MediaLinkKind.dbValue`）。
@@ -142,6 +169,35 @@ void _configureRelation(ArgParser parser) {
   );
 }
 
+/// 可手动关联的关系（app 侧 `kMediaLinkPickableRelations`）。
+const List<String> kMediaLinkManualRelations = <String>[
+  'adaptation',
+  'same_work',
+  'theme_song',
+];
+
+void _configureAdd(ArgParser parser) {
+  parser
+    ..addOption(
+      'relation',
+      allowed: kMediaLinkManualRelations,
+      mandatory: true,
+      help:
+          'adaptation = 原作 / 改编；theme_song = 音乐是视频的 OP / ED / 插入曲；其余用 same_work',
+    )
+    ..addOption(
+      'self-is',
+      allowed: const <String>['original', 'adaptation'],
+      help: 'adaptation 必填：<endpoint> 是原作（original）还是改编（adaptation）',
+    )
+    ..addOption(
+      'role',
+      allowed: const <String>['op', 'ed', 'insert'],
+      help: 'theme_song：角色（默认 op）',
+    )
+    ..addOption('episodes', help: 'theme_song：适用集数，如 1-12 或 1-6,8（默认全部）');
+}
+
 void _configureLimit(ArgParser parser) {
   parser.addOption('limit', help: '最多列几个（默认 50）');
 }
@@ -170,6 +226,51 @@ CtlRequestSpec _buildAccept(CtlCommandContext context) =>
 
 CtlRequestSpec _buildReject(CtlCommandContext context) =>
     _decision(context, 'reject');
+
+CtlRequestSpec _buildFind(CtlCommandContext context) {
+  final String kind = context.positional(0, 'kind').trim();
+  if (!kMediaLinkEndpointKinds.contains(kind)) {
+    throw CtlUsageError(
+      '<kind> 只能是 ${kMediaLinkEndpointKinds.join(' / ')}：$kind',
+    );
+  }
+  final String search = context.rest.skip(1).join(' ').trim();
+  final String? limit = context.option('limit');
+  if (limit != null && !RegExp(r'^[1-9]\d*$').hasMatch(limit)) {
+    throw CtlUsageError('--limit 必须是正整数：$limit');
+  }
+  return CtlRequestSpec.get(
+    _linkCandidates,
+    query: <String, String>{
+      'kind': kind,
+      if (search.isNotEmpty) 'search': search,
+      'limit': ?limit,
+    },
+  );
+}
+
+CtlRequestSpec _buildAdd(CtlCommandContext context) {
+  final String endpoint = _endpoint(context, 0, 'endpoint');
+  final String other = _endpoint(context, 1, 'other');
+  final String relation = context.option('relation')!;
+  final String? selfIs = context.option('self-is');
+  if (relation == 'adaptation' && selfIs == null) {
+    throw CtlUsageError('adaptation 要用 --self-is 说明 <endpoint> 是原作还是改编');
+  }
+  return CtlRequestSpec.post(
+    '$_links/${Uri.encodeComponent(endpoint)}/add',
+    body: <String, Object?>{
+      'other': other,
+      'relation': relation,
+      'selfIs': ?selfIs,
+      'role': ?context.option('role'),
+      'episodes': ?context.option('episodes'),
+    },
+  );
+}
+
+CtlRequestSpec _buildRemove(CtlCommandContext context) =>
+    _decision(context, 'remove');
 
 CtlRequestSpec _buildInfer(CtlCommandContext context) => CtlRequestSpec.post(
   '$_links/${Uri.encodeComponent(_endpoint(context, 0, 'endpoint'))}/infer',
@@ -258,6 +359,24 @@ String _renderDecision(Object? data) {
   final Object? other = link['other'];
   return '${describeMediaLinkState('${link['state']}')}：${link['relation']} · '
       '${other is Map ? '${other['endpoint']} ${other['title']}' : ''}';
+}
+
+String _renderFind(Object? data) {
+  if (data is! Map) return '完成';
+  final List<Map<String, Object?>> rows = <Map<String, Object?>>[
+    if (data['items'] is List)
+      for (final Object? i in data['items'] as List)
+        if (i is Map)
+          <String, Object?>{'endpoint': i['endpoint'], 'title': i['title']},
+  ];
+  final String table = renderCtlTable(rows, const <(String, String)>[
+    ('端点', 'endpoint'),
+    ('标题', 'title'),
+  ], empty: '没有条目');
+  final Object? total = data['total'];
+  return total is int && total > rows.length
+      ? '$table\n（共 $total 条，只列前 ${rows.length} 条；--limit 调大）'
+      : table;
 }
 
 String _renderInfer(Object? data) {

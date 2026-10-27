@@ -76,7 +76,7 @@ pub fn small_package() -> &'static [u8] {
             Some(path) => PathBuf::from(path),
             None => PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("model")
-                .join("sm40v2-package.zip"),
+                .join("sm56-package.zip"),
         };
         let bytes = std::fs::read(&path).unwrap_or_else(|error| {
             panic!(

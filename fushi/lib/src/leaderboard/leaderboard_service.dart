@@ -165,14 +165,22 @@ class LeaderboardService extends ChangeNotifier {
   LeaderboardLocalAccount? _account;
   LeaderboardClient? _client;
   LeaderboardSelf? _self;
+
+  /// [_self] 是本进程从服务端取到的（而不只是冷启动时读的本机缓存）。
+  bool _selfFresh = false;
   bool _accountGone = false;
   bool _disposed = false;
 
   LeaderboardStatus get status =>
       _account == null ? LeaderboardStatus.disabled : LeaderboardStatus.active;
 
-  /// 最近一次从服务端拿到的自己（开启后未联网过时为 null，调 [refreshSelf]）。
+  /// 最近一次拿到的自己：本进程联网取过就是服务端的最新值；还没取过时是 [load] 从本机
+  /// 缓存读出的上一次的值（冷启动首页头像不必等网络，反馈 hDfesbQvxB）；都没有为 null。
+  /// 要最新值看 [selfFresh]，不是就调 [refreshSelf]。
   LeaderboardSelf? get self => _self;
+
+  /// [self] 是本进程从服务端取到的（false = 还是缓存或没有）。
+  bool get selfFresh => _selfFresh;
 
   /// 已开启时的签名客户端（UI 读榜 / 好友等直接用）；未开启为 null。
   LeaderboardClient? get client => _client;
@@ -221,6 +229,11 @@ class LeaderboardService extends ChangeNotifier {
         'stored recovery code is invalid; treated as not enabled',
         st,
       );
+    }
+    // 冷启动先用上次缓存的自己（昵称 / 头像），联网刷新回来再覆盖。期间若已有新鲜值
+    // （load 与登录 / refreshSelf 交错）不拿旧缓存盖它。
+    if (_account != null && _self == null) {
+      _self = await store.readSelf(accountId: account.accountId);
     }
     _notify();
   }
@@ -382,7 +395,9 @@ class LeaderboardService extends ChangeNotifier {
       await store.markSignedIn();
       _activate(account, identity);
       _self = self;
+      _selfFresh = true;
       _resetSessionState();
+      await _writeSelfCache(store, self);
       _notify();
     });
   }
@@ -400,20 +415,20 @@ class LeaderboardService extends ChangeNotifier {
 
   Future<LeaderboardSelf> refreshSelf() async {
     await load();
-    final LeaderboardSelf self = await _requireClient().me();
-    _self = self;
-    _notify();
+    final LeaderboardClient client = _requireClient();
+    final LeaderboardSelf self = await client.me();
+    await _adoptFreshSelf(client, self);
     return self;
   }
 
   /// [visibility] = `public` | `friends`；null 字段不改。
   Future<void> updateProfile({String? nickname, String? visibility}) async {
     await load();
-    _self = await _requireClient().updateProfile(
-      nickname: nickname,
-      visibility: visibility,
+    final LeaderboardClient client = _requireClient();
+    await _adoptFreshSelf(
+      client,
+      await client.updateProfile(nickname: nickname, visibility: visibility),
     );
-    _notify();
   }
 
   /// 把本地图片裁成 128px 正方形 JPEG（后台 isolate）后上传为头像。
@@ -421,8 +436,33 @@ class LeaderboardService extends ChangeNotifier {
     await load();
     final LeaderboardClient client = _requireClient();
     await client.setAvatar(await _avatarEncoder(path));
-    _self = await client.me();
+    await _adoptFreshSelf(client, await client.me());
+  }
+
+  /// 服务端刚回的自己：记进内存、写本机缓存、通知。在写队列里做，且只认发请求时的
+  /// 那个客户端仍是当前客户端——请求在飞时退出 / 换号，旧账户的资料不落到新状态上，
+  /// 也不在退出后重新写出缓存文件。
+  Future<void> _adoptFreshSelf(
+    LeaderboardClient client,
+    LeaderboardSelf self,
+  ) => _serialWrite(() async {
+    if (_disposed || !identical(client, _client)) return;
+    _self = self;
+    _selfFresh = true;
+    await _writeSelfCache(_requireStore(), self);
     _notify();
+  });
+
+  /// 写资料缓存失败只影响下次冷启动能不能先画头像，不影响本次结果：记日志、不抛。
+  Future<void> _writeSelfCache(
+    LeaderboardStore store,
+    LeaderboardSelf self,
+  ) async {
+    try {
+      await store.writeSelf(self);
+    } catch (e, st) {
+      ErrorLogService.instance.log('LeaderboardService.selfCache', e, st);
+    }
   }
 
   /// 本机账户是否已同意公开（未开启为 false）。
@@ -674,6 +714,7 @@ class LeaderboardService extends ChangeNotifier {
       _account = null;
       _client = null;
       _self = null;
+      _selfFresh = false;
       _resetSessionState();
       _accountGone = accountGone;
       _notify();

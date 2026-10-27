@@ -6,11 +6,19 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 /// 内存资产库：命名空间用 `/` 分隔的路径作为 id；文件夹是已知路径集合，
 /// 资产是 path->bytes 映射。仅供测试（契约测试 + Plan B 编排器测试）。
 class FakeAssetStore implements SyncAssetStore {
-  FakeAssetStore({this.reportNullSizes = false});
+  FakeAssetStore({this.reportNullSizes = false, this.reportRevisions = false});
 
   /// 模拟 Dropbox/WebDAV/FTP 那类**不报 sizeBytes** 的后端：listChildren/findAsset
   /// 返回 sizeBytes=null。用于验证「同尺寸跳过」判据不依赖远端物理尺寸。
   final bool reportNullSizes;
+
+  /// 模拟 Drive / Dropbox / OneDrive / WebDAV 那类在列目录时给出**内容指纹**
+  /// （[AssetEntry.revision]）的后端：内容一变指纹就变。默认关（FTP / SFTP 口径）。
+  final bool reportRevisions;
+
+  String? _revisionOf(List<int> bytes) => reportRevisions
+      ? '${bytes.length}-${Object.hashAll(bytes).toRadixString(16)}'
+      : null;
 
   final Set<String> _folders = <String>{''};
   final Map<String, List<int>> _files = <String, List<int>>{};
@@ -49,6 +57,7 @@ class FakeAssetStore implements SyncAssetStore {
           id: e.key,
           name: e.key.substring(prefix.length),
           sizeBytes: reportNullSizes ? null : e.value.length,
+          revision: _revisionOf(e.value),
         ));
       }
     }

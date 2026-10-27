@@ -6,7 +6,7 @@ import '../helpers/source_guard.dart';
 
 /// Source guards for the 2026-06-08 video library naming batch (C):
 /// ① 多集导入用「系列名」命名播放列表（非某一集文件名）。
-/// ② 视频库卡片给播放列表加角标（≥2 集）与单视频区分。
+/// ② 视频库卡片给播放列表（≥2 集）在封面下副行标集数，与单视频区分。
 /// ③ 长按菜单加「重命名」。
 void main() {
   String read(String path) => File(path).readAsStringSync();
@@ -36,40 +36,55 @@ void main() {
     );
   });
 
-  test('② 视频库卡片用 playlistEpisodeCount 区分播放列表并加角标', () {
-    final String src = read(
-      'lib/src/pages/implementations/home_video_page.dart',
+  test('② 视频库卡片用 playlistEpisodeCount 区分播放列表并在副行标集数', () {
+    // 2026-10-25 库页材质定版（2abfd1327b）：封面上不再画任何角标，集数挪进封面
+    // 下的副行（_buildCardWatchMeta）。不变式没变——播放列表（≥2 集）必须与单视频
+    // 可区分、并显示集数——标的从角标挪到副行，断言随之重指。
+    final String src = compactCode(
+      read('lib/src/pages/implementations/home_video_page.dart'),
+    );
+    final String card = compactCode(
+      methodBody(
+        read('lib/src/pages/implementations/home_video_page.dart'),
+        'Widget _buildCard(',
+      ),
+    );
+    final String meta = compactCode(
+      methodBody(
+        read('lib/src/pages/implementations/home_video_page.dart'),
+        'String? _buildCardWatchMeta(',
+      ),
     );
     expect(
-      src.contains('playlistEpisodeCount(book.playlistJson)'),
+      card.contains(
+        'finalintepisodeCount=playlistEpisodeCount(book.playlistJson);',
+      ),
       isTrue,
       reason: '卡片需按 playlistEpisodeCount 判定是否播放列表',
     );
-    // 2026-10-25 库页材质定版（2abfd1327b，用户：「全部都不用角标设计」）：封面上
-    // 不再压角标，「这是播放列表、共 N 集」挪进封面下的副行 [_buildCardWatchMeta]。
-    // 不变式不变——播放列表必须与单视频可区分且显示集数——只是位置从角标换到副行。
-    final String code = compactCode(src);
     expect(
-      code.contains(
-        'subtitle:_buildCardWatchMeta(book,episodeCount:episodeCount',
+      card.contains(
+        'subtitle:_buildCardWatchMeta(book,episodeCount:episodeCount)',
       ),
       isTrue,
-      reason: '卡片副行必须按 playlistEpisodeCount 的结果区分播放列表与单视频',
-    );
-    final String meta = compactCode(
-      methodBody(src, 'String? _buildCardWatchMeta('),
+      reason: '卡片副行必须由 _buildCardWatchMeta 按集数生成',
     );
     expect(
       meta.contains('finalboolplaylist=episodeCount>=2;'),
       isTrue,
-      reason: '≥2 集才算播放列表（单元素列表/单视频不显示集数）',
+      reason: '≥2 集才算播放列表（单元素列表/单视频不标集数）',
     );
     expect(
       meta.contains(
         'if(playlist)t.video_playlist_episodes(count:episodeCount)',
       ),
       isTrue,
-      reason: '播放列表副行用 i18n key video_playlist_episodes 显示集数',
+      reason: '播放列表副行用 i18n key video_playlist_episodes 显示集数，与单视频区分',
+    );
+    expect(
+      src.contains('_buildPlaylistBadge('),
+      isFalse,
+      reason: '封面不再画播放列表角标（2026-10-25 定版：集数只进副行）',
     );
   });
 

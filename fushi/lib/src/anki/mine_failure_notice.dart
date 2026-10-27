@@ -58,18 +58,40 @@ abstract final class MineFailureNotice {
 
   /// 回包交给弹窗之前调：弹窗已不在（[originOnScreen] 为假）时宿主 toast 一次，
   /// 并改写回包让 popup.js 不再重复。其余情况原样返回。
+  ///
+  /// 先过「制卡提示」开关（[MineNotices.shown]）：用户关掉了「重复卡片提示」时，重复
+  /// 结果既不 toast、也不让弹窗就地说——回包去掉 `message` 并标 `hostReported`
+  /// （= 宿主已对这条提示作出裁决，popup.js 什么都不画）。`duplicate` 位原样保留，
+  /// 按钮照旧按真实状态画成已制卡 ✓。此前弹窗就地提示不经开关，关掉后「重复卡片，
+  /// 未导出」照样冒出来（反馈 3aFpRYC6a1 / jYEPxVSrts）。
   static Map<String, Object?> settle(
     Map<String, Object?> reply, {
     required bool originOnScreen,
   }) {
+    // 不看有没有 message：宿主没带原因时 popup.js 会退回通用的「导出卡片失败」，
+    // 被关掉的重复提示一样不能让它说。
+    if (_isMutedDuplicate(reply)) return _withoutMessage(reply);
     if (originOnScreen || !isReportableFailure(reply)) return reply;
     _toast(reply['message']! as String, duplicate: reply['duplicate'] == true);
-    return <String, Object?>{
-      for (final MapEntry<String, Object?> e in reply.entries)
-        if (e.key != 'message') e.key: e.value,
-      hostReportedKey: true,
-    };
+    return _withoutMessage(reply);
   }
+
+  /// 没被收下、因为卡已在 Anki 里、且用户关了「重复卡片提示」。失败（非重复）恒说。
+  static bool _isMutedDuplicate(Map<String, Object?> reply) =>
+      reply['ankiConnect'] != true &&
+      reply['queued'] != true &&
+      reply['duplicate'] == true &&
+      !MineNotices.shown(MineToastStatus.duplicate);
+
+  static Map<String, Object?> _withoutMessage(Map<String, Object?> reply) =>
+      <String, Object?>{
+        for (final MapEntry<String, Object?> e in reply.entries)
+          if (e.key != 'message') e.key: e.value,
+        hostReportedKey: true,
+      };
+
+  static MineToastStatus _statusOf(bool duplicate) =>
+      duplicate ? MineToastStatus.duplicate : MineToastStatus.failed;
 
   /// popup.js `mineFailureUnseen` 桥：弹窗收到失败回包时，发起制卡的那颗按钮已经
   /// 不在页面上（换词 / 原地跳转 / 热槽复用重渲染），提示无处可画，交回宿主 toast。
@@ -81,8 +103,10 @@ abstract final class MineFailureNotice {
     _toast(message, duplicate: args['duplicate'] == true);
   }
 
-  static void _toast(String message, {required bool duplicate}) => _toastSink(
-    message,
-    duplicate ? MineToastStatus.duplicate : MineToastStatus.failed,
-  );
+  /// 同样先过开关：测试替换的 [_toastSink] 也只收到用户真会看见的提示。
+  static void _toast(String message, {required bool duplicate}) {
+    final MineToastStatus status = _statusOf(duplicate);
+    if (!MineNotices.shown(status)) return;
+    _toastSink(message, status);
+  }
 }

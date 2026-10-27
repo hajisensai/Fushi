@@ -283,6 +283,8 @@ assert.deepEqual(log, ['native:VIDEO'], '只包一层');
                 'shell': doc(autoplay: false).shellHtml,
                 'off': doc(autoplay: false).fullCardScript,
                 'on': doc(autoplay: true).fullCardScript,
+                // 下一张卡（换卡停掉上一张页内所有在响的媒体，N-JACNGS-K）。
+                'next': doc(autoplay: true, body: '<b>Next</b>').fullCardScript,
               }),
             );
           final ProcessResult result = await Process.run(
@@ -299,7 +301,7 @@ assert.deepEqual(log, ['native:VIDEO'], '只包一层');
             0,
             reason: '${result.stdout}\n${result.stderr}',
           );
-          expect(result.stdout, contains('PASS 26 browser checks'));
+          expect(result.stdout, contains('PASS 28 browser checks'));
         } finally {
           temp.deleteSync(recursive: true);
         }

@@ -13,22 +13,36 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
   /// syncContent、漫画受 syncMangaContent 门控。进度走 [SyncPhase.books]，
   /// 临时文件 finally 清理，逐项错误进 [report.errors] 不中断整体。
   ///
-  /// **删除传播**：现有实现不传播书籍删除（SyncManager 云路径同语义）。
-  /// 若后续需要互联书籍删除传播，参考词典删除传播（BUG-086）扩展此方法。
+  /// **删除意图先于推送**（反馈 Et3pmRzo0k）：host 上被「从所有设备删除」的书，本机
+  /// 删除前就有的那份不进 diff（[_loadHostPushVetoTombstones]）——否则 host 导入会清掉
+  /// 墓碑、删除被静默撤销。本机删后重新导入的（`localAddedAt` 晚于删除）照推，host
+  /// 端同一判据放行（[kPeerPushPresentSinceHeader]）。书籍删除本身经
+  /// [_syncDeletionTombstonesLive] 双向传播。
   Future<void> _syncBooksContentLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) async {
+    final DeletionTombstoneEntries? hostTombstones =
+        await _loadHostPushVetoTombstones(report, backend, 'live push books');
+    if (hostTombstones == null) return;
     final List<RemoteBookInfo> remoteBooks = await backend.listRemoteBooks();
     // 书籍（EPUB 等）与漫画各看各的上传开关（所有者 2026-10-21：书籍和漫画分开）：
     // 开关关着的那类书不进 diff，既不推也不计进度条总数。
     final List<EpubBookRow> localBooks = <EpubBookRow>[
       for (final EpubBookRow b in await _db.getAllEpubBooks())
         if (isBookContentSyncEnabled(
-          b,
-          syncContent: syncContent,
-          syncMangaContent: syncMangaContent,
-        ))
+              b,
+              syncContent: syncContent,
+              syncMangaContent: syncMangaContent,
+            ) &&
+            // host 端按 sanitizeTtuFilename(书名) 派生键入库、记墓碑；本机行键通常与之
+            // 相同，不同时（落地键带后缀等）两个都查。
+            !_hostVetoesPush(
+              hostTombstones,
+              kinds: const <SyncTombstoneKind>[SyncTombstoneKind.book],
+              itemKeys: <String>{b.bookKey, sanitizeTtuFilename(b.title)},
+              presentSinceAt: b.localAddedAt,
+            ))
           b,
     ];
 
@@ -122,6 +136,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           tmp,
           displayTitle: override?.title,
           displayTitleAt: override?.updatedAt ?? 0,
+          presentSinceAt: row.localAddedAt,
           onProgress: (double f, [int? b]) => _emit(
             SyncPhase.books,
             itemIndex: index,

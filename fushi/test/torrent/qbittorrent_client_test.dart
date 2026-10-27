@@ -51,27 +51,60 @@ void main() {
     });
   });
 
-  group('extractSidCookie', () {
+  group('extractSessionCookie', () {
     test('extracts SID from a single cookie', () {
-      expect(extractSidCookie('SID=abc123; HttpOnly; path=/'), 'abc123');
+      expect(extractSessionCookie('SID=abc123; HttpOnly; path=/'), 'SID=abc123');
     });
 
     test('extracts SID from a joined multi-cookie header', () {
       // package:http 会把多个 Set-Cookie 用 ", " 连成一串。
       const String header =
           'theme=dark; path=/, SID=xyz789; HttpOnly; path=/, lang=ja; path=/';
-      expect(extractSidCookie(header), 'xyz789');
+      expect(extractSessionCookie(header), 'SID=xyz789');
     });
 
-    test('returns null when no SID present', () {
-      expect(extractSidCookie('theme=dark; path=/'), isNull);
-      expect(extractSidCookie(''), isNull);
-      expect(extractSidCookie(null), isNull);
+    test('keeps the port-suffixed cookie name of qBittorrent 5.2+', () {
+      // Feedback MrC_WCyTun：5.2 起会话 cookie 叫 QBT_SID_<端口>，旧实现只认
+      // SID，登录成功后报 "no SID cookie"。
+      expect(
+        extractSessionCookie(
+          'QBT_SID_8080=tok52; HttpOnly; SameSite=Lax; path=/',
+        ),
+        'QBT_SID_8080=tok52',
+      );
+    });
+
+    test('returns null when no session cookie present', () {
+      expect(extractSessionCookie('theme=dark; path=/'), isNull);
+      expect(extractSessionCookie(''), isNull);
+      expect(extractSessionCookie(null), isNull);
     });
 
     test('does not match SID as a suffix of another cookie name', () {
-      expect(extractSidCookie('QSID=nope; path=/'), isNull);
+      expect(extractSessionCookie('QSID=nope; path=/'), isNull);
+      expect(extractSessionCookie('XQBT_SID_1=nope; path=/'), isNull);
     });
+  });
+
+  test('qBittorrent 5.2+ login sends the port-suffixed cookie back', () async {
+    final List<String?> sentCookies = <String?>[];
+    final QBittorrentClient client = QBittorrentClient(
+      baseUrl: 'http://qb.local:8080',
+      username: 'u',
+      password: 'p',
+      client: MockClient((http.Request request) async {
+        if (request.url.path == '/api/v2/auth/login') {
+          return http.Response('Ok.', 200, headers: <String, String>{
+            'set-cookie': 'QBT_SID_8080=tok52; HttpOnly; path=/',
+          });
+        }
+        sentCookies.add(request.headers['cookie']);
+        return http.Response('v5.2.0', 200);
+      }),
+    );
+    expect(await client.login(), isTrue);
+    expect(await client.fetchVersion(), 'v5.2.0');
+    expect(sentCookies, <String?>['QBT_SID_8080=tok52']);
   });
 
   group('login', () {

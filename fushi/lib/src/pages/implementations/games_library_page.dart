@@ -44,7 +44,6 @@ import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale_prompt.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
-import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/mining/galgame_library_query.dart';
@@ -673,10 +672,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     _launching = true;
     // 查词卡的**词头**跟这个游戏的文本语言走（释义跟词典走）。hook 文本没有任何
     // 语言声明可读，所以这里用的就是用户在卡菜单里指定的值；没指定则落全局默认。
-    _appModel.currentLookupLanguage = resolveContentLanguage(
-      explicit: game.language,
-      globalDefault: _appModel.prefsRepo.defaultContentLanguage,
-    );
+    _appModel.enterGameLookupLanguage(game.language);
     try {
       if (!Platform.isWindows) {
         FushiToast.show(

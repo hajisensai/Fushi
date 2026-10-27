@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
@@ -9,6 +11,36 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
     show FushiMotion, fushiMotionDuration;
+
+/// 浮动件（跳转回退胶囊）占的带子高度：胶囊命中区 48dp + 上下各 4dp 留白。
+const double kLyricsNavigationAccessoryBand = 56;
+
+/// 有浮动件时歌词 WebView 的矩形：外观给的歌词矩形 [lyricsRect] 从底边让出
+/// [kLyricsNavigationAccessoryBand]（矩形太矮时至少留 1dp 高，不出负高度）。
+Rect lyricsViewRectFor(Rect lyricsRect, {required bool hasAccessory}) {
+  if (!hasAccessory) return lyricsRect;
+  final double bottom = math.max(
+    lyricsRect.top + 1,
+    lyricsRect.bottom - kLyricsNavigationAccessoryBand,
+  );
+  return Rect.fromLTRB(
+    lyricsRect.left,
+    lyricsRect.top,
+    lyricsRect.right,
+    bottom,
+  );
+}
+
+/// 浮动件所在的带子：歌词矩形最底下那一截，紧贴外观底栏 / 控件面板的上沿。
+Rect navigationAccessoryRectFor(Rect lyricsRect) {
+  final Rect lyrics = lyricsViewRectFor(lyricsRect, hasAccessory: true);
+  return Rect.fromLTRB(
+    lyricsRect.left,
+    lyrics.bottom,
+    lyricsRect.right,
+    math.max(lyrics.bottom, lyricsRect.bottom),
+  );
+}
 
 /// 歌词播放覆盖层外壳：盖在阅读器之上，阅读器在下面照常存活、跟随音频、记统计
 /// （见 [LyricsPlayerData] 文件头）。本组件只负责：
@@ -36,8 +68,14 @@ class ReaderLyricsPlayerOverlay extends StatefulWidget {
   /// 歌词文档主题（颜色 / 对齐 / 透明度阶梯）变化。首帧也会回调一次。
   final ValueChanged<LyricsHtmlTheme> onHtmlThemeChanged;
 
-  /// 挂在歌词区顶部居中的浮动件（阅读器的「跳转回退」胶囊），盖在歌词之上、
-  /// 外观 chrome 之下。null 不画。
+  /// 歌词区底边、紧贴底栏（控件面板）上方的浮动件（阅读器的「跳转回退」胶囊）。
+  /// null 不画。
+  ///
+  /// 反馈 0AwuVqrNFn：旧实现把它盖在歌词区顶部，压住正文行。现在它有自己的一条
+  /// 带子（[kLyricsNavigationAccessoryBand]）：有浮动件时歌词 WebView 的矩形从底边
+  /// 让出这条带子，胶囊坐在带子里，**不与任何歌词行重叠**——与用户怎么调边距无关
+  /// （默认边距下也成立），因为让位发生在外观给出的歌词矩形上，而不是靠歌词文档的
+  /// 内边距碰运气。
   final Widget? navigationAccessory;
 
   @override
@@ -267,13 +305,17 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
                         ),
                       ),
                     ),
-                    Positioned.fromRect(rect: rect, child: widget.lyricsView),
+                    Positioned.fromRect(
+                      rect: lyricsViewRectFor(
+                        rect,
+                        hasAccessory: widget.navigationAccessory != null,
+                      ),
+                      child: widget.lyricsView,
+                    ),
                     if (widget.navigationAccessory != null)
-                      Positioned(
-                        top: rect.top + 8,
-                        left: rect.left,
-                        width: rect.width,
-                        child: widget.navigationAccessory!,
+                      Positioned.fromRect(
+                        rect: navigationAccessoryRectFor(rect),
+                        child: Center(child: widget.navigationAccessory),
                       ),
                     Positioned.fill(
                       child: design.buildChrome(

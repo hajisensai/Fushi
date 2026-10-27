@@ -519,14 +519,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Open disc menu by default':
       'test/media/video/disc/disc_session_entry_test.dart'
       '（resolveDiscPrimaryKind：设置关 = 主按钮直接播正片）',
-  // 作品图谱 L2 两项（OP / ED 声纹识别后的播放行为）。写 prefsRepo（changed=true），
-  // 生效点在视频页覆盖层的状态机：harness 里没有带识别结果的正在播放的视频。
+  // 作品图谱 L2（OP / ED 声纹识别后自动跳过）。写 prefsRepo（changed=true），
+  // 生效点在视频页的状态机：harness 里没有带识别结果的正在播放的视频。
   'video/Skip intros and credits automatically':
-      'test/media/video/video_theme_song_overlay_test.dart'
+      'test/media/video/video_theme_song_tracker_test.dart'
       '（VideoThemeSongTracker：开关每次现读，只在刚进段 3 s 内自动跳一次）',
-  'video/Show the theme song title':
-      'test/media/video/video_theme_song_overlay_test.dart'
-      '（VideoThemeSongOverlay.showNowPlaying：关掉只剩跳过按钮）',
   'video/Auto-align downloaded subtitles':
       'test/media/video/embedded_reference_subtitle_sync_test.dart'
       '（gatedAutomaticSubtitleAligner：开关每次现读）',
@@ -741,6 +738,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Sentences from your library':
       'test/pages/popup_settings_injection_memo_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
+  // 查词页两个开关（反馈 3D-JH966Kr / cczhbM7ZOI）：生效点在 HomeDictionaryPage
+  // （结果顶部下拉是否清空、导航点进 / 清空后是否聚焦搜索框），开 / 关两态都有
+  // 真 widget 行为断言。
+  'lookup/Pull down at the top to clear the search':
+      'test/pages/home_dictionary_lookup_page_toggles_test.dart',
+  'lookup/Focus search when opening Lookup':
+      'test/pages/home_dictionary_lookup_page_toggles_test.dart',
   // 弹出查词 / 浏览器扩展弹窗的独立尺寸：生效点是有效尺寸解析（解锁前跟随
   // app 内共享值、解锁后用自身宽高），由 AppModel 接线测试咬住；窗口真尺寸要
   // 原生弹出窗 / 扩展宿主，widget 测不到。
@@ -884,6 +888,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 开着时制卡不碰后端、一律入队；行为由专项测试咬死。
   'cardCreation/Batch mining':
       'test/anki/pending_mining_anki_repository_test.dart (批量模式)',
+  // 连不上 Anki 时暂存卡片：同上写 AnkiSettings，故 changed=false。生效点同在待发
+  // 队列装饰器——默认关时拒绝连接原样报失败、开着才入队；行为由专项测试咬死。
+  'cardCreation/Hold cards when Anki is unreachable':
+      'test/anki/pending_mining_anki_repository_test.dart (连不上时暂存)',
   // issue #1949「启动 Fushi 时自动启动 Anki」：同上写 AnkiSettings，故 changed=false。
   // 生效点在 main() 启动后的 AnkiDesktopLauncher.autoLaunchOnStartup（拉起外部进程，
   // harness 里无从探测）；开关默认关 / 同步客户端后端与远程 AnkiConnect 不启动 /
@@ -971,6 +979,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'system/P2P (torrent) proxy':
       'test/torrent/download_http_client_proxy_test.dart',
   'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
+  // 复习数据的自动同步（反馈 VNz9dsLeIy）：写 srs_sync_auto，生效点是 SrsSyncScheduler 的几个
+  // 自动触发口（常规同步后置步骤 / 互联快速通道 / 本机写入后推送 / host 收到写入）；harness 里没有
+  // 复习同步在跑，专项测试咬住「关掉后各自动口不跑、手动与进复习页照跑」。
+  'syncBackup/Auto-sync review data': 'test/srs/srs_sync_scheduler_test.dart',
   'syncBackup/Sync statistics': 'test/sync/sync_gating_test.dart',
   // 设备级「同步浏览历史」：生效点是聚合快照按族裁剪（云 / 互联 client / host 三条路径）。
   'syncBackup/Sync browsing history':

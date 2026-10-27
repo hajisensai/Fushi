@@ -90,6 +90,7 @@ void main() {
         'alreadyHadOrSkipped': <String>['e2'],
         'noSubtitle': <String>[],
         'failed': <String>[],
+        'reasons': <String, String>{'e4': 'allCandidatesRejected'},
       });
       expect(context.cards, <List<String>>[
         <String>['vs1', 'vs2'],
@@ -109,6 +110,73 @@ void main() {
         'bookUid': 'e1',
         'language': 'ja',
       });
+    });
+
+    test('标了 mismatch 的候选不进卡片；全是 mismatch 按没有候选处理并给出原因', () async {
+      final _Context context = _Context(
+        (String id, Map<String, Object?> _) => switch (id) {
+          'video.subtitle.fetch' => _ok(const <String, Object?>{
+            'outcome': 'allCandidatesRejected',
+          }),
+          'video.subtitle.search' => _ok(const <String, Object?>{
+            'candidates': <Object?>[
+              <String, Object?>{
+                'id': 'vs1',
+                'fileName': 'Show.S01E03.WEBRip.srt',
+                'mismatch': 'release names a TV episode, target is a movie',
+              },
+              <String, Object?>{
+                'id': 'vs2',
+                'fileName': 'Show.S01E04.WEBRip.srt',
+                'mismatch': 'release names a TV episode, target is a movie',
+              },
+            ],
+          }),
+          _ => const AgentToolResult.error('unexpected'),
+        },
+      );
+      final Map<Object?, Object?> summary =
+          await SubtitleFillSkill().run(context, <String, Object?>{
+                'bookUids': <String>['m1'],
+                'asrFallback': false,
+              })
+              as Map<Object?, Object?>;
+      expect(context.cards, isEmpty);
+      expect(summary['noSubtitle'], <String>['m1']);
+      expect(
+        (summary['reasons']! as Map<Object?, Object?>)['m1'],
+        contains('target is a movie'),
+      );
+    });
+
+    test('preferFormat=ass：ass 候选排在卡片最前，其余保持原序', () async {
+      final _Context context = _Context(
+        (String id, Map<String, Object?> _) => switch (id) {
+          'video.subtitle.fetch' => _ok(const <String, Object?>{
+            'outcome': 'allCandidatesRejected',
+          }),
+          'video.subtitle.search' => _ok(const <String, Object?>{
+            'candidates': <Object?>[
+              <String, Object?>{'id': 'vs1', 'fileName': 'a.srt'},
+              <String, Object?>{'id': 'vs2', 'fileName': 'b.ass'},
+              <String, Object?>{
+                'id': 'vs3',
+                'fileName': 'c.ass',
+                'mismatch': 'other work',
+              },
+              <String, Object?>{'id': 'vs4', 'fileName': 'd.srt'},
+            ],
+          }),
+          _ => const AgentToolResult.error('unexpected'),
+        },
+      );
+      await SubtitleFillSkill().run(context, <String, Object?>{
+        'bookUids': <String>['e1'],
+        'preferFormat': '.ASS',
+      });
+      expect(context.cards, <List<String>>[
+        <String>['vs2', 'vs1', 'vs4'],
+      ]);
     });
 
     test('asrFallback=false：都没有就记为 noSubtitle，不生成', () async {

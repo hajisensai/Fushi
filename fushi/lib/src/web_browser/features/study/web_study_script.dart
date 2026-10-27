@@ -17,7 +17,7 @@ const int kWebStudyJapaneseMinChars = 60;
 ///   动态加载的页面在 DOM 变化后再判（判定成立后不再算）。
 /// - **字数（翻走即计）**：含日文的文本按其所在元素交给 `IntersectionObserver`，
 ///   元素在视口里出现过、之后整块滚出视口**上方**时，把它的文字（不含振假名 `rt`）
-///   的日文字符数计入；同一页同一段文字只计一次（按文字内容去重，注音 / 阅读模式
+///   的日文字符数计入；同一页同一段文字只计一次（按文字内容去重，阅读模式
 ///   换掉 DOM 后不会重计相同的段落）。停在最后一屏没滚走的不计——与阅读器「翻走才
 ///   入账」同一口径。
 String webStudyInstallSource() => _kWebStudyInstallTemplate
@@ -67,15 +67,12 @@ const String _kWebStudyInstallTemplate = r'''
     if (countJa(s) >= JA_MIN) ja = true;
   }
   function unitOf(t){
-    var furi = null;
     for (var n = t.parentNode; n && n.nodeType === 1; n = n.parentNode) {
       if (SKIP[n.tagName] || n.isContentEditable) return null;
-      if (n.classList && n.classList.contains('fushi-furi')) furi = n;
     }
-    return furi || t.parentNode;
+    return t.parentNode;
   }
   function textsOf(el){
-    if (typeof el.__fushiSrc === 'string') return [el.__fushiSrc];
     var out = [];
     for (var c = el.firstChild; c; c = c.nextSibling) {
       if (c.nodeType === 3 && c.nodeValue) out.push(c.nodeValue);

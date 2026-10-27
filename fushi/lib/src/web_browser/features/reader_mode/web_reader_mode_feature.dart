@@ -10,8 +10,6 @@ import 'package:fushi/src/media/novel/web/web_novel_gate.dart';
 import 'package:fushi/src/media/novel/web/web_novel_page_fetcher.dart';
 import 'package:fushi/src/media/novel/web/web_novel_reader_launch.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/web_browser/features/furigana/web_furigana_feature.dart'
-    show webCssColor;
 import 'package:fushi/src/web_browser/features/reader_mode/web_reader_mode_document.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
@@ -33,7 +31,7 @@ typedef WebReaderModeExtractor =
     Future<WebArticle> Function(Uint8List html, Uri url);
 
 /// 阅读模式：任意文章页一键换成干净排版（正文提取与网页小说同一个 Rust 提取器，
-/// 见 [webReaderModeInstallScript]），查词 / 注音照常；阅读模式里可「存进书架」，走
+/// 见 [webReaderModeInstallScript]），查词照常；阅读模式里可「存进书架」，走
 /// 网页小说既有的入书架路径 [readWebNovelPageInFushi]（含预览确认、并进已有作品）。
 ///
 /// 合规：阅读模式本身只是把**当前已打开的页面**换个排版显示，与 Safari 阅读器同类，
@@ -204,4 +202,11 @@ WebReaderModeTheme webReaderModeThemeOf(BuildContext context) {
     accent: webCssColor(s.primary),
     dark: theme.brightness == Brightness.dark,
   );
+}
+
+/// [Color] → CSS `#rrggbb`（不带透明度：脚本自己按需混透明）。
+String webCssColor(Color c) {
+  String hex(double v) =>
+      (v * 255).round().clamp(0, 255).toRadixString(16).padLeft(2, '0');
+  return '#${hex(c.r)}${hex(c.g)}${hex(c.b)}';
 }

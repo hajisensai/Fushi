@@ -2,7 +2,7 @@
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
 //! Fushi RWKV 排程原生推理库：上游 RWKV 调度（kuma3-anki-core 的
-//! `rslib/src/rwkv`，AGPL-3.0-or-later）推理核心的薄封装 + SM40 小模型 + C ABI。
+//! `rslib/src/rwkv`，AGPL-3.0-or-later）推理核心的薄封装 + SM56 小模型 + C ABI。
 //!
 //! 设计：
 //! - 整段复习历史按时间顺序回放（[RwkvRuntime::replay]）进模型，维护 card / note / deck /
@@ -80,11 +80,11 @@ pub const UPSTREAM_REPO: &str = "https://github.com/Pedrubik2000/kuma3-anki-core
 pub const UPSTREAM_SHA: &str = "c639bcec696f2317f9bb9a736d433b9d6c0d9c56";
 /// 通用预训练权重（`RWKV_trained_on_5000_10000.bin`，11,082,637 字节）的 SHA-256。
 pub const MODEL_SHA256: &str = "749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec";
-/// 小模型 SM40 发布包 `sm40v2-package.zip`（JSchoreels/anki-rwkv release
-/// `small-model-sm40-2026-10-19`，5,582,672 字节）的 SHA-256。权重是包里的
-/// `sm40v2/weights.int8.bin`（推荐，436,391 字节）或 `sm40v2/weights.f32.bin`。
+/// 小模型 SM56 发布包 `sm56-package.zip`（JSchoreels/anki-rwkv release
+/// `small-model-sm56-2026-10-24`，5,581,795 字节）的 SHA-256。权重是包里的
+/// `sm56/weights.int8.bin`（推荐，436,391 字节）或 `sm56/weights.f32.bin`。
 pub const SMALL_MODEL_PACKAGE_SHA256: &str =
-    "9bc1e3e4040ce9693f230e905abb5c925b1102f787424b9059543ae900f1e2a2";
+    "7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a";
 
 // ---------------------------------------------------------------------------
 // Rust API
@@ -95,7 +95,7 @@ pub const SMALL_MODEL_PACKAGE_SHA256: &str =
 pub enum ModelKind {
     /// 2,762,884 参数的上游模型（质量优先）。
     Large,
-    /// 331,511 参数的 SM40 小模型（省内存；298 个留出用户上 LogLoss 比大模型高约 1%）。
+    /// 331,511 参数的 SM56 小模型（省内存；作者 723 个留出用户上 LogLoss 比大模型高 0.34% / 0.47%）。
     Small,
 }
 

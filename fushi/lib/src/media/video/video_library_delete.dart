@@ -35,6 +35,8 @@ import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart'
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show LocalVideoFileDeleteHooks;
+import 'package:fushi_engine/media/video/video_work_companions.dart'
+    show videoWorkCompanionBookUids;
 import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi/utils.dart';
@@ -64,12 +66,22 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
   bool removeFromCollections = true,
   Future<void> Function()? afterDeleteBeforeReclaim,
 }) async {
+  // 删的是一整部作品时，它名下不在合集里的附属行（本地特典 / 下载整理出的附件）
+  // 跟着一起删，否则正片没了、特典行和特典文件原样留下（fuQcFmZZxb / BUG-3817）。
+  // 「只删本机副本、成员行保留」（removeFromCollections: false）的作品仍在，不扩。
+  final List<String> requested = bookUids.toList(growable: false);
+  final List<String> targetUids = removeFromCollections
+      ? <String>[
+          ...requested,
+          ...await videoWorkCompanionBookUids(database, requested),
+        ]
+      : requested;
   LocalFileDeleteReport report = const LocalFileDeleteReport();
   if (decision.deleteStatistics) {
     await _deleteStatisticsForVideos(
       repo: repo,
       database: database,
-      bookUids: bookUids,
+      bookUids: targetUids,
     );
   }
   // 蓝光盘特典不在盘合集里，删掉它不留任何成员墓碑，下一次重扫会原样建回来
@@ -79,7 +91,7 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
       const <BlurayExtraDeletionTombstone>[];
   try {
     extraTombstones =
-        await planBlurayExtraDeletionTombstones(database, bookUids);
+        await planBlurayExtraDeletionTombstones(database, targetUids);
   } catch (e, stack) {
     ErrorLogService.instance
         .log('VideoLibraryDelete.planBlurayExtraTombstones', e, stack);
@@ -88,7 +100,7 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
   List<VideoBookDeleteFailure> failed = const <VideoBookDeleteFailure>[];
   try {
     deleted = await repo.deleteVideoBooksAndReclaimAssets(
-      bookUids,
+      targetUids,
       scope: decision.scope,
       compactDatabase: compactDatabase,
       deleteLocalFiles: decision.deleteLocalFiles,
@@ -140,7 +152,7 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
         database,
         extraTombstones,
         deletedUids: <String>{
-          for (final String uid in bookUids)
+          for (final String uid in targetUids)
             if (!failedUids.contains(uid)) uid,
         },
       );

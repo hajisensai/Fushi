@@ -4,6 +4,7 @@ import 'dart:ui' show Rect;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show TextEditingController, TextSelection;
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
@@ -334,8 +335,13 @@ class AdvancedMiningController extends ChangeNotifier {
   AdvancedMiningAudioWindow? audioWindow;
   bool audioLoaded = false;
 
-  /// 试听是否正在播。只驱动按钮外观；真正的播放状态在宿主控制器里。
+  /// 试听是否正在播。只驱动按钮外观；真正的播放状态在宿主控制器里，这里跟着宿主交回
+  /// 的 [RangePlayback] 走：那段播完 / 被打断就复位（FDN66-xurt）。
   bool previewing = false;
+
+  /// 每次起播 / 停止都 +1：只认最新一次试听的结局，停掉的旧一段晚到的「结束」不能把
+  /// 新一段的按钮复位。
+  int _previewGen = 0;
 
   int _describeGen = 0;
 
@@ -407,6 +413,9 @@ class AdvancedMiningController extends ChangeNotifier {
   ///
   /// 每次都把**当前**偏移交给宿主重新算区间，而不是复用打开时的那一段：用户在这里
   /// 加减句子、微调起止的目的就是改变那段区间（BUG-2196 ②）。
+  ///
+  /// 起播后按宿主交回的句柄收尾：那段播完 / 被打断时 [previewing] 自动复位，下一次点击
+  /// 就是重新试听，而不是去停一段早已结束的播放（FDN66-xurt）。
   Future<bool> togglePreview() async {
     final AdvancedMiningAudioSection? section = audioSection;
     if (section == null) return false;
@@ -414,32 +423,54 @@ class AdvancedMiningController extends ChangeNotifier {
       await stopPreview();
       return true;
     }
+    final int gen = ++_previewGen;
     previewing = true;
     _notify();
-    bool ok;
+    RangePlayback? playback;
     try {
-      ok = await section.preview(audioStartDeltaMs, audioEndDeltaMs);
+      playback = await section.preview(audioStartDeltaMs, audioEndDeltaMs);
     } catch (e, stack) {
       fushiDebugPrint('AdvancedMining.preview: $e\n$stack');
-      ok = false;
+      playback = null;
     }
-    if (!ok) {
+    if (_disposed) return playback != null;
+    if (gen != _previewGen) {
+      // 起播途中用户已点了停止（stopPreview 已复位按钮）：那次停止早于这次起播落地，
+      // 宿主随后才把这段放出来，补停一次，不留一段按钮显示「没在放」却在响的声音。
+      if (playback != null && !playback.isEnded) {
+        await _stopHostPreview(section);
+      }
+      return true;
+    }
+    if (playback == null) {
       previewing = false;
       _notify();
+      return false;
     }
-    return ok;
+    unawaited(_resetWhenPreviewEnds(playback, gen));
+    return true;
+  }
+
+  Future<void> _resetWhenPreviewEnds(RangePlayback playback, int gen) async {
+    await playback.ended;
+    if (_disposed || gen != _previewGen || !previewing) return;
+    previewing = false;
+    _notify();
+  }
+
+  Future<void> _stopHostPreview(AdvancedMiningAudioSection section) async {
+    try {
+      await section.stopPreview();
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.stopPreview: $e\n$stack');
+    }
   }
 
   Future<void> stopPreview() async {
     if (!previewing) return;
+    _previewGen++;
     final AdvancedMiningAudioSection? section = audioSection;
-    if (section != null) {
-      try {
-        await section.stopPreview();
-      } catch (e, stack) {
-        fushiDebugPrint('AdvancedMining.stopPreview: $e\n$stack');
-      }
-    }
+    if (section != null) await _stopHostPreview(section);
     previewing = false;
     _notify();
   }

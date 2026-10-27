@@ -13,6 +13,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 
@@ -120,6 +121,14 @@ class RemoteAiAgentSession extends ChangeNotifier
   @override
   int get totalTokens => (_view['tokens'] as num?)?.toInt() ?? 0;
 
+  @override
+  AiChatUsage get usage => _view['usage'] is Map
+      ? AiChatUsage.fromJson(Map<String, Object?>.from(_view['usage'] as Map))
+      : const AiChatUsage();
+
+  @override
+  Map<String, double> get cost => agentCostFromJson(_view['cost']);
+
   String? get _pendingKind {
     if (_offline) return null;
     final Object? pending = _view['pending'];
@@ -141,8 +150,16 @@ class RemoteAiAgentSession extends ChangeNotifier
   void answerChoice(String? id) =>
       unawaited(_act(<String, Object?>{'type': 'answerChoice', 'choice': id}));
 
+  /// 截图不过线：远端用的是那台设备配的模型，本机不知道它能不能收图。
   @override
-  Future<void> send(String text, {AgentUiContext? context}) {
+  bool get acceptsImages => false;
+
+  @override
+  Future<void> send(
+    String text, {
+    AgentUiContext? context,
+    List<AiChatImage> images = const <AiChatImage>[],
+  }) {
     final String trimmed = text.trim();
     if (trimmed.isEmpty) return Future<void>.value();
     return _act(<String, Object?>{

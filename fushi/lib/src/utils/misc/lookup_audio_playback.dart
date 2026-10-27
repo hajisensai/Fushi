@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' show md5;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/creator/mining_tts_fallback.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
@@ -16,11 +15,15 @@ import 'package:fushi/src/utils/misc/local_audio_db.dart'
 import 'package:fushi/src/utils/misc/system_tts.dart'
     show resolveSystemTtsLanguageTag;
 import 'package:fushi/src/utils/misc/tts_channel.dart';
+import 'package:fushi/src/utils/misc/word_audio_cache.dart';
 import 'package:fushi/src/utils/misc/word_audio_resolver.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show normalizeDictionaryMediaPath;
 import 'package:path_provider/path_provider.dart';
+
+export 'package:fushi/src/utils/misc/word_audio_cache.dart'
+    show kWordAudioCacheMaxFiles;
 
 /// 单次本地音频库查询的**预算**上限：超过就不再等，把控制权还给 UI
 /// （自动发音不能为了一个库把查词卡住）。
@@ -360,10 +363,6 @@ Uint8List? _loadDictionaryMediaBytes(String dictionary, String path) {
   return FushiDicts.instance.getMediaFile(dictionary, path);
 }
 
-/// 单词音频落盘缓存目录（`systemTemp/fushi_word_audio`）最多保留的文件数；超出按
-/// mtime 淘汰最旧的。每段都是一两秒的词音频，几十个足够覆盖「反复点同一批词」。
-const int kWordAudioCacheMaxFiles = 64;
-
 /// [audioRefToWebViewUrl] 的逆向：`http(s)://` 原样返回；`data:` URL 解码、
 /// `image://?dictionary=&path=` 词典媒体 URL 取出字节，落到缓存目录下按内容寻址的
 /// 文件（同一段音频复用同一文件，播放中的文件不会被下一次播放覆写），返回其路径。
@@ -382,23 +381,12 @@ Future<String?> webViewWordAudioUrlToPlayableRef(
   );
   if (payload == null) return null;
   final (Uint8List bytes, String fileExt) = payload;
-  final Directory dir =
-      cacheDir ??
-      Directory(
-        '${Directory.systemTemp.path}${Platform.pathSeparator}'
-        'fushi_word_audio',
-      );
-  await dir.create(recursive: true);
-  final String name = '${md5.convert(bytes)}.$fileExt';
-  final File file = File('${dir.path}${Platform.pathSeparator}$name');
-  if (!await file.exists() || await file.length() != bytes.length) {
-    await file.writeAsBytes(bytes, flush: true);
-  } else {
-    // 复用即续命：淘汰按 mtime，刚要播的这段不能被当成最旧的删掉。
-    await file.setLastModified(DateTime.now());
-  }
-  _pruneWordAudioCache(dir, keep: file.path, maxFiles: maxCacheFiles);
-  return file.path;
+  return cacheWordAudioBytes(
+    bytes,
+    fileExt,
+    cacheDir: cacheDir,
+    maxFiles: maxCacheFiles,
+  );
 }
 
 /// 把 popup 交来的非 http URL 解成「字节 + 落盘扩展名」；认不出 / 空载荷回 null。
@@ -432,36 +420,6 @@ Future<String?> webViewWordAudioUrlToPlayableRef(
     return (bytes, _audioExtensionForMediaPath(path));
   }
   return null;
-}
-
-/// 把 [dir] 收到至多 [maxFiles] 个文件：按 mtime 从旧到新删，[keep] 永不删。
-/// 用 listSync（目录很小；异步 list 在 widget 测试的 fake-async 里永不完成）。
-/// 单个文件删不掉（已被并发删除等）只跳过它——下一次播放会再收一次。
-void _pruneWordAudioCache(
-  Directory dir, {
-  required String keep,
-  required int maxFiles,
-}) {
-  final List<File> files = dir.listSync().whereType<File>().toList();
-  if (files.length <= maxFiles) return;
-  final List<(File, DateTime)> aged = <(File, DateTime)>[];
-  for (final File f in files) {
-    if (f.path == keep) continue;
-    try {
-      aged.add((f, f.lastModifiedSync()));
-    } on FileSystemException {
-      continue;
-    }
-  }
-  aged.sort(((File, DateTime) a, (File, DateTime) b) => a.$2.compareTo(b.$2));
-  final int excess = files.length - maxFiles;
-  for (final (File f, DateTime _) in aged.take(excess)) {
-    try {
-      f.deleteSync();
-    } on FileSystemException {
-      continue;
-    }
-  }
 }
 
 /// 词典媒体路径的扩展名（MDX 的 `.spx` / `.wav` 等原样保留，只是给人看的提示；

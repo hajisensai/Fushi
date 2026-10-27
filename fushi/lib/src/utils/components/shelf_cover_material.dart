@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -156,6 +157,7 @@ class ShelfMaterialSurface extends StatelessWidget {
     this.dim = 0,
     this.lifted = false,
     this.compact = false,
+    this.pressGlint = true,
     super.key,
   });
 
@@ -166,6 +168,10 @@ class ShelfMaterialSurface extends StatelessWidget {
   final double dim;
   final bool lifted;
   final bool compact;
+
+  /// 轻触 / 长按时是否扫一遍光（见 [ShelfCoverSheen.glint]）。叠层 / 扇形里
+  /// 藏在后面的那几本传 false。
+  final bool pressGlint;
 
   @override
   Widget build(BuildContext context) {
@@ -266,7 +272,7 @@ class ShelfMaterialSurface extends StatelessWidget {
             IgnorePointer(
               child: ClipRRect(
                 borderRadius: radius,
-                child: ShelfCoverSheen(active: raised),
+                child: ShelfCoverSheen(active: raised, glint: pressGlint),
               ),
             ),
         ],
@@ -386,24 +392,92 @@ class _GlossLayer extends StatelessWidget {
   );
 }
 
-/// 悬停时从右往左慢慢扫过的一道柔光（最亮约 16%，深色 11%）。
+/// 从右往左慢慢扫过的一道柔光（最亮约 16%，深色 11%）。两种触发：
 ///
-/// [active] 由 false→true 时扫入、true→false 时扫回；时长取
-/// [shelfSheenDuration]，减弱动态效果下直接跳到终点（光带停在封面外，不可见）。
-class ShelfCoverSheen extends StatelessWidget {
-  const ShelfCoverSheen({required this.active, super.key});
+/// - **悬停**：[active] 由 false→true 时扫入、true→false 时扫回；
+/// - **轻触 / 长按**（[glint] 为真时）：最近的 `FushiPressScale` 每确认一次按下
+///   （[FushiPressScale.pulseOf] 变化）就从右到左完整扫一遍，扫完光带停在封面
+///   外、悄悄归位。触屏没有悬停，此前点 / 长按封面只有缩放，看不到这层光面。
+///
+/// 时长取 [shelfSheenDuration]，减弱动态效果 / 墨水屏下直接跳到终点（光带停在
+/// 封面外，不可见）。光带在进度 0 与 1 时都在封面之外，所以「跳回 0」不可见。
+class ShelfCoverSheen extends StatefulWidget {
+  const ShelfCoverSheen({required this.active, this.glint = true, super.key});
 
   final bool active;
+
+  /// 是否响应按压脉冲（叠层 / 扇形里藏在后面的那几本传 false，只让最前那本闪）。
+  final bool glint;
+
+  @override
+  State<ShelfCoverSheen> createState() => _ShelfCoverSheenState();
+}
+
+class _ShelfCoverSheenState extends State<ShelfCoverSheen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _sweep;
+
+  /// 上一次看到的按压脉冲；null = 还没读过（首次读取不算一次按压）。
+  int? _pulse;
+
+  /// 正在播一遍按压扫光：播完若没悬停就悄悄归 0，而不是像悬停离开那样扫回去。
+  bool _glinting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _sweep = AnimationController(vsync: this, value: widget.active ? 1 : 0)
+      ..addStatusListener(_onStatus);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sweep.duration = shelfSheenDuration(context);
+    if (!widget.glint) return;
+    final int pulse = FushiPressScale.pulseOf(context);
+    final int? previous = _pulse;
+    _pulse = pulse;
+    if (previous != null && previous != pulse) _playGlint();
+  }
+
+  @override
+  void didUpdateWidget(covariant ShelfCoverSheen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active == widget.active) return;
+    // 按压扫光进行中：让它扫完（扫完由 [_onStatus] 按当前悬停态收尾）。
+    if (_glinting) return;
+    _sweep.animateTo(widget.active ? 1 : 0, curve: FushiMotion.enter);
+  }
+
+  void _playGlint() {
+    _glinting = true;
+    // 已停在终点（悬停中 / 上一遍刚扫完）就从头再扫一遍；扫到一半则接着扫完。
+    if (_sweep.value >= 0.999) _sweep.value = 0;
+    _sweep.animateTo(1, curve: FushiMotion.enter);
+  }
+
+  void _onStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || !_glinting) return;
+    _glinting = false;
+    // 悬停中停在终点（与悬停扫入的终态一致）；否则归 0，下次悬停照常扫入。
+    if (!widget.active) _sweep.value = 0;
+  }
+
+  @override
+  void dispose() {
+    _sweep.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final bool dark =
         Theme.of(context).colorScheme.brightness == Brightness.dark;
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(end: active ? 1 : 0),
-      duration: shelfSheenDuration(context),
-      curve: FushiMotion.enter,
-      builder: (BuildContext context, double t, Widget? _) {
+    return AnimatedBuilder(
+      animation: _sweep,
+      builder: (BuildContext context, Widget? _) {
+        final double t = _sweep.value;
         // t=0 / t=1 光带都在封面之外：不画，省一层 shader。
         if (t <= 0.001 || t >= 0.999) return const SizedBox.expand();
         return CustomPaint(
@@ -608,6 +682,7 @@ class ShelfCoverPile extends StatelessWidget {
                 backgroundColor: backgroundColor,
                 dim: dim,
                 lifted: lifted && overlay != null,
+                pressGlint: overlay != null,
                 overlay: overlay ?? const <Widget>[],
                 child: child,
               ),
@@ -981,6 +1056,10 @@ class ShelfMetaTags extends StatelessWidget {
 
 /// 卡片标题：最多 [maxLines] 行，放不下时桌面悬停显示全名（与 [ShelfCardFooter]
 /// 同一套溢出提示）。
+///
+/// 恒占满 [maxLines] 行高：短标题只排一行时也留出其余行，同一网格行里副行与
+/// 进度条才落在同一条基线上（否则单行标题的卡片底部整体上移、与两行标题的卡片
+/// 错位）。占位用同字体的空行撑高，行高与真实排版一致，不靠估算值。
 class ShelfTitleLine extends StatelessWidget {
   const ShelfTitleLine({
     required this.title,
@@ -995,7 +1074,7 @@ class ShelfTitleLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ShelfTitleOverflowTooltip(
+    final Widget text = ShelfTitleOverflowTooltip(
       title: title,
       style: style,
       maxLines: maxLines,
@@ -1005,6 +1084,19 @@ class ShelfTitleLine extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: style,
       ),
+    );
+    if (maxLines <= 1) return text;
+    return Stack(
+      children: <Widget>[
+        ExcludeSemantics(
+          child: Text(
+            '\n' * (maxLines - 1),
+            maxLines: maxLines,
+            style: style.copyWith(color: const Color(0x00000000)),
+          ),
+        ),
+        text,
+      ],
     );
   }
 }

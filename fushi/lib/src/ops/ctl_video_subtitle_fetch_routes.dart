@@ -6,6 +6,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show VideoSubtitleBackfillReport;
 
 import 'package:fushi/src/media/video/subtitle/library_video_subtitle_backfill.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_work_identity.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -148,6 +149,9 @@ class CtlVideoSubtitleFetchHandlers {
           <String, Object?>{
             'id': _hits.put((target: target, candidate: candidate)),
             ...ctlSubtitleCandidateJson(candidate),
+            // 与自动补同一道作品核对（BUG-3068）：标明「这条不是这部作品」，调用方
+            // （AI 补字幕技能）据此不把已判错的候选拿给用户挑。
+            ...ctlSubtitleWorkMismatchJson(target, candidate),
           },
       ],
       'failures': <Map<String, Object?>>[
@@ -195,6 +199,18 @@ Map<String, Object?> ctlSubtitleCandidateJson(
   if (candidate.episode != null) 'episode': candidate.episode,
   if (candidate.fileSize != null) 'size': candidate.fileSize,
 };
+
+/// 候选与目标作品对不上时的 `{'mismatch': 原因}`；对得上为空表。判据就是自动补
+/// 下载前用的 [checkSubtitleWork]，不另立一套。
+Map<String, Object?> ctlSubtitleWorkMismatchJson(
+  SubtitleBackfillTarget target,
+  VideoSubtitleCandidate candidate,
+) {
+  final SubtitleWorkCheck check = checkSubtitleWork(target.media, candidate);
+  return check.rejected
+      ? <String, Object?>{'mismatch': check.detail}
+      : const <String, Object?>{};
+}
 
 /// 一个来源的失败（限流 / 鉴权 / 连不上）。
 Map<String, Object?> ctlSubtitleFailureJson(ExternalProviderFailure failure) =>

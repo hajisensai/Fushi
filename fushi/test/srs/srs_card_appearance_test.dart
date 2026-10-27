@@ -350,6 +350,24 @@ void main() {
         ),
       );
     });
+
+    test('底色：Fushi 卡片由宿主铺外观配色，其它类型宿主不铺、留给卡片 CSS', () {
+      String hex(Color c) =>
+          '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
+      final ColorScheme custom = ColorScheme.fromSeed(
+        seedColor: const Color(0xFFB3261E),
+      );
+      expect(
+        docFor(fushiCard: true).themeCss,
+        contains('html,body{background:${hex(custom.surface)};'),
+      );
+      // 模板 `.card` 写透明时要透出复习页背景（WebView 本身也是透明的），宿主不能
+      // 再垫一层主题 surface。
+      expect(
+        docFor(fushiCard: false).themeCss,
+        contains('html,body{background:transparent;'),
+      );
+    });
   });
 
   group('预览框（1:1 渲染，不缩放平台视图）', () {

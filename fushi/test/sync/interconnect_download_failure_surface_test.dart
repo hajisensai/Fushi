@@ -15,9 +15,10 @@ import '../helpers/source_guard.dart';
 ///   回来，看到的还是一张什么都没发生的占位卡。
 /// - 生命周期：`clearTask` 生产零调用，completed/failed 任务在 Map 里永久占格。
 ///
-/// 修法两头：卡片上给失败态一个恒定出口（原为封面失败角标，2026-10-25 起是封面下
-/// 的错误色副行；重进页面照样在，带真实错误文本，再点一次下载即重试），以及结束态
-/// 有界保留。
+/// 修法两头：卡片上给失败态一个恒定出口（重进页面照样在，带真实错误文本，再点一次
+/// 下载即重试；2026-10-25 材质定版后封面不再画角标，出口从封面角标
+/// `RemoteDownloadFailedBadge` 挪到封面下的错误色副行 `_remoteDownloadMeta`），
+/// 以及结束态有界保留。
 void main() {
   group('InterconnectDownloadManager 结束态生命周期', () {
     late Directory dir;
@@ -245,59 +246,71 @@ void main() {
       'lib/src/pages/implementations/home_video_page.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
 
-    // 2026-10-25 库页材质定版（2abfd1327b）后封面上不再压角标：下载态从
-    // `_remoteDownloadBadge`（RemoteDownloadProgressBadge / RemoteDownloadFailedBadge）
-    // 挪进封面下的副行，由 `_remoteDownloadMeta` 分流、`_videoCardMeta` 渲染。
-    // 不变量不变：失败态要有恒定的卡片出口、带真实错误文本。
-    test('副行下载态按任务状态分流：running → 进度，failed → 错误色副行', () {
+    test('副行下载态按任务状态分流：running → 进度，failed → 错误态带原文', () {
+      // 2026-10-25 材质定版（2abfd1327b）：封面角标撤掉，下载态改由
+      // `_remoteDownloadMeta` 产出副行（文字 + 进度 / 错误色）。契约不变：失败态
+      // 必须单独分流出来，否则失败永远没有卡片出口（旧实现只看 isRunning）。
       final String meta = methodBody(
         pageSource(),
         '  _CardDownloadMeta? _remoteDownloadMeta(',
       );
+      final String code = compactCode(meta);
       expect(
-        containsCodeLine(meta, 'InterconnectDownloadStatus.failed'),
+        containsCodeLine(meta, 'case InterconnectDownloadStatus.failed:'),
         isTrue,
         reason: '失败态不分流 = 失败永远没有卡片出口（旧实现只看 isRunning）',
       );
       expect(
-        containsCodeLine(meta, 'InterconnectDownloadStatus.running'),
+        containsCodeLine(meta, 'case InterconnectDownloadStatus.running:'),
         isTrue,
         reason: '进行中仍要显示进度',
       );
-      expect(
-        containsCodeLine(meta, 'failed: true'),
-        isTrue,
-        reason:
-            '失败分支必须标 failed，卡片据此走错误色副行——它是失败态唯一'
-            '恒定的出口（SnackBar 会被 !mounted 吃掉）',
+      final int failedAt = code.indexOf(
+        'caseInterconnectDownloadStatus.failed:',
+      );
+      final int nextCaseAt = code.indexOf('case', failedAt + 1);
+      final String failedBranch = code.substring(
+        failedAt,
+        nextCaseAt < 0 ? code.length : nextCaseAt,
       );
       expect(
-        containsCodeLine(meta, 'remote_video_download_failed_'),
+        failedBranch.contains('failed:true'),
         isTrue,
-        reason: '失败副行要有独立 key，测试与焦点按状态定位',
+        reason: '失败分支必须标 failed，卡片才会按错误色渲染',
       );
       expect(
-        containsCodeLine(meta, 'task.error'),
+        failedBranch.contains("'remote_video_download_failed_\$safeKey'"),
+        isTrue,
+        reason: '失败态要有独立 key，供卡片与测试按状态定位',
+      );
+      expect(
+        failedBranch.contains('task.error'),
         isTrue,
         reason: '副行必须带真实错误文本，否则用户只知道「失败了」',
       );
     });
 
-    test('占位卡渲染的是这个分流后的副行，不是裸 isRunning 判据', () {
+    test('占位卡渲染的是这个分流后的下载态，不是裸 isRunning 判据', () {
       final String card = methodBody(
         pageSource(),
         '  Widget _buildRemoteVideoCard(',
       );
       expect(containsIdentifierCall(card, '_remoteDownloadMeta'), isTrue);
+      final String code = compactCode(card);
       expect(
-        containsCodeLine(card, 'download?.label'),
+        code.contains('download?.label'),
         isTrue,
-        reason: '副行文字必须取分流结果（含失败文本），不能只画「☁ 远端」',
+        reason: '副行文字必须优先取分流后的下载态（失败原文 / 进度）',
       );
       expect(
-        containsCodeLine(card, 'ShelfMetaTone.error'),
+        code.contains('download?.key'),
         isTrue,
-        reason: '失败态副行要用错误色，与普通「远端」副行区分',
+        reason: '副行 key 必须随下载态切换（失败 key 才能被定位）',
+      );
+      expect(
+        code.contains('download?.failed??false?ShelfMetaTone.error'),
+        isTrue,
+        reason: '失败态必须以错误色渲染，不能与普通副行同色',
       );
       expect(
         RegExp(r'\.isRunning\(video\.id\)').hasMatch(maskComments(card)),

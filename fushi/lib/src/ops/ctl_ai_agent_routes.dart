@@ -80,6 +80,7 @@ List<CtlRoute> buildAiAgentCtlRoutes(OpContext context) {
         'sessionId': agent?.id,
         'running': controller.running,
         'tokens': agent?.totalTokens ?? 0,
+        if (agent != null && agent.cost.isNotEmpty) 'cost': agent.cost,
         'entries': <Object?>[for (final AgentEntry e in entries) e.toJson()],
         if (confirm != null)
           'pending': <String, Object?>{'kind': 'confirm', 'entryId': confirm},

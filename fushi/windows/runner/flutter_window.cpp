@@ -3911,6 +3911,8 @@ void FlutterWindow::RegisterWindowCaptureChannel() {
 
 // galgame 一键制卡 A 阶段 — audio_loopback channel（仅 Windows）。start 打开 WASAPI
 // loopback 采集进环形缓冲（同步握手拿格式）；grabRecent 拉最近 N 毫秒 PCM；stop 释放。
+// start 带 {userDataFolder, silent} 时改走进程树模式（网页视频制卡队列：只录该 WebView2
+// 环境的声音，silent 时不从扬声器出声）；restoreDucked{userDataFolder} 是崩溃残留兜底。
 // 采集/环形缓冲逻辑在 AudioLoopbackCapture 单例（见 audio_loopback_capture.cpp）。native
 // 内部全程 HRESULT 校验，失败以 error map fail-open（Dart 侧 LoopbackGalAudioSource 降级）。
 void FlutterWindow::RegisterAudioLoopbackChannel() {
@@ -3937,17 +3939,69 @@ void FlutterWindow::RegisterAudioLoopbackChannel() {
                flutter::EncodableValue(f.is_float)},
           };
         };
+        // 进程树模式参数：{userDataFolder: String, silent: bool}；缺省 = 系统混音。
+        auto read_options = [&call]() {
+          fushi::LoopbackOptions options;
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (args == nullptr) {
+            return options;
+          }
+          const auto folder = args->find(flutter::EncodableValue("userDataFolder"));
+          if (folder != args->end()) {
+            if (const auto* s = std::get_if<std::string>(&folder->second)) {
+              options.user_data_folder = Utf8ToWideString(*s);
+            }
+          }
+          const auto silent = args->find(flutter::EncodableValue("silent"));
+          if (silent != args->end()) {
+            if (const auto* b = std::get_if<bool>(&silent->second)) {
+              options.silent = *b;
+            }
+          }
+          return options;
+        };
         if (method == "start") {
+          fushi::LoopbackError error = fushi::LoopbackError::kNone;
           const fushi::LoopbackFormat f =
-              fushi::AudioLoopbackCapture::Instance().Start();
+              fushi::AudioLoopbackCapture::Instance().Start(read_options(),
+                                                            &error);
           if (!f.ok) {
+            const char* code = "start_failed";
+            switch (error) {
+              case fushi::LoopbackError::kTargetNotFound:
+                code = "target_not_found";
+                break;
+              case fushi::LoopbackError::kProcessLoopbackUnsupported:
+                code = "unsupported";
+                break;
+              case fushi::LoopbackError::kBusy:
+                code = "busy";
+                break;
+              default:
+                break;
+            }
             result->Success(flutter::EncodableValue(flutter::EncodableMap{
                 {flutter::EncodableValue("error"),
                  flutter::EncodableValue(
-                     std::string("loopback start failed"))}}));
+                     std::string("loopback start failed"))},
+                {flutter::EncodableValue("code"),
+                 flutter::EncodableValue(std::string(code))}}));
             return;
           }
           result->Success(flutter::EncodableValue(format_map(f)));
+          return;
+        }
+        if (method == "restoreDucked") {
+          // 独立 MTA 线程跑（UI 线程是 STA），只枚举会话、几毫秒，join 等结果。
+          const fushi::LoopbackOptions options = read_options();
+          int restored = 0;
+          std::thread worker([&options, &restored]() {
+            restored =
+                fushi::AudioLoopbackCapture::RestoreDuckedSessions(options);
+          });
+          worker.join();
+          result->Success(flutter::EncodableValue(restored));
           return;
         }
         if (method == "stop") {

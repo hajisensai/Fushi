@@ -20,6 +20,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
+import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/underlay_composition.dart'
@@ -171,35 +172,132 @@ Future<UnmodifiableListView<UserScript>> loadWebVideoUserScripts({
   ]);
 }
 
-/// 窗口宿主档用独立环境（浏览器参数不同 → 独立 cookie 罐）：把内置档已登录的站点 cookie
-/// 复制过来，用户不用登录两次。尽力而为，失败只记日志（站点会要求登录）。
-Future<void> copyWebVideoLoginCookies({
+/// 登录 cookie 的来源环境，按顺序抄（后抄的同名 cookie 盖掉先抄的；与目标是同一个环境的
+/// 跳过）：内置档 → 窗口宿主档 → app 内浏览器（[MangaWebViewEnvironment]，「浏览」里的标签页
+/// 都在它里面）。浏览器排最后：站点并进浏览器之后（2026-10-26）用户是在浏览器里登录、再点
+/// 「用 Fushi 播放」进播放页的；只抄内置档的话播放页拿不到浏览器里的登录态，要求重新登录
+/// （2026-10-27 用户报 Netflix）。窗口宿主档也是来源：制卡队列在内置档里重放，要带上用户在
+/// 播放页里登录的那份。站点登出后不留登录 cookie，后抄的登出态盖不掉先抄的登录 cookie。
+const List<Future<WebViewEnvironment?> Function()> kWebVideoLoginCookieSources =
+    <Future<WebViewEnvironment?> Function()>[
+      webVideoCapturableEnvironment,
+      webVideoWindowedEnvironment,
+      MangaWebViewEnvironment.obtain,
+    ];
+
+/// 各环境独立 cookie 罐（浏览器参数不同 → 独立 user data folder）：把 [sources]（默认
+/// [kWebVideoLoginCookieSources]）里已登录的站点 cookie 复制到 [to]，用户不用登录两次。
+/// 尽力而为：单个来源失败只记日志、不挡其它来源（最坏是站点要求登录）。返回 [to] 里原本
+/// 没有、这次新加上的 cookie 名数（> 0 通常意味着目标从未登录变成已登录，调用方据此决定
+/// 要不要刷新已打开的页面）。
+Future<int> copyWebVideoLoginCookies({
   required Uri uri,
   required WebViewEnvironment to,
+  List<Future<WebViewEnvironment?> Function()> sources =
+      kWebVideoLoginCookieSources,
 }) async {
+  final WebUri url = WebUri('${uri.scheme}://${uri.host}/');
+  final CookieManager dst = CookieManager.instance(webViewEnvironment: to);
+  final Set<String> existing = <String>{};
   try {
-    final WebViewEnvironment from = await webVideoCapturableEnvironment();
-    final WebUri url = WebUri('${uri.scheme}://${uri.host}/');
-    final List<Cookie> cookies = await CookieManager.instance(
-      webViewEnvironment: from,
-    ).getCookies(url: url);
-    final CookieManager dst = CookieManager.instance(webViewEnvironment: to);
-    for (final Cookie c in cookies) {
-      await dst.setCookie(
-        url: url,
-        name: c.name,
-        value: c.value.toString(),
-        domain: c.domain,
-        path: c.path ?? '/',
-        // 会话 cookie 不带 expires（fork 已把 CDP 的秒转成毫秒、会话回 null）。
-        expiresDate: c.isSessionOnly == true ? null : c.expiresDate,
-        isSecure: c.isSecure,
-        isHttpOnly: c.isHttpOnly,
-      );
+    for (final Cookie c in await dst.getCookies(url: url)) {
+      existing.add(c.name);
     }
   } catch (e) {
-    ErrorLogService.instance.log('web_video', 'cookie copy: $e');
+    ErrorLogService.instance.log('web_video', 'cookie read: $e');
   }
+  final Set<String> added = <String>{};
+  for (final Future<WebViewEnvironment?> Function() source in sources) {
+    try {
+      final WebViewEnvironment? from = await source();
+      // 没有显式环境（非 Windows / 建不出来）或就是目标自己：没东西可抄。
+      if (from == null || identical(from, to)) continue;
+      final List<Cookie> cookies = await CookieManager.instance(
+        webViewEnvironment: from,
+      ).getCookies(url: url);
+      for (final Cookie c in cookies) {
+        final bool ok = await dst.setCookie(
+          url: url,
+          name: c.name,
+          value: c.value.toString(),
+          domain: c.domain,
+          path: c.path ?? '/',
+          // 会话 cookie 不带 expires（fork 已把 CDP 的秒转成毫秒、会话回 null）。
+          expiresDate: c.isSessionOnly == true ? null : c.expiresDate,
+          isSecure: c.isSecure,
+          isHttpOnly: c.isHttpOnly,
+        );
+        if (ok && !existing.contains(c.name)) added.add(c.name);
+      }
+    } catch (e) {
+      ErrorLogService.instance.log('web_video', 'cookie copy: $e');
+    }
+  }
+  return added.length;
+}
+
+/// 反方向：播放页（窗口宿主档 / 内置档）里的站点登录态抄回 app 内浏览器
+/// （[MangaWebViewEnvironment]）。登录入口主要在浏览器，但用户也会在播放页里登录；不抄
+/// 回去的话回到浏览器看同一个站点还是未登录（BUG-3801）。播放页关掉时调；返回浏览器新加
+/// 的 cookie 名数（见 [copyWebVideoLoginCookies]）。非 Windows / 浏览器环境建不出来时返回 0。
+Future<int> syncWebVideoLoginToBrowser(Uri uri) {
+  final String host = uri.host.toLowerCase();
+  if (host.isEmpty) return Future<int>.value(0);
+  final Future<int> started = _syncWebVideoLoginToBrowser(uri);
+  final Future<void> settled = started.then<void>((_) {}, onError: (_) {});
+  _browserLoginSyncs[host] = settled;
+  unawaited(
+    settled.whenComplete(() {
+      if (identical(_browserLoginSyncs[host], settled)) {
+        _browserLoginSyncs.remove(host);
+      }
+    }),
+  );
+  return started;
+}
+
+/// 每个 host 正在进行的 [syncWebVideoLoginToBrowser]（播放页 dispose 发起的那次）。
+final Map<String, Future<void>> _browserLoginSyncs = <String, Future<void>>{};
+
+/// 等 [uri] 这个站点正在进行的回抄完成（没有就立刻完成）：浏览器标签页回到前台时先等它，
+/// 再看自己的 cookie 有没有变。
+Future<void> webVideoBrowserLoginSyncSettled(Uri uri) =>
+    _browserLoginSyncs[uri.host.toLowerCase()] ?? Future<void>.value();
+
+/// app 内浏览器里 [uri] 站点当前的 cookie 名（非 Windows / 读不到时为空集）。
+Future<Set<String>> webBrowserSiteCookieNames(Uri uri) async {
+  if (uri.host.isEmpty) return <String>{};
+  try {
+    final WebViewEnvironment? browser = await MangaWebViewEnvironment.obtain();
+    if (browser == null) return <String>{};
+    final List<Cookie> cookies = await CookieManager.instance(
+      webViewEnvironment: browser,
+    ).getCookies(url: WebUri('${uri.scheme}://${uri.host}/'));
+    return <String>{for (final Cookie c in cookies) c.name};
+  } catch (e) {
+    ErrorLogService.instance.log('web_video', 'browser cookie names: $e');
+    return <String>{};
+  }
+}
+
+Future<int> _syncWebVideoLoginToBrowser(Uri uri) async {
+  final WebViewEnvironment? browser;
+  try {
+    browser = await MangaWebViewEnvironment.obtain();
+  } catch (e) {
+    ErrorLogService.instance.log('web_video', 'browser env: $e');
+    return 0;
+  }
+  if (browser == null) return 0;
+  return copyWebVideoLoginCookies(
+    uri: uri,
+    to: browser,
+    // 窗口宿主档排后面：用户在播放页里登录的就是它。
+    sources: const <Future<WebViewEnvironment?> Function()>[
+      webVideoCapturableEnvironment,
+      webVideoWindowedEnvironment,
+    ],
+  );
 }
 
 /// 浏览器扩展送来的站点会话（[BrowserCookieImportGate]，与漫画源登录同一条通道）写进视频
@@ -731,6 +829,15 @@ class WebVideoSession {
   }
 
   void dispose() {
+    // 播放页里登录的站点会话抄回 app 内浏览器（登录入口主要在浏览器，BUG-3801）。
+    if (!_disposed && isReady) {
+      final String current = nav.value.url;
+      unawaited(
+        syncWebVideoLoginToBrowser(
+          Uri.parse(current.isNotEmpty ? current : pageUrl),
+        ),
+      );
+    }
     _disposed = true;
     nav.dispose();
     _web = null;

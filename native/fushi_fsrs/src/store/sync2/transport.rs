@@ -456,6 +456,13 @@ pub(crate) struct IngestSession {
     fork_at: Option<u64>,
 }
 
+impl IngestSession {
+    /// 这个会话收的是不是 [profile] 的段（删 profile 时作废它，store/profile_data.rs）。
+    pub(crate) fn belongs_to(&self, profile: &str) -> bool {
+        self.profile == profile
+    }
+}
+
 /// 收一批段（不换身份）：远端操作投递进投影 / 缓冲，返回应用条数；本机身份的段只比链，把分叉点（第一处不同的
 /// 前一个 seq）取最小累积进 [fork_at]。
 #[allow(clippy::too_many_arguments)]
@@ -642,28 +649,69 @@ pub(crate) fn rotate(conn: &Connection, profile: &str, keep: u64, now: i64, t: &
     Ok(())
 }
 
+/// 一批发件的字节预算（按段打包后的体积估计累计；一批至少一段，所以单段超预算时自成一批）。
+///
+/// 取值理由：与收段的 Dart 侧 `kSrsSync2IngestBudgetBytes` 同口径（8 MiB）。以前一次把 `uploaded` 之后的
+/// **全部**段打包返回：积压几十万条操作时内核、FFI 拷贝与 Dart 各持一份整份积压，上传中途断一次下一轮整份
+/// 重来（反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL：同一台小米 43 万条操作反复补传、日志里有 OOM）。按批产出
+/// 后，发件全过程的峰值只与本常量（+ 一段的解码操作）有关、与积压总量无关；单段上限 4 MiB
+/// （[segment::SEGMENT_TARGET_BYTES]），所以一批至少两段满段。
+pub const OUTBOX_BATCH_BYTES: u64 = 8 * 1024 * 1024;
+
+/// 一批发件的段数上限：小段（老版本切的 64 KB 段、合并前的尾段、清除改写的重传）体积小但每个都是一次 PUT，
+/// 只按字节限的话一批可能是上千个文件、一次中断要重传上千个请求。64 段与收段一批的在途数同量级，水位每
+/// 64 个请求至少前进一次。
+pub const OUTBOX_BATCH_SEGMENTS: usize = 64;
+
+/// [SrsCore::sync2_outbox] 的一批。
+pub struct OutboxBatch {
+    /// 段文件（相对路径 → 字节），按 seq 升序。
+    pub files: Vec<(String, Vec<u8>)>,
+    /// 与 [files] 一一对应的 `(first, last)`：上传成功后原样交回 [SrsCore::sync2_outbox_ack]。
+    pub segments: Vec<(u64, u64)>,
+    /// 这一批确认后的水位（发到的最大 seq；没有新段时就是当前水位）。
+    pub upto: u64,
+    /// 预算到了、后面还有要发的段：确认这一批后再取下一批。
+    pub more: bool,
+}
+
+/// [location] 上已确认上传到的水位：本机 seq ≤ 它的段都已在该位置上（head 写出时、或每批确认时前进）。
+fn uploaded_of(c: &Connection, profile: &str, location: &str) -> Result<u64, String> {
+    Ok(c.query_row(
+        "SELECT uploaded FROM sync2_locations WHERE profile_uid = ?1 AND location = ?2",
+        params![profile, location],
+        |r| r.get::<_, i64>(0),
+    )
+    .optional()
+    .map_err(sql)?
+    .unwrap_or(0) as u64)
+}
+
 impl SrsCore {
-    /// 发件：本设备还没上传到 [location] 的段（文件相对路径 → 字节）。段切点在第一次发件时定下，
-    /// 各位置拿到同样的段；[key] = 该位置开了加密时的集合密钥。返回 `(段, 发到的最大 seq)`。
-    pub fn sync2_outbox(&self, profile: &str, location: &str, key: Option<[u8; 32]>) -> Result<(Vec<(String, Vec<u8>)>, u64), String> {
+    /// 发件（分批）：本设备还没上传到 [location] 的段，从已确认水位之后按 seq 升序，凑够 [max_bytes] 字节或
+    /// [max_segments] 段就停（一批至少一段）。段切点在第一次发件时定下，各位置拿到同样的段；[key] = 该位置
+    /// 开了加密时的集合密钥。调用方上传完这一批后调 [Self::sync2_outbox_ack] 持久化水位，`more` 为真就再取下一批：
+    /// 中途断网 / 被杀只丢在途这一批，下一轮从水位接着发，不整份重来。分批对读者透明——读者只看 head，head
+    /// 仍在全部段传完后才写（§6.1）。
+    pub fn sync2_outbox(
+        &self,
+        profile: &str,
+        location: &str,
+        key: Option<[u8; 32]>,
+        max_bytes: u64,
+        max_segments: usize,
+    ) -> Result<OutboxBatch, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             cut_segments(c, &local)?;
             compact_segments(c, &local)?;
-            let cuts = cut_segments(c, &local)?;
-            let uploaded: u64 = c
-                .query_row(
-                    "SELECT uploaded FROM sync2_locations WHERE profile_uid = ?1 AND location = ?2",
-                    params![profile, location],
-                    |r| r.get::<_, i64>(0),
-                )
-                .optional()
-                .map_err(sql)?
-                .unwrap_or(0) as u64;
+            cut_segments(c, &local)?;
+            let cuts = segments_of(c, &local)?;
+            let uploaded = uploaded_of(c, profile, location)?;
             let ck = key.map(CollectionKey);
-            let mut out = Vec::new();
-            let mut top = uploaded;
+            let mut batch = OutboxBatch { files: Vec::new(), segments: Vec::new(), upto: uploaded, more: false };
+            let mut bytes_total: u64 = 0;
             // 清除（§10.5）改写过的本机段：已经传过也要重传（同名覆盖；链值不变，名字不变）。
             let rewrites: BTreeSet<u64> = c
                 .prepare_cached("SELECT first FROM sync2_rewrites WHERE profile_uid = ?1 AND location = ?2")
@@ -672,9 +720,17 @@ impl SrsCore {
                 .map_err(sql)?
                 .collect::<Result<_, _>>()
                 .map_err(sql)?;
-            for (first, last) in cuts {
+            for (first, last, estimate) in cuts {
                 if last <= uploaded && !rewrites.contains(&first) {
                     continue;
+                }
+                if !batch.files.is_empty() {
+                    // 体积未知（0，不该出现：合并前已补算）按满段算，宁可这一批少带一段。
+                    let est = if estimate == 0 { segment::SEGMENT_TARGET_BYTES } else { estimate };
+                    if batch.files.len() >= max_segments || bytes_total.saturating_add(est) > max_bytes {
+                        batch.more = true;
+                        break;
+                    }
                 }
                 let mut ops = Vec::with_capacity((last - first + 1) as usize);
                 for seq in first..=last {
@@ -682,10 +738,50 @@ impl SrsCore {
                 }
                 let prev = chain_at(c, profile, &local.device, first - 1)?.ok_or("missing chain")?;
                 let (h, bytes) = segment::pack(local.collection, &ops, prev, &local.key, ck.as_ref())?;
-                out.push((format!("devices/{}/{}", local.device.text(), h.file_name()), bytes));
-                top = top.max(last);
+                drop(ops);
+                bytes_total += bytes.len() as u64;
+                batch.files.push((format!("devices/{}/{}", local.device.text(), h.file_name()), bytes));
+                batch.segments.push((first, last));
+                batch.upto = batch.upto.max(last);
             }
-            Ok((out, top))
+            Ok(batch)
+        })
+    }
+
+    /// 确认一批发件已经全部写到 [location]：[segments] = 那一批的 `(first, last)`。清掉这些段的重传登记，并把
+    /// 水位推进到「水位之后首尾相接、全部已确认」的最后一段（水位的含义不变：seq ≤ 它的本机段都在该位置上）。
+    /// 返回 `(这一批的段是否仍是当前切法, 新水位)`；前者为假 = 发件与确认之间段被合并改切过（只会是别的位置的
+    /// 发件并发跑了合并），没对上的段不算数、下一批照当前切法重发。
+    pub fn sync2_outbox_ack(&self, profile: &str, location: &str, segments: &[(u64, u64)]) -> Result<(bool, u64), String> {
+        let w = self.writer()?;
+        in_savepoint(&w, |c| {
+            let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+            let current = segments_of(c, &local)?;
+            let live: BTreeSet<(u64, u64)> = current.iter().map(|&(a, b, _)| (a, b)).collect();
+            let acked: BTreeSet<(u64, u64)> = segments.iter().copied().filter(|s| live.contains(s)).collect();
+            for (first, _) in &acked {
+                c.prepare_cached("DELETE FROM sync2_rewrites WHERE profile_uid = ?1 AND location = ?2 AND first = ?3")
+                    .map_err(sql)?
+                    .execute(params![profile, location, *first as i64])
+                    .map_err(sql)?;
+            }
+            let uploaded = uploaded_of(c, profile, location)?;
+            let mut mark = uploaded;
+            for &(a, b, _) in current.iter().filter(|s| s.1 > uploaded) {
+                if !acked.contains(&(a, b)) {
+                    break;
+                }
+                mark = b;
+            }
+            if mark > uploaded {
+                c.execute(
+                    "INSERT INTO sync2_locations (profile_uid, location, uploaded) VALUES (?1, ?2, ?3) \
+                     ON CONFLICT(profile_uid, location) DO UPDATE SET uploaded = MAX(uploaded, excluded.uploaded)",
+                    params![profile, location, mark as i64],
+                )
+                .map_err(sql)?;
+            }
+            Ok((acked.len() == segments.len(), mark))
         })
     }
 
