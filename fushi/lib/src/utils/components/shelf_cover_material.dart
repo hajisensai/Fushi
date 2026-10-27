@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/cover_badge.dart'
+    show coverBadgeLabelHeight;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -842,10 +844,9 @@ class ShelfCardMeta extends StatelessWidget {
       context,
       _titleStyle(theme, tokens, apple: false),
     );
-    final double subLine = textLineHeight(context, _subStyle(theme));
     return tokens.spacing.gap * 1.25 +
         titleLine * titleLines +
-        subLine +
+        _subRowHeight(context, theme) +
         _kProgressGap +
         _kProgressHeight +
         kTextBlockSlack;
@@ -853,6 +854,15 @@ class ShelfCardMeta extends StatelessWidget {
 
   static const double _kProgressHeight = 4;
   static const double _kProgressGap = 5;
+
+  /// 副行高：副行文字一行与尾部角标（[coverBadgeLabelHeight]，原盘 / 规格角标）取大。
+  /// 角标比副行文字高；只按文字算时，标题占满 [titleMaxLines] 行的卡会溢出（单行标题
+  /// 时多出的一行把它盖住了）。副行固定这个高度，有没有角标的卡底部都对齐。
+  static double _subRowHeight(BuildContext context, ThemeData theme) =>
+      math.max(
+        textLineHeight(context, _subStyle(theme)),
+        coverBadgeLabelHeight(context),
+      );
 
   static TextStyle _titleStyle(
     ThemeData theme,
@@ -921,33 +931,40 @@ class ShelfCardMeta extends StatelessWidget {
             style: titleStyle,
             maxLines: titleMaxLines,
           ),
-          LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) => Row(
-              children: <Widget>[
-                if (leadingIcon != null) ...<Widget>[
-                  FushiIcon(
-                    leadingIcon!,
-                    size: (subStyle.fontSize ?? 11) + 1,
-                    color: tone == ShelfMetaTone.normal ? onSurface : toneColor,
+          SizedBox(
+            height: _subRowHeight(context, theme),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) =>
+                  Row(
+                    children: <Widget>[
+                      if (leadingIcon != null) ...<Widget>[
+                        FushiIcon(
+                          leadingIcon!,
+                          size: (subStyle.fontSize ?? 11) + 1,
+                          color: tone == ShelfMetaTone.normal
+                              ? onSurface
+                              : toneColor,
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      Expanded(
+                        child: Text(
+                          subtitle ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: subStyle,
+                        ),
+                      ),
+                      if (trailing != null)
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth:
+                                constraints.maxWidth * _kTrailingMaxFraction,
+                          ),
+                          child: trailing,
+                        ),
+                    ],
                   ),
-                  const SizedBox(width: 4),
-                ],
-                Expanded(
-                  child: Text(
-                    subtitle ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: subStyle,
-                  ),
-                ),
-                if (trailing != null)
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: constraints.maxWidth * _kTrailingMaxFraction,
-                    ),
-                    child: trailing,
-                  ),
-              ],
             ),
           ),
           const SizedBox(height: _kProgressGap),
