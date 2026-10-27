@@ -474,4 +474,121 @@ void main() {
       );
     });
   });
+
+  group('usage purpose', () {
+    const Set<OnboardingFeature> freshInstall = <OnboardingFeature>{
+      ...kOnboardingDefaultCapabilities,
+      OnboardingFeature.books,
+      OnboardingFeature.video,
+      OnboardingFeature.lookup,
+      OnboardingFeature.cardCreation,
+      OnboardingFeature.sync,
+    };
+
+    test('media only drops every language-learning step', () {
+      final Set<OnboardingFeature> media = onboardingSelectionForPurpose(
+        OnboardingUsagePurpose.mediaOnly,
+        <OnboardingFeature>{...freshInstall, OnboardingFeature.manualResources},
+      );
+      expect(media.intersection(kOnboardingLanguageLearningFeatures), isEmpty);
+      // 与学外语无关的选择原样保留。
+      expect(
+        media,
+        containsAll(<OnboardingFeature>[
+          OnboardingFeature.books,
+          OnboardingFeature.video,
+          OnboardingFeature.sync,
+          OnboardingFeature.fonts,
+        ]),
+      );
+      final List<OnboardingStepId> steps = _steps(
+        media,
+        globalLookupAvailable: true,
+        ankiReady: true,
+        reviewMethod: OnboardingReviewMethod.fushi,
+        srsEnabled:
+            onboardingSrsModuleOverride(
+              purpose: OnboardingUsagePurpose.mediaOnly,
+              selected: media,
+            ) ??
+            true,
+      );
+      expect(
+        steps,
+        isNot(
+          anyOf(<Matcher>[
+            contains(OnboardingStepId.recommendedPack),
+            contains(OnboardingStepId.manualResources),
+            contains(OnboardingStepId.reviewMethod),
+            contains(OnboardingStepId.anki),
+            contains(OnboardingStepId.clickLookup),
+            contains(OnboardingStepId.globalLookup),
+            contains(OnboardingStepId.firstAnkiCard),
+            contains(OnboardingStepId.srs),
+          ]),
+        ),
+      );
+      expect(steps, contains(OnboardingStepId.fonts));
+    });
+
+    test('switching back to learning restores the factory presets', () {
+      final Set<OnboardingFeature> roundTrip = onboardingSelectionForPurpose(
+        OnboardingUsagePurpose.languageLearning,
+        onboardingSelectionForPurpose(
+          OnboardingUsagePurpose.mediaOnly,
+          freshInstall,
+        ),
+      );
+      expect(roundTrip, freshInstall);
+    });
+
+    test('initial purpose follows lookup and card creation modules', () {
+      expect(
+        onboardingUsagePurposeOf(
+          lookupModuleEnabled: true,
+          cardCreationModuleEnabled: true,
+        ),
+        OnboardingUsagePurpose.languageLearning,
+      );
+      expect(
+        onboardingUsagePurposeOf(
+          lookupModuleEnabled: false,
+          cardCreationModuleEnabled: true,
+        ),
+        OnboardingUsagePurpose.languageLearning,
+      );
+      expect(
+        onboardingUsagePurposeOf(
+          lookupModuleEnabled: false,
+          cardCreationModuleEnabled: false,
+        ),
+        OnboardingUsagePurpose.mediaOnly,
+      );
+    });
+
+    test('srs is only switched off for media only without card creation', () {
+      expect(
+        onboardingSrsModuleOverride(
+          purpose: OnboardingUsagePurpose.mediaOnly,
+          selected: <OnboardingFeature>{},
+        ),
+        isFalse,
+      );
+      // 用户在方格里手动勾回制卡：交给「复习方式」一步决定。
+      expect(
+        onboardingSrsModuleOverride(
+          purpose: OnboardingUsagePurpose.mediaOnly,
+          selected: <OnboardingFeature>{OnboardingFeature.cardCreation},
+        ),
+        isNull,
+      );
+      expect(
+        onboardingSrsModuleOverride(
+          purpose: OnboardingUsagePurpose.languageLearning,
+          selected: <OnboardingFeature>{},
+        ),
+        isNull,
+      );
+    });
+  });
 }
