@@ -617,10 +617,13 @@ bool get srsCardUsesThemedScrollbar => !(isIOSPlatform || isMacOSPlatform);
 /// 播放按钮配色变量，以及 [themedScrollbar] 时的细滚动条。[appearanceCss] 是外观设置
 /// 注入的 `--fushi-srs-*` 变量与 @font-face（见 srs_card_appearance.dart），排在最后，
 /// 同名变量以它为准。
+///
+/// [background] 为 null 时 html/body 透明：WebView 本身也是透明的，透出复习页背景，
+/// 卡片 CSS 自己不铺底色（或写 `transparent`）时就不会再叠一层宿主底色。
 @visibleForTesting
 String srsCardThemeCss({
   required bool dark,
-  required Color background,
+  required Color? background,
   required Color foreground,
   required Color accent,
   required Color onAccent,
@@ -630,7 +633,7 @@ String srsCardThemeCss({
     ':root{color-scheme:${dark ? 'dark' : 'light'};'
     '--fushi-srs-accent:${_cssColor(accent)};'
     '--fushi-srs-on-accent:${_cssColor(onAccent)};}'
-    'html,body{background:${_cssColor(background)};'
+    'html,body{background:${background == null ? 'transparent' : _cssColor(background)};'
     'color:${_cssColor(foreground)};}'
     '${themedScrollbar ? srsCardScrollbarCss(foreground) : ''}'
     '$appearanceCss';
@@ -1033,7 +1036,7 @@ class SrsCardFaceDocument {
   factory SrsCardFaceDocument.of(
     SrsCardFace face, {
     required bool dark,
-    required Color background,
+    required Color? background,
     required Color foreground,
     required Color accent,
     required Color onAccent,
@@ -1483,7 +1486,9 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
   return SrsCardFaceDocument.of(
     face,
     dark: dark,
-    background: scheme.surface,
+    // Fushi 卡的底色是外观配色（自定义强调色时与页面背景不同），由宿主铺；其它卡片
+    // 类型对齐 Anki：底色归卡片 CSS，宿主不铺，模板写透明就透出复习页背景。
+    background: fushi ? scheme.surface : null,
     foreground: scheme.onSurface,
     accent: scheme.primary,
     onAccent: scheme.onPrimary,
@@ -1991,7 +1996,9 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
           javaScriptEnabled: true,
           supportZoom: false,
           disableContextMenu: true,
-          transparentBackground: false,
+          // 透明：卡片底色只来自主题 CSS（[srsCardThemeCss]）与卡片 CSS，模板写透明时
+          // 透出复习页背景，而不是平台视图自己的白底。
+          transparentBackground: true,
           // 卡面媒体经拦截器 / 自定义 scheme 从 SrsMediaStore 供字节（见 srs_card_media.dart）。
           useShouldInterceptRequest: true,
           resourceCustomSchemes: const <String>[kSrsMediaScheme],
