@@ -47,6 +47,8 @@ const Map<String, String> kAddressParamOpsWithoutConfirmation =
       'links.accept': 'endpoint 是本地条目引用，不是网络地址',
       'links.reject': 'endpoint 是本地条目引用，不是网络地址',
       'links.infer': 'endpoint 是本地条目引用，不是网络地址',
+      'links.add': 'endpoint / other 是本地条目引用，不是网络地址',
+      'links.remove': 'endpoint 是本地条目引用，不是网络地址',
       'web.bookmark.add': '只存书签，不打开；打开要经 web.open（先确认）或用户自己点',
       'web.bookmark.update': '只改书签字段，不打开',
       'web.adblock.allowlist.add': 'host 只进广告拦截白名单文本，不请求它',

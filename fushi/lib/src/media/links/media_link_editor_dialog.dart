@@ -1,7 +1,5 @@
-import 'dart:async';
-
 import 'package:fushi/src/media/links/media_link_entries.dart';
-import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
+import 'package:fushi/src/media/links/media_link_manual.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -11,21 +9,6 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
-
-/// 手动连接里可选的关系（原声需要 OST 专辑端点、声优需要人物端点，那两类本地条目
-/// 落地前不提供）。主题曲只在一端音乐、一端视频时可选（[mediaLinkThemeSongCompatible]）。
-const List<MediaLinkRelation> kMediaLinkPickableRelations = <MediaLinkRelation>[
-  MediaLinkRelation.adaptation,
-  MediaLinkRelation.sameWork,
-  MediaLinkRelation.themeSong,
-];
-
-/// 主题曲连接可选的角色（`media_links.role`）。
-const List<ThemeSongRole> kMediaLinkPickableThemeSongRoles = <ThemeSongRole>[
-  ThemeSongRole.op,
-  ThemeSongRole.ed,
-  ThemeSongRole.insert,
-];
 
 String _themeSongRoleLabel(ThemeSongRole r) => switch (r) {
   ThemeSongRole.op => t.music_theme_song_role_op,
@@ -111,38 +94,15 @@ class _MediaLinkEditorDialogState extends State<MediaLinkEditorDialog> {
   Future<void> _pick(MediaLinkEntry target) async {
     if (_saving || !_relationUsable) return;
     setState(() => _saving = true);
-    if (_relation == MediaLinkRelation.themeSong) {
-      // 方向固定「音乐 → 视频」。
-      final bool selfIsMusic = mediaLinkIsMusicKind(widget.self.kind);
-      final MediaLinkEndpoint music = selfIsMusic
-          ? widget.self
-          : target.endpoint;
-      final String range = _episodeRange.text.trim();
-      await widget.database.upsertManualMediaLink(
-        relation: _relation,
-        from: music,
-        to: selfIsMusic ? target.endpoint : widget.self,
-        role: _themeSongRole.wire,
-        // 解析不了的范围按「全部」存（不把一段垃圾文本冻进 wire 值）。
-        episodeRange: parseEpisodeRange(range) == null ? null : range,
-      );
-      // 后台识别这条连接覆盖的各集（串行队列、缓存有效的集跳过）。
-      unawaited(
-        themeSongDetectorFor(widget.database).detect(
-          onlyTrackUid: music.kind == MediaLinkKind.musicTrack
-              ? music.key
-              : null,
-        ),
-      );
-    } else {
-      final bool selfIsFrom =
-          _relation != MediaLinkRelation.adaptation || _selfIsOriginal;
-      await widget.database.upsertManualMediaLink(
-        relation: _relation,
-        from: selfIsFrom ? widget.self : target.endpoint,
-        to: selfIsFrom ? target.endpoint : widget.self,
-      );
-    }
+    await writeManualMediaLink(
+      widget.database,
+      self: widget.self,
+      target: target.endpoint,
+      relation: _relation,
+      selfIsOriginal: _selfIsOriginal,
+      themeSongRole: _themeSongRole,
+      episodeRange: _episodeRange.text,
+    );
     if (!mounted) return;
     Navigator.of(context).pop(target);
   }

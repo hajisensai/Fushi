@@ -1,8 +1,8 @@
 part of '../video_fushi_page.dart';
 
 /// 作品图谱 L2（docs/specs/2026-10-24-cross-media-links.md §2）：本集识别出的 OP / ED
-/// → 「跳过片头 / 片尾」按钮、可选自动跳过、OP 期间角落「♪ 曲名 · 在音乐库打开」、
-/// 进度条上的段首 / 段尾刻度。
+/// → 可选自动跳过（默认关）、进度条上的段首 / 段尾刻度。画面上不出跳过按钮与曲名
+/// 角标（BUG-3801 按用户决定删除）。
 ///
 /// 数据：`video_theme_song_spans` 按集缓存（[loadThemeSongSpansForEpisode]）。缓存里
 /// 没有这一集时，排一次**只针对这一集**的识别（[ThemeSongDetector.detect]），识别完再读；
@@ -80,57 +80,7 @@ extension _VideoThemeSong on _VideoFushiPageState {
     ];
     // 刻度层挂不挂取决于有无刻度（[_buildChapterMarkersOverlay]），段从无到有要重建一次。
     _rebuild(() {});
-    // 立刻按当前位置判一次（暂停在 OP 里打开时，按钮不必等下一次位置事件）。
+    // 立刻按当前位置判一次（刚进 OP 时识别结果才到，不必等下一次位置事件）。
     _themeSongTracker.onPosition(_controller?.positionMs);
-  }
-
-  void _skipThemeSong(ThemeSongSpan span) {
-    final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
-    unawaited(controller.seekMs(_themeSongTracker.skip(span)));
-  }
-
-  /// 「在音乐库打开」：在视频页之上压曲目页（音乐模块的曲目详情）。视频暂停，回来
-  /// 后焦点经 [PageFocusOwnership.guardOverlay] 归还正文。
-  void _openThemeSongTrack(ThemeSongSpan span) {
-    final VideoPlayerController? controller = _controller;
-    if (controller != null && controller.isPlaying) {
-      unawaited(controller.pause());
-    }
-    final NavigatorState navigator = Navigator.of(context);
-    unawaited(
-      _focusOwnership.guardOverlay<void>(
-        () => navigator.push<void>(
-          adaptivePageRoute<void>(
-            context: context,
-            builder: (_) => MusicTrackDetailPage(trackUid: span.trackUid),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildThemeSongOverlay() {
-    final ColorScheme cs = _videoChromeColorScheme(context);
-    // 跳过按钮底部避让与自动连播卡同源（进度条真实几何，见 [_buildAutoAdvanceOverlay]）。
-    final ({double bottom, double height}) band = videoSeekBarTrackBand(
-      trackCenter: _videoSeekBarTrackCenter,
-      tickHeight: _videoSeekBarTrackHeight * _controlsDensityScale,
-    );
-    return Positioned.fill(
-      child: SafeArea(
-        child: VideoThemeSongOverlay(
-          tracker: _themeSongTracker,
-          showNowPlaying: appModel.videoThemeSongNowPlaying,
-          onSkip: _skipThemeSong,
-          onOpenTrack: _openThemeSongTrack,
-          surfaceColor: _osdSurfaceColor(cs),
-          textColor: _osdTextColor(cs),
-          skipBottomInset: band.bottom + band.height + 16 * _videoUiScale,
-          nowPlayingTopInset: _videoButtonBarHeight + 8 * _videoUiScale,
-          uiScale: _videoUiScale,
-        ),
-      ),
-    );
   }
 }

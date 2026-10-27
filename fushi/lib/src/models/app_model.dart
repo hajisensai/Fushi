@@ -5233,16 +5233,11 @@ class AppModel with ChangeNotifier {
 
   bool get videoDiscLaunchAnimation => prefsRepo.videoDiscLaunchAnimation;
 
-  /// 作品图谱 L2：OP / ED 自动跳过 / 角落曲名（落 Drift preferences）。
+  /// 作品图谱 L2：OP / ED 自动跳过（落 Drift preferences）。
   bool get videoThemeSongAutoSkip => prefsRepo.videoThemeSongAutoSkip;
 
   Future<void> setVideoThemeSongAutoSkip(bool value) =>
       prefsRepo.setVideoThemeSongAutoSkip(value);
-
-  bool get videoThemeSongNowPlaying => prefsRepo.videoThemeSongNowPlaying;
-
-  Future<void> setVideoThemeSongNowPlaying(bool value) =>
-      prefsRepo.setVideoThemeSongNowPlaying(value);
 
   Future<void> setVideoDiscLaunchAnimation(bool value) =>
       prefsRepo.setVideoDiscLaunchAnimation(value);

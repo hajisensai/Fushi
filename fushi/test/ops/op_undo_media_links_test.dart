@@ -95,8 +95,16 @@ void main() {
     'other': 'video_episode:video/anime',
   };
 
-  test('风险级：三条 read、四条可撤销的 write', () {
+  Map<String, Object?> pick2(String relation, {String? selfIs}) =>
+      <String, Object?>{
+        ...pick,
+        'relation': relation,
+        if (selfIs != null) 'selfIs': selfIs,
+      };
+
+  test('风险级：四条 read、六条可撤销的 write', () {
     for (final String id in <String>[
+      'links.candidates',
       'links.list',
       'people.list',
       'people.get',
@@ -106,6 +114,8 @@ void main() {
     for (final String id in <String>[
       'links.accept',
       'links.reject',
+      'links.add',
+      'links.remove',
       'links.infer',
       'people.same',
     ]) {
@@ -162,6 +172,116 @@ void main() {
     await db.confirmMediaLink(linkId);
     expect(await undo(again), OpUndoStatus.superseded);
     expect(await state(), MediaLinkState.confirmed);
+  });
+
+  // BUG-3802：AI 只能接受 / 否决 / 推断建议，用户点名「把 A 和 B 关联起来」时没有任何
+  // 操作能做到（详情页「关联作品」对话框背后的手动连接从没进操作目录）。
+  group('手动关联（links.candidates / links.add / links.remove）', () {
+    int later() => DateTime.now().millisecondsSinceEpoch + 60000;
+
+    test('候选按种类 + 标题找本机条目，给出 links.add 要的端点', () async {
+      final OpInvocation found = await run(
+        'links.candidates',
+        <String, Object?>{'kind': 'video_episode', 'search': 'アニメ'},
+      );
+      final Map<Object?, Object?> r = found.result! as Map<Object?, Object?>;
+      expect(r['total'], 1);
+      expect((r['items']! as List<Object?>).single, <String, Object?>{
+        'endpoint': 'video_episode:video/anime',
+        'title': 'アニメ',
+      });
+    });
+
+    test('改编：按 selfIs 定方向、恒为确认；撤销（执行前没有这一行）→ 墓碑', () async {
+      final OpInvocation added = await run('links.add', <String, Object?>{
+        'endpoint': 'video_episode:video/anime',
+        'other': 'book:原作',
+        'relation': 'adaptation',
+        'selfIs': 'adaptation',
+      });
+      // 本条（动画）是改编 → 方向 原作 → 动画，与 linkId 同一身份。
+      final MediaLinkRow row = (await db.mediaLinkById(linkId))!;
+      expect(mediaLinkStateOf(row), MediaLinkState.confirmed);
+      expect(row.source, MediaLinkSource.manual);
+      expect(await undo(added), OpUndoStatus.done);
+      expect(await state(), MediaLinkState.removed);
+    });
+
+    test('把一条建议手动连上 → 撤销恢复成原来的建议', () async {
+      await suggest();
+      final OpInvocation added = await run('links.add', <String, Object?>{
+        'endpoint': 'book:原作',
+        'other': 'video_episode:video/anime',
+        'relation': 'adaptation',
+        'selfIs': 'original',
+      });
+      expect(await state(), MediaLinkState.confirmed);
+      expect(await undo(added), OpUndoStatus.done);
+      final MediaLinkRow row = (await db.mediaLinkById(linkId))!;
+      expect(mediaLinkStateOf(row), MediaLinkState.suggested);
+      expect(row.source, 'mal');
+    });
+
+    test('关联后用户又移除了 → 撤销 superseded、不覆盖', () async {
+      final OpInvocation added = await run(
+        'links.add',
+        pick2('adaptation', selfIs: 'original'),
+      );
+      await db.removeMediaLink(linkId, at: later());
+      expect(await undo(added), OpUndoStatus.superseded);
+      expect(await state(), MediaLinkState.removed);
+    });
+
+    test('same_work 无方向；参数不全 / 关系不合法时拒绝、不写库', () async {
+      await run('links.add', pick2('same_work'));
+      final MediaLinkId same = mediaLinkIdFor(
+        MediaLinkRelation.sameWork,
+        book,
+        video,
+      );
+      expect(
+        mediaLinkStateOf((await db.mediaLinkById(same))!),
+        MediaLinkState.confirmed,
+      );
+
+      for (final Map<String, Object?> bad in <Map<String, Object?>>[
+        pick2('adaptation'), // 缺 selfIs
+        pick2('theme_song'), // 两端不是音乐 + 视频
+        pick2('soundtrack'), // 不在可手动连接的关系里
+        <String, Object?>{
+          'endpoint': 'book:原作',
+          'other': 'book:不存在',
+          'relation': 'same_work',
+        },
+      ]) {
+        await expectLater(
+          run('links.add', bad),
+          throwsA(isA<CtlFailure>()),
+          reason: '$bad',
+        );
+      }
+      expect(await db.mediaLinkById(linkId), isNull);
+    });
+
+    test('移除确认的关联 → 撤销恢复成确认；建议不能当关联移除', () async {
+      await db.upsertManualMediaLink(
+        relation: MediaLinkRelation.adaptation,
+        from: book,
+        to: video,
+        at: 5,
+      );
+      final OpInvocation removed = await run('links.remove', pick);
+      expect(await state(), MediaLinkState.removed);
+      expect(await undo(removed), OpUndoStatus.done);
+      final MediaLinkRow row = (await db.mediaLinkById(linkId))!;
+      expect(mediaLinkStateOf(row), MediaLinkState.confirmed);
+      expect(row.createdAt, 5);
+
+      await db.discardMediaLinkSuggestion(linkId);
+      await db.removeMediaLink(linkId);
+      await db.restoreMediaLinkSuggestion(linkId);
+      await expectLater(run('links.remove', pick), throwsA(isA<CtlFailure>()));
+    });
   });
 
   group('同一人', () {
