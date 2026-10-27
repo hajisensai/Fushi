@@ -90,8 +90,10 @@ extension _VideoSpeed on _VideoFushiPageState {
     unawaited(_setSpeed(speed, persist: false, rebuild: false));
     // TODO-1154：在长按落点上方弹出跟随指针的倍速徽章（B 站/YouTube 观感），
     // 取代钉死左上角的 _showOsd。localPosition 与 Stack 同坐标系，可直接用作 Positioned 锚点。
-    _longPressSpeedBadge.value =
-        (position: details.localPosition, speed: speed);
+    _longPressSpeedBadge.value = (
+      position: details.localPosition,
+      speed: speed,
+    );
   }
 
   /// 长按后横向拖动连续调速（TODO-338）：向右拖加速、向左减速，以长按固定加速速
@@ -107,15 +109,22 @@ extension _VideoSpeed on _VideoFushiPageState {
       details.localOffsetFromOrigin.dx,
     );
     // 徽章始终跟随指针移动（即使速度未越过 0.1x 步进也更新位置），保证「跟手」。
-    _longPressSpeedBadge.value =
-        (position: details.localPosition, speed: snapped);
+    _longPressSpeedBadge.value = (
+      position: details.localPosition,
+      speed: snapped,
+    );
     if ((snapped - _playbackSpeed).abs() < 0.001) return;
     // BUG-965：拖动热路径每 0.1x 步进都调这里；rebuild: false 省掉全页 setState，
     // 让徽章（独立 ValueListenableBuilder）跟手渲染倍速，拖动才顺滑。
     unawaited(_setSpeed(snapped, persist: false, rebuild: false));
   }
 
-  void _handleVideoLongPressEnd(LongPressEndDetails details) {
+  /// 长按会话收尾（[VideoLongPressSessionDetector] 保证每个已开始的会话恰好调一次：
+  /// 正常松手、指针被系统取消、识别器重置、手势层卸载都汇到这里，3sDHeyPQ-I）。
+  void _handleVideoLongPressEnd() {
+    // 手势层随页面一起卸载时收尾被推迟到微任务，此刻页面已 dispose（徽章 notifier
+    // 也已释放），没有可恢复的东西。
+    if (!mounted) return;
     // 键盘/手柄的按住临时倍速正持有恢复位（手势 start 在 previous 非空时早退、
     // 从未接管），这次长按松手只清徽章、不动倍速——恢复权归 [_releaseHoldSpeed]。
     if (_holdSpeedActive) {

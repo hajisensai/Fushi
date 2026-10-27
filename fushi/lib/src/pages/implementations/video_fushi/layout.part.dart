@@ -486,8 +486,10 @@ extension _VideoLayout on _VideoFushiPageState {
                   // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
                   onInvoke: (Offset position) => _handleSecondaryTap(position),
                   ladder: _VideoFushiPageState.kVideoMouseLadder,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
+                  // 3sDHeyPQ-I：长按临时倍速的会话绑到发起它的指针上，抬起 / 取消 /
+                  // 识别器重置 / 卸载都恰好收尾一次（识别器在长按被接受后遇到取消
+                  // 不回调任何东西，只接 onLongPressEnd 会让徽章与倍速卡住）。
+                  child: VideoLongPressSessionDetector(
                     onLongPressStart: _handleVideoLongPressStart,
                     onLongPressMoveUpdate: _handleVideoLongPressMoveUpdate,
                     onLongPressEnd: _handleVideoLongPressEnd,
