@@ -33,6 +33,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
 import 'package:fushi/utils.dart' show ErrorLogService;
@@ -97,6 +98,9 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
   SrsDbStore store,
   String directoryKey, {
   SrsLocationKey? locationKey,
+  void Function(int done, int total)? onFetchProgress,
+  void Function()? onUploadStart,
+  bool Function()? shouldStop,
 }) async {
   final SrsSync2Report r = await srsSync2Round(
     host: store,
@@ -108,6 +112,9 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
     locationId: directoryKey,
     nowMs: () => store.now().$1,
     key: locationKey,
+    onFetchProgress: onFetchProgress,
+    onUploadStart: onUploadStart,
+    shouldStop: shouldStop,
   );
   if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
   return r;
@@ -225,7 +232,7 @@ class SrsSyncScheduler {
     Future<List<SrsLocalDirectory>> Function()? localDirectories,
     Future<List<SrsFolderLocation>> Function()? folderLocations,
     SrsProfileLinker? profileLinker,
-    SrsSyncRunner runner = srsDefaultSyncRunner,
+    SrsSyncRunner? runner,
     Future<Directory?> Function()? readMediaRoot,
     SrsMediaSyncRunner mediaRunner = srsDefaultMediaSyncRunner,
     DateTime Function()? clock,
@@ -252,7 +259,7 @@ class SrsSyncScheduler {
        _folderLocations = folderLocations,
        _onDataChanged = onDataChanged,
        _onNotice = onNotice,
-       _runner = runner,
+       _injectedRunner = runner,
        _clock = clock ?? DateTime.now;
 
   final Future<SrsDbStore?> Function() _readStore;
@@ -271,7 +278,38 @@ class SrsSyncScheduler {
   final Map<String, Object> folderErrors = <String, Object>{};
   final void Function() _onDataChanged;
   final void Function(SrsSyncNotice notice) _onNotice;
-  final SrsSyncRunner _runner;
+
+  /// 测试注入的一轮；null = 生产实现（[srsDefaultSyncRunner]，带进度与收手检查）。
+  final SrsSyncRunner? _injectedRunner;
+
+  Future<SrsSync2Report> _runner(
+    SyncAssetStore backend,
+    SrsDbStore store,
+    String directoryKey, {
+    SrsLocationKey? locationKey,
+  }) =>
+      _injectedRunner?.call(
+        backend,
+        store,
+        directoryKey,
+        locationKey: locationKey,
+      ) ??
+      srsDefaultSyncRunner(
+        backend,
+        store,
+        directoryKey,
+        locationKey: locationKey,
+        onFetchProgress: (int done, int total) =>
+            srsSyncProgress.value = SrsSyncProgress(
+              stage: SrsSyncStage.downloading,
+              done: done,
+              total: total,
+            ),
+        onUploadStart: () => srsSyncProgress.value = const SrsSyncProgress(
+          stage: SrsSyncStage.uploading,
+        ),
+        shouldStop: () => _halted,
+      );
   final Future<Directory?> Function()? _readMediaRoot;
   final SrsMediaSyncRunner _mediaRunner;
   final DateTime Function() _clock;
@@ -384,7 +422,15 @@ class SrsSyncScheduler {
   Future<void> _tail = Future<void>.value();
 
   Future<T> _serially<T>(Future<T> Function() body) {
-    final Future<T> run = _tail.then((_) => body());
+    final Future<T> run = _tail.then((_) async {
+      if (_halted) return body();
+      srsSyncProgress.value = const SrsSyncProgress();
+      try {
+        return await body();
+      } finally {
+        srsSyncProgress.value = null;
+      }
+    });
     _tail = run.then<void>((_) {}, onError: (Object _) {});
     return run;
   }
@@ -477,6 +523,9 @@ class SrsSyncScheduler {
       try {
         final Directory? root = await readMediaRoot();
         if (root != null) {
+          srsSyncProgress.value = const SrsSyncProgress(
+            stage: SrsSyncStage.media,
+          );
           final SrsMediaSyncReport media = await _mediaRunner(
             backend,
             store,

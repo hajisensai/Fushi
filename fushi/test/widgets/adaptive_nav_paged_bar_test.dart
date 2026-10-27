@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -9,17 +8,19 @@ import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// 两套设计系统：MD3 悬浮底栏 / Apple 胶囊。
-enum _Design { md3, apple }
+/// 设计系统：分页只剩 Apple 胶囊在用（MD3 分页样式 2026-10-25 删除）。
+enum _Design { apple }
 
 // 2026-10-15 底栏「分页滑动」：胶囊里每页 5 个（查词留在右下角固定钮）；
 // 底栏横滑翻页（跟手、过 1/4 页或甩一下就翻）；按住约 0.3 秒进入拖选，手指
 // 罩着哪一格就选哪一格，拖到边缘停一下自动翻页，松手切过去。
 //
 // 2026-10-16 用户「手机上没看见分页啊。而且 apple 也要分页」：Apple 胶囊此前
-// 不读 barStyle、恒按平铺画（9 个目的地全挤进一枚胶囊）。现在两套设计系统
-// 共用同一份分页状态 / 手势（`_NavPagedRow`），下面每条用例在 MD3 与 Apple
-// 两套下都跑；几何按真手机（390×844 逻辑像素、DPR 3、出厂纯图标）。
+// 不读 barStyle、恒按平铺画（9 个目的地全挤进一枚胶囊）。
+//
+// 2026-10-25 用户砍掉了 MD3 的「分页滑动」样式（设置里不再有这一项）；分页
+// 只剩 Apple 胶囊用来画没接 Apple 的原型样式（含出厂默认的相机模式条），
+// 所以下面只跑 Apple；几何按真手机（390×844 逻辑像素、DPR 3、出厂纯图标）。
 void main() {
   const Size phone = Size(390, 844);
   const double dpr = 3;
@@ -64,7 +65,7 @@ void main() {
     int currentIndex = 0,
     ValueChanged<int>? onTap,
     ValueChanged<int>? onDragSelect,
-    AdaptiveNavBarStyle style = AdaptiveNavBarStyle.pager,
+    AdaptiveNavBarStyle style = AdaptiveNavBarStyle.modeStrip,
     int? searchIndex,
   }) async {
     usePhone(tester);
@@ -115,7 +116,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  for (final _Design design in _Design.values) {
+  for (final _Design design in <_Design>[_Design.apple]) {
     group('${design.name} 翻页', () {
       testWidgets(
         '手机尺寸：一页 5 个，左滑翻到下一页，点第二页的项照常切；首页再右滑不动',
@@ -182,7 +183,7 @@ void main() {
                     onTap: (_) {},
                     items: itemsOf(n),
                     showLabels: false,
-                    barStyle: AdaptiveNavBarStyle.pager,
+                    barStyle: AdaptiveNavBarStyle.modeStrip,
                   ),
             ),
           ),
@@ -258,15 +259,9 @@ void main() {
         expect(bar(), <int>[0, 1, 2, 3, 4]);
         await gesture.up();
         await tester.pumpAndSettle();
-        // MD3 落地走 onDragSelect（宿主接模块切换转场）；Apple 保持 iOS 的
-        // 点按切换语义，落地走 onTap。
-        if (design == _Design.md3) {
-          expect(drags, <int>[3]);
-          expect(taps, isEmpty);
-        } else {
-          expect(taps, <int>[3]);
-          expect(drags, isEmpty);
-        }
+        // Apple 保持 iOS 的点按切换语义，落地走 onTap。
+        expect(taps, <int>[3]);
+        expect(drags, isEmpty);
       });
 
       testWidgets('拖回当前项上松手 = 取消', (WidgetTester tester) async {
@@ -356,22 +351,4 @@ void main() {
       });
     });
   }
-
-  testWidgets('MD3 没接 onDragSelect 时拖选落地走 onTap', (WidgetTester tester) async {
-    final List<int> taps = <int>[];
-    await pumpBar(tester, _Design.md3, onTap: taps.add);
-    final TestGesture gesture = await tester.startGesture(
-      tester.getCenter(shown(0)),
-    );
-    await tester.pump(const Duration(milliseconds: 350));
-    await gesture.moveTo(tester.getCenter(shown(2)));
-    await tester.pump();
-    await gesture.up();
-    await tester.pumpAndSettle();
-    expect(taps, <int>[2]);
-  });
-
-  test('i18n 键仍在（设置项文案）', () {
-    expect(t.home_nav_bar_style_pager, isNotEmpty);
-  });
 }

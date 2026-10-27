@@ -43,9 +43,14 @@ abstract class WebBrowserFeature {
       const <WebBrowserAction>[];
 
   /// 功能自身状态变了（开关类动作的 [WebBrowserAction.selected]、某个动作出现 /
-  /// 消失），而标签页本身没变：壳监听它重建工具栏 / 「⋯」菜单。null = 动作只随
-  /// 标签页状态变化。
+  /// 消失、[statusBar] 出现 / 消失），而标签页本身没变：壳监听它重建工具栏 /
+  /// 「⋯」菜单 / 状态条。null = 动作只随标签页状态变化。
   Listenable? get actionsChanged => null;
+
+  /// 功能正在进行、需要用户看见并能取消的状态（例如「正在等系统浏览器送回登录」）：
+  /// 壳把它排在页面内容上方（查找条下面），出现 / 消失带尺寸动画。null = 没有。
+  /// 变化经 [actionsChanged] 通知。用设计系统的横幅组件（`FushiInlineNotice`）。
+  Widget? statusBar(BuildContext context) => null;
 
   /// 浏览页销毁。
   void dispose() {}

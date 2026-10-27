@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/srs/srs_sync_progress.dart';
+import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
@@ -45,8 +47,9 @@ void main() {
       );
       expect(withTitle, contains(title));
       // 没书名时退化成不带名字的文案，不能漏出空引号 / null。
-      final String withoutTitle =
-          syncActivityLine(const SyncActivity(SyncActivityKind.singleBook));
+      final String withoutTitle = syncActivityLine(
+        const SyncActivity(SyncActivityKind.singleBook),
+      );
       expect(withoutTitle, isNotEmpty);
       expect(withoutTitle, isNot(contains('null')));
       expect(withoutTitle, isNot(equals(withTitle)));
@@ -59,7 +62,8 @@ void main() {
       expect(
         line,
         equals(
-            syncActivityLine(const SyncActivity(SyncActivityKind.singleBook))),
+          syncActivityLine(const SyncActivity(SyncActivityKind.singleBook)),
+        ),
       );
     });
   });
@@ -68,12 +72,14 @@ void main() {
     test('每种结局各有各的文案，且都不为空', () {
       final Map<SyncOutcomeReason, String> lines = <SyncOutcomeReason, String>{
         for (final SyncOutcomeReason reason in SyncOutcomeReason.values)
-          reason: syncOutcomeLine(SyncRunOutcome(
-            kind: SyncActivityKind.fullSweep,
-            reason: reason,
-            channelsRun: reason == SyncOutcomeReason.completed ? 1 : 0,
-            finishedAt: 0,
-          )),
+          reason: syncOutcomeLine(
+            SyncRunOutcome(
+              kind: SyncActivityKind.fullSweep,
+              reason: reason,
+              channelsRun: reason == SyncOutcomeReason.completed ? 1 : 0,
+              finishedAt: 0,
+            ),
+          ),
       };
       for (final MapEntry<SyncOutcomeReason, String> e in lines.entries) {
         expect(e.value, isNotEmpty, reason: '${e.key} 没有可显示的文案');
@@ -87,13 +93,13 @@ void main() {
 
     test('「跑完了」与「一条通道都没跑起来」文案必须不同（本 bug 的核心）', () {
       String lineFor(SyncOutcomeReason reason, int channels) => syncOutcomeLine(
-            SyncRunOutcome(
-              kind: SyncActivityKind.fullSweep,
-              reason: reason,
-              channelsRun: channels,
-              finishedAt: 0,
-            ),
-          );
+        SyncRunOutcome(
+          kind: SyncActivityKind.fullSweep,
+          reason: reason,
+          channelsRun: channels,
+          finishedAt: 0,
+        ),
+      );
       expect(
         lineFor(SyncOutcomeReason.completed, 2),
         isNot(equals(lineFor(SyncOutcomeReason.noChannels, 0))),
@@ -102,18 +108,22 @@ void main() {
     });
 
     test('completed 把实跑通道数带进文案', () {
-      final String one = syncOutcomeLine(const SyncRunOutcome(
-        kind: SyncActivityKind.fullSweep,
-        reason: SyncOutcomeReason.completed,
-        channelsRun: 1,
-        finishedAt: 0,
-      ));
-      final String two = syncOutcomeLine(const SyncRunOutcome(
-        kind: SyncActivityKind.fullSweep,
-        reason: SyncOutcomeReason.completed,
-        channelsRun: 2,
-        finishedAt: 0,
-      ));
+      final String one = syncOutcomeLine(
+        const SyncRunOutcome(
+          kind: SyncActivityKind.fullSweep,
+          reason: SyncOutcomeReason.completed,
+          channelsRun: 1,
+          finishedAt: 0,
+        ),
+      );
+      final String two = syncOutcomeLine(
+        const SyncRunOutcome(
+          kind: SyncActivityKind.fullSweep,
+          reason: SyncOutcomeReason.completed,
+          channelsRun: 2,
+          finishedAt: 0,
+        ),
+      );
       expect(one, contains('1'));
       expect(two, contains('2'));
       expect(one, isNot(equals(two)));
@@ -125,13 +135,12 @@ void main() {
       syncInProgress.value = false;
       syncProgress.value = null;
       syncActivity.value = null;
+      srsSyncProgress.value = null;
     });
 
     Future<void> pumpBanner(WidgetTester tester) => tester.pumpWidget(
-          const MaterialApp(
-            home: Scaffold(body: SyncProgressBanner()),
-          ),
-        );
+      const MaterialApp(home: Scaffold(body: SyncProgressBanner())),
+    );
 
     testWidgets('没有同步在跑时收成零高度，不占布局', (WidgetTester tester) async {
       syncInProgress.value = false;
@@ -140,8 +149,9 @@ void main() {
       expect(find.byType(Text), findsNothing);
     });
 
-    testWidgets('同步中但没有阶段 tick（轻量路径）→ 仍然有文字，不是光秃秃一条线',
-        (WidgetTester tester) async {
+    testWidgets('同步中但没有阶段 tick（轻量路径）→ 仍然有文字，不是光秃秃一条线', (
+      WidgetTester tester,
+    ) async {
       syncInProgress.value = true;
       syncProgress.value = null;
       syncActivity.value = const SyncActivity(SyncActivityKind.collections);
@@ -152,7 +162,8 @@ void main() {
       expect(
         (tester.widget<Text>(text).data ?? ''),
         equals(
-            syncActivityLine(const SyncActivity(SyncActivityKind.collections))),
+          syncActivityLine(const SyncActivity(SyncActivityKind.collections)),
+        ),
       );
     });
 
@@ -166,7 +177,8 @@ void main() {
       expect(
         tester
             .widget<FushiLinearProgressIndicator>(
-                find.byType(FushiLinearProgressIndicator))
+              find.byType(FushiLinearProgressIndicator),
+            )
             .value,
         isNull,
       );
@@ -189,10 +201,120 @@ void main() {
       expect(
         tester
             .widget<FushiLinearProgressIndicator>(
-                find.byType(FushiLinearProgressIndicator))
+              find.byType(FushiLinearProgressIndicator),
+            )
             .value,
         closeTo(3 / 8, 1e-9),
       );
+    });
+  });
+
+  group('SyncProgressBanner × 复习同步', () {
+    tearDown(() {
+      syncInProgress.value = false;
+      syncProgress.value = null;
+      syncActivity.value = null;
+      srsSyncProgress.value = null;
+    });
+
+    Future<void> pumpBanner(WidgetTester tester) => tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: SyncProgressBanner())),
+    );
+
+    double? barValue(WidgetTester tester, String rowKey) => tester
+        .widget<FushiLinearProgressIndicator>(
+          find.descendant(
+            of: find.byKey(ValueKey<String>(rowKey)),
+            matching: find.byType(FushiLinearProgressIndicator),
+          ),
+        )
+        .value;
+
+    testWidgets('只有复习同步在跑（常规同步没跑）也亮：文字 + 确定进度', (WidgetTester tester) async {
+      const SrsSyncProgress p = SrsSyncProgress(
+        stage: SrsSyncStage.downloading,
+        done: 123,
+        total: 2048,
+      );
+      srsSyncProgress.value = p;
+      await pumpBanner(tester);
+      expect(find.text(srsSyncProgressLine(p)), findsOneWidget);
+      expect(srsSyncProgressLine(p), contains('123'));
+      expect(srsSyncProgressLine(p), contains('2048'));
+      expect(
+        barValue(tester, 'sync-progress-banner-srs'),
+        closeTo(123 / 2048, 1e-9),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('sync-progress-banner-general')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('准备 / 上传 / 媒体各有文案，进度条不确定', (WidgetTester tester) async {
+      for (final SrsSyncStage stage in <SrsSyncStage>[
+        SrsSyncStage.preparing,
+        SrsSyncStage.uploading,
+        SrsSyncStage.media,
+      ]) {
+        final SrsSyncProgress p = SrsSyncProgress(stage: stage);
+        srsSyncProgress.value = p;
+        await pumpBanner(tester);
+        await tester.pump(const Duration(seconds: 1));
+        final String line = srsSyncProgressLine(p);
+        expect(line, isNotEmpty);
+        expect(find.text(line), findsOneWidget, reason: '$stage');
+        expect(
+          barValue(tester, 'sync-progress-banner-srs'),
+          isNull,
+          reason: '$stage',
+        );
+      }
+      // 四个阶段文案互不相同。
+      expect(
+        <String>{
+          for (final SrsSyncStage s in SrsSyncStage.values)
+            srsSyncProgressLine(SrsSyncProgress(stage: s, total: 0)),
+        }.length,
+        SrsSyncStage.values.length,
+      );
+    });
+
+    testWidgets('与常规同步并存：两行都在，各配各的进度', (WidgetTester tester) async {
+      syncInProgress.value = true;
+      const SyncProgress general = SyncProgress(
+        phase: SyncPhase.readingData,
+        itemIndex: 2,
+        itemTotal: 8,
+      );
+      syncProgress.value = general;
+      const SrsSyncProgress srs = SrsSyncProgress(
+        stage: SrsSyncStage.downloading,
+        done: 1,
+        total: 4,
+      );
+      srsSyncProgress.value = srs;
+      await pumpBanner(tester);
+      expect(find.text(syncProgressLine(general)), findsOneWidget);
+      expect(find.text(srsSyncProgressLine(srs)), findsOneWidget);
+      expect(
+        barValue(tester, 'sync-progress-banner-general'),
+        closeTo(3 / 8, 1e-9),
+      );
+      expect(
+        barValue(tester, 'sync-progress-banner-srs'),
+        closeTo(1 / 4, 1e-9),
+      );
+    });
+
+    testWidgets('复习同步跑完（回到 null）→ 收回零高度', (WidgetTester tester) async {
+      srsSyncProgress.value = const SrsSyncProgress();
+      await pumpBanner(tester);
+      expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
+      srsSyncProgress.value = null;
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(FushiLinearProgressIndicator), findsNothing);
+      expect(find.byType(Text), findsNothing);
     });
   });
 
@@ -200,8 +322,9 @@ void main() {
     // 运行时表面在 headless 测试里挂不稳（真跑一轮同步要 DB + 网络后端），故用源码
     // 扫描锁住不变式本身：全局同步状态只能由 _beginSyncActivity / _endSyncActivity
     // 这一对维护。
-    final String src =
-        File('lib/src/sync/sync_auto_trigger.dart').readAsStringSync();
+    final String src = File(
+      'lib/src/sync/sync_auto_trigger.dart',
+    ).readAsStringSync();
 
     int occurrences(String needle) => needle.allMatches(src).length;
 
@@ -237,9 +360,9 @@ void main() {
       // 那一行讲的是「立即同步」这件事；拿后台单本 / 合集轻量同步的结局来填会
       // 答非所问（用户点的是全量，看到的却是某本书的结果）。设置页运行时表面要
       // AppModel + SettingsContext，headless 挂不稳，故在此锁不变式。
-      final String rowSrc =
-          File('lib/src/sync/sync_settings_schema/actions.part.dart')
-              .readAsStringSync();
+      final String rowSrc = File(
+        'lib/src/sync/sync_settings_schema/actions.part.dart',
+      ).readAsStringSync();
       // 不变式没变，钉的位置变了：这一行现在读**语义精确的那个值**
       // （`lastFullSweepOutcome`），而不是读 `lastSyncOutcome` 再在消费端过滤
       // `kind`。后者会被任何一轮别的同步挤掉 —— 合集轻量、单本，以及同页那四个

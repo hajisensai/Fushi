@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
@@ -5,7 +7,9 @@ import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_recent_destinations.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/settings/settings_search.dart';
@@ -15,6 +19,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiHeightReporter, FushiTopFadeScrim;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 
 class SettingsHomePage extends BasePage {
   const SettingsHomePage({super.key, this.embedded = false, this.onBack});
@@ -84,10 +89,24 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
   /// 当前搜索结果（build 时求值；回车打开第一条用）。
   List<SettingsSearchEntry> _results = const <SettingsSearchEntry>[];
 
+  /// 上一次 build 时是不是宽屏主从（消费 [settingsDestinationRequest] 时据此决定
+  /// 是切右窗格还是推详情页）。
+  bool _wide = false;
+
+  /// 上一次 build 求出的可见分类。
+  List<SettingsDestination> _destinations = const <SettingsDestination>[];
+
   @override
   void initState() {
     super.initState();
     _narrowScrollController.addListener(_onNarrowScroll);
+    settingsDestinationRequest.addListener(_onDestinationRequested);
+    // 设置 tab 还没挂载时就发来的请求：挂载后第一帧消费（那时才知道宽窄）。
+    if (settingsDestinationRequest.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _onDestinationRequested(),
+      );
+    }
     // 错误 / 调试日志、游戏内查词准入、推荐包下载阶段（BUG-2165：宽屏内联主从
     // 同样要实时刷新）由读它们的分组自己订阅（SettingsSection.liveListenable），
     // 内联详情与 push 出去的详情页走同一套分组组件，宿主页不再整页 setState。
@@ -95,6 +114,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
 
   @override
   void dispose() {
+    settingsDestinationRequest.removeListener(_onDestinationRequested);
     _searchController.dispose();
     _searchFocusNode.dispose();
     _narrowScrollController.removeListener(_onNarrowScroll);
@@ -118,6 +138,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                   destination.isVisible(settingsContext),
             )
             .toList(growable: false);
+    _destinations = destinations;
     // 首次进入（null）或当前选中分类被平台门控隐藏时，落到第一个可见分类。
     if (!destinations.any(
       (SettingsDestination destination) =>
@@ -135,6 +156,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     final Widget content = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide = constraints.maxWidth >= 720;
+        _wide = wide;
         // MD3：Android 16「设置」。宽屏左导航右详情（页头外壳同旧），窄屏是自带
         // 折叠大标题顶栏的单列（不再套外壳页头，见 _buildMd3NarrowLayout）。
         if (md3) {
@@ -343,6 +365,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       _searchQuery = '';
       if (wide) _selectedDestinationId = entry.destination.id;
     });
+    unawaited(
+      recordSettingsDestinationVisit(appModel.prefsRepo, entry.destination.id),
+    );
     // 宽屏右窗格已切到该分类，只需再推子页；窄屏连顶层分类页一起推。
     openSettingsSearchEntry(Navigator.of(context), entry, pushTopLevel: !wide);
   }
@@ -824,7 +849,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     );
     // 整页底色（不是顶部底带）：本页是 home tab，没有 Scaffold 提供底色与 ink。
     return Material(
-      color: tokens.surfaces.page,
+      color: fushiPageBackgroundColor(context),
       child: !showHeader
           ? scroll
           : Stack(
@@ -878,5 +903,28 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
 
   void _selectDestination(SettingsDestinationId id) {
     setState(() => _selectedDestinationId = id);
+    unawaited(recordSettingsDestinationVisit(appModel.prefsRepo, id));
+  }
+
+  /// 消费 [settingsDestinationRequest]（首页侧栏「设置」速览卡点了某个分类）：
+  /// 宽屏切右窗格，窄屏推该分类的详情页。分类此刻不可见（平台 / 模块门控）
+  /// 就只清掉请求。
+  void _onDestinationRequested() {
+    final SettingsDestinationId? id = settingsDestinationRequest.value;
+    if (id == null || !mounted) return;
+    settingsDestinationRequest.value = null;
+    final SettingsDestination? destination = _destinations
+        .where((SettingsDestination d) => d.id == id)
+        .firstOrNull;
+    if (destination == null) return;
+    _selectDestination(id);
+    if (_wide) return;
+    unawaited(
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => SettingsDetailPage(destination: destination),
+        ),
+      ),
+    );
   }
 }

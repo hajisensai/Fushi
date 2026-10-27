@@ -573,7 +573,15 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     return map.entryAt(virtual).chapterIndex;
   }
 
-  Future<void> _navigateToChapter(
+  /// 返回值：这次请求**是否真的开始了导航**（走到了 [_beginNavigation]）。
+  ///
+  /// `false` = 被拒（页面已卸载 / 书或 WebView 未就绪 / 章号越界 / 被动导航的目标
+  /// 解析后落在目录页）：既没有 `_beginNavigation`，也就没有 restore 回执
+  /// （[_onRestoreComplete]）、没有中止收尾（[_failNavigation]）、连 content-ready
+  /// 兜底计时都没有武装。持有有声书跨章守卫的调用方（[_handleCueCrossChapter]）
+  /// 必须据此自己释放守卫——否则守卫等的那条回执永远不会来（BUG-3798）。
+  /// `true` 之后的结局（回执 / 中止）由导航自身负责通知控制器。
+  Future<bool> _navigateToChapter(
     int index, {
     double progress = 0.0,
     int? charOffset,
@@ -585,10 +593,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         _book == null ||
         index < 0 ||
         index >= _book!.chapters.length) {
-      return;
+      return false;
     }
     if (_controller == null) {
-      return;
+      return false;
     }
     // TODO-1128：目标是被吸收的单图片章时，重定向到其宿主文本章的章首——被吸收图片只在
     // 宿主正文顶部内联注入那一份，绝不再加载独立单图页（消除重复）。charOffset 归零锚
@@ -604,7 +612,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 否则跨章会把用户甩到目录。manual=true 是用户显式跳章（TOC 点击 / 翻章
     // 按钮），保留其自由不拦。被动命中 nav 页直接保位（不加载、不归零）。
     if (!manual && _book!.isChapterNav(index)) {
-      return;
+      return false;
     }
 
     if (manual) {
@@ -633,6 +641,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       debugPrint('[ReaderFushi] _navigateToChapter loadUrl failed: $e');
       _failNavigation();
     }
+    return true;
   }
 
   Future<bool> _navigateToChapterAndWait(
@@ -657,7 +666,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 把收藏句的精确字符锚烘进同一条原子恢复链（_beginNavigation → shell
     // restoreToCharOffset），与冷启动 charAnchor 跳转（BUG-459）同构；[charOffsetEnd]
     // 句尾锚透传做整句对齐（BUG-461）。分数与字符锚二选一：charOffset 非空时优先。
-    await _navigateToChapter(
+    final bool started = await _navigateToChapter(
       index,
       progress: progress,
       charOffset: charOffset,
@@ -665,6 +674,9 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       manual: manual,
       preciseLocateJs: preciseLocateJs,
     );
+    // 被拒的导航没有自己的 restore completer：不能去等**上一次**导航残留的那个
+    // （它可能仍在飞，等到的是别人的结局）。
+    if (!started) return false;
     final bool success =
         await _restoreCompleter?.future.timeout(
           const Duration(seconds: 10),
@@ -1018,6 +1030,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         '${webViewKeyBridgeScript(handlerName: 'onSpreadKey', keys: spreadKeyBridgeTokens(appModel.shortcutRegistry))}\n${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}';
 
     final String html = buildSpreadPageHtml(
+      // 调用方 [_navigateToSpread] 已在 [_beginNavigation] 里递增代际。
+      navigationGeneration: _navigateGeneration,
       leftUrl: leftUrl,
       rightUrl: rightUrl,
       swipeDistThreshold: swipeThresholds.dist,

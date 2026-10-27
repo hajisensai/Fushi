@@ -115,7 +115,9 @@ void main() {
     expect(clear.spec.gateParams.map((OpParam p) => p.name), <String>[
       'confirm',
     ]);
-    expect(catalog['web.open']!.risk, OpRisk.read);
+    // 打开网址 = 浏览器立刻请求模型给的地址，这一下出站撤销不了 → 先确认。
+    expect(catalog['web.open']!.risk, OpRisk.irreversible);
+    expect(catalog['web.open']!.spec.needsConfirmation, isTrue);
     expect(catalog['web.adblock.update']!.risk, OpRisk.read);
   });
 

@@ -1,6 +1,7 @@
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 
 /// 每一页的底：页面底色 + 角落 M3E 形状背景（[LibraryShapeBackdrop]），并把子树
@@ -16,11 +17,21 @@ import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 /// 材质），但子树结构不变，切换设计系统时页面 State 不重建。
 ///
 /// 页面里拿 `scaffoldBackgroundColor` 当「不透明页底」用的地方（渐隐遮罩、加载罩）
-/// 改用 [fushiOpaquePageColor]。
+/// 改用 [fushiOpaquePageColor]；整页底色（Scaffold / 整页 Material）一律用
+/// [fushiPageBackgroundColor]，否则实色页底会把形状整片盖成白底。
 class FushiPageBackdrop extends StatelessWidget {
   const FushiPageBackdrop({required this.child, super.key});
 
   final Widget child;
+
+  /// [context] 所在页的页底是否已被 [FushiPageBackdrop] 换成透明：正在画形状，
+  /// 或整页经 [setFushiPageRouteTransparent] 让给底层合成。对话框 / 底部面板挂在
+  /// Navigator 的 overlay 上、不在页面子树里，这里恒为 false。
+  static bool activeOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_FushiPageBackdropScope>()
+          ?.active ??
+      false;
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +51,10 @@ class FushiPageBackdrop extends StatelessWidget {
               data: enabled || seeThrough
                   ? theme.copyWith(scaffoldBackgroundColor: Colors.transparent)
                   : theme,
-              child: child,
+              child: _FushiPageBackdropScope(
+                active: enabled || seeThrough,
+                child: child,
+              ),
             ),
           ),
         );
@@ -48,6 +62,24 @@ class FushiPageBackdrop extends StatelessWidget {
     );
   }
 }
+
+class _FushiPageBackdropScope extends InheritedWidget {
+  const _FushiPageBackdropScope({required this.active, required super.child});
+
+  final bool active;
+
+  @override
+  bool updateShouldNotify(_FushiPageBackdropScope oldWidget) =>
+      active != oldWidget.active;
+}
+
+/// 整页底色：在画形状的 [FushiPageBackdrop] 里是透明（底色与形状由背景层画），
+/// 否则是设计 token 的页面底色。页面级 Scaffold / 整页 Material 的底色走这里，
+/// 不要直接写 `tokens.surfaces.page`。
+Color fushiPageBackgroundColor(BuildContext context) =>
+    FushiPageBackdrop.activeOf(context)
+    ? Colors.transparent
+    : FushiDesignTokens.of(context).surfaces.page;
 
 /// 整页必须透明的路由（不画底色、不画形状）。
 final ValueNotifier<Set<Route<Object?>>> _transparentPageRoutes =

@@ -38,6 +38,7 @@ void main() {
     const String leftUrl = 'fushi.local/OEBPS/img/left.png';
     const String rightUrl = 'fushi.local/OEBPS/img/right.png';
     final String html = buildSpreadPageHtml(
+      navigationGeneration: 1,
       leftUrl: leftUrl,
       rightUrl: rightUrl,
       swipeDistThreshold: 44,
@@ -93,9 +94,9 @@ void main() {
     });
 
     test('空白桥与 spreadReady 就绪门控互不干扰 (TODO-1229 不回退)', () {
-      expect(html, contains("callHandler('spreadReady')"));
+      expect(html, contains("callHandler('spreadReady', 1)"));
       expect(html, contains('function signalReady'));
-      expect("callHandler('spreadReady')".allMatches(html).length, 1);
+      expect("callHandler('spreadReady', 1)".allMatches(html).length, 1);
     });
   });
 

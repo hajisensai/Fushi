@@ -2,13 +2,24 @@
 //!
 //! 约定与 lib.rs 其余部分相同：返回 i32 状态（0 成功，负数失败），失败时 `*error_out` 是新分配的
 //! C 字符串（用 `ffsrs_free_string` 释放）；Rust 分配的字节用 `ffsrs_free_bytes` 释放；panic 一律
-//! 接住转成 -100。句柄是 `SrsCore` 的裸指针，线程安全，可在任意 isolate 上用。
+//! 接住转成 -100。
+//!
+//! 库句柄（[SrsCoreHandle]）**不是指针**，是句柄表里的一个编号：Dart 把句柄地址交给后台 isolate
+//! （`SrsCore.fromAddress`），拥有者关库时那边可能还在调用、甚至之后才调用。每次调用先在句柄表里
+//! 取出一份 `Arc<SrsCore>` 再干活，关库把它从表里摘掉：在途调用手上那份让结构体活到它跑完，之后
+//! 再来的调用查不到编号、报「已关闭」，最后一份引用放掉时结构体真正释放。编号单调递增不复用，
+//! 旧句柄不会误指到后来打开的库。只读会话句柄（[ReadSessionHandle]）同理，另一张表；会话随所属的库
+//! 关闭而失效（连接关掉、之后报「已关闭」），表项留到 [ffsrs_store_read_end]。线程安全，可在任意
+//! isolate 上用。
 
 use std::ffi::{c_char, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
-use super::{ReadSession, SrsCore};
+use super::{ReadSession, SrsCore, CLOSED};
 
 pub const STORE_OK: i32 = 0;
 pub const STORE_ERROR: i32 = -1;
@@ -35,6 +46,76 @@ fn bytes<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
 fn utf8<'a>(ptr: *const u8, len: usize) -> Result<&'a str, String> {
     let b = bytes(ptr, len).ok_or_else(|| "null string".to_string())?;
     std::str::from_utf8(b).map_err(|e| e.to_string())
+}
+
+/// 库句柄的不透明类型：C 侧只见一个 `void*`，值是 [HANDLES] 里的编号，从不解引用。
+pub enum SrsCoreHandle {}
+
+/// 打开着的库：编号 → 共享引用。只在取 / 放引用的一瞬间持锁，命令本身不在锁里跑。
+static HANDLES: Mutex<BTreeMap<usize, Arc<SrsCore>>> = Mutex::new(BTreeMap::new());
+
+/// 只读会话句柄的不透明类型：值是 [SESSIONS] 里的编号，从不解引用。
+pub enum ReadSessionHandle {}
+
+/// 没结束的只读会话：编号 → 共享引用（同 [HANDLES]，只在取 / 放引用时持锁）。
+static SESSIONS: Mutex<BTreeMap<usize, Arc<ReadSession>>> = Mutex::new(BTreeMap::new());
+
+/// 下一个句柄编号（0 留给 NULL；库与会话共用，单调递增，不复用）。
+static NEXT_HANDLE: AtomicUsize = AtomicUsize::new(1);
+
+fn sessions() -> std::sync::MutexGuard<'static, BTreeMap<usize, Arc<ReadSession>>> {
+    SESSIONS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// 跑一段带会话句柄的操作（已结束 / 从没开过 = 「已关闭」）。
+fn run_session(
+    session: *const ReadSessionHandle,
+    error_out: *mut *mut c_char,
+    body: impl FnOnce(&ReadSession) -> Result<(), String>,
+) -> i32 {
+    if session.is_null() {
+        set_error(error_out, "null srs handle");
+        return STORE_BAD_ARGUMENT;
+    }
+    let found = sessions().get(&(session as usize)).cloned();
+    let Some(s) = found else {
+        set_error(error_out, CLOSED);
+        return STORE_ERROR;
+    };
+    run(Arc::as_ptr(&s), error_out, body)
+}
+
+fn handles() -> std::sync::MutexGuard<'static, BTreeMap<usize, Arc<SrsCore>>> {
+    // 锁里只有 BTreeMap 的增删查，不跑用户代码；就算哪次 panic 毒化了锁，表本身也完好。
+    HANDLES.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn register(core: SrsCore) -> *mut SrsCoreHandle {
+    let id = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
+    handles().insert(id, Arc::new(core));
+    id as *mut SrsCoreHandle
+}
+
+/// 取出句柄对应的库（已关闭 / 从没打开过 = None）。
+fn resolve(core: *const SrsCoreHandle) -> Option<Arc<SrsCore>> {
+    handles().get(&(core as usize)).cloned()
+}
+
+/// 跑一段带库句柄的操作：调用期间手上握着一份 `Arc`，关库不会把结构体从脚下释放掉。
+fn run_core(
+    core: *const SrsCoreHandle,
+    error_out: *mut *mut c_char,
+    body: impl FnOnce(&SrsCore) -> Result<(), String>,
+) -> i32 {
+    if core.is_null() {
+        set_error(error_out, "null srs handle");
+        return STORE_BAD_ARGUMENT;
+    }
+    let Some(c) = resolve(core) else {
+        set_error(error_out, CLOSED);
+        return STORE_ERROR;
+    };
+    run(Arc::as_ptr(&c), error_out, body)
 }
 
 /// 跑一段带句柄（[SrsCore] / [ReadSession]）的操作，统一处理空指针、错误与 panic。
@@ -74,7 +155,7 @@ fn hand_out(buf: Vec<u8>, out: *mut *mut u8, out_len: *mut usize) {
 pub extern "C" fn ffsrs_store_open(
     path: *const u8,
     path_len: usize,
-    core_out: *mut *mut SrsCore,
+    core_out: *mut *mut SrsCoreHandle,
     error_out: *mut *mut c_char,
 ) -> i32 {
     if core_out.is_null() {
@@ -86,7 +167,7 @@ pub extern "C" fn ffsrs_store_open(
     }));
     match outcome {
         Ok(Ok(core)) => {
-            unsafe { *core_out = Box::into_raw(Box::new(core)) };
+            unsafe { *core_out = register(core) };
             STORE_OK
         }
         Ok(Err(e)) => {
@@ -100,24 +181,26 @@ pub extern "C" fn ffsrs_store_open(
     }
 }
 
-/// 关闭（NULL 无操作，重复关闭无操作）：等在途命令跑完再关两条连接，之后经这个句柄的命令一律报
-/// 「已关闭」。
-///
-/// 句柄指向的结构体**不释放**：Dart 侧把句柄地址交给后台 isolate（`SrsCore.fromAddress`），
-/// 拥有者关闭时那边可能还在调用、甚至之后才调用；释放掉就是 use-after-free（2026-10-25 CI 实测：
-/// 测试 tearDown 关库时 `Isolate.run` 里的 sync2 还在跑，析构 serde_json 时 `free(): invalid
-/// pointer`）。留下的只有两把空锁加一个路径，每次打开一份，进程里打开 srs.db 的次数是个位数。
+/// 关闭（NULL 无操作，重复关闭无操作）：把句柄从句柄表里摘掉，等在途命令跑完再关两条连接；之后经这个
+/// 句柄的命令一律报「已关闭」。结构体在最后一个在途调用放掉引用时释放（通常就在这里）。
 #[no_mangle]
-pub extern "C" fn ffsrs_store_close(core: *mut SrsCore) {
-    if !core.is_null() {
-        let _ = catch_unwind(AssertUnwindSafe(|| unsafe { (*core).close() }));
+pub extern "C" fn ffsrs_store_close(core: *mut SrsCoreHandle) {
+    if core.is_null() {
+        return;
     }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        // 先摘再关（摘的时候不等连接锁）：摘掉之后新来的调用查不到编号，close 只需等已经在途的那些。
+        let removed = handles().remove(&(core as usize));
+        if let Some(c) = removed {
+            c.close();
+        }
+    }));
 }
 
 /// `*out` = 1 已搬迁（或确认没有可搬的），0 未搬迁。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_legacy_state(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     out: *mut i32,
     error_out: *mut *mut c_char,
 ) -> i32 {
@@ -125,7 +208,7 @@ pub extern "C" fn ffsrs_store_legacy_state(
         set_error(error_out, "null out");
         return STORE_BAD_ARGUMENT;
     }
-    run(core, error_out, |c| {
+    run_core(core, error_out, |c| {
         let v = c.legacy_imported()?;
         unsafe { *out = v as i32 };
         Ok(())
@@ -133,21 +216,21 @@ pub extern "C" fn ffsrs_store_legacy_state(
 }
 
 #[no_mangle]
-pub extern "C" fn ffsrs_store_legacy_begin(core: *const SrsCore, error_out: *mut *mut c_char) -> i32 {
-    run(core, error_out, |c| c.legacy_begin())
+pub extern "C" fn ffsrs_store_legacy_begin(core: *const SrsCoreHandle, error_out: *mut *mut c_char) -> i32 {
+    run_core(core, error_out, |c| c.legacy_begin())
 }
 
 /// 一页旧表行（rows.rs 编码）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_legacy_page(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     table: *const u8,
     table_len: usize,
     page: *const u8,
     page_len: usize,
     error_out: *mut *mut c_char,
 ) -> i32 {
-    run(core, error_out, |c| {
+    run_core(core, error_out, |c| {
         let t = utf8(table, table_len)?;
         let p = bytes(page, page_len).ok_or("null page")?;
         c.legacy_page(t, p).map(|_| ())
@@ -155,33 +238,33 @@ pub extern "C" fn ffsrs_store_legacy_page(
 }
 
 #[no_mangle]
-pub extern "C" fn ffsrs_store_legacy_commit(core: *const SrsCore, error_out: *mut *mut c_char) -> i32 {
-    run(core, error_out, |c| c.legacy_commit())
+pub extern "C" fn ffsrs_store_legacy_commit(core: *const SrsCoreHandle, error_out: *mut *mut c_char) -> i32 {
+    run_core(core, error_out, |c| c.legacy_commit())
 }
 
 #[no_mangle]
-pub extern "C" fn ffsrs_store_legacy_abort(core: *const SrsCore, error_out: *mut *mut c_char) -> i32 {
-    run(core, error_out, |c| c.legacy_abort())
+pub extern "C" fn ffsrs_store_legacy_abort(core: *const SrsCoreHandle, error_out: *mut *mut c_char) -> i32 {
+    run_core(core, error_out, |c| c.legacy_abort())
 }
 
 #[no_mangle]
 pub extern "C" fn ffsrs_store_legacy_mark_none(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     error_out: *mut *mut c_char,
 ) -> i32 {
-    run(core, error_out, |c| c.legacy_mark_none())
+    run_core(core, error_out, |c| c.legacy_mark_none())
 }
 
 /// `VACUUM INTO` 一份快照；`strip_device_local != 0` 时清空设备本地表。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_snapshot(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     path: *const u8,
     path_len: usize,
     strip_device_local: i32,
     error_out: *mut *mut c_char,
 ) -> i32 {
-    run(core, error_out, |c| {
+    run_core(core, error_out, |c| {
         c.snapshot_into(Path::new(utf8(path, path_len)?), strip_device_local != 0)
     })
 }
@@ -189,7 +272,7 @@ pub extern "C" fn ffsrs_store_snapshot(
 /// 只读调试查询（测试 / 诊断）。参数是一行 rows.rs 编码的页（列数 = 参数个数，可为空页）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_debug_query(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     sql: *const u8,
     sql_len: usize,
     params: *const u8,
@@ -202,7 +285,7 @@ pub extern "C" fn ffsrs_store_debug_query(
         set_error(error_out, "null out");
         return STORE_BAD_ARGUMENT;
     }
-    run(core, error_out, |c| {
+    run_core(core, error_out, |c| {
         let s = utf8(sql, sql_len)?;
         let p = bytes(params, params_len).ok_or("null params")?;
         let values = if p.is_empty() {
@@ -223,17 +306,19 @@ pub extern "C" fn ffsrs_store_debug_query(
 /// 用 [ffsrs_store_read_end] 结束（回滚并关闭）。会话可以在别的线程 / isolate 上用，但同一时刻只许一个调用。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_read_begin(
-    core: *const SrsCore,
-    session_out: *mut *mut ReadSession,
+    core: *const SrsCoreHandle,
+    session_out: *mut *mut ReadSessionHandle,
     error_out: *mut *mut c_char,
 ) -> i32 {
     if session_out.is_null() {
         set_error(error_out, "null session_out");
         return STORE_BAD_ARGUMENT;
     }
-    run(core, error_out, |c| {
+    run_core(core, error_out, |c| {
         let s = c.read_session()?;
-        unsafe { *session_out = Box::into_raw(Box::new(s)) };
+        let id = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
+        sessions().insert(id, s);
+        unsafe { *session_out = id as *mut ReadSessionHandle };
         Ok(())
     })
 }
@@ -241,7 +326,7 @@ pub extern "C" fn ffsrs_store_read_begin(
 /// 在只读会话的读事务里跑一条只读语句。参数页 / 结果编码同 [ffsrs_store_debug_query]。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_read_query(
-    session: *const ReadSession,
+    session: *const ReadSessionHandle,
     sql: *const u8,
     sql_len: usize,
     params: *const u8,
@@ -254,7 +339,7 @@ pub extern "C" fn ffsrs_store_read_query(
         set_error(error_out, "null out");
         return STORE_BAD_ARGUMENT;
     }
-    run(session, error_out, |r| {
+    run_session(session, error_out, |r| {
         let s = utf8(sql, sql_len)?;
         let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
         hand_out(r.query(s, &values)?, out, out_len);
@@ -262,12 +347,19 @@ pub extern "C" fn ffsrs_store_read_query(
     })
 }
 
-/// 结束只读会话（NULL 无操作）。之后句柄不可再用。
+/// 结束只读会话（NULL 无操作，重复结束无操作）：从表里摘掉、等在途查询跑完后回滚并关连接；之后经这个
+/// 句柄的查询报「已关闭」。
 #[no_mangle]
-pub extern "C" fn ffsrs_store_read_end(session: *mut ReadSession) {
-    if !session.is_null() {
-        let _ = catch_unwind(AssertUnwindSafe(|| unsafe { drop(Box::from_raw(session)) }));
+pub extern "C" fn ffsrs_store_read_end(session: *mut ReadSessionHandle) {
+    if session.is_null() {
+        return;
     }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let removed = sessions().remove(&(session as usize));
+        if let Some(s) = removed {
+            s.close();
+        }
+    }));
 }
 
 fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
@@ -285,7 +377,7 @@ fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
 /// 一行 `[变更行数, last_insert_rowid]`；缓冲区用 `ffsrs_free_bytes` 释放。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     sql: *const u8,
     sql_len: usize,
     params: *const u8,
@@ -299,7 +391,7 @@ pub extern "C" fn ffsrs_store_exec(
         set_error(error_out, "null out");
         return STORE_BAD_ARGUMENT;
     }
-    run(core, error_out, |c| {
+    run_core(core, error_out, |c| {
         let s = utf8(sql, sql_len)?;
         let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
         hand_out(c.exec(s, &values, select != 0)?, out, out_len);
@@ -311,7 +403,7 @@ pub extern "C" fn ffsrs_store_exec(
 /// `[语句下标 i64, 参数页 blob]`（参数页是一行的 rows.rs 页，可为空字节）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec_batch(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     statements: *const u8,
     statements_len: usize,
     applications: *const u8,
@@ -319,7 +411,7 @@ pub extern "C" fn ffsrs_store_exec_batch(
     error_out: *mut *mut c_char,
 ) -> i32 {
     use rusqlite::types::Value;
-    run(core, error_out, |c| {
+    run_core(core, error_out, |c| {
         let (_, stmt_rows) =
             super::rows::decode(bytes(statements, statements_len).ok_or("null statements")?)?;
         let mut sqls: Vec<String> = Vec::with_capacity(stmt_rows.len());
@@ -354,7 +446,7 @@ pub extern "C" fn ffsrs_store_exec_batch(
 /// `*out` = 1 写连接在事务里。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_in_transaction(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     out: *mut i32,
     error_out: *mut *mut c_char,
 ) -> i32 {
@@ -362,7 +454,7 @@ pub extern "C" fn ffsrs_store_in_transaction(
         set_error(error_out, "null out");
         return STORE_BAD_ARGUMENT;
     }
-    run(core, error_out, |c| {
+    run_core(core, error_out, |c| {
         let v = c.in_transaction()?;
         unsafe { *out = v as i32 };
         Ok(())
@@ -373,7 +465,7 @@ pub extern "C" fn ffsrs_store_in_transaction(
 /// `n_groups` 份历史；输出布局同 `ffsrs_history_states`，用 `ffsrs_free_bytes` 释放。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_history_states(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     groups: *const u8,
     groups_len: usize,
     n_groups: usize,
@@ -386,7 +478,7 @@ pub extern "C" fn ffsrs_store_history_states(
         set_error(error_out, "null out");
         return STORE_BAD_ARGUMENT;
     }
-    run(core, error_out, |c| {
+    run_core(core, error_out, |c| {
         let (_, rows) = super::rows::decode(bytes(groups, groups_len).ok_or("null groups")?)?;
         let mut lineages: Vec<Vec<String>> = vec![Vec::new(); n_groups];
         for r in rows {
@@ -410,7 +502,7 @@ pub extern "C" fn ffsrs_store_history_states(
 /// 用 `ffsrs_free_bytes` 释放。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_stat_projection(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     groups: *const u8,
     groups_len: usize,
     n_groups: usize,
@@ -422,7 +514,7 @@ pub extern "C" fn ffsrs_store_stat_projection(
         set_error(error_out, "null out");
         return STORE_BAD_ARGUMENT;
     }
-    run(core, error_out, |c| {
+    run_core(core, error_out, |c| {
         let lineages = decode_groups(bytes(groups, groups_len).ok_or("null groups")?, n_groups)?;
         hand_out(c.stat_projection(&lineages)?, out, out_len);
         Ok(())
@@ -480,7 +572,7 @@ fn ints<'a>(ptr: *const i64, n: usize) -> Option<&'a [i64]> {
 /// 统一的命令外壳：输入页 + i64 参数，输出 Rust 分配的字节（`ffsrs_free_bytes` 释放）。
 #[allow(clippy::too_many_arguments)]
 fn command(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     page: *const u8,
     page_len: usize,
     args: *const i64,
@@ -494,7 +586,7 @@ fn command(
         set_error(error_out, "null out");
         return STORE_BAD_ARGUMENT;
     }
-    run(core, error_out, |c| {
+    run_core(core, error_out, |c| {
         let page = bytes(page, page_len).ok_or("null page")?;
         let args = ints(args, n_args).ok_or("null args")?;
         hand_out(body(c, page, args)?, out, out_len);
@@ -517,7 +609,7 @@ fn group_count(args: &[i64]) -> Result<usize, String> {
 /// 优化器训练集（`SrsCore::optimizer_items`）。`args = [n_groups, alg, utcOffsetMin, rolloverHour, 卡数字 id × n_groups]`。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_optimizer_items(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     page: *const u8,
     page_len: usize,
     args: *const i64,
@@ -539,7 +631,7 @@ pub extern "C" fn ffsrs_store_optimizer_items(
 /// mode 0 = 逐卡（`SrsCore::rwkv_cards`），1 = 全量回放（`SrsCore::rwkv_replay`，页里要有 profile 行）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_rwkv_rows(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     page: *const u8,
     page_len: usize,
     args: *const i64,
@@ -565,7 +657,7 @@ pub extern "C" fn ffsrs_store_rwkv_rows(
 /// `args = [since, with_rows, incremental?]`（第三个省略 = 0，整表计数）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_rwkv_log_tail(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     page: *const u8,
     page_len: usize,
     args: *const i64,
@@ -657,6 +749,9 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
         }
         "plan" => c.sync2_plan(profile, blobs)?,
         "ingest" => parse(c.sync2_ingest(profile, blobs, key32(&req["key"])?, i("now")?)?)?,
+        "ingest_begin" => c.sync2_ingest_begin(profile)?,
+        "ingest_batch" => parse(c.sync2_ingest_batch(profile, blobs, key32(&req["key"])?, i("now")?)?)?,
+        "ingest_finish" => parse(c.sync2_ingest_finish(profile, i("now")?)?)?,
         "rotate" => c.sync2_rotate(profile, i("now")?)?,
         "export" => {
             files.push(("export.fushisrs".to_owned(), c.sync2_export(profile)?));
@@ -722,7 +817,7 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
 /// 输出 = `u32 json_len + JSON`，再接 `u32 n` 与 n 组分帧的 `(相对路径, 字节)`（发件 / 写 head 才有）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_sync2(
-    core: *const SrsCore,
+    core: *const SrsCoreHandle,
     request: *const u8,
     request_len: usize,
     blobs: *const u8,
@@ -735,7 +830,7 @@ pub extern "C" fn ffsrs_store_sync2(
         set_error(error_out, "null out");
         return STORE_BAD_ARGUMENT;
     }
-    run(core, error_out, |c| {
+    run_core(core, error_out, |c| {
         let req: serde_json::Value =
             serde_json::from_str(utf8(request, request_len)?).map_err(|e| format!("bad sync2 request: {e}"))?;
         let blobs = frames(bytes(blobs, blobs_len).ok_or("null blobs")?)?;
@@ -753,4 +848,274 @@ pub extern "C" fn ffsrs_store_sync2(
         hand_out(buf, out, out_len);
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CString;
+    use std::path::PathBuf;
+    use std::ptr::{null, null_mut};
+    use std::sync::{Barrier, Weak};
+
+    fn temp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "ffsrs_store_ffi_{}_{}_{}",
+            name,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("srs.db")
+    }
+
+    fn open(p: &Path) -> *mut SrsCoreHandle {
+        let path = p.to_str().unwrap().as_bytes();
+        let mut core: *mut SrsCoreHandle = null_mut();
+        let mut err: *mut c_char = null_mut();
+        assert_eq!(ffsrs_store_open(path.as_ptr(), path.len(), &mut core, &mut err), STORE_OK);
+        assert!(!core.is_null());
+        core
+    }
+
+    /// 取走错误文本（并释放）。
+    fn take(err: *mut c_char) -> String {
+        assert!(!err.is_null(), "no error message");
+        unsafe { CString::from_raw(err) }.into_string().unwrap()
+    }
+
+    /// 结构体还活着（只看引用计数，不碰内容）。
+    fn alive(weak: &Weak<SrsCore>) -> bool {
+        weak.strong_count() > 0
+    }
+
+    /// 关库后经旧句柄的每个入口都报「已关闭」（不 UAF、不按路径把库重新打开）；重复关闭无操作；
+    /// 关库后结构体随即释放（回归：#2540 的修法让每开一次库泄漏一个结构体）。
+    #[test]
+    fn closed_handle_rejects_every_entry_point_and_frees_the_core() {
+        let p = temp("closed");
+        let h = open(&p);
+        let weak = Arc::downgrade(&resolve(h).unwrap());
+        ffsrs_store_close(h);
+        assert!(!alive(&weak), "closing the last reference must free the core");
+        ffsrs_store_close(h);
+        // 关库后 srs.db 可删（覆盖恢复）；之后任何入口都不许把它重新建出来。
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+
+        let h = h as *const SrsCoreHandle;
+        let mut out: *mut u8 = null_mut();
+        let mut out_len: usize = 0;
+        let mut flag: i32 = 0;
+        let mut session: *mut ReadSessionHandle = null_mut();
+        let (o, ol, f, s) = (
+            &mut out as *mut *mut u8,
+            &mut out_len as *mut usize,
+            &mut flag as *mut i32,
+            &mut session as *mut *mut ReadSessionHandle,
+        );
+        let sql: &[u8] = b"SELECT 1";
+        let snap: &[u8] = b"snap.db";
+        let req: &[u8] = br#"{"op":"status","profile":"p"}"#;
+        let args = [0i64; 4];
+        let a = args.as_ptr();
+        type Call<'a> = (&'static str, Box<dyn Fn(*mut *mut c_char) -> i32 + 'a>);
+        let calls: Vec<Call<'_>> = vec![
+            ("legacy_state", Box::new(|e| ffsrs_store_legacy_state(h, f, e))),
+            ("legacy_begin", Box::new(|e| ffsrs_store_legacy_begin(h, e))),
+            ("legacy_page", Box::new(|e| ffsrs_store_legacy_page(h, sql.as_ptr(), 1, null(), 0, e))),
+            ("legacy_commit", Box::new(|e| ffsrs_store_legacy_commit(h, e))),
+            ("legacy_abort", Box::new(|e| ffsrs_store_legacy_abort(h, e))),
+            ("legacy_mark_none", Box::new(|e| ffsrs_store_legacy_mark_none(h, e))),
+            ("snapshot", Box::new(|e| ffsrs_store_snapshot(h, snap.as_ptr(), snap.len(), 0, e))),
+            ("debug_query", Box::new(|e| ffsrs_store_debug_query(h, sql.as_ptr(), sql.len(), null(), 0, o, ol, e))),
+            ("read_begin", Box::new(|e| ffsrs_store_read_begin(h, s, e))),
+            ("exec", Box::new(|e| ffsrs_store_exec(h, sql.as_ptr(), sql.len(), null(), 0, 1, o, ol, e))),
+            ("exec_batch", Box::new(|e| ffsrs_store_exec_batch(h, null(), 0, null(), 0, e))),
+            ("in_transaction", Box::new(|e| ffsrs_store_in_transaction(h, f, e))),
+            ("history_states", Box::new(|e| ffsrs_store_history_states(h, null(), 0, 0, o, ol, e))),
+            ("stat_projection", Box::new(|e| ffsrs_store_stat_projection(h, null(), 0, 0, o, ol, e))),
+            ("optimizer_items", Box::new(|e| ffsrs_store_optimizer_items(h, null(), 0, a, 4, o, ol, e))),
+            ("rwkv_rows", Box::new(|e| ffsrs_store_rwkv_rows(h, null(), 0, a, 4, o, ol, e))),
+            ("rwkv_log_tail", Box::new(|e| ffsrs_store_rwkv_log_tail(h, null(), 0, a, 4, o, ol, e))),
+            ("sync2", Box::new(|e| ffsrs_store_sync2(h, req.as_ptr(), req.len(), null(), 0, o, ol, e))),
+        ];
+        assert_eq!(calls.len(), 18);
+        for (name, call) in &calls {
+            let mut err: *mut c_char = null_mut();
+            assert_eq!(call(&mut err), STORE_ERROR, "{name}");
+            assert_eq!(take(err), CLOSED, "{name}");
+        }
+        drop(calls);
+        assert!(out.is_null() && session.is_null());
+        assert!(!p.exists(), "a call on a closed store reopened srs.db by path");
+    }
+
+    /// 在途命令期间关库：close 立即把句柄摘掉，在途调用手上那份引用让结构体活到它返回（不 UAF），
+    /// 它返回后结构体才释放（不泄漏）；在途调用之后再碰连接得到「已关闭」，别的调用也一律「已关闭」。
+    #[test]
+    fn close_during_an_in_flight_command_neither_frees_under_it_nor_leaks() {
+        let p = temp("inflight");
+        let h = open(&p);
+        let weak = Arc::downgrade(&resolve(h).unwrap());
+        let entered = Arc::new(Barrier::new(2));
+        let closed = Arc::new(Barrier::new(2));
+        let worker = {
+            let (entered, closed) = (Arc::clone(&entered), Arc::clone(&closed));
+            let id = h as usize;
+            std::thread::spawn(move || {
+                let mut err: *mut c_char = null_mut();
+                let rc = run_core(id as *const SrsCoreHandle, &mut err, |c| {
+                    c.debug_query("SELECT 1", &[])?;
+                    entered.wait();
+                    closed.wait();
+                    // 拥有者已经关库：结构体还在（这里拿它的锁不是 UAF），连接已经没了。
+                    c.debug_query("SELECT 1", &[]).map(|_| ())
+                });
+                (rc, take(err))
+            })
+        };
+        entered.wait();
+        ffsrs_store_close(h);
+        assert!(alive(&weak), "the in-flight call must keep the core alive");
+        let mut err: *mut c_char = null_mut();
+        let mut flag = 0;
+        assert_eq!(ffsrs_store_in_transaction(h, &mut flag, &mut err), STORE_ERROR);
+        assert_eq!(take(err), CLOSED);
+        closed.wait();
+        let (rc, msg) = worker.join().unwrap();
+        assert_eq!((rc, msg.as_str()), (STORE_ERROR, CLOSED));
+        assert!(!alive(&weak), "the core must be freed once the last in-flight call returns");
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+    }
+
+    /// 压力：多线程不停跑命令时关库，每个调用不是成功就是「已关闭」，最后结构体释放。
+    #[test]
+    fn concurrent_commands_racing_close_only_see_ok_or_closed() {
+        let p = temp("race");
+        let h = open(&p);
+        let weak = Arc::downgrade(&resolve(h).unwrap());
+        let start = Arc::new(Barrier::new(5));
+        let workers: Vec<_> = (0..4)
+            .map(|_| {
+                let start = Arc::clone(&start);
+                let id = h as usize;
+                std::thread::spawn(move || {
+                    start.wait();
+                    let h = id as *const SrsCoreHandle;
+                    let sql: &[u8] = b"SELECT COUNT(*) FROM sqlite_master";
+                    let mut ok = 0usize;
+                    loop {
+                        let mut out: *mut u8 = null_mut();
+                        let mut out_len = 0usize;
+                        let mut err: *mut c_char = null_mut();
+                        let rc = ffsrs_store_debug_query(
+                            h,
+                            sql.as_ptr(),
+                            sql.len(),
+                            null(),
+                            0,
+                            &mut out,
+                            &mut out_len,
+                            &mut err,
+                        );
+                        if rc == STORE_OK {
+                            crate::ffsrs_free_bytes(out, out_len);
+                            ok += 1;
+                            continue;
+                        }
+                        let msg = take(err);
+                        assert_eq!((rc, msg.as_str()), (STORE_ERROR, CLOSED));
+                        return ok;
+                    }
+                })
+            })
+            .collect();
+        start.wait();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        ffsrs_store_close(h);
+        let done: usize = workers.into_iter().map(|w| w.join().unwrap()).sum();
+        assert!(done > 0);
+        assert!(!alive(&weak));
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+    }
+
+    /// 经 C ABI：开会话 → 关库 → 会话查询报已关闭，库文件可改名 / 删除；read_end 之后同样报已关闭，
+    /// 重复 read_end 无操作。
+    #[test]
+    fn closing_the_store_invalidates_its_read_sessions() {
+        let p = temp("sessions");
+        let h = open(&p);
+        let mut session: *mut ReadSessionHandle = null_mut();
+        let mut err: *mut c_char = null_mut();
+        assert_eq!(ffsrs_store_read_begin(h, &mut session, &mut err), STORE_OK);
+        assert!(!session.is_null());
+        let sql: &[u8] = b"SELECT COUNT(*) FROM sqlite_master";
+        let query = |s: *const ReadSessionHandle| -> (i32, Option<String>) {
+            let mut out: *mut u8 = null_mut();
+            let mut out_len = 0usize;
+            let mut err: *mut c_char = null_mut();
+            let rc = ffsrs_store_read_query(s, sql.as_ptr(), sql.len(), null(), 0, &mut out, &mut out_len, &mut err);
+            if rc == STORE_OK {
+                crate::ffsrs_free_bytes(out, out_len);
+                (rc, None)
+            } else {
+                (rc, Some(take(err)))
+            }
+        };
+        assert_eq!(query(session), (STORE_OK, None));
+
+        ffsrs_store_close(h);
+        assert_eq!(query(session), (STORE_ERROR, Some(CLOSED.to_string())));
+        // 会话还没 read_end，但它的连接已经关了：库文件能改名、能删（Windows 下有打开的句柄就不行）。
+        let moved = p.with_file_name("srs.moved.db");
+        std::fs::rename(&p, &moved).unwrap();
+        std::fs::remove_file(&moved).unwrap();
+
+        ffsrs_store_read_end(session);
+        assert_eq!(query(session), (STORE_ERROR, Some(CLOSED.to_string())));
+        ffsrs_store_read_end(session);
+        assert!(sessions().get(&(session as usize)).is_none());
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+    }
+
+    /// 会话查询在途时关库：close 等那次查询跑完（不 UAF、不在查询中途关连接），之后的查询报已关闭。
+    #[test]
+    fn close_waits_for_an_in_flight_read_session_query() {
+        let p = temp("session_inflight");
+        let h = open(&p);
+        let mut session: *mut ReadSessionHandle = null_mut();
+        let mut err: *mut c_char = null_mut();
+        assert_eq!(ffsrs_store_read_begin(h, &mut session, &mut err), STORE_OK);
+        let entered = Arc::new(Barrier::new(2));
+        let worker = {
+            let entered = Arc::clone(&entered);
+            let id = session as usize;
+            std::thread::spawn(move || {
+                let mut err: *mut c_char = null_mut();
+                let rc = run_session(id as *const ReadSessionHandle, &mut err, |s| {
+                    let guard = s.conn.lock().unwrap();
+                    entered.wait();
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    guard
+                        .as_ref()
+                        .ok_or_else(|| "closed under the query".to_string())?
+                        .query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
+                        .map(|_| ())
+                        .map_err(|e| e.to_string())
+                });
+                (rc, if err.is_null() { None } else { Some(take(err)) })
+            })
+        };
+        entered.wait();
+        let t0 = std::time::Instant::now();
+        ffsrs_store_close(h);
+        assert!(t0.elapsed() >= std::time::Duration::from_millis(200), "close did not wait for the session query");
+        assert_eq!(worker.join().unwrap(), (STORE_OK, None));
+        std::fs::remove_file(&p).unwrap();
+        ffsrs_store_read_end(session);
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
+    }
 }

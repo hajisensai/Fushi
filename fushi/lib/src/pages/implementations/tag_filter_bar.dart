@@ -678,7 +678,7 @@ enum FushiTagFilterBarPart {
   sortMenuAnchor,
 }
 
-/// 库页单行页头里的「批量选择 / 排序 / 管理标签」三颗动作（2026-10-14）。
+/// 库页单行页头里的「批量选择 / 排序 / 管理标签 / 管理合集」动作（2026-10-14）。
 ///
 /// 都是 [FushiIconButton]，由页头按 [FushiIconButton.overflowPriority] 放不下时
 /// 逐颗收进「⋯」；激活中的批量选择（[selectionMode]）是选中态、恒外露。排序
@@ -695,9 +695,11 @@ List<FushiIconButton> libraryHeaderTagActions(
   VoidCallback? onToggleSelectionMode,
   bool showTagManagement = true,
   VoidCallback? onTagsChanged,
+  VoidCallback? onManageCollections,
   int selectionPriority = 30,
   int sortPriority = 20,
   int tagManagePriority = 10,
+  int collectionManagePriority = 9,
 }) {
   final t = Translations.of(context);
   final String sortTooltip = sortGrouped ? t.library_sort_filter : t.sort_by;
@@ -736,6 +738,16 @@ List<FushiIconButton> libraryHeaderTagActions(
           ref: ref,
           onTagsChanged: onTagsChanged,
         ),
+      ),
+    // 「管理合集」与「管理标签」对等（[CollectionManagementPage]），由库页传入
+    // 本域的打开方式；null = 该页不提供。
+    if (onManageCollections != null)
+      FushiIconButton(
+        key: const ValueKey<String>('library_collection_manage'),
+        icon: FushiIcons.collection,
+        tooltip: t.collection_manage_title,
+        overflowPriority: collectionManagePriority,
+        onTap: onManageCollections,
       ),
   ];
 }

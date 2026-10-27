@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3399 条。点号进各自文件。
+> 共 3402 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3798](bugs/BUG-3798-audiobook-chapter-transition-receipt-lost.md) | ✅ | ✅ | audiobook-chapter-transition-receipt-lost |
+| [BUG-3797](bugs/BUG-3797-srs-deleted-tagged-note-stuck-pending.md) | ✅ | ✅ | 带标签的已删笔记一直挂在「等你决定的笔记」里，确认删除也消不掉 |
+| [BUG-3796](bugs/BUG-3796-windows-nav-switch-freeze-a11y-reparent.md) | ✅ | ✅ | windows-nav-switch-freeze-a11y-reparent |
 | [BUG-3795](bugs/BUG-3795-web-browser-overflow-menu-gap.md) | ✅ | ✅ | web-browser-overflow-menu-gap |
 | [BUG-3794](bugs/BUG-3794-web-video-site-floating-ball-unclickable.md) | ✅ | ✅ | web-video-site-floating-ball-unclickable |
 | [BUG-3793](bugs/BUG-3793-web-video-site-backdrop-covers-underlay.md) | ✅ | ✅ | web-video-site-backdrop-covers-underlay |

@@ -179,19 +179,30 @@ class BrowserCookieImportRequestHandle {
   final StreamController<BrowserCookieDelivery> _controller =
       StreamController<BrowserCookieDelivery>.broadcast(sync: true);
   bool _ended = false;
+  bool _dispatching = false;
 
   Stream<BrowserCookieDelivery> get deliveries => _controller.stream;
 
   void _push(BrowserCookieDelivery delivery) {
     if (_ended) return;
-    _controller.add(delivery);
+    _dispatching = true;
+    try {
+      _controller.add(delivery);
+    } finally {
+      _dispatching = false;
+    }
+    // 监听者在收这一批时 end() 了（「导入一次就结束」）：同步派发中途不能 close
+    // （broadcast 控制器派发中关闭会抛 StateError），派发一返回就在这里关。
+    if (_ended) unawaited(_controller.close());
   }
 
+  /// 撤销登记：之后 [BrowserCookieImportGate.deliver] 对这个 nonce 回 false。可以在
+  /// [deliveries] 的监听者里调（收到第一批就结束），登记立刻失效，流在本批派发完后关闭。
   void end() {
     if (_ended) return;
     _ended = true;
     BrowserCookieImportGate._endedBy(this);
-    unawaited(_controller.close());
+    if (!_dispatching) unawaited(_controller.close());
   }
 }
 

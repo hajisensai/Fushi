@@ -14,6 +14,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
+import 'package:fushi/src/utils/adaptive/nav_overflow/nav_mode_strip_bar.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -26,8 +27,9 @@ import '../helpers/test_platform_services.dart';
 /// 走设置页那一行真正的 onChanged 写偏好，再把 AppModel 读出的值按首页外壳的
 /// 同一接线（`barStyle: appModel.navBarStyle`，下方源码守卫钉住）喂给生产底栏
 /// [adaptiveBottomBar]，断言屏幕上看得见的结果：
-/// - 分页滑动（出厂默认，2026-10-16 用户拍板）：一页 5 个（T0–T4），后面的
-///   不在栏上，没有「更多」；
+/// - 相机模式条（出厂默认，2026-10-23 用户拍板）：栏上画的是模式条（纯图标，
+///   没有文字标签），没有「更多」；分页滑动 / 圆柱滚筒两项 2026-10-25 删除，
+///   设置里不再出现；
 /// - 平铺：1200 宽下 9 个入口全部平铺，没有「+」。
 void main() {
   late FushiDatabase db;
@@ -126,7 +128,7 @@ void main() {
     await pumpShell(tester);
   }
 
-  testWidgets('bottom bar style row switches between flat and paged', (
+  testWidgets('bottom bar style row switches between flat and mode strip', (
     WidgetTester tester,
   ) async {
     await tester.runAsync(() async {
@@ -141,14 +143,26 @@ void main() {
     // 从没写过偏好 = 出厂默认相机模式条（老用户升级上来同样如此）。
     expect(styleRow().selected(settingsContext), AdaptiveNavBarStyle.modeStrip);
     expect(styleRow().defaultValue, AdaptiveNavBarStyle.modeStrip);
-
-    await choose(tester, AdaptiveNavBarStyle.pager);
-    expect(visible(), <String>['T0', 'T1', 'T2', 'T3', 'T4']);
+    // 分页滑动 / 圆柱滚筒已删，设置里只剩三项。
+    expect(
+      <AdaptiveNavBarStyle>[
+        for (final SettingsSegmentOption<AdaptiveNavBarStyle> option
+            in styleRow().options)
+          option.value,
+      ],
+      <AdaptiveNavBarStyle>[
+        AdaptiveNavBarStyle.flat,
+        AdaptiveNavBarStyle.dial,
+        AdaptiveNavBarStyle.modeStrip,
+      ],
+    );
+    expect(find.byType(NavModeStripBar), findsOneWidget);
     expect(onBar(t.home_nav_more), isFalse);
 
     await choose(tester, AdaptiveNavBarStyle.flat);
     expect(visible(), labels, reason: '平铺：1200 宽全部平铺');
     expect(onBar(t.home_nav_more), isFalse);
+    expect(find.byType(NavModeStripBar), findsNothing);
 
     // 显式选过平铺的落库了，重新载入偏好后仍是平铺，不被新默认覆盖。
     await tester.runAsync(() async {
@@ -157,8 +171,8 @@ void main() {
       expect(reloaded.navBarStyle, AdaptiveNavBarStyle.flat);
     });
 
-    await choose(tester, AdaptiveNavBarStyle.pager);
-    expect(visible(), <String>['T0', 'T1', 'T2', 'T3', 'T4']);
+    await choose(tester, AdaptiveNavBarStyle.modeStrip);
+    expect(find.byType(NavModeStripBar), findsOneWidget);
   });
 
   test('没写过 / 未知值回落出厂默认相机模式条；显式值原样读回', () {
@@ -173,7 +187,12 @@ void main() {
       AdaptiveNavBarStyle.modeStrip,
     );
     expect(AdaptiveNavBarStyle.fromPref('flat'), AdaptiveNavBarStyle.flat);
-    expect(AdaptiveNavBarStyle.fromPref('pager'), AdaptiveNavBarStyle.pager);
+    // 已删样式落过库的值回落出厂默认。
+    expect(
+      AdaptiveNavBarStyle.fromPref('pager'),
+      AdaptiveNavBarStyle.modeStrip,
+    );
+    expect(AdaptiveNavBarStyle.fromPref('drum'), AdaptiveNavBarStyle.modeStrip);
   });
 
   test('home shell feeds the bottom bar from navBarStyle', () {

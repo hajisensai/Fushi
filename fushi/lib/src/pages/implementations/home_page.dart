@@ -133,6 +133,7 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/pages/implementations/home_module_swipe.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart'
     show FushiFocusController, FushiFocusRoot;
 import 'package:fushi/src/shortcuts/input_binding.dart'
@@ -1522,8 +1523,10 @@ class _HomePageState extends BasePageState<HomePage>
       // `_elements.contains(element)` 断言（Mac 调试版红屏）。
       builder: (BuildContext context, bool mica, Widget? child) {
         final ThemeData theme = Theme.of(context);
+        // 形状背景在画时整条路由底是实色（[FushiPageBackdrop]），窗口材质本来
+        // 就透不出来；此时再刷 0.6 的 surface 只会把形状洗成一片白。
         return Theme(
-          data: mica
+          data: mica && !FushiPageBackdrop.activeOf(context)
               ? theme.copyWith(
                   scaffoldBackgroundColor: theme.colorScheme.surface.withValues(
                     alpha: 0.6,
@@ -1796,6 +1799,11 @@ class _HomePageState extends BasePageState<HomePage>
       contextOf: () => context,
       videoRepo: () => _videoRepository,
       goToTab: _selectTabFromNav,
+      // 与其它下载端口同走 _popToBrowseTab：先判可达、再回到 home 这一层路由
+      // （peek 也可能在 pushed 页上被唤起），只切 tab 会停在原页面上。
+      openDownloads: () {
+        _popToBrowseTab(BrowseTab.downloads);
+      },
     ),
   );
 

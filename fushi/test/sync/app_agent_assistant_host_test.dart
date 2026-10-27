@@ -181,11 +181,13 @@ void main() {
   AgentAssistantHost agentHost({
     List<AiChatTurn> turns = const <AiChatTurn>[],
     bool aiEnabled = true,
+    bool allowPeers = true,
     List<AiProviderConfig>? providers,
     bool ready = true,
     void Function()? onLlm,
   }) => createAgentAssistantHostWith(
     aiModuleEnabled: () => aiEnabled,
+    allowPeers: () => allowPeers,
     settings: _Settings(providers ?? <AiProviderConfig>[_provider]),
     database: hostDb,
     invoker: () => ready ? _invoker(store, deleted) : null,
@@ -237,7 +239,8 @@ void main() {
   }
 
   test(
-    '能力位：就绪 → 宣告 agent + 工具数；没指派 / 关了 AI / 未初始化 → 按 feature 报短码，不建模型',
+    '能力位：就绪 → 宣告 agent + 工具数；没指派 / 关了 AI / 没允许配对设备 / 未初始化 → '
+    '按 feature 报短码，不建模型',
     () async {
       final (_, String url) = await startHost(agentHost());
       final HostAssistantTarget ready = (await client().probeUrl(url))!;
@@ -254,10 +257,15 @@ void main() {
               'no_provider',
             ),
             (agentHost(aiEnabled: false), 'disabled'),
+            // 与服务端 ai.agent_for_peers 同一判据：用户没打开就不对配对设备开放。
+            (
+              agentHost(allowPeers: false, onLlm: () => llmBuilt = true),
+              'disabled',
+            ),
             (agentHost(ready: false), 'not_ready'),
           ]) {
         final FushiSyncServer server = FushiSyncServer(
-          syncDataDir: p.join(tmp.path, 'sync-$reason'),
+          syncDataDir: p.join(tmp.path, 'sync-${identityHashCode(host)}'),
           port: 0,
           token: 'tok',
           assistant: CompositeHostAssistantProvider(

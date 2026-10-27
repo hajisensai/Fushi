@@ -162,9 +162,10 @@ pub(crate) fn tag_remove(conn: &Connection, profile: &str, note: &str, tag: &str
     Ok(())
 }
 
-/// 合成的 `tags` 修改记录的写入者名（每条笔记一个，seq 恒为 1）。
+/// 合成的 `tags` 修改记录的写入者名（每条笔记一个，seq 恒为 1）。前缀让寄存器内核认出它是没有因果 dot 的
+/// 合成行、不拿它判「与删除并发」（registers.rs [crate::registers::SYNTHETIC_WRITER_PREFIX]）。
 pub(crate) fn tags_writer(note: &str) -> String {
-    format!("sync2:tags:{note}")
+    format!("{}tags:{note}", crate::registers::SYNTHETIC_WRITER_PREFIX)
 }
 
 /// 把笔记的 OR-Set 值投影成唯一一行 `tags` 修改记录（替换掉这条笔记上其它的 `tags` 行）。

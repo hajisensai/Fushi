@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
@@ -562,6 +563,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
             header: CollectionDetailHero(
               backdrop: backdrop,
               cover: cover,
+              coverMaterial: ShelfCoverMaterial.glossyPoster,
               logo: mediaServerHeroImage(
                 _browser,
                 _detail,

@@ -6,6 +6,7 @@ import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/media/collections/collection_detail_layout.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
@@ -403,6 +404,7 @@ class _StandaloneVideoWorkDetailState
           header: CollectionDetailHero(
             backdrop: fanart,
             cover: poster,
+            coverMaterial: ShelfCoverMaterial.glossyPoster,
             title: title,
             originalTitle: originalTitle == title ? null : originalTitle,
             airDate: work?.premiereDate,
@@ -829,6 +831,7 @@ class _RemoteVideoWorkDetailPageState extends State<RemoteVideoWorkDetailPage> {
           header: CollectionDetailHero(
             backdrop: fanart,
             cover: poster,
+            coverMaterial: ShelfCoverMaterial.glossyPoster,
             title: title,
             originalTitle: originalTitle == title ? null : originalTitle,
             airDate: work?.premiered,

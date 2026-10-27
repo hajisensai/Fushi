@@ -174,6 +174,7 @@ import 'package:fushi_engine/media/torrent/public_trackers.dart';
 import 'package:fushi_engine/utils/net/fake_ip_dns.dart';
 import 'package:fushi_torrent/fushi_torrent.dart' show FtSessionStatus;
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart';
 import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
 import 'package:fushi_engine/media/torrent/bt_site_providers.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -3851,6 +3852,9 @@ class AppModel with ChangeNotifier {
           appDirectory,
         ).hasImportReceipt,
       );
+      // 旧内置 BT 站（#2563 删除）→ 用户 BT 站：老用户首次启动迁一次，新装不迁。
+      // 必须在首页首帧写 first_time_setup 之前判、在任何消费方读 btSites 之前跑。
+      await _settleLegacyBuiltinBtSites();
       // 复习默认开之后，新装用户从不经过 [setModuleEnabled] 打开复习，那里「第一次打开
       // 复习时把日界设成凌晨 4 点（与 Anki 一致）」的落点就够不着：在这里补同一条规则。
       // 只在日界从没设过时写（老用户迁移后复习是关的，走不到这里）。
@@ -7293,8 +7297,6 @@ class AppModel with ChangeNotifier {
         CoreAudioDiscoverySource(httpClientFactory: createDownloadHttpClient),
         // 用户添加的 BT 站：Nyaa 式站点按各自生效的发现域展开成发现源（一条
         // 配置 = 一个源实例，停用的不登记，同 OPDS / AList 自配源）。没有内置站。
-        // 用户添加的 BT 站：Nyaa 式站点按各自生效的发现域展开成发现源（一条
-        // 配置 = 一个源实例，停用的不登记，同 OPDS / AList 自配源）。没有内置站。
         if (isPreferencesReady)
           ...nyaaDiscoverySourcesForBtSites(
             prefsRepo.btSites,
@@ -7354,8 +7356,8 @@ class AppModel with ChangeNotifier {
   /// 重建发现源注册表：用户增删改 OPDS 服务器后必须调。
   ///
   /// 注册表是**构造期快照**（懒建后 app 生命周期常驻），不重建的话新加的服务器
-  /// 要等下次冷启动才出现——这正是视频域 [setVideoResourceSourceEnabled] 里
-  /// 「改完必须重建下载流水线运行时」踩过的同一个坑。
+  /// 要等下次冷启动才出现——与视频域资源 provider 同一个坑（[setBtSites] 改完必须
+  /// 重建下载流水线运行时）。
   ///
   /// 旧实例先 close 再丢弃，否则每改一次配置就漏一个 HTTP client。
   Future<void> reloadDiscoverySources() async {
@@ -7422,6 +7424,38 @@ class AppModel with ChangeNotifier {
       if (id.trim().isNotEmpty) id.trim(),
   };
 
+  /// 旧内置 BT 站的一次性升级迁移（判据与规则见引擎 `bt_site_legacy_migration.dart`）。
+  ///
+  /// 老用户信号：首页首帧写的 `first_time_setup` / 新手引导写的 `onboarding_completed`
+  /// 已落过盘（与 [PreferencesRepository.settleSrsMiningTargetInstallDefault] 同一判据；
+  /// 本方法先于首页跑，全新安装此时两者都不存在），或旧内置源的启停偏好、订阅 / 任务
+  /// 上引用旧内置 provider id 的数据。iOS 上旧版从没有发现源 / 下载中心，对应的站点不迁。
+  Future<void> _settleLegacyBuiltinBtSites() async {
+    bool stored(String key) =>
+        prefsRepo.getPref(key, defaultValue: null) != null;
+    try {
+      await runLegacyBuiltinBtSitesMigration(
+        prefsRepo,
+        existingInstall:
+            stored('first_time_setup') || stored('onboarding_completed'),
+        usage: await scanLegacyBtSourceUsage(_database),
+        hostHadDiscoverySources:
+            StoreRestrictedCapability.externalDiscovery.isAvailable,
+        hostHadResourceSearch: StoreRestrictedCapability.downloads.isAvailable,
+        onDecodeError: (Object error, StackTrace stack) => ErrorLogService
+            .instance
+            .log('AppModel.settleLegacyBuiltinBtSites.decode', error, stack),
+      );
+    } on Object catch (error, stack) {
+      // 迁移失败不能拖垮启动；标记没写，下次启动重试。
+      ErrorLogService.instance.log(
+        'AppModel.settleLegacyBuiltinBtSites',
+        error,
+        stack,
+      );
+    }
+  }
+
   /// 用户添加的 BT 站（偏好未就绪时为空）。
   List<BtSiteConfig> get btSites =>
       isPreferencesReady ? prefsRepo.btSites : const <BtSiteConfig>[];
@@ -7440,6 +7474,20 @@ class AppModel with ChangeNotifier {
         subscriptions.wakeBtSiteMissingSubscriptions().catchError(
           (Object error, StackTrace stack) => ErrorLogService.instance.log(
             'AppModel.setBtSites.wake',
+            error,
+            stack,
+          ),
+        ),
+      );
+    }
+    // 旧番剧订阅（JSON 存储、走 Nyaa 式站点）同样会因缺站停在「没有可用的 BT 站」。
+    final AnimeDownloadSubscriptionService? animeSubscriptions =
+        _animeDownloadSubscriptionService;
+    if (animeSubscriptions != null) {
+      unawaited(
+        animeSubscriptions.wakeBtSiteMissingSubscriptions().catchError(
+          (Object error, StackTrace stack) => ErrorLogService.instance.log(
+            'AppModel.setBtSites.wakeAnime',
             error,
             stack,
           ),

@@ -73,20 +73,51 @@ class InterconnectServiceConfigSnapshot {
     'resource_bt_sites': PrefCodec.encode(''),
   };
 
+  /// 只在 host **真有这一行**时才放进快照的键：凭据与配置清单。
+  ///
+  /// 这些键清空时一律写一行空值（`setPref('')` / 空 JSON 数组 `[]`），而且都属设备
+  /// 本地 / 凭据，Profile 切换的剪枝碰不到它们——所以 host 上**没有这一行** = host
+  /// 从没配过，不是「清空了」。把缺行物化成默认值发出去，会把子设备自己配好的
+  /// BT 站 / Torznab / API key 清掉（旧版本 host、或 host 上从没配过的用户都会触发）。
+  /// 显式清空（有行、值为空）照常随快照下发、清掉子设备的旧值。
+  static const Set<String> _rowRequiredKeys = <String>{
+    'jimaku_api_key',
+    'qb_connection_config',
+    kBangumiAccessTokenPref,
+    'video_scraper_tmdb_api_key',
+    'video_subtitle_opensubtitles_config',
+    'video_subtitle_subdl_api_key',
+    'video_resource_torznab_config',
+    'resource_bt_sites',
+  };
+
+  /// 跟着另一个键一起出现 / 缺席的键（成对同步）：Bangumi 账号显示名跟令牌走——
+  /// 令牌没下发时名字也不下发，否则子设备留着自己的令牌、名字却被清成空。
+  static const Map<String, String> _companionOf = <String, String>{
+    kBangumiAccountNamePref: kBangumiAccessTokenPref,
+  };
+
   /// Raw [PrefCodec] values, kept raw so the client does not double-encode
-  /// strings or JSON. Missing host rows are materialized as semantic defaults,
-  /// allowing a cleared/rotated key to clear an older child value.
+  /// strings or JSON.
+  ///
+  /// 缺行的处理分两类：普通开关 / 标量设置缺行 = 用户在用默认值（Profile 切换的
+  /// 剪枝会删掉这类行），物化成默认值下发；[_rowRequiredKeys] 缺行 = host 从没配过，
+  /// 整个键不下发，客户端 [applyTo] 对缺席的键什么都不做（旧版本 host 不认识的键同理）。
   final Map<String, String> preferences;
 
   factory InterconnectServiceConfigSnapshot.fromPreferences(
     Map<String, String> allPreferences,
   ) {
-    return InterconnectServiceConfigSnapshot._(
-      <String, String>{
-        for (final String key in sharedPreferenceKeys)
-          key: allPreferences[key] ?? _defaultRawValues[key]!,
-      },
-    );
+    bool exported(String key) {
+      final String? companion = _companionOf[key];
+      if (companion != null) return exported(companion);
+      return !_rowRequiredKeys.contains(key) || allPreferences.containsKey(key);
+    }
+
+    return InterconnectServiceConfigSnapshot._(<String, String>{
+      for (final String key in sharedPreferenceKeys)
+        if (exported(key)) key: allPreferences[key] ?? _defaultRawValues[key]!,
+    });
   }
 
   factory InterconnectServiceConfigSnapshot.fromJson(
@@ -111,14 +142,16 @@ class InterconnectServiceConfigSnapshot {
   }
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'schemaVersion': schemaVersion,
-        'preferences': preferences,
-      };
+    'schemaVersion': schemaVersion,
+    'preferences': preferences,
+  };
 
   /// Applies only changed allowlisted rows. Returns the number of rows changed.
   ///
-  /// Unknown/missing fields are ignored; a real host snapshot contains every
-  /// allowlisted key (including encoded defaults for cleared values).
+  /// Unknown/missing fields are ignored: a missing key means the host has
+  /// nothing to say about it (never configured there, or an older host that
+  /// does not know the key), so the local value stays as is. An explicitly
+  /// cleared value arrives as an encoded empty value and is applied.
   ///
   /// Bangumi 令牌换人时同时归零本设备的对账水位
   /// （[kBangumiTokenScopedWatermarkPrefs]），与设置页写令牌那条路径共用同一条

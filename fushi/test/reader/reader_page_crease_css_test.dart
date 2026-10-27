@@ -275,6 +275,7 @@ void main() {
 
   test('EPUB 图片跨页：铰链缝进两半之间，无缝时不发', () {
     String html(double gutter) => buildSpreadPageHtml(
+      navigationGeneration: 1,
       leftUrl: 'l.jpg',
       rightUrl: 'r.jpg',
       swipeDistThreshold: 44,

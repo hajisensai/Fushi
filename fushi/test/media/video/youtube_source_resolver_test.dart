@@ -14,6 +14,13 @@ void main() {
       expect(isYoutubeUrl('https://www.netflix.com/watch/1'), false);
       expect(isYoutubeUrl('/local/file.mp4'), false);
     });
+    test('matches on domain boundaries, not bare suffixes', () {
+      expect(isYoutubeUrl('https://youtube.com/watch?v=abc123'), true);
+      expect(isYoutubeUrl('https://m.youtube.com/watch?v=abc123'), true);
+      expect(isYoutubeUrl('https://www.youtube-nocookie.com/embed/x'), true);
+      expect(isYoutubeUrl('https://notyoutube.com/watch?v=abc123'), false);
+      expect(isYoutubeUrl('https://evil-youtube-nocookie.com/embed/x'), false);
+    });
   });
 
   group('parseYoutubeTimedTextToCues', () {
