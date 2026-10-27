@@ -12,6 +12,20 @@ import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
 
+/// 歌词层「手动滚动脱离跟随」诊断（JS `onLyricsBrowseDiag`，反馈 0rvPl6s6tR）的一行文字。[args] =
+/// `[kind, 距上次程序化滚动 ms, 距上次用户输入 ms, 已在浏览态, 在播放]`；同时记下此刻常规同步 / 复习同步
+/// 是否在跑，用来判断跟随中断与后台同步有没有关系。参数不全或类型不对时照原样记下，不丢这条线索。
+String lyricsBrowseDiagLine(
+  List<dynamic> args, {
+  required bool regularSyncRunning,
+  required bool srsSyncRunning,
+}) {
+  String at(int i) => i < args.length ? '${args[i]}' : '?';
+  return '${at(0)} sinceProgMs=${at(1)} sinceInputMs=${at(2)} '
+      'browsing=${at(3)} playing=${at(4)} '
+      'sync=$regularSyncRunning srsSync=$srsSyncRunning';
+}
+
 class LyricsModeHtml {
   LyricsModeHtml._();
 
@@ -834,8 +848,53 @@ window.addEventListener('wheel', function(e) {
   _lyWheelTarget += px;
   if (!_lyWheelRaf) _lyWheelRaf = requestAnimationFrame(_lyWheelFrame);
 }, {passive: false});
+// 反馈 0rvPl6s6tR：「手动滚动」只认真的用户输入。以前「免判窗口之外的 scroll 都算用户滚」：
+// 设备忙（后台同步 / 解码占满 CPU）时，自动跟随那一帧的 scroll 事件晚于 150 ms 才到；视口尺寸
+// 变化、重排后的位置钳制 / 滚动锚定也会发 scroll——都被当成用户滚走了，歌词停止跟随、弹出
+// 「跟随音频」。现在只有手指按着、或刚有过触摸 / 指针 / 键盘输入（[_LY_USER_INPUT_MS] 内）时的
+// scroll 才进入浏览态；滚轮另由上面的 wheel 监听进入。其余 scroll 一律不算，并上报诊断。
+var _LY_USER_INPUT_MS = 1000;
+var _lyTouching = false, _lyUserInputAt = -1e9;
+function _lyNoteUserInput() { _lyUserInputAt = performance.now(); }
+document.addEventListener('touchstart', function() {
+  _lyTouching = true; _lyNoteUserInput();
+}, {passive: true, capture: true});
+document.addEventListener('touchmove', _lyNoteUserInput, {passive: true, capture: true});
+function _lyTouchDone() { _lyTouching = false; _lyNoteUserInput(); }
+document.addEventListener('touchend', _lyTouchDone, {passive: true, capture: true});
+document.addEventListener('touchcancel', _lyTouchDone, {passive: true, capture: true});
+document.addEventListener('pointerdown', _lyNoteUserInput, {passive: true, capture: true});
+document.addEventListener('pointermove', function(e) {
+  if (e.buttons) _lyNoteUserInput();
+}, {passive: true, capture: true});
+document.addEventListener('keydown', _lyNoteUserInput, {passive: true, capture: true});
+function __lyricsIsUserScroll(now) {
+  if (now <= _lyProgUntil) return false;
+  return _lyTouching || now - _lyUserInputAt <= _LY_USER_INPUT_MS;
+}
+window.__lyricsIsUserScroll = __lyricsIsUserScroll;
+// 诊断（随反馈日志上传）：每类每 30 秒最多报一次，带离上次程序化滚动 / 上次用户输入多久。
+var _lyDiagAt = {};
+function _lyBrowseDiag(kind, now) {
+  if (_lyDiagAt[kind] !== undefined && now - _lyDiagAt[kind] < 30000) return;
+  _lyDiagAt[kind] = now;
+  var bridge = window.flutter_inappwebview;
+  if (!bridge || typeof bridge.callHandler !== 'function') return;
+  try {
+    bridge.callHandler('onLyricsBrowseDiag', kind,
+      Math.round(now - _lyProgUntil), Math.round(now - _lyUserInputAt),
+      _lyBrowsing, _lyPlaying);
+  } catch (e) {}
+}
 document.addEventListener('scroll', function() {
-  if (performance.now() > _lyProgUntil) _lyEnterBrowse();
+  var now = performance.now();
+  if (now <= _lyProgUntil) return;
+  if (__lyricsIsUserScroll(now)) {
+    if (!_lyBrowsing) _lyBrowseDiag('user-scroll', now);
+    _lyEnterBrowse();
+  } else {
+    _lyBrowseDiag('ignored-scroll', now);
+  }
 }, {passive: true, capture: true});
 
 // ── cue 切换 ──

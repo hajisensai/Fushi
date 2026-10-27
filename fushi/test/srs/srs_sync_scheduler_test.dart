@@ -429,6 +429,135 @@ void main() {
     );
   });
 
+  test('拉进别的设备的变更才报数据变动；之后没有新数据的轮次不报（反馈 I1Bg6uMZ32）', () async {
+    final (FushiDatabase db2, SrsDbStore other) = await openSrsTestStore(
+      deviceId: 'other',
+    );
+    addTearDown(db2.close);
+    final SrsSyncScheduler s = scheduler();
+    final LocalDirectoryAssetStore dir = LocalDirectoryAssetStore(root);
+    await s.syncWithBackend(dir);
+    expect(changed, 0, reason: '只有本机的数据：没有拉进任何东西');
+    await other.createNote(
+      noteTypeId: other.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '風',
+      },
+    );
+    expect(
+      (await srsDefaultSyncRunner(dir, other, 'other:${root.path}')).error,
+      isNull,
+    );
+    final SrsSync2Report pulled = await s.syncWithBackend(dir);
+    expect(pulled.applied, greaterThan(0));
+    expect(changed, 1, reason: '拉进了另一台设备的笔记：界面要重读');
+    await s.syncWithBackend(dir);
+    await s.syncWithBackend(dir);
+    expect(changed, 1, reason: '没有新数据的轮次不该让界面重读（也就不会再触发推送）');
+  });
+
+  group('自动同步复习数据开关（反馈 VNz9dsLeIy）', () {
+    test('关着：常规同步后置步骤、本机写入后推送、host 收到写入都不跑；立即同步与进复习页照跑', () async {
+      bool auto = false;
+      final List<String> keys = <String>[];
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          await body(LocalDirectoryAssetStore(root));
+          return (ran: 1, errors: const <Object>[]);
+        },
+        directoryKeyOf: (SyncAssetStore b) async => 'channel',
+        localDirectories: () async => <SrsLocalDirectory>[
+          SrsLocalDirectory(
+            directoryKey: 'interconnect:host',
+            store: LocalDirectoryAssetStore(root),
+          ),
+        ],
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        hostWriteDebounce: const Duration(milliseconds: 30),
+        autoSyncEnabled: () async => auto,
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              keys.add(key);
+              return SrsSync2Report();
+            },
+      );
+      addTearDown(s.dispose);
+      final LocalDirectoryAssetStore channel = LocalDirectoryAssetStore(root);
+      SrsSync2Report? afterChannel = SrsSync2Report();
+      afterChannel = await s.autoSyncWithBackend(channel);
+      await s.autoPush(() async => channel);
+      s.notifyLocalDirectoryWritten();
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await s.quiesce();
+      expect(afterChannel, isNull, reason: '后置步骤关着时不跑');
+      expect(keys, isEmpty, reason: '关着时没有任何一处自动触发跑了同步');
+
+      // 用户自己发起的两处不受开关影响。
+      await s.syncNow();
+      expect(keys, <String>['channel', 'interconnect:host']);
+      keys.clear();
+      expect(await s.syncThrottled(), isTrue);
+      expect(keys, <String>['channel', 'interconnect:host']);
+      keys.clear();
+
+      // 打开：每次触发时现读开关，立即生效。
+      auto = true;
+      await s.autoSyncWithBackend(channel);
+      expect(keys, <String>['channel']);
+      keys.clear();
+      await s.autoPush(() async => channel);
+      expect(keys, <String>['channel', 'interconnect:host']);
+      keys.clear();
+      s.notifyLocalDirectoryWritten();
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      // 去抖到点后那一轮排在串行链上：等它跑完。
+      await s.quiesce();
+      expect(keys, <String>['interconnect:host']);
+    });
+
+    test('开关默认开，写入后读回', () async {
+      final SyncRepository repo = SyncRepository(db);
+      expect(await repo.isSrsAutoSyncEnabled(), isTrue);
+      await repo.setSrsAutoSyncEnabled(false);
+      expect(await repo.isSrsAutoSyncEnabled(), isFalse);
+      expect(await db.getPrefTyped<bool>('srs_sync_auto', true), isFalse);
+    });
+
+    test('接线守卫：运行时的自动触发口都经开关', () {
+      final String src = File(
+        'lib/src/srs/srs_app_runtime.dart',
+      ).readAsStringSync();
+      expect(src, contains('isSrsAutoSyncEnabled()'));
+      // 通道后置步骤与互联快速通道走 autoSyncWithBackend，本机写入后的推送走 autoPush。
+      expect(
+        RegExp(
+          r'_postRun\(SyncBackend backend\) async \{\s*await sync\.autoSyncWithBackend\(backend\);',
+        ).hasMatch(src),
+        isTrue,
+      );
+      expect(
+        src,
+        contains(
+          'await sync.autoSyncWithBackend(InterconnectSyncBackend.instance)',
+        ),
+      );
+      expect(src, contains('await sync.autoPush('));
+      expect(src, contains('&& await sync.isAutoSyncEnabled()'));
+      expect(
+        src,
+        isNot(contains('sync.syncWithBackend(')),
+        reason: '运行时不该绕过开关直接跑一轮',
+      );
+    });
+  });
+
   test('进复习 tab 的节流：60 秒内第二次跳过', () async {
     DateTime now = DateTime(2026, 10, 15, 10);
     int runs = 0;

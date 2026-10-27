@@ -139,6 +139,7 @@ import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/reader_resource_sanitizer.dart';
 import 'package:fushi/src/reader/reader_exit_flush.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/srs/srs_sync_progress.dart' show srsSyncProgress;
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_restore_anchor.dart';
 import 'package:fushi/src/reader/reader_source_locator.dart';
