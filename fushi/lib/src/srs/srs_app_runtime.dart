@@ -91,6 +91,11 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
       srsRevisionProvider,
       (int? previous, int next) => runtime.localPush.trigger(),
     );
+    // 复习页的评分 / 撤销等只发这个信号（不叫醒被盖住的列表，见 srsLocalWriteProvider）。
+    ref.listen<int>(
+      srsLocalWriteProvider,
+      (int? previous, int next) => runtime.localPush.trigger(),
+    );
     // RWKV 排程服务随模块常驻（store.rwkv 由它装配；对象很轻，重活按需启动）。
     ref.listen<AsyncValue<Object?>>(
       srsRwkvServiceProvider,

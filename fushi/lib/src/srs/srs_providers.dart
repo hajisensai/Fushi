@@ -348,6 +348,23 @@ void bumpSrsRevision(WidgetRef ref) {
   ref.read(srsRevisionProvider.notifier).state++;
 }
 
+/// 本机复习数据有变动、但**不要求**列表 / 计数此刻重读的信号（单调递增）：复习页里的评分 /
+/// 撤销 / 搁置等。只有互联快速通道订阅它（`srs_app_runtime.dart`，去抖后推一轮）。
+///
+/// 复习页压在牌组列表 / 首页之上，那些页面此刻看不见；以前每评一张卡都发
+/// [srsRevisionProvider]，被盖住的牌组列表随之整库重算一遍计数（[SrsDbStore.deckSummaries]）、
+/// 整页重建两三次，正撞在下一张卡上屏与进场动画的那几帧上（BUG：评分后下一张卡掉帧）。
+/// 进复习页的三个入口（牌组列表、首页复习条、导航速览）都在复习页返回时发一次
+/// [bumpSrsRevision]，列表回到屏上时照样是新的。
+final StateProvider<int> srsLocalWriteProvider = StateProvider<int>(
+  (Ref ref) => 0,
+);
+
+/// 复习页的写操作后调用：只通知互联推送（见 [srsLocalWriteProvider]）。
+void bumpSrsLocalWrite(WidgetRef ref) {
+  ref.read(srsLocalWriteProvider.notifier).state++;
+}
+
 /// 删牌组的执行与进度（BUG-3543 的分块删除）：app 级，不随牌组列表页销毁。
 ///
 /// 以前进度 notifier 与「删完重读」都挂在牌组列表页的 State 上；复习 tab 不常驻，删除途中
