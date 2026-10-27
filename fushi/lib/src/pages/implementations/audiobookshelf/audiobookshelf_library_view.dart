@@ -609,7 +609,7 @@ class _ItemCard extends StatelessWidget {
                         left: 0,
                         right: 0,
                         bottom: 0,
-                        child: LinearProgressIndicator(
+                        child: FushiLinearProgressIndicator(
                           value: fraction,
                           minHeight: 3,
                           backgroundColor: Colors.black38,

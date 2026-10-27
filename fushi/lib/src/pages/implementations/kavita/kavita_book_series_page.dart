@@ -252,7 +252,7 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
       subtitle: status.isEmpty ? null : Text(status),
       onTap: busy ? null : () => unawaited(_read(chapter)),
       trailing: busy
-          ? TextButton(
+          ? FushiTextButton(
               onPressed: () => _tokens[chapter.id]?.cancel(),
               child: Text(t.kavita_book_cancel),
             )
@@ -260,18 +260,18 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 if (canDownload && pinned)
-                  IconButton(
+                  FushiIconButtonControl(
                     tooltip: t.kavita_book_remove_download,
                     icon: const FushiIcon(FushiIcons.downloadDone),
                     onPressed: () => unawaited(_removeDownload(local.bookKey)),
                   )
                 else if (canDownload)
-                  IconButton(
+                  FushiIconButtonControl(
                     tooltip: t.kavita_book_download,
                     icon: const FushiIcon(FushiIcons.download),
                     onPressed: () => unawaited(_download(chapter)),
                   ),
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: t.kavita_book_open,
                   icon: const FushiIcon(FushiIcons.books),
                   onPressed: () => unawaited(_read(chapter)),
