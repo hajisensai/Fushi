@@ -165,14 +165,18 @@ class SrsAppRuntime {
     // 每个位置的端到端加密密钥（设备本地凭据；同步与历史页里开 / 输入口令）。
     locationKey: (String id) => app.srsLocationKeys[id],
     onEncryptionEnabled: app.setSrsLocationKey,
+    // 设置 › 同步「自动同步复习数据」（反馈 VNz9dsLeIy）：关掉后只剩手动同步与进复习页的节流同步。
+    autoSyncEnabled: () => SyncRepository(app.database).isSrsAutoSyncEnabled(),
   );
 
   /// 互联快速通道（srs_interconnect_watch.dart）：长轮询所连 host，有新数据立刻同步这一条通道。
   late final SrsInterconnectWatcher interconnectWatch = SrsInterconnectWatcher(
-    ready: _interconnectReady,
+    // 快速通道是自动同步：开关关着时不挂长轮询（watcher 空闲重查时会再问，打开后自动恢复）。
+    ready: () async =>
+        await _interconnectReady() && await sync.isAutoSyncEnabled(),
     wait: InterconnectSyncBackend.instance.waitSrsChanges,
     onChange: () async {
-      await sync.syncWithBackend(InterconnectSyncBackend.instance);
+      await sync.autoSyncWithBackend(InterconnectSyncBackend.instance);
     },
   );
 
@@ -192,10 +196,11 @@ class SrsAppRuntime {
 
   Future<void> _pushInterconnect() async {
     try {
-      if (await _interconnectReady()) {
-        await sync.syncWithBackend(InterconnectSyncBackend.instance);
-      }
-      await sync.syncLocalDirectories();
+      await sync.autoPush(
+        () async => await _interconnectReady()
+            ? InterconnectSyncBackend.instance
+            : null,
+      );
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsAppRuntime.pushInterconnect', e, stack);
     }
@@ -225,7 +230,7 @@ class SrsAppRuntime {
   late final SyncChannelPostRunHook _postRunHook = _postRun;
 
   Future<void> _postRun(SyncBackend backend) async {
-    await sync.syncWithBackend(backend);
+    await sync.autoSyncWithBackend(backend);
   }
 
   /// 本机开着互联服务时，客户端经互联写进来的同步目录（host 自己不是任何一条通道的客户端，

@@ -13,6 +13,10 @@
 ///    [kSrsHostWriteDebounce]）：只跑本机目录。host 自己经本机文件系统读写这块目录，不走互联，
 ///    所以它的同步不会再触发自己；客户端也不因 host 同步而被触发——没有循环。
 ///
+/// 自动同步开关（[SrsSyncScheduler.isAutoSyncEnabled]，设置 › 同步「自动同步复习数据」，反馈 VNz9dsLeIy）
+/// 只管不由用户直接发起的那几处：1（[autoSyncWithBackend]，互联快速通道同走它）、4（[notifyLocalDirectoryWritten]）与本机写入后的
+/// 推送（[autoPush]）；app 侧互联快速通道也读它。关掉后只剩 2、3：用户点了「立即同步」，或自己进了复习页。
+///
 /// 目录身份拿不到（云盘账户还没认出来）时这一轮跳过该后端（报告 error =
 /// [kSrsSyncDirectoryIdentityUnavailable]），不把同一个目录当成新目录起步 / 重发。
 ///
@@ -243,7 +247,9 @@ class SrsSyncScheduler {
     SrsLocationKey? Function(String locationId)? locationKey,
     Future<void> Function(String locationId, SrsLocationKey key)?
     onEncryptionEnabled,
+    Future<bool> Function()? autoSyncEnabled,
   }) : _profileLinker = profileLinker,
+       _autoSyncEnabled = autoSyncEnabled,
        _locationKey = locationKey,
        _onEncryptionEnabled = onEncryptionEnabled,
        _onLocalDirectoryPublished = onLocalDirectoryPublished,
@@ -327,6 +333,13 @@ class SrsSyncScheduler {
 
   static bool _alwaysRun() => true;
 
+  /// 自动同步开关（null = 恒开）。见文件头。
+  final Future<bool> Function()? _autoSyncEnabled;
+
+  /// 复习数据的自动同步此刻是否开着（每次触发时现读，改设置立即生效）。
+  Future<bool> isAutoSyncEnabled() async =>
+      await _autoSyncEnabled?.call() ?? true;
+
   /// 首次 v2 同步是否已确认（没确认前一轮也不跑，见 [kSrsSyncAwaitingConfirm]）。
   final bool Function() _firstSyncConfirmed;
 
@@ -407,14 +420,36 @@ class SrsSyncScheduler {
     await _tail;
   }
 
-  /// 已配对设备往本机 host 的 SRS 目录写了文件：去抖后只跑本机目录（见文件头第 4 条）。
+  /// 已配对设备往本机 host 的 SRS 目录写了文件：去抖后只跑本机目录（见文件头第 4 条）。自动同步关着时
+  /// 不跑（开关在到点时读）。
   void notifyLocalDirectoryWritten() {
     if (_disposed || _localDirectories == null) return;
     _hostWriteTimer?.cancel();
     _hostWriteTimer = Timer(_hostWriteDebounce, () {
       _hostWriteTimer = null;
-      unawaited(syncLocalDirectories());
+      unawaited(_syncLocalDirectoriesIfAuto());
     });
+  }
+
+  Future<void> _syncLocalDirectoriesIfAuto() async {
+    if (!await isAutoSyncEnabled()) return;
+    await syncLocalDirectories();
+  }
+
+  /// 自动触发的一轮（常规同步一条通道跑完后的复习步骤，文件头第 1 条；互联快速通道看到 host 有新数据）：
+  /// 自动同步关着时不跑，返回 null。
+  Future<SrsSync2Report?> autoSyncWithBackend(SyncAssetStore backend) async {
+    if (!await isAutoSyncEnabled()) return null;
+    return syncWithBackend(backend);
+  }
+
+  /// 本机写了复习数据后的推送：[interconnect] 给出此刻可用的互联后端（没连上为 null）就同步它，
+  /// 再跑本机目录（本机作为 host 时唤醒连它的设备）。自动同步关着时什么都不做。
+  Future<void> autoPush(Future<SyncAssetStore?> Function() interconnect) async {
+    if (!await isAutoSyncEnabled()) return;
+    final SyncAssetStore? backend = await interconnect();
+    if (backend != null) await syncWithBackend(backend);
+    await syncLocalDirectories();
   }
 
   /// 串行化：通道后置步骤（常规同步互斥锁里）、进复习 tab、「立即同步」、本机 host 目录可能同时触发，

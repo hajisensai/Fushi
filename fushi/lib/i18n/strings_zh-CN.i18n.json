@@ -7586,6 +7586,8 @@
   "srs_status_review_by_recall": "复习中（RWKV）",
   "srs_status_review_in": "复习中 · $n天后",
   "srs_status_suspended": "已暂停",
+  "srs_sync_auto": "自动同步复习数据",
+  "srs_sync_auto_hint": "在每次常规同步之后、已配对设备有新的复习数据时、以及复习后不久，在后台同步复习数据。关掉后，复习数据只在牌组列表点「立即同步」或打开复习页时同步（每分钟最多一次）。书与视频进度的同步不受影响",
   "srs_sync_awaiting_confirm": "在复习页确认后才会开始同步复习数据",
   "srs_sync_backend_unsupported": "当前同步后端不支持复习数据同步",
   "srs_sync_clock_skew": "系统时间不准（偏差超过 10 分钟），复习记录改按同步服务器的时间记。",
