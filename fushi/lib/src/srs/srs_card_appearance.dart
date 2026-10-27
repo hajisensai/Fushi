@@ -71,7 +71,6 @@ class SrsCardAppearance {
     this.glossaryExpanded = false,
     this.frontReading = false,
     this.frontFrequency = false,
-    this.sentenceFurigana = false,
     this.compactPhone = true,
     this.designSkin = true,
     this.aggregateFrequency = true,
@@ -118,9 +117,6 @@ class SrsCardAppearance {
   /// 正面显示词频序位。
   final bool frontFrequency;
 
-  /// 例句注音常显（关 = 悬停 / 点按时显示）。
-  final bool sentenceFurigana;
-
   /// 手机精简背面：窄屏时长主释义收到约半屏（点「展开全文」看全）。关掉 = 主释义
   /// 全文。宽屏不受影响。「全部释义」里的词典两种都是与查词弹窗同形的逐部折叠卡。
   final bool compactPhone;
@@ -154,7 +150,6 @@ class SrsCardAppearance {
     bool? glossaryExpanded,
     bool? frontReading,
     bool? frontFrequency,
-    bool? sentenceFurigana,
     bool? compactPhone,
     bool? designSkin,
     bool? aggregateFrequency,
@@ -173,7 +168,6 @@ class SrsCardAppearance {
     glossaryExpanded: glossaryExpanded ?? this.glossaryExpanded,
     frontReading: frontReading ?? this.frontReading,
     frontFrequency: frontFrequency ?? this.frontFrequency,
-    sentenceFurigana: sentenceFurigana ?? this.sentenceFurigana,
     compactPhone: compactPhone ?? this.compactPhone,
     designSkin: designSkin ?? this.designSkin,
     aggregateFrequency: aggregateFrequency ?? this.aggregateFrequency,
@@ -219,7 +213,6 @@ class SrsCardAppearance {
       glossaryExpanded: _bool(json['glossaryExpanded'], d.glossaryExpanded),
       frontReading: _bool(json['frontReading'], d.frontReading),
       frontFrequency: _bool(json['frontFrequency'], d.frontFrequency),
-      sentenceFurigana: _bool(json['sentenceFurigana'], d.sentenceFurigana),
       compactPhone: _bool(json['compactPhone'], d.compactPhone),
       designSkin: _bool(json['designSkin'], d.designSkin),
     );
@@ -250,7 +243,6 @@ class SrsCardAppearance {
     'glossaryExpanded': glossaryExpanded,
     'frontReading': frontReading,
     'frontFrequency': frontFrequency,
-    'sentenceFurigana': sentenceFurigana,
     'compactPhone': compactPhone,
     'designSkin': designSkin,
   };
@@ -478,7 +470,6 @@ Map<String, double> srsCardShapeVars(SrsCardTokens tokens) => <String, double>{
 String srsCardAppearanceClasses(SrsCardAppearance a) => <String>[
   if (a.frontReading) 'fushi-srs-front-reading',
   if (a.frontFrequency) 'fushi-srs-front-freq',
-  if (a.sentenceFurigana) 'fushi-srs-sentence-furigana',
   if (a.glossaryExpanded) 'fushi-srs-gloss-expanded',
   if (a.dictUnified) 'fushi-srs-dict-unified',
   if (!a.showPicture) 'fushi-srs-hide-picture',

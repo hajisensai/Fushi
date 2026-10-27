@@ -91,7 +91,6 @@ void main() {
       const SrsCardAppearance(
         frontReading: true,
         frontFrequency: true,
-        sentenceFurigana: true,
         glossaryExpanded: true,
         showPicture: false,
         showTranslation: false,

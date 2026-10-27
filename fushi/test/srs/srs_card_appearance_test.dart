@@ -195,14 +195,12 @@ void main() {
           glossaryExpanded: true,
           frontReading: true,
           frontFrequency: true,
-          sentenceFurigana: true,
           density: SrsCardDensity.comfortable,
         ),
       );
       expect(c.split(' ').toSet(), <String>{
         'fushi-srs-front-reading',
         'fushi-srs-front-freq',
-        'fushi-srs-sentence-furigana',
         'fushi-srs-gloss-expanded',
         'fushi-srs-hide-picture',
         'fushi-srs-hide-translation',

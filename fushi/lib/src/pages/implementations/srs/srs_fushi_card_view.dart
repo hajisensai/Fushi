@@ -805,7 +805,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     if (!srsFushiBlockVisible(FushiCardBlock.sentence, f, s.appearance)) {
       return null;
     }
-    final bool showRuby = s.appearance.sentenceFurigana || _sentenceRuby;
+    final bool showRuby = _sentenceRuby;
     final String raw = srsFieldFilled(f['SentenceFurigana'])
         ? f['SentenceFurigana']!
         : f['Sentence']!;
@@ -829,7 +829,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final List<String> audio = _media.sentenceUnit;
     // 注音收起时第一下点按是「显示注音」（原有操作），不取词；注音显示后点在字上 =
     // 查词，点在字外 = 收起注音。
-    final bool rubyToggle = hasRuby && !s.appearance.sentenceFurigana;
+    final bool rubyToggle = hasRuby;
     final Widget text = SrsRubyText(
       key: const ValueKey<String>('srs-fushi-sentence'),
       segments: showRuby
@@ -1722,6 +1722,10 @@ class _MediaImageState extends ConsumerState<_MediaImage>
   /// 每次例句开播 +1：动图子树换 key 重建，从第一帧播起。
   int _restart = 0;
 
+  /// 重播期间仍垫在底下的旧动图（key）：新实例解出首帧之前先留着旧画面，否则替换瞬间
+  /// 整块变空、动图「闪一下」。新实例出帧后（[_layerReady]）撤掉。
+  int? _prevRestart;
+
   @override
   void initState() {
     super.initState();
@@ -1744,7 +1748,20 @@ class _MediaImageState extends ConsumerState<_MediaImage>
     if (provider != null && !isAvifPath(widget.name)) {
       unawaited(provider.evict());
     }
-    setState(() => _restart++);
+    setState(() {
+      _prevRestart ??= _restart;
+      _restart++;
+    });
+  }
+
+  /// 第 [restart] 层已出首帧：是当前层就撤掉垫底的旧层。
+  void _layerReady(int restart) {
+    if (restart != _restart || _prevRestart == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && restart == _restart && _prevRestart != null) {
+        setState(() => _prevRestart = null);
+      }
+    });
   }
 
   void _unlisten() {
@@ -1840,21 +1857,41 @@ class _MediaImageState extends ConsumerState<_MediaImage>
         !widget.name.startsWith('data:') && isAvifPath(widget.name)
         ? _providerStore?.resolve(widget.name)
         : null;
-    Widget picture({BoxFit? fit}) => KeyedSubtree(
-      key: ValueKey<int>(_restart),
-      child: avif != null
-          ? FushiAnimatedAvifImage(
-              file: avif,
-              fit: fit,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            )
-          : Image(
-              image: provider!,
-              fit: fit,
-              gaplessPlayback: true,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-    );
+    Widget layer(int restart, BoxFit? fit, {required bool signal}) =>
+        KeyedSubtree(
+          key: ValueKey<int>(restart),
+          child: avif != null
+              ? FushiAnimatedAvifImage(
+                  file: avif,
+                  fit: fit,
+                  onFirstFrame: signal ? () => _layerReady(restart) : null,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                )
+              : Image(
+                  image: provider!,
+                  fit: fit,
+                  gaplessPlayback: true,
+                  frameBuilder: signal
+                      ? (BuildContext _, Widget child, int? frame, bool _) {
+                          if (frame != null) _layerReady(restart);
+                          return child;
+                        }
+                      : null,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                ),
+        );
+    Widget picture({BoxFit? fit}) {
+      final int? prev = _prevRestart;
+      if (prev == null) return layer(_restart, fit, signal: false);
+      return Stack(
+        fit: StackFit.passthrough,
+        children: <Widget>[
+          layer(prev, fit, signal: false),
+          layer(_restart, fit, signal: true),
+        ],
+      );
+    }
+
     final Widget image = provider == null
         ? const SizedBox.shrink()
         // 框与原图同比例；contain 保证取整误差下也不裁掉边。

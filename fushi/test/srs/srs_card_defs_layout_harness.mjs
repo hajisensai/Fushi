@@ -119,6 +119,18 @@ try {
       await new Promise((r) => setTimeout(r, 50));
       check(applies === 1, 'resize applies after script rerun: ' + applies);
       window.__fushiSrsHostLayout = realApply;
+
+      // 栏宽变了但没有 window resize（排版后纵向滚动条出现 / 消失）：分列卡片的像素宽度要跟着
+      // 重排，否则与通栏主词典右缘差一条滚动条宽。
+      if (${page.cols} > 1) {
+        fc.style.paddingRight = '8px';
+        await frame();
+        await new Promise((r) => setTimeout(r, 50));
+        const right = list.getBoundingClientRect().right;
+        const over = Math.max(...packed.map((g) => g.getBoundingClientRect().right)) - right;
+        check(over < 1, 'cards re-packed after column width change, overflow ' + over);
+        fc.style.paddingRight = '';
+      }
       return fails;
     })()`);
     if (result.length) {
