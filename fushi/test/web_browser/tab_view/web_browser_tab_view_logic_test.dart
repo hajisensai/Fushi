@@ -262,6 +262,45 @@ void main() {
     });
   });
 
+  group('被顶掉的导航迟到的错误（BUG-3856）', () {
+    final Uri first = Uri.parse('https://www.youtube.com/watch?v=a');
+    final Uri second = Uri.parse(
+      'https://www.youtube.com/watch?v=a&themeRefresh=1',
+    );
+
+    test('页面自己改址后，首个导航迟到的 connection stopped 不盖失败页', () {
+      final WebBrowserNavigationLog log = WebBrowserNavigationLog()
+        ..onStart(first)
+        ..onStart(second);
+      expect(log.isSuperseded(first), isTrue);
+      expect(log.isSuperseded(second), isFalse);
+    });
+
+    test('当前导航自己的错误照常显示', () {
+      final WebBrowserNavigationLog log = WebBrowserNavigationLog()
+        ..onStart(first);
+      expect(log.isSuperseded(first), isFalse);
+    });
+
+    test('没记录过的地址（重定向后）不算过期；只差锚点算同一次', () {
+      final WebBrowserNavigationLog log = WebBrowserNavigationLog()
+        ..onStart(first)
+        ..onStart(
+          Uri.parse('https://www.youtube.com/watch?v=a&themeRefresh=1#t'),
+        );
+      expect(log.isSuperseded(Uri.parse('https://example.com/')), isFalse);
+      expect(log.isSuperseded(second), isFalse);
+    });
+
+    test('回到同一地址重新导航后，它的错误不再算过期', () {
+      final WebBrowserNavigationLog log = WebBrowserNavigationLog()
+        ..onStart(first)
+        ..onStart(second)
+        ..onStart(first);
+      expect(log.isSuperseded(first), isFalse);
+    });
+  });
+
   group('退出网页全屏还原缩放', () {
     test('全屏后缩放被压到 0.76 → 退出时按比值拉回', () {
       final WebBrowserFullscreenZoomGuard g = WebBrowserFullscreenZoomGuard();
