@@ -166,6 +166,12 @@ class AiAgentController extends ChangeNotifier
   int get totalTokens => _session?.totalTokens ?? 0;
 
   @override
+  AiChatUsage get usage => _session?.usage ?? const AiChatUsage();
+
+  @override
+  Map<String, double> get cost => _session?.cost ?? const <String, double>{};
+
+  @override
   bool get awaitingConfirm => host.awaitingConfirm;
 
   @override

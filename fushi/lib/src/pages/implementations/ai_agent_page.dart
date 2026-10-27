@@ -13,6 +13,8 @@ import 'dart:convert';
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:intl/intl.dart' show Intl, NumberFormat;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/ai/agent/ai_agent_controller.dart';
@@ -479,7 +481,8 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
         if (widget.compact) _compactHeader(context),
         if (!widget.compact && _controller.executorLabel != null)
           _executorBar(context),
-        if (!widget.compact && _controller.undoableCount > 0)
+        if (!widget.compact &&
+            (_controller.undoableCount > 0 || _controller.totalTokens > 0))
           _summaryBar(context),
         Expanded(
           child: ListView(
@@ -541,6 +544,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                     style: Theme.of(context).textTheme.bodySmall,
                     overflow: TextOverflow.ellipsis,
                   ),
+                ?_usageText(context, Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),
@@ -591,8 +595,11 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     );
   }
 
+  /// 整页顶部：本场改动数 + 用量 / 费用，「全部撤销」与「新对话」。
   Widget _summaryBar(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final int undoable = _controller.undoableCount;
+    final TextStyle? style = Theme.of(context).textTheme.bodyMedium;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
@@ -603,17 +610,25 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
       child: Row(
         children: <Widget>[
           Expanded(
-            child: Text(
-              '${t.ai_agent_session_summary(n: '${_controller.undoableCount}')}'
-              ' · ${t.ai_agent_tokens(n: '${_controller.totalTokens}')}',
-              style: Theme.of(context).textTheme.bodyMedium,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (undoable > 0)
+                  Text(
+                    t.ai_agent_session_summary(n: '$undoable'),
+                    style: style,
+                  ),
+                ?_usageText(context, style),
+              ],
             ),
           ),
-          FushiTextButton(
-            key: const ValueKey<String>('ai-agent-undo-all'),
-            onPressed: () => unawaited(_undoAll()),
-            child: Text(t.ai_agent_undo_all(n: '${_controller.undoableCount}')),
-          ),
+          if (undoable > 0)
+            FushiTextButton(
+              key: const ValueKey<String>('ai-agent-undo-all'),
+              onPressed: () => unawaited(_undoAll()),
+              child: Text(t.ai_agent_undo_all(n: '$undoable')),
+            ),
           FushiIconButtonControl(
             key: const ValueKey<String>('ai-agent-new-session'),
             tooltip: t.ai_agent_new_session,
@@ -623,6 +638,42 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
             icon: const FushiIcon(FushiIcons.add),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 本场用量：「12,345 tokens · 约 $0.0123」，悬停 / 长按看输入 / 输出 / 缓存分项。
+  /// 还没发过请求时为 null。费用只在执行设备的提供商填了单价时出现。
+  Widget? _usageText(BuildContext context, TextStyle? style) {
+    final int total = _controller.totalTokens;
+    if (total <= 0) return null;
+    final String locale = Intl.getCurrentLocale();
+    final NumberFormat count = NumberFormat.decimalPattern(locale);
+    final AiChatUsage usage = _controller.usage;
+    final List<String> parts = <String>[
+      t.ai_agent_tokens(n: count.format(total)),
+      for (final MapEntry<String, double> cost in _controller.cost.entries)
+        t.ai_agent_cost(
+          amount: NumberFormat.simpleCurrency(
+            locale: locale,
+            name: cost.key,
+            // 一场对话常常不到一分钱：小额多留几位，不显示成 $0.00。
+            decimalDigits: cost.value < 1 ? 4 : 2,
+          ).format(cost.value),
+        ),
+    ];
+    return FushiTooltip(
+      message: t.ai_agent_usage_breakdown(
+        input: count.format(usage.inputTokens ?? 0),
+        output: count.format(usage.outputTokens ?? 0),
+        cacheRead: count.format(usage.cacheReadTokens ?? 0),
+        cacheWrite: count.format(usage.cacheWriteTokens ?? 0),
+      ),
+      child: Text(
+        parts.join(' · '),
+        key: const ValueKey<String>('ai-agent-usage'),
+        style: style?.copyWith(color: fushiNeutralSecondaryForeground(context)),
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -651,11 +702,6 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              t.ai_agent_empty_examples,
-              style: Theme.of(context).textTheme.bodyMedium,
             ),
           ],
         ),
@@ -1036,56 +1082,66 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     );
   }
 
-  /// 输入栏（上下文 chip + 输入胶囊 + 发送 / 停止）。
+  /// 输入栏（上下文 chip + 输入框 + 发送 / 停止）。
+  ///
+  /// MD3 下是**一层**悬浮面板：chip、输入框、按钮都直接放在面板上，输入框不再另套
+  /// 一层不同底色的圆角框（面板套面板显得臃肿），按钮贴底对齐（多行输入时不悬在
+  /// 中间）。Apple / 墨水屏没有外层面板，输入框自己带底色 / 描边。
   Widget _composer(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool glass = isGlassDesign(context);
+    final bool eink = isEinkTheme(context);
+    final bool panel = !glass && !eink;
     final bool running = _controller.running;
     final AgentUiContext? uiContext = _activeContext;
-    final String? contextTitle = uiContext?.itemTitle ?? uiContext?.page;
+    final String? contextTitle =
+        uiContext?.itemTitle ?? _contextPageLabel(uiContext?.page);
+    final Widget field = FushiTextFieldControl(
+      key: const ValueKey<String>('ai-agent-input'),
+      controller: _input,
+      focusNode: _inputFocus,
+      enabled: !running,
+      autofocus: true,
+      minLines: 1,
+      maxLines: 4,
+      textInputAction: TextInputAction.send,
+      onSubmitted: (_) => unawaited(_send()),
+      style: Theme.of(context).textTheme.bodyLarge,
+      decoration: InputDecoration(
+        hintText: t.ai_agent_input_hint,
+        border: InputBorder.none,
+        filled: false,
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: panel ? 8 : 20,
+          vertical: 14,
+        ),
+      ),
+    );
     final Widget row = Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: <Widget>[
         // 浮层 / 侧栏才有：截图时把面板藏掉就露出下面的页面；整页外壳下面也是
         // 不透明路由，截不到别的。
         if (widget.compact && screenTextCaptureSupported) ...<Widget>[
           AiAgentScreenTextButton(attachment: _screenText, enabled: !running),
-          SizedBox(width: tokens.spacing.gap / 2),
-        ],
+          if (!panel) SizedBox(width: tokens.spacing.gap / 2),
+        ] else if (panel)
+          const SizedBox(width: 12),
         Expanded(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: isEinkTheme(context)
-                  ? scheme.surface
-                  : scheme.surfaceContainerHigh,
-              borderRadius: FushiBorderRadius.dialog,
-              border: isEinkTheme(context)
-                  ? Border.all(color: scheme.onSurface)
-                  : null,
-            ),
-            child: FushiTextFieldControl(
-              key: const ValueKey<String>('ai-agent-input'),
-              controller: _input,
-              focusNode: _inputFocus,
-              enabled: !running,
-              autofocus: true,
-              minLines: 1,
-              maxLines: 4,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => unawaited(_send()),
-              style: Theme.of(context).textTheme.bodyLarge,
-              decoration: InputDecoration(
-                hintText: t.ai_agent_input_hint,
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 14,
+          child: panel
+              ? field
+              : DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: eink ? scheme.surface : scheme.surfaceContainerHigh,
+                    borderRadius: FushiBorderRadius.dialog,
+                    border: eink ? Border.all(color: scheme.onSurface) : null,
+                  ),
+                  child: field,
                 ),
-              ),
-            ),
-          ),
         ),
-        SizedBox(width: tokens.spacing.gap),
+        SizedBox(width: panel ? 4 : tokens.spacing.gap),
         if (running)
           FushiIconButtonControl(
             key: const ValueKey<String>('ai-agent-stop'),
@@ -1108,16 +1164,27 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        AiAgentScreenTextChip(attachment: _screenText),
-        if (contextTitle != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6, left: 4),
-            child: FushiInputChip(
-              key: const ValueKey<String>('ai-agent-context-chip'),
-              label: Text(t.ai_agent_context_chip(title: contextTitle)),
-              onDeleted: () => setState(() => _contextDropped = true),
-            ),
+        Padding(
+          padding: panel
+              ? const EdgeInsets.fromLTRB(6, 4, 6, 0)
+              : EdgeInsets.zero,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              AiAgentScreenTextChip(attachment: _screenText),
+              if (contextTitle != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2, left: 4),
+                  child: FushiInputChip(
+                    key: const ValueKey<String>('ai-agent-context-chip'),
+                    label: Text(t.ai_agent_context_chip(title: contextTitle)),
+                    onDeleted: () => setState(() => _contextDropped = true),
+                  ),
+                ),
+            ],
           ),
+        ),
         row,
       ],
     );
@@ -1127,18 +1194,30 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
       tokens.spacing.page,
       tokens.spacing.gap + bottomSafeInsetOf(context),
     );
-    if (glass || isEinkTheme(context)) {
-      return Padding(padding: outer, child: body);
-    }
+    if (!panel) return Padding(padding: outer, child: body);
     return Padding(
       padding: outer,
       child: DecoratedBox(
         decoration: fushiFloatingPillDecoration(
           context,
-          color: scheme.surfaceContainer,
+          color: scheme.surfaceContainerHigh,
+          shape: const RoundedRectangleBorder(
+            borderRadius: FushiBorderRadius.dialog,
+          ),
         ),
-        child: Padding(padding: const EdgeInsets.all(6), child: body),
+        child: Padding(padding: const EdgeInsets.all(4), child: body),
       ),
     );
   }
+
+  /// 上下文 chip 里的页面名：库页页头「问 AI」给的是内部页面键，换成用户看得懂
+  /// 的页面标题；认不出的键原样显示。
+  static String? _contextPageLabel(String? page) => switch (page) {
+    null => null,
+    'books' => t.books,
+    'manga_library' => t.manga_library,
+    'video_library' => t.nav_video,
+    'games_library' => t.nav_game,
+    final String other => other,
+  };
 }
