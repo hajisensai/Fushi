@@ -224,6 +224,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     _seedWarmPopup();
     unawaited(_refreshFavoritedCueCache());
     unawaited(_refreshStagedMineCount());
+    if (Platform.isWindows) _startWebMineIdle();
     // 站点入口还没有书：进度 / 观看统计等播起某一集落库后再接（[_bindWebEpisode]）。
     if (_webBoundEpisodeUrl == null) {
       controller.rebindWebBook(null);
@@ -1298,8 +1299,9 @@ extension _VideoWebSource on _VideoFushiPageState {
   }
 
   /// 跑制卡队列：同一本书原地换成内置网页播放器（可捕获的 1080p 档），画面一就绪就自动
-  /// 逐句重放落卡（[WebVideoFushiPage.autoRunMineQueue]）。
-  Future<void> _runWebMineQueue() async {
+  /// 逐句重放落卡（[WebVideoFushiPage.autoRunMineQueue]）。[idle] = 空闲自动制卡的交接：
+  /// 那边静音跑、有输入即让位，跑完换回本页（[WebVideoFushiPage.returnHostingAfterMining]）。
+  Future<void> _runWebMineQueue({bool idle = false}) async {
     await _controller?.flushPosition();
     if (!context.mounted) return;
     await Navigator.of(context).pushReplacement(
@@ -1310,13 +1312,35 @@ extension _VideoWebSource on _VideoFushiPageState {
           repo: widget.repo,
           hosting: WebVideoHosting.builtin,
           autoRunMineQueue: true,
+          returnHostingAfterMining: idle ? WebVideoHosting.windowed : null,
         ),
       ),
     );
   }
 
+  /// 空闲判定：用户在播放器档里暂停了、队列非空、整机 2 分钟没输入 → 交接到内置档。
+  void _startWebMineIdle() {
+    _webMineIdle?.dispose();
+    final WebMineIdleScheduler scheduler = WebMineIdleScheduler(
+      canStart: () =>
+          mounted &&
+          _webMode &&
+          _webPlayerMode &&
+          !WebMineIdleScheduler.silentCaptureUnavailable &&
+          _stagedMineCount.value > 0 &&
+          !(_webSession?.lastState?.isPlaying ?? true),
+      onIdle: () => unawaited(_runWebMineQueue(idle: true)),
+      // 交接后本页即被替换；让位由内置档那一页负责。
+      onUserActive: () {},
+    );
+    _webMineIdle = scheduler;
+    scheduler.start();
+  }
+
   /// dispose：退窗口全屏（runner 拥有的全屏态不随路由消失）、拆会话、归还底层合成。
   void _disposeWebSource() {
+    _webMineIdle?.dispose();
+    _webMineIdle = null;
     _detachControllerChapterListener();
     if (_webWindowFullscreen && Platform.isWindows) {
       _webWindowFullscreen = false;

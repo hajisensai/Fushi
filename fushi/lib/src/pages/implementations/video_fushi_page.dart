@@ -391,6 +391,7 @@ import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/video_mine_queue.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/mining/web_mine_idle.dart' show WebMineIdleScheduler;
 import 'package:fushi/src/mining/web_mine_queue_store.dart'
     show WebMineQueueStore, decodeWebMineFields;
 import 'package:fushi/src/media/video/video_mine_queue_dialog.dart';
@@ -2338,6 +2339,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   late final WebMineQueueStore _webMineQueue = WebMineQueueStore(
     appModel.database,
   );
+
+  /// 网页档的空闲自动制卡：用户暂停后离开电脑，换到内置档静音重放队列，跑完换回本页
+  /// （`web_mine_idle.dart`；仅 Windows）。
+  WebMineIdleScheduler? _webMineIdle;
 
   /// 站点 WebView 的稳定身份：视频区 Stack 里有无 `<video>` 两种布局之间不重建它。
   final GlobalKey _webSurfaceKey = GlobalKey(debugLabel: 'video-web-surface');
