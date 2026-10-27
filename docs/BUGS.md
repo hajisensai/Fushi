@@ -44,6 +44,12 @@
 |---|:--:|:--:|---|
 | [BUG-3819](bugs/BUG-3819-english-ordinal-season-dirs.md) | ✅ | ✅ | 视频解析器不认 Second Season / Season Two 等英文序数季名，合集包续季目录判不出季号 |
 | [BUG-3818](bugs/BUG-3818-cloud-tombstone-per-marker-round-trips.md) | ✅ | ✅ | 云同步删除墓碑阶段逐条 GET 全部远端标记，单阶段 200 s+ |
+> 共 3423 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3819](bugs/BUG-3819-emby-auth-header-legacy-brand.md) | ✅ | ✅ | Emby/Jellyfin 认证头仍报旧品牌 Hibiki，添加服务器失败日志无请求轨迹 |
+| [BUG-3818](bugs/BUG-3818-media-server-episode-version-pick.md) | ✅ | ✅ | 媒体服务器：继续观看卡要能去详情，非续播集播放前要能选版本 |
 | [BUG-3817](bugs/BUG-3817-video-delete-work-leaves-extras.md) | ✅ | ✅ | 删除动漫只删正片：特典与其余下载资源残留在目录 |
 | [BUG-3816](bugs/BUG-3816-download-organize-multi-work-pack-collision.md) | ✅ | ✅ | 下载整理：多作品合集包续作目录无季号撞名整任务失败 |
 | [BUG-3815](bugs/BUG-3815-interconnect-push-resurrects-host-deleted-book.md) | ✅ | ✅ | 互联客户端把主机「从所有设备删除」的书推回主机并清掉删除墓碑 |

@@ -1,8 +1,10 @@
-import 'package:flutter/widgets.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_grid_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 分区内三层视图之间的跳转全走这里。`Navigator.of(context)` 在浏览页里解析到的是
@@ -147,5 +149,72 @@ void openMediaServerItemDetail(
       );
     case MediaServerItemType.season || MediaServerItemType.folder:
       openMediaServerItem(context, session, item);
+  }
+}
+
+/// 「继续观看」卡长按 / 右键菜单里的一项。
+enum MediaServerContinueMenuAction { resume, details }
+
+/// 「继续观看」卡的长按 / 右键菜单（a-XEzglLaq）：「继续播放」（与点按同义，
+/// [resumeMediaServerItem]）+「打开详情」（集进所属剧的详情并选中它的季，
+/// [openMediaServerItemDetail]）。菜单锚在 [context] 所在的卡上（设计系统分派的
+/// [showFushiMenu]：MD3 菜单面 + 淡入下拉 / Apple 玻璃面板 + 变形展开）。
+Future<void> showMediaServerContinueMenu(
+  BuildContext context,
+  MediaServerSession session,
+  MediaServerItem item, {
+  List<MediaServerItem> siblings = const <MediaServerItem>[],
+}) async {
+  final RenderObject? overlay = Overlay.of(context).context.findRenderObject();
+  final RenderObject? card = context.findRenderObject();
+  assert(
+    card is RenderBox,
+    'showMediaServerContinueMenu needs the card’s own context, '
+    'not a list / sliver context (got ${card.runtimeType})',
+  );
+  if (overlay is! RenderBox || card is! RenderBox || !card.hasSize) return;
+  // 坐标经 Overlay 换算，消掉界面缩放（BUG-781 同族纪律）。
+  final Rect anchor = Rect.fromPoints(
+    card.localToGlobal(Offset.zero, ancestor: overlay),
+    card.localToGlobal(card.size.bottomRight(Offset.zero), ancestor: overlay),
+  );
+  PopupMenuItem<MediaServerContinueMenuAction> entry(
+    MediaServerContinueMenuAction value,
+    IconData icon,
+    String label,
+  ) => PopupMenuItem<MediaServerContinueMenuAction>(
+    key: ValueKey<String>('media-server-continue-menu-${value.name}'),
+    value: value,
+    child: Row(
+      children: <Widget>[
+        FushiIcon(icon, size: 20),
+        const SizedBox(width: 12),
+        Text(label),
+      ],
+    ),
+  );
+  final MediaServerContinueMenuAction? action =
+      await showFushiMenu<MediaServerContinueMenuAction>(
+        context: context,
+        position: RelativeRect.fromRect(anchor, Offset.zero & overlay.size),
+        items: <PopupMenuEntry<MediaServerContinueMenuAction>>[
+          entry(
+            MediaServerContinueMenuAction.resume,
+            FushiIcons.play,
+            t.media_server_continue_menu_resume,
+          ),
+          entry(
+            MediaServerContinueMenuAction.details,
+            FushiIcons.info,
+            t.media_server_continue_menu_details,
+          ),
+        ],
+      );
+  if (action == null || !context.mounted) return;
+  switch (action) {
+    case MediaServerContinueMenuAction.resume:
+      resumeMediaServerItem(context, session, item, siblings: siblings);
+    case MediaServerContinueMenuAction.details:
+      openMediaServerItemDetail(context, session, item);
   }
 }

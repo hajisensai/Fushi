@@ -22,6 +22,8 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
+    show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
@@ -3733,6 +3735,12 @@ class AppModel with ChangeNotifier {
       /// Prepare entities that may be repeatedly used at runtime.
       _packageInfo = await PackageInfo.fromPlatform();
       _mediaTrackingAppVersion = _packageInfo.version;
+      // 媒体服务器认证头的客户端身份（产品名 / 本机设备名 / 应用版本，
+      // AL8qJr6yr-）：之后所有 Jellyfin / Emby 请求都按它报。
+      mediaServerClientIdentity = await resolveMediaServerClientIdentity(
+        platformServices.deviceInfo,
+        version: _packageInfo.version,
+      );
 
       debugPrint('[Fushi] init: directories (early, needed for DB)');
       // TODO-1260：这一步内部解析数据根（含对自定义数据根盘的 stat）。盘掉线时最易 hang，
