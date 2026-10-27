@@ -457,76 +457,69 @@ void main() {
   });
 
   group('自动同步复习数据开关（反馈 VNz9dsLeIy）', () {
-    test('关着：常规同步后置步骤、本机写入后推送、host 收到写入都不跑；立即同步与进复习页照跑', () {
-      fakeAsync((FakeAsync async) {
-        bool auto = false;
-        final List<String> keys = <String>[];
-        final SrsSyncScheduler s = SrsSyncScheduler(
-          readStore: () async => store,
-          channels: (Future<void> Function(SyncAssetStore) body) async {
-            await body(LocalDirectoryAssetStore(root));
-            return (ran: 1, errors: const <Object>[]);
-          },
-          directoryKeyOf: (SyncAssetStore b) async => 'channel',
-          localDirectories: () async => <SrsLocalDirectory>[
-            SrsLocalDirectory(
-              directoryKey: 'interconnect:host',
-              store: LocalDirectoryAssetStore(root),
-            ),
-          ],
-          onDataChanged: () {},
-          onNotice: (SrsSyncNotice _) {},
-          hostWriteDebounce: const Duration(milliseconds: 30),
-          autoSyncEnabled: () async => auto,
-          runner:
-              (
-                SyncAssetStore b,
-                SrsDbStore st,
-                String key, {
-                SrsLocationKey? locationKey,
-              }) async {
-                keys.add(key);
-                return SrsSync2Report();
-              },
-        );
-        addTearDown(s.dispose);
-        final LocalDirectoryAssetStore channel = LocalDirectoryAssetStore(root);
-        SrsSync2Report? afterChannel = SrsSync2Report();
-        s.autoSyncWithBackend(channel).then((SrsSync2Report? r) {
-          afterChannel = r;
-        });
-        s.autoPush(() async => channel);
-        s.notifyLocalDirectoryWritten();
-        async.elapse(const Duration(milliseconds: 100));
-        async.flushMicrotasks();
-        expect(afterChannel, isNull, reason: '后置步骤关着时不跑');
-        expect(keys, isEmpty, reason: '关着时没有任何一处自动触发跑了同步');
+    test('关着：常规同步后置步骤、本机写入后推送、host 收到写入都不跑；立即同步与进复习页照跑', () async {
+      bool auto = false;
+      final List<String> keys = <String>[];
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          await body(LocalDirectoryAssetStore(root));
+          return (ran: 1, errors: const <Object>[]);
+        },
+        directoryKeyOf: (SyncAssetStore b) async => 'channel',
+        localDirectories: () async => <SrsLocalDirectory>[
+          SrsLocalDirectory(
+            directoryKey: 'interconnect:host',
+            store: LocalDirectoryAssetStore(root),
+          ),
+        ],
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        hostWriteDebounce: const Duration(milliseconds: 30),
+        autoSyncEnabled: () async => auto,
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              keys.add(key);
+              return SrsSync2Report();
+            },
+      );
+      addTearDown(s.dispose);
+      final LocalDirectoryAssetStore channel = LocalDirectoryAssetStore(root);
+      SrsSync2Report? afterChannel = SrsSync2Report();
+      afterChannel = await s.autoSyncWithBackend(channel);
+      await s.autoPush(() async => channel);
+      s.notifyLocalDirectoryWritten();
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await s.quiesce();
+      expect(afterChannel, isNull, reason: '后置步骤关着时不跑');
+      expect(keys, isEmpty, reason: '关着时没有任何一处自动触发跑了同步');
 
-        // 用户自己发起的两处不受开关影响。
-        s.syncNow();
-        async.flushMicrotasks();
-        expect(keys, <String>['channel', 'interconnect:host']);
-        keys.clear();
-        s.syncThrottled();
-        async.flushMicrotasks();
-        expect(keys, <String>['channel', 'interconnect:host']);
-        keys.clear();
+      // 用户自己发起的两处不受开关影响。
+      await s.syncNow();
+      expect(keys, <String>['channel', 'interconnect:host']);
+      keys.clear();
+      expect(await s.syncThrottled(), isTrue);
+      expect(keys, <String>['channel', 'interconnect:host']);
+      keys.clear();
 
-        // 打开：每次触发时现读开关，立即生效。
-        auto = true;
-        s.autoSyncWithBackend(channel);
-        async.flushMicrotasks();
-        expect(keys, <String>['channel']);
-        keys.clear();
-        s.autoPush(() async => channel);
-        async.flushMicrotasks();
-        expect(keys, <String>['channel', 'interconnect:host']);
-        keys.clear();
-        s.notifyLocalDirectoryWritten();
-        async.elapse(const Duration(milliseconds: 100));
-        async.flushMicrotasks();
-        expect(keys, <String>['interconnect:host']);
-      });
+      // 打开：每次触发时现读开关，立即生效。
+      auto = true;
+      await s.autoSyncWithBackend(channel);
+      expect(keys, <String>['channel']);
+      keys.clear();
+      await s.autoPush(() async => channel);
+      expect(keys, <String>['channel', 'interconnect:host']);
+      keys.clear();
+      s.notifyLocalDirectoryWritten();
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      // 去抖到点后那一轮排在串行链上：等它跑完。
+      await s.quiesce();
+      expect(keys, <String>['interconnect:host']);
     });
 
     test('开关默认开，写入后读回', () async {
