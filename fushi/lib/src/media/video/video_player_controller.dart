@@ -6177,6 +6177,28 @@ class VideoPlayerController extends ChangeNotifier
     await skipToCue(_cues[prev]);
   }
 
+  /// 「重播当前句」：跳到 [cue] 起点**并起播**（Dbd86l4kA-，所有者 2026-10-27 拍板：
+  /// 重播类动作一律起播；单纯「跳到上 / 下一句」[skipToCue] / [skipToPrevCue] /
+  /// [skipToNextCue] 保持当前播放 / 暂停态不变）。与查词浮层的 [replayCue] 不同：
+  /// 不挂「播到句尾就停」的一次性 hold，播完照常往下走。
+  Future<void> playFromCue(AudioCue cue) async {
+    await skipToCue(cue);
+    await (_replayPlayOverride ?? play).call();
+  }
+
+  /// 「重播上一句」：按 [skipToPrevCue] 的判据定位上一句，跳到其起点并起播
+  /// （Dbd86l4kA-，见 [playFromCue]）。已是第一句时 no-op，不起播。
+  Future<void> playFromPreviousCue() async {
+    if (_cues.isEmpty) return;
+    final int? prev = prevCueIndexFor(
+      cues: _cues,
+      positionMs: effectiveSubtitleClockMs,
+      anchorIndex: _seekTargetCueIndex,
+    );
+    if (prev == null) return;
+    await playFromCue(_cues[prev]);
+  }
+
   /// 跳上一句字幕。无 cue 时退化成回退 [seekSeconds] 秒（当回退键，让用户跨过没字幕的
   /// 转场段，TODO-119/BUG-198）；有 cue 时的行为由 [degradeFarCueToTimeSeek] 决定：
   ///

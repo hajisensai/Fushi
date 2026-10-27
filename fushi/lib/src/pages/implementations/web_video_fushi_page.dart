@@ -1477,11 +1477,14 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       cycleSecondarySubtitleObscure: noop,
       toggleSecondarySubtitleHide: noop,
       toggleFavoriteSentence: () => unawaited(_toggleFavoriteCurrent()),
+      // 重播类动作一律起播（Dbd86l4kA-，与本地视频页同口径）；只跳不播的是
+      // previousSubtitle / nextSubtitle。
       replayCurrentSubtitle: () {
         final AudioCue? cue = _controller.currentCue ?? _lastLookupCue;
-        if (cue != null) unawaited(_seekMs(cue.startMs));
+        if (cue != null) unawaited(_seekMs(cue.startMs).then((_) => _play()));
       },
-      replayPreviousSubtitle: () => unawaited(_seekToCueOffset(-1)),
+      replayPreviousSubtitle: () =>
+          unawaited(_seekToCueOffset(-1).then((_) => _play())),
       previousChapter: noop,
       nextChapter: noop,
       openSubtitleAlign: noop,

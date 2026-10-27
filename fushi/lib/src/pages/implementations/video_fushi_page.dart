@@ -10130,7 +10130,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         );
         break;
       case VideoControlItem.replayCue:
-        // 与快捷键 videoReplayCurrentSubtitle 同一实现（回到本句开头、只播这一句，
+        // 与快捷键 videoReplayCurrentSubtitle 同一实现（回到本句开头并起播，
         // 续命控制条）。
         unawaited(_replayCurrentCueAndKeepControls());
         break;
@@ -11406,18 +11406,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     await _toggleFavoriteCueForVideo(cue);
   }
 
+  /// 重播当前句：回到本句开头**并起播**（Dbd86l4kA-：暂停态按重播也开始播放；
+  /// 只跳不播的是「上 / 下一句字幕」）。
   Future<void> _replayCurrentCueAndKeepControls() async {
     final AudioCue? cue = _currentCueForAction();
     if (cue == null) return;
     _keepControlsAliveIfVisible();
-    await _controller?.skipToCue(cue);
+    await _controller?.playFromCue(cue);
   }
 
   /// 重播上一句（TODO-378，BUG-287）：跳到上一条 cue 起点并播放，**不**退化成回退几秒
-  /// （走纯 [VideoPlayerController.skipToPrevCue]，与底栏「上一句」按钮同语义）。
+  /// （定位判据与底栏「上一句」按钮的 [VideoPlayerController.skipToPrevCue] 相同，
+  /// 区别只在本动作一定起播，Dbd86l4kA-）。
   Future<void> _replayPreviousCueAndKeepControls() async {
     _keepControlsAliveIfVisible();
-    await _controller?.skipToPrevCue();
+    await _controller?.playFromPreviousCue();
   }
 
   /// 弹快捷倍速浮层（TODO-438）：有按钮触发源时锚定 speed 按钮、按其槽位自适应方向

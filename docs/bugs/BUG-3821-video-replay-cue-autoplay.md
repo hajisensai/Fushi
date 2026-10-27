@@ -1,0 +1,6 @@
+## BUG-3821 · 视频暂停时「重播当前句 / 重播上一句」只跳到句首不起播
+- **报告**：2026-10-27（用户：应用内反馈 Dbd86l4kA-，设计诉求；所有者 2026-10-27 按分诊推荐方案拍板：重播类动作一律起播，单纯跳句保持播放 / 暂停态）
+- **真实性**：✅ 行为与注释不符。`fushi/lib/src/pages/implementations/video_fushi_page.dart:11384-11397`（修前）`_replayCurrentCueAndKeepControls` / `_replayPreviousCueAndKeepControls` 调 `VideoPlayerController.skipToCue` / `skipToPrevCue`，而 `fushi/lib/src/media/video/video_player_controller.dart:5957`（`skipToCue`）只 `_rawSeekMs`、不起播；注释写的却是「跳到上一条 cue 起点并播放」。网页视频页（`web_video_fushi_page.dart:1480-1484`）与浏览器扩展 `subtitle-panel.js` `shortcutReplay` 同样只 seek。
+- **[x] ① 已修复** — 控制器新增 `playFromCue(cue)`（`skipToCue` + 起播，不挂一次性句尾停）与 `playFromPreviousCue()`（定位判据与 `skipToPrevCue` 同为 `prevCueIndexFor`，不退化时间回退）；视频页两个重播入口（快捷键 / 手柄 / 控制条 replayCue 按钮共用）改走它们。`skipToCue` / `skipToPrevCue` / `skipToNextCue` 不动，上 / 下一句仍只跳不播。网页视频页重播两动作 seek 后 `_play()`；浏览器扩展「重播本句」seek 后若暂停则 `video.play()`（扩展无「重播上一句」动作）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_player_play_from_cue_test.dart`（起播 / 首句 no-op / 跳句不起播 / 页面接线）；`fushi/test/pages/video_controls_customization_guard_test.dart` 的「重播上一句不退化」守卫改钉 `playFromPreviousCue`；`tools/browser-extension/subtitle-modes.test.js`「暂停时按重播本句起播，上一句 / 下一句保持暂停」。变异：`playFromCue` 去掉起播 → 2 例红。
+- **备注**：Netflix 上扩展的 seek 走主世界 bridge，起播仍直接调 `<video>.play()`，未在 Netflix 实测。

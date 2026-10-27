@@ -435,8 +435,19 @@ void main() {
     expect(shortcuts, contains('replayPreviousSubtitle'));
     expect(settings, contains('videoReplayPreviousSubtitle'));
     expect(page, contains('_replayPreviousCueAndKeepControls'));
-    // 「重播上一句」必须是纯句子跳转（skipToPrevCue），不得退化成时间回退。
-    expect(page, contains('skipToPrevCue();'));
+    // 「重播上一句」必须是纯句子跳转，不得退化成时间回退；Dbd86l4kA- 起它走起播版本
+    // playFromPreviousCue（定位判据与 skipToPrevCue 同为 prevCueIndexFor）。
+    expect(page, contains('playFromPreviousCue();'));
+    final String controllerSrc = read(
+      'lib/src/media/video/video_player_controller.dart',
+    );
+    final int prevAt = controllerSrc.indexOf(
+      'Future<void> playFromPreviousCue() async {',
+    );
+    expect(prevAt, greaterThan(0));
+    final String prevBody = controllerSrc.substring(prevAt, prevAt + 400);
+    expect(prevBody, contains('prevCueIndexFor('));
+    expect(prevBody, isNot(contains('skipToPrevCueOrSeekBack')));
 
     expect(page, contains('_toggleFavoriteCurrentCue'));
     expect(page, contains('_replayCurrentCueAndKeepControls'));
