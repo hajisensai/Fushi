@@ -18,6 +18,7 @@ import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
 import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:path/path.dart' as p;
 
 /// 把服务器条目里的字幕文件取到本机临时目录，返回本地文件。
@@ -34,9 +35,7 @@ Future<File> downloadAudiobookshelfSubtitle({
   final List<int> bytes = await api.fetchLibraryTextFile(itemId, file.ino);
   final Directory dir = tempDir ?? await enginePaths.tempRootDirectory();
   await dir.create(recursive: true);
-  final String safeName = p
-      .basename(file.filename)
-      .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_');
+  final String safeName = safeWindowsFileName(p.basename(file.filename));
   final File out = File(p.join(dir.path, 'abs_${itemId}_$safeName'));
   await out.writeAsBytes(bytes, flush: true);
   return out;

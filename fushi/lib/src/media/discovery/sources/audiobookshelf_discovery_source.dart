@@ -19,6 +19,7 @@ import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.d
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 
 /// 源 id 前缀。持久化的「停用源清单」按 id 存，改前缀即断档。
 const String kAudiobookshelfSourceIdPrefix = 'abs-';
@@ -232,10 +233,7 @@ class AudiobookshelfDiscoverySource extends MediaDiscoverySource {
       List<DiscoveryCompanionFile> companions,
     })
   >
-  _prepareEpisodeDownload(
-    String itemId,
-    String episodeId,
-  ) async {
+  _prepareEpisodeDownload(String itemId, String episodeId) async {
     final AudiobookshelfItemDetail detail = await _api.itemDetail(
       itemId,
       expanded: false,
@@ -391,7 +389,7 @@ String audiobookshelfEpisodeFileName(AudiobookshelfEpisode episode) {
     _ => '.mp3',
   };
   final String base = episode.title
-      .replaceAll(RegExp(r'[\\/:*?"<>|]'), ' ')
+      .replaceAll(windowsUnsafeFileNameChars, ' ')
       .trim();
   return '${base.isEmpty ? episode.id : base}$ext';
 }

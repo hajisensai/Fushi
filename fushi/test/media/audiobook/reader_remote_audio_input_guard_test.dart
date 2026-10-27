@@ -9,6 +9,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
+import '../../helpers/source_guard.dart';
+
 void main() {
   final Directory readerDir = Directory(
     'lib/src/pages/implementations/reader_fushi',
@@ -50,10 +52,7 @@ void main() {
   test('阅读器里没有 audioFiles[…].path 这类直接取本机路径的写法', () {
     final RegExp direct = RegExp(r'audioFiles\s*(\?|!)?\s*\[[^\]]*\]\s*\.path');
     // 注释里讲「不要这样写」不算违规：只看代码行。
-    String codeOf(File file) => file
-        .readAsLinesSync()
-        .where((String line) => !line.trimLeft().startsWith('//'))
-        .join('\n');
+    String codeOf(File file) => maskComments(file.readAsStringSync());
     final List<String> violations = <String>[
       for (final File file in readerParts())
         if (direct.hasMatch(codeOf(file))) p.basename(file.path),

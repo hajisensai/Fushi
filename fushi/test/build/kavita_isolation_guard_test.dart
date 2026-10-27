@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// Kavita 集成的结构性护栏（源码扫描）。
 ///
 /// 这些边界失效都是静默的：编译、测试照常过，问题要到合并另一条分支（ABS）、
@@ -21,10 +23,7 @@ void main() {
           if (e is File && e.path.endsWith('.dart')) e,
   ];
 
-  String strip(String source) => source
-      .split('\n')
-      .where((String l) => !l.trimLeft().startsWith('//'))
-      .join('\n');
+  String strip(String source) => maskComments(source);
 
   test('guard sees the kavita sources (not vacuous)', () {
     expect(kavitaFiles().length, greaterThan(8));

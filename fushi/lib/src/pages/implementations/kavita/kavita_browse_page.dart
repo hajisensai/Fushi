@@ -616,8 +616,9 @@ class _KavitaSeriesCoverState extends State<KavitaSeriesCover> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     Widget placeholder(IconData icon) => ColoredBox(
-      color: cs.surfaceContainerHighest,
+      color: tokens.surfaces.overlay,
       child: Center(child: FushiIcon(icon, color: cs.onSurfaceVariant)),
     );
     return FutureBuilder<Uint8List>(
