@@ -152,6 +152,8 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) async {
+    // 列举远端要走网络：先换掉上一阶段最后一本书的进度行（见 [_emitPhaseStart]）。
+    _emitPhaseStart(SyncPhase.audiobooks);
     final List<RemoteAudiobookInfo> remoteAudiobooks = await backend
         .listRemoteAudiobooks();
     final List<AudiobookRow> localAudiobooks = await _db.getAllAudiobooks();

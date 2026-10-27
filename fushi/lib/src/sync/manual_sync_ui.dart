@@ -124,6 +124,14 @@ String syncPhaseLabel(SyncPhase phase) {
       return t.sync_progress_videos;
     case SyncPhase.fonts:
       return t.sync_progress_fonts;
+    case SyncPhase.statistics:
+      return t.sync_progress_statistics;
+    case SyncPhase.collections:
+      return t.sync_progress_collections;
+    case SyncPhase.deletions:
+      return t.sync_progress_deletions;
+    case SyncPhase.pendingMines:
+      return t.sync_progress_pending_mines;
   }
 }
 

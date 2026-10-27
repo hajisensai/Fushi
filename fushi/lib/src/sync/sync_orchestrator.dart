@@ -648,6 +648,16 @@ class SyncOrchestrator {
     );
   }
 
+  /// 宣告进入一个没有条目计数（或计数尚未算出）的阶段：`itemTotal == 0` 让 UI 只显示
+  /// 阶段名并画不确定进度条。
+  ///
+  /// 进度行一直显示**最后一次** tick，直到整轮结束（`syncProgress` 不会自己清）。
+  /// 一个阶段若不发 tick，界面就停在上一阶段最后一本书上——反馈里「最后一本像卡死」
+  /// 的那 10–20 秒，正是有声书阶段之后统计 / 合集 / 墓碑这串收尾步骤在静默跑
+  /// （DRXb43v3fA / y3tzvcnrPU）。每个会走网络的阶段开工前都要发这一下。
+  void _emitPhaseStart(SyncPhase phase) =>
+      _emit(phase, itemIndex: 0, itemTotal: 0);
+
   /// One meter for the whole run: per-file byte counts fold into its running
   /// total, so the rate carries across files and phases instead of restarting.
   final TransferRateMeter _rateMeter = TransferRateMeter();
@@ -842,6 +852,7 @@ class SyncOrchestrator {
     // 这里遍历本地 VideoBooks 推/拉 lastPositionMs，让「立即同步」一次把书+视频
     // 进度都同步。
     if (isInterconnect) {
+      _emitPhaseStart(SyncPhase.readingData);
       await _syncBookProgressLive(report, b);
       mark('bookProgressLive');
       await _syncVideoProgressLive(report, b);
@@ -854,6 +865,7 @@ class SyncOrchestrator {
       // 互联无 per-device 快照文件、不依赖 deviceId：host 单份权威快照，client GET →
       // 并集折叠 → 写回本地 → PUT 回 host（host 再 MAX/并集折叠进自己 DB）。
       if (syncStats || syncFavorites || syncWebHistory) {
+        _emitPhaseStart(SyncPhase.statistics);
         await _syncAggregateLive(report, b);
       }
     }
@@ -867,6 +879,7 @@ class SyncOrchestrator {
     if (!isInterconnect &&
         (syncStats || syncWebHistory) &&
         deviceId.isNotEmpty) {
+      _emitPhaseStart(SyncPhase.statistics);
       await _syncAggregate(report);
     }
     mark('aggregate');
@@ -878,6 +891,7 @@ class SyncOrchestrator {
     //   __collections__ 资产（互联 backend 的资产层是 live 端点适配，语义不同）。
     // 两条通道调用同一 CollectionSyncEngine.merge / applyCollectionLocalChanges，
     // 成员并集 + 移出/删除墓碑 + 手动序整合集 LWW，仅通道不同。
+    _emitPhaseStart(SyncPhase.collections);
     if (isInterconnect) {
       await _syncCollectionsLive(report, b);
       // 标签紧跟合集之后：合集标签按合集自然键解析，要先让合集行落地。
@@ -895,6 +909,7 @@ class SyncOrchestrator {
     // 删除传播墓碑（显式确认式）：发布本机未发布删除标记 + 消费远端标记算 deleteLocal
     // 候选（塞 report，UI 弹逐条确认）。放合集之后、冷却戳之前：本地在库键此刻最稳定，
     // 且中断则下轮重跑。基线不在此推进（见 syncDeletionTombstones 文档）。
+    _emitPhaseStart(SyncPhase.deletions);
     if (isInterconnect) {
       await _syncDeletionTombstonesLive(report, b);
     } else {
@@ -906,6 +921,7 @@ class SyncOrchestrator {
     // 错误，不打断本轮——卡都还在各自设备的本地队列里，下一轮再传。
     final PendingMineRelay? relay = pendingMineRelay;
     if (relay != null) {
+      _emitPhaseStart(SyncPhase.pendingMines);
       try {
         final PendingMineRelayReport r = await relay.run(b);
         report.pendingMinesReceived += r.received;
@@ -1858,41 +1874,31 @@ class SyncOrchestrator {
   /// book's folder. A book with a local audiobook absent remotely is pushed;
   /// a remote package for a local book without audiobook is left untouched for
   /// explicit manual download flows.
+  ///
+  /// 这条通道是 upload-only，所以**工作集只由本地 DB 决定**：本端确有完整有声书
+  /// （Audiobooks + SrtBooks 行在、音频文件没断链）的书（DRXb43v3fA / y3tzvcnrPU）。
+  /// 此前循环遍历 `getAllEpubBooks()` 全表——漫画与没有有声书的书也在这张表里——
+  /// 每本都发一次「有声书 (k/N)」进度、每本都无条件 `ensureBookFolder` +
+  /// 两次 `findAsset`（Drive 上每本最多三次网络往返），算出的 `hasLocal` 却只在
+  /// 最后决定传不传。于是 1 本有声书显示成「有声书 (k/全部书数)」、逐本走过漫画，
+  /// 远端慢时整段像卡死。远端状态只对工作集里的书才需要问。
   Future<void> syncAudiobookPackages(String root, SyncRunReport report) async {
-    // A real "files transferred" denominator would need a findAsset network
-    // round-trip per book before the loop; instead progress is keyed on the
-    // book scan (k/N books), with the large pull/push fraction blended into the
-    // current book's slot. The bar still advances monotonically.
-    final List<EpubBookRow> books = await _db.getAllEpubBooks();
-    final int total = books.length;
+    // 立刻换掉上一阶段最后一本书的进度行：建工作集要读 DB 与探音频文件。
+    _emitPhaseStart(SyncPhase.audiobooks);
+    final List<({EpubBookRow book, SrtBookRow srt})> work =
+        await _localAudiobookPushSet(report);
+    final int total = work.length;
     for (int i = 0; i < total; i++) {
-      final EpubBookRow book = books[i];
+      final EpubBookRow book = work[i].book;
+      final SrtBookRow srt = work[i].srt;
       _emit(
         SyncPhase.audiobooks,
         itemIndex: i,
         itemTotal: total,
         title: book.title,
       );
-      // BUG-619 / TODO-1329: skip empty-key books. bookKey == the sanitized
-      // title, so an empty key means ensureBookFolder would collapse onto the
-      // sync root and scatter the .fushiaudio package into fushi-data/ instead
-      // of the per-book folder. (requireBookFolderName is the precise backstop.)
-      if (book.bookKey.isEmpty) continue;
       File? tmp;
       try {
-        final String bookKey = book.bookKey;
-        final AudiobookRow? ab = await _db.getAudiobookByBookKey(bookKey);
-        final SrtBookRow? srt = await _db.getSrtBookByBookKey(bookKey);
-        // 只看行在不在会把音频已断链的有声书打成零音频包推上云，之后远端「已有」，
-        // 这本书永远不再补传（与互联 BUG-2551 同判据）。
-        final bool hasLocal =
-            ab != null &&
-            srt != null &&
-            await audiobookAudioIsIntact(
-              audioPathsJson: ab.audioPathsJson,
-              audioRoot: ab.audioRoot,
-            );
-
         final String folderId = await _backend.ensureBookFolder(
           bookTitle: book.title,
           rootFolderId: root,
@@ -1902,35 +1908,71 @@ class SyncOrchestrator {
         final AssetEntry? existing =
             await _backend.findAsset(folderId, kSyncAudiobookAssetName) ??
             await _backend.findAsset(folderId, kLegacySyncAudiobookAssetName);
+        if (existing != null) continue;
 
-        if (hasLocal && existing == null) {
-          tmp = _tmpFile('.fushiaudio');
-          await _packages.exportAudioDatabasePackage(
-            bookKey: bookKey,
-            srtBookUid: srt.uid,
-            outputFile: tmp,
-          );
-          await _backend.putAsset(
-            folderId,
-            kSyncAudiobookAssetName,
-            tmp,
-            onProgress: (double f, [int? b]) => _emit(
-              SyncPhase.audiobooks,
-              itemIndex: i,
-              itemTotal: total,
-              title: book.title,
-              fileFraction: f,
-              fileBytes: b,
-            ),
-          );
-          report.audiobooksExported++;
-        }
+        tmp = _tmpFile('.fushiaudio');
+        await _packages.exportAudioDatabasePackage(
+          bookKey: book.bookKey,
+          srtBookUid: srt.uid,
+          outputFile: tmp,
+        );
+        await _backend.putAsset(
+          folderId,
+          kSyncAudiobookAssetName,
+          tmp,
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.audiobooks,
+            itemIndex: i,
+            itemTotal: total,
+            title: book.title,
+            fileFraction: f,
+            fileBytes: b,
+          ),
+        );
+        report.audiobooksExported++;
       } catch (e) {
         report.noteError('audiobook "${book.title}"', e);
       } finally {
         _safeDelete(tmp);
       }
     }
+  }
+
+  /// [syncAudiobookPackages] 的工作集：本地书架上确有完整有声书、可以打包上传的书，
+  /// 按 `getAllEpubBooks()` 的顺序。纯本地判定，不碰远端。
+  ///
+  /// - 空 bookKey 的书排除（BUG-619 / TODO-1329：bookKey == 规范化标题，空 key 会让
+  ///   `ensureBookFolder` 塌到同步根，把包撒进 fushi-data/）。
+  /// - 只看行在不在会把音频已断链的有声书打成零音频包推上云，之后远端「已有」，
+  ///   这本书永远不再补传（与互联 BUG-2551 同判据），所以还要探音频文件。
+  Future<List<({EpubBookRow book, SrtBookRow srt})>> _localAudiobookPushSet(
+    SyncRunReport report,
+  ) async {
+    final Map<String, AudiobookRow> audiobookByKey = <String, AudiobookRow>{
+      for (final AudiobookRow ab in await _db.getAllAudiobooks())
+        if (ab.bookKey.isNotEmpty) ab.bookKey: ab,
+    };
+    final List<({EpubBookRow book, SrtBookRow srt})> work =
+        <({EpubBookRow book, SrtBookRow srt})>[];
+    if (audiobookByKey.isEmpty) return work;
+    for (final EpubBookRow book in await _db.getAllEpubBooks()) {
+      final AudiobookRow? ab = audiobookByKey[book.bookKey];
+      if (ab == null) continue;
+      try {
+        final SrtBookRow? srt = await _db.getSrtBookByBookKey(book.bookKey);
+        if (srt == null) continue;
+        if (!await audiobookAudioIsIntact(
+          audioPathsJson: ab.audioPathsJson,
+          audioRoot: ab.audioRoot,
+        )) {
+          continue;
+        }
+        work.add((book: book, srt: srt));
+      } catch (e) {
+        report.noteError('audiobook "${book.title}"', e);
+      }
+    }
+    return work;
   }
 
   /// Deletes per-book metadata/cover files that spilled directly into the sync
