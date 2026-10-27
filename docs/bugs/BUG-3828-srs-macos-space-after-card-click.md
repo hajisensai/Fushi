@@ -1,4 +1,4 @@
-## BUG-3820 · macOS 点过卡面后空格不翻面（键盘桥可被卡片脚本截走 + 加取证）
+## BUG-3828 · macOS 点过卡面后空格不翻面（键盘桥可被卡片脚本截走 + 加取证）
 - **报告**：2026-10-27（用户：应用内反馈 OO3O-3ljda，macOS 3.0.1-debug.20797，导入的 Lapis 模板，正面点一下后空格无反应）
 - **真实性**：⚠️ 部分确认（缺 macOS 真机，根因未定论）。
   - 已确认的路径：macOS 上点进卡面后 WKWebView 持有 first responder，Flutter 收不到按键（`reader_fushi/caret.part.dart:63` 同一事实），空格只剩页内键盘桥（`webview_key_bridge.dart` 生成、`srs_card_face.dart` `_injectBridge` 注入）。截图显示点按切出了悬浮顶栏（`_onCardTapEmpty`），没有查词弹窗（排除 `guardBridgeToken` 吞键）。

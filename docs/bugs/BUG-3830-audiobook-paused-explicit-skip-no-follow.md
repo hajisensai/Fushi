@@ -1,4 +1,4 @@
-## BUG-3819 · 有声书暂停时显式跳句阅读器视口不跟随
+## BUG-3830 · 有声书暂停时显式跳句阅读器视口不跟随
 - **报告**：2026-10-27（用户：应用内反馈 yk2XDOGh-H，Android 3.0.1-debug；设计项，所有者 2026-10-27 批准按分诊推荐实施）
 - **真实性**：✅ 真问题（沿代码路径确认，非设备复现）。暂停中按「下一句」，音频与高亮已到目标句，但目标句在下一页时视口不翻：
   - `fushi/lib/src/media/audiobook/audiobook_controller.dart:2177`（修前）`shouldRevealCurrentCue` 要求 `_player.playing`——这是 BUG-2961 / BUG-2781 有意的「暂停态被动更新不拽视口」；

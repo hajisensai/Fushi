@@ -1,4 +1,4 @@
-## BUG-3818 · 云同步删除墓碑阶段逐条 GET 全部远端标记，单阶段 200 s+
+## BUG-3819 · 云同步删除墓碑阶段逐条 GET 全部远端标记，单阶段 200 s+
 - **报告**：2026-10-27（用户：应用内反馈 SDbJAx1Db6 的附带日志；该反馈主诉是游戏内嵌套查词，本条只是日志里顺带暴露的问题，不关闭该反馈）
 - **真实性**：✅ 真 bug。日志 `SyncRunReport.timing` 六轮 `deletionTombstones=196693–236138ms`（整轮云同步 204–250 s），并有 121 条 `deletion tombstone "favoritesentence__…json" unreadable: HandshakeException: Connection terminated during handshake`。根因 `fushi/lib/src/sync/sync_orchestrator.dart:1311–1316`（修复前 `syncDeletionTombstones`，base `cd7c9a975f`）：`listChildren(__tombstones__)` 后对**每一个**逐条标记 `await _backend.getJsonAsset(e.id)` 顺序串行，每条一次独立 HTTPS 往返；标记永不 GC（同函数文档「不自动 GC 远端标记」），所以每轮成本 = 2 + N 次往返且 N 只增不减（用户收藏句删除墓碑几百条）。读失败没有预算：连接坏掉时剩下每条都要再撞一次 TLS 握手、各记一条错。没有重复下载以外的问题（无重试 / 无额外超时），慢纯粹是「每轮逐条全量读」。
 - **[x] ① 已修复** — 读侧改成粗粒度对象（`packages/fushi_engine/lib/sync/deletion_tombstone_bundle.dart` 新增 + `sync_orchestrator.dart` `syncDeletionTombstones` 重写读段）：

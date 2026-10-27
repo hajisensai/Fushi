@@ -1,4 +1,4 @@
-## BUG-3819 · macOS 复习每次翻面 / 换卡都重建卡面 WebView（installLookup 打进死通道、卡顿）
+## BUG-3827 · macOS 复习每次翻面 / 换卡都重建卡面 WebView（installLookup 打进死通道、卡顿）
 - **报告**：2026-10-27（用户：应用内反馈 O1yqRPUyut「复习的时候卡住」，macOS 3.0.1-debug.21088）
 - **真实性**：✅ 真 bug（日志 + 代码路径确认，非设备复现）。
   - 日志 6593 行里 610 条 `SrsWebCardFace.installLookup: MissingPluginException(... evaluateJavascript on channel com.pichillilorenzo/flutter_inappwebview_<n>)`，`<n>` 每条严格 +2、间隔 3–60 s（复习节奏，不是定时器）：每张卡新建两个平台视图、其中一次注入打进已销毁的通道。分诊稿「每 3 秒重建」不准确，是每张卡两次。

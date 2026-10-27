@@ -1,4 +1,4 @@
-## BUG-3819 · 设置 › 同步加「自动同步复习数据」开关（复习数据后台同步无法单独关闭）
+## BUG-3824 · 设置 › 同步加「自动同步复习数据」开关（复习数据后台同步无法单独关闭）
 - **报告**：2026-10-27（用户：QQ 群经 fushi-bot 代提交 VNz9dsLeIy；关联 I1Bg6uMZ32、0rvPl6s6tR。分诊 `docs/reviews/2026-10-27-feedback-triage.md` 第五节第 2 项，所有者已批准推荐方案）
 - **真实性**：✅ 设计缺口（不是代码错误）。复习数据的后台同步有四个自动触发口，没有一个能单独关：常规同步每条通道后的复习步骤（`fushi/lib/src/srs/srs_app_runtime.dart` 旧 `_postRun`）、本机写入后的去抖推送（旧 `srs_app_runtime.dart:90` 的 `localPush`）、互联快速通道长轮询（`SrsInterconnectWatcher`，host 有新数据立刻同步）、本机作为主机收到写入后 3 s 去抖（`fushi/lib/src/srs/srs_sync_scheduler.dart` `notifyLocalDirectoryWritten`）。互联的 `interconnect.auto_sync` 只管常规同步轮次，用户想停掉复习数据的后台同步只能整个关互联。
 - **[x] ① 已实现** — 提交 `feat(srs): setting to turn off automatic review-data sync`。

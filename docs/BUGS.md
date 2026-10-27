@@ -33,49 +33,25 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3422 条。点号进各自文件。
+> 共 3436 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3832](bugs/BUG-3832-srs-interconnect-sync-crash.md) | ✅ | ✅ | 小米设备 SRS 互联同步 / 复习记录 / 导入卡片时闪退（Dart 日志无栈） |
+| [BUG-3831](bugs/BUG-3831-native-exit-reason-logging.md) | ✅ | ✅ | 原生崩溃 / 被系统杀的进程没有任何日志（反馈分诊约一半闪退卡在 Dart 日志无栈） |
+| [BUG-3830](bugs/BUG-3830-audiobook-paused-explicit-skip-no-follow.md) | ✅ | ✅ | 有声书暂停时显式跳句阅读器视口不跟随 |
+| [BUG-3829](bugs/BUG-3829-audiobook-jump-pill-threshold-and-lyrics-placement.md) | ✅ | ✅ | 有声书返回原位置胶囊阈值过小且歌词模式压住歌词 |
+| [BUG-3828](bugs/BUG-3828-srs-macos-space-after-card-click.md) | ✅ | ✅ | macOS 点过卡面后空格不翻面（键盘桥可被卡片脚本截走 + 加取证） |
+| [BUG-3827](bugs/BUG-3827-srs-card-face-webview-recreated-per-flip.md) | ✅ | ✅ | macOS 复习每次翻面 / 换卡都重建卡面 WebView（installLookup 打进死通道、卡顿） |
+| [BUG-3826](bugs/BUG-3826-srs-native-audio-queue-blocks-stop.md) | ✅ | ✅ | 复习换卡后上一张音频不停（原生 just_audio play() 占住串行队列） |
+| [BUG-3825](bugs/BUG-3825-lyrics-follow-breaks-without-touch.md) | ✅ | ✅ | 歌词模式没碰屏幕也会自动对齐中断、弹出「跟随音频」 |
+| [BUG-3824](bugs/BUG-3824-srs-auto-sync-toggle.md) | ✅ | ✅ | 设置 › 同步加「自动同步复习数据」开关（复习数据后台同步无法单独关闭） |
+| [BUG-3823](bugs/BUG-3823-srs-sync-pull-triggers-push.md) | ✅ | ✅ | 复习同步拉入的变更又触发一轮本机推送，库页横幅反复弹出、内容上下挪 |
+| [BUG-3822](bugs/BUG-3822-emby-auth-header-legacy-brand.md) | ✅ | ✅ | Emby/Jellyfin 认证头仍报旧品牌 Hibiki，添加服务器失败日志无请求轨迹 |
+| [BUG-3821](bugs/BUG-3821-media-server-episode-version-pick.md) | ✅ | ✅ | 媒体服务器：继续观看卡要能去详情，非续播集播放前要能选版本 |
+| [BUG-3820](bugs/BUG-3820-english-ordinal-season-dirs.md) | ✅ | ✅ | 视频解析器不认 Second Season / Season Two 等英文序数季名，合集包续季目录判不出季号 |
+| [BUG-3819](bugs/BUG-3819-cloud-tombstone-per-marker-round-trips.md) | ✅ | ✅ | 云同步删除墓碑阶段逐条 GET 全部远端标记，单阶段 200 s+ |
 | [BUG-3818](bugs/BUG-3818-profile-delete-srs-cascade.md) | ✅ | ✅ | 删 Profile 后 srs.db 里该 uid 的复习数据与媒体目录残留（无主副本） |
-> 共 3423 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3819](bugs/BUG-3819-english-ordinal-season-dirs.md) | ✅ | ✅ | 视频解析器不认 Second Season / Season Two 等英文序数季名，合集包续季目录判不出季号 |
-| [BUG-3818](bugs/BUG-3818-cloud-tombstone-per-marker-round-trips.md) | ✅ | ✅ | 云同步删除墓碑阶段逐条 GET 全部远端标记，单阶段 200 s+ |
-> 共 3423 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3819](bugs/BUG-3819-emby-auth-header-legacy-brand.md) | ✅ | ✅ | Emby/Jellyfin 认证头仍报旧品牌 Hibiki，添加服务器失败日志无请求轨迹 |
-| [BUG-3818](bugs/BUG-3818-media-server-episode-version-pick.md) | ✅ | ✅ | 媒体服务器：继续观看卡要能去详情，非续播集播放前要能选版本 |
-> 共 3424 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3820](bugs/BUG-3820-lyrics-follow-breaks-without-touch.md) | ✅ | ✅ | 歌词模式没碰屏幕也会自动对齐中断、弹出「跟随音频」 |
-| [BUG-3819](bugs/BUG-3819-srs-auto-sync-toggle.md) | ✅ | ✅ | 设置 › 同步加「自动同步复习数据」开关（复习数据后台同步无法单独关闭） |
-| [BUG-3818](bugs/BUG-3818-srs-sync-pull-triggers-push.md) | ✅ | ✅ | 复习同步拉入的变更又触发一轮本机推送，库页横幅反复弹出、内容上下挪 |
-> 共 3424 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3820](bugs/BUG-3820-srs-macos-space-after-card-click.md) | ✅ | ✅ | macOS 点过卡面后空格不翻面（键盘桥可被卡片脚本截走 + 加取证） |
-| [BUG-3819](bugs/BUG-3819-srs-card-face-webview-recreated-per-flip.md) | ✅ | ✅ | macOS 复习每次翻面 / 换卡都重建卡面 WebView（installLookup 打进死通道、卡顿） |
-| [BUG-3818](bugs/BUG-3818-srs-native-audio-queue-blocks-stop.md) | ✅ | ✅ | 复习换卡后上一张音频不停（原生 just_audio play() 占住串行队列） |
-> 共 3423 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3819](bugs/BUG-3819-audiobook-paused-explicit-skip-no-follow.md) | ✅ | ✅ | 有声书暂停时显式跳句阅读器视口不跟随 |
-| [BUG-3818](bugs/BUG-3818-audiobook-jump-pill-threshold-and-lyrics-placement.md) | ✅ | ✅ | 有声书返回原位置胶囊阈值过小且歌词模式压住歌词 |
-> 共 3423 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3819](bugs/BUG-3819-srs-interconnect-sync-crash.md) | ✅ | ✅ | 小米设备 SRS 互联同步 / 复习记录 / 导入卡片时闪退（Dart 日志无栈） |
-| [BUG-3818](bugs/BUG-3818-native-exit-reason-logging.md) | ✅ | ✅ | 原生崩溃 / 被系统杀的进程没有任何日志（反馈分诊约一半闪退卡在 Dart 日志无栈） |
 | [BUG-3817](bugs/BUG-3817-video-delete-work-leaves-extras.md) | ✅ | ✅ | 删除动漫只删正片：特典与其余下载资源残留在目录 |
 | [BUG-3816](bugs/BUG-3816-download-organize-multi-work-pack-collision.md) | ✅ | ✅ | 下载整理：多作品合集包续作目录无季号撞名整任务失败 |
 | [BUG-3815](bugs/BUG-3815-interconnect-push-resurrects-host-deleted-book.md) | ✅ | ✅ | 互联客户端把主机「从所有设备删除」的书推回主机并清掉删除墓碑 |

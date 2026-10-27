@@ -7,7 +7,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import '../../helpers/fake_just_audio.dart';
 import '../../helpers/source_guard.dart';
 
-/// 反馈 yk2XDOGh-H（BUG-3819）：有声书暂停时用户**显式**跳句（上一句 / 下一句按钮、
+/// 反馈 yk2XDOGh-H（BUG-3830）：有声书暂停时用户**显式**跳句（上一句 / 下一句按钮、
 /// 快捷键、音量键句子导航），阅读器视口要跟到目标句（必要时翻页 / 跨章）；被动的
 /// 进度更新仍不拽视口（BUG-2961 / BUG-2781）。
 ///

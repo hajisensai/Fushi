@@ -1,4 +1,4 @@
-## BUG-3818 · 复习换卡后上一张音频不停（原生 just_audio play() 占住串行队列）
+## BUG-3826 · 复习换卡后上一张音频不停（原生 just_audio play() 占住串行队列）
 - **报告**：2026-10-27（用户：应用内反馈 N-JACNGS-K Android 3.0.1-debug.21417、MljlXfzZzL macOS 3.0.1-debug.20797；1o9Oe8GuDR 同机「音频播放不了」疑同类）
 - **真实性**：✅ 真 bug（沿代码路径 + 上游源码确认，非设备复现）。
   - `fushi/lib/src/utils/misc/desktop_audio_playback.dart:280`（修前）`_play` 的串行 body 里 `await _player.play()`。注释假设它「native play 请求被接受就返回」——只对 media_kit 后端（Windows / Linux，`main.dart` `JustAudioMediaKit.ensureInitialized()` 缺省参数）成立。Android / iOS / macOS 走 just_audio 原生实现：`just_audio-0.9.42/android/.../AudioPlayer.java:938-952` 把 `play` 的 `Result` 存进 `playResult`，直到暂停 / 播完 / 释放才回复（darwin `AudioPlayer.m:1027-1031` 的 `_playResult` 同理）；just_audio 的 `play()`（`just_audio.dart:933-971`）等的就是它。

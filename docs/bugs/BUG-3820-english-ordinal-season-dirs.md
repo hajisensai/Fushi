@@ -1,4 +1,4 @@
-## BUG-3819 · 视频解析器不认 Second Season / Season Two 等英文序数季名，合集包续季目录判不出季号
+## BUG-3820 · 视频解析器不认 Second Season / Season Two 等英文序数季名，合集包续季目录判不出季号
 - **报告**：2026-10-27（应用内反馈 kg41f2PGdC 的遗留项，见 BUG-3816 备注）
 - **真实性**：✅ 真 bug。季号规则只认数字形式：`native/fushi_compute/src/parse/media_name.rs:155`（修前）`ordinal_season` = `(\d{1,2})\s*(?:st|nd|rd|th)\s*Season`、`season_word` = `Season[\s._]*(\d{1,2})`，`parse_title_text` ④ 季度模式（修前 `:657-671`）里没有任何英文序数词 / 基数词规则。于是 `[VCB-Studio] Yama no Susume Second Season [01]...mkv` 与其目录名 `season` 均为 null；BUG-3816 的整理器只能把 `Second Season` / `Third Season` 目录当作「并列作品」镜像落位，而不是按季并进同一合集。
 - **[x] ① 已修复** — `media_name.rs` 新增两条规则 `word_ordinal_season`（`(first|second|…|tenth)[\s._]+Season`）与 `season_cardinal_word`（`Season[\s._]+(one|two|…|ten)`），大小写不敏感、要求两侧是分隔符边界，只在与 `Season` 直接相连的词组里认（裸 `Second` / `Two` 不算）；在 ④ 里排在数字序数规则之前，季名从标题里剥掉（与 `2nd Season` 同口径）。罗马数字 `II/III/IV` 结尾沿用既有 `ascii_roman_tail`，未扩大。整理器 `video_download_organizer.dart` 无需改：文件名 / 目录名一旦解出季号，`_packSeasonLayout` 就把它们排除出「并列作品」判定并按季落位。
