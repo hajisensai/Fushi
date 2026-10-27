@@ -190,6 +190,7 @@ import 'package:fushi/src/media/video/underlay_composition.dart'
         releaseUnderlayComposition,
         underlayCompositionSupported;
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/media/video/web_mine_return_state.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart'
     show
         WebVideoHosting,
@@ -396,6 +397,7 @@ import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/video_mine_queue.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/mining/web_mine_idle.dart' show WebMineIdleScheduler;
 import 'package:fushi/src/mining/web_mine_queue_store.dart'
     show WebMineQueueStore, decodeWebMineFields;
 import 'package:fushi/src/media/video/video_mine_queue_dialog.dart';
@@ -736,6 +738,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     this.discLaunchOrigin,
     this.webSite,
     this.webBackToBrowser = false,
+    this.webReturnState,
     this.remoteDisc,
     super.key,
   }) : remoteInfo = null,
@@ -763,6 +766,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
        discLaunchOrigin = null,
        webSite = null,
        webBackToBrowser = false,
+       webReturnState = null,
        remoteDisc = null,
        playlistCollectionId = null;
 
@@ -812,6 +816,10 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 选的集，本页网页档只是同一站点的第二份浏览器（BUG-3801）。
   final bool webBackToBrowser;
 
+  /// 网页档：制卡队列在内置档重放完换回本页时带回的重放前状态（站点字幕轨 / 音轨 / 位置），
+  /// 画面就绪后原样恢复（web_source.part.dart `_applyWebPendingRestore`）。
+  final WebMineReturnState? webReturnState;
+
   /// 流式原盘会话（远端原盘第二期）：盘在已配对 host 上，libmpv 经 HTTP 读它。只与
   /// [openBlurayMenu] 一起用（入口 [neutralizedRemoteDisc]）；本机没有这张盘的库行，
   /// 会话里的标题不绑定库行、不写进度。
@@ -841,6 +849,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     Rect? discLaunchOrigin,
     WebVideoSite? webSite,
     bool webBackToBrowser = false,
+    WebMineReturnState? webReturnState,
   }) => FushiAppUiScaleNeutralizer(
     child: VideoFushiPage(
       bookUid: bookUid,
@@ -858,6 +867,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       discLaunchOrigin: discLaunchOrigin,
       webSite: webSite,
       webBackToBrowser: webBackToBrowser,
+      webReturnState: webReturnState,
     ),
   );
 
@@ -2330,6 +2340,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 选择带到下一集，所以整个页面会话有效。
   bool _webSubtitleUserChosen = false;
   bool _webAudioUserChosen = false;
+
+  /// 待恢复的重放前状态（[VideoFushiPage.webReturnState]）；逐拍对齐，见 `_applyWebPendingRestore`。
+  WebMineReturnState? _webPendingRestore;
+  DateTime? _webPendingRestoreDeadline;
+  DateTime? _webLastRestoreActionAt;
+  bool _webRestoreNavigated = false;
   String? _webAudioAutoVideoKey;
 
   /// 当前选中的是站点的图片字幕：Fushi 叠层画不了，站点自己的字幕层要显示出来。
@@ -2363,6 +2379,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   late final WebMineQueueStore _webMineQueue = WebMineQueueStore(
     appModel.database,
   );
+
+  /// 网页档的空闲自动制卡：用户暂停后离开电脑，换到内置档静音重放队列，跑完换回本页
+  /// （`web_mine_idle.dart`；仅 Windows）。
+  WebMineIdleScheduler? _webMineIdle;
 
   /// 站点 WebView 的稳定身份：视频区 Stack 里有无 `<video>` 两种布局之间不重建它。
   final GlobalKey _webSurfaceKey = GlobalKey(debugLabel: 'video-web-surface');
