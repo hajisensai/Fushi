@@ -578,10 +578,6 @@ extension _VideoLayout on _VideoFushiPageState {
                         // 进度条章节刻度层（TODO-432）：叠在 seek bar 同一几何上画每章一条竖线。
                         // IgnorePointer 纯视觉、不拦 seek bar 拖动；随控制条显隐、仅有章节时画。
                         _buildChapterMarkersOverlay(controller),
-                        // 进度条 hover 缩略图预览层（TODO-669）：桌面 hover seek bar 时在指针
-                        // 上方弹缩略图 + 时间戳。纯视觉 IgnorePointer（不拦 seek bar 拖动），
-                        // hover 位置经 fork onHoverPosition → [_onSeekBarHover] 取得。
-                        _buildThumbnailPreviewOverlay(controller),
                         // 视频最下方那条主题色细进度条（开关 + 小窗档的唯一进度
                         // 指示）。排在控制条之后 = 画在 scrim 之上；纯装饰、
                         // IgnorePointer，不抢 seek bar 的命中区。
@@ -781,6 +777,14 @@ extension _VideoLayout on _VideoFushiPageState {
                         ),
                         // 图形字幕整轨转文字的进度卡（没在跑时零尺寸）。
                         _buildGraphicSubtitleOcrProgressOverlay(),
+                        // 进度条 hover 缩略图预览层（TODO-669）：桌面 hover seek bar 时在指针
+                        // 上方弹缩略图 + 时间戳。纯视觉 IgnorePointer（不拦 seek bar 拖动），
+                        // hover 位置经 fork onHoverPosition → [_onSeekBarHover] 取得。
+                        // KKxMNpG99t：必须排在弹幕 / 文本字幕 / 图形字幕各层**之后**——
+                        // 用户正在 hover 进度条找画面，预览是此刻的焦点；排在字幕前面时
+                        // 底部字幕（控制条可见时恰好抬到进度条上方）把缩略图压在下面。
+                        // IgnorePointer，挪层不改任何命中。
+                        _buildThumbnailPreviewOverlay(controller),
                         _buildOsdOverlay(),
                         // 在线视频后台制卡 / 看完再制卡的右上角角标（无任务时零尺寸）。
                         _buildMineQueueBadgeOverlay(),
