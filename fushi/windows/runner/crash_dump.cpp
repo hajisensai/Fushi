@@ -246,7 +246,10 @@ namespace fushi
       } else {
         pos = AppendTextW(line, pos, cap, L"<not written>");
       }
-      pos = AppendTextW(line, pos, cap, L"\r\n");
+      // 行尾 CRLF 用字符数组拼，不写成以反斜杠开头的宽字符串字面量：路径字面量守卫
+      // （wgc_capture_logging_guard_test，防 MSVC C4129 吞分隔符）只放行转义的 L"\\。
+      static constexpr wchar_t kCrlf[] = {L'\r', L'\n', L'\0'};
+      pos = AppendTextW(line, pos, cap, kCrlf);
 
       wchar_t log_path[MAX_PATH];
       if (!ResolveCrashDumpDirectory(log_path)) return;

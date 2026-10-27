@@ -528,14 +528,14 @@ void main() {
           'interconnect.share_statistics',
           'interconnect.share_favorites',
           'interconnect.auto_sync',
+          // 反馈 VNz9dsLeIy（BUG-3824）：复习数据自己的自动同步开关，紧跟在互联自动同步之后。
+          'sync.srs_auto_sync',
         ]);
-        expect(dest.sections[3].items.last, isA<SettingsSwitchItem>());
-        expect(
-          dest.sections[3].items.last.subtitle,
-          t.interconnect_auto_sync_hint,
-        );
-        final SettingsItem cloudAutoSync = buildSyncBackupDestination()
-            .sections
+        final SettingsItem interconnectAutoSync = dest.sections[3].items
+            .firstWhere((SettingsItem i) => i.id == 'interconnect.auto_sync');
+        expect(interconnectAutoSync, isA<SettingsSwitchItem>());
+        expect(interconnectAutoSync.subtitle, t.interconnect_auto_sync_hint);
+        final SettingsItem cloudAutoSync = buildSyncBackupDestination().sections
             .expand((SettingsSection s) => s.items)
             .firstWhere((SettingsItem i) => i.id == 'sync.auto_sync');
         expect(

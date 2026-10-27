@@ -578,6 +578,9 @@ class AppPaths {
     // 卡片来源回看的待回写草稿（临时音频/图片/字段，`card_source_drafts/<sourceId>`），
     // 失败后可恢复提交，必须随数据根走。派生点：card_source_router.dart。
     'card_source_drafts',
+    // 删 Profile 前自动做的复习数据备份（`.fushisrs`，撤销途径，BUG-3818），必须随数据根走。
+    // 派生点：AppPaths.srsProfileBackupsDirectory（srs_profile_cleanup.dart 使用）。
+    'srs_profile_backups',
     // 音频 CD 抓轨产物（BUG-3312，`<documents>/audio_cd/<卷标> (<光盘id>)/`）。导入后的
     // 视频条目 videoPath 指向这里，必须随数据根走。派生点：audio_cd_import.dart。
     'audio_cd',

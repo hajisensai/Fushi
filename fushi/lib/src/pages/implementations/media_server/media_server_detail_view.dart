@@ -12,6 +12,7 @@ import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_version_picker.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeInset, FushiFloatingChromeScope;
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
@@ -889,42 +890,45 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     final int versionCount =
         _episodeVersions[episode.id]?.length ?? episode.knownVersionCount ?? 0;
     final Widget card = FushiPressScale(
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          customBorder: RoundedRectangleBorder(
-            borderRadius: FushiM3eShape.cardRadius,
-          ),
-          canRequestFocus: false,
-          onTap: () => unawaited(_openEpisode(episode)),
-          // 长按 / 右键：重新选版本再播（记住过也问）。不支持多版本的服务器与
-          // 点按同义。
-          onLongPress: () => unawaited(_openEpisode(episode, alwaysAsk: true)),
-          onSecondaryTap: () =>
-              unawaited(_openEpisode(episode, alwaysAsk: true)),
-          child: CollectionEpisodeCard(
-            thumb: collectionEpisodeThumb(
-              context,
-              mediaServerCoverImage(
-                _browser,
-                episode,
-                kind: episode.hasThumb
-                    ? MediaServerImageKind.thumb
-                    : MediaServerImageKind.primary,
-              ),
+      // 长按 / 右键：重新选版本再播（记住过也问）。不支持多版本的服务器与点按同义。
+      // 右键走绑定表（ContextMenuTrigger），右键被别的动作占用时自动让位。
+      child: ContextMenuTrigger(
+        onInvoke: (Offset _) =>
+            unawaited(_openEpisode(episode, alwaysAsk: true)),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            customBorder: RoundedRectangleBorder(
+              borderRadius: FushiM3eShape.cardRadius,
             ),
-            number: '${episode.episodeNumber ?? index + 1}',
-            title: episode.name,
-            summary: episode.overview,
-            meta: <String>[
-              if (duration.isNotEmpty) duration,
-              if (versionCount > 1)
-                t.media_server_version_count(n: versionCount),
-            ],
-            completed: episode.played,
-            positionMs: episode.positionMs,
-            progress: mediaServerProgress(episode),
-            isContinue: isContinue,
+            canRequestFocus: false,
+            onTap: () => unawaited(_openEpisode(episode)),
+            onLongPress: () =>
+                unawaited(_openEpisode(episode, alwaysAsk: true)),
+            child: CollectionEpisodeCard(
+              thumb: collectionEpisodeThumb(
+                context,
+                mediaServerCoverImage(
+                  _browser,
+                  episode,
+                  kind: episode.hasThumb
+                      ? MediaServerImageKind.thumb
+                      : MediaServerImageKind.primary,
+                ),
+              ),
+              number: '${episode.episodeNumber ?? index + 1}',
+              title: episode.name,
+              summary: episode.overview,
+              meta: <String>[
+                if (duration.isNotEmpty) duration,
+                if (versionCount > 1)
+                  t.media_server_version_count(n: versionCount),
+              ],
+              completed: episode.played,
+              positionMs: episode.positionMs,
+              progress: mediaServerProgress(episode),
+              isContinue: isContinue,
+            ),
           ),
         ),
       ),
