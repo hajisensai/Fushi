@@ -10,6 +10,7 @@ import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/shortcuts/platform_modifier_state.dart';
 import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -1100,8 +1101,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 与持久化）。非缩放修饰键 / 非滚轮信号一律忽略，交回列表滚动。
   void _handleZoomWheel(PointerSignalEvent event) {
     if (event is! PointerScrollEvent) return;
-    if (!HardwareKeyboard.instance.isControlPressed &&
-        !HardwareKeyboard.instance.isMetaPressed) {
+    // 以平台真实修饰键状态为准（Ctrl 抬起落在 WebView2 / 别的窗口时缓存会卡在按下，
+    // 反馈 TpKspDUst7）；卡住的「按下」顺手解除，列表恢复可滚。
+    if (!isZoomModifierPressed()) {
+      if (_zoomModifierHeld && mounted) {
+        setState(() => _zoomModifierHeld = false);
+      }
       return;
     }
     if (event.scrollDelta.dy == 0) return;

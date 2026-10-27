@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:fushi/src/shortcuts/platform_modifier_state.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import '../../helpers/glass_unwrap.dart';
@@ -1742,6 +1743,49 @@ void main() {
       await tester.tap(find.byIcon(FushiIcons.textDecrease));
       await tester.pump();
       expect(changes, <int>[2, 1], reason: 'A- 报回档位 1');
+    });
+
+    testWidgets(
+        'stale Ctrl (key-up lost to WebView2) does not turn the wheel into '
+        'font zoom; a real Ctrl still zooms (feedback TpKspDUst7)',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+      final List<int> changes = <int>[];
+      bool platformCtrlDown = false;
+      debugPlatformZoomModifierQuery = () => platformCtrlDown;
+      addTearDown(() => debugPlatformZoomModifierQuery = null);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) => true,
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        initialFontScaleIndex: 1,
+        onFontScaleIndexChanged: changes.add,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+
+      // Flutter 看到了 Ctrl 按下，但抬起落在别处：缓存卡在「按下」。
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      final Offset row = tester.getCenter(find.text('x'));
+      final TestPointer pointer = TestPointer(1, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(pointer.hover(row));
+      await tester.sendEventToBinding(pointer.scroll(const Offset(0, -100)));
+      await tester.pump();
+      expect(changes, isEmpty, reason: '平台说 Ctrl 没按：不能缩字号');
+
+      platformCtrlDown = true;
+      await tester.sendEventToBinding(pointer.scroll(const Offset(0, -100)));
+      await tester.pump();
+      expect(changes, <int>[2], reason: '真按着 Ctrl：照常放大');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     });
 
     // ── BUG-879：字幕列表行 Shift-悬停查词（与画面字幕对称）─────────────────
