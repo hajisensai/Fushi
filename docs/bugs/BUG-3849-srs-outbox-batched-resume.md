@@ -1,6 +1,6 @@
-## BUG-3821 · SRS 同步 v2 发件一次性全量进内存、断点整份重传、推送失败不退避
-- **报告**：2026-10-27（应用内反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL，同一台小米 23116PN5BC；BUG-3819 的结构性后续）
-- **真实性**：✅ 真缺陷（已沿代码路径验证；是否就是那三次闪退的直接原因仍未坐实，见 BUG-3819 / BUG-3818）：
+## BUG-3849 · SRS 同步 v2 发件一次性全量进内存、断点整份重传、推送失败不退避
+- **报告**：2026-10-27（应用内反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL，同一台小米 23116PN5BC；BUG-3832 的结构性后续）
+- **真实性**：✅ 真缺陷（已沿代码路径验证；是否就是那三次闪退的直接原因仍未坐实，见 BUG-3832 / BUG-3831）：
   - 发件全量进内存：`native/fushi_fsrs/src/store/sync2/transport.rs` 旧 `sync2_outbox`（改前 648-697 行）对 `uploaded` 之后的**每一段**都 `load_op` + `segment::pack`，全部攒进一个 `Vec` 一次返回，FFI 再整份拷给 Dart（`srs_sync2_round.dart` 第 3 步一次性拿 `out.files`）。峰值内存随积压线性增长。
   - 断点整份重来：`uploaded` 水位只在 `sync2_head`（改前 735-746 行）里前进，而 head 要等全部段写完才写；上传中途断一次，下一轮 `uploaded` 原地不动、整份重新打包重传。日志里该设备失败段 seq 一天内从 277661 涨到 427227 即此。
   - 推送不退避：`fushi/lib/src/srs/srs_interconnect_watch.dart` 旧 `SrsLocalPush` 失败后照常每次去抖 5 s 就推，host 不可达时每答一张卡就对死地址探测一轮。
@@ -17,7 +17,7 @@
   - `fushi/test/srs/srs_sync_scheduler_test.dart`：`autoPush` 互联一轮在 exclusive 里、本机目录在锁外、失败报 false；接线守卫（推送 / 长轮询走 `runExclusiveWithSync`、`onReachable` 与手动同步重置退避）。
   - 变异（已做，已还原）：让 `sync2_outbox_ack` 不再持久化水位（`if mark > uploaded && false`）→ Rust 测试红，断言 `segment … sent twice`（下一批重发了已确认的第一批）。
 - **备注**：
-  - 未在真机（小米 23116PN5BC）验证：没有那台设备与它 43 万条积压的数据；只在单测里用 20 万条积压验证批大小上限与续传。闪退是否因此消失仍要等下一次带退出原因（BUG-3818）的反馈确认。
+  - 未在真机（小米 23116PN5BC）验证：没有那台设备与它 43 万条积压的数据；只在单测里用 20 万条积压验证批大小上限与续传。闪退是否因此消失仍要等下一次带退出原因（BUG-3831）的反馈确认。
   - 峰值内存 = 一批（≤ 8 MiB + 每段 < 1/64 余量）+ 正在打包那一段的解码操作（单段 ≤ `SEGMENT_MAX_OPS` = 25 万条）。后者是既有的单段上限，与积压总量无关，本次未动。
   - 顺带发现（未修，既有）：`segment.rs` `Splitter` 注释称体积估计（各小块分别压缩之和）是上界、「真实段不超过 `SEGMENT_TARGET_BYTES`」，实测不可压缩内容下一段 4 205 574 B，超出约 0.27%。影响仅是段 / 批略超目标，测试按 1/64 余量断言。
   - `sync2_status` 的 `unpublished` 现在按「未上传」而非「未写进 head」计（水位在批确认时就前进）；head 写成之前对端仍看不到这些段。
