@@ -337,7 +337,7 @@
         })
         .then(function (text) { post({ type: 'nfMeta', movieId: id, ok: true, text: text }); })
         .catch(function (e) {
-          errors.push(url.split('?')[0] + ' ' + String(e && e.message || e));
+          errors.push(url.split('?')[0] + ' ' + String(e?.message || e));
           attempt(i + 1);
         });
     }
