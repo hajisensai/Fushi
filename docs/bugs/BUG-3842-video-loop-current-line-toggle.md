@@ -1,4 +1,4 @@
-## BUG-3824 · 视频页没有「循环当前句」开关，精听只能反复按重播
+## BUG-3842 · 视频页没有「循环当前句」开关，精听只能反复按重播
 - **报告**：2026-10-27（用户：GitHub Issue #2537 经 fushi-bot 转应用内反馈 Ix4j5SKUth，Windows / 浏览器扩展，功能诉求；所有者 2026-10-27 按分诊推荐拍板：加开关动作、默认不绑键、状态在 UI 上可见）
 - **真实性**：✅ 缺口确认。`VideoPlayerController` 只有一次性「播到句尾就停」（`replayCue` 的 `_oneShotHoldCueIndex`，`fushi/lib/src/media/video/video_player_controller.dart:580`），没有任何循环播放某句的状态；`ShortcutAction` 里也没有对应动作。
 - **[x] ① 已修复** — 状态归控制器（不在页面另存镜像）：

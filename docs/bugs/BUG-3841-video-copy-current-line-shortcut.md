@@ -1,4 +1,4 @@
-## BUG-3823 · 视频页没有「复制当前台词」快捷键，只能开字幕列表逐行点
+## BUG-3841 · 视频页没有「复制当前台词」快捷键，只能开字幕列表逐行点
 - **报告**：2026-10-27（用户：GitHub Issue #2536 经 fushi-bot 转应用内反馈 _Eb0txdN4H，Windows，功能诉求；所有者 2026-10-27 按分诊推荐拍板：加快捷键动作、默认不绑键）
 - **真实性**：✅ 缺口确认。复制逻辑只挂在字幕列表行内按钮与查词浮层顶栏（`fushi/lib/src/pages/implementations/video_fushi/lookup_favorite.part.dart:259-283` `_copyLookupSentence` / `_copyCueText`），`ShortcutAction` 里没有任何复制当前句的动作，键盘 / 手柄 / 鼠标 / 屏幕自定义按钮都够不到。
 - **[x] ① 已修复** — 新增两个 video scope 动作 `videoCopyCurrentSubtitle` / `videoCopyCurrentSecondarySubtitle`（主 / 副分立，与遮蔽开关的主副分立同一体系；反馈提议的 Ctrl+C / Ctrl+Shift+C 由用户自配，**默认空绑定**），接进 `VideoPlayerShortcutActions` / `videoActionCallbacks` / `kVideoAssignableActions`（屏幕按钮可选）、`shortcut_labels`（标签 + 图标）与 i18n（`shortcut_action_video_copy_current_subtitle` / `…_secondary_subtitle` / `video_secondary_subtitle_copy_empty`，经 `i18n_sync`）。取句是纯函数 `fushi/lib/src/media/video/video_current_line_copy.dart` `videoCurrentLineCopyText`：画面上正在显示的那几句（重叠字幕按显示顺序换行），句间空隙回落到按位置解析的那句（主 = `_currentCueForAction`，副 = 副轨按 `effectiveSecondaryDelayMs` 解析）；写剪贴板 + OSD 与列表行内复制同一反馈。网页视频页接主字幕复制（没有副字幕轨，副动作 noop，与其副字幕遮蔽同口径）。浏览器扩展本就有 `copy-cue`，未动。

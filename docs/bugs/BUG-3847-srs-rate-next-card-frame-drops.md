@@ -1,4 +1,4 @@
-## BUG-3818 · SRS 评分后下一张卡掉帧：评分叫醒被盖住的牌组列表 + 卡面无关重建
+## BUG-3847 · SRS 评分后下一张卡掉帧：评分叫醒被盖住的牌组列表 + 卡面无关重建
 - **报告**：2026-10-27（用户：所有者口头报告「SRS 完成卡片评分后，下一张卡片显示帧率低」，无反馈 id）
 - **真实性**：✅ 真 bug。Windows 离屏 runner 实测（`fushi/integration_test/srs_rate_next_frame_itest.dart`，debug 构建，牌组列表页之上开复习页，键盘 Space 翻面 / 3 评分，每种卡 10 次，量评分起 1.5 s 内每帧 FrameTiming + 每帧重建的 element 数 + 各阶段时刻）。两条根因：
   1. **评分叫醒被复习页盖住的列表**：`fushi/lib/src/pages/implementations/srs/srs_review_page.dart:491`（修前）`_guarded` 每次写完都 `bumpSrsRevision` → `srsDeckListProvider`（`fushi/lib/src/srs/srs_providers.dart:535`）整库重算 `deckSummaries()`（牌组树 + 日界 + 30 天日志 + 今日活动 + 计数），冲突 / 迁移角标 provider 也重跑；被盖住的 `SrsDeckListPage` 在评分后 100–350 ms 内整页重建 2–3 次（每次约 2300 个 element），正撞在下一张卡上屏、底栏切换与 Fushi 卡片错峰进场动画那几帧。入口（牌组列表 `srs_deck_list_page.dart:158 _push`、首页复习条 `home_dashboard_page.dart:1924`、导航速览 `home_nav_peek.dart:452`）本来就在复习页返回时各发一次 `bumpSrsRevision`，评分时发是纯浪费。

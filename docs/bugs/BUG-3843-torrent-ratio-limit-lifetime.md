@@ -1,4 +1,4 @@
-## BUG-3818 · BT 分享率上限只在做种阶段截停，下载中上传不受限
+## BUG-3843 · BT 分享率上限只在做种阶段截停，下载中上传不受限
 - **报告**：2026-10-25（用户：应用内反馈 fRmEhU4XIK「设置了 1.3 的分享率，最终分享率却远高于设置」；所有者 2026-10-27 拍板按分诊第五节第 7 项实施：分享率按整个生命周期计算，达到即停上传，含下载中）
 - **真实性**：✅ 真 bug（按旧设计是「有意」，但与用户对「分享率上限」的理解不符）。根因：`packages/fushi_engine/lib/media/torrent/torrent_upload_policy.dart:46` `if (!metrics.isSeeding) return true;` 让下载阶段完全不套分享率；`embedded_torrent_host.dart` `sweepUploadPolicy` 里 `if (!t.isFinished) continue;` 又只对已完成种子下发 pause。下载期间上传不受限，完成时分享率早已超过上限，pause 只能截住之后的做种。另外 native C ABI 也没有「单种子停上传、继续下载」的原语（只有会话级 `ht_set_unchoke_slots` 和 `ht_pause_torrent`）。
 - **[x] ① 已修复** — 策略改成分享率按生命周期累计、下载中也判（做种时长仍只从做种起算）；新增 C ABI `ht_set_torrent_upload_blocked`（`native/fushi_torrent/fushi_torrent_ffi.cpp`，per-torrent `set_upload_limit(1)` / `-1`；libtorrent 的 per-torrent 0 与 -1 都表示「不限」，1 B/s 是能表达的最低值）+ Dart 绑定（可选符号探针 `hasTorrentUploadBlock`）；宿主 sweep 对每个种子幂等下发「上限触发 = 停上传」，下载中绝不 pause，已完成且达上限照旧 pause 停做种。设置文案换成新 key `video_setting_torrent_seed_ratio_lifetime_hint`，写明「含下载过程中的上传」。外接 qBittorrent 后端不下发本字段（qb 用它自己的分享率设置），config 注释写明。

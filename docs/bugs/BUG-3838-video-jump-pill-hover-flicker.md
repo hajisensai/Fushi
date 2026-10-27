@@ -1,4 +1,4 @@
-## BUG-3820 · Windows 视频页「返回跳转前位置」胶囊在鼠标停在边缘时持续闪烁、上下抖动
+## BUG-3838 · Windows 视频页「返回跳转前位置」胶囊在鼠标停在边缘时持续闪烁、上下抖动
 - **报告**：2026-10-27（用户：应用内反馈 qUeubxE-fM，Windows 3.0.1-debug.21088，附录屏）
 - **真实性**：✅ 真 bug（沿代码路径确认，并在 widget 测试里用真实 MouseTracker 复现出同一条自激环；未在 Windows 真机复测）。
   - `fushi/lib/src/pages/implementations/video_fushi/jump_history.part.dart:162-177`（修前）胶囊的 `top` 与 `visible` 都直接取 `_videoControlsVisible`；胶囊挂在控件 Stack 里、盖在 media_kit 桌面控制条的 `MouseRegion` 之上（`third_party/media_kit_video/.../material_desktop.dart:1015-1030`）。

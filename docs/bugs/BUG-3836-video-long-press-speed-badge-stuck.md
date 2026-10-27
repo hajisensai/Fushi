@@ -1,4 +1,4 @@
-## BUG-3818 · 长按倍速后徽章一直停在画面上，直到重开视频
+## BUG-3836 · 长按倍速后徽章一直停在画面上，直到重开视频
 - **报告**：2026-10-27（用户：应用内反馈 3sDHeyPQ-I，Windows 3.0.0+19763，视频播放页）
 - **真实性**：✅ 真 bug（沿代码路径 + Flutter 框架源码确认，未在设备复现）。长按会话的收尾只挂在一个不保证回调的出口上：
   - `fushi/lib/src/pages/implementations/video_fushi/layout.part.dart:491-493`（修前）裸 `GestureDetector` 只接 `onLongPressStart / MoveUpdate / End`；清徽章 `_longPressSpeedBadge.value = null` 与恢复倍速只在 `video_fushi/speed.part.dart:118-133`（修前）`_handleVideoLongPressEnd` 里。
