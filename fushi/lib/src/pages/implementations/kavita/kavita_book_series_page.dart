@@ -190,7 +190,7 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.series.displayName)),
+      appBar: FushiAppBar(title: Text(widget.series.displayName)),
       body: _body(),
     );
   }

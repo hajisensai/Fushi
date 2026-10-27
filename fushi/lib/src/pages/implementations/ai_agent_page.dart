@@ -662,7 +662,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
           ).format(cost.value),
         ),
     ];
-    return Tooltip(
+    return FushiTooltip(
       message: t.ai_agent_usage_breakdown(
         input: count.format(usage.inputTokens ?? 0),
         output: count.format(usage.outputTokens ?? 0),
