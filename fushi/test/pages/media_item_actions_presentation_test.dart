@@ -335,6 +335,80 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    Rect menuPanel(WidgetTester tester) => tester.getRect(
+      find
+          .ancestor(
+            of: find.text('Item title'),
+            matching: find.byType(Material),
+          )
+          .last,
+    );
+
+    testWidgets('flipped near the bottom-right, the bottom-right corner sits '
+        'on the pointer', (WidgetTester tester) async {
+      await open(
+        tester,
+        screen: const Size(1280, 800),
+        anchor: const Offset(1100, 700),
+      );
+      final Rect panel = menuPanel(tester);
+      expect(panel.right, moreOrLessEquals(1100, epsilon: 0.5));
+      expect(panel.bottom, moreOrLessEquals(700, epsilon: 0.5));
+    });
+
+    testWidgets(
+      'too tall for either side: opens toward the roomier side with a '
+      'corner on the pointer instead of straddling it',
+      (WidgetTester tester) async {
+        await open(
+          tester,
+          screen: const Size(1280, 360),
+          anchor: const Offset(300, 150),
+        );
+        final Rect panel = menuPanel(tester);
+        // 上方 142、下方 202：菜单放不下任何一侧，取下方、左上角贴指针并限高。
+        expect(panel.left, moreOrLessEquals(300, epsilon: 0.5));
+        expect(panel.top, moreOrLessEquals(150, epsilon: 0.5));
+        expect(panel.bottom, lessThanOrEqualTo(360 - 8 + 0.5));
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets('the entrance grows out of the pointer corner, not the screen '
+        'corner', (WidgetTester tester) async {
+      fired = <String>[];
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (BuildContext context) => TextButton(
+                onPressed: () => showMediaItemActions<void>(
+                  context: context,
+                  anchor: const Offset(900, 120),
+                  builder: (_) => buildFrame(),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+      // 进场缩放中途：左上角已在指针上，而不是从屏幕左上方向滑过来。
+      final Rect mid = menuPanel(tester);
+      expect(mid.left, moreOrLessEquals(900, epsilon: 0.5));
+      expect(mid.top, moreOrLessEquals(120, epsilon: 0.5));
+      await tester.pumpAndSettle();
+      final Rect done = menuPanel(tester);
+      expect(done.left, moreOrLessEquals(900, epsilon: 0.5));
+      expect(done.top, moreOrLessEquals(120, epsilon: 0.5));
+    });
+
     testWidgets('a right-click dispatched through contextMenuInvoker anchors '
         'the menu without the caller passing a position', (
       WidgetTester tester,

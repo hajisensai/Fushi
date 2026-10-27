@@ -1395,18 +1395,34 @@ class _MediaItemContextMenuRoute<T> extends PopupRoute<T> {
       curve: FushiMotion.enter,
       reverseCurve: FushiMotion.exit,
     );
+    final Animation<double> scale = Tween<double>(
+      begin: 0.92,
+      end: 1,
+    ).animate(curved);
+    // [child] 是铺满 Overlay 的整页（菜单由 [_ContextMenuLayout] 定位在其中），
+    // 缩放原点必须是指针本身：菜单的某个角就贴在指针上，绕指针缩放 = 从那个角
+    // 长出来。原点若取整页的 topLeft（屏幕左上角），进场时整块菜单会从屏幕左上
+    // 方向朝指针滑过来，指针越靠右下滑得越远，看起来像从侧边弹出。
     return FadeTransition(
       opacity: curved,
-      child: ScaleTransition(
-        scale: Tween<double>(begin: 0.92, end: 1).animate(curved),
-        alignment: Alignment.topLeft,
+      child: AnimatedBuilder(
+        animation: scale,
         child: child,
+        builder: (BuildContext context, Widget? child) => Transform.scale(
+          scale: scale.value,
+          alignment: Alignment.topLeft,
+          origin: anchor,
+          child: child,
+        ),
       ),
     );
   }
 }
 
-/// 把菜单放在指针右下；右 / 下放不下时翻到指针左 / 上，最后夹进屏幕安全区。
+/// 让菜单的一个角贴在指针上（桌面右键菜单惯例）：横向默认向右展开、右侧放不下
+/// 翻到左侧；纵向默认向下展开、下方放不下翻到上方。两侧都放不下时取空间大的
+/// 一侧，并把菜单限高到那一侧的空间（面板自带滚动）——而不是整块夹到屏幕顶 /
+/// 底，那样菜单会横跨指针、没有任何一个角在指针处。
 class _ContextMenuLayout extends SingleChildLayoutDelegate {
   const _ContextMenuLayout({required this.anchor, required this.padding});
 
@@ -1417,9 +1433,24 @@ class _ContextMenuLayout extends SingleChildLayoutDelegate {
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
-    return BoxConstraints.loose(
-      constraints.biggest,
-    ).deflate(padding + const EdgeInsets.all(_margin));
+    final Size size = constraints.biggest;
+    final double left = padding.left + _margin;
+    final double top = padding.top + _margin;
+    final double right = size.width - padding.right - _margin;
+    final double bottom = size.height - padding.bottom - _margin;
+    // 只给指针两侧中较大的那一侧：菜单无论怎么翻，都能完整落在那一侧。
+    return BoxConstraints(
+      maxWidth: math.max(0, math.max(right - anchor.dx, anchor.dx - left)),
+      maxHeight: math.max(0, math.max(bottom - anchor.dy, anchor.dy - top)),
+    );
+  }
+
+  /// 一维上选展开方向：正向（右 / 下）放得下就正向，否则反向放得下就反向，
+  /// 都放不下取空间大的一侧（[getConstraintsForChild] 已按它限过尺寸）。
+  static double _place(double anchor, double extent, double min, double max) {
+    if (anchor + extent <= max) return anchor;
+    if (anchor - extent >= min) return anchor - extent;
+    return max - anchor >= anchor - min ? anchor : anchor - extent;
   }
 
   @override
@@ -1428,10 +1459,9 @@ class _ContextMenuLayout extends SingleChildLayoutDelegate {
     final double top = padding.top + _margin;
     final double right = size.width - padding.right - _margin;
     final double bottom = size.height - padding.bottom - _margin;
-    double x = anchor.dx;
-    if (x + childSize.width > right) x = anchor.dx - childSize.width;
-    double y = anchor.dy;
-    if (y + childSize.height > bottom) y = anchor.dy - childSize.height;
+    double x = _place(anchor.dx, childSize.width, left, right);
+    double y = _place(anchor.dy, childSize.height, top, bottom);
+    // 指针本身落在安全区外（刘海 / 边距里右键）时的兜底。
     x = x.clamp(left, math.max(left, right - childSize.width));
     y = y.clamp(top, math.max(top, bottom - childSize.height));
     return Offset(x, y);
