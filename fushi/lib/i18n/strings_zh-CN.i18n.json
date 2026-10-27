@@ -38,7 +38,6 @@
   "ai_agent_confirm_undoable": "执行后可以撤销。",
   "ai_agent_context_chip": "关于：${title}",
   "ai_agent_details": "详情",
-  "ai_agent_empty_examples": "例如：「把字幕调大」「给这集找字幕」「装一个能看 X 的源」",
   "ai_agent_empty_title": "要我做什么？",
   "ai_agent_expand": "展开成整页",
   "ai_agent_history_by_user": "经你确认",

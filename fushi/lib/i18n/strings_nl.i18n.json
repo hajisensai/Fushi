@@ -38,7 +38,6 @@
   "ai_agent_confirm_undoable": "You can undo it afterwards.",
   "ai_agent_context_chip": "About: ${title}",
   "ai_agent_details": "Details",
-  "ai_agent_empty_examples": "For example: “Make subtitles bigger”, “Find subtitles for this episode”, “Install a source that has X”",
   "ai_agent_empty_title": "What should I do?",
   "ai_agent_expand": "Open as full page",
   "ai_agent_history_by_user": "Confirmed by you",

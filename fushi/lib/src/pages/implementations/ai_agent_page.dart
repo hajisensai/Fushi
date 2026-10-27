@@ -652,11 +652,6 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Text(
-              t.ai_agent_empty_examples,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
           ],
         ),
       ),
