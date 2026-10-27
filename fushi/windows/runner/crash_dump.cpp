@@ -253,7 +253,7 @@ namespace fushi
 
       wchar_t log_path[MAX_PATH];
       if (!ResolveCrashDumpDirectory(log_path)) return;
-      size_t lp = wcslen(log_path);
+      size_t lp = wcsnlen(log_path, MAX_PATH);
       if (!AppendSegmentW(log_path, &lp, L"\\crash_summary.log")) return;
       const int bytes = WideCharToMultiByte(CP_UTF8, 0, line,
         static_cast<int>(pos), g_summary_utf8, sizeof(g_summary_utf8), nullptr,
