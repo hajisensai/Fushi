@@ -686,7 +686,11 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
               fields: _fields,
               expand: _expandForPreview,
               tags: _parseTags(),
-              height: 360,
+              // 背面常含词典释义，固定 360 只露出头一段；随窗口高度放长。
+              height: (MediaQuery.sizeOf(context).height * 0.72).clamp(
+                360.0,
+                780.0,
+              ),
             ),
           ),
         ),
