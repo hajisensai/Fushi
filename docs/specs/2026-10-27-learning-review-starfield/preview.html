@@ -7,7 +7,7 @@
 :root{--sky:#04060d;--ink:#e8ecf7;--muted:#8c94ad;--line:rgba(160,175,220,.16);--glass:rgba(12,16,30,.8);--gold:#ffe3a1;--cyan:#7fe3ff;
   --f-word:"Shippori Mincho","Yu Mincho",serif;--f-ui:"Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;color-scheme:dark}
 html,body{height:100%;margin:0;background:var(--sky);color:var(--ink);font-family:var(--f-ui);overflow:hidden;font-size:14px}
-#c{position:fixed;inset:0;display:block;touch-action:none;cursor:grab}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
 .hud{position:fixed;z-index:5}
 #top{top:14px;left:16px;right:16px;display:flex;justify-content:space-between;gap:16px;pointer-events:none}
 #top>*{pointer-events:auto}
@@ -88,9 +88,7 @@ order.forEach((w,i)=>{const a=i*2.39996,r=Math.sqrt(i)*58;w.center=new THREE.Vec
 const words=new Map();
 const cards=D.cards.map((c,i)=>{
   const w=works[c.w];const k=w.cards.length;
-  const u=R()*6.283,v=Math.acos(2*R()-1),rad=w.rad*(.35+.65*Math.cbrt(R()));
-  const card={...c,i,work:w,k,slot:null,delay:R(),pos:new THREE.Vector3(),ti:0,
-    scatter:new THREE.Vector3(Math.sin(v)*Math.cos(u)*rad*1.15,Math.cos(v)*rad*.9,Math.sin(v)*Math.sin(u)*rad*1.15)};
+  const card={...c,i,work:w,k,slot:null,pos:new THREE.Vector3(),ti:0};
   w.cards.push(card);
   if(!words.has(c.word))words.set(c.word,{word:c.word,reading:c.reading,cards:[]});
   words.get(c.word).cards.push(card);return card;
@@ -98,7 +96,7 @@ const cards=D.cards.map((c,i)=>{
 works.forEach(w=>{const perm=[...Array(TILES).keys()].sort(()=>R()-.5);w.cards.forEach((c,k)=>{c.slot=perm[k%TILES];c.extra=k>=TILES;});});
 const hubs=[];
 words.forEach(w=>{const ws=[...new Set(w.cards.map(c=>c.work))];w.isBridge=ws.length>1;
-  if(w.isBridge){const p=new THREE.Vector3();ws.forEach(x=>p.add(x.center));p.divideScalar(ws.length);p.z+=30+R()*20;p.y+=(R()-.5)*20;
+  if(w.isBridge){const p=new THREE.Vector3();  // 位置在星尘段按实例重心算
     const born=w.cards.map(c=>c.t).sort((a,b)=>a-b)[1];w.hub={pos:p,word:w,born,n:ws.length};hubs.push(w.hub);}
   w.kanji=new Set([...w.word].filter(ch=>/[一-鿿]/.test(ch)));});
 const related=w=>{const o=[];words.forEach(x=>{if(x!==w&&[...x.kanji].some(k=>w.kanji.has(k)))o.push(x);});return o.slice(0,40);};
@@ -113,55 +111,67 @@ const controls=new THREE.OrbitControls(camera,canvas);controls.enableDamping=tru
 {const n=1800,g=new THREE.BufferGeometry(),p=new Float32Array(n*3);for(let i=0;i<n;i++){const u=R()*6.283,v=Math.acos(2*R()-1),r=900+R()*900;p.set([Math.sin(v)*Math.cos(u)*r,Math.cos(v)*r,Math.sin(v)*Math.sin(u)*r],i*3);}
  g.setAttribute('position',new THREE.BufferAttribute(p,3));scene.add(new THREE.Points(g,new THREE.PointsMaterial({color:0x8090b8,size:1.3,sizeAttenuation:false,transparent:true,opacity:.5})));}
 
-// ── 封面星尘：海报按 DX×DY 采样成星尘，大小/亮度随像素亮度（半色调）；
-//    每颗星尘归属最近的「卡位」种子（Voronoi），第 k 张卡点亮第 k 个种子的那片 → 卡越多封面越完整 ──
-const DX=46,DY=69;
+// ── 视角拼图：星星全部固定在三维空间里，不随距离变形 ──
+// 每颗星沿「HOME → 它在封面上的位置 c」这条视线前后错开：p = HOME + (c − HOME)·s。
+// 从 HOME 看，投影与封面完全重合（封面对齐）；视点一离开 HOME，前后错开的星就露出纵深、散成词星。
+// 星尘按海报像素亮度采样（半色调），归最近的卡位种子（Voronoi）：第 k 张卡点亮第 k 片 → 卡越多封面越完整。
+const DX=46,DY=69,DEPTH=.1;
 const PWW=COLS*CELL,PHH=ROWS*CELL;
+const WORLD_UP=new THREE.Vector3(0,1,0);
+works.forEach(w=>{w.nrm=HOME.clone().sub(w.center).normalize();w.right=new THREE.Vector3().crossVectors(WORLD_UP,w.nrm).normalize();w.up=new THREE.Vector3().crossVectors(w.nrm,w.right);w.dist=HOME.distanceTo(w.center);});
+const coverPoint=(w,u,v,out)=>out.copy(w.center).addScaledVector(w.right,(u-.5)*PWW*w.s).addScaledVector(w.up,(.5-v)*PHH*w.s);
+const depthS=()=>1+DEPTH*((R()+R()+R())/1.5-1);  // 近似钟形，大多数星离封面面不远
+const anamorph=(c,s,out)=>out.copy(HOME).addScaledVector(c.clone().sub(HOME),s);
 const pix=ag.getImageData(0,0,atlas.width,atlas.height).data;
 const samp=(w,u,v)=>{const x=Math.min(atlas.width-1,Math.round(w.ax*atlas.width+u*PW)),y=Math.min(atlas.height-1,Math.round(w.ay*atlas.height+v*PH));const i=(y*atlas.width+x)*4;return [pix[i]/255,pix[i+1]/255,pix[i+2]/255];};
+const cp=new THREE.Vector3();
 works.forEach(w=>{
-  // 种子 = 前 TILES 张卡在封面上的位置；分层抖动让种子铺得均匀
   const seeds=[];const perm=[...Array(TILES).keys()].sort(()=>R()-.5);
   for(let s=0;s<TILES;s++){const cell=perm[s],cx=cell%COLS,cy=Math.floor(cell/COLS);seeds.push([(cx+.15+.7*R())/COLS,(cy+.15+.7*R())/ROWS]);}
   w.seeds=seeds;
-  w.cards.forEach((c,k)=>{const sd=k<TILES?seeds[k]:[R(),R()];c.u=sd[0];c.v=sd[1];c.pcol=new THREE.Color(...samp(w,sd[0],sd[1]));});
+  w.cards.forEach((c,k)=>{const sd=k<TILES?seeds[k]:[R(),R()];c.u=sd[0];c.v=sd[1];c.pcol=new THREE.Color(...samp(w,sd[0],sd[1]));
+    c.depth=depthS();anamorph(coverPoint(w,c.u,c.v,cp),c.depth,c.pos);});
 });
 const NDUST=works.length*DX*DY;
 const dg=new THREE.BufferGeometry();
 const dAt=(n,s)=>{const a=new THREE.BufferAttribute(new Float32Array(NDUST*s),s);dg.setAttribute(n,a);return a;};
-const dPos=dAt('position',3),dOff=dAt('aOff',2),dCol=dAt('aColor',3),dSize=dAt('aSize',1),dOwner=dAt('aOwner',1),dWork=dAt('aWork',1),dDrift=dAt('aDrift',3);
-{let i=0;works.forEach((w,wi)=>{for(let y=0;y<DY;y++)for(let x=0;x<DX;x++){
+const dPos=dAt('position',3),dCol=dAt('aColor',3),dSize=dAt('aSize',1),dOwner=dAt('aOwner',1),dWork=dAt('aWork',1);
+{let i=0;const p=new THREE.Vector3();works.forEach((w,wi)=>{for(let y=0;y<DY;y++)for(let x=0;x<DX;x++){
   const u=(x+.5+(R()-.5)*.3)/DX,v=(y+.5+(R()-.5)*.3)/DY;const [r,g,b]=samp(w,u,v);
   const lum=.3*r+.59*g+.11*b;const mx=Math.max(r,g,b,.001);const boost=Math.min(1.6,.75/mx+.4);
   let best=0,bd=9;w.seeds.forEach((s,k)=>{const dx=(s[0]-u)*COLS,dy=(s[1]-v)*ROWS;const d=dx*dx+dy*dy;if(d<bd){bd=d;best=k;}});
-  dPos.setXYZ(i,w.center.x,w.center.y,w.center.z);dOff.setXY(i,(u-.5)*PWW*w.s,(.5-v)*PHH*w.s);
+  const s=depthS();anamorph(coverPoint(w,u,v,cp),s,p);
+  dPos.setXYZ(i,p.x,p.y,p.z);
   dCol.setXYZ(i,Math.min(1,r*boost),Math.min(1,g*boost),Math.min(1,b*boost));
-  dSize.setX(i,w.s*(PWW/DX)*(.35+1.05*Math.pow(lum,.9)));dOwner.setX(i,best);dWork.setX(i,wi);
-  const a=R()*6.283,e=Math.acos(2*R()-1),m=w.rad*(.6+R()*.8);dDrift.setXYZ(i,Math.sin(e)*Math.cos(a)*m,Math.cos(e)*m*.8,Math.sin(e)*Math.sin(a)*m);i++;}});}
-const DVS=`attribute vec2 aOff;attribute vec3 aColor;attribute float aSize;attribute float aOwner;attribute float aWork;attribute vec3 aDrift;
-uniform vec3 uRight;uniform vec3 uUp;uniform float uT[64];uniform float uLit[64];uniform float uScale;uniform float uTime;
+  // 世界尺寸乘 s：从 HOME 看每颗星尘的屏幕大小与它在封面面上时一致
+  dSize.setX(i,s*w.s*(PWW/DX)*(.35+1.05*Math.pow(lum,.9)));dOwner.setX(i,best);dWork.setX(i,wi);i++;}});}
+const DVS=`attribute vec3 aColor;attribute float aSize;attribute float aOwner;attribute float aWork;
+uniform float uLit[64];uniform float uAlign[64];uniform float uScale;uniform float uTime;
 varying vec3 vC;varying float vA;
-void main(){int wi=int(aWork+.5);float T=uT[wi];float lit=step(aOwner+.5,uLit[wi]);
- vec3 p=position+uRight*aOff.x+uUp*aOff.y+aDrift*T*T;
- vec4 mv=modelViewMatrix*vec4(p,1.);
- float tw=.85+.15*sin(uTime*1.7+aOwner*3.1+aOff.x*.7);
+void main(){int wi=int(aWork+.5);float lit=step(aOwner+.5,uLit[wi]);float al=uAlign[wi];
+ vec4 mv=modelViewMatrix*vec4(position,1.);
+ float tw=.85+.15*sin(uTime*1.7+aOwner*3.1+position.x*.37);
  gl_PointSize=clamp(aSize*uScale/-mv.z,0.,90.);gl_Position=projectionMatrix*mv;
- vC=aColor*mix(.22,1.,lit)*tw;vA=mix(.08,.62,lit)*(1.-.88*T);}`;
+ vC=aColor*mix(.22,1.,lit)*tw;vA=mix(.08,.62,lit)*mix(.26,1.,al);}`;
 const PFS=`varying vec3 vC;varying float vA;
 void main(){vec2 c=gl_PointCoord-.5;float d=length(c)*2.;float g=exp(-d*d*4.)+.35*exp(-d*d*1.2);float a=g*vA;if(a<.004)discard;gl_FragColor=vec4(vC*a,1.);}`;
-const dustMat=new THREE.ShaderMaterial({vertexShader:DVS,fragmentShader:PFS,uniforms:{uRight:{value:new THREE.Vector3()},uUp:{value:new THREE.Vector3()},uT:{value:new Array(64).fill(0)},uLit:{value:new Array(64).fill(0)},uScale:{value:1},uTime:{value:0}},
+const dustMat=new THREE.ShaderMaterial({vertexShader:DVS,fragmentShader:PFS,uniforms:{uLit:{value:new Array(64).fill(0)},uAlign:{value:new Array(64).fill(1)},uScale:{value:1},uTime:{value:0}},
   transparent:true,depthWrite:false,blending:THREE.CustomBlending,blendSrc:THREE.OneFactor,blendDst:THREE.OneFactor});
 const dust=new THREE.Points(dg,dustMat);dust.frustumCulled=false;scene.add(dust);
 
-// ── 词星：远看是封面里最亮的点（取那处的海报色），走近散开成种类色的星 ──
+// ── 词星：对齐时是封面里取该处颜色的小亮点，错开后变成种类色、亮度 = 记忆稳定度 ──
 const SVS=`attribute vec3 aColor;attribute float aSize;attribute float aAlpha;uniform float uScale;varying vec3 vC;varying float vA;
 void main(){vec4 mv=modelViewMatrix*vec4(position,1.);gl_PointSize=clamp(aSize*uScale/-mv.z,1.5,140.);gl_Position=projectionMatrix*mv;vC=aColor;vA=aAlpha;}`;
 const SFS=`varying vec3 vC;varying float vA;
 void main(){vec2 c=gl_PointCoord-.5;float d=length(c)*2.;float g=exp(-d*d*7.)+.25*exp(-d*d*1.8);vec3 col=vC*g+vec3(1.)*exp(-d*d*40.)*.9;float a=g*vA;if(a<.004)discard;gl_FragColor=vec4(col*vA,1.);}`;
-hubs.forEach((h,j)=>h.i=cards.length+j);
+hubs.forEach((h,j)=>{h.i=cards.length+j;
+  // 桥星：放在它连接的几颗星的重心，再沿视线往前提一点，浮在封面之间
+  const p=new THREE.Vector3();h.word.cards.forEach(c=>p.add(c.pos));p.divideScalar(h.word.cards.length);
+  h.pos.copy(HOME).addScaledVector(p.sub(HOME),.9);});
 const NS=cards.length+hubs.length;const sg=new THREE.BufferGeometry();
 const sAt=(n,s)=>{const a=new THREE.BufferAttribute(new Float32Array(NS*s),s);a.setUsage(THREE.DynamicDrawUsage);sg.setAttribute(n,a);return a;};
 const S={pos:sAt('position',3),col:sAt('aColor',3),size:sAt('aSize',1),alpha:sAt('aAlpha',1)};
+cards.forEach(c=>S.pos.setXYZ(c.i,c.pos.x,c.pos.y,c.pos.z));hubs.forEach(h=>S.pos.setXYZ(h.i,h.pos.x,h.pos.y,h.pos.z));
 const starMat=new THREE.ShaderMaterial({vertexShader:SVS,fragmentShader:SFS,uniforms:{uScale:{value:1}},transparent:true,depthWrite:false,blending:THREE.CustomBlending,blendSrc:THREE.OneFactor,blendDst:THREE.OneFactor});
 const starPts=new THREE.Points(sg,starMat);starPts.frustumCulled=false;scene.add(starPts);
 const bl=new THREE.LineSegments(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0xffe3a1,transparent:true,opacity:.2,depthWrite:false}));
@@ -172,32 +182,30 @@ const klBuf=new Float32Array(400*6);kl.geometry.setAttribute('position',new THRE
 const tMin=cards[0].t-86400000,tMax=cards[cards.length-1].t+3600000;
 let now=Infinity,playing=false,playStart=0,playFrom=0;const PLAY_MS=28000;
 let sel=null,selCard=null,rel=[],hover=null,fly=null;
-const right=new THREE.Vector3(),up=new THREE.Vector3(),tmp=new THREE.Vector3(),c3=new THREE.Color(),WHITE=new THREE.Color(1,1,1);
+const tmp=new THREE.Vector3(),c3=new THREE.Color(),WHITE=new THREE.Color(1,1,1);
 const tmpK=new THREE.Color();cards.forEach(c=>c.mem=c.stab?Math.min(1,Math.log(1+c.stab)/Math.log(1+120)):0);
 const GOLD=new THREE.Color('#ffe3a1');const kc=k=>new THREE.Color((KINDS[k]||KINDS.video).color);
 works.forEach(w=>w.kcol=kc(w.kind));
 const ss=(e0,e1,x)=>{const t=Math.min(1,Math.max(0,(x-e0)/(e1-e0)));return t*t*(3-2*t);};
 function update(ts){
-  right.set(1,0,0).applyQuaternion(camera.quaternion);up.set(0,1,0).applyQuaternion(camera.quaternion);
   const flashSpan=(tMax-tMin)*.015;
-  works.forEach((w,wi)=>{w.T=ss(w.rad*4.2,w.rad*1.7,camera.position.distanceTo(w.center));w.lit=0;w.litAll=0;dustMat.uniforms.uT.value[wi]=w.T;});
+  // 对齐度：视点离 HOME 越远（相对该星团到 HOME 的距离），封面错开越多
+  const off=camera.position.distanceTo(HOME);
+  works.forEach((w,wi)=>{const al=1-ss(.012,.11,off/w.dist);w.T=1-al;w.lit=0;w.litAll=0;dustMat.uniforms.uAlign.value[wi]=al;});
   cards.forEach(c=>{
-    const w=c.work,vis=c.t<=now,ti=ss(0,1,w.T*1.7-c.delay*.7);c.ti=ti;
-    tmp.copy(w.center).addScaledVector(right,(c.u-.5)*PWW*w.s).addScaledVector(up,(.5-c.v)*PHH*w.s);
-    c.pos.copy(w.center).add(c.scatter).lerp(tmp,1-ti);
-    S.pos.setXYZ(c.i,c.pos.x,c.pos.y,c.pos.z);
+    const w=c.work,vis=c.t<=now,ti=w.T;c.ti=ti;
     const flash=vis&&now!==Infinity?Math.max(0,1-(now-c.t)/flashSpan):0;
     const bridge=words.get(c.word).isBridge;
     c3.copy(c.pcol).multiplyScalar(1.15).lerp(tmpK.copy(bridge?GOLD:w.kcol).multiplyScalar(.45+.75*c.mem),ti);c3.lerp(WHITE,flash*.7);
     S.col.setXYZ(c.i,c3.r,c3.g,c3.b);
-    let sz=(1.1*(1-ti)+(bridge?3.2:2.2)*ti)*(1+flash*2.5);if(sel&&sel.word===c.word)sz*=1.9;
+    let sz=(1.1*(1-ti)+(bridge?3.2:2.2)*ti)*c.depth*(1+flash*2.5);if(sel&&sel.word===c.word)sz*=1.9;
     S.size.setX(c.i,sz);S.alpha.setX(c.i,vis?(.32+(.35+.65*c.mem)*ti+flash*.6):0);
     if(vis){w.litAll++;if(!c.extra)w.lit++;}
   });
   works.forEach((w,wi)=>dustMat.uniforms.uLit.value[wi]=w.lit);
-  hubs.forEach(h=>{const vis=h.born<=now;S.pos.setXYZ(h.i,h.pos.x,h.pos.y,h.pos.z);S.col.setXYZ(h.i,GOLD.r,GOLD.g,GOLD.b);S.size.setX(h.i,(3+1.4*h.n)*(sel===h.word?1.5:1));S.alpha.setX(h.i,vis?1:0);});
-  Object.values(S).forEach(a=>a.needsUpdate=true);
-  dustMat.uniforms.uRight.value.copy(right);dustMat.uniforms.uUp.value.copy(up);dustMat.uniforms.uTime.value=ts/1000;
+  hubs.forEach(h=>{const vis=h.born<=now;S.col.setXYZ(h.i,GOLD.r,GOLD.g,GOLD.b);S.size.setX(h.i,(3+1.4*h.n)*(sel===h.word?1.5:1));S.alpha.setX(h.i,vis?1:0);});
+  ['col','size','alpha'].forEach(k=>S[k].needsUpdate=true);
+  dustMat.uniforms.uTime.value=ts/1000;
   let b=0;hubs.forEach(h=>{if(h.born>now)return;h.word.cards.forEach(c=>{if(c.t>now)return;blBuf.set([h.pos.x,h.pos.y,h.pos.z,c.pos.x,c.pos.y,c.pos.z],b);b+=6;});});
   bl.geometry.attributes.position.needsUpdate=true;bl.geometry.setDrawRange(0,b/3);
   let k=0;if(sel){const from=selCard?selCard.pos:(sel.hub?sel.hub.pos:sel.cards[0].pos);
@@ -218,18 +226,24 @@ function drawLabels(){
     screen[i*3]=pr?pr[0]:-1e4;screen[i*3+1]=pr?pr[1]:-1e4;screen[i*3+2]=pr?1:0;
     if(!pr||pr[0]<-40||pr[0]>W+40||pr[1]<-20||pr[1]>H+20)continue;
     const w=isHub?o.word:words.get(o.word);const forced=sel===w||relSet.has(w)||hover===i;
-    const d=camera.position.distanceTo(p);const tv=isHub?ss(700,250,d):o.ti;
+    const d=camera.position.distanceTo(p);const tv=isHub?Math.max(o.word.cards[0].work.T,.4):o.ti;
     if(!forced&&tv<.35)continue;cand.push({o,isHub,w,pr,forced,d,tv});
   }
   cand.sort((a,b)=>(b.forced-a.forced)||(a.d-b.d));
-  pool.forEach((el,k)=>{const c=cand[k];if(!c){el.style.opacity=0;return;}
+  // 去重叠：按屏幕格子占位，近处的先占，挤不下的不画（强制显示的除外）
+  const taken=new Set();let k=0;
+  for(const c of cand){if(k>=pool.length)break;
+    const key=Math.floor(c.pr[0]/70)+','+Math.floor(c.pr[1]/18);
+    if(!c.forced&&taken.has(key))continue;taken.add(key);
+    const el=pool[k++];
     const cls='lbl'+(c.isHub?' hub':'')+(sel===c.w&&(!selCard||selCard===c.o||c.isHub)?' sel':relSet.has(c.w)?' rel':'');
     if(el.className!==cls)el.className=cls;if(el.textContent!==c.w.word)el.textContent=c.w.word;
-    const fs=Math.max(10,Math.min(17,600/c.d));el.style.fontSize=fs+'px';
+    const fs=Math.max(10,Math.min(17,600/c.d*(50/camera.fov)));el.style.fontSize=fs+'px';
     el.style.color=(!c.isHub&&sel!==c.w&&!relSet.has(c.w))?(c.w.isBridge?'#ffe3a1':(KINDS[c.o.work.kind]||KINDS.video).color):'';
-    el.style.opacity=c.forced?1:Math.min(1,(c.tv-.35)*2.2)*Math.min(1,260/c.d);
-    el.style.transform=`translate(${c.pr[0]+8}px,${c.pr[1]-fs*.6}px)`;});
-  works.forEach((w,i)=>{const top=project(tmp.copy(w.center).addScaledVector(up,(ROWS/2)*CELL*w.s));const pr=project(tmp.copy(w.center).addScaledVector(up,-(ROWS/2)*CELL*w.s-3));const el=wl[i];
+    el.style.opacity=c.forced?1:Math.min(1,(c.tv-.35)*2.2)*Math.min(1,260/c.d*(50/camera.fov));
+    el.style.transform=`translate(${c.pr[0]+8}px,${c.pr[1]-fs*.6}px)`;}
+  for(;k<pool.length;k++)pool[k].style.opacity=0;
+  works.forEach((w,i)=>{const top=project(coverPoint(w,.5,0,tmp).clone());const pr=project(coverPoint(w,.5,1,tmp).addScaledVector(w.up,-3).clone());const el=wl[i];
     if(!pr||!top||w.T>.6||(pr[1]-top[1])<70){el.style.opacity=0;return;}el.style.opacity=1-w.T/.6;
     el.innerHTML=`<b>${esc(w.title)}</b><em>${w.litAll} 张卡 · 封面 ${Math.round(Math.min(w.lit,TILES)/TILES*100)}%</em>`;
     el.style.transform=`translate(calc(${pr[0]}px - 50%),${pr[1]}px)`;});
@@ -237,19 +251,26 @@ function drawLabels(){
 
 // ── 交互 ──
 const nearest=(x,y,m)=>{let best=-1,bd=m*m;for(let i=0;i<cards.length+hubs.length;i++){if(!screen[i*3+2])continue;const dx=screen[i*3]-x,dy=screen[i*3+1]-y,d=dx*dx+dy*dy;if(d<bd){bd=d;best=i;}}return best;};
-function flyTo(target,dist){const dir=camera.position.clone().sub(controls.target).normalize();fly={t0:performance.now(),dur:1100,fromP:camera.position.clone(),fromT:controls.target.clone(),toP:target.clone().addScaledVector(dir,dist),toT:target.clone()};}
-function workAt(x,y){let best=null;works.forEach(w=>{const a=project(tmp.copy(w.center).addScaledVector(right,-COLS*CELL*w.s/2).addScaledVector(up,ROWS*CELL*w.s/2)),b=project(tmp.copy(w.center).addScaledVector(right,COLS*CELL*w.s/2).addScaledVector(up,-ROWS*CELL*w.s/2));
+const BASE_FOV=50;
+function startFly(toP,toT,toF,dur){fly={t0:performance.now(),dur,fromP:camera.position.clone(),fromT:controls.target.clone(),fromF:camera.fov,toP,toT,toF};}
+// 走近某个星星：离开对齐点，星团散成有纵深的词星
+function flyTo(target,dist){const dir=camera.position.clone().sub(controls.target).normalize();startFly(target.clone().addScaledVector(dir,dist),target.clone(),BASE_FOV,1100);}
+// 看某部作品的封面：相机留在对齐点 HOME 不动，只转向并拉近焦距，封面保持对齐
+function focusWork(w){const h=PHH*w.s*1.55;startFly(HOME.clone(),w.center.clone(),Math.max(3,Math.min(BASE_FOV,2*Math.atan(h/2/w.dist)*180/Math.PI)),1100);}
+function workAt(x,y){let best=null;works.forEach(w=>{const a=project(coverPoint(w,0,0,tmp).clone()),b=project(coverPoint(w,1,1,tmp).clone());
   if(a&&b&&x>=Math.min(a[0],b[0])&&x<=Math.max(a[0],b[0])&&y>=Math.min(a[1],b[1])&&y<=Math.max(a[1],b[1])&&w.T<.4)best=w;});return best;}
-// 调试钩子：__fly(作品下标, 距离) 飞到某个星团
-window.__fly=(i,d)=>{const w=works[i];flyTo(w.center,d??w.rad*1.5);};
+// 调试钩子：__focus(作品下标) 对齐看封面；__orbit(角度) 绕当前目标转一个角度
+window.__focus=i=>focusWork(works[i]);
+window.__sf={works,cards,camera,project,HOME,dg,dustMat};
+window.__orbit=deg=>{const t=controls.target,off=camera.position.clone().sub(t);off.applyAxisAngle(new THREE.Vector3(0,1,0),deg*Math.PI/180);startFly(t.clone().add(off),t.clone(),camera.fov,900);};
 let down=null;
 canvas.addEventListener('pointerdown',e=>down={x:e.clientX,y:e.clientY});
 addEventListener('pointerup',e=>{if(!down)return;const m=Math.hypot(e.clientX-down.x,e.clientY-down.y);down=null;if(m>6||e.target!==canvas)return;
-  const w=workAt(e.clientX,e.clientY);if(w){flyTo(w.center,w.rad*1.5);toast(`飞向《${w.title}》`);return;}
+  const w=workAt(e.clientX,e.clientY);if(w){focusWork(w);toast(`《${w.title}》· 拖动视角让它散开`);return;}
   const i=nearest(e.clientX,e.clientY,18);if(i<0)return;
   if(i>=cards.length)select(hubs[i-cards.length].word,null);else select(words.get(cards[i].word),cards[i]);});
 canvas.addEventListener('pointermove',e=>{if(down)return;const i=nearest(e.clientX,e.clientY,14);hover=i>=0?i:null;canvas.style.cursor=i>=0||workAt(e.clientX,e.clientY)?'pointer':'grab';});
-document.getElementById('home').onclick=()=>{fly={t0:performance.now(),dur:1300,fromP:camera.position.clone(),fromT:controls.target.clone(),toP:HOME.clone(),toT:new THREE.Vector3()};};
+document.getElementById('home').onclick=()=>startFly(HOME.clone(),new THREE.Vector3(),BASE_FOV,1300);
 const panel=document.getElementById('panel'),pbody=document.getElementById('pbody');
 document.getElementById('close').onclick=()=>{sel=null;selCard=null;rel=[];panel.hidden=true;};
 const hl=(s,w)=>esc(s).split(esc(w)).join(`<mark>${esc(w)}</mark>`);
@@ -272,11 +293,12 @@ slider.oninput=()=>{setPlaying(false);const v=+slider.value/1000;now=v>=1?Infini
 document.getElementById('stats').textContent=`本机 SRS 牌组 · ${cards.length} 张卡 · ${words.size} 个词 · ${works.length} 部作品 · ${hubs.length} 颗桥星`;
 document.getElementById('warn').textContent=`从 ${new Date(cards[0].t).toLocaleDateString('zh-CN')} 第一张卡起的全部制卡（取自 SRS 牌组，不受制卡历史表 1000 条上限影响）。亮度 = 记忆稳定度。`;document.getElementById('warn').style.color='var(--muted)';
 document.getElementById('legend').innerHTML=[...new Set(works.map(w=>w.kind))].map(k=>`<span><span style="color:${(KINDS[k]||KINDS.video).color}">●</span> ${(KINDS[k]||KINDS.video).name}</span>`).join('')+'<span><span style="color:#ffe3a1">●</span> 桥星</span>';
-function resize(){W=innerWidth;H=innerHeight;renderer.setSize(W,H,false);camera.aspect=W/H;camera.updateProjectionMatrix();const sc=H*renderer.getPixelRatio()/(2*Math.tan(camera.fov*Math.PI/360));dustMat.uniforms.uScale.value=sc;starMat.uniforms.uScale.value=sc;}
+function applyLens(){camera.updateProjectionMatrix();const sc=H*renderer.getPixelRatio()/(2*Math.tan(camera.fov*Math.PI/360));dustMat.uniforms.uScale.value=sc;starMat.uniforms.uScale.value=sc;}
+function resize(){W=innerWidth;H=innerHeight;renderer.setSize(W,H,false);camera.aspect=W/H;applyLens();}
 addEventListener('resize',resize);resize();
 function frame(ts){
   if(playing){now=playFrom+(ts-playStart)/PLAY_MS*(tMax-tMin);if(now>=tMax){now=Infinity;setPlaying(false);}slider.value=now===Infinity?1000:Math.round((now-tMin)/(tMax-tMin)*1000);}
-  if(fly){const k=Math.min(1,(ts-fly.t0)/fly.dur),e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;camera.position.lerpVectors(fly.fromP,fly.toP,e);controls.target.lerpVectors(fly.fromT,fly.toT,e);if(k>=1)fly=null;}
+  if(fly){const k=Math.min(1,(ts-fly.t0)/fly.dur),e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;camera.position.lerpVectors(fly.fromP,fly.toP,e);controls.target.lerpVectors(fly.fromT,fly.toT,e);camera.fov=fly.fromF+(fly.toF-fly.fromF)*e;applyLens();if(k>=1)fly=null;}
   controls.update();update(ts);renderer.render(scene,camera);drawLabels();
   const lit=now===Infinity?cards.length:cards.filter(c=>c.t<=now).length;clock.textContent=`${now===Infinity?'今天':new Date(now).toLocaleDateString('zh-CN')} · 第 ${lit} 颗星`;
   requestAnimationFrame(frame);}
