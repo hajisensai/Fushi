@@ -599,6 +599,14 @@ class _AiProviderSettingsSectionState
               ),
             ),
             AdaptiveSettingsSwitchRow(
+              key: ValueKey<String>('ai-provider-$index-accepts-images'),
+              title: t.ai_provider_accepts_images,
+              subtitle: t.ai_provider_accepts_images_summary,
+              value: draft.acceptsImages,
+              onChanged: (bool value) =>
+                  _update(index, draft.copyWith(acceptsImages: value)),
+            ),
+            AdaptiveSettingsSwitchRow(
               key: ValueKey<String>('ai-provider-$index-allow-http'),
               title: t.ai_provider_allow_http,
               subtitle: t.ai_provider_allow_http_summary,
@@ -1348,6 +1356,7 @@ class _AiProviderDraft {
     required this.allowInsecureHttp,
     required this.requestsPerMinute,
     this.toolCallingOverride = AiToolCallingOverride.followPreset,
+    this.acceptsImages = false,
   });
 
   factory _AiProviderDraft.fromConfig(AiProviderConfig config) =>
@@ -1364,6 +1373,7 @@ class _AiProviderDraft {
         allowInsecureHttp: config.allowInsecureHttp,
         requestsPerMinute: config.requestsPerMinute,
         toolCallingOverride: config.toolCallingOverride,
+        acceptsImages: config.acceptsImages,
       );
 
   /// 选了一家预设后的新草稿。
@@ -1411,6 +1421,9 @@ class _AiProviderDraft {
   /// 端点不稳定时用户可以强制关（走 JSON 降级），或对预设标成不支持的端点强制开。
   final AiToolCallingOverride toolCallingOverride;
 
+  /// 所配模型能收图（见 [AiProviderConfig.acceptsImages]）。
+  final bool acceptsImages;
+
   String get presetDisplayName =>
       aiProviderPresetById(presetId)?.displayName ?? presetId;
 
@@ -1428,6 +1441,7 @@ class _AiProviderDraft {
     bool? allowInsecureHttp,
     int? requestsPerMinute,
     AiToolCallingOverride? toolCallingOverride,
+    bool? acceptsImages,
   }) => _AiProviderDraft(
     id: id,
     presetId: presetId,
@@ -1441,6 +1455,7 @@ class _AiProviderDraft {
     allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
     requestsPerMinute: requestsPerMinute ?? this.requestsPerMinute,
     toolCallingOverride: toolCallingOverride ?? this.toolCallingOverride,
+    acceptsImages: acceptsImages ?? this.acceptsImages,
   );
 
   /// 有效即返回配置，否则 null。
@@ -1467,6 +1482,7 @@ class _AiProviderDraft {
         allowInsecureHttp: allowInsecureHttp,
         requestsPerMinute: requestsPerMinute < 0 ? 0 : requestsPerMinute,
         toolCallingOverride: toolCallingOverride,
+        acceptsImages: acceptsImages,
       );
     } on ArgumentError {
       return null;

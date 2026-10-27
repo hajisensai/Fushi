@@ -332,6 +332,7 @@ class AiProviderConfig {
     this.allowInsecureHttp = false,
     this.requestsPerMinute = 0,
     this.toolCallingOverride = AiToolCallingOverride.followPreset,
+    this.acceptsImages = false,
   }) : apiKeys = List<AiApiKey>.unmodifiable(
          apiKeys ??
              (apiKey.isEmpty
@@ -403,6 +404,7 @@ class AiProviderConfig {
       toolCallingOverride: AiToolCallingOverride.fromStorageKey(
         json['toolCalling'] as String?,
       ),
+      acceptsImages: json['images'] as bool? ?? false,
     );
   }
 
@@ -459,6 +461,11 @@ class AiProviderConfig {
     AiToolCallingOverride.followPreset => preset?.supportsTools ?? false,
   };
 
+  /// 用户标明所配模型能收图（视觉模型）。能不能收图取决于具体模型而不是哪一家，
+  /// 预设猜不准，所以只认用户勾选；默认关——往纯文本模型发图会被直接拒。
+  /// AI 助手据此决定「附上屏幕」时要不要连截图一起发。
+  final bool acceptsImages;
+
   String get displayName => name.trim().isNotEmpty ? name.trim() : baseUrl.host;
 
   AiProviderPreset? get preset => aiProviderPresetById(presetId);
@@ -490,6 +497,7 @@ class AiProviderConfig {
     bool? allowInsecureHttp,
     int? requestsPerMinute,
     AiToolCallingOverride? toolCallingOverride,
+    bool? acceptsImages,
   }) => AiProviderConfig(
     id: id,
     presetId: presetId,
@@ -507,6 +515,7 @@ class AiProviderConfig {
     allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
     requestsPerMinute: requestsPerMinute ?? this.requestsPerMinute,
     toolCallingOverride: toolCallingOverride ?? this.toolCallingOverride,
+    acceptsImages: acceptsImages ?? this.acceptsImages,
   );
 
   /// API Key 在 JSON 里 base64 存放：`apiKeys` 是完整有序列表（空白草稿不落盘），
@@ -542,6 +551,7 @@ class AiProviderConfig {
     // 跟随预设时不落盘：旧数据缺字段 = 跟随预设，两者同一口径。
     if (toolCallingOverride != AiToolCallingOverride.followPreset)
       'toolCalling': toolCallingOverride.storageKey,
+    if (acceptsImages) 'images': true,
   };
 }
 

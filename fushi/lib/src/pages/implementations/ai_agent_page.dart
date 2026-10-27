@@ -11,6 +11,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:material_ui/material_ui.dart';
@@ -42,6 +43,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// 侧栏 / 浮层判宽阈值：宽于它的窗口用靠边侧栏，窄的用底部半屏面板。
 const double kAiAgentSidePanelBreakpoint = 840;
@@ -431,13 +433,15 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     final String text = _input.text.trim();
     if (text.isEmpty || _controller.running) return;
     _input.clear();
+    final AiAgentScreenAttachments attached = _screenText.take();
     try {
       await _controller.send(
         text,
-        context: aiAgentContextWithScreenText(
-          _activeContext,
-          _screenText.take(),
-        ),
+        context: aiAgentContextWithScreenText(_activeContext, attached.text),
+        // 截图只在模型能收图时附上；发送前模型换成了不能收图的，图就不发。
+        images: _controller.acceptsImages
+            ? aiAgentImagesFor(attached.image)
+            : const [],
       );
     } on StateError {
       if (mounted) await _guideToProviderSettings(context);
@@ -664,7 +668,12 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   }
 
   Widget _entry(BuildContext context, AgentEntry entry) => switch (entry.kind) {
-    AgentEntryKind.user => _bubble(context, entry.text, fromUser: true),
+    AgentEntryKind.user => _bubble(
+      context,
+      entry.text,
+      fromUser: true,
+      withImage: entry.imageCount > 0,
+    ),
     AgentEntryKind.assistant => _bubble(context, entry.text, fromUser: false),
     AgentEntryKind.toolCall => _toolCard(context, entry),
     AgentEntryKind.confirm => _confirmCard(context, entry),
@@ -673,8 +682,14 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
   };
 
   /// 聊天气泡（与「AI 下视频」同一套配色：MD3 primaryContainer / surfaceContainerHigh，
-  /// Apple 强调色 / secondaryFill，墨水屏描边）。
-  Widget _bubble(BuildContext context, String text, {required bool fromUser}) {
+  /// Apple 强调色 / secondaryFill，墨水屏描边）。模型的回复按 Markdown 渲染（模型
+  /// 几乎都用 `**粗体**` / 列表 / 引用排版），用户自己说的话原样显示。
+  Widget _bubble(
+    BuildContext context,
+    String text, {
+    required bool fromUser,
+    bool withImage = false,
+  }) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool glass = isGlassDesign(context);
     final bool eink = isEinkTheme(context);
@@ -717,18 +732,47 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                   horizontal: 14,
                   vertical: 9,
                 ),
-                child: SelectableText(
-                  text,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: foreground,
-                    height: 1.35,
-                  ),
-                ),
+                child: fromUser
+                    ? _userText(context, text, foreground, withImage)
+                    : AiAgentMarkdown(text: text, color: foreground),
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _userText(
+    BuildContext context,
+    String text,
+    Color foreground,
+    bool withImage,
+  ) {
+    final TextTheme theme = Theme.of(context).textTheme;
+    final Widget body = SelectableText(
+      text,
+      style: theme.bodyLarge?.copyWith(color: foreground, height: 1.35),
+    );
+    if (!withImage) return body;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiIcon(FushiIcons.image, size: 14, color: foreground),
+            const SizedBox(width: 4),
+            Text(
+              t.ai_agent_message_image_attached,
+              style: theme.labelMedium?.copyWith(color: foreground),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        body,
+      ],
     );
   }
 
@@ -1042,14 +1086,20 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool glass = isGlassDesign(context);
     final bool running = _controller.running;
+    final bool acceptsImages = _controller.acceptsImages;
     final AgentUiContext? uiContext = _activeContext;
     final String? contextTitle = uiContext?.itemTitle ?? uiContext?.page;
     final Widget row = Row(
       children: <Widget>[
         // 浮层 / 侧栏才有：截图时把面板藏掉就露出下面的页面；整页外壳下面也是
         // 不透明路由，截不到别的。
-        if (widget.compact && screenTextCaptureSupported) ...<Widget>[
-          AiAgentScreenTextButton(attachment: _screenText, enabled: !running),
+        if (widget.compact &&
+            (screenTextCaptureSupported || acceptsImages)) ...<Widget>[
+          AiAgentScreenTextButton(
+            attachment: _screenText,
+            enabled: !running,
+            keepImage: acceptsImages,
+          ),
           SizedBox(width: tokens.spacing.gap / 2),
         ],
         Expanded(
@@ -1138,6 +1188,74 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
           color: scheme.surfaceContainer,
         ),
         child: Padding(padding: const EdgeInsets.all(6), child: body),
+      ),
+    );
+  }
+}
+
+/// 模型回复的 Markdown 渲染（粗体 / 列表 / 引用 / 代码 / 链接）。可选中复制；
+/// 链接在外部浏览器打开。字号、行高与用户气泡一致，颜色跟随气泡前景色。
+class AiAgentMarkdown extends StatelessWidget {
+  const AiAgentMarkdown({required this.text, required this.color, super.key});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme theme = Theme.of(context).textTheme;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextStyle? body = theme.bodyLarge?.copyWith(
+      color: color,
+      height: 1.35,
+    );
+    return MarkdownBody(
+      data: text,
+      selectable: true,
+      // flutter_markdown 0.6.23 在 selectable 时会无条件解引用
+      // onSelectionChanged!，不传则选中文本即崩（TODO-966，与更新日志页同一约定）。
+      onSelectionChanged:
+          (
+            String? text,
+            TextSelection selection,
+            SelectionChangedCause? cause,
+          ) {},
+      onTapLink: (String _, String? href, String _) {
+        final Uri? uri = href == null ? null : Uri.tryParse(href);
+        if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
+          return;
+        }
+        unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
+      },
+      // 只给要改的样式：flutter_markdown 自己把它并到回退样式表上（回退样式表
+      // 读的是 LegacyDesignCompatibility 桥出来的旧主题），这里不必碰旧 SDK 类型。
+      styleSheet: MarkdownStyleSheet(
+        p: body,
+        listBullet: body,
+        strong: const TextStyle(fontWeight: FontWeight.w700),
+        em: const TextStyle(fontStyle: FontStyle.italic),
+        a: TextStyle(color: color, decoration: TextDecoration.underline),
+        h1: theme.titleLarge?.copyWith(color: color),
+        h2: theme.titleMedium?.copyWith(color: color),
+        h3: theme.titleSmall?.copyWith(color: color),
+        code: theme.bodyMedium?.copyWith(
+          color: color,
+          fontFamily: 'monospace',
+          backgroundColor: scheme.surfaceContainerHighest,
+        ),
+        codeblockDecoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        blockquote: body,
+        blockquoteDecoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(color: scheme.outlineVariant, width: 3),
+          ),
+        ),
+        blockquotePadding: const EdgeInsets.only(left: 10),
+        pPadding: EdgeInsets.zero,
+        blockSpacing: 8,
       ),
     );
   }
