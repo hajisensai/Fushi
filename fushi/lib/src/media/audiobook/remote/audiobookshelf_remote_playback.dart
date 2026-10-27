@@ -20,6 +20,7 @@ class AudiobookshelfRemotePlayback implements AudiobookRemotePlayback {
     Future<String> Function()? deviceId,
     void Function(String what, Object error)? onSyncError,
     Future<void> Function(int nowMs)? onPushed,
+    Future<void> Function(int serverProgressAt, int syncedAt)? onSynced,
     AudiobookshelfProgressSync? progressSync,
   }) : _api = api {
     _progress =
@@ -30,6 +31,7 @@ class AudiobookshelfRemotePlayback implements AudiobookRemotePlayback {
           deviceId: deviceId ?? () async => 'fushi',
           onError: onSyncError,
           onPushed: onPushed,
+          onSynced: onSynced,
         );
   }
 

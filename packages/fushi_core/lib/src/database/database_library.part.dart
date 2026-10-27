@@ -1812,6 +1812,31 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   Future<void> upsertRemoteAudioBinding(RemoteAudioBindingsCompanion row) =>
       into(remoteAudioBindings).insertOnConflictUpdate(row);
 
+  /// 只改进度同步的时刻列（`local_progress_at` / `server_progress_at` /
+  /// `progress_synced_at`，v138）。不读改写整行：本机写入时间与「对齐」两路回调
+  /// 并发落库，整行覆盖会互相盖掉对方刚写的列。没有这行（绑定已删）时是空操作。
+  Future<void> updateRemoteAudioProgressMarks(
+    String srtBookUid, {
+    int? localProgressAt,
+    int? serverProgressAt,
+    int? progressSyncedAt,
+  }) async {
+    final RemoteAudioBindingsCompanion marks = RemoteAudioBindingsCompanion(
+      localProgressAt: localProgressAt == null
+          ? const Value<int?>.absent()
+          : Value<int?>(localProgressAt),
+      serverProgressAt: serverProgressAt == null
+          ? const Value<int?>.absent()
+          : Value<int?>(serverProgressAt),
+      progressSyncedAt: progressSyncedAt == null
+          ? const Value<int?>.absent()
+          : Value<int?>(progressSyncedAt),
+    );
+    await (update(remoteAudioBindings)
+          ..where((t) => t.srtBookUid.equals(srtBookUid)))
+        .write(marks);
+  }
+
   Future<int> deleteRemoteAudioBinding(String srtBookUid) =>
       (delete(remoteAudioBindings)
             ..where((t) => t.srtBookUid.equals(srtBookUid)))

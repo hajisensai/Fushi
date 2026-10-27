@@ -49,7 +49,7 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 137);
+      expect(migrated.schemaVersion, 138);
       await migrated
           .into(migrated.remoteAudioBindings)
           .insert(
@@ -72,7 +72,7 @@ void main() {
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 137);
+      expect(probe.select('PRAGMA user_version').first.values.first, 138);
       final Map<String, sqlite.Row> columns = columnsOf(probe);
       expect(columns.keys.toSet(), <String>{
         'srt_book_uid',
@@ -85,6 +85,8 @@ void main() {
         'created_at',
         'updated_at',
         'local_progress_at',
+        'server_progress_at',
+        'progress_synced_at',
       });
       // 本机最后一次写进度的时刻：可空（null = 本机从没写过），与 updated_at 分开。
       expect(columns['local_progress_at']!['notnull'], 0);
@@ -129,7 +131,7 @@ void main() {
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 137);
+      expect(probe.select('PRAGMA user_version').first.values.first, 138);
     },
   );
 }

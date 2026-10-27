@@ -85,6 +85,8 @@ class RemoteAudioBinding {
     this.episodeId,
     this.subtitleOrigin = subtitleOriginLocal,
     this.localProgressAt,
+    this.serverProgressAt,
+    this.progressSyncedAt,
   });
 
   static const String providerAudiobookshelf = 'audiobookshelf';
@@ -115,6 +117,14 @@ class RemoteAudioBinding {
   /// 写入刷新。
   final int? localProgressAt;
 
+  /// 本机最后一次与服务器进度对齐时，服务器记的 `lastUpdate`（毫秒，**服务器时钟**）；
+  /// null = 从没对齐过。服务器 `lastUpdate` 比它新 = 别的设备写过。
+  final int? serverProgressAt;
+
+  /// 本机最后一次与服务器进度对齐的时刻（毫秒，**本机时钟**）；null = 从没对齐过。
+  /// [localProgressAt] 比它新 = 本机有还没推上去的进度。
+  final int? progressSyncedAt;
+
   /// 各音轨在全书时间轴上的位置，喂给 [splitCuesAcrossTracks]。
   List<AudioTrackSpan> get spans => <AudioTrackSpan>[
     for (final RemoteAudioTrack t in tracks) t.span,
@@ -140,6 +150,8 @@ class RemoteAudioBinding {
     String? subtitleOrigin,
     int? updatedAt,
     int? localProgressAt,
+    int? serverProgressAt,
+    int? progressSyncedAt,
   }) => RemoteAudioBinding(
     srtBookUid: srtBookUid,
     provider: provider,
@@ -151,6 +163,8 @@ class RemoteAudioBinding {
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     localProgressAt: localProgressAt ?? this.localProgressAt,
+    serverProgressAt: serverProgressAt ?? this.serverProgressAt,
+    progressSyncedAt: progressSyncedAt ?? this.progressSyncedAt,
   );
 
   static String encodeTracks(List<RemoteAudioTrack> tracks) => jsonEncode(
@@ -190,6 +204,8 @@ class RemoteAudioBinding {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       localProgressAt: row.localProgressAt,
+      serverProgressAt: row.serverProgressAt,
+      progressSyncedAt: row.progressSyncedAt,
     );
   }
 
@@ -205,6 +221,8 @@ class RemoteAudioBinding {
         createdAt: createdAt,
         updatedAt: updatedAt,
         localProgressAt: Value<int?>(localProgressAt),
+        serverProgressAt: Value<int?>(serverProgressAt),
+        progressSyncedAt: Value<int?>(progressSyncedAt),
       );
 }
 
@@ -249,6 +267,20 @@ class RemoteAudioBindingRepository {
 
   Future<void> save(RemoteAudioBinding binding) =>
       _db.upsertRemoteAudioBinding(binding.toCompanion());
+
+  /// 只写进度同步的时刻列（传 null 的列不动）。进度同步的两路回调（本机写入时间 /
+  /// 与服务器对齐）会并发落库，必须走它而不是读出整行再 [save]，否则互相覆盖。
+  Future<void> updateProgressMarks(
+    String srtBookUid, {
+    int? localProgressAt,
+    int? serverProgressAt,
+    int? progressSyncedAt,
+  }) => _db.updateRemoteAudioProgressMarks(
+    srtBookUid,
+    localProgressAt: localProgressAt,
+    serverProgressAt: serverProgressAt,
+    progressSyncedAt: progressSyncedAt,
+  );
 
   Future<int> delete(String srtBookUid) =>
       _db.deleteRemoteAudioBinding(srtBookUid);
