@@ -237,9 +237,23 @@ void main() {
     });
   });
 
+  // ⑦ 断言的是「seek 返回后、seek 之后的位置到来之前仍未到位」。控制器的位置流
+  // （just_audio `createPositionStream`）在 seek 返回后有两路会推来 seek 之后的
+  // 真位置（目标处），控制器按设计判到位清旗：
+  //   1. 墙钟周期计时器：seek 返回后只要过了一个周期就推一次——用例与机器快慢赛跑；
+  //   2. 平台 seek 完成的 playbackEvent：位置流按 `DateTime.now()` 外推后过
+  //      `.distinct()`，与 seek 开头那次乐观事件的外推值同一微秒时被去重丢掉、否则
+  //      送达——Windows 时钟粒度粗多半相等（本机绿），Linux 微秒精度多半不等（CI 红）。
+  // 所以这组把周期调到远超用例耗时、并让假平台 seek 完成时不回报位置，「seek 之后的
+  // 位置」只来自测试自己喂的 tick；最后一条对照用生产配置证明真位置照常判到位。
+  const Duration noWallClockTicks = Duration(hours: 1);
   group('⑦ 显式 seek「已到位」只认 seek 之后产生的位置', () {
     test('向后 seek：平台返回前回报的旧位置不算到位，返回后到目标才算', () async {
-      final _Harness h = await _Harness.create(bookCues());
+      final _Harness h = await _Harness.create(
+        bookCues(),
+        positionPollPeriod: noWallClockTicks,
+      );
+      h.platform.player!.reportSeekCompletion = false;
       await h.controller.play();
       // 正在播第 5 章第 3 句（2500ms），用户跳回第 1 句（0ms）。
       h.controller.debugUpdateCueForPosition(2500);
@@ -276,7 +290,11 @@ void main() {
     });
 
     test('前向 seek：原行为不变（返回后未到目标不放、到目标即放）', () async {
-      final _Harness h = await _Harness.create(bookCues());
+      final _Harness h = await _Harness.create(
+        bookCues(),
+        positionPollPeriod: noWallClockTicks,
+      );
+      h.platform.player!.reportSeekCompletion = false;
       await h.controller.play();
       h.controller.debugUpdateCueForPosition(100);
       final AudioCue target = h.cue(file: 0, startMs: 2000);
@@ -295,6 +313,20 @@ void main() {
       );
       expect(h.controller.currentCue?.startMs, 1000);
     });
+
+    test('对照：生产配置下，seek 之后推来的真位置照常判到位', () async {
+      final _Harness h = await _Harness.create(bookCues());
+      await h.controller.play();
+      h.controller.debugUpdateCueForPosition(100);
+      final AudioCue target = h.cue(file: 0, startMs: 2000);
+
+      await h.controller.skipToCue(target);
+      // 不喂测试 tick，等过几个 125 ms 周期：平台完成事件 / 计时器推的都是 seek
+      // 之后的真位置（目标处），必须判到位清旗、cue 停在目标句。
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(h.controller.explicitSeekInFlightForTesting, isFalse);
+      expect(h.controller.currentCue, same(target));
+    });
   });
 }
 
@@ -311,9 +343,14 @@ class _Harness {
     (AudioCue c) => c.audioFileIndex == file && c.startMs == startMs,
   );
 
-  static Future<_Harness> create(List<AudioCue> cues) async {
+  static Future<_Harness> create(
+    List<AudioCue> cues, {
+    Duration positionPollPeriod = const Duration(milliseconds: 125),
+  }) async {
     final _FakeJustAudioPlatform platform = _installFakeAudioPlatform();
-    final AudiobookPlayerController controller = AudiobookPlayerController();
+    final AudiobookPlayerController controller = AudiobookPlayerController(
+      positionPollPeriod: positionPollPeriod,
+    );
     addTearDown(controller.dispose);
     final List<File> files = <File>[
       for (int i = 0; i < 2; i++)
@@ -423,6 +460,10 @@ class _FakeAudioPlayer extends AudioPlayerPlatform {
   Completer<void>? _heldGate;
   bool _throwNextSeek = false;
 
+  /// false = seek 完成时不发 playbackEvent（文件下标照常更新），seek 之后的位置
+  /// 只由测试自己喂；见 ⑦ 组注释。
+  bool reportSeekCompletion = true;
+
   /// 下一次 seek 挂起，直到 [releaseSeeks]（之后的 seek 照常返回）。
   void holdSeeks() => _nextGate = Completer<void>();
 
@@ -479,7 +520,7 @@ class _FakeAudioPlayer extends AudioPlayerPlatform {
       await gate.future;
     }
     _index = request.index ?? _index;
-    _emit(request.position?.inMilliseconds ?? 0);
+    if (reportSeekCompletion) _emit(request.position?.inMilliseconds ?? 0);
     return SeekResponse();
   }
 

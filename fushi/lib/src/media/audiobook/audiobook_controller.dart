@@ -56,7 +56,15 @@ bool readerVisibleForLifecycleState(AppLifecycleState state) =>
     state == AppLifecycleState.resumed || state == AppLifecycleState.inactive;
 
 class AudiobookPlayerController extends ChangeNotifier {
-  AudiobookPlayerController();
+  /// [positionPollPeriod]：位置轮询周期，生产恒为默认 125 ms。只给测试换成远大于
+  /// 用例耗时的值：真时间下这只墙钟计时器会在 seek 返回后的任意时刻插进一次
+  /// 「seek 之后的真位置」，断言「尚未到位」的用例就与机器快慢赛跑。
+  AudiobookPlayerController({
+    @visibleForTesting
+    Duration positionPollPeriod = const Duration(milliseconds: 125),
+  }) : _positionPollPeriod = positionPollPeriod;
+
+  final Duration _positionPollPeriod;
 
   // ── 内部状态 ──────────────────────────────────────────────────────────────
 
@@ -1969,8 +1977,8 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 状态变化时 just_audio 自发降频到 maxPeriod）。
     _positionSub = _player
         .createPositionStream(
-          minPeriod: const Duration(milliseconds: 125),
-          maxPeriod: const Duration(milliseconds: 125),
+          minPeriod: _positionPollPeriod,
+          maxPeriod: _positionPollPeriod,
         )
         .listen((pos) {
           _updateCurrentCue(pos.inMilliseconds);
