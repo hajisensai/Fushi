@@ -673,6 +673,14 @@ class _AiProviderSettingsSectionState
               ),
             ),
             AdaptiveSettingsSwitchRow(
+              key: ValueKey<String>('ai-provider-$index-accepts-images'),
+              title: t.ai_provider_accepts_images,
+              subtitle: t.ai_provider_accepts_images_summary,
+              value: draft.acceptsImages,
+              onChanged: (bool value) =>
+                  _update(index, draft.copyWith(acceptsImages: value)),
+            ),
+            AdaptiveSettingsSwitchRow(
               key: ValueKey<String>('ai-provider-$index-allow-http'),
               title: t.ai_provider_allow_http,
               subtitle: t.ai_provider_allow_http_summary,
@@ -1431,6 +1439,7 @@ class _AiProviderDraft {
     required this.requestsPerMinute,
     this.toolCallingOverride = AiToolCallingOverride.followPreset,
     this.pricing = const AiModelPricing(),
+    this.acceptsImages = false,
   });
 
   factory _AiProviderDraft.fromConfig(AiProviderConfig config) =>
@@ -1448,6 +1457,7 @@ class _AiProviderDraft {
         requestsPerMinute: config.requestsPerMinute,
         toolCallingOverride: config.toolCallingOverride,
         pricing: config.pricing,
+        acceptsImages: config.acceptsImages,
       );
 
   /// 选了一家预设后的新草稿。
@@ -1498,6 +1508,9 @@ class _AiProviderDraft {
   /// 模型单价（见 [AiProviderConfig.pricing]）。
   final AiModelPricing pricing;
 
+  /// 所配模型能收图（见 [AiProviderConfig.acceptsImages]）。
+  final bool acceptsImages;
+
   String get presetDisplayName =>
       aiProviderPresetById(presetId)?.displayName ?? presetId;
 
@@ -1516,6 +1529,7 @@ class _AiProviderDraft {
     int? requestsPerMinute,
     AiToolCallingOverride? toolCallingOverride,
     AiModelPricing? pricing,
+    bool? acceptsImages,
   }) => _AiProviderDraft(
     id: id,
     presetId: presetId,
@@ -1530,6 +1544,7 @@ class _AiProviderDraft {
     requestsPerMinute: requestsPerMinute ?? this.requestsPerMinute,
     toolCallingOverride: toolCallingOverride ?? this.toolCallingOverride,
     pricing: pricing ?? this.pricing,
+    acceptsImages: acceptsImages ?? this.acceptsImages,
   );
 
   /// 有效即返回配置，否则 null。
@@ -1557,6 +1572,7 @@ class _AiProviderDraft {
         requestsPerMinute: requestsPerMinute < 0 ? 0 : requestsPerMinute,
         toolCallingOverride: toolCallingOverride,
         pricing: pricing,
+        acceptsImages: acceptsImages,
       );
     } on ArgumentError {
       return null;

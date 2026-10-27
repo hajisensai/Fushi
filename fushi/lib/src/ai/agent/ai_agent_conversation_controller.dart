@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatImage;
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
@@ -36,8 +37,17 @@ abstract interface class AiAgentConversationController implements Listenable {
   void answerConfirm(bool approved);
   void answerChoice(String? id);
 
-  /// 说一句话。本机没指派提供商时抛 `StateError('ai_agent_no_provider')`。
-  Future<void> send(String text, {AgentUiContext? context});
+  /// 执行这场对话的模型能不能收图（提供商勾了「支持图片输入」）。远端会话按
+  /// 不能处理：截图只在本机发给本机配的模型。
+  bool get acceptsImages;
+
+  /// 说一句话；[images] 只在 [acceptsImages] 时才给。本机没指派提供商时抛
+  /// `StateError('ai_agent_no_provider')`。
+  Future<void> send(
+    String text, {
+    AgentUiContext? context,
+    List<AiChatImage> images = const <AiChatImage>[],
+  });
 
   Future<AgentUndoResult> undoEntry(String entryId);
 

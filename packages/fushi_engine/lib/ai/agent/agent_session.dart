@@ -157,6 +157,7 @@ class AgentEntry {
     this.selected,
     this.taskId,
     this.taskState,
+    this.imageCount = 0,
   });
 
   final String id;
@@ -181,6 +182,9 @@ class AgentEntry {
   /// 长任务 id（执行结果里带的）；[taskState] = `running` / `done` / `failed`。
   String? taskId;
   String? taskState;
+
+  /// 用户这句附带的图片张数（界面标「附图」用；图片本身不进存档）。
+  final int imageCount;
 
   bool get canUndo =>
       kind == AgentEntryKind.toolCall &&
@@ -210,6 +214,7 @@ class AgentEntry {
     if (selected != null) 'selected': selected,
     if (taskId != null) 'taskId': taskId,
     if (taskState != null) 'taskState': taskState,
+    if (imageCount > 0) 'images': imageCount,
   };
 
   static AgentEntry fromJson(Map<String, Object?> json) {
@@ -251,6 +256,7 @@ class AgentEntry {
       selected: json['selected'] as String?,
       taskId: json['taskId'] as String?,
       taskState: json['taskState'] as String?,
+      imageCount: (json['images'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -387,7 +393,15 @@ class AgentSession {
   }
 
   /// 用户说一句话，跑完这一轮（模型可能连调多个工具）。
-  Future<void> send(String text, {AgentUiContext? context}) async {
+  ///
+  /// [images] 随这句一起发给模型（视觉模型才该给，调用方按提供商的
+  /// `acceptsImages` 判断）；留在本场历史里，后续追问还能看到同一张图，但不进
+  /// 存档（[agentMessageToJson] 不存图片）。
+  Future<void> send(
+    String text, {
+    AgentUiContext? context,
+    List<AiChatImage> images = const <AiChatImage>[],
+  }) async {
     if (_running) throw StateError('上一轮还没结束');
     final String trimmed = text.trim();
     if (trimmed.isEmpty) return;
@@ -400,12 +414,13 @@ class AgentSession {
           kind: AgentEntryKind.user,
           createdAt: _now(),
           text: trimmed,
+          imageCount: images.length,
         ),
       );
       final String contextBlock = context == null
           ? ''
           : '\n\n<ui_context>${jsonEncode(context.toJson())}</ui_context>';
-      _history.add(AiChatMessage.user('$trimmed$contextBlock'));
+      _history.add(AiChatMessage.user('$trimmed$contextBlock', images: images));
       await _runTurn();
     } finally {
       _running = false;

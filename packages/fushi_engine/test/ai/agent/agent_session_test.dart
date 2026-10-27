@@ -424,6 +424,45 @@ void main() {
     expect(llm.requests.single.first.cacheable, isTrue);
   });
 
+  test('附图随这句发给模型，后续追问仍在历史里；条目记张数、存档不存图', () async {
+    final _StubLlm llm = _StubLlm(<AiChatTurn>[_reply('ok'), _reply('ok2')]);
+    final AgentSession session = _session(llm, _Toolbox(), _Host());
+    const AiChatImage shot = AiChatImage(bytes: <int>[1, 2, 3]);
+    await session.send('解释一下', images: const <AiChatImage>[shot]);
+    final AiChatMessage user = llm.requests.single.last;
+    expect(user.images, hasLength(1));
+    expect(user.images.single.bytes, <int>[1, 2, 3]);
+    final AgentEntry entry = session.entries.firstWhere(
+      (AgentEntry e) => e.kind == AgentEntryKind.user,
+    );
+    expect(entry.imageCount, 1);
+
+    await session.send('再说详细点');
+    final List<AiChatMessage> second = llm.requests.last;
+    expect(
+      second.where((AiChatMessage m) => m.images.isNotEmpty),
+      hasLength(1),
+      reason: '同一场对话里追问，模型还要看得到那张图',
+    );
+    expect(second.last.images, isEmpty);
+
+    final Map<String, Object?> saved =
+        jsonDecode(jsonEncode(session.toJson())) as Map<String, Object?>;
+    expect(saved.toString(), isNot(contains('base64')));
+    final AgentSession restored = AgentSession.fromJson(
+      saved,
+      llm: llm,
+      toolbox: _Toolbox(),
+      host: _Host(),
+    );
+    expect(
+      restored.entries
+          .firstWhere((AgentEntry e) => e.kind == AgentEntryKind.user)
+          .imageCount,
+      1,
+    );
+  });
+
   test('降级协议：不支持 tool calling 时只回一个 JSON 动作，同一管线', () async {
     final _Toolbox toolbox = _Toolbox();
     final _StubLlm llm = _StubLlm(<AiChatTurn>[
