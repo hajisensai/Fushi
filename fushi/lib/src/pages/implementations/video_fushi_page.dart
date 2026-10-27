@@ -396,7 +396,7 @@ import 'package:fushi/src/mining/web_mine_queue_store.dart'
 import 'package:fushi/src/media/video/video_mine_queue_dialog.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
-    show adaptivePageRoute;
+    show adaptivePageRoute, adaptiveSegmentedButton;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show einkSafeDuration, isEinkTheme;
 import 'package:fushi/src/utils/app_ui_scale.dart';
@@ -730,6 +730,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     this.discLaunchCover,
     this.discLaunchOrigin,
     this.webSite,
+    this.webBackToBrowser = false,
     this.remoteDisc,
     super.key,
   }) : remoteInfo = null,
@@ -756,6 +757,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
        discLaunchCover = null,
        discLaunchOrigin = null,
        webSite = null,
+       webBackToBrowser = false,
        remoteDisc = null,
        playlistCollectionId = null;
 
@@ -800,6 +802,11 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 播起某一集时这一集才落库、本页身份换成它（web_source.part.dart `_bindWebEpisode`）。
   final WebVideoSite? webSite;
 
+  /// 本页是 app 内浏览器「用 Fushi 播放」交接过来的：返回直接关掉本页、回到浏览器里原来的
+  /// 站点页，不再一级一级退到本页自己的网页档（带地址栏和关闭钮的那份）——用户是在浏览器里
+  /// 选的集，本页网页档只是同一站点的第二份浏览器（BUG-3801）。
+  final bool webBackToBrowser;
+
   /// 流式原盘会话（远端原盘第二期）：盘在已配对 host 上，libmpv 经 HTTP 读它。只与
   /// [openBlurayMenu] 一起用（入口 [neutralizedRemoteDisc]）；本机没有这张盘的库行，
   /// 会话里的标题不绑定库行、不写进度。
@@ -828,6 +835,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     ImageProvider? discLaunchCover,
     Rect? discLaunchOrigin,
     WebVideoSite? webSite,
+    bool webBackToBrowser = false,
   }) => FushiAppUiScaleNeutralizer(
     child: VideoFushiPage(
       bookUid: bookUid,
@@ -844,6 +852,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       discLaunchCover: discLaunchCover,
       discLaunchOrigin: discLaunchOrigin,
       webSite: webSite,
+      webBackToBrowser: webBackToBrowser,
     ),
   );
 

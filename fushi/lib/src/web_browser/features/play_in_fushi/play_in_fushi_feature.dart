@@ -205,6 +205,7 @@ class PlayInFushiFeature extends WebBrowserFeature {
         url: url,
         title: webVideoSiteDefaultTitle(url.toString()),
         repo: _repository(),
+        backToBrowser: true,
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('web_browser.play_in_fushi', e, stack);

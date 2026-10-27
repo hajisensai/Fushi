@@ -485,28 +485,43 @@ extension _VideoWebSource on _VideoFushiPageState {
     _onWebState(state);
   }
 
-  /// 播放器档右上组头部的「回到网页」：与原盘「主菜单」同一个挂法（随控制条显隐、窄屏收进「⋯」）。
+  /// 网页档 / 播放器档切换（BUG-3801，用户：「应该改成有个按钮切换，而不是独立一个页面」）：
+  /// 两档共用这一个分段按钮——网页档挂在工具条上，播放器档挂在右上组头部——当前在哪一档
+  /// 一眼可见，切换也只在这里点。页面里没有视频时「播放器」段不可选。
+  Widget _buildWebModeToggle() => KeyedSubtree(
+    key: const ValueKey<String>('video-web-mode-toggle'),
+    child: adaptiveSegmentedButton<bool>(
+      context: context,
+      segments: <ButtonSegment<bool>>[
+        ButtonSegment<bool>(
+          value: false,
+          icon: const FushiIcon(FushiIcons.webAsset),
+          label: Text(t.web_video_mode_page),
+        ),
+        ButtonSegment<bool>(
+          value: true,
+          enabled: _webPageHasVideo || _webPlayerMode,
+          icon: const FushiIcon(FushiIcons.playCircle),
+          label: Text(t.web_video_mode_player),
+        ),
+      ],
+      selected: <bool>{_webPlayerMode},
+      onSelectionChanged: (Set<bool> v) => _setWebPlayerMode(v.first),
+    ),
+  );
+
+  /// 播放器档右上组头部的档位切换（[_buildWebModeToggle]）：与原盘「主菜单」同一个挂法（随
+  /// 控制条显隐、窄屏收进「⋯」，收进去时是「回到网页」一项）。
   List<VideoBarEntry> _webPageBarEntries({required bool desktop}) {
-    void run() => _setWebPlayerMode(false);
     return <VideoBarEntry>[
       VideoBarEntry(
         priority: 87,
         menuAction: VideoBarMenuAction(
           icon: FushiIcons.webAsset,
           label: t.web_video_page_show,
-          onSelected: run,
+          onSelected: () => _setWebPlayerMode(false),
         ),
-        child: FushiTooltip(
-          message: t.web_video_page_show,
-          child: KeyedSubtree(
-            key: const ValueKey<String>('video-web-page-show'),
-            child: _chromeIconButton(
-              icon: FushiIcons.webAsset,
-              desktop: desktop,
-              onPressed: run,
-            ),
-          ),
-        ),
+        child: _buildWebModeToggle(),
       ),
     ];
   }
@@ -1087,7 +1102,7 @@ extension _VideoWebSource on _VideoFushiPageState {
 
   /// 网页档（登录 / 选人 / 详情 / 选集）上方的浏览器工具条：后退（一级一级往外退，与
   /// 返回键同一条 [_handleBackOrExit]）/ 前进 / 刷新（加载中是停止）/ 地址栏（网址或搜索词）
-  /// / 页面里有视频时的「在播放器里看」/ 关闭本页。
+  /// / 页面里有视频时的档位切换（[_buildWebModeToggle]）/ 关闭本页（浏览器交接过来的没有）。
   Widget _buildWebPageBar() {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
@@ -1146,23 +1161,21 @@ extension _VideoWebSource on _VideoFushiPageState {
                 const SizedBox(width: 4),
               ],
               if (_webPageHasVideo) ...<Widget>[
-                FushiFilledButton.tonalIcon(
-                  key: const ValueKey<String>('video-web-player-open'),
-                  onPressed: () => _setWebPlayerMode(true),
-                  icon: const FushiIcon(FushiIcons.playCircle),
-                  label: Text(t.web_video_player_open),
-                ),
+                _buildWebModeToggle(),
                 const SizedBox(width: 4),
               ],
-              FushiIconButtonControl(
-                key: const ValueKey<String>('video-web-nav-close'),
-                tooltip: t.web_video_nav_close,
-                icon: const FushiIcon(FushiIcons.close),
-                onPressed: () {
-                  _webClosing = true;
-                  unawaited(_handleBackOrExit());
-                },
-              ),
+              // 浏览器交接过来的不给「关闭」：本页网页档只是播放页的一档，返回就回浏览器
+              // （[VideoFushiPage.webBackToBrowser]），再给个关闭钮像是另开了一个页面。
+              if (!widget.webBackToBrowser)
+                FushiIconButtonControl(
+                  key: const ValueKey<String>('video-web-nav-close'),
+                  tooltip: t.web_video_nav_close,
+                  icon: const FushiIcon(FushiIcons.close),
+                  onPressed: () {
+                    _webClosing = true;
+                    unawaited(_handleBackOrExit());
+                  },
+                ),
             ],
           ),
         ),
@@ -1223,11 +1236,13 @@ extension _VideoWebSource on _VideoFushiPageState {
   }
 
   /// 返回键在网页档里的一级：播放器档先退回网页；网页有站内历史就后退一页。都没有（或
-  /// 点了工具条「关闭」）返回 false，调用方关掉本页。同步判定：能否后退读工具条缓存的
+  /// 点了工具条「关闭」、或本页是浏览器交接过来的）返回 false，调用方关掉本页。同步判定：能否后退读工具条缓存的
   /// [WebVideoNavState.canGoBack]（退出路径不 await，BUG-2119）。
   bool _webBackStep() {
     final WebVideoSession? session = _webSession;
     if (session == null || _webClosing) return false;
+    // 浏览器交接过来的：返回就回浏览器（[VideoFushiPage.webBackToBrowser]）。
+    if (widget.webBackToBrowser) return false;
     if (_webPlayerMode) {
       _setWebPlayerMode(false);
       return true;
