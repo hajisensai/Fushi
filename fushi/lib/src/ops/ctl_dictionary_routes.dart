@@ -253,12 +253,15 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
       if (limit < 1) throw const CtlFailure.badRequest('limit 必须 ≥ 1');
       // 与浏览器扩展 `/api/lookup/dictionary`（buildRemoteDictionaryLookupResponse）
       // 同一个查词服务：同一套清洗 / 缓存 / 隐藏词典过滤，只是不要 popupJson。
-      final DictionarySearchResult? result = await app()
-          .createRemoteLookupService()
-          .searchDictionary(
+      // `language`（可选）：调用方的查词语言，与扩展 / 对端同一分派点；缺省按本机
+      // 当前查词语言。
+      final DictionarySearchResult? result =
+          await searchRemoteDictionaryForRequest(
+            app().createRemoteLookupService(),
             term: term,
             wildcards: call.optBool('wildcards') ?? false,
             maximumTerms: limit,
+            language: _ctlLookupLanguage(call),
           );
       return ctlSearchResultJson(
         term,
@@ -374,10 +377,12 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
       final bool lookup = call.optBool('lookup') ?? true;
       DictionarySearchResult? found;
       if (lookup && (reading == null || glossary == null)) {
-        found = await app().createRemoteLookupService().searchDictionary(
+        found = await searchRemoteDictionaryForRequest(
+          app().createRemoteLookupService(),
           term: word,
           wildcards: false,
           maximumTerms: 10,
+          language: _ctlLookupLanguage(call),
         );
       }
       final Map<String, String> fields = buildCtlMineFields(
@@ -1020,3 +1025,8 @@ Map<String, String> _stringMap(Object? raw) {
       if (e.key != null && e.value != null) '${e.key}': '${e.value}',
   };
 }
+
+/// 控制通道查词请求里调用方声明的查词语言（[kRemoteLookupLanguageField]，查询参数或
+/// body 均可）；空 / 缺省为 null，按本机当前查词语言。
+String? _ctlLookupLanguage(CtlCall call) =>
+    call.optString(kRemoteLookupLanguageField);

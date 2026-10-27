@@ -1577,12 +1577,23 @@ class AppModel with ChangeNotifier {
   /// `chineseSimpToTrad`）。语言取查词来源语言 [currentLookupLanguage]，缺省落到
   /// 全局默认内容语言——与词头字体链同一套解析（[resolveContentLanguage]）。
   /// 语言未知时为 false：不对日语等其它语言的查词做任何改动。
-  bool get lookupChineseSimpToTrad => isChineseLanguageTag(
-    resolveContentLanguage(
-      explicit: currentLookupLanguage,
-      globalDefault: defaultContentLanguage,
-    ),
-  );
+  bool get lookupChineseSimpToTrad => lookupChineseSimpToTradFor(null);
+
+  /// 本次查词实际按哪种语言处理：[requested]（远端请求方声明的查词语言，非空时优先）→
+  /// 查词来源语言 [currentLookupLanguage] → 全局默认内容语言；全空为 null（语言未知）。
+  /// 本机发给对端的查词也带这个值（[_searchRemoteDictionary]），对端据此判是否中文。
+  String? effectiveLookupLanguage({String? requested}) =>
+      resolveContentLanguage(
+        explicit: (requested?.trim().isNotEmpty ?? false)
+            ? requested
+            : currentLookupLanguage,
+        globalDefault: defaultContentLanguage,
+      );
+
+  /// 「按中文处理（开简体 → 繁體回落）」的唯一判据；[requested] 见
+  /// [effectiveLookupLanguage]。本机查词传 null，替对端查词传对端声明的语言。
+  bool lookupChineseSimpToTradFor(String? requested) =>
+      isChineseLanguageTag(effectiveLookupLanguage(requested: requested));
 
   /// [dictRepo] 是否已经赋值。
   ///
@@ -3958,9 +3969,6 @@ class AppModel with ChangeNotifier {
           );
         }
       }
-
-      // 词典样式规则的 CSS 编译产物按当前编译器重算（Android 独立弹窗只读这份缓存）。
-      await refreshCompiledDictStyleCssCache();
 
       // TODO-1260：内部对每本词典的资源目录做 exists() 探测（数据根派生），同样叠超时。
       ErrorLogService.instance.markInitStep(
@@ -8294,6 +8302,26 @@ class AppModel with ChangeNotifier {
     int? overrideMaximumTerms,
     bool useCache = true,
     bool allowRemoteLookup = true,
+  }) => _searchDictionaryInLanguage(
+    searchTerm: searchTerm,
+    searchWithWildcards: searchWithWildcards,
+    overrideMaximumTerms: overrideMaximumTerms,
+    useCache: useCache,
+    allowRemoteLookup: allowRemoteLookup,
+  );
+
+  /// [searchDictionary] 的本体，多一个 [lookupLanguage]：替对端查词时传对端声明的查词
+  /// 语言（见 [effectiveLookupLanguage]）；本机查词为 null，按本机当前查词语言。
+  ///
+  /// 不把 [lookupLanguage] 加到公开的 [searchDictionary] 上：那是测试替身普遍覆写的
+  /// 面，加参数会让全部替身失配。只有同库的 [_AppModelRemoteLookupService] 用它。
+  Future<DictionarySearchResult> _searchDictionaryInLanguage({
+    required String searchTerm,
+    required bool searchWithWildcards,
+    int? overrideMaximumTerms,
+    bool useCache = true,
+    bool allowRemoteLookup = true,
+    String? lookupLanguage,
   }) async {
     searchTerm = normalizeSearchTerm(
       searchTerm,
@@ -8316,12 +8344,14 @@ class AppModel with ChangeNotifier {
             searchTerm: searchTerm,
             searchWithWildcards: searchWithWildcards,
             maximumTerms: effectiveMaxTerms,
+            lookupLanguage: lookupLanguage,
           )
         : null;
     final Future<_LocalDictionaryLookup> local = _searchLocalDictionary(
       searchTerm: searchTerm,
       effectiveMaxTerms: effectiveMaxTerms,
       useCache: useCache,
+      lookupLanguage: lookupLanguage,
     );
     if (remote != null) {
       final DictionarySearchResult? remoteResult = await remote;
@@ -8346,6 +8376,7 @@ class AppModel with ChangeNotifier {
             searchTerm: searchTerm,
             searchWithWildcards: searchWithWildcards,
             maximumTerms: effectiveMaxTerms,
+            lookupLanguage: lookupLanguage,
           );
       if (remoteResult != null) {
         return remoteResult;
@@ -8373,10 +8404,11 @@ class AppModel with ChangeNotifier {
     required String searchTerm,
     required int effectiveMaxTerms,
     required bool useCache,
+    String? lookupLanguage,
   }) async {
     // maxTerms 与 maxResults 现在恒等（引擎上限已对齐词头预算），键格式保持不变以免
     // 旧键格式守卫漂移。
-    final bool simpToTrad = lookupChineseSimpToTrad;
+    final bool simpToTrad = lookupChineseSimpToTradFor(lookupLanguage);
     final String cacheKey = buildSearchCacheKey(
       term: searchTerm,
       maxTerms: effectiveMaxTerms,
@@ -8460,6 +8492,7 @@ class AppModel with ChangeNotifier {
     required String searchTerm,
     required bool searchWithWildcards,
     required int maximumTerms,
+    String? lookupLanguage,
   }) async {
     if (!remoteLookupEnabled) return null;
     // 配对设备被证实不可达后的冷却窗内直接短路（BUG-1302）。远端查词排在本地
@@ -8477,11 +8510,14 @@ class AppModel with ChangeNotifier {
       // BUG-3612：结果由电脑查出，弹窗却在本机渲染、Glossary 也在本机导出——
       // 客户端开着 `trackDictionaryStyles`，结果随附电脑的词典样式
       // （[DictionarySearchResult.remoteDictionaryStyles]）。
+      // 带上本机这次查词的语言：对端按它（而不是对端自己正在读的内容）决定是否开
+      // 简体 → 繁體回落。语言未知时不带，对端按旧行为。
       final DictionarySearchResult? result = await _remoteDictionaryLookup
           .searchDictionary(
             term: searchTerm,
             wildcards: searchWithWildcards,
             maximumTerms: maximumTerms,
+            language: effectiveLookupLanguage(requested: lookupLanguage),
           );
       // 拿到任何 HTTP 响应即证明设备活着（含「可达但无结果」的 null），清冷却。
       _remoteDictionaryUnreachableUntil = null;
@@ -10238,26 +10274,10 @@ class AppModel with ChangeNotifier {
 
   ({String raw, List<DictStyleRule> rules})? _dictStyleRulesMemo;
 
-  /// 保存规则表，并同步刷新 CSS 编译产物缓存。
-  ///
-  /// 缓存只为跑不了 Dart 编译器的消费方存在（Android 独立弹窗 Activity 直连
-  /// prefs 表）。这里是它唯一的写入点——冗余数据必须单点收口，否则迟早不同步。
+  /// 保存规则表。CSS 一律在注入时由 `effective*DictCSS` 现算，不落编译产物缓存。
   Future<void> saveDictStyleRules(List<DictStyleRule> rules) async {
     await prefsRepo.setDictStyleRulesRaw(encodeDictStyleRules(rules));
-    await prefsRepo.setDictStyleRulesCss(encodeCompiledDictStyleCss(rules));
     notifyListeners();
-  }
-
-  /// 启动时把 CSS 编译产物缓存与规则表对齐。
-  ///
-  /// 缓存是编译器的**产物**：编译器修了（例如圆角不再附带 `display: inline-block`），
-  /// 已存的旧产物不会自己变。Android 独立弹窗只读缓存，不重编，于是存量用户的弹窗会
-  /// 一直吃旧的错误 CSS，直到他们碰巧重新保存一次规则。这里按当前编译器重算，内容
-  /// 不同才写——仍是 [saveDictStyleRules] 同一个编译函数，不引入第二套产物。
-  Future<void> refreshCompiledDictStyleCssCache() async {
-    final String compiled = encodeCompiledDictStyleCss(dictStyleRules);
-    if (prefsRepo.dictStyleRulesCss == compiled) return;
-    await prefsRepo.setDictStyleRulesCss(compiled);
   }
 
   /// 注入弹窗的全局 CSS：可视化产物 + 用户手写。
@@ -11582,6 +11602,7 @@ class _AppModelRemoteLookupService
         FushiRemoteLookupService,
         FushiRemoteAudioListService,
         FushiRemoteTimedPopupLookupService,
+        FushiRemoteLanguageLookupService,
         FushiRemoteMiningService,
         FushiRemoteSourceNoteService,
         FushiRemoteHistoryService {
@@ -12120,17 +12141,52 @@ class _AppModelRemoteLookupService
     required String term,
     required bool wildcards,
     required int maximumTerms,
+  }) => _searchDictionary(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+  );
+
+  @override
+  Future<DictionarySearchResult?> searchDictionaryInLanguage({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required String language,
+  }) => _searchDictionary(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+    language: language,
+  );
+
+  /// [language]：请求方声明的查词语言；null = 旧请求，按本机当前查词语言。
+  Future<DictionarySearchResult?> _searchDictionary({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    String? language,
   }) async {
-    final DictionarySearchResult source = await _appModel.searchDictionary(
-      searchTerm: term,
-      searchWithWildcards: wildcards,
-      overrideMaximumTerms: maximumTerms,
-      // 浏览器 Shift 与 Side Panel 都会在同一词上反复落点。禁用结果缓存会在 FFI
-      // 原始结果已命中时仍重复构造 DictionaryEntry 和 popupJson（冷后每次仍需数十
-      // 毫秒）；词典/排序/隐藏项设置的所有写路径都会统一清该缓存，因此这里安全复用。
-      useCache: true,
-      allowRemoteLookup: false,
-    );
+    // 浏览器 Shift 与 Side Panel 都会在同一词上反复落点。禁用结果缓存会在 FFI
+    // 原始结果已命中时仍重复构造 DictionaryEntry 和 popupJson（冷后每次仍需数十
+    // 毫秒）；词典/排序/隐藏项设置的所有写路径都会统一清该缓存，因此这里安全复用。
+    // 不带语言的旧请求仍走公开的 [AppModel.searchDictionary]（行为与此前逐字相同）。
+    final DictionarySearchResult source = language == null
+        ? await _appModel.searchDictionary(
+            searchTerm: term,
+            searchWithWildcards: wildcards,
+            overrideMaximumTerms: maximumTerms,
+            useCache: true,
+            allowRemoteLookup: false,
+          )
+        : await _appModel._searchDictionaryInLanguage(
+            searchTerm: term,
+            searchWithWildcards: wildcards,
+            overrideMaximumTerms: maximumTerms,
+            useCache: true,
+            allowRemoteLookup: false,
+            lookupLanguage: language,
+          );
     if (source.entries.isEmpty) return null;
     // scrollPosition 是 DictionarySearchResult 唯一的可变字段。远端传输复用缓存内容，
     // 但不能把本地历史/页面滚动位置的对象别名暴露给远端 record/full-result 调用方。
@@ -12171,11 +12227,28 @@ class _AppModelRemoteLookupService
     timing: timing,
   );
 
+  @override
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupInLanguage({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required String language,
+    RemoteDictionaryPopupTiming? timing,
+  }) => _searchDictionaryPopup(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+    timing: timing,
+    language: language,
+  );
+
+  /// [language] 同 [_searchDictionary]。
   Future<RemoteDictionaryPopupLookup?> _searchDictionaryPopup({
     required String term,
     required bool wildcards,
     required int maximumTerms,
     RemoteDictionaryPopupTiming? timing,
+    String? language,
   }) async {
     timing?.reset();
     final Stopwatch? serviceWatch = timing == null
@@ -12202,7 +12275,7 @@ class _AppModelRemoteLookupService
       }
       if (searchTerm.trim().isEmpty) return null;
 
-      final bool simpToTrad = _appModel.lookupChineseSimpToTrad;
+      final bool simpToTrad = _appModel.lookupChineseSimpToTradFor(language);
       final String searchCacheKey = buildSearchCacheKey(
         term: searchTerm,
         maxTerms: maximumTerms,

@@ -3961,19 +3961,6 @@ class PreferencesRepository extends ChangeNotifier
     await setPref(dictStyleRulesPrefKey, raw);
   }
 
-  /// 规则表的 CSS 编译产物缓存。
-  ///
-  /// 供跑不了 Dart 编译器的消费方直接读（Android 独立弹窗 Activity 直连 prefs
-  /// 表）。Dart 侧一律走 `AppModel.effective*DictCSS` 现算，不读这个缓存——
-  /// 冗余数据只由同一个编译函数产出：`AppModel.saveDictStyleRules`（保存时）与
-  /// `AppModel.refreshCompiledDictStyleCssCache`（启动时按当前编译器对齐），一类读者。
-  String get dictStyleRulesCss =>
-      getPref(dictStyleRulesCssPrefKey, defaultValue: '') as String;
-
-  Future<void> setDictStyleRulesCss(String css) async {
-    await setPref(dictStyleRulesCssPrefKey, css);
-  }
-
   // ── audio sources ────────────────────────────────────────────────────
 
   /// 已退役的内置远端音频源 URL。曾经随新装默认写入用户的音频源列表；2026-09-13

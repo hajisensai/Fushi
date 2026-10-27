@@ -8,6 +8,8 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show kRemoteDictionaryMediaMaxBytes, safeDictionaryMediaPath;
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show kRemoteLookupLanguageField;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -111,17 +113,24 @@ class FushiRemoteLookupClient {
   /// （`AppModel.searchDictionary` 的 remote-first 语义），配对设备离线/换网/
   /// 休眠时每次查词都要把「3s × 候选数」全额付一遍，且因为短路在缓存之前，
   /// 重复查同一个词也不例外——这正是用户报的「某些机器上查词要 4-5 秒」。
+  ///
+  /// [language]：本端这次查词的语言（BCP-47）。带上后 host 按它而不是 host 自己正在读
+  /// 的内容决定是否开简体 → 繁體回落；null / 空串不发该字段（旧 host 本就忽略它）。
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
     required bool wildcards,
     required int maximumTerms,
+    String? language,
   }) async {
+    final String? lookupLanguage =
+        (language == null || language.trim().isEmpty) ? null : language.trim();
     final InterconnectPostOutcome outcome = await _postLookup(
       path: '/api/lookup/dictionary',
       body: <String, dynamic>{
         'term': term,
         'wildcards': wildcards,
         'maximumTerms': maximumTerms,
+        if (lookupLanguage != null) kRemoteLookupLanguageField: lookupLanguage,
         // 空串 ≠ 任何 host 指纹 ⇒ 首查必拿到整表。
         if (_trackDictionaryStyles)
           'stylesRevision': _dictionaryStylesRevision ?? '',

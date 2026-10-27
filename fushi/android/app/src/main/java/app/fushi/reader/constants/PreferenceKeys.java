@@ -89,13 +89,9 @@ public final class PreferenceKeys {
 
     /**
      * Prefs file holding the user's lookup input-method language. Written by the
-     * Flutter side through {@code ChannelNames.LOOKUP_IME}; read by the two
-     * lookup surfaces whose search box is a native EditText
-     * ({@code FloatingDictService}, {@code PopupDictActivity}) — those cannot
-     * take Flutter's {@code hintLocales} parameter.
-     *
-     * Its own file rather than the floating-dict one: both of those surfaces
-     * need it, and one of them is an Activity that owns no floating-window prefs.
+     * Flutter side through {@code ChannelNames.LOOKUP_IME}; read by the lookup
+     * surface whose search box is a native EditText ({@code FloatingDictService})
+     * — it cannot take Flutter's {@code hintLocales} parameter.
      */
     public static final String FILE_LOOKUP_IME = "lookup_ime_prefs";
 

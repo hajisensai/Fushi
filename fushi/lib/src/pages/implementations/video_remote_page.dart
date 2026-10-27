@@ -1273,6 +1273,8 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         term: term,
         wildcards: true,
         maximumTerms: maximumTerms,
+        // 本机（遥控端）的查词语言随请求发给电脑：中文时电脑开简体 → 繁體回落。
+        language: mixinAppModel.effectiveLookupLanguage(),
       );
     } catch (e) {
       // 电脑不可达 / 配对被拒：横幅报原因，弹框按「没查到」收尾（不留半截搜索态）。

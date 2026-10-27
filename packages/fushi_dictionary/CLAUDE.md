@@ -16,7 +16,7 @@
 ## C++ 引擎真实位置（不在本包）
 
 - **本包只剩纯 Dart**：`lib/src/` 下仅 `engine/`、`ffi/`、`formats/`、`language/`、`models/` 五个目录，无任何 `.cpp/.cc/.h`；FFI 绑定在 `lib/src/ffi/fushidicts_ffi_bindings.dart`。
-- **C++ 引擎源码全在仓库根 `native/fushidicts/`**：`fushidicts_src/`（`deinflector.cpp` / `importer.cpp` / `lookup.cpp` / `query.cpp` / `popup_json.cpp` 等实现）、`fushidicts_include/`（头文件）、`fushidicts_ffi.cpp`（C ABI 导出，供 Dart FFI）、`fushidicts_jni.cpp`（Android JNI 桥）、`CMakeLists.txt`（构建）；`fushidicts_external/` 为 vendored 第三方依赖（glaze / libdeflate / unordered_dense / utf8proc / utfcpp / xxHash / zstd）；`UPSTREAM.md` 记上游同步基线。
+- **C++ 引擎源码全在仓库根 `native/fushidicts/`**：`fushidicts_src/`（`deinflector.cpp` / `importer.cpp` / `lookup.cpp` / `query.cpp` / `popup_json.cpp` 等实现）、`fushidicts_include/`（头文件）、`fushidicts_ffi.cpp`（C ABI 导出，供 Dart FFI；五端唯一的原生桥）、`CMakeLists.txt`（构建）；`fushidicts_external/` 为 vendored 第三方依赖（glaze / libdeflate / unordered_dense / utf8proc / utfcpp / xxHash / zstd）；`UPSTREAM.md` 记上游同步基线。
 - **改 C++ 引擎行为（查询/导入/去屈折/解析）去 `native/fushidicts/`，不在本包**；本包只做 Dart 侧绑定、格式注册与语言处理封装。
 
 ## 对外接口

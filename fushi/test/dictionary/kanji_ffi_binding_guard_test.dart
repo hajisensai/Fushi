@@ -77,15 +77,4 @@ void main() {
     // initializeTyped must accept the kanji bucket so S4 can route kanji dicts.
     expect(engine.contains('List<String> kanjiPaths'), isTrue);
   });
-
-  test('Android JNI mirrors the kanji bindings symmetrically', () {
-    final String jni = read('../native/fushidicts/fushidicts_jni.cpp');
-    expect(jni.contains('nativeAddKanjiDict'), isTrue);
-    expect(jni.contains('nativeQueryKanjiJson'), isTrue);
-    final String bridge = read(
-        '../fushi/android/app/src/main/java/app/fushi/reader/FushiBridge.kt');
-    expect(bridge.contains('nativeAddKanjiDict'), isTrue);
-    expect(bridge.contains('nativeQueryKanjiJson'), isTrue);
-    expect(bridge.contains('fun queryKanjiJson('), isTrue);
-  });
 }

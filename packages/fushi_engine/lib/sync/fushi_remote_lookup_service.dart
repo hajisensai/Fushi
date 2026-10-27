@@ -58,6 +58,116 @@ abstract class FushiRemotePopupLookupService {
   });
 }
 
+/// 查词请求带了**请求方的查词语言**（wire 字段 [kRemoteLookupLanguageField]）时的可选
+/// 能力：实现方按请求方语言决定查词行为（中文 → 引擎额外试简体 → 繁體变体），而不是按
+/// 本机当前查词语言——两台设备可能正在读不同语言的内容。
+///
+/// 探测式接口（与 [FushiRemotePopupLookupService] 同法）：请求不带语言、或 service 没实现
+/// 它（旧实现 / 测试替身）时一律走 [FushiRemoteLookupService.searchDictionary] 等旧方法，
+/// 行为与从前逐字相同。分派只在 [searchRemoteDictionaryForRequest] /
+/// [searchRemoteDictionaryPopupForRequest] 一处。
+abstract class FushiRemoteLanguageLookupService {
+  /// [language] 为请求方声明的 BCP-47 语言标签（已裁掉空白、非空）。
+  Future<DictionarySearchResult?> searchDictionaryInLanguage({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required String language,
+  });
+
+  /// [FushiRemotePopupLookupService.searchDictionaryPopup] 的带语言版本；[timing] 非 null
+  /// 时与 [FushiRemoteTimedPopupLookupService] 同语义地记录阶段耗时。
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupInLanguage({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required String language,
+    RemoteDictionaryPopupTiming? timing,
+  });
+}
+
+/// 查词请求体里「请求方查词语言」的字段名（可选；缺省 = 旧行为，按 host 本机语言）。
+const String kRemoteLookupLanguageField = 'language';
+
+/// 从请求体（JSON body / ctl 查询参数）取请求方查词语言：非字符串、空串、纯空白都当没给。
+String? remoteLookupLanguageOf(Map<String, dynamic> body) {
+  final Object? raw = body[kRemoteLookupLanguageField];
+  if (raw is! String) return null;
+  final String trimmed = raw.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+/// 完整查词结果的唯一分派点：请求带了语言且 [lookup] 认识语言时走
+/// [FushiRemoteLanguageLookupService.searchDictionaryInLanguage]，否则走旧方法。
+Future<DictionarySearchResult?> searchRemoteDictionaryForRequest(
+  FushiRemoteLookupService lookup, {
+  required String term,
+  required bool wildcards,
+  required int maximumTerms,
+  required String? language,
+}) {
+  final Object service = lookup;
+  if (language != null && service is FushiRemoteLanguageLookupService) {
+    return service.searchDictionaryInLanguage(
+      term: term,
+      wildcards: wildcards,
+      maximumTerms: maximumTerms,
+      language: language,
+    );
+  }
+  return lookup.searchDictionary(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+  );
+}
+
+/// 本次请求能否走 popup 快路径（[searchRemoteDictionaryPopupForRequest]）；false 时调用方
+/// 回落完整查词。单列成判断而不是让快路径返回 null，免得「没有快路径」与「快路径查无
+/// 结果」混成同一个 null。
+bool hasPopupFastPath(FushiRemoteLookupService lookup, {String? language}) {
+  final Object service = lookup;
+  return (language != null && service is FushiRemoteLanguageLookupService) ||
+      service is FushiRemotePopupLookupService;
+}
+
+/// 见 [hasPopupFastPath]：调用前必须先确认它为 true。
+Future<RemoteDictionaryPopupLookup?> searchRemoteDictionaryPopupForRequest(
+  FushiRemoteLookupService lookup, {
+  required String term,
+  required bool wildcards,
+  required int maximumTerms,
+  required String? language,
+  RemoteDictionaryPopupTiming? timing,
+}) {
+  final Object service = lookup;
+  if (language != null && service is FushiRemoteLanguageLookupService) {
+    return service.searchDictionaryPopupInLanguage(
+      term: term,
+      wildcards: wildcards,
+      maximumTerms: maximumTerms,
+      language: language,
+      timing: timing,
+    );
+  }
+  if (service is! FushiRemotePopupLookupService) {
+    throw StateError('lookup service has no popup fast path');
+  }
+  if (timing != null && service is FushiRemoteTimedPopupLookupService) {
+    return service.searchDictionaryPopupWithTiming(
+      term: term,
+      wildcards: wildcards,
+      maximumTerms: maximumTerms,
+      timing: timing,
+    );
+  }
+  return service.searchDictionaryPopup(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+  );
+}
+
 /// [FushiRemotePopupLookupService] 的可选诊断能力。
 ///
 /// 保持原 popup 快路径接口不变，只有需要服务端阶段计时的调用方才探测本接口并传入

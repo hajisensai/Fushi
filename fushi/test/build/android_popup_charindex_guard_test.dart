@@ -34,8 +34,8 @@ void main() {
 
   group('BUG-214 floating lyric lookup charIndex wiring', () {
     test(
-      'FloatingLyricService routes the tap into the Flutter popup, not the '
-      'deactivated native PopupDictActivity, and ships the tapped charIndex',
+      'FloatingLyricService routes the tap into the Flutter popup and ships '
+      'the tapped charIndex',
       () {
         final String service = read('FloatingLyricService.java');
 
@@ -52,12 +52,6 @@ void main() {
           handleTap,
           contains('new Intent(this, PopupDictFlutterActivity.class)'),
           reason: 'must launch the keyboard-free Flutter popup',
-        );
-        expect(
-          handleTap.contains('new Intent(this, PopupDictActivity.class)'),
-          isFalse,
-          reason: 'the native WebView popup forces a search keyboard and '
-              'ignores charIndex — it must not be the tap target',
         );
         expect(
           handleTap,

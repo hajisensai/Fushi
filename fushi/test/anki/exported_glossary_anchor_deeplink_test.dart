@@ -80,11 +80,10 @@ void main() {
   });
 
   test(
-      'Android :popup activities accept the fushi scheme for lookup deep links '
+      'Android :popup activity accepts the fushi scheme for lookup deep links '
       '(source guard)', () {
     const List<String> activities = <String>[
       'android/app/src/main/java/app/fushi/reader/PopupDictFlutterActivity.kt',
-      'android/app/src/main/java/app/fushi/reader/PopupDictActivity.kt',
     ];
     for (final String path in activities) {
       final File file = File(path);

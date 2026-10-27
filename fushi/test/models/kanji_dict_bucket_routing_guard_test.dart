@@ -12,9 +12,8 @@
 //      resolve through the term index).
 //   2. `searchDictionary` must query the kanji bucket for a single-kanji lookup
 //      and attach the results to the search result.
-//   3. The Android popup path (`PopupDbReader.kt`) must emit a real "kanji"
-//      type so the dormant "kanji" branch in `FushiBridge.kt` routes kanji
-//      dictionaries to `nativeAddKanjiDict`.
+//   (The Android `:popup` process runs the same Dart path through
+//   `popupMain`, so it needs no separate guard.)
 //
 // Layer rationale: the real engine reload + kanji query go through a C++ FFI
 // engine flutter_test cannot link, and these touch the live Drift DB +
@@ -197,43 +196,6 @@ void main() {
         reason:
             'a kanji-only lookup (no term match) must still return a '
             'result carrying the kanji card',
-      );
-    });
-  });
-
-  group('Android popup process routes kanji to its own bucket', () {
-    test('PopupDbReader maps the kanji type to a real "kanji" bucket', () {
-      final File f = File(
-        'android/app/src/main/java/app/fushi/reader/PopupDbReader.kt',
-      );
-      expect(f.existsSync(), isTrue);
-      final String src = f.readAsStringSync();
-      expect(
-        src.contains('"term", "kanji" -> "term"'),
-        isFalse,
-        reason: 'the pre-S4 kanji->term shim must be removed (TODO-094 S4)',
-      );
-      expect(
-        src.contains('"kanji" -> "kanji"'),
-        isTrue,
-        reason:
-            'the popup DB reader must emit a real "kanji" type so the '
-            'kanji bucket is routed to nativeAddKanjiDict',
-      );
-    });
-
-    test('FushiBridge routes a "kanji" type to nativeAddKanjiDict', () {
-      final File f = File(
-        'android/app/src/main/java/app/fushi/reader/FushiBridge.kt',
-      );
-      expect(f.existsSync(), isTrue);
-      final String src = f.readAsStringSync();
-      expect(
-        src.contains('"kanji" -> nativeAddKanjiDict(handle, path)'),
-        isTrue,
-        reason:
-            'the kanji branch (no longer dormant) must add to the native '
-            'kanji index (TODO-094 S4)',
       );
     });
   });
