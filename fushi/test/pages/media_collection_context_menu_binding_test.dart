@@ -11,6 +11,11 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+/// 成员区三种承载：列表行、无筛选时的拖排网格（任何排序下都可拖）、有筛选时
+/// 退回的普通网格（[SliverGrid] + 成员格）。三条路径各自接了一份菜单触发，都要
+/// 遵循鼠标绑定表。
+enum _MemberView { list, reorderGrid, filteredGrid }
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -19,10 +24,13 @@ void main() {
     MouseBindingDispatch.resetForTest();
   });
 
-  for (final bool list in <bool>[false, true]) {
-    testWidgets('合集${list ? '列表' : '非拖排网格'}菜单遵循默认、让位和改绑', (
-      WidgetTester tester,
-    ) async {
+  for (final _MemberView view in _MemberView.values) {
+    final String label = switch (view) {
+      _MemberView.list => '列表',
+      _MemberView.reorderGrid => '拖排网格',
+      _MemberView.filteredGrid => '筛选后普通网格',
+    };
+    testWidgets('合集$label菜单遵循默认、让位和改绑', (WidgetTester tester) async {
       // 展示 hero、工具条和成员；本例验证鼠标绑定，矮窗删除动作另有行为测试。
       tester.view.physicalSize = const Size(1400, 1200);
       tester.view.devicePixelRatio = 1;
@@ -72,15 +80,30 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      if (list) {
-        await tester.tap(
-          find.byKey(const ValueKey<String>('collection_detail_view_list')),
-        );
-        await tester.pumpAndSettle();
+      switch (view) {
+        case _MemberView.list:
+          await tester.tap(
+            find.byKey(const ValueKey<String>('collection_detail_view_list')),
+          );
+          await tester.pumpAndSettle();
+        case _MemberView.reorderGrid:
+          break;
+        case _MemberView.filteredGrid:
+          // 拖排网格不接筛选结果（下标要回写全表）：搜索命中后退回普通网格。
+          await tester.enterText(
+            find.byKey(const ValueKey<String>('collection_detail_search')),
+            'k1',
+          );
+          await tester.pumpAndSettle();
       }
-      // 未写手动排序偏好：必须命中新增的普通网格，而非已正确接线的拖排网格。
+      // 未写手动排序偏好时无筛选网格也是拖排网格（拖一次即存为手动序）；普通网格
+      // 只在筛选 / 多选下出现，所以三条路径都要单独钉住。
       final Finder member = find.byKey(
-        ValueKey<String>('member-${list ? 'row' : 'tile'}-epub|k1'),
+        ValueKey<String>(switch (view) {
+          _MemberView.list => 'member-row-epub|k1',
+          _MemberView.reorderGrid => 'epub|k1',
+          _MemberView.filteredGrid => 'member-tile-epub|k1',
+        }),
       );
       expect(member, findsOneWidget);
       expect(member.hitTestable(), findsOneWidget);
