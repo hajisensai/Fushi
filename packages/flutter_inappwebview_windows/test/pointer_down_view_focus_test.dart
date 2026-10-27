@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_inappwebview_windows/src/in_app_webview/custom_platform_view.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-3855：鼠标点进 WebView2 时，插件不得把原生焦点从 Chromium 抢回 Flutter 视图。
+/// BUG-3858：鼠标点进 WebView2 时，插件不得把原生焦点从 Chromium 抢回 Flutter 视图。
 ///
 /// 真实链路：WebView2 收到 LEFT_BUTTON_DOWN 后自己 SetFocus 到 Chromium 子窗，引擎给框架
 /// 发 `ViewFocusState.unfocused`，焦点停在根作用域。原先 onPointerDown 里的

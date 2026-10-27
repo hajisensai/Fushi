@@ -1,4 +1,4 @@
-## BUG-3855 · Windows 应用内浏览器点网页会把焦点抢回 Flutter，YouTube 设置菜单的二级项打不开
+## BUG-3858 · Windows 应用内浏览器点网页会把焦点抢回 Flutter，YouTube 设置菜单的二级项打不开
 - **报告**：2026-10-28（用户：Windows 版应用内浏览器打开 YouTube 视频页，齿轮菜单能开，带「>」的音轨 / 字幕 / 休眠定时器 / 播放速度 / 画质点了打不开；普通 Chrome 正常）
 - **真实性**：✅ 真 bug，真 app 复现（Windows 离屏 runner，Flutter 层 mouse 指针经真实 `SendMouseInput` 链路）。根因 `packages/flutter_inappwebview_windows/lib/src/in_app_webview/custom_platform_view.dart:601-608`（修复前）：`onPointerDown` 在 `!_focusNode.hasFocus` 时 `_focusNode.requestFocus()`，50 ms 后再补一次。
   - 链路：WebView2 收到 LEFT_BUTTON_DOWN 自己 SetFocus 到 Chromium 子窗 → Flutter 视图 WM_KILLFOCUS → 引擎报 `ViewFocusState.unfocused`，框架把焦点停到根作用域（Flutter 3.47 `widgets/view.dart` `_ViewState.didChangeViewFocus`）。下一次点网页时上面那行让 View 作用域重新得焦 → `_scopeFocusChangeListener` 发 `requestViewFocusChange(focused)` → 引擎 SetFocus 回 Flutter 视图，与 Chromium 来回抢。

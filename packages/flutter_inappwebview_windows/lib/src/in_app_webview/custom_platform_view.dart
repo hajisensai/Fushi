@@ -598,7 +598,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
                       _reportSurfaceSize();
                       _reportWidgetPosition();
 
-                      // 按下时**不**向 Flutter 要焦点（BUG-3855）。WebView2 收到 down 会自己
+                      // 按下时**不**向 Flutter 要焦点（BUG-3858）。WebView2 收到 down 会自己
                       // SetFocus 到 Chromium 的子窗，Flutter 视图随之收到 WM_KILLFOCUS，框架把
                       // 焦点停到根作用域。此时再 `_focusNode.requestFocus()`，View 作用域
                       // 重新得焦 → `requestViewFocusChange(focused)` → 引擎 SetFocus 回 Flutter

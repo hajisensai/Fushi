@@ -262,7 +262,7 @@ void main() {
     });
   });
 
-  group('被顶掉的导航迟到的错误（BUG-3856）', () {
+  group('被顶掉的导航迟到的错误（BUG-3859）', () {
     final Uri first = Uri.parse('https://www.youtube.com/watch?v=a');
     final Uri second = Uri.parse(
       'https://www.youtube.com/watch?v=a&themeRefresh=1',

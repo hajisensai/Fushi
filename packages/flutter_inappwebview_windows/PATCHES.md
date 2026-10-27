@@ -55,7 +55,7 @@ all (which is also why sub-frame `callHandler` never worked on Windows). The
 Source check is therefore defence in depth, not the primary gate. Not yet
 verified at runtime on this machine.
 
-## No Flutter focus request on mouse down (BUG-3855, 2026-10-28)
+## No Flutter focus request on mouse down (BUG-3858, 2026-10-28)
 
 - `custom_platform_view.dart` `onPointerDown`: upstream called
   `_focusNode.requestFocus()` (plus a 50 ms retry) whenever the platform-view

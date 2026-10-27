@@ -240,7 +240,7 @@ void main() {
         result('播放器设置按钮出现', hasButton);
         await settle(5000);
         // 失败页：YouTube 的 themeRefresh 改址曾把被顶掉的首个导航报成
-        // 「connection was stopped」盖在新文档上（BUG-3856，已修）。
+        // 「connection was stopped」盖在新文档上（BUG-3859，已修）。
         result(
           '没有失败页盖在已加载的页面上 ${tab.error?.description ?? ''}',
           tab.error == null,

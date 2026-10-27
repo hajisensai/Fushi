@@ -182,7 +182,7 @@ WebBrowserLoadError? classifyWebBrowserMainFrameError({
 /// 页面自己改址（YouTube 首开会 `location.replace` 加 `&themeRefresh=1`）时，
 /// WebView2 把被顶掉的首个导航报成 `CONNECTION_ABORTED`（「connection was
 /// stopped」），而且报在新导航开始之后——新导航的 loadStart 已经清过失败页，这条
-/// 迟到的错误再盖上去，失败页就压在已加载好的新文档上、吞掉所有点击（BUG-3856）。
+/// 迟到的错误再盖上去，失败页就压在已加载好的新文档上、吞掉所有点击（BUG-3859）。
 /// 取消类判据认不出它（描述与真断连同一句），只能按「是不是当前这次导航」判。
 class WebBrowserNavigationLog {
   static const int _capacity = 8;

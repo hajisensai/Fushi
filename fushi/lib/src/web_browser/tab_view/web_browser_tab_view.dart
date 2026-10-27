@@ -138,7 +138,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   /// 主框架 HTTP 4xx / 5xx 候选（加载结束按页面是否空白决定是否显示失败页）。
   int? _pendingHttpStatus;
 
-  /// 最近开始的主框架导航（认出被顶掉的导航迟到的错误，BUG-3856）。
+  /// 最近开始的主框架导航（认出被顶掉的导航迟到的错误，BUG-3859）。
   final WebBrowserNavigationLog _navigations = WebBrowserNavigationLog();
 
   bool? _active;
