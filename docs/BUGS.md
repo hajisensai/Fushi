@@ -50,6 +50,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3801](bugs/BUG-3801-srs-cross-profile-field-edit-id-collision.md) | 🚧 | ✅ | 空 Profile 导入 APKG 撞 srs_field_edits.id 主键；删 Profile 后 SRS 数据残留 |
+> 共 3405 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3801](bugs/BUG-3801-remote-audio-direct-url-treated-as-json.md) | ✅ | ✅ | 英语查词时直接返回音频的自定义 URL 音源（uapis.cn / GPT-SoVITS /tts）没有声音 |
 | [BUG-3800](bugs/BUG-3800-floating-ball-switch-profile-label.md) | ✅ | ✅ | 悬浮球切换配置按钮文案被换成配置名 |
 | [BUG-3799](bugs/BUG-3799-kavita-cache-download-semantics-empty.md) | ✅ | ✅ | Kavita 缓存 / 下载两态是空的：阅读即永久入库、移除下载只翻标记 |
 | [BUG-3798](bugs/BUG-3798-audiobook-chapter-transition-receipt-lost.md) | ✅ | ✅ | audiobook-chapter-transition-receipt-lost |

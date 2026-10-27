@@ -786,6 +786,7 @@
   "audio_source_loopback_warning": "Zeigt auf dieses Gerät – nach Gerätewechsel neu zuweisen",
   "audio_source_request_error": "Audioquellen-Anfrage fehlgeschlagen: ${detail}",
   "audio_source_timeout": "Audioquellen-Timeout: \"${host}\" — Server antwortet nicht, versuchen Sie es später oder ändern Sie die Quelle",
+  "audio_source_unrecognized_response": "Audio source \"${host}\" returned neither audio nor a Yomitan audio source list — check the link, or whether the service is the right type",
   "audio_source_updated": "Audioquelle aktualisiert",
   "audio_source_url_invalid": "Der Link muss http(s) sein und einen Platzhalter für Begriff oder Lesung enthalten",
   "audio_unavailable": "Kein Audio gefunden.",
