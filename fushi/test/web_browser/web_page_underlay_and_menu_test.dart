@@ -1,10 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/video/underlay_composition.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_menus.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_browser/features/login_import/web_browser_login_import_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
@@ -188,6 +190,142 @@ void main() {
       feature.dispose();
       expect(BrowserCookieImportGate.pending, isNull);
       await tester.pump(const Duration(seconds: 5));
+    });
+
+    // 2026-10-27 审查：登记挂到浏览页关闭，期间每次在系统浏览器打开该站都会再灌一批
+    // cookie 并重载当前标签页。改成导入一次即结束，等待期间有可取消的状态条。
+    group('一次登记只导一次', () {
+      const BrowserSiteCookie session = BrowserSiteCookie(
+        name: 'sid',
+        value: 'v1',
+        domain: '.example.com',
+        path: '/',
+        secure: true,
+        hostOnly: false,
+      );
+      const BrowserSiteCookie otherSite = BrowserSiteCookie(
+        name: 'sid',
+        value: 'x',
+        domain: '.other.org',
+        path: '/',
+        secure: true,
+        hostOnly: false,
+      );
+      final Uri page = Uri.parse('https://www.example.com/watch');
+
+      late List<List<BrowserSiteCookie>> written;
+      late WebBrowserLoginImportFeature feature;
+
+      setUp(() {
+        BrowserCookieImportGate.resetForTesting();
+        written = <List<BrowserSiteCookie>>[];
+        feature = WebBrowserLoginImportFeature(
+          environment: () async => null,
+          openExternal: (Uri _) async => true,
+          writeCookies: (List<BrowserSiteCookie> cookies) async {
+            written.add(cookies);
+            return cookies.length;
+          },
+        );
+      });
+
+      tearDown(() {
+        feature.dispose();
+        BrowserCookieImportGate.resetForTesting();
+      });
+
+      bool deliver(String nonce, List<BrowserSiteCookie> cookies) =>
+          BrowserCookieImportGate.deliver(
+            nonce: nonce,
+            host: 'example.com',
+            cookies: cookies,
+          );
+
+      testWidgets('导入一次后结束：同一 nonce 再来的回传被拒、不再写', (WidgetTester tester) async {
+        await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+        await feature.begin(WebBrowserTab(id: 't', url: page), page);
+        final String nonce = BrowserCookieImportGate.pending!.nonce;
+        expect(feature.pendingHost, 'example.com');
+
+        expect(deliver(nonce, const <BrowserSiteCookie>[session]), isTrue);
+        // 收到第一批就同步结束：deliver 返回时登记已撤。
+        expect(BrowserCookieImportGate.pending, isNull);
+        expect(feature.pendingHost, isNull);
+        await tester.pump();
+        expect(written, hasLength(1));
+
+        expect(deliver(nonce, const <BrowserSiteCookie>[session]), isFalse);
+        await tester.pump();
+        expect(written, hasLength(1));
+        await tester.pump(const Duration(seconds: 5));
+      });
+
+      test('取消后被拒', () async {
+        await feature.begin(WebBrowserTab(id: 't', url: page), page);
+        final String nonce = BrowserCookieImportGate.pending!.nonce;
+        feature.cancel();
+        expect(feature.pendingHost, isNull);
+        expect(BrowserCookieImportGate.pending, isNull);
+        expect(deliver(nonce, const <BrowserSiteCookie>[session]), isFalse);
+        await Future<void>.delayed(Duration.zero);
+        expect(written, isEmpty);
+      });
+
+      test('nonce 不匹配被拒，登记照常等着', () async {
+        await feature.begin(WebBrowserTab(id: 't', url: page), page);
+        expect(deliver('forged', const <BrowserSiteCookie>[session]), isFalse);
+        await Future<void>.delayed(Duration.zero);
+        expect(written, isEmpty);
+        expect(feature.pendingHost, 'example.com');
+      });
+
+      test('只有别站 cookie 的一批不算导入，接着等', () async {
+        await feature.begin(WebBrowserTab(id: 't', url: page), page);
+        final String nonce = BrowserCookieImportGate.pending!.nonce;
+        expect(deliver(nonce, const <BrowserSiteCookie>[otherSite]), isTrue);
+        await Future<void>.delayed(Duration.zero);
+        expect(written, isEmpty);
+        expect(feature.pendingHost, 'example.com');
+      });
+
+      test('关掉要重载的标签页 = 取消', () async {
+        final WebBrowserTab tab = WebBrowserTab(id: 't', url: page);
+        await feature.begin(tab, page);
+        final String nonce = BrowserCookieImportGate.pending!.nonce;
+        feature.onTabClosed(WebBrowserTab(id: 'other', url: page));
+        expect(feature.pendingHost, 'example.com');
+        feature.onTabClosed(tab);
+        expect(feature.pendingHost, isNull);
+        expect(deliver(nonce, const <BrowserSiteCookie>[session]), isFalse);
+      });
+
+      testWidgets('等待期间有状态条，点「取消」撤销登记、状态条消失', (WidgetTester tester) async {
+        int changes = 0;
+        feature.actionsChanged.addListener(() => changes++);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ListenableBuilder(
+                listenable: feature.actionsChanged,
+                builder: (BuildContext context, Widget? _) =>
+                    feature.statusBar(context) ?? const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        );
+        expect(find.byType(FushiInlineNotice), findsNothing);
+        await feature.begin(WebBrowserTab(id: 't', url: page), page);
+        await tester.pump();
+        expect(changes, 1);
+        expect(find.byType(FushiInlineNotice), findsOneWidget);
+        expect(find.textContaining('example.com'), findsOneWidget);
+
+        await tester.tap(find.text(t.cancel));
+        await tester.pump();
+        expect(find.byType(FushiInlineNotice), findsNothing);
+        expect(BrowserCookieImportGate.pending, isNull);
+        await tester.pump(const Duration(seconds: 5));
+      });
     });
   });
 }

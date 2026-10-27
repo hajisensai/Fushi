@@ -201,8 +201,7 @@ import 'package:fushi/src/media/video/web_video_session.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show RemoteMineResult;
-import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:fushi/src/media/manga/cookie/browser_login_import.dart';
 import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/media/video/youtube_range_relay.dart'
     show relayYoutubeStreamUrl;
@@ -2281,10 +2280,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 工具条的「关闭」：这一次返回不再一级一级退，直接关掉本页。
   bool _webClosing = false;
 
-  /// 「从浏览器导入登录」的登记（[BrowserCookieImportGate]）与上一批已写入的内容签名
-  /// （扩展每分钟心跳都会再送一次，内容没变就不刷新页面）。
-  BrowserCookieImportRequestHandle? _webLoginImport;
-  String? _webLoginImportSignature;
+  /// 「从浏览器导入登录」（共用实现 [BrowserLoginImport]：一次即结束、等待时有可取消
+  /// 的状态条）。第一次点按钮时建。
+  BrowserLoginImport? _webLoginImport;
 
   /// 站点当前视频身份（glue 的 `videoKey`；SPA 换集即变）与它名下的字幕轨。
   String _webVideoKey = '';

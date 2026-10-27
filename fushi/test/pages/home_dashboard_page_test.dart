@@ -8,6 +8,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
+    show FushiMotion;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
@@ -29,7 +31,9 @@ import 'package:fushi/src/pages/implementations/home_page.dart'
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
-    show CoverProgressStrip;
+    show CoverProgressStrip, ShelfCoverFrame;
+import 'package:fushi/src/utils/components/shelf_cover_material.dart'
+    show ShelfCardMeta, ShelfMaterialSurface;
 import 'package:fushi/src/utils/components/cover_badge.dart' show CoverBadge;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
@@ -798,7 +802,7 @@ void main() {
   }
 
   testWidgets('「继续」主角卡 + 带标题的横滑行：最近读的放大成主角卡（波浪进度 + '
-      '「继续阅读」），其余卡封面下挂标题，角标 = 阅读进度', (WidgetTester tester) async {
+      '「继续阅读」），其余卡封面下挂标题，副行 = 阅读进度（封面不压角标）', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     final File cover = File('${storeDir.path}/book_cover.png')
       ..writeAsBytesSync(_kOnePixelPng);
@@ -855,31 +859,48 @@ void main() {
       ),
       findsOneWidget,
     );
-    // 横滑卡：封面下方画标题，右上角角标仍是进度。
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey<String>('home-cover-title')),
-        matching: find.text('另一本书'),
+    // 横滑卡：封面下方是库页同款文字块（标题 + 副行进度文案 + 进度条），
+    // 封面上不压任何角标、不贴进度条。
+    final Finder rowMeta = find.descendant(
+      of: find.descendant(
+        of: rowCards(),
+        matching: find.byKey(const ValueKey<String>('home-cover-title')),
       ),
+      matching: find.byType(ShelfCardMeta),
+    );
+    expect(rowMeta, findsOneWidget);
+    expect(
+      find.descendant(of: rowMeta, matching: find.text('另一本书')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: rowCards(), matching: find.text('50%')),
+      find.descendant(of: rowMeta, matching: find.text('50%')),
       findsOneWidget,
+      reason: '阅读进度文案进副行',
     );
+    expect(
+      tester.widget<ShelfCardMeta>(rowMeta).progress,
+      0.5,
+      reason: '进度条进文字块',
+    );
+    final Finder rowCover = find.descendant(
+      of: rowCards(),
+      matching: find.byType(ShelfCoverFrame),
+    );
+    expect(rowCover, findsOneWidget);
+    expect(
+      find.descendant(of: rowCover, matching: find.text('50%')),
+      findsNothing,
+      reason: '封面上不压进度角标',
+    );
+    expect(find.byType(CoverBadge), findsNothing);
     final SemanticsHandle semantics = tester.ensureSemantics();
     await tester.pump();
     expect(find.bySemanticsLabel('另一本书 · 50%'), findsOneWidget);
     semantics.dispose();
-    // 封面底部进度条只在横滑卡上（主角卡用波浪进度条）。
-    expect(find.byType(CoverProgressStrip), findsOneWidget);
-    expect(
-      find.descendant(
-        of: rowCards(),
-        matching: find.byType(CoverProgressStrip),
-      ),
-      findsOneWidget,
-    );
+    // 带标题时进度条在副行下面：封面底边不再贴 CoverProgressStrip（主角卡用
+    // 波浪进度条）。
+    expect(find.byType(CoverProgressStrip), findsNothing);
   });
 
   testWidgets('精简 · 没有封面的条目兜底显示标题（BUG-1018：用 override 书名）', (
@@ -1061,11 +1082,15 @@ void main() {
     );
     await pumpDashboard(tester);
 
-    // 悬停放大是 FushiHoverLift 内层的绘制变换：量卡体（ClipRRect），不量外壳；
-    // 卡体下方还挂着标题块，放大后同样不能被行视口截掉。
-    final Finder card = find
-        .descendant(of: rowCards().last, matching: find.byType(ClipRRect))
-        .first;
+    // 悬停放大是 FushiHoverLift 内层的绘制变换，材质封面悬停时还会再整体上抬
+    //（书皮 / 卡盒）：量真正画出来的封面面（单本 = 唯一一块
+    // ShelfMaterialSurface，含两层位移），不量外壳；卡体下方还挂着标题块，放大后
+    // 同样不能被行视口截掉。
+    final Finder card = find.descendant(
+      of: rowCards().last,
+      matching: find.byType(ShelfMaterialSurface),
+    );
+    expect(card, findsOneWidget);
     final Finder title = find.descendant(
       of: rowCards().last,
       matching: find.byKey(const ValueKey<String>('home-cover-title')),
@@ -1090,6 +1115,9 @@ void main() {
     );
     await mouse.removePointer();
     await pumpDashboard(tester);
+    // 材质面的上抬走 FushiMotion.long（450 ms），比 pumpDashboard 推进的 400 ms
+    // 长：再推满一段，等它落回原位再比。
+    await tester.pump(FushiMotion.long);
     expect(tester.getRect(card), originalRect);
   });
 
@@ -1470,7 +1498,7 @@ void main() {
     });
   });
 
-  testWidgets('精简 · 窄屏横滑卡上的集数角标完整显示，不被卡边裁掉；主角卡进度文案同样完整', (
+  testWidgets('精简 · 窄屏横滑卡副行的集数完整显示，不被卡边裁掉或省略号截断；主角卡进度文案同样完整', (
     WidgetTester tester,
   ) async {
     useSize(tester, const Size(320, 700));
@@ -1501,13 +1529,25 @@ void main() {
       continueItems(tester).map((_ContinueItem c) => c.badgeLabel),
       <String?>['30%', t.home_continue_episode(n: 12)],
     );
-    final Rect card = tester.getRect(rowCards());
-    final Rect badge = tester.getRect(
+    // 集数不再压在封面上，进封面下的副行：副行在卡宽内、单行不被省略号截断。
+    expect(
       find.descendant(of: rowCards(), matching: find.byType(CoverBadge)),
+      findsNothing,
     );
-    expect(badge.left, greaterThanOrEqualTo(card.left));
-    expect(badge.right, lessThanOrEqualTo(card.right));
+    final Rect card = tester.getRect(rowCards());
+    final Finder episode = find.descendant(
+      of: find.descendant(of: rowCards(), matching: find.byType(ShelfCardMeta)),
+      matching: find.text(t.home_continue_episode(n: 12)),
+    );
+    expect(episode, findsOneWidget);
     expect(find.text(t.home_continue_episode(n: 12)), findsOneWidget);
+    final Rect episodeRect = tester.getRect(episode);
+    expect(episodeRect.left, greaterThanOrEqualTo(card.left));
+    expect(episodeRect.right, lessThanOrEqualTo(card.right));
+    final RenderParagraph episodeText = tester.renderObject<RenderParagraph>(
+      episode,
+    );
+    expect(episodeText.didExceedMaxLines, isFalse, reason: '集数文案完整显示，不被省略号截断');
     // 主角卡进度文案在卡内完整显示。
     final Rect heroRect = tester.getRect(hero());
     final Rect label = tester.getRect(

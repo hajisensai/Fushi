@@ -501,8 +501,8 @@ SettingsDestination buildAppearanceDestination() {
             },
             defaultValue: false,
           ),
-          // 手机底栏形态：平铺（放不下收进「更多」）/ 分页滑动（所有入口同级，
-          // 底栏横滑翻页、按住拖选）。
+          // 手机底栏形态：平铺（放不下收进「更多」）/ 拇指转盘 / 相机模式条
+          // （出厂默认）。分页滑动与圆柱滚筒已于 2026-10-25 删除。
           SettingsSegmentedItem<AdaptiveNavBarStyle>(
             id: 'appearance.nav_bar_style',
             title: t.home_nav_bar_style,
@@ -513,16 +513,8 @@ SettingsDestination buildAppearanceDestination() {
                 label: t.home_nav_bar_style_flat,
               ),
               SettingsSegmentOption<AdaptiveNavBarStyle>(
-                value: AdaptiveNavBarStyle.pager,
-                label: t.home_nav_bar_style_pager,
-              ),
-              SettingsSegmentOption<AdaptiveNavBarStyle>(
                 value: AdaptiveNavBarStyle.dial,
                 label: t.home_nav_bar_style_dial,
-              ),
-              SettingsSegmentOption<AdaptiveNavBarStyle>(
-                value: AdaptiveNavBarStyle.drum,
-                label: t.home_nav_bar_style_drum,
               ),
               SettingsSegmentOption<AdaptiveNavBarStyle>(
                 value: AdaptiveNavBarStyle.modeStrip,

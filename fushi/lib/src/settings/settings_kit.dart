@@ -40,6 +40,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_section_anchor.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart'
     show kSettingsRowLabelMinWidth, settingsRowHasLeadingIcon;
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 
 export 'package:fushi/src/utils/components/settings_section_anchor.dart'
     show SettingsSectionAnchor, SettingsSectionSpy, SettingsSectionSpyScope;
@@ -1878,7 +1879,7 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color page = apple
         ? appleColorsOf(context).groupedBackground
-        : tokens.surfaces.page;
+        : fushiPageBackgroundColor(context);
     final bool canPop =
         widget.showBack && (ModalRoute.of(context)?.canPop ?? false);
     // 正文在 Builder 里构建：[bodyBuilder] 拿到的 context 在下面的 MediaQuery

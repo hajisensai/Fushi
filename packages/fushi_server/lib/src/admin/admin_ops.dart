@@ -30,6 +30,68 @@ const OpParam _confirmGate = OpParam.userGate(
   description: 'The user confirmed this irreversible operation in the app.',
 );
 
+/// `server.download.add-with-trackers` 的表态参数：用户在确认卡片上看过完整的磁力链接。
+const String kServerOpTrustMagnetAddressesGate = 'trustMagnetAddresses';
+
+/// 磁力链接里让 BT 客户端去请求的地址参数（BEP 9 / 19：tracker、web seed、exact /
+/// acceptable source、peer 地址；`tr.1` 这类编号写法同样算）。
+const List<String> kMagnetAddressParams = <String>[
+  'tr',
+  'ws',
+  'xs',
+  'as',
+  'x.pe',
+];
+
+/// [magnet] 带不带地址参数（见 [kMagnetAddressParams]）。解析不了的一律按带了算。
+bool magnetHasAddressParams(String magnet) {
+  final int q = magnet.indexOf('?');
+  if (q < 0) return false;
+  for (final String pair in magnet.substring(q + 1).split('&')) {
+    final int eq = pair.indexOf('=');
+    final String rawKey = eq < 0 ? pair : pair.substring(0, eq);
+    final String key;
+    try {
+      key = Uri.decodeQueryComponent(rawKey).toLowerCase();
+    } on FormatException {
+      return true;
+    }
+    for (final String p in kMagnetAddressParams) {
+      if (key == p || key.startsWith('$p.')) return true;
+    }
+  }
+  return false;
+}
+
+const List<OpParam> _downloadAddParams = <OpParam>[
+  OpParam.string('magnet', description: 'Magnet URI.', required: true),
+  OpParam.string(
+    'title',
+    description: 'Work title (used for organizing and scraping).',
+    required: true,
+  ),
+  OpParam.string(
+    'mediaKind',
+    description: 'movie or tv.',
+    enumValues: <String>['movie', 'tv'],
+  ),
+  OpParam.integer('year', description: 'Release year, when known.'),
+  OpParam.string(
+    'metadataProvider',
+    description: 'Identity provider, given together with externalId.',
+    enumValues: <String>['anidb', 'mal', 'tmdb'],
+  ),
+  OpParam.string(
+    'externalId',
+    description: 'Positive integer id at metadataProvider.',
+  ),
+  OpParam.string(
+    'subtitlePolicy',
+    description: 'Subtitle fetching policy.',
+    enumValues: <String>['none', 'bestEffort', 'required'],
+  ),
+];
+
 /// 设置里 AI 可以改的项（都能写回旧值；凭据 / 要重启的项不在其中）。
 const List<String> kServerAgentSettingKeys = <String>[
   'subtitleLanguage',
@@ -169,14 +231,21 @@ String _enc(Object? id) => Uri.encodeComponent('$id');
   final List<CtlRoute> routes = <CtlRoute>[];
   final List<OpDescription> descriptions = <OpDescription>[];
 
-  void op(OpDescription description, {bool gated = false}) {
-    routes.add(
-      CtlRoute(
-        description.method,
-        description.pattern,
-        _forward(dispatch, gated: gated),
-      ),
-    );
+  void op(
+    OpDescription description, {
+    bool gated = false,
+    CtlRouteHandler? handler,
+    bool addRoute = true,
+  }) {
+    if (addRoute) {
+      routes.add(
+        CtlRoute(
+          description.method,
+          description.pattern,
+          handler ?? _forward(dispatch, gated: gated),
+        ),
+      );
+    }
     descriptions.add(description);
   }
 
@@ -391,77 +460,89 @@ String _enc(Object? id) => Uri.encodeComponent('$id');
       ),
     ),
   );
-  op(
-    OpDescription(
-      id: 'server.download.add',
-      method: 'POST',
-      pattern: '/api/admin/downloads',
-      summary:
-          'Queue a torrent download (magnet link) on the server into its managed library. Undo cancels the job unless it already finished.',
-      risk: OpRisk.write,
-      longRunning: true,
-      params: const <OpParam>[
-        OpParam.string('magnet', description: 'Magnet URI.', required: true),
-        OpParam.string(
-          'title',
-          description: 'Work title (used for organizing and scraping).',
-          required: true,
+  final OpUndo downloadAddUndo = OpUndo(
+    record: (CtlCall call, Map<String, Object?> before, Object? result) =>
+        OpUndoRecord(
+          payload: <String, Object?>{
+            'jobId': result is Map ? result['jobId'] : null,
+          },
+          after: '${call.body['title']}',
         ),
-        OpParam.string(
-          'mediaKind',
-          description: 'movie or tv.',
-          enumValues: <String>['movie', 'tv'],
-        ),
-        OpParam.integer('year', description: 'Release year, when known.'),
-        OpParam.string(
-          'metadataProvider',
-          description: 'Identity provider, given together with externalId.',
-          enumValues: <String>['anidb', 'mal', 'tmdb'],
-        ),
-        OpParam.string(
-          'externalId',
-          description: 'Positive integer id at metadataProvider.',
-        ),
-        OpParam.string(
-          'subtitlePolicy',
-          description: 'Subtitle fetching policy.',
-          enumValues: <String>['none', 'bestEffort', 'required'],
-        ),
-      ],
-      undo: OpUndo(
-        record: (CtlCall call, Map<String, Object?> before, Object? result) =>
-            OpUndoRecord(
-              payload: <String, Object?>{
-                'jobId': result is Map ? result['jobId'] : null,
-              },
-              after: '${call.body['title']}',
-            ),
-        revert: (Map<String, Object?> payload) async {
-          final Object? id = payload['jobId'];
-          final Map<String, Object?>? job = id == null
-              ? null
-              : await _downloadJob(dispatch(), '$id');
-          if (job == null) {
-            return const OpUndoOutcome.failed('download job no longer exists');
-          }
-          switch (job['lifecycle']) {
-            case 'completed':
-              return const OpUndoOutcome.superseded(
-                'download already finished; files are kept',
-              );
-            case 'cancelled':
-              return const OpUndoOutcome.done();
-          }
-          await adminCall(
-            dispatch(),
-            'POST',
-            '/api/admin/downloads/${_enc(id)}/cancel',
+    revert: (Map<String, Object?> payload) async {
+      final Object? id = payload['jobId'];
+      final Map<String, Object?>? job = id == null
+          ? null
+          : await _downloadJob(dispatch(), '$id');
+      if (job == null) {
+        return const OpUndoOutcome.failed('download job no longer exists');
+      }
+      switch (job['lifecycle']) {
+        case 'completed':
+          return const OpUndoOutcome.superseded(
+            'download already finished; files are kept',
           );
+        case 'cancelled':
           return const OpUndoOutcome.done();
-        },
-      ),
-    ),
+      }
+      await adminCall(
+        dispatch(),
+        'POST',
+        '/api/admin/downloads/${_enc(id)}/cancel',
+      );
+      return const OpUndoOutcome.done();
+    },
   );
+  // 磁力链接里的 tr= / ws= / xs= / as= / x.pe= 是 BT 客户端随后会去请求的地址：模型
+  // 自己拼的 tracker URL 能把它看到的任何数据带出去，这一下出站撤销不了（spec §5.2）。
+  // 不带这些参数的磁力（纯 DHT）直接执行、可撤销；带了的必须走先确认的那条，确认卡片
+  // 上能看到完整链接。判据是「有没有地址参数」而不是「是不是已知 tracker」：服务端这层
+  // 没有可信的 tracker 白名单，按主机名放行也挡不住 `udp://known:1337/announce?<数据>`。
+  OpDescription downloadAdd({required bool withAddresses}) => OpDescription(
+    id: withAddresses
+        ? 'server.download.add-with-trackers'
+        : 'server.download.add',
+    method: 'POST',
+    pattern: '/api/admin/downloads',
+    summary: withAddresses
+        ? 'Queue a torrent download whose magnet link carries tracker / web '
+              'seed addresses (tr=, ws=, xs=, as=, x.pe=). The client contacts '
+              'those addresses, so the user confirms the full link first. Undo '
+              'cancels the job unless it already finished.'
+        : 'Queue a torrent download (magnet link) on the server into its '
+              'managed library. Magnets with tracker / web seed addresses '
+              '(tr=, ws=…) are refused here: use '
+              'server.download.add-with-trackers. Undo cancels the job unless '
+              'it already finished.',
+    risk: OpRisk.write,
+    confirm: withAddresses,
+    longRunning: true,
+    params: <OpParam>[
+      ..._downloadAddParams,
+      if (withAddresses)
+        const OpParam.userGate(
+          kServerOpTrustMagnetAddressesGate,
+          description: 'The user confirmed the magnet link with its addresses.',
+        ),
+    ],
+    undo: downloadAddUndo,
+  );
+  op(
+    downloadAdd(withAddresses: false),
+    handler: (CtlCall call) async {
+      final Map<String, Object?> body = Map<String, Object?>.of(call.body);
+      final bool trusted =
+          body.remove(kServerOpTrustMagnetAddressesGate) == true;
+      if (!trusted && magnetHasAddressParams('${body['magnet'] ?? ''}')) {
+        throw const CtlFailure.rejected(
+          'magnet_has_addresses: the magnet carries tracker / web seed '
+          'addresses; use server.download.add-with-trackers (the user '
+          'confirms the link)',
+        );
+      }
+      return adminCall(dispatch(), call.method, call.path, body: body);
+    },
+  );
+  op(downloadAdd(withAddresses: true), addRoute: false);
   op(
     OpDescription(
       id: 'server.download.cancel',

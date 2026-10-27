@@ -52,6 +52,7 @@ AgentAssistantHost createAppAgentAssistantHost(AppModel appModel) {
   OpContext? cachedFor;
   return createAgentAssistantHostWith(
     aiModuleEnabled: () => isAiModuleEnabled(appModel.moduleVisibility),
+    allowPeers: () => appModel.prefsRepo.aiAgentForPeers,
     settings: appModel.prefsRepo,
     database: appModel.database,
     invoker: () {
@@ -68,10 +69,15 @@ AgentAssistantHost createAppAgentAssistantHost(AppModel appModel) {
 /// 同 [createAppAgentAssistantHost]，依赖全部可注入（测试用 stub 模型与假目录）。
 ///
 /// - [aiModuleEnabled]：用户关了 AI 模块 → `disabled`（不是「没配 AI」）；
+/// - [allowPeers]：用户没在「设置 › 模型 › LLM › AI 助手」打开「允许已配对设备使用」
+///   → `disabled`。与服务端 `ai.agent_for_peers` 同一判据（默认关）：远端会话用本机的
+///   AI 指派、调本机操作目录，比配对本身给的权限多（配对只给读库 / 进度同步），不能
+///   默认放行；
 /// - [settings]：解析「AI 助手」指派，没指派 → `no_provider`，不发任何请求；
 /// - [invoker]：本机操作目录；null（app 还没初始化完）→ `not_ready`。
 AgentAssistantHost createAgentAssistantHostWith({
   required bool Function() aiModuleEnabled,
+  required bool Function() allowPeers,
   required AiSettingsSource settings,
   required FushiDatabase database,
   required OpInvoker? Function() invoker,
@@ -83,6 +89,7 @@ AgentAssistantHost createAgentAssistantHostWith({
     if (resolveAiAgentProvider(settings) == null) {
       return kHostAssistantReasonNoProvider;
     }
+    if (!allowPeers()) return kHostAssistantReasonDisabled;
     if (invoker() == null) return kHostAssistantReasonNotReady;
     return null;
   }
@@ -109,6 +116,9 @@ AgentAssistantHost createAgentAssistantHostWith({
       // 门在 open 之前刚查过；这里再落空只可能是恰好在两步之间被改掉。
       if (provider == null) {
         throw const HostAssistantUnavailable(kHostAssistantReasonNoProvider);
+      }
+      if (!aiModuleEnabled() || !allowPeers()) {
+        throw const HostAssistantUnavailable(kHostAssistantReasonDisabled);
       }
       if (ops == null) {
         throw const HostAssistantUnavailable(kHostAssistantReasonNotReady);

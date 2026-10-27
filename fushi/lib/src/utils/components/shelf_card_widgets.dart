@@ -322,12 +322,21 @@ class ShelfCoverSelection extends InheritedWidget {
 /// 后面露出两层逐级内缩的「下一本」——MD3 是 surfaceContainerHighest / High 两层
 /// 色块，Apple 是两层模糊压暗的同一张封面（Apple Music / Photos 相簿叠放），
 /// 墨水屏是描边空层。是否叠层只取决于调用点（同一调用点恒定），不随主题增删。
+///
+/// [density] 由调用点决定（同一调用点恒定）：库页网格卡用默认的
+/// [ShelfCoverDensity.regular]；列表行里 40–60 宽的小缩略图用
+/// [ShelfCoverDensity.compact]——材质下只画圆角 / 内描边 / 轻光泽（没有投影、
+/// 接触阴影、悬停扫光、扇形 / 叠层），没有材质时也不画投影与叠层；两种情况都
+/// 不画勾选圈（选中罩照常）。比例由调用方外层的盒子给（专辑
+/// [kShelfAlbumAspectRatio]、剧照 [kShelfLandscapeAspectRatio]），本组件按实际
+/// 尺寸铺满，不假定 2:3。
 class ShelfCoverFrame extends StatelessWidget {
   const ShelfCoverFrame({
     required this.child,
     this.backgroundColor,
     this.stackedBehind,
     this.stackedCovers,
+    this.density = ShelfCoverDensity.regular,
     super.key,
   });
 
@@ -341,14 +350,18 @@ class ShelfCoverFrame extends StatelessWidget {
   /// （近 → 远）。null 时退回用 [stackedBehind] 重复填后几层。
   final List<Widget>? stackedCovers;
 
+  /// 封面框密度，见类注释与 [ShelfCoverDensity]。
+  final ShelfCoverDensity density;
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool compact = density == ShelfCoverDensity.compact;
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context) && !eink;
     final bool dark = cs.brightness == Brightness.dark;
-    final bool lifted = !eink && FushiHoverLift.liftedOf(context);
+    final bool lifted = !eink && !compact && FushiHoverLift.liftedOf(context);
     final BorderRadius radius = shelfCoverRadius(context);
     final ShelfCoverSelection? selection = ShelfCoverSelection.maybeOf(context);
     final ShelfCoverMaterial? material = shelfCoverMaterialOf(context);
@@ -357,7 +370,7 @@ class ShelfCoverFrame extends StatelessWidget {
     }
 
     final List<BoxShadow> shadows;
-    if (eink) {
+    if (eink || compact) {
       shadows = const <BoxShadow>[];
     } else if (apple) {
       shadows = <BoxShadow>[
@@ -416,7 +429,7 @@ class ShelfCoverFrame extends StatelessWidget {
             ),
             if (selection != null && selection.selected)
               const Positioned.fill(child: ShelfSelectedOverlay()),
-            if (selection != null && selection.selectionMode)
+            if (!compact && selection != null && selection.selectionMode)
               PositionedDirectional(
                 top: checkInset,
                 start: checkInset,
@@ -426,7 +439,7 @@ class ShelfCoverFrame extends StatelessWidget {
         ),
       ),
     );
-    final Widget? behind = stackedBehind;
+    final Widget? behind = compact ? null : stackedBehind;
     if (behind == null) return cover;
     const double step = kShelfCoverStackLift / 2;
     Widget layer(int depth) {
@@ -474,7 +487,8 @@ class ShelfCoverFrame extends StatelessWidget {
     );
   }
 
-  /// 材质库页：单张 = 材质表面 + 接触阴影；多本 = [ShelfCoverPile]。
+  /// 材质库页：单张 = 材质表面 + 接触阴影；多本 = [ShelfCoverPile]；
+  /// 简化档 = 只有材质表面（无投影 / 接触阴影 / 扫光 / 叠层 / 勾选圈）。
   Widget _buildMaterial(
     BuildContext context,
     ShelfCoverMaterial material,
@@ -483,6 +497,18 @@ class ShelfCoverFrame extends StatelessWidget {
     ShelfCoverSelection? selection,
   ) {
     final double checkInset = tokens.spacing.gap / 2;
+    if (density == ShelfCoverDensity.compact) {
+      return ShelfMaterialSurface(
+        material: material,
+        backgroundColor: backgroundColor,
+        compact: true,
+        overlay: <Widget>[
+          if (selection != null && selection.selected)
+            const Positioned.fill(child: ShelfSelectedOverlay()),
+        ],
+        child: child,
+      );
+    }
     final List<Widget> overlay = <Widget>[
       if (selection != null && selection.selected)
         const Positioned.fill(child: ShelfSelectedOverlay()),

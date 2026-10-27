@@ -15,7 +15,9 @@ import 'package:fushi_engine/media/torrent/download_timeouts.dart'
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart'
-    show VideoDownloadSubscriptionBtSiteMissing;
+    show
+        VideoDownloadSubscriptionBtSiteMissing,
+        isVideoSubscriptionBtSiteMissingError;
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/video/jimaku_batch.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
@@ -535,8 +537,44 @@ class AnimeDownloadSubscriptionService {
         if (subscription.enabled) await _check(subscription);
       }
     } finally {
-      _checking = false;
-      checking.value = false;
+      _finishChecking();
+    }
+  }
+
+  /// 有一轮检查在跑时收到的唤醒请求：那一轮可能已经按旧站点配置查过某些订阅，
+  /// 跑完后必须按新配置再唤醒一次，否则这次唤醒就丢了。
+  bool _wakePending = false;
+
+  void _finishChecking() {
+    _checking = false;
+    checking.value = false;
+    if (_wakePending) {
+      _wakePending = false;
+      unawaited(wakeBtSiteMissingSubscriptions());
+    }
+  }
+
+  /// 用户 BT 站配置变了（新增 / 启用 / 重新检测）后调：立即重查因「没有可用的
+  /// BT 站」（[VideoDownloadSubscriptionBtSiteMissing]）而停住的启用订阅，不等
+  /// [interval] 的下一次定时检查。与视频订阅的
+  /// `VideoDownloadSubscriptionService.wakeBtSiteMissingSubscriptions` 同一判据。
+  Future<void> wakeBtSiteMissingSubscriptions() async {
+    if (_checking) {
+      _wakePending = true;
+      return;
+    }
+    _checking = true;
+    checking.value = true;
+    try {
+      for (final AnimeDownloadSubscription subscription
+          in await store.loadAll()) {
+        if (subscription.enabled &&
+            isVideoSubscriptionBtSiteMissingError(subscription.lastError)) {
+          await _check(subscription);
+        }
+      }
+    } finally {
+      _finishChecking();
     }
   }
 
@@ -554,8 +592,7 @@ class AnimeDownloadSubscriptionService {
         }
       }
     } finally {
-      _checking = false;
-      checking.value = false;
+      _finishChecking();
     }
   }
 

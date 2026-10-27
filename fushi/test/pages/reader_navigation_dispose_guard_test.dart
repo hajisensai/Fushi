@@ -65,7 +65,7 @@ void main() {
   test('_navigateToChapter 在任何状态变更前拒绝已销毁 reader', () {
     final String body = bodyBetween(
       navigationPart,
-      'Future<void> _navigateToChapter(',
+      'Future<bool> _navigateToChapter(',
       'Future<bool> _navigateToChapterAndWait(',
     );
     final int mountedGuard = body.indexOf('if (!mounted ||');
@@ -81,7 +81,8 @@ void main() {
     // TODO-2337：守卫必须真的早退，而不是只把条件写出来。
     final String guardBody = guardBlockBody(body, 'if (!mounted ||');
     expect(
-      guardBody.contains('return;'),
+      // BUG-3798：_navigateToChapter 回报「是否开始导航」，守卫块里是 `return false;`。
+      guardBody.contains('return false;'),
       isTrue,
       reason: '已销毁 State 命中守卫后必须 return，否则照样跑到 _beginNavigation/setState',
     );

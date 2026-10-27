@@ -3,6 +3,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -18,6 +19,7 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -29,6 +31,46 @@ Future<void> openMusicServerList(BuildContext context) =>
         builder: (_) => const MusicServerListPage(),
       ),
     );
+
+/// 专辑网格的列宽上限（本地曲库与服务器曲库同一套几何）。
+const double kMusicAlbumGridMaxExtent = 200;
+
+/// 专辑网格的列数与行高：唱片封面（[kShelfAlbumAspectRatio]，方形）+ 封面下文字块
+/// （[ShelfCardMeta.heightFor]，随文字缩放变高），按 `MaxCrossAxisExtent` 同一列数
+/// 公式复算卡宽（与游戏库 / 媒体服务器同一做法，不用死比例）。[width] 是网格视口宽，
+/// 左右各让一个页边（[FushiSpacingTokens.page]）。
+SliverGridDelegate musicAlbumGridDelegate(BuildContext context, double width) {
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  final double spacing = tokens.spacing.gap * 1.5;
+  final double available = math.max(1, width - tokens.spacing.page * 2);
+  final int columns = (available / (kMusicAlbumGridMaxExtent + spacing))
+      .ceil()
+      .clamp(1, 1 << 10);
+  final double cardWidth = (available - (columns - 1) * spacing) / columns;
+  return SliverGridDelegateWithMaxCrossAxisExtent(
+    maxCrossAxisExtent: kMusicAlbumGridMaxExtent,
+    mainAxisSpacing: spacing,
+    crossAxisSpacing: spacing,
+    mainAxisExtent:
+        cardWidth / kShelfAlbumAspectRatio + ShelfCardMeta.heightFor(context),
+  );
+}
+
+/// 专辑详情页大封面的边长。
+const double kMusicAlbumDetailCoverSize = 200;
+
+/// 专辑详情页大封面：与网格同一份「唱片」材质（regular 密度：投影 + 接触阴影 +
+/// 光泽），墨水屏退回描边封面框。本地专辑页与服务器专辑页共用。
+Widget musicAlbumDetailCover(Widget cover) => ShelfCoverMaterialScope(
+  material: ShelfCoverMaterial.glossyAlbum,
+  child: SizedBox.square(
+    dimension: kMusicAlbumDetailCoverSize,
+    child: AspectRatio(
+      aspectRatio: kShelfAlbumAspectRatio,
+      child: ShelfCoverFrame(child: cover),
+    ),
+  ),
+);
 
 /// 服务器曲目 → 播放项（按设置的码率上限）。
 List<MusicPlayItem> _playItems(
@@ -405,38 +447,50 @@ class _AlbumGrid extends StatelessWidget {
         ),
       );
     }
-    return FushiEntranceScope(
-      child: GridView.builder(
-        padding: withBottomSafeInset(
-          context,
-          EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            MediaQuery.paddingOf(context).top + tokens.spacing.gap,
-            tokens.spacing.page,
-            tokens.spacing.section,
-          ),
+    // 专辑一律是方形「唱片」材质（用户 2026-10-26 拍板）。
+    return ShelfCoverMaterialScope(
+      material: ShelfCoverMaterial.glossyAlbum,
+      child: FushiEntranceScope(
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) =>
+              GridView.builder(
+                padding: withBottomSafeInset(
+                  context,
+                  EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    MediaQuery.paddingOf(context).top + tokens.spacing.gap,
+                    tokens.spacing.page,
+                    tokens.spacing.section,
+                  ),
+                ),
+                gridDelegate: musicAlbumGridDelegate(
+                  context,
+                  constraints.maxWidth,
+                ),
+                itemCount: albums.length,
+                itemBuilder: fushiStaggeredItemBuilder((
+                  BuildContext context,
+                  int i,
+                ) {
+                  final MusicServerAlbum a = albums[i];
+                  return MusicServerAlbumCard(
+                    key: ValueKey<String>('music-server-album-${a.id}'),
+                    browser: browser,
+                    album: a,
+                  );
+                }),
+              ),
         ),
-        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 200,
-          mainAxisSpacing: tokens.spacing.gap * 1.5,
-          crossAxisSpacing: tokens.spacing.gap * 1.5,
-          childAspectRatio: 0.74,
-        ),
-        itemCount: albums.length,
-        itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
-          final MusicServerAlbum a = albums[i];
-          return MusicServerAlbumCard(
-            key: ValueKey<String>('music-server-album-${a.id}'),
-            browser: browser,
-            album: a,
-          );
-        }),
       ),
     );
   }
 }
 
-/// 服务器专辑卡（服务器页的网格与混排进曲库的专辑都用它：右上角云朵标出「在服务器上」）。
+/// 服务器专辑卡（服务器页的网格与混排进曲库的专辑都用它）：方形「唱片」材质
+/// （[ShelfCoverMaterial.glossyAlbum]，由网格外的 [ShelfCoverMaterialScope] 给；
+/// 墨水屏 / 无 Scope 时退回描边封面框）+ 封面下的 [ShelfCardMeta]。封面上不压角标
+/// （用户 2026-10-25）：「在服务器上」的云朵进副行开头。悬停抬升与扫光来自
+/// [FushiHoverLift] 与材质，按压下沉来自卡壳。
 class MusicServerAlbumCard extends StatelessWidget {
   const MusicServerAlbumCard({
     super.key,
@@ -449,74 +503,43 @@ class MusicServerAlbumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return FushiHoverLift(
-      builder: (BuildContext context, bool hovering) => FushiPressScale(
-        child: InkWell(
-          borderRadius: FushiDesignTokens.of(context).radii.cardRadius,
-          onTap: () => unawaited(
-            Navigator.of(context).push<void>(
-              adaptivePageRoute<void>(
-                context: context,
-                builder: (_) =>
-                    MusicServerAlbumPage(browser: browser, album: album),
-              ),
+      builder: (BuildContext context, bool _) => shelfCoverCard(
+        onTap: () => unawaited(
+          Navigator.of(context).push<void>(
+            adaptivePageRoute<void>(
+              context: context,
+              builder: (_) =>
+                  MusicServerAlbumPage(browser: browser, album: album),
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    MusicCover(
-                      coverPath: browser.coverUri(album.coverRef)?.toString(),
-                    ),
-                    Positioned(
-                      right: 6,
-                      top: 6,
-                      child: Semantics(
-                        label: browser.displayName,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: scheme.surfaceContainerHighest.withValues(
-                              alpha: 0.85,
-                            ),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: FushiIcon(
-                              FushiIcons.cloud,
-                              size: 14,
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            AspectRatio(
+              aspectRatio: kShelfAlbumAspectRatio,
+              child: ShelfCoverFrame(
+                child: MusicCover(
+                  coverPath: browser.coverUri(album.coverRef)?.toString(),
                 ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                album.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: context.fushiType.titleSmallEmphasized,
-              ),
-              Text(
-                <String>[
+            ),
+            // 云朵只是图标，服务器名经语义标签读出（原封面角标的 Semantics 原样保留）。
+            Semantics(
+              label: browser.displayName,
+              child: ShelfCardMeta(
+                key: ValueKey<String>('music-server-album-meta-${album.id}'),
+                title: album.title,
+                leadingIcon: FushiIcons.cloud,
+                subtitle: <String>[
                   album.artist ?? t.music_artist_unknown,
                   if (album.year != null) '${album.year}',
                 ].join(' · '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: context.fushiType.bodySmall,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -677,12 +700,13 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
                   runSpacing: tokens.spacing.gap,
                   crossAxisAlignment: WrapCrossAlignment.end,
                   children: <Widget>[
-                    MusicCover(
-                      coverPath: widget.browser
-                          .coverUri(album.coverRef)
-                          ?.toString(),
-                      size: 200,
-                      borderRadius: tokens.radii.groupRadius,
+                    musicAlbumDetailCover(
+                      MusicCover(
+                        coverPath: widget.browser
+                            .coverUri(album.coverRef)
+                            ?.toString(),
+                        size: kMusicAlbumDetailCoverSize,
+                      ),
                     ),
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 420),

@@ -29,8 +29,11 @@ import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_sync_progress.dart';
+import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -39,6 +42,18 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
+
+/// 「同步状态」摘要行标题：同步在跑时说进行中（不能说「所有改动都已同步」——数字是开跑前的
+/// 快照），否则按未上传条数说。
+String srsTimelineSummaryTitle({
+  required SrsSyncProgress? syncing,
+  required int unpublished,
+}) {
+  if (syncing != null) return t.srs_timeline_syncing;
+  return unpublished > 0
+      ? t.srs_timeline_unpublished(n: unpublished)
+      : t.srs_timeline_all_published;
+}
 
 /// 一个还原点（内核 `sync2_checkpoints` 的一行）。
 class SrsCheckpointView {
@@ -123,10 +138,29 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   Map<String, Object?> _status = const <String, Object?>{};
   List<SrsCheckpointView> _checkpoints = const <SrsCheckpointView>[];
 
+  /// 上一次看到的复习同步进度；从非 null 变回 null = 一轮刚跑完，要重读状态。
+  SrsSyncProgress? _lastSyncProgress = srsSyncProgress.value;
+
   @override
   void initState() {
     super.initState();
+    srsSyncProgress.addListener(_onSyncProgress);
     unawaited(_reload());
+  }
+
+  @override
+  void dispose() {
+    srsSyncProgress.removeListener(_onSyncProgress);
+    super.dispose();
+  }
+
+  /// 一轮同步跑完（进度回到 null）后重读状态：未上传 / 落后条数要换成这轮之后的值，
+  /// 否则状态卡停在开跑前的「还有 N 条没收到」。进度本身由状态卡就地监听，不整页重建。
+  void _onSyncProgress() {
+    final SrsSyncProgress? now = srsSyncProgress.value;
+    final bool finished = _lastSyncProgress != null && now == null;
+    _lastSyncProgress = now;
+    if (finished && mounted) unawaited(_reload());
   }
 
   Future<void> _reload() async {
@@ -741,32 +775,50 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     final int unpublished = (_status['unpublished'] as num?)?.toInt() ?? 0;
     final int pending = (_status['pending'] as num?)?.toInt() ?? 0;
     final int ops = (_status['ops'] as num?)?.toInt() ?? 0;
-    return AdaptiveSettingsSection(
-      title: t.srs_timeline_status,
-      children: <Widget>[
-        AdaptiveSettingsRow(
-          key: const ValueKey<String>('srs_timeline_status_summary'),
-          title: unpublished > 0
-              ? t.srs_timeline_unpublished(n: unpublished)
-              : t.srs_timeline_all_published,
-          subtitle: t.srs_timeline_ops(n: ops),
-          icon: unpublished > 0 ? FushiIcons.cloudSync : FushiIcons.success,
-          showIcon: true,
-        ),
-        if (pending > 0)
-          AdaptiveSettingsRow(
-            key: const ValueKey<String>('srs_timeline_status_pending'),
-            title: t.srs_timeline_waiting(n: pending),
-            subtitle: t.srs_timeline_waiting_hint,
-            icon: FushiIcons.schedule,
-            showIcon: true,
+    // 状态数字是上次重读时的快照；同步在跑时它们正在变，不能说「都已同步」，
+    // 摘要行换成进行中的阶段与进度，对端行的「没收到」换成「正在接收」。
+    return ValueListenableBuilder<SrsSyncProgress?>(
+      valueListenable: srsSyncProgress,
+      builder: (BuildContext context, SrsSyncProgress? syncing, _) =>
+          AdaptiveSettingsSection(
+            title: t.srs_timeline_status,
+            children: <Widget>[
+              AdaptiveSettingsRow(
+                key: const ValueKey<String>('srs_timeline_status_summary'),
+                title: srsTimelineSummaryTitle(
+                  syncing: syncing,
+                  unpublished: unpublished,
+                ),
+                subtitle: syncing != null
+                    ? srsSyncProgressLine(syncing)
+                    : t.srs_timeline_ops(n: ops),
+                icon: syncing != null
+                    ? FushiIcons.sync
+                    : (unpublished > 0
+                          ? FushiIcons.cloudSync
+                          : FushiIcons.success),
+                showIcon: true,
+              ),
+              if (pending > 0)
+                AdaptiveSettingsRow(
+                  key: const ValueKey<String>('srs_timeline_status_pending'),
+                  title: t.srs_timeline_waiting(n: pending),
+                  subtitle: t.srs_timeline_waiting_hint,
+                  icon: FushiIcons.schedule,
+                  showIcon: true,
+                ),
+              for (final Map<String, Object?> d in devices)
+                _deviceRow(context, d, syncing: syncing != null),
+            ],
           ),
-        for (final Map<String, Object?> d in devices) _deviceRow(context, d),
-      ],
     );
   }
 
-  Widget _deviceRow(BuildContext context, Map<String, Object?> d) {
+  Widget _deviceRow(
+    BuildContext context,
+    Map<String, Object?> d, {
+    required bool syncing,
+  }) {
     final String id = d['device'] as String? ?? '';
     final String name = (d['name'] as String?)?.trim() ?? '';
     final bool self = d['self'] == true;
@@ -786,7 +838,10 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
             DateTime.fromMillisecondsSinceEpoch(seenAt),
           ),
         ),
-      if (behind > 0) t.srs_timeline_behind(n: behind),
+      if (behind > 0)
+        syncing
+            ? t.srs_timeline_receiving(n: behind)
+            : t.srs_timeline_behind(n: behind),
       if (frozen) t.srs_timeline_frozen,
       if (mismatch) t.srs_timeline_digest_mismatch,
       if (warning != null && warning.isNotEmpty) t.srs_timeline_device_warning,
@@ -809,6 +864,8 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<Widget> items = <Widget>[
+      // 常规同步 / 复习同步在跑时的进度条；都没在跑时零高度。
+      const SyncProgressBanner(),
       // 复习数据随已有的同步通道走：没配通道时这里给出去处。
       Padding(
         padding: EdgeInsets.only(bottom: tokens.spacing.gap),

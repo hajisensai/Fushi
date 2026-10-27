@@ -961,7 +961,9 @@ const List<String> _providerFields = <String>[
 
 /// 新增时可填的 base URL。改已有提供商的 URL 刻意不声明：路由改 URL 会保留已存的
 /// API Key，模型（受网页 / 字幕里的提示注入）把 URL 指到别处，下一次请求就把 key
-/// 发出去——撤销收不回已外泄的 key。新增的提供商没有 key，填 URL 无此风险。
+/// 发出去——撤销收不回已外泄的 key。新增的提供商虽然没有 key，但 URL 仍是模型给的：
+/// 接着 `settings.ai.provider.probe` 或把某个功能（含 AI 助手自己）指派给它，app 就会
+/// 向那个地址发请求、把对话内容发过去，撤销收不回，所以新增一律先确认（见下）。
 const OpParam _providerBaseUrl = OpParam.string(
   'baseUrl',
   description: 'API base URL.',
@@ -1010,8 +1012,10 @@ List<OpDescription> _aiOps(OpDescribeKit kit) => <OpDescription>[
     summary:
         'Add an LLM provider from a preset. The API key cannot be set here: '
         'the user must enter it on the Settings › Models › LLM page. Undo '
-        'deletes the provider (and restores the previous default).',
+        'deletes the provider (and restores the previous default). The user '
+        'confirms first: a new provider points the app at a new address.',
     risk: OpRisk.write,
+    confirm: true,
     params: const <OpParam>[
       OpParam.string(
         'preset',

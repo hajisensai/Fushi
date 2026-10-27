@@ -1046,6 +1046,14 @@ extension _VideoWebSource on _VideoFushiPageState {
             height: _kVideoWebPageBarHeight,
             child: _buildWebPageBar(),
           ),
+          // 「从浏览器导入登录」的等待状态条（可取消），贴在网页工具条下面。
+          if (_webLoginImport case final BrowserLoginImport import)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: _kVideoWebPageBarHeight,
+              child: BrowserLoginImportStatusBar(import: import),
+            ),
           // 网页档也要看得到短提示（登录导入等）：播放器档的 OSD 层挂在控制条里，这里补一层。
           Positioned(
             left: 0,
@@ -1118,7 +1126,9 @@ extension _VideoWebSource on _VideoFushiPageState {
                 key: const ValueKey<String>('video-web-login-import'),
                 tooltip: t.web_video_login_import,
                 icon: FushiIcon(
-                  _webLoginImport == null ? FushiIcons.login : FushiIcons.sync,
+                  (_webLoginImport?.waiting ?? false)
+                      ? FushiIcons.sync
+                      : FushiIcons.login,
                 ),
                 onPressed: _beginWebLoginImport,
               ),
@@ -1148,10 +1158,11 @@ extension _VideoWebSource on _VideoFushiPageState {
     );
   }
 
-  /// 「从浏览器导入登录」：与漫画源登录同一条扩展通道（[BrowserCookieImportGate]）——登记
-  /// 当前站点、在系统浏览器里打开它，Fushi 浏览器扩展在该站页面加载完 / 每分钟心跳时把它的
-  /// cookie 送来，写进视频的 WebView2 环境（[importWebVideoBrowserCookies]）后刷新本页。
-  /// 登记保持到本页关闭：用户可能还没在浏览器里登录，登完再加载一次就会再送。
+  /// 「从浏览器导入登录」：与漫画源登录、app 内浏览器同一份 [BrowserLoginImport]——登记
+  /// 当前站点、在系统浏览器里打开它，Fushi 浏览器扩展把该站 cookie 送来，写进视频的
+  /// WebView2 环境（[importWebVideoBrowserCookies]）后刷新本页，登记随即结束（之后扩展
+  /// 再送一律被拒，不会每次打开该站都灌一批、刷一次页）。等待时网页工具条下有可取消的
+  /// 状态条。
   void _beginWebLoginImport() {
     final WebVideoSession? session = _webSession;
     if (session == null) return;
@@ -1160,66 +1171,39 @@ extension _VideoWebSource on _VideoFushiPageState {
       current.isNotEmpty ? current : session.pageUrl,
     );
     if (page == null || page.host.isEmpty) return;
-    final String host = BrowserCookieImportGate.normalizeHost(page.host);
-    if (_webLoginImport?.request.host != host) {
-      _endWebLoginImport();
-      final BrowserCookieImportRequestHandle handle =
-          BrowserCookieImportGate.begin(host);
-      // 句柄 end() 关闭 deliveries，订阅随之结束，不必另存。
-      handle.deliveries.listen(
-        (BrowserCookieDelivery delivery) =>
-            unawaited(_applyWebLoginImport(host, delivery)),
+    BrowserLoginImport? import = _webLoginImport;
+    if (import == null) {
+      final BrowserLoginImport created = BrowserLoginImport(
+        write: importWebVideoBrowserCookies,
+        onImported: _onWebLoginImported,
+        onFailed: () => _showOsd(
+          t.login_import_write_failed,
+          icon: FushiIcons.login,
+          severity: ToastSeverity.error,
+        ),
       );
-      _rebuild(() => _webLoginImport = handle);
+      // 工具条按钮图标与状态条跟着阶段变。
+      created.addListener(() => _rebuild(() {}));
+      _rebuild(() => _webLoginImport = created);
+      import = created;
     }
-    _showOsd(
-      t.web_video_login_import_waiting,
-      icon: FushiIcons.login,
-      prominent: true,
-      severity: ToastSeverity.info,
-    );
-    unawaited(
-      launchUrl(
-        Uri(scheme: 'https', host: page.host, path: '/'),
-        mode: LaunchMode.externalApplication,
-      ).catchError((Object _) => false),
-    );
+    unawaited(import.begin(page));
   }
 
-  Future<void> _applyWebLoginImport(
-    String host,
-    BrowserCookieDelivery delivery,
-  ) async {
-    final List<BrowserSiteCookie> cookies = browserSiteCookiesForSite(
-      delivery.cookies,
-      host,
-    );
-    if (cookies.isEmpty) return;
-    final String signature =
-        (cookies
-                .map(
-                  (BrowserSiteCookie c) => '${c.domain}|${c.name}=${c.value}',
-                )
-                .toList()
-              ..sort())
-            .join(';');
-    if (signature == _webLoginImportSignature) return;
-    _webLoginImportSignature = signature;
-    final int written = await importWebVideoBrowserCookies(cookies);
+  void _onWebLoginImported(int written) {
     final WebVideoSession? session = _webSession;
-    if (!mounted || session == null || written == 0) return;
+    if (!mounted || session == null) return;
     _showOsd(
       t.web_video_login_import_received(count: written),
       icon: FushiIcons.login,
       severity: ToastSeverity.success,
     );
-    await session.reload();
+    unawaited(session.reload());
   }
 
   void _endWebLoginImport() {
-    _webLoginImport?.end();
+    _webLoginImport?.dispose();
     _webLoginImport = null;
-    _webLoginImportSignature = null;
   }
 
   /// 地址栏没在编辑时跟着当前页面地址（[WebVideoSession.nav] 的监听者）。

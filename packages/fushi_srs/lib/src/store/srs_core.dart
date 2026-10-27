@@ -360,7 +360,8 @@ final class SrsCore {
     owned: false,
   );
 
-  /// 句柄地址（跨 isolate 传递用）。
+  /// 句柄值（跨 isolate 传递用）：原生句柄表里的编号而不是指针，拥有者关库后经它的调用一律报
+  /// 「已关闭」（[SrsCoreException]），不会碰到已释放的内存。
   int get address => _handle.address;
 
   /// 加载的原生库路径（跨 isolate 传递用）。

@@ -91,6 +91,8 @@ class _FakeAdmin {
         return _json(<String, Object?>{'libraries': libraries});
       case ('POST', '/api/admin/scan'):
         return _json(const <String, Object?>{'started': true});
+      case ('POST', '/api/admin/downloads'):
+        return _json(const <String, Object?>{'jobId': 'j1'});
     }
     return _json(<String, Object?>{
       'error': 'unknown admin route $method $path',
@@ -267,6 +269,98 @@ void main() {
       );
       expect(admin.requests, <String>['POST /api/admin/scan']);
       expect(admin.bodies.last.containsKey(kServerOpConfirmGate), isFalse);
+    });
+  });
+
+  group('磁力链接里的地址参数（tr= 等）', () {
+    const String btih = 'urn:btih:0123456789abcdef0123456789abcdef01234567';
+
+    test('判据：tr / ws / xs / as / x.pe（含编号写法、编码写法）都算；纯 DHT 不算', () {
+      expect(magnetHasAddressParams('magnet:?xt=$btih&dn=a'), isFalse);
+      for (final String extra in <String>[
+        'tr=udp%3A%2F%2Fevil%3A1337%2Fannounce%3Fd%3Dsecret',
+        'tr.1=http://t.example/announce',
+        'ws=https://seed.example/file',
+        'xs=https://x.example/a.torrent',
+        'as=https://x.example/a.torrent',
+        'x.pe=203.0.113.5:6881',
+        'TR=http://t.example/announce',
+        '%74r=http://t.example/announce',
+      ]) {
+        expect(
+          magnetHasAddressParams('magnet:?xt=$btih&$extra'),
+          isTrue,
+          reason: extra,
+        );
+      }
+    });
+
+    test('模型给带 tracker 的磁力：直接执行的那条拒绝、不碰 admin API；先确认的那条确认后才转发', () async {
+      final _FakeAdmin admin = _FakeAdmin();
+      final OpCatalog catalog = buildServerAdminOpCatalog(() => admin.handle);
+      final OpInvoker invoker = OpInvoker(catalog);
+      const String withTracker =
+          'magnet:?xt=$btih&tr=udp://evil.example:1337/announce?d=secret';
+      final Map<String, Object?> args = <String, Object?>{
+        'magnet': withTracker,
+        'title': 'Work',
+      };
+      expect(catalog['server.download.add']!.spec.needsConfirmation, isFalse);
+      final FushiOpSpec confirmed =
+          catalog['server.download.add-with-trackers']!.spec;
+      expect(confirmed.needsConfirmation, isTrue);
+      expect(confirmed.undoable, isTrue);
+
+      await expectLater(
+        invoker.invoke('server.download.add', args, caller: OpCaller.model),
+        throwsA(
+          isA<CtlFailure>().having(
+            (CtlFailure f) => f.message,
+            'message',
+            contains('server.download.add-with-trackers'),
+          ),
+        ),
+      );
+      // 模型自己塞表态参数：未知参数 400。
+      await expectLater(
+        invoker.invoke('server.download.add-with-trackers', <String, Object?>{
+          ...args,
+          kServerOpTrustMagnetAddressesGate: true,
+        }, caller: OpCaller.model),
+        throwsA(
+          isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 400),
+        ),
+      );
+      // 没经确认（运行时没注入）：同样拒。
+      await expectLater(
+        invoker.invoke(
+          'server.download.add-with-trackers',
+          args,
+          caller: OpCaller.model,
+        ),
+        throwsA(isA<CtlFailure>()),
+      );
+      expect(admin.requests, isEmpty);
+
+      await invoker.invoke(
+        'server.download.add-with-trackers',
+        args,
+        caller: OpCaller.model,
+        grantedGates: const <String>{kServerOpTrustMagnetAddressesGate},
+      );
+      expect(admin.requests, <String>['POST /api/admin/downloads']);
+      expect(admin.bodies.last['magnet'], withTracker);
+      expect(
+        admin.bodies.last.containsKey(kServerOpTrustMagnetAddressesGate),
+        isFalse,
+      );
+
+      // 纯 DHT 的磁力直接执行。
+      await invoker.invoke('server.download.add', <String, Object?>{
+        'magnet': 'magnet:?xt=$btih',
+        'title': 'Work',
+      }, caller: OpCaller.model);
+      expect(admin.requests, hasLength(2));
     });
   });
 

@@ -43,6 +43,7 @@ import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_starter_packs_dialog.dart';
+import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -822,6 +823,12 @@ class _DeckListState extends State<_DeckList> {
     ];
     final int visibleCount = visible.where((bool v) => v).length;
     final List<Widget> items = <Widget>[
+      // 同步进度（常规同步 / 复习同步；复习同步一轮可能跑十几分钟）：没在跑时零高度，
+      // 与下一项的间距由它自己的 margin 只在可见时留（下面分隔符对它给 0）。
+      SyncProgressBanner(
+        key: const ValueKey<String>('srs-sync-progress'),
+        margin: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
+      ),
       // 后台导入任务（BUG-3549）：有任务时排在最前。
       if (widget.showImportTasks)
         const SrsImportTasksBar(key: ValueKey<String>('srs-import-tasks')),
@@ -1011,7 +1018,9 @@ class _DeckListState extends State<_DeckList> {
             // 牌组行是一组分段卡（行间 2px，由 FushiGroupedListItem 自己画），横幅与
             // 牌组之间才留卡片间距。
             separatorBuilder: (BuildContext context, int index) => SizedBox(
-              height: index >= firstDeckItem ? 0 : tokens.spacing.gap * 1.5,
+              height: index == 0 || index >= firstDeckItem
+                  ? 0
+                  : tokens.spacing.gap * 1.5,
             ),
             itemBuilder: fushiStaggeredItemBuilder(
               (BuildContext context, int index) => items[index],

@@ -1,6 +1,8 @@
 // Fushi 卡片混合渲染：原生区块 + 释义 WebView（测试里由 srsCardFaceBuilderProvider 换成占位）。
 // 钉住：正面不建 WebView、区块顺序跟单一真相源 FushiCardBlock 走、宽窄两种版式、外观开关、
 // 内容高度撑开释义区、点击卡 Enter 翻、MD3 / Apple 两套设计系统都不抛。
+import 'dart:io';
+
 import 'package:flutter/foundation.dart'
     show debugDefaultTargetPlatformOverride;
 import 'package:flutter/services.dart';
@@ -71,6 +73,7 @@ void main() {
     SrsCardAppearance appearance = const SrsCardAppearance(),
     bool apple = false,
     double topInset = 0,
+    SrsMediaStore? store,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -80,9 +83,7 @@ void main() {
     Widget host(bool showingAnswer) => ProviderScope(
       overrides: <Override>[
         appProvider.overrideWith((Ref ref) => app),
-        srsMediaStoreProvider.overrideWith(
-          (Ref ref) async => null as SrsMediaStore?,
-        ),
+        srsMediaStoreProvider.overrideWith((Ref ref) async => store),
         srsCardFaceBuilderProvider.overrideWithValue((
           BuildContext context,
           SrsCardFace face,
@@ -585,6 +586,72 @@ void main() {
     final Rect tall = await pictureRect();
     expect(tall.height, lessThanOrEqualTo(220.5));
     expect(tall.width, lessThan(block.width / 2));
+  });
+
+  group('卡上引用了媒体、本机文件缺失（还没同步过来）', () {
+    late Directory dir;
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('srs_card_missing_media_');
+    });
+    tearDown(() => dir.delete(recursive: true));
+
+    testWidgets('图片：画「图片未同步」占位（宽版式铺满栏宽、16:9），不再是零尺寸空盒', (
+      WidgetTester tester,
+    ) async {
+      await pump(
+        tester,
+        answer: true,
+        size: const Size(1280, 800),
+        store: SrsMediaStore(dir),
+        fields: _fields(<String, String>{
+          'Picture': '<img src="never_synced.png">',
+        }),
+      );
+      // 文件读取失败在真实 IO 里回调，setState 后再 pump 一帧。
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      final Finder placeholder = find.byKey(
+        const ValueKey<String>('srs-fushi-picture-missing'),
+      );
+      expect(placeholder, findsOne);
+      expect(find.text(t.srs_card_media_missing_image), findsOne);
+      final Rect block = tester.getRect(
+        find.byKey(const ValueKey<String>('srs-fushi-sentence-block')),
+      );
+      final Rect rect = tester.getRect(placeholder);
+      expect(rect.width, moreOrLessEquals(block.width, epsilon: 0.5));
+      expect(rect.width / rect.height, closeTo(16 / 9, 0.01));
+    });
+
+    testWidgets('视频片段：画「视频未同步」占位，宽版式与图片同规则铺满栏宽', (WidgetTester tester) async {
+      await pump(
+        tester,
+        answer: true,
+        size: const Size(1280, 800),
+        store: SrsMediaStore(dir),
+        fields: _fields(<String, String>{
+          'Picture': coverMediaRef('never_synced.webm'),
+        }),
+      );
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      final Finder placeholder = find.byKey(
+        const ValueKey<String>('srs-card-video-missing'),
+      );
+      expect(placeholder, findsOne);
+      expect(find.text(t.srs_card_media_missing_video), findsOne);
+      final Rect block = tester.getRect(
+        find.byKey(const ValueKey<String>('srs-fushi-sentence-block')),
+      );
+      final Rect rect = tester.getRect(placeholder);
+      expect(rect.left, moreOrLessEquals(block.left, epsilon: 0.5));
+      expect(rect.width, moreOrLessEquals(block.width, epsilon: 0.5));
+      expect(rect.height, lessThanOrEqualTo(800 * 0.4 + 0.5));
+    });
   });
 
   test('图片来源：光栅 data URI → 内存；SVG / 远程 / 无媒体库 → 不画', () {

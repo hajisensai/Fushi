@@ -1,4 +1,5 @@
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -48,7 +49,6 @@ class _CollectionRelationsSectionState
     extends State<CollectionRelationsSection> {
   static const double _cardWidth = 132;
   static const double _coverHeight = _cardWidth * 3 / 2;
-  static const double _textHeight = 48;
   static const double _gap = 12;
 
   final ScrollController _controller = ScrollController();
@@ -112,40 +112,42 @@ class _CollectionRelationsSectionState
     CollectionRelationRow relation,
     Offset globalPosition,
   ) async {
-    final RenderObject? overlay =
-        Overlay.of(context).context.findRenderObject();
+    final RenderObject? overlay = Overlay.of(
+      context,
+    ).context.findRenderObject();
     if (overlay is! RenderBox) return;
     final Offset anchor = overlay.globalToLocal(globalPosition);
-    final _RelationMenuAction? action = await showFushiMenu<_RelationMenuAction>(
-      context: context,
-      position: RelativeRect.fromRect(
-        Rect.fromPoints(anchor, anchor),
-        Offset.zero & overlay.size,
-      ),
-      items: <PopupMenuEntry<_RelationMenuAction>>[
-        if (widget.onDownload != null)
-          PopupMenuItem<_RelationMenuAction>(
-            value: _RelationMenuAction.download,
-            child: Row(
-              children: <Widget>[
-                const FushiIcon(Icons.download_outlined, size: 20),
-                const SizedBox(width: 12),
-                Text(t.collection_relation_download),
-              ],
+    final _RelationMenuAction? action =
+        await showFushiMenu<_RelationMenuAction>(
+          context: context,
+          position: RelativeRect.fromRect(
+            Rect.fromPoints(anchor, anchor),
+            Offset.zero & overlay.size,
+          ),
+          items: <PopupMenuEntry<_RelationMenuAction>>[
+            if (widget.onDownload != null)
+              PopupMenuItem<_RelationMenuAction>(
+                value: _RelationMenuAction.download,
+                child: Row(
+                  children: <Widget>[
+                    const FushiIcon(Icons.download_outlined, size: 20),
+                    const SizedBox(width: 12),
+                    Text(t.collection_relation_download),
+                  ],
+                ),
+              ),
+            PopupMenuItem<_RelationMenuAction>(
+              value: _RelationMenuAction.bind,
+              child: Row(
+                children: <Widget>[
+                  const FushiIcon(Icons.link, size: 20),
+                  const SizedBox(width: 12),
+                  Text(t.collection_relation_bind),
+                ],
+              ),
             ),
-          ),
-        PopupMenuItem<_RelationMenuAction>(
-          value: _RelationMenuAction.bind,
-          child: Row(
-            children: <Widget>[
-              const FushiIcon(Icons.link, size: 20),
-              const SizedBox(width: 12),
-              Text(t.collection_relation_bind),
-            ],
-          ),
-        ),
-      ],
-    );
+          ],
+        );
     if (!mounted) return;
     switch (action) {
       case _RelationMenuAction.download:
@@ -160,8 +162,8 @@ class _CollectionRelationsSectionState
   /// 「绑定到已有合集」：列全部本地合集（排除本合集自身）→ 选中即写
   /// bindCollectionRelationTarget 并刷新区块。
   Future<void> _bindToExisting(CollectionRelationRow relation) async {
-    final List<MediaCollectionRow> all =
-        await widget.database.getAllMediaCollections();
+    final List<MediaCollectionRow> all = await widget.database
+        .getAllMediaCollections();
     final List<MediaCollectionRow> candidates = <MediaCollectionRow>[
       for (final MediaCollectionRow c in all)
         if (c.id != widget.collectionId) c,
@@ -196,10 +198,7 @@ class _CollectionRelationsSectionState
     });
   }
 
-  Widget _buildCard(
-    BuildContext context,
-    CollectionRelationRow relation,
-  ) {
+  Widget _buildCard(BuildContext context, CollectionRelationRow relation) {
     // 封面三级回落：coverPath 本地文件 → coverUrl 网络（AppHttpImage 是刮削
     // 候选封面的既有口径，见 scrape_cover_preview.dart）→ 占位图标。
     final ImageProvider? localCover = resolveMediaCoverImage(
@@ -223,68 +222,39 @@ class _CollectionRelationsSectionState
       coverWidget = _coverPlaceholder(context);
     }
     final bool bound = relation.targetCollectionId != null;
+    // 封面即卡片（与视频库同一个光面海报材质）：关系类型与「已绑定」🔗 不再压在
+    // 封面上，进封面下的副行（[ShelfCardMeta]）。
     return SizedBox(
       width: _cardWidth,
-      child: GestureDetector(
-        // 未绑定边需要触发点坐标定位菜单，InkWell onTap 拿不到，统一走 onTapUp。
-        onTapUp: (TapUpDetails details) {
-          final int? target = relation.targetCollectionId;
-          if (target != null) {
-            widget.onOpenCollection(target);
-            return;
-          }
-          _showUnboundMenu(relation, details.globalPosition);
-        },
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            ClipRRect(
-              borderRadius: FushiBorderRadius.card,
-              child: SizedBox(
+      child: FushiHoverLift(
+        builder: (BuildContext context, bool _) => GestureDetector(
+          // 未绑定边需要触发点坐标定位菜单，InkWell onTap 拿不到，统一走 onTapUp。
+          onTapUp: (TapUpDetails details) {
+            final int? target = relation.targetCollectionId;
+            if (target != null) {
+              widget.onOpenCollection(target);
+              return;
+            }
+            _showUnboundMenu(relation, details.globalPosition);
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              SizedBox(
                 width: _cardWidth,
                 height: _coverHeight,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    coverWidget,
-                    PositionedDirectional(
-                      top: 6,
-                      start: 6,
-                      // 关系类型徽标压在封面图上，走共享封面角标胶囊
-                      // （CoverBadge 的纯文字形态）——此前这里是第四份手抄的
-                      // 「深色 scrim + 圆角胶囊 + 白色小字」，正是 CoverBadge
-                      // 要收口的那一类。
-                      child: CoverBadge(
-                        label: _relationLabel(relation.relationType),
-                      ),
-                    ),
-                    if (bound)
-                      PositionedDirectional(
-                        bottom: 6,
-                        end: 6,
-                        child: FushiIcon(
-                          Icons.link,
-                          size: 16,
-                          color: Colors.white.withValues(alpha: 0.9),
-                        ),
-                      ),
-                  ],
+                child: ShelfCoverMaterialScope(
+                  material: ShelfCoverMaterial.glossyPoster,
+                  child: ShelfCoverFrame(child: coverWidget),
                 ),
               ),
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: _textHeight - 6,
-              child: Text(
-                relation.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+              ShelfCardMeta(
+                title: relation.title,
+                subtitle: _relationLabel(relation.relationType),
+                leadingIcon: bound ? Icons.link : null,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -293,65 +263,69 @@ class _CollectionRelationsSectionState
   /// 无封面占位走三库页共用的 [ShelfCoverPlaceholder]（底色/描边/图标色全部
   /// 取自设计令牌，`tokens.surfaces.overlay` 即原先直读的最高阶容器面色）。
   Widget _coverPlaceholder(BuildContext context) => ShelfCoverPlaceholder(
-        icon: Icons.movie_outlined,
-        iconSize: 28,
-        backgroundColor: FushiDesignTokens.of(context).surfaces.overlay,
-      );
+    icon: Icons.movie_outlined,
+    iconSize: 28,
+    backgroundColor: FushiDesignTokens.of(context).surfaces.overlay,
+  );
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FutureBuilder<List<CollectionRelationRow>>(
       future: _relationsFuture,
-      builder: (
-        BuildContext context,
-        AsyncSnapshot<List<CollectionRelationRow>> snap,
-      ) {
-        final List<CollectionRelationRow> relations =
-            snap.data ?? const <CollectionRelationRow>[];
-        // 无关系边（未刮削/源无关联）整块不渲染，不占位。
-        if (relations.isEmpty) return const SizedBox.shrink();
-        return Padding(
-          key: const ValueKey<String>('collection-relations-section'),
-          padding: EdgeInsets.only(top: tokens.spacing.section),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-                child: Text(
-                  t.collection_related_title,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-              ),
-              SizedBox(height: tokens.spacing.rowVertical),
-              SizedBox(
-                height: _coverHeight + _textHeight,
-                // 鼠标拖动横滚（home_video 横滚行同款）。**裸滚轮刻意不横滚**：
-                // 本区嵌在合集详情页的纵向滚动里，投轴会把整页滚动吃掉
-                // （BUG-1536）；Shift + 滚轮的横滚由 Flutter 内建翻轴提供，
-                // 行为守卫见 test/pages/collection_relations_section_test.dart。
-                child: HorizontalDragScrollable(
-                  child: ListView.separated(
-                    controller: _controller,
-                    scrollDirection: Axis.horizontal,
-                    physics: desktopAwareScrollPhysics(),
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<List<CollectionRelationRow>> snap,
+          ) {
+            final List<CollectionRelationRow> relations =
+                snap.data ?? const <CollectionRelationRow>[];
+            // 无关系边（未刮削/源无关联）整块不渲染，不占位。
+            if (relations.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              key: const ValueKey<String>('collection-relations-section'),
+              padding: EdgeInsets.only(top: tokens.spacing.section),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Padding(
                     padding: EdgeInsets.symmetric(
                       horizontal: tokens.spacing.page,
                     ),
-                    itemCount: relations.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: _gap),
-                    itemBuilder: (BuildContext context, int index) =>
-                        _buildCard(context, relations[index]),
+                    child: Text(
+                      t.collection_related_title,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
-                ),
+                  SizedBox(height: tokens.spacing.rowVertical),
+                  SizedBox(
+                    height: _coverHeight + ShelfCardMeta.heightFor(context),
+                    // 鼠标拖动横滚（home_video 横滚行同款）。**裸滚轮刻意不横滚**：
+                    // 本区嵌在合集详情页的纵向滚动里，投轴会把整页滚动吃掉
+                    // （BUG-1536）；Shift + 滚轮的横滚由 Flutter 内建翻轴提供，
+                    // 行为守卫见 test/pages/collection_relations_section_test.dart。
+                    child: HorizontalDragScrollable(
+                      child: ListView.separated(
+                        controller: _controller,
+                        scrollDirection: Axis.horizontal,
+                        physics: desktopAwareScrollPhysics(),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: tokens.spacing.page,
+                        ),
+                        itemCount: relations.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(width: _gap),
+                        itemBuilder: (BuildContext context, int index) =>
+                            _buildCard(context, relations[index]),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        );
-      },
+            );
+          },
     );
   }
 }

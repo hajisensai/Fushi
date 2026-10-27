@@ -25,6 +25,7 @@ void main() {
     const String leftUrl = 'fushi.local/OEBPS/img/left.png';
     const String rightUrl = 'fushi.local/OEBPS/img/right.png';
     final String html = buildSpreadPageHtml(
+      navigationGeneration: 1,
       leftUrl: leftUrl,
       rightUrl: rightUrl,
       swipeDistThreshold: 44,
@@ -35,7 +36,7 @@ void main() {
     test('两张整页图 URL 与 spreadReady 信号都在', () {
       expect(html, contains('src="$leftUrl"'));
       expect(html, contains('src="$rightUrl"'));
-      expect(html, contains("callHandler('spreadReady')"));
+      expect(html, contains("callHandler('spreadReady', 1)"));
     });
 
     test('spreadReady 只从 signalReady() 发出，且被图片 load 计数门控', () {
@@ -49,10 +50,10 @@ void main() {
       // callHandler('spreadReady') 只出现一次，且在 signalReady 定义之后（=被它包裹），
       // 不再在解析时同步触发。
       final int readyCount =
-          "callHandler('spreadReady')".allMatches(html).length;
+          "callHandler('spreadReady', 1)".allMatches(html).length;
       expect(readyCount, 1, reason: 'spreadReady 应只由 signalReady 单点发出');
       final int signalDefIdx = html.indexOf('function signalReady');
-      final int readyIdx = html.indexOf("callHandler('spreadReady')");
+      final int readyIdx = html.indexOf("callHandler('spreadReady', 1)");
       expect(signalDefIdx, greaterThanOrEqualTo(0));
       expect(readyIdx, greaterThan(signalDefIdx),
           reason: 'spreadReady 必须在 signalReady 函数体内，而非解析时同步调用');

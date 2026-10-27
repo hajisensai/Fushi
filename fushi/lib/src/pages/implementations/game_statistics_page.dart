@@ -392,6 +392,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     return buildStatMediaRow(
       context,
       icon: Icons.sports_esports_outlined,
+      source: StatSourceKind.game,
       cover: resolveMediaCoverImage(
         kind: MediaKind.game,
         localPath: game?.coverPath,

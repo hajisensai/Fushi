@@ -6,6 +6,7 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/reader/reader_panel_kit.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -549,6 +550,8 @@ class _ReadoutChip extends StatelessWidget {
   }
 }
 
+/// 目录面板书头的小封面：光面书皮材质简化档（用户 2026-10-26：圆角 + 内
+/// 描边 + 轻光泽，不画投影），墨水屏退回描边框。
 class _HeroCover extends StatelessWidget {
   const _HeroCover({required this.path});
 
@@ -556,22 +559,14 @@ class _HeroCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: SizedBox(
-          width: 52,
-          height: 74,
+    return SizedBox(
+      width: 52,
+      height: 74,
+      child: ShelfCoverMaterialScope(
+        material: ShelfCoverMaterial.glossyBook,
+        child: ShelfCoverFrame(
+          density: ShelfCoverDensity.compact,
+          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
           child: Image.file(
             File(path),
             fit: BoxFit.cover,

@@ -5372,6 +5372,14 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 最近打开的设置一级分类（JSON 字符串数组，最近的在前；见
+  /// `settings_recent_destinations.dart`）。空串 = 还没打开过。
+  String get settingsRecentDestinationsJson =>
+      getPref('settings_recent_destinations', defaultValue: '') as String;
+
+  Future<void> setSettingsRecentDestinationsJson(String value) =>
+      setPref('settings_recent_destinations', value);
+
   bool get mangaChromeFloating =>
       getPref('manga_chrome_floating', defaultValue: true) as bool;
 
@@ -5608,6 +5616,15 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('manga_download_auto_ocr', value);
     notifyListeners();
   }
+
+  /// 本机当互联 host 时，是否允许已配对设备远程使用 AI 助手（`/api/assistant` 的
+  /// `agent` feature）。默认关，与服务端 `ai.agent_for_peers` 同一判据：远端会话会用
+  /// 本机的 AI 指派、调本机操作目录，比配对本身给的权限多，只能由用户在设置页打开。
+  bool get aiAgentForPeers =>
+      getPref('ai_agent_for_peers', defaultValue: false) as bool;
+
+  Future<void> setAiAgentForPeers(bool value) =>
+      setPref('ai_agent_for_peers', value);
 
   /// AI 整理库「导入后自动整理」（spec docs/specs/2026-10-20-ai-library-organize-design.md
   /// §10.2）。默认关：按量计费，绝不静默开启。

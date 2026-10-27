@@ -83,6 +83,12 @@ void resetSettingsSchemaCache() {
 List<SettingsDestination> buildSettingsSchema(SettingsContext context) =>
     _schemaSnapshot().destinations;
 
+/// 同 [buildSettingsSchema]，给只看**结构**、不求值任何可见性的调用方（控制通道按
+/// 「同一配置里有凭据 + 地址」判定哪些项模型不可写，见
+/// `ops/ctl_settings_credential_endpoints.dart`；守卫测试同一份枚举）。
+List<SettingsDestination> settingsSchemaDestinations() =>
+    _schemaSnapshot().destinations;
+
 /// 全部一级分类的声明树。**locale 之外不得依赖任何运行期状态**——见
 /// [_SettingsSchemaCache] 的「为什么可以缓存」；新增分类若需要读动态状态，写进 item
 /// 闭包，不要写在这里（有源码守卫 `settings_schema_cache_test.dart` 钉零参调用）。

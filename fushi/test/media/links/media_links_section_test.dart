@@ -75,8 +75,36 @@ void main() {
 
     expect(find.text('同一作品'), findsWidgets);
     expect(find.text('某动画'), findsOneWidget);
-    expect(find.text('改编作'), findsOneWidget, reason: '本条是原作 → 对端徽标「改编作」');
-    expect(find.text('未入库'), findsOneWidget);
+    // 关系与「未入库」不再压在封面上，进封面下的副行（`关系 · 状态`）。
+    final Finder animeCard = find.byKey(
+      ValueKey<String>(
+        'media-link-card-video_collection-${collectionTagEntryKey(animeId)}',
+      ),
+    );
+    final Finder missingCard = find.byKey(
+      const ValueKey<String>('media-link-card-game-missing-game'),
+    );
+    expect(
+      find.descendant(of: animeCard, matching: find.text('改编作')),
+      findsOneWidget,
+      reason: '本条是原作 → 对端副行「改编作」，已入库不带状态',
+    );
+    expect(
+      find.descendant(of: missingCard, matching: find.text('同一作品 · 未入库')),
+      findsOneWidget,
+      reason: '未入库端点的副行 = 关系 · 未入库',
+    );
+    expect(
+      find.descendant(of: missingCard, matching: find.byType(ColorFiltered)),
+      findsOneWidget,
+      reason: '未入库是去饱和灰卡',
+    );
+    expect(
+      find.descendant(of: animeCard, matching: find.byType(ColorFiltered)),
+      findsNothing,
+      reason: '已入库卡不灰化',
+    );
+    expect(find.textContaining('未入库'), findsOneWidget);
     expect(find.text('可能相关'), findsNothing);
 
     await tester.tap(find.text('missing-game'));

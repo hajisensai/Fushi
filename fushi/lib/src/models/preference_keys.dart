@@ -41,6 +41,10 @@ const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
+  // bool（默认 false）：本机当互联 host 时，是否允许已配对设备经 `/api/assistant`
+  // 远程使用 AI 助手（会用本机的 AI 指派、调本机操作目录）。与服务端
+  // `ai.agent_for_peers` 同一判据：默认关、用户在设置里亲手打开（设备本地）。
+  'ai_agent_for_peers',
   // 「哪个功能用哪家 AI」的映射。不含凭据，但跟着 ai_providers 一起设备本地：
   // providers 不跨设备，映射跨过去只会指向一个不存在的 id。
   'ai_feature_providers',
@@ -528,6 +532,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // video_resource_torznab_config 同样归类：PrefRedactionPolicy.sensitiveKeys +
   // deviceLocalPrefKeys + 互联服务配置同步。
   'resource_bt_sites',
+  // 旧内置 BT 站 → 用户 BT 站一次性升级迁移的已跑标记（'migrated' / 'fresh'，见引擎
+  // bt_site_legacy_migration.dart）。描述本安装，设备本地（deviceLocalPrefKeys）：
+  // 不进 Profile 快照 / 备份，恢复备份也不重判——新装用户恢复后不会被塞进旧内置站。
+  'resource_bt_sites_legacy_migrated',
   'reverse_navigation_bar',
   'reverse_reader_bottom_bar',
   // BUG-2100 沙箱重定位台账：上次启动时的两个数据根。根变了（iOS 每次更新都会换
@@ -540,6 +548,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'screen_ocr.card_image',
   // bool：Android 截屏识字保持录屏会话、之后不再弹确认框（默认 false）。
   'screen_ocr.keep_capture_session',
+  // string（JSON 数组，最近的在前）：最近打开的设置一级分类（SettingsDestinationId.name），
+  // 首页侧栏「设置」速览卡读它（settings_recent_destinations.dart，设备本地）。
+  'settings_recent_destinations',
   // String：已废弃（2026-10-13 起合集一律是网格里的单个格子，「整行展开」rows
   // 模式已移除；旧值 rows / cards 都无人读取）。key 冻结保留，备份 / 旧数据兼容。
   'shelf_collection_layout',
@@ -744,8 +755,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_remote_control_layout',
   'video_remote_subtitle',
   // 旧「内置视频资源索引器」停用清单（逗号分隔）。内置 BT 站已整体移除（用户
-  // 自己添加 BT 站，见 resource_bt_sites），存量键冻结、不再读写；留在这里只为
-  // 键名不被别的功能复用。
+  // 自己添加 BT 站，见 resource_bt_sites），存量键冻结、不再写；只有一次性升级迁移
+  // （引擎 bt_site_legacy_migration.dart）读它决定迁出站点的启停。留在这里也为键名
+  // 不被别的功能复用。
   'video_resource_disabled_sources',
   'video_resource_torznab_config',
   'video_respect_ass_style',

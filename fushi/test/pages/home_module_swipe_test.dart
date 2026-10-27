@@ -7,6 +7,7 @@ import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/rendering.dart' show SemanticsData, SemanticsNode;
 import 'package:flutter/semantics.dart' show SemanticsAction;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/pages/implementations/home_module_swipe.dart';
@@ -211,6 +212,38 @@ void main() {
       await tester.pumpAndSettle();
       expect(host.current, HomeTab.books);
     });
+
+    testWidgets('横滑切模块轻震一次（与底栏切页同一种选中触觉），到头不切也不震', (WidgetTester tester) async {
+      final List<String> haptics = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (MethodCall call) async {
+          if (call.method == 'HapticFeedback.vibrate') {
+            haptics.add(call.arguments as String);
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      final _SwipeHostState host = await pumpHost(
+        tester,
+        initial: HomeTab.home,
+      );
+      await tester.fling(content(), const Offset(200, 0), 1000);
+      await tester.pumpAndSettle();
+      expect(host.current, HomeTab.home);
+      expect(haptics, isEmpty, reason: '到头没切，不震');
+
+      await tester.fling(content(), const Offset(-200, 0), 1000);
+      await tester.pumpAndSettle();
+      expect(host.current, HomeTab.books);
+      expect(haptics, <String>['HapticFeedbackType.selectionClick']);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
     testWidgets('到头不循环', (WidgetTester tester) async {
       final _SwipeHostState host = await pumpHost(
