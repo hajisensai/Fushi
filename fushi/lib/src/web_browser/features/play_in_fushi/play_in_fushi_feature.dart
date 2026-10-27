@@ -8,6 +8,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart'
     show isKnownWebPageVideoUrl;
+import 'package:fushi/src/media/video/web_video_bridge.dart'
+    show kWebVideoNetflixHosts;
+import 'package:fushi/src/media/video/web_video_session.dart'
+    show webVideoIsWatchPage;
 import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -22,6 +26,20 @@ const String kWebBrowserPauseVideosScript =
     '(function(){var n=0;var vs=document.querySelectorAll("video");'
     'for(var i=0;i<vs.length;i++){try{if(!vs[i].paused){vs[i].pause();n++;}}'
     'catch(e){}}return n;})();';
+
+/// 浏览器标签页播不了、一进观看页就该直接交给播放页的地址：Netflix 的 `/watch/<id>`。
+///
+/// 浏览器标签页的画面是捕获合成出来的，DRM 视频走 DComp overlay，捕获到的是纯黑，4K 捕获
+/// 还卡（2026-10-27 用户：Netflix 在浏览器里黑屏、卡，要再点一次「用 Fushi 播放」才进播放器）；
+/// 播放页的窗口宿主档才有硬件 PlayReady。浏览 / 详情页（预告片）不算，用户在那里选集。
+bool webBrowserWatchPageNeedsPlayer(Uri? url) {
+  if (url == null) return false;
+  final String host = url.host.toLowerCase();
+  final bool drmSite = kWebVideoNetflixHosts.any(
+    (String d) => host == d || host.endsWith('.$d'),
+  );
+  return drmSite && webVideoIsWatchPage(url.toString());
+}
 
 /// 「用 Fushi 播放」：在 YouTube 观看页把当前视频交给 Fushi 自己的视频播放页。
 ///
@@ -42,6 +60,9 @@ const String kWebBrowserPauseVideosScript =
 /// 落库），接着在那里选集播放（用户 2026-10-26：视频站点与浏览器站点合成一份，进
 /// 播放页靠按钮而不是另开一个列表）。已知视频站（[isKnownWebPageVideoUrl]）放工具栏，
 /// 其它网页收在「⋯」里。无痕标签页不给：播放页用的是常规登录存储，还会把看过的集落库。
+///
+/// 浏览器播不了的观看页（[webBrowserWatchPageNeedsPlayer]）不等用户点：地址一变到那里就自动
+/// 交给播放页，标签页退回上一页（回来时停在选集页，而不是一张黑掉的观看页）。
 class PlayInFushiFeature extends WebBrowserFeature {
   PlayInFushiFeature({
     required VideoBookRepository Function() repository,
@@ -57,6 +78,32 @@ class PlayInFushiFeature extends WebBrowserFeature {
 
   /// 正在起播的标签页（防连点）。
   final Set<String> _launching = <String>{};
+
+  /// 每个标签页最近一次自动交给播放页的地址：退不回去（观看页就是第一页）时标签页还停在
+  /// 原地，同一地址不再自动交第二次。
+  final Map<String, String> _autoHandedOff = <String, String>{};
+
+  @override
+  void onUrlChanged(
+    BuildContext context,
+    WebBrowserTab tab,
+    InAppWebViewController controller,
+    Uri? url,
+  ) {
+    if (url == null ||
+        tab.incognito ||
+        !_playerAvailable() ||
+        !webBrowserWatchPageNeedsPlayer(url)) {
+      return;
+    }
+    final String key = url.toString();
+    if (_autoHandedOff[tab.id] == key) return;
+    _autoHandedOff[tab.id] = key;
+    unawaited(_openPage(context, tab, url, controller, leaveWatchPage: true));
+  }
+
+  @override
+  void onTabClosed(WebBrowserTab tab) => _autoHandedOff.remove(tab.id);
 
   @override
   String get id => 'play_in_fushi';
@@ -101,7 +148,7 @@ class PlayInFushiFeature extends WebBrowserFeature {
         priority: 80,
         onPressed: _launching.contains(tab.id)
             ? null
-            : () => unawaited(_openPage(context, tab, url)),
+            : () => unawaited(_openPage(context, tab, url, tab.controller)),
       ),
     ];
   }
@@ -110,10 +157,13 @@ class PlayInFushiFeature extends WebBrowserFeature {
     BuildContext context,
     WebBrowserTab tab,
     Uri url,
-  ) async {
+    InAppWebViewController? controller, {
+    bool leaveWatchPage = false,
+  }) async {
     if (!_launching.add(tab.id)) return;
     try {
-      await _pausePage(tab.controller);
+      await _pausePage(controller);
+      if (leaveWatchPage) await _leavePage(controller);
       if (!context.mounted) return;
       await openInWebVideoPlayer(
         context,
@@ -189,6 +239,16 @@ class PlayInFushiFeature extends WebBrowserFeature {
       FushiToast.show(msg: t.video_load_failed_generic);
     } finally {
       _launching.remove(tab.id);
+    }
+  }
+
+  /// 自动交接后标签页退回上一页（选集页），不停在播不了的观看页上继续拉流。
+  Future<void> _leavePage(InAppWebViewController? controller) async {
+    if (controller == null) return;
+    try {
+      if (await controller.canGoBack()) await controller.goBack();
+    } catch (e) {
+      debugPrint('[web-browser] leave watch page failed: $e');
     }
   }
 

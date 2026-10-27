@@ -20,6 +20,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
+import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/underlay_composition.dart'
@@ -171,34 +172,51 @@ Future<UnmodifiableListView<UserScript>> loadWebVideoUserScripts({
   ]);
 }
 
-/// 窗口宿主档用独立环境（浏览器参数不同 → 独立 cookie 罐）：把内置档已登录的站点 cookie
-/// 复制过来，用户不用登录两次。尽力而为，失败只记日志（站点会要求登录）。
+/// 登录 cookie 的来源环境，按顺序抄（后抄的同名 cookie 盖掉先抄的）：先内置档，再 app 内
+/// 浏览器（[MangaWebViewEnvironment]，「浏览」里的标签页都在它里面）。浏览器排后面：站点并进
+/// 浏览器之后（2026-10-26）用户是在浏览器里登录、再点「用 Fushi 播放」进播放页的，只抄内置档
+/// 的话播放页拿不到浏览器里的登录态，要求重新登录（2026-10-27 用户报 Netflix）。
+const List<Future<WebViewEnvironment?> Function()> kWebVideoLoginCookieSources =
+    <Future<WebViewEnvironment?> Function()>[
+      webVideoCapturableEnvironment,
+      MangaWebViewEnvironment.obtain,
+    ];
+
+/// 窗口宿主档用独立环境（浏览器参数不同 → 独立 cookie 罐）：把内置档与 app 内浏览器已登录
+/// 的站点 cookie 复制过来（[kWebVideoLoginCookieSources]），用户不用登录两次。尽力而为：
+/// 单个来源失败只记日志、不挡其它来源（最坏是站点要求登录）。
 Future<void> copyWebVideoLoginCookies({
   required Uri uri,
   required WebViewEnvironment to,
+  List<Future<WebViewEnvironment?> Function()> sources =
+      kWebVideoLoginCookieSources,
 }) async {
-  try {
-    final WebViewEnvironment from = await webVideoCapturableEnvironment();
-    final WebUri url = WebUri('${uri.scheme}://${uri.host}/');
-    final List<Cookie> cookies = await CookieManager.instance(
-      webViewEnvironment: from,
-    ).getCookies(url: url);
-    final CookieManager dst = CookieManager.instance(webViewEnvironment: to);
-    for (final Cookie c in cookies) {
-      await dst.setCookie(
-        url: url,
-        name: c.name,
-        value: c.value.toString(),
-        domain: c.domain,
-        path: c.path ?? '/',
-        // 会话 cookie 不带 expires（fork 已把 CDP 的秒转成毫秒、会话回 null）。
-        expiresDate: c.isSessionOnly == true ? null : c.expiresDate,
-        isSecure: c.isSecure,
-        isHttpOnly: c.isHttpOnly,
-      );
+  final WebUri url = WebUri('${uri.scheme}://${uri.host}/');
+  final CookieManager dst = CookieManager.instance(webViewEnvironment: to);
+  for (final Future<WebViewEnvironment?> Function() source in sources) {
+    try {
+      final WebViewEnvironment? from = await source();
+      // 没有显式环境（非 Windows / 建不出来）或就是目标自己：没东西可抄。
+      if (from == null || identical(from, to)) continue;
+      final List<Cookie> cookies = await CookieManager.instance(
+        webViewEnvironment: from,
+      ).getCookies(url: url);
+      for (final Cookie c in cookies) {
+        await dst.setCookie(
+          url: url,
+          name: c.name,
+          value: c.value.toString(),
+          domain: c.domain,
+          path: c.path ?? '/',
+          // 会话 cookie 不带 expires（fork 已把 CDP 的秒转成毫秒、会话回 null）。
+          expiresDate: c.isSessionOnly == true ? null : c.expiresDate,
+          isSecure: c.isSecure,
+          isHttpOnly: c.isHttpOnly,
+        );
+      }
+    } catch (e) {
+      ErrorLogService.instance.log('web_video', 'cookie copy: $e');
     }
-  } catch (e) {
-    ErrorLogService.instance.log('web_video', 'cookie copy: $e');
   }
 }
 
