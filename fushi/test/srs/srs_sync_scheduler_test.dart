@@ -429,6 +429,33 @@ void main() {
     );
   });
 
+  test('拉进别的设备的变更才报数据变动；之后没有新数据的轮次不报（反馈 I1Bg6uMZ32）', () async {
+    final (FushiDatabase db2, SrsDbStore other) = await openSrsTestStore(
+      deviceId: 'other',
+    );
+    addTearDown(db2.close);
+    final SrsSyncScheduler s = scheduler();
+    final LocalDirectoryAssetStore dir = LocalDirectoryAssetStore(root);
+    await s.syncWithBackend(dir);
+    expect(changed, 0, reason: '只有本机的数据：没有拉进任何东西');
+    await other.createNote(
+      noteTypeId: other.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '風',
+      },
+    );
+    expect(
+      (await srsDefaultSyncRunner(dir, other, 'other:${root.path}')).error,
+      isNull,
+    );
+    final SrsSync2Report pulled = await s.syncWithBackend(dir);
+    expect(pulled.applied, greaterThan(0));
+    expect(changed, 1, reason: '拉进了另一台设备的笔记：界面要重读');
+    await s.syncWithBackend(dir);
+    await s.syncWithBackend(dir);
+    expect(changed, 1, reason: '没有新数据的轮次不该让界面重读（也就不会再触发推送）');
+  });
+
   test('进复习 tab 的节流：60 秒内第二次跳过', () async {
     DateTime now = DateTime(2026, 10, 15, 10);
     int runs = 0;

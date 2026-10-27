@@ -496,6 +496,7 @@ void main() {
         readMedia: () async => null,
         engine: () => const SrsTestEngine(),
         bumpRevision: () {},
+        bumpPulledRevision: () {},
       );
       expect(app.srsAnkiConnectEndpoint, isNull);
       runtime.install();
