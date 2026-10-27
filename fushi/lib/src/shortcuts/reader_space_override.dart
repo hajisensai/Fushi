@@ -26,7 +26,8 @@ ShortcutAction? resolveReaderSpaceOverride({
 }) {
   if (modifiers.isNotEmpty) return null;
   if (!hasActiveAudiobook) return null;
-  final bool isSpace = key == LogicalKeyboardKey.space ||
+  final bool isSpace =
+      key == LogicalKeyboardKey.space ||
       (key == LogicalKeyboardKey.process &&
           physicalKey == PhysicalKeyboardKey.space);
   if (!isSpace) return null;
@@ -71,19 +72,23 @@ ShortcutAction? resolveReaderArrowPageTurn({
   PhysicalKeyboardKey? physicalKey,
 }) {
   if (modifiers.isNotEmpty) return null;
-  // 用户已把裸左/右键改绑成非翻页动作（或解绑）→ 不覆写，交回注册表解析真实绑定。
-  // 只有当该键仍绑定到翻页时，阅读方向校正才适用。
-  if (boundAction != ShortcutAction.readerPageForward &&
-      boundAction != ShortcutAction.readerPageBackward) {
-    return null;
-  }
   final bool leftIsForward = rtl ^ reverse;
-  final bool isLeft = key == LogicalKeyboardKey.arrowLeft ||
+  final bool isLeft =
+      key == LogicalKeyboardKey.arrowLeft ||
       (key == LogicalKeyboardKey.process &&
           physicalKey == PhysicalKeyboardKey.arrowLeft);
-  final bool isRight = key == LogicalKeyboardKey.arrowRight ||
+  final bool isRight =
+      key == LogicalKeyboardKey.arrowRight ||
       (key == LogicalKeyboardKey.process &&
           physicalKey == PhysicalKeyboardKey.arrowRight);
+  // 阅读方向校正只接管「出厂的物理方向绑定」：左 = 后退、右 = 前进（见
+  // shortcut_defaults.dart）。用户把该键改绑成别的动作、解绑，或改成**相反**的
+  // 翻页方向，都是明确意图 → 不覆写，交回注册表解析真实绑定。此前只判「是不是
+  // 翻页动作」，把右键绑成「上一页」照样被按阅读方向改回「下一页」（反馈 aiRZmYl5zS）。
+  final ShortcutAction factoryBinding = isLeft
+      ? ShortcutAction.readerPageBackward
+      : ShortcutAction.readerPageForward;
+  if ((!isLeft && !isRight) || boundAction != factoryBinding) return null;
   if (isLeft) {
     return leftIsForward
         ? ShortcutAction.readerPageForward
