@@ -1,4 +1,4 @@
-## BUG-3801 · 互联客户端把主机「从所有设备删除」的书推回主机并清掉删除墓碑
+## BUG-3815 · 互联客户端把主机「从所有设备删除」的书推回主机并清掉删除墓碑
 - **报告**：2026-10-27（用户：应用内反馈 Et3pmRzo0k —— Windows 互联主机上勾「从所有设备删除」删了 6 本书，Android 客户端同步后书没在手机上删，反而重新出现在主机上，主机 `book_tombstones` / 同步删除墓碑都没了）
 - **真实性**：✅ 真 bug（沿代码路径确认，并在 `interconnect_push_respects_host_tombstone_test.dart` 以真实 HTTP 链路复现）。根因是两层同时缺失：
   1. **client 推送不看删除意图**：互联一轮 `SyncOrchestrator.run()` 先跑内容推送 `_syncBooksContentLive`（`fushi/lib/src/sync/sync_orchestrator.dart:711`），删除墓碑的拉取与确认 `_syncDeletionTombstonesLive` 排在整轮最后（同文件 `:899`），且确认要等 UI 逐条点——推送时本机那份旧副本必然还在。推送清单 `computeBookSyncDiff`（`fushi/lib/src/sync/sync_orchestrator/books.part.dart:46`）只认「本端有 ∧ host 无」，host「无」正是因为被删了。有声书（`sync_orchestrator/audiobooks.part.dart:194-218`，按 bookKey union）与视频（`sync_orchestrator/videos.part.dart:326-349`，按 bookUid）是同一形状，同病。
