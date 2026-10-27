@@ -248,6 +248,7 @@ const Set<String> kSrsLocationCryptoErrors = <String>{
 class SrsProfileConflict {
   const SrsProfileConflict({
     required this.directoryKey,
+    required this.localUid,
     required this.candidates,
     required this.localHasNotes,
   });
@@ -255,15 +256,19 @@ class SrsProfileConflict {
   /// 冲突所在的同步位置（[SrsSyncEngine.directoryKey] 同一身份）。
   final String directoryKey;
 
+  /// 判定时本机 profile 的 uid：冲突只属于这个 profile（用户之后切了 profile，这个冲突就不再适用）。
+  final String localUid;
+
   /// 可以采用的 profile（按 uid 排序）。
   final List<SrsRemoteProfile> candidates;
 
   /// 本机 profile 有用户笔记：选定后并入，而不是直接改用。
   final bool localHasNotes;
 
-  /// 「保持本机独立」按它记：同一位置出现了别的候选会再提示。
+  /// 「保持本机独立」按它记（本机 profile + 位置 + 候选）：同一位置出现了别的候选、或换了本机 profile 会再提示。
   String get ignoreKey => <String>[
     directoryKey,
+    localUid,
     for (final SrsRemoteProfile c in candidates) c.uid,
   ].join('|');
 }
@@ -383,8 +388,9 @@ class SrsSyncScheduler {
   /// 最近一次检出的 profile 冲突（[SrsSyncNotice.profileNotLinked]）；app 侧据此弹窗。
   SrsProfileConflict? profileConflict;
 
-  /// 各位置最近一次 profile 关联判定：冲突的判定 [kSrsProfileConflictRecheck] 内复用，「已关联上」（本机 uid 目录里
-  /// 已有别的设备）永久复用——两者都不会因为再列一遍目录而改变，每轮重列只是白走一圈网盘请求。
+  /// 各（位置, 本机 profile uid）最近一次 profile 关联判定（键见 [_linkKey]）：冲突的判定 [kSrsProfileConflictRecheck]
+  /// 内复用，「已关联上」（本机 uid 目录里已有别的设备）永久复用——两者都不会因为再列一遍目录而改变，每轮重列只是
+  /// 白走一圈网盘请求。键里必须带 uid：调度器跨 profile 切换常驻，只按位置记会让切过去的 profile 永远跳过关联。
   final Map<String, ({DateTime at, SrsProfileConflict? conflict})>
   _linkDecided = <String, ({DateTime at, SrsProfileConflict? conflict})>{};
 
@@ -676,8 +682,9 @@ class SrsSyncScheduler {
     }
     final SrsProfileLinker? linker = _profileLinker;
     bool adopted = false;
+    final String linkKey = _linkKey(key, store.profileUid);
     final ({DateTime at, SrsProfileConflict? conflict})? decided =
-        _linkDecided[key];
+        _linkDecided[linkKey];
     final bool reuseLink =
         decided != null &&
         (decided.conflict == null ||
@@ -690,14 +697,20 @@ class SrsSyncScheduler {
       if (choose != null) {
         final SrsProfileConflict conflict = SrsProfileConflict(
           directoryKey: key,
+          localUid: store.profileUid,
           candidates: choose,
           localHasNotes: link.localHasNotes,
         );
         profileConflict = conflict;
-        _linkDecided[key] = (at: _clock(), conflict: conflict);
-        _noticeOnce(SrsSyncNotice.profileNotLinked);
+        _linkDecided[linkKey] = (at: _clock(), conflict: conflict);
+        // 每次重新判出都通知（不是 [_noticeOnce]）：用户选了「稍后」或冲突换了内容，下一次判定还要能再问；
+        // 判定本身按 [kSrsProfileConflictRecheck] 复用，不会每轮都通知。
+        _onNotice(SrsSyncNotice.profileNotLinked);
       } else if (link.linked) {
-        _linkDecided[key] = (at: _clock(), conflict: null);
+        _linkDecided[_linkKey(key, store.profileUid)] = (
+          at: _clock(),
+          conflict: null,
+        );
       }
       if (_halted) return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
     }
@@ -788,22 +801,36 @@ class SrsSyncScheduler {
     return report;
   }
 
-  /// 用户在冲突弹窗里选了 [uid]：本机 profile 改用它（本机有笔记时并入，见 [SrsProfileLinker.adopt]），之后跑一轮
-  /// 「立即同步」把两边的数据收发齐。与同步串行（同一个 store）。
-  Future<SrsSyncNowResult> adoptProfile(String uid) async {
+  /// 用户在冲突弹窗里选了 [uid]（[conflict] 的候选）：本机 profile 改用它（本机有笔记时并入，见
+  /// [SrsProfileLinker.adopt]），之后跑一轮「立即同步」把两边的数据收发齐。与同步串行（同一个 store）。
+  ///
+  /// 弹窗开着的时候用户可能已经切到别的 profile：此刻的 profile 不是 [conflict] 判定时的那个就抛
+  /// [StateError]、什么都不动——否则会把另一个 profile 并进不相干的候选。
+  Future<SrsSyncNowResult> adoptProfile(
+    SrsProfileConflict conflict,
+    String uid,
+  ) async {
     final SrsProfileLinker? linker = _profileLinker;
     if (linker == null) return const SrsSyncNowResult(ran: 0);
     await _serially(() async {
       final SrsDbStore? store = await _readStore();
       if (store == null || _halted) return;
+      if (store.profileUid != conflict.localUid) {
+        throw StateError(
+          'active SRS profile changed since the conflict was detected '
+          '(${conflict.localUid} -> ${store.profileUid})',
+        );
+      }
       await linker.adopt(store, uid);
-      profileConflict = null;
+      if (identical(profileConflict, conflict)) profileConflict = null;
       _linkDecided.clear();
-      _noticed.remove(SrsSyncNotice.profileNotLinked);
       _onDataChanged();
     });
     return syncNow();
   }
+
+  static String _linkKey(String directoryKey, String profileUid) =>
+      '$directoryKey\u0000$profileUid';
 
   /// 对所有已认证通道、以及本机直接读写的目录（本机作为互联 host 时）各跑一轮（不节流）。
   /// 通道抛错与报告里带回错误的目录都记进 [SrsSyncNowResult.errors]，不算同步成功。

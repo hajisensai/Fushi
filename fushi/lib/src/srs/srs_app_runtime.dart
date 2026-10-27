@@ -397,7 +397,7 @@ class SrsAppRuntime {
 
   void _onHomeTabChanged() {
     if (homeShellTabNotifier.value != HomeTab.srs) return;
-    _maybeShowProfileConflict();
+    _maybeShowProfileConflict(tabEntry: true);
     unawaited(
       sync.syncThrottled().catchError((Object e, StackTrace stack) {
         ErrorLogService.instance.log('SrsAppRuntime.tabSync', e, stack);
@@ -446,8 +446,11 @@ class SrsAppRuntime {
   static const String kIgnoredProfileConflictsPrefKey =
       'srs_sync_ignored_profile_conflicts';
 
-  /// 检出、还没给用户看的 profile 冲突。
+  /// 检出、还没给用户看（或用户选了「稍后」）的 profile 冲突。
   SrsProfileConflict? _pendingConflict;
+
+  /// 用户选了「稍后」的那个冲突（[SrsProfileConflict.ignoreKey]）：重判出同一个冲突时不当场再弹，等下次进复习页。
+  String? _deferredConflictKey;
   bool _conflictDialogOpen = false;
 
   List<String> _ignoredConflicts() {
@@ -458,8 +461,9 @@ class SrsAppRuntime {
         : const <String>[];
   }
 
-  /// 有待处理的冲突、用户此刻在复习页（在用复习时才打扰）、没被忽略过：弹窗。
-  void _maybeShowProfileConflict() {
+  /// 有待处理的冲突、用户此刻在复习页（在用复习时才打扰）、没被忽略过：弹窗。[tabEntry] = 用户刚进复习页：
+  /// 「稍后」过的冲突只在这时再问，同步后台重判出来时不当场再弹。
+  void _maybeShowProfileConflict({bool tabEntry = false}) {
     final SrsProfileConflict? conflict = _pendingConflict;
     if (conflict == null || _conflictDialogOpen) return;
     if (_ignoredConflicts().contains(conflict.ignoreKey)) {
@@ -467,6 +471,7 @@ class SrsAppRuntime {
       return;
     }
     if (homeShellTabNotifier.value != HomeTab.srs) return;
+    if (!tabEntry && conflict.ignoreKey == _deferredConflictKey) return;
     final BuildContext? context = app.navigatorKey.currentContext;
     if (context == null) return;
     _pendingConflict = null;
@@ -477,7 +482,9 @@ class SrsAppRuntime {
             await showSrsProfileConflictDialog(context, conflict);
         switch (choice) {
           case null:
-            // 稍后：下次进复习页（或这轮冲突判定过期重判）再问。
+            // 稍后：留着，下次进复习页再问（期间重判出新的冲突以新的为准）。
+            _pendingConflict ??= conflict;
+            _deferredConflictKey = conflict.ignoreKey;
             return;
           case SrsProfileConflictKeepSeparate():
             if (!app.isPreferencesReady) return;
@@ -488,7 +495,7 @@ class SrsAppRuntime {
           case SrsProfileConflictAdopt(:final String uid):
             FushiToast.show(msg: t.srs_sync_profile_conflict_done);
             try {
-              await sync.adoptProfile(uid);
+              await sync.adoptProfile(conflict, uid);
             } catch (e, stack) {
               ErrorLogService.instance.log(
                 'SrsAppRuntime.adoptProfile',

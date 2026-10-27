@@ -214,6 +214,32 @@ void main() {
     expect((await b.linker.link(dir, b.store)).choose, isNull);
   });
 
+  // 审查 PR #2593：孤儿目录清理只认「本设备换 uid 时离开的」旧 uid。删掉的 profile（srs_profile_cleanup.dart 约定
+  // 远端已同步的集合不动、只删本机）、恢复旧备份前的 uid 同样「只有本设备写过、本机没有这个 uid」，同步目录里那份
+  // 可能是唯一的副本，绝不能顺手删掉。
+  test('只有本设备写过、本机没有的 uid 目录：不是本设备换 uid 留下的就不删', () async {
+    final _Device a = await _Device.open('a');
+    await a.addNote('雪');
+    expect((await a.sync(dir)).error, isNull);
+    // 本设备旧写入者（`<deviceId>#<化身号>`）写过的、本机已不存在的 profile（例如被删掉的那个）。
+    const String goneUid = 'deleted-profile-uid';
+    final Directory gone = Directory(
+      '${root.path}/$kSrsSync2Namespace/$goneUid/a#1',
+    )..createSync(recursive: true);
+    File(
+      '${gone.path}/$kSrsProfileInfoName',
+    ).writeAsStringSync('{"name":"Old","hasNotes":true}');
+    File('${gone.path}/batch-1').writeAsStringSync('payload');
+    for (int i = 0; i < 2; i++) {
+      expect((await a.sync(dir)).error, isNull);
+    }
+    expect(
+      File('${gone.path}/batch-1').existsSync(),
+      isTrue,
+      reason: '不是换 uid 留下的孤儿：同步目录里的那份不动',
+    );
+  });
+
   test('两边都只有内置行：只有一边采用，最终同一个 uid', () async {
     final _Device a = await _Device.open('a');
     final _Device b = await _Device.open('b');
