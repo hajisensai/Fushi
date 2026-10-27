@@ -133,6 +133,8 @@ function makeWheelEvent(target, ancestors, calls) {
     target,
     composedPath() { return pathArr; },
     preventDefault() { calls.prevented = true; },
+    // UIF7NkYCjL：弹窗内的滚轮截住向宿主页的冒泡（真 WheelEvent 恒有此方法）。
+    stopPropagation() { calls.stopped = true; },
   };
 }
 

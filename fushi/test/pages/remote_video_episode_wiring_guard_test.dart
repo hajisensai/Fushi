@@ -66,7 +66,8 @@ void main() {
   test(
     'remote episode switch streams by episodeIndex (DB-only, not host path)',
     () {
-      // _loadRemoteEpisode 向 host 按 episodeIndex 换流式 url（绝不用本地 path）。
+      // _loadRemoteEpisode 向 host 按主机侧集序号 streamEpisodeIndex 换流式 url 与字幕
+      // （绝不用本地 path；合集连播下 index 是合集位置、主机侧恒 0，见 BUG-3804）。
       final int loadStart = pageSrc.indexOf('Future<void> _loadRemoteEpisode(');
       expect(loadStart, isNonNegative);
       // TODO-1000：分离流（video-only + 外挂 audio-only）接线把 _loadRemoteEpisode 撑大，
@@ -81,13 +82,13 @@ void main() {
       final String loadEp = pageSrc.substring(loadStart, loadEnd);
       expect(
         loadEp.contains('remoteVideoStreamUrls(') &&
-            loadEp.contains('episodeIndex: index,'),
+            loadEp.contains('episodeIndex: streamEpisodeIndex'),
         isTrue,
         reason: 'remote episode load must request stream by episodeIndex',
       );
       expect(
         loadEp.contains('getRemoteVideoSubtitle(') &&
-            loadEp.contains('episodeIndex: index,'),
+            loadEp.contains('episodeIndex: streamEpisodeIndex'),
         isTrue,
         reason: 'remote episode subtitle must also be fetched by episodeIndex',
       );
