@@ -74,6 +74,12 @@ const String kSrsSyncStoreUnavailable = 'srs store unavailable';
 /// 升级到同步 v2 后还没确认过首次同步（设计 §13 第 5 条：首次 v2 同步弹窗确认一次，说明「并入、不覆盖」）。
 const String kSrsSyncAwaitingConfirm = 'srs first v2 sync not confirmed';
 
+/// 只说明「本机此刻不该同步」、与网络 / 对端无关的报告错误：推送不为它们退避。
+const Set<String> kSrsSyncLocalStateErrors = <String>{
+  kSrsSyncStoreUnavailable,
+  kSrsSyncAwaitingConfirm,
+};
+
 /// 复习同步一轮的活动面包屑名（[ActivityBreadcrumb]）。
 const String kSrsSyncActivity = 'srs_sync';
 
@@ -464,11 +470,29 @@ class SrsSyncScheduler {
 
   /// 本机写了复习数据后的推送：[interconnect] 给出此刻可用的互联后端（没连上为 null）就同步它，
   /// 再跑本机目录（本机作为 host 时唤醒连它的设备）。自动同步关着时什么都不做。
-  Future<void> autoPush(Future<SyncAssetStore?> Function() interconnect) async {
-    if (!await isAutoSyncEnabled()) return;
-    final SyncAssetStore? backend = await interconnect();
-    if (backend != null) await syncWithBackend(backend);
+  ///
+  /// [exclusive] 包住「取互联后端 + 跑它的一轮」：app 侧传常规同步的那把互斥（`runExclusiveWithSync`），
+  /// 推送与常规同步不再并发改同一个单例后端的会话 / 选路缓存（反馈 XDV7Mzc2gw）。本机目录只读写本机文件
+  /// 系统、不碰共享后端，放在锁外，不延长常规同步的等待。
+  ///
+  /// 返回互联这一步是否成功（没连上 / 自动同步关着 / 首次同步未确认这类本机状态都不算失败）：
+  /// [SrsLocalPush] 据此做失败退避。互联那一轮抛的错照常抛给调用方。
+  Future<bool> autoPush(
+    Future<SyncAssetStore?> Function() interconnect, {
+    Future<bool> Function(Future<bool> Function() body)? exclusive,
+  }) async {
+    if (!await isAutoSyncEnabled()) return true;
+    Future<bool> pushInterconnect() async {
+      final SyncAssetStore? backend = await interconnect();
+      if (backend == null) return true;
+      final String? error = (await syncWithBackend(backend)).error;
+      return error == null || kSrsSyncLocalStateErrors.contains(error);
+    }
+
+    final bool ok =
+        await (exclusive?.call(pushInterconnect) ?? pushInterconnect());
     await syncLocalDirectories();
+    return ok;
   }
 
   /// 串行化：通道后置步骤（常规同步互斥锁里）、进复习 tab、「立即同步」、本机 host 目录可能同时触发，

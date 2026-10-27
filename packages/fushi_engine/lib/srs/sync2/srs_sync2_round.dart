@@ -61,6 +61,9 @@ const int kSrsSync2IngestBudgetBytes = 8 * 1024 * 1024;
 /// 调用方要求中途收手（库要关 / 调度器卸下）：已收的批次都已提交，下一轮接着拉。
 const String kSrsSync2Stopped = 'srs sync round stopped';
 
+/// 发件的一批在上传与确认之间被内核改切（并发的另一轮跑了小段合并）：这一轮不写 head，下一轮从水位续发。
+const String kSrsSync2OutboxRecut = 'srs outbox batch was re-cut';
+
 /// 本协议版本（`meta.json` 的 `v`）与能读它的最低读者版本。
 const int kSrsSync2Protocol = 1;
 const int kSrsSync2MinReader = 1;
@@ -112,8 +115,9 @@ class SrsSync2Report {
 /// 绝不降级成明文；本机刚开加密 → 这一轮把 `kdf` 写进 `meta.json`）；[archive] = 归档位置：只写不删（不清本机
 /// 的旧 head，设计 §10.3）。[onFetchProgress] 报下载 + 收进本机的段数（开拉前一次 `(0, 总数)`，之后每批一次）；
 /// [onUploadStart] 在开始发件时调一次；[shouldStop] 每批收完后问一次，为真就以 [kSrsSync2Stopped] 收手（已收的
-/// 批次都已提交）。[ingestBudgetBytes] 见 [kSrsSync2IngestBudgetBytes]；[fetchConcurrency] = 拉段时同时在途的
-/// 下载数。
+/// 批次都已提交）；发件的每批确认后也问一次（已确认的批次水位已持久化）。[ingestBudgetBytes] 见
+/// [kSrsSync2IngestBudgetBytes]；[fetchConcurrency] = 拉段时同时在途的下载数；[outboxBudgetBytes] = 发件一批的
+/// 字节预算（null = 内核默认 `OUTBOX_BATCH_BYTES`，测试用小值逼出多批）。
 Future<SrsSync2Report> srsSync2Round({
   required SrsSync2Host host,
   required SrsLocationStore location,
@@ -126,6 +130,7 @@ Future<SrsSync2Report> srsSync2Round({
   bool Function()? shouldStop,
   int ingestBudgetBytes = kSrsSync2IngestBudgetBytes,
   int fetchConcurrency = kSrsSync2Concurrency,
+  int? outboxBudgetBytes,
 }) async {
   final SrsSync2Report report = SrsSync2Report();
   // meta.json：协议版本与集合身份，创建后只读（§6.1）；加密握手（§9）以位置上的 kdf 为准。
@@ -240,20 +245,41 @@ Future<SrsSync2Report> srsSync2Round({
     absorb(await host.sync2IngestFinish());
   }
 
-  // 3. 发件：先段、后 head。
+  // 3. 发件：先段、后 head。分批（内核 `sync2_outbox` 按字节 / 段数上限产出一批，见 transport.rs
+  // `OUTBOX_BATCH_BYTES`）：一批全部写成后 `outbox_ack` 持久化水位，再取下一批——内存里同一时刻只有一批，
+  // 上传中途断网 / 被杀只丢在途那一批，下一轮从水位接着发（以前一次取全部积压，断一次整份重来，反馈
+  // XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）。head 仍在全部批次写完后才写，读者看到的永远是一致前缀。
   onUploadStart?.call();
-  final SrsSync2Result out = await host.sync2Command(<String, Object?>{
-    'op': 'outbox',
-    'location': progressId,
-    'key': keyHex,
-  });
-  await srsRunPooled(out.files, kSrsSync2Concurrency, (
-    (String, Uint8List) f,
-  ) async {
-    await location.put(f.$1, f.$2);
-    report.uploaded++;
-  });
-  final int upto = (out.map['upto'] as int?) ?? 0;
+  int upto = 0;
+  while (true) {
+    final SrsSync2Result out = await host.sync2Command(<String, Object?>{
+      'op': 'outbox',
+      'location': progressId,
+      'key': keyHex,
+      if (outboxBudgetBytes != null) 'maxBytes': outboxBudgetBytes,
+    });
+    upto = (out.map['upto'] as int?) ?? 0;
+    if (out.files.isEmpty) break;
+    await srsRunPooled(out.files, kSrsSync2Concurrency, (
+      (String, Uint8List) f,
+    ) async {
+      await location.put(f.$1, f.$2);
+      report.uploaded++;
+    });
+    final Map<String, Object?> ack = (await host.sync2Command(<String, Object?>{
+      'op': 'outbox_ack',
+      'location': progressId,
+      'segments': out.map['segments'],
+    })).map;
+    if (ack['accepted'] != true) {
+      // 发件与确认之间段被改切（只会是并发的另一轮跑了合并）：没对上的段不算数，这一轮不写 head，
+      // 下一轮按当前切法从水位续发。
+      return report..error = kSrsSync2OutboxRecut;
+    }
+    upto = (ack['uploaded'] as int?) ?? upto;
+    if (out.map['more'] != true) break;
+    if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
+  }
   // 状态摘要随 head 发布（§4.5：同一版本向量下两台设备摘要不同 = 确定性 bug）。全库扫描，内核只在版本向量
   // 变了且离上次满 [kSrsSync2DigestInterval] 时才重算，读连接上算、不占写锁。
   await host.sync2Command(<String, Object?>{

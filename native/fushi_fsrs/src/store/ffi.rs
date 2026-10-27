@@ -743,10 +743,28 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
         "migrate" => c.sync2_migrate(profile, i("now")?, req.get("limit").and_then(Value::as_u64))?,
         "replay_all" => json!(c.sync2_replay_all(profile)?),
         "preview" => c.sync2_preview(profile, s("card")?, req.get("note").and_then(Value::as_str), i("now")?, i("utcOff")?, i("rollover")?)?,
+        // 分批发件：一批上传完用 outbox_ack 交回 segments 推进水位，more 为真再取下一批（store/sync2/transport.rs）。
         "outbox" => {
-            let (segs, upto) = c.sync2_outbox(profile, s("location")?, key32(&req["key"])?)?;
-            *files = segs;
-            json!({"upto": upto})
+            let max_bytes = req.get("maxBytes").and_then(Value::as_u64).unwrap_or(crate::store::sync2::transport::OUTBOX_BATCH_BYTES);
+            let max_segments =
+                req.get("maxSegments").and_then(Value::as_u64).map_or(crate::store::sync2::transport::OUTBOX_BATCH_SEGMENTS, |n| n as usize);
+            let batch = c.sync2_outbox(profile, s("location")?, key32(&req["key"])?, max_bytes.max(1), max_segments.max(1))?;
+            *files = batch.files;
+            json!({"upto": batch.upto, "more": batch.more, "segments": batch.segments})
+        }
+        "outbox_ack" => {
+            let segments: Vec<(u64, u64)> = req
+                .get("segments")
+                .and_then(Value::as_array)
+                .ok_or("sync2: missing segments")?
+                .iter()
+                .map(|p| match p.as_array().map(|x| (x.first().and_then(Value::as_u64), x.get(1).and_then(Value::as_u64))) {
+                    Some((Some(a), Some(b))) => Ok((a, b)),
+                    _ => Err("sync2: bad segment pair".to_string()),
+                })
+                .collect::<Result<_, _>>()?;
+            let (accepted, uploaded) = c.sync2_outbox_ack(profile, s("location")?, &segments)?;
+            json!({"accepted": accepted, "uploaded": uploaded})
         }
         "head" => {
             let (path, bytes, gen, obsolete) = c.sync2_head(profile, s("location")?, i("upto")? as u64, i("now")?)?;

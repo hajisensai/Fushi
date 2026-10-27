@@ -540,7 +540,7 @@ void main() {
       // 通道后置步骤与互联快速通道走 autoSyncWithBackend，本机写入后的推送走 autoPush。
       expect(
         RegExp(
-          r'_postRun\(SyncBackend backend\) async \{\s*await sync\.autoSyncWithBackend\(backend\);',
+          r'_postRun\(SyncBackend backend\) async \{\s*(final SrsSync2Report\? r =\s*)?await sync\.autoSyncWithBackend\(backend\);',
         ).hasMatch(src),
         isTrue,
       );
@@ -556,6 +556,97 @@ void main() {
         src,
         isNot(contains('sync.syncWithBackend(')),
         reason: '运行时不该绕过开关直接跑一轮',
+      );
+    });
+
+    // 反馈 XDV7Mzc2gw：推送 / 长轮询触发的一轮与常规同步走同一把互斥；推送结果交给 SrsLocalPush 退避。
+    test('autoPush：互联一轮在 exclusive 里跑，本机目录在锁外；失败报 false', () async {
+      final Directory root = Directory.systemTemp.createTempSync('srs-push-');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final List<String> log = <String>[];
+      bool locked = false;
+      String? error;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'channel',
+        localDirectories: () async => <SrsLocalDirectory>[
+          SrsLocalDirectory(
+            directoryKey: 'interconnect:host',
+            store: LocalDirectoryAssetStore(root),
+          ),
+        ],
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              log.add('$key locked=$locked');
+              return SrsSync2Report()..error = key == 'channel' ? error : null;
+            },
+      );
+      addTearDown(s.dispose);
+      final LocalDirectoryAssetStore channel = LocalDirectoryAssetStore(root);
+      Future<bool> exclusive(Future<bool> Function() body) async {
+        locked = true;
+        try {
+          return await body();
+        } finally {
+          locked = false;
+        }
+      }
+
+      expect(
+        await s.autoPush(() async => channel, exclusive: exclusive),
+        isTrue,
+      );
+      expect(log, <String>[
+        'channel locked=true',
+        'interconnect:host locked=false',
+      ]);
+      log.clear();
+      error = 'No reachable Fushi server address';
+      expect(
+        await s.autoPush(() async => channel, exclusive: exclusive),
+        isFalse,
+        reason: '推送失败要让 SrsLocalPush 退避',
+      );
+      error = kSrsSyncAwaitingConfirm;
+      expect(
+        await s.autoPush(() async => channel, exclusive: exclusive),
+        isTrue,
+        reason: '本机状态类原因不算网络失败',
+      );
+      expect(
+        await s.autoPush(() async => null, exclusive: exclusive),
+        isTrue,
+        reason: '没连互联不算失败',
+      );
+    });
+
+    test('接线守卫：推送 / 长轮询走常规同步的互斥，失败会退避、可被重置', () {
+      final String src = File(
+        'lib/src/srs/srs_app_runtime.dart',
+      ).readAsStringSync();
+      expect(src, contains('exclusive: runExclusiveWithSync'));
+      expect(
+        RegExp(
+          r'onChange: \(\) => runExclusiveWithSync\(\(\) async \{\s*await sync\.autoSyncWithBackend\(InterconnectSyncBackend\.instance\);',
+        ).hasMatch(src),
+        isTrue,
+      );
+      expect(src, contains('ready: () => runExclusiveWithSync('));
+      expect(src, contains('onReachable: () => localPush.resetBackoff()'));
+      expect(
+        RegExp(
+          r'Future<SrsSyncNowResult> syncNow\(\) \{\s*localPush\.resetBackoff\(\);',
+        ).hasMatch(src),
+        isTrue,
       );
     });
   });
