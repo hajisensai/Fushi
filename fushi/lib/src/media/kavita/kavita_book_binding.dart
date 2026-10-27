@@ -33,6 +33,7 @@ class KavitaBookBinding {
     this.lastPulledAt,
     this.lastPushedPage,
     this.bookScrollId,
+    this.lastOpenedAt,
   });
 
   final String serverConfigId;
@@ -44,8 +45,14 @@ class KavitaBookBinding {
   /// `KavitaFormat` 值（目前只会是 epub）。
   final int format;
 
-  /// true = 打开时拉取的缓存副本（可被清理）；false = 用户「下载」固定的副本。
+  /// true = 「阅读」拉下来的缓存副本：受 `kKavitaCachedBookLimit` 上限约束、超出按
+  /// 最近使用淘汰，也可在设置里一键清理；false = 用户显式「下载」的持久副本，
+  /// 只有「移除下载」才删。
   final bool cachedOnly;
+
+  /// 最近一次经 Kavita 页打开（或下载）这一章的本地时刻（epoch 毫秒）；缓存淘汰按它
+  /// （与阅读位置的更新时刻取较新者）排最近使用。旧绑定没有这个字段 = null。
+  final int? lastOpenedAt;
 
   /// 最近一次成功推给服务器的本地时刻（epoch 毫秒）；null = 从没推过。
   final int? lastPushedAt;
@@ -68,6 +75,7 @@ class KavitaBookBinding {
     int? lastPulledAt,
     int? lastPushedPage,
     String? bookScrollId,
+    int? lastOpenedAt,
   }) => KavitaBookBinding(
     serverConfigId: serverConfigId,
     seriesId: seriesId,
@@ -80,6 +88,7 @@ class KavitaBookBinding {
     lastPulledAt: lastPulledAt ?? this.lastPulledAt,
     lastPushedPage: lastPushedPage ?? this.lastPushedPage,
     bookScrollId: bookScrollId ?? this.bookScrollId,
+    lastOpenedAt: lastOpenedAt ?? this.lastOpenedAt,
   );
 
   /// 是否指向同一台服务器上的同一章。
@@ -100,6 +109,7 @@ class KavitaBookBinding {
     if (lastPulledAt != null) 'lastPulledAt': lastPulledAt,
     if (lastPushedPage != null) 'lastPushedPage': lastPushedPage,
     if (bookScrollId != null) 'bookScrollId': bookScrollId,
+    if (lastOpenedAt != null) 'lastOpenedAt': lastOpenedAt,
   });
 
   /// 解析 `sourceMetadata`；不是 Kavita 绑定 / 字段缺失 / 非 JSON 一律 null。
@@ -144,6 +154,9 @@ class KavitaBookBinding {
           : null,
       bookScrollId: decoded['bookScrollId'] is String
           ? decoded['bookScrollId']! as String
+          : null,
+      lastOpenedAt: decoded['lastOpenedAt'] is int
+          ? decoded['lastOpenedAt']! as int
           : null,
     );
   }

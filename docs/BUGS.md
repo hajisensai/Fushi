@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3402 条。点号进各自文件。
+> 共 3404 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3800](bugs/BUG-3800-floating-ball-switch-profile-label.md) | ✅ | ✅ | 悬浮球切换配置按钮文案被换成配置名 |
+| [BUG-3799](bugs/BUG-3799-kavita-cache-download-semantics-empty.md) | ✅ | ✅ | Kavita 缓存 / 下载两态是空的：阅读即永久入库、移除下载只翻标记 |
 | [BUG-3798](bugs/BUG-3798-audiobook-chapter-transition-receipt-lost.md) | ✅ | ✅ | audiobook-chapter-transition-receipt-lost |
 | [BUG-3797](bugs/BUG-3797-srs-deleted-tagged-note-stuck-pending.md) | ✅ | ✅ | 带标签的已删笔记一直挂在「等你决定的笔记」里，确认删除也消不掉 |
 | [BUG-3796](bugs/BUG-3796-windows-nav-switch-freeze-a11y-reparent.md) | ✅ | ✅ | windows-nav-switch-freeze-a11y-reparent |

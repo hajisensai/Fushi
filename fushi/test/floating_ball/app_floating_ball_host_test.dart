@@ -28,6 +28,7 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -249,6 +250,42 @@ void main() {
     expect(byKey('scene_play_pause'), findsOneWidget);
     expect(byKey('floating_ball_action_lookup'), findsOneWidget);
     expect(byKey('floating_ball_action_clipboard'), findsNothing);
+  });
+
+  testWidgets('切换配置按钮：文案仍是「切换配置」，当前配置名只进悬停提示', (WidgetTester tester) async {
+    // 回归（PR #2565 审查）：按钮文案曾被换成当前配置名，标签胶囊里只剩
+    // 「Default」，看不出按下去是「切换」。
+    await prefs.setFloatingBallButtons(FloatingBallScope.general, <String>[
+      'switch_profile',
+    ]);
+    await prefs.setFloatingBallShowLabels(true);
+    final ProfileRepository repo = _TwoProfilesRepository();
+    await pumpHost(
+      tester,
+      extraOverrides: <Override>[
+        profileRepositoryProvider.overrideWith((Ref ref) => repo),
+        profileViewModelProvider.overrideWith(
+          (Ref ref) => _RecordingProfileViewModel(repo),
+        ),
+      ],
+    );
+    await tester.pumpAndSettle();
+    await expand(tester);
+    final ReaderHeaderAction action = tester
+        .widget<ReaderFloatingBall>(find.byType(ReaderFloatingBall))
+        .actions
+        .singleWhere(
+          (ReaderHeaderAction a) =>
+              a.key ==
+              const ValueKey<String>('floating_ball_action_switch_profile'),
+        );
+    expect(action.label, t.floating_ball_action_switch_profile);
+    expect(
+      action.tooltipText,
+      t.floating_ball_action_switch_profile_tooltip(name: 'Default'),
+    );
+    expect(find.text(t.floating_ball_action_switch_profile), findsOneWidget);
+    expect(find.text('Default'), findsNothing, reason: '配置名不当按钮文案');
   });
 
   testWidgets('勾选了但页面此刻没提供的专属按钮跳过', (WidgetTester tester) async {
@@ -1385,11 +1422,10 @@ void main() {
         await tester.pump();
         await tester.pump();
         expect(ball(), findsNothing);
-        expect(
-          yields(),
-          <bool>[true, false],
-          reason: '应用内一颗球都不画时应用外球还让位 = Fushi 里一颗球都没有',
-        );
+        expect(yields(), <bool>[
+          true,
+          false,
+        ], reason: '应用内一颗球都不画时应用外球还让位 = Fushi 里一颗球都没有');
         expect(prefs.floatingBallInApp, isTrue, reason: '不动开关');
         await tester.runAsync(() async {
           await prefs.setFloatingBallButtons(
