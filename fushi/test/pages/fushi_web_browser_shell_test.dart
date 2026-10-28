@@ -133,6 +133,32 @@ void main() {
     expect(entry.autocorrect, isFalse);
   });
 
+  testWidgets('入口页「进入浏览器」不输地址直接进浏览页，只恢复上次的标签页', (WidgetTester tester) async {
+    await store.saveSession(
+      WebBrowserSession(
+        tabs: <WebBrowserSessionTab>[
+          WebBrowserSessionTab(
+            id: 'old',
+            url: Uri.parse('https://old.example/'),
+            title: 'Old',
+          ),
+        ],
+        activeTabId: 'old',
+      ),
+    );
+    await pumpApp(
+      tester,
+      const Size(1280, 720),
+      const FushiWebBrowserHomePage(),
+    );
+    await tester.tap(byKey('web-browser-enter'));
+    await tester.pumpAndSettle();
+    final FushiWebBrowserPageState state = page(tester);
+    expect(state.tabsController.tabs.map((WebBrowserTab t) => t.url), <Uri>[
+      Uri.parse('https://old.example/'),
+    ]);
+  });
+
   testWidgets('竖屏：点站点推全屏浏览页，底栏在网页下方，地址栏点开才可编辑，后退回入口页', (
     WidgetTester tester,
   ) async {

@@ -208,6 +208,13 @@ class _FushiWebBrowserHomePageState
     if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));
   }
 
+  /// 直接进浏览页（空地址 = 只恢复上次的标签页，见 [FushiWebBrowserPage.initialUrl]）。
+  Future<void> _enterBrowser() async {
+    _addressFocus.unfocus();
+    await Navigator.of(context).push<void>(fushiWebBrowserRoute(context, ''));
+    if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));
+  }
+
   /// 点站点：标了「用播放页打开」且本平台有播放页就进播放页，否则进浏览器。
   Future<void> _openSite(WebBrowserSite site) async {
     if (!webBrowserSiteOpensInPlayer(site)) return _open(site.url);
@@ -372,6 +379,21 @@ class _FushiWebBrowserHomePageState
         SliverPadding(
           padding: EdgeInsets.fromLTRB(page, top + tokens.spacing.gap, page, 0),
           sliver: SliverToBoxAdapter(child: _buildAddressBar(context)),
+        ),
+        // 不输地址也能进浏览页：恢复上次的标签页，没有就开新标签页。
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(page, tokens.spacing.gap, page, 0),
+          sliver: SliverToBoxAdapter(
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: FushiFilledButton.tonalIcon(
+                key: const ValueKey<String>('web-browser-enter'),
+                onPressed: () => unawaited(_enterBrowser()),
+                icon: const FushiIcon(FushiIcons.tab),
+                label: Text(t.web_browser_enter),
+              ),
+            ),
+          ),
         ),
         SliverPadding(
           padding: EdgeInsets.fromLTRB(
