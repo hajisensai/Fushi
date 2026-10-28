@@ -162,6 +162,8 @@
   // 占位轨被选为活动轨 → 请桥真取（同一 key 5 秒内不重复请求；取失败用户重选即可再试）。
   function requestLazyIfPending(track) {
     if (!track || !track.pending || typeof window.fushiRequestLazyTrack !== 'function') return;
+    // 手机遥控的被动轮询只读状态，不替用户去取占位轨（Netflix 取轨会临时切站点字幕）。
+    if (remote && remote.passive) return;
     var now = Date.now();
     st.lazyRequestedAt = st.lazyRequestedAt || {};
     if (now - (st.lazyRequestedAt[track.key] || 0) < 5000) return;
@@ -1396,11 +1398,269 @@
     return true;
   };
 
+  // ── 手机视频遥控（Fushi app 内浏览器宿主专用）──────────────────────────────
+  // app 内浏览器把「前台标签页的正片」登记成手机遥控的播放器（`fushiRemote*` 消息，app 侧
+  // web_browser_video_remote.dart）。浏览器扩展本身从不发这三条消息，所以扩展里这一节不会
+  // 被触发、零开销：视频事件监听只在第一次收到遥控消息时才挂。
+  //
+  // controlRevision 的语义与 app 原生播放器同（`VideoPlayerController.remoteControlRevision`）：
+  // 「有人在电脑前做了一次显式播放控制」（播放 / 暂停 / 拖动）就 +1，手机据此判断「查词暂停后
+  // 电脑前有没有人动过」、决定关弹窗时还续不续播。这里只计**不是遥控自己下发**的那部分
+  // （遥控下发的那次由 app 侧自己计，见 expectPlaying / expectSeek）；试听播到句尾的自动停下
+  // 也不计。
+  var remote = {
+    // remoteState 读状态期间为 true：见 requestLazyIfPending。
+    passive: false,
+    revision: 0,
+    boundVideo: null,
+    handlers: null,
+    // 遥控刚下发、尚未在视频事件上兑现的目标播放态 / seek（兑现的那一下不计数）。
+    expectPlaying: null,
+    expectSeek: false,
+    // 正在试听的区间（null = 没在试听）。
+    range: null,
+  };
+  function remotePlaying(v) {
+    return !!v && !v.paused && !v.ended;
+  }
+  function remoteStopRange(pause) {
+    var r = remote.range;
+    if (!r) return;
+    remote.range = null;
+    try { clearInterval(r.timer); } catch (_) {}
+    if (pause) remoteSetPlaying(videoEl(), false);
+  }
+  function remoteOnPlayState(playing) {
+    if (remote.expectPlaying === playing) { remote.expectPlaying = null; return; }
+    remote.expectPlaying = null;
+    remote.revision++;
+    // 电脑前有人按了播放 / 暂停：试听作废（与原生 playRangeMs「中途控制即放弃」同）。
+    remoteStopRange(false);
+  }
+  function remoteOnSeeking() {
+    if (remote.expectSeek) { remote.expectSeek = false; return; }
+    remote.revision++;
+    remoteStopRange(false);
+  }
+  function remoteHandlers() {
+    if (!remote.handlers) {
+      remote.handlers = {
+        play: function () { remoteOnPlayState(true); },
+        pause: function () { remoteOnPlayState(false); },
+        seeking: function () { remoteOnSeeking(); },
+      };
+    }
+    return remote.handlers;
+  }
+  // 换了正片元素（单页应用换集 / 换清晰度重建 <video>）就把监听挪过去。
+  function remoteWatch(v) {
+    if (remote.boundVideo === (v || null)) return;
+    var h = remoteHandlers();
+    var old = remote.boundVideo;
+    if (old && typeof old.removeEventListener === 'function') {
+      for (var k in h) { try { old.removeEventListener(k, h[k]); } catch (_) {} }
+    }
+    remote.boundVideo = v || null;
+    remote.expectPlaying = null;
+    remote.expectSeek = false;
+    if (v && typeof v.addEventListener === 'function') {
+      for (var t in h) { try { v.addEventListener(t, h[t]); } catch (_) {} }
+    }
+  }
+  function remoteSetPlaying(v, playing) {
+    if (!v) return;
+    // 只有真要翻转时才登记期望：已经是目标态时事件不会来，留着期望会吞掉下一次真手动操作。
+    if (remotePlaying(v) !== playing) remote.expectPlaying = playing;
+    try {
+      if (playing) {
+        var p = v.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(function () { if (remote.expectPlaying === true) remote.expectPlaying = null; });
+        }
+      } else {
+        v.pause();
+      }
+    } catch (_) {
+      remote.expectPlaying = null;
+    }
+  }
+  function remoteSeek(ms) {
+    remote.expectSeek = true;
+    seekTo(ms);
+  }
+  // 试听：从 startMs 播到 endMs 自动停（与原生 playRangeMs 同语义）。到点的那次暂停是
+  // 试听自己的收尾，不计入 controlRevision。
+  function remotePlayRange(startMs, endMs) {
+    remoteStopRange(false);
+    var v = videoEl();
+    if (!v || !(endMs > startMs)) return false;
+    remoteSeek(startMs);
+    remoteSetPlaying(v, true);
+    var r = { start: startMs, end: endMs, landed: false, timer: null };
+    r.timer = setInterval(function () {
+      if (remote.range !== r) return;
+      var now = videoTimeMs();
+      // seek 落地前读到的还是旧位置：落进 [start-1s, end) 之后才开始判终点。
+      if (!r.landed) {
+        if (now >= r.start - 1000 && now < r.end) r.landed = true;
+        else return;
+      }
+      if (now < r.end) return;
+      remote.range = null;
+      try { clearInterval(r.timer); } catch (_) {}
+      var cur = videoEl();
+      if (cur && remotePlaying(cur)) {
+        remote.expectPlaying = false;
+        try { cur.pause(); } catch (_) { remote.expectPlaying = null; }
+      }
+    }, 40);
+    remote.range = r;
+    return true;
+  }
+  function remotePlayback() {
+    var v = videoEl();
+    remoteWatch(v);
+    var duration = v && typeof v.duration === 'number' && isFinite(v.duration) ? v.duration : 0;
+    var volume = v && typeof v.volume === 'number' ? (v.muted ? 0 : v.volume) : 0;
+    return {
+      positionMs: videoTimeMs(),
+      durationMs: Math.max(0, Math.round(duration * 1000)),
+      playing: remotePlaying(v),
+      rate: v && typeof v.playbackRate === 'number' ? v.playbackRate : 1,
+      volume: Math.max(0, Math.min(100, Math.round(volume * 100))),
+      controlRevision: remote.revision,
+      site: typeof fushiSite === 'function' ? fushiSite() : 'other',
+      title: (typeof document !== 'undefined' && document.title) || '',
+    };
+  }
+  function remoteState(includeCues) {
+    var state;
+    remote.passive = true;
+    try { state = sidePanelState(includeCues); } finally { remote.passive = false; }
+    state.remote = remotePlayback();
+    return state;
+  }
+  function remoteControl(msg) {
+    var v = videoEl();
+    remoteWatch(v);
+    if (!v) return { ok: false, error: 'no-video' };
+    var action = String(msg.action || '');
+    if (action === 'play') {
+      remoteStopRange(false);
+      remoteSetPlaying(v, true);
+    } else if (action === 'pause') {
+      remoteStopRange(false);
+      remoteSetPlaying(v, false);
+    } else if (action === 'seek') {
+      remoteStopRange(false);
+      remoteSeek(Math.max(0, Number(msg.ms) || 0));
+    } else if (action === 'volume') {
+      var n = Math.max(0, Math.min(100, Number(msg.volume) || 0));
+      try {
+        v.volume = n / 100;
+        if (n > 0 && v.muted) v.muted = false;
+      } catch (_) {}
+    } else if (action === 'playRange') {
+      if (!remotePlayRange(Number(msg.startMs) || 0, Number(msg.endMs) || 0)) {
+        return { ok: false, error: 'empty-range' };
+      }
+    } else if (action === 'stopRange') {
+      remoteStopRange(true);
+    } else if (action === 'selectTrack') {
+      // 与侧栏选轨（fushiSubtitleSidePanelSelectTrack）同一语义：只换活动轨，不动总开关。
+      var wanted = String(msg.lang || '');
+      var found = false;
+      var available = tracksForVideo();
+      for (var i = 0; i < available.length; i++) {
+        if (available[i].lang === wanted) { found = true; break; }
+      }
+      if (!found) return { ok: false, error: 'track-missing' };
+      st.activeLang = wanted;
+      // 手机明确选了这条：占位轨此刻去真取（与侧栏选轨后的下一次刷新同一条路）。
+      refreshHeadless();
+    } else {
+      return { ok: false, error: 'unknown-action' };
+    }
+    return remoteState(false);
+  }
+  // B 站可裁源的音轨直链（与 background.js 的 fushiResolveBilibili*Playurl 同两条请求）：
+  // app 宿主里本文件跑在页面主世界，带用户自己的会话取、只回传响应体。取不到 → null，
+  // app 侧按 background.js 同一规则降级（稿件让服务端自己解析、番剧不带可裁源）。
+  function remoteBilibiliPlayurl(clip) {
+    if (!clip || typeof fetch !== 'function') return Promise.resolve(null);
+    var base = 'https://api.bilibili.com';
+    var job;
+    if (clip.kind === 'bilibili-pgc') {
+      job = fetch(base + '/pgc/player/web/playurl?ep_id=' + encodeURIComponent(String(clip.id)) +
+        '&fnval=4048&fourk=1', { credentials: 'include' })
+        .then(function (r) { return r.ok ? r.text() : null; });
+    } else if (clip.kind === 'bilibili') {
+      var page = typeof clip.part === 'number' && clip.part >= 1 ? clip.part : 1;
+      job = fetch(base + '/x/web-interface/view?bvid=' + encodeURIComponent(String(clip.id)),
+        { credentials: 'include' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (view) {
+          if (!view || view.code !== 0 || !view.data) return null;
+          var pages = Array.isArray(view.data.pages) ? view.data.pages : [];
+          var entry = page <= pages.length ? pages[page - 1] : pages[0];
+          var cid = (entry && entry.cid) || view.data.cid;
+          if (!cid) return null;
+          return fetch(base + '/x/player/playurl?bvid=' + encodeURIComponent(String(clip.id)) +
+            '&cid=' + encodeURIComponent(String(cid)) + '&fnval=4048&fourk=1',
+          { credentials: 'include' })
+            .then(function (r) { return r.ok ? r.text() : null; });
+        });
+    } else {
+      return Promise.resolve(null);
+    }
+    var timeout = new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 8000); });
+    return Promise.race([job.catch(function () { return null; }), timeout]).then(function (body) {
+      return typeof body === 'string' && body ? body : null;
+    });
+  }
+  // 遥控制卡要的页面侧素材：可裁原始流的身份（subtitle-providers.js fushiClipSource）、页面标题、
+  // 当前解码帧（YouTube / Netflix 不取：前者服务端从流里裁画面，后者 DRM 取不到）、B 站 playurl。
+  function remoteMineContext() {
+    var clip = typeof fushiClipSource === 'function' ? fushiClipSource() : null;
+    var out = {
+      ok: true,
+      site: typeof fushiSite === 'function' ? fushiSite() : 'other',
+      clip: clip,
+      title: (typeof document !== 'undefined' && document.title) || '',
+    };
+    var kind = clip && clip.kind;
+    if (kind !== 'youtube' && kind !== 'netflix' && typeof fushiCaptureVideoFrame === 'function') {
+      var frame = null;
+      try { frame = fushiCaptureVideoFrame(videoEl()); } catch (_) { frame = null; }
+      if (frame && frame.base64) out.screenshotBase64 = frame.base64;
+    }
+    if (kind === 'bilibili' || kind === 'bilibili-pgc') {
+      return remoteBilibiliPlayurl(clip).then(function (body) {
+        if (body) out.playurlBody = body;
+        return out;
+      });
+    }
+    return Promise.resolve(out);
+  }
+
   // 浏览器 Side Panel 与当前标签之间的唯一契约。列表 DOM 完全位于扩展页面；这里仅做
   // 序列化、seek、偏移、外挂轨安装和查词命令，不向宿主网页挂字幕列表节点。
   try {
     chrome.runtime.onMessage.addListener(function (msg, _sender, sendResponse) {
       if (!msg || typeof msg.type !== 'string') return false;
+      // app 内浏览器的手机视频遥控（见上方「手机视频遥控」一节；扩展里没人发这三条）。
+      if (msg.type === 'fushiRemoteState') {
+        sendResponse(remoteState(msg.includeCues === true));
+        return false;
+      }
+      if (msg.type === 'fushiRemoteControl') {
+        sendResponse(remoteControl(msg));
+        return false;
+      }
+      if (msg.type === 'fushiRemoteMineContext') {
+        remoteMineContext().then(sendResponse, function () { sendResponse({ ok: false }); });
+        return true;
+      }
       if (msg.type === 'fushiSubtitleSidePanelState') {
         sendResponse(sidePanelState(msg.includeCues === true));
         return false;

@@ -731,6 +731,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         ref,
         lookup: _lookup,
         openExtensionSettings: _openExtensionSettings,
+        closeTab: closeTab,
       ),
       _ShortcutKeyBridge(
         registry: _appModel.shortcutRegistry,

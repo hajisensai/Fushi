@@ -400,7 +400,16 @@ final class VideoRemoteHost implements VideoRemoteService {
   final Map<String, _RemoteMineTask> _tasks = <String, _RemoteMineTask>{};
   Future<void> _mutationTail = Future<void>.value();
 
+  /// Players still open, oldest first; the last one is [_binding]. A page
+  /// opened over another player (the in-app browser over a native video page,
+  /// or the reverse) takes the phone, and closing it hands the phone back to
+  /// the one underneath instead of leaving it with no video (BUG-3874).
+  final List<VideoRemotePlaybackBinding> _open = <VideoRemotePlaybackBinding>[];
+
   void register(VideoRemotePlaybackBinding binding) {
+    _open
+      ..removeWhere((VideoRemotePlaybackBinding b) => identical(b, binding))
+      ..add(binding);
     final VideoRemotePlaybackBinding? old = _binding;
     if (old != null) {
       old.removeListener(_changed);
@@ -415,6 +424,7 @@ final class VideoRemoteHost implements VideoRemoteService {
   }
 
   void unregister(VideoRemotePlaybackBinding binding) {
+    _open.removeWhere((VideoRemotePlaybackBinding b) => identical(b, binding));
     if (!identical(binding, _binding)) {
       return;
     }
@@ -425,6 +435,11 @@ final class VideoRemoteHost implements VideoRemoteService {
     _cues = const <VideoRemoteCue>[];
     _cueMap.clear();
     _sessionId = '';
+    final VideoRemotePlaybackBinding? underneath = _open.lastOrNull;
+    if (underneath != null) {
+      register(underneath);
+      return;
+    }
     _publish();
   }
 

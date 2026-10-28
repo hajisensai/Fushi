@@ -217,6 +217,9 @@ extension _VideoWebSource on _VideoFushiPageState {
       _videoReadyToShow = true;
     });
     _syncVolumeDisplay(controller.volume);
+    // 手机遥控：与本地片源同一个绑定（[_registerVideoRemote]），字幕轨 / 在线字幕 / 制卡
+    // 按网页档分流。
+    _registerVideoRemote(controller);
     // 章节来自站点（Netflix 片头片尾标记，[setWebChapters]）：按钮随有无章节出现 / 消失。
     _attachControllerChapterListener(controller);
     _adoptHandedOverFullscreenForWeb();
