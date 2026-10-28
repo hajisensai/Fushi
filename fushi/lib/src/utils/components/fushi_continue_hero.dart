@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
@@ -226,7 +227,11 @@ class FushiContinueHero extends StatelessWidget {
               ? null
               : backdropAspectRatio;
           // 宽卡按钮在信息列底下，封面与信息列同高。
-          final double coverHeight = roomy ? 176 : 102;
+          // 有行尾剧照的宽卡再高一档：剧照要铺满信息列右边的整段空间，卡越高
+          // 裁切越少。
+          final double coverHeight = roomy
+              ? (stillAspect == null ? 176 : 216)
+              : 102;
           // 横图（视频剧照）在窄卡上别吃掉信息列：宽度封顶卡宽 40%。
           final double coverWidth = (coverHeight * coverAspectRatio).clamp(
             0.0,
@@ -272,10 +277,17 @@ class FushiContinueHero extends StatelessWidget {
                 : Positioned.fill(
                     child: LayoutBuilder(
                       builder: (BuildContext _, BoxConstraints box) {
-                        final double w = (box.maxHeight * stillAspect).clamp(
-                          0.0,
-                          box.maxWidth * (roomy ? 0.55 : 0.65),
-                        );
+                        // 宽卡：剧照从信息列右边紧接着开始一直铺到行尾（至少按原
+                        // 比例完整宽度），封面与剧照之间不留空；窄卡封顶 65%。
+                        final double natural = box.maxHeight * stillAspect;
+                        final double infoEnd =
+                            pad.left +
+                            coverWidth +
+                            gap +
+                            math.min(520.0, c.maxWidth - coverWidth - gap);
+                        final double w = roomy
+                            ? math.max(natural, box.maxWidth - infoEnd + 48)
+                            : math.min(natural, box.maxWidth * 0.65);
                         return Align(
                           alignment: AlignmentDirectional.centerEnd,
                           child: SizedBox(
@@ -283,8 +295,8 @@ class FushiContinueHero extends StatelessWidget {
                             height: box.maxHeight,
                             child: fade(
                               poster,
-                              <double>[0, 0.75, 1],
-                              const <double>[0, 0.3, 0.5],
+                              <double>[0, 0.8, 1],
+                              const <double>[0, 0.18, 0.32],
                             ),
                           ),
                         );
