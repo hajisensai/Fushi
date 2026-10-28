@@ -98,6 +98,7 @@ void main() {
       recognizer: _OneCueRecognizer(),
       jobsRoot: Directory(p.join(tmp.path, 'jobs')),
       probeDurationMs: (String _) async => 1440000,
+      styleReference: null,
     );
     final VideoSubtitlePipelineResult r = await pipeline.run(
       videoPaths: <String>[video.path],
@@ -155,6 +156,7 @@ void main() {
           recognizer: _OneCueRecognizer(id),
           jobsRoot: jobs,
           probeDurationMs: (String _) async => 1440000,
+          styleReference: null,
           ai: ai == null
               ? null
               : VideoSubtitleAiConfig(completer: ai, glossaryStore: store),
@@ -209,6 +211,7 @@ void main() {
       recognizer: _OneCueRecognizer(),
       jobsRoot: Directory(p.join(tmp.path, 'jobs')),
       probeDurationMs: (String _) async => 1440000,
+      styleReference: null,
       ai: VideoSubtitleAiConfig(
         completer: ai,
         glossaryStore: SubtitleGlossaryFileStore(

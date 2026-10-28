@@ -38,7 +38,6 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
-import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_ass_style_reference_loader.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
@@ -1063,7 +1062,6 @@ class AppVideoSubtitleService {
         recognizer: choice.recognizer,
         jobsRoot: root,
         ai: aiConfig,
-        styleReference: loadSubtitleStyleReference,
         probeDurationMs: _probeDurationMs,
       );
       final VideoSubtitlePipelineResult result = await pipeline.run(

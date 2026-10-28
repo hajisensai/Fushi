@@ -260,7 +260,7 @@ class VideoSubtitlePipeline {
     this.displaySplitter = splitSubtitleDraftCuesForDisplay,
     this.subtitleSuffix = 'ja',
     this.exportDir,
-    this.styleReference,
+    this.styleReference = loadSubtitleStyleReference,
     Future<int?> Function(String videoPath)? probeDurationMs,
     DateTime Function()? clock,
   }) : _probeDurationMs = probeDurationMs ?? probeVideoDurationMs,
@@ -280,8 +280,10 @@ class VideoSubtitlePipeline {
   /// 写进这个目录（CLI `--out-dir`：不碰视频目录），已有字幕的判定也看这个目录。
   final Directory? exportDir;
 
-  /// 样式参考（同一视频已有的 ASS，通常是别的语言）：给了且找得到参考时，SRT 之外
-  /// 再按参考的样式 / 位置导出一份 `<视频名>.<后缀>.ass`。null = 只出 SRT。
+  /// 样式参考（同一视频已有的 ASS，通常是别的语言）：找得到参考时，SRT 之外再按
+  /// 参考的样式 / 位置导出一份 `<视频名>.<后缀>.ass`。生产默认
+  /// [loadSubtitleStyleReference]，app 本机、host 任务、服务端 `subgen` 都走这一处；
+  /// 显式传 null = 只出 SRT（测试用）。
   final SubtitleStyleReferenceLoader? styleReference;
   final Future<int?> Function(String videoPath) _probeDurationMs;
   final DateTime Function() _clock;

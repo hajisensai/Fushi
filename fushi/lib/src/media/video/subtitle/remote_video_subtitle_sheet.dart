@@ -43,7 +43,7 @@ String? remoteVideoSubtitleEpisodeResultLabel(
     VideoSubtitleEpisodeResult(
       videoPath: e.episode.title,
       status: known,
-      outputPath: e.srt?.path,
+      outputPath: e.subtitle?.path,
     ),
   );
 }
@@ -385,7 +385,7 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
           : videoSubtitleStageLabel(job.episodes[job.current].stage!),
     RemoteVideoSubtitleJobStatus.succeeded => t.video_subtitle_ai_status_done(
       n: job.episodes
-          .where((RemoteVideoSubtitleEpisodeProgress e) => e.srt != null)
+          .where((RemoteVideoSubtitleEpisodeProgress e) => e.subtitle != null)
           .length,
     ),
     RemoteVideoSubtitleJobStatus.unsupported =>

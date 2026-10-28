@@ -23,6 +23,8 @@
 ///
 /// 产物：每集导出的 SRT（库视频还会按管线规则写在视频旁：`<视频名>.ja.srt`，已有
 /// 非本管线写的同名字幕时改写 `.ja.asr.srt`）+ `summary.json`（每集状态、AI 用量）。
+/// 视频已有别的 ASS 时另有套了它样式的 `.ja.ass`（summary 的 `styledOutput`，
+/// 单集任务的 primaryOutput 也指向它）。
 library;
 
 import 'dart:async';
@@ -301,7 +303,11 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
           b.name,
       ],
       if (moss.isNotEmpty) 'moss': moss,
-      'outputs': <String>['<video>.<suffix>.srt', kVideoSubtitleSummaryOutput],
+      'outputs': <String>[
+        '<video>.<suffix>.srt',
+        '<video>.<suffix>.ass',
+        kVideoSubtitleSummaryOutput,
+      ],
     };
   }
 
@@ -332,6 +338,7 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     if (outputName.endsWith('.srt')) {
       return 'application/x-subrip; charset=utf-8';
     }
+    if (outputName.endsWith('.ass')) return 'text/x-ssa; charset=utf-8';
     if (outputName.endsWith('.json')) return 'application/json; charset=utf-8';
     return 'application/octet-stream';
   }
@@ -436,30 +443,43 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     await ctx.outputsDir.create(recursive: true);
     final Map<String, String> outputs = <String, String>{};
     final List<Map<String, Object?>> episodes = <Map<String, Object?>>[];
-    String? firstSrt;
+    String? firstSubtitle;
+
+    /// 把 [path] 收进产物目录（重名补 ` (2)`），返回产物名。
+    Future<String> collect(String path) async {
+      String name = p.basename(path);
+      int n = 2;
+      while (outputs.containsKey(name)) {
+        name = '${p.basenameWithoutExtension(path)} ($n)${p.extension(path)}';
+        n++;
+      }
+      final File dest = ctx.output(name);
+      if (!p.equals(p.absolute(path), p.absolute(dest.path))) {
+        await File(path).copy(dest.path);
+      }
+      outputs[name] = name;
+      return name;
+    }
+
     for (final VideoSubtitleEpisodeResult e in result.episodes) {
       String? outputName;
+      String? styledName;
       final String? path = e.outputPath;
+      final String? styled = e.styledOutputPath;
       if (e.exported && path != null) {
-        outputName = p.basename(path);
-        int n = 2;
-        while (outputs.containsKey(outputName)) {
-          outputName =
-              '${p.basenameWithoutExtension(path)} ($n)${p.extension(path)}';
-          n++;
-        }
-        final File dest = ctx.output(outputName!);
-        if (!p.equals(p.absolute(path), p.absolute(dest.path))) {
-          await File(path).copy(dest.path);
-        }
-        outputs[outputName] = outputName;
-        firstSrt ??= outputName;
+        outputName = await collect(path);
+        if (styled != null) styledName = await collect(styled);
+        // 套了参考样式的 ASS 是这一集的首选产物（取回端优先加载它）。
+        firstSubtitle ??= styledName ?? outputName;
       }
       episodes.add(<String, Object?>{
         'video': p.basename(e.videoPath),
         'status': e.status.name,
         if (e.outputPath != null) 'subtitlePath': e.outputPath,
         if (outputName != null) 'output': outputName,
+        if (styled != null) 'styledSubtitlePath': styled,
+        if (styledName != null) 'styledOutput': styledName,
+        if (e.styleReference != null) 'styleReference': e.styleReference,
         if (e.reason != null) 'reason': e.reason,
         'cues': e.cueCount,
       });
@@ -495,8 +515,8 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
         .length;
     return HostJobOutcome(
       outputs: outputs,
-      primaryOutput: result.episodes.length == 1 && firstSrt != null
-          ? firstSrt
+      primaryOutput: result.episodes.length == 1 && firstSubtitle != null
+          ? firstSubtitle
           : kVideoSubtitleSummaryOutput,
       message:
           'exported $exported/${result.episodes.length}'
