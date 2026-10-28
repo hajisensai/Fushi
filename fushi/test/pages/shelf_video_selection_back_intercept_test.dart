@@ -189,10 +189,16 @@ void main() {
         contains('intercepting: _selectionMode'),
         reason: '${e.key} 多选态拦返回，普通态不变',
       );
+      // 拖动排序态（菜单「排序」进入）也拦返回：先结束排序，否则退出多选。
+      final bool reorders = region.contains('_reordering');
       expect(
         region,
-        contains('onIntercept: _exitSelectionMode'),
-        reason: '${e.key} 返回被拦时应退出多选态',
+        contains(
+          reorders
+              ? 'onIntercept: _reordering ? _endReorder : _exitSelectionMode'
+              : 'onIntercept: _exitSelectionMode',
+        ),
+        reason: '${e.key} 返回被拦时应退出多选态（排序态先结束排序）',
       );
     }
   });
