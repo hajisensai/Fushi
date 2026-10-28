@@ -531,6 +531,11 @@ Future<SyncRunReport?> _runSyncChannelInner({
     onProgress: onProgress,
   );
   final SyncRunReport report = await orchestrator.run();
+  // 编排的阶段到此为止；后置步骤（复习同步可能跑很久）与调用方的库页刷新都不发
+  // tick，不换掉的话进度行会一直挂着编排的最后一个阶段名。
+  onProgress(
+    const SyncProgress(phase: SyncPhase.finishing, itemIndex: 0, itemTotal: 0),
+  );
   final SyncChannelPostRunHook? postRun = syncChannelPostRunHook;
   if (postRun != null) {
     try {

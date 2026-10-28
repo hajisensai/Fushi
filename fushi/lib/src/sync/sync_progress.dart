@@ -51,6 +51,11 @@ enum SyncPhase {
 
   /// Pending card-mining relay (`__pending_mines__`).
   pendingMines,
+
+  /// 通道编排跑完之后的后置步骤（复习同步、刷新库页）。它们不发阶段 tick，没有
+  /// 这一档时进度行会一直挂着编排的最后一个阶段名（用户看到的是「同步待发制卡」
+  /// 长时间不动，以为每轮都在传卡）。
+  finishing,
 }
 
 /// One progress tick within a sync phase.

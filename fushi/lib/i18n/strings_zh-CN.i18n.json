@@ -8290,6 +8290,7 @@
   "sync_progress_collections": "同步合集",
   "sync_progress_deletions": "同步删除记录",
   "sync_progress_dictionaries": "同步词典",
+  "sync_progress_finishing": "正在收尾",
   "sync_progress_fonts": "同步字体",
   "sync_progress_local_audio": "同步本地音频",
   "sync_progress_pending_mines": "同步待发制卡",

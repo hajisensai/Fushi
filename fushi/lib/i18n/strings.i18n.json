@@ -8290,6 +8290,7 @@
   "sync_progress_collections": "Syncing collections",
   "sync_progress_deletions": "Syncing deletions",
   "sync_progress_dictionaries": "Syncing dictionaries",
+  "sync_progress_finishing": "Finishing up",
   "sync_progress_fonts": "Syncing fonts",
   "sync_progress_local_audio": "Syncing local audio",
   "sync_progress_pending_mines": "Syncing pending cards",

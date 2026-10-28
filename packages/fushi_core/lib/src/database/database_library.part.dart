@@ -1854,6 +1854,17 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   Future<List<ReaderPositionRow>> getAllReaderPositions() =>
       select(readerPositions).get();
 
+  /// `reader_positions` 任一写入的数据层信号（不带内容，消费方自己重读）。
+  ///
+  /// 写者不止本机阅读器与本机发起的同步：本机作为互联 host 时，对端经
+  /// `putBookProgress` 推来的进度也落这张表，而那条路径不经过本机同步收尾的
+  /// 刷新通知。库页据此失效进度缓存，任何写入者天然覆盖。
+  Stream<void> watchReaderPositionsChanged() => tableUpdates(
+        TableUpdateQuery.onAllTables(
+          <ResultSetImplementation<dynamic, dynamic>>[readerPositions],
+        ),
+      ).map((_) {});
+
   Future<void> upsertReaderPosition(ReaderPositionsCompanion pos) =>
       into(readerPositions).insert(
         pos,

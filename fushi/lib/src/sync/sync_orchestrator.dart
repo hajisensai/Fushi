@@ -930,12 +930,16 @@ class SyncOrchestrator {
     mark('deletionTombstones');
 
     // 待发制卡跨设备中转：云与互联同走资产层（__pending_mines__ 命名空间）。失败只记
-    // 错误，不打断本轮——卡都还在各自设备的本地队列里，下一轮再传。
+    // 错误，不打断本轮——卡都还在各自设备的本地队列里，下一轮再传。阶段名只在中转
+    // 真要碰远端时才公布：本机没认领落地、也没有要中转的卡时它一个请求都不发，
+    // 挂出「同步待发制卡」只会让用户以为每轮都在传卡。
     final PendingMineRelay? relay = pendingMineRelay;
     if (relay != null) {
-      _emitPhaseStart(SyncPhase.pendingMines);
       try {
-        final PendingMineRelayReport r = await relay.run(b);
+        final PendingMineRelayReport r = await relay.run(
+          b,
+          onRemoteWork: () => _emitPhaseStart(SyncPhase.pendingMines),
+        );
         report.pendingMinesReceived += r.received;
       } catch (e) {
         report.errors.add('pending mines: $e');

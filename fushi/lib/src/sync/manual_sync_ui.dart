@@ -132,6 +132,8 @@ String syncPhaseLabel(SyncPhase phase) {
       return t.sync_progress_deletions;
     case SyncPhase.pendingMines:
       return t.sync_progress_pending_mines;
+    case SyncPhase.finishing:
+      return t.sync_progress_finishing;
   }
 }
 

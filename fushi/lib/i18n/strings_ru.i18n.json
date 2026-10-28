@@ -8290,6 +8290,7 @@
   "sync_progress_collections": "Синхронизация коллекций",
   "sync_progress_deletions": "Syncing deletions",
   "sync_progress_dictionaries": "Синхронизация словарей",
+  "sync_progress_finishing": "Finishing up",
   "sync_progress_fonts": "Syncing fonts",
   "sync_progress_local_audio": "Синхронизация локального аудио",
   "sync_progress_pending_mines": "Syncing pending cards",
