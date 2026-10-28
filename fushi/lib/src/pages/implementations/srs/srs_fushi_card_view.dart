@@ -645,19 +645,38 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       kana,
     );
     if (kana.isEmpty) return const <Widget>[];
-    return <Widget>[
-      SrsPitchGraph(
-        key: const ValueKey<String>('srs-fushi-pitch'),
-        kana: kana,
-        position: positions.firstOrNull,
-        categories: f['PitchCategories'] ?? '',
-        style: s.text(
-          s.tokens.emphasisLine,
-          scale: s.appearance.textScale,
-          height: 1.3,
+    final TextStyle style = s.text(
+      s.tokens.emphasisLine,
+      scale: s.appearance.textScale,
+      height: 1.3,
+    );
+    // 一个读音有几种声调就画几张图（没有可解析的声调时只显示读音本身）；key 各不相同，
+    // 同一个 Wrap 里重复 key 会直接抛错。
+    final List<int?> graphs = positions.isEmpty
+        ? const <int?>[null]
+        : positions;
+    final List<Widget> out = <Widget>[
+      for (int i = 0; i < graphs.length; i++)
+        SrsPitchGraph(
+          key: ValueKey<String>(
+            i == 0 ? 'srs-fushi-pitch' : 'srs-fushi-pitch-$i',
+          ),
+          kana: kana,
+          position: graphs[i],
+          categories: f['PitchCategories'] ?? '',
+          style: style,
+          dark: s.dark,
+          fallbackColor: s.scheme.onSurface,
         ),
-        dark: s.dark,
-        fallbackColor: s.scheme.onSurface,
+    ];
+    if (!center || out.length < 2) return out;
+    // 正面居中竖排的 Column 里：多张图横向并排、放不下再折行。
+    return <Widget>[
+      Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 12,
+        runSpacing: 6,
+        children: out,
       ),
     ];
   }

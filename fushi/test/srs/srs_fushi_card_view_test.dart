@@ -418,6 +418,44 @@ void main() {
     expect(find.byKey(const ValueKey<String>('srs-fushi-term')), findsOne);
   });
 
+  testWidgets('多个声调：每个声调各画一张声调图，不只画第一个', (WidgetTester tester) async {
+    await pump(
+      tester,
+      answer: true,
+      fields: _fields(<String, String>{
+        'ExpressionFurigana': '',
+        'ExpressionReading': 'かよう',
+        'PitchPosition': '0, 2',
+        'PitchCategories': '',
+      }),
+    );
+    final Finder graphs = find.byType(SrsPitchGraph);
+    expect(graphs, findsNWidgets(2));
+    expect(
+      tester
+          .widgetList<SrsPitchGraph>(graphs)
+          .map((SrsPitchGraph g) => g.position),
+      <int?>[0, 2],
+    );
+    expect(find.byKey(const ValueKey<String>('srs-fushi-pitch')), findsOne);
+    expect(find.byKey(const ValueKey<String>('srs-fushi-pitch-1')), findsOne);
+  });
+
+  testWidgets('没有可解析的声调：只画一份读音', (WidgetTester tester) async {
+    await pump(
+      tester,
+      answer: true,
+      fields: _fields(<String, String>{
+        'ExpressionFurigana': '',
+        'ExpressionReading': 'かよう',
+        'PitchPosition': '',
+      }),
+    );
+    final Finder graphs = find.byType(SrsPitchGraph);
+    expect(graphs, findsOne);
+    expect(tester.widget<SrsPitchGraph>(graphs).position, isNull);
+  });
+
   group('词频聚合', () {
     final Map<String, String> freq = <String, String>{
       'FreqSort': '1840',
