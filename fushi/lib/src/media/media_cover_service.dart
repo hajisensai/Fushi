@@ -66,7 +66,8 @@ class MediaCoverService {
   static Future<void> applyCoverBytes({
     required List<int> bytes,
     required String destPath,
-  }) => writeCoverBytesAtomically(bytes: bytes, destPath: destPath);
+  }) =>
+      writeCoverBytesAtomically(bytes: bytes, destPath: destPath);
 
   /// 统一「封面已消失」入口：[destPath] 上的封面文件**已经被删除**时调用，
   /// 双键驱逐它的解码缓存。
@@ -129,9 +130,8 @@ class MediaCoverService {
       return await VideoCoverMutationGate.runExclusive(() async {
         final Directory covers =
             coversDirectory ?? await VideoStorage.coversDir();
-        await CoverMetaStore(
-          covers,
-        ).set(bookUid, const CoverMeta(origin: CoverOrigin.manual));
+        await CoverMetaStore(covers)
+            .set(bookUid, const CoverMeta(origin: CoverOrigin.manual));
         return setVideoCoverFromPickedFile(
           repo: repo,
           bookUid: bookUid,
@@ -173,14 +173,11 @@ class MediaCoverService {
     if (lease == null) throw StateError('视频刮削资料正在清理');
     try {
       return await VideoCoverMutationGate.runExclusive(() async {
-        final Directory covers =
-            collectionCoversDirectory ??
+        final Directory covers = collectionCoversDirectory ??
             await VideoStorage.collectionCoversDir();
         await covers.create(recursive: true);
-        final String destPath = p.join(
-          covers.path,
-          videoCoverFileName('$collectionId'),
-        );
+        final String destPath =
+            p.join(covers.path, videoCoverFileName('$collectionId'));
         await applyCoverFile(source: File(pickedPath), destPath: destPath);
         await database.updateMediaCollectionCoverPath(collectionId, destPath);
         return destPath;
