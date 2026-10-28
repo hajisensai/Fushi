@@ -266,6 +266,7 @@ class SrsNoteTypeView {
     required this.builtinKey,
     required this.edits,
     this.freqFieldId,
+    this.effectiveFreqFieldId,
     this.definedFields = const <SrsFieldDef>[],
     this.definedTemplates = const <SrsTemplateDef>[],
   });
@@ -284,9 +285,13 @@ class SrsNoteTypeView {
   final String? termFieldId;
 
   /// 显式设的词频序字段（[SrsFieldKeys.freqField]，内置类型有代码默认）；null = 没设。
-  /// 实际取哪个字段（显式的还在就用它，否则名为 `FreqSort` 的字段）由缓存刷新的内核决定
-  /// （native/fushi_fsrs/src/store/caches.rs `frequency_field`）。
+  /// 实际取哪个字段见 [effectiveFreqFieldId]。
   final String? freqFieldId;
+
+  /// 实际生效的词频序字段（显式的还在就用它，否则名为 `FreqSort` 的字段；都没有 = null）。由内核物化时
+  /// 算好（native/fushi_fsrs/src/registers.rs `effective_frequency_field`），缓存行 `freq_rank` 也按它解析，
+  /// Dart 不另写一份判据。
+  final String? effectiveFreqFieldId;
   final int? deletedAt;
   final String? builtinKey;
   final SrsEntityEdits edits;

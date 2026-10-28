@@ -115,6 +115,7 @@ void main() {
     await s.renameField(s.lapisNoteTypeId, lapis('FreqSort'), '频率');
     final SrsNoteTypeView lapisType = (await s.noteType(s.lapisNoteTypeId))!;
     expect(lapisType.freqFieldId, lapis('FreqSort'));
+    expect(lapisType.effectiveFreqFieldId, lapis('FreqSort'));
     final List<String> lapisCards = await addLapis(s, <(String, String)>[
       ('雪', '<b>42</b> (JPDB)'),
     ]);
@@ -128,6 +129,11 @@ void main() {
     final String other = await s.addField(typeId, 'Rank');
     SrsNoteTypeView custom = (await s.noteType(typeId))!;
     expect(custom.freqFieldId, isNull);
+    expect(
+      custom.effectiveFreqFieldId,
+      freqSort,
+      reason: '没显式设：按名字 FreqSort 认',
+    );
 
     t += 1000;
     final String noteId = await s.createNote(
@@ -145,6 +151,7 @@ void main() {
     await s.setFreqField(typeId, other);
     custom = (await s.noteType(typeId))!;
     expect(custom.freqFieldId, other);
+    expect(custom.effectiveFreqFieldId, other);
     expect((await s.cardRow(card))!.freqRank, 9);
 
     // 清掉显式设置：回到按名字认。

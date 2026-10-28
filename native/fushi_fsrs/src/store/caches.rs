@@ -197,7 +197,7 @@ struct TypeInfo {
     templates: Vec<(String, i64, String)>,
     term_field: Option<String>,
     reading_field: Option<String>,
-    /// 词频序字段（卡片缓存行的 `freq_rank` 从它解析），见 [frequency_field]。
+    /// 词频序字段（卡片缓存行的 `freq_rank` 从它解析），即视图的 `qe`（registers.rs `effective_frequency_field`）。
     freq_field: Option<String>,
     deleted: bool,
 }
@@ -209,7 +209,7 @@ impl TypeInfo {
             view["fs"].as_array().into_iter().flatten().map(|f| (s(&f["id"]), s(&f["name"]))).collect();
         TypeInfo {
             cloze: view["nk"].as_str() == Some("cloze"),
-            freq_field: frequency_field(view["qf"].as_str(), &fields),
+            freq_field: view["qe"].as_str().map(str::to_owned),
             fields,
             templates: view["ts"]
                 .as_array()
@@ -224,17 +224,6 @@ impl TypeInfo {
     }
 }
 
-/// 新卡按词频出卡时读名次的字段（原 Dart `SrsNoteTypeView.frequencyField`）：显式设的 `qf`（registers.rs
-/// `note_type_view`：修改记录 `freqField` 优先、否则内置默认 `freqFieldId`；字段还在时），否则名为 `FreqSort`
-/// 的字段（去首尾空白、不分大小写——Lapis 及其衍生类型、从 Anki 导入的同类笔记都用这个名字）；都没有 = None。
-fn frequency_field(explicit: Option<&str>, fields: &[(String, String)]) -> Option<String> {
-    if let Some(id) = explicit {
-        if fields.iter().any(|(f, _)| f == id) {
-            return Some(id.to_owned());
-        }
-    }
-    fields.iter().find(|(_, name)| name.trim().to_lowercase() == "freqsort").map(|(id, _)| id.clone())
-}
 
 /// 物化好的笔记里缓存行用得到的部分。
 struct NoteInfo {

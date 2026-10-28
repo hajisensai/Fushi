@@ -331,6 +331,7 @@ SrsNoteTypeView _noteTypeView(SrsEntitySource s, Map<String, Object?> r) {
     css: v['css']! as String,
     termFieldId: v['tf'] as String?,
     freqFieldId: v['qf'] as String?,
+    effectiveFreqFieldId: v['qe'] as String?,
     deletedAt: v['da'] as int?,
     builtinKey: v['bk'] as String?,
     edits: _edits(r, s.edits),

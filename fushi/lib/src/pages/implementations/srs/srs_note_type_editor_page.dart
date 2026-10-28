@@ -145,7 +145,7 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
     );
   }
 
-  /// 词频序字段：显式选一个字段，或「自动」= 按字段名 `FreqSort` 认（[SrsNoteTypeView.frequencyField]）。
+  /// 词频序字段：显式选一个字段，或「自动」= 按字段名 `FreqSort` 认（[SrsNoteTypeView.effectiveFreqFieldId]）。
   Future<void> _pickFreqField(SrsNoteTypeView type) async {
     const String auto = '';
     final String current = type.freqFieldId ?? auto;
@@ -584,7 +584,9 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
     final SrsFieldDef? term = type.fields
         .where((SrsFieldDef f) => f.id == type.termFieldId)
         .firstOrNull;
-    final SrsFieldDef? freq = type.frequencyField;
+    final SrsFieldDef? freq = type.fields
+        .where((SrsFieldDef f) => f.id == type.effectiveFreqFieldId)
+        .firstOrNull;
     return FushiCard(
       key: const ValueKey<String>('srs-note-type-overview'),
       padding: EdgeInsets.zero,

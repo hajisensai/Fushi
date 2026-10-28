@@ -726,6 +726,10 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
         Some(s) => Some(s.to_owned()),
         None => as_str(get(builtin, "freqFieldId"), "freqFieldId")?.map(str::to_owned),
     };
+    // 实际生效的词频序字段（缓存行 `freq_rank` 的来源、编辑页「词频序字段」标签都读它，规则只在这里写一次）：
+    // 显式设的 `freq`（字段还在时），否则名为 `FreqSort` 的字段（去首尾空白、不分大小写——Lapis 及其衍生类型、
+    // 从 Anki 导入的同类笔记都用这个名字）；都没有 = None。
+    let freq_effective = effective_frequency_field(freq.as_deref(), &live_fields);
     Ok(json!({
         "ak": as_int(get(payload, "ankiNum"), "ankiNum")?.unwrap_or(0),
         "nk": as_str(get(payload, "ntKind"), "ntKind")?.unwrap_or("standard"),
@@ -737,9 +741,20 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
         "css": css,
         "tf": term,
         "qf": freq,
+        "qe": freq_effective,
         "da": ent.deleted_at(),
         "bk": as_str(get(payload, "builtin"), "builtin")?,
     }))
+}
+
+/// 见 [note_type_view] 里 `qe` 的说明。
+fn effective_frequency_field(explicit: Option<&str>, fields: &[FieldDef]) -> Option<String> {
+    if let Some(id) = explicit {
+        if fields.iter().any(|f| f.id == id) {
+            return Some(id.to_owned());
+        }
+    }
+    fields.iter().find(|f| f.name.trim().to_lowercase() == "freqsort").map(|f| f.id.clone())
 }
 
 // ---------------------------------------------------------------- 物化：牌组
