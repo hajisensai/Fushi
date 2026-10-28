@@ -6,6 +6,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 
 /// 侧栏一条字幕。
 @immutable
@@ -261,7 +262,7 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
       final Duration d = fushiMotionDuration(context, FushiMotion.medium);
       if (row != null) {
         unawaited(
-          Scrollable.ensureVisible(
+          FushiFocusScroll.ensureVisible(
             row,
             alignment: 0.3,
             duration: d,
@@ -279,7 +280,13 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final BuildContext? again = _rowKeys[index]?.currentContext;
         if (again != null && mounted) {
-          unawaited(Scrollable.ensureVisible(again, alignment: 0.3));
+          unawaited(
+            FushiFocusScroll.ensureVisible(
+              again,
+              alignment: 0.3,
+              duration: Duration.zero,
+            ),
+          );
         }
       });
     });
