@@ -156,7 +156,10 @@ SrsFieldClass srsFieldClassOf(SrsEntityKind kind, String fieldKey) {
       if (fieldKey == SrsFieldKeys.deleted) return SrsFieldClass.content;
       return SrsFieldClass.content;
     case SrsEntityKind.noteType:
-      if (fieldKey == SrsFieldKeys.name || fieldKey == SrsFieldKeys.termField) {
+      // 词条字段 / 词频序字段都是「指向哪个字段」的设置：最后修改生效，不按内容冲突处理。
+      if (fieldKey == SrsFieldKeys.name ||
+          fieldKey == SrsFieldKeys.termField ||
+          fieldKey == SrsFieldKeys.freqField) {
         return SrsFieldClass.setting;
       }
       return SrsFieldClass.content;

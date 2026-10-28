@@ -524,6 +524,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Skip intros and credits automatically':
       'test/media/video/video_theme_song_tracker_test.dart'
       '（VideoThemeSongTracker：开关每次现读，只在刚进段 3 s 内自动跳一次）',
+  'video/Auto-hide jump-back pill':
+      'test/media/video/video_jump_pill_hover_test.dart'
+      '（过期后控制条再出现也不显示 / 视频页接线：时长现读偏好、历史变化重新计时）',
   'video/Auto-align downloaded subtitles':
       'test/media/video/embedded_reference_subtitle_sync_test.dart'
       '（gatedAutomaticSubtitleAligner：开关每次现读）',

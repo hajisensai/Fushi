@@ -179,4 +179,15 @@ void main() {
     expect((await reopened.cardRow(c[1]))!.freqRank, 100);
     expect(await reopened.nextCard(reopened.defaultDeckId), c[1]);
   });
+
+  test('字段类别：词频序字段与词条字段同为设置类（最后修改生效、不按内容冲突）', () {
+    expect(
+      srsFieldClassOf(SrsEntityKind.noteType, SrsFieldKeys.freqField),
+      SrsFieldClass.setting,
+    );
+    expect(
+      srsFieldClassOf(SrsEntityKind.noteType, SrsFieldKeys.termField),
+      SrsFieldClass.setting,
+    );
+  });
 }
