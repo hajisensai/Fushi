@@ -741,6 +741,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // int（默认 -1 = 自动）：互联远端视频画质档在 kInterconnectQualityPresets 里的
   // 下标。自动 = 局域网原画直传、走公网压到中档（interconnect_video_quality.dart）。
   'video_interconnect_quality_preset',
+  // int 秒（默认 10，0 = 不自动隐藏）：「返回跳转前位置」胶囊自上次跳转起多久后
+  // 不再随控制条出现，见 videoJumpPillLiveVisible。
+  'video_jump_pill_auto_hide_seconds',
   'video_library_auto_backfill_scrape',
   // bool（默认 true）：后台为媒体库里的在线视频作品（在线视频源 / 媒体服务器的剧）
   // 补新集（video_library_update_probe.dart）；与「番剧新集提醒」开关分开。

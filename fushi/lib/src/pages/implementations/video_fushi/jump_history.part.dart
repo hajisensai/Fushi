@@ -17,7 +17,8 @@ part of '../video_fushi_page.dart';
 ///   `onSeekStart` 记出发点、`onSeekEnd` 落点时判定；横滑 / 双击取相对基准时作废。
 ///
 /// 显隐：没跳转过不画；有历史时，跳转 / 返回 / 前进后亮 [_videoJumpFlashDuration]，
-/// 之后只随控制条（[_videoControlsVisible]）出现；小窗 / 画中画 / 沉浸锁下不画；
+/// 之后只随控制条（[_videoControlsVisible]）出现，自上次跳转起超过设置的自动隐藏时长
+/// （`video_jump_pill_auto_hide_seconds`，默认 10 秒）后控制条出现也不画；小窗 / 画中画 / 沉浸锁下不画；
 /// × 清空历史。胶囊挂在 controls builder 的 Stack 里（窗口与全屏同一 builder），
 /// 全屏路由不随页面 setState 重建，所以显隐全走 notifier。
 extension _VideoJumpBack on _VideoFushiPageState {
@@ -111,7 +112,19 @@ extension _VideoJumpBack on _VideoFushiPageState {
       });
     }
     _videoJumpPillFlashing.value = flash;
+    _armVideoJumpPillAutoHide(active: flash);
     _videoJumpHistoryRevision.value++;
+  }
+
+  /// 每次历史变化重新计时自动隐藏（时长现读偏好，0 = 不自动隐藏）。
+  void _armVideoJumpPillAutoHide({required bool active}) {
+    _videoJumpPillExpireTimer?.cancel();
+    _videoJumpPillExpired.value = false;
+    final int seconds = appModel.videoJumpPillAutoHideSeconds;
+    if (!active || seconds <= 0) return;
+    _videoJumpPillExpireTimer = Timer(Duration(seconds: seconds), () {
+      if (mounted) _videoJumpPillExpired.value = true;
+    });
   }
 
   Future<void> _walkVideoJumpHistory({required bool forward}) async {
@@ -148,6 +161,10 @@ extension _VideoJumpBack on _VideoFushiPageState {
   void _onVideoJumpPillHoverChanged(bool hovering) {
     if (!mounted) return;
     _videoJumpPillHovered.value = hovering;
+    // 悬停期间布局冻结、胶囊一直在；移开后从头计时，不让它在鼠标刚离开那一刻消失。
+    if (!hovering && !_videoJumpHistory.isEmpty) {
+      _armVideoJumpPillAutoHide(active: true);
+    }
     final bool hold =
         hovering && videoJumpPillHoverHoldsControls(_videoJumpPillLayout);
     if (hold == _controlsHoldJumpPill) return;
@@ -164,6 +181,7 @@ extension _VideoJumpBack on _VideoFushiPageState {
       listenable: Listenable.merge(<Listenable>[
         _videoJumpHistoryRevision,
         _videoJumpPillFlashing,
+        _videoJumpPillExpired,
         _videoJumpPillHovered,
         _videoControlsVisible,
         _miniSurface,
@@ -184,7 +202,11 @@ extension _VideoJumpBack on _VideoFushiPageState {
             top: chromeShown
                 ? _subtitleControlsTopReserve()
                 : _videoTopBarMargin().top + 8,
-            visible: chromeShown || _videoJumpPillFlashing.value,
+            visible: videoJumpPillLiveVisible(
+              chromeShown: chromeShown,
+              flashing: _videoJumpPillFlashing.value,
+              expired: _videoJumpPillExpired.value,
+            ),
             chromeShown: chromeShown,
           ),
         );

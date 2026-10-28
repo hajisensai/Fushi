@@ -30,6 +30,8 @@ import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
+import 'package:fushi/src/media/video/video_jump_pill_hover.dart'
+    show kVideoJumpPillAutoHideDefaultSeconds;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart'
     show MineToastStatus, mineToastShown;
@@ -1994,6 +1996,18 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoSlimProgressBar(bool value) async {
     await setPref('video_slim_progress_bar', value);
+    notifyListeners();
+  }
+
+  /// 「返回跳转前位置」胶囊自动隐藏秒数（0 = 不自动隐藏，只随控制条显隐）。
+  /// 超时后控制条再出现也不画胶囊，下一次跳转再亮；默认 10 秒。
+  int get videoJumpPillAutoHideSeconds => getPref(
+        'video_jump_pill_auto_hide_seconds',
+        defaultValue: kVideoJumpPillAutoHideDefaultSeconds,
+      ) as int;
+
+  Future<void> setVideoJumpPillAutoHideSeconds(int value) async {
+    await setPref('video_jump_pill_auto_hide_seconds', value);
     notifyListeners();
   }
 
