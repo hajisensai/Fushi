@@ -200,3 +200,24 @@ CREATE TABLE IF NOT EXISTS sync2_legacy (
 
 /// V6：本机切段点的压缩后体积估计（字节；0 = 未知，升级前切的老段）。
 pub const V6: &str = "ALTER TABLE sync2_segments ADD COLUMN bytes INTEGER NOT NULL DEFAULT 0;";
+
+/// V7：`MediaAt` 操作的投影（设计 §6.4）——各存储位置的媒体目录里有什么，以及谁对哪个位置做过完整列举。
+/// 媒体对账读它代替列目录。每个（位置, 名字）按 HLC 大者胜。
+pub const V7: &str = r#"
+CREATE TABLE IF NOT EXISTS sync2_media_at (
+  profile_uid TEXT NOT NULL,
+  location TEXT NOT NULL,
+  name TEXT NOT NULL,
+  present INTEGER NOT NULL,
+  wall INTEGER NOT NULL,
+  logical INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  PRIMARY KEY (profile_uid, location, name)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_media_seeded (
+  profile_uid TEXT NOT NULL,
+  location TEXT NOT NULL,
+  wall INTEGER NOT NULL,
+  PRIMARY KEY (profile_uid, location)
+) WITHOUT ROWID;
+"#;

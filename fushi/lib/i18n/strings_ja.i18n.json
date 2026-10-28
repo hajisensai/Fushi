@@ -8296,6 +8296,7 @@
   "sync_progress_pending_mines": "Syncing pending cards",
   "sync_progress_preparing": "同期を準備中",
   "sync_progress_reading": "読書データを同期中",
+  "sync_progress_remote_listing": "Reading the remote file list",
   "sync_progress_statistics": "Syncing statistics and favorites",
   "sync_progress_videos": "動画を同期中",
   "sync_role_locked_by_client": "既に別のデバイスに接続しています。サーバーとして動作する前に接続を解除してください。",

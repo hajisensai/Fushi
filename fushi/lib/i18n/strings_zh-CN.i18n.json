@@ -8296,6 +8296,7 @@
   "sync_progress_pending_mines": "同步待发制卡",
   "sync_progress_preparing": "正在准备同步",
   "sync_progress_reading": "同步阅读数据",
+  "sync_progress_remote_listing": "正在读取远端文件清单",
   "sync_progress_statistics": "同步统计与收藏",
   "sync_progress_videos": "同步视频",
   "sync_role_locked_by_client": "已连接其他设备，请先移除连接后才能作为服务端。",

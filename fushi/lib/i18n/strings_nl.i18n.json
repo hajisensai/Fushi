@@ -8296,6 +8296,7 @@
   "sync_progress_pending_mines": "Syncing pending cards",
   "sync_progress_preparing": "Synchronisatie voorbereiden",
   "sync_progress_reading": "Leesgegevens synchroniseren",
+  "sync_progress_remote_listing": "Reading the remote file list",
   "sync_progress_statistics": "Syncing statistics and favorites",
   "sync_progress_videos": "Video's synchroniseren",
   "sync_role_locked_by_client": "Al verbonden met een ander apparaat. Verwijder de verbinding voordat je als server fungeert.",

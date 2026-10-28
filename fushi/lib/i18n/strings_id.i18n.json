@@ -8296,6 +8296,7 @@
   "sync_progress_pending_mines": "Syncing pending cards",
   "sync_progress_preparing": "Menyiapkan sinkronisasi",
   "sync_progress_reading": "Menyinkronkan data baca",
+  "sync_progress_remote_listing": "Reading the remote file list",
   "sync_progress_statistics": "Syncing statistics and favorites",
   "sync_progress_videos": "Menyinkronkan video",
   "sync_role_locked_by_client": "Sudah terhubung ke perangkat lain. Hapus koneksi sebelum menjadi host sebagai server.",

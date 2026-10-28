@@ -259,6 +259,7 @@ void main() {
             SrsDbStore st,
             Directory mediaRoot, {
             SrsMediaCipher? cipher,
+            required String locationId,
           }) async {
             mediaRuns++;
             return SrsMediaSyncReport();
@@ -427,6 +428,7 @@ void main() {
             SrsDbStore st,
             Directory mediaRoot, {
             SrsMediaCipher? cipher,
+            required String locationId,
           }) async {
             ciphers.add(cipher);
             return SrsMediaSyncReport();

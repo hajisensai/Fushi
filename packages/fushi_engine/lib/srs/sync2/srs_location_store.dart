@@ -3,7 +3,8 @@
 /// 所以这里不需要锁、原子比较交换或一致的列目录。
 ///
 /// 路径一律相对于一个 profile 集合的根（`fushi-srs/<profileUid>/v2/`），用 `/` 分隔：
-/// `meta.json`、`devices/<DeviceId>/{head-*.json, seg-*.bin, profile.json}`、`media/<sha256 前 2 位>/<sha256>`。
+/// `meta.json`、`devices/<DeviceId>/{head-*.json, seg-*.bin, profile.json}`、`media/<文件名>`（加密时
+/// `media-e/<密钥指纹>/<文件名>`）。
 library;
 
 import 'dart:async';
@@ -38,6 +39,9 @@ abstract interface class SrsLocationStore {
 
   /// 读文件；不存在返回 null。
   Future<Uint8List?> get(String path);
+
+  /// 文件在不在（按名查一次，不下载内容、不列整个目录）。
+  Future<bool> exists(String path);
 
   /// 写文件（同名覆盖；中间目录按需创建）。
   Future<void> put(String path, Uint8List bytes);
@@ -257,6 +261,16 @@ class SrsAssetLocationStore implements SrsLocationStore {
   }
 
   @override
+  Future<bool> exists(String path) async {
+    final (String dir, String name) = _split(path);
+    final Map<String, String?>? listed = _listed[_norm(dir)];
+    if (listed != null && listed.containsKey(name)) return true;
+    final String? id = await _folder(dir, create: false);
+    if (id == null) return false;
+    return await store.findAsset(id, name) != null;
+  }
+
+  @override
   Future<void> put(String path, Uint8List bytes) =>
       _write(() => _put(path, bytes));
 
@@ -363,6 +377,9 @@ class SrsDirectoryLocationStore implements SrsLocationStore {
   }
 
   @override
+  Future<bool> exists(String path) => _file(path).exists();
+
+  @override
   Future<void> put(String path, Uint8List bytes) async {
     final File f = _file(path);
     await f.parent.create(recursive: true);
@@ -413,6 +430,9 @@ class SrsMemoryLocationStore implements SrsLocationStore {
 
   @override
   Future<Uint8List?> get(String path) async => files[path];
+
+  @override
+  Future<bool> exists(String path) async => files.containsKey(path);
 
   @override
   Future<void> put(String path, Uint8List bytes) async =>

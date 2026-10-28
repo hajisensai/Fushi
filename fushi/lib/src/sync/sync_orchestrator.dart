@@ -702,6 +702,7 @@ class SyncOrchestrator {
     // 逐本问。每本书之后走的判定逻辑一字未改，也没有任何「快照说没变所以跳过」的
     // 中间结论——跳过是单边不安全的操作，一旦所依赖的结论与远端实情不符，漏掉的
     // 那次对端更新会被本地 LWW 覆盖掉，那是丢数据而不是慢。
+    _emitPhaseStart(SyncPhase.remoteListing);
     final String root = await _backend.findOrCreateRootFolder();
     final SyncBackend backend = _backend;
     final RemoteListingSnapshot? listing = backend is RemoteListingCapable

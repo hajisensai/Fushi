@@ -1710,3 +1710,62 @@ fn a_huge_backlog_is_sent_in_bounded_batches_and_resumes_from_the_watermark() {
     assert_eq!(count(&c), count(&a));
     assert_eq!(a.digest(), c.digest());
 }
+
+fn media_known(d: &Device, loc: &str) -> (bool, Vec<String>) {
+    let v = d.core.sync2_media_known(P, loc).unwrap();
+    let names = v["present"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_owned()).collect();
+    (v["seeded"] == json!(true), names)
+}
+
+fn strs(xs: &[&str]) -> Vec<String> {
+    xs.iter().map(|s| (*s).to_owned()).collect()
+}
+
+/// 设计 §6.4：位置的媒体目录内容记在日志里。A 对位置列举一次（带 seeded），B 只靠同步收到的操作就知道
+/// 该位置已列举过、里面有什么；之后的增删按 HLC 大者胜，各设备收敛到同一张表；与投影一致的事实不重复记。
+#[test]
+fn media_presence_travels_in_the_log_and_converges() {
+    let a = Device::new("ma");
+    let b = Device::new("mb");
+    let mut bucket = Bucket::default();
+    const L: &str = "drive:acct/media";
+
+    assert_eq!(media_known(&a, L), (false, vec![]));
+    let many: Vec<String> = (0..(crate::sync2::op::MEDIA_AT_MAX_NAMES + 5)).map(|i| format!("m{i:05}.mp3")).collect();
+    let r = a.core.sync2_media_record(P, L, &many, &[], true, T0).unwrap();
+    // 超过单条上限的名字切成两条，外加一条列举标记。
+    assert_eq!(r["appended"], json!(3));
+    assert_eq!(media_known(&a, L), (true, many.clone()));
+
+    // 同样的事实再记一遍：一条都不追加。
+    assert_eq!(a.core.sync2_media_record(P, L, &many[..10], &[], true, T0 + 1).unwrap()["appended"], json!(0));
+
+    a.sync(&mut bucket, "loc", T0 + 2);
+    b.sync(&mut bucket, "loc", T0 + 2);
+    assert_eq!(media_known(&b, L), (true, many.clone()), "B learns the listing from A's ops, without listing");
+    // 别的位置互不相干。
+    assert_eq!(media_known(&b, "other/media"), (false, vec![]));
+
+    // B 读不到 m00000（被外部删了）→ 记不在；A 之后补传 → 记在。HLC 大者胜。
+    b.core.sync2_media_record(P, L, &[], &strs(&["m00000.mp3"]), false, T0 + 10).unwrap();
+    b.sync(&mut bucket, "loc", T0 + 11);
+    a.sync(&mut bucket, "loc", T0 + 11);
+    assert!(!media_known(&a, L).1.contains(&"m00000.mp3".to_owned()));
+    a.core.sync2_media_record(P, L, &strs(&["m00000.mp3", "new.png"]), &[], false, T0 + 20).unwrap();
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 21);
+        b.sync(&mut bucket, "loc", T0 + 21);
+    }
+    assert_eq!(media_known(&a, L), media_known(&b, L));
+    let (_, now) = media_known(&b, L);
+    assert!(now.contains(&"m00000.mp3".to_owned()) && now.contains(&"new.png".to_owned()));
+    assert_eq!(a.digest(), b.digest());
+}
+
+#[test]
+fn media_known_reports_absent_names_separately() {
+    let a = Device::new("mk");
+    a.core.sync2_media_record(P, "l/media", &strs(&["x.mp3"]), &strs(&["gone.png"]), true, T0).unwrap();
+    let v = a.core.sync2_media_known(P, "l/media").unwrap();
+    assert_eq!(v, json!({"seeded": true, "present": ["x.mp3"], "absent": ["gone.png"]}));
+}

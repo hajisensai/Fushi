@@ -8296,6 +8296,7 @@
   "sync_progress_pending_mines": "Syncing pending cards",
   "sync_progress_preparing": "동기화 준비 중",
   "sync_progress_reading": "독서 데이터 동기화 중",
+  "sync_progress_remote_listing": "Reading the remote file list",
   "sync_progress_statistics": "Syncing statistics and favorites",
   "sync_progress_videos": "동영상 동기화 중",
   "sync_role_locked_by_client": "이미 다른 기기에 연결되어 있습니다. 서버로 호스팅하려면 먼저 연결을 해제하세요.",
