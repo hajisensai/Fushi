@@ -550,6 +550,26 @@ void main() {
       expect(_hits(pms, '/library/streams/9'), hasLength(1));
     });
 
+    test('集的剧海报：有 grandparentThumb 才借剧，否则回落集自身', () {
+      final MediaServerItem withShowThumb = PlexVideoClient.mediaServerItemFrom(
+        PlexApi.parseMetadata(<String, Object?>{
+          ..._episode('ep-1'),
+          'grandparentThumb': '/library/metadata/show-1/thumb/1',
+        })!,
+        MediaServerItemType.episode,
+      );
+      expect(withShowThumb.seriesCoverItemId, 'show-1');
+      expect(withShowThumb.posterItem.id, 'show-1');
+      expect(withShowThumb.posterItem.type, MediaServerItemType.series);
+
+      final MediaServerItem without = PlexVideoClient.mediaServerItemFrom(
+        PlexApi.parseMetadata(_episode('ep-2'))!,
+        MediaServerItemType.episode,
+      );
+      expect(without.seriesCoverItemId, isNull);
+      expect(without.posterItem.id, 'ep-2');
+    });
+
     test('toRemoteVideoInfo：集的标题 / 合集归属 / 封面；非叶子抛', () {
       final PlexVideoClient c = _client(_FakePms());
       final MediaServerItem ep = PlexVideoClient.mediaServerItemFrom(
