@@ -166,9 +166,14 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     for (final SrsLocationEntry e in await location.list(folder))
       if (!e.isFolder) e.name,
   };
+  // 本机有哪些文件：异步列一次目录，不逐个 `existsSync`。两边都有的文件后面没有任何真正挂起的 IO，逐个同步 stat
+  // 会让整轮在微任务里跑完、不回事件循环——上万个媒体时 UI isolate 几秒到几十秒收不到帧和触摸（BUG-3865）。
+  final _SrsLocalMediaIndex localIndex = await _SrsLocalMediaIndex.scan(
+    mediaRoot,
+  );
   Future<void> syncOne(String name) async {
     final File local = File(p.join(mediaRoot.path, name));
-    final bool haveLocal = local.existsSync();
+    final bool haveLocal = await localIndex.has(local, name);
     final bool haveRemote = remote.contains(name);
     if (!haveLocal) {
       final Uint8List? bytes = haveRemote
@@ -182,6 +187,7 @@ Future<SrsMediaSyncReport> srsSyncMedia({
       final File tmp = File('${local.path}.download');
       await tmp.writeAsBytes(bytes, flush: true);
       await tmp.rename(local.path);
+      localIndex.add(name);
       report.downloaded++;
       if (!haveRemote) {
         await put(name, bytes);
@@ -232,4 +238,38 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     });
   }
   return report;
+}
+
+/// 本机媒体目录的一次性文件名索引（一轮媒体同步开头异步列一次目录）。
+///
+/// 名字原样命中就算有；只差大小写命中时（不分大小写的文件系统上可能是同一个文件，分大小写的上不是）对这一个文件
+/// 异步 `exists()` 复核，与原先逐个 stat 的结果相同。
+class _SrsLocalMediaIndex {
+  _SrsLocalMediaIndex._(this._names, this._folded);
+
+  final Set<String> _names;
+  final Set<String> _folded;
+
+  static Future<_SrsLocalMediaIndex> scan(Directory root) async {
+    final Set<String> names = <String>{};
+    if (await root.exists()) {
+      await for (final FileSystemEntity e in root.list(followLinks: false)) {
+        if (e is! Directory) names.add(p.basename(e.path));
+      }
+    }
+    return _SrsLocalMediaIndex._(names, <String>{
+      for (final String n in names) n.toLowerCase(),
+    });
+  }
+
+  Future<bool> has(File local, String name) async {
+    if (_names.contains(name)) return true;
+    if (!_folded.contains(name.toLowerCase())) return false;
+    return local.exists();
+  }
+
+  void add(String name) {
+    _names.add(name);
+    _folded.add(name.toLowerCase());
+  }
 }

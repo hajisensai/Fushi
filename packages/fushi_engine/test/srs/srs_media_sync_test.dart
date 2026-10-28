@@ -252,4 +252,112 @@ void main() {
     await srsSyncOnce(c, loc);
     expect((await media(c, loc, mediaDir('c'))).downloaded, 1);
   });
+
+  test('BUG-3865：媒体对账不在调用方 isolate 上逐个同步 stat 本机文件', () async {
+    final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+    final Directory mediaA = mediaDir('a');
+    final SrsDbStore a = await device('a');
+    // 两边都有的一大批 + 只在本机的一个（该上传）+ 只在位置上的一个（该下载）。
+    const int both = 300;
+    final StringBuffer pictures = StringBuffer();
+    for (int i = 0; i < both; i++) {
+      final String name = 'shared$i.png';
+      writeMedia(mediaA, name, <int>[i % 256]);
+      loc.files['$kSrsMediaFolder/$name'] = Uint8List.fromList(<int>[i % 256]);
+      pictures.write('<img src="$name">');
+    }
+    writeMedia(mediaA, 'localonly.png', <int>[1]);
+    loc.files['$kSrsMediaFolder/remoteonly.png'] = Uint8List.fromList(<int>[2]);
+    pictures.write('<img src="localonly.png"><img src="remoteonly.png">');
+    await addNote(a, '多', pictures.toString());
+
+    final List<String> syncStats = <String>[];
+    final SrsMediaSyncReport r = await IOOverrides.runZoned(
+      () => media(a, loc, mediaA),
+      createFile: (String path) => _StatSpyFile(path, syncStats),
+    );
+    expect(syncStats, isEmpty, reason: '同步 stat 会把整轮对账钉在 UI isolate 的微任务里');
+    expect(r.uploaded, 1);
+    expect(r.downloaded, 1);
+    expect(r.missing, isEmpty);
+    expect(File(p.join(mediaA.path, 'remoteonly.png')).readAsBytesSync(), <int>[
+      2,
+    ]);
+    expect(await loc.get('$kSrsMediaFolder/localonly.png'), <int>[1]);
+  });
 }
+
+/// 记录同步 stat 类调用（`existsSync` / `statSync` / `lengthSync` / `lastModifiedSync`）的 [File] 代理；
+/// 其余成员转给真实文件。用到没转发的成员时直接抛错，免得测试悄悄走了别的路径。
+class _StatSpyFile implements File {
+  _StatSpyFile(String path, this._log) : _real = _realFile(path);
+
+  final File _real;
+  final List<String> _log;
+
+  static File _realFile(String path) =>
+      IOOverrides.runWithIOOverrides(() => File(path), _NoOverrides());
+
+  void _record(String what) => _log.add('$what ${_real.path}');
+
+  @override
+  String get path => _real.path;
+  @override
+  Directory get parent => _real.parent;
+  @override
+  Uri get uri => _real.uri;
+  @override
+  bool get isAbsolute => _real.isAbsolute;
+  @override
+  File get absolute => _real.absolute;
+  @override
+  Future<bool> exists() => _real.exists();
+  @override
+  bool existsSync() {
+    _record('existsSync');
+    return _real.existsSync();
+  }
+
+  @override
+  FileStat statSync() {
+    _record('statSync');
+    return _real.statSync();
+  }
+
+  @override
+  int lengthSync() {
+    _record('lengthSync');
+    return _real.lengthSync();
+  }
+
+  @override
+  DateTime lastModifiedSync() {
+    _record('lastModifiedSync');
+    return _real.lastModifiedSync();
+  }
+
+  @override
+  Future<FileStat> stat() => _real.stat();
+  @override
+  Future<int> length() => _real.length();
+  @override
+  Future<Uint8List> readAsBytes() => _real.readAsBytes();
+  @override
+  Future<File> writeAsBytes(
+    List<int> bytes, {
+    FileMode mode = FileMode.write,
+    bool flush = false,
+  }) => _real.writeAsBytes(bytes, mode: mode, flush: flush);
+  @override
+  Future<File> rename(String newPath) => _real.rename(newPath);
+  @override
+  Future<FileSystemEntity> delete({bool recursive = false}) =>
+      _real.delete(recursive: recursive);
+
+  @override
+  Object? noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('_StatSpyFile 没转发 ${invocation.memberName}');
+}
+
+/// 不覆盖任何东西的 [IOOverrides]：在代理里造真实 [File] 时跳出外层的 `createFile`。
+final class _NoOverrides extends IOOverrides {}

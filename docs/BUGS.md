@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3468 条。点号进各自文件。
+> 共 3469 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3865](bugs/BUG-3865-srs-media-sync-sync-stat-freezes-ui.md) | ✅ | ✅ | 复习同步「同步卡片媒体」阶段逐个同步 stat 本机文件，UI 卡死到 ANR |
 | [BUG-3864](bugs/BUG-3864-srs-review-space-dead-on-reveal.md) | 🚧 | 🚧 | 复习页空格翻到答案面后键盘失灵（Windows，未复现） |
 | [BUG-3863](bugs/BUG-3863-srs-auto-reposition-freeze.md) | ✅ | ✅ | 制卡后自动重排卡死白屏、同步也卡 |
 | [BUG-3862](bugs/BUG-3862-srs-profile-link-silent-keep.md) | ✅ | ✅ | 多台设备同名 profile 静默不关联、冲突只闪 toast |
