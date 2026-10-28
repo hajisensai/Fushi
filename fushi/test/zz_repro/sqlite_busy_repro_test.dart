@@ -13,6 +13,21 @@ const int kReps = int.fromEnvironment('REPS', defaultValue: 300);
 
 Directory _tmp(String p) => Directory.systemTemp.createTempSync(p);
 
+String _full(Object e) {
+  Object inner = e;
+  try {
+    final dynamic d = e;
+    inner = d.remoteCause as Object? ?? e;
+  } on Object {
+    inner = e;
+  }
+  if (inner is s3.SqliteException) {
+    return 'ext=${inner.extendedResultCode} op=${inner.operation} '
+        'stmt=${inner.causingStatement} msg=${inner.message} expl=${inner.explanation}';
+  }
+  return inner.toString().replaceAll('\n', ' | ');
+}
+
 String _describe(Object e) {
   if (e is s3.SqliteException) {
     return 'SqliteException ext=${e.extendedResultCode} '
@@ -37,6 +52,8 @@ class _Tally {
       ok++;
       if (ms > maxOkMs) maxOkMs = ms;
     } else {
+      // ignore: avoid_print
+      print('REPRO-ERR[$name] ms=$ms ${_full(error)}');
       final String k = _describe(error);
       errors[k] = (errors[k] ?? 0) + 1;
       errorMs.add(ms);

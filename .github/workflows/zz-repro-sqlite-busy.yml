@@ -26,24 +26,7 @@ jobs:
       run: |
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
-    - name: Repro (plain flutter test)
+    - name: V1 only, x3000, full errors
       continue-on-error: true
       working-directory: fushi
-      run: flutter test --no-pub test/zz_repro/sqlite_busy_repro_test.dart --dart-define=REPS=400 --reporter expanded > /tmp/plain.txt 2>&1; grep -E "REPRO|tests passed|tests failed" /tmp/plain.txt
-    - name: Repro (faster-testing, repro + anki suite)
-      continue-on-error: true
-      working-directory: fushi
-      run: |
-        flutter test --no-pub --experimental-faster-testing --concurrency=1 test/zz_repro/sqlite_busy_repro_test.dart test/anki/anki_settings_drift_store_test.dart --dart-define=REPS=400 --reporter expanded > /tmp/fast.txt 2>&1 || true
-        grep -E "REPRO|tests passed|tests failed|\[E\]" /tmp/fast.txt
-        grep -n -B2 -A40 "\[E\]" /tmp/fast.txt | head -200
-    - name: Loop anki suite alone (faster-testing x15, plain x15)
-      continue-on-error: true
-      working-directory: fushi
-      run: |
-        for i in $(seq 1 15); do
-          flutter test --no-pub --experimental-faster-testing --concurrency=1 test/anki/anki_settings_drift_store_test.dart --reporter expanded > /tmp/a$i.txt 2>&1 && echo "fast#$i pass" || { echo "fast#$i FAIL"; grep -n -A30 "\[E\]" /tmp/a$i.txt | head -60; }
-        done
-        for i in $(seq 1 15); do
-          flutter test --no-pub test/anki/anki_settings_drift_store_test.dart --reporter expanded > /tmp/b$i.txt 2>&1 && echo "plain#$i pass" || { echo "plain#$i FAIL"; grep -n -A30 "\[E\]" /tmp/b$i.txt | head -60; }
-        done
+      run: flutter test --no-pub test/zz_repro/sqlite_busy_repro_test.dart --plain-name "V1 " --dart-define=REPS=3000 --reporter expanded > /tmp/v1.txt 2>&1; grep -E "REPRO" /tmp/v1.txt | cut -c1-1500
