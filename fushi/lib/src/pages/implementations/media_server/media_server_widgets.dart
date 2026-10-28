@@ -767,7 +767,10 @@ class MediaServerLibraryCollage extends StatelessWidget {
         <(MediaServerItem, ImageProvider)>[];
     for (final MediaServerItem item in items) {
       if (posters.length >= kMediaServerLibraryCollageCount) break;
-      final ImageProvider? provider = mediaServerCoverImage(browser, item);
+      final ImageProvider? provider = mediaServerCoverImage(
+        browser,
+        item.coverItem,
+      );
       if (provider != null) posters.add((item, provider));
     }
     if (posters.isEmpty) return ShelfCoverPlaceholder(icon: placeholderIcon);

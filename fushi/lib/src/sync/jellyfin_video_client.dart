@@ -1898,6 +1898,25 @@ class JellyfinApi {
     }
   }
 
+  /// 手动标记已看 / 未看：`POST /Users/{uid}/PlayedItems/{id}` 标已看，`DELETE`
+  /// 取消。与播放上报无关（不写活动日志里的「播放已停止」）。非 2xx 抛
+  /// [JellyfinApiException]。
+  Future<void> setPlayed({
+    required String userId,
+    required String itemId,
+    required bool played,
+  }) async {
+    final String path = '/Users/$userId/PlayedItems/$itemId';
+    final http.Response res =
+        await (played
+                ? _client.post(_uri(path), headers: _headers)
+                : _client.delete(_uri(path), headers: _headers))
+            .timeout(kRequestTimeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw JellyfinApiException.fromResponse(res, path);
+    }
+  }
+
   /// 停止播放上报（POST /Sessions/Playing/Stopped）。
   ///
   /// **只在真正停止播放时发**。服务器对它有额外副作用：接近片尾时把条目标记为
@@ -2348,6 +2367,7 @@ class JellyfinVideoClient
         RemoteVideoDetailFetch,
         RemoteVideoPlaybackStop,
         RemoteVideoPlaybackSession,
+        RemoteVideoPlayedMark,
         RemoteVideoQualityLimit,
         RemoteVideoCollectionIsWork,
         RemoteVideoStreamVariants,
@@ -2571,6 +2591,13 @@ class JellyfinVideoClient
     );
   }
 
+  /// 单集所属剧的封面 URL（[MediaServerItem.coverItem]：服务器报了剧海报才给，
+  /// 否则 null）。剧 / 合集卡片用它代替单集截图。
+  String? seriesCoverUrl(MediaServerItem item) {
+    final MediaServerItem cover = item.coverItem;
+    return identical(cover, item) ? null : coverUrl(cover);
+  }
+
   RemoteVideoInfo _remoteVideoInfoFor(
     MediaServerItem item, {
     int? sizeBytes,
@@ -2584,10 +2611,19 @@ class JellyfinVideoClient
     durationMs: item.durationMs,
     hasCover: item.hasCover,
     coverUrl: coverUrl(item),
+    seriesCoverUrl: seriesCoverUrl(item),
+    completedAt: completedAtOf(item),
     positionMs: item.positionMs,
     positionUpdatedAtMs: item.lastPlayedAtMs,
     collection: _collectionOf(item),
   );
+
+  /// 服务器上的「已播放」→ [RemoteVideoInfo.completedAt]（库页菜单标签与系列
+  /// 「已看 x/N」据此）。时刻取服务器的 `UserData.LastPlayedDate`：Jellyfin / Emby
+  /// 标记已播放（手动 PlayedItems 或播完）时都会盖这个时刻；已播放却没有时刻的
+  /// 只剩外部导入的旧数据，按「看完时刻未知」= null，不编造时刻。
+  static int? completedAtOf(MediaServerItem item) =>
+      item.played && item.lastPlayedAtMs > 0 ? item.lastPlayedAtMs : null;
 
   // ── MediaServerBrowser：JellyfinItem → MediaServerItem 纯函数投影 ─────────
 
@@ -3291,6 +3327,10 @@ class JellyfinVideoClient
     }
     return out;
   }
+
+  @override
+  Future<void> setRemoteVideoPlayed(String id, {required bool played}) =>
+      api.setPlayed(userId: userId, itemId: id, played: played);
 
   /// [RemoteVideoDetailFetch]：打一次 `/Items/{id}` 把清单里省掉的重字段
   /// （MediaSources → 文件大小 / 精确文本字幕轨 / 字幕文件名）补齐。

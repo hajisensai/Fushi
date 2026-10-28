@@ -3263,6 +3263,73 @@ mixin _FushiDbVideoDomain
         ),
       );
 
+  /// 手动「标记已看 / 未看」的行级部分：写 [VideoBooks.completedAt]（null = 取消
+  /// 已看）并把 [VideoBooks.lastPositionMs] 归零，一个事务。
+  ///
+  /// 位置必须一起收：已打勾但断点停在中途会被判成「重看到一半」
+  /// （`CollectionMemberProgress.isRewatching`），「下一集」不推进；取消已看时位置
+  /// 若还在片尾区也仍会被算成看完。已看过的再标已看保留原完成时刻。统计与最近
+  /// 播放时刻不动（完整重置走 [clearVideoBookWatchProgress]）。
+  ///
+  /// 互联 LWW 镜像键（位置 / 看完标记的 `_at_` 戳）由仓库层
+  /// `VideoBookRepository.setWatched` 在同一事务里盖，这里只管行。返回
+  /// completedAt 实际变了的条数与写后的行（不存在的 uid 不在其中）。
+  Future<({int changed, List<VideoBookRow> rows})> setVideoBooksWatched(
+    List<String> bookUids,
+    DateTime? completedAt,
+  ) {
+    if (bookUids.isEmpty) {
+      return Future<({int changed, List<VideoBookRow> rows})>.value((
+        changed: 0,
+        rows: const <VideoBookRow>[],
+      ));
+    }
+    return transaction(() async {
+      final int changed;
+      if (completedAt == null) {
+        changed =
+            await (update(videoBooks)..where(
+                  (t) => t.bookUid.isIn(bookUids) & t.completedAt.isNotNull(),
+                ))
+                .write(const VideoBooksCompanion(completedAt: Value(null)));
+      } else {
+        changed =
+            await (update(videoBooks)..where(
+                  (t) => t.bookUid.isIn(bookUids) & t.completedAt.isNull(),
+                ))
+                .write(VideoBooksCompanion(completedAt: Value(completedAt)));
+      }
+      await (update(videoBooks)..where((t) => t.bookUid.isIn(bookUids))).write(
+        const VideoBooksCompanion(lastPositionMs: Value(0)),
+      );
+      final List<VideoBookRow> rows = await (select(
+        videoBooks,
+      )..where((t) => t.bookUid.isIn(bookUids))).get();
+      return (changed: changed, rows: rows);
+    });
+  }
+
+  /// 原样写回一行的「看完标记 + 断点」（撤销「标记已看 / 未看」用）。只动这两列；
+  /// 互联镜像键由仓库层 `VideoBookRepository.restoreWatchState` 负责。
+  Future<void> restoreVideoBookWatchState(
+    String bookUid, {
+    required DateTime? completedAt,
+    required int positionMs,
+  }) => (update(videoBooks)..where((t) => t.bookUid.equals(bookUid))).write(
+    VideoBooksCompanion(
+      completedAt: Value<DateTime?>(completedAt),
+      lastPositionMs: Value(positionMs),
+    ),
+  );
+
+  /// 只写 [VideoBooks.completedAt]（互联把对端较新的看完标记落到本行时用）。
+  Future<void> updateVideoBookCompletedAt(
+    String bookUid,
+    DateTime? completedAt,
+  ) => (update(videoBooks)..where((t) => t.bookUid.equals(bookUid))).write(
+    VideoBooksCompanion(completedAt: Value<DateTime?>(completedAt)),
+  );
+
   Future<void> updateVideoBookEpisode(String bookUid, int episodeIndex) =>
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid))).write(
         VideoBooksCompanion(currentEpisode: Value(episodeIndex)),

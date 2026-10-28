@@ -924,9 +924,12 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'video_danmaku_episode/',
   // 视频远端断点/播放偏好三件套族（PositionPrefKeys，fushi_library_host_service.dart）：
   // `<前缀><bookUid>` 值键 + `<前缀>at_<bookUid>` 时间戳键，逐字段 LWW 跨设备同步
-  //（播放偏好同步泛化批：调轴/音轨/副字幕源/副字幕调轴）。
+  //（播放偏好同步泛化批：调轴/音轨/副字幕源/副字幕调轴；看完标记 = 手动标记已看 /
+  // 未看的 LWW 镜像，值是 completedAt 毫秒、0 = 未看完）。
   'video_remote_audio_track_',
   'video_remote_audio_track_at_',
+  'video_remote_completed_',
+  'video_remote_completed_at_',
   'video_remote_delay_',
   'video_remote_delay_at_',
   'video_remote_position_',

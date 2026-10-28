@@ -91,6 +91,11 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/selection/media_selection_controller.dart';
+import 'package:fushi/src/media/selection/selection_gestures.dart';
+import 'package:fushi/src/media/video/video_watched_marks.dart';
+import 'package:fushi/src/sync/remote_video_client.dart'
+    show RemoteVideoPlayedMark;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_lock_dialog.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
@@ -295,6 +300,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 季 tab 控制器：只在 ≥2 节时存在，节数变化（移出成员导致某季清空）时重建。
   TabController? _seasonTabs;
   int _selectedSeason = 0;
+
+  /// 集多选（批量标记已看 / 未看）。只用散格（键 = [CollectionEpisodeSlot.entryKey]），
+  /// 与库页多选同一个状态机：Shift 区间选、全选、可见性约束都现成。
+  final MediaSelectionController _selection = MediaSelectionController();
 
   /// 初始选季只做一次（落在续播那一季，见 [_rebuildSections]）。之后一律尊重
   /// 用户手选的 tab —— 重排 / 移出成员不得把他弹回别的季。
@@ -2521,6 +2530,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           // 多季合集：季分段（浮动胶囊）紧贴标题行、在集列表之上——用户一进详情页
           // 就看得见分季。
           if (_hasSeasonTabs) _buildSeasonTabs(),
+          // 多选入口：选集后批量标记已看 / 未看（底栏见 [_buildSelectionBar]）。
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+              child: FushiTextButton(
+                key: const ValueKey<String>('collection-select-toggle'),
+                onPressed: _toggleSelecting,
+                child: Text(
+                  _selecting ? t.dialog_cancel : t.collection_select_episodes,
+                ),
+              ),
+            ),
+          ),
           SizedBox(height: tokens.spacing.card),
           // hayase 式宽列表卡（TODO-2491 用户拍板）：每集一张横向卡（16:9 缩略图 +
           // 「N. 集名」+ 集简介 + 观看进度），**默认全量可见、不再折叠**；宽屏两列。
@@ -2568,6 +2591,18 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 全序落盘。
   Widget _buildEpisodeGrid() {
     final List<CollectionEpisodeSlot> visible = _visibleSlots;
+    // 区间选 / 全选按可见顺序（本季）；顺序变了锚点作废，底栏计数补一帧。
+    if (_selection.setVisibleOrder(
+          loose: <String>[
+            for (final CollectionEpisodeSlot s in visible) s.entryKey,
+          ],
+          collections: const <int>[],
+        ) &&
+        _selecting) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         const double spacing = 12;
@@ -2584,15 +2619,38 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           reordering: _reordering,
           keyForIndex: (int i) =>
               ValueKey<String>('collection-episode-row-${visible[i].entryKey}'),
-          onReorder: _onReorder,
-          onActivateItem: (int i) => _openSlot(visible[i]),
+          // 多选态不重排（拖动只会误操作）；点击 = 勾选 / 取消勾选。
+          onReorder: _selecting ? (int from, int to) {} : _onReorder,
+          onActivateItem: (int i) {
+            if (_selecting) {
+              _tapSelect(visible[i]);
+              return;
+            }
+            // 桌面 Ctrl（macOS ⌘）/ Shift 点击直接进多选并选中该集。
+            if (selectionEntryModifierPressed(context)) {
+              setState(
+                () => _selection.enterWith(
+                  SelectionSlot.loose(visible[i].entryKey),
+                ),
+              );
+              return;
+            }
+            _openSlot(visible[i]);
+          },
           onContextMenu: (int i, Offset globalPosition) =>
               _showEpisodeMenu(visible[i], globalPosition),
           // 2026-10 动效重做：集卡首屏错峰进场（窗口在页级
           // [FushiEntranceScope]，换季时重开）。只包装卡，不改网格几何。
           itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
             index: i,
-            child: _buildEpisodeCard(context, visible[i], i),
+            child: _selecting
+                ? _withSelectionOverlay(
+                    _buildEpisodeCard(context, visible[i], i),
+                    selected: _selection.isSelected(
+                      SelectionSlot.loose(visible[i].entryKey),
+                    ),
+                  )
+                : _buildEpisodeCard(context, visible[i], i),
           ),
         );
       },
@@ -2774,6 +2832,37 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     group: DialogActionGroup.organize,
                     onPressed: () => pick(_EpisodeMenuAction.openFileLocation),
                   ),
+                // 标记已看 / 未看：本地集写库，媒体服务器的远端集同步到服务器；其它远端
+                // 源没有这个协议（[CollectionRemoteContext.playedMark] 为 null）就不出。
+                if (_canMarkWatched(episode)) ...<DialogListAction>[
+                  DialogListAction(
+                    label: episode.completed
+                        ? t.video_mark_unwatched
+                        : t.video_mark_watched,
+                    icon: episode.completed
+                        ? FushiIcons.visibilityOff
+                        : FushiIcons.check,
+                    group: DialogActionGroup.progress,
+                    onPressed: () => pick(
+                      episode.completed
+                          ? _EpisodeMenuAction.markUnwatched
+                          : _EpisodeMenuAction.markWatched,
+                    ),
+                  ),
+                  DialogListAction(
+                    label: t.video_mark_watched_through,
+                    icon: FushiIcons.checklist,
+                    group: DialogActionGroup.progress,
+                    onPressed: () =>
+                        pick(_EpisodeMenuAction.markWatchedThrough),
+                  ),
+                ],
+                DialogListAction(
+                  label: t.collection_select_episodes,
+                  icon: FushiIcons.selectAll,
+                  group: DialogActionGroup.organize,
+                  onPressed: () => pick(_EpisodeMenuAction.select),
+                ),
                 // v95：完整技术规格（音轨/字幕轨在集卡上放不下，只能进弹窗）。
                 // 仅本地文件有——远端占位集探不了。
                 if (episode.local != null && widget.videoSpecs != null)
@@ -2844,6 +2933,22 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         if (!deleted || !mounted) return;
         widget.onChanged();
         await _reload();
+      case _EpisodeMenuAction.markWatched:
+        await _markEpisodes(<CollectionEpisodeSlot>[episode], watched: true);
+      case _EpisodeMenuAction.markUnwatched:
+        await _markEpisodes(<CollectionEpisodeSlot>[episode], watched: false);
+      case _EpisodeMenuAction.markWatchedThrough:
+        await _markEpisodes(
+          itemsThrough(
+            _visibleSlots,
+            _visibleSlots.indexOf(episode),
+          ).where(_canMarkWatched).toList(),
+          watched: true,
+        );
+      case _EpisodeMenuAction.select:
+        setState(
+          () => _selection.enterWith(SelectionSlot.loose(episode.entryKey)),
+        );
       case _EpisodeMenuAction.download:
         _openDownloadDialog(episodeNumber: _episodeNumberOf(episode));
       case _EpisodeMenuAction.openFileLocation:
@@ -2859,6 +2964,186 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case null:
         break;
     }
+  }
+
+  /// 这一集能不能手动标记：本地行总是可以；纯远端集要来源支持（媒体服务器）。
+  bool _canMarkWatched(CollectionEpisodeSlot episode) =>
+      episode.local != null || widget.remote?.playedMark != null;
+
+  /// 批量标记已看 / 未看，一次 [setVideosWatched]：本地行（含本地入库的媒体服务器
+  /// 条目，顺带回写服务器）写库并盖同步戳；纯远端集与本地集在当前来源上的镜像经
+  /// 来源的「已播放」协议标到服务器（同一条目只发一次）。之后重读本页与库页；
+  /// 服务器失败只提示条数，并如实区分「本地已更新」与「什么都没改」。
+  Future<void> _markEpisodes(
+    List<CollectionEpisodeSlot> episodes, {
+    required bool watched,
+  }) async {
+    if (episodes.isEmpty) return;
+    final RemoteVideoPlayedMark? marker = widget.remote?.playedMark;
+    final List<String> localUids = <String>[
+      for (final CollectionEpisodeSlot e in episodes)
+        if (e.local != null) e.local!.bookUid,
+    ];
+    final List<String> remoteIds = <String>[
+      for (final CollectionEpisodeSlot e in episodes)
+        if (e.local == null && e.remote != null)
+          e.remote!.id
+        else if (marker != null && e.remoteMirror != null)
+          e.remoteMirror!.id,
+    ];
+    final WatchedMarkResult result;
+    try {
+      result = await setVideosWatched(
+        db: widget.database,
+        watched: watched,
+        localUids: localUids,
+        remoteIds: remoteIds,
+        remoteMarker: marker,
+      );
+    } catch (e, stack) {
+      // 服务器失败在 setVideosWatched 内部计数；走到这里的是本地写库失败。
+      ErrorLogService.instance.log('CollectionDetail.markWatched', e, stack);
+      FushiToast.show(msg: t.video_mark_failed, severity: ToastSeverity.error);
+      return;
+    }
+    if (remoteIds.isNotEmpty || result.remoteChanged > 0) {
+      widget.remote?.onPlayedMarked?.call();
+    }
+    if (!mounted) return;
+    widget.onChanged();
+    await _reload();
+    if (!mounted) return;
+    FushiToast.show(
+      msg: watchedMarkFeedback(result, watched: watched),
+      severity: result.hasFailures
+          ? ToastSeverity.error
+          : ToastSeverity.success,
+    );
+  }
+
+  bool get _selecting => _selection.active;
+
+  void _exitSelection() => setState(_selection.exit);
+
+  void _toggleSelecting() => setState(_selection.toggleMode);
+
+  void _tapSelect(CollectionEpisodeSlot episode) => setState(
+    () => _selection.applyTap(
+      SelectionSlot.loose(episode.entryKey),
+      selectionTapKind(),
+    ),
+  );
+
+  void _selectAllInSeason() => setState(
+    () => _selection.selectAll(
+      loose: <String>[
+        for (final CollectionEpisodeSlot s in _visibleSlots) s.entryKey,
+      ],
+      collections: const <int>[],
+    ),
+  );
+
+  Future<void> _markSelected({required bool watched}) async {
+    final Set<String> keys = _selection.looseKeys;
+    final List<CollectionEpisodeSlot> targets = <CollectionEpisodeSlot>[
+      for (final CollectionEpisodeSlot s in _visibleSlots)
+        if (keys.contains(s.entryKey) && _canMarkWatched(s)) s,
+    ];
+    setState(_selection.exit);
+    await _markEpisodes(targets, watched: watched);
+  }
+
+  /// 多选态底栏：已选数 + 全选本季 + 标记已看 / 未看 + 取消。
+  Widget? _buildSelectionBar() {
+    if (!_selecting) return null;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerHigh,
+      elevation: 3,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
+            children: <Widget>[
+              Text(
+                t.collection_selected_count(n: _selection.length),
+                key: const ValueKey<String>('collection-selection-count'),
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  FushiTextButton(
+                    onPressed: _selectAllInSeason,
+                    child: Text(t.collection_select_all_in_season),
+                  ),
+                  FushiTextButton(
+                    key: const ValueKey<String>(
+                      'collection-selection-unwatched',
+                    ),
+                    onPressed: _selection.isEmpty
+                        ? null
+                        : () => unawaited(_markSelected(watched: false)),
+                    child: Text(t.video_mark_unwatched),
+                  ),
+                  FushiFilledButton(
+                    key: const ValueKey<String>('collection-selection-watched'),
+                    onPressed: _selection.isEmpty
+                        ? null
+                        : () => unawaited(_markSelected(watched: true)),
+                    child: Text(t.video_mark_watched),
+                  ),
+                  FushiTextButton(
+                    onPressed: _exitSelection,
+                    child: Text(t.dialog_cancel),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 多选态集卡的选中描边 + 右上角勾选标。整层 IgnorePointer：手势仍归网格。
+  Widget _withSelectionOverlay(Widget card, {required bool selected}) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Stack(
+      children: <Widget>[
+        card,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: FushiBorderRadius.card,
+                border: selected
+                    ? Border.all(color: scheme.primary, width: 2)
+                    : null,
+                color: selected ? scheme.primary.withValues(alpha: 0.08) : null,
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 8,
+          right: 8,
+          child: IgnorePointer(
+            child: FushiIcon(
+              selected ? FushiIcons.check : FushiIcons.radioUnchecked,
+              size: 22,
+              color: selected ? scheme.primary : scheme.outline,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   /// 在系统文件管理器里定位并选中这一集的原始文件。候选表与视频库卡同源
@@ -3317,6 +3602,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       // [MediaDetailSkeleton] / SafeArea）。
       extendBodyBehindAppBar: true,
       appBar: _buildAppBar(),
+      bottomNavigationBar: _buildSelectionBar(),
       // 加载骨架 → 正文 / 空态交叉淡入（时长走动效令牌，墨水屏 / 减弱动效归零）。
       body: PopScope(
         canPop: !_reordering,
@@ -3365,6 +3651,10 @@ enum _EpisodeMenuAction {
   resumeDownload,
   cancelDownload,
   deleteLocalCopy,
+  markWatched,
+  markUnwatched,
+  markWatchedThrough,
+  select,
   download,
   openFileLocation,
   mediaInfo,

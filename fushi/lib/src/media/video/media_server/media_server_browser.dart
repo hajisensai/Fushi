@@ -334,6 +334,7 @@ class MediaServerItem {
   /// 容器的未看子项数（`UserData.UnplayedItemCount`）。
   final int? unplayedChildCount;
   final bool hasCover;
+
   final bool hasBackdrop;
 
   /// 横版缩略图 / logo 有无（Jellyfin `ImageTags.Thumb` / `ImageTags.Logo`）；

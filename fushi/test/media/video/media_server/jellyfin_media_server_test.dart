@@ -1252,6 +1252,114 @@ void main() {
     });
   });
 
+  group('手动标记已看（PlayedItems）', () {
+    test('已看 = POST、未看 = DELETE，路径带用户与条目 id，并带认证头', () async {
+      final _Router r = _Router((_) => _json(<String, Object?>{}));
+      final JellyfinVideoClient c = _client(r.client);
+
+      await c.setRemoteVideoPlayed('ep1', played: true);
+      await c.setRemoteVideoPlayed('ep2', played: false);
+
+      expect(r.seen.map((http.Request q) => q.method), <String>[
+        'POST',
+        'DELETE',
+      ]);
+      expect(r.seen.map((http.Request q) => q.url.path), <String>[
+        '/Users/u1/PlayedItems/ep1',
+        '/Users/u1/PlayedItems/ep2',
+      ]);
+      expect(r.seen.first.headers['Authorization'], contains('Token="tok"'));
+    });
+
+    test('非 2xx 抛 JellyfinApiException（调用方据此计失败）', () async {
+      final _Router r = _Router((_) => _json(<String, Object?>{}, 404));
+      final JellyfinVideoClient c = _client(r.client);
+      expect(
+        () => c.setRemoteVideoPlayed('gone', played: true),
+        throwsA(isA<JellyfinApiException>()),
+      );
+    });
+
+    test('清单里的集带服务器上的「已播放」：completedAt = 服务器的 LastPlayedDate', () {
+      final Map<String, Object?> json = _episode('ep1', season: 1, episode: 1);
+      final Map<String, Object?> userData =
+          json['UserData']! as Map<String, Object?>;
+      userData['Played'] = true;
+      userData['LastPlayedDate'] = '2026-10-20T08:00:00.0000000Z';
+      final RemoteVideoInfo played = _client(
+        _Router((_) => _page(const [])).client,
+      ).infoFromItem(JellyfinApi.parseItem(json));
+      expect(
+        played.completedAt,
+        DateTime.utc(2026, 10, 20, 8).millisecondsSinceEpoch,
+        reason: '用服务器给的时刻，不编造魔数',
+      );
+      userData.remove('LastPlayedDate');
+      final RemoteVideoInfo noDate = _client(
+        _Router((_) => _page(const [])).client,
+      ).infoFromItem(JellyfinApi.parseItem(json));
+      expect(noDate.completedAt, isNull, reason: '时刻未知不编造');
+      final RemoteVideoInfo unplayed = _client(
+        _Router((_) => _page(const [])).client,
+      ).infoFromItem(JellyfinApi.parseItem(_episode('ep2')));
+      expect(unplayed.completedAt, isNull);
+    });
+  });
+
+  group('剧海报（seriesCoverUrl）', () {
+    JellyfinVideoClient client() =>
+        _client(_Router((_) => _page(const [])).client);
+
+    test('单集且剧有 Primary 图 → 指向剧的海报，不是单集截图', () {
+      final Map<String, Object?> json = _episode('ep2', season: 1, episode: 2);
+      json['SeriesId'] = 'series-1';
+      json['SeriesPrimaryImageTag'] = 'ptag';
+      final RemoteVideoInfo info = client().infoFromItem(
+        JellyfinApi.parseItem(json),
+      );
+      expect(info.seriesCoverUrl, contains('/Items/series-1/Images/Primary?'));
+      expect(info.coverUrl, contains('/Items/ep2/Images/Primary?'));
+    });
+
+    test('浏览路径：MediaServerItem 带剧海报旗子，toRemoteVideoInfo 同样给剧海报', () async {
+      final Map<String, Object?> json = _episode('ep5', season: 1, episode: 5);
+      json['SeriesPrimaryImageTag'] = 'ptag';
+      final MediaServerItem item = JellyfinVideoClient.mediaServerItemFrom(
+        JellyfinApi.parseItem(json),
+        MediaServerItemType.episode,
+      );
+      expect(item.coverItem.id, 'series-1');
+      expect(item.seriesId, 'series-1');
+      expect(
+        client().toRemoteVideoInfo(item).seriesCoverUrl,
+        contains('/Items/series-1/Images/Primary?'),
+      );
+
+      final MediaServerItem noPoster = JellyfinVideoClient.mediaServerItemFrom(
+        JellyfinApi.parseItem(_episode('ep6', season: 1, episode: 6)),
+        MediaServerItemType.episode,
+      );
+      expect(identical(noPoster.coverItem, noPoster), isTrue);
+      expect(client().toRemoteVideoInfo(noPoster).seriesCoverUrl, isNull);
+    });
+
+    test('剧没有 Primary 图 / 没有 SeriesId → null（不拼会 404 的地址）', () {
+      final Map<String, Object?> noTag = _episode('ep3', season: 1, episode: 3);
+      noTag['SeriesId'] = 'series-1';
+      expect(
+        client().infoFromItem(JellyfinApi.parseItem(noTag)).seriesCoverUrl,
+        isNull,
+      );
+      final Map<String, Object?> noId = _episode('ep4', season: 1, episode: 4);
+      noId.remove('SeriesId');
+      noId['SeriesPrimaryImageTag'] = 'ptag';
+      expect(
+        client().infoFromItem(JellyfinApi.parseItem(noId)).seriesCoverUrl,
+        isNull,
+      );
+    });
+  });
+
   group('parseItem 新字段', () {
     test(
       'SeriesId / SeasonId / Played / UnplayedItemCount / Backdrop / 详情字段；旧字段不变',
