@@ -55,6 +55,11 @@
 | [BUG-3857](bugs/BUG-3857-collection-long-press-waits-release.md) | ✅ | ✅ | collection-long-press-waits-release |
 | [BUG-3856](bugs/BUG-3856-macos-appdelegate-super-selectors.md) | ✅ | ✅ | macOS 导入时打开访达面板后切到别的 app 再切回来必崩（AppDelegate 对 FlutterAppDelegate 没实现的 NSApplicationDelegate 方法调 super） |
 | [BUG-3855](bugs/BUG-3855-emby-waf-dart-user-agent-404.md) | ✅ | ✅ | 部分 Emby 服务器的 CDN/WAF 前置按 UA 拦 Dart 默认 UA，全站回裸 404，添加服务器与登录必失败 |
+> 共 3459 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3855](bugs/BUG-3855-kavita-pull-ignored-after-push.md) | ✅ | ✅ | Kavita→Fushi 进度拉取失效（时间基线 + 容差吞掉服务器改动） |
 | [BUG-3854](bugs/BUG-3854-ai-cannot-link-works.md) | ✅ | ✅ | 内置 AI 助手怎么都做不到「关联作品」 |
 | [BUG-3853](bugs/BUG-3853-collection-longpress-haptic.md) | ✅ | ✅ | collection-longpress-haptic |
 | [BUG-3852](bugs/BUG-3852-web-browser-tab-strip-caption-row-and-exit.md) | ✅ | ✅ | web-browser-tab-strip-caption-row-and-exit |

@@ -1,8 +1,8 @@
 /// 打开 Kavita 书时本机与服务器进度分叉：问用户保留哪一边。
 ///
 /// 返回 [KavitaSyncAction.adoptServer] / [KavitaSyncAction.pushLocal]；点空白 /
-/// 返回键按「保留本机」处理（不丢本机进度、也不覆盖服务器——`pushLocal` 在调用方
-/// 才会真的推）。
+/// 返回键按 [KavitaSyncAction.none] 处理：本机进度与服务器进度都原样保留，本次不推
+/// 也不拉（下次打开再问）。
 library;
 
 import 'package:material_ui/material_ui.dart';
@@ -42,5 +42,5 @@ Future<KavitaSyncAction> showKavitaProgressConflictDialog(
       ],
     ),
   );
-  return choice ?? KavitaSyncAction.pushLocal;
+  return choice ?? KavitaSyncAction.none;
 }

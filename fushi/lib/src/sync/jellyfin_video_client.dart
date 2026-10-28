@@ -467,6 +467,7 @@ class JellyfinItem {
     this.hasLogoImage = false,
     this.parentThumbItemId,
     this.parentBackdropItemId,
+    this.seriesCoverItemId,
     this.overview,
     this.communityRating,
     this.genres = const <String>[],
@@ -524,6 +525,11 @@ class JellyfinItem {
   /// 拿去请求必 404。「继续观看」横卡在集自身没有横图时回落到它们。
   final String? parentThumbItemId;
   final String? parentBackdropItemId;
+
+  /// 集所属剧的竖版海报所在条目 id（`SeriesId` + `SeriesPrimaryImageTag`，缺时回落
+  /// `ParentPrimaryImageItemId` + `ParentPrimaryImageTag`）。只对 Episode 且服务器
+  /// 确实报了对应 tag 时非 null——没 tag 的 id 拿去取图必 404。
+  final String? seriesCoverItemId;
 
   /// 详情字段（`Overview` / `CommunityRating` / `Genres`）：清单请求不带对应
   /// Fields 时为空，单条目 `/Items/{id}` 全量返回。
@@ -611,6 +617,7 @@ class JellyfinItem {
     hasLogoImage: hasLogoImage,
     parentThumbItemId: parentThumbItemId,
     parentBackdropItemId: parentBackdropItemId,
+    seriesCoverItemId: seriesCoverItemId,
     overview: overview,
     communityRating: communityRating,
     genres: genres,
@@ -2179,6 +2186,9 @@ class JellyfinApi {
     final String? parentThumbTag = json['ParentThumbImageTag'] as String?;
     final List<Object?> parentBackdropTags =
         (json['ParentBackdropImageTags'] as List?) ?? const <Object?>[];
+    final String? seriesCoverItemId = (json['Type'] as String?) == 'Episode'
+        ? _seriesCoverItemIdOf(json)
+        : null;
 
     return JellyfinItem(
       id: (json['Id'] as String?) ?? '',
@@ -2224,6 +2234,7 @@ class JellyfinApi {
       parentBackdropItemId: parentBackdropTags.isEmpty
           ? null
           : json['ParentBackdropItemId'] as String?,
+      seriesCoverItemId: seriesCoverItemId,
       overview: json['Overview'] as String?,
       communityRating: (json['CommunityRating'] as num?)?.toDouble(),
       genres: <String>[
@@ -2233,6 +2244,21 @@ class JellyfinApi {
       mediaSources: mediaSources,
       mediaSourceCount: (json['MediaSourceCount'] as num?)?.toInt(),
     );
+  }
+
+  /// 集的「剧竖版海报」所在条目 id：`SeriesId` 带 `SeriesPrimaryImageTag`，缺时
+  /// 回落 `ParentPrimaryImageItemId` 带 `ParentPrimaryImageTag`；都没有 null。
+  static String? _seriesCoverItemIdOf(Map<String, Object?> json) {
+    String? nonEmpty(Object? v) => v is String && v.isNotEmpty ? v : null;
+    final String? seriesId = nonEmpty(json['SeriesId']);
+    if (seriesId != null && nonEmpty(json['SeriesPrimaryImageTag']) != null) {
+      return seriesId;
+    }
+    final String? parentId = nonEmpty(json['ParentPrimaryImageItemId']);
+    if (parentId != null && nonEmpty(json['ParentPrimaryImageTag']) != null) {
+      return parentId;
+    }
+    return null;
   }
 
   /// `MediaSources[]` 的一项 → DTO：版本名 / 容器 / 大小 / 码率、第一条视频流的
@@ -2650,6 +2676,7 @@ class JellyfinVideoClient
     hasLogo: item.hasLogoImage,
     parentThumbItemId: item.parentThumbItemId,
     parentBackdropItemId: item.parentBackdropItemId,
+    seriesCoverItemId: item.seriesCoverItemId,
     overview: item.overview,
     communityRating: item.communityRating,
     genres: item.genres,

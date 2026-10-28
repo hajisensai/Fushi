@@ -193,6 +193,66 @@ void main() {
       );
     });
 
+    test(
+      'server edit right after our last sync still pulls (page baseline)',
+      () {
+        // 上次一致在第 3 页（本机 10 分钟时推的）；Kavita 网页 30 秒后改到第 8 页。
+        // 时间基线 + 2 分钟容差会判成没动；页号基线必须判 adoptServer。
+        expect(
+          _decide(
+            serverPage: 8,
+            serverAt: 10 * _min + 30 * 1000,
+            localPage: 3,
+            localAt: 10 * _min,
+            lastSync: 10 * _min,
+            syncedPage: 3,
+          ).action,
+          KavitaSyncAction.adoptServer,
+        );
+      },
+    );
+
+    test('page baseline: both left the agreed page -> conflict', () {
+      expect(
+        _decide(
+          serverPage: 8,
+          serverAt: 20 * _min,
+          localPage: 5,
+          localAt: 15 * _min,
+          lastSync: 10 * _min,
+          syncedPage: 3,
+        ).action,
+        KavitaSyncAction.conflict,
+      );
+    });
+
+    test('page baseline: only local left the agreed page -> push', () {
+      expect(
+        _decide(
+          serverPage: 3,
+          serverAt: 10 * _min,
+          localPage: 5,
+          localAt: 11 * _min,
+          lastSync: 10 * _min,
+          syncedPage: 3,
+        ).action,
+        KavitaSyncAction.pushLocal,
+      );
+    });
+
+    test('page baseline: server reset to 0 asks instead of dropping local', () {
+      final KavitaSyncDecision d = _decide(
+        serverPage: 0,
+        serverAt: 20 * _min,
+        localPage: 8,
+        localAt: 10 * _min,
+        lastSync: 10 * _min,
+        syncedPage: 8,
+      );
+      expect(d.action, KavitaSyncAction.conflict);
+      expect(d.preferred, KavitaSyncAction.pushLocal);
+    });
+
     test('finished chapter is the last zero-based page', () {
       expect(isKavitaChapterFinished(page: 11, totalPages: 12), isTrue);
       expect(isKavitaChapterFinished(page: 10, totalPages: 12), isFalse);

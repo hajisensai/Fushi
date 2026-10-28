@@ -537,6 +537,25 @@ SettingsDestination buildServicesDestination() {
                 : t.settings_service_configured,
             body: (SettingsContext c) =>
                 const AudiobookshelfServerSettingsSection(),
+            // 首页「继续」混排是显式 opt-in（默认关，与 Jellyfin 的「在视频库中混排
+            // 显示」同原则）。schema 原生开关：设置搜索 / 控制通道 / 覆盖测试都认得。
+            sections: <SettingsSection>[
+              SettingsSection(
+                id: 'services.audiobookshelf.home',
+                items: <SettingsItem>[
+                  SettingsSwitchItem(
+                    id: 'services.audiobookshelf.show_in_home',
+                    title: t.discovery_audiobookshelf_home_continue_title,
+                    subtitle: t.discovery_audiobookshelf_home_continue_hint,
+                    value: (SettingsContext c) =>
+                        c.appModel.prefsRepo.audiobookshelfShowInHome,
+                    onChanged: (SettingsContext c, bool value) =>
+                        c.appModel.prefsRepo.setAudiobookshelfShowInHome(value),
+                    defaultValue: false,
+                  ),
+                ],
+              ),
+            ],
           ),
           SettingsNavigationItem(
             id: 'services.danmaku.configure',
@@ -637,6 +656,7 @@ SettingsNavigationItem _servicePage({
   required SettingsSubtitleBuilder status,
   required SettingsItemBuilder body,
   List<SettingsBodySearchEntry> entries = const <SettingsBodySearchEntry>[],
+  List<SettingsSection> sections = const <SettingsSection>[],
 }) => SettingsNavigationItem(
   id: id,
   title: title,
@@ -645,7 +665,7 @@ SettingsNavigationItem _servicePage({
     id: SettingsDestinationId.services,
     title: title,
     icon: FushiIcons.cloud,
-    sections: const <SettingsSection>[],
+    sections: sections,
     body: body,
     bodySearchEntries: entries,
   ),

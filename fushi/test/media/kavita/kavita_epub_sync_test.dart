@@ -37,11 +37,19 @@ KavitaBookBinding _binding({int? pushedAt, int? pulledAt, int? page}) =>
     );
 
 class _Server {
-  _Server({this.pageNum = 0, this.modifiedAt, this.offline = false});
+  _Server({
+    this.pageNum = 0,
+    this.modifiedAt,
+    this.offline = false,
+    this.infoPages,
+  });
 
   int pageNum;
   int? modifiedAt;
   bool offline;
+
+  /// `Reader/chapter-info` 报的页数；null = 该接口不可用（旧行为：放行）。
+  int? infoPages;
   final List<http.Request> writes = <http.Request>[];
 
   KavitaApi api() => KavitaApi(
@@ -63,6 +71,12 @@ class _Server {
                 isUtc: true,
               ).toIso8601String(),
           }),
+          200,
+        );
+      }
+      if (r.url.path == '/api/Reader/chapter-info' && infoPages != null) {
+        return http.Response(
+          jsonEncode(<String, Object?>{'pages': infoPages}),
           200,
         );
       }
@@ -163,6 +177,31 @@ void main() {
       contains('lastPulledAt'),
     );
     expect(server.pushedPages, isEmpty, reason: 'adopting never writes back');
+    await session!.close();
+  });
+
+  test('section count differs from Kavita page count: no session', () async {
+    final EpubBookRow row = await insertBook(meta: _binding().encode());
+    final _Server server = _Server(
+      pageNum: 7,
+      modifiedAt: _base + 5 * _min,
+      infoPages: 13,
+    );
+    expect(await attach(row, server), isNull);
+    expect(await db.getReaderPosition(row.uid), isNull);
+    expect(server.pushedPages, isEmpty);
+  });
+
+  test('matching page count syncs normally', () async {
+    final EpubBookRow row = await insertBook(meta: _binding().encode());
+    final _Server server = _Server(
+      pageNum: 7,
+      modifiedAt: _base + 5 * _min,
+      infoPages: 12,
+    );
+    final KavitaEpubSyncSession? session = await attach(row, server);
+    expect(session, isNotNull);
+    expect((await db.getReaderPosition(row.uid))!.sectionIndex, 7);
     await session!.close();
   });
 

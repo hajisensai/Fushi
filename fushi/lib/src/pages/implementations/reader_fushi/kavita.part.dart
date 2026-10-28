@@ -7,6 +7,12 @@ extension _ReaderKavitaExtension on _ReaderFushiPageState {
   /// 任何失败只记日志，绝不影响开书。
   Future<void> _attachKavitaSync(FushiDatabase db, EpubBookRow row) async {
     if (!isKavitaBookMetadata(row.sourceMetadata)) return;
+    // 登记「这本书正开在阅读器里」：后台进度对账跳过它，系列页关书后等它的最后
+    // 一次推送（dispose 里 [_releaseKavitaSync] 配对释放）。
+    if (!_kavitaOpenMarked) {
+      _kavitaOpenMarked = true;
+      KavitaOpenBooks.opened(widget.bookKey);
+    }
     try {
       final KavitaEpubSyncSession? session = await KavitaEpubSyncSession.attach(
         db: db,
@@ -15,13 +21,23 @@ extension _ReaderKavitaExtension on _ReaderFushiPageState {
         apiFor: KavitaApiRegistry.instance.apiFor,
         promptConflict:
             (KavitaProgress server, ReaderPositionRow? local) async {
-              if (!mounted || local == null) return KavitaSyncAction.pushLocal;
+              if (!mounted || local == null) return KavitaSyncAction.none;
               return showKavitaProgressConflictDialog(
                 context,
                 localSection: local.sectionIndex,
                 serverSection: server.pageNum,
               );
             },
+        onSectionCountMismatch: (int serverSections, int localSections) {
+          if (!mounted) return;
+          FushiToast.show(
+            msg: t.kavita_sync_section_mismatch(
+              server: '$serverSections',
+              local: '$localSections',
+            ),
+            severity: ToastSeverity.warning,
+          );
+        },
       );
       if (!mounted) {
         unawaited(session?.close());
@@ -30,6 +46,19 @@ extension _ReaderKavitaExtension on _ReaderFushiPageState {
       _kavitaSync = session;
     } on Object catch (e, stack) {
       ErrorLogService.instance.log('ReaderFushi._attachKavitaSync', e, stack);
+    }
+  }
+
+  /// 关书：限时 flush 待推进度并释放登记（dispose 调；不阻塞、内部吞错）。flush 的
+  /// future 交给 [KavitaOpenBooks]，系列页据此等最后一次推送落地再重取进度。
+  void _releaseKavitaSync() {
+    final Future<void>? flush = _kavitaSync?.close();
+    _kavitaSync = null;
+    if (_kavitaOpenMarked) {
+      _kavitaOpenMarked = false;
+      KavitaOpenBooks.closed(widget.bookKey, flush: flush);
+    } else if (flush != null) {
+      unawaited(flush);
     }
   }
 }
