@@ -148,61 +148,38 @@ assert.deepEqual(calls, [], '链接 / onclick 里的图、已拦截、右键、�
     test('原样 = 旧上限（220 / 矮视口 120，视口高于 520 才铺满）', () {
       final SrsPictureLimits tall = srsPictureLimits(
         SrsReviewImageSize.original,
-        wide: true,
         viewport: 800,
-        thumb: 84,
       );
-      expect(tall.maxWidth, isNull);
       expect(tall.maxHeight, 220);
       expect(tall.fillWidth, isTrue);
       expect(tall.maxFillHeight, 800 * kSrsPictureFillMaxViewportFraction);
       final SrsPictureLimits short = srsPictureLimits(
         SrsReviewImageSize.original,
-        wide: true,
         viewport: 500,
-        thumb: 84,
       );
       expect(short.maxHeight, 120);
       expect(short.fillWidth, isFalse);
-      final SrsPictureLimits thumb = srsPictureLimits(
-        SrsReviewImageSize.original,
-        wide: false,
-        viewport: 800,
-        thumb: 84,
-      );
-      expect(thumb.maxWidth, closeTo(84 * 1.5, 1e-9));
-      expect(thumb.maxHeight, closeTo(84 * 1.4, 1e-9));
-      expect(thumb.fillWidth, isFalse);
     });
 
     test('档位越大，上限单调变大；放大档矮视口也铺满', () {
-      for (final bool wide in <bool>[true, false]) {
-        for (final double viewport in <double>[500, 800]) {
-          final List<SrsPictureLimits> l = SrsReviewImageSize.values
-              .map(
-                (SrsReviewImageSize s) => srsPictureLimits(
-                  s,
-                  wide: wide,
-                  viewport: viewport,
-                  thumb: 84,
-                ),
-              )
-              .toList();
-          for (int i = 1; i < l.length; i++) {
-            expect(
-              l[i].maxHeight,
-              greaterThan(l[i - 1].maxHeight),
-              reason: 'wide=$wide viewport=$viewport #$i',
-            );
-            expect(l[i].maxFillHeight, greaterThan(l[i - 1].maxFillHeight));
-          }
+      for (final double viewport in <double>[500, 800]) {
+        final List<SrsPictureLimits> l = SrsReviewImageSize.values
+            .map(
+              (SrsReviewImageSize s) => srsPictureLimits(s, viewport: viewport),
+            )
+            .toList();
+        for (int i = 1; i < l.length; i++) {
+          expect(
+            l[i].maxHeight,
+            greaterThan(l[i - 1].maxHeight),
+            reason: 'viewport=$viewport #$i',
+          );
+          expect(l[i].maxFillHeight, greaterThan(l[i - 1].maxFillHeight));
         }
       }
       final SrsPictureLimits large = srsPictureLimits(
         SrsReviewImageSize.large,
-        wide: true,
         viewport: 500,
-        thumb: 84,
       );
       expect(large.fillWidth, isTrue);
       expect(large.maxHeight, 500 * kSrsReviewLargeImageMaxVh / 100);
