@@ -5307,11 +5307,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         : continueItems.first.hero();
     final Widget? hero = heroData == null
         ? null
-        : _buildHomeContinueHero(heroData);
-    final Widget? subscriptionRow = _buildSubscriptionUpdatesRow(
-      updates,
-      cardWidth,
-    );
+        : _buildHomeContinueHero(heroData, updates);
+    // 横排版有主卡时「已更新未看」在主卡右侧并排模块里，不再重复成行。
+    final bool split =
+        contentWidth >= kVideoHomeHeroSplitMinWidth && updates.isNotEmpty;
+    final Widget? subscriptionRow = split && hero != null
+        ? null
+        : _buildSubscriptionUpdatesRow(updates, cardWidth);
     final Widget? continueRow = _buildContinueRow(
       continueItems.skip(1).toList(growable: false),
       cardWidth,
@@ -5370,7 +5372,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// [FushiContinueHero]（2026-10-28 统一）。剧照（无字背景优先）铺满卡底当海报，
   /// 起始侧竖版作品封面，信息列「继续观看」眉标 + 片名 + 副标题（远端条目前缀
   /// 云图标）+ 进度，行尾「继续 · 第 N 集」与「详情」（只有合集有详情页）。
-  Widget _buildHomeContinueHero(_HomeHeroData hero) {
+  Widget _buildHomeContinueHero(
+    _HomeHeroData hero,
+    List<_HomeSubscriptionItem> updates,
+  ) {
     final VoidCallback? onDetail = hero.onDetail;
     final double? progress = hero.progress;
     final ImageProvider? poster = hero.poster;
@@ -5413,6 +5418,92 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               onPressed: _selectionMode ? null : onDetail,
             ),
       entranceIndex: null,
+      asideMinWidth: kVideoHomeHeroSplitMinWidth,
+      asideFlex: kVideoHomeHeroSplitFlex,
+      aside: updates.isEmpty
+          ? null
+          : FushiContinueAside(
+              title: t.video_home_subscription_updates,
+              items: <FushiContinueQueueItem>[
+                for (final _HomeSubscriptionItem item in updates)
+                  _subscriptionAsideItem(item),
+              ],
+            ),
+    );
+  }
+
+  /// 「已更新未看」并排模块的一行：竖版作品封面、标题、「第 n 集 · 入库日期」，
+  /// 行尾「N 集新」徽标 + 圆形播放钮。
+  FushiContinueQueueItem _subscriptionAsideItem(_HomeSubscriptionItem item) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    final ImageProvider? cover = _collectionPosterProvider(
+      item.collection,
+      item.members,
+      item.target,
+    );
+    void onPlay() =>
+        _openSlot(item.target, playlistCollectionId: item.collection.id);
+    void onMenu() => _showCollectionContextMenu(item.collection);
+    return FushiContinueQueueItem(
+      key: ValueKey<String>(
+        'home_video_subscription_panel_${item.collection.id}',
+      ),
+      focusId: FushiFocusId(
+        'home-video-subscription-panel-${item.collection.id}',
+      ),
+      cover: cover == null
+          ? ShelfCoverPlaceholder(icon: FushiIcons.video)
+          : PortraitCoverImage(
+              image: cover,
+              errorBuilder: (BuildContext _) =>
+                  ShelfCoverPlaceholder(icon: FushiIcons.video),
+            ),
+      title: _workTitle(item.collection),
+      subtitle: <String>[
+        t.home_continue_episode(n: item.episodeNumber),
+        if (item.update.latestUnwatchedImportedAtMs > 0)
+          _formatOverviewDate(
+            DateTime.fromMillisecondsSinceEpoch(
+              item.update.latestUnwatchedImportedAtMs,
+            ),
+          ),
+      ].join(' · '),
+      onTap: _selectionMode ? null : onPlay,
+      onLongPress: _selectionMode ? null : onMenu,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: cs.primaryContainer,
+              borderRadius: const BorderRadius.all(Radius.circular(999)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              child: Text(
+                t.video_home_subscription_new_count(
+                  count: item.update.unwatchedCount,
+                ),
+                style: textTheme.labelMedium?.copyWith(
+                  color: cs.onPrimaryContainer,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          FushiIconButton(
+            icon: FushiIcons.play,
+            tooltip: t.play,
+            size: 18,
+            backgroundColor: cs.secondaryContainer,
+            enabledColor: cs.onSecondaryContainer,
+            enabled: !_selectionMode,
+            onTap: onPlay,
+          ),
+        ],
+      ),
     );
   }
 

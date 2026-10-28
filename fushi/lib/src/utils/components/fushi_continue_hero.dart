@@ -16,10 +16,14 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
-/// 书架 / 漫画书架 / 游戏首页共用的「继续」大卡（2026-10-28 统一）：满宽 tonal
-/// 卡，起始侧封面，中间「眉标 → 标题 → 元信息 → 进度」，行尾 [FushiResumeActions]
-/// （窄卡换到信息列下方占满整行）。整卡点按 = 主按钮，悬停抬升（[FushiHoverLift]）、
-/// 按压下沉与焦点环由 [FushiCard] 提供；进场随页面错峰淡入。
+/// 书架 / 漫画书架 / 游戏 / 视频 / 首页共用的「继续」大卡（2026-10-28 统一）：
+/// tonal 卡，起始侧封面，「眉标 → 标题 → 元信息 → 进度 → 按钮」，背景海报
+/// （剧照 / 模糊封面）。整卡点按 = 主按钮，悬停抬升（[FushiHoverLift]）、按压
+/// 下沉与焦点环由 [FushiCard] 提供；进场随页面错峰淡入。
+///
+/// 给了 [aside]（右侧模块：「已更新未看」/「也在读」/「最近玩过」）且宽度
+/// ≥ [asideMinWidth] 时左右并排（主卡 : 模块 = [asideFlex] : 1，同高），主卡
+/// 变横幅：剧照铺满卡面、起始侧淡出；宽度不够时模块不画，主卡占满整行。
 ///
 /// 整卡是唯一的焦点站点：主按钮只是同一动作的视觉入口，不再单独抢焦点；次按钮
 /// （「详情」）是另一个动作，保留可聚焦。
@@ -46,8 +50,9 @@ class FushiContinueHero extends StatelessWidget {
     this.metaIcon,
     this.backdrop,
     this.backdropAspectRatio,
-    this.queue = const <FushiContinueQueueItem>[],
-    this.queueTitle,
+    this.aside,
+    this.asideMinWidth = 860,
+    this.asideFlex = 1.55,
     super.key,
   });
 
@@ -96,10 +101,14 @@ class FushiContinueHero extends StatelessWidget {
   /// null = 铺满整卡（模糊封面这类没有构图的底纹）。
   final double? backdropAspectRatio;
 
-  /// 宽卡右侧的「也在读 / 最近玩过」队列（最多 3 条）：把宽屏卡片右半边的空白
-  /// 用起来。窄卡、或卡上有行尾剧照（[backdropAspectRatio]）时不画。
-  final List<FushiContinueQueueItem> queue;
-  final String? queueTitle;
+  /// 右侧并排模块（通常是 [FushiContinueAside]）；null = 主卡占满整行。
+  final Widget? aside;
+
+  /// 并排的最小总宽；窄于它时 [aside] 不画。
+  final double asideMinWidth;
+
+  /// 并排时主卡与模块的宽度比（主卡 : 模块 = asideFlex : 1）。
+  final double asideFlex;
 
   /// 第一行元信息前的小图标（视频远端条目的云图标）。
   final IconData? metaIcon;
@@ -107,8 +116,46 @@ class FushiContinueHero extends StatelessWidget {
   /// 错峰进场序号；null = 调用方自己包进场动画。
   final int? entranceIndex;
 
+  /// 并排时两边的高度：随主卡宽按 0.45 换算，夹在 [260, 380]（与视频首页横排版
+  /// 同一口径）。
+  static double splitHeight(double heroWidth) =>
+      (heroWidth * 0.45).clamp(260.0, 380.0);
+
   @override
   Widget build(BuildContext context) {
+    final Widget? side = aside;
+    final int? index = entranceIndex;
+    Widget enter(Widget child, int offset) => index == null && offset == 0
+        ? child
+        : FushiStaggeredEntrance(index: (index ?? 0) + offset, child: child);
+    if (side == null) return enter(_buildCard(context, banner: false), 0);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints outer) {
+        if (outer.maxWidth < asideMinWidth) {
+          return enter(_buildCard(context, banner: false), 0);
+        }
+        final double gap = FushiDesignTokens.of(context).spacing.gap * 1.5;
+        final double heroWidth =
+            (outer.maxWidth - gap) * asideFlex / (asideFlex + 1);
+        return SizedBox(
+          height: splitHeight(heroWidth),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              SizedBox(
+                width: heroWidth,
+                child: enter(_buildCard(context, banner: true), 0),
+              ),
+              SizedBox(width: gap),
+              Expanded(child: enter(side, 1)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCard(BuildContext context, {required bool banner}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
@@ -232,7 +279,13 @@ class FushiContinueHero extends StatelessWidget {
           // 解出卡高，让原比例剧照的宽度正好填满信息列右边的空间：
           //   (h + 上下内边距) × 剧照比 = 卡宽 − 左内边距 − h × 封面比 − 间距 − 信息列
           final double coverHeight;
-          if (!roomy) {
+          if (banner) {
+            // 横幅：卡高已由并排布局定好，封面在其中居中。
+            coverHeight = math.min(
+              roomy ? 176.0 : 102.0,
+              outer.maxHeight - pad.vertical,
+            );
+          } else if (!roomy) {
             coverHeight = 102;
           } else if (stillAspect == null) {
             coverHeight = 176;
@@ -275,9 +328,23 @@ class FushiContinueHero extends StatelessWidget {
               );
 
           Widget layered(Widget body) {
-            final Widget padded = Padding(padding: pad, child: body);
+            final Widget padded = banner
+                ? Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Padding(padding: pad, child: body),
+                  )
+                : Padding(padding: pad, child: body);
             if (poster == null) return padded;
-            final Widget layer = stillAspect == null
+            final Widget layer = banner && stillAspect != null
+                // 横幅：剧照铺满卡面（卡已是横幅比例，裁切很少），起始侧淡出。
+                ? Positioned.fill(
+                    child: fade(
+                      poster,
+                      <double>[0.1, 0.55, 1],
+                      const <double>[0, 0.35, 0.62],
+                    ),
+                  )
+                : stillAspect == null
                 // 模糊封面：整卡淡淡一层底纹，行尾稍浓。
                 ? Positioned.fill(
                     child: fade(
@@ -311,14 +378,12 @@ class FushiContinueHero extends StatelessWidget {
                       },
                     ),
                   );
-            return Stack(children: <Widget>[layer, padded]);
+            return Stack(
+              fit: banner ? StackFit.expand : StackFit.loose,
+              children: <Widget>[layer, padded],
+            );
           }
 
-          final bool showQueue =
-              roomy &&
-              stillAspect == null &&
-              queue.isNotEmpty &&
-              c.maxWidth >= 900;
           if (roomy) {
             // 宽卡：封面 | 信息列（眉标 → 标题 → 元信息 → 进度 → 按钮），右侧整块
             // 留给海报；信息列封顶 520，进度条不被拉成整行长线。
@@ -344,18 +409,6 @@ class FushiContinueHero extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (showQueue) ...<Widget>[
-                    SizedBox(width: gap),
-                    SizedBox(
-                      width: (c.maxWidth * 0.34).clamp(280.0, 400.0),
-                      child: _ContinueQueuePanel(
-                        title: queueTitle,
-                        items: queue.take(3).toList(growable: false),
-                        coverAspectRatio: coverAspectRatio,
-                        accent: accent,
-                      ),
-                    ),
-                  ],
                 ],
               ),
             );
@@ -380,18 +433,14 @@ class FushiContinueHero extends StatelessWidget {
         },
       ),
     );
-    final Widget lifted = FushiHoverLift(
+    return FushiHoverLift(
       scale: 1.01,
       builder: (BuildContext _, bool __) => card,
     );
-    final int? index = entranceIndex;
-    return index == null
-        ? lifted
-        : FushiStaggeredEntrance(index: index, child: lifted);
   }
 }
 
-/// [FushiContinueHero.queue] 的一条。
+/// [FushiContinueAside] 的一行。
 @immutable
 class FushiContinueQueueItem {
   const FushiContinueQueueItem({
@@ -400,6 +449,9 @@ class FushiContinueQueueItem {
     required this.onTap,
     this.subtitle,
     this.progress,
+    this.trailing,
+    this.onLongPress,
+    this.focusId,
     this.key,
   });
 
@@ -409,107 +461,151 @@ class FushiContinueQueueItem {
 
   /// 0..1；null = 不画进度。
   final double? progress;
-  final VoidCallback onTap;
+
+  /// 行尾附件（视频「N 集新」徽标 + 播放钮）。
+  final Widget? trailing;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final FushiFocusId? focusId;
   final Key? key;
 }
 
-/// 继续卡右侧的队列面板：半透明卡面上的小标题 + 至多 3 行（小封面、标题、
-/// 副标题 / M3E 平直进度）。每行自带按压 / 悬停 / 焦点。
-class _ContinueQueuePanel extends StatelessWidget {
-  const _ContinueQueuePanel({
+/// 继续卡并排的右侧模块：圆角 tonal 面板，小标题 + 按面板高度放得下的几行
+/// （1–4 行；每行小竖封面、标题、副标题 / M3E 平直进度、行尾附件）。
+class FushiContinueAside extends StatelessWidget {
+  const FushiContinueAside({
+    required this.title,
     required this.items,
-    required this.coverAspectRatio,
-    required this.accent,
-    this.title,
+    this.coverAspectRatio = 2 / 3,
+    super.key,
   });
 
-  final String? title;
+  final String title;
   final List<FushiContinueQueueItem> items;
+  final double coverAspectRatio;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final bool apple = isGlassDesign(context) && !eink;
+    final Color accent = eink
+        ? cs.onSurface
+        : (apple ? appleColorsOf(context).accent : tokens.surfaces.primary);
+    // 每行 60 高封面 + 上下各 8 内边距；标题行约 28。
+    const double tileExtent = 76;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: tokens.surfaces.group,
+        borderRadius: const BorderRadius.all(Radius.circular(28)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 10),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints c) {
+            final int capacity = c.hasBoundedHeight
+                ? ((c.maxHeight - 28) / tileExtent).floor().clamp(1, 4)
+                : 4;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(
+                    start: 8,
+                    bottom: 6,
+                  ),
+                  child: Text(title, style: tokens.type.sectionLabel),
+                ),
+                for (final FushiContinueQueueItem item in items.take(capacity))
+                  _AsideTile(
+                    item: item,
+                    coverAspectRatio: coverAspectRatio,
+                    accent: accent,
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _AsideTile extends StatelessWidget {
+  const _AsideTile({
+    required this.item,
+    required this.coverAspectRatio,
+    required this.accent,
+  });
+
+  final FushiContinueQueueItem item;
   final double coverAspectRatio;
   final Color accent;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    const double thumbHeight = 48;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: tokens.surfaces.page.withValues(alpha: 0.42),
-        borderRadius: const BorderRadius.all(Radius.circular(20)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            if (title != null)
-              Padding(
-                padding: const EdgeInsetsDirectional.only(start: 8, bottom: 4),
-                child: Text(title!, style: tokens.type.sectionLabel),
-              ),
-            for (final FushiContinueQueueItem item in items)
-              Material(
-                type: MaterialType.transparency,
-                child: InkWell(
-                  key: item.key,
-                  borderRadius: const BorderRadius.all(Radius.circular(12)),
-                  onTap: item.onTap,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    child: Row(
-                      children: <Widget>[
-                        SizedBox(
-                          height: thumbHeight,
-                          width: thumbHeight * coverAspectRatio,
-                          child: ClipRRect(
-                            borderRadius: const BorderRadius.all(
-                              Radius.circular(6),
-                            ),
-                            child: item.cover,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                item.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: tokens.type.listTitle,
-                              ),
-                              if (item.subtitle != null)
-                                Text(
-                                  item.subtitle!,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: tokens.type.metadata,
-                                ),
-                              if (item.progress != null) ...<Widget>[
-                                const SizedBox(height: 6),
-                                FushiLinearProgressIndicator(
-                                  value: item.progress!.clamp(0.0, 1.0),
-                                  minHeight: 3,
-                                  wavy: false,
-                                  color: accent,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    const double coverHeight = 60;
+    return FushiCard(
+      key: item.key,
+      focusId: item.focusId,
+      color: Colors.transparent,
+      borderColor: Colors.transparent,
+      borderRadius: const BorderRadius.all(Radius.circular(16)),
+      padding: const EdgeInsets.all(8),
+      onTap: item.onTap,
+      onLongPress: item.onLongPress,
+      onSecondaryTap: item.onLongPress,
+      child: Row(
+        children: <Widget>[
+          SizedBox(
+            height: coverHeight,
+            width: coverHeight * coverAspectRatio,
+            child: ShelfCoverFrame(child: item.cover),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  item.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-              ),
+                if (item.subtitle != null) ...<Widget>[
+                  const SizedBox(height: 2),
+                  Text(
+                    item.subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: tokens.type.metadata,
+                  ),
+                ],
+                if (item.progress != null) ...<Widget>[
+                  const SizedBox(height: 6),
+                  FushiLinearProgressIndicator(
+                    value: item.progress!.clamp(0.0, 1.0),
+                    minHeight: 3,
+                    wavy: false,
+                    color: accent,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (item.trailing != null) ...<Widget>[
+            const SizedBox(width: 8),
+            item.trailing!,
           ],
-        ),
+        ],
       ),
     );
   }

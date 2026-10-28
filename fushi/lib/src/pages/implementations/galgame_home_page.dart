@@ -817,17 +817,22 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         label: t.game_view_detail,
         onPressed: () => unawaited(_openDetail(game)),
       ),
-      queueTitle: t.game_recently_played,
-      queue: <FushiContinueQueueItem>[
-        for (final GalgameEntry g in recent)
-          if (g.id != game.id)
-            FushiContinueQueueItem(
-              cover: _GameCoverArt(game: g),
-              title: g.displayName,
-              subtitle: g.lastPlayedMs > 0 ? _formatDay(g.lastPlayedMs) : null,
-              onTap: () => unawaited(_launchGame(g)),
-            ),
-      ],
+      aside: FushiContinueAside(
+        title: t.game_recently_played,
+        coverAspectRatio: kShelfGameCaseAspectRatio,
+        items: <FushiContinueQueueItem>[
+          for (final GalgameEntry g in recent)
+            if (g.id != game.id)
+              FushiContinueQueueItem(
+                cover: _GameCoverArt(game: g),
+                title: g.displayName,
+                subtitle: g.lastPlayedMs > 0
+                    ? _formatDay(g.lastPlayedMs)
+                    : null,
+                onTap: () => unawaited(_launchGame(g)),
+              ),
+        ],
+      ),
       entranceIndex: null,
     );
   }

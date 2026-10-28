@@ -1728,32 +1728,42 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       progressLabel: t.book_read_progress(percent: percent),
       actionLabel: t.home_continue,
       onOpen: openHero,
-      queueTitle: t.book_continue_queue,
-      queue: <FushiContinueQueueItem>[
-        for (final MediaItem m in others.take(3))
-          FushiContinueQueueItem(
-            cover: Image(
-              image: mediaSource.getDisplayThumbnailFromMediaItem(
-                appModel: appModel,
-                item: m,
-              ),
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) =>
-                  _coverPlaceholderIcon(Icons.menu_book_outlined),
+      aside: others.isEmpty
+          ? null
+          : FushiContinueAside(
+              title: t.book_continue_queue,
+              items: <FushiContinueQueueItem>[
+                for (final MediaItem m in others.take(3))
+                  FushiContinueQueueItem(
+                    cover: Image(
+                      image: mediaSource.getDisplayThumbnailFromMediaItem(
+                        appModel: appModel,
+                        item: m,
+                      ),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _coverPlaceholderIcon(Icons.menu_book_outlined),
+                    ),
+                    title: mediaSource.getDisplayTitleFromMediaItem(m),
+                    subtitle: t.book_read_progress(
+                      percent: m.duration > 0
+                          ? (m.position / m.duration * 100).round()
+                          : 0,
+                    ),
+                    progress: m.duration > 0 ? m.position / m.duration : null,
+                    onTap: () async {
+                      final MediaSource source = m.getMediaSource(
+                        appModel: appModel,
+                      );
+                      await appModel.openMedia(
+                        ref: ref,
+                        mediaSource: source,
+                        item: m,
+                      );
+                    },
+                  ),
+              ],
             ),
-            title: mediaSource.getDisplayTitleFromMediaItem(m),
-            subtitle: t.book_read_progress(
-              percent: m.duration > 0
-                  ? (m.position / m.duration * 100).round()
-                  : 0,
-            ),
-            progress: m.duration > 0 ? m.position / m.duration : null,
-            onTap: () async {
-              final MediaSource source = m.getMediaSource(appModel: appModel);
-              await appModel.openMedia(ref: ref, mediaSource: source, item: m);
-            },
-          ),
-      ],
     );
   }
 
