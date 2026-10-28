@@ -84,12 +84,14 @@ void main() {
       page = _FakePage();
       runtime = <Map<String, Object?>>[];
       runtimeReply = (_) => null;
-      storage = WebBrowserExtensionStorage(prefs: _MemoryPrefs());
       settingsOpened = 0;
       pickResult = <WebBrowserSubtitleFile>[];
     });
 
     Future<void> pump(WidgetTester tester, {double width = 280}) async {
+      // 存储在测试体的 zone 里建：它的写入队列是已完成的 Future 链，建在 setUp 的真实 zone
+      // 里时回调排进真实微任务队列，fake async 的 pump 冲不到。
+      storage = WebBrowserExtensionStorage(prefs: _MemoryPrefs());
       tester.view.physicalSize = Size(width, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -247,7 +249,8 @@ void main() {
     testWidgets('点行内空白 = 跳到这句', (WidgetTester tester) async {
       await pump(tester);
       final Rect row = tester.getRect(find.text('こんにちは'));
-      await tester.tapAt(Offset(row.right + 40, row.center.dy));
+      // 文字下方的行内留白（不在字上）。
+      await tester.tapAt(Offset(row.center.dx, row.bottom + 6));
       await tester.pump();
       expect(
         page.received.where(
