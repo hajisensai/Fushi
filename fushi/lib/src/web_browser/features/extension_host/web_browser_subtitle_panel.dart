@@ -409,10 +409,10 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                IconButton(
+                FushiIconButton(
                   tooltip: t.floating_dict_close,
-                  icon: const Icon(FushiIcons.close),
-                  onPressed: widget.onClose,
+                  icon: FushiIcons.close,
+                  onTap: widget.onClose,
                 ),
               ],
             ),
@@ -423,21 +423,23 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
               crossAxisAlignment: WrapCrossAlignment.center,
               spacing: 4,
               children: <Widget>[
-                TextButton.icon(
+                FushiTextButton.icon(
                   icon: const Icon(FushiIcons.subtitles),
                   label: Text(trackLabel, overflow: TextOverflow.ellipsis),
                   onPressed: s == null || s.tracks.isEmpty ? null : _pickTrack,
                 ),
-                FushiTooltip(
-                  message: t.video_setting_av_delay,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      IconButton(
-                        icon: const Icon(FushiIcons.remove),
-                        onPressed: s == null ? null : () => _nudgeOffset(-100),
-                      ),
-                      TextButton(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    FushiIconButton(
+                      tooltip:
+                          '${t.video_setting_av_delay} ${_offsetLabel(-100)}',
+                      icon: FushiIcons.remove,
+                      onTap: s == null ? null : () => _nudgeOffset(-100),
+                    ),
+                    FushiTooltip(
+                      message: t.video_setting_av_delay,
+                      child: FushiTextButton(
                         onPressed: s == null ? null : _resetOffset,
                         child: Text(
                           _offsetLabel(s?.offsetMs ?? 0),
@@ -445,12 +447,14 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
                               '${t.video_setting_av_delay} ${_offsetLabel(s?.offsetMs ?? 0)}',
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(FushiIcons.add),
-                        onPressed: s == null ? null : () => _nudgeOffset(100),
-                      ),
-                    ],
-                  ),
+                    ),
+                    FushiIconButton(
+                      tooltip:
+                          '${t.video_setting_av_delay} ${_offsetLabel(100)}',
+                      icon: FushiIcons.add,
+                      onTap: s == null ? null : () => _nudgeOffset(100),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -511,7 +515,7 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          TextButton(
+          FushiTextButton(
             style: TextButton.styleFrom(
               minimumSize: const Size(64, 48),
               foregroundColor: active
