@@ -1704,12 +1704,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     return FushiContinueHero(
       cardKey: const ValueKey<String>('reader_shelf_continue_hero'),
       focusId: const FushiFocusId('reader-shelf-continue-hero'),
-      actionKey: const ValueKey<String>('reader_shelf_continue_hero_button'),
       progressKey: const ValueKey<String>(
         'reader_shelf_continue_hero_progress',
-      ),
-      backdrop: FushiContinueHero.blurredBackdrop(
-        Image(image: coverImage, fit: BoxFit.cover),
       ),
       // 与书架网格同一个光面书皮材质（网格的 Scope 只包 SliverGrid）。
       cover: ShelfCoverMaterialScope(
@@ -1726,44 +1722,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       title: mediaSource.getDisplayTitleFromMediaItem(hero),
       progress: fraction,
       progressLabel: t.book_read_progress(percent: percent),
-      actionLabel: t.home_continue,
       onOpen: openHero,
-      aside: others.isEmpty
-          ? null
-          : FushiContinueAside(
-              title: t.book_continue_queue,
-              items: <FushiContinueQueueItem>[
-                for (final MediaItem m in others.take(3))
-                  FushiContinueQueueItem(
-                    cover: Image(
-                      image: mediaSource.getDisplayThumbnailFromMediaItem(
-                        appModel: appModel,
-                        item: m,
-                      ),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _coverPlaceholderIcon(Icons.menu_book_outlined),
-                    ),
-                    title: mediaSource.getDisplayTitleFromMediaItem(m),
-                    subtitle: t.book_read_progress(
-                      percent: m.duration > 0
-                          ? (m.position / m.duration * 100).round()
-                          : 0,
-                    ),
-                    progress: m.duration > 0 ? m.position / m.duration : null,
-                    onTap: () async {
-                      final MediaSource source = m.getMediaSource(
-                        appModel: appModel,
-                      );
-                      await appModel.openMedia(
-                        ref: ref,
-                        mediaSource: source,
-                        item: m,
-                      );
-                    },
-                  ),
-              ],
-            ),
     );
   }
 

@@ -650,7 +650,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                           SizedBox(height: tokens.spacing.card),
                           FushiStaggeredEntrance(
                             index: 4,
-                            child: _buildHero(context, hero, recent),
+                            child: _buildHero(context, hero),
                           ),
                         ],
                         if (recent.isNotEmpty) ...<Widget>[
@@ -789,11 +789,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   /// 「继续游戏」大卡：与书架 / 漫画书架同一张满宽 [FushiContinueHero]
   /// （2026-10-28 统一）。游戏盒封面自带框；眉标「游玩中 / 继续游戏」，元信息
   /// 最后游玩 + 累计时长；整卡点按 = 启动，次按钮「查看详情」。
-  Widget _buildHero(
-    BuildContext context,
-    GalgameEntry game,
-    List<GalgameEntry> recent,
-  ) {
+  Widget _buildHero(BuildContext context, GalgameEntry game) {
     final bool hasPlayed = game.lastPlayedMs > 0;
     final String statusLabel = game.playStatus == GalgamePlayStatus.playing
         ? t.game_status_playing
@@ -801,7 +797,6 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     return FushiContinueHero(
       cover: _gameCaseFrame(_GameCoverArt(game: game)),
       frameCover: false,
-      backdrop: FushiContinueHero.blurredBackdrop(_GameCoverArt(game: game)),
       coverAspectRatio: kShelfGameCaseAspectRatio,
       eyebrow: statusLabel,
       title: game.displayName,
@@ -810,28 +805,11 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
           '${t.game_stat_last_played}  ${_formatDay(game.lastPlayedMs)}',
         '${t.game_stat_total_time}  ${formatStatTime(game.totalPlaySeconds * 1000)}',
       ],
-      actionLabel: t.game_launch,
       onOpen: () => unawaited(_launchGame(game)),
       secondary: FushiResumeSecondaryAction(
         icon: FushiIcons.info,
         label: t.game_view_detail,
         onPressed: () => unawaited(_openDetail(game)),
-      ),
-      aside: FushiContinueAside(
-        title: t.game_recently_played,
-        coverAspectRatio: kShelfGameCaseAspectRatio,
-        items: <FushiContinueQueueItem>[
-          for (final GalgameEntry g in recent)
-            if (g.id != game.id)
-              FushiContinueQueueItem(
-                cover: _GameCoverArt(game: g),
-                title: g.displayName,
-                subtitle: g.lastPlayedMs > 0
-                    ? _formatDay(g.lastPlayedMs)
-                    : null,
-                onTap: () => unawaited(_launchGame(g)),
-              ),
-        ],
       ),
       entranceIndex: null,
     );

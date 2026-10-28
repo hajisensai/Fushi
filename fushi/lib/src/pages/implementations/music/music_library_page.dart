@@ -208,10 +208,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     return FushiContinueHero(
       cardKey: const ValueKey<String>('music-continue-hero'),
       focusId: const FushiFocusId('music-continue-hero'),
-      actionKey: const ValueKey<String>('music-continue-hero-action'),
       cover: cover,
       coverAspectRatio: 1,
-      backdrop: FushiContinueHero.blurredBackdrop(cover),
       eyebrow: t.music_continue_listening,
       title: album?.title ?? track.title,
       metaLines: <String>[
@@ -221,7 +219,6 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
             (track.artistCredit ?? album!.albumArtistCredit)!,
         ].join(' · '),
       ],
-      actionLabel: t.home_continue,
       onOpen: () => _continueListening(track, snap),
       secondary: album == null
           ? null

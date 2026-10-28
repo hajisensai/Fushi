@@ -9,7 +9,6 @@
 /// 墨水屏的差异也在这里各自收口。
 library;
 
-
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
@@ -710,7 +709,6 @@ class HomeContinueHero extends StatelessWidget {
         : ShelfCoverMaterialScope(material: m, child: cover);
     return FushiContinueHero(
       cardKey: const ValueKey<String>('home-continue-hero'),
-      actionKey: const ValueKey<String>('home-continue-hero-action'),
       progressKey: const ValueKey<String>('home-continue-hero-progress'),
       cover: framedCover,
       coverAspectRatio: landscapeCover
@@ -718,7 +716,6 @@ class HomeContinueHero extends StatelessWidget {
           : (m == ShelfCoverMaterial.gameCase
                 ? kShelfGameCaseAspectRatio
                 : 2 / 3),
-      backdrop: FushiContinueHero.blurredBackdrop(cover),
       eyebrow: eyebrow ?? actionLabel,
       title: title,
       metaLines: <String>[
@@ -726,8 +723,6 @@ class HomeContinueHero extends StatelessWidget {
       ],
       progress: progress,
       progressLabel: progressLabel,
-      actionLabel: actionLabel,
-      actionIcon: actionIcon,
       onOpen: onOpen,
       entranceIndex: null,
     );
