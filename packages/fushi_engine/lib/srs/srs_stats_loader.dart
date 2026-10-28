@@ -110,7 +110,7 @@ Future<SrsStatsBundle> loadSrsStats(
   final int today = dayCtx.dayIndexOf(now);
   final SrsDeckTree tree = await store.deckTree();
 
-  // 前身卡（更改笔记类型 / 旧 Lapis 迁到 Fushi 卡片后隐藏的旧卡）的复习已在缓存刷新时记到继承它历史的
+  // 前身卡（更改笔记类型 / 旧 Lapis 迁到 Fushi 卡片后不再生成的旧卡）的复习已在缓存刷新时记到继承它历史的
   // 可见卡上（投影的归属卡，见 `SrsDbStore._refreshStatProjection`），并按合并历史分类。
   final ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
   history = srsStatsFromProjection(

@@ -12,6 +12,7 @@
 //! 只打开 `srs.db`、它的备份快照副本或自己生成的临时文件；绝不打开主库 `fushi.db`（同一进程里
 //! Drift 那份 SQLite 与这里自带的一份同开一个文件，会在 POSIX 平台上互相清掉文件锁）。
 
+pub(crate) mod caches;
 pub mod ffi;
 pub mod rows;
 mod profile_data;
@@ -67,6 +68,25 @@ impl<'a> Conn<'a> {
             return Err(CLOSED.to_string());
         }
         Ok(Self(guard))
+    }
+}
+
+/// 命令之间一条连接留着的页缓存上限。一条命令里照样能用满 `cache_size`（64 MB：收段后的缓存刷新这类大写事务
+/// 靠它不反复换页，压到 8 MB 实测端到端慢约 20%）；命令结束（守卫放锁）时还超过这个数，就把能丢的页还掉，
+/// 大命令跑完不常驻几十 MB。
+const IDLE_CACHE_BYTES: i32 = 8 * 1024 * 1024;
+
+impl Drop for Conn<'_> {
+    fn drop(&mut self) {
+        let Some(c) = self.0.as_ref() else { return };
+        let (mut used, mut high) = (0, 0);
+        // SAFETY: 句柄属于这条仍持着锁的连接，只读一项统计。
+        let rc = unsafe {
+            rusqlite::ffi::sqlite3_db_status(c.handle(), rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED, &mut used, &mut high, 0)
+        };
+        if rc == rusqlite::ffi::SQLITE_OK && used > IDLE_CACHE_BYTES {
+            let _ = c.release_memory();
+        }
     }
 }
 
@@ -479,34 +499,7 @@ impl SrsCore {
         groups: &[Vec<String>],
     ) -> Result<std::collections::HashMap<String, Vec<(String, Option<i64>)>>, String> {
         let w = self.writer()?;
-        let mut wanted: Vec<&str> = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-        for g in groups {
-            for c in g {
-                if seen.insert(c.as_str()) {
-                    wanted.push(c.as_str());
-                }
-            }
-        }
-        let mut logs: std::collections::HashMap<String, Vec<(String, Option<i64>)>> =
-            std::collections::HashMap::with_capacity(wanted.len());
-        for chunk in wanted.chunks(500) {
-            let marks = vec!["?"; chunk.len()].join(", ");
-            let sql = format!(
-                "SELECT l.card_id, l.json, e.server_time FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})"
-            );
-            let mut stmt = w.prepare_cached(&sql).map_err(|e| e.to_string())?;
-            let mut q = stmt
-                .query(rusqlite::params_from_iter(chunk.iter()))
-                .map_err(|e| e.to_string())?;
-            while let Some(row) = q.next().map_err(|e| e.to_string())? {
-                let card: String = row.get(0).map_err(|e| e.to_string())?;
-                let json: String = row.get(1).map_err(|e| e.to_string())?;
-                let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
-                logs.entry(card).or_default().push((json, st));
-            }
-        }
-        Ok(logs)
+        logs_of(&w, groups)
     }
 
     // ------------------------------------------------------------ 测试 / 诊断
@@ -515,6 +508,18 @@ impl SrsCore {
     /// 产品代码一律走粗粒度命令。
     pub fn debug_query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
         query_rows(&*self.reader()?, sql, params)
+    }
+
+    /// 一次性全库扫描（状态摘要）用的只读连接：页缓存只有 2 MB、调用方用完即关，扫描读过的页不会留在读连接的
+    /// 64 MB 页缓存里（那份缓存留给反复读同一批行的历史类命令）。顺序扫描靠 mmap 与操作系统的文件缓存，小页缓存
+    /// 不慢。与 [SrsCore::read_session] 一样先拿读连接的锁：与 [SrsCore::close] 互斥，库已关闭就报「已关闭」。
+    pub(crate) fn scan_connection(&self) -> Result<(Conn<'_>, Connection), String> {
+        let open = self.reader()?;
+        let conn = Connection::open_with_flags(&self.path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+            .map_err(|e| format!("open scan connection {}: {e}", self.path.display()))?;
+        configure(&conn)?;
+        conn.execute_batch("PRAGMA cache_size = -2048;").map_err(|e| e.to_string())?;
+        Ok((open, conn))
     }
 
     /// 另开一条只读连接、开读事务并先读一次（快照在第一次读时才定下）：返回时快照已定，之后本库的
@@ -539,6 +544,41 @@ impl SrsCore {
         sessions.push(Arc::downgrade(&session));
         Ok(session)
     }
+}
+
+/// 这些组里全部卡的日志原文 + 服务器时刻（[conn] 上一条 JOIN 按块取；写连接看得见 Drift 事务里未提交的行）。
+pub(crate) fn logs_of(
+    conn: &rusqlite::Connection,
+    groups: &[Vec<String>],
+) -> Result<std::collections::HashMap<String, Vec<(String, Option<i64>)>>, String> {
+    let mut wanted: Vec<&str> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for g in groups {
+        for c in g {
+            if seen.insert(c.as_str()) {
+                wanted.push(c.as_str());
+            }
+        }
+    }
+    let mut logs: std::collections::HashMap<String, Vec<(String, Option<i64>)>> =
+        std::collections::HashMap::with_capacity(wanted.len());
+    for chunk in wanted.chunks(500) {
+        let marks = vec!["?"; chunk.len()].join(", ");
+        let sql = format!(
+            "SELECT l.card_id, l.json, e.server_time FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})"
+        );
+        let mut stmt = conn.prepare_cached(&sql).map_err(|e| e.to_string())?;
+        let mut q = stmt
+            .query(rusqlite::params_from_iter(chunk.iter()))
+            .map_err(|e| e.to_string())?;
+        while let Some(row) = q.next().map_err(|e| e.to_string())? {
+            let card: String = row.get(0).map_err(|e| e.to_string())?;
+            let json: String = row.get(1).map_err(|e| e.to_string())?;
+            let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
+            logs.entry(card).or_default().push((json, st));
+        }
+    }
+    Ok(logs)
 }
 
 #[cfg(test)]

@@ -10,7 +10,7 @@ import 'scheduler.dart';
 
 /// 新卡出卡顺序（牌组设置 [SrsFieldKeys.deckNewOrder]）。
 enum SrsNewCardOrder {
-  /// 按卡上的词频名次（笔记类型的词频序字段，见 [SrsNoteTypeView.frequencyField]）升序：常用词先出。
+  /// 按卡上的词频名次（笔记类型的词频序字段，见 [SrsNoteTypeView.freqFieldId]）升序：常用词先出。
   /// 名次随笔记同步，每台设备读到同一个数，出卡顺序一致；没有名次的卡排在后面、按 [position] 的规则。
   frequency('frequency'),
 

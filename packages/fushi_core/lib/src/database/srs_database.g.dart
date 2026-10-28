@@ -4103,7 +4103,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
   /// 原有的（笔记 createdAt, cardId）顺序——老数据出卡顺序不变。
   final int? newPosition;
 
-  /// srs.db schema v8：笔记词频序字段（`SrsNoteTypeView.frequencyField`）解析出的名次，越小越常见；
+  /// srs.db schema v8：笔记词频序字段（内核 caches.rs `frequency_field`）解析出的名次，越小越常见；
   /// NULL = 没有。牌组「新卡顺序 = 按词频」时出卡按它升序，排在 [newPosition] 之前。由笔记派生、
   /// 随笔记刷新，不同步。
   final int? freqRank;

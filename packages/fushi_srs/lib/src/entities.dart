@@ -284,7 +284,8 @@ class SrsNoteTypeView {
   final String? termFieldId;
 
   /// 显式设的词频序字段（[SrsFieldKeys.freqField]，内置类型有代码默认）；null = 没设。
-  /// 实际取哪个字段看 [frequencyField]。
+  /// 实际取哪个字段（显式的还在就用它，否则名为 `FreqSort` 的字段）由缓存刷新的内核决定
+  /// （native/fushi_fsrs/src/store/caches.rs `frequency_field`）。
   final String? freqFieldId;
   final int? deletedAt;
   final String? builtinKey;
@@ -298,20 +299,6 @@ class SrsNoteTypeView {
   final List<SrsTemplateDef> definedTemplates;
 
   bool get isCloze => kind == SrsNoteTypeKind.cloze;
-
-  /// 新卡按词频出卡时读名次的字段：显式设的 [freqFieldId]（字段还在时），否则名为 `FreqSort` 的字段
-  /// （不分大小写——Lapis 及其衍生类型、从 Anki 导入的同类笔记都用这个名字）；都没有 = null。
-  SrsFieldDef? get frequencyField {
-    final String? id = freqFieldId;
-    if (id != null) {
-      final SrsFieldDef? f = fieldById(id);
-      if (f != null) return f;
-    }
-    for (final SrsFieldDef f in fields) {
-      if (f.name.trim().toLowerCase() == 'freqsort') return f;
-    }
-    return null;
-  }
 
   SrsFieldDef? fieldById(String id) {
     for (final SrsFieldDef f in fields) {

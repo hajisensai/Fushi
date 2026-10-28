@@ -127,7 +127,7 @@ void main() {
       expect(n.field(srsFushiCardFieldId(kProfile, 'SentenceTranslation')), '');
       final SrsNoteTypeView fushi = (await a.noteType(a.fushiCardNoteTypeId))!;
       final String newCard = SrsIds.card(note, fushi.templates.single.id, 0);
-      expect((await a.cardRow(oldCard))!.hidden, isTrue);
+      expect(await a.cardRow(oldCard), isNull, reason: '旧卡不再生成，删缓存行；增量与重建同一张表');
       final SrsCardCacheRow c = (await a.cardRow(newCard))!;
       expect(c.hidden, isFalse);
       expect(c.lastLogId, l2.id);

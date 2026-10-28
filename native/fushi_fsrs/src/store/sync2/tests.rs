@@ -816,6 +816,75 @@ fn fushisrs_export_import_merges_without_overwriting() {
     assert!(ids.iter().any(|r| r[0] == "ra") && ids.iter().any(|r| r[0] == "rt"));
 }
 
+/// 流式导出的明文与旧实现（整份攒好再压缩）逐字节相同，旧方式压出的包照样能导入；大包（解压后几十 MB）
+/// 导入后与作者一致；截断的包报错且什么都不改。
+#[test]
+fn fushisrs_streaming_export_import_is_format_compatible_and_handles_large_packages() {
+    use crate::sync2::id::Id;
+    use crate::sync2::vv::OpId;
+    let a = Device::new("xa");
+    let b = Device::new("xb");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck)]);
+    let filler = "日本語の例文。".repeat(1000);
+    for batch in 0..4 {
+        let events: Vec<Value> =
+            (0..250).map(|i| edit("note", &format!("N{batch}-{i}"), "f/s", json!(format!("{filler}{i}")))).collect();
+        a.apply(T0 + batch, events);
+    }
+    a.sync(&mut bucket, "loc", T0 + 10);
+    b.sync(&mut bucket, "loc", T0 + 11);
+    b.apply(T0 + 12, vec![review("rb", "C", T0 + 12, 3, "learn")]);
+    b.sync(&mut bucket, "loc", T0 + 13);
+    a.sync(&mut bucket, "loc", T0 + 14);
+
+    let exported = a.core.sync2_export(P).unwrap();
+    // 旧实现的明文：整份按同一格式写出。
+    let legacy_plain = {
+        let w = a.core.writer().unwrap();
+        let local = super::Local::load(&w, P).unwrap().unwrap();
+        let mut out = crate::sync2::codec::Writer::new();
+        out.raw(b"FSRS2EXP");
+        out.u8(1);
+        local.collection.write(&mut out);
+        let devices: Vec<(Vec<u8>, Option<Vec<u8>>, i64)> = w
+            .prepare("SELECT device, public, applied FROM sync2_devices WHERE profile_uid = ?1 ORDER BY device")
+            .unwrap()
+            .query_map([P], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        out.uv(devices.len() as u64);
+        for (dev, public, applied) in devices {
+            let device = Id(dev.try_into().unwrap());
+            device.write(&mut out);
+            out.bytes(&public.unwrap_or_default());
+            out.uv(applied as u64);
+            for seq in 1..=applied as u64 {
+                out.bytes(&super::load_op(&w, P, &OpId { device, seq }).unwrap().unwrap().encode());
+            }
+        }
+        out.into_vec()
+    };
+    assert!(legacy_plain.len() > 20 * 1024 * 1024, "{}", legacy_plain.len());
+    assert_eq!(crate::zstd_decompress(&exported).unwrap(), legacy_plain);
+
+    let c = Device::new("xc");
+    c.core.sync2_identity(P, T0).unwrap();
+    let before = projection(&c);
+    assert!(c.core.sync2_import(P, &exported[..exported.len() / 2], T0 + 20).is_err());
+    assert_eq!(projection(&c), before);
+    let legacy = ruzstd::encoding::compress_to_vec(&legacy_plain[..], ruzstd::encoding::CompressionLevel::Fastest);
+    let r: Value = serde_json::from_str(&c.core.sync2_import(P, &legacy, T0 + 20).unwrap()).unwrap();
+    assert_eq!(r["pending"], json!(0), "{r}");
+    assert_eq!(projection(&c), projection(&a));
+    let d = Device::new("xd");
+    d.core.sync2_identity(P, T0).unwrap();
+    d.core.sync2_import(P, &exported, T0 + 20).unwrap();
+    assert_eq!(projection(&d), projection(&a));
+}
+
 fn segment_files(bucket: &Bucket, d: &Device) -> usize {
     let dev = d.core.sync2_identity(P, T0).unwrap()["device"].as_str().unwrap().to_owned();
     bucket.0.keys().filter(|k| k.starts_with(&format!("devices/{dev}/seg-"))).count()
@@ -876,6 +945,122 @@ fn a_large_first_commit_uploads_a_handful_of_files() {
     let c = Device::new("bigc");
     c.sync(&mut bucket, "loc", T0 + DAY);
     assert_eq!(projection(&a), projection(&c));
+    assert_eq!(a.digest(), c.digest());
+}
+
+/// 解压后切满的段（压缩后很小）在分层合并眼里是满段：不会每轮被挑出来重新加载、重新压缩估算（重切后段数
+/// 不减，合并最后会作罢，但白做一遍）。
+#[test]
+fn raw_full_segments_are_never_compaction_candidates() {
+    use crate::sync2::id::Id;
+    use crate::sync2::op::{Op, SCHEMA};
+    use crate::sync2::segment::split_ranges;
+    use crate::sync2::hlc::Hlc;
+    use crate::sync2::vv::{OpId, Vv};
+    let dev = Id([4; 16]);
+    let deps = std::sync::Arc::new(Vv::new());
+    let ops: Vec<Op> = (1..=800u64)
+        .map(|seq| Op {
+            id: OpId { device: dev, seq },
+            hlc: Hlc { wall: seq as i64, logical: 0, device: dev },
+            deps: deps.clone(),
+            kind: 9999,
+            schema: SCHEMA,
+            payload: vec![0u8; 100_000].into(),
+            purged: false,
+        })
+        .collect();
+    let segs = split_ranges(&ops);
+    assert!(segs.len() >= 5, "{segs:?}");
+    let plan = super::transport::compaction_plan(&segs);
+    assert!(plan.is_empty(), "{:?}", plan.iter().map(|g| g.segs.clone()).collect::<Vec<_>>());
+}
+
+/// 重复度高的大正文：按解压后体积切成几段（读端一次只解一段），解压后过半的段不再被分层合并重切 / 重传；
+/// 新设备逐段收、结果与发件端一致。
+#[test]
+fn highly_compressible_content_is_cut_by_uncompressed_size_and_not_recompacted() {
+    let a = Device::new("raw");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck)]);
+    let filler = "日本語の例文。".repeat(1000);
+    for batch in 0..8 {
+        let events: Vec<Value> =
+            (0..250).map(|i| edit("note", &format!("N{batch}-{i}"), "f/s", json!(format!("{filler}{i}")))).collect();
+        a.apply(T0 + batch, events);
+    }
+    let mut bucket = Bucket::default();
+    a.sync(&mut bucket, "loc", T0 + DAY);
+    // 2000 × ~21 KB ≈ 42 MB 明文，压缩后不到 1 MB：按解压后 16 MB 上限至少三段。
+    let files: Vec<String> = bucket.0.keys().filter(|k| k.contains("/seg-")).cloned().collect();
+    assert!(files.len() >= 3, "{files:?}");
+    // 分层合并每轮都会看一遍切段点：这些段压缩后很小，若按真实压缩体积记，每轮都会被挑出来重新加载、重新压缩
+    // 估算（再因段数不减而作罢）。
+    let segs: Vec<(u64, u64, u64)> = a
+        .rows("SELECT first, last, bytes FROM sync2_segments ORDER BY first")
+        .iter()
+        .skip(1)
+        .map(|r| (r[0].parse().unwrap(), r[1].parse().unwrap(), r[2].parse().unwrap()))
+        .collect();
+    assert!(segs.len() >= 3, "{segs:?}");
+    let plan = super::transport::compaction_plan(&segs);
+    assert!(plan.is_empty(), "{:?}", plan.iter().map(|g| g.segs.clone()).collect::<Vec<_>>());
+    for _ in 0..3 {
+        a.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    }
+    let again: Vec<String> = bucket.0.keys().filter(|k| k.contains("/seg-")).cloned().collect();
+    assert_eq!(again, files);
+    let c = Device::new("rawc");
+    c.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    assert_eq!(projection(&a), projection(&c));
+    assert_eq!(a.digest(), c.digest());
+}
+
+/// 旧版本只按压缩后体积切段，位置上可能躺着一个解压后几十 MB 的段（不会重切，§7.1 段不可变）。收段端照样收：
+/// 校验走流式（不留操作），再流式按块投递，结果与逐段收的一样。
+#[test]
+fn legacy_oversized_segment_is_streamed_in_and_matches_the_author() {
+    use crate::sync2::segment::{self, Verified, CHAIN_ZERO, SEGMENT_MAX_RAW_BYTES};
+    let a = Device::new("legacy");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck)]);
+    let filler = "日本語の例文。".repeat(1000);
+    for batch in 0..8 {
+        let events: Vec<Value> =
+            (0..250).map(|i| edit("note", &format!("N{batch}-{i}"), "f/s", json!(format!("{filler}{i}")))).collect();
+        a.apply(T0 + batch, events);
+    }
+    let mut bucket = Bucket::default();
+    a.sync(&mut bucket, "loc", T0 + DAY);
+    // 把 A 发出的全部段并成旧版本会切出的那种一整段（同一把设备钥匙签，链与原段一致）。
+    let (collection, signer, public) = {
+        let w = a.core.writer().unwrap();
+        let local = super::Local::load(&w, P).unwrap().unwrap();
+        let public = local.key.public();
+        (local.collection, local.key, public)
+    };
+    let mut paths: Vec<&String> = bucket.0.keys().filter(|k| k.contains("/seg-")).collect();
+    paths.sort();
+    let mut ops = Vec::new();
+    for p in paths {
+        ops.extend(segment::open(&bucket.0[p], &public, None).unwrap().ops);
+    }
+    let raw: u64 = ops.iter().map(|o| o.payload.len() as u64 + 24).sum();
+    assert!(raw > 2 * SEGMENT_MAX_RAW_BYTES, "{raw}");
+    let (_, big) = segment::pack(collection, &ops, CHAIN_ZERO, &signer, None).unwrap();
+    assert!((big.len() as u64) < SEGMENT_MAX_RAW_BYTES / 8, "compressed {}", big.len());
+    let opened = segment::open_verified(&big, &public, None).unwrap();
+    assert!(matches!(opened.verify().unwrap(), Verified::Stream(_)), "an oversized segment must not be kept whole");
+
+    let c = Device::new("legacyc");
+    c.core.sync2_identity(P, T0 + 2 * DAY).unwrap();
+    let heads: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/head-")).map(|(_, v)| v.clone()).collect();
+    c.core.sync2_plan(P, &heads).unwrap();
+    let out: Value = serde_json::from_str(&c.core.sync2_ingest(P, &[big], None, T0 + 2 * DAY).unwrap()).unwrap();
+    assert_eq!(out["errors"], json!([]), "{out}");
+    assert_eq!(out["applied"].as_u64().unwrap(), ops.len() as u64);
+    assert_eq!(projection(&a), projection(&c));
+    c.core.sync2_digest_due(P, T0 + 2 * DAY, Some(0)).unwrap();
     assert_eq!(a.digest(), c.digest());
 }
 
@@ -946,6 +1131,56 @@ fn a_new_device_catches_up_a_long_causally_interleaved_history_in_one_round() {
     assert_eq!(a.state("C"), c.state("C"));
     assert_eq!(a.digest(), c.digest());
     assert!(started.elapsed().as_secs() < 60, "{:?}", started.elapsed());
+}
+
+/// 先只收到依赖别的设备的那一支：等着的操作写进缓冲表（测试里内存预算极小，必然落表），内存里只留链值；
+/// 另一台设备的段下一次调用才到，缓冲表里的按主键读出投递，结果与一次收齐相同。
+#[test]
+fn ops_waiting_on_another_device_spill_to_the_buffer_and_land_later() {
+    let a = Device::new("wa");
+    let b = Device::new("wb");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck)]);
+    for i in 0..40 {
+        let at = T0 + i * 600_000;
+        a.apply(at, vec![edit("note", "N1", "f/x", json!(format!("a{i}"))), review(&format!("ra{i}"), "C", at, 3, "review")]);
+        a.sync(&mut bucket, "loc", at);
+        b.sync(&mut bucket, "loc", at);
+        b.apply(at + 1, vec![edit("note", "N1", "f/x", json!(format!("b{i}"))), review(&format!("rb{i}"), "C", at + 1, 2, "review")]);
+        b.sync(&mut bucket, "loc", at + 1);
+        a.sync(&mut bucket, "loc", at + 1);
+    }
+    let now = T0 + 99 * DAY;
+    let c = Device::new("wc");
+    c.core.sync2_identity(P, now).unwrap();
+    let heads: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/head-")).map(|(_, v)| v.clone()).collect();
+    let plan = c.core.sync2_plan(P, &heads).unwrap();
+    let dev_of = |d: &Device| -> String {
+        let w = d.core.writer().unwrap();
+        super::Local::load(&w, P).unwrap().unwrap().device.text()
+    };
+    let (a_dev, b_dev) = (dev_of(&a), dev_of(&b));
+    let files_of = |dev: &str| -> Vec<Vec<u8>> {
+        plan["fetch"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|f| f["files"].as_array().unwrap().iter())
+            .map(|n| n.as_str().unwrap())
+            .filter(|n| n.contains(dev))
+            .map(|n| bucket.0[n].clone())
+            .collect()
+    };
+    let first: Value = serde_json::from_str(&c.core.sync2_ingest(P, &files_of(&b_dev), None, now).unwrap()).unwrap();
+    assert!(first["pending"].as_i64().unwrap() > 40, "B's ops wait on A: {first}");
+    let second: Value = serde_json::from_str(&c.core.sync2_ingest(P, &files_of(&a_dev), None, now).unwrap()).unwrap();
+    assert_eq!(second["pending"], json!(0), "{second}");
+    assert_eq!(second["errors"], json!([]), "{second}");
+    assert_eq!(projection(&a), projection(&c));
+    assert_eq!(a.state("C"), c.state("C"));
+    c.core.sync2_digest_due(P, now, Some(0)).unwrap();
+    assert_eq!(a.digest(), c.digest());
 }
 
 #[test]
@@ -1768,4 +2003,45 @@ fn media_known_reports_absent_names_separately() {
     a.core.sync2_media_record(P, "l/media", &strs(&["x.mp3"]), &strs(&["gone.png"]), true, T0).unwrap();
     let v = a.core.sync2_media_known(P, "l/media").unwrap();
     assert_eq!(v, json!({"seeded": true, "present": ["x.mp3"], "absent": ["gone.png"]}));
+}
+
+/// 投影改动只以粗粒度摘要交回 Dart（`marks`）：受影响的笔记 / 卡 / 笔记类型 + 修订号增量，不带事件全文。
+/// 规则与 Dart 旧 `_absorbProjection` 逐条解析一致：界面状态类修改记录只推进界面修订号；笔记类型只有影响缓存行
+/// 的键才标脏；牌组 / profile 的非界面状态改动推进 RWKV 修订号；日志只标卡。本机写入与收段同一套。
+#[test]
+fn projection_changes_come_back_as_coarse_marks_not_event_bodies() {
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let mut bucket = Bucket::default();
+    let deck = super::config::default_deck_id(P);
+    let batch = vec![
+        deck_entity(&deck),
+        edit("deck", &deck, "collapsed", json!(true)),
+        edit("deck", &deck, "name", json!("Default")),
+        edit("notetype", "T1", "css", json!(".x{}")),
+        edit("notetype", "T1", "fieldDesc/f1", json!("d")),
+        edit("notetype", "T2", "templates", json!([])),
+        edit("note", "N1", "f/f1", json!("hello")),
+        edit("card", "C1", "newPos", json!(3)),
+        edit("card", "C2", "flag", json!(1)),
+        review("r1", "C3", T0 + 1, 3, "learn"),
+    ];
+    let expect = json!({
+        "notes": ["N1"], "cards": ["C1", "C2", "C3"], "noteTypes": ["T2"],
+        "landed": 10, "content": 7, "view": 2, "rwkv": 2,
+    });
+    let out = a.apply(T0 + 1, batch);
+    assert_eq!(out["marks"], expect, "{out}");
+    assert!(out.get("events").is_none(), "no event bodies cross FFI: {out}");
+    assert_eq!(out["landed"].as_array().unwrap().len(), 10);
+
+    a.sync(&mut bucket, "loc", T0 + 2);
+    let got = b.sync(&mut bucket, "loc", T0 + 2);
+    assert_eq!(got["marks"], expect, "ingest reports the same marks: {got}");
+    assert!(got.get("events").is_none(), "{got}");
+
+    // 什么都没落（重复收同一批）：摘要为空。
+    let again = b.sync(&mut bucket, "loc", T0 + 3);
+    assert_eq!(again["marks"]["landed"], json!(0), "{again}");
+    assert_eq!(again["marks"]["notes"], json!([]), "{again}");
 }
