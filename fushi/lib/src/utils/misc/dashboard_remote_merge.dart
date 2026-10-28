@@ -1,6 +1,7 @@
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 
 /// 新首页仪表盘互联数据混排的纯函数层（「继续/活动也走 hibiki 互联」）。
 ///
@@ -22,7 +23,16 @@ class RemoteContinueCandidate {
     this.percent = 0,
     this.coverUrl,
     this.collectionName,
+    this.coverFetcher,
+    this.sourceLabel,
   });
+
+  /// 本条封面的取图器。null = 用页面级的互联取图器（互联候选的旧行为）；媒体
+  /// 服务器候选自带自己的 client。
+  final RemoteCoverFetcher? coverFetcher;
+
+  /// 来源标注（卡片副标题「· 来源」）。null = 页面级的互联设备名。
+  final String? sourceLabel;
 
   /// 远端条目的媒体种类（BUG-1119：此前是 `bool isVideo` 二元降维，SRT 书会被
   /// 当成 epub、第三种媒体结构上装不下——与 BUG-1111 本地侧同病）。书清单侧是
@@ -254,4 +264,64 @@ List<ActivityEventRow> mergeActivityEvents(
     ..sort((ActivityEventRow a, ActivityEventRow b) =>
         b.timestampMs.compareTo(a.timestampMs));
   return merged.length <= limit ? merged : merged.sublist(0, limit);
+}
+
+/// 媒体服务器（Jellyfin / Emby）进媒体库的条目在首页的两类候选：
+/// - [continueWatching]：有断点（positionMs > 0）且未看完，**每部剧一张**（取最近
+///   播放的那集），本地已有同 uid 的不出。
+/// - [recentlyAdded]：有入库时刻（用户「加入媒体库」的时刻）的，**每部剧一张**，
+///   封面优先剧海报。
+({
+  List<RemoteContinueCandidate> continueWatching,
+  List<RemoteContinueCandidate> recentlyAdded,
+})
+mediaServerDashboardCandidates({
+  required List<RemoteVideoInfo> videos,
+  required Set<String> localVideoUids,
+  RemoteCoverFetcher? coverFetcher,
+  String? sourceLabel,
+}) {
+  final Map<String, RemoteVideoInfo> resumeByGroup =
+      <String, RemoteVideoInfo>{};
+  final Map<String, RemoteVideoInfo> addedByGroup = <String, RemoteVideoInfo>{};
+  for (final RemoteVideoInfo v in videos) {
+    if (localVideoUids.contains(v.id)) continue;
+    final String group = v.collection?.collectionName ?? v.id;
+    if (v.positionMs > 0 && v.completedAt == null) {
+      final RemoteVideoInfo? best = resumeByGroup[group];
+      if (best == null || v.positionUpdatedAtMs > best.positionUpdatedAtMs) {
+        resumeByGroup[group] = v;
+      }
+    }
+    final int importedAt = v.importedAt ?? 0;
+    if (importedAt > 0) {
+      final RemoteVideoInfo? first = addedByGroup[group];
+      // 点开从第一集开始：同一部剧取集序最小的那集。
+      if (first == null ||
+          (v.collection?.sortIndex ?? 0) < (first.collection?.sortIndex ?? 0)) {
+        addedByGroup[group] = v;
+      }
+    }
+  }
+  RemoteContinueCandidate candidate(RemoteVideoInfo v, int recentMs) =>
+      RemoteContinueCandidate(
+        kind: MediaKind.video,
+        id: v.id,
+        title: v.title,
+        recentMs: recentMs,
+        coverUrl: v.seriesCoverUrl ?? v.coverUrl,
+        collectionName: v.collection?.collectionName,
+        coverFetcher: coverFetcher,
+        sourceLabel: sourceLabel,
+      );
+  return (
+    continueWatching: <RemoteContinueCandidate>[
+      for (final RemoteVideoInfo v in resumeByGroup.values)
+        candidate(v, v.positionUpdatedAtMs),
+    ],
+    recentlyAdded: <RemoteContinueCandidate>[
+      for (final RemoteVideoInfo v in addedByGroup.values)
+        candidate(v, v.importedAt ?? 0),
+    ],
+  );
 }

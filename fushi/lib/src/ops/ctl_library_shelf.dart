@@ -32,6 +32,7 @@ import 'package:fushi/src/media/collections/collection_episode_slot.dart'
     show videoCollectionMemberVisibility;
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/video/video_watched_marks.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart'
     show addTagToHost, removeTagFromHost, tagsForMediaRef;
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -897,7 +898,7 @@ class LibraryCtlShelf {
   // ── 读完标记 ─────────────────────────────────────────────────────────
 
   /// 标记 / 取消读完（书架卡「标记已读完」同一列 `EpubBooks.completedAt`；视频写
-  /// [FushiDatabase.markVideoCompleted]——自 BUG-3491 起播放不再自动打勾，这是手动
+  /// [setVideosWatched]——自 BUG-3491 起播放不再自动打勾，这是手动
   /// 标记视频已看的入口之一）。
   Future<Map<String, Object?>> setCompleted(
     LibraryCtlKey key, {
@@ -921,12 +922,13 @@ class LibraryCtlShelf {
         );
       case LibraryCtlStore.video:
         await _requireVideo(key);
-        if (!completed) {
-          throw const CtlFailure.rejected(
-            '视频没有单独的「取消看完」，用 library reset 清除观看进度',
-          );
-        }
-        await _db.markVideoCompleted(key.id, DateTime.now());
+        // 与界面菜单同一个入口：标记 / 取消已看都清掉续播位置（统计不动，完整
+        // 重置仍走 library reset）。
+        await setVideosWatched(
+          db: _db,
+          watched: completed,
+          localUids: <String>[key.id],
+        );
       case LibraryCtlStore.game:
         throw const CtlFailure.rejected('游戏的游玩状态请用 game 命令设置');
     }

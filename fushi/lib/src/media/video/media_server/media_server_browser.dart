@@ -277,6 +277,7 @@ class MediaServerItem {
     this.episodeCount,
     this.unplayedChildCount,
     this.hasCover = false,
+    this.hasSeriesCover = false,
     this.hasBackdrop = false,
     this.hasThumb = false,
     this.hasLogo = false,
@@ -333,6 +334,10 @@ class MediaServerItem {
   /// 容器的未看子项数（`UserData.UnplayedItemCount`）。
   final int? unplayedChildCount;
   final bool hasCover;
+
+  /// 集所属的剧有 Primary 海报（Jellyfin `SeriesPrimaryImageTag`）。卡片据此
+  /// 用剧海报代替单集截图（[seriesId] 即海报所在条目）。
+  final bool hasSeriesCover;
   final bool hasBackdrop;
 
   /// 横版缩略图 / logo 有无（Jellyfin `ImageTags.Thumb` / `ImageTags.Logo`）；

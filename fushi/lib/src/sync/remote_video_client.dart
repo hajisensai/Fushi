@@ -202,6 +202,16 @@ abstract interface class RemoteVideoPlaybackStop {
   Future<void> stopRemoteVideoPlayback(String id, int positionMs);
 }
 
+/// 「手动标记已看 / 未看」的可选能力（Jellyfin / Emby 的 PlayedItems 端点）。
+///
+/// 互联 host 与云盘的「看完」状态归对端自己，没有这个协议，所以单独拆成可选接口，
+/// 与 [RemoteVideoPlaybackStop] 同范式：页面 `source is RemoteVideoPlayedMark`
+/// 才出对应菜单项。
+abstract interface class RemoteVideoPlayedMark {
+  /// 把远端视频 [id] 标成已看（[played] = true）或未看。
+  Future<void> setRemoteVideoPlayed(String id, {required bool played});
+}
+
 /// 「播放会话生命周期」的可选能力——[RemoteVideoPlaybackStop] 的超集。
 ///
 /// Jellyfin / Emby 的会话协议是三段式：`/Sessions/Playing`（开始）→

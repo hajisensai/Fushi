@@ -2129,6 +2129,7 @@ class RemoteVideoInfo {
     this.hasCover = false,
     this.coverUrl,
     this.coverPath,
+    this.seriesCoverUrl,
     this.positionMs = 0,
     this.positionUpdatedAtMs = 0,
     this.delayMs = 0,
@@ -2173,6 +2174,11 @@ class RemoteVideoInfo {
   final bool hasCover;
   final String? coverUrl;
   final String? coverPath;
+
+  /// 所属剧的海报地址（仅媒体服务器的单集填写；其余来源恒 null）。
+  /// [coverUrl] 对单集是截图，剧 / 合集卡片应优先用本字段。只在 client
+  /// 本地由服务器条目派生，不进 wire。
+  final String? seriesCoverUrl;
 
   /// 远端播放列表的剧集（TODO-885）。空 = 单视频（向后兼容）；length>1 = 多集播放列表。
   final List<RemoteVideoEpisode> episodes;
@@ -2346,6 +2352,7 @@ class RemoteVideoInfo {
         hasCover: hasCover ?? this.hasCover,
         coverUrl: coverUrl ?? this.coverUrl,
         coverPath: coverPath ?? this.coverPath,
+        seriesCoverUrl: seriesCoverUrl,
         positionMs: positionMs ?? this.positionMs,
         positionUpdatedAtMs: positionUpdatedAtMs ?? this.positionUpdatedAtMs,
         delayMs: delayMs ?? this.delayMs,

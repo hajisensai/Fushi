@@ -1157,7 +1157,7 @@ void main() {
       );
     });
 
-    test('读完标记：书写 completedAt、视频只能标记看完、游戏拒绝', () async {
+    test('读完标记：书与视频都能标记 / 取消，游戏拒绝', () async {
       await addBook('猫');
       await addVideo('v1');
       await shelf.setCompleted(key('book:猫'), completed: true);
@@ -1169,9 +1169,11 @@ void main() {
         (await VideoBookRepository(db).getByBookUid('v1'))!.completedAt,
         isNotNull,
       );
+      // 视频也能取消已看（与界面菜单同一入口）：完成标记与续播位置一并收回。
+      await shelf.setCompleted(key('video:v1'), completed: false);
       expect(
-        () => shelf.setCompleted(key('video:v1'), completed: false),
-        _ctlFailure(422),
+        (await VideoBookRepository(db).getByBookUid('v1'))!.completedAt,
+        isNull,
       );
       expect(
         () => shelf.setCompleted(key('game:g'), completed: true),
