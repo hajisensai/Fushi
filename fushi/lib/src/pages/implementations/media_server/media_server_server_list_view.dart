@@ -340,7 +340,7 @@ class _MediaServerListViewState extends State<MediaServerListView> {
                       count: 1,
                       focusId: const FushiFocusId('media-server-list-add'),
                       onTap: widget.onOpenSettings,
-                      child: const _AddServerRow(),
+                      child: const MediaServerAddRow(),
                     ),
                   ),
                 ],
@@ -480,8 +480,8 @@ class _ServerRow extends StatelessWidget {
 
 /// 组下方的「去设置添加服务器」行：primary 色块圆底加号 + 强调色文字（iOS 设置
 /// 「添加账户」口径）。
-class _AddServerRow extends StatelessWidget {
-  const _AddServerRow();
+class MediaServerAddRow extends StatelessWidget {
+  const MediaServerAddRow({super.key});
 
   @override
   Widget build(BuildContext context) {

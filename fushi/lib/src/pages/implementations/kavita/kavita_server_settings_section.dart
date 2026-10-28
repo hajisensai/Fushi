@@ -18,6 +18,8 @@ import 'package:fushi/src/media/kavita/kavita_book_service.dart';
 import 'package:fushi/src/media/kavita/kavita_connect_probe.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/settings_server_expandable_row.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -43,6 +45,9 @@ class _KavitaServerSettingsSectionState
   AppModel? _appModel;
 
   final Map<String, _ProbeState> _probes = <String, _ProbeState>{};
+
+  /// 展开中的服务器（按草稿 id）；已存在的默认收起，新加的默认展开。
+  final Set<String> _expanded = <String>{};
 
   /// 本机缓存副本数；null = 还没数过。
   int? _cachedBookCount;
@@ -124,18 +129,28 @@ class _KavitaServerSettingsSectionState
             hint: t.kavita_settings_hint,
             icon: FushiIcons.books,
           ),
-          for (int index = 0; index < _drafts.length; index++) _card(index),
+          FushiEntranceScope(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                for (int index = 0; index < _drafts.length; index++)
+                  _card(index),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
           Align(
             alignment: Alignment.centerLeft,
             child: FushiOutlinedButton.icon(
               key: const ValueKey<String>('kavita-server-add'),
-              onPressed: () => setState(
-                () => _drafts.add(
-                  KavitaDraft.empty(
-                    'server-${DateTime.now().microsecondsSinceEpoch}',
-                  ),
-                ),
-              ),
+              onPressed: () => setState(() {
+                final KavitaDraft draft = KavitaDraft.empty(
+                  'server-${DateTime.now().microsecondsSinceEpoch}',
+                );
+                _drafts.add(draft);
+                _expanded.add(draft.id);
+              }),
               icon: const Icon(FushiIcons.add),
               label: Text(t.kavita_server_add),
             ),
@@ -173,109 +188,119 @@ class _KavitaServerSettingsSectionState
   Widget _card(int index) {
     final KavitaDraft draft = _drafts[index];
     final _ProbeState? probe = _probes[draft.id];
-    return FushiCard(
+    final String title = draft.name.trim().isNotEmpty
+        ? draft.name.trim()
+        : (draft.url.trim().isNotEmpty
+              ? draft.url.trim()
+              : t.kavita_server_add);
+    final String subtitle = draft.name.trim().isNotEmpty
+        ? draft.url.trim()
+        : '';
+    return SettingsServerExpandableRow(
       key: ValueKey<String>('kavita-server-${draft.id}'),
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: FushiSwitchListTile.adaptive(
-                  key: ValueKey<String>('kavita-server-$index-enabled'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  title: Text(t.kavita_server_enabled),
-                  value: draft.enabled,
-                  onChanged: (bool value) =>
-                      _update(index, draft.copyWith(enabled: value)),
-                ),
-              ),
-              FushiIconButtonControl(
-                key: ValueKey<String>('kavita-server-$index-remove'),
-                tooltip: t.kavita_server_remove,
-                onPressed: () {
-                  setState(() {
-                    _probes.remove(_drafts[index].id);
-                    _drafts.removeAt(index);
-                  });
-                  unawaited(_saveValidDrafts());
-                },
-                icon: const Icon(FushiIcons.removeCircle),
-              ),
-            ],
+      rowKey: ValueKey<String>('kavita-server-$index-row'),
+      index: index,
+      count: _drafts.length,
+      title: title,
+      subtitle: subtitle,
+      expanded: _expanded.contains(draft.id),
+      onToggle: () => setState(() {
+        if (!_expanded.remove(draft.id)) _expanded.add(draft.id);
+      }),
+      panel: <Widget>[
+        FushiSwitchListTile.adaptive(
+          key: ValueKey<String>('kavita-server-$index-enabled'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(t.kavita_server_enabled),
+          value: draft.enabled,
+          onChanged: (bool value) =>
+              _update(index, draft.copyWith(enabled: value)),
+        ),
+        SettingsFormField(
+          key: ValueKey<String>('kavita-server-$index-name'),
+          label: t.kavita_name_label,
+          initialValue: draft.name,
+          hintText: t.kavita_name_hint,
+          onChanged: (String value) =>
+              _update(index, draft.copyWith(name: value)),
+        ),
+        SettingsFormField(
+          key: ValueKey<String>('kavita-server-$index-url'),
+          label: t.kavita_url_label,
+          initialValue: draft.url,
+          helperText: t.kavita_url_hint,
+          keyboardType: TextInputType.url,
+          errorText: draft.urlError,
+          onChanged: (String value) =>
+              _update(index, draft.copyWith(url: value)),
+        ),
+        FushiSwitchListTile.adaptive(
+          key: ValueKey<String>('kavita-server-$index-allow-http'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(t.kavita_http_allow),
+          subtitle: Text(t.kavita_http_allow_hint),
+          value: draft.allowInsecureHttp,
+          onChanged: (bool value) =>
+              _update(index, draft.copyWith(allowInsecureHttp: value)),
+        ),
+        SettingsFormField(
+          key: ValueKey<String>('kavita-server-$index-api-key'),
+          label: t.kavita_api_key_label,
+          initialValue: draft.apiKey,
+          helperText: t.kavita_api_key_hint,
+          obscureText: true,
+          onChanged: (String value) =>
+              _update(index, draft.copyWith(apiKey: value)),
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FushiOutlinedButton.icon(
+            key: ValueKey<String>('kavita-server-$index-connect'),
+            onPressed: !draft.canConnect || probe?.running == true
+                ? null
+                : () => unawaited(_connect(draft.id)),
+            icon: probe?.running == true
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(FushiIcons.wifi),
+            label: Text(t.kavita_connect_test),
           ),
-          SettingsFormField(
-            key: ValueKey<String>('kavita-server-$index-name'),
-            label: t.kavita_name_label,
-            initialValue: draft.name,
-            hintText: t.kavita_name_hint,
-            onChanged: (String value) =>
-                _update(index, draft.copyWith(name: value)),
-          ),
-          SettingsFormField(
-            key: ValueKey<String>('kavita-server-$index-url'),
-            label: t.kavita_url_label,
-            initialValue: draft.url,
-            helperText: t.kavita_url_hint,
-            keyboardType: TextInputType.url,
-            errorText: draft.urlError,
-            onChanged: (String value) =>
-                _update(index, draft.copyWith(url: value)),
-          ),
-          FushiSwitchListTile.adaptive(
-            key: ValueKey<String>('kavita-server-$index-allow-http'),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            title: Text(t.kavita_http_allow),
-            subtitle: Text(t.kavita_http_allow_hint),
-            value: draft.allowInsecureHttp,
-            onChanged: (bool value) =>
-                _update(index, draft.copyWith(allowInsecureHttp: value)),
-          ),
-          SettingsFormField(
-            key: ValueKey<String>('kavita-server-$index-api-key'),
-            label: t.kavita_api_key_label,
-            initialValue: draft.apiKey,
-            helperText: t.kavita_api_key_hint,
-            obscureText: true,
-            onChanged: (String value) =>
-                _update(index, draft.copyWith(apiKey: value)),
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FushiOutlinedButton.icon(
-              key: ValueKey<String>('kavita-server-$index-connect'),
-              onPressed: !draft.canConnect || probe?.running == true
-                  ? null
-                  : () => unawaited(_connect(draft.id)),
-              icon: probe?.running == true
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: FushiCircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(FushiIcons.wifi),
-              label: Text(t.kavita_connect_test),
-            ),
-          ),
-          if (probe != null && !probe.running)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                probe.message,
-                key: ValueKey<String>('kavita-server-$index-probe-result'),
-                style: TextStyle(
-                  color: probe.ok
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.error,
-                ),
+        ),
+        if (probe != null && !probe.running)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              probe.message,
+              key: ValueKey<String>('kavita-server-$index-probe-result'),
+              style: TextStyle(
+                color: probe.ok
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.error,
               ),
             ),
-        ],
-      ),
+          ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: FushiTextButton(
+            key: ValueKey<String>('kavita-server-$index-remove'),
+            destructive: true,
+            onPressed: () {
+              setState(() {
+                _probes.remove(_drafts[index].id);
+                _expanded.remove(_drafts[index].id);
+                _drafts.removeAt(index);
+              });
+              unawaited(_saveValidDrafts());
+            },
+            child: Text(t.kavita_server_remove),
+          ),
+        ),
+      ],
     );
   }
 

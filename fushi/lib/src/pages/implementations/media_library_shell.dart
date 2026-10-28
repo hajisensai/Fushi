@@ -47,6 +47,10 @@ enum MediaLibraryViewKind {
   /// **kind** 而不是按下标记住选中项（见 `didUpdateWidget`）。
   audiobookshelf,
 
+  /// 「媒体服务器」：用户自己的 Kavita / Audiobookshelf 服务器列表（书 / 漫画域），
+  /// 点进某台浏览。与视频域的「媒体服务器」分区同位同构。
+  mediaServers,
+
   // 「设置」视图已移除（2026-10-09 用户拍板）：它只是全局「设置 › <本域>」分类的
   // 投影，与全局设置、阅读时的设置面板重复。各域设置一律从全局设置进入。
 }
