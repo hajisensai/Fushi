@@ -808,6 +808,14 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
             None => c.sync2_digest(profile)?,
         },
         "status" => c.sync2_status(profile)?,
+        // 位置媒体目录的已知内容 / 记下事实（store/sync2/media.rs）：媒体对账读日志投影，不列目录。
+        "media_known" => c.sync2_media_known(profile, s("location")?)?,
+        "media_record" => {
+            let names = |k: &str| -> Vec<String> {
+                req.get(k).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default()
+            };
+            c.sync2_media_record(profile, s("location")?, &names("present"), &names("absent"), req["seeded"] == Value::Bool(true), i("now")?)?
+        }
         // 删 profile 的级联清理（store/profile_data.rs）：确认框的规模、一个事务里删光本机数据。
         "profile_footprint" => c.profile_footprint(profile)?,
         "profile_purge" => c.profile_purge(profile)?,

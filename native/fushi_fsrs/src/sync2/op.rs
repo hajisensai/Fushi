@@ -26,6 +26,16 @@ pub const KIND_MEDIA: u16 = 8;
 pub const KIND_DECK_ALIAS: u16 = 9;
 pub const KIND_LEGACY_UNKNOWN: u16 = 10;
 pub const KIND_TAG_ORDER: u16 = 11;
+pub const KIND_MEDIA_AT: u16 = 12;
+
+/// [Body::MediaAt] 的标志位：这批名字此刻**在**该位置（否则 = 确认不在）。
+pub const MEDIA_AT_PRESENT: u8 = 1;
+/// [Body::MediaAt] 的标志位：作者刚对该位置做完一次完整列举，这批（及同一作者此前带同一列举的各批）是
+/// 当时的全集。见过它的设备不再为这个位置列目录。
+pub const MEDIA_AT_SEEDED: u8 = 2;
+
+/// 一条 [Body::MediaAt] 最多带多少个名字（首次列举出几万个媒体时按此切成多条，单条载荷有界）。
+pub const MEDIA_AT_MAX_NAMES: usize = 2000;
 
 /// 本版本写出的载荷格式号。
 pub const SCHEMA: u16 = 1;
@@ -290,6 +300,10 @@ pub enum Body {
     Purge { kind: EntKind, entity: Key },
     /// 媒体文件名 → 内容（内容寻址，设计 §6.4）。
     Media { name: String, sha256: [u8; 32], size: u64 },
+    /// 某个存储位置的媒体目录里有 / 没有这些文件（设计 §6.4）：作者上传 / 下载成功、列举到，或读取时确认
+    /// 不在之后写下的事实。[location] 是位置身份 + 媒体目录（加密媒体的目录按密钥指纹分），对内核不透明。
+    /// 每个（位置, 名字）按 HLC 大者胜；各设备据此知道远端有什么，媒体对账不再列目录。
+    MediaAt { location: String, flags: u8, names: Vec<String> },
     /// 两个存活牌组全名相同：[from] 并入 [to]（ID 较小者），之后指向 from 的按 to 处理（设计 §3.1）。
     DeckAlias { from: Key, to: Key },
     /// 旧协议里本机不认识的事件，原样保存（JSON 原文）。
@@ -312,6 +326,7 @@ impl Body {
             Body::Checkpoint { .. } => KIND_CHECKPOINT,
             Body::Purge { .. } => KIND_PURGE,
             Body::Media { .. } => KIND_MEDIA,
+            Body::MediaAt { .. } => KIND_MEDIA_AT,
             Body::DeckAlias { .. } => KIND_DECK_ALIAS,
             Body::LegacyUnknown { .. } => KIND_LEGACY_UNKNOWN,
             Body::Unknown | Body::Purged => u16::MAX,
@@ -364,6 +379,14 @@ impl Body {
                 w.str(name);
                 w.raw(sha256);
                 w.uv(*size);
+            }
+            Body::MediaAt { location, flags, names } => {
+                w.str(location);
+                w.u8(*flags);
+                w.uv(names.len() as u64);
+                for n in names {
+                    w.str(n);
+                }
             }
             Body::DeckAlias { from, to } => {
                 from.write(&mut w);
@@ -419,6 +442,19 @@ impl Body {
                 sha256: r.raw(32)?.try_into().map_err(|_| DecodeError("sha256"))?,
                 size: r.uv()?,
             },
+            KIND_MEDIA_AT => {
+                let location = r.str()?.to_owned();
+                let flags = r.u8()?;
+                let n = r.uv()?;
+                if n > MEDIA_AT_MAX_NAMES as u64 {
+                    return Err(DecodeError("too many media names"));
+                }
+                let mut names = Vec::with_capacity(n as usize);
+                for _ in 0..n {
+                    names.push(r.str()?.to_owned());
+                }
+                Body::MediaAt { location, flags, names }
+            }
             KIND_DECK_ALIAS => Body::DeckAlias { from: Key::read(r)?, to: Key::read(r)? },
             KIND_LEGACY_UNKNOWN => Body::LegacyUnknown { json: r.str()?.to_owned() },
             _ => Body::Unknown,
@@ -621,6 +657,8 @@ pub(crate) mod tests {
             Body::Checkpoint { name: "a".into(), reason: "import".into() },
             Body::Purge { kind: EntKind::Note, entity: Key::of("n") },
             Body::Media { name: "a.mp3".into(), sha256: [9; 32], size: 77 },
+            Body::MediaAt { location: "drive:x/media".into(), flags: MEDIA_AT_PRESENT | MEDIA_AT_SEEDED, names: vec!["a.mp3".into(), "b.png".into()] },
+            Body::MediaAt { location: "drive:x/media".into(), flags: 0, names: vec![] },
             Body::DeckAlias { from: Key::of("b"), to: Key::of("a") },
             Body::LegacyUnknown { json: "{}".into() },
         ];
@@ -629,6 +667,13 @@ pub(crate) mod tests {
             assert_eq!(Body::decode(b.kind(), &bytes).unwrap(), b);
         }
         assert_eq!(Body::decode(999, b"anything").unwrap(), Body::Unknown);
+    }
+
+    #[test]
+    fn media_at_rejects_an_oversized_name_list() {
+        let names: Vec<String> = (0..=MEDIA_AT_MAX_NAMES).map(|i| format!("{i}.mp3")).collect();
+        let bytes = Body::MediaAt { location: "l".into(), flags: MEDIA_AT_PRESENT, names }.encode();
+        assert!(Body::decode(KIND_MEDIA_AT, &bytes).is_err());
     }
 
     #[test]

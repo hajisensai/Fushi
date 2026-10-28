@@ -10,6 +10,7 @@
 //! 所有命令在写连接上的一个 SAVEPOINT 里做：Dart 的 Drift 事务开着时嵌在里面，没开时自成事务。
 
 pub mod config;
+pub mod media;
 pub mod schema;
 pub(crate) mod semantics;
 pub mod timeline;
@@ -488,6 +489,7 @@ pub(crate) fn project(conn: &Connection, profile: &str, op: &Op, now: i64, proje
                 .map_err(sql)?;
             }
         }
+        Body::MediaAt { location, flags, names } => media::project_media_at(conn, profile, op, &location, flags, &names)?,
         Body::LegacyUnknown { json } => {
             if project {
                 let v: Value = serde_json::from_str(&json).unwrap_or(Value::Null);

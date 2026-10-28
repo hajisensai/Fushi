@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -289,6 +289,10 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         if !has {
             tx.execute_batch(super::sync2::schema::V6).map_err(|e| e.to_string())?;
         }
+    }
+    if current < 7 {
+        // V7：MediaAt 操作的投影（媒体对账不再列目录，store/sync2/media.rs）。
+        tx.execute_batch(super::sync2::schema::V7).map_err(|e| e.to_string())?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \
