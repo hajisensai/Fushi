@@ -842,6 +842,14 @@ class _MediaCollectionGridDetailPageState
           tags: _collectionTags,
           wide: wide,
           onEditTags: _editCollectionTags,
+          // 整块点按 = 接着看 / 读 current（不放按钮，hero 上有播放标记示意）。
+          continueLabel: current?.displayTitle,
+          onContinue: current == null || widget.onOpenMember == null
+              ? null
+              : () => widget.onOpenMember!(
+                  current.row.mediaType,
+                  current.row.entryKey,
+                ),
         );
         final Widget hero = heroMaterial == null
             ? heroCard

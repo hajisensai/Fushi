@@ -149,6 +149,9 @@ Duration shelfSheenDuration(BuildContext context) =>
 ///
 /// [compact] = 简化档（[ShelfCoverDensity.compact]）：只留外轮廓、光泽与内描边，
 /// 不画投影与扫光，[lifted] 被忽略。
+///
+/// [flat] = 平贴在色块上（合集 hero）：不画投影，其余（光泽、扫光、悬停）照常。
+/// 大投影压在 tonal 色块上会糊出一块发灰的底，看着像封面另垫了一块板。
 class ShelfMaterialSurface extends StatelessWidget {
   const ShelfMaterialSurface({
     required this.material,
@@ -158,6 +161,7 @@ class ShelfMaterialSurface extends StatelessWidget {
     this.dim = 0,
     this.lifted = false,
     this.compact = false,
+    this.flat = false,
     this.pressGlint = true,
     super.key,
   });
@@ -169,6 +173,7 @@ class ShelfMaterialSurface extends StatelessWidget {
   final double dim;
   final bool lifted;
   final bool compact;
+  final bool flat;
 
   /// 轻触 / 长按时是否扫一遍光（见 [ShelfCoverSheen.glint]）。叠层 / 扇形里
   /// 藏在后面的那几本传 false。
@@ -259,7 +264,7 @@ class ShelfMaterialSurface extends StatelessWidget {
       curve: FushiMotion.standard,
       decoration: BoxDecoration(
         borderRadius: radius,
-        boxShadow: compact
+        boxShadow: compact || flat
             ? const <BoxShadow>[]
             : shelfMaterialShadows(dark: dark, lifted: raised),
       ),
@@ -643,6 +648,7 @@ class ShelfCoverPile extends StatelessWidget {
     required this.behind,
     this.frontOverlay = const <Widget>[],
     this.backgroundColor,
+    this.flat = false,
     super.key,
   });
 
@@ -653,6 +659,9 @@ class ShelfCoverPile extends StatelessWidget {
   final List<Widget> behind;
   final List<Widget> frontOverlay;
   final Color? backgroundColor;
+
+  /// 平贴在色块上：每本都不画投影，也没有接触阴影（见 [ShelfMaterialSurface.flat]）。
+  final bool flat;
 
   @override
   Widget build(BuildContext context) {
@@ -681,6 +690,7 @@ class ShelfCoverPile extends StatelessWidget {
               child: ShelfMaterialSurface(
                 material: material,
                 backgroundColor: backgroundColor,
+                flat: flat,
                 dim: dim,
                 lifted: lifted && overlay != null,
                 pressGlint: overlay != null,
@@ -769,16 +779,17 @@ class ShelfCoverPile extends StatelessWidget {
         return Stack(
           clipBehavior: Clip.none,
           children: <Widget>[
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: -kShelfContactShadowDrop,
-              height: kShelfContactShadowHeight,
-              child: ShelfContactShadow(
-                lifted: lifted,
-                widthFactor: back.isEmpty ? 1.07 : 1.15,
+            if (!flat)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: -kShelfContactShadowDrop,
+                height: kShelfContactShadowHeight,
+                child: ShelfContactShadow(
+                  lifted: lifted,
+                  widthFactor: back.isEmpty ? 1.07 : 1.15,
+                ),
               ),
-            ),
             ...layers,
           ],
         );
