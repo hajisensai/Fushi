@@ -1,10 +1,11 @@
 /// 设置页「服务器列表」的可展开行：收起时一行摘要（名称 + 副标题），点击展开
 /// 编辑面板。照抄 `jellyfin_settings_widget.dart` 的 `_buildServerRow`（分段卡片 +
-/// 弹簧转箭头 + `AnimatedSize` 展开），供 Kavita / Audiobookshelf 设置区共用。
+/// 弹簧转箭头 + `FushiAnimatedSize` 展开），供 Kavita / Audiobookshelf 设置区共用。
 library;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -66,7 +67,7 @@ class SettingsServerExpandableRow extends StatelessWidget {
                 ),
                 onTap: onToggle,
               ),
-              AnimatedSize(
+              FushiAnimatedSize(
                 duration: motion.spatialDefault.duration,
                 curve: motion.spatialDefault.curve,
                 alignment: Alignment.topCenter,
