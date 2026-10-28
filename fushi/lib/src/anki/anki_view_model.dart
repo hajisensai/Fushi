@@ -488,6 +488,9 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 本后端能不能读卡组新卡并改写位置（只有 AnkiConnect 能）。
   bool get supportsDeckReposition => _repository.supportsDeckReposition;
 
+  /// 本后端要不要「制卡后自动重排」（Fushi 复习不要：出卡直接按词频名次排）。
+  bool get supportsAutoReposition => _repository.supportsAutoReposition;
+
   /// 与当前仓库绑定的重排编排器（无状态，随用随建）。
   AnkiDeckRepositionRunner get deckRepositionRunner => AnkiDeckRepositionRunner(
         _repository,
@@ -668,7 +671,7 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
       status: MineToastStatus.failed,
     ),
   );
-  // 远端制卡的仓库 `supportsDeckReposition` 为 false，装饰器里的判据会跳过——
+  // 远端制卡的仓库 `supportsAutoReposition` 为 false，装饰器里的判据会跳过——
   // 包上只是让两条返回路径形状一致，将来主机端支持了不必再改这里。
   return _withSrsMining(
     ref,
@@ -693,24 +696,21 @@ final hostMiningAnkiRepositoryProvider = Provider<BaseAnkiRepository>(
 /// 制卡行为与没有复习模块时逐字节一致（用户硬要求：关闭时零行为变化、零额外开销）。
 /// 包在待发队列**外面**：SRS 是本机写入，不该因为 Anki 连不上被冻进队列。
 ///
-/// SRS 层外面再套一层「制卡后自动重排」：SRS 层的 [SrsMiningAnkiRepository.mineEntry]
-/// 直接写复习、不经过里层，里层那份（绑 Anki）根本看不到这次制卡。两份调度器各管
-/// 各的落卡处，不会对同一张卡重排两次：复习制卡只经过外层，待发队列补发给 Anki 的卡
-/// 只经过里层。
+/// SRS 层外面**不**套「制卡后自动重排」：复习出卡时直接按卡上的词频名次排（牌组「新卡顺序
+/// = 按词频」，见 `SrsDbStore.nextCard`），刚挖的卡立刻就在对的位置，不需要事后改写新卡位置——
+/// 那样每挖一个词都会产生要同步的位置修改记录，而且各设备用各自的词典现查，排出来的顺序未必一致。
+/// 里层那份（绑 Anki）只看得到经待发队列补发给 Anki 的卡，复习制卡不经过它。
 BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
   if (!ref.watch(srsMiningToReviewProvider)) return repo;
   // 制卡写进复习后递增刷新信号：牌组列表与首页复习条的计数随之重读。
   final StateController<int> revision = ref.read(srsRevisionProvider.notifier);
-  return _withAutoReposition(
-    ref,
-    SrsMiningAnkiRepository(
-      inner: repo,
-      miner: () => _readSrsMiner(ref),
-      onCardsAdded: () => revision.state++,
-      // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。
-      openNote: (String noteId) async =>
-          await SrsAppHost.current?.openNote(noteId) ?? false,
-    ),
+  return SrsMiningAnkiRepository(
+    inner: repo,
+    miner: () => _readSrsMiner(ref),
+    onCardsAdded: () => revision.state++,
+    // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。
+    openNote: (String noteId) async =>
+        await SrsAppHost.current?.openNote(noteId) ?? false,
   );
 }
 

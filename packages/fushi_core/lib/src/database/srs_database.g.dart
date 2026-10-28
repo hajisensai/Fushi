@@ -3739,6 +3739,17 @@ class $SrsCardsCacheTable extends SrsCardsCache
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _freqRankMeta = const VerificationMeta(
+    'freqRank',
+  );
+  @override
+  late final GeneratedColumn<int> freqRank = GeneratedColumn<int>(
+    'freq_rank',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -3764,6 +3775,7 @@ class $SrsCardsCacheTable extends SrsCardsCache
     scheduler,
     noteCreatedAt,
     newPosition,
+    freqRank,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3937,6 +3949,12 @@ class $SrsCardsCacheTable extends SrsCardsCache
         ),
       );
     }
+    if (data.containsKey('freq_rank')) {
+      context.handle(
+        _freqRankMeta,
+        freqRank.isAcceptableOrUnknown(data['freq_rank']!, _freqRankMeta),
+      );
+    }
     return context;
   }
 
@@ -4038,6 +4056,10 @@ class $SrsCardsCacheTable extends SrsCardsCache
         DriftSqlType.int,
         data['${effectivePrefix}new_position'],
       ),
+      freqRank: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}freq_rank'],
+      ),
     );
   }
 
@@ -4080,6 +4102,11 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
   /// 写它）。NULL = 从没排过：有位置的新卡先出（位置升序），没位置的排在后面并保持
   /// 原有的（笔记 createdAt, cardId）顺序——老数据出卡顺序不变。
   final int? newPosition;
+
+  /// srs.db schema v7：笔记词频序字段（`SrsNoteTypeView.frequencyField`）解析出的名次，越小越常见；
+  /// NULL = 没有。牌组「新卡顺序 = 按词频」时出卡按它升序，排在 [newPosition] 之前。由笔记派生、
+  /// 随笔记刷新，不同步。
+  final int? freqRank;
   const SrsCardCacheRow({
     required this.id,
     required this.profileUid,
@@ -4104,6 +4131,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
     required this.scheduler,
     required this.noteCreatedAt,
     this.newPosition,
+    this.freqRank,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -4146,6 +4174,9 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
     map['note_created_at'] = Variable<int>(noteCreatedAt);
     if (!nullToAbsent || newPosition != null) {
       map['new_position'] = Variable<int>(newPosition);
+    }
+    if (!nullToAbsent || freqRank != null) {
+      map['freq_rank'] = Variable<int>(freqRank);
     }
     return map;
   }
@@ -4191,6 +4222,9 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
       newPosition: newPosition == null && nullToAbsent
           ? const Value.absent()
           : Value(newPosition),
+      freqRank: freqRank == null && nullToAbsent
+          ? const Value.absent()
+          : Value(freqRank),
     );
   }
 
@@ -4223,6 +4257,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
       scheduler: serializer.fromJson<String>(json['scheduler']),
       noteCreatedAt: serializer.fromJson<int>(json['noteCreatedAt']),
       newPosition: serializer.fromJson<int?>(json['newPosition']),
+      freqRank: serializer.fromJson<int?>(json['freqRank']),
     );
   }
   @override
@@ -4252,6 +4287,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
       'scheduler': serializer.toJson<String>(scheduler),
       'noteCreatedAt': serializer.toJson<int>(noteCreatedAt),
       'newPosition': serializer.toJson<int?>(newPosition),
+      'freqRank': serializer.toJson<int?>(freqRank),
     };
   }
 
@@ -4279,6 +4315,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
     String? scheduler,
     int? noteCreatedAt,
     Value<int?> newPosition = const Value.absent(),
+    Value<int?> freqRank = const Value.absent(),
   }) => SrsCardCacheRow(
     id: id ?? this.id,
     profileUid: profileUid ?? this.profileUid,
@@ -4307,6 +4344,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
     scheduler: scheduler ?? this.scheduler,
     noteCreatedAt: noteCreatedAt ?? this.noteCreatedAt,
     newPosition: newPosition.present ? newPosition.value : this.newPosition,
+    freqRank: freqRank.present ? freqRank.value : this.freqRank,
   );
   SrsCardCacheRow copyWithCompanion(SrsCardsCacheCompanion data) {
     return SrsCardCacheRow(
@@ -4349,6 +4387,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
       newPosition: data.newPosition.present
           ? data.newPosition.value
           : this.newPosition,
+      freqRank: data.freqRank.present ? data.freqRank.value : this.freqRank,
     );
   }
 
@@ -4377,7 +4416,8 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
           ..write('lastLogId: $lastLogId, ')
           ..write('scheduler: $scheduler, ')
           ..write('noteCreatedAt: $noteCreatedAt, ')
-          ..write('newPosition: $newPosition')
+          ..write('newPosition: $newPosition, ')
+          ..write('freqRank: $freqRank')
           ..write(')'))
         .toString();
   }
@@ -4407,6 +4447,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
     scheduler,
     noteCreatedAt,
     newPosition,
+    freqRank,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -4434,7 +4475,8 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
           other.lastLogId == this.lastLogId &&
           other.scheduler == this.scheduler &&
           other.noteCreatedAt == this.noteCreatedAt &&
-          other.newPosition == this.newPosition);
+          other.newPosition == this.newPosition &&
+          other.freqRank == this.freqRank);
 }
 
 class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
@@ -4461,6 +4503,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
   final Value<String> scheduler;
   final Value<int> noteCreatedAt;
   final Value<int?> newPosition;
+  final Value<int?> freqRank;
   final Value<int> rowid;
   const SrsCardsCacheCompanion({
     this.id = const Value.absent(),
@@ -4486,6 +4529,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
     this.scheduler = const Value.absent(),
     this.noteCreatedAt = const Value.absent(),
     this.newPosition = const Value.absent(),
+    this.freqRank = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   SrsCardsCacheCompanion.insert({
@@ -4512,6 +4556,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
     this.scheduler = const Value.absent(),
     this.noteCreatedAt = const Value.absent(),
     this.newPosition = const Value.absent(),
+    this.freqRank = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        profileUid = Value(profileUid),
@@ -4542,6 +4587,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
     Expression<String>? scheduler,
     Expression<int>? noteCreatedAt,
     Expression<int>? newPosition,
+    Expression<int>? freqRank,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -4568,6 +4614,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
       if (scheduler != null) 'scheduler': scheduler,
       if (noteCreatedAt != null) 'note_created_at': noteCreatedAt,
       if (newPosition != null) 'new_position': newPosition,
+      if (freqRank != null) 'freq_rank': freqRank,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -4596,6 +4643,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
     Value<String>? scheduler,
     Value<int>? noteCreatedAt,
     Value<int?>? newPosition,
+    Value<int?>? freqRank,
     Value<int>? rowid,
   }) {
     return SrsCardsCacheCompanion(
@@ -4622,6 +4670,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
       scheduler: scheduler ?? this.scheduler,
       noteCreatedAt: noteCreatedAt ?? this.noteCreatedAt,
       newPosition: newPosition ?? this.newPosition,
+      freqRank: freqRank ?? this.freqRank,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4698,6 +4747,9 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
     if (newPosition.present) {
       map['new_position'] = Variable<int>(newPosition.value);
     }
+    if (freqRank.present) {
+      map['freq_rank'] = Variable<int>(freqRank.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4730,6 +4782,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
           ..write('scheduler: $scheduler, ')
           ..write('noteCreatedAt: $noteCreatedAt, ')
           ..write('newPosition: $newPosition, ')
+          ..write('freqRank: $freqRank, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -7289,6 +7342,7 @@ typedef $$SrsCardsCacheTableCreateCompanionBuilder =
       Value<String> scheduler,
       Value<int> noteCreatedAt,
       Value<int?> newPosition,
+      Value<int?> freqRank,
       Value<int> rowid,
     });
 typedef $$SrsCardsCacheTableUpdateCompanionBuilder =
@@ -7316,6 +7370,7 @@ typedef $$SrsCardsCacheTableUpdateCompanionBuilder =
       Value<String> scheduler,
       Value<int> noteCreatedAt,
       Value<int?> newPosition,
+      Value<int?> freqRank,
       Value<int> rowid,
     });
 
@@ -7440,6 +7495,11 @@ class $$SrsCardsCacheTableFilterComposer
 
   ColumnFilters<int> get newPosition => $composableBuilder(
     column: $table.newPosition,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get freqRank => $composableBuilder(
+    column: $table.freqRank,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -7567,6 +7627,11 @@ class $$SrsCardsCacheTableOrderingComposer
     column: $table.newPosition,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get freqRank => $composableBuilder(
+    column: $table.freqRank,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$SrsCardsCacheTableAnnotationComposer
@@ -7662,6 +7727,9 @@ class $$SrsCardsCacheTableAnnotationComposer
     column: $table.newPosition,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get freqRank =>
+      $composableBuilder(column: $table.freqRank, builder: (column) => column);
 }
 
 class $$SrsCardsCacheTableTableManager
@@ -7718,6 +7786,7 @@ class $$SrsCardsCacheTableTableManager
                 Value<String> scheduler = const Value.absent(),
                 Value<int> noteCreatedAt = const Value.absent(),
                 Value<int?> newPosition = const Value.absent(),
+                Value<int?> freqRank = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SrsCardsCacheCompanion(
                 id: id,
@@ -7743,6 +7812,7 @@ class $$SrsCardsCacheTableTableManager
                 scheduler: scheduler,
                 noteCreatedAt: noteCreatedAt,
                 newPosition: newPosition,
+                freqRank: freqRank,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -7770,6 +7840,7 @@ class $$SrsCardsCacheTableTableManager
                 Value<String> scheduler = const Value.absent(),
                 Value<int> noteCreatedAt = const Value.absent(),
                 Value<int?> newPosition = const Value.absent(),
+                Value<int?> freqRank = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SrsCardsCacheCompanion.insert(
                 id: id,
@@ -7795,6 +7866,7 @@ class $$SrsCardsCacheTableTableManager
                 scheduler: scheduler,
                 noteCreatedAt: noteCreatedAt,
                 newPosition: newPosition,
+                freqRank: freqRank,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

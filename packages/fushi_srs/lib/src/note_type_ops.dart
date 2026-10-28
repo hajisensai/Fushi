@@ -125,6 +125,7 @@ class SrsNewNoteType {
     required this.templates,
     required this.css,
     required this.termFieldId,
+    this.freqFieldId,
   });
 
   final SrsEntityRecord record;
@@ -133,6 +134,9 @@ class SrsNewNoteType {
   final List<SrsTemplateDef> templates;
   final String css;
   final String? termFieldId;
+
+  /// 显式的词频序字段（[SrsFieldKeys.freqField]）；null = 不写，按字段名认。
+  final String? freqFieldId;
 
   String get id => record.id;
 }
@@ -262,6 +266,9 @@ SrsNewNoteType srsCloneNoteType({
     termFieldId: source.termFieldId == null
         ? null
         : oldToNew[source.termFieldId],
+    freqFieldId: source.freqFieldId == null
+        ? null
+        : oldToNew[source.freqFieldId],
   );
 }
 

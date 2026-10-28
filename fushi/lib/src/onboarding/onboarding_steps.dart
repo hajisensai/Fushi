@@ -204,8 +204,8 @@ bool? onboardingSrsModuleOverride({
     ? false
     : null;
 
-/// 新手引导里「制卡后自动按词频重排」开关的初值：**开**。Fushi 复习路径（复习方式
-/// 一步）与 Anki 路径（Anki 步）各摆一颗，共用这一个初值与同一个设置
+/// 新手引导里「制卡后自动按词频重排」开关的初值：**开**。只在 Anki 路径（Anki 步）有：
+/// Fushi 复习出卡直接按卡上的词频名次排，不需要这颗开关
 /// （所有者 2026-10-20：「走新手教程那步的时候默认开启」）。
 ///
 /// 设置本身（`AnkiSettings.autoRepositionEnabled`）默认关，因为它会在用户没点

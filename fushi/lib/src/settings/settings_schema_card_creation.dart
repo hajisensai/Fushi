@@ -124,9 +124,11 @@ SettingsDestination buildCardCreationDestination() {
         id: 'card_creation.anki.reposition_auto',
         title: t.anki_reposition_auto_title,
         hasRevealTarget: true,
-        // 两种目标都有：Anki 目标在「Anki」分组（要 Anki 已配置），Fushi 复习目标在
-        // 「Fushi 复习」分组（复习层自己读写新卡位置）。
-        visible: _repositionVisible,
+        // 只有 Anki 目标有：Fushi 复习出卡直接按词频名次排，不需要制卡后改写位置。
+        visible: _ankiOnly(
+          (SettingsContext c) =>
+              c.ref.watch(ankiViewModelProvider).isConfigured,
+        ),
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.profile',
@@ -500,7 +502,7 @@ bool _toReview(SettingsContext c) =>
 SettingsVisibility _ankiOnly([SettingsVisibility? inner]) =>
     (SettingsContext c) => !_toReview(c) && (inner?.call(c) ?? true);
 
-/// 「按词频重排新卡」两行：目标为 Fushi 复习时恒在（「Fushi 复习」分组），否则跟着
+/// 「按词频重排新卡」：目标为 Fushi 复习时恒在（「Fushi 复习」分组），否则跟着
 /// 「Anki」分组里的条件（Anki 已配置）。
 bool _repositionVisible(SettingsContext c) =>
     _toReview(c) ||

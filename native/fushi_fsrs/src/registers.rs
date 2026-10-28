@@ -721,6 +721,11 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
         Some(s) => Some(s.to_owned()),
         None => as_str(get(builtin, "termFieldId"), "termFieldId")?.map(str::to_owned),
     };
+    // 词频序字段（新卡按词频出卡的排序键来源）：与词条字段同一套「修改记录优先、否则内置默认」。
+    let freq = match as_str(ent.value("freqField"), "freqField")? {
+        Some(s) => Some(s.to_owned()),
+        None => as_str(get(builtin, "freqFieldId"), "freqFieldId")?.map(str::to_owned),
+    };
     Ok(json!({
         "ak": as_int(get(payload, "ankiNum"), "ankiNum")?.unwrap_or(0),
         "nk": as_str(get(payload, "ntKind"), "ntKind")?.unwrap_or("standard"),
@@ -731,6 +736,7 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
         "dt": defined_templates.items.iter().map(template_json).collect::<Vec<_>>(),
         "css": css,
         "tf": term,
+        "qf": freq,
         "da": ent.deleted_at(),
         "bk": as_str(get(payload, "builtin"), "builtin")?,
     }))
@@ -797,6 +803,7 @@ fn deck_view(ent: &Entity<'_, '_>, payload: &Value) -> Result<Value, String> {
         "co": *ent.value("collapsed") == Value::Bool(true),
         "po": position,
         "ap": *ent.value("autoplay") != Value::Bool(false),
+        "no": as_str(ent.value("newOrder"), "newOrder")?,
         "rq": *ent.value("replayQuestion") != Value::Bool(false),
         "rw": ent.value("rwkvQueue"),
         "ba": baseline_at,

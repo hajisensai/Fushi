@@ -80,6 +80,6 @@ void main() {
                 .customSelect('SELECT json FROM srs_local_state')
                 .getSingle())
             .read<String>('json');
-    expect((jsonDecode(json) as Map)['cacheRev'], 5);
+    expect((jsonDecode(json) as Map)['cacheRev'], 6);
   });
 }

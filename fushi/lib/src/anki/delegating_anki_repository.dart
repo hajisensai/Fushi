@@ -197,6 +197,9 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
   bool get supportsDeckReposition => inner.supportsDeckReposition;
 
   @override
+  bool get supportsAutoReposition => inner.supportsAutoReposition;
+
+  @override
   Future<List<AnkiCardInfo>> listNewCards(String deckName) =>
       inner.listNewCards(deckName);
 

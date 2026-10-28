@@ -736,11 +736,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     ];
   }
 
-  /// 「Fushi 复习」分组里的两行重排（手动重排 + 制卡后自动重排）。行本身与 Anki 目标
-  /// 时同一套（同一个 reveal target id，两种目标下只出现一处）。
+  /// 「Fushi 复习」分组里的手动重排。行本身与 Anki 目标时同一套（同一个 reveal target id，
+  /// 两种目标下只出现一处）。
   List<Widget> _buildSrsRepositionRows(SrsMiningChoices choices) {
     final AnkiViewModel vm = ref.read(ankiViewModelProvider.notifier);
-    final AnkiSettings settings = ref.watch(ankiViewModelProvider).settings;
     // 下拉项的 id 只是键（重排按牌组全名取卡），用下标即可。
     final List<AnkiDeck> decks = <AnkiDeck>[
       for (int i = 0; i < choices.decks.length; i++)
@@ -750,6 +749,8 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ((String, String) d) => d.$1 == choices.resolved.deckId,
     );
     return <Widget>[
+      // 没有「制卡后自动重排」：复习出卡直接按卡上的词频名次排（牌组设置「新卡顺序」），
+      // 手动重排只为「按位置」的牌组与没有名次的卡写位置。
       SettingsSearchTarget(
         id: 'card_creation.anki.reposition',
         child: _buildDeckRepositionRow(
@@ -757,10 +758,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           decks: decks,
           initialDeckId: initial < 0 ? null : initial,
         ),
-      ),
-      SettingsSearchTarget(
-        id: 'card_creation.anki.reposition_auto',
-        child: _buildAutoRepositionRow(settings, vm),
       ),
     ];
   }
@@ -2298,7 +2295,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 「制卡后自动重排」开关。与上面那行同样的支持判据：不支持的后端置灰而
   /// 不隐藏，否则用户会以为这功能不存在。
   Widget _buildAutoRepositionRow(AnkiSettings settings, AnkiViewModel vm) {
-    final bool supported = vm.supportsDeckReposition;
+    final bool supported = vm.supportsAutoReposition;
     return AdaptiveSettingsSwitchRow(
       icon: FushiIcons.sync,
       showIcon: true,

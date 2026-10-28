@@ -158,10 +158,11 @@ void main() {
       'card_creation.anki.overwrite_scope',
       // 新卡按词频重排：复习层自己读写新卡位置，挪进「Fushi 复习」分组。
       'card_creation.anki.reposition',
-      'card_creation.anki.reposition_auto',
     ]) {
       expect(entry(id).isVisible(ctx), isTrue, reason: id);
     }
+    // 复习没有「制卡后自动重排」：出卡直接按卡上的词频名次排（牌组「新卡顺序」）。
+    expect(entry('card_creation.anki.reposition_auto').isVisible(ctx), isFalse);
     expect(navVisible(ctx, 'card_creation.media.open'), isTrue);
 
     // 切回 Anki：恢复。

@@ -386,7 +386,10 @@ class SrsDbStore implements SrsSync2Host {
   /// 5（BUG-3797）：srs_notes_cache.pending_decision 的推导改了——标签 OR-Set 的合成 `tags` 行不再被当成
   /// 「与删除并发的修改」。老库里每条带标签的已删笔记都被错标成待裁决（挂在冲突中心「等你决定的笔记」里，
   /// 「确认删除」也消不掉），升级时把标着待裁决的笔记重算一遍。
-  static const int _kCacheRevision = 5;
+  ///
+  /// 6（srs.db schema v7）：srs_cards_cache.freq_rank（笔记词频序字段的名次，新卡按词频出卡用）。老库这一列
+  /// 是空的，升级时全部笔记缓存重算一遍。
+  static const int _kCacheRevision = 6;
   int _cacheRevision = _kCacheRevision;
 
   /// 有效复习投影要重算的卡（缓存刷新写过 / 隐藏的卡、脏卡、重建与升级时的全部卡）：[_flushCachesNow]
@@ -845,7 +848,8 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 笔记类型的这个字段键是否影响笔记 / 卡片缓存行。缓存行只由类型的字段定义（排序字段、卡片生成的
-  /// 空卡判断）、模板定义（生成哪些卡）、词条字段（termKey）与删除标记（笔记是否还在）派生（见
+  /// 空卡判断、按名字认的词频序字段）、模板定义（生成哪些卡）、词条字段（termKey）、词频序字段（freq_rank）
+  /// 与删除标记（笔记是否还在）派生（见
   /// [_planNote]）；名字、CSS、字段说明只在渲染 / 编辑时读，改它们不必把整个类型的笔记重算一遍
   /// （以前改一行 CSS 也要物化该类型全部笔记与卡片）。按排除法列：不认识的键一律当作影响，宁可多算。
   static bool _noteTypeKeyAffectsCaches(String fieldKey) =>
@@ -1738,6 +1742,8 @@ class SrsDbStore implements SrsSync2Host {
             templateId: c.templateId,
             clozeOrd: c.clozeOrd,
             noteCreatedAt: n?.createdAt ?? c.noteCreatedAt,
+            // 名次由笔记派生：只有卡片事件变了时沿用缓存里的值（笔记变了走 [_applyNotePlan] 重算）。
+            freqRank: c.freqRank,
             hidden: c.hidden,
           ),
         );
@@ -2016,6 +2022,10 @@ class SrsDbStore implements SrsSync2Host {
         ]);
         await _flushCaches();
       }
+      if (_cacheRevision < 6) {
+        _dirtyNotes.addAll(await entityIds(SrsEntityKind.note));
+        await _flushCaches();
+      }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();
     });
@@ -2074,6 +2084,10 @@ class SrsDbStore implements SrsSync2Host {
     final String sortField = t == null || t.fields.isEmpty
         ? ''
         : ankiStripHtml(n.field(t.fields.first.id)).trim();
+    final SrsFieldDef? freqField = t?.frequencyField;
+    final int? freqRank = freqField == null
+        ? null
+        : freqRankOf(n.field(freqField.id));
 
     // 卡片生成（铁律 D）：期望的 (templateId, clozeOrd) 集合；不在集合里的现存卡片隐藏，不写同步行。
     final Map<String, (String, int, bool)> expected =
@@ -2112,10 +2126,26 @@ class SrsDbStore implements SrsSync2Host {
       term: term,
       reading: reading,
       sortField: sortField,
+      freqRank: freqRank,
       expected: expected,
       noteGone: noteGone,
     );
   }
+
+  /// 词频序字段的值 → 名次：去掉 HTML 后第一段数字（制卡写的是 `{frequency-harmonic-rank}` 的整数，
+  /// 手改 / 导入的可能带标签或说明文字）；不是正整数（空、0、没有数字）= null，排在有名次的卡后面。
+  /// 最多取 9 位，免得超长数字串溢出。
+  static int? freqRankOf(String value) {
+    final RegExpMatch? m = _kLeadingDigits.firstMatch(ankiStripHtml(value));
+    if (m == null) return null;
+    final String digits = m.group(0)!;
+    final int? rank = int.tryParse(
+      digits.length > 9 ? digits.substring(0, 9) : digits,
+    );
+    return rank == null || rank <= 0 ? null : rank;
+  }
+
+  static final RegExp _kLeadingDigits = RegExp(r'\d+');
 
   /// 笔记当前字段值引用的媒体文件名（[SrsNotesCache.mediaRefs] 的值：换行分隔、去重排序）。
   static String _mediaRefsOf(SrsNoteView n) {
@@ -2225,6 +2255,7 @@ class SrsDbStore implements SrsSync2Host {
           templateId: tplId,
           clozeOrd: ord,
           noteCreatedAt: n.createdAt,
+          freqRank: plan.freqRank,
           hidden: noteGone || empty,
         ),
       );
@@ -2629,6 +2660,7 @@ class SrsDbStore implements SrsSync2Host {
     required String templateId,
     required int clozeOrd,
     required int noteCreatedAt,
+    required int? freqRank,
     required bool hidden,
   }) {
     final SrsCardFlags flags = material.lineage.flags;
@@ -2657,6 +2689,7 @@ class SrsDbStore implements SrsSync2Host {
       scheduler: Value<String>(s.scheduler),
       noteCreatedAt: Value<int>(noteCreatedAt),
       newPosition: Value<int?>(flags.newPosition),
+      freqRank: Value<int?>(freqRank),
     );
   }
 
@@ -3948,7 +3981,18 @@ class SrsDbStore implements SrsSync2Host {
     return (introduced, reviewed, answers);
   }
 
-  /// 新卡出卡顺序（[nextCard] 与「按词频重排新卡」共用这一处）：排过的卡在前、按位置
+  /// [nextCard] 的新卡 ORDER BY。按词频时名次在前：名次是笔记上的值、随笔记同步，各设备出卡顺序一致，
+  /// 刚挖的卡也立刻落在对的位置，不用事后写位置。没有名次的卡退回 [compareNewCardOrder] 的同序。
+  static String _newCardOrderSql(SrsNewCardOrder order) => switch (order) {
+    SrsNewCardOrder.frequency =>
+      'freq_rank IS NULL, freq_rank, '
+          'new_position IS NULL, new_position, note_created_at, id',
+    // 与 [compareNewCardOrder] 同序：NULL 位置排在最后。
+    SrsNewCardOrder.position =>
+      'new_position IS NULL, new_position, note_created_at, id',
+  };
+
+  /// 新卡位置序（按位置出卡的牌组、[nextCard] 的兜底、「按词频重排新卡」共用这一处）：排过的卡在前、按位置
   /// 升序；没排过的（[SrsCardCacheRow.newPosition] 为 null）在后、按（笔记创建时刻,
   /// cardId）——从没重排过的库出卡顺序与加位置之前逐张相同。位置相同再按后者。
   static int compareNewCardOrder(SrsCardCacheRow a, SrsCardCacheRow b) {
@@ -4301,8 +4345,9 @@ class SrsDbStore implements SrsSync2Host {
     };
   }
 
-  /// 下一张要复习的卡：到期的学习卡 → 到期复习卡（可提取度从低到高）→ 新卡（[compareNewCardOrder]
-  /// 的同序 SQL：排过位置的在前按位置升序，没排过的在后按（笔记创建时刻, cardId））。
+  /// 下一张要复习的卡：到期的学习卡 → 到期复习卡（可提取度从低到高）→ 新卡（所点牌组的「新卡顺序」：
+  /// 按词频 = 有名次的在前按名次升序，其余按 [compareNewCardOrder]；按位置 = [compareNewCardOrder] 的同序
+  /// SQL：排过位置的在前按位置升序，没排过的在后按（笔记创建时刻, cardId））。
   /// 计数按牌组在 SQL 里聚合，三类候选各由一条 `LIMIT 1` 查询在 SQL 里挑出，
   /// 不把子树里几千上万张卡的行搬回 Dart。
   Future<String?> nextCard(
@@ -4422,8 +4467,7 @@ class SrsDbStore implements SrsSync2Host {
           (String d) => pathHasRoom(d, (_DeckCount x) => x.newRemaining),
         ),
         "queue = 'new'",
-        // 与 [compareNewCardOrder] 同序：NULL 位置排在最后。
-        'new_position IS NULL, new_position, note_created_at, id',
+        _newCardOrderSql(ctx.tree.paramsOwner(deckId).newCardOrder),
         const <Variable<Object>>[],
       );
       if (fresh != null) return fresh.$1;
@@ -5490,6 +5534,7 @@ class _NotePlan {
     required this.term,
     required this.reading,
     required this.sortField,
+    required this.freqRank,
     required this.expected,
     required this.noteGone,
   });
@@ -5499,6 +5544,9 @@ class _NotePlan {
   final String term;
   final String reading;
   final String sortField;
+
+  /// 词频序字段的名次（[SrsDbStore.freqRankOf]）；写进这条笔记每张卡的 freq_rank。
+  final int? freqRank;
 
   /// cardId → (templateId, clozeOrd, empty)。
   final Map<String, (String, int, bool)> expected;

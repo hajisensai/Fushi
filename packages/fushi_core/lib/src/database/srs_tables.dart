@@ -185,6 +185,11 @@ class SrsCardsCache extends Table {
   /// 原有的（笔记 createdAt, cardId）顺序——老数据出卡顺序不变。
   IntColumn get newPosition => integer().nullable()();
 
+  /// srs.db schema v7：笔记词频序字段（`SrsNoteTypeView.frequencyField`）解析出的名次，越小越常见；
+  /// NULL = 没有。牌组「新卡顺序 = 按词频」时出卡按它升序，排在 [newPosition] 之前。由笔记派生、
+  /// 随笔记刷新，不同步。
+  IntColumn get freqRank => integer().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

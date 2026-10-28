@@ -102,6 +102,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   bool _ownParams = true;
   bool _autoplayAudio = true;
   bool _replayQuestionAudio = true;
+  SrsNewCardOrder _newCardOrder = SrsNewCardOrder.frequency;
 
   String? _learnError;
   String? _relearnError;
@@ -166,6 +167,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _ownParams = deck.ownParams;
         _autoplayAudio = deck.autoplayAudio;
         _replayQuestionAudio = deck.replayQuestionAudio;
+        _newCardOrder = deck.newCardOrder;
         _rwkvMinReviews.text = '${deck.rwkvQueue.minReviewsPerDay}';
         _rwkvRepeatReviews.text = '${deck.rwkvQueue.repeatMinReviews}';
         _rwkvRepeatSeconds.text = '${deck.rwkvQueue.repeatMinSeconds}';
@@ -263,6 +265,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       }
       if (_replayQuestionAudio != deck.replayQuestionAudio) {
         out[SrsFieldKeys.deckReplayQuestion] = _replayQuestionAudio;
+      }
+      if (_newCardOrder != deck.newCardOrder) {
+        out[SrsFieldKeys.deckNewOrder] = _newCardOrder.wire;
       }
       final SrsRwkvQueueSettings queue = _rwkvQueue(deck.rwkvQueue);
       if (queue != deck.rwkvQueue) {
@@ -769,6 +774,38 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           errorText: _relearnError,
         ),
         _conflictNote(context, SrsFieldKeys.deckSteps),
+      ]),
+      // 新卡顺序与记忆率同一条继承（只看 own 祖先，见 [SrsDeckView.newCardOrder]）。
+      _group(context, <Widget?>[
+        if (ownsParams) ...<Widget?>[
+          AdaptiveSettingsSegmentedRow<SrsNewCardOrder>(
+            key: const ValueKey<String>('srs-settings-new-order'),
+            title: t.srs_settings_new_order,
+            subtitle: switch (_newCardOrder) {
+              SrsNewCardOrder.frequency =>
+                t.srs_settings_new_order_frequency_hint,
+              SrsNewCardOrder.position =>
+                t.srs_settings_new_order_position_hint,
+            },
+            segments: <ButtonSegment<SrsNewCardOrder>>[
+              ButtonSegment<SrsNewCardOrder>(
+                value: SrsNewCardOrder.frequency,
+                label: Text(t.srs_settings_new_order_frequency),
+              ),
+              ButtonSegment<SrsNewCardOrder>(
+                value: SrsNewCardOrder.position,
+                label: Text(t.srs_settings_new_order_position),
+              ),
+            ],
+            selected: _newCardOrder,
+            onChanged: (SrsNewCardOrder v) => setState(() => _newCardOrder = v),
+          ),
+          _conflictNote(context, SrsFieldKeys.deckNewOrder),
+        ] else
+          Text(
+            t.srs_settings_inherited_from(name: _owner?.name ?? ''),
+            style: context.fushiType.bodyMedium,
+          ),
       ]),
     ];
   }
