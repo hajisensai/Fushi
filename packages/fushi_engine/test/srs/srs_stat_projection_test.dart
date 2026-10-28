@@ -469,7 +469,7 @@ void main() {
         templateMap: <String, String?>{vt.templates[0].id: vf.templates[1].id},
       );
       final String newCard = SrsIds.card(note, vt.templates[0].id, 0);
-      expect((await a.cardRow(card2))!.hidden, isTrue);
+      expect(await a.cardRow(card2), isNull, reason: '前身卡不再生成，删缓存行；增量与重建同一张表');
 
       final List<String> incremental = await projectionRows(a.db);
       final List<String> stats = await fromLoader(a, jst);

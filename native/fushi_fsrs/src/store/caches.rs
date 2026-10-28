@@ -99,13 +99,14 @@ pub(crate) struct Written {
     pub notes: Vec<String>,
     /// 写了整行的卡。
     pub cards: Vec<String>,
-    /// 只改成隐藏的卡（不再应有的旧卡）。
-    pub hidden: Vec<String>,
+    /// 删掉的卡缓存行（笔记不再生成的卡：删掉的模板 / cloze 序号、更改笔记类型的前身卡）。它的日志与修改记录
+    /// 都还在，再生成时（同一卡 ID）按血统原样重算。
+    pub removed: Vec<String>,
 }
 
 impl Written {
     pub(crate) fn to_json(&self) -> Value {
-        serde_json::json!({"notes": self.notes, "cards": self.cards, "hidden": self.hidden})
+        serde_json::json!({"notes": self.notes, "cards": self.cards, "removed": self.removed})
     }
 }
 
@@ -151,7 +152,7 @@ pub(crate) fn refresh(c: &Connection, profile: &str, cfg: &CacheConfig, dirty: D
         flush_notes(c, profile, cfg, chunk, &mut types, &mut refreshed, now, &mut out)?;
     }
     // 卡片的历史 / 标志沿「前身」继承：前身变了，后继卡也要重算。
-    let succ = if dirty.cards.is_empty() && !dirty.all_stats && out.cards.is_empty() && out.hidden.is_empty() {
+    let succ = if dirty.cards.is_empty() && !dirty.all_stats && out.cards.is_empty() && out.removed.is_empty() {
         HashMap::new()
     } else {
         successor_index(c)?
@@ -174,7 +175,7 @@ pub(crate) fn refresh(c: &Connection, profile: &str, cfg: &CacheConfig, dirty: D
     // 投影在全部缓存行（可见性）写完之后再算：归属看的是这一轮之后的可见性。还没有缓存行的卡也算。
     stat_seeds.extend(closure);
     stat_seeds.extend(out.cards.iter().cloned());
-    stat_seeds.extend(out.hidden.iter().cloned());
+    stat_seeds.extend(out.removed.iter().cloned());
     if dirty.all_stats {
         stat_seeds.extend(strings(c, "SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = ?1", &[profile])?);
     }
@@ -380,17 +381,19 @@ fn flush_notes(
         }
         plans.push((k, expected, gone));
     }
-    // 不再应有的旧卡只改成隐藏。
-    let mut hide: Vec<String> = Vec::new();
+    // 不再应有的旧卡删行：缓存是事件的纯函数，增量刷新与 [rebuild] 必须得到同一张表（删除前的 Dart 增量路径
+    // 把它们留成 hidden=1、重建又不写，两条路径的结果取决于这台机器重建过没有，更改笔记类型的预演会因此
+    // 多 / 少继承一张旧卡的历史）。
+    let mut gone_cards: Vec<String> = Vec::new();
     for (k, expected, _) in &plans {
         for card in existing.get(&views[*k].id).into_iter().flatten() {
             if !expected.iter().any(|e| &e.0 == card) {
-                hide.push(card.clone());
+                gone_cards.push(card.clone());
             }
         }
     }
-    hide_cards(c, &hide)?;
-    out.hidden.extend(hide);
+    delete_cards(c, &gone_cards)?;
+    out.removed.extend(gone_cards);
     let materials = card_materials(c, cfg, &want)?;
     let mut card_stmt = c.prepare_cached(CARD_UPSERT).map_err(sql)?;
     for (k, expected, gone) in &plans {
@@ -576,9 +579,9 @@ fn write_card(
     Ok(())
 }
 
-fn hide_cards(c: &Connection, ids: &[String]) -> Result<(), String> {
+fn delete_cards(c: &Connection, ids: &[String]) -> Result<(), String> {
     for chunk in ids.chunks(500) {
-        let q = format!("UPDATE srs_cards_cache SET hidden = 1 WHERE id IN ({})", marks(chunk.len()));
+        let q = format!("DELETE FROM srs_cards_cache WHERE id IN ({})", marks(chunk.len()));
         c.prepare_cached(&q).map_err(sql)?.execute(params_from_iter(chunk.iter())).map_err(sql)?;
     }
     Ok(())

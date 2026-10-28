@@ -5,10 +5,12 @@
 // `_refreshCardChunk` / `_refreshStatProjection`）生成，生成脚本留档在 fixtures/gen_cache_vectors.dart.txt。
 // 向量里是原始事件表（srs_entities / srs_field_edits / srs_review_logs / srs_event_local）的全部行，与
 // `rebuildCaches()` 之后的三张缓存表（srs_notes_cache 去 updated_at / srs_cards_cache / srs_stat_reviews）。
+// 原始表里还有两类只来自遗留数据（旧同步 / 备份恢复）的行，同样由旧实现重建出期望：srs_event_local 的服务器时刻
+// （排序键钳位，改变并发修改的胜者与历史顺序）与一个谁也没见过的写者的并发修改 / 并发删除（pending_decision = 1）。
 //
-// 期望表取重建结果。增量刷新与重建的已知差别（2026-10-28 拍板）：增量会留下「不再应有的卡」（删掉的模板、
-// 更改笔记类型的前身卡、消失的 cloze 序号）的 hidden=1 行，重建不写它们；所以增量用例只断言「向量里的行都在且
-// 逐列一致、多出的行全是 hidden=1」。
+// 期望表取重建结果。删除前的 Dart 增量刷新会把「不再应有的卡」（删掉的模板、更改笔记类型的前身卡、消失的
+// cloze 序号）留成 hidden=1 行、重建又不写它们，两条路径结果不同；Rust 版两条路径都删这些行，所以增量用例
+// 与重建用例同样逐行全等（一行不多），并且先往被刷新的笔记下塞一张不该有的卡，证明增量刷新会把它删掉。
 //
 // - 用例 1：空库灌原始四张表 → rebuildCaches → 三张缓存表逐行等于向量（浮点逐位比较）。
 // - 用例 2：同上重建后，再走两条增量刷新路径（被刷新的行先改坏，证明真的重算了）：
@@ -16,6 +18,7 @@
 //      `_applyNotePlan` 与 `_refreshCardChunk`）；
 //   b. 把本机缓存修订号写回 0 再打开（`SrsDbStore.open` → 升级路径：全部笔记 + 有新卡位置的卡 + 全部有日志的
 //      卡标脏，走增量刷新而不是删表重建）。
+//   两条路径前都给被刷新的笔记各塞一张不该有的卡（复制它的一张卡、换个卡 ID）。
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -161,12 +164,8 @@ void main() {
     ];
   }
 
-  /// 逐行逐列对向量。[allowHiddenExtras]：库里多出的行只要 hidden=1 就放过（增量路径）。返回多出的行数。
-  Future<int> check(
-    SrsDbStore s,
-    String name, {
-    bool allowHiddenExtras = false,
-  }) async {
+  /// 逐行逐列对向量，多一行少一行都算错。
+  Future<void> check(SrsDbStore s, String name) async {
     final Table want = _table(expected[name]);
     final List<int> pkIdx = <int>[
       for (final String c in want.pk) want.columns.indexOf(c),
@@ -191,17 +190,14 @@ void main() {
         }
       }
     }
-    final int hidden = want.columns.indexOf('hidden');
-    for (final MapEntry<String, List<Object?>> e in gotBy.entries) {
-      if (allowHiddenExtras && hidden >= 0 && e.value[hidden] == 1) continue;
-      problems.add('extra ${e.key}');
+    for (final String k in gotBy.keys) {
+      problems.add('extra $k');
     }
     expect(
       problems.take(20).toList(),
       isEmpty,
       reason: '$name: ${problems.length} problems',
     );
-    return gotBy.length;
   }
 
   test('灌原始事件 → rebuildCaches → 三张缓存表逐行等于向量', () async {
@@ -242,6 +238,30 @@ void main() {
       );
     }
 
+    /// 给 [noteIds] 各塞一张不该有的卡：复制它的第一张卡、卡 ID 换成固定前缀（不会与真卡撞）。返回塞了几张。
+    Future<int> plantStale(Iterable<String> noteIds) async {
+      final List<String> all = <String>[
+        for (final QueryRow r
+            in await s.db
+                .customSelect('PRAGMA table_info(srs_cards_cache)')
+                .get())
+          '"${r.read<String>('name')}"',
+      ];
+      final String rest = all.where((String c) => c != '"id"').join(', ');
+      final Set<String> want = noteIds.toSet();
+      final Set<String> done = <String>{};
+      for (final List<Object?> c in cards.rows) {
+        final String note = c[col(cards, 'note_id')]! as String;
+        if (!want.contains(note) || !done.add(note)) continue;
+        await s.db.customStatement(
+          'INSERT INTO srs_cards_cache ("id", $rest) '
+          'SELECT ?, $rest FROM srs_cards_cache WHERE id = ?',
+          <Object?>['stale-$note', c[col(cards, 'id')]],
+        );
+      }
+      return done.length;
+    }
+
     // a. 本机写入：没有待裁决的笔记里每 7 条取一条改标签再改回；它们以外的卡每 11 张取一张改旗标再改回。
     final List<List<Object?>> sampleNotes = <List<Object?>>[
       for (int i = 0; i < notes.rows.length; i += 7)
@@ -270,6 +290,7 @@ void main() {
           c[col(cards, 'id')]! as String,
       ],
     );
+    expect(await plantStale(sampleNoteIds), greaterThan(0));
     for (final List<Object?> n in sampleNotes) {
       final String id = n[col(notes, 'id')]! as String;
       final List<String> tags =
@@ -285,11 +306,18 @@ void main() {
       await s.setFlag(id, flag);
     }
     for (final String name in kCacheTables) {
-      await check(s, name, allowHiddenExtras: true);
+      await check(s, name);
     }
 
-    // b. 升级路径：全表改坏，缓存修订号写回 0，重新打开同一个库。
+    // b. 升级路径：全表改坏、每条笔记塞一张不该有的卡，缓存修订号写回 0，重新打开同一个库。
     await corrupt();
+    expect(
+      await plantStale(<String>[
+        for (final List<Object?> n in notes.rows)
+          n[col(notes, 'id')]! as String,
+      ]),
+      greaterThan(100),
+    );
     final QueryRow ls = await s.db
         .customSelect(
           'SELECT json FROM srs_local_state WHERE profile_uid = ?',
@@ -307,7 +335,7 @@ void main() {
     );
     final SrsDbStore reopened = await openOn(st);
     for (final String name in kCacheTables) {
-      await check(reopened, name, allowHiddenExtras: true);
+      await check(reopened, name);
     }
   }, timeout: const Timeout(Duration(minutes: 10)));
 }

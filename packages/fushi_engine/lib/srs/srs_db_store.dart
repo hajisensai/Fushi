@@ -1542,7 +1542,7 @@ class SrsDbStore implements SrsSync2Host {
     );
   }
 
-  /// 内核交回的缓存写入清单（`cache`：写了整行的笔记 / 卡、只改成隐藏的卡）记进变更日志与数字索引（同一个
+  /// 内核交回的缓存写入清单（`cache`：写了整行的笔记 / 卡、删掉的卡）记进变更日志与数字索引（同一个
   /// 独占区 / 事务里；事务回滚时 [_transactionOrReload] 会把两者一起作废）。
   void _absorbCache(Map<String, Object?> r) {
     final Map<Object?, Object?>? w = r['cache'] as Map<Object?, Object?>?;
@@ -1553,9 +1553,10 @@ class SrsDbStore implements SrsSync2Host {
     ];
     final List<String> notes = ids('notes');
     final List<String> cards = ids('cards');
-    final List<String> hidden = ids('hidden');
-    if (notes.isEmpty && cards.isEmpty && hidden.isEmpty) return;
-    _journalCacheWrite(notes, <String>[...cards, ...hidden]);
+    final List<String> removed = ids('removed');
+    if (notes.isEmpty && cards.isEmpty && removed.isEmpty) return;
+    // 删掉的卡留在数字索引里无害（映射到的 UUID 查不到行，见 [_ankiNoteIndex]）。
+    _journalCacheWrite(notes, <String>[...cards, ...removed]);
     _indexCacheRows(notes, cards);
   }
 
@@ -1847,7 +1848,7 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 复习日志的归属：前身卡 → 继承它历史的可见卡（与 [history] 合并前身日志同一条血统规则）。
   ///
-  /// 更改笔记类型 / 旧 Lapis 迁到 Fushi 卡片后，日志仍记在（已隐藏的）前身卡名下；按卡读日志的地方
+  /// 更改笔记类型 / 旧 Lapis 迁到 Fushi 卡片后，日志仍记在前身卡（已没有缓存行）名下；按卡读日志的地方
   /// （统计）要把它们算到继承它们的那张可见卡上，否则那张卡在牌组统计里一条复习都没有。一张前身被
   /// 几张可见卡继承时（极少）归 id 最小的那张，不重复计数。
   Future<Map<String, String>> historyOwnerIndex() async {
