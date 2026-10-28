@@ -2249,6 +2249,17 @@ class PreferencesRepository extends ChangeNotifier
     }
   }
 
+  /// 是否把 Audiobookshelf 上收听中的条目混排进首页「继续」。默认 false：与媒体
+  /// 服务器的 `jellyfin_show_in_library` 同一原则——用户自配服务器的条目混进本地
+  /// 视图是显式 opt-in，关着时首页根本不去问服务器。
+  bool get audiobookshelfShowInHome =>
+      getPref('audiobookshelf_show_in_home', defaultValue: false) as bool;
+
+  Future<void> setAudiobookshelfShowInHome(bool value) async {
+    await setPref('audiobookshelf_show_in_home', value);
+    notifyListeners();
+  }
+
   Future<void> setDiscoveryAudiobookshelfServers(
     Iterable<AudiobookshelfServerConfig> servers,
   ) async {

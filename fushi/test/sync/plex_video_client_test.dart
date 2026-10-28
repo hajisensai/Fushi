@@ -559,15 +559,15 @@ void main() {
         MediaServerItemType.episode,
       );
       expect(withShowThumb.seriesCoverItemId, 'show-1');
-      expect(withShowThumb.posterItem.id, 'show-1');
-      expect(withShowThumb.posterItem.type, MediaServerItemType.series);
+      expect(withShowThumb.coverItem.id, 'show-1');
+      expect(withShowThumb.coverItem.type, MediaServerItemType.series);
 
       final MediaServerItem without = PlexVideoClient.mediaServerItemFrom(
         PlexApi.parseMetadata(_episode('ep-2'))!,
         MediaServerItemType.episode,
       );
       expect(without.seriesCoverItemId, isNull);
-      expect(without.posterItem.id, 'ep-2');
+      expect(without.coverItem.id, 'ep-2');
     });
 
     test('toRemoteVideoInfo：集的标题 / 合集归属 / 封面；非叶子抛', () {

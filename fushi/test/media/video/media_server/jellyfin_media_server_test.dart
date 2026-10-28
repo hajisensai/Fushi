@@ -1354,8 +1354,8 @@ void main() {
         'ParentPrimaryImageTag': 'pt',
       });
       expect(viaSeries.seriesCoverItemId, 'series-1');
-      expect(viaSeries.posterItem.id, 'series-1');
-      expect(viaSeries.posterItem.hasCover, isTrue);
+      expect(viaSeries.coverItem.id, 'series-1');
+      expect(viaSeries.coverItem.hasCover, isTrue);
       expect(viaSeries.hasCover, isTrue, reason: '集自己的 Primary 信息保留给集列表');
 
       final MediaServerItem viaParent = map(<String, Object?>{
@@ -1370,7 +1370,7 @@ void main() {
         'SeriesId': 'series-1',
       });
       expect(none.seriesCoverItemId, isNull);
-      expect(none.posterItem.id, 'ep1');
+      expect(none.coverItem.id, 'ep1');
 
       // 非集不借剧海报。
       final MediaServerItem movie = JellyfinVideoClient.mediaServerItemFrom(
@@ -1384,7 +1384,7 @@ void main() {
         MediaServerItemType.movie,
       );
       expect(movie.seriesCoverItemId, isNull);
-      expect(movie.posterItem.id, 'm1');
+      expect(movie.coverItem.id, 'm1');
     });
   });
 }

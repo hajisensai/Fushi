@@ -80,6 +80,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/misc/dashboard_remote_merge.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue.dart';
+import 'package:fushi/src/utils/misc/dashboard_server_continue_feed.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart'
     show AudiobookshelfServerConfig;
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
@@ -553,7 +554,14 @@ class _ContinueEntry {
 
   /// 本条的媒体种类。书按真实身份区分 [MediaKind.epub] / [MediaKind.srt]
   /// （两者在本区块行为一致，经 [isBook] 归并），不再用一个 bool 硬编码二元。
-  final MediaKind kind;
+  ///
+  /// null = 有声书（Audiobookshelf 服务器条目，[isAudiobook]）：[MediaKind] 是书 /
+  /// 字幕书 / 视频 / 游戏这几种**本地库行**的持久化值域，没有有声书，也不该为一张
+  /// 首页卡往里加值或挪用 epub。
+  final MediaKind? kind;
+
+  /// 有声书分支（Audiobookshelf 服务器条目；方形封面、打开详情页）。
+  bool get isAudiobook => server != null && !server!.isVideo;
 
   /// 视频分支（横版封面 / 直接续播）。
   bool get isVideo => kind == MediaKind.video;
@@ -578,7 +586,7 @@ class _ContinueEntry {
       ? (server!.isVideo ? ModuleId.video : ModuleId.books)
       : book?.mediaSourceIdentifier == MangaFushiSource.kUniqueKey
       ? ModuleId.manga
-      : moduleOfMediaKind(kind);
+      : moduleOfMediaKind(kind!);
 
   final String title;
 
@@ -608,8 +616,8 @@ class _ContinueEntry {
   final RemoteContinueCandidate? remote;
 
   /// 用户自配服务器（Jellyfin / Emby / Plex、Audiobookshelf）上的在进行条目。
-  /// 视频类 [kind] 为 [MediaKind.video]；ABS 有声书没有对应的 [MediaKind]，归书模块
-  /// （ABS 标签页住在书库里），[kind] 取 [MediaKind.epub] 只为满足结构。
+  /// 视频类 [kind] 为 [MediaKind.video]；ABS 有声书 [kind] 为 null（见 [kind]），
+  /// 归书模块（ABS 标签页住在书库里）。
   final ServerContinueCandidate? server;
 }
 
@@ -837,14 +845,15 @@ class _HomeDashboardPageState
       const <RemoteContinueCandidate>[];
 
   /// 用户自配服务器（Jellyfin / Emby / Plex、Audiobookshelf）上进行中的条目，
-  /// 异步到达、不阻塞首帧；与本地「继续」条目按最近播放时刻混排。按数据库实例缓存
-  /// 上一轮结果（[_serverContinueCache]），重建首帧直接用，避免整行闪一下。
+  /// 异步到达、不阻塞首帧；与本地「继续」条目按最近播放时刻混排。结果缓存、刷新
+  /// 节流与服务器连接都归进程级的 [ServerContinueFeed]（按数据库实例一份），重建
+  /// 首帧直接用上一轮结果，避免整行闪一下。混排是显式 opt-in，见
+  /// [_serverContinueGates]。
   List<ServerContinueCandidate> _serverContinue =
       const <ServerContinueCandidate>[];
-  bool _serverContinueLoading = false;
-  bool _serverContinueReloadQueued = false;
-  static final Expando<List<ServerContinueCandidate>> _serverContinueCache =
-      Expando<List<ServerContinueCandidate>>('home-dashboard-server-continue');
+
+  /// 上次取数时的混排门控签名（偏好翻转时据此立即重取 / 清空）。
+  String? _serverContinueGateAtLastLoad;
 
   /// 远端封面取图器（互联 client 可用时非空；喂 [RemoteCoverImage]）。
   RemoteCoverFetcher? _remoteCoverFetcher;
@@ -955,15 +964,13 @@ class _HomeDashboardPageState
       _applySnapshot(snapshot);
       _initialLoadDone = true;
     }
-    _serverContinue =
-        _serverContinueCache[ref.read(appProvider).database] ??
-        const <ServerContinueCandidate>[];
+    _serverContinue = ServerContinueFeed.of(
+      ref.read(appProvider).database,
+    ).current;
     unawaited(_loadDashboardData());
     // Kavita 绑定书：服务器端改了进度（网页端翻页 / 标已读未读）时静默对账，
     // 采用后写本地阅读位置，表级信号会带动本页重载。进入 / 切回首页 / 回前台触发。
-    _kavitaLifecycle = AppLifecycleListener(
-      onResume: _reconcileKavitaProgress,
-    );
+    _kavitaLifecycle = AppLifecycleListener(onResume: _onResumeForKavita);
     homeShellTabNotifier.addListener(_onTabForKavita);
     _reconcileKavitaProgress();
     unawaited(_loadServerContinue());
@@ -996,7 +1003,15 @@ class _HomeDashboardPageState
   /// 忽略——prefsRepo 的通知很频繁，不能每次都重跑远端取数。
   void _onPrefsChangedForRemoteGate() {
     if (!mounted) return;
-    final bool gate = ref.read(appProvider).prefsRepo.showRemoteEntries;
+    final AppModel appModel = ref.read(appProvider);
+    // 服务器条目的混排开关翻转：先按新门控过滤已上屏的条目（关掉立即消失），
+    // 再重取（门控签名变了，节流缓存自动作废）。
+    final String serverGate = _serverContinueGates(appModel).signature;
+    if (serverGate != _serverContinueGateAtLastLoad) {
+      setState(() {});
+      unawaited(_loadServerContinue());
+    }
+    final bool gate = appModel.prefsRepo.showRemoteEntries;
     if (gate == _remoteGateAtLastLoad) return;
     unawaited(_loadRemoteDashboardData());
   }
@@ -1015,7 +1030,8 @@ class _HomeDashboardPageState
 
   @override
   void onTabActivated() {
-    // 服务器侧的进度在别处（播放页 / 其它设备）会变，切回首页时重拉一次。
+    // 服务器侧的进度在别处（播放页 / 其它设备）会变，切回首页时重拉——经
+    // [ServerContinueFeed] 节流，短时间内来回切 tab 不重发请求。
     unawaited(_loadServerContinue());
     if (_reloadDeferredWhileHidden) {
       _reloadDeferredWhileHidden = false;
@@ -1046,6 +1062,14 @@ class _HomeDashboardPageState
 
   void _onTabForKavita() {
     if (_isVisibleTab) _reconcileKavitaProgress();
+  }
+
+  /// 回前台只在首页真的在屏上时对账：首页 tab 被选中、且上面没压着别的路由
+  /// （阅读器 / 详情页开着回前台时不去动服务器进度——那本书归阅读器管）。
+  void _onResumeForKavita() {
+    if (!mounted || !_isVisibleTab) return;
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
+    _reconcileKavitaProgress();
   }
 
   void _reconcileKavitaProgress() {
@@ -1433,53 +1457,83 @@ class _HomeDashboardPageState
     }
   }
 
+  /// 用户自配服务器条目混进首页「继续」的门控（显式 opt-in）：
+  /// - Jellyfin / Emby / Plex 走既有的「在视频库中混排显示」
+  ///   （`jellyfin_show_in_library`，默认关，文案即「混排进首页、系列与全部视频」）；
+  /// - Audiobookshelf 走「在首页『继续』中显示」（`audiobookshelf_show_in_home`，
+  ///   默认关）。
+  /// 各自还要所属模块开着（视频模块关着不问媒体服务器，书模块关着不问 ABS）。
+  ({bool mediaServers, bool audiobookshelf, String signature})
+  _serverContinueGates(AppModel appModel) {
+    final bool ready = appModel.isPreferencesReady;
+    final ModuleVisibility visibility = appModel.moduleVisibility;
+    final bool media =
+        ready &&
+        appModel.prefsRepo.jellyfinShowInLibrary &&
+        visibility.isEnabled(ModuleId.video);
+    final bool abs =
+        ready &&
+        appModel.prefsRepo.audiobookshelfShowInHome &&
+        visibility.isEnabled(ModuleId.books);
+    return (mediaServers: media, audiobookshelf: abs, signature: '$media|$abs');
+  }
+
   /// 取用户自配服务器上进行中的条目，到达后 setState 混进「继续」。失败静默：
   /// 离线 / 令牌失效的服务器只是不贡献条目（各服务器独立吞错，互不拖累）。
-  /// 在飞时再来的请求合并成一次随后补跑，保证最后一次触发看到最新进度。
-  Future<void> _loadServerContinue() async {
-    if (_serverContinueLoading) {
-      _serverContinueReloadQueued = true;
-      return;
-    }
-    _serverContinueLoading = true;
+  /// 节流、并发合并与连接复用都在 [ServerContinueFeed]；[force] 绕过节流（从服务器
+  /// 条目回来，进度确实变了）。
+  Future<void> _loadServerContinue({bool force = false}) async {
+    final AppModel appModel = ref.read(appProvider);
+    final ({bool mediaServers, bool audiobookshelf, String signature}) gates =
+        _serverContinueGates(appModel);
+    _serverContinueGateAtLastLoad = gates.signature;
+    final ServerContinueFeed feed = ServerContinueFeed.of(appModel.database);
     try {
-      final FushiDatabase db = ref.read(appProvider).database;
-      final List<ServerContinueCandidate> loaded =
-          await (widget.serverContinueLoader ?? _loadConfiguredServerContinue)();
-      _serverContinueCache[db] = loaded;
-      if (!mounted) return;
+      final List<ServerContinueCandidate> loaded = await feed.load(
+        gate: gates.signature,
+        force: force,
+        // 两个开关都关着：一台服务器都不问，并关掉留着的连接。
+        fetch: !gates.mediaServers && !gates.audiobookshelf
+            ? () async {
+                feed.retainBrowsers(const <MediaServerConfig>[]);
+                return const <ServerContinueCandidate>[];
+              }
+            : widget.serverContinueLoader ?? _loadConfiguredServerContinue,
+      );
+      if (!mounted || identical(loaded, _serverContinue)) return;
       setState(() => _serverContinue = loaded);
     } catch (e, stack) {
-      ErrorLogService.instance.log('HomeDashboardPage.serverContinue', e, stack);
-    } finally {
-      _serverContinueLoading = false;
-    }
-    if (_serverContinueReloadQueued && mounted) {
-      _serverContinueReloadQueued = false;
-      unawaited(_loadServerContinue());
+      ErrorLogService.instance.log(
+        'HomeDashboardPage.serverContinue',
+        e,
+        stack,
+      );
     }
   }
 
-  /// 已配置服务器的真取数：只问确实配了的服务器，且只问模块开着的那一侧（视频模块
-  /// 关着不问 Jellyfin / Emby / Plex，书模块关着不问 Audiobookshelf）。
+  /// 已配置服务器的真取数：只问门控开着的那一侧（[_serverContinueGates]），且只问
+  /// 确实配了的服务器。媒体服务器的浏览器由 [ServerContinueFeed] 按配置复用，
+  /// 不再出现的配置（登出 / 换线路 / 门控关掉）的连接在这里关掉。
   Future<List<ServerContinueCandidate>> _loadConfiguredServerContinue() async {
     final AppModel appModel = ref.read(appProvider);
-    final ModuleVisibility visibility = appModel.moduleVisibility;
+    final ServerContinueFeed feed = ServerContinueFeed.of(appModel.database);
+    final ({bool mediaServers, bool audiobookshelf, String signature}) gates =
+        _serverContinueGates(appModel);
     final List<Future<List<ServerContinueCandidate>>> jobs =
         <Future<List<ServerContinueCandidate>>>[];
-    if (visibility.isEnabled(ModuleId.video)) {
+    List<MediaServerConfig> configs = const <MediaServerConfig>[];
+    if (gates.mediaServers) {
       try {
-        final List<MediaServerConfig> configs = await SyncRepository(
-          appModel.database,
-        ).getMediaServers();
-        for (final MediaServerConfig config in configs) {
-          jobs.add(_loadMediaServerContinue(config));
-        }
+        configs = await SyncRepository(appModel.database).getMediaServers();
       } catch (e) {
         debugPrint('[home-continue] media server configs failed: $e');
       }
     }
-    if (visibility.isEnabled(ModuleId.books) && appModel.isPreferencesReady) {
+    feed.retainBrowsers(configs);
+    for (final MediaServerConfig config in configs) {
+      jobs.add(_loadMediaServerContinue(feed.browserFor(config)));
+    }
+    if (gates.audiobookshelf) {
       for (final AudiobookshelfServerConfig server in audiobookshelfTabServers(
         appModel.prefsRepo.discoveryAudiobookshelfServers,
       )) {
@@ -1494,10 +1548,9 @@ class _HomeDashboardPageState
   }
 
   Future<List<ServerContinueCandidate>> _loadMediaServerContinue(
-    MediaServerConfig config,
+    MediaServerBrowser browser,
   ) async {
     try {
-      final MediaServerBrowser browser = config.buildBrowser();
       Future<List<MediaServerItem>> row(
         Future<List<MediaServerItem>> Function() fetch,
       ) async {
@@ -1515,13 +1568,20 @@ class _HomeDashboardPageState
           row(browser.listNextUp),
         ],
       );
+      // 「接下来看」的集没播过、服务器不报时刻：按所属剧最近一次播放排序。
+      final Map<String, int> seriesRecent = await nextUpSeriesRecency(
+        browser: browser,
+        resume: both[0],
+        nextUp: both[1],
+      );
       return mediaServerContinueCandidates(
         serverId: browser.serverId,
         serverName: browser.displayName,
         resume: both[0],
         nextUp: both[1],
-        // 集用剧竖版海报（集自己的 Primary 是 16:9 截图），与本地漫画 / 视频卡同形。
-        coverUrlOf: (MediaServerItem item) => browser.coverUrl(item.posterItem),
+        seriesRecentMs: seriesRecent,
+        // 集用剧竖版封面（集自己的 Primary 是 16:9 截图），与本地漫画 / 视频卡同形。
+        coverUrlOf: (MediaServerItem item) => browser.coverUrl(item.coverItem),
         coverFetcher: browser,
         // 与服务器自己的浏览页同一出口：根 Navigator 压 VideoFushiPage.neutralizedRemote。
         open: (BuildContext context, MediaServerItem item) =>
@@ -2162,9 +2222,17 @@ class _HomeDashboardPageState
     }
     // 用户自配服务器（Jellyfin / Emby / Plex、Audiobookshelf）上进行中的条目，同样
     // 按最近播放时刻混排。已下载 / 入库到本机的媒体服务器条目让位给本地那张卡。
-    if (_serverContinue.isNotEmpty) {
+    // 渲染时再按当前门控过滤一遍：开关刚关掉、重取还没回来时也不混排。
+    final ({bool mediaServers, bool audiobookshelf, String signature}) gates =
+        _serverContinueGates(ref.read(appProvider));
+    final List<ServerContinueCandidate> serverContinue =
+        <ServerContinueCandidate>[
+          for (final ServerContinueCandidate c in _serverContinue)
+            if (c.isVideo ? gates.mediaServers : gates.audiobookshelf) c,
+        ];
+    if (serverContinue.isNotEmpty) {
       final Set<String> localServerItemKeys = <String>{};
-      if (_serverContinue.any((ServerContinueCandidate c) => c.isVideo)) {
+      if (serverContinue.any((ServerContinueCandidate c) => c.isVideo)) {
         for (final VideoBookRow v in _videos) {
           if (!isMediaServerVideoPath(v.videoPath)) continue;
           final MediaServerBookSpec? spec = MediaServerBookSpec.tryParse(
@@ -2178,12 +2246,12 @@ class _HomeDashboardPageState
         }
       }
       for (final ServerContinueCandidate c in mergeServerContinue(
-        <List<ServerContinueCandidate>>[_serverContinue],
+        <List<ServerContinueCandidate>>[serverContinue],
         localMediaServerItemKeys: localServerItemKeys,
       )) {
         entries.add(
           _ContinueEntry(
-            kind: c.isVideo ? MediaKind.video : MediaKind.epub,
+            kind: c.isVideo ? MediaKind.video : null,
             title: c.title,
             recentMs: c.recentMs,
             progress: c.progress,
@@ -2398,7 +2466,7 @@ class _HomeDashboardPageState
     // 有声书没有现成的「收听」类型词（ABS 文案在多数语言还是英文占位，首页 i18n
     // 守卫不放行），副标题直接由服务器名承担来源。
     final List<String> subtitle = <String>[
-      if (server == null || server.isVideo) _kindLabel(entry.kind),
+      if (entry.kind case final MediaKind kind) _kindLabel(kind),
       if (collectionName != null && collectionName != entry.title) entry.title,
       if (entry.remote != null) _remoteDeviceName ?? t.home_remote_source,
       if (server != null) server.serverName,
@@ -2442,12 +2510,9 @@ class _HomeDashboardPageState
   };
 
   /// 主角卡主按钮与「继续」FAB 共用的动作文案。
-  String _resumeActionLabel(_ContinueEntry entry) =>
-      entry.server != null && !entry.server!.isVideo
-      ? t.collection_open
-      : _resumeKindLabel(entry);
-
-  String _resumeKindLabel(_ContinueEntry entry) => switch (entry.kind) {
+  String _resumeActionLabel(_ContinueEntry entry) => switch (entry.kind) {
+    // 有声书落地是条目详情页（由它起播），文案说「打开」。
+    null => t.collection_open,
     MediaKind.video => t.video_continue_watching,
     MediaKind.epub || MediaKind.srt => t.book_continue_reading,
     // 游戏卡落地是切到游戏库（启动走那边的确认链），文案说「打开」；
@@ -2456,11 +2521,8 @@ class _HomeDashboardPageState
   };
 
   /// 主角卡主按钮与「继续」FAB 共用的动作图标。
-  IconData _resumeActionIcon(_ContinueEntry entry) => entry.server != null
-      ? FushiIcons.play
-      : _resumeKindIcon(entry);
-
-  IconData _resumeKindIcon(_ContinueEntry entry) => switch (entry.kind) {
+  IconData _resumeActionIcon(_ContinueEntry entry) => switch (entry.kind) {
+    null => FushiIcons.play,
     MediaKind.video => FushiIcons.play,
     MediaKind.epub || MediaKind.srt => FushiIcons.books,
     MediaKind.game => FushiIcons.games,
@@ -2613,9 +2675,10 @@ class _HomeDashboardPageState
               material: _continueMaterial(e),
               cover: _continueCover(tokens, appModel, e),
               title: _continueDisplayTitle(e),
-              subtitle:
-                  '${_kindLabel(e.kind)} · '
-                  '${formatActivityRelativeTime(e.recentMs, now)}',
+              subtitle: <String>[
+                if (e.kind case final MediaKind kind) _kindLabel(kind),
+                formatActivityRelativeTime(e.recentMs, now),
+              ].join(' · '),
               onTap: () => unawaited(_openContinueEntry(appModel, e)),
             ),
         ],
@@ -2727,7 +2790,9 @@ class _HomeDashboardPageState
       switch (entry.kind) {
         MediaKind.video => ShelfCoverMaterial.glossyPoster,
         MediaKind.game => ShelfCoverMaterial.gameCase,
-        MediaKind.epub || MediaKind.srt => ShelfCoverMaterial.glossyBook,
+        MediaKind.epub ||
+        MediaKind.srt ||
+        null => ShelfCoverMaterial.glossyBook,
       };
 
   /// 卡的显示名（读屏标签 / 悬停提示 / 无封面兜底）：合集成员显示合集名（非合集
@@ -3220,8 +3285,8 @@ class _HomeDashboardPageState
           stack,
         );
       }
-      // 回来后服务器上的进度变了，重拉一次「继续」。
-      if (mounted) unawaited(_loadServerContinue());
+      // 回来后服务器上的进度变了，强制重拉一次「继续」（绕过节流）。
+      if (mounted) unawaited(_loadServerContinue(force: true));
       return;
     }
     if (entry.remote != null) {

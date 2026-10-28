@@ -46,7 +46,8 @@ class ServerContinueCandidate {
   /// 剧名 / 播客名；非 null 时卡片显示它，[title] 退为副标题（与本地合集同规则）。
   final String? collectionName;
 
-  /// 最近播放时刻（epoch 毫秒）；服务器没报则为 0（排在已知时刻之后）。
+  /// 最近播放时刻（epoch 毫秒）；NextUp 取所属剧的最近播放时刻；都不知道为 0
+  /// （排在已知时刻之后）。
   final int recentMs;
 
   /// 0..1；未知为 null（不画进度条）。
@@ -75,12 +76,15 @@ String mediaServerItemKey(String serverId, String itemId) =>
 ///
 /// 口径与服务器首页「继续观看」行一致（`media_server_home_view`）：Resume 在前
 /// （有断点的优先），NextUp 补没断点的下一集；只收可播叶子，同 id 去重，已看完
-/// 的不收。排序时刻取服务器记的最近播放时刻，NextUp 通常没有，落 0。
+/// 的不收。排序时刻取服务器记的最近播放时刻；NextUp 的集本身没播过、服务器不报
+/// 时刻，取所属剧的最近播放时刻 [seriesRecentMs]（见 [nextUpSeriesRecency]），
+/// 否则「接下来看」永远沉到所有本地条目之后。仍不知道的落 0。
 List<ServerContinueCandidate> mediaServerContinueCandidates({
   required String serverId,
   required String serverName,
   required Iterable<MediaServerItem> resume,
   required Iterable<MediaServerItem> nextUp,
+  Map<String, int> seriesRecentMs = const <String, int>{},
   required String? Function(MediaServerItem item) coverUrlOf,
   required Future<void> Function(BuildContext context, MediaServerItem item)
   open,
@@ -107,18 +111,67 @@ List<ServerContinueCandidate> mediaServerContinueCandidates({
         itemId: item.id,
         title: grouped && code.isNotEmpty ? '$code ${item.name}' : item.name,
         collectionName: grouped ? series : null,
-        recentMs: item.lastPlayedAtMs,
+        recentMs: item.lastPlayedAtMs > 0
+            ? item.lastPlayedAtMs
+            : (seriesRecentMs[item.seriesId] ?? 0),
         progress: fraction,
         badgeLabel: code.isNotEmpty
             ? code
             : (fraction == null ? null : '${(fraction * 100).round()}%'),
         coverUrl: coverUrlOf(item),
-        coverCacheKey: 'media-server:$serverId:${item.posterItem.id}',
+        coverCacheKey: 'media-server:$serverId:${item.coverItem.id}',
         coverFetcher: coverFetcher,
         open: (BuildContext context) => open(context, item),
       ),
     );
   }
+  return out;
+}
+
+/// NextUp 里没有自身播放时刻的集 → 所属剧的最近播放时刻（seriesId → epoch 毫秒）。
+///
+/// 先看同一台服务器 Resume ∪ NextUp 里同剧条目报的时刻（不发请求）；还不知道的剧，
+/// 问这一集所在季的集清单（[MediaServerBrowser.listEpisodes]，一季一发），取其中
+/// 最近一次播放——「接下来看」的上一集就在里面。季首集的上一集在上一季时这一季
+/// 没有播放记录，落空（0）。单剧失败只丢这一剧，不影响其它。
+Future<Map<String, int>> nextUpSeriesRecency({
+  required MediaServerBrowser browser,
+  required Iterable<MediaServerItem> resume,
+  required Iterable<MediaServerItem> nextUp,
+}) async {
+  final Map<String, int> out = <String, int>{};
+  for (final MediaServerItem item in resume.followedBy(nextUp)) {
+    final String? series = item.seriesId;
+    if (series == null || item.lastPlayedAtMs <= 0) continue;
+    if (item.lastPlayedAtMs > (out[series] ?? 0)) {
+      out[series] = item.lastPlayedAtMs;
+    }
+  }
+  final Map<String, MediaServerItem> unknown = <String, MediaServerItem>{};
+  for (final MediaServerItem item in nextUp) {
+    final String? series = item.seriesId;
+    if (series == null || item.lastPlayedAtMs > 0) continue;
+    if (out.containsKey(series)) continue;
+    unknown.putIfAbsent(series, () => item);
+  }
+  await Future.wait<void>(<Future<void>>[
+    for (final MapEntry<String, MediaServerItem> e in unknown.entries)
+      () async {
+        try {
+          final MediaServerPage page = await browser.listEpisodes(
+            seriesId: e.key,
+            seasonId: e.value.seasonId,
+          );
+          int latest = 0;
+          for (final MediaServerItem ep in page.items) {
+            if (ep.lastPlayedAtMs > latest) latest = ep.lastPlayedAtMs;
+          }
+          if (latest > 0) out[e.key] = latest;
+        } on Object {
+          // 这一剧问不到：留 0，排在已知时刻之后。
+        }
+      }(),
+  ]);
   return out;
 }
 

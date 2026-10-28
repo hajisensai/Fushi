@@ -351,7 +351,7 @@ class MediaServerItem {
   /// 集所属剧的竖版海报所在条目 id（Jellyfin / Emby `SeriesId` +
   /// `SeriesPrimaryImageTag`，Plex `grandparentThumb`）；只在服务器确实报了剧海报时
   /// 非 null。集自己的 Primary 是 16:9 截图，列表 / 继续观看 / 首页要「剧封面」时用
-  /// [posterItem]，不要直接拿集去取图。
+  /// [coverItem]，不要直接拿集去取图。
   final String? seriesCoverItemId;
   final String? overview;
   final double? communityRating;
@@ -380,7 +380,7 @@ class MediaServerItem {
   /// 展示用「封面条目」：集在服务器报了剧海报时返回一个只带主图旗子的剧条目
   /// （交给 [MediaServerBrowser.coverUrl] 即得剧海报）；其余（电影 / 剧 / 季 / 无剧
   /// 海报信息的集）就是自己，调用方对「没有剧图」自然回落到集自身的图。
-  MediaServerItem get posterItem {
+  MediaServerItem get coverItem {
     final String? cover = seriesCoverItemId;
     if (type != MediaServerItemType.episode || cover == null || cover.isEmpty) {
       return this;

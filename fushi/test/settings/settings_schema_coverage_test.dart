@@ -49,6 +49,11 @@ const String _kFloatingBallSceneButtons =
     '各场景的勾选互不影响 / 勾选了但页面此刻没提供的专属按钮跳过';
 
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 首页「继续」混排 Audiobookshelf（opt-in）：生效点是首页 dashboard 的取数与混排，
+  // harness 设置页里没有首页。
+  'services/Show in Home Continue':
+      'test/pages/home_dashboard_page_test.dart（opt-in 关着：不问服务器、不混排；'
+      '打开后立即混进来）',
   // app 内浏览器（系统 › 浏览器）：生效点在全屏浏览页 / 标签页 WebView，harness 设置页
   // 没有浏览页。浏览页每次打开现读这些偏好。
   'system/Tab style':

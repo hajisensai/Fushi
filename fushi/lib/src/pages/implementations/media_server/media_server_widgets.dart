@@ -347,7 +347,7 @@ class MediaServerItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ImageProvider? image = mediaServerCoverImage(browser, item.posterItem);
+    final ImageProvider? image = mediaServerCoverImage(browser, item.coverItem);
     final Widget cover = image == null
         ? ShelfCoverPlaceholder(icon: _placeholderIcon(item.type))
         : PortraitCoverImage(
@@ -436,9 +436,9 @@ List<ImageProvider> mediaServerContinueImages(
 
   if (item.type == MediaServerItemType.episode) {
     // 剧的竖版海报排第一（用户 2026-10-28：继续观看 / 接下来看要剧封面，不要集截图）；
-    // 服务器没报剧海报时 posterItem 就是集自己，下面的截图序列照旧兜底。
+    // 服务器没报剧海报时 coverItem 就是集自己，下面的截图序列照旧兜底。
     if (item.seriesCoverItemId != null) {
-      add(item.posterItem, MediaServerImageKind.primary);
+      add(item.coverItem, MediaServerImageKind.primary);
     }
     add(item, MediaServerImageKind.thumb);
     add(item, MediaServerImageKind.primary);

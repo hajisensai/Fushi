@@ -1629,6 +1629,11 @@ void main() {
 
   group('服务器「继续」（Jellyfin / Emby / Plex、Audiobookshelf）', () {
     final int now = DateTime.now().millisecondsSinceEpoch;
+    // 混排是显式 opt-in（默认关）：本组除门控用例外都按用户已打开两个开关来测。
+    setUp(() async {
+      await prefs.setJellyfinShowInLibrary(true);
+      await prefs.setAudiobookshelfShowInHome(true);
+    });
     ServerContinueCandidate candidate(
       ServerContinueSource source,
       String id,
@@ -1703,6 +1708,99 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('opt-in 关着：不问服务器、不混排；打开后立即混进来', (WidgetTester tester) async {
+      useSize(tester, const Size(1280, 900));
+      await prefs.setJellyfinShowInLibrary(false);
+      await prefs.setAudiobookshelfShowInHome(false);
+      int calls = 0;
+      final List<String> opened = <String>[];
+      await tester.pumpWidget(
+        buildApp(
+          serverContinueLoader: () async {
+            calls++;
+            return <ServerContinueCandidate>[
+              candidate(
+                ServerContinueSource.mediaServer,
+                'jf-movie',
+                '服务器电影',
+                now - 100,
+                opened,
+              ),
+              candidate(
+                ServerContinueSource.audiobookshelf,
+                'abs-book',
+                '有声书',
+                now - 200,
+                opened,
+              ),
+            ];
+          },
+        ),
+      );
+      await pumpDashboard(tester);
+      expect(calls, 0, reason: 'both opt-ins off: no server is asked');
+      expect(hero(), findsNothing);
+
+      // 只开 ABS：媒体服务器条目仍不混排。
+      await prefs.setAudiobookshelfShowInHome(true);
+      await pumpDashboard(tester);
+      expect(calls, 1);
+      expect(
+        continueItems(tester).map((_ContinueItem i) => i.title).toList(),
+        <String>['有声书'],
+      );
+
+      // 再关掉：已上屏的条目立即消失。
+      await prefs.setAudiobookshelfShowInHome(false);
+      await pumpDashboard(tester);
+      expect(hero(), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('节流：短时间内来回切回首页不重复请求服务器', (WidgetTester tester) async {
+      useSize(tester, const Size(1280, 900));
+      int calls = 0;
+      final List<String> opened = <String>[];
+      Future<List<ServerContinueCandidate>> loader() async {
+        calls++;
+        return <ServerContinueCandidate>[
+          candidate(
+            ServerContinueSource.mediaServer,
+            'jf-movie',
+            '服务器电影',
+            now - 100,
+            opened,
+          ),
+        ];
+      }
+
+      final HomeTab tabBefore = homeShellTabNotifier.value;
+      addTearDown(() => homeShellTabNotifier.value = tabBefore);
+      homeShellTabNotifier.value = HomeTab.home;
+      await tester.pumpWidget(buildApp(serverContinueLoader: loader));
+      await pumpDashboard(tester);
+      expect(calls, 1);
+      // 来回切 tab：切回首页触发 onTabActivated，节流期内不重发请求。
+      for (int i = 0; i < 3; i++) {
+        homeShellTabNotifier.value = HomeTab.video;
+        await tester.pump();
+        homeShellTabNotifier.value = HomeTab.home;
+        await pumpDashboard(tester);
+      }
+      expect(calls, 1, reason: 'fresh result reused inside the TTL');
+      expect(
+        continueItems(tester).map((_ContinueItem i) => i.title).toList(),
+        <String>['服务器电影'],
+      );
+      // 从服务器条目回来 = 进度确实变了：强制重取。
+      await tester.tap(heroAction());
+      await tester.pump();
+      await pumpDashboard(tester);
+      expect(opened, <String>['jf-movie']);
+      expect(calls, 2);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('取数失败：静默不贡献条目，首页照常渲染', (WidgetTester tester) async {
       useSize(tester, const Size(1280, 900));
       await tester.pumpWidget(
@@ -1716,7 +1814,9 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('模块门控：视频模块关着不出服务器视频，书模块的 ABS 条目照出', (WidgetTester tester) async {
+    testWidgets('模块门控：视频模块关着不出服务器视频，书模块的 ABS 条目照出', (
+      WidgetTester tester,
+    ) async {
       useSize(tester, const Size(1280, 900));
       await appModel.setModuleEnabled(ModuleId.video, false);
       final List<String> opened = <String>[];
