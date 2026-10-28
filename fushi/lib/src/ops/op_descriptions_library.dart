@@ -1205,7 +1205,9 @@ List<OpDescription> _describeShelfMiscOps(OpDescribeKit kit) => <OpDescription>[
     pattern: '$_item/completed',
     summary:
         'Mark a book / audiobook as finished or not finished, or a video as '
-        'watched (videos cannot be un-marked here).',
+        'watched / unwatched (videos: both clear the resume point; media-server '
+        'items are also updated on the server). Undo restores the video\'s '
+        'previous watched state and resume point.',
     risk: OpRisk.write,
     params: const <OpParam>[
       _keyParam,
@@ -1214,20 +1216,66 @@ List<OpDescription> _describeShelfMiscOps(OpDescribeKit kit) => <OpDescription>[
         description: 'true = finished.',
         required: true,
       ),
+      OpParam.integer(
+        'positionMs',
+        description:
+            'Videos only: restore this resume point (ms) instead of clearing '
+            'it (used by undo).',
+      ),
+      OpParam.integer(
+        'completedAt',
+        description:
+            'Videos only, with positionMs: the finish time (epoch ms) to '
+            'restore when completed=true.',
+      ),
     ],
     undo: opScopedSnapshotUndo(
-      read: (OpUndoScope scope) async =>
-          (await _itemDetail(kit, scope.params['key']!))['completed'] == true,
+      read: (OpUndoScope scope) async {
+        final Map<String, Object?> detail = await _itemDetail(
+          kit,
+          scope.params['key']!,
+        );
+        if (!scope.params['key']!.startsWith('video:')) {
+          return detail['completed'] == true;
+        }
+        // 视频：看完标记会连带收回断点，撤销要把两样都还回去。
+        return <String, Object?>{
+          'completed': detail['completed'] == true,
+          'completedAt': detail['completedAt'],
+          'positionMs': detail['positionMs'] ?? 0,
+        };
+      },
       write: (OpUndoScope scope, Object? old) async {
         await kit.callRoute(
           'PUT',
           '$_item/completed',
           params: scope.params,
-          body: <String, Object?>{'completed': old == true},
+          body: old is Map
+              ? <String, Object?>{
+                  'completed': old['completed'] == true,
+                  'completedAt': ?old['completedAt'],
+                  'positionMs': old['positionMs'] ?? 0,
+                }
+              : <String, Object?>{'completed': old == true},
         );
       },
-      newValue: (CtlCall call, Object? result) =>
-          _map(result)['completed'] == true,
+      newValue: (CtlCall call, Object? result) {
+        final Map<String, Object?> after = _map(result);
+        if (!call.params['key']!.startsWith('video:')) {
+          return after['completed'] == true;
+        }
+        return <String, Object?>{
+          'completed': after['completed'] == true,
+          'positionMs': after['positionMs'] ?? 0,
+        };
+      },
+      // 撤销前比对「看完 + 断点」：之后又看过 / 又改过就 superseded，不覆盖。
+      compareBy: (Object? v) => v is Map
+          ? <String, Object?>{
+              'completed': v['completed'] == true,
+              'positionMs': v['positionMs'] ?? 0,
+            }
+          : v == true,
     ),
   ),
   const OpDescription(

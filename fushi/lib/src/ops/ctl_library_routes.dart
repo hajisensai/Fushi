@@ -378,6 +378,8 @@ class _LibraryCtlHandlers {
         if (row == null) throw CtlFailure.notFound('视频库里没有 ${key.wire}');
         return <String, Object?>{
           ..._videoEntry(row).toJson(),
+          // 看完时刻（撤销「标记已看 / 未看」原样恢复用）。
+          'completedAt': row.completedAt?.millisecondsSinceEpoch,
           'videoPath': row.videoPath,
           if (row.subtitleSource != null) 'subtitleSource': row.subtitleSource,
           'currentEpisode': row.currentEpisode,
