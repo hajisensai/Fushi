@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
@@ -12,6 +13,7 @@ import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -658,12 +660,26 @@ class _SidebarBookmarksState extends State<_SidebarBookmarks> {
     setState(() => _items = items.take(12).toList(growable: false));
   }
 
+  /// 拖动排序：列出的是根目录按 position 排好的前几条，下标即同级位置。
+  void _reorder(int from, int to) {
+    if (from == to) return;
+    final WebBrowserBookmark moved = _items[from];
+    setState(() {
+      _items = <WebBrowserBookmark>[..._items]
+        ..removeAt(from)
+        ..insert(to, moved);
+    });
+    unawaited(widget.store.updateBookmark(moved.id, position: to));
+  }
+
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: <Widget>[
-      for (final WebBrowserBookmark b in _items) widget.itemBuilder(context, b),
-    ],
+  Widget build(BuildContext context) => FushiReorderableColumn(
+    itemCount: _items.length,
+    keyForIndex: (int i) =>
+        ValueKey<String>('web-browser-sidebar-bookmark-row-${_items[i].id}'),
+    onReorder: _reorder,
+    itemBuilder: (BuildContext context, int i) =>
+        widget.itemBuilder(context, _items[i]),
   );
 }
 

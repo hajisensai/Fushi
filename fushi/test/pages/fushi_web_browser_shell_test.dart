@@ -452,6 +452,40 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('侧边栏书签鼠标拖动排序，写回 position', (WidgetTester tester) async {
+    final int a = await store.addBookmark(
+      title: 'A',
+      url: Uri.parse('https://a.example/'),
+    );
+    final int b = await store.addBookmark(
+      title: 'B',
+      url: Uri.parse('https://b.example/'),
+    );
+    await pumpBrowser(tester, const Size(1280, 720));
+    final Offset start = tester.getCenter(
+      byKey('web-browser-sidebar-bookmark-$a'),
+    );
+    final double dy =
+        tester.getCenter(byKey('web-browser-sidebar-bookmark-$b')).dy -
+        start.dy +
+        20;
+    final TestGesture mouse = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    for (int i = 1; i <= 10; i++) {
+      await mouse.moveTo(start + Offset(0, dy * i / 10));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(
+      (await store.bookmarks()).map((WebBrowserBookmark e) => e.id).toList(),
+      <int>[b, a],
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('竖屏标签数按钮：新建后变 2，打开网格、选卡片回到网页', (WidgetTester tester) async {
     await pumpBrowser(tester, const Size(390, 844));
     Finder count(String n) => find.descendant(
