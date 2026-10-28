@@ -65,7 +65,7 @@ import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
-import 'package:fushi_engine/media/video/bluray/bluray_disc_thumbnail.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_disc_artwork.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart'
     show CoverImageInvalidException;
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
@@ -2416,14 +2416,9 @@ class SourceLibraryScanner {
   }) async {
     if (plan.blurayDiscs.isEmpty) return 0;
 
-    final List<MediaCollectionRow> collections = await _db
-        .getAllMediaCollections();
     final Map<String, int> existingCollectionIds = <String, int>{
-      for (final MediaCollectionRow c in collections)
+      for (final MediaCollectionRow c in await _db.getAllMediaCollections())
         if (c.collectionType == 'playlist') c.name: c.id,
-    };
-    final Map<int, String?> collectionCovers = <int, String?>{
-      for (final MediaCollectionRow c in collections) c.id: c.coverPath,
     };
 
     // 用户单独删掉的特典：挂在盘合集自然键下的成员墓碑（见
@@ -2491,11 +2486,9 @@ class SourceLibraryScanner {
         );
         count++;
       }
-      await _applyBlurayDiscArtwork(
-        collectionId,
-        disc.rootPath,
-        currentCover: collectionCovers[collectionId],
-      );
+      if (collectionId != null) {
+        await _applyBlurayDiscArtwork(collectionId, disc.rootPath);
+      }
 
       // 特典（菜单里的「特典映像」等）入库、带来源，但不进盘合集：索引器随后把它们
       // 挂到正片作品下，作品资料页的特典区就能看到、点开就播。排在合集墓碑守卫
@@ -2525,22 +2518,36 @@ class SourceLibraryScanner {
   /// 同一部作品的几张盘刮削出来是同一张海报，盘面图才分得开。新建与重扫的老合集
   /// 都走这里，老库重扫一次就补上。
   ///
-  /// 按图本身解码出的朝向分流（阈值与卡片判横竖同一个
-  /// [PortraitCoverImage.portraitAspectThreshold]）：
-  /// * 竖图 → 合集主封面（竖卡墙）。合集已有自有封面（用户手选 / 先前写过）且
-  ///   文件还在就不动。
-  /// * 横图 → 附加图组的 [MediaImageKind.discArt]，只给横向槽位用；竖卡墙仍是
-  ///   刮削海报，不把横图垫进竖卡。已有且文件还在就不动。
+  /// 按图头里的像素尺寸分流（阈值与卡片判横竖同一个
+  /// [PortraitCoverImage.portraitAspectThreshold]），两张都登记进附加图组、都**不碰**
+  /// 合集自有封面 `coverPath`（那是用户手选 / 导入海报的位置，见
+  /// `collection_cover.dart`）：
+  /// * 竖图 → [MediaImageKind.discCover]：竖卡封面链里排在自有封面之后、刮削海报
+  ///   之前（`collectionOwnCoverCandidates`）。
+  /// * 横图 → [MediaImageKind.discArt]：只给横向槽位用，不把横图垫进竖卡。
   ///
+  /// 已登记且文件还在的槽位不重写；两个槽位都在时连盘都不读（重扫不重复读图）。
   /// 选哪份语言的元数据跟界面语言（[blurayLanguageCodes]），没有就按盘上的顺序。
-  /// 写入走 [MediaCoverService]（刮削清理期租约 + 封面写互斥）；拿不到租约、图
-  /// 解不开都只跳过，不让整次扫描失败。
+  /// 写入走 [MediaCoverService.applyCollectionDiscImage]（刮削清理期租约 + 封面写
+  /// 互斥）；拿不到租约、图解不开都只跳过，不让整次扫描失败。
   Future<void> _applyBlurayDiscArtwork(
-    int? collectionId,
-    String discRootPath, {
-    required String? currentCover,
-  }) async {
-    if (collectionId == null) return;
+    int collectionId,
+    String discRootPath,
+  ) async {
+    final List<MediaImageRow> images = await _db.getMediaImagesForCollection(
+      collectionId,
+    );
+    Future<bool> filled(MediaImageKind kind) async {
+      for (final MediaImageRow row in images) {
+        if (row.kind == kind.dbValue) return _existingFile(row.path);
+      }
+      return false;
+    }
+
+    final bool coverFilled = await filled(MediaImageKind.discCover);
+    final bool artFilled = await filled(MediaImageKind.discArt);
+    if (coverFilled && artFilled) return;
+
     final List<BlurayDiscArtwork> artwork = await readBlurayDiscArtwork(
       discRootPath,
       preferredLanguages: blurayLanguageCodes(
@@ -2560,31 +2567,19 @@ class SourceLibraryScanner {
       return best;
     }
 
-    final BlurayDiscArtwork? portrait = largest(true);
-    final BlurayDiscArtwork? landscape = largest(false);
     try {
-      if (portrait != null && !await _existingFile(currentCover)) {
-        await MediaCoverService.applyCollectionCover(
+      for (final (MediaImageKind kind, bool done, BlurayDiscArtwork? art)
+          in <(MediaImageKind, bool, BlurayDiscArtwork?)>[
+            (MediaImageKind.discCover, coverFilled, largest(true)),
+            (MediaImageKind.discArt, artFilled, largest(false)),
+          ]) {
+        if (done || art == null) continue;
+        await MediaCoverService.applyCollectionDiscImage(
           database: _db,
           collectionId: collectionId,
-          pickedPath: portrait.path,
+          kind: kind,
+          sourcePath: art.path,
         );
-      }
-      if (landscape != null) {
-        final String? currentArt =
-            (await _db.getMediaImagesForCollection(collectionId))
-                .where(
-                  (MediaImageRow r) => r.kind == MediaImageKind.discArt.dbValue,
-                )
-                .map((MediaImageRow r) => r.path)
-                .firstOrNull;
-        if (!await _existingFile(currentArt)) {
-          await MediaCoverService.applyCollectionDiscArt(
-            database: _db,
-            collectionId: collectionId,
-            sourcePath: landscape.path,
-          );
-        }
       }
     } on StateError catch (e) {
       debugPrint('[SourceLibraryScanner] disc artwork skipped: $e');

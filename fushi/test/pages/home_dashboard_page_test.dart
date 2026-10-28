@@ -1449,7 +1449,7 @@ void main() {
     test('海报存在优先用海报', () async {
       expect(
         await dashboardVideoCoverPath(
-          collectionCover: 'poster',
+          collectionCovers: <String>['poster'],
           ownCover: 'frame',
           exists: (String p) => existsIn(<String>{'poster', 'frame'}, p),
         ),
@@ -1457,10 +1457,21 @@ void main() {
       );
     });
 
+    test('自有封面文件不在 → 原盘竖版盘面图（自有层第二候选）', () async {
+      expect(
+        await dashboardVideoCoverPath(
+          collectionCovers: <String>['own', 'disc'],
+          ownCover: 'frame',
+          exists: (String p) => existsIn(<String>{'disc', 'frame'}, p),
+        ),
+        'disc',
+      );
+    });
+
     test('海报文件不在 → 这一集封面', () async {
       expect(
         await dashboardVideoCoverPath(
-          collectionCover: 'poster',
+          collectionCovers: <String>['poster'],
           ownCover: 'frame',
           exists: (String p) => existsIn(<String>{'frame'}, p),
         ),
@@ -1472,7 +1483,7 @@ void main() {
       final List<String> probed = <String>[];
       expect(
         await dashboardVideoCoverPath(
-          collectionCover: null,
+          collectionCovers: const <String>[],
           ownCover: '',
           memberCovers: <String?>[null, 'm1', 'm2', 'm3'],
           exists: (String p) async {
@@ -1488,7 +1499,7 @@ void main() {
     test('全不存在 → null', () async {
       expect(
         await dashboardVideoCoverPath(
-          collectionCover: 'a',
+          collectionCovers: <String>['a'],
           ownCover: 'b',
           memberCovers: <String?>['c'],
           exists: (String _) async => false,

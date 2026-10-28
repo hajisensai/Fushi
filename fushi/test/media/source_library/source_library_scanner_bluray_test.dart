@@ -21,6 +21,10 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
+import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart'
+    show clearCollectionOwnCover;
+import 'package:fushi_engine/media/collections/collection_cover.dart'
+    show loadCollectionOwnCoverCandidates;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -685,8 +689,9 @@ void main() {
   });
 
   // 同一部作品的几张盘刮削出来是同一张海报，书架上分不出哪张是哪张。盘内
-  // `BDMV/META/DL` 带着厂商给的盘面图：按图本身解码出的朝向分流——竖图做合集
-  // 主封面（竖卡墙），横图进附加图组 disc_art（只给横向槽位），不把横图垫进竖卡。
+  // `BDMV/META/DL` 带着厂商给的盘面图：按图头里的尺寸分流——竖图登记成附加图组
+  // disc_cover（竖卡封面自有层的第二候选），横图登记成 disc_art（只给横向槽位）。
+  // 两者都不写合集自有封面 coverPath（PR #2606 审查：写进去就和用户手选分不开）。
   group('原盘盘面图按横竖分流', () {
     late FushiDatabase db;
     late String disc;
@@ -696,7 +701,7 @@ void main() {
         img.encodeJpg(img.Image(width: width, height: height));
 
     /// 写一份 `bdmt_<lang>.xml` 与其中的图（文件名 → 字节）。声明的 size 故意
-    /// 写成与实际相反：朝向只认解码结果。
+    /// 写成与实际相反：朝向只认图头。
     void writeMeta(String lang, Map<String, List<int>> images) {
       for (final MapEntry<String, List<int>> e in images.entries) {
         File(p.join(dl.path, e.key)).writeAsBytesSync(e.value);
@@ -717,11 +722,14 @@ void main() {
           (MediaCollectionRow c) => c.collectionType == 'playlist',
         );
 
-    Future<String?> discArt(int collectionId) async =>
+    Future<String?> discImage(int collectionId, MediaImageKind kind) async =>
         (await db.getMediaImagesForCollection(collectionId))
-            .where((MediaImageRow r) => r.kind == 'disc_art')
+            .where((MediaImageRow r) => r.kind == kind.dbValue)
             .map((MediaImageRow r) => r.path)
             .firstOrNull;
+
+    Future<List<String>> ownCandidates() async =>
+        loadCollectionOwnCoverCandidates(db, await discCollection());
 
     Future<SourceLibraryRow> scanOnce() async {
       final SourceLibraryRow source = await _videoSource(db, tmp.path);
@@ -746,7 +754,7 @@ void main() {
       await db.close();
     });
 
-    test('竖图：做合集主封面（取最大的竖图），不进横向槽', () async {
+    test('竖图：登记 disc_cover（取最大的竖图），不写 coverPath、不进横向槽', () async {
       final List<int> big = jpeg(40, 60);
       writeMeta('eng', <String, List<int>>{
         'S.jpg': jpeg(20, 30),
@@ -754,12 +762,15 @@ void main() {
       });
       await scanOnce();
       final MediaCollectionRow c = await discCollection();
-      expect(File(c.coverPath!).readAsBytesSync(), big);
-      expect(p.isWithin(disc, c.coverPath!), isFalse, reason: '复制进封面目录');
-      expect(await discArt(c.id), isNull);
+      expect(c.coverPath, isNull, reason: '自有封面列留给用户 / 导入');
+      final String tall = (await discImage(c.id, MediaImageKind.discCover))!;
+      expect(File(tall).readAsBytesSync(), big);
+      expect(p.isWithin(disc, tall), isFalse, reason: '复制进封面目录');
+      expect(await ownCandidates(), <String>[tall]);
+      expect(await discImage(c.id, MediaImageKind.discArt), isNull);
     });
 
-    test('横图：只进 disc_art，竖卡封面不动（回落刮削海报）', () async {
+    test('横图：只进 disc_art，竖卡自有层仍空（回落刮削海报）', () async {
       final List<int> wide = jpeg(64, 36);
       writeMeta('eng', <String, List<int>>{
         'S.jpg': jpeg(32, 18),
@@ -768,7 +779,8 @@ void main() {
       await scanOnce();
       final MediaCollectionRow c = await discCollection();
       expect(c.coverPath, isNull);
-      final String art = (await discArt(c.id))!;
+      expect(await ownCandidates(), isEmpty);
+      final String art = (await discImage(c.id, MediaImageKind.discArt))!;
       expect(File(art).readAsBytesSync(), wide);
       expect(p.isWithin(disc, art), isFalse, reason: '复制进封面目录');
     });
@@ -778,9 +790,17 @@ void main() {
       final List<int> wide = jpeg(64, 36);
       writeMeta('eng', <String, List<int>>{'P.jpg': tall, 'L.jpg': wide});
       await scanOnce();
-      final MediaCollectionRow c = await discCollection();
-      expect(File(c.coverPath!).readAsBytesSync(), tall);
-      expect(File((await discArt(c.id))!).readAsBytesSync(), wide);
+      final int id = (await discCollection()).id;
+      expect(
+        File(
+          (await discImage(id, MediaImageKind.discCover))!,
+        ).readAsBytesSync(),
+        tall,
+      );
+      expect(
+        File((await discImage(id, MediaImageKind.discArt))!).readAsBytesSync(),
+        wide,
+      );
     });
 
     test('语言跟界面语言：界面日文取 jpn 那份，界面英文取 eng 那份', () async {
@@ -791,7 +811,10 @@ void main() {
       LocaleSettings.setLocale(AppLocale.ja);
       await scanOnce();
       final int id = (await discCollection()).id;
-      expect(File((await discArt(id))!).readAsBytesSync(), jpnArt);
+      expect(
+        File((await discImage(id, MediaImageKind.discArt))!).readAsBytesSync(),
+        jpnArt,
+      );
     });
 
     test('界面语言盘上没有：按盘上的文件名顺序取第一份', () async {
@@ -801,10 +824,13 @@ void main() {
       LocaleSettings.setLocale(AppLocale.ko);
       await scanOnce();
       final int id = (await discCollection()).id;
-      expect(File((await discArt(id))!).readAsBytesSync(), engArt);
+      expect(
+        File((await discImage(id, MediaImageKind.discArt))!).readAsBytesSync(),
+        engArt,
+      );
     });
 
-    test('老合集重扫补上；用户手选的封面与已有盘面图都不被覆盖', () async {
+    test('老合集重扫补上；已登记且文件还在的槽位不重写', () async {
       final List<int> tall = jpeg(40, 60);
       writeMeta('eng', <String, List<int>>{
         'P.jpg': tall,
@@ -812,23 +838,45 @@ void main() {
       });
       final SourceLibraryRow source = await scanOnce();
       final int id = (await discCollection()).id;
-      // 本功能之前导入的老库：两处都是空的。
-      await db.updateMediaCollectionCoverPath(id, null);
+      // 本功能之前导入的老库：附加图组是空的。
       await (db.delete(
         db.mediaImages,
       )..where(($MediaImagesTable t) => t.collectionId.equals(id))).go();
       final SourceLibraryScanner scanner = SourceLibraryScanner(db);
       expect((await scanner.scan(source)).succeeded, isTrue);
       expect((await discCollection()).id, id, reason: '重扫对回同一合集');
-      expect(File((await discCollection()).coverPath!).readAsBytesSync(), tall);
-      final String art = (await discArt(id))!;
+      final String cover = (await discImage(id, MediaImageKind.discCover))!;
+      final String art = (await discImage(id, MediaImageKind.discArt))!;
+      expect(File(cover).readAsBytesSync(), tall);
+
+      // 盘上的图换了：两个槽位都已登记、文件都在，重扫不再读盘也不重写。
+      writeMeta('eng', <String, List<int>>{
+        'P.jpg': jpeg(50, 70),
+        'L.jpg': jpeg(70, 40),
+      });
+      expect((await scanner.scan(source)).succeeded, isTrue);
+      expect(File(cover).readAsBytesSync(), tall);
+      expect(await discImage(id, MediaImageKind.discArt), art);
+    });
+
+    test('用户手选封面优先；清除封面后重扫不写回自有层', () async {
+      writeMeta('eng', <String, List<int>>{'P.jpg': jpeg(40, 60)});
+      final SourceLibraryRow source = await scanOnce();
+      final int id = (await discCollection()).id;
+      final String tall = (await discImage(id, MediaImageKind.discCover))!;
 
       final String picked = p.join(tmp.path, 'picked.jpg');
       File(picked).writeAsBytesSync(jpeg(3, 5));
       await db.updateMediaCollectionCoverPath(id, picked);
+      final SourceLibraryScanner scanner = SourceLibraryScanner(db);
       expect((await scanner.scan(source)).succeeded, isTrue);
       expect((await discCollection()).coverPath, picked);
-      expect(await discArt(id), art);
+      expect(await ownCandidates(), <String>[picked, tall]);
+
+      await clearCollectionOwnCover(db, id);
+      expect((await scanner.scan(source)).succeeded, isTrue);
+      expect((await discCollection()).coverPath, isNull, reason: '不写回');
+      expect(await ownCandidates(), <String>[tall], reason: '回落盘面竖图');
     });
 
     test('盘面图解不开：扫描照常成功，什么都不写', () async {
@@ -838,7 +886,7 @@ void main() {
       await scanOnce();
       final MediaCollectionRow c = await discCollection();
       expect(c.coverPath, isNull);
-      expect(await discArt(c.id), isNull);
+      expect(await db.getMediaImagesForCollection(c.id), isEmpty);
     });
 
     test('盘上没有 META 图：什么都不写，照旧回落刮削图', () async {
@@ -846,7 +894,7 @@ void main() {
       await scanOnce();
       final MediaCollectionRow c = await discCollection();
       expect(c.coverPath, isNull);
-      expect(await discArt(c.id), isNull);
+      expect(await db.getMediaImagesForCollection(c.id), isEmpty);
     });
   });
 }

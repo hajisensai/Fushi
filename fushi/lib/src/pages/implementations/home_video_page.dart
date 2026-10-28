@@ -29,6 +29,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/collections/collection_cover.dart'
+    show collectionOwnCoverCandidates;
 import 'package:fushi_engine/media/collections/collection_merge.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
@@ -401,6 +403,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final bool? exists = _coverExists.lookupOptional(path);
     if (exists == null) return kPendingCoverImage;
     return exists ? resizedFileImage(File(path!)) : null;
+  }
+
+  /// 合集竖版封面的自有层：自有封面 → 原盘竖版盘面图（优先级只在
+  /// [collectionOwnCoverCandidates] 写一次），取第一个文件存在的；某一级还在探测
+  /// 时停在 [kPendingCoverImage]，不先闪成后面的回退。都没有为 null。
+  ImageProvider? _collectionOwnCover(MediaCollectionRow? collection) {
+    if (collection == null) return null;
+    for (final String path in collectionOwnCoverCandidates(
+      collection,
+      _mediaImagesByCollection[collection.id],
+    )) {
+      final ImageProvider? cover = _localFileCover(path);
+      if (cover != null) return cover;
+    }
+    return null;
   }
 
   Future<_RemoteVideoState?>? _remoteFuture;
@@ -6488,7 +6505,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     List<_VideoSlot> members,
     _VideoSlot fallback,
   ) {
-    return _localFileCover(collection.coverPath) ??
+    return _collectionOwnCover(collection) ??
         _canonicalCollectionPosterProvider(collection.id) ??
         _collectionMembersCoverProvider(_localMembersOf(members)) ??
         _slotCoverProvider(fallback);
@@ -7859,7 +7876,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     CollectionGroup<_VideoSlot> group, {
     bool landscapeSlot = false,
   }) {
-    final ImageProvider? own = _localFileCover(group.collection?.coverPath);
+    final ImageProvider? own = _collectionOwnCover(group.collection);
     if (own != null) {
       return PortraitCoverImage(
         image: own,
@@ -7978,7 +7995,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     bool landscapeSlot = false,
   }) {
     final bool frontOwnsCover =
-        _localFileCover(group.collection?.coverPath) != null ||
+        _collectionOwnCover(group.collection) != null ||
         (group.collection != null &&
             _canonicalCollectionPosterProvider(group.collection!.id) != null);
     ImageProvider? coverOf(_VideoSlot slot) => slot.local != null
@@ -9473,7 +9490,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     List<String> memberUidOrder,
     List<VideoBookRow> library,
   ) {
-    final ImageProvider? own = _localFileCover(collection.coverPath);
+    final ImageProvider? own = _collectionOwnCover(collection);
     if (own != null) return own;
     final ImageProvider? canonical = _canonicalCollectionPosterProvider(
       collection.id,

@@ -6,6 +6,8 @@ import 'package:drift/drift.dart'
     show ResultSetImplementation, TableUpdate, TableUpdateQuery;
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
+import 'package:fushi_engine/media/collections/collection_cover.dart'
+    show collectionOwnCoverCandidates;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -177,16 +179,21 @@ double dashboardRowCoverHeight(double mainColumnWidth) =>
 /// 过期时一次 stat 要逐级重列目录、单次数秒。旧实现在 build 里同步 `existsSync`，
 /// 读有声书时统计表每几秒一写就触发首页重建 → 主 isolate 冻结数秒，同 isolate 上
 /// 的互联 host 端点（含 `/api/ping`）与 UI 一起卡死（BUG-3756）。
+///
+/// [collectionCovers] 是合集自有层的候选（自有封面 → 原盘竖版盘面图，按
+/// `collectionOwnCoverCandidates` 的顺序），取第一张存在的。
 @visibleForTesting
 Future<String?> dashboardVideoCoverPath({
-  required String? collectionCover,
+  required Iterable<String?> collectionCovers,
   required String? ownCover,
   Iterable<String?> memberCovers = const <String?>[],
   required Future<bool> Function(String path) exists,
 }) async {
   Future<bool> usable(String? path) async =>
       path != null && path.isNotEmpty && await exists(path);
-  if (await usable(collectionCover)) return collectionCover;
+  for (final String? path in collectionCovers) {
+    if (await usable(path)) return path;
+  }
   if (await usable(ownCover)) return ownCover;
   // 逐个惰性取：找到第一张存在的就停。
   for (final String? path in memberCovers) {
@@ -603,7 +610,7 @@ class _HomeDashboardSnapshot {
   final List<StatFact> gameRows;
   final Map<int, String> collectionNamesById;
   final Map<String, int> primaryCollectionByEntry;
-  final Map<int, String> collectionCoverById;
+  final Map<int, List<String>> collectionCoverById;
   final Map<String, String> epubUidByBookKey;
   final Map<String, int> epubLocalAddedAtByKey;
   final Map<String, int> memberSortIndex;
@@ -771,9 +778,10 @@ class _HomeDashboardPageState
   /// [initState] 异步载入的视频库（继续观看 + 视频计数）。
   List<VideoBookRow> _videos = const <VideoBookRow>[];
 
-  /// 合集主封面（`MediaCollections.coverPath`，刮削落地的作品海报）：「继续」
-  /// 竖卡的视频优先用它，集封面多是横版截帧。
-  Map<int, String> _collectionCoverById = const <int, String>{};
+  /// 合集主封面的自有层候选（`MediaCollections.coverPath` 刮削落地的作品海报 /
+  /// 手选图 → 原盘竖版盘面图，[collectionOwnCoverCandidates]）：「继续」竖卡的
+  /// 视频优先用它，集封面多是横版截帧。
+  Map<int, List<String>> _collectionCoverById = const <int, List<String>>{};
 
   /// 「继续」视频卡封面的异步解析结果：候选签名（[_videoCoverCandidateKey]）→
   /// 第一张存在的封面（null = 全不存在）。build 只读这张表、绝不碰文件系统
@@ -1070,6 +1078,9 @@ class _HomeDashboardPageState
     final Future<MediaTrackingStatus> trackingF = kMediaTrackingEnabled
         ? appModel.mediaTrackingService.loadStatus()
         : Future<MediaTrackingStatus>.value(MediaTrackingStatus.empty);
+    final Future<List<MediaImageRow>> discCoversF = db.getMediaImagesOfKind(
+      MediaImageKind.discCover,
+    );
     await Future.wait<Object?>(<Future<Object?>>[
       videosF,
       factsF,
@@ -1077,6 +1088,7 @@ class _HomeDashboardPageState
       membershipF,
       gamesF,
       trackingF,
+      discCoversF,
     ]);
     final List<VideoBookRow> videos = await videosF;
     final StatFacts facts = await factsF;
@@ -1089,9 +1101,18 @@ class _HomeDashboardPageState
     final Map<int, String> collectionNamesById = <int, String>{
       for (final MediaCollectionRow c in collections) c.id: c.name,
     };
-    final Map<int, String> collectionCoverById = <int, String>{
+    final Map<int, List<MediaImageRow>> discCoversByCollection =
+        <int, List<MediaImageRow>>{};
+    for (final MediaImageRow row in await discCoversF) {
+      if (row.collectionId case final int id) {
+        (discCoversByCollection[id] ??= <MediaImageRow>[]).add(row);
+      }
+    }
+    final Map<int, List<String>> collectionCoverById = <int, List<String>>{
       for (final MediaCollectionRow c in collections)
-        if (c.coverPath case final String path when path.isNotEmpty) c.id: path,
+        if (collectionOwnCoverCandidates(c, discCoversByCollection[c.id])
+            case final List<String> paths when paths.isNotEmpty)
+          c.id: paths,
     };
     final Map<String, ({int collectionId, int sortIndex})> membership =
         await membershipF;
@@ -2676,21 +2697,21 @@ class _HomeDashboardPageState
     final VideoBookRow? video = entry.video;
     if (video == null) return null;
     final int? cid = entry.collectionId;
-    final String? collectionCover = cid == null
-        ? null
-        : _collectionCoverById[cid];
+    final List<String> collectionCovers = cid == null
+        ? const <String>[]
+        : _collectionCoverById[cid] ?? const <String>[];
     final List<String?> memberCovers = cid == null
         ? const <String?>[]
         : _collectionMemberCovers(cid, except: video.bookUid).toList();
     final String key = _videoCoverCandidateKey(
-      collectionCover,
+      collectionCovers,
       video.coverPath,
       memberCovers,
     );
     if (!_videoCoverByCandidates.containsKey(key)) {
       _resolveVideoCover(
         key,
-        collectionCover: collectionCover,
+        collectionCovers: collectionCovers,
         ownCover: video.coverPath,
         memberCovers: memberCovers,
       );
@@ -2707,11 +2728,11 @@ class _HomeDashboardPageState
 
   /// [_videoCoverByCandidates] 的键：候选路径按回退顺序拼接（纯字符串，零 IO）。
   static String _videoCoverCandidateKey(
-    String? collectionCover,
+    List<String> collectionCovers,
     String? ownCover,
     List<String?> memberCovers,
   ) => <String?>[
-    collectionCover,
+    ...collectionCovers,
     ownCover,
     ...memberCovers,
   ].map((String? e) => e ?? '').join('|');
@@ -2720,7 +2741,7 @@ class _HomeDashboardPageState
   /// 线程池里等，不阻塞 UI isolate），结果进 [_videoCoverByCandidates] 后重建。
   void _resolveVideoCover(
     String key, {
-    required String? collectionCover,
+    required List<String> collectionCovers,
     required String? ownCover,
     required List<String?> memberCovers,
   }) {
@@ -2729,7 +2750,7 @@ class _HomeDashboardPageState
       String? resolved;
       try {
         resolved = await dashboardVideoCoverPath(
-          collectionCover: collectionCover,
+          collectionCovers: collectionCovers,
           ownCover: ownCover,
           memberCovers: memberCovers,
           exists: (String path) => File(path).exists(),

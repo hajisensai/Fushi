@@ -15,6 +15,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/collections/collection_cover.dart'
+    show collectionOwnCoverCandidates;
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/collection_detail_layout.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
@@ -337,6 +339,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       const <String, List<VideoMetadataEpisodeRow>>{};
   String? _canonicalCoverPath;
   String? _canonicalCoverRemoteUrl;
+
+  /// 本合集的附加图组（v68 `media_images`）快照：hero 封面自有层的原盘竖版盘面图
+  /// 从这里取（[collectionOwnCoverCandidates]）。
+  List<MediaImageRow> _mediaImages = const <MediaImageRow>[];
   List<VideoMetadataTermRow> _workTerms = const <VideoMetadataTermRow>[];
   List<VideoMetadataExtraRow> _workExtras = const <VideoMetadataExtraRow>[];
 
@@ -558,6 +564,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       _workTerms = workTerms;
       _workExtras = workExtras;
       _scrapeMeta = decoded;
+      _mediaImages = imageRows;
       _canonicalCoverPath = canonicalImages
           .where(
             (VideoMetadataImageRow row) =>
@@ -1169,19 +1176,24 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     //
     // 存在性读 [_coverExists]（零同步 IO，BUG-3756）；某一级还在探测时整条链停在
     // [kPendingCoverImage]，不先闪成后面的回退封面。
-    final String? collectionCoverPath =
-        (_collectionRow ?? widget.collection).coverPath;
-    switch (_coverExists.lookupOptional(collectionCoverPath)) {
-      case null:
-        return kPendingCoverImage;
-      case true:
-        return resolveMediaCoverImage(
-          kind: MediaKind.video,
-          localPath: collectionCoverPath,
-          decodeWidth: 1600,
-        );
-      case false:
-        break;
+    // 自有层（自有封面 → 原盘竖版盘面图）的优先级只在
+    // [collectionOwnCoverCandidates] 写一次。
+    for (final String ownCoverPath in collectionOwnCoverCandidates(
+      _collectionRow ?? widget.collection,
+      _mediaImages,
+    )) {
+      switch (_coverExists.lookupOptional(ownCoverPath)) {
+        case null:
+          return kPendingCoverImage;
+        case true:
+          return resolveMediaCoverImage(
+            kind: MediaKind.video,
+            localPath: ownCoverPath,
+            decodeWidth: 1600,
+          );
+        case false:
+          break;
+      }
     }
     switch (_coverExists.lookupOptional(_canonicalCoverPath)) {
       case null:

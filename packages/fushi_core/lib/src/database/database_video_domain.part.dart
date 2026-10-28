@@ -199,8 +199,8 @@ mixin _FushiDbVideoDomain
   ///
   /// 事务内 delete + insert（与 [replaceCollectionRelations] 同理由）：图组来自
   /// 源的一次完整响应，逐条 upsert 会留下上次刮削已不存在的残图行。只删
-  /// [MediaImageKind.scrapeOwned] 的种类：原盘盘面图（[MediaImageKind.discArt]）
-  /// 由源库扫描写入，重刮不能把它清掉。
+  /// [MediaImageKind.scrapeOwned] 的种类：原盘盘面图（[MediaImageKind.discArt] /
+  /// [MediaImageKind.discCover]）由源库扫描写入，重刮不能把它清掉。
   Future<void> replaceMediaImagesForCollection(
     int collectionId,
     List<MediaImagesCompanion> images,
@@ -237,24 +237,32 @@ mixin _FushiDbVideoDomain
           kind.dbValue,
       ]);
 
-  /// 设置某合集的原盘盘面图（[MediaImageKind.discArt]，每合集一张）：替换旧行，
-  /// `sourceUrl` 为 null。
-  Future<void> setCollectionDiscArt(int collectionId, String path) =>
-      transaction(() async {
-        await (delete(mediaImages)..where(
-              ($MediaImagesTable t) =>
-                  t.collectionId.equals(collectionId) &
-                  t.kind.equals(MediaImageKind.discArt.dbValue),
-            ))
-            .go();
-        await into(mediaImages).insert(
-          MediaImagesCompanion.insert(
-            collectionId: Value<int?>(collectionId),
-            kind: MediaImageKind.discArt.dbValue,
-            path: path,
-          ),
-        );
-      });
+  /// 设置某合集的一张原盘盘面图（[kind] 只能是 [MediaImageKind.discArt] /
+  /// [MediaImageKind.discCover]，每合集每种一张）：替换旧行，`sourceUrl` 为 null。
+  Future<void> setCollectionDiscImage(
+    int collectionId,
+    MediaImageKind kind,
+    String path,
+  ) {
+    if (kind != MediaImageKind.discArt && kind != MediaImageKind.discCover) {
+      throw ArgumentError.value(kind, 'kind', 'not a disc image kind');
+    }
+    return transaction(() async {
+      await (delete(mediaImages)..where(
+            ($MediaImagesTable t) =>
+                t.collectionId.equals(collectionId) &
+                t.kind.equals(kind.dbValue),
+          ))
+          .go();
+      await into(mediaImages).insert(
+        MediaImagesCompanion.insert(
+          collectionId: Value<int?>(collectionId),
+          kind: kind.dbValue,
+          path: path,
+        ),
+      );
+    });
+  }
 
   /// 某合集的附加图组（kind 组内按 position 升序，backdrop 轮换序即此序）。
   Future<List<MediaImageRow>> getMediaImagesForCollection(int collectionId) =>
@@ -274,6 +282,15 @@ mixin _FushiDbVideoDomain
             ..where(($MediaImagesTable t) => t.bookUid.equals(bookUid))
             ..orderBy([
               ($MediaImagesTable t) => OrderingTerm(expression: t.kind),
+              ($MediaImagesTable t) => OrderingTerm(expression: t.position),
+            ]))
+          .get();
+
+  /// 某一种附加图的全部行（如首页只要原盘竖版盘面图时，不必拉整表）。
+  Future<List<MediaImageRow>> getMediaImagesOfKind(MediaImageKind kind) =>
+      (select(mediaImages)
+            ..where(($MediaImagesTable t) => t.kind.equals(kind.dbValue))
+            ..orderBy([
               ($MediaImagesTable t) => OrderingTerm(expression: t.position),
             ]))
           .get();

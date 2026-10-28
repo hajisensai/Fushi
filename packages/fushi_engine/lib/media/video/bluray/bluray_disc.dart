@@ -31,6 +31,7 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/video/bluray/bluray_disc_meta_files.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 import 'package:fushi_engine/media/video/disc/disc_title_selection.dart';
 
@@ -379,18 +380,25 @@ Future<BlurayPlaylist?> _readPlaylistFile(File file) async {
 /// 盘名：`BDMV/META/DL/bdmt_*.xml` 里的盘内标题，读不到就用目录名。
 ///
 /// META 是可选段，多数压制盘没有；有的时候它比目录名准得多（目录名常带压制组后缀）。
+///
+/// 选文件与盘面图（`readBlurayDiscArtwork`）同一个排序函数
+/// [orderBlurayDiscMetadataFiles]，但**不带界面语言偏好**：盘名是盘合集的自然键
+/// （合集按名对回、特典墓碑按名挂），跟着界面语言变，切一次语言重扫就会把同一张
+/// 盘拆成新合集。
 Future<String> readBlurayDiscName(String rootPath) async {
   final String fallback = p.basename(p.normalize(rootPath));
   final Directory metaDir = Directory(p.join(rootPath, 'BDMV', 'META', 'DL'));
   try {
     if (!await metaDir.exists()) return fallback;
-    final List<File> candidates =
-        (await metaDir.list(followLinks: false).toList())
-            .whereType<File>()
-            .where((File f) => p.extension(f.path).toLowerCase() == '.xml')
-            .toList()
-          ..sort((File a, File b) => a.path.compareTo(b.path));
-    for (final File file in candidates) {
+    final List<String> names = <String>[
+      await for (final FileSystemEntity e in metaDir.list(followLinks: false))
+        if (e is File) p.basename(e.path),
+    ];
+    for (final String name in orderBlurayDiscMetadataFiles(
+      names,
+      preferredLanguages: const <String>[],
+    )) {
+      final File file = File(p.join(metaDir.path, name));
       if (await file.length() > kBlurayMaxPlaylistBytes) continue;
       final String? title = parseBlurayMetaTitle(await file.readAsString());
       if (title != null && title.isNotEmpty) return title;

@@ -1,18 +1,18 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fushi_engine/media/video/bluray/bluray_disc_thumbnail.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_disc_artwork.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 // Same shape as a retail disc's BDMV/META/DL/bdmt_jpn.xml.
-String _disclib(String thumbnails) =>
+String _disclib(String images) =>
     '\uFEFF<?xml version="1.0" encoding="utf-8"?>\n'
     '<disclib xmlns="urn:BDA:bdmv;disclib">\n'
     '  <di:discinfo xmlns:di="urn:BDA:bdmv;discinfo">\n'
     '    <di:title><di:name>超かぐや姫！</di:name></di:title>\n'
-    '    <di:description>$thumbnails</di:description>\n'
+    '    <di:description>$images</di:description>\n'
     '  </di:discinfo>\n'
     '</disclib>\n';
 
@@ -20,22 +20,22 @@ Uint8List _jpeg(int width, int height) =>
     img.encodeJpg(img.Image(width: width, height: height));
 
 void main() {
-  group('parseBlurayDiscThumbnails', () {
-    test('reads every thumbnail href in document order', () {
+  group('parseBlurayDiscArtworkRefs', () {
+    test('reads every declared image href in document order', () {
       expect(
-        parseBlurayDiscThumbnails(
+        parseBlurayDiscArtworkRefs(
           _disclib(
             '<di:thumbnail href="./S.jpg" size="416x240" />'
             '<di:thumbnail href="./L.jpg" size="640x360" />',
           ),
-        ).map((BlurayDiscThumbnail t) => t.href),
+        ).map((BlurayDiscArtworkRef t) => t.href),
         <String>['S.jpg', 'L.jpg'],
       );
     });
 
     test('drops hrefs that leave META/DL', () {
       expect(
-        parseBlurayDiscThumbnails(
+        parseBlurayDiscArtworkRefs(
           _disclib(
             '<di:thumbnail href="../../index.bdmv" />'
             '<di:thumbnail href="/etc/passwd" />'
@@ -43,13 +43,13 @@ void main() {
             '<di:thumbnail href="sub\\..\\..\\x.jpg" />'
             '<di:thumbnail href="art/cover.png" />',
           ),
-        ).map((BlurayDiscThumbnail t) => t.href),
+        ).map((BlurayDiscArtworkRef t) => t.href),
         <String>['art/cover.png'],
       );
     });
 
     test('malformed XML yields nothing', () {
-      expect(parseBlurayDiscThumbnails('<disclib><di:thumb'), isEmpty);
+      expect(parseBlurayDiscArtworkRefs('<disclib><di:thumb'), isEmpty);
     });
   });
 
@@ -82,9 +82,72 @@ void main() {
     );
   });
 
-  test('image size comes from the image, not from a declared size', () {
-    expect(decodeImageSize(_jpeg(40, 60)), (width: 40, height: 60));
-    expect(decodeImageSize(Uint8List.fromList(<int>[9, 8, 7])), isNull);
+  test('metadata file names match case-insensitively', () {
+    expect(
+      orderBlurayDiscMetadataFiles(<String>[
+        'BDMT_JPN.XML',
+        'bdmt_eng.xml',
+        'Bdmt_x.xml',
+      ], preferredLanguages: blurayLanguageCodes('ja')),
+      <String>['BDMT_JPN.XML', 'bdmt_eng.xml'],
+    );
+  });
+
+  group('readImageHeaderSize', () {
+    late Directory dir;
+
+    setUp(() async => dir = await Directory.systemTemp.createTemp('bd_hdr_'));
+    tearDown(() => dir.delete(recursive: true));
+
+    Future<({int width, int height})?> sizeOf(List<int> bytes) {
+      final File file = File(p.join(dir.path, 'x.img'))
+        ..writeAsBytesSync(bytes);
+      return readImageHeaderSize(file);
+    }
+
+    test(
+      'JPEG and PNG sizes come from the header, not a declared size',
+      () async {
+        expect(await sizeOf(_jpeg(40, 60)), (width: 40, height: 60));
+        expect(await sizeOf(img.encodePng(img.Image(width: 64, height: 36))), (
+          width: 64,
+          height: 36,
+        ));
+        expect(
+          await sizeOf(
+            img.encodeJpg(img.Image(width: 9, height: 5), quality: 10),
+          ),
+          (width: 9, height: 5),
+        );
+      },
+    );
+
+    test('SOF behind APPn segments larger than the read window', () async {
+      final Uint8List jpeg = _jpeg(30, 20);
+      // SOI, then two ~51 KB APP1 segments (an embedded EXIF preview / ICC
+      // profile does this; one segment's length is 16-bit), then the rest of
+      // the original stream: the SOF sits past the first 64 KB.
+      final BytesBuilder b = BytesBuilder()..add(<int>[0xFF, 0xD8]);
+      for (int i = 0; i < 2; i++) {
+        b
+          ..add(<int>[0xFF, 0xE1, 0xC8, 0x02])
+          ..add(Uint8List(0xC800));
+      }
+      b.add(jpeg.sublist(2));
+      final Uint8List bytes = b.takeBytes();
+      expect(bytes.length, greaterThan(64 * 1024));
+      expect(await sizeOf(bytes), (width: 30, height: 20));
+    });
+
+    test('not an image / truncated header → null', () async {
+      expect(await sizeOf(<int>[9, 8, 7]), isNull);
+      expect(await sizeOf(_jpeg(40, 60).sublist(0, 20)), isNull);
+      expect(await sizeOf(<int>[0xFF, 0xD8, 0xFF, 0xDA, 0, 2]), isNull);
+      expect(
+        await readImageHeaderSize(File(p.join(dir.path, 'missing.jpg'))),
+        isNull,
+      );
+    });
   });
 
   group('readBlurayDiscArtwork', () {
