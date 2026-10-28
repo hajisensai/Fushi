@@ -12,6 +12,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema_web_browser.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/settings_section_anchor.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_strings.dart';
 import 'package:fushi/utils.dart';
@@ -62,6 +63,16 @@ class _WebBrowserSettingsPageState extends ConsumerState<WebBrowserSettingsPage>
   bool _initialPushPending = false;
 
   bool _stringsReady = WebBrowserExtensionStrings.instance.isLoaded;
+
+  /// 双栏下右栏各组自己的分组锚点登记处：不让它们登记到外层页壳的 spy，
+  /// 否则页头下会冒出一排分组跳转 chip（分组导航已经在左栏）。
+  final SettingsSectionSpy _paneSpy = SettingsSectionSpy();
+
+  @override
+  void dispose() {
+    _paneSpy.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -128,12 +139,15 @@ class _WebBrowserSettingsPageState extends ConsumerState<WebBrowserSettingsPage>
             sections: const <SettingsSection>[],
             // 两栏各自滚动，要占满详情视口。
             bodyFillsViewport: true,
-            body: (SettingsContext c) => _TwoPane(
-              settingsContext: c,
-              renderer: renderer,
-              selected: _selected,
-              onSelected: _select,
-              stringsReady: _stringsReady,
+            body: (SettingsContext c) => SettingsSectionSpyScope(
+              spy: _paneSpy,
+              child: _TwoPane(
+                settingsContext: c,
+                renderer: renderer,
+                selected: _selected,
+                onSelected: _select,
+                stringsReady: _stringsReady,
+              ),
             ),
           ),
         );
