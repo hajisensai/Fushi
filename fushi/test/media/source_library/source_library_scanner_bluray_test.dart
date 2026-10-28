@@ -23,6 +23,7 @@ import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 import '../video/bluray_fixture.dart';
@@ -679,6 +680,99 @@ void main() {
       for (final String id in <String>['00001', '00002', '00003']) {
         expect(planned, contains(p.normalize(mpls(series, id))));
       }
+    });
+  });
+
+  // 同一部作品的几张盘刮削出来是同一张海报，书架上分不出哪张是哪张。盘内
+  // `BDMV/META/DL` 带着厂商给的盘面图，导入 / 重扫时写成盘合集的自有封面。
+  group('盘合集封面取盘内自带的盘面图', () {
+    late FushiDatabase db;
+    late String disc;
+
+    List<int> png(int side) =>
+        img.encodePng(img.Image(width: side, height: side));
+
+    void writeDiscArt(String root, List<int> large) {
+      final Directory dl = Directory(p.join(root, 'BDMV', 'META', 'DL'))
+        ..createSync(recursive: true);
+      File(p.join(dl.path, 'S.jpg')).writeAsBytesSync(png(2));
+      File(p.join(dl.path, 'L.jpg')).writeAsBytesSync(large);
+      File(p.join(dl.path, 'bdmt_jpn.xml')).writeAsStringSync(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<disclib xmlns="urn:BDA:bdmv;disclib">'
+        '<di:discinfo xmlns:di="urn:BDA:bdmv;discinfo">'
+        '<di:title><di:name>KAGUYA</di:name></di:title>'
+        '<di:description>'
+        '<di:thumbnail href="./S.jpg" size="416x240" />'
+        '<di:thumbnail href="./L.jpg" size="640x360" />'
+        '</di:description></di:discinfo></disclib>',
+      );
+    }
+
+    Future<MediaCollectionRow> discCollection() async =>
+        (await db.getAllMediaCollections()).singleWhere(
+          (MediaCollectionRow c) => c.collectionType == 'playlist',
+        );
+
+    setUp(() {
+      db = _memDb();
+      disc = p.join(tmp.path, 'Kaguya', 'Disc 1');
+      _writeDisc(disc, <String>['00011', '00012']);
+    });
+
+    tearDown(() => db.close());
+
+    test('新导入的盘：合集自有封面是最大的盘面图', () async {
+      final List<int> large = png(8);
+      writeDiscArt(disc, large);
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+      ).scan(await _videoSource(db, tmp.path));
+      expect(summary.succeeded, isTrue, reason: summary.error ?? '');
+
+      final String? cover = (await discCollection()).coverPath;
+      expect(cover, isNotNull);
+      expect(p.isWithin(disc, cover!), isFalse, reason: '复制进封面目录，不引用盘内路径');
+      expect(File(cover).readAsBytesSync(), large);
+    });
+
+    test('老合集（本功能之前导入、封面列为空）重扫补上；已有封面不被覆盖', () async {
+      final List<int> large = png(6);
+      writeDiscArt(disc, large);
+      final SourceLibraryScanner scanner = SourceLibraryScanner(db);
+      final SourceLibraryRow source = await _videoSource(db, tmp.path);
+      expect((await scanner.scan(source)).succeeded, isTrue);
+      final int id = (await discCollection()).id;
+      await db.updateMediaCollectionCoverPath(id, null);
+
+      expect((await scanner.scan(source)).succeeded, isTrue);
+      final MediaCollectionRow again = await discCollection();
+      expect(again.id, id, reason: '重扫对回同一合集');
+      expect(File(again.coverPath!).readAsBytesSync(), large);
+
+      // 用户之后手选了别的封面：重扫不能拿盘面图顶掉。
+      final String picked = p.join(tmp.path, 'picked.jpg');
+      File(picked).writeAsBytesSync(png(3));
+      await db.updateMediaCollectionCoverPath(id, picked);
+      expect((await scanner.scan(source)).succeeded, isTrue);
+      expect((await discCollection()).coverPath, picked);
+    });
+
+    test('盘面图解不开：扫描照常成功，合集不写封面', () async {
+      writeDiscArt(disc, <int>[9, 8, 7]);
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+      ).scan(await _videoSource(db, tmp.path));
+      expect(summary.succeeded, isTrue, reason: summary.error ?? '');
+      expect((await discCollection()).coverPath, isNull);
+    });
+
+    test('盘上没有 META 图：合集不写封面，照旧回落到成员 / 刮削海报', () async {
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+      ).scan(await _videoSource(db, tmp.path));
+      expect(summary.succeeded, isTrue, reason: summary.error ?? '');
+      expect((await discCollection()).coverPath, isNull);
     });
   });
 }

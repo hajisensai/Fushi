@@ -57,10 +57,14 @@ import 'package:fushi/src/media/collections/collection_ai_order.dart'
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:fushi/src/media/import/import_carrier.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_disc_thumbnail.dart';
+import 'package:fushi_engine/media/cover_file_writer.dart'
+    show CoverImageInvalidException;
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
     show discRootForMemberPath;
@@ -2409,9 +2413,14 @@ class SourceLibraryScanner {
   }) async {
     if (plan.blurayDiscs.isEmpty) return 0;
 
+    final List<MediaCollectionRow> collections = await _db
+        .getAllMediaCollections();
     final Map<String, int> existingCollectionIds = <String, int>{
-      for (final MediaCollectionRow c in await _db.getAllMediaCollections())
+      for (final MediaCollectionRow c in collections)
         if (c.collectionType == 'playlist') c.name: c.id,
+    };
+    final Map<int, String?> collectionCovers = <int, String?>{
+      for (final MediaCollectionRow c in collections) c.id: c.coverPath,
     };
 
     // 用户单独删掉的特典：挂在盘合集自然键下的成员墓碑（见
@@ -2446,6 +2455,7 @@ class SourceLibraryScanner {
         if (await _collectionBelongsToDisc(existingId, disc.rootPath)) break;
         existingId = null;
       }
+      int? collectionId = existingId;
       if (existingId != null) {
         await _videoRepo.reconcileSplitPlaylist(
           collectionId: existingId,
@@ -2471,12 +2481,18 @@ class SourceLibraryScanner {
               reuseExistingPaths: true,
             );
         existingCollectionIds[collectionName] = result.collectionId;
+        collectionId = result.collectionId;
         await _videoRepo.recordVideoImportActivity(
           bookUid: result.episodeUids.first,
           title: collectionName,
         );
         count++;
       }
+      await _applyBlurayDiscCover(
+        collectionId,
+        disc.rootPath,
+        currentCover: collectionCovers[collectionId],
+      );
 
       // 特典（菜单里的「特典映像」等）入库、带来源，但不进盘合集：索引器随后把它们
       // 挂到正片作品下，作品资料页的特典区就能看到、点开就播。排在合集墓碑守卫
@@ -2500,6 +2516,42 @@ class SourceLibraryScanner {
       }
     }
     return count;
+  }
+
+  /// 盘合集的自有封面取盘内自带的封面图（`BDMV/META/DL`，见
+  /// [findBlurayDiscThumbnail]）：同一部作品的几张盘刮削出来是同一张海报，盘面图
+  /// 才分得开。新建与重扫的老合集都走这里，老库重扫一次就补上。
+  ///
+  /// 合集已有自有封面（用户手选 / 先前写过）且文件还在就不动：这是「设置封面」
+  /// 之后的用户选择，也让重扫幂等。写入走 [MediaCoverService.applyCollectionCover]
+  /// （刮削清理期租约 + 封面写互斥），拿不到租约只跳过，不让整次扫描失败。
+  Future<void> _applyBlurayDiscCover(
+    int? collectionId,
+    String discRootPath, {
+    required String? currentCover,
+  }) async {
+    if (collectionId == null) return;
+    if (currentCover != null &&
+        currentCover.isNotEmpty &&
+        await File(currentCover).exists()) {
+      return;
+    }
+    final String? thumbnail = await findBlurayDiscThumbnail(discRootPath);
+    if (thumbnail == null) return;
+    try {
+      await MediaCoverService.applyCollectionCover(
+        database: _db,
+        collectionId: collectionId,
+        pickedPath: thumbnail,
+      );
+    } on StateError catch (e) {
+      debugPrint('[SourceLibraryScanner] disc cover skipped: $e');
+    } on CoverImageInvalidException catch (e) {
+      // 盘上的图是不可信输入：解不开就当没有，合集照旧回落到刮削海报。
+      debugPrint('[SourceLibraryScanner] disc cover skipped: $e');
+    } on FileSystemException catch (e) {
+      debugPrint('[SourceLibraryScanner] disc cover skipped: $e');
+    }
   }
 
   /// 把扫描根里认出的 DVD 导入成合集：一张盘一个 `playlist` 合集，一个入选 title 一行
