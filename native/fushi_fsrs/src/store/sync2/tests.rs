@@ -1710,3 +1710,44 @@ fn a_huge_backlog_is_sent_in_bounded_batches_and_resumes_from_the_watermark() {
     assert_eq!(count(&c), count(&a));
     assert_eq!(a.digest(), c.digest());
 }
+
+/// 投影改动只以粗粒度摘要交回 Dart（`marks`）：受影响的笔记 / 卡 / 笔记类型 + 修订号增量，不带事件全文。
+/// 规则与 Dart 旧 `_absorbProjection` 逐条解析一致：界面状态类修改记录只推进界面修订号；笔记类型只有影响缓存行
+/// 的键才标脏；牌组 / profile 的非界面状态改动推进 RWKV 修订号；日志只标卡。本机写入与收段同一套。
+#[test]
+fn projection_changes_come_back_as_coarse_marks_not_event_bodies() {
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let mut bucket = Bucket::default();
+    let deck = super::config::default_deck_id(P);
+    let batch = vec![
+        deck_entity(&deck),
+        edit("deck", &deck, "collapsed", json!(true)),
+        edit("deck", &deck, "name", json!("Default")),
+        edit("notetype", "T1", "css", json!(".x{}")),
+        edit("notetype", "T1", "fieldDesc/f1", json!("d")),
+        edit("notetype", "T2", "templates", json!([])),
+        edit("note", "N1", "f/f1", json!("hello")),
+        edit("card", "C1", "newPos", json!(3)),
+        edit("card", "C2", "flag", json!(1)),
+        review("r1", "C3", T0 + 1, 3, "learn"),
+    ];
+    let expect = json!({
+        "notes": ["N1"], "cards": ["C1", "C2", "C3"], "noteTypes": ["T2"],
+        "landed": 10, "content": 7, "view": 2, "rwkv": 2,
+    });
+    let out = a.apply(T0 + 1, batch);
+    assert_eq!(out["marks"], expect, "{out}");
+    assert!(out.get("events").is_none(), "no event bodies cross FFI: {out}");
+    assert_eq!(out["landed"].as_array().unwrap().len(), 10);
+
+    a.sync(&mut bucket, "loc", T0 + 2);
+    let got = b.sync(&mut bucket, "loc", T0 + 2);
+    assert_eq!(got["marks"], expect, "ingest reports the same marks: {got}");
+    assert!(got.get("events").is_none(), "{got}");
+
+    // 什么都没落（重复收同一批）：摘要为空。
+    let again = b.sync(&mut bucket, "loc", T0 + 3);
+    assert_eq!(again["marks"]["landed"], json!(0), "{again}");
+    assert_eq!(again["marks"]["notes"], json!([]), "{again}");
+}

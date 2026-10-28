@@ -548,8 +548,7 @@ fn ingest_result(c: &Connection, profile: &str, t: Touched, applied: usize, erro
         .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1", [profile], |r| r.get(0))
         .map_err(sql)?;
     Ok(json!({
-        "events": t.events,
-        "dominated": t.dominated,
+        "marks": t.marks.to_json(),
         "replayed": replayed,
         "applied": applied,
         "pending": pending,
@@ -972,7 +971,7 @@ impl SrsCore {
 
     /// 收段：每项是一个段文件的字节（任意顺序、可重复）。校验（签名 / 链 / 解密）、按设备连续前缀 + 因果
     /// 满足才应用；不满足的进缓冲等下一轮。返回
-    /// `{"events":[落进投影的事件], "dominated":[..], "replayed":[..], "applied":n, "pending":n, "errors":[..], "fork":bool}`。
+    /// `{"marks":{..见 [super::Marks::to_json]}, "replayed":[..], "applied":n, "pending":n, "errors":[..], "fork":bool}`。
     ///
     /// 一次收完；同一轮要分几批收（字节预算）时用 [SrsCore::sync2_ingest_begin] / [SrsCore::sync2_ingest_batch] /
     /// [SrsCore::sync2_ingest_finish]，分叉判定与换身份和把全部批次拼成一次调用这里相同。
@@ -1314,8 +1313,7 @@ impl SrsCore {
                 .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = ?1", [profile], |r| r.get(0))
                 .map_err(sql)?;
             Ok(json!({
-                "events": t.events,
-                "dominated": t.dominated,
+                "marks": t.marks.to_json(),
                 "replayed": replayed,
                 "applied": applied,
                 "pending": pending,

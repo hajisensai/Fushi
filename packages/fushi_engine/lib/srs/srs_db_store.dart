@@ -874,31 +874,11 @@ class SrsDbStore implements SrsSync2Host {
   /// - 身份记录：同 ID 同内容不落；同 ID 异内容取规范编码较小的一份（确定性兜底，只可能是 bug 或损坏）；
   /// - 修改记录：同 ID 已在不落；被同一字段键上已有记录支配的丢掉，支配别人的把对方删掉；
   /// - 日志：同 ID 取规范编码较小的一份；不认识的事件原样保留。
-  /// 每条真落库的事件修订号 +1（[changeFingerprint]）。返回真正新落的事件 ID（按序）。
+  /// 每条真落库的事件修订号 +1（[changeFingerprint]）。返回真正新落的事件数。
   ///
   /// 以前每条事件「先查再写」各两三次往返（库在后台 isolate，每次往返都是一次跨 isolate 消息），
   /// 导入一个几千条笔记的包、应用一批对端事件都要几万次往返（BUG-3549 / BUG-3543）。
-  /// 这条事件是否推进 [_contentRevision]：复习日志与界面状态类修改记录不推进。
-  static bool _touchesRwkvScores(SrsEvent e) => switch (e) {
-    SrsEntityEvent(:final SrsEntityRecord record) =>
-      record.kind == SrsEntityKind.deck || record.kind == SrsEntityKind.profile,
-    SrsEditEvent(:final SrsFieldEdit edit) =>
-      (edit.entityKind == SrsEntityKind.deck ||
-              edit.entityKind == SrsEntityKind.profile) &&
-          srsFieldClassOf(edit.entityKind, edit.fieldKey) !=
-              SrsFieldClass.viewState,
-    _ => false,
-  };
-
-  static bool _touchesContent(SrsEvent e) => switch (e) {
-    SrsLogEvent() => false,
-    SrsEditEvent(:final SrsFieldEdit edit) =>
-      srsFieldClassOf(edit.entityKind, edit.fieldKey) !=
-          SrsFieldClass.viewState,
-    _ => true,
-  };
-
-  Future<List<String>> _storeLocalBatch(
+  Future<int> _storeLocalBatch(
     List<SrsEvent> events, {
     bool stamped = false,
     int? serverTimeMs,
@@ -948,32 +928,28 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 把一次 sync2 命令（本机 apply、远端 ingest、冲突解决、恢复……）对投影的改动接进本机缓存与修订号：
-  /// 落进投影的事件按旧事件同一套标记（实体缓存、脏卡、内容 / 界面 / RWKV 修订号），重放改写过日志的卡与
-  /// 被冲突扣住 / 清除改变了可见性的实体也一并标脏。返回落进投影的事件 ID（按序）。
-  List<String> _absorbProjection(Map<String, Object?> r) {
-    final List<String> landed = <String>[];
-    for (final Object? raw in (r['events'] as List?) ?? const <Object?>[]) {
-      if (raw is! Map) continue;
-      final SrsEvent e = SrsEvent.fromJson(raw.cast<String, Object?>());
-      switch (e) {
-        case SrsEntityEvent(:final SrsEntityRecord record):
-          _markEntity(record.kind, record.id);
-        case SrsEditEvent(:final SrsFieldEdit edit):
-          _markEntity(edit.entityKind, edit.entityId, fieldKey: edit.fieldKey);
-        case SrsLogEvent(:final SrsReviewLog log):
-          _dirtyCards.add(log.cardId);
-        case SrsUnknownEvent():
-          break;
-      }
-      _revision++;
-      if (_touchesContent(e)) {
-        _contentRevision++;
-      } else if (e is SrsEditEvent) {
-        _viewRevision++;
-      }
-      if (_touchesRwkvScores(e)) _rwkvScoresRevision++;
-      landed.add(e.id);
+  /// 内核已把落进投影的事件折成粗粒度摘要 `marks`（受影响的笔记 / 卡 / 笔记类型 + 内容 / 界面 / RWKV 修订号
+  /// 增量，native/fushi_fsrs/src/store/sync2/mod.rs `Marks`），这里只并集合、加计数——不再收每条事件的全文
+  /// （一批收段解开后可达几百 MB，跨 isolate 拷贝 + UI 线程逐条解析曾让大同步卡死 / OOM）。重放改写过日志的卡与
+  /// 被冲突扣住 / 清除改变了可见性的实体也一并标脏。返回落进投影的事件数。
+  int _absorbProjection(Map<String, Object?> r) {
+    final Map<String, Object?> m =
+        (r['marks'] as Map?)?.cast<String, Object?>() ??
+        const <String, Object?>{};
+    for (final Object? id in (m['notes'] as List?) ?? const <Object?>[]) {
+      _dirtyNotes.add(id! as String);
     }
+    for (final Object? id in (m['cards'] as List?) ?? const <Object?>[]) {
+      _dirtyCards.add(id! as String);
+    }
+    for (final Object? id in (m['noteTypes'] as List?) ?? const <Object?>[]) {
+      _dirtyNoteTypes.add(id! as String);
+    }
+    final int landed = (m['landed'] as int?) ?? 0;
+    _revision += landed;
+    _contentRevision += (m['content'] as int?) ?? 0;
+    _viewRevision += (m['view'] as int?) ?? 0;
+    _rwkvScoresRevision += (m['rwkv'] as int?) ?? 0;
     for (final Object? c in (r['replayed'] as List?) ?? const <Object?>[]) {
       if (c is String) _dirtyCards.add(c);
     }
@@ -1075,9 +1051,8 @@ class SrsDbStore implements SrsSync2Host {
         ...request,
         'now': now().$1,
       }, blobs: segments);
-      final List<String> landed = _absorbProjection(r);
-      if (landed.isNotEmpty ||
-          ((r['replayed'] as List?)?.isNotEmpty ?? false)) {
+      final int landed = _absorbProjection(r);
+      if (landed > 0 || ((r['replayed'] as List?)?.isNotEmpty ?? false)) {
         _rwkvScoresRevision++;
       }
       await _flushCaches();
@@ -4815,14 +4790,14 @@ class SrsDbStore implements SrsSync2Host {
         if (e is! SrsEntityEvent || e.record.profileUid == profileUid) e,
     ];
     await _transactionOrReload(() async {
-      final Set<String> landed = (await _storeLocalBatch(
+      final int landed = await _storeLocalBatch(
         mine,
         stamped: true,
         serverTimeMs: serverTimeMs,
         serverTimes: serverTimes,
-      )).toSet();
+      );
       // 同步合并：别的设备的作答带动了牌组 / 全局状态，RWKV 分数表整表重查（见 rwkvScoresKey）。
-      if (landed.isNotEmpty) _rwkvScoresRevision++;
+      if (landed > 0) _rwkvScoresRevision++;
       for (final SrsEvent e in mine) {
         final Hlc? h = switch (e) {
           SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
