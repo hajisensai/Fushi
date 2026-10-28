@@ -947,6 +947,54 @@ fn highly_compressible_content_is_cut_by_uncompressed_size_and_not_recompacted()
     assert_eq!(a.digest(), c.digest());
 }
 
+/// 旧版本只按压缩后体积切段，位置上可能躺着一个解压后几十 MB 的段（不会重切，§7.1 段不可变）。收段端照样收：
+/// 校验走流式（不留操作），再流式按块投递，结果与逐段收的一样。
+#[test]
+fn legacy_oversized_segment_is_streamed_in_and_matches_the_author() {
+    use crate::sync2::segment::{self, Verified, CHAIN_ZERO, SEGMENT_MAX_RAW_BYTES};
+    let a = Device::new("legacy");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck)]);
+    let filler = "日本語の例文。".repeat(1000);
+    for batch in 0..8 {
+        let events: Vec<Value> =
+            (0..250).map(|i| edit("note", &format!("N{batch}-{i}"), "f/s", json!(format!("{filler}{i}")))).collect();
+        a.apply(T0 + batch, events);
+    }
+    let mut bucket = Bucket::default();
+    a.sync(&mut bucket, "loc", T0 + DAY);
+    // 把 A 发出的全部段并成旧版本会切出的那种一整段（同一把设备钥匙签，链与原段一致）。
+    let (collection, signer, public) = {
+        let w = a.core.writer().unwrap();
+        let local = super::Local::load(&w, P).unwrap().unwrap();
+        let public = local.key.public();
+        (local.collection, local.key, public)
+    };
+    let mut paths: Vec<&String> = bucket.0.keys().filter(|k| k.contains("/seg-")).collect();
+    paths.sort();
+    let mut ops = Vec::new();
+    for p in paths {
+        ops.extend(segment::open(&bucket.0[p], &public, None).unwrap().ops);
+    }
+    let raw: u64 = ops.iter().map(|o| o.payload.len() as u64 + 24).sum();
+    assert!(raw > 2 * SEGMENT_MAX_RAW_BYTES, "{raw}");
+    let (_, big) = segment::pack(collection, &ops, CHAIN_ZERO, &signer, None).unwrap();
+    assert!((big.len() as u64) < SEGMENT_MAX_RAW_BYTES / 8, "compressed {}", big.len());
+    let opened = segment::open_verified(&big, &public, None).unwrap();
+    assert!(matches!(opened.verify().unwrap(), Verified::Stream(_)), "an oversized segment must not be kept whole");
+
+    let c = Device::new("legacyc");
+    c.core.sync2_identity(P, T0 + 2 * DAY).unwrap();
+    let heads: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/head-")).map(|(_, v)| v.clone()).collect();
+    c.core.sync2_plan(P, &heads).unwrap();
+    let out: Value = serde_json::from_str(&c.core.sync2_ingest(P, &[big], None, T0 + 2 * DAY).unwrap()).unwrap();
+    assert_eq!(out["errors"], json!([]), "{out}");
+    assert_eq!(out["applied"].as_u64().unwrap(), ops.len() as u64);
+    assert_eq!(projection(&a), projection(&c));
+    c.core.sync2_digest_due(P, T0 + 2 * DAY, Some(0)).unwrap();
+    assert_eq!(a.digest(), c.digest());
+}
+
 /// 升级前切的老段（体积未知，记 0）：下一轮补算体积、按层合并，位置上换成少数几个大段，新设备照样收齐。
 #[test]
 fn pre_upgrade_small_segments_are_sized_and_compacted() {

@@ -550,18 +550,28 @@ fn ingest_segments(
                 }
             }
         };
-        let seg = match segment::open(bytes, &public, ck.as_ref()) {
+        let seg = match segment::open_verified(bytes, &public, ck.as_ref()) {
             Ok(s) => s,
             Err(e) => {
                 errors.push(format!("{}: {e}", header.device.text()));
                 continue;
             }
         };
+        // 整段校验（签名已过，这里重算链）后才动投影；超大旧段校验时不留操作，下面再流式解一遍。
+        let ops = match seg.verify() {
+            Ok(ops) => ops,
+            Err(e) => {
+                errors.push(format!("{}: {e}", header.device.text()));
+                continue;
+            }
+        };
+        let stream_err = |e: segment::SegmentError| format!("{}: {e}", header.device.text());
         if header.device == local.device {
             // 同一身份、签名也对（同一把钥匙 = 数据目录被复制）：逐条比链，第一处不同之前是共同前缀。
             let mut chain = seg.header.prev_chain;
-            for op in &seg.ops {
-                chain = chain_next(&chain, op);
+            for op in ops {
+                let op = op.map_err(stream_err)?;
+                chain = chain_next(&chain, &op);
                 let ours = chain_at(c, profile, &local.device, op.id.seq)?;
                 if ours != Some(chain) {
                     let k = op.id.seq - 1;
@@ -571,15 +581,32 @@ fn ingest_segments(
             }
             continue;
         }
+        // 按块投：一块投完（投上的当场释放）再解下一块，超大旧段也只占一块的内存。块边界与段边界一样任意，
+        // 结果等价于逐段投递（Dart 本来就按任意段边界切批）。
         let mut chain = seg.header.prev_chain;
-        delivery.push(seg.ops.into_iter().map(|op| {
+        let mut chunk: Vec<(Op, Chain)> = Vec::new();
+        let mut chunk_raw = 0usize;
+        for op in ops {
+            let op = op.map_err(stream_err)?;
             chain = chain_next(&chain, &op);
-            (op, chain)
-        }));
+            chunk_raw += op.payload.len() + 24;
+            chunk.push((op, chain));
+            if chunk.len() >= DELIVERY_CHUNK_OPS || chunk_raw >= DELIVERY_CHUNK_RAW {
+                delivery.push(std::mem::take(&mut chunk));
+                chunk_raw = 0;
+                delivery.drain(c, profile, now, t)?;
+            }
+        }
+        delivery.push(chunk);
         delivery.drain(c, profile, now, t)?;
     }
     delivery.finish(c, profile)
 }
+
+/// 收段时一次投递的块（条数 / 解压后字节，先到者为准）：新切的段本来就不超过 [segment::SEGMENT_MAX_RAW_BYTES]，
+/// 这两条只在读旧版本切出的超大段时起作用。
+const DELIVERY_CHUNK_OPS: usize = 16_384;
+const DELIVERY_CHUNK_RAW: usize = 4 * 1024 * 1024;
 
 /// 收段命令的返回（重放受影响的卡、数缓冲）。
 fn ingest_result(c: &Connection, profile: &str, t: Touched, applied: usize, errors: Vec<String>, fork: bool) -> Result<String, String> {
