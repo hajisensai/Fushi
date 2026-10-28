@@ -4019,7 +4019,7 @@ Promise.all([
 // 状态标记只画 ↗ 图标（用户 10-28：不要「新卡」文字），宿主下发的状态文案记在
 // data-srs-label 上（同时进提示 / aria-label）。
 function srsLabelOf(badge) {
-  return (badge.dataset && badge.dataset.srsLabel) || '';
+  return badge.dataset?.srsLabel || '';
 }
 
 // ── Fushi 复习（SRS）词状态标记：createSrsStatusBadge ─────────────────────────────
