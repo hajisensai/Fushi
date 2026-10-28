@@ -230,6 +230,24 @@ void main() {
       );
     });
 
+    test('集的封面缓存键跟着剧海报走，不沿用集自己的 id（旧缓存里是 16:9 截图）', () {
+      final List<ServerContinueCandidate> out = _mediaServer(
+        resume: <MediaServerItem>[
+          const MediaServerItem(
+            id: 'ep1',
+            name: 'Pilot',
+            type: MediaServerItemType.episode,
+            seriesName: 'Show',
+            seriesCoverItemId: 'series1',
+            hasCover: true,
+            positionMs: 1000,
+            durationMs: 100000,
+          ),
+        ],
+      );
+      expect(out.single.coverCacheKey, 'media-server:s1:series1');
+    });
+
     test('空输入得空表', () {
       expect(
         mergeServerContinue(const <List<ServerContinueCandidate>>[]),

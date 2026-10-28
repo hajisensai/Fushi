@@ -113,7 +113,7 @@ List<ServerContinueCandidate> mediaServerContinueCandidates({
             ? code
             : (fraction == null ? null : '${(fraction * 100).round()}%'),
         coverUrl: coverUrlOf(item),
-        coverCacheKey: 'media-server:$serverId:${item.id}',
+        coverCacheKey: 'media-server:$serverId:${item.posterItem.id}',
         coverFetcher: coverFetcher,
         open: (BuildContext context) => open(context, item),
       ),
