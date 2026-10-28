@@ -3,6 +3,11 @@ import 'package:fushi/src/mining/galgame_repository.dart'
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/collections/collection_cover.dart'
+    show
+        collectionOwnCoverCandidates,
+        firstExistingCoverPath,
+        loadCollectionOwnCoverCandidates;
 import 'package:material_ui/material_ui.dart';
 
 /// 作品图谱一个端点在本机的展示信息（[resolveMediaLinkEntry] 产出）。
@@ -137,7 +142,9 @@ Future<MediaLinkEntry> resolveMediaLinkEntry(
         endpoint: endpoint,
         title: collection.name,
         inLibrary: true,
-        coverPath: collection.coverPath,
+        coverPath: await firstExistingCoverPath(
+          await loadCollectionOwnCoverCandidates(db, collection),
+        ),
       );
     case MediaLinkKind.game:
       final GalgameRow? game = await db.getGalgame(endpoint.key);
@@ -262,6 +269,15 @@ Future<List<MediaLinkEntry>> loadMediaLinkCandidates(
       }
     case MediaLinkKind.videoCollection:
       // 合集表不带种类列：按成员推导出的视频库域取（与「加入合集」同一判据）。
+      final Map<int, List<MediaImageRow>> discCovers =
+          <int, List<MediaImageRow>>{};
+      for (final MediaImageRow row in await db.getMediaImagesOfKind(
+        MediaImageKind.discCover,
+      )) {
+        if (row.collectionId case final int id) {
+          (discCovers[id] ??= <MediaImageRow>[]).add(row);
+        }
+      }
       for (final MediaCollectionRow c
           in await db.getMediaCollectionsForEntryDomain(MediaKind.video, '')) {
         out.add(
@@ -269,7 +285,9 @@ Future<List<MediaLinkEntry>> loadMediaLinkCandidates(
             endpoint: (kind: kind, key: collectionTagEntryKey(c.id)),
             title: c.name,
             inLibrary: true,
-            coverPath: c.coverPath,
+            coverPath: await firstExistingCoverPath(
+              collectionOwnCoverCandidates(c, discCovers[c.id]),
+            ),
           ),
         );
       }

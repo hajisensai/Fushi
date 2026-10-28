@@ -7,6 +7,8 @@ import 'dart:typed_data';
 import 'package:meta/meta.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:http/http.dart' as http;
+import 'package:fushi_engine/media/collections/collection_cover.dart'
+    show applyScrapedCollectionCover;
 import 'package:fushi_engine/media/video/metadata/anidb_file_identity_store.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_hash_identity_service.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
@@ -4529,18 +4531,12 @@ class VideoSourceScrapeCoordinator
           DatabaseSidecarGeneratedArtifactChecker(database);
       await VideoCoverMutationGate.runExclusive(() async {
         if (localWork.collection case final MediaCollectionRow collection) {
-          final MediaCollectionRow? current =
-              await database.getMediaCollectionById(collection.id);
-          if (current != null &&
-              (current.coverPath == null ||
-                  await generated.isUnmodifiedGeneratedArtifact(
-                    current.coverPath!,
-                  ))) {
-            await database.updateMediaCollectionCoverPath(
-              collection.id,
-              coverPath,
-            );
-          }
+          await applyScrapedCollectionCover(
+            database,
+            collection.id,
+            coverPath,
+            generated: generated,
+          );
         } else {
           final VideoBookRow planned = localWork.members.single;
           final VideoBookRow? current =

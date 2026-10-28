@@ -57,10 +57,17 @@ import 'package:fushi/src/media/collections/collection_ai_order.dart'
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:fushi/src/media/import/import_carrier.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart'
+    show PortraitCoverImage;
+import 'package:fushi/i18n/strings.g.dart' show LocaleSettings;
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_disc_artwork.dart';
+import 'package:fushi_engine/media/cover_file_writer.dart'
+    show CoverImageInvalidException;
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
     show discRootForMemberPath;
@@ -2446,6 +2453,7 @@ class SourceLibraryScanner {
         if (await _collectionBelongsToDisc(existingId, disc.rootPath)) break;
         existingId = null;
       }
+      int? collectionId = existingId;
       if (existingId != null) {
         await _videoRepo.reconcileSplitPlaylist(
           collectionId: existingId,
@@ -2471,11 +2479,15 @@ class SourceLibraryScanner {
               reuseExistingPaths: true,
             );
         existingCollectionIds[collectionName] = result.collectionId;
+        collectionId = result.collectionId;
         await _videoRepo.recordVideoImportActivity(
           bookUid: result.episodeUids.first,
           title: collectionName,
         );
         count++;
+      }
+      if (collectionId != null) {
+        await _applyBlurayDiscArtwork(collectionId, disc.rootPath);
       }
 
       // 特典（菜单里的「特典映像」等）入库、带来源，但不进盘合集：索引器随后把它们
@@ -2501,6 +2513,86 @@ class SourceLibraryScanner {
     }
     return count;
   }
+
+  /// 盘合集用盘内自带的盘面图（`BDMV/META/DL`，见 [readBlurayDiscArtwork]）：
+  /// 同一部作品的几张盘刮削出来是同一张海报，盘面图才分得开。新建与重扫的老合集
+  /// 都走这里，老库重扫一次就补上。
+  ///
+  /// 按图头里的像素尺寸分流（阈值与卡片判横竖同一个
+  /// [PortraitCoverImage.portraitAspectThreshold]），两张都登记进附加图组、都**不碰**
+  /// 合集自有封面 `coverPath`（那是用户手选 / 导入海报的位置，见
+  /// `collection_cover.dart`）：
+  /// * 竖图 → [MediaImageKind.discCover]：竖卡封面链里排在自有封面之后、刮削海报
+  ///   之前（`collectionOwnCoverCandidates`）。
+  /// * 横图 → [MediaImageKind.discArt]：只给横向槽位用，不把横图垫进竖卡。
+  ///
+  /// 已登记且文件还在的槽位不重写；两个槽位都在时连盘都不读（重扫不重复读图）。
+  /// 选哪份语言的元数据跟界面语言（[blurayLanguageCodes]），没有就按盘上的顺序。
+  /// 写入走 [MediaCoverService.applyCollectionDiscImage]（刮削清理期租约 + 封面写
+  /// 互斥）；拿不到租约、图解不开都只跳过，不让整次扫描失败。
+  Future<void> _applyBlurayDiscArtwork(
+    int collectionId,
+    String discRootPath,
+  ) async {
+    final List<MediaImageRow> images = await _db.getMediaImagesForCollection(
+      collectionId,
+    );
+    Future<bool> filled(MediaImageKind kind) async {
+      for (final MediaImageRow row in images) {
+        if (row.kind == kind.dbValue) return _existingFile(row.path);
+      }
+      return false;
+    }
+
+    final bool coverFilled = await filled(MediaImageKind.discCover);
+    final bool artFilled = await filled(MediaImageKind.discArt);
+    if (coverFilled && artFilled) return;
+
+    final List<BlurayDiscArtwork> artwork = await readBlurayDiscArtwork(
+      discRootPath,
+      preferredLanguages: blurayLanguageCodes(
+        LocaleSettings.currentLocale.languageCode,
+      ),
+    );
+    if (artwork.isEmpty) return;
+    BlurayDiscArtwork? largest(bool portrait) {
+      BlurayDiscArtwork? best;
+      for (final BlurayDiscArtwork a in artwork) {
+        if ((a.aspect <= PortraitCoverImage.portraitAspectThreshold) !=
+            portrait) {
+          continue;
+        }
+        if (best == null || a.area > best.area) best = a;
+      }
+      return best;
+    }
+
+    try {
+      for (final (MediaImageKind kind, bool done, BlurayDiscArtwork? art)
+          in <(MediaImageKind, bool, BlurayDiscArtwork?)>[
+            (MediaImageKind.discCover, coverFilled, largest(true)),
+            (MediaImageKind.discArt, artFilled, largest(false)),
+          ]) {
+        if (done || art == null) continue;
+        await MediaCoverService.applyCollectionDiscImage(
+          database: _db,
+          collectionId: collectionId,
+          kind: kind,
+          sourcePath: art.path,
+        );
+      }
+    } on StateError catch (e) {
+      debugPrint('[SourceLibraryScanner] disc artwork skipped: $e');
+    } on CoverImageInvalidException catch (e) {
+      // 盘上的图是不可信输入：解不开就当没有，合集照旧回落到刮削图。
+      debugPrint('[SourceLibraryScanner] disc artwork skipped: $e');
+    } on FileSystemException catch (e) {
+      debugPrint('[SourceLibraryScanner] disc artwork skipped: $e');
+    }
+  }
+
+  static Future<bool> _existingFile(String? path) async =>
+      path != null && path.isNotEmpty && await File(path).exists();
 
   /// 把扫描根里认出的 DVD 导入成合集：一张盘一个 `playlist` 合集，一个入选 title 一行
   /// `VideoBooks`，与 [_importBlurayDiscs] 同构（合集名候选、重扫对齐、墓碑守卫

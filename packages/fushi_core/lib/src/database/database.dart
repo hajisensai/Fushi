@@ -23,6 +23,7 @@ import 'epub_book_meta.dart';
 import 'galgame_text_line_tables.dart';
 import 'media_kind.dart';
 import 'media_kind_mappings.dart';
+import 'media_image_kind.dart';
 import 'media_link_kind.dart';
 import 'music_scrape_tables.dart';
 import 'music_tables.dart';

@@ -34,6 +34,8 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi_engine/media/collections/collection_cover.dart'
+    show loadCollectionOwnCoverCandidates;
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
@@ -595,16 +597,18 @@ Future<_NavPeekCollections> _loadCollections(AppModel appModel) async {
   );
 }
 
-/// 视频合集的封面，顺序与视频库合集卡一致：合集自己的封面文件（手选 / 刮削 /
-/// 下载导入写的 `cover_path`）→ 刮削作品的海报（cover / poster，本地文件优先、
-/// 没有落盘就走远端地址）→ null（调用方退回成员封面）。
+/// 视频合集的封面，顺序与视频库合集卡一致：自有层（合集自己的封面文件 → 原盘竖版
+/// 盘面图，见 [loadCollectionOwnCoverCandidates]）→ 刮削作品的海报（cover /
+/// poster，本地文件优先、没有落盘就走远端地址）→ null（调用方退回成员封面）。
 Future<ImageProvider?> _videoCollectionCover(
   AppModel appModel,
   MediaCollectionRow collection,
 ) async {
-  final String? own = collection.coverPath;
-  if (own != null && own.isNotEmpty && File(own).existsSync()) {
-    return resizedFileImage(File(own));
+  for (final String own in await loadCollectionOwnCoverCandidates(
+    appModel.database,
+    collection,
+  )) {
+    if (await File(own).exists()) return resizedFileImage(File(own));
   }
   final VideoMetadataWorkRow? work = await appModel.database
       .resolveVideoMetadataWorkForCollection(collection.id);
