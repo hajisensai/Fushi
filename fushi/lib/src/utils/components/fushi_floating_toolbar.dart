@@ -1046,6 +1046,29 @@ double fushiTopBarActionsBudget({
         : 0) -
     8;
 
+/// 前置圆钮（[FushiFloatingTopBar.leading]）在 [maxWidth] 里平铺几颗（纯函数）。
+///
+/// 前置圆钮按布局可以不止一颗（阅读器把目录 / 图库 / 统计拖到左上角）。放不下时
+/// 从末尾起收进「⋯」——第一颗（返回）恒在——并给「⋯」留出一格（动作胶囊内边距 +
+/// 一颗按钮）；全部放得下时只在还有动作要排（[hasActions]）才预留这格。
+int fushiTopBarLeadingFitCount({
+  required int leadingCount,
+  required double maxWidth,
+  required bool hasActions,
+  double slotWidth = _kTopBarActionSlot,
+}) {
+  if (leadingCount <= 1 || !maxWidth.isFinite) return leadingCount;
+  final double menu = 8 + _kTopBarActionsPadding + slotWidth;
+  if (leadingCount * _kTopBarLeadingSlot + (hasActions ? menu : 0) <=
+      maxWidth) {
+    return leadingCount;
+  }
+  for (int k = leadingCount - 1; k > 1; k--) {
+    if (k * _kTopBarLeadingSlot + menu <= maxWidth) return k;
+  }
+  return 1;
+}
+
 /// 顶部悬浮条「默认展开、放不下才收进 ⋯」的平铺颗数决策（带展开回差）。
 ///
 /// 有状态（记住上一次平铺几颗作回差参照），由持有它的 State 保活；
@@ -1227,12 +1250,19 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
   String? _lastLabeledSelection;
 
   /// 带字排法 + 展开回差：更宽松的排法要连回差一起放得下才换过去。
-  FushiTopBarLabeledLayout _labeledLayoutFor(double maxWidth) {
+  FushiTopBarLabeledLayout _labeledLayoutFor(
+    double maxWidth, {
+    required int leadingCount,
+  }) {
     final List<FushiToolbarItem> items = <FushiToolbarItem>[
       for (final List<FushiToolbarItem> g in actions) ...g,
       ...overflow,
     ];
-    final double budget = _actionsBudget(maxWidth, hasTitle: false);
+    final double budget = _actionsBudget(
+      maxWidth,
+      hasTitle: false,
+      leadingCount: leadingCount,
+    );
     double width(FushiToolbarItem item) =>
         fushiTopBarInlineItemWidth(context, item);
     FushiTopBarLabeledLayout at(
@@ -1283,7 +1313,9 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
   int _visibleFor(
     double maxWidth, {
     required bool hasTitle,
+    required int leadingCount,
     double? titleWidth,
+    bool menuPinned = false,
   }) {
     if (!widget.adaptiveOverflow) {
       int total = 0;
@@ -1298,9 +1330,10 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
       budget: _actionsBudget(
         maxWidth,
         hasTitle: hasTitle,
+        leadingCount: leadingCount,
         titleWidth: titleWidth,
       ),
-      pinnedMenu: widget.menu.isNotEmpty,
+      pinnedMenu: menuPinned || widget.menu.isNotEmpty,
       slotWidth: fushiTopBarActionSlotWidth(context),
     );
   }
@@ -1314,11 +1347,12 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
   double _actionsBudget(
     double maxWidth, {
     required bool hasTitle,
+    required int leadingCount,
     double? titleWidth,
   }) =>
       fushiTopBarActionsBudget(
         maxWidth: maxWidth,
-        leadingCount: leading.length,
+        leadingCount: leadingCount,
         hasTitle: hasTitle,
         titleWidth: titleWidth,
       ) +
@@ -1527,9 +1561,24 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
           );
     final Widget row = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
+        // 前置圆钮放不下时从末尾起收进「⋯」（排在被收起的动作之前）。
+        final int leadingShown = widget.adaptiveOverflow
+            ? fushiTopBarLeadingFitCount(
+                leadingCount: leading.length,
+                maxWidth: constraints.maxWidth,
+                hasActions: hasActions,
+                slotWidth: fushiTopBarActionSlotWidth(context),
+              )
+            : leading.length;
+        final List<FushiToolbarItem> foldedLeading = leading.sublist(
+          leadingShown,
+        );
         final FushiTopBarLabeledLayout? labeled =
             widget.inlineLabels && titlePill == null
-            ? _labeledLayoutFor(constraints.maxWidth)
+            ? _labeledLayoutFor(
+                constraints.maxWidth,
+                leadingCount: leadingShown,
+              )
             : null;
         final ({
           List<List<FushiToolbarItem>> groups,
@@ -1547,18 +1596,25 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
                 _visibleFor(
                   constraints.maxWidth,
                   hasTitle: titlePill != null,
+                  leadingCount: leadingShown,
+                  // 收起的前置钮在「⋯」里：⋯ 恒占一格。
+                  menuPinned: foldedLeading.isNotEmpty,
                   titleWidth: titlePill == null
                       ? null
                       : _materialTitleWidth(context, t, s),
                 ),
               )
             : (groups: actions, overflow: overflow);
-        final Widget? toolbar = hasActions
+        final Widget? toolbar = hasActions || foldedLeading.isNotEmpty
             // 不做尺寸动画（HBK034）：AnimatedSize 收缩时会保留旧宽度一帧，窗口
             // 骤缩时右侧溢出。按目标宽度立即布局，防抖靠展开回差。
             ? FushiFloatingToolbar(
                 groups: split.groups,
-                overflow: <FushiToolbarItem>[...split.overflow, ...widget.menu],
+                overflow: <FushiToolbarItem>[
+                  ...foldedLeading,
+                  ...split.overflow,
+                  ...widget.menu,
+                ],
                 colors: colors,
                 compact: true,
                 inlineLabel: labeled == null
@@ -1572,7 +1628,9 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
         return Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
-            for (final FushiToolbarItem item in leading) ...<Widget>[
+            for (final FushiToolbarItem item in leading.take(
+              leadingShown,
+            )) ...<Widget>[
               // 前置键（返回等）就是一枚圆：按钮经 [FushiFillSlot] 撑满整枚圆，
               // 悬停 / 按下的 state layer 与命中区 = 可见形状。
               FushiFloatingPill(

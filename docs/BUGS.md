@@ -44,6 +44,8 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3867](bugs/BUG-3867-sync-stuck-preparing-drive-listing.md) | ✅ | ✅ | sync-stuck-preparing-drive-listing |
+| [BUG-3868](bugs/BUG-3868-lyrics-narrow-illustration-entry.md) | ✅ | ✅ | lyrics-narrow-illustration-entry |
+| [BUG-3867](bugs/BUG-3867-reader-floating-leading-overflow.md) | ✅ | ✅ | reader-floating-leading-overflow |
 | [BUG-3866](bugs/BUG-3866-bluray-menu-aacs-win-file-callback-size.md) | ✅ | ✅ | Windows 加密原盘菜单又打不开（fushi_aacs 文件回调把 seek 返回值当文件大小） |
 | [BUG-3865](bugs/BUG-3865-srs-media-sync-sync-stat-freezes-ui.md) | ✅ | ✅ | 复习同步「同步卡片媒体」阶段逐个同步 stat 本机文件，UI 卡死到 ANR |
 | [BUG-3864](bugs/BUG-3864-srs-review-space-dead-on-reveal.md) | 🚧 | 🚧 | 复习页空格翻到答案面后键盘失灵（Windows，未复现） |

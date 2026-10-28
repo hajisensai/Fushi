@@ -3,6 +3,10 @@
 // HBK049：触控平台 ±10 秒按钮被整组 FittedBox 缩到 48 以下，偏中心点击落空。
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'dart:convert';
+
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart';
 
@@ -29,6 +33,8 @@ Widget _app({
   ValueChanged<int>? onSeekRelative,
   VoidCallback? onToggleStatsTimer,
   ValueChanged<String>? onOtherAction,
+  LyricsIllustrationController? illustrations,
+  ValueChanged<int>? onOpenIllustration,
 }) => MaterialApp(
   theme: platform == null ? null : ThemeData(platform: platform),
   builder: (BuildContext context, Widget? child) => MediaQuery(
@@ -50,6 +56,7 @@ Widget _app({
         lyricsMasked: false,
         statsTimerPaused: true,
         clock: _Clock(),
+        illustrations: illustrations,
       ),
       callbacks: LyricsPlayerCallbacks(
         onClose: () => onOtherAction?.call('close'),
@@ -66,6 +73,10 @@ Widget _app({
         onSeekRelative: onSeekRelative ?? (_) {},
         onToggleStatsTimer:
             onToggleStatsTimer ?? () => onOtherAction?.call('studyClock'),
+        onOpenIllustration: onOpenIllustration == null
+            ? null
+            : (int index, {required bool returnToCover}) =>
+                  onOpenIllustration(index),
       ),
       onHtmlThemeChanged: (_) {},
     ),
@@ -73,6 +84,78 @@ Widget _app({
 );
 
 void main() {
+  testWidgets('手机竖屏头行放不下时先省章名、留住小封面（窄屏唯一插图入口）', (WidgetTester tester) async {
+    // 群反馈 2026-10-28：手机歌词模式播到章节扉页没有插画——头行被倍速 / 计时
+    // / ⋯ 胶囊占满，小封面（兼插图入口）先被省掉了。
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(393, 852);
+    addTearDown(tester.view.reset);
+    final LyricsIllustrationController
+    illustrations = LyricsIllustrationController()
+      ..load(
+        <LyricsIllustration>[
+          LyricsIllustration(
+            key: 'frontispiece',
+            position: const LyricsBookPosition(2, 0),
+            image: MemoryImage(
+              base64Decode(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+              ),
+            ),
+          ),
+        ],
+        position: const LyricsBookPosition(0, 0),
+        audioPosition: Duration.zero,
+      );
+    addTearDown(illustrations.dispose);
+    final List<int> opened = <int>[];
+    await tester.pumpWidget(
+      _app(
+        textScale: 1,
+        platform: TargetPlatform.android,
+        illustrations: illustrations,
+        onOpenIllustration: opened.add,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(tester.takeException(), isNull);
+    expect(find.byType(LyricsIllustrationCompactArtwork), findsOneWidget);
+    const Key popup = ValueKey<String>(
+      'lyrics_popup_illustration_frontispiece',
+    );
+    expect(find.byKey(popup), findsNothing, reason: '没走过插图时不弹');
+
+    // 顺着播走过扉页插图：与宽屏封面位同一套逻辑，标题上方弹出插图卡。
+    illustrations.observe(
+      const LyricsBookPosition(2, 5),
+      audioPosition: const Duration(seconds: 5),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(popup), findsOneWidget);
+    final Rect card = tester.getRect(find.byKey(popup));
+    final Rect cover = tester.getRect(
+      find.byKey(const ValueKey<String>('lyrics_compact_artwork')),
+    );
+    expect(card.bottom, lessThan(cover.top), reason: '插图卡停在播放卡上方');
+
+    // 点中间看大图；✕ 收起回到无弹窗。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lyrics_illustration_card')),
+    );
+    expect(opened, <int>[0]);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lyrics_illustration_close')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(popup), findsNothing);
+
+    // 章名也是插图入口。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lyrics_title_illustration_entry')),
+    );
+    expect(opened, <int>[0, 0]);
+  });
+
   for (final TargetPlatform platform in <TargetPlatform>[
     TargetPlatform.android,
     TargetPlatform.windows,

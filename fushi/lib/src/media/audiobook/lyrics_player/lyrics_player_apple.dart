@@ -606,8 +606,36 @@ class _NarrowChrome extends StatelessWidget {
       leading: buttons.sublist(0, split),
       trailing: buttons.sublist(split),
     );
+    // 标题下方的插图卡框：与宽屏封面位同一套弹出逻辑，贴标题行左缘往下展开，
+    // 底边不压到播放卡（各留 12），高不超过 320。
+    final double popupTop =
+        layout.headerTop + kLyricsShellAppleNarrowHeaderHeight + 12;
+    final double popupHeight = math.max(
+      0,
+      math.min(320, bar.top - 12 - popupTop),
+    );
+    final double popupWidth = bar.width * 0.6;
     return Stack(
       children: <Widget>[
+        Positioned(
+          left: bar.left,
+          top: popupTop,
+          width: popupWidth,
+          height: popupHeight,
+          child: LyricsIllustrationPopupCard(
+            controller: data.illustrations,
+            width: popupWidth,
+            height: popupHeight,
+            borderRadius: const BorderRadius.all(Radius.circular(14)),
+            alignment: AlignmentDirectional.topStart,
+            onOpen: callbacks.onOpenIllustration == null
+                ? null
+                : (int index) => callbacks.onOpenIllustration!(
+                    index,
+                    returnToCover: false,
+                  ),
+          ),
+        ),
         Positioned(
           left: padding.left + 18,
           right: padding.right + 10,
@@ -629,7 +657,17 @@ class _NarrowChrome extends StatelessWidget {
               const SizedBox(width: 6),
               _NarrowIllustrationEntry(data: data, callbacks: callbacks),
               Expanded(
-                child: _NarrowHeader(title: data.title, clock: data.clock),
+                // 书名行也是插图入口（与左侧缩略图同一动作）。
+                child: LyricsIllustrationTapTarget(
+                  controller: data.illustrations,
+                  onOpen: callbacks.onOpenIllustration == null
+                      ? null
+                      : (int index) => callbacks.onOpenIllustration!(
+                          index,
+                          returnToCover: true,
+                        ),
+                  child: _NarrowHeader(title: data.title, clock: data.clock),
+                ),
               ),
               // 布局「顶部」区的按钮（出厂 遮罩 / Aa / 统计）。
               ..._appleControlButtons(
