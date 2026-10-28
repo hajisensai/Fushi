@@ -46,11 +46,18 @@ SrsDefsLayoutConfig _config({
   expandedDictionaryNames: unfolded,
   mainLabel: 'Main',
   othersLabel: 'Others',
+  expandAllLabel: 'Expand all',
+  collapseAllLabel: 'Collapse all',
   uiLanguageTag: 'zh-CN',
 );
 
-/// 与 SrsFushiCardView._defsFace 同形的释义页文档。
-SrsCardFaceDocument _doc(SrsDefsLayoutConfig config, {bool withMain = true}) {
+/// 与 SrsFushiCardView._defsFace 同形的释义页文档。[glossExpanded] = 卡面外观「默认展开
+/// 全部释义」。
+SrsCardFaceDocument _doc(
+  SrsDefsLayoutConfig config, {
+  bool withMain = true,
+  bool glossExpanded = false,
+}) {
   final Map<String, String> fields = <String, String>{
     ...srsSampleCardFields(),
     'Glossary': _glossary,
@@ -81,7 +88,7 @@ SrsCardFaceDocument _doc(SrsDefsLayoutConfig config, {bool withMain = true}) {
     theme: ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
     ),
-    appearance: const SrsCardAppearance(),
+    appearance: SrsCardAppearance(glossaryExpanded: glossExpanded),
     labels: _labels,
     mediaUrlPrefix: 'https://srs.local/media/',
     themedScrollbar: false,
@@ -109,6 +116,8 @@ void main() {
       expect(css, contains('--fushi-srs-dict-collapse:1;'));
       expect(css, contains('--fushi-srs-label-main:"Main";'));
       expect(css, contains('--fushi-srs-ui-lang:"zh-CN";'));
+      expect(css, contains('--fushi-srs-label-expand-all:"Expand all";'));
+      expect(css, contains('--fushi-srs-label-collapse-all:"Collapse all";'));
       expect(
         css,
         contains(
@@ -192,10 +201,15 @@ void main() {
         SrsDefsLayoutConfig config,
         List<bool> open, {
         bool withMain = true,
+        bool glossExpanded = false,
         int cols = 2,
         List<int>? columnOf,
       }) {
-        final SrsCardFaceDocument d = _doc(config, withMain: withMain);
+        final SrsCardFaceDocument d = _doc(
+          config,
+          withMain: withMain,
+          glossExpanded: glossExpanded,
+        );
         return <String, Object?>{
           'shell': d.shellHtml,
           'calls': d.hostScript + d.fullCardScript,
@@ -243,6 +257,14 @@ void main() {
           _config(collapse: false, folded: <String>['DictC']),
           <bool>[true, true, false, true],
         ),
+        // 卡面外观「默认展开全部释义」开：压过自动展开行数，与全局折叠开关关同样全部展开
+        // （逐本折叠的照样收起）。
+        'gloss expanded': page(_config(folded: <String>['DictC']), <bool>[
+          true,
+          true,
+          false,
+          true,
+        ], glossExpanded: true),
         // 列数 1：2 行只多展开 1 本。
         'one column': page(_config(columns: 1, rows: 2), <bool>[
           true,

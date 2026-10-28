@@ -782,12 +782,6 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
             a.frontFrequency,
             (bool v) => a.copyWith(frontFrequency: v),
           ),
-          _switch(
-            'sentence-furigana',
-            t.srs_card_appearance_sentence_furigana,
-            a.sentenceFurigana,
-            (bool v) => a.copyWith(sentenceFurigana: v),
-          ),
         ],
       ),
     ];

@@ -630,7 +630,7 @@
   border-radius: 2px;
 }
 
-/* 例句注音默认悬停 / 点按显示（Lapis 的 "hover"），宿主挂 fushi-srs-sentence-furigana 常显 */
+/* 例句字段自带的注音悬停 / 点按显示（Lapis 的 "hover"） */
 .fc-sentence rt {
   font-size: 0.5em;
   color: var(--fc-fg-muted);
@@ -639,8 +639,7 @@
 }
 
 .fc-sentence:hover rt,
-.fc-sentence:active rt,
-.fushi-srs-sentence-furigana .fc-sentence rt {
+.fc-sentence:active rt {
   opacity: 1;
 }
 

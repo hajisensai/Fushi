@@ -186,7 +186,7 @@ String _hiraganaOf(String s) => String.fromCharCodes(<int>[
 ///
 /// 制卡链路只在「查到的那串」逐字出现在例句里时才写 `<b>`（`anki_models.dart`
 /// `_sentenceValue`），以下情形卡面上没有蓝色强调：例句字段里没 `<b>`（Anki 迁移的笔记、
-/// 字幕句与上下文句不同的视频卡）、`SentenceFurigana` 优先显示而它没带 `<b>`、例句里有
+/// 字幕句与上下文句不同的视频卡）、例句里有
 /// 白名单外的标签让解析退回纯文本（`<b>` 一起丢了）、挖空 `{{c1::…}}`。这里按
 /// [srsSentenceTargetRange] 在显示的段落里重新定位目标词并标成加粗段（注音段整段标）。
 @visibleForTesting
@@ -805,17 +805,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     if (!srsFushiBlockVisible(FushiCardBlock.sentence, f, s.appearance)) {
       return null;
     }
-    final bool showRuby = s.appearance.sentenceFurigana || _sentenceRuby;
-    final String raw = srsFieldFilled(f['SentenceFurigana'])
-        ? f['SentenceFurigana']!
-        : f['Sentence']!;
+    final bool showRuby = _sentenceRuby;
+    final String raw = f['Sentence']!;
     // 目标词强调（#9）：显示的那份没带 `<b>` 时按字段标记 / 词条写法重新定位。
     final List<SrsInline> segs = srsEmphasizeSentenceTarget(
       srsParseInline(srsClozeToBold(raw)),
-      marked: <String>[
-        ...srsMarkedTargets(raw),
-        ...srsMarkedTargets(f['Sentence'] ?? ''),
-      ],
+      marked: srsMarkedTargets(raw),
       terms: <String>[
         srsPlainText(f['Expression'] ?? ''),
         if (srsFieldFilled(f['ExpressionFurigana']))
@@ -829,7 +824,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final List<String> audio = _media.sentenceUnit;
     // 注音收起时第一下点按是「显示注音」（原有操作），不取词；注音显示后点在字上 =
     // 查词，点在字外 = 收起注音。
-    final bool rubyToggle = hasRuby && !s.appearance.sentenceFurigana;
+    final bool rubyToggle = hasRuby;
     final Widget text = SrsRubyText(
       key: const ValueKey<String>('srs-fushi-sentence'),
       segments: showRuby

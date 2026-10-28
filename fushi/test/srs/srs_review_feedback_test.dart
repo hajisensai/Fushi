@@ -648,7 +648,7 @@ void main() {
       );
     });
 
-    test('SentenceFurigana 没带 <b>：用 Sentence 字段里标出的目标词定位（注音段整段强调）', () {
+    test('显示的注音句没带 <b>：用另一份里标出的目标词定位（注音段整段强调）', () {
       final List<SrsInline> segs = srsEmphasizeSentenceTarget(
         srsParseInline('図書館[としょかん]に 通[かよ]っている'),
         marked: srsMarkedTargets('図書館に<b>通って</b>いる'),
