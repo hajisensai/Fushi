@@ -189,10 +189,11 @@ void main() {
         contains('intercepting: _selectionMode'),
         reason: '${e.key} 多选态拦返回，普通态不变',
       );
+      // 9650ff43b48 起拖动排序态同样拦返回（先结束排序），非排序时退出多选态。
       expect(
         region,
-        contains('onIntercept: _exitSelectionMode'),
-        reason: '${e.key} 返回被拦时应退出多选态',
+        contains('onIntercept: _reordering ? _endReorder : _exitSelectionMode'),
+        reason: '${e.key} 返回被拦时应退出多选态（排序态先结束排序）',
       );
     }
   });

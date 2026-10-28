@@ -280,7 +280,7 @@ function applySrsStatusBadge(badge, status) {
         badge.classList.remove(`srs-status-${kind}`);
     }
     if (!ok) {
-        badge.textContent = '';
+        delete badge.dataset.srsLabel;
         setInlineButtonTip(badge, '');
         return;
     }
@@ -290,9 +290,14 @@ function applySrsStatusBadge(badge, status) {
             ? 'new'
             : status.queue === 'review' ? 'review' : 'learning';
     badge.classList.add(`srs-status-${kind}`);
-    badge.textContent = String(status.dueLabel || '');
+    // 用户 10-28：按钮上只画 ↗ 图标（与制卡目标 = Anki 时的「在 Anki 中打开」同一颗
+    // 图标），不写「新卡」之类的文字；状态只靠队列配色 + 提示 / 无障碍标签表达。
+    // data-srs-label 是当前状态文案的可观测标记（测试断言用）。
+    const label = String(status.dueLabel || '');
+    badge.dataset.srsLabel = label;
+    const tooltip = String(status.tooltip || '');
     // 不用原生 title（离屏 WebView2 上会飞，BUG-842），走 DOM 自绘提示。
-    setInlineButtonTip(badge, String(status.tooltip || status.dueLabel || ''));
+    setInlineButtonTip(badge, label && tooltip ? `${label} · ${tooltip}` : (label || tooltip));
 }
 
 // 复习词状态的小批合并（srs_followup K）：一轮 IntersectionObserver 回调里进入可见 /
@@ -392,6 +397,7 @@ function createSrsStatusBadge(expression, reading) {
             }
         },
     });
+    setButtonIcon(badge, 'openInAnki');
     // 单条刷新（制卡 / 改卡后）走单条桥，立即发出、不等批次。
     const fetchStatus = () => fetchSrsTermStatusSingle(
         bridge, { expression: expression || '', reading: reading || '' });
@@ -5647,7 +5653,7 @@ function createEntryHeader(entry, idx) {
     // 制卡目标 = Fushi 复习（宿主注入 __fushiSrsMiningTarget）时，↗ 走的是
     // SrsMiningAnkiRepository.openWordInAnki → 复习笔记编辑页，与上面复习状态标记
     // （「新卡」/「复习中 · 3天后」）点开的是同一张笔记：两颗按钮去同一个地方，只留
-    // 带状态文案的那颗。制卡目标 = Anki 时两者去处不同（Anki / Fushi 复习），照旧都在。
+    // 带状态配色 / 提示的那颗（它同样画 ↗ 图标，见 applySrsStatusBadge）。制卡目标 = Anki 时两者去处不同（Anki / Fushi 复习），照旧都在。
     const srsOwnsOpenCard = srsBadge !== null &&
         window.__fushiSrsMiningTarget === true;
     if (miningEnabled && !srsOwnsOpenCard) {
