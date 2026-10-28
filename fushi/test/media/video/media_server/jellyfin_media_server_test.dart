@@ -1333,5 +1333,58 @@ void main() {
       expect(noTags.parentThumbItemId, isNull);
       expect(noTags.parentBackdropItemId, isNull);
     });
+
+    test('集的剧海报：SeriesPrimaryImageTag > ParentPrimaryImage 回落 > 无则用集自身图', () {
+      MediaServerItem map(Map<String, Object?> extra) =>
+          JellyfinVideoClient.mediaServerItemFrom(
+            JellyfinApi.parseItem(<String, Object?>{
+              'Id': 'ep1',
+              'Name': 'Ep',
+              'Type': 'Episode',
+              'ImageTags': <String, Object?>{'Primary': 'ep-tag'},
+              ...extra,
+            }),
+            MediaServerItemType.episode,
+          );
+
+      final MediaServerItem viaSeries = map(<String, Object?>{
+        'SeriesId': 'series-1',
+        'SeriesPrimaryImageTag': 'st',
+        'ParentPrimaryImageItemId': 'season-1',
+        'ParentPrimaryImageTag': 'pt',
+      });
+      expect(viaSeries.seriesCoverItemId, 'series-1');
+      expect(viaSeries.posterItem.id, 'series-1');
+      expect(viaSeries.posterItem.hasCover, isTrue);
+      expect(viaSeries.hasCover, isTrue, reason: '集自己的 Primary 信息保留给集列表');
+
+      final MediaServerItem viaParent = map(<String, Object?>{
+        'SeriesId': 'series-1',
+        'ParentPrimaryImageItemId': 'series-1',
+        'ParentPrimaryImageTag': 'pt',
+      });
+      expect(viaParent.seriesCoverItemId, 'series-1');
+
+      // 只有 id 没 tag：取图必 404，不借；回落集自身。
+      final MediaServerItem none = map(<String, Object?>{
+        'SeriesId': 'series-1',
+      });
+      expect(none.seriesCoverItemId, isNull);
+      expect(none.posterItem.id, 'ep1');
+
+      // 非集不借剧海报。
+      final MediaServerItem movie = JellyfinVideoClient.mediaServerItemFrom(
+        JellyfinApi.parseItem(<String, Object?>{
+          'Id': 'm1',
+          'Name': 'M',
+          'Type': 'Movie',
+          'SeriesId': 'x',
+          'SeriesPrimaryImageTag': 't',
+        }),
+        MediaServerItemType.movie,
+      );
+      expect(movie.seriesCoverItemId, isNull);
+      expect(movie.posterItem.id, 'm1');
+    });
   });
 }

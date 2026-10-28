@@ -1452,7 +1452,8 @@ class _HomeDashboardPageState
         serverName: browser.displayName,
         resume: both[0],
         nextUp: both[1],
-        coverUrlOf: browser.coverUrl,
+        // 集用剧竖版海报（集自己的 Primary 是 16:9 截图），与本地漫画 / 视频卡同形。
+        coverUrlOf: (MediaServerItem item) => browser.coverUrl(item.posterItem),
         coverFetcher: browser,
         // 与服务器自己的浏览页同一出口：根 Navigator 压 VideoFushiPage.neutralizedRemote。
         open: (BuildContext context, MediaServerItem item) =>

@@ -347,7 +347,7 @@ class MediaServerItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ImageProvider? image = mediaServerCoverImage(browser, item);
+    final ImageProvider? image = mediaServerCoverImage(browser, item.posterItem);
     final Widget cover = image == null
         ? ShelfCoverPlaceholder(icon: _placeholderIcon(item.type))
         : PortraitCoverImage(
@@ -412,7 +412,7 @@ double mediaServerContinueCardHeight(BuildContext context) =>
 /// 「继续观看」横卡的候选图，按优先级排好；前一张取不回来（兼容层会报 tag 却
 /// 404，BUG-2602）就换下一张，见 [MediaServerFallbackImage]。
 ///
-/// - 集：自身 Thumb → 自身 Primary（Jellyfin / Emby 的集主图就是一帧 16:9 截图）
+/// - 集：剧海报（服务器报了才有）→ 自身 Thumb → 自身 Primary（Jellyfin / Emby 的集主图就是一帧 16:9 截图）
 ///   → 剧的 Thumb → 剧的 Backdrop。
 /// - 电影：Thumb → Backdrop → Primary（2:3 海报，横槽里由
 ///   [PortraitCoverImage] 模糊垫底后完整显示）。
@@ -435,6 +435,11 @@ List<ImageProvider> mediaServerContinueImages(
   }
 
   if (item.type == MediaServerItemType.episode) {
+    // 剧的竖版海报排第一（用户 2026-10-28：继续观看 / 接下来看要剧封面，不要集截图）；
+    // 服务器没报剧海报时 posterItem 就是集自己，下面的截图序列照旧兜底。
+    if (item.seriesCoverItemId != null) {
+      add(item.posterItem, MediaServerImageKind.primary);
+    }
     add(item, MediaServerImageKind.thumb);
     add(item, MediaServerImageKind.primary);
     final String? parentThumb = item.parentThumbItemId;
