@@ -39,6 +39,7 @@ const Map<String, String> kWebBrowserExtensionOmittedSettings =
       'subtitleLookupOnPage': '只影响扩展 Side Panel 里的查词：app 内查词恒为 app 弹窗',
       'subtitleAutoScroll': '只影响扩展 Side Panel 的字幕列表：app 原生侧栏不读它',
       'subtitleFontLibrary': '字体库下载列表（后续再接；已下载字体若被选中仍会列在字体下拉里）',
+      'extensionStyle': '界面风格（M3E / 液态玻璃）：app 内跟随 Fushi 的设计系统，宿主把它算成只读键',
       'customThemeEditor': '自定义配色编辑器（后续再接；已有自定义主题可在配色主题里选中）',
     };
 
@@ -796,29 +797,6 @@ SettingsDestination _appearanceDestination() => SettingsDestination(
     _section(
       id: 'appearance',
       items: <SettingsItem>[
-        SettingsSegmentedItem<String>(
-          id: 'web_browser.extension.extensionStyle',
-          title: _x('opt_extensionStyle_title'),
-          subtitle: _d('opt_extensionStyle_desc'),
-          icon: FushiIcons.formatShapes,
-          defaultValue: 'm3e',
-          options: <SettingsSegmentOption<String>>[
-            SettingsSegmentOption<String>(
-              value: 'm3e',
-              label: _x('opt_extensionStyle_option_m3e'),
-              tooltip: _d('opt_extensionStyle_option_m3e_desc'),
-            ),
-            SettingsSegmentOption<String>(
-              value: 'glass',
-              label: _x('opt_extensionStyle_option_glass'),
-              tooltip: _d('opt_extensionStyle_option_glass_desc'),
-            ),
-          ],
-          selected: (SettingsContext c) =>
-              _read(c, 'extensionStyle') == 'glass' ? 'glass' : 'm3e',
-          onChanged: (SettingsContext c, String v) =>
-              _write(c, <String, Object?>{'extensionStyle': v}),
-        ),
         SettingsSegmentedItem<String>(
           id: 'web_browser.extension.extensionPalette',
           title: _x('opt_palette_title'),

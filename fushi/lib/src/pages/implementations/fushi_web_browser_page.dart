@@ -642,6 +642,10 @@ class _ShortcutKeyBridge extends WebBrowserFeature {
 ///
 /// 返回（系统返回 / 侧滑 / Esc）：查词弹窗 → 全屏 / 查找条 / 网格 / 抽屉 → 网页
 /// 历史 → 关掉由别的标签页打开的子页 → 离开浏览页（[webBrowserBackStep]）。
+/// 网页右侧功能侧栏（字幕列表）的缺省 / 最小宽度。
+const double kWebBrowserSidePanelDefaultWidth = 360;
+const double kWebBrowserSidePanelMinWidth = 280;
+
 class FushiWebBrowserPage extends ConsumerStatefulWidget {
   const FushiWebBrowserPage({required this.initialUrl, super.key});
 
@@ -691,6 +695,9 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
 
   /// 侧边栏是抽屉形态时（手机横屏）的开合，与桌面推挤形态的记忆开关分开。
   bool _drawerOpen = false;
+
+  /// 字幕侧栏拖宽进行中的宽度（null = 不在拖，用已存宽度）。
+  double? _sidePanelWidthDrag;
   bool _gridOpen = false;
   WebBrowserCollapseState _collapse = const WebBrowserCollapseState();
   final Map<String, Uint8List> _thumbnails = <String, Uint8List>{};
@@ -2013,8 +2020,9 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     );
   }
 
-  /// 功能侧栏（[WebBrowserFeature.sidePanel]）：宽（≥ 720dp）排在网页右侧 360dp，
-  /// 窄窗口是盖住网页下半部的底部抽屉。网页本体的子树位置恒定（侧栏增删不重挂
+  /// 功能侧栏（[WebBrowserFeature.sidePanel]）：宽（≥ 720dp）排在网页右侧，左边缘
+  /// 可拖宽（与视频页字幕列表同一个宽度偏好，0 = 缺省 360dp），窄窗口是盖住网页
+  /// 下半部的底部抽屉。网页本体的子树位置恒定（侧栏增删不重挂
   /// WebView，否则平台视图会重载）。全屏看视频时不出侧栏。
   Widget _withSidePanel(
     BuildContext context,
@@ -2031,8 +2039,19 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints box) {
         final bool wide = box.maxWidth >= 720;
-        final Duration d = fushiMotionDuration(context, FushiMotion.medium);
-        final double panelWidth = wide ? 360 : box.maxWidth;
+        // 拖动中逐帧跟手，不走开合动画。
+        final Duration d = _sidePanelWidthDrag != null
+            ? Duration.zero
+            : fushiMotionDuration(context, FushiMotion.medium);
+        final double maxPanelWidth = box.maxWidth * 0.6;
+        final double storedWidth = _appModel.videoSubtitleListWidth;
+        final double panelWidth = wide
+            ? (_sidePanelWidthDrag ??
+                      (storedWidth > 0
+                          ? storedWidth
+                          : kWebBrowserSidePanelDefaultWidth))
+                  .clamp(kWebBrowserSidePanelMinWidth, maxPanelWidth)
+            : box.maxWidth;
         final double panelHeight = wide ? box.maxHeight : box.maxHeight * 0.45;
         final bool open = panel != null;
         return Stack(
@@ -2068,13 +2087,81 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
                             : const BorderRadius.vertical(
                                 top: Radius.circular(24),
                               ),
-                        child: panel,
+                        child: wide
+                            ? Stack(
+                                fit: StackFit.expand,
+                                children: <Widget>[
+                                  panel,
+                                  PositionedDirectional(
+                                    start: 0,
+                                    top: 0,
+                                    bottom: 0,
+                                    child: _sidePanelResizeHandle(
+                                      currentWidth: panelWidth,
+                                      maxWidth: maxPanelWidth,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : panel,
                       ),
               ),
             ),
           ],
         );
       },
+    );
+  }
+
+  /// 侧栏左边缘的拖宽把手：向左拖变宽，松手落偏好，双击复位缺省宽度。
+  Widget _sidePanelResizeHandle({
+    required double currentWidth,
+    required double maxWidth,
+  }) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        key: const ValueKey<String>('web-browser-side-panel-resize'),
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragUpdate: (DragUpdateDetails details) {
+          final double base = _sidePanelWidthDrag ?? currentWidth;
+          final bool rtl = Directionality.of(context) == TextDirection.rtl;
+          final double dx = rtl ? -details.delta.dx : details.delta.dx;
+          setState(
+            () => _sidePanelWidthDrag = (base - dx).clamp(
+              kWebBrowserSidePanelMinWidth,
+              maxWidth,
+            ),
+          );
+        },
+        onHorizontalDragEnd: (DragEndDetails _) {
+          final double? dragged = _sidePanelWidthDrag;
+          if (dragged != null) {
+            unawaited(_appModel.setVideoSubtitleListWidth(dragged));
+          }
+          setState(() => _sidePanelWidthDrag = null);
+        },
+        onDoubleTap: () {
+          unawaited(
+            _appModel
+                .setVideoSubtitleListWidth(0)
+                .then((_) => mounted ? setState(() {}) : null),
+          );
+        },
+        child: SizedBox(
+          width: 8,
+          child: Center(
+            child: Container(
+              width: 2,
+              decoration: BoxDecoration(
+                color: cs.outlineVariant,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

@@ -40,6 +40,9 @@ final Provider<WebBrowserExtensionStorage> webBrowserExtensionStorageProvider =
         computed: <String, Object? Function()>{
           // 扩展界面语言「跟随 Fushi」读它（扩展里由 background 从 app 响应镜像进来）。
           'appLocale': () => LocaleSettings.currentLocale.languageTag,
+          // 界面风格跟随 Fushi 主设置、不单独设：app 的两套设计系统都是实色面
+          // （Apple 也钉了实色，见 glassMaterialTier），对应扩展的 M3E。
+          'extensionStyle': () => 'm3e',
           // 调色板「跟随 Fushi」读它（扩展里由 background 从查词响应镜像进来）。
           'appThemeMirror': () => webBrowserExtensionThemeMirror(
             colors: app.browserExtensionThemeColors,

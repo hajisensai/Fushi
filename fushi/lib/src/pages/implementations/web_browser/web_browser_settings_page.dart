@@ -171,9 +171,13 @@ class _TwoPane extends StatelessWidget {
             // 详情的身份就是当前分组：切组整棵重建，避免复用上一组同位置的开关 /
             // 滑杆 element（圆点滑动、滚动位置串组）。
             key: ValueKey<WebBrowserSettingsGroup>(selected),
-            child: renderer.buildDetailContent(
-              settingsContext: settingsContext,
-              destination: selected.destination(),
+            // 切组淡入淡出时新旧两组同时在树上：各自用隐式滚动位置，不共用
+            // PrimaryScrollController（否则 Scrollbar 断言「一个控制器挂了两个位置」）。
+            child: PrimaryScrollController.none(
+              child: renderer.buildDetailContent(
+                settingsContext: settingsContext,
+                destination: selected.destination(),
+              ),
             ),
           );
     return Row(
@@ -184,6 +188,7 @@ class _TwoPane extends StatelessWidget {
           child: FushiEntranceScope(
             child: ListView(
               key: const ValueKey<String>('web_browser_settings.nav'),
+              primary: false,
               padding: EdgeInsets.only(
                 top: tokens.spacing.gap,
                 bottom:
