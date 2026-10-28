@@ -119,8 +119,8 @@ class _GrowInState extends State<_GrowIn> with SingleTickerProviderStateMixin {
   );
 }
 
-/// 一个标签的菜单手势：右键（或用户在快捷键里改绑的「打开菜单」键，经
-/// [ContextMenuTrigger]）/ 长按。
+/// 一个标签的指针手势：右键（或用户在快捷键里改绑的「打开菜单」键，经
+/// [ContextMenuTrigger]）/ 长按开菜单；中键单击关闭（与 Chrome / Edge 一致）。
 Widget _tabGestures({
   required WebBrowserTab tab,
   required WebBrowserTabCallbacks callbacks,
@@ -129,6 +129,7 @@ Widget _tabGestures({
   onInvoke: (Offset p) => callbacks.onContextMenu(tab, p),
   child: GestureDetector(
     behavior: HitTestBehavior.opaque,
+    onTertiaryTapUp: (TapUpDetails _) => callbacks.onClose(tab),
     onLongPressStart: (LongPressStartDetails d) =>
         callbacks.onContextMenu(tab, d.globalPosition),
     child: child,
