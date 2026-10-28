@@ -812,10 +812,18 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     final TextStyle metaStyle = type.bodyMedium.tabular.copyWith(
       color: onTone.withValues(alpha: 0.78),
     );
-    return FushiCard(
+    // 整卡可点 = 启动、长按 / 右键 = 详情，外包悬停抬升——与书架 / 漫画「继续
+    // 阅读」卡、视频「继续观看」主卡同一套交互；之前只有两枚按钮有反馈，封面
+    // 与空白处点了没反应。
+    final Widget card = FushiCard(
+      key: ValueKey<String>('games_home_hero_${game.id}'),
+      focusId: FushiFocusId('game-dashboard-hero-${game.id}'),
       tone: FushiCardTone.primary,
       borderRadius: apple ? null : FushiM3eShape.containerLargeRadius,
       padding: const EdgeInsets.all(20),
+      onTap: () => unawaited(_launchGame(game)),
+      onLongPress: () => unawaited(_openDetail(game)),
+      onSecondaryTap: () => unawaited(_openDetail(game)),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final bool roomy = constraints.maxWidth >= 560;
@@ -886,6 +894,10 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
           );
         },
       ),
+    );
+    return FushiHoverLift(
+      scale: 1.01,
+      builder: (BuildContext _, bool __) => card,
     );
   }
 
