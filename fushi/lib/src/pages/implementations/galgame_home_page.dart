@@ -797,6 +797,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     return FushiContinueHero(
       cover: _gameCaseFrame(_GameCoverArt(game: game)),
       frameCover: false,
+      backdrop: FushiContinueHero.blurredBackdrop(_GameCoverArt(game: game)),
       coverAspectRatio: kShelfGameCaseAspectRatio,
       eyebrow: statusLabel,
       title: game.displayName,

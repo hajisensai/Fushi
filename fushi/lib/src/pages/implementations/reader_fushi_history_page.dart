@@ -1684,6 +1684,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ? (hero.position / hero.duration).clamp(0.0, 1.0)
         : 0.0;
     final int percent = (fraction * 100).round();
+    final ImageProvider coverImage = mediaSource
+        .getDisplayThumbnailFromMediaItem(appModel: appModel, item: hero);
     Future<void> openHero() async {
       final MediaSource source = hero.getMediaSource(appModel: appModel);
       await appModel.openMedia(ref: ref, mediaSource: source, item: hero);
@@ -1699,6 +1701,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       progressKey: const ValueKey<String>(
         'reader_shelf_continue_hero_progress',
       ),
+      backdrop: FushiContinueHero.blurredBackdrop(
+        Image(image: coverImage, fit: BoxFit.cover),
+      ),
       // 与书架网格同一个光面书皮材质（网格的 Scope 只包 SliverGrid）。
       cover: ShelfCoverMaterialScope(
         material: ShelfCoverMaterial.glossyBook,
@@ -1706,10 +1711,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           imageErrorBuilder: (_, __, ___) =>
               _coverPlaceholderIcon(Icons.menu_book_outlined),
           placeholder: MemoryImage(kTransparentImage),
-          image: mediaSource.getDisplayThumbnailFromMediaItem(
-            appModel: appModel,
-            item: hero,
-          ),
+          image: coverImage,
           fit: BoxFit.cover,
         ),
       ),

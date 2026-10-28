@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/components/fushi_resume_actions.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -5293,7 +5294,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final double contentWidth = (availableWidth - tokens.spacing.card * 2)
         .clamp(0.0, double.infinity);
     final double cardWidth = videoHomePosterCardWidth(contentWidth);
-    final bool split = contentWidth >= kVideoHomeHeroSplitMinWidth;
     final List<_HomeContinueItem> continueItems = _collectContinueItems(
       filtered,
       remoteVideos,
@@ -5307,13 +5307,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         : continueItems.first.hero();
     final Widget? hero = heroData == null
         ? null
-        : split
-        ? _buildHomeHeroSplit(heroData, updates, contentWidth)
-        : _buildHomeHeroCard(heroData, contentWidth);
-    // 横排版有主卡时「已更新未看」在主卡右侧面板里，不再重复成行。
-    final Widget? subscriptionRow = split && hero != null
-        ? null
-        : _buildSubscriptionUpdatesRow(updates, cardWidth);
+        : _buildHomeContinueHero(heroData);
+    final Widget? subscriptionRow = _buildSubscriptionUpdatesRow(
+      updates,
+      cardWidth,
+    );
     final Widget? continueRow = _buildContinueRow(
       continueItems.skip(1).toList(growable: false),
       cardWidth,
@@ -5368,268 +5366,52 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           MediaImageKind.backdrop,
         ];
 
-  /// 竖排版主卡：整宽圆角 tonal 卡，上半 16:9 剧照（光面海报横版材质，库页
-  /// 定版 2026-10-26：剧照上不压角标），下面「继续观看」眉标、标题、副标题
-  /// （远端条目前缀云图标）、进度条与「继续 · 第 N 集」/「详情」按钮。整卡点
-  /// 一下 = 主按钮。
-  Widget _buildHomeHeroCard(_HomeHeroData hero, double contentWidth) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final TextTheme textTheme = Theme.of(context).textTheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ImageProvider? image = hero.image(overlay: false);
-    final double progress = hero.progress ?? 0;
-    final bool eink = isEinkTheme(context);
-    final bool apple = isGlassDesign(context) && !eink;
-    final FushiAppleColors appleColors = appleColorsOf(context);
-    // 进度条与库页卡副行（[ShelfCardMeta]）同色：Apple 强调色 / MD3 primary，
-    // 轨道 tertiaryFill / surfaceContainerHighest；墨水屏黑白两段。
-    final Color progressFill = eink
-        ? cs.onSurface
-        : (apple ? appleColors.accent : cs.primary);
-    final Color progressTrack = eink
-        ? cs.surface
-        : (apple ? appleColors.tertiaryFill : cs.surfaceContainerHighest);
-    const double stillInset = 12;
-    return FushiCard(
-      key: hero.cardKey,
-      focusId: hero.focusId,
-      color: tokens.surfaces.group,
-      // 大图贴边铺满到圆角，不吃卡片默认内边距。
-      padding: EdgeInsets.zero,
-      borderRadius: const BorderRadius.all(Radius.circular(24)),
-      onTap: _selectionMode ? null : hero.onPlay,
-      onLongPress: _selectionMode ? null : hero.onLongPress,
-      onSecondaryTap: _selectionMode ? null : hero.onLongPress,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              stillInset,
-              stillInset,
-              stillInset,
-              0,
-            ),
-            child: SizedBox(
-              height: videoHomeHeroStillHeight(contentWidth - stillInset * 2),
-              child: ShelfCoverFrame(child: _buildHomeHeroImage(image)),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  t.video_continue_watching,
-                  style: textTheme.labelMedium?.copyWith(
-                    color: apple ? appleColors.secondaryLabel : cs.primary,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  hero.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (hero.subtitle.isNotEmpty || hero.cloud)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Row(
-                      children: <Widget>[
-                        if (hero.cloud) ...<Widget>[
-                          FushiIcon(
-                            FushiIcons.cloud,
-                            size: (tokens.type.metadata.fontSize ?? 12) + 2,
-                            color: tokens.type.metadata.color,
-                          ),
-                          const SizedBox(width: 6),
-                        ],
-                        Expanded(
-                          child: Text(
-                            hero.subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: tokens.type.metadata,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 12, bottom: 14),
-                  child: FushiLinearProgressIndicator(
-                    value: progress.clamp(0.0, 1.0),
-                    minHeight: 4,
-                    color: progressFill,
-                    backgroundColor: progressTrack,
-                    borderRadius: const BorderRadius.all(Radius.circular(2)),
-                  ),
-                ),
-                _buildHomeHeroActions(hero, overImage: false),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 横排版首屏：主卡（约 1.55fr）+ 右侧「已更新未看」面板（约 1fr），同高并排；
-  /// 面板为空时主卡占满整宽。
-  Widget _buildHomeHeroSplit(
-    _HomeHeroData hero,
-    List<_HomeSubscriptionItem> updates,
-    double contentWidth,
-  ) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    if (updates.isEmpty) {
-      return SizedBox(
-        height: videoHomeHeroSplitHeight(contentWidth),
-        child: _buildHomeHeroOverlay(hero),
-      );
-    }
-    final double gap = tokens.spacing.gap * 1.5;
-    final double heroWidth =
-        (contentWidth - gap) *
-        kVideoHomeHeroSplitFlex /
-        (kVideoHomeHeroSplitFlex + 1);
-    final double height = videoHomeHeroSplitHeight(heroWidth);
-    return SizedBox(
-      height: height,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          SizedBox(width: heroWidth, child: _buildHomeHeroOverlay(hero)),
-          SizedBox(width: gap),
-          Expanded(
-            child: FushiStaggeredEntrance(
-              index: 1,
-              child: _buildSubscriptionPanel(updates, height),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 横排版主卡：大图铺满，起始侧渐暗遮罩上叠「继续观看」眉标、标题、副标题、
-  /// 进度与按钮。
-  Widget _buildHomeHeroOverlay(_HomeHeroData hero) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final TextTheme textTheme = Theme.of(context).textTheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 叠在图上的文字恒用浅色：遮罩是 scrim 色（深），不随明暗主题翻转。
-    final Color onImage = cs.surface.computeLuminance() > 0.5
-        ? cs.surface
-        : cs.onSurface;
+  /// 「继续观看」主卡：与书架 / 漫画书架 / 游戏首页同一张满宽
+  /// [FushiContinueHero]（2026-10-28 统一）。剧照（无字背景优先）铺满卡底当海报，
+  /// 起始侧竖版作品封面，信息列「继续观看」眉标 + 片名 + 副标题（远端条目前缀
+  /// 云图标）+ 进度，行尾「继续 · 第 N 集」与「详情」（只有合集有详情页）。
+  Widget _buildHomeContinueHero(_HomeHeroData hero) {
+    final VoidCallback? onDetail = hero.onDetail;
+    final double? progress = hero.progress;
+    final ImageProvider? poster = hero.poster;
+    final ImageProvider? still = hero.image(overlay: true);
     final String subtitle = <String>[
       if (hero.subtitle.isNotEmpty) hero.subtitle,
       if (hero.detailLine != null) hero.detailLine!,
     ].join(' · ');
-    return FushiCard(
-      key: hero.cardKey,
+    return FushiContinueHero(
+      cardKey: hero.cardKey,
       focusId: hero.focusId,
-      color: tokens.surfaces.group,
-      // 大图贴边铺满到圆角，不吃卡片默认内边距。
-      padding: EdgeInsets.zero,
-      borderRadius: const BorderRadius.all(Radius.circular(28)),
-      onTap: _selectionMode ? null : hero.onPlay,
+      actionKey: const ValueKey<String>('home_video_hero_play'),
+      // 没有竖版海报（散片 / 远端）时退回剧照当横版封面。
+      cover: poster == null
+          ? _buildHomeHeroImage(still)
+          : Image(
+              image: poster,
+              fit: BoxFit.cover,
+              errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
+                  ShelfCoverPlaceholder(icon: FushiIcons.video),
+            ),
+      coverAspectRatio: poster == null ? 16 / 9 : 2 / 3,
+      backdrop: still == null ? null : _buildHomeHeroImage(still),
+      eyebrow: t.video_continue_watching,
+      title: hero.title,
+      metaLines: <String>[if (subtitle.isNotEmpty) subtitle],
+      metaIcon: hero.cloud ? FushiIcons.cloud : null,
+      progress: progress ?? 0,
+      progressLabel: progress == null ? null : '${(progress * 100).round()}%',
+      actionLabel: hero.playLabel,
+      onOpen: _selectionMode ? null : hero.onPlay,
       onLongPress: _selectionMode ? null : hero.onLongPress,
-      onSecondaryTap: _selectionMode ? null : hero.onLongPress,
-      child: Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          _buildHomeHeroImage(hero.image(overlay: true)),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: AlignmentDirectional.centerStart,
-                end: AlignmentDirectional.centerEnd,
-                colors: <Color>[
-                  cs.scrim.withValues(alpha: 0.78),
-                  cs.scrim.withValues(alpha: 0.35),
-                  cs.scrim.withValues(alpha: 0),
-                ],
-                stops: const <double>[0, 0.55, 1],
-              ),
+      secondary: onDetail == null
+          ? null
+          : FushiResumeSecondaryAction(
+              key: const ValueKey<String>('home_video_hero_detail'),
+              icon: FushiIcons.info,
+              label: t.video_hero_detail_view,
+              onPressed: _selectionMode ? null : onDetail,
             ),
-          ),
-          if (hero.cloud)
-            const PositionedDirectional(
-              top: 16,
-              end: 16,
-              child: CoverBadge(icon: FushiIcons.cloud),
-            ),
-          Align(
-            alignment: AlignmentDirectional.bottomStart,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 460),
-              child: Padding(
-                padding: const EdgeInsets.all(28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      t.video_continue_watching,
-                      style: textTheme.labelMedium?.copyWith(
-                        color: onImage.withValues(alpha: 0.85),
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      hero.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: textTheme.headlineSmall?.copyWith(
-                        color: onImage,
-                        fontWeight: FontWeight.w800,
-                        height: 1.2,
-                      ),
-                    ),
-                    if (subtitle.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: onImage.withValues(alpha: 0.9),
-                          ),
-                        ),
-                      ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 14, bottom: 16),
-                      child: SizedBox(
-                        width: 280,
-                        child: FushiLinearProgressIndicator(
-                          value: (hero.progress ?? 0).clamp(0.0, 1.0),
-                          minHeight: 4,
-                          color: cs.inversePrimary,
-                          backgroundColor: onImage.withValues(alpha: 0.3),
-                          borderRadius: const BorderRadius.all(
-                            Radius.circular(2),
-                          ),
-                        ),
-                      ),
-                    ),
-                    _buildHomeHeroActions(hero, overImage: true),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+      entranceIndex: null,
     );
   }
 
@@ -5643,182 +5425,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       image: image,
       errorBuilder: (BuildContext _) =>
           ShelfCoverPlaceholder(icon: FushiIcons.video),
-    );
-  }
-
-  /// 主卡按钮行：主按钮「继续 · 第 N 集」（文案与详情页悬浮按钮同源
-  /// [MediaDetailResumeFab.labelFor]）+ 次按钮「详情」（只有合集有详情页）。
-  Widget _buildHomeHeroActions(_HomeHeroData hero, {required bool overImage}) {
-    final VoidCallback? onDetail = hero.onDetail;
-    return FushiResumeActions(
-      primaryKey: const ValueKey<String>('home_video_hero_play'),
-      label: hero.playLabel,
-      onPressed: _selectionMode ? null : hero.onPlay,
-      overImage: overImage,
-      secondary: onDetail == null
-          ? null
-          : FushiResumeSecondaryAction(
-              key: const ValueKey<String>('home_video_hero_detail'),
-              icon: FushiIcons.info,
-              label: t.video_hero_detail_view,
-              onPressed: _selectionMode ? null : onDetail,
-            ),
-    );
-  }
-
-  /// 横排版主卡右侧的「已更新未看」面板：按面板高度能放下几条就列几条（1–4），
-  /// 每条小竖封面 + 标题 +「第 n 集 · 入库日期」+「N 集新」徽标 + 圆形播放钮。
-  Widget _buildSubscriptionPanel(
-    List<_HomeSubscriptionItem> updates,
-    double height,
-  ) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 每条 60 高封面 + 上下各 8 内边距；标题行与面板内边距约 68。
-    const double tileExtent = 76;
-    final int capacity = ((height - 68) / tileExtent).floor().clamp(1, 4);
-    final List<_HomeSubscriptionItem> shown = updates
-        .take(capacity)
-        .toList(growable: false);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: tokens.surfaces.group,
-        borderRadius: const BorderRadius.all(Radius.circular(28)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.only(left: 8, bottom: 6),
-              child: Text(
-                t.video_home_subscription_updates,
-                style: tokens.type.sectionLabel,
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                physics: desktopAwareScrollPhysics(),
-                itemCount: shown.length,
-                itemBuilder: (BuildContext context, int i) =>
-                    FushiStaggeredEntrance(
-                      index: i + 1,
-                      child: _buildSubscriptionPanelTile(shown[i]),
-                    ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSubscriptionPanelTile(_HomeSubscriptionItem item) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final TextTheme textTheme = Theme.of(context).textTheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ImageProvider? cover = _collectionPosterProvider(
-      item.collection,
-      item.members,
-      item.target,
-    );
-    final String subtitle = <String>[
-      t.home_continue_episode(n: item.episodeNumber),
-      if (item.update.latestUnwatchedImportedAtMs > 0)
-        _formatOverviewDate(
-          DateTime.fromMillisecondsSinceEpoch(
-            item.update.latestUnwatchedImportedAtMs,
-          ),
-        ),
-    ].join(' · ');
-    void onPlay() =>
-        _openSlot(item.target, playlistCollectionId: item.collection.id);
-    void onMenu() => _showCollectionContextMenu(item.collection);
-    return FushiCard(
-      key: ValueKey<String>(
-        'home_video_subscription_panel_${item.collection.id}',
-      ),
-      focusId: FushiFocusId(
-        'home-video-subscription-panel-${item.collection.id}',
-      ),
-      color: Colors.transparent,
-      borderColor: Colors.transparent,
-      borderRadius: const BorderRadius.all(Radius.circular(16)),
-      padding: const EdgeInsets.all(8),
-      onTap: _selectionMode ? null : onPlay,
-      onLongPress: _selectionMode ? null : onMenu,
-      onSecondaryTap: _selectionMode ? null : onMenu,
-      child: Row(
-        children: <Widget>[
-          SizedBox(
-            width: 40,
-            height: 60,
-            child: ShelfCoverFrame(
-              child: cover == null
-                  ? ShelfCoverPlaceholder(icon: FushiIcons.video)
-                  : PortraitCoverImage(
-                      image: cover,
-                      errorBuilder: (BuildContext _) =>
-                          ShelfCoverPlaceholder(icon: FushiIcons.video),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  _workTitle(item.collection),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.type.metadata,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: cs.primaryContainer,
-              borderRadius: const BorderRadius.all(Radius.circular(999)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-              child: Text(
-                t.video_home_subscription_new_count(
-                  count: item.update.unwatchedCount,
-                ),
-                style: textTheme.labelMedium?.copyWith(
-                  color: cs.onPrimaryContainer,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          FushiIconButton(
-            icon: FushiIcons.play,
-            tooltip: t.play,
-            size: 18,
-            backgroundColor: cs.secondaryContainer,
-            enabledColor: cs.onSecondaryContainer,
-            enabled: !_selectionMode,
-            onTap: onPlay,
-          ),
-        ],
-      ),
     );
   }
 
@@ -6548,6 +6154,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       focusId: FushiFocusId('home-video-continue-${book.bookUid}'),
       title: _metadataWorkByBook[book.bookUid]?.title ?? book.title,
       subtitle: _continueSecondaryText(book, episodeNumber: episodeNumber),
+      poster: _bookPosterProvider(book),
       image: ({required bool overlay}) =>
           _mediaImageProvider(
             _mediaImagesByBookUid[book.bookUid],
@@ -6645,6 +6252,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       detailLine: completedCount > 0
           ? t.video_hero_episodes_watched(n: completedCount)
           : null,
+      poster: _collectionPosterProvider(collection, members, target),
       image: ({required bool overlay}) =>
           _mediaImageProvider(
             _mediaImagesByCollection[collection.id],
@@ -6714,6 +6322,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       subtitle: t.video_watched_up_to(
         time: formatVideoPosition(video.positionMs),
       ),
+      poster: cover,
       image: ({required bool overlay}) => cover,
       progress: _slotPositionFraction(_VideoSlot(remote: video)),
       playLabel: MediaDetailResumeFab.labelFor(
@@ -10961,6 +10570,7 @@ class _HomeHeroData {
     this.onDetail,
     this.progress,
     this.detailLine,
+    this.poster,
     this.cloud = false,
   });
 
@@ -10976,6 +10586,9 @@ class _HomeHeroData {
 
   /// 大图 provider；[overlay] = 标题叠在图上（横排版），选图偏好不同。
   final ImageProvider? Function({required bool overlay}) image;
+
+  /// 竖版作品封面（与继续观看行卡同源）；null = 没有，主卡退回剧照当封面。
+  final ImageProvider? poster;
 
   /// 进度 0–1；null = 不知道（进度条画空轨）。
   final double? progress;

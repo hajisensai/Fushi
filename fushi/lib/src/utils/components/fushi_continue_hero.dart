@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -9,6 +11,7 @@ import 'package:fushi/src/utils/components/fushi_resume_actions.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -38,8 +41,17 @@ class FushiContinueHero extends StatelessWidget {
     this.progressKey,
     this.entranceIndex = 0,
     this.frameCover = true,
+    this.onLongPress,
+    this.metaIcon,
+    this.backdrop,
     super.key,
   });
+
+  /// 封面模糊成背景海报（书 / 漫画 / 游戏没有横版剧照时用自己的封面）。
+  static Widget blurredBackdrop(Widget image) => ImageFiltered(
+    imageFilter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+    child: image,
+  );
 
   /// 封面（调用方自带材质 / 占位）；[frameCover] 时外面套 [ShelfCoverFrame]。
   final Widget cover;
@@ -47,7 +59,8 @@ class FushiContinueHero extends StatelessWidget {
   /// false：[cover] 自带框（如游戏盒框），不再套 [ShelfCoverFrame]。
   final bool frameCover;
 
-  /// 封面宽高比（书 / 漫画 2:3，游戏盒 [kShelfGameCaseAspectRatio]）。
+  /// 封面宽高比（书 / 漫画 2:3，游戏盒 [kShelfGameCaseAspectRatio]，视频剧照
+  /// 16:9）。封面按**高度**定尺寸，各域卡高一致、横图自然变宽。
   final double coverAspectRatio;
   final String eyebrow;
   final String title;
@@ -66,6 +79,16 @@ class FushiContinueHero extends StatelessWidget {
   final Key? cardKey;
   final Key? actionKey;
   final Key? progressKey;
+
+  /// 长按 / 右键（视频首页的条目菜单）。
+  final VoidCallback? onLongPress;
+
+  /// 背景海报（视频剧照 / [blurredBackdrop] 模糊封面）：铺满整卡，起始侧用卡面色
+  /// 渐变压住保证文字可读，行尾露出画面。null 或墨水屏 = 纯色卡。
+  final Widget? backdrop;
+
+  /// 第一行元信息前的小图标（视频远端条目的云图标）。
+  final IconData? metaIcon;
 
   /// 错峰进场序号；null = 调用方自己包进场动画。
   final int? entranceIndex;
@@ -107,14 +130,28 @@ class FushiContinueHero extends StatelessWidget {
               style: titleStyle,
             ),
           ),
-          for (final String line in metaLines)
+          for (int i = 0; i < metaLines.length; i++)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                line,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: tokens.type.metadata,
+              child: Row(
+                children: <Widget>[
+                  if (i == 0 && metaIcon != null) ...<Widget>[
+                    FushiIcon(
+                      metaIcon!,
+                      size: (tokens.type.metadata.fontSize ?? 12) + 2,
+                      color: tokens.type.metadata.color,
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Flexible(
+                    child: Text(
+                      metaLines[i],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tokens.type.metadata,
+                    ),
+                  ),
+                ],
               ),
             ),
           if (v != null) ...<Widget>[
@@ -156,57 +193,99 @@ class FushiContinueHero extends StatelessWidget {
       secondary: secondary,
     );
 
+    final Color cardColor = tokens.surfaces.group;
+    final Widget? poster = eink ? null : backdrop;
     final Widget card = FushiCard(
       key: cardKey,
       focusId: focusId,
-      padding: EdgeInsets.all(tokens.spacing.gap * 2),
+      color: cardColor,
+      // 背景海报要贴边铺满到圆角，内边距挪到 Stack 里的内容层。
+      padding: EdgeInsets.zero,
       onTap: onOpen,
+      onLongPress: onLongPress,
+      onSecondaryTap: onLongPress,
       child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints c) {
+        builder: (BuildContext context, BoxConstraints outer) {
+          final EdgeInsets pad = EdgeInsets.all(tokens.spacing.gap * 2);
+          final BoxConstraints c = outer.deflate(pad);
           final bool roomy = c.maxWidth >= 640;
-          final double coverWidth = roomy ? 96 : 68;
+          final double coverHeight = roomy ? 144 : 102;
+          // 横图（视频剧照）在窄卡上别吃掉信息列：宽度封顶卡宽 40%。
+          final double coverWidth = (coverHeight * coverAspectRatio).clamp(
+            0.0,
+            c.maxWidth * 0.4,
+          );
           final Widget coverBox = SizedBox(
             width: coverWidth,
-            child: AspectRatio(
-              aspectRatio: coverAspectRatio,
-              child: frameCover ? ShelfCoverFrame(child: cover) : cover,
-            ),
+            height: coverWidth / coverAspectRatio,
+            child: frameCover ? ShelfCoverFrame(child: cover) : cover,
           );
           final double gap = tokens.spacing.gap * (roomy ? 2.5 : 1.5);
-          if (roomy) {
-            return Row(
+          Widget layered(Widget body) {
+            final Widget padded = Padding(padding: pad, child: body);
+            if (poster == null) return padded;
+            return Stack(
               children: <Widget>[
-                coverBox,
-                SizedBox(width: gap),
-                // 宽卡信息列封顶 520：进度条不被拉成整行长线，按钮贴行尾。
-                Expanded(
-                  child: Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 520),
-                      child: info(),
+                Positioned.fill(child: poster),
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: AlignmentDirectional.centerStart,
+                        end: AlignmentDirectional.centerEnd,
+                        colors: <Color>[
+                          cardColor.withValues(alpha: 0.97),
+                          cardColor.withValues(alpha: 0.86),
+                          cardColor.withValues(alpha: roomy ? 0.35 : 0.6),
+                        ],
+                        stops: const <double>[0, 0.45, 1],
+                      ),
                     ),
                   ),
                 ),
-                SizedBox(width: gap),
-                actions(fill: false),
+                padded,
               ],
             );
           }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
+
+          if (roomy) {
+            return layered(
               Row(
                 children: <Widget>[
                   coverBox,
                   SizedBox(width: gap),
-                  Expanded(child: info()),
+                  // 宽卡信息列封顶 520：进度条不被拉成整行长线，按钮贴行尾。
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 520),
+                        child: info(),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: gap),
+                  actions(fill: false),
                 ],
               ),
-              SizedBox(height: tokens.spacing.gap * 1.5),
-              actions(fill: true),
-            ],
+            );
+          }
+          return layered(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    coverBox,
+                    SizedBox(width: gap),
+                    Expanded(child: info()),
+                  ],
+                ),
+                SizedBox(height: tokens.spacing.gap * 1.5),
+                actions(fill: true),
+              ],
+            ),
           );
         },
       ),
