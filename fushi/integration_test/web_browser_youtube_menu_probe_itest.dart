@@ -7,12 +7,19 @@
 //
 // 跑：在 fushi/ 下
 // `.\tool\run_windows_itest.ps1 integration_test/web_browser_youtube_menu_probe_itest.dart`
+//
+// 真鼠标模式（Flutter 层指针全过、用户真鼠标仍打不开时用）：
+// `.\tool\run_windows_itest.ps1 -Visible -DartDefine FUSHI_YT_REAL_INPUT=1 integration_test/web_browser_youtube_menu_probe_itest.dart`
+// 改用 SetCursorPos + SendInput 走系统输入队列（会占用桌面光标几十秒），
+// 每次点击前后记录 Win32 焦点窗口（GetGUIThreadInfo）。
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi' hide Size;
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'dart:ui' show ViewFocusEvent;
 
+import 'package:ffi/ffi.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -33,6 +40,123 @@ import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
 const String _kUrl = 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
+
+const bool _kRealInput = String.fromEnvironment('FUSHI_YT_REAL_INPUT') == '1';
+
+final DynamicLibrary _user32 = DynamicLibrary.open('user32.dll');
+final int Function(int, int) _setCursorPos = _user32
+    .lookupFunction<Int32 Function(Int32, Int32), int Function(int, int)>(
+      'SetCursorPos',
+    );
+final int Function(int, Pointer<Uint8>, int) _sendInput = _user32
+    .lookupFunction<
+      Uint32 Function(Uint32, Pointer<Uint8>, Int32),
+      int Function(int, Pointer<Uint8>, int)
+    >('SendInput');
+final int Function(int, int, Pointer<Utf16>, Pointer<Utf16>) _findWindowEx =
+    _user32.lookupFunction<
+      IntPtr Function(IntPtr, IntPtr, Pointer<Utf16>, Pointer<Utf16>),
+      int Function(int, int, Pointer<Utf16>, Pointer<Utf16>)
+    >('FindWindowExW');
+final int Function(int, Pointer<Uint32>) _getWindowThreadProcessId = _user32
+    .lookupFunction<
+      Uint32 Function(IntPtr, Pointer<Uint32>),
+      int Function(int, Pointer<Uint32>)
+    >('GetWindowThreadProcessId');
+final int Function(int, Pointer<Int32>) _clientToScreen = _user32
+    .lookupFunction<
+      Int32 Function(IntPtr, Pointer<Int32>),
+      int Function(int, Pointer<Int32>)
+    >('ClientToScreen');
+final int Function(int, Pointer<Uint8>) _getGuiThreadInfo = _user32
+    .lookupFunction<
+      Int32 Function(Uint32, Pointer<Uint8>),
+      int Function(int, Pointer<Uint8>)
+    >('GetGUIThreadInfo');
+final int Function(int, Pointer<Utf16>, int) _getClassName = _user32
+    .lookupFunction<
+      Int32 Function(IntPtr, Pointer<Utf16>, Int32),
+      int Function(int, Pointer<Utf16>, int)
+    >('GetClassNameW');
+
+final int Function(int) _windowFromPoint = _user32
+    .lookupFunction<IntPtr Function(Int64), int Function(int)>(
+      'WindowFromPoint',
+    );
+final int Function(Pointer<Int32>) _getCursorPos = _user32
+    .lookupFunction<
+      Int32 Function(Pointer<Int32>),
+      int Function(Pointer<Int32>)
+    >('GetCursorPos');
+
+/// 光标下的窗口（POINT 按值传，x64 打包成一个 64 位整数）。
+String _windowUnderCursor() {
+  final Pointer<Int32> pt = calloc<Int32>(2);
+  try {
+    _getCursorPos(pt);
+    final int packed = (pt[0] & 0xffffffff) | (pt[1] << 32);
+    return 'cursor=(${pt[0]},${pt[1]}) under=${_className(_windowFromPoint(packed))}';
+  } finally {
+    calloc.free(pt);
+  }
+}
+
+/// 本进程的 Flutter 视图 HWND（同类名的用户实例按 PID 排除）。
+int _ownFlutterView() {
+  final Pointer<Utf16> cls = 'FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf16();
+  final Pointer<Utf16> view = 'FLUTTERVIEW'.toNativeUtf16();
+  final Pointer<Uint32> pidOut = calloc<Uint32>();
+  try {
+    int top = 0;
+    while (true) {
+      top = _findWindowEx(0, top, cls, nullptr);
+      if (top == 0) return 0;
+      _getWindowThreadProcessId(top, pidOut);
+      if (pidOut.value == pid) return _findWindowEx(top, 0, view, nullptr);
+    }
+  } finally {
+    calloc.free(cls);
+    calloc.free(view);
+    calloc.free(pidOut);
+  }
+}
+
+String _className(int hwnd) {
+  if (hwnd == 0) return 'null';
+  final Pointer<Utf16> buf = calloc<Uint16>(128).cast<Utf16>();
+  try {
+    _getClassName(hwnd, buf, 128);
+    return '${buf.toDartString()}@0x${hwnd.toRadixString(16)}';
+  } finally {
+    calloc.free(buf);
+  }
+}
+
+/// Win32 焦点所在：视图线程的 hwndFocus / hwndActive。
+String _win32Focus(int view) {
+  final int tid = _getWindowThreadProcessId(view, nullptr);
+  final Pointer<Uint8> info = calloc<Uint8>(72);
+  try {
+    info.cast<Uint32>().value = 72;
+    if (_getGuiThreadInfo(tid, info) == 0) return 'n/a';
+    final int active = (info + 8).cast<IntPtr>().value;
+    final int focus = (info + 16).cast<IntPtr>().value;
+    return 'focus=${_className(focus)} active=${_className(active)}';
+  } finally {
+    calloc.free(info);
+  }
+}
+
+void _sendButton(bool down) {
+  final Pointer<Uint8> input = calloc<Uint8>(40);
+  try {
+    input.cast<Uint32>().value = 0; // INPUT_MOUSE
+    (input + 20).cast<Uint32>().value = down ? 0x0002 : 0x0004;
+    _sendInput(1, input, 40);
+  } finally {
+    calloc.free(input);
+  }
+}
 
 /// 页内事件记录器：捕获阶段、只记播放器子树内的事件，外加菜单 DOM 变化。
 const String _kRecorder = r'''
@@ -297,9 +421,39 @@ void main() {
         addTearDown(mouse.removePointer);
         Offset mouseAt = webRect.center;
 
+        final int flutterView = _kRealInput ? _ownFlutterView() : 0;
+        if (_kRealInput) {
+          // Live binding 默认把真设备指针只画圈不分发。
+          final IntegrationTestWidgetsFlutterBinding b =
+              IntegrationTestWidgetsFlutterBinding.instance;
+          b.shouldPropagateDevicePointerEvents = true;
+          await windowManager.setAlwaysOnTop(true);
+          await windowManager.focus();
+          addTearDown(() => windowManager.setAlwaysOnTop(false));
+          log('real-input view=${_className(flutterView)}');
+        }
+        void realMove(Offset logical) {
+          final Pointer<Int32> pt = calloc<Int32>(2);
+          try {
+            final double dpr = tester.view.devicePixelRatio;
+            pt[0] = (logical.dx * dpr).round();
+            pt[1] = (logical.dy * dpr).round();
+            _clientToScreen(flutterView, pt);
+            _setCursorPos(pt[0], pt[1]);
+          } finally {
+            calloc.free(pt);
+          }
+        }
+
         Future<void> hoverTo(Offset target, {int steps = 8}) async {
           final Offset from = mouseAt;
           for (int i = 1; i <= steps; i++) {
+            if (_kRealInput) {
+              mouseAt = Offset.lerp(from, target, i / steps)!;
+              realMove(mouseAt);
+              await tester.pump(const Duration(milliseconds: 30));
+              continue;
+            }
             await mouse.moveTo(Offset.lerp(from, target, i / steps)!);
             mouseAt = Offset.lerp(from, target, i / steps)!;
             await tester.pump(const Duration(milliseconds: 30));
@@ -309,15 +463,25 @@ void main() {
         Future<void> click(Offset target) async {
           await hoverTo(target);
           await settle(300);
+          String w32() => _kRealInput
+              ? ' ${_win32Focus(flutterView)} ${_windowUnderCursor()}'
+              : '';
           log(
-            'before-down primary=${FocusManager.instance.primaryFocus} viewFocusEvents=${viewFocus.count}',
+            'before-down primary=${FocusManager.instance.primaryFocus} viewFocusEvents=${viewFocus.count}${w32()}',
           );
-          await mouse.down(target);
-          await tester.pump(const Duration(milliseconds: 80));
-          await mouse.up();
+          if (_kRealInput) {
+            _sendButton(true);
+            await tester.pump(const Duration(milliseconds: 80));
+            log('mid-click${w32()}');
+            _sendButton(false);
+          } else {
+            await mouse.down(target);
+            await tester.pump(const Duration(milliseconds: 80));
+            await mouse.up();
+          }
           await settle(800);
           log(
-            'after-click primary=${FocusManager.instance.primaryFocus} viewFocusEvents=${viewFocus.count}',
+            'after-click primary=${FocusManager.instance.primaryFocus} viewFocusEvents=${viewFocus.count}${w32()}',
           );
         }
 
@@ -413,6 +577,11 @@ return JSON.stringify({display:cs.display, visible: m.getBoundingClientRect().wi
       },
     );
 
+    // 框架在测试体结束时就校验这个开关（早于 addTearDown），必须在这里还原。
+    IntegrationTestWidgetsFlutterBinding
+            .instance
+            .shouldPropagateDevicePointerEvents =
+        false;
     try {
       if (originalSize != null) await windowManager.setSize(originalSize!);
     } on Object {

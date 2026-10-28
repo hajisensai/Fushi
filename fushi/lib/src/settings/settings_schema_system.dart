@@ -22,7 +22,6 @@ import 'package:fushi/src/onboarding/recommended_pack_import.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/settings/settings_schema_web_adblock.dart';
 import 'package:fushi/src/settings/settings_schema_web_browser.dart';
 import 'package:fushi/src/diagnostics/video_diag_export.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
@@ -609,10 +608,9 @@ SettingsDestination buildSystemDestination() {
           ),
         ],
       ),
-      // app 内浏览器（标签页样式、搜索引擎、网页深色……），紧跟网络分组。
-      buildWebBrowserSection(),
-      // 应用内网页浏览（InAppWebView）的广告 / 跟踪拦截，紧跟网络分组。
-      buildWebAdblockSection(),
+      // app 内浏览器：一行入口，进统一的「浏览器设置」（浏览器本身 + 网页广告拦截 +
+      // 浏览器扩展各组；宽屏双栏、窄屏下钻），紧跟网络分组。
+      buildWebBrowserEntrySection(),
       // v101 统一更新提醒。四个域各一个开关 + 系统通知总开关。
       //
       // 四个域开关**不经 `AppModel.updateFeedService`**，直接读写 pref 键：

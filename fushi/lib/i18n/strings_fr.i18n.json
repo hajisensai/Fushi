@@ -10036,6 +10036,7 @@
   "web_browser_download_state_failed": "Failed",
   "web_browser_downloads_empty": "No downloads yet",
   "web_browser_downloads_title": "Downloads",
+  "web_browser_enter": "Open browser",
   "web_browser_error_certificate_body": "The site's security certificate is invalid, expired, or doesn't match this address.",
   "web_browser_error_certificate_title": "Connection isn't secure",
   "web_browser_error_connection_body": "The site refused the connection or can't be reached. It may be down; try again later.",

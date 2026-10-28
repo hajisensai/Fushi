@@ -10036,6 +10036,7 @@
   "web_browser_download_state_failed": "失败",
   "web_browser_downloads_empty": "还没有下载记录",
   "web_browser_downloads_title": "下载",
+  "web_browser_enter": "进入浏览器",
   "web_browser_error_certificate_body": "该网站的安全证书无效、已过期或与网址不符。",
   "web_browser_error_certificate_title": "连接不安全",
   "web_browser_error_connection_body": "网站拒绝了连接或无法访问，可能暂时停止服务，请稍后重试。",

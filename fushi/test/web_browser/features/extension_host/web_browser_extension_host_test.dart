@@ -6,7 +6,7 @@ import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_bundle.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_host_feature.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_messages.dart';
-import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_settings_page.dart';
+import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_strings.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_storage.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_subtitle_panel.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_video_activity.dart';

@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:fushi_engine/foundation/pref_store.dart';
 
 /// 扩展 `chrome.storage.local` 在 app 内浏览器里的落点：一个设备本地偏好（JSON 对象），
@@ -38,7 +40,11 @@ Map<String, Object?> webBrowserExtensionChangesJson(
 /// - [bridged]：有 app 真源的键（如「查词时暂停」↔ `pause_on_lookup`），读写都走真源；
 /// - [computed]：只读、现场算的键（如 `appLocale` = app 当前界面语言）。扩展写它们一律忽略
 ///   ——扩展里它们本就是 background 镜像 app 状态写进去的，宿主里直接现算。
-class WebBrowserExtensionStorage {
+///
+/// 进程内只有一份（`webBrowserExtensionStorageProvider`）：浏览页的扩展宿主与设置页
+/// 读写同一个实例，任何一方写入都经 [changes] 发出变更集（宿主据此推给自己打开着的
+/// 标签页），并 [notifyListeners]（设置页据此重画）。
+class WebBrowserExtensionStorage extends ChangeNotifier {
   WebBrowserExtensionStorage({
     required PrefStore prefs,
     Map<String, WebBrowserExtensionBridgedKey> bridged =
@@ -64,21 +70,45 @@ class WebBrowserExtensionStorage {
     return result;
   }
 
+  /// 写入后的变更集（同步派发：写完那一刻所有监听方就拿到，与原先「写完立即广播」
+  /// 时序一致）。只报实际变化了的键，空变更集不发。
+  Stream<Map<String, WebBrowserExtensionStorageChange>> get changes =>
+      _changes.stream;
+  final StreamController<Map<String, WebBrowserExtensionStorageChange>>
+  _changes =
+      StreamController<Map<String, WebBrowserExtensionStorageChange>>.broadcast(
+        sync: true,
+      );
+
+  void _emit(Map<String, WebBrowserExtensionStorageChange> changes) {
+    if (changes.isEmpty) return;
+    _changes.add(changes);
+    notifyListeners();
+  }
+
+  /// 上一次解码的原文与结果：设置页一屏几十行逐行读，同一份 JSON 不重复解码。
+  String? _decodedRaw;
+  Map<String, Object?> _decoded = const <String, Object?>{};
+
   Map<String, Object?> _readStored() {
     final Object? raw = _prefs.getPref(
       kWebBrowserExtensionStoragePref,
       defaultValue: '',
     );
     if (raw is! String || raw.isEmpty) return <String, Object?>{};
-    try {
-      final Object? decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) {
-        return Map<String, Object?>.of(decoded);
+    if (raw != _decodedRaw) {
+      Map<String, Object?> next = const <String, Object?>{};
+      try {
+        final Object? decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) next = decoded;
+      } on FormatException {
+        // 坏数据：当空存储，下次写入覆盖。
       }
-    } on FormatException {
-      // 坏数据：当空存储，下次写入覆盖。
+      _decodedRaw = raw;
+      _decoded = next;
     }
-    return <String, Object?>{};
+    // 调用方会就地改返回值（set / remove），给一份浅拷贝；嵌套值只读不改。
+    return Map<String, Object?>.of(_decoded);
   }
 
   Future<void> _writeStored(Map<String, Object?> values) =>
@@ -115,7 +145,13 @@ class WebBrowserExtensionStorage {
   /// 写入；回实际变化了的键（值没变的不报，与 chrome 同语义）。
   Future<Map<String, WebBrowserExtensionStorageChange>> set(
     Map<String, Object?> items,
-  ) => _serialized(() => _set(items));
+  ) => _serialized(() async {
+    final Map<String, WebBrowserExtensionStorageChange> changes = await _set(
+      items,
+    );
+    _emit(changes);
+    return changes;
+  });
 
   Future<Map<String, WebBrowserExtensionStorageChange>> _set(
     Map<String, Object?> items,
@@ -150,7 +186,13 @@ class WebBrowserExtensionStorage {
   /// 删键。真源键不能「删」（app 偏好总有值）——忽略。
   Future<Map<String, WebBrowserExtensionStorageChange>> remove(
     List<String> keys,
-  ) => _serialized(() => _remove(keys));
+  ) => _serialized(() async {
+    final Map<String, WebBrowserExtensionStorageChange> changes = await _remove(
+      keys,
+    );
+    _emit(changes);
+    return changes;
+  });
 
   Future<Map<String, WebBrowserExtensionStorageChange>> _remove(
     List<String> keys,
@@ -173,6 +215,12 @@ class WebBrowserExtensionStorage {
     }
     if (changes.isNotEmpty) await _writeStored(stored);
     return changes;
+  }
+
+  @override
+  void dispose() {
+    unawaited(_changes.close());
+    super.dispose();
   }
 
   /// 外部（app 设置页）改了真源键：编出对应的变更集，好广播给页面。
