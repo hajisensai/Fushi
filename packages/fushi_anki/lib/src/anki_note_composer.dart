@@ -335,7 +335,7 @@ mixin AnkiNoteComposer {
               (t) => t.name == current.selectedNoteTypeName,
             )
           : null) ??
-      noteTypes.firstWhereOrNull(LapisPreset.matches) ??
+      noteTypes.firstWhereOrNull(LapisPreset.hasPreset) ??
       noteTypes.first;
 
   @protected
@@ -343,8 +343,8 @@ mixin AnkiNoteComposer {
     AnkiNoteType selectedNoteType,
     AnkiSettings current,
   ) {
-    if (LapisPreset.matches(selectedNoteType) &&
-        !_currentSelectionMatchesLapis(current)) {
+    if (LapisPreset.hasPreset(selectedNoteType) &&
+        !_currentSelectionHasPreset(current)) {
       return LapisPreset.applyDefaults(selectedNoteType, {});
     }
     // 现有映射一个字段都不属于选中的笔记类型（空表，或留着上一个笔记类型的字段名）：
@@ -352,15 +352,15 @@ mixin AnkiNoteComposer {
     return LapisPreset.applyDefaults(selectedNoteType, current.fieldMappings);
   }
 
-  bool _currentSelectionMatchesLapis(AnkiSettings current) {
+  bool _currentSelectionHasPreset(AnkiSettings current) {
     final matched = current.availableNoteTypes.firstWhereOrNull(
       (t) =>
           t.id == current.selectedNoteTypeId ||
           t.name == current.selectedNoteTypeName,
     );
-    if (matched != null) return LapisPreset.matches(matched);
-    return current.selectedNoteTypeName?.toLowerCase().contains('lapis') ??
-        false;
+    if (matched != null) return LapisPreset.hasPreset(matched);
+    final String? name = current.selectedNoteTypeName?.toLowerCase();
+    return name != null && (name.contains('lapis') || name.contains('senren'));
   }
 
   // ── note tags：两 backend 共用（杜绝两份漂移） ──────────────────
