@@ -1584,6 +1584,75 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('牌组设置页：新卡顺序缺省按词频，改成按位置写进牌组；继承参数的子牌组不显示选择', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String kid = (await tester.runAsync(
+        () => store.createDeck('Kid', parentId: store.defaultDeckId),
+      ))!;
+      expect(
+        (await tester.runAsync(
+          store.deckTree,
+        ))![store.defaultDeckId]!.newCardOrder,
+        SrsNewCardOrder.frequency,
+        reason: '缺省 = 按词频',
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      final Finder order = find.byKey(
+        const ValueKey<String>('srs-settings-new-order'),
+      );
+      await tester.scrollUntilVisible(
+        order,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(order);
+      await tester.pumpAndSettle();
+      final Finder position = find.descendant(
+        of: order,
+        matching: find.text(t.srs_settings_new_order_position),
+      );
+      if (position.evaluate().isEmpty) {
+        // 行宽放不下分段时设置行降级成菜单（设计系统行为）：先点开再选。
+        await tester.tap(
+          find.descendant(
+            of: order,
+            matching: find.text(t.srs_settings_new_order),
+          ),
+        );
+        await _settle(tester);
+      }
+      await tester.tap(find.text(t.srs_settings_new_order_position).last);
+      await _settle(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      );
+      await _settle(tester);
+      final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      expect(tree[store.defaultDeckId]!.newCardOrder, SrsNewCardOrder.position);
+      expect(
+        tree.paramsOwner(kid).newCardOrder,
+        SrsNewCardOrder.position,
+        reason: '子牌组随继承',
+      );
+      await _unmount(tester);
+
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: kid),
+      );
+      expect(order, findsNothing);
+      await _unmount(tester);
+    });
+
     testWidgets('牌组设置页：「让子牌组都继承这里」把整棵子树里单独设置的后代改成继承', (
       WidgetTester tester,
     ) async {

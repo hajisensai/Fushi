@@ -241,6 +241,7 @@ String _builtinJson(SrsBuiltinNoteType b) => jsonEncode(<String, Object?>{
   'name': b.name,
   'css': b.css,
   'termFieldId': b.termFieldId,
+  'freqFieldId': b.freqFieldId,
   'fields': <Object?>[
     for (final SrsFieldDef f in b.fields)
       <String, Object?>{
@@ -324,6 +325,7 @@ SrsNoteTypeView _noteTypeView(SrsEntitySource s, Map<String, Object?> r) {
     ],
     css: v['css']! as String,
     termFieldId: v['tf'] as String?,
+    freqFieldId: v['qf'] as String?,
     deletedAt: v['da'] as int?,
     builtinKey: v['bk'] as String?,
     edits: _edits(r, s.edits),
@@ -377,6 +379,7 @@ SrsDeckView _deckView(SrsEntitySource s, Map<String, Object?> r) {
     autoplayAudio: v['ap'] == true,
     replayQuestionAudio: v['rq'] == true,
     rwkvQueue: SrsRwkvQueueSettings.fromValue(v['rw']),
+    newCardOrder: SrsNewCardOrder.fromWire(v['no'] as String?),
     optimizeBaselineAt: v['ba'] as int?,
     optimizeBaselineCount: v['bn'] as int?,
     deletedAt: v['da'] as int?,

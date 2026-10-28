@@ -213,6 +213,13 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
             SrsFieldKeys.termField,
             nt.termFieldId,
           ),
+        if (nt.freqFieldId != null)
+          SrsEditSpec(
+            SrsEntityKind.noteType,
+            nt.id,
+            SrsFieldKeys.freqField,
+            nt.freqFieldId,
+          ),
       ],
       records: <SrsEntityRecord>[nt.record],
     );
@@ -425,6 +432,13 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
           SrsFieldKeys.termField,
           null,
         ),
+      if (t.freqFieldId == fieldId)
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.freqField,
+          null,
+        ),
     ]);
   }
 
@@ -464,6 +478,17 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
           SrsEntityKind.noteType,
           noteTypeId,
           SrsFieldKeys.termField,
+          fieldId,
+        ),
+      ]);
+
+  /// 词频序字段（新卡按词频出卡读它）；null = 清掉显式设置，回到按字段名 `FreqSort` 认。
+  Future<void> setFreqField(String noteTypeId, String? fieldId) =>
+      writeEdits(<SrsEditSpec>[
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.freqField,
           fieldId,
         ),
       ]);

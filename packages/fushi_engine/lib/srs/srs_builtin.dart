@@ -116,6 +116,7 @@ SrsBuiltinNoteType srsBuiltinNoteType(
     ],
     css: tpl.css,
     termFieldId: nameToId['Expression'],
+    freqFieldId: nameToId['FreqSort'],
   );
 }
 

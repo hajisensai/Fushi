@@ -168,6 +168,7 @@ class SrsBuiltinNoteType {
     required this.templates,
     required this.css,
     this.termFieldId,
+    this.freqFieldId,
   });
 
   final String key;
@@ -177,6 +178,7 @@ class SrsBuiltinNoteType {
   final List<SrsTemplateDef> templates;
   final String css;
   final String? termFieldId;
+  final String? freqFieldId;
 }
 
 /// 带冲突信息的字段值。
@@ -263,6 +265,7 @@ class SrsNoteTypeView {
     required this.deletedAt,
     required this.builtinKey,
     required this.edits,
+    this.freqFieldId,
     this.definedFields = const <SrsFieldDef>[],
     this.definedTemplates = const <SrsTemplateDef>[],
   });
@@ -279,6 +282,10 @@ class SrsNoteTypeView {
   final List<SrsTemplateDef> templates;
   final String css;
   final String? termFieldId;
+
+  /// 显式设的词频序字段（[SrsFieldKeys.freqField]，内置类型有代码默认）；null = 没设。
+  /// 实际取哪个字段看 [frequencyField]。
+  final String? freqFieldId;
   final int? deletedAt;
   final String? builtinKey;
   final SrsEntityEdits edits;
@@ -291,6 +298,20 @@ class SrsNoteTypeView {
   final List<SrsTemplateDef> definedTemplates;
 
   bool get isCloze => kind == SrsNoteTypeKind.cloze;
+
+  /// 新卡按词频出卡时读名次的字段：显式设的 [freqFieldId]（字段还在时），否则名为 `FreqSort` 的字段
+  /// （不分大小写——Lapis 及其衍生类型、从 Anki 导入的同类笔记都用这个名字）；都没有 = null。
+  SrsFieldDef? get frequencyField {
+    final String? id = freqFieldId;
+    if (id != null) {
+      final SrsFieldDef? f = fieldById(id);
+      if (f != null) return f;
+    }
+    for (final SrsFieldDef f in fields) {
+      if (f.name.trim().toLowerCase() == 'freqsort') return f;
+    }
+    return null;
+  }
 
   SrsFieldDef? fieldById(String id) {
     for (final SrsFieldDef f in fields) {

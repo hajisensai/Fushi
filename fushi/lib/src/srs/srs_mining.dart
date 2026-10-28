@@ -813,7 +813,9 @@ typedef SrsNoteOpener = Future<bool> Function(String noteId);
 /// - 「回到出处改卡」：先在复习里找带这个出处的笔记；复习里没有才交给 Anki——出处
 ///   链接可能来自切换前制进 Anki 的卡，那张卡本来就在 Anki 里。
 /// - 新卡按词频重排：走复习（[listNewCards] / [setNewCardPositions] 读写卡片的
-///   新卡位置，见 [SrsDbStore.newCardsInDeck]），手动重排与制卡后自动重排都可用。
+///   新卡位置，见 [SrsDbStore.newCardsInDeck]），只有手动重排。复习不需要制卡后自动重排：
+///   牌组「新卡顺序 = 按词频」时出卡直接按卡上的词频名次排；手动重排写的位置用于
+///   「新卡顺序 = 按位置」的牌组，以及按词频时没有名次的卡。
 /// - Anki 专属能力（建笔记类型 / 牌组、改模板样式、媒体去重、同步片段模板探测）：
 ///   在此模式下关闭（能力位为 false / 明确报不可用），设置页对应入口已隐藏。
 /// - 只读写本机偏好的设置读写（loadSettings / saveSettings / updateSettings /
@@ -1170,6 +1172,11 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
 
   @override
   bool get supportsDeckReposition => true;
+
+  /// 复习出卡按牌组「新卡顺序」直接读卡上的词频名次，刚挖的卡立刻就在对的位置：不需要
+  /// 制卡后改写新卡位置（那样每挖一个词都要同步一批位置修改记录）。
+  @override
+  bool get supportsAutoReposition => false;
 
   /// [deckName]（复习牌组全名，含子牌组）里的新卡，形状对齐 AnkiConnect `cardsInfo`：
   /// 整数 id = [SrsIds.ankiNumericId]，`due` = 此刻的出卡位置（从没排过的卡是临时编号，

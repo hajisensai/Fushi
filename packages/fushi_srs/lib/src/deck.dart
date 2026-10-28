@@ -8,6 +8,28 @@ import 'entities.dart';
 import 'field_edit.dart';
 import 'scheduler.dart';
 
+/// 新卡出卡顺序（牌组设置 [SrsFieldKeys.deckNewOrder]）。
+enum SrsNewCardOrder {
+  /// 按卡上的词频名次（笔记类型的词频序字段，见 [SrsNoteTypeView.frequencyField]）升序：常用词先出。
+  /// 名次随笔记同步，每台设备读到同一个数，出卡顺序一致；没有名次的卡排在后面、按 [position] 的规则。
+  frequency('frequency'),
+
+  /// 按新卡位置（手动「按词频重排新卡」/ Anki 导入写的 `newPos`），没排过的按添加先后。
+  position('position');
+
+  const SrsNewCardOrder(this.wire);
+
+  final String wire;
+
+  /// 缺省与不认识的值（更新版本加的新顺序）都按 [frequency]。
+  static SrsNewCardOrder fromWire(String? wire) {
+    for (final SrsNewCardOrder o in values) {
+      if (o.wire == wire) return o;
+    }
+    return frequency;
+  }
+}
+
 /// 一种算法的参数组（整体一个字段键，按铁律 H 设置类合并）。
 class SrsParamSet {
   const SrsParamSet({
@@ -153,6 +175,7 @@ class SrsDeckView {
     this.autoplayAudio = true,
     this.replayQuestionAudio = true,
     this.rwkvQueue = const SrsRwkvQueueSettings(),
+    this.newCardOrder = SrsNewCardOrder.frequency,
     required this.optimizeBaselineAt,
     required this.optimizeBaselineCount,
     required this.deletedAt,
@@ -211,6 +234,9 @@ class SrsDeckView {
 
   /// RWKV-Instant 排队设置。只看 own 祖先上的值（[SrsDeckTree.paramsOwner]）。
   final SrsRwkvQueueSettings rwkvQueue;
+
+  /// 新卡出卡顺序。只看 own 祖先上的值（[SrsDeckTree.paramsOwner]）。
+  final SrsNewCardOrder newCardOrder;
   final int? optimizeBaselineAt;
   final int? optimizeBaselineCount;
   final int? deletedAt;

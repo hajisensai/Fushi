@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -223,6 +223,11 @@ CREATE INDEX IF NOT EXISTS idx_srs_stat_reviews_card ON srs_stat_reviews (card_i
 /// `SrsNotesCache.mediaRefs`）。老库加列留空，由 Dart 侧缓存修订号 3 的升级步重算全部笔记缓存填满。
 const V4: &str = "ALTER TABLE srs_notes_cache ADD COLUMN media_refs TEXT NOT NULL DEFAULT '';";
 
+/// V8：卡片缓存加 `freq_rank`（笔记词频序字段解析出的名次，越小越常见；没有 = NULL。Drift 声明见
+/// srs_tables.dart `SrsCardsCache.freqRank`）。牌组「新卡顺序 = 按词频」时出卡按它排。老库加列留空，由 Dart
+/// 侧缓存修订号 6 的升级步重算全部笔记缓存填满。
+const V8: &str = "ALTER TABLE srs_cards_cache ADD COLUMN freq_rank INTEGER NULL;";
+
 /// 建表 / 升级到 [SCHEMA_VERSION]。在一个事务里做；版本只升不降（库比本程序新 = 打开失败，
 /// 免得旧版本写坏新版本的库）。
 pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
@@ -293,6 +298,19 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     if current < 7 {
         // V7：MediaAt 操作的投影（媒体对账不再列目录，store/sync2/media.rs）。
         tx.execute_batch(super::sync2::schema::V7).map_err(|e| e.to_string())?;
+    }
+    if current < 8 {
+        let has: bool = tx
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('srs_cards_cache') WHERE name = 'freq_rank'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .map_err(|e| e.to_string())?
+            > 0;
+        if !has {
+            tx.execute_batch(V8).map_err(|e| e.to_string())?;
+        }
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \

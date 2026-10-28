@@ -520,13 +520,6 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       // 照着默认（Fushi 复习）直接按下一步也是显式选择：初值进页时不写，这里补写。
       await _applyReviewMethod(_reviewMethod);
       if (!mounted) return;
-      // Fushi 复习路径的自动重排开关同理此刻写入（Anki 路径在 Anki 步写）。
-      if (_reviewMethod == OnboardingReviewMethod.fushi) {
-        await ref
-            .read(ankiViewModelProvider.notifier)
-            .setAutoRepositionEnabled(_autoReposition);
-        if (!mounted) return;
-      }
     }
     final List<OnboardingStepId> steps = _steps;
     if (steps[_stepIndex] == OnboardingStepId.features) {
@@ -838,10 +831,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 「第一张卡」教程。重开向导不会拿旧缓存冒充本次连接成功。
   bool _ankiConnectionVerified = false;
 
-  /// 「制卡后自动按词频重排」的向导内选择（复习方式一步与 Anki 步共用），初值
+  /// 「制卡后自动按词频重排」的向导内选择（只在 Anki 步），初值
   /// [kOnboardingAutoRepositionDefault]；
-  /// 离开复习方式一步（选了 Fushi 复习）或 Anki 步时写进
-  /// `AnkiSettings.autoRepositionEnabled`（见 [_goNextAsync]）。
+  /// 离开 Anki 步时写进 `AnkiSettings.autoRepositionEnabled`（见 [_goNextAsync]）。
   bool _autoReposition = kOnboardingAutoRepositionDefault;
 
   /// 移动端「本机改用 AnkiConnect」次级说明的展开态（默认收起）。
@@ -1360,22 +1352,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
               onToggleAnki: () =>
                   setState(() => _ankiOptionExpanded = !_ankiOptionExpanded),
             ),
-            // Fushi 复习路径的「制卡后自动按词频重排」（引导里默认开，离开本步时写入
-            // 设置，见 [_goNextAsync]）。Anki 路径的同一颗开关在 Anki 步里。
-            if (_reviewMethod == OnboardingReviewMethod.fushi) ...<Widget>[
-              SizedBox(height: FushiDesignTokens.of(context).spacing.gap),
-              FushiCard(
-                child: AdaptiveSettingsSwitchRow(
-                  icon: FushiIcons.sync,
-                  showIcon: true,
-                  title: t.anki_reposition_auto_title,
-                  subtitle: t.onboarding_review_fushi_auto_reposition_hint,
-                  subtitleMaxLines: 4,
-                  value: _autoReposition,
-                  onChanged: (bool v) => setState(() => _autoReposition = v),
-                ),
-              ),
-            ],
+            // Fushi 复习路径没有「制卡后自动重排」：复习出卡直接按卡上的词频名次排。
           ],
         );
       case OnboardingStepId.anki:

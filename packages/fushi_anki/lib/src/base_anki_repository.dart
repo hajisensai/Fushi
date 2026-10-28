@@ -554,6 +554,12 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   /// 也没有对应端点。这些后端默认 false，UI 据此把入口置灰并说明原因。
   bool get supportsDeckReposition => false;
 
+  /// 制卡后要不要自动重排新卡（「制卡后自动按词频重排」开关与调度器只对它为 true 的后端生效）。
+  ///
+  /// 缺省 = 能重排就要：Anki 出卡只看队列位置，新卡按词频出只能事后改写位置。Fushi 复习
+  /// 覆盖成 false——它出卡时直接按卡上的词频名次排（牌组「新卡顺序」），不需要事后改写。
+  bool get supportsAutoReposition => supportsDeckReposition;
+
   /// 列出 [deckName]（含子卡组、排除筛选牌组）里的全部**新卡**。
   /// 默认实现 = 不支持，抛 [UnsupportedError]；调用前先看
   /// [supportsDeckReposition]。
