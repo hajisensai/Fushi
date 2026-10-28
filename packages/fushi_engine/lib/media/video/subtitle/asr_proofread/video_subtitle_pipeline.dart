@@ -23,6 +23,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:fushi_asr_subtitles/asr_subtitles.dart'
     show SubtitleCue, SubtitleFormat, renderSubtitles;
 import 'package:fushi_engine/media/video/video_member_file.dart';
@@ -114,6 +115,8 @@ class VideoSubtitleEpisodeResult {
     this.outputPath,
     this.styledOutputPath,
     this.styleReference,
+    this.styledError,
+    this.removedOutputPaths = const <String>[],
     this.reason,
     this.cueCount = 0,
   });
@@ -125,11 +128,20 @@ class VideoSubtitleEpisodeResult {
   final String? outputPath;
 
   /// 按参考 ASS 套了样式的 `<视频名>.<后缀>.ass`（同 [outputPath] 的目录与
-  /// `.asr` 退路规则）；没有参考或目标被别人的文件占着时为 null。
+  /// `.asr` 退路规则）；没有参考、目标被别人的文件占着或 ASS 阶段失败时为 null。
   final String? styledOutputPath;
 
   /// 样式来源（参考 ASS 的文件名或内嵌轨标签）。
   final String? styleReference;
+
+  /// ASS 可选阶段失败的原因（找参考 / 渲染 / 写文件 / 清理过期 ASS 抛的异常）。
+  /// 这一阶段失败不影响本集的 SRT 导出（[status] 仍是导出），调用方据此上报。
+  final String? styledError;
+
+  /// 本轮删掉的本管线旧产物：上一轮写过、这一轮不再导出的 ASS（参考没了、
+  /// 落点从 `.ass` 换到 `.asr.ass` 等）。条目若还登记着其中某个，调用方应改登记
+  /// 本轮的产物。
+  final List<String> removedOutputPaths;
 
   /// 跳过的原因（英文短句，排查用；UI 按 [status] 出文案）。
   final String? reason;
@@ -701,11 +713,28 @@ class VideoSubtitlePipeline {
     final List<int> bytes = utf8.encode(srt);
     await writeSubtitleJobFileAtomic(File(path), srt);
     e.state.exports[path] = sha1.convert(bytes).toString();
-    final ({String path, String label})? styled = await _exportStyled(
-      e,
-      cues,
-      asAsr: path != target,
-    );
+    // SRT 的归属记录先落盘：后面的 ASS 是可选阶段，它出任何问题都不能让
+    // 「这份 SRT 是本管线写的」这条记录丢掉（丢了下次会把它当成别人的文件）。
+    await e.state.save(e.dir);
+
+    ({String path, String label})? styled;
+    String? styledError;
+    try {
+      styled = await _exportStyled(e, cues, asAsr: path != target);
+    } catch (error, stack) {
+      styledError = 'styled ASS export failed: $error';
+      fushiDebugPrint(
+        '[VideoSubtitlePipeline] ${e.video}: $styledError\n$stack',
+      );
+    }
+    final List<String> removed = <String>[];
+    try {
+      removed.addAll(await _removeStaleStyled(e, keep: styled?.path));
+    } catch (error, stack) {
+      final String message = 'stale styled ASS cleanup failed: $error';
+      styledError = styledError == null ? message : '$styledError; $message';
+      fushiDebugPrint('[VideoSubtitlePipeline] ${e.video}: $message\n$stack');
+    }
     await e.state.save(e.dir);
     return VideoSubtitleEpisodeResult(
       videoPath: e.video,
@@ -715,8 +744,37 @@ class VideoSubtitlePipeline {
       outputPath: path,
       styledOutputPath: styled?.path,
       styleReference: styled?.label,
+      styledError: styledError,
+      removedOutputPaths: removed,
       cueCount: cues.length,
     );
+  }
+
+  /// 删掉本管线以前写过、这一轮不再导出的 ASS（[keep] 是本轮导出的那份，没出为
+  /// null）：参考没了 / ASS 阶段失败时旧 `.ass` 和新 SRT 内容对不上，留着播放器
+  /// 会继续加载过期字幕。只删内容仍是本管线所写的（[_JobState.wrote]）；用户改过
+  /// 的不动。文件已不在的只清记录。返回删掉的路径。
+  Future<List<String>> _removeStaleStyled(
+    _Episode e, {
+    required String? keep,
+  }) async {
+    final List<String> removed = <String>[];
+    for (final String candidate in <String>[
+      styledSubtitlePathFor(e.video),
+      asrStyledSubtitlePathFor(e.video),
+    ]) {
+      if (keep != null && p.equals(candidate, keep)) continue;
+      if (!e.state.exports.containsKey(candidate)) continue;
+      final File f = File(candidate);
+      if (e.state.wrote(candidate)) {
+        await f.delete();
+        e.state.exports.remove(candidate);
+        removed.add(candidate);
+      } else if (!await f.exists()) {
+        e.state.exports.remove(candidate);
+      }
+    }
+    return removed;
   }
 
   /// 有样式参考时按参考导出 ASS（与 SRT 同一套占位规则：目标被别人的文件占着就

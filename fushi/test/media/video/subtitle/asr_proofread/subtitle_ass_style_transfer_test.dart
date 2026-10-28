@@ -81,6 +81,13 @@ String _referenceAss({int extraLines = 10}) {
   return b.toString();
 }
 
+/// [_referenceAss] 末尾再追加一段 `[Events]`，多一条 `Dialogue: [dialogue]`。
+String _withExtraEvent(String dialogue) =>
+    '${_referenceAss()}[Events]\n'
+    'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, '
+    'Effect, Text\n'
+    'Dialogue: $dialogue\n';
+
 List<String> _dialogues(String ass) => <String>[
   for (final String l in ass.split('\n'))
     if (l.startsWith('Dialogue:')) l.trimRight(),
@@ -168,14 +175,95 @@ void main() {
       );
     });
 
-    test('只有招牌与之重叠时继承招牌的位置', () {
+    test(r'只有招牌（\pos）与之重叠：招牌不参与挑选，用默认对白样式、不加覆盖标签', () {
       expect(
         _dialogues(
           render(const <AssStyledCue>[
             AssStyledCue(startMs: 7000, endMs: 9000, text: 'タイトル'),
           ]),
         ).single,
-        r'Dialogue: 2,0:00:07.00,0:00:09.00,Sign,,0,0,0,,{\pos(960,100)}タイトル',
+        'Dialogue: 0,0:00:07.00,0:00:09.00,Dial,,0,0,0,,タイトル',
+      );
+      expect(
+        pickAssReferenceEvent(startMs: 7000, endMs: 9000, events: ref.events),
+        isNull,
+      );
+    });
+
+    test(r'\move / \clip / \iclip 的事件同样不参与挑选（日语行不套招牌的定位 / 旋转 / 裁剪）', () {
+      for (final String sign in <String>[
+        r'{\move(0,0,100,100)\frz10}移动',
+        r'{\clip(0,0,500,500)}裁剪',
+        r'{\iclip(0,0,500,500)\fax0.2}反裁剪',
+      ]) {
+        final AssStyleReference r = parseAssStyleReference(
+          _withExtraEvent('3,0:00:20.00,0:00:22.00,Sign,,0,0,0,,$sign'),
+          label: 'x',
+        )!;
+        expect(
+          _dialogues(
+            renderAssWithReferenceStyle(
+              cues: const <AssStyledCue>[
+                AssStyledCue(startMs: 20000, endMs: 22000, text: '看板'),
+              ],
+              reference: r,
+            ),
+          ).single,
+          'Dialogue: 0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,看板',
+          reason: sign,
+        );
+      }
+    });
+
+    /// 一份只有一条带 [tags] 的对白（0:20–0:22）+ 填充对白的参考。
+    String renderWithTags(String tags) {
+      final AssStyleReference r = parseAssStyleReference(
+        _withExtraEvent('0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,{$tags}台词'),
+        label: 'x',
+      )!;
+      return _dialogues(
+        renderAssWithReferenceStyle(
+          cues: const <AssStyledCue>[
+            AssStyledCue(startMs: 20000, endMs: 22000, text: 'セリフ'),
+          ],
+          reference: r,
+        ),
+      ).single;
+    }
+
+    test(r'alpha + \t 淡入：起点 \alpha&HFF& 不继承（否则去掉 \t 后日语行整行透明）', () {
+      final String line = renderWithTags(
+        r'\an8\alpha&HFF&\t(0,200,\alpha&H00&)',
+      );
+      expect(line, 'Dialogue: 0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,{\\an8}セリフ');
+      expect(line, isNot(contains(r'\alpha&HFF&')));
+      for (final String a in <String>[r'\1a&HFF&', r'\3a&H80&']) {
+        expect(
+          renderWithTags('$a\\t(0,200,${a.substring(0, 3)}&H00&)'),
+          isNot(contains(a)),
+        );
+      }
+    });
+
+    test(r'clip + \t 擦入：\clip 起点不继承（否则日语行被裁成 0 宽）', () {
+      final String line = renderWithTags(
+        r'\clip(0,0,0,1080)\t(0,500,\clip(0,0,1920,1080))\c&H00FFFF&',
+      );
+      expect(line, isNot(contains(r'\clip')));
+      expect(line, endsWith(r'{\c&H00FFFF&}セリフ'));
+    });
+
+    test(r'白名单：颜色 / 字体 / 描边 / 淡入淡出保留；旋转 / 错切 / 原点 / 缩放 / \fade 丢弃', () {
+      expect(
+        renderWithTags(
+          r'\an7\fad(120,80)\1c&HFFFFFF&\3c&H000000&\4c&H202020&'
+          r'\fnNoto Serif\fs60\b1\i1\bord2.5\shad1\blur0.6\be1'
+          r'\frz12\frx3\fry4\fax0.1\fay0.2\org(10,10)\fscx120\fscy90'
+          r'\fade(255,0,255,0,100,200,300)\u1\s1',
+        ),
+        r'Dialogue: 0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,'
+        r'{\an7\fad(120,80)\1c&HFFFFFF&\3c&H000000&\4c&H202020&'
+        r'\fnNoto Serif\fs60\b1\i1\bord2.5\shad1\blur0.6\be1}セリフ',
       );
     });
 
@@ -228,7 +316,11 @@ void main() {
       expect(top.spans.any((SubtitleSpan s) => s.colorArgb != null), isTrue);
       expect(top.fade?.fadeInMs, 100);
       expect(top.playResY, 1080);
-      expect(cues[2].markup!.posFraction?.xFraction, closeTo(0.5, 1e-6));
+      expect(
+        cues[2].markup?.posFraction,
+        isNull,
+        reason: '只和招牌重叠的行不继承招牌的 \\pos',
+      );
       expect(cues[0].markup!.cueStyle, isNotNull);
     });
 
@@ -319,6 +411,78 @@ void main() {
       ).run(videoPaths: <String>[video], work: work);
       expect(r.episodes.single.styledOutputPath, isNull);
       expect(File(p.join(tmp.path, 'ep01.ja.ass')).existsSync(), isFalse);
+    });
+
+    test('上次导出过 .ja.ass、这次没参考：过期的 .ja.ass 删掉并报给调用方', () async {
+      final String ass = p.join(tmp.path, 'ep01.ja.ass');
+      await pipeline(
+        ownChecks: <bool Function(String)>[],
+        referenceText: _referenceAss(),
+      ).run(videoPaths: <String>[video], work: work);
+      expect(File(ass).existsSync(), isTrue);
+
+      final VideoSubtitleEpisodeResult e = (await pipeline(
+        ownChecks: <bool Function(String)>[],
+      ).run(videoPaths: <String>[video], work: work)).episodes.single;
+      expect(e.status, VideoSubtitleEpisodeStatus.exported);
+      expect(e.styledOutputPath, isNull);
+      expect(e.removedOutputPaths, <String>[ass]);
+      expect(File(ass).existsSync(), isFalse);
+      expect(File(p.join(tmp.path, 'ep01.ja.srt')).existsSync(), isTrue);
+
+      // 再跑一次：记录已清，不会重复报删除。
+      final VideoSubtitleEpisodeResult third = (await pipeline(
+        ownChecks: <bool Function(String)>[],
+      ).run(videoPaths: <String>[video], work: work)).episodes.single;
+      expect(third.removedOutputPaths, isEmpty);
+    });
+
+    test('上次导出的 .ja.ass 被用户改过：这次没参考也不删', () async {
+      final String ass = p.join(tmp.path, 'ep01.ja.ass');
+      await pipeline(
+        ownChecks: <bool Function(String)>[],
+        referenceText: _referenceAss(),
+      ).run(videoPaths: <String>[video], work: work);
+      File(ass).writeAsStringSync('edited by user');
+      final VideoSubtitleEpisodeResult e = (await pipeline(
+        ownChecks: <bool Function(String)>[],
+      ).run(videoPaths: <String>[video], work: work)).episodes.single;
+      expect(e.removedOutputPaths, isEmpty);
+      expect(File(ass).readAsStringSync(), 'edited by user');
+    });
+
+    test('ASS 阶段抛异常：本集照样导出 SRT，失败原因单独报，SRT 归属照常记下', () async {
+      final String srt = p.join(tmp.path, 'ep01.ja.srt');
+      final String ass = p.join(tmp.path, 'ep01.ja.ass');
+      // 先有一份本管线写的 .ja.ass，确认失败后它也按过期清掉（不和新 SRT 错配）。
+      await pipeline(
+        ownChecks: <bool Function(String)>[],
+        referenceText: _referenceAss(),
+      ).run(videoPaths: <String>[video], work: work);
+      final VideoSubtitlePipelineResult r = await VideoSubtitlePipeline(
+        recognizer: _FakeRecognizer(drafts),
+        jobsRoot: Directory(p.join(tmp.path, 'jobs')),
+        displaySplitter: null,
+        probeDurationMs: (String _) async => 1440000,
+        styleReference:
+            (String path, {required bool Function(String) isOwnOutput}) =>
+                throw const FileSystemException('reference unreadable'),
+      ).run(videoPaths: <String>[video], work: work);
+      final VideoSubtitleEpisodeResult e = r.episodes.single;
+      expect(e.status, VideoSubtitleEpisodeStatus.exported);
+      expect(e.outputPath, srt);
+      expect(e.styledOutputPath, isNull);
+      expect(e.styledError, contains('reference unreadable'));
+      expect(e.removedOutputPaths, <String>[ass]);
+      expect(File(ass).existsSync(), isFalse);
+
+      // SRT 的归属记录在：再跑一次仍覆盖写 .ja.srt，而不是当成别人的改写 .ja.asr.srt。
+      final VideoSubtitleEpisodeResult again = (await pipeline(
+        ownChecks: <bool Function(String)>[],
+      ).run(videoPaths: <String>[video], work: work)).episodes.single;
+      expect(again.status, VideoSubtitleEpisodeStatus.exported);
+      expect(again.outputPath, srt);
+      expect(again.styledError, isNull);
     });
 
     test('用户自己的 .ja.ass 不覆盖：改写 .ja.asr.ass', () async {

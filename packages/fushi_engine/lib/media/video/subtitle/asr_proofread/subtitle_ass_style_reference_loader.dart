@@ -41,8 +41,10 @@ Future<AssStyleReference?> loadSubtitleStyleReference(
     );
     if (ref != null) found.add(ref);
   }
-  // 内嵌轨要整片 demux 一遍：只对本机文件做，网络盘上不拉整部视频。
-  if (hasLocalMediaFileSync(videoPath) && !isNetworkMediaPath(videoPath)) {
+  // 内嵌轨要整片 demux 一遍：只对本机文件做，网络盘上不拉整部视频。先判网络路径
+  // 再做（异步的）存在性检查：断线的 UNC / 映射盘上同步 stat 会卡住 isolate 几十秒
+  // （BUG-3756 同类）。
+  if (!isNetworkMediaPath(videoPath) && await hasLocalMediaFile(videoPath)) {
     try {
       final EmbeddedSubtitleTrackProbeResult probe =
           await probeEmbeddedSubtitleTracks(videoPath);

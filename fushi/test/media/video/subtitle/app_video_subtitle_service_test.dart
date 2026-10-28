@@ -290,6 +290,58 @@ void main() {
       expect(job.registeredBookUids, <String>['a']);
     });
 
+    test('上次登记的是本管线的 .ja.ass、这次没参考：删掉旧 ASS，登记切回 .ja.srt', () async {
+      final String ep1 = video('ep01.mkv');
+      final String zhAss = p.join(p.dirname(ep1), 'ep01.zh.ass');
+      final StringBuffer zh = StringBuffer()
+        ..writeln('[Script Info]')
+        ..writeln('PlayResX: 1920')
+        ..writeln('PlayResY: 1080')
+        ..writeln('[V4+ Styles]')
+        ..writeln('Format: Name, Fontname, Fontsize, PrimaryColour, Alignment')
+        ..writeln('Style: Top,Noto Sans,70,&H0000FFFF,8')
+        ..writeln('[Events]')
+        ..writeln(
+          'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, '
+          'Effect, Text',
+        );
+      for (int i = 0; i < 12; i++) {
+        final String s = (i * 2).toString().padLeft(2, '0');
+        zh.writeln('Dialogue: 0,0:00:$s.00,0:00:$s.90,Top,,0,0,0,,{\\an8}第$i句');
+      }
+      File(zhAss).writeAsStringSync('$zh');
+      await addBook('a', ep1);
+      final AppVideoSubtitleService service = buildService();
+      final AppVideoSubtitleTarget target = await service.resolveBook('a');
+      final String srt = p.join(p.dirname(ep1), 'ep01.ja.srt');
+      final String ass = p.join(p.dirname(ep1), 'ep01.ja.ass');
+
+      final AppVideoSubtitleJob first = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await first.done;
+      expect(first.status, AppVideoSubtitleJobStatus.succeeded);
+      expect((await db.getVideoBookByBookUid('a'))!.subtitleSource, ass);
+
+      // 参考字幕没了：这次只出 SRT。
+      File(zhAss).deleteSync();
+      final AppVideoSubtitleJob second = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await second.done;
+      expect(second.status, AppVideoSubtitleJobStatus.succeeded);
+      expect(File(ass).existsSync(), isFalse, reason: '过期的本管线 ASS 不留');
+      expect(File(srt).existsSync(), isTrue);
+      expect(
+        (await db.getVideoBookByBookUid('a'))!.subtitleSource,
+        srt,
+        reason: '库里选着的旧 ASS 被删了，切到本轮的 SRT',
+      );
+      expect(second.registeredBookUids, <String>['a']);
+    });
+
     test('同时只跑一个：第二个任务被拒（busy）', () async {
       await addBook('a', video('ep01.mkv'));
       final AppVideoSubtitleService service = buildService();

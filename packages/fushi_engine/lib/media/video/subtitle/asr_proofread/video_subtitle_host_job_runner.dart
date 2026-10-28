@@ -480,6 +480,7 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
         if (styled != null) 'styledSubtitlePath': styled,
         if (styledName != null) 'styledOutput': styledName,
         if (e.styleReference != null) 'styleReference': e.styleReference,
+        if (e.styledError != null) 'styledError': e.styledError,
         if (e.reason != null) 'reason': e.reason,
         'cues': e.cueCount,
       });

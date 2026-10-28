@@ -485,6 +485,7 @@ Future<int> runSubgen(
               if (e.styledOutputPath != null)
                 'styledOutput': e.styledOutputPath,
               if (e.styleReference != null) 'styleReference': e.styleReference,
+              if (e.styledError != null) 'styledError': e.styledError,
               if (e.reason != null) 'reason': e.reason,
               'cues': e.cueCount,
             },
@@ -753,6 +754,7 @@ void _printReport(
           '  ${e['status']}  $name  ${e['cues']} 条'
           '${e['output'] != null ? '  → ${e['output']}' : ''}'
           '${e['styledOutput'] != null ? '  + ${e['styledOutput']}（样式取自 ${e['styleReference']}）' : ''}'
+          '${e['styledError'] != null ? '  （ASS 未导出：${e['styledError']}）' : ''}'
           '${e['reason'] != null ? '  （${e['reason']}）' : ''}',
         );
       }

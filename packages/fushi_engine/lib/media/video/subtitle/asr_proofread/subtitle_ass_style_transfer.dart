@@ -5,17 +5,22 @@
 /// 参考 ASS ─parseAssStyleReference─▶ 原样保留的头部段（[Script Info] / [V4+ Styles]
 ///                                      / [Fonts] …）+ 带时间的对白事件
 /// 日语 cue ─按时间重叠挑参考事件─▶ 继承它的 Layer / Style / Name / Margin / Effect
-///                                  + 行首覆盖标签（\an \pos \c \fad …）
+///                                  + 白名单内的行首覆盖标签（\an \fad \c \fn …）
 /// ```
 ///
 /// - 颜色、字体、描边、默认位置来自参考的 Style 行（整段原样拷贝，不改写）；
-///   单行的位置 / 颜色来自参考事件行首的覆盖标签。
-/// - 卡拉 OK（`\k` 系）、`\t` 动画、`\p` 绘图只对参考原文的字 / 时间有意义，换成
-///   日语正文就错位，一律不继承；行中的覆盖块同理丢弃。
-/// - 时间上找不到参考事件的日语行用参考里最常用的对白样式、不加覆盖标签。
-/// - 选参考事件时，带 `\pos` / `\move` / `\clip` 的事件（多半是招牌、标题等排版）
-///   降权：只有没有普通对白与它重叠时才继承它的位置。参考本身含日语（双语字幕）
-///   时优先继承日语那一行的样式。
+///   单行的对齐 / 颜色 / 字体来自参考事件行首的覆盖标签。
+/// - 覆盖标签走**白名单**（`_inheritableTag`）：只继承静态的对齐（`\an`）、淡入淡出
+///   （`\fad`）、颜色（`\c` `\1c`–`\4c`）、字体 / 字号 / 粗斜体（`\fn` `\fs` `\b` `\i`）、
+///   描边 / 阴影 / 模糊（`\bord` `\shad` `\blur` `\be`）。其余一律丢弃：卡拉 OK（`\k`
+///   系）、`\t` 动画、`\p` 绘图只对参考原文的字 / 时间有意义；透明度（`\alpha`
+///   `\1a`–`\4a`）与裁剪（`\clip` `\iclip`）常是 `\t` 动画的起点
+///   （`{\alpha&HFF&\t(0,200,\alpha&H00&)}`），去掉 `\t` 只留起点会让日语行整行不可见
+///   或被裁成 0 宽；旋转 / 错切 / 原点 / 移动是给参考原文排版用的。行中的覆盖块同理丢弃。
+/// - 带 `\pos` / `\move` / `\clip` / `\iclip` 的事件（招牌、标题等排版）**不参与**挑选：
+///   日语对白不会被套上招牌的位置 / 旋转 / 裁剪。
+/// - 时间上找不到普通参考事件的日语行用参考里最常用的对白样式、不加覆盖标签。
+/// - 参考本身含日语（双语字幕）时优先继承日语那一行的样式。
 ///
 /// 纯函数，不碰文件系统；读文件 / 抽内嵌轨见 `subtitle_ass_style_reference_loader.dart`。
 library;
@@ -234,8 +239,9 @@ String renderAssWithReferenceStyle({
 
 /// 给 `[startMs, endMs)` 的日语行挑要继承的参考事件；没有足够重叠的返回 null。
 ///
-/// 得分 = 重叠毫秒 × 权重：排版类事件（[AssReferenceEvent.isPositioned]）×0.25，
-/// 正文含假名的事件 ×1.5（双语字幕里日语那一行）；同分取样式更常用的、再取文件序靠前的。
+/// 排版类事件（[AssReferenceEvent.isPositioned]：招牌、标题）不参与挑选。
+/// 得分 = 重叠毫秒 × 权重：正文含假名的事件 ×1.5（双语字幕里日语那一行）；同分取
+/// 样式更常用的、再取文件序靠前的。
 AssReferenceEvent? pickAssReferenceEvent({
   required int startMs,
   required int endMs,
@@ -250,12 +256,12 @@ AssReferenceEvent? pickAssReferenceEvent({
   for (final AssReferenceEvent e in events) {
     if (e.startMs >= endMs) break;
     if (e.endMs <= startMs) continue;
+    if (e.isPositioned) continue;
     final int overlap =
         (e.endMs < endMs ? e.endMs : endMs) -
         (e.startMs > startMs ? e.startMs : startMs);
     if (overlap < duration * kAssStyleMinOverlapRatio) continue;
     double score = overlap.toDouble();
-    if (e.isPositioned) score *= 0.25;
     if (_kana.hasMatch(e.plainText)) score *= 1.5;
     if (best == null ||
         score > bestScore ||
@@ -318,8 +324,19 @@ final RegExp _kana = RegExp(r'[\u3040-\u30FF]');
 final RegExp _drawingTag = RegExp(r'\\p[1-9]');
 final RegExp _positionTag = RegExp(r'\\(pos|move|i?clip)\(');
 
-/// 不继承的标签：卡拉 OK、`\t` 动画、`\p` 绘图 / 基线偏移。
-final RegExp _droppedTag = RegExp(r'^\\(k[fo]?\d|K\d|t\(|p\d|pbo)');
+/// 可继承的行首覆盖标签（白名单，整条标签全匹配）；不在表里的一律丢弃，理由见文件头。
+final RegExp _inheritableTag = RegExp(
+  r'^\\(?:'
+  r'an[1-9]'
+  r'|fad\(\s*\d+\s*,\s*\d+\s*\)'
+  r'|[1-4]?c&H[0-9A-Fa-f]{1,8}&?'
+  r'|fn[^\\(){}]+'
+  r'|fs\d+(?:\.\d+)?'
+  r'|b\d+'
+  r'|i[01]'
+  r'|(?:bord|shad|blur|be)\d+(?:\.\d+)?'
+  r')$',
+);
 
 String _overrideBlocks(String text) => RegExp(
   r'\{[^}]*\}',
@@ -349,7 +366,7 @@ List<String> _splitTags(String block) {
 
 String _inheritableTags(List<String> tags) => <String>[
   for (final String t in tags)
-    if (!_droppedTag.hasMatch(t)) t,
+    if (_inheritableTag.hasMatch(t)) t,
 ].join();
 
 /// 日语正文写进 ASS：换行 → `\N`，花括号换全角（不然会被当成覆盖块吞掉）。

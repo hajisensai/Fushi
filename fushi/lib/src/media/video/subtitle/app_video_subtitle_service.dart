@@ -1076,6 +1076,14 @@ class AppVideoSubtitleService {
         for (final AppVideoSubtitleEpisodeProgress e in job.episodes) {
           if (e.episode.videoPath == r.videoPath) e.result = r;
         }
+        final String? styledError = r.styledError;
+        if (styledError != null) {
+          // ASS 是可选阶段：失败不影响 SRT，但要进错误日志可查。
+          ErrorLogService.instance.log(
+            'video.subtitlePipeline.styledAss',
+            '${r.videoPath}: $styledError',
+          );
+        }
         // 有按参考样式导出的 ASS 就登记它（颜色 / 位置才显示得出来）。
         final String? output = r.styledOutputPath ?? r.outputPath;
         if (!r.exported || output == null) continue;
@@ -1087,7 +1095,14 @@ class AppVideoSubtitleService {
           episode.bookUid,
           output,
           replace: episode.replacesSubtitleSelection,
-          supersedes: r.styledOutputPath == null ? null : r.outputPath,
+          supersedes: <String>{
+            // 带样式的 ASS 取代同次导出的 SRT；
+            if (r.styledOutputPath != null && r.outputPath != null)
+              r.outputPath!,
+            // 本轮删掉的旧 ASS（参考没了 / ASS 阶段失败 / 落点换了）：库里还选着
+            // 它就切到本轮产物，不然播放器继续找一个已不存在的过期字幕。
+            ...r.removedOutputPaths,
+          },
         )) {
           job.registeredBookUids.add(episode.bookUid);
         }
@@ -1136,19 +1151,20 @@ class AppVideoSubtitleService {
   /// 字幕 cue 一起清掉（与播放页选字幕同一事务写法）：单视频重进时先读 cue 缓存，
   /// 留着旧源的 cue，外挂档案解析失败时会把旧字幕当成新选择显示出来。返回是否写了。
   ///
-  /// [supersedes]：本次同时导出的 SRT。条目当前选的正是它（上一次生成登记的）时，
-  /// 换成带样式的 [output] 不算覆盖用户的选择。
+  /// [supersedes]：被 [output] 取代的本管线产物——同次导出的 SRT（有带样式的 ASS
+  /// 时），以及本轮删掉的旧 ASS。条目当前选的正是其中之一（上一次生成登记的）时，
+  /// 换成 [output] 不算覆盖用户的选择。
   Future<bool> _registerSubtitleSource(
     String bookUid,
     String output, {
     bool replace = false,
-    String? supersedes,
+    Set<String> supersedes = const <String>{},
   }) async {
     final VideoBookRow? row = await database.getVideoBookByBookUid(bookUid);
     if (row == null) return false;
     final String? current = row.subtitleSource;
     final VideoBookRepository repo = VideoBookRepository(database);
-    if (replace || (supersedes != null && current == supersedes)) {
+    if (replace || (current != null && supersedes.contains(current))) {
       if (current == output) return false;
       await repo.saveSubtitleSelection(
         bookUid: bookUid,
