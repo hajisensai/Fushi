@@ -1072,7 +1072,17 @@ class JellyfinApi {
         '${accessToken == null ? '' : ', Token="$accessToken"'}';
   }
 
+  /// 本应用自报的 `User-Agent`（`Fushi/<版本>`）。定义在
+  /// [mediaServerUserAgent]（与认证头 `Client=` 同源），这里只是本类的入口。
+  ///
+  /// 为何必须显式设：不设时 dart:io 会自报 `Dart/<SDK> (dart:io)`，而部分
+  /// Emby 部署的 CDN / WAF 前置按 UA 拦「Dart」子串，整个域名回裸 404
+  /// （BUG-3855）。[identity] 只给测试注入。
+  static String userAgentFor([MediaServerClientIdentity? identity]) =>
+      mediaServerUserAgent(identity);
+
   Map<String, String> get _headers => <String, String>{
+    'User-Agent': userAgentFor(),
     'Authorization': authHeaderFor(accessToken, deviceId),
     'X-Emby-Authorization': authHeaderFor(accessToken, deviceId),
     'Content-Type': 'application/json',

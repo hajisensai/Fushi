@@ -121,6 +121,50 @@ void main() {
       }
       expect(ErrorLogService.instance.entries, isEmpty, reason: '成功不记失败轨迹');
     });
+
+    // 部分公益服的 Cloudflare 前置按 UA 拦「Dart」子串：不显式设 UA 时
+    // package:http 会自报 `Dart/<SDK> (dart:io)`，整站回裸 404（连公开端点
+    // 和登录都进不去），而 SenPlayer / Hills / Yamby 因自报 UA 正常。
+    test('每个请求自报 User-Agent：产品名/版本，不含 Dart', () async {
+      mediaServerClientIdentity = const MediaServerClientIdentity(
+        deviceName: 'MacBook',
+        version: '3.0.1',
+      );
+      expect(JellyfinApi.userAgentFor(), 'Fushi/3.0.1');
+      expect(JellyfinApi.userAgentFor(), isNot(contains('Dart')));
+
+      final List<http.Request> seen = <http.Request>[];
+      await signInJellyfinServer(
+        repo,
+        url: 'http://nas:8096',
+        username: 'u',
+        password: _password,
+        httpClientFactory: () => MockClient((http.Request req) async {
+          seen.add(req);
+          if (req.url.path == '/Users/AuthenticateByName') {
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'AccessToken': _token,
+                'User': <String, Object?>{'Id': 'u1'},
+              }),
+              200,
+            );
+          }
+          return http.Response(
+            jsonEncode(<String, Object?>{'ServerName': 'N'}),
+            200,
+          );
+        }),
+      );
+      expect(seen, isNotEmpty);
+      for (final http.Request req in seen) {
+        expect(
+          req.headers['user-agent'],
+          'Fushi/3.0.1',
+          reason: '${req.method} ${req.url.path} 缺自报 UA',
+        );
+      }
+    });
   });
 
   group('身份解析', () {
@@ -199,6 +243,7 @@ void main() {
         expect(text, contains(line));
       }
       expect(text, contains('Client="Fushi"'));
+      expect(text, contains('user-agent: Fushi/'), reason: 'UA 也进轨迹（BUG-3855）');
       expect(text, isNot(contains(_password)));
       expect(text, isNot(contains('emby.example.com')), reason: '不记主机名');
     });

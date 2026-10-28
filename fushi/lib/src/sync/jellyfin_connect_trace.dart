@@ -2,7 +2,11 @@ import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
-import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart';
+import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
+    show
+        MediaServerClientIdentity,
+        mediaServerClientIdentity,
+        mediaServerUserAgent;
 
 /// 「添加服务器 / 添加线路」一次尝试的请求轨迹（AL8qJr6yr-）：每发一条请求记
 /// `方法 路径 → 状态码 [content-type] [server]`，失败时整段写进错误日志
@@ -39,6 +43,9 @@ class JellyfinConnectTrace {
       '$stage failed for $shape',
       'client: Client="${id.product}" Device="${id.deviceName}" '
           'Version="${id.version}"',
+      // UA 也记：部分服务器按 UA 拦（CDN/WAF 前置拦 Dart 默认 UA，BUG-3855），
+      // 没有这一行时「全站 404」与「服务器真没这条路由」在日志里完全一样。
+      'user-agent: ${mediaServerUserAgent()}',
       'requests (${_lines.length}):',
       for (final String line in _lines) '  $line',
       'error: ${_withoutHost(redactCredentialsInText(error.toString()), uri)}',
