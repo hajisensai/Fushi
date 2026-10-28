@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -319,12 +320,9 @@ void main() {
     );
     expect(hero, findsOneWidget, reason: '唯一在看的一部被提成首屏主卡');
     expect(
-      find.descendant(
-        of: hero,
-        matching: find.byKey(const ValueKey<String>('home_video_hero_play')),
-      ),
+      find.ancestor(of: hero, matching: find.byType(FushiContinueHero)),
       findsOneWidget,
-      reason: '前提：这张是主卡（带「继续」主按钮），不是横滚行卡',
+      reason: '前提：这张是主卡（FushiContinueHero），不是横滚行卡',
     );
     expect(
       tagTextIn('home_video_continue_collection_$heroCid', 'HeroTag'),

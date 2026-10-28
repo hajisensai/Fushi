@@ -13,7 +13,6 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
-import 'package:fushi/src/utils/components/fushi_resume_actions.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/music/music_format_badge.dart';
@@ -193,6 +192,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   }
 
   /// 曲库顶部「继续收听」卡：与书架 / 视频 / 游戏同一张 [FushiContinueHero]。
+  /// 点按 = 续播，长按 / 右键 = 打开专辑（卡上不放按钮）。
   Widget? _buildContinueHero(MusicLibrarySnapshot snap) {
     final MusicTrackRow? track = _lastPlayed;
     if (track == null || _query.isNotEmpty) return null;
@@ -220,13 +220,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         ].join(' · '),
       ],
       onOpen: () => _continueListening(track, snap),
-      secondary: album == null
-          ? null
-          : FushiResumeSecondaryAction(
-              icon: FushiIcons.info,
-              label: t.music_continue_open_album,
-              onPressed: () => _openAlbum(album),
-            ),
+      onLongPress: album == null ? null : () => _openAlbum(album),
     );
   }
 

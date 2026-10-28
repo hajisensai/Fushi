@@ -11,7 +11,6 @@ import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
-import 'package:fushi/src/utils/components/fushi_resume_actions.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
@@ -5270,12 +5269,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   /// 视频首页概览（2026-10 重设计，设计稿 `fushi/build/video_home_design/`）：
   ///
-  /// - **首屏主卡**：合并后「继续观看」的第一项（最近在看的那部）。竖排版整宽、
-  ///   上图下文（[_buildHomeHeroCard]）；横排版（内容宽 ≥
-  ///   [kVideoHomeHeroSplitMinWidth]）大图铺满、文字叠在左侧渐暗上，右侧并排
-  ///   「已更新未看」列表面板（[_buildHomeHeroSplit]，面板为空则主卡占满整宽）。
-  /// - 其下横滚行：竖排版「已更新未看 → 继续观看 → 最近添加」；横排版「已更新
-  ///   未看」已在面板里，只剩「继续观看 → 最近添加」。主卡那部不再进继续观看行。
+  /// - **首屏主卡**：合并后「继续观看」的第一项（最近在看的那部），满宽
+  ///   [FushiContinueHero]（[_buildHomeContinueHero]，2026-10-28 与书架 / 游戏
+  ///   统一；原横排版右侧「已更新未看」面板随之撤掉）。
+  /// - 其下横滚行：「已更新未看 → 继续观看 → 最近添加」。主卡那部不再进继续
+  ///   观看行。
   /// - 「下一集」不再单独成行：[continueWatchingSeriesIndex] 本身就是 Next-Up 口径
   ///   （最近那集没看完停它、看完取下一集），每部作品在继续观看里只出现一次。
   ///
@@ -5369,9 +5367,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 「继续观看」主卡：与书架 / 漫画书架 / 游戏首页同一张满宽
   /// [FushiContinueHero]（2026-10-28 统一）。剧照（无字背景优先）铺满卡底当海报，
   /// 起始侧竖版作品封面，信息列「继续观看」眉标 + 片名 + 副标题（远端条目前缀
-  /// 云图标）+ 进度，行尾「继续 · 第 N 集」与「详情」（只有合集有详情页）。
+  /// 云图标）+ 进度。卡上不放按钮：点按 = 续播，长按 / 右键 = 条目菜单（合集
+  /// 菜单里有「打开详情」）。
   Widget _buildHomeContinueHero(_HomeHeroData hero) {
-    final VoidCallback? onDetail = hero.onDetail;
     final double? progress = hero.progress;
     final ImageProvider? poster = hero.poster;
     final ImageProvider? still = hero.image(overlay: true);
@@ -5402,14 +5400,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       progressLabel: progress == null ? null : '${(progress * 100).round()}%',
       onOpen: _selectionMode ? null : hero.onPlay,
       onLongPress: _selectionMode ? null : hero.onLongPress,
-      secondary: onDetail == null
-          ? null
-          : FushiResumeSecondaryAction(
-              key: const ValueKey<String>('home_video_hero_detail'),
-              icon: FushiIcons.info,
-              label: t.video_hero_detail_view,
-              onPressed: _selectionMode ? null : onDetail,
-            ),
       entranceIndex: null,
     );
   }
@@ -6272,7 +6262,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ),
       onPlay: () => _openSlot(target, playlistCollectionId: collection.id),
       onLongPress: () => _showCollectionContextMenu(collection),
-      onDetail: () => _openCollectionDetail(collection),
       cloud: target.local == null,
     );
   }
@@ -6636,7 +6625,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }
 
   /// 首页分区的首屏骨架：与 [_buildOverviewSection] 同外边距、同几何——主卡位
-  /// （竖排版 16:9 大图 + 文字区；横排版按整宽主卡高）+ 两条竖版 2:3 卡的横滚行
+  /// （[FushiContinueHero.placeholderHeight]）+ 两条竖版 2:3 卡的横滚行
   /// （[videoHomePosterCardWidth]）。标题位是一条文字条，高度由同样式的单行文本
   /// 撑出，与真实行标题逐像素同高。真实版面随数据变（有无主卡 / 面板、0–3 条
   /// 行），骨架取最常见的「主卡 + 两条行」；[withHero] 为 false（库里没有任何播放
@@ -6649,7 +6638,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double cardWidth = videoHomePosterCardWidth(availableWidth);
     final double coverHeight = videoCoverHeightForPortraitWidth(cardWidth);
-    final bool split = availableWidth >= kVideoHomeHeroSplitMinWidth;
     // 盖满一行可视宽再多一张（行是懒加载列表，多出的不构建）。
     final int cardCount =
         ((availableWidth / (cardWidth + tokens.spacing.gap)).ceil() + 1).clamp(
@@ -6679,42 +6667,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ],
       ),
     );
-    final Widget hero = split
-        ? FushiSkeleton(
-            height: videoHomeHeroSplitHeight(availableWidth),
-            borderRadius: const BorderRadius.all(Radius.circular(28)),
-          )
-        : ClipRRect(
-            borderRadius: const BorderRadius.all(Radius.circular(24)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                FushiSkeleton(
-                  height: videoHomeHeroStillHeight(availableWidth),
-                  borderRadius: BorderRadius.zero,
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      FushiSkeleton.line(widthFactor: 0.7, height: 18),
-                      const SizedBox(height: 8),
-                      FushiSkeleton.line(widthFactor: 0.4, height: 12),
-                      const SizedBox(height: 14),
-                      FushiSkeleton.line(height: 4),
-                      const SizedBox(height: 14),
-                      const FushiSkeleton(
-                        width: 160,
-                        height: 40,
-                        borderRadius: BorderRadius.all(Radius.circular(20)),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
+    // 主卡位与真主卡（[FushiContinueHero]，视频恒带剧照比例）同一个高度判据。
+    final Widget hero = FushiSkeleton(
+      height: FushiContinueHero.placeholderHeight(
+        availableWidth,
+        gap: tokens.spacing.gap,
+        still: true,
+      ),
+      borderRadius: FushiM3eShape.containerLargeRadius,
+    );
     return FushiSkeletonShimmer(
       child: Padding(
         padding: EdgeInsets.fromLTRB(
@@ -10566,7 +10527,6 @@ class _HomeHeroData {
     required this.playLabel,
     required this.onPlay,
     this.onLongPress,
-    this.onDetail,
     this.progress,
     this.detailLine,
     this.poster,
@@ -10596,9 +10556,6 @@ class _HomeHeroData {
   final String playLabel;
   final VoidCallback onPlay;
   final VoidCallback? onLongPress;
-
-  /// 「详情」按钮；null = 没有详情页（散片 / 远端），不画按钮。
-  final VoidCallback? onDetail;
 
   /// 目标集只在 host 上（点开流播）。
   final bool cloud;

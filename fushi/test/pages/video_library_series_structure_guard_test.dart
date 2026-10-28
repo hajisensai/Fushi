@@ -37,8 +37,7 @@ void main() {
     ).readAsStringSync();
 
     expect(page, contains('_buildContinueRow('));
-    expect(page, contains('_buildHomeHeroCard('));
-    expect(page, contains('_buildHomeHeroSplit('));
+    expect(page, contains('_buildHomeContinueHero('));
     expect(page, contains('_buildSubscriptionUpdatesRow('));
     expect(
       page,

@@ -812,13 +812,9 @@ class _MediaCollectionGridDetailPageState
         final double hPad = wide ? tokens.spacing.card * 1.5 : 12;
         final ({int finished, int counted, double? progress}) summary =
             summarizeCollectionMembers(entries);
-        final CollectionMemberEntry? next = widget.onOpenMember == null
-            ? null
-            : pickContinueMember(entries);
-        // 封面前排 = 「继续」会打开的那本（看到第五本就显示第五本），其余按合集序
-        // 垫在后面当叠层。
-        final CollectionMemberEntry? current =
-            next ?? pickContinueMember(entries);
+        // 封面前排 = 正在读的那本（看到第五本就显示第五本），其余按合集序垫在
+        // 后面当叠层。
+        final CollectionMemberEntry? current = pickContinueMember(entries);
         final List<Widget> covers = <Widget>[
           if (current?.info?.cover case final Widget cover) cover,
           for (final CollectionMemberEntry e in entries)
@@ -845,13 +841,6 @@ class _MediaCollectionGridDetailPageState
           covers: covers.take(3).toList(),
           tags: _collectionTags,
           wide: wide,
-          continueStarted:
-              next?.info?.lastReadAt != null || (next?.info?.progress ?? 0) > 0,
-          continueLabel: next?.displayTitle,
-          onContinue: next == null
-              ? null
-              : () =>
-                    widget.onOpenMember!(next.row.mediaType, next.row.entryKey),
           onEditTags: _editCollectionTags,
         );
         final Widget hero = heroMaterial == null

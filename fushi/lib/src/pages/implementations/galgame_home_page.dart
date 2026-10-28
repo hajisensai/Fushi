@@ -35,7 +35,6 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
-import 'package:fushi/src/utils/components/fushi_resume_actions.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromePinnedOffset;
@@ -788,7 +787,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
 
   /// 「继续游戏」大卡：与书架 / 漫画书架同一张满宽 [FushiContinueHero]
   /// （2026-10-28 统一）。游戏盒封面自带框；眉标「游玩中 / 继续游戏」，元信息
-  /// 最后游玩 + 累计时长；整卡点按 = 启动，次按钮「查看详情」。
+  /// 最后游玩 + 累计时长；整卡点按 = 启动，长按 / 右键 = 详情（与随机推荐卡同一
+  /// 约定；卡上不放按钮，2026-10-28 与书 / 视频 / 音乐统一）。
   Widget _buildHero(BuildContext context, GalgameEntry game) {
     final bool hasPlayed = game.lastPlayedMs > 0;
     final String statusLabel = game.playStatus == GalgamePlayStatus.playing
@@ -806,11 +806,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         '${t.game_stat_total_time}  ${formatStatTime(game.totalPlaySeconds * 1000)}',
       ],
       onOpen: () => unawaited(_launchGame(game)),
-      secondary: FushiResumeSecondaryAction(
-        icon: FushiIcons.info,
-        label: t.game_view_detail,
-        onPressed: () => unawaited(_openDetail(game)),
-      ),
+      onLongPress: () => unawaited(_openDetail(game)),
       entranceIndex: null,
     );
   }

@@ -1,17 +1,20 @@
 /// 合集详情页 hero（书架 / 漫画库 / 游戏库共用）：堆叠封面大图 + 合集名 + 项数 /
-/// 读完数 + 整体进度（M3E 波浪条 + Display 级百分比；Apple 细线条）+ 「继续」主
-/// 按钮（M3E 尺寸档 M 填充按钮；Apple 填充胶囊）+ 彩色标签 chip 与「编辑标签」。
+/// 读完数 + 整体进度（M3E 波浪条 + Display 级百分比；Apple 细线条）+ 彩色标签
+/// chip 与「编辑标签」。
+///
+/// 不放「继续」按钮（2026-10-28 用户拍板砍掉）：要读哪本直接点下面的成员卡。
+/// 底色与库页的「继续」大卡同一块色（[fushiHeroBlockColor]），里外统一。
 ///
 /// 宽屏（[wide]）封面在左、信息在右；窄屏与作品详情页同一套紧凑排法（小封面在
-/// 起始侧、合集名 / 项数在旁，进度 / 标签 / 继续按钮占满整宽）。只吃纯值与回调，
-/// 数据求值（续读是哪一本、进度怎么算）在页面与 `collection_member_view.dart`。
+/// 起始侧、合集名 / 项数在旁，进度 / 标签占满整宽）。只吃纯值与回调，进度怎么算
+/// 在页面与 `collection_member_view.dart`。
 library;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
-import 'package:fushi/src/utils/components/fushi_resume_actions.dart';
+import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/utils.dart';
@@ -27,9 +30,6 @@ class CollectionDetailHeroCard extends StatelessWidget {
     this.progress,
     this.covers = const <Widget>[],
     this.tags = const <BookTagRow>[],
-    this.continueLabel,
-    this.continueStarted = false,
-    this.onContinue,
     this.onEditTags,
     this.wide = false,
   });
@@ -46,13 +46,6 @@ class CollectionDetailHeroCard extends StatelessWidget {
   /// 前几本的纯封面（首个在最前），最多取 3 张堆叠。
   final List<Widget> covers;
   final List<BookTagRow> tags;
-
-  /// 「继续」目标的名字（按钮副文案）；null = 只显示「继续 / 开始」。
-  final String? continueLabel;
-
-  /// 目标已经读过（「继续」）还是没读过（「开始」）。
-  final bool continueStarted;
-  final VoidCallback? onContinue;
   final VoidCallback? onEditTags;
   final bool wide;
 
@@ -124,15 +117,6 @@ class CollectionDetailHeroCard extends StatelessWidget {
           ],
         ),
       ],
-      if (onContinue != null) ...<Widget>[
-        SizedBox(height: tokens.spacing.gap * 2),
-        _ContinueButton(
-          started: continueStarted,
-          subtitle: continueLabel,
-          onPressed: onContinue!,
-          fill: !wide,
-        ),
-      ],
     ];
 
     final Widget body = wide
@@ -182,17 +166,9 @@ class CollectionDetailHeroCard extends StatelessWidget {
   }
 }
 
-/// hero 色块底色：primaryContainer 叠在 surfaceContainerLow 上。
-///
-/// 深色下 vibrant 方案的 primaryContainer 是 tone 30 的满彩度色（紫色主题下一大块
-/// 纯紫，iOS 深色反馈截图），叠 62% 后整块 hero 像一面纯色墙、压过封面与正文；
-/// 深色改叠 32%，色相仍在、彩度降到与其它深色卡面同一档。浅色维持原配比。
-Color collectionHeroBackground(ColorScheme scheme) => Color.alphaBlend(
-  scheme.primaryContainer.withValues(
-    alpha: scheme.brightness == Brightness.dark ? 0.32 : 0.62,
-  ),
-  scheme.surfaceContainerLow,
-);
+/// hero 色块底色：与「继续」大卡同一块色，见 [fushiHeroBlockColor]。
+Color collectionHeroBackground(ColorScheme scheme) =>
+    fushiHeroBlockColor(scheme);
 
 /// 整体进度：「整体进度」小标题 + Display 级百分比 + 波浪进度条（Apple 细线条）。
 class _HeroProgress extends StatelessWidget {
@@ -258,44 +234,6 @@ class _HeroProgress extends StatelessWidget {
           ],
         ),
       ],
-    );
-  }
-}
-
-/// 「继续 / 开始」主按钮：M3E 尺寸档 M 的填充按钮（56 高、左右 24 留白，按压
-/// 形变），Apple 强调色填充胶囊。副文案是目标条目名。
-///
-/// 不能用扩展 FAB：它把图标 + 文字按无界宽度排版后居中，可用宽度不够时内容
-/// 从两侧溢出按钮（手机上长条目名把播放图标挤到按钮左缘外，BUG-3063）。填充
-/// 按钮的文字是 Flexible，宽度不够就按省略号收缩，左右留白恒等于尺寸档 token。
-class _ContinueButton extends StatelessWidget {
-  const _ContinueButton({
-    required this.started,
-    required this.subtitle,
-    required this.onPressed,
-    this.fill = false,
-  });
-
-  final bool started;
-  final String? subtitle;
-  final VoidCallback onPressed;
-
-  /// 窄屏紧凑 hero：占满整行宽度（与作品详情页主按钮同形）。
-  final bool fill;
-
-  @override
-  Widget build(BuildContext context) {
-    final String label = started
-        ? t.collection_detail_continue
-        : t.collection_detail_start;
-    final String text = subtitle == null || subtitle!.isEmpty
-        ? label
-        : '$label · $subtitle';
-    return FushiResumeActions(
-      primaryKey: const ValueKey<String>('collection_detail_continue'),
-      label: text,
-      onPressed: onPressed,
-      fill: fill,
     );
   }
 }

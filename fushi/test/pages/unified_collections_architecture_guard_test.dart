@@ -145,18 +145,18 @@ void main() {
   test('视频首页形态：首屏主卡 + 横滚行 + 分区化媒体库墙（TODO-2486 → 2026-10 重设计）', () {
     // TODO-2486 用户拍板设计稿（2026-08-01）：hero →「继续观看」/「最近添加」横滚行
     // → 分区化媒体库墙。hero 轮播已随 #792 dashboard 化删除（2026-10-04）。
-    // 2026-10 首页重设计：继续观看第一项提成首屏主卡（竖排版上图下文 / 横排版大图
-    // 叠字 + 右侧「已更新未看」面板），「下一集」并入继续观看；行卡统一 2:3 竖封面。
-    // 撤任一接线即转红。
+    // 2026-10 首页重设计：继续观看第一项提成首屏主卡，「下一集」并入继续观看；
+    // 行卡统一 2:3 竖封面。2026-10-28 主卡换成与书架 / 游戏共用的满宽
+    // FushiContinueHero，原横排版右侧「已更新未看」面板撤掉。撤任一接线即转红。
     expect(
-      homeSrc.contains('_buildHomeHeroCard('),
+      homeSrc.contains('_buildHomeContinueHero('),
       isTrue,
-      reason: '竖排版首屏主卡（继续观看第一项）',
+      reason: '首屏主卡（继续观看第一项）',
     );
     expect(
-      homeSrc.contains('_buildHomeHeroSplit('),
+      homeSrc.contains('FushiContinueHero('),
       isTrue,
-      reason: '横排版首屏主卡 + 「已更新未看」面板',
+      reason: '主卡走共用的继续大卡',
     );
     expect(
       homeSrc.contains('_buildNextEpisodeRow'),

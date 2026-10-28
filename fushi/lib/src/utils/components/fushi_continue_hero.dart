@@ -7,28 +7,27 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_press_scale.dart';
-import 'package:fushi/src/utils/components/fushi_resume_actions.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
-import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
-    show FushiButtonSize;
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// 书架 / 漫画书架 / 游戏 / 视频 / 首页共用的「继续」大卡（2026-10-28 统一）：
-/// 满宽 tonal 卡，起始侧封面，「眉标 → 标题 → 元信息 → 进度 → 按钮」，背景
-/// 海报。整卡点按 = 主按钮，悬停抬升（[FushiHoverLift]）、按压下沉与焦点环由
+/// 满宽 tonal 卡，起始侧封面，「眉标 → 标题 → 元信息 → 进度」，背景海报。
+/// 整卡点按 = 继续，悬停抬升（[FushiHoverLift]）、按压下沉与焦点环由
 /// [FushiCard] 提供；进场随页面错峰淡入。
 ///
 /// 背景海报只用于有构图的剧照（视频，给 [backdropAspectRatio]）：宽卡变成占满
 /// 整行的横幅，剧照按原比例**完整**贴在行尾（不裁切），起始边淡出进卡面，封面
 /// 与文字在起始侧。书 / 漫画 / 游戏是纯色卡（模糊封面底纹 2026-10-28 撤掉）。
 ///
-/// 整卡是唯一的焦点站点：主按钮只是同一动作的视觉入口，不再单独抢焦点；次按钮
-/// （「详情」）是另一个动作，保留可聚焦。
+/// 卡上不放任何按钮（2026-10-28 用户拍板）：整卡点按 = 继续，「详情 / 打开专辑」
+/// 这类次动作走长按 / 右键（[onLongPress]）。整卡是唯一的焦点站点。
+///
+/// 底色与合集详情 hero 同一块色（[fushiHeroBlockColor]），库页外的「继续」卡与
+/// 合集里的 hero 一眼看出是同一种东西。
 class FushiContinueHero extends StatelessWidget {
   const FushiContinueHero({
     required this.cover,
@@ -39,7 +38,6 @@ class FushiContinueHero extends StatelessWidget {
     this.metaLines = const <String>[],
     this.progress,
     this.progressLabel,
-    this.secondary,
     this.focusId,
     this.cardKey,
     this.progressKey,
@@ -56,6 +54,23 @@ class FushiContinueHero extends StatelessWidget {
   /// = 卡高 × 比例，宽屏下约占一半，起始侧留给封面与文字。
   static double bannerHeight(double cardWidth) =>
       (cardWidth * 0.3).clamp(260.0, 420.0);
+
+  /// 内容区（扣掉内边距）≥ 它时是宽卡：封面 176 高、横幅版式可用。
+  static const double _roomyMinWidth = 640;
+
+  /// 首屏骨架用的卡高：与真卡同一套判据（[still] = 调用方给了
+  /// [backdropAspectRatio]）。横幅的高只随卡宽变，与剧照有没有加载出来无关，
+  /// 骨架换真卡不跳；非横幅按封面高估（信息列一般矮于封面）。
+  static double placeholderHeight(
+    double cardWidth, {
+    required double gap,
+    required bool still,
+  }) {
+    final double pad = gap * 2;
+    final bool roomy = cardWidth - pad * 2 >= _roomyMinWidth;
+    if (roomy && still) return bannerHeight(cardWidth);
+    return (roomy ? 176.0 : 102.0) + pad * 2;
+  }
 
   /// 封面（调用方自带材质 / 占位）；[frameCover] 时外面套 [ShelfCoverFrame]。
   final Widget cover;
@@ -78,12 +93,11 @@ class FushiContinueHero extends StatelessWidget {
 
   /// 整卡点按 = 继续（卡上不再单放「继续」主按钮）。
   final VoidCallback? onOpen;
-  final FushiResumeSecondaryAction? secondary;
   final FushiFocusId? focusId;
   final Key? cardKey;
   final Key? progressKey;
 
-  /// 长按 / 右键（视频首页的条目菜单）。
+  /// 长按 / 右键：条目菜单或详情（游戏详情、音乐专辑、视频条目菜单）。
   final VoidCallback? onLongPress;
 
   /// 背景海报（视频剧照）。null 或墨水屏 = 纯色卡。
@@ -189,22 +203,6 @@ class FushiContinueHero extends StatelessWidget {
       );
     }
 
-    // 卡上只剩次按钮（「详情」/「打开专辑」）；继续 = 点整张卡。
-    final FushiResumeSecondaryAction? second = secondary;
-    Widget actions({required bool fill}) => second == null
-        ? const SizedBox.shrink()
-        : FushiPressScale(
-            scale: 0.96,
-            child: FushiFilledButton.tonalIcon(
-              key: second.key,
-              size: FushiButtonSize.m,
-              onPressed: second.onPressed,
-              icon: FushiIcon(second.icon),
-              label: Text(second.label, maxLines: 1),
-            ),
-          );
-    final double actionsGap = second == null ? 0 : tokens.spacing.gap * 2;
-
     // 海报用**透明度遮罩**淡出（不是盖一层卡面色渐变）：卡片的悬停 / 按压高亮
     // 画在内容下面，盖固定色会在海报起始边露出一道接缝。
     Widget fade(Widget image, List<double> opacity, List<double> stops) =>
@@ -225,7 +223,8 @@ class FushiContinueHero extends StatelessWidget {
     final Widget card = FushiCard(
       key: cardKey,
       focusId: focusId,
-      color: tokens.surfaces.group,
+      color: eink || apple ? tokens.surfaces.group : fushiHeroBlockColor(cs),
+      borderRadius: eink || apple ? null : FushiM3eShape.containerLargeRadius,
       // 背景海报要贴边铺满到圆角，内边距挪到 Stack 里的内容层。
       padding: EdgeInsets.zero,
       onTap: onOpen,
@@ -235,15 +234,15 @@ class FushiContinueHero extends StatelessWidget {
         builder: (BuildContext context, BoxConstraints outer) {
           final EdgeInsets pad = EdgeInsets.all(tokens.spacing.gap * 2);
           final BoxConstraints c = outer.deflate(pad);
-          final bool roomy = c.maxWidth >= 640;
+          final bool roomy = c.maxWidth >= _roomyMinWidth;
           final double gap = tokens.spacing.gap * (roomy ? 2.5 : 1.5);
-          final double? stillAspect = poster == null
-              ? null
-              : backdropAspectRatio;
+          // 横幅只看调用方有没有声明剧照比例，不看剧照这次有没有图：卡高不随
+          // 图片加载 / 缺图跳变，首屏骨架（[placeholderHeight]）也能对齐。
+          final double? stillAspect = backdropAspectRatio;
           final bool banner = roomy && stillAspect != null;
           final double cardHeight = banner ? bannerHeight(outer.maxWidth) : 0;
           // 横幅里剧照按原比例完整显示的宽（行尾）；起始侧剩下的给封面与文字。
-          final double stillWidth = banner
+          final double stillWidth = banner && poster != null
               ? math.min(cardHeight * stillAspect, outer.maxWidth * 0.62)
               : 0;
           final double coverHeight = banner
@@ -267,17 +266,18 @@ class FushiContinueHero extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: <Widget>[
-                  PositionedDirectional(
-                    top: 0,
-                    bottom: 0,
-                    end: 0,
-                    width: stillWidth,
-                    child: fade(
-                      poster!,
-                      <double>[0, 1, 1],
-                      const <double>[0, 0.22, 1],
+                  if (poster != null)
+                    PositionedDirectional(
+                      top: 0,
+                      bottom: 0,
+                      end: 0,
+                      width: stillWidth,
+                      child: fade(
+                        poster,
+                        <double>[0, 1, 1],
+                        const <double>[0, 0.22, 1],
+                      ),
                     ),
-                  ),
                   PositionedDirectional(
                     top: 0,
                     bottom: 0,
@@ -296,15 +296,7 @@ class FushiContinueHero extends StatelessWidget {
                                 constraints: const BoxConstraints(
                                   maxWidth: 520,
                                 ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    info(),
-                                    SizedBox(height: actionsGap),
-                                    actions(fill: false),
-                                  ],
-                                ),
+                                child: info(),
                               ),
                             ),
                           ),
@@ -318,7 +310,7 @@ class FushiContinueHero extends StatelessWidget {
           }
 
           final Widget body = roomy
-              // 宽卡：封面 | 信息列（眉标 → 标题 → 元信息 → 进度 → 按钮）；信息列
+              // 宽卡：封面 | 信息列（眉标 → 标题 → 元信息 → 进度）；信息列
               // 封顶 520，进度条不被拉成整行长线。
               ? Row(
                   children: <Widget>[
@@ -329,15 +321,7 @@ class FushiContinueHero extends StatelessWidget {
                         alignment: AlignmentDirectional.centerStart,
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 520),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              info(),
-                              SizedBox(height: actionsGap),
-                              actions(fill: false),
-                            ],
-                          ),
+                          child: info(),
                         ),
                       ),
                     ),
@@ -354,10 +338,6 @@ class FushiContinueHero extends StatelessWidget {
                         Expanded(child: info()),
                       ],
                     ),
-                    if (second != null) ...<Widget>[
-                      SizedBox(height: tokens.spacing.gap * 1.5),
-                      actions(fill: true),
-                    ],
                   ],
                 );
           final Widget padded = Padding(padding: pad, child: body);
@@ -410,3 +390,16 @@ class FushiContinueHero extends StatelessWidget {
         : FushiStaggeredEntrance(index: index, child: lifted);
   }
 }
+
+/// 「继续」卡与合集详情 hero 共用的 M3E 色块：primaryContainer 叠在
+/// surfaceContainerLow 上。
+///
+/// 深色下 vibrant 方案的 primaryContainer 是 tone 30 的满彩度色（紫色主题下一大块
+/// 纯紫，iOS 深色反馈截图），叠 62% 后整块像一面纯色墙、压过封面与正文；深色改叠
+/// 32%，色相仍在、彩度降到与其它深色卡面同一档。浅色维持原配比。
+Color fushiHeroBlockColor(ColorScheme scheme) => Color.alphaBlend(
+  scheme.primaryContainer.withValues(
+    alpha: scheme.brightness == Brightness.dark ? 0.32 : 0.62,
+  ),
+  scheme.surfaceContainerLow,
+);
