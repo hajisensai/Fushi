@@ -69,7 +69,7 @@ verified at runtime on this machine.
   WebView2, and Flutter parks focus at the root scope via the engine's
   `unfocused` view event. Test: `test/pointer_down_view_focus_test.dart`.
 
-## Composition host HWND is a hidden child, not an owned top-level (BUG-3867, 2026-10-28)
+## Composition host HWND is a hidden child, not an owned top-level (BUG-3871, 2026-10-28)
 
 - `in_app_webview_manager.cpp` `createInAppWebView`: upstream created the
   WebView2 host window with style `0` and the Flutter view as "parent", which

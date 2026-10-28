@@ -1,4 +1,4 @@
-// 媒体对账读日志投影、不列目录（srs_media_sync.dart 的 locationId 路径，内核 store/sync2/media.rs，BUG-3867）：
+// 媒体对账读日志投影、不列目录（srs_media_sync.dart 的 locationId 路径，内核 store/sync2/media.rs，BUG-3869）：
 // 一个位置全系统只完整列举一次；之后各设备从同步收到的 MediaAt 操作得知位置上有什么，只对不认识的名字逐个查；
 // 投影说在、实际不在 → 记不在，持有它的设备下一轮补传。
 import 'dart:io';

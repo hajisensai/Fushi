@@ -1,4 +1,4 @@
-## BUG-3867 · 应用内浏览器真鼠标点 YouTube 设置二级项仍打不开（WebView2 宿主是 owned 顶层窗口，抢走激活）
+## BUG-3871 · 应用内浏览器真鼠标点 YouTube 设置二级项仍打不开（WebView2 宿主是 owned 顶层窗口，抢走激活）
 - **报告**：2026-10-28（用户：BUG-3858 修复已装上的 debug.21854 里，真鼠标仍点不开 YouTube 设置的二级菜单）
 - **真实性**：✅ 真 bug。真鼠标（SetCursorPos + SendInput）复现：齿轮能开菜单，字幕 / 休眠定时器 / 播放速度 / 画质四个二级项 4/4 打不开；Win32 记录显示网页得焦后激活窗口变成 `CustomPlatformView`（插件的隐藏宿主），下一次点击时主窗口被重新激活、焦点回到 FLUTTERVIEW（view focus `focused` → `unfocused` 来回一次），网页先 blur 后 mousedown。根因 `packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_manager.cpp`（`createInAppWebView` 的 `CreateWindowEx`，composition 分支 style 0 = owned 顶层）+ runner `fushi/windows/runner/win32_window.cpp` 的 WM_ACTIVATE 焦点还原。BUG-3858 的 Flutter 层探针用合成指针，不经系统激活流程，所以当时 10/10 通过却没覆盖真鼠标。
 - **[x] ① 已修复** — composition 宿主改为不可见 `WS_CHILD`，Chromium 焦点窗留在主窗口树内，点击网页不再触发激活切换。修复后真鼠标探针 10/10（证据 `fushi/.codex-test/windows-itest/win-itest-20261028-132801-dd41c240`，修复前 `win-itest-20261028-132221-50af5ed7` 4 项 FAIL）。

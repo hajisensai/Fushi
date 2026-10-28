@@ -140,7 +140,7 @@ namespace flutter_inappwebview_plugin
     // 从不显示）。上游是 style 0，即挂在 Flutter 视图上的 owned 顶层窗口：网页一拿键盘焦点
     // （Chromium SetFocus 自己的子窗），激活窗口就跟着换成这个隐藏顶层，主窗口失活；下一次
     // 真鼠标点击要重新激活主窗口，runner 在 WM_ACTIVATE 里把焦点还给 Flutter 视图，网页先收到
-    // blur 再收到 mousedown，YouTube 设置菜单这类失焦即收的弹层每点必关（BUG-3867）。
+    // blur 再收到 mousedown，YouTube 设置菜单这类失焦即收的弹层每点必关（BUG-3871）。
     // 做成子窗口后 Chromium 的焦点窗留在主窗口的窗口树里，点网页不再触发激活切换。
     const bool windowedHosting = webViewEnvironment && webViewEnvironment->windowedHosting;
 

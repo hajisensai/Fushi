@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-3867：composition 模式下 WebView2 的宿主 HWND 必须是 Flutter 视图的子窗口。
+/// BUG-3871：composition 模式下 WebView2 的宿主 HWND 必须是 Flutter 视图的子窗口。
 ///
 /// 上游建的是 style 0 的 owned 顶层窗口。Chromium 拿键盘焦点（SetFocus 自己挂在宿主下
 /// 的子窗）时，激活窗口随之换成这个隐藏顶层、主窗口失活；用户下一次真鼠标点击要重新激活
@@ -28,7 +28,7 @@ void main() {
     expect(
       compositionStyle,
       contains('WS_CHILD'),
-      reason: 'composition 宿主不是子窗口时，网页得焦会把激活窗口换走（BUG-3867）',
+      reason: 'composition 宿主不是子窗口时，网页得焦会把激活窗口换走（BUG-3871）',
     );
     expect(
       compositionStyle,

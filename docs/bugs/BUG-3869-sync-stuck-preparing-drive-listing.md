@@ -1,4 +1,4 @@
-## BUG-3867 · sync-stuck-preparing-drive-listing
+## BUG-3869 · sync-stuck-preparing-drive-listing
 - **报告**：2026-10-28（用户：复习页顶部同步进度条一直显示「正在准备同步」）
 - **真实性**：✅ 真 bug。用户本机（Google Drive App Data 空间 + 互联 host）实测：12:57:29 启动后的自动 sweep 到 13:02:54 才写下 `sync_last_sync_ms__googleDrive`，整整 5 分多钟进度行停在「正在准备同步」。本机互联目录里 `fushi-srs` 有 80,919 个文件，其中 99.5% 是复习卡媒体（`v2/media` 40,319 个 + 旧格式 `<写入者>/media` 40,235 个），操作分段只有 346 个。根因三层：
   1. `packages/fushi_engine/lib/srs/srs_media_sync.dart` 的 `srsSyncMedia` 每轮对账都 `location.list('media')` 把位置上的媒体目录整个列一遍（旧格式兜底再列一遍），数万个文件在网盘上要按页列几十个请求；它跑在 `runOnAuthenticatedSyncChannels` / `syncChannelPostRunHook` 持有的全局同步锁里，书同步只能干等。内核早有 `Body::Media` 操作与 `sync2_media` 投影，但从没有生产代码写过，远端有什么只能靠列目录。
