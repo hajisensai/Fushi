@@ -241,7 +241,7 @@ void main() {
     });
   });
 
-  group('BUG-3859 纯键盘空格背卡：翻到答案面后空格 / 数字键仍生效', () {
+  group('BUG-3864 纯键盘空格背卡：翻到答案面后空格 / 数字键仍生效', () {
     // 整面卡面换成「带 autofocus 焦点节点、按下即 requestFocus」的替身，模拟 Windows
     // 平台视图（custom_platform_view.dart 的 Focus(autofocus: true) + 指针按下抢焦）。
     Widget platformViewLikeFace(BuildContext context, SrsCardFace face) {
