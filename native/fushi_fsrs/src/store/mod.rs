@@ -71,6 +71,25 @@ impl<'a> Conn<'a> {
     }
 }
 
+/// 命令之间一条连接留着的页缓存上限。一条命令里照样能用满 `cache_size`（64 MB：收段后的缓存刷新这类大写事务
+/// 靠它不反复换页，压到 8 MB 实测端到端慢约 20%）；命令结束（守卫放锁）时还超过这个数，就把能丢的页还掉，
+/// 大命令跑完不常驻几十 MB。
+const IDLE_CACHE_BYTES: i32 = 8 * 1024 * 1024;
+
+impl Drop for Conn<'_> {
+    fn drop(&mut self) {
+        let Some(c) = self.0.as_ref() else { return };
+        let (mut used, mut high) = (0, 0);
+        // SAFETY: 句柄属于这条仍持着锁的连接，只读一项统计。
+        let rc = unsafe {
+            rusqlite::ffi::sqlite3_db_status(c.handle(), rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED, &mut used, &mut high, 0)
+        };
+        if rc == rusqlite::ffi::SQLITE_OK && used > IDLE_CACHE_BYTES {
+            let _ = c.release_memory();
+        }
+    }
+}
+
 impl Deref for Conn<'_> {
     type Target = Connection;
 

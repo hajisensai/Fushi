@@ -1481,6 +1481,8 @@ pub fn parse_device(s: &str) -> Result<Id, String> {
 }
 
 #[cfg(test)]
+mod mem_bench;
+#[cfg(test)]
 pub(crate) mod tests;
 
 impl SrsCore {
