@@ -20,6 +20,7 @@ import 'package:fushi/src/media/people/person_entry_sections.dart'
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_scrape_sections.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -196,6 +197,7 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
             final String title = track?.title ?? '';
             return FushiPageScaffold(
               title: title,
+              bottomNavigationBar: const MusicNowPlayingBar(),
               header: apple
                   ? null
                   : Padding(

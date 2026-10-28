@@ -5272,6 +5272,8 @@
   "music_library_empty": "曲库还是空的",
   "music_library_empty_hint": "添加一个放着音乐文件的文件夹。",
   "music_library_rescan": "重新扫描曲库",
+  "music_library_search_empty": "没有匹配项",
+  "music_library_search_hint": "搜索音乐",
   "music_listening_study_hint": "关闭时只计歌词页上查词、制卡或循环之后的收听时间",
   "music_listening_study_title": "听歌计入学习",
   "music_loudness_scan_hint": "后台做 EBU R128 测量，结果只存进曲库，不改动你的文件。",

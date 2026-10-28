@@ -5272,6 +5272,8 @@
   "music_library_empty": "No music yet",
   "music_library_empty_hint": "Add a folder that holds your music files.",
   "music_library_rescan": "Rescan library",
+  "music_library_search_empty": "No matches",
+  "music_library_search_hint": "Search music",
   "music_listening_study_hint": "When off, only listening after a lookup, card or loop on the lyrics page counts",
   "music_listening_study_title": "Count listening as study time",
   "music_loudness_scan_hint": "EBU R128 scan in the background. Results are stored in the library; your files are not modified.",

@@ -18,6 +18,7 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
     show musicAlbumDetailCover, kMusicAlbumDetailCoverSize;
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
@@ -331,6 +332,7 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
 
     return FushiPageScaffold(
       title: album.title,
+      bottomNavigationBar: const MusicNowPlayingBar(),
       header: apple
           ? null
           : Padding(

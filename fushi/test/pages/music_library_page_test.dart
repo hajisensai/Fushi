@@ -11,6 +11,7 @@ import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -125,6 +126,68 @@ void main() {
     await tester.tap(find.text(t.music_section_artists));
     await tester.pumpAndSettle();
     expect(find.text('Singer'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('搜索框按当前分区筛选；无匹配给空态；清空恢复', (WidgetTester tester) async {
+    final FushiDatabase db = await _seed();
+    addTearDown(db.close);
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db);
+    await _pump(tester, app, const MusicLibraryPage());
+    final Finder field = find.byKey(const ValueKey<String>('music-library-search'));
+    expect(field, findsOneWidget);
+
+    await tester.tap(find.text(t.music_section_songs));
+    await tester.pumpAndSettle();
+    await tester.enterText(field, 'song t1');
+    await tester.pumpAndSettle();
+    expect(find.text('Song t1'), findsOneWidget);
+    expect(find.text('Song t2'), findsNothing);
+
+    await tester.enterText(field, 'zzzz');
+    await tester.pumpAndSettle();
+    expect(find.text(t.music_library_search_empty), findsOneWidget);
+
+    await tester.enterText(field, '');
+    await tester.pumpAndSettle();
+    expect(find.text('Song t1'), findsOneWidget);
+    expect(find.text('Song t2'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('搜索框与分段选择器左缘对齐、宽 520-600、每个分区都在', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1424, 951);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = await _seed();
+    addTearDown(db.close);
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db);
+    await _pump(tester, app, const MusicLibraryPage());
+    final Finder field = find.byKey(
+      const ValueKey<String>('music-library-search'),
+    );
+    final Finder selector = find.byType(FushiPillSegmentedButton<MusicLibrarySection>);
+    final double selectorLeft = tester.getTopLeft(selector).dx;
+    final Finder bar = find.ancestor(
+      of: field,
+      matching: find.byType(ConstrainedBox),
+    );
+    for (final MusicLibrarySection s in MusicLibrarySection.values) {
+      await tester.tap(find.text(musicLibrarySectionLabel(s)).first);
+      await tester.pumpAndSettle();
+      expect(field, findsOneWidget, reason: '$s');
+      final Rect r = tester.getRect(field);
+      expect(r.left, selectorLeft, reason: '$s left edge');
+      expect(r.width, inInclusiveRange(520, 600), reason: '$s width');
+      expect(tester.getTopLeft(selector).dy, lessThan(r.top));
+    }
+    expect(bar, findsWidgets);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();

@@ -9,6 +9,7 @@ import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -171,6 +172,7 @@ class MusicTrackListPage extends StatelessWidget {
     final NavigatorState? navigator = Navigator.maybeOf(context);
     return FushiPageScaffold(
       title: title,
+      bottomNavigationBar: const MusicNowPlayingBar(),
       header: apple
           ? null
           : Padding(
