@@ -4,6 +4,7 @@
 //   （widget 测试里没有 WebView），原生 Fushi 卡面照常原生绘制；音频出口换成记录器。
 // - 卡面链接脚本在 node 里真的执行（最小 DOM 桩，跑的是生产常量本身）。
 // 数据库读写放 tester.runAsync。
+import 'dart:math' as math;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show FlutterView;
@@ -299,7 +300,14 @@ void main() {
             final Rect card = tester.getRect(
               find.byKey(const ValueKey<String>('srs-card-surface')),
             );
-            await tester.tapAt(card.bottomCenter - const Offset(0, 30));
+            // 原生卡面铺到透明底栏背后，底栏自己接点按（点进去会按到「显示答案」）：
+            // 点卡面露在底栏上沿以上的那部分。
+            final Rect bar = tester.getRect(
+              find.byKey(const ValueKey<String>('srs-review-bottom-bar')),
+            );
+            await tester.tapAt(
+              Offset(card.center.dx, math.min(card.bottom, bar.top) - 30),
+            );
             await _settle(tester);
             expect(answerShown(), isFalse);
           }
