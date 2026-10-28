@@ -44,6 +44,7 @@ class FushiContinueHero extends StatelessWidget {
     this.onLongPress,
     this.metaIcon,
     this.backdrop,
+    this.backdropAspectRatio,
     super.key,
   });
 
@@ -86,6 +87,11 @@ class FushiContinueHero extends StatelessWidget {
   /// 背景海报（视频剧照 / [blurredBackdrop] 模糊封面）：铺满整卡，起始侧用卡面色
   /// 渐变压住保证文字可读，行尾露出画面。null 或墨水屏 = 纯色卡。
   final Widget? backdrop;
+
+  /// 背景海报是一张有构图的图（视频剧照 16:9）时给它的宽高比：按原比例**完整**
+  /// 贴在卡片行尾（宽封顶卡宽 65%），起始边渐隐进卡面色，不再铺满裁成一条。
+  /// null = 铺满整卡（模糊封面这类没有构图的底纹）。
+  final double? backdropAspectRatio;
 
   /// 第一行元信息前的小图标（视频远端条目的云图标）。
   final IconData? metaIcon;
@@ -209,7 +215,21 @@ class FushiContinueHero extends StatelessWidget {
           final EdgeInsets pad = EdgeInsets.all(tokens.spacing.gap * 2);
           final BoxConstraints c = outer.deflate(pad);
           final bool roomy = c.maxWidth >= 640;
-          final double coverHeight = roomy ? 144 : 102;
+          final double? stillAspect = poster == null
+              ? null
+              : backdropAspectRatio;
+          // 有构图剧照的卡加高一档，让行尾的剧照有分量。
+          final double coverHeight = roomy
+              ? (stillAspect == null ? 144 : 184)
+              : 102;
+          // 宽卡：按钮让到剧照左侧，剧照主体（渐隐区以外）不被遮挡。
+          final double stillReserve = roomy && stillAspect != null
+              ? ((coverHeight + pad.vertical) * stillAspect).clamp(
+                      0.0,
+                      outer.maxWidth * 0.65,
+                    ) *
+                    0.72
+              : 0;
           // 横图（视频剧照）在窄卡上别吃掉信息列：宽度封顶卡宽 40%。
           final double coverWidth = (coverHeight * coverAspectRatio).clamp(
             0.0,
@@ -224,6 +244,51 @@ class FushiContinueHero extends StatelessWidget {
           Widget layered(Widget body) {
             final Widget padded = Padding(padding: pad, child: body);
             if (poster == null) return padded;
+            final double? aspect = backdropAspectRatio;
+            if (aspect != null) {
+              return Stack(
+                children: <Widget>[
+                  Positioned.fill(
+                    child: LayoutBuilder(
+                      builder: (BuildContext _, BoxConstraints box) {
+                        final double w = (box.maxHeight * aspect).clamp(
+                          0.0,
+                          box.maxWidth * 0.65,
+                        );
+                        return Align(
+                          alignment: AlignmentDirectional.centerEnd,
+                          child: SizedBox(
+                            width: w,
+                            height: box.maxHeight,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: <Widget>[
+                                poster,
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: AlignmentDirectional.centerStart,
+                                      end: AlignmentDirectional.centerEnd,
+                                      colors: <Color>[
+                                        cardColor,
+                                        cardColor.withValues(alpha: 0.55),
+                                        cardColor.withValues(alpha: 0),
+                                      ],
+                                      stops: const <double>[0, 0.2, 0.5],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  padded,
+                ],
+              );
+            }
             return Stack(
               children: <Widget>[
                 Positioned.fill(child: poster),
@@ -266,6 +331,7 @@ class FushiContinueHero extends StatelessWidget {
                   ),
                   SizedBox(width: gap),
                   actions(fill: false),
+                  if (stillReserve > 0) SizedBox(width: stillReserve),
                 ],
               ),
             );

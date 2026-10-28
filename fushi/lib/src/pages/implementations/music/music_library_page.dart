@@ -9,6 +9,11 @@ import 'package:drift/drift.dart'
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/media/music/music_output_backend.dart'
+    show MusicPlayItem;
+import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
+import 'package:fushi/src/utils/components/fushi_resume_actions.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/music/music_format_badge.dart';
@@ -107,6 +112,9 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
 
+  /// 最近播放的那首（播放事件流最新一条）；null = 没听过 / 测试注入快照。
+  MusicTrackRow? _lastPlayed;
+
   AppModel get _app => ref.read(appProvider);
 
   @override
@@ -125,6 +133,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                 db.musicAlbums,
                 db.musicPlaylists,
                 db.musicDiscSources,
+                db.musicPlayEvents,
               ],
             ),
           )
@@ -147,8 +156,81 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         : (_app.isDatabaseReady
               ? await MusicLibrarySnapshot.load(_app.database)
               : MusicLibrarySnapshot.empty);
+    final List<MusicTrackRow> recent = loader == null && _app.isDatabaseReady
+        ? await _app.database.listRecentlyPlayedMusicTracks(limit: 1)
+        : const <MusicTrackRow>[];
     if (!mounted) return;
-    setState(() => _snapshot = snap);
+    setState(() {
+      _snapshot = snap;
+      _lastPlayed = recent.isEmpty ? null : recent.first;
+    });
+  }
+
+  /// 「继续收听」：从上次那首所在专辑、那一首起播（引擎不持久化播放位置，曲内
+  /// 从头开始）；散曲只播它自己。
+  void _continueListening(MusicTrackRow track, MusicLibrarySnapshot snap) {
+    final MusicAlbumRow? album = track.albumUid == null
+        ? null
+        : snap.albumByUid[track.albumUid];
+    final List<MusicTrackRow> tracks = album == null
+        ? <MusicTrackRow>[track]
+        : snap.tracksOfAlbum(album.albumUid);
+    final int start = tracks.indexWhere(
+      (MusicTrackRow t) => t.trackUid == track.trackUid,
+    );
+    unawaited(
+      _app.musicSession.engine.playQueue(
+        <MusicPlayItem>[
+          for (final MusicTrackRow t in tracks)
+            musicPlayItemOf(t, album: album),
+        ],
+        startIndex: start < 0 ? 0 : start,
+        context: album == null
+            ? MusicQueueContext.mixed
+            : MusicQueueContext.album,
+      ),
+    );
+  }
+
+  /// 曲库顶部「继续收听」卡：与书架 / 视频 / 游戏同一张 [FushiContinueHero]。
+  Widget? _buildContinueHero(MusicLibrarySnapshot snap) {
+    final MusicTrackRow? track = _lastPlayed;
+    if (track == null || _query.isNotEmpty) return null;
+    final MusicAlbumRow? album = track.albumUid == null
+        ? null
+        : snap.albumByUid[track.albumUid];
+    final Widget cover = MusicCover(
+      coverPath: album?.coverPath,
+      embeddedFromPath: album == null
+          ? track.path
+          : snap.embeddedCoverPathOf(album),
+    );
+    return FushiContinueHero(
+      cardKey: const ValueKey<String>('music-continue-hero'),
+      focusId: const FushiFocusId('music-continue-hero'),
+      actionKey: const ValueKey<String>('music-continue-hero-action'),
+      cover: cover,
+      coverAspectRatio: 1,
+      backdrop: FushiContinueHero.blurredBackdrop(cover),
+      eyebrow: t.music_continue_listening,
+      title: album?.title ?? track.title,
+      metaLines: <String>[
+        <String>[
+          if (album != null) track.title,
+          if ((track.artistCredit ?? album?.albumArtistCredit) != null)
+            (track.artistCredit ?? album!.albumArtistCredit)!,
+        ].join(' · '),
+      ],
+      actionLabel: t.home_continue,
+      onOpen: () => _continueListening(track, snap),
+      secondary: album == null
+          ? null
+          : FushiResumeSecondaryAction(
+              icon: FushiIcons.info,
+              label: t.music_continue_open_album,
+              onPressed: () => _openAlbum(album),
+            ),
+    );
   }
 
   Future<void> _reloadServerAlbums() async {
@@ -382,32 +464,42 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
             ),
             // 每个分区都保留搜索框槽位（作品分区无可筛内容，输入无副作用），切页签头部不跳动；查询词跨分区保留。
             Padding(
-                padding: EdgeInsets.fromLTRB(
-                  tokens.spacing.page,
-                  tokens.spacing.gap,
-                  tokens.spacing.page,
-                  0,
-                ),
-                // 与库页工具行同一形态：宽屏搜索框限宽靠左，窄屏撑满。
-                child: Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 560),
-                    child: FushiSearchBar(
-                      fieldKey: const ValueKey<String>('music-library-search'),
-                      clearButtonKey: const ValueKey<String>(
-                        'music-library-search-clear',
-                      ),
-                      controller: _searchController,
-                      hintText: t.music_library_search_hint,
-                      onQueryChanged: (String q) =>
-                          setState(() => _query = q),
-                      onClear: () => setState(() => _query = ''),
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.gap,
+                tokens.spacing.page,
+                0,
+              ),
+              // 与库页工具行同一形态：宽屏搜索框限宽靠左，窄屏撑满。
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: FushiSearchBar(
+                    fieldKey: const ValueKey<String>('music-library-search'),
+                    clearButtonKey: const ValueKey<String>(
+                      'music-library-search-clear',
                     ),
+                    controller: _searchController,
+                    hintText: t.music_library_search_hint,
+                    onQueryChanged: (String q) => setState(() => _query = q),
+                    onClear: () => setState(() => _query = ''),
                   ),
                 ),
               ),
+            ),
             SizedBox(height: tokens.spacing.gap),
+            if (snap == null ? null : _buildContinueHero(snap)
+                case final Widget hero)
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  0,
+                  tokens.spacing.page,
+                  tokens.spacing.gap * 1.5,
+                ),
+                child: hero,
+              ),
             // 常规同步 / 复习同步在跑时的进度条（全局状态，不只本页触发的）；没在跑时零高度。
             SyncProgressBanner(
               key: const ValueKey<String>('music-sync-progress'),
@@ -483,8 +575,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     final bool noMatch =
         _query.trim().isNotEmpty &&
         switch (_section) {
-          MusicLibrarySection.albums =>
-            albums.isEmpty && serverAlbums.isEmpty,
+          MusicLibrarySection.albums => albums.isEmpty && serverAlbums.isEmpty,
           MusicLibrarySection.artists => artists.isEmpty,
           MusicLibrarySection.songs => tracks.isEmpty,
           MusicLibrarySection.playlists => playlists.isEmpty,

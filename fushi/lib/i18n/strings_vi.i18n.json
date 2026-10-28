@@ -5207,6 +5207,8 @@
   "music_cd_reading": "Reading disc…",
   "music_cd_reread": "Read disc again",
   "music_cd_track_name": "Track $n",
+  "music_continue_listening": "Continue listening",
+  "music_continue_open_album": "Open album",
   "music_crossfade_continuous_hint": "Also crossfade consecutive album tracks and CUE splits, which normally stay gapless.",
   "music_crossfade_continuous_title": "Crossfade gapless tracks too",
   "music_crossfade_disabled_direct": "Off with direct hardware output",

@@ -5207,6 +5207,8 @@
   "music_cd_reading": "正在读盘…",
   "music_cd_reread": "重新读盘",
   "music_cd_track_name": "第 $n 轨",
+  "music_continue_listening": "继续收听",
+  "music_continue_open_album": "打开专辑",
   "music_crossfade_continuous_hint": "专辑相邻曲目与 CUE 拆轨默认保持无缝，打开后也交叉淡入。",
   "music_crossfade_continuous_title": "连续曲目也淡入",
   "music_crossfade_disabled_direct": "硬件直出时已停用",

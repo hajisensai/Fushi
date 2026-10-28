@@ -5394,6 +5394,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             ),
       coverAspectRatio: poster == null ? 16 / 9 : 2 / 3,
       backdrop: still == null ? null : _buildHomeHeroImage(still),
+      backdropAspectRatio: 16 / 9,
       eyebrow: t.video_continue_watching,
       title: hero.title,
       metaLines: <String>[if (subtitle.isNotEmpty) subtitle],
