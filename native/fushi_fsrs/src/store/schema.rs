@@ -225,7 +225,7 @@ const V4: &str = "ALTER TABLE srs_notes_cache ADD COLUMN media_refs TEXT NOT NUL
 
 /// V8：卡片缓存加 `freq_rank`（笔记词频序字段解析出的名次，越小越常见；没有 = NULL。Drift 声明见
 /// srs_tables.dart `SrsCardsCache.freqRank`）。牌组「新卡顺序 = 按词频」时出卡按它排。老库加列留空，由 Dart
-/// 侧缓存修订号 6 的升级步重算全部笔记缓存填满。
+/// 侧缓存修订号 6 的升级步让内核（store/caches.rs）重算全部笔记缓存填满。
 const V8: &str = "ALTER TABLE srs_cards_cache ADD COLUMN freq_rank INTEGER NULL;";
 
 /// 建表 / 升级到 [SCHEMA_VERSION]。在一个事务里做；版本只升不降（库比本程序新 = 打开失败，

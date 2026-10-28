@@ -220,7 +220,7 @@ Future<SrsSync2Report> srsSync2Round({
     report.fork = report.fork || r['fork'] == true;
     report.changed =
         report.changed ||
-        ((r['events'] as List?)?.isNotEmpty ?? false) ||
+        (((r['marks'] as Map?)?['landed'] as int?) ?? 0) > 0 ||
         ((r['replayed'] as List?)?.isNotEmpty ?? false) ||
         ((r['changed'] as List?)?.isNotEmpty ?? false);
     report.errors.addAll(<String>[

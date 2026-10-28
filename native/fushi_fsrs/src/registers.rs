@@ -1104,6 +1104,32 @@ pub(crate) fn deck_view_of(payload: &Value, edits: &[StoredEdit<'_>]) -> Result<
     deck_view(&ent, payload)
 }
 
+/// 笔记的物化视图（与 `materialize` 的 `note` 组同一份，键见 [note_view]）。
+pub(crate) fn note_view_of(payload: &Value, edits: &[StoredEdit<'_>]) -> Result<Value, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    let concurrent = ent.concurrent_with_delete();
+    note_view(&ent, payload, &concurrent)
+}
+
+/// 笔记类型的物化视图（与 `materialize` 的 `notetype` 组同一份，键见 [note_type_view]）；[builtin] 是内置
+/// 类型的代码默认值（不是内置类型 = null）。
+pub(crate) fn note_type_view_of(payload: &Value, edits: &[StoredEdit<'_>], builtin: &Value) -> Result<Value, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    note_type_view(&ent, payload, builtin)
+}
+
+/// 卡片 ID（Dart `SrsIds.card`）：UUIDv5(笔记 ID, `<模板 ID>/<cloze 序号>`)。笔记 ID 不是 UUID = 错误
+/// （Dart `_uuidBytes` 抛 FormatException）。
+pub(crate) fn card_id(note_id: &str, template_id: &str, cloze_ord: i64) -> Result<String, String> {
+    let hex: Vec<u8> = note_id.bytes().filter(|b| *b != b'-').collect();
+    if hex.len() != 32 || !hex.iter().all(u8::is_ascii_hexdigit) {
+        return Err(format!("not a uuid: {note_id}"));
+    }
+    Ok(uuid_v5(&uuid_bytes(note_id), &format!("{template_id}/{cloze_ord}")))
+}
+
 /// 某实体某字段键的生效值（多值寄存器按读路径的规则取胜者；没有记录 = null）。
 pub(crate) fn register_value(edits: &[StoredEdit<'_>], key: &str) -> Result<Value, String> {
     let parsed = parse_stored(edits)?;

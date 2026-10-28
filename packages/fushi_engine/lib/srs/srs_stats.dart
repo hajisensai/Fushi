@@ -1026,7 +1026,7 @@ class SrsStatProjection {
 
   final String logId;
 
-  /// 归属卡（卡自己可见就是它自己；隐藏的前身卡归继承它历史的可见卡，见 `SrsStatReviews`）。
+  /// 归属卡（卡自己可见就是它自己；不可见（或已无缓存行）的前身卡归继承它历史的可见卡，见 `SrsStatReviews`）。
   final String cardId;
   final int occurredAt;
   final int utcOffsetMin;

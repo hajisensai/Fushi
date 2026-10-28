@@ -57,15 +57,8 @@ void main() {
     return order;
   }
 
-  test('名次解析：去 HTML 取第一段数字，非正整数 = 没有名次', () {
-    expect(SrsDbStore.freqRankOf('1320'), 1320);
-    expect(SrsDbStore.freqRankOf(' <b>42</b> '), 42);
-    expect(SrsDbStore.freqRankOf('7 (JPDB)'), 7);
-    expect(SrsDbStore.freqRankOf(''), isNull);
-    expect(SrsDbStore.freqRankOf('0'), isNull);
-    expect(SrsDbStore.freqRankOf('—'), isNull);
-    expect(SrsDbStore.freqRankOf('12345678901234'), 123456789);
-  });
+  // 名次解析（去 HTML 取第一段数字，非正整数 = 没有名次）搬进了 Rust 缓存计算：固定向量回归在
+  // native/fushi_fsrs/src/card_cache.rs `freq_rank_dart_vectors`。
 
   test('缺省按词频：有名次的按名次升序先出，没有名次的在后、按添加先后；不写任何位置', () async {
     final SrsDbStore s = await open();
@@ -121,7 +114,11 @@ void main() {
     final SrsDbStore s = await open();
     await s.renameField(s.lapisNoteTypeId, lapis('FreqSort'), '频率');
     final SrsNoteTypeView lapisType = (await s.noteType(s.lapisNoteTypeId))!;
-    expect(lapisType.frequencyField?.id, lapis('FreqSort'));
+    expect(lapisType.freqFieldId, lapis('FreqSort'));
+    final List<String> lapisCards = await addLapis(s, <(String, String)>[
+      ('雪', '<b>42</b> (JPDB)'),
+    ]);
+    expect((await s.cardRow(lapisCards.single))!.freqRank, 42);
 
     final String typeId = await s.createStockNoteType(
       SrsStockNoteType.basic,
@@ -131,7 +128,6 @@ void main() {
     final String other = await s.addField(typeId, 'Rank');
     SrsNoteTypeView custom = (await s.noteType(typeId))!;
     expect(custom.freqFieldId, isNull);
-    expect(custom.frequencyField?.id, freqSort);
 
     t += 1000;
     final String noteId = await s.createNote(
@@ -148,7 +144,7 @@ void main() {
     // 显式改选：同类型笔记的缓存跟着重算。
     await s.setFreqField(typeId, other);
     custom = (await s.noteType(typeId))!;
-    expect(custom.frequencyField?.id, other);
+    expect(custom.freqFieldId, other);
     expect((await s.cardRow(card))!.freqRank, 9);
 
     // 清掉显式设置：回到按名字认。
