@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 
@@ -437,7 +438,13 @@ void main() {
     final Text sub = tester.widget<Text>(find.text('对齐失败 · 12%'));
     final BuildContext ctx = tester.element(find.text('对齐失败 · 12%'));
     expect(sub.style?.color, Theme.of(ctx).colorScheme.error);
-    expect(find.byType(FractionallySizedBox), findsOneWidget);
+    // 进度条走 M3E 平直静止形态（与继续卡同一组件，2026-10-28）。
+    final FushiLinearProgressIndicator bar = tester
+        .widget<FushiLinearProgressIndicator>(
+          find.byType(FushiLinearProgressIndicator),
+        );
+    expect(bar.value, 0.12);
+    expect(bar.wavy, isFalse);
   });
 
   testWidgets('副行标签：色点 + 名字，不加 # 前缀，超出收成 +N', (WidgetTester tester) async {

@@ -51,10 +51,21 @@ void main() {
   });
 
   test('书架：继续阅读 hero 标题接标题溢出 Tooltip（TODO-2497）', () {
+    // 2026-10-28 起书架 hero 是共用的 FushiContinueHero，Tooltip 接在组件里。
+    final String shelf = maskComments(
+      File(
+        'lib/src/pages/implementations/reader_fushi_history_page.dart',
+      ).readAsStringSync(),
+    );
     expect(
-      countIn('lib/src/pages/implementations/reader_fushi_history_page.dart'),
+      shelf.contains('FushiContinueHero('),
+      isTrue,
+      reason: '书架继续阅读 hero 必须走共用的 FushiContinueHero',
+    );
+    expect(
+      countIn('lib/src/utils/components/fushi_continue_hero.dart'),
       greaterThanOrEqualTo(1),
-      reason: '书架继续阅读 hero 标题必须接 ShelfTitleOverflowTooltip',
+      reason: 'FushiContinueHero 标题必须接 ShelfTitleOverflowTooltip',
     );
   });
 
