@@ -44,6 +44,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/web_browser/web_browser_chrome_colors.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store_provider.dart';
 import 'package:fushi/src/web_browser/features/study/web_card_source.dart';
@@ -1573,9 +1574,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     return MediaQuery.paddingOf(context).top > 0;
   }
 
-  Color _barColor(BuildContext context) => isGlassDesign(context)
-      ? appleColorsOf(context).secondaryGroupedBackground
-      : Theme.of(context).colorScheme.surfaceContainer;
+  Color _barColor(BuildContext context) => webBrowserBarColor(context);
 
   Widget _addressBarFor(
     BuildContext context, {

@@ -14,6 +14,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/web_browser/web_browser_chrome_colors.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_storage.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_strings.dart';
 import 'package:fushi/utils.dart';
@@ -897,7 +898,7 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
     final bool hasTracks = s != null && s.tracks.isNotEmpty;
     final Duration reveal = fushiMotionDuration(context, FushiMotion.short);
     return Material(
-      color: FushiDesignTokens.of(context).surfaces.group,
+      color: webBrowserBarColor(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[

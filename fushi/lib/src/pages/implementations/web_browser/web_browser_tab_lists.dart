@@ -16,10 +16,11 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:flutter/gestures.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_favicon.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
-import 'package:fushi/utils.dart' show HorizontalDragScrollable;
+import 'package:fushi/utils.dart' show WheelToHorizontalScroll;
 import 'package:window_manager/window_manager.dart' show DragToMoveArea;
 
 /// 侧边栏 / 顶部标签栏 / 标签页网格共用的标签操作。
@@ -79,7 +80,7 @@ String _tabLabel(WebBrowserTab tab) {
 
 /// 插入时从零宽 / 零高长出来（标签增删的尺寸过渡）。
 class _GrowIn extends StatefulWidget {
-  const _GrowIn({required this.child, this.axis = Axis.vertical, super.key});
+  const _GrowIn({required this.child, this.axis = Axis.vertical});
 
   final Widget child;
   final Axis axis;
@@ -181,25 +182,12 @@ class WebBrowserTabStrip extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
               Flexible(
-                // 桌面鼠标按住左右拖也能平移标签栏（默认 dragDevices 不含鼠标）。
-                child: HorizontalDragScrollable(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: <Widget>[
-                        for (final WebBrowserTab tab in tabs)
-                          _GrowIn(
-                            key: ValueKey<String>('strip-${tab.id}'),
-                            axis: Axis.horizontal,
-                            child: SizedBox(
-                              width: width,
-                              child: _StripTab(tab: tab, callbacks: callbacks),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+                // 鼠标按住标签横拖 = 排序（Chrome / Edge 式），所以不再让鼠标拖动平移
+                // 标签栏；平移改走滚轮（纵向滚轮投到横轴）与触屏拖动。
+                child: _StripReorderList(
+                  tabs: tabs,
+                  callbacks: callbacks,
+                  tabWidth: width,
                 ),
               ),
               FushiIconButton(
@@ -232,6 +220,92 @@ class WebBrowserTabStrip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 标签栏的横向可排序列表：鼠标横拖越过拖动阈值即拾起标签（单击仍是切换），
+/// 松手落到新位置；触屏照常横滑平移、长按出菜单。
+class _StripReorderList extends StatefulWidget {
+  const _StripReorderList({
+    required this.tabs,
+    required this.callbacks,
+    required this.tabWidth,
+  });
+
+  final List<WebBrowserTab> tabs;
+  final WebBrowserTabCallbacks callbacks;
+  final double tabWidth;
+
+  @override
+  State<_StripReorderList> createState() => _StripReorderListState();
+}
+
+class _StripReorderListState extends State<_StripReorderList> {
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: kWebBrowserTabStripHeight,
+      child: WheelToHorizontalScroll(
+        controller: _scroll,
+        child: ReorderableListView.builder(
+          scrollController: _scroll,
+          scrollDirection: Axis.horizontal,
+          shrinkWrap: true,
+          buildDefaultDragHandles: false,
+          itemCount: widget.tabs.length,
+          onReorder: widget.callbacks.onReorder,
+          // 拾起的标签不加默认的浮起卡片底，保持标签本身的样子跟手。
+          proxyDecorator: (Widget child, int _, Animation<double> _) =>
+              Material(type: MaterialType.transparency, child: child),
+          itemBuilder: (BuildContext context, int i) {
+            final WebBrowserTab tab = widget.tabs[i];
+            return _StripDragStartListener(
+              key: ValueKey<String>('strip-${tab.id}'),
+              index: i,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: _GrowIn(
+                  axis: Axis.horizontal,
+                  child: SizedBox(
+                    width: widget.tabWidth,
+                    child: _StripTab(tab: tab, callbacks: widget.callbacks),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// 只认鼠标 / 触控板的横向拖动：越过拖动阈值才开始排序，所以单击与中键关闭照常；
+/// 触屏不参与（触屏横滑是平移标签栏）。
+class _StripDragStartListener extends ReorderableDragStartListener {
+  const _StripDragStartListener({
+    required super.index,
+    required super.child,
+    super.key,
+  });
+
+  @override
+  MultiDragGestureRecognizer createRecognizer() =>
+      HorizontalMultiDragGestureRecognizer(
+        debugOwner: this,
+        supportedDevices: const <PointerDeviceKind>{
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.trackpad,
+          PointerDeviceKind.stylus,
+        },
+      );
 }
 
 /// 标题栏模式下标签栏末尾至少保留的拖窗空白。
