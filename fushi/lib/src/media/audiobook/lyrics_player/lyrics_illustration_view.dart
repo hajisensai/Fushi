@@ -22,6 +22,8 @@ import 'package:fushi/utils.dart';
 //    点左 / 右三分之一 = 上 / 下一张，点中间 = 看大图，右上角 ✕ = 回封面。
 //  * [LyricsIllustrationCompactArtwork]：窄屏控制条里的小封面方块。有新插图时换成
 //    插图缩略图并带一个提示点；点它进插图大图浏览，看完回到封面。
+//  * [LyricsIllustrationPopupCard]：窄屏播放卡标题上方的插图卡。与宽屏封面位同一
+//    套弹出逻辑（播放走过插图时弹出并停住，✕ 收起），只是没有封面可换。
 //  * [showLyricsIllustrationViewer]：插图大图浏览（左右翻页 + 双指 / 滚轮缩放）。
 
 /// 插图卡上左右「翻页热区」各占的宽度比例；中间那段是「看大图」。
@@ -221,6 +223,7 @@ class _IllustrationCard extends StatefulWidget {
     required this.height,
     required this.borderRadius,
     required this.onOpen,
+    this.alignment = Alignment.center,
   });
 
   final LyricsIllustrationController controller;
@@ -229,6 +232,9 @@ class _IllustrationCard extends StatefulWidget {
   final double height;
   final BorderRadius borderRadius;
   final ValueChanged<int>? onOpen;
+
+  /// 插图按原比例缩进 [width]×[height] 后在框里的位置。
+  final AlignmentGeometry alignment;
 
   @override
   State<_IllustrationCard> createState() => _IllustrationCardState();
@@ -347,7 +353,8 @@ class _IllustrationCardState extends State<_IllustrationCard> {
       );
     }
 
-    return Center(
+    return Align(
+      alignment: widget.alignment,
       child: SizedBox(
         width: w,
         height: h,
@@ -469,6 +476,129 @@ class _IllustrationCardState extends State<_IllustrationCard> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 窄屏：标题上方的插图卡
+// ---------------------------------------------------------------------------
+
+/// 窄屏播放卡标题上方的插图卡：插图位有图（播放走过插图 / 点小封面或章名）时以
+/// 与宽屏封面位相同的 M3E spatial 弹簧弹出，按原比例贴 [alignment] 放进
+/// [width]×[height]；点左 / 右三分之一翻页，点中间看大图，✕ 收起。插图位为空时
+/// 不占任何东西（不挡歌词的点按）。
+class LyricsIllustrationPopupCard extends StatelessWidget {
+  const LyricsIllustrationPopupCard({
+    super.key,
+    required this.controller,
+    required this.width,
+    required this.height,
+    required this.borderRadius,
+    this.alignment = AlignmentDirectional.bottomStart,
+    this.onOpen,
+  });
+
+  final LyricsIllustrationController? controller;
+  final double width;
+  final double height;
+  final BorderRadius borderRadius;
+  final AlignmentGeometry alignment;
+
+  /// 点插图卡中间：看大图（参数是插图下标）。
+  final ValueChanged<int>? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final LyricsIllustrationController? c = controller;
+    if (c == null || width <= 0 || height <= 0) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: c,
+      builder: (BuildContext context, Widget? _) {
+        final int? shown = c.shown;
+        final FushiMotionScheme motion = context.fushiMotion;
+        return AnimatedSwitcher(
+          duration: motion.spatialDefault.duration,
+          reverseDuration: motion.effectsDefault.duration,
+          switchInCurve: motion.spatialDefault.curve,
+          switchOutCurve: motion.effectsDefault.curve,
+          layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+            fit: StackFit.passthrough,
+            children: <Widget>[...previous, if (current != null) current],
+          ),
+          transitionBuilder: (Widget child, Animation<double> animation) =>
+              FadeTransition(
+                opacity: fushiUnitClamped(animation),
+                child: ScaleTransition(
+                  alignment: alignment.resolve(Directionality.of(context)),
+                  scale: Tween<double>(begin: 0.9, end: 1).animate(animation),
+                  child: child,
+                ),
+              ),
+          child: shown == null
+              ? const SizedBox.shrink(
+                  key: ValueKey<String>('lyrics_popup_illustration_none'),
+                )
+              : SizedBox(
+                  key: ValueKey<String>(
+                    'lyrics_popup_illustration_${c.items[shown].key}',
+                  ),
+                  width: width,
+                  height: height,
+                  child: _IllustrationCard(
+                    controller: c,
+                    index: shown,
+                    width: width,
+                    height: height,
+                    borderRadius: borderRadius,
+                    onOpen: onOpen,
+                    alignment: alignment,
+                  ),
+                ),
+        );
+      },
+    );
+  }
+}
+
+/// 把 [child]（窄屏播放卡的章名）变成插图入口：已听到插图时点它与点小封面一样
+/// 进插图大图浏览；还没有可看的插图时原样返回 [child]、不吃点按。
+class LyricsIllustrationTapTarget extends StatelessWidget {
+  const LyricsIllustrationTapTarget({
+    super.key,
+    required this.controller,
+    required this.onOpen,
+    required this.child,
+  });
+
+  final LyricsIllustrationController? controller;
+
+  /// 从第几张看起（参数是插图下标）。
+  final ValueChanged<int>? onOpen;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final LyricsIllustrationController? c = controller;
+    final ValueChanged<int>? open = onOpen;
+    if (c == null || open == null) return child;
+    return ListenableBuilder(
+      listenable: c,
+      child: child,
+      builder: (BuildContext context, Widget? child) {
+        final int? start = c.browseStart;
+        if (start == null) return child!;
+        return Semantics(
+          button: true,
+          label: t.lyrics_illustration_open,
+          child: GestureDetector(
+            key: const ValueKey<String>('lyrics_title_illustration_entry'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => open(start),
+            child: MouseRegion(cursor: SystemMouseCursors.click, child: child),
+          ),
+        );
+      },
     );
   }
 }

@@ -53,6 +53,82 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('前置圆钮放不下时从末尾收进 ⋯：返回恒在、⋯ 不被挤出屏幕', (WidgetTester tester) async {
+    // 手机竖屏阅读器：布局把模式 / 目录 / 图库 / 统计拖到左上角，顶栏右侧只有
+    // 「更多」。前置圆钮以前不参与收纳，⋯ 被挤出右边缘点不到。
+    final List<FushiToolbarItem> leading = <FushiToolbarItem>[
+      for (final String label in <String>[
+        'Back',
+        'Lyrics',
+        'Contents',
+        'Gallery',
+        'Stats',
+      ])
+        FushiToolbarItem(icon: Icons.circle, label: label, onPressed: () {}),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 369,
+              child: FushiFloatingTopBar(
+                leading: leading,
+                overflow: <FushiToolbarItem>[
+                  FushiToolbarItem(
+                    icon: Icons.fullscreen,
+                    label: 'Fullscreen',
+                    onPressed: () {},
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: '不得溢出');
+    expect(more, findsOneWidget);
+    final Rect bar = tester.getRect(find.byType(FushiFloatingTopBar));
+    final Rect menu = tester.getRect(more);
+    expect(menu.right, lessThanOrEqualTo(bar.right), reason: '⋯ 完整落在顶栏内');
+    expect(find.byTooltip('Back'), findsOneWidget);
+    expect(find.byTooltip('Stats'), findsNothing, reason: '最后一颗先收');
+
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(find.text('Stats'), findsOneWidget, reason: '收起的前置钮进 ⋯ 菜单');
+    expect(find.text('Fullscreen'), findsOneWidget);
+  });
+
+  test('前置圆钮测宽：放得下全平铺，放不下至少留返回', () {
+    expect(
+      fushiTopBarLeadingFitCount(
+        leadingCount: 3,
+        maxWidth: 1000,
+        hasActions: true,
+      ),
+      3,
+    );
+    expect(
+      fushiTopBarLeadingFitCount(
+        leadingCount: 6,
+        maxWidth: 369,
+        hasActions: true,
+      ),
+      lessThan(6),
+    );
+    expect(
+      fushiTopBarLeadingFitCount(
+        leadingCount: 6,
+        maxWidth: 40,
+        hasActions: false,
+      ),
+      1,
+    );
+  });
+
   test('拆分：按优先级平铺前 k 颗，其余（含 overflow）进 ⋯', () {
     final FushiToolbarItem a = FushiToolbarItem(
       icon: Icons.add,
