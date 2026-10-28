@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3476 条。点号进各自文件。
+> 共 3477 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3873](bugs/BUG-3873-kavita-pull-ignored-after-push.md) | ✅ | ✅ | Kavita→Fushi 进度拉取失效（时间基线 + 容差吞掉服务器改动） |
 | [BUG-3872](bugs/BUG-3872-lyrics-narrow-illustration-entry.md) | ✅ | ✅ | lyrics-narrow-illustration-entry |
 | [BUG-3871](bugs/BUG-3871-webview2-host-toplevel-steals-activation.md) | ✅ | ✅ | 应用内浏览器真鼠标点 YouTube 设置二级项仍打不开（WebView2 宿主是 owned 顶层窗口，抢走激活） |
 | [BUG-3870](bugs/BUG-3870-reader-floating-leading-overflow.md) | ✅ | ✅ | reader-floating-leading-overflow |
@@ -55,11 +56,6 @@
 | [BUG-3857](bugs/BUG-3857-collection-long-press-waits-release.md) | ✅ | ✅ | collection-long-press-waits-release |
 | [BUG-3856](bugs/BUG-3856-macos-appdelegate-super-selectors.md) | ✅ | ✅ | macOS 导入时打开访达面板后切到别的 app 再切回来必崩（AppDelegate 对 FlutterAppDelegate 没实现的 NSApplicationDelegate 方法调 super） |
 | [BUG-3855](bugs/BUG-3855-emby-waf-dart-user-agent-404.md) | ✅ | ✅ | 部分 Emby 服务器的 CDN/WAF 前置按 UA 拦 Dart 默认 UA，全站回裸 404，添加服务器与登录必失败 |
-> 共 3459 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3855](bugs/BUG-3855-kavita-pull-ignored-after-push.md) | ✅ | ✅ | Kavita→Fushi 进度拉取失效（时间基线 + 容差吞掉服务器改动） |
 | [BUG-3854](bugs/BUG-3854-ai-cannot-link-works.md) | ✅ | ✅ | 内置 AI 助手怎么都做不到「关联作品」 |
 | [BUG-3853](bugs/BUG-3853-collection-longpress-haptic.md) | ✅ | ✅ | collection-longpress-haptic |
 | [BUG-3852](bugs/BUG-3852-web-browser-tab-strip-caption-row-and-exit.md) | ✅ | ✅ | web-browser-tab-strip-caption-row-and-exit |
