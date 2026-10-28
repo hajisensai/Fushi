@@ -878,23 +878,19 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 以前每条事件「先查再写」各两三次往返（库在后台 isolate，每次往返都是一次跨 isolate 消息），
   /// 导入一个几千条笔记的包、应用一批对端事件都要几万次往返（BUG-3549 / BUG-3543）。
-  /// 这条事件是否推进 [_contentRevision]：复习日志与界面状态类修改记录不推进。
-  static bool _touchesRwkvScores(SrsEvent e) => switch (e) {
-    SrsEntityEvent(:final SrsEntityRecord record) =>
-      record.kind == SrsEntityKind.deck || record.kind == SrsEntityKind.profile,
-    SrsEditEvent(:final SrsFieldEdit edit) =>
-      (edit.entityKind == SrsEntityKind.deck ||
-              edit.entityKind == SrsEntityKind.profile) &&
-          srsFieldClassOf(edit.entityKind, edit.fieldKey) !=
-              SrsFieldClass.viewState,
+  /// 这条落库标记是否推进 [_rwkvScoresRevision]：牌组 / profile 的身份记录与非界面状态修改记录。
+  static bool _touchesRwkvScores(_SrsLanded m) => switch (m.type) {
+    'entity' => m.kind == SrsEntityKind.deck || m.kind == SrsEntityKind.profile,
+    'edit' =>
+      (m.kind == SrsEntityKind.deck || m.kind == SrsEntityKind.profile) &&
+          srsFieldClassOf(m.kind!, m.fieldKey!) != SrsFieldClass.viewState,
     _ => false,
   };
 
-  static bool _touchesContent(SrsEvent e) => switch (e) {
-    SrsLogEvent() => false,
-    SrsEditEvent(:final SrsFieldEdit edit) =>
-      srsFieldClassOf(edit.entityKind, edit.fieldKey) !=
-          SrsFieldClass.viewState,
+  /// 这条落库标记是否推进 [_contentRevision]：复习日志与界面状态类修改记录不推进。
+  static bool _touchesContent(_SrsLanded m) => switch (m.type) {
+    'log' => false,
+    'edit' => srsFieldClassOf(m.kind!, m.fieldKey!) != SrsFieldClass.viewState,
     _ => true,
   };
 
@@ -952,27 +948,30 @@ class SrsDbStore implements SrsSync2Host {
   /// 被冲突扣住 / 清除改变了可见性的实体也一并标脏。返回落进投影的事件 ID（按序）。
   List<String> _absorbProjection(Map<String, Object?> r) {
     final List<String> landed = <String>[];
+    // 内核交回的是落库**标记**（种类 / ID / 字段键），不是事件全文：一批收段几万条操作时全文是几百 MB
+    // JSON，跨 isolate 拷一遍再在这里逐条 `SrsEvent.fromJson`——UI isolate 卡死、内存冲到 4 GB 被系统杀
+    // （store/sync2/mod.rs `Touched::landed_*`）。
     for (final Object? raw in (r['events'] as List?) ?? const <Object?>[]) {
-      if (raw is! Map) continue;
-      final SrsEvent e = SrsEvent.fromJson(raw.cast<String, Object?>());
-      switch (e) {
-        case SrsEntityEvent(:final SrsEntityRecord record):
-          _markEntity(record.kind, record.id);
-        case SrsEditEvent(:final SrsFieldEdit edit):
-          _markEntity(edit.entityKind, edit.entityId, fieldKey: edit.fieldKey);
-        case SrsLogEvent(:final SrsReviewLog log):
-          _dirtyCards.add(log.cardId);
-        case SrsUnknownEvent():
-          break;
+      final _SrsLanded? m = _SrsLanded.tryParse(raw);
+      if (m == null) continue;
+      switch (m.type) {
+        case 'entity' when m.kind != null:
+          _markEntity(m.kind!, m.entityId);
+        case 'edit' when m.kind != null && m.fieldKey != null:
+          _markEntity(m.kind!, m.entityId, fieldKey: m.fieldKey);
+        case 'log':
+          _dirtyCards.add(m.entityId);
+        default:
+          continue;
       }
       _revision++;
-      if (_touchesContent(e)) {
+      if (_touchesContent(m)) {
         _contentRevision++;
-      } else if (e is SrsEditEvent) {
+      } else if (m.type == 'edit') {
         _viewRevision++;
       }
-      if (_touchesRwkvScores(e)) _rwkvScoresRevision++;
-      landed.add(e.id);
+      if (_touchesRwkvScores(m)) _rwkvScoresRevision++;
+      landed.add(m.id);
     }
     for (final Object? c in (r['replayed'] as List?) ?? const <Object?>[]) {
       if (c is String) _dirtyCards.add(c);
@@ -5621,3 +5620,36 @@ Future<SrsSync2Result> _coreSync2(
     libraryPath: libraryPath,
   ).sync2(request, blobs: blobs),
 );
+
+/// 内核交回的一条「落进投影」标记（store/sync2/mod.rs `Touched::landed_*` 的线格式）：
+/// `{"t":"entity","id","k"}` / `{"t":"edit","id","k","e","f"}` / `{"t":"log","id","card"}`。
+/// [entityId]：实体记录 = 自身 ID，修改记录 = 被改的实体，日志 = 卡片。
+class _SrsLanded {
+  const _SrsLanded(this.type, this.id, this.entityId, this.kind, this.fieldKey);
+
+  final String type;
+  final String id;
+  final String entityId;
+  final SrsEntityKind? kind;
+  final String? fieldKey;
+
+  static _SrsLanded? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? type = raw['t'];
+    final Object? id = raw['id'];
+    if (type is! String || id is! String) return null;
+    final SrsEntityKind? kind = SrsEntityKind.tryParse(raw['k'] as String?);
+    return switch (type) {
+      'entity' => _SrsLanded(type, id, id, kind, null),
+      'edit' => switch (raw['e']) {
+        final String e => _SrsLanded(type, id, e, kind, raw['f'] as String?),
+        _ => null,
+      },
+      'log' => switch (raw['card']) {
+        final String c => _SrsLanded(type, id, c, null, null),
+        _ => null,
+      },
+      _ => null,
+    };
+  }
+}

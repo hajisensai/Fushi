@@ -1710,3 +1710,34 @@ fn a_huge_backlog_is_sent_in_bounded_batches_and_resumes_from_the_watermark() {
     assert_eq!(count(&c), count(&a));
     assert_eq!(a.digest(), c.digest());
 }
+
+/// 收段 / 本机写入交回 Dart 的 `events` 只有落库标记（种类 / ID / 字段键 / 卡），不带事件全文：
+/// 一批收段几万条操作时全文是几百 MB JSON，跨 isolate 拷一遍再在 UI isolate 解析，同步时卡死并 OOM 闪退。
+#[test]
+fn ingest_returns_compact_landed_markers_not_event_bodies() {
+    let a = Device::new("a");
+    let b = Device::new("b");
+    let mut bucket = Bucket::default();
+    let deck = super::config::default_deck_id(P);
+    let big = "x".repeat(64 * 1024);
+    let local = a.apply(T0, vec![
+        deck_entity(&deck),
+        edit("note", "N1", "fld/front", json!(big)),
+        review("r1", "C1", T0 + 1, 3, "learn"),
+    ]);
+    a.sync(&mut bucket, "loc", T0 + 2);
+    let got = b.sync(&mut bucket, "loc", T0 + 3);
+    for out in [&local, &got] {
+        let events = out["events"].as_array().unwrap();
+        assert!(!events.is_empty(), "{out}");
+        assert!(out["events"].to_string().len() < 4096, "event bodies leaked into the result");
+        for e in events.iter().filter(|e| !e.is_null()) {
+            assert!(e.get("x").is_none(), "{e}");
+            assert!(e["id"].is_string(), "{e}");
+        }
+    }
+    let events = got["events"].as_array().unwrap();
+    assert!(events.iter().any(|e| e["t"] == "edit" && e["k"] == "note" && e["e"] == "N1" && e["f"] == "fld/front"), "{got}");
+    assert!(events.iter().any(|e| e["t"] == "log" && e["id"] == "r1" && e["card"] == "C1"), "{got}");
+    assert!(events.iter().any(|e| e["t"] == "entity" && e["k"] == "deck" && e["id"] == deck.as_str()), "{got}");
+}

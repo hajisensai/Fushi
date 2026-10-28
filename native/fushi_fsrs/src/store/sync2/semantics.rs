@@ -208,7 +208,7 @@ pub(crate) fn refresh_tags_row(conn: &Connection, profile: &str, note: &str, t: 
     .map_err(sql)?
     .execute(params![id, profile, note, writer, text])
     .map_err(sql)?;
-    t.events.push(json!({"t": "edit", "x": row}));
+    t.landed_edit(&id, "note", note, "tags");
     Ok(())
 }
 

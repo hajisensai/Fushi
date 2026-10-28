@@ -308,7 +308,10 @@ fn note_legacy(conn: &Connection, profile: &str, device: &Id, seq: u64, l: &Lega
 /// 一次投影涉及的东西（交回 Dart 刷新缓存 / 做标记用）。
 #[derive(Default, Debug)]
 pub(crate) struct Touched {
-    /// 真正落进投影的事件（旧事件 JSON 形态，`{"t":..,"x":..}`）。
+    /// 真正落进投影的事件的**标记**（不是事件全文）：Dart 侧只用它标脏缓存、推修订号、收落库 ID，见
+    /// [Touched::landed_entity] / [Touched::landed_edit] / [Touched::landed_log]。以前这里交回整条事件 JSON（实体
+    /// 记录全文、笔记字段值、日志行），一批收段几万条操作就是几百 MB 的 JSON，跨 isolate 拷一遍再在 UI isolate
+    /// 上逐条解析——同步时卡死 UI、内存冲到 4 GB 被 Scudo OOM 杀掉（BUG：制卡后自动重排 + 同步闪退）。
     pub events: Vec<Value>,
     /// 被新落的修改记录支配、从投影删掉的修改记录 ID。
     pub dominated: Vec<String>,
@@ -320,6 +323,23 @@ pub(crate) struct Touched {
     /// 这一次被彻底清除的实体 (kind, id)：Dart 侧要通知依赖它们的派生表（RWKV 分数表）。
     pub purged: BTreeSet<(String, String)>,
     pub diagnostics: Vec<String>,
+}
+
+impl Touched {
+    /// 一条实体身份记录落进投影：`{"t":"entity","id","k"}`。
+    pub(crate) fn landed_entity(&mut self, id: &str, kind: &str) {
+        self.events.push(json!({"t": "entity", "id": id, "k": kind}));
+    }
+
+    /// 一条修改记录落进投影：`{"t":"edit","id","k","e","f"}`（实体种类 / 实体 ID / 字段键）。
+    pub(crate) fn landed_edit(&mut self, id: &str, kind: &str, entity: &str, field: &str) {
+        self.events.push(json!({"t": "edit", "id": id, "k": kind, "e": entity, "f": field}));
+    }
+
+    /// 一条复习日志落进投影：`{"t":"log","id","card"}`。
+    pub(crate) fn landed_log(&mut self, id: &str, card: &str) {
+        self.events.push(json!({"t": "log", "id": id, "card": card}));
+    }
 }
 
 pub(crate) fn canonical(v: &Value) -> String {
@@ -542,7 +562,7 @@ fn project_entity(conn: &Connection, profile: &str, kind: EntKind, idt: &str, da
         .map_err(sql)?
         .execute(params![idt, profile, kind.wire(), canonical(&d), d["createdAt"].as_i64().unwrap_or(0)])
         .map_err(sql)?;
-        t.events.push(json!({"t": "entity", "x": rec}));
+        t.landed_entity(idt, kind.wire());
     }
     Ok(())
 }
@@ -643,7 +663,7 @@ pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody,
         }
         _ => {}
     }
-    t.events.push(json!({"t": "edit", "x": row}));
+    t.landed_edit(&eid, e.kind.wire(), &ent, &e.key);
     Ok(())
 }
 
@@ -681,7 +701,7 @@ fn project_log(conn: &Connection, profile: &str, op: &Op, l: &LogBody, now: i64,
         .map_err(sql)?;
         upsert_server_time(conn, profile, &lid, l.legacy_server_time, now)?;
         t.cards.insert(card.clone());
-        t.events.push(json!({"t": "log", "x": row}));
+        t.landed_log(&lid, &card);
     }
     semantics::evaluate_holds(conn, profile, "card", &card, now, t)?;
     if let Some(n) = &l.note {
@@ -1089,7 +1109,7 @@ impl SrsCore {
 
     /// 本机写入（设计 §6.2 第 1 步之前：复习立即本地落盘）。[input] 是 JSON 数组，每项
     /// `{"e": <SrsEvent JSON>, "note": <日志卡片的笔记 ID | null>}`。返回
-    /// `{"events":[落进投影的事件], "landed":[每项是否落了], "dominated":[...], "replayed":[...]}`。
+    /// `{"events":[每项最后落进投影的那条的标记（见 [Touched::events]）| null], "landed":[每项是否落了], "dominated":[...], "replayed":[...]}`。
     pub fn sync2_apply_local(&self, profile: &str, now: i64, input: &str) -> Result<String, String> {
         let items: Vec<Value> = serde_json::from_str(input).map_err(|e| format!("bad apply input: {e}"))?;
         let w = self.writer()?;

@@ -972,7 +972,7 @@ impl SrsCore {
 
     /// 收段：每项是一个段文件的字节（任意顺序、可重复）。校验（签名 / 链 / 解密）、按设备连续前缀 + 因果
     /// 满足才应用；不满足的进缓冲等下一轮。返回
-    /// `{"events":[落进投影的事件], "dominated":[..], "replayed":[..], "applied":n, "pending":n, "errors":[..], "fork":bool}`。
+    /// `{"events":[落进投影的事件的标记（见 [Touched::events]）], "dominated":[..], "replayed":[..], "applied":n, "pending":n, "errors":[..], "fork":bool}`。
     ///
     /// 一次收完；同一轮要分几批收（字节预算）时用 [SrsCore::sync2_ingest_begin] / [SrsCore::sync2_ingest_batch] /
     /// [SrsCore::sync2_ingest_finish]，分叉判定与换身份和把全部批次拼成一次调用这里相同。

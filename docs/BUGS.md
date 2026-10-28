@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3470 条。点号进各自文件。
+> 共 3471 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3867](bugs/BUG-3867-srs-sync-ingest-oom-crash.md) | ✅ | ✅ | srs-sync-ingest-oom-crash |
 | [BUG-3866](bugs/BUG-3866-bluray-menu-aacs-win-file-callback-size.md) | ✅ | ✅ | Windows 加密原盘菜单又打不开（fushi_aacs 文件回调把 seek 返回值当文件大小） |
 | [BUG-3865](bugs/BUG-3865-srs-media-sync-sync-stat-freezes-ui.md) | ✅ | ✅ | 复习同步「同步卡片媒体」阶段逐个同步 stat 本机文件，UI 卡死到 ANR |
 | [BUG-3864](bugs/BUG-3864-srs-review-space-dead-on-reveal.md) | 🚧 | 🚧 | 复习页空格翻到答案面后键盘失灵（Windows，未复现） |
