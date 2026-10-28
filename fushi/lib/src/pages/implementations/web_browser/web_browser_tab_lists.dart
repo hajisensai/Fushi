@@ -266,7 +266,8 @@ class _StripReorderListState extends State<_StripReorderList> {
               Material(type: MaterialType.transparency, child: child),
           itemBuilder: (BuildContext context, int i) {
             final WebBrowserTab tab = widget.tabs[i];
-            return _StripDragStartListener(
+            return _MouseDragStartListener(
+              axis: Axis.horizontal,
               key: ValueKey<String>('strip-${tab.id}'),
               index: i,
               child: Align(
@@ -287,25 +288,35 @@ class _StripReorderListState extends State<_StripReorderList> {
   }
 }
 
-/// 只认鼠标 / 触控板的横向拖动：越过拖动阈值才开始排序，所以单击与中键关闭照常；
-/// 触屏不参与（触屏横滑是平移标签栏）。
-class _StripDragStartListener extends ReorderableDragStartListener {
-  const _StripDragStartListener({
+/// 只认鼠标 / 触控板 / 笔沿 [axis] 的拖动：越过拖动阈值才开始排序，所以单击、
+/// 中键关闭、右键菜单照常；触屏不参与（触屏拖动是滚动列表，长按是菜单）。
+class _MouseDragStartListener extends ReorderableDragStartListener {
+  const _MouseDragStartListener({
+    required this.axis,
     required super.index,
     required super.child,
     super.key,
   });
 
+  final Axis axis;
+
+  static const Set<PointerDeviceKind> _devices = <PointerDeviceKind>{
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.stylus,
+  };
+
   @override
-  MultiDragGestureRecognizer createRecognizer() =>
-      HorizontalMultiDragGestureRecognizer(
-        debugOwner: this,
-        supportedDevices: const <PointerDeviceKind>{
-          PointerDeviceKind.mouse,
-          PointerDeviceKind.trackpad,
-          PointerDeviceKind.stylus,
-        },
-      );
+  MultiDragGestureRecognizer createRecognizer() => switch (axis) {
+    Axis.horizontal => HorizontalMultiDragGestureRecognizer(
+      debugOwner: this,
+      supportedDevices: _devices,
+    ),
+    Axis.vertical => VerticalMultiDragGestureRecognizer(
+      debugOwner: this,
+      supportedDevices: _devices,
+    ),
+  };
 }
 
 /// 标题栏模式下标签栏末尾至少保留的拖窗空白。
@@ -491,13 +502,18 @@ class WebBrowserSidebar extends StatelessWidget {
                   onReorder: callbacks.onReorder,
                   itemBuilder: (BuildContext context, int i) {
                     final WebBrowserTab tab = tabs[i];
-                    return ReorderableDelayedDragStartListener(
+                    // 鼠标：竖拖即排序；触屏：长按后拖（列表滚动占着竖滑）。
+                    return _MouseDragStartListener(
+                      axis: Axis.vertical,
                       key: ValueKey<String>('sidebar-${tab.id}'),
                       index: i,
-                      child: _GrowIn(
-                        child: FushiStaggeredEntrance(
-                          index: i,
-                          child: _SidebarTab(tab: tab, callbacks: callbacks),
+                      child: ReorderableDelayedDragStartListener(
+                        index: i,
+                        child: _GrowIn(
+                          child: FushiStaggeredEntrance(
+                            index: i,
+                            child: _SidebarTab(tab: tab, callbacks: callbacks),
+                          ),
                         ),
                       ),
                     );

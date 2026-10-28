@@ -7,7 +7,7 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart'
     show debugDefaultTargetPlatformOverride;
-import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -419,6 +419,36 @@ void main() {
     await tester.tap(find.text(t.web_browser_tab_close_others));
     await tester.pumpAndSettle();
     expect(state.tabsController.tabs, <WebBrowserTab>[first]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('侧边栏鼠标竖拖即排序（不用长按）', (WidgetTester tester) async {
+    await pumpBrowser(tester, const Size(1280, 720));
+    final FushiWebBrowserPageState state = page(tester);
+    state.runShortcut(ShortcutAction.webBrowserNewTab);
+    await tester.pumpAndSettle();
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    final WebBrowserTab first = state.tabsController.tabs.first;
+    final WebBrowserTab second = state.tabsController.tabs.last;
+    final Offset start = tester.getCenter(
+      byKey('web-browser-sidebar-tab-${first.id}'),
+    );
+    final double dy =
+        tester.getCenter(byKey('web-browser-sidebar-tab-${second.id}')).dy -
+        start.dy +
+        30;
+    final TestGesture mouse = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    for (int i = 1; i <= 10; i++) {
+      await mouse.moveTo(start + Offset(0, dy * i / 10));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(state.tabsController.tabs, <WebBrowserTab>[second, first]);
     expect(tester.takeException(), isNull);
   });
 
