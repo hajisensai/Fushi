@@ -31,13 +31,19 @@ void main() {
     expect(shell, contains('MediaSourcesPage('));
   });
 
-  test('主页只组装主卡、继续观看（含下一集）、已更新未看和最近添加，系列与原始视频分流', () {
+  test('主页只组装首屏继续观看（含下一集）、已更新未看和最近添加，系列与原始视频分流', () {
     final String page = File(
       'lib/src/pages/implementations/home_video_page.dart',
     ).readAsStringSync();
 
-    expect(page, contains('_buildContinueRow('));
-    expect(page, contains('_buildHomeContinueHero('));
+    // 2026-10-28 方案 F：首屏 [VideoContinueSpotlight] 就是全部的继续观看，下面
+    // 不再另起一行（用户「最上面不就是继续观看，这不就重复了吗」）。
+    expect(page, contains('VideoContinueSpotlight('));
+    expect(
+      page,
+      isNot(contains('_buildContinueRow(')),
+      reason: '继续观看全在首屏，另起一行就重复了',
+    );
     expect(page, contains('_buildSubscriptionUpdatesRow('));
     expect(
       page,

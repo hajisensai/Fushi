@@ -14,16 +14,13 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
-/// 书架 / 漫画书架 / 游戏 / 视频 / 首页共用的「继续」大卡（2026-10-28 统一）：
-/// 满宽 tonal 卡，起始侧封面，「眉标 → 标题 → 元信息 → 进度」，背景海报。
+/// 书架 / 漫画书架 / 游戏 / 音乐 / 首页共用的「继续」大卡（2026-10-28 统一）：
+/// tonal 纯色卡，起始侧封面，「眉标 → 标题 → 元信息 → 进度」。
 /// 整卡点按 = 继续，悬停抬升（[FushiHoverLift]）、按压下沉与焦点环由
 /// [FushiCard] 提供；进场随页面错峰淡入。
 ///
-/// 背景海报只用于有构图的剧照（视频，给 [backdropAspectRatio]）：剧照铺满整卡
-/// （按卡片比例裁切），起始侧淡成底纹托住封面与文字、行尾清晰（用户 2026-10-28
-/// 「整块都是横屏图覆盖」）。卡高与书架同一档，不为剧照拉成高横幅（同日「继续
-/// 观看还是太大了」）。
-/// 书 / 漫画 / 游戏是纯色卡（模糊封面底纹 2026-10-28 撤掉）。
+/// 不画背景图（模糊封面底纹 2026-10-28 撤掉）；视频首页的剧照卡另有
+/// `VideoContinueSpotlight`（同日方案 F），不走本组件。
 ///
 /// 卡宽封顶 [maxWidth]、贴起始侧（用户同日「横屏全宽有点丑」）：满宽铺开时
 /// 封面与文字只占起始侧一小块，剩下一大片空。
@@ -50,8 +47,6 @@ class FushiContinueHero extends StatelessWidget {
     this.frameCover = true,
     this.onLongPress,
     this.metaIcon,
-    this.backdrop,
-    this.backdropAspectRatio,
     super.key,
   });
 
@@ -101,13 +96,6 @@ class FushiContinueHero extends StatelessWidget {
 
   /// 长按 / 右键：条目菜单或详情（游戏详情、音乐专辑、视频条目菜单）。
   final VoidCallback? onLongPress;
-
-  /// 背景海报（视频剧照）。null 或墨水屏 = 纯色卡。
-  final Widget? backdrop;
-
-  /// [backdrop] 是有构图的图（视频剧照 16:9）时给它的宽高比：剧照铺满整卡、
-  /// 起始侧淡出。null = 模糊封面这类没有构图的底纹。
-  final double? backdropAspectRatio;
 
   /// 第一行元信息前的小图标（视频远端条目的云图标）。
   final IconData? metaIcon;
@@ -204,29 +192,11 @@ class FushiContinueHero extends StatelessWidget {
       );
     }
 
-    // 海报用**透明度遮罩**淡出（不是盖一层卡面色渐变）：卡片的悬停 / 按压高亮
-    // 画在内容下面，盖固定色会在海报起始边露出一道接缝。
-    Widget fade(Widget image, List<double> opacity, List<double> stops) =>
-        ShaderMask(
-          blendMode: BlendMode.dstIn,
-          shaderCallback: (Rect r) => LinearGradient(
-            begin: AlignmentDirectional.centerStart,
-            end: AlignmentDirectional.centerEnd,
-            colors: <Color>[
-              for (final double o in opacity) Colors.black.withValues(alpha: o),
-            ],
-            stops: stops,
-          ).createShader(r, textDirection: Directionality.of(context)),
-          child: image,
-        );
-
-    final Widget? poster = eink ? null : backdrop;
     final Widget card = FushiCard(
       key: cardKey,
       focusId: focusId,
       color: eink || apple ? tokens.surfaces.group : fushiHeroBlockColor(cs),
       borderRadius: eink || apple ? null : FushiM3eShape.containerLargeRadius,
-      // 背景海报要贴边铺满到圆角，内边距挪到 Stack 里的内容层。
       padding: EdgeInsets.zero,
       onTap: onOpen,
       onLongPress: onLongPress,
@@ -237,7 +207,6 @@ class FushiContinueHero extends StatelessWidget {
           final BoxConstraints c = outer.deflate(pad);
           final bool roomy = c.maxWidth >= _roomyMinWidth;
           final double gap = tokens.spacing.gap * (roomy ? 2 : 1.5);
-          final double? stillAspect = backdropAspectRatio;
           final double coverHeight = roomy ? _roomyCoverHeight : 102;
           // 横图封面在窄卡上别吃掉信息列：宽度封顶卡宽 40%。
           final double coverWidth = (coverHeight * coverAspectRatio).clamp(
@@ -281,31 +250,7 @@ class FushiContinueHero extends StatelessWidget {
                     ),
                   ],
                 );
-          final Widget padded = Padding(padding: pad, child: body);
-          if (poster == null) return padded;
-          return Stack(
-            children: <Widget>[
-              Positioned.fill(
-                child: stillAspect == null
-                    // 模糊封面：整卡淡淡一层底纹，行尾稍浓。
-                    ? fade(
-                        poster,
-                        <double>[0, 0.18, roomy ? 0.5 : 0.35],
-                        const <double>[0, 0.45, 1],
-                      )
-                    // 剧照铺满整卡（用户 2026-10-28「整块都是横屏图覆盖」）：
-                    // cover 裁成卡片比例，起始侧淡成底纹托住文字，行尾清晰。
-                    : fade(
-                        poster,
-                        roomy
-                            ? <double>[0.28, 0.45, 1]
-                            : <double>[0.18, 0.3, 0.7],
-                        const <double>[0, 0.4, 0.85],
-                      ),
-              ),
-              padded,
-            ],
-          );
+          return Padding(padding: pad, child: body);
         },
       ),
     );

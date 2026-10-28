@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
+import 'package:fushi/src/media/video/video_continue_spotlight.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -129,7 +129,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// 有播放痕迹（未看完）→ 进「继续观看」行。
+  /// 有播放痕迹（未看完）→ 进首屏继续观看区（VideoContinueSpotlight）。
   Future<void> seedInProgress(String uid, String title) => db.upsertVideoBook(
     VideoBooksCompanion(
       bookUid: Value<String>(uid),
@@ -140,7 +140,7 @@ void main() {
   );
 
   /// 一部最近刚播放（`lastPlayedAt` = 现在）的在看合集：它是继续观看的第一项、
-  /// 被提成首屏主卡，其余在看条目都进「继续观看」横滚行。返回合集 id。
+  /// 占首屏主卡，其余在看条目落到首屏小卡。返回合集 id。
   Future<int> seedHeroDecoy() async {
     final int cid = await db.createMediaCollection(
       'HeroDecoy',
@@ -169,25 +169,51 @@ void main() {
     ),
   );
 
-  testWidgets('继续观看行的散卡显示该视频的标签', (WidgetTester tester) async {
+  // 2026-10-28 方案 F：继续观看全在首屏 VideoContinueSpotlight（16:9 剧照卡，
+  // 图下只有一行片名），与原首屏主卡同一口径不画标签；标签（BUG-1808）留在
+  // 「已更新未看」「最近添加」行卡与库墙卡上。散片 / 合集 / 远端三种卡一起钉：
+  // 任一种悄悄长出标签都会红。
+  testWidgets('首屏继续观看卡不画标签（散片 / 合集 / 远端）', (WidgetTester tester) async {
     await seedHeroDecoy();
     await seedInProgress('video/tagged', 'Tagged Show');
-    await seedInProgress('video/plain', 'Plain Show');
-    final int tagId = await db.createTag('WatchLater', 0xFF2196F3);
-    await db.addTagToVideoBook('video/tagged', tagId);
-
-    await pumpHome(tester);
-
-    expect(
-      tagTextIn('home_video_continue_video/tagged', 'WatchLater'),
-      findsOneWidget,
-      reason: '首页横滚卡必须和墙卡一样画出已打的标签（BUG-1808）',
+    final int looseTag = await db.createTag('WatchLater', 0xFF2196F3);
+    await db.addTagToVideoBook('video/tagged', looseTag);
+    final int cid = await db.createMediaCollection(
+      'MyShow',
+      collectionType: 'playlist',
     );
-    expect(
-      tagTextIn('home_video_continue_video/plain', 'WatchLater'),
-      findsNothing,
-      reason: '标签只属于打过它的那条视频，不得整行铺开',
+    await seedInProgress('video/ep1', 'Ep1');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep1');
+    final int collectionTag = await db.createTag('Airing', 0xFFFF9800);
+    await db.addTagToCollection(cid, collectionTag);
+
+    await pumpHome(
+      tester,
+      remote: const <RemoteVideoInfo>[
+        RemoteVideoInfo(
+          id: 'video/remote-watching',
+          title: 'Remote Watching',
+          positionMs: 60000,
+          positionUpdatedAtMs: 1700000000000,
+          tags: <String>['HostTag'],
+        ),
+      ],
     );
+
+    for (final (String key, String tag) in <(String, String)>[
+      ('home_video_continue_video/tagged', 'WatchLater'),
+      ('home_video_continue_collection_$cid', 'Airing'),
+      ('home_video_continue_remote_video_remote-watching', 'HostTag'),
+    ]) {
+      final Finder card = find.byKey(ValueKey<String>(key));
+      expect(card, findsOneWidget, reason: '前提：$key 在首屏继续观看区');
+      expect(
+        find.ancestor(of: card, matching: find.byType(VideoContinueSpotlight)),
+        findsOneWidget,
+        reason: '前提：$key 是首屏卡，不是横滚行卡',
+      );
+      expect(tagTextIn(key, tag), findsNothing, reason: '首屏继续观看卡不画标签');
+    }
   });
 
   testWidgets('最近添加行的卡显示该视频的标签', (WidgetTester tester) async {
@@ -212,32 +238,15 @@ void main() {
     );
   });
 
-  testWidgets('继续观看行的合集卡显示合集自己的标签', (WidgetTester tester) async {
-    await seedHeroDecoy();
-    final int cid = await db.createMediaCollection(
-      'MyShow',
-      collectionType: 'playlist',
-    );
-    await seedInProgress('video/ep1', 'Ep1');
-    await db.addToCollection(cid, MediaKind.video, 'video/ep1');
-    final int tagId = await db.createTag('Airing', 0xFFFF9800);
-    await db.addTagToCollection(cid, tagId);
-
-    await pumpHome(tester);
-
-    expect(
-      tagTextIn('home_video_continue_collection_$cid', 'Airing'),
-      findsOneWidget,
-      reason: '合集的标签走 collectionTagMapProvider，与合集墙卡同一口径',
-    );
-  });
-
   // 首页 overview 原有**三条**横滚行（继续观看 / 下一集 / 最近添加），每条都可能
   // 出合集卡。上面三条只覆盖了继续观看的散卡/合集卡与最近添加的散卡，剩下两处
   // 合集卡当初就是这么漏掉的——补画时同样漏了一遍。按行 × 卡型逐格补齐。
-  // 2026-10 重设计后「下一集」并入继续观看：Next-Up 落到下一集的合集卡同样要画
-  // 标签（它走的是继续观看合集卡，但目标集是未开播的下一集，副标题与进度另一套）。
-  testWidgets('继续观看里 Next-Up 落到下一集的合集卡显示合集自己的标签', (WidgetTester tester) async {
+  // 2026-10 重设计后「下一集」并入继续观看；2026-10-28 继续观看全在首屏、不画
+  // 标签。这条留着钉 Next-Up 合集卡的副标题：首屏小卡压的是完整的「下一集 ·
+  // 第 N 集」（曾按分隔符切成只剩「下一集」，集数丢了）。
+  testWidgets('首屏 Next-Up 合集小卡压完整的「下一集 · 第 N 集」、不画标签', (
+    WidgetTester tester,
+  ) async {
     await seedHeroDecoy();
     final int cid = await db.createMediaCollection(
       'NextShow',
@@ -273,12 +282,12 @@ void main() {
         matching: find.text(t.video_home_next_episode_number(n: 2)),
       ),
       findsOneWidget,
-      reason: '前提：这张卡确实是 Next-Up 落到下一集的那种',
+      reason: '小卡必须压完整的「下一集 · 第 2 集」，不能只剩「下一集」',
     );
     expect(
       tagTextIn('home_video_continue_collection_$cid', 'NextUp'),
-      findsOneWidget,
-      reason: 'Next-Up 合集卡与其它行同一标签口径（BUG-1808 补齐）',
+      findsNothing,
+      reason: '首屏继续观看卡不画标签',
     );
   });
 
@@ -320,56 +329,33 @@ void main() {
     );
     expect(hero, findsOneWidget, reason: '唯一在看的一部被提成首屏主卡');
     expect(
-      find.ancestor(of: hero, matching: find.byType(FushiContinueHero)),
+      find.ancestor(of: hero, matching: find.byType(VideoContinueSpotlight)),
       findsOneWidget,
-      reason: '前提：这张是主卡（FushiContinueHero），不是横滚行卡',
+      reason: '前提：这张是首屏主卡（VideoContinueSpotlight），不是横滚行卡',
     );
     expect(
       tagTextIn('home_video_continue_collection_$heroCid', 'HeroTag'),
       findsNothing,
-      reason: '2026-10 重设计：主卡是大图 + 标题 + 按钮版式，不画标签 chip',
+      reason: '首屏主卡是剧照 + 片名 + 进度版式，不画标签',
     );
   });
 
   // ── 远端占位卡：host 清单下发的是标签**名**（标签本身每设备本地） ──────────
 
-  testWidgets('继续观看行的远端占位卡显示 host 下发的标签', (WidgetTester tester) async {
-    await seedHeroDecoy();
-    await pumpHome(
-      tester,
-      remote: const <RemoteVideoInfo>[
-        RemoteVideoInfo(
-          id: 'video/remote-watching',
-          title: 'Remote Watching',
-          positionMs: 60000,
-          positionUpdatedAtMs: 1700000000000,
-          tags: <String>['HostTag'],
-        ),
-      ],
-    );
-
-    expect(
-      tagTextIn('home_video_continue_remote_video_remote-watching', 'HostTag'),
-      findsOneWidget,
-      reason: 'RemoteVideoInfo.tags 一直在清单里，远端卡不该是唯一看不到标签的卡',
-    );
-  });
-
   testWidgets('远端标签借本机同名标签的颜色，本机没有则走 chip 默认色', (WidgetTester tester) async {
     const int knownColor = 0xFF9C27B0;
     await db.createTag('Known', knownColor);
-    // 远端卡要落进横滚行（主卡不画标签）。
-    await seedHeroDecoy();
 
+    // 远端卡要落进画标签的横滚行：刚入库、没播过 →「最近添加」行（继续观看
+    // 全在首屏、不画标签）。
     await pumpHome(
       tester,
-      remote: const <RemoteVideoInfo>[
+      remote: <RemoteVideoInfo>[
         RemoteVideoInfo(
           id: 'video/remote-colored',
           title: 'Remote Colored',
-          positionMs: 60000,
-          positionUpdatedAtMs: 1700000000000,
-          tags: <String>['Known', 'Unknown'],
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+          tags: const <String>['Known', 'Unknown'],
         ),
       ],
     );

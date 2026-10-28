@@ -367,6 +367,40 @@ void main() {
     expect(find.byType(ShelfCoverSheen), findsOneWidget);
   });
 
+  testWidgets('平贴档（合集 hero 色块里）：仍是扇形多本，但每本无投影、无接触阴影', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      harness(
+        ShelfCoverFrame(
+          flat: true,
+          stackedCovers: <Widget>[cover('b'), cover('c')],
+          child: cover('a'),
+        ),
+        material: ShelfCoverMaterial.glossyBook,
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    // 叠放照旧：三本都在，走 [ShelfCoverPile]。
+    expect(find.byType(ShelfCoverPile), findsOneWidget);
+    expect(find.byType(ShelfMaterialSurface), findsNWidgets(3));
+    expect(find.byKey(const ValueKey<String>('cover-b')), findsOneWidget);
+    // 材质投影压在 tonal 色块上会糊出一块发灰的底（用户截图「封面右侧有点卡」）。
+    expect(find.byType(ShelfContactShadow), findsNothing);
+    for (final Element e
+        in find
+            .descendant(
+              of: find.byType(ShelfMaterialSurface),
+              matching: find.byType(AnimatedContainer),
+            )
+            .evaluate()) {
+      final AnimatedContainer box = e.widget as AnimatedContainer;
+      expect((box.decoration! as BoxDecoration).boxShadow, isEmpty);
+    }
+    // 扫光不是投影，平贴档照常保留。
+    expect(find.byType(ShelfCoverSheen), findsWidgets);
+  });
+
   for (final double width in <double>[60, 160, 320]) {
     testWidgets('16:9 剧照（海报材质横版）宽 $width 不溢出、按实际尺寸铺满', (
       WidgetTester tester,

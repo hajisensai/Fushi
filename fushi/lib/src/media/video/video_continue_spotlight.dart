@@ -77,15 +77,14 @@ class VideoContinueSpotlight extends StatelessWidget {
     );
   }
 
-  /// 首屏骨架用的高度：与真组件同一套几何（窄屏按有小卡行估）。
-  static double placeholderHeight(double width, double gapUnit) {
-    final double gap = _gap(gapUnit);
-    if (width >= wideMinWidth) return _wideGeometry(width, gap).mainHeight;
-    return math.min(width * 9 / 16, _narrowMainMaxHeight) +
-        gap +
-        _narrowSideWidth * 9 / 16 +
-        _sideTitleHeight +
-        _liftRoom * 2;
+  /// 首屏骨架的主卡位尺寸：与真主卡同一套几何（[width] 是本组件拿到的宽）。
+  /// 骨架只画主卡位——小卡有几张要等数据，窄屏小卡行随数据出现。
+  static Size placeholderMainSize(double width, double gapUnit) {
+    if (width >= wideMinWidth) {
+      final _WideGeometry g = _wideGeometry(width, _gap(gapUnit));
+      return Size(g.mainWidth, g.mainHeight);
+    }
+    return Size(width, math.min(width * 9 / 16, _narrowMainMaxHeight));
   }
 
   /// 横滑区与首页其它横滚行同一套：鼠标 / 触控板可拖（[HorizontalDragScrollable]），
@@ -219,6 +218,7 @@ class VideoContinueSpotlightEntry {
     required this.subtitle,
     required this.image,
     required this.onOpen,
+    this.shortSubtitle,
     this.progress,
     this.onLongPress,
     this.cloud = false,
@@ -228,8 +228,12 @@ class VideoContinueSpotlightEntry {
   final FushiFocusId focusId;
   final String title;
 
-  /// 「看到第 N 集 · 剩余 M 分钟」；小卡只取第一段压在图上。
+  /// 主卡的完整副标题（「看到第 N 集 · 剩余 M 分钟 · 已看 N 集」）。
   final String subtitle;
+
+  /// 小卡压在图上的那行（不含「已看 N 集」这类追加段）；null = 用 [subtitle]。
+  /// 由调用方给，不在这里按分隔符切：「下一集 · 第 N 集」切开就只剩「下一集」。
+  final String? shortSubtitle;
 
   /// 横版剧照（调用方负责无图 / 失败占位）。
   final Widget image;
@@ -352,9 +356,8 @@ class _SideCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final String episode = entry.subtitle.split(' · ').first;
+    final String episode = entry.shortSubtitle ?? entry.subtitle;
     return FushiHoverLift(
-      scale: 1.03,
       builder: (BuildContext _, bool __) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,

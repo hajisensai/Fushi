@@ -45,8 +45,6 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
-import 'package:fushi/src/media/detail/media_detail_kit.dart'
-    show MediaDetailResumeFab;
 import 'package:fushi/src/media/video/cover_ui/video_online_cover_picker.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
@@ -5371,6 +5369,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       focusId: hero.focusId,
       title: hero.title,
       subtitle: subtitle,
+      shortSubtitle: hero.subtitle,
       // 没有横版剧照时退回竖版海报（LandscapeCoverImage 垫模糊底）。
       image: _buildHomeHeroImage(hero.image(overlay: true) ?? hero.poster),
       progress: hero.progress,
@@ -5470,13 +5469,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       items.add(
         _HomeContinueItem(
           recentMs: recentMs,
-          buildCard: (double cardWidth) => _buildContinueCollectionCard(
-            collection,
-            members,
-            cardWidth,
-            completed,
-            currentIndex,
-          ),
           hero: () => _continueCollectionHero(
             collection,
             members,
@@ -5501,8 +5493,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       items.add(
         _HomeContinueItem(
           recentMs: at?.millisecondsSinceEpoch ?? 0,
-          buildCard: (double cardWidth) =>
-              _buildContinueEntryCard(book, cardWidth),
           hero: () => _continueEntryHero(book),
         ),
       );
@@ -5521,8 +5511,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       items.add(
         _HomeContinueItem(
           recentMs: video.positionUpdatedAtMs,
-          buildCard: (double cardWidth) =>
-              _buildContinueRemoteCard(video, cardWidth),
           hero: () => _continueRemoteHero(video),
         ),
       );
@@ -6034,14 +6022,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     return (remote.positionMs / durationMs).clamp(0.0, 1.0);
   }
 
-  /// 这一集算「看到一半」（主按钮写「继续」而不是「开始观看」）：有播放位置且
-  /// 没看完——与合集详情页悬浮按钮 `_isEpisodeStarted` 同口径（BUG-3491）。
-  bool _slotStarted(_VideoSlot slot) {
-    final VideoSeriesPlaybackState state = _slotPlaybackStates(<_VideoSlot>[
-      slot,
-    ]).single;
-    return state.positionMs > 0 && !state.progress.isFinished;
-  }
 
   /// 合集竖版作品封面链：合集自有封面 → 刮削作品海报 → 成员本地封面借用 →
   /// [fallback] 那一集（纯远端合集时是远端封面）。不取 titleCard / backdrop 横图。
@@ -6060,37 +6040,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ImageProvider? _bookPosterProvider(VideoBookRow book) =>
       _canonicalBookPosterProvider(book.bookUid) ?? _localCoverProvider(book);
 
-  /// 继续观看行·本地散卡：点击直接续播；竖版作品封面；多集副行「看到第 N 集」+
-  /// 按集进度条，单视频显看到的时间 + 集内进度（不知道片长就不画进度条，与墙卡
-  /// 同一诚实口径）。
-  Widget _buildContinueEntryCard(VideoBookRow book, double cardWidth) {
-    final int episodeCount = playlistEpisodeCount(book.playlistJson);
-    final int? episodeNumber = episodeCount > 1
-        ? book.currentEpisode + 1
-        : null;
-    return _buildRowMediaCard(
-      cardKey: ValueKey<String>('home_video_continue_${book.bookUid}'),
-      focusId: FushiFocusId('home-video-continue-${book.bookUid}'),
-      cover: _bookPosterProvider(book),
-      title: _metadataWorkByBook[book.bookUid]?.title ?? book.title,
-      cardWidth: cardWidth,
-      onTap: () => _open(book),
-      onLongPress: () => _showVideoMenu(book),
-      tags: _videoBookTagChips(book.bookUid),
-      progressFraction: episodeNumber == null
-          ? _bookPositionFraction(book)
-          : videoWatchFraction(
-              completed: book.completedAt != null,
-              currentEpisode: book.currentEpisode,
-              episodeCount: episodeCount,
-            ),
-      secondaryText: _continueSecondaryText(book, episodeNumber: episodeNumber),
-    );
-  }
-
-  /// 主卡·本地散片：大图 titleCard / backdrop（散装电影刮削图组）→ 自身封面；
-  /// 散片没有合集详情页，不出「详情」按钮。key / 焦点 id 沿用它在继续观看行里的
-  /// 卡（主卡就是被提上来的那张）。
+  /// 首屏继续观看卡·本地散片：大图 titleCard / backdrop（散装电影刮削图组）→
+  /// 自身封面。
   _HomeHeroData _continueEntryHero(VideoBookRow book) {
     final int episodeCount = playlistEpisodeCount(book.playlistJson);
     final int? episodeNumber = episodeCount > 1
@@ -6119,13 +6070,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               currentEpisode: book.currentEpisode,
               episodeCount: episodeCount,
             ),
-      playLabel: MediaDetailResumeFab.labelFor(
-        watching: true,
-        started: _slotStarted(_VideoSlot(local: book)),
-        itemLabel: episodeNumber == null
-            ? null
-            : t.home_continue_episode(n: episodeNumber),
-      ),
       onPlay: () => unawaited(_open(book)),
       onLongPress: () => _showVideoMenu(book),
     );
@@ -6150,37 +6094,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         : t.video_home_continue_episode_number(n: currentIndex + 1);
   }
 
-  /// 继续观看行·合集卡：点击续播 Next-Up 一集（带合集上下文）；竖版作品海报；
-  /// 进度条 = 已看完成员 / 总数；副行 =「看到第 N 集」。成员含本地行与远端占位
-  /// （BUG-3611），目标集只在 host 上时点卡流播、副行前导 ☁。
-  Widget _buildContinueCollectionCard(
-    MediaCollectionRow collection,
-    List<_VideoSlot> members,
-    double cardWidth,
-    int completedCount,
-    int currentIndex,
-  ) {
-    final _VideoSlot target = members[currentIndex];
-    return _buildRowMediaCard(
-      cardKey: ValueKey<String>(
-        'home_video_continue_collection_${collection.id}',
-      ),
-      focusId: FushiFocusId('home-video-continue-collection-${collection.id}'),
-      cover: _collectionPosterProvider(collection, members, target),
-      title: _workTitle(collection),
-      cardWidth: cardWidth,
-      onTap: () => _openSlot(target, playlistCollectionId: collection.id),
-      onLongPress: () => _showCollectionContextMenu(collection),
-      tags: _collectionTagChips(collection.id),
-      progressFraction: completedCount / members.length,
-      secondaryText: _continueCollectionSecondaryText(target, currentIndex),
-      cloudBadge: target.local == null,
-    );
-  }
-
-  /// 主卡·合集：大图走 v68 选图链（titleCard / backdrop，Jellyfin preferThumb
-  /// 口径）→ 刮削作品横图 → 目标集截帧 → 竖版作品封面链；进度条 = 目标集
-  /// 集内进度（不知道片长时退回已看完成员 / 总数）；「详情」进合集详情页。key / 焦点 id 沿用继续观看行的合集卡。
+  /// 首屏继续观看卡·合集：大图走 v68 选图链（titleCard / backdrop，Jellyfin
+  /// preferThumb 口径）→ 刮削作品横图 → 目标集截帧 → 竖版作品封面链；进度条 =
+  /// 目标集集内进度（不知道片长时退回已看完成员 / 总数）。目标集只在 host 上时
+  /// 点卡流播、副标题前导 ☁。
   _HomeHeroData _continueCollectionHero(
     MediaCollectionRow collection,
     List<_VideoSlot> members,
@@ -6188,7 +6105,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     int currentIndex,
   ) {
     final _VideoSlot target = members[currentIndex];
-    final int episodeNumber = currentIndex + 1;
     return _HomeHeroData(
       cardKey: ValueKey<String>(
         'home_video_continue_collection_${collection.id}',
@@ -6213,11 +6129,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           _collectionPosterProvider(collection, members, target),
       progress:
           _slotPositionFraction(target) ?? completedCount / members.length,
-      playLabel: MediaDetailResumeFab.labelFor(
-        watching: true,
-        started: _slotStarted(target),
-        itemLabel: t.home_continue_episode(n: episodeNumber),
-      ),
       onPlay: () => _openSlot(target, playlistCollectionId: collection.id),
       onLongPress: () => _showCollectionContextMenu(collection),
       cloud: target.local == null,
@@ -6235,29 +6146,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       book.completedAt != null ||
       book.lastPlayedAt != null;
 
-  /// 继续观看行·远端占位卡：点击流播（BUG-995 血缘——只看远端也有续播入口）；
-  /// 副行前导 ☁ + 看到的集 / 时间，host 下发片长时画集内进度。
-  Widget _buildContinueRemoteCard(RemoteVideoInfo video, double cardWidth) {
-    final String safeKey = _safeRemoteKey(video.id);
-    return _buildRowMediaCard(
-      cardKey: ValueKey<String>('home_video_continue_remote_$safeKey'),
-      focusId: FushiFocusId('home-video-continue-remote-$safeKey'),
-      cover: _remoteCoverProvider(video),
-      title: video.title,
-      cardWidth: cardWidth,
-      onTap: () => _openRemote(video),
-      onLongPress: () => _showRemoteVideoDialog(video),
-      tags: _remoteTagChips(video.tags),
-      progressFraction: _slotPositionFraction(_VideoSlot(remote: video)),
-      secondaryText: video.isPlaylist
-          ? '${t.video_home_continue_episode_number(n: video.currentEpisode + 1)}'
-                ' · ${t.video_playlist_episodes(count: video.episodes.length)}'
-          : t.video_watched_up_to(time: formatVideoPosition(video.positionMs)),
-      cloudBadge: true,
-    );
-  }
-
-  /// 主卡·远端占位：大图即远端封面；没有详情页。
+  /// 首屏继续观看卡·远端占位：大图即远端封面；点卡流播。副标题与原远端行卡
+  /// 同口径（播放列表「第 N 集 · 共 M 集」，单视频「已看至 时间」）。
   _HomeHeroData _continueRemoteHero(RemoteVideoInfo video) {
     final String safeKey = _safeRemoteKey(video.id);
     final ImageProvider? cover = _remoteCoverProvider(video);
@@ -6265,19 +6155,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       cardKey: ValueKey<String>('home_video_continue_remote_$safeKey'),
       focusId: FushiFocusId('home-video-continue-remote-$safeKey'),
       title: video.title,
-      subtitle: t.video_watched_up_to(
-        time: formatVideoPosition(video.positionMs),
-      ),
+      subtitle: video.isPlaylist
+          ? '${t.video_home_continue_episode_number(n: video.currentEpisode + 1)}'
+                ' · ${t.video_playlist_episodes(count: video.episodes.length)}'
+          : t.video_watched_up_to(time: formatVideoPosition(video.positionMs)),
       poster: cover,
       image: ({required bool overlay}) => cover,
       progress: _slotPositionFraction(_VideoSlot(remote: video)),
-      playLabel: MediaDetailResumeFab.labelFor(
-        watching: true,
-        started: _slotStarted(_VideoSlot(remote: video)),
-        itemLabel: video.isPlaylist
-            ? t.home_continue_episode(n: video.currentEpisode + 1)
-            : null,
-      ),
       onPlay: () => unawaited(_openRemote(video)),
       onLongPress: () => _showRemoteVideoDialog(video),
       cloud: true,
@@ -6583,7 +6467,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }
 
   /// 首页分区的首屏骨架：与 [_buildOverviewSection] 同外边距、同几何——主卡位
-  /// （[VideoContinueSpotlight.placeholderHeight]）+ 两条竖版 2:3 卡的横滚行
+  /// （[VideoContinueSpotlight.placeholderMainSize]）+ 两条竖版 2:3 卡的横滚行
   /// （[videoHomePosterCardWidth]）。标题位是一条文字条，高度由同样式的单行文本
   /// 撑出，与真实行标题逐像素同高。真实版面随数据变（有无主卡 / 面板、0–3 条
   /// 行），骨架取最常见的「主卡 + 两条行」；[withHero] 为 false（库里没有任何播放
@@ -6625,13 +6509,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ],
       ),
     );
-    // 首屏位与真组件（[VideoContinueSpotlight]）同一套几何。
-    final Widget hero = FushiSkeleton(
-      height: VideoContinueSpotlight.placeholderHeight(
-        availableWidth,
-        tokens.spacing.gap,
-      ),
-      borderRadius: FushiM3eShape.containerLargeRadius,
+    // 主卡位与真主卡（[VideoContinueSpotlight]）同一套几何：量的是同一个可用宽
+    // （LayoutBuilder），贴起始侧，骨架换真卡不跳。
+    final Widget hero = LayoutBuilder(
+      builder: (BuildContext _, BoxConstraints c) {
+        final Size main = VideoContinueSpotlight.placeholderMainSize(
+          c.maxWidth,
+          tokens.spacing.gap,
+        );
+        return Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FushiSkeleton(
+            width: main.width,
+            height: main.height,
+            borderRadius: FushiM3eShape.containerLargeRadius,
+          ),
+        );
+      },
     );
     return FushiSkeletonShimmer(
       child: Padding(
@@ -10458,22 +10352,17 @@ Widget _videoCardSkeleton(VideoCardOrientation orientation) => Column(
   ],
 );
 
-/// 首页「继续观看」的一项（2026-10 重设计）：第一项提成首屏主卡（[hero]），
-/// 其余在继续观看行里画成竖版卡（[buildCard]），两种画法共用同一份选集结果。
+/// 首页「继续观看」的一项：首屏 [VideoContinueSpotlight] 的一张卡（[hero]，
+/// 惰性构造）+ 排序键。
 class _HomeContinueItem {
-  const _HomeContinueItem({
-    required this.recentMs,
-    required this.buildCard,
-    required this.hero,
-  });
+  const _HomeContinueItem({required this.recentMs, required this.hero});
 
   /// 最近观看时刻（epoch 毫秒），排序键。
   final int recentMs;
-  final Widget Function(double cardWidth) buildCard;
   final _HomeHeroData Function() hero;
 }
 
-/// 首屏主卡的数据（竖排版上图下文 / 横排版图上叠字两种画法共用）。
+/// 首屏继续观看卡的数据（主卡 / 小卡共用，见 [VideoContinueSpotlight]）。
 class _HomeHeroData {
   const _HomeHeroData({
     required this.cardKey,
@@ -10481,7 +10370,6 @@ class _HomeHeroData {
     required this.title,
     required this.subtitle,
     required this.image,
-    required this.playLabel,
     required this.onPlay,
     this.onLongPress,
     this.progress,
@@ -10494,23 +10382,21 @@ class _HomeHeroData {
   final FushiFocusId focusId;
   final String title;
 
-  /// 与继续观看行卡同一份副标题（「看到第 N 集 · 剩余 M 分钟」等）。
+  /// 副标题（「看到第 N 集 · 剩余 M 分钟」等）；小卡只取第一段压在图上。
   final String subtitle;
 
-  /// 横排版副标题后追加的一段（「已看 N 集」）；竖排版空间小，不画。
+  /// 副标题后追加的一段（「已看 N 集」）。
   final String? detailLine;
 
-  /// 大图 provider；[overlay] = 标题叠在图上（横排版），选图偏好不同。
+  /// 剧照 provider；[overlay] = 文字压在图上（首屏卡恒为 true），先取无字背景。
   final ImageProvider? Function({required bool overlay}) image;
 
-  /// 竖版作品封面（与继续观看行卡同源）；null = 没有，主卡退回剧照当封面。
+  /// 竖版作品封面；没有横版剧照时卡面退回用它。
   final ImageProvider? poster;
 
   /// 进度 0–1；null = 不知道（进度条画空轨）。
   final double? progress;
 
-  /// 主按钮文案（[MediaDetailResumeFab.labelFor]）。
-  final String playLabel;
   final VoidCallback onPlay;
   final VoidCallback? onLongPress;
 
