@@ -12,6 +12,7 @@
 //! 只打开 `srs.db`、它的备份快照副本或自己生成的临时文件；绝不打开主库 `fushi.db`（同一进程里
 //! Drift 那份 SQLite 与这里自带的一份同开一个文件，会在 POSIX 平台上互相清掉文件锁）。
 
+pub(crate) mod caches;
 pub mod ffi;
 pub mod rows;
 mod profile_data;
@@ -479,34 +480,7 @@ impl SrsCore {
         groups: &[Vec<String>],
     ) -> Result<std::collections::HashMap<String, Vec<(String, Option<i64>)>>, String> {
         let w = self.writer()?;
-        let mut wanted: Vec<&str> = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-        for g in groups {
-            for c in g {
-                if seen.insert(c.as_str()) {
-                    wanted.push(c.as_str());
-                }
-            }
-        }
-        let mut logs: std::collections::HashMap<String, Vec<(String, Option<i64>)>> =
-            std::collections::HashMap::with_capacity(wanted.len());
-        for chunk in wanted.chunks(500) {
-            let marks = vec!["?"; chunk.len()].join(", ");
-            let sql = format!(
-                "SELECT l.card_id, l.json, e.server_time FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})"
-            );
-            let mut stmt = w.prepare_cached(&sql).map_err(|e| e.to_string())?;
-            let mut q = stmt
-                .query(rusqlite::params_from_iter(chunk.iter()))
-                .map_err(|e| e.to_string())?;
-            while let Some(row) = q.next().map_err(|e| e.to_string())? {
-                let card: String = row.get(0).map_err(|e| e.to_string())?;
-                let json: String = row.get(1).map_err(|e| e.to_string())?;
-                let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
-                logs.entry(card).or_default().push((json, st));
-            }
-        }
-        Ok(logs)
+        logs_of(&w, groups)
     }
 
     // ------------------------------------------------------------ 测试 / 诊断
@@ -539,6 +513,41 @@ impl SrsCore {
         sessions.push(Arc::downgrade(&session));
         Ok(session)
     }
+}
+
+/// 这些组里全部卡的日志原文 + 服务器时刻（[conn] 上一条 JOIN 按块取；写连接看得见 Drift 事务里未提交的行）。
+pub(crate) fn logs_of(
+    conn: &rusqlite::Connection,
+    groups: &[Vec<String>],
+) -> Result<std::collections::HashMap<String, Vec<(String, Option<i64>)>>, String> {
+    let mut wanted: Vec<&str> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for g in groups {
+        for c in g {
+            if seen.insert(c.as_str()) {
+                wanted.push(c.as_str());
+            }
+        }
+    }
+    let mut logs: std::collections::HashMap<String, Vec<(String, Option<i64>)>> =
+        std::collections::HashMap::with_capacity(wanted.len());
+    for chunk in wanted.chunks(500) {
+        let marks = vec!["?"; chunk.len()].join(", ");
+        let sql = format!(
+            "SELECT l.card_id, l.json, e.server_time FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})"
+        );
+        let mut stmt = conn.prepare_cached(&sql).map_err(|e| e.to_string())?;
+        let mut q = stmt
+            .query(rusqlite::params_from_iter(chunk.iter()))
+            .map_err(|e| e.to_string())?;
+        while let Some(row) = q.next().map_err(|e| e.to_string())? {
+            let card: String = row.get(0).map_err(|e| e.to_string())?;
+            let json: String = row.get(1).map_err(|e| e.to_string())?;
+            let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
+            logs.entry(card).or_default().push((json, st));
+        }
+    }
+    Ok(logs)
 }
 
 #[cfg(test)]

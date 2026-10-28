@@ -1,0 +1,1041 @@
+// 一次性：用**删除前的 Dart 实现**生成缓存刷新（srs_db_store.dart `_flushCachesNow` / `_planNote` /
+// `_mediaRefsOf` / `_applyNotePlan` / `_cardCacheRow` / `_refreshCardChunk` / `_refreshStatProjection`）
+// 收编进 Rust 之前的固定向量。
+//
+// - store 级：用公开 API 造一个覆盖面尽量广的库（自定义标准 / cloze 类型的各种模板语法、内置 Lapis /
+//   Fushi 卡片、字段语料、标签 / 牌组 / 删除 / 删模板 / 删类型 / 更改笔记类型 / 卡片标志 / 复习与撤销 /
+//   第二台设备同步来的修改与「删除 vs 并发修改」待裁决），断言增量刷新出的缓存与 `rebuildCaches()` 一致后，
+//   导出原始事件表（srs_entities / srs_field_edits / srs_review_logs / srs_event_local）与期望缓存表
+//   （srs_notes_cache 去 updated_at / srs_cards_cache / srs_stat_reviews）
+//   → packages/fushi_engine/test/srs/fixtures/cache_vectors.json.gz（回归：srs_cache_vectors_test.dart）。
+// - 纯函数：srsNormalizeTerm / ankiStripHtml(+trim+200 码元截断) / clozeOrdinalsIn / 媒体引用（同 `_mediaRefsOf`）
+//   与模板判空（templateIdsToNames + isAnkiCardEmpty）→ native/fushi_fsrs/tests/fixtures/cache_text_vectors.json。
+//
+// 生成后本文件改名 fixtures/gen_cache_vectors.dart.txt 只作留档（运行时是 test 文件：
+// `dart test test/srs/srs_cache_vectors_gen_test.dart`，在 packages/fushi_engine 下）。
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
+
+import 'package:drift/drift.dart' show QueryRow, Variable, driftRuntimeOptions;
+import 'package:fushi_anki/fushi_anki_core.dart';
+import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
+import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart' show srsMediaRefsIn;
+import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_srs/fushi_srs.dart';
+import 'package:test/test.dart';
+
+import 'support/srs_sync2_peers.dart';
+import 'support/srs_test_storage.dart';
+
+const String kProfile = '01928c3e-0000-7000-8000-0000000000c5';
+const String kDevice = 'vec-A';
+
+final Random _r = Random(20261028);
+
+T _pick<T>(List<T> xs) => xs[_r.nextInt(xs.length)];
+
+String _hex40(int seed) {
+  final Random r = Random(seed);
+  return List<String>.generate(
+    40,
+    (_) => '0123456789abcdef'[r.nextInt(16)],
+  ).join();
+}
+
+/// 字段语料：每条覆盖一个推导规则的边角（见文件头）。
+List<String> fieldCorpus() {
+  final String nest12 =
+      '${List<String>.generate(12, (int i) => '{{c${i + 1}::').join()}核'
+      '${List<String>.filled(12, '}}').join()}';
+  final String longSurrogate =
+      '${List<String>.filled(199, 'あ').join()}😀tail'; // 第 200 个码元落在 😀 的代理对中间
+  return <String>[
+    '',
+    ' ',
+    '  \t\n ',
+    '<br>',
+    '<br/><br />',
+    '<div></div>',
+    '<div><br></div>',
+    '&nbsp;',
+    '　',
+    '\u0085',
+    '﻿',
+    ' ',
+    ' ',
+    '​',
+    '\u0085x﻿',
+    '猫',
+    'ねこ',
+    'Cat',
+    '漢字[かんじ]',
+    ' 日本[にほん] 語[ご]',
+    '[]',
+    '[ruby only]',
+    '<b>太字</b>',
+    '<ruby>漢<rt>かん</rt></ruby>',
+    '<span style="color:red">赤</span>',
+    '<style>.a{color:red}</style>本文',
+    '<STYLE type="text/css">x{}</STYLE>y',
+    '<script>var a="<b>";</script>z',
+    '<SCRIPT>1</SCRIPT>after',
+    '<!-- comment <b> -->c',
+    '<!-- unterminated comment',
+    '<b unclosed',
+    'a < b > c',
+    '&nbsp;&amp;&#12354;&#x3042;&#xD800;&hellip;&unknown;',
+    '&lt;b&gt;',
+    '&#0;',
+    '&#x110000;',
+    '&#xa0;',
+    '&#160;',
+    '&AMP;',
+    '&amp;nbsp;',
+    '&#X41;',
+    '&#;',
+    '&hellip',
+    'ＡＢＣ１２３！～ｚ',
+    'Ｈｅｌｌｏ　Ｗｏｒｌｄ',
+    'Hello World',
+    'İstanbul',
+    'ΟΔΟΣ',
+    'ΑΣ Σ',
+    'Straße',
+    'ǅungla',
+    'ＩＩ',
+    'Ǆ',
+    'ﬃ',
+    '<img src="a b.png">',
+    "<img src='single.jpg'>",
+    '<img src=noquote.gif>',
+    '[sound:x.mp3]',
+    '[sound:http://r.example/r.mp3]',
+    '[sound:a b.ogg][sound:c.ogg]',
+    '<img src="%E3%81%82.png">',
+    '<img src="%ZZ.png">',
+    '<img src="100%.png">',
+    '<img src="a%2">',
+    '<img src="http://ex.com/a.png">',
+    '<img src="https://ex.com/b.png">',
+    '<img src="data:image/png;base64,AAA">',
+    '<img src="a&amp;b.png">',
+    '<img src="&quot;q&quot;.png">',
+    '<img src="&lt;lt&gt;.png">',
+    '<img src="&#39;apos.png">',
+    '<object data="o.svg" src="o2.svg">',
+    '<IMG SRC="UP.PNG">',
+    '<Img Src="Mixed.Png">',
+    '<audio src="a.ogg"><source src="b.ogg"></audio>',
+    '<video src="v.mp4" data="v2.webm">',
+    '<img src="line\nbreak.png">',
+    '<img alt="x" src="😀.png">',
+    '<img src="｡.png">',
+    '<img src="\u{1F600}b.png"><img src="｡b.png">',
+    '<iframe src="frame.html"></iframe>',
+    '<imgx src="not.png">',
+    '<img data-src="lazy.png">',
+    '<img srcset="set.png">',
+    '<img src="">',
+    '<img src="dup.png"><img src="dup.png">',
+    '<img\nsrc="nl.png">',
+    '<link rel="stylesheet" href="_fushi_style_${_hex40(1)}.css">',
+    '<script><link rel="stylesheet" href="_fushi_style_${_hex40(2)}.css"></script>',
+    '<link rel="stylesheet" href="_fushi_style_${_hex40(3)}.css"><link rel="stylesheet" href="_fushi_style_${_hex40(4)}.css">',
+    '<link rel="stylesheet" href="_fushi_style_${_hex40(5).toUpperCase()}.css">',
+    "<link rel='stylesheet' href='_fushi_style_${_hex40(6)}.css'>",
+    '{{c1::猫}}',
+    '{{c1,3::犬::hint}}',
+    '{{c2::外{{c3::内}}}}',
+    '{{c0::zero}}',
+    '{{c1::unclosed',
+    r'\( a^{b}}} \) {{c4::m}}',
+    r'{{c5::\(x^{2}}\)}}',
+    r'\[ {{c6::y}} \]',
+    nest12,
+    '{{c10::ten}}',
+    '{{C1::upper}}',
+    '{{c1:single}}',
+    '{{c-1::neg}}',
+    '{{c 1::space}}',
+    '{{c01::lead}}',
+    '{{c2,2,0::dup}}',
+    '{{c99999999999999999999::big}}',
+    '}}{{c7::after stray}}',
+    '{{c8::a}}{{c8::b}}',
+    longSurrogate,
+    List<String>.filled(201, 'a').join(),
+    '<b>${List<String>.filled(250, 'x').join()}</b>',
+    '${List<String>.filled(198, 'い').join()}<b>😀</b>end',
+    List<String>.filled(200, 'ー').join(),
+  ];
+}
+
+/// 语料随机拼接（字段值 / 纯函数输入）。
+String randomValue(List<String> corpus) {
+  final int roll = _r.nextInt(10);
+  if (roll < 5) return _pick(corpus);
+  final int n = 2 + _r.nextInt(3);
+  return List<String>.generate(
+    n,
+    (_) => _pick(corpus),
+  ).join(_pick(<String>['', ' ', '\n', '<br>', '・']));
+}
+
+/// 模板正面（按名字写；落库 / 向量前换成 fld:id）。
+const List<String> kTemplates = <String>[
+  '{{Front}}',
+  '{{Back}}',
+  '{{#Extra}}{{Extra}}{{/Extra}}',
+  '{{^Extra}}{{Back}}{{/Extra}}',
+  '{{text:Reading}}',
+  '{{Tags}} {{Deck}} {{Card}} {{CardFlag}} {{Subdeck}} {{Type}}',
+  '<!-- {{Front}} -->{{Back}}',
+  '{{=<% %>=}}<%Front%>',
+  '{{#Front}}unclosed',
+  '{{#Front}}x{{/Back}}',
+  '{{#c1}}{{Front}}{{/c1}}',
+  '{{cloze:Front}}',
+  '{{furigana:Reading}}{{kana:Back}}',
+  '{{Missing}}',
+  'static only',
+  '{{#Tags}}{{Front}}{{/Tags}}',
+  '{{FrontSide}}',
+  '{{^Front}}{{^Back}}none{{/Back}}{{/Front}}',
+  '{{#Front}}{{#Back}}{{Extra}}{{/Back}}{{/Front}}',
+  '{{ Front }}',
+  '{{text:hint:Extra}}',
+  '{{/Front}}',
+  '{{Front',
+  '{{#Card}}{{Back}}{{/Card}}',
+  '<!-- {{#Front}} -->{{Back}}',
+  '{{=[[ ]]=}}[[Back]] {{Front}}',
+  '{{type:Back}}',
+  '{{#Reading}}{{/Reading}}{{Front}}',
+  '{{tts ja_JP:Front}}',
+  '{{#Front}}{{^Front}}{{Back}}{{/Front}}{{/Front}}',
+  '{{#Extra}}{{/Extra}}',
+  '{{^Reading}}{{/Reading}}',
+  '{{Extra}}{{Reading}}',
+  '{{#CardFlag}}{{Front}}{{/CardFlag}}',
+  '{{c1::Front}}',
+  '{{{Front}}}',
+];
+
+bool _hasLoneSurrogate(String s) {
+  for (int i = 0; i < s.length; i++) {
+    final int c = s.codeUnitAt(i);
+    if (c >= 0xD800 && c <= 0xDBFF) {
+      if (i + 1 < s.length) {
+        final int d = s.codeUnitAt(i + 1);
+        if (d >= 0xDC00 && d <= 0xDFFF) {
+          i++;
+          continue;
+        }
+      }
+      return true;
+    }
+    if (c >= 0xDC00 && c <= 0xDFFF) return true;
+  }
+  return false;
+}
+
+String _sortOf(String s) {
+  final String t = ankiStripHtml(s).trim();
+  return t.length > 200 ? t.substring(0, 200) : t;
+}
+
+/// 同 srs_db_store.dart `_mediaRefsOf`（单个值）。
+String _mediaOf(String s) {
+  final Set<String> refs = <String>{...srsMediaRefsIn(s), ...srsStyleRefsIn(s)};
+  return (refs.where((String r) => !r.contains('\n')).toList()..sort()).join(
+    '\n',
+  );
+}
+
+Object? _jsonCell(Object? v) =>
+    v is Uint8List ? <String, String>{'b64': base64Encode(v)} : v;
+
+/// 一张表全部列的全部行（按主键排序）。
+Future<Map<String, Object?>> dumpTable(
+  SrsDbStore s,
+  String table, {
+  Set<String> drop = const <String>{},
+}) async {
+  final List<QueryRow> info = await s.db
+      .customSelect('PRAGMA table_info($table)')
+      .get();
+  final List<String> cols = <String>[
+    for (final QueryRow c in info)
+      if (!drop.contains(c.read<String>('name'))) c.read<String>('name'),
+  ];
+  final List<QueryRow> pkRows =
+      info.where((QueryRow c) => c.read<int>('pk') > 0).toList()..sort(
+        (QueryRow a, QueryRow b) =>
+            a.read<int>('pk').compareTo(b.read<int>('pk')),
+      );
+  final List<String> pk = <String>[
+    for (final QueryRow c in pkRows) c.read<String>('name'),
+  ];
+  final List<QueryRow> rows = await s.db
+      .customSelect(
+        'SELECT ${cols.map((String c) => '"$c"').join(', ')} FROM $table '
+        'WHERE profile_uid = ? ORDER BY ${pk.map((String c) => '"$c"').join(', ')}',
+        variables: <Variable<Object>>[Variable<String>(s.profileUid)],
+      )
+      .get();
+  return <String, Object?>{
+    'columns': cols,
+    'pk': pk,
+    'rows': <List<Object?>>[
+      for (final QueryRow r in rows)
+        <Object?>[for (final String c in cols) _jsonCell(r.data[c])],
+    ],
+  };
+}
+
+const List<String> kRawTables = <String>[
+  'srs_entities',
+  'srs_field_edits',
+  'srs_review_logs',
+  'srs_event_local',
+];
+
+Future<Map<String, Map<String, Object?>>> dumpCaches(SrsDbStore s) async =>
+    <String, Map<String, Object?>>{
+      'srs_notes_cache': await dumpTable(
+        s,
+        'srs_notes_cache',
+        drop: <String>{'updated_at'},
+      ),
+      'srs_cards_cache': await dumpTable(s, 'srs_cards_cache'),
+      'srs_stat_reviews': await dumpTable(s, 'srs_stat_reviews'),
+    };
+
+void main() {
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  int t = DateTime.utc(2026, 3, 1, 3).millisecondsSinceEpoch;
+  void tick([int maxMs = 90000]) => t += 1 + _r.nextInt(maxMs);
+
+  Future<SrsDbStore> device(String id) async {
+    final SrsStorage st = await openTestSrsStorage();
+    return SrsDbStore.open(
+      db: st.db,
+      core: st.core,
+      profileUid: kProfile,
+      deviceId: id,
+      engine: FfiFsrsEngine.tryCreate(),
+      trustedClock: SrsTrustedClock(
+        wallClockMs: () => t,
+        monotonicMs: () => t,
+        bootId: 'boot-$id',
+      ),
+      fallbackRolloverHour: () => 4,
+    );
+  }
+
+  test('generate cache vectors', () async {
+    final List<String> corpus = fieldCorpus();
+    // 已知会让缓存刷新整笔抛出的媒体引用（见回报）：只进纯函数向量，不进 store。
+    const List<String> throwing = <String>[
+      '<img src="%FF.png">',
+      '<img src="%C3.png">',
+      '<img src="%E3%81.png">',
+      '[sound:%FF.mp3]',
+    ];
+
+    // ---------------------------------------------------------------- 媒体抛异常探针（独立库）
+    {
+      final SrsDbStore p = await device('probe');
+      final SrsNoteTypeView l = (await p.noteType(p.lapisNoteTypeId))!;
+      Object? err;
+      try {
+        await p.createNote(
+          noteTypeId: l.id,
+          fieldsById: <String, String>{
+            l.fields.first.id: '<img src="%FF.png">',
+          },
+        );
+      } on Object catch (e) {
+        err = e;
+      }
+      stdout.writeln(
+        'PROBE media %FF -> ${err == null ? 'no error' : '${err.runtimeType}: $err'}',
+      );
+    }
+
+    final SrsDbStore a = await device(kDevice);
+    await a.editFields(SrsEntityKind.profile, kProfile, <String, Object?>{
+      SrsFieldKeys.utcOffsetMin: 540,
+      SrsFieldKeys.dayRolloverHour: 4,
+    });
+
+    // ---------------------------------------------------------------- 牌组
+    final String deckSub = await a.ensureDeckPath('Vec::Sub');
+    final String deckLeaf = await a.ensureDeckPath('Vec::Sub::Leaf');
+    final String deck2 = await a.createDeck('Vec2');
+    final List<String?> decks = <String?>[
+      null,
+      null,
+      deckSub,
+      deckLeaf,
+      deck2,
+      a.defaultDeckId,
+    ];
+
+    // ---------------------------------------------------------------- 笔记类型
+    Future<SrsNoteTypeView> type(String id) async => (await a.noteType(id))!;
+    String ids(SrsNoteTypeView v, String tpl) => templateNamesToIds(
+      tpl,
+      <String, String>{for (final SrsFieldDef f in v.fields) f.name: f.id},
+    );
+
+    Future<String> customType(
+      String name,
+      List<String> templates, {
+      String? termField = 'Front',
+    }) async {
+      final String id = await a.createStockNoteType(
+        SrsStockNoteType.basicReversed,
+        name,
+      );
+      await a.addField(id, 'Extra');
+      await a.addField(id, 'Reading');
+      SrsNoteTypeView v = await type(id);
+      await a.updateTemplate(
+        id,
+        v.templates[0].id,
+        front: ids(v, templates[0]),
+      );
+      await a.updateTemplate(
+        id,
+        v.templates[1].id,
+        front: ids(v, templates[1]),
+      );
+      for (int i = 2; i < templates.length; i++) {
+        await a.addTemplate(
+          id,
+          name: 'T$i',
+          front: ids(v, templates[i]),
+          back: '{{FrontSide}}<hr>',
+        );
+      }
+      v = await type(id);
+      final String? tf = termField == null
+          ? null
+          : v.fields.firstWhere((SrsFieldDef f) => f.name == termField).id;
+      await a.setTermField(id, tf);
+      return id;
+    }
+
+    final String typeA = await customType('Vec A', kTemplates.sublist(0, 18));
+    final String typeC = await customType(
+      'Vec C',
+      kTemplates.sublist(18),
+      termField: 'Reading',
+    );
+    final String typeD = await customType('Vec D', <String>[
+      '{{Front}}',
+      '{{#Back}}{{Back}}{{/Back}}',
+    ], termField: null);
+    final String typeDel = await customType('Vec Del', <String>[
+      '{{Front}}',
+      '{{Back}}',
+    ]);
+    final String cloze = await a.createStockNoteType(
+      SrsStockNoteType.cloze,
+      'Vec Cloze',
+    );
+
+    // ---------------------------------------------------------------- 笔记
+    final List<String> notes = <String>[];
+    final Map<String, String> noteType = <String, String>{};
+    const List<String> tagPool = <String>['a', 'B', 'タグ', 'x::y', 'leech', 'Ä'];
+    String clozeValue() {
+      final List<String> clozes = corpus
+          .where((String s) => s.contains('{{'))
+          .toList();
+      return _r.nextInt(5) == 0
+          ? randomValue(corpus)
+          : '${_pick(clozes)}${_pick(<String>['', ' ', randomValue(corpus)])}';
+    }
+
+    Future<void> addNotes(
+      String typeId,
+      int n, {
+      bool clozeType = false,
+    }) async {
+      final SrsNoteTypeView v = await type(typeId);
+      final List<SrsEventDraft> drafts = <SrsEventDraft>[];
+      for (int i = 0; i < n; i++) {
+        tick();
+        final Map<String, String> fields = <String, String>{
+          for (final SrsFieldDef f in v.fields)
+            if (_r.nextInt(6) != 0)
+              f.id: clozeType && f.ord == 0
+                  ? clozeValue()
+                  : randomValue(corpus),
+        };
+        final List<String> tags = <String>[
+          for (final String tg in tagPool)
+            if (_r.nextInt(5) == 0) tg,
+        ];
+        final String? deck = _pick(decks);
+        final int? createdAt = _r.nextInt(4) == 0
+            ? t - _r.nextInt(1 << 30)
+            : null;
+        if (_r.nextBool()) {
+          final String id = await a.createNote(
+            noteTypeId: typeId,
+            fieldsById: fields,
+            deckId: deck,
+            tags: tags,
+            createdAt: createdAt,
+          );
+          notes.add(id);
+          noteType[id] = typeId;
+        } else {
+          final String guid = 'vec-${notes.length}-${_r.nextInt(1 << 30)}';
+          drafts.addAll(
+            a.newNoteDrafts(
+              noteTypeId: typeId,
+              fieldsById: fields,
+              guid: guid,
+              deckId: deck,
+              tags: tags,
+              createdAt: createdAt,
+            ),
+          );
+          final String id = SrsIds.note(kProfile, guid);
+          notes.add(id);
+          noteType[id] = typeId;
+        }
+      }
+      if (drafts.isNotEmpty) await a.importDrafts(drafts);
+    }
+
+    await addNotes(typeA, 70);
+    await addNotes(typeC, 60);
+    await addNotes(typeD, 45);
+    await addNotes(cloze, 80, clozeType: true);
+    await addNotes(a.lapisNoteTypeId, 55);
+    await addNotes(a.fushiCardNoteTypeId, 40);
+    await addNotes(typeDel, 15);
+
+    // 改字段 / 改标签。
+    for (int i = 0; i < 50; i++) {
+      tick();
+      final String n = _pick(notes);
+      final SrsNoteTypeView v = await type(noteType[n]!);
+      await a.updateNote(
+        n,
+        fieldsById: <String, String>{
+          for (final SrsFieldDef f in v.fields)
+            if (_r.nextInt(3) == 0) f.id: randomValue(corpus),
+        },
+        tags: _r.nextBool()
+            ? <String>[
+                for (final String tg in tagPool)
+                  if (_r.nextInt(3) == 0) tg,
+              ]
+            : null,
+      );
+    }
+
+    // ---------------------------------------------------------------- 复习
+    final Map<String, List<String>> answered = <String, List<String>>{};
+    Future<void> reviewRound(int count) async {
+      final List<SrsCardCacheRow> visible = (await a.allCardRows())
+          .where((SrsCardCacheRow c) => !c.hidden)
+          .toList();
+      for (int i = 0; i < count; i++) {
+        t +=
+            _pick(<int>[
+              60000,
+              600000,
+              3600000,
+              86400000,
+              3 * 86400000,
+              20 * 86400000,
+            ]) +
+            _r.nextInt(60000);
+        final SrsCardCacheRow c = _pick(visible);
+        final SrsReviewLog log = await a.answer(
+          c.id,
+          1 + _r.nextInt(4),
+          durationMs: _r.nextInt(30000),
+        );
+        (answered[c.id] ??= <String>[]).add(log.id);
+        if (_r.nextInt(3) == 0) {
+          // 同一张卡连着再复习几次。
+          for (int k = 0; k < 1 + _r.nextInt(3); k++) {
+            t += _pick(<int>[60000, 600000, 86400000, 5 * 86400000]);
+            final SrsReviewLog l2 = await a.answer(c.id, 1 + _r.nextInt(4));
+            answered[c.id]!.add(l2.id);
+          }
+        }
+      }
+    }
+
+    await reviewRound(220);
+    // 撤销：每张卡最后一条。
+    int undone = 0;
+    for (final MapEntry<String, List<String>> e
+        in answered.entries.toList()..shuffle(_r)) {
+      if (undone >= 25) break;
+      tick();
+      if (await a.undo(e.key, e.value.last)) undone++;
+    }
+    final List<String> answeredCards = answered.keys.toList();
+    for (int i = 0; i < 6; i++) {
+      tick();
+      await a.resetCard(_pick(answeredCards));
+    }
+    for (int i = 0; i < 6; i++) {
+      tick();
+      await a.setDueDay(_pick(answeredCards), 20500 + _r.nextInt(400));
+    }
+
+    // ---------------------------------------------------------------- 结构变化
+    // 删模板（旧卡变 hidden）、给已有笔记的类型加模板、换词条字段。
+    SrsNoteTypeView va = await type(typeA);
+    tick();
+    await a.deleteTemplate(typeA, va.templates[1].id);
+    final SrsNoteTypeView vd = await type(typeD);
+    tick();
+    await a.addTemplate(
+      typeD,
+      name: 'Added',
+      front: ids(vd, '{{#Extra}}{{Front}}{{/Extra}}'),
+      back: 'b',
+    );
+    tick();
+    await a.setTermField(typeC, (await type(typeC)).fields.first.id);
+
+    // 更改笔记类型：D → A（含复习过的卡），再把其中一部分 A → C（两层血统）；Lapis → D。
+    final List<String> dNotes = <String>[
+      for (final String n in notes)
+        if (noteType[n] == typeD) n,
+    ];
+    final List<String> toA = dNotes.take(14).toList();
+    va = await type(typeA);
+    final SrsNoteTypeView vdNow = await type(typeD);
+    tick();
+    await a.changeNoteType(
+      noteIds: toA,
+      targetTypeId: typeA,
+      fieldMap: srsDefaultFieldMap(vdNow, va),
+      templateMap: srsDefaultTemplateMap(vdNow, va),
+    );
+    for (final String n in toA) {
+      noteType[n] = typeA;
+    }
+    await reviewRound(40);
+    final List<String> toC = toA.take(6).toList();
+    final SrsNoteTypeView vc = await type(typeC);
+    va = await type(typeA);
+    tick();
+    await a.changeNoteType(
+      noteIds: toC,
+      targetTypeId: typeC,
+      fieldMap: srsDefaultFieldMap(va, vc),
+      templateMap: srsDefaultTemplateMap(va, vc),
+    );
+    for (final String n in toC) {
+      noteType[n] = typeC;
+    }
+    final List<String> lapisNotes = <String>[
+      for (final String n in notes)
+        if (noteType[n] == a.lapisNoteTypeId) n,
+    ].take(8).toList();
+    final SrsNoteTypeView vl = await type(a.lapisNoteTypeId);
+    final SrsNoteTypeView vd2 = await type(typeD);
+    tick();
+    await a.changeNoteType(
+      noteIds: lapisNotes,
+      targetTypeId: typeD,
+      fieldMap: srsDefaultFieldMap(vl, vd2)
+        ..[vd2.fields.first.id] = vl.fields.first.id,
+      templateMap: srsDefaultTemplateMap(vl, vd2),
+    );
+    for (final String n in lapisNotes) {
+      noteType[n] = typeD;
+    }
+    await reviewRound(40);
+
+    // 卡片标志。
+    final List<SrsCardCacheRow> all = await a.allCardRows();
+    final List<SrsCardCacheRow> shown = all
+        .where((SrsCardCacheRow c) => !c.hidden)
+        .toList();
+    for (int i = 0; i < 30; i++) {
+      tick();
+      await a.setSuspended(_pick(shown).id, _r.nextInt(4) != 0);
+    }
+    for (int i = 0; i < 20; i++) {
+      tick();
+      await a.buryUntil(
+        _pick(shown).id,
+        _r.nextInt(4) == 0 ? null : 20400 + _r.nextInt(300),
+      );
+    }
+    for (int i = 0; i < 30; i++) {
+      tick();
+      await a.setFlag(_pick(shown).id, _r.nextInt(8));
+    }
+    for (int i = 0; i < 30; i++) {
+      tick();
+      await a.moveCard(
+        _pick(all).id,
+        _pick(<String>[deckSub, deckLeaf, deck2, a.defaultDeckId]),
+      );
+    }
+    final List<SrsCardCacheRow> fresh =
+        shown.where((SrsCardCacheRow c) => c.queue == 'new').toList()
+          ..shuffle(_r);
+    tick();
+    await a.setNewCardPositions(<String, int>{
+      for (final SrsCardCacheRow c in fresh.take(40))
+        c.id: _r.nextInt(500) - 50,
+    });
+
+    // 删除 / 恢复笔记、删类型。
+    final List<String> shuffled = notes.toList()..shuffle(_r);
+    final List<String> deleted = shuffled.take(22).toList();
+    for (final String n in deleted) {
+      tick();
+      await a.deleteNote(n);
+    }
+    for (final String n in deleted.take(5)) {
+      tick();
+      await a.restoreNote(n);
+    }
+    tick();
+    await a.deleteNoteType(typeDel);
+
+    // ---------------------------------------------------------------- 第二台设备
+    final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+    final SrsDbStore b = await device('vec-B');
+    await srsSyncPeers(<SrsDbStore>[a, b], loc, rounds: 2);
+    // 删除 vs 并发修改 → 待裁决；B 端另有修改与复习。
+    final List<String> live = <String>[
+      for (final String n in shuffled.skip(22)) n,
+    ];
+    for (final String n in live.take(6)) {
+      tick();
+      await a.deleteNote(n);
+      final SrsNoteTypeView v = (await b.noteType(noteType[n]!))!;
+      await b.updateNote(
+        n,
+        fieldsById: <String, String>{v.fields.first.id: 'B改${_r.nextInt(100)}'},
+      );
+    }
+    for (final String n in live.skip(6).take(20)) {
+      tick();
+      final SrsNoteTypeView v = (await b.noteType(noteType[n]!))!;
+      await b.updateNote(
+        n,
+        fieldsById: <String, String>{_pick(v.fields).id: randomValue(corpus)},
+        tags: <String>['from-b'],
+      );
+    }
+    final List<SrsCardCacheRow> bShown = (await b.allCardRows())
+        .where((SrsCardCacheRow c) => !c.hidden)
+        .toList();
+    for (int i = 0; i < 40; i++) {
+      t += _pick(<int>[600000, 86400000, 4 * 86400000]);
+      await b.answer(_pick(bShown).id, 1 + _r.nextInt(4));
+    }
+    for (int i = 0; i < 10; i++) {
+      tick();
+      await b.setFlag(_pick(bShown).id, 1 + _r.nextInt(6));
+    }
+    await srsSyncPeers(<SrsDbStore>[a, b], loc, rounds: 2);
+    await reviewRound(30);
+
+    // ---------------------------------------------------------------- 不变量：增量 == 重建
+    final Map<String, Map<String, Object?>> incremental = await dumpCaches(a);
+    await a.rebuildCaches();
+    final Map<String, Map<String, Object?>> rebuilt = await dumpCaches(a);
+    final Map<String, List<String>> succ = await a.successorIndex();
+    final List<String> brokenTables = <String>[];
+    for (final String table in incremental.keys) {
+      final List<String> cols =
+          (incremental[table]!['columns']! as List<Object?>).cast<String>();
+      Map<Object?, List<Object?>> byKey(List<Object?> rows) =>
+          <Object?, List<Object?>>{
+            for (final Object? r in rows)
+              (r! as List<Object?>).first: r as List<Object?>,
+          };
+      final Map<Object?, List<Object?>> x = byKey(
+        incremental[table]!['rows']! as List<Object?>,
+      );
+      final Map<Object?, List<Object?>> y = byKey(
+        rebuilt[table]!['rows']! as List<Object?>,
+      );
+      final List<Object?> onlyX = <Object?>[
+        for (final Object? k in x.keys)
+          if (!y.containsKey(k)) k,
+      ];
+      final List<Object?> onlyY = <Object?>[
+        for (final Object? k in y.keys)
+          if (!x.containsKey(k)) k,
+      ];
+      final List<Object?> differ = <Object?>[
+        for (final Object? k in x.keys)
+          if (y.containsKey(k) && jsonEncode(x[k]) != jsonEncode(y[k])) k,
+      ];
+      stdout.writeln(
+        'INVARIANT $table: incremental=${x.length} rebuild=${y.length} '
+        'onlyIncremental=${onlyX.length} onlyRebuild=${onlyY.length} differ=${differ.length}',
+      );
+      // 放宽后的不变量（协调方拍板 A）：增量多出的行只能是 hidden=1 的「不再应有的卡」（重建不写它们）；
+      // 重建不能多行，共有的行逐列一致。期望表取重建结果。
+      final int hiddenCol = cols.indexOf('hidden');
+      final bool extrasHidden =
+          hiddenCol >= 0 && onlyX.every((Object? k) => x[k]![hiddenCol] == 1);
+      if (onlyY.isEmpty && differ.isEmpty && (onlyX.isEmpty || extrasHidden)) {
+        if (onlyX.isEmpty) continue;
+        stdout.writeln(
+          '  (allowed: ${onlyX.length} hidden-only extra rows in incremental)',
+        );
+      } else {
+        brokenTables.add(table);
+      }
+      if (table == 'srs_cards_cache') {
+        final int hi = cols.indexOf('hidden');
+        final int tpl = cols.indexOf('template_id');
+        final int ord = cols.indexOf('cloze_ord');
+        final int reps = cols.indexOf('reps');
+        final Map<String, int> why = <String, int>{};
+        for (final Object? k in onlyX) {
+          final List<Object?> r = x[k]!;
+          final String c =
+              '${r[hi] == 1 ? 'hidden' : 'VISIBLE'}/'
+              '${succ.containsKey(k) ? 'predecessor' : 'no-successor'}/'
+              '${(r[ord]! as int) > 0 ? 'cloze' : 'tpl'}/${(r[reps]! as int) > 0 ? 'reviewed' : 'unreviewed'}';
+          why[c] = (why[c] ?? 0) + 1;
+        }
+        stdout.writeln('  onlyIncremental by hidden/lineage/kind/reps: $why');
+        final Map<Object?, int> byTpl = <Object?, int>{};
+        for (final Object? k in onlyX) {
+          byTpl[x[k]![tpl]] = (byTpl[x[k]![tpl]] ?? 0) + 1;
+        }
+        stdout.writeln('  onlyIncremental template ids: $byTpl');
+      }
+      for (final Object? k in onlyX.take(3)) {
+        stdout.writeln('  incremental only: ${jsonEncode(x[k])}');
+      }
+      for (final Object? k in onlyY.take(3)) {
+        stdout.writeln('  rebuild only:     ${jsonEncode(y[k])}');
+      }
+      for (final Object? k in differ.take(5)) {
+        stdout.writeln('  differ $k:');
+        for (int i = 0; i < cols.length; i++) {
+          if (jsonEncode(x[k]![i]) != jsonEncode(y[k]![i])) {
+            stdout.writeln(
+              '    ${cols[i]}: incremental=${jsonEncode(x[k]![i])} rebuild=${jsonEncode(y[k]![i])}',
+            );
+          }
+        }
+      }
+    }
+    if (brokenTables.isNotEmpty)
+      fail('cache invariant broken in $brokenTables (vectors not written)');
+    stdout.writeln('INVARIANT ok (relaxed: hidden-only extras allowed)');
+
+    // ---------------------------------------------------------------- 导出 store 级向量
+    final Map<String, Object?> raw = <String, Object?>{
+      for (final String table in kRawTables) table: await dumpTable(a, table),
+    };
+    final Map<String, Object?> store = <String, Object?>{
+      'profile': kProfile,
+      'device': kDevice,
+      'tables': raw,
+      'expected': rebuilt,
+    };
+    final File gz = File('test/srs/fixtures/cache_vectors.json.gz')
+      ..parent.createSync(recursive: true);
+    gz.writeAsBytesSync(gzip.encode(utf8.encode(jsonEncode(store))));
+    final List<Object?> nc =
+        rebuilt['srs_notes_cache']!['rows']! as List<Object?>;
+    final List<Object?> cc =
+        rebuilt['srs_cards_cache']!['rows']! as List<Object?>;
+    final List<Object?> sr =
+        rebuilt['srs_stat_reviews']!['rows']! as List<Object?>;
+    final List<String> ncCols =
+        (rebuilt['srs_notes_cache']!['columns']! as List<Object?>)
+            .cast<String>();
+    final List<String> ccCols =
+        (rebuilt['srs_cards_cache']!['columns']! as List<Object?>)
+            .cast<String>();
+    int count(
+      List<Object?> rows,
+      List<String> cols,
+      String col,
+      bool Function(Object?) p,
+    ) => rows
+        .where((Object? r) => p((r! as List<Object?>)[cols.indexOf(col)]))
+        .length;
+    stdout.writeln(
+      'STORE notes=${nc.length} cards=${cc.length} stat=${sr.length} '
+      'logs=${((raw['srs_review_logs']! as Map<String, Object?>)['rows']! as List<Object?>).length} '
+      'entities=${((raw['srs_entities']! as Map<String, Object?>)['rows']! as List<Object?>).length} '
+      'edits=${((raw['srs_field_edits']! as Map<String, Object?>)['rows']! as List<Object?>).length} '
+      'eventLocal=${((raw['srs_event_local']! as Map<String, Object?>)['rows']! as List<Object?>).length}',
+    );
+    stdout.writeln(
+      'STORE hiddenCards=${count(cc, ccCols, 'hidden', (Object? v) => v == 1)} '
+      'deletedNotes=${count(nc, ncCols, 'deleted_at', (Object? v) => v != null)} '
+      'pending=${count(nc, ncCols, 'pending_decision', (Object? v) => v == 1)} '
+      'withReading=${count(nc, ncCols, 'reading_key', (Object? v) => v != '')} '
+      'withMedia=${count(nc, ncCols, 'media_refs', (Object? v) => v != '')} '
+      'sortHasFFFD=${count(nc, ncCols, 'sort_field', (Object? v) => (v! as String).contains('�'))} '
+      'suspended=${count(cc, ccCols, 'suspended', (Object? v) => v == 1)} '
+      'flagged=${count(cc, ccCols, 'flag', (Object? v) => v != 0)} '
+      'newPos=${count(cc, ccCols, 'new_position', (Object? v) => v != null)} '
+      'clozeOrd>0=${count(cc, ccCols, 'cloze_ord', (Object? v) => v != 0)} '
+      'reviewed=${count(cc, ccCols, 'reps', (Object? v) => v != 0)}',
+    );
+    stdout.writeln('wrote ${gz.path} (${gz.lengthSync()} bytes)');
+
+    // ---------------------------------------------------------------- 纯函数向量
+    final List<Map<String, Object?>> text = <Map<String, Object?>>[];
+    final List<String> mediaThrows = <String>[];
+    int skippedSurrogate = 0;
+    final List<String> inputs = <String>[
+      ...corpus,
+      ...throwing,
+      for (final String tpl in kTemplates) tpl,
+      for (int i = 0; i < 2400; i++)
+        randomValue(<String>[...corpus, ...throwing]),
+      for (int i = 0; i < 1600; i++)
+        List<String>.generate(
+          2 + _r.nextInt(3),
+          (_) => _pick(<String>[...corpus, ...throwing]),
+        ).join(_pick(<String>['', ' ', '\n'])),
+    ];
+    final Set<String> seen = <String>{};
+    for (final String s in inputs) {
+      if (!seen.add(s)) continue;
+      // media = null：旧实现在这里抛（Uri.decodeFull 的 FormatException，`_unescape` 只接 ArgumentError）；
+      // Rust 版有意不抛、原样保留，测试跳过 null。
+      String? media;
+      try {
+        media = _mediaOf(s);
+      } on Object {
+        mediaThrows.add(s);
+      }
+      final String term = srsNormalizeTerm(s);
+      final String sort = _sortOf(s);
+      final List<int> clozeOrds = clozeOrdinalsIn(s).toList();
+      if (<String>[s, term, sort, ?media].any(_hasLoneSurrogate)) {
+        skippedSurrogate++;
+        continue;
+      }
+      text.add(<String, Object?>{
+        's': s,
+        'term': term,
+        'sort': sort,
+        'cloze': clozeOrds,
+        'media': media,
+      });
+    }
+
+    // 模板判空。
+    const Map<String, String> allIds = <String, String>{
+      'Front': 'fF',
+      'Back': 'fB',
+      'Extra': 'fE',
+      'Reading': 'fR',
+    };
+    const List<String> emptyish = <String>[
+      '',
+      ' ',
+      '<br>',
+      '<div></div>',
+      '<div><br></div>',
+      '&nbsp;',
+      '　',
+      '\n',
+      'x',
+      '0',
+      '<img src="a.png">',
+      '<b></b>',
+      '猫',
+      '{{c1::x}}',
+      '\u0085',
+      '﻿',
+      '<!-- c -->',
+    ];
+    final List<Map<String, Object?>> empties = <Map<String, Object?>>[];
+    int nTrue = 0, nFalse = 0, nNull = 0;
+    for (final String named in <String>[
+      ...kTemplates,
+      '{{fld:ghost}}',
+      '{{#fld:ghost}}x{{/fld:ghost}}',
+    ]) {
+      for (int k = 0; k < 30; k++) {
+        // 偶尔 idToName 缺一个字段（模板里的 fld:id 原样留下）。
+        final Map<String, String> nameToId = Map<String, String>.of(allIds);
+        if (k % 7 == 6) nameToId.remove(_pick(allIds.keys.toList()));
+        final String front = templateNamesToIds(named, allIds);
+        final Map<String, String> idToName = <String, String>{
+          for (final MapEntry<String, String> e in nameToId.entries)
+            e.value: e.key,
+        };
+        final Map<String, String> fields = <String, String>{
+          for (final String name in nameToId.keys)
+            name: _r.nextInt(4) == 0 ? randomValue(corpus) : _pick(emptyish),
+        };
+        final int ord = _r.nextInt(4);
+        bool? empty;
+        try {
+          empty = isAnkiCardEmpty(
+            questionTemplate: templateIdsToNames(front, idToName),
+            noteFields: fields,
+            cardOrd: ord,
+            isCloze: false,
+          );
+        } on Object {
+          empty = null;
+        }
+        if (<String>[front, ...fields.values].any(_hasLoneSurrogate)) continue;
+        if (empty == null) {
+          nNull++;
+        } else if (empty) {
+          nTrue++;
+        } else {
+          nFalse++;
+        }
+        empties.add(<String, Object?>{
+          'front': front,
+          'idToName': idToName,
+          'fields': fields,
+          'ord': ord,
+          'empty': empty,
+        });
+      }
+    }
+    final File tf = File(
+      '../../native/fushi_fsrs/tests/fixtures/cache_text_vectors.json',
+    )..parent.createSync(recursive: true);
+    tf.writeAsStringSync(
+      jsonEncode(<String, Object?>{
+        'source':
+            'packages/fushi_engine/test/srs/fixtures/gen_cache_vectors.dart.txt (Dart implementation before the Rust port)',
+        'text': text,
+        'templateEmpty': empties,
+      }),
+    );
+    stdout.writeln(
+      'TEXT entries=${text.length} mediaNull=${mediaThrows.length} skippedSurrogate=$skippedSurrogate '
+      'templateEmpty=${empties.length} (true=$nTrue false=$nFalse null=$nNull) -> ${tf.path} (${tf.lengthSync()} bytes)',
+    );
+    expect(tf.lengthSync(), lessThan(2 * 1024 * 1024));
+  }, timeout: const Timeout(Duration(minutes: 40)));
+}

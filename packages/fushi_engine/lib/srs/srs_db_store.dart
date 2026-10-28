@@ -18,7 +18,6 @@ import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
-import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart' show srsMediaRefsIn;
 import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
@@ -375,7 +374,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 这些卡就一直按创建时刻出、取卡读到的位置也是空的，直到这张卡再被改一次。
   ///
   /// 2（srs.db schema v3）：srs_stat_reviews（有效复习投影）。存量库的投影表是新建的空表，升级时按全部
-  /// 卡 + 全部有日志的卡算一遍投影（[_refreshStatProjection]）。
+  /// 卡 + 全部有日志的卡算一遍投影（native/fushi_fsrs/src/store/caches.rs `refresh_stats`）。
   ///
   /// 3（srs.db schema v4）：srs_notes_cache.media_refs（笔记引用的媒体）。老库这一列是空的，升级时
   /// 全部笔记缓存重算一遍。
@@ -388,10 +387,6 @@ class SrsDbStore implements SrsSync2Host {
   /// 「确认删除」也消不掉），升级时把标着待裁决的笔记重算一遍。
   static const int _kCacheRevision = 5;
   int _cacheRevision = _kCacheRevision;
-
-  /// 有效复习投影要重算的卡（缓存刷新写过 / 隐藏的卡、脏卡、重建与升级时的全部卡）：[_flushCachesNow]
-  /// 末尾按归属组一起算（[_refreshStatProjection]）。多算只是白算，不会错。
-  final Set<String> _statDirty = <String>{};
 
   /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。
   int _revision = 0;
@@ -691,11 +686,6 @@ class SrsDbStore implements SrsSync2Host {
     return one.edits[key]!;
   }
 
-  /// 影响面：哪些笔记 / 卡片 / 笔记类型的缓存要刷新。
-  final Set<String> _dirtyNotes = <String>{};
-  final Set<String> _dirtyCards = <String>{};
-  final Set<String> _dirtyNoteTypes = <String>{};
-
   /// 笔记字段值里的内联样式换成共享样式引用（表示层，见库注释）。只动 `f/<fieldId>` 的字符串值；
   /// 其余字段键、没有可换的块、没装样式库时原样返回。本机写、导入、对端事件都经这里落库。
   ///
@@ -793,6 +783,7 @@ class SrsDbStore implements SrsSync2Host {
               .get();
           if (rows.isEmpty) return -1;
           int n = 0;
+          final Set<String> touched = <String>{};
           for (final QueryRow r in rows) {
             final SrsFieldEdit e = SrsFieldEdit.fromJson(
               (jsonDecode(r.read<String>('json')) as Map)
@@ -808,12 +799,13 @@ class SrsDbStore implements SrsSync2Host {
               )..where((t) => t.id.equals(r.read<String>('id')))).write(
                 SrsFieldEditsCompanion(json: Value<String>(c.canonical())),
               );
-              _markEntity(e.entityKind, e.entityId);
+              touched.add(e.entityId);
               n++;
             }
             _styleCursor = r.read<int>('rid');
           }
-          await _flushCaches();
+          // 只换了字段值的表示：笔记缓存行的媒体引用跟着变（内核重算这几条笔记）。
+          if (touched.isNotEmpty) await _refreshCaches(notes: touched);
           await _saveLocal();
           return n;
         }),
@@ -826,34 +818,7 @@ class SrsDbStore implements SrsSync2Host {
     return rewritten;
   }
 
-  /// [fieldKey]：修改记录的字段键（身份记录为 null）。笔记类型只有影响缓存行的键才让它的全部笔记
-  /// 重算（见 [_noteTypeKeyAffectsCaches]）。
-  void _markEntity(SrsEntityKind kind, String id, {String? fieldKey}) {
-    switch (kind) {
-      case SrsEntityKind.note:
-        _dirtyNotes.add(id);
-      case SrsEntityKind.card:
-        _dirtyCards.add(id);
-      case SrsEntityKind.noteType:
-        if (fieldKey == null || _noteTypeKeyAffectsCaches(fieldKey)) {
-          _dirtyNoteTypes.add(id);
-        }
-      case SrsEntityKind.deck:
-      case SrsEntityKind.profile:
-        break;
-    }
-  }
-
-  /// 笔记类型的这个字段键是否影响笔记 / 卡片缓存行。缓存行只由类型的字段定义（排序字段、卡片生成的
-  /// 空卡判断）、模板定义（生成哪些卡）、词条字段（termKey）与删除标记（笔记是否还在）派生（见
-  /// [_planNote]）；名字、CSS、字段说明只在渲染 / 编辑时读，改它们不必把整个类型的笔记重算一遍
-  /// （以前改一行 CSS 也要物化该类型全部笔记与卡片）。按排除法列：不认识的键一律当作影响，宁可多算。
-  static bool _noteTypeKeyAffectsCaches(String fieldKey) =>
-      fieldKey != SrsFieldKeys.name &&
-      fieldKey != SrsFieldKeys.css &&
-      !fieldKey.startsWith(SrsFieldKeys.fieldDescriptionPrefix);
-
-  /// 本机产生事件：落库、进发件箱、刷新缓存。调用方在独占区（[runExclusive]）里、紧接着分配
+  /// 本机产生事件：落库、进发件箱、刷新缓存（内核在 `apply` 的同一次调用里刷新）。调用方在独占区（[runExclusive]）里、紧接着分配
   /// 序号之后调它：分配与落库之间不插进别的写入。
   Future<void> _emit(List<SrsEvent> events) async {
     assert(
@@ -863,7 +828,6 @@ class SrsDbStore implements SrsSync2Host {
     await _transactionOrReload(() async {
       // 同步 v2：操作落进 ops 就是「已备份、待发布」，没有单独的发件箱（发件按段，见 store/sync2/transport.rs）。
       await _storeLocalBatch(events);
-      await _flushCaches();
       await _saveLocal();
     });
   }
@@ -927,40 +891,26 @@ class SrsDbStore implements SrsSync2Host {
     return _absorbProjection(r);
   }
 
-  /// 把一次 sync2 命令（本机 apply、远端 ingest、冲突解决、恢复……）对投影的改动接进本机缓存与修订号：
-  /// 内核已把落进投影的事件折成粗粒度摘要 `marks`（受影响的笔记 / 卡 / 笔记类型 + 内容 / 界面 / RWKV 修订号
-  /// 增量，native/fushi_fsrs/src/store/sync2/mod.rs `Marks`），这里只并集合、加计数——不再收每条事件的全文
-  /// （一批收段解开后可达几百 MB，跨 isolate 拷贝 + UI 线程逐条解析曾让大同步卡死 / OOM）。重放改写过日志的卡与
-  /// 被冲突扣住 / 清除改变了可见性的实体也一并标脏。返回落进投影的事件数。
+  /// 把一次 sync2 命令（本机 apply、远端 ingest、冲突解决、恢复……）的结果接进修订号与本机缓存的变更日志：
+  /// 内核已把落进投影的事件折成粗粒度摘要 `marks`（native/fushi_fsrs/src/store/sync2/mod.rs `Marks`），并在
+  /// 同一次调用里按它刷新了缓存行（store/caches.rs），交回写过哪些笔记 / 卡（`cache`）。这里只加计数、记日志——
+  /// 不收事件全文，也不在 UI isolate 上重算缓存行（大同步曾因此卡死 / OOM）。冲突扣住 / 解除改变了可见性的
+  /// 实体各推进一次修订号。返回落进投影的事件数。
   int _absorbProjection(Map<String, Object?> r) {
     final Map<String, Object?> m =
         (r['marks'] as Map?)?.cast<String, Object?>() ??
         const <String, Object?>{};
-    for (final Object? id in (m['notes'] as List?) ?? const <Object?>[]) {
-      _dirtyNotes.add(id! as String);
-    }
-    for (final Object? id in (m['cards'] as List?) ?? const <Object?>[]) {
-      _dirtyCards.add(id! as String);
-    }
-    for (final Object? id in (m['noteTypes'] as List?) ?? const <Object?>[]) {
-      _dirtyNoteTypes.add(id! as String);
-    }
     final int landed = (m['landed'] as int?) ?? 0;
     _revision += landed;
     _contentRevision += (m['content'] as int?) ?? 0;
     _viewRevision += (m['view'] as int?) ?? 0;
     _rwkvScoresRevision += (m['rwkv'] as int?) ?? 0;
-    for (final Object? c in (r['replayed'] as List?) ?? const <Object?>[]) {
-      if (c is String) _dirtyCards.add(c);
-    }
     for (final Object? c in (r['changed'] as List?) ?? const <Object?>[]) {
-      if (c is List && c.length == 2) {
-        final SrsEntityKind? kind = SrsEntityKind.tryParse(c[0] as String?);
-        if (kind != null) {
-          _markEntity(kind, c[1]! as String);
-          _revision++;
-          _contentRevision++;
-        }
+      if (c is List &&
+          c.length == 2 &&
+          SrsEntityKind.tryParse(c[0] as String?) != null) {
+        _revision++;
+        _contentRevision++;
       }
     }
     for (final Object? c in (r['purged'] as List?) ?? const <Object?>[]) {
@@ -969,6 +919,7 @@ class SrsDbStore implements SrsSync2Host {
         if (kind != null) _purgedPending.add((kind, c[1]! as String));
       }
     }
+    _absorbCache(r);
     return landed;
   }
 
@@ -1055,7 +1006,6 @@ class SrsDbStore implements SrsSync2Host {
       if (landed > 0 || ((r['replayed'] as List?)?.isNotEmpty ?? false)) {
         _rwkvScoresRevision++;
       }
-      await _flushCaches();
       await _saveLocal();
     });
     await _notifyPurged();
@@ -1069,7 +1019,6 @@ class SrsDbStore implements SrsSync2Host {
         await _transactionOrReload(() async {
           r = await _sync2(<String, Object?>{...request, 'now': now().$1});
           _absorbProjection(r);
-          await _flushCaches();
           await _saveLocal();
         });
         await _notifyPurged();
@@ -1157,7 +1106,6 @@ class SrsDbStore implements SrsSync2Host {
       );
       _absorbProjection(r);
       _rwkvScoresRevision++;
-      await _flushCaches();
       await _saveLocal();
     });
     final Map<String, Object?> id = await _sync2(<String, Object?>{
@@ -1189,7 +1137,38 @@ class SrsDbStore implements SrsSync2Host {
   }) => _coreSync2(core.address, core.libraryPath, <String, Object?>{
     ...request,
     'profile': profileUid,
+    if (_kSync2CacheOps.contains(request['op'])) 'caches': _cacheConfig,
   }, blobs);
+
+  /// 改投影 / 刷新缓存的 v2 命令：内核在同一次调用里刷新本机缓存行（native/fushi_fsrs/src/store/caches.rs），
+  /// 要带上只有 Dart 知道的缓存配置（[_cacheConfig]）。
+  static const Set<String> _kSync2CacheOps = <String>{
+    'apply',
+    'ingest',
+    'ingest_batch',
+    'ingest_finish',
+    'import',
+    'resolve',
+    'purge',
+    'checkpoint',
+    'restore',
+    'refresh_caches',
+    'rebuild_caches',
+  };
+
+  /// 缓存刷新的配置：本 profile 的默认牌组与各内置笔记类型（代码默认值 + 读音字段，readingKey 的来源）。
+  late final Map<String, Object?> _cacheConfig = <String, Object?>{
+    'defaultDeck': defaultDeckId,
+    'builtins': <String, Object?>{
+      for (final SrsBuiltinNoteTypeSpec spec in kSrsBuiltinNoteTypes)
+        spec.key: <String, Object?>{
+          'b': srsBuiltinNoteTypeKernelValue(
+            srsBuiltinNoteType(profileUid, spec),
+          ),
+          'reading': srsBuiltinReadingFieldId(profileUid, spec.key),
+        },
+    },
+  };
 
   /// 按 SQLite 变量上限分块（IN 列表）。
   static Iterable<List<String>> _chunks(Iterable<String> ids) sync* {
@@ -1544,222 +1523,50 @@ class SrsDbStore implements SrsSync2Host {
 
   // ------------------------------------------------------------------ 缓存
 
-  /// 按影响面刷新缓存（笔记缓存行、卡片缓存行）。与逐条重算同结果：每条笔记 / 每张卡的缓存行
-  /// 只由它自己的事件决定，分块预读 + 成批写只是把读写往返摊薄。
-  ///
-  /// 先清掉外层可能带着的预读：刷新必须读本事务里刚落的行，不能读调用方的旧快照。
-  Future<void> _flushCaches() => runZoned(
-    _flushCachesNow,
-    zoneValues: <Object?, Object?>{_RefreshPrefetch.zoneKey: null},
-  );
-
-  Future<void> _flushCachesNow() async {
-    if (_dirtyNoteTypes.isNotEmpty) {
-      final List<String> types = _dirtyNoteTypes.toList();
-      _dirtyNoteTypes.clear();
-      // 成员按笔记缓存的**当前**类型找（走 v125 的 idx_srs_notes_cache_type，只读 id）。每条有身份
-      // 记录的笔记在它自己落库的那次刷新里就有了缓存行（[_planNote] 只在笔记不存在时返回 null，类型
-      // 缺失照样写行），而本批新落的笔记已经因自己的事件进了 _dirtyNotes——所以不必再把全部笔记的
-      // 身份记录读回来逐条 JSON 解析创建时的类型（以前每改一次笔记类型都整表扫一遍）。
-      final $SrsNotesCacheTable c = db.srsNotesCache;
-      for (final List<String> chunk in _chunks(types.toSet())) {
-        final List<TypedResult> rows =
-            await (db.selectOnly(c)
-                  ..addColumns(<Expression<Object>>[c.id])
-                  ..where(
-                    c.profileUid.equals(profileUid) & c.noteTypeId.isIn(chunk),
-                  ))
-                .get();
-        _dirtyNotes.addAll(rows.map((TypedResult r) => r.read(c.id)!));
-      }
-    }
-    final List<String> notes = _dirtyNotes.toList();
-    _dirtyNotes.clear();
-    // 一次刷新内同一笔记类型只物化一次（导入一批几百条同类型笔记，类型的模板 / CSS 修改记录
-    // 不必每条笔记各读一遍、各解析一遍）。本次刷新的事件都已落库，物化结果在刷新期间不变。
-    final Map<String, SrsNoteTypeView?> noteTypes =
-        <String, SrsNoteTypeView?>{};
-    // 本次刷新里已经按最新事件重算过的卡（笔记刷新会重算它全部的卡）：下面不再算第二遍。
-    final Set<String> refreshed = <String>{};
-    // 分块：每块先把这些笔记 / 它们的卡（连同全部前身卡）要读的行一次预读进内存（Zone 里的
-    // [_RefreshPrefetch]），逐条算，写入攒成一个 Drift batch。以前每条笔记、每张卡各自查身份记录 /
-    // 修改记录 / 服务器时刻 / 日志、各写一两条语句，一条笔记十几次往返（BUG-3549 / BUG-3543）。
-    for (int i = 0; i < notes.length; i += _refreshChunk) {
-      final List<String> chunk = notes.sublist(
-        i,
-        min(i + _refreshChunk, notes.length),
-      );
-      final _RefreshPrefetch pre = _RefreshPrefetch();
-      // 预读只对本次刷新（同一 Zone 里的调用链）可见：同一时刻 UI 别处读 store 不会读到
-      // 这个事务里尚未提交的行。
-      await _writeCache(
-        await _readWith(
-          pre,
-          () => _flushChunk(pre, chunk, noteTypes, refreshed),
-        ),
-      );
-    }
-    // 卡片的历史 / 标志沿「前身」继承：前身变了，后继卡也要重算。
-    final Set<String> cards = <String>{};
-    final List<String> queue = _dirtyCards.toList();
-    _dirtyCards.clear();
-    // 「前身 → 后继」一次读全（走 v119 的部分索引，只碰前身链接那几行；以前每张脏卡各扫
-    // 一遍修改记录表，随表长成平方级，BUG-3549）。
-    final Map<String, List<String>> successors = queue.isEmpty
-        ? const <String, List<String>>{}
-        : await _successorIndex();
-    while (queue.isNotEmpty) {
-      final String c = queue.removeLast();
-      if (!cards.add(c)) continue;
-      queue.addAll(successors[c] ?? const <String>[]);
-    }
-    final List<String> rest = <String>[
-      for (final String c in cards)
-        if (!refreshed.contains(c)) c,
-    ];
-    for (int i = 0; i < rest.length; i += _refreshChunk) {
-      await _refreshCardChunk(
-        rest.sublist(i, min(i + _refreshChunk, rest.length)),
-      );
-    }
-    // 投影在全部缓存行（可见性）写完之后再算：归属看的是这一轮之后的可见性。还没有缓存行的卡
-    // （日志先于笔记到达、笔记已被物理清除）也算：它们的复习照样计入统计。
-    _statDirty.addAll(cards);
-    if (_statDirty.isNotEmpty) {
-      final Set<String> seeds = Set<String>.of(_statDirty);
-      _statDirty.clear();
-      await _refreshStatProjection(seeds);
-    }
-  }
-
-  /// 缓存刷新每块的笔记 / 卡数：块内的读写各合成几次往返；块不宜太大（一块的计算在 UI isolate
-  /// 上连续跑完，中间不让出事件循环）。
-  static const int _refreshChunk = 200;
-
-  /// 一块笔记的缓存刷新（在带预读的 Zone 里跑，见 [_flushCaches]）：只读、只算，写入返回给调用方
-  /// 成批写。
-  Future<_CacheWrites> _flushChunk(
-    _RefreshPrefetch pre,
-    List<String> chunk,
-    Map<String, SrsNoteTypeView?> noteTypes,
-    Set<String> refreshed,
-  ) async {
-    await _prefetchEntities(pre, chunk);
-    await _prefetchEdits(pre, SrsEntityKind.note, chunk);
-    await _prefetchCardsOfNotes(pre, chunk);
-    // 这块笔记的物化整块一次 FFI 调用；块里用到、本次刷新还没物化过的笔记类型再一次。
-    final Map<String, SrsNoteView?> views = await _materializeNotes(chunk);
-    final List<String> types = <String>{
-      for (final SrsNoteView? v in views.values)
-        if (v != null && !noteTypes.containsKey(v.noteTypeId)) v.noteTypeId,
-    }.toList();
-    if (types.isNotEmpty) noteTypes.addAll(await _materializeNoteTypes(types));
-    final List<_NotePlan> plans = <_NotePlan>[
-      for (final String n in chunk)
-        if (views[n] case final SrsNoteView v)
-          _planNote(v, noteTypes[v.noteTypeId]),
-    ];
-    final Map<String, String?> noteDeckOf = <String, String?>{
-      for (final _NotePlan p in plans)
-        for (final String c in p.expected.keys) c: p.note.deckId,
-    };
-    await _prefetchLineage(pre, noteDeckOf.keys, withLogs: false);
-    final Map<String, _CardMaterial> materials = await _cardMaterials(
-      noteDeckOf,
+  /// 本机刷新缓存行（不经投影命令的路径：存量样式去重换了字段值的表示、推导规则升级）：内核一次调用算完并
+  /// 落库（native/fushi_fsrs/src/store/caches.rs），这里只记下写过哪些笔记 / 卡。调用方在独占区与写事务里。
+  Future<void> _refreshCaches({
+    Iterable<String> notes = const <String>[],
+    Iterable<String> cards = const <String>[],
+    bool allNotes = false,
+    bool allStats = false,
+  }) async {
+    _absorbCache(
+      await _sync2(<String, Object?>{
+        'op': 'refresh_caches',
+        'notes': notes.toList(),
+        'cards': cards.toList(),
+        'allNotes': allNotes,
+        'allStats': allStats,
+      }),
     );
-    final _CacheWrites out = _CacheWrites();
-    for (final _NotePlan p in plans) {
-      await _applyNotePlan(p, refreshed, out, materials);
-    }
-    return out;
   }
 
-  /// 一块「只有卡片事件变了」的卡的缓存刷新：卡片缓存行、笔记缓存行、血统（修改记录 + 日志）
-  /// 各分块一次预读，算完一个 batch 写回。缓存里还没有的卡跳过（日志先于笔记到达：笔记到时一起生成）。
-  Future<void> _refreshCardChunk(List<String> chunk) async {
-    final Map<String, SrsCardCacheRow> rows = <String, SrsCardCacheRow>{
-      for (final SrsCardCacheRow c in await cardRows(chunk)) c.id: c,
-    };
-    if (rows.isEmpty) return;
-    final Map<String, SrsNoteCacheRow> notes = <String, SrsNoteCacheRow>{};
-    for (final List<String> ids in _chunks(<String>{
-      for (final SrsCardCacheRow c in rows.values) c.noteId,
-    })) {
-      for (final SrsNoteCacheRow n in await (db.select(
-        db.srsNotesCache,
-      )..where((x) => x.id.isIn(ids))).get()) {
-        notes[n.id] = n;
-      }
-    }
-    final _RefreshPrefetch pre = _RefreshPrefetch();
-    await _prefetchLineage(pre, rows.keys, withLogs: false);
-    final _CacheWrites out = _CacheWrites();
-    await _readWith(pre, () async {
-      final Map<String, _CardMaterial> materials = await _cardMaterials(
-        <String, String?>{
-          for (final SrsCardCacheRow c in rows.values)
-            c.id: notes[c.noteId]?.deckId,
-        },
-      );
-      for (final String id in chunk) {
-        final SrsCardCacheRow? c = rows[id];
-        if (c == null) continue;
-        final SrsNoteCacheRow? n = notes[c.noteId];
-        out.cards.add(
-          _cardCacheRow(
-            materials[id]!,
-            cardId: id,
-            noteId: c.noteId,
-            templateId: c.templateId,
-            clozeOrd: c.clozeOrd,
-            noteCreatedAt: n?.createdAt ?? c.noteCreatedAt,
-            hidden: c.hidden,
-          ),
-        );
-      }
-    });
-    await _writeCache(out);
+  /// 内核交回的缓存写入清单（`cache`：写了整行的笔记 / 卡、只改成隐藏的卡）记进变更日志与数字索引（同一个
+  /// 独占区 / 事务里；事务回滚时 [_transactionOrReload] 会把两者一起作废）。
+  void _absorbCache(Map<String, Object?> r) {
+    final Map<Object?, Object?>? w = r['cache'] as Map<Object?, Object?>?;
+    if (w == null) return;
+    List<String> ids(String k) => <String>[
+      for (final Object? id in (w[k] as List?) ?? const <Object?>[])
+        id! as String,
+    ];
+    final List<String> notes = ids('notes');
+    final List<String> cards = ids('cards');
+    final List<String> hidden = ids('hidden');
+    if (notes.isEmpty && cards.isEmpty && hidden.isEmpty) return;
+    _journalCacheWrite(notes, <String>[...cards, ...hidden]);
+    _indexCacheRows(notes, cards);
   }
 
-  /// 一块缓存刷新攒下的写入：一个 Drift batch（一次往返）。三类行互不重叠（笔记行 / 隐藏的旧卡 /
-  /// 重算的卡），顺序无关。
-  Future<void> _writeCache(_CacheWrites w) async {
-    if (w.isEmpty) return;
-    final List<String> noteIds = <String>[
-      for (final SrsNotesCacheCompanion n in w.notes) n.id.value,
-    ];
-    final List<String> cardIds = <String>[
-      for (final SrsCardsCacheCompanion c in w.cards) c.id.value,
-    ];
-    // 变更日志与数字索引随写入同步记下（同一个独占区 / 事务里）；事务回滚时
-    // [_transactionOrReload] 会把两者一起作废。
-    _journalCacheWrite(noteIds, <String>[...cardIds, ...w.hide]);
-    _statDirty
-      ..addAll(cardIds)
-      ..addAll(w.hide);
-    _indexCacheRows(noteIds, cardIds);
-    await db.batch((Batch b) {
-      if (w.notes.isNotEmpty) {
-        b.insertAllOnConflictUpdate(db.srsNotesCache, w.notes);
-      }
-      for (final List<String> ids in _chunks(w.hide)) {
-        b.update(
-          db.srsCardsCache,
-          const SrsCardsCacheCompanion(hidden: Value<bool>(true)),
-          where: ($SrsCardsCacheTable x) => x.id.isIn(ids),
-        );
-      }
-      if (w.cards.isNotEmpty) {
-        b.insertAllOnConflictUpdate(db.srsCardsCache, w.cards);
-      }
-    });
-  }
+  /// 批量读（历史、血统）每块的卡数：块内的读各合成几次往返。
+  static const int _refreshChunk = 200;
 
   /// 一组卡的「血统」要读的行（自己与全部前身的修改记录 + 日志 + 服务器时刻）分轮预读：每轮把
   /// 上一轮新发现的前身一起读（前身链通常一两层）。只多读不少读：前身键的值是否为 true 由
   /// [_cardLineage] 照常判断。
   ///
-  /// [withLogs] = false：不预读日志（缓存刷新的日志由 Rust 在写连接上直读，见 [_cardMaterials]）。
+  /// [withLogs] = false：不预读日志（缓存刷新整段在 Rust：native/fushi_fsrs/src/store/caches.rs）。
   Future<void> _prefetchLineage(
     _RefreshPrefetch pre,
     Iterable<String> cardIds, {
@@ -1889,22 +1696,6 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
-  Future<void> _prefetchCardsOfNotes(
-    _RefreshPrefetch pre,
-    Iterable<String> noteIds,
-  ) async {
-    for (final List<String> chunk in _chunks(noteIds)) {
-      for (final String id in chunk) {
-        pre.cardsByNote[id] = <SrsCardCacheRow>[];
-      }
-      for (final SrsCardCacheRow r in await (db.select(
-        db.srsCardsCache,
-      )..where((t) => t.noteId.isIn(chunk))).get()) {
-        pre.cardsByNote[r.noteId]!.add(r);
-      }
-    }
-  }
-
   /// 全部「前身卡 → 后继卡」链接（卡的 `historyFrom/<前身>` 修改记录）。
   ///
   /// 条件用 v119 的部分覆盖索引 `idx_srs_field_edits_history_from` 的同一句 WHERE
@@ -1972,139 +1763,35 @@ class SrsDbStore implements SrsSync2Host {
               ],
             )
             .get();
-        _dirtyCards.addAll(
-          rows.map((QueryRow r) => r.read<String>('entity_id')),
+        await _refreshCaches(
+          cards: rows.map((QueryRow r) => r.read<String>('entity_id')),
         );
-        await _flushCaches();
       }
-      if (_cacheRevision < 2) {
-        _statDirty.addAll(await _allStatSeeds());
-        await _flushCaches();
-      }
-      if (_cacheRevision < 3) {
-        _dirtyNotes.addAll(await entityIds(SrsEntityKind.note));
-        await _flushCaches();
-      }
+      if (_cacheRevision < 2) await _refreshCaches(allStats: true);
+      if (_cacheRevision < 3) await _refreshCaches(allNotes: true);
       if (_cacheRevision < 5) {
-        _dirtyNotes.addAll(<String>[
-          for (final SrsNoteCacheRow n in await notesPendingDecision()) n.id,
-        ]);
-        await _flushCaches();
+        await _refreshCaches(
+          notes: <String>[
+            for (final SrsNoteCacheRow n in await notesPendingDecision()) n.id,
+          ],
+        );
       }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();
     });
   });
 
-  /// 丢掉全部缓存，由事件重建（缓存不同步，随时可重建）。
+  /// 丢掉全部缓存（笔记 / 卡片缓存行、有效复习投影），由事件重建（缓存不同步，随时可重建）：内核一次调用删
+  /// 掉本 profile 的缓存行、按全部笔记与全部有日志的卡重算（native/fushi_fsrs/src/store/caches.rs `rebuild`）。
   Future<void> rebuildCaches() => runExclusive(() async {
     _cacheRevision = _kCacheRevision;
     _resetCacheJournal();
     await db.transaction(() async {
-      await (db.delete(
-        db.srsCardsCache,
-      )..where((t) => t.profileUid.equals(profileUid))).go();
-      await (db.delete(
-        db.srsNotesCache,
-      )..where((t) => t.profileUid.equals(profileUid))).go();
-      await (db.delete(
-        db.srsStatReviews,
-      )..where((t) => t.profileUid.equals(profileUid))).go();
-      // 投影按全部有日志的卡重算（缓存行随笔记重建，那些卡由 [_writeCache] 记进来；这里补上没有
-      // 缓存行的卡：笔记已物理清除，复习照样计入统计）。
-      _statDirty.addAll(await _allStatSeeds());
-      final List<SrsEntityRow> notes =
-          await (db.select(db.srsEntities)..where(
-                (t) =>
-                    t.profileUid.equals(profileUid) &
-                    t.kind.equals(SrsEntityKind.note.wire),
-              ))
-              .get();
-      _dirtyNotes.addAll(notes.map((SrsEntityRow r) => r.id));
-      await _flushCaches();
+      _absorbCache(
+        await _sync2(const <String, Object?>{'op': 'rebuild_caches'}),
+      );
     });
   });
-
-  Map<String, String> _fieldsByName(SrsNoteView n, SrsNoteTypeView t) =>
-      <String, String>{
-        for (final SrsFieldDef f in t.fields) f.name: n.field(f.id),
-      };
-
-  Map<String, String> _idToName(SrsNoteTypeView t) => <String, String>{
-    for (final SrsFieldDef f in t.fields) f.id: f.name,
-  };
-
-  /// 笔记缓存刷新的第一步（只读）：物化笔记与类型，算出缓存行的派生值与应有的卡。
-  _NotePlan _planNote(SrsNoteView n, SrsNoteTypeView? t) {
-    final String term = t?.termFieldId == null
-        ? ''
-        : srsTermKey(n.field(t!.termFieldId!));
-    final String? readingFieldId = srsBuiltinReadingFieldId(
-      profileUid,
-      t?.builtinKey,
-    );
-    final String reading = readingFieldId == null
-        ? ''
-        : srsReadingKey(n.field(readingFieldId));
-    final String sortField = t == null || t.fields.isEmpty
-        ? ''
-        : ankiStripHtml(n.field(t.fields.first.id)).trim();
-
-    // 卡片生成（铁律 D）：期望的 (templateId, clozeOrd) 集合；不在集合里的现存卡片隐藏，不写同步行。
-    final Map<String, (String, int, bool)> expected =
-        <String, (String, int, bool)>{};
-    if (t != null) {
-      final Map<String, String> byName = _fieldsByName(n, t);
-      final Map<String, String> idToName = _idToName(t);
-      if (t.isCloze && t.templates.isNotEmpty) {
-        final SrsTemplateDef tpl = t.templates.first;
-        final Set<int> ords = clozeOrdinalsIn(byName.values.join('\n'));
-        for (final int ord in ords) {
-          expected[SrsIds.card(n.id, tpl.id, ord)] = (tpl.id, ord, false);
-        }
-      } else {
-        for (final SrsTemplateDef tpl in t.templates) {
-          bool empty;
-          try {
-            empty = isAnkiCardEmpty(
-              questionTemplate: templateIdsToNames(tpl.front, idToName),
-              noteFields: byName,
-              cardOrd: tpl.ord,
-              isCloze: false,
-            );
-          } on Object {
-            empty = false;
-          }
-          expected[SrsIds.card(n.id, tpl.id, 0)] = (tpl.id, 0, empty);
-        }
-      }
-    }
-    final bool noteGone =
-        n.deletedAt != null || t == null || t.deletedAt != null;
-    return _NotePlan(
-      note: n,
-      noteType: t,
-      term: term,
-      reading: reading,
-      sortField: sortField,
-      expected: expected,
-      noteGone: noteGone,
-    );
-  }
-
-  /// 笔记当前字段值引用的媒体文件名（[SrsNotesCache.mediaRefs] 的值：换行分隔、去重排序）。
-  static String _mediaRefsOf(SrsNoteView n) {
-    final Set<String> refs = <String>{
-      for (final String v in n.fields.values) ...<String>[
-        ...srsMediaRefsIn(v),
-        // 释义样式去重的共享样式文件（`_fushi_style_<sha1>.css`，见 srs_style_store.dart）。
-        ...srsStyleRefsIn(v),
-      ],
-    };
-    return (refs.where((String r) => !r.contains('\n')).toList()..sort()).join(
-      '\n',
-    );
-  }
 
   /// 删除时刻不晚于 [deletedBeforeMs] 的已删笔记引用的媒体（过了保留期、可以回收的候选；是否真删由调用方
   /// 再扣掉存活引用）。
@@ -2147,64 +1834,6 @@ class SrsDbStore implements SrsSync2Host {
       out.addAll(r.read(t.mediaRefs)!.split('\n'));
     }
     return out;
-  }
-
-  /// 笔记缓存刷新的第二步：算笔记缓存行、要隐藏的不再应有的卡、应有的卡的缓存行（记进
-  /// [refreshed]），攒进 [out] 由调用方成批写。
-  Future<void> _applyNotePlan(
-    _NotePlan plan,
-    Set<String> refreshed,
-    _CacheWrites out,
-    Map<String, _CardMaterial> materials,
-  ) async {
-    final SrsNoteView n = plan.note;
-    final String sortField = plan.sortField;
-    out.notes.add(
-      SrsNotesCacheCompanion.insert(
-        id: n.id,
-        profileUid: profileUid,
-        noteTypeId: n.noteTypeId,
-        guid: n.guid,
-        createdAt: n.createdAt,
-        deckId: Value<String?>(n.deckId),
-        deletedAt: Value<int?>(n.deletedAt),
-        termKey: Value<String>(plan.term),
-        readingKey: Value<String>(plan.reading),
-        sortField: Value<String>(
-          sortField.length > 200 ? sortField.substring(0, 200) : sortField,
-        ),
-        tagsJson: Value<String>(jsonEncode(n.tags)),
-        pendingDecision: Value<bool>(n.hasPendingDecision),
-        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
-        // 已删笔记也记：存活引用按 deleted_at 过滤，保留期 / 过期回收要读到被删笔记引用了什么。
-        mediaRefs: Value<String>(_mediaRefsOf(n)),
-      ),
-    );
-    final Map<String, (String, int, bool)> expected = plan.expected;
-    final bool noteGone = plan.noteGone;
-    final List<SrsCardCacheRow> existing =
-        _RefreshPrefetch.current?.cardsByNote[n.id] ??
-        await (db.select(
-          db.srsCardsCache,
-        )..where((c) => c.noteId.equals(n.id))).get();
-    for (final SrsCardCacheRow c in existing) {
-      if (!expected.containsKey(c.id)) out.hide.add(c.id);
-    }
-    for (final MapEntry<String, (String, int, bool)> e in expected.entries) {
-      final (String tplId, int ord, bool empty) = e.value;
-      out.cards.add(
-        _cardCacheRow(
-          materials[e.key]!,
-          cardId: e.key,
-          noteId: n.id,
-          templateId: tplId,
-          clozeOrd: ord,
-          noteCreatedAt: n.createdAt,
-          hidden: noteGone || empty,
-        ),
-      );
-      refreshed.add(e.key);
-    }
   }
 
   /// 一张卡的复习历史：自己的日志 + 全部前身卡（更改笔记类型继承来的）的日志。
@@ -2253,145 +1882,6 @@ class SrsDbStore implements SrsSync2Host {
     }
     return out;
   }
-
-  /// 本 profile 全部有日志的卡（投影重建 / 升级的种子；缓存行由刷新本身记进 [_statDirty]）。
-  Future<List<String>> _allStatSeeds() async {
-    final $SrsReviewLogsTable t = db.srsReviewLogs;
-    return <String>[
-      for (final TypedResult r
-          in await (db.selectOnly(t, distinct: true)
-                ..addColumns(<Expression<Object>>[t.cardId])
-                ..where(t.profileUid.equals(profileUid)))
-              .get())
-        r.read(t.cardId)!,
-    ];
-  }
-
-  /// 有效复习投影（`srs_stat_reviews`）：[seeds] 所在的「前身 ↔ 后继」连通分量整份重算。
-  ///
-  /// 归属（投影行的 `card_id`）只在这里定一次，增量与重建同一规则：
-  /// - 卡自己可见 → 归自己（前身自己还可见时它的日志仍归它，与 [historyOwnerIndex] 同）；
-  /// - 否则归继承它历史的可见卡（它在其血统里）中 id 最小的；
-  /// - 都不可见（笔记已删）→ 归它的后代里没有后代的那张（链尾）中 id 最小的；没有后代 → 归自己。
-  /// 每个归属组（归属卡 + 归它的卡）的日志合在一起，由 Rust 选取、按合并历史分类（一次 FFI 调用一批组）。
-  /// 缓存行的可见性在这之前已写完（同一事务里），所以更改笔记类型 / Lapis 迁移把旧卡藏起来的那一轮，
-  /// 旧卡的复习就记到新卡上；之后重建、恢复、新设备首次同步都得出同样的行。
-  Future<void> _refreshStatProjection(Set<String> seeds) async {
-    final Map<String, List<String>> succ = await _successorIndex();
-    final Map<String, List<String>> pred = <String, List<String>>{};
-    for (final MapEntry<String, List<String>> e in succ.entries) {
-      for (final String s in e.value) {
-        (pred[s] ??= <String>[]).add(e.key);
-      }
-    }
-    // 连通分量：沿链接双向扩（链接表是超集；真正的血统下面按修改记录的生效值算）。
-    final Set<String> family = <String>{};
-    final List<String> queue = seeds.toList();
-    while (queue.isNotEmpty) {
-      final String c = queue.removeLast();
-      if (!family.add(c)) continue;
-      queue
-        ..addAll(succ[c] ?? const <String>[])
-        ..addAll(pred[c] ?? const <String>[]);
-    }
-    final List<String> ids = family.toList()..sort();
-    final Set<String> visible = <String>{
-      for (final SrsCardCacheRow c in await cardRows(ids))
-        if (!c.hidden) c.id,
-    };
-    // 真后代：p 在 X 的血统里（X ≠ p）。只有带链接的卡才可能有前身 / 后代。
-    final List<String> linked = <String>[
-      for (final String c in ids)
-        if (succ.containsKey(c) || pred.containsKey(c)) c,
-    ];
-    final Map<String, Set<String>> descendants = <String, Set<String>>{};
-    for (int i = 0; i < linked.length; i += _refreshChunk) {
-      final List<String> chunk = linked.sublist(
-        i,
-        min(i + _refreshChunk, linked.length),
-      );
-      final List<List<String>> lineages = await _lineageIds(
-        _RefreshPrefetch(),
-        chunk,
-      );
-      for (int k = 0; k < chunk.length; k++) {
-        for (final String p in lineages[k].skip(1)) {
-          (descendants[p] ??= <String>{}).add(chunk[k]);
-        }
-      }
-    }
-    String ownerOf(String c) {
-      if (visible.contains(c)) return c;
-      final Set<String>? d = descendants[c];
-      if (d == null || d.isEmpty) return c;
-      final List<String> shown = <String>[
-        for (final String x in d)
-          if (visible.contains(x)) x,
-      ]..sort();
-      if (shown.isNotEmpty) return shown.first;
-      final List<String> tails = <String>[
-        for (final String x in d)
-          if (descendants[x]?.isEmpty ?? true) x,
-      ]..sort();
-      return tails.isNotEmpty ? tails.first : (d.toList()..sort()).first;
-    }
-
-    final Map<String, List<String>> groups = <String, List<String>>{};
-    for (final String c in ids) {
-      final String o = ownerOf(c);
-      (groups[o] ??= <String>[o]);
-      if (c != o) groups[o]!.add(c);
-    }
-    final List<String> owners = groups.keys.toList();
-    final List<SrsStatReviewsCompanion> rows = <SrsStatReviewsCompanion>[];
-    final int address = core.address;
-    final String? libraryPath = core.libraryPath;
-    for (int i = 0; i < owners.length; i += _statChunk) {
-      final List<String> chunk = owners.sublist(
-        i,
-        min(i + _statChunk, owners.length),
-      );
-      final List<List<String>> batch = <List<String>>[
-        for (final String o in chunk) groups[o]!,
-      ];
-      // Rust 在写连接上直读日志（含本事务未提交的行）；放后台 isolate，不挡 UI（同 [_cardMaterials]）。
-      final Uint8List page = await _coreStatProjection(
-        address,
-        libraryPath,
-        batch,
-      );
-      final (int _, List<List<Object?>> out) = srsDecodeRows(page);
-      for (final List<Object?> r in out) {
-        rows.add(
-          SrsStatReviewsCompanion.insert(
-            logId: r[1]! as String,
-            profileUid: profileUid,
-            cardId: chunk[r[0]! as int],
-            occurredAt: r[2]! as int,
-            utcOffsetMin: Value<int>(r[3]! as int),
-            rating: Value<int?>(r[4] as int?),
-            kind: Value<int>(r[5]! as int),
-            durationMs: Value<int>(r[6]! as int),
-            prevDueDay: Value<int?>(r[7] as int?),
-            maturityDelta: Value<int>(r[8]! as int),
-          ),
-        );
-      }
-    }
-    // 分量里每张卡名下的旧行整份换掉；行身份是日志 ID，归属换了的日志被新行覆盖，一条日志至多一行。
-    await db.batch((Batch b) {
-      for (final List<String> chunk in _chunks(family)) {
-        b.deleteWhere(
-          db.srsStatReviews,
-          ($SrsStatReviewsTable x) => x.cardId.isIn(chunk),
-        );
-      }
-      if (rows.isNotEmpty) b.insertAllOnConflictUpdate(db.srsStatReviews, rows);
-    });
-  }
-
-  /// 投影每次 Rust 调用的归属组数。
-  static const int _statChunk = 500;
 
   /// 一组卡各自的复习历史（同 [history]；按输入顺序去重）。按块预读整条血统的修改记录、日志与
   /// 服务器时刻（每块几次往返），批量重置 / 设置到期 / 撤销 / 立即重排 / 导出 / 优化器取数不再每张卡
@@ -2553,86 +2043,6 @@ class SrsDbStore implements SrsSync2Host {
     ];
     final Map<String, int> s = await _serverTimesFor(logs.map((l) => l.id));
     return (logs, (String id) => s[id]);
-  }
-
-  /// 一组卡的缓存行原料：血统（自己 + 全部前身的修改记录）与卡片历史内核算出的当前状态。
-  /// 整组一次 Rust 调用（[SrsCore.historyStates]）：日志原文与服务器时刻由 Rust 在写连接上直读并选取，
-  /// 不经 Dart。
-  Future<Map<String, _CardMaterial>> _cardMaterials(
-    Map<String, String?> noteDeckOf,
-  ) async {
-    final List<String> ids = noteDeckOf.keys.toList();
-    final _RefreshPrefetch pre = _RefreshPrefetch.current ?? _RefreshPrefetch();
-    // 已预读的血统跳过；血统与继承标志整组一次内核调用（字段寄存器内核）。
-    await _prefetchLineage(pre, ids, withLogs: false);
-    final List<SrsCardLineage> lineages = _lineagesIn(pre, <SrsCardWant>[
-      for (final String id in ids)
-        SrsCardWant(
-          id,
-          noteDeckId: noteDeckOf[id],
-          fallbackDeckId: defaultDeckId,
-        ),
-    ]).wants;
-    final List<List<String>> groups = <List<String>>[
-      for (final SrsCardLineage l in lineages) l.lineage,
-    ];
-    // Rust 在写连接上直读日志 + 服务器时刻并选取（一次调用）；放后台 isolate，不挡 UI。同一条
-    // 连接上 Drift 正开着的事务（本次落库的新日志）它看得见：调用期间 Drift 不会插进别的语句
-    // （缓存刷新在写锁 + 事务里）。
-    final int address = core.address;
-    final String? libraryPath = core.libraryPath;
-    final Uint8List raw = await _coreHistoryStates(
-      address,
-      libraryPath,
-      groups,
-    );
-    final List<SrsHistoryState> states = srsDecodeHistoryStates(
-      raw,
-      groups.length,
-    );
-    return <String, _CardMaterial>{
-      for (int i = 0; i < ids.length; i++)
-        ids[i]: _CardMaterial(lineages[i], states[i]),
-    };
-  }
-
-  /// 一张卡的缓存行（只算不写）：标志沿血统继承，状态由卡片历史内核从自己 + 全部前身的日志选出。
-  SrsCardsCacheCompanion _cardCacheRow(
-    _CardMaterial material, {
-    required String cardId,
-    required String noteId,
-    required String templateId,
-    required int clozeOrd,
-    required int noteCreatedAt,
-    required bool hidden,
-  }) {
-    final SrsCardFlags flags = material.lineage.flags;
-    final SrsScheduleResult s = material.state.result;
-    return SrsCardsCacheCompanion.insert(
-      id: cardId,
-      profileUid: profileUid,
-      noteId: noteId,
-      templateId: templateId,
-      clozeOrd: Value<int>(clozeOrd),
-      deckId: flags.deckId,
-      suspended: Value<bool>(flags.suspended),
-      buriedUntilDay: Value<int?>(flags.buriedUntilDay),
-      flag: Value<int>(flags.flag),
-      hidden: Value<bool>(hidden),
-      queue: Value<String>(s.queue.wire),
-      dueDay: Value<int?>(s.dueDay),
-      dueAt: Value<int?>(s.dueAt),
-      scheduledDays: Value<int>(s.scheduledDays),
-      reps: Value<int>(s.reps),
-      lapses: Value<int>(s.lapses),
-      stability: Value<double?>(s.memory?.stability),
-      difficulty: Value<double?>(s.memory?.difficulty),
-      lastReviewedAt: Value<int?>(s.lastReviewedAt),
-      lastLogId: Value<String?>(material.state.lastLogId),
-      scheduler: Value<String>(s.scheduler),
-      noteCreatedAt: Value<int>(noteCreatedAt),
-      newPosition: Value<int?>(flags.newPosition),
-    );
   }
 
   // ------------------------------------------------------------------ 修改记录
@@ -4426,6 +3836,15 @@ class SrsDbStore implements SrsSync2Host {
     );
   }
 
+  Map<String, String> _fieldsByName(SrsNoteView n, SrsNoteTypeView t) =>
+      <String, String>{
+        for (final SrsFieldDef f in t.fields) f.name: n.field(f.id),
+      };
+
+  Map<String, String> _idToName(SrsNoteTypeView t) => <String, String>{
+    for (final SrsFieldDef f in t.fields) f.id: f.name,
+  };
+
   /// 渲染卡面（模板正文里的 fieldId 引用换回名字后交给 Anki 渲染器）。
   ///
   /// 调用方刚取过这张卡的 [cardDetail] 时传进来（[detail]），不再读第二遍（复习页出题 / 预取）。
@@ -4726,9 +4145,6 @@ class SrsDbStore implements SrsSync2Host {
   /// 事务回滚不回滚内存：恢复等多步写入中途失败后必须调它，否则 applied 里会留下已回滚的 dot，
   /// 之后真正同步来的同一批记录会被本机新写的记录误判为「已看见」而支配丢弃。
   Future<void> reloadLocal() => runExclusive(() async {
-    _dirtyNotes.clear();
-    _dirtyCards.clear();
-    _dirtyNoteTypes.clear();
     _resetCacheJournal();
     await _loadLocal();
   });
@@ -4812,7 +4228,6 @@ class SrsDbStore implements SrsSync2Host {
           );
         }
       }
-      await _flushCaches();
       await _saveLocal();
     });
   });
@@ -4830,9 +4245,6 @@ class SrsDbStore implements SrsSync2Host {
     try {
       await db.transaction(body);
     } catch (error, stack) {
-      _dirtyNotes.clear();
-      _dirtyCards.clear();
-      _dirtyNoteTypes.clear();
       _resetCacheJournal();
       try {
         await _loadLocal();
@@ -5184,10 +4596,10 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// AnkiConnect 整数 id → UUID 的本机索引（不同步）。null = 还没回填（或缓存行被整体换掉，
-  /// 要重新回填）；回填之后由 [_writeCache] 在写缓存行的同一个独占区 / 事务里随写随增，未命中即
+  /// 要重新回填）；回填之后由 [_absorbCache] 在写缓存行的同一个独占区 / 事务里随写随增，未命中即
   /// 「不存在」——不再每次未命中都整表重建（HBK-AUDIT-017）。
   ///
-  /// 缓存行只经 [_writeCache] 写入（导入、同步、更改笔记类型、编辑都走缓存刷新）；绕过它整体
+  /// 缓存行只经 [_absorbCache] 写入（导入、同步、更改笔记类型、编辑都走缓存刷新）；绕过它整体
   /// 删 / 换缓存行的路径（[rebuildCaches]、事务回滚后的 [_loadLocal] 重读）调
   /// [_resetCacheJournal] 把索引置回 null，下次查时重新回填。被删掉的实体在索引里留着无害：
   /// 它映射到的 UUID 查不到行，调用方照常报「不存在」。
@@ -5195,7 +4607,7 @@ class SrsDbStore implements SrsSync2Host {
   Map<int, String>? _ankiCardIndex;
 
   /// 整表回填数字索引（在独占区里跑：回填期间不会有写入插进来、让新行既不在回填结果里、
-  /// 又因为索引还是 null 没被 [_writeCache] 记上）。
+  /// 又因为索引还是 null 没被 [_absorbCache] 记上）。
   Future<void> _ensureAnkiNumericIndex() async {
     if (_ankiNoteIndex != null && _ankiCardIndex != null) return;
     await runExclusive(() async {
@@ -5268,7 +4680,7 @@ class SrsDbStore implements SrsSync2Host {
 
   // ------------------------------------------------------------------ 缓存变更日志
 
-  /// 缓存行的变化代号：每次 [_writeCache] 写入 +1，缓存被整体换掉（[_resetCacheJournal]）也 +1。
+  /// 缓存行的变化代号：每次 [_absorbCache] 写入 +1，缓存被整体换掉（[_resetCacheJournal]）也 +1。
   /// 只在本对象内单调；跨对象 / 跨进程不可比。
   int _cacheGeneration = 0;
 
@@ -5290,7 +4702,7 @@ class SrsDbStore implements SrsSync2Host {
   /// （缓存整体换过、事务回滚重读过本机状态，或日志滚掉了这段）：调用方要整份重读。
   ///
   /// 常驻视图（AnkiConnect 兼容层）据此只重读变了的那些笔记 / 卡，不再每次请求整库重物化。
-  /// 缓存行只经 [_writeCache] 写，所以导入、同步、编辑、复习、更改笔记类型都在这里留痕。
+  /// 缓存行只经 [_absorbCache] 写，所以导入、同步、编辑、复习、更改笔记类型都在这里留痕。
   ({Set<String> notes, Set<String> cards})? cacheChangesSince(int generation) {
     if (generation > _cacheGeneration || generation < _cacheJournalFloor) {
       return null;
@@ -5413,7 +4825,7 @@ class _Instant {
   final List<_InstantCard> eligible;
 }
 
-/// 缓存刷新的一块笔记的预读（见 [SrsDbStore._flushCaches]）：只在那次刷新的 Zone 里可见。
+/// 一次批量读的预读（见 [SrsDbStore._readWith]）：只在那次读的 Zone 里可见。
 /// 各 Map 里「有键」= 已预读（值可能为空 / null）；没键的照常查库。
 class _RefreshPrefetch {
   static final Object zoneKey = Object();
@@ -5431,53 +4843,8 @@ class _RefreshPrefetch {
   final Map<String, List<SrsReviewLogRow>> logsByCard =
       <String, List<SrsReviewLogRow>>{};
 
-  final Map<String, List<SrsCardCacheRow>> cardsByNote =
-      <String, List<SrsCardCacheRow>>{};
   final Map<String, int> serverTimes = <String, int>{};
   final Set<String> serverTimesKnown = <String>{};
-}
-
-/// 一张卡的缓存行原料（见 `SrsDbStore._cardMaterials`）。
-class _CardMaterial {
-  const _CardMaterial(this.lineage, this.state);
-
-  /// 自己在前、再按广度优先列出全部前身，与沿血统继承的标志。
-  final SrsCardLineage lineage;
-  final SrsHistoryState state;
-}
-
-/// 一块缓存刷新攒下的写入（见 `SrsDbStore._writeCache`）。
-class _CacheWrites {
-  final List<SrsNotesCacheCompanion> notes = <SrsNotesCacheCompanion>[];
-
-  /// 不再应有的旧卡（只改 hidden）。
-  final List<String> hide = <String>[];
-  final List<SrsCardsCacheCompanion> cards = <SrsCardsCacheCompanion>[];
-
-  bool get isEmpty => notes.isEmpty && hide.isEmpty && cards.isEmpty;
-}
-
-/// [SrsDbStore._planNote] 的结果。
-class _NotePlan {
-  const _NotePlan({
-    required this.note,
-    required this.noteType,
-    required this.term,
-    required this.reading,
-    required this.sortField,
-    required this.expected,
-    required this.noteGone,
-  });
-
-  final SrsNoteView note;
-  final SrsNoteTypeView? noteType;
-  final String term;
-  final String reading;
-  final String sortField;
-
-  /// cardId → (templateId, clozeOrd, empty)。
-  final Map<String, (String, int, bool)> expected;
-  final bool noteGone;
 }
 
 /// [SrsDbStore.bulkWrites] 在一条数据库连接上的嵌套深度与要恢复的阈值。
@@ -5492,28 +4859,6 @@ class _BulkWriteState {
 
 // 送进后台 isolate 的 Rust 直读命令一律写成顶层函数：闭包写在实例方法里会连带捕获 `this`
 // （SrsDbStore 里有 Future 等不可发送的对象），Isolate.run 当场抛「object is unsendable」。
-
-Future<Uint8List> _coreHistoryStates(
-  int address,
-  String? libraryPath,
-  List<List<String>> groups,
-) => Isolate.run<Uint8List>(
-  () => SrsCore.fromAddress(
-    address,
-    libraryPath: libraryPath,
-  ).historyStates(groups),
-);
-
-Future<Uint8List> _coreStatProjection(
-  int address,
-  String? libraryPath,
-  List<List<String>> groups,
-) => Isolate.run<Uint8List>(
-  () => SrsCore.fromAddress(
-    address,
-    libraryPath: libraryPath,
-  ).statProjection(groups),
-);
 
 Future<Uint8List> _coreOptimizerItems(
   int address,
