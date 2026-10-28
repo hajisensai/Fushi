@@ -94,6 +94,8 @@ import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/selection/media_selection_controller.dart';
 import 'package:fushi/src/media/selection/selection_gestures.dart';
 import 'package:fushi/src/media/video/video_watched_marks.dart';
+import 'package:fushi/src/sync/remote_video_client.dart'
+    show RemoteVideoPlayedMark;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_lock_dialog.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
@@ -2591,7 +2593,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final List<CollectionEpisodeSlot> visible = _visibleSlots;
     // 区间选 / 全选按可见顺序（本季）；顺序变了锚点作废，底栏计数补一帧。
     if (_selection.setVisibleOrder(
-          loose: <String>[for (final CollectionEpisodeSlot s in visible) s.entryKey],
+          loose: <String>[
+            for (final CollectionEpisodeSlot s in visible) s.entryKey,
+          ],
           collections: const <int>[],
         ) &&
         _selecting) {
@@ -2829,7 +2833,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     onPressed: () => pick(_EpisodeMenuAction.openFileLocation),
                   ),
                 // 标记已看 / 未看：本地集写库，媒体服务器的远端集同步到服务器；其它远端
-                // 源没有这个协议（[CollectionRemoteContext.markPlayed] 为 null）就不出。
+                // 源没有这个协议（[CollectionRemoteContext.playedMark] 为 null）就不出。
                 if (_canMarkWatched(episode)) ...<DialogListAction>[
                   DialogListAction(
                     label: episode.completed
@@ -2964,54 +2968,56 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 这一集能不能手动标记：本地行总是可以；纯远端集要来源支持（媒体服务器）。
   bool _canMarkWatched(CollectionEpisodeSlot episode) =>
-      episode.local != null || widget.remote?.markPlayed != null;
+      episode.local != null || widget.remote?.playedMark != null;
 
-  /// 批量标记已看 / 未看。本地行（含有本地副本的集）写库；媒体服务器上的对应条目
-  /// 同步到服务器；之后重读本页与库页。远端失败只提示条数，本地结果照常生效。
+  /// 批量标记已看 / 未看，一次 [setVideosWatched]：本地行（含本地入库的媒体服务器
+  /// 条目，顺带回写服务器）写库并盖同步戳；纯远端集与本地集在当前来源上的镜像经
+  /// 来源的「已播放」协议标到服务器（同一条目只发一次）。之后重读本页与库页；
+  /// 服务器失败只提示条数，并如实区分「本地已更新」与「什么都没改」。
   Future<void> _markEpisodes(
     List<CollectionEpisodeSlot> episodes, {
     required bool watched,
   }) async {
     if (episodes.isEmpty) return;
+    final RemoteVideoPlayedMark? marker = widget.remote?.playedMark;
     final List<String> localUids = <String>[
       for (final CollectionEpisodeSlot e in episodes)
         if (e.local != null) e.local!.bookUid,
     ];
-    // 纯远端集用它自己的 id；本地副本的集若也对应服务器条目（remoteMirror）一并标。
     final List<String> remoteIds = <String>[
       for (final CollectionEpisodeSlot e in episodes)
         if (e.local == null && e.remote != null)
           e.remote!.id
-        else if (e.remoteMirror != null)
+        else if (marker != null && e.remoteMirror != null)
           e.remoteMirror!.id,
     ];
-    int failed = 0;
+    final WatchedMarkResult result;
     try {
-      await setVideosWatched(
+      result = await setVideosWatched(
         db: widget.database,
         watched: watched,
         localUids: localUids,
+        remoteIds: remoteIds,
+        remoteMarker: marker,
       );
-      if (remoteIds.isNotEmpty) {
-        final Future<int> Function(List<String>, {required bool played})?
-        markPlayed = widget.remote?.markPlayed;
-        failed = markPlayed == null
-            ? remoteIds.length
-            : await markPlayed(remoteIds, played: watched);
-      }
     } catch (e, stack) {
+      // 服务器失败在 setVideosWatched 内部计数；走到这里的是本地写库失败。
       ErrorLogService.instance.log('CollectionDetail.markWatched', e, stack);
-      failed = episodes.length;
+      FushiToast.show(msg: t.video_mark_failed, severity: ToastSeverity.error);
+      return;
+    }
+    if (remoteIds.isNotEmpty || result.remoteChanged > 0) {
+      widget.remote?.onPlayedMarked?.call();
     }
     if (!mounted) return;
     widget.onChanged();
     await _reload();
     if (!mounted) return;
     FushiToast.show(
-      msg: failed > 0
-          ? t.video_mark_server_failed(n: failed)
-          : (watched ? t.video_marked_watched : t.video_marked_unwatched),
-      severity: failed > 0 ? ToastSeverity.error : ToastSeverity.success,
+      msg: watchedMarkFeedback(result, watched: watched),
+      severity: result.hasFailures
+          ? ToastSeverity.error
+          : ToastSeverity.success,
     );
   }
 
@@ -3030,7 +3036,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   void _selectAllInSeason() => setState(
     () => _selection.selectAll(
-      loose: <String>[for (final CollectionEpisodeSlot s in _visibleSlots) s.entryKey],
+      loose: <String>[
+        for (final CollectionEpisodeSlot s in _visibleSlots) s.entryKey,
+      ],
       collections: const <int>[],
     ),
   );
@@ -3076,7 +3084,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     child: Text(t.collection_select_all_in_season),
                   ),
                   FushiTextButton(
-                    key: const ValueKey<String>('collection-selection-unwatched'),
+                    key: const ValueKey<String>(
+                      'collection-selection-unwatched',
+                    ),
                     onPressed: _selection.isEmpty
                         ? null
                         : () => unawaited(_markSelected(watched: false)),

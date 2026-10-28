@@ -1668,6 +1668,20 @@ String videoRemoteSecondaryDelayPrefKey(String bookUid) =>
 String videoRemoteSecondaryDelayAtPrefKey(String bookUid) =>
     videoRemoteSecondaryDelayPrefKeys.atKey(bookUid);
 
+/// 视频「看完标记」跨设备三件套（手动标记已看 / 未看）。值 = 看完时刻 epoch
+/// 毫秒；0 = 未看完（带戳 0 = 显式取消过已看）。行上的真相是
+/// `VideoBooks.completedAt`，这对键只是它的 LWW 镜像：写入点（
+/// `VideoBookRepository.setWatched` / `clearWatchProgress` / 撤销）与行同一事务盖戳，
+/// 互联按「严格较新者胜」两端收敛，标记不会被一次同步回退。
+const PositionPrefKeys videoRemoteCompletedPrefKeys =
+    PositionPrefKeys('video_remote_completed_');
+
+String videoRemoteCompletedPrefKey(String bookUid) =>
+    videoRemoteCompletedPrefKeys.positionKey(bookUid);
+
+String videoRemoteCompletedAtPrefKey(String bookUid) =>
+    videoRemoteCompletedPrefKeys.atKey(bookUid);
+
 /// 每视频「播放偏好」带戳状态（播放偏好同步泛化批）——互联同步的统一载体。
 ///
 /// 设计准则（用户拍板：**不应该让同步这件事变得困难**）：每个偏好 = (值, 时间戳)
@@ -1688,6 +1702,8 @@ class VideoPlaybackSyncState {
     this.secondarySubtitleAt = 0,
     this.secondaryDelayMs,
     this.secondaryDelayAt = 0,
+    this.completedAt,
+    this.completedMarkedAt = 0,
   });
 
   /// 主字幕调轴（毫秒，可负；无「清除」语义，0 即中性）。
@@ -1706,12 +1722,18 @@ class VideoPlaybackSyncState {
   final int? secondaryDelayMs;
   final int secondaryDelayAt;
 
+  /// 看完标记（epoch 毫秒；null = 未看完；带戳 null = 显式取消过已看）与它的
+  /// 标记时刻。值镜像 `VideoBooks.completedAt`，见 [videoRemoteCompletedPrefKeys]。
+  final int? completedAt;
+  final int completedMarkedAt;
+
   /// 是否没有任何带戳字段（PUT 空状态没有意义，端点可直接 no-op）。
   bool get isEmpty =>
       delayAt == 0 &&
       audioTrackAt == 0 &&
       secondarySubtitleAt == 0 &&
-      secondaryDelayAt == 0;
+      secondaryDelayAt == 0 &&
+      completedMarkedAt == 0;
 
   Map<String, Object?> toJson() => <String, Object?>{
         if (delayAt > 0) ...<String, Object?>{
@@ -1731,6 +1753,10 @@ class VideoPlaybackSyncState {
           if (secondaryDelayMs != null) 'secondaryDelayMs': secondaryDelayMs,
           'secondaryDelayAt': secondaryDelayAt,
         },
+        if (completedMarkedAt > 0) ...<String, Object?>{
+          if (completedAt != null) 'completedAt': completedAt,
+          'completedMarkedAt': completedMarkedAt,
+        },
       };
 
   static VideoPlaybackSyncState fromJson(Map<String, Object?> json) =>
@@ -1743,6 +1769,8 @@ class VideoPlaybackSyncState {
         secondarySubtitleAt: _jsonInt(json['secondarySubtitleAt']) ?? 0,
         secondaryDelayMs: _jsonInt(json['secondaryDelayMs']),
         secondaryDelayAt: _jsonInt(json['secondaryDelayAt']) ?? 0,
+        completedAt: _jsonInt(json['completedAt']),
+        completedMarkedAt: _jsonInt(json['completedMarkedAt']) ?? 0,
       );
 
   /// 逐字段「严格较新时间戳者胜」合并：[incoming] 某字段 at 严格大于 [held] 才
@@ -1777,6 +1805,12 @@ class VideoPlaybackSyncState {
         secondaryDelayAt: incoming.secondaryDelayAt > held.secondaryDelayAt
             ? incoming.secondaryDelayAt
             : held.secondaryDelayAt,
+        completedAt: incoming.completedMarkedAt > held.completedMarkedAt
+            ? incoming.completedAt
+            : held.completedAt,
+        completedMarkedAt: incoming.completedMarkedAt > held.completedMarkedAt
+            ? incoming.completedMarkedAt
+            : held.completedMarkedAt,
       );
 
   @override
@@ -1789,7 +1823,9 @@ class VideoPlaybackSyncState {
       other.secondarySubtitleSource == secondarySubtitleSource &&
       other.secondarySubtitleAt == secondarySubtitleAt &&
       other.secondaryDelayMs == secondaryDelayMs &&
-      other.secondaryDelayAt == secondaryDelayAt;
+      other.secondaryDelayAt == secondaryDelayAt &&
+      other.completedAt == completedAt &&
+      other.completedMarkedAt == completedMarkedAt;
 
   @override
   int get hashCode => Object.hash(
@@ -1800,7 +1836,9 @@ class VideoPlaybackSyncState {
       secondarySubtitleSource,
       secondarySubtitleAt,
       secondaryDelayMs,
-      secondaryDelayAt);
+      secondaryDelayAt,
+      completedAt,
+      completedMarkedAt);
 }
 
 /// 字幕调轴跨设备冲突解决——「严格较新时间戳者胜」。纯函数。
@@ -2141,6 +2179,7 @@ class RemoteVideoInfo {
     this.secondaryDelayMs,
     this.secondaryDelayUpdatedAtMs = 0,
     this.completedAt,
+    this.completedMarkedAtMs = 0,
     this.episodes = const <RemoteVideoEpisode>[],
     this.currentEpisode = 0,
     this.tags = const <String>[],
@@ -2267,11 +2306,17 @@ class RemoteVideoInfo {
         secondarySubtitleAt: secondarySubtitleUpdatedAtMs,
         secondaryDelayMs: secondaryDelayMs,
         secondaryDelayAt: secondaryDelayUpdatedAtMs,
+        completedAt: completedAt,
+        completedMarkedAt: completedMarkedAtMs,
       );
 
   /// host 端该视频的「看完」时刻（epoch 毫秒；null = 未看完）。client 剧集面板的
   /// 看完角标（Jellyfin played 勾）数据源——此前远端集无口径恒无标记。
   final int? completedAt;
+
+  /// [completedAt] 最后一次被手动标记 / 取消的时刻（LWW 戳；0 = 从未带戳标过，
+  /// 旧 host 不下发）。client sweep 据此与本地看完标记逐字段收敛。
+  final int completedMarkedAtMs;
 
   bool get hasDisplayCover =>
       hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
@@ -2306,6 +2351,7 @@ class RemoteVideoInfo {
         if (secondaryDelayUpdatedAtMs > 0)
           'secondaryDelayUpdatedAtMs': secondaryDelayUpdatedAtMs,
         if (completedAt != null) 'completedAt': completedAt,
+        if (completedMarkedAtMs > 0) 'completedMarkedAtMs': completedMarkedAtMs,
         if (importedAt != null) 'importedAt': importedAt,
         // 单视频（episodes <=1）向后兼容：不写 episodes/currentEpisode 键。
         if (episodes.length > 1) ...<String, Object?>{
@@ -2338,6 +2384,7 @@ class RemoteVideoInfo {
     int? secondaryDelayMs,
     int? secondaryDelayUpdatedAtMs,
     int? completedAt,
+    int? completedMarkedAtMs,
     RemoteCollectionMembership? collection,
   }) =>
       RemoteVideoInfo(
@@ -2368,6 +2415,7 @@ class RemoteVideoInfo {
         secondaryDelayUpdatedAtMs:
             secondaryDelayUpdatedAtMs ?? this.secondaryDelayUpdatedAtMs,
         completedAt: completedAt ?? this.completedAt,
+        completedMarkedAtMs: completedMarkedAtMs ?? this.completedMarkedAtMs,
         episodes: episodes,
         currentEpisode: currentEpisode,
         tags: tags,
@@ -2410,6 +2458,7 @@ class RemoteVideoInfo {
       secondaryDelayUpdatedAtMs:
           _jsonInt(json['secondaryDelayUpdatedAtMs']) ?? 0,
       completedAt: _jsonInt(json['completedAt']),
+      completedMarkedAtMs: _jsonInt(json['completedMarkedAtMs']) ?? 0,
       importedAt: _jsonInt(json['importedAt']),
       episodes: _jsonVideoEpisodes(json['episodes']),
       currentEpisode: _jsonInt(json['currentEpisode']) ?? 0,

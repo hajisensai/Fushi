@@ -8995,6 +8995,8 @@
   "video_loading_subtitle": "جارٍ تحميل الترجمات…",
   "video_loop_cue_badge_label": "Looping line",
   "video_loop_cue_badge_tooltip": "Click to stop looping",
+  "video_mark_failed": "Couldn't update the watched state.",
+  "video_mark_remote_failed": "Couldn't mark $n item(s) on the server.",
   "video_mark_server_failed": "تعذّر تحديث الخادم لـ $n عنصر. تم تحديث الحالة محليًا.",
   "video_mark_unwatched": "وضع علامة كغير مُشاهَد",
   "video_mark_watched": "وضع علامة كمُشاهَد",

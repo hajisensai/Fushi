@@ -12,6 +12,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
+import 'package:fushi/src/sync/remote_video_client.dart'
+    show RemoteVideoPlayedMark;
 import 'package:fushi_core/fushi_core.dart'
     show MediaCollectionItemRow, MediaCollectionRow, MediaKind, VideoBookRow;
 
@@ -309,14 +311,17 @@ class CollectionRemoteContext {
     this.downloads,
     this.deleteLocalCopy,
     this.discActions,
-    this.markPlayed,
+    this.playedMark,
+    this.onPlayedMarked,
   });
 
-  /// 手动标记远端集已看 / 未看（媒体服务器 Jellyfin / Emby 的「已播放」）。返回
-  /// **失败条数**；实现负责作废该来源的清单缓存，调用方随后重读即可。null = 该
-  /// 来源不支持（互联 / 云盘的看完状态归对端），详情页不给远端集出这些菜单项。
-  final Future<int> Function(List<String> ids, {required bool played})?
-  markPlayed;
+  /// 当前远端来源的「已播放」协议（媒体服务器 Jellyfin / Emby）。null = 该来源
+  /// 不支持（互联 / 云盘的看完状态归对端），详情页不给纯远端集出标记菜单项。
+  /// 落地统一走 `setVideosWatched`（本地行 + 服务器回写同一入口）。
+  final RemoteVideoPlayedMark? playedMark;
+
+  /// 远端集被标记后通知调用方（作废该来源的清单缓存，之后重读拿到新的已播放）。
+  final void Function()? onPlayedMarked;
 
   /// 拉对端视频清单（调用方走共享的 [RemoteLibraryCache]，TTL 内不打网络）。
   final Future<List<RemoteVideoInfo>> Function() loadRemoteVideos;

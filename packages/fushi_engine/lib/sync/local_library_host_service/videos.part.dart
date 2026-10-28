@@ -218,6 +218,7 @@ mixin _LocalLibraryHostVideos
           collectionRow?.secondarySubtitleDelayMs,
           row.secondaryDelayMs,
         ),
+        completedAt: row.completedAt?.millisecondsSinceEpoch,
       ),
       VideoPlaybackSyncState(
         delayMs: PrefCodec.decode<int>(
@@ -248,6 +249,16 @@ mixin _LocalLibraryHostVideos
         ),
         secondaryDelayAt: PrefCodec.decode<int>(
           prefs[videoRemoteSecondaryDelayAtPrefKey(row.bookUid)] ?? '',
+          0,
+        ),
+        completedAt: _completedAtFromPref(
+          PrefCodec.decode<int>(
+            prefs[videoRemoteCompletedPrefKey(row.bookUid)] ?? '',
+            0,
+          ),
+        ),
+        completedMarkedAt: PrefCodec.decode<int>(
+          prefs[videoRemoteCompletedAtPrefKey(row.bookUid)] ?? '',
           0,
         ),
       ),
@@ -291,8 +302,10 @@ mixin _LocalLibraryHostVideos
       secondarySubtitleUpdatedAtMs: playback.secondarySubtitleAt,
       secondaryDelayMs: playback.secondaryDelayMs,
       secondaryDelayUpdatedAtMs: playback.secondaryDelayAt,
-      // 看完标记下发（client 剧集面板角标；此前远端集无口径恒无标记）。
-      completedAt: row.completedAt?.millisecondsSinceEpoch,
+      // 看完标记下发（client 剧集面板角标；此前远端集无口径恒无标记）+ 它的 LWW
+      // 戳（client sweep 据此与本地手动标记收敛）。
+      completedAt: playback.completedAt,
+      completedMarkedAtMs: playback.completedMarkedAt,
       episodes: episodes,
       currentEpisode: currentEpisode,
       tags: tags,
@@ -671,6 +684,7 @@ mixin _LocalLibraryHostVideos
         col?.secondarySubtitleDelayMs,
         row?.secondaryDelayMs,
       ),
+      completedAt: row?.completedAt?.millisecondsSinceEpoch,
     );
     final VideoPlaybackSyncState stamped = VideoPlaybackSyncState(
       delayMs: await _db.getPrefTyped<int>(videoRemoteDelayPrefKey(id), 0),
@@ -697,6 +711,13 @@ mixin _LocalLibraryHostVideos
       ),
       secondaryDelayAt: await _db.getPrefTyped<int>(
         videoRemoteSecondaryDelayAtPrefKey(id),
+        0,
+      ),
+      completedAt: _completedAtFromPref(
+        await _db.getPrefTyped<int>(videoRemoteCompletedPrefKey(id), 0),
+      ),
+      completedMarkedAt: await _db.getPrefTyped<int>(
+        videoRemoteCompletedAtPrefKey(id),
         0,
       ),
     );
@@ -734,6 +755,8 @@ mixin _LocalLibraryHostVideos
         kVideoSubtitleDelayLimitMs,
       ),
       secondaryDelayAt: capAt(incoming.secondaryDelayAt),
+      completedAt: incoming.completedAt,
+      completedMarkedAt: capAt(incoming.completedMarkedAt),
     );
     final VideoPlaybackSyncState held = await getVideoPlayback(id);
     final VideoPlaybackSyncState merged = VideoPlaybackSyncState.merge(
@@ -803,6 +826,25 @@ mixin _LocalLibraryHostVideos
           merged.secondaryDelayMs,
         );
       }
+    }
+    // 看完标记：对端手动标记 / 取消已看（严格较新）→ 镜像键 + 行同时落地，host
+    // 本机库页与之后下发给其它 client 的清单都跟着变。
+    if (merged.completedMarkedAt > 0 &&
+        merged.completedMarkedAt != held.completedMarkedAt) {
+      await _db.setPrefTyped<int>(
+        videoRemoteCompletedPrefKey(id),
+        merged.completedAt ?? 0,
+      );
+      await _db.setPrefTyped<int>(
+        videoRemoteCompletedAtPrefKey(id),
+        merged.completedMarkedAt,
+      );
+      await _db.updateVideoBookCompletedAt(
+        id,
+        merged.completedAt == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(merged.completedAt!),
+      );
     }
   }
 
@@ -1355,3 +1397,6 @@ Future<void> _moveFileInto(File src, File dest) async {
     }
   }
 }
+
+/// `video_remote_completed_` 镜像键的值 → 看完时刻（0 / 负数 = 未看完）。
+int? _completedAtFromPref(int raw) => raw > 0 ? raw : null;

@@ -1252,65 +1252,6 @@ void main() {
     });
   });
 
-  group('只列加入媒体库的条目（libraryItemIds）', () {
-    test('剧展开成全部集、电影取自身、已被服务器删除的跳过；不枚举整个媒体库', () async {
-      final _Router r = _Router((http.Request req) {
-        final String path = req.url.path;
-        if (path == '/Users/u1/Items/series-1') {
-          return _json(_item('series-1', 'Series', isFolder: true));
-        }
-        if (path == '/Users/u1/Items/movie-1') {
-          return _json(_item('movie-1', 'Movie'));
-        }
-        if (path == '/Users/u1/Items/gone') {
-          return _json(<String, Object?>{}, 404);
-        }
-        if (path == '/Users/u1/Items' &&
-            req.url.queryParameters['ParentId'] == 'series-1') {
-          return req.url.queryParameters['IncludeItemTypes'] == 'Episode'
-              ? _page(<Map<String, Object?>>[
-                  _episode('ep1', episode: 1),
-                  _episode('ep2', episode: 2),
-                ])
-              : _page(const <Map<String, Object?>>[]);
-        }
-        return _page(const <Map<String, Object?>>[]);
-      });
-      final JellyfinVideoClient c = JellyfinVideoClient(
-        api: JellyfinApi(
-          serverUrl: kServer,
-          accessToken: 'tok',
-          client: r.client,
-        ),
-        userId: 'u1',
-        libraryItemIds: const <String>['series-1', 'movie-1', 'gone'],
-        libraryItemAddedAtMs: const <String, int>{
-          'series-1': 1000,
-          'movie-1': 2000,
-        },
-      );
-
-      final List<RemoteVideoInfo> out = await c.listRemoteVideos();
-
-      expect(out.map((RemoteVideoInfo v) => v.id), <String>[
-        'ep1',
-        'ep2',
-        'movie-1',
-      ]);
-      // 加入时刻 = 这些集的入库时间，首页「最近添加」据此出现。
-      expect(out.map((RemoteVideoInfo v) => v.importedAt), <int>[
-        1000,
-        1000,
-        2000,
-      ]);
-      expect(
-        r.seen.any((http.Request q) => q.url.path.endsWith('/Views')),
-        isFalse,
-        reason: '只列加入项时不该去枚举全部媒体库',
-      );
-    });
-  });
-
   group('手动标记已看（PlayedItems）', () {
     test('已看 = POST、未看 = DELETE，路径带用户与条目 id，并带认证头', () async {
       final _Router r = _Router((_) => _json(<String, Object?>{}));
@@ -1339,13 +1280,25 @@ void main() {
       );
     });
 
-    test('清单里的集带服务器上的「已播放」：completedAt 非空', () {
+    test('清单里的集带服务器上的「已播放」：completedAt = 服务器的 LastPlayedDate', () {
       final Map<String, Object?> json = _episode('ep1', season: 1, episode: 1);
-      (json['UserData']! as Map<String, Object?>)['Played'] = true;
+      final Map<String, Object?> userData =
+          json['UserData']! as Map<String, Object?>;
+      userData['Played'] = true;
+      userData['LastPlayedDate'] = '2026-10-20T08:00:00.0000000Z';
       final RemoteVideoInfo played = _client(
         _Router((_) => _page(const [])).client,
       ).infoFromItem(JellyfinApi.parseItem(json));
-      expect(played.completedAt, isNotNull);
+      expect(
+        played.completedAt,
+        DateTime.utc(2026, 10, 20, 8).millisecondsSinceEpoch,
+        reason: '用服务器给的时刻，不编造魔数',
+      );
+      userData.remove('LastPlayedDate');
+      final RemoteVideoInfo noDate = _client(
+        _Router((_) => _page(const [])).client,
+      ).infoFromItem(JellyfinApi.parseItem(json));
+      expect(noDate.completedAt, isNull, reason: '时刻未知不编造');
       final RemoteVideoInfo unplayed = _client(
         _Router((_) => _page(const [])).client,
       ).infoFromItem(JellyfinApi.parseItem(_episode('ep2')));

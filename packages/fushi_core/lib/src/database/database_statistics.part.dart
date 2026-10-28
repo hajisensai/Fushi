@@ -1200,44 +1200,6 @@ mixin _FushiDbStatistics
             ..where((t) => t.bookUid.equals(bookUid) & t.completedAt.isNull()))
           .write(VideoBooksCompanion(completedAt: Value(completedAt)));
 
-  /// 手动「标记已看 / 未看」：写 completed_at（null = 取消已看）并**清掉续播位置**。
-  ///
-  /// 位置必须一起清：已打勾但断点停在中途会被判成「重看到一半」（
-  /// `CollectionMemberProgress.isRewatching`），「下一集」不会推进、「继续观看」
-  /// 还会留着它；取消已看时位置若还在片尾区，也仍会被算成看完。Jellyfin 的
-  /// 「已播放 / 未播放」同样清 resume 位置。统计与最近播放时刻不动——完整重置走
-  /// 「清除观看进度」。已看过的再标已看保留原完成时刻。返回实际改到的行数。
-  Future<int> setVideosCompleted(List<String> bookUids, DateTime? completedAt) {
-    if (bookUids.isEmpty) return Future<int>.value(0);
-    return transaction(() async {
-      if (completedAt == null) {
-        return (update(videoBooks)..where((t) => t.bookUid.isIn(bookUids)))
-            .write(
-              const VideoBooksCompanion(
-                completedAt: Value(null),
-                lastPositionMs: Value(0),
-              ),
-            );
-      }
-      final int fresh =
-          await (update(videoBooks)..where(
-                (t) => t.bookUid.isIn(bookUids) & t.completedAt.isNull(),
-              ))
-              .write(
-                VideoBooksCompanion(
-                  completedAt: Value(completedAt),
-                  lastPositionMs: const Value(0),
-                ),
-              );
-      // 已打勾的（可能正在重看到一半）只收回位置，保留原完成时刻。
-      await (update(videoBooks)..where(
-            (t) => t.bookUid.isIn(bookUids) & t.completedAt.isNotNull(),
-          ))
-          .write(const VideoBooksCompanion(lastPositionMs: Value(0)));
-      return fresh;
-    });
-  }
-
   // ── favorite words ──────────────────────────────────────────────
   /// 收藏一个词条（幂等：(expression, reading, sourceType) 已存在则跳过）。
   /// 返回 true 表示这次新增了收藏，false 表示已收藏过。

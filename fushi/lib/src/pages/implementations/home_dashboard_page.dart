@@ -804,17 +804,16 @@ class _HomeDashboardPageState
   /// 远端封面取图器（互联 client 可用时非空；喂 [RemoteCoverImage]）。
   RemoteCoverFetcher? _remoteCoverFetcher;
 
-  /// 媒体服务器（Jellyfin / Emby）进媒体库的条目：「继续」补位与「最近添加」
-  /// （判据与视频页同一份：[resolveJellyfinLibraryClient]）。
+  /// 媒体服务器（Jellyfin / Emby）整库混排时的「继续」补位（判据与视频页同一份：
+  /// [resolveJellyfinLibraryClient]）。手动「加入媒体库」的条目是本地行，已经走
+  /// 本地的「继续 / 最近添加」，不在这里。
   List<RemoteContinueCandidate> _mediaServerContinue =
-      const <RemoteContinueCandidate>[];
-  List<RemoteContinueCandidate> _mediaServerRecent =
       const <RemoteContinueCandidate>[];
 
   /// 上一轮已上屏的媒体服务器清单（TTL 内同一对象 → 切回首页不重算）。
   List<RemoteVideoInfo>? _appliedMediaServerVideos;
 
-  /// 上一轮取数时的媒体库范围签名（开关 / 加入项变了才重取）。
+  /// 上一轮取数时的混排范围签名（开关变了才重取）。
   String? _mediaServerScopeAtLastLoad;
 
   /// 互联 host 设备显示名（配对时存进 [FushiClientUrl.deviceName]；取不到时
@@ -1372,9 +1371,9 @@ class _HomeDashboardPageState
     }
   }
 
-  /// 媒体服务器（Jellyfin / Emby）进媒体库的条目 → 「继续」补位 + 「最近添加」。
-  /// 经与视频页同槽的 TTL 缓存取清单（谁先拉到谁受益）；整库枚举照旧受「自动
-  /// 列出条目」开关管，只列加入项时照拉。失败 = 保持现状，下次进首页重试。
+  /// 媒体服务器（Jellyfin / Emby）整库混排的条目 → 「继续」补位。经与视频页同槽的
+  /// TTL 缓存取清单（谁先拉到谁受益）；整库枚举照旧受「自动列出条目」开关管。
+  /// 失败 = 保持现状，下次进首页重试。
   Future<void> _loadMediaServerDashboardData({
     bool skipIfUnchanged = false,
   }) async {
@@ -1389,17 +1388,15 @@ class _HomeDashboardPageState
       if (!mounted) return;
       if (client == null) {
         _appliedMediaServerVideos = null;
-        if (_mediaServerContinue.isEmpty && _mediaServerRecent.isEmpty) return;
+        if (_mediaServerContinue.isEmpty) return;
         setState(() {
           _mediaServerContinue = const <RemoteContinueCandidate>[];
-          _mediaServerRecent = const <RemoteContinueCandidate>[];
         });
         return;
       }
       final RemoteLibraryCache cache = ref.read(remoteLibraryCacheProvider);
       final List<RemoteVideoInfo>? videos =
           shouldFetchJellyfinList(
-            client: client,
             forceRefresh: false,
             autoList: prefs.jellyfinAutoListVideos,
           )
@@ -1416,18 +1413,18 @@ class _HomeDashboardPageState
       if (skipIfUnchanged && identical(videos, _appliedMediaServerVideos)) {
         return;
       }
-      final candidates = mediaServerDashboardCandidates(
-        videos: videos,
-        localVideoUids: <String>{
-          for (final VideoBookRow v in _videos) v.bookUid,
-        },
-        coverFetcher: client,
-        sourceLabel: client.displayName,
-      );
+      final List<RemoteContinueCandidate> candidates =
+          mediaServerContinueCandidates(
+            videos: videos,
+            localVideoUids: <String>{
+              for (final VideoBookRow v in _videos) v.bookUid,
+            },
+            coverFetcher: client,
+            sourceLabel: client.displayName,
+          );
       setState(() {
         _appliedMediaServerVideos = videos;
-        _mediaServerContinue = candidates.continueWatching;
-        _mediaServerRecent = candidates.recentlyAdded;
+        _mediaServerContinue = candidates;
       });
     } catch (_) {
       // 服务器不可达 / 超时：保持现状，下次进入首页自然重试。
@@ -1441,7 +1438,6 @@ class _HomeDashboardPageState
     final bool hasRemoteState =
         _remoteContinue.isNotEmpty ||
         _mediaServerContinue.isNotEmpty ||
-        _mediaServerRecent.isNotEmpty ||
         _remoteDeviceName != null ||
         _remoteCoverFetcher != null;
     if (!hasRemoteState) return;
@@ -1451,7 +1447,6 @@ class _HomeDashboardPageState
     setState(() {
       _remoteContinue = const <RemoteContinueCandidate>[];
       _mediaServerContinue = const <RemoteContinueCandidate>[];
-      _mediaServerRecent = const <RemoteContinueCandidate>[];
       _remoteCoverFetcher = null;
       _remoteDeviceName = null;
     });
@@ -2392,23 +2387,6 @@ class _HomeDashboardPageState
       );
     }
 
-    // 媒体服务器「加入媒体库」的剧：每部一张；已在「继续」里的那部不重复出。
-    final Set<String> shownRemoteGroups = <String>{
-      for (final _ContinueEntry e in _continueVisible)
-        if (e.remote case final RemoteContinueCandidate r)
-          r.collectionName ?? r.id,
-    };
-    for (final RemoteContinueCandidate c in _mediaServerRecent) {
-      if (shownRemoteGroups.contains(c.collectionName ?? c.id)) continue;
-      entries.add(_ContinueEntry(
-        kind: MediaKind.video,
-        title: c.title,
-        recentMs: c.recentMs,
-        collectionName: c.collectionName,
-        remote: c,
-      ));
-    }
-
     for (final GalgameEntry g in _games) {
       if (shownGames.contains(g.id)) continue;
       entries.add(
@@ -2568,9 +2546,8 @@ class _HomeDashboardPageState
   String _continueDisplayTitle(_ContinueEntry entry) {
     final String title = entry.collectionName ?? entry.title;
     if (entry.remote == null) return title;
-    final String source = entry.remote!.sourceLabel ??
-        _remoteDeviceName ??
-        t.home_remote_source;
+    final String source =
+        entry.remote!.sourceLabel ?? _remoteDeviceName ?? t.home_remote_source;
     return '$title · $source';
   }
 

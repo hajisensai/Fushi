@@ -1755,13 +1755,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 自己的树浏览——一进视频页就整库拍平枚举（BUG-1891 的根源）从此不再是默认行为。
   /// 闸门放在注入点之前：测试注入的 client 同样过闸，测的才是真判据。
   Future<JellyfinVideoClient?> _resolveJellyfinVideoClient() async {
-    final bool showAll = appModelNoUpdate.prefsRepo.jellyfinShowInLibrary;
+    if (!appModelNoUpdate.prefsRepo.jellyfinShowInLibrary) return null;
     final Future<JellyfinVideoClient?> Function()? injected =
         widget.jellyfinVideoClientLoader;
-    if (injected != null) return showAll ? injected() : null;
+    if (injected != null) return injected();
 
     final AppModel appModel = ref.read(appProvider);
-    // 整库混排关着时，只列用户手动「加入媒体库」的剧 / 电影；一个都没有就不连。
+    // 判据与首页同一份；手动「加入媒体库」的条目是本地行，不靠这条混排。
     return resolveJellyfinLibraryClient(
       prefs: appModelNoUpdate.prefsRepo,
       syncRepo: SyncRepository(appModel.database),
@@ -1795,7 +1795,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       return;
     }
     _remoteGateAtLastLoad = gate;
-    // 整库 / 只列加入项两种清单共用同一缓存槽：开关或加入项变了，旧清单作废。
+    // 混排开关翻转：这台服务器的旧清单作废，重取到的是新范围而不是 TTL 内的旧清单。
     final String? sourceId = _remoteVideoSource?.remoteLibrarySourceId;
     if (sourceId != null) _remoteCache.invalidateSource(sourceId);
     setState(() {
@@ -4414,39 +4414,38 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     return parts.join(' · ');
   }
 
-  /// 手动标记已看 / 未看（本地行 + 媒体服务器条目）。落地见 [setVideosWatched]；
-  /// 之后刷新本页（本地行走表级流，这里再显式 [_refresh] 一次），媒体服务器条目
-  /// 作废清单缓存后强制重拉，让卡片 / 系列进度读到新的「已播放」。
+  /// 手动标记已看 / 未看（本地行 + 媒体服务器条目）。落地见 [setVideosWatched]
+  /// （本地入库的媒体服务器条目同时回写服务器）；之后刷新本页（本地行走表级流，
+  /// 这里再显式 [_refresh] 一次）。服务器上有东西被改过就作废当前来源的清单缓存
+  /// 并强制重拉，让卡片 / 系列进度读到新的「已播放」。
   Future<void> _markWatched({
     required bool watched,
     List<String> localUids = const <String>[],
     List<String> remoteIds = const <String>[],
   }) async {
-    final Object? source = _remoteVideoSource;
-    final RemoteVideoPlayedMark? marker = source is RemoteVideoPlayedMark
-        ? source
-        : null;
+    final RemoteVideoSource? source = _remoteVideoSource;
     final WatchedMarkResult result = await setVideosWatched(
       db: appModelNoUpdate.database,
       watched: watched,
       localUids: localUids,
-      remoteIds: marker == null ? const <String>[] : remoteIds,
-      remoteMarker: marker,
+      remoteIds: remoteIds,
+      remoteMarker: source is RemoteVideoPlayedMark
+          ? source as RemoteVideoPlayedMark
+          : null,
     );
     if (!mounted) return;
-    if (remoteIds.isNotEmpty && marker != null) {
-      final String? sourceId = _remoteVideoSource?.remoteLibrarySourceId;
-      if (sourceId != null) _remoteCache.invalidateSource(sourceId);
+    if (source != null && (remoteIds.isNotEmpty || result.remoteChanged > 0)) {
+      _remoteCache.invalidateSource(source.remoteLibrarySourceId);
       setState(() {
         _remoteFuture = _loadRemoteVideos(forceRefresh: true);
       });
     }
     _refresh();
     FushiToast.show(
-      msg: result.hasFailures
-          ? t.video_mark_server_failed(n: result.remoteFailed)
-          : (watched ? t.video_marked_watched : t.video_marked_unwatched),
-      severity: result.hasFailures ? ToastSeverity.error : ToastSeverity.success,
+      msg: watchedMarkFeedback(result, watched: watched),
+      severity: result.hasFailures
+          ? ToastSeverity.error
+          : ToastSeverity.success,
     );
   }
 
@@ -4470,8 +4469,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final List<String> remote = <String>[
       for (final RemoteVideoInfo v
           in _lastRemoteState?.videos ?? const <RemoteVideoInfo>[])
-        if (_remoteCollectionId(v) == collectionId &&
-            !localUids.contains(v.id))
+        if (_remoteCollectionId(v) == collectionId && !localUids.contains(v.id))
           v.id,
     ];
     return (local: local, remote: remote);
@@ -6638,7 +6636,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ) {
     return _collectionOwnCover(collection) ??
         _canonicalCollectionPosterProvider(collection.id) ??
-        _membersRemotePosterProvider(members) ??
+        _membersRemoteSeriesCoverProvider(members) ??
         _collectionMembersCoverProvider(_localMembersOf(members)) ??
         _slotCoverProvider(fallback);
   }
@@ -7723,7 +7721,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   /// 媒体服务器单集所属剧的海报（[RemoteVideoInfo.seriesCoverUrl]）。系列 / 合集
   /// 卡用它代替首集截图；没有（或没有可用的封面抓取器）返回 null。
-  ImageProvider? _remoteSeriesPosterProvider(RemoteVideoInfo video) {
+  ImageProvider? _remoteSeriesCoverProvider(RemoteVideoInfo video) {
     final String? url = video.seriesCoverUrl;
     final RemoteCoverFetcher? fetcher = remoteCoverFetcherFor(
       _remoteVideoClient,
@@ -7739,11 +7737,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }
 
   /// 成员里第一个带剧海报的远端集的剧海报（剧海报优先于任何单集截图）。
-  ImageProvider? _membersRemotePosterProvider(List<_VideoSlot> members) {
+  ImageProvider? _membersRemoteSeriesCoverProvider(List<_VideoSlot> members) {
     for (final _VideoSlot m in members) {
       final RemoteVideoInfo? remote = m.remote;
       if (remote == null) continue;
-      final ImageProvider? poster = _remoteSeriesPosterProvider(remote);
+      final ImageProvider? poster = _remoteSeriesCoverProvider(remote);
       if (poster != null) return poster;
     }
     return null;
@@ -8063,7 +8061,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
       final RemoteVideoInfo? remote = it.payload.remote;
       if (remote == null) continue;
-      final ImageProvider? poster = _remoteSeriesPosterProvider(remote);
+      final ImageProvider? poster = _remoteSeriesCoverProvider(remote);
       if (poster != null) {
         return PortraitCoverImage(
           image: poster,
@@ -9815,11 +9813,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       extraListActions: <DialogListAction>[
         // 整部标记已看 / 未看：本地成员写库，媒体服务器成员同步到服务器。
         ...(() {
-          final targets = _collectionWatchedTargets(
-            collection.id,
-            <String>{for (final VideoBookRow b in library) b.bookUid},
-            memberUidOrder,
-          );
+          final targets = _collectionWatchedTargets(collection.id, <String>{
+            for (final VideoBookRow b in library) b.bookUid,
+          }, memberUidOrder);
           if (targets.local.isEmpty && targets.remote.isEmpty) {
             return const <DialogListAction>[];
           }
@@ -10254,18 +10250,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           : _chooseTmdbOrderingOnHost,
       deleteLocalCopy: _deleteDownloadedLocalCopy,
       discActions: _remoteDiscActions(source),
-      markPlayed: source is RemoteVideoPlayedMark
-          ? (List<String> ids, {required bool played}) async {
-              final WatchedMarkResult result = await setVideosWatched(
-                db: appModelNoUpdate.database,
-                watched: played,
-                remoteIds: ids,
-                remoteMarker: source as RemoteVideoPlayedMark,
-              );
-              _remoteCache.invalidateSource(source.remoteLibrarySourceId);
-              return result.remoteFailed;
-            }
+      playedMark: source is RemoteVideoPlayedMark
+          ? source as RemoteVideoPlayedMark
           : null,
+      onPlayedMarked: () =>
+          _remoteCache.invalidateSource(source.remoteLibrarySourceId),
     );
   }
 
@@ -11307,7 +11296,6 @@ bool shouldFetchRemoteVideoList({
 }) =>
     source is! JellyfinVideoClient ||
     shouldFetchJellyfinList(
-      client: source,
       forceRefresh: forceRefresh,
       autoList: jellyfinAutoList,
     );

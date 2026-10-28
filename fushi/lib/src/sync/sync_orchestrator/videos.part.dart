@@ -203,6 +203,27 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
             );
           }
         }
+        // 看完标记（手动标记已看 / 未看，见 VideoBookRepository.setWatched）：
+        // 对端严格较新 → 镜像键用对端的戳落地，有行时写穿 completedAt。
+        if (merged.completedMarkedAt != local.completedMarkedAt) {
+          await _db.setPrefTyped<int>(
+            videoRemoteCompletedPrefKey(uid),
+            merged.completedAt ?? 0,
+          );
+          await _db.setPrefTyped<int>(
+            videoRemoteCompletedAtPrefKey(uid),
+            merged.completedMarkedAt,
+          );
+          if (hasRow) {
+            final int? completedAt = merged.completedAt;
+            await _db.updateVideoBookCompletedAt(
+              uid,
+              completedAt == null
+                  ? null
+                  : DateTime.fromMillisecondsSinceEpoch(completedAt),
+            );
+          }
+        }
       } catch (e) {
         report.noteError('live video playback "$uid"', e);
       }
@@ -246,6 +267,11 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
         await readString(videoRemoteSecondaryDelayPrefKey(uid)),
       ),
       secondaryDelayAt: await readInt(videoRemoteSecondaryDelayAtPrefKey(uid)),
+      completedAt: switch (await readInt(videoRemoteCompletedPrefKey(uid))) {
+        final int ms when ms > 0 => ms,
+        _ => null,
+      },
+      completedMarkedAt: await readInt(videoRemoteCompletedAtPrefKey(uid)),
     );
   }
 
@@ -268,6 +294,10 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
     secondaryDelayAt: local.secondaryDelayAt > host.secondaryDelayAt
         ? local.secondaryDelayAt
         : 0,
+    completedAt: local.completedAt,
+    completedMarkedAt: local.completedMarkedAt > host.completedMarkedAt
+        ? local.completedMarkedAt
+        : 0,
   );
 
   /// 这一视频的播放偏好这一轮是否有事可做：有本地较新字段要推，或有 host 较新
@@ -284,7 +314,8 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
     return merged.delayAt != local.delayAt ||
         merged.audioTrackAt != local.audioTrackAt ||
         merged.secondarySubtitleAt != local.secondarySubtitleAt ||
-        merged.secondaryDelayAt != local.secondaryDelayAt;
+        merged.secondaryDelayAt != local.secondaryDelayAt ||
+        merged.completedMarkedAt != local.completedMarkedAt;
   }
 
   /// 互联视频文件 live push（client→host，TODO §2.6「后续批」接线）。

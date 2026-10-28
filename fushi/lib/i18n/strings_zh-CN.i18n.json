@@ -8995,6 +8995,8 @@
   "video_loading_subtitle": "正在下载字幕…",
   "video_loop_cue_badge_label": "循环当前句",
   "video_loop_cue_badge_tooltip": "点击停止循环",
+  "video_mark_failed": "未能更新观看状态。",
+  "video_mark_remote_failed": "有 $n 项未能在服务器上标记。",
   "video_mark_server_failed": "有 $n 项未能同步到服务器，本地状态已更新。",
   "video_mark_unwatched": "标记为未看",
   "video_mark_watched": "标记为已看",

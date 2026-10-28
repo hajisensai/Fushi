@@ -44,10 +44,10 @@ ImageProvider? mediaServerCoverImage(
   );
 }
 
-/// 卡片海报：单集且所属剧有海报时用**剧海报**（竖卡上单集截图只是一条横带 +
+/// 卡片封面：单集且所属剧有封面时用**剧封面**（竖卡上单集截图只是一条横带 +
 /// 模糊垫底），否则退回条目自身封面。把剧 id 包成只带封面旗子的条目交给
 /// [mediaServerCoverImage]，缓存键自然按剧共享。
-ImageProvider? mediaServerPosterImage(
+ImageProvider? mediaServerCardCoverImage(
   MediaServerBrowser browser,
   MediaServerItem item,
 ) {
@@ -373,7 +373,7 @@ class MediaServerItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ImageProvider? image = mediaServerPosterImage(browser, item);
+    final ImageProvider? image = mediaServerCardCoverImage(browser, item);
     final Widget cover = image == null
         ? ShelfCoverPlaceholder(icon: _placeholderIcon(item.type))
         : PortraitCoverImage(
@@ -788,7 +788,7 @@ class MediaServerLibraryCollage extends StatelessWidget {
         <(MediaServerItem, ImageProvider)>[];
     for (final MediaServerItem item in items) {
       if (posters.length >= kMediaServerLibraryCollageCount) break;
-      final ImageProvider? provider = mediaServerPosterImage(browser, item);
+      final ImageProvider? provider = mediaServerCardCoverImage(browser, item);
       if (provider != null) posters.add((item, provider));
     }
     if (posters.isEmpty) return ShelfCoverPlaceholder(icon: placeholderIcon);

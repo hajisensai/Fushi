@@ -8995,6 +8995,8 @@
   "video_loading_subtitle": "Descargando subtítulos…",
   "video_loop_cue_badge_label": "Looping line",
   "video_loop_cue_badge_tooltip": "Click to stop looping",
+  "video_mark_failed": "Couldn't update the watched state.",
+  "video_mark_remote_failed": "Couldn't mark $n item(s) on the server.",
   "video_mark_server_failed": "No se pudo actualizar el servidor para $n elemento(s). El estado local sí se actualizó.",
   "video_mark_unwatched": "Marcar como no visto",
   "video_mark_watched": "Marcar como visto",

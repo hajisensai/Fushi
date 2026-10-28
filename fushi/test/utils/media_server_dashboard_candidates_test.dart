@@ -8,7 +8,6 @@ RemoteVideoInfo _ep(
   required int index,
   int positionMs = 0,
   int positionUpdatedAtMs = 0,
-  int? importedAt,
   int? completedAt,
 }) => RemoteVideoInfo(
   id: id,
@@ -17,7 +16,6 @@ RemoteVideoInfo _ep(
   seriesCoverUrl: 'http://nas/Items/$series/Images/Primary',
   positionMs: positionMs,
   positionUpdatedAtMs: positionUpdatedAtMs,
-  importedAt: importedAt,
   completedAt: completedAt,
   collection: RemoteCollectionMembership(
     collectionName: series,
@@ -26,29 +24,10 @@ RemoteVideoInfo _ep(
   ),
 );
 
-/// 首页「继续 / 最近添加」的媒体服务器候选：每部剧一张，封面用剧海报。
+/// 首页「继续」的媒体服务器（整库混排）候选：每部剧一张，封面用剧封面。
 void main() {
-  test('最近添加：每部剧一张、指向第一集、封面是剧海报、按加入时刻', () {
-    final result = mediaServerDashboardCandidates(
-      videos: <RemoteVideoInfo>[
-        _ep('a2', series: 'A', index: 2, importedAt: 500),
-        _ep('a1', series: 'A', index: 1, importedAt: 500),
-        _ep('b1', series: 'B', index: 1),
-      ],
-      localVideoUids: const <String>{},
-      sourceLabel: 'Samu',
-    );
-    expect(result.recentlyAdded, hasLength(1), reason: '没加入时刻的 B 不出');
-    final RemoteContinueCandidate a = result.recentlyAdded.single;
-    expect(a.id, 'a1');
-    expect(a.recentMs, 500);
-    expect(a.coverUrl, 'http://nas/Items/A/Images/Primary');
-    expect(a.collectionName, 'A');
-    expect(a.sourceLabel, 'Samu');
-  });
-
   test('继续：每部剧取最近播放的那集；看完的、本地已有的不出', () {
-    final result = mediaServerDashboardCandidates(
+    final List<RemoteContinueCandidate> result = mediaServerContinueCandidates(
       videos: <RemoteVideoInfo>[
         _ep(
           'a1',
@@ -72,12 +51,16 @@ void main() {
           positionMs: 10,
           positionUpdatedAtMs: 3,
         ),
+        _ep('d1', series: 'D', index: 1),
       ],
       localVideoUids: const <String>{'c1'},
+      sourceLabel: 'Samu',
     );
-    expect(
-      result.continueWatching.map((RemoteContinueCandidate c) => c.id),
-      <String>['a2'],
-    );
+    expect(result.map((RemoteContinueCandidate c) => c.id), <String>['a2']);
+    final RemoteContinueCandidate a = result.single;
+    expect(a.recentMs, 9);
+    expect(a.coverUrl, 'http://nas/Items/A/Images/Primary', reason: '剧封面优先');
+    expect(a.collectionName, 'A');
+    expect(a.sourceLabel, 'Samu');
   });
 }

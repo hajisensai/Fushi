@@ -8995,6 +8995,8 @@
   "video_loading_subtitle": "正在下載字幕…",
   "video_loop_cue_badge_label": "Looping line",
   "video_loop_cue_badge_tooltip": "Click to stop looping",
+  "video_mark_failed": "Couldn't update the watched state.",
+  "video_mark_remote_failed": "Couldn't mark $n item(s) on the server.",
   "video_mark_server_failed": "有 $n 項未能同步到伺服器，本機狀態已更新。",
   "video_mark_unwatched": "標記為未看",
   "video_mark_watched": "標記為已看",

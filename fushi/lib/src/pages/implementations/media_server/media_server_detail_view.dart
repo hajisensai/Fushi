@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    show ProviderContainer, ProviderScope;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:flutter/rendering.dart' show SliverConstraints;
@@ -12,9 +13,6 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/media/video/video_watched_marks.dart';
 import 'package:fushi/src/models/app_model.dart' show appProvider;
-import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/sync/jellyfin_video_client.dart'
-    show JellyfinVideoClient;
 import 'package:fushi/src/sync/remote_library_cache.dart'
     show remoteLibraryCacheProvider;
 import 'package:fushi/src/sync/remote_video_client.dart'
@@ -121,44 +119,12 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
 
   MediaServerBrowser get _browser => widget.session.browser;
 
-  /// Jellyfin / Emby 的清单来源 id；其它服务器没有对应的「库范围」偏好，为 null。
-  String? get _librarySourceId => switch (_browser) {
-    final JellyfinVideoClient c => c.remoteLibrarySourceId,
+  /// 这台服务器的「已播放」回写能力（经契约的 [MediaServerBrowser.playbackClient]
+  /// 判断，不认具体服务器类型）；null = 不支持，集卡长按保持「重选版本」原行为。
+  RemoteVideoPlayedMark? get _playedMark => switch (_browser.playbackClient) {
+    final RemoteVideoPlayedMark marker => marker,
     _ => null,
   };
-
-  PreferencesRepository get _prefs => ProviderScope.containerOf(
-    context,
-    listen: false,
-  ).read(appProvider).prefsRepo;
-
-  /// 把「加入 / 移出媒体库」同步进 Jellyfin / Emby 的库范围偏好
-  /// （`jellyfin_library_items`，id → 加入时刻）：整库混排关着时，视频页与首页
-  /// 只列这里登记的剧 / 电影，首页「最近添加」靠加入时刻排序。入库本体（本地
-  /// 流媒体行）仍由 [MediaServerVideoLibrary] 负责，这里只记范围。
-  Future<void> _mirrorLibraryScope({required bool added}) async {
-    final String? sourceId = _librarySourceId;
-    if (sourceId == null) return;
-    final PreferencesRepository prefs = _prefs;
-    final Map<String, int> items = Map<String, int>.of(
-      prefs.jellyfinLibraryItems(sourceId),
-    );
-    if (added) {
-      items.putIfAbsent(
-        widget.item.id,
-        () => DateTime.now().millisecondsSinceEpoch,
-      );
-    } else {
-      items.remove(widget.item.id);
-    }
-    // 先作废这台服务器的清单缓存，再写偏好：视频页 / 首页收到偏好变更后
-    // 重取到的是新范围，不是 TTL 内的旧清单。
-    ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(remoteLibraryCacheProvider).invalidateSource(sourceId);
-    await prefs.setJellyfinLibraryItems(sourceId, items);
-  }
 
   bool get _isSeries => widget.item.type == MediaServerItemType.series;
 
@@ -371,7 +337,6 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     setState(() => _libraryBusy = true);
     try {
       final int added = await library.addToLibrary(_browser, _detail);
-      await _mirrorLibraryScope(added: true);
       FushiToast.show(
         msg: t.video_online_library_added(n: added),
         severity: ToastSeverity.success,
@@ -394,7 +359,6 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
       if (await library.removeFromLibrary(_browser, _detail) > 0) {
         FushiToast.show(msg: t.video_online_library_removed);
       }
-      await _mirrorLibraryScope(added: false);
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'MediaServerDetailView.remove',
@@ -472,8 +436,8 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
   /// 重新选版本再播。仅服务器支持「已播放」协议（Jellyfin / Emby）时出；其它服务器
   /// 保持原行为（长按直接重选版本）。「之前」按当前季已加载的集序算。
   Future<void> _showEpisodeMenu(MediaServerItem episode) async {
-    final Object browser = _browser;
-    if (browser is! RemoteVideoPlayedMark) {
+    final RemoteVideoPlayedMark? marker = _playedMark;
+    if (marker == null) {
       await _openEpisode(episode, alwaysAsk: true);
       return;
     }
@@ -505,14 +469,18 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
             ),
             if (index > 0)
               ListTile(
-                key: const ValueKey<String>('media-server-episode-mark-through'),
+                key: const ValueKey<String>(
+                  'media-server-episode-mark-through',
+                ),
                 leading: const FushiIcon(FushiIcons.checklist),
                 title: Text(t.video_mark_watched_through),
                 onTap: () => Navigator.pop(dialogContext, _EpisodeMark.through),
               ),
             if (versionCount > 1)
               ListTile(
-                key: const ValueKey<String>('media-server-episode-pick-version'),
+                key: const ValueKey<String>(
+                  'media-server-episode-pick-version',
+                ),
                 leading: const FushiIcon(FushiIcons.video),
                 title: Text(t.media_server_version_pick_title),
                 onTap: () =>
@@ -532,39 +500,44 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
       _ => <MediaServerItem>[episode],
     };
     await _markEpisodes(
-      browser,
+      marker,
       targets,
       watched: choice != _EpisodeMark.unwatched,
     );
   }
 
+  /// 标记集已看 / 未看：已入库的集（本地行，`bookUid` = 服务器条目 id）走本地
+  /// 写库 + 回写服务器，没入库的直接标服务器——同一入口 [setVideosWatched]。
   Future<void> _markEpisodes(
     RemoteVideoPlayedMark marker,
     List<MediaServerItem> targets, {
     required bool watched,
   }) async {
+    final Set<String> inLibrary = _libraryStatus?.online ?? const <String>{};
+    final ProviderContainer container = ProviderScope.containerOf(
+      context,
+      listen: false,
+    );
     final WatchedMarkResult result = await setVideosWatched(
-      db: ProviderScope.containerOf(
-        context,
-        listen: false,
-      ).read(appProvider).database,
+      db: container.read(appProvider).database,
       watched: watched,
-      remoteIds: <String>[for (final MediaServerItem e in targets) e.id],
+      localUids: <String>[
+        for (final MediaServerItem e in targets)
+          if (inLibrary.contains(e.id)) e.id,
+      ],
+      remoteIds: <String>[
+        for (final MediaServerItem e in targets)
+          if (!inLibrary.contains(e.id)) e.id,
+      ],
       remoteMarker: marker,
     );
-    if (!mounted) return;
     // 库页 / 首页读的是同一台服务器的清单缓存：作废它，下次读到新的「已播放」。
-    final String? sourceId = _librarySourceId;
-    if (sourceId != null) {
-      ProviderScope.containerOf(
-        context,
-        listen: false,
-      ).read(remoteLibraryCacheProvider).invalidateSource(sourceId);
-    }
+    container
+        .read(remoteLibraryCacheProvider)
+        .invalidateSource(_browser.serverId);
+    if (!mounted) return;
     FushiToast.show(
-      msg: result.hasFailures
-          ? t.video_mark_server_failed(n: result.remoteFailed)
-          : (watched ? t.video_marked_watched : t.video_marked_unwatched),
+      msg: watchedMarkFeedback(result, watched: watched),
       severity: result.hasFailures
           ? ToastSeverity.error
           : ToastSeverity.success,

@@ -8995,6 +8995,8 @@
   "video_loading_subtitle": "자막 다운로드 중…",
   "video_loop_cue_badge_label": "Looping line",
   "video_loop_cue_badge_tooltip": "Click to stop looping",
+  "video_mark_failed": "Couldn't update the watched state.",
+  "video_mark_remote_failed": "Couldn't mark $n item(s) on the server.",
   "video_mark_server_failed": "$n개 항목의 서버 업데이트에 실패했습니다. 로컬 상태는 업데이트되었습니다.",
   "video_mark_unwatched": "시청 안 함으로 표시",
   "video_mark_watched": "시청함으로 표시",

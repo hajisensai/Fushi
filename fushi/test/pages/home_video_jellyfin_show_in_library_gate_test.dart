@@ -169,9 +169,6 @@ void main() {
 /// 计数版 Jellyfin client：只实现库页取清单会碰到的成员，其余经 [noSuchMethod]
 /// 兜底（与 home_video_collection_detail_gate_test 同款）。
 class _CountingJellyfinClient implements JellyfinVideoClient {
-  @override
-  List<String>? get libraryItemIds => null;
-
   int listCalls = 0;
 
   @override

@@ -188,9 +188,6 @@ void main() {
 /// 计数版 Jellyfin client：`is JellyfinVideoClient` 命中 BUG-1891 闸门；只实现
 /// 页面与详情页这条路径真正会碰到的成员，其余经 [noSuchMethod] 兜底。
 class _CountingJellyfinClient implements JellyfinVideoClient {
-  @override
-  List<String>? get libraryItemIds => null;
-
   int listCalls = 0;
 
   @override
