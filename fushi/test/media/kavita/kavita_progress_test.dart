@@ -240,6 +240,19 @@ void main() {
       );
     });
 
+    test('page baseline: server reset to 0 asks instead of dropping local', () {
+      final KavitaSyncDecision d = _decide(
+        serverPage: 0,
+        serverAt: 20 * _min,
+        localPage: 8,
+        localAt: 10 * _min,
+        lastSync: 10 * _min,
+        syncedPage: 8,
+      );
+      expect(d.action, KavitaSyncAction.conflict);
+      expect(d.preferred, KavitaSyncAction.pushLocal);
+    });
+
     test('finished chapter is the last zero-based page', () {
       expect(isKavitaChapterFinished(page: 11, totalPages: 12), isTrue);
       expect(isKavitaChapterFinished(page: 10, totalPages: 12), isFalse);

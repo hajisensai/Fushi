@@ -109,6 +109,14 @@ KavitaSyncDecision resolveKavitaProgress({
             : KavitaSyncAction.pushLocal,
       );
     }
+    // 服务器被重置回第 0 页（网页端「标为未读」）而本机停在已读位置：不静默丢本机
+    // 进度，交给用户裁决，默认保留本机。
+    if (serverMovedByPage && serverPage == 0 && lastSyncedPage > 0) {
+      return const KavitaSyncDecision(
+        KavitaSyncAction.conflict,
+        preferred: KavitaSyncAction.pushLocal,
+      );
+    }
     return serverMovedByPage
         ? const KavitaSyncDecision(KavitaSyncAction.adoptServer)
         : const KavitaSyncDecision(KavitaSyncAction.pushLocal);

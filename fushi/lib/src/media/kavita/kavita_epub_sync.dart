@@ -81,10 +81,34 @@ class KavitaEpubSyncSession {
     final int lastSection = row.chapterCount > 0 ? row.chapterCount - 1 : 0;
 
     KavitaProgress? remote;
+    KavitaChapterInfo? info;
     try {
-      remote = await api.getProgress(binding.chapterId).timeout(pullTimeout);
+      final List<Object?> results = await Future.wait<Object?>(
+        <Future<Object?>>[
+          api.getProgress(binding.chapterId),
+          // 页数只用来核对两侧的脊柱下标是否对得上；拿不到就当未知放行。
+          api
+              .getChapterInfo(binding.chapterId)
+              .then<Object?>(
+                (KavitaChapterInfo i) => i,
+                onError: (Object _) => null,
+              ),
+        ],
+      ).timeout(pullTimeout);
+      remote = results[0] as KavitaProgress?;
+      info = results[1] as KavitaChapterInfo?;
     } on Object {
       remote = null; // 离线 / 超时 / 服务器错误：放行，稍后首次推送前再校验。
+      info = null;
+    }
+    // Kavita 的 pageNum 与本地 sectionIndex 都是脊柱下标，只有两侧章数一致才一一
+    // 对应。不一致（Fushi 丢了非 HTML / 缺文件的脊柱项，或 Kavita 跳过了某些项）时
+    // 任何拉取 / 推送都会落到错的一章，宁可整本不同步。
+    if (info != null &&
+        info.pages > 0 &&
+        row.chapterCount > 0 &&
+        info.pages != row.chapterCount) {
+      return null;
     }
 
     int? lastPushedPage = binding.lastPushedPage;
