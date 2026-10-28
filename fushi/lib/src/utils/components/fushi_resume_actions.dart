@@ -23,6 +23,7 @@ class FushiResumeActions extends StatelessWidget {
     this.icon = FushiIcons.play,
     this.fill = false,
     this.overImage = false,
+    this.primaryFocusable = true,
     this.primaryKey,
     super.key,
   });
@@ -40,11 +41,14 @@ class FushiResumeActions extends StatelessWidget {
 
   /// 压在图片上（Apple 下主按钮白底黑字）。
   final bool overImage;
+
+  /// false：主按钮不进焦点遍历、不单独读屏（外层整卡已是同一动作的焦点站点）。
+  final bool primaryFocusable;
   final Key? primaryKey;
 
   @override
   Widget build(BuildContext context) {
-    final Widget primary = ConstrainedBox(
+    Widget primary = ConstrainedBox(
       constraints: BoxConstraints(
         maxWidth: fill ? double.infinity : 420,
         minWidth: fill ? double.infinity : 0,
@@ -61,6 +65,9 @@ class FushiResumeActions extends StatelessWidget {
         ),
       ),
     );
+    if (!primaryFocusable) {
+      primary = ExcludeFocus(child: ExcludeSemantics(child: primary));
+    }
     final FushiResumeSecondaryAction? second = secondary;
     if (second == null) return primary;
     return Wrap(
