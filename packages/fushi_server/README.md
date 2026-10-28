@@ -38,7 +38,7 @@ fushi_server/
 
 - Linux：glibc ≥ 2.35（Debian 12 / Ubuntu 22.04 及以后）。内置 torrent 引擎与 onnxruntime 都随包、静态，不用装 `libtorrent-rasterbar` / `libssl`。
 - `ffmpeg` / `ffprobe`：视频封面抽帧、ASR 音轨解码、下载后转封装。不在 PATH 时在配置里写 `ffmpeg:` / `ffprobe:` 路径（直接生效，不需要环境变量；`FUSHI_FFMPEG` 仍认，配置优先）。
-- 局域网自动发现（可选）：`avahi-utils`（有 `avahi-publish` 就广播 `_fushi._tcp`；没有也能手输地址配对）。
+- 局域网自动发现（可选）：`avahi-utils`（有 `avahi-publish` 就广播 `_fushi-sync._tcp`；没有也能手输地址配对）。
 
 本机自己构建（任何平台，需 Dart SDK ≥ 3.8）：
 
@@ -132,11 +132,15 @@ ai:                           # 「AI 下视频」助手会话用的 AI 提供�
 libraries:
   - id: "anime"
     path: "/srv/media/anime"
-    kind: "video"             # video | book | manga
+    kind: "video"             # video | book | manga | audiobook（music 暂不支持，见 docs/agent/server-parity-gaps.md）
     enabled: true
   - id: "manga"
     path: "/srv/media/manga"
-    kind: "manga"             # .mokuro 卷 + 纯页图目录（根有页图=一卷；否则每个含页图的直接子目录一卷）；cbz/cbr/pdf 暂不支持
+    kind: "manga"             # .mokuro 卷、单文件卷（cbz / zip / cbr / rar / cb7，rar 系需 7-Zip）与纯页图目录；PDF 暂不支持
+    enabled: true
+  - id: "audiobooks"
+    path: "/srv/media/audiobooks"
+    kind: "audiobook"         # 每个含音频的目录一本（CD1 / Disc 2 分碟子目录并进上一层），可带 EPUB / 字幕；只有音频的不导入（不自动转录）；音频原地引用、不拷贝
     enabled: true
 ```
 
@@ -170,7 +174,7 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 
 ```
 fushi_server ctl status | logs | p2p
-fushi_server ctl lib [ls] | add <path> [--kind video|book] [--id x] | rm <id> [--purge]
+fushi_server ctl lib [ls] | add <path> [--kind video|book|manga|audiobook] [--id x] | rm <id> [--purge]
 fushi_server ctl scan [--prune|--no-prune]
 fushi_server ctl dl [ls] | cancel|retry|rm <id> | subtitles <id>（该任务的字幕行：来源 / 语言 / 原文件名 / 落盘路径 / 错误）
 fushi_server ctl dl add --title t (<magnet> | --magnet m | --torrent <路径|URL>)
@@ -406,8 +410,8 @@ DB 的 `dictionary_history` / `search_history_items`）。`/api/capabilities` �
 - 原生库定位：`FUSHI_DICTS_LIB` 环境变量 → `bin/../lib/libfushidicts_ffi.so`（Windows `.dll`、macOS `.dylib`）。
   Linux 自编：`CC=gcc-14 CXX=g++-14 bash native/fushidicts/build_linux_so.sh`，产物
   `native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so`（静态链 libstdc++，只动态依赖 glibc；需要支持
-  `std::ranges::to` 的编译器，即 GCC 14+，GCC 13 编不过）。CI 的 `build-multiplatform.yml` linux-server 产物已随包
-  这份 .so 与变形表；正式发布包（`release-server.yml`，ubuntu-22.04）**尚未**随包，需自行放进 `lib/`。
+  `std::ranges::to` 的编译器，即 GCC 14+，GCC 13 编不过）。CI 的 `build-multiplatform.yml` linux-server 产物与正式发布包
+  （`release-server.yml`，ubuntu-22.04，GCC 14 PPA 编译并断言 glibc ≤ 2.35）都已随包这份 .so 与变形表。
 - 去屈折变形表：`FUSHI_TRANSFORMS_DIR` → `bin/../share/fushi/transforms/` → `bin/transforms/`（目录里要有
   `manifest.json`，内容即 `fushi/assets/transforms/`）。缺表时仍能查原形，但「食べた」查不到「食べる」。
 - 词典来源：客户端「词典 · 传输」推送（即时生效），或离线命令：
