@@ -2016,6 +2016,7 @@ class AnkiCardInfo {
     required this.modelName,
     required this.deckName,
     required this.fields,
+    this.hasStoredPosition = true,
   });
 
   final int cardId;
@@ -2024,6 +2025,11 @@ class AnkiCardInfo {
   /// 同一 note 的第几张卡（模板序号）。
   final int ord;
   final int due;
+
+  /// [due] 是不是后端真实存着的位置。AnkiConnect 恒为 true；Fushi 复习里从没排过位置的
+  /// 新卡为 false——它的 [due] 只是按此刻出卡顺序临时编的号（不落库），重排时不能当作
+  /// 「已经在这个位置、可以不动」的锚点（见 `BaseAnkiRepository.assignNewCardPositions`）。
+  final bool hasStoredPosition;
 
   /// Anki `type`：0 新卡 / 1 学习中 / 2 复习 / 3 重学。
   final int type;

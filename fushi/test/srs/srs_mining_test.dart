@@ -23,6 +23,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_new_card_positions.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -99,6 +100,19 @@ class _FakeAnki extends BaseAnkiRepository {
 
   @override
   Future<bool> createDeck(String name) async => false;
+}
+
+/// 数 [listNewCards] 调用次数的透传装饰器（验证 apply 不再整组重读字段）。
+class _CountingRepo extends DelegatingAnkiRepository {
+  _CountingRepo(BaseAnkiRepository inner) : super(inner: inner);
+
+  int listCalls = 0;
+
+  @override
+  Future<List<AnkiCardInfo>> listNewCards(String deckName) {
+    listCalls++;
+    return super.listNewCards(deckName);
+  }
 }
 
 String _payload(
@@ -679,11 +693,16 @@ void main() {
         expect(outcome.failures, isEmpty);
         expect(outcome.written, 3);
         expect(await expressionsInOrder(), <String>['上手', '犬', '雪']);
+        // 复习的位置是带间隙的排序键（从没排过的卡按间隙追加），不是 Anki 的 1..N。
         expect(
           (await repo.listNewCards(
             await deckName(),
           )).map((AnkiCardInfo c) => c.due),
-          <int>[1, 2, 3],
+          <int>[
+            kSrsNewPositionGap,
+            2 * kSrsNewPositionGap,
+            3 * kSrsNewPositionGap,
+          ],
         );
         expect(await nextExpression(), '上手');
 
@@ -695,6 +714,73 @@ void main() {
         expect(undo.failures, isEmpty);
         expect(await expressionsInOrder(), before);
       });
+
+      test('大牌组（2000 张新卡）里再挖 1 张：自动重排只写这 1 张、写回前不再整组读字段', () async {
+        // 根因回归（用户 2026-10-27「一自动重排就卡住、白屏、同步也卡」）：旧实现每次把整个
+        // 牌组连续重编 1..N，插到词频中间的一张新卡让它后面每张卡 +1——挖一个词 = O(N) 条
+        // `newPos` 修改记录进发件箱（2000 张实测 998 条）；写回前还把整组连字段再读一遍。
+        const int n = 2000;
+        for (int i = 0; i < n; i++) {
+          await store.createNote(
+            noteTypeId: store.fushiCardNoteTypeId,
+            fieldsById: <String, String>{
+              fid('Expression'): 'w$i',
+              fid('FreqSort'): '${2 * i + 2}',
+            },
+          );
+        }
+        final _CountingRepo counting = _CountingRepo(repo);
+        final AnkiDeckRepositionRunner r = AnkiDeckRepositionRunner(
+          counting,
+          snapshotDirectory: () async => snapshots,
+        );
+        Future<AnkiRepositionOutcome> reposition() async {
+          final AnkiRepositionPlan plan = (await r.plan(
+            deckName: await deckName(),
+            settings: const AnkiSettings(),
+            options: const AnkiRepositionRankOptions(
+              source: AnkiRepositionSource.field,
+            ),
+          ))!;
+          return r.apply(plan, auto: true);
+        }
+
+        // 首次重排：从没排过的卡全部要落位（一次性）。
+        expect((await reposition()).written, n);
+
+        // 再挖一张，词频落在正中间。
+        await store.createNote(
+          noteTypeId: store.fushiCardNoteTypeId,
+          fieldsById: <String, String>{
+            fid('Expression'): 'mid',
+            fid('FreqSort'): '${n + 1}',
+          },
+        );
+        counting.listCalls = 0;
+        final AnkiRepositionOutcome outcome = await reposition();
+        expect(outcome.failures, isEmpty);
+        expect(outcome.written, 1, reason: '只写新挖的那张，不重编它后面的 1000 张');
+        expect(counting.listCalls, 1, reason: '整组带字段只在 plan 读一次，apply 只取 id');
+
+        final List<AnkiCardInfo> after = await repo.listNewCards(
+          await deckName(),
+        );
+        expect(after, hasLength(n + 1));
+        expect(after[n ~/ 2].fields['Expression'], 'mid');
+        for (int i = 1; i < after.length; i++) {
+          expect(after[i].due, greaterThan(after[i - 1].due));
+        }
+
+        // 顺序没变再跑一次：一张都不写。
+        final AnkiRepositionPlan again = (await r.plan(
+          deckName: await deckName(),
+          settings: const AnkiSettings(),
+          options: const AnkiRepositionRankOptions(
+            source: AnkiRepositionSource.field,
+          ),
+        ))!;
+        expect(again.changed, 0);
+      }, timeout: const Timeout(Duration(minutes: 5)));
 
       test('写回时已不是新卡 / 找不到的进 failures、不写', () async {
         await mineRanked(repo, '雪', 'ゆき', 300);

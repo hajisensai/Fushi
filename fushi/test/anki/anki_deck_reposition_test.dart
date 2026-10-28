@@ -344,6 +344,46 @@ void main() {
       expect(p, isNull);
     });
 
+    // 反馈：电脑上制卡后自动重排就卡死白屏——每次都在 UI isolate 上把整组新卡重查一遍词典。
+    test('词典来源：同一组词典与选项下 rank 跨次缓存，换词典即作废', () async {
+      final List<String> queried = <String>[];
+      List<FushiTermResult> lookup(String e) {
+        queried.add(e);
+        return <FushiTermResult>[
+          _term(e, '', <String, List<int>>{
+            'JPDB': <int>[e.codeUnitAt(0)]
+          }),
+        ];
+      }
+
+      String signature = 'dicts-v1';
+      final _FakeRepo repo = _FakeRepo(cards: <AnkiCardInfo>[
+        _card(1, note: 1, due: 1, fields: <String, String>{'Expression': '犬'}),
+        _card(2, note: 2, due: 2, fields: <String, String>{'Expression': '猫'}),
+      ]);
+      final AnkiDeckRepositionRunner r = AnkiDeckRepositionRunner(
+        repo,
+        lookup: lookup,
+        frequencySignature: () => signature,
+        snapshotDirectory: () async => tmp,
+      );
+      Future<void> plan() => r.plan(
+            deckName: 'D',
+            settings: const AnkiSettings(),
+            options: const AnkiRepositionRankOptions(),
+          );
+      await plan();
+      expect(queried, <String>['犬', '猫']);
+      repo.cards.add(
+        _card(3, note: 3, due: 3, fields: <String, String>{'Expression': '鳥'}),
+      );
+      await plan();
+      expect(queried, <String>['犬', '猫', '鳥'], reason: '只查新卡');
+      signature = 'dicts-v2';
+      await plan();
+      expect(queried.length, 6, reason: '换了词典：整组重查');
+    });
+
     test('词典来源：按旧位置排队、同 note 只查一次、进度回调到位', () async {
       int lookups = 0;
       List<FushiTermResult> lookup(String e) {
@@ -474,6 +514,73 @@ void main() {
       expect(snap.existsSync(), isFalse, reason: '撤销成功后快照删除，不会二次撤销');
     });
 
+    test('AnkiConnect 连续编号：只发位置变了的卡，不重发没动的', () async {
+      final _FakeRepo repo = _FakeRepo(cards: <AnkiCardInfo>[
+        _card(1, due: 1, fields: <String, String>{'FreqSort': '10'}),
+        _card(2, due: 2, fields: <String, String>{'FreqSort': '30'}),
+        _card(3, due: 3, fields: <String, String>{'FreqSort': '20'}),
+      ]);
+      final AnkiDeckRepositionRunner r = runner(repo);
+      final AnkiRepositionPlan plan = (await r.plan(
+        deckName: 'D',
+        settings: const AnkiSettings(),
+        options:
+            const AnkiRepositionRankOptions(source: AnkiRepositionSource.field),
+      ))!;
+      expect(plan.updates.map((AnkiCardDueUpdate u) => '${u.cardId}:${u.due}'),
+          <String>['1:1', '3:2', '2:3'],
+          reason: 'Anki 后端仍是 1..N 连续编号');
+      expect(plan.changed, 2);
+      final AnkiRepositionOutcome out = await r.apply(plan);
+      expect(out.written, 2);
+      expect(
+          repo.writes.single
+              .map((AnkiCardDueUpdate u) => '${u.cardId}:${u.due}'),
+          <String>['3:2', '2:3']);
+      final Map<String, dynamic> json =
+          jsonDecode(out.snapshot!.readAsStringSync()) as Map<String, dynamic>;
+      expect(
+        (json['positions'] as List<dynamic>)
+            .map((dynamic e) => (e as Map<String, dynamic>)['cardId']),
+        <int>[3, 2],
+      );
+    });
+
+    test('后端自定位置分配（稀疏）；旧位置没落库的卡即使数值相同也要写', () async {
+      final _FakeRepo repo = _FakeRepo(
+        cards: <AnkiCardInfo>[
+          _card(1, due: 100, fields: <String, String>{'FreqSort': '10'}),
+          AnkiCardInfo(
+            cardId: 2,
+            noteId: 20,
+            ord: 0,
+            due: 200,
+            type: 0,
+            queue: 0,
+            modelName: 'Lapis',
+            deckName: 'D',
+            fields: const <String, String>{'FreqSort': '20'},
+            hasStoredPosition: false,
+          ),
+        ],
+        assign: (List<AnkiCardInfo> ordered) => <int>[
+          for (final AnkiCardInfo c in ordered) c.due,
+        ],
+      );
+      final AnkiDeckRepositionRunner r = runner(repo);
+      final AnkiRepositionPlan plan = (await r.plan(
+        deckName: 'D',
+        settings: const AnkiSettings(),
+        options:
+            const AnkiRepositionRankOptions(source: AnkiRepositionSource.field),
+      ))!;
+      expect(plan.updates.map((AnkiCardDueUpdate u) => u.due), <int>[100, 200]);
+      expect(plan.changed, 1, reason: '卡 2 的 200 只是临时编号，必须落库');
+      await r.apply(plan);
+      expect(repo.writes.single.map((AnkiCardDueUpdate u) => u.cardId),
+          <int>[2]);
+    });
+
     test('写回前重校验：预览期间被学掉的卡不写位置，也不进快照', () async {
       // 计划算好时两张都是新卡。
       final _FakeRepo repo = _FakeRepo(cards: <AnkiCardInfo>[
@@ -547,9 +654,18 @@ void main() {
 }
 
 class _FakeRepo extends BaseAnkiRepository {
-  _FakeRepo({this.supported = true, this.cards = const <AnkiCardInfo>[]});
+  _FakeRepo({
+    this.supported = true,
+    this.cards = const <AnkiCardInfo>[],
+    this.assign,
+  });
 
   final bool supported;
+  final List<int> Function(List<AnkiCardInfo> ordered)? assign;
+
+  @override
+  List<int> assignNewCardPositions(List<AnkiCardInfo> ordered) =>
+      assign?.call(ordered) ?? super.assignNewCardPositions(ordered);
   List<AnkiCardInfo> cards;
   final List<List<AnkiCardDueUpdate>> writes = <List<AnkiCardDueUpdate>>[];
 

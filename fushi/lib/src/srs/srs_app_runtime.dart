@@ -34,6 +34,12 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier;
+import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart'
+    show
+        SrsProfileConflictAdopt,
+        SrsProfileConflictChoice,
+        SrsProfileConflictKeepSeparate,
+        showSrsProfileConflictDialog;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_legacy_backup_cleanup.dart';
@@ -88,6 +94,9 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
           ref.invalidate(srsStoreProvider);
           return ref.read(srsStoreProvider.future);
         },
+        mediaRoot: () async => SrsMediaStore.mediaRootFor(
+          await ref.read(srsSupportRootProvider)(),
+        ),
         onError: ErrorLogService.instance.log,
       ),
     );
@@ -388,6 +397,7 @@ class SrsAppRuntime {
 
   void _onHomeTabChanged() {
     if (homeShellTabNotifier.value != HomeTab.srs) return;
+    _maybeShowProfileConflict(tabEntry: true);
     unawaited(
       sync.syncThrottled().catchError((Object e, StackTrace stack) {
         ErrorLogService.instance.log('SrsAppRuntime.tabSync', e, stack);
@@ -415,16 +425,94 @@ class SrsAppRuntime {
   }
 
   void _showSyncNotice(SrsSyncNotice notice) {
-    FushiToast.show(
-      msg: switch (notice) {
-        SrsSyncNotice.backendUnsupported => t.srs_sync_backend_unsupported,
-        SrsSyncNotice.clockSkew => t.srs_sync_clock_skew,
-        SrsSyncNotice.profileNotLinked => t.srs_sync_profile_not_linked(
-          name: sync.lastUnlinkedProfile ?? '',
-        ),
-        SrsSyncNotice.awaitingConfirm => t.srs_sync_awaiting_confirm,
-      },
-      severity: ToastSeverity.warning,
-    );
+    final String msg;
+    switch (notice) {
+      case SrsSyncNotice.profileNotLinked:
+        // 冲突要用户拿主意，不是一闪而过的 toast：进复习页时弹窗（见 [_maybeShowProfileConflict]）。
+        _pendingConflict = sync.profileConflict;
+        _maybeShowProfileConflict();
+        return;
+      case SrsSyncNotice.backendUnsupported:
+        msg = t.srs_sync_backend_unsupported;
+      case SrsSyncNotice.clockSkew:
+        msg = t.srs_sync_clock_skew;
+      case SrsSyncNotice.awaitingConfirm:
+        msg = t.srs_sync_awaiting_confirm;
+    }
+    FushiToast.show(msg: msg, severity: ToastSeverity.warning);
+  }
+
+  /// 偏好：用户选了「保持分开」的 profile 冲突（[SrsProfileConflict.ignoreKey] 列表）。
+  static const String kIgnoredProfileConflictsPrefKey =
+      'srs_sync_ignored_profile_conflicts';
+
+  /// 检出、还没给用户看（或用户选了「稍后」）的 profile 冲突。
+  SrsProfileConflict? _pendingConflict;
+
+  /// 用户选了「稍后」的那个冲突（[SrsProfileConflict.ignoreKey]）：重判出同一个冲突时不当场再弹，等下次进复习页。
+  String? _deferredConflictKey;
+  bool _conflictDialogOpen = false;
+
+  List<String> _ignoredConflicts() {
+    if (!app.isPreferencesReady) return const <String>[];
+    final Object? raw = app.prefsRepo.getPref(kIgnoredProfileConflictsPrefKey);
+    return raw is List
+        ? <String>[for (final Object? x in raw) '$x']
+        : const <String>[];
+  }
+
+  /// 有待处理的冲突、用户此刻在复习页（在用复习时才打扰）、没被忽略过：弹窗。[tabEntry] = 用户刚进复习页：
+  /// 「稍后」过的冲突只在这时再问，同步后台重判出来时不当场再弹。
+  void _maybeShowProfileConflict({bool tabEntry = false}) {
+    final SrsProfileConflict? conflict = _pendingConflict;
+    if (conflict == null || _conflictDialogOpen) return;
+    if (_ignoredConflicts().contains(conflict.ignoreKey)) {
+      _pendingConflict = null;
+      return;
+    }
+    if (homeShellTabNotifier.value != HomeTab.srs) return;
+    if (!tabEntry && conflict.ignoreKey == _deferredConflictKey) return;
+    final BuildContext? context = app.navigatorKey.currentContext;
+    if (context == null) return;
+    _pendingConflict = null;
+    _conflictDialogOpen = true;
+    unawaited(() async {
+      try {
+        final SrsProfileConflictChoice? choice =
+            await showSrsProfileConflictDialog(context, conflict);
+        switch (choice) {
+          case null:
+            // 稍后：留着，下次进复习页再问（期间重判出新的冲突以新的为准）。
+            _pendingConflict ??= conflict;
+            _deferredConflictKey = conflict.ignoreKey;
+            return;
+          case SrsProfileConflictKeepSeparate():
+            if (!app.isPreferencesReady) return;
+            await app.prefsRepo.setPref(
+              kIgnoredProfileConflictsPrefKey,
+              <String>[..._ignoredConflicts(), conflict.ignoreKey],
+            );
+          case SrsProfileConflictAdopt(:final String uid):
+            FushiToast.show(msg: t.srs_sync_profile_conflict_done);
+            try {
+              await sync.adoptProfile(conflict, uid);
+            } catch (e, stack) {
+              ErrorLogService.instance.log(
+                'SrsAppRuntime.adoptProfile',
+                e,
+                stack,
+              );
+              FushiToast.show(
+                msg: t.srs_sync_profile_conflict_failed,
+                severity: ToastSeverity.error,
+              );
+            }
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsAppRuntime.profileConflict', e, stack);
+      } finally {
+        _conflictDialogOpen = false;
+      }
+    }());
   }
 }

@@ -19,6 +19,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_new_card_positions.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 
@@ -1171,8 +1172,9 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   bool get supportsDeckReposition => true;
 
   /// [deckName]（复习牌组全名，含子牌组）里的新卡，形状对齐 AnkiConnect `cardsInfo`：
-  /// 整数 id = [SrsIds.ankiNumericId]，`due` = 此刻的出卡位置，`fields` 只给重排取 rank
-  /// 用的三种角色（见 [srsRepositionRoleFields]）。
+  /// 整数 id = [SrsIds.ankiNumericId]，`due` = 此刻的出卡位置（从没排过的卡是临时编号，
+  /// `hasStoredPosition` 为 false），`fields` 只给重排取 rank 用的三种角色（见
+  /// [srsRepositionRoleFields]）。
   @override
   Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
     final SrsMiner miner = await _requireMiner();
@@ -1188,6 +1190,7 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
           noteId: SrsIds.ankiNumericId(e.note.id),
           ord: e.ord,
           due: e.position,
+          hasStoredPosition: e.card.newPosition != null,
           type: 0,
           queue: e.card.suspended ? -1 : 0,
           modelName: e.noteType.name,
@@ -1204,6 +1207,25 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     ];
   }
 
+  /// 写回前重校验只要 id：只读卡片缓存的 ID 列，不读笔记、不物化。
+  @override
+  Future<Set<int>> newCardIdsIn(String deckName) async {
+    final SrsMiner miner = await _requireMiner();
+    return <int>{
+      for (final String id in await miner.store.newCardIdsInDeck(deckName))
+        SrsIds.ankiNumericId(id),
+    };
+  }
+
+  /// 复习的新卡位置只是排序键、每改一张就是一条要同步的修改记录：只移动必须移动的卡
+  /// （[srsMinimalMovePositions]），不像 Anki 那样每次连续重编 1..N。
+  @override
+  List<int> assignNewCardPositions(List<AnkiCardInfo> ordered) =>
+      srsMinimalMovePositions(<int?>[
+        for (final AnkiCardInfo c in ordered)
+          c.hasStoredPosition ? c.due : null,
+      ]);
+
   /// 写回新卡位置。此刻已不是新卡（学过了 / 删了）或找不到的卡记进 failures、不写。
   @override
   Future<AnkiCardDueWriteResult> setNewCardPositions(
@@ -1219,8 +1241,12 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     final Map<String, int> positions = <String, int>{};
     final Map<String, int> handleOf = <String, int>{};
     final Map<int, String> failures = <int, String>{};
-    for (final AnkiCardDueUpdate u in updates) {
-      final String? id = await miner.store.cardIdForAnkiNumericId(u.cardId);
+    final List<String?> ids = await miner.store.cardIdsForAnkiNumericIds(<int>[
+      for (final AnkiCardDueUpdate u in updates) u.cardId,
+    ]);
+    for (int i = 0; i < updates.length; i++) {
+      final AnkiCardDueUpdate u = updates[i];
+      final String? id = ids[i];
       if (id == null) {
         failures[u.cardId] = 'card not found in Fushi review';
         continue;

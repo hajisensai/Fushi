@@ -9,12 +9,14 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_profile_link.dart' show SrsRemoteProfile;
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/srs/srs_sync_scheduler.dart' show SrsProfileConflict;
 import 'package:fushi/src/sync/sync_settings_schema.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -108,6 +110,95 @@ Future<bool> ensureSrsFirstSyncConfirmed(
   await app.setSrsSync2MergeConfirmed(true);
   return true;
 }
+
+/// 用户对 profile 冲突（[SrsProfileConflict]）的选择。
+sealed class SrsProfileConflictChoice {
+  const SrsProfileConflictChoice();
+}
+
+/// 采用候选 [uid]（本机有笔记时并入）。
+class SrsProfileConflictAdopt extends SrsProfileConflictChoice {
+  const SrsProfileConflictAdopt(this.uid);
+  final String uid;
+}
+
+/// 保持本机独立：这个位置的这组候选不再提示。
+class SrsProfileConflictKeepSeparate extends SrsProfileConflictChoice {
+  const SrsProfileConflictKeepSeparate();
+}
+
+/// 候选的副标题：最近更新时刻（有的话）+ uid 前 8 位（同名的几份靠它区分）。
+String srsProfileCandidateSubtitle(SrsRemoteProfile c) {
+  final int? at = c.updatedAt;
+  String two(int v) => v.toString().padLeft(2, '0');
+  final String? when = at == null
+      ? null
+      : () {
+          final DateTime d = DateTime.fromMillisecondsSinceEpoch(at).toLocal();
+          return '${d.year}-${two(d.month)}-${two(d.day)} '
+              '${two(d.hour)}:${two(d.minute)}';
+        }();
+  return <String>[
+    if (when != null) t.srs_sync_profile_conflict_updated(date: when),
+    c.uid.length > 8 ? c.uid.substring(0, 8) : c.uid,
+  ].join(' · ');
+}
+
+/// 同步位置里没法自动关联本机 profile（多个有数据的同名 profile，或两边都有笔记）：让用户选采用哪一份、保持本机
+/// 独立，或稍后再说（返回 null）。本机有笔记时说明会并入、不丢数据。
+Future<SrsProfileConflictChoice?> showSrsProfileConflictDialog(
+  BuildContext context,
+  SrsProfileConflict conflict,
+) => showAppDialog<SrsProfileConflictChoice>(
+  context: context,
+  builder: (BuildContext dialogContext) => FushiAlertDialog(
+    icon: const FushiDialogHeroIcon(icon: FushiIcons.cloudSync),
+    title: Text(t.srs_sync_profile_conflict_title),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(t.srs_sync_profile_conflict_body),
+          const SizedBox(height: 8),
+          Text(
+            conflict.localHasNotes
+                ? t.srs_sync_profile_conflict_merge_hint
+                : t.srs_sync_profile_conflict_adopt_hint,
+            style: Theme.of(dialogContext).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          for (final SrsRemoteProfile c in conflict.candidates)
+            FushiListTile(
+              key: ValueKey<String>('srs-profile-conflict-${c.uid}'),
+              title: c.displayName,
+              subtitle: srsProfileCandidateSubtitle(c),
+              icon: FushiIcons.cloudSync,
+              selected: false,
+              onTap: () => Navigator.of(
+                dialogContext,
+              ).pop(SrsProfileConflictAdopt(c.uid)),
+            ),
+        ],
+      ),
+    ),
+    actions: <Widget>[
+      FushiDialogAction(
+        label: t.srs_sync_profile_conflict_later,
+        kind: FushiDialogActionKind.secondary,
+        onPressed: () => Navigator.of(dialogContext).pop(),
+      ),
+      FushiDialogAction(
+        key: const ValueKey<String>('srs-profile-conflict-keep-separate'),
+        label: t.srs_sync_profile_conflict_keep_separate,
+        kind: FushiDialogActionKind.secondary,
+        onPressed: () => Navigator.of(
+          dialogContext,
+        ).pop(const SrsProfileConflictKeepSeparate()),
+      ),
+    ],
+  ),
+);
 
 /// 同步与历史页的说明：复习数据随已有的同步通道走（附两个分类的入口）。
 class SrsSyncSettingsNotice extends StatelessWidget {

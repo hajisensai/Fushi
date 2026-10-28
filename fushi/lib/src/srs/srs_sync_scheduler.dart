@@ -55,6 +55,13 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 /// 两次「进入复习 tab」触发之间的最小间隔。
 const Duration kSrsSyncMinInterval = Duration(seconds: 60);
 
+/// 本轮既没收到远端操作、也没发出本机段时，媒体对账最多隔多久仍跑一次（补上次没下载成的文件）。
+/// 有新操作的一轮（新笔记引用了新媒体 / 别的设备传来了笔记）照常立刻对账。
+const Duration kSrsMediaReconcileInterval = Duration(minutes: 30);
+
+/// 「两边都有笔记、无法自动关联」的判定结果复用多久（判定要把同步目录里全部 profile 列一遍、逐个下载说明文件）。
+const Duration kSrsProfileConflictRecheck = Duration(minutes: 30);
+
 /// 可信时间与系统时钟的偏差超过它就提示一次。
 const int kSrsClockSkewWarnMs = 10 * 60 * 1000;
 
@@ -236,6 +243,36 @@ const Set<String> kSrsLocationCryptoErrors = <String>{
 };
 
 /// 只提示一次的通知类别。
+/// 一个位置上没法自动关联的 profile（[SrsSyncNotice.profileNotLinked]）：目录里有多个有数据的同一 profile，或本机
+/// 与对方都有用户笔记（见 srs_profile_link.dart [SrsProfileLinkChoose]）。由用户选采用哪一个。
+class SrsProfileConflict {
+  const SrsProfileConflict({
+    required this.directoryKey,
+    required this.localUid,
+    required this.candidates,
+    required this.localHasNotes,
+  });
+
+  /// 冲突所在的同步位置（[SrsSyncEngine.directoryKey] 同一身份）。
+  final String directoryKey;
+
+  /// 判定时本机 profile 的 uid：冲突只属于这个 profile（用户之后切了 profile，这个冲突就不再适用）。
+  final String localUid;
+
+  /// 可以采用的 profile（按 uid 排序）。
+  final List<SrsRemoteProfile> candidates;
+
+  /// 本机 profile 有用户笔记：选定后并入，而不是直接改用。
+  final bool localHasNotes;
+
+  /// 「保持本机独立」按它记（本机 profile + 位置 + 候选）：同一位置出现了别的候选、或换了本机 profile 会再提示。
+  String get ignoreKey => <String>[
+    directoryKey,
+    localUid,
+    for (final SrsRemoteProfile c in candidates) c.uid,
+  ].join('|');
+}
+
 enum SrsSyncNotice {
   /// 当前同步后端拿不到服务器时间，复习数据没法同步。
   backendUnsupported,
@@ -244,7 +281,7 @@ enum SrsSyncNotice {
   clockSkew,
 
   /// 同步目录里有另一台设备的同一个 profile，但两边都有用户笔记，没法自动关联
-  /// （[SrsSyncScheduler.lastUnlinkedProfile] 是对方的 profile 名）。
+  /// （详情见 [SrsSyncScheduler.profileConflict]；app 侧弹窗让用户处理，不走 toast）。
   profileNotLinked,
 
   /// 升级到同步 v2 后首次同步还没确认（[kSrsSyncAwaitingConfirm]），复习数据暂不同步。
@@ -348,8 +385,17 @@ class SrsSyncScheduler {
   final Set<SrsSyncNotice> _noticed = <SrsSyncNotice>{};
   DateTime? _lastThrottledAt;
 
-  /// 最近一次 [SrsSyncNotice.profileNotLinked] 说的那个对方 profile 名。
-  String? lastUnlinkedProfile;
+  /// 最近一次检出的 profile 冲突（[SrsSyncNotice.profileNotLinked]）；app 侧据此弹窗。
+  SrsProfileConflict? profileConflict;
+
+  /// 各（位置, 本机 profile uid）最近一次 profile 关联判定（键见 [_linkKey]）：冲突的判定 [kSrsProfileConflictRecheck]
+  /// 内复用，「已关联上」（本机 uid 目录里已有别的设备）永久复用——两者都不会因为再列一遍目录而改变，每轮重列只是
+  /// 白走一圈网盘请求。键里必须带 uid：调度器跨 profile 切换常驻，只按位置记会让切过去的 profile 永远跳过关联。
+  final Map<String, ({DateTime at, SrsProfileConflict? conflict})>
+  _linkDecided = <String, ({DateTime at, SrsProfileConflict? conflict})>{};
+
+  /// 各位置最近一次媒体对账成功的时刻（见 [kSrsMediaReconcileInterval]）。
+  final Map<String, DateTime> _mediaReconciledAt = <String, DateTime>{};
   bool _disposed = false;
 
   /// 底层库此刻能不能用（app 侧 = 库已打开）。关库（备份恢复 / 数据根迁移 / 退出）
@@ -636,14 +682,35 @@ class SrsSyncScheduler {
     }
     final SrsProfileLinker? linker = _profileLinker;
     bool adopted = false;
-    if (linker != null) {
+    final String linkKey = _linkKey(key, store.profileUid);
+    final ({DateTime at, SrsProfileConflict? conflict})? decided =
+        _linkDecided[linkKey];
+    final bool reuseLink =
+        decided != null &&
+        (decided.conflict == null ||
+            _clock().difference(decided.at) < kSrsProfileConflictRecheck);
+    if (linker != null && !reuseLink) {
       final SrsProfileLinkOutcome link = await linker.link(backend, store);
       adopted = !identical(link.store, store);
       store = link.store;
-      final String? unlinked = link.unlinkedProfileName;
-      if (unlinked != null) {
-        lastUnlinkedProfile = unlinked;
-        _noticeOnce(SrsSyncNotice.profileNotLinked);
+      final List<SrsRemoteProfile>? choose = link.choose;
+      if (choose != null) {
+        final SrsProfileConflict conflict = SrsProfileConflict(
+          directoryKey: key,
+          localUid: store.profileUid,
+          candidates: choose,
+          localHasNotes: link.localHasNotes,
+        );
+        profileConflict = conflict;
+        _linkDecided[linkKey] = (at: _clock(), conflict: conflict);
+        // 每次重新判出都通知（不是 [_noticeOnce]）：用户选了「稍后」或冲突换了内容，下一次判定还要能再问；
+        // 判定本身按 [kSrsProfileConflictRecheck] 复用，不会每轮都通知。
+        _onNotice(SrsSyncNotice.profileNotLinked);
+      } else if (link.linked) {
+        _linkDecided[_linkKey(key, store.profileUid)] = (
+          at: _clock(),
+          conflict: null,
+        );
       }
       if (_halted) return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
     }
@@ -690,7 +757,17 @@ class SrsSyncScheduler {
     if (report.error == null && !_halted) await _reportDigestMismatch(store);
     bool mediaChanged = false;
     final Future<Directory?> Function()? readMediaRoot = _readMediaRoot;
-    if (report.error == null && readMediaRoot != null && !_halted) {
+    // 媒体对账每轮都要全量列远端媒体目录、逐个看本机文件、扫三遍笔记引用：只在这一轮真有新操作进出（新笔记引用了
+    // 新媒体 / 别的设备传来了笔记）、或本位置还没对账过 / 距上次满 [kSrsMediaReconcileInterval] 时跑。
+    final DateTime? reconciled = _mediaReconciledAt[key];
+    final bool mediaDue =
+        adopted ||
+        report.applied > 0 ||
+        report.uploaded > 0 ||
+        report.fork ||
+        reconciled == null ||
+        _clock().difference(reconciled) >= kSrsMediaReconcileInterval;
+    if (report.error == null && readMediaRoot != null && mediaDue && !_halted) {
       // 媒体跟在事件之后：先拿到引用它们的笔记，再按内容哈希补齐两边缺的文件。
       // 媒体失败只记日志，不影响复习数据本身的同步结果。
       try {
@@ -708,6 +785,7 @@ class SrsSyncScheduler {
                 : null,
           );
           mediaChanged = media.downloaded > 0;
+          _mediaReconciledAt[key] = _clock();
         }
       } catch (e, stack) {
         ErrorLogService.instance.log('SrsSyncScheduler.media', e, stack);
@@ -723,10 +801,48 @@ class SrsSyncScheduler {
     return report;
   }
 
+  /// 用户在冲突弹窗里选了 [uid]（[conflict] 的候选）：本机 profile 改用它（本机有笔记时并入，见
+  /// [SrsProfileLinker.adopt]），之后跑一轮「立即同步」把两边的数据收发齐。与同步串行（同一个 store）。
+  ///
+  /// 弹窗开着的时候用户可能已经切到别的 profile：此刻的 profile 不是 [conflict] 判定时的那个就抛
+  /// [StateError]、什么都不动——否则会把另一个 profile 并进不相干的候选。
+  Future<SrsSyncNowResult> adoptProfile(
+    SrsProfileConflict conflict,
+    String uid,
+  ) async {
+    final SrsProfileLinker? linker = _profileLinker;
+    if (linker == null) return const SrsSyncNowResult(ran: 0);
+    await _serially(() async {
+      final SrsDbStore? store = await _readStore();
+      if (store == null || _halted) return;
+      if (store.profileUid != conflict.localUid) {
+        throw StateError(
+          'active SRS profile changed since the conflict was detected '
+          '(${conflict.localUid} -> ${store.profileUid})',
+        );
+      }
+      await linker.adopt(store, uid);
+      if (identical(profileConflict, conflict)) profileConflict = null;
+      _linkDecided.clear();
+      _onDataChanged();
+    });
+    return syncNow();
+  }
+
+  static String _linkKey(String directoryKey, String profileUid) =>
+      '$directoryKey\u0000$profileUid';
+
   /// 对所有已认证通道、以及本机直接读写的目录（本机作为互联 host 时）各跑一轮（不节流）。
   /// 通道抛错与报告里带回错误的目录都记进 [SrsSyncNowResult.errors]，不算同步成功。
+  ///
+  /// 用户主动的一轮（「立即同步」、进复习 tab、AnkiConnect `sync`）：媒体全量对账、冲突判定重做，不复用上次结论。
   Future<SrsSyncNowResult> syncNow() async {
     if (_halted) return const SrsSyncNowResult(ran: 0);
+    _mediaReconciledAt.clear();
+    _linkDecided.removeWhere(
+      (String _, ({DateTime at, SrsProfileConflict? conflict}) d) =>
+          d.conflict != null,
+    );
     int reportFailures = 0;
     final List<Object> errors = <Object>[];
     final ({int ran, List<Object> errors}) channels = await _channels((
