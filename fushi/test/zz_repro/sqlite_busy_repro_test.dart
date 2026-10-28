@@ -130,6 +130,40 @@ void main() {
   }, timeout: const Timeout(Duration(minutes: 20)));
 
   test(
+    'V5 FushiDatabase x2 getPref then insertPrefIfAbsent (anki flow)',
+    () async {
+      final _Tally tally = _Tally('V5-anki-flow');
+      for (int i = 0; i < kReps; i++) {
+        final Directory dir = _tmp('busy_flow_');
+        final FushiDatabase a = FushiDatabase(dir.path);
+        final FushiDatabase b = FushiDatabase(dir.path);
+        await a.getPref('prefs_version');
+        await b.getPref('prefs_version');
+        Future<Object?> flow(FushiDatabase d) async {
+          if (await d.getPref('anki_settings') != null) return false;
+          await Future<void>.delayed(Duration.zero);
+          return d.insertPrefIfAbsent('anki_settings', 's:v');
+        }
+
+        final List<(Object?, int)> r = await Future.wait(
+          <Future<(Object?, int)>>[
+            _timed(() => flow(a)),
+            _timed(() => flow(b)),
+          ],
+        );
+        for (final (Object?, int) x in r) {
+          tally.record(x.$1, x.$2);
+        }
+        await a.close();
+        await b.close();
+        dir.deleteSync(recursive: true);
+      }
+      tally.report();
+    },
+    timeout: const Timeout(Duration(minutes: 20)),
+  );
+
+  test(
     'V2 raw sqlite3 deferred BEGIN',
     () => _rawVariant('V2-raw-deferred', false),
     timeout: const Timeout(Duration(minutes: 20)),
