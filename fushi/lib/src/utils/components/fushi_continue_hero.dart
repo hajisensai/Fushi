@@ -227,11 +227,25 @@ class FushiContinueHero extends StatelessWidget {
               ? null
               : backdropAspectRatio;
           // 宽卡按钮在信息列底下，封面与信息列同高。
-          // 有行尾剧照的宽卡再高一档：剧照要铺满信息列右边的整段空间，卡越高
-          // 裁切越少。
-          final double coverHeight = roomy
-              ? (stillAspect == null ? 176 : 216)
-              : 102;
+          final double gap = tokens.spacing.gap * (roomy ? 2.5 : 1.5);
+          // 有行尾剧照的宽卡：剧照**永不裁切**（按原比例完整显示），反过来由卡宽
+          // 解出卡高，让原比例剧照的宽度正好填满信息列右边的空间：
+          //   (h + 上下内边距) × 剧照比 = 卡宽 − 左内边距 − h × 封面比 − 间距 − 信息列
+          final double coverHeight;
+          if (!roomy) {
+            coverHeight = 102;
+          } else if (stillAspect == null) {
+            coverHeight = 176;
+          } else {
+            final double solved =
+                (outer.maxWidth -
+                    pad.left -
+                    gap -
+                    520 -
+                    pad.vertical * stillAspect) /
+                (stillAspect + coverAspectRatio);
+            coverHeight = solved.clamp(176.0, 300.0);
+          }
           // 横图（视频剧照）在窄卡上别吃掉信息列：宽度封顶卡宽 40%。
           final double coverWidth = (coverHeight * coverAspectRatio).clamp(
             0.0,
@@ -242,7 +256,6 @@ class FushiContinueHero extends StatelessWidget {
             height: coverWidth / coverAspectRatio,
             child: frameCover ? ShelfCoverFrame(child: cover) : cover,
           );
-          final double gap = tokens.spacing.gap * (roomy ? 2.5 : 1.5);
 
           // 海报用**透明度遮罩**淡出（不是盖一层卡面色渐变）：卡片的悬停 / 按压
           // 高亮画在内容下面，盖固定色会在海报起始边露出一道接缝。
@@ -277,17 +290,12 @@ class FushiContinueHero extends StatelessWidget {
                 : Positioned.fill(
                     child: LayoutBuilder(
                       builder: (BuildContext _, BoxConstraints box) {
-                        // 宽卡：剧照从信息列右边紧接着开始一直铺到行尾（至少按原
-                        // 比例完整宽度），封面与剧照之间不留空；窄卡封顶 65%。
-                        final double natural = box.maxHeight * stillAspect;
-                        final double infoEnd =
-                            pad.left +
-                            coverWidth +
-                            gap +
-                            math.min(520.0, c.maxWidth - coverWidth - gap);
-                        final double w = roomy
-                            ? math.max(natural, box.maxWidth - infoEnd + 48)
-                            : math.min(natural, box.maxWidth * 0.65);
+                        // 剧照恒按原比例完整显示（宽 = 卡高 × 比例），不拉伸不裁切；
+                        // 卡高已按卡宽解好，宽卡上它正好接到信息列右边。
+                        final double w = math.min(
+                          box.maxHeight * stillAspect,
+                          box.maxWidth * (roomy ? 0.7 : 0.65),
+                        );
                         return Align(
                           alignment: AlignmentDirectional.centerEnd,
                           child: SizedBox(
