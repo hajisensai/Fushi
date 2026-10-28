@@ -4016,6 +4016,12 @@ Promise.all([
   testFavoriteBatchPayloadWithoutEntriesIsNull(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
+// 状态标记只画 ↗ 图标（用户 10-28：不要「新卡」文字），宿主下发的状态文案记在
+// data-srs-label 上（同时进提示 / aria-label）。
+function srsLabelOf(badge) {
+  return (badge.dataset && badge.dataset.srsLabel) || '';
+}
+
 // ── Fushi 复习（SRS）词状态标记：createSrsStatusBadge ─────────────────────────────
 // 宿主注入 __fushiSrsEnabled=false（复习模块关）时既不渲染标记、也不发 srsTermStatus
 // 桥（零开销）；开着时按宿主回包（文案由宿主本地化）画标记，点它把 cardId/noteId 交给
@@ -4078,7 +4084,10 @@ async function testSrsBadgeShowsHostLabelAndOpensCard() {
   assert.ok(badge, 'module on: SRS badge exists');
   assert.ok(!badge.classList.contains('srs-status-hidden'), 'status known -> visible');
   assert.ok(badge.classList.contains('srs-status-review'), 'queue drives the color class');
-  assert.equal(badge.textContent, '复习中 · 3天后', 'host-localized label is shown verbatim');
+  assert.equal(srsLabelOf(badge), '复习中 · 3天后', 'host-localized label is kept verbatim');
+  assert.equal(badge.dataset.icon, 'openInAnki', 'badge paints the ↗ icon, not text');
+  assert.ok(!String(badge.innerHTML).includes('复习中'), 'status text is not painted on the button');
+  assert.equal(badge.dataset.fushiTip, '复习中 · 3天后 · Open', 'status + action go to the tip');
   const mine = findByClassDeep(header, 'mine-button');
   assert.equal(mine.textContent, '✓', 'Anki ✓ still painted independently');
   await badge.onclick({ stopPropagation() {} });
@@ -4096,7 +4105,7 @@ async function testSrsBadgeHiddenWhenWordNotInSrs() {
   const badge = findByClassDeep(header, 'srs-status-badge');
   assert.ok(badge.classList.contains('srs-status-hidden'),
     'no SRS card -> badge stays hidden');
-  assert.equal(badge.textContent, '');
+  assert.equal(srsLabelOf(badge), '');
 }
 
 // 制卡目标 = Fushi 复习（宿主注入 __fushiSrsMiningTarget=true）：「在 Anki 中打开」↗
@@ -4226,12 +4235,12 @@ async function testSrsVisibleBatchIsOneRoundTripAndSkipsHiddenEntries() {
     assert.ok(!srsCalls[0].payload.terms.some((t) => t.expression === w.expression),
       `hidden entry ${w.expression} is not pulled into the batch`);
   }
-  assert.equal(badges[0].textContent, '雪/ゆき');
-  assert.equal(badges[1].textContent, '上手/じょうず');
-  assert.equal(badges[2].textContent, '上手/うわて', 'reading-keyed reply lands on its own header');
+  assert.equal(srsLabelOf(badges[0]), '雪/ゆき');
+  assert.equal(srsLabelOf(badges[1]), '上手/じょうず');
+  assert.equal(srsLabelOf(badges[2]), '上手/うわて', 'reading-keyed reply lands on its own header');
   assert.ok(badges[3].classList.contains('srs-status-hidden'), 'null status stays hidden');
-  assert.equal(badges[4].textContent, '雪/ゆき', 'duplicate header joins the in-flight request');
-  assert.equal(badges[5].textContent, '猫/ねこ');
+  assert.equal(srsLabelOf(badges[4]), '雪/ゆき', 'duplicate header joins the in-flight request');
+  assert.equal(srsLabelOf(badges[5]), '猫/ねこ');
   for (const h of hidden) {
     assert.ok(findByClassDeep(h, 'srs-status-badge').classList.contains('srs-status-hidden'));
   }
@@ -4268,11 +4277,11 @@ async function testSrsBatchStaleReplyCannotRepaint() {
   assert.equal(pending.length, 1);
   // 元素版本：批次在途时单条刷新了第一个标记 → 旧批次结果不得覆盖它。
   await badges[0].__fushiRefreshSrsStatus();
-  assert.equal(badges[0].textContent, 'fresh', 'single refresh goes out immediately');
+  assert.equal(srsLabelOf(badges[0]), 'fresh', 'single refresh goes out immediately');
   pending[0]();
   await flush();
-  assert.equal(badges[0].textContent, 'fresh', 'stale batch reply cannot overwrite a refreshed badge');
-  assert.equal(badges[1].textContent, '猫/ねこ');
+  assert.equal(srsLabelOf(badges[0]), 'fresh', 'stale batch reply cannot overwrite a refreshed badge');
+  assert.equal(srsLabelOf(badges[1]), '猫/ねこ');
 
   // epoch：重新渲染后上一轮在途批次的回包不再落地。
   const next = [srsWord('犬', 'いぬ'), srsWord('鳥', 'とり')].map((w, i) =>
@@ -4283,7 +4292,7 @@ async function testSrsBatchStaleReplyCannotRepaint() {
   context.resetEntryStateChecks();
   pending[1]();
   await flush();
-  assert.ok(nextBadges.every((b) => b.textContent === ''),
+  assert.ok(nextBadges.every((b) => srsLabelOf(b) === ''),
     'a batch from the previous render cannot paint');
 }
 
@@ -4302,7 +4311,7 @@ async function testSrsBatchFallsBackToSinglesOnOldHost() {
   observers[0].revealAll(badges);
   await flush();
   await flush();
-  assert.deepEqual(badges.map((b) => b.textContent), ['雪/ゆき', '猫/ねこ', '犬/いぬ']);
+  assert.deepEqual(badges.map((b) => srsLabelOf(b)), ['雪/ゆき', '猫/ねこ', '犬/いぬ']);
   assert.equal(names.filter((n) => n === 'srsTermStatusBatch').length, 1);
   assert.equal(names.filter((n) => n === 'srsTermStatus').length, 3);
   // 同一轮渲染里不再试批量。
@@ -4313,7 +4322,7 @@ async function testSrsBatchFallsBackToSinglesOnOldHost() {
   await flush();
   assert.equal(names.filter((n) => n === 'srsTermStatusBatch').length, 1,
     'after a failed batch the render keeps using single calls');
-  assert.deepEqual(more.map((b) => b.textContent), ['鳥/とり', '魚/さかな']);
+  assert.deepEqual(more.map((b) => srsLabelOf(b)), ['鳥/とり', '魚/さかな']);
 }
 
 async function testSrsSingleVisibleEntryUsesSingleCallAndBatchesAreCapped() {
@@ -4342,7 +4351,7 @@ async function testSrsSingleVisibleEntryUsesSingleCallAndBatchesAreCapped() {
   await flush();
   const batches = calls.filter((c) => c.name === 'srsTermStatusBatch');
   assert.deepEqual(batches.map((c) => c.n), [32, 8], 'batches are capped at 32 terms');
-  assert.ok(many.every((b) => b.textContent !== ''));
+  assert.ok(many.every((b) => srsLabelOf(b) !== ''));
 }
 
 (async () => {

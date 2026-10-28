@@ -617,6 +617,7 @@ html {
 .audio-button,
 .favorite-button,
 .open-anki-button,
+.srs-status-badge,
 .mine-button {
     padding: 0 4px;
     border: none;
@@ -2647,21 +2648,15 @@ html.fushi-glass-host.fushi-apple .ctx-adjust-button:active {
     background-color: color-mix(in srgb, var(--text-color) 14%, transparent);
 }
 
-/* Fushi 复习（SRS）词状态标记（popup.js createSrsStatusBadge）：小号 tonal 胶囊，文案
-   （「复习中 · 3天后」/「新卡」/「已暂停」）由宿主本地化后下发。复习模块关着时 popup.js
-   根本不渲染它。M3E：按队列分色——到期复习用主色、学习中用三级色、新卡用次级色、暂停
+/* Fushi 复习（SRS）词状态标记（popup.js createSrsStatusBadge）：与「在 Anki 中打开」同一颗
+   ↗ 图标按钮（用户 10-28：不要「新卡」文字），尺寸 / 形状跟其它词条头图标按钮走；状态文案
+   （「复习中 · 3天后」/「新卡」/「已暂停」）只进提示与无障碍标签。复习模块关着时 popup.js
+   根本不渲染它。按队列分色——到期复习用主色、学习中用三级色、新卡用次级色、暂停
    用中性灰；颜色全部走注入的色角色变量（亮 / 暗 / 自定义主题自动跟随），淡染半透明，
-   自定义卡面底色下同样成立。Apple 设计系统在下面换成系统灰胶囊 + 强调色文字。
+   自定义卡面底色下同样成立。Apple 设计系统在下面换成系统灰底 + 强调色图标。
    墨水屏由 html.eink 通配压平圆角 / 动效。 */
 .srs-status-badge {
-    box-sizing: border-box;
-    height: 24px;
-    padding: 0 10px;
     border: none;
-    border-radius: 12px;
-    font-size: 12px;
-    line-height: 24px;
-    white-space: nowrap;
     color: var(--md-primary, var(--primary-color));
     background-color: color-mix(in srgb, var(--md-primary, var(--primary-color)) 14%, transparent);
     opacity: 1;
@@ -3274,6 +3269,7 @@ html.fushi-m3e .header-buttons > .inline-action-button {
 html.fushi-m3e .header-buttons > .audio-button,
 html.fushi-m3e .header-buttons > .favorite-button,
 html.fushi-m3e .header-buttons > .open-anki-button,
+html.fushi-m3e .header-buttons > .srs-status-badge,
 html.fushi-m3e .header-buttons > .clear-draft-button,
 html.fushi-m3e .header-buttons > .ctx-adjust-button {
     font-size: 20px;
