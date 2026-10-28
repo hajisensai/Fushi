@@ -166,6 +166,42 @@ void main() {
     await _unmount(tester);
   });
 
+  testWidgets('底栏让位：原生卡面铺到底栏背后、底栏高度作滚动内边距；WebView 卡面停在底栏上沿', (
+    WidgetTester tester,
+  ) async {
+    final Finder bar = find.byKey(
+      const ValueKey<String>('srs-review-bottom-bar'),
+    );
+    final SrsDbStore store = await _openStore(tester);
+    await _addFushiCard(tester, store);
+    await _pumpReview(tester, store: store, apple: false);
+
+    final double barHeight = tester.getSize(bar).height;
+    expect(barHeight, greaterThan(0));
+    // 原生卡面画到窗口底端（底栏背后），末尾内容靠滚动内边距让到底栏上沿以上。
+    expect(tester.getBottomLeft(_surface).dy, tester.getBottomLeft(bar).dy);
+    expect(
+      tester.widget<SrsFushiCardView>(_native).bottomInset?.value,
+      barHeight,
+    );
+    final EdgeInsets padding =
+        tester
+                .widget<SingleChildScrollView>(
+                  find.byKey(const ValueKey<String>('srs-fushi-front')),
+                )
+                .padding!
+            as EdgeInsets;
+    expect(padding.bottom, greaterThan(barHeight));
+    await _unmount(tester);
+
+    final SrsDbStore lapis = await _openStore(tester);
+    await _addLapis(tester, lapis);
+    await _pumpReview(tester, store: lapis, apple: false);
+    // 整面 WebView 滚不到底栏下面：卡面底边正好在底栏上沿。
+    expect(tester.getBottomLeft(_surface).dy, tester.getTopLeft(bar).dy);
+    await _unmount(tester);
+  });
+
   testWidgets('Apple 原生 Fushi 卡面：页头不悬浮，卡面不加滚动内边距', (WidgetTester tester) async {
     final SrsDbStore store = await _openStore(tester);
     await _addFushiCard(tester, store);
