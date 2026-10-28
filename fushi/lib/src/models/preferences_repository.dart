@@ -711,6 +711,58 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 用户手动「加入媒体库」的 Jellyfin/Emby 剧 / 电影 id，按服务器
+  /// （`JellyfinVideoClient.sourceIdFor`）分桶。与 [jellyfinShowInLibrary] 无关：
+  /// 即使整库混排关着，这里的条目也会出现在首页 / 系列 / 全部视频。
+  ///
+  /// 值 = 加入时刻（epoch 毫秒；旧格式只存 id 的读成 0）。首页「最近添加」靠它
+  /// 给这些远端条目一个入库时间。
+  Map<String, int> jellyfinLibraryItems(String sourceId) {
+    final Object? raw = _jellyfinLibraryItems()[sourceId];
+    if (raw is Map) {
+      return <String, int>{
+        for (final MapEntry<Object?, Object?> e in raw.entries)
+          if (e.key is String && (e.key as String).isNotEmpty)
+            e.key as String: e.value is num ? (e.value as num).toInt() : 0,
+      };
+    }
+    if (raw is List) {
+      return <String, int>{
+        for (final Object? id in raw)
+          if (id is String && id.isNotEmpty) id: 0,
+      };
+    }
+    return <String, int>{};
+  }
+
+  List<String> jellyfinLibraryItemIds(String sourceId) =>
+      jellyfinLibraryItems(sourceId).keys.toList();
+
+  Future<void> setJellyfinLibraryItems(
+    String sourceId,
+    Map<String, int> items,
+  ) async {
+    final Map<String, Object?> all = _jellyfinLibraryItems();
+    if (items.isEmpty) {
+      all.remove(sourceId);
+    } else {
+      all[sourceId] = items;
+    }
+    await setPref('jellyfin_library_items', jsonEncode(all));
+    notifyListeners();
+  }
+
+  Map<String, Object?> _jellyfinLibraryItems() {
+    final String raw =
+        getPref('jellyfin_library_items', defaultValue: '') as String;
+    if (raw.isEmpty) return <String, Object?>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is Map) return Map<String, Object?>.from(decoded);
+    } catch (_) {}
+    return <String, Object?>{};
+  }
+
   /// 媒体服务器（Jellyfin/Emby）串流画质档下标；-1 = 自动（服务器允许时直播放原
   /// 文件）。选档 = 向服务器声明码率 / 宽度上限，超限由服务器转码到该档。
   int get mediaServerQualityPresetIndex =>

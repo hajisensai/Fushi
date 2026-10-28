@@ -44,6 +44,32 @@ ImageProvider? mediaServerCoverImage(
   );
 }
 
+/// 卡片海报：单集且所属剧有海报时用**剧海报**（竖卡上单集截图只是一条横带 +
+/// 模糊垫底），否则退回条目自身封面。把剧 id 包成只带封面旗子的条目交给
+/// [mediaServerCoverImage]，缓存键自然按剧共享。
+ImageProvider? mediaServerPosterImage(
+  MediaServerBrowser browser,
+  MediaServerItem item,
+) {
+  final String? seriesId = item.seriesId;
+  if (item.type == MediaServerItemType.episode &&
+      item.hasSeriesCover &&
+      seriesId != null &&
+      seriesId.isNotEmpty) {
+    final ImageProvider? poster = mediaServerCoverImage(
+      browser,
+      MediaServerItem(
+        id: seriesId,
+        name: '',
+        type: MediaServerItemType.series,
+        hasCover: true,
+      ),
+    );
+    if (poster != null) return poster;
+  }
+  return mediaServerCoverImage(browser, item);
+}
+
 /// 详情页 hero 用的大图（横版背景 / 标题 logo）：请求宽度与解码宽度都比网格卡大
 /// ——背景要铺满 1600+ 逻辑像素宽的 hero，720 像素放大后一片糊；logo 在 hero 里
 /// 最大 460×110 逻辑像素 × dpr。缓存键带上请求宽度，与网格卡的 720 版本互不串。
@@ -347,7 +373,7 @@ class MediaServerItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ImageProvider? image = mediaServerCoverImage(browser, item);
+    final ImageProvider? image = mediaServerPosterImage(browser, item);
     final Widget cover = image == null
         ? ShelfCoverPlaceholder(icon: _placeholderIcon(item.type))
         : PortraitCoverImage(
@@ -762,7 +788,7 @@ class MediaServerLibraryCollage extends StatelessWidget {
         <(MediaServerItem, ImageProvider)>[];
     for (final MediaServerItem item in items) {
       if (posters.length >= kMediaServerLibraryCollageCount) break;
-      final ImageProvider? provider = mediaServerCoverImage(browser, item);
+      final ImageProvider? provider = mediaServerPosterImage(browser, item);
       if (provider != null) posters.add((item, provider));
     }
     if (posters.isEmpty) return ShelfCoverPlaceholder(icon: placeholderIcon);

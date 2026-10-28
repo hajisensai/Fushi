@@ -66,6 +66,9 @@ import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/jellyfin_library_scope.dart';
+import 'package:fushi/src/sync/jellyfin_video_client.dart'
+    show JellyfinVideoClient;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
@@ -793,6 +796,19 @@ class _HomeDashboardPageState
   /// 远端封面取图器（互联 client 可用时非空；喂 [RemoteCoverImage]）。
   RemoteCoverFetcher? _remoteCoverFetcher;
 
+  /// 媒体服务器（Jellyfin / Emby）进媒体库的条目：「继续」补位与「最近添加」
+  /// （判据与视频页同一份：[resolveJellyfinLibraryClient]）。
+  List<RemoteContinueCandidate> _mediaServerContinue =
+      const <RemoteContinueCandidate>[];
+  List<RemoteContinueCandidate> _mediaServerRecent =
+      const <RemoteContinueCandidate>[];
+
+  /// 上一轮已上屏的媒体服务器清单（TTL 内同一对象 → 切回首页不重算）。
+  List<RemoteVideoInfo>? _appliedMediaServerVideos;
+
+  /// 上一轮取数时的媒体库范围签名（开关 / 加入项变了才重取）。
+  String? _mediaServerScopeAtLastLoad;
+
   /// 互联 host 设备显示名（配对时存进 [FushiClientUrl.deviceName]；取不到时
   /// 渲染层回退通用「远端」文案）。「标明设备来源」的数据源。
   String? _remoteDeviceName;
@@ -916,9 +932,16 @@ class _HomeDashboardPageState
   /// 忽略——prefsRepo 的通知很频繁，不能每次都重跑远端取数。
   void _onPrefsChangedForRemoteGate() {
     if (!mounted) return;
-    final bool gate = ref.read(appProvider).prefsRepo.showRemoteEntries;
-    if (gate == _remoteGateAtLastLoad) return;
-    unawaited(_loadRemoteDashboardData());
+    final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
+    final bool gate = prefs.showRemoteEntries;
+    if (gate != _remoteGateAtLastLoad) {
+      unawaited(_loadRemoteDashboardData());
+      return;
+    }
+    if (gate &&
+        jellyfinLibraryScopeSignature(prefs) != _mediaServerScopeAtLastLoad) {
+      unawaited(_loadMediaServerDashboardData());
+    }
   }
 
   /// 追踪状态版本号（[initState] 挂监听，[dispose] 解除）。
@@ -1196,6 +1219,8 @@ class _HomeDashboardPageState
       _clearRemoteDashboardData();
       return;
     }
+    // 媒体服务器与互联互不依赖：各取各的，谁没配谁不出。
+    unawaited(_loadMediaServerDashboardData(skipIfUnchanged: skipIfUnchanged));
     final SyncRepository syncRepo = SyncRepository(appModel.database);
     // 互联是独立开关（已与云备份后端解耦），未启用/未配对直接跳过。
     if (!await syncRepo.isInterconnectEnabled()) return;
@@ -1313,19 +1338,86 @@ class _HomeDashboardPageState
     }
   }
 
+  /// 媒体服务器（Jellyfin / Emby）进媒体库的条目 → 「继续」补位 + 「最近添加」。
+  /// 经与视频页同槽的 TTL 缓存取清单（谁先拉到谁受益）；整库枚举照旧受「自动
+  /// 列出条目」开关管，只列加入项时照拉。失败 = 保持现状，下次进首页重试。
+  Future<void> _loadMediaServerDashboardData({
+    bool skipIfUnchanged = false,
+  }) async {
+    final AppModel appModel = ref.read(appProvider);
+    final PreferencesRepository prefs = appModel.prefsRepo;
+    _mediaServerScopeAtLastLoad = jellyfinLibraryScopeSignature(prefs);
+    try {
+      final JellyfinVideoClient? client = await resolveJellyfinLibraryClient(
+        prefs: prefs,
+        syncRepo: SyncRepository(appModel.database),
+      );
+      if (!mounted) return;
+      if (client == null) {
+        _appliedMediaServerVideos = null;
+        if (_mediaServerContinue.isEmpty && _mediaServerRecent.isEmpty) return;
+        setState(() {
+          _mediaServerContinue = const <RemoteContinueCandidate>[];
+          _mediaServerRecent = const <RemoteContinueCandidate>[];
+        });
+        return;
+      }
+      final RemoteLibraryCache cache = ref.read(remoteLibraryCacheProvider);
+      final List<RemoteVideoInfo>? videos =
+          shouldFetchJellyfinList(
+            client: client,
+            forceRefresh: false,
+            autoList: prefs.jellyfinAutoListVideos,
+          )
+          ? await cache.read<List<RemoteVideoInfo>>(
+              sourceId: client.remoteLibrarySourceId,
+              key: RemoteLibraryCacheKeys.videos,
+              fetch: client.listRemoteVideos,
+            )
+          : cache.peek<List<RemoteVideoInfo>>(
+              sourceId: client.remoteLibrarySourceId,
+              key: RemoteLibraryCacheKeys.videos,
+            );
+      if (videos == null || !mounted) return;
+      if (skipIfUnchanged && identical(videos, _appliedMediaServerVideos)) {
+        return;
+      }
+      final candidates = mediaServerDashboardCandidates(
+        videos: videos,
+        localVideoUids: <String>{
+          for (final VideoBookRow v in _videos) v.bookUid,
+        },
+        coverFetcher: client,
+        sourceLabel: client.displayName,
+      );
+      setState(() {
+        _appliedMediaServerVideos = videos;
+        _mediaServerContinue = candidates.continueWatching;
+        _mediaServerRecent = candidates.recentlyAdded;
+      });
+    } catch (_) {
+      // 服务器不可达 / 超时：保持现状，下次进入首页自然重试。
+    }
+  }
+
   /// 门控关闭时清掉已混排进页面的远端状态（「继续」补位卡 / 设备名 / 封面
   /// 取图器），回到纯本地视图。没有远端状态时不动 UI。
   void _clearRemoteDashboardData() {
     if (!mounted) return;
     final bool hasRemoteState =
         _remoteContinue.isNotEmpty ||
+        _mediaServerContinue.isNotEmpty ||
+        _mediaServerRecent.isNotEmpty ||
         _remoteDeviceName != null ||
         _remoteCoverFetcher != null;
     if (!hasRemoteState) return;
     _appliedRemoteBooks = null;
     _appliedRemoteVideos = null;
+    _appliedMediaServerVideos = null;
     setState(() {
       _remoteContinue = const <RemoteContinueCandidate>[];
+      _mediaServerContinue = const <RemoteContinueCandidate>[];
+      _mediaServerRecent = const <RemoteContinueCandidate>[];
       _remoteCoverFetcher = null;
       _remoteDeviceName = null;
     });
@@ -1866,7 +1958,10 @@ class _HomeDashboardPageState
     // 合集一卡；本地已出同名合集卡的再去掉（反馈 GonyeE75Kd：同名卡刷屏）。
     final List<RemoteContinueCandidate> remoteUnits =
         withoutLocallyCoveredCollections(
-          _remoteContinue,
+          <RemoteContinueCandidate>[
+            ..._remoteContinue,
+            ..._mediaServerContinue,
+          ],
           localVideoCollectionNames: <String>{
             for (final _ContinueEntry e in entries)
               if (e.isVideo && e.collectionName != null) e.collectionName!,
@@ -2096,7 +2191,8 @@ class _HomeDashboardPageState
     final List<String> subtitle = <String>[
       kind,
       if (collectionName != null && collectionName != entry.title) entry.title,
-      if (entry.remote != null) _remoteDeviceName ?? t.home_remote_source,
+      if (entry.remote != null)
+        entry.remote!.sourceLabel ?? _remoteDeviceName ?? t.home_remote_source,
     ];
     final int recent = entry.recentMs;
     // 卡片比例跟着实际用到的图走（用户 2026-10-14）：探测与渲染共用同一个
@@ -2262,6 +2358,23 @@ class _HomeDashboardPageState
       );
     }
 
+    // 媒体服务器「加入媒体库」的剧：每部一张；已在「继续」里的那部不重复出。
+    final Set<String> shownRemoteGroups = <String>{
+      for (final _ContinueEntry e in _continueVisible)
+        if (e.remote case final RemoteContinueCandidate r)
+          r.collectionName ?? r.id,
+    };
+    for (final RemoteContinueCandidate c in _mediaServerRecent) {
+      if (shownRemoteGroups.contains(c.collectionName ?? c.id)) continue;
+      entries.add(_ContinueEntry(
+        kind: MediaKind.video,
+        title: c.title,
+        recentMs: c.recentMs,
+        collectionName: c.collectionName,
+        remote: c,
+      ));
+    }
+
     for (final GalgameEntry g in _games) {
       if (shownGames.contains(g.id)) continue;
       entries.add(
@@ -2421,7 +2534,10 @@ class _HomeDashboardPageState
   String _continueDisplayTitle(_ContinueEntry entry) {
     final String title = entry.collectionName ?? entry.title;
     if (entry.remote == null) return title;
-    return '$title · ${_remoteDeviceName ?? t.home_remote_source}';
+    final String source = entry.remote!.sourceLabel ??
+        _remoteDeviceName ??
+        t.home_remote_source;
+    return '$title · $source';
   }
 
   /// 书 [MediaItem] 的真实媒体种类：standalone SRT 书身份是
@@ -2628,12 +2744,19 @@ class _HomeDashboardPageState
     );
   }
 
+  /// 远端封面的磁盘缓存键：互联条目按稳定 id；媒体服务器条目的封面可能是**剧**
+  /// 海报（不是这集的截图），按不含令牌的 URL 路径分键，免得与视频页按集 id 缓存
+  /// 的截图串成一张。
+  String _remoteCoverKey(RemoteContinueCandidate remote, String url) =>
+      remote.coverFetcher == null ? remote.id : Uri.parse(url).path;
+
   /// 远端条目封面：互联 coverUrl + 取图器可用则 [RemoteCoverImage]（按稳定 id
   /// 磁盘缓存），否则「图标 + 条目名」兜底。
   Widget _remoteCover(FushiDesignTokens tokens, _ContinueEntry entry) {
     final RemoteContinueCandidate remote = entry.remote!;
     final String? coverUrl = remote.coverUrl;
-    final RemoteCoverFetcher? fetcher = _remoteCoverFetcher;
+    final RemoteCoverFetcher? fetcher =
+        remote.coverFetcher ?? _remoteCoverFetcher;
     final IconData icon = entry.isVideo ? FushiIcons.video : FushiIcons.books;
     final String title = _continueDisplayTitle(entry);
     if (coverUrl == null || coverUrl.isEmpty || fetcher == null) {
@@ -2641,7 +2764,11 @@ class _HomeDashboardPageState
     }
     // 远端封面横竖不可知（host 侧可能是截帧也可能是海报）：竖卡，横图裁进去。
     return PortraitCoverImage(
-      image: RemoteCoverImage(coverUrl, fetcher, cacheKey: remote.id),
+      image: RemoteCoverImage(
+        coverUrl,
+        fetcher,
+        cacheKey: _remoteCoverKey(remote, coverUrl),
+      ),
       cropMismatch: true,
       errorBuilder: (BuildContext _) =>
           _coverPlaceholder(tokens, icon, title: title),
@@ -2656,9 +2783,14 @@ class _HomeDashboardPageState
     final RemoteContinueCandidate? remote = entry.remote;
     if (remote != null) {
       final String? url = remote.coverUrl;
-      final RemoteCoverFetcher? fetcher = _remoteCoverFetcher;
+      final RemoteCoverFetcher? fetcher =
+          remote.coverFetcher ?? _remoteCoverFetcher;
       if (url == null || url.isEmpty || fetcher == null) return null;
-      return RemoteCoverImage(url, fetcher, cacheKey: remote.id);
+      return RemoteCoverImage(
+        url,
+        fetcher,
+        cacheKey: _remoteCoverKey(remote, url),
+      );
     }
     final VideoBookRow? video = entry.video;
     if (video == null) return null;

@@ -279,7 +279,11 @@ class JellyfinServerConfig implements MediaServerConfig {
   /// 从配置构造可用客户端（每次取数新建实例，缓存身份见
   /// [JellyfinVideoClient.remoteLibrarySourceId]）。请求走当前线路
   /// [effectiveServerUrl]，身份锚仍是 [serverUrl]。
-  JellyfinVideoClient buildClient({http.Client? httpClient}) =>
+  JellyfinVideoClient buildClient({
+    http.Client? httpClient,
+    List<String>? libraryItemIds,
+    Map<String, int> libraryItemAddedAtMs = const <String, int>{},
+  }) =>
       JellyfinVideoClient(
         api: JellyfinApi(
           serverUrl: effectiveServerUrl,
@@ -291,6 +295,8 @@ class JellyfinServerConfig implements MediaServerConfig {
         libraryIds: libraryIds,
         serverName: serverName,
         identityServerUrl: serverUrl,
+        libraryItemIds: libraryItemIds,
+        libraryItemAddedAtMs: libraryItemAddedAtMs,
       );
 }
 
@@ -447,6 +453,7 @@ class JellyfinItem {
     this.episodeNumber,
     this.durationMs,
     this.hasPrimaryImage = false,
+    this.hasSeriesPrimaryImage = false,
     this.positionMs = 0,
     this.playedPercentage,
     this.mediaSourceId,
@@ -500,6 +507,9 @@ class JellyfinItem {
   final int? episodeNumber;
   final int? durationMs;
   final bool hasPrimaryImage;
+
+  /// 单集所属的剧有 Primary（海报）图（`SeriesPrimaryImageTag`）。
+  final bool hasSeriesPrimaryImage;
 
   /// 集 / 季所属的剧与集所属的季（`SeriesId` / `SeasonId`）。浏览页靠它们从
   /// 「继续观看 / 接下来看」的一集跳回剧与季，不用再按剧名字符串折叠。
@@ -587,6 +597,7 @@ class JellyfinItem {
     episodeNumber: episodeNumber,
     durationMs: durationMs,
     hasPrimaryImage: hasPrimaryImage,
+    hasSeriesPrimaryImage: hasSeriesPrimaryImage,
     positionMs: positionMs,
     playedPercentage: playedPercentage,
     mediaSourceId: source.id,
@@ -1881,6 +1892,24 @@ class JellyfinApi {
     }
   }
 
+  /// 手动标记已看 / 未看：`POST /Users/{uid}/PlayedItems/{id}` 标已看，`DELETE`
+  /// 取消。与播放上报无关（不写活动日志里的「播放已停止」）。非 2xx 抛
+  /// [JellyfinApiException]。
+  Future<void> setPlayed({
+    required String userId,
+    required String itemId,
+    required bool played,
+  }) async {
+    final String path = '/Users/$userId/PlayedItems/$itemId';
+    final http.Response res = await (played
+            ? _client.post(_uri(path), headers: _headers)
+            : _client.delete(_uri(path), headers: _headers))
+        .timeout(kRequestTimeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw JellyfinApiException.fromResponse(res, path);
+    }
+  }
+
   /// 停止播放上报（POST /Sessions/Playing/Stopped）。
   ///
   /// **只在真正停止播放时发**。服务器对它有额外副作用：接近片尾时把条目标记为
@@ -2182,6 +2211,8 @@ class JellyfinApi {
       episodeNumber: (json['IndexNumber'] as num?)?.toInt(),
       durationMs: runTimeTicks == null ? null : runTimeTicks ~/ kTicksPerMs,
       hasPrimaryImage: imageTags.containsKey('Primary'),
+      hasSeriesPrimaryImage:
+          ((json['SeriesPrimaryImageTag'] as String?) ?? '').isNotEmpty,
       positionMs: positionTicks ~/ kTicksPerMs,
       playedPercentage: (userData['PlayedPercentage'] as num?)?.toDouble(),
       mediaSourceId: mediaSourceId,
@@ -2312,6 +2343,7 @@ class JellyfinVideoClient
         RemoteVideoDetailFetch,
         RemoteVideoPlaybackStop,
         RemoteVideoPlaybackSession,
+        RemoteVideoPlayedMark,
         RemoteVideoQualityLimit,
         RemoteVideoCollectionIsWork,
         RemoteVideoStreamVariants,
@@ -2325,10 +2357,20 @@ class JellyfinVideoClient
     this.libraryIds = const <String>[],
     this.serverName,
     String? identityServerUrl,
+    this.libraryItemIds,
+    this.libraryItemAddedAtMs = const <String, int>{},
   }) : identityServerUrl = identityServerUrl ?? api.serverUrl;
 
   final JellyfinApi api;
   final String userId;
+
+  /// 非 null = 只列这些条目（用户手动「加入媒体库」的剧 / 电影 id），不枚举整个
+  /// 媒体库。null = 照旧按 [libraryIds] 整库枚举。
+  final List<String>? libraryItemIds;
+
+  /// [libraryItemIds] 各条目的加入时刻（epoch 毫秒）：作为该条目下各集的入库
+  /// 时间（[RemoteVideoInfo.importedAt]），首页「最近添加」据此排序 / 圈窗口。
+  final Map<String, int> libraryItemAddedAtMs;
 
   /// 这台服务器在本机的身份锚（= [JellyfinServerConfig.serverUrl]，登录时的主
   /// 地址）。[api.serverUrl] 是请求实际走的**当前线路**，多线路之后两者可以不同；
@@ -2518,9 +2560,11 @@ class JellyfinVideoClient
   ///
   /// 与 [toRemoteVideoInfo] 共用 [_remoteVideoInfoFor]：两条路径只差「详情里
   /// 才有的 MediaSources 派生字段」（文件大小 / 字幕文件名），其余字段一份映射。
-  RemoteVideoInfo infoFromItem(JellyfinItem item) {
+  RemoteVideoInfo infoFromItem(JellyfinItem item, {int? importedAtMs}) {
     final JellyfinSubtitleStream? subtitle = _defaultTextSubtitle(item);
     return _remoteVideoInfoFor(
+      importedAtMs: importedAtMs,
+      seriesCoverUrl: seriesPosterUrl(item),
       // 走到这里的都是视频叶子（listRemoteVideos 先按 isPlayableVideo 过滤；
       // 详情 / 播放路径的 id 都来自视频叶子）。真遇到投影不了的类型也按叶子处理
       // ——与改动前「从不看类型」的行为一致，不丢条目。
@@ -2535,8 +2579,23 @@ class JellyfinVideoClient
     );
   }
 
+  /// 单集所属剧的海报 URL（服务器报告该剧有 Primary 图才给，否则 null）。
+  String? seriesPosterUrl(JellyfinItem item) {
+    final String? seriesId = item.seriesId;
+    if (item.type != 'Episode' ||
+        !item.hasSeriesPrimaryImage ||
+        seriesId == null ||
+        seriesId.isEmpty) {
+      return null;
+    }
+    return api.imageUrl(seriesId,
+        maxWidth: kMediaServerCoverMaxWidth, imageType: 'Primary');
+  }
+
   RemoteVideoInfo _remoteVideoInfoFor(
     MediaServerItem item, {
+    String? seriesCoverUrl,
+    int? importedAtMs,
     int? sizeBytes,
     String? subtitleFileName,
   }) => RemoteVideoInfo(
@@ -2548,6 +2607,12 @@ class JellyfinVideoClient
     durationMs: item.durationMs,
     hasCover: item.hasCover,
     coverUrl: coverUrl(item),
+    seriesCoverUrl: seriesCoverUrl,
+    importedAt: importedAtMs,
+    // 服务器上的「已播放」：库页菜单标签与系列「已看 x/N」据此。
+    completedAt: item.played
+        ? (item.lastPlayedAtMs > 0 ? item.lastPlayedAtMs : 1)
+        : null,
     positionMs: item.positionMs,
     positionUpdatedAtMs: item.lastPlayedAtMs,
     collection: _collectionOf(item),
@@ -2635,6 +2700,7 @@ class JellyfinVideoClient
     episodeCount: item.recursiveItemCount,
     unplayedChildCount: item.unplayedChildCount,
     hasCover: item.hasPrimaryImage,
+    hasSeriesCover: item.hasSeriesPrimaryImage,
     hasBackdrop: item.hasBackdrop,
     hasThumb: item.hasThumbImage,
     hasLogo: item.hasLogoImage,
@@ -3174,7 +3240,17 @@ class JellyfinVideoClient
         'only Movie / Episode leaves are playable',
       );
     }
-    return _remoteVideoInfoFor(item);
+    final String? seriesId = item.seriesId;
+    return _remoteVideoInfoFor(
+      item,
+      seriesCoverUrl: item.type == MediaServerItemType.episode &&
+              item.hasSeriesCover &&
+              seriesId != null &&
+              seriesId.isNotEmpty
+          ? api.imageUrl(seriesId,
+              maxWidth: kMediaServerCoverMaxWidth, imageType: 'Primary')
+          : null,
+    );
   }
 
   /// 「没指定轨时该下哪条字幕」的唯一判据：外挂文本轨优先，其次第一条文本轨；
@@ -3226,6 +3302,8 @@ class JellyfinVideoClient
 
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async {
+    final List<String>? only = libraryItemIds;
+    if (only != null) return _listSelectedVideos(only);
     final List<String?> parents = await resolveEnumerationParents();
     final List<RemoteVideoInfo> out = <RemoteVideoInfo>[];
     final Set<String> seen = <String>{};
@@ -3254,6 +3332,39 @@ class JellyfinVideoClient
     }
     return out;
   }
+
+  /// 只列用户加入媒体库的条目：电影 / 单集直接取详情，剧（或季 / 文件夹）递归取
+  /// 其下全部视频。服务器上已删除的条目（404）跳过，不拖垮整份清单。
+  Future<List<RemoteVideoInfo>> _listSelectedVideos(List<String> ids) async {
+    final List<RemoteVideoInfo> out = <RemoteVideoInfo>[];
+    final Set<String> seen = <String>{};
+    for (final String id in ids) {
+      try {
+        final JellyfinItem item =
+            await api.itemDetail(userId: userId, itemId: id);
+        if (item.isPlayableVideo) {
+          if (seen.add(item.id)) {
+            out.add(infoFromItem(item, importedAtMs: libraryItemAddedAtMs[id]));
+          }
+          continue;
+        }
+        final JellyfinRecursiveResult page =
+            await api.recursiveVideoItems(userId: userId, parentId: id);
+        for (final JellyfinItem child in page.items) {
+          if (child.isPlayableVideo && seen.add(child.id)) {
+            out.add(infoFromItem(child, importedAtMs: libraryItemAddedAtMs[id]));
+          }
+        }
+      } on JellyfinApiException catch (e) {
+        debugPrint('[jellyfin] library item $id unavailable: $e');
+      }
+    }
+    return out;
+  }
+
+  @override
+  Future<void> setRemoteVideoPlayed(String id, {required bool played}) =>
+      api.setPlayed(userId: userId, itemId: id, played: played);
 
   /// [RemoteVideoDetailFetch]：打一次 `/Items/{id}` 把清单里省掉的重字段
   /// （MediaSources → 文件大小 / 精确文本字幕轨 / 字幕文件名）补齐。

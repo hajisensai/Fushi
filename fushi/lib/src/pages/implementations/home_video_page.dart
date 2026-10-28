@@ -1,6 +1,7 @@
 import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
+
 import 'dart:async' show StreamSubscription, Timer, unawaited;
 import 'dart:convert' show utf8;
 import 'dart:io';
@@ -108,6 +109,7 @@ import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
 import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/media/video/video_watched_marks.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
@@ -154,8 +156,9 @@ import 'package:fushi/src/media/video/disc/remote_disc_download.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
+import 'package:fushi/src/sync/jellyfin_library_scope.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
-    show JellyfinServerConfig, JellyfinVideoClient;
+    show JellyfinVideoClient;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/video_remote_client.dart';
 import 'package:fushi/src/sync/video_remote_targets.dart';
@@ -1714,15 +1717,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 自己的树浏览——一进视频页就整库拍平枚举（BUG-1891 的根源）从此不再是默认行为。
   /// 闸门放在注入点之前：测试注入的 client 同样过闸，测的才是真判据。
   Future<JellyfinVideoClient?> _resolveJellyfinVideoClient() async {
-    if (!appModelNoUpdate.prefsRepo.jellyfinShowInLibrary) return null;
+    final bool showAll = appModelNoUpdate.prefsRepo.jellyfinShowInLibrary;
     final Future<JellyfinVideoClient?> Function()? injected =
         widget.jellyfinVideoClientLoader;
-    if (injected != null) return injected();
+    if (injected != null) return showAll ? injected() : null;
 
     final AppModel appModel = ref.read(appProvider);
-    final SyncRepository syncRepo = SyncRepository(appModel.database);
-    final JellyfinServerConfig? config = await syncRepo.getJellyfinServer();
-    return config?.buildClient();
+    // 整库混排关着时，只列用户手动「加入媒体库」的剧 / 电影；一个都没有就不连。
+    return resolveJellyfinLibraryClient(
+      prefs: appModelNoUpdate.prefsRepo,
+      syncRepo: SyncRepository(appModel.database),
+    );
   }
 
   /// 是否应该去问远端要视频清单。
@@ -1736,13 +1741,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 上一次取数时 [_shouldLoadRemoteVideos] 的值（BUG-1182），用于识别开关翻转。
   bool _remoteGateAtLastLoad = true;
 
+  /// 上次取数时 Jellyfin 相关开关的取值，翻转时同样要重取。
+  String? _jellyfinGateAtLastLoad;
+
+  String get _jellyfinGate =>
+      jellyfinLibraryScopeSignature(appModelNoUpdate.prefsRepo);
+
   /// prefsRepo 变更回调：只关心「显示远端条目」门控是否翻转。其余偏好变动一概忽略
   /// ——prefsRepo 的通知很频繁，不能每次都去动远端 future。
   void _onPrefsChangedForRemoteGate() {
     if (!mounted) return;
     final bool gate = _shouldLoadRemoteVideos;
-    if (gate == _remoteGateAtLastLoad) return;
+    if (gate == _remoteGateAtLastLoad &&
+        _jellyfinGate == _jellyfinGateAtLastLoad) {
+      return;
+    }
     _remoteGateAtLastLoad = gate;
+    // 整库 / 只列加入项两种清单共用同一缓存槽：开关或加入项变了，旧清单作废。
+    final String? sourceId = _remoteVideoSource?.remoteLibrarySourceId;
+    if (sourceId != null) _remoteCache.invalidateSource(sourceId);
     setState(() {
       _remoteFuture = _loadRemoteVideos();
     });
@@ -1752,10 +1769,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     bool forceRefresh = false,
   }) async {
     _remoteGateAtLastLoad = _shouldLoadRemoteVideos;
+    _jellyfinGateAtLastLoad = _jellyfinGate;
     // 远端清单换代 = 封面文件路径集合可能变，记忆表随之作废（见 _remoteCoverFileExists）。
     _remoteCoverExists.clear();
     if (!_shouldLoadRemoteVideos) {
-      _remoteVideoSource = null;
       return null;
     }
     // TODO-2119：互联优先、次选 Jellyfin 媒体服务器、否则回退云盘；三者都是
@@ -1765,7 +1782,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         await _resolveRemoteVideoClient() ??
         await _resolveJellyfinVideoClient() ??
         await _resolveCloudRemoteVideoClient();
-    _remoteVideoSource = source;
     if (source == null) return null;
     try {
       // BUG-1180：经共享缓存取清单——切回视频 tab（[onTabActivated]）不再必然打一轮
@@ -1822,6 +1838,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           for (final RemoteVideoInfo video in videos)
             if (localUids.contains(video.id)) video.id: video,
         },
+        source: source,
       );
     } catch (e) {
       // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
@@ -1829,7 +1846,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 原始异常只落 debugPrint 供排查；显式下拉刷新时的用户可见反馈用本地化友好
       // 文案（见 _pullToRefresh），不把 TimeoutException 等开发者文本泄漏进 UI。
       debugPrint('[home-video] remote video list failed: $e');
-      return _RemoteVideoState(videos: const <RemoteVideoInfo>[], failed: true);
+      return _RemoteVideoState(
+        videos: const <RemoteVideoInfo>[],
+        failed: true,
+        source: source,
+      );
     }
   }
 
@@ -3044,6 +3065,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // _downloadRemote 自身会给「不可达」提示。
       if (_cloudRemoteVideoClient != null) {
         await _downloadRemote(video);
+        return;
+      }
+      // 来源已不可用：给反馈并重取清单，而不是静默无反应。
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          FushiSnackBar(content: Text(t.remote_video_unavailable)),
+        );
+        setState(() {
+          _remoteFuture = _loadRemoteVideos(forceRefresh: true);
+        });
       }
       return;
     }
@@ -4060,6 +4091,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           // 三判据与合集续播 [CollectionMemberProgress.hasTrace] 同口径）——用户
           // 误点开下一集又退出后，「继续看」会被钉在那一集上，这条动作让它回到
           // 上一集看完后的下一集。从未看过的集画这个按钮只是一个什么都不会发生的钮。
+          DialogQuickAction(
+            label: _localCountsAsWatched(book)
+                ? t.video_mark_unwatched
+                : t.video_mark_watched,
+            icon: _localCountsAsWatched(book)
+                ? FushiIcons.visibilityOff
+                : FushiIcons.check,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              unawaited(
+                _markWatched(
+                  watched: !_localCountsAsWatched(book),
+                  localUids: <String>[book.bookUid],
+                ),
+              );
+            },
+          ),
           if (videoBookHasWatchTrace(book))
             DialogQuickAction(
               label: t.video_watch_progress_clear,
@@ -4235,6 +4283,69 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       track.codec,
     ];
     return parts.join(' · ');
+  }
+
+  /// 手动标记已看 / 未看（本地行 + 媒体服务器条目）。落地见 [setVideosWatched]；
+  /// 之后刷新本页（本地行走表级流，这里再显式 [_refresh] 一次），媒体服务器条目
+  /// 作废清单缓存后强制重拉，让卡片 / 系列进度读到新的「已播放」。
+  Future<void> _markWatched({
+    required bool watched,
+    List<String> localUids = const <String>[],
+    List<String> remoteIds = const <String>[],
+  }) async {
+    final Object? source = _remoteVideoSource;
+    final RemoteVideoPlayedMark? marker = source is RemoteVideoPlayedMark
+        ? source
+        : null;
+    final WatchedMarkResult result = await setVideosWatched(
+      db: appModelNoUpdate.database,
+      watched: watched,
+      localUids: localUids,
+      remoteIds: marker == null ? const <String>[] : remoteIds,
+      remoteMarker: marker,
+    );
+    if (!mounted) return;
+    if (remoteIds.isNotEmpty && marker != null) {
+      final String? sourceId = _remoteVideoSource?.remoteLibrarySourceId;
+      if (sourceId != null) _remoteCache.invalidateSource(sourceId);
+      setState(() {
+        _remoteFuture = _loadRemoteVideos(forceRefresh: true);
+      });
+    }
+    _refresh();
+    FushiToast.show(
+      msg: result.hasFailures
+          ? t.video_mark_server_failed(n: result.remoteFailed)
+          : (watched ? t.video_marked_watched : t.video_marked_unwatched),
+      severity: result.hasFailures ? ToastSeverity.error : ToastSeverity.success,
+    );
+  }
+
+  /// 本地行此刻是否算「看过了」（与「已看完 x/N」同口径：手动标记或进度到片尾）。
+  bool _localCountsAsWatched(VideoBookRow book) => CollectionMemberProgress(
+    positionMs: book.lastPositionMs,
+    completed: book.completedAt != null,
+    durationMs: _knownDurationMs(book.bookUid),
+  ).countsAsWatched;
+
+  /// 合集菜单「全部标记已看 / 未看」的目标：本地成员 + 媒体服务器上的成员。
+  ({List<String> local, List<String> remote}) _collectionWatchedTargets(
+    int collectionId,
+    Set<String> localUids,
+    List<String> memberUids,
+  ) {
+    final List<String> local = <String>[
+      for (final String uid in memberUids)
+        if (localUids.contains(uid)) uid,
+    ];
+    final List<String> remote = <String>[
+      for (final RemoteVideoInfo v
+          in _lastRemoteState?.videos ?? const <RemoteVideoInfo>[])
+        if (_remoteCollectionId(v) == collectionId &&
+            !localUids.contains(v.id))
+          v.id,
+    ];
+    return (local: local, remote: remote);
   }
 
   /// 清除这一集的观看进度（行级四列 + 互联 LWW 镜像键，见
@@ -4913,6 +5024,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 final _RemoteVideoState? snapState = remoteSnap.data;
                 if (snapState != null && !snapState.failed) {
                   _lastRemoteState = snapState;
+                }
+                if (snapState != null) {
+                  // 来源与清单同步：卡片总是配着产出它们的 client。
+                  _remoteVideoSource = snapState.source;
+                } else if (remoteSnap.connectionState == ConnectionState.done) {
+                  // 加载完成但没有来源（开关关闭等）：丢弃旧清单，别留幽灵卡片。
+                  _lastRemoteState = null;
+                  _remoteVideoSource = null;
                 }
                 // TODO-2486：远端条目与本地同规则过年份/看完状态筛选（远端无刮削
                 // 资料 = 未知年份桶；无完成标记按未完成、进度取 positionMs）。
@@ -6365,6 +6484,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   ) {
     return _localFileCover(collection.coverPath) ??
         _canonicalCollectionPosterProvider(collection.id) ??
+        _membersRemotePosterProvider(members) ??
         _collectionMembersCoverProvider(_localMembersOf(members)) ??
         _slotCoverProvider(fallback);
   }
@@ -7373,6 +7493,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return null;
   }
 
+  /// 媒体服务器单集所属剧的海报（[RemoteVideoInfo.seriesCoverUrl]）。系列 / 合集
+  /// 卡用它代替首集截图；没有（或没有可用的封面抓取器）返回 null。
+  ImageProvider? _remoteSeriesPosterProvider(RemoteVideoInfo video) {
+    final String? url = video.seriesCoverUrl;
+    final RemoteCoverFetcher? fetcher = remoteCoverFetcherFor(
+      _remoteVideoClient,
+    );
+    if (url == null || url.isEmpty || fetcher == null) return null;
+    return ResizeImage(
+      // 缓存键只取不含令牌的路径（/Items/<剧 id>/Images/Primary），同一部剧
+      // 的所有单集共用一份磁盘缓存。
+      RemoteCoverImage(url, fetcher, cacheKey: Uri.parse(url).path),
+      width: kLocalCoverDecodePixelWidth,
+      allowUpscaling: false,
+    );
+  }
+
+  /// 成员里第一个带剧海报的远端集的剧海报（剧海报优先于任何单集截图）。
+  ImageProvider? _membersRemotePosterProvider(List<_VideoSlot> members) {
+    for (final _VideoSlot m in members) {
+      final RemoteVideoInfo? remote = m.remote;
+      if (remote == null) continue;
+      final ImageProvider? poster = _remoteSeriesPosterProvider(remote);
+      if (poster != null) return poster;
+    }
+    return null;
+  }
+
   /// 最近一次已完成合集收养的远端清单（对象身份，见 [_loadRemoteVideos]）。
   List<RemoteVideoInfo>? _adoptedRemoteVideos;
 
@@ -7675,6 +7823,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           landscapeSlot: landscapeSlot,
           errorBuilder: (BuildContext _) =>
               ShelfCoverPlaceholder(icon: FushiIcons.video),
+        );
+      }
+    }
+    // 媒体服务器的剧海报优先于任何单集截图（本地成员抽帧 / 远端首集）。
+    for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
+      final RemoteVideoInfo? remote = it.payload.remote;
+      if (remote == null) continue;
+      final ImageProvider? poster = _remoteSeriesPosterProvider(remote);
+      if (poster != null) {
+        return PortraitCoverImage(
+          image: poster,
+          landscapeSlot: landscapeSlot,
+          errorBuilder: (BuildContext _) =>
+              ShelfCoverPlaceholder(icon: Icons.movie_outlined),
         );
       }
     }
@@ -8632,6 +8794,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               _showRemoteVideoInfo(video);
             },
           ),
+          // 媒体服务器（Jellyfin / Emby）条目：手动标记已看 / 未看并同步到服务器。
+          if (_remoteVideoSource is RemoteVideoPlayedMark)
+            DialogQuickAction(
+              label: video.completedAt != null
+                  ? t.video_mark_unwatched
+                  : t.video_mark_watched,
+              icon: video.completedAt != null
+                  ? FushiIcons.visibilityOff
+                  : FushiIcons.check,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(
+                  _markWatched(
+                    watched: video.completedAt == null,
+                    remoteIds: <String>[video.id],
+                  ),
+                );
+              },
+            ),
         ],
         dangerActions: <DialogDangerAction>[
           if (canDelete)
@@ -9398,6 +9579,41 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 挂上去点了也看不出任何变化。「恢复默认」只在真有自有封面时出现——没有
       // 可恢复的东西就不该占一行菜单。
       extraListActions: <DialogListAction>[
+        // 整部标记已看 / 未看：本地成员写库，媒体服务器成员同步到服务器。
+        ...(() {
+          final targets = _collectionWatchedTargets(
+            collection.id,
+            <String>{for (final VideoBookRow b in library) b.bookUid},
+            memberUidOrder,
+          );
+          if (targets.local.isEmpty && targets.remote.isEmpty) {
+            return const <DialogListAction>[];
+          }
+          return <DialogListAction>[
+            DialogListAction(
+              label: t.collection_mark_all_watched,
+              icon: FushiIcons.check,
+              onPressed: () => unawaited(
+                _markWatched(
+                  watched: true,
+                  localUids: targets.local,
+                  remoteIds: targets.remote,
+                ),
+              ),
+            ),
+            DialogListAction(
+              label: t.collection_mark_all_unwatched,
+              icon: FushiIcons.visibilityOff,
+              onPressed: () => unawaited(
+                _markWatched(
+                  watched: false,
+                  localUids: targets.local,
+                  remoteIds: targets.remote,
+                ),
+              ),
+            ),
+          ];
+        })(),
         DialogListAction(
           label: t.collection_cover_set,
           icon: Icons.image_outlined,
@@ -9804,6 +10020,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           : _chooseTmdbOrderingOnHost,
       deleteLocalCopy: _deleteDownloadedLocalCopy,
       discActions: _remoteDiscActions(source),
+      markPlayed: source is RemoteVideoPlayedMark
+          ? (List<String> ids, {required bool played}) async {
+              final WatchedMarkResult result = await setVideosWatched(
+                db: appModelNoUpdate.database,
+                watched: played,
+                remoteIds: ids,
+                remoteMarker: source as RemoteVideoPlayedMark,
+              );
+              _remoteCache.invalidateSource(source.remoteLibrarySourceId);
+              return result.remoteFailed;
+            }
+          : null,
     );
   }
 
@@ -10842,14 +11070,25 @@ bool shouldFetchRemoteVideoList({
   required Object? source,
   required bool forceRefresh,
   required bool jellyfinAutoList,
-}) => forceRefresh || source is! JellyfinVideoClient || jellyfinAutoList;
+}) =>
+    source is! JellyfinVideoClient ||
+    shouldFetchJellyfinList(
+      client: source,
+      forceRefresh: forceRefresh,
+      autoList: jellyfinAutoList,
+    );
 
 class _RemoteVideoState {
   const _RemoteVideoState({
     required this.videos,
     this.failed = false,
     this.localCopies = const <String, RemoteVideoInfo>{},
+    this.source,
   });
+
+  /// 产出这份清单的来源。卡片只能用生成它们的 client 取封面 / 开播，
+  /// 否则来源被关掉后旧卡片还在、封面空白且点击无反应。
+  final RemoteVideoSource? source;
 
   final List<RemoteVideoInfo> videos;
 

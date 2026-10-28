@@ -128,9 +128,7 @@ void main() {
     expect(client.listCalls, 0, reason: '闸门关时一次拍平清单请求都不发');
   });
 
-  testWidgets('对照：混排开 → 同一路径确实会问 Jellyfin 要清单', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('对照：混排开 → 同一路径确实会问 Jellyfin 要清单', (WidgetTester tester) async {
     await prefs.setJellyfinShowInLibrary(true);
     final _CountingJellyfinClient client = _CountingJellyfinClient();
     int loaderCalls = 0;
@@ -147,11 +145,33 @@ void main() {
       reason: '闸门开时这条路径要真的取数，否则上面的 0 只是「根本没走到」',
     );
   });
+
+  testWidgets('混排开→关：远端卡片立即消失，再开回来重新出现', (WidgetTester tester) async {
+    await prefs.setJellyfinShowInLibrary(true);
+    final _CountingJellyfinClient client = _CountingJellyfinClient();
+
+    await tester.pumpWidget(buildApp(client: client, onLoaderCalled: () {}));
+    await tester.pumpAndSettle();
+    expect(find.text('远端条目'), findsWidgets);
+
+    // 关掉开关：页面必须重取并丢掉旧清单，不能留下没有 client 的幽灵卡片
+    // （封面空白、点击无反应）。
+    await prefs.setJellyfinShowInLibrary(false);
+    await tester.pumpAndSettle();
+    expect(find.text('远端条目'), findsNothing);
+
+    await prefs.setJellyfinShowInLibrary(true);
+    await tester.pumpAndSettle();
+    expect(find.text('远端条目'), findsWidgets);
+  });
 }
 
 /// 计数版 Jellyfin client：只实现库页取清单会碰到的成员，其余经 [noSuchMethod]
 /// 兜底（与 home_video_collection_detail_gate_test 同款）。
 class _CountingJellyfinClient implements JellyfinVideoClient {
+  @override
+  List<String>? get libraryItemIds => null;
+
   int listCalls = 0;
 
   @override
