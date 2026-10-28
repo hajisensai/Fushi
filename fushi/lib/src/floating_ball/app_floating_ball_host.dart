@@ -1271,7 +1271,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   /// 按钮的可见文案（标签胶囊）**始终**是「切换配置」：它说的是按下去做什么。
   /// 把文案换成配置名会让按钮看不出是「切换」，当前配置名只放在这里。
   String _switchProfileTooltip(ProfileUiState state) {
-    final ProfileRow? active = state.isLoading ? null : state.activeProfile;
+    final ProfileRow? active = state.displayProfile;
     return active == null
         ? t.floating_ball_action_switch_profile
         : t.floating_ball_action_switch_profile_tooltip(name: active.name);
