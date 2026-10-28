@@ -1328,8 +1328,13 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
                     text: cue.text,
                     child: Text(
                       cue.text,
+                      // 用户的字号档是对正文的再缩放：叠在系统文字缩放之上，
+                      // 字号本身仍取字阶 bodyLarge，不在这里另立字号。
+                      textScaler: _StepTextScaler(
+                        MediaQuery.textScalerOf(context),
+                        scale,
+                      ),
                       style: base?.copyWith(
-                        fontSize: (base.fontSize ?? 16) * scale,
                         color: active
                             ? scheme.onSecondaryContainer
                             : scheme.onSurface,
@@ -1354,4 +1359,33 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
     final String ss = s.toString().padLeft(2, '0');
     return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
   }
+}
+
+/// 在父级 [TextScaler]（系统文字缩放，可能非线性）之上再乘一个字号档系数：
+/// 先把字号放大 [factor] 倍，再交给父级缩放，系统缩放曲线保持不变。
+@immutable
+class _StepTextScaler extends TextScaler {
+  const _StepTextScaler(this.parent, this.factor);
+
+  final TextScaler parent;
+  final double factor;
+
+  @override
+  double scale(double fontSize) => parent.scale(fontSize * factor);
+
+  @Deprecated(
+    'Use of textScaleFactor was deprecated in preparation for the upcoming '
+    'nonlinear text scaling support.',
+  )
+  @override
+  double get textScaleFactor => scale(14) / 14;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _StepTextScaler &&
+      other.parent == parent &&
+      other.factor == factor;
+
+  @override
+  int get hashCode => Object.hash(parent, factor);
 }

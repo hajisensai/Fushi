@@ -18,7 +18,6 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:flutter/gestures.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_favicon.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
@@ -48,8 +47,16 @@ class WebBrowserTabCallbacks {
 
   /// 标签区域右键 / 长按（[globalPosition] 定位菜单）。
   final void Function(WebBrowserTab tab, Offset globalPosition) onContextMenu;
+
+  /// 标签重排，沿 SDK `ReorderableList` 口径：[newIndex] 是**移除前**的插入点
+  /// （往后拖时比最终下标大 1）。本文件的重排件给出的是最终下标，经
+  /// [_reorderToListIndex] 换算后再交给这里。
   final void Function(int oldIndex, int newIndex) onReorder;
 }
+
+/// [FushiReorderableColumn] / [FushiReorderableRow] 的「最终下标 to」换成
+/// [WebBrowserTabCallbacks.onReorder] 的 `ReorderableList` 口径（移除前插入点）。
+int _reorderToListIndex(int from, int to) => to > from ? to + 1 : to;
 
 Color _chromeColor(BuildContext context) => isGlassDesign(context)
     ? appleColorsOf(context).secondaryGroupedBackground
@@ -99,7 +106,10 @@ class _GrowInState extends State<_GrowIn> with SingleTickerProviderStateMixin {
     super.didChangeDependencies();
     if (_c.isDismissed && !_c.isAnimating) {
       _c.duration = fushiMotionDuration(context, FushiMotion.medium);
-      if (_c.duration == Duration.zero) {
+      // 拖拽浮层里的副本（FushiEntranceScope(enabled: false)）是已可见标签的复制，
+      // 直接显示终态，不从零宽长出来。
+      if (_c.duration == Duration.zero ||
+          !FushiEntranceScope.enabledOf(context)) {
         _c.value = 1;
       } else {
         _c.forward();
@@ -224,8 +234,15 @@ class WebBrowserTabStrip extends StatelessWidget {
   }
 }
 
-/// 标签栏的横向可排序列表：鼠标横拖越过拖动阈值即拾起标签（单击仍是切换），
-/// 松手落到新位置；触屏照常横滑平移、长按出菜单。
+/// 标签栏的横向可排序列表（[FushiReorderableRow]：浮层画在列表自身 Stack 里、
+/// 指针经 globalToLocal 消掉祖先缩放，界面大小非 100% 时也不漂移，BUG-778）。
+///
+/// - 鼠标 / 触控板 / 笔：横拖越过拖动阈值即拾起标签（单击仍是切换，中键关闭、
+///   右键菜单不受影响），松手落到新位置。
+/// - 触屏：不参与重排——横滑平移标签栏（滚动件默认 dragDevices 含 touch），
+///   长按出菜单。
+/// - 鼠标平移走滚轮：[WheelToHorizontalScroll] 把纵向滚轮投到横轴。鼠标左键横拖
+///   已是重排手势，所以不包 HorizontalDragScrollable（会与重排抢同一个横拖）。
 class _StripReorderList extends StatefulWidget {
   const _StripReorderList({
     required this.tabs,
@@ -256,70 +273,42 @@ class _StripReorderListState extends State<_StripReorderList> {
       height: kWebBrowserTabStripHeight,
       child: WheelToHorizontalScroll(
         controller: _scroll,
-        child: ReorderableListView.builder(
-          scrollController: _scroll,
+        child: SingleChildScrollView(
+          controller: _scroll,
           scrollDirection: Axis.horizontal,
-          shrinkWrap: true,
-          buildDefaultDragHandles: false,
-          itemCount: widget.tabs.length,
-          onReorder: widget.callbacks.onReorder,
-          // 拾起的标签不加默认的浮起卡片底，保持标签本身的样子跟手。
-          proxyDecorator: (Widget child, int _, Animation<double> _) =>
-              Material(type: MaterialType.transparency, child: child),
-          itemBuilder: (BuildContext context, int i) {
-            final WebBrowserTab tab = widget.tabs[i];
-            return _MouseDragStartListener(
-              axis: Axis.horizontal,
-              key: ValueKey<String>('strip-${tab.id}'),
-              index: i,
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: _GrowIn(
-                  axis: Axis.horizontal,
-                  child: SizedBox(
-                    width: widget.tabWidth,
-                    child: _StripTab(tab: tab, callbacks: widget.callbacks),
+          child: FushiReorderableRow(
+            itemCount: widget.tabs.length,
+            keyForIndex: (int i) =>
+                ValueKey<String>('strip-${widget.tabs[i].id}'),
+            onReorder: (int from, int to) =>
+                widget.callbacks.onReorder(from, _reorderToListIndex(from, to)),
+            // 触屏长按留给标签菜单、横滑留给平移。
+            touchDragEnabled: false,
+            feedbackBorderRadius: _kStripTabRadius,
+            itemBuilder: (BuildContext context, int i) => Align(
+              alignment: Alignment.bottomCenter,
+              child: _GrowIn(
+                axis: Axis.horizontal,
+                child: SizedBox(
+                  width: widget.tabWidth,
+                  child: _StripTab(
+                    tab: widget.tabs[i],
+                    callbacks: widget.callbacks,
                   ),
                 ),
               ),
-            );
-          },
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-/// 只认鼠标 / 触控板 / 笔沿 [axis] 的拖动：越过拖动阈值才开始排序，所以单击、
-/// 中键关闭、右键菜单照常；触屏不参与（触屏拖动是滚动列表，长按是菜单）。
-class _MouseDragStartListener extends ReorderableDragStartListener {
-  const _MouseDragStartListener({
-    required this.axis,
-    required super.index,
-    required super.child,
-    super.key,
-  });
-
-  final Axis axis;
-
-  static const Set<PointerDeviceKind> _devices = <PointerDeviceKind>{
-    PointerDeviceKind.mouse,
-    PointerDeviceKind.trackpad,
-    PointerDeviceKind.stylus,
-  };
-
-  @override
-  MultiDragGestureRecognizer createRecognizer() => switch (axis) {
-    Axis.horizontal => HorizontalMultiDragGestureRecognizer(
-      debugOwner: this,
-      supportedDevices: _devices,
-    ),
-    Axis.vertical => VerticalMultiDragGestureRecognizer(
-      debugOwner: this,
-      supportedDevices: _devices,
-    ),
-  };
-}
+/// 顶部标签的上圆角（标签本体与拖拽浮层同形）。
+const BorderRadius _kStripTabRadius = BorderRadius.vertical(
+  top: Radius.circular(10),
+);
 
 /// 标题栏模式下标签栏末尾至少保留的拖窗空白。
 const double _kCaptionDragReserve = 48;
@@ -346,14 +335,10 @@ class _StripTab extends StatelessWidget {
             label: _tabLabel(tab),
             child: Material(
               color: active ? _chromeColor(context) : Colors.transparent,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(10),
-              ),
+              borderRadius: _kStripTabRadius,
               child: InkWell(
                 key: ValueKey<String>('web-browser-strip-tab-${tab.id}'),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(10),
-                ),
+                borderRadius: _kStripTabRadius,
                 onTap: () => callbacks.onSelect(tab),
                 child: SizedBox(
                   height: 30,
@@ -499,27 +484,25 @@ class WebBrowserSidebar extends StatelessWidget {
               ),
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                sliver: SliverReorderableList(
-                  itemCount: tabs.length,
-                  onReorder: callbacks.onReorder,
-                  itemBuilder: (BuildContext context, int i) {
-                    final WebBrowserTab tab = tabs[i];
-                    // 鼠标：竖拖即排序；触屏：长按后拖（列表滚动占着竖滑）。
-                    return _MouseDragStartListener(
-                      axis: Axis.vertical,
-                      key: ValueKey<String>('sidebar-${tab.id}'),
-                      index: i,
-                      child: ReorderableDelayedDragStartListener(
+                // 鼠标：拖过阈值即排序；触屏：长按后拖（列表滚动占着竖滑）。
+                // 自实现重排件：SDK SliverReorderableList 的 Overlay 代理不认祖先
+                // 缩放，界面大小非 100% 时浮层漂移（BUG-778）。
+                sliver: SliverToBoxAdapter(
+                  child: FushiReorderableColumn(
+                    itemCount: tabs.length,
+                    keyForIndex: (int i) =>
+                        ValueKey<String>('sidebar-${tabs[i].id}'),
+                    onReorder: (int from, int to) => callbacks.onReorder(
+                      from,
+                      _reorderToListIndex(from, to),
+                    ),
+                    itemBuilder: (BuildContext context, int i) => _GrowIn(
+                      child: FushiStaggeredEntrance(
                         index: i,
-                        child: _GrowIn(
-                          child: FushiStaggeredEntrance(
-                            index: i,
-                            child: _SidebarTab(tab: tab, callbacks: callbacks),
-                          ),
-                        ),
+                        child: _SidebarTab(tab: tabs[i], callbacks: callbacks),
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
               ),
               SliverPadding(

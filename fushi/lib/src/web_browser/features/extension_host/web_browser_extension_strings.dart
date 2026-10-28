@@ -22,36 +22,33 @@ Map<String, String> parseWebBrowserExtensionEnglishLocale(String source) {
   return out;
 }
 
-/// 读扩展界面字典：[languageTag] 的 `locales/<tag>.json`，缺的键回落英文源字典。
+/// 读扩展界面字典：[languageTag] 的 `locales/<tag>.json` 覆盖英文源字典的同名键。
+///
+/// 字典随包（`assets/browser_extension/locales/`，app 的 17 种界面语言各有一份），
+/// 读不到 / 解析不出就是打包缺陷：**直接抛错**，不静默退回键名——否则设置页会
+/// 整片显示 `opt_xxx_title` 这类键名而没有任何报错可查。
 Future<Map<String, String>> loadWebBrowserExtensionStrings({
   String? languageTag,
   Future<String> Function(String asset)? loadString,
 }) async {
   final Future<String> Function(String) load =
       loadString ?? rootBundle.loadString;
-  final Map<String, String> out = <String, String>{};
-  try {
-    out.addAll(
-      parseWebBrowserExtensionEnglishLocale(
-        await load('${kWebBrowserExtensionRoot}locales/en.js'),
-      ),
-    );
-  } catch (_) {
-    // 没有英文字典：文案退回键名。
+  const String englishAsset = '${kWebBrowserExtensionRoot}locales/en.js';
+  final Map<String, String> out = parseWebBrowserExtensionEnglishLocale(
+    await load(englishAsset),
+  );
+  if (out.isEmpty) {
+    throw FormatException('扩展英文源字典解析为空（格式漂移？）', englishAsset);
   }
   final String tag = languageTag ?? LocaleSettings.currentLocale.languageTag;
   if (tag != 'en') {
-    try {
-      final Object? decoded = jsonDecode(
-        await load('${kWebBrowserExtensionRoot}locales/$tag.json'),
-      );
-      if (decoded is Map<String, dynamic>) {
-        for (final MapEntry<String, dynamic> e in decoded.entries) {
-          if (e.value is String) out[e.key] = e.value as String;
-        }
-      }
-    } catch (_) {
-      // 该语言没有扩展字典：用英文。
+    final String asset = '${kWebBrowserExtensionRoot}locales/$tag.json';
+    final Object? decoded = jsonDecode(await load(asset));
+    if (decoded is! Map<String, dynamic>) {
+      throw FormatException('扩展字典顶层不是对象', asset);
+    }
+    for (final MapEntry<String, dynamic> e in decoded.entries) {
+      if (e.value is String) out[e.key] = e.value as String;
     }
   }
   return out;
@@ -61,8 +58,8 @@ Future<Map<String, String>> loadWebBrowserExtensionStrings({
 ///
 /// 浏览器设置里扩展那几组的文案直接用扩展自己的字典——同一个开关在扩展设置页、
 /// 页内播放器菜单、app 里叫同一个名字，17 种语言的译文也只维护扩展那一份。设置
-/// schema 的标题在构造期求值，所以打开那几组之前先 [ensureLoaded]；没读到的键退回
-/// 键名本身（只在资产缺失时出现）。
+/// schema 的标题在构造期求值，所以打开那几组之前先 [ensureLoaded]；字典读取失败会
+/// 让 [ensureLoaded] 抛错（随包资产缺失 = 打包缺陷），不静默退回键名。
 class WebBrowserExtensionStrings {
   WebBrowserExtensionStrings._();
 
@@ -88,10 +85,21 @@ class WebBrowserExtensionStrings {
     if (_loading != null && _loadingTag == tag) return _loading!;
     _loadingTag = tag;
     return _loading = () async {
-      final Map<String, String> next = await loadWebBrowserExtensionStrings(
-        languageTag: tag,
-        loadString: debugLoadString,
-      );
+      final Map<String, String> next;
+      try {
+        next = await loadWebBrowserExtensionStrings(
+          languageTag: tag,
+          loadString: debugLoadString,
+        );
+      } on Object {
+        // 失败不缓存：清掉在途句柄让下次调用重读，错误原样抛给调用方
+        // （由其 / 全局错误上报记录），不吞。
+        if (_loadingTag == tag) {
+          _loading = null;
+          _loadingTag = null;
+        }
+        rethrow;
+      }
       if (_loadingTag != tag) return;
       _strings = next;
       _tag = tag;

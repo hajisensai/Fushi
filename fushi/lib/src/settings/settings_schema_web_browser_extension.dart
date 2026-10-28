@@ -1192,7 +1192,7 @@ SettingsCustomItem _shortcutRow(String action, String key, String label) =>
           onChanged: (bool v) =>
               unawaited(_write(c, <String, Object?>{key: v})),
           actions: <Widget>[
-            Tooltip(
+            FushiTooltip(
               message: _x('opt_shortcut_edit_title'),
               child: FushiTextButton(
                 key: ValueKey<String>('web_browser.extension.shortcut.$action'),

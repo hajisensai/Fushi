@@ -11,6 +11,8 @@ import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiExpressiveShape, FushiExpressiveShapeBorder;
@@ -333,7 +335,8 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
             controller: data.illustrations,
             width: geometry.popupSize.width,
             height: geometry.popupSize.height,
-            borderRadius: BorderRadius.circular(16),
+            // 弹出插图是一张卡：走 M3E 卡片形状档，不另立圆角数值。
+            borderRadius: FushiM3eShape.cardRadius,
             onOpen: callbacks.onOpenIllustration == null
                 ? null
                 : (int index) => callbacks.onOpenIllustration!(

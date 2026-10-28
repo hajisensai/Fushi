@@ -2153,9 +2153,10 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
           child: Center(
             child: Container(
               width: 2,
-              decoration: BoxDecoration(
+              // 2dp 细条两端全圆（胶囊），不另立圆角数值。
+              decoration: ShapeDecoration(
                 color: cs.outlineVariant,
-                borderRadius: BorderRadius.circular(1),
+                shape: const StadiumBorder(),
               ),
             ),
           ),
