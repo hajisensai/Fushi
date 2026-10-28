@@ -170,12 +170,12 @@ class FushiContinueHero extends StatelessWidget {
                     value: v,
                     minHeight: 4,
                     borderRadius: const BorderRadius.all(Radius.circular(2)),
-                    // 卡上不要常驻波浪动画，走平直形态（同封面进度条）。
-                    year2023: apple ? null : true,
+                    // MD3 = M3 Expressive 波浪线性进度（轨道间隙 + 末端停止点，
+                    // 轨道色取主题的 M3E 轨道色）；Apple 原生细条；墨水屏平直。
                     color: accent,
                     backgroundColor: apple
                         ? appleColorsOf(context).tertiaryFill
-                        : cs.surfaceContainerHighest,
+                        : null,
                   ),
                 ),
                 if (progressLabel != null) ...<Widget>[
@@ -218,18 +218,8 @@ class FushiContinueHero extends StatelessWidget {
           final double? stillAspect = poster == null
               ? null
               : backdropAspectRatio;
-          // 有构图剧照的卡加高一档，让行尾的剧照有分量。
-          final double coverHeight = roomy
-              ? (stillAspect == null ? 144 : 184)
-              : 102;
-          // 宽卡：按钮让到剧照左侧，剧照主体（渐隐区以外）不被遮挡。
-          final double stillReserve = roomy && stillAspect != null
-              ? ((coverHeight + pad.vertical) * stillAspect).clamp(
-                      0.0,
-                      outer.maxWidth * 0.65,
-                    ) *
-                    0.72
-              : 0;
+          // 宽卡按钮在信息列底下，封面与信息列同高。
+          final double coverHeight = roomy ? 176 : 102;
           // 横图（视频剧照）在窄卡上别吃掉信息列：宽度封顶卡宽 40%。
           final double coverWidth = (coverHeight * coverAspectRatio).clamp(
             0.0,
@@ -241,97 +231,87 @@ class FushiContinueHero extends StatelessWidget {
             child: frameCover ? ShelfCoverFrame(child: cover) : cover,
           );
           final double gap = tokens.spacing.gap * (roomy ? 2.5 : 1.5);
+
+          // 海报用**透明度遮罩**淡出（不是盖一层卡面色渐变）：卡片的悬停 / 按压
+          // 高亮画在内容下面，盖固定色会在海报起始边露出一道接缝。
+          Widget fade(Widget image, List<double> opacity, List<double> stops) =>
+              ShaderMask(
+                blendMode: BlendMode.dstIn,
+                shaderCallback: (Rect r) => LinearGradient(
+                  begin: AlignmentDirectional.centerStart,
+                  end: AlignmentDirectional.centerEnd,
+                  colors: <Color>[
+                    for (final double o in opacity)
+                      Colors.black.withValues(alpha: o),
+                  ],
+                  stops: stops,
+                ).createShader(r, textDirection: Directionality.of(context)),
+                child: image,
+              );
+
           Widget layered(Widget body) {
             final Widget padded = Padding(padding: pad, child: body);
             if (poster == null) return padded;
-            final double? aspect = backdropAspectRatio;
-            if (aspect != null) {
-              return Stack(
-                children: <Widget>[
-                  Positioned.fill(
+            final Widget layer = stillAspect == null
+                // 模糊封面：整卡淡淡一层底纹，行尾稍浓。
+                ? Positioned.fill(
+                    child: fade(
+                      poster,
+                      <double>[0, 0.18, roomy ? 0.5 : 0.35],
+                      const <double>[0, 0.45, 1],
+                    ),
+                  )
+                // 有构图的剧照：按原比例完整贴在行尾，起始边淡出。
+                : Positioned.fill(
                     child: LayoutBuilder(
                       builder: (BuildContext _, BoxConstraints box) {
-                        final double w = (box.maxHeight * aspect).clamp(
+                        final double w = (box.maxHeight * stillAspect).clamp(
                           0.0,
-                          box.maxWidth * 0.65,
+                          box.maxWidth * (roomy ? 0.55 : 0.65),
                         );
                         return Align(
                           alignment: AlignmentDirectional.centerEnd,
                           child: SizedBox(
                             width: w,
                             height: box.maxHeight,
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: <Widget>[
-                                poster,
-                                DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: AlignmentDirectional.centerStart,
-                                      end: AlignmentDirectional.centerEnd,
-                                      colors: <Color>[
-                                        cardColor,
-                                        cardColor.withValues(alpha: 0.55),
-                                        cardColor.withValues(alpha: 0),
-                                      ],
-                                      stops: const <double>[0, 0.2, 0.5],
-                                    ),
-                                  ),
-                                ),
-                              ],
+                            child: fade(
+                              poster,
+                              <double>[0, 0.75, 1],
+                              const <double>[0, 0.3, 0.5],
                             ),
                           ),
                         );
                       },
                     ),
-                  ),
-                  padded,
-                ],
-              );
-            }
-            return Stack(
-              children: <Widget>[
-                Positioned.fill(child: poster),
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: AlignmentDirectional.centerStart,
-                        end: AlignmentDirectional.centerEnd,
-                        colors: <Color>[
-                          cardColor.withValues(alpha: 0.97),
-                          cardColor.withValues(alpha: 0.86),
-                          cardColor.withValues(alpha: roomy ? 0.35 : 0.6),
-                        ],
-                        stops: const <double>[0, 0.45, 1],
-                      ),
-                    ),
-                  ),
-                ),
-                padded,
-              ],
-            );
+                  );
+            return Stack(children: <Widget>[layer, padded]);
           }
 
           if (roomy) {
+            // 宽卡：封面 | 信息列（眉标 → 标题 → 元信息 → 进度 → 按钮），右侧整块
+            // 留给海报；信息列封顶 520，进度条不被拉成整行长线。
             return layered(
               Row(
                 children: <Widget>[
                   coverBox,
                   SizedBox(width: gap),
-                  // 宽卡信息列封顶 520：进度条不被拉成整行长线，按钮贴行尾。
                   Expanded(
                     child: Align(
                       alignment: AlignmentDirectional.centerStart,
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 520),
-                        child: info(),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            info(),
+                            SizedBox(height: tokens.spacing.gap * 2),
+                            actions(fill: false),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                  SizedBox(width: gap),
-                  actions(fill: false),
-                  if (stillReserve > 0) SizedBox(width: stillReserve),
                 ],
               ),
             );
