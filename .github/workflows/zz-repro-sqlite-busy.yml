@@ -1,0 +1,36 @@
+# Throwaway: reproduce the insertPrefIfAbsent SQLITE_BUSY on a Linux runner.
+# Lives only on repro/* branches; never merged.
+name: zz repro sqlite busy
+on:
+  push:
+    branches: ['repro/**']
+permissions:
+  contents: read
+jobs:
+  repro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v6
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+      with:
+        flutter-version: '3.47.6'
+        cache: true
+    - uses: ./.github/actions/pdfium-hook-cache
+      with:
+        purpose: test
+    - name: Flutter pub get
+      working-directory: fushi
+      run: flutter pub get --enforce-lockfile
+    - name: Apply pub cache patches
+      run: |
+        chmod +x ci/apply-patches.sh
+        bash ci/apply-patches.sh
+    - name: Repro (plain flutter test)
+      continue-on-error: true
+      working-directory: fushi
+      run: flutter test --no-pub test/zz_repro/sqlite_busy_repro_test.dart --dart-define=REPS=400 --reporter expanded 2>&1 | grep -E "REPRO|tests passed|failed|Exception" || true
+    - name: Repro (experimental-faster-testing, with the anki suite)
+      continue-on-error: true
+      working-directory: fushi
+      run: flutter test --no-pub --experimental-faster-testing --concurrency=1 test/zz_repro/sqlite_busy_repro_test.dart test/anki/anki_settings_drift_store_test.dart --dart-define=REPS=400 --reporter expanded 2>&1 | grep -E "REPRO|tests passed|failed|Exception|locked" || true
