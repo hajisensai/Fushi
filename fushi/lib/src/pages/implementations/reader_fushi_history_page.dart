@@ -191,6 +191,16 @@ List<MediaItem> filterShelfEntriesByMangaSplit(
     )
     .toList();
 
+/// `reader_positions` 写入到达时，书架是立刻重算进度还是记一笔等切回再算。
+///
+/// 只在书架真被看着时（书架 tab 在前、没有书开着）重算：阅读器每翻几页就写一次
+/// 位置，那时书架藏在阅读器后面，跟着重算整个书列表是白费；关书时
+/// `ReaderFushiSource.onSourceExit` 自己会失效同一对缓存。
+bool shouldReloadShelfProgressNow({
+  required bool shelfVisible,
+  required bool mediaOpen,
+}) => shelfVisible && !mediaOpen;
+
 class ReaderFushiHistoryPage extends HistoryReaderPage {
   const ReaderFushiHistoryPage({
     this.mangaOnly = false,
@@ -647,6 +657,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     _collectionTablesSub = appModelNoUpdate.database
         .watchCollectionTablesChanged()
         .listen(_onCollectionTablesChanged);
+    // 阅读进度同理：本机作为互联 host 时，对端推来的进度经 putBookProgress 直接
+    // 落 reader_positions，不经本机同步收尾的 refreshTab，书架进度条与「继续阅读」
+    // 会一直停在旧值（手机读到 2%，电脑书架仍显示 17%）。订阅表信号，任何写入者
+    // 天然覆盖。
+    _readerPositionsSub = appModelNoUpdate.database
+        .watchReaderPositionsChanged()
+        .listen(_onReaderPositionsChanged);
     // 统一下载中心：mokuro.moe 卷经漫画下载服务后台落库（可能在「在线目录」
     // 页关闭后才完成）。监听 mokuroImportedCount 增量失效书架 provider，取代旧的
     // 「对话框关闭回传导入数」信号（该信号已随对话框改队列化而移除）。
@@ -705,7 +722,37 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     if (!mounted) return;
     if (homeShellTabNotifier.value == HomeTab.books) {
       _refreshRemoteBooks();
+      if (_progressReloadDeferred) _reloadBookProgress();
     }
+  }
+
+  StreamSubscription<void>? _readerPositionsSub;
+  Timer? _progressReloadDebounce;
+
+  /// 书架不可见（别的 tab / 书正开着）时到达的进度写入：只记一笔，切回书架再重算。
+  /// 阅读器每翻几页就写一次位置，不能让藏在后面的书架跟着重算整个书列表。
+  bool _progressReloadDeferred = false;
+
+  /// reader_positions 写入回调：防抖后失效书列表 / 最近阅读时刻两个缓存 provider。
+  void _onReaderPositionsChanged(void _) {
+    _progressReloadDebounce?.cancel();
+    _progressReloadDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      if (!shouldReloadShelfProgressNow(
+        shelfVisible: homeShellTabNotifier.value == HomeTab.books,
+        mediaOpen: appModelNoUpdate.isMediaOpen,
+      )) {
+        _progressReloadDeferred = true;
+        return;
+      }
+      _reloadBookProgress();
+    });
+  }
+
+  void _reloadBookProgress() {
+    _progressReloadDeferred = false;
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(bookLastReadAtProvider);
   }
 
   /// tabRefreshNotifier 回调：重载书架合集折叠映射。后台合集同步（仅
@@ -764,6 +811,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
     _collectionTablesSub?.cancel();
     _collectionsReloadDebounce?.cancel();
+    _readerPositionsSub?.cancel();
+    _progressReloadDebounce?.cancel();
     _mokuroImported?.removeListener(_onMokuroImportedChanged);
     homeShellTabNotifier.removeListener(_onShellTabActivated);
     appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);

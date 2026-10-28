@@ -8290,6 +8290,7 @@
   "sync_progress_collections": "กำลังซิงค์คอลเลกชัน",
   "sync_progress_deletions": "Syncing deletions",
   "sync_progress_dictionaries": "กำลังซิงค์พจนานุกรม",
+  "sync_progress_finishing": "Finishing up",
   "sync_progress_fonts": "Syncing fonts",
   "sync_progress_local_audio": "กำลังซิงค์เสียงในเครื่อง",
   "sync_progress_pending_mines": "Syncing pending cards",

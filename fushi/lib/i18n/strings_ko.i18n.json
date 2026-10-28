@@ -8290,6 +8290,7 @@
   "sync_progress_collections": "컬렉션 동기화 중",
   "sync_progress_deletions": "Syncing deletions",
   "sync_progress_dictionaries": "사전 동기화 중",
+  "sync_progress_finishing": "Finishing up",
   "sync_progress_fonts": "Syncing fonts",
   "sync_progress_local_audio": "로컬 오디오 동기화 중",
   "sync_progress_pending_mines": "Syncing pending cards",
