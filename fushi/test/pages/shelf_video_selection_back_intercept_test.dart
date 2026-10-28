@@ -189,9 +189,11 @@ void main() {
         contains('intercepting: _selectionMode'),
         reason: '${e.key} 多选态拦返回，普通态不变',
       );
+      // 重排态（9650ff43b4）与多选态共用这一层：onIntercept 可以先分派重排态，但多选态的出口仍是
+      // _exitSelectionMode。
       expect(
         region,
-        contains('onIntercept: _exitSelectionMode'),
+        matches(RegExp(r'onIntercept:[^\n]*_exitSelectionMode')),
         reason: '${e.key} 返回被拦时应退出多选态',
       );
     }
