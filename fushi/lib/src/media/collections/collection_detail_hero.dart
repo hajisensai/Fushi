@@ -11,6 +11,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_resume_actions.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/utils.dart';
@@ -290,23 +291,11 @@ class _ContinueButton extends StatelessWidget {
     final String text = subtitle == null || subtitle!.isEmpty
         ? label
         : '$label · $subtitle';
-    return ConstrainedBox(
-      constraints: BoxConstraints(
-        maxWidth: fill ? double.infinity : 420,
-        minWidth: fill ? double.infinity : 0,
-      ),
-      child: FushiFilledButton.icon(
-        key: const ValueKey<String>('collection_detail_continue'),
-        size: FushiButtonSize.m,
-        onPressed: onPressed,
-        icon: const FushiIcon(FushiIcons.play),
-        label: Text(
-          text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-      ),
+    return FushiResumeActions(
+      primaryKey: const ValueKey<String>('collection_detail_continue'),
+      label: text,
+      onPressed: onPressed,
+      fill: fill,
     );
   }
 }

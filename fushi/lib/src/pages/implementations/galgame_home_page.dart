@@ -34,6 +34,7 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_resume_actions.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromePinnedOffset;
@@ -835,8 +836,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    _StatusPill(label: statusLabel),
-                    const SizedBox(height: 12),
+                    _HeroEyebrow(label: statusLabel),
+                    const SizedBox(height: 6),
                     // TODO-2497：两行仍放不下时，桌面悬停显示完整游戏名。
                     ShelfTitleOverflowTooltip(
                       title: game.displayName,
@@ -861,23 +862,14 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                         ),
                       ),
                     SizedBox(height: roomy ? 20 : 14),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        FushiFilledButton.icon(
-                          onPressed: () => unawaited(_launchGame(game)),
-                          size: roomy ? FushiButtonSize.m : null,
-                          icon: const FushiIcon(FushiIcons.play),
-                          label: Text(t.game_launch),
-                        ),
-                        FushiFilledButton.tonalIcon(
-                          onPressed: () => unawaited(_openDetail(game)),
-                          size: roomy ? FushiButtonSize.m : null,
-                          icon: const FushiIcon(FushiIcons.info),
-                          label: Text(t.game_view_detail),
-                        ),
-                      ],
+                    FushiResumeActions(
+                      label: t.game_launch,
+                      onPressed: () => unawaited(_launchGame(game)),
+                      secondary: FushiResumeSecondaryAction(
+                        icon: FushiIcons.info,
+                        label: t.game_view_detail,
+                        onPressed: () => unawaited(_openDetail(game)),
+                      ),
                     ),
                   ],
                 ),
@@ -1426,10 +1418,10 @@ class _GameCoverPlaceholder extends StatelessWidget {
   }
 }
 
-/// hero 左上角的状态胶囊：M3E 在 primaryContainer 上压一枚 primary 实心胶囊；
-/// Apple 强调色胶囊 + 白字；墨水屏描边无底。
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.label});
+/// hero 眉标（「继续游戏」/「游玩中」）：与书 / 视频 hero 同一套纯文字眉标
+/// （M3E primary 强调字、Apple 强调色、墨水屏正文色），不再画实心胶囊。
+class _HeroEyebrow extends StatelessWidget {
+  const _HeroEyebrow({required this.label});
 
   final String label;
 
@@ -1438,32 +1430,14 @@ class _StatusPill extends StatelessWidget {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context) && !eink;
-    final Color background = eink
-        ? Colors.transparent
+    final Color color = eink
+        ? cs.onSurface
         : apple
         ? appleColorsOf(context).accent
         : cs.primary;
-    final Color foreground = eink
-        ? cs.onSurface
-        : apple
-        ? Colors.white
-        : cs.onPrimary;
-    return DecoratedBox(
-      decoration: ShapeDecoration(
-        color: background,
-        shape: StadiumBorder(
-          side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        child: Text(
-          label,
-          style: context.fushiType.labelLargeEmphasized.copyWith(
-            color: foreground,
-          ),
-        ),
-      ),
+    return Text(
+      label,
+      style: context.fushiType.labelLargeEmphasized.copyWith(color: color),
     );
   }
 }

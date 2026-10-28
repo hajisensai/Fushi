@@ -1,5 +1,6 @@
 import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_resume_actions.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async' show StreamSubscription, Timer, unawaited;
 import 'dart:io';
@@ -1697,14 +1698,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         : tokens.surfaces.primary;
     final bool wide = MediaQuery.sizeOf(context).width >= 840;
     final double coverWidth = wide ? 72 : 60;
+    Future<void> openHero() async {
+      final MediaSource source = hero.getMediaSource(appModel: appModel);
+      await appModel.openMedia(ref: ref, mediaSource: source, item: hero);
+    }
+
     final Widget card = FushiCard(
       key: const ValueKey<String>('reader_shelf_continue_hero'),
       focusId: const FushiFocusId('reader-shelf-continue-hero'),
       padding: EdgeInsets.all(tokens.spacing.gap * 1.5),
-      onTap: () async {
-        final MediaSource source = hero.getMediaSource(appModel: appModel);
-        await appModel.openMedia(ref: ref, mediaSource: source, item: hero);
-      },
+      onTap: openHero,
       child: Row(
         children: <Widget>[
           // 与书架网格同一个光面书皮材质（网格的 Scope 只包 SliverGrid）。
@@ -1789,17 +1792,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             ),
           ),
           SizedBox(width: tokens.spacing.gap * 1.5),
-          // 行尾继续按钮：纯视觉暗示（整卡就是点击目标），不单独抢焦点。
-          ExcludeSemantics(
-            child: DecoratedBox(
-              decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
-              child: Padding(
-                padding: EdgeInsets.all(tokens.spacing.gap * 1.25),
-                child: FushiIcon(
-                  Icons.play_arrow_rounded,
-                  size: 24,
-                  color: apple ? appleColorsOf(context).onAccent : cs.onPrimary,
+          // 行尾继续按钮：与合集 / 视频 / 游戏 hero 同一枚主按钮（FushiResumeActions）。
+          // 整卡已是焦点站点与点击目标，按钮不再单独抢焦点 / 重复读屏。
+          ExcludeFocus(
+            child: ExcludeSemantics(
+              child: FushiResumeActions(
+                primaryKey: const ValueKey<String>(
+                  'reader_shelf_continue_hero_button',
                 ),
+                label: t.home_continue,
+                onPressed: openHero,
               ),
             ),
           ),

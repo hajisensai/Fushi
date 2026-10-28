@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_resume_actions.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
@@ -5649,28 +5650,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// [MediaDetailResumeFab.labelFor]）+ 次按钮「详情」（只有合集有详情页）。
   Widget _buildHomeHeroActions(_HomeHeroData hero, {required bool overImage}) {
     final VoidCallback? onDetail = hero.onDetail;
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: <Widget>[
-        FushiFilledButton.icon(
-          key: const ValueKey<String>('home_video_hero_play'),
-          onPressed: _selectionMode ? null : hero.onPlay,
-          overImage: overImage,
-          icon: const FushiIcon(FushiIcons.play),
-          label: Text(
-            hero.playLabel,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        if (onDetail != null)
-          FushiFilledButton.tonal(
-            key: const ValueKey<String>('home_video_hero_detail'),
-            onPressed: _selectionMode ? null : onDetail,
-            child: Text(t.video_hero_detail_view),
-          ),
-      ],
+    return FushiResumeActions(
+      primaryKey: const ValueKey<String>('home_video_hero_play'),
+      label: hero.playLabel,
+      onPressed: _selectionMode ? null : hero.onPlay,
+      overImage: overImage,
+      secondary: onDetail == null
+          ? null
+          : FushiResumeSecondaryAction(
+              key: const ValueKey<String>('home_video_hero_detail'),
+              icon: FushiIcons.info,
+              label: t.video_hero_detail_view,
+              onPressed: _selectionMode ? null : onDetail,
+            ),
     );
   }
 

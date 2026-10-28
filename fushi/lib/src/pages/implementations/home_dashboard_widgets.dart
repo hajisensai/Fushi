@@ -16,6 +16,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_resume_actions.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -877,11 +878,11 @@ class HomeContinueHero extends StatelessWidget {
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: AlignmentDirectional.centerStart,
-          child: FushiFilledButton.icon(
-            key: const ValueKey<String>('home-continue-hero-action'),
+          child: FushiResumeActions(
+            primaryKey: const ValueKey<String>('home-continue-hero-action'),
             onPressed: onOpen,
-            icon: FushiIcon(actionIcon),
-            label: Text(actionLabel),
+            icon: actionIcon,
+            label: actionLabel,
           ),
         ),
       ],
