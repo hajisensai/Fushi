@@ -1,4 +1,4 @@
-// 媒体库壳按 kind（而不是下标）记住选中的视图：Audiobookshelf 标签随登录 / 登出出现在
+// 媒体库壳按 kind（而不是下标）记住选中的视图：「媒体服务器」标签随增删服务器出现在
 // 视图列表中间时，已选中的视图不能被下标错位顶掉，保活的访问记录也要跟着重新定位。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
@@ -65,16 +65,14 @@ void main() {
   });
   tearDown(() => kinds.dispose());
 
-  testWidgets('选中「导入」后，Audiobookshelf 出现在中间：仍停在「导入」', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('选中「导入」后，「媒体服务器」出现在中间：仍停在「导入」', (WidgetTester tester) async {
     await pumpShell(tester);
     await select(tester, MediaLibraryViewKind.sources);
     expect(find.text('view:sources'), findsOneWidget);
 
     kinds.value = <MediaLibraryViewKind>[
       MediaLibraryViewKind.library,
-      MediaLibraryViewKind.audiobookshelf,
+      MediaLibraryViewKind.mediaServers,
       MediaLibraryViewKind.sources,
     ];
     await tester.pumpAndSettle();
@@ -82,11 +80,11 @@ void main() {
     expect(
       find.text('view:sources'),
       findsOneWidget,
-      reason: '下标 1 变成了 Audiobookshelf，选中项必须跟着 kind 走到下标 2',
+      reason: '下标 1 变成了「媒体服务器」，选中项必须跟着 kind 走到下标 2',
     );
-    expect(find.text('view:audiobookshelf'), findsNothing);
+    expect(find.text('view:mediaServers'), findsNothing);
     expect(
-      builds.containsKey(MediaLibraryViewKind.audiobookshelf),
+      builds.containsKey(MediaLibraryViewKind.mediaServers),
       isFalse,
       reason: '没访问过的新标签不提前构建',
     );
@@ -99,13 +97,13 @@ void main() {
 
     kinds.value = <MediaLibraryViewKind>[
       MediaLibraryViewKind.library,
-      MediaLibraryViewKind.audiobookshelf,
+      MediaLibraryViewKind.mediaServers,
       MediaLibraryViewKind.sources,
     ];
     await tester.pumpAndSettle();
     // 切到新出现的标签，再切回「导入」：「导入」应仍被保活（没被当成没访问过）。
-    await select(tester, MediaLibraryViewKind.audiobookshelf);
-    expect(find.text('view:audiobookshelf'), findsOneWidget);
+    await select(tester, MediaLibraryViewKind.mediaServers);
+    expect(find.text('view:mediaServers'), findsOneWidget);
     await select(tester, MediaLibraryViewKind.sources);
     expect(find.text('view:sources'), findsOneWidget);
     expect(find.text('view:library', skipOffstage: false), findsOneWidget);
@@ -116,17 +114,15 @@ void main() {
     );
   });
 
-  testWidgets('正在看的 Audiobookshelf 标签消失（登出）：回到第一个视图', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('正在看的「媒体服务器」标签消失（删掉最后一台）：回到第一个视图', (WidgetTester tester) async {
     kinds.value = <MediaLibraryViewKind>[
       MediaLibraryViewKind.library,
-      MediaLibraryViewKind.audiobookshelf,
+      MediaLibraryViewKind.mediaServers,
       MediaLibraryViewKind.sources,
     ];
     await pumpShell(tester);
-    await select(tester, MediaLibraryViewKind.audiobookshelf);
-    expect(find.text('view:audiobookshelf'), findsOneWidget);
+    await select(tester, MediaLibraryViewKind.mediaServers);
+    expect(find.text('view:mediaServers'), findsOneWidget);
 
     kinds.value = <MediaLibraryViewKind>[
       MediaLibraryViewKind.library,

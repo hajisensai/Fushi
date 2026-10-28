@@ -68,7 +68,7 @@ void main() {
     });
   });
 
-  group('LapisPreset.applyDefaults（非 Lapis）', () {
+  group('NoteTypePresets.applyDefaults（无预设）', () {
     const AnkiNoteType basic = AnkiNoteType(
       id: 1,
       name: 'Basic',
@@ -77,14 +77,14 @@ void main() {
 
     test('空映射补默认值，不再返回 {}', () {
       expect(
-        LapisPreset.applyDefaults(basic, const <String, String>{}),
+        NoteTypePresets.applyDefaults(basic, const <String, String>{}),
         isNotEmpty,
       );
     });
 
     test('已覆盖到该笔记类型的映射原样保留', () {
       const Map<String, String> mine = <String, String>{'Back': '{sentence}'};
-      expect(LapisPreset.applyDefaults(basic, mine), same(mine));
+      expect(NoteTypePresets.applyDefaults(basic, mine), same(mine));
     });
   });
 

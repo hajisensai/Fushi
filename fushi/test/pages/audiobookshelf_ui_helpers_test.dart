@@ -187,34 +187,31 @@ void main() {
       'lib/src/pages/implementations/home_reader_page.dart',
     ).readAsStringSync().replaceAll(RegExp(r'\s+'), '');
 
-    test('标签页只在有可用服务器时出现，且用的是 audiobookshelf 这个 kind', () {
+    test('Kavita / Audiobookshelf 合并为一个「媒体服务器」标签：配了服务器才出现、订阅配置变化、不挂 iOS 受限门', () {
       expect(
         source,
-        contains('if(absServers.isNotEmpty)MediaLibraryViewSpec('),
+        contains(
+          'finalboolmediaServers=ref.watch(userMediaServersAvailableProvider(UserMediaServersDomain.book),);',
+        ),
       );
-      expect(source, contains('kind:MediaLibraryViewKind.audiobookshelf,'));
-      expect(source, contains('audiobookshelfTabServers('));
-    });
-
-    test('它不挂在 iOS 受限的 externalDiscovery 门里（用户自己的服务器，同 Jellyfin）', () {
-      final int entry = source.indexOf('if(absServers.isNotEmpty)');
-      final int discover = source.indexOf(
-        'if(StoreRestrictedCapability.externalDiscovery.isAvailable||',
-      );
-      expect(entry, greaterThan(0));
-      expect(discover, greaterThan(0));
-      // 发现页那一项在 ABS 之前结束：两个 if 是并列的，不是嵌套。
-      final String betweenAndAfter = source.substring(discover, entry);
       expect(
-        betweenAndAfter,
-        contains('MediaLibraryViewKind.discover'),
-        reason: '发现页的 if 先出现并先结束',
+        source,
+        contains(
+          'if(mediaServers)MediaLibraryViewSpec(kind:MediaLibraryViewKind.mediaServers,',
+        ),
       );
-      final String absEntry = source.substring(
+      expect(
+        source,
+        contains('UserMediaServersView(domain:UserMediaServersDomain.book)'),
+      );
+      final int entry = source.indexOf(
+        'kind:MediaLibraryViewKind.mediaServers',
+      );
+      final String entrySpec = source.substring(
         entry,
         source.indexOf('if(online)', entry),
       );
-      expect(absEntry, isNot(contains('externalDiscovery')));
+      expect(entrySpec, isNot(contains('externalDiscovery')));
     });
   });
 }

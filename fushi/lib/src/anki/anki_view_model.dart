@@ -181,7 +181,7 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     final updated = await _repository.updateSettings((s) => s.copyWith(
           selectedNoteTypeId: noteType.id,
           selectedNoteTypeName: noteType.name,
-          fieldMappings: LapisPreset.applyDefaults(noteType, {}),
+          fieldMappings: NoteTypePresets.applyDefaults(noteType, {}),
         ));
     state = state.copyWith(settings: updated);
   }
@@ -355,7 +355,7 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
             selectedDeckName: deck.name,
             selectedNoteTypeId: noteType.id,
             selectedNoteTypeName: noteType.name,
-            fieldMappings: LapisPreset.applyDefaults(noteType, {}),
+            fieldMappings: NoteTypePresets.applyDefaults(noteType, {}),
           ));
       state = state.copyWith(settings: updated, isFetching: false);
       return LapisSetupResult(created

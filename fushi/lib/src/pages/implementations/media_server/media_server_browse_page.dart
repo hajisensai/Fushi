@@ -4,8 +4,6 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_server_list_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/src/settings/settings_detail_page.dart';
-import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
     show ShortcutBindingScope;
 import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
@@ -142,12 +140,7 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
       injected();
       return;
     }
-    Navigator.of(context, rootNavigator: true).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            SettingsDetailPage(destination: buildServicesDestination()),
-      ),
-    );
+    openMediaServerSettings(context);
   }
 
   /// 嵌套栈能退一层就退，并报告是否退了。
