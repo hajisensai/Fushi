@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use super::codec::{DResult, DecodeError, Reader, Writer};
+use super::codec::{DResult, DecodeError, Reader, StreamError, Writer, ZstdWindow};
 use super::hlc::Hlc;
 use super::id::Id;
 use super::keys::{verify, CollectionKey, DeviceKey};
@@ -215,21 +215,16 @@ fn read_op(r: &mut Reader<'_>, device: Id, seq: u64, i: u64, prev_wall: i64, pre
     Ok(Op { id: OpId { device, seq }, hlc: Hlc { wall, logical, device }, deps, kind, schema, payload, purged })
 }
 
-/// 读到一半缺字节（[Reader] 的截断错误）：流式解码时意味着「再补读一些」，不是格式错。
-fn is_truncation(e: &DecodeError) -> bool {
-    e.0.starts_with("truncated")
+impl From<StreamError> for SegmentError {
+    fn from(e: StreamError) -> Self {
+        SegmentError::Corrupt(e.to_string())
+    }
 }
 
-/// 读窗口每次至少补这么多字节。
-const STREAM_WINDOW: usize = 64 * 1024;
-
-/// 流式解开的段体：边解压边逐条解码，手里只有一个读窗口，不随段的解压后体积增长。
+/// 流式解开的段体：边解压边逐条解码（[ZstdWindow]），不随段的解压后体积增长。
 /// 由 [OpenSegment::ops] / [OpenSegment::verify] 产出；格式错时产出一次 `Err` 后结束。
 pub struct OpStream<'s> {
-    decoder: ruzstd::decoding::StreamingDecoder<&'s [u8], ruzstd::decoding::FrameDecoder>,
-    buf: Vec<u8>,
-    pos: usize,
-    eof: bool,
+    window: ZstdWindow<'s>,
     device: Id,
     first: u64,
     last: u64,
@@ -243,13 +238,8 @@ pub struct OpStream<'s> {
 
 impl<'s> OpStream<'s> {
     fn new(compressed: &'s [u8], header: &SegmentHeader) -> Result<OpStream<'s>, SegmentError> {
-        let decoder =
-            ruzstd::decoding::StreamingDecoder::new(compressed).map_err(|e| SegmentError::Corrupt(e.to_string()))?;
         Ok(OpStream {
-            decoder,
-            buf: Vec::new(),
-            pos: 0,
-            eof: false,
+            window: ZstdWindow::new(compressed)?,
             device: header.device,
             first: header.first,
             last: header.last,
@@ -261,55 +251,11 @@ impl<'s> OpStream<'s> {
         })
     }
 
-    /// 补读：先丢掉已解码的前缀，再补 [STREAM_WINDOW] 与未解码部分中较大者（单条很大时窗口按倍数涨到装得下它）。
-    fn fill(&mut self) -> Result<(), SegmentError> {
-        use std::io::Read;
-        if self.pos > 0 {
-            self.buf.drain(..self.pos);
-            self.pos = 0;
-        }
-        let have = self.buf.len();
-        let want = have + STREAM_WINDOW.max(have);
-        self.buf.resize(want, 0);
-        let mut got = have;
-        while got < want {
-            match self.decoder.read(&mut self.buf[got..]) {
-                Ok(0) => {
-                    self.eof = true;
-                    break;
-                }
-                Ok(k) => got += k,
-                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(e) => {
-                    self.buf.truncate(got);
-                    return Err(SegmentError::Corrupt(e.to_string()));
-                }
-            }
-        }
-        self.buf.truncate(got);
-        Ok(())
-    }
-
-    /// 从窗口里解一个值；缺字节就补读重试，流读完了还缺才算截断。
-    fn parse<T>(&mut self, f: impl Fn(&mut Reader<'_>) -> DResult<T>) -> Result<T, SegmentError> {
-        loop {
-            let mut r = Reader::new(&self.buf[self.pos..]);
-            match f(&mut r) {
-                Ok(v) => {
-                    self.pos += r.pos;
-                    return Ok(v);
-                }
-                Err(e) if is_truncation(&e) && !self.eof => self.fill()?,
-                Err(e) => return Err(e.into()),
-            }
-        }
-    }
-
     fn step(&mut self) -> Result<Option<Op>, SegmentError> {
         let n = match self.n {
             Some(n) => n,
             None => {
-                let n = self.parse(|r| r.uv())?;
+                let n = self.window.parse(|r| r.uv())?;
                 if n != self.last - self.first + 1 {
                     return Err(DecodeError("segment op count").into());
                 }
@@ -318,16 +264,13 @@ impl<'s> OpStream<'s> {
             }
         };
         if self.i == n {
-            if self.pos == self.buf.len() && !self.eof {
-                self.fill()?;
-            }
-            if self.pos < self.buf.len() {
+            if !self.window.at_end()? {
                 return Err(DecodeError("trailing bytes in segment body").into());
             }
             return Ok(None);
         }
         let (device, seq, i, wall, deps) = (self.device, self.first + self.i, self.i, self.wall, self.deps.clone());
-        let op = self.parse(|r| read_op(r, device, seq, i, wall, &deps))?;
+        let op = self.window.parse(|r| read_op(r, device, seq, i, wall, &deps))?;
         self.wall = op.hlc.wall;
         self.deps = op.deps.clone();
         self.i += 1;
@@ -840,7 +783,7 @@ pub(crate) mod tests {
             assert_eq!(op.unwrap(), ops[n]);
             n += 1;
             // 窗口只需装下一条（100 KB）：远小于整段明文。
-            assert!(stream.buf.capacity() <= 512 * 1024, "window grew to {}", stream.buf.capacity());
+            assert!(stream.window.window_capacity() <= 512 * 1024, "window grew to {}", stream.window.window_capacity());
         }
         assert_eq!(n, ops.len());
         // 小段校验那一遍就整段留下。

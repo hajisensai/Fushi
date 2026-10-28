@@ -816,6 +816,75 @@ fn fushisrs_export_import_merges_without_overwriting() {
     assert!(ids.iter().any(|r| r[0] == "ra") && ids.iter().any(|r| r[0] == "rt"));
 }
 
+/// 流式导出的明文与旧实现（整份攒好再压缩）逐字节相同，旧方式压出的包照样能导入；大包（解压后几十 MB）
+/// 导入后与作者一致；截断的包报错且什么都不改。
+#[test]
+fn fushisrs_streaming_export_import_is_format_compatible_and_handles_large_packages() {
+    use crate::sync2::id::Id;
+    use crate::sync2::vv::OpId;
+    let a = Device::new("xa");
+    let b = Device::new("xb");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck)]);
+    let filler = "日本語の例文。".repeat(1000);
+    for batch in 0..4 {
+        let events: Vec<Value> =
+            (0..250).map(|i| edit("note", &format!("N{batch}-{i}"), "f/s", json!(format!("{filler}{i}")))).collect();
+        a.apply(T0 + batch, events);
+    }
+    a.sync(&mut bucket, "loc", T0 + 10);
+    b.sync(&mut bucket, "loc", T0 + 11);
+    b.apply(T0 + 12, vec![review("rb", "C", T0 + 12, 3, "learn")]);
+    b.sync(&mut bucket, "loc", T0 + 13);
+    a.sync(&mut bucket, "loc", T0 + 14);
+
+    let exported = a.core.sync2_export(P).unwrap();
+    // 旧实现的明文：整份按同一格式写出。
+    let legacy_plain = {
+        let w = a.core.writer().unwrap();
+        let local = super::Local::load(&w, P).unwrap().unwrap();
+        let mut out = crate::sync2::codec::Writer::new();
+        out.raw(b"FSRS2EXP");
+        out.u8(1);
+        local.collection.write(&mut out);
+        let devices: Vec<(Vec<u8>, Option<Vec<u8>>, i64)> = w
+            .prepare("SELECT device, public, applied FROM sync2_devices WHERE profile_uid = ?1 ORDER BY device")
+            .unwrap()
+            .query_map([P], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        out.uv(devices.len() as u64);
+        for (dev, public, applied) in devices {
+            let device = Id(dev.try_into().unwrap());
+            device.write(&mut out);
+            out.bytes(&public.unwrap_or_default());
+            out.uv(applied as u64);
+            for seq in 1..=applied as u64 {
+                out.bytes(&super::load_op(&w, P, &OpId { device, seq }).unwrap().unwrap().encode());
+            }
+        }
+        out.into_vec()
+    };
+    assert!(legacy_plain.len() > 20 * 1024 * 1024, "{}", legacy_plain.len());
+    assert_eq!(crate::zstd_decompress(&exported).unwrap(), legacy_plain);
+
+    let c = Device::new("xc");
+    c.core.sync2_identity(P, T0).unwrap();
+    let before = projection(&c);
+    assert!(c.core.sync2_import(P, &exported[..exported.len() / 2], T0 + 20).is_err());
+    assert_eq!(projection(&c), before);
+    let legacy = ruzstd::encoding::compress_to_vec(&legacy_plain[..], ruzstd::encoding::CompressionLevel::Fastest);
+    let r: Value = serde_json::from_str(&c.core.sync2_import(P, &legacy, T0 + 20).unwrap()).unwrap();
+    assert_eq!(r["pending"], json!(0), "{r}");
+    assert_eq!(projection(&c), projection(&a));
+    let d = Device::new("xd");
+    d.core.sync2_identity(P, T0).unwrap();
+    d.core.sync2_import(P, &exported, T0 + 20).unwrap();
+    assert_eq!(projection(&d), projection(&a));
+}
+
 fn segment_files(bucket: &Bucket, d: &Device) -> usize {
     let dev = d.core.sync2_identity(P, T0).unwrap()["device"].as_str().unwrap().to_owned();
     bucket.0.keys().filter(|k| k.starts_with(&format!("devices/{dev}/seg-"))).count()
@@ -1062,6 +1131,56 @@ fn a_new_device_catches_up_a_long_causally_interleaved_history_in_one_round() {
     assert_eq!(a.state("C"), c.state("C"));
     assert_eq!(a.digest(), c.digest());
     assert!(started.elapsed().as_secs() < 60, "{:?}", started.elapsed());
+}
+
+/// 先只收到依赖别的设备的那一支：等着的操作写进缓冲表（测试里内存预算极小，必然落表），内存里只留链值；
+/// 另一台设备的段下一次调用才到，缓冲表里的按主键读出投递，结果与一次收齐相同。
+#[test]
+fn ops_waiting_on_another_device_spill_to_the_buffer_and_land_later() {
+    let a = Device::new("wa");
+    let b = Device::new("wb");
+    let deck = super::config::default_deck_id(P);
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![deck_entity(&deck)]);
+    for i in 0..40 {
+        let at = T0 + i * 600_000;
+        a.apply(at, vec![edit("note", "N1", "f/x", json!(format!("a{i}"))), review(&format!("ra{i}"), "C", at, 3, "review")]);
+        a.sync(&mut bucket, "loc", at);
+        b.sync(&mut bucket, "loc", at);
+        b.apply(at + 1, vec![edit("note", "N1", "f/x", json!(format!("b{i}"))), review(&format!("rb{i}"), "C", at + 1, 2, "review")]);
+        b.sync(&mut bucket, "loc", at + 1);
+        a.sync(&mut bucket, "loc", at + 1);
+    }
+    let now = T0 + 99 * DAY;
+    let c = Device::new("wc");
+    c.core.sync2_identity(P, now).unwrap();
+    let heads: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/head-")).map(|(_, v)| v.clone()).collect();
+    let plan = c.core.sync2_plan(P, &heads).unwrap();
+    let dev_of = |d: &Device| -> String {
+        let w = d.core.writer().unwrap();
+        super::Local::load(&w, P).unwrap().unwrap().device.text()
+    };
+    let (a_dev, b_dev) = (dev_of(&a), dev_of(&b));
+    let files_of = |dev: &str| -> Vec<Vec<u8>> {
+        plan["fetch"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|f| f["files"].as_array().unwrap().iter())
+            .map(|n| n.as_str().unwrap())
+            .filter(|n| n.contains(dev))
+            .map(|n| bucket.0[n].clone())
+            .collect()
+    };
+    let first: Value = serde_json::from_str(&c.core.sync2_ingest(P, &files_of(&b_dev), None, now).unwrap()).unwrap();
+    assert!(first["pending"].as_i64().unwrap() > 40, "B's ops wait on A: {first}");
+    let second: Value = serde_json::from_str(&c.core.sync2_ingest(P, &files_of(&a_dev), None, now).unwrap()).unwrap();
+    assert_eq!(second["pending"], json!(0), "{second}");
+    assert_eq!(second["errors"], json!([]), "{second}");
+    assert_eq!(projection(&a), projection(&c));
+    assert_eq!(a.state("C"), c.state("C"));
+    c.core.sync2_digest_due(P, now, Some(0)).unwrap();
+    assert_eq!(a.digest(), c.digest());
 }
 
 #[test]
