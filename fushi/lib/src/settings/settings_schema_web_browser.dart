@@ -235,10 +235,11 @@ IconData webBrowserSettingsGroupIcon(WebBrowserSettingsGroup g) => switch (g) {
 /// 浏览器设置的总览页（窄屏下钻的第一层；也是设置搜索的子页路径）。
 ///
 /// 浏览器本身两组用 `child`（行进设置搜索索引、进焦点覆盖遍历，与改版前同一批行）；
-/// 扩展各组的文案来自扩展字典、要异步读入，故不进静态索引——点进去前先读字典。
+/// 扩展各组的文案来自扩展字典、要异步读入，故不进静态索引——点进去前先读字典。构建本 schema
+/// 不做任何 IO（AI / ctl 路由也会遍历它，那里不一定有 Flutter binding）：字典在打开浏览器设置
+/// （[openWebBrowserSettings]）或点进扩展组时读，组标题在渲染时取。
 /// 复用 `system` 的 id（子页不扩容枚举），必须经 `SettingsDetailPage.subPage` 推。
 SettingsDestination webBrowserSettingsDestination() {
-  unawaited(WebBrowserExtensionStrings.instance.ensureLoaded());
   return SettingsDestination(
     id: SettingsDestinationId.system,
     title: t.web_browser_menu_settings,
