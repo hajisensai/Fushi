@@ -8,6 +8,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/utils/misc/dashboard_server_continue.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
     show FushiMotion;
 import 'package:fushi/i18n/strings.g.dart';
@@ -157,6 +159,7 @@ void main() {
       int? playlistCollectionId,
     )?
     openVideoOverride,
+    Future<List<ServerContinueCandidate>> Function()? serverContinueLoader,
   }) => ProviderScope(
     overrides: <Override>[
       platformServicesProvider.overrideWithValue(platformServices),
@@ -171,6 +174,9 @@ void main() {
           body: HomeDashboardPage(
             videoRepo: VideoBookRepository(db),
             openVideoOverride: openVideoOverride,
+            serverContinueLoader:
+                serverContinueLoader ??
+                () async => const <ServerContinueCandidate>[],
           ),
         ),
       ),
@@ -1608,6 +1614,129 @@ void main() {
     expect(opened, <(String, int?)>[('e1', cid)]);
     expect(homeShellTabNotifier.value, tabBefore);
     expect(tester.takeException(), isNull);
+  });
+
+  group('服务器「继续」（Jellyfin / Emby / Plex、Audiobookshelf）', () {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    ServerContinueCandidate candidate(
+      ServerContinueSource source,
+      String id,
+      String title,
+      int recentMs,
+      List<String> opened,
+    ) => ServerContinueCandidate(
+      source: source,
+      serverId: 'srv',
+      serverName: 'MyServer',
+      itemId: id,
+      title: title,
+      recentMs: recentMs,
+      progress: 0.4,
+      badgeLabel: '40%',
+      open: (BuildContext _) async {
+        opened.add(id);
+      },
+    );
+
+    testWidgets('与本地条目同一行按最近播放时刻混排；点卡走各自的打开出口', (WidgetTester tester) async {
+      useSize(tester, const Size(1280, 900));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value('local'),
+          title: const Value('本地视频'),
+          videoPath: const Value('/abs/local.mp4'),
+          lastPositionMs: const Value(1000),
+          importedAt: Value(now - 100000),
+        ),
+      );
+      final List<String> opened = <String>[];
+      await tester.pumpWidget(
+        buildApp(
+          serverContinueLoader: () async => <ServerContinueCandidate>[
+            candidate(
+              ServerContinueSource.audiobookshelf,
+              'abs-book',
+              '有声书',
+              now - 1000,
+              opened,
+            ),
+            candidate(
+              ServerContinueSource.mediaServer,
+              'jf-movie',
+              '服务器电影',
+              now - 5000,
+              opened,
+            ),
+          ],
+        ),
+      );
+      await pumpDashboard(tester);
+
+      expect(
+        continueItems(tester).map((_ContinueItem i) => i.title).toList(),
+        <String>['有声书', '服务器电影 · MyServer', '本地视频'],
+      );
+      final HomeContinueHero h = tester.widget<HomeContinueHero>(hero());
+      expect(h.subtitle, contains('MyServer'));
+      expect(h.progressLabel, '40%');
+      expect(h.actionLabel, t.collection_open);
+
+      await tester.tap(heroAction());
+      await tester.pump();
+      expect(opened, <String>['abs-book']);
+
+      // 横滑行：第二张是服务器电影，点开走媒体服务器出口。
+      await tester.tap(rowCards().first);
+      await tester.pump();
+      expect(opened, <String>['abs-book', 'jf-movie']);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('取数失败：静默不贡献条目，首页照常渲染', (WidgetTester tester) async {
+      useSize(tester, const Size(1280, 900));
+      await tester.pumpWidget(
+        buildApp(
+          serverContinueLoader: () async => throw StateError('server offline'),
+        ),
+      );
+      await pumpDashboard(tester);
+
+      expect(hero(), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('模块门控：视频模块关着不出服务器视频，书模块的 ABS 条目照出', (WidgetTester tester) async {
+      useSize(tester, const Size(1280, 900));
+      await appModel.setModuleEnabled(ModuleId.video, false);
+      final List<String> opened = <String>[];
+      await tester.pumpWidget(
+        buildApp(
+          serverContinueLoader: () async => <ServerContinueCandidate>[
+            candidate(
+              ServerContinueSource.mediaServer,
+              'jf-movie',
+              '服务器电影',
+              now - 100,
+              opened,
+            ),
+            candidate(
+              ServerContinueSource.audiobookshelf,
+              'abs-book',
+              '有声书',
+              now - 9000,
+              opened,
+            ),
+          ],
+        ),
+      );
+      await pumpDashboard(tester);
+
+      expect(
+        continueItems(tester).map((_ContinueItem i) => i.title).toList(),
+        <String>['有声书'],
+      );
+      expect(tester.takeException(), isNull);
+    });
   });
 
   /// BUG-1111/BUG-1112 公共装配：让本用例以 **Windows** 语义组装 [AppModel]。
