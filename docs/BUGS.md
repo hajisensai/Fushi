@@ -47,6 +47,12 @@
 | [BUG-3856](bugs/BUG-3856-srs-media-sync-full-reconcile-every-round.md) | ✅ | ✅ | 复习媒体同步每轮全量对账（媒体同步慢） |
 | [BUG-3855](bugs/BUG-3855-srs-sync-self-wake-loop.md) | ✅ | ✅ | 复习同步自己唤醒自己无限循环（同步时卡顿、一直在重载） |
 | [BUG-3857](bugs/BUG-3857-collection-long-press-waits-release.md) | ✅ | ✅ | collection-long-press-waits-release |
+> 共 3460 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3859](bugs/BUG-3859-superseded-navigation-error-covers-page.md) | ✅ | ✅ | superseded-navigation-error-covers-page |
+| [BUG-3858](bugs/BUG-3858-webview2-click-steals-focus-closes-yt-menu.md) | ✅ | ✅ | Windows 应用内浏览器点网页会把焦点抢回 Flutter，YouTube 设置菜单的二级项打不开 |
 | [BUG-3854](bugs/BUG-3854-ai-cannot-link-works.md) | ✅ | ✅ | 内置 AI 助手怎么都做不到「关联作品」 |
 | [BUG-3853](bugs/BUG-3853-collection-longpress-haptic.md) | ✅ | ✅ | collection-longpress-haptic |
 | [BUG-3852](bugs/BUG-3852-web-browser-tab-strip-caption-row-and-exit.md) | ✅ | ✅ | web-browser-tab-strip-caption-row-and-exit |

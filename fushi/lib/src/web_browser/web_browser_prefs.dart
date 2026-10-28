@@ -106,6 +106,8 @@ const List<String> kWebBrowserDeviceLocalPrefKeys = <String>[
   'web_browser_custom_search_engines',
   // data/web_browser_site_settings.dart（按站点的权限决定）。
   'web_browser_site_permissions',
-  // features/youtube_subtitles（页内可点字幕开关）。
+  // 已删除的 features/youtube_subtitles 开关：不再读写，存量值仍不进备份 / 同步。
   'web_browser_youtube_subtitles',
+  // features/extension_host（扩展脚本的 chrome.storage.local）。
+  'web_browser_extension_storage',
 ];

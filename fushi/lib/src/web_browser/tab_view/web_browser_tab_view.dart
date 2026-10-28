@@ -138,6 +138,9 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   /// 主框架 HTTP 4xx / 5xx 候选（加载结束按页面是否空白决定是否显示失败页）。
   int? _pendingHttpStatus;
 
+  /// 最近开始的主框架导航（认出被顶掉的导航迟到的错误，BUG-3859）。
+  final WebBrowserNavigationLog _navigations = WebBrowserNavigationLog();
+
   bool? _active;
 
   bool _appliedDesktopMode = false;
@@ -256,6 +259,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     _controller = null;
     // 摘控制器会 notify 壳；dispose 期间壳可能正在重建，推迟到帧后。
     final WebBrowserTab tab = _tab;
+    tab.attachViewport(null);
     if (tab.controller == null) return;
     if (SchedulerBinding.instance.schedulerPhase ==
         SchedulerPhase.persistentCallbacks) {
@@ -545,6 +549,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     _adblock?.onLoadStart(url);
     _fullscreenZoom.stop();
     _pendingHttpStatus = null;
+    _navigations.onStart(url == null ? null : Uri.tryParse(url.toString()));
     if (_tab.error != null) _tab.setError(null);
     _tab.update(
       url: url == null ? null : Uri.tryParse(url.toString()),
@@ -626,7 +631,9 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
       type: error.type,
       description: error.description,
     );
-    if (classified == null) return;
+    if (classified == null || _navigations.isSuperseded(classified.url)) {
+      return;
+    }
     unawaited(_pullToRefresh?.endRefreshing());
     _tab.update(loading: false);
     _tab.setError(classified);
@@ -1092,6 +1099,12 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     return r is RenderBox && r.attached && r.hasSize ? r : null;
   }
 
+  Rect? _viewportRectToGlobal(Rect local) {
+    final RenderBox? box = _webViewBox;
+    if (box == null || !mounted) return null;
+    return box.localToGlobal(local.topLeft) & local.size;
+  }
+
   void _onTextSelected(Object? raw) {
     final SrsCardLookupController? lookup = _lookup;
     final RenderBox? box = _webViewBox;
@@ -1259,6 +1272,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     _windowConsumed = true;
     _controller = controller;
     _tab.attachController(controller);
+    _tab.attachViewport(_viewportRectToGlobal);
     for (final WebBrowserFeature f in widget.host.features) {
       _guardFeature(
         f,

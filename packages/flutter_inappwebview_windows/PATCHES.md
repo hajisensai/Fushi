@@ -54,3 +54,17 @@ Per the WebView2 SDK 1.0.2792.45 docs shipped in the NuGet package
 all (which is also why sub-frame `callHandler` never worked on Windows). The
 Source check is therefore defence in depth, not the primary gate. Not yet
 verified at runtime on this machine.
+
+## No Flutter focus request on mouse down (BUG-3858, 2026-10-28)
+
+- `custom_platform_view.dart` `onPointerDown`: upstream called
+  `_focusNode.requestFocus()` (plus a 50 ms retry) whenever the platform-view
+  focus node lacked focus. Since Flutter's multi-view focus API, a focus request
+  inside a view whose native window lost focus makes the framework call
+  `requestViewFocusChange(focused)`, and the Windows engine answers with
+  `SetFocus` on the Flutter view HWND. WebView2 has just moved Win32 focus to
+  Chromium for the same click, so the two fight; the page sees a `window` blur
+  on every click and focus-sensitive popups (the YouTube settings menu's
+  sub-panels) close. Removed: clicking web content leaves keyboard focus with
+  WebView2, and Flutter parks focus at the root scope via the engine's
+  `unfocused` view event. Test: `test/pointer_down_view_focus_test.dart`.

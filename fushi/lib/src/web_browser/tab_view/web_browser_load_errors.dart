@@ -176,6 +176,36 @@ WebBrowserLoadError? classifyWebBrowserMainFrameError({
   );
 }
 
+/// 本标签页最近开始的主框架导航（按开始顺序），用来认出「已被后来导航顶掉」的
+/// 那次导航迟到的错误。
+///
+/// 页面自己改址（YouTube 首开会 `location.replace` 加 `&themeRefresh=1`）时，
+/// WebView2 把被顶掉的首个导航报成 `CONNECTION_ABORTED`（「connection was
+/// stopped」），而且报在新导航开始之后——新导航的 loadStart 已经清过失败页，这条
+/// 迟到的错误再盖上去，失败页就压在已加载好的新文档上、吞掉所有点击（BUG-3859）。
+/// 取消类判据认不出它（描述与真断连同一句），只能按「是不是当前这次导航」判。
+class WebBrowserNavigationLog {
+  static const int _capacity = 8;
+  final List<String> _started = <String>[];
+
+  static String _key(Uri url) => url.removeFragment().toString();
+
+  /// 主框架开始导航（`onLoadStart`）。
+  void onStart(Uri? url) {
+    if (url == null) return;
+    _started.add(_key(url));
+    if (_started.length > _capacity) _started.removeAt(0);
+  }
+
+  /// [url] 的错误是否属于已被后来导航顶掉的那次：它开始过、但不是最近一次。没记
+  /// 录过的地址（如重定向后的地址，部分平台不为重定向报 loadStart）不算过期。
+  bool isSuperseded(Uri url) {
+    if (_started.isEmpty) return false;
+    final String key = _key(url);
+    return _started.last != key && _started.contains(key);
+  }
+}
+
 /// 主框架 HTTP 错误码是否**可能**要显示失败页。
 ///
 /// 只是候选：网站自己的 404 / 500 页、Cloudflare 的 403 / 503 验证页都有正文，
