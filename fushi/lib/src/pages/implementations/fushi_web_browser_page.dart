@@ -16,7 +16,7 @@ import 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.d
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_menus.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_routes.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_tab_lists.dart';
-import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/pages/implementations/web_browser/web_browser_settings_page.dart';
 import 'package:fushi/src/settings/settings_schema_web_browser.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show focusedEditableText;
@@ -46,8 +46,6 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store_provider.dart';
-import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_host_feature.dart';
-import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_settings_page.dart';
 import 'package:fushi/src/web_browser/features/study/web_card_source.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/features/web_browser_features.dart';
@@ -731,22 +729,10 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     unawaited(_restore());
   }
 
-  /// 扩展「扩展设置」（播放器菜单、报错 toast）：app 原生的扩展设置页。
+  /// 扩展「扩展设置」（播放器菜单、报错 toast）：统一「浏览器设置」，落在扩展的字幕组。
   void _openExtensionSettings() {
     if (!mounted) return;
-    final WebBrowserExtensionHostFeature? host = _features
-        .whereType<WebBrowserExtensionHostFeature>()
-        .firstOrNull;
-    if (host == null) return;
-    unawaited(
-      Navigator.of(context).push(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (BuildContext _) =>
-              WebBrowserExtensionSettingsPage(feature: host),
-        ),
-      ),
-    );
+    unawaited(_openSettings(group: WebBrowserSettingsGroup.subtitle));
   }
 
   Future<void> _restore() async {
@@ -1066,14 +1052,9 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     );
   }
 
-  Future<void> _openSettings() async {
-    await Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext _) =>
-            SettingsDetailPage.subPage(webBrowserSettingsDestination),
-      ),
-    );
+  /// 「⋯ › 浏览器设置」与播放器菜单「扩展设置」共用的统一入口。
+  Future<void> _openSettings({WebBrowserSettingsGroup? group}) async {
+    await openWebBrowserSettings(context, group: group);
     if (!mounted) return;
     setState(() {
       _tabStyle = webBrowserTabStyle(_prefs);

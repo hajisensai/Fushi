@@ -32,7 +32,7 @@ const String kWebBrowserExtensionHandler = 'fushiExt';
 /// - 查词 → content.js 的宿主适配口 → app 的查词弹窗（与页内取词同一个
 ///   [SrsCardLookupController]）；关窗回调 JS 续播，命中字数回调 JS 高亮；
 /// - 字幕侧栏 → app 原生侧栏 [WebBrowserSubtitlePanel]（扩展 Side Panel 同一份消息契约）；
-/// - 扩展设置 → [openSettings]（app 原生设置页）。
+/// - 扩展设置 → [openSettings]（app 原生「浏览器设置」里的扩展分组）。
 ///
 /// 安全：整栈在页面主世界跑，但 chrome 垫片、桥、适配口都是闭包局部的；页面唯一看得到的
 /// `window.__fushiExtHost` 每个方法都先核对本会话密钥，Dart 侧同样只认带密钥的调用。
@@ -57,6 +57,8 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
        _api = api,
        _loadAsset = loadAsset,
        secret = secret ?? _newSecret() {
+    // 存储的任何写入（页内脚本、设置页、别的浏览页）都推给本浏览页打开着的标签页。
+    _storageChanges = storage.changes.listen(_broadcastStorage);
     _bundleLoad = (loadParts ?? loadWebBrowserExtensionBundleParts)()
         .then<String?>(
           (WebBrowserExtensionBundleParts parts) => _bundle =
@@ -69,6 +71,8 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
   }
 
   final WebBrowserExtensionStorage _storage;
+  late final StreamSubscription<Map<String, WebBrowserExtensionStorageChange>>
+  _storageChanges;
   final Future<FushiExtensionApiResponse> Function(
     String path,
     Map<String, dynamic> body,
@@ -255,14 +259,13 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
       case 'storageSet':
         final Object? items = body['items'];
         if (items is! Map) return null;
-        _broadcastStorage(await _storage.set(Map<String, Object?>.from(items)));
+        // 广播走 [_storageChanges]（写入方是谁都一样）。
+        await _storage.set(Map<String, Object?>.from(items));
         return null;
       case 'storageRemove':
         final Object? keys = body['keys'];
         if (keys is! List) return null;
-        _broadcastStorage(
-          await _storage.remove(<String>[for (final Object? k in keys) '$k']),
-        );
+        await _storage.remove(<String>[for (final Object? k in keys) '$k']);
         return null;
       case 'asset':
         return _readAsset(body['path']);
@@ -419,15 +422,15 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
     }
   }
 
-  /// app 侧（扩展设置页）改了存储：落库并推给所有打开的页面。
-  Future<void> setStorage(Map<String, Object?> items) async =>
-      _broadcastStorage(await _storage.set(items));
+  /// app 侧改了存储：落库（广播经 [_storageChanges] 推给所有打开的页面）。
+  Future<void> setStorage(Map<String, Object?> items) => _storage.set(items);
 
-  /// 读存储（扩展设置页）。
+  /// 读存储。
   Map<String, Object?> readStorage(List<String>? keys) => _storage.get(keys);
 
   @override
   void dispose() {
+    unawaited(_storageChanges.cancel());
     for (final _ExtensionLookupSurface s in _surfaces.values) {
       lookup?.unregister(s);
     }
