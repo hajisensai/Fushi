@@ -48,6 +48,7 @@ import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/fushi_tree.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -968,7 +969,7 @@ class _DeckListState extends State<_DeckList> {
       // 分段卡的圆角按「可见行」里的位置算；隐藏行收成 0 高，位置无所谓。
       final int index = visible[i] ? shown++ : shown;
       items.add(
-        _DeckReveal(
+        FushiTreeReveal(
           key: ValueKey<String>('srs-deck-${d.deck.id}'),
           visible: visible[i],
           child: _DeckDragShell(
@@ -1045,77 +1046,6 @@ class _DeckListState extends State<_DeckList> {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// 子牌组随父牌组收起 / 展开：尺寸过渡 + 淡入淡出；收起后不进焦点遍历、不吃点击、不读屏。
-class _DeckReveal extends StatefulWidget {
-  const _DeckReveal({super.key, required this.visible, required this.child});
-
-  final bool visible;
-  final Widget child;
-
-  @override
-  State<_DeckReveal> createState() => _DeckRevealState();
-}
-
-class _DeckRevealState extends State<_DeckReveal>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    value: widget.visible ? 1 : 0,
-  );
-  late final CurvedAnimation _curve = CurvedAnimation(
-    parent: _controller,
-    curve: FushiMotion.enter,
-    reverseCurve: FushiMotion.exit,
-  );
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _controller.duration = fushiMotionDuration(context, FushiMotion.medium);
-    _controller.reverseDuration = fushiMotionDuration(
-      context,
-      FushiMotion.longReverse,
-    );
-  }
-
-  @override
-  void didUpdateWidget(_DeckReveal oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.visible == widget.visible) return;
-    if (widget.visible) {
-      unawaited(_controller.forward());
-    } else {
-      unawaited(_controller.reverse());
-    }
-  }
-
-  @override
-  void dispose() {
-    _curve.dispose();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bool hidden = !widget.visible;
-    return ExcludeFocus(
-      excluding: hidden,
-      child: IgnorePointer(
-        ignoring: hidden,
-        child: ExcludeSemantics(
-          excluding: hidden,
-          child: SizeTransition(
-            sizeFactor: _curve,
-            axisAlignment: -1,
-            child: FadeTransition(opacity: _curve, child: widget.child),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -1834,10 +1764,8 @@ class _CollapseToggle extends StatelessWidget {
         child: SizedBox.square(
           dimension: _extent,
           child: Center(
-            child: AnimatedRotation(
-              turns: collapsed ? 0 : 0.25,
-              duration: fushiMotionDuration(context, FushiMotion.short),
-              curve: FushiMotion.standard,
+            child: FushiTreeChevron(
+              expanded: !collapsed,
               child: FushiIconButton(
                 key: ValueKey<String>('srs-deck-toggle-$deckId'),
                 icon: FushiIcons.chevronRight,

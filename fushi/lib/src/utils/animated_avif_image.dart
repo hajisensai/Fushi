@@ -41,6 +41,7 @@ class FushiAnimatedAvifImage extends StatefulWidget {
     this.errorBuilder,
     this.semanticLabel,
     this.filterQuality = FilterQuality.medium,
+    this.onFirstFrame,
   });
 
   final File file;
@@ -62,6 +63,10 @@ class FushiAnimatedAvifImage extends StatefulWidget {
 
   /// 同 [Image.filterQuality]。
   final FilterQuality filterQuality;
+
+  /// 首帧解出并画上屏后回调一次（换文件 / 重开后的首帧同样回调）。调用方据此在「新实例」
+  /// 出画面之前一直垫着旧实例，避免替换瞬间闪空。
+  final VoidCallback? onFirstFrame;
 
   @override
   State<FushiAnimatedAvifImage> createState() => _FushiAnimatedAvifImageState();
@@ -250,6 +255,9 @@ class _FushiAnimatedAvifImageState extends State<FushiAnimatedAvifImage>
       }
     });
     _updateRunning(restart: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && generation == _generation) widget.onFirstFrame?.call();
+    });
   }
 
   void _fail(Object error, StackTrace? stack) {

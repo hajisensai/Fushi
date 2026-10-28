@@ -211,6 +211,16 @@ const String kSrsDefsLayoutScript = r'''
       window.__fushiSrsDefsObserver = new ResizeObserver(function(entries){
         for (var e = 0; e < entries.length; e++) {
           var t = entries[e].target;
+          // 分列容器自己的宽度变了（排版后内容变高 / 变矮让纵向滚动条出现或消失，
+          // 栏宽随之差一条滚动条，但这不会触发 window resize）：卡片宽度是排版时量出来的
+          // 像素值，不重排就和通栏的主词典差一条滚动条宽（右缘对不齐）。
+          if (t.__fushiSrsWidth !== undefined) {
+            if (t.__fushiSrsWidth !== t.clientWidth) {
+              if (window.__fushiSrsHostLayout) window.__fushiSrsHostLayout();
+              return;
+            }
+            continue;
+          }
           if (t.__fushiSrsHeight !== t.offsetHeight) {
             if (window.__fushiSrsHostLayout) window.__fushiSrsHostLayout();
             return;
@@ -234,6 +244,7 @@ const String kSrsDefsLayoutScript = r'''
   function reset(list, items){
     delete list.dataset.fushiSrsCols;
     list.style.height = '';
+    list.__fushiSrsWidth = list.clientWidth;
     for (var i = 0; i < items.length; i++) {
       items[i].style.width = '';
       items[i].style.transform = '';
@@ -247,6 +258,7 @@ const String kSrsDefsLayoutScript = r'''
     if (cols <= 1) { reset(list, items); return; }
     list.dataset.fushiSrsCols = String(cols);
     var full = list.clientWidth;
+    list.__fushiSrsWidth = full;
     var width = (full - (cols - 1) * GAP) / cols;
     var start = 0, top = 0;
     if (lead && items.length) {
@@ -380,7 +392,10 @@ const String kSrsDefsLayoutScript = r'''
     }
     pack(list, groups, cols, lead);
     syncToggle(more);
-    if (obs) for (var o = 0; o < groups.length; o++) obs.observe(groups[o]);
+    if (obs) {
+      for (var o = 0; o < groups.length; o++) obs.observe(groups[o]);
+      obs.observe(list);
+    }
   }
   window.__fushiSrsHostLayout = apply;
   if (!window.__fushiSrsHostLayoutListen) {

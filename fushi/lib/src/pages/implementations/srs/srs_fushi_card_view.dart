@@ -1717,6 +1717,10 @@ class _MediaImageState extends ConsumerState<_MediaImage>
   /// 每次例句开播 +1：动图子树换 key 重建，从第一帧播起。
   int _restart = 0;
 
+  /// 重播期间仍垫在底下的旧动图（key）：新实例解出首帧之前先留着旧画面，否则替换瞬间
+  /// 整块变空、动图「闪一下」。新实例出帧后（[_layerReady]）撤掉。
+  int? _prevRestart;
+
   @override
   void initState() {
     super.initState();
@@ -1739,7 +1743,20 @@ class _MediaImageState extends ConsumerState<_MediaImage>
     if (provider != null && !isAvifPath(widget.name)) {
       unawaited(provider.evict());
     }
-    setState(() => _restart++);
+    setState(() {
+      _prevRestart ??= _restart;
+      _restart++;
+    });
+  }
+
+  /// 第 [restart] 层已出首帧：是当前层就撤掉垫底的旧层。
+  void _layerReady(int restart) {
+    if (restart != _restart || _prevRestart == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && restart == _restart && _prevRestart != null) {
+        setState(() => _prevRestart = null);
+      }
+    });
   }
 
   void _unlisten() {
@@ -1835,21 +1852,44 @@ class _MediaImageState extends ConsumerState<_MediaImage>
         !widget.name.startsWith('data:') && isAvifPath(widget.name)
         ? _providerStore?.resolve(widget.name)
         : null;
-    Widget picture({BoxFit? fit}) => KeyedSubtree(
-      key: ValueKey<int>(_restart),
-      child: avif != null
-          ? FushiAnimatedAvifImage(
-              file: avif,
-              fit: fit,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            )
-          : Image(
-              image: provider!,
-              fit: fit,
-              gaplessPlayback: true,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-    );
+    Widget layer(int restart, BoxFit? fit, {required bool signal}) =>
+        KeyedSubtree(
+          key: ValueKey<int>(restart),
+          child: avif != null
+              ? FushiAnimatedAvifImage(
+                  file: avif,
+                  fit: fit,
+                  onFirstFrame: signal ? () => _layerReady(restart) : null,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                )
+              : Image(
+                  image: provider!,
+                  fit: fit,
+                  gaplessPlayback: true,
+                  frameBuilder: signal
+                      ? (BuildContext _, Widget child, int? frame, bool _) {
+                          if (frame != null) _layerReady(restart);
+                          return child;
+                        }
+                      : null,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                ),
+        );
+    // 无论有没有垫底层都是同一个 Stack：各层以 key 在兄弟间对位，旧层从「独占」变成
+    // 「垫底」、新层从「叠在上面」变成「独占」时元素与已解出的画面原样保留。若单层时直接
+    // 返回 KeyedSubtree、双层时才包 Stack，父节点类型一变旧层就被卸载重建，垫底的只是又
+    // 一个从零解码的新实例，闪空照旧。
+    Widget picture({BoxFit? fit}) {
+      final int? prev = _prevRestart;
+      return Stack(
+        fit: StackFit.passthrough,
+        children: <Widget>[
+          if (prev != null) layer(prev, fit, signal: false),
+          layer(_restart, fit, signal: prev != null),
+        ],
+      );
+    }
+
     final Widget image = provider == null
         ? const SizedBox.shrink()
         // 框与原图同比例；contain 保证取整误差下也不裁掉边。

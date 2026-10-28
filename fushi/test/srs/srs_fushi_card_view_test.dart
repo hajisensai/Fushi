@@ -1,6 +1,7 @@
 // Fushi 卡片混合渲染：原生区块 + 释义 WebView（测试里由 srsCardFaceBuilderProvider 换成占位）。
 // 钉住：正面不建 WebView、区块顺序跟单一真相源 FushiCardBlock 走、宽窄两种版式、外观开关、
 // 内容高度撑开释义区、点击卡 Enter 翻、MD3 / Apple 两套设计系统都不抛。
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart'
@@ -17,6 +18,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_sample.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
+import 'package:fushi/src/srs/srs_card_video_channel.dart'
+    show SrsCardSentenceCompanion;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiCard;
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
@@ -586,6 +589,60 @@ void main() {
     final Rect tall = await pictureRect();
     expect(tall.height, lessThanOrEqualTo(220.5));
     expect(tall.width, lessThan(block.width / 2));
+  });
+
+  testWidgets('动图随例句重播：新实例出首帧前，旧画面那一层原样留着（不重建、不闪空）', (
+    WidgetTester tester,
+  ) async {
+    // 同步 IO：testWidgets 的假时钟里 await 真异步 IO 会挂住。
+    final Directory dir = Directory.systemTemp.createTempSync(
+      'srs_card_gif_restart_',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    // 1×1 GIF。
+    File('${dir.path}/clip.gif').writeAsBytesSync(
+      base64Decode('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'),
+    );
+    await pump(
+      tester,
+      answer: true,
+      store: SrsMediaStore(dir),
+      fields: _fields(<String, String>{'Picture': '<img src="clip.gif">'}),
+    );
+    final Finder images = find.descendant(
+      of: find.byKey(const ValueKey<String>('srs-fushi-picture')),
+      matching: find.byType(Image),
+    );
+    expect(images, findsOneWidget);
+    final State<StatefulWidget> before = tester.state(images);
+
+    final SrsCardSentenceCompanion media =
+        tester.state(
+              find.byWidgetPredicate(
+                (Widget w) => w.runtimeType.toString() == '_MediaImage',
+              ),
+            )
+            as SrsCardSentenceCompanion;
+    media.sentenceStarted('sentence.mp3');
+    await tester.pump();
+
+    // 旧层与新层并排：旧层必须就是原来那个实例（换父节点会把它连同已解出的画面一起丢掉，
+    // 垫底的就成了又一个从零解码的新实例，替换瞬间照样空一下）。
+    expect(images, findsNWidgets(2));
+    expect(before.mounted, isTrue, reason: '旧画面那一层必须是原实例');
+    expect(identical(tester.state(images.first), before), isTrue);
+
+    // 新层解出首帧后撤掉垫底层：留下的就是新层那个实例（不再重建一次从头播）。
+    final State<StatefulWidget> fresh = tester.state(images.last);
+    // 文件读取与解码在真实 IO 里回调：让出真实时间后再 pump。
+    for (int i = 0; i < 20 && images.evaluate().length > 1; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(images, findsOneWidget);
+    expect(identical(tester.state(images), fresh), isTrue);
   });
 
   group('卡上引用了媒体、本机文件缺失（还没同步过来）', () {
