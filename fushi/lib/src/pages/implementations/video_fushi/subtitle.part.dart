@@ -2860,7 +2860,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           (RemoteVideoSubtitleEpisodeProgress e) =>
               e.episode.videoId == videoId,
         );
-    final String? path = episode?.srt?.path;
+    final String? path = episode?.subtitle?.path;
     if (path == null) {
       final String? label = episode == null
           ? null

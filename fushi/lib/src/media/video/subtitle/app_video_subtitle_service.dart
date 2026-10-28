@@ -13,7 +13,8 @@
 ///   校验不过 = 把候选表交给用户改、取消 = 已落盘的阶段保留；
 /// - 产物登记：导出的 `<视频名>.ja.srt` / `.ja.asr.srt` 在该条目**还没有字幕选择**时
 ///   写进 `video_books.subtitleSource`（用户自己选过的字幕 / 显式关闭不覆盖）。播放页
-///   当前那集由页面自己切过去。
+///   当前那集由页面自己切过去。视频已有别的 ASS 字幕（外挂或内嵌）时管线另出一份
+///   套了它样式 / 位置的 `.ja.ass`，登记的是这份。
 ///
 /// AI 边界（CLAUDE.md「AI 功能」硬边界）：没指派提供商时一个请求都不发（[start] 直接
 /// 拒绝，UI 引导去「设置 › 模型 › LLM」）；只发 ASR 文本与专名表，不发音频 / 画面。
@@ -1075,7 +1076,16 @@ class AppVideoSubtitleService {
         for (final AppVideoSubtitleEpisodeProgress e in job.episodes) {
           if (e.episode.videoPath == r.videoPath) e.result = r;
         }
-        final String? output = r.outputPath;
+        final String? styledError = r.styledError;
+        if (styledError != null) {
+          // ASS 是可选阶段：失败不影响 SRT，但要进错误日志可查。
+          ErrorLogService.instance.log(
+            'video.subtitlePipeline.styledAss',
+            '${r.videoPath}: $styledError',
+          );
+        }
+        // 有按参考样式导出的 ASS 就登记它（颜色 / 位置才显示得出来）。
+        final String? output = r.styledOutputPath ?? r.outputPath;
         if (!r.exported || output == null) continue;
         final AppVideoSubtitleEpisode? episode = target.episodes
             .where((AppVideoSubtitleEpisode e) => e.videoPath == r.videoPath)
@@ -1085,6 +1095,14 @@ class AppVideoSubtitleService {
           episode.bookUid,
           output,
           replace: episode.replacesSubtitleSelection,
+          supersedes: <String>{
+            // 带样式的 ASS 取代同次导出的 SRT；
+            if (r.styledOutputPath != null && r.outputPath != null)
+              r.outputPath!,
+            // 本轮删掉的旧 ASS（参考没了 / ASS 阶段失败 / 落点换了）：库里还选着
+            // 它就切到本轮产物，不然播放器继续找一个已不存在的过期字幕。
+            ...r.removedOutputPaths,
+          },
         )) {
           job.registeredBookUids.add(episode.bookUid);
         }
@@ -1132,16 +1150,21 @@ class AppVideoSubtitleService {
   /// [AppVideoSubtitleEpisode.replacesSubtitleSelection]）。替换时连同库里缓存的旧
   /// 字幕 cue 一起清掉（与播放页选字幕同一事务写法）：单视频重进时先读 cue 缓存，
   /// 留着旧源的 cue，外挂档案解析失败时会把旧字幕当成新选择显示出来。返回是否写了。
+  ///
+  /// [supersedes]：被 [output] 取代的本管线产物——同次导出的 SRT（有带样式的 ASS
+  /// 时），以及本轮删掉的旧 ASS。条目当前选的正是其中之一（上一次生成登记的）时，
+  /// 换成 [output] 不算覆盖用户的选择。
   Future<bool> _registerSubtitleSource(
     String bookUid,
     String output, {
     bool replace = false,
+    Set<String> supersedes = const <String>{},
   }) async {
     final VideoBookRow? row = await database.getVideoBookByBookUid(bookUid);
     if (row == null) return false;
     final String? current = row.subtitleSource;
     final VideoBookRepository repo = VideoBookRepository(database);
-    if (replace) {
+    if (replace || (current != null && supersedes.contains(current))) {
       if (current == output) return false;
       await repo.saveSubtitleSelection(
         bookUid: bookUid,

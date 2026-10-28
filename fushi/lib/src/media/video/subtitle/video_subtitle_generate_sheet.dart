@@ -98,25 +98,31 @@ String videoSubtitleStageLabel(VideoSubtitleStage stage) => switch (stage) {
 };
 
 /// 一集最终去向的文案。
-String videoSubtitleEpisodeStatusLabel(VideoSubtitleEpisodeResult r) =>
-    switch (r.status) {
-      VideoSubtitleEpisodeStatus.exported =>
-        t.video_subtitle_ai_episode_exported(
-          name: p.basename(r.outputPath ?? ''),
-        ),
-      VideoSubtitleEpisodeStatus.exportedAsAsr =>
-        t.video_subtitle_ai_episode_exported_asr(
-          name: p.basename(r.outputPath ?? ''),
-        ),
-      VideoSubtitleEpisodeStatus.skippedExistingSubtitle =>
-        t.video_subtitle_ai_episode_skipped_existing,
-      VideoSubtitleEpisodeStatus.skippedBothExist =>
-        t.video_subtitle_ai_episode_skipped_both,
-      VideoSubtitleEpisodeStatus.skippedSong =>
-        t.video_subtitle_ai_episode_skipped_song,
-      VideoSubtitleEpisodeStatus.skippedNoDialogue =>
-        t.video_subtitle_ai_episode_skipped_no_dialogue,
-    };
+String videoSubtitleEpisodeStatusLabel(VideoSubtitleEpisodeResult r) {
+  final String label = _episodeStatusLabel(r);
+  final String? reference = r.styleReference;
+  return r.styledOutputPath == null || reference == null
+      ? label
+      : '$label · ${t.video_subtitle_ai_episode_styled_from(name: reference)}';
+}
+
+String _episodeStatusLabel(VideoSubtitleEpisodeResult r) => switch (r.status) {
+  VideoSubtitleEpisodeStatus.exported => t.video_subtitle_ai_episode_exported(
+    name: p.basename(r.styledOutputPath ?? r.outputPath ?? ''),
+  ),
+  VideoSubtitleEpisodeStatus.exportedAsAsr =>
+    t.video_subtitle_ai_episode_exported_asr(
+      name: p.basename(r.styledOutputPath ?? r.outputPath ?? ''),
+    ),
+  VideoSubtitleEpisodeStatus.skippedExistingSubtitle =>
+    t.video_subtitle_ai_episode_skipped_existing,
+  VideoSubtitleEpisodeStatus.skippedBothExist =>
+    t.video_subtitle_ai_episode_skipped_both,
+  VideoSubtitleEpisodeStatus.skippedSong =>
+    t.video_subtitle_ai_episode_skipped_song,
+  VideoSubtitleEpisodeStatus.skippedNoDialogue =>
+    t.video_subtitle_ai_episode_skipped_no_dialogue,
+};
 
 /// MOSS 用不上的原因 → 文案（有分类按分类，否则显示排查原文）。
 String videoSubtitleMossProblemText(VideoSubtitleMossProblem problem) {

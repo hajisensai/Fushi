@@ -121,6 +121,7 @@ void main() {
   }) => VideoSubtitlePipeline(
     recognizer: recognizer,
     jobsRoot: jobs,
+    styleReference: null,
     ai: ai == null
         ? null
         : VideoSubtitleAiConfig(completer: ai, glossaryStore: store),

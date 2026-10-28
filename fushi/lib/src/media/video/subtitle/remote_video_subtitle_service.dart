@@ -9,8 +9,9 @@
 ///   成员逐集提交 `videoId` 任务。host 侧 `SubtitleWorkContextLoader.forBook` 会把合集
 ///   成员解析到同一个作品键（`collection:<host 合集 id>`），各集共用 host 上的同一张
 ///   专名表（第一集生成，后面的复用）。已有 `.ja.srt` 的成员跳过。
-/// - 产物：host 库视频会在 host 那边视频旁导出（`<视频名>.ja.srt`）；本机把取回的
-///   SRT 复制进 `video_subtitles/`，由视频页按「远端视频加外挂字幕」同一条路加载。
+/// - 产物：host 库视频会在 host 那边视频旁导出（`<视频名>.ja.srt`，视频有别的 ASS 时
+///   另有套了它样式的 `.ja.ass`）；本机把取回的字幕（有 ASS 取 ASS）复制进
+///   `video_subtitles/`，由视频页按「远端视频加外挂字幕」同一条路加载。
 library;
 
 import 'dart:async';
@@ -154,8 +155,9 @@ class RemoteVideoSubtitleEpisodeProgress {
   String? message;
   double progress = 0;
 
-  /// 取回并复制进 `video_subtitles/` 的 SRT；没导出为 null。
-  File? srt;
+  /// 取回并复制进 `video_subtitles/` 的字幕（有套样式的 ASS 取 ASS，否则 SRT）；
+  /// 没导出为 null。
+  File? subtitle;
 
   /// host summary 里这一集的状态（`exported` / `skippedSong` …）与原因。
   String? status;
@@ -417,7 +419,8 @@ class RemoteVideoSubtitleService {
     });
   }
 
-  /// 读 summary.json 记下这一集的去向，把导出的 SRT 复制进 `video_subtitles/`。
+  /// 读 summary.json 记下这一集的去向，把导出的字幕（有 ASS 取 ASS，否则 SRT）复制进
+  /// `video_subtitles/`。
   Future<void> _collect(
     HostJobTarget target,
     RemoteVideoSubtitleEpisodeProgress e,
@@ -435,7 +438,9 @@ class RemoteVideoSubtitleService {
           e
             ..status = first['status'] as String?
             ..reason = first['reason'] as String?;
-          outputName = first['output'] as String?;
+          // 套了参考样式的 ASS 优先（颜色 / 位置），没有再取 SRT。
+          outputName =
+              first['styledOutput'] as String? ?? first['output'] as String?;
         }
       } on FormatException {
         // summary 坏了：退回按扩展名找 SRT。
@@ -457,7 +462,7 @@ class RemoteVideoSubtitleService {
     );
     await srt.copy(dest.path);
     e
-      ..srt = dest
+      ..subtitle = dest
       ..status ??= 'exported';
   }
 }

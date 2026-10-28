@@ -9685,6 +9685,7 @@
   "video_subtitle_ai_episode_skipped_existing": "略過：已有 .ja.srt",
   "video_subtitle_ai_episode_skipped_no_dialogue": "略過：幾乎沒有台詞（歌曲或片段）",
   "video_subtitle_ai_episode_skipped_song": "略過：判定為純歌曲（OP/ED、MV）",
+  "video_subtitle_ai_episode_styled_from": "Styles from ${name}",
   "video_subtitle_ai_error_reply_incomplete": "AI 多次回覆均不完整",
   "video_subtitle_ai_estimate": "約 ${requests} 次請求，輸入約 ${input}、輸出約 ${output} token",
   "video_subtitle_ai_estimate_by_drafts": "（按識別稿估算）",

@@ -172,12 +172,53 @@ void main() {
         VideoSubtitleStage.proofread,
       ]),
     );
-    final File srt = job.episodes.single.srt!;
+    final File srt = job.episodes.single.subtitle!;
     expect(p.dirname(srt.path), p.join(tmp.path, 'subs'));
     expect(srt.readAsStringSync(), contains('唯'));
     expect(job.episodes.single.status, 'exported');
     expect(svc.latestJobFor(single), same(job));
     expect(svc.activeJob, isNull);
+  });
+
+  test('host 另出了套样式的 ASS：取回 ASS 而不是 SRT', () async {
+    final FakeHostPort host = FakeHostPort(
+      target: hostTarget(<String>['video_subtitle']),
+      script:
+          (String id, Directory out, StreamController<HostJobEvent> c) async {
+            await out.create(recursive: true);
+            final File srt = File(p.join(out.path, '$id.ja.srt'))
+              ..writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\n唯\n');
+            final File ass = File(p.join(out.path, '$id.ja.ass'))
+              ..writeAsStringSync('[Script Info]\n');
+            final File summary = File(p.join(out.path, 'summary.json'))
+              ..writeAsStringSync(
+                jsonEncode(<String, Object?>{
+                  'episodes': <Object?>[
+                    <String, Object?>{
+                      'video': '$id.mkv',
+                      'status': 'exported',
+                      'output': '$id.ja.srt',
+                      'styledOutput': '$id.ja.ass',
+                    },
+                  ],
+                }),
+              );
+            c.add(
+              HostJobDone(<String, File>{
+                '$id.ja.srt': srt,
+                '$id.ja.ass': ass,
+                'summary.json': summary,
+              }),
+            );
+            await c.close();
+          },
+    );
+    final RemoteVideoSubtitleJob job = service(
+      host,
+    ).start(single, const RemoteVideoSubtitleOptions());
+    await job.done;
+    expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+    expect(job.episodes.single.subtitle!.path, endsWith('v1.ja.ass'));
   });
 
   test('host 报错（没指派提供商等）：failed，报错原样给用户，后面的集不再提交', () async {
@@ -240,8 +281,8 @@ void main() {
       host.submitted.map((Map<String, Object?> m) => m['videoId']),
       <String>['v1', 'op'],
     );
-    expect(job.episodes[0].srt, isNotNull);
-    expect(job.episodes[1].srt, isNull);
+    expect(job.episodes[0].subtitle, isNotNull);
+    expect(job.episodes[1].subtitle, isNull);
     expect(job.episodes[1].status, 'skippedSong');
     expect(job.episodes[1].reason, 'short clip classified as song');
   });

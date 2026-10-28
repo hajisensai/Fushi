@@ -257,6 +257,54 @@ void main() {
     expect(ctx.output('Show 01.ja.srt').existsSync(), isTrue);
   });
 
+  test('库视频旁有别的语言的 ASS：另出套了它样式的 .ja.ass，作首选产物并记进 summary', () async {
+    final Directory lib = Directory(p.join(tmp.path, 'lib', 'Show'))
+      ..createSync(recursive: true);
+    final File video = File(p.join(lib.path, 'Show 01.mkv'))
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    final StringBuffer zh = StringBuffer()
+      ..writeln('[Script Info]')
+      ..writeln('PlayResX: 1920')
+      ..writeln('PlayResY: 1080')
+      ..writeln('[V4+ Styles]')
+      ..writeln(
+        'Format: Name, Fontname, Fontsize, PrimaryColour, Alignment, MarginV',
+      )
+      ..writeln('Style: Top,Noto Sans,70,&H0000FFFF,8,40')
+      ..writeln('[Events]')
+      ..writeln(
+        'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, '
+        'Effect, Text',
+      );
+    for (int i = 0; i < 12; i++) {
+      final String s = (i * 2).toString().padLeft(2, '0');
+      zh.writeln('Dialogue: 0,0:00:$s.00,0:00:$s.90,Top,,0,0,0,,{\\an8}第$i句');
+    }
+    File(p.join(lib.path, 'Show 01.zh.ass')).writeAsStringSync('$zh');
+    final (HostJobContext ctx, _) = context(const <String, Object?>{
+      'proofread': false,
+      'videoId': 'v1',
+    });
+    final HostJobOutcome outcome = await runner(
+      resolveVideo: (String id) async => id == 'v1' ? video.path : null,
+    ).run(ctx);
+    expect(outcome.outputs, contains('Show 01.ja.srt'));
+    expect(outcome.outputs, contains('Show 01.ja.ass'));
+    expect(outcome.primaryOutput, 'Show 01.ja.ass');
+    expect(
+      ctx.output('Show 01.ja.ass').readAsStringSync(),
+      contains(r',Top,,0,0,0,,{\an8}Show 01 台詞0'),
+    );
+    final Map<String, Object?> episode =
+        ((jsonDecode(ctx.output(kVideoSubtitleSummaryOutput).readAsStringSync())
+                        as Map<String, Object?>)['episodes']!
+                    as List<Object?>)
+                .single!
+            as Map<String, Object?>;
+    expect(episode['styledOutput'], 'Show 01.ja.ass');
+    expect(episode['styleReference'], 'Show 01.zh.ass');
+  });
+
   test('AI 请求失败：任务以「暂停：AI 请求失败（原因）」结束；识别稿已缓存，重提交不再识别', () async {
     final _Settings settings = _Settings();
     AiChatClient failing() => AiChatClient(
