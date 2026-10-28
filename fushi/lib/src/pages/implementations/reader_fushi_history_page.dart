@@ -22,6 +22,8 @@ import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/sync/epub_repackage.dart';
+import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
+import 'package:fushi/src/media/kavita/kavita_progress_refresher.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
@@ -600,6 +602,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 两个实例都订阅。BUG-1181 担心的重复网络由共享 TTL 清单缓存（BUG-1180）吸收，
     // 两个实例命中同一份清单。
     homeShellTabNotifier.addListener(_onShellTabActivated);
+    // Kavita 绑定书：服务器端改了进度时静默对账，采用后刷新书架进度条。
+    _kavitaLifecycle = AppLifecycleListener(
+      onResume: _reconcileKavitaProgress,
+    );
+    _reconcileKavitaProgress();
     // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
     // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
     // 用 appModelNoUpdate：initState 里读 appModel 会走 ref.watch，触发
@@ -636,10 +643,33 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       h.key,
   ].join('|');
 
+  AppLifecycleListener? _kavitaLifecycle;
+
+  void _reconcileKavitaProgress() {
+    if (!mounted) return;
+    final AppModel model = appModelNoUpdate;
+    unawaited(
+      KavitaProgressRefresher.shared
+          .refresh(
+            db: model.database,
+            servers: model.prefsRepo.kavitaServers,
+            apiFor: KavitaApiRegistry.instance.apiFor,
+          )
+          .then((int adopted) {
+            if (adopted > 0 && mounted) {
+              ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+              ref.invalidate(bookLastReadAtProvider);
+            }
+          })
+          .catchError((Object _) {}),
+    );
+  }
+
   /// 切回书架 tab 时自动重拉远端书（BUG-992）。非书架 tab 的切换忽略。
   void _onShellTabActivated() {
     if (!mounted) return;
     if (homeShellTabNotifier.value == HomeTab.books) {
+      _reconcileKavitaProgress();
       _refreshRemoteBooks();
     }
   }
@@ -702,6 +732,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     _collectionsReloadDebounce?.cancel();
     _mokuroImported?.removeListener(_onMokuroImportedChanged);
     homeShellTabNotifier.removeListener(_onShellTabActivated);
+    _kavitaLifecycle?.dispose();
     appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
     assert(() {
       ReaderFushiHistoryPage.debugOpenBook = null;

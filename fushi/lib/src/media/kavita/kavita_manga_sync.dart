@@ -316,6 +316,16 @@ class KavitaMangaSyncSession {
                 ? now()
                 : null,
           );
+          // 服务器上这章不是「读完」（含被网页端标未读回到第 0 页）：本地的已读标记
+          // 也要撤掉，否则作品页仍显示已读。只在用户已确认采用服务器（冲突弹窗 /
+          // 本机没动过）时走到这里，所以不会静默丢本机进度。
+          if (local?.readAt != null &&
+              !isKavitaChapterFinished(page: page, totalPages: pages)) {
+            await db.clearMangaChapterRead(
+              bookUid: bookUid,
+              chapterKey: chapterKey,
+            );
+          }
           adoptedPage = page;
           lastPushedPage = page;
           syncedPage = page;
@@ -400,7 +410,11 @@ int? _asInt(Object? value) => switch (value) {
 /// [KavitaMangaSyncSession.attach] 逐章精确裁决（含冲突询问），这里没有服务器时刻
 /// 可比。读完的章只增不减，与阅读器的已读标记规则一致。
 ///
-/// [chapters] 是描述符章表（`raw` 里有刷新时存的 `pages` / `pagesRead`）。返回
+/// 服务器把某章标未读（pagesRead 回 0）而本机仍是已读的情形**不在这里处理**：
+/// 这里既没有服务器时刻也没有同步基线，分不出「服务器被重置」和「本机离线读完、
+/// 还没推上去」，贸然清掉会丢本机进度。该情形由开章时的 attach 按页基线裁决
+/// （本机没动过 → 冲突弹窗，用户选采用服务器才清已读），与 EPUB 一致。
+////// [chapters] 是描述符章表（`raw` 里有刷新时存的 `pages` / `pagesRead`）。返回
 /// 写入的章数。永不抛错。
 Future<int> reconcileKavitaChapterStates({
   required FushiDatabase db,
@@ -439,4 +453,49 @@ Future<int> reconcileKavitaChapterStates({
     // 对账失败不影响作品页展示；下次刷新再来。
   }
   return written;
+}
+
+/// 在 Fushi 里手动把一章标已读 / 未读（Kavita 条目；服务器那边已由调用方标好）后，
+/// 对齐本地章进度与同步基线。
+///
+/// 位置与基线必须一起改：只改服务器，下次开章时本地旧页 != 基线会被
+/// [resolveKavitaProgress] 判成「本地动过」，把旧进度推回去，等于标记被撤销。
+/// - 标未读：`readAt` 清空、`lastPage` 回 0、基线页 0；
+/// - 标已读：`readAt` 记现在、`lastPage` 落最后一页（[totalPages] 未知则不动页）、
+///   基线页同步。
+/// 永不抛错。
+Future<void> alignKavitaMangaChapterMark({
+  required FushiDatabase db,
+  required KavitaMangaSyncStampStore stamps,
+  required String bookUid,
+  required String chapterKey,
+  required bool read,
+  int totalPages = 0,
+  int Function()? nowMs,
+}) async {
+  if (bookUid.isEmpty || chapterKey.isEmpty) return;
+  final int now = (nowMs ?? () => DateTime.now().millisecondsSinceEpoch)();
+  try {
+    final MangaChapterStateRow? existing = await db.getMangaChapterState(
+      bookUid: bookUid,
+      chapterKey: chapterKey,
+    );
+    final int pages = totalPages > 0 ? totalPages : (existing?.pageCount ?? 0);
+    final int page = read
+        ? (pages > 0 ? pages - 1 : existing?.lastPage ?? 0)
+        : 0;
+    await db.saveMangaChapterState(
+      bookUid: bookUid,
+      chapterKey: chapterKey,
+      lastPage: page,
+      pageCount: pages > 0 ? pages : null,
+      readAt: read ? now : null,
+    );
+    if (!read) {
+      await db.clearMangaChapterRead(bookUid: bookUid, chapterKey: chapterKey);
+    }
+    await stamps.record(bookUid, chapterKey, now, page: page);
+  } on Object {
+    // 对齐失败：下次开章由逐章对账兜底。
+  }
 }

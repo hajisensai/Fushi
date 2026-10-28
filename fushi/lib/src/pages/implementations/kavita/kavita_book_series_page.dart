@@ -36,8 +36,26 @@ class KavitaBookSeriesPage extends ConsumerStatefulWidget {
     required this.server,
     required this.series,
     required this.api,
+    this.service,
+    this.readerSettleDelays = kReaderSettleDelays,
     super.key,
   });
+
+  /// 阅读器关闭后的「追平」重取间隔。阅读器 dispose 只是把最后一页交给
+  /// `KavitaEpubSyncSession.close()`（fire-and-forget，最长等 `kCloseFlushTimeout` = 5s），
+  /// 页面拿不到那个 future，所以关书后立刻重取可能早于最后一次推送。这里在立即重取之后
+  /// 再按间隔补取（累计 6s > 5s 的 flush 上限），一旦某次补取看到章节进度变化就停：
+  /// 变化 = 推送已落到服务器。
+  static const List<Duration> kReaderSettleDelays = <Duration>[
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+    Duration(seconds: 3),
+  ];
+
+  final List<Duration> readerSettleDelays;
+
+  /// 注入的书服务（测试用）；null = 用 appProvider 的数据库与临时目录自建。
+  final KavitaBookService? service;
 
   final KavitaServerConfig server;
   final KavitaSeries series;
@@ -76,8 +94,8 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
   KavitaBookService? _service;
 
   Future<KavitaBookService> _ensureService() async {
-    final KavitaBookService? existing = _service;
-    if (existing != null) return existing;
+    final KavitaBookService? existing = _service ?? widget.service;
+    if (existing != null) return _service = existing;
     final AppModel appModel = ref.read(appProvider);
     final KavitaBookService created = KavitaBookService(
       db: appModel.database,
@@ -104,6 +122,7 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _settleGeneration++;
     for (final KavitaCancelToken token in _tokens.values) {
       token.cancel();
     }
@@ -113,7 +132,8 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
   /// [silent] = 刷新已有列表（回前台 / 下拉 / 读完回来 / 标记后）：不闪加载态，失败
   /// 只记日志、保留旧数据。章节的已读进度（`pagesRead`）只来自这次拉取，所以任何
   /// 「服务器可能变了」的时机都要走它。
-  Future<void> _load({bool silent = false}) async {
+  /// 返回这次是否成功取到并应用了列表。
+  Future<bool> _load({bool silent = false}) async {
     if (!silent) {
       setState(() {
         _loading = true;
@@ -127,19 +147,41 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
       final KavitaBookService service = await _ensureService();
       final Map<int, ({String bookKey, KavitaBookBinding binding})> bound =
           await service.boundChapters(widget.server.id);
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _chapters = detail.allChapters;
         _bound = bound;
         _loading = false;
       });
+      return true;
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('KavitaBookSeries.load', error, stack);
-      if (!mounted || silent) return;
+      if (!mounted || silent) return false;
       setState(() {
         _error = error;
         _loading = false;
       });
+      return false;
+    }
+  }
+
+  int _settleGeneration = 0;
+
+  String _progressSignature() => <String>[
+    for (final KavitaChapter c in _chapters) '${c.id}:${c.pagesRead}',
+  ].join(',');
+
+  /// 阅读器关闭后重取：先立即取一次，再按 [KavitaBookSeriesPage.readerSettleDelays]
+  /// 补取直到进度出现变化（见该常量说明）。新一轮 / 页面销毁会让旧一轮作废。
+  Future<void> _reloadAfterReader() async {
+    final int generation = ++_settleGeneration;
+    await _load(silent: true);
+    for (final Duration delay in widget.readerSettleDelays) {
+      final String before = _progressSignature();
+      await Future<void>.delayed(delay);
+      if (!mounted || generation != _settleGeneration) return;
+      final bool ok = await _load(silent: true);
+      if (ok && _progressSignature() != before) return;
     }
   }
 
@@ -207,7 +249,7 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
       item: item,
     );
     // 阅读器关闭时会把进度推给服务器；回来后重取，列表上的进度才是服务器的最新值。
-    if (mounted) unawaited(_load(silent: true));
+    if (mounted) unawaited(_reloadAfterReader());
   }
 
   /// 手动标已读 / 未读（长按 / 右键菜单）：先改服务器，再把本地副本的位置与同步基线
