@@ -52,6 +52,7 @@ import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
     show MusicKaraokeTrack, openMusicKaraokePage;
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -908,12 +909,42 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (showCover) ...<Widget>[
-          Row(
-            children: <Widget>[
-              const Spacer(),
-              if (_hasKaraokeStage) _buildKaraokeButton(),
-              if (FloatingLyricChannel.supported) _buildDesktopLyricsButton(),
-              _buildMoreButton(context),
+          // 宽屏没有窄屏的顶栏关闭键：用与视频 / 详情页同款的悬浮顶栏，左侧
+          // 圆形返回钮，右侧动作（放不下时自适应收进「⋯」）。
+          FushiFloatingTopBar(
+            key: const ValueKey<String>('music_lyrics_back'),
+            leading: <FushiToolbarItem>[
+              FushiToolbarItem(
+                icon: FushiIcons.back,
+                label: MaterialLocalizations.of(context).backButtonTooltip,
+                onPressed: () => unawaited(Navigator.of(context).maybePop()),
+              ),
+            ],
+            actions: <List<FushiToolbarItem>>[
+              <FushiToolbarItem>[
+                if (_hasKaraokeStage)
+                  FushiToolbarItem(
+                    key: const ValueKey<String>('music_lyrics_karaoke'),
+                    icon: FushiIcons.mic,
+                    label: t.music_karaoke_open,
+                    selected: _prefersOriginal,
+                    onPressed: () => unawaited(_openKaraoke()),
+                  ),
+                if (FloatingLyricChannel.supported)
+                  FushiToolbarItem(
+                    key: const ValueKey<String>('music_lyrics_desktop'),
+                    icon: FushiIcons.pictureInPicture,
+                    label: t.music_desktop_lyrics_title,
+                    selected: appModel.musicDesktopLyrics,
+                    onPressed: () => unawaited(_toggleDesktopLyrics()),
+                  ),
+                FushiToolbarItem(
+                  key: const ValueKey<String>('music_lyrics_more'),
+                  icon: FushiIcons.moreHoriz,
+                  label: t.music_lyrics_choose_source,
+                  onPressed: () => unawaited(_openSourceActions()),
+                ),
+              ],
             ],
           ),
           Flexible(

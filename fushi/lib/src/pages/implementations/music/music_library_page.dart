@@ -12,6 +12,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/music/music_format_badge.dart';
+import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
@@ -29,6 +30,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
@@ -102,6 +104,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   List<MusicServerAlbumRef> _serverAlbums = const <MusicServerAlbumRef>[];
   bool _scanning = false;
   StreamSubscription<Set<TableUpdate>>? _dbSub;
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
 
   AppModel get _app => ref.read(appProvider);
 
@@ -131,6 +135,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   @override
   void dispose() {
     unawaited(_dbSub?.cancel());
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -375,6 +380,33 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                 ),
               ),
             ),
+            // 每个分区都保留搜索框槽位（作品分区无可筛内容，输入无副作用），切页签头部不跳动；查询词跨分区保留。
+            Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  tokens.spacing.gap,
+                  tokens.spacing.page,
+                  0,
+                ),
+                // 与库页工具行同一形态：宽屏搜索框限宽靠左，窄屏撑满。
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: FushiSearchBar(
+                      fieldKey: const ValueKey<String>('music-library-search'),
+                      clearButtonKey: const ValueKey<String>(
+                        'music-library-search-clear',
+                      ),
+                      controller: _searchController,
+                      hintText: t.music_library_search_hint,
+                      onQueryChanged: (String q) =>
+                          setState(() => _query = q),
+                      onClear: () => setState(() => _query = ''),
+                    ),
+                  ),
+                ),
+              ),
             SizedBox(height: tokens.spacing.gap),
             // 常规同步 / 复习同步在跑时的进度条（全局状态，不只本页触发的）；没在跑时零高度。
             SyncProgressBanner(
@@ -420,18 +452,65 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         ),
       );
     }
+    // 搜索走统一归一化（[filterByMediaSearch]）：大小写 / 全半角 / 假名同口径。
+    final List<MusicAlbumRow> albums = filterByMediaSearch<MusicAlbumRow>(
+      snap.albums,
+      _query,
+      (MusicAlbumRow a) => <String>[a.title, ?a.albumArtistCredit],
+    );
+    final List<MusicServerAlbumRef> serverAlbums =
+        filterByMediaSearch<MusicServerAlbumRef>(
+          _serverAlbums,
+          _query,
+          (MusicServerAlbumRef a) => <String>[a.album.title, ?a.album.artist],
+        );
+    final List<MusicArtistRow> artists = filterByMediaSearch<MusicArtistRow>(
+      snap.artists,
+      _query,
+      (MusicArtistRow a) => <String>[a.name],
+    );
+    final List<MusicTrackRow> tracks = filterByMediaSearch<MusicTrackRow>(
+      snap.tracks,
+      _query,
+      (MusicTrackRow r) => <String>[r.title, ?r.artistCredit],
+    );
+    final List<MusicPlaylistRow> playlists =
+        filterByMediaSearch<MusicPlaylistRow>(
+          snap.playlists,
+          _query,
+          (MusicPlaylistRow p) => <String>[p.name],
+        );
+    final bool noMatch =
+        _query.trim().isNotEmpty &&
+        switch (_section) {
+          MusicLibrarySection.albums =>
+            albums.isEmpty && serverAlbums.isEmpty,
+          MusicLibrarySection.artists => artists.isEmpty,
+          MusicLibrarySection.songs => tracks.isEmpty,
+          MusicLibrarySection.playlists => playlists.isEmpty,
+          MusicLibrarySection.works => false,
+        };
+    if (noMatch) {
+      return Center(
+        child: FushiPlaceholderMessage(
+          icon: FushiIcons.search,
+          message: t.music_library_search_empty,
+        ),
+      );
+    }
     return switch (_section) {
       MusicLibrarySection.albums => _AlbumGrid(
         snapshot: snap,
-        serverAlbums: _serverAlbums,
+        albums: albums,
+        serverAlbums: serverAlbums,
         onOpen: _openAlbum,
       ),
       MusicLibrarySection.artists => _ArtistList(
-        artists: snap.artists,
+        artists: artists,
         onOpen: (MusicArtistRow a) => unawaited(_openArtist(a)),
       ),
       MusicLibrarySection.songs => MusicTrackList(
-        tracks: snap.tracks,
+        tracks: tracks,
         albums: snap.albumByUid,
         context: MusicQueueContext.mixed,
       ),
@@ -450,7 +529,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                   message: t.music_playlists_empty,
                 ),
               )
-            : _PlaylistList(playlists: snap.playlists),
+            : _PlaylistList(playlists: playlists),
     };
   }
 }
@@ -458,11 +537,15 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
 class _AlbumGrid extends StatelessWidget {
   const _AlbumGrid({
     required this.snapshot,
+    required this.albums,
     required this.onOpen,
     this.serverAlbums = const <MusicServerAlbumRef>[],
   });
 
   final MusicLibrarySnapshot snapshot;
+
+  /// 已按搜索词筛过的本地专辑（[snapshot] 仍用来取各专辑的曲目）。
+  final List<MusicAlbumRow> albums;
   final ValueChanged<MusicAlbumRow> onOpen;
 
   /// 混排进来的服务器专辑：排在本地专辑之后，卡片带云朵、点开走服务器专辑页。
@@ -471,7 +554,6 @@ class _AlbumGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final List<MusicAlbumRow> albums = snapshot.albums;
     // 专辑一律是方形「唱片」材质（用户 2026-10-26 拍板）；行高按新卡算
     // （[musicAlbumGridDelegate]：方形封面 + ShelfCardMeta 文字块）。
     return ShelfCoverMaterialScope(

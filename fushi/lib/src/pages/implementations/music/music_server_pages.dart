@@ -13,6 +13,7 @@ import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -109,6 +110,7 @@ Widget _scaffold(
   final NavigatorState? navigator = Navigator.maybeOf(context);
   return FushiPageScaffold(
     title: title,
+    bottomNavigationBar: const MusicNowPlayingBar(),
     header: isGlassDesign(context)
         ? null
         : Padding(
