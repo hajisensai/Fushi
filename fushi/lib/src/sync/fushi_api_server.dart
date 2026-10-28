@@ -9,20 +9,11 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart'
     show VideoSubtitleRegistry;
-import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart'
-    show VideoSubtitleCandidate;
-import 'package:fushi_engine/media/video/video_subtitle_source.dart'
-    show buildParsedSubtitleResponse;
-import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
-    show resolveYoutubeCaptionsForExtension;
-// remote_subtitle_search_handlers 是 #1399 把 Jimaku 专用处理器泛化后的版本，
-// 仍住在 fushi（它接的是 app 侧已配置的字幕源）；其余几个随本 PR 搬进 engine。
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
 import 'package:fushi/src/srs/srs_term_status_bridge.dart'
     show kSrsTermStatusBatchMax;
-import 'package:fushi/src/sync/remote_subtitle_search_handlers.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsTermQuery;
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
@@ -34,6 +25,7 @@ import 'package:fushi/src/sync/browser_extension_test_page.dart'
     show kBrowserExtensionTestPagePath;
 import 'package:fushi/src/sync/extension_font_api.dart';
 import 'package:fushi/src/sync/fushi_api_access_policy.dart';
+import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/sync/yomitan_term_entries_adapter.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
@@ -170,6 +162,7 @@ class FushiApiServer {
     FushiApiAccessPolicy accessPolicy = FushiApiAccessPolicy.localOnly,
     SrsAnkiConnectEndpoint? ankiConnectEndpoint,
     int? ankiConnectCompatPort,
+    FushiExtensionApiCore? extensionApiCore,
   }) : _requestedPort = port,
        _ankiConnect = ankiConnectEndpoint,
        _ankiConnectCompatPort = ankiConnectCompatPort,
@@ -184,18 +177,24 @@ class FushiApiServer {
        _extensionBuildProvider = extensionBuildProvider,
        _appLocaleProvider = appLocaleProvider,
        _popupDictionaryCssProvider = popupDictionaryCssProvider,
-       _onExtensionPopupSize = onExtensionPopupSize,
-       _onExtensionStudy = onExtensionStudy,
        _onExtensionFavorite = onExtensionFavorite,
        _onExtensionSeen = onExtensionSeen,
        _onLookupActivity = onLookupActivity,
        _onExtensionReport = onExtensionReport,
-       _subtitleRegistryProvider = subtitleRegistryProvider,
        _extensionTestPageProvider = extensionTestPageProvider,
        _fontApi = fontApi,
        _srsApiProvider = srsApiProvider,
        _apiKey = apiKey,
-       _accessPolicy = accessPolicy;
+       _accessPolicy = accessPolicy,
+       _ownsExtensionApi = extensionApiCore == null,
+       _extensionApi =
+           extensionApiCore ??
+           FushiExtensionApiCore(
+             subtitleRegistryProvider: subtitleRegistryProvider,
+             fontApi: fontApi,
+             onExtensionPopupSize: onExtensionPopupSize,
+             onExtensionStudy: onExtensionStudy,
+           );
 
   final int _requestedPort;
   final FushiRemoteLookupService _lookup;
@@ -221,15 +220,14 @@ class FushiApiServer {
   final String Function()? _appLocaleProvider;
   // BUG-1718：词典自带 CSS + 用户自定义 CSS 供给器，按 revision 门控随查词响应下发给扩展弹窗。
   final RemotePopupDictionaryCss Function()? _popupDictionaryCssProvider;
-  // 弹窗尺寸精细化 Phase D：扩展弹窗被拖角调整尺寸后，content.js 经 bridge 回写最终基准
-  // 最大宽高；这个 sink 收到（未 clamp 的原始逻辑像素）→ app 侧 clamp + 拖即解锁 + 写扩展键。
-  // 未注入（旧 app / 配对 sync host）时端点 404（向后兼容，无写偏好副作用）。
-  final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
-  // 扩展视频沉浸时间进学习统计：content 脚本在网页视频播放时每 ~1s +
-  // play/pause/seek/ended 时刻打 /api/extension/study，解析成 [BrowserVideoSample]
-  // 交给这个 sink（app 侧 BrowserVideoStudyBridge → VideoWatchTracker + StudyClock）。
-  // 未注入（旧 app / 配对 sync host）时端点 404（向后兼容，无写库副作用）。
-  final void Function(BrowserVideoSample sample)? _onExtensionStudy;
+  // 浏览器扩展与 HTTP 无关的一组端点（YouTube 字幕 / 外挂字幕解析 / 在线字幕搜索下载 /
+  // 字体列表 / 弹窗尺寸回写 / 视频沉浸时间）的核心逻辑，见 [FushiExtensionApiCore.paths]。
+  // 弹窗尺寸 / 沉浸时间 sink、在线字幕 registry 供给器都在这里；未注入时对应端点 404
+  // （旧 app / 配对 sync host 向后兼容）。app 内浏览器进程内直接调同一实例。
+  final FushiExtensionApiCore _extensionApi;
+  // 核心是本 server 自建的（没注入）才归它管：停服时清候选缓存。注入的那份与 app 内
+  // 浏览器共用，停 / 重启 HTTP 服务不能把浏览器里「查字幕」搜到一半的候选清掉。
+  final bool _ownsExtensionApi;
   // BUG-3141：扩展查词弹窗 ☆/★ 收藏（POST `/api/extension/favorite`）。app 侧与 app 外
   // 浮窗的 favoriteEntry / favoriteCheck 两个桥同一份收藏读写。未注入时端点 404。
   final ExtensionFavoriteHandler? _onExtensionFavorite;
@@ -244,13 +242,6 @@ class FushiApiServer {
   // （+ manifest version）。app 侧记录后与内置指纹比对，不一致时在扩展管理页给出
   // 更新提示。旧扩展发 '{}'（无 build 字段）时不回调——行为等同现状（向后兼容）。
   final void Function(String build, String? version)? _onExtensionReport;
-  // 「查字幕」扩展桥：已配置在线字幕来源的 registry 供给器（Jimaku / OpenSubtitles /
-  // AJATT，与 app 内「找字幕」对话框同一份）。未注入/一个来源都没配时端点回
-  // {ok:false, error:'no-provider'}；旧 jimaku 端点在 Jimaku 缺席时仍回 'no-api-key'。
-  //
-  // 此前这里持有的是**自己 new 的 JimakuClient**（只认 API key），于是扩展永远只有
-  // Jimaku 一家：零配置的 AJATT、用户已填 key 的 OpenSubtitles 在扩展里都不存在。
-  final Future<VideoSubtitleRegistry?> Function()? _subtitleRegistryProvider;
 
   /// 新手引导「试一试」页的 HTML 供给器：请求到达时才生成（例句随用户已装词典的
   /// 词头语言走，文案随当前 app 语言走）。未注入时该路由 404。
@@ -258,6 +249,7 @@ class FushiApiServer {
 
   /// 扩展字幕外观「字体」下拉框的真源：app 字体目录 + 推荐字体下载
   /// （`/api/extension/fonts` / `fonts/file` / `fonts/download`）。未注入时三路 404。
+  /// 列表端点经 [_extensionApi]；这里供字节 / 下载两路。
   final ExtensionFontApi? _fontApi;
 
   /// 复习（SRS）扩展端点的供给器；未注入或回 null（模块关）时 `/api/srs/*` 404。
@@ -325,23 +317,6 @@ class FushiApiServer {
     await s?.close(force: true);
   }
 
-  // 搜索候选按 handle 暂存（download 要交回候选对象本身：OpenSubtitles 的 fileId、
-  // Jimaku/AJATT 的下载 URL 都只活在候选里，裸 handle 串重建不出来）；插入序 LRU。
-  static const int _kSubtitleCandidateCacheLimit = 200;
-  final Map<String, VideoSubtitleCandidate> _subtitleCandidates =
-      <String, VideoSubtitleCandidate>{};
-
-  Future<VideoSubtitleRegistry?> _subtitleRegistryFor() async =>
-      await _subtitleRegistryProvider?.call();
-
-  void _rememberSubtitleCandidate(String handle, VideoSubtitleCandidate c) {
-    _subtitleCandidates.remove(handle); // 重插到尾部（LRU 触达即续期）
-    _subtitleCandidates[handle] = c;
-    while (_subtitleCandidates.length > _kSubtitleCandidateCacheLimit) {
-      _subtitleCandidates.remove(_subtitleCandidates.keys.first);
-    }
-  }
-
   // 单词音频短命 token 与查词/制卡端点的 handler 正文收在 [RemoteLookupRoutes]，
   // 与 FushiSyncServer 共用一份（TTL 5 分钟 + BUG-908(a) 上限 128）。
   final RemoteAudioTokenStore _audioTokens = RemoteAudioTokenStore();
@@ -379,7 +354,7 @@ class FushiApiServer {
     await _stopAnkiConnectCompatListener();
     await _server?.close(force: true);
     _server = null;
-    _subtitleCandidates.clear();
+    if (_ownsExtensionApi) _extensionApi.clearSubtitleCandidates();
   }
 
   /// 网络层访问控制，先于 [_authMiddleware]、覆盖全部路径（含免密钥的音频文件 /
@@ -561,6 +536,9 @@ class FushiApiServer {
     if (_kLookupActivityPaths.contains(path)) {
       _onLookupActivity?.call();
     }
+    if (FushiExtensionApiCore.paths.contains(path)) {
+      return _handleExtensionApiCore(request, path);
+    }
     switch (path) {
       case '/serverVersion':
         return jsonResponse(<String, dynamic>{'version': 1});
@@ -589,10 +567,6 @@ class FushiApiServer {
       // Issue #1409：弹窗 ↗「在 Anki 中打开」（与 app 内 openInAnki 桥同一 repo 方法）。
       case '/api/anki/open':
         return _lookupRoutes.handleOpenInAnki(request);
-      case '/api/extension/popup-size':
-        return _handleExtensionPopupSize(request);
-      case '/api/extension/study':
-        return _handleExtensionStudy(request);
       case '/api/extension/favorite':
         return _handleExtensionFavorite(request);
       case '/api/srs/term-status':
@@ -605,70 +579,39 @@ class FushiApiServer {
         return _handleExtensionStatus(request);
       case '/api/extension/site-cookies':
         return _handleSiteCookies(request);
-      case '/api/extension/fonts':
-        return _handleExtensionFonts(request);
       case '/api/extension/fonts/download':
         return _handleExtensionFontDownload(request);
-      case '/api/youtube/captions':
-        return _handleYoutubeCaptions(request);
-      case '/api/subtitle/parse':
-        return _handleSubtitleParse(request);
-      case '/api/subtitle/search':
-        return _handleSubtitleSearch(request);
-      case '/api/subtitle/fetch':
-        return _handleSubtitleFetch(request);
-      // 旧扩展副本（BUG-1079 的自更新 stale 态）仍打 jimaku 专用路径：限定到
-      // Jimaku 一家，语义与旧实现逐字不变。
-      case '/api/subtitle/jimaku/search':
-        return _handleSubtitleSearch(
-          request,
-          restrictToProviderIds: kJimakuOnlyProviderIds,
-        );
-      case '/api/subtitle/jimaku/fetch':
-        return _handleSubtitleFetch(
-          request,
-          restrictToProviderIds: kJimakuOnlyProviderIds,
-        );
       default:
         return shelf.Response.notFound('Unknown endpoint');
     }
   }
 
-  /// 「查字幕」扩展桥①搜索：body `{query?, anilistId?, episode?, season?, anime?,
-  /// languages?}`。逻辑在 [buildRemoteSubtitleSearchResponse]（扇出全部已配置来源、
-  /// 排序去重、部分失败照样出结果）；候选按 handle 暂存供 fetch。
-  Future<shelf.Response> _handleSubtitleSearch(
-    shelf.Request request, {
-    Set<String>? restrictToProviderIds,
-  }) async {
-    final Map<String, dynamic>? body = await readJsonObjectBody(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    return jsonResponse(
-      await buildRemoteSubtitleSearchResponse(
-        body,
-        registryProvider: _subtitleRegistryFor,
-        rememberCandidate: _rememberSubtitleCandidate,
-        restrictToProviderIds: restrictToProviderIds,
-      ),
-    );
+  /// [FushiExtensionApiCore.paths] 的 HTTP 外壳：未注入 404 优先 → 读 JSON body（非法
+  /// 400 'Invalid JSON'；字体列表不读 body）→ 交核心 → 成功 JSON / 失败纯文本。
+  Future<shelf.Response> _handleExtensionApiCore(
+    shelf.Request request,
+    String path,
+  ) async {
+    final FushiExtensionApiResponse? unavailable = _extensionApi
+        .unavailableResponse(path);
+    if (unavailable != null) return _extensionApiShelfResponse(unavailable);
+    final Map<String, dynamic> body;
+    if (path == FushiExtensionApiCore.fontsPath) {
+      body = const <String, dynamic>{};
+    } else {
+      final Map<String, dynamic>? parsed = await readJsonObjectBody(request);
+      if (parsed == null) return shelf.Response(400, body: 'Invalid JSON');
+      body = parsed;
+    }
+    return _extensionApiShelfResponse(await _extensionApi.handle(path, body));
   }
 
-  /// 「查字幕」扩展桥②下载+解析：body `{handle}`。响应与 `/api/subtitle/parse`
-  /// 同形（`{format, cues:[...]}` + filename/language），扩展直接走既有 InstallTrack 落地。
-  Future<shelf.Response> _handleSubtitleFetch(
-    shelf.Request request, {
-    Set<String>? restrictToProviderIds,
-  }) async {
-    final Map<String, dynamic>? body = await readJsonObjectBody(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    return jsonResponse(
-      await buildRemoteSubtitleFetchResponse(
-        body,
-        registryProvider: _subtitleRegistryFor,
-        resolveCandidate: (String handle) => _subtitleCandidates[handle],
-        restrictToProviderIds: restrictToProviderIds,
-      ),
-    );
+  static shelf.Response _extensionApiShelfResponse(
+    FushiExtensionApiResponse response,
+  ) {
+    final Map<String, dynamic>? json = response.json;
+    if (response.ok && json != null) return jsonResponse(json);
+    return shelf.Response(response.status, body: response.text);
   }
 
   /// BUG-726/自更新：状态端点回带当前内置扩展指纹（extensionBuild），扩展
@@ -704,24 +647,6 @@ class FushiApiServer {
       if (extensionBuild != null) 'extensionBuild': extensionBuild,
       if (locale != null) 'locale': locale,
       if (cookieImport != null) 'cookieImport': cookieImport.toJson(),
-    });
-  }
-
-  /// 扩展字幕外观「字体」下拉框的数据源：目录里真实存在的字体 + 推荐字体表
-  /// （逐项标注 installed）。body 可空。
-  Future<shelf.Response> _handleExtensionFonts(shelf.Request request) async {
-    final ExtensionFontApi? api = _fontApi;
-    if (api == null) return shelf.Response.notFound('Not Found');
-    final List<ExtensionFontEntry> fonts = await api.listFonts();
-    final List<ExtensionRecommendedFont> recommended = await api
-        .listRecommended();
-    return jsonResponse(<String, dynamic>{
-      'fonts': <Map<String, dynamic>>[
-        for (final ExtensionFontEntry font in fonts) font.toJson(),
-      ],
-      'recommended': <Map<String, dynamic>>[
-        for (final ExtensionRecommendedFont font in recommended) font.toJson(),
-      ],
     });
   }
 
@@ -895,82 +820,6 @@ class FushiApiServer {
   // /api/mine、/api/mine/forward、/api/anki/note-type/*、/api/duplicate、
   // /api/anki/open、/api/lookup/audio[/file] 的 handler 正文在 [RemoteLookupRoutes]（与
   // FushiSyncServer 共用）；扩展默认指向本 server（19633），故那是真正被命中的路径。
-
-  /// A（BUG-783 后续）：浏览器扩展抓 YouTube 网页视频**真整集字幕**端点——复用 app 内已
-  /// 修好的 `resolveYoutubeCaptionsForExtension`（androidVr getPlayerResponse + 现在认得
-  /// format-3 的 timedtext 解析），返回全部轨（自动/人工）+ 各轨 cue，替扩展脆弱的 DOM 刮取。
-  /// body：`{videoId 或 url, preferLang?}`。best-effort：无字幕/失败返回 `{tracks:[]}`（扩展
-  /// 面板回落 live 采样，视频照看）。
-  Future<shelf.Response> _handleYoutubeCaptions(shelf.Request request) async {
-    final Map<String, dynamic>? body = await readJsonObjectBody(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    final Object? id = body['videoId'] ?? body['url'];
-    if (id is! String || id.isEmpty) {
-      return shelf.Response(400, body: 'Missing videoId');
-    }
-    final Object? lang = body['preferLang'];
-    return jsonResponse(
-      await resolveYoutubeCaptionsForExtension(
-        id,
-        preferLang: lang is String && lang.isNotEmpty ? lang : 'ja',
-      ),
-    );
-  }
-
-  /// B（asb 招牌）：浏览器扩展**给任意网页视频加载用户自己的外挂字幕文件**端点——扩展读本地
-  /// srt/ass/vtt 文本 POST 上来，server 复用 app 内已测的 SRT/ASS/VTT parser 解析成 cue，扩展把
-  /// cue 叠到当前网页视频。body：`{filename, content}`。不支持的扩展名回 `{error:'unsupported'}`。
-  Future<shelf.Response> _handleSubtitleParse(shelf.Request request) async {
-    final Map<String, dynamic>? body = await readJsonObjectBody(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    final Object? filename = body['filename'];
-    final Object? content = body['content'];
-    if (filename is! String || content is! String || filename.isEmpty) {
-      return shelf.Response(400, body: 'Missing filename/content');
-    }
-    return jsonResponse(
-      buildParsedSubtitleResponse(filename: filename, content: content),
-    );
-  }
-
-  /// 弹窗尺寸精细化 Phase D：浏览器扩展弹窗被拖右下角把手调整尺寸后，content.js 经
-  /// background（POST `/api/extension/popup-size` {maxWidth,maxHeight}）回写最终基准最大宽
-  /// 高。走与查词同一 [_authMiddleware]（Basic `fushi:'+key`）鉴权——**不在**免鉴权白名
-  /// 单里，绝不新开无鉴权写入口。收到 → 交给注入的 [_onExtensionPopupSize] sink（app 侧
-  /// clamp 250-2000/200-1600 + 「拖即解锁」extensionPopupIndependentSize + 只写扩展键，
-  /// 绝不碰 overlay/popupMax）。未注入（旧 app / 配对 host）时 404，无副作用（向后兼容）。
-  Future<shelf.Response> _handleExtensionPopupSize(
-    shelf.Request request,
-  ) async {
-    final void Function(double, double)? sink = _onExtensionPopupSize;
-    if (sink == null) return shelf.Response.notFound('Popup size sink off');
-    final Map<String, dynamic>? body = await readJsonObjectBody(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    final dynamic w = body['maxWidth'];
-    final dynamic h = body['maxHeight'];
-    if (w is! num || h is! num) {
-      return shelf.Response(400, body: 'Missing maxWidth/maxHeight');
-    }
-    sink(w.toDouble(), h.toDouble());
-    return jsonResponse(<String, dynamic>{'ok': true});
-  }
-
-  /// 扩展视频沉浸时间样本（POST `/api/extension/study`，体见 [BrowserVideoSample]）。
-  /// 与 popup-size 同一 [_authMiddleware] 鉴权、**不在**免鉴权白名单里——这是一条
-  /// 写学习统计的入口，绝不无鉴权开放。体不合契约（含 `mediaKind` 不是 `video`）
-  /// 400；未注入 sink 404；成功 `{ok:true}`。
-  Future<shelf.Response> _handleExtensionStudy(shelf.Request request) async {
-    final void Function(BrowserVideoSample)? sink = _onExtensionStudy;
-    if (sink == null) return shelf.Response.notFound('Study sink off');
-    final Map<String, dynamic>? body = await readJsonObjectBody(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    final BrowserVideoSample? sample = BrowserVideoSample.tryParse(body);
-    if (sample == null) {
-      return shelf.Response(400, body: 'Invalid study sample');
-    }
-    sink(sample);
-    return jsonResponse(<String, dynamic>{'ok': true});
-  }
 
   /// BUG-3141：扩展查词弹窗的 ☆/★（POST `/api/extension/favorite`）。body
   /// `{toggle, expression, reading, glossary?, sentence?}`：`toggle` 为 true 切换收藏并回

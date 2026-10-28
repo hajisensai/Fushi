@@ -181,6 +181,13 @@ abstract final class FushiSprings {
     dampingRatio: 1,
     stiffness: 3800,
   );
+
+  /// 树状组件展开（Material）：ζ 0.7 的俏皮回弹，刚度与 [spatialDefault] 同档。
+  /// 收起不用它（ζ 钉 1，避免高度负过冲露缝），见 `FushiTreeReveal`。
+  static const FushiSpringSpec treeExpand = FushiSpringSpec(
+    dampingRatio: 0.7,
+    stiffness: 380,
+  );
   static const FushiSpringSpec effectsDefault = FushiSpringSpec(
     dampingRatio: 1,
     stiffness: 1600,

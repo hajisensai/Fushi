@@ -145,11 +145,14 @@ void main() {
       media: false,
       archive: true,
     );
-    // head 的代号是本机全局递增的（不分位置），所以两个位置分开各跑 6 轮。
+    // head 的代号是本机全局递增的（不分位置），所以两个位置分开各跑 6 轮。每轮先有新操作：内容没变的一轮
+    // 不写 head（空 head 会唤醒连着同一位置的全部设备，见 srs_sync2_round.dart）。
     for (int i = 0; i < 6; i++) {
+      await addNote(a, '雨$i');
       await run(sync, a);
     }
     for (int i = 0; i < 6; i++) {
+      await addNote(a, '風$i');
       await run(archive, a);
     }
     expect(await headsOf(sync, a), 3, reason: '本代 + 前两代');

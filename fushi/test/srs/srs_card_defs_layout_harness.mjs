@@ -119,6 +119,47 @@ try {
       await new Promise((r) => setTimeout(r, 50));
       check(applies === 1, 'resize applies after script rerun: ' + applies);
       window.__fushiSrsHostLayout = realApply;
+
+      // 「其他词典」行尾的全部展开 / 收起：有一本没展开就全部展开，再点全部收起；
+      // 点它不收起整个分区，重排后仍按最短列打包。
+      const btn = more.querySelector(':scope > summary > .fushi-srs-more-toggle');
+      if (${page.main}) {
+        check(!!btn, 'expand-all toggle present');
+        check(btn && getComputedStyle(btn).pointerEvents === 'auto', 'toggle clickable');
+        const every = () => groups.every((g) => g.open);
+        const none = () => groups.every((g) => !g.open);
+        const syncState = (all) => btn.getAttribute('aria-expanded') === String(all) &&
+          btn.getAttribute('aria-label') === (all ? 'Collapse all' : 'Expand all');
+        check(syncState(every()), 'toggle state initial ' + btn.getAttribute('aria-label'));
+        const wasAll = every();
+        btn.click();
+        await frame();
+        check(more.open, 'section stays open after toggle');
+        check(wasAll ? none() : every(), 'first click ' + JSON.stringify(groups.map((g) => g.open)));
+        check(syncState(!wasAll), 'toggle state after first click');
+        await new Promise((r) => setTimeout(r, 50));
+        checkPacking('after toggle all');
+        btn.click();
+        await frame();
+        check(wasAll ? every() : none(), 'second click ' + JSON.stringify(groups.map((g) => g.open)));
+        // 逐本开合后按钮状态跟上。
+        if (!wasAll) {
+          groups.forEach((g) => { g.open = true; });
+          await new Promise((r) => setTimeout(r, 50));
+          check(syncState(true), 'toggle follows manual open');
+        }
+      }
+      // 栏宽变了但没有 window resize（排版后纵向滚动条出现 / 消失）：分列卡片的像素宽度要跟着
+      // 重排，否则与通栏主词典右缘差一条滚动条宽。
+      if (${page.cols} > 1) {
+        fc.style.paddingRight = '8px';
+        await frame();
+        await new Promise((r) => setTimeout(r, 50));
+        const right = list.getBoundingClientRect().right;
+        const over = Math.max(...packed.map((g) => g.getBoundingClientRect().right)) - right;
+        check(over < 1, 'cards re-packed after column width change, overflow ' + over);
+        fc.style.paddingRight = '';
+      }
       return fails;
     })()`);
     if (result.length) {

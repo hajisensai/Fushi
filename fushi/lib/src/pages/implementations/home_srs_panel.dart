@@ -25,6 +25,21 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
+/// 首页此刻是否真被看着（首页 dashboard 按 TickerMode 写入：所在 tab 隐藏、或被别的页面盖住时为 false）。
+final StateProvider<bool> homeSrsLiveProvider = StateProvider<bool>(
+  (Ref ref) => true,
+);
+
+/// 首页用的牌组列表：首页看得见时订阅 [srsDeckListProvider]（写操作 / 制卡 / 同步后重读）；看不见时只取当前
+/// 已有的值、不订阅——没人订阅时 [srsDeckListProvider] 不重算，用户在阅读器里制卡、后台同步收数据都不会让
+/// 看不见的首页在 UI isolate 上重扫一遍全部卡片。回到首页重新订阅，脏了就重算一次。
+final Provider<AsyncValue<SrsDeckListData?>> homeSrsDeckListProvider =
+    Provider<AsyncValue<SrsDeckListData?>>(
+      (Ref ref) => ref.watch(homeSrsLiveProvider)
+          ? ref.watch(srsDeckListProvider)
+          : ref.read(srsDeckListProvider),
+    );
+
 /// 复习条该不该出现在首页（纯函数，判据的唯一实现）。
 ///
 /// - 复习模块关着：恒不显示（模块关着时不建任何 SRS 状态，档位也不读）。
@@ -62,7 +77,7 @@ final Provider<bool> homeSrsPanelVisibleProvider = Provider<bool>((Ref ref) {
       mode == HomeDashboardPanelMode.auto && !miningToReview;
   final int? totalCards = needsCount
       ? ref.watch(
-          srsDeckListProvider.select(
+          homeSrsDeckListProvider.select(
             (AsyncValue<SrsDeckListData?> d) => d.valueOrNull?.totalCards,
           ),
         )
@@ -96,7 +111,9 @@ class HomeSrsPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final SrsDeckListData? data = ref.watch(srsDeckListProvider).valueOrNull;
+    final SrsDeckListData? data = ref
+        .watch(homeSrsDeckListProvider)
+        .valueOrNull;
     final bool apple = isGlassDesign(context);
     final bool eink = isEinkTheme(context);
     final BorderRadius radius = apple

@@ -100,7 +100,7 @@ const String kFushiCardBackTemplate = r'''<!--
     {{#Sentence}}
     <section class="fc-sentence-block">
       <div class="fc-sentence-body">
-        <div class="fc-sentence">{{#SentenceFurigana}}{{furigana:SentenceFurigana}}{{/SentenceFurigana}}{{^SentenceFurigana}}{{furigana:Sentence}}{{/SentenceFurigana}}</div>
+        <div class="fc-sentence">{{furigana:Sentence}}</div>
         {{#SentenceTranslation}}<div class="fc-translation" lang="">{{SentenceTranslation}}</div>{{/SentenceTranslation}}
       </div>
       {{#SentenceAudio}}<span class="fc-audio">{{SentenceAudio}}</span>{{/SentenceAudio}}
@@ -1047,7 +1047,7 @@ const String kFushiCardStylingCss = r'''/*
   border-radius: 2px;
 }
 
-/* 例句注音默认悬停 / 点按显示（Lapis 的 "hover"），宿主挂 fushi-srs-sentence-furigana 常显 */
+/* 例句字段自带的注音悬停 / 点按显示（Lapis 的 "hover"） */
 .fc-sentence rt {
   font-size: 0.5em;
   color: var(--fc-fg-muted);
@@ -1056,8 +1056,7 @@ const String kFushiCardStylingCss = r'''/*
 }
 
 .fc-sentence:hover rt,
-.fc-sentence:active rt,
-.fushi-srs-sentence-furigana .fc-sentence rt {
+.fc-sentence:active rt {
   opacity: 1;
 }
 

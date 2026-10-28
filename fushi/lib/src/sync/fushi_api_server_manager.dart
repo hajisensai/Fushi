@@ -8,6 +8,7 @@ import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
 import 'package:fushi/src/sync/extension_font_api.dart';
 import 'package:fushi/src/sync/fushi_api_access_policy.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
+import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
 /// 持有并按需启停 [FushiApiServer]。tokenizer（带读音的分词）注入解耦 FFI。
@@ -36,6 +37,7 @@ class FushiApiServerManager {
     String Function()? extensionTestPageProvider,
     ExtensionFontApi? fontApi,
     SrsExtensionApi? Function()? srsApiProvider,
+    FushiExtensionApiCore? extensionApiCore,
   }) : _lookup = lookupService,
        _mining = miningService,
        _history = historyService,
@@ -56,7 +58,8 @@ class FushiApiServerManager {
        _subtitleRegistryProvider = subtitleRegistryProvider,
        _extensionTestPageProvider = extensionTestPageProvider,
        _fontApi = fontApi,
-       _srsApiProvider = srsApiProvider;
+       _srsApiProvider = srsApiProvider,
+       _extensionApiCore = extensionApiCore;
 
   final FushiRemoteLookupService _lookup;
   final FushiRemoteMiningService? _mining;
@@ -98,6 +101,9 @@ class FushiApiServerManager {
   final ExtensionFontApi? _fontApi;
   // 复习（SRS）扩展端点供给器，透传给 [FushiApiServer]（模块关着时回 null → 404）。
   final SrsExtensionApi? Function()? _srsApiProvider;
+  // 浏览器扩展端点核心（与 app 内浏览器共用同一实例），透传给 [FushiApiServer]；
+  // null 时 server 用上面那批 sink / 供给器自建一个。
+  final FushiExtensionApiCore? _extensionApiCore;
 
   FushiApiServer? _server;
 
@@ -147,6 +153,7 @@ class FushiApiServerManager {
       apiKey: apiKey.isEmpty ? null : apiKey,
       accessPolicy: accessPolicy,
       ankiConnectEndpoint: _ankiConnectEndpoint,
+      extensionApiCore: _extensionApiCore,
     );
     // 先登记再 await 绑端口：绑定是 I/O、会让出事件循环，启动期间（app 冷启动时
     // SRS runtime 恰在这段空档里注入 AnkiConnect 端点）的 setter 必须能推到这台

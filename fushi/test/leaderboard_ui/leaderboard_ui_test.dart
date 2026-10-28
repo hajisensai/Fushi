@@ -255,12 +255,19 @@ void main() {
   );
 
   /// 写一份本机账户文件（= 已开启），并把服务读进内存。真实 IO 必须在 runAsync 里。
+  ///
+  /// 服务也在 runAsync（真实 zone）里构造：它的写队列初值 `Future.value()` 属于构造时
+  /// 的 zone，`refreshSelf` 等经写队列的调用对这个已完成 future 挂 `.then`，回调微任务
+  /// 排在 future 自己的 zone 上。若服务建在 fake zone，`runAsync(service.refreshSelf)`
+  /// 里没人 pump fake zone，微任务永不执行 → 测试挂满 10 分钟超时，残留的 runAsync 又让
+  /// 同文件后续测试全部报「Reentrant call to runAsync()」。
   Future<LeaderboardService> activeService(
     WidgetTester tester, {
     bool blockedElsewhere = false,
   }) async {
-    final LeaderboardService service = buildService();
+    late final LeaderboardService service;
     await tester.runAsync(() async {
+      service = buildService();
       await LeaderboardStore(supportRoot: root, profileId: 1).write(
         LeaderboardLocalAccount(
           recoveryCode: LeaderboardIdentity.generate().toRecoveryCode(),
@@ -315,6 +322,14 @@ void main() {
       await tester.pump(const Duration(milliseconds: 20));
     }
   }
+
+  /// 本机资料缓存已落盘（`writeSelf` 的临时文件写完并 rename）。登录 / `refreshSelf`
+  /// 都在写完缓存后才通知 UI；不等它，界面还没刷新，Windows 上 tearDown 删临时目录
+  /// 也会撞上仍开着的文件句柄。
+  bool selfCached() => LeaderboardStore(
+    supportRoot: root,
+    profileId: 1,
+  ).selfCacheFile.existsSync();
 
   Future<void> settle(WidgetTester tester) async {
     for (int i = 0; i < 10; i++) {
@@ -1247,7 +1262,10 @@ void main() {
     expect(submit.onPressed, isNotNull, reason: '登录不强制勾同意');
     await tester.tap(byKey('leaderboard-signin-submit'));
     // 账户先落盘再激活（`_adopt`）：状态翻成 active 时文件已写完。
-    await settleIo(tester, () => service.status == LeaderboardStatus.active);
+    await settleIo(
+      tester,
+      () => service.status == LeaderboardStatus.active && selfCached(),
+    );
     expect(service.status, LeaderboardStatus.active);
     final LeaderboardLocalAccount? saved = await tester
         .runAsync<LeaderboardLocalAccount?>(
@@ -1276,7 +1294,10 @@ void main() {
     await tester.enterText(editable('leaderboard-signin-nickname'), 'Neko');
     await tester.pump();
     await tester.tap(byKey('leaderboard-signin-submit'));
-    await settleIo(tester, () => service.status == LeaderboardStatus.active);
+    await settleIo(
+      tester,
+      () => service.status == LeaderboardStatus.active && selfCached(),
+    );
     final LeaderboardLocalAccount? saved = await tester
         .runAsync<LeaderboardLocalAccount?>(
           () => LeaderboardStore(supportRoot: root, profileId: 1).read(),
@@ -1305,7 +1326,10 @@ void main() {
     await tester.pump();
     await tester.tap(byKey('leaderboard-signin-submit'));
     // 账户先落盘再激活（`_adopt`）：状态翻成 active 时文件已写完。
-    await settleIo(tester, () => service.status == LeaderboardStatus.active);
+    await settleIo(
+      tester,
+      () => service.status == LeaderboardStatus.active && selfCached(),
+    );
     final LeaderboardLocalAccount? saved = await tester
         .runAsync<LeaderboardLocalAccount?>(
           () => LeaderboardStore(supportRoot: root, profileId: 1).read(),
@@ -1428,7 +1452,7 @@ void main() {
     tallView(tester);
     final LeaderboardService service = await activeService(tester);
     await tester.pumpWidget(wrap(service, const LeaderboardAccountPage()));
-    await settle(tester);
+    await settleIo(tester, selfCached);
 
     await tester.scrollUntilVisible(
       byKey('leaderboard-device-KeyOld0000000002'),
@@ -1460,6 +1484,12 @@ void main() {
       isEmpty,
       reason: '先确认',
     );
+    // 解绑后页面再 refreshSelf 一次：资料缓存写完才通知，等到这次通知再收尾，
+    // 免得 tearDown 删临时目录时撞上仍开着的缓存文件（Windows）。
+    int notified = 0;
+    void onNotify() => notified++;
+    service.addListener(onNotify);
+    addTearDown(() => service.removeListener(onNotify));
     await tester.tap(
       find
           .descendant(
@@ -1468,7 +1498,8 @@ void main() {
           )
           .last,
     );
-    await settle(tester);
+    await settleIo(tester, () => notified > 0);
+    expect(notified, greaterThan(0), reason: '解绑后刷新了自己（资料缓存已落盘）');
     expect(
       server.requests
           .where((http.Request r) => r.method == 'DELETE')
@@ -1607,7 +1638,7 @@ void main() {
         ),
       ),
     );
-    await settle(tester);
+    await settleIo(tester, selfCached);
     final Finder back = byKey('leaderboard-back');
     expect(back, findsOneWidget);
     final Finder title = find.descendant(

@@ -560,6 +560,23 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   Future<List<AnkiCardInfo>> listNewCards(String deckName) async =>
       throw UnsupportedError('This Anki backend cannot list deck cards.');
 
+  /// [deckName] 里此刻全部新卡的 id（写回前重校验「还是不是新卡」用）。
+  ///
+  /// 默认取 [listNewCards] 的 id；读字段代价高的后端（Fushi 复习要物化笔记）覆盖成
+  /// 只读卡片 id 的轻查询——写回前的重校验不需要字段，不该再把整个牌组读一遍。
+  Future<Set<int>> newCardIdsIn(String deckName) async => <int>{
+        for (final AnkiCardInfo c in await listNewCards(deckName)) c.cardId,
+      };
+
+  /// 给已按目标出卡顺序排好的 [ordered] 分配新位置（与 [ordered] 同序、严格递增）。
+  ///
+  /// 默认 = 从 1 起连续编号，与 Anki 自己的「重新定位」一致（AnkiConnect 走这条）。
+  /// 后端可以覆盖成「只移动必须移动的卡」的稀疏方案（Fushi 复习：位置只是排序键、
+  /// 每改一张卡就是一条要同步的修改记录）。
+  List<int> assignNewCardPositions(List<AnkiCardInfo> ordered) => <int>[
+        for (int i = 0; i < ordered.length; i++) i + 1,
+      ];
+
   /// 批量写回新卡位置。默认实现 = 不支持。
   Future<AnkiCardDueWriteResult> setNewCardPositions(
     List<AnkiCardDueUpdate> updates,

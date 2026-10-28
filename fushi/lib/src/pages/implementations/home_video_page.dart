@@ -7,6 +7,8 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
+import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -365,7 +367,8 @@ class HomeVideoPage extends BaseModuleTabPage {
   BaseModuleTabPageState<HomeVideoPage> createState() => _HomeVideoPageState();
 }
 
-class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
+class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
+    with LibraryReorderHost<HomeVideoPage> {
   Future<List<VideoBookRow>>? _future;
 
   /// 本地封面 / 海报 / 附加图的「文件在不在」异步记忆表（BUG-3756）：这些路径常落在
@@ -544,8 +547,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   bool _backfillingCovers = false;
 
   /// 排序交互重设计层次 A：当前排序方式（偏好 `video_sort_mode` 持久化，默认
-  /// 最近观看，用户拍板）。旧 `ShelfEntries.sortOrder` 手动权重已废弃不再读取。
+  /// 最近观看，用户拍板）。旧 `ShelfEntries.sortOrder` 手动权重已废弃不再读取；
+  /// 「手动」的顺序存在偏好 `library_manual_order::video`（系列墙与「全部视频」
+  /// 共用一份名次表：合集是 `c<id>`、视频是 bookUid）。
   ShelfSortMode _sortMode = ShelfSortMode.recent;
+
+  /// 「手动」排序的名次表（单元 tieKey → 下标），见 [compareShelfSortKeys]。
+  Map<String, int> _manualRanks = <String, int>{};
+
+  /// 排序模式（条目菜单「排序」进入，[LibraryReorderHost]）：系列墙 / 「全部视频」
+  /// 网格换成拖排网格，触屏按住即拖，底部「完成」退出。
+  bool _reordering = false;
+
+  /// 本帧当前分区按排序排好的单元 tieKey：进排序模式时用它给手动序播种。
+  List<String> _sortedUnitKeys = const <String>[];
+
+  static const String _manualOrderLibrary = 'video';
 
   /// P5-A：视频库搜索词（原文，匹配时才归一化）。**刻意不持久化**——下次进
   /// 视频库还挂着上次的搜索词只会让人以为库空了（与书架/游戏库页同一决定）。
@@ -1246,6 +1263,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final ShelfSortMode sortMode = ShelfSortMode.fromName(
       appModel.prefsRepo.videoSortModeName,
     );
+    final Map<String, int> manualRanks = decodeShelfManualOrder(
+      appModel.prefsRepo.libraryManualOrder(_manualOrderLibrary),
+    );
     // 十三个全表查询互不依赖：一次全部发出去，让 Drift 的后台执行器流水线化，
     // 而不是每个都等上一个的往返回来再发下一个（合集行要等最后一个落地才能画）。
     // 先 Future.wait 挂上监听，某个查询失败时其余错误不会成为无人接的未处理异常。
@@ -1390,6 +1410,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     setState(() {
       _libraryMapsAppliedSequence = requestSequence;
       _sortMode = sortMode;
+      _manualRanks = manualRanks;
       _memberSortIndex = memberSortIndex;
       _collectionsById = <int, MediaCollectionRow>{
         for (final MediaCollectionRow c in collections) c.id: c,
@@ -1935,8 +1956,99 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   // 选择集与 picker 比书架简单一层（无 epub/srt 双类分支）。
 
   void _toggleSelectionMode() {
-    setState(_selection.toggleMode);
+    setState(() {
+      _reordering = false;
+      _selection.toggleMode();
+    });
   }
+
+  /// 只有系列墙与「全部视频」有可排的网格；多选中不提供。
+  @override
+  VoidCallback? get libraryReorderEntry =>
+      !_selectionMode &&
+          (widget.section == VideoLibrarySection.series ||
+              widget.section == VideoLibrarySection.allVideos)
+      ? _startReorder
+      : null;
+
+  /// 进入排序模式：排序方式切到「手动」；之前不是手动的，先把当前显示顺序存成
+  /// 手动序，拖动从用户眼前的顺序开始。
+  void _startReorder() {
+    if (!mounted) return;
+    if (_sortMode != ShelfSortMode.manual) {
+      _setManualOrder(_sortedUnitKeys);
+    }
+    setState(() {
+      _reordering = true;
+      _sortMode = ShelfSortMode.manual;
+    });
+    unawaited(
+      ref.read(appProvider).prefsRepo.setVideoSortModeName(_sortMode.name),
+    );
+  }
+
+  void _endReorder() => setState(() => _reordering = false);
+
+  void _setManualOrder(List<String> order) {
+    final String encoded = encodeShelfManualOrder(order);
+    _manualRanks = decodeShelfManualOrder(encoded);
+    unawaited(
+      ref
+          .read(appProvider)
+          .prefsRepo
+          .setLibraryManualOrder(_manualOrderLibrary, encoded),
+    );
+  }
+
+  /// 排序模式里的一次拖动：[visible] 是网格上的单元（显示顺序）。没有名次的单元
+  /// 显示在最前（[compareShelfSortKeys]），按显示顺序补进完整手动序再合并。
+  void _onVideoReorder(List<String> visible, int from, int to) {
+    final List<String> all = <String>[
+      for (final String key in visible)
+        if (!_manualRanks.containsKey(key)) key,
+      ..._manualRanks.keys,
+    ];
+    setState(
+      () => _setManualOrder(
+        moveInShelfManualOrder(all: all, visible: visible, from: from, to: to),
+      ),
+    );
+  }
+
+  /// 排序模式下的拖排网格（系列墙 / 「全部视频」共用）：与常态网格同列数、同
+  /// 间距、同格子比例，卡片包 [IgnorePointer]（手势归网格）。
+  List<Widget> _buildVideoReorderSlivers({
+    required List<String> unitKeys,
+    required List<_VideoWallEntry> cells,
+    required VideoCardOrientation orientation,
+    required double childAspectRatio,
+    required EdgeInsetsGeometry padding,
+    required int columns,
+  }) => <Widget>[
+    SliverPadding(
+      padding: padding,
+      sliver: SliverToBoxAdapter(
+        child: FushiReorderableGrid(
+          key: const ValueKey<String>('home_video_reorder_grid'),
+          itemCount: cells.length,
+          crossAxisCount: columns,
+          childAspectRatio: childAspectRatio,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          feedbackBorderRadius: FushiBorderRadius.card,
+          reordering: true,
+          keyForIndex: (int i) => ValueKey<String>(unitKeys[i]),
+          onReorder: (int from, int to) => _onVideoReorder(unitKeys, from, to),
+          itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
+            index: i,
+            child: IgnorePointer(child: cells[i].build(orientation)),
+          ),
+        ),
+      ),
+    ),
+    // 底部浮动「完成」栏不压住末行。
+    const SliverToBoxAdapter(child: SizedBox(height: 96)),
+  ];
 
   void _exitSelectionMode() {
     setState(_selection.exit);
@@ -4716,8 +4828,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 分区可见时拦（HBK-AUDIT-017）：切到发现 / 媒体服务器等分区后，背后保活的
     // 多选不能吃掉返回键。
     return SectionPopScope(
-      intercepting: _selectionMode,
-      onIntercept: _exitSelectionMode,
+      intercepting: _selectionMode || _reordering,
+      onIntercept: _reordering ? _endReorder : _exitSelectionMode,
       child: FushiFileDropTarget(
         debugLabel: 'home-video',
         onDrop: _handleVideoDrop,
@@ -4807,6 +4919,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 onDragEnd: () => setState(_selection.endRangeDrag),
                 child: _buildVideoLibraryBody(),
               ),
+            ),
+          ),
+          // 排序模式的「完成」栏：与批量栏同一种弹簧进出。
+          FushiSpringReveal(
+            visible: _reordering,
+            edge: VerticalDirection.down,
+            maintainState: false,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Center(child: LibraryReorderBar(onDone: _endReorder)),
             ),
           ),
           // 批量栏是多选态的底部浮动工具栏：弹簧从底边浮起 / 沉下。
@@ -6759,8 +6881,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 标签过滤隐藏的合集：整卡连同成员一并跳过（成员随合集隐藏，符合按合集标签显隐语义）。
     }
     loose.sort(
-      (_VideoLooseCard a, _VideoLooseCard b) =>
-          compareShelfSortKeys(a.sortKey, b.sortKey, _sortMode),
+      (_VideoLooseCard a, _VideoLooseCard b) => compareShelfSortKeys(
+        a.sortKey,
+        b.sortKey,
+        _sortMode,
+        manualRanks: _manualRanks,
+      ),
     );
     // Shift 区间选 / 长按扫选的顺序真值：取排序**之后**的散卡序，与用户屏幕上的
     // 排列逐项一致（排序 / 搜索 / 标签筛选都已作用其上）。顺序一变，控制器自动
@@ -6772,18 +6898,60 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       ],
       collections: _visibleCollectionIds,
     );
-    final List<_VideoWallEntry> cells = <_VideoWallEntry>[
-      for (final CollectionGroup<_VideoSlot> group in collectionGroups)
-        _VideoWallEntry(
-          build: (VideoCardOrientation orientation) =>
-              _buildCollectionCoverCard(group, orientation: orientation),
+    // 「手动」排序下合集卡与散卡按用户拖出来的顺序混排；其余排序方式合集在前、
+    // 散卡在后。
+    final List<({ShelfSortKey sortKey, _VideoWallEntry entry})> units =
+        <({ShelfSortKey sortKey, _VideoWallEntry entry})>[
+          for (final CollectionGroup<_VideoSlot> group in collectionGroups)
+            (
+              sortKey: _groupSortKey(group),
+              entry: _VideoWallEntry(
+                build: (VideoCardOrientation orientation) =>
+                    _buildCollectionCoverCard(group, orientation: orientation),
+              ),
+            ),
+          for (final _VideoLooseCard card in loose)
+            (sortKey: card.sortKey, entry: card.entry),
+        ];
+    if (_sortMode == ShelfSortMode.manual) {
+      units.sort(
+        (
+          ({ShelfSortKey sortKey, _VideoWallEntry entry}) a,
+          ({ShelfSortKey sortKey, _VideoWallEntry entry}) b,
+        ) => compareShelfSortKeys(
+          a.sortKey,
+          b.sortKey,
+          _sortMode,
+          manualRanks: _manualRanks,
         ),
-      for (final _VideoLooseCard card in loose) card.entry,
+      );
+    }
+    final List<String> unitKeys = <String>[
+      for (final ({ShelfSortKey sortKey, _VideoWallEntry entry}) u in units)
+        u.sortKey.tieKey,
+    ];
+    _sortedUnitKeys = unitKeys;
+    final List<_VideoWallEntry> cells = <_VideoWallEntry>[
+      for (final ({ShelfSortKey sortKey, _VideoWallEntry entry}) u in units)
+        u.entry,
     ];
     if (cells.isEmpty) {
       return <Widget>[
         SliverFillRemaining(hasScrollBody: false, child: _buildFilteredEmpty()),
       ];
+    }
+    if (_reordering) {
+      return _buildVideoReorderSlivers(
+        unitKeys: unitKeys,
+        cells: cells,
+        orientation: VideoCardOrientation.portrait,
+        childAspectRatio:
+            cardLayout.cardWidth /
+            (videoCoverHeightForPortraitWidth(cardLayout.cardWidth) +
+                _videoCardTextBlock(context)),
+        padding: EdgeInsets.all(tokens.spacing.card),
+        columns: cardLayout.columns,
+      );
     }
     return <Widget>[
       _buildVideoWallSliver(
@@ -6990,9 +7158,37 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<VideoBookRow> ordered = books.toList()
       ..sort(
-        (VideoBookRow a, VideoBookRow b) =>
-            compareShelfSortKeys(_videoSortKey(a), _videoSortKey(b), _sortMode),
+        (VideoBookRow a, VideoBookRow b) => compareShelfSortKeys(
+          _videoSortKey(a),
+          _videoSortKey(b),
+          _sortMode,
+          manualRanks: _manualRanks,
+        ),
       );
+    _sortedUnitKeys = <String>[
+      for (final VideoBookRow book in ordered) book.bookUid,
+    ];
+    // 排序模式：只排本地视频（远端占位恒在本地之后、不参与手动序），列表布局
+    // 也临时换成网格来拖。
+    if (_reordering) {
+      return _buildVideoReorderSlivers(
+        unitKeys: _sortedUnitKeys,
+        cells: <_VideoWallEntry>[
+          for (final VideoBookRow book in ordered)
+            _VideoWallEntry(
+              build: (_) =>
+                  _buildCard(book, orientation: VideoCardOrientation.landscape),
+            ),
+        ],
+        orientation: VideoCardOrientation.landscape,
+        childAspectRatio:
+            cardLayout.cardWidth /
+            (cardLayout.cardWidth / kVideoLandscapeCardAspect +
+                _videoCardTextBlock(context)),
+        padding: EdgeInsets.all(tokens.spacing.card),
+        columns: cardLayout.columns,
+      );
+    }
     _visibleCollectionIds = const <int>[];
     // 本地在前、远端占位在后，与下面列表 / 网格两种布局的渲染序一致。
     _syncVisibleOrder(
@@ -7416,7 +7612,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         );
     groups.sort(
       (CollectionGroup<_VideoSlot> a, CollectionGroup<_VideoSlot> b) =>
-          compareShelfSortKeys(_groupSortKey(a), _groupSortKey(b), _sortMode),
+          compareShelfSortKeys(
+            _groupSortKey(a),
+            _groupSortKey(b),
+            _sortMode,
+            manualRanks: _manualRanks,
+          ),
     );
     return groups;
   }
@@ -9082,6 +9283,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ShelfSortMode.recent => t.sort_recent_watched,
     ShelfSortMode.title => t.sort_title,
     ShelfSortMode.imported => t.sort_imported,
+    ShelfSortMode.manual => t.sort_manual,
   };
 
   void _toggleFilter(int tagId) {

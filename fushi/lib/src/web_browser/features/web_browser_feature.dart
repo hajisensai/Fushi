@@ -61,6 +61,11 @@ abstract class WebBrowserFeature {
   /// 变化经 [actionsChanged] 通知。用设计系统的横幅组件（`FushiInlineNotice`）。
   Widget? statusBar(BuildContext context) => null;
 
+  /// 功能给前台标签页 [tab] 配的侧栏（例如网页视频的字幕列表）：宽窗口排在网页右侧，
+  /// 窄窗口作为底部抽屉盖在网页下半部，出现 / 消失带动画。null = 没有。变化经
+  /// [actionsChanged] 通知。
+  Widget? sidePanel(BuildContext context, WebBrowserTab tab) => null;
+
   /// 浏览页销毁。
   void dispose() {}
 }

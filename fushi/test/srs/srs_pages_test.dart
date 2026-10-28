@@ -264,6 +264,10 @@ Future<String> _addLapis(
   ),
 ))!;
 
+/// 子牌组收起要等收起弹簧落定（FushiTreeReveal：ζ 钉 1，Apple 的 spatialDefault 刚度
+/// 157.91 落到 0.1% 约 0.73 s），默认 12 轮 × 60 ms 不够，收起断言多等一段。
+const int _kTreeSettleRounds = 20;
+
 /// 让真异步（drift）与帧都推进：DB 读在 runAsync 里跑一小段真实时间。
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
   for (int i = 0; i < rounds; i++) {
@@ -609,7 +613,7 @@ void main() {
       );
       final int revisionBefore = container.read(srsRevisionProvider);
       await tester.tap(toggle);
-      await _settle(tester);
+      await _settle(tester, rounds: _kTreeSettleRounds);
       expect(childHeight(), 0, reason: '收起后后代消失');
       expect(
         await tester.runAsync(
@@ -632,7 +636,7 @@ void main() {
       expect(childHeight(), greaterThan(0), reason: '重读的数据晚于本地写入：撤掉覆盖');
       await tester.runAsync(() => store.setDeckCollapsed(parent, true));
       container.read(srsRevisionProvider.notifier).state++;
-      await _settle(tester);
+      await _settle(tester, rounds: _kTreeSettleRounds);
       expect(childHeight(), 0);
 
       await tester.tap(toggle);
@@ -658,7 +662,7 @@ void main() {
       await tester.pump();
       expect(rowFocus.hasPrimaryFocus, isTrue);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
-      await _settle(tester);
+      await _settle(tester, rounds: _kTreeSettleRounds);
       expect(childHeight(), 0);
       expect(
         await tester.runAsync(
@@ -684,7 +688,7 @@ void main() {
       expect(leading, findsOneWidget);
       final Rect leadingRect = tester.getRect(leading);
       await tester.tapAt(Offset(leadingRect.right - 4, leadingRect.center.dy));
-      await _settle(tester);
+      await _settle(tester, rounds: _kTreeSettleRounds);
       expect(childHeight(), 0, reason: '点行首图标收起后代');
       expect(find.byType(SrsReviewPage), findsNothing, reason: '没有进入复习');
       // 行首左侧留白（缩进左边、贴着行边）同样算折叠区。

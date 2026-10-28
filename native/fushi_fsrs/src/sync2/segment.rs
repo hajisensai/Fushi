@@ -465,6 +465,17 @@ impl Head {
         serde_json::to_vec(&self.unsigned_json()).expect("head json")
     }
 
+    /// 内容签名：除代号与时刻外的全部字段（发布了什么、ack 到哪、摘要、名字）。两个 head 的内容签名相同 =
+    /// 对别的设备而言没有任何新信息，不必再发一次（见 `sync2_head` 的「没变就不写」）。
+    pub fn content_sig(&self) -> String {
+        let mut v = self.unsigned_json();
+        if let Some(m) = v.as_object_mut() {
+            m.remove("gen");
+            m.remove("at");
+        }
+        hex(blake3::hash(&serde_json::to_vec(&v).expect("head json")).as_bytes())
+    }
+
     pub fn encode(&self, signer: &DeviceKey) -> Vec<u8> {
         let sig = signer.sign(&self.signed_bytes());
         let mut v = self.unsigned_json();

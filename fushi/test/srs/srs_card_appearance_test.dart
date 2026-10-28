@@ -75,7 +75,7 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   group('设置 → 注入', () {
-    test('默认外观：配色变量齐全、倍率为 1、只有统一词典样式类', () {
+    test('默认外观：配色变量齐全、倍率为 1、统一词典样式 + 全部释义默认展开', () {
       const SrsCardAppearance a = SrsCardAppearance();
       final String css = _css(a);
       for (final String v in <String>[
@@ -98,6 +98,7 @@ void main() {
       expect(css, isNot(contains('@font-face')));
       expect(srsCardAppearanceClasses(a).split(' ').toSet(), <String>{
         'fushi-srs-dict-unified',
+        'fushi-srs-gloss-expanded',
         'fushi-srs-freq-aggregate',
       });
     });
@@ -195,14 +196,12 @@ void main() {
           glossaryExpanded: true,
           frontReading: true,
           frontFrequency: true,
-          sentenceFurigana: true,
           density: SrsCardDensity.comfortable,
         ),
       );
       expect(c.split(' ').toSet(), <String>{
         'fushi-srs-front-reading',
         'fushi-srs-front-freq',
-        'fushi-srs-sentence-furigana',
         'fushi-srs-gloss-expanded',
         'fushi-srs-hide-picture',
         'fushi-srs-hide-translation',
@@ -298,36 +297,38 @@ void main() {
   });
 
   group('外观只作用于 Fushi 卡片', () {
-    SrsCardFaceDocument docFor({required bool fushiCard}) =>
-        srsCardFaceDocumentFor(
-          SrsCardFace(
-            cardId: 'c',
-            showingAnswer: true,
-            bodyHtml: '<b>x</b>',
-            css: '.card{}',
-            languageCode: 'ja',
-            onBridgeKey: (_) {},
-            fushiCard: fushiCard,
-          ),
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-          ),
-          appearance: const SrsCardAppearance(
-            colorSource: SrsCardColorSource.custom,
-            customAccent: 0xFFB3261E,
-            showPicture: false,
-            // 设计系统样式覆盖另有专门测试（srs_card_design_skin_test.dart）；这里只看
-            // Fushi 卡片专属的外观不外漏。
-            designSkin: false,
-          ),
-          labels: _labels,
-          mediaUrlPrefix: 'https://srs.local/media/',
-          themedScrollbar: false,
-          fontUrl: (String path) => path,
-          fonts: const <Map<String, dynamic>>[
-            <String, dynamic>{'name': 'Klee One'},
-          ],
-        );
+    SrsCardFaceDocument docFor({
+      required bool fushiCard,
+      SrsCardColorSource colorSource = SrsCardColorSource.custom,
+    }) => srsCardFaceDocumentFor(
+      SrsCardFace(
+        cardId: 'c',
+        showingAnswer: true,
+        bodyHtml: '<b>x</b>',
+        css: '.card{}',
+        languageCode: 'ja',
+        onBridgeKey: (_) {},
+        fushiCard: fushiCard,
+      ),
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+      ),
+      appearance: SrsCardAppearance(
+        colorSource: colorSource,
+        customAccent: 0xFFB3261E,
+        showPicture: false,
+        // 设计系统样式覆盖另有专门测试（srs_card_design_skin_test.dart）；这里只看
+        // Fushi 卡片专属的外观不外漏。
+        designSkin: false,
+      ),
+      labels: _labels,
+      mediaUrlPrefix: 'https://srs.local/media/',
+      themedScrollbar: false,
+      fontUrl: (String path) => path,
+      fonts: const <Map<String, dynamic>>[
+        <String, dynamic>{'name': 'Klee One'},
+      ],
+    );
 
     test('Fushi 卡片：变量 / 类名 / 字体 / 自定义配色都注入', () {
       final SrsCardFaceDocument d = docFor(fushiCard: true);
@@ -353,7 +354,7 @@ void main() {
       );
     });
 
-    test('底色：Fushi 卡片由宿主铺外观配色，其它类型宿主不铺、留给卡片 CSS', () {
+    test('底色：只有 Fushi 卡片的自定义配色由宿主铺，其它情况宿主不铺、透出复习页背景', () {
       String hex(Color c) =>
           '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
       final ColorScheme custom = ColorScheme.fromSeed(
@@ -367,6 +368,11 @@ void main() {
       // 再垫一层主题 surface。
       expect(
         docFor(fushiCard: false).themeCss,
+        contains('html,body{background:transparent;'),
+      );
+      // Fushi 卡跟随 app 主题配色：与页面背景同色，宿主也不铺，透出路由层的形状背景。
+      expect(
+        docFor(fushiCard: true, colorSource: SrsCardColorSource.app).themeCss,
         contains('html,body{background:transparent;'),
       );
     });
@@ -563,7 +569,8 @@ void main() {
           final String layout = size.width >= 840 ? 'wide' : 'narrow';
           expect(
             faceText(),
-            'face:$layout:back:fushi-srs-dict-unified fushi-srs-freq-aggregate',
+            'face:$layout:back:fushi-srs-gloss-expanded '
+            'fushi-srs-dict-unified fushi-srs-freq-aggregate',
           );
           expect(
             find.byKey(const ValueKey<String>('srs-card-preview-frame')),
@@ -610,7 +617,10 @@ void main() {
           tester.widget<AdaptiveSettingsSwitchRow>(unify).onChanged!(false);
           await tester.pump(const Duration(milliseconds: 300));
           expect(app.value.dictUnified, isFalse);
-          expect(faceText(), 'face:$layout:back:fushi-srs-freq-aggregate');
+          expect(
+            faceText(),
+            'face:$layout:back:fushi-srs-gloss-expanded fushi-srs-freq-aggregate',
+          );
 
           // 预览与复习页一样走 Fushi 卡片的混合渲染：上面的卡面是释义区 WebView。
           expect(

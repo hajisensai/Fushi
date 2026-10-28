@@ -1077,6 +1077,7 @@ class FushiSyncServer {
         return _reportClientWrite(
           reqPath,
           await _serializeDavWrite(fsPath, () => _handlePut(request, fsPath)),
+          published: true,
         );
       case 'MKCOL':
         return _serializeDavWrite(fsPath, () => _handleMkcol(fsPath));
@@ -1100,9 +1101,16 @@ class FushiSyncServer {
     }
   }
 
-  /// 写成功（2xx）才回调 [onClientWrite]；回调异常不影响响应。
-  shelf.Response _reportClientWrite(String reqPath, shelf.Response response) {
-    if (response.statusCode >= 200 &&
+  /// 写成功（2xx）才回调 [onClientWrite]；回调异常不影响响应。[published] = 这次写带来了新内容（PUT）：
+  /// 只有它推进复习同步的长轮询令牌。删旧 head（客户端每发一个新 head 就清两代前的）没有任何新数据，
+  /// 以前也推进令牌，等于每轮多唤醒一次全部设备。
+  shelf.Response _reportClientWrite(
+    String reqPath,
+    shelf.Response response, {
+    bool published = false,
+  }) {
+    if (published &&
+        response.statusCode >= 200 &&
         response.statusCode < 300 &&
         // 复习同步的命名空间（srs/sync2/srs_location_store.dart kSrsSync2Namespace）下的 head：段先于 head
         // 写，head 落地才说明这一轮的段齐了，只在这时唤醒长轮询。

@@ -68,17 +68,17 @@ class AnkiRepositionSnapshot {
   final List<AnkiCardDueUpdate> positions;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'deckName': deckName,
-        'createdAt': createdAt.toUtc().toIso8601String(),
-        'positions':
-            positions.map((AnkiCardDueUpdate u) => u.toJson()).toList(),
-      };
+    'deckName': deckName,
+    'createdAt': createdAt.toUtc().toIso8601String(),
+    'positions': positions.map((AnkiCardDueUpdate u) => u.toJson()).toList(),
+  };
 
   static AnkiRepositionSnapshot? fromJson(File file, Object? raw) {
     if (raw is! Map) return null;
     final Object? deck = raw['deckName'];
-    final DateTime? createdAt =
-        DateTime.tryParse(raw['createdAt']?.toString() ?? '');
+    final DateTime? createdAt = DateTime.tryParse(
+      raw['createdAt']?.toString() ?? '',
+    );
     final Object? rawPositions = raw['positions'];
     if (deck is! String || createdAt == null || rawPositions is! List) {
       return null;
@@ -117,6 +117,12 @@ class AnkiRepositionCancelled implements Exception {
   const AnkiRepositionCancelled();
 }
 
+/// 生产用的词典集合签名：装载的释义词典目录（按装载顺序）。换了词典，缓存的词频序就作废。
+String defaultAnkiFrequencySignature() {
+  if (!FushiDicts.isInitialized || FushiDicts.hasPendingDicts) return '';
+  return FushiDicts.instance.termDictionaryPaths.join('\n');
+}
+
 /// 生产用的引擎查询：引擎没装载时返回空（当作没有词频，而不是崩）。
 List<FushiTermResult> defaultAnkiFrequencyLookup(String expression) {
   if (!FushiDicts.isInitialized) return const <FushiTermResult>[];
@@ -127,11 +133,14 @@ class AnkiDeckRepositionRunner {
   AnkiDeckRepositionRunner(
     this._repository, {
     AnkiFrequencyLookup lookup = defaultAnkiFrequencyLookup,
+    String Function() frequencySignature = defaultAnkiFrequencySignature,
     Future<Directory> Function()? snapshotDirectory,
     String snapshotFolder = kAnkiSnapshotFolder,
-  })  : _lookup = lookup,
-        _snapshotDirectory = snapshotDirectory ??
-            (() => _defaultSnapshotDirectory(snapshotFolder));
+  }) : _lookup = lookup,
+       _frequencySignature = frequencySignature,
+       _snapshotDirectory =
+           snapshotDirectory ??
+           (() => _defaultSnapshotDirectory(snapshotFolder));
 
   /// 写 Anki 卡组的重排快照的目录名（`<supportRoot>/backups/<名字>/`）。
   static const String kAnkiSnapshotFolder = 'anki_reposition';
@@ -142,11 +151,20 @@ class AnkiDeckRepositionRunner {
 
   final BaseAnkiRepository _repository;
   final AnkiFrequencyLookup _lookup;
+  final String Function() _frequencySignature;
   final Future<Directory> Function() _snapshotDirectory;
 
-  /// 每查这么多张卡让出一次事件循环：FFI 查询是同步的，不让出进度条不会动、
-  /// 取消按钮也点不到。
+  /// 每处理这么多张卡报一次进度。
   static const int kYieldEvery = 32;
+
+  /// 连续算 rank 最多占用 UI isolate 这么久就让出一次事件循环：词典查询是同步 FFI，一次可达毫秒级，
+  /// 按张数让出（以前每 32 张）一帧里可能连查几十次，大牌组自动重排时界面白屏无响应。
+  static const Duration kYieldBudget = Duration(milliseconds: 8);
+
+  /// 词典来源的 rank 缓存：(词形, 读音) → rank。词典集合（[_frequencySignature]）与选项不变时 rank 是确定的，
+  /// 制卡后的自动重排只需给新卡查词典，不必每次把整组几千张卡重查一遍。
+  final Map<String, int?> _dictionaryRanks = <String, int?>{};
+  String? _dictionaryRanksKey;
 
   bool get isSupported => _repository.supportsDeckReposition;
 
@@ -179,6 +197,18 @@ class AnkiDeckRepositionRunner {
       return byDue != 0 ? byDue : a.cardId.compareTo(b.cardId);
     });
 
+    if (options.source == AnkiRepositionSource.dictionaries) {
+      final String key = <Object?>[
+        _frequencySignature(),
+        (options.dictionaries.toList()..sort()).join('\u0001'),
+        options.aggregate.name,
+      ].join('\u0000');
+      if (key != _dictionaryRanksKey) {
+        _dictionaryRanks.clear();
+        _dictionaryRanksKey = key;
+      }
+    }
+    final Stopwatch slice = Stopwatch()..start();
     final Map<int, AnkiRepositionCard> byNote = <int, AnkiRepositionCard>{};
     final Map<String, AnkiNoteFieldRoles> rolesByModel =
         <String, AnkiNoteFieldRoles>{};
@@ -187,11 +217,13 @@ class AnkiDeckRepositionRunner {
     for (final AnkiCardInfo card in cards) {
       final AnkiRepositionCard? cached = byNote[card.noteId];
       if (cached != null) {
-        ranked.add(AnkiRepositionCard(
-          card: card,
-          expression: cached.expression,
-          rank: cached.rank,
-        ));
+        ranked.add(
+          AnkiRepositionCard(
+            card: card,
+            expression: cached.expression,
+            rank: cached.rank,
+          ),
+        );
       } else {
         final AnkiNoteFieldRoles roles = rolesByModel.putIfAbsent(
           card.modelName,
@@ -210,24 +242,38 @@ class AnkiDeckRepositionRunner {
         ranked.add(entry);
       }
       done++;
-      if (done % kYieldEvery == 0) {
-        onProgress?.call(AnkiRepositionProgress(
-          stage: AnkiRepositionStage.rank,
-          done: done,
-          total: cards.length,
-        ));
+      final bool checkpoint = done % kYieldEvery == 0;
+      if (checkpoint) {
+        onProgress?.call(
+          AnkiRepositionProgress(
+            stage: AnkiRepositionStage.rank,
+            done: done,
+            total: cards.length,
+          ),
+        );
+      }
+      // 进度点也让出一次：进度条要能画出来、取消按钮要能点到（同步查词再快也一样）。
+      if (checkpoint || slice.elapsed >= kYieldBudget) {
         await Future<void>.delayed(Duration.zero);
+        slice.reset();
         if (shouldCancel?.call() ?? false) {
           throw const AnkiRepositionCancelled();
         }
       }
     }
-    onProgress?.call(AnkiRepositionProgress(
-      stage: AnkiRepositionStage.rank,
-      done: cards.length,
-      total: cards.length,
-    ));
-    return planCardPositions(deckName, ranked, rareFirst: options.rareFirst);
+    onProgress?.call(
+      AnkiRepositionProgress(
+        stage: AnkiRepositionStage.rank,
+        done: cards.length,
+        total: cards.length,
+      ),
+    );
+    return planCardPositions(
+      deckName,
+      ranked,
+      rareFirst: options.rareFirst,
+      assignPositions: _repository.assignNewCardPositions,
+    );
   }
 
   int? _rankFor(
@@ -241,19 +287,32 @@ class AnkiDeckRepositionRunner {
         if (name == null) return null;
         return parseFieldRank(card.fields[name] ?? '');
       case AnkiRepositionSource.dictionaries:
-        return dictionaryRankFor(
-          expression: _plain(card.fields, roles.expression),
-          reading: _plain(card.fields, roles.reading),
+        final String expression = _plain(card.fields, roles.expression);
+        final String reading = _plain(card.fields, roles.reading);
+        final String key = '$expression\u0000$reading';
+        if (_dictionaryRanks.containsKey(key)) return _dictionaryRanks[key];
+        final int? rank = dictionaryRankFor(
+          expression: expression,
+          reading: reading,
           options: options,
           lookup: _lookup,
         );
+        // 词典还没装载好时查不到不代表没有词频：不缓存，下次再查。
+        if (_dictionaryRanksKey?.startsWith('\u0000') != true) {
+          _dictionaryRanks[key] = rank;
+        }
+        return rank;
     }
   }
 
   static String _plain(Map<String, String> fields, String? name) =>
       name == null ? '' : ankiFieldPlainText(fields[name] ?? '');
 
-  /// 写回 [plan]：先按当前新卡集合重新过滤，再落快照，再批量写位置。
+  /// 写回 [plan]：只取**要写**的卡（[AnkiRepositionPlan.needsWrite]，位置没变的
+  /// 不重发），按当前新卡集合重新过滤，再落快照，再批量写位置。
+  ///
+  /// 重校验只要新卡 id（[BaseAnkiRepository.newCardIdsIn]），不再把整个牌组连字段
+  /// 读一遍——plan 刚读过，写回前再读一次全量是纯浪费（Fushi 复习要整组物化笔记）。
   ///
   /// 为什么要重新过滤：plan 是**预览之前**算的，而预览弹窗可以开任意久，这条链路
   /// 的前提又正是「Anki 正开着」——用户完全可能在这期间去学几张。卡一旦离开新卡
@@ -266,33 +325,40 @@ class AnkiDeckRepositionRunner {
     AnkiRepositionOnProgress? onProgress,
     bool auto = false,
   }) async {
-    onProgress?.call(AnkiRepositionProgress(
-      stage: AnkiRepositionStage.fetch,
-      total: plan.updates.length,
-    ));
-    final List<AnkiCardInfo> current =
-        await _repository.listNewCards(plan.deckName);
-    final Set<int> stillNew = <int>{
-      for (final AnkiCardInfo c in current) c.cardId,
-    };
-    final List<AnkiCardDueUpdate> updates = <AnkiCardDueUpdate>[
-      for (final AnkiCardDueUpdate u in plan.updates)
-        if (stillNew.contains(u.cardId)) u,
+    final List<int> moving = <int>[
+      for (int i = 0; i < plan.updates.length; i++)
+        if (plan.needsWrite(i)) i,
     ];
-    final int skipped = plan.updates.length - updates.length;
+    onProgress?.call(
+      AnkiRepositionProgress(
+        stage: AnkiRepositionStage.fetch,
+        total: moving.length,
+      ),
+    );
+    final Set<int> stillNew = await _repository.newCardIdsIn(plan.deckName);
+    final List<int> writing = <int>[
+      for (final int i in moving)
+        if (stillNew.contains(plan.updates[i].cardId)) i,
+    ];
+    final List<AnkiCardDueUpdate> updates = <AnkiCardDueUpdate>[
+      for (final int i in writing) plan.updates[i],
+    ];
+    final int skipped = moving.length - writing.length;
     // 快照只存真的会被写的那些：撤销要回到的是「我们动过的卡」的旧位置，
     // 没动过的卡不该出现在里面。
     final List<AnkiCardDueUpdate> previous = <AnkiCardDueUpdate>[
-      for (final AnkiCardDueUpdate u in plan.previous)
-        if (stillNew.contains(u.cardId)) u,
+      for (final int i in writing) plan.previous[i],
     ];
-    onProgress?.call(AnkiRepositionProgress(
-      stage: AnkiRepositionStage.write,
-      total: updates.length,
-    ));
+    onProgress?.call(
+      AnkiRepositionProgress(
+        stage: AnkiRepositionStage.write,
+        total: updates.length,
+      ),
+    );
     final File snapshot = await _writeSnapshot(plan, previous, auto: auto);
-    final AnkiCardDueWriteResult result =
-        await _repository.setNewCardPositions(updates);
+    final AnkiCardDueWriteResult result = await _repository.setNewCardPositions(
+      updates,
+    );
     return AnkiRepositionOutcome(
       written: result.written,
       failures: result.failures,
@@ -391,8 +457,10 @@ class AnkiDeckRepositionRunner {
     // 文件名里的 ISO 时刻字典序即时间序，新的在后。
     autoSnapshots.sort();
     int deleted = 0;
-    for (final String path
-        in autoSnapshots.sublist(0, autoSnapshots.length - keep)) {
+    for (final String path in autoSnapshots.sublist(
+      0,
+      autoSnapshots.length - keep,
+    )) {
       try {
         await File(path).delete();
         deleted++;
@@ -406,18 +474,16 @@ class AnkiDeckRepositionRunner {
   /// 把 [snapshot] 里的旧位置写回去——**只恢复此刻仍是新卡的那些**（快照之后
   /// 学过的卡 `due` 已经是日期，写位置进去就是毁进度）。成功后删掉快照文件。
   Future<AnkiRepositionUndoOutcome> undo(
-      AnkiRepositionSnapshot snapshot) async {
-    final List<AnkiCardInfo> current =
-        await _repository.listNewCards(snapshot.deckName);
-    final Set<int> stillNew = <int>{
-      for (final AnkiCardInfo c in current) c.cardId,
-    };
+    AnkiRepositionSnapshot snapshot,
+  ) async {
+    final Set<int> stillNew = await _repository.newCardIdsIn(snapshot.deckName);
     final List<AnkiCardDueUpdate> restorable = <AnkiCardDueUpdate>[
       for (final AnkiCardDueUpdate u in snapshot.positions)
         if (stillNew.contains(u.cardId)) u,
     ];
-    final AnkiCardDueWriteResult result =
-        await _repository.setNewCardPositions(restorable);
+    final AnkiCardDueWriteResult result = await _repository.setNewCardPositions(
+      restorable,
+    );
     // 一张都没恢复就删快照 = 把唯一的后悔药静默销毁。restorable 为空时仓储层
     // 直接 early return（written=0, failures={}），hasFailures 是 false —— 只要
     // listNewCards 这一刻因为任何原因（卡组改名、连接抖动、用户手动动过）没返回

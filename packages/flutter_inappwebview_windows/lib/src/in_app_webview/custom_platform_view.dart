@@ -598,15 +598,14 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
                       _reportSurfaceSize();
                       _reportWidgetPosition();
 
-                      if (!_focusNode.hasFocus) {
-                        _focusNode.requestFocus();
-                        Future.delayed(const Duration(milliseconds: 50), () {
-                          if (!_focusNode.hasFocus) {
-                            _focusNode.requestFocus();
-                          }
-                        });
-                      }
-
+                      // 按下时**不**向 Flutter 要焦点（BUG-3858）。WebView2 收到 down 会自己
+                      // SetFocus 到 Chromium 的子窗，Flutter 视图随之收到 WM_KILLFOCUS，框架把
+                      // 焦点停到根作用域。此时再 `_focusNode.requestFocus()`，View 作用域
+                      // 重新得焦 → `requestViewFocusChange(focused)` → 引擎 SetFocus 回 Flutter
+                      // 视图，与 Chromium 来回抢几轮：页面里每次都是一次 window blur，
+                      // YouTube 设置菜单这类「失焦即关」的弹层点二级项时整个关掉，网页输入框
+                      // 也可能在抢夺结束时丢键盘。点进网页 = 键盘归网页，与浏览器一致；
+                      // app 快捷键走宿主页面自己的键盘桥。
                       _pointerKind = ev.kind;
                       if (ev.kind == PointerDeviceKind.touch) {
                         _controller._setPointerUpdate(

@@ -61,7 +61,15 @@ bool webStudyClockMayRun({
   required bool pageVisible,
   required bool japanesePage,
   required bool interacted,
-}) => tabActive && appForeground && pageVisible && japanesePage && interacted;
+  bool videoPlaying = false,
+}) =>
+    tabActive &&
+    appForeground &&
+    pageVisible &&
+    japanesePage &&
+    interacted &&
+    // 页内网页视频在播：这段时间由扩展沉浸计时记进视频统计，阅读面让位，不双计。
+    !videoPlaying;
 
 /// 页内脚本的一次上报。
 typedef WebStudyReport = ({
@@ -101,6 +109,7 @@ class WebStudySession {
   bool _pageVisible = true;
   bool _japanese = false;
   bool _interacted = false;
+  bool _videoPlaying = false;
 
   /// 当前页面身份（测试 / 诊断）。
   String? get mediaKey => _key;
@@ -115,6 +124,7 @@ class WebStudySession {
         pageVisible: _pageVisible,
         japanesePage: _japanese,
         interacted: _interacted,
+        videoPlaying: _videoPlaying,
       );
 
   /// 主框架换了页面（加载完成 / SPA 改地址）。身份没变不动；变了封上一页的时钟，
@@ -132,6 +142,13 @@ class WebStudySession {
 
   void setTabActive(bool active) {
     _tabActive = active;
+    _sync();
+  }
+
+  /// 本页网页视频在播 / 停了（见 `WebBrowserVideoActivity`）。
+  void setVideoPlaying(bool playing) {
+    if (playing == _videoPlaying) return;
+    _videoPlaying = playing;
     _sync();
   }
 

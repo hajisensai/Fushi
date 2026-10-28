@@ -16,7 +16,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, defaultTargetPlatform;
 import 'package:flutter/rendering.dart' show RenderProxyBox;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -186,7 +187,7 @@ String _hiraganaOf(String s) => String.fromCharCodes(<int>[
 ///
 /// 制卡链路只在「查到的那串」逐字出现在例句里时才写 `<b>`（`anki_models.dart`
 /// `_sentenceValue`），以下情形卡面上没有蓝色强调：例句字段里没 `<b>`（Anki 迁移的笔记、
-/// 字幕句与上下文句不同的视频卡）、`SentenceFurigana` 优先显示而它没带 `<b>`、例句里有
+/// 字幕句与上下文句不同的视频卡）、例句里有
 /// 白名单外的标签让解析退回纯文本（`<b>` 一起丢了）、挖空 `{{c1::…}}`。这里按
 /// [srsSentenceTargetRange] 在显示的段落里重新定位目标词并标成加粗段（注音段整段标）。
 @visibleForTesting
@@ -247,6 +248,7 @@ class SrsFushiCardView extends ConsumerStatefulWidget {
     required this.fields,
     required this.definitionsHtml,
     this.topInset = 0,
+    this.bottomInset,
   });
 
   /// 这面卡（cardId / 正反面 / 版式 / 按键桥）。[SrsCardFace.css] 是模板样式表，给释义 WebView 用。
@@ -261,6 +263,13 @@ class SrsFushiCardView extends ConsumerStatefulWidget {
   /// 卡面顶端被浮动页头盖住的高度（状态栏 + 页头）。卡面铺到页头底下，这段只作滚动
   /// 内边距：开头的内容从页头下沿开始，往下翻时滚进页头底下，页头收起后不留空带。
   final double topInset;
+
+  /// 卡面底端被浮在上面的底栏（显示答案 / 评分 / 重播）盖住的高度。与 [topInset] 同理：
+  /// 卡面铺到底栏背后，这段只作滚动内边距，末尾的内容能滚到底栏上沿以上。
+  ///
+  /// 用可监听值而不是 double：底栏随翻面 / 换卡变高变矮时只让卡面自己重排，复习页缓存的
+  /// 卡面 widget（见复习页 `_cardFace`）不必因此重建。null = 0。
+  final ValueListenable<double>? bottomInset;
 
   @override
   ConsumerState<SrsFushiCardView> createState() => _SrsFushiCardViewState();
@@ -313,15 +322,27 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     _channel.setSentenceAudio(this, _media.companionSentence);
   }
 
+  /// 底栏让位高度（[SrsFushiCardView.bottomInset]）。
+  double get _bottomInset => widget.bottomInset?.value ?? 0;
+
+  void _onBottomInset() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
     _declareSentenceAudio();
+    widget.bottomInset?.addListener(_onBottomInset);
   }
 
   @override
   void didUpdateWidget(SrsFushiCardView old) {
     super.didUpdateWidget(old);
+    if (old.bottomInset != widget.bottomInset) {
+      old.bottomInset?.removeListener(_onBottomInset);
+      widget.bottomInset?.addListener(_onBottomInset);
+    }
     _declareSentenceAudio();
     if (old.face.cardId != widget.face.cardId) {
       // 内容高度保留上一张的：页面只在高度变化时上报，新卡同高时不会再报。
@@ -335,6 +356,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
 
   @override
   void dispose() {
+    widget.bottomInset?.removeListener(_onBottomInset);
     _channel.clearSentenceAudio(this);
     _scroll.dispose();
     _selectionFocus.dispose();
@@ -407,11 +429,17 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           child: SrsNativeLookupRegion(
             key: _lookupRegion,
             child: ColoredBox(
-              color: scheme.surface,
+              // 跟随 app 主题时不铺底，透出复习页背景（与 WebView 外壳同一判据）。
+              color: srsCardPaintsOwnSurface(widget.face, a)
+                  ? scheme.surface
+                  : Colors.transparent,
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints c) {
                   if (c.maxHeight.isFinite) {
-                    _viewport = math.max(0, c.maxHeight - widget.topInset);
+                    _viewport = math.max(
+                      0,
+                      c.maxHeight - widget.topInset - _bottomInset,
+                    );
                   }
                   final bool wide = switch (widget.face.layout) {
                     SrsCardLayout.wide => true,
@@ -481,7 +509,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       child: SingleChildScrollView(
         key: const ValueKey<String>('srs-fushi-front'),
         controller: _scroll,
-        padding: EdgeInsets.all(s.pad).copyWith(top: s.pad + widget.topInset),
+        padding: EdgeInsets.all(
+          s.pad,
+        ).copyWith(top: s.pad + widget.topInset, bottom: s.pad + _bottomInset),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -805,17 +835,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     if (!srsFushiBlockVisible(FushiCardBlock.sentence, f, s.appearance)) {
       return null;
     }
-    final bool showRuby = s.appearance.sentenceFurigana || _sentenceRuby;
-    final String raw = srsFieldFilled(f['SentenceFurigana'])
-        ? f['SentenceFurigana']!
-        : f['Sentence']!;
+    final bool showRuby = _sentenceRuby;
+    final String raw = f['Sentence']!;
     // 目标词强调（#9）：显示的那份没带 `<b>` 时按字段标记 / 词条写法重新定位。
     final List<SrsInline> segs = srsEmphasizeSentenceTarget(
       srsParseInline(srsClozeToBold(raw)),
-      marked: <String>[
-        ...srsMarkedTargets(raw),
-        ...srsMarkedTargets(f['Sentence'] ?? ''),
-      ],
+      marked: srsMarkedTargets(raw),
       terms: <String>[
         srsPlainText(f['Expression'] ?? ''),
         if (srsFieldFilled(f['ExpressionFurigana']))
@@ -829,7 +854,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final List<String> audio = _media.sentenceUnit;
     // 注音收起时第一下点按是「显示注音」（原有操作），不取词；注音显示后点在字上 =
     // 查词，点在字外 = 收起注音。
-    final bool rubyToggle = hasRuby && !s.appearance.sentenceFurigana;
+    final bool rubyToggle = hasRuby;
     final Widget text = SrsRubyText(
       key: const ValueKey<String>('srs-fushi-sentence'),
       segments: showRuby
@@ -1024,6 +1049,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         '.fc.fc-back.fc-defs-only{flex-direction:column;align-items:stretch;'
         'max-width:none;margin:0;}'
         '${wide ? '' : ':root{--fushi-srs-clamp:${(_viewport * 0.52).round()}px;}'}'
+        // 宽版式释义栏铺到底栏背后、页内自己滚：末尾留出底栏高度，最后一条能滚到底栏以上。
+        '${wide && _bottomInset > 0 ? 'html{padding-bottom:${_bottomInset.round()}px;}' : ''}'
         // 主词典通栏 + 其他词典分列，展开规则跟查词设置（srs_card_defs_layout.dart）。
         '${ref.watch(srsDefsLayoutCssProvider)}',
     hostScript: kSrsDefsLayoutScript,
@@ -1127,7 +1154,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     return SingleChildScrollView(
       key: const ValueKey<String>('srs-fushi-back-narrow'),
       controller: _scroll,
-      padding: EdgeInsets.only(top: widget.topInset, bottom: s.pad),
+      padding: EdgeInsets.only(
+        top: widget.topInset,
+        bottom: s.pad + _bottomInset,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -1175,9 +1205,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           width: leftWidth,
           child: SingleChildScrollView(
             controller: _scroll,
-            padding: EdgeInsets.all(
-              s.pad,
-            ).copyWith(top: s.pad + widget.topInset),
+            padding: EdgeInsets.all(s.pad).copyWith(
+              top: s.pad + widget.topInset,
+              bottom: s.pad + _bottomInset,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
@@ -1722,6 +1753,10 @@ class _MediaImageState extends ConsumerState<_MediaImage>
   /// 每次例句开播 +1：动图子树换 key 重建，从第一帧播起。
   int _restart = 0;
 
+  /// 重播期间仍垫在底下的旧动图（key）：新实例解出首帧之前先留着旧画面，否则替换瞬间
+  /// 整块变空、动图「闪一下」。新实例出帧后（[_layerReady]）撤掉。
+  int? _prevRestart;
+
   @override
   void initState() {
     super.initState();
@@ -1744,7 +1779,20 @@ class _MediaImageState extends ConsumerState<_MediaImage>
     if (provider != null && !isAvifPath(widget.name)) {
       unawaited(provider.evict());
     }
-    setState(() => _restart++);
+    setState(() {
+      _prevRestart ??= _restart;
+      _restart++;
+    });
+  }
+
+  /// 第 [restart] 层已出首帧：是当前层就撤掉垫底的旧层。
+  void _layerReady(int restart) {
+    if (restart != _restart || _prevRestart == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && restart == _restart && _prevRestart != null) {
+        setState(() => _prevRestart = null);
+      }
+    });
   }
 
   void _unlisten() {
@@ -1840,21 +1888,44 @@ class _MediaImageState extends ConsumerState<_MediaImage>
         !widget.name.startsWith('data:') && isAvifPath(widget.name)
         ? _providerStore?.resolve(widget.name)
         : null;
-    Widget picture({BoxFit? fit}) => KeyedSubtree(
-      key: ValueKey<int>(_restart),
-      child: avif != null
-          ? FushiAnimatedAvifImage(
-              file: avif,
-              fit: fit,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            )
-          : Image(
-              image: provider!,
-              fit: fit,
-              gaplessPlayback: true,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-    );
+    Widget layer(int restart, BoxFit? fit, {required bool signal}) =>
+        KeyedSubtree(
+          key: ValueKey<int>(restart),
+          child: avif != null
+              ? FushiAnimatedAvifImage(
+                  file: avif,
+                  fit: fit,
+                  onFirstFrame: signal ? () => _layerReady(restart) : null,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                )
+              : Image(
+                  image: provider!,
+                  fit: fit,
+                  gaplessPlayback: true,
+                  frameBuilder: signal
+                      ? (BuildContext _, Widget child, int? frame, bool _) {
+                          if (frame != null) _layerReady(restart);
+                          return child;
+                        }
+                      : null,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                ),
+        );
+    // 无论有没有垫底层都是同一个 Stack：各层以 key 在兄弟间对位，旧层从「独占」变成
+    // 「垫底」、新层从「叠在上面」变成「独占」时元素与已解出的画面原样保留。若单层时直接
+    // 返回 KeyedSubtree、双层时才包 Stack，父节点类型一变旧层就被卸载重建，垫底的只是又
+    // 一个从零解码的新实例，闪空照旧。
+    Widget picture({BoxFit? fit}) {
+      final int? prev = _prevRestart;
+      return Stack(
+        fit: StackFit.passthrough,
+        children: <Widget>[
+          if (prev != null) layer(prev, fit, signal: false),
+          layer(_restart, fit, signal: prev != null),
+        ],
+      );
+    }
+
     final Widget image = provider == null
         ? const SizedBox.shrink()
         // 框与原图同比例；contain 保证取整误差下也不裁掉边。

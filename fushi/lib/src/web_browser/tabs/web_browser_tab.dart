@@ -1,3 +1,5 @@
+import 'dart:ui' show Rect;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
@@ -157,6 +159,20 @@ class WebBrowserTab extends ChangeNotifier {
     _controller = controller;
     notifyListeners();
   }
+
+  Rect? Function(Rect local)? _viewportToGlobal;
+
+  /// 只由 `WebBrowserTabView` 调：登记「网页视口坐标（CSS px）→ 全局逻辑坐标」的换算
+  /// （页内脚本报来的矩形据此给 Flutter 弹窗做锚点）。null = 摘掉。
+  void attachViewport(Rect? Function(Rect local)? mapper) {
+    _viewportToGlobal = mapper;
+  }
+
+  /// WebView 在屏上、能换算坐标。
+  bool get hasViewport => _viewportToGlobal != null;
+
+  /// 网页视口里的矩形换成全局坐标；WebView 不在屏上（后台标签页 / 已销毁）时 null。
+  Rect? viewportRectToGlobal(Rect local) => _viewportToGlobal?.call(local);
 }
 
 /// 主框架加载失败的描述（加载失败页用）。

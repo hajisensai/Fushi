@@ -8,6 +8,7 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
@@ -111,6 +112,14 @@ void main() {
         deviceId: 'probe_abc=',
       );
       for (int round = 1; round <= 3; round++) {
+        // 每轮先有新操作：内容没变的一轮不写 head、也就不列设备目录取服务端时间（空 head 会唤醒连着同一 host
+        // 的全部设备，见 srs_sync2_round.dart）。
+        await store.createNote(
+          noteTypeId: store.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId('href-profile', 'Expression'): '語$round',
+          },
+        );
         // 每轮新建位置对象 = 生产里每次同步的形态（文件夹缓存为空，只能靠 PROPFIND 找）。
         final SrsSync2Report r = await srsSync2Round(
           host: store,

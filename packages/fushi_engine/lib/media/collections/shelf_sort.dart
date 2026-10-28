@@ -14,7 +14,12 @@ enum ShelfSortMode {
   title,
 
   /// 导入时间（新导入在前）。
-  imported;
+  imported,
+
+  /// 手动：用户在排序模式里拖出来的顺序（[compareShelfSortKeys] 的
+  /// `manualRanks`）。不在手动序里的单元（排好之后新导入的）排在最前、按导入
+  /// 时间倒序，新东西不会沉到底。
+  manual;
 
   /// 从持久化 `.name` 解析；未知值（含旧版本残留）退默认 [recent]。
   static ShelfSortMode fromName(String name) => values.firstWhere(
@@ -49,9 +54,28 @@ class ShelfSortKey {
 
 /// 按 [mode] 比较两个排序键。各模式的次级键固定（recent→imported→title、
 /// title→imported、imported→title），最后恒以 [ShelfSortKey.tieKey] 决出全序。
-int compareShelfSortKeys(ShelfSortKey a, ShelfSortKey b, ShelfSortMode mode) {
+///
+/// [ShelfSortMode.manual] 按 [manualRanks]（tieKey → 手动序下标）升序；没有名次
+/// 的排在有名次的前面，彼此按 imported→title。
+int compareShelfSortKeys(
+  ShelfSortKey a,
+  ShelfSortKey b,
+  ShelfSortMode mode, {
+  Map<String, int> manualRanks = const <String, int>{},
+}) {
   int c;
   switch (mode) {
+    case ShelfSortMode.manual:
+      final int? ra = manualRanks[a.tieKey];
+      final int? rb = manualRanks[b.tieKey];
+      if (ra != null && rb != null) {
+        c = ra.compareTo(rb);
+      } else if (ra != null || rb != null) {
+        c = ra == null ? -1 : 1;
+      } else {
+        c = b.importedAt.compareTo(a.importedAt);
+        if (c == 0) c = naturalCompare(a.title, b.title);
+      }
     case ShelfSortMode.recent:
       c = b.recentScore.compareTo(a.recentScore);
       if (c == 0) c = b.importedAt.compareTo(a.importedAt);
@@ -232,4 +256,43 @@ ShelfProgressTally<T> tallyShelfProgress<T>(
     finished: finished,
     inProgress: inProgress,
   );
+}
+
+/// 手动序的持久化形态（换行分隔的 tieKey 列表）→ 名次表。
+Map<String, int> decodeShelfManualOrder(String raw) {
+  final Map<String, int> ranks = <String, int>{};
+  if (raw.isEmpty) return ranks;
+  for (final String key in raw.split(_manualOrderSeparator)) {
+    if (key.isNotEmpty) ranks.putIfAbsent(key, () => ranks.length);
+  }
+  return ranks;
+}
+
+/// 名次表 → 持久化形态。tieKey 里可能有逗号（文件路径），故用换行分隔。
+String encodeShelfManualOrder(List<String> order) =>
+    order.join(_manualOrderSeparator);
+
+/// 手动序持久化的分隔符：换行（tieKey 不含换行）。
+const String _manualOrderSeparator = '\n';
+
+/// 排序模式里的一次拖动：[visible] 是当前显示的单元（tieKey，显示顺序），把
+/// 下标 [from] 的移到 [to]；[all] 是**全部**单元按当前手动序排好的 tieKey（筛选 /
+/// 搜索藏起来的也在内）。返回新的完整手动序：[visible] 占的槽位按移动后的顺序
+/// 依次回填，被筛掉的单元原位不动（与合集成员的筛选态拖排同一合并语义）。
+List<String> moveInShelfManualOrder({
+  required List<String> all,
+  required List<String> visible,
+  required int from,
+  required int to,
+}) {
+  final List<String> moved = List<String>.of(visible);
+  if (from < 0 || from >= moved.length) return List<String>.of(all);
+  final String item = moved.removeAt(from);
+  moved.insert(to.clamp(0, moved.length), item);
+  final Set<String> named = moved.toSet();
+  int next = 0;
+  return <String>[
+    for (final String key in all)
+      if (named.contains(key)) moved[next++] else key,
+  ];
 }

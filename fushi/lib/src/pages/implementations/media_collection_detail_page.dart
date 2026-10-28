@@ -6,6 +6,7 @@ import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
@@ -222,6 +223,7 @@ class MediaCollectionDetailPage extends StatefulWidget {
 class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     with
         CollectionDetailShared<MediaCollectionDetailPage>,
+        LibraryReorderHost<MediaCollectionDetailPage>,
         TickerProviderStateMixin {
   late String _name;
 
@@ -350,6 +352,18 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// `pushReplacement` / `removeRoute`，第一集被换走时那个 Future 就完成了，用户
   /// 其实还在看第二集。只有「本页路由重新变成栈顶」才是真的回来了。
   bool _awaitingPlaybackReturn = false;
+
+  /// 排序模式（集卡菜单「排序」进入）：触屏按住集卡即拖，见 [LibraryReorderHost]。
+  bool _reordering = false;
+
+  void _startReorder() {
+    if (mounted) setState(() => _reordering = true);
+  }
+
+  void _endReorder() => setState(() => _reordering = false);
+
+  @override
+  VoidCallback? get libraryReorderEntry => _startReorder;
 
   /// 上一次看到的本页路由是否在栈顶（判「被盖住 → 又露出来」的边沿）。
   bool _routeWasCurrent = true;
@@ -2536,7 +2550,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 集列表（hayase 式宽卡网格）：宽度 ≥ [kCollectionEpisodeTwoColumnMinWidth] 两列，
   /// 否则一列。拖拽重排/右键/长按菜单由 [FushiReorderableGrid] 统一接管（鼠标
-  /// 按住即拖 + 右键菜单；触摸长按起拖、原地松手出菜单——BUG-778 缩放安全一族）。
+  /// 按住即拖 + 右键菜单；触摸长按与库页卡片同一时机直接出菜单，菜单「排序」进入
+  /// 排序模式后按住即拖——BUG-778 缩放安全一族）。
   /// 分季时只列本季（[_visibleMembers]），拖拽是节内重排，由 [_onReorder] 拼回
   /// 全序落盘。
   Widget _buildEpisodeGrid() {
@@ -2554,6 +2569,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           crossAxisSpacing: spacing,
           mainAxisSpacing: spacing,
           feedbackBorderRadius: FushiBorderRadius.card,
+          reordering: _reordering,
           keyForIndex: (int i) =>
               ValueKey<String>('collection-episode-row-${visible[i].entryKey}'),
           onReorder: _onReorder,
@@ -2662,7 +2678,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     }
   }
 
-  /// 集卡上下文菜单（右键 / 触摸长按原地松手）。管理能力从旧管理列表的行内
+  /// 集卡上下文菜单（右键 / 触摸长按）。管理能力从旧管理列表的行内
   /// 按钮收进本菜单（拖拽排序仍是直接拖卡）。
   ///
   /// 容器走 [showMediaItemActions]，与库页卡片同一套：右键在指针处弹右键菜单
@@ -3290,13 +3306,32 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       extendBodyBehindAppBar: true,
       appBar: _buildAppBar(),
       // 加载骨架 → 正文 / 空态交叉淡入（时长走动效令牌，墨水屏 / 减弱动效归零）。
-      body: AnimatedSwitcher(
-        duration: context.fushiMotion.effectsDefault.duration,
-        child: KeyedSubtree(
-          key: ValueKey<String>(
-            _loading ? 'loading' : (_slots.isEmpty ? 'empty' : 'content'),
-          ),
-          child: body,
+      body: PopScope(
+        canPop: !_reordering,
+        onPopInvokedWithResult: (bool didPop, Object? _) {
+          if (!didPop && _reordering) _endReorder();
+        },
+        child: Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: AnimatedSwitcher(
+                duration: context.fushiMotion.effectsDefault.duration,
+                child: KeyedSubtree(
+                  key: ValueKey<String>(
+                    _loading
+                        ? 'loading'
+                        : (_slots.isEmpty ? 'empty' : 'content'),
+                  ),
+                  child: body,
+                ),
+              ),
+            ),
+            LibraryReorderBar.overlay(
+              context: context,
+              visible: _reordering,
+              onDone: _endReorder,
+            ),
+          ],
         ),
       ),
     );

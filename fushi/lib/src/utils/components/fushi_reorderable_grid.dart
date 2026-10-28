@@ -21,7 +21,7 @@ typedef FushiReorderGridCallback = void Function(int from, int to);
 /// 单元被激活（主指针轻点，未拖拽）——用于「点卡片打开条目」。
 typedef FushiReorderGridActivate = void Function(int index);
 
-/// 单元请求上下文菜单：桌面鼠标右键（secondary tap）/ 触摸长按后原地松手（未拖动）。
+/// 单元请求上下文菜单：桌面鼠标右键（secondary tap）/ 触摸长按（到时即弹，不等松手）。
 /// [globalPosition] 为触发点全局坐标。右键路径在回调同步执行期间另经
 /// [activeContextMenuAnchor] 暴露同一坐标（长按路径为 null），条目菜单
 /// （`showMediaItemActions`）据此区分「指针处右键菜单」与「长按抽屉 / 对话框」。
@@ -38,9 +38,15 @@ typedef FushiReorderGridContextMenu =
 /// **起拖时机按输入设备区分**（与 [FushiReorderableColumn] 一致）：
 /// - 鼠标 / 触控板 / 触控笔等精确指针 → [ImmediateMultiDragGestureRecognizer]，
 ///   按下移动即拖（桌面「按住左键就能拖」的预期）；右键（secondary tap）→ 上下文菜单。
-/// - 触摸屏 → [LongPressGestureRecognizer]：长按后**移动**才起拖（重排），长按后
-///   **原地松手**（未移动）→ 上下文菜单。触摸没有右键，故长按同时承载「拿起拖拽」与
-///   「弹出菜单」，用是否移动过 slop 消歧——这是触摸端唯一自洽的编排。
+/// - 触摸屏 → [LongPressGestureRecognizer]，按 [reordering] 分两态：
+///   - 常态（[reordering] 为 false）且提供了 [onContextMenu]：长按一到时就弹上下文
+///     菜单，与库页卡片 `InkWell.onLongPress` 同一时机（不等松手）；触摸不起拖。
+///     旧编排让长按同时承载「拿起拖拽」与「弹菜单」、只能等松手看有没有移动来消歧，
+///     合集里长按要自己松手才出抽屉，与外面的库页不一致。
+///   - 排序模式（[reordering] 为 true，由条目菜单里的「排序」进入）：按住
+///     [kPressTimeout] 即拿起、拖动重排；快速滑动仍交给外层滚动。此态不激活条目、
+///     不弹菜单。
+///   - 未提供 [onContextMenu]（纯排序列表，如字体页）：长按后移动即拖，与旧行为一致。
 ///
 /// **为什么不用 `ReorderableListView` / pub `ReorderableGridView`**（BUG-778）：
 /// SDK/pub 的拖拽代理把浮层放进 [Overlay]，用「全局坐标 − overlay 原点」纯平移定位，
@@ -62,6 +68,7 @@ class FushiReorderableGrid extends StatefulWidget {
     this.onActivateItem,
     this.onContextMenu,
     this.feedbackBorderRadius,
+    this.reordering = false,
     super.key,
   });
 
@@ -85,8 +92,11 @@ class FushiReorderableGrid extends StatefulWidget {
   /// 主指针轻点单元（未拖拽）回调（点卡片打开条目）；null = 不接管主轻点。
   final FushiReorderGridActivate? onActivateItem;
 
-  /// 上下文菜单回调（右键 / 触摸长按原地松手）；null = 不提供菜单。
+  /// 上下文菜单回调（右键 / 触摸长按）；null = 不提供菜单。
   final FushiReorderGridContextMenu? onContextMenu;
+
+  /// 排序模式：触摸按住即拖、轻点与菜单都停用（见类注释）。
+  final bool reordering;
 
   /// 拖拽浮层复制的圆角（裁切到此半径）；null = 直角。
   final BorderRadius? feedbackBorderRadius;
@@ -111,8 +121,8 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
   double _cellW = 0;
   double _cellH = 0;
 
-  // 触摸长按态：起拖前先记录、移动过 slop 才真正起拖，松手时据是否移动过决定
-  // 「提交重排」还是「弹出上下文菜单」。
+  // 触摸长按态（仅排序模式 / 无菜单时）：起拖前先记录，排序模式下长按即起拖，
+  // 无菜单的纯排序列表移动过 slop 才起拖。
   int? _touchPendingOriginal;
   Offset _touchStartGlobal = Offset.zero;
   bool _touchMoved = false;
@@ -142,7 +152,8 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
   @override
   void didUpdateWidget(covariant FushiReorderableGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.itemCount != widget.itemCount) {
+    if (oldWidget.itemCount != widget.itemCount ||
+        oldWidget.reordering != widget.reordering) {
       _resetDisplay();
       _dragOriginal = null;
       _touchPendingOriginal = null;
@@ -337,16 +348,28 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
     _scrollable = null;
   }
 
-  // ── 触摸长按：起拖前先待命，移动过 slop 才起拖，原地松手→菜单 ──────────────
+  /// 常态下触摸长按直接弹菜单（与库页卡片同一时机），不进拖拽待命。
+  bool get _touchLongPressOpensMenu =>
+      !widget.reordering && widget.onContextMenu != null;
+
+  // ── 触摸长按：常态到时即弹菜单；排序模式拿起即拖；无菜单时移动过 slop 起拖 ──
   void _touchLongPressStart(int original, LongPressStartDetails d) {
-    _touchPendingOriginal = original;
-    _touchStartGlobal = d.globalPosition;
-    _touchMoved = false;
     // 长按一被识别就给触感（库页卡片 `InkWell.onLongPress` 走的同一个
     // `Feedback.forLongPress`：Android 震动、iOS 重触感 + 点击音、桌面无）。
     // 本网格用裸识别器、卡片又包在 IgnorePointer 里，不补这一下合集里长按就
     // 完全没有触感，与外面的库页不一致。
     Feedback.forLongPress(context);
+    if (_touchLongPressOpensMenu) {
+      widget.onContextMenu!(original, d.globalPosition);
+      return;
+    }
+    _touchPendingOriginal = original;
+    _touchStartGlobal = d.globalPosition;
+    _touchMoved = false;
+    if (widget.reordering) {
+      _touchMoved = true;
+      _beginDrag(original, d.globalPosition);
+    }
   }
 
   void _touchLongPressMove(int original, LongPressMoveUpdateDetails d) {
@@ -362,11 +385,7 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
   void _touchLongPressEnd(int original, LongPressEndDetails d) {
     if (_touchPendingOriginal != original) return;
     _touchPendingOriginal = null;
-    if (_touchMoved) {
-      _endDrag();
-    } else {
-      widget.onContextMenu?.call(original, d.globalPosition);
-    }
+    if (_touchMoved) _endDrag();
     _touchMoved = false;
   }
 
@@ -457,7 +476,9 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
 
   Widget _buildCell(int original) {
     final Widget content = widget.itemBuilder(context, original);
-    final FushiReorderGridContextMenu? menu = widget.onContextMenu;
+    final FushiReorderGridContextMenu? menu = widget.reordering
+        ? null
+        : widget.onContextMenu;
     // 被拖单元在原位保留占位但透明（充当随实时重排移动的「空位」），可见的是浮层。
     final Widget slot = _dragOriginal == original
         ? Opacity(opacity: 0, child: content)
@@ -467,7 +488,7 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
     return ContextMenuTrigger(
       // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
       // 与 [contextMenuInvoker] 同一约定：同步执行期间暴露锚点，右键才弹成指针处
-      // 的右键菜单；不包这一层，右键与触摸长按松手落到同一份抽屉 / 对话框。
+      // 的右键菜单；不包这一层，右键与触摸长按落到同一份抽屉 / 对话框。
       onInvoke: menu == null
           ? null
           : (Offset position) => runWithContextMenuAnchor(
@@ -475,6 +496,8 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
               () => menu(original, position),
             ),
       child: RawGestureDetector(
+        // 进出排序模式时长按识别器的 duration 要换，用模式作 key 让识别器重建。
+        key: ValueKey<bool>(widget.reordering),
         behavior: HitTestBehavior.opaque,
         gestures: <Type, GestureRecognizerFactory>{
           // 主轻点 → 激活。上下文菜单不在这里：TapGestureRecognizer 的非主键入口
@@ -484,8 +507,9 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
               GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
                 () => TapGestureRecognizer(),
                 (TapGestureRecognizer instance) {
-                  final FushiReorderGridActivate? activate =
-                      widget.onActivateItem;
+                  final FushiReorderGridActivate? activate = widget.reordering
+                      ? null
+                      : widget.onActivateItem;
                   // 与 `InkWell.onTap` 同一份 `Feedback.forTap`（Android 点击音）。
                   instance.onTap = activate == null
                       ? null
@@ -516,10 +540,13 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
                       _onMouseDragStart(original, position);
                 },
               ),
-          // 触摸屏：长按待命，移动过 slop 起拖，原地松手弹菜单。
+          // 触摸屏：常态长按到时弹菜单；排序模式按住 [kPressTimeout] 即拿起拖动。
+          // 识别器的 duration 只能在构造时给，故按模式换 key 重建（factory 只在
+          // 类型首次出现时构造）。
           LongPressGestureRecognizer:
               GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
                 () => LongPressGestureRecognizer(
+                  duration: widget.reordering ? kPressTimeout : null,
                   supportedDevices: _touchDragDevices,
                 ),
                 (LongPressGestureRecognizer instance) {

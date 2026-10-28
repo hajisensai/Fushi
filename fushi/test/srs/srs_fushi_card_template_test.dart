@@ -86,12 +86,30 @@ void main() {
     }
   });
 
+  test('Fushi card no longer shows SentenceFurigana (owner 2026-10-28)', () {
+    // 字段仍留在笔记类型里（与 Lapis 同名同序），卡面与外观不再读它。
+    for (final String part in <String>[
+      FushiCardNoteType.template.front,
+      FushiCardNoteType.template.back,
+      FushiCardNoteType.template.css,
+    ]) {
+      expect(part, isNot(contains('SentenceFurigana')));
+      expect(part, isNot(contains('fushi-srs-sentence-furigana')));
+    }
+    for (final FushiCardBlock b in FushiCardBlock.values) {
+      expect(b.fields, isNot(contains('SentenceFurigana')));
+    }
+    expect(
+      const SrsCardAppearance().toJson().containsKey('sentenceFurigana'),
+      isFalse,
+    );
+  });
+
   test('every host class the appearance can emit is styled by the template', () {
     final String classes = srsCardAppearanceClasses(
       const SrsCardAppearance(
         frontReading: true,
         frontFrequency: true,
-        sentenceFurigana: true,
         glossaryExpanded: true,
         showPicture: false,
         showTranslation: false,

@@ -189,8 +189,105 @@ void main() {
           ),
         ],
       );
-      expect(d, isA<SrsProfileLinkConflict>());
-      expect((d as SrsProfileLinkConflict).remoteName, 'Default');
+      expect(d, isA<SrsProfileLinkChoose>());
+      expect(
+        (d as SrsProfileLinkChoose).candidates.single.displayName,
+        'Default',
+      );
+    });
+
+    // 实测布局（三台设备各自随机生成 uid、都叫 Default）：电脑 PC（有笔记）、iPhone（有笔记）、平板（空）、一个旧版本留下
+    // 的无说明文件目录。以前平板按名字匹配到两个就静默保持，永远按自己的空 profile 同步、拉不到任何数据。
+    const String kPc = '01a13df1-0000-7000-8000-000000000001';
+    const String kPhone = '01a13dd3-0000-7000-8000-000000000002';
+    const String kTablet = '01a17876-0000-7000-8000-000000000003';
+    const String kLegacy = '01a14b6c-0000-7000-8000-000000000004';
+    const List<SrsRemoteProfile> layout = <SrsRemoteProfile>[
+      SrsRemoteProfile(
+        uid: kPc,
+        writers: <String>['v2:pc'],
+        names: <String>{'Default'},
+        hasNotes: true,
+      ),
+      SrsRemoteProfile(
+        uid: kPhone,
+        writers: <String>['v2:phone'],
+        names: <String>{'Default'},
+        hasNotes: true,
+      ),
+      SrsRemoteProfile(
+        uid: kTablet,
+        writers: <String>['v2:tablet'],
+        names: <String>{'Default'},
+        hasNotes: false,
+      ),
+      SrsRemoteProfile(uid: kLegacy, writers: <String>['old#1']),
+    ];
+    SrsProfileLinkDecision decideAs(String uid, String device, bool notes) =>
+        srsDecideProfileLink(
+          localUid: uid,
+          localName: 'Default',
+          deviceId: device,
+          localHasNotes: notes,
+          localProfileCount: 1,
+          remote: layout,
+          v2Device: device,
+        );
+
+    test('多台设备同名：没有笔记的平板不再静默保持，让用户在有数据的候选里选', () {
+      final SrsProfileLinkDecision d = decideAs(kTablet, 'tablet', false);
+      expect(d, isA<SrsProfileLinkChoose>());
+      expect(
+        (d as SrsProfileLinkChoose).candidates.map(
+          (SrsRemoteProfile c) => c.uid,
+        ),
+        <String>[kPhone, kPc],
+        reason: '空的平板自己与名字对不上的旧目录不算候选；按 uid 排序',
+      );
+    });
+
+    test('多台设备同名：有笔记的 iPhone 与电脑各自让用户选（只列对方有数据的）', () {
+      final SrsProfileLinkDecision phone = decideAs(kPhone, 'phone', true);
+      expect(
+        (phone as SrsProfileLinkChoose).candidates.map(
+          (SrsRemoteProfile c) => c.uid,
+        ),
+        <String>[kPc],
+      );
+      final SrsProfileLinkDecision pc = decideAs(kPc, 'pc', true);
+      expect(
+        (pc as SrsProfileLinkChoose).candidates.map(
+          (SrsRemoteProfile c) => c.uid,
+        ),
+        <String>[kPhone],
+      );
+    });
+
+    test('候选全是空 profile：本机也空时收敛到 uid 最小的那个', () {
+      const List<SrsRemoteProfile> empties = <SrsRemoteProfile>[
+        SrsRemoteProfile(
+          uid: kPhone,
+          writers: <String>['v2:phone'],
+          names: <String>{'Default'},
+          hasNotes: false,
+        ),
+        SrsRemoteProfile(
+          uid: kTablet,
+          writers: <String>['v2:tablet'],
+          names: <String>{'Default'},
+          hasNotes: false,
+        ),
+      ];
+      final SrsProfileLinkDecision d = srsDecideProfileLink(
+        localUid: kPc,
+        localName: 'Default',
+        deviceId: 'pc',
+        localHasNotes: false,
+        localProfileCount: 1,
+        remote: empties,
+        v2Device: 'pc',
+      );
+      expect((d as SrsProfileLinkAdopt).uid, kPhone);
     });
 
     test('本机有笔记、对方只有内置行：保持（等对方来采用）', () {

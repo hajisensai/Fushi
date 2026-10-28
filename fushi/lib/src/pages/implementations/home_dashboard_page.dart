@@ -875,6 +875,19 @@ class _HomeDashboardPageState
   static final Expando<_HomeDashboardSnapshot> _snapshots =
       Expando<_HomeDashboardSnapshot>('home-dashboard-snapshot');
 
+  /// 首页此刻是否真被看着（所在 tab 可见、没被别的页面盖住）：两种情况 Flutter 都会关掉这里的 TickerMode。
+  /// 复习条据此只在看得见时订阅牌组计数（[homeSrsLiveProvider]）。
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool live = TickerMode.valuesOf(context).enabled;
+    if (ref.read(homeSrsLiveProvider) == live) return;
+    // 依赖变化回调在构建期内，不能当场改 provider。
+    scheduleMicrotask(() {
+      if (mounted) ref.read(homeSrsLiveProvider.notifier).state = live;
+    });
+  }
+
   @override
   void initState() {
     super.initState();

@@ -130,6 +130,9 @@ Future<void> _unmount(WidgetTester tester) async {
 }
 
 final Finder _surface = find.byKey(const ValueKey<String>('srs-card-surface'));
+final Finder _bottomBar = find.byKey(
+  const ValueKey<String>('srs-review-bottom-bar'),
+);
 
 /// 悬浮顶栏（收起后 FushiChromeReveal 把它放进 Offstage，默认 finder 看不到）。
 final Finder _floatingBar = find.descendant(
@@ -211,14 +214,43 @@ void main() {
     await _pumpReview(tester, store: store);
 
     expect(_floatingBar, findsNothing);
-    // 卡面右下角：正面内容居中，这里是空白。
-    final Offset blank = tester.getBottomRight(_surface) - const Offset(24, 24);
+    // 卡面右下角、底栏上沿以上：正面内容居中，这里是空白。原生卡面铺到底栏背后，
+    // 卡面自己的右下角落在底栏那条里（归底栏，见下一条）。
+    final Offset blank = Offset(
+      tester.getBottomRight(_surface).dx - 24,
+      tester.getTopLeft(_bottomBar).dy - 24,
+    );
     await tester.tapAt(blank);
     await _animate(tester);
     expect(_floatingBar, findsOneWidget);
     await tester.tapAt(blank);
     await _animate(tester);
     expect(_floatingBar, findsNothing);
+    await _unmount(tester);
+  });
+
+  testWidgets('原生 Fushi 卡面：点底栏留白（按钮旁 / 底边）不算点卡面空白', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _openStore(tester);
+    await _addFushiCard(tester, store);
+    await _pumpReview(tester, store: store);
+
+    // 卡面铺到窗口底端、底栏压在它上面：这条里的点按会命中下面的卡面，除非底栏自己认领。
+    expect(
+      tester.getBottomLeft(_surface).dy,
+      tester.getBottomLeft(_bottomBar).dy,
+    );
+    final Rect bar = tester.getRect(_bottomBar);
+    for (final Offset at in <Offset>[
+      Offset(bar.left + 4, bar.center.dy), // 左侧页边留白
+      Offset(bar.right - 4, bar.center.dy), // 右侧页边留白
+      Offset(bar.center.dx, bar.bottom - 2), // 按钮下方留白 / 底部安全区
+    ]) {
+      await tester.tapAt(at);
+      await _animate(tester);
+      expect(_floatingBar, findsNothing, reason: '$at');
+    }
     await _unmount(tester);
   });
 

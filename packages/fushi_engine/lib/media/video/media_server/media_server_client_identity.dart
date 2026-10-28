@@ -77,3 +77,22 @@ Future<MediaServerClientIdentity> resolveMediaServerClientIdentity(
     version: sanitizeMediaServerHeaderValue(version, fallback: '1.0'),
   );
 }
+
+/// 本应用对媒体服务器自报的 `User-Agent`：`Fushi/<应用版本>`。
+///
+/// 不显式设置时，`package:http` 底层的 dart:io `HttpClient` 会自报
+/// `Dart/<SDK 版本> (dart:io)`。部分 Emby 部署的 CDN / WAF 前置按 UA 拦「Dart」
+/// 这个子串：整个域名回裸 404（连 `/System/Info/Public` 与
+/// `/Users/AuthenticateByName` 都进不去），只报自己名字的客户端不受影响——
+/// 症状就是「别的客户端都能加，只有本应用 404」。
+///
+/// 这里与 [MediaServerClientIdentity] 同源：UA 报的产品名 / 版本就是认证头
+/// `Client=` 报的那一份，服务器后台看到的是同一个身份。**只报自己**，不冒充
+/// 别的客户端名（同 BUG-2848 的取舍：那是规避服务器运营方的访问控制）。
+String mediaServerUserAgent([MediaServerClientIdentity? identity]) {
+  final MediaServerClientIdentity id = identity ?? mediaServerClientIdentity;
+  return sanitizeMediaServerHeaderValue(
+    '${id.product}/${id.version}',
+    fallback: kMediaServerClientProduct,
+  );
+}

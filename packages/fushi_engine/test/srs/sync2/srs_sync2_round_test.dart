@@ -117,6 +117,67 @@ void main() {
     await round(b, loc);
     expect(await b.note(note), isNotNull);
   });
+
+  // 反馈：iPhone 连着 Windows host 时复习同步一轮接一轮不停——每轮都写新 head（再删旧 head），host 按 head 写入
+  // 推进长轮询令牌，写的设备自己被唤醒再跑一轮。没变的一轮不能往位置写任何东西。
+  test('没有新东西的一轮不写 head、不删旧 head；head 不见了才补写', () async {
+    final _CountingStore loc = _CountingStore();
+    final SrsDbStore a = await device('A');
+    final SrsDbStore b = await device('B');
+    await addNote(a, '風');
+    await round(a, loc);
+    await round(b, loc);
+    // 各自再跑到稳定（B 收了 A 的数据，ack 变了要发一次；A 收到 B 的 ack 也一样）。
+    for (int i = 0; i < 2; i++) {
+      await round(a, loc);
+      await round(b, loc);
+    }
+    loc.writes.clear();
+    final SrsSync2Report quiet = await round(a, loc);
+    expect(loc.writes, isEmpty, reason: 'nothing changed: no put / delete');
+    expect(quiet.uploaded, 0);
+    expect(quiet.serverTimeMs, isNull);
+
+    // 本机有新操作：段与 head 照发。
+    await addNote(a, '光');
+    await round(a, loc);
+    expect(
+      loc.writes.where((String w) => w.contains('/head-')),
+      isNotEmpty,
+      reason: 'a new op publishes a new head',
+    );
+
+    // 位置上本机的 head 被清掉了（写之前断网 / 别的工具删了）：没变也补写。
+    loc.files.removeWhere(
+      (String path, Uint8List _) =>
+          path.contains('/head-') && path.contains(a.sync2Device!),
+    );
+    loc.writes.clear();
+    await round(a, loc);
+    expect(
+      loc.writes.where(
+        (String w) => w.startsWith('put') && w.contains('/head-'),
+      ),
+      isNotEmpty,
+    );
+  });
+}
+
+/// 记下全部写 / 删（`put <path>` / `delete <path>`）。
+class _CountingStore extends SrsMemoryLocationStore {
+  final List<String> writes = <String>[];
+
+  @override
+  Future<void> put(String path, Uint8List bytes) {
+    writes.add('put $path');
+    return super.put(path, bytes);
+  }
+
+  @override
+  Future<void> delete(String path) {
+    writes.add('delete $path');
+    return super.delete(path);
+  }
 }
 
 /// 模拟最终一致的列目录：段文件暂时读不到（head 已可见）。

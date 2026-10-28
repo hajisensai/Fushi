@@ -38,6 +38,20 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3855](bugs/BUG-3855-bluray-menu-aacs-win-file-callback-size.md) | ✅ | ✅ | Windows 加密原盘菜单又打不开（fushi_aacs 文件回调把 seek 返回值当文件大小） |
+> 共 3468 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3864](bugs/BUG-3864-srs-review-space-dead-on-reveal.md) | 🚧 | 🚧 | 复习页空格翻到答案面后键盘失灵（Windows，未复现） |
+| [BUG-3863](bugs/BUG-3863-srs-auto-reposition-freeze.md) | ✅ | ✅ | 制卡后自动重排卡死白屏、同步也卡 |
+| [BUG-3862](bugs/BUG-3862-srs-profile-link-silent-keep.md) | ✅ | ✅ | 多台设备同名 profile 静默不关联、冲突只闪 toast |
+| [BUG-3861](bugs/BUG-3861-srs-media-sync-full-reconcile-every-round.md) | ✅ | ✅ | 复习媒体同步每轮全量对账（媒体同步慢） |
+| [BUG-3860](bugs/BUG-3860-srs-sync-self-wake-loop.md) | ✅ | ✅ | 复习同步自己唤醒自己无限循环（同步时卡顿、一直在重载） |
+| [BUG-3859](bugs/BUG-3859-superseded-navigation-error-covers-page.md) | ✅ | ✅ | superseded-navigation-error-covers-page |
+| [BUG-3858](bugs/BUG-3858-webview2-click-steals-focus-closes-yt-menu.md) | ✅ | ✅ | Windows 应用内浏览器点网页会把焦点抢回 Flutter，YouTube 设置菜单的二级项打不开 |
+| [BUG-3857](bugs/BUG-3857-collection-long-press-waits-release.md) | ✅ | ✅ | collection-long-press-waits-release |
+| [BUG-3856](bugs/BUG-3856-macos-appdelegate-super-selectors.md) | ✅ | ✅ | macOS 导入时打开访达面板后切到别的 app 再切回来必崩（AppDelegate 对 FlutterAppDelegate 没实现的 NSApplicationDelegate 方法调 super） |
+| [BUG-3855](bugs/BUG-3855-emby-waf-dart-user-agent-404.md) | ✅ | ✅ | 部分 Emby 服务器的 CDN/WAF 前置按 UA 拦 Dart 默认 UA，全站回裸 404，添加服务器与登录必失败 |
 | [BUG-3854](bugs/BUG-3854-ai-cannot-link-works.md) | ✅ | ✅ | 内置 AI 助手怎么都做不到「关联作品」 |
 | [BUG-3853](bugs/BUG-3853-collection-longpress-haptic.md) | ✅ | ✅ | collection-longpress-haptic |
 | [BUG-3852](bugs/BUG-3852-web-browser-tab-strip-caption-row-and-exit.md) | ✅ | ✅ | web-browser-tab-strip-caption-row-and-exit |

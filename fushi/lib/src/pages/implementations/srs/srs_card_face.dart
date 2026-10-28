@@ -1462,6 +1462,12 @@ void srsWarmCardFace({required String css, required List<String> bodies}) {
   }
 }
 
+/// 卡面是否自己铺底色：只有 Fushi 卡片用了自定义配色（[SrsCardColorSource.custom]）
+/// 时铺它的 surface；跟随 app 主题时与页面背景同色，铺了只会盖住路由层的形状背景。
+/// 原生卡面（`SrsFushiCardView`）与 WebView 外壳共用这一条判据。
+bool srsCardPaintsOwnSurface(SrsCardFace face, SrsCardAppearance appearance) =>
+    face.fushiCard && appearance.colorSource == SrsCardColorSource.custom;
+
 /// 一面卡在给定主题 / 外观下的外壳文档。外观设置只属于 Fushi 卡片
 /// （[SrsCardFace.fushiCard]）：别的类型拿不到它的变量、类名、字体与自定义配色，按自身
 /// HTML/CSS 原样渲染（与 Anki 一致）。
@@ -1486,9 +1492,12 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
   return SrsCardFaceDocument.of(
     face,
     dark: dark,
-    // Fushi 卡的底色是外观配色（自定义强调色时与页面背景不同），由宿主铺；其它卡片
-    // 类型对齐 Anki：底色归卡片 CSS，宿主不铺，模板写透明就透出复习页背景。
-    background: fushi ? scheme.surface : null,
+    // 宿主默认不铺底：卡面透出复习页背景（路由层的形状背景）。只有 Fushi 卡用了自定义
+    // 配色时才铺它的 surface（与页面背景不同色，是用户选的卡面底色）；其它卡片类型
+    // 对齐 Anki，底色归卡片 CSS。
+    background: srsCardPaintsOwnSurface(face, appearance)
+        ? scheme.surface
+        : null,
     foreground: scheme.onSurface,
     accent: scheme.primary,
     onAccent: scheme.onPrimary,

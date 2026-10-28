@@ -20,6 +20,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
+import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
@@ -108,6 +109,46 @@ class _AssetBackend extends _NoTimeStore implements SyncBackend {
       throw UnimplementedError('unexpected ${invocation.memberName}');
 }
 
+/// 记录每次关联判定的假 linker：[conflictFor] 里的 uid 判成冲突，其余判成「已关联上」。
+class _RecordingLinker implements SrsProfileLinker {
+  _RecordingLinker({this.conflictFor = const <String>{}});
+
+  final Set<String> conflictFor;
+  final List<String> linkedUids = <String>[];
+  final List<String> adopted = <String>[];
+
+  @override
+  Future<SrsProfileLinkOutcome> link(
+    SyncAssetStore backend,
+    SrsDbStore store,
+  ) async {
+    linkedUids.add(store.profileUid);
+    if (conflictFor.contains(store.profileUid)) {
+      return SrsProfileLinkOutcome(
+        store,
+        choose: const <SrsRemoteProfile>[
+          SrsRemoteProfile(uid: 'remote-uid', writers: <String>['v2:x']),
+        ],
+        localHasNotes: true,
+      );
+    }
+    return SrsProfileLinkOutcome(store, linked: true);
+  }
+
+  @override
+  Future<SrsDbStore> adopt(SrsDbStore store, String uid) async {
+    adopted.add('${store.profileUid}->$uid');
+    return store;
+  }
+
+  @override
+  Future<void> publish(
+    SyncAssetStore backend,
+    SrsDbStore store,
+    String directoryKey,
+  ) async {}
+}
+
 void main() {
   late Directory root;
   late FushiDatabase db;
@@ -192,6 +233,148 @@ void main() {
             l.cast<String, Object?>(),
     ];
   }
+
+  // 反馈「媒体同步那么慢」：媒体对账每轮都全量列远端媒体目录、逐个看本机文件、扫三遍笔记引用。
+  test('媒体对账：没有新操作进出的一轮跳过，有新笔记 / 到期 / 用户主动同步时照跑', () async {
+    DateTime now = DateTime(2026, 10, 28, 12);
+    int mediaRuns = 0;
+    final Directory media = Directory(p.join(root.path, '_media'))
+      ..createSync();
+    final Directory location = Directory(p.join(root.path, 'loc'))
+      ..createSync();
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(location));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:loc',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      readMediaRoot: () async => media,
+      clock: () => now,
+      mediaRunner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            Directory mediaRoot, {
+            SrsMediaCipher? cipher,
+          }) async {
+            mediaRuns++;
+            return SrsMediaSyncReport();
+          },
+    );
+    Future<void> round() async {
+      expect(
+        (await s.syncWithBackend(LocalDirectoryAssetStore(location))).error,
+        isNull,
+      );
+    }
+
+    await round();
+    expect(mediaRuns, 1, reason: '这个位置第一次：对账');
+    await round();
+    expect(mediaRuns, 1, reason: '什么都没变：跳过');
+    await store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): '霧',
+      },
+    );
+    await round();
+    expect(mediaRuns, 2, reason: '发出了新笔记：它可能引用新媒体');
+    now = now.add(kSrsMediaReconcileInterval);
+    await round();
+    expect(mediaRuns, 3, reason: '到期：补上次没下载成的文件');
+    await s.syncNow();
+    expect(mediaRuns, 4, reason: '用户主动同步：全量对账');
+  });
+
+  // 审查 PR #2593：关联判定缓存只按位置记，调度器跨 profile 切换常驻 → 切过去的 profile 永远跳过关联
+  // （不自动采用、不检出冲突、不续做中断的并入）。
+  test('关联判定缓存按（位置, profile）记：切到另一个 profile 照样判定，同一 profile 才复用', () async {
+    final SrsDbStore other = await SrsDbStore.open(
+      db: store.db,
+      core: store.core,
+      profileUid: 'other-profile',
+      deviceId: 'dev',
+    );
+    SrsDbStore active = store;
+    final _RecordingLinker linker = _RecordingLinker();
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => active,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(root));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:root',
+      profileLinker: linker,
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+    );
+    final LocalDirectoryAssetStore dir = LocalDirectoryAssetStore(root);
+    expect((await s.syncWithBackend(dir)).error, isNull);
+    expect((await s.syncWithBackend(dir)).error, isNull);
+    expect(linker.linkedUids, <String>[
+      kSrsTestProfile,
+    ], reason: '同一 profile 已关联上：复用');
+    active = other;
+    expect((await s.syncWithBackend(dir)).error, isNull);
+    expect(linker.linkedUids, <String>[
+      kSrsTestProfile,
+      'other-profile',
+    ], reason: '换了 profile：必须重新判定');
+  });
+
+  test('profile 冲突：每次重新判出都通知；切了 profile 后用旧冲突采用被拒、什么都不动', () async {
+    DateTime now = DateTime(2026, 10, 28, 12);
+    final SrsDbStore other = await SrsDbStore.open(
+      db: store.db,
+      core: store.core,
+      profileUid: 'other-profile',
+      deviceId: 'dev',
+    );
+    SrsDbStore active = store;
+    final _RecordingLinker linker = _RecordingLinker(
+      conflictFor: <String>{kSrsTestProfile},
+    );
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => active,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(root));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:root',
+      profileLinker: linker,
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      clock: () => now,
+    );
+    final LocalDirectoryAssetStore dir = LocalDirectoryAssetStore(root);
+    await s.syncWithBackend(dir);
+    final SrsProfileConflict conflict = s.profileConflict!;
+    expect(conflict.localUid, kSrsTestProfile);
+    expect(
+      notices.where((SrsSyncNotice n) => n == SrsSyncNotice.profileNotLinked),
+      hasLength(1),
+    );
+    await s.syncWithBackend(dir);
+    expect(
+      notices.where((SrsSyncNotice n) => n == SrsSyncNotice.profileNotLinked),
+      hasLength(1),
+      reason: '判定复用期内不重复通知',
+    );
+    now = now.add(kSrsProfileConflictRecheck);
+    await s.syncWithBackend(dir);
+    expect(
+      notices.where((SrsSyncNotice n) => n == SrsSyncNotice.profileNotLinked),
+      hasLength(2),
+      reason: '过期重判又判出冲突：再通知（用户选过「稍后」也要能再问）',
+    );
+    active = other;
+    await expectLater(s.adoptProfile(conflict, 'remote-uid'), throwsStateError);
+    expect(linker.adopted, isEmpty, reason: '冲突属于别的 profile：不许把当前 profile 并进去');
+  });
 
   test('加密路径经调度器：注入的 runner / 媒体 runner 拿到本机密钥与封装，开加密生效后位置上没有明文', () async {
     // P2-8：调度器不再按 identical(runner, 默认实现) 区分测试注入；注入的实现收到的就是生产路径会用的密钥。

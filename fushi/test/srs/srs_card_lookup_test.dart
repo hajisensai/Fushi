@@ -77,6 +77,8 @@ Future<DictionarySearchResult> _fakeSearch(String term, int max) async =>
 Map<String, String> _fields() => <String, String>{
   for (final String f in FushiCardNoteType.fields) f: '',
   ...srsSampleCardFields(),
+  // 例句字段自带 Anki 方括号注音（导入的笔记常见）：例句注音的点按显示走这一份。
+  'Sentence': '毎日[まいにち]のように 図書館[としょかん]に<b>通[かよ]って</b>いる。',
 };
 
 void main() {
