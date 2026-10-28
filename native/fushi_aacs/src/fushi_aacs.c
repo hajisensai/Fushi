@@ -166,14 +166,26 @@ static uint8_t *read_disc_file(const char *device, const char *relative,
   return data;
 }
 
+/* Size of a file-layer handle, measured like libbluray's own file_size():
+ * seek's return value is not a position on every platform (libbluray 1.5.0
+ * file_win32.c returns fseeko64's 0-on-success, file_posix.c returns lseek's
+ * offset), so only its sign is meaningful and the size comes from tell. */
+static int64_t file_cb_size(AACS_FILE_H *file) {
+  if (!file->seek || !file->tell) return -1;
+  if (file->seek(file, 0, SEEK_END) < 0) return -1;
+  const int64_t size = file->tell(file);
+  if (file->seek(file, 0, SEEK_SET) < 0) return -1;
+  return size;
+}
+
 /* Reads <relative> fully through libbluray's file layer (aacs_set_fopen). */
 static uint8_t *read_disc_file_cb(const AACS *aacs, const char *relative,
                                   size_t max_bytes, size_t *length) {
   AACS_FILE_H *file = aacs->fopen_fp(aacs->fopen_handle, relative);
   if (!file) return NULL;
   uint8_t *data = NULL;
-  const int64_t size = file->seek ? file->seek(file, 0, SEEK_END) : -1;
-  if (size > 0 && (uint64_t)size <= max_bytes && file->seek(file, 0, SEEK_SET) == 0) {
+  const int64_t size = file_cb_size(file);
+  if (size > 0 && (uint64_t)size <= max_bytes) {
     data = (uint8_t *)malloc((size_t)size);
     int64_t done = 0;
     while (data && done < size) {
