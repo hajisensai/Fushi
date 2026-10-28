@@ -61,9 +61,13 @@ typedef struct {
   mem_entry entries[4];
   int count;
   int opened;
+  /* libbluray 1.5.0's file layer differs per platform: file_posix.c's seek
+   * returns lseek's new offset, file_win32.c's returns fseeko64's 0. */
+  int win32_seek;
 } mem_disc;
 
 typedef struct {
+  const mem_disc *disc;
   const mem_entry *entry;
   int64_t pos;
 } mem_file;
@@ -80,7 +84,11 @@ static int64_t mem_seek(AACS_FILE_H *file, int64_t offset, int32_t origin) {
                                               : offset;
   if (target < 0 || target > f->entry->size) return -1;
   f->pos = target;
-  return target;
+  return f->disc->win32_seek ? 0 : target;
+}
+
+static int64_t mem_tell(AACS_FILE_H *file) {
+  return ((mem_file *)file->internal)->pos;
 }
 
 static int64_t mem_read(AACS_FILE_H *file, uint8_t *buf, int64_t size) {
@@ -100,10 +108,12 @@ static AACS_FILE_H *mem_open(void *handle, const char *filename) {
     if (strcmp(disc->entries[i].name, filename) != 0) continue;
     AACS_FILE_H *file = (AACS_FILE_H *)calloc(1, sizeof(*file));
     mem_file *f = (mem_file *)calloc(1, sizeof(*f));
+    f->disc = disc;
     f->entry = &disc->entries[i];
     file->internal = f;
     file->close = mem_close;
     file->seek = mem_seek;
+    file->tell = mem_tell;
     file->read = mem_read;
     disc->opened++;
     return file;
@@ -306,32 +316,36 @@ int main(void) {
     aacs_close(aacs);
   }
 
-  /* File-callback contract: no path, files only through libbluray's layer. */
+  /* File-callback contract: no path, files only through libbluray's layer,
+   * under both platforms' seek return conventions. */
   fushi_aacs_set_disc_key(disc_id, vuk);
-  mem_disc memory = {{{"AACS/Unit_Key_RO.inf", unit_file, sizeof(unit_file)},
-                      {"AACS/Content000.cer", cert, sizeof(cert)},
-                      {"AACS/MKB_RO.inf", mkb, 12}},
-                     3,
-                     0};
-  aacs = aacs_init();
-  CHECK(aacs != NULL);
-  if (aacs) {
-    aacs_set_fopen(aacs, &memory, mem_open);
-    CHECK(aacs_open_device(aacs, NULL, NULL) == 0);
-    CHECK(memory.opened == 3);
-    CHECK(memcmp(aacs_get_disc_id(aacs), disc_id, 20) == 0);
-    CHECK(aacs_get_bus_encryption(aacs) == 1);
-    CHECK(aacs_get_mkb_version(aacs) == 0x44);
-    uint8_t plain[6144], unit[6144];
-    make_plain_unit(plain, 77);
-    encrypt_unit(unit_keys[1], plain, unit);
-    CHECK(aacs_decrypt_unit(aacs, unit) == 1);
-    for (int packet = 0; packet < 32; packet++) plain[packet * 192] &= 0x3f;
-    CHECK(memcmp(unit, plain, 6144) == 0);
-    aacs_close(aacs);
+  for (int win32_seek = 0; win32_seek <= 1; win32_seek++) {
+    mem_disc memory = {{{"AACS/Unit_Key_RO.inf", unit_file, sizeof(unit_file)},
+                        {"AACS/Content000.cer", cert, sizeof(cert)},
+                        {"AACS/MKB_RO.inf", mkb, 12}},
+                       3,
+                       0,
+                       win32_seek};
+    aacs = aacs_init();
+    CHECK(aacs != NULL);
+    if (aacs) {
+      aacs_set_fopen(aacs, &memory, mem_open);
+      CHECK(aacs_open_device(aacs, NULL, NULL) == 0);
+      CHECK(memory.opened == 3);
+      CHECK(memcmp(aacs_get_disc_id(aacs), disc_id, 20) == 0);
+      CHECK(aacs_get_bus_encryption(aacs) == 1);
+      CHECK(aacs_get_mkb_version(aacs) == 0x44);
+      uint8_t plain[6144], unit[6144];
+      make_plain_unit(plain, 77);
+      encrypt_unit(unit_keys[1], plain, unit);
+      CHECK(aacs_decrypt_unit(aacs, unit) == 1);
+      for (int packet = 0; packet < 32; packet++) plain[packet * 192] &= 0x3f;
+      CHECK(memcmp(unit, plain, 6144) == 0);
+      aacs_close(aacs);
+    }
   }
   /* The callback wins over a path; a disc it cannot serve is corrupted. */
-  mem_disc empty = {{{0}}, 0, 0};
+  mem_disc empty = {{{0}}, 0, 0, 0};
   aacs = aacs_init();
   if (aacs) {
     aacs_set_fopen(aacs, &empty, mem_open);
