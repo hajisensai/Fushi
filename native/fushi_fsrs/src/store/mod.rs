@@ -491,6 +491,18 @@ impl SrsCore {
         query_rows(&*self.reader()?, sql, params)
     }
 
+    /// 一次性全库扫描（状态摘要）用的只读连接：页缓存只有 2 MB、调用方用完即关，扫描读过的页不会留在读连接的
+    /// 64 MB 页缓存里（那份缓存留给反复读同一批行的历史类命令）。顺序扫描靠 mmap 与操作系统的文件缓存，小页缓存
+    /// 不慢。与 [SrsCore::read_session] 一样先拿读连接的锁：与 [SrsCore::close] 互斥，库已关闭就报「已关闭」。
+    pub(crate) fn scan_connection(&self) -> Result<(Conn<'_>, Connection), String> {
+        let open = self.reader()?;
+        let conn = Connection::open_with_flags(&self.path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+            .map_err(|e| format!("open scan connection {}: {e}", self.path.display()))?;
+        configure(&conn)?;
+        conn.execute_batch("PRAGMA cache_size = -2048;").map_err(|e| e.to_string())?;
+        Ok((open, conn))
+    }
+
     /// 另开一条只读连接、开读事务并先读一次（快照在第一次读时才定下）：返回时快照已定，之后本库的
     /// 新写入都不在里面。备份读快照用（后台 isolate 里分页读二三十秒，不占读 / 写连接）。
     ///

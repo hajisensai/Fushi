@@ -879,6 +879,74 @@ fn a_large_first_commit_uploads_a_handful_of_files() {
     assert_eq!(a.digest(), c.digest());
 }
 
+/// 解压后切满的段（压缩后很小）在分层合并眼里是满段：不会每轮被挑出来重新加载、重新压缩估算（重切后段数
+/// 不减，合并最后会作罢，但白做一遍）。
+#[test]
+fn raw_full_segments_are_never_compaction_candidates() {
+    use crate::sync2::id::Id;
+    use crate::sync2::op::{Op, SCHEMA};
+    use crate::sync2::segment::split_ranges;
+    use crate::sync2::hlc::Hlc;
+    use crate::sync2::vv::{OpId, Vv};
+    let dev = Id([4; 16]);
+    let deps = std::sync::Arc::new(Vv::new());
+    let ops: Vec<Op> = (1..=800u64)
+        .map(|seq| Op {
+            id: OpId { device: dev, seq },
+            hlc: Hlc { wall: seq as i64, logical: 0, device: dev },
+            deps: deps.clone(),
+            kind: 9999,
+            schema: SCHEMA,
+            payload: vec![0u8; 100_000].into(),
+            purged: false,
+        })
+        .collect();
+    let segs = split_ranges(&ops);
+    assert!(segs.len() >= 5, "{segs:?}");
+    let plan = super::transport::compaction_plan(&segs);
+    assert!(plan.is_empty(), "{:?}", plan.iter().map(|g| g.segs.clone()).collect::<Vec<_>>());
+}
+
+/// 重复度高的大正文：按解压后体积切成几段（读端一次只解一段），解压后过半的段不再被分层合并重切 / 重传；
+/// 新设备逐段收、结果与发件端一致。
+#[test]
+fn highly_compressible_content_is_cut_by_uncompressed_size_and_not_recompacted() {
+    let a = Device::new("raw");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck)]);
+    let filler = "日本語の例文。".repeat(1000);
+    for batch in 0..8 {
+        let events: Vec<Value> =
+            (0..250).map(|i| edit("note", &format!("N{batch}-{i}"), "f/s", json!(format!("{filler}{i}")))).collect();
+        a.apply(T0 + batch, events);
+    }
+    let mut bucket = Bucket::default();
+    a.sync(&mut bucket, "loc", T0 + DAY);
+    // 2000 × ~21 KB ≈ 42 MB 明文，压缩后不到 1 MB：按解压后 16 MB 上限至少三段。
+    let files: Vec<String> = bucket.0.keys().filter(|k| k.contains("/seg-")).cloned().collect();
+    assert!(files.len() >= 3, "{files:?}");
+    // 分层合并每轮都会看一遍切段点：这些段压缩后很小，若按真实压缩体积记，每轮都会被挑出来重新加载、重新压缩
+    // 估算（再因段数不减而作罢）。
+    let segs: Vec<(u64, u64, u64)> = a
+        .rows("SELECT first, last, bytes FROM sync2_segments ORDER BY first")
+        .iter()
+        .skip(1)
+        .map(|r| (r[0].parse().unwrap(), r[1].parse().unwrap(), r[2].parse().unwrap()))
+        .collect();
+    assert!(segs.len() >= 3, "{segs:?}");
+    let plan = super::transport::compaction_plan(&segs);
+    assert!(plan.is_empty(), "{:?}", plan.iter().map(|g| g.segs.clone()).collect::<Vec<_>>());
+    for _ in 0..3 {
+        a.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    }
+    let again: Vec<String> = bucket.0.keys().filter(|k| k.contains("/seg-")).cloned().collect();
+    assert_eq!(again, files);
+    let c = Device::new("rawc");
+    c.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    assert_eq!(projection(&a), projection(&c));
+    assert_eq!(a.digest(), c.digest());
+}
+
 /// 升级前切的老段（体积未知，记 0）：下一轮补算体积、按层合并，位置上换成少数几个大段，新设备照样收齐。
 #[test]
 fn pre_upgrade_small_segments_are_sized_and_compacted() {

@@ -2,7 +2,9 @@
 //   1. `FUSHI_SRS_INGEST_BENCH=<笔记数> FUSHI_SRS_INGEST_BENCH_DIR=<空目录>`：设备 A 写一批带长字段的笔记、发段，
 //      位置上的文件落进目录；
 //   2. 同样的环境变量再跑一次（目录已有文件）：新设备 B 一轮同步收下全部段，量这一轮的墙钟耗时（含 FFI、跨
-//      isolate 拷贝、缓存刷新）与进程峰值 RSS 相对开库后的增量。
+//      isolate 拷贝、缓存刷新）与进程峰值 RSS 相对开库后的增量。Windows 上另报峰值私有提交（`PeakPagedMemorySize64`）：
+//      峰值 RSS（工作集）把 SQLite mmap 进来的库文件页也算进去（srs.db 开 256 MiB mmap），那部分是可回收的
+//      文件页；私有提交才是收段真正占住的堆。
 // 只用来出 PR 里的前后对比数字。
 import 'dart:io';
 import 'dart:typed_data';
@@ -63,11 +65,13 @@ void main() {
           loc.files[rel] = f.readAsBytesSync();
         }
         final SrsDbStore b = await device('B');
+        final int priv0 = _peakPrivateBytes();
         final int rss0 = ProcessInfo.maxRss;
         final Stopwatch sw = Stopwatch()..start();
         final SrsSync2Report r = await round(b, loc);
         sw.stop();
         final int rss1 = ProcessInfo.maxRss;
+        final int priv1 = _peakPrivateBytes();
         expect(r.error, isNull);
         expect(r.applied, greaterThan(0));
         // ignore: avoid_print
@@ -75,7 +79,8 @@ void main() {
           'INGEST_BENCH notes=$notes applied=${r.applied} '
           'ms=${sw.elapsedMilliseconds} '
           'maxRssBeforeMiB=${rss0 >> 20} maxRssAfterMiB=${rss1 >> 20} '
-          'peakDeltaMiB=${(rss1 - rss0) >> 20}',
+          'peakDeltaMiB=${(rss1 - rss0) >> 20} '
+          'peakPrivateDeltaMiB=${priv0 < 0 ? 'n/a' : (priv1 - priv0) >> 20}',
         );
         return;
       }
@@ -111,4 +116,15 @@ void main() {
         : false,
     timeout: const Timeout(Duration(minutes: 30)),
   );
+}
+
+/// 本进程的峰值私有提交（字节；非 Windows 为 -1）。
+int _peakPrivateBytes() {
+  if (!Platform.isWindows) return -1;
+  final ProcessResult r = Process.runSync('powershell', <String>[
+    '-NoProfile',
+    '-Command',
+    '(Get-Process -Id $pid).PeakPagedMemorySize64',
+  ]);
+  return int.tryParse((r.stdout as String).trim()) ?? -1;
 }

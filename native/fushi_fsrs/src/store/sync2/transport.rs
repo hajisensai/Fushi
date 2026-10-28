@@ -98,13 +98,13 @@ fn compact_tier(bytes: u64) -> u32 {
 }
 
 /// 一组相邻的段（seq 首尾相接）与它们的体积之和。
-struct CompactGroup {
-    segs: Vec<(u64, u64)>,
+pub(super) struct CompactGroup {
+    pub(super) segs: Vec<(u64, u64)>,
     bytes: u64,
 }
 
 /// 只看体积定出要合并的组（每组 ≥ 2 个相邻段），不读操作。
-fn compaction_plan(segs: &[(u64, u64, u64)]) -> Vec<CompactGroup> {
+pub(super) fn compaction_plan(segs: &[(u64, u64, u64)]) -> Vec<CompactGroup> {
     fn flush(stack: &mut Vec<CompactGroup>, merges: &mut Vec<CompactGroup>) {
         merges.extend(stack.drain(..).filter(|g| g.segs.len() > 1));
     }
@@ -342,16 +342,28 @@ fn unstore(c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<(), S
     Ok(())
 }
 
-/// 因果投递：缓冲表里留着的 + 本轮刚收的 [incoming]（`(操作, 链值)`，任意顺序、可重复），按设备排成队，能接上的
+/// 因果投递：缓冲表里留着的 + 本轮刚收的远端操作（`(操作, 链值)`，任意顺序、可重复），按设备排成队，能接上的
 /// （seq = applied + 1、链接得上、依赖都已应用）就应用，直到哪个队首都动不了。投递不了的写进缓冲等下一轮。
-/// 返回应用条数。
 ///
 /// 在内存里按设备排队：每一遍只看各设备的队首，整体是 O(操作数 + 遍数 × 设备数)。（逐遍重扫整张缓冲表在
-/// 新设备追赶两台互相同步过上千次的设备时是平方级的。）设备进度（`sync2_devices.applied / chain`）最后一次写。
-fn deliver(c: &Connection, profile: &str, incoming: Vec<(Op, Chain)>, now: i64, t: &mut Touched) -> Result<usize, String> {
-    let mut vv = applied_vv(c, profile)?;
-    let mut queues: BTreeMap<Id, BTreeMap<u64, Held>> = BTreeMap::new();
-    {
+/// 新设备追赶两台互相同步过上千次的设备时是平方级的。）
+///
+/// 一次收段调用里只开一个：缓冲表只读一次，每解开一段就 [Delivery::push] + [Delivery::drain]，投上的操作当场
+/// 释放，[Delivery::finish] 最后一次写设备进度、把没投上的写进缓冲。所以收段的内存是「一段 + 等依赖的操作」，
+/// 不随一批里有几段增长；结果与整批一起投相同（等价于每批只收一段，Dart 侧本来就按任意段边界切批）。
+struct Delivery {
+    vv: Vv,
+    queues: BTreeMap<Id, BTreeMap<u64, Held>>,
+    chains: BTreeMap<Id, Chain>,
+    /// 本次调用里判定分叉的设备：它这一支后面再来的操作也不收（与整批投递时 `q.clear()` 一并清掉相同）。
+    forked: BTreeSet<Id>,
+    applied: usize,
+}
+
+impl Delivery {
+    fn load(c: &Connection, profile: &str) -> Result<Delivery, String> {
+        let vv = applied_vv(c, profile)?;
+        let mut queues: BTreeMap<Id, BTreeMap<u64, Held>> = BTreeMap::new();
         let mut stmt = c.prepare_cached("SELECT device, seq, op, chain FROM sync2_pending WHERE profile_uid = ?1").map_err(sql)?;
         let mut q = stmt.query([profile]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
@@ -361,92 +373,117 @@ fn deliver(c: &Connection, profile: &str, incoming: Vec<(Op, Chain)>, now: i64, 
             let held = Held { op: None, raw: Some(r.get(2).map_err(sql)?), chain, stored: true };
             queues.entry(device).or_default().insert(seq, held);
         }
+        Ok(Delivery { vv, queues, chains: BTreeMap::new(), forked: BTreeSet::new(), applied: 0 })
     }
-    for (op, chain) in incoming {
-        // 缓冲表里已有同一 (设备, seq) 的以它为准（与原先 INSERT OR IGNORE 一样）。
-        queues
-            .entry(op.id.device)
-            .or_default()
-            .entry(op.id.seq)
-            .or_insert(Held { op: Some(op), raw: None, chain, stored: false });
+
+    fn push(&mut self, incoming: impl IntoIterator<Item = (Op, Chain)>) {
+        for (op, chain) in incoming {
+            if self.forked.contains(&op.id.device) {
+                continue;
+            }
+            // 缓冲表里已有同一 (设备, seq) 的以它为准（与原先 INSERT OR IGNORE 一样）。
+            self.queues
+                .entry(op.id.device)
+                .or_default()
+                .entry(op.id.seq)
+                .or_insert(Held { op: Some(op), raw: None, chain, stored: false });
+        }
     }
-    let mut chains: BTreeMap<Id, Chain> = BTreeMap::new();
-    let mut applied_n = 0usize;
-    loop {
-        let mut progress = false;
-        for (device, q) in queues.iter_mut() {
-            while let Some(mut entry) = q.first_entry() {
-                let seq = *entry.key();
-                let have = vv.get(device);
-                if seq <= have {
-                    // 已有：同一 seq 链值不同 = 那台设备的身份分叉了（它自己会换身份重签发）。
-                    let held = entry.remove();
-                    if chain_at(c, profile, device, seq)? != Some(held.chain) {
-                        mark_fork(c, profile, device)?;
+
+    fn drain(&mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched) -> Result<(), String> {
+        let Delivery { vv, queues, chains, applied, forked } = self;
+        let mut dropped: Vec<Id> = Vec::new();
+        loop {
+            let mut progress = false;
+            for (device, q) in queues.iter_mut() {
+                while let Some(mut entry) = q.first_entry() {
+                    let seq = *entry.key();
+                    let have = vv.get(device);
+                    if seq <= have {
+                        // 已有：同一 seq 链值不同 = 那台设备的身份分叉了（它自己会换身份重签发）。
+                        let held = entry.remove();
+                        if chain_at(c, profile, device, seq)? != Some(held.chain) {
+                            mark_fork(c, profile, device)?;
+                        }
+                        if held.stored {
+                            unstore(c, profile, device, seq)?;
+                        }
+                        continue;
                     }
+                    if seq != have + 1 {
+                        break;
+                    }
+                    let prev = match chains.get(device) {
+                        Some(p) => *p,
+                        None => chain_at(c, profile, device, seq - 1)?.unwrap_or(CHAIN_ZERO),
+                    };
+                    let held = entry.get_mut();
+                    let chain = held.chain;
+                    let op = held.op()?;
+                    if chain_next(&prev, op) != chain {
+                        // 接不上本机已有的前缀：那台设备分叉过，这一支不收。
+                        mark_fork(c, profile, device)?;
+                        c.execute(
+                            "DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq >= ?3",
+                            params![profile, device.0.to_vec(), seq as i64],
+                        )
+                        .map_err(sql)?;
+                        q.clear();
+                        dropped.push(*device);
+                        break;
+                    }
+                    if !op.deps.le(&vv) {
+                        break;
+                    }
+                    insert_op(c, profile, op, &chain, now)?;
+                    project(c, profile, op, now, true, t)?;
                     if held.stored {
                         unstore(c, profile, device, seq)?;
                     }
-                    continue;
+                    entry.remove();
+                    vv.set(*device, seq);
+                    chains.insert(*device, chain);
+                    *applied += 1;
+                    progress = true;
                 }
-                if seq != have + 1 {
-                    break;
-                }
-                let prev = match chains.get(device) {
-                    Some(p) => *p,
-                    None => chain_at(c, profile, device, seq - 1)?.unwrap_or(CHAIN_ZERO),
-                };
-                let held = entry.get_mut();
-                let chain = held.chain;
-                let op = held.op()?;
-                if chain_next(&prev, op) != chain {
-                    // 接不上本机已有的前缀：那台设备分叉过，这一支不收。
-                    mark_fork(c, profile, device)?;
-                    c.execute(
-                        "DELETE FROM sync2_pending WHERE profile_uid = ?1 AND device = ?2 AND seq >= ?3",
-                        params![profile, device.0.to_vec(), seq as i64],
-                    )
-                    .map_err(sql)?;
-                    q.clear();
-                    break;
-                }
-                if !op.deps.le(&vv) {
-                    break;
-                }
-                insert_op(c, profile, op, &chain, now)?;
-                project(c, profile, op, now, true, t)?;
-                if held.stored {
-                    unstore(c, profile, device, seq)?;
-                }
-                entry.remove();
-                vv.set(*device, seq);
-                chains.insert(*device, chain);
-                applied_n += 1;
-                progress = true;
+            }
+            if !progress {
+                break;
             }
         }
-        if !progress {
-            break;
+        forked.extend(dropped);
+        Ok(())
+    }
+
+    /// 设备进度一次写；没投上的写进缓冲。返回应用条数。
+    fn finish(mut self, c: &Connection, profile: &str) -> Result<usize, String> {
+        for (device, chain) in &self.chains {
+            c.prepare_cached("UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = ?1 AND device = ?2")
+                .map_err(sql)?
+                .execute(params![profile, device.0.to_vec(), self.vv.get(device) as i64, chain.to_vec()])
+                .map_err(sql)?;
         }
-    }
-    for (device, chain) in &chains {
-        c.prepare_cached("UPDATE sync2_devices SET applied = ?3, chain = ?4 WHERE profile_uid = ?1 AND device = ?2")
-            .map_err(sql)?
-            .execute(params![profile, device.0.to_vec(), vv.get(device) as i64, chain.to_vec()])
-            .map_err(sql)?;
-    }
-    for (device, q) in queues.iter_mut() {
-        for (seq, held) in q.iter_mut().filter(|(_, h)| !h.stored) {
-            let bytes = held.op()?.encode();
-            c.prepare_cached(
-                "INSERT OR IGNORE INTO sync2_pending (profile_uid, device, seq, op, chain) VALUES (?1, ?2, ?3, ?4, ?5)",
-            )
-            .map_err(sql)?
-            .execute(params![profile, device.0.to_vec(), *seq as i64, bytes, held.chain.to_vec()])
-            .map_err(sql)?;
+        for (device, q) in self.queues.iter_mut() {
+            for (seq, held) in q.iter_mut().filter(|(_, h)| !h.stored) {
+                let bytes = held.op()?.encode();
+                c.prepare_cached(
+                    "INSERT OR IGNORE INTO sync2_pending (profile_uid, device, seq, op, chain) VALUES (?1, ?2, ?3, ?4, ?5)",
+                )
+                .map_err(sql)?
+                .execute(params![profile, device.0.to_vec(), *seq as i64, bytes, held.chain.to_vec()])
+                .map_err(sql)?;
+            }
         }
+        Ok(self.applied)
     }
-    Ok(applied_n)
+}
+
+/// 一次投完一组操作（导入包的路径；收段走 [Delivery] 逐段投）。
+fn deliver(c: &Connection, profile: &str, incoming: Vec<(Op, Chain)>, now: i64, t: &mut Touched) -> Result<usize, String> {
+    let mut d = Delivery::load(c, profile)?;
+    d.push(incoming);
+    d.drain(c, profile, now, t)?;
+    d.finish(c, profile)
 }
 
 /// 分批收段会话（[SrsCore::sync2_ingest_begin]）：开会话时的本机身份与跨批累积的分叉点。
@@ -465,6 +502,9 @@ impl IngestSession {
 
 /// 收一批段（不换身份）：远端操作投递进投影 / 缓冲，返回应用条数；本机身份的段只比链，把分叉点（第一处不同的
 /// 前一个 seq）取最小累积进 [fork_at]。
+///
+/// 逐段处理：按（设备, 起始 seq）排好，解开一段就投一段（[Delivery]），同时在内存里的只有当前这段与等依赖的
+/// 操作。以前先把一批里全部段的操作解码攒齐再投，一批的字节预算按压缩后体积算，重复度高的正文解开能大两个数量级。
 #[allow(clippy::too_many_arguments)]
 fn ingest_segments(
     c: &Connection,
@@ -478,18 +518,17 @@ fn ingest_segments(
     fork_at: &mut Option<u64>,
 ) -> Result<usize, String> {
     let ck = key.map(CollectionKey);
-    let mut incoming: Vec<(Op, Chain)> = Vec::new();
+    let mut order: Vec<(segment::SegmentHeader, &Vec<u8>)> = Vec::with_capacity(segments.len());
     for bytes in segments {
-        let header = match segment::peek_header(bytes) {
-            Ok(h) => h,
-            Err(e) => {
-                errors.push(e.to_string());
-                continue;
-            }
-        };
-        if header.collection != local.collection {
-            continue;
+        match segment::peek_header(bytes) {
+            Ok(h) if h.collection == local.collection => order.push((h, bytes)),
+            Ok(_) => {}
+            Err(e) => errors.push(e.to_string()),
         }
+    }
+    order.sort_by_key(|(h, _)| (h.device, h.first));
+    let mut delivery = Delivery::load(c, profile)?;
+    for (header, bytes) in order {
         let public: Option<Vec<u8>> = c
             .query_row(
                 "SELECT public FROM sync2_devices WHERE profile_uid = ?1 AND device = ?2",
@@ -533,12 +572,13 @@ fn ingest_segments(
             continue;
         }
         let mut chain = seg.header.prev_chain;
-        for op in seg.ops {
+        delivery.push(seg.ops.into_iter().map(|op| {
             chain = chain_next(&chain, &op);
-            incoming.push((op, chain));
-        }
+            (op, chain)
+        }));
+        delivery.drain(c, profile, now, t)?;
     }
-    deliver(c, profile, incoming, now, t)
+    delivery.finish(c, profile)
 }
 
 /// 收段命令的返回（重放受影响的卡、数缓冲）。
@@ -1081,39 +1121,35 @@ impl SrsCore {
     }
 
     /// 算并记下状态摘要（写进 head，§4.5）。摘要是全库扫描（100 万次复习约数秒），所以：
-    /// - 在**读连接**的一个读事务里算（WAL 快照：摘要与版本向量出自同一时刻；不占写锁，复习照常写）；
-    /// - 给了 [min_interval_ms]：版本向量没变、或离上次算不到这个间隔，就不算（返回 `{"skipped": true}`）。
+    /// - 给了 [min_interval_ms]：版本向量没变、或离上次算不到这个间隔，就不算（返回 `{"skipped": true}`）；
+    /// - 在一条**专用的扫描连接**（[SrsCore::scan_connection]，小页缓存、算完即关）的一个读事务里算（WAL 快照：
+    ///   摘要与版本向量出自同一时刻；不占写锁，复习照常写）。一次性顺序扫描用不上页缓存，放在读连接上会把它
+    ///   的 64 MB 页缓存填满、并一直占到关库。
     pub fn sync2_digest_due(&self, profile: &str, now: i64, min_interval_ms: Option<i64>) -> Result<Value, String> {
         let key = format!("sync2_digest/{profile}");
         let at_key = format!("sync2_digest_at/{profile}");
-        let (d, vv) = {
+        if let Some(interval) = min_interval_ms {
             let r = self.reader()?;
-            r.execute_batch("BEGIN").map_err(sql)?;
-            let out = (|| {
-                let vv = applied_vv(&r, profile)?;
-                if let Some(interval) = min_interval_ms {
-                    let prev: Option<String> = r
-                        .query_row("SELECT value FROM srs_meta WHERE key = ?1", [&key], |x| x.get(0))
-                        .optional()
-                        .map_err(sql)?;
-                    let last_at: i64 = r
-                        .query_row("SELECT value FROM srs_meta WHERE key = ?1", [&at_key], |x| x.get::<_, String>(0))
-                        .optional()
-                        .map_err(sql)?
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(0);
-                    let same_vv = prev.as_deref().and_then(|p| p.split_once('@')).is_some_and(|(_, v)| v == vv.hash_hex());
-                    if same_vv || now - last_at < interval {
-                        return Ok(None);
-                    }
-                }
-                Ok::<_, String>(Some((digest(&r, profile)?, vv)))
-            })();
-            r.execute_batch("COMMIT").map_err(sql)?;
-            match out? {
-                Some(x) => x,
-                None => return Ok(json!({"skipped": true})),
+            let vv = applied_vv(&r, profile)?;
+            let prev: Option<String> =
+                r.query_row("SELECT value FROM srs_meta WHERE key = ?1", [&key], |x| x.get(0)).optional().map_err(sql)?;
+            let last_at: i64 = r
+                .query_row("SELECT value FROM srs_meta WHERE key = ?1", [&at_key], |x| x.get::<_, String>(0))
+                .optional()
+                .map_err(sql)?
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            let same_vv = prev.as_deref().and_then(|p| p.split_once('@')).is_some_and(|(_, v)| v == vv.hash_hex());
+            if same_vv || now - last_at < interval {
+                return Ok(json!({"skipped": true}));
             }
+        }
+        let (d, vv) = {
+            let (_open, r) = self.scan_connection()?;
+            r.execute_batch("BEGIN").map_err(sql)?;
+            let out = (|| Ok::<_, String>((digest(&r, profile)?, applied_vv(&r, profile)?)))();
+            r.execute_batch("COMMIT").map_err(sql)?;
+            out?
         };
         let w = self.writer()?;
         in_savepoint(&w, |c| {

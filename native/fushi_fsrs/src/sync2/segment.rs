@@ -39,6 +39,10 @@ pub const MIN_READER: u32 = 1;
 pub const SEGMENT_TARGET_BYTES: u64 = 4 * 1024 * 1024;
 /// 每段条数上限：只是解码内存的保险（真实复习压缩后每条几十字节，4 MB 约十万条）。
 pub const SEGMENT_MAX_OPS: u64 = 250_000;
+/// 每段**解压后**的体积上限（按载荷 + 每条固定开销估计）。只按压缩后体积切时，重复度高的正文（例句、模板
+/// 化字段）压缩比能到上百倍，一个 4 MB 的段解开就是几百 MB，读端解一段要同时拿着明文与解出来的操作。
+/// 普通内容压缩比几倍，这条上限碰不到；碰到的段在 [Splitter] 交回的体积里按满段记（见 [Splitter::finish]）。
+pub const SEGMENT_MAX_RAW_BYTES: u64 = 16 * 1024 * 1024;
 /// 估算压缩体积的小块：块内一起压、块间各自压，求和是整段一起压的上界（块越大越准，也越费内存）。
 const CHUNK_OPS: usize = 4096;
 const CHUNK_RAW: usize = 256 * 1024;
@@ -325,12 +329,14 @@ pub fn compressed_len(ops: &[Op]) -> u64 {
 /// 按设计 §6.2 的目标把一台设备连续 seq 的操作流式切成段：逐条 [Splitter::push]，最后 [Splitter::finish] 得到
 /// `(first, last, 压缩后体积估计)`。不必把整段操作攒在内存里——首次提交几十万条也只占一个小块的内存。
 ///
-/// 切点只落在小块边界上；体积估计是各小块单独压缩之和（上界），所以真实段不超过 [SEGMENT_TARGET_BYTES]。
+/// 切点只落在小块边界上；体积估计是各小块单独压缩之和（上界），所以真实段不超过 [SEGMENT_TARGET_BYTES]，
+/// 解压后也不超过 [SEGMENT_MAX_RAW_BYTES]（单条操作本身更大时一条一段）。
 #[derive(Default)]
 pub struct Splitter {
     chunk: Vec<Op>,
     chunk_raw: usize,
-    cur: Option<(u64, u64, u64)>,
+    /// 当前段 `(first, last, 压缩后体积估计, 解压后体积估计)`。
+    cur: Option<(u64, u64, u64, u64)>,
     out: Vec<(u64, u64, u64)>,
 }
 
@@ -352,14 +358,20 @@ impl Splitter {
         let (Some(head), Some(tail)) = (self.chunk.first(), self.chunk.last()) else { return };
         let (first, last, n) = (head.id.seq, tail.id.seq, self.chunk.len() as u64);
         let bytes = compressed_len(&self.chunk);
+        let raw = self.chunk_raw as u64;
         match &mut self.cur {
-            Some((a, b, s)) if *s + bytes <= SEGMENT_TARGET_BYTES && *b - *a + 1 + n <= SEGMENT_MAX_OPS => {
+            Some((a, b, s, w))
+                if *s + bytes <= SEGMENT_TARGET_BYTES
+                    && *b - *a + 1 + n <= SEGMENT_MAX_OPS
+                    && *w + raw <= SEGMENT_MAX_RAW_BYTES =>
+            {
                 *b = last;
                 *s += bytes;
+                *w += raw;
             }
             cur => {
-                if let Some(done) = cur.replace((first, last, bytes)) {
-                    self.out.push(done);
+                if let Some(done) = cur.replace((first, last, bytes, raw)) {
+                    self.out.push(Self::sized(done));
                 }
             }
         }
@@ -367,10 +379,20 @@ impl Splitter {
         self.chunk_raw = 0;
     }
 
+    /// `(first, last, 体积)`：解压后已过上限一半的段按「满段」（[SEGMENT_TARGET_BYTES] 的一半）记。分层合并
+    /// （store/sync2/transport.rs）只看这个数，否则这种压缩后很小的段会每轮被挑出来重切、又切回原样。
+    fn sized((a, b, s, w): (u64, u64, u64, u64)) -> (u64, u64, u64) {
+        if w >= SEGMENT_MAX_RAW_BYTES / 2 {
+            (a, b, s.max(SEGMENT_TARGET_BYTES / 2))
+        } else {
+            (a, b, s)
+        }
+    }
+
     pub fn finish(mut self) -> Vec<(u64, u64, u64)> {
         self.flush_chunk();
         if let Some(done) = self.cur.take() {
-            self.out.push(done);
+            self.out.push(Self::sized(done));
         }
         self.out
     }
@@ -695,6 +717,39 @@ pub(crate) mod tests {
             next = b + 1;
         }
         assert_eq!(next, 201);
+    }
+
+    #[test]
+    fn split_caps_uncompressed_size_and_marks_raw_full_segments_full() {
+        // 极易压缩的大载荷：每条 100 KB 全零、共 40 MB，压缩后只有几十 KB。只按压缩后体积切会是一段 40 MB 明文。
+        let dev = Id([3; 16]);
+        let deps = Arc::new(Vv::new());
+        let ops: Vec<Op> = (1..=400u64)
+            .map(|seq| Op {
+                id: OpId { device: dev, seq },
+                hlc: Hlc { wall: seq as i64, logical: 0, device: dev },
+                deps: deps.clone(),
+                kind: 9999,
+                schema: SCHEMA,
+                payload: vec![0u8; 100_000].into(),
+                purged: false,
+            })
+            .collect();
+        let r = split_ranges(&ops);
+        assert!(r.len() >= 3, "{r:?}");
+        let mut next = 1;
+        for &(a, b, bytes) in &r {
+            assert_eq!(a, next);
+            let raw: u64 = ops[(a - 1) as usize..b as usize].iter().map(|o| o.payload.len() as u64 + 24).sum();
+            assert!(raw <= SEGMENT_MAX_RAW_BYTES, "{raw}");
+            let (_, packed) = pack(Id::ZERO, &ops[(a - 1) as usize..b as usize], CHAIN_ZERO, &DeviceKey::generate(), None).unwrap();
+            assert!((packed.len() as u64) < SEGMENT_TARGET_BYTES / 8, "压缩后确实很小：{}", packed.len());
+            if raw >= SEGMENT_MAX_RAW_BYTES / 2 {
+                assert!(bytes >= SEGMENT_TARGET_BYTES / 2, "解压后过半的段按满段记，分层合并不再挑它：{bytes}");
+            }
+            next = b + 1;
+        }
+        assert_eq!(next, 401);
     }
 }
 
