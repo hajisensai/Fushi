@@ -8295,6 +8295,7 @@
   "sync_progress_pending_mines": "Syncing pending cards",
   "sync_progress_preparing": "جارٍ التحضير للمزامنة",
   "sync_progress_reading": "مزامنة بيانات القراءة",
+  "sync_progress_remote_listing": "Reading the remote file list",
   "sync_progress_statistics": "Syncing statistics and favorites",
   "sync_progress_videos": "جارٍ مزامنة الفيديوهات",
   "sync_role_locked_by_client": "متصل بالفعل بجهاز آخر. أزل الاتصال قبل التشغيل كخادم مضيف.",

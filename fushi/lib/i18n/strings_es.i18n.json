@@ -8295,6 +8295,7 @@
   "sync_progress_pending_mines": "Syncing pending cards",
   "sync_progress_preparing": "Preparando sincronización",
   "sync_progress_reading": "Sincronizando datos de lectura",
+  "sync_progress_remote_listing": "Reading the remote file list",
   "sync_progress_statistics": "Syncing statistics and favorites",
   "sync_progress_videos": "Sincronizando vídeos",
   "sync_role_locked_by_client": "Ya conectado a otro dispositivo. Quita la conexión antes de actuar como servidor.",

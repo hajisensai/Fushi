@@ -8295,6 +8295,7 @@
   "sync_progress_pending_mines": "Syncing pending cards",
   "sync_progress_preparing": "Đang chuẩn bị đồng bộ",
   "sync_progress_reading": "Đang đồng bộ dữ liệu đọc",
+  "sync_progress_remote_listing": "Reading the remote file list",
   "sync_progress_statistics": "Syncing statistics and favorites",
   "sync_progress_videos": "Đang đồng bộ video",
   "sync_role_locked_by_client": "Đã kết nối tới thiết bị khác. Gỡ kết nối trước khi chạy như máy chủ.",

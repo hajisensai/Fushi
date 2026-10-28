@@ -42,13 +42,18 @@ class FakeSyncBackend implements SyncBackend {
   Future<AssetEntry?> findAsset(String namespaceId, String name) =>
       _store.findAsset(namespaceId, name);
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) =>
-      _store.putAsset(namespaceId, name, file, onProgress: onProgress);
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) => _store.putAsset(namespaceId, name, file, onProgress: onProgress);
   @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) =>
-      _store.getAsset(assetId, destination, onProgress: onProgress);
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) => _store.getAsset(assetId, destination, onProgress: onProgress);
   @override
   Future<Object?> getJsonAsset(String assetId) => _store.getJsonAsset(assetId);
   @override
@@ -66,8 +71,7 @@ class FakeSyncBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) =>
-      _store.ensureFolder(rootFolderId, bookTitle);
+  }) => _store.ensureFolder(rootFolderId, bookTitle);
 
   // ── Unreached members ─────────────────────────────────────────────
   @override
@@ -104,46 +108,44 @@ class FakeSyncBackend implements SyncBackend {
     required String folderId,
     required String? fileId,
     required TtuProgress progress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateStatsFile({
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> uploadContentFile({
     required String folderId,
     required String fileName,
     required File file,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      throw UnimplementedError();
+    String folderId,
+    String fileName,
+  ) async => throw UnimplementedError();
   @override
   void clearCache() {}
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {}
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {}
   @override
   String? get cachedRootFolderId => 'root';
   @override
@@ -161,20 +163,19 @@ SyncOrchestrator _orchestrator(
   Directory dictRoot,
   Directory audioRoot,
   Directory tmp,
-) =>
-    SyncOrchestrator(
-      db: db,
-      backend: backend,
-      dictionaryResourceRoot: dictRoot,
-      audioDatabaseRoot: audioRoot,
-      tempDir: tmp,
-      syncStats: false,
-      syncAudioBookPosition: false,
-      syncContent: false,
-      syncMangaContent: false,
-      syncAudioBookFiles: false,
-      syncDictionary: true,
-    );
+) => SyncOrchestrator(
+  db: db,
+  backend: backend,
+  dictionaryResourceRoot: dictRoot,
+  audioDatabaseRoot: audioRoot,
+  tempDir: tmp,
+  syncStats: false,
+  syncAudioBookPosition: false,
+  syncContent: false,
+  syncMangaContent: false,
+  syncAudioBookFiles: false,
+  syncDictionary: true,
+);
 
 void main() {
   late Directory work;
@@ -186,57 +187,75 @@ void main() {
     if (work.existsSync()) await work.delete(recursive: true);
   });
 
-  test('dictionary syncs from source device to target device via backend',
-      () async {
-    final FakeAssetStore store = FakeAssetStore();
-    final FakeSyncBackend backend = FakeSyncBackend(store);
-    final Directory tmp = Directory('${work.path}/tmp')..createSync();
+  test(
+    'dictionary syncs from source device to target device via backend',
+    () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final FakeSyncBackend backend = FakeSyncBackend(store);
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
 
-    // ── Source device: one dictionary + its resource files ──
-    final FushiDatabase srcDb = _memDb();
-    addTearDown(srcDb.close);
-    await srcDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-      name: 'testdict',
-      formatKey: 'yomitan',
-      order: 0,
-      type: const Value('term'),
-      metadataJson: const Value('{}'),
-      hiddenLanguagesJson: const Value('[]'),
-      collapsedLanguagesJson: const Value('[]'),
-    ));
-    final Directory srcDictRoot = Directory('${work.path}/src_dicts')
-      ..createSync();
-    Directory('${srcDictRoot.path}/testdict').createSync(recursive: true);
-    File('${srcDictRoot.path}/testdict/index.json')
-        .writeAsStringSync('{"title":"testdict"}');
+      // ── Source device: one dictionary + its resource files ──
+      final FushiDatabase srcDb = _memDb();
+      addTearDown(srcDb.close);
+      await srcDb.upsertDictionaryMeta(
+        DictionaryMetadataCompanion.insert(
+          name: 'testdict',
+          formatKey: 'yomitan',
+          order: 0,
+          type: const Value('term'),
+          metadataJson: const Value('{}'),
+          hiddenLanguagesJson: const Value('[]'),
+          collapsedLanguagesJson: const Value('[]'),
+        ),
+      );
+      final Directory srcDictRoot = Directory('${work.path}/src_dicts')
+        ..createSync();
+      Directory('${srcDictRoot.path}/testdict').createSync(recursive: true);
+      File(
+        '${srcDictRoot.path}/testdict/index.json',
+      ).writeAsStringSync('{"title":"testdict"}');
 
-    final SyncRunReport pushReport = SyncRunReport();
-    await _orchestrator(srcDb, backend, srcDictRoot, tmp, tmp)
-        .syncDictionaries(pushReport, direction: SyncAssetDirection.both);
-    expect(pushReport.dictionariesExported, 1);
-    expect(pushReport.errors, isEmpty);
+      final SyncRunReport pushReport = SyncRunReport();
+      await _orchestrator(
+        srcDb,
+        backend,
+        srcDictRoot,
+        tmp,
+        tmp,
+      ).syncDictionaries(pushReport, direction: SyncAssetDirection.both);
+      expect(pushReport.dictionariesExported, 1);
+      expect(pushReport.errors, isEmpty);
 
-    // ── Target device: empty DB + empty resource root ──
-    final FushiDatabase tgtDb = _memDb();
-    addTearDown(tgtDb.close);
-    final Directory tgtDictRoot = Directory('${work.path}/tgt_dicts')
-      ..createSync();
+      // ── Target device: empty DB + empty resource root ──
+      final FushiDatabase tgtDb = _memDb();
+      addTearDown(tgtDb.close);
+      final Directory tgtDictRoot = Directory('${work.path}/tgt_dicts')
+        ..createSync();
 
-    final SyncRunReport pullReport = SyncRunReport();
-    await _orchestrator(tgtDb, backend, tgtDictRoot, tmp, tmp)
-        .syncDictionaries(pullReport, direction: SyncAssetDirection.both);
+      final SyncRunReport pullReport = SyncRunReport();
+      await _orchestrator(
+        tgtDb,
+        backend,
+        tgtDictRoot,
+        tmp,
+        tmp,
+      ).syncDictionaries(pullReport, direction: SyncAssetDirection.both);
 
-    expect(pullReport.dictionariesImported, 1);
-    expect(pullReport.errors, isEmpty);
+      expect(pullReport.dictionariesImported, 1);
+      expect(pullReport.errors, isEmpty);
 
-    final List<DictionaryMetaRow> imported =
-        await tgtDb.getAllDictionaryMetadata();
-    expect(imported.map((DictionaryMetaRow d) => d.name), contains('testdict'));
-    expect(
-      File('${tgtDictRoot.path}/testdict/index.json').existsSync(),
-      isTrue,
-    );
-  });
+      final List<DictionaryMetaRow> imported = await tgtDb
+          .getAllDictionaryMetadata();
+      expect(
+        imported.map((DictionaryMetaRow d) => d.name),
+        contains('testdict'),
+      );
+      expect(
+        File('${tgtDictRoot.path}/testdict/index.json').existsSync(),
+        isTrue,
+      );
+    },
+  );
 
   test('syncDictionaries emits per-item progress with file fraction', () async {
     final FakeAssetStore store = FakeAssetStore();
@@ -245,15 +264,17 @@ void main() {
 
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
-    await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-      name: 'progdict',
-      formatKey: 'yomitan',
-      order: 0,
-      type: const Value('term'),
-      metadataJson: const Value('{}'),
-      hiddenLanguagesJson: const Value('[]'),
-      collapsedLanguagesJson: const Value('[]'),
-    ));
+    await db.upsertDictionaryMeta(
+      DictionaryMetadataCompanion.insert(
+        name: 'progdict',
+        formatKey: 'yomitan',
+        order: 0,
+        type: const Value('term'),
+        metadataJson: const Value('{}'),
+        hiddenLanguagesJson: const Value('[]'),
+        collapsedLanguagesJson: const Value('[]'),
+      ),
+    );
     final Directory dictRoot = Directory('${work.path}/dicts')..createSync();
     Directory('${dictRoot.path}/progdict').createSync(recursive: true);
     File('${dictRoot.path}/progdict/index.json').writeAsStringSync('{}');
@@ -273,17 +294,23 @@ void main() {
       syncDictionary: true,
       onProgress: events.add,
     );
-    await orchestrator.syncDictionaries(SyncRunReport(),
-        direction: SyncAssetDirection.both);
+    await orchestrator.syncDictionaries(
+      SyncRunReport(),
+      direction: SyncAssetDirection.both,
+    );
 
     // One push: a start tick (no fraction) then the putAsset fraction tick.
-    final dictEvents =
-        events.where((e) => e.phase == SyncPhase.dictionaries).toList();
+    final dictEvents = events
+        .where((e) => e.phase == SyncPhase.dictionaries)
+        .toList();
     expect(dictEvents, isNotEmpty);
     expect(dictEvents.every((e) => e.itemTotal == 1), isTrue);
     expect(dictEvents.first.title, 'progdict');
-    expect(dictEvents.any((e) => e.fileFraction == 1.0), isTrue,
-        reason: 'putAsset onProgress(1.0) must blend into the bar');
+    expect(
+      dictEvents.any((e) => e.fileFraction == 1.0),
+      isTrue,
+      reason: 'putAsset onProgress(1.0) must blend into the bar',
+    );
     // Fraction at the file tick = (0 + 1) / 1 = 1.0.
     expect(dictEvents.last.fraction, 1.0);
   });
@@ -295,15 +322,17 @@ void main() {
 
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
-    await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-      name: 'shared',
-      formatKey: 'yomitan',
-      order: 0,
-      type: const Value('term'),
-      metadataJson: const Value('{}'),
-      hiddenLanguagesJson: const Value('[]'),
-      collapsedLanguagesJson: const Value('[]'),
-    ));
+    await db.upsertDictionaryMeta(
+      DictionaryMetadataCompanion.insert(
+        name: 'shared',
+        formatKey: 'yomitan',
+        order: 0,
+        type: const Value('term'),
+        metadataJson: const Value('{}'),
+        hiddenLanguagesJson: const Value('[]'),
+        collapsedLanguagesJson: const Value('[]'),
+      ),
+    );
     final Directory dictRoot = Directory('${work.path}/dicts')..createSync();
     Directory('${dictRoot.path}/shared').createSync(recursive: true);
     File('${dictRoot.path}/shared/index.json').writeAsStringSync('{}');
@@ -311,127 +340,156 @@ void main() {
     // First run pushes; second run on the same DB must be a no-op (present
     // on both sides → neither exported again nor imported).
     final SyncRunReport first = SyncRunReport();
-    await _orchestrator(db, backend, dictRoot, tmp, tmp)
-        .syncDictionaries(first, direction: SyncAssetDirection.both);
+    await _orchestrator(
+      db,
+      backend,
+      dictRoot,
+      tmp,
+      tmp,
+    ).syncDictionaries(first, direction: SyncAssetDirection.both);
     expect(first.dictionariesExported, 1);
 
     final SyncRunReport second = SyncRunReport();
-    await _orchestrator(db, backend, dictRoot, tmp, tmp)
-        .syncDictionaries(second, direction: SyncAssetDirection.both);
+    await _orchestrator(
+      db,
+      backend,
+      dictRoot,
+      tmp,
+      tmp,
+    ).syncDictionaries(second, direction: SyncAssetDirection.both);
     expect(second.dictionariesExported, 0);
     expect(second.dictionariesImported, 0);
     expect(second.errors, isEmpty);
   });
 
-  test('audiobook package uploads without pulling remote-only package',
-      () async {
-    final FakeAssetStore store = FakeAssetStore();
-    final FakeSyncBackend backend = FakeSyncBackend(store);
-    final Directory tmp = Directory('${work.path}/tmp')..createSync();
-    final Directory srcAudioRoot = Directory('${work.path}/src_audio')
-      ..createSync();
-    final Directory tgtAudioRoot = Directory('${work.path}/tgt_audio')
-      ..createSync();
+  test(
+    'audiobook package uploads without pulling remote-only package',
+    () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final FakeSyncBackend backend = FakeSyncBackend(store);
+      final Directory tmp = Directory('${work.path}/tmp')..createSync();
+      final Directory srcAudioRoot = Directory('${work.path}/src_audio')
+        ..createSync();
+      final Directory tgtAudioRoot = Directory('${work.path}/tgt_audio')
+        ..createSync();
 
-    SyncOrchestrator orch(FushiDatabase db, Directory audioRoot) =>
-        SyncOrchestrator(
-          db: db,
-          backend: backend,
-          dictionaryResourceRoot: tmp,
-          audioDatabaseRoot: audioRoot,
-          tempDir: tmp,
-          syncStats: false,
-          syncAudioBookPosition: false,
-          syncContent: false,
-          syncMangaContent: false,
-          syncAudioBookFiles: true,
-          syncDictionary: false,
-        );
+      SyncOrchestrator orch(FushiDatabase db, Directory audioRoot) =>
+          SyncOrchestrator(
+            db: db,
+            backend: backend,
+            dictionaryResourceRoot: tmp,
+            audioDatabaseRoot: audioRoot,
+            tempDir: tmp,
+            syncStats: false,
+            syncAudioBookPosition: false,
+            syncContent: false,
+            syncMangaContent: false,
+            syncAudioBookFiles: true,
+            syncDictionary: false,
+          );
 
-    // ── Source device: book keyed by title + its audiobook/srt/cues/files ──
-    final FushiDatabase srcDb = _memDb();
-    addTearDown(srcDb.close);
-    final String srcKey = await srcDb.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'MyBook',
-      title: 'MyBook',
-      epubPath: '/fake/mybook.epub',
-      extractDir: '/fake/extract',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: 1,
-    ));
-    final File track = File('${srcAudioRoot.path}/track.mp3')
-      ..writeAsStringSync('audio');
-    final File align = File('${srcAudioRoot.path}/align.srt')
-      ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n');
-    await srcDb.upsertAudiobook(AudiobooksCompanion.insert(
-      bookKey: srcKey,
-      audioRoot: Value(srcAudioRoot.path),
-      audioPathsJson: Value(jsonEncode(<String>[track.path])),
-      alignmentFormat: 'srt',
-      alignmentPath: align.path,
-    ));
-    await srcDb.upsertSrtBook(SrtBooksCompanion.insert(
-      uid: 'srt-$srcKey',
-      title: 'MyBook',
-      audioRoot: Value(srcAudioRoot.path),
-      audioPathsJson: Value(jsonEncode(<String>[track.path])),
-      srtPath: align.path,
-      importedAt: 1,
-      bookKey: Value(srcKey),
-    ));
-    await srcDb.replaceCuesForBook(srcKey, <AudioCuesCompanion>[
-      AudioCuesCompanion.insert(
-        bookKey: srcKey,
-        chapterHref: 'c.xhtml',
-        sentenceIndex: 0,
-        textFragmentId: 'f0',
-        cueText: 'hi',
-        startMs: 0,
-        endMs: 1000,
-        audioFileIndex: 0,
-      ),
-    ]);
+      // ── Source device: book keyed by title + its audiobook/srt/cues/files ──
+      final FushiDatabase srcDb = _memDb();
+      addTearDown(srcDb.close);
+      final String srcKey = await srcDb.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'MyBook',
+          title: 'MyBook',
+          epubPath: '/fake/mybook.epub',
+          extractDir: '/fake/extract',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: 1,
+        ),
+      );
+      final File track = File('${srcAudioRoot.path}/track.mp3')
+        ..writeAsStringSync('audio');
+      final File align = File('${srcAudioRoot.path}/align.srt')
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n');
+      await srcDb.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: srcKey,
+          audioRoot: Value(srcAudioRoot.path),
+          audioPathsJson: Value(jsonEncode(<String>[track.path])),
+          alignmentFormat: 'srt',
+          alignmentPath: align.path,
+        ),
+      );
+      await srcDb.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'srt-$srcKey',
+          title: 'MyBook',
+          audioRoot: Value(srcAudioRoot.path),
+          audioPathsJson: Value(jsonEncode(<String>[track.path])),
+          srtPath: align.path,
+          importedAt: 1,
+          bookKey: Value(srcKey),
+        ),
+      );
+      await srcDb.replaceCuesForBook(srcKey, <AudioCuesCompanion>[
+        AudioCuesCompanion.insert(
+          bookKey: srcKey,
+          chapterHref: 'c.xhtml',
+          sentenceIndex: 0,
+          textFragmentId: 'f0',
+          cueText: 'hi',
+          startMs: 0,
+          endMs: 1000,
+          audioFileIndex: 0,
+        ),
+      ]);
 
-    final SyncRunReport push = SyncRunReport();
-    await orch(srcDb, srcAudioRoot).syncAudiobookPackages('root', push);
-    expect(push.errors, isEmpty, reason: push.errors.join(' | '));
-    expect(push.audiobooksExported, 1);
+      final SyncRunReport push = SyncRunReport();
+      await orch(srcDb, srcAudioRoot).syncAudiobookPackages('root', push);
+      expect(push.errors, isEmpty, reason: push.errors.join(' | '));
+      expect(push.audiobooksExported, 1);
 
-    // ── Target device: SAME title → SAME bookKey (stable identity across
-    // devices), NO audiobook yet ──
-    final FushiDatabase tgtDb = _memDb();
-    addTearDown(tgtDb.close);
-    final String tgtKey = await tgtDb.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'MyBook',
-      title: 'MyBook',
-      epubPath: '/fake/mybook.epub',
-      extractDir: '/fake/extract2',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: 2,
-    ));
-    expect(tgtKey, srcKey); // bookKey is stable across devices
+      // ── Target device: SAME title → SAME bookKey (stable identity across
+      // devices), NO audiobook yet ──
+      final FushiDatabase tgtDb = _memDb();
+      addTearDown(tgtDb.close);
+      final String tgtKey = await tgtDb.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'MyBook',
+          title: 'MyBook',
+          epubPath: '/fake/mybook.epub',
+          extractDir: '/fake/extract2',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: 2,
+        ),
+      );
+      expect(tgtKey, srcKey); // bookKey is stable across devices
 
-    final SyncRunReport second = SyncRunReport();
-    await orch(tgtDb, tgtAudioRoot).syncAudiobookPackages('root', second);
-    expect(second.errors, isEmpty, reason: second.errors.join(' | '));
-    expect(second.audiobooksImported, 0,
-        reason: 'Upload audiobook files 不能自动拉取远端独有有声书包');
+      final SyncRunReport second = SyncRunReport();
+      await orch(tgtDb, tgtAudioRoot).syncAudiobookPackages('root', second);
+      expect(second.errors, isEmpty, reason: second.errors.join(' | '));
+      expect(
+        second.audiobooksImported,
+        0,
+        reason: 'Upload audiobook files 不能自动拉取远端独有有声书包',
+      );
 
-    // The remote-only package stays remote; explicit manual download is a
-    // separate flow.
-    expect(tgtKey, srcKey); // bookKey is stable across devices
-    expect(await tgtDb.getAudiobookByBookKey(tgtKey), isNull);
-    expect(await tgtDb.getSrtBookByBookKey(tgtKey), isNull);
-    expect(await tgtDb.getCuesForBook(tgtKey), isEmpty);
+      // The remote-only package stays remote; explicit manual download is a
+      // separate flow.
+      expect(tgtKey, srcKey); // bookKey is stable across devices
+      expect(await tgtDb.getAudiobookByBookKey(tgtKey), isNull);
+      expect(await tgtDb.getSrtBookByBookKey(tgtKey), isNull);
+      expect(await tgtDb.getCuesForBook(tgtKey), isEmpty);
 
-    final SyncRunReport targetUpload = SyncRunReport();
-    await orch(srcDb, srcAudioRoot).syncAudiobookPackages('root', targetUpload);
-    expect(targetUpload.errors, isEmpty,
-        reason: targetUpload.errors.join(' | '));
-    expect(targetUpload.audiobooksExported, 0, reason: '远端已有包时不重复上传');
-  });
+      final SyncRunReport targetUpload = SyncRunReport();
+      await orch(
+        srcDb,
+        srcAudioRoot,
+      ).syncAudiobookPackages('root', targetUpload);
+      expect(
+        targetUpload.errors,
+        isEmpty,
+        reason: targetUpload.errors.join(' | '),
+      );
+      expect(targetUpload.audiobooksExported, 0, reason: '远端已有包时不重复上传');
+    },
+  );
 
   // ── 方向裁剪 ─────────────────────────────────────────────────────────────
   //
@@ -450,37 +508,46 @@ void main() {
     ) async {
       final FushiDatabase srcDb = _memDb();
       addTearDown(srcDb.close);
-      await srcDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-        name: 'remoteonly',
-        formatKey: 'yomitan',
-        order: 0,
-        type: const Value('term'),
-        metadataJson: const Value('{}'),
-        hiddenLanguagesJson: const Value('[]'),
-        collapsedLanguagesJson: const Value('[]'),
-      ));
+      await srcDb.upsertDictionaryMeta(
+        DictionaryMetadataCompanion.insert(
+          name: 'remoteonly',
+          formatKey: 'yomitan',
+          order: 0,
+          type: const Value('term'),
+          metadataJson: const Value('{}'),
+          hiddenLanguagesJson: const Value('[]'),
+          collapsedLanguagesJson: const Value('[]'),
+        ),
+      );
       final Directory srcRoot = Directory('${work.path}/src_$tag')
         ..createSync();
       Directory('${srcRoot.path}/remoteonly').createSync(recursive: true);
-      File('${srcRoot.path}/remoteonly/index.json')
-          .writeAsStringSync('{"title":"remoteonly"}');
-      await _orchestrator(srcDb, backend, srcRoot, tmp, tmp).syncDictionaries(
-        SyncRunReport(),
-        direction: SyncAssetDirection.upload,
-      );
+      File(
+        '${srcRoot.path}/remoteonly/index.json',
+      ).writeAsStringSync('{"title":"remoteonly"}');
+      await _orchestrator(
+        srcDb,
+        backend,
+        srcRoot,
+        tmp,
+        tmp,
+      ).syncDictionaries(SyncRunReport(), direction: SyncAssetDirection.upload);
 
-      await localDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-        name: 'localonly',
-        formatKey: 'yomitan',
-        order: 0,
-        type: const Value('term'),
-        metadataJson: const Value('{}'),
-        hiddenLanguagesJson: const Value('[]'),
-        collapsedLanguagesJson: const Value('[]'),
-      ));
+      await localDb.upsertDictionaryMeta(
+        DictionaryMetadataCompanion.insert(
+          name: 'localonly',
+          formatKey: 'yomitan',
+          order: 0,
+          type: const Value('term'),
+          metadataJson: const Value('{}'),
+          hiddenLanguagesJson: const Value('[]'),
+          collapsedLanguagesJson: const Value('[]'),
+        ),
+      );
       Directory('${localDictRoot.path}/localonly').createSync(recursive: true);
-      File('${localDictRoot.path}/localonly/index.json')
-          .writeAsStringSync('{"title":"localonly"}');
+      File(
+        '${localDictRoot.path}/localonly/index.json',
+      ).writeAsStringSync('{"title":"localonly"}');
       return _orchestrator(localDb, backend, localDictRoot, tmp, tmp);
     }
 
@@ -491,19 +558,27 @@ void main() {
       addTearDown(db.close);
       final Directory dictRoot = Directory('${work.path}/dir_up')..createSync();
 
-      final SyncOrchestrator orch =
-          await seedBothSides(backend, tmp, db, dictRoot, 'up');
+      final SyncOrchestrator orch = await seedBothSides(
+        backend,
+        tmp,
+        db,
+        dictRoot,
+        'up',
+      );
       final SyncRunReport report = SyncRunReport();
       await orch.syncDictionaries(report, direction: SyncAssetDirection.upload);
 
       expect(report.dictionariesExported, 1, reason: 'localonly 应被推上去');
-      expect(report.dictionariesImported, 0,
-          reason: 'upload 绝不能顺手把 remoteonly 拉下来');
+      expect(
+        report.dictionariesImported,
+        0,
+        reason: 'upload 绝不能顺手把 remoteonly 拉下来',
+      );
       expect(report.errors, isEmpty);
       final List<DictionaryMetaRow> local = await db.getAllDictionaryMetadata();
-      expect(local.map((DictionaryMetaRow d) => d.name).toList(),
-          <String>['localonly'],
-          reason: '本地词典表不该多出 remoteonly');
+      expect(local.map((DictionaryMetaRow d) => d.name).toList(), <String>[
+        'localonly',
+      ], reason: '本地词典表不该多出 remoteonly');
     });
 
     test('download 只拉远端独有，一份本端独有的都不推', () async {
@@ -514,23 +589,37 @@ void main() {
       final Directory dictRoot = Directory('${work.path}/dir_down')
         ..createSync();
 
-      final SyncOrchestrator orch =
-          await seedBothSides(backend, tmp, db, dictRoot, 'down');
+      final SyncOrchestrator orch = await seedBothSides(
+        backend,
+        tmp,
+        db,
+        dictRoot,
+        'down',
+      );
       final SyncRunReport report = SyncRunReport();
-      await orch.syncDictionaries(report,
-          direction: SyncAssetDirection.download);
+      await orch.syncDictionaries(
+        report,
+        direction: SyncAssetDirection.download,
+      );
 
       expect(report.dictionariesImported, 1, reason: 'remoteonly 应被拉下来');
-      expect(report.dictionariesExported, 0,
-          reason: 'download 绝不能顺手把 localonly 推上去');
+      expect(
+        report.dictionariesExported,
+        0,
+        reason: 'download 绝不能顺手把 localonly 推上去',
+      );
       expect(report.errors, isEmpty);
-      final List<AssetEntry> remote =
-          await backend.listChildren(kSyncDictionaryNamespace);
+      final List<AssetEntry> remote = await backend.listChildren(
+        kSyncDictionaryNamespace,
+      );
       final Iterable<String> names = remote
           .where((AssetEntry e) => !e.isFolder)
           .map((AssetEntry e) => e.name);
-      expect(names.any((String n) => n.startsWith('localonly')), isFalse,
-          reason: '远端不该多出 localonly');
+      expect(
+        names.any((String n) => n.startsWith('localonly')),
+        isFalse,
+        reason: '远端不该多出 localonly',
+      );
     });
 
     test('进度分母只算被选中的那一半', () async {
@@ -564,8 +653,11 @@ void main() {
           .where((SyncProgress e) => e.phase == SyncPhase.dictionaries)
           .toList();
       expect(dictEvents, isNotEmpty);
-      expect(dictEvents.every((SyncProgress e) => e.itemTotal == 1), isTrue,
-          reason: 'upload 的分母是本端独有的数量，不是 union 的大小');
+      expect(
+        dictEvents.every((SyncProgress e) => e.itemTotal == 1),
+        isTrue,
+        reason: 'upload 的分母是本端独有的数量，不是 union 的大小',
+      );
     });
 
     test('runAssetTransferOnly 按 kind 分派到对应维度，不碰另一类', () async {
@@ -576,8 +668,13 @@ void main() {
       final Directory dictRoot = Directory('${work.path}/dir_kind')
         ..createSync();
 
-      final SyncOrchestrator orch =
-          await seedBothSides(backend, tmp, db, dictRoot, 'kind');
+      final SyncOrchestrator orch = await seedBothSides(
+        backend,
+        tmp,
+        db,
+        dictRoot,
+        'kind',
+      );
       // 选 localAudio：词典两侧都有独有项，但这一轮一件都不该动。
       final SyncRunReport report = await orch.runAssetTransferOnly(
         kind: SyncAssetKind.localAudio,
@@ -597,22 +694,21 @@ void main() {
       Directory tmp, {
       List<LocalAudioDbEntry> entries = const <LocalAudioDbEntry>[],
       Future<void> Function(LocalAudioPackageContents)? onImported,
-    }) =>
-        SyncOrchestrator(
-          db: db,
-          backend: backend,
-          dictionaryResourceRoot: tmp,
-          audioDatabaseRoot: tmp,
-          tempDir: tmp,
-          syncStats: false,
-          syncAudioBookPosition: false,
-          syncContent: false,
-          syncMangaContent: false,
-          syncAudioBookFiles: false,
-          syncDictionary: false,
-          localAudioEntries: entries,
-          onLocalAudioImported: onImported,
-        );
+    }) => SyncOrchestrator(
+      db: db,
+      backend: backend,
+      dictionaryResourceRoot: tmp,
+      audioDatabaseRoot: tmp,
+      tempDir: tmp,
+      syncStats: false,
+      syncAudioBookPosition: false,
+      syncContent: false,
+      syncMangaContent: false,
+      syncAudioBookFiles: false,
+      syncDictionary: false,
+      localAudioEntries: entries,
+      onLocalAudioImported: onImported,
+    );
 
     LocalAudioDbEntry seedDb(Directory dir, String name) {
       final File db = File('${dir.path}/local_audio_${name.hashCode}.db')
@@ -637,8 +733,12 @@ void main() {
 
       final LocalAudioDbEntry entry = seedDb(tmp, 'NHK Audio');
       final SyncRunReport report = SyncRunReport();
-      await orch(db, backend, tmp, entries: <LocalAudioDbEntry>[entry])
-          .syncLocalAudioPackages(report, direction: SyncAssetDirection.both);
+      await orch(
+        db,
+        backend,
+        tmp,
+        entries: <LocalAudioDbEntry>[entry],
+      ).syncLocalAudioPackages(report, direction: SyncAssetDirection.both);
 
       expect(report.localAudioExported, 1);
       expect(report.localAudioImported, 0);
@@ -659,8 +759,12 @@ void main() {
       addTearDown(srcDb.close);
       final LocalAudioDbEntry srcEntry = seedDb(tmp, 'Forvo');
       final SyncRunReport push = SyncRunReport();
-      await orch(srcDb, backend, tmp, entries: <LocalAudioDbEntry>[srcEntry])
-          .syncLocalAudioPackages(push, direction: SyncAssetDirection.both);
+      await orch(
+        srcDb,
+        backend,
+        tmp,
+        entries: <LocalAudioDbEntry>[srcEntry],
+      ).syncLocalAudioPackages(push, direction: SyncAssetDirection.both);
       expect(push.localAudioExported, 1);
 
       // Target has no local entries → pulls + invokes the import callback.
@@ -695,8 +799,11 @@ void main() {
       // Staged .db is available while the import callback runs…
       expect(dbFileExistedDuringImport, isTrue);
       // …and is cleaned up afterwards — no staging .db leak (I-1).
-      expect(File(stagingDbPath!).existsSync(), isFalse,
-          reason: 'staging .db must be deleted after import (I-1)');
+      expect(
+        File(stagingDbPath!).existsSync(),
+        isFalse,
+        reason: 'staging .db must be deleted after import (I-1)',
+      );
     });
 
     test('entry present on both sides (same displayName) is skipped', () async {
@@ -709,8 +816,12 @@ void main() {
       final LocalAudioDbEntry entry = seedDb(tmp, 'Shared');
       // First run pushes.
       final SyncRunReport first = SyncRunReport();
-      await orch(db, backend, tmp, entries: <LocalAudioDbEntry>[entry])
-          .syncLocalAudioPackages(first, direction: SyncAssetDirection.both);
+      await orch(
+        db,
+        backend,
+        tmp,
+        entries: <LocalAudioDbEntry>[entry],
+      ).syncLocalAudioPackages(first, direction: SyncAssetDirection.both);
       expect(first.localAudioExported, 1);
 
       // Second run with the SAME displayName present on both sides: no push,
@@ -750,8 +861,9 @@ void main() {
       expect(report.localAudioImported, 0);
       // The phase never ran → the local-audio namespace holds no packages even
       // though a local entry existed that would otherwise have been pushed.
-      final List<AssetEntry> children =
-          await backend.listChildren(kSyncLocalAudioNamespace);
+      final List<AssetEntry> children = await backend.listChildren(
+        kSyncLocalAudioNamespace,
+      );
       expect(children.where((AssetEntry e) => !e.isFolder), isEmpty);
     });
   });
@@ -766,32 +878,33 @@ void main() {
       Directory tmp,
       Directory audioRoot,
       List<SyncProgress> events,
-    ) =>
-        SyncOrchestrator(
-          db: db,
-          backend: backend,
-          dictionaryResourceRoot: tmp,
-          audioDatabaseRoot: audioRoot,
-          tempDir: tmp,
-          syncStats: false,
-          syncAudioBookPosition: false,
-          syncContent: false,
-          syncMangaContent: false,
-          syncAudioBookFiles: true,
-          syncDictionary: false,
-          onProgress: events.add,
-        );
+    ) => SyncOrchestrator(
+      db: db,
+      backend: backend,
+      dictionaryResourceRoot: tmp,
+      audioDatabaseRoot: audioRoot,
+      tempDir: tmp,
+      syncStats: false,
+      syncAudioBookPosition: false,
+      syncContent: false,
+      syncMangaContent: false,
+      syncAudioBookFiles: true,
+      syncDictionary: false,
+      onProgress: events.add,
+    );
 
     Future<void> insertBook(FushiDatabase db, String title) async {
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: title,
-        title: title,
-        epubPath: '/fake/$title.epub',
-        extractDir: '/fake/$title',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: 1,
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: title,
+          title: title,
+          epubPath: '/fake/$title.epub',
+          extractDir: '/fake/$title',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: 1,
+        ),
+      );
     }
 
     Future<void> insertAudiobook(
@@ -804,22 +917,26 @@ void main() {
       if (audioIntact) track.writeAsStringSync('audio');
       final File align = File('${audioRoot.path}/$key.srt')
         ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n');
-      await db.upsertAudiobook(AudiobooksCompanion.insert(
-        bookKey: key,
-        audioRoot: Value(audioRoot.path),
-        audioPathsJson: Value(jsonEncode(<String>[track.path])),
-        alignmentFormat: 'srt',
-        alignmentPath: align.path,
-      ));
-      await db.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: 'srt-$key',
-        title: key,
-        audioRoot: Value(audioRoot.path),
-        audioPathsJson: Value(jsonEncode(<String>[track.path])),
-        srtPath: align.path,
-        importedAt: 1,
-        bookKey: Value(key),
-      ));
+      await db.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: key,
+          audioRoot: Value(audioRoot.path),
+          audioPathsJson: Value(jsonEncode(<String>[track.path])),
+          alignmentFormat: 'srt',
+          alignmentPath: align.path,
+        ),
+      );
+      await db.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'srt-$key',
+          title: key,
+          audioRoot: Value(audioRoot.path),
+          audioPathsJson: Value(jsonEncode(<String>[track.path])),
+          srtPath: align.path,
+          importedAt: 1,
+          bookKey: Value(key),
+        ),
+      );
       await db.replaceCuesForBook(key, <AudioCuesCompanion>[
         AudioCuesCompanion.insert(
           bookKey: key,
@@ -836,16 +953,18 @@ void main() {
 
     List<SyncProgress> countedAudiobookTicks(List<SyncProgress> events) =>
         events
-            .where((SyncProgress e) =>
-                e.phase == SyncPhase.audiobooks && e.itemTotal > 0)
+            .where(
+              (SyncProgress e) =>
+                  e.phase == SyncPhase.audiobooks && e.itemTotal > 0,
+            )
             .toList();
 
     test('只遍历本端确有完整有声书的书：分母 = 工作集，漫画零网络往返', () async {
-      final _CountingSyncBackend backend =
-          _CountingSyncBackend(FakeAssetStore());
+      final _CountingSyncBackend backend = _CountingSyncBackend(
+        FakeAssetStore(),
+      );
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
-      final Directory audioRoot = Directory('${work.path}/audio')
-        ..createSync();
+      final Directory audioRoot = Directory('${work.path}/audio')..createSync();
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
@@ -860,20 +979,27 @@ void main() {
 
       final List<SyncProgress> events = <SyncProgress>[];
       final SyncRunReport report = SyncRunReport();
-      await orch(db, backend, tmp, audioRoot, events)
-          .syncAudiobookPackages('root', report);
+      await orch(
+        db,
+        backend,
+        tmp,
+        audioRoot,
+        events,
+      ).syncAudiobookPackages('root', report);
 
       expect(report.errors, isEmpty, reason: report.errors.join(' | '));
       expect(report.audiobooksExported, 1);
-      expect(backend.ensuredBookFolders, <String>['AudioBook'],
-          reason: '只有工作集里的书才该碰远端书文件夹');
+      expect(backend.ensuredBookFolders, <String>[
+        'AudioBook',
+      ], reason: '只有工作集里的书才该碰远端书文件夹');
       expect(backend.findAssetCalls, 2, reason: '新名 + 旧名各问一次，仅这一本');
       expect(backend.putAssetCalls, 1);
 
       final List<SyncProgress> ticks = countedAudiobookTicks(events);
       expect(ticks, isNotEmpty);
-      expect(ticks.map((SyncProgress e) => e.itemTotal).toSet(), <int>{1},
-          reason: '进度分母必须是真实工作集（1 本），不是全部书数');
+      expect(ticks.map((SyncProgress e) => e.itemTotal).toSet(), <int>{
+        1,
+      }, reason: '进度分母必须是真实工作集（1 本），不是全部书数');
       expect(ticks.map((SyncProgress e) => e.title).toSet(), <String>{
         'AudioBook',
       });
@@ -881,8 +1007,13 @@ void main() {
       // 第二轮：远端已有包 → 只问一次 find，不再上传。
       final _CountingSyncBackend again = _CountingSyncBackend(backend.store);
       final SyncRunReport second = SyncRunReport();
-      await orch(db, again, tmp, audioRoot, <SyncProgress>[])
-          .syncAudiobookPackages('root', second);
+      await orch(
+        db,
+        again,
+        tmp,
+        audioRoot,
+        <SyncProgress>[],
+      ).syncAudiobookPackages('root', second);
       expect(second.audiobooksExported, 0);
       expect(again.ensuredBookFolders, <String>['AudioBook']);
       expect(again.findAssetCalls, 1);
@@ -890,8 +1021,9 @@ void main() {
     });
 
     test('本端没有任何有声书：零网络往返，只发不计数的阶段 tick', () async {
-      final _CountingSyncBackend backend =
-          _CountingSyncBackend(FakeAssetStore());
+      final _CountingSyncBackend backend = _CountingSyncBackend(
+        FakeAssetStore(),
+      );
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
@@ -901,8 +1033,13 @@ void main() {
 
       final List<SyncProgress> events = <SyncProgress>[];
       final SyncRunReport report = SyncRunReport();
-      await orch(db, backend, tmp, tmp, events)
-          .syncAudiobookPackages('root', report);
+      await orch(
+        db,
+        backend,
+        tmp,
+        tmp,
+        events,
+      ).syncAudiobookPackages('root', report);
 
       expect(backend.ensuredBookFolders, isEmpty);
       expect(backend.findAssetCalls, 0);
@@ -915,8 +1052,9 @@ void main() {
     });
 
     test('有声书之后的收尾阶段各自发 tick，进度行不停在最后一本书上', () async {
-      final _CountingSyncBackend backend =
-          _CountingSyncBackend(FakeAssetStore());
+      final _CountingSyncBackend backend = _CountingSyncBackend(
+        FakeAssetStore(),
+      );
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
@@ -924,51 +1062,77 @@ void main() {
       final List<SyncProgress> events = <SyncProgress>[];
       await orch(db, backend, tmp, tmp, events).run();
 
-      final List<SyncPhase> phases =
-          events.map((SyncProgress e) => e.phase).toList();
+      final List<SyncPhase> phases = events
+          .map((SyncProgress e) => e.phase)
+          .toList();
       final int audiobooksAt = phases.lastIndexOf(SyncPhase.audiobooks);
       expect(audiobooksAt, isNonNegative);
       final List<SyncPhase> tail = phases.sublist(audiobooksAt + 1);
-      expect(tail, containsAllInOrder(<SyncPhase>[
-        SyncPhase.collections,
-        SyncPhase.deletions,
-      ]));
+      expect(
+        tail,
+        containsAllInOrder(<SyncPhase>[
+          SyncPhase.collections,
+          SyncPhase.deletions,
+        ]),
+      );
       expect(phases.last, isNot(SyncPhase.audiobooks));
       for (final SyncPhase p in tail) {
         expect(syncPhaseLabel(p), isNotEmpty);
       }
     });
-  });
 
-  group('sync cooldown timestamp lifecycle (TODO-1332)', () {
-    test(
-        'run() records the cooldown timestamp only after a full sweep completes',
-        () async {
-      final FakeAssetStore store = FakeAssetStore();
-      final FakeSyncBackend backend = FakeSyncBackend(store);
+    test('第一个 tick 就是远端清单阶段：列举期间不再停在「正在准备同步」', () async {
+      final _CountingSyncBackend backend = _CountingSyncBackend(
+        FakeAssetStore(),
+      );
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
-      // 整轮 sweep 前：从未同步过 -> 无冷却时间戳。
-      expect(await SyncRepository(db).getLastSyncMs(SyncChannelScope.unscoped),
-          isNull);
+      final List<SyncProgress> events = <SyncProgress>[];
+      await orch(db, backend, tmp, tmp, events).run();
 
-      await _orchestrator(db, backend, tmp, tmp, tmp).run();
-
-      // 整轮完成 -> 记录冷却时间戳（下次 app-open 在冷却窗内不再重复整轮 sweep）。
-      expect(await SyncRepository(db).getLastSyncMs(SyncChannelScope.unscoped),
-          isNotNull,
-          reason: '完整完成的 sweep 必须记录冷却时间戳');
+      expect(events, isNotEmpty);
+      expect(events.first.phase, SyncPhase.remoteListing);
+      expect(events.first.itemTotal, 0);
+      expect(syncPhaseLabel(SyncPhase.remoteListing), isNotEmpty);
     });
+  });
 
+  group('sync cooldown timestamp lifecycle (TODO-1332)', () {
     test(
-        'an interrupted sweep leaves the cooldown timestamp unset so the next '
+      'run() records the cooldown timestamp only after a full sweep completes',
+      () async {
+        final FakeAssetStore store = FakeAssetStore();
+        final FakeSyncBackend backend = FakeSyncBackend(store);
+        final Directory tmp = Directory('${work.path}/tmp')..createSync();
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+
+        // 整轮 sweep 前：从未同步过 -> 无冷却时间戳。
+        expect(
+          await SyncRepository(db).getLastSyncMs(SyncChannelScope.unscoped),
+          isNull,
+        );
+
+        await _orchestrator(db, backend, tmp, tmp, tmp).run();
+
+        // 整轮完成 -> 记录冷却时间戳（下次 app-open 在冷却窗内不再重复整轮 sweep）。
+        expect(
+          await SyncRepository(db).getLastSyncMs(SyncChannelScope.unscoped),
+          isNotNull,
+          reason: '完整完成的 sweep 必须记录冷却时间戳',
+        );
+      },
+    );
+
+    test('an interrupted sweep leaves the cooldown timestamp unset so the next '
         'app-open retries (discard incomplete, resync next startup)', () async {
       final FakeAssetStore store = FakeAssetStore();
       // 书阶段（无书）之后、词典阶段 ensureNamespace 抛出 -> 模拟整轮 sweep 被中断。
-      final _InterruptDuringDictBackend backend =
-          _InterruptDuringDictBackend(store);
+      final _InterruptDuringDictBackend backend = _InterruptDuringDictBackend(
+        store,
+      );
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
@@ -979,9 +1143,11 @@ void main() {
       );
 
       // 中断态被丢弃：lastSyncMs 未写 -> 下次 app-open 自动同步重新整轮重试。
-      expect(await SyncRepository(db).getLastSyncMs(SyncChannelScope.unscoped),
-          isNull,
-          reason: '被中断的残缺 sweep 不得记录冷却时间戳，否则会压制下次重试');
+      expect(
+        await SyncRepository(db).getLastSyncMs(SyncChannelScope.unscoped),
+        isNull,
+        reason: '被中断的残缺 sweep 不得记录冷却时间戳，否则会压制下次重试',
+      );
     });
   });
 }
@@ -994,7 +1160,8 @@ class _InterruptDuringDictBackend extends FakeSyncBackend {
 
   @override
   Future<String> ensureNamespace(String name) async => throw StateError(
-      'sweep interrupted during dictionary phase (TODO-1332 test)');
+    'sweep interrupted during dictionary phase (TODO-1332 test)',
+  );
 }
 
 /// [FakeSyncBackend] 变体（DRXb43v3fA / y3tzvcnrPU）：记下有声书阶段碰远端的次数。
@@ -1014,8 +1181,10 @@ class _CountingSyncBackend extends FakeSyncBackend {
     SyncCoverDataProvider? readCoverData,
   }) {
     ensuredBookFolders.add(bookTitle);
-    return super
-        .ensureBookFolder(bookTitle: bookTitle, rootFolderId: rootFolderId);
+    return super.ensureBookFolder(
+      bookTitle: bookTitle,
+      rootFolderId: rootFolderId,
+    );
   }
 
   @override
@@ -1025,8 +1194,12 @@ class _CountingSyncBackend extends FakeSyncBackend {
   }
 
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-      {void Function(double progress)? onProgress}) {
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) {
     putAssetCalls++;
     return super.putAsset(namespaceId, name, file, onProgress: onProgress);
   }

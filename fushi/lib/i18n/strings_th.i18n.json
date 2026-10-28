@@ -8295,6 +8295,7 @@
   "sync_progress_pending_mines": "Syncing pending cards",
   "sync_progress_preparing": "กำลังเตรียมซิงค์",
   "sync_progress_reading": "กำลังซิงค์ข้อมูลการอ่าน",
+  "sync_progress_remote_listing": "Reading the remote file list",
   "sync_progress_statistics": "Syncing statistics and favorites",
   "sync_progress_videos": "กำลังซิงค์วิดีโอ",
   "sync_role_locked_by_client": "เชื่อมต่อกับอุปกรณ์อื่นอยู่แล้ว ลบการเชื่อมต่อก่อนทำหน้าที่เป็นเซิร์ฟเวอร์",

@@ -8295,6 +8295,7 @@
   "sync_progress_pending_mines": "Syncing pending cards",
   "sync_progress_preparing": "正在準備同步",
   "sync_progress_reading": "正在同步閱讀資料",
+  "sync_progress_remote_listing": "Reading the remote file list",
   "sync_progress_statistics": "Syncing statistics and favorites",
   "sync_progress_videos": "同步影片",
   "sync_role_locked_by_client": "已連接其他裝置。作為伺服器前請先移除連線。",

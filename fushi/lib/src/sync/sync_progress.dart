@@ -13,6 +13,11 @@ library;
 /// label; keeping it an enum (not a pre-localized string) keeps i18n in the
 /// widget layer and makes the orchestrator testable.
 enum SyncPhase {
+  /// 解析同步根 + 一次列举远端清单（`snapshotListing`）+ 清理根下残留。每轮最先走网络的
+  /// 一步，库大时可达数十秒；没有这个阶段名时进度行停在「正在准备同步」，与「等锁 /
+  /// 鉴权」同形，用户看不出同步在干活。
+  remoteListing,
+
   /// Downloading + importing books that exist remotely but not locally.
   books,
 
