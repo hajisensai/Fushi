@@ -20,6 +20,8 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
+import 'package:fushi/src/media/kavita/kavita_progress_refresher.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
@@ -908,6 +910,13 @@ class _HomeDashboardPageState
       _initialLoadDone = true;
     }
     unawaited(_loadDashboardData());
+    // Kavita 绑定书：服务器端改了进度（网页端翻页 / 标已读未读）时静默对账，
+    // 采用后写本地阅读位置，表级信号会带动本页重载。进入 / 切回首页 / 回前台触发。
+    _kavitaLifecycle = AppLifecycleListener(
+      onResume: _reconcileKavitaProgress,
+    );
+    homeShellTabNotifier.addListener(_onTabForKavita);
+    _reconcileKavitaProgress();
     // 阅读/观看/导入写库 → 表级变更 → 防抖后重查聚合，首页自动刷新（竞态无关：
     // 信号在写入 commit 后才发，重查读到的是已落库数据）。
     _dataChangeSub = ref
@@ -981,6 +990,29 @@ class _HomeDashboardPageState
   List<RemoteBookInfo>? _appliedRemoteBooks;
   List<RemoteVideoInfo>? _appliedRemoteVideos;
 
+  AppLifecycleListener? _kavitaLifecycle;
+
+  void _onTabForKavita() {
+    if (_isVisibleTab) _reconcileKavitaProgress();
+  }
+
+  void _reconcileKavitaProgress() {
+    if (!mounted) return;
+    final AppModel model = ref.read(appProvider);
+    unawaited(
+      KavitaProgressRefresher.shared
+          .refresh(
+            db: model.database,
+            servers: model.prefsRepo.kavitaServers,
+            apiFor: KavitaApiRegistry.instance.apiFor,
+          )
+          .then((int adopted) {
+            if (adopted > 0 && mounted) _reloadNow();
+          })
+          .catchError((Object _) {}),
+    );
+  }
+
   /// 表变更后防抖重载（多次连续写只重查一次，避免频繁 setState）。
   void _scheduleReload() {
     _reloadDebounce?.cancel();
@@ -1010,6 +1042,8 @@ class _HomeDashboardPageState
   @override
   void dispose() {
     _reloadDebounce?.cancel();
+    _kavitaLifecycle?.dispose();
+    homeShellTabNotifier.removeListener(_onTabForKavita);
     _midnightReload?.cancel();
     unawaited(_dataChangeSub?.cancel());
     _galgameRepo?.removeListener(_scheduleReload);

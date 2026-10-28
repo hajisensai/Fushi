@@ -2413,11 +2413,26 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     //
     // Kavita 条目：读章进度前先与服务器对账（可能改写本章进度，下面照常按章进度
     // 落页）。非 Kavita 直接返回；离线 / 超时放行，永不抛错、不卡开章。
-    await _attachKavitaMangaSync(row, entry, chapter);
+    final int? kavitaAdoptedPage = await _attachKavitaMangaSync(
+      row,
+      entry,
+      chapter,
+    );
     int initialPage = landOnLastPage ? kMangaLandOnLastPage : 0;
     if (explicitInitialPage != null) {
       // 调用方点名的页（首次装载）：不再按章级进度挑页。
       initialPage = explicitInitialPage;
+    } else if (!landOnLastPage &&
+        kavitaAdoptedPage != null &&
+        !isKavitaChapterFinished(
+          page: kavitaAdoptedPage,
+          totalPages: chapter.raw['pages'] is int
+              ? chapter.raw['pages']! as int
+              : 0,
+        )) {
+      // 刚采用了服务器进度（别的设备读到这一页）：就从这一页开始。本地章若标着
+      // 已读，章级续读点会算成 0（重读语义），把刚采用的页吞掉。
+      initialPage = kavitaAdoptedPage;
     } else if (!landOnLastPage && row.uid.isNotEmpty) {
       final MangaChapterStateRow? state = await appModel.database
           .getMangaChapterState(bookUid: row.uid, chapterKey: chapter.key);

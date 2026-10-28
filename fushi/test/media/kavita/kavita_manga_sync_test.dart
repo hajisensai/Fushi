@@ -322,6 +322,108 @@ void main() {
     });
   });
 
+  group('server marked the chapter unread', () {
+    // 本机读完（末页 + 已读标记），上次同步停在末页；服务器随后被标未读回 0。
+    Future<_Server> arrange() async {
+      await setLocal(9);
+      await db.markMangaChaptersRead(
+        bookUid: _uid,
+        chapterKeys: <String>[_chapterKey],
+      );
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      await stamps.record(_uid, _chapterKey, now - 100 * _min, page: 9);
+      return _Server(pageNum: 0, modifiedAt: now);
+    }
+
+    Future<MangaChapterStateRow?> state() =>
+        db.getMangaChapterState(bookUid: _uid, chapterKey: _chapterKey);
+
+    test('user adopts the server: read flag cleared, back to page 0', () async {
+      final _Server server = await arrange();
+      final KavitaMangaSyncSession? session = await attach(
+        server,
+        prompt: (KavitaProgress s, MangaChapterStateRow l) async =>
+            KavitaSyncAction.adoptServer,
+      );
+      await session!.close();
+      final MangaChapterStateRow row = (await state())!;
+      expect(row.lastPage, 0);
+      expect(row.readAt, isNull);
+      expect(server.pushedPages, isEmpty);
+    });
+
+    test('no prompt (or keep local): stays read, nothing pushed', () async {
+      final _Server server = await arrange();
+      final KavitaMangaSyncSession? session = await attach(server);
+      await session!.close();
+      final MangaChapterStateRow row = (await state())!;
+      expect(row.lastPage, 9);
+      expect(row.readAt, isNotNull);
+      expect(server.pushedPages, isEmpty);
+    });
+
+    test('series page reconcile leaves a locally read chapter alone', () async {
+      await arrange();
+      await reconcileKavitaChapterStates(
+        db: db,
+        bookUid: _uid,
+        chapters: <OnlineMangaChapter>[
+          OnlineMangaChapter(
+            key: _chapterKey,
+            name: 'c',
+            raw: const <String, Object?>{'pages': 10, 'pagesRead': 0},
+          ),
+        ],
+      );
+      expect((await state())!.readAt, isNotNull);
+    });
+  });
+
+  group('alignKavitaMangaChapterMark', () {
+    test('unread: clears read, page 0, baseline 0', () async {
+      await setLocal(9);
+      await db.markMangaChaptersRead(
+        bookUid: _uid,
+        chapterKeys: <String>[_chapterKey],
+      );
+      await alignKavitaMangaChapterMark(
+        db: db,
+        stamps: stamps,
+        bookUid: _uid,
+        chapterKey: _chapterKey,
+        read: false,
+        totalPages: 10,
+        nowMs: () => _base,
+      );
+      final MangaChapterStateRow row = (await db.getMangaChapterState(
+        bookUid: _uid,
+        chapterKey: _chapterKey,
+      ))!;
+      expect(row.readAt, isNull);
+      expect(row.lastPage, 0);
+      expect(stamps.stampOf(_uid, _chapterKey), (at: _base, page: 0));
+    });
+
+    test('read: marks read, last page, baseline last page', () async {
+      await alignKavitaMangaChapterMark(
+        db: db,
+        stamps: stamps,
+        bookUid: _uid,
+        chapterKey: _chapterKey,
+        read: true,
+        totalPages: 10,
+        nowMs: () => _base,
+      );
+      final MangaChapterStateRow row = (await db.getMangaChapterState(
+        bookUid: _uid,
+        chapterKey: _chapterKey,
+      ))!;
+      expect(row.readAt, _base);
+      expect(row.lastPage, 9);
+      expect(stamps.stampOf(_uid, _chapterKey), (at: _base, page: 9));
+    });
+  });
+
   test('offline at open: session still opens, local untouched', () async {
     await setLocal(5);
     final _Server server = _Server(offline: true);
@@ -386,5 +488,77 @@ void main() {
     expect(stored, isNot(contains('K')), reason: 'no credentials');
     stored = 'not json';
     expect(store.lastSyncAt('a', '2'), isNull);
+  });
+
+  group('reconcileKavitaChapterStates', () {
+    OnlineMangaChapter ch(String key, int pages, int pagesRead) =>
+        OnlineMangaChapter(
+          key: key,
+          name: key,
+          raw: <String, Object?>{'pages': pages, 'pagesRead': pagesRead},
+        );
+
+    test('adopts server progress for chapters never opened here', () async {
+      final int written = await reconcileKavitaChapterStates(
+        db: db,
+        bookUid: _uid,
+        chapters: <OnlineMangaChapter>[
+          ch('1', 10, 0),
+          ch('2', 10, 4),
+          ch('3', 10, 10),
+        ],
+        nowMs: () => _base,
+      );
+      expect(written, 2);
+      expect(
+        await db.getMangaChapterState(bookUid: _uid, chapterKey: '1'),
+        isNull,
+      );
+      final MangaChapterStateRow two = (await db.getMangaChapterState(
+        bookUid: _uid,
+        chapterKey: '2',
+      ))!;
+      expect(two.lastPage, 4);
+      expect(two.readAt, isNull);
+      final MangaChapterStateRow three = (await db.getMangaChapterState(
+        bookUid: _uid,
+        chapterKey: '3',
+      ))!;
+      expect(three.lastPage, 9);
+      expect(three.readAt, _base);
+    });
+
+    test('keeps local mid-chapter progress, marks finished read', () async {
+      await db.saveMangaChapterState(
+        bookUid: _uid,
+        chapterKey: '2',
+        lastPage: 7,
+        pageCount: 10,
+      );
+      await db.saveMangaChapterState(
+        bookUid: _uid,
+        chapterKey: '3',
+        lastPage: 2,
+        pageCount: 10,
+      );
+      await reconcileKavitaChapterStates(
+        db: db,
+        bookUid: _uid,
+        chapters: <OnlineMangaChapter>[ch('2', 10, 4), ch('3', 10, 10)],
+        nowMs: () => _base,
+      );
+      expect(
+        (await db.getMangaChapterState(
+          bookUid: _uid,
+          chapterKey: '2',
+        ))!.lastPage,
+        7,
+      );
+      final MangaChapterStateRow three = (await db.getMangaChapterState(
+        bookUid: _uid,
+        chapterKey: '3',
+      ))!;
+      expect(three.readAt, _base);
+    });
   });
 }

@@ -1,4 +1,9 @@
 import 'dart:async';
+import 'package:fushi/src/media/kavita/kavita_manga_sync.dart';
+import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
+import 'package:fushi/src/media/kavita/kavita_server_config.dart';
+import 'package:fushi_engine/media/kavita/kavita_api.dart'
+    show KavitaApiException;
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
@@ -1102,10 +1107,23 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         entry: entry,
       );
       final EpubBookRow? row = await service.database.getEpubBook(bookKey);
+      // Kavita：服务器的逐章已读状态并进本地章进度（别的设备读过的章在这里才看得到）。
+      Map<String, MangaChapterStateRow>? reconciled;
+      if (row != null &&
+          updated.runtime == OnlineMangaRuntimeKind.kavita &&
+          await reconcileKavitaChapterStates(
+                db: service.database,
+                bookUid: row.uid,
+                chapters: updated.chapters,
+              ) >
+              0) {
+        reconciled = await _readChapterStates(row);
+      }
       if (!mounted) return;
       setState(() {
         _entry = updated;
         if (row != null) _row = row;
+        if (reconciled != null) _states = reconciled;
         _refreshSucceeded = true;
       });
     } on OnlineMangaUnavailable catch (error, stack) {
@@ -1412,11 +1430,100 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     unawaited(_refreshDownloadState());
   }
 
+  /// Kavita 条目：把一批章的已读 / 未读推给服务器，并对齐本地章进度与同步基线。
+  ///
+  /// 返回 false = 服务器没成功（已弹错误提示），调用方不应再改本地。非 Kavita
+  /// 条目 / 服务器不可用时返回 true（只走本地）。章 key 不是 chapterId 的跳过。
+  Future<bool> _markKavitaChapters(
+    List<OnlineMangaChapter> chapters, {
+    required bool read,
+  }) async {
+    final OnlineMangaLibraryEntry? entry = _entry;
+    final String? bookUid = _bookUid;
+    if (entry == null ||
+        bookUid == null ||
+        !KavitaMangaSyncSession.appliesTo(entry)) {
+      return true;
+    }
+    final int? seriesId = int.tryParse(entry.series.key);
+    KavitaServerConfig? server;
+    for (final KavitaServerConfig s in _appModel.prefsRepo.kavitaServers) {
+      if (s.id == entry.sourceId) server = s;
+    }
+    final List<OnlineMangaChapter> targets = <OnlineMangaChapter>[
+      for (final OnlineMangaChapter c in chapters)
+        if (int.tryParse(c.key) != null) c,
+    ];
+    if (seriesId == null ||
+        server == null ||
+        !server.isUsable ||
+        targets.isEmpty) {
+      return true;
+    }
+    final List<int> ids = <int>[for (final c in targets) int.parse(c.key)];
+    try {
+      final api = KavitaApiRegistry.instance.apiFor(server);
+      if (read) {
+        await api.markChaptersRead(seriesId: seriesId, chapterIds: ids);
+      } else {
+        await api.markChaptersUnread(seriesId: seriesId, chapterIds: ids);
+      }
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaSeriesPage.kavitaMark', error, stack);
+      if (mounted) {
+        FushiToast.show(
+          msg: t.kavita_book_mark_failed(
+            reason: error is KavitaApiException
+                ? 'HTTP ${error.statusCode}'
+                : error.runtimeType.toString(),
+          ),
+          severity: ToastSeverity.error,
+        );
+      }
+      return false;
+    }
+    final PrefKavitaMangaSyncStampStore stamps = PrefKavitaMangaSyncStampStore(
+      read: () =>
+          _appModel.prefsRepo.getPref(kKavitaMangaSyncStatePref, defaultValue: '')
+              as String,
+      write: (String value) =>
+          _appModel.prefsRepo.setPref(kKavitaMangaSyncStatePref, value),
+    );
+    for (final OnlineMangaChapter c in targets) {
+      await alignKavitaMangaChapterMark(
+        db: _appModel.database,
+        stamps: stamps,
+        bookUid: bookUid,
+        chapterKey: c.key,
+        read: read,
+        totalPages: _asPages(c.raw['pages']),
+      );
+    }
+    return true;
+  }
+
+  static int _asPages(Object? v) => switch (v) {
+    final num n => n.toInt(),
+    final String s => int.tryParse(s) ?? 0,
+    _ => 0,
+  };
+
   Future<void> _toggleChapterRead(OnlineMangaChapter chapter) async {
     final String? bookUid = _bookUid;
     if (bookUid == null) return;
     final MangaChapterStateRow? state = _states[chapter.key];
-    if (state?.readAt != null) {
+    final bool markRead = state?.readAt == null;
+    if (!await _markKavitaChapters(<OnlineMangaChapter>[
+      chapter,
+    ], read: markRead)) {
+      return;
+    }
+    if (_entry != null && KavitaMangaSyncSession.appliesTo(_entry)) {
+      // Kavita：本地状态已由 alignKavitaMangaChapterMark 写好（含页与基线）。
+      await _reloadChapterStates();
+      return;
+    }
+    if (!markRead) {
       await _appModel.database.clearMangaChapterRead(
         bookUid: bookUid,
         chapterKey: chapter.key,
@@ -1439,12 +1546,15 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     if (bookUid == null || entry == null) return;
     final int index = entry.indexOfChapterKey(chapter.key);
     if (index < 0) return;
+    final List<OnlineMangaChapter> targets = entry.chapters.sublist(index);
+    if (!await _markKavitaChapters(targets, read: true)) return;
+    if (KavitaMangaSyncSession.appliesTo(entry)) {
+      await _reloadChapterStates();
+      return;
+    }
     await _appModel.database.markMangaChaptersRead(
       bookUid: bookUid,
-      chapterKeys: <String>[
-        for (int i = index; i < entry.chapters.length; i++)
-          entry.chapters[i].key,
-      ],
+      chapterKeys: <String>[for (final c in targets) c.key],
     );
     await _reloadChapterStates();
   }

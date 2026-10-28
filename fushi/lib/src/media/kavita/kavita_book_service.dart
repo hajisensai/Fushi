@@ -324,6 +324,48 @@ class KavitaBookService {
     );
   }
 
+  /// 章节在服务器上被手动标已读 / 未读后，对齐本地副本（没有本地副本就什么都不做）。
+  ///
+  /// 本地阅读位置与同步基线必须一起改：只改服务器的话，下次打开时本地位置（旧页）
+  /// 与基线不同会被 [resolveKavitaProgress] 当成「本地动过」而把旧进度推回去。
+  /// - 标未读：位置回书首（严格新于旧行的时间戳）、基线回 0；
+  /// - 标已读：位置与基线都落到最后一页（[totalPages] 为服务器章节页数）。
+  Future<void> alignLocalWithServerMark({
+    required String serverConfigId,
+    required int chapterId,
+    required bool read,
+    required int totalPages,
+  }) => _serialized(() async {
+    final String? bookKey = await findBookKey(
+      serverConfigId: serverConfigId,
+      chapterId: chapterId,
+    );
+    if (bookKey == null) return;
+    final EpubBookRow? row = await _db.getEpubBook(bookKey);
+    if (row == null) return;
+    final int page = read ? (totalPages > 0 ? totalPages - 1 : 0) : 0;
+    if (row.uid.isNotEmpty) {
+      final ReaderPositionRow? existing = await _db.getReaderPosition(row.uid);
+      // 标未读且本来没位置 = 已经是未读，不凭空造一行。
+      if (existing != null || read) {
+        final int now = _nowMs();
+        final int stamp = existing != null && existing.updatedAt >= now
+            ? existing.updatedAt + 1
+            : now;
+        await _db.upsertReaderPosition(
+          ReaderPositionsCompanion(
+            bookUid: Value<String>(row.uid),
+            sectionIndex: Value<int>(page),
+            normCharOffset: const Value<int>(0),
+            charOffset: const Value<int>(-1),
+            updatedAt: Value<int>(stamp),
+          ),
+        );
+      }
+    }
+    await recordSync(bookKey, pulled: true, page: page);
+  });
+
   /// 可被清理的缓存副本（未固定、且没有用户数据）的 bookKey 列表。设置页「清理缓存」
   /// 按钮上的数字用它——与 [clearCache] 实际会动的范围一致。
   Future<List<String>> cachedBookKeys() async => <String>[
