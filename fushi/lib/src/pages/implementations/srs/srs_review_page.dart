@@ -53,6 +53,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_card_appearance.dart'
+    show SrsCardAppearance, SrsCardColorSource, srsCardColorScheme;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_card_media.dart' show srsMediaNameFromUrl;
 import 'package:fushi/src/srs/srs_change_note_type.dart';
@@ -1742,27 +1744,31 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
               behavior: HitTestBehavior.opaque,
               child: _SrsHeightReporter(
                 onHeight: _onBottomBarHeight,
-                child: SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      tokens.spacing.page,
-                      tokens.spacing.gap * 1.5,
-                      tokens.spacing.page,
-                      tokens.spacing.gap * 1.5,
-                    ),
-                    child: _withBottomReplay(
-                      context,
-                      AnimatedSwitcher(
-                        duration: fushiMotionDuration(
-                          context,
-                          FushiMotion.short,
+                child: _withBottomBarScrim(
+                  context,
+                  underBar: underBar,
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        tokens.spacing.page,
+                        tokens.spacing.gap * 1.5,
+                        tokens.spacing.page,
+                        tokens.spacing.gap * 1.5,
+                      ),
+                      child: _withBottomReplay(
+                        context,
+                        AnimatedSwitcher(
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.short,
+                          ),
+                          switchInCurve: FushiMotion.enter,
+                          switchOutCurve: FushiMotion.exit,
+                          child: _showingAnswer
+                              ? _buildRatingRow(context)
+                              : _buildShowAnswer(context),
                         ),
-                        switchInCurve: FushiMotion.enter,
-                        switchOutCurve: FushiMotion.exit,
-                        child: _showingAnswer
-                            ? _buildRatingRow(context)
-                            : _buildShowAnswer(context),
                       ),
                     ),
                   ),
@@ -1772,6 +1778,35 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           ),
         ],
       ),
+    );
+  }
+
+  /// 原生 Fushi 卡面铺在底栏背后滚动：底栏垫一层由透明渐变到卡面底色的底板，滚到底栏
+  /// 下面的释义 / 来源不再从评分按钮之间透出来、跟按钮文字叠在一起（手机上评分按钮
+  /// 占满整行，透出来的字尤其乱）。整面 WebView 卡面停在底栏上沿，不需要底板。
+  Widget _withBottomBarScrim(
+    BuildContext context, {
+    required bool underBar,
+    required Widget child,
+  }) {
+    if (!underBar) return child;
+    final SrsCardAppearance appearance = ref.watch(srsCardAppearanceProvider);
+    final ColorScheme app = Theme.of(context).colorScheme;
+    // 与卡面同一判据：自定义配色时卡面自己铺底（卡面配色的 surface），否则透出页面底色。
+    final Color surface = appearance.colorSource == SrsCardColorSource.custom
+        ? srsCardColorScheme(appearance, app).surface
+        : app.surface;
+    return DecoratedBox(
+      key: const ValueKey<String>('srs-review-bottom-bar-scrim'),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: <Color>[surface.withValues(alpha: 0), surface, surface],
+          stops: const <double>[0, 0.3, 1],
+        ),
+      ),
+      child: child,
     );
   }
 

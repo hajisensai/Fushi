@@ -208,18 +208,7 @@ void main() {
         final Finder f = find.byKey(ValueKey<String>(_blockKeys[b]!));
         expect(f, findsOneWidget, reason: b.name);
         final double y = tester.getTopLeft(f).dy;
-        if (b == FushiCardBlock.picture) {
-          // 窄屏图片是标题行右上角的缩略图：与词条同一行，排在词条右侧。
-          final Finder term = find.byKey(
-            const ValueKey<String>('srs-fushi-term'),
-          );
-          expect(y, closeTo(tester.getTopLeft(term).dy, 24));
-          expect(
-            tester.getTopLeft(f).dx,
-            greaterThan(tester.getTopRight(term).dx),
-          );
-          continue;
-        }
+        // 窄屏图片 / 视频不再是标题右侧的缩略图：单独一块通栏，排在词条区下面。
         expect(y, greaterThanOrEqualTo(previous), reason: b.name);
         previous = y;
       }
@@ -526,7 +515,9 @@ void main() {
     expect(tester.getTopLeft(term).dy, lessThan(inset));
   });
 
-  testWidgets('窄屏封面按原比例完整显示（不再裁成正方形）', (WidgetTester tester) async {
+  testWidgets('窄屏（手机）：图片通栏与例句卡等宽、按原比例；词条独占整行不被挤折行', (
+    WidgetTester tester,
+  ) async {
     await pump(tester, answer: true);
     final Finder pic = find.descendant(
       of: find.byKey(const ValueKey<String>('srs-fushi-picture')),
@@ -535,12 +526,28 @@ void main() {
     await tester.runAsync(
       () => precacheImage(tester.widget<Image>(pic).image, tester.element(pic)),
     );
+    // 尺寸监听在 runAsync 里回调、setState 后再 pump 一帧才换成铺满。
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
     await tester.pump(const Duration(milliseconds: 100));
-    final Size size = tester.getSize(pic);
-    // 样例图 320×200：宽高比保持 1.6，限在缩略图框（84 × 1.5 宽、84 × 1.4 高）内。
-    expect(size.width / size.height, closeTo(1.6, 0.02));
-    expect(size.width, lessThanOrEqualTo(84 * 1.5));
-    expect(size.height, lessThanOrEqualTo(84 * 1.4));
+    final Rect rect = tester.getRect(pic);
+    final Rect block = tester.getRect(
+      find.byKey(const ValueKey<String>('srs-fushi-sentence-block')),
+    );
+    // 样例图 320×200（1.6）：铺满栏宽，左右边与例句卡对齐，按原比例定高——不再是
+    // 标题右侧 126×118 的缩略图。
+    expect(rect.left, moreOrLessEquals(block.left, epsilon: 0.5));
+    expect(rect.right, moreOrLessEquals(block.right, epsilon: 0.5));
+    expect(rect.width / rect.height, closeTo(1.6, 0.02));
+    // 图片在词条区下面、例句上面。
+    final Rect header = tester.getRect(
+      find.byKey(const ValueKey<String>('srs-fushi-header')),
+    );
+    expect(rect.top, greaterThanOrEqualTo(header.bottom));
+    expect(rect.bottom, lessThanOrEqualTo(block.top));
+    // 词条区占满整行宽（没有并排的缩略图分走宽度）。
+    expect(header.width, moreOrLessEquals(block.width, epsilon: 0.5));
   });
 
   testWidgets('宽屏左栏：常见比例的图与例句卡等宽；竖长封面照旧限高', (WidgetTester tester) async {
