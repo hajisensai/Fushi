@@ -9685,6 +9685,7 @@
   "video_subtitle_ai_episode_skipped_existing": "スキップ：.ja.srt が既にあります",
   "video_subtitle_ai_episode_skipped_no_dialogue": "スキップ：台詞がほとんどありません（歌やクリップ）",
   "video_subtitle_ai_episode_skipped_song": "スキップ：歌（OP/ED、MV）と判定されました",
+  "video_subtitle_ai_episode_styled_from": "Styles from ${name}",
   "video_subtitle_ai_error_reply_incomplete": "AIの返答が何度か再試行しても不完全でした",
   "video_subtitle_ai_estimate": "約 ${requests} 回のリクエスト、入力 約 ${input}／出力 約 ${output} トークン",
   "video_subtitle_ai_estimate_by_drafts": "（認識済みの字幕から算出）",

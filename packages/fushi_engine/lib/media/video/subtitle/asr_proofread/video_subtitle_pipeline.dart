@@ -7,6 +7,7 @@
 /// ```
 /// 识别全部集 → S0 专名表（每作品一次）→ 每集 S3 校对 → S4 写法统一
 ///   → 短视频 S5 歌曲判定 → S5 长条拆分（注入点）→ 导出 <视频名>.<后缀>.srt
+///   （+ 有样式参考时 <视频名>.<后缀>.ass，见 subtitle_ass_style_transfer.dart）
 /// ```
 ///
 /// AI 关闭（[VideoSubtitlePipeline.ai] 为 null）时跳过 S0/S3/S4/歌曲判定，只做
@@ -27,6 +28,8 @@ import 'package:fushi_asr_subtitles/asr_subtitles.dart'
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_ass_style_reference_loader.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_ass_style_transfer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_clip_classifier.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_consistency_pass.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_display_split.dart';
@@ -109,6 +112,8 @@ class VideoSubtitleEpisodeResult {
     required this.videoPath,
     required this.status,
     this.outputPath,
+    this.styledOutputPath,
+    this.styleReference,
     this.reason,
     this.cueCount = 0,
   });
@@ -118,6 +123,13 @@ class VideoSubtitleEpisodeResult {
 
   /// 写出的字幕路径（导出时）。
   final String? outputPath;
+
+  /// 按参考 ASS 套了样式的 `<视频名>.<后缀>.ass`（同 [outputPath] 的目录与
+  /// `.asr` 退路规则）；没有参考或目标被别人的文件占着时为 null。
+  final String? styledOutputPath;
+
+  /// 样式来源（参考 ASS 的文件名或内嵌轨标签）。
+  final String? styleReference;
 
   /// 跳过的原因（英文短句，排查用；UI 按 [status] 出文案）。
   final String? reason;
@@ -248,6 +260,7 @@ class VideoSubtitlePipeline {
     this.displaySplitter = splitSubtitleDraftCuesForDisplay,
     this.subtitleSuffix = 'ja',
     this.exportDir,
+    this.styleReference,
     Future<int?> Function(String videoPath)? probeDurationMs,
     DateTime Function()? clock,
   }) : _probeDurationMs = probeDurationMs ?? probeVideoDurationMs,
@@ -266,6 +279,10 @@ class VideoSubtitlePipeline {
   /// 字幕写到哪个目录；null = 视频旁（播放页的 sidecar 探测直接加载）。给了就全部
   /// 写进这个目录（CLI `--out-dir`：不碰视频目录），已有字幕的判定也看这个目录。
   final Directory? exportDir;
+
+  /// 样式参考（同一视频已有的 ASS，通常是别的语言）：给了且找得到参考时，SRT 之外
+  /// 再按参考的样式 / 位置导出一份 `<视频名>.<后缀>.ass`。null = 只出 SRT。
+  final SubtitleStyleReferenceLoader? styleReference;
   final Future<int?> Function(String videoPath) _probeDurationMs;
   final DateTime Function() _clock;
 
@@ -280,6 +297,14 @@ class VideoSubtitlePipeline {
     exportDir?.path ?? p.dirname(videoPath),
     '${p.basenameWithoutExtension(videoPath)}.$subtitleSuffix.asr.srt',
   );
+
+  /// 套了参考样式的 ASS：`<视频名>.<后缀>.ass`。
+  String styledSubtitlePathFor(String videoPath) =>
+      p.setExtension(subtitlePathFor(videoPath), '.ass');
+
+  /// 同名 ASS 已被别人的文件占着时的退路 `<视频名>.<后缀>.asr.ass`。
+  String asrStyledSubtitlePathFor(String videoPath) =>
+      p.setExtension(asrSubtitlePathFor(videoPath), '.ass');
 
   Directory jobDirFor(String videoPath) =>
       Directory(p.join(jobsRoot.path, videoSubtitleJobId(videoPath)));
@@ -674,6 +699,11 @@ class VideoSubtitlePipeline {
     final List<int> bytes = utf8.encode(srt);
     await writeSubtitleJobFileAtomic(File(path), srt);
     e.state.exports[path] = sha1.convert(bytes).toString();
+    final ({String path, String label})? styled = await _exportStyled(
+      e,
+      cues,
+      asAsr: path != target,
+    );
     await e.state.save(e.dir);
     return VideoSubtitleEpisodeResult(
       videoPath: e.video,
@@ -681,8 +711,52 @@ class VideoSubtitlePipeline {
           ? VideoSubtitleEpisodeStatus.exported
           : VideoSubtitleEpisodeStatus.exportedAsAsr,
       outputPath: path,
+      styledOutputPath: styled?.path,
+      styleReference: styled?.label,
       cueCount: cues.length,
     );
+  }
+
+  /// 有样式参考时按参考导出 ASS（与 SRT 同一套占位规则：目标被别人的文件占着就
+  /// 改写 `.asr.ass`，那个也被占就不写）。SRT 已经落到 `.asr` 退路时 ASS 也只写退路，
+  /// 两份产物保持同名配对。没有参考 / 写不了返回 null。
+  Future<({String path, String label})?> _exportStyled(
+    _Episode e,
+    List<SubtitleDraftCue> cues, {
+    required bool asAsr,
+  }) async {
+    final SubtitleStyleReferenceLoader? load = styleReference;
+    if (load == null) return null;
+    final AssStyleReference? reference = await load(
+      e.video,
+      // 只排除本管线写过的文件；用户自己放的 `.ja.ass` 照样能当参考。
+      isOwnOutput: (String path) =>
+          e.state.exports.keys.any((String own) => p.equals(own, path)),
+    );
+    if (reference == null) return null;
+    final String target = styledSubtitlePathFor(e.video);
+    final String fallback = asrStyledSubtitlePathFor(e.video);
+    bool free(String path) => !File(path).existsSync() || e.state.wrote(path);
+    final String? path = !asAsr && free(target)
+        ? target
+        : free(fallback)
+        ? fallback
+        : null;
+    if (path == null) return null;
+    final String ass = renderAssWithReferenceStyle(
+      cues: <AssStyledCue>[
+        for (final SubtitleDraftCue c in cues)
+          AssStyledCue(
+            startMs: c.startMs,
+            endMs: c.endMs < c.startMs + 300 ? c.startMs + 300 : c.endMs,
+            text: c.text,
+          ),
+      ],
+      reference: reference,
+    );
+    await writeSubtitleJobFileAtomic(File(path), ass);
+    e.state.exports[path] = sha1.convert(utf8.encode(ass)).toString();
+    return (path: path, label: reference.label);
   }
 
   static List<SubtitleDraftCue>? _readCues(File f) {

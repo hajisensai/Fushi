@@ -9685,6 +9685,7 @@
   "video_subtitle_ai_episode_skipped_existing": "Skipped: already has a .ja.srt",
   "video_subtitle_ai_episode_skipped_no_dialogue": "Skipped: almost no dialogue (song or clip)",
   "video_subtitle_ai_episode_skipped_song": "Skipped: judged to be a song (OP/ED, MV)",
+  "video_subtitle_ai_episode_styled_from": "Styles from ${name}",
   "video_subtitle_ai_error_reply_incomplete": "the AI reply was incomplete after several retries",
   "video_subtitle_ai_estimate": "About ${requests} requests, ~${input} input / ~${output} output tokens",
   "video_subtitle_ai_estimate_by_drafts": " (from recognized subtitles)",
