@@ -250,7 +250,8 @@ void main() {
         r'\clip(0,0,0,1080)\t(0,500,\clip(0,0,1920,1080))\c&H00FFFF&',
       );
       expect(line, isNot(contains(r'\clip')));
-      expect(line, endsWith(r'{\c&H00FFFF&}セリフ'));
+      // 带 \clip 的事件整条不参与挑选（排版类），日语行走默认对白样式。
+      expect(line, 'Dialogue: 0,0:00:20.00,0:00:22.00,Dial,,0,0,0,,セリフ');
     });
 
     test(r'白名单：颜色 / 字体 / 描边 / 淡入淡出保留；旋转 / 错切 / 原点 / 缩放 / \fade 丢弃', () {
