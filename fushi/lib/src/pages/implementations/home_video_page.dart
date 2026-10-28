@@ -5308,7 +5308,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ? null
         : split
         ? _buildHomeHeroSplit(heroData, updates, contentWidth)
-        : _buildHomeHeroCard(heroData, contentWidth);
+        : _liftHomeHero(_buildHomeHeroCard(heroData, contentWidth));
     // 横排版有主卡时「已更新未看」在主卡右侧面板里，不再重复成行。
     final Widget? subscriptionRow = split && hero != null
         ? null
@@ -5479,6 +5479,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
   }
 
+  /// 主卡悬停抬升：与书架 / 漫画「继续阅读」卡、首页 dashboard 主卡同一套
+  /// （整卡 [FushiHoverLift]，大卡只轻抬 1.01）。主卡大图盖住了 [FushiCard] 的
+  /// 状态层，不包这一层鼠标放上去毫无反馈。多选态整卡不可点，抬升一并关掉。
+  Widget _liftHomeHero(Widget card) => FushiHoverLift(
+    enabled: !_selectionMode,
+    scale: 1.01,
+    builder: (BuildContext _, bool __) => card,
+  );
+
   /// 横排版首屏：主卡（约 1.55fr）+ 右侧「已更新未看」面板（约 1fr），同高并排；
   /// 面板为空时主卡占满整宽。
   Widget _buildHomeHeroSplit(
@@ -5490,7 +5499,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (updates.isEmpty) {
       return SizedBox(
         height: videoHomeHeroSplitHeight(contentWidth),
-        child: _buildHomeHeroOverlay(hero),
+        child: _liftHomeHero(_buildHomeHeroOverlay(hero)),
       );
     }
     final double gap = tokens.spacing.gap * 1.5;
@@ -5504,7 +5513,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          SizedBox(width: heroWidth, child: _buildHomeHeroOverlay(hero)),
+          SizedBox(
+            width: heroWidth,
+            child: _liftHomeHero(_buildHomeHeroOverlay(hero)),
+          ),
           SizedBox(width: gap),
           Expanded(
             child: FushiStaggeredEntrance(
