@@ -7,13 +7,18 @@
 /// adoptServer**——写本地阅读位置并记同步戳；冲突 / 推本地 / 无需动作一律不碰，
 /// 留给开书时的 attach（那里有冲突对话框与推送）。
 ///
+/// 采用写入由 [KavitaBookService.adoptServerProgress] 完成：在服务锁内按最新状态
+/// 重新决策、比较后写入、时间戳取服务器进度时刻（不扰动「最近阅读」排序、不在
+/// 互联同步里压过别的设备更晚的进度）；阅读器正开着的书整本跳过。
+///
 /// 离线 / 超时 / 服务器错误整本跳过；脊柱章数与服务器页数对不上的书也跳过（与
 /// attach 同一道安全检查）。有节流，永不抛错、不阻塞渲染。
 library;
 
 import 'dart:async';
 
-import 'package:fushi_audio/fushi_audio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart';
@@ -21,7 +26,7 @@ import 'package:fushi_engine/media/kavita/kavita_models.dart';
 import 'package:fushi/src/media/kavita/kavita_book_binding.dart';
 import 'package:fushi/src/media/kavita/kavita_book_service.dart';
 import 'package:fushi/src/media/kavita/kavita_epub_sync.dart';
-import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
+import 'package:fushi/src/media/kavita/kavita_open_books.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 
 class KavitaProgressRefresher {
@@ -100,6 +105,8 @@ class KavitaProgressRefresher {
       );
       if (binding == null || row.uid.isEmpty) continue;
       if (!ids.contains(binding.serverConfigId)) continue;
+      // 阅读器开着的书归阅读器的同步会话管（写入前在锁内还会再查一次）。
+      if (KavitaOpenBooks.isOpen(row.bookKey)) continue;
       final ReaderPositionRow? pos = await db.getReaderPosition(row.uid);
       int recency = row.importedAt;
       for (final int? v in <int?>[
@@ -121,6 +128,7 @@ class KavitaProgressRefresher {
     KavitaBookBinding binding,
     KavitaApi api,
   ) async {
+    // 网络在锁外：拉取可能要几秒，不能挡开书 / 删书那把锁。
     final List<Object?> results = await Future.wait<Object?>(<Future<Object?>>[
       api.getProgress(binding.chapterId),
       api
@@ -137,24 +145,20 @@ class KavitaProgressRefresher {
         info.pages > 0 &&
         row.chapterCount > 0 &&
         info.pages != row.chapterCount) {
+      // 与开书时同一道安全检查：脊柱章数对不上时页号落不到对的章，整本不同步。
+      // 开书时阅读器会提示用户；后台这里只留痕。
+      debugPrint(
+        '[kavita-refresh] ${row.bookKey}: server lists ${info.pages} '
+        'sections, local copy has ${row.chapterCount}; progress sync skipped',
+      );
       return false;
     }
-    final ReaderPositionRow? local = await db.getReaderPosition(row.uid);
-    final KavitaSyncDecision decision = decideKavitaEpubSync(
-      binding: binding,
+    // 决策与写入在服务的锁里、按锁内重读的最新状态做（见 adoptServerProgress）。
+    return KavitaBookService(db: db, nowMs: _nowMs).adoptServerProgress(
+      bookKey: row.bookKey,
       remote: remote,
-      local: local,
+      decide: (KavitaBookBinding fresh, ReaderPositionRow? local) =>
+          decideKavitaEpubSync(binding: fresh, remote: remote, local: local),
     );
-    if (decision.action != KavitaSyncAction.adoptServer) return false;
-    final int lastSection = row.chapterCount > 0 ? row.chapterCount - 1 : 0;
-    final int page = remote.pageNum.clamp(0, lastSection);
-    await ReaderPositionRepository(
-      db,
-    ).save(bookUid: row.uid, sectionIndex: page, normCharOffset: 0);
-    await KavitaBookService(
-      db: db,
-      nowMs: _nowMs,
-    ).recordSync(row.bookKey, pulled: true, page: page);
-    return true;
   }
 }

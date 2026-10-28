@@ -19,6 +19,8 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';
@@ -60,6 +62,8 @@ class KavitaEpubSyncSession {
     required List<KavitaServerConfig> servers,
     required KavitaApi Function(KavitaServerConfig) apiFor,
     KavitaConflictPrompt? promptConflict,
+    void Function(int serverSections, int localSections)?
+    onSectionCountMismatch,
     Duration pullTimeout = kPullTimeout,
     Duration debounce = const Duration(seconds: 10),
     int Function()? nowMs,
@@ -103,11 +107,17 @@ class KavitaEpubSyncSession {
     }
     // Kavita 的 pageNum 与本地 sectionIndex 都是脊柱下标，只有两侧章数一致才一一
     // 对应。不一致（Fushi 丢了非 HTML / 缺文件的脊柱项，或 Kavita 跳过了某些项）时
-    // 任何拉取 / 推送都会落到错的一章，宁可整本不同步。
+    // 任何拉取 / 推送都会落到错的一章，宁可整本不同步——但不能静默：交给调用方
+    // 告诉用户这本书的进度不会同步（阅读器弹提示）。
     if (info != null &&
         info.pages > 0 &&
         row.chapterCount > 0 &&
         info.pages != row.chapterCount) {
+      debugPrint(
+        '[kavita-sync] ${row.bookKey}: server lists ${info.pages} sections, '
+        'local copy has ${row.chapterCount}; progress sync disabled',
+      );
+      onSectionCountMismatch?.call(info.pages, row.chapterCount);
       return null;
     }
 

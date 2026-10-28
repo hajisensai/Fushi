@@ -1,5 +1,5 @@
 // Kavita EPUB 系列页：章节行的服务器进度文案、长按 / 右键菜单标已读、下拉刷新、
-// 静默重取失败保留旧列表、阅读器关闭后的追平重取。假服务器（MockClient）+ 真页面；
+// 静默重取失败保留旧列表、阅读器关闭后等关书推送再重取（KavitaOpenBooks，单测见 kavita_open_books_test）。假服务器（MockClient）+ 真页面；
 // 书服务注入内存库，不构造 AppModel。
 import 'dart:convert';
 
@@ -130,7 +130,6 @@ void main() {
             series: series,
             api: api,
             service: service,
-            readerSettleDelays: const <Duration>[],
           ),
         ),
       ),

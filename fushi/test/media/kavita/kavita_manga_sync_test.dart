@@ -422,6 +422,81 @@ void main() {
       expect(row.lastPage, 9);
       expect(stamps.stampOf(_uid, _chapterKey), (at: _base, page: 9));
     });
+
+    test('server not updated (offline): local still marks read, baseline stays '
+        'on the last known server page, next open pushes the mark', () async {
+      await setLocal(3);
+      await stamps.record(_uid, _chapterKey, _base, page: 3);
+      await alignKavitaMangaChapterMark(
+        db: db,
+        stamps: stamps,
+        bookUid: _uid,
+        chapterKey: _chapterKey,
+        read: true,
+        totalPages: 10,
+        serverConfirmed: false,
+        knownServerPage: 3,
+        nowMs: () => _base + _min,
+      );
+      final MangaChapterStateRow row = (await db.getMangaChapterState(
+        bookUid: _uid,
+        chapterKey: _chapterKey,
+      ))!;
+      expect(row.readAt, _base + _min, reason: 'local mark takes effect');
+      expect(row.lastPage, 9);
+      expect(stamps.stampOf(_uid, _chapterKey)?.page, 3);
+
+      // 回到线上、服务器仍停在 3：本地离开了基线 → 开章时推本机的标记。
+      final _Server server = _Server(pageNum: 3, modifiedAt: _base);
+      final KavitaMangaSyncSession? session = await attach(server);
+      expect(session!.adoptedPage, isNull);
+      await session.close();
+      expect(server.pushedPages, <int>[9]);
+    });
+
+    test(
+      'offline unread without a prior baseline: the known server page becomes '
+      'the baseline and the series refresh does not re-mark it read',
+      () async {
+        await setLocal(9);
+        await db.markMangaChaptersRead(
+          bookUid: _uid,
+          chapterKeys: <String>[_chapterKey],
+        );
+        await alignKavitaMangaChapterMark(
+          db: db,
+          stamps: stamps,
+          bookUid: _uid,
+          chapterKey: _chapterKey,
+          read: false,
+          totalPages: 10,
+          serverConfirmed: false,
+          knownServerPage: 9,
+          nowMs: () => _base,
+        );
+        expect(stamps.stampOf(_uid, _chapterKey)?.page, 9);
+        // 作品页刷新拿到服务器的旧状态（仍读完）：本机未推的标未读不被改回去。
+        await reconcileKavitaChapterStates(
+          db: db,
+          bookUid: _uid,
+          chapters: <OnlineMangaChapter>[
+            OnlineMangaChapter(
+              key: _chapterKey,
+              name: 'c',
+              raw: const <String, Object?>{'pages': 10, 'pagesRead': 10},
+            ),
+          ],
+          stamps: stamps,
+          nowMs: () => _base + _min,
+        );
+        final MangaChapterStateRow row = (await db.getMangaChapterState(
+          bookUid: _uid,
+          chapterKey: _chapterKey,
+        ))!;
+        expect(row.readAt, isNull);
+        expect(row.lastPage, 0);
+      },
+    );
   });
 
   test('offline at open: session still opens, local untouched', () async {

@@ -44,6 +44,8 @@ import 'package:fushi_engine/media/kavita/kavita_models.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/kavita/kavita_book_binding.dart';
+import 'package:fushi/src/media/kavita/kavita_open_books.dart';
+import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_sync.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
@@ -323,6 +325,63 @@ class KavitaBookService {
       ),
     );
   }
+
+  /// 后台对账（首页 / 书架）采用服务器进度：[remote] 是锁外刚拉到的服务器进度，
+  /// [decide] 是与开书时同一个决策（`decideKavitaEpubSync`）。
+  ///
+  /// 决策与写入都在 [_serialized] 里、基于**锁内重读**的绑定与本地位置：拉取期间
+  /// 本地可能已被阅读器 / 互联对端 / 标记操作改写，用候选阶段的快照做决定会把那些
+  /// 更新盖掉。阅读器正开着这本书（[KavitaOpenBooks.isOpen]）时整本跳过——位置归
+  /// 阅读器自己的同步会话管。阅读器存进度、互联落地不走这把锁，所以写入用
+  /// [FushiDatabase.upsertReaderPositionIfUnchanged]：「决策时读到的那一行」在写入
+  /// 时必须仍是现行值，否则放弃（下个窗口重判）。
+  ///
+  /// 时间戳用服务器的 `lastModifiedUtc`（那次进度真实发生的时刻），不是本机现在：
+  /// 用「现在」会把这本书顶到「最近阅读」最前，并在互联同步（按 updatedAt 后写者赢）
+  /// 里压过另一台设备在这之后真实读过的进度。服务器时刻不晚于本地行时取本地行 +1
+  /// ——只让新行严格新于旧行，排序位置不动。返回是否写入。
+  Future<bool> adoptServerProgress({
+    required String bookKey,
+    required KavitaProgress remote,
+    required KavitaSyncDecision Function(
+      KavitaBookBinding binding,
+      ReaderPositionRow? local,
+    )
+    decide,
+  }) => _serialized(() async {
+    if (KavitaOpenBooks.isOpen(bookKey)) return false;
+    final DateTime? serverAt = remote.lastModifiedUtc;
+    if (serverAt == null) return false;
+    final EpubBookRow? row = await _db.getEpubBook(bookKey);
+    if (row == null || row.uid.isEmpty) return false;
+    final KavitaBookBinding? binding = KavitaBookBinding.tryParse(
+      row.sourceMetadata,
+    );
+    if (binding == null) return false;
+    final ReaderPositionRow? local = await _db.getReaderPosition(row.uid);
+    if (decide(binding, local).action != KavitaSyncAction.adoptServer) {
+      return false;
+    }
+    final int lastSection = row.chapterCount > 0 ? row.chapterCount - 1 : 0;
+    final int page = remote.pageNum.clamp(0, lastSection);
+    final int serverMs = serverAt.millisecondsSinceEpoch;
+    final int stamp = local == null || serverMs > local.updatedAt
+        ? serverMs
+        : local.updatedAt + 1;
+    final bool written = await _db.upsertReaderPositionIfUnchanged(
+      ReaderPositionsCompanion(
+        bookUid: Value<String>(row.uid),
+        sectionIndex: Value<int>(page),
+        normCharOffset: const Value<int>(0),
+        charOffset: const Value<int>(-1),
+        updatedAt: Value<int>(stamp),
+      ),
+      expectedUpdatedAt: local?.updatedAt ?? 0,
+    );
+    if (!written) return false;
+    await recordSync(bookKey, pulled: true, page: page);
+    return true;
+  });
 
   /// 章节在服务器上被手动标已读 / 未读后，对齐本地副本（没有本地副本就什么都不做）。
   ///

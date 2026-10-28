@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/kavita/kavita_book_binding.dart';
+import 'package:fushi/src/media/kavita/kavita_open_books.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_refresher.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -40,7 +41,11 @@ class _Server {
     this.modifiedAt,
     this.offline = false,
     this.infoPages,
+    this.onPull,
   });
+
+  /// 拉进度时的插队写入（模拟拉取期间阅读器 / 互联对端落地的本地进度）。
+  final Future<void> Function()? onPull;
 
   int pageNum;
   int? modifiedAt;
@@ -59,6 +64,7 @@ class _Server {
       }
       if (offline) throw http.ClientException('offline');
       if (r.url.path == '/api/Reader/get-progress') {
+        await onPull?.call();
         return http.Response(
           jsonEncode(<String, Object?>{
             'chapterId': 43011,
@@ -224,6 +230,99 @@ void main() {
     expect((await db.getReaderPosition(row.uid))!.sectionIndex, 3);
     clock += 5 * _min;
     expect(await run(r, moved), 1);
+    expect((await db.getReaderPosition(row.uid))!.sectionIndex, 9);
+  });
+
+  test('adopted position carries the server progress time, not local now, '
+      'so the recent-reading order is not disturbed', () async {
+    final EpubBookRow row = await insertBook(
+      meta: _binding(pushedAt: _base, page: 3).encode(),
+      localSection: 3,
+    );
+    // 另一本本机书在服务器那次进度之后读过：它应仍排在 Kavita 书前面。
+    final int serverAt = _base + 60 * _min;
+    final int otherAt = _base + 90 * _min;
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion(
+        bookUid: const Value('other-uid'),
+        sectionIndex: const Value(1),
+        normCharOffset: const Value(0),
+        updatedAt: Value(otherAt),
+      ),
+    );
+    final _Server server = _Server(pageNum: 9, modifiedAt: serverAt);
+    expect(await run(refresher(), server), 1);
+    final ReaderPositionRow adopted = (await db.getReaderPosition(row.uid))!;
+    expect(adopted.sectionIndex, 9);
+    expect(adopted.updatedAt, serverAt, reason: 'not the local clock');
+    expect(adopted.updatedAt, lessThan(clock));
+    final List<ReaderPositionRow> recent = (await db.getAllReaderPositions())
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    expect(recent.first.bookUid, 'other-uid');
+    // 互联同步按 updatedAt 后写者赢：别的设备在服务器那次之后的真实进度
+    // （serverAt < peerAt < 本机现在）仍然更新，不会被这次后台采用压过。
+    final int peerAt = _base + 120 * _min;
+    expect(peerAt, greaterThan(adopted.updatedAt));
+  });
+
+  test('server time older than the local row: stamp is local + 1', () async {
+    // 页基线判定采用服务器（本地停在基线页，只是章内滚动刷新了时间），服务器时刻
+    // 反而更早：只让新行严格新于旧行，不往前跳到本机现在。
+    final int localAt = _base + 200 * _min;
+    final EpubBookRow row = await insertBook(
+      meta: _binding(pushedAt: _base, page: 3).encode(),
+      localSection: 3,
+      localAt: localAt,
+    );
+    final _Server server = _Server(pageNum: 9, modifiedAt: _base + 60 * _min);
+    expect(await run(refresher(), server), 1);
+    final ReaderPositionRow adopted = (await db.getReaderPosition(row.uid))!;
+    expect(adopted.sectionIndex, 9);
+    expect(adopted.updatedAt, localAt + 1);
+  });
+
+  test(
+    'a local write landing during the pull wins over the stale decision',
+    () async {
+      final EpubBookRow row = await insertBook(
+        meta: _binding(pushedAt: _base, page: 3).encode(),
+        localSection: 3,
+      );
+      final int laterLocal = _base + 400 * _min;
+      final _Server server = _Server(
+        pageNum: 9,
+        modifiedAt: _base + 60 * _min,
+        onPull: () => db.upsertReaderPosition(
+          ReaderPositionsCompanion(
+            bookUid: Value(row.uid),
+            sectionIndex: const Value(5),
+            normCharOffset: const Value(0),
+            updatedAt: Value(laterLocal),
+          ),
+        ),
+      );
+      // 锁内按最新本地（5 页、已离开基线 3）重新决策 = 两侧都动过 → 不采用。
+      expect(await run(refresher(), server), 0);
+      final ReaderPositionRow local = (await db.getReaderPosition(row.uid))!;
+      expect(local.sectionIndex, 5);
+      expect(local.updatedAt, laterLocal);
+    },
+  );
+
+  test('book open in the reader is never rewritten by the refresher', () async {
+    final EpubBookRow row = await insertBook(
+      meta: _binding(pushedAt: _base, page: 3).encode(),
+      localSection: 3,
+    );
+    final _Server server = _Server(pageNum: 9, modifiedAt: _base + 60 * _min);
+    KavitaOpenBooks.opened('Book');
+    try {
+      expect(await run(refresher(), server, force: true), 0);
+      expect((await db.getReaderPosition(row.uid))!.sectionIndex, 3);
+    } finally {
+      KavitaOpenBooks.closed('Book');
+    }
+    expect(await run(refresher(), server, force: true), 1);
     expect((await db.getReaderPosition(row.uid))!.sectionIndex, 9);
   });
 }

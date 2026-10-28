@@ -416,10 +416,15 @@ int? _asInt(Object? value) => switch (value) {
 /// （本机没动过 → 冲突弹窗，用户选采用服务器才清已读），与 EPUB 一致。
 ////// [chapters] 是描述符章表（`raw` 里有刷新时存的 `pages` / `pagesRead`）。返回
 /// 写入的章数。永不抛错。
+///
+/// [stamps] 给了时，本机有**未推上去**的改动（章进度页 != 同步基线页，例如离线时
+/// 标的已读 / 未读）的章也跳过：服务器那份是旧的，按它改会把本机的标记撤销；这些
+/// 章在开章时由 attach 按基线判成「本地动过」推上去。
 Future<int> reconcileKavitaChapterStates({
   required FushiDatabase db,
   required String bookUid,
   required List<OnlineMangaChapter> chapters,
+  KavitaMangaSyncStampStore? stamps,
   int Function()? nowMs,
 }) async {
   if (bookUid.isEmpty) return 0;
@@ -434,6 +439,10 @@ Future<int> reconcileKavitaChapterStates({
       final int pagesRead = _asInt(chapter.raw['pagesRead']) ?? 0;
       if (pages <= 0 || pagesRead <= 0) continue;
       final MangaChapterStateRow? local = states[chapter.key];
+      final int? baseline = stamps?.stampOf(bookUid, chapter.key)?.page;
+      if (local != null && baseline != null && local.lastPage != baseline) {
+        continue;
+      }
       final bool serverFinished = pagesRead >= pages;
       if (local != null && !(serverFinished && local.readAt == null)) continue;
       final int page = (serverFinished ? pages - 1 : pagesRead).clamp(
@@ -463,6 +472,12 @@ Future<int> reconcileKavitaChapterStates({
 /// - 标未读：`readAt` 清空、`lastPage` 回 0、基线页 0；
 /// - 标已读：`readAt` 记现在、`lastPage` 落最后一页（[totalPages] 未知则不动页）、
 ///   基线页同步。
+///
+/// [serverConfirmed] = false：服务器没标成（离线 / 出错）。本机照样生效，但基线
+/// **不**前移到新页——基线留在服务器上一次已知的页（已有基线不动；从没有基线时用
+/// [knownServerPage]，即作品页最近一次从服务器取到的这一章进度），于是本机页 !=
+/// 基线 = 「本地动过、还没推」：开章时 attach 把它推上去，作品页刷新时的
+/// [reconcileKavitaChapterStates] 也不会按服务器的旧状态把它改回去。
 /// 永不抛错。
 Future<void> alignKavitaMangaChapterMark({
   required FushiDatabase db,
@@ -471,6 +486,8 @@ Future<void> alignKavitaMangaChapterMark({
   required String chapterKey,
   required bool read,
   int totalPages = 0,
+  bool serverConfirmed = true,
+  int? knownServerPage,
   int Function()? nowMs,
 }) async {
   if (bookUid.isEmpty || chapterKey.isEmpty) return;
@@ -494,7 +511,19 @@ Future<void> alignKavitaMangaChapterMark({
     if (!read) {
       await db.clearMangaChapterRead(bookUid: bookUid, chapterKey: chapterKey);
     }
-    await stamps.record(bookUid, chapterKey, now, page: page);
+    if (serverConfirmed) {
+      await stamps.record(bookUid, chapterKey, now, page: page);
+    } else {
+      final KavitaMangaSyncStamp? stamp = stamps.stampOf(bookUid, chapterKey);
+      if (stamp?.page == null && knownServerPage != null) {
+        await stamps.record(
+          bookUid,
+          chapterKey,
+          stamp?.at ?? now,
+          page: knownServerPage,
+        );
+      }
+    }
   } on Object {
     // 对齐失败：下次开章由逐章对账兜底。
   }

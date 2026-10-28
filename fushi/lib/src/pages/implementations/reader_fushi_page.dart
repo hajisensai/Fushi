@@ -26,6 +26,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_book_binding.dart';
 import 'package:fushi/src/media/kavita/kavita_epub_sync.dart';
+import 'package:fushi/src/media/kavita/kavita_open_books.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
@@ -110,7 +111,8 @@ import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
-import 'package:fushi_engine/media/kavita/kavita_models.dart' show KavitaProgress;
+import 'package:fushi_engine/media/kavita/kavita_models.dart'
+    show KavitaProgress;
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
     show kMediaTrackingEnabled;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
@@ -1782,6 +1784,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 逻辑全在 `media/kavita/kavita_epub_sync.dart`，本页只接三处线：开书恢复前
   /// attach、`_persistPosition` 落库后转发、dispose 时 close。
   KavitaEpubSyncSession? _kavitaSync;
+
+  /// 本页是否已在 [KavitaOpenBooks] 登记这本书（[_releaseKavitaSync] 配对释放）。
+  bool _kavitaOpenMarked = false;
 
   /// 同合集卷上下文（BUG-2521）：开书后由 [_loadVolumeContext] 一次装载；null =
   /// 不在多卷合集里。消费点：章节列表卷 chip、画廊卷 chip、[_switchToVolume]。
@@ -3581,8 +3586,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     if (_hasEverLoaded && _lastProgressSection >= 0) {
       _kavitaSync?.onPositionSaved(_lastProgressSection);
     }
-    unawaited(_kavitaSync?.close());
-    _kavitaSync = null;
+    _releaseKavitaSync();
     // Search navigation can still be awaiting restore while the route closes.
     // Complete it as failed now (and clear its precise-locate request) instead
     // of leaving the callback alive until the 10-second timeout.

@@ -684,9 +684,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 两个实例命中同一份清单。
     homeShellTabNotifier.addListener(_onShellTabActivated);
     // Kavita 绑定书：服务器端改了进度时静默对账，采用后刷新书架进度条。
-    _kavitaLifecycle = AppLifecycleListener(
-      onResume: _reconcileKavitaProgress,
-    );
+    _kavitaLifecycle = AppLifecycleListener(onResume: _onResumeForKavita);
     _reconcileKavitaProgress();
     // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
     // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
@@ -725,6 +723,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   ].join('|');
 
   AppLifecycleListener? _kavitaLifecycle;
+
+  /// 回前台只在书架真的在屏上时对账：书架 tab 被选中、且上面没压着别的路由
+  /// （阅读器开着回前台时不去动服务器进度——那本书归阅读器管）。
+  void _onResumeForKavita() {
+    if (!mounted || homeShellTabNotifier.value != HomeTab.books) return;
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
+    _reconcileKavitaProgress();
+  }
 
   void _reconcileKavitaProgress() {
     if (!mounted) return;

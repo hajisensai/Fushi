@@ -17,6 +17,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_book_binding.dart';
 import 'package:fushi/src/media/kavita/kavita_book_service.dart';
+import 'package:fushi/src/media/kavita/kavita_open_books.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -37,22 +38,8 @@ class KavitaBookSeriesPage extends ConsumerStatefulWidget {
     required this.series,
     required this.api,
     this.service,
-    this.readerSettleDelays = kReaderSettleDelays,
     super.key,
   });
-
-  /// 阅读器关闭后的「追平」重取间隔。阅读器 dispose 只是把最后一页交给
-  /// `KavitaEpubSyncSession.close()`（fire-and-forget，最长等 `kCloseFlushTimeout` = 5s），
-  /// 页面拿不到那个 future，所以关书后立刻重取可能早于最后一次推送。这里在立即重取之后
-  /// 再按间隔补取（累计 6s > 5s 的 flush 上限），一旦某次补取看到章节进度变化就停：
-  /// 变化 = 推送已落到服务器。
-  static const List<Duration> kReaderSettleDelays = <Duration>[
-    Duration(seconds: 1),
-    Duration(seconds: 2),
-    Duration(seconds: 3),
-  ];
-
-  final List<Duration> readerSettleDelays;
 
   /// 注入的书服务（测试用）；null = 用 appProvider 的数据库与临时目录自建。
   final KavitaBookService? service;
@@ -167,22 +154,16 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
 
   int _settleGeneration = 0;
 
-  String _progressSignature() => <String>[
-    for (final KavitaChapter c in _chapters) '${c.id}:${c.pagesRead}',
-  ].join(',');
-
-  /// 阅读器关闭后重取：先立即取一次，再按 [KavitaBookSeriesPage.readerSettleDelays]
-  /// 补取直到进度出现变化（见该常量说明）。新一轮 / 页面销毁会让旧一轮作废。
-  Future<void> _reloadAfterReader() async {
+  /// 阅读器关闭后重取：阅读器 dispose 时把最后一页交给关书推送，推送的 future 由
+  /// [KavitaOpenBooks] 交出——等它结束（推成 / 超时 / 离线都算结束）再重取，列表上
+  /// 的进度才是服务器的最新值。回来时阅读器路由可能还在退场动画里没 dispose，
+  /// [KavitaOpenBooks.settled] 会一直等到它真正关书并推完。新一轮 / 页面销毁让旧一轮
+  /// 作废。
+  Future<void> _reloadAfterReader(String bookKey) async {
     final int generation = ++_settleGeneration;
+    await KavitaOpenBooks.settled(bookKey);
+    if (!mounted || generation != _settleGeneration) return;
     await _load(silent: true);
-    for (final Duration delay in widget.readerSettleDelays) {
-      final String before = _progressSignature();
-      await Future<void>.delayed(delay);
-      if (!mounted || generation != _settleGeneration) return;
-      final bool ok = await _load(silent: true);
-      if (ok && _progressSignature() != before) return;
-    }
   }
 
   Future<void> _refreshBound() async {
@@ -249,7 +230,7 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
       item: item,
     );
     // 阅读器关闭时会把进度推给服务器；回来后重取，列表上的进度才是服务器的最新值。
-    if (mounted) unawaited(_reloadAfterReader());
+    if (mounted) unawaited(_reloadAfterReader(bookKey));
   }
 
   /// 手动标已读 / 未读（长按 / 右键菜单）：先改服务器，再把本地副本的位置与同步基线
