@@ -195,34 +195,66 @@ mixin _FushiDbVideoDomain
 
   // ── media_images（媒体附加图组，schema v68 / Jellyfin 图组对齐）──────
 
-  /// 整体替换某合集的附加图组（重刮即替换；空列表 = 清空）。
+  /// 整体替换某合集**刮削所属**的附加图组（重刮即替换；空列表 = 清空）。
   ///
   /// 事务内 delete + insert（与 [replaceCollectionRelations] 同理由）：图组来自
-  /// 源的一次完整响应，逐条 upsert 会留下上次刮削已不存在的残图行。
+  /// 源的一次完整响应，逐条 upsert 会留下上次刮削已不存在的残图行。只删
+  /// [MediaImageKind.scrapeOwned] 的种类：原盘盘面图（[MediaImageKind.discArt]）
+  /// 由源库扫描写入，重刮不能把它清掉。
   Future<void> replaceMediaImagesForCollection(
     int collectionId,
     List<MediaImagesCompanion> images,
   ) => transaction(() async {
-    await (delete(mediaImages)
-          ..where(($MediaImagesTable t) => t.collectionId.equals(collectionId)))
+    await (delete(mediaImages)..where(
+          ($MediaImagesTable t) =>
+              t.collectionId.equals(collectionId) & _scrapeOwnedKind(t),
+        ))
         .go();
     for (final MediaImagesCompanion c in images) {
       await into(mediaImages).insert(c);
     }
   });
 
-  /// 整体替换某视频的附加图组（散装电影刮削用；空列表 = 清空）。
+  /// 整体替换某视频刮削所属的附加图组（散装电影刮削用；空列表 = 清空），口径同
+  /// [replaceMediaImagesForCollection]。
   Future<void> replaceMediaImagesForBook(
     String bookUid,
     List<MediaImagesCompanion> images,
   ) => transaction(() async {
-    await (delete(
-      mediaImages,
-    )..where(($MediaImagesTable t) => t.bookUid.equals(bookUid))).go();
+    await (delete(mediaImages)..where(
+          ($MediaImagesTable t) =>
+              t.bookUid.equals(bookUid) & _scrapeOwnedKind(t),
+        ))
+        .go();
     for (final MediaImagesCompanion c in images) {
       await into(mediaImages).insert(c);
     }
   });
+
+  Expression<bool> _scrapeOwnedKind($MediaImagesTable t) =>
+      t.kind.isIn(<String>[
+        for (final MediaImageKind kind in MediaImageKind.scrapeOwned)
+          kind.dbValue,
+      ]);
+
+  /// 设置某合集的原盘盘面图（[MediaImageKind.discArt]，每合集一张）：替换旧行，
+  /// `sourceUrl` 为 null。
+  Future<void> setCollectionDiscArt(int collectionId, String path) =>
+      transaction(() async {
+        await (delete(mediaImages)..where(
+              ($MediaImagesTable t) =>
+                  t.collectionId.equals(collectionId) &
+                  t.kind.equals(MediaImageKind.discArt.dbValue),
+            ))
+            .go();
+        await into(mediaImages).insert(
+          MediaImagesCompanion.insert(
+            collectionId: Value<int?>(collectionId),
+            kind: MediaImageKind.discArt.dbValue,
+            path: path,
+          ),
+        );
+      });
 
   /// 某合集的附加图组（kind 组内按 position 升序，backdrop 轮换序即此序）。
   Future<List<MediaImageRow>> getMediaImagesForCollection(int collectionId) =>

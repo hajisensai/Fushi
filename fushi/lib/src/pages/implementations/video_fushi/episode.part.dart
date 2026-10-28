@@ -392,10 +392,11 @@ extension _VideoEpisode on _VideoFushiPageState {
         : t.collection_group_season(n: season);
   }
 
-  /// 剧集卡封面回退链的合集段（v68）：合集带字横图 → 无字背景；全缺 → null
-  /// （面板占位图标）。整组只解析一次，面板 N 张卡共享同一 provider。
+  /// 剧集卡封面回退链的合集段（v68）：原盘盘面图 → 合集带字横图 → 无字背景；
+  /// 全缺 → null（面板占位图标）。整组只解析一次，面板 N 张卡共享同一 provider。
   ImageProvider? _playlistSeriesFallbackCover() {
     for (final MediaImageKind kind in const <MediaImageKind>[
+      MediaImageKind.discArt,
       MediaImageKind.titleCard,
       MediaImageKind.backdrop,
     ]) {

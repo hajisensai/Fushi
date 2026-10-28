@@ -58,6 +58,9 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart'
+    show PortraitCoverImage;
+import 'package:fushi/i18n/strings.g.dart' show LocaleSettings;
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
@@ -2488,7 +2491,7 @@ class SourceLibraryScanner {
         );
         count++;
       }
-      await _applyBlurayDiscCover(
+      await _applyBlurayDiscArtwork(
         collectionId,
         disc.rootPath,
         currentCover: collectionCovers[collectionId],
@@ -2518,41 +2521,83 @@ class SourceLibraryScanner {
     return count;
   }
 
-  /// 盘合集的自有封面取盘内自带的封面图（`BDMV/META/DL`，见
-  /// [findBlurayDiscThumbnail]）：同一部作品的几张盘刮削出来是同一张海报，盘面图
-  /// 才分得开。新建与重扫的老合集都走这里，老库重扫一次就补上。
+  /// 盘合集用盘内自带的盘面图（`BDMV/META/DL`，见 [readBlurayDiscArtwork]）：
+  /// 同一部作品的几张盘刮削出来是同一张海报，盘面图才分得开。新建与重扫的老合集
+  /// 都走这里，老库重扫一次就补上。
   ///
-  /// 合集已有自有封面（用户手选 / 先前写过）且文件还在就不动：这是「设置封面」
-  /// 之后的用户选择，也让重扫幂等。写入走 [MediaCoverService.applyCollectionCover]
-  /// （刮削清理期租约 + 封面写互斥），拿不到租约只跳过，不让整次扫描失败。
-  Future<void> _applyBlurayDiscCover(
+  /// 按图本身解码出的朝向分流（阈值与卡片判横竖同一个
+  /// [PortraitCoverImage.portraitAspectThreshold]）：
+  /// * 竖图 → 合集主封面（竖卡墙）。合集已有自有封面（用户手选 / 先前写过）且
+  ///   文件还在就不动。
+  /// * 横图 → 附加图组的 [MediaImageKind.discArt]，只给横向槽位用；竖卡墙仍是
+  ///   刮削海报，不把横图垫进竖卡。已有且文件还在就不动。
+  ///
+  /// 选哪份语言的元数据跟界面语言（[blurayLanguageCodes]），没有就按盘上的顺序。
+  /// 写入走 [MediaCoverService]（刮削清理期租约 + 封面写互斥）；拿不到租约、图
+  /// 解不开都只跳过，不让整次扫描失败。
+  Future<void> _applyBlurayDiscArtwork(
     int? collectionId,
     String discRootPath, {
     required String? currentCover,
   }) async {
     if (collectionId == null) return;
-    if (currentCover != null &&
-        currentCover.isNotEmpty &&
-        await File(currentCover).exists()) {
-      return;
+    final List<BlurayDiscArtwork> artwork = await readBlurayDiscArtwork(
+      discRootPath,
+      preferredLanguages: blurayLanguageCodes(
+        LocaleSettings.currentLocale.languageCode,
+      ),
+    );
+    if (artwork.isEmpty) return;
+    BlurayDiscArtwork? largest(bool portrait) {
+      BlurayDiscArtwork? best;
+      for (final BlurayDiscArtwork a in artwork) {
+        if ((a.aspect <= PortraitCoverImage.portraitAspectThreshold) !=
+            portrait) {
+          continue;
+        }
+        if (best == null || a.area > best.area) best = a;
+      }
+      return best;
     }
-    final String? thumbnail = await findBlurayDiscThumbnail(discRootPath);
-    if (thumbnail == null) return;
+
+    final BlurayDiscArtwork? portrait = largest(true);
+    final BlurayDiscArtwork? landscape = largest(false);
     try {
-      await MediaCoverService.applyCollectionCover(
-        database: _db,
-        collectionId: collectionId,
-        pickedPath: thumbnail,
-      );
+      if (portrait != null && !await _existingFile(currentCover)) {
+        await MediaCoverService.applyCollectionCover(
+          database: _db,
+          collectionId: collectionId,
+          pickedPath: portrait.path,
+        );
+      }
+      if (landscape != null) {
+        final String? currentArt =
+            (await _db.getMediaImagesForCollection(collectionId))
+                .where(
+                  (MediaImageRow r) => r.kind == MediaImageKind.discArt.dbValue,
+                )
+                .map((MediaImageRow r) => r.path)
+                .firstOrNull;
+        if (!await _existingFile(currentArt)) {
+          await MediaCoverService.applyCollectionDiscArt(
+            database: _db,
+            collectionId: collectionId,
+            sourcePath: landscape.path,
+          );
+        }
+      }
     } on StateError catch (e) {
-      debugPrint('[SourceLibraryScanner] disc cover skipped: $e');
+      debugPrint('[SourceLibraryScanner] disc artwork skipped: $e');
     } on CoverImageInvalidException catch (e) {
-      // 盘上的图是不可信输入：解不开就当没有，合集照旧回落到刮削海报。
-      debugPrint('[SourceLibraryScanner] disc cover skipped: $e');
+      // 盘上的图是不可信输入：解不开就当没有，合集照旧回落到刮削图。
+      debugPrint('[SourceLibraryScanner] disc artwork skipped: $e');
     } on FileSystemException catch (e) {
-      debugPrint('[SourceLibraryScanner] disc cover skipped: $e');
+      debugPrint('[SourceLibraryScanner] disc artwork skipped: $e');
     }
   }
+
+  static Future<bool> _existingFile(String? path) async =>
+      path != null && path.isNotEmpty && await File(path).exists();
 
   /// 把扫描根里认出的 DVD 导入成合集：一张盘一个 `playlist` 合集，一个入选 title 一行
   /// `VideoBooks`，与 [_importBlurayDiscs] 同构（合集名候选、重扫对齐、墓碑守卫

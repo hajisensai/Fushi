@@ -23,7 +23,20 @@ enum MediaImageKind {
 
   /// 带片名文字的横版图（TMDB 里 `iso_639_1` 非空的 backdrop——Jellyfin 把它
   /// 分流为 Thumb，槽位语义：横版卡片图，与全屏背景分开）。
-  titleCard('title_card');
+  titleCard('title_card'),
+
+  /// 原盘自带的横版盘面图（`BDMV/META/DL`，厂商给的，通常带片名）。归属盘合集、
+  /// 由源库扫描写入、`sourceUrl` 恒为 null（手动附加图同契约）；**不属于刮削
+  /// 投影**——刮削重写图组只替换 [scrapeOwned] 那几种，不碰它。竖版盘面图不进
+  /// 本表，直接做合集主封面（`MediaCollections.coverPath`）。
+  discArt('disc_art');
+
+  /// 刮削整组重写时归它管的种类（[discArt] 之外全部）。
+  static const List<MediaImageKind> scrapeOwned = <MediaImageKind>[
+    backdrop,
+    logo,
+    titleCard,
+  ];
 
   const MediaImageKind(this.dbValue);
 

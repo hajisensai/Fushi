@@ -5334,15 +5334,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
   }
 
-  /// 主卡大图的选图顺序：竖排版文字在图下，带片名的横图（titleCard）优先；横排版
-  /// 标题叠在图上，先取无字背景（backdrop），免得图里的片名与叠加标题重复。
+  /// 主卡大图的选图顺序：竖排版文字在图下，带片名的横图优先——原盘自带的盘面图
+  /// （discArt，区分同一部作品的不同盘）先于刮削的 titleCard；横排版标题叠在图
+  /// 上，先取无字背景（backdrop），免得图里的片名与叠加标题重复。
   static List<MediaImageKind> _heroImageKinds({required bool overlay}) =>
       overlay
       ? const <MediaImageKind>[
           MediaImageKind.backdrop,
           MediaImageKind.titleCard,
+          MediaImageKind.discArt,
         ]
       : const <MediaImageKind>[
+          MediaImageKind.discArt,
           MediaImageKind.titleCard,
           MediaImageKind.backdrop,
         ];

@@ -1,30 +1,38 @@
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
-/// The disc's own library artwork: `BDMV/META/DL/bdmt_<lang>.xml` ("disclib"
-/// metadata) names thumbnails that sit beside it, e.g.
-/// `<di:thumbnail href="./L.jpg" size="640x360"/>`. Authored by the publisher,
-/// so it tells discs of one work apart where the scraped poster cannot.
+/// One thumbnail a disclib document declares: `BDMV/META/DL/bdmt_<lang>.xml`
+/// names images that sit beside it, e.g.
+/// `<di:thumbnail href="./L.jpg" size="640x360"/>`. The declared size is
+/// untrusted; [readBlurayDiscArtwork] measures the image itself.
 class BlurayDiscThumbnail {
-  const BlurayDiscThumbnail({
-    required this.href,
+  const BlurayDiscThumbnail({required this.href});
+
+  /// Relative to `BDMV/META/DL`, already checked to stay inside it.
+  final String href;
+}
+
+/// A disc artwork image with its decoded pixel size.
+class BlurayDiscArtwork {
+  const BlurayDiscArtwork({
+    required this.path,
     required this.width,
     required this.height,
   });
 
-  /// Relative to `BDMV/META/DL`, already checked to stay inside it.
-  final String href;
+  final String path;
   final int width;
   final int height;
+
+  double get aspect => width / height;
+  int get area => width * height;
 }
 
-/// Languages tried first, in order; any other language follows by file name.
-const List<String> kBlurayDiscThumbnailLanguages = <String>['jpn', 'eng'];
-
-/// Every usable thumbnail one disclib document declares. Unknown `size`
-/// counts as 0x0 so it still beats nothing but loses to any sized entry.
+/// Every thumbnail one disclib document declares, in document order.
 List<BlurayDiscThumbnail> parseBlurayDiscThumbnails(String xmlSource) {
   final XmlDocument document;
   try {
@@ -32,24 +40,13 @@ List<BlurayDiscThumbnail> parseBlurayDiscThumbnails(String xmlSource) {
   } on XmlException {
     return const <BlurayDiscThumbnail>[];
   }
-  final List<BlurayDiscThumbnail> thumbnails = <BlurayDiscThumbnail>[];
-  for (final XmlElement element
-      in document.descendants.whereType<XmlElement>()) {
-    if (element.name.local != 'thumbnail') continue;
-    final String? href = _containedHref(element.getAttribute('href'));
-    if (href == null) continue;
-    final RegExpMatch? size = RegExp(
-      r'^\s*(\d{1,5})\s*x\s*(\d{1,5})\s*$',
-    ).firstMatch(element.getAttribute('size') ?? '');
-    thumbnails.add(
-      BlurayDiscThumbnail(
-        href: href,
-        width: size == null ? 0 : int.parse(size.group(1)!),
-        height: size == null ? 0 : int.parse(size.group(2)!),
-      ),
-    );
-  }
-  return thumbnails;
+  return <BlurayDiscThumbnail>[
+    for (final XmlElement element
+        in document.descendants.whereType<XmlElement>())
+      if (element.name.local == 'thumbnail')
+        if (_containedHref(element.getAttribute('href')) case final String href)
+          BlurayDiscThumbnail(href: href),
+  ];
 }
 
 /// Disc metadata is untrusted: only plain names inside `META/DL` qualify.
@@ -66,10 +63,36 @@ String? _containedHref(String? raw) {
   return normalized;
 }
 
-/// Orders `bdmt_<lang>.xml` names by [preferredLanguages], then by name.
+/// ISO 639-2 codes (bibliographic and terminology forms) a disc may use in
+/// `bdmt_<lang>.xml` for a UI language given as an ISO 639-1 code. Unknown
+/// languages map to nothing, so the disc's own order decides.
+List<String> blurayLanguageCodes(String languageCode) =>
+    switch (languageCode.toLowerCase()) {
+      'ar' => const <String>['ara'],
+      'de' => const <String>['ger', 'deu'],
+      'en' => const <String>['eng'],
+      'es' => const <String>['spa'],
+      'fr' => const <String>['fre', 'fra'],
+      'id' => const <String>['ind'],
+      'it' => const <String>['ita'],
+      'ja' => const <String>['jpn'],
+      'ko' => const <String>['kor'],
+      'nl' => const <String>['dut', 'nld'],
+      'pt' => const <String>['por'],
+      'ru' => const <String>['rus'],
+      'th' => const <String>['tha'],
+      'tr' => const <String>['tur'],
+      'vi' => const <String>['vie'],
+      'zh' => const <String>['chi', 'zho'],
+      _ => const <String>[],
+    };
+
+/// Orders `bdmt_<lang>.xml` names: [preferredLanguages] first, in order, then
+/// the rest by file name (libbluray likewise falls back to the first entry
+/// when the player language has none).
 List<String> orderBlurayDiscMetadataFiles(
   Iterable<String> fileNames, {
-  List<String> preferredLanguages = kBlurayDiscThumbnailLanguages,
+  required List<String> preferredLanguages,
 }) {
   int rank(String name) {
     final String lang = name.substring(5, name.length - 4).toLowerCase();
@@ -88,13 +111,30 @@ List<String> orderBlurayDiscMetadataFiles(
   return names;
 }
 
-/// Absolute path of the disc's artwork under [discRootPath], or null when the
-/// disc declares none that exists. The first language (see
-/// [orderBlurayDiscMetadataFiles]) with an existing thumbnail wins; within it,
-/// the largest.
-Future<String?> findBlurayDiscThumbnail(
+/// Pixel size read from the image header, or null when it is not an image.
+/// Disc files are untrusted, and the decoders throw assorted errors on
+/// malformed headers: any failure means "not an image".
+({int width, int height})? decodeImageSize(Uint8List bytes) {
+  final img.DecodeInfo? info;
+  try {
+    info = img.findDecoderForData(bytes)?.startDecode(bytes);
+  } on Object {
+    return null;
+  }
+  if (info == null || info.width <= 0 || info.height <= 0) return null;
+  return (width: info.width, height: info.height);
+}
+
+const int _kMaxMetadataBytes = 256 * 1024;
+const int _kMaxArtworkBytes = 16 * 1024 * 1024;
+
+/// The disc's own artwork under [discRootPath], measured by decoding each
+/// image: the first metadata language (see [orderBlurayDiscMetadataFiles])
+/// that yields at least one readable image wins, and all of its images are
+/// returned. Empty when the disc declares none.
+Future<List<BlurayDiscArtwork>> readBlurayDiscArtwork(
   String discRootPath, {
-  List<String> preferredLanguages = kBlurayDiscThumbnailLanguages,
+  required List<String> preferredLanguages,
 }) async {
   final Directory dl = Directory(p.join(discRootPath, 'BDMV', 'META', 'DL'));
   final List<String> names;
@@ -104,30 +144,44 @@ Future<String?> findBlurayDiscThumbnail(
         if (e is File) p.basename(e.path),
     ];
   } on FileSystemException {
-    return null;
+    return const <BlurayDiscArtwork>[];
   }
   for (final String name in orderBlurayDiscMetadataFiles(
     names,
     preferredLanguages: preferredLanguages,
   )) {
-    final File xml = File(p.join(dl.path, name));
+    final List<BlurayDiscArtwork> artwork = <BlurayDiscArtwork>[];
     try {
+      final File xml = File(p.join(dl.path, name));
       // Bound allocation for malformed/untrusted disc metadata.
-      if (await xml.length() > 256 * 1024) continue;
-      final List<BlurayDiscThumbnail> declared =
-          parseBlurayDiscThumbnails(await xml.readAsString())..sort(
-            (BlurayDiscThumbnail a, BlurayDiscThumbnail b) =>
-                (b.width * b.height).compareTo(a.width * a.height),
-          );
-      for (final BlurayDiscThumbnail t in declared) {
-        final String path = p.joinAll(<String>[dl.path, ...t.href.split('/')]);
-        if (await File(path).exists()) return path;
+      if (await xml.length() > _kMaxMetadataBytes) continue;
+      for (final BlurayDiscThumbnail t in parseBlurayDiscThumbnails(
+        await xml.readAsString(),
+      )) {
+        final File file = File(
+          p.joinAll(<String>[dl.path, ...t.href.split('/')]),
+        );
+        if (!await file.exists() || await file.length() > _kMaxArtworkBytes) {
+          continue;
+        }
+        final ({int width, int height})? size = decodeImageSize(
+          await file.readAsBytes(),
+        );
+        if (size == null) continue;
+        artwork.add(
+          BlurayDiscArtwork(
+            path: file.path,
+            width: size.width,
+            height: size.height,
+          ),
+        );
       }
     } on FileSystemException {
       continue;
     } on FormatException {
       continue;
     }
+    if (artwork.isNotEmpty) return artwork;
   }
-  return null;
+  return const <BlurayDiscArtwork>[];
 }

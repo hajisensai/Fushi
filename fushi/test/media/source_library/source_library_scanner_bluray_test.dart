@@ -12,6 +12,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -684,27 +685,29 @@ void main() {
   });
 
   // 同一部作品的几张盘刮削出来是同一张海报，书架上分不出哪张是哪张。盘内
-  // `BDMV/META/DL` 带着厂商给的盘面图，导入 / 重扫时写成盘合集的自有封面。
-  group('盘合集封面取盘内自带的盘面图', () {
+  // `BDMV/META/DL` 带着厂商给的盘面图：按图本身解码出的朝向分流——竖图做合集
+  // 主封面（竖卡墙），横图进附加图组 disc_art（只给横向槽位），不把横图垫进竖卡。
+  group('原盘盘面图按横竖分流', () {
     late FushiDatabase db;
     late String disc;
+    late Directory dl;
 
-    List<int> png(int side) =>
-        img.encodePng(img.Image(width: side, height: side));
+    List<int> jpeg(int width, int height) =>
+        img.encodeJpg(img.Image(width: width, height: height));
 
-    void writeDiscArt(String root, List<int> large) {
-      final Directory dl = Directory(p.join(root, 'BDMV', 'META', 'DL'))
-        ..createSync(recursive: true);
-      File(p.join(dl.path, 'S.jpg')).writeAsBytesSync(png(2));
-      File(p.join(dl.path, 'L.jpg')).writeAsBytesSync(large);
-      File(p.join(dl.path, 'bdmt_jpn.xml')).writeAsStringSync(
+    /// 写一份 `bdmt_<lang>.xml` 与其中的图（文件名 → 字节）。声明的 size 故意
+    /// 写成与实际相反：朝向只认解码结果。
+    void writeMeta(String lang, Map<String, List<int>> images) {
+      for (final MapEntry<String, List<int>> e in images.entries) {
+        File(p.join(dl.path, e.key)).writeAsBytesSync(e.value);
+      }
+      File(p.join(dl.path, 'bdmt_$lang.xml')).writeAsStringSync(
         '<?xml version="1.0" encoding="utf-8"?>'
         '<disclib xmlns="urn:BDA:bdmv;disclib">'
         '<di:discinfo xmlns:di="urn:BDA:bdmv;discinfo">'
         '<di:title><di:name>KAGUYA</di:name></di:title>'
         '<di:description>'
-        '<di:thumbnail href="./S.jpg" size="416x240" />'
-        '<di:thumbnail href="./L.jpg" size="640x360" />'
+        '${images.keys.map((String n) => '<di:thumbnail href="./$n" size="9x16" />').join()}'
         '</di:description></di:discinfo></disclib>',
       );
     }
@@ -714,65 +717,136 @@ void main() {
           (MediaCollectionRow c) => c.collectionType == 'playlist',
         );
 
+    Future<String?> discArt(int collectionId) async =>
+        (await db.getMediaImagesForCollection(collectionId))
+            .where((MediaImageRow r) => r.kind == 'disc_art')
+            .map((MediaImageRow r) => r.path)
+            .firstOrNull;
+
+    Future<SourceLibraryRow> scanOnce() async {
+      final SourceLibraryRow source = await _videoSource(db, tmp.path);
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+      ).scan(source);
+      expect(summary.succeeded, isTrue, reason: summary.error ?? '');
+      return source;
+    }
+
     setUp(() {
       db = _memDb();
       disc = p.join(tmp.path, 'Kaguya', 'Disc 1');
       _writeDisc(disc, <String>['00011', '00012']);
+      dl = Directory(p.join(disc, 'BDMV', 'META', 'DL'))
+        ..createSync(recursive: true);
+      LocaleSettings.setLocale(AppLocale.en);
     });
 
-    tearDown(() => db.close());
-
-    test('新导入的盘：合集自有封面是最大的盘面图', () async {
-      final List<int> large = png(8);
-      writeDiscArt(disc, large);
-      final SourceScanSummary summary = await SourceLibraryScanner(
-        db,
-      ).scan(await _videoSource(db, tmp.path));
-      expect(summary.succeeded, isTrue, reason: summary.error ?? '');
-
-      final String? cover = (await discCollection()).coverPath;
-      expect(cover, isNotNull);
-      expect(p.isWithin(disc, cover!), isFalse, reason: '复制进封面目录，不引用盘内路径');
-      expect(File(cover).readAsBytesSync(), large);
+    tearDown(() async {
+      LocaleSettings.setLocale(AppLocale.en);
+      await db.close();
     });
 
-    test('老合集（本功能之前导入、封面列为空）重扫补上；已有封面不被覆盖', () async {
-      final List<int> large = png(6);
-      writeDiscArt(disc, large);
-      final SourceLibraryScanner scanner = SourceLibraryScanner(db);
-      final SourceLibraryRow source = await _videoSource(db, tmp.path);
-      expect((await scanner.scan(source)).succeeded, isTrue);
+    test('竖图：做合集主封面（取最大的竖图），不进横向槽', () async {
+      final List<int> big = jpeg(40, 60);
+      writeMeta('eng', <String, List<int>>{
+        'S.jpg': jpeg(20, 30),
+        'P.jpg': big,
+      });
+      await scanOnce();
+      final MediaCollectionRow c = await discCollection();
+      expect(File(c.coverPath!).readAsBytesSync(), big);
+      expect(p.isWithin(disc, c.coverPath!), isFalse, reason: '复制进封面目录');
+      expect(await discArt(c.id), isNull);
+    });
+
+    test('横图：只进 disc_art，竖卡封面不动（回落刮削海报）', () async {
+      final List<int> wide = jpeg(64, 36);
+      writeMeta('eng', <String, List<int>>{
+        'S.jpg': jpeg(32, 18),
+        'L.jpg': wide,
+      });
+      await scanOnce();
+      final MediaCollectionRow c = await discCollection();
+      expect(c.coverPath, isNull);
+      final String art = (await discArt(c.id))!;
+      expect(File(art).readAsBytesSync(), wide);
+      expect(p.isWithin(disc, art), isFalse, reason: '复制进封面目录');
+    });
+
+    test('同时有横竖：各归各位', () async {
+      final List<int> tall = jpeg(40, 60);
+      final List<int> wide = jpeg(64, 36);
+      writeMeta('eng', <String, List<int>>{'P.jpg': tall, 'L.jpg': wide});
+      await scanOnce();
+      final MediaCollectionRow c = await discCollection();
+      expect(File(c.coverPath!).readAsBytesSync(), tall);
+      expect(File((await discArt(c.id))!).readAsBytesSync(), wide);
+    });
+
+    test('语言跟界面语言：界面日文取 jpn 那份，界面英文取 eng 那份', () async {
+      final List<int> jpnArt = jpeg(64, 36);
+      final List<int> engArt = jpeg(80, 45);
+      writeMeta('jpn', <String, List<int>>{'J.jpg': jpnArt});
+      writeMeta('eng', <String, List<int>>{'E.jpg': engArt});
+      LocaleSettings.setLocale(AppLocale.ja);
+      await scanOnce();
       final int id = (await discCollection()).id;
+      expect(File((await discArt(id))!).readAsBytesSync(), jpnArt);
+    });
+
+    test('界面语言盘上没有：按盘上的文件名顺序取第一份', () async {
+      final List<int> engArt = jpeg(64, 36);
+      writeMeta('jpn', <String, List<int>>{'J.jpg': jpeg(80, 45)});
+      writeMeta('eng', <String, List<int>>{'E.jpg': engArt});
+      LocaleSettings.setLocale(AppLocale.ko);
+      await scanOnce();
+      final int id = (await discCollection()).id;
+      expect(File((await discArt(id))!).readAsBytesSync(), engArt);
+    });
+
+    test('老合集重扫补上；用户手选的封面与已有盘面图都不被覆盖', () async {
+      final List<int> tall = jpeg(40, 60);
+      writeMeta('eng', <String, List<int>>{
+        'P.jpg': tall,
+        'L.jpg': jpeg(64, 36),
+      });
+      final SourceLibraryRow source = await scanOnce();
+      final int id = (await discCollection()).id;
+      // 本功能之前导入的老库：两处都是空的。
       await db.updateMediaCollectionCoverPath(id, null);
-
+      await (db.delete(
+        db.mediaImages,
+      )..where(($MediaImagesTable t) => t.collectionId.equals(id))).go();
+      final SourceLibraryScanner scanner = SourceLibraryScanner(db);
       expect((await scanner.scan(source)).succeeded, isTrue);
-      final MediaCollectionRow again = await discCollection();
-      expect(again.id, id, reason: '重扫对回同一合集');
-      expect(File(again.coverPath!).readAsBytesSync(), large);
+      expect((await discCollection()).id, id, reason: '重扫对回同一合集');
+      expect(File((await discCollection()).coverPath!).readAsBytesSync(), tall);
+      final String art = (await discArt(id))!;
 
-      // 用户之后手选了别的封面：重扫不能拿盘面图顶掉。
       final String picked = p.join(tmp.path, 'picked.jpg');
-      File(picked).writeAsBytesSync(png(3));
+      File(picked).writeAsBytesSync(jpeg(3, 5));
       await db.updateMediaCollectionCoverPath(id, picked);
       expect((await scanner.scan(source)).succeeded, isTrue);
       expect((await discCollection()).coverPath, picked);
+      expect(await discArt(id), art);
     });
 
-    test('盘面图解不开：扫描照常成功，合集不写封面', () async {
-      writeDiscArt(disc, <int>[9, 8, 7]);
-      final SourceScanSummary summary = await SourceLibraryScanner(
-        db,
-      ).scan(await _videoSource(db, tmp.path));
-      expect(summary.succeeded, isTrue, reason: summary.error ?? '');
-      expect((await discCollection()).coverPath, isNull);
+    test('盘面图解不开：扫描照常成功，什么都不写', () async {
+      writeMeta('eng', <String, List<int>>{
+        'bad.jpg': <int>[9, 8, 7],
+      });
+      await scanOnce();
+      final MediaCollectionRow c = await discCollection();
+      expect(c.coverPath, isNull);
+      expect(await discArt(c.id), isNull);
     });
 
-    test('盘上没有 META 图：合集不写封面，照旧回落到成员 / 刮削海报', () async {
-      final SourceScanSummary summary = await SourceLibraryScanner(
-        db,
-      ).scan(await _videoSource(db, tmp.path));
-      expect(summary.succeeded, isTrue, reason: summary.error ?? '');
-      expect((await discCollection()).coverPath, isNull);
+    test('盘上没有 META 图：什么都不写，照旧回落刮削图', () async {
+      dl.deleteSync(recursive: true);
+      await scanOnce();
+      final MediaCollectionRow c = await discCollection();
+      expect(c.coverPath, isNull);
+      expect(await discArt(c.id), isNull);
     });
   });
 }
