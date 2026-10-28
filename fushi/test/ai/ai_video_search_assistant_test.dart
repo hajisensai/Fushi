@@ -13,7 +13,7 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 class _Sub extends VideoSubtitleCandidate {

@@ -318,10 +318,10 @@ import 'package:fushi_engine/media/video/download/video_download_subtitle_langua
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/scraped_subtitle_targets.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
 import 'package:fushi/src/media/video/subtitle/download_subtitle_retry.dart';
-import 'package:fushi/src/media/video/subtitle/library_video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/library_video_subtitle_backfill.dart';
 import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/subtitle/configured_subtitle_providers.dart';

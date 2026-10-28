@@ -22,6 +22,11 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/library_video_subtitle_backfill.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show VideoSubtitleBackfillReport;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
@@ -63,6 +68,7 @@ import 'package:fushi_server/src/remote_mining_host.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 
@@ -102,8 +108,12 @@ class HeadlessHost {
     required this.identity,
     bool Function()? p2pAvailable,
     ServerDictionaryHost? dictionaryHost,
+    VideoSubtitleRegistry Function()? subtitleRegistryFactory,
   }) : _config = config,
        _injectedDictionaryHost = dictionaryHost,
+       _subtitleRegistryFactory =
+           subtitleRegistryFactory ??
+           (() => buildServerSubtitleRegistry(prefs)),
        _p2pAvailable =
            p2pAvailable ?? (() => InterconnectP2pRuntime.isAvailable);
 
@@ -116,6 +126,10 @@ class HeadlessHost {
 
   /// 原生 libfushi_p2p 是否可用（测试可注入）。
   final bool Function() _p2pAvailable;
+
+  /// 在线字幕来源（下载管线字幕阶段 + 单视频补字幕）。生产 =
+  /// [buildServerSubtitleRegistry]：只装偏好开着且有 key 的来源；测试注入假来源。
+  final VideoSubtitleRegistry Function() _subtitleRegistryFactory;
   final ServerPaths paths;
   final FushiDatabase db;
   final ServerPrefs prefs;
@@ -289,6 +303,9 @@ class HeadlessHost {
       prefs: prefs,
       identity: identity,
       scrape: videoScrape,
+      // 字幕语言现读配置（WebUI 改完，下一次重建管线生效）。
+      subtitleLanguage: () => config.subtitleLanguage,
+      subtitleRegistryFactory: _subtitleRegistryFactory,
     );
     await downloads.start();
     _downloads = downloads;
@@ -405,7 +422,10 @@ class HeadlessHost {
           // 服务端自己的临时目录。
           ..graphicSubtitleTrackExporter = InterconnectGraphicSubtitleExporter(
             cacheDir: Directory(p.join(paths.temp.path, 'graphic_sub_tracks')),
-          ).export;
+          ).export
+          // 「立即给这个视频补字幕」：与 app 当 host 同一个引擎服务（身份取已落库的刮削
+          // 结论，只补缺的，不覆盖已有字幕）。
+          ..videoSubtitleBackfill = backfillVideoSubtitle;
     try {
       await server.start();
     } catch (_) {
@@ -668,6 +688,38 @@ class HeadlessHost {
   Future<Set<String>> _loadPairedPeerTokens() async {
     final List<FushiPairedPeerRow> peers = await db.getPairedPeers();
     return peers.map((FushiPairedPeerRow r) => r.token).toSet();
+  }
+
+  /// 给库里一个视频补一条字幕（互联 `POST /api/library/videos/<id>/subtitle/backfill`）。
+  /// 视频不存在返回 null（路由 404）；一家字幕来源都没配时回 `unavailable`。
+  ///
+  /// 每次调用按当前偏好 / 环境重建来源（经互联同步来的 key、WebUI 改的字幕语言即时
+  /// 生效），用完即关。没接 AI 重排：服务端的 `ai:` 段没有「字幕重排」指派（app 的
+  /// `aiSubtitleBackfillReorder` 读的是 app 偏好里的 AI 指派）。
+  Future<VideoSubtitleBackfillReport?> backfillVideoSubtitle(
+    String videoId, {
+    String? language,
+  }) async {
+    final VideoSubtitleRegistry registry = _subtitleRegistryFactory();
+    try {
+      return await backfillLibraryVideoSubtitle(
+        database: db,
+        service: VideoSubtitleBackfillService(
+          registry: registry,
+          subtitleAligner: serverSubtitleAligner(prefs),
+          preferredLanguages: serverPreferredSubtitleLanguages(
+            config.subtitleLanguage,
+          ),
+          defaultContentLanguage: serverDefaultContentLanguage(prefs),
+        ),
+        videoId: videoId,
+        language: language,
+        seriesLanguage: (String seriesKey) =>
+            serverSeriesSubtitleLanguage(prefs, seriesKey),
+      );
+    } finally {
+      registry.close();
+    }
   }
 
   /// `asr` 任务的 `videoId` → host 库里的视频文件（分集 0）。

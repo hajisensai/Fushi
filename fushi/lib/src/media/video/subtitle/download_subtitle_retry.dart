@@ -19,7 +19,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show VideoSubtitleBackfillReport;
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/video/subtitle/library_video_subtitle_backfill.dart'
+import 'package:fushi_engine/media/video/subtitle/library_video_subtitle_backfill.dart'
     show subtitleSourceBlocksBackfill;
 
 /// 下载完成后多久之内还值得回头找字幕。超过这个窗口仍没有，多半是真没人做。

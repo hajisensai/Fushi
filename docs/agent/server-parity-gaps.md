@@ -51,9 +51,22 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   (`video_scrape_host.dart`).
 - **Manga PDF**: not imported. Rasterizing needs the app's pdfium/pdfrx. Downloads with a
   PDF are blocked with `unsupportedOnThisHost`, and manga roots skip `.pdf`.
-- **Subtitle backfill**: the video subtitle backfill endpoint returns 501 on the server, because
-  the capability is `videoSubtitleBackfill=false`. The backfill service is only wired
-  when the app is the host.
+- **Subtitles (what is still app-only)**: downloads source subtitles and
+  `POST /api/library/videos/<id>/subtitle/backfill` works on the server (one provider
+  assembly in `packages/fushi_server/lib/src/server_subtitle_providers.dart`; the backfill
+  service lives in `packages/fushi_engine/lib/media/video/subtitle/`). Still missing:
+  - backfill after a scrape (the app's `onWorkScraped` → `_backfillSubtitlesForScrapedWork`);
+    the server scrape coordinator has no `onWorkScraped` hook wired;
+  - the periodic retry of downloads that finished without a subtitle
+    (`fushi/lib/src/media/video/subtitle/download_subtitle_retry.dart`, app-only timer);
+  - AI reordering of candidates (`aiSubtitleBackfillReorder`): the server's `ai:` section
+    is only assigned to the video-acquire assistant;
+  - the app's Jimaku provider (search by AniList id) and AJATT: both live in `fushi/`
+    (`jimaku_subtitle_provider.dart`, `ajatt_*`). The server's Jimaku provider searches
+    by title + episode only.
+  - the download pipeline reads subtitle providers when the pipeline is (re)built (start,
+    or after resource indexers are saved). A key pushed later over interconnect needs one
+    of those, or a restart. Backfill reads them per request.
 - **Audiobooks with audio only (no subtitle)**: these are not imported, either from an
   `audiobook` library root (counted as `audiobooksNeedSubtitle` in the scan summary) or
   from a download (`buildServerDiscoveryImporters` in `discovery_import_host.dart` blocks
