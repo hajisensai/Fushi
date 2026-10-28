@@ -2518,6 +2518,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   VideoJumpPillLayout? _videoJumpPillLayout;
   Timer? _videoJumpFlashTimer;
 
+  /// 自上次跳转 / 返回 / 前进起超过自动隐藏时长：胶囊不再随控制条出现，下次跳转复位。
+  final ValueNotifier<bool> _videoJumpPillExpired = ValueNotifier<bool>(false);
+  Timer? _videoJumpPillExpireTimer;
+
   /// 鼠标当前是否悬停在右 / 左浮动学习按钮 rail 上（BUG-283）。
   ///
   /// 根因：rail 按钮是 opaque 的 [IconButton]，叠在 media_kit 桌面控制条那个**全画面**
@@ -6605,8 +6609,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _videoJumpPillHovered.dispose();
     _videoControlsVisible.dispose();
     _videoJumpFlashTimer?.cancel();
+    _videoJumpPillExpireTimer?.cancel();
     _videoJumpHistoryRevision.dispose();
     _videoJumpPillFlashing.dispose();
+    _videoJumpPillExpired.dispose();
     _railHovered.dispose();
     _cursorHidden.dispose();
     super.dispose();

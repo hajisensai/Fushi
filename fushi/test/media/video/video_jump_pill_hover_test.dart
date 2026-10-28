@@ -189,6 +189,61 @@ void main() {
     });
   });
 
+  group('videoJumpPillLiveVisible（自动隐藏）', () {
+    test('未过期：闪现或控制条可见时显示，两者都没有不显示', () {
+      expect(
+        videoJumpPillLiveVisible(
+          chromeShown: true,
+          flashing: false,
+          expired: false,
+        ),
+        isTrue,
+      );
+      expect(
+        videoJumpPillLiveVisible(
+          chromeShown: false,
+          flashing: true,
+          expired: false,
+        ),
+        isTrue,
+      );
+      expect(
+        videoJumpPillLiveVisible(
+          chromeShown: false,
+          flashing: false,
+          expired: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('过期后控制条再出现也不显示', () {
+      expect(
+        videoJumpPillLiveVisible(
+          chromeShown: true,
+          flashing: true,
+          expired: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('选项含 5 / 10 / 15 秒与「不隐藏」(0)，默认值在选项内', () {
+      expect(kVideoJumpPillAutoHideOptions, <int>[5, 10, 15, 0]);
+      expect(
+        kVideoJumpPillAutoHideOptions,
+        contains(kVideoJumpPillAutoHideDefaultSeconds),
+      );
+    });
+
+    test('视频页接线：可见性走 videoJumpPillLiveVisible，历史变化重新计时', () {
+      final String src = readVideoFushiSource();
+      expect(src.contains('visible: videoJumpPillLiveVisible('), isTrue);
+      expect(src.contains('_armVideoJumpPillAutoHide(active: flash);'), isTrue);
+      expect(src.contains('appModel.videoJumpPillAutoHideSeconds'), isTrue);
+    });
+  });
+
   group('VideoHoverHoldRegion', () {
     testWidgets('只认子树真实命中；悬停中被卸载也补一次 false', (WidgetTester tester) async {
       final List<bool> events = <bool>[];

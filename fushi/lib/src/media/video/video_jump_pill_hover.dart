@@ -55,6 +55,20 @@ VideoJumpPillLayout resolveVideoJumpPillLayout({
   return live;
 }
 
+/// 胶囊自动隐藏可选秒数（设置项分段选项，0 = 不自动隐藏）。
+const List<int> kVideoJumpPillAutoHideOptions = <int>[5, 10, 15, 0];
+
+/// 胶囊自动隐藏的出厂秒数。
+const int kVideoJumpPillAutoHideDefaultSeconds = 10;
+
+/// 胶囊不悬停时这一帧是否显示：跳转后闪现窗口内或控制条可见时显示；自上次跳转 /
+/// 返回 / 前进起超过自动隐藏时长（[expired]）后，控制条再出现也不画，下一次跳转再亮。
+bool videoJumpPillLiveVisible({
+  required bool chromeShown,
+  required bool flashing,
+  required bool expired,
+}) => !expired && (chromeShown || flashing);
+
 /// 胶囊悬停期间是否把控制条按住：只有悬停开始那一帧控制条本来就可见时才按（闪现态的
 /// 胶囊不应把隐藏着的控制条唤出来）。
 bool videoJumpPillHoverHoldsControls(VideoJumpPillLayout? atHoverStart) =>
