@@ -26,6 +26,7 @@ export 'src/ankiconnect/ankiconnect_service.dart';
 export 'src/lapis_blocks.dart';
 export 'src/lapis_note_type.dart';
 export 'src/lapis_preset.dart';
+export 'src/note_type_preset.dart';
 export 'src/senren_preset.dart';
 export 'src/note_type_default_mappings.dart';
 export 'src/lapis_style_preview.dart';

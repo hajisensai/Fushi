@@ -8,7 +8,7 @@ import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:meta/meta.dart';
 
 import 'lapis_blocks.dart';
-import 'lapis_preset.dart';
+import 'note_type_preset.dart';
 import 'note_type_default_mappings.dart';
 import 'card_source_link.dart';
 import 'mining_request_overrides.dart';
@@ -528,7 +528,7 @@ class AnkiSettings {
     if (noteType == null || noteType.fields.isEmpty) return this;
     if (mappingsCoverNoteType(fieldMappings, noteType)) return this;
     return copyWith(
-      fieldMappings: LapisPreset.applyDefaults(noteType, const {}),
+      fieldMappings: NoteTypePresets.applyDefaults(noteType, const {}),
     );
   }
 

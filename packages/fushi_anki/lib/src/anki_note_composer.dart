@@ -8,7 +8,7 @@ import 'anki_compact_glossaries.dart';
 import 'anki_glossary_css.dart';
 import 'anki_models.dart';
 import 'lapis_note_type.dart';
-import 'lapis_preset.dart';
+import 'note_type_preset.dart';
 
 /// TODO-779：单词远程音频获取的结果载体。两 backend 的远程音频路径
 /// （`_storeRemoteAudio` / `_addRemoteAudio`）共用，把过去只能返回的裸 ref
@@ -335,7 +335,7 @@ mixin AnkiNoteComposer {
               (t) => t.name == current.selectedNoteTypeName,
             )
           : null) ??
-      noteTypes.firstWhereOrNull(LapisPreset.hasPreset) ??
+      NoteTypePresets.preferred(noteTypes) ??
       noteTypes.first;
 
   @protected
@@ -343,13 +343,16 @@ mixin AnkiNoteComposer {
     AnkiNoteType selectedNoteType,
     AnkiSettings current,
   ) {
-    if (LapisPreset.hasPreset(selectedNoteType) &&
+    if (NoteTypePresets.hasPreset(selectedNoteType) &&
         !_currentSelectionHasPreset(current)) {
-      return LapisPreset.applyDefaults(selectedNoteType, {});
+      return NoteTypePresets.applyDefaults(selectedNoteType, {});
     }
     // 现有映射一个字段都不属于选中的笔记类型（空表，或留着上一个笔记类型的字段名）：
     // 原样沿用 = 每张卡都是空卡。按字段名补默认映射。
-    return LapisPreset.applyDefaults(selectedNoteType, current.fieldMappings);
+    return NoteTypePresets.applyDefaults(
+      selectedNoteType,
+      current.fieldMappings,
+    );
   }
 
   bool _currentSelectionHasPreset(AnkiSettings current) {
@@ -358,9 +361,8 @@ mixin AnkiNoteComposer {
           t.id == current.selectedNoteTypeId ||
           t.name == current.selectedNoteTypeName,
     );
-    if (matched != null) return LapisPreset.hasPreset(matched);
-    final String? name = current.selectedNoteTypeName?.toLowerCase();
-    return name != null && (name.contains('lapis') || name.contains('senren'));
+    if (matched != null) return NoteTypePresets.hasPreset(matched);
+    return NoteTypePresets.nameHasPreset(current.selectedNoteTypeName);
   }
 
   // ── note tags：两 backend 共用（杜绝两份漂移） ──────────────────
