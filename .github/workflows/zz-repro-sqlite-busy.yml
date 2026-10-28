@@ -26,7 +26,12 @@ jobs:
       run: |
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
-    - name: V1 only, x3000, full errors
+    - name: A/B under CPU stress, x3000 each
       continue-on-error: true
       working-directory: fushi
-      run: flutter test --no-pub test/zz_repro/sqlite_busy_repro_test.dart --plain-name "V1 " --dart-define=REPS=3000 --reporter expanded > /tmp/v1.txt 2>&1; grep -E "REPRO" /tmp/v1.txt | cut -c1-1500
+      run: |
+        for c in $(seq 1 $(( $(nproc) * 2 ))); do (while :; do :; done) & done
+        flutter test --no-pub test/zz_repro/sqlite_busy_repro_test.dart --plain-name "AB-" --dart-define=REPS=3000 --reporter expanded > /tmp/ab.txt 2>&1 || true
+        kill $(jobs -p) 2>/dev/null || true
+        grep -E "REPRO" /tmp/ab.txt | cut -c1-1500
+        grep -E "tests passed|tests failed" /tmp/ab.txt | tail -1

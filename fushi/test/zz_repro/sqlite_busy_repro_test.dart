@@ -123,7 +123,80 @@ Future<void> _rawVariant(String name, bool immediate) async {
   tally.report();
 }
 
+/// The pre-fix shape of insertPrefIfAbsent: drift's deferred transaction.
+Future<bool> _oldInsertPrefIfAbsent(FushiDatabase d, String key, String value) {
+  return d.transaction(() async {
+    final int inserted = await d.customUpdate(
+      'INSERT OR IGNORE INTO preferences (key, value, updated_at) '
+      'VALUES (?, ?, ?)',
+      variables: <Variable<Object>>[
+        Variable<String>(key),
+        Variable<String>(value),
+        Variable<int>(DateTime.now().millisecondsSinceEpoch),
+      ],
+    );
+    if (inserted != 1) return false;
+    final String? raw = await d.getPref('prefs_version');
+    final int current = raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
+    await d.customUpdate(
+      'INSERT INTO preferences (key, value, updated_at) VALUES (?, ?, ?) '
+      'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      variables: <Variable<Object>>[
+        const Variable<String>('prefs_version'),
+        Variable<String>(PrefCodec.encode(current + 1)),
+        const Variable<int>(0),
+      ],
+    );
+    return true;
+  });
+}
+
+Future<void> _pairVariant(
+  String name,
+  Future<bool> Function(FushiDatabase d) insert,
+) async {
+  final _Tally tally = _Tally(name);
+  for (int i = 0; i < kReps; i++) {
+    final Directory dir = _tmp('busy_ab_');
+    final FushiDatabase a = FushiDatabase(dir.path);
+    final FushiDatabase b = FushiDatabase(dir.path);
+    await a.getPref('x');
+    await b.getPref('x');
+    final List<(Object?, int)> r = await Future.wait(<Future<(Object?, int)>>[
+      _timed(() => insert(a)),
+      _timed(() => insert(b)),
+    ]);
+    int landed = 0;
+    for (final (Object?, int) x in r) {
+      tally.record(x.$1, x.$2);
+    }
+    if (await a.getPref('anki_settings') != null) landed++;
+    if (landed != 1) tally.record(StateError('row missing'), -1);
+    await a.close();
+    await b.close();
+    dir.deleteSync(recursive: true);
+  }
+  tally.report();
+}
+
 void main() {
+  test(
+    'AB-old deferred transaction',
+    () => _pairVariant(
+      'AB-old',
+      (FushiDatabase d) => _oldInsertPrefIfAbsent(d, 'anki_settings', 's:v'),
+    ),
+    timeout: const Timeout(Duration(minutes: 25)),
+  );
+
+  test(
+    'AB-new product insertPrefIfAbsent',
+    () => _pairVariant(
+      'AB-new',
+      (FushiDatabase d) => d.insertPrefIfAbsent('anki_settings', 's:v'),
+    ),
+    timeout: const Timeout(Duration(minutes: 25)),
+  );
   test('V1 FushiDatabase x2 insertPrefIfAbsent', () async {
     final _Tally tally = _Tally('V1-fushi');
     for (int i = 0; i < kReps; i++) {
