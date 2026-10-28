@@ -1192,7 +1192,7 @@ impl SrsCore {
 
     /// 算并记下状态摘要（写进 head，§4.5）。摘要是全库扫描（100 万次复习约数秒），所以：
     /// - 给了 [min_interval_ms]：版本向量没变、或离上次算不到这个间隔，就不算（返回 `{"skipped": true}`）；
-    /// - 在一条**专用的扫描连接**（[SrsCore::scan_connection]，小页缓存、算完即关）的一个读事务里算（WAL 快照：
+    /// - 在一条**专用的扫描连接**（[SrsCore::scan_session]，小页缓存、算完即关、不占读连接的锁）的一个读事务里算（WAL 快照：
     ///   摘要与版本向量出自同一时刻；不占写锁，复习照常写）。一次性顺序扫描用不上页缓存，放在读连接上会把它
     ///   的 64 MB 页缓存填满、并一直占到关库。
     pub fn sync2_digest_due(&self, profile: &str, now: i64, min_interval_ms: Option<i64>) -> Result<Value, String> {
@@ -1215,10 +1215,14 @@ impl SrsCore {
             }
         }
         let (d, vv) = {
-            let (_open, r) = self.scan_connection()?;
-            r.execute_batch("BEGIN").map_err(sql)?;
-            let out = (|| Ok::<_, String>((digest(&r, profile)?, applied_vv(&r, profile)?)))();
-            r.execute_batch("COMMIT").map_err(sql)?;
+            let scan = self.scan_session()?;
+            let out = scan.with(|r| {
+                r.execute_batch("BEGIN").map_err(sql)?;
+                let out = (|| Ok::<_, String>((digest(r, profile)?, applied_vv(r, profile)?)))();
+                r.execute_batch("COMMIT").map_err(sql)?;
+                out
+            });
+            scan.close();
             out?
         };
         let w = self.writer()?;
