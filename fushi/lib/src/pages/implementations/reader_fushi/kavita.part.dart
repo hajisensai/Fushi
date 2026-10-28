@@ -15,7 +15,7 @@ extension _ReaderKavitaExtension on _ReaderFushiPageState {
         apiFor: KavitaApiRegistry.instance.apiFor,
         promptConflict:
             (KavitaProgress server, ReaderPositionRow? local) async {
-              if (!mounted || local == null) return KavitaSyncAction.pushLocal;
+              if (!mounted || local == null) return KavitaSyncAction.none;
               return showKavitaProgressConflictDialog(
                 context,
                 localSection: local.sectionIndex,

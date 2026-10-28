@@ -3576,6 +3576,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _studyClock?.detach();
     readerSessionRemotes.unregister(_sessionRemote);
     // Kavita 绑定书：关书时限时 flush 待推进度（不阻塞 dispose，内部吞错）。
+    // 防抖里还没落库的最后一章也要带上：dispose 之后 [_persistPosition] 的转发会撞
+    // 上已置空的会话，所以这里用页面缓存的最近 section 直接补报（纯内存，零 DB IO）。
+    if (_hasEverLoaded && _lastProgressSection >= 0) {
+      _kavitaSync?.onPositionSaved(_lastProgressSection);
+    }
     unawaited(_kavitaSync?.close());
     _kavitaSync = null;
     // Search navigation can still be awaiting restore while the route closes.

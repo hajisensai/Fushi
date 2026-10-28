@@ -95,6 +95,25 @@ KavitaSyncDecision resolveKavitaProgress({
   final int server = serverModifiedAt!;
   final int local = localUpdatedAt!;
 
+  if (lastSyncedPage != null) {
+    // 有「上次两侧一致的页」就不看时钟：哪一侧离开了这一页，哪一侧就是动过的。
+    // 时间基线会把「上次打开 / 推送后 2 分钟内」的服务器改动当成没动过，而每次
+    // 打开又把基线推到现在，那次改动就永远拉不下来（BUG：Kavita→Fushi 拉取失效）。
+    final bool serverMovedByPage = serverPage != lastSyncedPage;
+    final bool localMovedByPage = localPage != lastSyncedPage;
+    if (serverMovedByPage && localMovedByPage) {
+      return KavitaSyncDecision(
+        KavitaSyncAction.conflict,
+        preferred: server >= local
+            ? KavitaSyncAction.adoptServer
+            : KavitaSyncAction.pushLocal,
+      );
+    }
+    return serverMovedByPage
+        ? const KavitaSyncDecision(KavitaSyncAction.adoptServer)
+        : const KavitaSyncDecision(KavitaSyncAction.pushLocal);
+  }
+
   if (lastSyncAt == null) {
     // 从没同步过：直接比时间戳。
     final int diff = server - local;

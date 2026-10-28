@@ -61,6 +61,12 @@ extension _MangaKavitaSyncExtension on _MangaFushiPageState {
 
   /// 收掉当前会话：限时 flush 待推进度后释放（不 await，内部吞错）。
   void _closeKavitaMangaSync() {
+    // 防抖里还没落库的最后一页：补报页面缓存的当前页（纯内存），否则 dispose 后
+    // 迟到的章状态保存会撞上已置空的会话，最后一页永远推不到服务器。
+    final String? chapterKey = _shelfChapterKey;
+    if (chapterKey != null && _payload != null) {
+      _reportKavitaMangaPage(chapterKey, _currentPage);
+    }
     final KavitaMangaSyncSession? session = _kavitaMangaSync;
     _kavitaMangaSync = null;
     if (session != null) unawaited(session.close());
