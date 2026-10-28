@@ -137,6 +137,8 @@ class KavitaLibraryAdapter implements OnlineMangaRuntimeAdapter {
         'chapterId': chapter.id,
         'volumeId': chapter.volumeId,
         'pages': chapter.pages,
+        // 服务器侧已读页数（刷新时的快照）：作品页据此对账从没在本机打开过的章。
+        'pagesRead': chapter.pagesRead,
         if (chapter.isSpecial) 'isSpecial': true,
       },
     );

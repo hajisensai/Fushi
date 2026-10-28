@@ -22,6 +22,8 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -46,7 +48,21 @@ class KavitaBookSeriesPage extends ConsumerStatefulWidget {
       _KavitaBookSeriesPageState();
 }
 
-class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
+/// 章节在服务器上的已读百分比（0-100）；没有页数信息时为 0。
+int kavitaChapterReadPercent(KavitaChapter chapter) {
+  if (chapter.pages <= 0) return 0;
+  return ((chapter.pagesRead * 100) ~/ chapter.pages).clamp(0, 100);
+}
+
+/// 章节行的进度文案：读完 / 读了一部分 / 没读（空串）。
+String kavitaChapterProgressLabel(KavitaChapter chapter) {
+  if (chapter.isRead) return t.kavita_book_progress_finished;
+  final int percent = kavitaChapterReadPercent(chapter);
+  return percent > 0 ? t.kavita_book_progress_percent(percent: '$percent') : '';
+}
+
+class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
+    with WidgetsBindingObserver {
   List<KavitaChapter> _chapters = const <KavitaChapter>[];
   Map<int, ({String bookKey, KavitaBookBinding binding})> _bound =
       const <int, ({String bookKey, KavitaBookBinding binding})>{};
@@ -75,22 +91,35 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_load());
+  }
+
+  /// 应用从后台回来：服务器上的进度可能被别处（网页端标已读 / 未读）改过，静默重取。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_load(silent: true));
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     for (final KavitaCancelToken token in _tokens.values) {
       token.cancel();
     }
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  /// [silent] = 刷新已有列表（回前台 / 下拉 / 读完回来 / 标记后）：不闪加载态，失败
+  /// 只记日志、保留旧数据。章节的已读进度（`pagesRead`）只来自这次拉取，所以任何
+  /// 「服务器可能变了」的时机都要走它。
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final KavitaSeriesDetail detail = await widget.api.getSeriesDetail(
         widget.series.id,
@@ -106,7 +135,7 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
       });
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('KavitaBookSeries.load', error, stack);
-      if (!mounted) return;
+      if (!mounted || silent) return;
       setState(() {
         _error = error;
         _loading = false;
@@ -177,7 +206,89 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
       mediaSource: item.getMediaSource(appModel: appModel),
       item: item,
     );
-    if (mounted) unawaited(_refreshBound());
+    // 阅读器关闭时会把进度推给服务器；回来后重取，列表上的进度才是服务器的最新值。
+    if (mounted) unawaited(_load(silent: true));
+  }
+
+  /// 手动标已读 / 未读（长按 / 右键菜单）：先改服务器，再把本地副本的位置与同步基线
+  /// 对齐（见 [KavitaBookService.alignLocalWithServerMark]），最后重取列表。
+  Future<void> _setRead(KavitaChapter chapter, {required bool read}) async {
+    Object? failure;
+    try {
+      if (read) {
+        await widget.api.markChaptersRead(
+          seriesId: widget.series.id,
+          chapterIds: <int>[chapter.id],
+        );
+      } else {
+        await widget.api.markChaptersUnread(
+          seriesId: widget.series.id,
+          chapterIds: <int>[chapter.id],
+        );
+      }
+      final KavitaBookService service = await _ensureService();
+      await service.alignLocalWithServerMark(
+        serverConfigId: widget.server.id,
+        chapterId: chapter.id,
+        read: read,
+        totalPages: chapter.pages,
+      );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('KavitaBookSeries.mark', error, stack);
+      failure = error;
+    }
+    if (!mounted) return;
+    FushiToast.show(
+      msg: failure != null
+          ? t.kavita_book_mark_failed(
+              reason: failure is KavitaApiException
+                  ? 'HTTP ${failure.statusCode}'
+                  : failure.runtimeType.toString(),
+            )
+          : read
+          ? t.kavita_book_marked_read
+          : t.kavita_book_marked_unread,
+      severity: failure != null ? ToastSeverity.error : ToastSeverity.success,
+    );
+    await _load(silent: true);
+  }
+
+  /// 章节菜单（长按 / 右键）：标已读 / 未读。
+  Future<void> _showChapterMenu(KavitaChapter chapter) async {
+    final bool read = chapter.isRead;
+    final bool? markRead = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
+        key: const ValueKey<String>('kavita-chapter-menu'),
+        title: Text(
+          chapter.displayName,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (!read)
+              FushiListItem(
+                key: const ValueKey<String>('kavita-chapter-mark-read'),
+                leading: const FushiIcon(FushiIcons.check),
+                title: Text(t.kavita_book_mark_read),
+                onTap: () => Navigator.pop(dialogContext, true),
+              ),
+            if (read || chapter.pagesRead > 0)
+              FushiListItem(
+                key: const ValueKey<String>('kavita-chapter-mark-unread'),
+                leading: const FushiIcon(FushiIcons.visibilityOff),
+                title: Text(t.kavita_book_mark_unread),
+                onTap: () => Navigator.pop(dialogContext, false),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (markRead == null || !mounted) return;
+    await _setRead(chapter, read: markRead);
   }
 
   Future<void> _download(KavitaChapter chapter) async {
@@ -270,17 +381,20 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
       );
     }
     final bool canDownload = userConfiguredServersAvailable;
-    return FushiEntranceScope(
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: _chapters.length,
-        itemBuilder: fushiStaggeredItemBuilder((
-          BuildContext context,
-          int index,
-        ) {
-          final KavitaChapter chapter = _chapters[index];
-          return _chapterTile(chapter, canDownload: canDownload);
-        }),
+    return FushiRefreshIndicator(
+      onRefresh: () => _load(silent: true),
+      child: FushiEntranceScope(
+        child: ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: _chapters.length,
+          itemBuilder: fushiStaggeredItemBuilder((
+            BuildContext context,
+            int index,
+          ) {
+            final KavitaChapter chapter = _chapters[index];
+            return _chapterTile(chapter, canDownload: canDownload);
+          }),
+        ),
       ),
     );
   }
@@ -300,11 +414,16 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
         : local != null
         ? t.kavita_book_cached
         : '';
-    return FushiListItem(
+    final String progress = kavitaChapterProgressLabel(chapter);
+    final String subtitle = <String>[
+      if (progress.isNotEmpty) progress,
+      if (status.isNotEmpty) status,
+    ].join(' · ');
+    final Widget item = FushiListItem(
       key: ValueKey<String>('kavita_chapter_${chapter.id}'),
       title: Text(chapter.displayName),
       titleMaxLines: 2,
-      subtitle: status.isEmpty ? null : Text(status),
+      subtitle: subtitle.isEmpty ? null : Text(subtitle),
       onTap: busy ? null : () => unawaited(_read(chapter)),
       trailing: busy
           ? FushiTextButton(
@@ -333,6 +452,15 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage> {
                 ),
               ],
             ),
+    );
+    // 右键走绑定表（ContextMenuTrigger），长按给触屏；下载中不弹（避免与取消抢）。
+    if (busy) return item;
+    return ContextMenuTrigger(
+      onInvoke: (Offset _) => unawaited(_showChapterMenu(chapter)),
+      child: GestureDetector(
+        onLongPress: () => unawaited(_showChapterMenu(chapter)),
+        child: item,
+      ),
     );
   }
 }

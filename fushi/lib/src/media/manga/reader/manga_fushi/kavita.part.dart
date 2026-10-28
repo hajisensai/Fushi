@@ -7,14 +7,18 @@ extension _MangaKavitaSyncExtension on _MangaFushiPageState {
   /// 开章前调用：先收掉上一章的会话（限时 flush，不 await 网络），再为 Kavita
   /// 条目的 [chapter] 建会话（拉取 + 决策，可能改写本地章进度）。非 Kavita 条目
   /// 直接返回；任何失败只记日志，绝不影响开章。
-  Future<void> _attachKavitaMangaSync(
+  ///
+  /// 返回打开时采用了服务器进度的页（0 起；未采用 / 非 Kavita 为 null）：调用方
+  /// 必须以它为起始页——只靠 `resolveMangaChapterResumePoint` 读回章进度会被「读完
+  /// 过的章从头看」吞掉刚采用的页。
+  Future<int?> _attachKavitaMangaSync(
     EpubBookRow row,
     OnlineMangaLibraryEntry entry,
     OnlineMangaChapter chapter,
   ) async {
     _closeKavitaMangaSync();
     if (_sourceReviewActive || !KavitaMangaSyncSession.appliesTo(entry)) {
-      return;
+      return null;
     }
     try {
       final KavitaMangaSyncSession? session =
@@ -47,12 +51,14 @@ extension _MangaKavitaSyncExtension on _MangaFushiPageState {
           );
       if (!mounted) {
         unawaited(session?.close());
-        return;
+        return null;
       }
       _kavitaMangaSync = session;
+      return session?.adoptedPage;
     } on Object catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage.attachKavitaSync', e, stack);
     }
+    return null;
   }
 
   /// 章进度落库后转发给 Kavita 同步（防抖上报；非 Kavita 条目为空操作）。

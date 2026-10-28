@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/media/kavita/kavita_manga_sync.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
@@ -1102,10 +1103,23 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         entry: entry,
       );
       final EpubBookRow? row = await service.database.getEpubBook(bookKey);
+      // Kavita：服务器的逐章已读状态并进本地章进度（别的设备读过的章在这里才看得到）。
+      Map<String, MangaChapterStateRow>? reconciled;
+      if (row != null &&
+          updated.runtime == OnlineMangaRuntimeKind.kavita &&
+          await reconcileKavitaChapterStates(
+                db: service.database,
+                bookUid: row.uid,
+                chapters: updated.chapters,
+              ) >
+              0) {
+        reconciled = await _readChapterStates(row);
+      }
       if (!mounted) return;
       setState(() {
         _entry = updated;
         if (row != null) _row = row;
+        if (reconciled != null) _states = reconciled;
         _refreshSucceeded = true;
       });
     } on OnlineMangaUnavailable catch (error, stack) {

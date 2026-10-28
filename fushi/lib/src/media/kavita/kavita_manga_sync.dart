@@ -392,3 +392,51 @@ int? _asInt(Object? value) => switch (value) {
   final String v => int.tryParse(v),
   _ => null,
 };
+
+/// 作品页刷新后把服务器的逐章已读状态并进本地章进度（`manga_chapter_states`）。
+///
+/// 只处理**本机还没有记录**的章（别的设备读过、这台从没打开）和「服务器已读完而
+/// 本机没标已读」的章；本机已有进度的章（半途页号）不动——它们的新旧由开章时的
+/// [KavitaMangaSyncSession.attach] 逐章精确裁决（含冲突询问），这里没有服务器时刻
+/// 可比。读完的章只增不减，与阅读器的已读标记规则一致。
+///
+/// [chapters] 是描述符章表（`raw` 里有刷新时存的 `pages` / `pagesRead`）。返回
+/// 写入的章数。永不抛错。
+Future<int> reconcileKavitaChapterStates({
+  required FushiDatabase db,
+  required String bookUid,
+  required List<OnlineMangaChapter> chapters,
+  int Function()? nowMs,
+}) async {
+  if (bookUid.isEmpty) return 0;
+  final int Function() now =
+      nowMs ?? (() => DateTime.now().millisecondsSinceEpoch);
+  int written = 0;
+  try {
+    final Map<String, MangaChapterStateRow> states = await db
+        .getMangaChapterStates(bookUid);
+    for (final OnlineMangaChapter chapter in chapters) {
+      final int pages = _asInt(chapter.raw['pages']) ?? 0;
+      final int pagesRead = _asInt(chapter.raw['pagesRead']) ?? 0;
+      if (pages <= 0 || pagesRead <= 0) continue;
+      final MangaChapterStateRow? local = states[chapter.key];
+      final bool serverFinished = pagesRead >= pages;
+      if (local != null && !(serverFinished && local.readAt == null)) continue;
+      final int page = (serverFinished ? pages - 1 : pagesRead).clamp(
+        0,
+        pages - 1,
+      );
+      await db.saveMangaChapterState(
+        bookUid: bookUid,
+        chapterKey: chapter.key,
+        lastPage: serverFinished ? (local?.lastPage ?? page) : page,
+        pageCount: pages,
+        readAt: serverFinished ? now() : null,
+      );
+      written++;
+    }
+  } on Object {
+    // 对账失败不影响作品页展示；下次刷新再来。
+  }
+  return written;
+}

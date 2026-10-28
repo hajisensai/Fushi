@@ -387,4 +387,76 @@ void main() {
     stored = 'not json';
     expect(store.lastSyncAt('a', '2'), isNull);
   });
+
+  group('reconcileKavitaChapterStates', () {
+    OnlineMangaChapter ch(String key, int pages, int pagesRead) =>
+        OnlineMangaChapter(
+          key: key,
+          name: key,
+          raw: <String, Object?>{'pages': pages, 'pagesRead': pagesRead},
+        );
+
+    test('adopts server progress for chapters never opened here', () async {
+      final int written = await reconcileKavitaChapterStates(
+        db: db,
+        bookUid: _uid,
+        chapters: <OnlineMangaChapter>[
+          ch('1', 10, 0),
+          ch('2', 10, 4),
+          ch('3', 10, 10),
+        ],
+        nowMs: () => _base,
+      );
+      expect(written, 2);
+      expect(
+        await db.getMangaChapterState(bookUid: _uid, chapterKey: '1'),
+        isNull,
+      );
+      final MangaChapterStateRow two = (await db.getMangaChapterState(
+        bookUid: _uid,
+        chapterKey: '2',
+      ))!;
+      expect(two.lastPage, 4);
+      expect(two.readAt, isNull);
+      final MangaChapterStateRow three = (await db.getMangaChapterState(
+        bookUid: _uid,
+        chapterKey: '3',
+      ))!;
+      expect(three.lastPage, 9);
+      expect(three.readAt, _base);
+    });
+
+    test('keeps local mid-chapter progress, marks finished read', () async {
+      await db.saveMangaChapterState(
+        bookUid: _uid,
+        chapterKey: '2',
+        lastPage: 7,
+        pageCount: 10,
+      );
+      await db.saveMangaChapterState(
+        bookUid: _uid,
+        chapterKey: '3',
+        lastPage: 2,
+        pageCount: 10,
+      );
+      await reconcileKavitaChapterStates(
+        db: db,
+        bookUid: _uid,
+        chapters: <OnlineMangaChapter>[ch('2', 10, 4), ch('3', 10, 10)],
+        nowMs: () => _base,
+      );
+      expect(
+        (await db.getMangaChapterState(
+          bookUid: _uid,
+          chapterKey: '2',
+        ))!.lastPage,
+        7,
+      );
+      final MangaChapterStateRow three = (await db.getMangaChapterState(
+        bookUid: _uid,
+        chapterKey: '3',
+      ))!;
+      expect(three.readAt, _base);
+    });
+  });
 }
