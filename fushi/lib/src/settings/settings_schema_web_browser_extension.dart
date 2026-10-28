@@ -36,8 +36,9 @@ const Map<String, String> kWebBrowserExtensionOmittedSettings =
       'touchLookupTap / touchLookupHold':
           'touch-lookup.js 不装进 app 宿主（网页正文取词由宿主自己的取词脚本负责）',
       'mobileSubtitleDrawer': 'mobile-drawer.js 不装进 app 宿主（字幕列表是 app 原生侧栏）',
-      'subtitleLookupOnPage': '只影响扩展 Side Panel 里的查词：app 内查词恒为 app 弹窗',
-      'subtitleAutoScroll': '只影响扩展 Side Panel 的字幕列表：app 原生侧栏不读它',
+      'subtitleLookupOnPage':
+          '扩展 Side Panel 是浏览器的独立窗口、面板内弹窗只能有面板那么宽，才要把查词交给网页渲染；'
+          'app 原生侧栏点词用的是 app 查词弹窗（不受侧栏宽度限制），没有这层取舍',
       'subtitleFontLibrary': '字体库下载列表（后续再接；已下载字体若被选中仍会列在字体下拉里）',
       'extensionStyle': '界面风格（M3E / 液态玻璃）：app 内跟随 Fushi 的设计系统，宿主把它算成只读键',
       'customThemeEditor': '自定义配色编辑器（后续再接；已有自定义主题可在配色主题里选中）',
@@ -254,6 +255,13 @@ SettingsDestination _subtitleDestination() => SettingsDestination(
           fallback: true,
           label: 'opt_subtitleDragDropEnabled',
           icon: FushiIcons.upload,
+        ),
+        // 页内字幕面板与 app 原生字幕侧栏共用（侧栏的「跟随」钮写的也是它）。
+        _switch(
+          'subtitleAutoScroll',
+          fallback: true,
+          label: 'opt_subtitleAutoScroll',
+          icon: FushiIcons.myLocation,
         ),
         _switch(
           'netflixHideNextEpisode',

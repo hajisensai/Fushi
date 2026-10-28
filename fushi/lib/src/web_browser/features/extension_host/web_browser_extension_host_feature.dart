@@ -204,6 +204,15 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
     return WebBrowserSubtitlePanel(
       key: ValueKey<String>('web-browser-subtitle-panel-${tab.id}'),
       request: (Map<String, Object?> message) => request(tab, message),
+      // 侧栏的后台消息（加载本地字幕 / 在线搜索）走与页内脚本同一份路由。
+      runtime: (Map<String, Object?> message) =>
+          routeWebBrowserExtensionMessage(
+            Map<String, dynamic>.from(message),
+            _servicesFor(tab),
+          ),
+      storage: _storage,
+      onOpenSettings: openSettings,
+      tabTitle: () => tab.title,
       onClose: closeSidePanel,
     );
   }
