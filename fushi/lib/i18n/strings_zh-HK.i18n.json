@@ -1423,6 +1423,7 @@
   "batch_tag_removed_items": "Removed tag $name from $n items.",
   "batch_tag_removed_video": "已從 $n 個影片移除標籤「$name」。",
   "batch_tag_title": "批量管理標籤",
+  "book_continue_queue": "Also reading",
   "book_continue_reading": "繼續閱讀",
   "book_convert_blocked_already": "這本書已經是該格式了。",
   "book_convert_blocked_no_original": "這本漫畫是從圖片導入的，沒有可還原的原書。",

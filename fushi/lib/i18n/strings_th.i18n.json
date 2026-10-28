@@ -1423,6 +1423,7 @@
   "batch_tag_removed_items": "Removed tag $name from $n items.",
   "batch_tag_removed_video": "ลบแท็ก \"$name\" จากวิดีโอ $n รายการแล้ว",
   "batch_tag_title": "จัดการแท็ก",
+  "book_continue_queue": "Also reading",
   "book_continue_reading": "อ่านต่อ",
   "book_convert_blocked_already": "หนังสือนี้อยู่ในรูปแบบนั้นแล้ว",
   "book_convert_blocked_no_original": "มังงะนี้นำเข้าจากรูปภาพ จึงไม่มีหนังสือต้นฉบับที่จะแปลงกลับ",

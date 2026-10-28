@@ -1423,6 +1423,7 @@
   "batch_tag_removed_items": "Removed tag $name from $n items.",
   "batch_tag_removed_video": "Se eliminó la etiqueta \"$name\" de $n vídeo(s).",
   "batch_tag_title": "Gestionar etiquetas",
+  "book_continue_queue": "Also reading",
   "book_continue_reading": "Seguir leyendo",
   "book_convert_blocked_already": "Este libro ya está en ese formato.",
   "book_convert_blocked_no_original": "Este manga fue importado desde imágenes, por lo que no hay libro original al que convertir.",

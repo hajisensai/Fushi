@@ -1653,17 +1653,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       isCompleted: (MediaItem item) =>
           _completedBookKeys.contains(_parseBookKey(item.mediaIdentifier)),
     );
-    final MediaItem? hero = mostRecentlyReadCandidate(
-      tally.inProgress,
-      // BUG-2904：映射键是 uid，bookKey 必须经换算表一跳（与「最近阅读」排序同）。
-      (MediaItem item) =>
-          lastReadAtForBookKey(
-            _lastReadAtByBookKey,
-            _epubUidByKey,
-            _parseBookKey(item.mediaIdentifier),
-          ) ??
-          0,
-    );
+    // BUG-2904：映射键是 uid，bookKey 必须经换算表一跳（与「最近阅读」排序同）。
+    int readAt(MediaItem item) =>
+        lastReadAtForBookKey(
+          _lastReadAtByBookKey,
+          _epubUidByKey,
+          _parseBookKey(item.mediaIdentifier),
+        ) ??
+        0;
+    final MediaItem? hero = mostRecentlyReadCandidate(tally.inProgress, readAt);
     if (hero == null) return const SizedBox.shrink();
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -1672,14 +1670,23 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         tokens.spacing.card,
         0,
       ),
-      child: _buildContinueReadingHero(hero, tokens),
+      child: _buildContinueReadingHero(
+        hero,
+        tokens,
+        tally.inProgress.where((MediaItem m) => !identical(m, hero)).toList()
+          ..sort((MediaItem a, MediaItem b) => readAt(b).compareTo(readAt(a))),
+      ),
     );
   }
 
   /// 继续阅读 hero：书架 / 漫画书架 / 游戏首页共用的满宽「继续」大卡
   /// [FushiContinueHero]（2026-10-28 统一）。封面走同一个光面书皮材质，信息列
   /// 「继续阅读」眉标 + 书名 + 进度「已读 x%」，行尾「继续」主按钮；整卡点按开书。
-  Widget _buildContinueReadingHero(MediaItem hero, FushiDesignTokens tokens) {
+  Widget _buildContinueReadingHero(
+    MediaItem hero,
+    FushiDesignTokens tokens,
+    List<MediaItem> others,
+  ) {
     final double fraction = hero.duration > 0
         ? (hero.position / hero.duration).clamp(0.0, 1.0)
         : 0.0;
@@ -1721,6 +1728,32 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       progressLabel: t.book_read_progress(percent: percent),
       actionLabel: t.home_continue,
       onOpen: openHero,
+      queueTitle: t.book_continue_queue,
+      queue: <FushiContinueQueueItem>[
+        for (final MediaItem m in others.take(3))
+          FushiContinueQueueItem(
+            cover: Image(
+              image: mediaSource.getDisplayThumbnailFromMediaItem(
+                appModel: appModel,
+                item: m,
+              ),
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) =>
+                  _coverPlaceholderIcon(Icons.menu_book_outlined),
+            ),
+            title: mediaSource.getDisplayTitleFromMediaItem(m),
+            subtitle: t.book_read_progress(
+              percent: m.duration > 0
+                  ? (m.position / m.duration * 100).round()
+                  : 0,
+            ),
+            progress: m.duration > 0 ? m.position / m.duration : null,
+            onTap: () async {
+              final MediaSource source = m.getMediaSource(appModel: appModel);
+              await appModel.openMedia(ref: ref, mediaSource: source, item: m);
+            },
+          ),
+      ],
     );
   }
 

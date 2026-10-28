@@ -971,6 +971,15 @@ class ShelfCardMeta extends StatelessWidget {
             height: _kProgressHeight,
             child: value == null
                 ? null
+                : !eink
+                // M3E 平直静止进度（轨道间隙 + 末端停止点），与继续卡同一组件。
+                ? FushiLinearProgressIndicator(
+                    value: value.clamp(0.0, 1.0),
+                    minHeight: _kProgressHeight,
+                    wavy: false,
+                    color: fill,
+                    backgroundColor: apple ? track : null,
+                  )
                 : ClipRRect(
                     borderRadius: BorderRadius.circular(_kProgressHeight / 2),
                     child: DecoratedBox(

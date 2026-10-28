@@ -1423,6 +1423,7 @@
   "batch_tag_removed_items": "Removed tag $name from $n items.",
   "batch_tag_removed_video": "تمت إزالة وسم \"$name\" من $n فيديو.",
   "batch_tag_title": "إدارة العلامات",
+  "book_continue_queue": "Also reading",
   "book_continue_reading": "متابعة القراءة",
   "book_convert_blocked_already": "هذا الكتاب بالفعل بهذه الصيغة.",
   "book_convert_blocked_no_original": "تم استيراد هذه المانغا من صور، لذا لا يوجد كتاب أصلي للتحويل إليه.",

@@ -1423,6 +1423,7 @@
   "batch_tag_removed_items": "Removed tag $name from $n items.",
   "batch_tag_removed_video": "Đã xóa nhãn \"$name\" khỏi $n video.",
   "batch_tag_title": "Quản lý thẻ",
+  "book_continue_queue": "Also reading",
   "book_continue_reading": "Đọc tiếp",
   "book_convert_blocked_already": "Sách này đã ở định dạng đó rồi.",
   "book_convert_blocked_no_original": "Truyện tranh này được nhập từ hình ảnh, nên không có sách gốc để chuyển lại.",

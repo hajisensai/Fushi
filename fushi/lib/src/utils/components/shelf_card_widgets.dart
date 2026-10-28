@@ -599,9 +599,9 @@ class CoverProgressStrip extends StatelessWidget {
             key: progressKey,
             value: value,
             minHeight: height,
-            // MD3 封面上要的是一条贴底细线：Expressive 的波浪 + 轨道断口在
-            // 3px 高的封面条上读作噪点（还会常驻动画），走平直的 2023 形态。
-            year2023: apple ? null : true,
+            // MD3 封面上要的是一条贴底细线：M3E 平直静止形态（轨道间隙 +
+            // 末端停止点，不跑波浪动画）。
+            wavy: false,
             backgroundColor: eink
                 ? tokens.surfaces.page
                 : apple

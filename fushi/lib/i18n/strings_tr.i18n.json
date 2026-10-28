@@ -1423,6 +1423,7 @@
   "batch_tag_removed_items": "Removed tag $name from $n items.",
   "batch_tag_removed_video": "$n videodan \"$name\" etiketi kaldırıldı.",
   "batch_tag_title": "Etiketleri Yönet",
+  "book_continue_queue": "Also reading",
   "book_continue_reading": "Okumaya devam et",
   "book_convert_blocked_already": "Bu kitap zaten o formatta.",
   "book_convert_blocked_no_original": "Bu manga görsellerden içe aktarıldı, bu nedenle geri dönüştürülecek orijinal bir kitap yok.",

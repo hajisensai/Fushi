@@ -1423,6 +1423,7 @@
   "batch_tag_removed_items": "Removed tag $name from $n items.",
   "batch_tag_removed_video": "Тег «$name» удалён из видео ($n).",
   "batch_tag_title": "Управление тегами",
+  "book_continue_queue": "Also reading",
   "book_continue_reading": "Продолжить чтение",
   "book_convert_blocked_already": "Эта книга уже в этом формате.",
   "book_convert_blocked_no_original": "Эта манга была импортирована из изображений, поэтому исходная книга для обратной конвертации отсутствует.",

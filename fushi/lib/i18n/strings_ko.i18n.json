@@ -1423,6 +1423,7 @@
   "batch_tag_removed_items": "Removed tag $name from $n items.",
   "batch_tag_removed_video": "동영상 $n개에서 태그 \"$name\" 제거됨.",
   "batch_tag_title": "태그 관리",
+  "book_continue_queue": "Also reading",
   "book_continue_reading": "이어 읽기",
   "book_convert_blocked_already": "이 도서는 이미 해당 형식입니다.",
   "book_convert_blocked_no_original": "이 만화는 이미지에서 가져온 것이므로 되돌릴 원본 도서가 없습니다.",

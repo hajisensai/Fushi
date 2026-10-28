@@ -1423,6 +1423,7 @@
   "batch_tag_removed_items": "Removed tag $name from $n items.",
   "batch_tag_removed_video": "Menghapus tag \"$name\" dari $n video.",
   "batch_tag_title": "Kelola Tag",
+  "book_continue_queue": "Also reading",
   "book_continue_reading": "Lanjutkan membaca",
   "book_convert_blocked_already": "Buku ini sudah dalam format tersebut.",
   "book_convert_blocked_no_original": "Manga ini diimpor dari gambar, jadi tidak ada buku asli untuk dikonversi kembali.",

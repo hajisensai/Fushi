@@ -1423,6 +1423,7 @@
   "batch_tag_removed_items": "Removed tag $name from $n items.",
   "batch_tag_removed_video": "Tag „$name\" von $n Video(s) entfernt.",
   "batch_tag_title": "Tags verwalten",
+  "book_continue_queue": "Also reading",
   "book_continue_reading": "Weiterlesen",
   "book_convert_blocked_already": "Dieses Buch ist bereits in diesem Format.",
   "book_convert_blocked_no_original": "Dieses Manga wurde aus Bildern importiert, daher gibt es kein Originalbuch zur Rückumwandlung.",

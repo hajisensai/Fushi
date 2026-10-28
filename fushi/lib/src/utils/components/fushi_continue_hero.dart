@@ -45,6 +45,8 @@ class FushiContinueHero extends StatelessWidget {
     this.metaIcon,
     this.backdrop,
     this.backdropAspectRatio,
+    this.queue = const <FushiContinueQueueItem>[],
+    this.queueTitle,
     super.key,
   });
 
@@ -92,6 +94,11 @@ class FushiContinueHero extends StatelessWidget {
   /// 贴在卡片行尾（宽封顶卡宽 65%），起始边渐隐进卡面色，不再铺满裁成一条。
   /// null = 铺满整卡（模糊封面这类没有构图的底纹）。
   final double? backdropAspectRatio;
+
+  /// 宽卡右侧的「也在读 / 最近玩过」队列（最多 3 条）：把宽屏卡片右半边的空白
+  /// 用起来。窄卡、或卡上有行尾剧照（[backdropAspectRatio]）时不画。
+  final List<FushiContinueQueueItem> queue;
+  final String? queueTitle;
 
   /// 第一行元信息前的小图标（视频远端条目的云图标）。
   final IconData? metaIcon;
@@ -287,6 +294,11 @@ class FushiContinueHero extends StatelessWidget {
             return Stack(children: <Widget>[layer, padded]);
           }
 
+          final bool showQueue =
+              roomy &&
+              stillAspect == null &&
+              queue.isNotEmpty &&
+              c.maxWidth >= 900;
           if (roomy) {
             // 宽卡：封面 | 信息列（眉标 → 标题 → 元信息 → 进度 → 按钮），右侧整块
             // 留给海报；信息列封顶 520，进度条不被拉成整行长线。
@@ -312,6 +324,18 @@ class FushiContinueHero extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (showQueue) ...<Widget>[
+                    SizedBox(width: gap),
+                    SizedBox(
+                      width: (c.maxWidth * 0.34).clamp(280.0, 400.0),
+                      child: _ContinueQueuePanel(
+                        title: queueTitle,
+                        items: queue.take(3).toList(growable: false),
+                        coverAspectRatio: coverAspectRatio,
+                        accent: accent,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             );
@@ -344,5 +368,129 @@ class FushiContinueHero extends StatelessWidget {
     return index == null
         ? lifted
         : FushiStaggeredEntrance(index: index, child: lifted);
+  }
+}
+
+/// [FushiContinueHero.queue] 的一条。
+@immutable
+class FushiContinueQueueItem {
+  const FushiContinueQueueItem({
+    required this.cover,
+    required this.title,
+    required this.onTap,
+    this.subtitle,
+    this.progress,
+    this.key,
+  });
+
+  final Widget cover;
+  final String title;
+  final String? subtitle;
+
+  /// 0..1；null = 不画进度。
+  final double? progress;
+  final VoidCallback onTap;
+  final Key? key;
+}
+
+/// 继续卡右侧的队列面板：半透明卡面上的小标题 + 至多 3 行（小封面、标题、
+/// 副标题 / M3E 平直进度）。每行自带按压 / 悬停 / 焦点。
+class _ContinueQueuePanel extends StatelessWidget {
+  const _ContinueQueuePanel({
+    required this.items,
+    required this.coverAspectRatio,
+    required this.accent,
+    this.title,
+  });
+
+  final String? title;
+  final List<FushiContinueQueueItem> items;
+  final double coverAspectRatio;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    const double thumbHeight = 48;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: tokens.surfaces.page.withValues(alpha: 0.42),
+        borderRadius: const BorderRadius.all(Radius.circular(20)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (title != null)
+              Padding(
+                padding: const EdgeInsetsDirectional.only(start: 8, bottom: 4),
+                child: Text(title!, style: tokens.type.sectionLabel),
+              ),
+            for (final FushiContinueQueueItem item in items)
+              Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  key: item.key,
+                  borderRadius: const BorderRadius.all(Radius.circular(12)),
+                  onTap: item.onTap,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        SizedBox(
+                          height: thumbHeight,
+                          width: thumbHeight * coverAspectRatio,
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.all(
+                              Radius.circular(6),
+                            ),
+                            child: item.cover,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                item.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: tokens.type.listTitle,
+                              ),
+                              if (item.subtitle != null)
+                                Text(
+                                  item.subtitle!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: tokens.type.metadata,
+                                ),
+                              if (item.progress != null) ...<Widget>[
+                                const SizedBox(height: 6),
+                                FushiLinearProgressIndicator(
+                                  value: item.progress!.clamp(0.0, 1.0),
+                                  minHeight: 3,
+                                  wavy: false,
+                                  color: accent,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }

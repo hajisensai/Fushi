@@ -1750,7 +1750,7 @@ class _MemberListRow extends StatelessWidget {
                               ),
                               value: progress.clamp(0.0, 1.0),
                               minHeight: 4,
-                              year2023: apple ? null : true,
+                              wavy: false,
                               color:
                                   info?.readStatus == ShelfReadStatus.finished
                                   ? (apple
