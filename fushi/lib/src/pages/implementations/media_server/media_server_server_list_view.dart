@@ -8,6 +8,8 @@ import 'package:fushi/src/pages/implementations/media_server/media_server_aggreg
 import 'package:fushi/src/pages/implementations/media_server/media_server_home_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -277,27 +279,163 @@ class _MediaServerListViewState extends State<MediaServerListView> {
   }
 
   Widget _buildEmpty(double top) {
-    return Padding(
+    return MediaServerListEmpty(
       key: ValueKey<String>('media-server-list-empty-$_epoch'),
+      top: top,
+      onOpenSettings: widget.onOpenSettings,
+    );
+  }
+
+  Widget _buildList(List<MediaServerEntry> servers, double top) {
+    return MediaServerGroupedList(
+      key: ValueKey<String>('media-server-list-body-$_epoch'),
+      top: top,
+      onOpenSettings: widget.onOpenSettings,
+      rows: <MediaServerListRowData>[
+        for (final MediaServerEntry entry in servers) _rowFor(entry),
+      ],
+    );
+  }
+
+  MediaServerListRowData _rowFor(MediaServerEntry entry) {
+    final MediaServerBrowser browser = entry.browser;
+    final MediaServerFamily family = mediaServerFamilyOf(browser.serverId);
+    return MediaServerListRowData(
+      id: browser.serverId,
+      name: browser.displayName,
+      url: browser.serverUrl,
+      kindLabel: mediaServerFamilyLabel(family),
+      icon: mediaServerFamilyIcon(family),
+      accountName: entry.accountName,
+      onTap: () => _openServer(entry),
+      // 多线路时行尾一个「切换线路」菜单：出门在外从局域网地址切到公网地址
+      // 不用进设置；只有一条线路时不出这个入口。
+      trailing: entry.canSwitchRoute
+          ? FushiPopupMenuButton<String>(
+              key: ValueKey<String>(
+                'media-server-route-switch-${browser.serverId}',
+              ),
+              tooltip: t.media_server_route_switch,
+              icon: const FushiIcon(FushiIcons.swap),
+              initialValue: browser.serverUrl,
+              onSelected: (String url) {
+                if (url == browser.serverUrl) return;
+                unawaited(() async {
+                  await entry.onSwitchRoute?.call(url);
+                  if (mounted) _reload();
+                }());
+              },
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                for (final String url in entry.routeUrls)
+                  CheckedPopupMenuItem<String>(
+                    value: url,
+                    checked: url == browser.serverUrl,
+                    child: Text(url, overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+            )
+          : null,
+    );
+  }
+}
+
+/// 「选择服务器」列表里的一行（视频 Jellyfin / Emby / Plex 与书 / 漫画的
+/// Kavita / Audiobookshelf 共用同一种行）。
+class MediaServerListRowData {
+  const MediaServerListRowData({
+    required this.id,
+    required this.name,
+    required this.url,
+    required this.kindLabel,
+    required this.icon,
+    required this.onTap,
+    this.accountName,
+    this.trailing,
+  });
+
+  /// 行身份（key / 焦点 id 用），同一列表内唯一。
+  final String id;
+  final String name;
+  final String url;
+
+  /// 类型名（产品名不翻译）。
+  final String kindLabel;
+  final IconData icon;
+
+  /// 点行：进这台服务器。
+  final VoidCallback onTap;
+
+  /// 登录账号名；空则不显示。
+  final String? accountName;
+
+  /// 行尾 chevron 前的附加动作（视频的「切换线路」菜单）。
+  final Widget? trailing;
+}
+
+/// 打开「设置 › 服务」（媒体服务器在这里增删）。
+void openMediaServerSettings(BuildContext context) {
+  Navigator.of(context, rootNavigator: true).push<void>(
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) =>
+          SettingsDetailPage(destination: buildServicesDestination()),
+    ),
+  );
+}
+
+/// 没有服务器的空态：提示 + 「去设置添加服务器」。
+class MediaServerListEmpty extends StatelessWidget {
+  const MediaServerListEmpty({
+    required this.top,
+    required this.onOpenSettings,
+    super.key,
+  });
+
+  /// 顶部让位（浮动工具区高度）。
+  final double top;
+  final VoidCallback onOpenSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
       padding: EdgeInsets.only(top: top),
       child: FushiPlaceholderMessage(
         icon: FushiIcons.server,
         message: t.media_server_servers_empty_hint,
         action: FushiFilledButton.tonalIcon(
           key: const ValueKey<String>('media-server-list-go-settings'),
-          onPressed: widget.onOpenSettings,
+          onPressed: onOpenSettings,
           icon: const FushiIcon(FushiIcons.settingsGear),
           label: Text(t.media_server_servers_go_settings),
         ),
       ),
     );
   }
+}
 
-  Widget _buildList(List<MediaServerEntry> servers, double top) {
+/// 「选择服务器」正文（2026-10 重做，视频 / 书 / 漫画共用）：设置风格的分组
+/// 列表——每台一行（类型图标 / 服务器名 / 当前地址 / 类型 · 账号 / 行尾动作 /
+/// chevron），组下方一行「去设置添加服务器」。MD3 是分段卡、Apple 是 inset
+/// grouped（[FushiGroupedListItem]），行在进场窗口里错峰淡入。
+class MediaServerGroupedList extends StatelessWidget {
+  const MediaServerGroupedList({
+    required this.rows,
+    required this.top,
+    required this.onOpenSettings,
+    super.key,
+  });
+
+  final List<MediaServerListRowData> rows;
+
+  /// 顶部让位（浮动工具区高度），加成列表顶部内边距。
+  final double top;
+  final VoidCallback onOpenSettings;
+
+  @override
+  Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final int count = servers.length;
+    final int count = rows.length;
     return FushiEntranceScope(
-      key: ValueKey<String>('media-server-list-body-$_epoch'),
       child: ListView(
         key: const PageStorageKey<String>('media-server-list'),
         padding: EdgeInsets.fromLTRB(
@@ -319,16 +457,11 @@ class _MediaServerListViewState extends State<MediaServerListView> {
                       index: i,
                       child: _ServerRow(
                         key: ValueKey<String>(
-                          'media-server-card-${servers[i].browser.serverId}',
+                          'media-server-card-${rows[i].id}',
                         ),
-                        entry: servers[i],
+                        row: rows[i],
                         index: i,
                         count: count,
-                        onTap: () => _openServer(servers[i]),
-                        onSwitchRoute: (String url) async {
-                          await servers[i].onSwitchRoute?.call(url);
-                          if (mounted) _reload();
-                        },
                       ),
                     ),
                   SizedBox(height: tokens.spacing.section),
@@ -339,8 +472,8 @@ class _MediaServerListViewState extends State<MediaServerListView> {
                       index: 0,
                       count: 1,
                       focusId: const FushiFocusId('media-server-list-add'),
-                      onTap: widget.onOpenSettings,
-                      child: const MediaServerAddRow(),
+                      onTap: onOpenSettings,
+                      child: const _AddServerRow(),
                     ),
                   ),
                 ],
@@ -353,30 +486,25 @@ class _MediaServerListViewState extends State<MediaServerListView> {
   }
 }
 
-/// 一台服务器的分组行。整行可点（进首页），焦点目标由行外壳挂。
+/// 一台服务器的分组行。整行可点（进这台服务器），焦点目标由行外壳挂。
 class _ServerRow extends StatelessWidget {
   const _ServerRow({
-    required this.entry,
+    required this.row,
     required this.index,
     required this.count,
-    required this.onTap,
-    required this.onSwitchRoute,
     super.key,
   });
 
-  final MediaServerEntry entry;
+  final MediaServerListRowData row;
   final int index;
   final int count;
-  final VoidCallback onTap;
-  final Future<void> Function(String url) onSwitchRoute;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool apple = isGlassDesign(context);
-    final MediaServerBrowser browser = entry.browser;
-    final String? account = entry.accountName;
-    final MediaServerFamily family = mediaServerFamilyOf(browser.serverId);
+    final String? account = row.accountName;
+    final Widget? trailing = row.trailing;
     const double badge = 40;
     final double rowPad = tokens.spacing.rowHorizontal;
     final TextStyle secondary = tokens.type.metadata.copyWith(
@@ -387,8 +515,8 @@ class _ServerRow extends StatelessWidget {
       count: count,
       // Apple 分隔线从文字起点开始（行内边距 + 图标盒 + 间距）。
       separatorIndent: rowPad + badge + rowPad,
-      focusId: FushiFocusId('media-server-card-${browser.serverId}'),
-      onTap: onTap,
+      focusId: FushiFocusId('media-server-card-${row.id}'),
+      onTap: row.onTap,
       child: Padding(
         padding: EdgeInsets.symmetric(
           horizontal: rowPad,
@@ -399,7 +527,7 @@ class _ServerRow extends StatelessWidget {
             // 类型图标走 M3E 行首形状底（secondaryContainer 方圆角；Apple 是
             // iOS 设置式彩色圆角方块；墨水屏描边无底）。
             FushiListLeadingIcon(
-              mediaServerFamilyIcon(family),
+              row.icon,
               shape: FushiLeadingShape.square,
               size: badge,
               iconSize: 22,
@@ -410,21 +538,21 @@ class _ServerRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Text(
-                    browser.displayName,
+                    row.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: tokens.type.listTitle,
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    browser.serverUrl,
+                    row.url,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: secondary,
                   ),
                   Row(
                     children: <Widget>[
-                      Text(mediaServerFamilyLabel(family), style: secondary),
+                      Text(row.kindLabel, style: secondary),
                       if (account != null && account.isNotEmpty) ...<Widget>[
                         Text('  ·  ', style: secondary),
                         Flexible(
@@ -441,28 +569,7 @@ class _ServerRow extends StatelessWidget {
                 ],
               ),
             ),
-            // 多线路时行尾一个「切换线路」菜单：出门在外从局域网地址切到公网地址
-            // 不用进设置；只有一条线路时不出这个入口。
-            if (entry.canSwitchRoute)
-              FushiPopupMenuButton<String>(
-                key: ValueKey<String>(
-                  'media-server-route-switch-${browser.serverId}',
-                ),
-                tooltip: t.media_server_route_switch,
-                icon: const FushiIcon(FushiIcons.swap),
-                initialValue: browser.serverUrl,
-                onSelected: (String url) {
-                  if (url != browser.serverUrl) unawaited(onSwitchRoute(url));
-                },
-                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                  for (final String url in entry.routeUrls)
-                    CheckedPopupMenuItem<String>(
-                      value: url,
-                      checked: url == browser.serverUrl,
-                      child: Text(url, overflow: TextOverflow.ellipsis),
-                    ),
-                ],
-              ),
+            if (trailing != null) trailing,
             const SizedBox(width: 4),
             if (apple)
               const FushiAppleChevron()
@@ -480,8 +587,8 @@ class _ServerRow extends StatelessWidget {
 
 /// 组下方的「去设置添加服务器」行：primary 色块圆底加号 + 强调色文字（iOS 设置
 /// 「添加账户」口径）。
-class MediaServerAddRow extends StatelessWidget {
-  const MediaServerAddRow({super.key});
+class _AddServerRow extends StatelessWidget {
+  const _AddServerRow();
 
   @override
   Widget build(BuildContext context) {

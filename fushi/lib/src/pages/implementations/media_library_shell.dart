@@ -27,10 +27,6 @@ enum MediaLibraryViewKind {
   /// （BUG-1710）。
   browse,
 
-  /// Kavita 书籍库：用户自己服务器上的 EPUB（流式阅读 / 下载 / 进度同步）。
-  /// 仅在配置了可用 Kavita 服务器时出现。
-  kavita,
-
   /// 在线来源：已装扩展提供的在线源（与「浏览 › 来源」同一组件）。
   onlineSources,
 
@@ -42,13 +38,14 @@ enum MediaLibraryViewKind {
   /// 两个独立视图，不在这里。
   sources,
 
-  /// 用户自己的 Audiobookshelf 服务器：浏览书库 / 播客并流式播放（只在书域）。有
-  /// 已登录的服务器才出现，登录 / 登出时会在视图列表中间出现或消失，所以壳按
-  /// **kind** 而不是按下标记住选中项（见 `didUpdateWidget`）。
-  audiobookshelf,
-
   /// 「媒体服务器」：用户自己的 Kavita / Audiobookshelf 服务器列表（书 / 漫画域），
-  /// 点进某台浏览。与视频域的「媒体服务器」分区同位同构。
+  /// 点进某台浏览。与视频域的「媒体服务器」分区共用同一个列表组件。只在配了可用
+  /// 服务器时出现，增删服务器时会在视图列表中间出现或消失，所以壳按 **kind**
+  /// 而不是按下标记住选中项（见 `didUpdateWidget`）。
+  ///
+  /// 原先的 `kavita` / `audiobookshelf` 两个视图并进了这里；用户自定义页签顺序里
+  /// 存的旧 id（`kavita` / `audiobookshelf`）按「存储里有但此刻不存在的忽略」规则
+  /// 自然失效，不需要迁移。
   mediaServers,
 
   // 「设置」视图已移除（2026-10-09 用户拍板）：它只是全局「设置 › <本域>」分类的

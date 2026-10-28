@@ -187,11 +187,23 @@ void main() {
       'lib/src/pages/implementations/home_reader_page.dart',
     ).readAsStringSync().replaceAll(RegExp(r'\s+'), '');
 
-    test('Kavita / Audiobookshelf 合并为一个「媒体服务器」标签，常驻、不挂 iOS 受限门', () {
-      expect(source, contains('kind:MediaLibraryViewKind.mediaServers,'));
-      expect(source, contains('BookMediaServersView()'));
-      expect(source, isNot(contains('MediaLibraryViewKind.audiobookshelf')));
-      expect(source, isNot(contains('MediaLibraryViewKind.kavita')));
+    test('Kavita / Audiobookshelf 合并为一个「媒体服务器」标签：配了服务器才出现、订阅配置变化、不挂 iOS 受限门', () {
+      expect(
+        source,
+        contains(
+          'finalboolmediaServers=ref.watch(userMediaServersAvailableProvider(UserMediaServersDomain.book),);',
+        ),
+      );
+      expect(
+        source,
+        contains(
+          'if(mediaServers)MediaLibraryViewSpec(kind:MediaLibraryViewKind.mediaServers,',
+        ),
+      );
+      expect(
+        source,
+        contains('UserMediaServersView(domain:UserMediaServersDomain.book)'),
+      );
       final int entry = source.indexOf(
         'kind:MediaLibraryViewKind.mediaServers',
       );
