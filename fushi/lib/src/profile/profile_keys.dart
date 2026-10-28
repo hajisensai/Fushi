@@ -16,7 +16,10 @@ import 'package:fushi/src/media/video/video_screenshot_destination.dart'
     show kVideoScreenshotDirectoryPref;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preference_keys.dart'
-    show kAnkiSettingsPrefKey, kSectionTabOrderPrefKeyPrefix;
+    show
+        kAnkiSettingsPrefKey,
+        kLibraryManualOrderPrefKeyPrefix,
+        kSectionTabOrderPrefKeyPrefix;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/srs/srs_providers.dart'
     show kSrsLapisMigrationReminderPrefKey;
@@ -186,6 +189,7 @@ class ProfileKeys {
     // 库页顶部页签的用户顺序与底栏模块顺序同族：描述这台设备的入口布局。进快照
     // 的话切 Profile 会把刚排好的顺序剪掉或换回旧值。
     kSectionTabOrderPrefKeyPrefix,
+    kLibraryManualOrderPrefKeyPrefix,
   ];
 
   /// BUG-1018 (A4): per-item display-name overrides are CONTENT tied to a

@@ -14,6 +14,7 @@ import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show ShelfReadStatus;
@@ -45,9 +46,11 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 /// - **成员工具条**：合集内搜索、筛选（标签 / 阅读状态）、排序（卷号 / 添加时间 /
 ///   阅读时间 / 手动）、网格 ↔ 列表、多选。卷号 / 添加时间 / 阅读时间是**视图排序**
 ///   （不落库），「存为手动顺序」才写穿 sortIndex（即旧的一键整理）。
-/// - **成员**：手动序且无筛选时是可拖排网格（[FushiReorderableGrid]，消缩放 2D 拖排，
+/// - **成员**：无筛选的网格是可拖排网格（[FushiReorderableGrid]，消缩放 2D 拖排，
 ///   落盘 sortIndex 与库页合集行同源，筛选态下保序合并 [mergeCollectionOrder]）；
-///   其余是错峰进场的普通网格 / 列表。
+///   其余是错峰进场的普通网格 / 列表。长按与库页卡片同一时机直接弹成员菜单；
+///   触屏重排从菜单「排序」进入排序模式（[LibraryReorderHost]，筛选 / 列表下
+///   也进拖排网格），底部 [LibraryReorderBar]「完成」退出。
 /// - **多选批量**：移出合集、打标签（共享 [showTagPicker]）、标记读完 / 未读、移到
 ///   其他合集；底部 M3E 浮动操作栏（spring 进出）。
 ///
@@ -107,7 +110,7 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
   /// 弹窗按它数各合集的成员（BUG-3361）。null = 按原始成员行数。
   final CollectionMemberVisibility? isMemberVisible;
 
-  /// 成员卡的上下文菜单（网格右键 / 触摸长按松手）。非 null 时整个菜单交给调用方：
+  /// 成员卡的上下文菜单（网格右键 / 触摸长按）。非 null 时整个菜单交给调用方：
   /// 书架传入与库页书卡**同一个**菜单构建（标签 / 标记读完 / 删除 / 重命名…再补
   /// 「移出合集」，[onRemoveFromCollection] 即本页的移出流程），合集内外右键一致
   /// （BUG-2969：此前合集内只有「打开 / 移出」两项，选不了标签、也读不出这是同一本书）。
@@ -157,7 +160,9 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
 
 class _MediaCollectionGridDetailPageState
     extends State<MediaCollectionGridDetailPage>
-    with CollectionDetailShared<MediaCollectionGridDetailPage> {
+    with
+        CollectionDetailShared<MediaCollectionGridDetailPage>,
+        LibraryReorderHost<MediaCollectionGridDetailPage> {
   late String _name;
   List<MediaCollectionItemRow> _rows = const <MediaCollectionItemRow>[];
 
@@ -203,6 +208,9 @@ class _MediaCollectionGridDetailPageState
   bool _filtersOpen = false;
   bool _selecting = false;
   final Set<String> _selected = <String>{};
+
+  /// 排序模式（成员菜单「排序」进入）：触屏按住即拖，见 [LibraryReorderHost]。
+  bool _reordering = false;
 
   /// hero 滚出视口后 AppBar 才显示合集名。
   bool _titleVisible = false;
@@ -457,7 +465,7 @@ class _MediaCollectionGridDetailPageState
     widget.onChanged();
   }
 
-  /// 长按（原地松手）/ 右键 / 「⋯」上下文菜单。
+  /// 长按 / 右键 / 「⋯」上下文菜单（菜单里的「排序」进入本页排序模式）。
   ///
   /// 容器由 [showMediaItemActions] 按触发方式决定，与库页卡片同一套：右键（同步
   /// 派发期间 [activeContextMenuAnchor] 非空）在指针处弹右键菜单，长按 / ⋯ /
@@ -475,11 +483,16 @@ class _MediaCollectionGridDetailPageState
     shared = widget.onShowMemberMenu;
     if (shared != null) {
       // BUG-2969：调用方的卡片菜单（与库页同一份），移出合集仍走本页流程。
-      await shared(
-        row.mediaType,
-        row.entryKey,
-        onRemoveFromCollection: () => _removeMember(row),
-      );
+      // 菜单在调用方 context 上弹出，「排序」入口须同步压成本页的（否则指向库页）。
+      Future<void> pending = Future<void>.value();
+      runWithLibraryReorder(_startReorder, () {
+        pending = shared(
+          row.mediaType,
+          row.entryKey,
+          onRemoveFromCollection: () => _removeMember(row),
+        );
+      });
+      await pending;
       if (mounted) await _reload();
       return;
     }
@@ -529,8 +542,25 @@ class _MediaCollectionGridDetailPageState
     setState(() {
       _selecting = !_selecting;
       _selected.clear();
+      _reordering = false;
     });
   }
+
+  // ── 排序模式 ──────────────────────────────────────────────────────────
+
+  void _startReorder() {
+    if (!mounted) return;
+    setState(() {
+      _reordering = true;
+      _selecting = false;
+      _selected.clear();
+    });
+  }
+
+  void _endReorder() => setState(() => _reordering = false);
+
+  @override
+  VoidCallback? get libraryReorderEntry => _startReorder;
 
   void _toggleSelected(CollectionMemberEntry entry) {
     setState(() {
@@ -744,14 +774,24 @@ class _MediaCollectionGridDetailPageState
             : entries.isEmpty
             ? _EmptyCollection(onBack: () => Navigator.of(context).maybePop())
             : PopScope(
-                canPop: !_selecting,
+                canPop: !_selecting && !_reordering,
                 onPopInvokedWithResult: (bool didPop, Object? _) {
-                  if (!didPop && _selecting) _endSelection();
+                  if (didPop) return;
+                  if (_reordering) {
+                    _endReorder();
+                  } else if (_selecting) {
+                    _endSelection();
+                  }
                 },
                 child: Stack(
                   children: <Widget>[
                     _buildScroll(entries, arranged, cards, filtered),
                     _buildSelectionBar(arranged),
+                    LibraryReorderBar.overlay(
+                      context: context,
+                      visible: _reordering,
+                      onDone: _endReorder,
+                    ),
                   ],
                 ),
               ),
@@ -788,10 +828,12 @@ class _MediaCollectionGridDetailPageState
         // 任何排序下都可拖：拖一次即把当前显示顺序连同这次移动存为手动序
         // （[_onReorder]）。此前只在「手动」下才进拖排网格，而默认排序是卷号，
         // 没手动排过的合集一律拖不动、长按还弹菜单（用户实报「不能拖动排序」）。
+        // 排序模式下筛选 / 列表也进拖排网格（筛选态由 [mergeCollectionOrder] 保序合并）。
         final bool canReorder =
-            !filtered &&
-            !_selecting &&
-            _viewMode == CollectionMemberViewMode.grid;
+            _reordering ||
+            (!filtered &&
+                !_selecting &&
+                _viewMode == CollectionMemberViewMode.grid);
 
         // hero 叠层封面与成员卡同一套条目材质：按成员主类型（数量最多的那类）选。
         final ShelfCoverMaterial? heroMaterial = _dominantCoverMaterial(_rows);
@@ -887,7 +929,7 @@ class _MediaCollectionGridDetailPageState
               ),
             ),
           );
-        } else if (_viewMode == CollectionMemberViewMode.list) {
+        } else if (_viewMode == CollectionMemberViewMode.list && !canReorder) {
           slivers.add(
             SliverPadding(
               padding: EdgeInsets.symmetric(horizontal: hPad),
@@ -913,9 +955,9 @@ class _MediaCollectionGridDetailPageState
             ),
           );
         } else if (canReorder) {
-          // 无筛选：消缩放 2D 拖排网格（轻点 → 打开、按下 / 长按拖 → 重排、
-          // 长按松手 / 右键 → 上下文菜单）。卡片包在 IgnorePointer 里，避免其内部
-          // InkWell 的 long-press 与网格触摸拖拽争用手势竞技场。
+          // 消缩放 2D 拖排网格（轻点 → 打开、鼠标按下拖 → 重排、长按 / 右键 →
+          // 上下文菜单；排序模式下触屏按住即拖）。卡片包在 IgnorePointer 里，避免
+          // 其内部 InkWell 的 long-press 与网格触摸手势争用竞技场。
           slivers.add(
             SliverPadding(
               padding: EdgeInsets.symmetric(horizontal: hPad),
@@ -927,6 +969,7 @@ class _MediaCollectionGridDetailPageState
                   crossAxisSpacing: spacing,
                   mainAxisSpacing: spacing,
                   feedbackBorderRadius: FushiBorderRadius.card,
+                  reordering: _reordering,
                   keyForIndex: (int i) => ValueKey<String>(arranged[i].key),
                   onReorder: (int from, int to) =>
                       _onReorder(arranged, from, to),
@@ -984,7 +1027,9 @@ class _MediaCollectionGridDetailPageState
         // 底部留白：多选浮动栏出现时不压住末行。
         slivers.add(
           SliverToBoxAdapter(
-            child: SizedBox(height: _selecting ? 120 : tokens.spacing.card * 2),
+            child: SizedBox(
+              height: _selecting || _reordering ? 120 : tokens.spacing.card * 2,
+            ),
           ),
         );
         // 2026-10 动效：hero / 工具条 / 成员错峰进场。

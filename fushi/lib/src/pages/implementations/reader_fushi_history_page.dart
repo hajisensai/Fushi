@@ -143,6 +143,8 @@ import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
+import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart'
@@ -235,7 +237,8 @@ class ReaderFushiHistoryPage extends HistoryReaderPage {
 }
 
 class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
-    extends HistoryReaderPageState {
+    extends HistoryReaderPageState
+    with LibraryReorderHost<BaseHistoryPage> {
   ReaderFushiHistoryPage get _pageWidget => widget as ReaderFushiHistoryPage;
   bool get _mangaOnly => _pageWidget.mangaOnly;
 
@@ -350,9 +353,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   _RemoteBookState? _lastRemoteState;
 
   /// 排序交互重设计层次 A：当前排序方式（偏好 `shelf_sort_mode` 持久化，默认
-  /// 最近阅读=历史序，现状零变化）。旧 `ShelfEntries.sortOrder` 手动权重已废弃。
+  /// 最近阅读=历史序，现状零变化）。旧 `ShelfEntries.sortOrder` 手动权重已废弃；
+  /// 「手动」的顺序存在偏好 `library_manual_order::book` / `::manga`。
   Future<void>? _shelfMapsFuture;
   ShelfSortMode _sortMode = ShelfSortMode.recent;
+
+  /// 「手动」排序的名次表（单元 tieKey → 下标），见 [compareShelfSortKeys]。
+  Map<String, int> _manualRanks = <String, int>{};
+
+  /// 排序模式（条目菜单「排序」进入，[LibraryReorderHost]）：主网格换成拖排网格，
+  /// 触屏按住即拖，底部「完成」退出。
+  bool _reordering = false;
+
+  /// 本帧按当前排序排好、尚未经标签筛选的全部单元 tieKey：进排序模式时用它给
+  /// 手动序播种（被筛掉的单元也按原位排进去）。
+  List<String> _sortedUnitKeys = const <String>[];
+
+  /// 书架与漫画库各存一份手动序（同一页面类，单元集合不同）。
+  String get _manualOrderLibrary => _mangaOnly ? 'manga' : 'book';
 
   /// P5-A：书架搜索词（原文，匹配时才归一化）。**刻意不持久化**——下次进书架还
   /// 挂着上次的搜索词只会让人以为书没了（与游戏库页同一决定）。
@@ -505,7 +523,53 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   }
 
   void _toggleSelectionMode() {
-    setState(_selection.toggleMode);
+    setState(() {
+      _reordering = false;
+      _selection.toggleMode();
+    });
+  }
+
+  @override
+  VoidCallback? get libraryReorderEntry =>
+      _selectionMode ? null : _startReorder;
+
+  /// 进入排序模式：排序方式切到「手动」；之前不是手动的，先把当前显示顺序存成
+  /// 手动序，拖动从用户眼前的顺序开始。
+  void _startReorder() {
+    if (!mounted) return;
+    if (_sortMode != ShelfSortMode.manual) {
+      _setManualOrder(_sortedUnitKeys);
+    }
+    setState(() {
+      _reordering = true;
+      _sortMode = ShelfSortMode.manual;
+    });
+    unawaited(appModel.prefsRepo.setShelfSortModeName(_sortMode.name));
+  }
+
+  void _endReorder() => setState(() => _reordering = false);
+
+  void _setManualOrder(List<String> order) {
+    final String encoded = encodeShelfManualOrder(order);
+    _manualRanks = decodeShelfManualOrder(encoded);
+    unawaited(
+      appModel.prefsRepo.setLibraryManualOrder(_manualOrderLibrary, encoded),
+    );
+  }
+
+  /// 排序模式里的一次拖动：[visible] 是网格上的单元（显示顺序）。没有名次的单元
+  /// 显示在最前（[compareShelfSortKeys]），按显示顺序补进完整手动序再合并。
+  void _onShelfReorder(List<String> visible, int from, int to) {
+    final List<String> all = <String>[
+      for (final String key in visible)
+        if (!_manualRanks.containsKey(key)) key,
+      ..._manualRanks.keys,
+    ];
+    setState(
+      () => _setManualOrder(
+        moveInShelfManualOrder(all: all, visible: visible, from: from, to: to),
+      ),
+    );
   }
 
   void _exitSelectionMode() {
@@ -787,8 +851,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 只在书架所在分区可见时拦（HBK-AUDIT-017）：停在「发现」等视图时，背后保活
     // 的书架多选不能吃掉返回键。
     return SectionPopScope(
-      intercepting: _selectionMode,
-      onIntercept: _exitSelectionMode,
+      intercepting: _selectionMode || _reordering,
+      onIntercept: _reordering ? _endReorder : _exitSelectionMode,
       child: FushiFileDropTarget(
         debugLabel: 'reader-shelf',
         onDrop: _handleShelfDrop,
@@ -942,6 +1006,18 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                 ),
                 // 批量栏是多选态的底部浮动工具栏：弹簧从底边浮起 / 沉下（与视频库
                 // 同一形态）。
+                // 排序模式的「完成」栏：与批量栏同一种弹簧进出。
+                FushiSpringReveal(
+                  visible: _reordering,
+                  edge: VerticalDirection.down,
+                  maintainState: false,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Center(
+                      child: LibraryReorderBar(onDone: _endReorder),
+                    ),
+                  ),
+                ),
                 FushiSpringReveal(
                   visible: _selectionMode,
                   edge: VerticalDirection.down,
@@ -1192,6 +1268,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// epub 导入时间，外加偏好里的排序方式。
   Future<void> _loadShelfMaps() async {
     _sortMode = ShelfSortMode.fromName(appModel.prefsRepo.shelfSortModeName);
+    _manualRanks = decodeShelfManualOrder(
+      appModel.prefsRepo.libraryManualOrder(_manualOrderLibrary),
+    );
     // 书架 / 漫画库：本地分卷按系列自动收进合集（「志乃と恋」1–4 卷叠成一张卡）。
     // 每次导入 / 合集变化都会重载到这里，所以这一处覆盖全部导入入口；归组幂等，
     // 已在合集里的卷与用户删过 / 移出过的不动。
@@ -1298,6 +1377,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     ShelfSortMode.recent => t.sort_recent_read,
     ShelfSortMode.title => t.sort_title,
     ShelfSortMode.imported => t.sort_imported,
+    ShelfSortMode.manual => t.sort_manual,
   };
 
   /// 每本书（书稳定身份 → reader_positions.updatedAt 毫秒）的最后阅读时间；
@@ -1981,8 +2061,17 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         };
     shelfGroups.sort(
       (CollectionGroup<_ShelfBookSlot> a, CollectionGroup<_ShelfBookSlot> b) =>
-          compareShelfSortKeys(sortKeys[a]!, sortKeys[b]!, _sortMode),
+          compareShelfSortKeys(
+            sortKeys[a]!,
+            sortKeys[b]!,
+            _sortMode,
+            manualRanks: _manualRanks,
+          ),
     );
+    _sortedUnitKeys = <String>[
+      for (final CollectionGroup<_ShelfBookSlot> g in shelfGroups)
+        sortKeys[g]!.tieKey,
+    ];
     // 合集标签过滤：含【全部】选中标签的合集 id（null = 无选中标签，不过滤）。被标签
     // 过滤隐藏的合集连同成员从 shelfGroups 移除（成员随合集隐藏，符合按合集标签显隐
     // 语义）；散书由 filteredBookIdsProvider / filteredSrtBookIdsProvider 另行过滤。
@@ -2124,6 +2213,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                     shelfGroups,
                     epubCoverUrisByBookKey,
                     constraints,
+                    unitKeys: <String>[
+                      for (final CollectionGroup<_ShelfBookSlot> g
+                          in shelfGroups)
+                        sortKeys[g]!.tieKey,
+                    ],
                   ),
               ],
             ),
@@ -2142,16 +2236,50 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 用户拍板移除（切换要整棵 sliver 树换形、几百张卡重建，iOS 掉帧；合集多了还把
   /// 散书挤到很下面）。偏好 key `shelf_collection_layout` 冻结不用，旧值 `rows` 无人读取
   /// = 一律按格子显示。
+  ///
+  /// 排序模式（[_reordering]）下换成 [FushiReorderableGrid]：同列数、同格子比例，
+  /// 卡片包 [IgnorePointer]（手势归网格），[unitKeys] 是各格的单元 tieKey。
   List<Widget> _buildShelfGroupSlivers(
     List<CollectionGroup<_ShelfBookSlot>> groups,
     Map<String, String> epubCoverUrisByBookKey,
-    BoxConstraints constraints,
-  ) {
+    BoxConstraints constraints, {
+    required List<String> unitKeys,
+  }) {
     final ({int columns, double cardWidth}) cardLayout = unifiedShelfCardLayout(
       availableWidth: constraints.maxWidth,
       targetWidth: _gridExtent(context, constraints),
       spacing: 0,
     );
+    if (_reordering) {
+      return <Widget>[
+        SliverToBoxAdapter(
+          child: ShelfCoverMaterialScope(
+            material: ShelfCoverMaterial.glossyBook,
+            child: FushiReorderableGrid(
+              key: const ValueKey<String>('reader_shelf_reorder_grid'),
+              itemCount: groups.length,
+              crossAxisCount: cardLayout.columns,
+              childAspectRatio: kShelfBookCardAspectRatio,
+              reordering: true,
+              keyForIndex: (int i) => ValueKey<String>(unitKeys[i]),
+              onReorder: (int from, int to) =>
+                  _onShelfReorder(unitKeys, from, to),
+              itemBuilder: (_, int i) => FushiStaggeredEntrance(
+                index: i,
+                child: IgnorePointer(
+                  child: _buildShelfGroupCard(
+                    groups[i],
+                    epubCoverUrisByBookKey,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        // 底部浮动「完成」栏不压住末行。
+        const SliverToBoxAdapter(child: SizedBox(height: 96)),
+      ];
+    }
     return <Widget>[
       // 2026-10-25 库页定版：书架 / 漫画库的条目材质是光面书皮（单本）/ 扇形
       // （合集），墨水屏由 [shelfCoverMaterialOf] 自动退回描边封面框。只包网格：

@@ -20,6 +20,8 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
         kLegacyWebKnowledgeSiteIds,
         parseWebKnowledgeCustomSites,
         parseWebKnowledgeEnabledIds;
+import 'package:fushi/src/models/preference_keys.dart'
+    show kLibraryManualOrderPrefKeyPrefix;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
@@ -564,6 +566,15 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('shelf_sort_mode', name);
     notifyListeners();
   }
+
+  /// 库页「手动」排序的顺序（`decodeShelfManualOrder` 的输入），[library] 取
+  /// `book` / `manga` / `video` / `game`。
+  String libraryManualOrder(String library) =>
+      getPref('$kLibraryManualOrderPrefKeyPrefix$library', defaultValue: '')
+          as String;
+
+  Future<void> setLibraryManualOrder(String library, String encoded) =>
+      setPref('$kLibraryManualOrderPrefKeyPrefix$library', encoded);
 
   /// 书架搜索栏「阅读状态」筛选的 [ShelfReadStatus] `.name`（unread/reading/
   /// finished）；空串 = 全部。跨重启保留（与游戏库页游玩状态筛选同一决定）。

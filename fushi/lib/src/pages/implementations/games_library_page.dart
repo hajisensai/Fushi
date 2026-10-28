@@ -7,6 +7,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
+import 'package:fushi/src/utils/components/library_reorder.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart'
+    show SectionPopScope;
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
+    show decodeShelfManualOrder, encodeShelfManualOrder, moveInShelfManualOrder;
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/implementations/collection_management_page.dart';
@@ -125,7 +131,8 @@ class GamesLibraryPage extends ConsumerStatefulWidget {
   ConsumerState<GamesLibraryPage> createState() => _GamesLibraryPageState();
 }
 
-class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
+class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
+    with LibraryReorderHost<GamesLibraryPage> {
   /// 缓存 [AppModel]（`appProvider` 单例，实例不变）。
   late final AppModel _appModel = ref.read(appProvider);
 
@@ -237,6 +244,87 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   void _refresh() {
     if (!mounted) return;
     setState(() => _games = _repo.games);
+  }
+
+  /// 「手动」排序的名次表（单元 tieKey → 下标；合集 `c<id>`、游戏 id），存在偏好
+  /// `library_manual_order::game`。
+  late Map<String, int> _manualRanks = decodeShelfManualOrder(
+    _appModel.prefsRepo.libraryManualOrder(_manualOrderLibrary),
+  );
+
+  static const String _manualOrderLibrary = 'game';
+
+  /// 排序模式（条目菜单「排序」进入，[LibraryReorderHost]）：网格换成拖排网格，
+  /// 触屏按住即拖，底部「完成」退出。
+  bool _reordering = false;
+
+  /// 本帧按当前排序排好的网格单元 tieKey：进排序模式时用它给手动序播种。
+  List<String> _sortedUnitKeys = const <String>[];
+
+  @override
+  VoidCallback? get libraryReorderEntry => _startReorder;
+
+  /// 进入排序模式：排序方式切到「手动」；之前不是手动的，先把当前显示顺序存成
+  /// 手动序，拖动从用户眼前的顺序开始。
+  void _startReorder() {
+    if (!mounted) return;
+    if (_view.sortField != GalgameSortField.manual) {
+      _setManualOrder(_sortedUnitKeys);
+      _setView(_view.copyWith(sortField: GalgameSortField.manual));
+    }
+    setState(() => _reordering = true);
+  }
+
+  void _endReorder() => setState(() => _reordering = false);
+
+  void _setManualOrder(List<String> order) {
+    final String encoded = encodeShelfManualOrder(order);
+    _manualRanks = decodeShelfManualOrder(encoded);
+    unawaited(
+      _appModel.prefsRepo.setLibraryManualOrder(_manualOrderLibrary, encoded),
+    );
+  }
+
+  /// 排序模式里的一次拖动：[visible] 是网格上的单元（显示顺序）。没有名次的单元
+  /// 显示在最前，按显示顺序补进完整手动序再合并。
+  void _onGameReorder(List<String> visible, int from, int to) {
+    final List<String> all = <String>[
+      for (final String key in visible)
+        if (!_manualRanks.containsKey(key)) key,
+      ..._manualRanks.keys,
+    ];
+    setState(
+      () => _setManualOrder(
+        moveInShelfManualOrder(all: all, visible: visible, from: from, to: to),
+      ),
+    );
+  }
+
+  /// 网格单元的手动序身份：合集 `c<id>`、散卡游戏 id（与书架 / 视频库同形）。
+  static String _gameUnitKey(CollectionGroup<GalgameEntry> group) {
+    final MediaCollectionRow? collection = group.collection;
+    return collection == null
+        ? group.coverItem.payload.id
+        : 'c${collection.id}';
+  }
+
+  /// 「手动」排序：按名次升序；没有名次的（排好之后新加的）在最前、按添加时间
+  /// 倒序。合集取成员最晚的添加时间。
+  int _compareManualUnits(
+    CollectionGroup<GalgameEntry> a,
+    CollectionGroup<GalgameEntry> b,
+  ) {
+    final String ka = _gameUnitKey(a);
+    final String kb = _gameUnitKey(b);
+    final int? ra = _manualRanks[ka];
+    final int? rb = _manualRanks[kb];
+    if (ra != null && rb != null) return ra.compareTo(rb);
+    if (ra != null || rb != null) return ra == null ? -1 : 1;
+    int newest(CollectionGroup<GalgameEntry> g) => g.items
+        .map((CollectionOrderingItem<GalgameEntry> it) => it.importedAt)
+        .reduce((int x, int y) => x > y ? x : y);
+    final int c = newest(b).compareTo(newest(a));
+    return c != 0 ? c : ka.compareTo(kb);
   }
 
   /// 改视图状态并持久化（搜索词不落库，见 [GalgameLibraryView]）。
@@ -779,7 +867,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     // 等于重新把占位关进网格分支里。
     // 库页材质（2026-10-25 用户定版）：网格条目走透明卡盒（材质作用域挂在网格 sliver 上，
     // 见 [_buildLibrarySlivers]）。
-    final Widget body = FushiFileDropTarget(
+    final Widget content = FushiFileDropTarget(
       debugLabel: 'games-library',
       onDrop: (List<String> paths, Offset position) =>
           unawaited(_handleDrop(paths, position)),
@@ -808,6 +896,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             tagFilterActive: allowedIds != null,
           ),
         ),
+      ),
+    );
+    // 排序模式的「完成」栏叠在内容底部；返回键先退出排序模式。
+    final Widget body = SectionPopScope(
+      intercepting: _reordering,
+      onIntercept: _endReorder,
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(child: content),
+          LibraryReorderBar.overlay(
+            context: context,
+            visible: _reordering,
+            onDone: _endReorder,
+          ),
+        ],
       ),
     );
     // 嵌在游戏 tab 里（生产路径）：单件入口已统一收敛到「导入」分段（与书 /
@@ -1655,6 +1758,37 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           collectionsById: _collectionsById,
           memberSortIndex: _memberSortIndex,
         );
+    if (_view.sortField == GalgameSortField.manual) {
+      groups.sort(_compareManualUnits);
+    }
+    final List<String> unitKeys = <String>[
+      for (final CollectionGroup<GalgameEntry> g in groups) _gameUnitKey(g),
+    ];
+    _sortedUnitKeys = unitKeys;
+    if (_reordering) {
+      final double extent = _gameCardExtent(context, metrics.cardWidth);
+      return <Widget>[
+        SliverToBoxAdapter(
+          child: FushiReorderableGrid(
+            key: const ValueKey<String>('games_reorder_grid'),
+            itemCount: groups.length,
+            crossAxisCount: metrics.columns,
+            childAspectRatio: metrics.cardWidth / extent,
+            crossAxisSpacing: _kGameGridSpacing,
+            mainAxisSpacing: _kGameGridSpacing,
+            feedbackBorderRadius: FushiBorderRadius.card,
+            reordering: true,
+            keyForIndex: (int i) => ValueKey<String>(unitKeys[i]),
+            onReorder: (int from, int to) => _onGameReorder(unitKeys, from, to),
+            itemBuilder: (BuildContext context, int i) =>
+                FushiStaggeredEntrance(
+                  index: i,
+                  child: IgnorePointer(child: _buildGroupCard(groups[i])),
+                ),
+          ),
+        ),
+      ];
+    }
     final SliverGridDelegate gridDelegate =
         SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: metrics.columns,
@@ -2096,6 +2230,7 @@ String galgameSortFieldLabel(GalgameSortField field) => switch (field) {
   GalgameSortField.siteScore => t.game_sort_site_score,
   GalgameSortField.userRating => t.game_sort_user_rating,
   GalgameSortField.name => t.game_sort_name,
+  GalgameSortField.manual => t.sort_manual,
 };
 
 /// 本地/在线筛选的用户可读标签。
@@ -2112,6 +2247,7 @@ String? galgameSortValueLabel(GalgameEntry game, GalgameSortField field) {
   switch (field) {
     case GalgameSortField.added:
     case GalgameSortField.name:
+    case GalgameSortField.manual:
       return null;
     case GalgameSortField.releaseDate:
       return game.effectiveReleaseDate;

@@ -12,6 +12,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/src/utils/components/library_reorder.dart';
 
 // ---------------------------------------------------------------------------
 // Action data model
@@ -326,6 +327,14 @@ Future<T?> showMediaItemActions<T>({
   // 卡片右键经 [contextMenuInvoker] 同步派发到这里时，按下坐标就在
   // [activeContextMenuAnchor] 里；先 await 再弹的调用方自己在入口处读好传进来。
   final Offset? globalAnchor = anchor ?? activeContextMenuAnchor;
+  // 弹出处若可排序（库页 / 合集页的 [LibraryReorderHost]），把入口带进菜单路由，
+  // [MediaItemDialogFrame] 据此补一项「排序」。
+  final VoidCallback? onStartReorder = libraryReorderEntryOf(context);
+  Widget host(MediaItemActionsLayout layout, Widget child) =>
+      LibraryReorderScope(
+        onStartReorder: onStartReorder,
+        child: MediaItemActionsHost(layout: layout, child: child),
+      );
   if (globalAnchor != null) {
     final NavigatorState navigator = Navigator.of(context, rootNavigator: true);
     // 全局 UI 缩放下 Overlay 与屏幕坐标不同尺度：一律经 globalToLocal 换算
@@ -342,10 +351,8 @@ Future<T?> showMediaItemActions<T>({
           context,
         ).modalBarrierDismissLabel,
         reduceMotion: !fushiMotionEnabled(context),
-        builder: (BuildContext menuContext) => MediaItemActionsHost(
-          layout: MediaItemActionsLayout.contextMenu,
-          child: builder(menuContext),
-        ),
+        builder: (BuildContext menuContext) =>
+            host(MediaItemActionsLayout.contextMenu, builder(menuContext)),
       ),
     );
   }
@@ -356,18 +363,14 @@ Future<T?> showMediaItemActions<T>({
   if (narrow && !isCupertinoPlatform(context)) {
     return adaptiveModalSheet<T>(
       context: context,
-      builder: (BuildContext sheetContext) => MediaItemActionsHost(
-        layout: MediaItemActionsLayout.sheet,
-        child: builder(sheetContext),
-      ),
+      builder: (BuildContext sheetContext) =>
+          host(MediaItemActionsLayout.sheet, builder(sheetContext)),
     );
   }
   return showAppDialog<T>(
     context: context,
-    builder: (BuildContext dialogContext) => MediaItemActionsHost(
-      layout: MediaItemActionsLayout.dialog,
-      child: builder(dialogContext),
-    ),
+    builder: (BuildContext dialogContext) =>
+        host(MediaItemActionsLayout.dialog, builder(dialogContext)),
   );
 }
 
@@ -518,8 +521,51 @@ class MediaItemDialogFrame extends StatelessWidget {
     return sections;
   }
 
+  /// 菜单从可排序的库页 / 合集页弹出时补上的「排序」（见 [LibraryReorderScope]）：
+  /// 关菜单后进入该页的排序模式。
+  ///
+  /// 返回的是**只供本次 build 取数的值对象**，不挂进 widget 树：此前把补好动作的
+  /// 骨架当子 widget 再包一层，树里就有两个 [MediaItemDialogFrame]（外层还把自己的
+  /// [key] 原样传给内层，带 GlobalKey 的调用方会撞 key），按类型找骨架的调用方与
+  /// 测试全部失配。
+  MediaItemDialogFrame _withReorderAction(
+    BuildContext context,
+    VoidCallback onStartReorder,
+  ) => MediaItemDialogFrame(
+    title: title,
+    cover: cover,
+    author: author,
+    showLaunchAction: showLaunchAction,
+    launchLabel: launchLabel,
+    onLaunch: onLaunch,
+    quickActions: quickActions,
+    listActions: <DialogListAction>[
+      ...listActions,
+      DialogListAction(
+        label: t.library_reorder_action,
+        icon: FushiIcons.dragIndicator,
+        onPressed: () {
+          Navigator.pop(context);
+          onStartReorder();
+        },
+      ),
+    ],
+    dangerActions: dangerActions,
+    coverBackdrop: coverBackdrop,
+    coverMaterial: coverMaterial,
+  );
+
   @override
   Widget build(BuildContext context) {
+    final VoidCallback? onStartReorder = libraryReorderEntryOf(context);
+    final MediaItemDialogFrame frame = onStartReorder == null
+        ? this
+        : _withReorderAction(context, onStartReorder);
+    return frame._buildLayout(context);
+  }
+
+  /// 按 [MediaItemActionsHost] 给的容器形态排版（右键菜单 / 抽屉 / 对话框）。
+  Widget _buildLayout(BuildContext context) {
     final MediaItemActionsLayout layout = MediaItemActionsHost.layoutOf(
       context,
     );

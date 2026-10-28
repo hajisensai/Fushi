@@ -14,8 +14,10 @@ class _Harness extends StatefulWidget {
     this.onReorder,
     this.onActivate,
     this.onContextMenu,
+    this.reordering = false,
   });
   final List<String> items;
+  final bool reordering;
   final void Function(int from, int to)? onReorder;
   final void Function(int index)? onActivate;
   final void Function(int index, Offset pos)? onContextMenu;
@@ -43,6 +45,7 @@ class _HarnessState extends State<_Harness> {
       },
       onActivateItem: widget.onActivate,
       onContextMenu: widget.onContextMenu,
+      reordering: widget.reordering,
       itemBuilder: (BuildContext context, int i) => SizedBox(
         width: 100,
         height: 100,
@@ -58,6 +61,7 @@ Future<void> _pumpGrid(
   void Function(int from, int to)? onReorder,
   void Function(int index)? onActivate,
   void Function(int index, Offset pos)? onContextMenu,
+  bool reordering = false,
   double scale = 1.0,
 }) async {
   Widget grid = Center(
@@ -68,6 +72,7 @@ Future<void> _pumpGrid(
         onReorder: onReorder,
         onActivate: onActivate,
         onContextMenu: onContextMenu,
+        reordering: reordering,
       ),
     ),
   );
@@ -150,7 +155,8 @@ void main() {
   });
 
   testWidgets(
-    'touch long-press released in place fires context menu, NOT a reorder',
+    'touch long-press opens the context menu on timeout, before release, '
+    'and never starts a drag (same timing as library cards)',
     (WidgetTester tester) async {
       final List<int> reorders = <int>[];
       final List<int> menus = <int>[];
@@ -165,20 +171,57 @@ void main() {
       final Offset start = tester.getCenter(find.text('B'));
       final TestGesture gesture = await tester.startGesture(start);
       await tester.pump(const Duration(milliseconds: 600));
-      // 原地松手（未移动）→ 上下文菜单，不重排。
+      // 手指还按着：菜单已经弹出，不等松手。
+      expect(menus, <int>[1], reason: 'long-press must open menu on timeout');
+      // 继续拖动也不起拖。
+      await gesture.moveTo(tester.getCenter(find.text('C')));
+      await tester.pump();
       await gesture.up();
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
-      expect(
-        reorders,
-        isEmpty,
-        reason: 'a stationary long-press must not reorder',
-      );
-      expect(menus, <int>[
-        1,
-      ], reason: 'long-press release must fire context menu');
+      expect(menus, <int>[1], reason: 'release must not fire a second menu');
+      expect(reorders, isEmpty, reason: 'touch must not drag outside reorder');
       expect(order, <String>['A', 'B', 'C']);
+    },
+  );
+
+  testWidgets(
+    'reordering mode: a short touch hold lifts and drags; tap and menu are off',
+    (WidgetTester tester) async {
+      final List<int> menus = <int>[];
+      final List<int> activations = <int>[];
+      final List<String> order = <String>['A', 'B', 'C'];
+      await _pumpGrid(
+        tester,
+        order: order,
+        reordering: true,
+        onReorder: (int from, int to) {
+          final String item = order.removeAt(from);
+          order.insert(to, item);
+        },
+        onActivate: activations.add,
+        onContextMenu: (int index, Offset pos) => menus.add(index),
+      );
+
+      await tester.tap(find.text('B'));
+      await tester.pumpAndSettle();
+      expect(activations, isEmpty, reason: 'tap must not open while sorting');
+
+      final Offset start = tester.getCenter(find.text('A'));
+      final Offset target = tester.getCenter(find.text('C'));
+      final TestGesture gesture = await tester.startGesture(start);
+      await tester.pump(const Duration(milliseconds: 150));
+      await gesture.moveTo(Offset.lerp(start, target, 0.6)!);
+      await tester.pump();
+      await gesture.moveTo(target);
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(menus, isEmpty, reason: 'no menu while sorting');
+      expect(order, <String>['B', 'C', 'A']);
     },
   );
 

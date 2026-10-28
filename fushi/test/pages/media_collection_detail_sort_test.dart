@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/gestures.dart' show kLongPressTimeout;
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -163,8 +163,9 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    // BUG-778 后拖拽走 FushiReorderableGrid：触摸 = 长按整卡起拖（鼠标即
-    // 拖）。三卡从上到下 = Beta / 第10话 / 第9话；长按首卡（Beta）往下拖两卡。
+    // BUG-778 后拖拽走 FushiReorderableGrid：鼠标按住即拖；触摸长按直接弹集卡
+    // 菜单，触屏拖排要先经菜单「排序」进排序模式。三卡从上到下 = Beta / 第10话 /
+    // 第9话；按住首卡（Beta）往下拖两卡。
     final Finder betaRow = find.byKey(
       const ValueKey<String>('collection-episode-row-video/beta'),
     );
@@ -180,8 +181,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     final TestGesture gesture =
-        await tester.startGesture(tester.getCenter(betaRow));
-    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+        await tester.startGesture(tester.getCenter(betaRow),
+            kind: PointerDeviceKind.mouse);
+    await tester.pump();
     // 集卡高 128 + 间距 12：中心要落进第 3 个槽（Δy ≈ 2×140），拖 7×40=280。
     for (int step = 0; step < 7; step++) {
       await gesture.moveBy(const Offset(0, 40));
@@ -278,8 +280,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       final TestGesture gesture =
-          await tester.startGesture(tester.getCenter(betaRow));
-      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+          await tester.startGesture(tester.getCenter(betaRow),
+              kind: PointerDeviceKind.mouse);
+      await tester.pump();
       for (int step = 0; step < 7; step++) {
         await gesture.moveBy(const Offset(0, 40));
         await tester.pump(const Duration(milliseconds: 16));
