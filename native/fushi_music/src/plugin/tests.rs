@@ -29,7 +29,11 @@ fn open(tag: &str, manifest: &str, files: &[(&str, &str)], budget: u64) -> Resul
 }
 
 fn step(inst: &mut Instance, ops: Value) -> Value {
-    inst.step(ops.to_string().as_bytes())
+    step_blob(inst, ops, &[]).0
+}
+
+fn step_blob(inst: &mut Instance, ops: Value, blob: &[u8]) -> (Value, Vec<u8>) {
+    inst.step(ops.to_string().as_bytes(), blob)
 }
 
 #[test]
@@ -55,9 +59,11 @@ fn invoke_with_http_roundtrip() {
     assert_eq!(call["op"], "http");
     assert_eq!(call["args"]["method"], "GET");
     assert!(call["args"]["url"].as_str().unwrap().starts_with("https://api.example.com/s?q=%E5%A4%9C"));
-    let body = data_encoding::BASE64.encode(br#"{"items":["a","b"]}"#);
-    let out = step(&mut inst, json!([{ "op": "complete", "call": call["id"], "ok": true,
-        "value": { "status": 200, "url": "https://api.example.com/s", "headers": {}, "bodyBase64": body } }]));
+    assert!(call["args"].get("body").is_none(), "GET 没有请求体");
+    let body: &[u8] = br#"xx{"items":["a","b"]}"#;
+    let (out, _) = step_blob(&mut inst, json!([{ "op": "complete", "call": call["id"], "ok": true,
+        "value": { "status": 200, "url": "https://api.example.com/s", "headers": {},
+                   "body": { "off": 2, "len": body.len() - 2 } } }]), body);
     assert_eq!(out["settled"][0], json!({ "inv": 1, "ok": true, "value": { "items": ["A", "B"], "page": 2 } }), "{out}");
     assert_eq!(out["logs"][0]["message"], "status 200");
 
@@ -157,7 +163,7 @@ fn credentials_gate_and_set_cookies() {
     let c = &out["calls"][0];
     let out = step(&mut inst, json!([{ "op": "complete", "call": c["id"], "ok": true,
         "value": { "status": 200, "url": "https://api.example.com/login", "headers": {},
-                   "setCookies": ["MUSIC_U=a; Expires=Wed, 01 Jan 2031 00:00:00 GMT", "__csrf=b"], "bodyBase64": "" } }]));
+                   "setCookies": ["MUSIC_U=a; Expires=Wed, 01 Jan 2031 00:00:00 GMT", "__csrf=b"] } }]));
     let c = &out["calls"][0];
     assert_eq!(c["op"], "credentials.set");
     assert_eq!(c["args"]["value"], "MUSIC_U=a; Expires=Wed, 01 Jan 2031 00:00:00 GMT|__csrf=b");
@@ -318,8 +324,10 @@ fn check_urls_runs_concurrently_with_step() {
         let mut out: *mut u8 = std::ptr::null_mut();
         let mut len = 0usize;
         unsafe {
-            ffm_plugin_step(addr as *mut PluginHandle, ops.as_ptr(), ops.len(), &mut out, &mut len);
-            let v: Value = serde_json::from_slice(std::slice::from_raw_parts(out, len)).unwrap();
+            ffm_plugin_step(addr as *mut PluginHandle, ops.as_ptr(), ops.len(), std::ptr::null(), 0, &mut out, &mut len);
+            let frame = std::slice::from_raw_parts(out, len);
+            let n = u32::from_le_bytes(frame[..4].try_into().unwrap()) as usize;
+            let v: Value = serde_json::from_slice(&frame[4..4 + n]).unwrap();
             crate::ffm_free_bytes(out, len);
             v
         }
@@ -339,4 +347,41 @@ fn check_urls_runs_concurrently_with_step() {
     let stepped = stepper.join().unwrap();
     assert_eq!(stepped["settled"][0]["value"], 1, "{stepped}");
     unsafe { ffm_plugin_close(handle) };
+}
+
+/// 请求体 / 响应体走二进制区：请求体原样出现在输出二进制区（参数里只有引用），响应体按引用切给 JS；
+/// 越界引用按失败交回插件，不 panic。
+#[test]
+fn http_bodies_travel_as_bytes() {
+    let m = manifest_with(&["search", "lyrics"], &["network"], &["api.example.com"]);
+    let js = r#"
+        module.exports = {
+          async search(a) {
+            const r = await fushi.http.request({ url: 'https://api.example.com/p', method: 'POST',
+              bodyBytes: new Uint8Array([0, 1, 2, 255]), responseType: 'bytes' });
+            return Array.from(r.bytes);
+          },
+          async lyrics() {
+            try { await fushi.http.request({ url: 'https://api.example.com/x' }); return 'no'; }
+            catch (e) { return String(e.message); }
+          },
+        };
+    "#;
+    let mut inst = open("bytes", &m, &[("main.js", js)], 2000).unwrap();
+    let (out, blob) = step_blob(&mut inst, json!([{ "op": "invoke", "inv": 1, "method": "search", "args": {} }]), &[]);
+    let call = &out["calls"][0];
+    assert_eq!(call["args"]["body"], json!({ "off": 0, "len": 4 }), "{out}");
+    assert_eq!(blob, vec![0u8, 1, 2, 255]);
+    assert!(call["args"].get("bodyBase64").is_none());
+    let (out, _) = step_blob(&mut inst, json!([{ "op": "complete", "call": call["id"], "ok": true,
+        "value": { "status": 200, "url": "https://api.example.com/p", "headers": {},
+                   "body": { "off": 1, "len": 3 } } }]), &[9, 7, 8, 6]);
+    assert_eq!(out["settled"][0]["value"], json!([7, 8, 6]), "{out}");
+
+    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 2, "method": "lyrics", "args": {} }]));
+    let call = &out["calls"][0];
+    let (out, _) = step_blob(&mut inst, json!([{ "op": "complete", "call": call["id"], "ok": true,
+        "value": { "status": 200, "url": "https://api.example.com/x", "headers": {},
+                   "body": { "off": 2, "len": 9 } } }]), &[1, 2, 3]);
+    assert_eq!(out["settled"][0]["value"], "响应体引用越界", "{out}");
 }

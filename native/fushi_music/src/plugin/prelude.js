@@ -5,9 +5,9 @@
   'use strict';
   var pendingCalls = Object.create(null);
 
-  function hostCall(op, args) {
+  function hostCall(op, args, body) {
     return new Promise(function (resolve, reject) {
-      var id = n.hostCall(op, JSON.stringify(args === undefined ? null : args));
+      var id = n.hostCall(op, JSON.stringify(args === undefined ? null : args), body);
       pendingCalls[id] = { resolve: resolve, reject: reject };
     });
   }
@@ -25,14 +25,16 @@
     }
   }
 
-  // Rust 侧在宿主调用完成后调它（成功：payload 是 JSON 文本；失败：错误信息）。
-  globalThis.__fushi_complete = function (id, ok, payload) {
+  // Rust 侧在宿主调用完成后调它（成功：payload 是 JSON 文本，body 是响应体 Uint8Array（有的话）；
+  // 失败：错误信息）。
+  globalThis.__fushi_complete = function (id, ok, payload, body) {
     var p = pendingCalls[id];
     if (!p) return;
     delete pendingCalls[id];
-    if (ok) p.resolve(JSON.parse(payload));
+    if (ok) p.resolve({ value: JSON.parse(payload), body: body });
     else p.reject(new Error(payload));
   };
+  function value(r) { return r.value; }
 
   // Rust 侧发起一次能力调用；结束时经 n.settle 回报（JSON 文本 / 错误串）。
   globalThis.__fushi_invoke = function (inv, method, argsJson) {
@@ -101,11 +103,13 @@
       headers: o.headers || {},
       timeoutMs: o.timeoutMs || 0
     };
-    if (o.bodyBytes !== undefined) args.bodyBase64 = n.b64Encode(bytes(o.bodyBytes));
-    else if (o.body !== undefined) args.bodyBase64 = n.b64Encode(n.utf8Encode(String(o.body)));
+    var body;
+    if (o.bodyBytes !== undefined) body = bytes(o.bodyBytes);
+    else if (o.body !== undefined) body = n.utf8Encode(String(o.body));
     var type = o.responseType || 'text';
-    return hostCall('http', args).then(function (r) {
-      var raw = n.b64Decode(r.bodyBase64 || '');
+    return hostCall('http', args, body).then(function (res) {
+      var r = res.value || {};
+      var raw = res.body || new Uint8Array(0);
       var out = {
         status: r.status, url: r.url, headers: r.headers || {},
         setCookies: Array.isArray(r.setCookies) ? r.setCookies.slice() : []
@@ -120,9 +124,9 @@
   }
 
   var storage = Object.freeze({
-    get: function (k) { return hostCall('storage.get', { key: String(k) }); },
-    set: function (k, v) { return hostCall('storage.set', { key: String(k), value: String(v) }); },
-    remove: function (k) { return hostCall('storage.remove', { key: String(k) }); }
+    get: function (k) { return hostCall('storage.get', { key: String(k) }).then(value); },
+    set: function (k, v) { return hostCall('storage.set', { key: String(k), value: String(v) }).then(value); },
+    remove: function (k) { return hostCall('storage.remove', { key: String(k) }).then(value); }
   });
 
   function fmt(args) {
@@ -138,9 +142,9 @@
   }
 
   var credentials = Object.freeze({
-    get: function (k) { return hostCall('credentials.get', { key: String(k) }); },
-    set: function (k, v) { return hostCall('credentials.set', { key: String(k), value: String(v) }); },
-    remove: function (k) { return hostCall('credentials.remove', { key: String(k) }); }
+    get: function (k) { return hostCall('credentials.get', { key: String(k) }).then(value); },
+    set: function (k, v) { return hostCall('credentials.set', { key: String(k), value: String(v) }).then(value); },
+    remove: function (k) { return hostCall('credentials.remove', { key: String(k) }).then(value); }
   });
 
   globalThis.console = Object.freeze({

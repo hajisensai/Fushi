@@ -1,13 +1,15 @@
 //! 在线音源插件运行时（`plugin` 特性；iOS 伞形库不开）。设计见
 //! `docs/specs/2026-10-28-music-plugins.md`；Dart 侧见 `packages/fushi_music/lib/src/plugin/`。
 //!
-//! C ABI（粗粒度，结果一律是 UTF-8 JSON，经 [crate::ffm_free_bytes] 释放）：
+//! C ABI（粗粒度，结果是 UTF-8 JSON，经 [crate::ffm_free_bytes] 释放；step 例外，见下）：
 //! - `ffm_plugin_inspect(zip)`：校验插件包，不写盘 → `{manifest, digest, signer, files}`；
 //! - `ffm_plugin_install(zip, root, digest)`：再次校验、摘要必须等于用户确认过的那份，原子装进
 //!   `<root>/<id>/`；
 //! - `ffm_plugin_verify(dir)`：重新哈希已装目录，只回摘要（列已装插件用，不建 JS 实例）；
 //! - `ffm_plugin_open(dir, budgetMs)`：重新哈希已装文件、建 QuickJS 实例、核对导出 → 句柄；
-//! - `ffm_plugin_step(handle, ops)`：步进驱动（见 [runtime]）；
+//! - `ffm_plugin_step(handle, ops, blob)`：步进驱动（见 [runtime]）。HTTP 请求 / 响应体走二进制区、
+//!   不经 base64：输入 `blob` 是 ops 里 `body: {off, len}` 引用的字节；输出帧为
+//!   `[u32 LE json 长度][json][二进制区]`，调用参数里的 `body: {off, len}` 指向输出二进制区；
 //! - `ffm_plugin_check_urls(handle, urls, purpose)`：按插件网络授权批量核对地址；
 //! - `ffm_plugin_close(handle)`；
 //! - `ffm_plugin_vault(root, op)`：凭据保险库（[vault]），`op` 为
@@ -43,6 +45,20 @@ pub struct PluginHandle {
 
 unsafe fn str_arg<'a>(ptr: *const u8, len: usize) -> Option<&'a str> {
     slice_arg(ptr, len).and_then(|b| std::str::from_utf8(b).ok())
+}
+
+/// step 的输出帧：`[u32 LE json 长度][json][二进制区]`。
+unsafe fn out_framed(v: serde_json::Value, blob: Vec<u8>, out_ptr: *mut *mut u8, out_len: *mut usize) -> i32 {
+    let j = v.to_string().into_bytes();
+    let Ok(n) = u32::try_from(j.len()) else {
+        return out_framed(error_json("step 结果过大".into()), Vec::new(), out_ptr, out_len);
+    };
+    let mut buf = Vec::with_capacity(4 + j.len() + blob.len());
+    buf.extend_from_slice(&n.to_le_bytes());
+    buf.extend_from_slice(&j);
+    buf.extend_from_slice(&blob);
+    hand_over_bytes(buf, out_ptr, out_len);
+    status::OK
 }
 
 unsafe fn out_json(v: serde_json::Value, out_ptr: *mut *mut u8, out_len: *mut usize) -> i32 {
@@ -183,6 +199,8 @@ pub unsafe extern "C" fn ffm_plugin_step(
     handle: *mut PluginHandle,
     ops_ptr: *const u8,
     ops_len: usize,
+    blob_ptr: *const u8,
+    blob_len: usize,
     out_ptr: *mut *mut u8,
     out_len: *mut usize,
 ) -> i32 {
@@ -193,13 +211,21 @@ pub unsafe extern "C" fn ffm_plugin_step(
         let Some(ops) = slice_arg(ops_ptr, ops_len) else {
             return status::NULL_ARGUMENT;
         };
+        let blob: &[u8] = if blob_len == 0 {
+            &[]
+        } else {
+            match slice_arg(blob_ptr, blob_len) {
+                Some(b) => b,
+                None => return status::NULL_ARGUMENT,
+            }
+        };
         // 锁中毒（上一次 step panic）时实例状态不可信：按 fatal 交回，宿主作废并重建。
         let handle: &PluginHandle = &*handle;
-        let v = match handle.inst.lock() {
-            Ok(mut inst) => inst.step(ops),
-            Err(_) => json!({ "fatal": "插件运行时内部错误（上次执行崩溃）" }),
+        let (v, out_blob) = match handle.inst.lock() {
+            Ok(mut inst) => inst.step(ops, blob),
+            Err(_) => (json!({ "fatal": "插件运行时内部错误（上次执行崩溃）" }), Vec::new()),
         };
-        out_json(v, out_ptr, out_len)
+        out_framed(v, out_blob, out_ptr, out_len)
     })
 }
 

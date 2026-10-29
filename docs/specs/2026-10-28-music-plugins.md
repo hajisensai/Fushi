@@ -71,6 +71,11 @@ zip，必须包含：
   `{"settled":[{inv,ok,value|error}], "calls":[{id,op,args}], "logs":[{level,message}], "fatal"?}`。
   `calls` 是插件发出、已通过授权核对的宿主调用（`http` / `storage.get|set|remove`），由 Dart
   执行后在下一次 step 用 `complete` 交回。
+- **字节不走 JSON / base64**（2026-10-29，按粗 FFI 规则）：`ffm_plugin_step(handle, ops, blob)`
+  另收一块二进制区，`complete` 的响应体写成 `value.body: {off, len}` 引用它；输出帧为
+  `[u32 LE json 长度][json][二进制区]`，`http` 调用参数里的请求体同样是 `body: {off, len}`。Dart 侧
+  每个实例一个长驻后台 isolate（`MusicPluginStepWorker`）跑 step，字节经 `TransferableTypedData`
+  转移，ops / 结果的 JSON 编解码也在后台 isolate；UI isolate 只做网络 IO（app 代理配置在这里）。
 - 插件可见的全局（其余原生桥在前奏结束后删除）：
 
 ```js

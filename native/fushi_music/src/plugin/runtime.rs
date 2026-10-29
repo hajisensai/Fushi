@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use rquickjs::{Context, Ctx, Exception, Function, Runtime, Value};
+use rquickjs::{Context, Ctx, Exception, Function, Runtime, TypedArray, Value};
 use serde::Deserialize;
 use serde_json::{json, Value as Json};
 
@@ -53,6 +53,8 @@ pub(crate) struct Outbox {
     pub(crate) calls: Vec<Json>,
     pub(crate) settled: Vec<Json>,
     pub(crate) logs: Vec<Json>,
+    /// 本 step 交给宿主的二进制数据（请求体）：调用参数里只放 `{"off","len"}` 引用。
+    out_blob: Vec<u8>,
     logs_dropped: usize,
     /// 已发给宿主、尚未 complete 的宿主调用 id。
     pending_calls: std::collections::BTreeSet<u64>,
@@ -99,11 +101,18 @@ pub(crate) struct Gate {
 }
 
 impl Gate {
-    /// 核对并登记一次宿主调用，返回调用 id。
-    pub(crate) fn host_call(&self, op: &str, args_json: &str) -> Result<u64, String> {
+    /// 核对并登记一次宿主调用，返回调用 id。[body] 是请求体原始字节（只有 http 收），不经
+    /// base64：随 step 输出的二进制区交给宿主，参数里只留 `body: {off, len}`。
+    pub(crate) fn host_call(&self, op: &str, args_json: &str, body: Option<Vec<u8>>) -> Result<u64, String> {
         let args: Json =
             serde_json::from_str(args_json).map_err(|e| format!("宿主调用参数不是 JSON：{e}"))?;
-        let normalized = match op {
+        if body.is_some() && op != "http" {
+            return Err(format!("宿主调用 {op} 不收二进制数据"));
+        }
+        if body.as_ref().is_some_and(|b| b.len() > MAX_BODY_BYTES) {
+            return Err("请求体超过 4 MiB".into());
+        }
+        let mut normalized = match op {
             "http" => self.check_http(&args)?,
             "storage.get" | "storage.set" | "storage.remove" => self.check_storage(op, &args)?,
             "credentials.get" | "credentials.set" | "credentials.remove" => {
@@ -111,7 +120,7 @@ impl Gate {
             }
             _ => return Err(format!("未知宿主调用 {op}")),
         };
-        let size = normalized.to_string().len();
+        let size = normalized.to_string().len() + body.as_ref().map_or(0, Vec::len);
         let mut out = self.outbox.lock().unwrap();
         if out.pending_calls.len() >= MAX_INFLIGHT_CALLS {
             return Err(out.fail(format!("在途宿主调用超过 {MAX_INFLIGHT_CALLS} 个，插件已终止")));
@@ -124,6 +133,10 @@ impl Gate {
         }
         out.step_calls += 1;
         out.step_out_bytes += size;
+        if let Some(b) = body {
+            normalized["body"] = json!({ "off": out.out_blob.len(), "len": b.len() });
+            out.out_blob.extend_from_slice(&b);
+        }
         out.next_call += 1;
         let id = out.next_call;
         out.pending_calls.insert(id);
@@ -142,8 +155,6 @@ impl Gate {
             method: String,
             #[serde(default)]
             headers: BTreeMap<String, String>,
-            #[serde(default)]
-            body_base64: Option<String>,
             #[serde(default)]
             timeout_ms: u64,
         }
@@ -168,11 +179,6 @@ impl Gate {
                 return Err(format!("不允许设置请求头 {k}"));
             }
         }
-        if let Some(b) = &req.body_base64 {
-            if b.len() > MAX_BODY_BYTES * 4 / 3 + 4 {
-                return Err("请求体超过 4 MiB".into());
-            }
-        }
         let timeout = match req.timeout_ms {
             0 => HTTP_TIMEOUT_DEFAULT,
             t => t.clamp(1000, HTTP_TIMEOUT_MAX),
@@ -181,7 +187,6 @@ impl Gate {
             "url": url,
             "method": req.method,
             "headers": req.headers,
-            "bodyBase64": req.body_base64,
             "timeoutMs": timeout,
         }))
     }
@@ -244,7 +249,9 @@ impl Gate {
 enum Op {
     /// 发起能力调用；`inv` 由宿主分配、在本实例内唯一。
     Invoke { inv: u64, method: String, #[serde(default)] args: Json },
-    /// 交回宿主调用结果：成功时 `value` 是任意 JSON，失败时 `error` 是错误信息。
+    /// 交回宿主调用结果：成功时 `value` 是任意 JSON，失败时 `error` 是错误信息。`value` 是对象且带
+    /// `body: {off, len}` 时，这段字节从 step 输入的二进制区切出、以 Uint8Array 交给 JS（响应体
+    /// 不经 base64 / JSON）。
     Complete {
         call: u64,
         ok: bool,
@@ -431,14 +438,15 @@ impl Instance {
         self.gate.policy.check_url(url, purpose)
     }
 
-    /// 执行一批操作并交回结果（见模块文档）。
-    pub fn step(&mut self, ops_json: &[u8]) -> Json {
+    /// 执行一批操作并交回结果（见模块文档）。[blob] 是本批 `complete` 引用的二进制区；返回值第二项
+    /// 是本 step 新发起的宿主调用引用的二进制区（请求体）。
+    pub fn step(&mut self, ops_json: &[u8], blob: &[u8]) -> (Json, Vec<u8>) {
         if let Some(f) = &self.fatal {
-            return json!({ "fatal": f, "settled": [], "calls": [], "logs": [] });
+            return (json!({ "fatal": f, "settled": [], "calls": [], "logs": [] }), Vec::new());
         }
         let ops: Vec<Op> = match serde_json::from_slice(ops_json) {
             Ok(v) => v,
-            Err(e) => return json!({ "error": format!("step 参数不合法：{e}") }),
+            Err(e) => return (json!({ "error": format!("step 参数不合法：{e}") }), Vec::new()),
         };
         self.gate.outbox.lock().unwrap().begin_step();
         self.arm();
@@ -467,16 +475,23 @@ impl Instance {
                             }));
                         }
                     }
-                    Op::Complete { call, ok, value, error } => {
+                    Op::Complete { call, ok, mut value, error } => {
                         // 只认还在途的调用：重复 / 未知 id 不进 JS。
                         if !self.gate.outbox.lock().unwrap().pending_calls.remove(&call) {
                             continue;
                         }
-                        let payload = if ok { value.to_string() } else { error };
-                        let r = ctx
-                            .globals()
-                            .get::<_, Function>("__fushi_complete")
-                            .and_then(|f| f.call::<_, ()>((call, ok, payload)));
+                        let (ok, body, payload) = match take_body(&mut value, blob) {
+                            _ if !ok => (false, None, error),
+                            Ok(body) => (true, body, value.to_string()),
+                            Err(e) => (false, None, e),
+                        };
+                        let r = ctx.globals().get::<_, Function>("__fushi_complete").and_then(|f| {
+                            let body = match body {
+                                Some(b) => Some(TypedArray::<u8>::new(ctx.clone(), b)?),
+                                None => None,
+                            };
+                            f.call::<_, ()>((call, ok, payload, body))
+                        });
                         if let Err(e) = r {
                             let msg = exception_text(&ctx, e);
                             self.gate.outbox.lock().unwrap().log("error", &msg);
@@ -499,6 +514,7 @@ impl Instance {
         let mut settled = std::mem::take(&mut out.settled);
         settled.extend(immediate);
         let calls = std::mem::take(&mut out.calls);
+        let out_blob = std::mem::take(&mut out.out_blob);
         let mut logs = std::mem::take(&mut out.logs);
         if out.logs_dropped > 0 {
             logs.push(json!({ "level": "warn", "message": format!("另有 {} 条日志被丢弃", out.logs_dropped) }));
@@ -508,8 +524,18 @@ impl Instance {
         if let Some(f) = &self.fatal {
             result["fatal"] = json!(f);
         }
-        result
+        (result, out_blob)
     }
+}
+
+/// 从 complete 的 `value` 里取出 `body: {off, len}` 引用并切出字节（越界 = 宿主协议错误，按失败交回）。
+fn take_body(value: &mut Json, blob: &[u8]) -> Result<Option<Vec<u8>>, String> {
+    let Some(obj) = value.as_object_mut() else { return Ok(None) };
+    let Some(r) = obj.remove("body") else { return Ok(None) };
+    let off = r["off"].as_u64().ok_or("响应体引用不合法")? as usize;
+    let len = r["len"].as_u64().ok_or("响应体引用不合法")? as usize;
+    let end = off.checked_add(len).filter(|&e| e <= blob.len()).ok_or("响应体引用越界")?;
+    Ok(Some(blob[off..end].to_vec()))
 }
 
 /// 能力调用结束（prelude 经 `n.settle` 回报）。结果过大按失败处理，不把几十 MB 塞回宿主。

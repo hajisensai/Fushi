@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:isolate';
@@ -64,12 +65,16 @@ typedef _StepC =
       Pointer<Void>,
       Pointer<Uint8>,
       Size,
+      Pointer<Uint8>,
+      Size,
       Pointer<Pointer<Uint8>>,
       Pointer<Size>,
     );
 typedef _StepDart =
     int Function(
       Pointer<Void>,
+      Pointer<Uint8>,
+      int,
       Pointer<Uint8>,
       int,
       Pointer<Pointer<Uint8>>,
@@ -268,19 +273,53 @@ abstract final class MusicPluginNative {
     return (handle: handle, summary: summary);
   }
 
-  static Map<String, Object?> step(int handle, String opsJson) {
+  /// 步进一次：[ops] 是操作数组（`complete` 的响应体以 `body: {off, len}` 引用 [blob]）。返回结果
+  /// JSON 与本步新发起调用引用的二进制区（请求体）。字节一次拷入 / 拷出，不经 base64。
+  /// 有 JS 执行，只在 [MusicPluginStepWorker] 的后台 isolate 里调。
+  static ({Map<String, Object?> out, Uint8List blob}) step(
+    int handle,
+    List<Map<String, Object?>> ops,
+    Uint8List blob,
+  ) {
     final _PluginBindings b = _PluginBindings.instance;
-    final Uint8List o = utf8.encode(opsJson);
-    return b.callJson(
-      'ffm_plugin_step',
-      (Arena a, Pointer<Pointer<Uint8>> out, Pointer<Size> len) => b.step(
+    final Uint8List o = utf8.encode(jsonEncode(ops));
+    return using((Arena a) {
+      final Pointer<Pointer<Uint8>> out = a<Pointer<Uint8>>();
+      final Pointer<Size> len = a<Size>();
+      out.value = nullptr;
+      len.value = 0;
+      final int rc = b.step(
         Pointer<Void>.fromAddress(handle),
         _copyIn(o, a),
         o.length,
+        blob.isEmpty ? nullptr : _copyIn(blob, a),
+        blob.length,
         out,
         len,
-      ),
-    );
+      );
+      if (rc != FfmStatus.ok || out.value == nullptr) {
+        if (out.value != nullptr) b._lib.freeBytes(out.value, len.value);
+        throw StateError('ffm_plugin_step failed with status $rc');
+      }
+      try {
+        final Uint8List frame = out.value.asTypedListOutOfLine(len.value);
+        final int n = ByteData.sublistView(
+          frame,
+          0,
+          4,
+        ).getUint32(0, Endian.little);
+        final Map<String, Object?> json =
+            (jsonDecode(utf8.decode(Uint8List.sublistView(frame, 4, 4 + n)))
+                    as Map<Object?, Object?>)
+                .cast<String, Object?>();
+        return (
+          out: json,
+          blob: Uint8List.fromList(Uint8List.sublistView(frame, 4 + n)),
+        );
+      } finally {
+        b._lib.freeBytes(out.value, len.value);
+      }
+    });
   }
 
   /// 按插件网络授权批量核对地址（一次 FFI）：同序返回规范化 URL，不在授权内的为 null。
@@ -347,12 +386,114 @@ abstract final class MusicPluginNativeAsync {
     int budgetMs,
   ) => Isolate.run(() => MusicPluginNative.open(dir, budgetMs));
 
-  static Future<Map<String, Object?>> step(int handle, String opsJson) =>
-      Isolate.run(() => MusicPluginNative.step(handle, opsJson));
-
   /// 保险库读写（Windows 上每次经 DPAPI 解封数据密钥，放后台 isolate）。
   static Future<Map<String, Object?>> vault(
     String root,
     Map<String, Object?> op,
   ) => Isolate.run(() => MusicPluginNative.vault(root, op));
+}
+
+/// 一个插件实例专属的长驻后台 isolate：step（执行 JS）全在这里跑，不每步新起 isolate。
+///
+/// 字节走 [TransferableTypedData]（转移所有权、不复制），ops / 结果的 JSON 编解码也在后台
+/// isolate 做；UI isolate 只交出结构化的操作表与一块二进制区。
+final class MusicPluginStepWorker {
+  MusicPluginStepWorker._(this._isolate, this._send, this._replies);
+
+  final Isolate _isolate;
+  final SendPort _send;
+  final ReceivePort _replies;
+  final Map<int, Completer<({Map<String, Object?> out, Uint8List blob})>>
+  _pending = <int, Completer<({Map<String, Object?> out, Uint8List blob})>>{};
+  int _next = 0;
+  bool _closed = false;
+
+  static Future<MusicPluginStepWorker> spawn() async {
+    final ReceivePort replies = ReceivePort('music-plugin-step');
+    final Isolate isolate = await Isolate.spawn<SendPort>(
+      _main,
+      replies.sendPort,
+      debugName: 'music-plugin-step',
+    );
+    final Completer<SendPort> ready = Completer<SendPort>();
+    late final MusicPluginStepWorker worker;
+    replies.listen((Object? m) {
+      if (!ready.isCompleted) {
+        ready.complete(m! as SendPort);
+        return;
+      }
+      worker._onReply(m! as List<Object?>);
+    });
+    worker = MusicPluginStepWorker._(isolate, await ready.future, replies);
+    return worker;
+  }
+
+  /// 在后台 isolate 里跑一次 [MusicPluginNative.step]。
+  Future<({Map<String, Object?> out, Uint8List blob})> step(
+    int handle,
+    List<Map<String, Object?>> ops,
+    TransferableTypedData blob,
+  ) {
+    if (_closed) {
+      return Future<({Map<String, Object?> out, Uint8List blob})>.error(
+        StateError('插件后台 isolate 已关闭'),
+      );
+    }
+    final int id = ++_next;
+    final Completer<({Map<String, Object?> out, Uint8List blob})> c =
+        Completer<({Map<String, Object?> out, Uint8List blob})>();
+    _pending[id] = c;
+    _send.send(<Object?>[id, handle, ops, blob]);
+    return c.future;
+  }
+
+  void _onReply(List<Object?> m) {
+    final Completer<({Map<String, Object?> out, Uint8List blob})>? c = _pending
+        .remove(m[0]! as int);
+    if (c == null) return;
+    if (m[1] is String) {
+      c.completeError(StateError(m[1]! as String));
+      return;
+    }
+    c.complete((
+      out: (m[1]! as Map<Object?, Object?>).cast<String, Object?>(),
+      blob: (m[2]! as TransferableTypedData).materialize().asUint8List(),
+    ));
+  }
+
+  /// 关闭（之后的 [step] 直接失败；在途的以异常结束）。
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    _replies.close();
+    _isolate.kill(priority: Isolate.immediate);
+    for (final Completer<({Map<String, Object?> out, Uint8List blob})> c
+        in _pending.values) {
+      c.completeError(StateError('插件后台 isolate 已关闭'));
+    }
+    _pending.clear();
+  }
+
+  static void _main(SendPort replies) {
+    final ReceivePort inbox = ReceivePort();
+    replies.send(inbox.sendPort);
+    inbox.listen((Object? raw) {
+      final List<Object?> m = raw! as List<Object?>;
+      final int id = m[0]! as int;
+      try {
+        final ({Map<String, Object?> out, Uint8List blob}) r =
+            MusicPluginNative.step(m[1]! as int, <Map<String, Object?>>[
+              for (final Object? o in m[2]! as List<Object?>)
+                (o! as Map<Object?, Object?>).cast<String, Object?>(),
+            ], (m[3]! as TransferableTypedData).materialize().asUint8List());
+        replies.send(<Object?>[
+          id,
+          r.out,
+          TransferableTypedData.fromList(<TypedData>[r.blob]),
+        ]);
+      } catch (e) {
+        replies.send(<Object?>[id, '$e', null]);
+      }
+    });
+  }
 }

@@ -134,7 +134,7 @@ void main() {
         'status': 200,
         'url': args['url'],
         'headers': <String, String>{},
-        'bodyBase64': base64.encode(utf8.encode(body)),
+        'body': Uint8List.fromList(utf8.encode(body)),
       };
     },
   );

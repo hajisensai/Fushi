@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'plugin_ffi.dart';
@@ -29,6 +30,7 @@ class MusicPluginInstance {
   MusicPluginInstance._({
     required this.info,
     required int handle,
+    required MusicPluginStepWorker worker,
     required MusicPluginHttpClientFactory httpClientFactory,
     required File storageFile,
     required MusicPluginLogSink log,
@@ -38,6 +40,7 @@ class MusicPluginInstance {
     MusicPluginAddressBlocker? addressBlocker,
     MusicPluginMediaProbe? mediaProbe,
   }) : _handle = handle,
+       _worker = worker,
        _resolver = resolver,
        _addressBlocker = addressBlocker,
        _mediaProbe = mediaProbe,
@@ -66,9 +69,17 @@ class MusicPluginInstance {
     if (error is String || r.handle == 0) {
       throw MusicPluginException('$error');
     }
+    final MusicPluginStepWorker worker;
+    try {
+      worker = await MusicPluginStepWorker.spawn();
+    } catch (_) {
+      MusicPluginNative.close(r.handle);
+      rethrow;
+    }
     return MusicPluginInstance._(
       info: MusicPluginPackageInfo.fromJson(r.summary),
       handle: r.handle,
+      worker: worker,
       httpClientFactory: httpClientFactory,
       storageFile: storageFile,
       log: log,
@@ -82,6 +93,9 @@ class MusicPluginInstance {
 
   final MusicPluginPackageInfo info;
   int _handle;
+
+  /// 本实例专属的长驻后台 isolate（step 都在这里跑）。
+  final MusicPluginStepWorker _worker;
   final MusicPluginHttpClientFactory _httpClientFactory;
   final File _storageFile;
   final MusicPluginLogSink _log;
@@ -257,11 +271,22 @@ class MusicPluginInstance {
           _queue,
         );
         _queue.clear();
-        final Map<String, Object?> out = await MusicPluginNativeAsync.step(
-          _handle,
-          jsonEncode(ops),
-        );
-        _consume(out);
+        // 响应体原样拼成一块二进制区随 step 转移给后台 isolate，ops 里只留 {off, len} 引用。
+        final List<TypedData> chunks = <TypedData>[];
+        int offset = 0;
+        for (final Map<String, Object?> op in ops) {
+          final Object? bytes = op.remove(_kBodyBytes);
+          if (bytes is! Uint8List) continue;
+          (op['value']! as Map<String, Object?>)['body'] = <String, Object?>{
+            'off': offset,
+            'len': bytes.length,
+          };
+          chunks.add(bytes);
+          offset += bytes.length;
+        }
+        final ({Map<String, Object?> out, Uint8List blob}) r = await _worker
+            .step(_handle, ops, TransferableTypedData.fromList(chunks));
+        _consume(r.out, r.blob);
       }
     } catch (e) {
       _die('插件运行时出错：$e');
@@ -271,7 +296,7 @@ class MusicPluginInstance {
     }
   }
 
-  void _consume(Map<String, Object?> out) {
+  void _consume(Map<String, Object?> out, Uint8List blob) {
     for (final Object? l
         in (out['logs'] as List<Object?>?) ?? const <Object?>[]) {
       final Map<Object?, Object?> m = l! as Map<Object?, Object?>;
@@ -299,6 +324,18 @@ class MusicPluginInstance {
         in (out['calls'] as List<Object?>?) ?? const <Object?>[]) {
       final Map<String, Object?> m = (call! as Map<Object?, Object?>)
           .cast<String, Object?>();
+      final Map<String, Object?> args = (m['args']! as Map<Object?, Object?>)
+          .cast<String, Object?>();
+      // 请求体引用 → 输出二进制区里的视图（不复制）。
+      if (args['body'] case final Map<Object?, Object?> ref) {
+        final int off = (ref['off']! as num).toInt();
+        final int len = (ref['len']! as num).toInt();
+        if (off < 0 || len < 0 || off + len > blob.length) {
+          throw StateError('请求体引用越界');
+        }
+        args['body'] = Uint8List.sublistView(blob, off, off + len);
+      }
+      m['args'] = args;
       unawaited(_runHostCall(m));
     }
     final Object? fatal = out['fatal'] ?? out['error'];
@@ -333,6 +370,10 @@ class MusicPluginInstance {
         'ok': true,
         'value': value,
       };
+      // 响应体不进 JSON：由 [_pump] 拼进二进制区。
+      if (value case final Map<String, Object?> v) {
+        if (v.remove('body') case final Uint8List body) op[_kBodyBytes] = body;
+      }
     } catch (e) {
       op = <String, Object?>{
         'op': 'complete',
@@ -447,6 +488,7 @@ class MusicPluginInstance {
     if (_fatal == null || _pumping || _handle == 0) return;
     MusicPluginNative.close(_handle);
     _handle = 0;
+    _worker.close();
     _net?.close(force: true);
     _net = null;
     final Completer<void>? idle = _idle;
@@ -512,6 +554,9 @@ final class MusicPluginResponseBudget {
 
 const int _kMaxRedirects = 5;
 
+/// 排队中的 complete 操作上挂响应体的私有键（[MusicPluginInstance._pump] 取走后拼进二进制区）。
+const String _kBodyBytes = '\u0000bodyBytes';
+
 /// 执行一次插件 HTTP 请求（参数已由 Rust 按授权核对并规范化），[net] 由调用方持有。重定向不交给
 /// HttpClient 自动跟随：每一跳先经 [checkRedirect]（Rust 授权核对）、再经 [MusicPluginGuardedHttp.pin]
 /// 解析核对（解析失败 / 私网都拒绝），连接只连核对过的 IP。
@@ -530,8 +575,7 @@ Future<Map<String, Object?>> performMusicPluginHttp(
             .entries)
       '${e.key}': '${e.value}',
   };
-  final String? bodyB64 = args['bodyBase64'] as String?;
-  List<int>? body = bodyB64 == null ? null : base64.decode(bodyB64);
+  List<int>? body = args['body'] as Uint8List?;
   final Duration timeout = Duration(
     milliseconds: (args['timeoutMs'] as num?)?.toInt() ?? 20000,
   );
@@ -606,7 +650,7 @@ Future<Map<String, Object?>> performMusicPluginHttp(
         // Set-Cookie 原样逐条给（Expires 里有逗号，拼接后插件无法拆回）。
         'setCookies':
             res.headers[HttpHeaders.setCookieHeader] ?? const <String>[],
-        'bodyBase64': base64.encode(buf.takeBytes()),
+        'body': buf.takeBytes(),
       };
     }
   } on TimeoutException {

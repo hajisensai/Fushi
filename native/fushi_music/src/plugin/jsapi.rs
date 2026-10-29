@@ -10,6 +10,7 @@ use data_encoding::{BASE64, HEXLOWER_PERMISSIVE};
 use hmac::{Hmac, Mac};
 use md5::Md5;
 use num_bigint::BigUint;
+use rquickjs::function::Opt;
 use rquickjs::{Ctx, Function, Object, Result, TypedArray, Value};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
@@ -39,11 +40,18 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, gate: Arc<Gate>) -> Result<Object<'js
         let gate = gate.clone();
         n.set(
             "hostCall",
-            Function::new(ctx.clone(), move |ctx: Ctx<'js>, op: String, args: String| {
-                gate.host_call(&op, &args)
-                    .map(|id| id as f64)
-                    .map_err(|e| throw(&ctx, &e))
-            })?,
+            Function::new(
+                ctx.clone(),
+                move |ctx: Ctx<'js>, op: String, args: String, body: Opt<Value<'js>>| {
+                    let body = match body.0.filter(|v| !v.is_undefined() && !v.is_null()) {
+                        Some(v) => Some(bytes_of(&ctx, &v)?),
+                        None => None,
+                    };
+                    gate.host_call(&op, &args, body)
+                        .map(|id| id as f64)
+                        .map_err(|e| throw(&ctx, &e))
+                },
+            )?,
         )?;
     }
     {
