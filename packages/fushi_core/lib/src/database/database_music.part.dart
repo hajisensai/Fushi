@@ -569,13 +569,24 @@ mixin _FushiDbMusic on _$FushiDatabase {
         ),
       );
 
-  /// 最近播放的曲目（按最近一次开始时刻去重），最多 [limit] 首。
+  /// 最近播放的曲库曲目（按最近一次开始时刻去重），最多 [limit] 首。
+  ///
+  /// 只算曲库里还在（未软删）的曲目，且过滤在 SQL 里做：在线插件 / 服务器曲目的播放事件
+  /// 不在 music_tracks 里，若先取 [limit] 条再丢，最近一次听的是在线曲时 `limit: 1`
+  /// 就什么都拿不到。
   Future<List<MusicTrackRow>> listRecentlyPlayedMusicTracks({
     int limit = 20,
   }) async {
     final Expression<int> lastPlayed = musicPlayEvents.startedAt.max();
     final List<TypedResult> rows =
-        await (selectOnly(musicPlayEvents)
+        await (selectOnly(musicPlayEvents).join(<Join>[
+                innerJoin(
+                  musicTracks,
+                  musicTracks.trackUid.equalsExp(musicPlayEvents.trackUid) &
+                      musicTracks.deletedAt.isNull(),
+                  useColumns: false,
+                ),
+              ])
               ..addColumns(<Expression<Object>>[
                 musicPlayEvents.trackUid,
                 lastPlayed,
