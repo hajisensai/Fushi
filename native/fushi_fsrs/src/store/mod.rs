@@ -20,6 +20,7 @@ pub mod rows;
 mod profile_data;
 mod projections;
 pub mod schema;
+pub mod study;
 pub mod sync2;
 
 use std::path::{Path, PathBuf};

@@ -1509,18 +1509,31 @@ impl SrsCore {
     pub fn sync2_preview(&self, profile: &str, card: &str, note: Option<&str>, now: i64, utc_off: i64, rollover: i64) -> Result<Value, String> {
         self.read_visible(|c| {
             let tree = config::DeckTree::load(c, profile)?;
+            // 调用方没给笔记（作答路径不再先读一遍卡片缓存行）：按缓存行补上，结果里交回（落日志时要带上）。
+            let looked_up: Option<String> = match note {
+                Some(_) => None,
+                None => c
+                    .prepare_cached("SELECT note_id FROM srs_cards_cache WHERE id = ?1")
+                    .map_err(sql)?
+                    .query_row([card], |r| r.get(0))
+                    .optional()
+                    .map_err(sql)?,
+            };
+            let note = note.or(looked_up.as_deref());
             let Group { rows, note: group_note } = group_of(c, card, note)?;
             // 此刻的生效配置：预览的是「现在作答」，作答落库时 `sc` 记下的也是这一份（[stamp_config]）。
-            let cfg = if rows.is_empty() && note.is_none() {
-                crate::sync2::sched::Config::default()
-            } else {
-                tree.config(&config::card_deck(c, &tree, card, group_note.as_deref())?)
+            let deck = if rows.is_empty() && note.is_none() { None } else { Some(config::card_deck(c, &tree, card, group_note.as_deref())?) };
+            let cfg = match &deck {
+                None => crate::sync2::sched::Config::default(),
+                Some(d) => tree.config(d),
             };
             let input: Vec<Row<'_>> = rows.iter().map(|(_, j, s, i, _)| Row { json: j, server_time: *s, intent: i.clone() }).collect();
             let day = crate::projection::Day { utc_offset_min: utc_off, rollover_hour: rollover };
             let (cur, mem, plan) = replay::preview(&input, &cfg, card, now, &day)?;
             let f = crate::sync2::sched::f32_json;
             Ok(json!({
+                "note": note,
+                "deck": deck,
                 "current": cur.to_json(),
                 "memoryBefore": mem.map(|m| json!({"s": f(m.s), "d": f(m.d), "sf": f(m.sf)})),
                 "plan": plan.iter().map(|s| s.to_json()).collect::<Vec<_>>(),
