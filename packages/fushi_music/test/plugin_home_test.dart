@@ -5,7 +5,12 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:test/test.dart';
 
 import 'plugin_host_test.dart'
-    show buildPlugin, manifest, fakePublicResolve, noRedirectProbe;
+    show
+        buildPlugin,
+        manifest,
+        fakePublicResolve,
+        noRedirectProbe,
+        testVaultKey;
 
 /// 推荐（`home`）与我的歌单（`library`）契约（docs/specs/2026-10-28-music-plugins.md §4）：
 /// 坏段丢弃、空段丢弃、段数 / 条数上限、未登录空页。
@@ -57,6 +62,7 @@ void main() {
   Future<(MusicPluginManager, MusicPluginSource)> install() async {
     final MusicPluginManager m = MusicPluginManager(
       rootDir: root,
+      vaultKey: testVaultKey,
       httpClientFactory: HttpClient.new,
       resolver: fakePublicResolve,
       mediaProbe: noRedirectProbe,

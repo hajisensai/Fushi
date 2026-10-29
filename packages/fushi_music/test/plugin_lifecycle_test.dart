@@ -7,7 +7,12 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:test/test.dart';
 
 import 'plugin_host_test.dart'
-    show buildPlugin, manifest, fakePublicResolve, noRedirectProbe;
+    show
+        buildPlugin,
+        manifest,
+        fakePublicResolve,
+        noRedirectProbe,
+        testVaultKey;
 
 /// 插件宿主的生命周期边界：停用 / 卸载后不再调用、调用墙钟超时、存储并发写、实例重建竞态。
 const String _js = r'''
@@ -39,6 +44,7 @@ void main() {
   Future<MusicPluginManager> installed() async {
     final MusicPluginManager m = MusicPluginManager(
       rootDir: root,
+      vaultKey: testVaultKey,
       httpClientFactory: HttpClient.new,
       resolver: fakePublicResolve,
       mediaProbe: noRedirectProbe,
@@ -75,6 +81,7 @@ void main() {
     // 停用状态落盘：新开的管理器（重启后）同样拒绝。
     final MusicPluginManager reopened = MusicPluginManager(
       rootDir: root,
+      vaultKey: testVaultKey,
       httpClientFactory: HttpClient.new,
       resolver: fakePublicResolve,
       mediaProbe: noRedirectProbe,

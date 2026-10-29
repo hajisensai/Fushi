@@ -5,7 +5,12 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:test/test.dart';
 
 import 'plugin_host_test.dart'
-    show buildPlugin, fakePublicResolve, manifest, noRedirectProbe;
+    show
+        buildPlugin,
+        fakePublicResolve,
+        manifest,
+        noRedirectProbe,
+        testVaultKey;
 
 /// HTTP 请求 / 响应体走二进制区：宿主拿到的请求体是 Uint8List（不是 base64 串），交回的响应体
 /// 原样（含非 UTF-8 字节）到达插件；同一实例连续多步复用同一个后台 isolate。
@@ -37,6 +42,7 @@ module.exports = {
   test('请求体以字节交给宿主，响应体原样交回插件', () async {
     final MusicPluginManager m = MusicPluginManager(
       rootDir: root,
+      vaultKey: testVaultKey,
       httpClientFactory: HttpClient.new,
       resolver: fakePublicResolve,
       mediaProbe: noRedirectProbe,

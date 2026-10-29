@@ -83,6 +83,12 @@ module.exports = {
 ''';
 
 /// 测试用解析：所有主机都解析到一个公网地址（不打真 DNS）。
+/// 凭据保险库数据密钥，照宿主契约给：Windows 传 null（Rust 侧 DPAPI 封装的磁盘密钥），其它平台
+/// 由宿主从系统安全存储取出后传入（这里用固定测试密钥代替 Keychain / Keystore / libsecret）。
+final MusicPluginVaultKeyProvider? testVaultKey = Platform.isWindows
+    ? null
+    : () async => Uint8List.fromList(List<int>.filled(32, 7));
+
 Future<List<InternetAddress>> fakePublicResolve(String host) async =>
     <InternetAddress>[InternetAddress('93.184.216.34')];
 
@@ -106,6 +112,7 @@ void main() {
 
   MusicPluginManager makeManager() => MusicPluginManager(
     rootDir: root,
+    vaultKey: testVaultKey,
     httpClientFactory: HttpClient.new,
     resolver: fakePublicResolve,
     mediaProbe: noRedirectProbe,
@@ -267,6 +274,7 @@ void main() {
   test('runaway plugin is killed and rebuilt on next use', () async {
     final MusicPluginManager m = MusicPluginManager(
       rootDir: root,
+      vaultKey: testVaultKey,
       httpClientFactory: HttpClient.new,
       resolver: fakePublicResolve,
       mediaProbe: noRedirectProbe,

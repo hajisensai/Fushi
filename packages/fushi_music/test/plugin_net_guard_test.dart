@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:test/test.dart';
 
-import 'plugin_host_test.dart' show buildPlugin, manifest;
+import 'plugin_host_test.dart' show buildPlugin, manifest, testVaultKey;
 
 /// 插件出站网络守卫：私网判据覆盖内嵌 IPv4 的 IPv6 形态；解析失败不放行；连接钉在核对过的 IP
 /// 上（DNS rebinding 换不了地址）；媒体地址逐跳核对重定向、请求头走白名单。
@@ -278,6 +278,7 @@ module.exports = {
     ) async {
       final MusicPluginManager m = MusicPluginManager(
         rootDir: root,
+        vaultKey: testVaultKey,
         httpClientFactory: HttpClient.new,
         log: (_, _, _) {},
         resolver: (String h) async => <InternetAddress>[

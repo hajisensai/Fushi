@@ -5,7 +5,12 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:test/test.dart';
 
 import 'plugin_host_test.dart'
-    show buildPlugin, manifest, fakePublicResolve, noRedirectProbe;
+    show
+        buildPlugin,
+        manifest,
+        fakePublicResolve,
+        noRedirectProbe,
+        testVaultKey;
 
 /// 艺人 / 专辑 / 歌单详情、MV 与搜索最佳匹配的契约
 /// （docs/specs/2026-10-28-music-plugins.md §4）：新字段解析、截断、坏数据丢弃、封面授权。
@@ -95,6 +100,7 @@ void main() {
   }) async {
     final MusicPluginManager m = MusicPluginManager(
       rootDir: root,
+      vaultKey: testVaultKey,
       httpClientFactory: HttpClient.new,
       resolver: fakePublicResolve,
       mediaProbe: noRedirectProbe,

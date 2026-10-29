@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:test/test.dart';
 
-import 'plugin_host_test.dart' show buildPlugin, manifest;
+import 'plugin_host_test.dart' show buildPlugin, manifest, testVaultKey;
 
 /// 覆盖安装核对签名者：同一签名者（含都未签名）的升级保留登录与存储；签名者对不上（含已装包
 /// 校验失败）按新插件处理、清掉旧插件的凭据与存储，别人不能靠同一个 id 继承用户的登录态。
@@ -25,6 +25,7 @@ module.exports = {
     root = Directory.systemTemp.createTempSync('fmp-signer-');
     m = MusicPluginManager(
       rootDir: root,
+      vaultKey: testVaultKey,
       httpClientFactory: HttpClient.new,
       log: (_, _, _) {},
     );

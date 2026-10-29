@@ -5,7 +5,12 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:test/test.dart';
 
 import 'plugin_host_test.dart'
-    show buildPlugin, manifest, fakePublicResolve, noRedirectProbe;
+    show
+        buildPlugin,
+        manifest,
+        fakePublicResolve,
+        noRedirectProbe,
+        testVaultKey;
 
 /// 「喜欢」（`like`）契约（docs/specs/2026-10-28-music-plugins.md §4）：未登录 list 为 null、
 /// set 抛错；登录后 list 给喜欢集合与平台歌单，set 改得回来；越权歌单封面清空。
@@ -45,6 +50,7 @@ void main() {
   Future<(MusicPluginManager, MusicPluginSource)> install() async {
     final MusicPluginManager m = MusicPluginManager(
       rootDir: root,
+      vaultKey: testVaultKey,
       httpClientFactory: HttpClient.new,
       resolver: fakePublicResolve,
       mediaProbe: noRedirectProbe,
@@ -90,6 +96,7 @@ void main() {
   test('like 能力必须随登录能力声明，否则拒装', () async {
     final MusicPluginManager m = MusicPluginManager(
       rootDir: root,
+      vaultKey: testVaultKey,
       httpClientFactory: HttpClient.new,
       resolver: fakePublicResolve,
       mediaProbe: noRedirectProbe,
