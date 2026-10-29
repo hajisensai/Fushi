@@ -1,8 +1,9 @@
-// AnkiConnect 兼容层的常驻视图（HBK-AUDIT-017）：跨请求常驻的笔记 / 卡 / 查重索引 / 搜索语料 /
-// 查询记忆，在每类变更之后都必须与「什么都不常驻、整份重读」的结果逐字节相同。
+// AnkiConnect 兼容层的增量状态（HBK-AUDIT-017 / L-5）：搜索语料、查重索引常驻原生浏览会话
+// （native/fushi_fsrs/src/store/browse.rs），按写入增量更新；在每类变更之后都必须与「什么都不常驻、整份重读」
+// 的结果逐字节相同。
 //
-// 判据：同一个 store 上，一直用着的 handler（常驻状态在变更前已经建好、查询已经记忆过）与每次
-// 新建的 handler（没有任何常驻状态，等价于旧实现的每请求整库读）对同一组请求的回答相同。
+// 判据：同一个 store 上，一直用着的 handler（会话、语料、查重索引在变更前已经建好，变更后只增量补读）先回答
+// 整组请求；然后关掉原生会话（`browse_close`），新建的 handler 在整份重建的会话上再回答一遍，两边相同。
 // 变更都绕过 handler 直接打在 store 上（同步、复习页、浏览页、导入都是这样写库的）。
 import 'dart:io';
 
@@ -86,31 +87,49 @@ void main() {
   /// 常驻 handler 与新 handler 对整组请求的回答相同（findCards / findNotes / canAddNotes /
   /// notesInfo / cardsInfo / getTags / deckNames）。
   Future<void> expectSameAsFresh(String label) async {
-    final SrsAnkiConnectHandler oracle = fresh();
-    Future<void> same(String action, Map<String, Object?> params) async {
-      final Object? want = await call(oracle, action, params);
-      final Object? got = await call(resident, action, params);
-      expect(got, want, reason: '$label: $action $params');
+    Future<List<(String, Map<String, Object?>, Object?)>> answers(
+      SrsAnkiConnectHandler h,
+    ) async {
+      final List<(String, Map<String, Object?>, Object?)> out =
+          <(String, Map<String, Object?>, Object?)>[];
+      Future<void> ask(String action, Map<String, Object?> params) async =>
+          out.add((action, params, await call(h, action, params)));
+      for (final String q in queries) {
+        await ask('findCards', <String, Object?>{'query': q});
+        await ask('findNotes', <String, Object?>{'query': q});
+      }
+      await ask('canAddNotesWithErrorDetail', <String, Object?>{
+        'notes': candidates(),
+      });
+      final Map<String, Object?> all =
+          (await call(h, 'findCards', <String, Object?>{'query': 'deck:*'}))!
+              as Map<String, Object?>;
+      await ask('cardsInfo', <String, Object?>{'cards': all['result']});
+      final Map<String, Object?> notes =
+          (await call(h, 'findNotes', <String, Object?>{'query': 'deck:*'}))!
+              as Map<String, Object?>;
+      await ask('notesInfo', <String, Object?>{'notes': notes['result']});
+      await ask('getTags', <String, Object?>{});
+      await ask('deckNamesAndIds', <String, Object?>{});
+      return out;
     }
 
-    for (final String q in queries) {
-      await same('findCards', <String, Object?>{'query': q});
-      await same('findNotes', <String, Object?>{'query': q});
+    final List<(String, Map<String, Object?>, Object?)> got = await answers(
+      resident,
+    );
+    // 原生会话整份丢掉：新 handler 的回答来自整份重建的语料与查重索引。
+    await store.browseCommand(<String, Object?>{'op': 'browse_close'});
+    final List<(String, Map<String, Object?>, Object?)> want = await answers(
+      fresh(),
+    );
+    expect(got.length, want.length);
+    for (int i = 0; i < got.length; i++) {
+      expect(
+        got[i].$3,
+        want[i].$3,
+        reason: '$label: ${want[i].$1} ${want[i].$2}',
+      );
     }
-    await same('canAddNotesWithErrorDetail', <String, Object?>{
-      'notes': candidates(),
-    });
-    final Map<String, Object?> all =
-        (await call(oracle, 'findCards', <String, Object?>{'query': 'deck:*'}))!
-            as Map<String, Object?>;
-    final List<Object?> cards = all['result']! as List<Object?>;
-    await same('cardsInfo', <String, Object?>{'cards': cards});
-    final Map<String, Object?> notes =
-        (await call(oracle, 'findNotes', <String, Object?>{'query': 'deck:*'}))!
-            as Map<String, Object?>;
-    await same('notesInfo', <String, Object?>{'notes': notes['result']});
-    await same('getTags', <String, Object?>{});
-    await same('deckNamesAndIds', <String, Object?>{});
   }
 
   setUp(() async {
