@@ -1767,37 +1767,6 @@ class SrsDbStore implements SrsSync2Host {
   /// 批量读（历史、血统）每块的卡数：块内的读各合成几次往返。
   static const int _refreshChunk = 200;
 
-  /// 一组卡的「血统」要读的行（自己与全部前身的修改记录 + 日志 + 服务器时刻）分轮预读：每轮把
-  /// 上一轮新发现的前身一起读（前身链通常一两层）。只多读不少读：前身键的值是否为 true 由
-  /// [_cardLineage] 照常判断。
-  ///
-  /// [withLogs] = false：不预读日志（缓存刷新整段在 Rust：native/fushi_fsrs/src/store/caches.rs）。
-  Future<void> _prefetchLineage(
-    _RefreshPrefetch pre,
-    Iterable<String> cardIds, {
-    bool withLogs = true,
-  }) async {
-    const String prefix = SrsFieldKeys.cardHistoryFromPrefix;
-    final String kind = SrsEntityKind.card.wire;
-    Set<String> next = <String>{
-      for (final String c in cardIds)
-        if (!pre.edits.containsKey('$kind/$c')) c,
-    };
-    for (int round = 0; next.isNotEmpty && round < 256; round++) {
-      await _prefetchEdits(pre, SrsEntityKind.card, next);
-      if (withLogs) await _prefetchLogs(pre, next);
-      final Set<String> preds = <String>{};
-      for (final String c in next) {
-        for (final String fieldKey in pre.editKeys['$kind/$c']!) {
-          if (!fieldKey.startsWith(prefix)) continue;
-          final String p = fieldKey.substring(prefix.length);
-          if (!pre.edits.containsKey('$kind/$p')) preds.add(p);
-        }
-      }
-      next = preds;
-    }
-  }
-
   /// 身份记录行（刷新期间先查预读）。
   Future<SrsEntityRow?> _entityRow(String id) async {
     final _RefreshPrefetch? pre = _RefreshPrefetch.current;
@@ -1833,12 +1802,11 @@ class SrsDbStore implements SrsSync2Host {
     for (final List<String> chunk in _chunks(ids)) {
       for (final String id in chunk) {
         pre.edits['${kind.wire}/$id'] = <SrsEditItem>[];
-        pre.editKeys['${kind.wire}/$id'] = <String>[];
       }
       for (final QueryRow q
           in await db
               .customSelect(
-                'SELECT f.entity_id AS e, f.field_key AS k, '
+                'SELECT f.entity_id AS e, '
                 'CAST(f.json AS BLOB) AS j, s.server_time AS st '
                 'FROM srs_field_edits f '
                 'LEFT JOIN srs_event_local s ON s.event_id = f.id '
@@ -1857,7 +1825,6 @@ class SrsDbStore implements SrsSync2Host {
         pre.edits[key]!.add(
           SrsEditItem.stored(q.read<Uint8List>('j'), q.readNullable<int>('st')),
         );
-        pre.editKeys[key]!.add(q.read<String>('k'));
       }
     }
   }
@@ -1927,29 +1894,22 @@ class SrsDbStore implements SrsSync2Host {
     return out;
   }
 
-  /// 一组卡各自的血统（自己在前，再按广度优先列出全部前身，防环）与沿血统继承的标志：字段寄存器内核
-  /// 一次算完。[pre] 里须已预读这些卡的整条血统（[_prefetchLineage]）。
-  SrsCardLineages _lineagesIn(_RefreshPrefetch pre, List<SrsCardWant> want) {
-    final String prefix = '${SrsEntityKind.card.wire}/';
-    return srsCardLineages(<String, List<SrsEditItem>>{
-      for (final MapEntry<String, List<SrsEditItem>> e in pre.edits.entries)
-        if (e.key.startsWith(prefix)) e.key.substring(prefix.length): e.value,
-    }, want);
-  }
-
-  /// 一组卡的血统（只要 ID）：先按块预读整条血统，再一次内核调用。
-  Future<List<List<String>>> _lineageIds(
-    _RefreshPrefetch pre,
-    List<String> cardIds,
-  ) async {
-    await _prefetchLineage(pre, cardIds);
-    return <List<String>>[
-      for (final SrsCardLineage l in _lineagesIn(pre, <SrsCardWant>[
-        for (final String id in cardIds)
-          SrsCardWant(id, noteDeckId: null, fallbackDeckId: defaultDeckId),
-      ]).wants)
-        l.lineage,
-    ];
+  /// 一组卡各自的血统（自己在前，再按广度优先列出全部前身，防环），与输入同序：内核按卡 id 解析
+  /// （store/caches.rs `lineage_ids`，只读前身链接那几条修改记录），一块一次命令。看得见本机写事务里还没提交的行。
+  Future<List<List<String>>> _lineages(List<String> cardIds) async {
+    final List<List<String>> out = <List<String>>[];
+    for (int i = 0; i < cardIds.length; i += 2000) {
+      final Object? r = (await _sync2Raw(<String, Object?>{
+        'op': 'lineages',
+        'cards': cardIds.sublist(i, min(i + 2000, cardIds.length)),
+      })).json;
+      for (final Object? l in r! as List<Object?>) {
+        out.add(<String>[
+          for (final Object? id in l! as List<Object?>) id! as String,
+        ]);
+      }
+    }
+    return out;
   }
 
   /// 本机缓存的推导规则比 [_cacheRevision] 新：只重算受新规则影响的那些行（见
@@ -2044,11 +2004,7 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 一张卡的复习历史：自己的日志 + 全部前身卡（更改笔记类型继承来的）的日志。
   Future<SrsCardHistory> history(String cardId) async {
-    final _RefreshPrefetch pre = _RefreshPrefetch();
-    final List<String> lineage = (await _lineageIds(pre, <String>[
-      cardId,
-    ])).single;
-    return _readWith(pre, () => _historyOf(lineage));
+    return _historyOf((await _lineages(<String>[cardId])).single);
   }
 
   /// 复习日志的归属：前身卡 → 继承它历史的可见卡（与 [history] 合并前身日志同一条血统规则）。
@@ -2072,10 +2028,7 @@ class SrsDbStore implements SrsSync2Host {
         i,
         min(i + _refreshChunk, visible.length),
       );
-      final List<List<String>> lineages = await _lineageIds(
-        _RefreshPrefetch(),
-        chunk,
-      );
+      final List<List<String>> lineages = await _lineages(chunk);
       for (int k = 0; k < chunk.length; k++) {
         for (final String id in lineages[k].skip(1)) {
           out.putIfAbsent(id, () => chunk[k]);
@@ -2102,8 +2055,12 @@ class SrsDbStore implements SrsSync2Host {
         i,
         min(i + _refreshChunk, ids.length),
       );
+      final List<List<String>> lineages = await _lineages(chunk);
+      // 整块血统的日志 + 服务器时刻一次预读（每块一两次往返），不逐卡查。
       final _RefreshPrefetch pre = _RefreshPrefetch();
-      final List<List<String>> lineages = await _lineageIds(pre, chunk);
+      await _prefetchLogs(pre, <String>{
+        for (final List<String> l in lineages) ...l,
+      });
       await _readWith(pre, () async {
         final List<SrsHistoryInput> inputs = <SrsHistoryInput>[
           for (final List<String> l in lineages) await _historyInput(l),
@@ -2121,30 +2078,13 @@ class SrsDbStore implements SrsSync2Host {
   // ------------------------------------------------------------------ P6 直读命令（统计 / 优化器 / RWKV）
   //
   // 日志不经 Dart：Rust 在 srs.db 的读连接上一个读事务里直读日志与服务器时刻、选取、投影，只回结果列
-  // （docs/specs/2026-10-23-srs-rust-store.md §7）。血统仍由 Dart 算（字段寄存器内核要修改记录预读，与
-  // 缓存刷新同一形态，不预读日志）。命令在后台 isolate 执行，UI isolate 不做同步 FFI 读库。
+  // （docs/specs/2026-10-23-srs-rust-store.md §7）。只交卡 id：血统也由内核在同一个快照里解析
+  // （store/projections.rs `expand_lineages`）。命令在常驻后台 isolate 执行，UI isolate 不做同步 FFI 读库。
 
-  /// 一组卡各自的血统（自己 + 全部前身的卡 ID），与输入同序。只预读修改记录。
-  Future<List<List<String>>> lineagesOf(List<String> cardIds) async {
-    final List<List<String>> out = <List<String>>[];
-    for (int i = 0; i < cardIds.length; i += 1000) {
-      final List<String> chunk = cardIds.sublist(
-        i,
-        min(i + 1000, cardIds.length),
-      );
-      final _RefreshPrefetch pre = _RefreshPrefetch();
-      await _readWith(pre, () async {
-        await _prefetchLineage(pre, chunk, withLogs: false);
-        for (final SrsCardLineage l in _lineagesIn(pre, <SrsCardWant>[
-          for (final String id in chunk)
-            SrsCardWant(id, noteDeckId: null, fallbackDeckId: defaultDeckId),
-        ]).wants) {
-          out.add(l.lineage);
-        }
-      });
-    }
-    return out;
-  }
+  /// 每张卡自成一份历史的输入（内核补齐前身）。
+  static List<List<String>> _seedGroups(List<String> cardIds) => <List<String>>[
+    for (final String id in cardIds) <String>[id],
+  ];
 
   /// 优化器训练集：[cardIds] 这些卡（按给定顺序）的有效评分（[srsPrepareOptimization] 的规则在 Rust）。
   Future<SrsTrainingSet> optimizerTrainingSet(
@@ -2153,13 +2093,12 @@ class SrsDbStore implements SrsSync2Host {
     required SrsDayContext day,
   }) async {
     if (cardIds.isEmpty) return SrsTrainingSet.empty();
-    final List<List<String>> lineages = await lineagesOf(cardIds);
     final List<int> numeric = SrsIds.ankiNumericIds(cardIds);
     return SrsTrainingSet(
       await _coreOptimizerItems(
         core.address,
         core.libraryPath,
-        lineages,
+        _seedGroups(cardIds),
         numeric,
         srsProjectionAlgorithmCode(algorithm),
         day.utcOffsetMin,
@@ -2175,12 +2114,11 @@ class SrsDbStore implements SrsSync2Host {
     SrsDayContext day,
   ) async {
     if (cardIds.isEmpty) return const <SrsRwkvCardRows>[];
-    final List<List<String>> lineages = await lineagesOf(cardIds);
     return srsDecodeRwkvCards(
       await _coreRwkvCards(
         core.address,
         core.libraryPath,
-        lineages,
+        _seedGroups(cardIds),
         ids,
         day.utcOffsetMin,
         day.rolloverHour,
@@ -2200,7 +2138,7 @@ class SrsDbStore implements SrsSync2Host {
       core.address,
       core.libraryPath,
       profileUid,
-      await lineagesOf(cardIds),
+      _seedGroups(cardIds),
       ids,
       day.utcOffsetMin,
       day.rolloverHour,
@@ -4705,9 +4643,6 @@ class _RefreshPrefetch {
 
   /// `<kind>/<entityId>` → 修改记录原文 + 服务器时刻（[SrsDbStore._prefetchEdits]）。
   final Map<String, List<SrsEditItem>> edits = <String, List<SrsEditItem>>{};
-
-  /// `<kind>/<entityId>` → 与 [edits] 同序的字段键（找前身不必解析原文）。
-  final Map<String, List<String>> editKeys = <String, List<String>>{};
   final Map<String, List<SrsReviewLogRow>> logsByCard =
       <String, List<SrsReviewLogRow>>{};
 

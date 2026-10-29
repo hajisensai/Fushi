@@ -436,6 +436,53 @@ fn card_materials(c: &Connection, cfg: &CacheConfig, want: &[(String, Option<Str
     Ok(out)
 }
 
+/// 一组卡各自的血统（自己在前、再按广度优先列出全部前身，防环、最多 256 张），与输入同序。与 [lineages]
+/// 同一条规则（`registers::card_lineage_flags`），但只读前身链接那几条修改记录（血统只看 `historyFrom/<前身>`
+/// 寄存器，每个键的值与别的键无关）：优化器 / RWKV 取数、卡片历史按卡 id 调，血统在内核里解析
+/// （以前 Dart 先把整条血统的全部修改记录预读回 UI isolate 再交给内核，十万张卡上百次往返）。
+pub(crate) fn lineage_ids(c: &Connection, cards: &[String]) -> Result<Vec<Vec<String>>, String> {
+    if cards.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut edits: BTreeMap<String, Vec<(String, Option<i64>)>> = BTreeMap::new();
+    let mut next: BTreeSet<String> = cards.iter().cloned().collect();
+    for _ in 0..256 {
+        if next.is_empty() {
+            break;
+        }
+        let ids: Vec<String> = next.iter().cloned().collect();
+        let mut preds: BTreeSet<String> = BTreeSet::new();
+        for id in &ids {
+            edits.entry(id.clone()).or_default();
+        }
+        for chunk in ids.chunks(400) {
+            let q = format!(
+                "SELECT f.entity_id, f.field_key, f.json, e.server_time FROM srs_field_edits f \
+                 LEFT JOIN srs_event_local e ON e.event_id = f.id \
+                 WHERE f.entity_kind = 'card' AND f.entity_id IN ({}) AND substr(f.field_key, 1, 12) = 'historyFrom/'",
+                marks(chunk.len())
+            );
+            let mut stmt = c.prepare_cached(&q).map_err(sql)?;
+            let mut it = stmt.query(params_from_iter(chunk.iter())).map_err(sql)?;
+            while let Some(r) = it.next().map_err(sql)? {
+                let id: String = r.get(0).map_err(sql)?;
+                let key: String = r.get(1).map_err(sql)?;
+                if let Some(p) = key.strip_prefix(HISTORY_FROM) {
+                    if !edits.contains_key(p) {
+                        preds.insert(p.to_owned());
+                    }
+                }
+                edits.entry(id).or_default().push((r.get(2).map_err(sql)?, r.get(3).map_err(sql)?));
+            }
+        }
+        next = preds;
+    }
+    let all: Vec<(String, Vec<StoredEdit<'_>>)> =
+        edits.iter().map(|(id, es)| (id.clone(), es.iter().map(|(j, s)| (j.as_str(), *s)).collect())).collect();
+    let want: Vec<(String, Option<String>, String)> = cards.iter().map(|id| (id.clone(), None, String::new())).collect();
+    Ok(registers::card_lineage_flags(&all, &want)?.into_iter().map(|(l, _)| l).collect())
+}
+
 /// 每个要的卡的 (血统：自己在前、再按广度优先列出全部前身, 继承后的标志 JSON)，与输入同序。
 fn lineages(c: &Connection, cfg: &CacheConfig, want: &[(String, Option<String>)]) -> Result<Vec<(Vec<String>, Value)>, String> {
     if want.is_empty() {
@@ -942,7 +989,8 @@ mod link_tests {
 
     use rusqlite::Connection;
 
-    use super::{link_family, successor_closure, Links, HISTORY_FROM};
+    use super::{lineage_ids, lineages, link_family, successor_closure, CacheConfig, Links, HISTORY_FROM};
+    use serde_json::Value;
     use crate::store::SrsCore;
 
     /// 改写前的实现（全库前身链接读进内存，再在内存里扩）：对拍用，逐字保留原逻辑。
@@ -1072,6 +1120,49 @@ mod link_tests {
         let (fam, linked) = old_family(&index, &BTreeSet::from(["H".to_owned()]));
         assert_eq!(fam.into_iter().collect::<Vec<_>>(), ["H", "I"].map(String::from).to_vec());
         assert_eq!(linked.len(), 2);
+        drop(w);
+        core.close();
+    }
+
+    /// 只读前身链接的 [lineage_ids] 与读全部修改记录的 [lineages]（缓存刷新用的那条）逐卡同血统：分叉、菱形、环、
+    /// 被同一写入者后来改成 false 的链接（不再算前身）、卡的别的字段与笔记上的同名键（噪声）。
+    #[test]
+    fn lineage_ids_match_full_edit_lineages() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_lineage_ids_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        let w = core.writer().unwrap();
+        let mut n = 0i64;
+        let mut put = |kind: &str, entity: &str, key: &str, v: Value| {
+            n += 1;
+            let json = serde_json::json!({
+                "p": "p", "k": kind, "e": entity, "f": key, "w": "w", "s": n, "v": v,
+                "hlc": format!("{}:0:w", 1_700_000_000_000i64 + n),
+            })
+            .to_string();
+            w.execute(
+                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json)                  VALUES (?1, 'p', ?2, ?3, ?4, 'w', ?5, ?6)",
+                rusqlite::params![format!("e{n}"), kind, entity, key, n, json],
+            )
+            .unwrap();
+        };
+        for (pred, succ) in [("A", "B"), ("A", "C"), ("B", "D"), ("C", "D"), ("D", "E"), ("H", "I"), ("I", "H"), ("X", "E")] {
+            put("card", succ, &format!("{HISTORY_FROM}{pred}"), Value::Bool(true));
+        }
+        // E 后来撤掉了 X 这个前身（同一写入者更新的记录支配旧的）。
+        put("card", "E", &format!("{HISTORY_FROM}X"), Value::Bool(false));
+        put("card", "B", "deck", Value::String("d".into()));
+        put("card", "D", "flag", serde_json::json!(2));
+        put("note", "A", &format!("{HISTORY_FROM}Q"), Value::Bool(true));
+        let cfg = CacheConfig::parse(&serde_json::json!({"defaultDeck": "d"})).unwrap();
+        let cards: Vec<String> = ["A", "B", "C", "D", "E", "H", "I", "X", "Q", "none"].map(String::from).to_vec();
+        let want: Vec<(String, Option<String>)> = cards.iter().map(|c| (c.clone(), None)).collect();
+        let full: Vec<Vec<String>> = lineages(&w, &cfg, &want).unwrap().into_iter().map(|(l, _)| l).collect();
+        assert_eq!(lineage_ids(&w, &cards).unwrap(), full);
+        assert_eq!(full[4], ["E", "D", "B", "C", "A"].map(String::from).to_vec(), "E without the retracted X");
+        assert!(lineage_ids(&w, &[]).unwrap().is_empty());
         drop(w);
         core.close();
     }
