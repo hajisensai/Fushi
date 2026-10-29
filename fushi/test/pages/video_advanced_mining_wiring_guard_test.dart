@@ -57,10 +57,17 @@ void main() {
       src,
       'Future<Map<String, Object?>> _mineRemoteVideoCue(',
     );
+    // 请求解析（含覆盖项）收进三处遥控绑定共用的同步函数 parseVideoRemoteMineRequest
+    // （BUG-3874）：它返回值不是 Future、内部直接 MiningRequestOverrides.readFrom，见
+    // video_remote_binding_support_test 的行为测试。这里咬住调用点仍在首个 await 之前。
     _expectBeforeFirstAwait(
       body,
-      'MiningRequestOverrides.readFrom(',
+      'parseVideoRemoteMineRequest(',
       '遥控制卡：覆盖项必须在 await _mineVideoCard 之前读取',
+    );
+    expect(
+      compactCode(maskComments(body)),
+      contains('finalMiningRequestOverrides?overrides=parsed.overrides;'),
     );
   });
 

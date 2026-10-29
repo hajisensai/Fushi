@@ -667,7 +667,7 @@ class FushiWebBrowserPage extends ConsumerStatefulWidget {
 
 /// 浏览页壳的状态（测试经它读标签列表、直接执行快捷键动作）。
 class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
-    with WidgetsBindingObserver
+    with WidgetsBindingObserver, RouteAware
     implements WebBrowserTabHost {
   late final WebBrowserStore _store = ref.read(webBrowserStoreProvider);
   late final List<WebBrowserFeature> _features;
@@ -704,6 +704,13 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   final Map<String, Uint8List> _thumbnails = <String, Uint8List>{};
 
   WebBrowserTab? _watched;
+
+  /// 已向 `appModel.routeObserver` 订阅的本页路由（换路由时重订）。
+  PageRoute<Object?>? _observedRoute;
+
+  /// 订阅所用的观察者（dispose 时退订；那时不再经 ref 读 AppModel）。
+  late final RouteObserver<PageRoute<Object?>> _routeObserver =
+      _appModel.routeObserver;
   bool _bookmarked = false;
   Uri? _bookmarkCheckedFor;
   bool _systemUiHidden = false;
@@ -731,6 +738,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         ref,
         lookup: _lookup,
         openExtensionSettings: _openExtensionSettings,
+        closeTab: closeTab,
       ),
       _ShortcutKeyBridge(
         registry: _appModel.shortcutRegistry,
@@ -776,7 +784,33 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    if (route is PageRoute<Object?> && !identical(route, _observedRoute)) {
+      _routeObserver
+        ..unsubscribe(this)
+        ..subscribe(this, route);
+      _observedRoute = route;
+    }
+  }
+
+  /// 浏览页被整页路由盖住 / 重新露出：转告各功能（手机遥控据此不在被盖住时抢登记）。
+  void _setCovered(bool covered) {
+    for (final WebBrowserFeature f in _features) {
+      f.onPageCoveredChanged(covered: covered);
+    }
+  }
+
+  @override
+  void didPushNext() => _setCovered(true);
+
+  @override
+  void didPopNext() => _setCovered(false);
+
+  @override
   void dispose() {
+    if (_observedRoute != null) _routeObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     if (_systemUiHidden) {
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
