@@ -1440,6 +1440,7 @@ class FushiFloatingChromeBar extends StatefulWidget {
     required this.slot,
     this.padding,
     this.leading,
+    this.trailing,
     super.key,
   });
 
@@ -1450,6 +1451,10 @@ class FushiFloatingChromeBar extends StatefulWidget {
   /// 页签胶囊左边的前导（独立 push 进来的页面的返回键，一枚圆胶囊）；与
   /// 页签胶囊同一行、间距 [kFushiFloatingChromeGap]。
   final Widget? leading;
+
+  /// 动作组右边的一枚圆胶囊（库页壳的「导入」入口，见 `libraryImportChromeButton`）；
+  /// 与动作组同一行、间距 [kFushiFloatingChromeGap]，不随动作组收进「⋯」。
+  final Widget? trailing;
 
   @override
   State<FushiFloatingChromeBar> createState() => _FushiFloatingChromeBarState();
@@ -1520,13 +1525,21 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
               ? 0
               : (inlineTitle ? maxTitle : kFushiPageChromeExtent) +
                     kFushiFloatingChromeGap;
+          final Widget? trailing = widget.trailing;
+          final double trailReserve = trailing == null
+              ? 0
+              : kFushiPageChromeExtent + kFushiFloatingChromeGap;
           final double maxActions = constraints.maxWidth.isFinite
               ? math.max(
-                  math.max(minActions, constraints.maxWidth / 2),
+                  math.max(
+                    minActions,
+                    (constraints.maxWidth - trailReserve) / 2,
+                  ),
                   tabsNatural == null
                       ? 0
                       : constraints.maxWidth -
                             leadReserve -
+                            trailReserve -
                             tabsNatural -
                             kFushiFloatingChromeGap,
                 )
@@ -1556,6 +1569,10 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
                   constraints: BoxConstraints(maxWidth: maxActions),
                   child: FushiFloatingActionsPill(slot: widget.slot),
                 ),
+                if (trailing != null) ...<Widget>[
+                  const SizedBox(width: kFushiFloatingChromeGap),
+                  trailing,
+                ],
               ],
             ),
           );
