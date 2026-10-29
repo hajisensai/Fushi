@@ -21,6 +21,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
 
 /// 交给插件的平台名（契约 `login({op:'methods', platform})`）。
@@ -517,6 +518,12 @@ class _MusicPluginWebLoginPageState extends State<MusicPluginWebLoginPage> {
   Timer? _timer;
   bool _done = false;
 
+  // 只救命、不重建：登录页没有可恢复的进度，renderer 死后让用户自己重开，
+  // 比自动重建悄悄清空已填的表单更清楚。
+  late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
+    surface: 'music-plugin-login',
+  );
+
   @override
   void initState() {
     super.initState();
@@ -578,16 +585,40 @@ class _MusicPluginWebLoginPageState extends State<MusicPluginWebLoginPage> {
           Expanded(
             child: !_ready
                 ? const FushiLoadingView()
-                : InAppWebView(
-                    key: const ValueKey<String>('music_plugin_login_webview'),
-                    webViewEnvironment: _environment,
-                    initialUrlRequest: URLRequest(url: WebUri.uri(widget.url)),
-                    initialSettings: InAppWebViewSettings(
-                      javaScriptEnabled: true,
-                      sharedCookiesEnabled: true,
+                : KeyedSubtree(
+                    // 重建 key 挂在 WebView 之上，与其它登录页同构。
+                    key: _deathGuard.rebuildKey,
+                    child: InAppWebView(
+                      key: const ValueKey<String>('music_plugin_login_webview'),
+                      webViewEnvironment: _environment,
+                      initialUrlRequest: URLRequest(
+                        url: WebUri.uri(widget.url),
+                      ),
+                      initialSettings: InAppWebViewSettings(
+                        javaScriptEnabled: true,
+                        sharedCookiesEnabled: true,
+                        // 登录页的 WebView 历史就是用户的站点导航，后退手势合理。
+                      ),
+                      onLoadStop: (InAppWebViewController _, WebUri? _) =>
+                          unawaited(_check()),
+                      // 非 null 本身就是救命动作：Java 侧据此 `return true`，
+                      // 不再连坐杀 app。
+                      onWebContentProcessDidTerminate:
+                          (InAppWebViewController _) => unawaited(
+                            _deathGuard.handleWebContentTerminated(),
+                          ),
+                      onRenderProcessGone:
+                          (
+                            InAppWebViewController _,
+                            RenderProcessGoneDetail detail,
+                          ) => unawaited(
+                            _deathGuard.handleDeath(
+                              didCrash: detail.didCrash,
+                              rendererPriorityAtExit:
+                                  detail.rendererPriorityAtExit,
+                            ),
+                          ),
                     ),
-                    onLoadStop: (InAppWebViewController _, WebUri? _) =>
-                        unawaited(_check()),
                   ),
           ),
         ],

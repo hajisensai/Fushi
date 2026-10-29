@@ -162,8 +162,11 @@ impl Gate {
             if value.len() > crate::plugin::vault::MAX_VALUE_BYTES {
                 return Err("凭据超过 64 KiB".into());
             }
+            return Ok(json!({ "key": key, "value": value }));
         }
-        Ok(args.clone())
+        // 只交出核对过的字段，不原样转发：插件能改写 JSON.stringify / toJSON 往参数里塞
+        // `plugin` / `op`，宿主若展开原参数就会以别的插件的名义读写凭据（跨插件越权）。
+        Ok(json!({ "key": key }))
     }
 
     fn check_storage(&self, op: &str, args: &Json) -> Result<Json, String> {
@@ -185,8 +188,10 @@ impl Gate {
             if value.len() > MAX_STORAGE_VALUE {
                 return Err("storage value 超过 1 MiB".into());
             }
+            return Ok(json!({ "key": key, "value": value }));
         }
-        Ok(args.clone())
+        // 同 check_credentials：只交出核对过的字段。
+        Ok(json!({ "key": key }))
     }
 }
 
@@ -315,10 +320,18 @@ impl Instance {
             }
             Ok(())
         });
+        if result.is_ok() {
+            // 模块顶层可能排了微任务（`Promise.resolve().then(...)`）：必须在同一份 CPU 预算内
+            // 跑掉——先 disarm 再跑会让微任务里的死循环永不中断，open 永不返回、实例占死一个线程
+            // 且无法卸载。日志留到第一次 step 交出。
+            self.run_jobs();
+        }
+        let over = self.over_budget() || self.fatal.is_some();
         self.disarm();
         result?;
-        // 模块顶层可能排了微任务；顺手跑掉，日志留到第一次 step 交出。
-        self.run_jobs();
+        if over {
+            return Err(format!("插件加载超过 {} ms CPU 预算，已终止", self.budget_ms));
+        }
         Ok(())
     }
 

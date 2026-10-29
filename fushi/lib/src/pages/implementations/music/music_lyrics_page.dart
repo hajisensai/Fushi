@@ -1272,7 +1272,29 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     final MusicSession session = appModelNoUpdate.musicSession;
     final MusicPlayerEngine engine = session.engine;
     final ColorScheme cs = Theme.of(context).colorScheme;
-    const double slot = 64;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        // 五格 64dp + 四道 12dp 间距 = 368dp；窄于此（手机竖屏的歌词栏常只有 320dp 上下）时
+        // 格子等比收窄，下限 48dp 命中区，不让按钮行溢出。
+        const double maxSlot = 64;
+        const double gap = 12;
+        final double fit = constraints.maxWidth.isFinite
+            ? (constraints.maxWidth - 4 * gap) / 5
+            : maxSlot;
+        final double slot = fit.clamp(48, maxSlot).toDouble();
+        return _buildTransportRow(context, engine, session, cs, slot, gap);
+      },
+    );
+  }
+
+  Widget _buildTransportRow(
+    BuildContext context,
+    MusicPlayerEngine engine,
+    MusicSession session,
+    ColorScheme cs,
+    double slot,
+    double gap,
+  ) {
     const double icon = 30;
     Widget cell(Widget child) => SizedBox(
       width: slot,
@@ -1283,7 +1305,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         cell(musicPlayModeButton(context, engine, iconSize: icon)),
-        const SizedBox(width: 12),
+        SizedBox(width: gap),
         cell(
           FushiIconButtonControl(
             iconSize: icon,
@@ -1292,7 +1314,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             icon: const FushiIcon(FushiIcons.skipPrevious),
           ),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: gap),
         cell(
           FushiExpressivePlayButton(
             key: const ValueKey<String>('music_lyrics_play_pause'),
@@ -1301,7 +1323,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             onPressed: () => unawaited(engine.togglePlayPause()),
           ),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: gap),
         cell(
           FushiIconButtonControl(
             iconSize: icon,
@@ -1310,7 +1332,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             icon: const FushiIcon(FushiIcons.skipNext),
           ),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: gap),
         cell(_buildFavoriteButton(session, icon, cs)),
       ],
     );

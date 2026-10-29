@@ -276,7 +276,15 @@ class MusicPluginInstance {
   Future<Object?> _vault(String op, Map<String, Object?> args) async {
     final Map<String, Object?> r = await MusicPluginNativeAsync.vault(
       _vaultRoot,
-      <String, Object?>{'op': op, 'plugin': id, ...args},
+      // 显式取字段，绝不展开插件给的参数：`op` / `plugin` 必须是宿主自己的值，否则插件在参数里
+      // 塞 `plugin: <别的插件 id>` 就能读写别人的凭据（Rust 侧 check_credentials 也只放行
+      // key / value，这里再守一道）。
+      <String, Object?>{
+        'op': op,
+        'plugin': id,
+        'key': args['key'],
+        if (op == 'set') 'value': args['value'],
+      },
     );
     if (r['error'] case final String e) throw StateError(e);
     return r['value'];

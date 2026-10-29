@@ -32,6 +32,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 
 part 'music_plugin_detail_pages.dart';
 
@@ -130,7 +131,8 @@ Widget _thumb(String? url, {bool round = false}) => round
         child: MusicCover(
           coverPath: url,
           size: 48,
-          borderRadius: BorderRadius.circular(24),
+          // 48dp 头像是正圆（半径 = 尺寸 / 2），几何而非圆角档位。
+          borderRadius: const BorderRadius.all(Radius.circular(24)),
         ),
       )
     : musicMaterialCover(
@@ -1433,7 +1435,7 @@ class _RankCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     return _MorphCard(
-      color: cs.surfaceContainerHigh,
+      color: FushiDesignTokens.of(context).surfaces.card,
       radius: const BorderRadius.all(Radius.circular(28)),
       hoverRadius: const BorderRadius.all(Radius.circular(16)),
       onTap: () => unawaited(
@@ -1926,7 +1928,7 @@ class _QuickTile extends StatelessWidget {
     return SizedBox(
       height: 64,
       child: _MorphCard(
-        color: cs.surfaceContainerHigh,
+        color: FushiDesignTokens.of(context).surfaces.card,
         radius: const BorderRadius.all(Radius.circular(16)),
         hoverRadius: const BorderRadius.all(Radius.circular(32)),
         onTap: onTap,
@@ -2024,7 +2026,7 @@ class _CoverWall extends StatelessWidget {
                           children: <Widget>[
                             for (int i = 0; i < _cols; i++)
                               ClipRRect(
-                                borderRadius: BorderRadius.circular(14),
+                                borderRadius: FushiM3eShape.smallRadius,
                                 child: SizedBox.square(
                                   dimension: _tile,
                                   child: MusicCover(

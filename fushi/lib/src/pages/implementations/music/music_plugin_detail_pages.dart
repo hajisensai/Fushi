@@ -133,8 +133,9 @@ class _ExpandableTextState extends State<_ExpandableText> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            AnimatedSize(
+            FushiAnimatedSize(
               duration: fushiMotionDuration(context, FushiMotion.medium),
+              curve: FushiSpringCurve.effects,
               alignment: Alignment.topLeft,
               child: Text(
                 widget.text,
@@ -185,7 +186,7 @@ Widget _artistLinks(
               key: ValueKey<String>(
                 'music-plugin-artist-link-${artists[i].id}',
               ),
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: FushiBorderRadius.chip,
               onTap: () => unawaited(
                 _push(
                   context,
@@ -679,7 +680,8 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
           child: MusicCover(
             coverPath: a.coverUrl ?? widget.artist.coverUrl,
             size: avatar,
-            borderRadius: BorderRadius.circular(avatar / 2),
+            // 艺人头像是正圆：半径随头像尺寸走，是几何而非圆角档位。
+            borderRadius: BorderRadius.all(Radius.circular(avatar / 2)),
           ),
         ),
         ConstrainedBox(
@@ -714,7 +716,7 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
                 FushiPressScale(
                   child: InkWell(
                     key: const ValueKey<String>('music-plugin-artist-bio'),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: FushiBorderRadius.card,
                     onTap: () => _select(_ArtistTab.details),
                     child: Text(
                       bio,

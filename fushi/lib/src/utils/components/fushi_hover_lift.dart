@@ -433,7 +433,7 @@ class FushiTilt extends StatelessWidget {
           TweenAnimationBuilder<Offset>(
             tween: Tween<Offset>(end: p ?? Offset.zero),
             duration: kFushiTiltFollowDuration,
-            curve: Curves.easeOutCubic,
+            curve: FushiSpringCurve.effects,
             child: child,
             builder: (BuildContext context, Offset v, Widget? child) {
               const double a = kFushiTiltMaxDegrees * math.pi / 180;
@@ -468,7 +468,7 @@ class FushiTiltGlare extends StatelessWidget {
             TweenAnimationBuilder<Offset>(
               tween: Tween<Offset>(end: p ?? Offset.zero),
               duration: kFushiTiltFollowDuration,
-              curve: Curves.easeOutCubic,
+              curve: FushiSpringCurve.effects,
               builder: (BuildContext context, Offset v, Widget? _) =>
                   AnimatedOpacity(
                     opacity: p == null ? 0 : 1,

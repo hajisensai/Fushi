@@ -273,6 +273,11 @@ pub(crate) fn rsa_raw(modulus_hex: &str, exponent_hex: &str, data: &[u8]) -> std
     if n.bits() < 64 || n.bits() > 8192 {
         return Err("modulus 长度不合理".into());
     }
+    // 只做公钥运算（平台协议用的都是 0x10001 一类小指数）。原生模幂期间 QuickJS 的中断回调
+    // 不会被调用，指数不设上限时插件传几 MB 的指数就能绕过 CPU 预算把线程占死几十秒。
+    if e.bits() > 64 {
+        return Err("exponent 超过 64 位（只支持公钥运算）".into());
+    }
     let m = BigUint::from_bytes_be(data);
     if m >= n {
         return Err("数据不小于模数".into());
@@ -307,6 +312,9 @@ mod tests {
     fn rsa_raw_small() {
         // 过小的模数拒绝；正常模数下结果等于大数模幂、并左补零到模长。
         assert!(rsa_raw("ca1", "11", &[65]).is_err());
+        // 超长指数拒绝（原生模幂不受 CPU 预算中断）。
+        let modulus_big = "c7f1d3e5b9a1f2d4c6e8a0b2d4f6a8c1e3f5a7b9d1c3e5f7a9b1d3f5e7c9a1b3";
+        assert!(rsa_raw(modulus_big, &"f".repeat(17), &[2]).is_err());
         let modulus = "c7f1d3e5b9a1f2d4c6e8a0b2d4f6a8c1e3f5a7b9d1c3e5f7a9b1d3f5e7c9a1b3";
         let out = rsa_raw(modulus, "10001", &[2]).unwrap();
         assert_eq!(out.len(), 32);

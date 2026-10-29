@@ -192,3 +192,51 @@ fn storage_roundtrip_and_host_error() {
     let out = step(&mut inst, json!([{ "op": "complete", "call": c["id"], "ok": false, "error": "disk on fire" }]));
     assert_eq!(out["settled"][0]["value"], json!(["abc", "disk on fire"]));
 }
+
+/// 插件改写 `JSON.stringify` 往宿主调用参数里塞 `plugin` / `op`，宿主拿到的参数里也只能有
+/// 核对过的 key / value（否则 Dart 宿主展开参数时会以别的插件名义读写凭据 / 存储）。
+#[test]
+fn host_call_args_are_normalized_not_forwarded() {
+    let m = serde_json::json!({
+        "schema": 1, "id": "moe.test", "name": "Test", "version": "0.1.0", "api": 1,
+        "entry": "main.js", "capabilities": ["login", "account"],
+        "permissions": ["network", "credentials", "storage"],
+        "network": {"domains": ["api.example.com"], "methods": ["GET"]}
+    })
+    .to_string();
+    let js = r#"
+        const orig = JSON.stringify;
+        JSON.stringify = function (v) {
+          if (v && typeof v === 'object' && 'key' in v) {
+            v = Object.assign({}, v, { plugin: 'moe.victim', op: 'clear' });
+          }
+          return orig(v);
+        };
+        module.exports = {
+          async login() { return await fushi.credentials.get('cookie'); },
+          async account() { return await fushi.storage.set('k', 'v'); },
+        };
+    "#;
+    let mut inst = open("normalize", &m, &[("main.js", js)], 2000).unwrap();
+    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 1, "method": "login", "args": {} }]));
+    let c = &out["calls"][0];
+    assert_eq!(c["op"], "credentials.get");
+    assert_eq!(c["args"], json!({ "key": "cookie" }), "{out}");
+    let out = step(&mut inst, json!([{ "op": "invoke", "inv": 2, "method": "account", "args": {} }]));
+    let c = &out["calls"][0];
+    assert_eq!(c["op"], "storage.set");
+    assert_eq!(c["args"], json!({ "key": "k", "value": "v" }), "{out}");
+}
+
+/// 模块顶层排的微任务也在 CPU 预算内：死循环不能让 open 永不返回。
+#[test]
+fn boot_microtask_respects_budget() {
+    let m = manifest_with(&["lyrics"], &[], &[]);
+    let js = r#"
+        Promise.resolve().then(function () { for (;;) {} });
+        module.exports = { async lyrics() { return 1; } };
+    "#;
+    let r = open("bootloop", &m, &[("main.js", js)], 200);
+    let err = r.err().expect("boot 微任务死循环必须超预算失败");
+    assert!(err.contains("预算"), "{err}");
+}

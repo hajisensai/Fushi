@@ -26,6 +26,8 @@ import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -259,9 +261,9 @@ class _CompactMusicBar extends StatelessWidget {
         padding: EdgeInsets.fromLTRB(8, 8, collapsed ? 8 : 10, 8),
         // 收起时点一下先展开，展开后再点才进播放页。
         onTap: collapsed ? peek : null,
-        child: AnimatedSize(
+        child: FushiAnimatedSize(
           duration: motion,
-          curve: Curves.easeOutBack,
+          curve: FushiSpringCurve.spatial,
           alignment: AlignmentDirectional.centerEnd,
           child: Row(
             mainAxisSize: collapsed ? MainAxisSize.min : MainAxisSize.max,
@@ -307,7 +309,7 @@ class _CompactMusicBar extends StatelessWidget {
         ),
         child: AnimatedAlign(
           duration: motion,
-          curve: Curves.easeOutCubic,
+          curve: FushiSpringCurve.effects,
           heightFactor: 1,
           alignment: collapsed
               ? AlignmentDirectional.centerEnd.resolve(
@@ -318,10 +320,14 @@ class _CompactMusicBar extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 560),
             child: roomy
                 ? card
-                : GestureDetector(
-                    onLongPress: () => unawaited(_moreMenu(context)),
-                    onSecondaryTap: () => unawaited(_moreMenu(context)),
-                    child: card,
+                : ContextMenuTrigger(
+                    onInvoke: contextMenuInvoker(
+                      () => unawaited(_moreMenu(context)),
+                    ),
+                    child: GestureDetector(
+                      onLongPress: () => unawaited(_moreMenu(context)),
+                      child: card,
+                    ),
                   ),
           ),
         ),
@@ -333,14 +339,13 @@ class _CompactMusicBar extends StatelessWidget {
     final AppModel appModel = ProviderScope.containerOf(
       context,
     ).read(appProvider);
-    await showModalBottomSheet<void>(
+    await adaptiveModalSheet<void>(
       context: context,
-      showDragHandle: true,
       builder: (BuildContext sheet) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            ListTile(
+            FushiListTileControl(
               leading: const FushiIcon(FushiIcons.highQuality),
               title: Text(t.music_signal_path_title),
               onTap: () {
@@ -348,7 +353,7 @@ class _CompactMusicBar extends StatelessWidget {
                 unawaited(showMusicSignalPathPanel(context, appModel));
               },
             ),
-            ListTile(
+            FushiListTileControl(
               leading: const FushiIcon(FushiIcons.stop),
               title: Text(t.music_stop),
               onTap: () {
@@ -487,7 +492,7 @@ class _DockedMusicBarState extends State<_DockedMusicBar> {
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
       child: AnimatedAlign(
         duration: motion,
-        curve: Curves.easeOutCubic,
+        curve: FushiSpringCurve.effects,
         heightFactor: 1,
         alignment: Alignment.center,
         child: MouseRegion(
@@ -504,9 +509,9 @@ class _DockedMusicBarState extends State<_DockedMusicBar> {
               padding: EdgeInsets.fromLTRB(8, 6, expanded ? 12 : 8, 6),
               // 收起时第一下只展开（触屏没有悬停）；展开后点条身才进播放页。
               onTap: expanded ? null : () => setState(() => _pinned = true),
-              child: AnimatedSize(
+              child: FushiAnimatedSize(
                 duration: motion,
-                curve: Curves.easeOutBack,
+                curve: FushiSpringCurve.spatial,
                 child: AnimatedSwitcher(
                   duration: fushiMotionDuration(context, FushiMotion.short),
                   layoutBuilder: (Widget? current, List<Widget> previous) =>

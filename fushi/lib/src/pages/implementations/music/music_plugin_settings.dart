@@ -10,6 +10,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_login.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -62,8 +63,8 @@ class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody> {
   });
 
   Future<void> _install() async {
-    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final FilePickerResult? picked = await pickFilesByExtensions(
+      context: context,
       allowedExtensions: const <String>['fushiplug', 'zip'],
       withData: true,
     );

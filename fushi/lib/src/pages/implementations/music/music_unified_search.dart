@@ -362,7 +362,7 @@ class _SourceTag extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: scheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: FushiBorderRadius.chip,
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1398,7 +1398,8 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
             child: MusicCover(
               coverPath: coverUrl,
               size: size,
-              borderRadius: BorderRadius.circular(size / 2),
+              // 艺人头像是正圆：半径随尺寸走，几何而非圆角档位。
+              borderRadius: BorderRadius.all(Radius.circular(size / 2)),
             ),
           )
         : musicMaterialCover(

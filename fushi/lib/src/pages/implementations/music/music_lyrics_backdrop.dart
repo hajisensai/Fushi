@@ -1047,7 +1047,7 @@ class _BackdropSceneState extends State<_BackdropScene> {
             cs.primaryContainer,
             cs.tertiaryContainer,
             cs.secondaryContainer,
-            cs.surfaceContainerHighest,
+            cs.surfaceContainer,
           ], kMusicMeshGridSize)
         : palette.grid;
     final Color base = palette.isEmpty

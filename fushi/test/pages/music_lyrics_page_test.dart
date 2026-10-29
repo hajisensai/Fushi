@@ -357,9 +357,14 @@ void main() {
     expect(app.learningActions, 1, reason: 'AB 循环算学习动作（D4）');
 
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(
-      find.byKey(const ValueKey<String>('music_lyrics_ab_loop_extend')),
+    // 宽屏左栏（封面 + 标题 + 进度 + 按钮组 + 工具行）在 800×600 下超过一屏、本身可滚动；
+    // 「再加一行」开 AB 后才出现在工具行里，先滚到可见再点（与用户操作一致）。
+    final Finder extend = find.byKey(
+      const ValueKey<String>('music_lyrics_ab_loop_extend'),
     );
+    await tester.ensureVisible(extend);
+    await tester.pump();
+    await tester.tap(extend);
     await tester.pump();
     expect(backend.log, contains('ab:1000-8000'));
 

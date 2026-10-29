@@ -9,11 +9,20 @@
 # 期望集**递归**取自 packages/fushi_music/lib/ 下所有 .dart 里的 'ffm_xxx' 字面量
 # （各域绑定分文件放在 lib/src/<域>/ 下），所以新增域符号自动跟上，不用手改清单。
 #
-# 用法: verify_abi.sh <ELF .so | Mach-O dylib / 可执行文件 / ar 静态库> [nm-binary]
+# 用法: verify_abi.sh [--no-plugin] <ELF .so | Mach-O dylib / 可执行文件 / ar 静态库> [nm-binary]
 #   nm-binary 缺省 `nm`；Android 交叉产物用 NDK 的 llvm-nm 更稳。
+#   --no-plugin：产物按 `default-features = false` 编（不带 plugin 特性 = 在线音源插件的 JS 运行时），
+#   期望集不含插件绑定（packages/fushi_music/lib/src/plugin/ 下的 ffm_plugin_*）。只给 iOS 用
+#   （伞形库 / Runner：App Store 合规，见 StoreRestrictedCapability.onlineMusicSource）；
+#   Dart 侧缺这组符号即 MusicPluginNative.isSupported == false。其余平台必须带全。
 set -euo pipefail
 
-BIN="${1:?usage: verify_abi.sh <binary> [nm-binary]}"
+PLUGIN_EXCLUDE=()
+if [[ "${1:-}" == "--no-plugin" ]]; then
+  PLUGIN_EXCLUDE=(--exclude-dir=plugin)
+  shift
+fi
+BIN="${1:?usage: verify_abi.sh [--no-plugin] <binary> [nm-binary]}"
 NM="${2:-nm}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,7 +35,7 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 # -h：多文件时不带文件名前缀；--include 只扫 .dart。没有任何命中时 grep 退 1，交给下面的哨兵判。
-grep -rhoE --include='*.dart' "'ffm_[a-z0-9_]+'" "$BINDINGS_DIR" | tr -d "'" | sort -u > "$work/expected.txt" || true
+grep -rhoE --include='*.dart' ${PLUGIN_EXCLUDE[@]+"${PLUGIN_EXCLUDE[@]}"} "'ffm_[a-z0-9_]+'" "$BINDINGS_DIR" | tr -d "'" | sort -u > "$work/expected.txt" || true
 expected_count="$(wc -l < "$work/expected.txt" | tr -d ' ')"
 echo "ffm_* symbols looked up by the Dart bindings: $expected_count"
 # 扫描规模哨兵：正则被绑定文件的格式改写打断时，期望集会塌成 0 条，「全都导出了」恒真。

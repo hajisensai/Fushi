@@ -53,6 +53,14 @@ aes-gcm = { version = "0.10", optional = true }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"], optional = true }
 
+# Android：rquickjs-sys 0.14 只随包附带桌面 / Apple 目标的 QuickJS 绑定，没有
+# aarch64 / x86_64 / armv7-linux-android*（实测缺绑定即 include! 失败）。Android 上用 bindgen
+# 现场生成：cargo-ndk 会给 bindgen 设好 NDK sysroot（BINDGEN_EXTRA_CLANG_ARGS_<triple>），
+# libclang 取 runner 自带的 / NDK 自带的（Windows 本机需 LIBCLANG_PATH 指向 NDK 的 llvm bin）。
+# 同名 optional 依赖在目标表里补特性，plugin 特性的 dep:rquickjs 同时激活两处声明。
+[target.'cfg(target_os = "android")'.dependencies]
+rquickjs = { version = "0.14", default-features = false, features = ["parallel", "bindgen"], optional = true }
+
 [features]
 default = ["plugin"]
 plugin = ["dep:rquickjs", "dep:serde", "dep:serde_json", "dep:zip", "dep:sha2", "dep:md-5", "dep:hmac",
