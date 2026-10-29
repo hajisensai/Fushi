@@ -221,3 +221,17 @@ CREATE TABLE IF NOT EXISTS sync2_media_seeded (
   PRIMARY KEY (profile_uid, location)
 ) WITHOUT ROWID;
 "#;
+
+/// V10：「因果优先、并发才比 HLC」寄存器的反链（store/sync2/mvr.rs）：媒体名 → 内容绑定（`m`）、各位置媒体在 / 不在
+/// （`a`）、笔记标签顺序（`t`）。只存（寄存器, 设备, seq），HLC 与上下文按主键从 `sync2_ops` 取。建表后由
+/// [super::mvr::rebuild] 从日志重建这三个投影（升级前按纯 HLC 算的值在慢钟 / 超前时钟下与新规则不同，各设备必须
+/// 从同一批操作推出同一结果）。
+pub const V10: &str = r#"
+CREATE TABLE IF NOT EXISTS sync2_mvr (
+  profile_uid TEXT NOT NULL,
+  reg TEXT NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  PRIMARY KEY (profile_uid, reg, device, seq)
+) WITHOUT ROWID;
+"#;
