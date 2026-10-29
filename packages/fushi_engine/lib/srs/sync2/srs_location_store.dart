@@ -46,8 +46,49 @@ abstract interface class SrsLocationStore {
   /// 写文件（同名覆盖；中间目录按需创建）。
   Future<void> put(String path, Uint8List bytes);
 
+  /// 写不可变对象（内容寻址媒体：名字就是内容哈希）：已在就什么都不做，不在才写。**从不先删再写**——覆盖写在云盘
+  /// 上是「删旧的 → 传新的」两步，中间被打断（或别的设备正好来读）就只剩半截 / 什么都没有。
+  Future<void> putNew(String path, Uint8List bytes);
+
   /// 删文件（不存在视为成功）。
   Future<void> delete(String path);
+}
+
+/// 能按文件读写的位置（审查 S-9）：大媒体从文件传、下载到文件，不整份读进内存。三个内置实现都支持；只实现了
+/// [SrsLocationStore] 的位置经 [srsLocationGetFile] / [srsLocationPutNewFile] 退回按字节读写。
+abstract interface class SrsLocationFileStore {
+  /// 把 [path] 下载到 [dst]（覆盖）；不存在返回 false（[dst] 不动）。
+  Future<bool> getFile(String path, File dst);
+
+  /// 同 [SrsLocationStore.putNew]，内容来自 [src]（调用期间 [src] 不得改动）。
+  Future<void> putNewFile(String path, File src);
+}
+
+/// 把 [path] 下载到 [dst]；不存在返回 false。
+Future<bool> srsLocationGetFile(
+  SrsLocationStore location,
+  String path,
+  File dst,
+) async {
+  if (location is SrsLocationFileStore) {
+    return (location as SrsLocationFileStore).getFile(path, dst);
+  }
+  final Uint8List? bytes = await location.get(path);
+  if (bytes == null) return false;
+  await dst.writeAsBytes(bytes, flush: true);
+  return true;
+}
+
+/// 把 [src] 写成不可变对象 [path]（见 [SrsLocationStore.putNew]）。
+Future<void> srsLocationPutNewFile(
+  SrsLocationStore location,
+  String path,
+  File src,
+) async {
+  if (location is SrsLocationFileStore) {
+    return (location as SrsLocationFileStore).putNewFile(path, src);
+  }
+  await location.putNew(path, await src.readAsBytes());
 }
 
 /// 一个位置同时在途的读 / 写 / 删 / 列目录请求数上限。
@@ -98,7 +139,7 @@ const String kSrsSync2Folder = 'v2';
 /// 一轮同步会并发读写（[srsSync2Round]）：建文件夹按路径单飞（同一路径只建一次——Google Drive 允许同名文件夹，
 /// 并发各建一个会把文件写散）；[maxConcurrentWrites] 给同一命名空间并发写会互相锁冲突的后端（Dropbox：
 /// `too_many_write_operations`）限流写 / 删，读不受限。
-class SrsAssetLocationStore implements SrsLocationStore {
+class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
   SrsAssetLocationStore({
     required this.store,
     required this.profileUid,
@@ -261,6 +302,27 @@ class SrsAssetLocationStore implements SrsLocationStore {
   }
 
   @override
+  Future<bool> getFile(String path, File dst) async {
+    final (String dir, String name) = _split(path);
+    final String? known = _listed[_norm(dir)]?[name];
+    if (known != null) {
+      try {
+        await store.getAsset(known, dst);
+        return true;
+      } on Object {
+        // 列出来之后被删 / 被重写（定位符变了）：按名重查。
+        _listed[_norm(dir)]?.remove(name);
+      }
+    }
+    final String? id = await _folder(dir, create: false);
+    if (id == null) return false;
+    final AssetEntry? a = await store.findAsset(id, name);
+    if (a == null) return false;
+    await store.getAsset(a.id, dst);
+    return true;
+  }
+
+  @override
   Future<bool> exists(String path) async {
     final (String dir, String name) = _split(path);
     final Map<String, String?>? listed = _listed[_norm(dir)];
@@ -304,6 +366,36 @@ class SrsAssetLocationStore implements SrsLocationStore {
   }
 
   @override
+  Future<void> putNew(String path, Uint8List bytes) => _write(() async {
+    final File f = _tmp();
+    try {
+      await f.writeAsBytes(bytes, flush: true);
+      await _putNewFile(path, f);
+    } finally {
+      try {
+        await f.delete();
+      } on FileSystemException {
+        // 临时文件留给系统清理。
+      }
+    }
+  });
+
+  @override
+  Future<void> putNewFile(String path, File src) =>
+      _write(() => _putNewFile(path, src));
+
+  /// 后端本来就是「从文件传」：直接传 [src]，不经内存、不再落一份临时文件。
+  Future<void> _putNewFile(String path, File src) async {
+    final (String dir, String name) = _split(path);
+    final Map<String, String?>? listed = _listed[_norm(dir)];
+    if (listed != null && listed.containsKey(name)) return;
+    final String id = (await _folder(dir, create: true))!;
+    if (listed == null && await store.findAsset(id, name) != null) return;
+    await store.putAsset(id, name, src);
+    listed?[name] = null;
+  }
+
+  @override
   Future<void> delete(String path) => _write(() => _delete(path));
 
   Future<void> _delete(String path) async {
@@ -324,7 +416,8 @@ class SrsAssetLocationStore implements SrsLocationStore {
 
 /// 本地文件夹位置（桌面任意目录、U 盘、NAS 挂载盘、Syncthing / 坚果云 / iCloud Drive 同步目录；设计 §6.5）。
 /// 写先落临时文件再改名，读者永远看不到半截文件。
-class SrsDirectoryLocationStore implements SrsLocationStore {
+class SrsDirectoryLocationStore
+    implements SrsLocationStore, SrsLocationFileStore {
   SrsDirectoryLocationStore(this.root);
 
   final Directory root;
@@ -391,6 +484,39 @@ class SrsDirectoryLocationStore implements SrsLocationStore {
   }
 
   @override
+  Future<void> putNew(String path, Uint8List bytes) async {
+    if (await _file(path).exists()) return;
+    await put(path, bytes);
+  }
+
+  @override
+  Future<bool> getFile(String path, File dst) async {
+    try {
+      await _file(path).copy(dst.path);
+      return true;
+    } on PathNotFoundException {
+      return false;
+    }
+  }
+
+  /// 先流式拷成同目录临时文件再改名（读者看不到半截）。
+  @override
+  Future<void> putNewFile(String path, File src) async {
+    final File f = _file(path);
+    if (await f.exists()) return;
+    await f.parent.create(recursive: true);
+    final File tmp = File(
+      p.join(f.parent.path, '.srs2tmp-${_rand.nextInt(1 << 30)}'),
+    );
+    try {
+      await src.copy(tmp.path);
+      await tmp.rename(f.path);
+    } finally {
+      if (await tmp.exists()) await tmp.delete();
+    }
+  }
+
+  @override
   Future<void> delete(String path) async {
     try {
       await _file(path).delete();
@@ -401,7 +527,7 @@ class SrsDirectoryLocationStore implements SrsLocationStore {
 }
 
 /// 内存位置（测试 / 模拟哑存储的故障注入）。
-class SrsMemoryLocationStore implements SrsLocationStore {
+class SrsMemoryLocationStore implements SrsLocationStore, SrsLocationFileStore {
   final Map<String, Uint8List> files = <String, Uint8List>{};
 
   @override
@@ -437,6 +563,24 @@ class SrsMemoryLocationStore implements SrsLocationStore {
   @override
   Future<void> put(String path, Uint8List bytes) async =>
       files[path] = Uint8List.fromList(bytes);
+
+  @override
+  Future<void> putNew(String path, Uint8List bytes) async {
+    if (files.containsKey(path)) return;
+    await put(path, bytes);
+  }
+
+  @override
+  Future<bool> getFile(String path, File dst) async {
+    final Uint8List? bytes = await get(path);
+    if (bytes == null) return false;
+    await dst.writeAsBytes(bytes, flush: true);
+    return true;
+  }
+
+  @override
+  Future<void> putNewFile(String path, File src) async =>
+      putNew(path, await src.readAsBytes());
 
   @override
   Future<void> delete(String path) async => files.remove(path);

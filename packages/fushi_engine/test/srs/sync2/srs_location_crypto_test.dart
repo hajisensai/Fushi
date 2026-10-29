@@ -13,6 +13,7 @@ import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../support/srs_test_storage.dart';
@@ -175,13 +176,18 @@ void main() {
       cipher: SrsMediaCipher(a, ka.keyHex),
     );
     final Uint8List sealed =
-        loc.written['${SrsMediaCipher(a, ka.keyHex).folder}/pic.png']!;
+        loc.written[srsMediaContentPath(
+          SrsMediaCipher(a, ka.keyHex).folder,
+          srsMediaSha256(picture),
+        )]!;
     expect(_contains(sealed, picture), isFalse);
     expect(
       loc.written.keys.where((String k) => k.startsWith('media/')),
       isEmpty,
     );
 
+    // 名字 → 内容的绑定是操作：A 再发一轮，B 才知道 pic.png 是哪份内容。
+    await round(a, loc, key: ka.enabled());
     await round(b, loc, key: ka.enabled());
     final SrsMediaSyncReport rb = await srsSyncMedia(
       location: loc,
@@ -191,5 +197,131 @@ void main() {
     );
     expect(rb.downloaded, 1);
     expect(File('${mb.path}/pic.png').readAsBytesSync(), picture);
+  });
+
+  test('S-9：大媒体文件到文件分块封装（FSM2），文件夹位置上流式传 / 收；坏一个字节整份拒收、不落地', () async {
+    final Directory root = Directory.systemTemp.createTempSync('srs_loc_dir_');
+    final SrsDirectoryLocationStore loc = SrsDirectoryLocationStore(root);
+    final SrsDbStore a = await device('A');
+    final SrsDbStore b = await device('B');
+    final Directory ma = Directory.systemTemp.createTempSync('srs_media_a_');
+    final Directory mb = Directory.systemTemp.createTempSync('srs_media_b_');
+    addTearDown(() {
+      for (final Directory d in <Directory>[root, ma, mb]) {
+        try {
+          d.deleteSync(recursive: true);
+        } on FileSystemException {
+          // 句柄滞后。
+        }
+      }
+    });
+    // 3 MiB + 零头：跨很多个 64 KiB 块，末块不满。
+    final Uint8List movie = Uint8List(3 * 1024 * 1024 + 12345);
+    for (int i = 0; i < movie.length; i++) {
+      movie[i] = (i * 131 + (i >> 9)) & 0xff;
+    }
+    File('${ma.path}/clip.mp4').writeAsBytesSync(movie);
+    await a.createNote(
+      noteTypeId: a.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kProfile, 'Expression'): '動[sound:clip.mp4]',
+      },
+    );
+    final SrsLocationKey ka = await srsDeriveLocationKey(
+      a,
+      'pw',
+      pendingEnable: true,
+    );
+    await round(a, loc, key: ka);
+    final SrsMediaCipher ca = SrsMediaCipher(a, ka.keyHex);
+    final SrsMediaSyncReport ra = await srsSyncMedia(
+      location: loc,
+      store: a,
+      mediaRoot: ma,
+      cipher: ca,
+    );
+    expect(ra.uploaded, 1);
+    final String sha = srsMediaSha256(movie);
+    final File sealed = File(
+      '${root.path}/${srsMediaContentPath(ca.folder, sha)}',
+    );
+    final Uint8List stored = sealed.readAsBytesSync();
+    expect(ascii.decode(stored.sublist(0, 4)), 'FSM2');
+    // 27 字节头 + 每 64 KiB 一个 16 字节 tag（含末块）。
+    expect(stored.length, 27 + movie.length + (movie.length ~/ 65536 + 1) * 16);
+    expect(
+      _contains(stored.sublist(0, 4096), movie.sublist(100, 140)),
+      isFalse,
+    );
+    // 位置目录里没有残留的临时文件。
+    expect(
+      root
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File f) => p.basename(f.path).startsWith('.srs2tmp-')),
+      isEmpty,
+    );
+
+    await round(a, loc, key: ka.enabled());
+    await round(b, loc, key: ka.enabled());
+    // 先把位置上的密文坏一个字节（中间某块）：B 拒收、不落地，位置上的坏文件删掉、记不在。
+    final Uint8List bad = Uint8List.fromList(stored);
+    bad[27 + 5 * 65552 + 7] ^= 0x40;
+    sealed.writeAsBytesSync(bad);
+    final SrsMediaSyncReport rejected = await srsSyncMedia(
+      location: loc,
+      store: b,
+      mediaRoot: mb,
+      cipher: SrsMediaCipher(b, ka.keyHex),
+    );
+    expect(rejected.rejected, contains('clip.mp4'));
+    expect(rejected.downloaded, 0);
+    expect(File('${mb.path}/clip.mp4').existsSync(), isFalse);
+    expect(
+      mb.listSync().map((FileSystemEntity e) => p.basename(e.path)),
+      isEmpty,
+      reason: 'no half-written .download / .part files left behind',
+    );
+    expect(sealed.existsSync(), isFalse);
+    // 持有原文件的 A 下一轮补传；B 照常拿到原样字节。
+    await srsSyncMedia(location: loc, store: a, mediaRoot: ma, cipher: ca);
+    final SrsMediaSyncReport rb = await srsSyncMedia(
+      location: loc,
+      store: b,
+      mediaRoot: mb,
+      cipher: SrsMediaCipher(b, ka.keyHex),
+    );
+    expect(rb.downloaded, 1);
+    expect(File('${mb.path}/clip.mp4').readAsBytesSync(), movie);
+  });
+
+  test('S-9：内存版 seal / open 与文件版同一格式，互相解得开', () async {
+    final SrsDbStore a = await device('A');
+    final SrsLocationKey ka = await srsDeriveLocationKey(
+      a,
+      'pw',
+      pendingEnable: true,
+    );
+    final SrsMediaCipher c = SrsMediaCipher(a, ka.keyHex);
+    final Directory dir = Directory.systemTemp.createTempSync('srs_seal_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final Uint8List plain = Uint8List.fromList(
+      List<int>.generate(200000, (int i) => i % 251),
+    );
+    final Uint8List sealed = await c.seal('n', plain);
+    expect(ascii.decode(sealed.sublist(0, 4)), 'FSM2');
+    final File src = File('${dir.path}/s')..writeAsBytesSync(sealed);
+    final File out = File('${dir.path}/o');
+    expect(await c.openFile('n', src, out), srsMediaSha256(plain));
+    expect(out.readAsBytesSync(), plain);
+    final File plainFile = File('${dir.path}/p')..writeAsBytesSync(plain);
+    final File sealedFile = File('${dir.path}/q');
+    expect(await c.sealFile('n', plainFile, sealedFile), srsMediaSha256(plain));
+    expect(await c.open('n', sealedFile.readAsBytesSync()), plain);
+    // AAD 绑定名字：换名解不开，文件版不留目标。
+    expect(await c.open('m', sealed), isNull);
+    final File none = File('${dir.path}/none');
+    expect(await c.openFile('m', src, none), isNull);
+    expect(none.existsSync(), isFalse);
   });
 }

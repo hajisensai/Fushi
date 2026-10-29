@@ -85,6 +85,9 @@ class SrsSync2Report {
   /// 这一轮上传的段数。
   int uploaded = 0;
 
+  /// 这一轮转发到这个位置的文件数（别的设备的转发件与 head，见 [srsRelayToLocation]）。
+  int relayed = 0;
+
   /// 发现本机身份分叉（已换身份重签发）。
   bool fork = false;
 
@@ -118,7 +121,8 @@ class SrsSync2Report {
 /// [kSrsSync2NeedsKey] / [kSrsSync2WrongKey]；本机开过加密而位置上的 `kdf` 不见了 → [kSrsSync2EncryptionMissing]，
 /// 绝不降级成明文；本机刚开加密 → 这一轮把 `kdf` 写进 `meta.json`）；[archive] = 归档位置：只写不删（不清本机
 /// 的旧 head，设计 §10.3）。[onFetchProgress] 报下载 + 收进本机的段数（开拉前一次 `(0, 总数)`，之后每批一次）；
-/// [onUploadStart] 在开始发件时调一次；[shouldStop] 每批收完后问一次，为真就以 [kSrsSync2Stopped] 收手（已收的
+/// [onUploadStart] 在开始发件时调一次；[beforeUpload] 在发件之前调一次（参数 = 这个位置的密钥，明文位置为 null），
+/// 用来先传媒体；[shouldStop] 每批收完后问一次，为真就以 [kSrsSync2Stopped] 收手（已收的
 /// 批次都已提交）；发件的每批确认后也问一次（已确认的批次水位已持久化）。[ingestBudgetBytes] 见
 /// [kSrsSync2IngestBudgetBytes]；[fetchConcurrency] = 拉段时同时在途的下载数；[outboxBudgetBytes] = 发件一批的
 /// 字节预算（null = 内核默认 `OUTBOX_BATCH_BYTES`，测试用小值逼出多批）。
@@ -131,6 +135,7 @@ Future<SrsSync2Report> srsSync2Round({
   bool archive = false,
   void Function(int done, int total)? onFetchProgress,
   void Function()? onUploadStart,
+  Future<void> Function(String? keyHex)? beforeUpload,
   bool Function()? shouldStop,
   int ingestBudgetBytes = kSrsSync2IngestBudgetBytes,
   int fetchConcurrency = kSrsSync2Concurrency,
@@ -199,8 +204,10 @@ Future<SrsSync2Report> srsSync2Round({
   ];
 
   // 2. 定要拉的段 → 拉 → 收。
+  // `location`：内核记下这个位置上有谁的哪些段（别的位置缺、本机可以转发的，见步骤 3 之后的转发）。
   final Map<String, Object?> plan = (await host.sync2Command(<String, Object?>{
     'op': 'plan',
+    'location': progressId,
   }, blobs: heads)).map;
   // 本机身份的段只用来比链找分叉点：内核在收段会话里跨批累积、收尾才换身份（[SrsSync2Host.sync2IngestBegin]），
   // 所以它们和别的段一样受字节预算约束。
@@ -234,7 +241,7 @@ Future<SrsSync2Report> srsSync2Round({
     await host.sync2IngestBegin();
     await for (final SrsFetchedBatch batch in srsFetchInBatches(
       wanted,
-      fetch: location.get,
+      fetch: (String path) => srsFetchSegment(location, path),
       budgetBytes: ingestBudgetBytes,
       concurrency: fetchConcurrency,
     )) {
@@ -247,12 +254,19 @@ Future<SrsSync2Report> srsSync2Round({
       if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
     }
     absorb(await host.sync2IngestFinish());
+  } else if (plan['finishPending'] == true) {
+    // 上一轮收段被打断在收尾之前：受影响的卡还在内核的待重放集合里（审查 S-4），这一轮没段可拉也收个尾。
+    await host.sync2IngestBegin();
+    absorb(await host.sync2IngestFinish());
   }
 
   // 3. 发件：先段、后 head。分批（内核 `sync2_outbox` 按字节 / 段数上限产出一批，见 transport.rs
   // `OUTBOX_BATCH_BYTES`）：一批全部写成后 `outbox_ack` 持久化水位，再取下一批——内存里同一时刻只有一批，
   // 上传中途断网 / 被杀只丢在途那一批，下一轮从水位接着发（以前一次取全部积压，断一次整份重来，反馈
   // XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）。head 仍在全部批次写完后才写，读者看到的永远是一致前缀。
+  // 媒体先于引用它的段（设计 §6.1 写入纪律 3，审查 S-10）：本机新绑定的媒体此刻先传上去（绑定本身是操作，随下面
+  // 的段一起发），读到这些段的设备就拿得到它们引用的内容。媒体失败由调用方处理，不打断操作同步。
+  if (beforeUpload != null) await beforeUpload(keyHex);
   onUploadStart?.call();
   int upto = 0;
   while (true) {
@@ -284,6 +298,20 @@ Future<SrsSync2Report> srsSync2Round({
     if (out.map['more'] != true) break;
     if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
   }
+  // 3½. 转发（反熵，设计 §6.3）：本机持有、而这个位置缺的别的设备的段（作者签名的转发件 `rly-…`）与 head 原文。
+  // 不转发的话只经别的位置连着本机的设备的操作永远到不了这里，本机之后的操作（上下文含它们）在读者那里也因果
+  // 投递不了（审查 S-1）。段先、head 后：内核只在一台设备的段都确认写上之后才给它的 head。
+  await srsRelayToLocation(
+    host: host,
+    location: location,
+    progressId: progressId,
+    keyHex: keyHex,
+    archive: archive,
+    budgetBytes: outboxBudgetBytes,
+    onWritten: () => report.relayed++,
+    shouldStop: shouldStop,
+  );
+
   // 状态摘要随 head 发布（§4.5：同一版本向量下两台设备摘要不同 = 确定性 bug）。全库扫描，内核只在版本向量
   // 变了且离上次满 [kSrsSync2DigestInterval] 时才重算，读连接上算、不占写锁。
   await host.sync2Command(<String, Object?>{
@@ -345,6 +373,72 @@ Future<SrsSync2Report> srsSync2Round({
   }
   await srsRunPooled(stale, kSrsSync2Concurrency, location.delete);
   return report;
+}
+
+/// 段文件对应的转发件路径（`devices/<设备>/seg-…` → `rly-…`，内核 segment.rs `relay_file_name`）；不是段文件原样返回。
+String srsRelayPath(String path) {
+  final int slash = path.lastIndexOf('/');
+  final String name = path.substring(slash + 1);
+  if (!name.startsWith('seg-')) return path;
+  return '${path.substring(0, slash + 1)}rly-${name.substring(4)}';
+}
+
+/// 拉一个段：作者自己写的 `seg-…` 不在就找别的设备转发来的同名 `rly-…`（作者没连过这个位置时只有后者）。
+Future<Uint8List?> srsFetchSegment(
+  SrsLocationStore location,
+  String path,
+) async {
+  final Uint8List? own = await location.get(path);
+  if (own != null) return own;
+  final String relayed = srsRelayPath(path);
+  return relayed == path ? null : location.get(relayed);
+}
+
+/// 把本机持有、而 [location] 缺的别的设备的段与 head 转发过去（内核 `relay_outbox` / `relay_ack`，
+/// store/sync2/relay.rs）：一批全部写成再确认，确认后内核才给段都已到位的设备的 head；被新转发的 head 取代的旧
+/// 转发件按内核给的清单删（归档位置一个不删）。[onWritten] 每写一个文件调一次。
+Future<void> srsRelayToLocation({
+  required SrsSync2Host host,
+  required SrsLocationStore location,
+  required String progressId,
+  required String? keyHex,
+  required bool archive,
+  int? budgetBytes,
+  void Function()? onWritten,
+  bool Function()? shouldStop,
+}) async {
+  while (true) {
+    final SrsSync2Result out = await host.sync2Command(<String, Object?>{
+      'op': 'relay_outbox',
+      'location': progressId,
+      'key': keyHex,
+      if (budgetBytes != null) 'maxBytes': budgetBytes,
+    });
+    if (out.files.isEmpty) return;
+    await srsRunPooled(out.files, kSrsSync2Concurrency, (
+      (String, Uint8List) f,
+    ) async {
+      await location.put(f.$1, f.$2);
+      onWritten?.call();
+    });
+    final Map<String, Object?> ack = (await host.sync2Command(<String, Object?>{
+      'op': 'relay_ack',
+      'location': progressId,
+      'paths': <String>[for (final (String, Uint8List) f in out.files) f.$1],
+    })).map;
+    if (!archive) {
+      await srsRunPooled(
+        <String>[
+          for (final Object? p in (ack['delete'] as List?) ?? const <Object?>[])
+            p! as String,
+        ],
+        kSrsSync2Concurrency,
+        location.delete,
+      );
+    }
+    if (out.map['more'] != true) return;
+    if (shouldStop?.call() ?? false) return;
+  }
 }
 
 /// [srsFetchInBatches] 的一批。

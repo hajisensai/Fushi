@@ -1,7 +1,9 @@
-// SRS 媒体同步（srs_media_sync.dart，docs/specs/2026-10-25-srs-sync-v2-design.md §6.4、§10.5）：集合根下一个
-// 内容寻址的 `media/` 目录；缺的从位置下载、位置缺的上传；被删笔记的媒体保留 90 天后才从位置上清，删除只凭
-// 正面证据（本机不认识的文件不删）；归档位置永不删；旧格式按写入者分目录的媒体只读兜底。
+// SRS 媒体同步（srs_media_sync.dart，docs/specs/2026-10-25-srs-sync-v2-design.md §6.4、§10.5）：集合根下内容寻址的
+// `media/<sha256 前 2 位>/<sha256>`，本机文件名经日志里的绑定映射到内容（绑定是操作，随段同步）；缺的从位置下载
+// 并校验哈希、位置缺的上传；被删笔记的媒体保留 90 天后才从位置上清，删除只凭正面证据（本机不认识的文件不删）；
+// 归档位置永不删；旧布局（按名字存的 `media/<名字>`、按写入者分目录）只读兜底。
 import 'dart:async';
+import 'dart:convert' show Encoding, utf8;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -11,6 +13,7 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
@@ -87,11 +90,15 @@ void main() {
     legacy: legacy,
   );
 
+  /// 位置上内容目录里有哪些内容（sha256）。
   Set<String> remoteMedia(SrsMemoryLocationStore loc) => <String>{
     for (final String path in loc.files.keys)
-      if (path.startsWith('$kSrsMediaFolder/'))
-        path.substring(kSrsMediaFolder.length + 1),
+      if (path.startsWith('$kSrsMediaFolder/') && path.split('/').length == 3)
+        path.split('/').last,
   };
+  String sha(List<int> bytes) => srsMediaSha256(bytes);
+  String at(List<int> bytes) =>
+      srsMediaContentPath(kSrsMediaFolder, sha(bytes));
 
   test('按内容名上传 / 下载；位置上丢了的由仍持有它的设备补传', () async {
     final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
@@ -114,7 +121,12 @@ void main() {
 
     final SrsMediaSyncReport ra = await media(a, loc, mediaA);
     expect(ra.uploaded, 2);
-    expect(remoteMedia(loc), <String>{'cat.png', 'meow.mp3'});
+    expect(remoteMedia(loc), <String>{
+      sha(<int>[1, 2, 3]),
+      sha(<int>[4, 5]),
+    });
+    // 名字 → 内容的绑定是操作：随下一轮同步到 B。
+    await srsSyncPeers(<SrsDbStore>[a, b], loc);
     final SrsMediaSyncReport rb = await media(b, loc, mediaB);
     expect(rb.downloaded, 2);
     expect(rb.missing, isEmpty);
@@ -126,7 +138,7 @@ void main() {
     expect((await media(a, loc, mediaA)).uploaded, 0, reason: '位置上已有，不重传');
 
     // 位置上的文件丢了（换了网盘 / 被别的工具删了）：持有它的设备下一轮补传，第三台照常拿到。
-    loc.files.remove('$kSrsMediaFolder/cat.png');
+    loc.files.remove(at(<int>[1, 2, 3]));
     expect((await media(b, loc, mediaB)).uploaded, 1);
     final SrsDbStore c = await device('c');
     await srsSyncOnce(c, loc);
@@ -161,10 +173,7 @@ void main() {
     await srsSyncPeers(<SrsDbStore>[a, b], loc);
     expect((await media(a, loc, mediaA)).uploaded, 2);
     // 别的设备的新笔记的媒体：本机还没收到那条笔记，不认识它。
-    await loc.put(
-      '$kSrsMediaFolder/stranger.png',
-      Uint8List.fromList(<int>[9]),
-    );
+    await loc.put(at(<int>[9]), Uint8List.fromList(<int>[9]));
 
     t += 1000;
     await a.deleteNote(gone);
@@ -172,7 +181,7 @@ void main() {
     t += 89 * kDay;
     SrsMediaSyncReport r = await media(a, loc, mediaA);
     expect(r.deleted, 0, reason: '保留期内不删');
-    expect(remoteMedia(loc), contains('only.png'));
+    expect(remoteMedia(loc), contains(sha(<int>[1])));
     // 保留期内恢复笔记媒体还在：新设备照样下载被删笔记的媒体。
     final SrsDbStore c = await device('c');
     await srsSyncOnce(c, loc);
@@ -183,13 +192,16 @@ void main() {
     t += 2 * kDay;
     r = await media(a, loc, mediaA);
     expect(r.deleted, 1);
-    expect(remoteMedia(loc), <String>{'shared.png', 'stranger.png'});
+    expect(remoteMedia(loc), <String>{
+      sha(<int>[2]),
+      sha(<int>[9]),
+    });
     expect(
       (await media(b, loc, mediaDir('b'))).uploaded,
       0,
       reason: '看得到删除的设备不会把过期的文件再传上来',
     );
-    expect(remoteMedia(loc), isNot(contains('only.png')));
+    expect(remoteMedia(loc), isNot(contains(sha(<int>[1]))));
   });
 
   test('归档位置永不删：过期的媒体照样留着', () async {
@@ -204,7 +216,9 @@ void main() {
     t += 365 * kDay;
     final SrsMediaSyncReport r = await media(a, loc, mediaA, archive: true);
     expect(r.deleted, 0);
-    expect(remoteMedia(loc), <String>{'only.png'});
+    expect(remoteMedia(loc), <String>{
+      sha(<int>[1]),
+    });
     // 同一份过期状态对普通同步 / 媒体位置就会清。
     expect((await media(a, loc, mediaA)).deleted, 1);
   });
@@ -246,9 +260,13 @@ void main() {
     expect(r.downloaded, 1);
     expect(r.uploaded, 1);
     expect(File(p.join(mediaB.path, 'old.png')).readAsBytesSync(), <int>[7, 7]);
-    expect(await loc.get('$kSrsMediaFolder/old.png'), <int>[7, 7]);
+    expect(
+      await loc.get(srsMediaContentPath(kSrsMediaFolder, sha(<int>[7, 7]))),
+      <int>[7, 7],
+    );
     expect(legacyFile.existsSync(), isTrue, reason: '旧目录不自动删');
-    // 之后不需要兜底：第三台直接从 v2 目录拿。
+    // 之后不需要兜底：B 绑上的内容随同步到第三台，它直接从内容目录拿。
+    await srsSyncOnce(b, loc);
     final SrsDbStore c = await device('c');
     await srsSyncOnce(c, loc);
     expect((await media(c, loc, mediaDir('c'))).downloaded, 1);
@@ -264,11 +282,15 @@ void main() {
     for (int i = 0; i < both; i++) {
       final String name = 'shared$i.png';
       writeMedia(mediaA, name, <int>[i % 256]);
-      loc.files['$kSrsMediaFolder/$name'] = Uint8List.fromList(<int>[i % 256]);
+      loc.files[at(<int>[i % 256])] = Uint8List.fromList(<int>[i % 256]);
       pictures.write('<img src="$name">');
     }
-    writeMedia(mediaA, 'localonly.png', <int>[1]);
-    loc.files['$kSrsMediaFolder/remoteonly.png'] = Uint8List.fromList(<int>[2]);
+    writeMedia(mediaA, 'localonly.png', <int>[1, 1]);
+    // 老版本按名字放上去的（没有绑定）：只读兜底下载，再补传进内容目录。
+    loc.files['$kSrsMediaFolder/remoteonly.png'] = Uint8List.fromList(<int>[
+      2,
+      2,
+    ]);
     pictures.write('<img src="localonly.png"><img src="remoteonly.png">');
     await addNote(a, '多', pictures.toString());
 
@@ -278,13 +300,15 @@ void main() {
       createFile: (String path) => _StatSpyFile(path, syncStats),
     );
     expect(syncStats, isEmpty, reason: '同步 stat 会把整轮对账钉在 UI isolate 的微任务里');
-    expect(r.uploaded, 1);
+    expect(r.uploaded, 2);
     expect(r.downloaded, 1);
     expect(r.missing, isEmpty);
     expect(File(p.join(mediaA.path, 'remoteonly.png')).readAsBytesSync(), <int>[
       2,
+      2,
     ]);
-    expect(await loc.get('$kSrsMediaFolder/localonly.png'), <int>[1]);
+    expect(await loc.get(at(<int>[1, 1])), <int>[1, 1]);
+    expect(await loc.get(at(<int>[2, 2])), <int>[2, 2]);
   });
 
   // 同步收尾 UI 卡一两秒：两边都有的媒体没有任何真正挂起的 IO，逐个走一遍异步流程就是一长串微任务、整段不回
@@ -297,10 +321,9 @@ void main() {
       final StringBuffer pictures = StringBuffer();
       for (int i = 0; i < both; i++) {
         final String name = 'shared$i.png';
-        writeMedia(dir, name, <int>[i % 256]);
-        loc.files['$kSrsMediaFolder/$name'] = Uint8List.fromList(<int>[
-          i % 256,
-        ]);
+        final List<int> bytes = <int>[i % 256, i ~/ 256];
+        writeMedia(dir, name, bytes);
+        loc.files[at(bytes)] = Uint8List.fromList(bytes);
         pictures.write('<img src="$name">');
       }
       await addNote(s, '多$both', pictures.toString());
@@ -321,14 +344,140 @@ void main() {
       return scheduled;
     }
 
-    final int few = await microtasksWith(20);
-    final int many = await microtasksWith(1000);
+    // 内容目录按 256 个前缀分子目录：两边的数都大到前缀目录基本占满，列目录的开销就与名字数无关。
+    final int few = await microtasksWith(600);
+    final int many = await microtasksWith(2000);
     expect(
       many - few,
       lessThan(200),
-      reason: '980 个两边都有的名字多出了 ${many - few} 个微任务（$few → $many）',
+      reason: '多出 1400 个两边都有的名字多出了 ${many - few} 个微任务（$few → $many）',
     );
   });
+
+  // 审查 S-3：以前按名字存 `media/<名字>`，两台设备各有一个同名不同内容的 image.jpg 时各留各的、永远分叉。
+  test('同名不同内容的媒体：两台设备收敛到同一份，两份内容都留在位置上', () async {
+    final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+    final SrsDbStore a = await device('a');
+    final SrsDbStore b = await device('b');
+    final Directory mediaA = mediaDir('a');
+    final Directory mediaB = mediaDir('b');
+    await addNote(a, '画', '<img src="image.jpg">');
+    await srsSyncPeers(<SrsDbStore>[a, b], loc);
+    writeMedia(mediaA, 'image.jpg', <int>[1, 1, 1]);
+    writeMedia(mediaB, 'image.jpg', <int>[2, 2]);
+    await media(a, loc, mediaA);
+    await media(b, loc, mediaB);
+    for (int i = 0; i < 2; i++) {
+      await srsSyncPeers(<SrsDbStore>[a, b], loc);
+      await media(a, loc, mediaA);
+      await media(b, loc, mediaB);
+    }
+    final List<int> onA = File(
+      p.join(mediaA.path, 'image.jpg'),
+    ).readAsBytesSync();
+    expect(File(p.join(mediaB.path, 'image.jpg')).readAsBytesSync(), onA);
+    expect(
+      remoteMedia(loc),
+      containsAll(<String>[
+        sha(<int>[1, 1, 1]),
+        sha(<int>[2, 2]),
+      ]),
+      reason: '输掉的那份内容在被换掉之前已传上去，不会只此一份地丢掉',
+    );
+    // 收敛之后：谁都不再下载、不再改绑定。
+    await srsSyncPeers(<SrsDbStore>[a, b], loc);
+    expect((await media(a, loc, mediaA)).downloaded, 0);
+    expect((await media(b, loc, mediaB)).downloaded, 0);
+  });
+
+  test('位置上的内容被截断 / 改坏：按 sha256 校验拒收、不落地；旧布局里对不上的同样拒收；持有者补传后照常拿到', () async {
+    final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+    final SrsDbStore a = await device('a');
+    final SrsDbStore b = await device('b');
+    final Directory mediaA = mediaDir('a');
+    final Directory mediaB = mediaDir('b');
+    writeMedia(mediaA, 'cat.png', <int>[1, 2, 3, 4]);
+    await addNote(a, '猫', '<img src="cat.png">');
+    expect((await media(a, loc, mediaA)).uploaded, 1);
+    await srsSyncPeers(<SrsDbStore>[a, b], loc);
+
+    // 云盘覆盖写被打断留下的半截文件；旧的按名字目录里是另一份内容。
+    loc.files[at(<int>[1, 2, 3, 4])] = Uint8List.fromList(<int>[1, 2]);
+    loc.files['$kSrsMediaFolder/cat.png'] = Uint8List.fromList(<int>[9, 9]);
+    final SrsMediaSyncReport r = await media(b, loc, mediaB);
+    expect(r.rejected, <String>{'cat.png'});
+    expect(r.downloaded, 0);
+    expect(r.missing, <String>{'cat.png'});
+    expect(File(p.join(mediaB.path, 'cat.png')).existsSync(), isFalse);
+    expect(
+      loc.files.containsKey(at(<int>[1, 2, 3, 4])),
+      isFalse,
+      reason: '名字就是哈希：对不上的那份是垃圾，删掉好让持有者补传',
+    );
+
+    expect((await media(a, loc, mediaA)).uploaded, 1);
+    final SrsMediaSyncReport again = await media(b, loc, mediaB);
+    expect(again.downloaded, 1);
+    expect(again.rejected, isEmpty);
+    expect(File(p.join(mediaB.path, 'cat.png')).readAsBytesSync(), <int>[
+      1,
+      2,
+      3,
+      4,
+    ]);
+  });
+
+  // 审查 S-10：以前媒体在整轮操作同步之后才传，读到新段的设备一时拿不到它引用的媒体。
+  test('一轮同步里媒体先于引用它的段上传；对端收了这一轮就拿得到', () async {
+    final _OrderedStore loc = _OrderedStore();
+    final SrsDbStore a = await device('a');
+    final SrsDbStore b = await device('b');
+    final Directory mediaA = mediaDir('a');
+    final Directory mediaB = mediaDir('b');
+    writeMedia(mediaA, 'cat.png', <int>[5, 5]);
+    await addNote(a, '猫', '<img src="cat.png">');
+    Future<SrsSync2Report> round(SrsDbStore s, Directory dir) => srsSync2Round(
+      host: s,
+      location: loc,
+      locationId: 'loc',
+      nowMs: () => s.now().$1,
+      beforeUpload: (String? keyHex) async {
+        await srsSyncMedia(
+          location: loc,
+          store: s,
+          mediaRoot: dir,
+          uploadOnly: true,
+        );
+      },
+    );
+    await round(a, mediaA);
+    final int mediaAt = loc.order.indexOf(at(<int>[5, 5]));
+    final int firstSegment = loc.order.indexWhere(
+      (String k) => k.contains('/seg-'),
+    );
+    expect(mediaAt, isNonNegative);
+    expect(firstSegment, greaterThan(mediaAt));
+    await round(b, mediaB);
+    expect(
+      File(p.join(mediaB.path, 'cat.png')).existsSync(),
+      isFalse,
+      reason: '发段前那一步只上传、不下载',
+    );
+    final SrsMediaSyncReport rb = await media(b, loc, mediaB);
+    expect(rb.downloaded, 1);
+    expect(File(p.join(mediaB.path, 'cat.png')).readAsBytesSync(), <int>[5, 5]);
+  });
+}
+
+/// 记下写入顺序的内存位置。
+class _OrderedStore extends SrsMemoryLocationStore {
+  final List<String> order = <String>[];
+
+  @override
+  Future<void> put(String path, Uint8List bytes) {
+    order.add(path);
+    return super.put(path, bytes);
+  }
 }
 
 /// 记录同步 stat 类调用（`existsSync` / `statSync` / `lengthSync` / `lastModifiedSync`）的 [File] 代理；
@@ -386,6 +535,21 @@ class _StatSpyFile implements File {
   Future<int> length() => _real.length();
   @override
   Future<Uint8List> readAsBytes() => _real.readAsBytes();
+  // 流式读写（审查 S-9：上传前边拷快照边算哈希，不整份读进内存）。
+  @override
+  Stream<List<int>> openRead([int? start, int? end]) =>
+      _real.openRead(start, end);
+  @override
+  IOSink openWrite({
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+  }) => _real.openWrite(mode: mode, encoding: encoding);
+  @override
+  Future<File> copy(String newPath) => _real.copy(newPath);
+  // 文件流在当前 zone 里按路径重造 File 再 open（即本代理）。
+  @override
+  Future<RandomAccessFile> open({FileMode mode = FileMode.read}) =>
+      _real.open(mode: mode);
   @override
   Future<File> writeAsBytes(
     List<int> bytes, {

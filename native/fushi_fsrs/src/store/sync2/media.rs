@@ -15,28 +15,17 @@ use serde_json::{json, Value};
 
 use crate::sync2::op::{Body, Op, MEDIA_AT_MAX_NAMES, MEDIA_AT_PRESENT, MEDIA_AT_SEEDED};
 
-use super::{append_local, applied_vv, in_savepoint, sql, Local, Touched};
+use super::{append_local, applied_vv, in_savepoint, mvr, sql, Local, Touched};
 use crate::store::SrsCore;
 
-/// 把一条 `MediaAt` 落进投影。
+/// 把一条 `MediaAt` 落进投影。每个（位置, 名字）是一个「因果优先、并发才比 HLC」的寄存器（mvr.rs）：看过「在」
+/// 之后才记的「不在」（或反过来）一定生效，与两台设备的时钟谁快无关。
 pub(crate) fn project_media_at(conn: &Connection, profile: &str, op: &Op, location: &str, flags: u8, names: &[String]) -> Result<(), String> {
-    let present = i64::from(flags & MEDIA_AT_PRESENT != 0);
-    let stamp = (op.hlc.wall, i64::from(op.hlc.logical), op.id.device.0.to_vec());
-    let mut cur = conn
-        .prepare_cached("SELECT wall, logical, device FROM sync2_media_at WHERE profile_uid = ?1 AND location = ?2 AND name = ?3")
-        .map_err(sql)?;
-    let mut put = conn
-        .prepare_cached(
-            "INSERT OR REPLACE INTO sync2_media_at (profile_uid, location, name, present, wall, logical, device) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        )
-        .map_err(sql)?;
+    let present = flags & MEDIA_AT_PRESENT != 0;
     for name in names {
-        let old: Option<(i64, i64, Vec<u8>)> =
-            cur.query_row(params![profile, location, name], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(sql)?;
-        if old.is_none_or(|o| stamp > o) {
-            put.execute(params![profile, location, name, present, stamp.0, stamp.1, stamp.2]).map_err(sql)?;
-        }
+        let win = mvr::write(conn, profile, &mvr::reg("a", &[location, name]), op)?;
+        let p = if win.id == op.id { Some(present) } else { None };
+        land_media_at(conn, profile, location, name, &win, p)?;
     }
     if flags & MEDIA_AT_SEEDED != 0 {
         conn.prepare_cached(
@@ -47,6 +36,34 @@ pub(crate) fn project_media_at(conn: &Connection, profile: &str, op: &Op, locati
         .execute(params![profile, location, op.hlc.wall])
         .map_err(sql)?;
     }
+    Ok(())
+}
+
+/// `sync2_media_at` 的一行落到寄存器的当前值 [win]（[present] = 它的在 / 不在，没给就从日志读）；相同就不写。
+pub(crate) fn land_media_at(conn: &Connection, profile: &str, location: &str, name: &str, win: &mvr::Write, present: Option<bool>) -> Result<(), String> {
+    let cur: Option<(i64, i64, Vec<u8>)> = conn
+        .prepare_cached("SELECT wall, logical, device FROM sync2_media_at WHERE profile_uid = ?1 AND location = ?2 AND name = ?3")
+        .map_err(sql)?
+        .query_row(params![profile, location, name], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .optional()
+        .map_err(sql)?;
+    if cur.as_ref().is_some_and(|(w, l, d)| (*w, *l, d.as_slice()) == (win.wall, win.logical, &win.id.device.0[..])) {
+        return Ok(());
+    }
+    let present = match present {
+        Some(p) => p,
+        None => match super::load_op(conn, profile, &win.id)?.and_then(|o| o.body().ok()) {
+            Some(Body::MediaAt { flags, .. }) => flags & MEDIA_AT_PRESENT != 0,
+            _ => return Ok(()),
+        },
+    };
+    conn.prepare_cached(
+        "INSERT OR REPLACE INTO sync2_media_at (profile_uid, location, name, present, wall, logical, device) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+    )
+    .map_err(sql)?
+    .execute(params![profile, location, name, i64::from(present), win.wall, win.logical, win.id.device.0.to_vec()])
+    .map_err(sql)?;
     Ok(())
 }
 
@@ -144,5 +161,235 @@ impl SrsCore {
             local.save(c)?;
             Ok(json!({"appended": bodies.len()}))
         })
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// 内容寻址媒体（设计 §6.1 / §6.4，审查 S-3）：位置上的媒体按内容存 `media/<sha256 前 2 位>/<sha256>`（不可变），本机文件名
+// 经日志里的绑定（`Body::Media{name, sha256, size}`，`sync2_media`）映射到内容。以前按名字存 `media/<name>`、下载不校验：
+// 两台设备各有一个同名不同内容的 `image.jpg` 时各留各的、永远分叉；云盘覆盖写的半截文件被当成本机文件永久留下。
+//
+// 每个名字的绑定是「因果优先、并发才比 HLC」的寄存器（mvr.rs）。本机怎么对齐（[SrsCore::sync2_media_scan]）：
+// - 本机有文件、内容 L：没有绑定 → 绑 L；绑定就是 L → 无事；绑定是别的内容 B 而本机上次对齐后文件没变过（`synced == L`）
+//   → 别的设备后来改了绑定，下载 B 换掉本机文件；文件改过（或从没对齐过）→ 本机这次改动是新写，绑 L（它看过 B，因果上盖过 B）。
+// - 本机没有文件：有绑定 → 下载绑定的内容（校验 sha256）；没有绑定 → 只能从旧格式（按名字存的）兜底，下载后再绑。
+// ---------------------------------------------------------------------------------------------------------------
+
+/// 一个本机媒体文件此刻的 (size, mtime 毫秒)；不在 / 不是普通文件 = None。
+fn stat_file(path: &std::path::Path) -> Option<(i64, i64)> {
+    let m = std::fs::metadata(path).ok()?;
+    if !m.is_file() {
+        return None;
+    }
+    let mtime = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as i64);
+    Some((m.len() as i64, mtime))
+}
+
+/// 文件内容的 sha256（按块读，不整个读进内存）。
+fn sha256_file(path: &std::path::Path) -> Result<[u8; 32], String> {
+    use sha2::Digest;
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).map_err(|e| format!("media: open {}: {e}", path.display()))?;
+    let mut h = sha2::Sha256::new();
+    let mut buf = vec![0u8; 1 << 16];
+    loop {
+        let n = f.read(&mut buf).map_err(|e| format!("media: read {}: {e}", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
+    Ok(h.finalize().into())
+}
+
+fn hex32(b: &[u8; 32]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// 64 位十六进制 → 32 字节。
+pub(crate) fn unhex32(s: &str) -> Option<[u8; 32]> {
+    if s.len() != 64 {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for (i, o) in out.iter_mut().enumerate() {
+        *o = u8::from_str_radix(s.get(i * 2..i * 2 + 2)?, 16).ok()?;
+    }
+    Some(out)
+}
+
+/// 本机记的一个媒体文件：(size, mtime, 内容, 上次与绑定对齐时的内容)。
+type LocalRow = (i64, i64, [u8; 32], Option<[u8; 32]>);
+
+fn local_row(c: &Connection, profile: &str, name: &str) -> Result<Option<LocalRow>, String> {
+    let row: Option<(i64, i64, Vec<u8>, Option<Vec<u8>>)> = c
+        .prepare_cached("SELECT size, mtime, sha256, synced FROM sync2_media_local WHERE profile_uid = ?1 AND name = ?2")
+        .map_err(sql)?
+        .query_row(params![profile, name], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .optional()
+        .map_err(sql)?;
+    Ok(row.and_then(|(size, mtime, sha, synced)| {
+        let sha: [u8; 32] = sha.try_into().ok()?;
+        Some((size, mtime, sha, synced.and_then(|s| s.try_into().ok())))
+    }))
+}
+
+fn put_local_row(c: &Connection, profile: &str, name: &str, row: &LocalRow) -> Result<(), String> {
+    c.prepare_cached(
+        "INSERT OR REPLACE INTO sync2_media_local (profile_uid, name, size, mtime, sha256, synced) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    )
+    .map_err(sql)?
+    .execute(params![profile, name, row.0, row.1, row.2.to_vec(), row.3.map(|s| s.to_vec())])
+    .map_err(sql)?;
+    Ok(())
+}
+
+/// 名字此刻绑定的内容 (sha256, size)。
+fn binding(c: &Connection, profile: &str, name: &str) -> Result<Option<([u8; 32], i64)>, String> {
+    let row: Option<(Vec<u8>, i64)> = c
+        .prepare_cached("SELECT sha256, size FROM sync2_media WHERE profile_uid = ?1 AND name = ?2")
+        .map_err(sql)?
+        .query_row(params![profile, name], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()
+        .map_err(sql)?;
+    Ok(row.and_then(|(sha, size)| Some((sha.try_into().ok()?, size))))
+}
+
+/// 在一个写事务里追加一批绑定（本机操作，立即投影）。
+fn append_bindings(c: &Connection, profile: &str, binds: &[(String, [u8; 32], i64)], now: i64) -> Result<(), String> {
+    if binds.is_empty() {
+        return Ok(());
+    }
+    let mut local = match Local::load(c, profile)? {
+        Some(l) => l,
+        None => Local::create(c, profile, now)?,
+    };
+    let mut applied = applied_vv(c, profile)?;
+    let mut t = Touched::default();
+    for (name, sha, size) in binds {
+        let body = Body::Media { name: name.clone(), sha256: *sha, size: (*size).max(0) as u64 };
+        let op = append_local(c, &mut local, &mut applied, &body, now)?;
+        super::project(c, profile, &op, now, true, &mut t)?;
+    }
+    local.save(c)
+}
+
+/// 本机一个媒体文件此刻的 (size, mtime, sha256)（[SrsCore::sync2_media_hash] 的结果，交回 [SrsCore::sync2_media_scan]）。
+pub type LocalFile = (i64, i64, [u8; 32]);
+
+impl SrsCore {
+    /// 媒体对账的第一步（只走读连接、不进写锁：首次对账要把几万个文件各读一遍）：本机媒体目录 [root] 下 [names] 中存在的
+    /// 文件此刻的 (size, mtime, sha256)。本机记过且 (size, mtime) 没变的不重算。返回 `{"files": [{"name", "size", "mtime",
+    /// "sha"}…]}`（不在 / 读不了的不列）。
+    pub fn sync2_media_hash(&self, profile: &str, root: &str, names: &[String]) -> Result<Value, String> {
+        let root = std::path::Path::new(root);
+        let cached: Vec<Option<LocalRow>> = {
+            let r = self.reader()?;
+            names.iter().map(|n| local_row(&r, profile, n)).collect::<Result<_, _>>()?
+        };
+        let mut files = Vec::new();
+        for (name, row) in names.iter().zip(&cached) {
+            let path = root.join(name);
+            let Some((size, mtime)) = stat_file(&path) else { continue };
+            let sha = match row {
+                Some((s, m, sha, _)) if *s == size && *m == mtime => Some(*sha),
+                // 读不了（被占用 / 刚被删）就当这一轮本机没有它。
+                _ => sha256_file(&path).ok(),
+            };
+            if let Some(sha) = sha {
+                files.push(json!({"name": name, "size": size, "mtime": mtime, "sha": hex32(&sha)}));
+            }
+        }
+        Ok(json!({"files": files}))
+    }
+
+    /// 媒体对账的第二步（写锁里）：[names] 各自该做什么，[files] 是第一步得到的本机现有文件。需要的绑定在同一个调用里写进
+    /// 日志。返回 `{"items": [{"name", "sha": 目标内容|null, "size", "have": 本机已是目标内容, "local": 本机现有内容|null}…],
+    /// "appended": 新绑定数}`。
+    /// `have == false && sha != null` = 去下载 `sha`（若 `local` 还不在位置上，先把它传上去，免得被换掉的本机内容只此一份）；
+    /// `sha == null` = 没有绑定、本机也没有（只能从旧格式兜底）。
+    pub fn sync2_media_scan(
+        &self,
+        profile: &str,
+        names: &[String],
+        files: &std::collections::HashMap<String, LocalFile>,
+        now: i64,
+    ) -> Result<Value, String> {
+        let w = self.writer()?;
+        in_savepoint(&w, |c| {
+            let mut items = Vec::with_capacity(names.len());
+            let mut binds: Vec<(String, [u8; 32], i64)> = Vec::new();
+            for name in names {
+                let bound = binding(c, profile, name)?;
+                let Some(&(size, mtime, l)) = files.get(name) else {
+                    items.push(match bound {
+                        Some((sha, size)) => json!({"name": name, "sha": hex32(&sha), "size": size, "have": false, "local": null}),
+                        None => json!({"name": name, "sha": null, "size": 0, "have": false, "local": null}),
+                    });
+                    continue;
+                };
+                let row = local_row(c, profile, name)?;
+                let synced = row.as_ref().and_then(|r| r.3);
+                let (target, tsize, have, synced) = match bound {
+                    Some((b, _)) if b == l => (l, size, true, Some(l)),
+                    Some((b, bsize)) if synced == Some(l) => (b, bsize, false, synced),
+                    _ => {
+                        binds.push((name.clone(), l, size));
+                        (l, size, true, Some(l))
+                    }
+                };
+                let new_row: LocalRow = (size, mtime, l, synced);
+                if row.as_ref() != Some(&new_row) {
+                    put_local_row(c, profile, name, &new_row)?;
+                }
+                items.push(json!({"name": name, "sha": hex32(&target), "size": tsize, "have": have, "local": hex32(&l)}));
+            }
+            append_bindings(c, profile, &binds, now)?;
+            Ok(json!({"items": items, "appended": binds.len()}))
+        })
+    }
+
+    /// 下载落地之后：[items]（名字, 写进本机的内容，调用方已校验过 sha256）已在 [root] 下。记成「本机已与绑定对齐」（记下此刻
+    /// 的 size / mtime，下一轮不重算）；名字还没有绑定（旧格式兜底下来的）就绑上。文件已经不在的不记。返回 `{"appended": n}`。
+    pub fn sync2_media_landed(&self, profile: &str, root: &str, items: &[(String, [u8; 32])], now: i64) -> Result<Value, String> {
+        let root = std::path::Path::new(root);
+        let mut rows: Vec<(String, LocalRow)> = Vec::new();
+        for (name, sha) in items {
+            let Some((size, mtime)) = stat_file(&root.join(name)) else { continue };
+            rows.push((name.clone(), (size, mtime, *sha, Some(*sha))));
+        }
+        let w = self.writer()?;
+        in_savepoint(&w, |c| {
+            let mut binds = Vec::new();
+            for (name, row) in &rows {
+                put_local_row(c, profile, name, row)?;
+                if binding(c, profile, name)?.is_none() {
+                    binds.push((name.clone(), row.2, row.0));
+                }
+            }
+            append_bindings(c, profile, &binds, now)?;
+            Ok(json!({"appended": binds.len()}))
+        })
+    }
+
+    /// 位置清理用：[expired]（只被删除已满保留期的笔记引用的名字）绑定的内容里，不被 [live]（存活引用）任何一个名字绑定的
+    /// 那些。返回 `{"sha": [十六进制…]}`。
+    pub fn sync2_media_doomed(&self, profile: &str, expired: &[String], live: &[String]) -> Result<Value, String> {
+        let r = self.reader()?;
+        let mut keep = std::collections::HashSet::new();
+        for n in live {
+            if let Some((sha, _)) = binding(&r, profile, n)? {
+                keep.insert(sha);
+            }
+        }
+        let mut out = std::collections::BTreeSet::new();
+        for n in expired {
+            if let Some((sha, _)) = binding(&r, profile, n)? {
+                if !keep.contains(&sha) {
+                    out.insert(hex32(&sha));
+                }
+            }
+        }
+        Ok(json!({"sha": out.into_iter().collect::<Vec<_>>()}))
     }
 }

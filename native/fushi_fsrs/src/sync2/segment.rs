@@ -337,9 +337,134 @@ pub fn pack(
     Ok((header, out))
 }
 
-/// 只读段头（不验签、不解体）：列目录后按需决定要不要整段处理。
+/// 只读段头（不验签、不解体）：列目录后按需决定要不要整段处理。转发件（[RELAY_MAGIC]）读的是里面原段的头。
 pub fn peek_header(bytes: &[u8]) -> Result<SegmentHeader, SegmentError> {
+    if bytes.starts_with(RELAY_MAGIC) {
+        let (_, _, orig_head) = relay_prefix(bytes)?;
+        return Ok(SegmentHeader::read(&mut Reader::new(orig_head))?);
+    }
     Ok(SegmentHeader::read(&mut Reader::new(bytes))?)
+}
+
+// ---------------------------------------------------------------- 转发件（设计 §6.3 反熵，2026-10-29 审查 S-1）
+
+/// 转发件的魔数。转发件 = 别的设备（作者）的一个段，由持有它的设备原样搬到作者自己没去过的位置
+/// （`devices/<作者>/rly-<first>-<last>-<tag>.bin`，与原段同名只换前缀：作者若也直接写这个位置，各写各的，互不覆盖）。
+///
+/// ```text
+/// "FSRL" | ver u8 | flags u8 (bit0 用目标位置的密钥封装) | bytes(原段头) | bytes(内层)
+/// 内层（封装时 = XChaCha20-Poly1305(nonce || ct)，AAD = 前面的全部字节）
+///   = bytes(原段体) | 原签名 [64] | bytes(原段体是密文时：解密后的压缩体；否则空)
+/// ```
+///
+/// 读者照常用**作者**公钥验原签名（签的是 blake3(原段头 || 原段体)，与原段体是不是密文无关），再用原段头里由签名
+/// 担保的 `prev_chain` → `last_chain` 校验解出的操作（哈希链承诺了每一条），所以转发者既伪造不了操作、也不需要
+/// 原位置的密钥；原段是密文时附带的明文压缩体同样逃不过链校验。目标位置加密时整个内层用目标位置的密钥封装，
+/// 明文不会落到加密位置上。
+pub const RELAY_MAGIC: &[u8; 4] = b"FSRL";
+const RELAY_VERSION: u8 = 1;
+
+/// 转发件的前缀：`(flags, 前缀字节 = AAD, 原段头字节)`。
+fn relay_prefix(bytes: &[u8]) -> Result<(u8, &[u8], &[u8]), SegmentError> {
+    let mut r = Reader::new(bytes);
+    if r.raw(4)? != RELAY_MAGIC {
+        return Err(SegmentError::Corrupt("relay magic".into()));
+    }
+    if r.u8()? != RELAY_VERSION {
+        return Err(SegmentError::Corrupt("relay version".into()));
+    }
+    let flags = r.u8()?;
+    let head = r.bytes()?;
+    Ok((flags, &bytes[..r.pos], head))
+}
+
+/// 转发件里的原段：`(原段完整字节, 原段体是密文时的明文压缩体)`。[key] = 转发件所在位置的密钥。
+pub fn relay_unwrap(bytes: &[u8], key: Option<&CollectionKey>) -> Result<(Vec<u8>, Option<Vec<u8>>), SegmentError> {
+    let (flags, aad, head) = relay_prefix(bytes)?;
+    let mut r = Reader::new(&bytes[aad.len()..]);
+    let inner_raw = r.bytes()?;
+    if !r.is_empty() {
+        return Err(SegmentError::Corrupt("relay trailing bytes".into()));
+    }
+    let inner = if flags & 1 != 0 {
+        let k = key.ok_or(SegmentError::Undecryptable)?;
+        std::borrow::Cow::Owned(k.open(inner_raw, aad).ok_or(SegmentError::Undecryptable)?)
+    } else {
+        std::borrow::Cow::Borrowed(inner_raw)
+    };
+    let mut r = Reader::new(&inner);
+    let body = r.bytes()?;
+    let sig = r.raw(64)?;
+    let plain = r.bytes()?;
+    if !r.is_empty() {
+        return Err(SegmentError::Corrupt("relay inner trailing bytes".into()));
+    }
+    let mut orig = head.to_vec();
+    let mut w = Writer::new();
+    w.bytes(body);
+    orig.extend_from_slice(&w.into_vec());
+    orig.extend_from_slice(sig);
+    Ok((orig, (!plain.is_empty()).then(|| plain.to_vec())))
+}
+
+/// 一个收到的段（原段或转发件）里转发要用的部分：`(原段完整字节, 原段体是密文时的明文压缩体)`。[key] = 它所在
+/// 位置的密钥。调用方先验过签名与链。
+pub fn relay_parts(bytes: &[u8], key: Option<&CollectionKey>) -> Result<(Vec<u8>, Option<Vec<u8>>), SegmentError> {
+    if bytes.starts_with(RELAY_MAGIC) {
+        return relay_unwrap(bytes, key);
+    }
+    let mut r = Reader::new(bytes);
+    let header = SegmentHeader::read(&mut r)?;
+    let head_len = r.pos;
+    let body = r.bytes()?;
+    let plain = if header.encrypted {
+        let k = key.ok_or(SegmentError::Undecryptable)?;
+        Some(k.open(body, &bytes[..head_len]).ok_or(SegmentError::Undecryptable)?)
+    } else {
+        None
+    };
+    Ok((bytes.to_vec(), plain))
+}
+
+/// 打包一个转发件（[orig] = 原段完整字节，[plain] = 原段体是密文时的明文压缩体；[key] = 目标位置的密钥）。
+pub fn relay_pack(orig: &[u8], plain: Option<&[u8]>, key: Option<&CollectionKey>) -> Result<Vec<u8>, String> {
+    let mut r = Reader::new(orig);
+    let header = SegmentHeader::read(&mut r).map_err(|e| e.to_string())?;
+    let head_len = r.pos;
+    let body = r.bytes().map_err(|e| e.to_string())?;
+    let sig = r.raw(64).map_err(|e| e.to_string())?;
+    let plain_body: &[u8] = match (header.encrypted, plain) {
+        (true, Some(p)) => p,
+        (true, None) => return Err("relay: encrypted segment without its plaintext body".into()),
+        (false, _) => &[],
+    };
+    let mut inner = Writer::new();
+    inner.bytes(body);
+    inner.raw(sig);
+    inner.bytes(plain_body);
+    let inner = inner.into_vec();
+    let mut w = Writer::new();
+    w.raw(RELAY_MAGIC);
+    w.u8(RELAY_VERSION);
+    w.u8(u8::from(key.is_some()));
+    w.bytes(&orig[..head_len]);
+    let mut out = w.into_vec();
+    let sealed = match key {
+        Some(k) => k.seal(&inner, &out),
+        None => inner,
+    };
+    let mut w = Writer::new();
+    w.bytes(&sealed);
+    out.extend_from_slice(&w.into_vec());
+    Ok(out)
+}
+
+/// 段文件名对应的转发件文件名（`seg-…` → `rly-…`）。
+pub fn relay_file_name(segment_file: &str) -> String {
+    match segment_file.strip_prefix("seg-") {
+        Some(rest) => format!("rly-{rest}"),
+        None => segment_file.to_owned(),
+    }
 }
 
 /// 验过签、解过密的段：段体仍是压缩的（体积受切段目标约束），操作按需流式解开（[Self::verify] / [Self::ops]）。
@@ -408,6 +533,27 @@ pub fn open_verified<'a>(
     public: &[u8; 32],
     key: Option<&CollectionKey>,
 ) -> Result<OpenSegment<'a>, SegmentError> {
+    if bytes.starts_with(RELAY_MAGIC) {
+        // 转发件：[key] 是转发件所在位置的密钥；原段按作者签名验，密文原段用附带的明文压缩体（链校验兜底）。
+        let (orig, plain) = relay_unwrap(bytes, key)?;
+        let mut r = Reader::new(&orig);
+        let header = SegmentHeader::read(&mut r)?;
+        let head_len = r.pos;
+        let body = r.bytes()?;
+        let sig: [u8; 64] = r.raw(64)?.try_into().map_err(|_| SegmentError::Corrupt("sig".into()))?;
+        let mut signed = blake3::Hasher::new();
+        signed.update(&orig[..head_len]);
+        signed.update(body);
+        if !verify(public, signed.finalize().as_bytes(), &sig) {
+            return Err(SegmentError::BadSignature);
+        }
+        let compressed = if header.encrypted {
+            plain.ok_or_else(|| SegmentError::Corrupt("relayed encrypted segment without its body".into()))?
+        } else {
+            body.to_vec()
+        };
+        return Ok(OpenSegment { header, compressed: std::borrow::Cow::Owned(compressed) });
+    }
     let mut r = Reader::new(bytes);
     let header = SegmentHeader::read(&mut r)?;
     let head_len = r.pos;
