@@ -10,7 +10,6 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:isolate';
 import 'dart:math';
 
 import 'package:drift/drift.dart';
@@ -21,6 +20,7 @@ import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_core_workers.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
 import 'package:fushi_engine/srs/srs_projections.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
@@ -1296,11 +1296,18 @@ class SrsDbStore implements SrsSync2Host {
   Future<SrsSync2Result> _sync2Raw(
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
-  }) => _coreSync2(core.address, core.libraryPath, <String, Object?>{
-    ...request,
-    'profile': profileUid,
-    if (_kSync2CacheOps.contains(request['op'])) 'caches': _cacheConfig,
-  }, blobs);
+  }) {
+    debugCoreCommands++;
+    return _coreSync2(core.address, core.libraryPath, <String, Object?>{
+      ...request,
+      'profile': profileUid,
+      if (_kSync2CacheOps.contains(request['op'])) 'caches': _cacheConfig,
+    }, blobs);
+  }
+
+  /// 发出过的内核命令数（`ffsrs_store_sync2` 一次算一条）：复习路径的 FFI 次数守卫 / 基准用。
+  @visibleForTesting
+  int debugCoreCommands = 0;
 
   /// 改投影 / 刷新缓存的 v2 命令：内核在同一次调用里刷新本机缓存行（native/fushi_fsrs/src/store/caches.rs），
   /// 要带上只有 Dart 知道的缓存配置（[_cacheConfig]）。
@@ -4656,24 +4663,24 @@ class _BulkWriteState {
   int restore = 1000;
 }
 
-// ------------------------------------------------------------------ P6 命令的后台 isolate 入口
+// ------------------------------------------------------------------ 内核命令的后台 isolate 入口
 //
-// 写成顶层函数：闭包只捕获句柄地址、库路径与入参（都可发送），不把 store（持有 Drift 连接）带过 isolate 边界。
-
-// 送进后台 isolate 的 Rust 直读命令一律写成顶层函数：闭包写在实例方法里会连带捕获 `this`
-// （SrsDbStore 里有 Future 等不可发送的对象），Isolate.run 当场抛「object is unsendable」。
+// 都在常驻 worker 池里执行（srs_core_workers.dart：符号只解析一次，不再每条命令起一个 isolate）。写成顶层
+// 函数：闭包只捕获句柄地址与入参（都可发送）——闭包写在实例方法里会连带捕获 `this`（SrsDbStore 里有
+// Future 等不可发送的对象），发送当场抛「object is unsendable」。
 
 Future<Uint8List> _coreOptimizerItems(
   int address,
   String? libraryPath,
-  List<List<String>> lineages,
+  List<List<String>> groups,
   List<int> cardIds,
   int algorithm,
   int utcOffsetMin,
   int rolloverHour,
-) => Isolate.run<Uint8List>(
-  () => SrsCore.fromAddress(address, libraryPath: libraryPath).optimizerItems(
-    lineages,
+) => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
+  address,
+  (SrsCore c) => c.optimizerItems(
+    groups,
     cardIds,
     algorithm: algorithm,
     utcOffsetMin: utcOffsetMin,
@@ -4684,13 +4691,14 @@ Future<Uint8List> _coreOptimizerItems(
 Future<Uint8List> _coreRwkvCards(
   int address,
   String? libraryPath,
-  List<List<String>> lineages,
+  List<List<String>> groups,
   List<int> ids,
   int utcOffsetMin,
   int rolloverHour,
-) => Isolate.run<Uint8List>(
-  () => SrsCore.fromAddress(address, libraryPath: libraryPath).rwkvCards(
-    lineages,
+) => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
+  address,
+  (SrsCore c) => c.rwkvCards(
+    groups,
     ids,
     utcOffsetMin: utcOffsetMin,
     rolloverHour: rolloverHour,
@@ -4701,15 +4709,16 @@ Future<Uint8List> _coreRwkvReplay(
   int address,
   String? libraryPath,
   String profileUid,
-  List<List<String>> lineages,
+  List<List<String>> groups,
   List<int> ids,
   int utcOffsetMin,
   int rolloverHour,
   int since,
-) => Isolate.run<Uint8List>(
-  () => SrsCore.fromAddress(address, libraryPath: libraryPath).rwkvReplay(
+) => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
+  address,
+  (SrsCore c) => c.rwkvReplay(
     profileUid,
-    lineages,
+    groups,
     ids,
     utcOffsetMin: utcOffsetMin,
     rolloverHour: rolloverHour,
@@ -4724,8 +4733,9 @@ Future<Uint8List> _coreRwkvLogTail(
   int since,
   bool withRows,
   bool incremental,
-) => Isolate.run<Uint8List>(
-  () => SrsCore.fromAddress(address, libraryPath: libraryPath).rwkvLogTail(
+) => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
+  address,
+  (SrsCore c) => c.rwkvLogTail(
     profileUid,
     since: since,
     withRows: withRows,
@@ -4738,12 +4748,9 @@ Future<SrsSync2Result> _coreSync2(
   String? libraryPath,
   Map<String, Object?> request,
   List<Uint8List> blobs,
-) => Isolate.run<SrsSync2Result>(
-  () => SrsCore.fromAddress(
-    address,
-    libraryPath: libraryPath,
-  ).sync2(request, blobs: blobs),
-);
+) => SrsCoreWorkers.of(
+  libraryPath,
+).run<SrsSync2Result>(address, (SrsCore c) => c.sync2(request, blobs: blobs));
 
 /// [SrsDbStore._noteTypeCache] 的一份：[key] 下物化过的笔记类型（含已删除的；不存在的 ID 记 null）与
 /// [SrsDbStore.noteTypes] 的整份列表（没算过 = null）。
