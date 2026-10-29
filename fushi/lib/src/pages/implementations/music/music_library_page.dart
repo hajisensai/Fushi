@@ -44,7 +44,9 @@ import 'package:fushi/src/pages/implementations/music/music_unified_search.dart'
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
-import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeBar, FushiFloatingChromeInsetPadding;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -177,6 +179,14 @@ typedef _MusicSearchInputs = ({
   List<MusicPluginManifest> searchPlugins,
 });
 
+/// 音乐来源管理对话框（曲库页顶栏与「设置 › 音乐」共用的入口）。
+Future<void> showMusicSourcesDialog(BuildContext context) =>
+    showAppDialog<void>(
+      context: context,
+      builder: (_) =>
+          MediaSourcesDialog(mediaKind: SourceLibraryKind.music.dbValue),
+    );
+
 class MusicLibraryPage extends ConsumerStatefulWidget {
   const MusicLibraryPage({
     super.key,
@@ -206,6 +216,9 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   List<MusicServerAlbumRef> _serverAlbums = const <MusicServerAlbumRef>[];
   bool _scanning = false;
   StreamSubscription<Set<TableUpdate>>? _dbSub;
+
+  /// 顶栏动作槽：本页把动作登记进来，由 [FushiFloatingChromeBar] 的动作组画出。
+  final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
 
   /// 已启用、校验通过的插件音源（合规门没过的平台恒为空）。
   List<MusicPluginManifest> _pluginSources = const <MusicPluginManifest>[];
@@ -288,6 +301,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   void dispose() {
     unawaited(_dbSub?.cancel());
     _searchInputs.dispose();
+    _actionsSlot.dispose();
     super.dispose();
   }
 
@@ -413,6 +427,72 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     await _reload();
   }
 
+  /// 管理音乐来源：列出已添加的文件夹，可重新扫描 / 移除 / 添加（库页共用的
+  /// 来源管理对话框；移除时连带软删该来源下的曲目，见 [removeSourceLibrary]）。
+  /// 曲库经表级变更流自动刷新，不用回调。
+  Future<void> _manageSources() => showMusicSourcesDialog(context);
+
+  /// 顶栏动作：搜索最常用、最后才收进「⋯」（[FushiShellHeaderActions] 从尾部往前收）。
+  void _claimHeaderActions() {
+    final bool idle = !_scanning;
+    _actionsSlot.claim(
+      this,
+      visible: true,
+      actions: FushiShellHeaderActions(
+        actions: <Widget>[
+          FushiIconButton(
+            key: const ValueKey<String>('music_open_search'),
+            icon: FushiIcons.search,
+            tooltip: t.music_library_search_hint,
+            onTap: () => unawaited(_openSearchPage()),
+          ),
+          FushiIconButton(
+            key: const ValueKey<String>('music_add_folder'),
+            icon: FushiIcons.libraryAdd,
+            tooltip: t.music_folder_add,
+            enabled: idle,
+            onTap: () => unawaited(_addFolder()),
+          ),
+          FushiIconButton(
+            key: const ValueKey<String>('music_manage_sources'),
+            icon: FushiIcons.folderOpen,
+            tooltip: t.music_sources_manage,
+            enabled: idle,
+            onTap: () => unawaited(_manageSources()),
+          ),
+          FushiIconButton(
+            key: const ValueKey<String>('music_add_disc'),
+            icon: FushiIcons.storage,
+            tooltip: t.music_disc_add,
+            enabled: idle,
+            onTap: () => unawaited(_addDisc()),
+          ),
+          if (musicAudioCdSupported())
+            FushiIconButton(
+              key: const ValueKey<String>('music_read_cd'),
+              icon: FushiIcons.audio,
+              tooltip: t.music_cd_read,
+              enabled: idle,
+              onTap: () => unawaited(_readCd()),
+            ),
+          FushiIconButton(
+            key: const ValueKey<String>('music_servers'),
+            icon: FushiIcons.cloud,
+            tooltip: t.music_servers_title,
+            onTap: () => unawaited(_openServers()),
+          ),
+          FushiIconButton(
+            key: const ValueKey<String>('music_rescan'),
+            icon: FushiIcons.refresh,
+            tooltip: t.music_library_rescan,
+            enabled: idle,
+            onTap: () => unawaited(_rescan()),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _rescan() async {
     setState(() => _scanning = true);
     try {
@@ -519,139 +599,89 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final MusicLibrarySnapshot? snap = _snapshot;
     // 首页的悬浮条宿主不给各 tab 加底部留白（会截短别的 tab 的列表），音乐页自己让位。
+    _claimHeaderActions();
     return MusicBarReserve(
       child: Focus(
         canRequestFocus: false,
         onKeyEvent: _handleKey,
-        child: SafeArea(
-          bottom: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  tokens.spacing.page,
-                  tokens.spacing.gap,
-                  tokens.spacing.page,
-                  tokens.spacing.gap,
-                ),
-                child: FushiFloatingTopBar(
-                  title: t.nav_music,
-                  actions: <List<FushiToolbarItem>>[
-                    // 搜索排最前：放不下时最后才收进「⋯」。
-                    <FushiToolbarItem>[
-                      FushiToolbarItem(
-                        key: const ValueKey<String>('music_open_search'),
-                        icon: FushiIcons.search,
-                        label: t.music_library_search_hint,
-                        onPressed: () => unawaited(_openSearchPage()),
-                      ),
-                    ],
-                    <FushiToolbarItem>[
-                      FushiToolbarItem(
-                        key: const ValueKey<String>('music_add_folder'),
-                        icon: FushiIcons.libraryAdd,
-                        label: t.music_folder_add,
-                        onPressed: _scanning
-                            ? null
-                            : () => unawaited(_addFolder()),
-                      ),
-                      FushiToolbarItem(
-                        key: const ValueKey<String>('music_add_disc'),
-                        icon: FushiIcons.storage,
-                        label: t.music_disc_add,
-                        onPressed: _scanning
-                            ? null
-                            : () => unawaited(_addDisc()),
-                      ),
-                      if (musicAudioCdSupported())
-                        FushiToolbarItem(
-                          key: const ValueKey<String>('music_read_cd'),
-                          icon: FushiIcons.audio,
-                          label: t.music_cd_read,
-                          onPressed: _scanning
-                              ? null
-                              : () => unawaited(_readCd()),
-                        ),
-                      FushiToolbarItem(
-                        key: const ValueKey<String>('music_servers'),
-                        icon: FushiIcons.cloud,
-                        label: t.music_servers_title,
-                        onPressed: () => unawaited(_openServers()),
-                      ),
-                      FushiToolbarItem(
-                        key: const ValueKey<String>('music_rescan'),
-                        icon: FushiIcons.refresh,
-                        label: t.music_library_rescan,
-                        onPressed: _scanning
-                            ? null
-                            : () => unawaited(_rescan()),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-                // 桌面端默认 dragDevices 不含鼠标：分段放不下时鼠标也得拖得动。
-                child: HorizontalDragScrollable(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: adaptiveSegmentedButton<MusicLibrarySection>(
-                      context: context,
-                      segments: <ButtonSegment<MusicLibrarySection>>[
+        // 顶栏与书架 / 漫画 / 视频 / 游戏库页同一套 M3E 浮动工具栏行
+        // （[FushiFloatingChromeBar]，用户 2026-10-30「音乐的顶栏和其他的不太
+        // 一样」）：宽窗下页面名胶囊（外壳经 [FushiShellInlineTitle] 交给本行画）
+        // + 分区页签胶囊 + 右侧动作组同一行；动作登记进本页自己的 [_actionsSlot]，
+        // 放不下按优先级收进「⋯」。
+        child: FushiShellTitleScope(
+          title: FushiShellTitleScope.maybeTitleOf(context) ?? '',
+          actionsSlot: _actionsSlot,
+          child: SafeArea(
+            bottom: false,
+            child: FushiFloatingChromeInsetPadding(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  FushiFloatingChromeBar(
+                    tabs: LibrarySectionTabs<MusicLibrarySection>(
+                      tabs: <LibrarySectionTab<MusicLibrarySection>>[
                         for (final MusicLibrarySection s
                             in MusicLibrarySection.values)
                           if (s != MusicLibrarySection.recommend ||
                               _hasRecommend)
-                            ButtonSegment<MusicLibrarySection>(
+                            LibrarySectionTab<MusicLibrarySection>(
                               value: s,
-                              label: Text(musicLibrarySectionLabel(s)),
+                              label: musicLibrarySectionLabel(s),
                             ),
                       ],
-                      selected: <MusicLibrarySection>{_section},
-                      onSelectionChanged: (Set<MusicLibrarySection> v) =>
-                          setState(() {
-                            _sectionTouched = true;
-                            _section = v.first;
-                          }),
+                      selected: _section,
+                      onChanged: (MusicLibrarySection v) => setState(() {
+                        _sectionTouched = true;
+                        _section = v;
+                      }),
+                      focusIdPrefix: 'music-library-view',
+                      floating: true,
                     ),
+                    slot: _actionsSlot,
                   ),
-                ),
-              ),
-              SizedBox(height: tokens.spacing.gap),
-              if (snap == null ? null : _buildContinueHero(snap)
-                  case final Widget hero)
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    tokens.spacing.page,
-                    0,
-                    tokens.spacing.page,
-                    tokens.spacing.gap * 1.5,
-                  ),
-                  child: hero,
-                ),
-              // 常规同步 / 复习同步在跑时的进度条（全局状态，不只本页触发的）；没在跑时零高度。
-              SyncProgressBanner(
-                key: const ValueKey<String>('music-sync-progress'),
-                margin: EdgeInsets.only(bottom: tokens.spacing.gap),
-              ),
-              if (_scanning) const FushiLinearProgressIndicator(),
-              Expanded(
-                child: snap == null
-                    ? const FushiLoadingView()
-                    : AnimatedSwitcher(
-                        duration: fushiMotionDuration(
-                          context,
-                          FushiMotion.medium,
-                        ),
-                        child: KeyedSubtree(
-                          key: ValueKey<MusicLibrarySection>(_section),
-                          child: _buildSection(context, snap),
-                        ),
+                  SizedBox(height: tokens.spacing.gap),
+                  if (snap == null ? null : _buildContinueHero(snap)
+                      case final Widget hero)
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        tokens.spacing.page,
+                        0,
+                        tokens.spacing.page,
+                        tokens.spacing.gap * 1.5,
                       ),
+                      child: hero,
+                    ),
+                  // 常规同步 / 复习同步在跑时的进度条（全局状态，不只本页触发的）；没在跑时零高度。
+                  SyncProgressBanner(
+                    key: const ValueKey<String>('music-sync-progress'),
+                    margin: EdgeInsets.only(bottom: tokens.spacing.gap),
+                  ),
+                  if (_scanning) const FushiLinearProgressIndicator(),
+                  Expanded(
+                    child: snap == null
+                        ? const FushiLoadingView()
+                        : AnimatedSwitcher(
+                            duration: fushiMotionDuration(
+                              context,
+                              FushiMotion.medium,
+                            ),
+                            // 每个分区一份自己的主滚动控制器：切区淡出期间新旧
+                            // 两个主滚动视图同时在树上（tab 被藏起时 ticker 静音、
+                            // 旧子树一直不移除），共用外壳那一个会让 Scrollbar 断言
+                            // 「attached to more than one ScrollPosition」。与视频
+                            // 库外壳的保活分区同一套做法。
+                            child: KeyedSubtree(
+                              key: ValueKey<MusicLibrarySection>(_section),
+                              child: SectionPrimaryScrollScope(
+                                child: _buildSection(context, snap),
+                              ),
+                            ),
+                          ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1257,9 +1287,10 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
             header: _header(context, inputs.searchPlugins),
             body: AnimatedSwitcher(
               duration: fushiMotionDuration(context, FushiMotion.medium),
+              // 同上：新旧两态各用自己的主滚动控制器。
               child: KeyedSubtree(
                 key: ValueKey<bool>(_query.trim().isEmpty),
-                child: _body(context, inputs),
+                child: SectionPrimaryScrollScope(child: _body(context, inputs)),
               ),
             ),
           ),

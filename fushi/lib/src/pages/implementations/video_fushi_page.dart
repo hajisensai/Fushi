@@ -10727,6 +10727,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     systemPadding: MediaQuery.of(context).padding,
     systemViewPadding: MediaQuery.of(context).viewPadding,
     systemBarsVisible: _systemBarsVisible,
+    desktopCaptionInset: FushiDesktopTitleBar.immersiveCaptionInset,
   );
 
   /// 字幕动态避让的「进度条上缘」高度（BUG-238 / BUG-901）：控制条可见时字幕底缘对它取
