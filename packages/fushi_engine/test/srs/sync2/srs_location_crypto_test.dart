@@ -264,7 +264,8 @@ void main() {
 
     await round(a, loc, key: ka.enabled());
     await round(b, loc, key: ka.enabled());
-    // 先把位置上的密文坏一个字节（中间某块）：B 拒收、不落地，位置上的坏文件删掉、记不在。
+    // 先把位置上的密文坏一个字节（中间某块）：B 拒收、不落地；位置上那份不删（读者分不清是对象坏了还是这次
+    // 传输坏了），只在旁边留可疑标记。
     final Uint8List bad = Uint8List.fromList(stored);
     bad[27 + 5 * 65552 + 7] ^= 0x40;
     sealed.writeAsBytesSync(bad);
@@ -282,9 +283,20 @@ void main() {
       isEmpty,
       reason: 'no half-written .download / .part files left behind',
     );
-    expect(sealed.existsSync(), isFalse);
-    // 持有原文件的 A 下一轮补传；B 照常拿到原样字节。
-    await srsSyncMedia(location: loc, store: a, mediaRoot: ma, cipher: ca);
+    expect(sealed.existsSync(), isTrue, reason: 'a reader never deletes');
+    final File marker = File(
+      '${root.path}/${srsMediaSuspectMarkerPath(ca.folder, sha)}',
+    );
+    expect(marker.existsSync(), isTrue);
+    // 持有原文件的 A 下一轮看到标记，用核对过的原文覆盖重传、删掉标记；B 照常拿到原样字节。
+    final SrsMediaSyncReport fixed = await srsSyncMedia(
+      location: loc,
+      store: a,
+      mediaRoot: ma,
+      cipher: ca,
+    );
+    expect(fixed.repaired, 1);
+    expect(marker.existsSync(), isFalse);
     final SrsMediaSyncReport rb = await srsSyncMedia(
       location: loc,
       store: b,

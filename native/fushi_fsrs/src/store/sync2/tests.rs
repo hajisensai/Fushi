@@ -2327,7 +2327,44 @@ fn media_known_reports_absent_names_separately() {
     let a = Device::new("mk");
     a.core.sync2_media_record(P, "l/media", &strs(&["x.mp3"]), &strs(&["gone.png"]), true, T0).unwrap();
     let v = a.core.sync2_media_known(P, "l/media").unwrap();
-    assert_eq!(v, json!({"seeded": true, "present": ["x.mp3"], "absent": ["gone.png"]}));
+    assert_eq!(v, json!({"seeded": true, "present": ["x.mp3"], "absent": ["gone.png"], "suspect": []}));
+}
+
+/// 集成审查【中】：读者下载到与名字（内容哈希）对不上的对象时不删它（那可能是位置上唯一的一份，删了持有者也许
+/// 再也补不回），只记「可疑」；可疑随日志传到别的设备（持有原文的那台据此覆盖重传），重传后记回「在」，各端收敛。
+#[test]
+fn suspect_media_travels_in_the_log_and_a_repair_clears_it() {
+    let a = Device::new("sa");
+    let b = Device::new("sb");
+    let mut bucket = Bucket::default();
+    const L: &str = "drive:acct/media";
+    a.core.sync2_media_record(P, L, &strs(&["x.mp3", "y.png"]), &[], true, T0).unwrap();
+    a.sync(&mut bucket, "loc", T0 + 1);
+    b.sync(&mut bucket, "loc", T0 + 1);
+
+    // B 读到坏的 x.mp3 → 记可疑。
+    let r = b.core.sync2_media_record_with_suspect(P, L, &[], &[], &strs(&["x.mp3"]), false, T0 + 10).unwrap();
+    assert_eq!(r["appended"], json!(1));
+    // 同一事实不重复记。
+    let again = b.core.sync2_media_record_with_suspect(P, L, &[], &[], &strs(&["x.mp3"]), false, T0 + 11).unwrap();
+    assert_eq!(again["appended"], json!(0));
+    let expect = json!({"seeded": true, "present": ["y.png"], "absent": [], "suspect": ["x.mp3"]});
+    assert_eq!(b.core.sync2_media_known(P, L).unwrap(), expect);
+
+    b.sync(&mut bucket, "loc", T0 + 12);
+    a.sync(&mut bucket, "loc", T0 + 12);
+    assert_eq!(a.core.sync2_media_known(P, L).unwrap(), expect, "the holder learns the object is suspect");
+
+    // A 持有原文，覆盖重传后记回「在」。
+    a.core.sync2_media_record(P, L, &strs(&["x.mp3"]), &[], false, T0 + 20).unwrap();
+    for _ in 0..2 {
+        a.sync(&mut bucket, "loc", T0 + 21);
+        b.sync(&mut bucket, "loc", T0 + 21);
+    }
+    let repaired = json!({"seeded": true, "present": ["x.mp3", "y.png"], "absent": [], "suspect": []});
+    assert_eq!(a.core.sync2_media_known(P, L).unwrap(), repaired);
+    assert_eq!(b.core.sync2_media_known(P, L).unwrap(), repaired);
+    assert_eq!(a.digest(), b.digest());
 }
 
 /// 投影改动只以粗粒度摘要交回 Dart（`marks`）：受影响的笔记 / 卡 / 笔记类型 + 修订号增量，不带事件全文。
