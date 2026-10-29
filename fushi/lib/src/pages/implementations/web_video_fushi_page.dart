@@ -753,9 +753,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final int? pos = state.positionMs;
     final int? previewEnd = _remotePreviewEndMs;
     if (pos != null && previewEnd != null && pos >= previewEnd) {
-      // 手机试听的那段放到终点：停下（与原生播放器 playRangeMs 到点暂停同义）。
+      // 手机试听的那段放到终点：停下（与原生播放器 playRangeMs 到点暂停同义）。试听自己的
+      // 收尾不是「有人动过播放」，不走计数的 [_pause]（与扩展 remotePlayRange 同）。
       _remotePreviewEndMs = null;
-      unawaited(_pause());
+      unawaited(_js('window.__fushiWebVideo.pause()'));
     }
     if (pos != null) {
       _controller.applyExternalPlaybackState(

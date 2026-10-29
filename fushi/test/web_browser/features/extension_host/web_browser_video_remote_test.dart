@@ -215,6 +215,36 @@ void main() {
       remote = WebBrowserVideoRemote(autoPoll: false, ports: remote.ports);
     });
 
+    test('页面一拍没回话（超时）不算没视频：会话与 sessionId 不变', () async {
+      await activate(tabA);
+      final String first = (await connect())['sessionId']! as String;
+      pages['a']!.silent = true;
+      await remote.poll();
+      final Map<String, Object?> s = await connect();
+      expect(s['available'], isTrue);
+      expect(s['sessionId'], first);
+      pages['a']!.silent = false;
+      await remote.poll();
+      expect((await connect())['sessionId'], first);
+    });
+
+    test('浏览页被盖住期间不新登记：下面这页换视频也抢不走上层播放器', () async {
+      await activate(tabA);
+      remote.setCovered(true);
+      final VideoRemotePlaybackBinding native = _nativeBinding();
+      host.register(native);
+      // 盖着期间下面这页换了视频：旧会话结束，但不新登记、不抢手机。
+      pages['a']!.videoKey = 'example.com/v9';
+      await remote.poll();
+      expect(remote.binding, isNull);
+      expect((await connect())['identity'], 'native');
+      // 上层播放器关掉、浏览页露出：再登记新视频。
+      host.unregister(native);
+      remote.setCovered(false);
+      await remote.poll();
+      expect((await connect())['identity'], 'web:example.com/v9');
+    });
+
     test('dispose 注销', () async {
       await activate(tabA);
       remote.dispose();
@@ -533,6 +563,9 @@ class _FakePage {
 
   String videoKey;
   bool hasVideo = true;
+
+  /// true = 页面不回话（模拟请求超时，`request` 回 null）。
+  bool silent = false;
   int positionMs = 3000;
   int durationMs = 120000;
   bool playing = true;
@@ -587,6 +620,7 @@ class _FakePage {
   };
 
   Object? handle(Map<String, Object?> message) {
+    if (silent) return null;
     switch (message['type']) {
       case 'fushiRemoteState':
         return state(message['includeCues'] == true);

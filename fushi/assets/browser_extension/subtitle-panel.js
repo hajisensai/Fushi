@@ -1485,6 +1485,9 @@
     }
   }
   function remoteSeek(ms) {
+    // 只有真会触发 seeking 的那次才登记期望：没有正片元素时 seekTo 什么都不做，留着期望会
+    // 吞掉下一次电脑前的真手动拖动（与 remoteSetPlaying 同理）。
+    if (!videoEl()) return;
     remote.expectSeek = true;
     seekTo(ms);
   }

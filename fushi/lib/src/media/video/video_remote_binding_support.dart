@@ -100,6 +100,10 @@ List<VideoRemoteCue> videoRemoteTrackRows(
 
 /// 手机制卡请求（`mine` 的 `fields`）解析后的三样：Anki 原始字段、手机带来的句子、
 /// 「高级制卡」覆盖项。形状不对抛 400 `invalid_fields`。
+///
+/// `fields['dictionaryMedia']`（手机送来的词典媒体清单）在这里统一清洗
+/// （[sanitizeVideoRemoteDictionaryMediaJson]）：三处遥控绑定都经这一个入口，越级路径
+/// 不会因为某条路径漏调而走到写缓存那一步。同步函数：调用方在首个 await 之前读完。
 typedef VideoRemoteMineRequest = ({
   Map<String, String> fields,
   String? sentence,
@@ -117,6 +121,12 @@ VideoRemoteMineRequest parseVideoRemoteMineRequest(
     for (final MapEntry<dynamic, dynamic> entry in rawFields.entries)
       entry.key.toString(): entry.value.toString(),
   };
+  final String? dictionaryMedia = fields['dictionaryMedia'];
+  if (dictionaryMedia != null) {
+    fields['dictionaryMedia'] = sanitizeVideoRemoteDictionaryMediaJson(
+      dictionaryMedia,
+    );
+  }
   if ((fields['expression'] ?? '').trim().isEmpty) {
     throw const VideoRemoteException(400, 'invalid_fields');
   }

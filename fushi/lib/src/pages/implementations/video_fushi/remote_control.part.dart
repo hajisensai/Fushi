@@ -571,9 +571,8 @@ extension _VideoRemoteControl on _VideoFushiPageState {
           dateKey: statTodayKey(),
         );
     final FushiDatabase historyDb = appModel.database;
-    final String dictionaryMedia = sanitizeVideoRemoteDictionaryMediaJson(
-      fields['dictionaryMedia'] ?? '',
-    );
+    // 已在 [parseVideoRemoteMineRequest] 里清洗（只留词典资源根内的路径）。
+    final String dictionaryMedia = fields['dictionaryMedia'] ?? '';
     String? error;
     // 宿主校验完查词上下文后同步调到这里：从那一刻到 [_mineVideoCard] 冻结播放器输入
     // 之间不得有任何 await，否则这段时间里换集（手机 openFavorite / 电脑本地换集）

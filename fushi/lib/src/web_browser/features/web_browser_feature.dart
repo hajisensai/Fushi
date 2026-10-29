@@ -42,6 +42,10 @@ abstract class WebBrowserFeature {
   /// 标签页成为 / 不再是前台标签页（统计计时、暂停注入等用）。
   void onTabActiveChanged(WebBrowserTab tab, {required bool active}) {}
 
+  /// 浏览页被别的整页路由盖住（[covered] = true，例如「在 Fushi 里播放」推出的播放器页）
+  /// / 重新露出（false）。对话框、菜单、底部抽屉不算。
+  void onPageCoveredChanged({required bool covered}) {}
+
   /// 标签页关闭（WebView 即将销毁）。
   void onTabClosed(WebBrowserTab tab) {}
 

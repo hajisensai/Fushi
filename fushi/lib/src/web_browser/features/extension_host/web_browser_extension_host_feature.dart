@@ -197,6 +197,12 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
   }
 
   @override
+  void onPageCoveredChanged({required bool covered}) {
+    // 盖住期间手机遥控不新登记，免得下面这页换视频后抢走上层播放器的手机。
+    videoRemote?.setCovered(covered);
+  }
+
+  @override
   void onTabClosed(WebBrowserTab tab) {
     videoRemote?.tabClosed(tab);
     _tabs.remove(tab.id);

@@ -92,6 +92,13 @@ WebBrowserVideoRemoteState? parseWebBrowserVideoRemoteState(Object? raw) {
   );
 }
 
+/// 一次状态轮询的结果：[answered] = 页面回了话；[state] = 认得出的状态（null = 回了但
+/// 认不出 / 没有遥控块）。
+typedef _RemoteStateReply = ({
+  bool answered,
+  WebBrowserVideoRemoteState? state,
+});
+
 /// 遥控绑定要的 app 能力（浏览页装配，测试注入假的）。
 class WebBrowserVideoRemotePorts {
   const WebBrowserVideoRemotePorts({
@@ -137,8 +144,10 @@ class WebBrowserVideoRemotePorts {
 /// 整栈（subtitle-panel.js 的 `fushiRemote*` 消息），与字幕侧栏开没开无关：登记期间每
 /// [activePollInterval] 轮询一次，没登记时每 [idlePollInterval] 看一眼前台页有没有视频。
 ///
-/// 原生播放器页叠在浏览页上面时会抢走登记；它关掉、宿主空出来后本控制器在下一次轮询把
-/// 自己登记回去（宿主正被别的播放器占着时不抢）。
+/// 宿主按「页面叠放」排登记顺序：后登记的在上面、接管手机。所以浏览页被整页路由盖住
+/// （[setCovered]，例如「在 Fushi 里播放」推出的原生播放器页）期间只更新 / 结束已有会话、
+/// **不新登记**——否则下面这页换视频后重登记会跳到上层播放器头上抢走手机。露出来后下一次
+/// 轮询再登记。页面一次没回话（超时）不算「没视频」，会话照旧，不让手机闪断。
 class WebBrowserVideoRemote extends ChangeNotifier {
   WebBrowserVideoRemote({
     required this.ports,
@@ -158,6 +167,9 @@ class WebBrowserVideoRemote extends ChangeNotifier {
 
   WebBrowserTab? _activeTab;
   _WebVideoRemoteSession? _session;
+
+  /// 浏览页被整页路由盖住（见 [setCovered]）。
+  bool _covered = false;
   Timer? _timer;
   bool _polling = false;
   bool _pollAgain = false;
@@ -176,6 +188,14 @@ class WebBrowserVideoRemote extends ChangeNotifier {
     final _WebVideoRemoteSession? session = _session;
     if (session != null && !identical(session.tab, tab)) _endSession();
     _pollSoon();
+  }
+
+  /// 浏览页被整页路由盖住 / 重新露出（`RouteAware.didPushNext` / `didPopNext`）。
+  /// 盖住期间不新登记（已有会话照常更新、该结束照常结束），露出后马上看一眼。
+  void setCovered(bool covered) {
+    if (covered == _covered) return;
+    _covered = covered;
+    if (!covered) _pollSoon();
   }
 
   /// [tab] 不再是前台页（随后通常紧跟新前台页的 [setActiveTab]）。
@@ -255,8 +275,11 @@ class WebBrowserVideoRemote extends ChangeNotifier {
       _endSession();
       return;
     }
-    final WebBrowserVideoRemoteState? state = await _fetch(tab);
+    final _RemoteStateReply reply = await _fetch(tab);
     if (_disposed || !identical(tab, _activeTab)) return;
+    // 页面这一拍没回话（繁忙 / 超时）：什么都不改，下一拍再看。
+    if (!reply.answered) return;
+    final WebBrowserVideoRemoteState? state = reply.state;
     if (state == null || !state.hasVideo) {
       _endSession();
       return;
@@ -265,26 +288,30 @@ class WebBrowserVideoRemote extends ChangeNotifier {
   }
 
   /// 取状态：cue 身份没变时只取状态，变了再带 cue 取一次（与字幕侧栏同一节奏）。
-  Future<WebBrowserVideoRemoteState?> _fetch(WebBrowserTab tab) async {
+  /// `answered == false` = 页面没回话（请求超时，`ports.request` 回 null），与「页面明确
+  /// 回报没视频 / 回报认不出」分开。
+  Future<_RemoteStateReply> _fetch(WebBrowserTab tab) async {
+    final Object? firstRaw = await ports.request(tab, <String, Object?>{
+      'type': 'fushiRemoteState',
+      'includeCues': false,
+    }, requestTimeout);
+    if (firstRaw == null) return (answered: false, state: null);
     final WebBrowserVideoRemoteState? first = parseWebBrowserVideoRemoteState(
-      await ports.request(tab, <String, Object?>{
-        'type': 'fushiRemoteState',
-        'includeCues': false,
-      }, requestTimeout),
+      firstRaw,
     );
-    if (first == null) return null;
+    if (first == null) return (answered: true, state: null);
     final _WebVideoRemoteSession? session = _session;
     if (session != null &&
         identical(session.tab, tab) &&
         session.cueIdentity == first.subtitles.cueIdentity) {
-      return first;
+      return (answered: true, state: first);
     }
-    return parseWebBrowserVideoRemoteState(
-      await ports.request(tab, <String, Object?>{
-        'type': 'fushiRemoteState',
-        'includeCues': true,
-      }, requestTimeout),
-    );
+    final Object? fullRaw = await ports.request(tab, <String, Object?>{
+      'type': 'fushiRemoteState',
+      'includeCues': true,
+    }, requestTimeout);
+    if (fullRaw == null) return (answered: false, state: null);
+    return (answered: true, state: parseWebBrowserVideoRemoteState(fullRaw));
   }
 
   /// 落一份页面回报。[fresh] = 命令的回执（遥控自己刚下发过，不再判断登记）。
@@ -302,6 +329,8 @@ class WebBrowserVideoRemote extends ChangeNotifier {
       session = null;
     }
     if (session == null) {
+      // 被别的整页路由盖着：不新登记（登记 = 放到最上层接管手机），露出后再登记。
+      if (_covered) return;
       session = _WebVideoRemoteSession(tab, state.subtitles.videoKey);
       session.binding = _bind(session);
       session.update(state);
@@ -486,7 +515,7 @@ class WebBrowserVideoRemote extends ChangeNotifier {
       'lang': track.lang,
     });
     // 活动轨换了：带 cue 重取一次，让宿主在回执后就看到新句子列表。
-    final WebBrowserVideoRemoteState? state = await _fetch(session.tab);
+    final WebBrowserVideoRemoteState? state = (await _fetch(session.tab)).state;
     if (state != null && identical(_session, session)) {
       _apply(session.tab, state, fresh: true);
     }
@@ -608,7 +637,9 @@ class WebBrowserVideoRemote extends ChangeNotifier {
       if (reply is! Map || reply['ok'] != true) {
         throw const VideoRemoteException(409, 'no_video');
       }
-      final WebBrowserVideoRemoteState? state = await _fetch(session.tab);
+      final WebBrowserVideoRemoteState? state = (await _fetch(
+        session.tab,
+      )).state;
       if (state != null && identical(_session, session)) {
         _apply(session.tab, state, fresh: true);
       }
@@ -692,15 +723,9 @@ class WebBrowserVideoRemote extends ChangeNotifier {
       cueSentence: null,
     ), parsed.overrides);
     final String sentence = videoRemoteMineSentence(selection, parsed.sentence);
-    final String? dictionaryMedia = parsed.fields['dictionaryMedia'];
-    final Map<String, String> fields = <String, String>{
-      ...parsed.fields,
-      // 手机送来的词典媒体只留落在词典资源根内的条目（mineImmersion 据此写缓存）。
-      if (dictionaryMedia != null)
-        'dictionaryMedia': sanitizeVideoRemoteDictionaryMediaJson(
-          dictionaryMedia,
-        ),
-    };
+    // 手机送来的词典媒体已在 [parseVideoRemoteMineRequest] 里清洗过（只留落在词典资源根
+    // 内的条目，mineImmersion 据此写缓存）。
+    final Map<String, String> fields = parsed.fields;
     final Object? reply = await ports.request(session.tab, <String, Object?>{
       'type': 'fushiRemoteMineContext',
     }, const Duration(seconds: 12));

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_remote_binding_support.dart';
 import 'package:fushi/src/sync/video_remote_host.dart';
+import 'package:fushi_anki/fushi_anki.dart' show MiningRequestOverrides;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart';
 
@@ -92,6 +93,45 @@ void main() {
         }),
         throwsA(_remoteError(400, 'invalid_fields')),
       );
+    });
+
+    test('dictionaryMedia 在解析入口统一清洗：越级路径进不了任何一条遥控制卡路径', () {
+      final VideoRemoteMineRequest r = parseVideoRemoteMineRequest(
+        <String, dynamic>{
+          'rawFields': <String, dynamic>{
+            'expression': '猫',
+            'dictionaryMedia': jsonEncode(<Map<String, String>>[
+              <String, String>{'dictionary': 'd', 'path': 'img/a.png'},
+              <String, String>{'dictionary': 'd', 'path': 'a.x/../../evil'},
+            ]),
+          },
+        },
+      );
+      final List<dynamic> media =
+          jsonDecode(r.fields['dictionaryMedia']!) as List<dynamic>;
+      expect(media, hasLength(1));
+      expect((media.single as Map<String, dynamic>)['path'], 'img/a.png');
+      // 没带就不凭空加。
+      expect(
+        parseVideoRemoteMineRequest(<String, dynamic>{
+          'rawFields': <String, dynamic>{'expression': '猫'},
+        }).fields.containsKey('dictionaryMedia'),
+        isFalse,
+      );
+    });
+
+    test('覆盖项从 rawFields 同步读出（调用方在首个 await 之前拿到）', () {
+      final VideoRemoteMineRequest r = parseVideoRemoteMineRequest(
+        <String, dynamic>{
+          'rawFields': <String, dynamic>{
+            'expression': '猫',
+            MiningRequestOverrides.wireKey: jsonEncode(
+              const MiningRequestOverrides(omitAudio: true).toJson(),
+            ),
+          },
+        },
+      );
+      expect(r.overrides?.omitAudio, isTrue);
     });
   });
 
