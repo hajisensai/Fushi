@@ -10,6 +10,7 @@
 //! 所有命令在写连接上的一个 SAVEPOINT 里做：Dart 的 Drift 事务开着时嵌在里面，没开时自成事务。
 
 pub mod config;
+pub mod digest;
 pub mod media;
 pub(crate) mod mvr;
 pub mod relay;
@@ -1534,6 +1535,12 @@ mod mem_bench;
 pub(crate) mod tests;
 #[cfg(test)]
 mod tests_causal;
+#[cfg(test)]
+mod tests_perf;
+#[cfg(test)]
+mod tests_digest;
+#[cfg(test)]
+mod tests_replay_pending;
 
 impl SrsCore {
     /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与

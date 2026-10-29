@@ -254,6 +254,10 @@ Future<SrsSync2Report> srsSync2Round({
       if (shouldStop?.call() ?? false) return report..error = kSrsSync2Stopped;
     }
     absorb(await host.sync2IngestFinish());
+  } else if (plan['finishPending'] == true) {
+    // 上一轮收段被打断在收尾之前：受影响的卡还在内核的待重放集合里（审查 S-4），这一轮没段可拉也收个尾。
+    await host.sync2IngestBegin();
+    absorb(await host.sync2IngestFinish());
   }
 
   // 3. 发件：先段、后 head。分批（内核 `sync2_outbox` 按字节 / 段数上限产出一批，见 transport.rs

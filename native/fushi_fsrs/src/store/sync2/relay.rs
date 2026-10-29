@@ -177,7 +177,50 @@ pub(crate) fn note_heads(
         .execute(params![profile, location, h.device.0.to_vec(), h.gen as i64, h.seq as i64, names_of(h)])
         .map_err(sql)?;
     }
-    // 这个位置上就是某设备最新的 head：别的位置缺、本机又没留原文的段，从这里拉（只为转发）。
+    relay_fetch(c, profile, local, heads)
+}
+
+/// [note_heads] 这一次什么都不会改（各设备的转发源 head 不比这些旧、这个位置上记的 head 与这一轮看到的相同、本机转发
+/// 上去的 head 都还看得到）：`plan` 的只读快路径据此不拿写锁（审查 S-8）。
+pub(crate) fn heads_noted(c: &Connection, profile: &str, local: &Local, location: Option<&str>, heads: &[(&Head, &[u8])]) -> Result<bool, String> {
+    for (h, _) in heads.iter().filter(|(h, _)| h.device != local.device) {
+        if relay_head(c, profile, &h.device)?.is_none_or(|(g, _, _)| g < h.gen) {
+            return Ok(false);
+        }
+    }
+    let Some(location) = location else { return Ok(true) };
+    let seen: BTreeMap<Id, u64> = heads.iter().filter(|(h, _)| h.device != local.device).map(|(h, _)| (h.device, h.gen)).collect();
+    let relayed: Vec<(Vec<u8>, i64)> = c
+        .prepare_cached(
+            "SELECT device, MAX(gen) FROM sync2_relay_out WHERE profile_uid = ?1 AND location = ?2 AND name LIKE 'head-%' GROUP BY device",
+        )
+        .map_err(sql)?
+        .query_map(params![profile, location], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    for (d, g) in relayed {
+        if seen.get(&id_of(d)?).copied().unwrap_or(0) < g as u64 {
+            return Ok(false);
+        }
+    }
+    let have: BTreeMap<Vec<u8>, (i64, i64, String)> = c
+        .prepare_cached("SELECT device, gen, seq, segments FROM sync2_location_heads WHERE profile_uid = ?1 AND location = ?2")
+        .map_err(sql)?
+        .query_map(params![profile, location], |r| Ok((r.get::<_, Vec<u8>>(0)?, (r.get(1)?, r.get(2)?, r.get(3)?))))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    let want: BTreeMap<Vec<u8>, (i64, i64, String)> = heads
+        .iter()
+        .filter(|(h, _)| h.device != local.device)
+        .map(|(h, _)| (h.device.0.to_vec(), (h.gen as i64, h.seq as i64, names_of(h))))
+        .collect();
+    Ok(have == want)
+}
+
+/// 这个位置上就是某设备最新的 head：别的位置缺、本机又没留原文的段，从这里拉（只为转发）。只读。
+pub(crate) fn relay_fetch(c: &Connection, profile: &str, local: &Local, heads: &[(&Head, &[u8])]) -> Result<BTreeMap<Id, Vec<String>>, String> {
     let locations = active_locations(c, profile)?;
     let mut fetch: BTreeMap<Id, Vec<String>> = BTreeMap::new();
     for (h, _) in heads {
