@@ -169,12 +169,20 @@ class SrsBuiltinNoteType {
     required this.css,
     this.termFieldId,
     this.freqFieldId,
+    this.legacyFieldNames = const <String, String>{},
   });
 
   final String key;
   final String name;
   final String kind;
   final List<SrsFieldDef> fields;
+
+  /// fieldId → 这个内置字段改名前的**默认名**（只列改过默认名的字段）。
+  ///
+  /// 字段定义修改记录（调序 / 改说明前的整份快照）里存的名字等于它时，物化把它当作「没改过名」，
+  /// 显示代码里的新默认名（registers.rs `note_type_view`）。只在读时认，不写修改记录：
+  /// 多设备各自升级不产生任何同步操作。
+  final Map<String, String> legacyFieldNames;
   final List<SrsTemplateDef> templates;
   final String css;
   final String? termFieldId;

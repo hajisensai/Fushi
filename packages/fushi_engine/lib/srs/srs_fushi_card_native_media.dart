@@ -19,11 +19,11 @@ import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 
 /// 原生卡面直接画的图片字段。
-const String kSrsFushiNativePictureField = 'Picture';
+const String kSrsFushiNativePictureField = FushiCardFields.media;
 
 /// 原生卡面按 `[sound:]` 出播放按钮的音频字段。
 const List<String> kSrsFushiNativeAudioFields = <String>[
-  'ExpressionAudio',
+  FushiCardFields.termAudio,
   'SentenceAudio',
 ];
 

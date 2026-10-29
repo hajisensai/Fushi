@@ -16,7 +16,11 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki_core.dart'
-    show FushiCardBlock, kFushiCardBackBlocks, kFushiCardSwitchFields;
+    show
+        FushiCardBlock,
+        FushiCardFields,
+        kFushiCardBackBlocks,
+        kFushiCardSwitchFields;
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
@@ -173,9 +177,12 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     if (type.builtinKey == kSrsBuiltinFushiCardKey) {
       final List<_FieldGroup> groups = <_FieldGroup>[];
       final Set<String> placed = <String>{};
+      // 按改名后的字段键分组：字段定义修改记录（调序 / 改名）里存的还是旧名（Expression /
+      // Picture …）时也落到同一组，不被甩进「更多字段」。
+      String key(SrsFieldDef f) => FushiCardFields.canonical(f.name);
       List<SrsFieldDef> named(Iterable<String> names) => <SrsFieldDef>[
         for (final String name in names)
-          ...type.fields.where((SrsFieldDef f) => f.name == name),
+          ...type.fields.where((SrsFieldDef f) => key(f) == name),
       ];
       for (final FushiCardBlock b in kFushiCardBackBlocks) {
         final List<SrsFieldDef> fields = named(b.fields);
@@ -185,19 +192,19 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       final List<SrsFieldDef> switches = named(kFushiCardSwitchFields);
       placed.addAll(kFushiCardSwitchFields);
       final List<SrsFieldDef> others = type.fields
-          .where((SrsFieldDef f) => !placed.contains(f.name))
+          .where((SrsFieldDef f) => !placed.contains(key(f)))
           .toList();
       final List<_FieldGroup> primary = <_FieldGroup>[];
       final List<_FieldGroup> rest = <_FieldGroup>[];
       for (final _FieldGroup g in groups) {
         final List<SrsFieldDef> head = g.$2
             .where(
-              (SrsFieldDef f) => kSrsFushiCardPrimaryFields.contains(f.name),
+              (SrsFieldDef f) => kSrsFushiCardPrimaryFields.contains(key(f)),
             )
             .toList();
         final List<SrsFieldDef> tail = g.$2
             .where(
-              (SrsFieldDef f) => !kSrsFushiCardPrimaryFields.contains(f.name),
+              (SrsFieldDef f) => !kSrsFushiCardPrimaryFields.contains(key(f)),
             )
             .toList();
         if (head.isNotEmpty) primary.add((g.$1, head));

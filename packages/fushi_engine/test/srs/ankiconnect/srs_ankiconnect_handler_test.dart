@@ -126,6 +126,82 @@ void main() {
     });
   });
 
+  group('Fushi 卡片字段改名后的旧名兼容（2026-10-29）', () {
+    test(
+      'Yomitan 还按旧字段名（Expression / Picture / MiscInfo）加卡 → 落到新名字段',
+      () async {
+        final int nid =
+            (await h.ok('addNote', <String, Object?>{
+                  'note': <String, Object?>{
+                    ...yomitanNote('食べる', model: 'Fushi Card'),
+                    'fields': <String, Object?>{
+                      'Expression': '食べる',
+                      'expressionreading': 'たべる',
+                      'Picture': '<img src="a.webp">',
+                      'MiscInfo': '出典',
+                    },
+                  },
+                }))!
+                as int;
+        final Map<String, Object?> n =
+            (((await h.ok('notesInfo', <String, Object?>{
+                              'notes': <int>[nid],
+                            }))!
+                            as List)
+                        .first!
+                    as Map)
+                .cast<String, Object?>();
+        final Map<String, Object?> fields = (n['fields']! as Map)
+            .cast<String, Object?>();
+        String value(String name) =>
+            ((fields[name]! as Map)['value'] as String?) ?? '';
+        expect(value('Term'), '食べる');
+        expect(value('TermReading'), 'たべる');
+        expect(value('Media'), '<img src="a.webp">');
+        expect(value('Source'), '出典');
+      },
+    );
+
+    test('findNotes 按旧字段名查（Yomitan 查重 "Expression:…"）仍查到 Fushi 卡片', () async {
+      final int fushi =
+          (await h.ok('addNote', <String, Object?>{
+                'note': <String, Object?>{
+                  ...yomitanNote('食べる', model: 'Fushi Card'),
+                  'fields': <String, Object?>{
+                    'Term': '食べる',
+                    'Media': '<img src="m.webp">',
+                  },
+                },
+              }))!
+              as int;
+      final int lapis =
+          (await h.ok('addNote', <String, Object?>{
+                'note': yomitanNote('食べる'),
+              }))!
+              as int;
+      Future<List<Object?>> find(String q) async =>
+          (await h.ok('findNotes', <String, Object?>{'query': q}))! as List;
+      expect(
+        await find('"Expression:食べる"'),
+        unorderedEquals(<int>[fushi, lapis]),
+      );
+      expect(await find('"note:Fushi Card" "expression:食べる"'), <int>[fushi]);
+      expect(await find('Picture:*m.webp*'), <int>[fushi]);
+      // 新名只命中 Fushi 卡片：Lapis 的 Expression 不认 Term。
+      expect(await find('"Term:食べる"'), <int>[fushi]);
+    });
+
+    test('别名只对 Fushi 卡片生效：Lapis 收到新名 Term 不会写进 Expression', () async {
+      final Map<String, Object?> r = await h.call('addNote', <String, Object?>{
+        'note': <String, Object?>{
+          ...yomitanNote('食べる'),
+          'fields': <String, Object?>{'Term': '食べる'},
+        },
+      });
+      expect(r['error'], isNotNull);
+    });
+  });
+
   group('加卡与查重（照 Yomitan anki-connect.js 的真实请求形状）', () {
     test('addNote → notesInfo / cardsInfo / findCards 形状', () async {
       final int nid =

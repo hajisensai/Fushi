@@ -56,11 +56,19 @@ SrsBuiltinNoteTypeSpec? srsBuiltinNoteTypeSpec(String? key) {
 String srsBuiltinNoteTypeId(String profileUid, String key) =>
     SrsIds.noteType(profileUid, SrsIds.builtinNoteTypeAnkiNum(key));
 
+/// 内置字段 ID / ankiNum 的派生种子。Fushi 卡片 2026-10-29 给 9 个字段改了名
+/// （[FushiCardFields]），ID 仍按**旧名**派生：旧卡的字段值、同步日志、词状态零迁移。
+/// 新增字段（改名之后才有的）没有旧名，种子就是自己的名字。
+String srsBuiltinFieldSeed(String key, String fieldKey) =>
+    key == kSrsBuiltinFushiCardKey
+    ? FushiCardFields.legacyNameOf(fieldKey)
+    : fieldKey;
+
 /// 内置笔记类型的字段键 → fieldId。
 String srsBuiltinFieldId(String profileUid, String key, String fieldKey) =>
     SrsIds.field(
       srsBuiltinNoteTypeId(profileUid, key),
-      SrsIds.builtinFieldAnkiNum(key, fieldKey),
+      SrsIds.builtinFieldAnkiNum(key, srsBuiltinFieldSeed(key, fieldKey)),
     );
 
 /// 某 profile 的内置 Lapis 笔记类型 ID。
@@ -101,7 +109,10 @@ SrsBuiltinNoteType srsBuiltinNoteType(
           id: nameToId[tpl.fields[i]]!,
           name: tpl.fields[i],
           ord: i,
-          ankiNum: SrsIds.builtinFieldAnkiNum(key, tpl.fields[i]),
+          ankiNum: SrsIds.builtinFieldAnkiNum(
+            key,
+            srsBuiltinFieldSeed(key, tpl.fields[i]),
+          ),
         ),
     ],
     templates: <SrsTemplateDef>[
@@ -115,8 +126,14 @@ SrsBuiltinNoteType srsBuiltinNoteType(
       ),
     ],
     css: tpl.css,
-    termFieldId: nameToId['Expression'],
-    freqFieldId: nameToId['FreqSort'],
+    legacyFieldNames: <String, String>{
+      for (final String f in tpl.fields)
+        if (srsBuiltinFieldSeed(key, f) != f)
+          nameToId[f]!: srsBuiltinFieldSeed(key, f),
+    },
+    termFieldId: nameToId['Expression'] ?? nameToId[FushiCardFields.term],
+    freqFieldId:
+        nameToId['FreqSort'] ?? nameToId[FushiCardFields.frequencyRank],
   );
 }
 
@@ -138,7 +155,13 @@ SrsBuiltinNoteType srsBuiltinFushiCard(String profileUid) =>
 String? srsBuiltinReadingFieldId(String profileUid, String? key) =>
     srsBuiltinNoteTypeSpec(key) == null
     ? null
-    : srsBuiltinFieldId(profileUid, key!, 'ExpressionReading');
+    : srsBuiltinFieldId(
+        profileUid,
+        key!,
+        key == kSrsBuiltinFushiCardKey
+            ? FushiCardFields.termReading
+            : 'ExpressionReading',
+      );
 
 /// Lapis 的读音字段（词状态的 readingKey 来源）。
 String srsLapisReadingFieldId(String profileUid) =>

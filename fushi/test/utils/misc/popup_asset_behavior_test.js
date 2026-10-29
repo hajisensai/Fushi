@@ -4130,8 +4130,12 @@ async function testOpenAnkiButtonMergedIntoSrsBadgeWhenTargetIsSrs() {
     await flush();
     assert.ok(findByClassDeep(header, 'srs-status-badge'),
       `target=${target}: SRS badge is the open-card entry`);
-    assert.equal(findByClassDeep(header, 'open-anki-button') !== null, expectOpenAnki,
-      `target=${target}: open-in-Anki button rendered=${expectOpenAnki}`);
+    // 10-29：↗ 永远在 DOM 里（徽标没状态时兜底）；目标 = 复习时带 open-anki-srs-owned，
+    // 由 CSS 在徽标可见时藏掉，避免两颗 ↗ 并排。
+    const openAnki = findByClassDeep(header, 'open-anki-button');
+    assert.ok(openAnki, `target=${target}: open-in-Anki button always rendered`);
+    assert.equal(openAnki.classList.contains('open-anki-srs-owned'), !expectOpenAnki,
+      `target=${target}: srs-owned marker iff the badge owns the entry`);
   }
   // 复习模块关着（没有状态标记）时，即使宿主说目标是复习，↗ 也不能跟着消失。
   const context = loadPopup();

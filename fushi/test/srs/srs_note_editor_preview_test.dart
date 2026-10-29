@@ -142,8 +142,8 @@ void main() {
       () => store.noteType(store.fushiCardNoteTypeId),
     ))!;
     final Map<String, String> values = <String, String>{
-      _fid('Expression'): '食べる',
-      _fid('Picture'): '[sound:clip.mp4]',
+      _fid('Term'): '食べる',
+      _fid('Media'): '[sound:clip.mp4]',
     };
     final SrsTemplateDef tpl = type.templates.first;
     expect(
@@ -177,7 +177,7 @@ void main() {
         template: tpl,
         valuesById: <String, String>{
           ...values,
-          _fid('Picture'): '<img src="https://example.com/a.png">',
+          _fid('Media'): '<img src="https://example.com/a.png">',
         },
       ),
       isNull,
@@ -191,7 +191,7 @@ void main() {
     testWidgets('[$ds] 宽窗：右栏常驻预览，字段改动即时反映', (WidgetTester tester) async {
       final SrsDbStore store = await _open(tester);
       final String note = await _note(tester, store, <String, String>{
-        'Expression': '食べる',
+        'Term': '食べる',
         'IsWordAndSentenceCard': 'x',
       });
       await _pump(
@@ -214,7 +214,7 @@ void main() {
       expect(_inPreview(find.textContaining('食べる')), findsWidgets);
       await tester.enterText(
         find.descendant(
-          of: _key('srs-field-input-Expression'),
+          of: _key('srs-field-input-Term'),
           matching: find.byType(EditableText),
         ),
         '飲む',
@@ -229,7 +229,7 @@ void main() {
     testWidgets('[$ds] 窄窗：顶栏「预览」打开底部抽屉', (WidgetTester tester) async {
       final SrsDbStore store = await _open(tester);
       final String note = await _note(tester, store, <String, String>{
-        'Expression': '食べる',
+        'Term': '食べる',
         'IsWordAndSentenceCard': 'x',
       });
       await _pump(
@@ -251,38 +251,36 @@ void main() {
   testWidgets('字段名翻译 + ⓘ 展开说明与制卡来源', (WidgetTester tester) async {
     final SrsDbStore store = await _open(tester);
     final String note = await _note(tester, store, <String, String>{
-      'Expression': '食べる',
+      'Term': '食べる',
     });
     await _pump(tester, store, note, size: const Size(1280, 1600));
     final Text label = tester.widget<Text>(
-      _key('srs-field-label-ExpressionFurigana'),
+      _key('srs-field-label-TermFurigana'),
     );
-    expect(label.textSpan!.toPlainText(), contains('ExpressionFurigana'));
+    expect(label.textSpan!.toPlainText(), contains('TermFurigana'));
     expect(
       label.textSpan!.toPlainText(),
       contains(t.srs_field_info_expression_furigana_name),
     );
-    expect(_key('srs-field-help-panel-ExpressionFurigana'), findsNothing);
-    await tester.tap(_key('srs-field-help-ExpressionFurigana'));
+    expect(_key('srs-field-help-panel-TermFurigana'), findsNothing);
+    await tester.tap(_key('srs-field-help-TermFurigana'));
     await _settle(tester, rounds: 4);
-    expect(_key('srs-field-help-panel-ExpressionFurigana'), findsOneWidget);
+    expect(_key('srs-field-help-panel-TermFurigana'), findsOneWidget);
     expect(
       find.text(t.srs_field_info_expression_furigana_desc),
       findsOneWidget,
     );
     expect(
       find.descendant(
-        of: _key('srs-field-help-panel-ExpressionFurigana'),
-        matching: find.text(
-          t.srs_field_info_raw_name(name: 'ExpressionFurigana'),
-        ),
+        of: _key('srs-field-help-panel-TermFurigana'),
+        matching: find.text(t.srs_field_info_raw_name(name: 'TermFurigana')),
       ),
       findsOneWidget,
     );
     // 内置 Fushi 卡片的这个字段有制卡映射：说明里给出「制卡时自动填入」一句。
     expect(
       find.descendant(
-        of: _key('srs-field-help-panel-ExpressionFurigana'),
+        of: _key('srs-field-help-panel-TermFurigana'),
         matching: find.byType(Text),
       ),
       findsNWidgets(3),
@@ -293,7 +291,7 @@ void main() {
   testWidgets('结构化字段在排版里改文字：只换那段文字，标签骨架原样', (WidgetTester tester) async {
     final SrsDbStore store = await _open(tester);
     final String note = await _note(tester, store, <String, String>{
-      'Expression': '通う',
+      'Term': '通う',
       'MainDefinition': _kGlossary,
     });
     await _pump(tester, store, note, size: const Size(1280, 2600));
@@ -383,7 +381,7 @@ void main() {
       type: type,
       template: type.templates.first,
       valuesById: <String, String>{
-        _fid('Expression'): '走る',
+        _fid('Term'): '走る',
         _fid('IsWordAndSentenceCard'): 'x',
       },
     );

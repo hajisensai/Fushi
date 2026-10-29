@@ -11,26 +11,26 @@ import 'fushi_card_template_data.dart';
 /// 背面的一个区块。
 enum FushiCardBlock {
   /// 词条（带振假名）。
-  term(<String>['ExpressionFurigana', 'Expression']),
+  term(<String>['TermFurigana', 'Term']),
 
   /// 读音 + 音调 + 单词音频 + 词频序位（标题区第二行）。
   reading(<String>[
-    'ExpressionReading',
+    'TermReading',
     'PitchPosition',
-    'ExpressionAudio',
-    'FreqSort',
+    'TermAudio',
+    'FrequencyRank',
   ]),
 
   /// 图片。
-  picture(<String>['Picture']),
+  picture(<String>['Media']),
 
   /// 例句 + 例句翻译 + 例句音频。
   sentence(<String>['Sentence', 'SentenceTranslation', 'SentenceAudio']),
 
   /// 释义区：选中文本、释义图片、主释义、全部释义。
   definitions(<String>[
-    'SelectionText',
-    'DefinitionPicture',
+    'LookupSelection',
+    'DefinitionMedia',
     'MainDefinition',
     'Glossary',
   ], definitionArea: true),
@@ -39,7 +39,7 @@ enum FushiCardBlock {
   frequency(<String>['Frequency']),
 
   /// 来源。
-  source(<String>['MiscInfo']);
+  source(<String>['Source']);
 
   const FushiCardBlock(this.fields, {this.definitionArea = false});
 

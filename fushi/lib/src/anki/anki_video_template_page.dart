@@ -90,7 +90,10 @@ class _AnkiVideoTemplatePageState extends State<AnkiVideoTemplatePage> {
             break;
           }
         }
-        field ??= definition.fields.contains('Picture')
+        // Fushi 卡片的画面字段叫 Media（旧名 Picture，Lapis 仍叫 Picture）。
+        field ??= definition.fields.contains(FushiCardFields.media)
+            ? FushiCardFields.media
+            : definition.fields.contains('Picture')
             ? 'Picture'
             : definition.fields.firstOrNull;
       }
