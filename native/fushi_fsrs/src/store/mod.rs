@@ -881,8 +881,8 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        // v1–v8 的 14 条 + v9 的 6 条队列 / 计数 / 日志索引 + v13 的 2 条 AnkiConnect 数字 id 索引。
-        assert_eq!(idx, 22);
+        // v1–v8 的 14 条 + v9 的 6 条队列 / 计数 / 日志索引 + v13 的 2 条 AnkiConnect 数字 id 索引 + v15 的查重索引。
+        assert_eq!(idx, 23);
     }
 
     #[test]
