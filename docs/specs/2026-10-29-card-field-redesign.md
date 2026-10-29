@@ -134,6 +134,17 @@ Lapis 内置类型本身保持 Lapis 官方字段名（它是对官方牌组的�
 - **未做（按需再开）**：
   - `{card-media}` 占位符：`{card-image}` 本来就按制卡模式产出静态图 / GIF / 视频片段，新增占位符要同时改
     设置页、映射偏好、导出包、12 处接线，且是持久化名；收益只是名字，暂缓。
-  - 「画面字段放什么」按来源的默认模式设置、模板 `.fc-picture → .fc-media` 类名：视觉与设置改动，另开。
   - 各语种里 `srs_field_info_picture_*` 一类人话文案仍写「图片」，等 `Media` 的统一措辞定下来再批量改。
   - AnkiDroid / AnkiMobile 对字段内 `<video>` 的实测仍未做。
+
+### 6.1 画面默认模式与 `.fc-media`（2026-10-29 追加）
+
+- **按来源的画面模式设置早就存在**，不需要新建：视频 `video_mining_image_mode`、galgame `gal_mining_image_mode`
+  各存一份，设置页各有一行（`anki_settings_page.dart`、控制通道 `ctl_settings_body_anki.dart`）。漫画 / 书只有
+  静态裁图，没有模式可选。
+- 本次改的是**未设置时的默认**：视频仍是视频片段，**galgame 改为动图（gif）**——
+  `galMiningImageMode` 对没显式设过的值取 `VideoMiningImageMode.gif`（`fromWireName(fallback:)`）。
+  显式选过的值（含显式视频片段）不受影响；老用户里没动过 galgame 这项的，下次制卡起出动图而不是片段。
+  这改变了所有者 2026-10-01「老用户也用片段」时 galgame 的默认，是用户 2026-10-29 明确要求的。
+- 模板类名：`.fc-picture → .fc-media`、`.fc-def-picture → .fc-def-media`（模板源、样式、脚本选择器、
+  生成文件同步）。宿主注入的 `fushi-srs-hide-picture` 类名是宿主契约，未动。

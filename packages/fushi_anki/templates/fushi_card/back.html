@@ -17,7 +17,7 @@
           {{#FrequencyRank}}<span class="fc-chip fc-chip--freq">{{FrequencyRank}}</span>{{/FrequencyRank}}
         </div>
       </div>
-      {{#Media}}<figure class="fc-picture {{Tags}}">{{Media}}</figure>{{/Media}}
+      {{#Media}}<figure class="fc-media {{Tags}}">{{Media}}</figure>{{/Media}}
     </header>
 
     {{#Sentence}}
@@ -33,7 +33,7 @@
 
   <section class="fc-defs">
     {{#LookupSelection}}<blockquote class="fc-selection">{{LookupSelection}}</blockquote>{{/LookupSelection}}
-    {{#DefinitionMedia}}<div class="fc-def-picture">{{DefinitionMedia}}</div>{{/DefinitionMedia}}
+    {{#DefinitionMedia}}<div class="fc-def-media">{{DefinitionMedia}}</div>{{/DefinitionMedia}}
     {{#MainDefinition}}<div class="fc-gloss fc-gloss--main">{{MainDefinition}}</div>{{/MainDefinition}}
     {{#Glossary}}
     <details class="fc-more"{{^MainDefinition}} open{{/MainDefinition}}>
@@ -304,10 +304,10 @@
     /* ---------- 图片：点按放大，再点关闭；加载完重算左栏能否吸顶 ---------- */
     function setUpLightbox() {
       /* 视频片段（制卡写进 Media 的 <video>）尺寸要等元数据到了才知道，同样重算 */
-      root.querySelectorAll(".fc-picture video, .fc-def-picture video").forEach(function (v) {
+      root.querySelectorAll(".fc-media video, .fc-def-media video").forEach(function (v) {
         if (v.readyState < 1) v.addEventListener("loadedmetadata", applyLayout, { once: true });
       });
-      var imgs = root.querySelectorAll(".fc-picture img, .fc-def-picture img");
+      var imgs = root.querySelectorAll(".fc-media img, .fc-def-media img");
       if (!imgs.length) return;
       imgs.forEach(function (img) {
         if (!img.complete) img.addEventListener("load", applyLayout, { once: true });

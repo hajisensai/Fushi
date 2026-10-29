@@ -100,12 +100,16 @@ enum VideoMiningImageMode {
   /// 偏好持久化用的稳定字符串键（勿随枚举名改动）。
   final String wireName;
 
-  /// 从偏好字符串解析；未知/null → [videoClip]（默认，见枚举文档）。
-  static VideoMiningImageMode fromWireName(String? name) {
+  /// 从偏好字符串解析；未知/null → [fallback]（默认 [videoClip]，见枚举文档；galgame 按
+  /// 来源给 [gif]，见 `PreferencesRepository.galMiningImageMode`）。
+  static VideoMiningImageMode fromWireName(
+    String? name, {
+    VideoMiningImageMode fallback = VideoMiningImageMode.videoClip,
+  }) {
     for (final VideoMiningImageMode mode in VideoMiningImageMode.values) {
       if (mode.wireName == name) return mode;
     }
-    return VideoMiningImageMode.videoClip;
+    return fallback;
   }
 
   /// 是否为静态截图模式（用户主动选静态图，非 GIF 降级）。动图与视频片段都不是。

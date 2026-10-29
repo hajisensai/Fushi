@@ -327,7 +327,8 @@ void main() {
     test('全新安装：模式默认 videoClip，格式取平台默认，不写模式键', () async {
       await repo.settleMiningImageModeInstallDefault();
       expect(repo.videoMiningImageMode, VideoMiningImageMode.videoClip);
-      expect(repo.galMiningImageMode, VideoMiningImageMode.videoClip);
+      // 按来源给默认（2026-10-29）：galgame 没设过时出动图。
+      expect(repo.galMiningImageMode, VideoMiningImageMode.gif);
       expect(repo.videoMiningClipFormat, platformDefault);
       expect(repo.galMiningClipFormat, platformDefault);
       final PreferencesRepository restored = PreferencesRepository(db);
@@ -350,9 +351,22 @@ void main() {
       restored.dispose();
     });
 
-    test('还没跑迁移（弹窗入口）：没设过的模式取 videoClip', () {
+    test('还没跑迁移（弹窗入口）：没设过的模式按来源取默认（视频片段 / galgame 动图）', () {
       expect(repo.videoMiningImageMode, VideoMiningImageMode.videoClip);
-      expect(repo.galMiningImageMode, VideoMiningImageMode.videoClip);
+      expect(repo.galMiningImageMode, VideoMiningImageMode.gif);
+    });
+
+    test('galgame 显式选过的模式压过来源默认（含显式 videoClip）', () async {
+      final PreferencesRepository explicit = await seeded(<String, String>{
+        'gal_mining_image_mode': VideoMiningImageMode.videoClip.wireName,
+      });
+      expect(explicit.galMiningImageMode, VideoMiningImageMode.videoClip);
+      explicit.dispose();
+      final PreferencesRepository still = await seeded(<String, String>{
+        'gal_mining_image_mode': VideoMiningImageMode.currentFrame.wireName,
+      });
+      expect(still.galMiningImageMode, VideoMiningImageMode.currentFrame);
+      still.dispose();
     });
 
     test('被 09-28 钉成 gif 的存量安装：迁到片段，格式钉平台默认（不推成 MP4）', () async {
@@ -420,7 +434,7 @@ void main() {
       });
       await legacy.settleMiningImageModeInstallDefault();
       expect(legacy.videoMiningImageMode, VideoMiningImageMode.gif);
-      expect(legacy.galMiningImageMode, VideoMiningImageMode.videoClip);
+      expect(legacy.galMiningImageMode, VideoMiningImageMode.gif);
       expect(
         legacy.prefsSnapshot[markerKey],
         PrefCodec.encode(VideoMiningImageMode.videoClip.wireName),
