@@ -19,7 +19,7 @@ import 'package:fushi/src/srs/srs_providers.dart';
 ///
 /// 每条路由调用 UI 按钮背后的同一个方法，不另写业务逻辑：
 /// - 牌组列表 = [SrsDbStore.deckSummaries]（牌组列表页）；
-/// - 笔记搜索 = [SrsBrowseSnapshot.load] + [SrsBrowseSnapshot.query]（浏览页，Anki 搜索语法；
+/// - 笔记搜索 = [SrsBrowseSession.query]（浏览页，Anki 搜索语法；
 ///   按字段搜 = [srsFieldContainsQuery]，与浏览页的字段下拉同一函数）；
 /// - 统计 = [loadSrsStats]（统计页）；
 /// - 冲突中心 = [SrsDbStore.sync2Conflicts] / [SrsDbStore.sync2Resolve]、
@@ -113,26 +113,22 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
     final int limit = (call.optInt('limit') ?? 50).clamp(1, 1000);
     final int offset = (call.optInt('offset') ?? 0).clamp(0, 1 << 30);
     final String query = _browseQuery(call);
-    final SrsBrowseSnapshot snap = await SrsBrowseSnapshot.load(store);
+    // 与浏览页同一个常驻原生会话（按 profile）：只取这一页的行。
+    final SrsBrowseResult result;
     try {
-      final List<SrsBrowseItem> items;
-      try {
-        items = await snap.query(query: query, mode: mode);
-      } on SrsSearchUnsupported catch (e) {
-        throw CtlFailure.badRequest('搜索不合法：${e.reason}');
-      }
-      return <String, Object?>{
-        'query': query,
-        'mode': mode.name,
-        'total': items.length,
-        'items': <Map<String, Object?>>[
-          for (final SrsBrowseItem i in items.skip(offset).take(limit))
-            _browseItemJson(i, mode),
-        ],
-      };
-    } finally {
-      snap.dispose();
+      result = await SrsBrowseSession(store).query(query: query, mode: mode);
+    } on SrsSearchUnsupported catch (e) {
+      throw CtlFailure.badRequest('搜索不合法：${e.reason}');
     }
+    return <String, Object?>{
+      'query': query,
+      'mode': mode.name,
+      'total': result.length,
+      'items': <Map<String, Object?>>[
+        for (final SrsBrowseRow r in await result.rows(offset, offset + limit))
+          _browseItemJson(r, mode),
+      ],
+    };
   }),
   CtlRoute.get('$kSrsCtlRoot/notes/:id', (CtlCall call) async {
     final SrsDbStore store = await requireSrsCtlStore(deps);
@@ -423,25 +419,23 @@ String _browseQuery(CtlCall call) {
   ].where((String s) => s.isNotEmpty).join(' ');
 }
 
-Map<String, Object?> _browseItemJson(SrsBrowseItem item, SrsBrowseMode mode) {
-  final SrsCardSearchSubject c = item.primary;
-  return <String, Object?>{
-    'noteId': item.noteId,
-    if (mode == SrsBrowseMode.cards) 'cardId': item.cardId,
-    'sortField': c.sortText,
-    'noteType': c.noteTypeName,
-    'deck': c.deckName,
-    'tags': c.tags,
-    if (mode == SrsBrowseMode.cards) ...<String, Object?>{
-      'template': c.templateName,
-      'queue': c.queue.name,
-      'dueInDays': c.dueInDays,
-      'reps': c.reps,
-      'lapses': c.lapses,
-    } else
-      'cards': item.cards.length,
-  };
-}
+Map<String, Object?> _browseItemJson(SrsBrowseRow c, SrsBrowseMode mode) =>
+    <String, Object?>{
+      'noteId': c.noteId,
+      if (mode == SrsBrowseMode.cards) 'cardId': c.cardId,
+      'sortField': c.sortText,
+      'noteType': c.noteTypeName,
+      'deck': c.deckName,
+      'tags': c.tags,
+      if (mode == SrsBrowseMode.cards) ...<String, Object?>{
+        'template': c.templateName,
+        'queue': c.queue?.name,
+        'dueInDays': c.dueInDays,
+        'reps': c.reps,
+        'lapses': c.lapses,
+      } else
+        'cards': c.cardCount,
+    };
 
 Map<String, Object?> _cardJson(SrsCardCacheRow c, SrsDeckTree tree) =>
     <String, Object?>{

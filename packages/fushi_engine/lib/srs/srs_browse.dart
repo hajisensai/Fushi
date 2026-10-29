@@ -360,6 +360,7 @@ class SrsBrowseRow {
     required this.deckName,
     required this.deckId,
     required this.noteTypeName,
+    required this.templateName,
     required this.queue,
     required this.dueInDays,
     required this.flag,
@@ -367,6 +368,9 @@ class SrsBrowseRow {
     required this.isBuried,
     required this.hasPendingDecision,
     required this.cardCount,
+    required this.tags,
+    required this.reps,
+    required this.lapses,
   });
 
   final String cardId;
@@ -377,6 +381,9 @@ class SrsBrowseRow {
   final String deckName;
   final String deckId;
   final String noteTypeName;
+
+  /// 主卡的模板名（模板被删了为空串）。
+  final String templateName;
 
   /// 主卡的队列；null = 这一行的卡在取行之前已被删掉（列表下次刷新时消失）。
   final SrsQueue? queue;
@@ -390,6 +397,11 @@ class SrsBrowseRow {
   /// 笔记有内容类待裁决。
   final bool hasPendingDecision;
   final int cardCount;
+  final List<String> tags;
+
+  /// 主卡的复习 / 遗忘次数。
+  final int reps;
+  final int lapses;
 
   bool get isNew => queue == SrsQueue.newCard;
   bool get gone => queue == null;
@@ -651,7 +663,7 @@ class SrsBrowseSession {
         .firstWhere(((String, Uint8List) f) => f.$1 == 'rows.i64')
         .$2;
     final ByteData ints = ByteData.sublistView(bytes);
-    const int width = 5;
+    const int width = 7;
     const int none = -0x8000000000000000;
     return <SrsBrowseRow>[
       for (int i = 0; i < s.length; i++)
@@ -668,6 +680,7 @@ class SrsBrowseSession {
             deckName: t[3]! as String,
             noteTypeName: t[4]! as String,
             deckId: t[5]! as String,
+            templateName: t[6]! as String,
             queue: q < 0 ? null : SrsQueue.values[q],
             dueInDays: due == none ? null : due,
             flag: at(2),
@@ -675,6 +688,11 @@ class SrsBrowseSession {
             isBuried: bits & 2 != 0,
             hasPendingDecision: bits & 4 != 0,
             cardCount: at(4),
+            tags: <String>[
+              for (final Object? tag in t[7]! as List<Object?>) tag! as String,
+            ],
+            reps: at(5),
+            lapses: at(6),
           );
         }(),
     ];

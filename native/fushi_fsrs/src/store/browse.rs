@@ -716,8 +716,12 @@ pub(crate) struct Session {
     /// 结构版本：变了搜索语料就要重建。
     shape: u64,
     view: Option<View>,
-    result: Option<Res>,
+    /// 最近几次查询的结果（新的在后；浏览页与控制通道可以同时各持一份）。
+    results: Vec<Res>,
 }
+
+/// 一个会话留几份查询结果。
+const KEEP_RESULTS: usize = 4;
 
 static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -735,7 +739,7 @@ impl Session {
             fields: HashSet::new(),
             shape: 0,
             view: None,
-            result: None,
+            results: Vec::new(),
         };
         {
             let mut stmt = c.prepare_cached(NOTES_SQL).map_err(sql)?;
@@ -762,7 +766,7 @@ impl Session {
         if d.cards.is_empty() && d.notes.is_empty() {
             return Ok(());
         }
-        if let Some(r) = self.result.as_mut() {
+        for r in &mut self.results {
             r.stale = true;
         }
         let ids: Vec<&String> = d.cards.iter().collect();
@@ -1081,7 +1085,10 @@ impl Session {
         let gen = GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let count = out_rows.len();
         let total = view.order.len();
-        self.result = Some(Res {
+        if self.results.len() >= KEEP_RESULTS {
+            self.results.remove(0);
+        }
+        self.results.push(Res {
             gen,
             cards_mode,
             rows: out_rows,
@@ -1213,35 +1220,49 @@ impl Session {
 
     fn result(&self, req: &Value) -> Result<&Res, String> {
         let gen = req.get("gen").and_then(Value::as_u64).ok_or("browse: missing gen")?;
-        match &self.result {
-            Some(r) if r.gen == gen => Ok(r),
-            _ => Err(format!("browse: result {gen} is gone")),
-        }
+        self.results.iter().find(|r| r.gen == gen).ok_or_else(|| format!("browse: result {gen} is gone"))
     }
 
-    /// 结果的一段行（`from..to`）：字符串列走 JSON，数值列每行 5 个 i64（小端）放进 `rows.i64`：
-    /// `[队列 (0 新 / 1 学习 / 2 复习 / 3 重学；-1 = 卡已不在), 到期天数 (i64::MIN = 没有), 旗标,
-    /// 位 (1 暂停 / 2 搁置 / 4 待裁决), 该行卡数]`。行的数据取会话里**此刻**的值（结果之后的写入已重读进来）。
+    /// 结果的一段行（`from..to`）：字符串列走 JSON（`[卡 id, 笔记 id, 排序字段, 牌组名, 笔记类型名, 牌组 id, 模板名, 标签]`），数值列每行 7 个 i64（小端）放进
+    /// `rows.i64`：`[队列 (0 新 / 1 学习 / 2 复习 / 3 重学；-1 = 卡已不在), 到期天数 (i64::MIN = 没有), 旗标,
+    /// 位 (1 暂停 / 2 搁置 / 4 待裁决), 该行卡数, 复习次数, 遗忘次数]`。行的数据取会话里**此刻**的值（结果之后的写入已重读进来）。
     fn rows(&self, req: &Value, files: &mut Vec<(String, Vec<u8>)>) -> Result<Value, String> {
         let r = self.result(req)?;
         let from = (req.get("from").and_then(Value::as_u64).unwrap_or(0) as usize).min(r.rows.len());
         let to = (req.get("to").and_then(Value::as_u64).map_or(r.rows.len(), |t| t as usize)).clamp(from, r.rows.len());
         let mut strings: Vec<Value> = Vec::with_capacity(to - from);
-        let mut ints: Vec<u8> = Vec::with_capacity((to - from) * 40);
+        let mut ints: Vec<u8> = Vec::with_capacity((to - from) * 56);
         for row in &r.rows[from..to] {
             let c = self.cards[row.primary as usize].as_ref();
             let n = self.notes[row.note as usize].as_ref();
             let (Some(c), Some(n)) = (c, n) else {
-                strings.push(json!(["", "", "", "", "", ""]));
-                for v in [-1i64, DUE_NONE, 0, 0, 0] {
+                strings.push(json!(["", "", "", "", "", "", "", []]));
+                for v in [-1i64, DUE_NONE, 0, 0, 0, 0, 0] {
                     ints.extend_from_slice(&v.to_le_bytes());
                 }
                 continue;
             };
-            let ty = r.ctx.types.get(&n.ty).map_or("", |t| t.name.as_str());
-            strings.push(json!([c.id, n.id, n.sort, r.ctx.deck(&c.deck).0, ty, c.deck]));
+            let ty = r.ctx.types.get(&n.ty);
+            strings.push(json!([
+                c.id,
+                n.id,
+                n.sort,
+                r.ctx.deck(&c.deck).0,
+                ty.map_or("", |t| t.name.as_str()),
+                c.deck,
+                ty.map_or("", |t| t.template_name(c)),
+                n.tags,
+            ]));
             let bits = i64::from(c.suspended) | (i64::from(r.ctx.is_buried(c)) << 1) | (i64::from(n.pending) << 2);
-            for v in [i64::from(c.queue), r.ctx.due_in_days(c).unwrap_or(DUE_NONE), c.flag, bits, row.cards.len() as i64] {
+            for v in [
+                i64::from(c.queue),
+                r.ctx.due_in_days(c).unwrap_or(DUE_NONE),
+                c.flag,
+                bits,
+                row.cards.len() as i64,
+                c.reps,
+                c.lapses,
+            ] {
                 ints.extend_from_slice(&v.to_le_bytes());
             }
         }
@@ -1367,7 +1388,8 @@ impl SrsCore {
             let out = match op {
                 "browse_query" => {
                     // 同一条查询、会话也没变（预览返回之类没有写入的刷新）：直接给回上次的结果。
-                    if let (Some(r), Some(since)) = (&s.result, req.get("since").and_then(Value::as_u64)) {
+                    let since = req.get("since").and_then(Value::as_u64);
+                    if let Some(r) = since.and_then(|g| s.results.iter().find(|r| r.gen == g)) {
                         let ctx = Ctx::parse(req)?;
                         let same = json!([
                             req.get("node"),
@@ -1380,7 +1402,7 @@ impl SrsCore {
                             ctx.today,
                         ]);
                         let prev = r.params.as_array().map(|a| Value::Array(a[..a.len() - 1].to_vec()));
-                        if r.gen == since && !r.stale && prev.as_ref() == Some(&same) {
+                        if !r.stale && prev.as_ref() == Some(&same) {
                             return Ok(json!({"gen": r.gen, "count": r.rows.len(), "same": true}));
                         }
                     }
