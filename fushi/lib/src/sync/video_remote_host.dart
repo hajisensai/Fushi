@@ -403,7 +403,7 @@ final class VideoRemoteHost implements VideoRemoteService {
   /// Players still open, oldest first; the last one is [_binding]. A page
   /// opened over another player (the in-app browser over a native video page,
   /// or the reverse) takes the phone, and closing it hands the phone back to
-  /// the one underneath instead of leaving it with no video (BUG-3874).
+  /// the one underneath instead of leaving it with no video (BUG-3878).
   final List<VideoRemotePlaybackBinding> _open = <VideoRemotePlaybackBinding>[];
 
   void register(VideoRemotePlaybackBinding binding) {

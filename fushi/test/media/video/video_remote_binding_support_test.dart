@@ -7,7 +7,7 @@ import 'package:fushi_anki/fushi_anki.dart' show MiningRequestOverrides;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart';
 
-/// BUG-3874：遥控绑定共用件（原生播放器页 / 内置网页播放器页 / app 内浏览器共用）。
+/// BUG-3878：遥控绑定共用件（原生播放器页 / 内置网页播放器页 / app 内浏览器共用）。
 AudioCue _cue(int start, int end, String text) => AudioCue()
   ..bookKey = ''
   ..chapterHref = ''
