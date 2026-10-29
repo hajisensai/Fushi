@@ -69,6 +69,9 @@ pub struct Corpus {
     note_field_off: Vec<u32>,
     /// 每个字段的字段名（字符串 id）。
     field_name: Vec<u32>,
+    /// 每个字段的别名（字符串 id；[`NO_ALIAS`] = 没有）。`字段名:值` 按名字或别名命中——内置 Fushi 卡片
+    /// 改过名的字段用它认旧名（`Expression:食べる` 仍查到 `Term` 字段），别名表由调用方按笔记类型给出。
+    field_alias: Vec<u32>,
     note_tag_off: Vec<u32>,
     tag: Vec<u32>,
     card_note: Vec<u32>,
@@ -97,6 +100,9 @@ struct ValueLoc {
 
 const MISSING: u32 = u32::MAX;
 
+/// 布局里「这个字段没有别名」。
+pub const NO_ALIAS: u32 = u32::MAX;
+
 /// 一条查询要的字段值：全部（未限定字段的文本 / `re:`）或若干字段名（字符串 id）。
 #[derive(Debug, PartialEq)]
 pub enum Needs {
@@ -110,6 +116,8 @@ pub enum Needs {
 pub struct FieldNames {
     ids: Vec<u32>,
     names: Vec<String>,
+    /// 与 [ids] 对齐：这个字段名在各排布里带的别名（去重）。
+    aliases: Vec<Vec<String>>,
 }
 
 impl FieldNames {
@@ -117,8 +125,11 @@ impl FieldNames {
     fn matching(&self, res: &[&Regex]) -> Vec<u32> {
         self.ids
             .iter()
-            .zip(&self.names)
-            .filter(|(_, name)| res.iter().any(|re| re.is_match(name)))
+            .zip(self.names.iter().zip(&self.aliases))
+            .filter(|(_, (name, aliases))| {
+                res.iter()
+                    .any(|re| re.is_match(name) || aliases.iter().any(|a| re.is_match(a)))
+            })
             .map(|(&id, _)| id)
             .collect()
     }
@@ -160,11 +171,13 @@ impl SearchError {
 const PARALLEL_STRIP_MIN: usize = 512;
 
 /// 布局数组（u32）：`[n_str, n_schemas, n_schema_names, n_notes, n_tags, n_cards,
-/// str_off(n_str+1), schema_off(n_schemas+1), schema_names(n_schema_names), note_type(n_notes),
+/// str_off(n_str+1), schema_off(n_schemas+1), schema_names(n_schema_names),
+/// schema_alias(n_schema_names), note_type(n_notes),
 /// note_schema(n_notes), note_tag_off(n_notes+1), tag(n_tags), card_note(n_cards),
 /// card_deck(n_cards), card_tpl(n_cards)]`。`text` 是全部名字类字符串的 UTF-8 拼接，
 /// 第 i 个串 = `text[str_off[i]..str_off[i+1]]`。字段排布（schema）= 一串字段名 id，
-/// 同一笔记类型的笔记共用一份；笔记的字段按排布顺序编号。
+/// 同一笔记类型的笔记共用一份；笔记的字段按排布顺序编号。`schema_alias` 与 `schema_names` 逐项对齐：
+/// 该字段的别名字符串 id，没有为 [`NO_ALIAS`]。
 impl Corpus {
     pub fn new(text: &[u8], layout: &[u32]) -> Result<Corpus, String> {
         let text = std::str::from_utf8(text).map_err(|e| format!("text is not UTF-8: {e}"))?;
@@ -187,6 +200,7 @@ impl Corpus {
         let str_off = take(n_str + 1)?;
         let schema_off = take(n_schemas + 1)?;
         let schema_names = take(n_schema_names)?;
+        let schema_alias = take(n_schema_names)?;
         let note_type = take(n_notes)?;
         let note_schema = take(n_notes)?;
         let note_tag_off = take(n_notes + 1)?;
@@ -213,6 +227,7 @@ impl Corpus {
         };
         if !str_ok(&note_type)
             || !str_ok(&schema_names)
+            || !schema_alias.iter().all(|&a| a == NO_ALIAS || (a as usize) < n_str)
             || !str_ok(&tag)
             || !str_ok(&card_deck)
             || !str_ok(&card_tpl)
@@ -230,21 +245,33 @@ impl Corpus {
         }
         let mut note_field_off = Vec::with_capacity(n_notes + 1);
         let mut field_name = Vec::new();
+        let mut field_alias = Vec::new();
         note_field_off.push(0u32);
         for &s in &note_schema {
-            let names = &schema_names[schema_off[s as usize] as usize..schema_off[s as usize + 1] as usize];
-            field_name.extend_from_slice(names);
+            let range = schema_off[s as usize] as usize..schema_off[s as usize + 1] as usize;
+            field_name.extend_from_slice(&schema_names[range.clone()]);
+            field_alias.extend_from_slice(&schema_alias[range]);
             note_field_off.push(u32::try_from(field_name.len()).map_err(|_| "too many fields")?);
         }
         let mut name_ids: Vec<u32> = schema_names.clone();
         name_ids.sort_unstable();
         name_ids.dedup();
+        let str_of = |i: u32| text[str_off[i as usize] as usize..str_off[i as usize + 1] as usize].to_owned();
+        let mut aliases: Vec<Vec<String>> = vec![Vec::new(); name_ids.len()];
+        for (&n, &a) in schema_names.iter().zip(&schema_alias) {
+            if a == NO_ALIAS {
+                continue;
+            }
+            let k = name_ids.binary_search(&n).map_err(|_| "schema name missing")?;
+            let alias = str_of(a);
+            if !aliases[k].contains(&alias) {
+                aliases[k].push(alias);
+            }
+        }
         let field_names = Arc::new(FieldNames {
-            names: name_ids
-                .iter()
-                .map(|&i| text[str_off[i as usize] as usize..str_off[i as usize + 1] as usize].to_owned())
-                .collect(),
+            names: name_ids.iter().map(|&i| str_of(i)).collect(),
             ids: name_ids,
+            aliases,
         });
         let n_fields = field_name.len();
         Ok(Corpus {
@@ -253,6 +280,7 @@ impl Corpus {
             note_type,
             note_field_off,
             field_name,
+            field_alias,
             note_tag_off,
             tag,
             card_note,
@@ -463,6 +491,12 @@ impl Corpus {
         Arc::clone(&self.field_names)
     }
 
+    /// 字段 [f] 的名字或别名命中 [names]。
+    fn field_name_matches(&self, names: &mut StrMemo<'_>, f: usize) -> bool {
+        names.matches(self, self.field_name[f])
+            || (self.field_alias[f] != NO_ALIAS && names.matches(self, self.field_alias[f]))
+    }
+
     /// 字段名属于 [names] 的字段（全部字段时 [names] 为 None）。
     fn needed_fields(&self, names: Option<&[u32]>) -> Vec<usize> {
         (0..self.field_count())
@@ -591,7 +625,7 @@ impl Corpus {
                 let mut names = StrMemo::new(name);
                 self.by_note(cand, |n| {
                     self.fields(n).any(|f| {
-                        names.matches(self, self.field_name[f])
+                        self.field_name_matches(&mut names, f)
                             && (value.is_match(self.stripped(f)) || value.is_match(self.value(f)))
                     })
                 })
@@ -600,7 +634,7 @@ impl Corpus {
                 let mut names = StrMemo::new(name);
                 self.by_note(cand, |n| {
                     self.fields(n)
-                        .any(|f| names.matches(self, self.field_name[f]) && value.is_match(self.value(f)))
+                        .any(|f| self.field_name_matches(&mut names, f) && value.is_match(self.value(f)))
                 })
             }
             Compiled::Deck(None) => cand,
@@ -1220,12 +1254,15 @@ mod tests {
             strs.push(s.to_owned());
             (strs.len() - 1) as u32
         };
-        let (mut nt, mut ns, mut so, mut sn, mut nto, mut tags) =
-            (vec![], vec![], vec![0u32], vec![], vec![0u32], vec![]);
+        let (mut nt, mut ns, mut so, mut sn, mut sa, mut nto, mut tags) =
+            (vec![], vec![], vec![0u32], vec![], vec![], vec![0u32], vec![]);
         for (k, (ty, fields, ts)) in notes.iter().enumerate() {
             nt.push(id(ty, &mut strs));
+            // 测试里 `名字|别名` 表示带别名的字段。
             for (n, _) in fields.iter() {
-                sn.push(id(n, &mut strs));
+                let (name, alias) = n.split_once('|').map_or((*n, None), |(a, b)| (a, Some(b)));
+                sn.push(id(name, &mut strs));
+                sa.push(alias.map_or(NO_ALIAS, |a| id(a, &mut strs)));
             }
             so.push(sn.len() as u32);
             ns.push(k as u32);
@@ -1254,7 +1291,7 @@ mod tests {
             tags.len() as u32,
             cards.len() as u32,
         ];
-        for part in [&off, &so, &sn, &nt, &ns, &nto, &tags, &cn, &cd, &ct] {
+        for part in [&off, &so, &sn, &sa, &nt, &ns, &nto, &tags, &cn, &cd, &ct] {
             layout.extend_from_slice(part);
         }
         let mut c = Corpus::new(text.as_bytes(), &layout).unwrap();
@@ -1296,6 +1333,34 @@ mod tests {
     fn text_field_deck_tag() {
         for joined_layout in [false, true] {
             text_field_deck_tag_with(joined_layout);
+        }
+    }
+
+    /// 字段别名：内置 Fushi 卡片的 `Term` 字段带别名 `Expression`，`Expression:食べる`（Yomitan 查重的
+    /// findNotes 形状）照样命中；没带别名的笔记类型（自建 `Term` 字段）不受影响；需求分析把别名算进去。
+    #[test]
+    fn field_alias_matches_the_legacy_name() {
+        use serde_json::json;
+        for joined_layout in [false, true] {
+            let c = corpus_with(
+                &[
+                    ("Fushi Card", &[("Term|Expression", "<b>食べる</b>"), ("Media|Picture", "x")], &[]),
+                    ("Lapis", &[("Expression", "食べる"), ("Picture", "")], &[]),
+                    ("Mine", &[("Term", "食べる")], &[]),
+                ],
+                &[(0, "D", "C"), (1, "D", "C"), (2, "D", "C")],
+                joined_layout,
+            );
+            assert_eq!(hits(&c, json!({"t":"field","f":"Expression","v":"食べる"})), [1, 1, 0]);
+            assert_eq!(hits(&c, json!({"t":"field","f":"expr*","v":"食べる"})), [1, 1, 0]);
+            assert_eq!(hits(&c, json!({"t":"field","f":"Term","v":"食べる"})), [1, 0, 1]);
+            assert_eq!(hits(&c, json!({"t":"fre","f":"expression","v":"べ","at":"x"})), [1, 1, 0]);
+            assert_eq!(hits(&c, json!({"t":"field","f":"Picture","v":"x"})), [1, 0, 0]);
+            // 需求：`Expression:` 要 Expression 列和带别名的 Term 列的值。
+            let q = json!({"t":"field","f":"Expression","v":"食べる"}).to_string();
+            let Needs::Names(ids) = c.needs(&q).unwrap() else { panic!("expected names") };
+            let names: Vec<&str> = ids.iter().map(|&i| c.s(i)).collect();
+            assert!(names.contains(&"Expression") && names.contains(&"Term"), "{names:?}");
         }
     }
 

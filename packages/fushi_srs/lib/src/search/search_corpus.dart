@@ -51,6 +51,12 @@ const int _dueNone = -0x8000000000000000;
 ///
 /// 给了它的语料**只经 [SrsSearchCorpus.prepare] 补传字段值**（取值是异步的）：[SrsSearchCorpus.match]
 /// 发现还缺字段值时抛 [StateError]，调用方必须先 `await prepare`。
+/// [subject] 所属笔记类型的字段别名：字段名 → 别名（`字段名:值` 按名字或别名命中）。只列有别名的字段；
+/// 同一笔记类型的笔记必须给出同一份。用途：内置 Fushi 卡片改过名的字段仍认旧名（Yomitan 的
+/// `Expression:…` 查重查询）。
+typedef SrsSearchFieldAliases =
+    Map<String, String> Function(SrsSearchSubject subject);
+
 abstract interface class SrsSearchFieldLoader {
   /// [subject] 所属笔记的字段名，按笔记类型的字段顺序（同 [SrsSearchSubject.fields] 的键序；不含值）。
   List<String> fieldNames(SrsSearchSubject subject);
@@ -75,11 +81,16 @@ final class SrsSearchCorpus implements Finalizable {
     this.cards, {
     FushiFsrs? library,
     SrsSearchFieldLoader? fieldLoader,
+    SrsSearchFieldAliases? fieldAliases,
   }) : _library = library,
-       _loader = fieldLoader;
+       _loader = fieldLoader,
+       _aliases = fieldAliases;
 
   final List<SrsSearchSubject> cards;
   final FushiFsrs? _library;
+
+  /// 字段名的别名（`字段名:值` 按名字或别名命中）；null = 都没有别名。
+  final SrsSearchFieldAliases? _aliases;
 
   /// 字段值的按需来源；null = 直接读 [SrsSearchSubject.fields]。
   final SrsSearchFieldLoader? _loader;
@@ -212,7 +223,7 @@ final class SrsSearchCorpus implements Finalizable {
 
   void _ensureHandle(FushiFsrs lib) {
     if (_handle != nullptr) return;
-    final _Layout layout = _Layout.build(cards, _loader);
+    final _Layout layout = _Layout.build(cards, _loader, _aliases);
     final Uint8List text = layout.text;
     final Pointer<Uint8> textPtr = malloc<Uint8>(
       text.isEmpty ? 1 : text.length,
@@ -1082,6 +1093,9 @@ int _warmMatch(int matchFn, int handle, String query, int count) {
   }
 }
 
+/// 布局里「这个字段没有别名」（search.rs `NO_ALIAS`）。
+const int _kNoAlias = 0xFFFFFFFF;
+
 /// `search.rs` `Corpus::new` 的布局：名字类字符串（去重）的 UTF-8 拼接 + u32 数组；字段值不在这里
 /// （按需由 [SrsSearchCorpus.prepare] / [SrsSearchCorpus.match] 另传）。
 class _Layout {
@@ -1112,6 +1126,7 @@ class _Layout {
   static _Layout build(
     List<SrsSearchSubject> cards,
     SrsSearchFieldLoader? loader,
+    SrsSearchFieldAliases? aliasesOf,
   ) {
     final BytesBuilder bytes = BytesBuilder(copy: false);
     final List<int> strOff = <int>[0];
@@ -1127,9 +1142,16 @@ class _Layout {
 
     final List<List<int>> schemaNames = <List<int>>[];
     final List<List<String>> schemaNameText = <List<String>>[];
+    // 与 schemaNames 对齐：每个槽位的别名字符串 id（[_kNoAlias] = 没有）。
+    final List<List<int>> schemaAlias = <List<int>>[];
+    final List<Map<String, String>> schemaAliasText = <Map<String, String>>[];
     // 笔记类型名 → 用过的字段排布（同一类型的笔记几乎总是同一份，逐个比字段名即可认出）。
     final Map<String, List<int>> schemasByType = <String, List<int>>{};
-    int schemaOf(String type, Iterable<String> fieldNames) {
+    int schemaOf(
+      String type,
+      Iterable<String> fieldNames,
+      Map<String, String> aliases,
+    ) {
       final List<int> candidates = schemasByType[type] ??= <int>[];
       final List<String> wanted = fieldNames.toList(growable: false);
       for (final int s in candidates) {
@@ -1138,7 +1160,7 @@ class _Layout {
         int k = 0;
         bool same = true;
         for (final String name in wanted) {
-          if (name != names[k++]) {
+          if (name != names[k++] || aliases[name] != schemaAliasText[s][name]) {
             same = false;
             break;
           }
@@ -1148,6 +1170,11 @@ class _Layout {
       final List<String> names = wanted;
       schemaNameText.add(names);
       schemaNames.add(<int>[for (final String n in names) intern(n)]);
+      schemaAliasText.add(aliases);
+      schemaAlias.add(<int>[
+        for (final String n in names)
+          if (aliases[n] case final String a) intern(a) else _kNoAlias,
+      ]);
       candidates.add(schemaNames.length - 1);
       return schemaNames.length - 1;
     }
@@ -1171,6 +1198,7 @@ class _Layout {
         final int schema = schemaOf(
           type,
           loader?.fieldNames(c) ?? c.fields.keys,
+          aliasesOf?.call(c) ?? const <String, String>{},
         );
         noteSchema.add(schema);
         noteFieldBase.add(fieldCount);
@@ -1201,6 +1229,7 @@ class _Layout {
       ...strOff,
       ...schemaOff,
       for (final List<int> names in schemaNames) ...names,
+      for (final List<int> aliases in schemaAlias) ...aliases,
       ...noteType,
       ...noteSchema,
       ...noteTagOff,

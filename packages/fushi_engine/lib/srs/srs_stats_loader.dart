@@ -77,7 +77,10 @@ class SrsStatsIndex {
     ];
   }();
 
-  late final SrsSearchCorpus _corpus = SrsSearchCorpus(_subjects);
+  late final SrsSearchCorpus _corpus = SrsSearchCorpus(
+    _subjects,
+    fieldAliases: srsCardSearchFieldAliases,
+  );
 
   /// 命中 Anki 搜索语法的卡；语法不支持 / 不合法、原生内核不可用时抛 [SrsSearchUnsupported]。
   Set<String> cardIdsMatching(String query) {

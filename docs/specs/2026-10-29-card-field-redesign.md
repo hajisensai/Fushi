@@ -131,6 +131,17 @@ Lapis 内置类型本身保持 Lapis 官方字段名（它是对官方牌组的�
   - Lapis → Fushi 卡片迁移计划：`srsLapisFieldSlot` 把旧名 / Lapis 内置字段落到新名槽位；
   - 导入的 Fushi 导出包（非内置）：`srsGuessFieldMapping` 与 Rust `effective_frequency_field` 认 `FrequencyRank`；
   - 字段目录 / 人话名 / 说明：`srsKnownField*` 经 `legacyNameOf` 查表。
+- **合入前审查补的旧名入口**（PR #2642）：
+  - Fushi 内置 AnkiConnect 服务（Yomitan 加卡 / 改字段 / 挂媒体）按旧名认内置 Fushi 卡片字段
+    （`srs_ankiconnect_handler.dart` `_fieldByName`）；
+  - 搜索语料带**字段别名**（布局新增 `schema_alias`，`search.rs` `field_alias` / `NO_ALIAS`）：内置 Fushi 卡片
+    的字段由 Dart `srsCardSearchFieldAliases` 按 `FushiCardFields` 给出改名前后的另一个名字，`Expression:食べる`
+    （Yomitan 查重的 findNotes）仍命中 `Term`；别名表只在 Dart 一处，Rust 不另存；
+  - 内置字段定义快照里的旧默认名：旧版本调序 / 改说明写下的 `fieldDef/<id>` 是整份快照，名字还是旧默认名。
+    内置默认值给每个改过名的字段带 `legacyName`（`SrsBuiltinNoteType.legacyFieldNames`），`registers.rs`
+    `note_type_view` 物化时快照名等于它就显示新默认名，顺序照快照、用户真改过的名字保留。**只在读时认、不写任何
+    修改记录**，多设备各自升级不产生同步操作，不会冲突或重复改名；代价是用户显式把字段改回旧默认名也会显示新名；
+  - Anki 侧新名导出副本的制卡预设 `FushiCardPreset`（旧名副本仍归 Lapis 预设）。
 - **未做（按需再开）**：
   - `{card-media}` 占位符：`{card-image}` 本来就按制卡模式产出静态图 / GIF / 视频片段，新增占位符要同时改
     设置页、映射偏好、导出包、12 处接线，且是持久化名；收益只是名字，暂缓。

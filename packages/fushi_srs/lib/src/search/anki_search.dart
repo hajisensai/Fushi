@@ -6,6 +6,7 @@ library;
 export 'search_corpus.dart'
     show
         SrsSearchCorpus,
+        SrsSearchFieldAliases,
         SrsSearchFieldLoader,
         kSrsSearchKernelUnavailable,
         srsDupeNormBatch;

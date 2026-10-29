@@ -108,6 +108,42 @@ void main() {
     },
   );
 
+  test(
+    'field-definition snapshots still carrying a legacy default name show the new name',
+    () async {
+      final SrsDbStore a = await device('a');
+      final String nt = a.fushiCardNoteTypeId;
+      final String term = srsFushiCardFieldId(kProfile, FushiCardFields.term);
+      final String media = srsFushiCardFieldId(kProfile, FushiCardFields.media);
+      final String source = srsFushiCardFieldId(
+        kProfile,
+        FushiCardFields.source,
+      );
+      // 旧版本写下的整份快照：名字是旧默认名（调序 / 改说明前的写法）。
+      await a.renameField(nt, term, 'Expression');
+      await a.renameField(nt, media, 'Picture');
+      // 用户真改过的名字。
+      await a.renameField(nt, source, '出典');
+      final SrsNoteTypeView before = (await a.noteType(nt))!;
+      await a.reorderFields(nt, <String>[
+        media,
+        for (final SrsFieldDef f in before.fields)
+          if (f.id != media) f.id,
+      ]);
+      final SrsNoteTypeView v = (await a.noteType(nt))!;
+      expect(v.fields.first.id, media, reason: '调过的顺序保留');
+      expect(v.fields.first.name, FushiCardFields.media);
+      expect(v.fieldById(term)!.name, FushiCardFields.term);
+      expect(v.fieldById(source)!.name, '出典');
+      // 只在读时认：再物化一次结果不变。
+      final SrsNoteTypeView again = (await a.noteType(nt))!;
+      expect(
+        again.fields.map((SrsFieldDef f) => f.name),
+        v.fields.map((SrsFieldDef f) => f.name),
+      );
+    },
+  );
+
   test('Fushi card notes get a reading key like Lapis', () async {
     final SrsDbStore a = await device('a');
     final String note = await a.createNote(

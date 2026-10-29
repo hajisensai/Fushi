@@ -131,7 +131,11 @@ class _Resident {
 
 /// 一组搜索求值对象连同它们的原生语料（常驻：字段值传过一次，之后的查询复用）。
 class _SearchPart {
-  _SearchPart(this.subjects) : corpus = SrsSearchCorpus(subjects);
+  _SearchPart(this.subjects)
+    : corpus = SrsSearchCorpus(
+        subjects,
+        fieldAliases: srsCardSearchFieldAliases,
+      );
 
   final List<_CardSubject> subjects;
   final SrsSearchCorpus corpus;

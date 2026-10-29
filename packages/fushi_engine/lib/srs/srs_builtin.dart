@@ -126,6 +126,11 @@ SrsBuiltinNoteType srsBuiltinNoteType(
       ),
     ],
     css: tpl.css,
+    legacyFieldNames: <String, String>{
+      for (final String f in tpl.fields)
+        if (srsBuiltinFieldSeed(key, f) != f)
+          nameToId[f]!: srsBuiltinFieldSeed(key, f),
+    },
     termFieldId: nameToId['Expression'] ?? nameToId[FushiCardFields.term],
     freqFieldId:
         nameToId['FreqSort'] ?? nameToId[FushiCardFields.frequencyRank],
