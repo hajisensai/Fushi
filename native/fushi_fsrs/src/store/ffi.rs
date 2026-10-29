@@ -373,8 +373,10 @@ fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
     Ok(rows.pop().unwrap_or_default())
 }
 
-/// Drift 执行器：写连接上执行一条语句。`select != 0` 返回「列名行 + 结果行」，否则返回
-/// 一行 `[变更行数, last_insert_rowid]`；缓冲区用 `ffsrs_free_bytes` 释放。
+/// Drift 执行器：执行一条语句。`select`：0 = 写语句（写连接，返回一行 `[变更行数, last_insert_rowid]`）；
+/// 1 = 写连接上的语句、返回结果行（`runCustom`：事务控制、PRAGMA）；2 = Drift 的查询（`runSelect`，
+/// [SrsCore::select]：Drift 事务外的只读查询走读连接的快照）。1 / 2 返回「列名行 + 结果行」；缓冲区用
+/// `ffsrs_free_bytes` 释放。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec(
     core: *const SrsCoreHandle,
@@ -394,7 +396,13 @@ pub extern "C" fn ffsrs_store_exec(
     run_core(core, error_out, |c| {
         let s = utf8(sql, sql_len)?;
         let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
-        hand_out(c.exec(s, &values, select != 0)?, out, out_len);
+        let page = match select {
+            0 => c.exec(s, &values, false)?,
+            1 => c.exec(s, &values, true)?,
+            2 => c.select(s, &values)?,
+            m => return Err(format!("unknown exec mode {m}")),
+        };
+        hand_out(page, out, out_len);
         Ok(())
     })
 }
@@ -774,8 +782,17 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut Vec<Vec<u8>>
         }
         let w = c.writer()?;
         let written = crate::store::sync2::in_savepoint(&w, |conn| crate::store::caches::refresh(conn, profile, &cfg, dirty))?;
+        // 本机作答：落库、刷新缓存之后接着在同一条写连接上排队（下一张 + 牌组计数，store/study.rs），复习页一次
+        // 评分一次命令。看得见这笔还没提交的写入。
+        let study = match req.get("study").filter(|s| s.is_object()) {
+            Some(s) => Some(crate::store::study::study(&w, profile, s)?),
+            None => None,
+        };
         if let Some(m) = v.as_object_mut() {
             m.insert("cache".to_owned(), written.to_json());
+            if let Some(s) = study {
+                m.insert("study".to_owned(), s);
+            }
         }
         return Ok(v);
     }
@@ -817,6 +834,13 @@ fn sync2_command(
         }
         "migrate" => c.sync2_migrate(profile, i("now")?, req.get("limit").and_then(Value::as_u64))?,
         "replay_all" => json!(c.sync2_replay_all(profile)?),
+        // 排队：牌组计数 + 出卡（store/study.rs），只读快照。
+        "study" => c.study(profile, req)?,
+        // 一组卡各自的血统（自己 + 全部前身，store/caches.rs `lineage_ids`）：卡片历史用。看得见本机写事务里未提交的行。
+        "lineages" => {
+            let cards: Vec<String> = req.get("cards").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();
+            json!(c.read_visible(|conn| crate::store::caches::lineage_ids(conn, &cards))?)
+        }
         "preview" => c.sync2_preview(profile, s("card")?, req.get("note").and_then(Value::as_str), i("now")?, i("utcOff")?, i("rollover")?)?,
         // 分批发件：一批上传完用 outbox_ack 交回 segments 推进水位，more 为真再取下一批（store/sync2/transport.rs）。
         "outbox" => {

@@ -1214,23 +1214,35 @@ pub(crate) fn append_local(conn: &Connection, local: &mut Local, applied: &mut V
     Ok(op)
 }
 
+/// [SrsCore::sync2_identity] 的结果。
+fn identity_json(l: &Local) -> Value {
+    json!({
+        "device": l.device.text(),
+        "collection": l.collection.text(),
+        "nextSeq": l.next_seq,
+        "migrated": l.migrated,
+        "name": l.name,
+        "public": l.key.public().iter().map(|b| format!("{b:02x}")).collect::<String>(),
+    })
+}
+
 impl SrsCore {
     /// 本机身份（没有就建）。返回 `{device, collection, nextSeq, migrated, name}`。
+    ///
+    /// 身份已在（每轮同步、开库都走这里，绝大多数情况）只是一次读：走读连接的快照，不排写锁
+    /// （[SrsCore::read_visible]；Drift 事务开着时照旧在写连接上读）。只有还没有身份时才进写连接，
+    /// 在 SAVEPOINT 里重查一遍再建（两个调用方同时看到「没有」，后进写锁的那个读到先建的那份，不会建两份）。
     pub fn sync2_identity(&self, profile: &str, now: i64) -> Result<Value, String> {
+        if let Some(l) = self.read_visible(|c| Local::load(c, profile))? {
+            return Ok(identity_json(&l));
+        }
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let l = match Local::load(c, profile)? {
                 Some(l) => l,
                 None => Local::create(c, profile, now)?,
             };
-            Ok(json!({
-                "device": l.device.text(),
-                "collection": l.collection.text(),
-                "nextSeq": l.next_seq,
-                "migrated": l.migrated,
-                "name": l.name,
-                "public": l.key.public().iter().map(|b| format!("{b:02x}")).collect::<String>(),
-            }))
+            Ok(identity_json(&l))
         })
     }
 
@@ -1546,22 +1558,37 @@ impl SrsCore {
     /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
     /// 确定性 FSRS 算四个按钮的结果。[note] = 卡所属笔记（新卡没有日志时据它找牌组）。日界用调用方此刻的口径
     /// （与写进日志的 utcOff / rollover 相同）。
+    ///
+    /// 只读（牌组树、血统日志、修改记录全是 SELECT，重放与 FSRS 是纯计算）：走读连接的快照，复习时每张卡的
+    /// 预览不排在同步投递 / 缓存刷新这类长写后面（[SrsCore::read_visible]；Drift 事务开着时照旧在写连接上）。
     pub fn sync2_preview(&self, profile: &str, card: &str, note: Option<&str>, now: i64, utc_off: i64, rollover: i64) -> Result<Value, String> {
-        let w = self.writer()?;
-        in_savepoint(&w, |c| {
+        self.read_visible(|c| {
             let tree = config::DeckTree::load(c, profile)?;
+            // 调用方没给笔记（作答路径不再先读一遍卡片缓存行）：按缓存行补上，结果里交回（落日志时要带上）。
+            let looked_up: Option<String> = match note {
+                Some(_) => None,
+                None => c
+                    .prepare_cached("SELECT note_id FROM srs_cards_cache WHERE id = ?1")
+                    .map_err(sql)?
+                    .query_row([card], |r| r.get(0))
+                    .optional()
+                    .map_err(sql)?,
+            };
+            let note = note.or(looked_up.as_deref());
             let Group { rows, note: group_note } = group_of(c, card, note)?;
             // 此刻的生效配置：预览的是「现在作答」，作答落库时 `sc` 记下的也是这一份（[stamp_config]）。
-            let cfg = if rows.is_empty() && note.is_none() {
-                crate::sync2::sched::Config::default()
-            } else {
-                tree.config(&config::card_deck(c, &tree, card, group_note.as_deref())?)
+            let deck = if rows.is_empty() && note.is_none() { None } else { Some(config::card_deck(c, &tree, card, group_note.as_deref())?) };
+            let cfg = match &deck {
+                None => crate::sync2::sched::Config::default(),
+                Some(d) => tree.config(d),
             };
             let input: Vec<Row<'_>> = rows.iter().map(|(_, j, s, i, _)| Row { json: j, server_time: *s, intent: i.clone() }).collect();
             let day = crate::projection::Day { utc_offset_min: utc_off, rollover_hour: rollover };
             let (cur, mem, plan) = replay::preview(&input, &cfg, card, now, &day)?;
             let f = crate::sync2::sched::f32_json;
             Ok(json!({
+                "note": note,
+                "deck": deck,
                 "current": cur.to_json(),
                 "memoryBefore": mem.map(|m| json!({"s": f(m.s), "d": f(m.d), "sf": f(m.sf)})),
                 "plan": plan.iter().map(|s| s.to_json()).collect::<Vec<_>>(),

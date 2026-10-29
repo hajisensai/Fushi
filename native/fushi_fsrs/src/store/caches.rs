@@ -152,23 +152,10 @@ pub(crate) fn refresh(c: &Connection, profile: &str, cfg: &CacheConfig, dirty: D
     for chunk in notes.chunks(CHUNK) {
         flush_notes(c, profile, cfg, chunk, &mut types, &mut refreshed, now, &mut out)?;
     }
-    // 卡片的历史 / 标志沿「前身」继承：前身变了，后继卡也要重算。
-    let succ = if dirty.cards.is_empty() && !dirty.all_stats && out.cards.is_empty() && out.removed.is_empty() {
-        HashMap::new()
-    } else {
-        successor_index(c)?
-    };
-    let mut closure: BTreeSet<String> = BTreeSet::new();
-    let mut queue: Vec<String> = dirty.cards.into_iter().collect();
-    while let Some(id) = queue.pop() {
-        if closure.contains(&id) {
-            continue;
-        }
-        if let Some(s) = succ.get(&id) {
-            queue.extend(s.iter().cloned());
-        }
-        closure.insert(id);
-    }
+    // 卡片的历史 / 标志沿「前身」继承：前身变了，后继卡也要重算。链接从种子卡按需查（[Links]）：一次作答只碰
+    // 这张卡的血统，不再把全库的前身链接读进内存；全量重建投影（`all_stats`）本来就要走遍全库，一次读完。
+    let mut links = if dirty.all_stats { Links::load_all(c)? } else { Links::default() };
+    let closure = successor_closure(c, &mut links, dirty.cards)?;
     let rest: Vec<String> = closure.iter().filter(|c| !refreshed.contains(*c)).cloned().collect();
     for chunk in rest.chunks(CHUNK) {
         flush_cards(c, profile, cfg, chunk, &mut out)?;
@@ -181,7 +168,7 @@ pub(crate) fn refresh(c: &Connection, profile: &str, cfg: &CacheConfig, dirty: D
         stat_seeds.extend(strings(c, "SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = ?1", &[profile])?);
     }
     if !stat_seeds.is_empty() {
-        refresh_stats(c, profile, cfg, &succ, &stat_seeds)?;
+        refresh_stats(c, profile, cfg, &mut links, &stat_seeds)?;
     }
     Ok(out)
 }
@@ -449,6 +436,53 @@ fn card_materials(c: &Connection, cfg: &CacheConfig, want: &[(String, Option<Str
     Ok(out)
 }
 
+/// 一组卡各自的血统（自己在前、再按广度优先列出全部前身，防环、最多 256 张），与输入同序。与 [lineages]
+/// 同一条规则（`registers::card_lineage_flags`），但只读前身链接那几条修改记录（血统只看 `historyFrom/<前身>`
+/// 寄存器，每个键的值与别的键无关）：优化器 / RWKV 取数、卡片历史按卡 id 调，血统在内核里解析
+/// （以前 Dart 先把整条血统的全部修改记录预读回 UI isolate 再交给内核，十万张卡上百次往返）。
+pub(crate) fn lineage_ids(c: &Connection, cards: &[String]) -> Result<Vec<Vec<String>>, String> {
+    if cards.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut edits: BTreeMap<String, Vec<(String, Option<i64>)>> = BTreeMap::new();
+    let mut next: BTreeSet<String> = cards.iter().cloned().collect();
+    for _ in 0..256 {
+        if next.is_empty() {
+            break;
+        }
+        let ids: Vec<String> = next.iter().cloned().collect();
+        let mut preds: BTreeSet<String> = BTreeSet::new();
+        for id in &ids {
+            edits.entry(id.clone()).or_default();
+        }
+        for chunk in ids.chunks(400) {
+            let q = format!(
+                "SELECT f.entity_id, f.field_key, f.json, e.server_time FROM srs_field_edits f \
+                 LEFT JOIN srs_event_local e ON e.event_id = f.id \
+                 WHERE f.entity_kind = 'card' AND f.entity_id IN ({}) AND substr(f.field_key, 1, 12) = 'historyFrom/'",
+                marks(chunk.len())
+            );
+            let mut stmt = c.prepare_cached(&q).map_err(sql)?;
+            let mut it = stmt.query(params_from_iter(chunk.iter())).map_err(sql)?;
+            while let Some(r) = it.next().map_err(sql)? {
+                let id: String = r.get(0).map_err(sql)?;
+                let key: String = r.get(1).map_err(sql)?;
+                if let Some(p) = key.strip_prefix(HISTORY_FROM) {
+                    if !edits.contains_key(p) {
+                        preds.insert(p.to_owned());
+                    }
+                }
+                edits.entry(id).or_default().push((r.get(2).map_err(sql)?, r.get(3).map_err(sql)?));
+            }
+        }
+        next = preds;
+    }
+    let all: Vec<(String, Vec<StoredEdit<'_>>)> =
+        edits.iter().map(|(id, es)| (id.clone(), es.iter().map(|(j, s)| (j.as_str(), *s)).collect())).collect();
+    let want: Vec<(String, Option<String>, String)> = cards.iter().map(|id| (id.clone(), None, String::new())).collect();
+    Ok(registers::card_lineage_flags(&all, &want)?.into_iter().map(|(l, _)| l).collect())
+}
+
 /// 每个要的卡的 (血统：自己在前、再按广度优先列出全部前身, 继承后的标志 JSON)，与输入同序。
 fn lineages(c: &Connection, cfg: &CacheConfig, want: &[(String, Option<String>)]) -> Result<Vec<(Vec<String>, Value)>, String> {
     if want.is_empty() {
@@ -628,23 +662,143 @@ const CARD_UPSERT: &str = "INSERT INTO srs_cards_cache (id, profile_uid, note_id
 
 // ---------------------------------------------------------------- 有效复习投影
 
-/// 全部「前身卡 → 后继卡」链接（卡的 `historyFrom/<前身>` 修改记录；走 v119 的部分覆盖索引，实体类型写成
-/// `+entity_kind` 不让规划器改挑别的索引）。
-fn successor_index(c: &Connection) -> Result<HashMap<String, Vec<String>>, String> {
-    let mut stmt = c
-        .prepare_cached(
-            "SELECT entity_id, field_key FROM srs_field_edits \
-             WHERE substr(field_key, 1, 12) = 'historyFrom/' AND +entity_kind = 'card'",
-        )
-        .map_err(sql)?;
-    let mut out: HashMap<String, Vec<String>> = HashMap::new();
-    let mut it = stmt.query([]).map_err(sql)?;
-    while let Some(r) = it.next().map_err(sql)? {
-        let succ: String = r.get(0).map_err(sql)?;
-        let key: String = r.get(1).map_err(sql)?;
-        out.entry(key[HISTORY_FROM.len()..].to_owned()).or_default().push(succ);
+/// 「前身卡 → 后继卡」链接：卡的 `historyFrom/<前身>` 修改记录（不看值：链接是超集，真正的血统按修改记录的
+/// 生效值另算）。从种子卡按需查——后继按 `field_key`（v119 的部分覆盖索引 `idx_srs_field_edits_history_from`）、
+/// 前身按 `entity_id`（`idx_srs_field_edits_entity`）——只查走到的卡；查过的卡记下，一次刷新里卡片闭包与投影
+/// 连通分量共用。[Links::load_all] 一次读完全库（全量重建投影用，结果与逐卡查相同）。
+#[derive(Default)]
+pub(crate) struct Links {
+    /// 查过后继的卡 → 它的后继（可为空；同一链接有几条修改记录就出现几次）。
+    succ: HashMap<String, Vec<String>>,
+    /// 查过前身的卡 → 它的前身。
+    pred: HashMap<String, Vec<String>>,
+    /// 全库已读完：没记下的卡就是没有链接。
+    complete: bool,
+}
+
+impl Links {
+    pub(crate) fn load_all(c: &Connection) -> Result<Links, String> {
+        let mut stmt = c
+            .prepare_cached(
+                "SELECT entity_id, field_key FROM srs_field_edits \
+                 WHERE substr(field_key, 1, 12) = 'historyFrom/' AND +entity_kind = 'card'",
+            )
+            .map_err(sql)?;
+        let mut out = Links { complete: true, ..Links::default() };
+        let mut it = stmt.query([]).map_err(sql)?;
+        while let Some(r) = it.next().map_err(sql)? {
+            let succ: String = r.get(0).map_err(sql)?;
+            let key: String = r.get(1).map_err(sql)?;
+            out.add(key[HISTORY_FROM.len()..].to_owned(), succ);
+        }
+        Ok(out)
     }
-    Ok(out)
+
+    fn add(&mut self, pred: String, succ: String) {
+        self.pred.entry(succ.clone()).or_default().push(pred.clone());
+        self.succ.entry(pred).or_default().push(succ);
+    }
+
+    /// 补查 [ids] 里还没查过后继的卡。
+    fn load_successors(&mut self, c: &Connection, ids: &[&String]) -> Result<(), String> {
+        if self.complete {
+            return Ok(());
+        }
+        let want: Vec<String> = ids.iter().filter(|id| !self.succ.contains_key(**id)).map(|id| format!("{HISTORY_FROM}{id}")).collect();
+        for chunk in want.chunks(500) {
+            let q = format!(
+                "SELECT entity_id, field_key FROM srs_field_edits WHERE field_key IN ({}) \
+                 AND substr(field_key, 1, 12) = 'historyFrom/' AND +entity_kind = 'card'",
+                marks(chunk.len())
+            );
+            let mut stmt = c.prepare_cached(&q).map_err(sql)?;
+            let mut it = stmt.query(params_from_iter(chunk.iter())).map_err(sql)?;
+            while let Some(r) = it.next().map_err(sql)? {
+                let succ: String = r.get(0).map_err(sql)?;
+                let key: String = r.get(1).map_err(sql)?;
+                self.succ.entry(key[HISTORY_FROM.len()..].to_owned()).or_default().push(succ);
+            }
+            for k in chunk {
+                self.succ.entry(k[HISTORY_FROM.len()..].to_owned()).or_default();
+            }
+        }
+        Ok(())
+    }
+
+    /// 补查 [ids] 里还没查过前身的卡。
+    fn load_predecessors(&mut self, c: &Connection, ids: &[&String]) -> Result<(), String> {
+        if self.complete {
+            return Ok(());
+        }
+        let want: Vec<&String> = ids.iter().copied().filter(|id| !self.pred.contains_key(*id)).collect();
+        for chunk in want.chunks(500) {
+            let q = format!(
+                "SELECT entity_id, field_key FROM srs_field_edits WHERE entity_kind = 'card' AND entity_id IN ({}) \
+                 AND substr(field_key, 1, 12) = 'historyFrom/'",
+                marks(chunk.len())
+            );
+            let mut stmt = c.prepare_cached(&q).map_err(sql)?;
+            let mut it = stmt.query(params_from_iter(chunk.iter())).map_err(sql)?;
+            while let Some(r) = it.next().map_err(sql)? {
+                let succ: String = r.get(0).map_err(sql)?;
+                let key: String = r.get(1).map_err(sql)?;
+                self.pred.entry(succ).or_default().push(key[HISTORY_FROM.len()..].to_owned());
+            }
+            for id in chunk {
+                self.pred.entry((*id).clone()).or_default();
+            }
+        }
+        Ok(())
+    }
+
+    fn successors(&self, id: &str) -> &[String] {
+        self.succ.get(id).map_or(&[], Vec::as_slice)
+    }
+
+    fn predecessors(&self, id: &str) -> &[String] {
+        self.pred.get(id).map_or(&[], Vec::as_slice)
+    }
+}
+
+/// [seeds] 与沿后继链接能走到的全部卡（广度优先，每一层一次批量查询）。
+fn successor_closure(c: &Connection, links: &mut Links, seeds: impl IntoIterator<Item = String>) -> Result<BTreeSet<String>, String> {
+    let mut closure: BTreeSet<String> = BTreeSet::new();
+    let mut frontier: Vec<String> = seeds.into_iter().filter(|s| closure.insert(s.clone())).collect();
+    while !frontier.is_empty() {
+        links.load_successors(c, &frontier.iter().collect::<Vec<_>>())?;
+        let mut next = Vec::new();
+        for id in &frontier {
+            for s in links.successors(id) {
+                if closure.insert(s.clone()) {
+                    next.push(s.clone());
+                }
+            }
+        }
+        frontier = next;
+    }
+    Ok(closure)
+}
+
+/// [seeds] 所在的「前身 ↔ 后继」连通分量（沿链接双向扩，广度优先、每一层两次批量查询）；返回里的每张卡前身 /
+/// 后继都已查过（[Links::successors] / [Links::predecessors] 可直接用）。
+fn link_family(c: &Connection, links: &mut Links, seeds: &BTreeSet<String>) -> Result<HashSet<String>, String> {
+    let mut family: HashSet<String> = seeds.iter().cloned().collect();
+    let mut frontier: Vec<String> = seeds.iter().cloned().collect();
+    while !frontier.is_empty() {
+        let refs: Vec<&String> = frontier.iter().collect();
+        links.load_successors(c, &refs)?;
+        links.load_predecessors(c, &refs)?;
+        let mut next = Vec::new();
+        for id in &frontier {
+            for n in links.successors(id).iter().chain(links.predecessors(id)) {
+                if family.insert(n.clone()) {
+                    next.push(n.clone());
+                }
+            }
+        }
+        frontier = next;
+    }
+    Ok(family)
 }
 
 /// 有效复习投影（`srs_stat_reviews`）：[seeds] 所在的「前身 ↔ 后继」连通分量整份重算。归属：卡自己可见 → 归
@@ -653,37 +807,11 @@ fn refresh_stats(
     c: &Connection,
     profile: &str,
     cfg: &CacheConfig,
-    succ: &HashMap<String, Vec<String>>,
+    links: &mut Links,
     seeds: &BTreeSet<String>,
 ) -> Result<(), String> {
-    let succ_owned;
-    let succ = if succ.is_empty() {
-        succ_owned = successor_index(c)?;
-        &succ_owned
-    } else {
-        succ
-    };
-    let mut pred: HashMap<&str, Vec<&str>> = HashMap::new();
-    for (p, ss) in succ {
-        for s in ss {
-            pred.entry(s.as_str()).or_default().push(p.as_str());
-        }
-    }
     // 连通分量：沿链接双向扩（链接表是超集；真正的血统下面按修改记录的生效值算）。
-    let mut family: HashSet<String> = HashSet::new();
-    let mut queue: Vec<String> = seeds.iter().cloned().collect();
-    while let Some(id) = queue.pop() {
-        if family.contains(&id) {
-            continue;
-        }
-        for s in succ.get(&id).into_iter().flatten() {
-            queue.push(s.clone());
-        }
-        for p in pred.get(id.as_str()).into_iter().flatten() {
-            queue.push((*p).to_owned());
-        }
-        family.insert(id);
-    }
+    let family = link_family(c, links, seeds)?;
     let mut ids: Vec<String> = family.iter().cloned().collect();
     ids.sort_by(|a, b| cmp_utf16(a, b));
     let mut visible: HashSet<String> = HashSet::new();
@@ -697,7 +825,7 @@ fn refresh_stats(
     }
     // 真后代：p 在 X 的血统里（X ≠ p）。只有带链接的卡才可能有前身 / 后代。
     let linked: Vec<String> =
-        ids.iter().filter(|c| succ.contains_key(*c) || pred.contains_key(c.as_str())).cloned().collect();
+        ids.iter().filter(|c| !links.successors(c).is_empty() || !links.predecessors(c).is_empty()).cloned().collect();
     let mut descendants: HashMap<String, BTreeSet<String>> = HashMap::new();
     for chunk in linked.chunks(CHUNK) {
         let want: Vec<(String, Option<String>)> = chunk.iter().map(|id| (id.clone(), None)).collect();
@@ -853,6 +981,257 @@ fn cards_of_notes(c: &Connection, notes: &[String]) -> Result<HashMap<String, Ve
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod link_tests {
+    use std::collections::{BTreeSet, HashMap, HashSet};
+
+    use rusqlite::Connection;
+
+    use super::{lineage_ids, lineages, link_family, successor_closure, CacheConfig, Links, HISTORY_FROM};
+    use serde_json::Value;
+    use crate::store::SrsCore;
+
+    /// 改写前的实现（全库前身链接读进内存，再在内存里扩）：对拍用，逐字保留原逻辑。
+    fn old_successor_index(c: &Connection) -> HashMap<String, Vec<String>> {
+        let mut stmt = c
+            .prepare(
+                "SELECT entity_id, field_key FROM srs_field_edits \
+                 WHERE substr(field_key, 1, 12) = 'historyFrom/' AND +entity_kind = 'card'",
+            )
+            .unwrap();
+        let mut out: HashMap<String, Vec<String>> = HashMap::new();
+        let mut it = stmt.query([]).unwrap();
+        while let Some(r) = it.next().unwrap() {
+            let succ: String = r.get(0).unwrap();
+            let key: String = r.get(1).unwrap();
+            out.entry(key[HISTORY_FROM.len()..].to_owned()).or_default().push(succ);
+        }
+        out
+    }
+
+    fn old_closure(succ: &HashMap<String, Vec<String>>, seeds: &[&str]) -> BTreeSet<String> {
+        let mut closure: BTreeSet<String> = BTreeSet::new();
+        let mut queue: Vec<String> = seeds.iter().map(|s| (*s).to_owned()).collect();
+        while let Some(id) = queue.pop() {
+            if closure.contains(&id) {
+                continue;
+            }
+            if let Some(s) = succ.get(&id) {
+                queue.extend(s.iter().cloned());
+            }
+            closure.insert(id);
+        }
+        closure
+    }
+
+    /// 旧 `refresh_stats` 的连通分量与「带链接的卡」。
+    fn old_family(succ: &HashMap<String, Vec<String>>, seeds: &BTreeSet<String>) -> (BTreeSet<String>, BTreeSet<String>) {
+        let mut pred: HashMap<&str, Vec<&str>> = HashMap::new();
+        for (p, ss) in succ {
+            for s in ss {
+                pred.entry(s.as_str()).or_default().push(p.as_str());
+            }
+        }
+        let mut family: HashSet<String> = HashSet::new();
+        let mut queue: Vec<String> = seeds.iter().cloned().collect();
+        while let Some(id) = queue.pop() {
+            if family.contains(&id) {
+                continue;
+            }
+            for s in succ.get(&id).into_iter().flatten() {
+                queue.push(s.clone());
+            }
+            for p in pred.get(id.as_str()).into_iter().flatten() {
+                queue.push((*p).to_owned());
+            }
+            family.insert(id);
+        }
+        let linked = family.iter().filter(|c| succ.contains_key(*c) || pred.contains_key(c.as_str())).cloned().collect();
+        (family.into_iter().collect(), linked)
+    }
+
+    fn new_family(c: &Connection, links: &mut Links, seeds: &BTreeSet<String>) -> (BTreeSet<String>, BTreeSet<String>) {
+        let family = link_family(c, links, seeds).unwrap();
+        let linked =
+            family.iter().filter(|x| !links.successors(x).is_empty() || !links.predecessors(x).is_empty()).cloned().collect();
+        (family.into_iter().collect(), linked)
+    }
+
+    fn edit(c: &Connection, n: &mut i64, kind: &str, entity: &str, key: &str) {
+        *n += 1;
+        c.execute(
+            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) \
+             VALUES (?1, 'p', ?2, ?3, ?4, 'w', ?5, '{}')",
+            rusqlite::params![format!("e{n}"), kind, entity, key, *n],
+        )
+        .unwrap();
+    }
+
+    /// 多分叉链：分叉（A→B、A→C）、汇合成菱形（B→D、C→D）、两条链并入一张（D→E、F→E）、同一链接两条记录
+    /// （不同写入者）、环（H→I→H）、跨链（E→J，K→J）、孤立卡、以及不该算进来的噪声（笔记上的 historyFrom/、
+    /// 卡的别的字段）。每个种子、几组多种子、全部卡逐一对拍：按需 BFS 与旧的全库读入结果完全一致。
+    #[test]
+    fn on_demand_link_walks_match_the_full_index() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_links_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        let w = core.writer().unwrap();
+        let mut n = 0;
+        let links: &[(&str, &str)] = &[
+            ("A", "B"), ("A", "C"), ("B", "D"), ("C", "D"), ("D", "E"), ("F", "E"), ("D", "E"),
+            ("H", "I"), ("I", "H"), ("E", "J"), ("K", "J"), ("L", "M"), ("M", "N"), ("L", "N"),
+        ];
+        for (pred, succ) in links {
+            edit(&w, &mut n, "card", succ, &format!("{HISTORY_FROM}{pred}"));
+        }
+        for card in ["A", "B", "G", "J", "Z"] {
+            edit(&w, &mut n, "card", card, "deck");
+            edit(&w, &mut n, "card", card, "flag");
+        }
+        edit(&w, &mut n, "note", "A", &format!("{HISTORY_FROM}Q"));
+        edit(&w, &mut n, "note", "Q", &format!("{HISTORY_FROM}G"));
+        let all = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "Q", "Z", "none"];
+        let mut seed_sets: Vec<Vec<&str>> = all.iter().map(|s| vec![*s]).collect();
+        seed_sets.extend([vec!["A", "F"], vec!["G", "H"], vec!["N", "K", "Z"], vec!["E", "M", "I"], all.to_vec(), vec![]]);
+        let index = old_successor_index(&w);
+        for seeds in &seed_sets {
+            let set: BTreeSet<String> = seeds.iter().map(|s| (*s).to_owned()).collect();
+            let expect_closure = old_closure(&index, seeds);
+            let expect_family = old_family(&index, &set);
+            // 每组种子用一份新的按需链接（与一次刷新相同），再用全库读入的 Links 各跑一遍。
+            let mut lazy = Links::default();
+            assert_eq!(successor_closure(&w, &mut lazy, set.iter().cloned()).unwrap(), expect_closure, "closure {seeds:?}");
+            assert_eq!(new_family(&w, &mut lazy, &set), expect_family, "family after closure {seeds:?}");
+            let mut fresh = Links::default();
+            assert_eq!(new_family(&w, &mut fresh, &set), expect_family, "family {seeds:?}");
+            let mut full = Links::load_all(&w).unwrap();
+            assert_eq!(successor_closure(&w, &mut full, set.iter().cloned()).unwrap(), expect_closure, "full closure {seeds:?}");
+            assert_eq!(new_family(&w, &mut full, &set), expect_family, "full family {seeds:?}");
+        }
+        // 抽查：菱形 + 汇合的闭包、环的分量。
+        assert_eq!(
+            old_closure(&index, &["A"]).into_iter().collect::<Vec<_>>(),
+            ["A", "B", "C", "D", "E", "J"].map(String::from).to_vec()
+        );
+        let (fam, linked) = old_family(&index, &BTreeSet::from(["H".to_owned()]));
+        assert_eq!(fam.into_iter().collect::<Vec<_>>(), ["H", "I"].map(String::from).to_vec());
+        assert_eq!(linked.len(), 2);
+        drop(w);
+        core.close();
+    }
+
+    /// 只读前身链接的 [lineage_ids] 与读全部修改记录的 [lineages]（缓存刷新用的那条）逐卡同血统：分叉、菱形、环、
+    /// 被同一写入者后来改成 false 的链接（不再算前身）、卡的别的字段与笔记上的同名键（噪声）。
+    #[test]
+    fn lineage_ids_match_full_edit_lineages() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_lineage_ids_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        let w = core.writer().unwrap();
+        let mut n = 0i64;
+        let mut put = |kind: &str, entity: &str, key: &str, v: Value| {
+            n += 1;
+            let json = serde_json::json!({
+                "p": "p", "k": kind, "e": entity, "f": key, "w": "w", "s": n, "v": v,
+                "hlc": format!("{}:0:w", 1_700_000_000_000i64 + n),
+            })
+            .to_string();
+            w.execute(
+                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json)                  VALUES (?1, 'p', ?2, ?3, ?4, 'w', ?5, ?6)",
+                rusqlite::params![format!("e{n}"), kind, entity, key, n, json],
+            )
+            .unwrap();
+        };
+        for (pred, succ) in [("A", "B"), ("A", "C"), ("B", "D"), ("C", "D"), ("D", "E"), ("H", "I"), ("I", "H"), ("X", "E")] {
+            put("card", succ, &format!("{HISTORY_FROM}{pred}"), Value::Bool(true));
+        }
+        // E 后来撤掉了 X 这个前身（同一写入者更新的记录支配旧的）。
+        put("card", "E", &format!("{HISTORY_FROM}X"), Value::Bool(false));
+        put("card", "B", "deck", Value::String("d".into()));
+        put("card", "D", "flag", serde_json::json!(2));
+        put("note", "A", &format!("{HISTORY_FROM}Q"), Value::Bool(true));
+        let cfg = CacheConfig::parse(&serde_json::json!({"defaultDeck": "d"})).unwrap();
+        let cards: Vec<String> = ["A", "B", "C", "D", "E", "H", "I", "X", "Q", "none"].map(String::from).to_vec();
+        let want: Vec<(String, Option<String>)> = cards.iter().map(|c| (c.clone(), None)).collect();
+        let full: Vec<Vec<String>> = lineages(&w, &cfg, &want).unwrap().into_iter().map(|(l, _)| l).collect();
+        assert_eq!(lineage_ids(&w, &cards).unwrap(), full);
+        assert_eq!(full[4], ["E", "D", "B", "C", "A"].map(String::from).to_vec(), "E without the retracted X");
+        assert!(lineage_ids(&w, &[]).unwrap().is_empty());
+        drop(w);
+        core.close();
+    }
+
+    /// 按需查只碰种子所在的链：库里别的链再多，一次刷新的查询行数只与这条链有关（不再全表读入）。
+    #[test]
+    fn on_demand_walk_reads_only_the_seed_lineage() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_links_scope_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        let w = core.writer().unwrap();
+        let mut n = 0;
+        for i in 0..2000 {
+            edit(&w, &mut n, "card", &format!("s{i}"), &format!("{HISTORY_FROM}p{i}"));
+        }
+        edit(&w, &mut n, "card", "y", &format!("{HISTORY_FROM}x"));
+        let mut links = Links::default();
+        let fam = link_family(&w, &mut links, &BTreeSet::from(["y".to_owned()])).unwrap();
+        assert_eq!(fam, HashSet::from(["x".to_owned(), "y".to_owned()]));
+        assert_eq!(links.succ.len() + links.pred.len(), 4, "walked beyond the seed lineage");
+        drop(w);
+        core.close();
+    }
+
+    /// 一次作答的缓存刷新里，前身链接这一步的耗时：旧（全库链接读进内存再扩）vs 新（从种子按需查）。库里
+    /// [n] 条链（每条 3 张卡），种子是其中一条的头。手动跑：
+    /// `cargo test --release --lib link_walk_bench -- --ignored --nocapture`。
+    #[test]
+    #[ignore]
+    fn link_walk_bench() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_links_bench_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        let w = core.writer().unwrap();
+        let n = 50_000;
+        let mut k = 0;
+        w.execute_batch("BEGIN").unwrap();
+        for i in 0..n {
+            edit(&w, &mut k, "card", &format!("b{i}"), &format!("{HISTORY_FROM}a{i}"));
+            edit(&w, &mut k, "card", &format!("c{i}"), &format!("{HISTORY_FROM}b{i}"));
+        }
+        w.execute_batch("COMMIT").unwrap();
+        let seeds = BTreeSet::from(["a7".to_owned()]);
+        let runs = 20;
+        let t0 = std::time::Instant::now();
+        for _ in 0..runs {
+            let index = old_successor_index(&w);
+            let closure = old_closure(&index, &["a7"]);
+            let fam = old_family(&index, &closure);
+            assert_eq!(fam.0.len(), 3);
+        }
+        let old_ms = t0.elapsed().as_secs_f64() * 1000.0 / runs as f64;
+        let t0 = std::time::Instant::now();
+        for _ in 0..runs {
+            let mut links = Links::default();
+            let closure = successor_closure(&w, &mut links, seeds.iter().cloned()).unwrap();
+            let fam = new_family(&w, &mut links, &closure);
+            assert_eq!(fam.0.len(), 3);
+        }
+        let new_ms = t0.elapsed().as_secs_f64() * 1000.0 / runs as f64;
+        println!("{} 条前身链接：旧 全库读入 {old_ms:.3} ms -> 新 按需 BFS {new_ms:.3} ms（闭包 + 连通分量，{runs} 次平均）", 2 * n);
+        drop(w);
+        core.close();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]
