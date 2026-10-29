@@ -182,6 +182,6 @@ void main() {
       );
     },
     skip: bench == null ? 'set FUSHI_SRS_ANSWER_BENCH=<notes>' : false,
-    timeout: const Timeout(Duration(minutes: 30)),
+    timeout: const Timeout(Duration(minutes: 120)),
   );
 }

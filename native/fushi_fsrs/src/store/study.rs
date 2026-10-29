@@ -19,6 +19,7 @@
 //! 结果 `{"counts": {牌组: [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因|null]}, "next", "after", "eligible"}`。
 //! 没给 `deck` = 全部牌组（牌组列表）；给了但不在树里 = `counts` 为 null。
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use rusqlite::{params_from_iter, types::Value as Sql, Connection};
@@ -425,6 +426,24 @@ struct Picker<'a> {
     counts: &'a HashMap<String, Count>,
     instant_decks: HashSet<&'a str>,
     eligible: &'a [(String, String, f64)],
+    /// 上一次扫到期复习卡留下的最低几张（按出卡序）与扫的牌组：「下一张」与「再下一张」共用一次扫描。
+    due_top: RefCell<Option<(Vec<String>, Vec<DueCand>)>>,
+}
+
+/// 一张到期复习候选：(卡, 上次作答, 稳定度, 排序键)。
+type DueCand = (String, Option<i64>, Option<f64>, Option<f64>);
+
+/// 一次扫描留下的最低几张：够「下一张 + 再下一张」（后者只多排除前者）。
+const DUE_TOP: usize = 2;
+
+/// 到期复习卡的出卡序：键（可提取度）小的先出；键为 NULL（除以零）的排最前（SQLite 升序 NULL 在前）；同键按 id。
+fn due_before(key: Option<f64>, id: &str, other_key: Option<f64>, other_id: &str) -> bool {
+    match (key, other_key) {
+        (None, None) => id < other_id,
+        (None, Some(_)) => true,
+        (Some(_), None) => false,
+        (Some(a), Some(b)) => a < b || (a == b && id < other_id),
+    }
 }
 
 impl Picker<'_> {
@@ -469,10 +488,22 @@ impl Picker<'_> {
     }
 
     /// 到期复习卡里可提取度最低的一张：顺着 `idx_srs_cards_cache_review_due`（牌组, 到期日）只扫到期候选，
-    /// 边扫边留最小的（不对全集排序）。返回 (卡, 上次作答, 稳定度)。
+    /// 边扫边留最低的 [DUE_TOP] 张（不对全集排序、只给留下的卡分配 id），同一组牌组的下一次（「再下一张」）
+    /// 直接从留下的里取。返回 (卡, 上次作答, 稳定度)。
     fn lowest_due(&self, decks: &[&str], exclude: &HashSet<&str>) -> Result<Option<(String, Option<i64>, Option<f64>)>, String> {
         if decks.is_empty() {
             return Ok(None);
+        }
+        if let Some((scanned, top)) = self.due_top.borrow().as_ref() {
+            if scanned.iter().map(String::as_str).eq(decks.iter().copied()) {
+                // 留下的都被排除了不代表没有别的卡：只有一张都没剩时才重扫。
+                if let Some((id, last, s, _)) = top.iter().find(|c| !exclude.contains(c.0.as_str())) {
+                    return Ok(Some((id.clone(), *last, *s)));
+                }
+                if top.len() < DUE_TOP {
+                    return Ok(None);
+                }
+            }
         }
         let sql_text = due_sql(decks.len());
         let mut args: Vec<Sql> = vec![Sql::Text(self.profile.to_owned()), Sql::Integer(self.ctx.today)];
@@ -480,29 +511,28 @@ impl Picker<'_> {
         args.push(Sql::Integer(self.ctx.today));
         let mut stmt = self.c.prepare_cached(&sql_text).map_err(sql)?;
         let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
-        let mut best: Option<(Option<f64>, String, Option<i64>, Option<f64>)> = None;
+        let mut top: Vec<DueCand> = Vec::with_capacity(DUE_TOP + 1);
         while let Some(r) = q.next().map_err(sql)? {
-            let id: String = r.get(0).map_err(sql)?;
-            if exclude.contains(id.as_str()) {
+            let id = r.get_ref(0).map_err(sql)?.as_str().map_err(|e| e.to_string())?;
+            if exclude.contains(id) {
                 continue;
             }
             let last: Option<i64> = r.get(1).map_err(sql)?;
             let s: Option<f64> = r.get(2).map_err(sql)?;
             let key = review_key(self.ctx.now, last, s);
-            let better = match &best {
-                None => true,
-                Some((bk, bid, _, _)) => match (key, bk) {
-                    (None, None) => id < *bid,
-                    (None, Some(_)) => true,
-                    (Some(_), None) => false,
-                    (Some(a), Some(b)) => a < *b || (a == *b && id < *bid),
-                },
-            };
-            if better {
-                best = Some((key, id, last, s));
+            if top.len() == DUE_TOP {
+                let worst = &top[DUE_TOP - 1];
+                if !due_before(key, id, worst.3, &worst.0) {
+                    continue;
+                }
             }
+            let at = top.iter().position(|c| due_before(key, id, c.3, &c.0)).unwrap_or(top.len());
+            top.insert(at, (id.to_owned(), last, s, key));
+            top.truncate(DUE_TOP);
         }
-        Ok(best.map(|(_, id, last, s)| (id, last, s)))
+        let best = top.first().map(|(id, last, s, _)| (id.clone(), *last, *s));
+        *self.due_top.borrow_mut() = Some((decks.iter().map(|d| (*d).to_owned()).collect(), top));
+        Ok(best)
     }
 
     /// 下一张：到期的学习卡 → 到期复习卡（可提取度从低到高；RWKV 牌组按 R）→ 新卡（所点牌组的新卡顺序）→
@@ -649,6 +679,7 @@ pub(crate) fn study(c: &Connection, profile: &str, req: &Value) -> Result<Value,
             counts: &counts,
             instant_decks: instant.keys().map(String::as_str).collect(),
             eligible: &eligible,
+            due_top: RefCell::new(None),
         };
         let mut ex: Vec<&str> = exclude.iter().map(String::as_str).collect();
         next = picker.next(&ex)?;
