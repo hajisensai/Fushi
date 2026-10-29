@@ -1480,8 +1480,35 @@ class SrsDbStore implements SrsSync2Host {
 
   // ------------------------------------------------------------------ 物化
 
-  Future<SrsNoteTypeView?> noteType(String id) async =>
-      (await _materializeNoteTypes(<String>[id]))[id];
+  /// [noteType] / [noteTypes] 的物化缓存（卡片详情每次 [cardDetail]、制卡选项每次库版本变动都要物化，每次两三次
+  /// Drift 往返 + 一次寄存器内核）。键是 [contentFingerprint]，与笔记类型的结构写入严格对应：
+  /// - 笔记类型只由它的身份记录与修改记录决定；这两类记录落进投影（本机写入、收段、导入、恢复、冲突解决、清除，
+  ///   全是内核命令）一律经 [_absorbProjection] 推进内容修订号（内核 `Marks::entity` / `Marks::edit`：笔记类型
+  ///   上没有界面状态类字段键，见 `is_view_state`）。Dart 侧对这两张表的直写只有 [compactStoredStyles]（只动笔记的
+  ///   修改记录、只换表示不换值）与 profile 合并删整个旧 profile 的行（之后按新 uid 重开），都碰不到本 profile 的
+  ///   笔记类型；
+  /// - 重读本机状态（开库、覆盖恢复后、写事务回滚后的 [_loadLocal]）推进它，纪元随覆盖恢复更换；
+  /// - 复习日志与界面状态（牌组收起 / 排序位、新卡位置）不推进它——它们碰不到笔记类型，所以不在键里
+  ///   （[_structureKey] 多出的 [_viewRevision] 只关牌组树）。
+  /// 读的途中键变了就不存（同 [deckTree]）。缓存的视图是不可变的，[noteTypes] 返回副本列表。
+  _NoteTypeCache? _noteTypeCache;
+
+  _NoteTypeCache _noteTypeCacheAt(String key) {
+    final _NoteTypeCache? c = _noteTypeCache;
+    return c != null && c.key == key ? c : _NoteTypeCache(key);
+  }
+
+  Future<SrsNoteTypeView?> noteType(String id) async {
+    final String key = contentFingerprint;
+    final _NoteTypeCache cache = _noteTypeCacheAt(key);
+    if (cache.byId.containsKey(id)) return cache.byId[id];
+    final SrsNoteTypeView? v = (await _materializeNoteTypes(<String>[id]))[id];
+    if (contentFingerprint == key) {
+      cache.byId[id] = v;
+      _noteTypeCache = cache;
+    }
+    return v;
+  }
 
   /// 一组笔记类型的物化（身份记录 / 修改记录先查预读）：整组一次 FFI 调用（字段寄存器内核）。
   /// 不存在的 ID 映射到 null。
@@ -1514,7 +1541,12 @@ class SrsDbStore implements SrsSync2Host {
     return out;
   }
 
+  /// 未删除的笔记类型，按名字排（按 [contentFingerprint] 缓存，见 [_noteTypeCache]）。
   Future<List<SrsNoteTypeView>> noteTypes() async {
+    final String key = contentFingerprint;
+    final _NoteTypeCache cache = _noteTypeCacheAt(key);
+    final List<SrsNoteTypeView>? cached = cache.all;
+    if (cached != null) return List<SrsNoteTypeView>.of(cached);
     final List<SrsEntityRow> rows =
         await (db.select(db.srsEntities)..where(
               (t) =>
@@ -1522,15 +1554,24 @@ class SrsDbStore implements SrsSync2Host {
                   t.kind.equals(SrsEntityKind.noteType.wire),
             ))
             .get();
+    final Map<String, SrsNoteTypeView?> byId = await noteTypesById(
+      rows.map((SrsEntityRow r) => r.id),
+    );
     final List<SrsNoteTypeView> out = <SrsNoteTypeView>[
-      for (final SrsNoteTypeView? v in (await noteTypesById(
-        rows.map((SrsEntityRow r) => r.id),
-      )).values)
+      for (final SrsNoteTypeView? v in byId.values)
         if (v != null && v.deletedAt == null) v,
     ];
     out.sort(
       (SrsNoteTypeView a, SrsNoteTypeView b) => a.name.compareTo(b.name),
     );
+    if (contentFingerprint == key) {
+      // 同一个键下物化结果相同：已缓存的单个视图保留原对象（调用方可按 identical 判没变）。
+      for (final MapEntry<String, SrsNoteTypeView?> e in byId.entries) {
+        cache.byId.putIfAbsent(e.key, () => e.value);
+      }
+      cache.all = List<SrsNoteTypeView>.unmodifiable(out);
+      _noteTypeCache = cache;
+    }
     return out;
   }
 
@@ -5095,3 +5136,13 @@ Future<SrsSync2Result> _coreSync2(
     libraryPath: libraryPath,
   ).sync2(request, blobs: blobs),
 );
+
+/// [SrsDbStore._noteTypeCache] 的一份：[key] 下物化过的笔记类型（含已删除的；不存在的 ID 记 null）与
+/// [SrsDbStore.noteTypes] 的整份列表（没算过 = null）。
+final class _NoteTypeCache {
+  _NoteTypeCache(this.key);
+
+  final String key;
+  final Map<String, SrsNoteTypeView?> byId = <String, SrsNoteTypeView?>{};
+  List<SrsNoteTypeView>? all;
+}
