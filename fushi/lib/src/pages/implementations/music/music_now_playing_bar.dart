@@ -291,10 +291,11 @@ class _CompactMusicBar extends StatelessWidget {
                 const SizedBox(width: 8),
                 if (roomy) ...<Widget>[
                   musicPlayModeButton(context, engine),
-                  const _MusicVolumeButton(),
+                  const MusicVolumeButton(),
                   const SizedBox(width: 4),
                 ],
                 musicTransportGroup(session, playSize: 48),
+                if (roomy) _musicBarCloseButton(session),
               ],
             ],
           ),
@@ -483,9 +484,10 @@ class _DockedMusicBarState extends State<_DockedMusicBar> {
         // 展开态右侧只留循环与音量（用户 2026-10-29）；信号路径在歌词页「⋯」里，
         // 点条身进播放页。
         musicPlayModeButton(context, engine),
-        _MusicVolumeButton(
+        MusicVolumeButton(
           onOpenChanged: (bool open) => setState(() => _menuOpen = open),
         ),
+        _musicBarCloseButton(session),
       ],
     );
     return Padding(
@@ -832,17 +834,30 @@ Widget musicPlayModeButton(
 }
 
 /// 音量：点开一条横向滑杆（0–100，写偏好并即时下发给后端）。
-class _MusicVolumeButton extends StatefulWidget {
-  const _MusicVolumeButton({this.onOpenChanged});
+/// 关闭迷你条：停止音乐并释放媒体会话（条随之消失）。用户 2026-10-30「底部栏
+/// 提供个按钮关闭」——原来只藏在长按菜单的「停止音乐」里。
+Widget _musicBarCloseButton(MusicSession session) => FushiIconButtonControl(
+  key: const ValueKey<String>('music_bar_close'),
+  tooltip: t.music_stop,
+  onPressed: () => unawaited(session.stop()),
+  icon: const FushiIcon(FushiIcons.close),
+);
+
+/// 音量按钮：点开弹出音量滑杆（迷你条与播放页共用，读写 [AppModel.musicVolume]）。
+class MusicVolumeButton extends StatefulWidget {
+  const MusicVolumeButton({super.key, this.onOpenChanged, this.iconSize});
+
+  /// 图标尺寸；null = 按钮默认（迷你条）。播放页按钮行传自己的统一尺寸。
+  final double? iconSize;
 
   /// 滑杆展开 / 收起（宿主据此保持展开，见 [_DockedMusicBarState]）。
   final ValueChanged<bool>? onOpenChanged;
 
   @override
-  State<_MusicVolumeButton> createState() => _MusicVolumeButtonState();
+  State<MusicVolumeButton> createState() => _MusicVolumeButtonState();
 }
 
-class _MusicVolumeButtonState extends State<_MusicVolumeButton> {
+class _MusicVolumeButtonState extends State<MusicVolumeButton> {
   final MenuController _menu = MenuController();
   double? _dragging;
 
@@ -894,6 +909,7 @@ class _MusicVolumeButtonState extends State<_MusicVolumeButton> {
             key: const ValueKey<String>('music_bar_volume'),
             tooltip: t.music_volume_title,
             isSelected: menu.isOpen,
+            iconSize: widget.iconSize,
             onPressed: () => menu.isOpen ? menu.close() : menu.open(),
             icon: FushiIcon(
               volume <= 0 ? FushiIcons.volumeOff : FushiIcons.volumeUp,

@@ -63,7 +63,7 @@ import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
-    show MusicEngineClock, musicPlayModeButton;
+    show MusicEngineClock, MusicVolumeButton, musicPlayModeButton;
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart'
     show musicPluginErrorText;
 import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
@@ -71,6 +71,8 @@ import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
+    show FushiDesktopTitleBar, FushiTitleBarColorScope, fushiTitleBarColorsOn;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -812,6 +814,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     );
     // 弹窗 / 浮窗从 [_themedContext]（这层主题之下）打开，才会带上封面配色。
     page = KeyedSubtree(key: _themedKey, child: page);
+    // 与阅读器 / 视频同为沉浸页：桌面自绘顶栏不占一行，悬停才浮出（用户
+    // 2026-10-30「视频、小说、漫画、音乐都要占满」）。配色取封面主题的表面色，
+    // 只用来托窗口按钮的柔光；macOS 红绿灯收不起，不上报，保持原来的叠放。
+    page = _TitleBarScope(child: page);
     if (apple) {
       page = FushiAppleDarkTier(child: page);
     } else {
@@ -1267,21 +1273,29 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   );
 
   /// 播放器按钮行（用户 2026-10-29 参考图）：播放模式 · 上一首 · 播放 · 下一首 ·
-  /// 收藏，五格等宽、等距，图标同一尺寸，只有播放键是实心圆。
+  /// 收藏 · 音量，六格等宽、等距、同一行，图标同一尺寸，只有播放键是实心圆。音量与
+  /// 迷你条同一枚按钮，点开弹滑杆（用户 2026-10-30「做成和底栏一样点击打开的，
+  /// 按钮都在同一行」）。
   Widget _buildTransport(BuildContext context) {
     final MusicSession session = appModelNoUpdate.musicSession;
     final MusicPlayerEngine engine = session.engine;
     final ColorScheme cs = Theme.of(context).colorScheme;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        // 五格 64dp + 四道 12dp 间距 = 368dp；窄于此（手机竖屏的歌词栏常只有 320dp 上下）时
-        // 格子等比收窄，下限 48dp 命中区，不让按钮行溢出。
+        // 六格 64dp + 五道 12dp 间距 = 444dp；窄于此（手机竖屏的歌词栏常只有 320dp 上下）
+        // 时格子等比收窄，下限 48dp 命中区；格子到下限后再收间距（下限 4），不让按钮行
+        // 溢出、不换行。
         const double maxSlot = 64;
-        const double gap = 12;
-        final double fit = constraints.maxWidth.isFinite
-            ? (constraints.maxWidth - 4 * gap) / 5
+        const double maxGap = 12;
+        const int slots = 6;
+        final double width = constraints.maxWidth;
+        final double fit = width.isFinite
+            ? (width - (slots - 1) * maxGap) / slots
             : maxSlot;
         final double slot = fit.clamp(48, maxSlot).toDouble();
+        final double gap = width.isFinite
+            ? ((width - slots * slot) / (slots - 1)).clamp(4, maxGap).toDouble()
+            : maxGap;
         return _buildTransportRow(context, engine, session, cs, slot, gap);
       },
     );
@@ -1334,12 +1348,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         ),
         SizedBox(width: gap),
         cell(_buildFavoriteButton(session, icon, cs)),
+        SizedBox(width: gap),
+        cell(MusicVolumeButton(iconSize: icon)),
       ],
     );
   }
 
   /// 收藏（在线平台的「喜欢」）：只有声明了收藏能力的插件曲目才有，其余留空位
-  /// 保持五格对称。
+  /// 保持六格对称。
   Widget _buildFavoriteButton(
     MusicSession session,
     double icon,
@@ -2031,4 +2047,20 @@ class _LinkTextState extends State<_LinkText> {
       ),
     );
   }
+}
+
+/// 把歌词页登记成桌面自绘顶栏的沉浸页（见 [FushiTitleBarColorScope]）；在封面
+/// 主题之下取色。
+class _TitleBarScope extends StatelessWidget {
+  const _TitleBarScope({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => FushiTitleBarColorScope(
+    colors: FushiDesktopTitleBar.immersivePagesFillWindow
+        ? fushiTitleBarColorsOn(Theme.of(context).colorScheme.surface)
+        : null,
+    child: child,
+  );
 }

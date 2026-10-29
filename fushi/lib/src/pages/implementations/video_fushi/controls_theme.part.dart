@@ -41,9 +41,15 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
       // M3E 浮动工具栏：顶栏胶囊离播放区上沿留一点呼吸（左右沿用 fork 默认 16）。
-      topButtonBarMargin: apple
-          ? fork.topButtonBarMargin
-          : const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      // 桌面自绘顶栏在播放页悬停才浮出、画面铺满整窗：胶囊再让出它的高度，
+      // 浮出的窗口按钮不压住顶栏（用户 2026-10-30）。
+      topButtonBarMargin: (apple
+              ? fork.topButtonBarMargin
+              : const EdgeInsets.fromLTRB(16, 8, 16, 0))
+          .copyWith(
+        top: (apple ? fork.topButtonBarMargin.top : 8) +
+            FushiDesktopTitleBar.immersiveCaptionInset,
+      ),
       // 中途缓冲圈带网络流读取速度（本地文件与 fork 默认外观一致）。
       bufferingIndicatorBuilder: (_) => VideoBufferingIndicator(
         readSpeed: _networkReadSpeedOf(controller),

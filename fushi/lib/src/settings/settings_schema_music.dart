@@ -12,6 +12,8 @@ import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
+import 'package:fushi/src/pages/implementations/music/music_library_page.dart'
+    show showMusicSourcesDialog;
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
@@ -24,8 +26,10 @@ import 'package:fushi/utils.dart';
 /// 「音乐」一级设置分类（音乐模块，docs/specs/2026-10-23-music-module-design.md §11.1）：
 /// 曲库入口 + 播放（无缝 / ReplayGain）。与 music 顶层 tab 同一个模块门。
 ///
-/// 音乐来源（文件夹）的增删在曲库页顶栏，这里只放一条直达曲库的导航，不另做一份
-/// 来源管理（两处各管一份会漂移）。
+/// 音乐来源（文件夹）的管理是库页共用的来源管理对话框（[MediaSourcesDialog]，
+/// 曲库页顶栏同一个入口）；这里只是又一条路进同一间屋子，不另做一份。「曲库」那行
+/// 只是跳到音乐页，副标题照实说，不再写成「来源」（用户 2026-10-30：点了直接跳页、
+/// 文案却像能管理来源）。
 SettingsDestination buildMusicDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.music,
@@ -43,12 +47,20 @@ SettingsDestination buildMusicDestination() {
           SettingsNavigationItem(
             id: 'music.library',
             title: t.music_open_library,
-            subtitle: t.music_settings_summary,
+            subtitle: t.music_open_library_hint,
             icon: FushiIcons.music,
             showIcon: true,
             onTap: (SettingsContext settingsContext) {
               homeShellTabNotifier.value = HomeTab.music;
             },
+          ),
+          SettingsNavigationItem(
+            id: 'music.sources',
+            title: t.music_sources_manage,
+            icon: FushiIcons.libraryAdd,
+            showIcon: true,
+            onTap: (SettingsContext settingsContext) =>
+                showMusicSourcesDialog(settingsContext.context),
           ),
         ],
       ),

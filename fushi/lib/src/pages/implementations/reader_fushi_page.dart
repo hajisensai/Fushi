@@ -202,7 +202,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
-    show FushiTitleBarColorScope;
+    show FushiDesktopTitleBar, FushiTitleBarColorScope;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
@@ -2803,7 +2803,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // `main()` 里被隐藏，[FushiDesktopTitleBar] 在整个 Navigator 之上提供稳定抓手，
   // 阅读器不再需要自己让位或自绘拖拽带——留着就是顶栏下面又压一条 28pt 空白。
   double get _readerTopOffset =>
-      _stableTopInset + _topProgressReserve + _desktopHeaderReserve;
+      _contentTopInset + _topProgressReserve + _desktopHeaderReserve;
+
+  /// 正文自己要让出的顶部系统 inset：桌面自绘顶栏在沉浸页只是悬停浮出、不占
+  /// 正文位置（[FushiDesktopTitleBar.immersiveCaptionInset]），正文铺到窗口顶端
+  /// 多出这一条；悬浮顶栏 / 弹窗仍按完整的 [_stableTopInset] 排在窗口按钮下面。
+  double get _contentTopInset =>
+      math.max(0, _stableTopInset - FushiDesktopTitleBar.immersiveCaptionInset);
 
   /// 歌词模式（独立 HTML 文档）此刻真正被顶部 chrome 占掉的高度：系统顶 inset +
   /// 顶栏预留（悬浮态顶栏不占正文位置，[_desktopHeaderReserve] 那时本就是 0）。
@@ -2812,7 +2818,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 顶部进度 pill（[_buildTopProgressBar] 对歌词早返回），把它的预留算进来就是在
   /// 歌词首行上方留一条谁也不占的空带。正文那条走 `setChromeInsets` 下发给
   /// WebView，歌词这条走 [independentDocumentInsets] 的 Flutter 侧 Padding。
-  double get _lyricsTopReserve => _stableTopInset + _desktopHeaderReserve;
+  double get _lyricsTopReserve => _contentTopInset + _desktopHeaderReserve;
 
   /// 正文底部总预留 = 底栏预留 + 底部带（状态行与系统底 inset 取大，不再相加）。
   double get _readerBottomReserve => _bottomChromeReserve + _statusFooterBand;
