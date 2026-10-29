@@ -65,6 +65,7 @@ void main() {
       'open',
       'status',
       'media_known',
+      'media_hash',
       'conflicts',
       'checkpoints',
       'history',
@@ -78,6 +79,8 @@ void main() {
       'head',
       'ingest_begin',
       'media_record',
+      'media_scan',
+      'media_landed',
     ]) {
       expect(SrsDbStore.kSrsSync2LockFreeOps, isNot(contains(op)));
     }

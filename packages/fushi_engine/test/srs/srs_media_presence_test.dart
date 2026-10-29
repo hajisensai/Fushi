@@ -46,6 +46,10 @@ class _CountingLocation implements SrsLocationStore {
   Future<void> put(String path, Uint8List bytes) => inner.put(path, bytes);
 
   @override
+  Future<void> putNew(String path, Uint8List bytes) =>
+      inner.putNew(path, bytes);
+
+  @override
   Future<void> delete(String path) => inner.delete(path);
 }
 
@@ -157,7 +161,9 @@ void main() {
     await media(a, loc, mediaA);
     await srsSyncPeers(<SrsDbStore>[a, c], loc.inner);
 
-    loc.inner.files.remove('$kSrsMediaFolder/cat.png');
+    loc.inner.files.remove(
+      srsMediaContentPath(kSrsMediaFolder, srsMediaSha256(<int>[7])),
+    );
     final SrsMediaSyncReport rc = await media(c, loc, mediaC);
     expect(rc.missing, <String>{'cat.png'});
     expect(

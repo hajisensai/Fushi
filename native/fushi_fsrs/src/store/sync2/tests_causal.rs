@@ -222,3 +222,78 @@ fn register_rebuild_from_the_log_matches_incremental_projection() {
     }
     assert_eq!(snap(&slow), before);
 }
+
+/// 一台设备的本机媒体目录对一个名字跑一次对账（第一步 hash、第二步 scan），返回那个名字的条目与新绑定数。
+fn media_scan(d: &Device, root: &std::path::Path, name: &str, now: i64) -> (Value, u64) {
+    let names = vec![name.to_owned()];
+    let hashed = d.core.sync2_media_hash(P, root.to_str().unwrap(), &names).unwrap();
+    let mut files = std::collections::HashMap::new();
+    for f in hashed["files"].as_array().unwrap() {
+        let sha = super::media::unhex32(f["sha"].as_str().unwrap()).unwrap();
+        files.insert(f["name"].as_str().unwrap().to_owned(), (f["size"].as_i64().unwrap(), f["mtime"].as_i64().unwrap(), sha));
+    }
+    let r = d.core.sync2_media_scan(P, &names, &files, now).unwrap();
+    (r["items"][0].clone(), r["appended"].as_u64().unwrap())
+}
+
+fn sha_hex(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes).iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// S-3：两台设备各有一个同名不同内容的媒体文件。以前按名字存、各留各的，永远分叉；现在名字经日志里的绑定（因果优先、
+/// 并发才比 HLC）映射到内容：输的一方被告知去下载赢的内容，落地后两边对齐、不再写新绑定。之后谁改了文件，谁的新内容
+/// 因果上盖过旧绑定（与时钟快慢无关），对方再跟上。
+#[test]
+fn same_named_media_with_different_content_converges() {
+    let (a, b) = (Device::new("ma"), Device::new("mb"));
+    let (ra, rb) = (super::tests::tempdir::new("ma-media"), super::tests::tempdir::new("mb-media"));
+    std::fs::write(ra.0.join("image.jpg"), b"from a").unwrap();
+    std::fs::write(rb.0.join("image.jpg"), b"from b").unwrap();
+    let (ia, na) = media_scan(&a, &ra.0, "image.jpg", T0);
+    let (ib, nb) = media_scan(&b, &rb.0, "image.jpg", T0 + 5);
+    assert_eq!((na, nb), (1, 1), "each device binds its own file first");
+    assert_eq!(ia["have"], json!(true));
+    assert_eq!(ib["sha"], json!(sha_hex(b"from b")));
+    let (_, again) = media_scan(&a, &ra.0, "image.jpg", T0 + 1);
+    assert_eq!(again, 0, "an unchanged file is not bound again");
+    let mut bucket = Bucket::default();
+    for t in [10, 20, 30] {
+        a.sync(&mut bucket, "loc", T0 + t);
+        b.sync(&mut bucket, "loc", T0 + t + 1);
+    }
+    // 并发的两次绑定：HLC 大者（b，T0 + 5）胜。a 本机文件自上次对齐后没改过 → 去下载 b 的内容，不再绑自己的。
+    let (ia, na) = media_scan(&a, &ra.0, "image.jpg", T0 + 40);
+    assert_eq!(na, 0);
+    assert_eq!(ia["have"], json!(false));
+    assert_eq!(ia["sha"], json!(sha_hex(b"from b")));
+    assert_eq!(ia["local"], json!(sha_hex(b"from a")));
+    let (ib, nb) = media_scan(&b, &rb.0, "image.jpg", T0 + 41);
+    assert_eq!((ib["have"].clone(), nb), (json!(true), 0));
+    std::fs::write(ra.0.join("image.jpg"), b"from b").unwrap();
+    let landed = a
+        .core
+        .sync2_media_landed(P, ra.0.to_str().unwrap(), &[("image.jpg".to_owned(), super::media::unhex32(&sha_hex(b"from b")).unwrap())], T0 + 42)
+        .unwrap();
+    assert_eq!(landed["appended"], json!(0));
+    let (ia, na) = media_scan(&a, &ra.0, "image.jpg", T0 + 43);
+    assert_eq!((ia["have"].clone(), na), (json!(true), 0));
+    // a 的时钟落后很多也一样：它看过 b 的绑定之后改了文件，新内容盖过 b 的。
+    std::fs::write(ra.0.join("image.jpg"), b"edited on a").unwrap();
+    let (ia, na) = media_scan(&a, &ra.0, "image.jpg", T0 - 1000 * HOUR);
+    assert_eq!((ia["have"].clone(), na), (json!(true), 1));
+    for t in [50, 60] {
+        a.sync(&mut bucket, "loc", T0 + t);
+        b.sync(&mut bucket, "loc", T0 + t + 1);
+    }
+    let (ib, _) = media_scan(&b, &rb.0, "image.jpg", T0 + 70);
+    assert_eq!(ib["have"], json!(false));
+    assert_eq!(ib["sha"], json!(sha_hex(b"edited on a")));
+    let bound = |d: &Device| d.rows(&format!("SELECT hex(sha256) FROM sync2_media WHERE profile_uid = '{P}' AND name = 'image.jpg'"));
+    assert_eq!(bound(&a), bound(&b));
+    // 清理：只被过期名字绑定、不被存活名字绑定的内容。
+    let doomed = a.core.sync2_media_doomed(P, &["image.jpg".to_owned()], &[]).unwrap();
+    assert_eq!(doomed["sha"], json!([sha_hex(b"edited on a")]));
+    let kept = a.core.sync2_media_doomed(P, &["image.jpg".to_owned()], &["image.jpg".to_owned()]).unwrap();
+    assert_eq!(kept["sha"], json!([]));
+}

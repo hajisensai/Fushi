@@ -46,6 +46,10 @@ abstract interface class SrsLocationStore {
   /// 写文件（同名覆盖；中间目录按需创建）。
   Future<void> put(String path, Uint8List bytes);
 
+  /// 写不可变对象（内容寻址媒体：名字就是内容哈希）：已在就什么都不做，不在才写。**从不先删再写**——覆盖写在云盘
+  /// 上是「删旧的 → 传新的」两步，中间被打断（或别的设备正好来读）就只剩半截 / 什么都没有。
+  Future<void> putNew(String path, Uint8List bytes);
+
   /// 删文件（不存在视为成功）。
   Future<void> delete(String path);
 }
@@ -304,6 +308,27 @@ class SrsAssetLocationStore implements SrsLocationStore {
   }
 
   @override
+  Future<void> putNew(String path, Uint8List bytes) => _write(() async {
+    final (String dir, String name) = _split(path);
+    final Map<String, String?>? listed = _listed[_norm(dir)];
+    if (listed != null && listed.containsKey(name)) return;
+    final String id = (await _folder(dir, create: true))!;
+    if (listed == null && await store.findAsset(id, name) != null) return;
+    final File f = _tmp();
+    try {
+      await f.writeAsBytes(bytes, flush: true);
+      await store.putAsset(id, name, f);
+    } finally {
+      try {
+        await f.delete();
+      } on FileSystemException {
+        // 临时文件留给系统清理。
+      }
+    }
+    listed?[name] = null;
+  });
+
+  @override
   Future<void> delete(String path) => _write(() => _delete(path));
 
   Future<void> _delete(String path) async {
@@ -391,6 +416,12 @@ class SrsDirectoryLocationStore implements SrsLocationStore {
   }
 
   @override
+  Future<void> putNew(String path, Uint8List bytes) async {
+    if (await _file(path).exists()) return;
+    await put(path, bytes);
+  }
+
+  @override
   Future<void> delete(String path) async {
     try {
       await _file(path).delete();
@@ -437,6 +468,12 @@ class SrsMemoryLocationStore implements SrsLocationStore {
   @override
   Future<void> put(String path, Uint8List bytes) async =>
       files[path] = Uint8List.fromList(bytes);
+
+  @override
+  Future<void> putNew(String path, Uint8List bytes) async {
+    if (files.containsKey(path)) return;
+    await put(path, bytes);
+  }
 
   @override
   Future<void> delete(String path) async => files.remove(path);
