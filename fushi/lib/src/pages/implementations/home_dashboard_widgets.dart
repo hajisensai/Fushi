@@ -9,13 +9,12 @@
 /// 墨水屏的差异也在这里各自收口。
 library;
 
-import 'dart:math' as math;
-
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -702,189 +701,30 @@ class HomeContinueHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool apple = isGlassDesign(context);
-    final bool eink = isEinkTheme(context);
-    final BorderRadius radius = fushiCardBorderRadius(context);
-    final Color fill = apple
-        ? appleColorsOf(context).tertiaryFill
-        : Color.alphaBlend(
-            tokens.surfaces.primaryContainer.withValues(alpha: 0.38),
-            tokens.surfaces.card,
-          );
-    return FushiHoverLift(
-      scale: 1.015,
-      builder: (BuildContext context, bool _) => FushiPressScale(
-        child: Material(
-          key: const ValueKey<String>('home-continue-hero'),
-          color: eink ? Colors.transparent : fill,
-          shape: RoundedRectangleBorder(
-            borderRadius: radius,
-            side: eink
-                ? BorderSide(color: tokens.surfaces.outline)
-                : BorderSide.none,
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            canRequestFocus: false,
-            onTap: onOpen,
-            child: Padding(
-              padding: EdgeInsets.all(tokens.spacing.card),
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints c) {
-                  final double portraitAspect = homeContinuePortraitAspect(
-                    material,
-                  );
-                  final double portraitWidth = math.min(
-                    coverHeight * portraitAspect,
-                    c.maxWidth * 0.36,
-                  );
-                  Size slot = homeContinueCoverSize(
-                    portraitWidth: portraitWidth,
-                    landscape: landscapeCover,
-                    portraitAspect: portraitAspect,
-                  );
-                  if (slot.width > c.maxWidth * 0.5) {
-                    final double w = c.maxWidth * 0.5;
-                    slot = Size(w, w * slot.height / slot.width);
-                  }
-                  return Row(
-                    children: <Widget>[
-                      AnimatedContainer(
-                        key: const ValueKey<String>('home-continue-hero-cover'),
-                        duration: fushiMotionDuration(
-                          context,
-                          FushiMotion.medium,
-                        ),
-                        curve: FushiMotion.standard,
-                        width: slot.width,
-                        height: slot.height,
-                        // 横版剧照（16:9）同样走光面海报：材质按实际尺寸画。
-                        child: _materialScope(ShelfCoverFrame(child: cover)),
-                      ),
-                      SizedBox(width: tokens.spacing.card + 4),
-                      // 宽屏信息列封顶 480：进度条与标题不被拉成一整条长线。
-                      Expanded(
-                        child: Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 480),
-                            child: _info(context, tokens),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 有材质时给封面框包 [ShelfCoverMaterialScope]；null 原样返回。
-  Widget _materialScope(Widget child) {
+    // 2026-10-28：与书架 / 漫画书架 / 游戏 / 视频首页同一张满宽「继续」大卡
+    // [FushiContinueHero]（模糊封面作背景海报、行尾 56 高主按钮、悬停抬升）。
     final ShelfCoverMaterial? m = material;
-    return m == null
-        ? child
-        : ShelfCoverMaterialScope(material: m, child: child);
-  }
-
-  Widget _info(BuildContext context, FushiDesignTokens tokens) {
-    final ThemeData theme = Theme.of(context);
-    final TextStyle titleStyle =
-        (theme.textTheme.titleLarge ?? tokens.type.listTitle).copyWith(
-          fontWeight: FontWeight.w600,
-          color: tokens.surfaces.onSurface,
-        );
-    final double? value = progress;
-    final String? label = progressLabel;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        if (eyebrow case final String text) ...<Widget>[
-          Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: tokens.type.metadata.copyWith(
-              color: tokens.surfaces.primary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          SizedBox(height: tokens.spacing.gap / 2),
-        ],
-        Text(
-          title,
-          key: const ValueKey<String>('home-continue-hero-title'),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: titleStyle,
-        ),
-        if (subtitle case final String sub) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap / 2),
-          Text(
-            sub,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: tokens.type.metadata,
-          ),
-        ],
-        if (value != null || label != null) ...<Widget>[
-          SizedBox(height: tokens.spacing.card),
-          Row(
-            children: <Widget>[
-              if (value != null)
-                Expanded(
-                  // 进度从 0 弹簧长到当前值（M3E 进场；墨水屏 / 减弱动态效果下
-                  // 时长归零即瞬间到位）。
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween<double>(begin: 0, end: value.clamp(0.0, 1.0)),
-                    duration: fushiMotionDuration(context, FushiMotion.long),
-                    curve: FushiMotion.enter,
-                    builder: (BuildContext context, double v, Widget? _) =>
-                        FushiLinearProgressIndicator(
-                          key: const ValueKey<String>(
-                            'home-continue-hero-progress',
-                          ),
-                          value: v,
-                          minHeight: 6,
-                          color: tokens.surfaces.primary,
-                        ),
-                  ),
-                )
-              else
-                const Spacer(),
-              if (label != null) ...<Widget>[
-                SizedBox(width: tokens.spacing.gap),
-                Text(
-                  label,
-                  maxLines: 1,
-                  style: tokens.type.metadata.copyWith(
-                    color: tokens.surfaces.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ],
-        SizedBox(height: tokens.spacing.card),
-        // 极窄屏信息列放不下整颗按钮时等比缩小，不溢出、不截字。
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: AlignmentDirectional.centerStart,
-          child: FushiFilledButton.icon(
-            key: const ValueKey<String>('home-continue-hero-action'),
-            onPressed: onOpen,
-            icon: FushiIcon(actionIcon),
-            label: Text(actionLabel),
-          ),
-        ),
+    final Widget framedCover = m == null
+        ? cover
+        : ShelfCoverMaterialScope(material: m, child: cover);
+    return FushiContinueHero(
+      cardKey: const ValueKey<String>('home-continue-hero'),
+      progressKey: const ValueKey<String>('home-continue-hero-progress'),
+      cover: framedCover,
+      coverAspectRatio: landscapeCover
+          ? 16 / 9
+          : (m == ShelfCoverMaterial.gameCase
+                ? kShelfGameCaseAspectRatio
+                : 2 / 3),
+      eyebrow: eyebrow ?? actionLabel,
+      title: title,
+      metaLines: <String>[
+        if (subtitle != null && subtitle!.isNotEmpty) subtitle!,
       ],
+      progress: progress,
+      progressLabel: progressLabel,
+      onOpen: onOpen,
+      entranceIndex: null,
     );
   }
 }

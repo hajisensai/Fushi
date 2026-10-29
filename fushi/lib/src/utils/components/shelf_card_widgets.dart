@@ -337,6 +337,7 @@ class ShelfCoverFrame extends StatelessWidget {
     this.stackedBehind,
     this.stackedCovers,
     this.density = ShelfCoverDensity.regular,
+    this.flat = false,
     super.key,
   });
 
@@ -352,6 +353,11 @@ class ShelfCoverFrame extends StatelessWidget {
 
   /// 封面框密度，见类注释与 [ShelfCoverDensity]。
   final ShelfCoverDensity density;
+
+  /// 平贴在 tonal 色块上（合集 hero）：材质下不画投影与接触阴影，与库页外的
+  /// 「继续」卡封面同样平贴在色块里。只影响材质路径（无材质的 MD3 框静止本就
+  /// 没有投影）。
+  final bool flat;
 
   @override
   Widget build(BuildContext context) {
@@ -530,6 +536,7 @@ class ShelfCoverFrame extends StatelessWidget {
       behind: behind,
       frontOverlay: overlay,
       backgroundColor: backgroundColor,
+      flat: flat,
     );
   }
 }
@@ -599,9 +606,9 @@ class CoverProgressStrip extends StatelessWidget {
             key: progressKey,
             value: value,
             minHeight: height,
-            // MD3 封面上要的是一条贴底细线：Expressive 的波浪 + 轨道断口在
-            // 3px 高的封面条上读作噪点（还会常驻动画），走平直的 2023 形态。
-            year2023: apple ? null : true,
+            // MD3 封面上要的是一条贴底细线：M3E 平直静止形态（轨道间隙 +
+            // 末端停止点，不跑波浪动画）。
+            wavy: false,
             backgroundColor: eink
                 ? tokens.surfaces.page
                 : apple

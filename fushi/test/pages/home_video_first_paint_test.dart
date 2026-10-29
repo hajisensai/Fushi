@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/video_continue_spotlight.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -363,12 +364,12 @@ void main() {
     );
     expect(realHero, findsOneWidget);
     expect(
-      find.descendant(
+      find.ancestor(
         of: realHero,
-        matching: find.byKey(const ValueKey<String>('home_video_hero_play')),
+        matching: find.byType(VideoContinueSpotlight),
       ),
       findsOneWidget,
-      reason: '前提：在看那部被提成了首屏主卡',
+      reason: '前提：在看那部是首屏继续观看区的主卡',
     );
     final Rect hero = tester.getRect(realHero);
     expect(hero.topLeft, skeletonHero.topLeft, reason: '主卡位与真主卡同位');

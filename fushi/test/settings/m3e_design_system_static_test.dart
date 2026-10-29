@@ -147,7 +147,9 @@ void main() {
     // 文字块 ShelfCardMeta（标签以「#名字」接在副行里）。
     'lib/src/pages/implementations/reader_fushi_history_page.dart': <String>[
       'FushiPageHeader',
-      'FushiCard',
+      // 「继续阅读」大卡收口到共享 FushiContinueHero（内部即 FushiCard，
+      // 2026-10-28 各库页统一），页面里不再直接画 FushiCard。
+      'FushiContinueHero(',
       'ShelfCardMeta',
       '_bookCardShell',
     ],

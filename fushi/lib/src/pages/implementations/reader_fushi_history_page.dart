@@ -1,5 +1,6 @@
 import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async' show StreamSubscription, Timer, unawaited;
 import 'dart:io';
@@ -169,10 +170,6 @@ part 'reader_history/dialogs.part.dart';
 /// [FushiFocusController.registerDirectionalAnchor]). Kept as constants (not
 /// derived per-instance ids) precisely so anchors can point at them by name.
 const FushiFocusId kShelfImportFocusId = FushiFocusId('reader-shelf-import');
-
-/// 书架「继续阅读」hero 的最大宽度：宽屏不拉满整行（一条 1600px 的长卡读起来
-/// 像横幅广告），窄屏照常撑满。
-const double _kContinueHeroMaxWidth = 720;
 
 /// 库页条目分流：漫画独立书架只收 manga 源条目，普通书架反向排除它们。
 ///
@@ -1742,17 +1739,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       isCompleted: (MediaItem item) =>
           _completedBookKeys.contains(_parseBookKey(item.mediaIdentifier)),
     );
-    final MediaItem? hero = mostRecentlyReadCandidate(
-      tally.inProgress,
-      // BUG-2904：映射键是 uid，bookKey 必须经换算表一跳（与「最近阅读」排序同）。
-      (MediaItem item) =>
-          lastReadAtForBookKey(
-            _lastReadAtByBookKey,
-            _epubUidByKey,
-            _parseBookKey(item.mediaIdentifier),
-          ) ??
-          0,
-    );
+    // BUG-2904：映射键是 uid，bookKey 必须经换算表一跳（与「最近阅读」排序同）。
+    int readAt(MediaItem item) =>
+        lastReadAtForBookKey(
+          _lastReadAtByBookKey,
+          _epubUidByKey,
+          _parseBookKey(item.mediaIdentifier),
+        ) ??
+        0;
+    final MediaItem? hero = mostRecentlyReadCandidate(tally.inProgress, readAt);
     if (hero == null) return const SizedBox.shrink();
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -1761,149 +1756,59 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         tokens.spacing.card,
         0,
       ),
-      child: _buildContinueReadingHero(hero, tokens),
+      child: _buildContinueReadingHero(
+        hero,
+        tokens,
+        tally.inProgress.where((MediaItem m) => !identical(m, hero)).toList()
+          ..sort((MediaItem a, MediaItem b) => readAt(b).compareTo(readAt(a))),
+      ),
     );
   }
 
-  /// 继续阅读 hero（2026-10 书架重设计，M3 Expressive / Apple 两套）：封面走共享
-  /// [ShelfCoverFrame]（圆角 + 投影 / Apple 内描边），右侧「继续阅读」小标题 +
-  /// 书名 + 进度条（共享 [FushiLinearProgressIndicator]）+「已读 x%」，行尾一枚
-  /// 强调色圆形继续按钮。整卡点击开书（[FushiCard] 自带按压下沉 / 焦点 / 状态层），
-  /// 外包 [FushiHoverLift] 悬停抬升；进场随书架网格同一窗口错峰淡入。
-  /// 宽屏不拉满整行（>[_kContinueHeroMaxWidth] 时左对齐收窄），窄屏撑满。
-  Widget _buildContinueReadingHero(MediaItem hero, FushiDesignTokens tokens) {
+  /// 继续阅读 hero：书架 / 漫画书架 / 游戏首页共用的满宽「继续」大卡
+  /// [FushiContinueHero]（2026-10-28 统一）。封面走同一个光面书皮材质，信息列
+  /// 「继续阅读」眉标 + 书名 + 进度「已读 x%」，行尾「继续」主按钮；整卡点按开书。
+  Widget _buildContinueReadingHero(
+    MediaItem hero,
+    FushiDesignTokens tokens,
+    List<MediaItem> others,
+  ) {
     final double fraction = hero.duration > 0
         ? (hero.position / hero.duration).clamp(0.0, 1.0)
         : 0.0;
     final int percent = (fraction * 100).round();
-    final bool apple = isGlassDesign(context) && !isEinkTheme(context);
-    final ColorScheme cs = theme.colorScheme;
-    final Color accent = apple
-        ? appleColorsOf(context).accent
-        : tokens.surfaces.primary;
-    final bool wide = MediaQuery.sizeOf(context).width >= 840;
-    final double coverWidth = wide ? 72 : 60;
-    final Widget card = FushiCard(
-      key: const ValueKey<String>('reader_shelf_continue_hero'),
+    final ImageProvider coverImage = mediaSource
+        .getDisplayThumbnailFromMediaItem(appModel: appModel, item: hero);
+    Future<void> openHero() async {
+      final MediaSource source = hero.getMediaSource(appModel: appModel);
+      await appModel.openMedia(ref: ref, mediaSource: source, item: hero);
+    }
+
+    // BUG-1108：与同卡封面（getDisplayThumbnailFromMediaItem）同源，经
+    // getDisplayTitleFromMediaItem 应用编辑弹窗写入的 override 书名；直读 DB
+    // 原始列 hero.title 会在改名后仍显示旧名。
+    return FushiContinueHero(
+      cardKey: const ValueKey<String>('reader_shelf_continue_hero'),
       focusId: const FushiFocusId('reader-shelf-continue-hero'),
-      padding: EdgeInsets.all(tokens.spacing.gap * 1.5),
-      onTap: () async {
-        final MediaSource source = hero.getMediaSource(appModel: appModel);
-        await appModel.openMedia(ref: ref, mediaSource: source, item: hero);
-      },
-      child: Row(
-        children: <Widget>[
-          // 与书架网格同一个光面书皮材质（网格的 Scope 只包 SliverGrid）。
-          ShelfCoverMaterialScope(
-            material: ShelfCoverMaterial.glossyBook,
-            child: SizedBox(
-              width: coverWidth,
-              height: coverWidth * 1.5,
-              child: ShelfCoverFrame(
-                child: FadeInImage(
-                  imageErrorBuilder: (_, __, ___) =>
-                      _coverPlaceholderIcon(Icons.menu_book_outlined),
-                  placeholder: MemoryImage(kTransparentImage),
-                  image: mediaSource.getDisplayThumbnailFromMediaItem(
-                    appModel: appModel,
-                    item: hero,
-                  ),
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
-          ),
-          SizedBox(width: tokens.spacing.gap * 2),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  t.book_continue_reading,
-                  style: tokens.type.sectionLabel.copyWith(color: accent),
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-                // TODO-2497：两行仍放不下时，桌面悬停显示完整书名（与库页卡
-                // 标题同款 ShelfTitleOverflowTooltip）。
-                // BUG-1108：与同卡封面（getDisplayThumbnailFromMediaItem）同源，
-                // 经 getDisplayTitleFromMediaItem 应用编辑弹窗写入的 override
-                // 书名；直读 DB 原始列 hero.title 会在改名后仍显示旧名。
-                Builder(
-                  builder: (BuildContext context) {
-                    final String heroTitle = mediaSource
-                        .getDisplayTitleFromMediaItem(hero);
-                    final TextStyle titleStyle = tokens.type.listTitle.copyWith(
-                      fontWeight: FontWeight.w600,
-                    );
-                    return ShelfTitleOverflowTooltip(
-                      title: heroTitle,
-                      style: titleStyle,
-                      maxLines: 2,
-                      child: Text(
-                        heroTitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: titleStyle,
-                      ),
-                    );
-                  },
-                ),
-                SizedBox(height: tokens.spacing.gap),
-                FushiLinearProgressIndicator(
-                  key: const ValueKey<String>(
-                    'reader_shelf_continue_hero_progress',
-                  ),
-                  value: fraction,
-                  minHeight: 4,
-                  borderRadius: const BorderRadius.all(Radius.circular(2)),
-                  // 小卡上不要常驻波浪动画，走平直形态（同封面进度条）。
-                  year2023: apple ? null : true,
-                  color: accent,
-                  backgroundColor: apple
-                      ? appleColorsOf(context).tertiaryFill
-                      : cs.surfaceContainerHighest,
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  t.book_read_progress(percent: percent),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.type.metadata,
-                ),
-              ],
-            ),
-          ),
-          SizedBox(width: tokens.spacing.gap * 1.5),
-          // 行尾继续按钮：纯视觉暗示（整卡就是点击目标），不单独抢焦点。
-          ExcludeSemantics(
-            child: DecoratedBox(
-              decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
-              child: Padding(
-                padding: EdgeInsets.all(tokens.spacing.gap * 1.25),
-                child: FushiIcon(
-                  Icons.play_arrow_rounded,
-                  size: 24,
-                  color: apple ? appleColorsOf(context).onAccent : cs.onPrimary,
-                ),
-              ),
-            ),
-          ),
-        ],
+      progressKey: const ValueKey<String>(
+        'reader_shelf_continue_hero_progress',
       ),
-    );
-    return Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: _kContinueHeroMaxWidth),
-        child: FushiStaggeredEntrance(
-          index: 0,
-          child: FushiHoverLift(
-            scale: 1.01,
-            builder: (BuildContext _, bool __) => card,
-          ),
+      // 与书架网格同一个光面书皮材质（网格的 Scope 只包 SliverGrid）。
+      cover: ShelfCoverMaterialScope(
+        material: ShelfCoverMaterial.glossyBook,
+        child: FadeInImage(
+          imageErrorBuilder: (_, __, ___) =>
+              _coverPlaceholderIcon(Icons.menu_book_outlined),
+          placeholder: MemoryImage(kTransparentImage),
+          image: coverImage,
+          fit: BoxFit.cover,
         ),
       ),
+      eyebrow: t.book_continue_reading,
+      title: mediaSource.getDisplayTitleFromMediaItem(hero),
+      progress: fraction,
+      progressLabel: t.book_read_progress(percent: percent),
+      onOpen: openHero,
     );
   }
 
