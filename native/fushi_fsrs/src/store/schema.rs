@@ -442,7 +442,10 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     if current < 14 {
         // V14：v12 起 `refresh_tags_row`（sync2/semantics.rs）用 `INSERT OR REPLACE` 改写标签行，REPLACE 删旧行不触发
         // DELETE 触发器，摘要桶只加不减——升过 v12 且改过两次以上标签的库桶表已经错了。写法改成 UPSERT 后从三张投影表
-        // 全量重建一次桶表（重建是表内容的确定性函数，重放结果相同）。
+        // 全量重建一次桶表（重建是表内容的确定性函数，重放结果相同）。先 install（建表 IF NOT EXISTS + 重建同样的
+        // 触发器，可重放）：这一步自足，不假设库里已有桶表——标着 13 却没有桶表的库确实存在（冻结的统计向量库
+        // fixtures/srs_stats_vectors.db.gz 就是，它出自桶表并入 V12 之前的开发版本）。
+        super::sync2::digest::install(&tx)?;
         super::sync2::digest::rebuild(&tx)?;
         // 同在 V14：旧段 / 旧转发件的删除改两段式（sync2/transport.rs `pending_deletes`、sync2/relay.rs）。
         tx.execute_batch(super::sync2::schema::V14_RELAY_GONE).map_err(|e| e.to_string())?;
