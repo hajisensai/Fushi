@@ -44,10 +44,15 @@ pub(crate) fn sql<E: std::fmt::Display>(e: E) -> String {
 pub(crate) fn in_savepoint<T>(conn: &Connection, f: impl FnOnce(&Connection) -> Result<T, String>) -> Result<T, String> {
     conn.execute_batch("SAVEPOINT sync2").map_err(sql)?;
     match f(conn) {
-        Ok(v) => {
-            conn.execute_batch("RELEASE sync2").map_err(sql)?;
-            Ok(v)
-        }
+        Ok(v) => match conn.execute_batch("RELEASE sync2") {
+            Ok(()) => Ok(v),
+            // 没有外层事务时 RELEASE 就是 COMMIT：提交失败不能把事务挂在写连接上（之后的写入都会落进这笔、
+            // 读路径也会误以为有跨命令事务），撤销后报错，调用方按失败处理（收段会话随之作废）。
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK TO sync2; RELEASE sync2");
+                Err(sql(e))
+            }
+        },
         Err(e) => {
             let _ = conn.execute_batch("ROLLBACK TO sync2; RELEASE sync2");
             Err(e)
