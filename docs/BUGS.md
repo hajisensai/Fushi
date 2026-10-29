@@ -33,14 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3478 条。点号进各自文件。
+> 共 3481 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3874](bugs/BUG-3874-android-debug-apk-extra-abis.md) | ✅ | ✅ | android-debug-apk-extra-abis |
-| [BUG-3876](bugs/BUG-3876-srs-webview-card-lookup-gate-never-sent.md) | ✅ | ✅ | srs-webview-card-lookup-gate-never-sent |
-| [BUG-3877](bugs/BUG-3877-srs-sync-review-lag.md) | ✅ | ✅ | srs-sync-review-lag |
 | [BUG-3878](bugs/BUG-3878-video-remote-web-video-uncontrollable.md) | ✅ | ✅ | video-remote-web-video-uncontrollable |
+| [BUG-3877](bugs/BUG-3877-srs-sync-review-lag.md) | ✅ | ✅ | srs-sync-review-lag |
+| [BUG-3876](bugs/BUG-3876-srs-webview-card-lookup-gate-never-sent.md) | ✅ | ✅ | srs-webview-card-lookup-gate-never-sent |
+| [BUG-3874](bugs/BUG-3874-android-debug-apk-extra-abis.md) | ✅ | ✅ | android-debug-apk-extra-abis |
 | [BUG-3873](bugs/BUG-3873-kavita-pull-ignored-after-push.md) | ✅ | ✅ | Kavita→Fushi 进度拉取失效（时间基线 + 容差吞掉服务器改动） |
 | [BUG-3872](bugs/BUG-3872-lyrics-narrow-illustration-entry.md) | ✅ | ✅ | lyrics-narrow-illustration-entry |
 | [BUG-3871](bugs/BUG-3871-webview2-host-toplevel-steals-activation.md) | ✅ | ✅ | 应用内浏览器真鼠标点 YouTube 设置二级项仍打不开（WebView2 宿主是 owned 顶层窗口，抢走激活） |
