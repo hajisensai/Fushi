@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 8;
+pub const SCHEMA_VERSION: i64 = 9;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -228,6 +228,43 @@ const V4: &str = "ALTER TABLE srs_notes_cache ADD COLUMN media_refs TEXT NOT NUL
 /// 侧缓存修订号 6 的升级步让内核（store/caches.rs）重算全部笔记缓存填满。
 const V8: &str = "ALTER TABLE srs_cards_cache ADD COLUMN freq_rank INTEGER NULL;";
 
+/// V9：复习出卡 / 牌组计数的索引（`SrsDbStore.nextCard` / `_deckTallies` / `_countContext`）。「可出」条件
+/// （`_liveSql`：`hidden = 0 AND suspended = 0 AND scheduler = 'fushi'`）与队列写进部分索引的 WHERE，查询里逐字
+/// 带着同样的条件才用得上；排序键与 Dart 的 ORDER BY 逐字同一个表达式（`_newCardOrderSql`），牌组、埋到哪天等
+/// 过滤列放在键尾，过滤不回表（SQLite 判覆盖要求查询碰到的列都在索引里，部分索引 WHERE 里那几列也不例外，所以
+/// 它们也列在键尾——值在这份索引里是常量，只多几个字节）。只加索引、不动数据。
+///
+/// - 新卡两种顺序（按位置 / 按词频）：profile 之后直接是排序键，子树里几个牌组的新卡按序扫、命中第一张即停，
+///   不把子树全部新卡取出来排序（以前每张卡出题都排一遍）。
+/// - 学习卡：按 `COALESCE(due_at, 0)` 有序，范围条件「到期」直接是索引区间。
+/// - 复习候选：按（牌组, `COALESCE(due_day, 0)`）只扫到期的卡，排序表达式要的列（上次复习、稳定度）与结果列
+///   都在索引里（覆盖，不回表）。
+///   复习序是「此刻的可提取度」，随此刻变化，无法建成索引序：这里只把候选收窄到到期卡（Rust 侧队列另做）。
+/// - 牌组计数：`hidden = 0` 的覆盖索引，按牌组有序，聚合不回表、不另排序。
+/// - 计数上下文的日志：（profile, 种类, 时刻）区间扫描，卡 / 类型列在索引里（正文 JSON 只在学习步那几行回表）。
+const V9: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_new_position ON srs_cards_cache
+  (profile_uid, new_position IS NULL, new_position, note_created_at, id, deck_id, buried_until_day,
+   queue, hidden, suspended, scheduler)
+  WHERE queue = 'new' AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_new_freq ON srs_cards_cache
+  (profile_uid, freq_rank IS NULL, freq_rank, new_position IS NULL, new_position, note_created_at, id, deck_id,
+   buried_until_day, queue, hidden, suspended, scheduler)
+  WHERE queue = 'new' AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_learning ON srs_cards_cache
+  (profile_uid, COALESCE(due_at, 0), id, deck_id, buried_until_day, due_at, queue, hidden, suspended, scheduler)
+  WHERE queue IN ('learning', 'relearning') AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_review_due ON srs_cards_cache
+  (profile_uid, deck_id, COALESCE(due_day, 0), buried_until_day, last_reviewed_at, stability, id, due_at, due_day,
+   queue, hidden, suspended, scheduler)
+  WHERE queue = 'review' AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_tally ON srs_cards_cache
+  (profile_uid, deck_id, queue, due_day, due_at, suspended, scheduler, buried_until_day)
+  WHERE hidden = 0;
+CREATE INDEX IF NOT EXISTS idx_srs_review_logs_profile_kind_time ON srs_review_logs
+  (profile_uid, kind, occurred_at, card_id, review_type);
+"#;
+
 /// 建表 / 升级到 [SCHEMA_VERSION]。在一个事务里做；版本只升不降（库比本程序新 = 打开失败，
 /// 免得旧版本写坏新版本的库）。
 pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
@@ -312,6 +349,9 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
             tx.execute_batch(V8).map_err(|e| e.to_string())?;
         }
     }
+    if current < 9 {
+        tx.execute_batch(V9).map_err(|e| e.to_string())?;
+    }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -319,4 +359,51 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const V9_INDEXES: [&str; 6] = [
+        "idx_srs_cards_cache_new_position",
+        "idx_srs_cards_cache_new_freq",
+        "idx_srs_cards_cache_learning",
+        "idx_srs_cards_cache_review_due",
+        "idx_srs_cards_cache_tally",
+        "idx_srs_review_logs_profile_kind_time",
+    ];
+
+    fn indexes(c: &rusqlite::Connection) -> Vec<String> {
+        let mut stmt = c.prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name").unwrap();
+        stmt.query_map([], |r| r.get::<_, String>(0)).unwrap().map(Result::unwrap).collect()
+    }
+
+    fn version(c: &rusqlite::Connection) -> String {
+        c.query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| r.get(0)).unwrap()
+    }
+
+    /// v8 的库升到 v9：补上出卡 / 计数索引；再跑一遍迁移（`current < 9` 的步骤重放）不出错、不重复建。
+    #[test]
+    fn v8_store_gains_the_queue_indexes_idempotently() {
+        let mut c = rusqlite::Connection::open_in_memory().unwrap();
+        migrate(&mut c).unwrap();
+        assert_eq!(SCHEMA_VERSION, 9);
+        assert_eq!(version(&c), "9");
+        for i in V9_INDEXES {
+            c.execute_batch(&format!("DROP INDEX {i}")).unwrap();
+        }
+        c.execute("UPDATE srs_meta SET value = '8' WHERE key = 'schema'", []).unwrap();
+        migrate(&mut c).unwrap();
+        let after = indexes(&c);
+        for i in V9_INDEXES {
+            assert!(after.contains(&i.to_owned()), "{i} missing after v8 -> v9");
+        }
+        assert_eq!(version(&c), "9");
+        // 中途崩溃重放：索引已在、版本号还是 8。
+        c.execute("UPDATE srs_meta SET value = '8' WHERE key = 'schema'", []).unwrap();
+        migrate(&mut c).unwrap();
+        assert_eq!(indexes(&c), after);
+        assert_eq!(version(&c), "9");
+    }
 }
