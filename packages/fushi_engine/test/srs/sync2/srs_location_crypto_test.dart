@@ -404,7 +404,7 @@ void main() {
     expect(ascii.decode(sealed.sublist(0, 4)), 'FSM2');
     final File src = File('${dir.path}/s')..writeAsBytesSync(sealed);
     final File out = File('${dir.path}/o');
-    expect(await c.openFile('n', src, out), srsMediaSha256(plain));
+    expect((await c.openFile('n', src, out)).sha256, srsMediaSha256(plain));
     expect(out.readAsBytesSync(), plain);
     final File plainFile = File('${dir.path}/p')..writeAsBytesSync(plain);
     final File sealedFile = File('${dir.path}/q');
@@ -413,7 +413,9 @@ void main() {
     // AAD 绑定名字：换名解不开，文件版不留目标。
     expect(await c.open('m', sealed), isNull);
     final File none = File('${dir.path}/none');
-    expect(await c.openFile('m', src, none), isNull);
+    final SrsMediaOpened wrongName = await c.openFile('m', src, none);
+    expect(wrongName.sha256, isNull);
+    expect(wrongName.failure, SrsMediaOpenFailure.unauthenticated);
     expect(none.existsSync(), isFalse);
   });
 }
