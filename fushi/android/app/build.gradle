@@ -256,8 +256,22 @@ android {
             }
         }
         ndk {
-            // abiFilters omitted: --split-per-abi in CI controls ABI splits;
-            // fat APK includes all ABIs by default
+            // Flutter 插件不分包时会把 abiFilters 清空后**固定**写回 arm / arm64 / x64 三个，
+            // 不看 `--target-platform`；而 target-platform 只管 libflutter/libapp，插件与本仓
+            // jniLibs（onnxruntime、ffmpeg、libmpv、各 Rust 内核）于是三 ABI 全进包：调试通道
+            // 的 arm64 包曾带着 ~228 MB 起不来的 armeabi-v7a / x86_64 死重（459 MB，BUG-3874）。
+            // gradle.properties 用官方开关 `disable-abi-filtering=true` 关掉它那份，这里按
+            // target-platform 收（没传时同 Flutter 默认三个，照旧排除第三方带的 32 位 x86）；
+            // --split-per-abi 时由 Flutter 设的 splits.abi 管，AGP 不许两者同时设。
+            def abiOfPlatform = ['android-arm': 'armeabi-v7a', 'android-arm64': 'arm64-v8a',
+                                 'android-x64': 'x86_64', 'android-x86': 'x86']
+            def targetPlatform = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+            def splitPerAbi = project.findProperty('split-per-abi')?.toString()?.toBoolean() ?: false
+            if (!splitPerAbi) {
+                abiFilters.clear()
+                abiFilters.addAll(targetPlatform.split(',')
+                    .collect { abiOfPlatform[it.trim()] }.findAll { it != null })
+            }
         }
     }
 
