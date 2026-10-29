@@ -77,6 +77,14 @@ pub struct Corpus {
     card_note: Vec<u32>,
     card_deck: Vec<u32>,
     card_tpl: Vec<u32>,
+    /// 字段排布（笔记类型 → 字段名 / 别名），[`Corpus::push_note`] 按它给新笔记排字段。
+    schema_off: Vec<u32>,
+    schema_names: Vec<u32>,
+    schema_alias: Vec<u32>,
+    /// 已移出的笔记 / 卡（[`Corpus::kill_note`] / [`Corpus::kill_card`]）：下标不复用，求值跳过。
+    note_dead: Vec<bool>,
+    card_dead: Vec<bool>,
+    dead_cards: usize,
     /// 出现过的字段名（去重）。建语料后不再变，与 FFI 句柄共享：需求分析不进语料锁。
     field_names: Arc<FieldNames>,
     /// 字段值：分批上传的文本块与每个字段在块里的位置（`chunk == MISSING` = 还没传）。
@@ -286,6 +294,12 @@ impl Corpus {
             card_note,
             card_deck,
             card_tpl,
+            schema_off,
+            schema_names,
+            schema_alias,
+            note_dead: vec![false; n_notes],
+            card_dead: vec![false; n_cards],
+            dead_cards: 0,
             field_names,
             chunks: Vec::new(),
             chunk_refs: Vec::new(),
@@ -311,6 +325,110 @@ impl Corpus {
 
     pub fn field_count(&self) -> usize {
         self.field_name.len()
+    }
+
+    /// 已移出的卡数（下标仍占着）。
+    pub fn dead_cards(&self) -> usize {
+        self.dead_cards
+    }
+
+    /// 笔记 [note] 的字段下标（字段按排布顺序）。
+    pub fn note_fields(&self, note: u32) -> std::ops::Range<usize> {
+        self.fields(note as usize)
+    }
+
+    /// 追加一个名字类字符串，交回它的 id（调用方负责去重）。
+    pub fn push_str(&mut self, s: &str) -> Result<u32, String> {
+        let id = u32::try_from(self.str_off.len() - 1).map_err(|_| "too many strings")?;
+        self.text.push_str(s);
+        let end = u32::try_from(self.text.len()).map_err(|_| "corpus text too large")?;
+        self.str_off.push(end);
+        Ok(id)
+    }
+
+    /// 追加一条笔记（笔记类型名 [type_name]、字段排布 [schema]、标签 [tags]，都是字符串 id / 排布下标），交回
+    /// 笔记下标。字段值随后用 [`Corpus::attach`] 补上。
+    pub fn push_note(&mut self, type_name: u32, schema: u32, tags: &[u32]) -> Result<u32, String> {
+        let n_str = (self.str_off.len() - 1) as u32;
+        if schema as usize + 1 >= self.schema_off.len() || type_name >= n_str || tags.iter().any(|&t| t >= n_str) {
+            return Err("bad note".into());
+        }
+        let note = u32::try_from(self.note_type.len()).map_err(|_| "too many notes")?;
+        let range = self.schema_off[schema as usize] as usize..self.schema_off[schema as usize + 1] as usize;
+        for k in range {
+            self.field_name.push(self.schema_names[k]);
+            self.field_alias.push(self.schema_alias[k]);
+            self.value_loc.push(ValueLoc {
+                chunk: MISSING,
+                start: 0,
+                end: 0,
+            });
+            self.stripped.push(OnceCell::new());
+        }
+        self.note_field_off.push(u32::try_from(self.field_name.len()).map_err(|_| "too many fields")?);
+        self.note_type.push(type_name);
+        self.tag.extend_from_slice(tags);
+        self.note_tag_off.push(u32::try_from(self.tag.len()).map_err(|_| "too many tags")?);
+        self.note_dead.push(false);
+        self.joined.push(OnceCell::new());
+        self.tags_joined.push(OnceCell::new());
+        Ok(note)
+    }
+
+    /// 追加一张卡（属于笔记 [note]，牌组名 / 模板名是字符串 id），交回卡下标。数值列下次查询前要按新的卡数重设。
+    pub fn push_card(&mut self, note: u32, deck: u32, tpl: u32) -> Result<u32, String> {
+        let n_str = (self.str_off.len() - 1) as u32;
+        if note as usize >= self.note_type.len() || deck >= n_str || tpl >= n_str {
+            return Err("bad card".into());
+        }
+        let card = u32::try_from(self.card_note.len()).map_err(|_| "too many cards")?;
+        self.card_note.push(note);
+        self.card_deck.push(deck);
+        self.card_tpl.push(tpl);
+        self.card_dead.push(false);
+        for col in &mut self.ints {
+            *col = None;
+        }
+        for col in &mut self.floats {
+            *col = None;
+        }
+        Ok(card)
+    }
+
+    /// 移出一条笔记：释放它的字段值与缓存（它的卡由调用方逐张 [`Corpus::kill_card`]）。
+    pub fn kill_note(&mut self, note: u32) {
+        let n = note as usize;
+        if self.note_dead[n] {
+            return;
+        }
+        self.note_dead[n] = true;
+        for f in self.fields(n) {
+            let loc = self.value_loc[f];
+            if loc.chunk != MISSING {
+                let refs = &mut self.chunk_refs[loc.chunk as usize];
+                *refs -= 1;
+                if *refs == 0 {
+                    self.chunks[loc.chunk as usize] = String::new();
+                }
+            }
+            self.value_loc[f] = ValueLoc {
+                chunk: MISSING,
+                start: 0,
+                end: 0,
+            };
+            self.stripped[f] = OnceCell::new();
+        }
+        self.joined[n] = OnceCell::new();
+        self.tags_joined[n] = OnceCell::new();
+    }
+
+    /// 移出一张卡：求值不再看它（`search` 的输出里恒为 0）。
+    pub fn kill_card(&mut self, card: u32) {
+        let i = card as usize;
+        if !self.card_dead[i] {
+            self.card_dead[i] = true;
+            self.dead_cards += 1;
+        }
     }
 
     pub fn set_ints(&mut self, col: usize, data: &[i64]) -> Result<(), String> {
@@ -358,6 +476,7 @@ impl Corpus {
         let chunk = u32::try_from(self.chunks.len()).map_err(|_| "too many chunks")?;
         self.chunks.push(text);
         self.chunk_refs.push(0);
+        let mut overwrote = false;
         for (k, &f) in fields.iter().enumerate() {
             let f = f as usize;
             let old = self.value_loc[f];
@@ -376,11 +495,17 @@ impl Corpus {
             };
             if old.chunk != MISSING {
                 self.stripped[f] = OnceCell::new();
+                overwrote = true;
             }
         }
-        // 覆盖了字段值：拼接缓存全部作废（极少发生：Dart 侧只在补传全部字段时覆盖）。
-        for cell in &mut self.joined {
-            cell.take();
+        // 覆盖了字段值：拼接缓存全部作废（极少发生：只在补传全部字段时覆盖）。
+        if overwrote {
+            for cell in &mut self.joined {
+                cell.take();
+            }
+        }
+        if self.chunk_refs[chunk as usize] == 0 {
+            self.chunks[chunk as usize] = String::new();
         }
         Ok(())
     }
@@ -499,7 +624,9 @@ impl Corpus {
 
     /// 字段名属于 [names] 的字段（全部字段时 [names] 为 None）。
     fn needed_fields(&self, names: Option<&[u32]>) -> Vec<usize> {
-        (0..self.field_count())
+        (0..self.note_type.len())
+            .filter(|&n| !self.note_dead[n])
+            .flat_map(|n| self.fields(n))
             .filter(|&f| names.map_or(true, |ns| ns.binary_search(&self.field_name[f]).is_ok()))
             .collect()
     }
@@ -521,7 +648,7 @@ impl Corpus {
             return Err(SearchError::internal("field values not uploaded"));
         }
         self.prestrip(&compiled);
-        let all: Vec<u32> = (0..self.card_count() as u32).collect();
+        let all: Vec<u32> = (0..self.card_count() as u32).filter(|&i| !self.card_dead[i as usize]).collect();
         let hits = self.eval(&compiled, all)?;
         out.fill(0);
         for &i in &hits {

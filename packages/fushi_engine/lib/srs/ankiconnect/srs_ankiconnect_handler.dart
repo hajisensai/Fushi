@@ -163,6 +163,29 @@ class SrsAnkiConnectHandler {
 
   final Future<SrsDbStore> Function() _store;
 
+  /// 兼容层在原生浏览会话（与浏览页共用）上的持有者名。
+  static const String browseOwner = 'ankiconnect';
+
+  /// 端点停用：注销兼容层对原生浏览会话的持有（浏览页还开着就留给它，否则释放）。库不可用或已经关了就不用做：
+  /// 会话住在内核里，随内核一起释放。
+  Future<void> close() async {
+    final SrsDbStore store;
+    try {
+      store = await _store();
+    } on StateError {
+      return;
+    }
+    if (store.core.isClosed) return;
+    try {
+      await store.browseCommand(<String, Object?>{
+        'op': 'browse_close',
+        'owner': browseOwner,
+      });
+    } on SrsCoreException catch (e) {
+      if (!e.message.contains('store is closed')) rethrow;
+    }
+  }
+
   /// `fushiIdentify` 回的随机实例 id。
   final String instanceId;
   final String? Function()? _apiKey;
@@ -428,6 +451,7 @@ class SrsAnkiConnectHandler {
           for (final Object? t
               in (await (await _store()).browseCommand(<String, Object?>{
                     'op': 'anki_tags',
+                    'owner': browseOwner,
                   })).map['tags']!
                   as List<Object?>)
             t! as String,
@@ -689,6 +713,7 @@ class SrsAnkiConnectHandler {
       final SrsSearchNode node = parseAnkiSearch(query);
       final SrsSync2Result r = await store.browseCommand(<String, Object?>{
         'op': 'anki_find',
+        'owner': browseOwner,
         ...await srsBrowseContext(store, rwkvInstant: false),
         if (node is! SrsSearchAll) 'node': srsSearchNodeJson(node),
         'mode': notes ? 'notes' : 'cards',
@@ -820,6 +845,7 @@ class SrsAnkiConnectHandler {
       final List<Object?> dup =
           (await s.store.browseCommand(<String, Object?>{
                 'op': 'anki_dupes',
+                'owner': browseOwner,
                 'first': <String, Object?>{
                   for (final SrsNoteTypeView t in s.types)
                     if (t.fields.isNotEmpty) t.id: t.fields.first.id,
