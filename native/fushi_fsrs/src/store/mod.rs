@@ -14,6 +14,7 @@
 //! 只打开 `srs.db`、它的备份快照副本或自己生成的临时文件；绝不打开主库 `fushi.db`（同一进程里
 //! Drift 那份 SQLite 与这里自带的一份同开一个文件，会在 POSIX 平台上互相清掉文件锁）。
 
+pub(crate) mod browse;
 pub(crate) mod caches;
 pub mod ffi;
 pub mod rows;
@@ -64,6 +65,8 @@ pub struct SrsCore {
     ingest_yield: AtomicBool,
     /// 常驻复习队列（store/queue.rs）：写连接上的触发器记下写过的卡 / 日志，`study` 按 profile 增量排队。
     study_hub: Arc<queue::StudyHub>,
+    /// 浏览页的常驻会话（store/browse.rs，按 profile）：搜索语料、列数据随写入增量更新。
+    browse: Mutex<std::collections::HashMap<String, browse::Session>>,
     /// 测试钩子：收段预处理拿完公钥、开始解码之前调用（测预处理不持写锁）。
     #[cfg(test)]
     #[allow(clippy::type_complexity)]
@@ -254,6 +257,7 @@ impl SrsCore {
             ingest_session: Mutex::new(None),
             ingest_yield: AtomicBool::new(false),
             study_hub,
+            browse: Mutex::new(std::collections::HashMap::new()),
             #[cfg(test)]
             ingest_prepare_hook: Mutex::new(None),
         })

@@ -844,7 +844,9 @@ void _columnsOf(SrsSearchNode node, Set<_IntCol> ints, Set<_FloatCol> floats) {
   }
 }
 
-/// 语法树 → `search.rs` 的 `Node` JSON。
+/// 语法树 → `search.rs` 的 `Node` JSON（浏览会话 native/fushi_fsrs/src/store/browse.rs 也收这一份）。
+Map<String, Object?> srsSearchNodeJson(SrsSearchNode node) => _nodeJson(node);
+
 Map<String, Object?> _nodeJson(SrsSearchNode node) => switch (node) {
   SrsSearchAll() => <String, Object?>{'t': 'all'},
   SrsSearchAnd(:final List<SrsSearchNode> children) => <String, Object?>{

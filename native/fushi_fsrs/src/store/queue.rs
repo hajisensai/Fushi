@@ -52,25 +52,38 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 
 // ------------------------------------------------------------------ 待重读
 
-/// 一个 profile 写过、还没重读进会话的卡 / 日志 id。
+/// 触发器记下的行种类（`srs_study_touch` 的第一个参数）。
+const TOUCH_CARD: i64 = 0;
+const TOUCH_LOG: i64 = 1;
+/// 笔记：笔记缓存行、笔记的修改记录、修改记录的服务器时刻（浏览会话 store/browse.rs 用）。
+const TOUCH_NOTE: i64 = 2;
+
+/// 一个 profile 写过、还没重读进会话的卡 / 日志 / 笔记 id。
 #[derive(Default, Clone, Debug)]
-struct Dirty {
-    cards: HashSet<String>,
-    logs: HashSet<String>,
-    /// 攒满了 [DIRTY_CAP]：不再逐个记，下次排队整份重建。
-    overflow: bool,
+pub(crate) struct Dirty {
+    pub(crate) cards: HashSet<String>,
+    pub(crate) logs: HashSet<String>,
+    pub(crate) notes: HashSet<String>,
+    /// 攒满了 [DIRTY_CAP]：不再逐个记，下次整份重建。
+    pub(crate) overflow: bool,
 }
 
 impl Dirty {
-    fn add(&mut self, log: bool, id: String) {
+    fn add(&mut self, kind: i64, id: String) {
         if self.overflow {
             return;
         }
-        if log { &mut self.logs } else { &mut self.cards }.insert(id);
-        if self.cards.len() + self.logs.len() > DIRTY_CAP {
+        match kind {
+            TOUCH_LOG => &mut self.logs,
+            TOUCH_NOTE => &mut self.notes,
+            _ => &mut self.cards,
+        }
+        .insert(id);
+        if self.cards.len() + self.logs.len() + self.notes.len() > DIRTY_CAP {
             self.overflow = true;
             self.cards = HashSet::new();
             self.logs = HashSet::new();
+            self.notes = HashSet::new();
         }
     }
 
@@ -79,23 +92,55 @@ impl Dirty {
             self.overflow = true;
             self.cards = HashSet::new();
             self.logs = HashSet::new();
+            self.notes = HashSet::new();
             return;
         }
         for id in o.cards {
-            self.add(false, id);
+            self.add(TOUCH_CARD, id);
         }
         for id in o.logs {
-            self.add(true, id);
+            self.add(TOUCH_LOG, id);
         }
+        for id in o.notes {
+            self.add(TOUCH_NOTE, id);
+        }
+    }
+}
+
+/// 一个消费方（复习队列 / 浏览会话）的待重读清单：各自取走、互不影响。
+#[derive(Default)]
+struct Consumer {
+    /// 写连接上还没结束的事务里写过的（未提交，或已回滚但写锁还没放）。
+    pending: HashMap<String, Dirty>,
+    /// 已提交（对读快照可见）、还没重读的。
+    committed: HashMap<String, Dirty>,
+}
+
+impl Consumer {
+    fn settle(&mut self) {
+        for (p, d) in std::mem::take(&mut self.pending) {
+            self.committed.entry(p).or_default().merge(d);
+        }
+    }
+
+    /// 取走 [profile] 已提交的待重读；[uncommitted] 时再并上未提交的（不清掉，提交 / 回滚后还要按终态重读）。
+    fn take(&mut self, profile: &str, uncommitted: bool) -> Dirty {
+        let mut d = self.committed.remove(profile).unwrap_or_default();
+        if uncommitted {
+            if let Some(p) = self.pending.get(profile) {
+                d.merge(p.clone());
+            }
+        }
+        d
     }
 }
 
 #[derive(Default)]
 struct Touched {
-    /// 写连接上还没结束的事务里写过的（未提交，或已回滚但写锁还没放）。
-    pending: HashMap<String, Dirty>,
-    /// 已提交（对读快照可见）、还没重读的。
-    committed: HashMap<String, Dirty>,
+    /// 复习队列：卡与日志。
+    study: Consumer,
+    /// 浏览会话（store/browse.rs）：卡与笔记。
+    browse: Consumer,
 }
 
 /// 一个 [crate::store::SrsCore] 的常驻复习队列：待重读清单 + 各 profile 的会话。
@@ -124,6 +169,30 @@ CREATE TEMP TRIGGER IF NOT EXISTS srs_study_log_upd AFTER UPDATE ON main.srs_rev
         SELECT srs_study_touch(1, OLD.profile_uid, OLD.id) WHERE OLD.id IS NOT NEW.id OR OLD.profile_uid IS NOT NEW.profile_uid; END;
 CREATE TEMP TRIGGER IF NOT EXISTS srs_study_log_del AFTER DELETE ON main.srs_review_logs
   BEGIN SELECT srs_study_touch(1, OLD.profile_uid, OLD.id); END;
+CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_note_ins AFTER INSERT ON main.srs_notes_cache
+  BEGIN SELECT srs_study_touch(2, NEW.profile_uid, NEW.id); END;
+CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_note_upd AFTER UPDATE ON main.srs_notes_cache
+  BEGIN SELECT srs_study_touch(2, NEW.profile_uid, NEW.id);
+        SELECT srs_study_touch(2, OLD.profile_uid, OLD.id) WHERE OLD.id IS NOT NEW.id OR OLD.profile_uid IS NOT NEW.profile_uid; END;
+CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_note_del AFTER DELETE ON main.srs_notes_cache
+  BEGIN SELECT srs_study_touch(2, OLD.profile_uid, OLD.id); END;
+CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_edit_ins AFTER INSERT ON main.srs_field_edits WHEN NEW.entity_kind = 'note'
+  BEGIN SELECT srs_study_touch(2, NEW.profile_uid, NEW.entity_id); END;
+CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_edit_upd AFTER UPDATE ON main.srs_field_edits
+  BEGIN SELECT srs_study_touch(2, NEW.profile_uid, NEW.entity_id) WHERE NEW.entity_kind = 'note';
+        SELECT srs_study_touch(2, OLD.profile_uid, OLD.entity_id) WHERE OLD.entity_kind = 'note'; END;
+CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_edit_del AFTER DELETE ON main.srs_field_edits WHEN OLD.entity_kind = 'note'
+  BEGIN SELECT srs_study_touch(2, OLD.profile_uid, OLD.entity_id); END;
+CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_stamp_ins AFTER INSERT ON main.srs_event_local WHEN NEW.server_time IS NOT NULL
+  BEGIN SELECT srs_study_touch(2, f.profile_uid, f.entity_id) FROM main.srs_field_edits f
+        WHERE f.id = NEW.event_id AND f.entity_kind = 'note'; END;
+CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_stamp_upd AFTER UPDATE ON main.srs_event_local
+  WHEN NEW.server_time IS NOT OLD.server_time OR NEW.event_id IS NOT OLD.event_id
+  BEGIN SELECT srs_study_touch(2, f.profile_uid, f.entity_id) FROM main.srs_field_edits f
+        WHERE f.id IN (NEW.event_id, OLD.event_id) AND f.entity_kind = 'note'; END;
+CREATE TEMP TRIGGER IF NOT EXISTS srs_browse_stamp_del AFTER DELETE ON main.srs_event_local WHEN OLD.server_time IS NOT NULL
+  BEGIN SELECT srs_study_touch(2, f.profile_uid, f.entity_id) FROM main.srs_field_edits f
+        WHERE f.id = OLD.event_id AND f.entity_kind = 'note'; END;
 ";
 
 impl StudyHub {
@@ -131,10 +200,17 @@ impl StudyHub {
     pub(crate) fn install(hub: &Arc<StudyHub>, c: &Connection) -> Result<(), String> {
         let h = Arc::clone(hub);
         c.create_scalar_function("srs_study_touch", 3, FunctionFlags::SQLITE_UTF8, move |ctx| {
-            let log = ctx.get::<i64>(0)? != 0;
+            let kind = ctx.get::<i64>(0)?;
             let profile = ctx.get::<String>(1)?;
             let id = ctx.get::<String>(2)?;
-            lock(&h.touched).pending.entry(profile).or_default().add(log, id);
+            let mut t = lock(&h.touched);
+            // 卡两边都要；日志只有复习队列要；笔记只有浏览要。
+            if kind != TOUCH_NOTE {
+                t.study.pending.entry(profile.clone()).or_default().add(kind, id.clone());
+            }
+            if kind != TOUCH_LOG {
+                t.browse.pending.entry(profile).or_default().add(kind, id);
+            }
             Ok(0i64)
         })
         .map_err(sql)?;
@@ -144,13 +220,13 @@ impl StudyHub {
     /// 写连接回到 autocommit（事务已提交或回滚完）：未提交的 id 挪进已提交。写锁守卫释放时调（还持着写锁）。
     pub(crate) fn settle(&self) {
         let mut t = lock(&self.touched);
-        if t.pending.is_empty() {
-            return;
-        }
-        let pending = std::mem::take(&mut t.pending);
-        for (p, d) in pending {
-            t.committed.entry(p).or_default().merge(d);
-        }
+        t.study.settle();
+        t.browse.settle();
+    }
+
+    /// 浏览会话（store/browse.rs）取走 [profile] 待重读的卡 / 笔记 id（口径同 [StudyHub::with_session]）。
+    pub(crate) fn take_browse(&self, profile: &str, uncommitted: bool) -> Dirty {
+        lock(&self.touched).browse.take(profile, uncommitted)
     }
 
     /// 在 [profile] 的会话上跑 [f]：先取走待重读的 id（[uncommitted] = 写连接上事务里的读，连未提交的一起），
@@ -167,16 +243,7 @@ impl StudyHub {
         f: impl FnOnce(&Session) -> Result<T, String>,
     ) -> Result<T, String> {
         let mut sessions = lock(&self.sessions);
-        let dirty = {
-            let mut t = lock(&self.touched);
-            let mut d = t.committed.remove(profile).unwrap_or_default();
-            if uncommitted {
-                if let Some(p) = t.pending.get(profile) {
-                    d.merge(p.clone());
-                }
-            }
-            d
-        };
+        let dirty = lock(&self.touched).study.take(profile, uncommitted);
         let fresh = match sessions.get(profile) {
             Some(s) => s.day != day || s.today != today || dirty.overflow,
             None => true,
