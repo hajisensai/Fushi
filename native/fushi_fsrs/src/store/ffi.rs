@@ -779,8 +779,17 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
         }
         let w = c.writer()?;
         let written = crate::store::sync2::in_savepoint(&w, |conn| crate::store::caches::refresh(conn, profile, &cfg, dirty))?;
+        // 本机作答：落库、刷新缓存之后接着在同一条写连接上排队（下一张 + 牌组计数，store/study.rs），复习页一次
+        // 评分一次命令。看得见这笔还没提交的写入。
+        let study = match req.get("study").filter(|s| s.is_object()) {
+            Some(s) => Some(crate::store::study::study(&w, profile, s)?),
+            None => None,
+        };
         if let Some(m) = v.as_object_mut() {
             m.insert("cache".to_owned(), written.to_json());
+            if let Some(s) = study {
+                m.insert("study".to_owned(), s);
+            }
         }
         return Ok(v);
     }
@@ -810,6 +819,8 @@ fn sync2_command(
         }
         "migrate" => c.sync2_migrate(profile, i("now")?, req.get("limit").and_then(Value::as_u64))?,
         "replay_all" => json!(c.sync2_replay_all(profile)?),
+        // 排队：牌组计数 + 出卡（store/study.rs），只读快照。
+        "study" => c.study(profile, req)?,
         "preview" => c.sync2_preview(profile, s("card")?, req.get("note").and_then(Value::as_str), i("now")?, i("utcOff")?, i("rollover")?)?,
         // 分批发件：一批上传完用 outbox_ack 交回 segments 推进水位，more 为真再取下一批（store/sync2/transport.rs）。
         "outbox" => {
