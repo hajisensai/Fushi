@@ -17,6 +17,23 @@ pub(crate) struct Device {
     pub _dir: tempdir::Dir,
 }
 
+thread_local! {
+    /// 测试开关：为真时同步助手里的「删位置上的文件」一律失败（模拟 `location.delete` 抛错 / head 上传失败后
+    /// 没走到删除）——不删也不发 `obsolete_ack`，与生产 Dart 只确认删成功的那些同一语义。
+    pub(crate) static FAIL_DELETES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// 按生产（srs_sync2_round.dart）的两段式删除：删成功的才 `obsolete_ack`。[FAIL_DELETES] 打开时一个都不删。
+fn delete_and_ack(core: &SrsCore, bucket: &mut Bucket, location: &str, paths: &[String]) {
+    if FAIL_DELETES.with(|f| f.get()) {
+        return;
+    }
+    for p in paths {
+        bucket.0.remove(p);
+    }
+    core.sync2_obsolete_ack(P, location, paths).unwrap();
+}
+
 pub(crate) mod tempdir {
     pub struct Dir(pub std::path::PathBuf);
     impl Drop for Dir {
@@ -92,9 +109,7 @@ impl Device {
         let (path, bytes, gen, obsolete) = self.core.sync2_head(P, location, upto, now).unwrap();
         let dir = path.rsplit_once('/').unwrap().0.to_owned();
         bucket.0.insert(path, bytes);
-        for name in obsolete {
-            bucket.0.remove(&name);
-        }
+        delete_and_ack(&self.core, bucket, location, &obsolete);
         // 与生产（srs_sync2_round.dart 第 4 步）同样：删本机两代以前的 head。
         bucket.0.retain(|k, _| {
             !(k.starts_with(&format!("{dir}/"))
@@ -120,9 +135,8 @@ impl Device {
                 bucket.0.insert(path, bytes);
             }
             let ack = self.core.sync2_relay_ack(P, location, &paths).unwrap();
-            for p in ack["delete"].as_array().unwrap() {
-                bucket.0.remove(p.as_str().unwrap());
-            }
+            let gone: Vec<String> = ack["delete"].as_array().unwrap().iter().map(|p| p.as_str().unwrap().to_owned()).collect();
+            delete_and_ack(&self.core, bucket, location, &gone);
             if !batch.more {
                 return n;
             }
@@ -2052,7 +2066,7 @@ fn unchanged_head_is_not_rewritten_until_content_changes_or_heartbeat() {
     }
     // 内容没变 → 不写，指回上次的 head。
     let last = match write_head(&a, &mut bucket, T0 + 1000) {
-        HeadWrite::Unchanged { path } => path,
+        HeadWrite::Unchanged { path, .. } => path,
         HeadWrite::Written { .. } => panic!("an unchanged head must not be rewritten"),
     };
     assert!(bucket.0.contains_key(&last), "points at the head already on the location: {last}");
@@ -2442,4 +2456,42 @@ fn ingest_commit_rechecks_device_keys_that_changed_after_prepare() {
     assert_eq!(r["applied"], json!(2), "{r}");
     assert!(b.core.sync2_ingest_commit(P, T0 + 30, super::transport::CommitBudget::unlimited()).is_err(), "the prepared batch is consumed");
     b.core.sync2_ingest_finish(P, T0 + 31).unwrap();
+}
+
+/// 集成审查【中】：旧小段删除两段式。过了宽限期该删的旧小段这一轮删除失败（head 上传 / `location.delete` 抛错），
+/// 记录留在 `sync2_obsolete`；下一轮（写 head 时，以及 head 没变、不写的那一轮）照样再给，删成功并 ack 后才移除。
+/// 以前 `take_obsolete` 取出即删记录，失败的这批旧段永远留在位置上。
+#[test]
+fn failed_obsolete_deletes_are_retried_next_round() {
+    let a = Device::new("oa");
+    let mut bucket = Bucket::default();
+    for i in 0..40 {
+        a.apply(T0 + i, vec![review(&format!("r{i}"), "C", T0 + 1000 * i, 3, "review")]);
+        a.sync(&mut bucket, "loc", T0 + 1000 * i);
+    }
+    let before = segment_files(&bucket, &a);
+    let rows_pending = |a: &Device| a.rows("SELECT COUNT(*) FROM sync2_obsolete")[1][0].parse::<usize>().unwrap();
+    assert!(rows_pending(&a) > 0);
+    // 过了宽限期、代号也够了的几轮，删除全部失败。
+    FAIL_DELETES.with(|f| f.set(true));
+    for k in 0..3 {
+        a.sync(&mut bucket, "loc", T0 + DAY + 60_000 + k);
+    }
+    FAIL_DELETES.with(|f| f.set(false));
+    assert_eq!(segment_files(&bucket, &a), before, "nothing was deleted");
+    let pending = rows_pending(&a);
+    assert!(pending > 0, "the failed deletes are still on record");
+    // head 没变、不写的一轮也把待删清单交出来。
+    let w = a.core.sync2_head_if_changed(P, "loc", u64::MAX, T0 + DAY + 70_000, Some(DAY)).unwrap();
+    match w {
+        super::transport::HeadWrite::Unchanged { obsolete, .. } => assert_eq!(obsolete.len(), pending),
+        super::transport::HeadWrite::Written { .. } => panic!("head content did not change"),
+    }
+    // 下一轮正常：删光并确认。
+    a.sync(&mut bucket, "loc", T0 + DAY + 80_000);
+    assert_eq!(rows_pending(&a), 0);
+    let rows = a.rows("SELECT COUNT(*) FROM sync2_segments")[1][0].parse::<usize>().unwrap();
+    assert_eq!(segment_files(&bucket, &a), rows, "the stale segments were deleted on the retry");
+    // ack 幂等：确认不在记录里的文件不报错、不误删别的记录。
+    assert_eq!(a.core.sync2_obsolete_ack(P, "loc", &["devices/x/seg-nope".to_owned()]).unwrap(), 0);
 }

@@ -882,8 +882,8 @@ fn sync2_command(
                     files.push((path, bytes));
                     json!({"gen": gen, "delete": obsolete})
                 }
-                crate::store::sync2::transport::HeadWrite::Unchanged { path } => {
-                    json!({"unchanged": true, "path": path})
+                crate::store::sync2::transport::HeadWrite::Unchanged { path, obsolete } => {
+                    json!({"unchanged": true, "path": path, "delete": obsolete})
                 }
             }
         }
@@ -902,6 +902,12 @@ fn sync2_command(
             let batch = c.sync2_relay_outbox(profile, s("location")?, key32(&req["key"])?, max_bytes.max(1))?;
             *files = batch.files;
             json!({"more": batch.more})
+        }
+        // 两段式删除：`head` / `relay_ack` 给的待删清单里 Dart 已经删掉（归档位置：按策略不删）的那些，内核移除记录。
+        "obsolete_ack" => {
+            let deleted: Vec<String> =
+                req.get("deleted").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
+            json!({"removed": c.sync2_obsolete_ack(profile, s("location")?, &deleted)?})
         }
         "relay_ack" => {
             let paths: Vec<String> = req.get("paths").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();

@@ -341,7 +341,17 @@ Future<SrsSync2Report> srsSync2Round({
     final bool present = (await location.list(
       'devices/$self',
     )).any((SrsLocationEntry f) => f.name == lastName);
-    if (present) return report;
+    if (present) {
+      // head 没变也交出待删清单：上一轮删到一半失败（或 head 上传失败没走到删除）的旧段 / 旧转发件这一轮再删。
+      await srsDeleteAndAck(
+        host: host,
+        location: location,
+        progressId: progressId,
+        paths: _pathsOf(head.map['delete']),
+        archive: archive,
+      );
+      return report;
+    }
     head = await host.sync2Command(<String, Object?>{
       'op': 'head',
       'location': progressId,
@@ -354,13 +364,16 @@ Future<SrsSync2Report> srsSync2Round({
     await location.put(path, bytes);
     written = path.substring(path.lastIndexOf('/') + 1);
   }
-  // 小段合并（§7.1）换下来的旧小段：新 head 已不再引用、全部活跃设备都 ack 过了。归档位置一个不删。
-  final List<String> stale = <String>[
-    if (!archive)
-      for (final Object? name
-          in (head.map['delete'] as List?) ?? const <Object?>[])
-        name! as String,
-  ];
+  // 小段合并（§7.1）换下来的旧小段（新 head 已不再引用、过了宽限期）与没删成的旧转发件：两段式，删成功才确认
+  // （内核 `obsolete_ack`），失败的下一轮再给。归档位置一个不删（只确认）。
+  await srsDeleteAndAck(
+    host: host,
+    location: location,
+    progressId: progressId,
+    paths: _pathsOf(head.map['delete']),
+    archive: archive,
+  );
+  final List<String> stale = <String>[];
 
   // 4. 本机两代以前的 head；顺便取服务端时间。
   final int gen = (head.map['gen'] as int?) ?? 0;
@@ -373,6 +386,46 @@ Future<SrsSync2Report> srsSync2Round({
   }
   await srsRunPooled(stale, kSrsSync2Concurrency, location.delete);
   return report;
+}
+
+List<String> _pathsOf(Object? list) => <String>[
+  for (final Object? p in (list as List?) ?? const <Object?>[]) p! as String,
+];
+
+/// 两段式删除（集成审查【中】）：删掉内核给的待删清单 [paths]（`head` / `relay_ack` 的 `delete`），**只把删成功的**
+/// 发 `obsolete_ack` 让内核移除记录；没删成的留在内核的待删表里，下一轮照样再给（[SrsLocationStore.delete] 对不存在
+/// 的文件视为成功，重删幂等）。以前内核交出清单时就删了记录，head 上传或删除中途抛错，这批旧文件永远没人再删。
+/// 归档位置（[archive]）按策略一个不删，直接确认。删除出错时先确认已删的那些，再原样抛出第一个错误。
+Future<void> srsDeleteAndAck({
+  required SrsSync2Host host,
+  required SrsLocationStore location,
+  required String progressId,
+  required List<String> paths,
+  required bool archive,
+}) async {
+  if (paths.isEmpty) return;
+  final List<String> done = <String>[if (archive) ...paths];
+  Object? error;
+  StackTrace? stack;
+  if (!archive) {
+    try {
+      await srsRunPooled(paths, kSrsSync2Concurrency, (String path) async {
+        await location.delete(path);
+        done.add(path);
+      });
+    } catch (e, s) {
+      error = e;
+      stack = s;
+    }
+  }
+  if (done.isNotEmpty) {
+    await host.sync2Command(<String, Object?>{
+      'op': 'obsolete_ack',
+      'location': progressId,
+      'deleted': done,
+    });
+  }
+  if (error != null) Error.throwWithStackTrace(error, stack!);
 }
 
 /// 段文件对应的转发件路径（`devices/<设备>/seg-…` → `rly-…`，内核 segment.rs `relay_file_name`）；不是段文件原样返回。
@@ -396,7 +449,7 @@ Future<Uint8List?> srsFetchSegment(
 
 /// 把本机持有、而 [location] 缺的别的设备的段与 head 转发过去（内核 `relay_outbox` / `relay_ack`，
 /// store/sync2/relay.rs）：一批全部写成再确认，确认后内核才给段都已到位的设备的 head；被新转发的 head 取代的旧
-/// 转发件按内核给的清单删（归档位置一个不删）。[onWritten] 每写一个文件调一次。
+/// 转发件按内核给的清单删（归档位置一个不删），删成功才确认（[srsDeleteAndAck]）。[onWritten] 每写一个文件调一次。
 Future<void> srsRelayToLocation({
   required SrsSync2Host host,
   required SrsLocationStore location,
@@ -426,16 +479,14 @@ Future<void> srsRelayToLocation({
       'location': progressId,
       'paths': <String>[for (final (String, Uint8List) f in out.files) f.$1],
     })).map;
-    if (!archive) {
-      await srsRunPooled(
-        <String>[
-          for (final Object? p in (ack['delete'] as List?) ?? const <Object?>[])
-            p! as String,
-        ],
-        kSrsSync2Concurrency,
-        location.delete,
-      );
-    }
+    // 被取代的旧转发件 / 旧转发 head：两段式删（失败的下一轮由这里或 head 那一步再给）。
+    await srsDeleteAndAck(
+      host: host,
+      location: location,
+      progressId: progressId,
+      paths: _pathsOf(ack['delete']),
+      archive: archive,
+    );
     if (out.map['more'] != true) return;
     if (shouldStop?.call() ?? false) return;
   }
