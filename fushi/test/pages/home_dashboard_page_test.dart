@@ -1739,7 +1739,7 @@ void main() {
       expect(h.progressLabel, '40%');
       expect(h.actionLabel, t.collection_open);
 
-      await tester.tap(heroAction());
+      await tester.tap(heroCard());
       await tester.pump();
       expect(opened, <String>['abs-book']);
 
@@ -1835,7 +1835,7 @@ void main() {
         <String>['服务器电影'],
       );
       // 从服务器条目回来 = 进度确实变了：强制重取。
-      await tester.tap(heroAction());
+      await tester.tap(heroCard());
       await tester.pump();
       await pumpDashboard(tester);
       expect(opened, <String>['jf-movie']);
