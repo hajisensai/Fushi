@@ -1721,6 +1721,149 @@ fn batched_ingest_session_matches_one_shot_ingest() {
         naive.core.sync2_ingest(P, b, None, T0 + 80).unwrap();
     }
     assert_ne!(frozen(&naive), frozen(&one), "per-batch rotation freezes at the wrong point");
+
+    // 投递切片（`ingest_commit` 每次只投 k 条，切点落在段中间、本机段比链中途、因果缓冲里）：报错、分叉点、
+    // 冻结点与投影都与一次收完相同。混进一段读不出段头的字节，报错的顺序也要一样。
+    let garbage = vec![0x42u8; 7];
+    let mut with_garbage = all.clone();
+    with_garbage.insert(3, garbage);
+    let oneg = Device::copy_of(&a, "oneg");
+    oneg.core.sync2_identity(P, T0 + 70).unwrap();
+    oneg.core.sync2_plan(P, &heads).unwrap();
+    let rg: Value = serde_json::from_str(&oneg.core.sync2_ingest(P, &with_garbage, None, T0 + 80).unwrap()).unwrap();
+    assert!(!rg["errors"].as_array().unwrap().is_empty(), "{rg}");
+    for k in [1usize, 3] {
+        let sliced = Device::copy_of(&a, &format!("sliced{k}"));
+        sliced.core.sync2_identity(P, T0 + 70).unwrap();
+        sliced.core.sync2_plan(P, &heads).unwrap();
+        sliced.core.sync2_ingest_begin(P).unwrap();
+        sliced.core.sync2_ingest_prepare(P, &with_garbage, None).unwrap();
+        let (mut applied, mut errors, mut commits) = (0, Vec::new(), 0);
+        loop {
+            let r: Value = serde_json::from_str(
+                &sliced.core.sync2_ingest_commit(P, T0 + 80, super::transport::CommitBudget::ops(k)).unwrap(),
+            )
+            .unwrap();
+            commits += 1;
+            applied += r["applied"].as_u64().unwrap();
+            errors.extend(r["errors"].as_array().unwrap().iter().cloned());
+            if r["more"] != json!(true) {
+                break;
+            }
+        }
+        assert!(commits as u64 > rg["applied"].as_u64().unwrap() / k as u64, "k={k}: {commits} commits");
+        assert_eq!(applied, rg["applied"].as_u64().unwrap(), "k={k}");
+        assert_eq!(Value::Array(errors), rg["errors"], "k={k}");
+        let rn: Value = serde_json::from_str(&sliced.core.sync2_ingest_finish(P, T0 + 80).unwrap()).unwrap();
+        assert_eq!(rn["fork"], json!(true), "k={k}: {rn}");
+        assert_eq!(frozen(&sliced), frozen(&oneg), "k={k}");
+        assert_eq!(norm(&sliced), norm(&oneg), "k={k}");
+    }
+    assert_eq!(norm(&oneg), norm(&one), "the unreadable segment changes nothing else");
+}
+
+/// 切片之间留在因果缓冲里的操作：y 的操作依赖 x 的，先收 y（全进缓冲），再按每片 1 条收 x——每片收尾把设备进度
+/// 与没投上的写进缓冲表、下一片重新读，x 投完后 y 的随之投上。投影与一次收完全部相同，缓冲最后清空。
+#[test]
+fn sliced_ingest_carries_waiting_ops_across_slices() {
+    let x = Device::new("x");
+    let y = Device::new("y");
+    let mut bucket = Bucket::default();
+    x.apply(T0, (0..5).map(|i| review(&format!("x{i}"), "C", T0 + i, 3, "review")).collect());
+    x.sync(&mut bucket, "loc", T0 + 10);
+    y.sync(&mut bucket, "loc", T0 + 11);
+    y.apply(T0 + 20, (0..4).map(|i| review(&format!("y{i}"), "C", T0 + 20 + i, 2, "review")).collect());
+    y.sync(&mut bucket, "loc", T0 + 30);
+    let dev = |d: &Device| d.core.sync2_status(P).unwrap()["device"].as_str().unwrap().to_owned();
+    let segs_of = |id: &str| -> Vec<Vec<u8>> {
+        bucket.0.iter().filter(|(k, _)| k.contains("/seg-") && k.contains(id)).map(|(_, v)| v.clone()).collect()
+    };
+    let (xs, ys) = (segs_of(&dev(&x)), segs_of(&dev(&y)));
+    assert!(!xs.is_empty() && !ys.is_empty());
+    let heads: Vec<Vec<u8>> = bucket
+        .0
+        .iter()
+        .filter(|(k, _)| k.rsplit('/').next().and_then(crate::sync2::segment::parse_head_file_name).is_some())
+        .map(|(_, v)| v.clone())
+        .collect();
+
+    let whole = Device::new("whole");
+    whole.core.sync2_identity(P, T0 + 40).unwrap();
+    whole.core.sync2_plan(P, &heads).unwrap();
+    let all: Vec<Vec<u8>> = ys.iter().chain(&xs).cloned().collect();
+    let rw: Value = serde_json::from_str(&whole.core.sync2_ingest(P, &all, None, T0 + 50).unwrap()).unwrap();
+    assert_eq!(rw["pending"], json!(0), "{rw}");
+
+    let z = Device::new("z");
+    z.core.sync2_identity(P, T0 + 40).unwrap();
+    z.core.sync2_plan(P, &heads).unwrap();
+    z.core.sync2_ingest_begin(P).unwrap();
+    let commit_all = |segs: &[Vec<u8>], k: usize| -> (u64, i64, usize) {
+        z.core.sync2_ingest_prepare(P, segs, None).unwrap();
+        let (mut applied, mut commits) = (0, 0);
+        loop {
+            let r: Value =
+                serde_json::from_str(&z.core.sync2_ingest_commit(P, T0 + 50, super::transport::CommitBudget::ops(k)).unwrap())
+                    .unwrap();
+            commits += 1;
+            applied += r["applied"].as_u64().unwrap();
+            assert_eq!(r["errors"], json!([]), "{r}");
+            if r["more"] != json!(true) {
+                return (applied, r["pending"].as_i64().unwrap(), commits);
+            }
+        }
+    };
+    let (applied_y, pending_y, _) = commit_all(&ys, 2);
+    assert_eq!(applied_y, 0, "y waits for x");
+    assert_eq!(pending_y, 4);
+    let (applied_x, pending, commits) = commit_all(&xs, 1);
+    assert_eq!(applied_x, rw["applied"].as_u64().unwrap());
+    assert_eq!(pending, 0);
+    assert!(commits >= 9, "one op per slice: {commits}");
+    z.core.sync2_ingest_finish(P, T0 + 51).unwrap();
+    assert_eq!(projection(&z), projection(&whole));
+}
+
+/// 有写入在等写锁（[SrsCore::sync2_ingest_yield]）：正在投的那一片做满保底条数就收，返回 `more`；收片后请求
+/// 清掉，下一片照常投，全部投完的条数不变。
+#[test]
+fn ingest_yield_cuts_the_running_slice_short() {
+    use super::transport::CommitBudget;
+    let a = Device::new("a");
+    let mut bucket = Bucket::default();
+    a.apply(T0, (0..300).map(|i| review(&format!("r{i}"), "C", T0 + i, 3, "review")).collect());
+    a.sync(&mut bucket, "loc", T0 + 400);
+    let b = Device::new("b");
+    b.sync(&mut Bucket::default(), "loc", T0 + 401);
+    let heads: Vec<Vec<u8>> = bucket
+        .0
+        .iter()
+        .filter(|(k, _)| k.rsplit('/').next().and_then(crate::sync2::segment::parse_head_file_name).is_some())
+        .map(|(_, v)| v.clone())
+        .collect();
+    b.core.sync2_plan(P, &heads).unwrap();
+    let segs: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/seg-")).map(|(_, v)| v.clone()).collect();
+    b.core.sync2_ingest_begin(P).unwrap();
+    b.core.sync2_ingest_prepare(P, &segs, None).unwrap();
+    b.core.sync2_ingest_yield();
+    let first: Value =
+        serde_json::from_str(&b.core.sync2_ingest_commit(P, T0 + 402, CommitBudget::slice(b.core.ingest_yield_flag())).unwrap())
+            .unwrap();
+    assert_eq!(first["applied"], json!(64), "{first}");
+    assert_eq!(first["more"], json!(true), "{first}");
+    assert!(!b.core.ingest_yield_flag().load(std::sync::atomic::Ordering::Relaxed), "the request is cleared");
+    let mut applied = 64;
+    loop {
+        let r: Value =
+            serde_json::from_str(&b.core.sync2_ingest_commit(P, T0 + 402, CommitBudget::slice(b.core.ingest_yield_flag())).unwrap())
+                .unwrap();
+        applied += r["applied"].as_u64().unwrap();
+        if r["more"] != json!(true) {
+            break;
+        }
+    }
+    assert_eq!(applied, 300);
+    b.core.sync2_ingest_finish(P, T0 + 403).unwrap();
 }
 
 /// 会话边界：没开会话就收批 / 收尾报错；会话期间本机换了身份，收批报错且会话作废。
@@ -2126,9 +2269,9 @@ fn ingest_commit_rechecks_device_keys_that_changed_after_prepare() {
     b.core.sync2_ingest_begin(P).unwrap();
     b.core.sync2_ingest_prepare(P, &segs, None).unwrap();
     b.core.sync2_plan(P, &heads).unwrap();
-    let r: Value = serde_json::from_str(&b.core.sync2_ingest_commit(P, T0 + 30).unwrap()).unwrap();
+    let r: Value = serde_json::from_str(&b.core.sync2_ingest_commit(P, T0 + 30, super::transport::CommitBudget::unlimited()).unwrap()).unwrap();
     assert_eq!(r["errors"], json!([]), "{r}");
     assert_eq!(r["applied"], json!(2), "{r}");
-    assert!(b.core.sync2_ingest_commit(P, T0 + 30).is_err(), "the prepared batch is consumed");
+    assert!(b.core.sync2_ingest_commit(P, T0 + 30, super::transport::CommitBudget::unlimited()).is_err(), "the prepared batch is consumed");
     b.core.sync2_ingest_finish(P, T0 + 31).unwrap();
 }

@@ -49,6 +49,8 @@ pub struct SrsCore {
     sessions: Mutex<Vec<Weak<ReadSession>>>,
     /// 正在进行的分批收段会话（[SrsCore::sync2_ingest_begin]）；None = 没有。
     ingest_session: Mutex<Option<sync2::transport::IngestSession>>,
+    /// 有写入在等写锁，正在投的收段那一片尽快收（[SrsCore::sync2_ingest_yield]）。
+    ingest_yield: AtomicBool,
     /// 测试钩子：收段预处理拿完公钥、开始解码之前调用（测预处理不持写锁）。
     #[cfg(test)]
     #[allow(clippy::type_complexity)]
@@ -192,6 +194,7 @@ impl SrsCore {
             path: path.to_path_buf(),
             sessions: Mutex::new(Vec::new()),
             ingest_session: Mutex::new(None),
+            ingest_yield: AtomicBool::new(false),
             #[cfg(test)]
             ingest_prepare_hook: Mutex::new(None),
         })
@@ -549,6 +552,38 @@ impl SrsCore {
         sessions.retain(|w| w.strong_count() > 0);
         sessions.push(Arc::downgrade(&session));
         Ok(session)
+    }
+
+    /// 把 WAL 并回主库（PASSIVE），在一条单独开的连接上做：不占写连接，并回期间本机作答照常写入（SQLite 的
+    /// checkpoint 锁与写锁互不相干，PASSIVE 也不等读者）。大批写入暂停自动 checkpoint 之后收尾用（Dart
+    /// `SrsDbStore.bulkWrites`）：在写连接上并回几十 MB 的 WAL 要几百毫秒，那期间所有写入都排在它后面。
+    /// 这条连接登记成会话，库关闭时等它做完再关。返回 `{busy, log, checkpointed}`（`PRAGMA wal_checkpoint` 的三列）。
+    pub fn wal_checkpoint(&self) -> Result<serde_json::Value, String> {
+        let session = {
+            let _open = self.reader()?;
+            let conn = Connection::open_with_flags(
+                &self.path,
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )
+            .map_err(|e| format!("open checkpoint connection {}: {e}", self.path.display()))?;
+            conn.busy_timeout(Duration::from_millis(5000)).map_err(|e| e.to_string())?;
+            let session = Arc::new(ReadSession { conn: Mutex::new(Some(conn)) });
+            let mut sessions = self.sessions.lock().map_err(|_| "srs sessions poisoned".to_string())?;
+            sessions.retain(|w| w.strong_count() > 0);
+            sessions.push(Arc::downgrade(&session));
+            session
+        };
+        let out = {
+            let guard = session.conn.lock().map_err(|_| "srs checkpoint connection poisoned".to_string())?;
+            let conn = guard.as_ref().ok_or(CLOSED)?;
+            conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+            })
+            .map_err(|e| e.to_string())
+        };
+        session.close();
+        let (busy, log, checkpointed) = out?;
+        Ok(serde_json::json!({"busy": busy != 0, "log": log, "checkpointed": checkpointed}))
     }
 }
 
