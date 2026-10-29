@@ -19,6 +19,7 @@ pub mod ffi;
 pub mod rows;
 mod profile_data;
 mod projections;
+pub(crate) mod queue;
 pub mod schema;
 pub mod study;
 pub mod sync2;
@@ -61,6 +62,8 @@ pub struct SrsCore {
     ingest_session: Mutex<Option<sync2::transport::IngestSession>>,
     /// 有写入在等写锁，正在投的收段那一片尽快收（[SrsCore::sync2_ingest_yield]）。
     ingest_yield: AtomicBool,
+    /// 常驻复习队列（store/queue.rs）：写连接上的触发器记下写过的卡 / 日志，`study` 按 profile 增量排队。
+    study_hub: Arc<queue::StudyHub>,
     /// 测试钩子：收段预处理拿完公钥、开始解码之前调用（测预处理不持写锁）。
     #[cfg(test)]
     #[allow(clippy::type_complexity)]
@@ -75,15 +78,20 @@ pub struct ReadSession {
     conn: Mutex<Option<Connection>>,
 }
 
-/// 打开着的一条连接（[SrsCore::reader] / [SrsCore::writer]），持有它就持有那把锁。
-pub(crate) struct Conn<'a>(MutexGuard<'a, Option<Connection>>);
+/// 打开着的一条连接（[SrsCore::reader] / [SrsCore::writer]），持有它就持有那把锁。写连接的守卫带着常驻复习队列：
+/// 释放时写连接已回到 autocommit（事务提交或回滚完）就把触发器记下的「未提交」id 挪成「已提交」（store/queue.rs）。
+pub(crate) struct Conn<'a>(MutexGuard<'a, Option<Connection>>, Option<&'a queue::StudyHub>);
 
 impl<'a> Conn<'a> {
     fn of(guard: MutexGuard<'a, Option<Connection>>) -> Result<Self, String> {
+        Self::with_hub(guard, None)
+    }
+
+    fn with_hub(guard: MutexGuard<'a, Option<Connection>>, hub: Option<&'a queue::StudyHub>) -> Result<Self, String> {
         if guard.is_none() {
             return Err(CLOSED.to_string());
         }
-        Ok(Self(guard))
+        Ok(Self(guard, hub))
     }
 }
 
@@ -95,6 +103,11 @@ const IDLE_CACHE_BYTES: i32 = 8 * 1024 * 1024;
 impl Drop for Conn<'_> {
     fn drop(&mut self) {
         let Some(c) = self.0.as_ref() else { return };
+        if let Some(hub) = self.1 {
+            if c.is_autocommit() {
+                hub.settle();
+            }
+        }
         let (mut used, mut high) = (0, 0);
         // SAFETY: 句柄属于这条仍持着锁的连接，只读一项统计。
         let rc = unsafe {
@@ -216,6 +229,8 @@ impl SrsCore {
             return Err(format!("srs.db journal_mode is {mode}, expected wal"));
         }
         schema::migrate(&mut writer)?;
+        let study_hub = Arc::new(queue::StudyHub::default());
+        queue::StudyHub::install(&study_hub, &writer)?;
         let reader = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -238,13 +253,14 @@ impl SrsCore {
             sessions: Mutex::new(Vec::new()),
             ingest_session: Mutex::new(None),
             ingest_yield: AtomicBool::new(false),
+            study_hub,
             #[cfg(test)]
             ingest_prepare_hook: Mutex::new(None),
         })
     }
 
     pub(crate) fn writer(&self) -> Result<Conn<'_>, String> {
-        Conn::of(self.writer.lock().map_err(|_| "srs writer poisoned".to_string())?)
+        Conn::with_hub(self.writer.lock().map_err(|_| "srs writer poisoned".to_string())?, Some(&self.study_hub))
     }
 
     pub(crate) fn reader(&self) -> Result<Conn<'_>, String> {
@@ -265,13 +281,18 @@ impl SrsCore {
     /// 事务里，看得见未提交的行，结束时 RELEASE 不改动任何东西）；否则在读连接上的一个读事务里读（整段同一份
     /// 已提交快照，不排写锁）。读连接是只读打开的：[f] 里混进写语句会直接报错，不会悄悄写到别处。
     pub(crate) fn read_visible<T>(&self, f: impl FnOnce(&Connection) -> Result<T, String>) -> Result<T, String> {
+        self.read_visible_tx(|c, _| f(c))
+    }
+
+    /// [SrsCore::read_visible]，并告诉 [f] 它是不是在写连接上还没结束的事务里读（true = 看得见未提交的行）。
+    pub(crate) fn read_visible_tx<T>(&self, f: impl FnOnce(&Connection, bool) -> Result<T, String>) -> Result<T, String> {
         if self.writer_tx_open() {
             let w = self.writer()?;
-            return sync2::in_savepoint(&w, f);
+            return sync2::in_savepoint(&w, |c| f(c, true));
         }
         let r = self.reader()?;
         r.execute_batch("BEGIN").map_err(|e| e.to_string())?;
-        let out = f(&r);
+        let out = f(&r, false);
         r.execute_batch("ROLLBACK").map_err(|e| e.to_string())?;
         out
     }

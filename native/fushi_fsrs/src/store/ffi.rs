@@ -782,7 +782,7 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
         // 本机作答：落库、刷新缓存之后接着在同一条写连接上排队（下一张 + 牌组计数，store/study.rs），复习页一次
         // 评分一次命令。看得见这笔还没提交的写入。
         let study = match req.get("study").filter(|s| s.is_object()) {
-            Some(s) => Some(crate::store::study::study(&w, profile, s)?),
+            Some(s) => Some(crate::store::study::study(&w, &c.study_hub, true, profile, s)?),
             None => None,
         };
         if let Some(m) = v.as_object_mut() {
