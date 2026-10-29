@@ -31,6 +31,24 @@ if (-not $NdkRoot) {
 if (-not (Test-Path $NdkRoot)) { throw "NDK not found: '$NdkRoot'（传 -NdkRoot 或设 ANDROID_NDK_HOME）" }
 $env:ANDROID_NDK_HOME = $NdkRoot
 
+# rquickjs-sys 在 Android 上走 bindgen：bindgen 默认给 clang 不带 API 级别的 --target，NDK r28+ 的
+# sys/cdefs.h 拒绝；cargo-ndk 只设下划线形式的 BINDGEN_EXTRA_CLANG_ARGS_<三元组>（只含 --sysroot），
+# bindgen 先查连字符形式——在那里给带 API 级别的 --target 与 sysroot（同 build_android_so.sh）。
+$sysroot = (Join-Path $NdkRoot "toolchains\llvm\prebuilt\windows-x86_64\sysroot") -replace '\\', '/'
+foreach ($abi in $Abis) {
+    $t = switch ($abi) {
+        "arm64-v8a" { @("aarch64-linux-android", "aarch64-linux-android", "aarch64-linux-android") }
+        "armeabi-v7a" { @("armv7-linux-androideabi", "armv7a-linux-androideabi", "arm-linux-androideabi") }
+        "x86_64" { @("x86_64-linux-android", "x86_64-linux-android", "x86_64-linux-android") }
+        "x86" { @("i686-linux-android", "i686-linux-android", "i686-linux-android") }
+        default { throw "unknown ABI $abi" }
+    }
+    [Environment]::SetEnvironmentVariable(
+        "BINDGEN_EXTRA_CLANG_ARGS_$($t[0])",
+        "--target=$($t[1])$Platform --sysroot=$sysroot -I$sysroot/usr/include/$($t[2])",
+        "Process")
+}
+
 $outDir = Join-Path $scriptDir "prebuilt\android"
 $cargoArgs = @("ndk", "--platform", "$Platform", "-o", $outDir)
 foreach ($abi in $Abis) { $cargoArgs += @("-t", $abi) }
