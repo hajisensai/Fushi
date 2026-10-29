@@ -89,11 +89,17 @@ impl Device {
         }
         let out: Value = serde_json::from_str(&self.core.sync2_ingest(P, &fetched, key, now).unwrap()).unwrap();
         let upto = self.upload_all_keyed(bucket, location, key);
-        let (path, bytes, _, obsolete) = self.core.sync2_head(P, location, upto, now).unwrap();
+        let (path, bytes, gen, obsolete) = self.core.sync2_head(P, location, upto, now).unwrap();
+        let dir = path.rsplit_once('/').unwrap().0.to_owned();
         bucket.0.insert(path, bytes);
         for name in obsolete {
             bucket.0.remove(&name);
         }
+        // 与生产（srs_sync2_round.dart 第 4 步）同样：删本机两代以前的 head。
+        bucket.0.retain(|k, _| {
+            !(k.starts_with(&format!("{dir}/"))
+                && k.rsplit('/').next().and_then(crate::sync2::segment::parse_head_file_name).is_some_and(|g| g + 2 < gen))
+        });
         self.relay_all(bucket, location, key);
         // 与生产同一节奏：版本向量变了且到期才重算（测试里间隔为 0 = 变了就算）。
         self.core.sync2_digest_due(P, now, Some(0)).unwrap();
@@ -928,8 +934,10 @@ fn segment_files(bucket: &Bucket, d: &Device) -> usize {
     bucket.0.keys().filter(|k| k.starts_with(&format!("devices/{dev}/seg-"))).count()
 }
 
+/// 小段分层合并后，旧小段在不再被任何留着的 head 引用、且过了宽限期后删掉——不等别的设备 ack（审查 S-5：对端
+/// 重装 / 换身份 / 长期休眠时它的 ack 永远不动，以前旧小段因此永远删不掉）。B 在这里收过一次之后就再也不同步。
 #[test]
-fn small_own_segments_are_compacted_and_old_files_deleted_after_everyone_acks() {
+fn small_own_segments_are_compacted_and_old_files_deleted_without_waiting_for_acks() {
     let a = Device::new("ca");
     let b = Device::new("cb");
     let mut bucket = Bucket::default();
@@ -943,15 +951,37 @@ fn small_own_segments_are_compacted_and_old_files_deleted_after_everyone_acks() 
         a.sync(&mut bucket, "loc", T0 + 1000 * i);
     }
     let before = segment_files(&bucket, &a);
-    // B 还没 ack：A 已合并并上传大段，但旧小段一个都不能删。
+    // 宽限期内：A 已合并并上传大段，旧小段还留着（读到旧 head 的读者照样拿得到它引用的段）。
     assert!(before > 16, "{before}");
-    b.sync(&mut bucket, "loc", T0 + DAY);
-    a.sync(&mut bucket, "loc", T0 + DAY);
+    let pending = a.rows("SELECT COUNT(*) FROM sync2_obsolete")[1][0].parse::<usize>().unwrap();
+    assert!(pending > 0, "merged-away segments are waiting");
+    // 写 head 的代号够了但时间不够：仍不删。
+    a.apply(T0 + 50_000, vec![review("x1", "C", T0 + 50_000, 3, "review")]);
+    a.sync(&mut bucket, "loc", T0 + 50_000);
+    a.apply(T0 + 51_000, vec![review("x2", "C", T0 + 51_000, 3, "review")]);
+    a.sync(&mut bucket, "loc", T0 + 51_000);
+    assert!(segment_files(&bucket, &a) >= before - 2, "nothing deleted inside the grace period");
+    // 过了宽限期，再写两代 head：B 从没再同步（ack 一直停在开头），旧小段照样删光。
+    a.apply(T0 + DAY + 60_000, vec![review("x3", "C", T0 + DAY + 60_000, 3, "review")]);
+    a.sync(&mut bucket, "loc", T0 + DAY + 60_000);
+    a.sync(&mut bucket, "loc", T0 + DAY + 61_000);
+    a.sync(&mut bucket, "loc", T0 + DAY + 62_000);
     let after = segment_files(&bucket, &a);
     let rows = a.rows("SELECT COUNT(*) FROM sync2_segments")[1][0].parse::<usize>().unwrap();
     // 位置上只剩当前切法下的段（合并掉的旧小段全删了）；尾部不足一组的小段留到下次合并。
-    assert_eq!(after, rows, "no stale segment files left once B acked");
+    assert_eq!(after, rows, "no stale segment files left, although B never acked them");
     assert!(after * 2 < before && after <= 16, "{before} -> {after}");
+    assert_eq!(a.rows("SELECT COUNT(*) FROM sync2_obsolete")[1][0], "0");
+    // 留着的 head 没有一份引用已删的段（读者只认 head 列出的段）。
+    for (k, v) in bucket.0.iter().filter(|(k, _)| k.contains("/head-")) {
+        let h = crate::sync2::segment::Head::decode(v).unwrap();
+        let dir = k.rsplit_once('/').unwrap().0;
+        for f in h.segment_files() {
+            assert!(bucket.0.contains_key(&format!("{dir}/{f}")), "{k} references deleted {f}");
+        }
+    }
+    // 休眠的 B 回来：读到的 head 只引用合并后的段，照样收齐。
+    b.sync(&mut bucket, "loc", T0 + 2 * DAY);
     assert_eq!(projection(&a), projection(&b));
     // 新设备只看得到合并后的段，也能完整收齐。
     let c = Device::new("cc");
@@ -1133,13 +1163,16 @@ fn pre_upgrade_small_segments_are_sized_and_compacted() {
     let rows = |d: &Device| d.rows("SELECT COUNT(*) FROM sync2_segments")[1][0].parse::<usize>().unwrap();
     assert!(rows(&a) < 10, "{} segments after compaction", rows(&a));
     assert!(a.rows("SELECT COUNT(*) FROM sync2_segments WHERE bytes = 0")[1][0] == "0");
-    // B ack 之后，位置上只剩合并后的段。
+    // 被替换的段在不再被引用后又过了两代 head、满 24 小时才删（不等任何设备 ack，审查 S-5）：之后位置上只剩合并后的段。
+    // 第二轮还会再合并一层，那批被替换的段从第二轮的 head 起算。
     a.sync(&mut bucket, "loc", T0 + 2 * DAY);
     b.sync(&mut bucket, "loc", T0 + 2 * DAY);
     a.sync(&mut bucket, "loc", T0 + 3 * DAY);
+    assert!(segment_files(&bucket, &a) > rows(&a), "still inside the grace window: nothing deleted yet");
+    a.sync(&mut bucket, "loc", T0 + 4 * DAY);
     assert_eq!(segment_files(&bucket, &a), rows(&a), "{dev}");
     let c = Device::new("oldc");
-    c.sync(&mut bucket, "loc", T0 + 3 * DAY);
+    c.sync(&mut bucket, "loc", T0 + 4 * DAY);
     assert_eq!(projection(&a), projection(&c));
     assert_eq!(projection(&a), projection(&b));
 }
@@ -1300,6 +1333,85 @@ fn bench_scale() {
          files={} bytes={bytes} join={join_ms}ms incremental_round_trip={incremental_ms}ms",
         cards * 20,
         bucket.0.len()
+    );
+}
+
+/// 新设备按生产节奏追赶（审查 S-4，默认不跑）：`SRS_BENCH_CARDS` 张卡（缺省 5000）× 每张 20 次复习，新设备
+/// 走分批收段会话——按 8 MiB 字节预算切批，每批 `ingest_prepare` + 按时间切片的 `ingest_commit`（150 ms 一片）直到
+/// 投完，最后 `ingest_finish`。与一次收完 / 全量重放对拍逐卡日志。
+/// `SRS_BENCH_CARDS=50000 cargo test --release --lib bench_join_sliced -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn bench_join_sliced() {
+    use std::time::Instant;
+    let cards: i64 = std::env::var("SRS_BENCH_CARDS").ok().and_then(|v| v.parse().ok()).unwrap_or(5000);
+    let a = Device::new("bench-js-a");
+    let deck = super::config::default_deck_id(P);
+    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
+    // 按天写：每天一批里含当天全部卡的那一次复习（真实形状：同一张卡的复习散在整个历史里，追赶时每片都碰到它）。
+    for r in 0..20i64 {
+        for chunk in 0..(cards + 4999) / 5000 {
+            let mut input = Vec::new();
+            for c in chunk * 5000..((chunk + 1) * 5000).min(cards) {
+                let at = T0 + r * DAY + c;
+                let e = review(&format!("r{c}-{r}"), &format!("C{c}"), at, 3, if r == 0 { "learn" } else { "review" });
+                input.push(json!({"e": e, "note": format!("N{c}")}));
+            }
+            a.core.sync2_apply_local(P, T0 + r * DAY + chunk, &Value::Array(input).to_string()).unwrap();
+        }
+    }
+    let mut bucket = Bucket::default();
+    a.sync(&mut bucket, "loc", T0 + 30 * DAY);
+    let heads: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/head-")).map(|(_, v)| v.clone()).collect();
+    let segs: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/seg-")).map(|(_, v)| v.clone()).collect();
+    let b = Device::new("bench-js-b");
+    b.core.sync2_identity(P, T0 + 30 * DAY).unwrap();
+    b.core.sync2_plan(P, &heads).unwrap();
+    let t = Instant::now();
+    b.core.sync2_ingest_begin(P).unwrap();
+    let (mut slices, mut batch, mut bytes) = (0usize, Vec::new(), 0usize);
+    let flush = |batch: &mut Vec<Vec<u8>>, slices: &mut usize| {
+        b.core.sync2_ingest_prepare(P, batch, None).unwrap();
+        loop {
+            let r: Value = serde_json::from_str(
+                &b.core.sync2_ingest_commit(P, T0 + 30 * DAY, super::transport::CommitBudget::slice(b.core.ingest_yield_flag())).unwrap(),
+            )
+            .unwrap();
+            *slices += 1;
+            if r["more"] != json!(true) {
+                break;
+            }
+        }
+        batch.clear();
+    };
+    for s in segs {
+        bytes += s.len();
+        batch.push(s);
+        if bytes >= 8 * 1024 * 1024 {
+            flush(&mut batch, &mut slices);
+            bytes = 0;
+        }
+    }
+    if !batch.is_empty() {
+        flush(&mut batch, &mut slices);
+    }
+    let commit_ms = t.elapsed().as_millis();
+    loop {
+        let r: Value = serde_json::from_str(&b.core.sync2_ingest_finish(P, T0 + 30 * DAY).unwrap()).unwrap();
+        if r["more"] != json!(true) {
+            break;
+        }
+    }
+    let join_ms = t.elapsed().as_millis();
+    let t = Instant::now();
+    let changed = a.core.sync2_replay_all(P).unwrap();
+    let replay_ms = t.elapsed().as_millis();
+    assert!(changed.is_empty(), "the author's results are already the replayed ones");
+    let logs = |d: &Device| d.rows("SELECT id, json FROM srs_review_logs ORDER BY id");
+    assert_eq!(logs(&a), logs(&b), "every card's replayed rows match the author's full replay");
+    println!(
+        "bench_join_sliced cards={cards} reviews={} slices={slices} commits={commit_ms}ms join_total={join_ms}ms replay_all={replay_ms}ms",
+        cards * 20
     );
 }
 
@@ -1948,14 +2060,32 @@ fn unchanged_head_is_not_rewritten_until_content_changes_or_heartbeat() {
     a.apply(T0 + 2000, vec![edit("deck", &deck, "name", json!("Renamed"))]);
     assert!(matches!(write_head(&a, &mut bucket, T0 + 3000), HeadWrite::Written { .. }));
     assert!(matches!(write_head(&a, &mut bucket, T0 + 4000), HeadWrite::Unchanged { .. }));
-    // 收到别的设备的操作（ack 变了）→ 写，对方据此知道可以压缩 / 清理。
+    // 收到别的设备的操作（只有 ack / 摘要变了）→ 不急着写（审查 S-8：ack 变化不再立刻唤醒对端，旧段删除也不等 ack），
+    // 过了 ACK_ONLY_HEAD_MS 才发布。
+    let ack_only = super::transport::ACK_ONLY_HEAD_MS;
     b.apply(T0 + 5000, vec![edit("note", "N1", "f/x", json!("b"))]);
     b.sync(&mut bucket, "loc", T0 + 5000);
-    a.sync(&mut bucket, "loc", T0 + 6000);
-    assert!(matches!(write_head(&a, &mut bucket, T0 + 6500), HeadWrite::Written { .. }), "the new ack (and its digest) is published");
-    assert!(matches!(write_head(&a, &mut bucket, T0 + 7000), HeadWrite::Unchanged { .. }));
+    a.core.sync2_identity(P, T0 + 6000).unwrap();
+    let heads: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/head-")).map(|(_, v)| v.clone()).collect();
+    let segs: Vec<Vec<u8>> = bucket.0.iter().filter(|(k, _)| k.contains("/seg-")).map(|(_, v)| v.clone()).collect();
+    a.core.sync2_plan_at(P, &heads, Some("loc")).unwrap();
+    let r: Value = serde_json::from_str(&a.core.sync2_ingest(P, &segs, None, T0 + 6000).unwrap()).unwrap();
+    assert!(r["applied"].as_u64().unwrap() > 0, "{r}");
+    assert!(matches!(write_head(&a, &mut bucket, T0 + 6500), HeadWrite::Unchanged { .. }), "an ack-only change waits");
+    assert!(matches!(write_head(&a, &mut bucket, T0 + 1000 + ack_only - 1), HeadWrite::Unchanged { .. }));
+    assert!(
+        matches!(write_head(&a, &mut bucket, T0 + 3000 + ack_only), HeadWrite::Written { .. }),
+        "the new ack (and its digest) is published after ACK_ONLY_HEAD_MS"
+    );
+    assert!(matches!(write_head(&a, &mut bucket, T0 + 4000 + ack_only), HeadWrite::Unchanged { .. }));
+    // ack 变了的同时本机也有新段 → 照常立刻写。
+    b.apply(T0 + 8000 + ack_only, vec![edit("note", "N1", "f/y", json!("b2"))]);
+    b.sync(&mut bucket, "loc", T0 + 8000 + ack_only);
+    a.sync(&mut bucket, "loc", T0 + 9000 + ack_only);
+    a.apply(T0 + 9500 + ack_only, vec![edit("deck", &deck, "name", json!("Again"))]);
+    assert!(matches!(write_head(&a, &mut bucket, T0 + 9600 + ack_only), HeadWrite::Written { .. }));
     // 到了心跳期限照写（seenAt / 校时靠它刷新）。
-    assert!(matches!(write_head(&a, &mut bucket, T0 + 6500 + 6 * HOUR), HeadWrite::Written { .. }));
+    assert!(matches!(write_head(&a, &mut bucket, T0 + 9600 + ack_only + 6 * HOUR), HeadWrite::Written { .. }));
 }
 
 /// 反馈 8TaOy2i-lL / BUG-3809：一个库文件里的多个 profile 共用 `srs_field_edits`（主键只有 `id`），

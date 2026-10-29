@@ -284,3 +284,37 @@ CREATE TABLE IF NOT EXISTS sync2_media_local (
   PRIMARY KEY (profile_uid, name)
 ) WITHOUT ROWID;
 "#;
+
+/// V12（审查 S-4）：收段时受影响、还没重放的卡。分批收段会话的每一片只把受影响的卡记进来（同一事务），收尾
+/// （[super::transport] `sync2_ingest_finish`）按片重放一次再删；崩溃 / 中途收手后表还在，下一次收尾接着重放。
+pub const V12_REPLAY: &str = r#"
+CREATE TABLE IF NOT EXISTS sync2_replay_pending (
+  profile_uid TEXT NOT NULL,
+  card_id TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, card_id)
+) WITHOUT ROWID;
+"#;
+
+/// 表 [table] 有没有列 [column]（ALTER 不带 IF NOT EXISTS，靠它让迁移可重放）。
+fn has_column(c: &rusqlite::Connection, table: &str, column: &str) -> Result<bool, String> {
+    c.query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"), [column], |r| r.get::<_, i64>(0))
+        .map(|n| n > 0)
+        .map_err(|e| e.to_string())
+}
+
+/// 升到 V12：每一步都按「已经做过就跳过」写，重放结果相同。
+pub fn migrate_v12(c: &rusqlite::Connection) -> Result<(), String> {
+    c.execute_batch(V12_REPLAY).map_err(|e| e.to_string())?;
+    // S-5：旧小段的删除改按「第一份不再引用它的 head 的代号 / 写出时刻」判（transport.rs `take_obsolete`），不再等别的
+    // 设备 ack。升级前已登记的行两列为空，下一次写 head 时按那一刻补上（从那时起算宽限期）。
+    for col in ["since_gen", "since_at"] {
+        if !has_column(c, "sync2_obsolete", col)? {
+            c.execute_batch(&format!("ALTER TABLE sync2_obsolete ADD COLUMN {col} INTEGER NULL;")).map_err(|e| e.to_string())?;
+        }
+    }
+    // S-7：摘要改按卡 ID 分桶、触发器增量维护（digest.rs）。建表 + 触发器后从三张投影表全量重建一次（升级时唯一一次
+    // 全表扫描；重建是表内容的确定性函数，重放这一步结果相同）。
+    super::digest::install(c)?;
+    super::digest::rebuild(c)?;
+    Ok(())
+}

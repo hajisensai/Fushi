@@ -779,8 +779,20 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
     sync2_command(c, op, profile, req, blobs, files)
 }
 
+/// 收段 / 重放的一片：默认按时间切、有写入排队就让出；测试用 `sliceOps` 按条数切、`sliceMs` 改时间上限。
+fn slice_budget<'a>(c: &'a SrsCore, req: &serde_json::Value) -> crate::store::sync2::transport::CommitBudget<'a> {
+    use crate::store::sync2::transport::CommitBudget;
+    use serde_json::Value;
+    match (req.get("sliceOps").and_then(Value::as_u64), req.get("sliceMs").and_then(Value::as_u64)) {
+        (Some(n), _) => CommitBudget::ops(n as usize),
+        (None, Some(ms)) => CommitBudget::slice_within(c.ingest_yield_flag(), std::time::Duration::from_millis(ms)),
+        (None, None) => CommitBudget::slice(c.ingest_yield_flag()),
+    }
+}
+
 /// 改投影的 v2 命令（结果带 `marks`）：分发器在同一次调用里刷新缓存行。
-const PROJECTING_OPS: [&str; 10] = ["apply", "ingest", "ingest_batch", "ingest_commit", "ingest_finish", "import", "resolve", "purge", "checkpoint", "restore"];
+const PROJECTING_OPS: [&str; 11] =
+    ["apply", "ingest", "ingest_batch", "ingest_commit", "ingest_finish", "replay_pending", "import", "resolve", "purge", "checkpoint", "restore"];
 
 fn sync2_command(
     c: &SrsCore,
@@ -840,6 +852,13 @@ fn sync2_command(
             }
         }
         // `location`：这些 head 所在位置的进度身份（记下位置上有谁的哪些段，转发用，store/sync2/relay.rs）。
+        // `readOnly`：只在读连接上算（Dart 不进写锁调）；要往库里记东西时回 `needsWrite`，Dart 再进写锁调一次（审查 S-8）。
+        "plan" if req["readOnly"] == Value::Bool(true) => {
+            match c.sync2_plan_read_only(profile, blobs, req.get("location").and_then(Value::as_str))? {
+                Some(v) => v,
+                None => json!({"needsWrite": true}),
+            }
+        }
         "plan" => c.sync2_plan_at(profile, blobs, req.get("location").and_then(Value::as_str))?,
         // 转发（store/sync2/relay.rs）：本机持有、这个位置缺的别的设备的段（转发件）与 head 原文；传完 relay_ack。
         "relay_outbox" => {
@@ -859,16 +878,10 @@ fn sync2_command(
         "ingest_prepare" => c.sync2_ingest_prepare(profile, blobs, key32(&req["key"])?)?,
         // 一次投一片（默认按时间切、有写入排队就让出；测试用 `sliceOps` 按条数切、`sliceMs` 改时间上限）；结果
         // `more` 为真 Dart 放开写锁再调。
-        "ingest_commit" => {
-            use crate::store::sync2::transport::CommitBudget;
-            let budget = match (req.get("sliceOps").and_then(Value::as_u64), req.get("sliceMs").and_then(Value::as_u64)) {
-                (Some(n), _) => CommitBudget::ops(n as usize),
-                (None, Some(ms)) => CommitBudget::slice_within(c.ingest_yield_flag(), std::time::Duration::from_millis(ms)),
-                (None, None) => CommitBudget::slice(c.ingest_yield_flag()),
-            };
-            parse(c.sync2_ingest_commit(profile, i("now")?, budget)?)?
-        }
-        "ingest_finish" => parse(c.sync2_ingest_finish(profile, i("now")?)?)?,
+        "ingest_commit" => parse(c.sync2_ingest_commit(profile, i("now")?, slice_budget(c, req))?)?,
+        // 收尾：换身份 + 重放各片记下的待重放卡（按片，`more` 为真 Dart 放开写锁后用 replay_pending 接着放，审查 S-4）。
+        "ingest_finish" => parse(c.sync2_ingest_finish_within(profile, i("now")?, slice_budget(c, req))?)?,
+        "replay_pending" => parse(c.sync2_replay_pending(profile, slice_budget(c, req))?)?,
         "rotate" => c.sync2_rotate(profile, i("now")?)?,
         "export" => {
             files.push(("export.fushisrs".to_owned(), c.sync2_export(profile)?));
@@ -893,6 +906,8 @@ fn sync2_command(
             None => c.sync2_digest(profile)?,
         },
         "status" => c.sync2_status(profile)?,
+        // 摘要各桶（读连接；两台设备摘要不同时定位不一致的 ID 范围，审查 S-7）。
+        "digest_buckets" => c.sync2_digest_buckets(profile)?,
         // 位置媒体目录的已知内容 / 记下事实（store/sync2/media.rs）：媒体对账读日志投影，不列目录。
         "media_known" => c.sync2_media_known(profile, s("location")?)?,
         "media_record" => {

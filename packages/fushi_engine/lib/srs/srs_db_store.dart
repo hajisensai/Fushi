@@ -978,21 +978,34 @@ class SrsDbStore implements SrsSync2Host {
   /// 被重用、head 的代号回退，已经发出去的段与 head 让对端判本机分叉（P1-4）。不排队的只有 [kSrsSync2LockFreeOps]：
   /// 不碰库的纯计算，以及只读已提交快照的命令——排队等于让复习作答等它们跑完（状态摘要是全库扫描，手机上
   /// 一两秒，每轮同步都可能轮到）。
+  ///
+  /// `plan` 先不进写锁、只在读连接上算（审查 S-8：空轮 head 都没变，什么都不用记）；内核说要记东西（新设备 / 更新的
+  /// head）才进写锁再算一次。
   @override
   Future<SrsSync2Result> sync2Command(
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
-  }) => kSrsSync2LockFreeOps.contains(request['op'])
-      ? _sync2Raw(request, blobs: blobs)
-      : runExclusive(() => _sync2Raw(request, blobs: blobs));
+  }) async {
+    if (request['op'] == 'plan') {
+      final SrsSync2Result r = await _sync2Raw(<String, Object?>{
+        ...request,
+        'readOnly': true,
+      }, blobs: blobs);
+      if (r.map['needsWrite'] != true) return r;
+    } else if (kSrsSync2LockFreeOps.contains(request['op'])) {
+      return _sync2Raw(request, blobs: blobs);
+    }
+    return runExclusive(() => _sync2Raw(request, blobs: blobs));
+  }
 
   /// 不进写锁的 v2 命令（见 [sync2Command]）。判据：结果不依赖写连接上还没提交的行，也不在别的写入的
   /// 中途改本机状态。
   /// - 纯计算（`derive_key` / `seal` / `open`）：不碰库；Argon2 派生要上百毫秒。
   /// - 只走读连接（WAL 快照，只见已提交的行）：`status` / `media_known` / `conflicts` / `checkpoints` / `history`；
   ///   `media_hash`（本机媒体文件的 sha256，首次对账要把几万个文件各读一遍；结论交给进写锁的 `media_scan`）。
-  /// - `digest`：扫描在内核自己的扫描会话里（已提交快照），只在末尾往写连接记一行摘要缓存（`srs_meta`）；
-  ///   恰好落进另一笔写事务而那笔回滚，丢的只是这行缓存，下一轮按间隔重算。
+  /// - `digest`：读连接上读触发器增量维护的 4096 个摘要桶求根（已提交快照，不再全库扫描），只在末尾往写连接
+  ///   记一行摘要缓存（`srs_meta`）；恰好落进另一笔写事务而那笔回滚，丢的只是这行缓存，下一轮按间隔重算。
+  /// - `digest_buckets`：同上读连接，列各摘要桶（摘要不一致时定位不一致的 ID 范围）。
   @visibleForTesting
   static const Set<String> kSrsSync2LockFreeOps = <String>{
     'derive_key',
@@ -1005,6 +1018,7 @@ class SrsDbStore implements SrsSync2Host {
     'checkpoints',
     'history',
     'digest',
+    'digest_buckets',
   };
 
   @override
@@ -1129,9 +1143,26 @@ class SrsDbStore implements SrsSync2Host {
       ..addAll(lists);
   }
 
+  /// 收尾：换身份，再把各片记下的待重放卡重放完（审查 S-4：每张卡一次会话只重放一遍）。重放也按片：内核返回
+  /// `more` 就放开写锁、再用 `replay_pending` 接着放，排队的作答只等一片。各片结果拼成一次的形状。
   @override
-  Future<Map<String, Object?>> sync2IngestFinish() =>
-      _sync2IngestStep(const <String, Object?>{'op': 'ingest_finish'});
+  Future<Map<String, Object?>> sync2IngestFinish({int? sliceOps}) async {
+    final List<Map<String, Object?>> parts = <Map<String, Object?>>[
+      await _sync2IngestStep(<String, Object?>{
+        'op': 'ingest_finish',
+        'sliceOps': ?sliceOps,
+      }),
+    ];
+    while (parts.last['more'] == true) {
+      parts.add(
+        await _sync2IngestStep(<String, Object?>{
+          'op': 'replay_pending',
+          'sliceOps': ?sliceOps,
+        }),
+      );
+    }
+    return <String, Object?>{..._mergeIngestSlices(parts), 'more': false};
+  }
 
   /// 收段会话的一步（投递一批 / 收尾换身份）：写锁里跑，投影变化接进本机缓存。
   Future<Map<String, Object?>> _sync2IngestStep(
@@ -1290,6 +1321,7 @@ class SrsDbStore implements SrsSync2Host {
     'ingest_batch',
     'ingest_commit',
     'ingest_finish',
+    'replay_pending',
     'import',
     'resolve',
     'purge',
