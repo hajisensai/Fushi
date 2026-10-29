@@ -234,4 +234,42 @@ CREATE TABLE IF NOT EXISTS sync2_mvr (
   seq INTEGER NOT NULL,
   PRIMARY KEY (profile_uid, reg, device, seq)
 ) WITHOUT ROWID;
+-- 段 / head 转发（store/sync2/relay.rs）：各设备见过的最新 head 原文（作者签名，原样可搬）与它引用的段名。
+CREATE TABLE IF NOT EXISTS sync2_relay_heads (
+  profile_uid TEXT NOT NULL,
+  device BLOB NOT NULL,
+  gen INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
+  segments TEXT NOT NULL,
+  bytes BLOB NOT NULL,
+  PRIMARY KEY (profile_uid, device)
+) WITHOUT ROWID;
+-- 别的设备的原段（作者签名的原文；原段体是密文时另存明文压缩体），只留还有位置缺它的。
+CREATE TABLE IF NOT EXISTS sync2_relay_segs (
+  profile_uid TEXT NOT NULL,
+  device BLOB NOT NULL,
+  name TEXT NOT NULL,
+  orig BLOB NOT NULL,
+  plain BLOB NULL,
+  PRIMARY KEY (profile_uid, device, name)
+) WITHOUT ROWID;
+-- 每个位置上各设备最新的 head（上一轮看 head 时见到的）：哪个位置缺谁的哪些段。
+CREATE TABLE IF NOT EXISTS sync2_location_heads (
+  profile_uid TEXT NOT NULL,
+  location TEXT NOT NULL,
+  device BLOB NOT NULL,
+  gen INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
+  segments TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, location, device)
+) WITHOUT ROWID;
+-- 本机转发到各位置的文件（段名，或 head 文件名）与当时转发的 head 代号（0 = 段已传、head 还没写）。
+CREATE TABLE IF NOT EXISTS sync2_relay_out (
+  profile_uid TEXT NOT NULL,
+  location TEXT NOT NULL,
+  device BLOB NOT NULL,
+  name TEXT NOT NULL,
+  gen INTEGER NOT NULL,
+  PRIMARY KEY (profile_uid, location, device, name)
+) WITHOUT ROWID;
 "#;

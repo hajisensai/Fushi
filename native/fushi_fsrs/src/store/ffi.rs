@@ -839,7 +839,19 @@ fn sync2_command(
                 }
             }
         }
-        "plan" => c.sync2_plan(profile, blobs)?,
+        // `location`：这些 head 所在位置的进度身份（记下位置上有谁的哪些段，转发用，store/sync2/relay.rs）。
+        "plan" => c.sync2_plan_at(profile, blobs, req.get("location").and_then(Value::as_str))?,
+        // 转发（store/sync2/relay.rs）：本机持有、这个位置缺的别的设备的段（转发件）与 head 原文；传完 relay_ack。
+        "relay_outbox" => {
+            let max_bytes = req.get("maxBytes").and_then(Value::as_u64).unwrap_or(crate::store::sync2::transport::OUTBOX_BATCH_BYTES);
+            let batch = c.sync2_relay_outbox(profile, s("location")?, key32(&req["key"])?, max_bytes.max(1))?;
+            *files = batch.files;
+            json!({"more": batch.more})
+        }
+        "relay_ack" => {
+            let paths: Vec<String> = req.get("paths").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
+            c.sync2_relay_ack(profile, s("location")?, &paths)?
+        }
         "ingest" => parse(c.sync2_ingest(profile, blobs, key32(&req["key"])?, i("now")?)?)?,
         "ingest_begin" => c.sync2_ingest_begin(profile)?,
         "ingest_batch" => parse(c.sync2_ingest_batch(profile, blobs, key32(&req["key"])?, i("now")?)?)?,

@@ -12,6 +12,7 @@
 pub mod config;
 pub mod media;
 pub(crate) mod mvr;
+pub mod relay;
 pub mod schema;
 pub(crate) mod semantics;
 pub mod timeline;

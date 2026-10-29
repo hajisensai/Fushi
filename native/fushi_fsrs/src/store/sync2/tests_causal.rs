@@ -28,6 +28,110 @@ fn media_state(d: &Device, location: &str, name: &str) -> Option<bool> {
     }
 }
 
+fn count(d: &Device, sql: &str) -> i64 {
+    d.rows(sql)[1][0].parse().unwrap()
+}
+
+fn reviews(d: &Device) -> i64 {
+    count(d, "SELECT COUNT(*) FROM srs_review_logs")
+}
+
+fn pending(d: &Device) -> i64 {
+    count(d, "SELECT COUNT(*) FROM sync2_pending")
+}
+
+/// 拓扑：A ↔ B 只经互联（ic），B ↔ C 只经网盘（cloud）。[cloud_key] = 网盘开了加密。跑若干圈，每圈 A、B 走 ic，
+/// B、C 走 cloud。
+fn relay_rounds(a: &Device, b: &Device, c: &Device, ic: &mut Bucket, cloud: &mut Bucket, cloud_key: Option<[u8; 32]>, now: i64, laps: usize) {
+    for i in 0..laps {
+        let t = now + i as i64 * 10;
+        a.sync(ic, "ic", t);
+        b.sync(ic, "ic", t + 1);
+        b.sync_keyed(cloud, "cloud", t + 2, cloud_key);
+        c.sync_keyed(cloud, "cloud", t + 3, cloud_key);
+    }
+}
+
+fn review_of(id: &str, card: &str, at: i64) -> Value {
+    super::tests::review(id, card, at, 3, "review")
+}
+
+fn relay_topology(cloud_key: Option<[u8; 32]>) {
+    let (a, b, c) = (Device::new("a"), Device::new("b"), Device::new("c"));
+    let (mut ic, mut cloud) = (Bucket::default(), Bucket::default());
+    a.apply(T0, vec![review_of("ra1", "CA", T0), review_of("ra2", "CA", T0 + 1)]);
+    // B 先只认识互联（第一次收 A 的段时还不知道网盘存在，没留原文），之后才加网盘。
+    a.sync(&mut ic, "ic", T0 + 10);
+    b.sync(&mut ic, "ic", T0 + 11);
+    b.apply(T0 + 12, vec![review_of("rb1", "CB", T0 + 12)]);
+    relay_rounds(&a, &b, &c, &mut ic, &mut cloud, cloud_key, T0 + 20, 3);
+    assert_eq!(reviews(&c), 3, "C received A's reviews only by relay through B");
+    assert_eq!(pending(&c), 0, "nothing of B's waits for A's ops any more");
+    // 反方向：C 的操作经 B 转到只连互联的 A；A 再写，C 照样收齐。
+    c.apply(T0 + 100, vec![review_of("rc1", "CC", T0 + 100)]);
+    a.apply(T0 + 100, vec![review_of("ra3", "CA", T0 + 100)]);
+    // C 的新段先要等 B 下一次走网盘才到 B，再等 B 走互联才到 A：比上一段多一圈。
+    relay_rounds(&a, &b, &c, &mut ic, &mut cloud, cloud_key, T0 + 110, 4);
+    for d in [&a, &b, &c] {
+        assert_eq!(reviews(d), 5);
+        assert_eq!(pending(d), 0);
+    }
+    assert_eq!(a.digest(), c.digest());
+    assert_eq!(b.digest(), c.digest());
+    // A 的段在网盘上只以转发件存在（A 从没连过网盘），作者签名原样：C 是按 A 的公钥验过才收的。
+    let a_id = a.core.sync2_status(P).unwrap()["device"].as_str().unwrap().to_owned();
+    let relayed: Vec<&Vec<u8>> = cloud.0.iter().filter(|(k, _)| k.starts_with(&format!("devices/{a_id}/rly-"))).map(|(_, v)| v).collect();
+    assert!(!relayed.is_empty());
+    assert!(!cloud.0.keys().any(|k| k.starts_with(&format!("devices/{a_id}/seg-"))));
+    for r in &relayed {
+        assert_eq!(&r[..4], crate::sync2::segment::RELAY_MAGIC);
+        assert_eq!(r[5] & 1, u8::from(cloud_key.is_some()), "relay envelopes on an encrypted location are sealed with its key");
+    }
+    // 转发完不留原文；被新 head 取代的旧转发件已清掉（网盘上 A 的转发件正好是 A 最新 head 引用的那些）。
+    assert_eq!(count(&b, "SELECT COUNT(*) FROM sync2_relay_segs"), 0);
+    let a_heads: Vec<&String> = cloud.0.keys().filter(|k| k.starts_with(&format!("devices/{a_id}/head-"))).collect();
+    assert_eq!(a_heads.len(), 1, "{a_heads:?}");
+}
+
+/// S-1：段 / head 转发——A ↔ B 只经互联、B ↔ C 只经网盘，C 收齐 A 的操作（以前永远收不到，B 此后的操作在 C 的
+/// 缓冲里无界堆积），反方向同样。
+#[test]
+fn ops_reach_a_device_two_hops_away_through_relay() {
+    relay_topology(None);
+}
+
+/// S-1：网盘加密、互联明文——转发件用网盘的密钥封装（明文不落到加密位置），读者不需要源位置的密钥。
+#[test]
+fn relay_crosses_locations_with_different_encryption() {
+    relay_topology(Some([7; 32]));
+}
+
+/// S-1：转发者篡改不了：改转发件里的明文压缩体（链对不上）或换签名都被拒。
+#[test]
+fn a_tampered_relay_envelope_is_rejected() {
+    let (a, b, c) = (Device::new("a"), Device::new("b"), Device::new("c"));
+    let (mut ic, mut cloud) = (Bucket::default(), Bucket::default());
+    a.apply(T0, vec![review_of("ra1", "CA", T0)]);
+    let key = Some([9; 32]);
+    a.sync(&mut ic, "ic", T0 + 1);
+    b.sync(&mut ic, "ic", T0 + 2);
+    b.sync_keyed(&mut cloud, "cloud", T0 + 3, key);
+    b.sync(&mut ic, "ic", T0 + 4);
+    b.sync_keyed(&mut cloud, "cloud", T0 + 5, key);
+    let a_id = a.core.sync2_status(P).unwrap()["device"].as_str().unwrap().to_owned();
+    let path = cloud.0.keys().find(|k| k.starts_with(&format!("devices/{a_id}/rly-"))).unwrap().clone();
+    let good = cloud.0[&path].clone();
+    // 解开封装、改一个字节的原段体，再用同一把位置密钥封回去：签名不再对得上。
+    let ck = crate::sync2::keys::CollectionKey([9; 32]);
+    let (mut orig, plain) = crate::sync2::segment::relay_unwrap(&good, Some(&ck)).unwrap();
+    let n = orig.len();
+    orig[n - 70] ^= 1;
+    cloud.0.insert(path.clone(), crate::sync2::segment::relay_pack(&orig, plain.as_deref(), Some(&ck)).unwrap());
+    let r = c.sync_keyed(&mut cloud, "cloud", T0 + 6, key);
+    assert_eq!(reviews(&c), 0, "{r}");
+    assert!(r["errors"].to_string().contains("signature"), "{r}");
+}
+
 /// S-2：收到远端操作后本机 HLC 推进并持久化——时钟慢一小时的设备看过对方的写入之后再写，HLC 也比它大。
 #[test]
 fn applied_remote_ops_advance_and_persist_the_local_clock() {

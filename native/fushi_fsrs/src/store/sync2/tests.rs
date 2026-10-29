@@ -53,6 +53,11 @@ impl Device {
     /// 一轮同步（设计 §6.2）：先读全部 head → 拉缺的段 → 收（分叉在这一步发现并换身份）→ 再发段 → 写 head。
     /// 先读后写：同一身份的另一个安装刚写的 head 不会被自己这一轮的 head 盖掉视线。
     pub fn sync(&self, bucket: &mut Bucket, location: &str, now: i64) -> Value {
+        self.sync_keyed(bucket, location, now, None)
+    }
+
+    /// 同 [Self::sync]，位置开了加密（[key] = 该位置的集合密钥）。
+    pub fn sync_keyed(&self, bucket: &mut Bucket, location: &str, now: i64, key: Option<[u8; 32]>) -> Value {
         self.core.sync2_identity(P, now).unwrap();
         // 每台设备取 gen 最大的 head；同一 gen 有两份（孪生）就都交给内核。
         let mut by_dev: BTreeMap<String, Vec<(u64, Vec<u8>)>> = BTreeMap::new();
@@ -69,32 +74,65 @@ impl Device {
             let top = hs.iter().map(|x| x.0).max().unwrap();
             heads.extend(hs.into_iter().filter(|x| x.0 == top).map(|x| x.1));
         }
-        let plan = self.core.sync2_plan(P, &heads).unwrap();
+        let plan = self.core.sync2_plan_at(P, &heads, Some(location)).unwrap();
         let mut fetched = Vec::new();
         for f in plan["fetch"].as_array().unwrap() {
             for name in f["files"].as_array().unwrap() {
-                if let Some(b) = bucket.0.get(name.as_str().unwrap()) {
+                // 与生产同样：段名列不到就找同名转发件（`rly-`，store/sync2/relay.rs）。
+                let name = name.as_str().unwrap();
+                let (dir, file) = name.rsplit_once('/').unwrap();
+                let relayed = format!("{dir}/{}", crate::sync2::segment::relay_file_name(file));
+                if let Some(b) = bucket.0.get(name).or_else(|| bucket.0.get(&relayed)) {
                     fetched.push(b.clone());
                 }
             }
         }
-        let out: Value = serde_json::from_str(&self.core.sync2_ingest(P, &fetched, None, now).unwrap()).unwrap();
-        let upto = self.upload_all(bucket, location);
+        let out: Value = serde_json::from_str(&self.core.sync2_ingest(P, &fetched, key, now).unwrap()).unwrap();
+        let upto = self.upload_all_keyed(bucket, location, key);
         let (path, bytes, _, obsolete) = self.core.sync2_head(P, location, upto, now).unwrap();
         bucket.0.insert(path, bytes);
         for name in obsolete {
             bucket.0.remove(&name);
         }
+        self.relay_all(bucket, location, key);
         // 与生产同一节奏：版本向量变了且到期才重算（测试里间隔为 0 = 变了就算）。
         self.core.sync2_digest_due(P, now, Some(0)).unwrap();
         out
     }
 
+    /// 与生产同一节奏的转发：取一批 → 写进 [bucket] → 确认（删掉被取代的旧转发件）→ 还有就再取。返回写的文件数。
+    pub fn relay_all(&self, bucket: &mut Bucket, location: &str, key: Option<[u8; 32]>) -> usize {
+        let mut n = 0;
+        for _ in 0..1000 {
+            let batch = self.core.sync2_relay_outbox(P, location, key, super::transport::OUTBOX_BATCH_BYTES).unwrap();
+            if batch.files.is_empty() {
+                return n;
+            }
+            let paths: Vec<String> = batch.files.iter().map(|f| f.0.clone()).collect();
+            n += paths.len();
+            for (path, bytes) in batch.files {
+                bucket.0.insert(path, bytes);
+            }
+            let ack = self.core.sync2_relay_ack(P, location, &paths).unwrap();
+            for p in ack["delete"].as_array().unwrap() {
+                bucket.0.remove(p.as_str().unwrap());
+            }
+            if !batch.more {
+                return n;
+            }
+        }
+        panic!("relay did not settle");
+    }
+
     /// 与生产同一节奏的分批发件：取一批 → 全部写进 [bucket] → 确认 → 还有就再取。返回写 head 用的水位。
     pub fn upload_all(&self, bucket: &mut Bucket, location: &str) -> u64 {
+        self.upload_all_keyed(bucket, location, None)
+    }
+
+    pub fn upload_all_keyed(&self, bucket: &mut Bucket, location: &str, key: Option<[u8; 32]>) -> u64 {
         use super::transport::{OUTBOX_BATCH_BYTES, OUTBOX_BATCH_SEGMENTS};
         loop {
-            let batch = self.core.sync2_outbox(P, location, None, OUTBOX_BATCH_BYTES, OUTBOX_BATCH_SEGMENTS).unwrap();
+            let batch = self.core.sync2_outbox(P, location, key, OUTBOX_BATCH_BYTES, OUTBOX_BATCH_SEGMENTS).unwrap();
             if batch.files.is_empty() {
                 return batch.upto;
             }
