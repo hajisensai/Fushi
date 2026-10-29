@@ -95,6 +95,14 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/web_video_bridge.dart'
+    show shouldOpenInWebVideoPlayer;
+import 'package:fushi/src/media/video/web_video_hosting.dart'
+    show WebVideoHosting;
+import 'package:fushi/src/mining/web_mine_background.dart';
+import 'package:fushi/src/mining/web_mine_queue_store.dart';
+import 'package:fushi/src/pages/implementations/web_video_fushi_page.dart'
+    show WebVideoFushiPage;
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart'
@@ -463,6 +471,9 @@ class _HomePageState extends BasePageState<HomePage>
   /// 于是每次都回到第一个「首页」分区。持有 [GlobalKey] 让换布局变成同一子树换父节点。
   final GlobalKey _homeBodyKey = GlobalKey(debugLabel: 'home-tab-body');
 
+  /// 网页视频制卡队列的后台空闲自动制卡（Windows：网页播放器与静音录音只在那儿有）。
+  WebMineBackgroundRunner? _webMineBackground;
+
   /// Android games tab（串流接收端）的依赖装配；只在首次切到该 tab 时构造。
   late final GameStreamLibraryServices _gameStreamLibraryServices =
       GameStreamLibraryServices.interconnect(appModel: appModelNoUpdate);
@@ -510,6 +521,54 @@ class _HomePageState extends BasePageState<HomePage>
   static const Duration _periodicSyncInterval = Duration(minutes: 1);
   Timer? _periodicSyncTimer;
 
+  /// 用户不开播放页时，网页视频攒下的制卡队列也能在离开电脑时自动跑：首页是顶层页
+  /// （没压着播放 / 阅读 / 设置页）才开制卡页，免得把用户留在那儿的东西盖掉。
+  void _startWebMineBackground() {
+    // widget 测试里不起：调度器是常驻周期计时器，会让每个泵首页的测试都留下 pending timer。
+    if (!Platform.isWindows ||
+        Platform.environment.containsKey('FLUTTER_TEST')) {
+      return;
+    }
+    final VideoBookRepository repo = VideoBookRepository(
+      appModelNoUpdate.database,
+    );
+    final WebMineQueueStore store = WebMineQueueStore(
+      appModelNoUpdate.database,
+    );
+    final WebMineBackgroundRunner runner = WebMineBackgroundRunner(
+      pendingBookUids: () async {
+        final List<String> eligible = <String>[];
+        for (final String uid in await store.pendingBookUids()) {
+          final VideoBookRow? row = await repo.getByBookUid(uid);
+          if (row != null && shouldOpenInWebVideoPlayer(row.videoPath)) {
+            eligible.add(uid);
+          }
+        }
+        return eligible;
+      },
+      atIdleSurface: () =>
+          mounted && (ModalRoute.of(context)?.isCurrent ?? false),
+      openMiningPage: (String uid) async {
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          adaptivePageRoute<void>(
+            context: context,
+            builder: (_) => WebVideoFushiPage.neutralized(
+              bookUid: uid,
+              repo: repo,
+              hosting: WebVideoHosting.builtin,
+              autoRunMineQueue: true,
+              idleAutoMining: true,
+              closeAfterMining: true,
+            ),
+          ),
+        );
+      },
+    );
+    _webMineBackground = runner;
+    runner.start();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -547,6 +606,7 @@ class _HomePageState extends BasePageState<HomePage>
       return true;
     }());
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
+    _startWebMineBackground();
     // TODO-376：只监听显式「打开查词 tab」请求（桌面悬浮字幕点词等手势触发），切到
     // 查词 tab 让 HomeDictionaryPage 挂载并消费 pending。不在此监听 DesktopLookupService
     // ——spec 2026-07-10 §7 后服务由 AppModel 持有 app 级监听，消费按
@@ -906,6 +966,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    _webMineBackground?.dispose();
     _appleChrome.dispose();
     _largeTitle.dispose();
     _shellActions.dispose();

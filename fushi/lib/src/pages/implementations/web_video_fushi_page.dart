@@ -111,8 +111,13 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     this.returnHostingAfterMining,
     this.idleAutoMining = false,
     this.mineReturnState,
+    this.closeAfterMining = false,
     super.key,
   });
+
+  /// 本页是后台空闲自动制卡打开的（[WebMineBackgroundRunner]：用户没开着播放页）：
+  /// 跑完 / 让位 / 放弃后直接关页，不恢复播放状态。
+  final bool closeAfterMining;
 
   /// 打开后画面一就绪就自动跑本书的制卡队列（4K 窗口宿主档「切到内置档制卡」的交接）。
   final bool autoRunMineQueue;
@@ -161,6 +166,7 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     WebVideoHosting? returnHostingAfterMining,
     bool idleAutoMining = false,
     WebMineReturnState? mineReturnState,
+    bool closeAfterMining = false,
   }) => FushiAppUiScaleNeutralizer(
     child: WebVideoFushiPage(
       bookUid: bookUid,
@@ -170,6 +176,7 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
       returnHostingAfterMining: returnHostingAfterMining,
       idleAutoMining: idleAutoMining,
       mineReturnState: mineReturnState,
+      closeAfterMining: closeAfterMining,
     ),
   );
 
@@ -418,6 +425,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 本页静音采集因暂时性原因（找不到进程 / 忙）失败过：本页不再自动开跑。系统不支持
   /// 则是进程级的 [WebMineIdleScheduler.silentCaptureUnavailable]。
   bool _autoGaveUp = false;
+
+  /// [_closeAfterMining] 已经关过页（让位 / 放弃 / 跑完可能先后都走到收尾）。
+  bool _closedAfterMining = false;
 
   /// 自动制卡已触发、但还在起音频 / 读队列（[_mineRunning] 尚未置位）时用户回来了：
   /// 开跑那一刻直接让位。
@@ -971,6 +981,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   bool _canStartIdleMining() =>
       mounted &&
       widget.returnHostingAfterMining == null &&
+      !widget.closeAfterMining &&
       !_mineRunning &&
       !WebMineIdleScheduler.silentCaptureUnavailable &&
       !_autoGaveUp &&
@@ -1013,6 +1024,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 改发 Toast）；原页留结果胶囊。[status] null = 没东西可做（队列已空），不打扰用户。
   void _finishMining({required bool auto, required WebMineAutoStatus? status}) {
     if (auto) _idleScheduler?.runFinished();
+    if (widget.closeAfterMining) {
+      _closeAfterMining(auto: auto, status: status);
+      return;
+    }
     final WebVideoHosting? back = widget.returnHostingAfterMining;
     if (back == null) {
       if (mounted && status != null) setState(() => _autoStatus = status);
@@ -1036,6 +1051,27 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         mineReturnState: widget.mineReturnState ?? _replayOrigin,
       ),
     );
+  }
+
+  /// 后台空闲自动制卡打开的页：跑出结果才发 Toast（用户可能不在场，回来时看得到），
+  /// 然后关页交还给 [WebMineBackgroundRunner]。只关一次。
+  void _closeAfterMining({
+    required bool auto,
+    required WebMineAutoStatus? status,
+  }) {
+    if (_closedAfterMining) return;
+    _closedAfterMining = true;
+    if (status case WebMineAutoFinished(
+      :final int ok,
+      :final int failed,
+    ) when ok + failed > 0) {
+      FushiToast.show(
+        msg: auto
+            ? t.web_video_mine_auto_finished(ok: ok, failed: failed)
+            : t.web_video_mine_queue_finished(ok: ok, failed: failed),
+      );
+    }
+    if (mounted) unawaited(Navigator.of(context).maybePop());
   }
 
   /// 当前播放状态的快照（站点还没报状态时 null）。
@@ -1338,7 +1374,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           _mineProgress = null;
         });
         // 原页：集 / 字幕轨 / 音轨 / 位置原样还回去；交接页把它带回原档（[_finishMining]）。
-        if (widget.returnHostingAfterMining == null) {
+        if (widget.returnHostingAfterMining == null &&
+            !widget.closeAfterMining) {
           _beginRestore(_replayOrigin);
         }
         unawaited(_refreshMinePending());

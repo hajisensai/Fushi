@@ -17,9 +17,11 @@ LocalLibraryHostService _makeService({
   required Directory tmp,
   String langCode = 'ja',
   Directory? uploadedVideoRoot,
-  Future<String?> Function(
-          {required String videoPath, required String bookUid})?
-      extractVideoCover,
+  Future<String?> Function({
+    required String videoPath,
+    required String bookUid,
+  })?
+  extractVideoCover,
 }) {
   final Directory dictRoot = Directory(p.join(tmp.path, 'dicts'))
     ..createSync(recursive: true);
@@ -65,35 +67,42 @@ void main() {
     test('在线视频源入库集（anime-source://）不下发给对端，也不能挂字幕', () async {
       final File videoFile = File(p.join(tmp.path, 'local.mp4'))
         ..writeAsBytesSync(List<int>.filled(16, 0));
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/local',
-        title: 'Local',
-        videoPath: videoFile.path,
-      ));
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'anime-source:pkg:42:/ep/1',
-        title: 'Episode 1',
-        videoPath: 'anime-source://pkg/42/Show - E01',
-        streamSpecJson: const Value<String?>('{"kind":"anime-source"}'),
-      ));
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/stream',
-        title: 'Stream',
-        videoPath: 'https://example.com/a.mp4',
-      ));
-
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/local',
+          title: 'Local',
+          videoPath: videoFile.path,
+        ),
+      );
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'anime-source:pkg:42:/ep/1',
+          title: 'Episode 1',
+          videoPath: 'anime-source://pkg/42/Show - E01',
+          streamSpecJson: const Value<String?>('{"kind":"anime-source"}'),
+        ),
+      );
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
-      expect(list.map((RemoteVideoInfo v) => v.id).toSet(),
-          <String>{'video/local', 'video/stream'});
+      expect(list.map((RemoteVideoInfo v) => v.id).toSet(), <String>{
+        'video/local',
+      });
 
       final File subtitle = File(p.join(tmp.path, 'sub.srt'))
         ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nx\n');
       await expectLater(
-        svc.importVideoSubtitle(subtitle,
-            id: 'anime-source:pkg:42:/ep/1', suffix: '.srt'),
-        throwsA(isA<StateError>().having((StateError e) => e.message,
-            'message', contains('no local file'))),
+        svc.importVideoSubtitle(
+          subtitle,
+          id: 'anime-source:pkg:42:/ep/1',
+          suffix: '.srt',
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (StateError e) => e.message,
+            'message',
+            contains('no local file'),
+          ),
+        ),
       );
       expect(await svc.resolveVideoFile('anime-source:pkg:42:/ep/1'), isNull);
     });
@@ -103,11 +112,13 @@ void main() {
       final File videoFile = File(p.join(tmp.path, 'film.mp4'))
         ..writeAsBytesSync(List<int>.filled(1024, 0));
 
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/film',
-        title: 'Film Title',
-        videoPath: videoFile.path,
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/film',
+          title: 'Film Title',
+          videoPath: videoFile.path,
+        ),
+      );
 
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
@@ -125,12 +136,14 @@ void main() {
       final File coverFile = File(p.join(tmp.path, 'covered.png'))
         ..writeAsBytesSync(<int>[1, 2, 3, 4]);
 
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/covered',
-        title: 'Covered Video',
-        videoPath: videoFile.path,
-        coverPath: Value<String?>(coverFile.path),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/covered',
+          title: 'Covered Video',
+          videoPath: videoFile.path,
+          coverPath: Value<String?>(coverFile.path),
+        ),
+      );
 
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
@@ -139,11 +152,13 @@ void main() {
     });
 
     test('视频文件不存在时 sizeBytes 为 null', () async {
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/ghost',
-        title: 'Ghost',
-        videoPath: p.join(tmp.path, 'nonexistent.mp4'),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/ghost',
+          title: 'Ghost',
+          videoPath: p.join(tmp.path, 'nonexistent.mp4'),
+        ),
+      );
 
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
@@ -154,17 +169,23 @@ void main() {
       final String videoPath = p.join(tmp.path, 'show.mkv');
       File(videoPath).writeAsBytesSync(<int>[0]);
       // 创建 ja.srt sidecar
-      File(p.join(tmp.path, 'show.ja.srt'))
-          .writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nHello\n');
+      File(
+        p.join(tmp.path, 'show.ja.srt'),
+      ).writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nHello\n');
 
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/show',
-        title: 'Show',
-        videoPath: videoPath,
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/show',
+          title: 'Show',
+          videoPath: videoPath,
+        ),
+      );
 
-      final LocalLibraryHostService svc =
-          _makeService(db: db, tmp: tmp, langCode: 'ja');
+      final LocalLibraryHostService svc = _makeService(
+        db: db,
+        tmp: tmp,
+        langCode: 'ja',
+      );
       final List<RemoteVideoInfo> list = await svc.listVideos();
       expect(list[0].hasSubtitle, isTrue);
     });
@@ -172,18 +193,23 @@ void main() {
     test('sidecar 字幕文件名保留真实扩展名', () async {
       final String videoPath = p.join(tmp.path, 'show.mkv');
       File(videoPath).writeAsBytesSync(<int>[0]);
-      File(p.join(tmp.path, 'show.ja.vtt')).writeAsStringSync(
-        'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n',
+      File(
+        p.join(tmp.path, 'show.ja.vtt'),
+      ).writeAsStringSync('WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n');
+
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/show',
+          title: 'Show',
+          videoPath: videoPath,
+        ),
       );
 
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/show',
-        title: 'Show',
-        videoPath: videoPath,
-      ));
-
-      final LocalLibraryHostService svc =
-          _makeService(db: db, tmp: tmp, langCode: 'ja');
+      final LocalLibraryHostService svc = _makeService(
+        db: db,
+        tmp: tmp,
+        langCode: 'ja',
+      );
       final List<RemoteVideoInfo> list = await svc.listVideos();
 
       expect(list.single.hasSubtitle, isTrue);
@@ -191,41 +217,53 @@ void main() {
       expect(list.single.toJson()['subtitleFileName'], 'show.ja.vtt');
     });
 
-    test('BUG-814: listVideos 不做内嵌字幕 ffmpeg 探测（即便后端可返回轨也延迟到 /streamurl）',
-        () async {
-      // 注入一个「若被探测就会返回 3 轨」的 mock ffmpeg 后端——用来证明 listVideos
-      // 根本没调用它（内嵌轨探测已延迟到播放时的 /streamurl 端点，BUG-814）。
-      setFfmpegBackendForTesting(const _EmbeddedSubtitleProbeBackend());
-      final String videoPath = p.join(tmp.path, 'embedded.mkv');
-      File(videoPath).writeAsBytesSync(<int>[0, 1, 2, 3]);
+    test(
+      'BUG-814: listVideos 不做内嵌字幕 ffmpeg 探测（即便后端可返回轨也延迟到 /streamurl）',
+      () async {
+        // 注入一个「若被探测就会返回 3 轨」的 mock ffmpeg 后端——用来证明 listVideos
+        // 根本没调用它（内嵌轨探测已延迟到播放时的 /streamurl 端点，BUG-814）。
+        setFfmpegBackendForTesting(const _EmbeddedSubtitleProbeBackend());
+        final String videoPath = p.join(tmp.path, 'embedded.mkv');
+        File(videoPath).writeAsBytesSync(<int>[0, 1, 2, 3]);
 
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/embedded',
-        title: 'Embedded',
-        videoPath: videoPath,
-      ));
+        await db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: 'video/embedded',
+            title: 'Embedded',
+            videoPath: videoPath,
+          ),
+        );
 
-      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
-      final List<RemoteVideoInfo> list = await svc.listVideos();
+        final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
+        final List<RemoteVideoInfo> list = await svc.listVideos();
 
-      // 列表端点是纯 DB/stat 读：内嵌轨恒空、hasSubtitle 只反映外挂 sidecar（此处无）。
-      expect(list.single.embeddedSubtitleTracks, isEmpty,
-          reason: 'listVideos 不再逐视频 spawn ffmpeg（避免大库互联视频列表超时变空）');
-      expect(list.single.hasSubtitle, isFalse);
-      expect(list.single.subtitleFileName, isNull);
-    });
+        // 列表端点是纯 DB/stat 读：内嵌轨恒空、hasSubtitle 只反映外挂 sidecar（此处无）。
+        expect(
+          list.single.embeddedSubtitleTracks,
+          isEmpty,
+          reason: 'listVideos 不再逐视频 spawn ffmpeg（避免大库互联视频列表超时变空）',
+        );
+        expect(list.single.hasSubtitle, isFalse);
+        expect(list.single.subtitleFileName, isNull);
+      },
+    );
 
     test('BUG-996: listVideos 下发字幕时序偏移 delayMs（远端播放跟随桌面调轴）', () async {
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/delayed',
-        title: 'Delayed',
-        videoPath: '/tmp/delayed.mp4',
-        delayMs: const Value(-1500),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/delayed',
+          title: 'Delayed',
+          videoPath: '/tmp/delayed.mp4',
+          delayMs: const Value(-1500),
+        ),
+      );
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
-      expect(list.single.delayMs, -1500,
-          reason: 'host 的 VideoBooks.delayMs 必须下发给远端');
+      expect(
+        list.single.delayMs,
+        -1500,
+        reason: 'host 的 VideoBooks.delayMs 必须下发给远端',
+      );
       // toJson/fromJson 往返保真；delayMs==0 不写键的向后兼容。
       expect(RemoteVideoInfo.fromJson(list.single.toJson()).delayMs, -1500);
       const RemoteVideoInfo zero = RemoteVideoInfo(id: 'x', title: 'X');
@@ -233,27 +271,36 @@ void main() {
       expect(RemoteVideoInfo.fromJson(zero.toJson()).delayMs, 0);
     });
 
-    test('BUG-1620: 带戳 delay prefs 胜过旧 row.delayMs，清单带 delayUpdatedAtMs',
-        () async {
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/delayed2',
-        title: 'Delayed2',
-        videoPath: '/tmp/delayed2.mp4',
-        delayMs: const Value(-1500),
-      ));
-      // client 上报过带戳调轴（prefs 通道）→ 清单应下发 prefs 胜者而非旧行值。
-      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
-      await svc.putVideoPlayback('video/delayed2',
-          const VideoPlaybackSyncState(delayMs: 2000, delayAt: 1700000000000));
-      final List<RemoteVideoInfo> list = await svc.listVideos();
-      expect(list.single.delayMs, 2000, reason: '带戳 prefs 应胜过旧 row 值');
-      expect(list.single.delayUpdatedAtMs, 1700000000000,
-          reason: '清单必须带戳，client 才能做 LWW 决议');
-      // json 向后兼容：无戳时不写 delayUpdatedAtMs 键。
-      const RemoteVideoInfo zero = RemoteVideoInfo(id: 'x', title: 'X');
-      expect(zero.toJson().containsKey('delayUpdatedAtMs'), isFalse);
-      expect(RemoteVideoInfo.fromJson(zero.toJson()).delayUpdatedAtMs, 0);
-    });
+    test(
+      'BUG-1620: 带戳 delay prefs 胜过旧 row.delayMs，清单带 delayUpdatedAtMs',
+      () async {
+        await db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: 'video/delayed2',
+            title: 'Delayed2',
+            videoPath: '/tmp/delayed2.mp4',
+            delayMs: const Value(-1500),
+          ),
+        );
+        // client 上报过带戳调轴（prefs 通道）→ 清单应下发 prefs 胜者而非旧行值。
+        final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
+        await svc.putVideoPlayback(
+          'video/delayed2',
+          const VideoPlaybackSyncState(delayMs: 2000, delayAt: 1700000000000),
+        );
+        final List<RemoteVideoInfo> list = await svc.listVideos();
+        expect(list.single.delayMs, 2000, reason: '带戳 prefs 应胜过旧 row 值');
+        expect(
+          list.single.delayUpdatedAtMs,
+          1700000000000,
+          reason: '清单必须带戳，client 才能做 LWW 决议',
+        );
+        // json 向后兼容：无戳时不写 delayUpdatedAtMs 键。
+        const RemoteVideoInfo zero = RemoteVideoInfo(id: 'x', title: 'X');
+        expect(zero.toJson().containsKey('delayUpdatedAtMs'), isFalse);
+        expect(RemoteVideoInfo.fromJson(zero.toJson()).delayUpdatedAtMs, 0);
+      },
+    );
 
     test('toJson/fromJson 往返一致', () {
       const RemoteVideoInfo info = RemoteVideoInfo(
@@ -285,10 +332,7 @@ void main() {
     });
 
     test('toJson 中 durationMs=null 不出现在 JSON', () {
-      const RemoteVideoInfo info = RemoteVideoInfo(
-        id: 'video/x',
-        title: 'X',
-      );
+      const RemoteVideoInfo info = RemoteVideoInfo(id: 'video/x', title: 'X');
       final Map<String, Object?> json = info.toJson();
       expect(json.containsKey('durationMs'), isFalse);
     });
@@ -301,13 +345,13 @@ void main() {
     const String uid = 'video/delay-sync';
 
     Future<void> insertVideo({int delayMs = 0}) => db.upsertVideoBook(
-          VideoBooksCompanion.insert(
-            bookUid: uid,
-            title: 'Delay Sync',
-            videoPath: '/tmp/delay-sync.mp4',
-            delayMs: Value(delayMs),
-          ),
-        );
+      VideoBooksCompanion.insert(
+        bookUid: uid,
+        title: 'Delay Sync',
+        videoPath: '/tmp/delay-sync.mp4',
+        delayMs: Value(delayMs),
+      ),
+    );
 
     test('无带戳 prefs 时回退行/系列级基底（戳 0）；未知 id 返回默认', () async {
       await insertVideo(delayMs: -800);
@@ -315,8 +359,9 @@ void main() {
       final VideoPlaybackSyncState s = await svc.getVideoPlayback(uid);
       expect(s.delayMs, -800, reason: '旧数据（无 prefs）行为与此前直读 row 一致');
       expect(s.delayAt, 0);
-      final VideoPlaybackSyncState missing =
-          await svc.getVideoPlayback('video/none');
+      final VideoPlaybackSyncState missing = await svc.getVideoPlayback(
+        'video/none',
+      );
       expect(missing.delayMs, 0);
       expect(missing.delayAt, 0);
     });
@@ -325,16 +370,18 @@ void main() {
       await insertVideo();
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       await svc.putVideoPlayback(
-          uid,
-          const VideoPlaybackSyncState(
-              delayMs: -1500,
-              delayAt: 1700000000000,
-              audioTrackId: '3',
-              audioTrackAt: 1700000000000,
-              secondarySubtitleSource: 'embedded:4',
-              secondarySubtitleAt: 1700000000000,
-              secondaryDelayMs: 250,
-              secondaryDelayAt: 1700000000000));
+        uid,
+        const VideoPlaybackSyncState(
+          delayMs: -1500,
+          delayAt: 1700000000000,
+          audioTrackId: '3',
+          audioTrackAt: 1700000000000,
+          secondarySubtitleSource: 'embedded:4',
+          secondarySubtitleAt: 1700000000000,
+          secondaryDelayMs: 250,
+          secondaryDelayAt: 1700000000000,
+        ),
+      );
       VideoPlaybackSyncState s = await svc.getVideoPlayback(uid);
       expect(s.delayMs, -1500);
       expect(s.audioTrackId, '3');
@@ -347,14 +394,18 @@ void main() {
       expect(row.secondarySubtitleSource, 'embedded:4');
       expect(row.secondaryDelayMs, 250);
       // 滞后设备旧戳不得回退（逐字段独立判定：只带旧戳 delay 的 PUT 不影响其它字段）。
-      await svc.putVideoPlayback(uid,
-          const VideoPlaybackSyncState(delayMs: 999, delayAt: 1699999990000));
+      await svc.putVideoPlayback(
+        uid,
+        const VideoPlaybackSyncState(delayMs: 999, delayAt: 1699999990000),
+      );
       s = await svc.getVideoPlayback(uid);
       expect(s.delayMs, -1500, reason: '旧时间戳不应回退新调轴');
       expect(s.audioTrackId, '3', reason: '未携带的字段不受影响');
       // 带戳 null（显式清除副字幕调轴）→ 清除也收敛。
       await svc.putVideoPlayback(
-          uid, const VideoPlaybackSyncState(secondaryDelayAt: 1700000005000));
+        uid,
+        const VideoPlaybackSyncState(secondaryDelayAt: 1700000005000),
+      );
       s = await svc.getVideoPlayback(uid);
       expect(s.secondaryDelayMs, isNull, reason: '带戳清除必须覆盖旧值（回跟随）');
       expect((await db.getVideoBookByBookUid(uid))!.secondaryDelayMs, isNull);
@@ -362,16 +413,19 @@ void main() {
 
     test('putVideoPlayback 未知 id / 空状态 no-op（不写脏 prefs）', () async {
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
-      await svc.putVideoPlayback('video/ghost',
-          const VideoPlaybackSyncState(delayMs: 1234, delayAt: 1700000000000));
+      await svc.putVideoPlayback(
+        'video/ghost',
+        const VideoPlaybackSyncState(delayMs: 1234, delayAt: 1700000000000),
+      );
       expect(
-          await db.getPrefTyped<int>(videoRemoteDelayPrefKey('video/ghost'), 0),
-          0,
-          reason: '存在性闸门：任意 id 上报不得写出孤儿 prefs');
+        await db.getPrefTyped<int>(videoRemoteDelayPrefKey('video/ghost'), 0),
+        0,
+        reason: '存在性闸门：任意 id 上报不得写出孤儿 prefs',
+      );
       expect(
-          await db.getPrefTyped<int>(
-              videoRemoteDelayAtPrefKey('video/ghost'), 0),
-          0);
+        await db.getPrefTyped<int>(videoRemoteDelayAtPrefKey('video/ghost'), 0),
+        0,
+      );
     });
 
     test('putVideoPlayback clamp ±600000；未来时间戳被上限截断', () async {
@@ -380,19 +434,28 @@ void main() {
       final int farFuture =
           DateTime.now().millisecondsSinceEpoch + 10 * 24 * 3600 * 1000;
       await svc.putVideoPlayback(
-          uid, VideoPlaybackSyncState(delayMs: -9999999, delayAt: farFuture));
+        uid,
+        VideoPlaybackSyncState(delayMs: -9999999, delayAt: farFuture),
+      );
       final VideoPlaybackSyncState s = await svc.getVideoPlayback(uid);
       expect(s.delayMs, -600000, reason: '越界调轴必须 clamp（±10 分钟）');
-      expect(s.delayAt,
-          lessThan(DateTime.now().millisecondsSinceEpoch + 6 * 60 * 1000),
-          reason: '未来戳必须截到 now+5min 内，否则 LWW 被永久锁死');
+      expect(
+        s.delayAt,
+        lessThan(DateTime.now().millisecondsSinceEpoch + 6 * 60 * 1000),
+        reason: '未来戳必须截到 now+5min 内，否则 LWW 被永久锁死',
+      );
       // 截断后的戳仍然「较新」，正常设备随后的调轴还能覆盖。
       await Future<void>.delayed(const Duration(milliseconds: 5));
       final int newer = DateTime.now().millisecondsSinceEpoch + 5 * 60 * 1000;
       await svc.putVideoPlayback(
-          uid, VideoPlaybackSyncState(delayMs: 777, delayAt: newer));
-      expect((await svc.getVideoPlayback(uid)).delayMs, 777,
-          reason: '截断语义不得把正常设备永远锁在门外');
+        uid,
+        VideoPlaybackSyncState(delayMs: 777, delayAt: newer),
+      );
+      expect(
+        (await svc.getVideoPlayback(uid)).delayMs,
+        777,
+        reason: '截断语义不得把正常设备永远锁在门外',
+      );
     });
   });
 
@@ -400,15 +463,18 @@ void main() {
 
   group('series-level prefs in listing (schema v52 → interconnect)', () {
     test('清单下发系列级调轴/音轨（col ?? row）+ completedAt', () async {
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/s1',
-        title: 'S1',
-        videoPath: '/tmp/s1.mp4',
-        delayMs: const Value(-100),
-        audioTrackId: const Value<String?>('1'),
-        completedAt: Value<DateTime?>(
-            DateTime.fromMillisecondsSinceEpoch(1700000000000)),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/s1',
+          title: 'S1',
+          videoPath: '/tmp/s1.mp4',
+          delayMs: const Value(-100),
+          audioTrackId: const Value<String?>('1'),
+          completedAt: Value<DateTime?>(
+            DateTime.fromMillisecondsSinceEpoch(1700000000000),
+          ),
+        ),
+      );
       final int cid = await db.createMediaCollection('Series S');
       await db.upsertCollectionItemAt(cid, 'video', 'video/s1', 0);
       await db.updateMediaCollectionSubtitleDelayMs(cid, -2000);
@@ -416,11 +482,17 @@ void main() {
 
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final RemoteVideoInfo info = (await svc.listVideos()).single;
-      expect(info.delayMs, -2000,
-          reason: 'host 在合集里调的轴（系列级）此前远端永远看不到——须优先于 row');
+      expect(
+        info.delayMs,
+        -2000,
+        reason: 'host 在合集里调的轴（系列级）此前远端永远看不到——须优先于 row',
+      );
       expect(info.audioTrackId, '3', reason: '系列级音轨优先于 row');
-      expect(info.completedAt, 1700000000000,
-          reason: '看完标记下发（client 剧集面板角标口径）');
+      expect(
+        info.completedAt,
+        1700000000000,
+        reason: '看完标记下发（client 剧集面板角标口径）',
+      );
       // json 往返（additive 字段向后兼容）。
       final RemoteVideoInfo back = RemoteVideoInfo.fromJson(info.toJson());
       expect(back.audioTrackId, '3');
@@ -428,11 +500,13 @@ void main() {
     });
 
     test('getVideoPlayback 用系列级基底；putVideoPlayback 写穿 row + 系列级', () async {
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/s2',
-        title: 'S2',
-        videoPath: '/tmp/s2.mp4',
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/s2',
+          title: 'S2',
+          videoPath: '/tmp/s2.mp4',
+        ),
+      );
       final int cid = await db.createMediaCollection('Series S2');
       await db.upsertCollectionItemAt(cid, 'video', 'video/s2', 0);
       await db.updateMediaCollectionSubtitleDelayMs(cid, -2000);
@@ -443,84 +517,113 @@ void main() {
       expect(s.delayAt, 0);
 
       await svc.putVideoPlayback(
-          'video/s2',
-          const VideoPlaybackSyncState(
-              delayMs: 1500,
-              delayAt: 1700000000000,
-              audioTrackId: '2',
-              audioTrackAt: 1700000000000));
+        'video/s2',
+        const VideoPlaybackSyncState(
+          delayMs: 1500,
+          delayAt: 1700000000000,
+          audioTrackId: '2',
+          audioTrackAt: 1700000000000,
+        ),
+      );
       expect((await db.getVideoBookByBookUid('video/s2'))!.delayMs, 1500);
-      expect((await db.getMediaCollectionById(cid))!.subtitleDelayMs, 1500,
-          reason: '系列级写穿：host 本机合集播放（读 col ?? row）立即跟随，'
-              '只写 row 会被非 null 系列级值遮蔽');
-      expect((await db.getMediaCollectionById(cid))!.audioTrackId, '2',
-          reason: '音轨同理（系列级音轨记忆）');
+      expect(
+        (await db.getMediaCollectionById(cid))!.subtitleDelayMs,
+        1500,
+        reason:
+            '系列级写穿：host 本机合集播放（读 col ?? row）立即跟随，'
+            '只写 row 会被非 null 系列级值遮蔽',
+      );
+      expect(
+        (await db.getMediaCollectionById(cid))!.audioTrackId,
+        '2',
+        reason: '音轨同理（系列级音轨记忆）',
+      );
     });
   });
 
   group('TODO-885 remote episodes', () {
-    test('playlistJson rows map to episodes (index+title, never host path)',
-        () async {
-      final Directory series = Directory(p.join(tmp.path, 'series'))
-        ..createSync();
-      final File ep0 = File(p.join(series.path, 'ep0.mp4'))
-        ..writeAsBytesSync(<int>[0]);
-      final File ep1 = File(p.join(series.path, 'ep1.mp4'))
-        ..writeAsBytesSync(<int>[0]);
-      final String playlistJson = jsonEncode(<Map<String, dynamic>>[
-        <String, dynamic>{
-          'title': 'Episode 1',
-          'path': ep0.path,
-          'positionMs': 0
-        },
-        <String, dynamic>{
-          'title': 'Episode 2',
-          'path': ep1.path,
-          'positionMs': 0
-        },
-      ]);
+    test(
+      'playlistJson rows map to episodes (index+title, never host path)',
+      () async {
+        final Directory series = Directory(p.join(tmp.path, 'series'))
+          ..createSync();
+        final File ep0 = File(p.join(series.path, 'ep0.mp4'))
+          ..writeAsBytesSync(<int>[0]);
+        final File ep1 = File(p.join(series.path, 'ep1.mp4'))
+          ..writeAsBytesSync(<int>[0]);
+        final String playlistJson = jsonEncode(<Map<String, dynamic>>[
+          <String, dynamic>{
+            'title': 'Episode 1',
+            'path': ep0.path,
+            'positionMs': 0,
+          },
+          <String, dynamic>{
+            'title': 'Episode 2',
+            'path': ep1.path,
+            'positionMs': 0,
+          },
+        ]);
 
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/series',
-        title: 'My Series',
-        videoPath: ep0.path,
-        playlistJson: Value<String?>(playlistJson),
-        currentEpisode: const Value<int>(1),
-      ));
+        await db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: 'video/series',
+            title: 'My Series',
+            videoPath: ep0.path,
+            playlistJson: Value<String?>(playlistJson),
+            currentEpisode: const Value<int>(1),
+          ),
+        );
 
-      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
-      final List<RemoteVideoInfo> list = await svc.listVideos();
-      expect(list.single.episodes, hasLength(2));
-      expect(list.single.episodes[0].index, 0);
-      expect(list.single.episodes[0].title, 'Episode 1');
-      expect(list.single.episodes[1].index, 1);
-      expect(list.single.episodes[1].title, 'Episode 2');
-      expect(list.single.currentEpisode, 1,
-          reason: 'currentEpisode picks the default start episode');
+        final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
+        final List<RemoteVideoInfo> list = await svc.listVideos();
+        expect(list.single.episodes, hasLength(2));
+        expect(list.single.episodes[0].index, 0);
+        expect(list.single.episodes[0].title, 'Episode 1');
+        expect(list.single.episodes[1].index, 1);
+        expect(list.single.episodes[1].title, 'Episode 2');
+        expect(
+          list.single.currentEpisode,
+          1,
+          reason: 'currentEpisode picks the default start episode',
+        );
 
-      final String dumped = jsonEncode(list.single.toJson());
-      expect(dumped.contains(ep0.path), isFalse,
-          reason: 'episode JSON must not leak host file path');
-      expect(dumped.contains(ep1.path), isFalse);
-      expect(dumped.contains(series.path), isFalse,
-          reason: 'episode JSON must not leak host directory structure');
-    });
+        final String dumped = jsonEncode(list.single.toJson());
+        expect(
+          dumped.contains(ep0.path),
+          isFalse,
+          reason: 'episode JSON must not leak host file path',
+        );
+        expect(dumped.contains(ep1.path), isFalse);
+        expect(
+          dumped.contains(series.path),
+          isFalse,
+          reason: 'episode JSON must not leak host directory structure',
+        );
+      },
+    );
 
-    test('single video (no playlistJson) has empty episodes and omits the key',
-        () async {
-      final File f = File(p.join(tmp.path, 'single.mp4'))
-        ..writeAsBytesSync(<int>[0]);
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/single',
-        title: 'Single',
-        videoPath: f.path,
-      ));
-      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
-      final List<RemoteVideoInfo> list = await svc.listVideos();
-      expect(list.single.episodes, isEmpty);
-      expect(list.single.toJson().containsKey('episodes'), isFalse,
-          reason: 'single video stays backward compatible (no episodes key)');
-    });
+    test(
+      'single video (no playlistJson) has empty episodes and omits the key',
+      () async {
+        final File f = File(p.join(tmp.path, 'single.mp4'))
+          ..writeAsBytesSync(<int>[0]);
+        await db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: 'video/single',
+            title: 'Single',
+            videoPath: f.path,
+          ),
+        );
+        final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
+        final List<RemoteVideoInfo> list = await svc.listVideos();
+        expect(list.single.episodes, isEmpty);
+        expect(
+          list.single.toJson().containsKey('episodes'),
+          isFalse,
+          reason: 'single video stays backward compatible (no episodes key)',
+        );
+      },
+    );
 
     test('episodes round-trip preserves index+title (only when length>1)', () {
       const RemoteVideoInfo info = RemoteVideoInfo(
@@ -547,7 +650,7 @@ void main() {
         id: 'video/one',
         title: 'One',
         episodes: <RemoteVideoEpisode>[
-          RemoteVideoEpisode(index: 0, title: 'A')
+          RemoteVideoEpisode(index: 0, title: 'A'),
         ],
       );
       expect(info.toJson().containsKey('episodes'), isFalse);
@@ -568,80 +671,109 @@ void main() {
         <String, dynamic>{'title': 'E0', 'path': ep0.path, 'positionMs': 0},
         <String, dynamic>{'title': 'E1', 'path': ep1.path, 'positionMs': 0},
       ]);
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/series2',
-        title: 'Series2',
-        videoPath: ep0.path,
-        playlistJson: Value<String?>(playlistJson),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/series2',
+          title: 'Series2',
+          videoPath: ep0.path,
+          playlistJson: Value<String?>(playlistJson),
+        ),
+      );
     }
 
-    test('resolveVideoFile(episodeIndex) looks up playlistJson[N].path',
-        () async {
-      await seedSeries();
-      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
-      final File? f0 =
-          await svc.resolveVideoFile('video/series2', episodeIndex: 0);
-      final File? f1 =
-          await svc.resolveVideoFile('video/series2', episodeIndex: 1);
-      expect(f0, isNotNull);
-      expect(f1, isNotNull);
-      expect(p.basename(f0!.path), 'ep0.mkv');
-      expect(p.basename(f1!.path), 'ep1.mkv');
-    });
+    test(
+      'resolveVideoFile(episodeIndex) looks up playlistJson[N].path',
+      () async {
+        await seedSeries();
+        final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
+        final File? f0 = await svc.resolveVideoFile(
+          'video/series2',
+          episodeIndex: 0,
+        );
+        final File? f1 = await svc.resolveVideoFile(
+          'video/series2',
+          episodeIndex: 1,
+        );
+        expect(f0, isNotNull);
+        expect(f1, isNotNull);
+        expect(p.basename(f0!.path), 'ep0.mkv');
+        expect(p.basename(f1!.path), 'ep1.mkv');
+      },
+    );
 
     test('out-of-range episodeIndex returns null (safe reject)', () async {
       await seedSeries();
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       expect(
-          await svc.resolveVideoFile('video/series2', episodeIndex: 9), isNull);
-      expect(await svc.resolveVideoFile('video/series2', episodeIndex: -1),
-          isNull);
+        await svc.resolveVideoFile('video/series2', episodeIndex: 9),
+        isNull,
+      );
+      expect(
+        await svc.resolveVideoFile('video/series2', episodeIndex: -1),
+        isNull,
+      );
     });
 
     test('resolveVideoSubtitle(episodeIndex) per-episode sidecar', () async {
       await seedSeries();
-      final LocalLibraryHostService svc =
-          _makeService(db: db, tmp: tmp, langCode: 'ja');
-      final File? sub1 =
-          await svc.resolveVideoSubtitle('video/series2', episodeIndex: 1);
+      final LocalLibraryHostService svc = _makeService(
+        db: db,
+        tmp: tmp,
+        langCode: 'ja',
+      );
+      final File? sub1 = await svc.resolveVideoSubtitle(
+        'video/series2',
+        episodeIndex: 1,
+      );
       expect(sub1, isNotNull);
       expect(p.basename(sub1!.path), 'ep1.ja.srt');
-      final File? sub0 =
-          await svc.resolveVideoSubtitle('video/series2', episodeIndex: 0);
+      final File? sub0 = await svc.resolveVideoSubtitle(
+        'video/series2',
+        episodeIndex: 0,
+      );
       expect(sub0, isNull);
     });
 
-    test('episodeIndex=0 equals legacy single-video behavior (videoPath)',
-        () async {
-      final File f = File(p.join(tmp.path, 'plain.mp4'))
-        ..writeAsBytesSync(<int>[0]);
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/plain',
-        title: 'Plain',
-        videoPath: f.path,
-      ));
-      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
-      final File? r =
-          await svc.resolveVideoFile('video/plain', episodeIndex: 0);
-      expect(r, isNotNull);
-      expect(r!.path, f.path);
-    });
+    test(
+      'episodeIndex=0 equals legacy single-video behavior (videoPath)',
+      () async {
+        final File f = File(p.join(tmp.path, 'plain.mp4'))
+          ..writeAsBytesSync(<int>[0]);
+        await db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: 'video/plain',
+            title: 'Plain',
+            videoPath: f.path,
+          ),
+        );
+        final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
+        final File? r = await svc.resolveVideoFile(
+          'video/plain',
+          episodeIndex: 0,
+        );
+        expect(r, isNotNull);
+        expect(r!.path, f.path);
+      },
+    );
 
     test('per-episode progress prefs keys are isolated by episode', () async {
       await seedSeries();
       await db.setPrefTyped<int>(
-          videoRemotePositionEpisodePrefKey('video/series2', 1), 50000);
+        videoRemotePositionEpisodePrefKey('video/series2', 1),
+        50000,
+      );
       await db.setPrefTyped<int>(
-          videoRemotePositionEpisodeAtPrefKey('video/series2', 1), 9000);
+        videoRemotePositionEpisodeAtPrefKey('video/series2', 1),
+        9000,
+      );
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
-      final ({int positionMs, int updatedAtMs}) ep1 =
-          await svc.getVideoPosition('video/series2', episodeIndex: 1);
+      final ({int positionMs, int updatedAtMs}) ep1 = await svc
+          .getVideoPosition('video/series2', episodeIndex: 1);
       expect(ep1.positionMs, 50000);
       expect(ep1.updatedAtMs, 9000);
-      final ({int positionMs, int updatedAtMs}) ep0 =
-          await svc.getVideoPosition('video/series2', episodeIndex: 0);
+      final ({int positionMs, int updatedAtMs}) ep0 = await svc
+          .getVideoPosition('video/series2', episodeIndex: 0);
       expect(ep0.positionMs, 0);
     });
   });
@@ -652,11 +784,13 @@ void main() {
     test('已知 id + 文件存在 → 返回 File', () async {
       final File videoFile = File(p.join(tmp.path, 'clip.mp4'))
         ..writeAsBytesSync(<int>[1, 2, 3]);
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/clip',
-        title: 'Clip',
-        videoPath: videoFile.path,
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/clip',
+          title: 'Clip',
+          videoPath: videoFile.path,
+        ),
+      );
 
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final File? f = await svc.resolveVideoFile('video/clip');
@@ -671,11 +805,13 @@ void main() {
     });
 
     test('已知 id 但文件不存在 → null', () async {
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/vanished',
-        title: 'Vanished',
-        videoPath: p.join(tmp.path, 'vanished.mp4'), // 不创建文件
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/vanished',
+          title: 'Vanished',
+          videoPath: p.join(tmp.path, 'vanished.mp4'), // 不创建文件
+        ),
+      );
 
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final File? f = await svc.resolveVideoFile('video/vanished');
@@ -694,69 +830,96 @@ void main() {
     });
 
     test('IPTV 直播频道（rtsp）与 .strm 流指针没有可下发的媒体字节 → null', () async {
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/channel',
-        title: 'Channel',
-        videoPath: 'rtsp://10.0.0.1:554/live/1',
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/channel',
+          title: 'Channel',
+          videoPath: 'rtsp://10.0.0.1:554/live/1',
+        ),
+      );
       // 本地 `.strm` 在磁盘上**存在**——旧判据只看 existsSync，会把这一行地址文本
       // 当视频文件下发给对端。
       final File strm = File(p.join(tmp.path, 'show.strm'))
         ..writeAsStringSync('https://example.com/live.m3u8\n');
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/strm',
-        title: 'Strm',
-        videoPath: strm.path,
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/strm',
+          title: 'Strm',
+          videoPath: strm.path,
+        ),
+      );
 
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       expect(await svc.resolveVideoFile('video/channel'), isNull);
       expect(await svc.resolveVideoFile('video/strm'), isNull);
       // 剪音频走同一条反查，也不会拿文本去喂 ffmpeg。
-      expect(await svc.clipVideoAudio('video/strm', startMs: 0, endMs: 1000),
-          isNull);
+      expect(
+        await svc.clipVideoAudio('video/strm', startMs: 0, endMs: 1000),
+        isNull,
+      );
     });
 
-    test('listVideos 不把 .strm 的文本大小 / 同目录字幕当成视频的', () async {
+    test('网络流书（Netflix 页 / 直链 / 频道）与 .strm 不下发给对端：host 没有媒体字节可给', () async {
+      // 反馈 _xEjClqXTQ：手机点电脑库里的 Netflix 条目 → /streamurl 404 →「无法加载该视频」。
+      final File videoFile = File(p.join(tmp.path, 'local.mp4'))
+        ..writeAsBytesSync(List<int>.filled(16, 0));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/local',
+          title: 'Local',
+          videoPath: videoFile.path,
+        ),
+      );
+      for (final (String uid, String path) in <(String, String)>[
+        ('video/netflix', 'https://www.netflix.com/watch/81731212'),
+        ('video/direct', 'https://example.com/a.mp4'),
+        ('video/channel', 'rtsp://10.0.0.1:554/live/1'),
+      ]) {
+        await db.upsertVideoBook(
+          VideoBooksCompanion.insert(bookUid: uid, title: uid, videoPath: path),
+        );
+        expect(
+          await _makeService(db: db, tmp: tmp).resolveVideoFile(uid),
+          isNull,
+          reason: '$uid：host 下发不了，所以不该出现在清单里',
+        );
+      }
       final File strm = File(p.join(tmp.path, 'pointer.strm'))
         ..writeAsStringSync('https://example.com/live.m3u8\n');
-      File(p.join(tmp.path, 'pointer.ja.srt'))
-          .writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nHello\n');
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/pointer',
-        title: 'Pointer',
-        videoPath: strm.path,
-      ));
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/channel',
-        title: 'Channel',
-        videoPath: 'udp://@239.0.0.1:1234',
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/pointer',
+          title: 'Pointer',
+          videoPath: strm.path,
+        ),
+      );
 
-      final LocalLibraryHostService svc =
-          _makeService(db: db, tmp: tmp, langCode: 'ja');
-      final Map<String, RemoteVideoInfo> byId = <String, RemoteVideoInfo>{
-        for (final RemoteVideoInfo v in await svc.listVideos()) v.id: v,
-      };
-      expect(byId['video/pointer']!.sizeBytes, isNull);
-      expect(byId['video/pointer']!.hasSubtitle, isFalse);
-      expect(byId['video/channel']!.sizeBytes, isNull);
-      expect(byId['video/channel']!.hasSubtitle, isFalse);
+      final List<RemoteVideoInfo> list = await _makeService(
+        db: db,
+        tmp: tmp,
+      ).listVideos();
+      expect(list.map((RemoteVideoInfo v) => v.id).toSet(), <String>{
+        'video/local',
+      });
     });
 
     test('rtsp 频道 / .strm 行拒收对端推来的字幕（无本地视频本体）', () async {
       final File strm = File(p.join(tmp.path, 'pushed.strm'))
         ..writeAsStringSync('https://example.com/live.m3u8\n');
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/pushed',
-        title: 'Pushed',
-        videoPath: strm.path,
-      ));
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/channel',
-        title: 'Channel',
-        videoPath: 'rtsp://10.0.0.1:554/live/1',
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/pushed',
+          title: 'Pushed',
+          videoPath: strm.path,
+        ),
+      );
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/channel',
+          title: 'Channel',
+          videoPath: 'rtsp://10.0.0.1:554/live/1',
+        ),
+      );
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       for (final String id in <String>['video/pushed', 'video/channel']) {
         final File sub = File(p.join(tmp.path, 'incoming.srt'))
@@ -779,16 +942,23 @@ void main() {
       final File subFile = File(p.join(tmp.path, 'ep01.ja.srt'))
         ..writeAsStringSync('sub');
 
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/ep01',
-        title: 'Ep01',
-        videoPath: videoPath,
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/ep01',
+          title: 'Ep01',
+          videoPath: videoPath,
+        ),
+      );
 
-      final LocalLibraryHostService svc =
-          _makeService(db: db, tmp: tmp, langCode: 'ja');
-      final File? f =
-          await svc.resolveVideoSubtitle('video/ep01', langCode: 'ja');
+      final LocalLibraryHostService svc = _makeService(
+        db: db,
+        tmp: tmp,
+        langCode: 'ja',
+      );
+      final File? f = await svc.resolveVideoSubtitle(
+        'video/ep01',
+        langCode: 'ja',
+      );
       expect(f, isNotNull);
       expect(f!.path, subFile.path);
     });
@@ -797,11 +967,13 @@ void main() {
       final String videoPath = p.join(tmp.path, 'nosub.mkv');
       File(videoPath).writeAsBytesSync(<int>[0]);
 
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/nosub',
-        title: 'NoSub',
-        videoPath: videoPath,
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/nosub',
+          title: 'NoSub',
+          videoPath: videoPath,
+        ),
+      );
 
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final File? f = await svc.resolveVideoSubtitle('video/nosub');
@@ -819,19 +991,23 @@ void main() {
   group('getVideoPosition host-local backward compat', () {
     test('falls back to VideoBooks.lastPositionMs when no prefs', () async {
       // host 本机播放只写 lastPositionMs（旧数据，无 video_remote_position prefs）。
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/local',
-        title: 'Local',
-        videoPath: '/tmp/local.mp4',
-        lastPositionMs: const Value(360000),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/local',
+          title: 'Local',
+          videoPath: '/tmp/local.mp4',
+          lastPositionMs: const Value(360000),
+        ),
+      );
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
-      final ({int positionMs, int updatedAtMs}) progress =
-          await svc.getVideoPosition('video/local');
-      expect(progress.positionMs, 360000,
-          reason:
-              'host self-play progress must be readable via getVideoPosition');
+      final ({int positionMs, int updatedAtMs}) progress = await svc
+          .getVideoPosition('video/local');
+      expect(
+        progress.positionMs,
+        360000,
+        reason: 'host self-play progress must be readable via getVideoPosition',
+      );
       // 无 importedAt 且无 prefs 戳：返回 0（该行未设 importedAt）。
       expect(progress.updatedAtMs, 0);
     });
@@ -839,45 +1015,53 @@ void main() {
     test('BUG-996: lastPositionMs 回退用 importedAt 作下界时间戳', () async {
       // host 本机播放只写 lastPositionMs（无 remote_position prefs），但行有 importedAt。
       const int importedMs = 1700000000000;
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/legacy',
-        title: 'Legacy',
-        videoPath: '/tmp/legacy.mp4',
-        lastPositionMs: const Value(900746),
-        importedAt: const Value(importedMs),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/legacy',
+          title: 'Legacy',
+          videoPath: '/tmp/legacy.mp4',
+          lastPositionMs: const Value(900746),
+          importedAt: const Value(importedMs),
+        ),
+      );
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
-      final ({int positionMs, int updatedAtMs}) progress =
-          await svc.getVideoPosition('video/legacy');
+      final ({int positionMs, int updatedAtMs}) progress = await svc
+          .getVideoPosition('video/legacy');
       expect(progress.positionMs, 900746);
       // BUG-996：不再恒 0——用 importedAt 作下界戳，host 真进度不被无效本地断点吃掉。
       expect(progress.updatedAtMs, importedMs);
     });
 
     test('prefs progress wins over lastPositionMs', () async {
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/both',
-        title: 'Both',
-        videoPath: '/tmp/both.mp4',
-        lastPositionMs: const Value(100000),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/both',
+          title: 'Both',
+          videoPath: '/tmp/both.mp4',
+          lastPositionMs: const Value(100000),
+        ),
+      );
       await db.setPrefTyped<int>(
-          videoRemotePositionPrefKey('video/both'), 800000);
+        videoRemotePositionPrefKey('video/both'),
+        800000,
+      );
       await db.setPrefTyped<int>(
-          videoRemotePositionAtPrefKey('video/both'), 7000);
+        videoRemotePositionAtPrefKey('video/both'),
+        7000,
+      );
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
-      final ({int positionMs, int updatedAtMs}) progress =
-          await svc.getVideoPosition('video/both');
+      final ({int positionMs, int updatedAtMs}) progress = await svc
+          .getVideoPosition('video/both');
       expect(progress.positionMs, 800000);
       expect(progress.updatedAtMs, 7000);
     });
 
     test('unknown id returns zero', () async {
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
-      final ({int positionMs, int updatedAtMs}) progress =
-          await svc.getVideoPosition('video/missing');
+      final ({int positionMs, int updatedAtMs}) progress = await svc
+          .getVideoPosition('video/missing');
       expect(progress.positionMs, 0);
       expect(progress.updatedAtMs, 0);
     });
@@ -892,13 +1076,13 @@ void main() {
     const int importedMs = 1700000000000;
 
     Future<void> seedRow(String uid) => db.upsertVideoBook(
-          VideoBooksCompanion.insert(
-            bookUid: uid,
-            title: uid,
-            videoPath: '/tmp/$uid.mp4',
-            importedAt: const Value(importedMs),
-          ),
-        );
+      VideoBooksCompanion.insert(
+        bookUid: uid,
+        title: uid,
+        videoPath: '/tmp/$uid.mp4',
+        importedAt: const Value(importedMs),
+      ),
+    );
 
     test('子端上报较新进度：行 lastPositionMs/lastPlayedAt 前进，时刻=对端戳', () async {
       await seedRow('video/ep14');
@@ -909,15 +1093,21 @@ void main() {
 
       final VideoBookRow? row = await db.getVideoBookByBookUid('video/ep14');
       expect(row!.lastPositionMs, 1200000);
-      expect(row.lastPlayedAt, peerAt,
-          reason: 'playedAt 必须用对端 updatedAtMs（不是 now），否则旧进度会钉死续播锚点');
+      expect(
+        row.lastPlayedAt,
+        peerAt,
+        reason: 'playedAt 必须用对端 updatedAtMs（不是 now），否则旧进度会钉死续播锚点',
+      );
     });
 
     test('host 本机行进度较旧时被对端推进（用户场景：手机看完后续集数）', () async {
       await seedRow('video/ep15');
       // host 本机曾播过一点（行级进度 + 本机时刻）。
-      await db.updateVideoBookPosition('video/ep15', 300000,
-          playedAt: importedMs + 1000);
+      await db.updateVideoBookPosition(
+        'video/ep15',
+        300000,
+        playedAt: importedMs + 1000,
+      );
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
       const int peerAt = importedMs + 7200000;
@@ -947,16 +1137,21 @@ void main() {
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
       const int peerAt = importedMs + 60000;
-      await svc.putVideoPosition('video/playlist-row', 700000, peerAt,
-          episodeIndex: 1);
+      await svc.putVideoPosition(
+        'video/playlist-row',
+        700000,
+        peerAt,
+        episodeIndex: 1,
+      );
 
       // 行级 lastPositionMs 无按集语义，episodeIndex>0 只落 per-episode prefs。
-      final VideoBookRow? row =
-          await db.getVideoBookByBookUid('video/playlist-row');
+      final VideoBookRow? row = await db.getVideoBookByBookUid(
+        'video/playlist-row',
+      );
       expect(row!.lastPositionMs, 0);
       expect(row.lastPlayedAt, isNull);
-      final ({int positionMs, int updatedAtMs}) ep1 =
-          await svc.getVideoPosition('video/playlist-row', episodeIndex: 1);
+      final ({int positionMs, int updatedAtMs}) ep1 = await svc
+          .getVideoPosition('video/playlist-row', episodeIndex: 1);
       expect(ep1.positionMs, 700000);
       expect(ep1.updatedAtMs, peerAt);
     });
@@ -966,10 +1161,13 @@ void main() {
 
       await svc.putVideoPosition('video/stream-only', 800000, 7000);
 
-      expect(await db.getVideoBookByBookUid('video/stream-only'), isNull,
-          reason: '流式视频绝不强建行污染书架');
-      final ({int positionMs, int updatedAtMs}) progress =
-          await svc.getVideoPosition('video/stream-only');
+      expect(
+        await db.getVideoBookByBookUid('video/stream-only'),
+        isNull,
+        reason: '流式视频绝不强建行污染书架',
+      );
+      final ({int positionMs, int updatedAtMs}) progress = await svc
+          .getVideoPosition('video/stream-only');
       expect(progress.positionMs, 800000);
       expect(progress.updatedAtMs, 7000);
     });
@@ -980,8 +1178,11 @@ void main() {
     test('上传视频落进 uploadedVideoRoot 并 upsert VideoBooks 行（保留扩展名）', () async {
       final Directory uploads = Directory(p.join(tmp.path, 'remote_videos'))
         ..createSync(recursive: true);
-      final LocalLibraryHostService svc =
-          _makeService(db: db, tmp: tmp, uploadedVideoRoot: uploads);
+      final LocalLibraryHostService svc = _makeService(
+        db: db,
+        tmp: tmp,
+        uploadedVideoRoot: uploads,
+      );
 
       // client 上传的临时字节（模拟 server 落到临时目录的 body）。
       final File upload = File(p.join(tmp.path, 'upload.bin'))
@@ -1012,8 +1213,11 @@ void main() {
     test('重复上传同一 bookUid 幂等覆盖同一行（不产生重复条目）', () async {
       final Directory uploads = Directory(p.join(tmp.path, 'remote_videos'))
         ..createSync(recursive: true);
-      final LocalLibraryHostService svc =
-          _makeService(db: db, tmp: tmp, uploadedVideoRoot: uploads);
+      final LocalLibraryHostService svc = _makeService(
+        db: db,
+        tmp: tmp,
+        uploadedVideoRoot: uploads,
+      );
 
       await svc.importVideo(
         File(p.join(tmp.path, 'u1.bin'))
@@ -1047,9 +1251,9 @@ void main() {
         db: db,
         tmp: tmp,
         uploadedVideoRoot: uploads,
-        extractVideoCover: (
-                {required String videoPath, required String bookUid}) async =>
-            coverFile.path,
+        extractVideoCover:
+            ({required String videoPath, required String bookUid}) async =>
+                coverFile.path,
       );
 
       await svc.importVideo(
@@ -1098,12 +1302,15 @@ class _EmbeddedSubtitleProbeBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
     if (args.contains('-hide_banner')) {
-      return const FfmpegRunResult(returnCode: 1, output: '''
+      return const FfmpegRunResult(
+        returnCode: 1,
+        output: '''
   Stream #0:0: Video: h264
   Stream #0:1(jpn): Subtitle: subrip (srt) (default)
   Stream #0:2(eng): Subtitle: mov_text (tx3g)
   Stream #0:3(jpn): Subtitle: hdmv_pgs_subtitle
-''');
+''',
+      );
     }
     return const FfmpegRunResult(returnCode: 0, output: '');
   }
