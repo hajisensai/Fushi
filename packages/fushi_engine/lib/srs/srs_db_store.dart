@@ -10,6 +10,8 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate' show TransferableTypedData;
+import 'dart:typed_data' show TypedData;
 import 'dart:math';
 
 import 'package:drift/drift.dart';
@@ -389,7 +391,10 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 6（srs.db schema v8）：srs_cards_cache.freq_rank（笔记词频序字段的名次，新卡按词频出卡用；由内核
   /// native/fushi_fsrs/src/store/caches.rs 的卡片行计算写出）。老库这一列是空的，升级时全部笔记缓存重算一遍。
-  static const int _kCacheRevision = 6;
+  ///
+  /// 7（srs.db schema v13）：srs_notes_cache.source_kind / source_title（笔记出处，统计页的「制卡来源」由内核直接读，
+  /// 见 store/bulk.rs `stats_bundle`）。老库这两列是空的，升级时全部笔记缓存重算一遍（`anki_id` 由 v13 迁移回填）。
+  static const int _kCacheRevision = 7;
   int _cacheRevision = _kCacheRevision;
 
   /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。
@@ -404,6 +409,11 @@ class SrsDbStore implements SrsSync2Host {
   /// 当前修订号（同步可读；与 [changeFingerprint] 同一个数，不含纪元）。牌组列表据此判断一份重读
   /// 结果是不是在某次写入之后取的。
   int get revision => _revision;
+
+  /// 统计指纹：纪元 + 落库事件里会改变统计结果的那部分（复习日志、卡片 / 笔记 / 牌组 / 笔记类型的内容事件、冲突
+  /// 扣住与解除）。界面状态类修改记录（牌组收起 / 展开，[SrsFieldClass.viewState]）不计入；没有事件落库的写入（同步
+  /// 簿记、媒体、空轮）不改变它。统计页据此判断 [srsRevisionProvider] 的一跳要不要重读（见 `loadSrsStats`）。
+  String get statsFingerprint => '$_epoch:${_revision - _viewRevision}';
 
   /// 内容指纹：纪元 + 内容修订号。相等 = 两次读之间没有落过日志 / 界面状态以外的事件、没有换过服务器
   /// 时刻、没有重读过本机状态——同步冲突 / 待裁决 / 迁移提醒的计数不可能变。
@@ -1293,6 +1303,28 @@ class SrsDbStore implements SrsSync2Host {
     List<Uint8List> blobs = const <Uint8List>[],
   }) async => (await _sync2Raw(request, blobs: blobs)).map;
 
+  /// 一条交回列式表的只读内核命令（store/bulk.rs）：结果的每个文件是一张 [SrsColumns]，从 worker 以
+  /// [TransferableTypedData] 交回，在本 isolate 上直接建视图。
+  Future<({Object? json, Map<String, SrsColumns> tables})> _columnsCommand(
+    Map<String, Object?> request,
+  ) async {
+    debugCoreCommands++;
+    final (
+      Object? json,
+      Map<String, TransferableTypedData> files,
+    ) = await _coreColumns(core.address, core.libraryPath, <String, Object?>{
+      ...request,
+      'profile': profileUid,
+    });
+    return (
+      json: json,
+      tables: <String, SrsColumns>{
+        for (final MapEntry<String, TransferableTypedData> f in files.entries)
+          f.key: SrsColumns.decode(f.value.materialize().asUint8List()),
+      },
+    );
+  }
+
   Future<SrsSync2Result> _sync2Raw(
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
@@ -1766,9 +1798,7 @@ class SrsDbStore implements SrsSync2Host {
     final List<String> cards = ids('cards');
     final List<String> removed = ids('removed');
     if (notes.isEmpty && cards.isEmpty && removed.isEmpty) return;
-    // 删掉的卡留在数字索引里无害（映射到的 UUID 查不到行，见 [_ankiNoteIndex]）。
     _journalCacheWrite(notes, <String>[...cards, ...removed]);
-    _indexCacheRows(notes, cards);
   }
 
   /// 批量读（历史、血统）每块的卡数：块内的读各合成几次往返。
@@ -1948,7 +1978,7 @@ class SrsDbStore implements SrsSync2Host {
           ],
         );
       }
-      if (_cacheRevision < 6) await _refreshCaches(allNotes: true);
+      if (_cacheRevision < 7) await _refreshCaches(allNotes: true);
       _cacheRevision = _kCacheRevision;
       await _saveLocal();
     });
@@ -3642,26 +3672,20 @@ class SrsDbStore implements SrsSync2Host {
     };
   }
 
-  /// [rows]（RWKV 牌组的复习卡）此刻的 RWKV 回忆率：统计页的可提取度用。RWKV 用不了时 null。
+  /// [cards]（RWKV 牌组的复习卡）此刻的 RWKV 回忆率：统计页的可提取度用。RWKV 用不了时 null。
   Future<Map<String, double>?> instantRetrievabilityOf(
-    List<SrsCardCacheRow> rows,
+    List<SrsRwkvCandidate> cards,
   ) async {
     final SrsRwkvScheduling? source = rwkv;
     if (source == null || !source.ready) return null;
-    if (rows.isEmpty) return const <String, double>{};
-    final List<double>? scores = await source
-        .instantRetrievability(<SrsRwkvCandidate>[
-          for (final SrsCardCacheRow r in rows)
-            SrsRwkvCandidate(
-              id: r.id,
-              noteId: r.noteId,
-              deckId: r.deckId,
-              lastLogId: r.lastLogId,
-            ),
-        ], nowMs: now().$1);
-    if (scores == null || scores.length != rows.length) return null;
+    if (cards.isEmpty) return const <String, double>{};
+    final List<double>? scores = await source.instantRetrievability(
+      cards,
+      nowMs: now().$1,
+    );
+    if (scores == null || scores.length != cards.length) return null;
     return <String, double>{
-      for (int i = 0; i < rows.length; i++) rows[i].id: scores[i],
+      for (int i = 0; i < cards.length; i++) cards[i].id: scores[i],
     };
   }
 
@@ -4435,10 +4459,81 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
-  /// 本 profile 的全部卡片缓存行（含隐藏）。
-  Future<List<SrsCardCacheRow>> allCardRows() => (db.select(
-    db.srsCardsCache,
-  )..where((c) => c.profileUid.equals(profileUid))).get();
+  /// 本 profile 的卡片缓存行按列（内核 `card_columns`，native/fushi_fsrs/src/store/bulk.rs）：只读快照里一次读完，
+  /// 列式字节经 [TransferableTypedData] 从 worker 原样交过来，不再经 Drift 解码成行对象、再 SendPort 深拷贝。
+  /// [fields] 限定要哪几列（缓存表列名，如 `id` / `note_id` / `deck_id`；缺省全部）；[visibleOnly] 只要可见卡。
+  Future<SrsColumns> cardColumns({
+    List<String>? fields,
+    bool visibleOnly = false,
+  }) async => (await _columnsCommand(<String, Object?>{
+    'op': 'card_columns',
+    'fields': ?fields,
+    if (visibleOnly) 'visibleOnly': true,
+  })).tables['columns']!;
+
+  /// 统计页的三张表（内核 `stats_bundle`：可见卡的统计列、出处字典、有效复习投影，另有复习归属到的不可见卡 ID），
+  /// 见 `loadSrsStats`。
+  Future<Map<String, SrsColumns>> statsColumns() async =>
+      (await _columnsCommand(const <String, Object?>{
+        'op': 'stats_bundle',
+      })).tables;
+
+  /// 本 profile 的全部卡片缓存行（含隐藏）。由 [cardColumns] 组装；只要几列的调用方直接用 [cardColumns]。
+  Future<List<SrsCardCacheRow>> allCardRows() async {
+    final SrsColumns c = await cardColumns();
+    final SrsStringColumn id = c.strings('id');
+    final SrsStringColumn note = c.strings('note_id');
+    final SrsStringColumn template = c.strings('template_id');
+    final SrsIntColumn ord = c.ints('cloze_ord');
+    final SrsStringColumn deck = c.strings('deck_id');
+    final SrsIntColumn suspended = c.ints('suspended');
+    final SrsIntColumn buried = c.ints('buried_until_day');
+    final SrsIntColumn flag = c.ints('flag');
+    final SrsIntColumn hidden = c.ints('hidden');
+    final SrsStringColumn queue = c.strings('queue');
+    final SrsIntColumn dueDay = c.ints('due_day');
+    final SrsIntColumn dueAt = c.ints('due_at');
+    final SrsIntColumn days = c.ints('scheduled_days');
+    final SrsIntColumn reps = c.ints('reps');
+    final SrsIntColumn lapses = c.ints('lapses');
+    final SrsDoubleColumn stability = c.doubles('stability');
+    final SrsDoubleColumn difficulty = c.doubles('difficulty');
+    final SrsIntColumn last = c.ints('last_reviewed_at');
+    final SrsStringColumn lastLog = c.strings('last_log_id');
+    final SrsStringColumn scheduler = c.strings('scheduler');
+    final SrsIntColumn created = c.ints('note_created_at');
+    final SrsIntColumn position = c.ints('new_position');
+    final SrsIntColumn freq = c.ints('freq_rank');
+    return <SrsCardCacheRow>[
+      for (int i = 0; i < c.rows; i++)
+        SrsCardCacheRow(
+          id: id[i],
+          profileUid: profileUid,
+          noteId: note[i],
+          templateId: template[i],
+          clozeOrd: ord[i],
+          deckId: deck[i],
+          suspended: suspended.flag(i),
+          buriedUntilDay: buried.at(i),
+          flag: flag[i],
+          hidden: hidden.flag(i),
+          queue: queue[i],
+          dueDay: dueDay.at(i),
+          dueAt: dueAt.at(i),
+          scheduledDays: days[i],
+          reps: reps[i],
+          lapses: lapses[i],
+          stability: stability.at(i),
+          difficulty: difficulty.at(i),
+          lastReviewedAt: last.at(i),
+          lastLogId: lastLog.at(i),
+          scheduler: scheduler[i],
+          noteCreatedAt: created[i],
+          newPosition: position.at(i),
+          freqRank: freq.at(i),
+        ),
+    ];
+  }
 
   /// 笔记缓存的变化戳：(行数, 最大 updatedAt)。笔记内容 / 笔记类型变化都会刷新笔记缓存行。
   Future<(int, int)> notesCacheStamp() async {
@@ -4452,87 +4547,32 @@ class SrsDbStore implements SrsSync2Host {
     return (row.read(count) ?? 0, row.read(maxUpdated) ?? 0);
   }
 
-  /// AnkiConnect 整数 id → UUID 的本机索引（不同步）。null = 还没回填（或缓存行被整体换掉，
-  /// 要重新回填）；回填之后由 [_absorbCache] 在写缓存行的同一个独占区 / 事务里随写随增，未命中即
-  /// 「不存在」——不再每次未命中都整表重建（HBK-AUDIT-017）。
-  ///
-  /// 缓存行只经 [_absorbCache] 写入（导入、同步、更改笔记类型、编辑都走缓存刷新）；绕过它整体
-  /// 删 / 换缓存行的路径（[rebuildCaches]、事务回滚后的 [_loadLocal] 重读）调
-  /// [_resetCacheJournal] 把索引置回 null，下次查时重新回填。被删掉的实体在索引里留着无害：
-  /// 它映射到的 UUID 查不到行，调用方照常报「不存在」。
-  Map<int, String>? _ankiNoteIndex;
-  Map<int, String>? _ankiCardIndex;
-
-  /// 整表回填数字索引（在独占区里跑：回填期间不会有写入插进来、让新行既不在回填结果里、
-  /// 又因为索引还是 null 没被 [_absorbCache] 记上）。
-  Future<void> _ensureAnkiNumericIndex() async {
-    if (_ankiNoteIndex != null && _ankiCardIndex != null) return;
-    await runExclusive(() async {
-      if (_ankiNoteIndex != null && _ankiCardIndex != null) return;
-      final List<SrsNoteCacheRow> notes = await (db.select(
-        db.srsNotesCache,
-      )..where((n) => n.profileUid.equals(profileUid))).get();
-      final List<SrsCardCacheRow> cards = await allCardRows();
-      // 整表一次批量派生（hash53 在 native/fushi_compute 里算）。
-      final List<String> noteIds = <String>[
-        for (final SrsNoteCacheRow n in notes) n.id,
-      ];
-      final List<String> cardIds = <String>[
-        for (final SrsCardCacheRow c in cards) c.id,
-      ];
-      final List<int> noteNums = SrsIds.ankiNumericIds(noteIds);
-      final List<int> cardNums = SrsIds.ankiNumericIds(cardIds);
-      _ankiNoteIndex = <int, String>{
-        for (int i = 0; i < noteIds.length; i++) noteNums[i]: noteIds[i],
-      };
-      _ankiCardIndex = <int, String>{
-        for (int i = 0; i < cardIds.length; i++) cardNums[i]: cardIds[i],
-      };
-    });
-  }
-
-  /// 一批刚写的缓存行登记进数字索引（索引还没回填时什么也不做：回填会读到它们）。
-  void _indexCacheRows(List<String> noteIds, List<String> cardIds) {
-    final Map<int, String>? notes = _ankiNoteIndex;
-    if (notes != null && noteIds.isNotEmpty) {
-      final List<int> nums = SrsIds.ankiNumericIds(noteIds);
-      for (int i = 0; i < noteIds.length; i++) {
-        notes[nums[i]] = noteIds[i];
-      }
-    }
-    final Map<int, String>? cards = _ankiCardIndex;
-    if (cards != null && cardIds.isNotEmpty) {
-      final List<int> nums = SrsIds.ankiNumericIds(cardIds);
-      for (int i = 0; i < cardIds.length; i++) {
-        cards[nums[i]] = cardIds[i];
-      }
-    }
-  }
-
   /// AnkiConnect 整数笔记 id（[SrsIds.ankiNumericId]）→ noteId；没有这条笔记为 null。
-  Future<String?> noteIdForAnkiNumericId(int ankiId) async {
-    await _ensureAnkiNumericIndex();
-    return _ankiNoteIndex![ankiId];
-  }
+  ///
+  /// 内核按缓存表的 `anki_id` 列（srs.db v13，写缓存行时算好、建了索引）直接反查（`anki_resolve`）。以前这里在
+  /// Dart 里整表读笔记缓存与卡片缓存、批量算一遍 hash53，常驻两张 int → UUID 映射，缓存整体换掉后再整表回填。
+  Future<String?> noteIdForAnkiNumericId(int ankiId) async =>
+      (await noteIdsForAnkiNumericIds(<int>[ankiId])).single;
 
   /// AnkiConnect 整数卡片 id → cardId（同 [noteIdForAnkiNumericId]）。
-  Future<String?> cardIdForAnkiNumericId(int ankiId) async {
-    await _ensureAnkiNumericIndex();
-    return _ankiCardIndex![ankiId];
-  }
+  Future<String?> cardIdForAnkiNumericId(int ankiId) async =>
+      (await cardIdsForAnkiNumericIds(<int>[ankiId])).single;
 
-  /// [noteIdForAnkiNumericId] 的成批版本（按输入顺序）。
-  Future<List<String?>> noteIdsForAnkiNumericIds(List<int> ankiIds) async {
-    await _ensureAnkiNumericIndex();
-    final Map<int, String> index = _ankiNoteIndex!;
-    return <String?>[for (final int n in ankiIds) index[n]];
-  }
+  /// [noteIdForAnkiNumericId] 的成批版本（按输入顺序），一次内核命令。
+  Future<List<String?>> noteIdsForAnkiNumericIds(List<int> ankiIds) =>
+      _ankiResolve('notes', ankiIds);
 
-  /// [cardIdForAnkiNumericId] 的成批版本（按输入顺序）。
-  Future<List<String?>> cardIdsForAnkiNumericIds(List<int> ankiIds) async {
-    await _ensureAnkiNumericIndex();
-    final Map<int, String> index = _ankiCardIndex!;
-    return <String?>[for (final int n in ankiIds) index[n]];
+  /// [cardIdForAnkiNumericId] 的成批版本（按输入顺序），一次内核命令。
+  Future<List<String?>> cardIdsForAnkiNumericIds(List<int> ankiIds) =>
+      _ankiResolve('cards', ankiIds);
+
+  Future<List<String?>> _ankiResolve(String kind, List<int> ankiIds) async {
+    if (ankiIds.isEmpty) return const <String?>[];
+    final Map<String, Object?> r = await _sync2(<String, Object?>{
+      'op': 'anki_resolve',
+      kind: ankiIds,
+    });
+    return <String?>[for (final Object? id in r[kind]! as List) id as String?];
   }
 
   // ------------------------------------------------------------------ 缓存变更日志
@@ -4589,14 +4629,12 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
-  /// 缓存行被整体换掉 / 内存与库可能不一致：日志作废（旧代号一律答 null）、数字索引待重新回填。
+  /// 缓存行被整体换掉 / 内存与库可能不一致：日志作废（旧代号一律答 null）。
   void _resetCacheJournal() {
     _cacheGeneration++;
     _cacheJournal.clear();
     _cacheJournalIds = 0;
     _cacheJournalFloor = _cacheGeneration;
-    _ankiNoteIndex = null;
-    _ankiCardIndex = null;
   }
 }
 
@@ -4742,6 +4780,22 @@ Future<Uint8List> _coreRwkvLogTail(
     incremental: incremental,
   ),
 );
+
+Future<(Object?, Map<String, TransferableTypedData>)> _coreColumns(
+  int address,
+  String? libraryPath,
+  Map<String, Object?> request,
+) => SrsCoreWorkers.of(libraryPath)
+    .run<(Object?, Map<String, TransferableTypedData>)>(address, (SrsCore c) {
+      final SrsSync2Result r = c.sync2(request);
+      return (
+        r.json,
+        <String, TransferableTypedData>{
+          for (final (String name, Uint8List bytes) in r.files)
+            name: TransferableTypedData.fromList(<TypedData>[bytes]),
+        },
+      );
+    });
 
 Future<SrsSync2Result> _coreSync2(
   int address,

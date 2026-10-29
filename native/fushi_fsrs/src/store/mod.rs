@@ -14,6 +14,7 @@
 //! 只打开 `srs.db`、它的备份快照副本或自己生成的临时文件；绝不打开主库 `fushi.db`（同一进程里
 //! Drift 那份 SQLite 与这里自带的一份同开一个文件，会在 POSIX 平台上互相清掉文件锁）。
 
+pub mod bulk;
 pub(crate) mod caches;
 pub mod ffi;
 pub mod rows;
@@ -375,7 +376,8 @@ impl SrsCore {
             return Err("legacy import not started".into());
         }
         let w = self.writer()?;
-        let result = Self::set_meta(&w, LEGACY_KEY, "1").and_then(|_| {
+        // 旧表形态没有 v13 的 `anki_id` 列：搬进来的缓存行在同一笔事务里补算。
+        let result = schema::backfill_anki_ids(&w).and_then(|_| Self::set_meta(&w, LEGACY_KEY, "1")).and_then(|_| {
             w.execute_batch("COMMIT").map_err(|e| e.to_string())
         });
         if result.is_err() {
@@ -900,8 +902,8 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        // v1–v8 的 14 条 + v9 的 6 条队列 / 计数 / 日志索引。
-        assert_eq!(idx, 20);
+        // v1–v8 的 14 条 + v9 的 6 条队列 / 计数 / 日志索引 + v13 的 2 条 AnkiConnect 数字 id 索引。
+        assert_eq!(idx, 22);
     }
 
     #[test]
