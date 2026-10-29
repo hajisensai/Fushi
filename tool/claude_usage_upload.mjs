@@ -20,6 +20,9 @@ import { join } from 'node:path';
 
 const DAY_MS = 86400 * 1000;
 const MAX_ROWS = 400;
+// 与服务端 services/leaderboard/src/ai_usage.js 的 MODEL_RE 同一规则：不合规的模型名在本地丢弃，
+// 否则服务端整批 400，之后每次定时上传都会因同一行失败。
+export const MODEL_RE = /^[A-Za-z0-9._:@/-]{1,128}$/;
 
 /**
  * @param {string[]} argv
@@ -69,7 +72,7 @@ export function aggregate(projects, days, now = Date.now()) {
       }
       const m = d.message;
       const u = m && m.usage;
-      if (d.type !== 'assistant' || !u || !m.model || m.model.startsWith('<')) continue;
+      if (d.type !== 'assistant' || !u || typeof m.model !== 'string' || !MODEL_RE.test(m.model)) continue;
       const day = String(d.timestamp || '').slice(0, 10);
       if (day < firstDay) continue;
       const key = `${m.id}|${d.requestId}`;

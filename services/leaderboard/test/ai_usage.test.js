@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { call, makeEnv } from './harness.js';
-import { normalizeUsage, weightedCost } from '../src/ai_usage.js';
+import { MODEL_RE, normalizeUsage, weightedCost } from '../src/ai_usage.js';
+import { MODEL_RE as UPLOADER_MODEL_RE } from '../../../tool/claude_usage_upload.mjs';
 
 const NOW = Date.UTC(2026, 9, 29, 12);
 const TOKEN = 'usage-token-0123456789abcdef';
@@ -42,6 +43,10 @@ describe('AI 额度上传', () => {
     bad({ source: 'pc', rows: [{ ...ok, model: '<x>' }] });
     bad({ source: 'pc', rows: [ok, ok] });
     expect(normalizeUsage({ source: 'pc', rows: [ok] }, NOW).rows).toHaveLength(1);
+    // Vertex / Bedrock 形态的模型名合法，不能让整批被拒。
+    for (const model of ['claude-opus-4-5@20251101', 'us.anthropic.claude-opus-4-5-v1:0', 'arn:aws:bedrock:us-east-1:1:inference-profile/x']) {
+      expect(normalizeUsage({ source: 'pc', rows: [row('2026-10-28', model)] }, NOW).rows).toHaveLength(1);
+    }
   });
 
   it('空库页面不报错；转义模型名', async () => {
@@ -49,6 +54,10 @@ describe('AI 额度上传', () => {
     const r = await call(env, 'GET', '/usage', { now: NOW });
     expect(r.status).toBe(200);
     expect(r.data).toContain('还没有上传数据');
+  });
+
+  it('上传脚本与服务端的模型名规则一致（否则一行坏数据让整批 400）', () => {
+    expect(UPLOADER_MODEL_RE.source).toBe(MODEL_RE.source);
   });
 
   it('weightedCost 按缓存计价比例折算', () => {

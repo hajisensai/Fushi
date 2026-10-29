@@ -21,7 +21,9 @@ export const USAGE_LIMITS = {
 
 const DAY_MS = 86400 * 1000;
 const SOURCE_RE = /^[a-z0-9_-]{1,32}$/;
-const MODEL_RE = /^[A-Za-z0-9._:-]{1,64}$/;
+// 模型名形态：直连 `claude-opus-5-5`、Vertex `claude-…@20251101`、Bedrock `us.anthropic.claude-…:0` / ARN `arn:aws:bedrock:…/…`。
+// 与 tool/claude_usage_upload.mjs 的 MODEL_RE 保持一致：客户端先按它丢弃不合规行，单行坏数据不会让整批 400。
+export const MODEL_RE = /^[A-Za-z0-9._:@/-]{1,128}$/;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
