@@ -1,6 +1,7 @@
 // 服务器曲库（音乐方案 §13 P5）：Jellyfin 音乐客户端（复用视频的 JellyfinApi 传输与凭据）、
 // 播放项换算、服务器页与「混排进曲库」的页面接线。
 
+import 'dart:io';
 import 'dart:convert';
 
 import 'package:drift/native.dart';
@@ -22,6 +23,7 @@ import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../helpers/test_platform_services.dart';
+import 'package:fushi_music/fushi_music.dart' show MusicPluginManager;
 
 const JellyfinServerConfig _config = JellyfinServerConfig(
   serverUrl: 'http://nas:8096',
@@ -135,6 +137,15 @@ Future<void> _pump(WidgetTester tester, AppModel app, Widget home) async {
   await tester.pumpAndSettle();
 }
 
+/// 没装任何插件的插件管理器：根目录不存在，列表恒空，不碰磁盘。
+MusicPluginManager _noPlugins() => MusicPluginManager(
+  rootDir: Directory(
+    '${Directory.systemTemp.path}/fushi-music-server-test-no-plugins',
+  ),
+  httpClientFactory: HttpClient.new,
+  log: (_, _, _) {},
+);
+
 void main() {
   group('Jellyfin 音乐客户端', () {
     test('专辑分页 / 曲目 / 搜索 / 流 / 封面：同一份认证头、令牌在 query', () async {
@@ -244,7 +255,8 @@ void main() {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final AppModel app = AppModel(testPlatformServices())
-      ..wireDatabaseForTesting(db);
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
     final _FakeBrowser browser = _FakeBrowser();
     await _pump(
       tester,
@@ -270,7 +282,8 @@ void main() {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final AppModel app = AppModel(testPlatformServices())
-      ..wireDatabaseForTesting(db);
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
     final _FakeBrowser browser = _FakeBrowser();
     await _pump(
       tester,
@@ -305,7 +318,8 @@ void main() {
     expect(prefs.musicSubsonicServers, isEmpty);
 
     final AppModel app = AppModel(testPlatformServices())
-      ..wireDatabaseForTesting(db);
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
     expect(app.isPreferencesReady, isFalse);
     expect(await loadMusicServerBrowsers(app), isEmpty);
     expect(await loadMixedServerAlbums(app), isEmpty);

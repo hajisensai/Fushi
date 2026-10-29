@@ -129,6 +129,29 @@ void main() {
     expect(engine.isPlaying, isFalse);
   });
 
+  test('队列来源：playQueue 记住、onTrackStarted 时可读、换队列替换、stop 清掉', () async {
+    MusicPlaySource? seen;
+    engine.onTrackStarted = (MusicPlayItem i) => seen = engine.source;
+    const MusicPlaySource album = MusicPlaySource.album('a1', title: 'A');
+    await engine.playQueue(<MusicPlayItem>[
+      _item('a'),
+      _item('b'),
+    ], source: album);
+    expect(seen, album);
+    await engine.skipNext();
+    expect(seen, album, reason: '同一队列里换曲来源不变');
+    await engine.setShuffle(true);
+    expect(engine.source, album);
+    await engine.playQueue(<MusicPlayItem>[_item('c')]);
+    expect(seen, isNull, reason: '新队列没传来源 = 未知，不沿用上一个');
+    await engine.playQueue(<MusicPlayItem>[
+      _item('d'),
+    ], source: MusicPlaySource.pluginPlaylist('demo', 'pl/9'));
+    expect(engine.source?.hostRef, (hostId: 'demo', itemId: 'pl/9'));
+    await engine.stop();
+    expect(engine.source, isNull);
+  });
+
   test('AB 循环：下发给后端；空区间 = 关；换曲目（含无缝推进）自动关', () async {
     await engine.playQueue(<MusicPlayItem>[_item('a'), _item('b'), _item('c')]);
     await engine.setAbLoop(

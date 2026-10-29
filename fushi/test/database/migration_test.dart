@@ -137,7 +137,7 @@ void main() {
           .map((r) => r.data['name'] as String)
           .toSet();
       expect(tableNames, containsAll(['series', 'shelf_entries']));
-      expect(db.schemaVersion, 138);
+      expect(db.schemaVersion, 139);
     });
 
     test(
@@ -146,7 +146,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 138,
+      expect(db.schemaVersion, 139,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -180,7 +180,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 138,
+      expect(db.schemaVersion, 139,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -202,7 +202,7 @@ void main() {
     test('fresh DB (v35) has video_books.stream_spec_json column (TODO-1157)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 138);
+      expect(db.schemaVersion, 139);
       final cols =
           await db.customSelect("PRAGMA table_info('video_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -212,7 +212,7 @@ void main() {
 
     test('fresh DB (v45) has media_collections.anilist_id column', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 138);
+      expect(db.schemaVersion, 139);
       final cols =
           await db.customSelect("PRAGMA table_info('media_collections')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -222,7 +222,7 @@ void main() {
 
     test('fresh DB (v46) has epub_books.completed_at column', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 138);
+      expect(db.schemaVersion, 139);
       final cols =
           await db.customSelect("PRAGMA table_info('epub_books')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -234,7 +234,7 @@ void main() {
         'fresh DB (v36) has favorite_words.book_key + title columns (TODO-1252)',
         () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 138);
+      expect(db.schemaVersion, 139);
       final cols =
           await db.customSelect("PRAGMA table_info('favorite_words')").get();
       final colNames = cols.map((r) => r.data['name'] as String).toSet();
@@ -248,7 +248,7 @@ void main() {
     // 且既有合集行**一行不少、一列不改**（升级绝不能碰用户数据）。
     test('fresh DB (v64) has collection_scrape_meta table', () async {
       final db = await _openDb();
-      expect(db.schemaVersion, 138);
+      expect(db.schemaVersion, 139);
       final rows = await db
           .customSelect(
               "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_scrape_meta'")

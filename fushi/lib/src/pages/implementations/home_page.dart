@@ -2151,13 +2151,19 @@ class _HomePageState extends BasePageState<HomePage>
         // 横滑切模块（只在手机底栏布局启用）。结构三套布局恒定，只翻 enabled：
         // 按布局增删这一层会让 GlobalKey 下的整棵正文重挂（BUG-2719 的那个坑）。
         Expanded(
-          child: HomeModuleSwipeDetector(
-            enabled: _moduleSwipeEnabled(),
-            tracker: _moduleRoot,
-            controller: _moduleSwipe,
-            targetFor: _moduleSwipeTarget,
-            onSwipe: _selectTab,
-            child: buildBody(),
+          // 音乐播放条真悬浮在正文之上（用户 2026-10-29：「做成真悬浮不要占住
+          // 底部」）：不再占 Column 的一行，胶囊两侧透出、点得到下面的内容。
+          child: MusicFloatingBarHost(
+            // 各 tab 自管底部留白；音乐页自己包 MusicBarReserve。
+            reserveSpace: false,
+            child: HomeModuleSwipeDetector(
+              enabled: _moduleSwipeEnabled(),
+              tracker: _moduleRoot,
+              controller: _moduleSwipe,
+              targetFor: _moduleSwipeTarget,
+              onSwipe: _selectTab,
+              child: buildBody(),
+            ),
           ),
         ),
         // 玻璃设计系统的移动布局里内容延伸到悬浮标签栏下面（extendBody），
@@ -2172,7 +2178,6 @@ class _HomePageState extends BasePageState<HomePage>
                 const RecommendedPackDownloadMiniBar(),
               if (visibility.isEnabled(ModuleId.listening))
                 const NowListeningMiniBar(),
-              const MusicNowPlayingBar(),
             ],
           ),
         ),

@@ -56,7 +56,16 @@ Future<void> _seedUserData(
         ),
       );
   for (final int s in playStarts) {
-    await db.startMusicPlayEvent(trackUid: 't1', startedAt: s);
+    await db.startMusicPlayEvent(
+      trackUid: 't1',
+      startedAt: s,
+      snapshot: MusicPlayEventSnapshot(
+        path: 'fushi-music-plugin://np/t1',
+        title: 'T1',
+        sourceKind: 'plugin_playlist',
+        sourceId: 'np/$s',
+      ),
+    );
   }
 }
 
@@ -172,6 +181,20 @@ void main() {
         .getSingle();
     expect(utf8.decode(lyric.read<Uint8List>('raw')), 'local lyric');
     expect(await _count(cur, 'music_play_events'), 2, reason: '20 去重，10 并入');
+    final QueryRow merged = await cur
+        .customSelect(
+          'SELECT path, title, source_kind, source_id FROM music_play_events '
+          'WHERE started_at = 10',
+        )
+        .getSingle();
+    expect(
+      merged.read<String>('path'),
+      'fushi-music-plugin://np/t1',
+      reason: 'v139 快照随合并导入带过来（在线曲目的最近播放全靠它）',
+    );
+    expect(merged.read<String>('title'), 'T1');
+    expect(merged.read<String>('source_kind'), 'plugin_playlist');
+    expect(merged.read<String>('source_id'), 'np/10');
     expect(await _count(cur, 'music_tracks'), 0, reason: '曲库目录是设备本地，不随备份来');
   });
 

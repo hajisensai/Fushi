@@ -31,7 +31,8 @@ fushi_web_core = { path = "../fushi_web_core" }
 # AGPL-3.0-or-later：见上面 license 处的说明。
 fushi_rwkv = { path = "../fushi_rwkv" }
 # 音乐胖核心（GPL-3.0-only；lofty / sha1 MIT OR Apache-2.0，encoding_rs (Apache-2.0 OR MIT) AND BSD-3-Clause）。
-fushi_music = { path = "../fushi_music" }
+# default-features = false：不带 plugin 特性（在线音源插件的 JS 运行时），iOS 不上这项能力。
+fushi_music = { path = "../fushi_music", default-features = false }
 # 语料胖核心（「我库里的例句」倒排索引，fcorp_*；零外部 crate 依赖，GPL-3.0-only）。
 fushi_corpus = { path = "../fushi_corpus" }
 

@@ -12,9 +12,9 @@
     "native/fushi_fsrs/Cargo.lock": "78c5ea7d38e660dbaeb59a6659e3c012fcaa3150907493b873746639e02dd14e",
     "native/fushi_fsrs/Cargo.toml": "026fc64ababbc107fa75cefad082ac80a5c5db4a85dce45fef57d0606ecb454f",
     "native/fushi_ios_umbrella/Cargo.lock": "7286acc35384f142d2545ac8164c3630c41a2bc9bd701f5b3c126b181f99845e",
-    "native/fushi_ios_umbrella/Cargo.toml": "b0d847351339d0dca895285bcfe34fb3fdc7434e2a917fa44cba37f96186b0d7",
-    "native/fushi_music/Cargo.lock": "d60da239f95ea65b13a54f5c93d5545d77ba14ebfefa801e41175a92d8d2d64b",
-    "native/fushi_music/Cargo.toml": "e4111d04a0c3dd6e480419741fee2fb014051cfc5cf267c3889da24db24e0082",
+    "native/fushi_ios_umbrella/Cargo.toml": "4ed339300c28218efbd798edb160922a79d1b77b2069937ae85c9a4455e1e9c7",
+    "native/fushi_music/Cargo.lock": "75a053345ab749fb1ffbeb67d1f8abf6440ff6e8df22401fa455c3d259314679",
+    "native/fushi_music/Cargo.toml": "98833bb05bc0dc5553a334229348460c99b7c3da329c619130ab4b4c1281a088",
     "native/fushi_p2p/Cargo.lock": "e50e51d44154f56bc3771a7278dbae39ba260f5d884fa68f9e98d0dd501be4e4",
     "native/fushi_p2p/Cargo.toml": "4c1cd272cf7d1ebbaa774a8cf9f17ae771bd6f36d2607fb3a4590447178d68a2",
     "native/fushi_rwkv/Cargo.lock": "4266ab30ac34757a5e95aa95202377ca0a021b4fb288b12e0e009ac157444961",
@@ -33,10 +33,11 @@
     "native/galgame_hook/third_party/locale_emulator/LICENSE-LGPL.txt": "ea8af5e789cb2d4e9b10bce3874982ade163b749b6bfbdb32e2df21c4d106de1",
     "native/galgame_hook/third_party/lunahook/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "native/galgame_hook/third_party/minhook/LICENSE.txt": "2bfff5fa29fc5d1cb2745acfaad9d930e983f5c8dd97e0ec5735d9199cf8f416",
-    "native/third_party_licenses/manifest.json": "827b97866902b9adf4b0bb83ea18dcf9c4befa58c20acc32a8582b38fdf58d7c",
+    "native/third_party_licenses/manifest.json": "860e817d1299595ba0f85d3fc1e096dea67c325c55089c1352f38f47d8b85403",
     "native/third_party_licenses/texts/boost-1.91.0-LICENSE_1_0.txt": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
     "native/third_party_licenses/texts/cdda/libcdio-2.3.0-COPYING": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
     "native/third_party_licenses/texts/cdda/libcdio-paranoia-10.2+2.0.2-COPYING": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+    "native/third_party_licenses/texts/crates/DelSkayn-rquickjs-d7ef5eea/LICENSE": "976ad3d07927343ab99b31510625acba89eac8e0e517c712925620ddeda91b70",
     "native/third_party_licenses/texts/crates/DimaKudosh-difflib-6fd59b0c/LICENSE": "6725d1437fc6c77301f2ff0e7d52914cf4f9509213e1078dc77d9356dbe6eac5",
     "native/third_party_licenses/texts/crates/OpenByteDev-dlopen2-cc80e4a0/LICENSE": "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2",
     "native/third_party_licenses/texts/crates/dropbox-rust-alloc-no-stdlib-0a81fd69/LICENSE": "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae",
@@ -63,6 +64,7 @@
     "native/third_party_licenses/texts/crates/open-i18n-rust-unic-8a6ce830/LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
     "native/third_party_licenses/texts/crates/projectfluent-fluent-langneg-rs-7fdc5904/LICENSE-APACHE": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
     "native/third_party_licenses/texts/crates/projectfluent-fluent-langneg-rs-7fdc5904/LICENSE-MIT": "016fcc02048817d628b04b140c54db290fd9d29a5e8a55b77871194e810716ac",
+    "native/third_party_licenses/texts/crates/quickjs-ng-in-rquickjs-sys-0.14.0/LICENSE": "96f73f9d2a16c21a36b418f06073be26e7d6d5e7c1bc99756b21a4f2c74ef171",
     "native/third_party_licenses/texts/crates/rust-windowing-android-ndk-rs-10f2ba38/LICENSE-APACHE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
     "native/third_party_licenses/texts/crates/rust-windowing-android-ndk-rs-10f2ba38/LICENSE-MIT": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
     "native/third_party_licenses/texts/crates/rustls-rustls-platform-verifier-252e2516/LICENSE-APACHE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
@@ -712,6 +714,7 @@
         "parking_lot",
         "parking_lot_core",
         "percent-encoding",
+        "percent-encoding-iri",
         "png",
         "postcard",
         "primal-check",
@@ -723,6 +726,7 @@
         "regex",
         "regex-automata",
         "regex-syntax",
+        "relative-path",
         "rustix",
         "rustls",
         "rustls-native-certs",
@@ -988,6 +992,7 @@
       "file": "23f18e03dc49df91.txt",
       "packages": [
         "adler2",
+        "allocator-api2",
         "anyhow",
         "atomic-waker",
         "camino",
@@ -1460,12 +1465,6 @@
       "file": "4148e7b027fba018.txt",
       "packages": [
         "pem-rfc7468"
-      ]
-    },
-    {
-      "file": "4201a739d99186cf.txt",
-      "packages": [
-        "percent-encoding-iri"
       ]
     },
     {
@@ -1942,7 +1941,8 @@
         "num-traits",
         "regex",
         "regex-automata",
-        "regex-syntax"
+        "regex-syntax",
+        "relative-path"
       ]
     },
     {
@@ -1988,6 +1988,12 @@
       "file": "6725d1437fc6c773.txt",
       "packages": [
         "difflib"
+      ]
+    },
+    {
+      "file": "6737ef630c5e038c.txt",
+      "packages": [
+        "curve25519-dalek"
       ]
     },
     {
@@ -2044,6 +2050,7 @@
         "hmac",
         "hybrid-array",
         "inout",
+        "md-5",
         "md4",
         "opaque-debug",
         "p256",
@@ -2100,6 +2107,12 @@
       ]
     },
     {
+      "file": "6f58f94baa693514.txt",
+      "packages": [
+        "ecb"
+      ]
+    },
+    {
       "file": "6ffedbc0f7878612.txt",
       "packages": [
         "xxHash"
@@ -2150,12 +2163,6 @@
       "file": "71065264f53174d1.txt",
       "packages": [
         "Eclipse Temurin JRE (BD-J private runtime)"
-      ]
-    },
-    {
-      "file": "71430174df61bd45.txt",
-      "packages": [
-        "percent-encoding-iri"
       ]
     },
     {
@@ -2227,6 +2234,12 @@
         "rand_core",
         "rand_distr",
         "rand_pcg"
+      ]
+    },
+    {
+      "file": "76e972ac0f4ddb11.txt",
+      "packages": [
+        "percent-encoding-iri"
       ]
     },
     {
@@ -2784,6 +2797,14 @@
       ]
     },
     {
+      "file": "976ad3d07927343a.txt",
+      "packages": [
+        "rquickjs",
+        "rquickjs-core",
+        "rquickjs-sys"
+      ]
+    },
+    {
       "file": "98181e7249d0c017.txt",
       "packages": [
         "block-buffer"
@@ -3105,6 +3126,7 @@
     {
       "file": "b30df9a48463d1c9.txt",
       "packages": [
+        "allocator-api2",
         "anyhow",
         "constant_time_eq",
         "dtoa",
@@ -3127,6 +3149,7 @@
     {
       "file": "b3470648aff02beb.txt",
       "packages": [
+        "ed25519",
         "signature"
       ]
     },
@@ -3147,6 +3170,7 @@
     {
       "file": "b4eb00df6e2a4d22.txt",
       "packages": [
+        "md-5",
         "sha1",
         "sha2"
       ]
@@ -3699,6 +3723,12 @@
       "packages": [
         "GNU libiconv",
         "libudfread"
+      ]
+    },
+    {
+      "file": "d87922bc69421b00.txt",
+      "packages": [
+        "rquickjs-sys"
       ]
     },
     {
@@ -4290,6 +4320,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -4319,6 +4350,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -4333,6 +4365,7 @@
       "license": "Apache-2.0 OR MIT",
       "origin": [
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -4385,6 +4418,19 @@
         "c0c56f26d9c051ca.txt"
       ],
       "note": "crate 包内没有许可文件；原文取自上游 https://github.com/dropbox/rust-alloc-no-stdlib/tree/0a81fd6928ea3b33c8cd484aa4575d50ffb98012。alloc-stdlib lives in a subdirectory of the alloc-no-stdlib repo and its crate ships no LICENSE; the repo-root LICENSE at tag 0.3.0 covers both crates (byte-identical to the one inside alloc-no-stdlib 3.0.0)"
+    },
+    {
+      "name": "allocator-api2",
+      "version": "0.2.21",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "b30df9a48463d1c9.txt",
+        "23f18e03dc49df91.txt"
+      ]
     },
     {
       "name": "ammonia",
@@ -4783,6 +4829,7 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -4907,7 +4954,8 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -5004,7 +5052,8 @@
       "version": "3.20.3",
       "license": "MIT OR Apache-2.0",
       "origin": [
-        "fushi_anki_sync"
+        "fushi_anki_sync",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -5124,7 +5173,8 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -5214,6 +5264,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -5362,7 +5413,8 @@
       "license": "Apache-2.0 OR MIT",
       "origin": [
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -5620,6 +5672,7 @@
         "fushi_anki_sync",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_rwkv"
       ],
       "textSource": "package",
@@ -5735,6 +5788,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -5786,6 +5840,18 @@
       ],
       "source": "MSYS2 mingw-w64-x86_64-curl 8.21.0-2 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
       "note": "DLLs: libcurl-4.dll."
+    },
+    {
+      "name": "curve25519-dalek",
+      "version": "4.1.3",
+      "license": "BSD-3-Clause",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6737ef630c5e038c.txt"
+      ]
     },
     {
       "name": "curve25519-dalek",
@@ -5910,7 +5976,8 @@
       "license": "Apache-2.0 OR MIT",
       "origin": [
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -6165,6 +6232,18 @@
       ]
     },
     {
+      "name": "ecb",
+      "version": "0.1.2",
+      "license": "MIT",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6f58f94baa693514.txt"
+      ]
+    },
+    {
       "name": "ecdsa",
       "version": "0.16.9",
       "license": "Apache-2.0 OR MIT",
@@ -6199,6 +6278,19 @@
     },
     {
       "name": "ed25519",
+      "version": "2.2.3",
+      "license": "Apache-2.0 OR MIT",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "c55cb43f2497b2c0.txt",
+        "b3470648aff02beb.txt"
+      ]
+    },
+    {
+      "name": "ed25519",
       "version": "3.0.0",
       "license": "Apache-2.0 OR MIT",
       "origin": [
@@ -6210,6 +6302,18 @@
       "texts": [
         "c55cb43f2497b2c0.txt",
         "9aa4f92bfcde293e.txt"
+      ]
+    },
+    {
+      "name": "ed25519-dalek",
+      "version": "2.2.0",
+      "license": "BSD-3-Clause",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "7b6a19666b1304f2.txt"
       ]
     },
     {
@@ -6347,7 +6451,8 @@
       "version": "1.0.3",
       "license": "Apache-2.0 OR MIT",
       "origin": [
-        "fushi_fsrs"
+        "fushi_fsrs",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -6720,6 +6825,7 @@
       "license": "Zlib",
       "origin": [
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -6752,6 +6858,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -7103,6 +7210,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -7166,6 +7274,7 @@
       "license": "Apache-2.0 OR MIT",
       "origin": [
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -7477,6 +7586,7 @@
         "fushi_anki_sync",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -7563,7 +7673,8 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -7809,6 +7920,18 @@
       ]
     },
     {
+      "name": "icu_collections",
+      "version": "2.4.0",
+      "license": "Unicode-3.0",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "f367c1b8e1aa2624.txt"
+      ]
+    },
+    {
       "name": "icu_locale_core",
       "version": "2.3.0",
       "license": "Unicode-3.0",
@@ -7817,6 +7940,18 @@
         "fushi_ios_umbrella",
         "fushi_p2p",
         "fushi_web_core"
+      ],
+      "textSource": "package",
+      "texts": [
+        "f367c1b8e1aa2624.txt"
+      ]
+    },
+    {
+      "name": "icu_locale_core",
+      "version": "2.4.0",
+      "license": "Unicode-3.0",
+      "origin": [
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -7839,6 +7974,18 @@
       ]
     },
     {
+      "name": "icu_normalizer",
+      "version": "2.4.0",
+      "license": "Unicode-3.0",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "f367c1b8e1aa2624.txt"
+      ]
+    },
+    {
       "name": "icu_normalizer_data",
       "version": "2.3.0",
       "license": "Unicode-3.0",
@@ -7847,6 +7994,18 @@
         "fushi_ios_umbrella",
         "fushi_p2p",
         "fushi_web_core"
+      ],
+      "textSource": "package",
+      "texts": [
+        "f367c1b8e1aa2624.txt"
+      ]
+    },
+    {
+      "name": "icu_normalizer_data",
+      "version": "2.4.0",
+      "license": "Unicode-3.0",
+      "origin": [
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -7869,6 +8028,18 @@
       ]
     },
     {
+      "name": "icu_properties",
+      "version": "2.4.0",
+      "license": "Unicode-3.0",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "f367c1b8e1aa2624.txt"
+      ]
+    },
+    {
       "name": "icu_properties_data",
       "version": "2.3.0",
       "license": "Unicode-3.0",
@@ -7884,6 +8055,18 @@
       ]
     },
     {
+      "name": "icu_properties_data",
+      "version": "2.4.0",
+      "license": "Unicode-3.0",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "f367c1b8e1aa2624.txt"
+      ]
+    },
+    {
       "name": "icu_provider",
       "version": "2.3.1",
       "license": "Unicode-3.0",
@@ -7892,6 +8075,18 @@
         "fushi_ios_umbrella",
         "fushi_p2p",
         "fushi_web_core"
+      ],
+      "textSource": "package",
+      "texts": [
+        "f367c1b8e1aa2624.txt"
+      ]
+    },
+    {
+      "name": "icu_provider",
+      "version": "2.4.0",
+      "license": "Unicode-3.0",
+      "origin": [
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -7931,6 +8126,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -7947,6 +8143,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -8007,6 +8204,7 @@
         "fushi_anki_sync",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -8022,6 +8220,7 @@
       "origin": [
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -8222,6 +8421,7 @@
         "fushi_anki_sync",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -9618,6 +9818,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -9910,6 +10111,19 @@
       "texts": [
         "143368af9701a24e.txt",
         "792d075c7bad6dac.txt"
+      ]
+    },
+    {
+      "name": "md-5",
+      "version": "0.10.6",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6aed14a798714567.txt",
+        "b4eb00df6e2a4d22.txt"
       ]
     },
     {
@@ -10554,7 +10768,8 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -10940,6 +11155,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -11410,6 +11626,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -11428,8 +11645,8 @@
       ],
       "textSource": "package",
       "texts": [
-        "4201a739d99186cf.txt",
-        "71430174df61bd45.txt"
+        "143368af9701a24e.txt",
+        "76e972ac0f4ddb11.txt"
       ]
     },
     {
@@ -11593,7 +11810,8 @@
       "license": "Apache-2.0 OR MIT",
       "origin": [
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -11663,6 +11881,7 @@
       "license": "Apache-2.0 OR MIT",
       "origin": [
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -11721,6 +11940,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -12069,7 +12289,8 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -12282,6 +12503,19 @@
       ]
     },
     {
+      "name": "relative-path",
+      "version": "2.0.3",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "143368af9701a24e.txt",
+        "6485b8ed310d3f03.txt"
+      ]
+    },
+    {
       "name": "reqwest",
       "version": "0.12.28",
       "license": "MIT OR Apache-2.0",
@@ -12350,6 +12584,45 @@
       "texts": [
         "d333faf49d8ca1d4.txt"
       ]
+    },
+    {
+      "name": "rquickjs",
+      "version": "0.14.0",
+      "license": "MIT",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "976ad3d07927343a.txt"
+      ]
+    },
+    {
+      "name": "rquickjs-core",
+      "version": "0.14.0",
+      "license": "MIT",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "upstream",
+      "texts": [
+        "976ad3d07927343a.txt"
+      ],
+      "note": "crate 包内没有许可文件；原文取自上游 https://github.com/DelSkayn/rquickjs/tree/d7ef5eeae702fea24c03643064de454f1c1dd4b0。rquickjs-core ships no LICENSE; the repo-root MIT LICENSE at tag v0.14.0 covers every crate in the workspace"
+    },
+    {
+      "name": "rquickjs-sys",
+      "version": "0.14.0",
+      "license": "MIT",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "upstream",
+      "texts": [
+        "976ad3d07927343a.txt",
+        "d87922bc69421b00.txt"
+      ],
+      "note": "crate 包内没有许可文件；原文取自上游 https://github.com/DelSkayn/rquickjs/tree/d7ef5eeae702fea24c03643064de454f1c1dd4b0。rquickjs-sys ships no LICENSE for its own code (repo-root MIT LICENSE at v0.14.0); it compiles the vendored QuickJS-ng C sources, whose LICENSE is copied verbatim from rquickjs-sys-0.14.0/quickjs/LICENSE"
     },
     {
       "name": "rtmpdump",
@@ -12762,6 +13035,7 @@
         "fushi_anki_sync",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -12830,6 +13104,7 @@
         "fushi_anki_sync",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -12860,6 +13135,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_fsrs",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -12971,7 +13247,8 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -13073,7 +13350,8 @@
       "license": "Apache-2.0 OR MIT",
       "origin": [
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -13208,6 +13486,19 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_web_core"
+      ],
+      "textSource": "package",
+      "texts": [
+        "143368af9701a24e.txt",
+        "0b28172679e0009b.txt"
+      ]
+    },
+    {
+      "name": "smallvec",
+      "version": "1.16.4",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -13382,7 +13673,8 @@
       "license": "Apache-2.0 OR MIT",
       "origin": [
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -13468,6 +13760,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -13570,6 +13863,7 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -13812,6 +14106,18 @@
         "fushi_ios_umbrella",
         "fushi_p2p",
         "fushi_web_core"
+      ],
+      "textSource": "package",
+      "texts": [
+        "f367c1b8e1aa2624.txt"
+      ]
+    },
+    {
+      "name": "tinystr",
+      "version": "0.8.5",
+      "license": "Unicode-3.0",
+      "origin": [
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -14304,6 +14610,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -14366,6 +14673,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -14382,6 +14690,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -14787,6 +15096,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_compute",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -14908,6 +15218,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -14988,6 +15299,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -15149,6 +15461,18 @@
       ]
     },
     {
+      "name": "yoke",
+      "version": "0.8.4",
+      "license": "Unicode-3.0",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "f367c1b8e1aa2624.txt"
+      ]
+    },
+    {
       "name": "zerocopy",
       "version": "0.7.35",
       "license": "BSD-2-Clause OR Apache-2.0 OR MIT",
@@ -15202,6 +15526,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -15231,7 +15556,8 @@
       "license": "Apache-2.0 OR MIT",
       "origin": [
         "fushi_compute",
-        "fushi_fsrs"
+        "fushi_fsrs",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -15246,6 +15572,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -15270,6 +15597,18 @@
       ]
     },
     {
+      "name": "zerovec",
+      "version": "0.11.9",
+      "license": "Unicode-3.0",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "f367c1b8e1aa2624.txt"
+      ]
+    },
+    {
       "name": "zimg",
       "version": "3.0.6",
       "license": "WTFPL",
@@ -15285,6 +15624,18 @@
       ],
       "source": "MSYS2 mingw-w64-x86_64-zimg 3.0.6-3 (native-dependency-packages.json); texts: upstream source in the MSYS2 source package mingw-w64-zimg-3.0.6-3.src.tar.zst",
       "note": "DLLs: libzimg-2.dll."
+    },
+    {
+      "name": "zip",
+      "version": "2.6.1",
+      "license": "MIT",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "13f16f8435b4242f.txt"
+      ]
     },
     {
       "name": "zip",
@@ -15373,6 +15724,7 @@
         "fushi_anki_sync",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -15387,6 +15739,18 @@
       "license": "Apache-2.0",
       "origin": [
         "fushi_anki_sync"
+      ],
+      "textSource": "package",
+      "texts": [
+        "48974c2c308f9902.txt"
+      ]
+    },
+    {
+      "name": "zopfli",
+      "version": "0.8.4",
+      "license": "Apache-2.0",
+      "origin": [
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [

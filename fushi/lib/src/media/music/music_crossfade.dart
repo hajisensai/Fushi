@@ -426,18 +426,22 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
     }
     if (identical(inst, _incoming)) {
       if (e is MusicBackendFailed) {
-        // 预加载失败：丢掉它，前一首放完时在主实例里直接开下一首（不淡入）。
-        final _Plan? plan = _plan;
-        final MusicCrossfadeInstance failed = inst;
-        _incoming = null;
-        if (plan != null) {
-          _handoff = plan.next;
-          _plan = null;
-        }
-        _emit(e);
-        unawaited(_disposeInstance(failed));
+        // 预加载失败：丢掉它，前一首放完时在主实例里直接开下一首（不淡入）。这里不上报——
+        // 那次重开若仍失败会由主实例报（届时它才是该出声的那一首）；现在报会让引擎把
+        // 「下一首」的失败当成正在放的这首。
+        _dropIncomingForHandoff(inst);
       }
     }
+  }
+
+  void _dropIncomingForHandoff(MusicCrossfadeInstance failed) {
+    if (identical(_incoming, failed)) _incoming = null;
+    final _Plan? plan = _plan;
+    if (plan != null) {
+      _handoff = plan.next;
+      _plan = null;
+    }
+    unawaited(_disposeInstance(failed));
   }
 
   // ── 调度 ────────────────────────────────────────────────────────────────
@@ -525,7 +529,17 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
     final MusicCrossfadeInstance inst = _create();
     inst.crossfadeFiltersEnabled = true;
     await inst.applySettings(_settings);
-    await inst.openIncoming(plan.next, fadeIn: plan.timing!.fadeLength);
+    try {
+      await inst.openIncoming(plan.next, fadeIn: plan.timing!.fadeLength);
+    } on MusicTrackOpenException {
+      // 下一首取流失败：同上，前一首放完时在主实例里再开一次（仍失败由主实例报）。
+      if (identical(_plan, plan)) {
+        _dropIncomingForHandoff(inst);
+      } else {
+        await _disposeInstance(inst);
+      }
+      return;
+    }
     if (!identical(_plan, plan) || _incoming != null) {
       await _disposeInstance(inst);
       return;
@@ -578,9 +592,7 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
     final MusicPlayItem? handoff = _handoff;
     if (handoff != null) {
       _handoff = null;
-      final MusicCrossfadeInstance primary = _ensurePrimary();
-      await primary.openPair(handoff, null, play: true);
-      _emit(MusicBackendAdvanced(handoff.trackUid));
+      await _openAfterEnd(handoff);
       return;
     }
     final _Plan? plan = _plan;
@@ -588,12 +600,26 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
     if (plan.timing == null) {
       // 还没排上淡出就放完了（极短曲目）：在主实例里直接开下一首。
       _plan = null;
-      final MusicCrossfadeInstance primary = _ensurePrimary();
-      await primary.openPair(plan.next, null, play: true);
-      _emit(MusicBackendAdvanced(plan.next.trackUid));
+      await _openAfterEnd(plan.next);
       return;
     }
     await _startIncoming(previousEnded: true);
+  }
+
+  /// 前一首放完后在主实例里直接开 [item]，当作自然推进上报。打不开（取流失败）时报
+  /// **这一首**的失败（引擎据 trackUid 推进到它并按失败处理），不发推进。被更晚的
+  /// [openPair] 作废时什么都不报。
+  Future<void> _openAfterEnd(MusicPlayItem item) async {
+    final int gen = _openGen;
+    final MusicCrossfadeInstance primary = _ensurePrimary();
+    try {
+      await primary.openPair(item, null, play: true);
+    } on MusicTrackOpenException catch (e) {
+      if (gen == _openGen) _emit(e.failure);
+      return;
+    }
+    if (gen != _openGen) return;
+    _emit(MusicBackendAdvanced(item.trackUid));
   }
 
   Future<void> _finishOverlap() async {
@@ -711,6 +737,10 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
     if (out != null) await out.applySettings(settings);
   }
 
+  /// 打开代次：每次 [openPair] / [stop] 加一。主实例取流期间又来了一次打开，前一次回来后
+  /// 不再排交叉淡入计划（那会把旧队列的「下一首」挂到新曲目后面）。
+  int _openGen = 0;
+
   @override
   Future<void> openPair(
     MusicPlayItem current,
@@ -718,8 +748,10 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
     required bool play,
     bool crossfadeNext = false,
   }) async {
+    final int gen = ++_openGen;
     await _collapse();
     await _dropPlan(disarm: false);
+    if (gen != _openGen) return;
     _handoff = null;
     _lastPts = null;
     final MusicCrossfadeInstance primary = _ensurePrimary();
@@ -727,6 +759,7 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
     primary.crossfadeFiltersEnabled = enabled;
     if (enabled && crossfadeNext && next != null) {
       await primary.openPair(current, null, play: play);
+      if (gen != _openGen) return;
       _plan = _Plan(next);
     } else {
       await primary.openPair(current, next, play: play);
@@ -806,6 +839,7 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
 
   @override
   Future<void> stop() async {
+    _openGen++;
     await _collapse();
     await _dropPlan(disarm: false);
     _handoff = null;

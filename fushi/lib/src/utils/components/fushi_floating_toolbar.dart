@@ -220,6 +220,18 @@ ShapeDecoration fushiFloatingPillDecoration(
   );
 }
 
+/// 子树里的 [FushiFloatingPill] 不画底（见 [FushiFloatingTopBar.bare]）。
+class FushiBareToolbarScope extends InheritedWidget {
+  const FushiBareToolbarScope({super.key, required super.child});
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FushiBareToolbarScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(FushiBareToolbarScope oldWidget) => false;
+}
+
 /// 一颗悬浮胶囊：MD3 给任意内容套上 [fushiFloatingPillDecoration]（实色 +
 /// Elevation 投影）；Apple 是原生 Cupertino 实色面：系统材质实色（或 [color]）
 /// + 发丝描边 + 柔和投影，不做玻璃与实时模糊（用户 2026-10-12：玻璃白边、
@@ -240,6 +252,18 @@ class FushiFloatingPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (FushiBareToolbarScope.of(context)) {
+      // 裸图标模式：保留形状裁剪（state layer 不溢出），不画底色与投影。
+      return Material(
+        type: MaterialType.transparency,
+        shape: shape,
+        clipBehavior: Clip.antiAlias,
+        child: FushiToolbarScope(
+          inGlassGroup: isGlassDesign(context),
+          child: Padding(padding: padding, child: child),
+        ),
+      );
+    }
     if (isGlassDesign(context)) {
       // Apple：原生 Cupertino 实色悬浮面（无玻璃 / 无实时模糊，见
       // [fushiAppleSolidFloatingDecoration]）；[color] 作底色，阅读器按纸色
@@ -867,6 +891,7 @@ class FushiFloatingTopBar extends StatefulWidget {
     this.colors,
     this.excludeFocus = false,
     this.adaptiveOverflow = true,
+    this.bare = false,
   });
 
   final List<FushiToolbarItem> leading;
@@ -903,6 +928,11 @@ class FushiFloatingTopBar extends StatefulWidget {
 
   /// false = 旧行为：[actions] 恒平铺、[overflow] 恒进「⋯」（布局编辑器的槽位预览用）。
   final bool adaptiveOverflow;
+
+  /// true = 不画悬浮胶囊底（无底色、无投影），只剩裸图标按钮；放在自带背景的
+  /// 沉浸页上用（音乐歌词页：右上动作与左上返回同样裸露，用户 2026-10-29）。
+  /// 自适应收纳照旧。
+  final bool bare;
 
   @override
   State<FushiFloatingTopBar> createState() => _FushiFloatingTopBarState();
@@ -1668,7 +1698,8 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
         );
       },
     );
-    return excludeFocus ? ExcludeFocus(child: row) : row;
+    final Widget bar = widget.bare ? FushiBareToolbarScope(child: row) : row;
+    return excludeFocus ? ExcludeFocus(child: bar) : bar;
   }
 }
 

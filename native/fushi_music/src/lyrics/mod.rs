@@ -37,7 +37,8 @@ use model::*;
 /// 解析器版本：任何会改变解析结果的修改都要升它；`music_lyrics.timeline_version` 与它不符
 /// 的缓存在读取时重建。
 /// 2：ASS 特效检测加了 `\org`、`\p1` 绘图与逐字定位（P3）。
-pub const PARSER_VERSION: u32 = 2;
+/// 3：翻译合并改为估计整体偏移 + 单调对齐，对不上的翻译挂靠原文行、不再成独立行。
+pub const PARSER_VERSION: u32 = 3;
 
 /// 按格式提示（扩展名或格式名，大小写不敏感，可空）+ 内容嗅探解析。`duration_ms` 是曲长
 /// （补最后一行终点），未知传 None。
@@ -50,13 +51,16 @@ pub fn parse(bytes: &[u8], hint: &str, duration_ms: Option<i64>) -> Result<Timel
         return Err("not a MIDI file".to_owned());
     }
     if syllabic::is_encrypted_krc(bytes) {
-        let plain = syllabic::decrypt_krc(bytes).ok_or_else(|| "KRC decryption failed".to_owned())?;
+        let plain =
+            syllabic::decrypt_krc(bytes).ok_or_else(|| "KRC decryption failed".to_owned())?;
         let text = text::normalize_newlines(&text::decode_text(&plain));
         return Ok(syllabic::parse(&text, syllabic::Flavor::Krc, duration_ms));
     }
     let text = text::normalize_newlines(&text::decode_text(bytes));
     if hint == "qrc" && !text.contains('[') && !text.contains("LyricContent") {
-        return Err("encrypted QRC is not supported (decrypt it with the QQ Music client first)".to_owned());
+        return Err(
+            "encrypted QRC is not supported (decrypt it with the QQ Music client first)".to_owned(),
+        );
     }
     let by_hint = match hint.as_str() {
         "ttml" | "xml" if ttml::looks_like_ttml(&text) => Some(parse_ttml(&text, duration_ms)?),

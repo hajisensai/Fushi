@@ -128,6 +128,10 @@ dependencies:
   # （Windows 走 flutter_local_notifications_windows 的 WinRT toast）。
   flutter_local_notifications: ^20.1.0
   flutter_riverpod: ^2.3.6
+  # 平台安全存储（iOS / macOS Keychain、Android Keystore、Linux libsecret）：只放音乐插件
+  # 凭据保险库的数据密钥（lib/src/media/music/plugin/music_plugin_vault_key.dart）。Windows
+  # 不用它（保险库密钥在 Rust 侧走 DPAPI）。钉确定版本：密钥存取语义变了会让所有插件掉登录。
+  flutter_secure_storage: 10.3.4
   # WebRTC 游戏串流（Windows 主机；五端都可当接收端）。
   # 钉精确版本，不用 caret：WGC 客户区采集的入口只在
   # ci/patches/hosted/flutter_webrtc-1.6.2+hotfix.3/ 那份补丁里，而补丁目录按
@@ -287,8 +291,10 @@ flutter:
 
   # 片段着色器（Impeller 编译期转 SPIR-V / MSL / GLSL）。
   # panorama_backdrop：首页「媒体库全景」的星空 + 中心光晕（lib/src/media/panorama/）。
+  # music_backdrop_pixi：歌词页 Pixi 流体背景（music_lyrics_backdrop.dart）。
   shaders:
     - shaders/panorama_backdrop.frag
+    - shaders/music_backdrop_pixi.frag
 
   # M3E 语义图标（lib/src/utils/fushi_icons.dart）：Material Symbols Rounded 可变字体
   # 的子集，由 tool/icons/gen_fushi_symbols.py 生成。线框 / 实心各一个字族——选中态在

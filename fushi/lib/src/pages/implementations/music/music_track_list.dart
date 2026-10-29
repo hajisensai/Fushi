@@ -9,7 +9,8 @@ import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
+    show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -71,6 +72,7 @@ class MusicTrackList extends ConsumerWidget {
     return FushiEntranceScope(
       child: ListView.builder(
         shrinkWrap: shrinkWrap,
+        primary: shrinkWrap ? false : null,
         physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
         padding: shrinkWrap
             ? EdgeInsets.zero
@@ -170,36 +172,37 @@ class MusicTrackListPage extends StatelessWidget {
     final bool apple = isGlassDesign(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final NavigatorState? navigator = Navigator.maybeOf(context);
-    return FushiPageScaffold(
-      title: title,
-      bottomNavigationBar: const MusicNowPlayingBar(),
-      header: apple
-          ? null
-          : Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                tokens.spacing.gap,
-                tokens.spacing.page,
-                tokens.spacing.gap,
+    return MusicFloatingBarHost(
+      child: FushiPageScaffold(
+        title: title,
+        header: apple
+            ? null
+            : Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  tokens.spacing.gap,
+                  tokens.spacing.page,
+                  tokens.spacing.gap,
+                ),
+                child: FushiFloatingTopBar(
+                  title: title,
+                  leading: <FushiToolbarItem>[
+                    if (navigator != null && navigator.canPop())
+                      FushiToolbarItem(
+                        icon: FushiIcons.back,
+                        label: MaterialLocalizations.of(
+                          context,
+                        ).backButtonTooltip,
+                        onPressed: () => unawaited(navigator.maybePop()),
+                      ),
+                  ],
+                ),
               ),
-              child: FushiFloatingTopBar(
-                title: title,
-                leading: <FushiToolbarItem>[
-                  if (navigator != null && navigator.canPop())
-                    FushiToolbarItem(
-                      icon: FushiIcons.back,
-                      label: MaterialLocalizations.of(
-                        context,
-                      ).backButtonTooltip,
-                      onPressed: () => unawaited(navigator.maybePop()),
-                    ),
-                ],
-              ),
-            ),
-      body: MusicTrackList(
-        tracks: tracks,
-        albums: albums,
-        context: MusicQueueContext.mixed,
+        body: MusicTrackList(
+          tracks: tracks,
+          albums: albums,
+          context: MusicQueueContext.mixed,
+        ),
       ),
     );
   }

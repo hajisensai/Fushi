@@ -214,6 +214,8 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("fastRewind", "fast_rewind", "fast_rewind_outlined", "fast_rewind", "快退"),
     ("replay", "replay", "replay", "replay", "重播"),
     ("repeat", "repeat", "repeat", "repeat", "循环"),
+    ("repeatOne", "repeat_one", "repeat_one", "repeat_one", "单曲循环"),
+    ("shuffle", "shuffle", "shuffle", "shuffle", "随机播放"),
     ("volumeUp", "volume_up", "volume_up_outlined", "volume_up", "音量"),
     ("volumeOff", "volume_off", "volume_off_outlined", "volume_off", "静音"),
     ("audio", "graphic_eq", "graphic_eq", "graphic_eq", "音频 / 波形"),
@@ -339,6 +341,8 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
 # （线框, 实心）。
 APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "settingsGear": ("gear", "gear_solid"),
+    "repeatOne": ("repeat_1", "repeat_1"),
+    "shuffle": ("shuffle", "shuffle"),
     "dictionary": ("book", "book_fill"),
     "manga": ("photo_on_rectangle", "photo_fill_on_rectangle_fill"),
     "menu": ("line_horizontal_3", "line_horizontal_3"),
