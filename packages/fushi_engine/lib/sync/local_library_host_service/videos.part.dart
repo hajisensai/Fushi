@@ -24,6 +24,14 @@ mixin _LocalLibraryHostVideos
     // 在线视频源入库集只在装了那个扩展的本机可播（起播时向扩展取流），媒体服务器
     // 入库条目只在登录了那台服务器的本机可播（令牌在本机设置里）：对端拿到也放
     // 不了，都不下发。
+    //
+    // 网络流书（网页视频站 Netflix / YouTube 页、直链、rtsp）与 `.strm` 流指针
+    // **照常下发**：这份清单也是同步编排眼里「host 有哪些视频」的集合（进度 /
+    // 播放偏好 sweep、合集收养都按它取交集），从清单里删掉会让两端都有的同一条
+    // 静默停止同步（BUG-3875 首版修法的回归）。host 没有它们的媒体字节
+    // （[resolveVideoFile] 恒 null，对端点开只会撞 `/streamurl` 404，反馈
+    // _xEjClqXTQ），所以标 [RemoteVideoInfo.peerPlayable] = false，由对端展示层
+    // 不出远端占位卡。光盘标题走盘共享，可播。
     final List<VideoBookRow> rows = (await _db.allVideoBooks())
         .where(
           (VideoBookRow row) =>
@@ -318,8 +326,14 @@ mixin _LocalLibraryHostVideos
       // 给远端占位造假 importedAt，远端条目结构上进不了「最近添加」。
       importedAt: row.importedAt,
       fileName: fileName,
+      peerPlayable: _hostServesVideoBytes(row.videoPath),
     );
   }
+
+  /// host 能否给对端这条视频的媒体字节（流式播放 / 下载）：网络流与 `.strm` 流指针
+  /// 在 host 本机也只是一个地址，[resolveVideoFile] 对它们恒 null（BUG-3875）。
+  bool _hostServesVideoBytes(String videoPath) =>
+      !isNetworkOnlyVideoPath(videoPath) && !isStrmPath(videoPath);
 
   /// host 本机为 [row] 持久化的外挂字幕文件（`VideoBooks.subtitleSource`）；不是
   /// 外挂字幕文件 / 文件已不在 / 行是多集播放列表 → null。
@@ -850,9 +864,12 @@ mixin _LocalLibraryHostVideos
 
   /// 廉价判断 host 库是否已存在 bookUid 为 [id] 的视频（一次 DB 查询）。
   @override
-  Future<bool> videoExists(String id) async {
+  Future<bool> videoExists(String id, {int episodeIndex = 0}) async {
     _assertSafeVideoId(id);
-    return (await _db.getVideoBookByBookUid(id)) != null;
+    if (episodeIndex == 0) return (await _db.getVideoBookByBookUid(id)) != null;
+    // 按集：与 [resolveVideoFile] 同一 DB-only 反查（越界 / 负下标 → null），但不
+    // 判本机有没有媒体文件。
+    return (await _resolveEpisodeVideoPath(id, episodeIndex)) != null;
   }
 
   /// 从 host 视频库删除 bookUid 为 [id] 的视频（[VideoDeletionHost]）。

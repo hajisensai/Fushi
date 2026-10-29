@@ -1858,9 +1858,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       final Set<String> localUids = localVideos
           .map((VideoBookRow r) => r.bookUid)
           .toSet();
+      // 收养用整份清单（同步层事实）；占位卡只给对端真能经 host 播放的条目
+      // （BUG-3875：网络流书 / `.strm` host 照常列出供同步，但没有字节可给）。
       final List<RemoteVideoInfo> remoteOnly = dedupeRemoteVideos(
         remote: filterOutLocallyDeletedRemoteVideos(
-          remote: videos,
+          remote: peerPlayableRemoteVideos(videos),
           deletedKeys: deletedVideoKeys,
         ),
         localBookUids: localUids,
@@ -9620,9 +9622,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       loadRemoteVideos: () async {
         final Set<String> deleted = await _pendingRemoteVideoDeletions(source);
         return filterOutLocallyDeletedRemoteVideos(
-          remote:
-              await _readRemoteVideoList(source: source, forceRefresh: false) ??
-              const <RemoteVideoInfo>[],
+          remote: peerPlayableRemoteVideos(
+            await _readRemoteVideoList(source: source, forceRefresh: false) ??
+                const <RemoteVideoInfo>[],
+          ),
           deletedKeys: deleted,
         );
       },

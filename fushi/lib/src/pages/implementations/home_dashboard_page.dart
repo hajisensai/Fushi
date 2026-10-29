@@ -1433,7 +1433,8 @@ class _HomeDashboardPageState
               keyOf: sanitizeTtuFilename,
             ),
             remoteVideos: filterOutLocallyDeletedRemoteVideos(
-              remote: remoteVideos,
+              // 继续观看只给对端真能经 host 播放的条目（BUG-3875）。
+              remote: peerPlayableRemoteVideos(remoteVideos),
               deletedKeys: deletedVideoKeys,
             ),
           );
