@@ -58,6 +58,7 @@ void main() {
         '${tmp.path}/srs.db',
         inline: false,
       );
+      final Stopwatch opening = Stopwatch()..start();
       final SrsDbStore store = await SrsDbStore.open(
         db: srs.db,
         core: srs.core,
@@ -87,7 +88,10 @@ void main() {
       );
 
       final int rss0 = ProcessInfo.currentRss >> 20;
-      stdout.writeln('BENCH rss after open ${rss0}MB');
+      // 含本机缓存修订号升级（老库第一次打开时的补算，如 v15 的 dupe_norm）。
+      stdout.writeln(
+        'BENCH open ${opening.elapsedMilliseconds}ms rss after open ${rss0}MB',
+      );
       List<Object?> notes = const <Object?>[];
       for (int i = 0; i < 2; i++) {
         final (int ms, int mb, Object? ids) = await _measure(
@@ -148,6 +152,12 @@ void main() {
           mb,
         );
       }
+      // 浏览会话释放之后（端点停了又起）：查重不该再为它整份建会话。
+      await h.close();
+      final (int msCold, int mbCold, Object? _) = await _measure(
+        () => ok('canAddNotes', <String, Object?>{'notes': candidates}),
+      );
+      report('canAddNotes(50) after close', msCold, mbCold);
       final (int msAdd, int mbAdd, Object? _) = await _measure(
         () => ok('addNote', <String, Object?>{'note': note('追加の語')}),
       );
