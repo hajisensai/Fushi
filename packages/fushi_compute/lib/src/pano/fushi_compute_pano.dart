@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
 import '../native_scratch.dart';
@@ -248,12 +249,12 @@ final class FfcPanorama implements Finalizable {
       final Pointer<Size> caps = arena<Size>(3);
       _check('buffers', _b.buffers(_handle, pos, uv, co, ix, ba, inf, caps));
       _vertexCapacity = caps[0];
-      _positions = pos.value.asTypedList(_vertexCapacity * 2);
-      _texCoords = uv.value.asTypedList(_vertexCapacity * 2);
-      _colors = co.value.asTypedList(_vertexCapacity);
-      _indices = ix.value.asTypedList(caps[1]);
-      _batchTable = ba.value.asTypedList(caps[2] * 5);
-      _info = inf.value.asTypedList(FfcPanoInfo.length);
+      _positions = pos.value.asTypedListOutOfLine(_vertexCapacity * 2);
+      _texCoords = uv.value.asTypedListOutOfLine(_vertexCapacity * 2);
+      _colors = co.value.asTypedListOutOfLine(_vertexCapacity);
+      _indices = ix.value.asTypedListOutOfLine(caps[1]);
+      _batchTable = ba.value.asTypedListOutOfLine(caps[2] * 5);
+      _info = inf.value.asTypedListOutOfLine(FfcPanoInfo.length);
     });
   }
 
@@ -395,13 +396,13 @@ final class FfcPanorama implements Finalizable {
 
   static Pointer<Float> _copyF32(Float32List src) {
     final Pointer<Float> p = malloc<Float>(src.isEmpty ? 1 : src.length);
-    p.asTypedList(src.length).setAll(0, src);
+    p.asTypedListOutOfLine(src.length).setAll(0, src);
     return p;
   }
 
   static Pointer<Int32> _copyI32(Int32List src) {
     final Pointer<Int32> p = malloc<Int32>(src.isEmpty ? 1 : src.length);
-    p.asTypedList(src.length).setAll(0, src);
+    p.asTypedListOutOfLine(src.length).setAll(0, src);
     return p;
   }
 }

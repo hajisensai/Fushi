@@ -55,8 +55,9 @@ final AutoDisposeFutureProvider<PanoramaAssets> panoramaAssetsProvider =
       SrsDbStore? srs;
       try {
         srs = await ref.watch(srsStoreProvider.future);
-      } catch (_) {
-        // 复习库打不开：照样出封面，只是没有词。
+      } catch (e, s) {
+        // 复习库打不开：照样出封面，只是没有词（记日志，不静默）。
+        ErrorLogService.instance.log('panoramaAssetsProvider.srs', e, s);
         srs = null;
       }
       final PanoramaLibrary library = await loadPanoramaLibrary(
@@ -245,12 +246,12 @@ class _PanoramaCinematicPageState extends State<PanoramaCinematicPage> {
               child: AnimatedOpacity(
                 opacity: _chrome ? 1 : 0,
                 duration: fushiMotionDuration(context, FushiMotion.long),
-                child: IconButton(
+                child: FushiIconButton(
                   key: const ValueKey<String>('panorama-cinematic-close'),
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                  color: Colors.white70,
-                  icon: const Icon(FushiIcons.close),
-                  onPressed: () => unawaited(Navigator.of(context).maybePop()),
+                  enabledColor: Colors.white70,
+                  icon: FushiIcons.close,
+                  onTap: () => unawaited(Navigator.of(context).maybePop()),
                 ),
               ),
             ),

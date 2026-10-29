@@ -12,6 +12,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/panorama/panorama_atlas.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 class PanoramaBookFlip extends StatefulWidget {
   const PanoramaBookFlip({
@@ -79,7 +80,7 @@ class _PanoramaBookFlipState extends State<PanoramaBookFlip>
       animation: _c,
       builder: (BuildContext context, Widget? _) {
         // 0–8% 停一拍；8–72% 翻开；之后停留读一眼。
-        final double open = Curves.easeInOutCubic.transform(
+        final double open = FushiMotion.standard.transform(
           ((_c.value - 0.08) / 0.64).clamp(0.0, 1.0),
         );
         final Rect body = widget.coverRect;

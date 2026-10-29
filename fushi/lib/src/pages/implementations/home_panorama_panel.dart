@@ -12,7 +12,6 @@ import 'package:fushi/src/media/panorama/panorama_page.dart';
 import 'package:fushi/src/media/panorama/panorama_stage.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
-import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -78,14 +77,14 @@ class HomePanoramaPanel extends ConsumerWidget {
       required IconData icon,
       required String label,
       required VoidCallback? onPressed,
-    }) => FushiPressScale(
+    }) => FushiIconButton(
+      key: ValueKey<String>(id),
+      icon: icon,
+      tooltip: label,
+      size: 20,
       enabled: onPressed != null,
-      child: IconButton(
-        key: ValueKey<String>(id),
-        tooltip: label,
-        onPressed: onPressed,
-        icon: FushiIcon(icon, size: 20, color: tokens.type.sectionLabel.color),
-      ),
+      enabledColor: tokens.type.sectionLabel.color,
+      onTap: onPressed,
     );
 
     final Widget stage;

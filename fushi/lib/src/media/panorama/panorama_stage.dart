@@ -246,8 +246,16 @@ class _PanoramaStageState extends State<PanoramaStage>
       }),
     );
     final FushiDatabase? db = widget.assets.db;
+    // 解析失败（解压目录被删 / 读盘出错）时记日志并回落到书名；不能把出错的 future
+    // 留给翻书层——那边只 then，错误会变成未处理的异步异常。
     _excerpt = work.isBook && db != null
-        ? loadPanoramaBookExcerpt(db: db, work: work)
+        ? loadPanoramaBookExcerpt(db: db, work: work).catchError((
+            Object e,
+            StackTrace s,
+          ) {
+            ErrorLogService.instance.log('PanoramaStage.excerpt', e, s);
+            return null;
+          })
         : null;
   }
 
@@ -541,6 +549,7 @@ class _PanoramaPainter extends CustomPainter {
 
   final Map<int, Paint> _pagePaints = <int, Paint>{};
   ui.Image? _targetImage;
+  int _targetWork = -1;
   Paint? _targetPaintCache;
 
   /// 图集页的纹理画笔（纹理坐标就是图集像素）。
@@ -576,10 +585,14 @@ class _PanoramaPainter extends CustomPainter {
           1,
         );
     }
-    if (_targetPaintCache != null && identical(_targetImage, src)) {
+    // 缓存键要带作品：没有高清图时不同作品可能落在同一图集页（src 相同、格子矩阵不同）。
+    if (_targetPaintCache != null &&
+        identical(_targetImage, src) &&
+        _targetWork == work) {
       return _targetPaintCache!;
     }
     _targetImage = src;
+    _targetWork = work;
     return _targetPaintCache = Paint()
       ..filterQuality = FilterQuality.medium
       ..isAntiAlias = true
