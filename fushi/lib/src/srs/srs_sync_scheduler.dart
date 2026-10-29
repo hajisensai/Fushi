@@ -890,10 +890,15 @@ class SrsSyncScheduler {
   /// 对所有已认证通道、以及本机直接读写的目录（本机作为互联 host 时）各跑一轮（不节流）。
   /// 通道抛错与报告里带回错误的目录都记进 [SrsSyncNowResult.errors]，不算同步成功。
   ///
-  /// 用户主动的一轮（「立即同步」、进复习 tab、AnkiConnect `sync`）：媒体全量对账、冲突判定重做，不复用上次结论。
-  Future<SrsSyncNowResult> syncNow() async {
+  /// 用户明确要求的一轮（「立即同步」、AnkiConnect `sync`）：媒体全量对账、冲突判定重做，不复用上次结论。
+  Future<SrsSyncNowResult> syncNow() => _syncAll(fullMediaReconcile: true);
+
+  /// 跑一轮全部通道。[fullMediaReconcile] = 不复用上次媒体对账的结论（只有用户手动「立即同步」）；否则媒体对账照
+  /// 内容指纹门控（[_mediaReconciledContent] / [kSrsMediaReconcileInterval]），没变就不重做（审查 S-11：以前进复习
+  /// 页的节流同步也清空对账时刻，每次进页都把几万个媒体整套对一遍）。
+  Future<SrsSyncNowResult> _syncAll({required bool fullMediaReconcile}) async {
     if (_halted) return const SrsSyncNowResult(ran: 0);
-    _mediaReconciledAt.clear();
+    if (fullMediaReconcile) _mediaReconciledAt.clear();
     _linkDecided.removeWhere(
       (String _, ({DateTime at, SrsProfileConflict? conflict}) d) =>
           d.conflict != null,
@@ -1000,7 +1005,8 @@ class SrsSyncScheduler {
     return SrsSyncNowResult(ran: ran, errors: errors);
   }
 
-  /// 节流版（进入复习 tab）：距上一次节流触发不足 [kSrsSyncMinInterval] 时跳过，返回 false。
+  /// 节流版（进入复习 tab）：距上一次节流触发不足 [kSrsSyncMinInterval] 时跳过，返回 false。媒体对账走内容指纹
+  /// 门控，不做全量（只有手动「立即同步」做，见 [syncNow]）。
   Future<bool> syncThrottled() async {
     final DateTime now = _clock();
     final DateTime? last = _lastThrottledAt;
@@ -1008,7 +1014,7 @@ class SrsSyncScheduler {
       return false;
     }
     _lastThrottledAt = now;
-    await syncNow();
+    await _syncAll(fullMediaReconcile: false);
     return true;
   }
 
