@@ -227,9 +227,11 @@ impl StudyHub {
         t.browse.settle();
     }
 
-    /// 浏览会话（store/browse.rs）取走 [profile] 待重读的卡 / 笔记 id（口径同 [StudyHub::with_session]）。
-    pub(crate) fn take_browse(&self, profile: &str, uncommitted: bool) -> Dirty {
-        lock(&self.touched).browse.take(profile, uncommitted)
+    /// 浏览会话（store/browse.rs）取走 [profile] 待重读的卡 / 笔记 id，并上未提交的（只读不清）：口径同
+    /// [StudyHub::with_session]——COMMIT 对读连接可见早于 [settle]，只取已提交的会在这个窗口里漏读一次。
+    /// [_uncommitted] 留给调用方表态，两种连接现在同一口径。
+    pub(crate) fn take_browse(&self, profile: &str, _uncommitted: bool) -> Dirty {
+        lock(&self.touched).browse.take(profile, true)
     }
 
     /// 在 [profile] 的会话上跑 [f]：先取走已提交的待重读 id、并上未提交的（只读不清，见文件头「事务边界」；
