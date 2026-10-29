@@ -46,28 +46,11 @@ enum _FloatCol { stability, difficulty }
 /// `search.rs` 的 `DUE_NONE`（没有到期日）。
 const int _dueNone = -0x8000000000000000;
 
-/// 字段值的按需来源：求值对象不常驻笔记字段文本时（浏览页的快照只装列表要显示的列），
-/// 语料按查询要的列分页向它取，取一页、编码、挂进原生侧，再取下一页——Dart 堆上同时只有一页文本。
-///
-/// 给了它的语料**只经 [SrsSearchCorpus.prepare] 补传字段值**（取值是异步的）：[SrsSearchCorpus.match]
-/// 发现还缺字段值时抛 [StateError]，调用方必须先 `await prepare`。
 /// [subject] 所属笔记类型的字段别名：字段名 → 别名（`字段名:值` 按名字或别名命中）。只列有别名的字段；
 /// 同一笔记类型的笔记必须给出同一份。用途：内置 Fushi 卡片改过名的字段仍认旧名（Yomitan 的
 /// `Expression:…` 查重查询）。
 typedef SrsSearchFieldAliases =
     Map<String, String> Function(SrsSearchSubject subject);
-
-abstract interface class SrsSearchFieldLoader {
-  /// [subject] 所属笔记的字段名，按笔记类型的字段顺序（同 [SrsSearchSubject.fields] 的键序；不含值）。
-  List<String> fieldNames(SrsSearchSubject subject);
-
-  /// 一页笔记的字段原文：`result[i][k]` 是 `notes[i]`（该笔记的代表卡）的 `names[i][k]` 字段；
-  /// 没有值的字段给空串。
-  Future<List<List<String>>> load(
-    List<SrsSearchSubject> notes,
-    List<List<String>> names,
-  );
-}
 
 /// 一批卡的搜索语料。卡的顺序就是 [match] 返回下标的口径。
 ///
@@ -80,10 +63,8 @@ final class SrsSearchCorpus implements Finalizable {
   SrsSearchCorpus(
     this.cards, {
     FushiFsrs? library,
-    SrsSearchFieldLoader? fieldLoader,
     SrsSearchFieldAliases? fieldAliases,
   }) : _library = library,
-       _loader = fieldLoader,
        _aliases = fieldAliases;
 
   final List<SrsSearchSubject> cards;
@@ -91,13 +72,6 @@ final class SrsSearchCorpus implements Finalizable {
 
   /// 字段名的别名（`字段名:值` 按名字或别名命中）；null = 都没有别名。
   final SrsSearchFieldAliases? _aliases;
-
-  /// 字段值的按需来源；null = 直接读 [SrsSearchSubject.fields]。
-  final SrsSearchFieldLoader? _loader;
-
-  /// 正在经 [_loader] 分页补传字段值的那次 [prepare]（结束时完成并清空）：后来的 [prepare] 等它
-  /// 传完再算要补哪些列，同一列不会被两次 [prepare] 各取一遍。
-  Future<void>? _loading;
 
   Pointer<Void> _handle = nullptr;
   FushiFsrs? _bound;
@@ -223,7 +197,7 @@ final class SrsSearchCorpus implements Finalizable {
 
   void _ensureHandle(FushiFsrs lib) {
     if (_handle != nullptr) return;
-    final _Layout layout = _Layout.build(cards, _loader, _aliases);
+    final _Layout layout = _Layout.build(cards, _aliases);
     final Uint8List text = layout.text;
     final Pointer<Uint8> textPtr = malloc<Uint8>(
       text.isEmpty ? 1 : text.length,
@@ -288,11 +262,6 @@ final class SrsSearchCorpus implements Finalizable {
     if (_disposed || node is SrsSearchAll || cards.isEmpty) return;
     final FushiFsrs lib = _lib(query);
     _ensureHandle(lib);
-    final SrsSearchFieldLoader? loader = _loader;
-    if (loader != null) {
-      await _prepareLoaded(lib, loader, node, query);
-      return;
-    }
     final Object? needs = _needs(lib, node, query);
     final _UploadPlan? plan = _planFor(needs);
     // 去 HTML、正则扫几百 MB 原文的那部分：大集合才值得开一个 isolate 预先求值。
@@ -366,98 +335,6 @@ final class SrsSearchCorpus implements Finalizable {
     return !_disposed;
   }
 
-  /// [prepare] 的按需取值版：字段值按笔记分页向 [loader] 取、编码、挂进原生侧（每页挂之前先等
-  /// 后台预求值退场），Dart 堆上同时只有一页文本；之后照常在后台预求值。
-  Future<void> _prepareLoaded(
-    FushiFsrs lib,
-    SrsSearchFieldLoader loader,
-    SrsSearchNode node,
-    String query,
-  ) async {
-    for (Future<void>? l = _loading; l != null; l = _loading) {
-      await l;
-    }
-    if (_disposed) return;
-    final Object? needs = _needs(lib, node, query);
-    final _UploadPlan? plan = _planFor(needs);
-    if (plan != null) {
-      final Completer<void> done = Completer<void>();
-      _loading = done.future;
-      try {
-        if (!await _uploadPaged(lib, loader, plan)) return;
-        _markUploaded(plan);
-      } finally {
-        _loading = null;
-        done.complete();
-      }
-    }
-    if (!await _settleBackground()) return;
-    final Map<String, Object?> n = (needs! as Map).cast<String, Object?>();
-    final bool text =
-        n['all'] == true || (n['names']! as List<Object?>).isNotEmpty;
-    if (text && cards.length >= _warmMinCards) await _warm(lib, node);
-  }
-
-  /// 按 [plan] 分页取值、编码、挂进语料。返回 false = 期间已 [dispose]。
-  Future<bool> _uploadPaged(
-    FushiFsrs lib,
-    SrsSearchFieldLoader loader,
-    _UploadPlan plan,
-  ) async {
-    final _Layout layout = _layout!;
-    final int chunkNew = lib.bindings.ffsrs_search_chunk_new_ptr.address;
-    final int total = layout.notes.length;
-    for (int from = 0; from < total; from += _loadPageNotes) {
-      final int to = from + _loadPageNotes < total
-          ? from + _loadPageNotes
-          : total;
-      final List<int> page = <int>[];
-      final List<SrsSearchSubject> subjects = <SrsSearchSubject>[];
-      final List<List<String>> names = <List<String>>[];
-      for (int i = from; i < to; i++) {
-        final int schema = layout.noteSchema[i];
-        final List<bool> wanted = plan.wanted[schema];
-        final List<String> all = layout.schemaNameText[schema];
-        final List<String> want = <String>[
-          for (int k = 0; k < all.length; k++)
-            if (wanted[k]) all[k],
-        ];
-        if (want.isEmpty) continue;
-        page.add(i);
-        subjects.add(layout.notes[i]);
-        names.add(want);
-      }
-      if (page.isEmpty) continue;
-      final List<List<String>> loaded = await loader.load(subjects, names);
-      if (_disposed) return false;
-      if (loaded.length != page.length) {
-        throw StateError(
-          'SrsSearchFieldLoader.load returned ${loaded.length} notes '
-          'for ${page.length}',
-        );
-      }
-      final _Values values = _collectLoaded(layout, plan, page, loaded);
-      final _Encoded encoded = _encodeValues(
-        values.strings,
-        values.sep,
-        values.chars,
-        chunkNew,
-      );
-      // 挂进语料要拿原生锁：先等别的查询的后台预求值退场（从这里到挂完没有 await）。
-      if (!await _settleBackground()) {
-        _freeChunks(lib, <_Encoded>[encoded]);
-        return false;
-      }
-      _uploadValues(
-        lib,
-        values,
-        <_Encoded>[encoded],
-        <int>[0, values.strings.length],
-      );
-    }
-    return true;
-  }
-
   /// 后台 isolate 上把 [node] 求值一遍（去 HTML 等缓存与结果留在原生侧），之后同一条查询的
   /// [match] 只是取结果。
   Future<void> _warm(FushiFsrs lib, SrsSearchNode node) async {
@@ -522,12 +399,6 @@ final class SrsSearchCorpus implements Finalizable {
   void _ensureValues(FushiFsrs lib, Object? needs) {
     final _UploadPlan? plan = _planFor(needs);
     if (plan == null) return;
-    if (_loader != null) {
-      throw StateError(
-        'SrsSearchCorpus: field values come from an SrsSearchFieldLoader; '
-        'await prepare() before match()',
-      );
-    }
     final _Values values = _collect(_layout!, plan);
     _uploadValues(
       lib,
@@ -603,48 +474,6 @@ final class SrsSearchCorpus implements Finalizable {
         if (!wanted[k]) continue;
         if (first) noteStarts.add(strings.length);
         final String v = fields[names[k]]!;
-        strings.add(v);
-        fieldIds.add(base + k);
-        sep.add(plan.joined && !first ? 1 : 0);
-        chars += v.length + 1;
-        first = false;
-      }
-    }
-    return _Values(
-      strings,
-      Uint32List.fromList(fieldIds),
-      Uint8List.fromList(sep),
-      noteStarts,
-      chars,
-    );
-  }
-
-  /// [_collect] 的按需取值版：[page] 是这一页的笔记下标，[loaded] 是它们按 [plan] 取回的字段值。
-  static _Values _collectLoaded(
-    _Layout layout,
-    _UploadPlan plan,
-    List<int> page,
-    List<List<String>> loaded,
-  ) {
-    final List<String> strings = <String>[];
-    final List<int> fieldIds = <int>[];
-    final List<int> sep = <int>[];
-    final List<int> noteStarts = <int>[];
-    int chars = 0;
-    for (int p = 0; p < page.length; p++) {
-      final int i = page[p];
-      final List<bool> wanted = plan.wanted[layout.noteSchema[i]];
-      final List<String> values = loaded[p];
-      final int base = layout.noteFieldBase[i];
-      int at = 0;
-      bool first = true;
-      for (int k = 0; k < wanted.length; k++) {
-        if (!wanted[k]) continue;
-        if (at >= values.length) {
-          throw StateError('SrsSearchFieldLoader.load: missing field values');
-        }
-        if (first) noteStarts.add(strings.length);
-        final String v = values[at++];
         strings.add(v);
         fieldIds.add(base + k);
         sep.add(plan.joined && !first ? 1 : 0);
@@ -954,9 +783,6 @@ const int _maxEncodeIsolates = 8;
 /// 卡数到这么多才在 [SrsSearchCorpus.prepare] 里开 isolate 预求值文本条件。
 const int _warmMinCards = 5000;
 
-/// 经 [SrsSearchFieldLoader] 取字段值时每页的笔记数。
-const int _loadPageNotes = 2000;
-
 /// 一次上传选中的（字段排布, 槽位）；[joined] = 全部字段按笔记连续排、同一笔记的字段隔 0x1f。
 final class _UploadPlan {
   const _UploadPlan(this.wanted, {required this.joined});
@@ -1127,7 +953,6 @@ class _Layout {
 
   static _Layout build(
     List<SrsSearchSubject> cards,
-    SrsSearchFieldLoader? loader,
     SrsSearchFieldAliases? aliasesOf,
   ) {
     final BytesBuilder bytes = BytesBuilder(copy: false);
@@ -1199,7 +1024,7 @@ class _Layout {
         noteType.add(intern(type));
         final int schema = schemaOf(
           type,
-          loader?.fieldNames(c) ?? c.fields.keys,
+          c.fields.keys,
           aliasesOf?.call(c) ?? const <String, String>{},
         );
         noteSchema.add(schema);
