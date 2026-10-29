@@ -767,10 +767,12 @@ impl Pano {
         if mode != MODE_INTERACTIVE && mode != MODE_CINEMATIC {
             return status::INVALID_ARGUMENT;
         }
-        // 交互模式里从锁定回来（打开作品后返回 / Esc 取消）：镜头回到选中前的位置，
-        // 不是回到开场星系。其余进入交互模式（建图后首次、从分享动画切回）才回开场镜头。
+        // 交互模式里再进交互模式（打开作品后返回 / Esc 取消）：镜头回到选中前的位置，
+        // 不是回到开场星系。有锁定时取锁定起点；没有锁定（不放动效时选中直接打开、
+        // 不建锁定）镜头本来就没动，原样保留。只有从别的模式进入（分享动画切回）才回开场镜头；
+        // 建图后首次进入时镜头本就是开场镜头。
         let back = if self.mode == MODE_INTERACTIVE {
-            self.lock.map(|l| l.from)
+            Some(self.lock.map_or(self.camera, |l| l.from))
         } else {
             None
         };
@@ -2101,7 +2103,14 @@ mod tests {
         p.set_mode(MODE_INTERACTIVE, -1);
         assert_eq!(p.camera, before);
         assert_eq!(p.dist_goal, before.dist);
-        // 不在锁定中进入交互模式（首次进入 / 从分享动画切回）仍回开场镜头。
+        // 不放动效时选中直接打开、不建锁定：返回同样保留当前镜头。
+        p.input(input::ZOOM, 2.0, 1.0);
+        let unlocked = p.camera;
+        assert_ne!(unlocked, INTERACTIVE_HOME);
+        p.set_mode(MODE_INTERACTIVE, -1);
+        assert_eq!(p.camera, unlocked);
+        assert_eq!(p.dist_goal, unlocked.dist);
+        // 从别的模式进入交互模式（从分享动画切回）仍回开场镜头。
         p.set_mode(MODE_CINEMATIC, -1);
         p.set_mode(MODE_INTERACTIVE, -1);
         assert_eq!(p.camera, INTERACTIVE_HOME);

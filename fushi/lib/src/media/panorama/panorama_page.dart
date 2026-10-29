@@ -113,6 +113,7 @@ List<int> panoramaShareTargetOrder(PanoramaLibrary library) {
   final List<PanoramaWork> works = library.works;
   final List<int> order = <int>[for (int i = 0; i < works.length; i++) i];
   order.sort((int a, int b) {
+    if (a == b) return 0;
     if (a == preferred) return -1;
     if (b == preferred) return 1;
     final int byRecent = works[b].lastOpenedAt.compareTo(works[a].lastOpenedAt);

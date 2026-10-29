@@ -410,6 +410,8 @@ class _PanoramaStageState extends State<PanoramaStage>
     });
     _target = -1;
     _preparedFor = -1;
+    // setMode 会把镜头目标收到当前位置，进行中的阶段切换到不了终点；交还给按实际 morph 回报。
+    _stageGoal = null;
     _frames
       ..hideTarget = false
       ..hiRes = null;
@@ -426,6 +428,8 @@ class _PanoramaStageState extends State<PanoramaStage>
       return;
     }
     final PanoramaWork work = widget.assets.library.works[index];
+    // 锁定期间 Rust 不推进镜头，进行中的阶段切换不会到位；改按实际 morph 回报。
+    _stageGoal = null;
     if (!_motion) {
       unawaited(_open(work));
       return;
