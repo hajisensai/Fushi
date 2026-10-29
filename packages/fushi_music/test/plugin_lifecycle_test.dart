@@ -6,7 +6,8 @@ import 'dart:typed_data';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:test/test.dart';
 
-import 'plugin_host_test.dart' show buildPlugin, manifest;
+import 'plugin_host_test.dart'
+    show buildPlugin, manifest, fakePublicResolve, noRedirectProbe;
 
 /// 插件宿主的生命周期边界：停用 / 卸载后不再调用、调用墙钟超时、存储并发写、实例重建竞态。
 const String _js = r'''
@@ -39,6 +40,8 @@ void main() {
     final MusicPluginManager m = MusicPluginManager(
       rootDir: root,
       httpClientFactory: HttpClient.new,
+      resolver: fakePublicResolve,
+      mediaProbe: noRedirectProbe,
       log: (_, _, _) {},
     );
     final Uint8List zip = buildPlugin(manifest(), <String, String>{
@@ -73,6 +76,8 @@ void main() {
     final MusicPluginManager reopened = MusicPluginManager(
       rootDir: root,
       httpClientFactory: HttpClient.new,
+      resolver: fakePublicResolve,
+      mediaProbe: noRedirectProbe,
       log: (_, _, _) {},
     );
     await expectLater(

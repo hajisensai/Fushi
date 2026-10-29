@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'plugin_ffi.dart';
 import 'plugin_instance.dart';
 import 'plugin_models.dart';
+import 'plugin_net_guard.dart';
 import 'plugin_source.dart';
 
 /// 一个已安装插件：校验摘要 + 启用状态；[error] 非空表示已装文件校验失败（被改过 / 不完整）。
@@ -38,14 +39,25 @@ class MusicPluginManager {
     required MusicPluginLogSink log,
     this.budgetMs = 2000,
     MusicPluginHttpPerformer? httpPerformer,
+    MusicPluginResolver? resolver,
+    MusicPluginAddressBlocker? addressBlocker,
+    MusicPluginMediaProbe? mediaProbe,
   }) : _httpClientFactory = httpClientFactory,
        _httpPerformer = httpPerformer,
+       _resolver = resolver,
+       _addressBlocker = addressBlocker,
+       _mediaProbe = mediaProbe,
        _log = log;
 
   final Directory rootDir;
   final MusicPluginHttpClientFactory _httpClientFactory;
   final MusicPluginLogSink _log;
   final MusicPluginHttpPerformer? _httpPerformer;
+
+  /// 出站解析 / 私网判据 / 媒体探测的注入点（测试用；缺省走系统 DNS 与真实探测）。
+  final MusicPluginResolver? _resolver;
+  final MusicPluginAddressBlocker? _addressBlocker;
+  final MusicPluginMediaProbe? _mediaProbe;
   final int budgetMs;
 
   final Map<String, Future<MusicPluginInstance>> _instances =
@@ -263,6 +275,9 @@ class MusicPluginManager {
       vaultRoot: rootDir.path,
       budgetMs: budgetMs,
       httpPerformer: _httpPerformer,
+      resolver: _resolver,
+      addressBlocker: _addressBlocker,
+      mediaProbe: _mediaProbe,
     );
     _instances[id] = opening;
     return opening;

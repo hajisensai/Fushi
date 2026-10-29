@@ -108,18 +108,16 @@ fn rule_matches(rule: &str, host: &str) -> bool {
     }
 }
 
-/// IP 地址是否落在本机 / 局域网段（宿主在 DNS 解析后同样要用这条判据，见 Dart 侧）。
+/// IP 地址是否落在本机 / 局域网 / 保留段（宿主在 DNS 解析后用同一判据，见 Dart 侧
+/// `isMusicPluginPrivateAddress`）。内嵌 IPv4 的 IPv6 形态（IPv4-mapped、IPv4-compatible、
+/// NAT64 `64:ff9b::/96`、6to4 `2002::/16`）按内嵌地址判；本地 NAT64 前缀 `64:ff9b:1::/48` 整段拒绝。
+///
+/// 这里只核对 URL 里的 IP 字面量，所以额外拒绝 `198.18.0.0/15`（基准测试段，fake-ip 代理的
+/// 假地址池）；Dart 侧核对的是 DNS 解析结果，那一段在 fake-ip 下是所有公网域名的解析值，不拦。
 pub fn check_ip(ip: IpAddr) -> Result<(), String> {
     let private = match ip {
-        IpAddr::V4(v4) => is_private_v4(v4),
-        IpAddr::V6(v6) => {
-            v6.is_loopback()
-                || v6.is_unspecified()
-                || (v6.segments()[0] & 0xfe00) == 0xfc00
-                || (v6.segments()[0] & 0xffc0) == 0xfe80
-                || v6.to_ipv4_mapped().is_some_and(is_private_v4)
-                || v6 == Ipv6Addr::LOCALHOST
-        }
+        IpAddr::V4(v4) => is_private_v4(v4) || (v4.octets()[0] == 198 && (v4.octets()[1] & 0xfe) == 18),
+        IpAddr::V6(v6) => is_private_v6(v6),
     };
     if private {
         Err(format!("不允许访问本机 / 局域网地址 {ip}"))
@@ -128,14 +126,44 @@ pub fn check_ip(ip: IpAddr) -> Result<(), String> {
     }
 }
 
+fn is_private_v6(v6: Ipv6Addr) -> bool {
+    let s = v6.segments();
+    let embedded = |hi: u16, lo: u16| is_private_v4(Ipv4Addr::from(((hi as u32) << 16) | lo as u32));
+    if s[..6] == [0; 6] {
+        // ::、::1、IPv4-compatible ::a.b.c.d
+        return (s[6] == 0 && s[7] <= 1) || embedded(s[6], s[7]);
+    }
+    if let Some(v4) = v6.to_ipv4_mapped() {
+        return is_private_v4(v4);
+    }
+    if s[0] == 0x64 && s[1] == 0xff9b {
+        if s[2..6] == [0; 4] {
+            return embedded(s[6], s[7]);
+        }
+        if s[2] == 1 {
+            return true;
+        }
+    }
+    if s[0] == 0x2002 {
+        return embedded(s[1], s[2]);
+    }
+    (s[0] & 0xfe00) == 0xfc00 // ULA
+        || (s[0] & 0xffc0) == 0xfe80 // 链路本地
+        || (s[0] & 0xffc0) == 0xfec0 // 站点本地（已废弃）
+        || (s[0] & 0xff00) == 0xff00 // 组播
+}
+
 fn is_private_v4(v4: Ipv4Addr) -> bool {
-    v4.is_loopback()
-        || v4.is_private()
-        || v4.is_link_local()
-        || v4.is_unspecified()
-        || v4.is_broadcast()
-        || v4.octets()[0] == 0
-        || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xc0) == 64)
+    let o = v4.octets();
+    o[0] == 0
+        || o[0] == 10
+        || o[0] == 127
+        || (o[0] == 100 && (o[1] & 0xc0) == 64)
+        || (o[0] == 169 && o[1] == 254)
+        || (o[0] == 172 && (o[1] & 0xf0) == 16)
+        || (o[0] == 192 && o[1] == 168)
+        || (o[0] == 192 && o[1] == 0 && o[2] == 0)
+        || o[0] >= 224
 }
 
 #[cfg(test)]
@@ -180,8 +208,15 @@ mod tests {
         for ip in ["10.0.0.1", "192.168.1.1", "172.16.0.1", "169.254.1.1", "100.64.0.1", "::1", "fe80::1", "fd00::1", "::ffff:192.168.0.1"] {
             assert!(check_ip(ip.parse().unwrap()).is_err(), "{ip}");
         }
-        assert!(check_ip("1.1.1.1".parse().unwrap()).is_ok());
-        assert!(check_ip("2606:4700::1111".parse().unwrap()).is_ok());
+        for ip in [
+            "64:ff9b::a00:1", "64:ff9b:1::1", "2002:c0a8:101::1", "::a9fe:a9fe", "192.0.0.8",
+            "198.18.0.1", "198.19.255.255", "224.0.0.1", "255.255.255.255", "fec0::1", "ff02::1", "::",
+        ] {
+            assert!(check_ip(ip.parse().unwrap()).is_err(), "{ip}");
+        }
+        for ip in ["1.1.1.1", "2606:4700::1111", "64:ff9b::808:808", "2002:808:808::1", "198.20.0.1"] {
+            assert!(check_ip(ip.parse().unwrap()).is_ok(), "{ip}");
+        }
     }
 
     #[test]

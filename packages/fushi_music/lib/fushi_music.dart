@@ -14,5 +14,6 @@ export 'src/plugin/plugin_ffi.dart';
 export 'src/plugin/plugin_instance.dart';
 export 'src/plugin/plugin_manager.dart';
 export 'src/plugin/plugin_models.dart';
+export 'src/plugin/plugin_net_guard.dart';
 export 'src/plugin/plugin_source.dart';
 export 'src/scan_wire.dart';

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'plugin_ffi.dart';
 import 'plugin_models.dart';
+import 'plugin_net_guard.dart';
 
 /// 插件日志出口（宿主接到 app 日志；插件日志是不可信文本，只当诊断看）。
 typedef MusicPluginLogSink =
@@ -33,7 +34,13 @@ class MusicPluginInstance {
     required MusicPluginLogSink log,
     required String vaultRoot,
     MusicPluginHttpPerformer? httpPerformer,
+    MusicPluginResolver? resolver,
+    MusicPluginAddressBlocker? addressBlocker,
+    MusicPluginMediaProbe? mediaProbe,
   }) : _handle = handle,
+       _resolver = resolver,
+       _addressBlocker = addressBlocker,
+       _mediaProbe = mediaProbe,
        _vaultRoot = vaultRoot,
        _httpPerformer = httpPerformer,
        _httpClientFactory = httpClientFactory,
@@ -49,6 +56,9 @@ class MusicPluginInstance {
     required String vaultRoot,
     int budgetMs = 2000,
     MusicPluginHttpPerformer? httpPerformer,
+    MusicPluginResolver? resolver,
+    MusicPluginAddressBlocker? addressBlocker,
+    MusicPluginMediaProbe? mediaProbe,
   }) async {
     final ({int handle, Map<String, Object?> summary}) r =
         await MusicPluginNativeAsync.open(dir, budgetMs);
@@ -64,6 +74,9 @@ class MusicPluginInstance {
       log: log,
       vaultRoot: vaultRoot,
       httpPerformer: httpPerformer,
+      resolver: resolver,
+      addressBlocker: addressBlocker,
+      mediaProbe: mediaProbe,
     );
   }
 
@@ -73,6 +86,11 @@ class MusicPluginInstance {
   final File _storageFile;
   final MusicPluginLogSink _log;
   final MusicPluginHttpPerformer? _httpPerformer;
+
+  /// 出站解析 / 私网判据（测试注入；缺省系统 DNS + [isMusicPluginPrivateAddress]）。
+  final MusicPluginResolver? _resolver;
+  final MusicPluginAddressBlocker? _addressBlocker;
+  final MusicPluginMediaProbe? _mediaProbe;
 
   /// 凭据保险库根目录（插件根目录；文件在其下 `.credentials/`）。
   final String _vaultRoot;
@@ -87,8 +105,15 @@ class MusicPluginInstance {
   String get id => info.manifest.id;
   bool get isAlive => _fatal == null && _handle != 0;
 
-  /// 本实例复用的出站客户端（同一插件连续请求同一主机时复用连接）。
-  HttpClient? _client;
+  /// 本实例复用的出站客户端（同一插件连续请求同一主机时复用连接）：每次请求先解析并核对
+  /// 目标主机，连接只连核对过的 IP（[MusicPluginGuardedHttp]）。
+  MusicPluginGuardedHttp? _net;
+
+  MusicPluginGuardedHttp get _guarded => _net ??= MusicPluginGuardedHttp(
+    _httpClientFactory(),
+    resolve: _resolver ?? InternetAddress.lookup,
+    isBlocked: _addressBlocker ?? isMusicPluginPrivateAddress,
+  );
 
   /// 本实例在途响应体的合计缓冲上限（单条 8 MiB × Rust 侧在途上限 32 条仍可到 256 MiB）。
   final MusicPluginResponseBudget _responseBudget = MusicPluginResponseBudget(
@@ -165,6 +190,61 @@ class MusicPluginInstance {
     return <String, String>{
       for (int i = 0; i < list.length; i++)
         if (checked[i] case final String ok) list[i]: ok,
+    };
+  }
+
+  /// 插件交给宿主播放的媒体地址（音频流 / MV）：按授权核对 → 请求头白名单 → 解析并核对主机、
+  /// 逐跳跟随重定向（每一跳都按授权核对、解析核对），交回最终地址给播放器。播放器拿到的是
+  /// 已经走完重定向的地址；它自己再解析 DNS 的那一步是已知边界（播放器不经本层建连）。
+  Future<({String url, Map<String, String> headers})> resolveMediaStream(
+    String url,
+    Map<String, String> headers,
+  ) async {
+    final Map<String, String> checkedHeaders = checkMusicPluginMediaHeaders(
+      headers,
+    );
+    String? current = checkMediaUrls(<String>[url])[url];
+    if (current == null) {
+      throw MusicPluginHttpException('媒体地址 $url 不在插件网络授权内');
+    }
+    final MusicPluginMediaProbe probe = _mediaProbe ?? _guarded.probeRedirect;
+    for (int hop = 0; ; hop++) {
+      final Uri uri = Uri.parse(current!);
+      final String? location = await probe(uri, checkedHeaders);
+      if (location == null) return (url: current, headers: checkedHeaders);
+      if (hop >= _kMaxRedirects) {
+        throw const MusicPluginHttpException('媒体地址重定向次数过多');
+      }
+      final String target = uri.resolve(location).toString();
+      current = checkMediaUrls(<String>[target])[target];
+      if (current == null) {
+        throw MusicPluginHttpException('媒体地址重定向到 $target，不在插件网络授权内');
+      }
+    }
+  }
+
+  /// 封面地址批量核对：按授权核对 + 按主机解析核对（每个主机解析一次、并发）。解析失败或落在
+  /// 私网的主机下的地址不出现在结果里。封面由图片加载器自己取（含重定向），不逐张探测。
+  Future<Map<String, String>> checkCoverUrls(Iterable<String> urls) async {
+    final Map<String, String> ok = checkMediaUrls(urls);
+    final Set<String> hosts = <String>{
+      for (final String u in ok.values) Uri.parse(u).host,
+    };
+    final Map<String, bool> publicHost = <String, bool>{};
+    await Future.wait(<Future<void>>[
+      for (final String h in hosts)
+        resolveMusicPluginPublicAddress(
+          h,
+          resolve: _resolver ?? InternetAddress.lookup,
+          isBlocked: _addressBlocker ?? isMusicPluginPrivateAddress,
+        ).then(
+          (_) => publicHost[h] = true,
+          onError: (Object _) => publicHost[h] = false,
+        ),
+    ]);
+    return <String, String>{
+      for (final MapEntry<String, String> e in ok.entries)
+        if (publicHost[Uri.parse(e.value).host] ?? false) e.key: e.value,
     };
   }
 
@@ -270,7 +350,7 @@ class MusicPluginInstance {
       _httpPerformer?.call(args) ??
       performMusicPluginHttp(
         args,
-        client: _client ??= _httpClientFactory(),
+        net: _guarded,
         budget: _responseBudget,
         checkRedirect: (String url) => MusicPluginNative.checkUrls(
           _handle,
@@ -367,8 +447,8 @@ class MusicPluginInstance {
     if (_fatal == null || _pumping || _handle == 0) return;
     MusicPluginNative.close(_handle);
     _handle = 0;
-    _client?.close(force: true);
-    _client = null;
+    _net?.close(force: true);
+    _net = null;
     final Completer<void>? idle = _idle;
     _idle = null;
     idle?.complete();
@@ -405,16 +485,6 @@ String musicPluginErrorSummary(String raw) {
   return stripped.isEmpty ? raw.trim() : stripped;
 }
 
-/// 插件 HTTP 请求失败（网络 / 超时 / 授权 / 超限）；[message] 原样交给插件。
-final class MusicPluginHttpException implements Exception {
-  const MusicPluginHttpException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
-
 const int _kMaxResponseBytes = 8 * 1024 * 1024;
 
 /// 一个插件实例所有在途响应体合计可缓冲的字节数。
@@ -442,42 +512,12 @@ final class MusicPluginResponseBudget {
 
 const int _kMaxRedirects = 5;
 
-/// 判断解析出的地址是否落在本机 / 局域网段（与 Rust `policy::check_ip` 同一判据）。
-bool isMusicPluginPrivateAddress(InternetAddress a) {
-  final Uint8List b = a.rawAddress;
-  if (a.isLoopback || a.isLinkLocal) return true;
-  if (a.type == InternetAddressType.IPv4) {
-    return b[0] == 0 ||
-        b[0] == 10 ||
-        b[0] == 127 ||
-        (b[0] == 100 && (b[1] & 0xc0) == 64) ||
-        (b[0] == 169 && b[1] == 254) ||
-        (b[0] == 172 && (b[1] & 0xf0) == 16) ||
-        (b[0] == 192 && b[1] == 168) ||
-        (b[0] == 255 && b[1] == 255 && b[2] == 255 && b[3] == 255);
-  }
-  if (a.type == InternetAddressType.IPv6) {
-    final bool unspecified = b.every((int x) => x == 0);
-    final bool uniqueLocal = (b[0] & 0xfe) == 0xfc;
-    final bool mapped =
-        b.sublist(0, 10).every((int x) => x == 0) &&
-        b[10] == 0xff &&
-        b[11] == 0xff;
-    if (mapped) {
-      return isMusicPluginPrivateAddress(
-        InternetAddress.fromRawAddress(Uint8List.fromList(b.sublist(12))),
-      );
-    }
-    return unspecified || uniqueLocal;
-  }
-  return false;
-}
-
-/// 执行一次插件 HTTP 请求（参数已由 Rust 按授权核对并规范化），[client] 由调用方持有。重定向不交给 HttpClient 自动跟随：
-/// 每一跳先经 [checkRedirect]（Rust 授权核对）再请求；DNS 解析结果落在私网段的直接拒绝。
+/// 执行一次插件 HTTP 请求（参数已由 Rust 按授权核对并规范化），[net] 由调用方持有。重定向不交给
+/// HttpClient 自动跟随：每一跳先经 [checkRedirect]（Rust 授权核对）、再经 [MusicPluginGuardedHttp.pin]
+/// 解析核对（解析失败 / 私网都拒绝），连接只连核对过的 IP。
 Future<Map<String, Object?>> performMusicPluginHttp(
   Map<String, Object?> args, {
-  required HttpClient client,
+  required MusicPluginGuardedHttp net,
   required String? Function(String url) checkRedirect,
   MusicPluginResponseBudget? budget,
 }) async {
@@ -495,12 +535,12 @@ Future<Map<String, Object?>> performMusicPluginHttp(
   final Duration timeout = Duration(
     milliseconds: (args['timeoutMs'] as num?)?.toInt() ?? 20000,
   );
-  client
+  final HttpClient client = net.client
     ..connectionTimeout = timeout
     ..autoUncompress = true;
   try {
     for (int hop = 0; ; hop++) {
-      await _rejectPrivateHost(uri.host);
+      await net.pin(uri);
       final HttpClientRequest req = await client
           .openUrl(method, uri)
           .timeout(timeout);
@@ -577,20 +617,5 @@ Future<Map<String, Object?>> performMusicPluginHttp(
     throw MusicPluginHttpException('HTTP 错误：${e.message}');
   } on HandshakeException catch (e) {
     throw MusicPluginHttpException('TLS 握手失败：${e.message}');
-  }
-}
-
-Future<void> _rejectPrivateHost(String host) async {
-  List<InternetAddress> addresses;
-  try {
-    addresses = await InternetAddress.lookup(host);
-  } on SocketException {
-    // 解析失败交给连接阶段报（经代理时本机可能根本解析不了）。
-    return;
-  }
-  for (final InternetAddress a in addresses) {
-    if (isMusicPluginPrivateAddress(a)) {
-      throw MusicPluginHttpException('$host 解析到本机 / 局域网地址，已拒绝');
-    }
   }
 }

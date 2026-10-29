@@ -82,6 +82,14 @@ module.exports = {
 };
 ''';
 
+/// 测试用解析：所有主机都解析到一个公网地址（不打真 DNS）。
+Future<List<InternetAddress>> fakePublicResolve(String host) async =>
+    <InternetAddress>[InternetAddress('93.184.216.34')];
+
+/// 测试用媒体探测：不是重定向（不打真网络）。
+Future<String?> noRedirectProbe(Uri uri, Map<String, String> headers) async =>
+    null;
+
 void main() {
   late Directory root;
   late List<Map<String, Object?>> requests;
@@ -99,6 +107,8 @@ void main() {
   MusicPluginManager makeManager() => MusicPluginManager(
     rootDir: root,
     httpClientFactory: HttpClient.new,
+    resolver: fakePublicResolve,
+    mediaProbe: noRedirectProbe,
     log: (String id, String level, String message) =>
         logs.add('$id/$level: $message'),
     httpPerformer: (Map<String, Object?> args) async {
@@ -258,6 +268,8 @@ void main() {
     final MusicPluginManager m = MusicPluginManager(
       rootDir: root,
       httpClientFactory: HttpClient.new,
+      resolver: fakePublicResolve,
+      mediaProbe: noRedirectProbe,
       log: (_, _, _) {},
       budgetMs: 300,
     );

@@ -4,7 +4,8 @@ import 'dart:typed_data';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:test/test.dart';
 
-import 'plugin_host_test.dart' show buildPlugin, manifest;
+import 'plugin_host_test.dart'
+    show buildPlugin, manifest, fakePublicResolve, noRedirectProbe;
 
 /// 「喜欢」（`like`）契约（docs/specs/2026-10-28-music-plugins.md §4）：未登录 list 为 null、
 /// set 抛错；登录后 list 给喜欢集合与平台歌单，set 改得回来；越权歌单封面清空。
@@ -45,6 +46,8 @@ void main() {
     final MusicPluginManager m = MusicPluginManager(
       rootDir: root,
       httpClientFactory: HttpClient.new,
+      resolver: fakePublicResolve,
+      mediaProbe: noRedirectProbe,
       log: (_, _, _) {},
     );
     final Uint8List zip = buildPlugin(
@@ -88,6 +91,8 @@ void main() {
     final MusicPluginManager m = MusicPluginManager(
       rootDir: root,
       httpClientFactory: HttpClient.new,
+      resolver: fakePublicResolve,
+      mediaProbe: noRedirectProbe,
       log: (_, _, _) {},
     );
     final Uint8List zip = buildPlugin(

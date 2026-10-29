@@ -4,7 +4,8 @@ import 'dart:typed_data';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:test/test.dart';
 
-import 'plugin_host_test.dart' show buildPlugin, manifest;
+import 'plugin_host_test.dart'
+    show buildPlugin, manifest, fakePublicResolve, noRedirectProbe;
 
 /// 登录契约（docs/specs/2026-10-28-music-plugins.md §4.1）：扫码轮询、表单提交、加密凭据、
 /// web / appUrl 按权限与网络授权过滤、卸载清凭据。
@@ -73,6 +74,8 @@ void main() {
     final MusicPluginManager m = MusicPluginManager(
       rootDir: root,
       httpClientFactory: HttpClient.new,
+      resolver: fakePublicResolve,
+      mediaProbe: noRedirectProbe,
       log: (_, _, _) {},
     );
     final Uint8List zip = buildPlugin(

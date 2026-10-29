@@ -1,6 +1,7 @@
 import 'plugin_instance.dart';
 import 'plugin_manager.dart';
 import 'plugin_models.dart';
+import 'plugin_net_guard.dart';
 
 /// 登录挑战里 `appUrl` 允许的自定义 scheme：只收各音乐平台 / 其账号体系的官方 App，宿主
 /// 只在用户点按钮后外部打开。其它 scheme（file / content / intent / javascript …）一律丢弃。
@@ -41,15 +42,30 @@ class MusicPluginSource {
     throw MusicPluginException('插件 $what 返回值不是对象', pluginId: pluginId);
   }
 
-  /// 整批核对封面地址，返回查表函数（越权 / 缺失 → null）。
-  String? Function(String?) _covers(
+  /// 整批核对封面地址（授权 + 主机解析不落私网），返回查表函数（越权 / 解析不过 / 缺失 → null）。
+  Future<String? Function(String?)> _covers(
     MusicPluginInstance inst,
     Iterable<String?> urls,
-  ) {
-    final Map<String, String> ok = inst.checkMediaUrls(
+  ) async {
+    final Map<String, String> ok = await inst.checkCoverUrls(
       urls.whereType<String>(),
     );
     return (String? url) => url == null ? null : ok[url];
+  }
+
+  /// 媒体地址交给播放器前：授权、请求头白名单、解析核对与逐跳重定向核对（见
+  /// [MusicPluginInstance.resolveMediaStream]）；任一不过都报错，不静默放行。
+  Future<({String url, Map<String, String> headers})> _media(
+    MusicPluginInstance inst,
+    String url,
+    Map<String, String> headers,
+    String what,
+  ) async {
+    try {
+      return await inst.resolveMediaStream(url, headers);
+    } on MusicPluginHttpException catch (e) {
+      throw MusicPluginException('$what不可用：${e.message}', pluginId: pluginId);
+    }
   }
 
   Future<(MusicPluginInstance, Map<String, Object?>)> _search(
@@ -93,7 +109,7 @@ class MusicPluginSource {
       pageSize,
     );
     final List<MusicPluginTrack> tracks = MusicPluginTrack.listFrom(r['items']);
-    final String? Function(String?) cover = _covers(
+    final String? Function(String?) cover = await _covers(
       inst,
       tracks.map((MusicPluginTrack t) => t.coverUrl),
     );
@@ -112,7 +128,7 @@ class MusicPluginSource {
       pageSize,
     );
     final List<MusicPluginAlbum> albums = MusicPluginAlbum.listFrom(r['items']);
-    final String? Function(String?) cover = _covers(
+    final String? Function(String?) cover = await _covers(
       inst,
       albums.map((MusicPluginAlbum a) => a.coverUrl),
     );
@@ -133,7 +149,7 @@ class MusicPluginSource {
     final List<MusicPluginArtist> artists = MusicPluginArtist.listFrom(
       r['items'],
     );
-    final String? Function(String?) cover = _covers(
+    final String? Function(String?) cover = await _covers(
       inst,
       artists.map((MusicPluginArtist a) => a.coverUrl),
     );
@@ -156,7 +172,7 @@ class MusicPluginSource {
     final List<MusicPluginPlaylist> lists = MusicPluginPlaylist.listFrom(
       r['items'],
     );
-    final String? Function(String?) cover = _covers(
+    final String? Function(String?) cover = await _covers(
       inst,
       lists.map((MusicPluginPlaylist p) => p.coverUrl),
     );
@@ -204,7 +220,7 @@ class MusicPluginSource {
         ),
       );
     }
-    final String? Function(String?) cover = _covers(inst, <String?>[
+    final String? Function(String?) cover = await _covers(inst, <String?>[
       for (final MusicPluginHomeSection s in parsed)
         for (final Object x in s.items)
           switch (x) {
@@ -253,7 +269,7 @@ class MusicPluginSource {
     final List<MusicPluginPlaylist> lists = MusicPluginPlaylist.listFrom(
       r['items'],
     );
-    final String? Function(String?) cover = _covers(
+    final String? Function(String?) cover = await _covers(
       inst,
       lists.map((MusicPluginPlaylist p) => p.coverUrl),
     );
@@ -277,7 +293,7 @@ class MusicPluginSource {
     final List<MusicPluginTrack> tracks = MusicPluginTrack.listFrom(
       r['tracks'],
     );
-    final String? Function(String?) cover = _covers(inst, <String?>[
+    final String? Function(String?) cover = await _covers(inst, <String?>[
       album.coverUrl,
       ...tracks.map((MusicPluginTrack t) => t.coverUrl),
     ]);
@@ -313,7 +329,7 @@ class MusicPluginSource {
     final List<MusicPluginTrack> tracks = MusicPluginTrack.listFrom(
       r['tracks'],
     );
-    final String? Function(String?) cover = _covers(inst, <String?>[
+    final String? Function(String?) cover = await _covers(inst, <String?>[
       p.coverUrl,
       ...tracks.map((MusicPluginTrack t) => t.coverUrl),
     ]);
@@ -346,7 +362,7 @@ class MusicPluginSource {
     final List<MusicPluginTrack> tracks = MusicPluginTrack.listFrom(
       r['tracks'],
     ).take(maxArtistHotTracks).toList();
-    final String? Function(String?) cover = _covers(inst, <String?>[
+    final String? Function(String?) cover = await _covers(inst, <String?>[
       a.coverUrl,
       ...albums.map((MusicPluginAlbum x) => x.coverUrl),
       ...tracks.map((MusicPluginTrack t) => t.coverUrl),
@@ -373,7 +389,7 @@ class MusicPluginSource {
     );
     final Map<String, Object?> r = _pageObject(v, 'artistAlbums');
     final List<MusicPluginAlbum> albums = MusicPluginAlbum.listFrom(r['items']);
-    final String? Function(String?) cover = _covers(
+    final String? Function(String?) cover = await _covers(
       inst,
       albums.map((MusicPluginAlbum a) => a.coverUrl),
     );
@@ -392,7 +408,7 @@ class MusicPluginSource {
     );
     final Map<String, Object?> r = _pageObject(v, 'artistMvs');
     final List<MusicPluginMv> mvs = MusicPluginMv.listFrom(r['items']);
-    final String? Function(String?) cover = _covers(
+    final String? Function(String?) cover = await _covers(
       inst,
       mvs.map((MusicPluginMv m) => m.coverUrl),
     );
@@ -414,13 +430,15 @@ class MusicPluginSource {
     if (s == null) {
       throw MusicPluginException('插件没有给出 MV 播放地址', pluginId: pluginId);
     }
-    final String? url = inst.checkMediaUrls(<String>[s.url])[s.url];
-    if (url == null) {
-      throw MusicPluginException('MV 地址不在插件声明的网络授权内', pluginId: pluginId);
-    }
+    final ({String url, Map<String, String> headers}) m = await _media(
+      inst,
+      s.url,
+      s.headers,
+      'MV 地址',
+    );
     return MusicPluginMvStream(
-      url: url,
-      headers: s.headers,
+      url: m.url,
+      headers: m.headers,
       expiresAt: s.expiresAt,
       width: s.width,
       height: s.height,
@@ -444,7 +462,7 @@ class MusicPluginSource {
       r['playlist'],
     );
     final MusicPluginAlbum? album = MusicPluginAlbum.fromJson(r['album']);
-    final String? Function(String?) cover = _covers(inst, <String?>[
+    final String? Function(String?) cover = await _covers(inst, <String?>[
       artist?.coverUrl,
       playlist?.coverUrl,
       album?.coverUrl,
@@ -472,7 +490,10 @@ class MusicPluginSource {
     if (p == null) return r;
     return MusicPluginLikes(
       trackIds: r.trackIds,
-      playlist: _withPlaylistCover(p, _covers(inst, <String?>[p.coverUrl])),
+      playlist: _withPlaylistCover(
+        p,
+        await _covers(inst, <String?>[p.coverUrl]),
+      ),
     );
   }
 
@@ -508,13 +529,15 @@ class MusicPluginSource {
     if (s == null) {
       throw MusicPluginException('插件没有给出播放地址', pluginId: pluginId);
     }
-    final String? url = inst.checkMediaUrls(<String>[s.url])[s.url];
-    if (url == null) {
-      throw MusicPluginException('播放地址不在插件声明的网络授权内', pluginId: pluginId);
-    }
+    final ({String url, Map<String, String> headers}) m = await _media(
+      inst,
+      s.url,
+      s.headers,
+      '播放地址',
+    );
     return MusicPluginStream(
-      url: url,
-      headers: s.headers,
+      url: m.url,
+      headers: m.headers,
       expiresAt: s.expiresAt,
       codec: s.codec,
       bitrateKbps: s.bitrateKbps,
