@@ -46,7 +46,10 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiFloatingChromeBar, FushiFloatingChromeInsetPadding;
+    show
+        FushiFloatingChromeBar,
+        FushiFloatingChromeInset,
+        FushiFloatingChromeInsetSpacer;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -614,73 +617,87 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
           actionsSlot: _actionsSlot,
           child: SafeArea(
             bottom: false,
-            child: FushiFloatingChromeInsetPadding(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  FushiFloatingChromeBar(
-                    tabs: LibrarySectionTabs<MusicLibrarySection>(
-                      tabs: <LibrarySectionTab<MusicLibrarySection>>[
-                        for (final MusicLibrarySection s
-                            in MusicLibrarySection.values)
-                          if (s != MusicLibrarySection.recommend ||
-                              _hasRecommend)
-                            LibrarySectionTab<MusicLibrarySection>(
-                              value: s,
-                              label: musicLibrarySectionLabel(s),
-                            ),
-                      ],
-                      selected: _section,
-                      onChanged: (MusicLibrarySection v) => setState(() {
-                        _sectionTouched = true;
-                        _section = v;
-                      }),
-                      focusIdPrefix: 'music-library-view',
-                      floating: true,
-                    ),
-                    slot: _actionsSlot,
-                  ),
-                  SizedBox(height: tokens.spacing.gap),
-                  if (snap == null ? null : _buildContinueHero(snap)
-                      case final Widget hero)
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        tokens.spacing.page,
-                        0,
-                        tokens.spacing.page,
-                        tokens.spacing.gap * 1.5,
-                      ),
-                      child: hero,
-                    ),
-                  // 常规同步 / 复习同步在跑时的进度条（全局状态，不只本页触发的）；没在跑时零高度。
-                  SyncProgressBanner(
-                    key: const ValueKey<String>('music-sync-progress'),
-                    margin: EdgeInsets.only(bottom: tokens.spacing.gap),
-                  ),
-                  if (_scanning) const FushiLinearProgressIndicator(),
-                  Expanded(
-                    child: snap == null
-                        ? const FushiLoadingView()
-                        : AnimatedSwitcher(
-                            duration: fushiMotionDuration(
-                              context,
-                              FushiMotion.medium,
-                            ),
-                            // 每个分区一份自己的主滚动控制器：切区淡出期间新旧
-                            // 两个主滚动视图同时在树上（tab 被藏起时 ticker 静音、
-                            // 旧子树一直不移除），共用外壳那一个会让 Scrollbar 断言
-                            // 「attached to more than one ScrollPosition」。与视频
-                            // 库外壳的保活分区同一套做法。
-                            child: KeyedSubtree(
-                              key: ValueKey<MusicLibrarySection>(_section),
-                              child: SectionPrimaryScrollScope(
-                                child: _buildSection(context, snap),
-                              ),
-                            ),
+            // 外壳给库页留的顶部呼吸（[FushiFloatingChromeInset]）由页头上方的
+            // 定高空白吃掉：本页工具栏是固定页头、不随滚动收起，下面各分区自己滚。
+            // 子树 inset 归零，分区的滚动视图不再重复让位。
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const FushiFloatingChromeInsetSpacer(),
+                Expanded(
+                  child: FushiFloatingChromeInset(
+                    top: 0,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        FushiFloatingChromeBar(
+                          tabs: LibrarySectionTabs<MusicLibrarySection>(
+                            tabs: <LibrarySectionTab<MusicLibrarySection>>[
+                              for (final MusicLibrarySection s
+                                  in MusicLibrarySection.values)
+                                if (s != MusicLibrarySection.recommend ||
+                                    _hasRecommend)
+                                  LibrarySectionTab<MusicLibrarySection>(
+                                    value: s,
+                                    label: musicLibrarySectionLabel(s),
+                                  ),
+                            ],
+                            selected: _section,
+                            onChanged: (MusicLibrarySection v) => setState(() {
+                              _sectionTouched = true;
+                              _section = v;
+                            }),
+                            focusIdPrefix: 'music-library-view',
+                            floating: true,
                           ),
+                          slot: _actionsSlot,
+                        ),
+                        SizedBox(height: tokens.spacing.gap),
+                        if (snap == null ? null : _buildContinueHero(snap)
+                            case final Widget hero)
+                          Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              tokens.spacing.page,
+                              0,
+                              tokens.spacing.page,
+                              tokens.spacing.gap * 1.5,
+                            ),
+                            child: hero,
+                          ),
+                        // 常规同步 / 复习同步在跑时的进度条（全局状态，不只本页触发的）；没在跑时零高度。
+                        SyncProgressBanner(
+                          key: const ValueKey<String>('music-sync-progress'),
+                          margin: EdgeInsets.only(bottom: tokens.spacing.gap),
+                        ),
+                        if (_scanning) const FushiLinearProgressIndicator(),
+                        Expanded(
+                          child: snap == null
+                              ? const FushiLoadingView()
+                              : AnimatedSwitcher(
+                                  duration: fushiMotionDuration(
+                                    context,
+                                    FushiMotion.medium,
+                                  ),
+                                  // 每个分区一份自己的主滚动控制器：切区淡出期间新旧
+                                  // 两个主滚动视图同时在树上（tab 被藏起时 ticker 静音、
+                                  // 旧子树一直不移除），共用外壳那一个会让 Scrollbar 断言
+                                  // 「attached to more than one ScrollPosition」。与视频
+                                  // 库外壳的保活分区同一套做法。
+                                  child: KeyedSubtree(
+                                    key: ValueKey<MusicLibrarySection>(
+                                      _section,
+                                    ),
+                                    child: SectionPrimaryScrollScope(
+                                      child: _buildSection(context, snap),
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
