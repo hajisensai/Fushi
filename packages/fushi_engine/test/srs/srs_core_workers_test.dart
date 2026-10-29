@@ -11,6 +11,8 @@ import 'support/srs_test_storage.dart';
 
 int _ping(SrsCore core) => 7;
 
+int _boom(SrsCore core) => throw StateError('boom');
+
 void main() {
   test('调用方 zone 不跑微任务：命令照常执行、worker 照常归还', () async {
     final SrsStorage storage = await openTestSrsStorage();
@@ -34,5 +36,9 @@ void main() {
         pool.run(address, _ping),
     ]).timeout(const Duration(seconds: 20));
     expect(after, everyElement(7));
+
+    // 命令报错照常交回调用方（在调用方自己的 error zone 里，不变成根 zone 的未捕获错误）。
+    await expectLater(pool.run(address, _boom), throwsA(isA<StateError>()));
+    expect(await pool.run(address, _ping), 7);
   });
 }
