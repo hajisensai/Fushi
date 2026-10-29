@@ -1,7 +1,7 @@
 // 统计页装载（`loadSrsStats`）的输入→输出回归向量。
 //
-// 输入是冻结的库：下面几个场景造出的 srs.db 原样存成 fixtures/srs_stats_vectors_<场景>.db（排程带 fuzz、种子是随机
-// 生成的卡 ID，每次重造的库都不一样，所以冻结库本身）。输出由**旧的 Dart 实现**（`allNoteViews` 物化全部笔记取
+// 输入是冻结的库：下面的场景造出的 srs.db 原样（gzip）存成 fixtures/srs_stats_vectors.db.gz（排程带 fuzz、种子是随机
+// 生成的卡 ID，每次重造的库都不一样，所以冻结库本身）；两种装载条件（FSRS / 挂上 RWKV-Instant 假打分器）读同一份库。输出由**旧的 Dart 实现**（`allNoteViews` 物化全部笔记取
 // 出处 + Drift 整表读卡片缓存 / 笔记缓存 / 有效复习投影，2026-10-29 L3 之前）在这些库上算出，存进
 // fixtures/srs_stats_vectors.json；统计装载搬进 Rust（`stats_bundle` 命令，列式结果）之后，新实现必须在同一份库上
 // 逐项给出同样的结果：每张可见卡的统计视图（状态 / 暂停 / 搁置 / 排程归属 / 间隔 / 到期 / 记忆状态 / 可提取度 /
@@ -181,6 +181,7 @@ void main() {
   final bool write = Platform.environment['SRS_STATS_VECTORS_WRITE'] == '1';
   final File vectors = File('$_fixtures/srs_stats_vectors.json');
   final Map<String, Object?> produced = <String, Object?>{};
+  bool built = false;
   final Map<String, Object?> expected = write
       ? const <String, Object?>{}
       : (jsonDecode(vectors.readAsStringSync()) as Map)
@@ -196,12 +197,16 @@ void main() {
 
   Future<void> scenario(String name, {required bool rwkv}) async {
     int t = 0;
-    final File db = File('$_fixtures/srs_stats_vectors_$name.db');
+    final File db = File('$_fixtures/srs_stats_vectors.db.gz');
     final SrsDbStore s;
-    if (write) {
+    if (write && !built) {
+      built = true;
       s = await _build(() => t, (int v) => t = v);
-      if (db.existsSync()) db.deleteSync();
-      s.core.snapshotInto(db.path, stripDeviceLocal: false);
+      final Directory tmp = Directory.systemTemp.createTempSync('srs_vec_');
+      final String snap = p.join(tmp.path, 'snap.db');
+      s.core.snapshotInto(snap, stripDeviceLocal: false);
+      db.writeAsBytesSync(gzip.encode(File(snap).readAsBytesSync()));
+      tmp.deleteSync(recursive: true);
     } else {
       final Directory dir = Directory.systemTemp.createTempSync('srs_vec_');
       addTearDown(() {
@@ -212,7 +217,7 @@ void main() {
         }
       });
       final String path = p.join(dir.path, 'srs.db');
-      db.copySync(path);
+      File(path).writeAsBytesSync(gzip.decode(db.readAsBytesSync()));
       final TestSrs srs = await openTestSrsAt(path);
       s = await SrsDbStore.open(
         db: srs.db,
