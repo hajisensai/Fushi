@@ -836,6 +836,13 @@ fn sync2_command(
         "replay_all" => json!(c.sync2_replay_all(profile)?),
         // 排队：牌组计数 + 出卡（store/study.rs），只读快照。
         "study" => c.study(profile, req)?,
+        // 列式批量读（store/bulk.rs），只读快照：卡片缓存行、统计页三张表、AnkiConnect 数字 id 反查。
+        "card_columns" => {
+            files.push(("columns".to_owned(), c.read_visible(|conn| crate::store::bulk::card_columns(conn, profile, req))?));
+            json!({})
+        }
+        "stats_bundle" => c.read_visible(|conn| crate::store::bulk::stats_bundle(conn, profile, files))?,
+        "anki_resolve" => c.read_visible(|conn| crate::store::bulk::anki_resolve(conn, profile, req))?,
         // 一组卡各自的血统（自己 + 全部前身，store/caches.rs `lineage_ids`）：卡片历史用。看得见本机写事务里未提交的行。
         "lineages" => {
             let cards: Vec<String> = req.get("cards").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();

@@ -77,8 +77,9 @@ class _AcError implements Exception {
 /// 跨请求常驻的集合视图：未删除的笔记、可见的卡、查重倒排索引与搜索语料。
 ///
 /// 以前每个请求都整库读卡片缓存行、整库物化笔记（变一条就全部重来），加卡、查重、搜索在大库上
-/// 每次都是秒级（HBK-AUDIT-017）。现在按 store 的变化指纹（[SrsDbStore.changeFingerprint]：笔记类型、
-/// 牌组、设置）与缓存变更日志（[SrsDbStore.cacheChangesSince]：笔记 / 卡的缓存行）增量刷新，只重读
+/// 每次都是秒级（HBK-AUDIT-017）。现在按 store 的内容指纹（[SrsDbStore.contentFingerprint]：笔记类型、
+/// 牌组、设置；复习日志与界面状态不推进它——以前用的修订号每条复习日志 +1，复习期间每个请求都重读一遍笔记类型
+/// 与牌组树并 jsonEncode 签名）与缓存变更日志（[SrsDbStore.cacheChangesSince]：笔记 / 卡的缓存行）增量刷新，只重读
 /// 变了的那几条；日志答不了（缓存整体重建、事务回滚、换了 store）才整份重读。
 class _Resident {
   _Resident(this.store);
@@ -715,7 +716,7 @@ class SrsAnkiConnectHandler {
   /// 代号，下次请求会把这段再补一遍（多读不少读）。
   Future<void> _refresh(_Resident r) async {
     final SrsDbStore store = r.store;
-    final String fingerprint = await store.changeFingerprint();
+    final String fingerprint = store.contentFingerprint;
     final int generation = store.cacheGeneration;
     // 日界：profile 设置（随指纹变）或系统时区（不随指纹变）都可能改它，每次读（一条查询）。
     final SrsDayContext day = await store.dayContext();
