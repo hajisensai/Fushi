@@ -10,6 +10,9 @@
 /// - 发送：命令是一个只捕获可发送数据（句柄地址、请求、字节块）的闭包——写成顶层函数造闭包，不捕获
 ///   `SrsDbStore`（它带着 Drift 连接与 Future，不可发送）。
 /// - worker 意外退出（原生崩溃以外的致命错误）：在途命令报错，那个 worker 丢弃，之后按需再起。
+/// - 归还 worker 不经调用方的 zone：回执在根 zone 里收、收到就先归还，再把结果交给调用方。调用方的 zone
+///   可能再也不跑微任务（widget 测试结束后的 FakeAsync、已经没人 await 的发后不理命令，如页面 dispose
+///   时关掉原生会话），若在调用方的 `finally` 里归还，那个 worker 就永远「在途」，池子耗尽后所有命令都挂住。
 library;
 
 import 'dart:async';
@@ -43,19 +46,16 @@ final class SrsCoreWorkers {
   int get debugSpawned => _spawnedTotal;
   int _spawnedTotal = 0;
 
-  /// 在 worker 里对 [address] 的句柄执行 [job]。
-  Future<T> run<T>(int address, SrsCoreJob<T> job) async {
+  /// 在 worker 里对 [address] 的句柄执行 [job]。取 worker、发命令、归还都在根 zone 里走（见库注释）；
+  /// 调用方只在自己的 zone 里等结果。
+  Future<T> run<T>(int address, SrsCoreJob<T> job) => Zone.root.run(() async {
     final _Worker w = await _acquire();
-    bool healthy = true;
-    try {
-      return await w.run<T>(address, job);
-    } on _WorkerDied {
-      healthy = false;
-      rethrow;
-    } finally {
-      _release(w, healthy: healthy);
-    }
-  }
+    return w.run<T>(
+      address,
+      job,
+      onSettled: (bool healthy) => _release(w, healthy: healthy),
+    );
+  });
 
   Future<_Worker> _acquire() async {
     if (_idle.isNotEmpty) return _idle.removeLast();
@@ -127,16 +127,24 @@ final class _Worker {
     return _Worker._(iso, inbox);
   }
 
-  Future<T> run<T>(int address, SrsCoreJob<T> job) {
+  /// [onSettled] 在根 zone 里、回执一到就调（先于 [run] 返回的 Future 完成；`false` = worker 已退出）。
+  Future<T> run<T>(
+    int address,
+    SrsCoreJob<T> job, {
+    required void Function(bool healthy) onSettled,
+  }) {
     final Completer<T> done = Completer<T>();
+    // RawReceivePort 的处理函数在根 zone 跑：在这里归还，不受调用方 zone 是否还跑微任务的影响。
     final RawReceivePort reply = RawReceivePort();
     reply.handler = (Object? m) {
       reply.close();
       _isolate.removeOnExitListener(reply.sendPort);
       if (m == _kExited) {
+        onSettled(false);
         done.completeError(const _WorkerDied());
         return;
       }
+      onSettled(true);
       final (bool ok, Object? value, String? stack) =
           m! as (bool, Object?, String?);
       if (ok) {

@@ -566,10 +566,16 @@ class SrsBrowseSession {
     );
   }
 
-  /// 释放原生侧的会话（字段文本可达几百 MB）。之后再 [query] 会重新建。
+  /// 释放原生侧的会话（字段文本可达几百 MB）。之后再 [query] 会重新建。库已经关了（页面 dispose 时发出的
+  /// 关闭排在关库之后）就什么都不用做：会话住在内核里，随内核一起释放了。
   Future<void> close() async {
     _last = null;
-    await store.browseCommand(<String, Object?>{'op': 'browse_close'});
+    if (store.core.isClosed) return;
+    try {
+      await store.browseCommand(<String, Object?>{'op': 'browse_close'});
+    } on SrsCoreException catch (e) {
+      if (!e.message.contains('store is closed')) rethrow;
+    }
   }
 
   /// 查询的上下文：笔记类型（字段、别名、模板）、牌组有效全名与是否按 RWKV 回忆率排队、此刻与日界、
