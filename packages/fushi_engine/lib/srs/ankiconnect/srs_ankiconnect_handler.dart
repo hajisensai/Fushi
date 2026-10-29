@@ -29,7 +29,6 @@ import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_media.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_engine/srs/srs_note_type_store.dart';
 
 /// 兼容的 AnkiConnect API 版本。
 const int kSrsAnkiConnectVersion = 6;
@@ -572,21 +571,26 @@ class SrsAnkiConnectHandler {
     return _Ctx(store, await store.noteTypes(), await store.deckTree());
   }
 
-  /// 一条笔记的可见卡排成 AnkiConnect 的顺序：模板顺序，再 clozeOrd（笔记类型里没有的模板当 0）。
-  static List<SrsCardCacheRow> _visibleCardsInOrder(
-    SrsNoteTypeView t,
-    Iterable<SrsCardCacheRow> cards,
-  ) {
+  /// 一条笔记的可见卡（[SrsAnkiNoteInfo.cards]）排成 AnkiConnect 的顺序：模板顺序，再 clozeOrd（笔记类型里没有的
+  /// 模板当 0），交回数字 id。
+  static List<int> _cardNumsInOrder(SrsNoteTypeView t, SrsAnkiNoteInfo note) {
     final Map<String, int> ord = <String, int>{
       for (final SrsTemplateDef d in t.templates) d.id: d.ord,
     };
-    return <SrsCardCacheRow>[
-      for (final SrsCardCacheRow c in cards)
-        if (!c.hidden) c,
-    ]..sort((SrsCardCacheRow a, SrsCardCacheRow b) {
-      final int c = (ord[a.templateId] ?? 0).compareTo(ord[b.templateId] ?? 0);
-      return c != 0 ? c : a.clozeOrd.compareTo(b.clozeOrd);
-    });
+    return <int>[
+      for (final ({int num, String templateId, int clozeOrd}) c
+          in <({int num, String templateId, int clozeOrd})>[...note.cards]
+            ..sort((
+              ({int num, String templateId, int clozeOrd}) a,
+              ({int num, String templateId, int clozeOrd}) b,
+            ) {
+              final int c = (ord[a.templateId] ?? 0).compareTo(
+                ord[b.templateId] ?? 0,
+              );
+              return c != 0 ? c : a.clozeOrd.compareTo(b.clozeOrd);
+            }))
+        c.num,
+    ];
   }
 
   /// 一组整数卡片 id 的缓存行（含隐藏的），按 `'$整数 id'` 取；不存在的不在表里。一次映射、
@@ -1465,59 +1469,61 @@ class SrsAnkiConnectHandler {
   // ---------------------------------------------------------------- 信息
 
   /// 字段值对外按 Anki 的样子给：释义样式去重的引用行展开回内联 `<style>`
-  /// （外部工具读到的与它当初写进来的逐字节相同）。
+  /// （外部工具读到的与它当初写进来的逐字节相同）。整条笔记的字段一批展开（[SrsDbStore.expandStylesAll]）。
   Future<Map<String, Object?>> _fieldsInfo(
     SrsDbStore store,
     SrsNoteTypeView t,
-    SrsNoteView n,
-  ) async => <String, Object?>{
+    String Function(String fieldId) field,
+  ) async => _fieldsInfoOf(
+    t,
+    await store.expandStylesAll(<String>[
+      for (final SrsFieldDef f in t.fields) field(f.id),
+    ]),
+  );
+
+  /// [t] 的字段按序配上已展开的值（[values] 与 `t.fields` 等长同序）。
+  static Map<String, Object?> _fieldsInfoOf(
+    SrsNoteTypeView t,
+    List<String> values,
+  ) => <String, Object?>{
     for (int i = 0; i < t.fields.length; i++)
-      t.fields[i].name: <String, Object?>{
-        'value': await store.expandStyles(n.field(t.fields[i].id)),
-        'order': i,
-      },
+      t.fields[i].name: <String, Object?>{'value': values[i], 'order': i},
   };
 
-  /// notesInfo：按 id 读笔记（寄存器物化）与它们的卡片缓存行；查询形式先 findNotes。
+  /// notesInfo：内核一次读完数字 id 反查、笔记物化与可见卡（[SrsDbStore.ankiNotesInfo]），全部字段的样式引用
+  /// 一批展开；查询形式先 findNotes。
   Future<List<Object?>> _notesInfo(Map<String, Object?> p) async {
     final _Ctx s = await _ctx();
     final List<int> ids = p.containsKey('query') && !p.containsKey('notes')
         ? (await _find(_requireString(p, 'query'), notes: true)).ids
         : _requireIntList(p, 'notes');
-    final List<String?> noteIds = await s.store.noteIdsForAnkiNumericIds(ids);
-    final List<String> known = <String>[
-      for (final String? id in noteIds)
-        if (id != null) id,
+    final List<SrsAnkiNoteInfo?> notes = await s.store.ankiNotesInfo(ids);
+    final List<SrsNoteTypeView?> types = <SrsNoteTypeView?>[
+      for (final SrsAnkiNoteInfo? n in notes)
+        n == null ? null : s.typeById[n.noteTypeId],
     ];
-    final Map<String, SrsNoteView?> views = await s.store.notes(known);
-    final Map<String, List<SrsCardCacheRow>> cards = await s.store.cardsOfNotes(
-      known,
-    );
+    final List<String> raw = <String>[
+      for (int k = 0; k < notes.length; k++)
+        if (types[k] != null)
+          for (final SrsFieldDef f in types[k]!.fields) notes[k]!.field(f.id),
+    ];
+    final List<String> values = await s.store.expandStylesAll(raw);
     final List<Object?> out = <Object?>[];
+    int at = 0;
     for (int k = 0; k < ids.length; k++) {
-      final int n = ids[k];
-      final String? id = noteIds[k];
-      final SrsNoteView? note = id == null ? null : views[id];
-      final SrsNoteTypeView? t = note == null || note.deletedAt != null
-          ? null
-          : s.typeById[note.noteTypeId];
+      final SrsAnkiNoteInfo? note = notes[k];
+      final SrsNoteTypeView? t = types[k];
       if (note == null || t == null) {
         out.add(<String, Object?>{});
         continue;
       }
       out.add(<String, Object?>{
-        'noteId': n,
+        'noteId': ids[k],
         'profile': _profile,
         'tags': note.tags,
-        'fields': await _fieldsInfo(s.store, t, note),
+        'fields': _fieldsInfoOf(t, values.sublist(at, at += t.fields.length)),
         'modelName': t.name,
-        'cards': <int>[
-          for (final SrsCardCacheRow c in _visibleCardsInOrder(
-            t,
-            cards[note.id] ?? const <SrsCardCacheRow>[],
-          ))
-            _num(c.id),
-        ],
+        'cards': _cardNumsInOrder(t, note),
       });
     }
     return out;
@@ -1589,7 +1595,7 @@ class SrsAnkiConnectHandler {
       final SrsQueue q = SrsQueue.parse(c.queue);
       out.add(<String, Object?>{
         'cardId': n,
-        'fields': await _fieldsInfo(s.store, t, note),
+        'fields': await _fieldsInfo(s.store, t, note.field),
         'fieldOrder': ord,
         'question': r?.question ?? '',
         'answer': r?.answer ?? '',

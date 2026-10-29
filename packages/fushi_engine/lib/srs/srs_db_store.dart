@@ -774,6 +774,16 @@ class SrsDbStore implements SrsSync2Host {
     return st.expand(html, dropMissing: dropMissing);
   }
 
+  /// [expandStyles] 的成批版本（与输入同序；样式文件每个只读一次，见 [SrsStyleStore.expandAll]）。
+  Future<List<String>> expandStylesAll(
+    List<String> htmls, {
+    bool dropMissing = false,
+  }) async {
+    final SrsStyleStore? st = styles;
+    if (st == null) return htmls;
+    return st.expandAll(htmls, dropMissing: dropMissing);
+  }
+
   /// [expandStyles] 逐值作用于一组字段（键不变）。
   Future<Map<String, String>> expandFields(
     Map<String, String> fields, {
@@ -4598,6 +4608,23 @@ class SrsDbStore implements SrsSync2Host {
   Future<List<String?>> cardIdsForAnkiNumericIds(List<int> ankiIds) =>
       _ankiResolve('cards', ankiIds);
 
+  /// AnkiConnect `notesInfo` 要的笔记内容（按输入顺序；查不到 / 已删除的为 null）：内核 `anki_notes_info`
+  /// （native/fushi_fsrs/src/store/bulk.rs）在只读快照上一次读完数字 id 反查、笔记物化与可见卡，只交回要用的值。
+  /// 字段值是落库表示（样式引用没展开，见 [expandStylesAll]）。
+  Future<List<SrsAnkiNoteInfo?>> ankiNotesInfo(List<int> ankiIds) async {
+    if (ankiIds.isEmpty) return const <SrsAnkiNoteInfo?>[];
+    final Map<String, Object?> r = await _sync2(<String, Object?>{
+      'op': 'anki_notes_info',
+      'notes': ankiIds,
+    });
+    return <SrsAnkiNoteInfo?>[
+      for (final Object? n in r['notes']! as List)
+        n == null
+            ? null
+            : SrsAnkiNoteInfo._fromKernel((n as Map).cast<String, Object?>()),
+    ];
+  }
+
   Future<List<String?>> _ankiResolve(String kind, List<int> ankiIds) async {
     if (ankiIds.isEmpty) return const <String?>[];
     final Map<String, Object?> r = await _sync2(<String, Object?>{
@@ -4849,4 +4876,49 @@ final class _NoteTypeCache {
   final String key;
   final Map<String, SrsNoteTypeView?> byId = <String, SrsNoteTypeView?>{};
   List<SrsNoteTypeView>? all;
+}
+
+/// [SrsDbStore.ankiNotesInfo] 的一项：一条未删除笔记的 AnkiConnect `notesInfo` 原料。
+class SrsAnkiNoteInfo {
+  const SrsAnkiNoteInfo({
+    required this.id,
+    required this.noteTypeId,
+    required this.tags,
+    required this.fields,
+    required this.cards,
+  });
+
+  factory SrsAnkiNoteInfo._fromKernel(Map<String, Object?> m) =>
+      SrsAnkiNoteInfo(
+        id: m['id']! as String,
+        noteTypeId: m['nt']! as String,
+        tags: <String>[for (final Object? t in m['t']! as List) t! as String],
+        // 与 SrsNoteView 同：同一字段 ID 出现两次时后者为准。
+        fields: <String, String>{
+          for (final List<Object?> f in (m['f']! as List).cast<List<Object?>>())
+            f[0]! as String: f[1]! as String,
+        },
+        cards: <({int num, String templateId, int clozeOrd})>[
+          for (final List<Object?> c in (m['c']! as List).cast<List<Object?>>())
+            (
+              num: c[0]! as int,
+              templateId: c[1]! as String,
+              clozeOrd: c[2]! as int,
+            ),
+        ],
+      );
+
+  /// 笔记 ID（UUID）。
+  final String id;
+  final String noteTypeId;
+  final List<String> tags;
+
+  /// 字段 ID → 值（落库表示）。
+  final Map<String, String> fields;
+
+  /// 可见卡：AnkiConnect 数字 id、模板 ID、cloze 序号（未排序）。
+  final List<({int num, String templateId, int clozeOrd})> cards;
+
+  /// 同 [SrsNoteView.field]：没有 = 空串。
+  String field(String fieldId) => fields[fieldId] ?? '';
 }

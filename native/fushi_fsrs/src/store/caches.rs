@@ -213,15 +213,16 @@ impl TypeInfo {
 
 
 /// 物化好的笔记里缓存行用得到的部分。
-struct NoteInfo {
-    id: String,
-    note_type: String,
+pub(crate) struct NoteInfo {
+    pub(crate) id: String,
+    pub(crate) note_type: String,
     guid: String,
     created_at: i64,
-    fields: Vec<(String, String)>,
-    tags: Vec<String>,
+    /// (字段 ID, 值)，寄存器视图 `f` 的原序（同一 ID 后者为准，见 [NoteInfo::field]）。
+    pub(crate) fields: Vec<(String, String)>,
+    pub(crate) tags: Vec<String>,
     deck: Option<String>,
-    deleted_at: Option<i64>,
+    pub(crate) deleted_at: Option<i64>,
     pending: bool,
     /// 出处（`SrsSourceRef`）：kind 与原样 title；没有出处（或不是带 kind 的对象）= 两个空串。
     source_kind: String,
@@ -290,7 +291,7 @@ fn expected_cards(n: &NoteInfo, t: &TypeInfo) -> Result<Vec<(String, String, i64
 }
 
 /// 一组笔记物化好的视图（不存在的跳过）：身份记录与修改记录分块一次读、整块一次寄存器内核。
-fn note_infos(c: &Connection, chunk: &[String]) -> Result<Vec<NoteInfo>, String> {
+pub(crate) fn note_infos(c: &Connection, chunk: &[String]) -> Result<Vec<NoteInfo>, String> {
     let rows = entity_rows(c, chunk)?;
     let edits = edits_of(c, "note", chunk)?;
     let mut views: Vec<NoteInfo> = Vec::new();

@@ -2048,6 +2048,29 @@ mod tests {
         assert_eq!(stats["sessions"], json!(1), "rereads, not rebuilds: {stats}");
     }
 
+    /// `anki_notes_info`（store/bulk.rs）：按数字 id 一批交回笔记类型、标签、字段（寄存器视图原序、落库表示）与可见卡；
+    /// 查不到 / 已删除的为 null，与请求等长、同序（重复的 id 各回一份）。
+    #[test]
+    fn anki_notes_info_reads_fields_tags_and_visible_cards_by_numeric_id() {
+        let (d, cfg, _) = library();
+        write(&d, &cfg, T0 + 1000, vec![edit("note", N2, "deleted", json!(T0 + 1000))]);
+        let num = crate::store::schema::anki_numeric_id;
+        let card = crate::registers::card_id(N1, "t1", 0).unwrap();
+        let req = json!({"notes": [num(N1), num(N2), 7, num(N3), num(N1)]});
+        let got = d.core.read_visible(|c| crate::store::bulk::anki_notes_info(c, P, &req)).unwrap();
+        let n1 = json!({
+            "id": N1, "nt": "A", "t": ["t1", "b"],
+            "f": [["fa", "<b>cat</b>"], ["fb", "dog"]],
+            "c": [[num(&card), "t1", 0]],
+        });
+        assert_eq!(got["notes"][0], n1);
+        assert_eq!(got["notes"][1], Value::Null, "deleted");
+        assert_eq!(got["notes"][2], Value::Null, "unknown");
+        assert_eq!(got["notes"][3]["nt"], json!("B"));
+        assert_eq!(got["notes"][3]["f"], json!([["x", "cat"]]));
+        assert_eq!(got["notes"][4], n1);
+    }
+
     /// 查重用得上 v15 的部分索引（候选规范形 IN (...) 不扫全表）。
     #[test]
     fn anki_dupes_query_uses_the_dupe_index() {
