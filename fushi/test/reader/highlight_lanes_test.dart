@@ -261,7 +261,7 @@ void main() {
         settings: settings,
         einkMode: true,
       );
-      // BUG-3874：墨水屏不再隐藏窄条层——查词 / 当前句 / 搜索的窄条去掉底色、画成外侧
+      // BUG-3886：墨水屏不再隐藏窄条层——查词 / 当前句 / 搜索的窄条去掉底色、画成外侧
       // 一条线；收藏的底色窄条隐藏（收藏保留原下划线）。
       final int layer = eink.lastIndexOf('fushi-hl-lanes {');
       expect(

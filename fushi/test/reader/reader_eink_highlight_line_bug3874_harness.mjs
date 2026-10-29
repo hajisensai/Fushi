@@ -1,4 +1,4 @@
-// BUG-3874: on e-ink the current-sentence line must run unbroken along the whole cue — across
+// BUG-3886: on e-ink the current-sentence line must run unbroken along the whole cue — across
 // ruby words, emphasis-marked text and line breaks — and must not be painted through a CSS
 // highlight (Blink clips the glyph ink of highlighted text, BUG-3776). Runs the generated
 // production reader CSS (einkMode) + engine shell + selection script in real Chrome, plays the

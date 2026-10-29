@@ -1402,7 +1402,7 @@ ruby.fushi-hl-$color-ruby-active {
   ///   抖动灰阶，且每次高亮移动都触发大面积刷新；下划线只刷新贴近文字的一条线。
   ///   查词选区=粗实线、有声书跟随=细实线、搜索命中=双线、收藏句=保留原下划线但
   ///   去掉色块（五色在灰阶屏上不可分，线本身就是收藏语义）。查词 / 跟读 / 搜索的线
-  ///   由窄条层画在窄条外侧（BUG-3874），不经 text-decoration——Blink 上 CSS Highlight
+  ///   由窄条层画在窄条外侧（BUG-3886），不经 text-decoration——Blink 上 CSS Highlight
   ///   一生效就裁字形墨迹，还会在注音、着重号处断线。
   /// - 跟读线用**实线**而非虚线：上游 HSA 的墨水屏跟读高亮是 overlay 层画的
   ///   1.5px 实心直线条（reader-popup-host.js `renderSasayakiHighlight`），
@@ -1424,7 +1424,7 @@ ruby.fushi-hl-$color-ruby-active {
   transition: none !important;
   animation: none !important;
 }
-/* BUG-3874：查词 / 有声书当前句 / 搜索的线由窄条层画，不用 text-decoration。这三类的
+/* BUG-3886：查词 / 有声书当前句 / 搜索的线由窄条层画，不用 text-decoration。这三类的
    ::highlight、ruby 分流 class、wrapper 在普通规则里本来就只是「透明底 + 继承字色」，这里不再给
    它们加下划线：Blink 把任何生效的 CSS Highlight 覆盖的文字裁进文字片段盒重画（BUG-3776，字形
    墨迹被切），窄条层的注册表钩子还把带着重号的文字剔出引擎绘制件——下划线到着重号处就断开；

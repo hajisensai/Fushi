@@ -12,7 +12,7 @@ import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// BUG-3874：墨水屏下有声书当前句的线在注音词、着重号处断开，字形被切。
+/// BUG-3886：墨水屏下有声书当前句的线在注音词、着重号处断开，字形被切。
 ///
 /// 墨水屏原来关掉窄条层、给 `::highlight(fushi-sentence-audio)` 加下划线：Blink 把生效的 CSS
 /// Highlight 覆盖的文字裁进文字片段盒重画（BUG-3776），窄条层的注册表钩子又把带着重号的文字剔出

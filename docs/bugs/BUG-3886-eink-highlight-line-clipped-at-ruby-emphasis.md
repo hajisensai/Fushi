@@ -1,4 +1,4 @@
-## BUG-3874 · 墨水屏跟读线在注音 / 着重号处断开、字形被切（VN）
+## BUG-3886 · 墨水屏跟读线在注音 / 着重号处断开、字形被切（VN）
 - **报告**：2026-10-29（用户：Android 墨水屏手机截图，竖排 VN、有声书在播，「vn模式遇到振假名会把字截断，貌似之前window也有这个问题」，随后补充「着重号也有同样的问题」。截图里当前句「あの少年が満身創痍の少女を抱きしめている。」的跟读线在「あの少年が」之后断开，带注音的「満身創痍の」整段没有线，下一列「少女を…」又接上）
 - **真实性**：✅ 真 bug（基线 upstream/develop `476c6b38c3`）。墨水屏模式关掉窄条层（`fushi/lib/src/reader/reader_content_styles.dart` `_einkOverrideCss` 旧 `fushi-hl-lanes { display: none }`），改给 `::highlight(fushi-sentence-audio)` / `::highlight(fushi-selection)` / `::highlight(fushi-search)` 与对应 wrapper、ruby class 加 `text-decoration` 下划线。于是在 Blink（Android WebView / WebView2）上：
   - 下划线让这层高亮不再是空操作，窄条层注册表钩子（`reader_selection_scripts.dart` `paintable` / `unpainted`，BUG-3776）把整句交给引擎绘制——Blink 把生效的 CSS Highlight 覆盖的文字裁进文字片段盒重画，BUG-3776 在彩色模式修掉的「字形墨迹被切」在墨水屏上原样回来。

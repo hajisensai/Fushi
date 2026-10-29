@@ -40,7 +40,7 @@ void main() {
       // 关过渡：书籍自带动画一并压掉。
       expect(css, contains('transition: none !important'));
       expect(css, contains('animation: none !important'));
-      // 线式高亮：查词=粗实线、sasayaki=细实线、搜索=双线。BUG-3874 起这三类的线由
+      // 线式高亮：查词=粗实线、sasayaki=细实线、搜索=双线。BUG-3886 起这三类的线由
       // 窄条层画（窄条外侧的一条边），不经 text-decoration——Blink 上 CSS Highlight
       // 会裁字形、在注音 / 着重号处断线（真 Chrome 测试见
       // reader_eink_highlight_line_bug3874_test）。
