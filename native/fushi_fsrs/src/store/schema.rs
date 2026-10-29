@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 13;
+pub const SCHEMA_VERSION: i64 = 14;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -438,6 +438,12 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         }
         tx.execute_batch(V13_INDEXES).map_err(|e| e.to_string())?;
         backfill_anki_ids(&tx)?;
+    }
+    if current < 14 {
+        // V14：v12 起 `refresh_tags_row`（sync2/semantics.rs）用 `INSERT OR REPLACE` 改写标签行，REPLACE 删旧行不触发
+        // DELETE 触发器，摘要桶只加不减——升过 v12 且改过两次以上标签的库桶表已经错了。写法改成 UPSERT 后从三张投影表
+        // 全量重建一次桶表（重建是表内容的确定性函数，重放结果相同）。
+        super::sync2::digest::rebuild(&tx)?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \
