@@ -400,6 +400,9 @@ class SrsSyncScheduler {
 
   /// 各位置最近一次媒体对账成功的时刻（见 [kSrsMediaReconcileInterval]）。
   final Map<String, DateTime> _mediaReconciledAt = <String, DateTime>{};
+
+  /// 各位置最近一次媒体对账开跑时本机内容指纹（[SrsDbStore.contentFingerprint]）。
+  final Map<String, String> _mediaReconciledContent = <String, String>{};
   bool _disposed = false;
 
   /// 底层库此刻能不能用（app 侧 = 库已打开）。关库（备份恢复 / 数据根迁移 / 退出）
@@ -761,15 +764,16 @@ class SrsSyncScheduler {
     if (report.error == null && !_halted) await _reportDigestMismatch(store);
     bool mediaChanged = false;
     final Future<Directory?> Function()? readMediaRoot = _readMediaRoot;
-    // 媒体对账每轮都要全量列远端媒体目录、逐个看本机文件、扫三遍笔记引用：只在这一轮真有新操作进出（新笔记引用了
-    // 新媒体 / 别的设备传来了笔记）、或本位置还没对账过 / 距上次满 [kSrsMediaReconcileInterval] 时跑。
+    // 媒体对账要逐个过一遍全部引用的媒体、扫三遍笔记引用：只在媒体引用可能变了（本机或别的设备改了笔记 / 笔记类型
+    // = 内容指纹变了）、或本位置还没对账过 / 距上次满 [kSrsMediaReconcileInterval] 时跑。复习日志不引用媒体：以前
+    // 「这一轮上传 / 应用过操作」就算，于是边背卡边推送的每一轮都整套对账一遍，同步收尾时 UI 卡顿。
     final DateTime? reconciled = _mediaReconciledAt[key];
+    final String content = store.contentFingerprint;
     final bool mediaDue =
         adopted ||
-        report.applied > 0 ||
-        report.uploaded > 0 ||
         report.fork ||
         reconciled == null ||
+        _mediaReconciledContent[key] != content ||
         _clock().difference(reconciled) >= kSrsMediaReconcileInterval;
     if (report.error == null && readMediaRoot != null && mediaDue && !_halted) {
       // 媒体跟在事件之后：先拿到引用它们的笔记，再按内容哈希补齐两边缺的文件。
@@ -791,6 +795,7 @@ class SrsSyncScheduler {
           );
           mediaChanged = media.downloaded > 0;
           _mediaReconciledAt[key] = _clock();
+          _mediaReconciledContent[key] = content;
         }
       } catch (e, stack) {
         ErrorLogService.instance.log('SrsSyncScheduler.media', e, stack);

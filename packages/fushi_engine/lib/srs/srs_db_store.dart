@@ -17,6 +17,7 @@ import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -960,21 +961,34 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 同步 v2 的命令（看 head / 发件 / 写 head / 身份 / 摘要……）与写事务互斥：内核与本机写入共用一条连接，
   /// 不排队的话 `outbox` / `head` / `plan` 会读到另一笔还没提交的 `apply` 事务里的操作——那笔回滚后同一个 seq
-  /// 被重用、head 的代号回退，已经发出去的段与 head 让对端判本机分叉（P1-4）。只有不碰库的纯计算（派生密钥、
-  /// 封装 / 解封媒体）不排队：Argon2 派生要上百毫秒，不该挡住复习写入。
+  /// 被重用、head 的代号回退，已经发出去的段与 head 让对端判本机分叉（P1-4）。不排队的只有 [kSrsSync2LockFreeOps]：
+  /// 不碰库的纯计算，以及只读已提交快照的命令——排队等于让复习作答等它们跑完（状态摘要是全库扫描，手机上
+  /// 一两秒，每轮同步都可能轮到）。
   @override
   Future<SrsSync2Result> sync2Command(
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
-  }) => _kSync2PureOps.contains(request['op'])
+  }) => kSrsSync2LockFreeOps.contains(request['op'])
       ? _sync2Raw(request, blobs: blobs)
       : runExclusive(() => _sync2Raw(request, blobs: blobs));
 
-  /// 不读写库的 v2 命令（见 [sync2Command]）。
-  static const Set<String> _kSync2PureOps = <String>{
+  /// 不进写锁的 v2 命令（见 [sync2Command]）。判据：结果不依赖写连接上还没提交的行，也不在别的写入的
+  /// 中途改本机状态。
+  /// - 纯计算（`derive_key` / `seal` / `open`）：不碰库；Argon2 派生要上百毫秒。
+  /// - 只走读连接（WAL 快照，只见已提交的行）：`status` / `media_known` / `conflicts` / `checkpoints` / `history`。
+  /// - `digest`：扫描在内核自己的扫描会话里（已提交快照），只在末尾往写连接记一行摘要缓存（`srs_meta`）；
+  ///   恰好落进另一笔写事务而那笔回滚，丢的只是这行缓存，下一轮按间隔重算。
+  @visibleForTesting
+  static const Set<String> kSrsSync2LockFreeOps = <String>{
     'derive_key',
     'seal',
     'open',
+    'status',
+    'media_known',
+    'conflicts',
+    'checkpoints',
+    'history',
+    'digest',
   };
 
   @override

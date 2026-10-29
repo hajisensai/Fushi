@@ -111,6 +111,12 @@ impl ReadSession {
         query_rows(&conn, sql, params)
     }
 
+    /// 在会话的连接上跑 [f]（持会话自己的锁：关库会等它跑完）；会话已关闭报「已关闭」。
+    pub(crate) fn with<T>(&self, f: impl FnOnce(&Connection) -> Result<T, String>) -> Result<T, String> {
+        let conn = Conn::of(self.conn.lock().map_err(|_| "srs read session poisoned".to_string())?)?;
+        f(&conn)
+    }
+
     /// 回滚读事务并关闭连接（幂等）。会等别的线程上在途的查询跑完；之后的查询报「已关闭」。
     pub fn close(&self) {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner()).take();
@@ -512,14 +518,19 @@ impl SrsCore {
 
     /// 一次性全库扫描（状态摘要）用的只读连接：页缓存只有 2 MB、调用方用完即关，扫描读过的页不会留在读连接的
     /// 64 MB 页缓存里（那份缓存留给反复读同一批行的历史类命令）。顺序扫描靠 mmap 与操作系统的文件缓存，小页缓存
-    /// 不慢。与 [SrsCore::read_session] 一样先拿读连接的锁：与 [SrsCore::close] 互斥，库已关闭就报「已关闭」。
-    pub(crate) fn scan_connection(&self) -> Result<(Conn<'_>, Connection), String> {
-        let open = self.reader()?;
+    /// 不慢。
+    ///
+    /// 与 [SrsCore::read_session] 一样登记成只读会话：只在开连接、登记的那一下拿读连接的锁（与 [SrsCore::close]
+    /// 互斥，库已关闭就报「已关闭」），扫描本身不占读连接——摘要扫 100 万次复习要几秒，以前整段攥着读锁，
+    /// 同一时刻走读连接的命令（同步状态、冲突、历史……）全被挡住。关库时会话随 [SrsCore::close] 一起关掉
+    /// （等在途的扫描跑完），close 返回时照样一条连接不剩。
+    pub(crate) fn scan_session(&self) -> Result<Arc<ReadSession>, String> {
+        let _open = self.reader()?;
         let conn = Connection::open_with_flags(&self.path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
             .map_err(|e| format!("open scan connection {}: {e}", self.path.display()))?;
         configure(&conn)?;
         conn.execute_batch("PRAGMA cache_size = -2048;").map_err(|e| e.to_string())?;
-        Ok((open, conn))
+        self.register_session(conn)
     }
 
     /// 另开一条只读连接、开读事务并先读一次（快照在第一次读时才定下）：返回时快照已定，之后本库的
@@ -538,6 +549,11 @@ impl SrsCore {
         conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
         conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
             .map_err(|e| e.to_string())?;
+        self.register_session(conn)
+    }
+
+    /// 把 [conn] 包成只读会话并登记（[SrsCore::close] 逐个关掉）。调用方持读连接的锁。
+    fn register_session(&self, conn: Connection) -> Result<Arc<ReadSession>, String> {
         let session = Arc::new(ReadSession { conn: Mutex::new(Some(conn)) });
         let mut sessions = self.sessions.lock().map_err(|_| "srs sessions poisoned".to_string())?;
         sessions.retain(|w| w.strong_count() > 0);
@@ -604,6 +620,41 @@ mod tests {
             .unwrap()
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
             .unwrap()
+    }
+
+    /// 全库扫描（状态摘要）跑在登记过的扫描会话上：扫描进行中读连接照样可用（以前整段攥着读锁，走读连接的
+    /// 命令全被挡几秒）；关库等在途扫描跑完、把会话一并关掉，之后经它的调用报已关闭，库文件可删。
+    #[test]
+    fn scan_session_leaves_the_reader_free_and_closes_with_the_store() {
+        use std::sync::{Arc, Barrier};
+        use std::time::{Duration, Instant};
+
+        let p = temp("scan_session");
+        let core = Arc::new(SrsCore::open(&p).unwrap());
+        let scan = core.scan_session().unwrap();
+        let entered = Arc::new(Barrier::new(2));
+        let worker = {
+            let scan = Arc::clone(&scan);
+            let entered = Arc::clone(&entered);
+            std::thread::spawn(move || {
+                scan.with(|c| {
+                    entered.wait();
+                    std::thread::sleep(Duration::from_millis(300));
+                    c.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0)).map_err(|e| e.to_string())
+                })
+            })
+        };
+        entered.wait();
+        // 扫描在途：读连接不被它占着。
+        assert!(core.reader.try_lock().is_ok(), "scan must not hold the reader lock");
+        assert!(count(&core, "srs_meta") >= 0);
+        let t0 = Instant::now();
+        core.close();
+        assert!(t0.elapsed() >= Duration::from_millis(200), "close did not wait for the in-flight scan");
+        assert!(worker.join().unwrap().is_ok());
+        assert_eq!(scan.with(|_| Ok(())), Err(CLOSED.to_string()));
+        std::fs::remove_file(&p).unwrap();
+        std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
     }
 
     /// 关闭与在途调用互斥：另一线程正拿着读连接时 close 等它跑完；之后的命令报已关闭，文件可删。
