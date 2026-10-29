@@ -93,6 +93,39 @@ fn relay_topology(cloud_key: Option<[u8; 32]>) {
     assert_eq!(a_heads.len(), 1, "{a_heads:?}");
 }
 
+/// 集成审查【中】：转发清理两段式。B 删被取代的旧转发件 / 旧转发 head 时失败（位置抛错），记录留在待删表；下一轮
+/// （哪怕这一轮没有新的转发、清单只能从 head 那一步拿）照样删掉。以前 `relay_ack` 取出即删记录，失败的永远留在网盘上。
+#[test]
+fn failed_relay_cleanup_is_retried_next_round() {
+    let (a, b, c) = (Device::new("ga"), Device::new("gb"), Device::new("gc"));
+    let (mut ic, mut cloud) = (Bucket::default(), Bucket::default());
+    a.apply(T0, vec![review_of("ra1", "CA", T0)]);
+    a.sync(&mut ic, "ic", T0 + 10);
+    b.sync(&mut ic, "ic", T0 + 11);
+    relay_rounds(&a, &b, &c, &mut ic, &mut cloud, None, T0 + 20, 2);
+    let a_id = a.core.sync2_status(P).unwrap()["device"].as_str().unwrap().to_owned();
+    let a_heads = |cloud: &Bucket| cloud.0.keys().filter(|k| k.starts_with(&format!("devices/{a_id}/head-"))).count();
+    assert_eq!(a_heads(&cloud), 1);
+    // A 再写几次：B 每次转发 A 的新 head，旧的转发 head 该删——但 B 这几轮删除全部失败。
+    super::tests::FAIL_DELETES.with(|f| f.set(true));
+    for i in 0..3 {
+        let t = T0 + 100 + i * 10;
+        a.apply(t, vec![review_of(&format!("rx{i}"), "CA", t)]);
+        a.sync(&mut ic, "ic", t);
+        b.sync(&mut ic, "ic", t + 1);
+        b.sync(&mut cloud, "cloud", t + 2);
+    }
+    super::tests::FAIL_DELETES.with(|f| f.set(false));
+    assert!(a_heads(&cloud) > 1, "failed deletes left superseded relayed heads behind");
+    assert!(count(&b, "SELECT COUNT(*) FROM sync2_relay_gone") > 0, "the cleanup is still pending");
+    // 下一轮没有新转发：清单只能从 head 那一步拿到，照样删光。
+    b.sync(&mut cloud, "cloud", T0 + 200);
+    assert_eq!(a_heads(&cloud), 1, "pending relay cleanup ran on the next round");
+    assert_eq!(count(&b, "SELECT COUNT(*) FROM sync2_relay_gone"), 0);
+    c.sync(&mut cloud, "cloud", T0 + 201);
+    assert_eq!(reviews(&c), reviews(&a));
+}
+
 /// S-1：段 / head 转发——A ↔ B 只经互联、B ↔ C 只经网盘，C 收齐 A 的操作（以前永远收不到，B 此后的操作在 C 的
 /// 缓冲里无界堆积），反方向同样。
 #[test]

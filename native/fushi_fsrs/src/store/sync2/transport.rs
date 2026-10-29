@@ -219,24 +219,35 @@ pub(crate) const OBSOLETE_GRACE_MS: i64 = 24 * 60 * 60 * 1000;
 /// [location] 上可以删的旧小段（调用方在写出代号 [gen] 的 head 之后取）。以前要等所有没冻结的其它设备在 head 里 ack
 /// 越过它，而对端重装 / 换身份 / 长期休眠时它的 ack 永远不动（只有本机换身份才冻结旧身份）→ `devices/<本机>/` 只增
 /// 不减，每轮列目录越来越慢。删除安全只取决于「还有没有 head 引用它」，与别的设备应用到哪无关（它们缺的操作在合并
-/// 后的段里，同一 seq 区间），所以改为按代号与时间删（[OBSOLETE_KEEP_GENS] / [OBSOLETE_GRACE_MS]）。取出即从待删表移除。
-fn take_obsolete(conn: &Connection, local: &Local, location: &str, gen: u64, now: i64) -> Result<Vec<String>, String> {
+/// 后的段里，同一 seq 区间），所以改为按代号与时间删（[OBSOLETE_KEEP_GENS] / [OBSOLETE_GRACE_MS]）。
+///
+/// 两段式（集成审查【中】）：这里只给清单、**不**从待删表移除。以前取出即删记录，而 Dart 之后才上传 head、最后才删
+/// 文件——head 上传或删除中途抛错，这批旧段就永远没人再删。现在记录留到 Dart 删成功后发 `obsolete_ack`
+/// （[SrsCore::sync2_obsolete_ack]）才移除；没 ack 的下一轮照样再给（删除对已不在的文件幂等）。
+fn stamp_obsolete(conn: &Connection, local: &Local, location: &str, gen: u64, now: i64) -> Result<(), String> {
     conn.prepare_cached(
         "UPDATE sync2_obsolete SET since_gen = ?3, since_at = ?4 WHERE profile_uid = ?1 AND location = ?2 AND since_gen IS NULL",
     )
     .map_err(sql)?
     .execute(params![local.profile, location, gen as i64, now])
     .map_err(sql)?;
-    let ripe = "profile_uid = ?1 AND location = ?2 AND since_gen + ?3 <= ?4 AND since_at + ?5 <= ?6";
-    let args = params![local.profile, location, OBSOLETE_KEEP_GENS as i64, gen as i64, OBSOLETE_GRACE_MS, now];
-    let names: Vec<String> = conn
-        .prepare_cached(&format!("SELECT name FROM sync2_obsolete WHERE {ripe} ORDER BY name"))
+    Ok(())
+}
+
+/// [location] 上此刻该删、还没确认删掉的文件：过了代号与宽限期的旧小段（[gen] = 本机在这个位置上最新的 head 代号），
+/// 加上转发清理（relay.rs `sync2_relay_ack`）留下的被取代的旧转发件 / 旧转发 head。只读，不改表。
+pub(crate) fn pending_deletes(conn: &Connection, profile: &str, location: &str, gen: u64, now: i64) -> Result<Vec<String>, String> {
+    let mut names: Vec<String> = conn
+        .prepare_cached(
+            "SELECT name FROM sync2_obsolete WHERE profile_uid = ?1 AND location = ?2 AND since_gen + ?3 <= ?4 AND since_at + ?5 <= ?6 \
+             UNION SELECT path FROM sync2_relay_gone WHERE profile_uid = ?1 AND location = ?2 ORDER BY 1",
+        )
         .map_err(sql)?
-        .query_map(args, |r| r.get(0))
+        .query_map(params![profile, location, OBSOLETE_KEEP_GENS as i64, gen as i64, OBSOLETE_GRACE_MS, now], |r| r.get(0))
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
-    conn.prepare_cached(&format!("DELETE FROM sync2_obsolete WHERE {ripe}")).map_err(sql)?.execute(args).map_err(sql)?;
+    names.dedup();
     Ok(names)
 }
 
@@ -1350,8 +1361,9 @@ pub const ACK_ONLY_HEAD_MS: i64 = 10 * 60 * 1000;
 pub enum HeadWrite {
     /// 写了新 head：`(相对路径, 字节, 代号, 可删的旧小段)`。
     Written { path: String, bytes: Vec<u8>, gen: u64, obsolete: Vec<String> },
-    /// 内容与上次写出的相同、还没到期：没写，[path] 是上次写出的那个 head。
-    Unchanged { path: String },
+    /// 内容与上次写出的相同、还没到期：没写，[path] 是上次写出的那个 head；[obsolete] 是此刻仍待删的文件（上一轮
+    /// 删到一半失败、还没 `obsolete_ack` 的那些照样给出）。
+    Unchanged { path: String, obsolete: Vec<String> },
 }
 
 /// 一批发件的字节预算（按段打包后的体积估计累计；一批至少一段，所以单段超预算时自成一批）。
@@ -1578,7 +1590,17 @@ impl SrsCore {
                         // 显示进度，旧段删除也不再等 ack（S-5）。
                         let ack_only_fresh = core == Some(core_sig.as_str()) && age.is_some_and(|a| a < ACK_ONLY_HEAD_MS.min(max_age));
                         if (s == sig && fresh) || ack_only_fresh {
-                            return Ok(HeadWrite::Unchanged { path: path.to_owned() });
+                            let gen: i64 = c
+                                .query_row(
+                                    "SELECT head_gen FROM sync2_locations WHERE profile_uid = ?1 AND location = ?2",
+                                    params![profile, location],
+                                    |r| r.get(0),
+                                )
+                                .optional()
+                                .map_err(sql)?
+                                .unwrap_or(0);
+                            let obsolete = pending_deletes(c, profile, location, gen.max(0) as u64, now)?;
+                            return Ok(HeadWrite::Unchanged { path: path.to_owned(), obsolete });
                         }
                     }
                 }
@@ -1606,8 +1628,32 @@ impl SrsCore {
             )
             .map_err(sql)?;
             // 新 head 已经不再引用合并掉的旧小段：已经没有任何留着的 head 引用、且过了宽限期的一并交给 Dart 删（S-5）。
-            let obsolete = take_obsolete(c, &local, location, head.gen, now)?;
+            // 只给清单，删成功后 Dart 发 `obsolete_ack` 才移除记录（两段式，见 [stamp_obsolete]）。
+            stamp_obsolete(c, &local, location, head.gen, now)?;
+            let obsolete = pending_deletes(c, profile, location, head.gen, now)?;
             Ok(HeadWrite::Written { path, bytes, gen: head.gen, obsolete })
+        })
+    }
+
+    /// 确认 [location] 上这些文件（`sync2_head` / `sync2_relay_ack` 给的待删清单里的相对路径）已经删掉（或在归档
+    /// 位置上按策略不删）：从待删记录里移除。没被确认的下一轮照样再给。返回移除的记录数。
+    pub fn sync2_obsolete_ack(&self, profile: &str, location: &str, deleted: &[String]) -> Result<usize, String> {
+        let w = self.writer()?;
+        in_savepoint(&w, |c| {
+            let mut n = 0;
+            for path in deleted {
+                n += c
+                    .prepare_cached("DELETE FROM sync2_obsolete WHERE profile_uid = ?1 AND location = ?2 AND name = ?3")
+                    .map_err(sql)?
+                    .execute(params![profile, location, path])
+                    .map_err(sql)?;
+                n += c
+                    .prepare_cached("DELETE FROM sync2_relay_gone WHERE profile_uid = ?1 AND location = ?2 AND path = ?3")
+                    .map_err(sql)?
+                    .execute(params![profile, location, path])
+                    .map_err(sql)?;
+            }
+            Ok(n)
         })
     }
 
