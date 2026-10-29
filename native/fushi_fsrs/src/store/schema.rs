@@ -406,4 +406,208 @@ mod tests {
         assert_eq!(indexes(&c), after);
         assert_eq!(version(&c), "9");
     }
+
+    /// 出卡 / 计数查询在大库上的耗时：有 v9 索引 vs 删掉 v9 索引（= v8，计数的全牌组查询按 v8 写法带 `+profile_uid`）。
+    /// SQL 逐字取自 `SrsDbStore.nextCard` / `_deckTallies` / `_countContext` 实际发出的语句
+    /// （packages/fushi_engine/test/srs/srs_queue_index_plan_test.dart 抓下来的）。手动跑：
+    /// `cargo test --release --lib queue_query_bench -- --ignored --nocapture`。
+    #[test]
+    #[ignore]
+    fn queue_query_bench() {
+        use rusqlite::types::Value;
+        const LIVE: &str = "hidden = 0 AND suspended = 0 AND scheduler = 'fushi' \
+            AND (buried_until_day IS NULL OR buried_until_day <= ?)";
+        let dir = std::env::temp_dir().join(format!("ffsrs_queue_bench_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let mut c = rusqlite::Connection::open(&path).unwrap();
+        c.execute_batch("PRAGMA journal_mode = WAL; PRAGMA cache_size = -65536; PRAGMA mmap_size = 268435456;").unwrap();
+        migrate(&mut c).unwrap();
+        let (cards, decks, logs) = (100_000usize, 40usize, 300_000usize);
+        let today: i64 = 20_000;
+        let now: i64 = today * 86_400_000;
+        {
+            let tx = c.transaction().unwrap();
+            {
+                let mut ins = tx
+                    .prepare(
+                        "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, suspended, hidden, \
+                         queue, due_day, due_at, stability, last_reviewed_at, note_created_at, new_position, freq_rank) \
+                         VALUES (?1, 'p', ?2, 't', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                    )
+                    .unwrap();
+                let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+                let mut rnd = move || {
+                    x ^= x << 13;
+                    x ^= x >> 7;
+                    x ^= x << 17;
+                    x
+                };
+                for i in 0..cards {
+                    let r = rnd();
+                    let q = match r % 100 {
+                        0..=59 => "new",
+                        60..=89 => "review",
+                        90..=94 => "learning",
+                        _ => "relearning",
+                    };
+                    let due_day = (q == "review").then(|| today - 400 + (rnd() % 800) as i64);
+                    let due_at = q.ends_with("learning").then(|| now - 3_600_000 + (rnd() % 7_200_000) as i64);
+                    let freq = (rnd() % 3 != 0).then(|| (rnd() % 50_000) as i64);
+                    let pos = (rnd() % 2 == 0).then(|| i as i64);
+                    ins.execute(rusqlite::params![
+                        format!("c{i:06}"),
+                        format!("n{i:06}"),
+                        format!("d{:02}", (r >> 8) as usize % decks),
+                        (rnd() % 50 == 0) as i64,
+                        (rnd() % 50 == 0) as i64,
+                        q,
+                        due_day,
+                        due_at,
+                        (q == "review").then(|| 1.0 + (rnd() % 1000) as f64 / 10.0),
+                        (q != "new").then(|| now - (rnd() % 30_000_000_000) as i64),
+                        i as i64,
+                        pos,
+                        freq,
+                    ])
+                    .unwrap();
+                }
+                let mut log = tx
+                    .prepare(
+                        "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, \
+                         origin, json) VALUES (?1, 'p', ?2, ?3, 3, ?4, ?5, 'fushi', ?6)",
+                    )
+                    .unwrap();
+                let body = format!("{{\"res\":{{\"reps\":2}},\"pad\":\"{}\"}}", "x".repeat(300));
+                for i in 0..logs {
+                    let r = rnd();
+                    log.execute(rusqlite::params![
+                        format!("l{i:07}"),
+                        format!("c{:06}", r as usize % cards),
+                        if r % 10 == 0 { "manual" } else { "review" },
+                        now - (r % (365 * 86_400_000)) as i64,
+                        if r % 7 == 0 { "learn" } else { "review" },
+                        body,
+                    ])
+                    .unwrap();
+                }
+            }
+            tx.commit().unwrap();
+        }
+        let sub: Vec<String> = (0..5).map(|d| format!("d{d:02}")).collect();
+        let deck_in = vec!["?"; sub.len()].join(", ");
+        let tally = |profile_col: &str, decks: Option<&[String]>| -> (String, Vec<Value>) {
+            let mut args: Vec<Value> = vec![
+                Value::Integer(today),
+                Value::Integer(today),
+                Value::Integer(now + 20 * 60_000),
+                Value::Integer(today),
+                Value::Integer(today),
+                Value::Text("p".into()),
+            ];
+            let filter = decks.map_or(String::new(), |d| {
+                args.extend(d.iter().map(|s| Value::Text(s.clone())));
+                format!(" AND deck_id IN ({})", vec!["?"; d.len()].join(", "))
+            });
+            (
+                format!(
+                    "SELECT deck_id, COUNT(*) AS total, \
+                     SUM(CASE WHEN {LIVE} AND queue NOT IN ('learning', 'relearning', 'review') THEN 1 ELSE 0 END) AS new_avail, \
+                     SUM(CASE WHEN {LIVE} AND queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ? THEN 1 ELSE 0 END) AS learn, \
+                     SUM(CASE WHEN {LIVE} AND queue = 'review' AND COALESCE(due_day, 0) <= ? THEN 1 ELSE 0 END) AS due \
+                     FROM srs_cards_cache WHERE {profile_col} = ? AND hidden = 0{filter} GROUP BY deck_id"
+                ),
+                args,
+            )
+        };
+        let pick = |cond: &str, order: &str, extra: Vec<Value>, order_vars: Vec<Value>| -> (String, Vec<Value>) {
+            let mut args = vec![Value::Text("p".into()), Value::Integer(today)];
+            args.extend(sub.iter().map(|s| Value::Text(s.clone())));
+            args.extend(extra);
+            args.extend(order_vars);
+            (
+                format!(
+                    "SELECT id, due_at FROM srs_cards_cache WHERE profile_uid = ? AND {LIVE} AND deck_id IN ({deck_in}) \
+                     AND {cond} ORDER BY {order} LIMIT 1"
+                ),
+                args,
+            )
+        };
+        let queries: Vec<(&str, (String, Vec<Value>), (String, Vec<Value>))> = {
+            let new_freq = pick(
+                "queue = 'new'",
+                "freq_rank IS NULL, freq_rank, new_position IS NULL, new_position, note_created_at, id",
+                vec![],
+                vec![],
+            );
+            let new_pos = pick("queue = 'new'", "new_position IS NULL, new_position, note_created_at, id", vec![], vec![]);
+            let learning = pick(
+                "queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ?",
+                "COALESCE(due_at, 0), id",
+                vec![Value::Integer(now + 20 * 60_000)],
+                vec![],
+            );
+            let review = pick(
+                "queue = 'review' AND COALESCE(due_day, 0) <= ?",
+                "1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
+                 / (9.0 * COALESCE(stability, 1.0))), id",
+                vec![Value::Integer(today)],
+                vec![Value::Integer(now)],
+            );
+            let logs30 = (
+                "SELECT \"srs_review_logs\".\"occurred_at\" AS \"srs_review_logs.occurred_at\" FROM \"srs_review_logs\" \
+                 WHERE (\"srs_review_logs\".\"profile_uid\" = ? AND \"srs_review_logs\".\"kind\" = ?) \
+                 AND \"srs_review_logs\".\"occurred_at\" >= ?;"
+                    .to_owned(),
+                vec![Value::Text("p".into()), Value::Text("review".into()), Value::Integer(now - 29 * 86_400_000)],
+            );
+            let today_logs = (
+                "SELECT card_id, occurred_at, review_type, CASE WHEN review_type = ? THEN json END AS j FROM srs_review_logs \
+                 WHERE profile_uid = ? AND kind = ? AND occurred_at >= ? ORDER BY occurred_at"
+                    .to_owned(),
+                vec![
+                    Value::Text("learn".into()),
+                    Value::Text("p".into()),
+                    Value::Text("review".into()),
+                    Value::Integer(now - 86_400_000),
+                ],
+            );
+            vec![
+                ("nextCard 新卡(按词频)", new_freq.clone(), new_freq),
+                ("nextCard 新卡(按位置)", new_pos.clone(), new_pos),
+                ("nextCard 学习卡", learning.clone(), learning),
+                ("nextCard 复习候选", review.clone(), review),
+                ("计数 子树5个牌组", tally("profile_uid", Some(&sub)), tally("profile_uid", Some(&sub))),
+                ("计数 全部牌组", tally("profile_uid", None), tally("+profile_uid", None)),
+                ("计数上下文 30天日志", logs30.clone(), logs30),
+                ("计数上下文 今天日志", today_logs.clone(), today_logs),
+            ]
+        };
+        let time = |c: &rusqlite::Connection, (sql, args): &(String, Vec<Value>)| -> (f64, usize) {
+            let mut stmt = c.prepare(sql).unwrap();
+            let mut rows = 0;
+            let runs = 20;
+            let t0 = std::time::Instant::now();
+            for _ in 0..runs {
+                rows = stmt.query(rusqlite::params_from_iter(args.iter())).unwrap().mapped(|_| Ok(())).count();
+            }
+            (t0.elapsed().as_secs_f64() * 1000.0 / runs as f64, rows)
+        };
+        let after: Vec<(f64, usize)> = queries.iter().map(|q| time(&c, &q.1)).collect();
+        for i in V9_INDEXES {
+            c.execute_batch(&format!("DROP INDEX {i}")).unwrap();
+        }
+        let before: Vec<(f64, usize)> = queries.iter().map(|q| time(&c, &q.2)).collect();
+        println!("{cards} 张卡 / {decks} 个牌组 / {logs} 条日志；每条查询 20 次取平均");
+        for (k, q) in queries.iter().enumerate() {
+            println!(
+                "{}: v8 {:.3} ms -> v9 {:.3} ms（{} 行）",
+                q.0, before[k].0, after[k].0, after[k].1
+            );
+            assert_eq!(before[k].1, after[k].1, "{}: row count differs", q.0);
+        }
+        drop(c);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

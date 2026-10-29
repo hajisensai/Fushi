@@ -1097,6 +1097,50 @@ mod link_tests {
         drop(w);
         core.close();
     }
+
+    /// 一次作答的缓存刷新里，前身链接这一步的耗时：旧（全库链接读进内存再扩）vs 新（从种子按需查）。库里
+    /// [n] 条链（每条 3 张卡），种子是其中一条的头。手动跑：
+    /// `cargo test --release --lib link_walk_bench -- --ignored --nocapture`。
+    #[test]
+    #[ignore]
+    fn link_walk_bench() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_links_bench_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        let w = core.writer().unwrap();
+        let n = 50_000;
+        let mut k = 0;
+        w.execute_batch("BEGIN").unwrap();
+        for i in 0..n {
+            edit(&w, &mut k, "card", &format!("b{i}"), &format!("{HISTORY_FROM}a{i}"));
+            edit(&w, &mut k, "card", &format!("c{i}"), &format!("{HISTORY_FROM}b{i}"));
+        }
+        w.execute_batch("COMMIT").unwrap();
+        let seeds = BTreeSet::from(["a7".to_owned()]);
+        let runs = 20;
+        let t0 = std::time::Instant::now();
+        for _ in 0..runs {
+            let index = old_successor_index(&w);
+            let closure = old_closure(&index, &["a7"]);
+            let fam = old_family(&index, &closure);
+            assert_eq!(fam.0.len(), 3);
+        }
+        let old_ms = t0.elapsed().as_secs_f64() * 1000.0 / runs as f64;
+        let t0 = std::time::Instant::now();
+        for _ in 0..runs {
+            let mut links = Links::default();
+            let closure = successor_closure(&w, &mut links, seeds.iter().cloned()).unwrap();
+            let fam = new_family(&w, &mut links, &closure);
+            assert_eq!(fam.0.len(), 3);
+        }
+        let new_ms = t0.elapsed().as_secs_f64() * 1000.0 / runs as f64;
+        println!("{} 条前身链接：旧 全库读入 {old_ms:.3} ms -> 新 按需 BFS {new_ms:.3} ms（闭包 + 连通分量，{runs} 次平均）", 2 * n);
+        drop(w);
+        core.close();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]

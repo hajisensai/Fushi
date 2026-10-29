@@ -899,7 +899,8 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(idx, 14);
+        // v1–v8 的 14 条 + v9 的 6 条队列 / 计数 / 日志索引。
+        assert_eq!(idx, 20);
     }
 
     #[test]
