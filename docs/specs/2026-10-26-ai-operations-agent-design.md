@@ -270,7 +270,7 @@ AI 助手是 IO 和编排代码，按「Rust 胖核心」规则留在 Dart（不
 | D1 | AI 能否直接执行操作 | **已拍板（2026-10-26）**：能，唯一要求是写操作可回滚；旧「只在候选里选、先进草稿」规则已从 `fushi/CLAUDE.md` 删除 |
 | D2 | 提供商不支持 tool calling 时 | 降级成「只回一个 JSON 动作」协议，同一管线；不拒用 |
 | D3 | 撤销记录保留多久 | 推荐 30 天（与软删回收站同期），过期只删记录和快照，不动已生效的改动 |
-| D4 | 入口放哪 | **悬浮球已拍板**（§6.4）。其余推荐：① 首页 dashboard 一张「AI 助手」卡 ② 桌面全局快捷键（如 Ctrl+K）呼出同一个浮层 ③ 各页顶栏「问 AI」（带当前页面上下文，走 `adaptiveOverflow`）。不新增主导航页签 |
+| D4 | 入口放哪 | **悬浮球已拍板**（§6.4）。其余推荐：① 首页 dashboard 一张「AI 助手」卡 ② 桌面全局快捷键（如 Ctrl+K）呼出同一个浮层 ③ 各页顶栏「问 AI」（带当前页面上下文，走 `adaptiveOverflow`）。不新增主导航页签。**2026-10-29 所有者拍板砍掉 ③**：各页顶栏按钮与首页 / 悬浮球重复，只留 ①② 与悬浮球（悬浮球本就按当前场景带上下文） |
 | D5 | 对话历史保存 | 本机保存最近 30 天，不同步、不备份（与 AI 配置同为设备本地） |
 | D6 | iOS | 页面保留；工具集按 `StoreRestrictedCapability` 过滤（扩展、在线源、下载中心对 AI 不可见），判据只认那一处 |
 | D7 | 控制通道目录从 `platform/desktop/ctl/` 搬到 `ops/` | 搬；一次性机械改名，单独一个 PR，先于 P1 合入，避免长期双份路径 |
@@ -302,7 +302,7 @@ AI 助手是 IO 和编排代码，按「Rust 胖核心」规则留在 Dart（不
 | LLM 层 | `AiChatClient.chat(messages, tools:)` 三协议 tool calling；提供商 `toolCallingOverride` 覆盖（设置页「工具调用」）；不支持时走「只回一个 JSON 动作」降级（D2） |
 | agent loop | `packages/fushi_engine/lib/ai/agent/`：确认 / 记账 / 撤销策略、元工具（`ops.search` / `ops.describe` / `ui.ask_choice`）、限额、不可信数据块、长任务续轮、技能执行、存档 |
 | app 侧 | `fushi/lib/src/ai/agent/`：`AiAgentToolbox`（记账进 v136 `ai_agent_actions`、结果凭据脱敏、长任务轮询）、`AiAgentController`、4 个技能、远端会话适配；界面 `ai_agent_page.dart`（整页 / 半屏 / 侧栏）与 `ai_agent_history_page.dart`（AI 操作记录） |
-| 入口 | 悬浮球「AI」（应用内 / 桌面应用外 / Android 应用外 + 单击直达）、首页「AI 助手」条、全局快捷键 Ctrl+J、阅读器 / 漫画 / 视频 / 库页顶栏「问 AI」、设置 › 模型 › LLM |
+| 入口 | 悬浮球「AI」（应用内 / 桌面应用外 / Android 应用外 + 单击直达）、首页「AI 助手」条、全局快捷键 Ctrl+J、设置 › 模型 › LLM（各页顶栏「问 AI」已于 2026-10-29 删除） |
 | 终端 | `fushi_cli ai ask / undo / log`（`/api/admin/ai/agent/*`，不进操作目录） |
 | 远端 | `/api/assistant` feature `agent`（引擎 `agent_assistant_host.dart`）；app 当 host 用本机目录；服务端用 `fushi_server/lib/src/admin/admin_ops.dart` 描述的 admin 操作 |
 

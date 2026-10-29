@@ -1,4 +1,3 @@
-import 'package:fushi/src/ai/agent/ai_agent_entry.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -1292,13 +1291,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           icon: Icons.movie_outlined,
           onTap: _openVideoImport,
         ),
-      // 「问 AI」（D4 ③）：最低优先级，宽度不够时最先收进「⋯」；AI 模块关着
-      // 时为空。
-      ...aiAgentAskHeaderActions(
-        context,
-        visibility: appModel.moduleVisibility,
-        page: _mangaOnly ? 'manga_library' : 'books',
-      ),
       // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01：各媒体页头不再
       // 各挂一个「xx统计」，统一从首页进统计中心）。收藏夹入口同理（用户定案
       // 2026-10-14）：收藏夹不按模块隔离，各库页都挂一个只会误导，统一从首页进。
