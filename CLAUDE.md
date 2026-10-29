@@ -95,6 +95,13 @@
 | 用户对重复的选择 | `DuplicateChoice{suffix, cancel}`（与策略词同形） | `DuplicateTitleResolution{addSuffix, cancel}` |
 | i18n key | `<域>_<子域名词>_<动作/状态>`（动词在尾）+ 英文 sentence case；改名必须 `i18n_sync --rename` | 手改 json；新增 `games_`/`ttu_` 前缀 key |
 
+## 功能黑名单（所有者拍板，不提议、不实现、不写进 spec / brief / 推荐）
+
+所有模块一律适用，包括「炫技」「锦上添花」类推荐；spec 里写了 ≠ 用户要。
+
+- **自动注音（机器推断读音的振假名 / furigana）——绝对不可**（所有者 2026-10-24 音乐模块拍板，2026-10-28 扩到全仓）：理由是自动注音不是 100% 准确，错误读音直接误导学习者。阅读器 / 漫画 / 视频字幕 / 歌词 / galgame / 相机 OCR 等任何场景都不按学习语言自动补读音；**来源自带的 ruby**（EPUB `<ruby>`、歌词源文件里的注音）照常解析显示，不在此列。
+- **音乐歌词编辑界面**（改字、编辑翻译 / 注音、单行偏移；2026-10-24）。整首偏移、选来源 / 恢复自动来源、导出 TTML 保留。
+
 ## Galgame Hook 硬规则
 
 - Galgame 文本/语音 Hook、LunaHook、helper、adapter、引擎适配**默认只做 Windows 端**；任何此类任务开工前必须完整阅读 [docs/agent/galgame-hooking.md](docs/agent/galgame-hooking.md)，其中「0. 硬规则」（平台边界、身份/时序台账、能力阶段分记、「适配成功」四条判据、触屏必测、只做引擎级适配、老游戏全屏、Loopback 降级与支持状态真相源）逐条照办。
