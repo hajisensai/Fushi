@@ -785,7 +785,7 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut Vec<Vec<u8>>
         // 本机作答：落库、刷新缓存之后接着在同一条写连接上排队（下一张 + 牌组计数，store/study.rs），复习页一次
         // 评分一次命令。看得见这笔还没提交的写入。
         let study = match req.get("study").filter(|s| s.is_object()) {
-            Some(s) => Some(crate::store::study::study(&w, profile, s)?),
+            Some(s) => Some(crate::store::study::study(&w, &c.study_hub, true, profile, s)?),
             None => None,
         };
         if let Some(m) = v.as_object_mut() {
@@ -843,6 +843,8 @@ fn sync2_command(
         }
         "stats_bundle" => c.read_visible(|conn| crate::store::bulk::stats_bundle(conn, profile, files))?,
         "anki_resolve" => c.read_visible(|conn| crate::store::bulk::anki_resolve(conn, profile, req))?,
+        // 卡片浏览的常驻会话（store/browse.rs）：查询（筛选 + 排序）、取行、取行 id、批量目标、关闭。
+        "browse_query" | "browse_rows" | "browse_ids" | "browse_targets" | "browse_close" => c.browse(op, profile, req, files)?,
         // 一组卡各自的血统（自己 + 全部前身，store/caches.rs `lineage_ids`）：卡片历史用。看得见本机写事务里未提交的行。
         "lineages" => {
             let cards: Vec<String> = req.get("cards").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();

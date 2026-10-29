@@ -10,6 +10,11 @@
 /// - 发送：命令是一个只捕获可发送数据（句柄地址、请求、字节块）的闭包——写成顶层函数造闭包，不捕获
 ///   `SrsDbStore`（它带着 Drift 连接与 Future，不可发送）。
 /// - worker 意外退出（原生崩溃以外的致命错误）：在途命令报错，那个 worker 丢弃，之后按需再起。
+/// - 调度不经调用方的 zone：取 worker、发命令、收回执、归还 worker、把下一条排队命令发出去，全在回执端口
+///   （根 zone）与池子自己的回调里做，调用方只拿到一个在它自己 zone 里完成的 Future。调用方的 zone 可能再也
+///   不跑微任务（widget 测试结束后的 FakeAsync、没人 await 的发后不理命令，如页面 dispose 时关掉原生会话）：
+///   若在调用方的 `await` 之后才归还 / 发命令，那个 worker 就永远「在途」，池子耗尽后所有命令都挂住。
+///   也不能把整条链挪进 `Zone.root.run`：错误不能跨 error zone 传给调用方的监听（会变成根 zone 的未捕获错误）。
 library;
 
 import 'dart:async';
@@ -36,7 +41,7 @@ final class SrsCoreWorkers {
 
   final String? libraryPath;
   final List<_Worker> _idle = <_Worker>[];
-  final Queue<Completer<_Worker>> _waiting = Queue<Completer<_Worker>>();
+  final Queue<_Job<Object?>> _waiting = Queue<_Job<Object?>>();
   int _live = 0;
 
   /// 已起的 worker 数（测试看复用）。
@@ -44,61 +49,85 @@ final class SrsCoreWorkers {
   int _spawnedTotal = 0;
 
   /// 在 worker 里对 [address] 的句柄执行 [job]。
-  Future<T> run<T>(int address, SrsCoreJob<T> job) async {
-    final _Worker w = await _acquire();
-    bool healthy = true;
-    try {
-      return await w.run<T>(address, job);
-    } on _WorkerDied {
-      healthy = false;
-      rethrow;
-    } finally {
-      _release(w, healthy: healthy);
+  Future<T> run<T>(int address, SrsCoreJob<T> job) {
+    final Completer<T> done = Completer<T>();
+    _submit(
+      _Job<Object?>(
+        address,
+        job,
+        (Object? value) => done.complete(value as T),
+        done.completeError,
+      ),
+    );
+    return done.future;
+  }
+
+  void _submit(_Job<Object?> j) {
+    if (_idle.isNotEmpty) {
+      _dispatch(_idle.removeLast(), j);
+    } else if (_live < maxWorkers) {
+      _spawnFor(j);
+    } else {
+      _waiting.add(j);
     }
   }
 
-  Future<_Worker> _acquire() async {
-    if (_idle.isNotEmpty) return _idle.removeLast();
-    if (_live < maxWorkers) {
-      _live++;
-      try {
-        _spawnedTotal++;
-        return await _Worker.spawn(libraryPath);
-      } catch (_) {
-        _live--;
-        rethrow;
+  /// 起一个新 worker 跑 [j]。起 isolate 的回调挂在根 zone 上（见库注释）。
+  void _spawnFor(_Job<Object?> j) {
+    _live++;
+    _spawnedTotal++;
+    Zone.root.run(
+      () => _Worker.spawn(libraryPath).then(
+        (_Worker w) => _dispatch(w, j),
+        onError: (Object e, StackTrace s) {
+          _live--;
+          j.fail(e, s);
+        },
+      ),
+    );
+  }
+
+  void _dispatch(_Worker w, _Job<Object?> j) {
+    w.send(j.address, j.job, (
+      bool healthy,
+      Object? value,
+      Object? error,
+      StackTrace? stack,
+    ) {
+      // 先归还（并发出下一条排队命令），再把结果交给调用方。
+      _release(w, healthy: healthy);
+      if (error == null) {
+        j.ok(value);
+      } else {
+        j.fail(error, stack ?? StackTrace.empty);
       }
-    }
-    final Completer<_Worker> c = Completer<_Worker>();
-    _waiting.add(c);
-    return c.future;
+    });
   }
 
   void _release(_Worker w, {required bool healthy}) {
     if (!healthy) {
       _live--;
       w.kill();
-      // 让一个排队的命令去起新的 worker。
-      if (_waiting.isNotEmpty) {
-        final Completer<_Worker> next = _waiting.removeFirst();
-        _live++;
-        _spawnedTotal++;
-        _Worker.spawn(libraryPath).then(
-          next.complete,
-          onError: (Object e, StackTrace s) {
-            _live--;
-            next.completeError(e, s);
-          },
-        );
-      }
+      // 让一条排队的命令去起新的 worker。
+      if (_waiting.isNotEmpty) _spawnFor(_waiting.removeFirst());
       return;
     }
     if (_waiting.isNotEmpty) {
-      _waiting.removeFirst().complete(w);
+      _dispatch(w, _waiting.removeFirst());
     } else {
       _idle.add(w);
     }
   }
+}
+
+/// 一条排队 / 在途的命令：结果经 [ok] / [fail] 交回调用方的 Completer。
+final class _Job<T> {
+  _Job(this.address, this.job, this.ok, this.fail);
+
+  final int address;
+  final SrsCoreJob<T> job;
+  final void Function(Object? value) ok;
+  final void Function(Object error, StackTrace stack) fail;
 }
 
 final class _WorkerDied implements Exception {
@@ -110,6 +139,15 @@ final class _WorkerDied implements Exception {
 
 /// 一条在途命令的回执标记（worker 退出时的 onExit 消息）。
 const String _kExited = 'srs-core-worker-exited';
+
+/// [_Worker.send] 的回执：worker 是否还健康、结果或错误。
+typedef _Reply =
+    void Function(
+      bool healthy,
+      Object? value,
+      Object? error,
+      StackTrace? stack,
+    );
 
 final class _Worker {
   _Worker._(this._isolate, this._inbox);
@@ -127,22 +165,24 @@ final class _Worker {
     return _Worker._(iso, inbox);
   }
 
-  Future<T> run<T>(int address, SrsCoreJob<T> job) {
-    final Completer<T> done = Completer<T>();
+  /// 发一条命令；回执到了在根 zone 里调 [onReply]（RawReceivePort 的处理函数在根 zone 跑）。
+  void send(int address, Object? job, _Reply onReply) {
     final RawReceivePort reply = RawReceivePort();
     reply.handler = (Object? m) {
       reply.close();
       _isolate.removeOnExitListener(reply.sendPort);
       if (m == _kExited) {
-        done.completeError(const _WorkerDied());
+        onReply(false, null, const _WorkerDied(), null);
         return;
       }
       final (bool ok, Object? value, String? stack) =
           m! as (bool, Object?, String?);
       if (ok) {
-        done.complete(value as T);
+        onReply(true, value, null, null);
       } else {
-        done.completeError(
+        onReply(
+          true,
+          null,
           value!,
           stack == null ? StackTrace.empty : StackTrace.fromString(stack),
         );
@@ -151,7 +191,6 @@ final class _Worker {
     _isolate.addOnExitListener(reply.sendPort, response: _kExited);
     // 原样发 [job]（调用方在顶层函数里造的闭包）：在这里另包一层会把 worker 自己带进闭包上下文。
     _inbox.send((address, job, reply.sendPort));
-    return done.future;
   }
 
   void kill() => _isolate.kill(priority: Isolate.immediate);

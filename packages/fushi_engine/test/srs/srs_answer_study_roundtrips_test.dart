@@ -147,10 +147,14 @@ void main() {
         stdout.writeln('BENCH built $cached in ${imp.elapsedMilliseconds}ms');
         return;
       }
+      // 第一次排队（牌组列表的计数）建常驻队列（native/fushi_fsrs/src/store/queue.rs）：整份读一遍缓存行与
+      // 30 天日志；之后的排队只做增量。
+      final Stopwatch open = Stopwatch()..start();
       final String deck = await _biggestRoot(store);
       final SrsStudyState first = (await store.studyState(deck))!;
       stdout.writeln(
-        'BENCH import=${imp.elapsedMilliseconds}ms deck=$deck '
+        'BENCH import=${imp.elapsedMilliseconds}ms '
+        'firstStudy=${open.elapsedMilliseconds}ms deck=$deck '
         'total=${first.summary.totalCards} new=${first.summary.newCount} '
         'learn=${first.summary.learnCount} review=${first.summary.reviewCount}',
       );
@@ -158,13 +162,14 @@ void main() {
       final List<int> ms = <int>[];
       int core = 0;
       int statements = 0;
-      for (int i = 0; i < 40 && next != null; i++) {
+      // 前 40 张评「良好」（复习卡出队），再 20 张评「重来」（进重学队列：学习卡路径）。
+      for (int i = 0; i < 60 && next != null; i++) {
         final int before = store.debugCoreCommands;
         counter.reset();
         final Stopwatch sw = Stopwatch()..start();
         final SrsAnswerOutcome out = await store.answerAndStudy(
           next,
-          3,
+          i < 40 ? 3 : 1,
           studyDeckId: deck,
         );
         ms.add(sw.elapsedMicroseconds);
@@ -173,12 +178,16 @@ void main() {
         next = out.study!.next;
       }
       // 前几次含首轮 worker / 语句缓存预热，只看稳定段。
-      final List<int> steady = ms.sublist(5)..sort();
+      final List<int> again = ms.length > 40
+          ? (ms.sublist(40)..sort())
+          : <int>[0];
+      final List<int> steady = ms.sublist(5, ms.length.clamp(5, 40))..sort();
       stdout.writeln(
         'BENCH answers=${ms.length} median=${steady[steady.length ~/ 2] / 1000}ms '
         'p90=${steady[(steady.length * 9) ~/ 10] / 1000}ms '
         'first=${ms.first / 1000}ms '
-        'core/answer=${core / ms.length} drift/answer=${statements / ms.length}',
+        'core/answer=${core / ms.length} drift/answer=${statements / ms.length} '
+        'again(n=${ms.length > 40 ? ms.length - 40 : 0}) median=${again[again.length ~/ 2] / 1000}ms',
       );
     },
     skip: bench == null ? 'set FUSHI_SRS_ANSWER_BENCH=<notes>' : false,

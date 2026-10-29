@@ -1225,7 +1225,7 @@ pub fn strip_html(html: &str) -> String {
 // ------------------------------------------------------------------ 查重规范形
 
 /// Dart `String.trim` 的空白：Unicode White_Space 加 BOM（U+FEFF）。
-fn is_dart_trim_space(c: char) -> bool {
+pub(crate) fn is_dart_trim_space(c: char) -> bool {
     c.is_whitespace() || c == '\u{FEFF}'
 }
 

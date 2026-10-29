@@ -1167,6 +1167,27 @@ pub(crate) fn register_value(edits: &[StoredEdit<'_>], key: &str) -> Result<Valu
     Ok(ent.value(key).clone())
 }
 
+/// 浏览（store/browse.rs）：一条笔记各字段的生效原文（`f/<字段 id>` 键；非字符串记成空串，与 Dart 浏览按需读同值），
+/// 以及各寄存器生效记录 HLC 物理时刻的最大值（Dart `srsEditsModifiedAt` 去掉创建时刻那一项；没有记录 = None）。
+/// [edits] 只给部分字段键时，最后改动时刻只对这些键成立（调用方只在给全部记录时用它）。
+pub(crate) fn note_browse_values(edits: &[StoredEdit<'_>]) -> Result<(Vec<(String, String)>, Option<i64>), String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    let mut values = Vec::new();
+    let mut modified: Option<i64> = None;
+    for r in &ent.regs {
+        let winner = r.live.first().map(|&i| &parsed[i]);
+        if let Some(e) = winner {
+            modified = Some(modified.map_or(e.physical, |m| m.max(e.physical)));
+        }
+        if let Some(id) = r.key.strip_prefix("f/") {
+            let v = winner.and_then(|e| e.value.as_str()).unwrap_or("");
+            values.push((id.to_owned(), v.to_owned()));
+        }
+    }
+    Ok((values, modified))
+}
+
 /// 一组卡的血统与标志（与 `materialize` 的 `cards` 组同一份）：[cards] 是 (卡 ID, 它的修改记录)，
 /// [want] 是 (卡 ID, 笔记首选牌组, 默认牌组)。返回每个 want 的 (血统, 标志 JSON)。
 pub(crate) fn card_lineage_flags(

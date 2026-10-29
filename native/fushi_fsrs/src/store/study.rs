@@ -1,16 +1,17 @@
 //! 复习排队：牌组计数（新 / 学习 / 到期，含每日上限与子树截断）与出卡（下一张、排除它之后的再下一张）。
 //!
 //! 以前在 Dart（`SrsDbStore._countContext` / `_deckTallies` / `_countTree` / `nextCard` 的 SQL `pick`）：评一张卡
-//! 要把计数上下文（牌组树、30 天日志、今天日志、按牌组聚合）整份重建三遍（出下一张、补计数、预取再下一张），
-//! 每遍十来次跨 isolate 的 Drift 往返；复习卡按「此刻的可提取度」排序，SQL 只能对全部到期卡建临时 B 树排序。
-//! 现在一次命令在一个读快照里算完：
+//! 要把计数上下文整份重建三遍、每遍十来次跨 isolate 的 Drift 往返。L2 搬进 Rust 后一次命令算完，但每次排队仍按
+//! 子树全部卡聚合计数、顺着到期索引扫全部到期卡（十万张到期卡约 100 ms）。现在计数原料、到期复习候选、学习卡与
+//! 今天的作答常驻内存（store/queue.rs 的会话，随写入按 id 增量重读），一次排队：
 //!
-//! - 计数上下文只建一份：牌组树、最近 30 天每天的复习数与今天的作答（同一次日志区间扫描）；
-//! - 每个牌组自己的计数原料走覆盖索引 `idx_srs_cards_cache_tally` 按牌组聚合（schema.rs `V9`）；
+//! - 牌组树每次照读（只与牌组数有关：改每日上限、挪牌组立即生效）；
+//! - 每个牌组自己的计数原料、今天已学 / 已复习的卡、最近 30 天每天的复习数直接取会话里的；
 //! - 牌组树计数对齐 Anki v3 的 limit tree（见 [count_tree]），口径与旧 Dart 逐项相同
-//!   （fushi_engine test/srs/srs_study_vectors_test.dart 用旧实现生成的向量钉住）；
-//! - 出卡：学习卡 / 新卡仍是一条走索引序的 `LIMIT 1`；复习卡在 Rust 里顺着到期索引扫候选、边扫边留可提取度
-//!   最低的一张（top-1），不排序全集；
+//!   （fushi_engine test/srs/srs_study_vectors_test.dart 用旧实现生成的向量钉住；本文件的测试拿 L2 的逐条 SQL
+//!   实现当基准，随机写入 / 跨日 / 回滚下逐步对拍）；
+//! - 出卡：学习卡 → 到期复习卡（会话里按块下界取此刻可提取度最低的一张，不扫全部到期卡）→ 新卡（部分索引序
+//!   `LIMIT 1`，命中第一张即停）→ 20 分钟内到期的学习卡；
 //! - RWKV-Instant 的牌组：分数由 Dart 侧的 RWKV 服务给（另一个原生库），这里只做排队规则（目标保留率、同日
 //!   间隔守卫、每天最少复习数、按 R 升序），与旧 Dart `_instantReviews` 同口径。
 //!
@@ -19,23 +20,19 @@
 //! 结果 `{"counts": {牌组: [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 缩减原因|null]}, "next", "after", "eligible"}`。
 //! 没给 `deck` = 全部牌组（牌组列表）；给了但不在树里 = `counts` 为 null。
 
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use rusqlite::{params_from_iter, types::Value as Sql, Connection};
 use serde_json::{json, Value};
 
 use crate::projection::Day;
+use crate::store::queue::{DeckRaw, DueCand, LogState, Session, StudyHub, LEARN_AHEAD_MS};
 use crate::store::sync2::config::DeckTree;
 use crate::store::sync2::sql;
 
-/// 卡「可出」：可见、未暂停、归 Fushi 排程、没埋或埋到期（绑定一个参数：今天）。
+/// 卡「可出」：可见、未暂停、归 Fushi 排程、没埋或埋到期（绑定一个参数：今天）。与 queue.rs `Row::live` 同一判据。
 const LIVE: &str = "hidden = 0 AND suspended = 0 AND scheduler = 'fushi' AND (buried_until_day IS NULL OR buried_until_day <= ?)";
 const DAY_MS: i64 = 86_400_000;
-/// 学习卡的「快到期」窗口：20 分钟内到期的学习卡算进学习数（Anki 的 learn ahead）。
-const LEARN_AHEAD_MS: i64 = 20 * 60_000;
-/// SQLite 变量上限内的 IN 列表分块。
-const CHUNK: usize = 400;
 
 /// 一个牌组自己（或整棵子树）的原始卡数与今天的学习量。
 #[derive(Clone, Copy, Default, Debug)]
@@ -56,6 +53,10 @@ impl Tally {
         self.due += o.due;
         self.new_done += o.new_done;
         self.review_done += o.review_done;
+    }
+
+    fn of(r: DeckRaw) -> Tally {
+        Tally { total: r.total, new_avail: r.new_avail, learn: r.learn, due: r.due, new_done: 0, review_done: 0 }
     }
 }
 
@@ -112,19 +113,16 @@ struct InstantDeck {
     repeat_seconds: i64,
 }
 
-struct Ctx {
+/// 一次排队的上下文：牌组树、「今天」、日志里来的那部分（会话常驻的，或测试基准每次扫的）。
+struct Ctx<'a> {
     tree: DeckTree,
     day: Day,
     now: i64,
     today: i64,
-    last30: Vec<i64>,
-    introduced: HashSet<String>,
-    reviewed: HashSet<String>,
-    /// 今天的全部作答（卡, 时刻）。
-    answers: Vec<(String, i64)>,
+    logs: &'a LogState,
 }
 
-impl Ctx {
+impl Ctx<'_> {
     fn day_start(&self, day: i64) -> i64 {
         day * DAY_MS + self.day.rollover_hour * 3_600_000 - self.day.utc_offset_min * 60_000
     }
@@ -138,71 +136,44 @@ fn int(v: &Value, k: &str, d: i64) -> i64 {
     v.get(k).and_then(Value::as_i64).unwrap_or(d)
 }
 
-/// 计数上下文：牌组树、「今天」、最近 30 天每天的复习数、今天已学的新卡 / 已复习的卡 / 全部作答。
-/// 30 天的计数与今天的作答是同一次日志区间扫描（`idx_srs_review_logs_profile_kind_time`，卡 / 类型列在索引里，
-/// 正文 JSON 只在今天的学习步那几行回表：判断是不是第一次学）。
-fn context(c: &Connection, profile: &str, now: i64, day: Day) -> Result<Ctx, String> {
-    let tree = DeckTree::load(c, profile)?;
-    let today = day.index(now);
-    let mut ctx = Ctx {
-        tree,
-        day,
-        now,
-        today,
-        last30: vec![0; 30],
-        introduced: HashSet::new(),
-        reviewed: HashSet::new(),
-        answers: Vec::new(),
-    };
-    let from = ctx.day_start(today - 29);
-    let today_start = ctx.day_start(today);
-    let mut stmt = c.prepare_cached(LOGS_SQL).map_err(sql)?;
-    let mut q = stmt.query(rusqlite::params![profile, from, today_start]).map_err(sql)?;
-    while let Some(r) = q.next().map_err(sql)? {
-        let at: i64 = r.get(1).map_err(sql)?;
-        let d = ctx.day.index(at);
-        let slot = d - (today - 29);
-        if (0..30).contains(&slot) {
-            ctx.last30[slot as usize] += 1;
-        }
-        if at < today_start {
-            continue;
-        }
-        let card: String = r.get(0).map_err(sql)?;
-        let ty: String = r.get(2).map_err(sql)?;
-        if ty == "review" {
-            ctx.reviewed.insert(card.clone());
-        }
-        if let Some(j) = r.get::<_, Option<String>>(3).map_err(sql)? {
-            let v: Value = serde_json::from_str(&j).unwrap_or(Value::Null);
-            if v["res"]["reps"].as_f64() == Some(1.0) {
-                ctx.introduced.insert(card.clone());
-            }
-        }
-        ctx.answers.push((card, at));
+/// 排队读的卡 / 日志数据：生产是常驻会话（[SessionSource]），测试里另有 L2 的逐条 SQL 实现当对拍基准。
+trait Source {
+    fn logs(&self) -> &LogState;
+    /// 每个牌组**自己**（不含子牌组）的计数原料；只给有 hidden = 0 的卡的牌组。[decks] 为 None = 全部牌组。
+    fn tallies(&self, now: i64, decks: Option<&[String]>) -> Result<HashMap<String, DeckRaw>, String>;
+    /// 一组卡所在的牌组与是否隐藏。
+    fn decks_of(&self, ids: &HashSet<String>) -> Result<HashMap<String, (String, bool)>, String>;
+    /// 子树里按 (COALESCE(due_at, 0), id) 第一张在 [limit] 前到期的可出学习卡：(卡, due_at)。
+    fn first_learning(&self, decks: &[&str], limit: i64, exclude: &[&str]) -> Result<Option<(String, Option<i64>)>, String>;
+    /// 几个牌组的到期复习卡里此刻可提取度最低的一张。
+    fn lowest_due(&self, decks: &[&str], now: i64, exclude: &HashSet<&str>) -> Result<Option<DueCand>, String>;
+}
+
+struct SessionSource<'a>(&'a Session);
+
+impl Source for SessionSource<'_> {
+    fn logs(&self) -> &LogState {
+        self.0.logs()
     }
-    Ok(ctx)
+
+    fn tallies(&self, now: i64, decks: Option<&[String]>) -> Result<HashMap<String, DeckRaw>, String> {
+        Ok(self.0.tallies(now, decks))
+    }
+
+    fn decks_of(&self, ids: &HashSet<String>) -> Result<HashMap<String, (String, bool)>, String> {
+        Ok(self.0.decks_of(ids))
+    }
+
+    fn first_learning(&self, decks: &[&str], limit: i64, exclude: &[&str]) -> Result<Option<(String, Option<i64>)>, String> {
+        Ok(self.0.first_learning(decks, limit, exclude))
+    }
+
+    fn lowest_due(&self, decks: &[&str], now: i64, exclude: &HashSet<&str>) -> Result<Option<DueCand>, String> {
+        Ok(self.0.lowest_due(decks, now, exclude))
+    }
 }
 
-/// 最近 30 天的复习日志（参数：profile, 30 天前的日界, 今天的日界）。
-const LOGS_SQL: &str = "SELECT card_id, occurred_at, review_type, \
-     CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END \
-     FROM srs_review_logs WHERE profile_uid = ?1 AND kind = 'review' AND occurred_at >= ?2 \
-     ORDER BY occurred_at";
-
-/// 按牌组聚合的计数原料；[decks] = `deck_id IN` 的个数（None = 不限牌组）。
-fn tallies_sql(decks: Option<usize>) -> String {
-    let deck_sql = decks.map_or(String::new(), |n| format!(" AND deck_id IN ({})", marks(n)));
-    format!(
-        "SELECT deck_id, COUNT(*), \
-         SUM(CASE WHEN {LIVE} AND queue NOT IN ('learning', 'relearning', 'review') THEN 1 ELSE 0 END), \
-         SUM(CASE WHEN {LIVE} AND queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ? THEN 1 ELSE 0 END), \
-         SUM(CASE WHEN {LIVE} AND queue = 'review' AND COALESCE(due_day, 0) <= ? THEN 1 ELSE 0 END) \
-         FROM srs_cards_cache WHERE profile_uid = ? AND hidden = 0{deck_sql} GROUP BY deck_id"
-    )
-}
-
-/// 学习卡 / 新卡的「按索引序取第一张」。
+/// 新卡的「按索引序取第一张」（`idx_srs_cards_cache_new_*` 部分索引）。
 fn first_sql(decks: usize, condition: &str, order: &str, exclude: usize) -> String {
     let not_in = if exclude == 0 { String::new() } else { format!(" AND id NOT IN ({})", marks(exclude)) };
     format!(
@@ -211,78 +182,11 @@ fn first_sql(decks: usize, condition: &str, order: &str, exclude: usize) -> Stri
     )
 }
 
-/// 到期复习卡里可提取度最低的 [DUE_TOP] 张（参数：profile, 今天, 牌组…, 今天, 排除…, 此刻）。排序键是 FSRS 遗忘曲线
-/// R = (1 + t/(9S))^-1（可提取度低的先出；与旧 Dart 排队同一条式子：除以零得 NULL，升序 NULL 在前）。`ORDER BY … LIMIT` 是 SQLite 的有界排序器（只留 LIMIT 行，
-/// 不对全集排序），比逐行交给 Rust 再比快（行步进 + 取 id 文本）：十万张到期卡上一次排队中位 114 → 99 ms。
-fn due_sql(decks: usize, exclude: usize) -> String {
-    let not_in = if exclude == 0 { String::new() } else { format!(" AND id NOT IN ({})", marks(exclude)) };
-    format!(
-        "SELECT id, last_reviewed_at, stability FROM srs_cards_cache WHERE profile_uid = ? AND {LIVE} \
-         AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?{not_in} \
-         ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
-         / (9.0 * COALESCE(stability, 1.0))), id LIMIT {DUE_TOP}",
-        marks(decks),
-    )
-}
-
-const LEARNING_WHERE: &str = "queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ?";
-const LEARNING_ORDER: &str = "COALESCE(due_at, 0), id";
 const NEW_BY_POSITION: &str = "new_position IS NULL, new_position, note_created_at, id";
 const NEW_BY_FREQUENCY: &str = "freq_rank IS NULL, freq_rank, new_position IS NULL, new_position, note_created_at, id";
 
 fn marks(n: usize) -> String {
     vec!["?"; n].join(", ")
-}
-
-/// 每个牌组**自己**（不含子牌组）的计数原料，在 SQL 里按牌组聚合（覆盖索引，不回表）。[decks] 为 None 时不限牌组。
-fn tallies(c: &Connection, profile: &str, ctx: &Ctx, decks: Option<&[String]>) -> Result<HashMap<String, Tally>, String> {
-    let sql_text = tallies_sql(decks.map(<[String]>::len));
-    let mut args: Vec<Sql> = vec![
-        Sql::Integer(ctx.today),
-        Sql::Integer(ctx.today),
-        Sql::Integer(ctx.now + LEARN_AHEAD_MS),
-        Sql::Integer(ctx.today),
-        Sql::Integer(ctx.today),
-        Sql::Text(profile.to_owned()),
-    ];
-    for d in decks.unwrap_or(&[]) {
-        args.push(Sql::Text(d.clone()));
-    }
-    let mut stmt = c.prepare_cached(&sql_text).map_err(sql)?;
-    let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
-    let mut out = HashMap::new();
-    while let Some(r) = q.next().map_err(sql)? {
-        out.insert(
-            r.get::<_, String>(0).map_err(sql)?,
-            Tally {
-                total: r.get(1).map_err(sql)?,
-                new_avail: r.get(2).map_err(sql)?,
-                learn: r.get(3).map_err(sql)?,
-                due: r.get(4).map_err(sql)?,
-                new_done: 0,
-                review_done: 0,
-            },
-        );
-    }
-    Ok(out)
-}
-
-/// 一组卡所在的牌组与是否隐藏（今天作答过的卡，只有当天那几十上百张：按主键查）。`+profile_uid` 不让 SQLite
-/// 改走 profile 前缀索引逐行回表。
-fn decks_of(c: &Connection, profile: &str, ids: &HashSet<String>) -> Result<HashMap<String, (String, bool)>, String> {
-    let all: Vec<&String> = ids.iter().collect();
-    let mut out = HashMap::new();
-    for chunk in all.chunks(CHUNK) {
-        let sql_text = format!("SELECT id, deck_id, hidden FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = ?", marks(chunk.len()));
-        let mut stmt = c.prepare_cached(&sql_text).map_err(sql)?;
-        let mut args: Vec<Sql> = chunk.iter().map(|s| Sql::Text((*s).clone())).collect();
-        args.push(Sql::Text(profile.to_owned()));
-        let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
-        while let Some(r) = q.next().map_err(sql)? {
-            out.insert(r.get::<_, String>(0).map_err(sql)?, (r.get::<_, String>(1).map_err(sql)?, r.get::<_, bool>(2).map_err(sql)?));
-        }
-    }
-    Ok(out)
 }
 
 /// RWKV-Instant 合格的复习卡（按 R 升序，同 R 按 id）。与旧 Dart `_instantReviews` 同口径：
@@ -291,7 +195,7 @@ fn decks_of(c: &Connection, profile: &str, ids: &HashSet<String>) -> Result<Hash
 ///   `repeat_reviews` 次 → 暂缓；
 /// - 每天最少复习数：某牌组今天复习过的卡加上合格卡仍不到这个数时，从只因 R 高于目标被挡的卡里按 R 升序补足。
 fn instant_eligible(
-    ctx: &Ctx,
+    ctx: &Ctx<'_>,
     scope: &HashSet<&str>,
     decks: &HashMap<String, InstantDeck>,
     cands: &[(String, String, Option<i64>, f64)],
@@ -307,8 +211,8 @@ fn instant_eligible(
             return true;
         }
         let mut others = 0;
-        for (other, at) in &ctx.answers {
-            if *at > last && other != id && answered_deck.get(other).is_some_and(|(d, _)| scope.contains(d.as_str())) {
+        for (other, at) in ctx.logs.answers() {
+            if at > last && other != id && answered_deck.get(other).is_some_and(|(d, _)| scope.contains(d.as_str())) {
                 others += 1;
                 if others >= q.repeat_reviews {
                     return true;
@@ -329,7 +233,7 @@ fn instant_eligible(
     let by_r = |a: &(String, String, f64), b: &(String, String, f64)| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.0.cmp(&b.0));
     if decks.values().any(|q| q.min_reviews > 0) && !above.is_empty() {
         let mut remaining: HashMap<&str, i64> = decks.iter().filter(|(_, q)| q.min_reviews > 0).map(|(d, q)| (d.as_str(), q.min_reviews)).collect();
-        for id in &ctx.reviewed {
+        for id in ctx.logs.reviewed_cards() {
             if let Some((d, _)) = answered_deck.get(id) {
                 if let Some(left) = remaining.get_mut(d.as_str()) {
                     *left -= 1;
@@ -357,7 +261,7 @@ fn instant_eligible(
 /// 牌组树计数（对齐 Anki v3 的 limit tree，rslib scheduler/queue/limits.rs）：每个牌组的今日剩余上限 = 自己的
 /// 每日上限（新卡另按复习量缩减）− 今天整棵子树里已学的新卡 / 已复习的卡；新卡 / 到期数自底向上取
 /// min(本牌组剩余上限, 自己的卡 + Σ 子牌组已截断后的数)；学习数不截断；只看 [root] 这棵子树（None = 全部顶层）。
-fn count_tree(ctx: &Ctx, tallies: &HashMap<String, Tally>, ids: &[String], root: Option<&str>) -> HashMap<String, Count> {
+fn count_tree(ctx: &Ctx<'_>, tallies: &HashMap<String, Tally>, ids: &[String], root: Option<&str>) -> HashMap<String, Count> {
     let scope: HashSet<&str> = ids.iter().map(String::as_str).collect();
     let mut children: HashMap<&str, Vec<&str>> = HashMap::new();
     let mut tops: Vec<&str> = Vec::new();
@@ -369,7 +273,7 @@ fn count_tree(ctx: &Ctx, tallies: &HashMap<String, Tally>, ids: &[String], root:
     }
     fn visit<'a>(
         id: &'a str,
-        ctx: &Ctx,
+        ctx: &Ctx<'_>,
         tallies: &HashMap<String, Tally>,
         children: &HashMap<&'a str, Vec<&'a str>>,
         out: &mut HashMap<String, Count>,
@@ -385,7 +289,7 @@ fn count_tree(ctx: &Ctx, tallies: &HashMap<String, Tally>, ids: &[String], root:
             learn_sum += cc.learn_count;
         }
         let view = &ctx.tree.decks[id].view;
-        let budget = new_card_budget(int(view, "np", 20), sub.due, &ctx.last30);
+        let budget = new_card_budget(int(view, "np", 20), sub.due, ctx.logs.last30());
         let new_remaining = (budget.allowed - sub.new_done).max(0);
         let review_remaining = (int(view, "rp", 200) - sub.review_done).max(0);
         let r = Count {
@@ -409,23 +313,15 @@ fn count_tree(ctx: &Ctx, tallies: &HashMap<String, Tally>, ids: &[String], root:
 
 struct Picker<'a> {
     c: &'a Connection,
+    src: &'a dyn Source,
     profile: &'a str,
-    ctx: &'a Ctx,
+    ctx: &'a Ctx<'a>,
     root: &'a str,
     sub: &'a [String],
     counts: &'a HashMap<String, Count>,
     instant_decks: HashSet<&'a str>,
     eligible: &'a [(String, String, f64)],
-    /// 上一次扫到期复习卡留下的最低几张（按出卡序）与扫的牌组：「下一张」与「再下一张」共用一次扫描。
-    due_top: RefCell<Option<(Vec<String>, Vec<DueCand>)>>,
 }
-
-/// 一张到期复习候选：(卡, 上次作答, 稳定度)。
-type DueCand = (String, Option<i64>, Option<f64>);
-
-/// 一次扫描留下的最低几张：够「下一张 + 再下一张」（后者只多排除前者）。
-const DUE_TOP: usize = 2;
-
 
 impl Picker<'_> {
     /// 一张卡能出，当且仅当它所在牌组到所点牌组这一路上每一层都还有剩余上限（层层上限构成层状拟阵，按任何
@@ -450,58 +346,21 @@ impl Picker<'_> {
         false
     }
 
-    /// 子树里一条「可出 + 条件」的候选，按 [order] 取第一张（走对应的部分索引，命中第一张即停）。
-    fn first(&self, decks: &[&str], condition: &str, vars: Vec<Sql>, order: &str, exclude: &[&str]) -> Result<Option<(String, Option<i64>)>, String> {
+    /// 子树里按新卡顺序的第一张可出新卡（走对应的部分索引，命中第一张即停）。
+    fn first_new(&self, decks: &[&str], order: &str, exclude: &[&str]) -> Result<Option<String>, String> {
         if decks.is_empty() {
             return Ok(None);
         }
-        let sql_text = first_sql(decks.len(), condition, order, exclude.len());
+        let sql_text = first_sql(decks.len(), "queue = 'new'", order, exclude.len());
         let mut args: Vec<Sql> = vec![Sql::Text(self.profile.to_owned()), Sql::Integer(self.ctx.today)];
         args.extend(decks.iter().map(|d| Sql::Text((*d).to_owned())));
-        args.extend(vars);
         args.extend(exclude.iter().map(|d| Sql::Text((*d).to_owned())));
         let mut stmt = self.c.prepare_cached(&sql_text).map_err(sql)?;
         let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
         match q.next().map_err(sql)? {
-            Some(r) => Ok(Some((r.get(0).map_err(sql)?, r.get(1).map_err(sql)?))),
+            Some(r) => Ok(Some(r.get(0).map_err(sql)?)),
             None => Ok(None),
         }
-    }
-
-    /// 到期复习卡里可提取度最低的一张：顺着 `idx_srs_cards_cache_review_due`（牌组, 到期日）只扫到期候选，
-    /// 在库里有界排序取最低的 [DUE_TOP] 张（[due_sql]），同一组牌组的下一次（「再下一张」，只多排除前一张）
-    /// 直接从留下的里取，不再扫一遍。返回 (卡, 上次作答, 稳定度)。
-    fn lowest_due(&self, decks: &[&str], exclude: &HashSet<&str>) -> Result<Option<(String, Option<i64>, Option<f64>)>, String> {
-        if decks.is_empty() {
-            return Ok(None);
-        }
-        if let Some((scanned, top)) = self.due_top.borrow().as_ref() {
-            if scanned.iter().map(String::as_str).eq(decks.iter().copied()) {
-                // 留下的都被排除了不代表没有别的卡：只有一张都没剩时才重扫。
-                if let Some(c) = top.iter().find(|c| !exclude.contains(c.0.as_str())) {
-                    return Ok(Some(c.clone()));
-                }
-                if top.len() < DUE_TOP {
-                    return Ok(None);
-                }
-            }
-        }
-        let ex: Vec<&str> = exclude.iter().copied().collect();
-        let sql_text = due_sql(decks.len(), ex.len());
-        let mut args: Vec<Sql> = vec![Sql::Text(self.profile.to_owned()), Sql::Integer(self.ctx.today)];
-        args.extend(decks.iter().map(|d| Sql::Text((*d).to_owned())));
-        args.push(Sql::Integer(self.ctx.today));
-        args.extend(ex.iter().map(|d| Sql::Text((*d).to_owned())));
-        args.push(Sql::Integer(self.ctx.now));
-        let mut stmt = self.c.prepare_cached(&sql_text).map_err(sql)?;
-        let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
-        let mut top: Vec<DueCand> = Vec::with_capacity(DUE_TOP);
-        while let Some(r) = q.next().map_err(sql)? {
-            top.push((r.get(0).map_err(sql)?, r.get(1).map_err(sql)?, r.get(2).map_err(sql)?));
-        }
-        let best = top.first().cloned();
-        *self.due_top.borrow_mut() = Some((decks.iter().map(|d| (*d).to_owned()).collect(), top));
-        Ok(best)
     }
 
     /// 下一张：到期的学习卡 → 到期复习卡（可提取度从低到高；RWKV 牌组按 R）→ 新卡（所点牌组的新卡顺序）→
@@ -509,13 +368,7 @@ impl Picker<'_> {
     fn next(&self, exclude: &[&str]) -> Result<Option<String>, String> {
         let ex: HashSet<&str> = exclude.iter().copied().collect();
         let sub: Vec<&str> = self.sub.iter().map(String::as_str).collect();
-        let learning = self.first(
-            &sub,
-            LEARNING_WHERE,
-            vec![Sql::Integer(self.ctx.now + LEARN_AHEAD_MS)],
-            LEARNING_ORDER,
-            exclude,
-        )?;
+        let learning = self.src.first_learning(&sub, self.ctx.now + LEARN_AHEAD_MS, exclude)?;
         if let Some((id, due)) = &learning {
             if due.unwrap_or(0) <= self.ctx.now {
                 return Ok(Some(id.clone()));
@@ -529,7 +382,7 @@ impl Picker<'_> {
                 .find(|(id, deck, _)| !ex.contains(id.as_str()) && self.path_has_room(deck, |c| c.review_remaining));
             let fsrs_decks: Vec<&str> =
                 sub.iter().copied().filter(|d| !self.instant_decks.contains(d) && self.path_has_room(d, |c| c.review_remaining)).collect();
-            let due = self.lowest_due(&fsrs_decks, &ex)?;
+            let due = if fsrs_decks.is_empty() { None } else { self.src.lowest_due(&fsrs_decks, self.ctx.now, &ex)? };
             match (instant_best, due) {
                 (None, Some((id, _, _))) => return Ok(Some(id)),
                 (Some((id, _, _)), None) => return Ok(Some(id.clone())),
@@ -549,7 +402,7 @@ impl Picker<'_> {
                 Some("position") => NEW_BY_POSITION,
                 _ => NEW_BY_FREQUENCY,
             };
-            if let Some((id, _)) = self.first(&decks, "queue = 'new'", Vec::new(), order, exclude)? {
+            if let Some(id) = self.first_new(&decks, order, exclude)? {
                 return Ok(Some(id));
             }
         }
@@ -557,14 +410,27 @@ impl Picker<'_> {
     }
 }
 
-/// 一次排队（见文件头）。[c] 是一个读快照（或写连接上的同一个事务：作答落库后接着算）。
-pub(crate) fn study(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
+/// 请求里的「此刻」与日界。
+fn when(req: &Value) -> Result<(i64, Day), String> {
     let now = req.get("now").and_then(Value::as_i64).ok_or("study: missing now")?;
     let day = Day {
         utc_offset_min: req.get("utcOff").and_then(Value::as_i64).ok_or("study: missing utcOff")?,
         rollover_hour: req.get("rollover").and_then(Value::as_i64).ok_or("study: missing rollover")?,
     };
-    let ctx = context(c, profile, now, day)?;
+    Ok((now, day))
+}
+
+/// 一次排队（见文件头）。[c] 是一个读快照（或写连接上的同一个事务：作答落库后接着算）；[uncommitted] = [c] 是
+/// 写连接上还没结束的事务（会话连未提交的改动一起重读，store/queue.rs）。
+pub(crate) fn study(c: &Connection, hub: &StudyHub, uncommitted: bool, profile: &str, req: &Value) -> Result<Value, String> {
+    let (now, day) = when(req)?;
+    hub.with_session(c, profile, day, day.index(now), uncommitted, |s| run(c, &SessionSource(s), profile, req))
+}
+
+/// 排队本身：数据从 [src] 取（会话，或测试基准）。
+fn run(c: &Connection, src: &dyn Source, profile: &str, req: &Value) -> Result<Value, String> {
+    let (now, day) = when(req)?;
+    let ctx = Ctx { tree: DeckTree::load(c, profile)?, day, now, today: day.index(now), logs: src.logs() };
     let root = req.get("deck").and_then(Value::as_str);
     if root.is_some_and(|r| !ctx.tree.decks.contains_key(r)) {
         return Ok(json!({"counts": null, "next": null, "after": null, "eligible": []}));
@@ -578,7 +444,8 @@ pub(crate) fn study(c: &Connection, profile: &str, req: &Value) -> Result<Value,
         }
     };
     let scope: HashSet<&str> = ids.iter().map(String::as_str).collect();
-    let mut t = tallies(c, profile, &ctx, root.map(|_| ids.as_slice()))?;
+    let mut t: HashMap<String, Tally> =
+        src.tallies(now, root.map(|_| ids.as_slice()))?.into_iter().map(|(k, v)| (k, Tally::of(v))).collect();
 
     // RWKV-Instant：Dart 给目标保留率 / 排队设置与候选分数；排队规则在这里。
     let mut instant: HashMap<String, InstantDeck> = HashMap::new();
@@ -604,11 +471,11 @@ pub(crate) fn study(c: &Connection, profile: &str, req: &Value) -> Result<Value,
             cands.push((id.to_owned(), deck.to_owned(), x[2].as_i64(), r));
         }
     }
-    let mut lookup: HashSet<String> = ctx.introduced.iter().chain(ctx.reviewed.iter()).cloned().collect();
+    let mut lookup: HashSet<String> = ctx.logs.introduced_cards().chain(ctx.logs.reviewed_cards()).cloned().collect();
     if rwkv.is_some() {
-        lookup.extend(ctx.answers.iter().map(|(id, _)| id.clone()));
+        lookup.extend(ctx.logs.answers().map(|(id, _)| id.clone()));
     }
-    let found = decks_of(c, profile, &lookup)?;
+    let found = src.decks_of(&lookup)?;
     let eligible = if rwkv.is_some() { instant_eligible(&ctx, &scope, &instant, &cands, &found) } else { Vec::new() };
     if rwkv.is_some() {
         for d in instant.keys() {
@@ -628,10 +495,10 @@ pub(crate) fn study(c: &Connection, profile: &str, req: &Value) -> Result<Value,
             continue;
         }
         let Some(x) = t.get_mut(deck) else { continue };
-        if ctx.introduced.contains(id) {
+        if ctx.logs.introduced(id) {
             x.new_done += 1;
         }
-        if ctx.reviewed.contains(id) {
+        if ctx.logs.reviewed(id) {
             x.review_done += 1;
         }
     }
@@ -641,6 +508,7 @@ pub(crate) fn study(c: &Connection, profile: &str, req: &Value) -> Result<Value,
         let exclude: Vec<String> = req["exclude"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();
         let picker = Picker {
             c,
+            src,
             profile,
             ctx: &ctx,
             root: r,
@@ -648,7 +516,6 @@ pub(crate) fn study(c: &Connection, profile: &str, req: &Value) -> Result<Value,
             counts: &counts,
             instant_decks: instant.keys().map(String::as_str).collect(),
             eligible: &eligible,
-            due_top: RefCell::new(None),
         };
         let mut ex: Vec<&str> = exclude.iter().map(String::as_str).collect();
         next = picker.next(&ex)?;
@@ -678,13 +545,16 @@ impl crate::store::SrsCore {
     /// 只读排队（牌组列表 / 复习页的计数与出卡）：走读连接的快照，不排在同步投递 / 缓存刷新这类长写后面
     /// （Drift 事务开着时照旧在写连接上，看得见未提交的行）。
     pub fn study(&self, profile: &str, req: &Value) -> Result<Value, String> {
-        self.read_visible(|c| study(c, profile, req))
+        self.read_visible_tx(|c, uncommitted| study(c, &self.study_hub, uncommitted, profile, req))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store::queue::{LOGS_SQL, ROW_COLUMNS};
+    use crate::store::SrsCore;
+    use std::sync::atomic::Ordering as AtomicOrdering;
 
     /// 与 Dart `srsComputeNewCardBudget` 的几个边界逐项一致（fushi_srs test/new_card_budget_test.dart 同组数）。
     #[test]
@@ -704,11 +574,136 @@ mod tests {
         assert_eq!(new_card_budget(0, 10, &[0; 30]), Budget { limit: 0, allowed: 0, review_budget: 0, reason: None });
     }
 
-    /// 排队的每条查询走上 v9 的索引（schema.rs `V9`）：学习卡 / 新卡按索引序取第一张、计数按牌组聚合、日志区间
-    /// 扫描都不回表另排序（无 TEMP B-TREE）；复习候选顺着到期索引覆盖扫描，只在 LIMIT 行上有界排序。
-    /// 单牌组与多牌组（`deck_id IN` 一个值 / 多个值）、带排除都看。
+    /// L2 的逐条 SQL 排队（2026-10-29 搬进常驻会话之前的生产实现，原样保留）：会话实现的对拍基准。每次排队按子树
+    /// 聚合计数、顺着到期索引有界排序取最低、日志整段扫。
+    mod oracle {
+        use super::super::*;
+
+        pub(super) const LEARNING_WHERE: &str = "queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ?";
+        pub(super) const LEARNING_ORDER: &str = "COALESCE(due_at, 0), id";
+
+        pub(super) fn tallies_sql(decks: Option<usize>) -> String {
+            let deck_sql = decks.map_or(String::new(), |n| format!(" AND deck_id IN ({})", marks(n)));
+            format!(
+                "SELECT deck_id, COUNT(*), \
+                 SUM(CASE WHEN {LIVE} AND queue NOT IN ('learning', 'relearning', 'review') THEN 1 ELSE 0 END), \
+                 SUM(CASE WHEN {LIVE} AND queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ? THEN 1 ELSE 0 END), \
+                 SUM(CASE WHEN {LIVE} AND queue = 'review' AND COALESCE(due_day, 0) <= ? THEN 1 ELSE 0 END) \
+                 FROM srs_cards_cache WHERE profile_uid = ? AND hidden = 0{deck_sql} GROUP BY deck_id"
+            )
+        }
+
+        pub(super) fn due_sql(decks: usize, exclude: usize) -> String {
+            let not_in = if exclude == 0 { String::new() } else { format!(" AND id NOT IN ({})", marks(exclude)) };
+            format!(
+                "SELECT id, last_reviewed_at, stability FROM srs_cards_cache WHERE profile_uid = ? AND {LIVE} \
+                 AND deck_id IN ({}) AND queue = 'review' AND COALESCE(due_day, 0) <= ?{not_in} \
+                 ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
+                 / (9.0 * COALESCE(stability, 1.0))), id LIMIT 2",
+                marks(decks),
+            )
+        }
+
+        pub(super) struct SqlSource<'a> {
+            pub c: &'a Connection,
+            pub profile: &'a str,
+            pub today: i64,
+            pub logs: LogState,
+        }
+
+        impl Source for SqlSource<'_> {
+            fn logs(&self) -> &LogState {
+                &self.logs
+            }
+
+            fn tallies(&self, now: i64, decks: Option<&[String]>) -> Result<HashMap<String, DeckRaw>, String> {
+                let sql_text = tallies_sql(decks.map(<[String]>::len));
+                let mut args: Vec<Sql> = vec![
+                    Sql::Integer(self.today),
+                    Sql::Integer(self.today),
+                    Sql::Integer(now + LEARN_AHEAD_MS),
+                    Sql::Integer(self.today),
+                    Sql::Integer(self.today),
+                    Sql::Text(self.profile.to_owned()),
+                ];
+                for d in decks.unwrap_or(&[]) {
+                    args.push(Sql::Text(d.clone()));
+                }
+                let mut stmt = self.c.prepare(&sql_text).map_err(sql)?;
+                let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
+                let mut out = HashMap::new();
+                while let Some(r) = q.next().map_err(sql)? {
+                    out.insert(
+                        r.get::<_, String>(0).map_err(sql)?,
+                        DeckRaw { total: r.get(1).map_err(sql)?, new_avail: r.get(2).map_err(sql)?, learn: r.get(3).map_err(sql)?, due: r.get(4).map_err(sql)? },
+                    );
+                }
+                Ok(out)
+            }
+
+            fn decks_of(&self, ids: &HashSet<String>) -> Result<HashMap<String, (String, bool)>, String> {
+                let all: Vec<&String> = ids.iter().collect();
+                let mut out = HashMap::new();
+                for chunk in all.chunks(400) {
+                    let sql_text = format!("SELECT id, deck_id, hidden FROM srs_cards_cache WHERE id IN ({}) AND +profile_uid = ?", marks(chunk.len()));
+                    let mut stmt = self.c.prepare(&sql_text).map_err(sql)?;
+                    let mut args: Vec<Sql> = chunk.iter().map(|s| Sql::Text((*s).clone())).collect();
+                    args.push(Sql::Text(self.profile.to_owned()));
+                    let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
+                    while let Some(r) = q.next().map_err(sql)? {
+                        out.insert(r.get::<_, String>(0).map_err(sql)?, (r.get::<_, String>(1).map_err(sql)?, r.get::<_, bool>(2).map_err(sql)?));
+                    }
+                }
+                Ok(out)
+            }
+
+            fn first_learning(&self, decks: &[&str], limit: i64, exclude: &[&str]) -> Result<Option<(String, Option<i64>)>, String> {
+                if decks.is_empty() {
+                    return Ok(None);
+                }
+                let sql_text = first_sql(decks.len(), LEARNING_WHERE, LEARNING_ORDER, exclude.len());
+                let mut args: Vec<Sql> = vec![Sql::Text(self.profile.to_owned()), Sql::Integer(self.today)];
+                args.extend(decks.iter().map(|d| Sql::Text((*d).to_owned())));
+                args.push(Sql::Integer(limit));
+                args.extend(exclude.iter().map(|d| Sql::Text((*d).to_owned())));
+                let mut stmt = self.c.prepare(&sql_text).map_err(sql)?;
+                let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
+                match q.next().map_err(sql)? {
+                    Some(r) => Ok(Some((r.get(0).map_err(sql)?, r.get(1).map_err(sql)?))),
+                    None => Ok(None),
+                }
+            }
+
+            fn lowest_due(&self, decks: &[&str], now: i64, exclude: &HashSet<&str>) -> Result<Option<DueCand>, String> {
+                let ex: Vec<&str> = exclude.iter().copied().collect();
+                let sql_text = due_sql(decks.len(), ex.len());
+                let mut args: Vec<Sql> = vec![Sql::Text(self.profile.to_owned()), Sql::Integer(self.today)];
+                args.extend(decks.iter().map(|d| Sql::Text((*d).to_owned())));
+                args.push(Sql::Integer(self.today));
+                args.extend(ex.iter().map(|d| Sql::Text((*d).to_owned())));
+                args.push(Sql::Integer(now));
+                let mut stmt = self.c.prepare(&sql_text).map_err(sql)?;
+                let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
+                match q.next().map_err(sql)? {
+                    Some(r) => Ok(Some((r.get(0).map_err(sql)?, r.get(1).map_err(sql)?, r.get(2).map_err(sql)?))),
+                    None => Ok(None),
+                }
+            }
+        }
+
+        /// 用旧实现排一次（每次整段扫日志）。
+        pub(super) fn study(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
+            let (now, day) = when(req)?;
+            let today = day.index(now);
+            let src = SqlSource { c, profile, today, logs: LogState::scan(c, profile, day, today)? };
+            run(c, &src, profile, req)
+        }
+    }
+
+    /// 排队仍在 SQL 里的查询走对应索引：新卡按索引序取第一张（无 TEMP B-TREE）、会话重建的日志区间扫描、
+    /// 按 id 重读缓存行 / 日志走主键。
     #[test]
-    fn queue_queries_use_the_v9_indexes() {
+    fn queue_queries_use_their_indexes() {
         let mut c = rusqlite::Connection::open_in_memory().unwrap();
         crate::store::schema::migrate(&mut c).unwrap();
         let plan = |q: &str| -> String {
@@ -730,16 +725,356 @@ mod tests {
         };
         for decks in [1, 3] {
             for ex in [0, 2] {
-                uses("learning", &first_sql(decks, LEARNING_WHERE, LEARNING_ORDER, ex), "COVERING INDEX idx_srs_cards_cache_learning", true);
                 uses("new(freq)", &first_sql(decks, "queue = 'new'", NEW_BY_FREQUENCY, ex), "idx_srs_cards_cache_new_freq", true);
                 uses("new(position)", &first_sql(decks, "queue = 'new'", NEW_BY_POSITION, ex), "idx_srs_cards_cache_new_position", true);
-                // 排序键随此刻变，没有索引能给出这个序：在覆盖索引的到期区间上有界排序（LIMIT，见 [due_sql]）。
-                uses("review", &due_sql(decks, ex), "COVERING INDEX idx_srs_cards_cache_review_due", false);
             }
-            uses("tally", &tallies_sql(Some(decks)), "COVERING INDEX idx_srs_cards_cache_tally", true);
         }
-        uses("tally(all)", &tallies_sql(None), "COVERING INDEX idx_srs_cards_cache_tally", true);
         uses("logs", LOGS_SQL, "idx_srs_review_logs_profile_kind_time", true);
+        uses("logs by id", &crate::store::queue::logs_by_id_sql(2), "sqlite_autoindex_srs_review_logs_1", false);
+        uses("rows by id", &format!("{ROW_COLUMNS} WHERE id IN (?, ?) AND +profile_uid = ?"), "sqlite_autoindex_srs_cards_cache_1", false);
         assert!(wrong.is_empty(), "{}", wrong.join("\n\n"));
+    }
+
+    /// 可复现的伪随机数（xorshift）。
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn below(&mut self, n: u64) -> u64 {
+            self.next() % n
+        }
+
+        fn pick<'a, T>(&mut self, xs: &'a [T]) -> &'a T {
+            &xs[self.below(xs.len() as u64) as usize]
+        }
+    }
+
+    const P: &str = "p";
+    const DECKS: [&str; 6] = ["R", "RA", "RA1", "RB", "O", "Z"];
+    const H: i64 = 3_600_000;
+
+    fn exec(core: &SrsCore, sql_text: &str, params: Vec<Sql>) {
+        core.exec(sql_text, &params, false).unwrap_or_else(|e| panic!("{sql_text}: {e}"));
+    }
+
+    fn edit(core: &SrsCore, n: &mut i64, entity: &str, key: &str, v: Value) {
+        *n += 1;
+        let json = json!({"p": P, "k": "deck", "e": entity, "f": key, "w": "w", "s": *n, "v": v, "hlc": format!("{}:0:w", 1_700_000_000_000i64 + *n)}).to_string();
+        exec(
+            core,
+            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) VALUES (?, ?, 'deck', ?, ?, 'w', ?, ?)",
+            vec![Sql::Text(format!("e{n}")), Sql::Text(P.into()), Sql::Text(entity.into()), Sql::Text(key.into()), Sql::Integer(*n), Sql::Text(json)],
+        );
+    }
+
+    /// 一张随机卡（同一组稳定度 / 上次作答取值有限，制造 R 相等按 id 比的情形；含稳定度为零得 NULL、从没作答）。
+    fn card_values(rng: &mut Rng, id: &str, today: i64, now: i64) -> Vec<Sql> {
+        let deck = *rng.pick(&DECKS);
+        let queue = *rng.pick(&["new", "new", "learning", "relearning", "review", "review", "review", "review"]);
+        let opt = |rng: &mut Rng, v: i64| if rng.below(6) == 0 { Sql::Null } else { Sql::Integer(v) };
+        let due_day = today - 3 + rng.below(6) as i64;
+        let due_at = now - 30 * 60_000 + rng.below(4) as i64 * 15 * 60_000;
+        let stab = match rng.below(8) {
+            0 => Sql::Null,
+            1 => Sql::Real(0.0),
+            n => Sql::Real([0.5, 1.0, 2.5, 10.0, 40.0, 3.0][n as usize - 2]),
+        };
+        let last = now - [1, 2, 3, 5, 8, 13][rng.below(6) as usize] * 86_400_000 - [0, 3 * H][rng.below(2) as usize];
+        let buried = match rng.below(10) {
+            0 => Sql::Integer(today),
+            1 => Sql::Integer(today + 1),
+            2 => Sql::Integer(today - 1),
+            _ => Sql::Null,
+        };
+        vec![
+            Sql::Text(id.into()),
+            Sql::Text(P.into()),
+            Sql::Text(deck.into()),
+            Sql::Integer((rng.below(12) == 0) as i64),
+            buried,
+            Sql::Integer((rng.below(15) == 0) as i64),
+            Sql::Text(queue.into()),
+            opt(rng, due_day),
+            opt(rng, due_at),
+            stab,
+            opt(rng, last),
+            Sql::Text(if rng.below(20) == 0 { "anki".into() } else { "fushi".into() }),
+            Sql::Integer(rng.below(50) as i64),
+            if rng.below(3) == 0 { Sql::Null } else { Sql::Integer(rng.below(40) as i64) },
+            if rng.below(3) == 0 { Sql::Null } else { Sql::Integer(rng.below(40) as i64) },
+        ]
+    }
+
+    const CARD_UPSERT: &str = "INSERT OR REPLACE INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, suspended, buried_until_day, \
+         hidden, queue, due_day, due_at, stability, last_reviewed_at, scheduler, note_created_at, new_position, freq_rank) \
+         VALUES (?1, ?2, ?1, 't', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)";
+
+    fn log(core: &SrsCore, n: &mut i64, card: &str, at: i64, ty: &str, reps: i64, kind: &str) {
+        *n += 1;
+        exec(
+            core,
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, json) VALUES (?, ?, ?, ?, 3, ?, ?, 'local', ?)",
+            vec![
+                Sql::Text(format!("l{n}")),
+                Sql::Text(P.into()),
+                Sql::Text(card.into()),
+                Sql::Text(kind.into()),
+                Sql::Integer(at),
+                Sql::Text(ty.into()),
+                Sql::Text(json!({"res": {"reps": reps}}).to_string()),
+            ],
+        );
+    }
+
+    /// 比一轮：几个根（含全部牌组）、带 / 不带排除、偶尔带 RWKV 候选；会话结果与旧实现逐项相同。
+    /// 返回出了几张非空的「下一张 / 再下一张」（测试自检：对拍不是一直在比空结果）。
+    fn compare(core: &SrsCore, rng: &mut Rng, now: i64, day: Day, cards: &[String], step: usize) -> usize {
+        let mut picked = 0;
+        for root in [None, Some("R"), Some("RA"), Some("RB"), Some("O"), Some("missing")] {
+            let mut req = json!({"now": now, "utcOff": day.utc_offset_min, "rollover": day.rollover_hour, "pick": true});
+            if let Some(r) = root {
+                req["deck"] = json!(r);
+            }
+            if rng.below(2) == 0 && !cards.is_empty() {
+                let ex: Vec<&String> = (0..1 + rng.below(3)).map(|_| rng.pick(cards)).collect();
+                req["exclude"] = json!(ex);
+            }
+            if rng.below(3) == 0 && !cards.is_empty() {
+                let cands: Vec<Value> = (0..4)
+                    .map(|_| json!([rng.pick(cards), "O", if rng.below(2) == 0 { Value::Null } else { json!(now - 2 * H) }, rng.below(100) as f64 / 100.0]))
+                    .collect();
+                req["rwkv"] = json!({"decks": {"O": [0.7, 2, 1, 60]}, "cands": cands});
+            }
+            let got = core.study(P, &req).unwrap();
+            let want = core.read_visible(|c| oracle::study(c, P, &req)).unwrap();
+            assert_eq!(got, want, "step {step} root {root:?} req {req}");
+            picked += usize::from(!got["next"].is_null()) + usize::from(!got["after"].is_null());
+        }
+        picked
+    }
+
+    /// 常驻会话与旧的逐条 SQL 排队逐步对拍：随机改卡（换队列 / 到期 / 暂停 / 埋 / 隐藏 / 挪牌组 / 稳定度）、加删卡、
+    /// 加删日志、改每日上限与新卡顺序、此刻前进（跨日、换翻日时刻 / UTC 偏移）、Drift 式事务里写（事务内排队看得见
+    /// 未提交的行；提交、整笔回滚、`ROLLBACK TO` 回滚一段）、一次写超过攒满阈值。每步每个根都与旧实现结果相同；
+    /// 同一个日界里只建一次会话（增量），跨日 / 攒满才重建。
+    #[test]
+    fn resident_session_matches_the_sql_queue() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_study_session_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+        let mut n = 0i64;
+        let mut logs = 0i64;
+        for d in DECKS {
+            exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES (?, ?, 'deck', '{}')", vec![Sql::Text(d.into()), Sql::Text(P.into())]);
+        }
+        for (d, parent) in [("RA", "R"), ("RA1", "RA"), ("RB", "R")] {
+            edit(&core, &mut n, d, "parent", json!(parent));
+        }
+        for (d, new, review) in [("R", 6, 9), ("RA", 3, 4), ("RA1", 50, 50), ("RB", 20, 2), ("O", 4, 5), ("Z", 5, 5)] {
+            edit(&core, &mut n, d, "limits", json!({"new": new, "review": review}));
+        }
+        let mut day = Day { utc_offset_min: 0, rollover_hour: 4 };
+        let mut now = 1_760_000_000_000i64;
+        let mut cards: Vec<String> = Vec::new();
+        for i in 0..400 {
+            let id = format!("c{i:04}");
+            exec(&core, CARD_UPSERT, card_values(&mut rng, &id, day.index(now), now));
+            cards.push(id);
+        }
+        for _ in 0..300 {
+            let card = rng.pick(&cards).clone();
+            let at = now - rng.below(40) as i64 * 86_400_000 / 2 - rng.below(5) as i64 * H;
+            log(&core, &mut logs, &card, at, *rng.pick(&["review", "learn", "relearn"]), 1 + rng.below(2) as i64, "review");
+        }
+        let mut builds_seen = 0;
+        let mut picked = 0;
+        let mut tx_depth = 0;
+        for step in 0..700 {
+            let today = day.index(now);
+            let mut new_day = false;
+            match rng.below(100) {
+                0..=29 => {
+                    let id = rng.pick(&cards).clone();
+                    exec(&core, CARD_UPSERT, card_values(&mut rng, &id, today, now));
+                }
+                30..=37 => {
+                    // 只改一两列（UPDATE 触发器）。
+                    let id = rng.pick(&cards).clone();
+                    let (col, v) = match rng.below(5) {
+                        0 => ("suspended", Sql::Integer(rng.below(2) as i64)),
+                        1 => ("buried_until_day", Sql::Integer(today + rng.below(2) as i64)),
+                        2 => ("deck_id", Sql::Text((*rng.pick(&DECKS)).into())),
+                        3 => ("hidden", Sql::Integer(rng.below(2) as i64)),
+                        _ => ("stability", Sql::Real(rng.below(30) as f64 + 0.5)),
+                    };
+                    exec(&core, &format!("UPDATE srs_cards_cache SET {col} = ? WHERE id = ?"), vec![v, Sql::Text(id)]);
+                }
+                38..=42 => {
+                    let id = format!("c{:04}", cards.len());
+                    exec(&core, CARD_UPSERT, card_values(&mut rng, &id, today, now));
+                    cards.push(id);
+                }
+                43..=45 => {
+                    let id = rng.pick(&cards).clone();
+                    exec(&core, "DELETE FROM srs_cards_cache WHERE id = ?", vec![Sql::Text(id)]);
+                }
+                46..=60 => {
+                    // 作答：今天的日志（第一次学 / 复习），偶尔是别的种类或很久以前的。
+                    let card = rng.pick(&cards).clone();
+                    let at = now - rng.below(3) as i64 * 60_000 - if rng.below(8) == 0 { 40 * 86_400_000 } else { 0 };
+                    let kind = if rng.below(10) == 0 { "manual" } else { "review" };
+                    log(&core, &mut logs, &card, at, *rng.pick(&["review", "learn", "relearn"]), 1 + rng.below(2) as i64, kind);
+                }
+                61..=63 => {
+                    let id = format!("l{}", 1 + rng.below(logs as u64));
+                    exec(&core, "DELETE FROM srs_review_logs WHERE id = ?", vec![Sql::Text(id)]);
+                }
+                64..=66 => {
+                    let d = *rng.pick(&DECKS);
+                    edit(&core, &mut n, d, "limits", json!({"new": rng.below(8), "review": rng.below(12)}));
+                }
+                67 => {
+                    edit(&core, &mut n, "R", "newOrder", json!(*rng.pick(&["position", "frequency"])));
+                }
+                68..=84 => now += rng.below(90) as i64 * 60_000,
+                85..=87 => {
+                    now += 20 * H + rng.below(10) as i64 * H;
+                    new_day = true;
+                }
+                88 => {
+                    day = Day { utc_offset_min: *rng.pick(&[0, 540, -300]), rollover_hour: *rng.pick(&[0, 4]) };
+                    new_day = true;
+                }
+                89..=94 if tx_depth == 0 => {
+                    exec(&core, "BEGIN", vec![]);
+                    tx_depth = 1;
+                }
+                89..=94 => {
+                    exec(&core, *rng.pick(&["COMMIT", "ROLLBACK"]), vec![]);
+                    tx_depth = 0;
+                }
+                95..=97 => {
+                    // 一段写在 SAVEPOINT 里又回滚掉（Drift 嵌套事务失败）。
+                    exec(&core, "SAVEPOINT t", vec![]);
+                    let id = rng.pick(&cards).clone();
+                    exec(&core, CARD_UPSERT, card_values(&mut rng, &id, today, now));
+                    let card = rng.pick(&cards).clone();
+                    log(&core, &mut logs, &card, now, "review", 2, "review");
+                    picked += compare(&core, &mut rng, now, day, &cards, step);
+                    exec(&core, "ROLLBACK TO t", vec![]);
+                    exec(&core, "RELEASE t", vec![]);
+                }
+                _ if step % 233 == 0 => {
+                    // 一条语句写超过攒满阈值：下次排队整份重建。
+                    exec(
+                        &core,
+                        "WITH RECURSIVE k(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM k WHERE i < ?) \
+                         INSERT OR REPLACE INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, queue, due_day, stability, last_reviewed_at) \
+                         SELECT printf('bulk%05d', i), ?, 'n', 't', 'Z', 'review', ?, 1.0 + (i % 7), ? - (i % 11) * 86400000 FROM k",
+                        vec![Sql::Integer(crate::store::queue::DIRTY_CAP as i64 + 10), Sql::Text(P.into()), Sql::Integer(today), Sql::Integer(now)],
+                    );
+                    new_day = true;
+                }
+                _ => {}
+            }
+            let before = core.study_hub.builds.load(AtomicOrdering::SeqCst);
+            picked += compare(&core, &mut rng, now, day, &cards, step);
+            let built = core.study_hub.builds.load(AtomicOrdering::SeqCst) - before;
+            if !new_day && step > 0 && day.index(now) == today {
+                assert_eq!(built, 0, "step {step}: no rebuild within a day");
+            }
+            builds_seen += built;
+        }
+        if tx_depth > 0 {
+            exec(&core, "ROLLBACK", vec![]);
+        }
+        assert!(builds_seen < 60, "rebuilt {builds_seen} times");
+        // 700 步 × 6 个根：大多数轮次真的出了卡（不是一直在比空结果）。
+        assert!(picked > 3000, "picked {picked}");
+        core.close();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 到期候选的块下界剪枝与逐张比相同：几千张卡里大量 R 相等（同稳定度 / 同上次作答）、上次作答在此刻之后（t < 0）、
+    /// 分母为零（NULL 排最前）；逐张删掉当前最低再取，序列与按 SQL 式子全排序一致。
+    #[test]
+    fn due_index_pops_in_sql_order() {
+        let mut rng = Rng(42);
+        let now = 1_760_000_000_000i64;
+        let dir = std::env::temp_dir().join(format!("ffsrs_due_index_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES ('O', ?, 'deck', '{}')", vec![Sql::Text(P.into())]);
+        let mut want: Vec<(Option<f64>, String)> = Vec::new();
+        for i in 0..3000 {
+            let id = format!("d{:05}", rng.below(1_000_000));
+            if want.iter().any(|(_, x)| *x == id) {
+                continue;
+            }
+            let stab = match rng.below(20) {
+                0 => None,
+                1 => Some(0.0),
+                2 => Some(-1.0),
+                _ => Some([0.3, 1.0, 4.0, 4.0, 17.5, 90.0][rng.below(6) as usize]),
+            };
+            let last = match rng.below(15) {
+                0 => None,
+                1 => Some(now + 3 * 86_400_000),
+                _ => Some(now - (rng.below(60) as i64) * 86_400_000 / 3),
+            };
+            exec(
+                &core,
+                "INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, queue, due_day, stability, last_reviewed_at) VALUES (?, ?, 'n', 't', 'O', 'review', 0, ?, ?)",
+                vec![Sql::Text(id.clone()), Sql::Text(P.into()), stab.map_or(Sql::Null, Sql::Real), last.map_or(Sql::Null, Sql::Integer)],
+            );
+            want.push((crate::store::queue::sql_r(now, last, stab), id));
+            let _ = i;
+        }
+        // 按 SQL 的 ORDER BY 取全序（库里排，不信 Rust 的比较）。
+        let order: Vec<String> = core
+            .read_visible(|c| {
+                let mut stmt = c
+                    .prepare(
+                        "SELECT id FROM srs_cards_cache ORDER BY 1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 ELSE (? - last_reviewed_at) / 86400000.0 END) \
+                         / (9.0 * COALESCE(stability, 1.0))), id",
+                    )
+                    .map_err(sql)?;
+                let v = stmt.query_map([now], |r| r.get::<_, String>(0)).map_err(sql)?.map(Result::unwrap).collect();
+                Ok(v)
+            })
+            .unwrap();
+        let mut ex: Vec<String> = Vec::new();
+        for expected in order.iter().take(400) {
+            let req = json!({"now": now, "utcOff": 0, "rollover": 0, "deck": "O", "pick": true, "exclude": ex});
+            // 上限放到很大（复习上限 200 会挡住）：直接问会话。
+            let got = core
+                .read_visible(|c| {
+                    core.study_hub.with_session(c, P, Day { utc_offset_min: 0, rollover_hour: 0 }, Day { utc_offset_min: 0, rollover_hour: 0 }.index(now), false, |s| {
+                        let exs: HashSet<&str> = ex.iter().map(String::as_str).collect();
+                        Ok(s.lowest_due(&["O"], now, &exs).map(|c| c.0))
+                    })
+                })
+                .unwrap();
+            assert_eq!(got.as_deref(), Some(expected.as_str()), "after excluding {} cards (req {req})", ex.len());
+            // 一半排除、一半真删（删走增量路径）。
+            if ex.len() % 2 == 0 {
+                ex.push(expected.clone());
+            } else {
+                exec(&core, "DELETE FROM srs_cards_cache WHERE id = ?", vec![Sql::Text(expected.clone())]);
+            }
+        }
+        core.close();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
