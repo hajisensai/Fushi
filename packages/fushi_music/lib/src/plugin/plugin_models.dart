@@ -223,6 +223,13 @@ enum MusicPluginQuality {
   );
 }
 
+/// 受信的插件签名公钥（base64）。只有用这些公钥签名的包才算「已验证」；其余签名只说明
+/// 「包没被改过、出自持有该私钥的人」，不说明发布者可信（任何人都能自签）。
+///
+/// 目前为空：本仓不内置任何平台插件、也没有官方插件仓库，谁来签、信任根怎么分发仍待所有者
+/// 决定（docs/specs/2026-10-28-music-plugins.md §6）。加公钥只改这里。
+const Set<String> kMusicPluginTrustedSigners = <String>{};
+
 /// 一个插件包（待安装或已安装）的校验摘要。
 class MusicPluginPackageInfo {
   const MusicPluginPackageInfo({
@@ -248,6 +255,10 @@ class MusicPluginPackageInfo {
   /// 签名公钥（base64）；null = 未签名。
   final String? signer;
   final List<String> files;
+
+  /// 签名公钥在 [kMusicPluginTrustedSigners] 里（UI 只对它显示「已验证」）。
+  bool get trustedSigner =>
+      signer != null && kMusicPluginTrustedSigners.contains(signer);
 }
 
 class MusicPluginArtistRef {

@@ -143,18 +143,60 @@ class MusicPluginManager {
     return MusicPluginPackageInfo.fromJson(r);
   }
 
-  /// 安装用户确认过的包（[digest] 来自 [inspect]）。同 id 覆盖升级，旧实例关闭。
-  Future<MusicPluginPackageInfo> install(Uint8List zip, String digest) async {
-    final Map<String, Object?> r = await MusicPluginNativeAsync.install(
-      zip,
-      rootDir.path,
-      digest,
+  /// 待装包 [info] 与已装的同 id 插件是否换了签名者（含「有签名 ↔ 无签名」、已装包校验失败）。
+  /// 没装过同 id 插件时为 false。换了签名者的包按新插件处理：[install] 会清掉旧插件的
+  /// 登录凭据与存储，不让别人用同一个 id 继承用户的登录态。
+  Future<bool> signerChanged(MusicPluginPackageInfo info) async {
+    final String id = info.manifest.id;
+    if (!_idPattern.hasMatch(id)) return false;
+    final Directory dir = Directory('${rootDir.path}/$id');
+    if (!dir.existsSync()) return false;
+    final Map<String, Object?> r = await MusicPluginNativeAsync.verify(
+      dir.path,
     );
-    if (r['error'] case final String e) throw MusicPluginException(e);
-    final MusicPluginPackageInfo info = MusicPluginPackageInfo.fromJson(r);
-    await _dropInstance(info.manifest.id);
-    _changes.add(null);
-    return info;
+    if (r['error'] != null) return true;
+    return MusicPluginPackageInfo.fromJson(r).signer != info.signer;
+  }
+
+  /// 安装用户确认过的包（[digest] 来自 [inspect]）。同 id 覆盖升级，旧实例关闭；签名者变了
+  /// （[signerChanged]）时清掉旧插件的凭据与存储，按新插件处理。
+  Future<MusicPluginPackageInfo> install(Uint8List zip, String digest) async {
+    final MusicPluginPackageInfo pending = await inspect(zip);
+    final String id = pending.manifest.id;
+    final bool reset = await signerChanged(pending);
+    if (reset) _uninstalling.add(id);
+    try {
+      if (reset) await _dropInstance(id);
+      final Map<String, Object?> r = await MusicPluginNativeAsync.install(
+        zip,
+        rootDir.path,
+        digest,
+      );
+      if (r['error'] case final String e) throw MusicPluginException(e);
+      final MusicPluginPackageInfo info = MusicPluginPackageInfo.fromJson(r);
+      await _dropInstance(info.manifest.id);
+      if (reset) {
+        _log(id, 'warn', '签名者与已安装版本不同：按新插件处理，已清除旧凭据与存储');
+        await _clearData(id);
+      }
+      _changes.add(null);
+      return info;
+    } finally {
+      if (reset) _uninstalling.remove(id);
+    }
+  }
+
+  /// 清掉插件的 `fushi.storage` 与加密凭据（卸载 / 换签名者覆盖安装）。
+  Future<void> _clearData(String id) async {
+    final File storage = storageFileFor(id);
+    if (storage.existsSync()) await storage.delete();
+    final Map<String, Object?> r = await MusicPluginNativeAsync.vault(
+      rootDir.path,
+      <String, Object?>{'op': 'clear', 'plugin': id},
+    );
+    if (r['error'] case final String e) {
+      throw MusicPluginException('清除插件凭据失败：$e', pluginId: id);
+    }
   }
 
   Future<void> setEnabled(String id, bool enabled) async {
@@ -173,12 +215,7 @@ class MusicPluginManager {
       await _dropInstance(id);
       final Directory dir = Directory('${rootDir.path}/$id');
       if (dir.existsSync()) await dir.delete(recursive: true);
-      final File storage = storageFileFor(id);
-      if (storage.existsSync()) await storage.delete();
-      await MusicPluginNativeAsync.vault(rootDir.path, <String, Object?>{
-        'op': 'clear',
-        'plugin': id,
-      });
+      await _clearData(id);
       final Map<String, bool> state = await _enabledState()
         ..remove(id);
       await _writeEnabled(state);

@@ -75,13 +75,17 @@ class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody> {
       final Uint8List bytes =
           file.bytes ?? await File(file.path!).readAsBytes();
       final MusicPluginPackageInfo info = await _manager.inspect(bytes);
+      final bool signerChanged = await _manager.signerChanged(info);
       if (!mounted) return;
       final bool ok = await showFushiConfirmDialog(
         context: context,
         title: t.music_plugins_install_title,
         icon: FushiIcons.browserExtension,
         confirmLabel: t.music_plugins_install_action,
-        content: MusicPluginPackageDetails(info: info),
+        content: MusicPluginPackageDetails(
+          info: info,
+          signerChanged: signerChanged,
+        ),
       );
       if (!ok) return;
       await _manager.install(bytes, info.digest);
@@ -265,9 +269,16 @@ class _PluginTile extends StatelessWidget {
 
 /// 插件包详情（安装确认 / 已装插件详情共用）：名称版本、说明、能力、权限、网络域名、签名。
 class MusicPluginPackageDetails extends StatelessWidget {
-  const MusicPluginPackageDetails({super.key, required this.info});
+  const MusicPluginPackageDetails({
+    super.key,
+    required this.info,
+    this.signerChanged = false,
+  });
 
   final MusicPluginPackageInfo info;
+
+  /// 待装包与已装的同 id 插件换了签名者（安装会清掉旧插件的登录与数据）。
+  final bool signerChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -311,20 +322,36 @@ class MusicPluginPackageDetails extends StatelessWidget {
         Row(
           spacing: tokens.spacing.gap * 0.5,
           children: <Widget>[
+            // 「已验证」只给受信公钥；自签名只说明包没被改过，不说明发布者可信。
             FushiIcon(
-              info.signer == null ? FushiIcons.warning : FushiIcons.verified,
+              info.trustedSigner ? FushiIcons.verified : FushiIcons.warning,
               size: 18,
             ),
             Expanded(
-              child: Text(
-                info.signer == null
-                    ? t.music_plugins_unsigned
-                    : t.music_plugins_signed(key: _shortKey(info.signer!)),
-                style: context.fushiType.bodySmall,
-              ),
+              child: Text(switch (info.signer) {
+                null => t.music_plugins_unsigned,
+                final String key when info.trustedSigner =>
+                  t.music_plugins_signed(key: _shortKey(key)),
+                final String key => t.music_plugins_self_signed(
+                  key: _shortKey(key),
+                ),
+              }, style: context.fushiType.bodySmall),
             ),
           ],
         ),
+        if (signerChanged)
+          Row(
+            spacing: tokens.spacing.gap * 0.5,
+            children: <Widget>[
+              const FushiIcon(FushiIcons.warning, size: 18),
+              Expanded(
+                child: Text(
+                  t.music_plugins_signer_changed,
+                  style: context.fushiType.bodySmall,
+                ),
+              ),
+            ],
+          ),
       ],
     );
   }
