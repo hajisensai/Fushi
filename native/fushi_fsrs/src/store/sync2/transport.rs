@@ -863,6 +863,10 @@ fn deliver_prepared(
             }
             Outcome::Ops(_) | Outcome::Deferred => public.ok_or("verified segment without a public key")?,
         };
+        if header.device != local.device && item.consumed == 0 {
+            // 签名与链都已验过：还有位置缺这台设备的这个段就留下原文，之后原样转发过去（relay.rs）。
+            super::relay::keep(c, profile, local, &header, bytes, ck.as_ref())?;
+        }
         let stream_err = |e: segment::SegmentError| format!("{}: {e}", header.device.text());
         let mut consumed = item.consumed;
         let mut exhausted = false;
@@ -1320,23 +1324,30 @@ impl SrsCore {
     /// 看 head：[heads] 是位置上各设备最新的 head 文件字节。返回要拉的段
     /// `{"fetch":[{"device","files":[相对路径]}], "fork": bool, "rejected":[设备], "devices":[...] }`。
     pub fn sync2_plan(&self, profile: &str, heads: &[Vec<u8>]) -> Result<Value, String> {
+        self.sync2_plan_at(profile, heads, None)
+    }
+
+    /// 同 [Self::sync2_plan]，[location] 给出时（这些 head 所在位置的进度身份，与发件同一个）还记下这个位置上有
+    /// 谁的哪些段：别的位置缺、只在这里有最新 head 的设备的段也列进要拉的（只为转发，relay.rs）。
+    pub fn sync2_plan_at(&self, profile: &str, heads: &[Vec<u8>], location: Option<&str>) -> Result<Value, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             let mut fetch = Vec::new();
             let mut rejected = Vec::new();
             let mut fork = false;
-            let mut best: BTreeMap<Id, Head> = BTreeMap::new();
+            let mut best: BTreeMap<Id, (Head, &[u8])> = BTreeMap::new();
             for bytes in heads {
                 let Ok(h) = Head::decode(bytes) else { continue };
                 if h.collection != local.collection {
                     continue;
                 }
-                if best.get(&h.device).is_none_or(|b| b.gen < h.gen) {
-                    best.insert(h.device, h);
+                if best.get(&h.device).is_none_or(|b| b.0.gen < h.gen) {
+                    best.insert(h.device, (h, bytes.as_slice()));
                 }
             }
-            for h in best.values() {
+            let mut trusted: Vec<(&Head, &[u8])> = Vec::new();
+            for (h, bytes) in best.values() {
                 if h.device == local.device {
                     // 自己的身份：远端比本机多，或同一 seq 上链值不同 = 有另一个安装在用同一个身份。
                     let ours = chain_at(c, profile, &local.device, h.seq)?;
@@ -1357,6 +1368,7 @@ impl SrsCore {
                     continue;
                 }
                 record_head(c, profile, h)?;
+                trusted.push((h, *bytes));
                 let applied: u64 = c
                     .query_row(
                         "SELECT applied FROM sync2_devices WHERE profile_uid = ?1 AND device = ?2",
@@ -1379,6 +1391,22 @@ impl SrsCore {
                     .collect();
                 if !files.is_empty() {
                     fetch.push(json!({"device": h.device.text(), "files": files, "own": false}));
+                }
+            }
+            // 只为转发要拉的（已应用过、当时没留原文的段）：并进同一设备的拉取清单。
+            for (device, names) in super::relay::note_heads(c, profile, &local, location, &trusted)? {
+                let dir = format!("devices/{}", device.text());
+                let extra: Vec<String> = names.into_iter().map(|n| format!("{dir}/{n}")).collect();
+                match fetch.iter_mut().find(|f| f["device"] == json!(device.text()) && f["own"] == json!(false)) {
+                    Some(f) => {
+                        let files = f["files"].as_array_mut().ok_or("plan: files")?;
+                        for p in extra {
+                            if !files.contains(&json!(p)) {
+                                files.push(json!(p));
+                            }
+                        }
+                    }
+                    None => fetch.push(json!({"device": device.text(), "files": extra, "own": false})),
                 }
             }
             Ok(json!({"fetch": fetch, "fork": fork, "rejected": rejected}))
