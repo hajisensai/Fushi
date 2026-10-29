@@ -5,7 +5,7 @@
   - 同一个钩子把**带着重号的文字**剔出引擎绘制件（防傍点被裁），墨水屏下这段文字就没有下划线——跟读线在着重号处断开（用户补充的现象）。真 Chrome（headless shell 1243）与小米平板 Chrome 156 均复现：「抱きしめて」段无线，前后有线。
   - 注音所在列丢线（用户截图）是同一条 `::highlight` 装饰线路径在用户设备的 WebView / 字体下的表现；本机 headless Chromium 与平板 Chrome 156 上这一段未丢线，未能在手头设备复现。
   - 「之前 Windows 也有」= BUG-3776（WebView2 上 VN 高亮条把字截断、傍点只剩一角），当时只修了彩色模式的路径。
-- **[x] ① 已修复** — `reader_content_styles.dart` `_einkOverrideCss`：墨水屏不再隐藏窄条层，查词 / 跟读 / 搜索三组窄条去掉底色，用 `::after` 在窄条块末端外侧画线（竖排在列左、横排在行下，与原下划线同位：查词 0.14em 实线、跟读 0.10em 实线、搜索双线）；这三类的 `::highlight`、ruby class、wrapper 不再加下划线，保持普通规则里的「透明底 + 继承字色」空操作，钩子整份不交给引擎。线随窄条层逐文本节点量出、跨注音并条，着重号文字照常有线、傍点不被裁。收藏色在墨水屏下维持原样（保留下划线、底色窄条隐藏）。翻页 / 滚动在墨水屏下原来靠 wrapper 下划线，现在同样由窄条层画线，三种 view mode 一致。
+- **[x] ① 已修复**（`4937b54cfc`）— `reader_content_styles.dart` `_einkOverrideCss`：墨水屏不再隐藏窄条层，查词 / 跟读 / 搜索三组窄条去掉底色，用 `::after` 在窄条块末端外侧画线（竖排在列左、横排在行下，与原下划线同位：查词 0.14em 实线、跟读 0.10em 实线、搜索双线）；这三类的 `::highlight`、ruby class、wrapper 不再加下划线，保持普通规则里的「透明底 + 继承字色」空操作，钩子整份不交给引擎。线随窄条层逐文本节点量出、跨注音并条，着重号文字照常有线、傍点不被裁。收藏色在墨水屏下维持原样（保留下划线、底色窄条隐藏）。翻页 / 滚动在墨水屏下原来靠 wrapper 下划线，现在同样由窄条层画线，三种 view mode 一致。
 - **[x] ② 已加自动化测试** — `fushi/test/reader/reader_eink_highlight_line_bug3874_test.dart`（+ `_harness.mjs`）：真 Chrome、生产 CSS（einkMode）+ 引擎壳 + 选区脚本，翻页 / 滚动 / VN × 横竖排，当前句跨注音词、两段着重号、换列：断言引擎不绘制当前句高亮，并沿每一行逐像素扫块末端外侧的线带——行首、行中缺口 ≤3px，行尾只允许标点墨迹收尾的 ≤0.5em。变异对照：换回 develop 版 CSS 后竖排 VN 红在「the engine still paints the cue highlight (7 ranges)」与「longest inner gap 176 px」（着重号段）。随改：`reader_eink_mode_test.dart`（线式标记改查窄条线规则）、`highlight_lanes_test.dart`（墨水屏不再隐藏窄条层）。
 - **三种 view mode**：测试覆盖翻页 / 滚动 / VN × 横竖排，全绿；本机截图对照三种模式墨水屏的线均从句首连到句尾。
 - **备注**：
