@@ -368,9 +368,14 @@ Map<String, Object?> srsBrowseCheckResult(
 /// 笔记最后改动时刻只在查询 / 按字段排序真用到时由原生侧从修改记录读一次，之后常驻。页面关掉时 [close]
 /// 释放原生侧内存。
 class SrsBrowseSession {
-  SrsBrowseSession(this.store);
+  SrsBrowseSession(this.store) : _owner = 'page:${_owners++}';
 
   final SrsDbStore store;
+
+  static int _owners = 0;
+
+  /// 本页面实例在原生会话上的持有者名：会话与 AnkiConnect 共用，[close] 只注销自己，最后一个持有者注销才释放。
+  final String _owner;
 
   /// 最近一次查询的结果（[query] 的 `since`：没有写入、条件没变时原生侧直接回同一份）。
   SrsBrowseResult? _last;
@@ -388,6 +393,7 @@ class SrsBrowseSession {
     final Map<String, Object?> r = srsBrowseCheckResult(
       (await store.browseCommand(<String, Object?>{
         'op': 'browse_query',
+        'owner': _owner,
         ...await srsBrowseContext(store),
         if (node is! SrsSearchAll) 'node': srsSearchNodeJson(node),
         'sort': <String, Object?>{
@@ -411,13 +417,17 @@ class SrsBrowseSession {
     );
   }
 
-  /// 释放原生侧的会话（字段文本可达几百 MB）。之后再 [query] 会重新建。库已经关了（页面 dispose 时发出的
+  /// 注销本页面对原生会话的持有；没有别的持有者（AnkiConnect、别的页面）时会话随之释放（字段文本可达几百 MB），
+  /// 之后再 [query] 会重新建。库已经关了（页面 dispose 时发出的
   /// 关闭排在关库之后）就什么都不用做：会话住在内核里，随内核一起释放了。
   Future<void> close() async {
     _last = null;
     if (store.core.isClosed) return;
     try {
-      await store.browseCommand(<String, Object?>{'op': 'browse_close'});
+      await store.browseCommand(<String, Object?>{
+        'op': 'browse_close',
+        'owner': _owner,
+      });
     } on SrsCoreException catch (e) {
       if (!e.message.contains('store is closed')) rethrow;
     }
@@ -425,7 +435,10 @@ class SrsBrowseSession {
 
   Future<SrsSync2Result> _command(Map<String, Object?> request) async {
     try {
-      return await store.browseCommand(request);
+      return await store.browseCommand(<String, Object?>{
+        ...request,
+        'owner': _owner,
+      });
     } on Object catch (e) {
       if ('$e'.contains('browse: result') ||
           '$e'.contains('browse: no session')) {

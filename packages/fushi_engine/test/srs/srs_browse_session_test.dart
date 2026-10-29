@@ -6,9 +6,11 @@ import 'dart:math';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
+import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
@@ -77,9 +79,27 @@ Future<List<String>> _probe(SrsBrowseSession session) async {
   return out;
 }
 
+/// 原生浏览会话的计数（`browse_stats`）：整份建会话的次数（全局）、这个会话整份建语料的次数、持有者。
+Future<({int sessions, int builds, bool live, List<Object?> owners})> _stats(
+  SrsDbStore s,
+) async {
+  final Map<String, Object?> m = (await s.browseCommand(<String, Object?>{
+    'op': 'browse_stats',
+  })).map;
+  return (
+    sessions: m['sessions']! as int,
+    builds: m['builds']! as int,
+    live: m['live']! as bool,
+    owners: m['owners']! as List<Object?>,
+  );
+}
+
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
+  // 增量语料（store/browse.rs `View::refresh`）：写过的笔记只重做自己的语料条目。每轮写入之后既要与新建的会话
+  // 逐项一致，又不许整份重建语料（计数不变；只有删牌组那一轮 Dart 传来的牌组名变了，重建一次）——关掉增量
+  // （写入后不重做条目）结果就对不上，改回「写了就整份重建」计数就对不上。
   test('增量会话与整份重建逐项一致（随机写入）', () async {
     int t = DateTime.utc(2026, 10, 10, 3).millisecondsSinceEpoch;
     final SrsDbStore s = await buildBrowseVecLibrary(() => t, (int v) => t = v);
@@ -92,14 +112,22 @@ void main() {
     String lapis(String k) => srsLapisFieldId(kBrowseVecProfile, k);
     int created = 0;
     int compared = 0;
+    final List<SrsNoteTypeView> types = <SrsNoteTypeView>[
+      for (final SrsNoteTypeView v in await s.noteTypes())
+        if (v.deletedAt == null && v.fields.isNotEmpty) v,
+    ];
+    expect(types.length, greaterThan(1));
+    int changed = 0;
     for (int round = 0; round < 12; round++) {
       // 先把字段列 / 修改时刻装进会话：之后的写入只能走增量。
       await _probe(session);
+      final ({int sessions, int builds, bool live, List<Object?> owners})
+      before = await _stats(s);
       for (int k = 0; k < 6; k++) {
         t += 60000 * (1 + rng.nextInt(90));
         final List<SrsBrowseRow> rows = await (await session.query()).all();
         final SrsBrowseRow row = rows[rng.nextInt(rows.length)];
-        switch (rng.nextInt(11)) {
+        switch (rng.nextInt(12)) {
           case 0:
             await s.setFlag(row.cardId, rng.nextInt(4));
           case 1:
@@ -136,6 +164,21 @@ void main() {
           case 9:
             // 跨日（会话不重建：日界只影响按此刻现算的列）。
             t += 86400000;
+          case 10:
+            // 换笔记类型：字段排布、模板（卡）都换了。
+            final SrsNoteTypeView from = (await s.noteType(
+              (await s.notes(<String>[row.noteId]))[row.noteId]!.noteTypeId,
+            ))!;
+            final SrsNoteTypeView to = types.firstWhere(
+              (SrsNoteTypeView v) => v.id != from.id,
+            );
+            await s.changeNoteType(
+              noteIds: <String>[row.noteId],
+              targetTypeId: to.id,
+              fieldMap: srsDefaultFieldMap(from, to),
+              templateMap: srsDefaultTemplateMap(from, to),
+            );
+            changed++;
           case _:
             final List<SrsCardCacheRow> cs = await s.cardsOfNote(row.noteId);
             if (cs.isNotEmpty) await s.resetCard(cs.first.id);
@@ -151,13 +194,71 @@ void main() {
         );
       }
       final List<String> incremental = await _probe(session);
+      final ({int sessions, int builds, bool live, List<Object?> owners})
+      after = await _stats(s);
+      expect(after.sessions, before.sessions, reason: 'round $round');
+      expect(
+        after.builds,
+        before.builds + (round == 7 ? 1 : 0),
+        reason: 'round $round: writes must patch the corpus per note',
+      );
       await session.close();
       final List<String> fresh = await _probe(session);
       expect(incremental, fresh, reason: 'round $round');
       compared += fresh.length;
     }
     expect(compared, 12 * _probes.length);
+    expect(changed, greaterThan(0));
     await session.close();
+  });
+
+  // 会话由浏览页与 AnkiConnect 共用（store/browse.rs `Sessions`）：浏览页关闭只注销自己，AnkiConnect 还在用就不
+  // 释放、下一个请求不重建；最后一个持有者注销才释放。
+  test('浏览页关闭不释放 AnkiConnect 还在用的会话；最后一个持有者注销才释放', () async {
+    int t = DateTime.utc(2026, 10, 10, 3).millisecondsSinceEpoch;
+    final SrsDbStore s = await buildBrowseVecLibrary(() => t, (int v) => t = v);
+    final SrsBrowseSession page = SrsBrowseSession(s);
+    final SrsAnkiConnectHandler ac = SrsAnkiConnectHandler(
+      store: () async => s,
+      instanceId: 'owner-test',
+    );
+    Future<List<Object?>> tags() async =>
+        (await s.browseCommand(<String, Object?>{
+              'op': 'anki_tags',
+              'owner': SrsAnkiConnectHandler.browseOwner,
+            })).map['tags']!
+            as List<Object?>;
+
+    await page.query(query: 'eat');
+    final List<Object?> before = await tags();
+    final ({int sessions, int builds, bool live, List<Object?> owners}) open =
+        await _stats(s);
+    expect(open.live, isTrue);
+    expect(open.owners, hasLength(2));
+
+    await page.close();
+    final ({int sessions, int builds, bool live, List<Object?> owners})
+    afterPage = await _stats(s);
+    expect(afterPage.live, isTrue);
+    expect(afterPage.owners, <Object?>[SrsAnkiConnectHandler.browseOwner]);
+    expect(await tags(), before);
+    expect((await _stats(s)).sessions, open.sessions);
+
+    // 浏览页重开：接着用同一个会话。
+    final SrsBrowseSession again = SrsBrowseSession(s);
+    await again.query(query: 'eat');
+    expect((await _stats(s)).sessions, open.sessions);
+    await again.close();
+
+    await ac.close();
+    final ({int sessions, int builds, bool live, List<Object?> owners}) closed =
+        await _stats(s);
+    expect(closed.live, isFalse);
+    expect(closed.owners, isEmpty);
+    // 再来一个请求：重新建。
+    expect(await tags(), before);
+    expect((await _stats(s)).sessions, open.sessions + 1);
+    await ac.close();
   });
 
   test('没有写入时同一条查询复用上次的结果；有写入就重算', () async {

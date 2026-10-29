@@ -845,7 +845,7 @@ fn sync2_command(
         "anki_resolve" => c.read_visible(|conn| crate::store::bulk::anki_resolve(conn, profile, req))?,
         // 卡片浏览的常驻会话（store/browse.rs）：查询（筛选 + 排序）、取行、取行 id、批量目标、关闭；AnkiConnect 的
         // 搜索 / 查重 / 标签走同一个会话。
-        "browse_query" | "browse_rows" | "browse_ids" | "browse_targets" | "browse_close" | "anki_find" | "anki_dupes" | "anki_tags" => {
+        "browse_query" | "browse_rows" | "browse_ids" | "browse_targets" | "browse_close" | "anki_find" | "anki_dupes" | "anki_tags" | "browse_stats" => {
             c.browse(op, profile, req, files)?
         }
         // 一组卡各自的血统（自己 + 全部前身，store/caches.rs `lineage_ids`）：卡片历史用。看得见本机写事务里未提交的行。

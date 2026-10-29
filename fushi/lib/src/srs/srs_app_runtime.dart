@@ -218,7 +218,9 @@ class SrsAppRuntime {
   Future<bool> _interconnectReady({bool allowBackground = false}) async {
     if (!app.isInitialised || !app.srsSync2MergeConfirmed) return false;
     final AppLifecycleState? state = WidgetsBinding.instance.lifecycleState;
-    if (!allowBackground && state != null && state != AppLifecycleState.resumed) {
+    if (!allowBackground &&
+        state != null &&
+        state != AppLifecycleState.resumed) {
       return false;
     }
     final SyncRepository repo = SyncRepository(app.database);
@@ -355,6 +357,13 @@ class SrsAppRuntime {
     }
     if (identical(app.srsAnkiConnectEndpoint, _endpoint)) {
       app.srsAnkiConnectEndpoint = null;
+    }
+    if (_endpoint case final SrsAnkiConnectEndpoint endpoint) {
+      unawaited(
+        endpoint.handler.close().catchError((Object e, StackTrace stack) {
+          ErrorLogService.instance.log('SrsAnkiConnect.close', e, stack);
+        }),
+      );
     }
     _endpoint = null;
     if (fushiAnkiConnectCompatInstanceId == instanceId) {

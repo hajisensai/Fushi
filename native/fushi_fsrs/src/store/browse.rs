@@ -417,20 +417,37 @@ fn interval_days(c: &Card) -> i64 {
 // ------------------------------------------------------------------ 搜索语料
 
 /// 由会话数据建的搜索语料与卡的自然顺序（笔记创建时刻、笔记 id、卡片序号、卡 id）。
+///
+/// **按笔记增量**：写过的笔记（字段、标签、换类型、增删卡、卡换牌组 / 模板、删除）只重做这几条笔记的语料条目
+/// （旧条目移出、新条目追加，[View::refresh]）；会话新装的字段列补传进现有语料（[View::upload_columns]）。整份
+/// 重建只在 Dart 传来的笔记类型结构 / 牌组名变了、或移出的条目攒得比活的还多时（[View::sparse]）。
 struct View {
     shape: u64,
     ctx: Value,
-    /// 语料里的第 i 张卡 = 会话卡槽 `order[i]`。
+    /// 语料卡 → 会话卡槽（[DEAD] = 已移出）。
     order: Vec<u32>,
-    /// 语料里的第 i 张卡属于语料笔记 `card_note[i]`；语料笔记 → 会话笔记槽。
+    /// 语料卡 → 语料笔记；语料笔记 → 会话笔记槽。
     card_note: Vec<u32>,
     note_slot: Vec<u32>,
-    /// 语料笔记 → 它的全部可见卡（语料卡下标，自然顺序）。
+    /// 语料笔记 → 它的全部可见卡（语料卡下标，自然顺序；已移出的笔记为空）。
     note_cards: Vec<Vec<u32>>,
+    /// 活的语料卡，按自然顺序。
+    natural: Vec<u32>,
+    /// 笔记 id → 它此刻的语料笔记。
+    note_of: HashMap<String, u32>,
     corpus: Corpus,
-    /// 语料的名字表（字符串 id → 原文）：把 [Needs::Names] 换回字段名。
+    /// 语料的名字表（字符串 id → 原文）：把 [Needs::Names] 换回字段名；[at] 是反查。
     strings: Vec<String>,
+    at: HashMap<String, u32>,
+    /// 笔记类型 id → 字段排布下标（建时为每个未删除的笔记类型各排一份）。
+    schema_of: HashMap<String, u32>,
+    /// 已传进语料的字段值：全部字段（0x1f 紧挨着）/ 这几列。
+    full: bool,
+    fields: HashSet<String>,
 }
+
+/// [View::order] 里已移出的卡。
+const DEAD: u32 = u32::MAX;
 
 struct Interner {
     text: String,
@@ -453,6 +470,17 @@ impl Interner {
     }
 }
 
+/// 自然顺序：笔记创建时刻、笔记 id、卡片序号、卡 id。
+fn natural_cmp(s: &Session, ctx: &Ctx, a: u32, b: u32) -> Ordering {
+    let (ca, cb) = (s.card(a), s.card(b));
+    let (na, nb) = (s.note(s.note_at[&ca.note]), s.note(s.note_at[&cb.note]));
+    na.created
+        .cmp(&nb.created)
+        .then_with(|| cmp16(&na.id, &nb.id))
+        .then_with(|| ctx.types[&na.ty].ordinal(ca).cmp(&ctx.types[&nb.ty].ordinal(cb)))
+        .then_with(|| cmp16(&ca.id, &cb.id))
+}
+
 impl View {
     fn build(s: &Session, ctx: &Ctx) -> Result<View, String> {
         // 可见卡：笔记在（未删除）、笔记类型在且没删。
@@ -460,30 +488,25 @@ impl View {
         for (slot, c) in s.cards.iter().enumerate() {
             let Some(c) = c else { continue };
             let Some(&ns) = s.note_at.get(&c.note) else { continue };
-            let n = s.notes[ns as usize].as_ref().expect("indexed note");
-            if ctx.types.get(&n.ty).is_some_and(|t| !t.deleted) {
+            if ctx.types.get(&s.note(ns).ty).is_some_and(|t| !t.deleted) {
                 order.push(slot as u32);
             }
         }
-        let note_of = |slot: u32| -> (u32, &Note) {
-            let c = s.cards[slot as usize].as_ref().expect("visible card");
-            let ns = s.note_at[&c.note];
-            (ns, s.notes[ns as usize].as_ref().expect("indexed note"))
-        };
-        let ordinal = |slot: u32| -> i64 {
-            let c = s.cards[slot as usize].as_ref().expect("visible card");
-            ctx.types[&note_of(slot).1.ty].ordinal(c)
-        };
-        let ords: HashMap<u32, i64> = order.iter().map(|&x| (x, ordinal(x))).collect();
+        let ords: HashMap<u32, i64> = order
+            .iter()
+            .map(|&x| {
+                let c = s.card(x);
+                (x, ctx.types[&s.note(s.note_at[&c.note]).ty].ordinal(c))
+            })
+            .collect();
         order.sort_by(|&a, &b| {
-            let (na, nb) = (note_of(a).1, note_of(b).1);
+            let (ca, cb) = (s.card(a), s.card(b));
+            let (na, nb) = (s.note(s.note_at[&ca.note]), s.note(s.note_at[&cb.note]));
             na.created
                 .cmp(&nb.created)
                 .then_with(|| cmp16(&na.id, &nb.id))
                 .then_with(|| ords[&a].cmp(&ords[&b]))
-                .then_with(|| {
-                    cmp16(&s.cards[a as usize].as_ref().unwrap().id, &s.cards[b as usize].as_ref().unwrap().id)
-                })
+                .then_with(|| cmp16(&ca.id, &cb.id))
         });
 
         let mut it = Interner {
@@ -492,9 +515,18 @@ impl View {
             at: HashMap::new(),
             strings: Vec::new(),
         };
-        let mut schema_of: HashMap<&str, u32> = HashMap::new();
+        // 每个未删除的笔记类型都排一份字段（不只现有笔记用到的）：后来新增的笔记直接用，字段名表也不随笔记变。
+        let mut type_ids: Vec<&String> = ctx.types.iter().filter(|(_, t)| !t.deleted).map(|(id, _)| id).collect();
+        type_ids.sort();
+        let mut schema_of: HashMap<String, u32> = HashMap::new();
         let mut schema_names: Vec<Vec<u32>> = Vec::new();
         let mut schema_alias: Vec<Vec<u32>> = Vec::new();
+        for id in type_ids {
+            let ty = &ctx.types[id];
+            schema_of.insert(id.clone(), schema_names.len() as u32);
+            schema_names.push(ty.slot_names.iter().map(|x| it.id(x)).collect());
+            schema_alias.push(ty.slot_alias.iter().map(|a| a.as_deref().map_or(search::NO_ALIAS, |a| it.id(a))).collect());
+        }
         let mut note_index: HashMap<u32, u32> = HashMap::new();
         let mut note_slot: Vec<u32> = Vec::new();
         let mut note_type: Vec<u32> = Vec::new();
@@ -505,30 +537,21 @@ impl View {
         let mut card_deck: Vec<u32> = Vec::with_capacity(order.len());
         let mut card_tpl: Vec<u32> = Vec::with_capacity(order.len());
         let mut note_cards: Vec<Vec<u32>> = Vec::new();
+        let mut note_of: HashMap<String, u32> = HashMap::new();
         for (vi, &slot) in order.iter().enumerate() {
-            let c = s.cards[slot as usize].as_ref().expect("visible card");
-            let (ns, n) = note_of(slot);
+            let c = s.card(slot);
+            let ns = s.note_at[&c.note];
+            let n = s.note(ns);
             let ty = &ctx.types[&n.ty];
             let vn = match note_index.get(&ns) {
                 Some(&v) => v,
                 None => {
                     let v = note_slot.len() as u32;
                     note_index.insert(ns, v);
+                    note_of.insert(n.id.clone(), v);
                     note_slot.push(ns);
                     note_type.push(it.id(&ty.name));
-                    let schema = match schema_of.get(n.ty.as_str()) {
-                        Some(&k) => k,
-                        None => {
-                            let k = schema_names.len() as u32;
-                            schema_names.push(ty.slot_names.iter().map(|x| it.id(x)).collect());
-                            schema_alias.push(
-                                ty.slot_alias.iter().map(|a| a.as_deref().map_or(search::NO_ALIAS, |a| it.id(a))).collect(),
-                            );
-                            schema_of.insert(n.ty.as_str(), k);
-                            k
-                        }
-                    };
-                    note_schema.push(schema);
+                    note_schema.push(schema_of[&n.ty]);
                     for t in &n.tags {
                         tag.push(it.id(t));
                     }
@@ -572,49 +595,184 @@ impl View {
         words.extend_from_slice(&card_note);
         words.extend_from_slice(&card_deck);
         words.extend_from_slice(&card_tpl);
-        let mut corpus = Corpus::new(it.text.as_bytes(), &words)?;
-
-        // 已装的字段原文挂进语料：全部字段都装了时同一条笔记的字段紧挨着、隔 0x1f（`n.flds` 直接切片）。
-        if s.full || !s.fields.is_empty() {
-            let mut text = String::new();
-            let mut fields: Vec<u32> = Vec::new();
-            let mut spans: Vec<u32> = Vec::new();
-            let mut base = 0usize;
-            for (vn, &ns) in note_slot.iter().enumerate() {
-                let n = s.notes[ns as usize].as_ref().expect("indexed note");
-                let ty = &ctx.types[&n.ty];
-                let schema = note_schema[vn] as usize;
-                let width = (schema_off[schema + 1] - schema_off[schema]) as usize;
-                for (k, fid) in ty.slot_ids.iter().enumerate().take(width) {
-                    if !s.full && !s.fields.contains(fid) {
-                        continue;
-                    }
-                    if s.full && k > 0 {
-                        text.push('\x1f');
-                    }
-                    let start = text.len();
-                    text.push_str(n.value(fid));
-                    if text.len() > u32::MAX as usize {
-                        return Err("browse: field text too large".into());
-                    }
-                    fields.push((base + k) as u32);
-                    spans.push(start as u32);
-                    spans.push(text.len() as u32);
-                }
-                base += width;
-            }
-            corpus.attach(text, &fields, &spans)?;
-        }
-        Ok(View {
+        let corpus = Corpus::new(it.text.as_bytes(), &words)?;
+        let natural: Vec<u32> = (0..order.len() as u32).collect();
+        let mut view = View {
             shape: s.shape,
             ctx: ctx.shape.clone(),
             order,
             card_note,
             note_slot,
             note_cards,
+            natural,
+            note_of,
             corpus,
             strings: it.strings,
-        })
+            at: it.at,
+            schema_of,
+            full: s.full,
+            fields: if s.full { HashSet::new() } else { s.fields.clone() },
+        };
+        let all: Vec<u32> = (0..view.note_slot.len() as u32).collect();
+        let only = if s.full { None } else { Some(&s.fields) };
+        if only.is_none_or(|f| !f.is_empty()) {
+            view.upload(s, ctx, &all, only)?;
+        }
+        Ok(view)
+    }
+
+    fn intern(&mut self, s: &str) -> Result<u32, String> {
+        if let Some(&i) = self.at.get(s) {
+            return Ok(i);
+        }
+        let i = self.corpus.push_str(s)?;
+        debug_assert_eq!(i as usize, self.strings.len());
+        self.strings.push(s.to_owned());
+        self.at.insert(s.to_owned(), i);
+        Ok(i)
+    }
+
+    /// 把语料笔记 [notes] 的字段原文传进语料：[only] = None 传全部字段（同一条笔记的字段紧挨着、隔 0x1f，
+    /// `n.flds` 直接切片），否则只传这几列。
+    fn upload(&mut self, s: &Session, ctx: &Ctx, notes: &[u32], only: Option<&HashSet<String>>) -> Result<(), String> {
+        let mut text = String::new();
+        let mut fields: Vec<u32> = Vec::new();
+        let mut spans: Vec<u32> = Vec::new();
+        for &vn in notes {
+            let n = s.note(self.note_slot[vn as usize]);
+            let ty = &ctx.types[&n.ty];
+            let range = self.corpus.note_fields(vn);
+            for (k, fid) in ty.slot_ids.iter().enumerate().take(range.len()) {
+                if only.is_some_and(|o| !o.contains(fid)) {
+                    continue;
+                }
+                if only.is_none() && k > 0 {
+                    text.push('\x1f');
+                }
+                let start = text.len();
+                text.push_str(n.value(fid));
+                if text.len() > u32::MAX as usize {
+                    return Err("browse: field text too large".into());
+                }
+                fields.push((range.start + k) as u32);
+                spans.push(start as u32);
+                spans.push(text.len() as u32);
+            }
+        }
+        if fields.is_empty() {
+            return Ok(());
+        }
+        self.corpus.attach(text, &fields, &spans)
+    }
+
+    /// 活的语料笔记。
+    fn live_notes(&self) -> Vec<u32> {
+        let mut v: Vec<u32> = self.note_of.values().copied().collect();
+        v.sort_unstable();
+        v
+    }
+
+    /// 会话新装的字段列补传进语料（全部字段装了 = 整份重传，紧挨着排）。
+    fn upload_columns(&mut self, s: &Session, ctx: &Ctx) -> Result<(), String> {
+        if self.full {
+            return Ok(());
+        }
+        if s.full {
+            let live = self.live_notes();
+            self.upload(s, ctx, &live, None)?;
+            self.full = true;
+            self.fields.clear();
+            return Ok(());
+        }
+        let missing: HashSet<String> = s.fields.difference(&self.fields).cloned().collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let live = self.live_notes();
+        self.upload(s, ctx, &live, Some(&missing))?;
+        self.fields.extend(missing);
+        Ok(())
+    }
+
+    /// 重做写过的笔记 [dirty]（笔记 id）的语料条目：旧条目连同它的卡移出，笔记还在、类型可见、有可见卡就追加
+    /// 新条目，卡按自然顺序插进 [natural]。
+    fn refresh(&mut self, s: &Session, ctx: &Ctx, dirty: &HashSet<String>) -> Result<(), String> {
+        if dirty.is_empty() {
+            return Ok(());
+        }
+        let mut killed: HashSet<u32> = HashSet::new();
+        for id in dirty {
+            let Some(vn) = self.note_of.remove(id) else { continue };
+            for x in std::mem::take(&mut self.note_cards[vn as usize]) {
+                self.order[x as usize] = DEAD;
+                self.corpus.kill_card(x);
+                killed.insert(x);
+            }
+            self.corpus.kill_note(vn);
+        }
+        if !killed.is_empty() {
+            self.natural.retain(|x| !killed.contains(x));
+        }
+        // 写过的笔记此刻的可见卡（扫一遍会话卡）。
+        let mut cards_of: HashMap<&str, Vec<u32>> = HashMap::new();
+        for (slot, c) in s.cards.iter().enumerate() {
+            if let Some(c) = c {
+                if dirty.contains(&c.note) {
+                    cards_of.entry(c.note.as_str()).or_default().push(slot as u32);
+                }
+            }
+        }
+        let mut added: Vec<u32> = Vec::new();
+        let mut ids: Vec<&String> = dirty.iter().collect();
+        ids.sort();
+        for id in ids {
+            let Some(&ns) = s.note_at.get(id) else { continue };
+            let n = s.note(ns);
+            let Some(ty) = ctx.types.get(&n.ty).filter(|t| !t.deleted) else { continue };
+            let Some(mut cards) = cards_of.remove(id.as_str()) else { continue };
+            let Some(&schema) = self.schema_of.get(&n.ty) else {
+                return Err("browse: note type missing from the corpus layout".into());
+            };
+            cards.sort_by(|&a, &b| natural_cmp(s, ctx, a, b));
+            let type_name = self.intern(&ty.name)?;
+            let mut tags: Vec<u32> = Vec::with_capacity(n.tags.len());
+            for t in &n.tags {
+                tags.push(self.intern(t)?);
+            }
+            let vn = self.corpus.push_note(type_name, schema, &tags)?;
+            debug_assert_eq!(vn as usize, self.note_slot.len());
+            self.note_slot.push(ns);
+            self.note_of.insert(id.clone(), vn);
+            let mut mine: Vec<u32> = Vec::with_capacity(cards.len());
+            for slot in cards {
+                let c = s.card(slot);
+                let deck = self.intern(&ctx.deck(&c.deck).0)?;
+                let tpl = self.intern(ty.template_name(c))?;
+                let x = self.corpus.push_card(vn, deck, tpl)?;
+                debug_assert_eq!(x as usize, self.order.len());
+                self.order.push(slot);
+                self.card_note.push(vn);
+                mine.push(x);
+                // 插进自然顺序（二分：活的卡按自然顺序排着）。
+                let at = self.natural.partition_point(|&y| natural_cmp(s, ctx, self.order[y as usize], slot) == Ordering::Less);
+                self.natural.insert(at, x);
+            }
+            self.note_cards.push(mine);
+            added.push(vn);
+        }
+        if !added.is_empty() {
+            let fields = self.fields.clone();
+            let only = if self.full { None } else { Some(&fields) };
+            if only.is_none_or(|f| !f.is_empty()) {
+                self.upload(s, ctx, &added, only)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 移出的卡比活的还多：整份重建更省（下标、数值列都按语料卡数算）。
+    fn sparse(&self) -> bool {
+        self.corpus.dead_cards() > 1024 && self.corpus.dead_cards() > self.natural.len()
     }
 }
 
@@ -699,6 +857,20 @@ struct Res {
     params: Value,
 }
 
+/// 各 profile 的浏览会话与它们的持有者。
+///
+/// 会话由浏览页（每个页面实例一个持有者）与 AnkiConnect 兼容层（一个持有者）共用：带 `owner` 的命令把它登记为
+/// 持有者，`browse_close` 只注销发命令的那一个，**最后一个持有者注销才释放会话**（字段原文可达几百 MB）。
+/// 选引用登记而不是「语料随内核常驻、按空闲 / 内存压力释放」：释放时机确定（页面关了、端点停了就还内存），
+/// 不需要计时器，也不会在有人还在用时被回收。持有者表与会话分开存：会话出错丢掉、整份重建时持有者照旧。
+#[derive(Default)]
+pub(crate) struct Sessions {
+    live: HashMap<String, Session>,
+    owners: HashMap<String, HashSet<String>>,
+    /// 整份建会话的次数（`browse_stats`）。
+    built: u64,
+}
+
 /// 一个 profile 的浏览会话。
 pub(crate) struct Session {
     cards: Vec<Option<Card>>,
@@ -709,9 +881,13 @@ pub(crate) struct Session {
     full: bool,
     /// 已为全部笔记装好的字段（[full] 时不用看）。
     fields: HashSet<String>,
-    /// 结构版本：变了搜索语料就要重建。
+    /// 结构版本：变了搜索语料就要整份重建（现在只有出错重建时用；写入走 [view_dirty] 按笔记增量）。
     shape: u64,
     view: Option<View>,
+    /// 语料建好之后写过的笔记（含增删卡、卡换牌组 / 模板的那几条笔记）：下次用语料前重做它们的条目。
+    view_dirty: HashSet<String>,
+    /// 整份建语料的次数（`browse_stats`：测试据此确认写入走的是增量）。
+    builds: u64,
     /// 最近几次查询的结果（新的在后；浏览页与控制通道可以同时各持一份）。
     results: Vec<Res>,
     /// AnkiConnect 查重的首字段规范形索引（第一次查重时建）。
@@ -761,6 +937,8 @@ impl Session {
             fields: HashSet::new(),
             shape: 0,
             view: None,
+            view_dirty: HashSet::new(),
+            builds: 0,
             results: Vec::new(),
             dupe: None,
             dupe_dirty: HashSet::new(),
@@ -816,19 +994,21 @@ impl Session {
                     (Some(card), Some(slot)) => {
                         let old = self.cards[slot as usize].as_ref().expect("indexed card");
                         if !old.same_shape(&card) {
-                            self.shape += 1;
+                            self.view_dirty.insert(old.note.clone());
+                            self.view_dirty.insert(card.note.clone());
                         }
                         self.cards[slot as usize] = Some(card);
                     }
                     (Some(card), None) => {
                         self.card_at.insert(id.clone(), self.cards.len() as u32);
+                        self.view_dirty.insert(card.note.clone());
                         self.cards.push(Some(card));
-                        self.shape += 1;
                     }
                     (None, Some(slot)) => {
                         self.card_at.remove(id);
-                        self.cards[slot as usize] = None;
-                        self.shape += 1;
+                        if let Some(old) = self.cards[slot as usize].take() {
+                            self.view_dirty.insert(old.note);
+                        }
                     }
                     (None, None) => {}
                 }
@@ -854,7 +1034,7 @@ impl Session {
                     (Some(n), Some(slot)) => {
                         let old = self.notes[slot as usize].as_ref().expect("indexed note");
                         if !old.same_shape(&n) {
-                            self.shape += 1;
+                            self.view_dirty.insert(id.clone());
                         }
                         self.notes[slot as usize] = Some(n);
                         present.push(id.clone());
@@ -862,23 +1042,23 @@ impl Session {
                     (Some(n), None) => {
                         self.note_at.insert(id.clone(), self.notes.len() as u32);
                         self.notes.push(Some(n));
-                        self.shape += 1;
+                        self.view_dirty.insert(id.clone());
                         present.push(id.clone());
                     }
                     (None, Some(slot)) => {
                         self.note_at.remove(id);
                         self.notes[slot as usize] = None;
-                        self.shape += 1;
+                        self.view_dirty.insert(id.clone());
                     }
                     (None, None) => {}
                 }
             }
         }
-        // 写过的笔记：已装的字段列 / 最后改动时刻按库里的修改记录重读（字段值进语料：结构变了）。
+        // 写过的笔记：已装的字段列 / 最后改动时刻按库里的修改记录重读（字段值在语料里：这几条笔记的条目重做）。
         if !present.is_empty() && (self.full || !self.fields.is_empty()) {
             let keys: Option<Vec<String>> = if self.full { None } else { Some(self.fields.iter().cloned().collect()) };
             self.load_values(c, profile, Some(&present), keys.as_deref())?;
-            self.shape += 1;
+            self.view_dirty.extend(present);
         }
         Ok(())
     }
@@ -982,7 +1162,6 @@ impl Session {
                 self.load_values(c, profile, None, None)?;
                 self.full = true;
                 self.fields.clear();
-                self.shape += 1;
             }
             Some(ids) => {
                 let missing: Vec<String> = ids.iter().filter(|f| !self.fields.contains(*f)).cloned().collect();
@@ -991,18 +1170,29 @@ impl Session {
                 }
                 self.load_values(c, profile, None, Some(&missing))?;
                 self.fields.extend(missing);
-                self.shape += 1;
             }
         }
         Ok(())
     }
 
+    /// 语料对上会话此刻：结构 / 上下文没变就按笔记增量补（写过的笔记、新装的字段列），否则（或移出的条目太多）
+    /// 整份重建。
     fn ensure_view(&mut self, ctx: &Ctx) -> Result<(), String> {
-        let fresh = self.view.as_ref().is_some_and(|v| v.shape == self.shape && v.ctx == ctx.shape);
-        if !fresh {
-            self.view = None;
-            self.view = Some(View::build(self, ctx)?);
+        let reusable = self.view.as_ref().is_some_and(|v| v.shape == self.shape && v.ctx == ctx.shape);
+        if reusable {
+            let mut v = self.view.take().expect("checked above");
+            let dirty = std::mem::take(&mut self.view_dirty);
+            v.upload_columns(self, ctx)?;
+            v.refresh(self, ctx, &dirty)?;
+            if !v.sparse() {
+                self.view = Some(v);
+                return Ok(());
+            }
         }
+        self.view = None;
+        self.view_dirty.clear();
+        self.view = Some(View::build(self, ctx)?);
+        self.builds += 1;
         Ok(())
     }
 
@@ -1058,8 +1248,8 @@ impl Session {
         }
         let keys: Vec<Key> = rows.iter().map(|(p, cs)| self.sort_key(view, &ctx, column, field.as_deref(), *p, cs)).collect();
         let mut idx: Vec<usize> = (0..rows.len()).collect();
-        // 值相同按自然顺序（主卡在语料里的位置就是自然顺序）。
-        idx.sort_by(|&a, &b| cmp_keys(&keys[a], &keys[b], asc).then_with(|| rows[a].0.cmp(&rows[b].0)));
+        // 值相同按自然顺序（行本身按命中的自然顺序排着）。
+        idx.sort_by(|&a, &b| cmp_keys(&keys[a], &keys[b], asc).then_with(|| a.cmp(&b)));
         let out_rows: Vec<Row> = idx
             .into_iter()
             .map(|i| {
@@ -1073,7 +1263,7 @@ impl Session {
             .collect();
         let gen = GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let count = out_rows.len();
-        let total = view.order.len();
+        let total = view.natural.len();
         if self.results.len() >= KEEP_RESULTS {
             self.results.remove(0);
         }
@@ -1129,7 +1319,7 @@ impl Session {
         }
         self.ensure_view(ctx)?;
         Ok(match &query {
-            None => Ok((0..self.view.as_ref().expect("view").order.len() as u32).collect()),
+            None => Ok(self.view.as_ref().expect("view").natural.clone()),
             Some(q) => {
                 let node = node.expect("query has a node");
                 self.set_columns(ctx, node)?;
@@ -1137,7 +1327,7 @@ impl Session {
                 let mut out = vec![0u8; view.order.len()];
                 match view.corpus.search(q, &mut out) {
                     Err(e) => Err(e),
-                    Ok(_) => Ok((0..out.len() as u32).filter(|&i| out[i as usize] != 0).collect()),
+                    Ok(_) => Ok(view.natural.iter().copied().filter(|&i| out[i as usize] != 0).collect()),
                 }
             }
         })
@@ -1153,6 +1343,14 @@ impl Session {
         let mut stab = Vec::with_capacity(n);
         let mut diff = Vec::with_capacity(n);
         for (i, &slot) in view.order.iter().enumerate() {
+            if slot == DEAD {
+                for col in &mut cols {
+                    col.push(0);
+                }
+                stab.push(f64::NAN);
+                diff.push(f64::NAN);
+                continue;
+            }
             let c = self.cards[slot as usize].as_ref().expect("visible card");
             let note = self.notes[view.note_slot[view.card_note[i] as usize] as usize].as_ref().expect("visible note");
             let ty = &ctx.types[&note.ty];
@@ -1539,12 +1737,42 @@ impl SrsCore {
     /// 浏览命令（ffi.rs 的 v2 分发器转来）：`browse_query` / `browse_rows` / `browse_ids` / `browse_targets` /
     /// `browse_close`，以及 AnkiConnect 兼容层的 `anki_find` / `anki_dupes` / `anki_tags`（同一个会话）。读快照（写连接上事务里则在 SAVEPOINT 里，看得见未提交的行）。
     pub(crate) fn browse(&self, op: &str, profile: &str, req: &Value, files: &mut Vec<(String, Vec<u8>)>) -> Result<Value, String> {
+        let owner = req.get("owner").and_then(Value::as_str);
         if op == "browse_close" {
-            lock(&self.browse).remove(profile);
-            return Ok(json!(true));
+            // 注销 [owner]（没带 = 旧调用方：按唯一持有者算）；没有持有者了才释放会话。
+            let mut b = lock(&self.browse);
+            let last = match owner {
+                Some(o) => {
+                    let set = b.owners.entry(profile.to_owned()).or_default();
+                    set.remove(o);
+                    set.is_empty()
+                }
+                None => true,
+            };
+            if last {
+                b.owners.remove(profile);
+                b.live.remove(profile);
+            }
+            return Ok(json!({"released": last}));
+        }
+        if op == "browse_stats" {
+            let b = lock(&self.browse);
+            let mut owners: Vec<&String> = b.owners.get(profile).into_iter().flatten().collect();
+            owners.sort();
+            let s = b.live.get(profile);
+            return Ok(json!({
+                "live": s.is_some(),
+                "sessions": b.built,
+                "builds": s.map_or(0, |s| s.builds),
+                "owners": owners,
+            }));
         }
         self.read_visible_tx(|c, uncommitted| {
-            let mut sessions = lock(&self.browse);
+            let mut b = lock(&self.browse);
+            if let Some(o) = owner {
+                b.owners.entry(profile.to_owned()).or_default().insert(o.to_owned());
+            }
+            let Sessions { live: sessions, built, .. } = &mut *b;
             // 先取待重读的 id 再开快照（这条连接这次读事务里第一条读在后面）。
             let dirty = self.study_hub.take_browse(profile, uncommitted);
             let fresh = dirty.overflow || !sessions.contains_key(profile);
@@ -1553,6 +1781,7 @@ impl SrsCore {
                 if op != "browse_query" && !op.starts_with("anki_") {
                     return Err("browse: no session (query first)".into());
                 }
+                *built += 1;
                 Session::build(c, profile).map(|s| {
                     sessions.insert(profile.to_owned(), s);
                 })
