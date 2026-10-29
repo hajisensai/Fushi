@@ -10,6 +10,7 @@ import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-3886：墨水屏下有声书当前句的线在注音词、着重号处断开，字形被切。
@@ -31,6 +32,8 @@ void main() {
       .replaceAll(RegExp(r'<rt>.*?</rt>'), '')
       .replaceAll(RegExp(r'<[^>]+>'), '');
   int units(String text) => text.replaceAll(RegExp('[、。]'), '').length;
+  String dataUri(String path) =>
+      'data:font/woff2;base64,${base64Encode(File(path).readAsBytesSync())}';
 
   Future<String> page({
     required String writingMode,
@@ -42,10 +45,24 @@ void main() {
     await settings.refreshFromDb();
     await settings.setWritingMode(writingMode);
     await settings.setViewMode(viewMode);
-    final String css = ReaderContentStyles.css(
-      settings: settings,
-      einkMode: true,
-    );
+    // 正文用随测试入库的 CJK 子集字体（Noto Sans JP，只含本页用字，带 vmtx / vert），竖排标点子集
+    // 换成 data URI：Linux CI 没有 CJK 字体，回退字形的宽度会让句子不换行、取样带错位；宿主字体
+    // 不同也会让线与字形盒的相对位置逐机不同。harness 断言这两款字体都已加载。
+    final String css =
+        ReaderContentStyles.css(
+          settings: settings,
+          einkMode: true,
+          fontFaces:
+              '@font-face { font-family: "$_fixtureFamily"; '
+              'src: url("${dataUri('test/reader/fixtures/eink_cjk_subset.woff2')}") '
+              'format("woff2"); }',
+          fontFamily: '"$_fixtureFamily"',
+        ).replaceAll(
+          ReaderCustomFontCss.resourceUrl(
+            ReaderVerticalPunctuationFont.urlPath,
+          ),
+          dataUri(ReaderVerticalPunctuationFont.assetKey),
+        );
     final bool vn = viewMode == 'vn';
     final String engine = ReaderPaginationScripts.engineShell(
       vnMode: vn,
@@ -144,6 +161,9 @@ void main() {
     timeout: const Timeout(Duration(seconds: 120)),
   );
 }
+
+/// 测试夹具 CJK 字体的 family 名；harness 按同名断言它已加载。
+const String _fixtureFamily = 'Fushi Eink Fixture CJK';
 
 /// Resolve Node before launching the browser harness so missing CI tools skip.
 String? _resolveNode() {

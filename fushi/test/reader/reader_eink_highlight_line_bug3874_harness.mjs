@@ -19,6 +19,17 @@ const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));  // NOSONA
 const PLAY = String.raw`(async () => {
   const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   await new Promise((r) => setTimeout(r, 700));
+  // The page must be laid out in the fixture fonts the Dart test embeds, not a host fallback:
+  // the fallback's glyph widths decide whether the cue wraps and where its lines sit.
+  await document.fonts.ready;
+  const faces = [...document.fonts];
+  const face = (family) => faces.find((f) => f.family.replace(/["']/g, '') === family);
+  const body = face('Fushi Eink Fixture CJK');
+  if (!body || body.status !== 'loaded') {
+    return { error: 'fixture CJK font not loaded (' + (body ? body.status : 'no @font-face') + ')' };
+  }
+  const punct = face('Fushi Vertical Punctuation');
+  if (punct && punct.status === 'error') return { error: 'vertical punctuation subset failed to load' };
   window.fushiReader.highlightSentenceAudioCue('c1', true);
   await frames();
   await new Promise((r) => setTimeout(r, 200));
@@ -62,16 +73,27 @@ const PLAY = String.raw`(async () => {
     line.boxes.push(b);
   });
   const em = parseFloat(getComputedStyle(document.body).fontSize);
+  // The line is drawn just outside the block-end edge of the cue's lane strips (the 1em strip
+  // the lane layer lays over each visual line), so the band sits across that edge. A text
+  // range's box spans the font's ascent + descent, which is font-dependent and wider than the
+  // em box, so it cannot place the band; it only gives the extent along the line.
+  const lanes = [...document.querySelectorAll('fushi-hl-lane[data-hl="fushi-sentence-audio"]')]
+    .map((el) => el.getBoundingClientRect()).filter((r) => r.width && r.height);
   const bands = lines.map((l) => {
     const a = Math.min(...l.boxes.map((b) => vertical ? b.t : b.l));
     const z = Math.max(...l.boxes.map((b) => vertical ? b.b : b.r));
     const text = l.boxes.map((b) => b.ch).join('');
+    const mine = lanes.filter((r) => {
+      const c = vertical ? (r.left + r.right) / 2 : (r.top + r.bottom) / 2;
+      return l.boxes.some((b) => vertical ? c > b.l && c < b.r : c > b.t && c < b.b);
+    });
+    if (!mine.length) return { text, error: 'no lane strip over this line' };
     if (vertical) {
-      const edge = Math.min(...l.boxes.map((b) => b.l));
-      return { text, rect: { x: Math.floor(edge - 0.45 * em), y: Math.ceil(a), width: Math.round(0.35 * em), height: Math.floor(z - a) } };
+      const edge = Math.min(...mine.map((r) => r.left));
+      return { text, rect: { x: Math.floor(edge - 0.4 * em), y: Math.ceil(a), width: Math.round(0.35 * em), height: Math.floor(z - a) } };
     }
-    const edge = Math.max(...l.boxes.map((b) => b.b));
-    return { text, rect: { x: Math.ceil(a), y: Math.ceil(edge + 0.1 * em), width: Math.floor(z - a), height: Math.round(0.35 * em) } };
+    const edge = Math.max(...mine.map((r) => r.bottom));
+    return { text, rect: { x: Math.ceil(a), y: Math.ceil(edge + 0.05 * em), width: Math.floor(z - a), height: Math.round(0.35 * em) } };
   });
   // What the engine itself paints for the cue (the hooked get() returns the caller's ranges).
   const painted = typeof HighlightRegistry === 'function'
@@ -147,6 +169,10 @@ function lineGaps(png64, vertical) {
 }
 
 const driver = await launchChromeDriver();
+// --window-size only sizes the window; the viewport the page gets is smaller by the browser's
+// own chrome and differs per platform. Pin it to the 1280x800 page the Dart config describes.
+// snap() is the driver's only Emulation.setDeviceMetricsOverride entry.
+await driver.snap('<!doctype html><body></body>', null, 1280, 800);
 const failures = [];
 let checked = 0;
 try {
@@ -159,6 +185,7 @@ try {
     // Blink clips the glyph ink of any text a live CSS highlight covers (BUG-3776).
     if (play.painted) fail('the engine still paints the cue highlight (' + play.painted + ' ranges)');
     for (const band of play.bands) {
+      if (band.error) { fail(band.error + ' 「' + band.text + '」'); continue; }
       const g = lineGaps(await driver.capture(band.rect), play.vertical);
       // The lane ends at the ink of line-final punctuation (。 sits in the first half of its box),
       // so the line may stop up to half an em early; anywhere else a gap is a break.
