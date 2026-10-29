@@ -461,10 +461,20 @@ final class SrsCore {
     ];
   });
 
-  /// 在写连接上执行一条语句（Drift 执行器后端，见 fushi_engine `srs_database_executor.dart`）。
-  /// [select] 时返回「列名行 + 结果行」，否则返回一行 `[变更行数, last_insert_rowid]`；都是
-  /// [srsDecodeRows] 的页。
+  /// 在写连接上执行一条语句（Drift 执行器的写语句与 `runCustom` 后端，见 fushi_engine
+  /// `srs_database_executor.dart`）。[select] 时返回「列名行 + 结果行」，否则返回一行
+  /// `[变更行数, last_insert_rowid]`；都是 [srsDecodeRows] 的页。事务控制语句（BEGIN / COMMIT /
+  /// SAVEPOINT）必须走这里：内核据此知道 Drift 事务是否开着（[execQuery] 的选路）。
   Uint8List exec(String sql, List<Object?> params, {required bool select}) =>
+      _exec(sql, params, select ? 1 : 0);
+
+  /// Drift 的查询（`runSelect`）：Drift 事务开着时在写连接上跑（看得见事务里未提交的行），否则只读查询走
+  /// 内核的读连接快照、不排写锁（native/fushi_fsrs/src/store/mod.rs `SrsCore::select`）。返回页同 [exec] 的查询。
+  Uint8List execQuery(String sql, List<Object?> params) =>
+      _exec(sql, params, 2);
+
+  /// [mode]：0 = 写语句，1 = 写连接上返回结果行的语句，2 = 选路查询（ffi.rs `ffsrs_store_exec`）。
+  Uint8List _exec(String sql, List<Object?> params, int mode) =>
       using((Arena arena) {
         final (ffi.Pointer<ffi.Uint8> s, int sn) = _utf8(arena, sql);
         final Uint8List encoded = params.isEmpty
@@ -477,17 +487,7 @@ final class SrsCore {
         err.value = ffi.nullptr;
         _check(
           _b,
-          _b.exec(
-            _h,
-            s,
-            sn,
-            pp,
-            encoded.length,
-            select ? 1 : 0,
-            out,
-            outLen,
-            err,
-          ),
+          _b.exec(_h, s, sn, pp, encoded.length, mode, out, outLen, err),
           err,
         );
         final int len = outLen.value;

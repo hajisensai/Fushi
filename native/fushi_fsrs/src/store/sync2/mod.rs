@@ -1167,23 +1167,35 @@ pub(crate) fn append_local(conn: &Connection, local: &mut Local, applied: &mut V
     Ok(op)
 }
 
+/// [SrsCore::sync2_identity] 的结果。
+fn identity_json(l: &Local) -> Value {
+    json!({
+        "device": l.device.text(),
+        "collection": l.collection.text(),
+        "nextSeq": l.next_seq,
+        "migrated": l.migrated,
+        "name": l.name,
+        "public": l.key.public().iter().map(|b| format!("{b:02x}")).collect::<String>(),
+    })
+}
+
 impl SrsCore {
     /// 本机身份（没有就建）。返回 `{device, collection, nextSeq, migrated, name}`。
+    ///
+    /// 身份已在（每轮同步、开库都走这里，绝大多数情况）只是一次读：走读连接的快照，不排写锁
+    /// （[SrsCore::read_visible]；Drift 事务开着时照旧在写连接上读）。只有还没有身份时才进写连接，
+    /// 在 SAVEPOINT 里重查一遍再建（两个调用方同时看到「没有」，后进写锁的那个读到先建的那份，不会建两份）。
     pub fn sync2_identity(&self, profile: &str, now: i64) -> Result<Value, String> {
+        if let Some(l) = self.read_visible(|c| Local::load(c, profile))? {
+            return Ok(identity_json(&l));
+        }
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let l = match Local::load(c, profile)? {
                 Some(l) => l,
                 None => Local::create(c, profile, now)?,
             };
-            Ok(json!({
-                "device": l.device.text(),
-                "collection": l.collection.text(),
-                "nextSeq": l.next_seq,
-                "migrated": l.migrated,
-                "name": l.name,
-                "public": l.key.public().iter().map(|b| format!("{b:02x}")).collect::<String>(),
-            }))
+            Ok(identity_json(&l))
         })
     }
 
@@ -1491,9 +1503,11 @@ impl SrsCore {
     /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
     /// 确定性 FSRS 算四个按钮的结果。[note] = 卡所属笔记（新卡没有日志时据它找牌组）。日界用调用方此刻的口径
     /// （与写进日志的 utcOff / rollover 相同）。
+    ///
+    /// 只读（牌组树、血统日志、修改记录全是 SELECT，重放与 FSRS 是纯计算）：走读连接的快照，复习时每张卡的
+    /// 预览不排在同步投递 / 缓存刷新这类长写后面（[SrsCore::read_visible]；Drift 事务开着时照旧在写连接上）。
     pub fn sync2_preview(&self, profile: &str, card: &str, note: Option<&str>, now: i64, utc_off: i64, rollover: i64) -> Result<Value, String> {
-        let w = self.writer()?;
-        in_savepoint(&w, |c| {
+        self.read_visible(|c| {
             let tree = config::DeckTree::load(c, profile)?;
             let Group { rows, note: group_note } = group_of(c, card, note)?;
             // 此刻的生效配置：预览的是「现在作答」，作答落库时 `sc` 记下的也是这一份（[stamp_config]）。
