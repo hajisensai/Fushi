@@ -773,7 +773,7 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &[Vec<u8>], files
 }
 
 /// 改投影的 v2 命令（结果带 `marks`）：分发器在同一次调用里刷新缓存行。
-const PROJECTING_OPS: [&str; 9] = ["apply", "ingest", "ingest_batch", "ingest_finish", "import", "resolve", "purge", "checkpoint", "restore"];
+const PROJECTING_OPS: [&str; 10] = ["apply", "ingest", "ingest_batch", "ingest_commit", "ingest_finish", "import", "resolve", "purge", "checkpoint", "restore"];
 
 fn sync2_command(
     c: &SrsCore,
@@ -836,6 +836,9 @@ fn sync2_command(
         "ingest" => parse(c.sync2_ingest(profile, blobs, key32(&req["key"])?, i("now")?)?)?,
         "ingest_begin" => c.sync2_ingest_begin(profile)?,
         "ingest_batch" => parse(c.sync2_ingest_batch(profile, blobs, key32(&req["key"])?, i("now")?)?)?,
+        // 拆开的一批：prepare 在写锁外解码验签（Dart 侧也不进写锁），commit 在写锁里投递。
+        "ingest_prepare" => c.sync2_ingest_prepare(profile, blobs, key32(&req["key"])?)?,
+        "ingest_commit" => parse(c.sync2_ingest_commit(profile, i("now")?)?)?,
         "ingest_finish" => parse(c.sync2_ingest_finish(profile, i("now")?)?)?,
         "rotate" => c.sync2_rotate(profile, i("now")?)?,
         "export" => {

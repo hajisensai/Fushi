@@ -995,20 +995,26 @@ class SrsDbStore implements SrsSync2Host {
   Future<void> sync2IngestBegin() =>
       runExclusive(() => _sync2(const <String, Object?>{'op': 'ingest_begin'}));
 
+  /// 收一批分两步：`ingest_prepare` 不进写锁（解压、解密、验签、重算链，手机上一批要一两秒，这期间本机作答照常
+  /// 写入；内核也只在读连接上短暂取公钥），`ingest_commit` 在写锁里投递预处理好的那批。预处理只读已提交的数据，
+  /// 之后公钥 / 身份变了内核在投递时按当时的重验，结果与在写锁里一步收完相同。
   @override
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
-  }) => _sync2IngestStep(<String, Object?>{
-    'op': 'ingest_batch',
-    'key': keyHex,
-  }, segments);
+  }) async {
+    await _sync2(<String, Object?>{
+      'op': 'ingest_prepare',
+      'key': keyHex,
+    }, blobs: segments);
+    return _sync2IngestStep(const <String, Object?>{'op': 'ingest_commit'});
+  }
 
   @override
   Future<Map<String, Object?>> sync2IngestFinish() =>
       _sync2IngestStep(const <String, Object?>{'op': 'ingest_finish'});
 
-  /// 收段会话的一步（收一批 / 收尾换身份）：写锁里跑，投影变化接进本机缓存。
+  /// 收段会话的一步（投递一批 / 收尾换身份）：写锁里跑，投影变化接进本机缓存。
   Future<Map<String, Object?>> _sync2IngestStep(
     Map<String, Object?> request, [
     List<Uint8List> segments = const <Uint8List>[],
@@ -1163,6 +1169,7 @@ class SrsDbStore implements SrsSync2Host {
     'apply',
     'ingest',
     'ingest_batch',
+    'ingest_commit',
     'ingest_finish',
     'import',
     'resolve',
