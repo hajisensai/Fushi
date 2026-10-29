@@ -73,6 +73,10 @@ pub struct SrsCore {
     #[cfg(test)]
     #[allow(clippy::type_complexity)]
     pub(crate) ingest_prepare_hook: Mutex<Option<Box<dyn Fn() + Send>>>,
+    /// 测试钩子：收段的一片投递完、提交之前（还持着写锁、事务没结束）调用，参数是这个库本身。
+    #[cfg(test)]
+    #[allow(clippy::type_complexity)]
+    pub(crate) ingest_commit_hook: Mutex<Option<Box<dyn Fn(&SrsCore) + Send>>>,
 }
 
 /// 一条独立的只读连接 + 一个读事务（[SrsCore::read_session]）：整段读取看到开会话那一刻的快照，
@@ -85,6 +89,9 @@ pub struct ReadSession {
 
 /// 打开着的一条连接（[SrsCore::reader] / [SrsCore::writer]），持有它就持有那把锁。写连接的守卫带着常驻复习队列：
 /// 释放时写连接已回到 autocommit（事务提交或回滚完）就把触发器记下的「未提交」id 挪成「已提交」（store/queue.rs）。
+/// 这一步晚于 COMMIT 对别的连接可见，且没法与 COMMIT 原子：SQLite 的 commit hook 在提交可见之前调（提前挪会让读快照
+/// 取走 id 却看不到提交 → 永远漏读），提交之后才有的回调与这里一样晚。所以正确性不靠挪的时机：排队的读路径连
+/// 「未提交」的 id 一起重读（只读不清，store/queue.rs `with_session`），这里只负责尽早把它们挪成可清的。
 pub(crate) struct Conn<'a>(MutexGuard<'a, Option<Connection>>, Option<&'a queue::StudyHub>);
 
 impl<'a> Conn<'a> {
@@ -258,6 +265,8 @@ impl SrsCore {
             browse: Mutex::new(browse::Sessions::default()),
             #[cfg(test)]
             ingest_prepare_hook: Mutex::new(None),
+            #[cfg(test)]
+            ingest_commit_hook: Mutex::new(None),
         })
     }
 

@@ -370,11 +370,18 @@ impl SrsCore {
     }
 
     /// 确认一批转发已经写到 [location]（[paths] = 那一批的相对路径）。返回 `{"delete": [相对路径]}`：被新转发的 head
-    /// 取代的、本机之前转发到这个位置的旧 head 与旧转发件（归档位置由调用方跳过删除）。
+    /// 取代的、本机之前转发到这个位置的旧 head 与旧转发件（归档位置由调用方跳过删除）。清单里的文件留在待删表
+    /// （`sync2_relay_gone`）里，调用方删成功（或归档位置按策略跳过）后发 `obsolete_ack` 才移除。
     pub fn sync2_relay_ack(&self, profile: &str, location: &str, paths: &[String]) -> Result<Value, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
-            let mut delete = Vec::new();
+            for path in paths {
+                // 刚写上去的文件不能再按旧的待删记录删掉（同名转发件可能被重新转发）。
+                c.prepare_cached("DELETE FROM sync2_relay_gone WHERE profile_uid = ?1 AND location = ?2 AND path = ?3")
+                    .map_err(sql)?
+                    .execute(params![profile, location, path])
+                    .map_err(sql)?;
+            }
             for path in paths {
                 let Some((device, file)) = split_path(path) else { continue };
                 if let Some(rest) = file.strip_prefix("rly-") {
@@ -425,7 +432,12 @@ impl SrsCore {
                         !names.contains(n) && *g != 0 && *g < prev_head
                     };
                     if gone {
-                        delete.push(format!("{dir}/{}", if n.starts_with("head-") { n.clone() } else { segment::relay_file_name(n) }));
+                        // 两段式：先记进待删表，Dart 删成功后 `obsolete_ack` 才移除（删到一半失败的下一轮再删）。
+                        let file = format!("{dir}/{}", if n.starts_with("head-") { n.clone() } else { segment::relay_file_name(n) });
+                        c.prepare_cached("INSERT OR IGNORE INTO sync2_relay_gone (profile_uid, location, path) VALUES (?1, ?2, ?3)")
+                            .map_err(sql)?
+                            .execute(params![profile, location, file])
+                            .map_err(sql)?;
                         c.prepare_cached("DELETE FROM sync2_relay_out WHERE profile_uid = ?1 AND location = ?2 AND device = ?3 AND name = ?4")
                             .map_err(sql)?
                             .execute(params![profile, location, device.0.to_vec(), n])
@@ -444,6 +456,14 @@ impl SrsCore {
                 .map_err(sql)?;
                 prune(c, profile, &device)?;
             }
+            // 这个位置上全部还没确认删掉的转发清理（含之前删到一半失败的）。
+            let delete: Vec<String> = c
+                .prepare_cached("SELECT path FROM sync2_relay_gone WHERE profile_uid = ?1 AND location = ?2 ORDER BY path")
+                .map_err(sql)?
+                .query_map(params![profile, location], |r| r.get(0))
+                .map_err(sql)?
+                .collect::<Result<_, _>>()
+                .map_err(sql)?;
             Ok(json!({"delete": delete}))
         })
     }

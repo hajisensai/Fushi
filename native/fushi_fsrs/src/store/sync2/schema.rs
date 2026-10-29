@@ -295,6 +295,17 @@ CREATE TABLE IF NOT EXISTS sync2_replay_pending (
 ) WITHOUT ROWID;
 "#;
 
+/// V14（集成审查【中】）：转发清理两段式（relay.rs `sync2_relay_ack`）。被新转发 head 取代的旧转发件 / 旧转发 head
+/// 从 `sync2_relay_out` 挪到这里等删，Dart 删成功后发 `obsolete_ack` 才移除；删除中途失败的下一轮照样再删。
+pub const V14_RELAY_GONE: &str = r#"
+CREATE TABLE IF NOT EXISTS sync2_relay_gone (
+  profile_uid TEXT NOT NULL,
+  location TEXT NOT NULL,
+  path TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, location, path)
+) WITHOUT ROWID;
+"#;
+
 /// 表 [table] 有没有列 [column]（ALTER 不带 IF NOT EXISTS，靠它让迁移可重放）。
 fn has_column(c: &rusqlite::Connection, table: &str, column: &str) -> Result<bool, String> {
     c.query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"), [column], |r| r.get::<_, i64>(0))

@@ -885,8 +885,8 @@ fn sync2_command(
                     files.push((path, bytes));
                     json!({"gen": gen, "delete": obsolete})
                 }
-                crate::store::sync2::transport::HeadWrite::Unchanged { path } => {
-                    json!({"unchanged": true, "path": path})
+                crate::store::sync2::transport::HeadWrite::Unchanged { path, obsolete } => {
+                    json!({"unchanged": true, "path": path, "delete": obsolete})
                 }
             }
         }
@@ -906,6 +906,12 @@ fn sync2_command(
             *files = batch.files;
             json!({"more": batch.more})
         }
+        // 两段式删除：`head` / `relay_ack` 给的待删清单里 Dart 已经删掉（归档位置：按策略不删）的那些，内核移除记录。
+        "obsolete_ack" => {
+            let deleted: Vec<String> =
+                req.get("deleted").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
+            json!({"removed": c.sync2_obsolete_ack(profile, s("location")?, &deleted)?})
+        }
         "relay_ack" => {
             let paths: Vec<String> = req.get("paths").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
             c.sync2_relay_ack(profile, s("location")?, &paths)?
@@ -918,10 +924,11 @@ fn sync2_command(
         "ingest_prepare" => c.sync2_ingest_prepare(profile, std::mem::take(blobs), key32(&req["key"])?)?,
         // 一次投一片（默认按时间切、有写入排队就让出；测试用 `sliceOps` 按条数切、`sliceMs` 改时间上限）；结果
         // `more` 为真 Dart 放开写锁再调。
-        "ingest_commit" => parse(c.sync2_ingest_commit(profile, i("now")?, slice_budget(c, req))?)?,
+        // `localState`：Dart 的本机状态行，与这一片同一笔事务写下（收段不套 Drift 事务，见 `sync2_ingest_commit_persisting`）。
+        "ingest_commit" => parse(c.sync2_ingest_commit_persisting(profile, i("now")?, slice_budget(c, req), req.get("localState").and_then(Value::as_str))?)?,
         // 收尾：换身份 + 重放各片记下的待重放卡（按片，`more` 为真 Dart 放开写锁后用 replay_pending 接着放，审查 S-4）。
-        "ingest_finish" => parse(c.sync2_ingest_finish_within(profile, i("now")?, slice_budget(c, req))?)?,
-        "replay_pending" => parse(c.sync2_replay_pending(profile, slice_budget(c, req))?)?,
+        "ingest_finish" => parse(c.sync2_ingest_finish_persisting(profile, i("now")?, slice_budget(c, req), req.get("localState").and_then(Value::as_str))?)?,
+        "replay_pending" => parse(c.sync2_replay_pending_persisting(profile, slice_budget(c, req), req.get("localState").and_then(Value::as_str))?)?,
         "rotate" => c.sync2_rotate(profile, i("now")?)?,
         "export" => {
             files.push(("export.fushisrs".to_owned(), c.sync2_export(profile)?));
@@ -969,7 +976,15 @@ fn sync2_command(
             let names = |k: &str| -> Vec<String> {
                 req.get(k).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default()
             };
-            c.sync2_media_record(profile, s("location")?, &names("present"), &names("absent"), req["seeded"] == Value::Bool(true), i("now")?)?
+            c.sync2_media_record_with_suspect(
+                profile,
+                s("location")?,
+                &names("present"),
+                &names("absent"),
+                &names("suspect"),
+                req["seeded"] == Value::Bool(true),
+                i("now")?,
+            )?
         }
         // 内容寻址媒体（store/sync2/media.rs，审查 S-3）：本机文件 → 内容 / 该下载什么；下载落地后对齐；清理哪些内容。
         "media_hash" | "media_scan" => {

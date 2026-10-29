@@ -13,7 +13,23 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 
-use crate::sync2::op::{Body, Op, MEDIA_AT_MAX_NAMES, MEDIA_AT_PRESENT, MEDIA_AT_SEEDED};
+use crate::sync2::op::{Body, Op, MEDIA_AT_MAX_NAMES, MEDIA_AT_PRESENT, MEDIA_AT_SEEDED, MEDIA_AT_SUSPECT};
+
+/// `sync2_media_at.present` 的取值：不在 / 在 / 在但可疑（[MEDIA_AT_SUSPECT]）。
+const AT_ABSENT: i64 = 0;
+const AT_PRESENT: i64 = 1;
+const AT_SUSPECT: i64 = 2;
+
+/// 一条 `MediaAt` 的标志位对应的投影值。
+fn at_state(flags: u8) -> i64 {
+    if flags & MEDIA_AT_PRESENT != 0 {
+        AT_PRESENT
+    } else if flags & MEDIA_AT_SUSPECT != 0 {
+        AT_SUSPECT
+    } else {
+        AT_ABSENT
+    }
+}
 
 use super::{append_local, applied_vv, in_savepoint, mvr, sql, Local, Touched};
 use crate::store::SrsCore;
@@ -21,10 +37,10 @@ use crate::store::SrsCore;
 /// 把一条 `MediaAt` 落进投影。每个（位置, 名字）是一个「因果优先、并发才比 HLC」的寄存器（mvr.rs）：看过「在」
 /// 之后才记的「不在」（或反过来）一定生效，与两台设备的时钟谁快无关。
 pub(crate) fn project_media_at(conn: &Connection, profile: &str, op: &Op, location: &str, flags: u8, names: &[String]) -> Result<(), String> {
-    let present = flags & MEDIA_AT_PRESENT != 0;
+    let state = at_state(flags);
     for name in names {
         let win = mvr::write(conn, profile, &mvr::reg("a", &[location, name]), op)?;
-        let p = if win.id == op.id { Some(present) } else { None };
+        let p = if win.id == op.id { Some(state) } else { None };
         land_media_at(conn, profile, location, name, &win, p)?;
     }
     if flags & MEDIA_AT_SEEDED != 0 {
@@ -39,8 +55,9 @@ pub(crate) fn project_media_at(conn: &Connection, profile: &str, op: &Op, locati
     Ok(())
 }
 
-/// `sync2_media_at` 的一行落到寄存器的当前值 [win]（[present] = 它的在 / 不在，没给就从日志读）；相同就不写。
-pub(crate) fn land_media_at(conn: &Connection, profile: &str, location: &str, name: &str, win: &mvr::Write, present: Option<bool>) -> Result<(), String> {
+/// `sync2_media_at` 的一行落到寄存器的当前值 [win]（[present] = 它的在 / 不在 / 可疑（[at_state]），没给就从日志读）；
+/// 相同就不写。
+pub(crate) fn land_media_at(conn: &Connection, profile: &str, location: &str, name: &str, win: &mvr::Write, present: Option<i64>) -> Result<(), String> {
     let cur: Option<(i64, i64, Vec<u8>)> = conn
         .prepare_cached("SELECT wall, logical, device FROM sync2_media_at WHERE profile_uid = ?1 AND location = ?2 AND name = ?3")
         .map_err(sql)?
@@ -53,7 +70,7 @@ pub(crate) fn land_media_at(conn: &Connection, profile: &str, location: &str, na
     let present = match present {
         Some(p) => p,
         None => match super::load_op(conn, profile, &win.id)?.and_then(|o| o.body().ok()) {
-            Some(Body::MediaAt { flags, .. }) => flags & MEDIA_AT_PRESENT != 0,
+            Some(Body::MediaAt { flags, .. }) => at_state(flags),
             _ => return Ok(()),
         },
     };
@@ -62,13 +79,14 @@ pub(crate) fn land_media_at(conn: &Connection, profile: &str, location: &str, na
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     )
     .map_err(sql)?
-    .execute(params![profile, location, name, i64::from(present), win.wall, win.logical, win.id.device.0.to_vec()])
+    .execute(params![profile, location, name, present, win.wall, win.logical, win.id.device.0.to_vec()])
     .map_err(sql)?;
     Ok(())
 }
 
-/// 投影里此刻与 [present] 不一致的名字（去重、保持首见顺序）。一样的不再写，免得每轮对账都往日志里灌重复事实。
-fn changed(conn: &Connection, profile: &str, location: &str, names: &[String], present: bool) -> Result<Vec<String>, String> {
+/// 投影里此刻与 [present]（[at_state] 的取值）不一致的名字（去重、保持首见顺序）。一样的不再写，免得每轮对账都往
+/// 日志里灌重复事实。
+fn changed(conn: &Connection, profile: &str, location: &str, names: &[String], present: i64) -> Result<Vec<String>, String> {
     let mut stmt =
         conn.prepare_cached("SELECT present FROM sync2_media_at WHERE profile_uid = ?1 AND location = ?2 AND name = ?3").map_err(sql)?;
     let mut seen = std::collections::HashSet::new();
@@ -78,7 +96,7 @@ fn changed(conn: &Connection, profile: &str, location: &str, names: &[String], p
             continue;
         }
         let cur: Option<i64> = stmt.query_row(params![profile, location, n], |r| r.get(0)).optional().map_err(sql)?;
-        if cur != Some(i64::from(present)) {
+        if cur != Some(present) {
             out.push(n.clone());
         }
     }
@@ -96,26 +114,28 @@ fn is_seeded(conn: &Connection, profile: &str, location: &str) -> Result<bool, S
 }
 
 impl SrsCore {
-    /// 某位置媒体目录的已知内容：`{"seeded": bool, "present": [名字…], "absent": [名字…]}`。`seeded` 为假 = 日志里
-    /// 还没有任何设备对它完整列举过，调用方要先列一次再 [SrsCore::sync2_media_record] 带 `seeded`。`absent` 是确认过
-    /// 不在的（不必再逐个查）；两边都没有的名字 = 未知。
+    /// 某位置媒体目录的已知内容：`{"seeded": bool, "present": [名字…], "absent": [名字…], "suspect": [名字…]}`。
+    /// `seeded` 为假 = 日志里还没有任何设备对它完整列举过，调用方要先列一次再 [SrsCore::sync2_media_record] 带 `seeded`。
+    /// `absent` 是确认过不在的（不必再逐个查）；`suspect` 是在、但有设备下载到的内容与名字对不上的（[MEDIA_AT_SUSPECT]）；
+    /// 都没有的名字 = 未知。
     pub fn sync2_media_known(&self, profile: &str, location: &str) -> Result<Value, String> {
         let r = self.reader()?;
         let mut present = Vec::new();
         let mut absent = Vec::new();
+        let mut suspect = Vec::new();
         let mut stmt = r
             .prepare("SELECT name, present FROM sync2_media_at WHERE profile_uid = ?1 AND location = ?2 ORDER BY name")
             .map_err(sql)?;
         let rows = stmt.query_map(params![profile, location], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))).map_err(sql)?;
         for row in rows {
             let (name, p) = row.map_err(sql)?;
-            if p != 0 {
-                present.push(name);
-            } else {
-                absent.push(name);
+            match p {
+                AT_PRESENT => present.push(name),
+                AT_SUSPECT => suspect.push(name),
+                _ => absent.push(name),
             }
         }
-        Ok(json!({"seeded": is_seeded(&r, profile, location)?, "present": present, "absent": absent}))
+        Ok(json!({"seeded": is_seeded(&r, profile, location)?, "present": present, "absent": absent, "suspect": suspect}))
     }
 
     /// 记下某位置媒体目录的事实：[present] 在、[absent] 不在；[seeded] = 这是一次完整列举的结果。只写与投影
@@ -129,14 +149,29 @@ impl SrsCore {
         seeded: bool,
         now: i64,
     ) -> Result<Value, String> {
+        self.sync2_media_record_with_suspect(profile, location, present, absent, &[], seeded, now)
+    }
+
+    /// 同 [SrsCore::sync2_media_record]，另记 [suspect]：在、但下载到的内容与名字对不上（[MEDIA_AT_SUSPECT]）。
+    #[allow(clippy::too_many_arguments)]
+    pub fn sync2_media_record_with_suspect(
+        &self,
+        profile: &str,
+        location: &str,
+        present: &[String],
+        absent: &[String],
+        suspect: &[String],
+        seeded: bool,
+        now: i64,
+    ) -> Result<Value, String> {
         if location.is_empty() {
             return Err("media_record: empty location".into());
         }
         let w = self.writer()?;
         in_savepoint(&w, |c| {
             let mut bodies = Vec::new();
-            for (names, flag) in [(present, MEDIA_AT_PRESENT), (absent, 0)] {
-                let todo = changed(c, profile, location, names, flag != 0)?;
+            for (names, flag) in [(present, MEDIA_AT_PRESENT), (absent, 0), (suspect, MEDIA_AT_SUSPECT)] {
+                let todo = changed(c, profile, location, names, at_state(flag))?;
                 for chunk in todo.chunks(MEDIA_AT_MAX_NAMES) {
                     bodies.push(Body::MediaAt { location: location.to_owned(), flags: flag, names: chunk.to_vec() });
                 }

@@ -608,29 +608,32 @@ class SrsDbStore implements SrsSync2Host {
   Hlc _rehome(Hlc h, String writer) => Hlc(h.physical, h.counter, writer);
 
   Future<void> _saveLocal() async {
-    final Map<String, Object?> j = <String, Object?>{
-      'incarnation': _incarnation,
-      'writerId': _writer.writerId,
-      'lastSeq': _writer.lastSeq,
-      'applied': _writer.applied.toJson(),
-      'hlc': _clock.last.encode(),
-      'outboxSeq': _outboxSeq,
-      'styleCursor': _styleCursor,
-      if (_pendingMediaGc.isNotEmpty)
-        'mediaGc': (_pendingMediaGc.toList()..sort()),
-      'cacheRev': _cacheRevision,
-      'revision': _revision,
-      'epoch': _epoch,
-    };
     await db
         .into(db.srsLocalState)
         .insertOnConflictUpdate(
           SrsLocalStateCompanion.insert(
             profileUid: profileUid,
-            json: jsonEncode(j),
+            json: jsonEncode(_localStateJson()),
           ),
         );
   }
+
+  /// [_saveLocal] 写下的本机状态（`srs_local_state.json`）。收段的一步把它交给内核、在投递的同一笔事务里写
+  /// （[_sync2IngestStep]）。
+  Map<String, Object?> _localStateJson() => <String, Object?>{
+    'incarnation': _incarnation,
+    'writerId': _writer.writerId,
+    'lastSeq': _writer.lastSeq,
+    'applied': _writer.applied.toJson(),
+    'hlc': _clock.last.encode(),
+    'outboxSeq': _outboxSeq,
+    'styleCursor': _styleCursor,
+    if (_pendingMediaGc.isNotEmpty)
+      'mediaGc': (_pendingMediaGc.toList()..sort()),
+    'cacheRev': _cacheRevision,
+    'revision': _revision,
+    'epoch': _epoch,
+  };
 
   (int, SrsTimeSource) now() => _trusted.now();
 
@@ -1204,23 +1207,30 @@ class SrsDbStore implements SrsSync2Host {
     return <String, Object?>{..._mergeIngestSlices(parts), 'more': false};
   }
 
-  /// 收段会话的一步（投递一批 / 收尾换身份）：写锁里跑，投影变化接进本机缓存。
+  /// 收段会话的一步（投递一片 / 收尾换身份 / 接着重放）：写锁里跑，投影变化接进本机缓存。
+  ///
+  /// **不套 Drift 事务**（集成审查【中高】）：以前包在 [_transactionOrReload] 里，Drift 的 BEGIN 让内核把写连接标成
+  /// 「挂着跨命令事务」（store/mod.rs `drift_tx`），整片期间所有只读命令与 Drift 查询都改走写连接——排在整片后面、
+  /// 还读得到没提交的行；而内核的收段会话（`prepared` / `delivery`）在内层 SAVEPOINT 释放时就推进了，外层事务若因
+  /// [_saveLocal] 失败回滚，库回到这一片之前、会话却停在之后。现在这一片由内核自己在一笔事务里提交（提交成功才推进
+  /// 会话），本机状态行（[_localStateJson]，这一步只会推进其中的修订号）作为 `localState` 交给内核在**同一笔事务**里
+  /// 写下，内核按同一规则推进修订号并回报 `localRevision`——要么一起落盘、要么一起不落，内存在命令成功之后才改。
+  /// 命令失败时内存没动过，无需重读本机状态。
   Future<Map<String, Object?>> _sync2IngestStep(
     Map<String, Object?> request, [
     List<Uint8List> segments = const <Uint8List>[],
   ]) => runExclusive(() async {
-    late Map<String, Object?> r;
-    await _transactionOrReload(() async {
-      r = await _sync2(<String, Object?>{
-        ...request,
-        'now': now().$1,
-      }, blobs: segments);
-      final int landed = _absorbProjection(r);
-      if (landed > 0 || ((r['replayed'] as List?)?.isNotEmpty ?? false)) {
-        _rwkvScoresRevision++;
-      }
-      await _saveLocal();
-    });
+    final Map<String, Object?> r = await _sync2(<String, Object?>{
+      ...request,
+      'now': now().$1,
+      'localState': jsonEncode(_localStateJson()),
+    }, blobs: segments);
+    final int landed = _absorbProjection(r);
+    final Object? persisted = r['localRevision'];
+    if (persisted is int) _revision = persisted;
+    if (landed > 0 || ((r['replayed'] as List?)?.isNotEmpty ?? false)) {
+      _rwkvScoresRevision++;
+    }
     await _notifyPurged();
     return r;
   });
@@ -1371,12 +1381,28 @@ class SrsDbStore implements SrsSync2Host {
     List<Uint8List> blobs = const <Uint8List>[],
   }) {
     debugCoreCommands++;
-    return _coreSync2(core.address, core.libraryPath, <String, Object?>{
-      ...request,
-      'profile': profileUid,
-      if (_kSync2CacheOps.contains(request['op'])) 'caches': _cacheConfig,
-    }, blobs);
+    return _coreSync2(
+      core.address,
+      core.libraryPath,
+      <String, Object?>{
+        ...request,
+        'profile': profileUid,
+        if (_kSync2CacheOps.contains(request['op'])) 'caches': _cacheConfig,
+      },
+      blobs,
+      lane: srsCoreLaneOf(request['op']),
+    );
   }
+
+  /// 内核命令走哪条 worker 道（srs_core_workers.dart [SrsCoreLane]，集成审查【中】）：复习页的作答 / 排队 / 预览
+  /// 走交互道，不排在同步的成批命令与媒体文件加解密后面；媒体文件的流式加解密 / 哈希走专用的文件道（同步时按
+  /// `kSrsSync2Concurrency` 并发，以前一来就占满整个池）；其余走默认道。
+  @visibleForTesting
+  static SrsCoreLane srsCoreLaneOf(Object? op) => switch (op) {
+    'apply' || 'study' || 'preview' => SrsCoreLane.interactive,
+    'seal_file' || 'open_file' || 'media_hash' => SrsCoreLane.file,
+    _ => SrsCoreLane.bulk,
+  };
 
   /// 发出过的内核命令数（`ffsrs_store_sync2` 一次算一条）：复习路径的 FFI 次数守卫 / 基准用。
   @visibleForTesting
@@ -4797,10 +4823,13 @@ Future<SrsSync2Result> _coreSync2(
   int address,
   String? libraryPath,
   Map<String, Object?> request,
-  List<Uint8List> blobs,
-) => SrsCoreWorkers.of(
-  libraryPath,
-).run<SrsSync2Result>(address, (SrsCore c) => c.sync2(request, blobs: blobs));
+  List<Uint8List> blobs, {
+  SrsCoreLane lane = SrsCoreLane.bulk,
+}) => SrsCoreWorkers.of(libraryPath).run<SrsSync2Result>(
+  address,
+  (SrsCore c) => c.sync2(request, blobs: blobs),
+  lane: lane,
+);
 
 /// [SrsDbStore._noteTypeCache] 的一份：[key] 下物化过的笔记类型（含已删除的；不存在的 ID 记 null）与
 /// [SrsDbStore.noteTypes] 的整份列表（没算过 = null）。

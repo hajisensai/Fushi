@@ -82,12 +82,14 @@ void main() {
     Directory dir, {
     bool archive = false,
     SrsLegacyMediaReader? legacy,
+    String? locationId,
   }) => srsSyncMedia(
     location: loc,
     store: s,
     mediaRoot: dir,
     archive: archive,
     legacy: legacy,
+    locationId: locationId,
   );
 
   /// 位置上内容目录里有哪些内容（sha256）。
@@ -390,33 +392,123 @@ void main() {
     expect((await media(b, loc, mediaB)).downloaded, 0);
   });
 
-  test('位置上的内容被截断 / 改坏：按 sha256 校验拒收、不落地；旧布局里对不上的同样拒收；持有者补传后照常拿到', () async {
+  // 集成审查【中】：以前读者校验失败就删位置上的内容对象。读者分不清是对象真坏了还是这次传输坏了（截断的响应、
+  // 网盘占位 / 同步中的半截文件），删了可能就删掉了唯一的一份。现在读者只记可疑、不落地、不删；持有原文（本机
+  // 哈希对得上）的设备覆盖重传修复。
+  test(
+    '位置上的内容被截断 / 改坏：按 sha256 校验拒收、不落地、不删；旧布局里对不上的同样拒收；持有者覆盖重传后照常拿到',
+    () async {
+      final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+      final SrsDbStore a = await device('a');
+      final SrsDbStore b = await device('b');
+      final Directory mediaA = mediaDir('a');
+      final Directory mediaB = mediaDir('b');
+      writeMedia(mediaA, 'cat.png', <int>[1, 2, 3, 4]);
+      await addNote(a, '猫', '<img src="cat.png">');
+      expect((await media(a, loc, mediaA)).uploaded, 1);
+      await srsSyncPeers(<SrsDbStore>[a, b], loc);
+
+      // 云盘覆盖写被打断留下的半截文件；旧的按名字目录里是另一份内容。
+      loc.files[at(<int>[1, 2, 3, 4])] = Uint8List.fromList(<int>[1, 2]);
+      loc.files['$kSrsMediaFolder/cat.png'] = Uint8List.fromList(<int>[9, 9]);
+      final SrsMediaSyncReport r = await media(b, loc, mediaB);
+      expect(r.rejected, <String>{'cat.png'});
+      expect(r.downloaded, 0);
+      expect(r.missing, <String>{'cat.png'});
+      expect(File(p.join(mediaB.path, 'cat.png')).existsSync(), isFalse);
+      expect(loc.files[at(<int>[1, 2, 3, 4])], <int>[
+        1,
+        2,
+      ], reason: 'a reader never deletes (or rewrites) a content object');
+      expect(
+        loc.files.containsKey(
+          srsMediaSuspectMarkerPath(kSrsMediaFolder, sha(<int>[1, 2, 3, 4])),
+        ),
+        isTrue,
+      );
+      // 再读一轮仍对不上：照样不落地、不删，标记只写一次。
+      final SrsMediaSyncReport still = await media(b, loc, mediaB);
+      expect(still.rejected, <String>{'cat.png'});
+      expect(loc.files[at(<int>[1, 2, 3, 4])], <int>[1, 2]);
+
+      // 持有原文的 A：用核对过的原文覆盖那份坏的、删掉标记。
+      final SrsMediaSyncReport fix = await media(a, loc, mediaA);
+      expect(fix.repaired, 1);
+      expect(fix.uploaded, 1);
+      expect(loc.files[at(<int>[1, 2, 3, 4])], <int>[1, 2, 3, 4]);
+      expect(
+        loc.files.keys.where((String k) => k.endsWith(kSrsMediaSuspectSuffix)),
+        isEmpty,
+      );
+      expect(
+        (await media(a, loc, mediaA)).uploaded,
+        0,
+        reason: 'repaired once',
+      );
+      final SrsMediaSyncReport again = await media(b, loc, mediaB);
+      expect(again.downloaded, 1);
+      expect(again.rejected, isEmpty);
+      expect(File(p.join(mediaB.path, 'cat.png')).readAsBytesSync(), <int>[
+        1,
+        2,
+        3,
+        4,
+      ]);
+    },
+  );
+
+  // 同上，记日志的位置（给了 locationId，不列目录）：可疑经日志传到持有者，持有者覆盖重传后记回「在」。
+  test('记日志的位置：读者把坏内容记为可疑（不删、不落地），可疑随日志传到持有者，持有者覆盖重传修复', () async {
     final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
     final SrsDbStore a = await device('a');
     final SrsDbStore b = await device('b');
     final Directory mediaA = mediaDir('a');
     final Directory mediaB = mediaDir('b');
+    const String id = 'test';
     writeMedia(mediaA, 'cat.png', <int>[1, 2, 3, 4]);
     await addNote(a, '猫', '<img src="cat.png">');
-    expect((await media(a, loc, mediaA)).uploaded, 1);
-    await srsSyncPeers(<SrsDbStore>[a, b], loc);
+    expect((await media(a, loc, mediaA, locationId: id)).uploaded, 1);
+    await srsSyncPeers(<SrsDbStore>[a, b], loc, locationId: id);
 
-    // 云盘覆盖写被打断留下的半截文件；旧的按名字目录里是另一份内容。
     loc.files[at(<int>[1, 2, 3, 4])] = Uint8List.fromList(<int>[1, 2]);
-    loc.files['$kSrsMediaFolder/cat.png'] = Uint8List.fromList(<int>[9, 9]);
-    final SrsMediaSyncReport r = await media(b, loc, mediaB);
+    final SrsMediaSyncReport r = await media(b, loc, mediaB, locationId: id);
     expect(r.rejected, <String>{'cat.png'});
     expect(r.downloaded, 0);
-    expect(r.missing, <String>{'cat.png'});
     expect(File(p.join(mediaB.path, 'cat.png')).existsSync(), isFalse);
+    expect(loc.files[at(<int>[1, 2, 3, 4])], <int>[1, 2]);
     expect(
-      loc.files.containsKey(at(<int>[1, 2, 3, 4])),
-      isFalse,
-      reason: '名字就是哈希：对不上的那份是垃圾，删掉好让持有者补传',
+      loc.files.keys.where((String k) => k.endsWith(kSrsMediaSuspectSuffix)),
+      isEmpty,
+      reason: 'a logged location carries the suspicion in the log, not markers',
     );
+    final String key = srsMediaContentPresenceKey(id, kSrsMediaFolder);
+    Future<Map<String, Object?>> known(SrsDbStore s) async =>
+        (await s.sync2Command(<String, Object?>{
+          'op': 'media_known',
+          'location': key,
+        })).map;
+    expect((await known(b))['suspect'], <String>[
+      sha(<int>[1, 2, 3, 4]),
+    ]);
 
-    expect((await media(a, loc, mediaA)).uploaded, 1);
-    final SrsMediaSyncReport again = await media(b, loc, mediaB);
+    // 持有者没收到 B 的日志之前不知道：照常认为在，不重传。
+    expect((await media(a, loc, mediaA, locationId: id)).repaired, 0);
+    await srsSyncPeers(<SrsDbStore>[b, a], loc, locationId: id);
+    expect((await known(a))['suspect'], <String>[
+      sha(<int>[1, 2, 3, 4]),
+    ]);
+    final SrsMediaSyncReport fix = await media(a, loc, mediaA, locationId: id);
+    expect(fix.repaired, 1);
+    expect(loc.files[at(<int>[1, 2, 3, 4])], <int>[1, 2, 3, 4]);
+    expect((await known(a))['suspect'], isEmpty);
+
+    await srsSyncPeers(<SrsDbStore>[a, b], loc, locationId: id);
+    final SrsMediaSyncReport again = await media(
+      b,
+      loc,
+      mediaB,
+      locationId: id,
+    );
     expect(again.downloaded, 1);
     expect(again.rejected, isEmpty);
     expect(File(p.join(mediaB.path, 'cat.png')).readAsBytesSync(), <int>[
@@ -425,6 +517,7 @@ void main() {
       3,
       4,
     ]);
+    expect((await known(b))['suspect'], isEmpty);
   });
 
   // 审查 S-10：以前媒体在整轮操作同步之后才传，读到新段的设备一时拿不到它引用的媒体。
