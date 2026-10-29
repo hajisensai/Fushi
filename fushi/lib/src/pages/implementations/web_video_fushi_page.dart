@@ -42,7 +42,11 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/immersion_capture_channel.dart'
+    show ImmersionCaptureResult, transcodeClipToCapture;
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
+import 'package:fushi/src/mining/mining_image_mode_target.dart';
+import 'package:fushi/src/mining/web_mine_clip.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/web_mine_idle.dart';
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
@@ -243,7 +247,33 @@ class _WebMineHost implements WebMineReplayHost {
       return null;
     }
   }
+
+  @override
+  Future<Uint8List?> frame() async {
+    try {
+      return await _page._web
+          ?.takeScreenshot(
+            screenshotConfiguration: ScreenshotConfiguration(
+              compressFormat: CompressFormat.JPEG,
+              quality: 85,
+            ),
+          )
+          .timeout(const Duration(seconds: 2));
+    } catch (e) {
+      ErrorLogService.instance.logDiagnostic('web_video', 'frame: $e');
+      return null;
+    }
+  }
 }
+
+/// 一句卡最终用的图片 / 音频（[_WebVideoFushiPageState._resolveCardMedia]）。
+typedef _WebMineCardMedia = ({
+  VideoMiningImageMode imageMode,
+  Uint8List? cover,
+  String coverName,
+  Uint8List? audio,
+  List<String> warnings,
+});
 
 /// [WebVideoFushiPage.debugSnapshot] 的只读快照。
 typedef WebVideoDebugSnapshot = ({
@@ -1242,8 +1272,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         audioTier: _appModel.miningAudioQuality,
         format: _appModel.videoMiningAnimatedFormat,
       );
+      // 图片模式按目标模板生效（模板不原样渲染图片字段时片段改动图），录之前定下：
+      // 动图 / 片段模式要在重放期间连续采帧，静图模式只截中点一张。
+      final VideoMiningImageMode imageMode = await resolveTargetMiningImageMode(
+        _appModel.videoMiningImageMode,
+        repo: ref.read(ankiRepositoryProvider),
+      );
       final WebMineReplayRunner runner = WebMineReplayRunner(
         host: _WebMineHost(this),
+        captureFrames: !imageMode.isStill,
         audioSource: format == null ? null : loopback,
         encodeAudio: (GalAudioSlice slice) => pcmSliceToAacBytes(
           pcm: slice.pcm,
@@ -1270,6 +1307,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
             cap,
             compression,
             tempDir,
+            imageMode,
           );
           if (error == null) {
             ok++;
@@ -1324,8 +1362,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     WebMineReplayCapture cap,
     MiningMediaCompression compression,
     String tempDir,
+    VideoMiningImageMode imageMode,
   ) async {
     final String? title = _row?.title;
+    final _WebMineCardMedia media = await _resolveCardMedia(
+      cap,
+      compression,
+      tempDir,
+      imageMode,
+    );
     final ImmersionMiningResult res;
     try {
       res = await ImmersionMiningEngine().mine(
@@ -1340,9 +1385,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           bookTitleTag: _appModel.autoAddBookNameToTags
               ? BaseAnkiRepository.sanitizeTitleTag(title)
               : null,
-          providedCoverBytes: cap.cover,
-          providedCoverName: 'web_video_cover.png',
-          providedAudioBytes: cap.audio,
+          imageMode: media.imageMode,
+          providedCoverBytes: media.cover,
+          providedCoverName: media.coverName,
+          providedAudioBytes: media.audio,
           providedAudioName:
               'web_video_audio.${immersionMiningAudioExtension()}',
           // 录不到音（无 loopback / 站点静音）也出截图卡：用户排队等的是这张卡，
@@ -1375,12 +1421,93 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       return described.message;
     }
     if (described.record) unawaited(recordMined());
+    final List<String> warnings = <String>[...cap.warnings, ...media.warnings];
     await _mineQueue.markDone(
       row.id,
       noteId: outcome.noteId,
-      warning: cap.warnings.isEmpty ? null : cap.warnings.join(','),
+      warning: warnings.isEmpty ? null : warnings.join(','),
     );
     return null;
+  }
+
+  /// 重放抓到的媒体 → 卡上的图片 / 音频。动图 / 片段模式把帧序列与句子音频合成中间
+  /// 片段，再走与浏览器扩展录制片段同一条 [transcodeClipToCapture] 出音画同步片段或
+  /// 动图；任何一步失败都退回中点那张封面（记 warning，不让整张卡失败）。
+  Future<_WebMineCardMedia> _resolveCardMedia(
+    WebMineReplayCapture cap,
+    MiningMediaCompression compression,
+    String tempDir,
+    VideoMiningImageMode imageMode,
+  ) async {
+    final _WebMineCardMedia still = (
+      imageMode: VideoMiningImageMode.currentFrame,
+      cover: cap.cover,
+      coverName: 'web_video_cover.png',
+      audio: cap.audio,
+      warnings: const <String>[],
+    );
+    if (imageMode.isStill || cap.frames.length < 2) return still;
+    // 片段 = 画面 + 句子声音一个文件；没录到音就没有片段可言，改出动图（与引擎
+    // 「不要音频 + 视频片段」同一降级目标）。
+    final VideoMiningImageMode mode = imageMode.isVideoClip && cap.audio == null
+        ? VideoMiningImageMode.gif
+        : imageMode;
+    final Uint8List? clip = await composeWebMineClip(
+      capture: cap,
+      audioExtension: immersionMiningAudioExtension(),
+      tempDir: tempDir,
+    );
+    if (clip == null) {
+      return (
+        imageMode: still.imageMode,
+        cover: still.cover,
+        coverName: still.coverName,
+        audio: still.audio,
+        warnings: const <String>['clip_compose_failed'],
+      );
+    }
+    final ImmersionCaptureResult res = await transcodeClipToCapture(
+      clip,
+      durationMs: cap.clipDurationMs,
+      compression: compression,
+      tempDir: tempDir,
+      imageMode: mode,
+      format: _appModel.videoMiningAnimatedFormat,
+      stillFormat: _appModel.videoMiningStillFormat,
+      clipFormat: _appModel.videoMiningClipFormat,
+    );
+    final Uint8List? cover = res.gifBytes;
+    if (!res.ok || cover == null) {
+      ErrorLogService.instance.log(
+        'web_video.mineClip',
+        'transcode failed: ${res.error}',
+      );
+      return (
+        imageMode: still.imageMode,
+        cover: still.cover,
+        coverName: still.coverName,
+        audio: still.audio,
+        warnings: const <String>['clip_transcode_failed'],
+      );
+    }
+    if (res.coverIsVideo) {
+      // 片段自带句子音频：引擎把同一个文件既当封面又当音频。
+      return (
+        imageMode: VideoMiningImageMode.videoClip,
+        cover: cover,
+        coverName: 'web_video_clip.${res.clipFormat.fileExtension}',
+        audio: null,
+        warnings: const <String>[],
+      );
+    }
+    return (
+      imageMode: VideoMiningImageMode.gif,
+      cover: cover,
+      coverName: 'web_video_clip.${res.animatedFormat.fileExtension}',
+      // 动图模式用回取的原始编码音频，不吃转码那一遍的二次压缩。
+      audio: cap.audio ?? res.audioBytes,
+      warnings: const <String>[],
+    );
   }
 
   // ── 收藏句（与视频页同一 FavoriteSentenceRepository / 来源标记）───────────
