@@ -9,6 +9,7 @@
 /// [SrsFieldInfo.suggestedSize] 等是可视化模板编辑器「按字段自动生成布局」时的默认摆法。
 library;
 
+import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardFields;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/srs/srs_visual_template.dart';
@@ -156,63 +157,70 @@ const Map<String, SrsFieldInfo> kSrsKnownFields = <String, SrsFieldInfo>{
 };
 
 /// [fieldName] 的已知说明；不认识返回 null。
-SrsFieldInfo? srsKnownField(String fieldName) => kSrsKnownFields[fieldName];
+///
+/// 表按 Lapis 字段名建；Fushi 卡片改了名的 9 个字段（[FushiCardFields]）经 `legacyNameOf` 落到同一条。
+SrsFieldInfo? srsKnownField(String fieldName) =>
+    kSrsKnownFields[FushiCardFields.legacyNameOf(fieldName)];
 
 /// 已知字段的人话名字（按界面语言）；不认识返回 null。
-String? srsKnownFieldLabel(String fieldName) => switch (fieldName) {
-  'Expression' => t.srs_field_info_expression_name,
-  'ExpressionFurigana' => t.srs_field_info_expression_furigana_name,
-  'ExpressionReading' => t.srs_field_info_expression_reading_name,
-  'ExpressionAudio' => t.srs_field_info_expression_audio_name,
-  'SelectionText' => t.srs_field_info_selection_text_name,
-  'MainDefinition' => t.srs_field_info_main_definition_name,
-  'DefinitionPicture' => t.srs_field_info_definition_picture_name,
-  'Sentence' => t.srs_field_info_sentence_name,
-  'SentenceFurigana' => t.srs_field_info_sentence_furigana_name,
-  'SentenceTranslation' => t.srs_field_info_sentence_translation_name,
-  'SentenceAudio' => t.srs_field_info_sentence_audio_name,
-  'Picture' => t.srs_field_info_picture_name,
-  'Glossary' => t.srs_field_info_glossary_name,
-  'Hint' => t.srs_field_info_hint_name,
-  'IsWordAndSentenceCard' => t.srs_field_info_is_word_and_sentence_card_name,
-  'IsClickCard' => t.srs_field_info_is_click_card_name,
-  'IsSentenceCard' => t.srs_field_info_is_sentence_card_name,
-  'IsAudioCard' => t.srs_field_info_is_audio_card_name,
-  'PitchPosition' => t.srs_field_info_pitch_position_name,
-  'PitchCategories' => t.srs_field_info_pitch_categories_name,
-  'Frequency' => t.srs_field_info_frequency_name,
-  'FreqSort' => t.srs_field_info_freq_sort_name,
-  'MiscInfo' => t.srs_field_info_misc_info_name,
-  _ => null,
-};
+String? srsKnownFieldLabel(String fieldName) =>
+    switch (FushiCardFields.legacyNameOf(fieldName)) {
+      'Expression' => t.srs_field_info_expression_name,
+      'ExpressionFurigana' => t.srs_field_info_expression_furigana_name,
+      'ExpressionReading' => t.srs_field_info_expression_reading_name,
+      'ExpressionAudio' => t.srs_field_info_expression_audio_name,
+      'SelectionText' => t.srs_field_info_selection_text_name,
+      'MainDefinition' => t.srs_field_info_main_definition_name,
+      'DefinitionPicture' => t.srs_field_info_definition_picture_name,
+      'Sentence' => t.srs_field_info_sentence_name,
+      'SentenceFurigana' => t.srs_field_info_sentence_furigana_name,
+      'SentenceTranslation' => t.srs_field_info_sentence_translation_name,
+      'SentenceAudio' => t.srs_field_info_sentence_audio_name,
+      'Picture' => t.srs_field_info_picture_name,
+      'Glossary' => t.srs_field_info_glossary_name,
+      'Hint' => t.srs_field_info_hint_name,
+      'IsWordAndSentenceCard' =>
+        t.srs_field_info_is_word_and_sentence_card_name,
+      'IsClickCard' => t.srs_field_info_is_click_card_name,
+      'IsSentenceCard' => t.srs_field_info_is_sentence_card_name,
+      'IsAudioCard' => t.srs_field_info_is_audio_card_name,
+      'PitchPosition' => t.srs_field_info_pitch_position_name,
+      'PitchCategories' => t.srs_field_info_pitch_categories_name,
+      'Frequency' => t.srs_field_info_frequency_name,
+      'FreqSort' => t.srs_field_info_freq_sort_name,
+      'MiscInfo' => t.srs_field_info_misc_info_name,
+      _ => null,
+    };
 
 /// 已知字段的说明（按界面语言）；不认识返回 null。
-String? srsKnownFieldDescription(String fieldName) => switch (fieldName) {
-  'Expression' => t.srs_field_info_expression_desc,
-  'ExpressionFurigana' => t.srs_field_info_expression_furigana_desc,
-  'ExpressionReading' => t.srs_field_info_expression_reading_desc,
-  'ExpressionAudio' => t.srs_field_info_expression_audio_desc,
-  'SelectionText' => t.srs_field_info_selection_text_desc,
-  'MainDefinition' => t.srs_field_info_main_definition_desc,
-  'DefinitionPicture' => t.srs_field_info_definition_picture_desc,
-  'Sentence' => t.srs_field_info_sentence_desc,
-  'SentenceFurigana' => t.srs_field_info_sentence_furigana_desc,
-  'SentenceTranslation' => t.srs_field_info_sentence_translation_desc,
-  'SentenceAudio' => t.srs_field_info_sentence_audio_desc,
-  'Picture' => t.srs_field_info_picture_desc,
-  'Glossary' => t.srs_field_info_glossary_desc,
-  'Hint' => t.srs_field_info_hint_desc,
-  'IsWordAndSentenceCard' => t.srs_field_info_is_word_and_sentence_card_desc,
-  'IsClickCard' => t.srs_field_info_is_click_card_desc,
-  'IsSentenceCard' => t.srs_field_info_is_sentence_card_desc,
-  'IsAudioCard' => t.srs_field_info_is_audio_card_desc,
-  'PitchPosition' => t.srs_field_info_pitch_position_desc,
-  'PitchCategories' => t.srs_field_info_pitch_categories_desc,
-  'Frequency' => t.srs_field_info_frequency_desc,
-  'FreqSort' => t.srs_field_info_freq_sort_desc,
-  'MiscInfo' => t.srs_field_info_misc_info_desc,
-  _ => null,
-};
+String? srsKnownFieldDescription(String fieldName) =>
+    switch (FushiCardFields.legacyNameOf(fieldName)) {
+      'Expression' => t.srs_field_info_expression_desc,
+      'ExpressionFurigana' => t.srs_field_info_expression_furigana_desc,
+      'ExpressionReading' => t.srs_field_info_expression_reading_desc,
+      'ExpressionAudio' => t.srs_field_info_expression_audio_desc,
+      'SelectionText' => t.srs_field_info_selection_text_desc,
+      'MainDefinition' => t.srs_field_info_main_definition_desc,
+      'DefinitionPicture' => t.srs_field_info_definition_picture_desc,
+      'Sentence' => t.srs_field_info_sentence_desc,
+      'SentenceFurigana' => t.srs_field_info_sentence_furigana_desc,
+      'SentenceTranslation' => t.srs_field_info_sentence_translation_desc,
+      'SentenceAudio' => t.srs_field_info_sentence_audio_desc,
+      'Picture' => t.srs_field_info_picture_desc,
+      'Glossary' => t.srs_field_info_glossary_desc,
+      'Hint' => t.srs_field_info_hint_desc,
+      'IsWordAndSentenceCard' =>
+        t.srs_field_info_is_word_and_sentence_card_desc,
+      'IsClickCard' => t.srs_field_info_is_click_card_desc,
+      'IsSentenceCard' => t.srs_field_info_is_sentence_card_desc,
+      'IsAudioCard' => t.srs_field_info_is_audio_card_desc,
+      'PitchPosition' => t.srs_field_info_pitch_position_desc,
+      'PitchCategories' => t.srs_field_info_pitch_categories_desc,
+      'Frequency' => t.srs_field_info_frequency_desc,
+      'FreqSort' => t.srs_field_info_freq_sort_desc,
+      'MiscInfo' => t.srs_field_info_misc_info_desc,
+      _ => null,
+    };
 
 /// 字段在界面上显示的名字：已知字段给人话名字，其余原样用字段名。
 String srsFieldDisplayName(SrsFieldDef field) =>

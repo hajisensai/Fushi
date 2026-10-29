@@ -9,15 +9,15 @@
   <div class="fc-aside">
     <header class="fc-head">
       <div class="fc-head-main">
-        <div class="fc-term">{{#ExpressionFurigana}}{{furigana:ExpressionFurigana}}{{/ExpressionFurigana}}{{^ExpressionFurigana}}{{Expression}}{{/ExpressionFurigana}}</div>
+        <div class="fc-term">{{#TermFurigana}}{{furigana:TermFurigana}}{{/TermFurigana}}{{^TermFurigana}}{{Term}}{{/TermFurigana}}</div>
         <div class="fc-reading-row">
-          <span class="fc-reading">{{#ExpressionFurigana}}{{kana:ExpressionFurigana}}{{/ExpressionFurigana}}{{^ExpressionFurigana}}{{ExpressionReading}}{{/ExpressionFurigana}}</span>
+          <span class="fc-reading">{{#TermFurigana}}{{kana:TermFurigana}}{{/TermFurigana}}{{^TermFurigana}}{{TermReading}}{{/TermFurigana}}</span>
           {{#PitchPosition}}<span class="fc-pitch-tags">{{PitchPosition}}</span>{{/PitchPosition}}
-          {{#ExpressionAudio}}<span class="fc-audio">{{ExpressionAudio}}</span>{{/ExpressionAudio}}
-          {{#FreqSort}}<span class="fc-chip fc-chip--freq">{{FreqSort}}</span>{{/FreqSort}}
+          {{#TermAudio}}<span class="fc-audio">{{TermAudio}}</span>{{/TermAudio}}
+          {{#FrequencyRank}}<span class="fc-chip fc-chip--freq">{{FrequencyRank}}</span>{{/FrequencyRank}}
         </div>
       </div>
-      {{#Picture}}<figure class="fc-picture {{Tags}}">{{Picture}}</figure>{{/Picture}}
+      {{#Media}}<figure class="fc-picture {{Tags}}">{{Media}}</figure>{{/Media}}
     </header>
 
     {{#Sentence}}
@@ -32,8 +32,8 @@
   </div>
 
   <section class="fc-defs">
-    {{#SelectionText}}<blockquote class="fc-selection">{{SelectionText}}</blockquote>{{/SelectionText}}
-    {{#DefinitionPicture}}<div class="fc-def-picture">{{DefinitionPicture}}</div>{{/DefinitionPicture}}
+    {{#LookupSelection}}<blockquote class="fc-selection">{{LookupSelection}}</blockquote>{{/LookupSelection}}
+    {{#DefinitionMedia}}<div class="fc-def-picture">{{DefinitionMedia}}</div>{{/DefinitionMedia}}
     {{#MainDefinition}}<div class="fc-gloss fc-gloss--main">{{MainDefinition}}</div>{{/MainDefinition}}
     {{#Glossary}}
     <details class="fc-more"{{^MainDefinition}} open{{/MainDefinition}}>
@@ -50,12 +50,12 @@
       <div class="fc-freq-list">{{Frequency}}</div>
     </section>
     {{/Frequency}}
-    {{#MiscInfo}}
+    {{#Source}}
     <section class="fc-meta-row fc-meta-row--source">
       <span class="fc-meta-label fc-meta-label--source"></span>
-      <div class="fc-source">{{MiscInfo}}</div>
+      <div class="fc-source">{{Source}}</div>
     </section>
-    {{/MiscInfo}}
+    {{/Source}}
   </footer>
 
   <span class="fc-src" data-fc="pitch-categories" hidden>{{text:PitchCategories}}</span>
@@ -303,7 +303,7 @@
 
     /* ---------- 图片：点按放大，再点关闭；加载完重算左栏能否吸顶 ---------- */
     function setUpLightbox() {
-      /* 视频片段（制卡写进 Picture 的 <video>）尺寸要等元数据到了才知道，同样重算 */
+      /* 视频片段（制卡写进 Media 的 <video>）尺寸要等元数据到了才知道，同样重算 */
       root.querySelectorAll(".fc-picture video, .fc-def-picture video").forEach(function (v) {
         if (v.readyState < 1) v.addEventListener("loadedmetadata", applyLayout, { once: true });
       });

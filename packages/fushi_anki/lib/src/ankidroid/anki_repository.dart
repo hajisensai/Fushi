@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../anki_models.dart';
 import '../card_source_link.dart';
+import '../fushi_card_fields.dart';
 import '../anki_note_type_definition.dart';
 import '../anki_remote_media_http.dart';
 import '../base_anki_repository.dart';
@@ -272,7 +273,11 @@ class AnkiRepository extends BaseAnkiRepository {
       payload: payload,
       context: context,
     );
-    final Map<String, String> fields = rendered.fields;
+    // 渲染键与笔记类型字段名新旧不一致（Fushi 卡片改名）时按别名对上，AnkiDroid 按名取值。
+    final Map<String, String> fields = FushiCardFields.alignToFields(
+      rendered.fields,
+      noteType.fields,
+    );
     // TODO-779: 单词远程音频下载失败时带可见原因到成功 toast（卡片仍建好）。
     final String? audioWarning = rendered.audioWarning;
 
@@ -285,7 +290,10 @@ class AnkiRepository extends BaseAnkiRepository {
       if (firstFieldValue.isNotEmpty) {
         final readingIdx = _findReadingFieldIndex(
           noteType,
-          settings.fieldMappings,
+          FushiCardFields.alignToFields(
+            settings.fieldMappings,
+            noteType.fields,
+          ),
         );
         try {
           final isDupe = await _channel.invokeMethod('checkForDuplicates', {

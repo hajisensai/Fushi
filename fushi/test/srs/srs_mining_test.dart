@@ -547,7 +547,7 @@ void main() {
       final List<MinedNoteRef> refs = await repo.findMatchingNotes('雪', 'ゆき');
       expect(refs.map((MinedNoteRef r) => r.noteId), <int>[newer, older]);
       expect(refs.first.preview, '雪');
-      expect((await repo.noteFields(newer))!['Expression'], '雪');
+      expect((await repo.noteFields(newer))!['Term'], '雪');
       expect(await repo.noteFields(12345), isNull);
 
       final String olderId = (await store.noteIdForAnkiNumericId(older))!;

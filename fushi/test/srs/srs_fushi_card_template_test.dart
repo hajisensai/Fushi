@@ -39,7 +39,7 @@ void main() {
   test('an empty Lapis-shaped note (only Expression) still renders', () {
     final AnkiRenderedCard card = _render(<String, String>{
       for (final String f in FushiCardNoteType.fields) f: '',
-      'Expression': '箔',
+      'Term': '箔',
     });
     expect(card.isEmpty, isFalse);
     expect(card.question, contains('箔'));
@@ -226,7 +226,7 @@ void main() {
           ...((raw[i]! as Map)['fields'] as Map).cast<String, String>(),
         };
         // 真实样本的图片 / 音频是媒体库里的文件名，预览页没有媒体库：换成样例图。
-        f['Picture'] = srsSampleCardFields()['Picture']!;
+        f['Media'] = srsSampleCardFields()['Media']!;
         samples.add(('real$i', f));
       }
     }

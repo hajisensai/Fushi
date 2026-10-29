@@ -65,12 +65,12 @@ final String kSrsSampleGlossary =
 /// 样例笔记的字段（Fushi 卡片字段名 → 内容）。
 Map<String, String> srsSampleCardFields() => <String, String>{
   for (final String f in FushiCardNoteType.fields) f: '',
-  'Expression': '通う',
-  'ExpressionFurigana': '通[かよ]う',
-  'ExpressionReading': 'かよう',
+  'Term': '通う',
+  'TermFurigana': '通[かよ]う',
+  'TermReading': 'かよう',
   'Sentence': '毎日のように図書館に<b>通って</b>いる。',
   'SentenceTranslation': '几乎每天都去图书馆。',
-  'Picture': _samplePicture,
+  'Media': _samplePicture,
   'MainDefinition': kSrsSampleMainDefinition,
   'Glossary': kSrsSampleGlossary,
   'PitchPosition':
@@ -79,7 +79,7 @@ Map<String, String> srsSampleCardFields() => <String, String>{
   'PitchCategories': 'heiban',
   'Frequency':
       '<ul style="text-align: left;"><li>JPDB: 1840</li><li>Novels: 2213</li></ul>',
-  'FreqSort': '1840',
-  'MiscInfo': '<a href="#">Fushi 示例书</a>',
+  'FrequencyRank': '1840',
+  'Source': '<a href="#">Fushi 示例书</a>',
   'IsWordAndSentenceCard': 'x',
 };

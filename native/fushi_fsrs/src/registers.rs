@@ -727,7 +727,7 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
         None => as_str(get(builtin, "freqFieldId"), "freqFieldId")?.map(str::to_owned),
     };
     // 实际生效的词频序字段（缓存行 `freq_rank` 的来源、编辑页「词频序字段」标签都读它，规则只在这里写一次）：
-    // 显式设的 `freq`（字段还在时），否则名为 `FreqSort` 的字段（去首尾空白、不分大小写——Lapis 及其衍生类型、
+    // 显式设的 `freq`（字段还在时），否则名为 `FreqSort` / `FrequencyRank` 的字段（去首尾空白、不分大小写——Lapis 及其衍生类型、
     // 从 Anki 导入的同类笔记都用这个名字）；都没有 = None。
     let freq_effective = effective_frequency_field(freq.as_deref(), &live_fields);
     Ok(json!({
@@ -754,7 +754,11 @@ fn effective_frequency_field(explicit: Option<&str>, fields: &[FieldDef]) -> Opt
             return Some(id.to_owned());
         }
     }
-    fields.iter().find(|f| f.name.trim().to_lowercase() == "freqsort").map(|f| f.id.clone())
+    // `FrequencyRank` 是 Fushi 卡片 2026-10-29 起的字段名（旧名 `FreqSort`），回导 Fushi 导出的包时认它。
+    fields
+        .iter()
+        .find(|f| matches!(f.name.trim().to_lowercase().as_str(), "freqsort" | "frequencyrank"))
+        .map(|f| f.id.clone())
 }
 
 // ---------------------------------------------------------------- 物化：牌组

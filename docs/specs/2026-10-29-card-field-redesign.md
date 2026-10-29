@@ -1,4 +1,4 @@
-# 卡组字段重新设计（方案，待确认，未动代码）
+# 卡组字段重新设计（2026-10-29 已采纳并实现，见文末「实现记录」）
 
 2026-10-29 用户：「卡组字段名感觉不太符合，可以重新设计一下，比如卡片的图片字段，可以塞视频、gif。」
 本文只出方案，等用户拍板后再实现。
@@ -113,3 +113,27 @@ Lapis 内置类型本身保持 Lapis 官方字段名（它是对官方牌组的�
 
 - fieldId 派生规则是最大雷区，步骤 1 必须先落地并带回归测试，再动别的。
 - Anki 端对 `<video>` 的支持因客户端而异，必须实测后才允许默认 clip 写进 Anki 目标。
+
+## 6. 实现记录（2026-10-29）
+
+用户拍板：2.2 改名清单**全部采纳**；Lapis 内置类型不改；**字段名就是键名（不另设显示名），旧名作别名兼容**。
+与第 2.1 节「稳定键 + 显示名」的差别：不再有第二个名字——Anki 里看到的、模板里写的、制卡映射的键都是新名；
+旧名只在「读入口」和「ID 派生」两处作别名存在。
+
+- **单一真相**：`packages/fushi_anki/lib/src/fushi_card_fields.dart`（`FushiCardFields`）：新名常量、`legacyNames`
+  （新→旧）、`canonical` / `canonicalizeFields` / `value` / `alignToFields` / `legacyNameOf`。
+- **fieldId 不变**：内置字段的 ID / ankiNum 按**旧名**派生（`srsBuiltinFieldSeed`，仅 `fushi_card`），旧卡的字段值、
+  同步日志、词状态零迁移；内置笔记类型本来就是「代码默认 + 修改记录」物化，名字自动跟随新名。
+  回归：`srs_builtin_fushi_card_test.dart`（新旧名都算出同一个 fieldId；Lapis 的 ID 不受影响）。
+- **旧名兼容入口**：
+  - 制卡到 Anki：`fieldsForNoteType` / `fieldMappingsAfterFetch` / AnkiDroid 取值前先 `alignToFields`——Anki 里已导出的
+    Fushi 卡片还是旧名（或映射偏好存的是旧名）都对得上，用户映射不丢；
+  - Lapis → Fushi 卡片迁移计划：`srsLapisFieldSlot` 把旧名 / Lapis 内置字段落到新名槽位；
+  - 导入的 Fushi 导出包（非内置）：`srsGuessFieldMapping` 与 Rust `effective_frequency_field` 认 `FrequencyRank`；
+  - 字段目录 / 人话名 / 说明：`srsKnownField*` 经 `legacyNameOf` 查表。
+- **未做（按需再开）**：
+  - `{card-media}` 占位符：`{card-image}` 本来就按制卡模式产出静态图 / GIF / 视频片段，新增占位符要同时改
+    设置页、映射偏好、导出包、12 处接线，且是持久化名；收益只是名字，暂缓。
+  - 「画面字段放什么」按来源的默认模式设置、模板 `.fc-picture → .fc-media` 类名：视觉与设置改动，另开。
+  - 各语种里 `srs_field_info_picture_*` 一类人话文案仍写「图片」，等 `Media` 的统一措辞定下来再批量改。
+  - AnkiDroid / AnkiMobile 对字段内 `<video>` 的实测仍未做。

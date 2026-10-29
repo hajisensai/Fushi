@@ -552,7 +552,7 @@
 .fc-pitch-num[data-type="kifuku"] { background: var(--fc-pitch-kifuku); }
 
 /* 图片：窄屏是标题区右上角的紧凑缩略图，按原比例完整显示（书封等竖图不裁切），
-   限高限宽不挤占词条行；点按放大看全图。Picture 也可能是视频片段（<video>，视频制卡默认）
+   限高限宽不挤占词条行；点按放大看全图。Media 也可能是视频片段（<video>，视频制卡默认）
    或动图（GIF / WebP / AVIF 都是 <img>）：视频与图片同一套尺寸 / 圆角 / 打码规则，
    但不放大（控制条本身就要点按） */
 .fc-picture {

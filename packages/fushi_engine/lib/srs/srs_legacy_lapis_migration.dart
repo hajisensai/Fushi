@@ -82,10 +82,13 @@ final RegExp _lapisWord = RegExp(r'\blapis\b', caseSensitive: false);
 String srsNormalizeLapisFieldName(String name) =>
     name.toLowerCase().replaceAll(RegExp(r'[\s_\-\.:/·・（）()\[\]【】「」]'), '');
 
-/// 归一后的 Fushi 卡片字段键 → 字段键。
+/// 归一后的 Fushi 卡片字段键 → 字段键。旧名（Lapis 字段名，[FushiCardFields] 的别名）也认，
+/// 落到改名后的字段键上。
 final Map<String, String> _fushiKeyByNormalized = <String, String>{
   for (final String k in FushiCardNoteType.fields)
     srsNormalizeLapisFieldName(k): k,
+  for (final MapEntry<String, String> e in FushiCardFields.legacyNames.entries)
+    srsNormalizeLapisFieldName(e.value): e.key,
 };
 
 /// 同义名（已归一）→ Fushi 卡片字段键。
@@ -270,7 +273,10 @@ SrsLapisFieldSlot? srsLapisFieldSlot(
     return _fushiKeyByNormalized.containsKey(
           srsNormalizeLapisFieldName(builtinName),
         )
-        ? SrsLapisFieldSlot(builtinName, SrsLapisFieldMatch.builtinKey)
+        ? SrsLapisFieldSlot(
+            FushiCardFields.canonical(builtinName),
+            SrsLapisFieldMatch.builtinKey,
+          )
         : null;
   }
   final String n = srsNormalizeLapisFieldName(f.name);
@@ -280,7 +286,12 @@ SrsLapisFieldSlot? srsLapisFieldSlot(
     return SrsLapisFieldSlot(exact, SrsLapisFieldMatch.exactName);
   }
   final String? alias = kSrsLapisFieldAliases[n];
-  if (alias != null) return SrsLapisFieldSlot(alias, SrsLapisFieldMatch.alias);
+  if (alias != null) {
+    return SrsLapisFieldSlot(
+      FushiCardFields.canonical(alias),
+      SrsLapisFieldMatch.alias,
+    );
+  }
   return null;
 }
 

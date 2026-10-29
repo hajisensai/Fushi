@@ -21,6 +21,7 @@ export 'src/anki_synchronized_clip_template.dart';
 export 'src/anki_template_render.dart';
 export 'src/card_source_link.dart';
 export 'src/fushi_card_blocks.dart';
+export 'src/fushi_card_fields.dart';
 export 'src/fushi_card_note_type.dart';
 export 'src/ankiconnect/ankiconnect_service.dart';
 export 'src/lapis_blocks.dart';

@@ -9,12 +9,12 @@ const String kFushiCardFrontTemplate = r'''<!--
   外观由 Fushi 宿主经 --fushi-srs-* 变量与 fushi-srs-* 类名注入；在 Anki 里没有宿主，按默认外观显示。
 -->
 <div class="fc fc-front" lang="ja">
-  {{#FreqSort}}<div class="fc-front-freq"><span class="fc-chip fc-chip--freq">{{FreqSort}}</span></div>{{/FreqSort}}
+  {{#FrequencyRank}}<div class="fc-front-freq"><span class="fc-chip fc-chip--freq">{{FrequencyRank}}</span></div>{{/FrequencyRank}}
 
   {{^IsSentenceCard}}{{^IsWordAndSentenceCard}}{{^IsClickCard}}{{^IsAudioCard}}
   <div class="fc-front-term">
-    <div class="fc-term fc-term--hero fc-term--plain">{{Expression}}</div>
-    {{#ExpressionFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:ExpressionFurigana}}</div>{{/ExpressionFurigana}}
+    <div class="fc-term fc-term--hero fc-term--plain">{{Term}}</div>
+    {{#TermFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:TermFurigana}}</div>{{/TermFurigana}}
     <div class="fc-front-pitch">{{PitchPosition}}</div>
   </div>
   {{/IsAudioCard}}{{/IsClickCard}}{{/IsWordAndSentenceCard}}{{/IsSentenceCard}}
@@ -25,8 +25,8 @@ const String kFushiCardFrontTemplate = r'''<!--
 
   {{#IsWordAndSentenceCard}}
   <div class="fc-front-term">
-    <div class="fc-term fc-term--hero fc-term--plain">{{Expression}}</div>
-    {{#ExpressionFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:ExpressionFurigana}}</div>{{/ExpressionFurigana}}
+    <div class="fc-term fc-term--hero fc-term--plain">{{Term}}</div>
+    {{#TermFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:TermFurigana}}</div>{{/TermFurigana}}
     <div class="fc-front-pitch">{{PitchPosition}}</div>
   </div>
   <div class="fc-front-context">{{kanji:Sentence}}</div>
@@ -34,7 +34,7 @@ const String kFushiCardFrontTemplate = r'''<!--
 
   {{#IsClickCard}}
   <div class="fc-click" role="button" tabindex="0">
-    <div class="fc-term fc-term--hero fc-click-term">{{Expression}}</div>
+    <div class="fc-term fc-term--hero fc-click-term">{{Term}}</div>
     <div class="fc-front-sentence fc-click-sentence">{{kanji:Sentence}}</div>
   </div>
   {{/IsClickCard}}
@@ -44,7 +44,7 @@ const String kFushiCardFrontTemplate = r'''<!--
     <div class="fc-front-sentence fc-front-sentence--masked">{{kanji:Sentence}}</div>
     <div class="fc-audio fc-audio--large">
       {{#SentenceAudio}}{{SentenceAudio}}{{/SentenceAudio}}
-      {{^SentenceAudio}}{{ExpressionAudio}}{{/SentenceAudio}}
+      {{^SentenceAudio}}{{TermAudio}}{{/SentenceAudio}}
     </div>
   </div>
   {{/IsAudioCard}}
@@ -86,15 +86,15 @@ const String kFushiCardBackTemplate = r'''<!--
   <div class="fc-aside">
     <header class="fc-head">
       <div class="fc-head-main">
-        <div class="fc-term">{{#ExpressionFurigana}}{{furigana:ExpressionFurigana}}{{/ExpressionFurigana}}{{^ExpressionFurigana}}{{Expression}}{{/ExpressionFurigana}}</div>
+        <div class="fc-term">{{#TermFurigana}}{{furigana:TermFurigana}}{{/TermFurigana}}{{^TermFurigana}}{{Term}}{{/TermFurigana}}</div>
         <div class="fc-reading-row">
-          <span class="fc-reading">{{#ExpressionFurigana}}{{kana:ExpressionFurigana}}{{/ExpressionFurigana}}{{^ExpressionFurigana}}{{ExpressionReading}}{{/ExpressionFurigana}}</span>
+          <span class="fc-reading">{{#TermFurigana}}{{kana:TermFurigana}}{{/TermFurigana}}{{^TermFurigana}}{{TermReading}}{{/TermFurigana}}</span>
           {{#PitchPosition}}<span class="fc-pitch-tags">{{PitchPosition}}</span>{{/PitchPosition}}
-          {{#ExpressionAudio}}<span class="fc-audio">{{ExpressionAudio}}</span>{{/ExpressionAudio}}
-          {{#FreqSort}}<span class="fc-chip fc-chip--freq">{{FreqSort}}</span>{{/FreqSort}}
+          {{#TermAudio}}<span class="fc-audio">{{TermAudio}}</span>{{/TermAudio}}
+          {{#FrequencyRank}}<span class="fc-chip fc-chip--freq">{{FrequencyRank}}</span>{{/FrequencyRank}}
         </div>
       </div>
-      {{#Picture}}<figure class="fc-picture {{Tags}}">{{Picture}}</figure>{{/Picture}}
+      {{#Media}}<figure class="fc-picture {{Tags}}">{{Media}}</figure>{{/Media}}
     </header>
 
     {{#Sentence}}
@@ -109,8 +109,8 @@ const String kFushiCardBackTemplate = r'''<!--
   </div>
 
   <section class="fc-defs">
-    {{#SelectionText}}<blockquote class="fc-selection">{{SelectionText}}</blockquote>{{/SelectionText}}
-    {{#DefinitionPicture}}<div class="fc-def-picture">{{DefinitionPicture}}</div>{{/DefinitionPicture}}
+    {{#LookupSelection}}<blockquote class="fc-selection">{{LookupSelection}}</blockquote>{{/LookupSelection}}
+    {{#DefinitionMedia}}<div class="fc-def-picture">{{DefinitionMedia}}</div>{{/DefinitionMedia}}
     {{#MainDefinition}}<div class="fc-gloss fc-gloss--main">{{MainDefinition}}</div>{{/MainDefinition}}
     {{#Glossary}}
     <details class="fc-more"{{^MainDefinition}} open{{/MainDefinition}}>
@@ -127,12 +127,12 @@ const String kFushiCardBackTemplate = r'''<!--
       <div class="fc-freq-list">{{Frequency}}</div>
     </section>
     {{/Frequency}}
-    {{#MiscInfo}}
+    {{#Source}}
     <section class="fc-meta-row fc-meta-row--source">
       <span class="fc-meta-label fc-meta-label--source"></span>
-      <div class="fc-source">{{MiscInfo}}</div>
+      <div class="fc-source">{{Source}}</div>
     </section>
-    {{/MiscInfo}}
+    {{/Source}}
   </footer>
 
   <span class="fc-src" data-fc="pitch-categories" hidden>{{text:PitchCategories}}</span>
@@ -380,7 +380,7 @@ const String kFushiCardBackTemplate = r'''<!--
 
     /* ---------- 图片：点按放大，再点关闭；加载完重算左栏能否吸顶 ---------- */
     function setUpLightbox() {
-      /* 视频片段（制卡写进 Picture 的 <video>）尺寸要等元数据到了才知道，同样重算 */
+      /* 视频片段（制卡写进 Media 的 <video>）尺寸要等元数据到了才知道，同样重算 */
       root.querySelectorAll(".fc-picture video, .fc-def-picture video").forEach(function (v) {
         if (v.readyState < 1) v.addEventListener("loadedmetadata", applyLayout, { once: true });
       });
@@ -969,7 +969,7 @@ const String kFushiCardStylingCss = r'''/*
 .fc-pitch-num[data-type="kifuku"] { background: var(--fc-pitch-kifuku); }
 
 /* 图片：窄屏是标题区右上角的紧凑缩略图，按原比例完整显示（书封等竖图不裁切），
-   限高限宽不挤占词条行；点按放大看全图。Picture 也可能是视频片段（<video>，视频制卡默认）
+   限高限宽不挤占词条行；点按放大看全图。Media 也可能是视频片段（<video>，视频制卡默认）
    或动图（GIF / WebP / AVIF 都是 <img>）：视频与图片同一套尺寸 / 圆角 / 打码规则，
    但不放大（控制条本身就要点按） */
 .fc-picture {

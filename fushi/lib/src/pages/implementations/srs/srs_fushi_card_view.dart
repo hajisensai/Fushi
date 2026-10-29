@@ -82,7 +82,7 @@ bool srsFushiBlockVisible(
       names.any((String n) => srsFieldFilled(fields[n]));
   return switch (block) {
     FushiCardBlock.term => true,
-    FushiCardBlock.reading => any(block.fields) || any(<String>['Expression']),
+    FushiCardBlock.reading => any(block.fields) || any(<String>['Term']),
     FushiCardBlock.picture => a.showPicture && any(block.fields),
     FushiCardBlock.sentence => srsFieldFilled(fields['Sentence']),
     FushiCardBlock.definitions => any(block.fields),
@@ -91,7 +91,7 @@ bool srsFushiBlockVisible(
     FushiCardBlock.frequency =>
       a.showFrequency &&
           any(block.fields) &&
-          !(a.aggregateFrequency && srsFieldFilled(fields['FreqSort'])),
+          !(a.aggregateFrequency && srsFieldFilled(fields['FrequencyRank'])),
     FushiCardBlock.source => a.showSource && any(block.fields),
   };
 }
@@ -471,8 +471,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final Map<String, String> f = widget.fields;
     final SrsFushiFrontKind kind = srsFushiFrontKind(f);
     final List<Widget> blocks = <Widget>[
-      if (s.appearance.frontFrequency && srsFieldFilled(f['FreqSort']))
-        _Chip(text: srsPlainText(f['FreqSort']!), style: s),
+      if (s.appearance.frontFrequency && srsFieldFilled(f['FrequencyRank']))
+        _Chip(text: srsPlainText(f['FrequencyRank']!), style: s),
       ...switch (kind) {
         SrsFushiFrontKind.word => <Widget>[_frontTerm(s, c)],
         SrsFushiFrontKind.sentence => <Widget>[_frontSentence(s, c)],
@@ -538,10 +538,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   Widget _frontTerm(_SrsCardStyle s, BoxConstraints c) {
     final Map<String, String> f = widget.fields;
     final bool ruby =
-        s.appearance.frontReading && srsFieldFilled(f['ExpressionFurigana']);
+        s.appearance.frontReading && srsFieldFilled(f['TermFurigana']);
     final List<SrsInline> segs = ruby
-        ? srsParseInline(f['ExpressionFurigana']!)
-        : <SrsInline>[SrsInline(srsPlainText(f['Expression'] ?? ''))];
+        ? srsParseInline(f['TermFurigana']!)
+        : <SrsInline>[SrsInline(srsPlainText(f['Term'] ?? ''))];
     return Column(
       key: const ValueKey<String>('srs-fushi-front-term'),
       mainAxisSize: MainAxisSize.min,
@@ -601,7 +601,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           ? CrossFadeState.showSecond
           : CrossFadeState.showFirst,
       firstChild: Text(
-        srsPlainText(widget.fields['Expression'] ?? ''),
+        srsPlainText(widget.fields['Term'] ?? ''),
         textAlign: TextAlign.center,
         style: s.term(s.tokens.hero, scale: _heroScale(s, c)),
       ),
@@ -637,9 +637,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
 
   List<Widget> _pitchRow(_SrsCardStyle s, {bool center = false}) {
     final Map<String, String> f = widget.fields;
-    final String kana = srsFieldFilled(f['ExpressionFurigana'])
-        ? srsKanaOf(srsParseInline(f['ExpressionFurigana']!))
-        : srsPlainText(f['ExpressionReading'] ?? '');
+    final String kana = srsFieldFilled(f['TermFurigana'])
+        ? srsKanaOf(srsParseInline(f['TermFurigana']!))
+        : srsPlainText(f['TermReading'] ?? '');
     final List<int> positions = srsPitchPositions(
       f['PitchPosition'] ?? '',
       kana,
@@ -683,9 +683,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
 
   Widget _readingRow(_SrsCardStyle s) {
     final Map<String, String> f = widget.fields;
-    final String kana = srsFieldFilled(f['ExpressionFurigana'])
-        ? srsKanaOf(srsParseInline(f['ExpressionFurigana']!))
-        : srsPlainText(f['ExpressionReading'] ?? '');
+    final String kana = srsFieldFilled(f['TermFurigana'])
+        ? srsKanaOf(srsParseInline(f['TermFurigana']!))
+        : srsPlainText(f['TermReading'] ?? '');
     final List<int> positions = srsPitchPositions(
       f['PitchPosition'] ?? '',
       kana,
@@ -707,11 +707,11 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           ),
         // 平均词频（聚合）：关了「显示词频」不出；下方明细区在时不重复。
         if (s.appearance.showFrequency &&
-            srsFieldFilled(f['FreqSort']) &&
+            srsFieldFilled(f['FrequencyRank']) &&
             !srsFushiBlockVisible(FushiCardBlock.frequency, f, s.appearance))
           _Chip(
             key: const ValueKey<String>('srs-fushi-frequency-aggregate'),
-            text: srsPlainText(f['FreqSort']!),
+            text: srsPlainText(f['FrequencyRank']!),
             style: s,
           ),
       ],
@@ -723,7 +723,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   /// 也从同一个 x 起头。词条独占整行宽：手机上不再与右侧缩略图抢宽度（短词被折成两行）。
   Widget _header(_SrsCardStyle s, BoxConstraints c) {
     final List<String> audio = srsAudioSources(
-      widget.fields['ExpressionAudio'] ?? '',
+      widget.fields['TermAudio'] ?? '',
     );
     final Widget main = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -770,9 +770,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
 
   Widget _term(_SrsCardStyle s, BoxConstraints c) {
     final Map<String, String> f = widget.fields;
-    final List<SrsInline> segs = srsFieldFilled(f['ExpressionFurigana'])
-        ? srsParseInline(f['ExpressionFurigana']!)
-        : srsParseInline(f['Expression'] ?? '', ankiFurigana: false);
+    final List<SrsInline> segs = srsFieldFilled(f['TermFurigana'])
+        ? srsParseInline(f['TermFurigana']!)
+        : srsParseInline(f['Term'] ?? '', ankiFurigana: false);
     final double min = s.sizeOf(s.tokens.termMin);
     final double scale =
         (c.maxWidth * 0.10).clamp(min, s.sizeOf(s.tokens.termMax)) /
@@ -802,7 +802,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     )) {
       return null;
     }
-    final String picture = widget.fields['Picture']!;
+    final String picture = widget.fields['Media']!;
     final SrsPictureLimits limits = srsPictureLimits(
       ref.watch(srsReviewImageSizeProvider),
       viewport: _viewport,
@@ -849,10 +849,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       srsParseInline(srsClozeToBold(raw)),
       marked: srsMarkedTargets(raw),
       terms: <String>[
-        srsPlainText(f['Expression'] ?? ''),
-        if (srsFieldFilled(f['ExpressionFurigana']))
-          srsKanaOf(srsParseInline(f['ExpressionFurigana']!)),
-        srsPlainText(f['ExpressionReading'] ?? ''),
+        srsPlainText(f['Term'] ?? ''),
+        if (srsFieldFilled(f['TermFurigana']))
+          srsKanaOf(srsParseInline(f['TermFurigana']!)),
+        srsPlainText(f['TermReading'] ?? ''),
       ],
     );
     final bool hasRuby = segs.any((SrsInline x) => x.ruby != null);
@@ -973,7 +973,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           key: const ValueKey<String>('srs-fushi-source'),
           label: labels.source,
           style: s,
-          child: _sourceText(s, f['MiscInfo']!),
+          child: _sourceText(s, f['Source']!),
         ),
     ];
   }
