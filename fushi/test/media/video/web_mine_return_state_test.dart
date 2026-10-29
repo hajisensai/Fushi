@@ -186,6 +186,80 @@ void main() {
       );
     });
 
+    // 后台空闲制卡页（closeAfterMining，用户不在场）：开页前就要静音、开不了跑要按时收尾、
+    // 机器驱动的播放不写续播点、关的是自己这条路由。
+    test('background mining page pre-starts silent capture', () {
+      expect(
+        page,
+        contains(
+          'bool get _isMiningHost =>\n'
+          '      widget.returnHostingAfterMining != null || widget.closeAfterMining;',
+        ),
+      );
+      final String created = body(
+        page,
+        'onWebViewCreated: (InAppWebViewController controller) {',
+        'unawaited(_applyShaderTier());',
+      );
+      expect(created, contains('if (_isMiningHost && !_windowed'));
+      expect(created, contains('_preStartSilentAudio()'));
+      // 「会话音量残留还原」只给用户自己的页：后台制卡页开播时做它会把刚压低的会话放出声。
+      final String onState = body(page, 'void _onState(', 'void _onKeyToken(');
+      expect(onState, contains('!_isMiningHost &&'));
+    });
+
+    test('idle auto mining page gives up when it never starts', () {
+      final String init = body(page, 'void initState() {', '@override');
+      expect(init, contains('if (widget.idleAutoMining)'));
+      expect(
+        init,
+        contains('Timer(kWebMineAutoStartTimeout, _onAutoStartTimeout)'),
+      );
+      final String timeout = body(
+        page,
+        'void _onAutoStartTimeout()',
+        'Future<void> _initGuarded()',
+      );
+      expect(timeout, contains('_autoRunTriggered || _mineRunning'));
+      expect(timeout, contains('_finishMining(auto: true'));
+      expect(
+        body(page, 'void dispose() {', '_flushPosition'),
+        contains('_autoStartDeadline?.cancel()'),
+      );
+      // 打开时队列已空：直接收尾，不等截止。
+      final String refresh = body(
+        page,
+        'Future<void> _refreshMinePending()',
+        'void _maybeAutoRunMineQueue()',
+      );
+      expect(refresh, contains('n == 0 &&'));
+      expect(refresh, contains('widget.idleAutoMining &&'));
+      expect(refresh, contains('_finishMining(auto: true, status: null)'));
+    });
+
+    test('background mining page never writes the resume position', () {
+      final String onState = body(page, 'void _onState(', 'void _onKeyToken(');
+      expect(
+        onState,
+        contains('if (!_mineRunning && !widget.closeAfterMining)'),
+      );
+      expect(
+        page,
+        contains('if (!widget.closeAfterMining) unawaited(_flushPosition());'),
+      );
+    });
+
+    test('background mining page closes its own route', () {
+      final String close = body(
+        page,
+        'void _closeAfterMining({',
+        'WebMineReturnState? _currentReturnState()',
+      );
+      expect(close, isNot(contains('.maybePop(')));
+      expect(close, contains('ModalRoute.of(context)'));
+      expect(close, contains('navigator.removeRoute(route)'));
+    });
+
     test('glue: empty track id selects the none track', () {
       final String select = body(
         glue,

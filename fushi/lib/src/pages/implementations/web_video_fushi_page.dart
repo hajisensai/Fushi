@@ -429,6 +429,16 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// [_closeAfterMining] 已经关过页（让位 / 放弃 / 跑完可能先后都走到收尾）。
   bool _closedAfterMining = false;
 
+  /// 空闲自动制卡页（交接页 / 后台制卡页）的开跑截止：页面开了却一直没开跑（加载失败、
+  /// 站点停在登录 / 选人页、打开时队列已被别处跑空）就按放弃收尾，不让一页无人值守的
+  /// 网页视频挂到用户回来、也不让后台调度卡在这一本上。
+  Timer? _autoStartDeadline;
+
+  /// 本页是制卡宿主（交接页 / 后台制卡页），不是用户自己在看的那一页：WebView 一建好
+  /// 就要静音（站点会自动播放），也不做用户本人才有的「会话音量残留还原」。
+  bool get _isMiningHost =>
+      widget.returnHostingAfterMining != null || widget.closeAfterMining;
+
   /// 自动制卡已触发、但还在起音频 / 读队列（[_mineRunning] 尚未置位）时用户回来了：
   /// 开跑那一刻直接让位。
   bool _autoYieldRequested = false;
@@ -542,7 +552,23 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     // Runtime 缺失 / 用户数据目录被占用时直接抛、`_copyLoginCookiesFromBuiltin` 的 IO）。
     // 从前抛出后 `_failReason` 恒 null、`_row` 恒 null ⇒ 页面永久停在**无 AppBar 的转圈**
     // 分支上，桌面端没有系统返回键 ⇒ 用户进来就出不去（与 BUG-2229 同构）。
+    if (widget.idleAutoMining) {
+      _autoStartDeadline = Timer(kWebMineAutoStartTimeout, _onAutoStartTimeout);
+    }
     unawaited(_initGuarded());
+  }
+
+  /// 空闲自动制卡页到点仍没开跑：整轮放弃（交接页换回原档，后台制卡页关页）。
+  void _onAutoStartTimeout() {
+    if (!mounted || _autoRunTriggered || _mineRunning) return;
+    _autoRunTriggered = true;
+    ErrorLogService.instance.log(
+      'web_video.mineQueue',
+      'idle auto mining never started: '
+          'row=${_row != null} hasVideo=${_state?.hasVideo ?? false} '
+          'pending=$_minePending fail=$_failReason',
+    );
+    _finishMining(auto: true, status: const WebMineAutoUnavailable());
   }
 
   /// [_init] 的异常边界：任何未预期失败都落进已有的**带 AppBar** 失败态，
@@ -578,6 +604,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       return true;
     }());
     _mineStopRequested = true;
+    _autoStartDeadline?.cancel();
     // 本页里登录的站点会话抄回 app 内浏览器（登录入口主要在浏览器，BUG-3801）。
     final Uri? site = _siteUri;
     if (site != null) unawaited(syncWebVideoLoginToBrowser(site));
@@ -593,7 +620,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       GlobalLookupController.instance.onHidden = _prevGlobalLookupOnHidden;
     }
     unawaited(_watchTracker?.stop());
-    unawaited(_flushPosition());
+    // 后台制卡页的播放全是机器驱动（站点自动播放 + 逐句重放），不是用户的续播点。
+    if (!widget.closeAfterMining) unawaited(_flushPosition());
     final OverlayEntry? entry = _popupOverlayEntry;
     if (entry != null) {
       removeAndDisposeOwnedOverlayEntry(entry);
@@ -750,8 +778,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         playing: state.isPlaying,
         durationMs: state.durationMs,
       );
-      // 队列重放期间的 seek/播放是机器驱动，不算观看进度、不计观看时长。
-      if (!_mineRunning) {
+      // 队列重放期间的 seek/播放是机器驱动，不算观看进度、不计观看时长；后台制卡页
+      // 整页都是机器驱动（开跑前站点自动播放、跑完到关页之间停在最后一句），同理。
+      if (!_mineRunning && !widget.closeAfterMining) {
         _maybePersistPosition(pos);
         _syncWatchTracker(state.isPlaying);
       }
@@ -763,7 +792,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (!_duckResidueChecked &&
         state.isPlaying &&
         !_mineRunning &&
-        widget.returnHostingAfterMining == null &&
+        !_isMiningHost &&
         !_windowed &&
         Platform.isWindows) {
       // 用户自己开播时内置档会话若还停在 -100 dB（上次静音重放中途进程被杀），就地还原。
@@ -952,6 +981,16 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final int n = await _mineQueue.pendingCount(widget.bookUid);
     if (!mounted) return;
     setState(() => _minePending = n);
+    if (n == 0 &&
+        widget.idleAutoMining &&
+        !_autoRunTriggered &&
+        !_mineRunning) {
+      // 空闲自动制卡页打开时队列已被别处跑空：没东西可做，直接收尾（同 [_runMineQueue]
+      // 读到空队列），不留一页无人值守的网页视频。
+      _autoRunTriggered = true;
+      _finishMining(auto: true, status: null);
+      return;
+    }
     _maybeAutoRunMineQueue();
   }
 
@@ -1071,7 +1110,17 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
             : t.web_video_mine_queue_finished(ok: ok, failed: failed),
       );
     }
-    if (mounted) unawaited(Navigator.of(context).maybePop());
+    if (!mounted) return;
+    // 关的是本页这条路由，不是导航栈顶：用户不在场时栈顶可能另有东西（maybePop 会弹错，
+    // 本页留着、后台调度一直以为在跑）。
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    if (route == null) return;
+    final NavigatorState navigator = Navigator.of(context);
+    if (route.isCurrent) {
+      navigator.pop();
+    } else {
+      navigator.removeRoute(route);
+    }
   }
 
   /// 当前播放状态的快照（站点还没报状态时 null）。
@@ -2833,10 +2882,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       onWebViewCreated: (InAppWebViewController controller) {
         _web = controller;
         _viewId = controller.platform.id;
-        if (widget.returnHostingAfterMining != null &&
-            !_windowed &&
-            Platform.isWindows) {
-          // 控制器建好 = 浏览器进程已在；站点还没加载完、还没自动播放。
+        if (_isMiningHost && !_windowed && Platform.isWindows) {
+          // 控制器建好 = 浏览器进程已在；站点还没加载完、还没自动播放。后台制卡页同样
+          // 要预起：它没有交接档，但站点照样一加载就带声音自动播放。
           _preStartFuture ??= _preStartSilentAudio();
         }
         unawaited(_applyShaderTier());

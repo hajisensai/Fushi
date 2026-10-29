@@ -17,6 +17,10 @@ import 'package:flutter/foundation.dart';
 /// 判定「用户离开了」的系统级无输入时长。
 const Duration kWebMineIdleThreshold = Duration(minutes: 2);
 
+/// 空闲自动制卡页（交接页 / 后台制卡页）从打开到开跑的截止：站点加载 + 画面就绪通常
+/// 十几秒；到点没开跑（加载失败、停在登录 / 选人页）就整轮放弃，不让页面无人值守地挂着。
+const Duration kWebMineAutoStartTimeout = Duration(seconds: 60);
+
 final class _LastInputInfo extends Struct {
   @Uint32()
   external int cbSize;
