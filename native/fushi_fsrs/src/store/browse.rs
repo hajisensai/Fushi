@@ -2021,6 +2021,33 @@ mod tests {
         assert_eq!(dupes(&d, probe), before);
     }
 
+    /// 同 study.rs `a_snapshot_read_between_commit_and_settle_rereads_the_touched_rows`，浏览会话这一侧：写锁守卫释放
+    /// （settle）晚于 COMMIT 可见。COMMIT 之后、守卫还持着时在读连接上发浏览命令：快照看得见新行，触发器记下的 id
+    /// 还在「未提交」里——只重读已提交的会按旧会话作答（漏读一次）。未提交的改动读到旧值（与快照一致），也不清掉，
+    /// 提交后再按终态重读。
+    #[test]
+    fn a_browse_read_between_commit_and_settle_rereads_the_touched_rows() {
+        let (d, _, _) = library();
+        let tags = |d: &Device| call(d, "anki_tags", json!({"owner": "ankiconnect"}))["tags"].clone();
+        assert_eq!(tags(&d), json!(["B", "b", "t1"]));
+        {
+            // 写连接上自动提交一条改动：COMMIT 已对读连接可见，守卫还没释放（没 settle）。浏览命令不在写连接上读
+            // （没有挂着的 Drift 事务），所以持着守卫也照样走读连接。
+            let w = d.core.writer().unwrap();
+            w.execute("UPDATE srs_notes_cache SET tags_json = '[\"zz\"]' WHERE id = ?1", [N1]).unwrap();
+            assert!(w.is_autocommit());
+            assert_eq!(tags(&d), json!(["B", "t1", "zz"]), "the committed write is visible and must be reread");
+            // 未提交的改动：读快照重读到的是旧值。
+            w.execute_batch(&format!("BEGIN; UPDATE srs_notes_cache SET tags_json = '[\"yy\"]' WHERE id = '{N2}';")).unwrap();
+            assert_eq!(tags(&d), json!(["B", "t1", "zz"]));
+            w.execute_batch("COMMIT;").unwrap();
+            assert_eq!(tags(&d), json!(["yy", "zz"]), "rows committed after an earlier reread are reread again");
+        }
+        assert_eq!(tags(&d), json!(["yy", "zz"]));
+        let stats = call(&d, "browse_stats", json!({}));
+        assert_eq!(stats["sessions"], json!(1), "rereads, not rebuilds: {stats}");
+    }
+
     /// 查重用得上 v15 的部分索引（候选规范形 IN (...) 不扫全表）。
     #[test]
     fn anki_dupes_query_uses_the_dupe_index() {
