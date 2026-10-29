@@ -738,6 +738,10 @@ class AnotherPopupPart {
         'roles and label sizes — same reviewed exception class as '
         'fushi_material_components / settings_shared.';
     const Map<String, String> allowedFiles = <String, String>{
+      'lib/src/media/panorama/panorama_atlas.dart':
+          'Library panorama glyph atlas: words are rasterized once at the atlas em size into GPU sprites (3D content scaled per frame by the Rust core), not page chrome.',
+      'lib/src/media/panorama/panorama_book_flip.dart':
+          'Library panorama book flip: the opened page lays out vertical body text sized from the page height (book content), not page chrome.',
       'lib/src/pages/implementations/srs/srs_field_editors.dart':
           'Ruby format key icon draws the reading glyph at 0.6x the body size (the icon is the ruby itself); derived from context.fushiType, not a free-standing size.',
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart':
@@ -1336,6 +1340,8 @@ class AnotherPopupPart {
     // 得到，因此本轮零红。它不是「以后再收窄」的占位——名单里的每个 token 从现在起
     // 都必须真实存在，删一个就红。
     const Map<String, Set<String>> allowedTokens = <String, Set<String>>{
+      'lib/src/media/panorama/panorama_atlas.dart': <String>{'fontSize:'},
+      'lib/src/media/panorama/panorama_book_flip.dart': <String>{'fontSize:'},
       'lib/src/pages/implementations/srs/srs_field_editors.dart': <String>{
         'fontSize:',
       },
