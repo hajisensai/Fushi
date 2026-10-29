@@ -1,19 +1,23 @@
 /// SRS 媒体同步（docs/specs/2026-10-25-srs-sync-v2-design.md §6.4、§6.5、§10.5）。
 ///
-/// 媒体内容寻址、不可变、只增：文件名就是内容哈希（制卡 / 导入时按内容命名），所以集合根下一个共用目录
-/// `media/<文件名>` 就是内容寻址存储，不再按写入者分目录。每轮（操作同步之后）：
+/// 媒体内容寻址、不可变、只增：位置上按内容存 `media/<sha256 前 2 位>/<sha256>`，本机文件名经日志里的绑定
+/// （内核 `Body::Media`，store/sync2/media.rs）映射到内容（审查 S-3：以前按名字存 `media/<名字>`、下载不校验，
+/// 同名不同内容的文件在两台设备上各留各的，云盘覆盖写的半截文件被当成本机文件）。每轮（发段之前先传一遍、
+/// 操作同步之后再完整对账一遍）：
 /// 1. 收集本 profile 全部存活笔记（含删除未满保留期的）与笔记类型引用的媒体文件名；
-/// 2. 本机缺、位置上有 → 下载；位置上没有、本机有 → 上传（位置之间互为镜像，缺的从别处补）；
-/// 3. 只被「删除已满 [kSrsMediaRetention]」的笔记引用、且不被任何存活引用的位置上的文件 → 删（要正面证据：
+/// 2. 本机有的按内容传上去；本机缺的、或绑定换了内容的，下载并校验 sha256；
+/// 3. 只被「删除已满 [kSrsMediaRetention]」的笔记引用、且不被任何存活引用绑定的内容 → 删（要正面证据：
 ///    本机不认识的文件不删）。别的设备若还看不到那次删除，会把它再传上来，不丢。**归档位置永不删**。
 ///
-/// 旧格式（`fushi-srs/<profileUid>/<写入者>/media/`）里已经传上去的文件只读兜底：v2 目录里没有、旧目录有的
-/// 照样能下载，之后由持有它的设备补传进 v2 目录。旧目录不自动删（设计 P7：用户在位置管理里手动清理）。
+/// 旧布局只读兜底：v2 目录下按名字存的 `media/<名字>`，与更老的写入者目录（`fushi-srs/<profileUid>/<写入者>/media/`）。
+/// 内容目录里没有、旧位置有（且与绑定的哈希一致）的照样能下载，之后补传进内容目录。旧位置不覆盖、不改名
+/// （写入者目录不自动删，设计 P7：用户在位置管理里手动清理）。
 library;
 
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
@@ -38,6 +42,9 @@ class SrsMediaSyncReport {
 
   /// 引用了但位置与本机都没有的文件（等持有它的设备上线）。
   final Set<String> missing = <String>{};
+
+  /// 下载到的内容与绑定的 sha256 对不上（截断 / 被改 / 解不开）而没有落地的名字。
+  final Set<String> rejected = <String>{};
 
   /// 这一轮列了位置上的整个媒体目录（没有日志投影可用：本地文件夹位置，或这个位置第一次对账）。
   bool listedRemote = false;
@@ -146,82 +153,39 @@ SrsLegacyMediaReader srsLegacyMediaReader(
 String srsMediaPresenceKey(String locationId, String folder) =>
     '$locationId/$folder';
 
+/// 位置上一份内容的路径：`<媒体目录>/<sha256 前 2 位>/<sha256>`（设计 §6.1，内容寻址、不可变）。
+String srsMediaContentPath(String folder, String sha) =>
+    '$folder/${sha.substring(0, 2)}/$sha';
+
+/// 位置上内容寻址目录的「有什么」记进日志用的位置身份（名字是 sha256）。与按名字存的旧目录分开记：同一个
+/// 字符串在两边指的不是同一个东西。
+String srsMediaContentPresenceKey(String locationId, String folder) =>
+    '${srsMediaPresenceKey(locationId, folder)}#sha256';
+
+/// 一段字节的 sha256（小写十六进制）。
+String srsMediaSha256(List<int> bytes) => sha256.convert(bytes).toString();
+
 /// 远端某个名字的已知状态。
 enum _Remote { present, absent, unknown }
 
-/// 跑一轮媒体同步。[mediaRoot] 是本 profile 的本机媒体目录；[archive] = 归档位置（只写不删）；[cipher] = 位置开了
-/// 加密时的媒体封装（文件放 `media-e/`、内容是密文，见 srs_location_crypto.dart）。
-///
-/// [locationId]（位置的稳定身份，各设备相同）给出时，位置上有什么读日志投影（内核 `media_known`），不列目录：
-/// - 日志里还没有任何设备对这个位置完整列举过 → 列一次，结果带「已列举」写进日志（全系统每个位置只列这一次）；
-/// - 之后只对投影里不认识的名字逐个查（老版本设备传上去的、别的设备刚传还没随段到达的），确认结果同样写回日志；
-///   读取时发现投影说在、实际不在 → 记「不在」，持有它的设备下一轮就会补传。
-/// 不给（本地文件夹位置，列目录只是本机文件系统调用）时照旧每轮列目录、不记日志。
-Future<SrsMediaSyncReport> srsSyncMedia({
-  required SrsLocationStore location,
-  required SrsDbStore store,
-  required Directory mediaRoot,
-  bool archive = false,
-  SrsLegacyMediaReader? legacy,
-  SrsMediaCipher? cipher,
-  String? locationId,
-}) async {
-  final SrsMediaSyncReport report = SrsMediaSyncReport();
-  // 加密媒体按密钥指纹分目录（换了密钥 = 新目录，全部按新密钥重传）。
-  final String folder = cipher == null ? kSrsMediaFolder : cipher.folder;
-  Future<void> put(String name, Uint8List plain) async => location.put(
-    '$folder/$name',
-    cipher == null ? plain : await cipher.seal(name, plain),
-  );
-  Future<Uint8List?> get(String name) async {
-    final Uint8List? b = await location.get('$folder/$name');
-    if (b == null || cipher == null) return b;
-    return cipher.open(name, b);
-  }
+/// 一个位置目录里「有什么」：日志投影（[locationKey] 给出时）+ 本轮确认的事实，最后写回日志。
+class _Presence {
+  _Presence(this.key);
 
-  final Set<String> wanted = await srsReferencedMedia(
-    store,
-    deletedAfterMs: store.now().$1 - kSrsMediaRetention.inMilliseconds,
-  );
-
-  final String? presenceKey = locationId == null
-      ? null
-      : srsMediaPresenceKey(locationId, folder);
+  /// 日志里的位置身份；null = 不记日志（本地文件夹位置，每轮列目录）。
+  final String? key;
   final Set<String> present = <String>{};
-  // 日志里记为「不在」的：这些已经查过（含旧格式目录），不再每轮逐个查。
   final Set<String> knownAbsent = <String>{};
-  // 本轮完整列举过目录：不在列表里的就是不在。
   bool listed = false;
-  if (presenceKey != null) {
-    final Map<String, Object?> known = (await store.sync2Command(
-      <String, Object?>{'op': 'media_known', 'location': presenceKey},
-    )).map;
-    if (known['seeded'] == true) {
-      present.addAll((known['present']! as List<Object?>).cast<String>());
-      knownAbsent.addAll((known['absent']! as List<Object?>).cast<String>());
-    }
-    listed = known['seeded'] != true;
-  } else {
-    listed = true;
-  }
-  if (listed) {
-    report.listedRemote = true;
-    present.addAll(<String>[
-      for (final SrsLocationEntry e in await location.list(folder))
-        if (!e.isFolder) e.name,
-    ]);
-  }
+  final Set<String> confirmedPresent = <String>{};
+  final Set<String> confirmedAbsent = <String>{};
+
   _Remote stateOf(String name) {
     if (present.contains(name)) return _Remote.present;
     if (listed || knownAbsent.contains(name)) return _Remote.absent;
     return _Remote.unknown;
   }
 
-  // 本轮确认的事实（最后一次写回日志）。
-  final Set<String> confirmedPresent = <String>{
-    if (presenceKey != null && listed) ...present,
-  };
-  final Set<String> confirmedAbsent = <String>{};
   void markPresent(String name) {
     present.add(name);
     confirmedPresent.add(name);
@@ -234,67 +198,260 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     confirmedAbsent.add(name);
   }
 
-  // 本机有哪些文件：异步列一次目录，不逐个 `existsSync`。两边都有的文件后面没有任何真正挂起的 IO，逐个同步 stat
-  // 会让整轮在微任务里跑完、不回事件循环——上万个媒体时 UI isolate 几秒到几十秒收不到帧和触摸（BUG-3865）。
-  final _SrsLocalMediaIndex localIndex = await _SrsLocalMediaIndex.scan(
-    mediaRoot,
+  /// 读日志投影。[seed] = 日志里没人完整列举过时由本轮列（内容目录）；旧的按名字目录只读兜底，从不列。
+  Future<bool> load(SrsDbStore store, {required bool seed}) async {
+    final String? k = key;
+    if (k == null) return listed = seed;
+    final Map<String, Object?> known = (await store.sync2Command(
+      <String, Object?>{'op': 'media_known', 'location': k},
+    )).map;
+    present.addAll((known['present']! as List<Object?>).cast<String>());
+    knownAbsent.addAll((known['absent']! as List<Object?>).cast<String>());
+    return listed = seed && known['seeded'] != true;
+  }
+
+  Future<void> record(SrsDbStore store, {required bool seeded}) async {
+    final String? k = key;
+    if (k == null) return;
+    if (confirmedPresent.isEmpty && confirmedAbsent.isEmpty && !seeded) {
+      return;
+    }
+    await store.sync2Command(<String, Object?>{
+      'op': 'media_record',
+      'location': k,
+      'present': confirmedPresent.toList(),
+      'absent': confirmedAbsent.toList(),
+      'seeded': seeded,
+      'now': store.now().$1,
+    });
+  }
+}
+
+/// 内核对一个媒体名字的结论（`media_scan`，store/sync2/media.rs）。
+class _MediaItem {
+  _MediaItem(Map<String, Object?> m)
+    : name = m['name']! as String,
+      sha = m['sha'] as String?,
+      have = m['have'] == true,
+      local = m['local'] as String?;
+
+  final String name;
+
+  /// 这个名字该是的内容（日志里的绑定）；null = 没有绑定、本机也没有。
+  final String? sha;
+
+  /// 本机文件已经是 [sha]。
+  final bool have;
+
+  /// 本机文件现在的内容（没有文件为 null）。
+  final String? local;
+}
+
+/// 跑一轮媒体同步。[mediaRoot] 是本 profile 的本机媒体目录；[archive] = 归档位置（只写不删）；[cipher] = 位置开了
+/// 加密时的媒体封装（文件放 `media-e/`、内容是密文，见 srs_location_crypto.dart）。
+///
+/// 位置上的媒体内容寻址（审查 S-3）：`<媒体目录>/<sha256 前 2 位>/<sha256>`，不可变、只增、只写一次
+/// （[SrsLocationStore.putNew]，从不覆盖）；本机文件名经日志里的绑定（内核 `Body::Media`）映射到内容：
+/// - 本机有文件 → 内核算出（或从缓存取）它的 sha256，没绑定 / 本机改过就绑上（`media_scan`），位置上没有那份内容就传；
+/// - 本机没有，或绑定指向别的内容（别的设备后来改了它）→ 下载绑定的内容，**校验 sha256**，对不上一律不落地
+///   （顺手删掉位置上那份坏的，持有原文件的设备下一轮补传）；
+/// - 位置上没有那份内容 → 只读兜底：旧的按名字存的 `<媒体目录>/<名字>` 与更老的写入者目录（[legacy]），有绑定时
+///   同样要哈希对得上。兜底拿到的补传进内容目录。旧位置的文件不覆盖、不改名。
+///
+/// [uploadOnly] = 只把本机有的内容传上去（不下载、不清理）：发段之前先跑这一步，媒体先于引用它的段到位置上
+/// （设计 §6.1 写入纪律 3，审查 S-10）。
+///
+/// [locationId]（位置的稳定身份，各设备相同）给出时，位置上有什么读日志投影（内核 `media_known`），不列目录：
+/// - 日志里还没有任何设备对这个位置的内容目录完整列举过 → 列一次（256 个前缀子目录），结果带「已列举」写进日志；
+/// - 之后只对投影里不认识的内容逐个查，确认结果同样写回日志；读取时发现投影说在、实际不在 → 记「不在」，持有它的
+///   设备下一轮就会补传。
+/// 不给（本地文件夹位置，列目录只是本机文件系统调用）时照旧每轮列目录、不记日志。
+Future<SrsMediaSyncReport> srsSyncMedia({
+  required SrsLocationStore location,
+  required SrsDbStore store,
+  required Directory mediaRoot,
+  bool archive = false,
+  SrsLegacyMediaReader? legacy,
+  SrsMediaCipher? cipher,
+  String? locationId,
+  bool uploadOnly = false,
+}) async {
+  final SrsMediaSyncReport report = SrsMediaSyncReport();
+  // 加密媒体按密钥指纹分目录（换了密钥 = 新目录，全部按新密钥重传）。
+  final String folder = cipher == null ? kSrsMediaFolder : cipher.folder;
+  // 内容按 sha256 寻址（加密时 AAD 也是 sha256：密文换了位置 / 名字解不开）。
+  Future<Uint8List> seal(String aad, Uint8List plain) async =>
+      cipher == null ? plain : await cipher.seal(aad, plain);
+  Future<Uint8List?> open(String aad, Uint8List? stored) async =>
+      stored == null || cipher == null ? stored : cipher.open(aad, stored);
+
+  final List<String> names = (await srsReferencedMedia(
+    store,
+    deletedAfterMs: store.now().$1 - kSrsMediaRetention.inMilliseconds,
+  )).toList()..sort();
+
+  // 1. 本机文件 → 内容（不进写锁：首次对账要把每个文件读一遍）→ 该做什么（写锁里，顺带写绑定）。
+  final Map<String, Object?> hashed = (await store.sync2Command(
+    <String, Object?>{
+      'op': 'media_hash',
+      'root': mediaRoot.path,
+      'names': names,
+    },
+  )).map;
+  final Map<String, Object?> scanned =
+      (await store.sync2Command(<String, Object?>{
+        'op': 'media_scan',
+        'names': names,
+        'files': hashed['files'],
+        'now': store.now().$1,
+      })).map;
+  final List<_MediaItem> items = <_MediaItem>[
+    for (final Object? m in scanned['items']! as List<Object?>)
+      _MediaItem((m! as Map<Object?, Object?>).cast<String, Object?>()),
+  ];
+
+  // 2. 位置上有什么：内容目录（日志投影，没人列过就列一次）与旧的按名字目录（只读兜底，只读投影、不列）。
+  final _Presence content = _Presence(
+    locationId == null ? null : srsMediaContentPresenceKey(locationId, folder),
   );
-  Future<void> syncOne(String name) async {
-    final File local = File(p.join(mediaRoot.path, name));
-    final bool haveLocal = await localIndex.has(local, name);
-    final _Remote remote = stateOf(name);
-    if (!haveLocal) {
-      Uint8List? bytes;
-      bool onRemote = false;
-      if (remote != _Remote.absent) {
-        // 投影说在，或投影不认识（逐个查这一个名字，不列目录）。
-        bytes = await get(name);
-        if (bytes != null) {
-          onRemote = true;
-          if (remote == _Remote.unknown) markPresent(name);
-        } else {
-          markAbsent(name);
+  final _Presence byName = _Presence(
+    locationId == null ? null : srsMediaPresenceKey(locationId, folder),
+  );
+  if (await content.load(store, seed: true)) {
+    report.listedRemote = true;
+    for (final SrsLocationEntry d in await location.list(folder)) {
+      if (!d.isFolder || d.name.length != 2) continue;
+      for (final SrsLocationEntry f in await location.list(
+        '$folder/${d.name}',
+      )) {
+        if (!f.isFolder && f.name.length == 64) {
+          content.present.add(f.name);
+          if (content.key != null) content.confirmedPresent.add(f.name);
         }
       }
-      // 旧格式目录只在第一次确认「不在」时找：日志里已记为不在的，当时已经找过。
-      if (bytes == null && !knownAbsent.contains(name)) {
-        bytes = await legacy?.call(name);
+    }
+  }
+  await byName.load(store, seed: false);
+
+  final List<(String, String)> landed = <(String, String)>[];
+
+  /// 把本机 [name]（内容应为 [sha]）传进内容目录；文件此刻的内容对不上（对账中途被改了）就留给下一轮。
+  Future<bool> upload(String name, String sha) async {
+    final Uint8List bytes = await File(
+      p.join(mediaRoot.path, name),
+    ).readAsBytes();
+    if (srsMediaSha256(bytes) != sha) return false;
+    await location.putNew(
+      srsMediaContentPath(folder, sha),
+      await seal(sha, bytes),
+    );
+    content.markPresent(sha);
+    report.uploaded++;
+    return true;
+  }
+
+  /// 确保内容 [sha] 在位置上（本机有、内容就是它）。
+  Future<void> ensureUploaded(String name, String sha) async {
+    final _Remote state = content.stateOf(sha);
+    if (state == _Remote.present) return;
+    if (state == _Remote.unknown &&
+        await location.exists(srsMediaContentPath(folder, sha))) {
+      content.markPresent(sha);
+      return;
+    }
+    await upload(name, sha);
+  }
+
+  /// 拿内容 [sha]：内容目录 → 旧的按名字目录 → 写入者目录。[sha] 为 null（没有绑定）时只能信兜底拿到的。
+  /// 拿到的明文一律按 sha256 校验；对不上的不要。
+  Future<Uint8List?> fetch(String name, String? sha) async {
+    if (sha != null && content.stateOf(sha) != _Remote.absent) {
+      final String path = srsMediaContentPath(folder, sha);
+      final Uint8List? stored = await location.get(path);
+      if (stored == null) {
+        content.markAbsent(sha);
+      } else {
+        final Uint8List? plain = await open(sha, stored);
+        if (plain != null && srsMediaSha256(plain) == sha) {
+          content.markPresent(sha);
+          return plain;
+        }
+        // 位置上这份内容是坏的（截断 / 被改 / 解不开）：名字就是哈希，坏的就是垃圾——删掉、记不在，持有原文件的
+        // 设备下一轮补传；不当成本机文件落地。
+        report.rejected.add(name);
+        await location.delete(path);
+        content.markAbsent(sha);
       }
-      if (bytes == null) {
-        // 位置上（含旧格式目录）确实没有：记下来，之后各轮不再逐个查它。
-        if (!knownAbsent.contains(name)) markAbsent(name);
-        report.missing.add(name);
-        return;
+    }
+    bool accept(Uint8List? plain) {
+      if (plain == null) return false;
+      if (sha == null || srsMediaSha256(plain) == sha) return true;
+      report.rejected.add(name);
+      return false;
+    }
+
+    if (byName.stateOf(name) != _Remote.absent) {
+      final Uint8List? plain = await open(
+        name,
+        await location.get('$folder/$name'),
+      );
+      if (plain == null) {
+        byName.markAbsent(name);
+      } else {
+        if (byName.stateOf(name) == _Remote.unknown) byName.markPresent(name);
+        if (accept(plain)) return plain;
       }
-      await mediaRoot.create(recursive: true);
-      final File tmp = File('${local.path}.download');
-      await tmp.writeAsBytes(bytes, flush: true);
-      await tmp.rename(local.path);
-      localIndex.add(name);
-      report.downloaded++;
-      if (!onRemote) {
-        await put(name, bytes);
-        markPresent(name);
-        report.uploaded++;
-      }
-    } else if (remote != _Remote.present) {
-      if (remote == _Remote.unknown && await location.exists('$folder/$name')) {
-        markPresent(name);
-        return;
-      }
-      await put(name, await local.readAsBytes());
-      markPresent(name);
+    }
+    // 写入者目录只在第一次确认「不在」时找：日志里已记为不在的，当时已经找过。
+    if (!byName.knownAbsent.contains(name)) {
+      final Uint8List? plain = await legacy?.call(name);
+      if (accept(plain)) return plain;
+    }
+    return null;
+  }
+
+  Future<void> syncOne(_MediaItem item) async {
+    final String name = item.name;
+    final String? sha = item.sha;
+    if (item.have) {
+      await ensureUploaded(name, sha!);
+      return;
+    }
+    if (uploadOnly) return;
+    // 本机文件要被换成别的内容：它若还不在位置上，先传上去——那份内容此刻可能只有这台设备有。
+    final String? local = item.local;
+    if (local != null) await ensureUploaded(name, local);
+    final Uint8List? bytes = await fetch(name, sha);
+    if (bytes == null) {
+      report.missing.add(name);
+      return;
+    }
+    final String got = sha ?? srsMediaSha256(bytes);
+    final File file = File(p.join(mediaRoot.path, name));
+    await mediaRoot.create(recursive: true);
+    final File tmp = File('${file.path}.download');
+    await tmp.writeAsBytes(bytes, flush: true);
+    await tmp.rename(file.path);
+    landed.add((name, got));
+    report.downloaded++;
+    if (content.stateOf(got) != _Remote.present) {
+      // 从旧目录兜底拿到的：补传进内容目录。
+      await location.putNew(
+        srsMediaContentPath(folder, got),
+        await seal(got, bytes),
+      );
+      content.markPresent(got);
       report.uploaded++;
     }
   }
 
-  // 两边都有的名字（本机原样有、位置上确认在）什么都不用做：同步地一次筛掉，只把要真做 IO 的交给并发池。以前
-  // 每个名字都走一遍 syncOne，这类名字一路没有真正挂起的 IO，上万个就在一串微任务里跑完、整段不回事件循环——
-  // 同步收尾的媒体阶段 UI isolate 收不到帧（手机上卡一两秒）。
-  final Set<String> work = <String>{
-    for (final String name in wanted)
-      if (!localIndex.hasExact(name) || stateOf(name) != _Remote.present) name,
-  };
+  // 本机已是目标内容、位置上也确认在的（绝大多数）什么都不用做：同步地一次筛掉，只把要真做 IO 的交给并发池
+  // （上万个名字逐个走异步流程会在一长串微任务里跑完、整段不回事件循环，同步收尾时 UI 卡顿）。
+  final List<_MediaItem> work = <_MediaItem>[
+    for (final _MediaItem it in items)
+      if (!it.have || content.stateOf(it.sha!) != _Remote.present)
+        if (it.have || !uploadOnly) it,
+  ];
 
   try {
     await _reconcile(
@@ -302,25 +459,27 @@ Future<SrsMediaSyncReport> srsSyncMedia({
       store: store,
       location: location,
       folder: folder,
-      wanted: work,
-      present: present,
-      archive: archive,
+      work: work,
+      content: content,
+      byName: byName,
+      prune: !archive && !uploadOnly,
       syncOne: syncOne,
-      onDeleted: markAbsent,
     );
   } finally {
-    // 中途失败也把已经确认的事实记下（下一轮不必再查一遍）；列举标记只在整轮跑完时写。
-    if (presenceKey != null &&
-        (confirmedPresent.isNotEmpty || confirmedAbsent.isNotEmpty || listed)) {
+    if (landed.isNotEmpty) {
       await store.sync2Command(<String, Object?>{
-        'op': 'media_record',
-        'location': presenceKey,
-        'present': confirmedPresent.toList(),
-        'absent': confirmedAbsent.toList(),
-        'seeded': listed && report.completed,
+        'op': 'media_landed',
+        'root': mediaRoot.path,
+        'items': <Map<String, String>>[
+          for (final (String name, String sha) in landed)
+            <String, String>{'name': name, 'sha': sha},
+        ],
         'now': store.now().$1,
       });
     }
+    // 中途失败也把已经确认的事实记下（下一轮不必再查一遍）；列举标记只在整轮跑完时写。
+    await content.record(store, seeded: content.listed && report.completed);
+    await byName.record(store, seeded: false);
   }
   return report;
 }
@@ -330,87 +489,70 @@ Future<void> _reconcile({
   required SrsDbStore store,
   required SrsLocationStore location,
   required String folder,
-  required Set<String> wanted,
-  required Set<String> present,
-  required bool archive,
-  required Future<void> Function(String name) syncOne,
-  required void Function(String name) onDeleted,
+  required List<_MediaItem> work,
+  required _Presence content,
+  required _Presence byName,
+  required bool prune,
+  required Future<void> Function(_MediaItem item) syncOne,
 }) async {
-  // 媒体是内容寻址的独立文件，彼此无先后：同时最多 [kSrsSync2Concurrency] 个在途（首次同步一个牌组上千个
-  // 图片 / 音频时，逐个等每个请求的固定延迟是主要耗时）。只差大小写的名字在不分大小写的文件系统上是同一个本机
-  // 文件，归成一组在同一个任务里依次处理（与原先逐个处理时的结果相同）。
-  final Map<String, List<String>> byFolded = <String, List<String>>{};
-  for (final String name in wanted) {
-    byFolded.putIfAbsent(name.toLowerCase(), () => <String>[]).add(name);
+  // 媒体彼此无先后：同时最多 [kSrsSync2Concurrency] 个在途（首次同步一个牌组上千个图片 / 音频时，逐个等每个请求
+  // 的固定延迟是主要耗时）。只差大小写的名字在不分大小写的文件系统上是同一个本机文件，归成一组在同一个任务里
+  // 依次处理。
+  final Map<String, List<_MediaItem>> byFolded = <String, List<_MediaItem>>{};
+  for (final _MediaItem it in work) {
+    byFolded.putIfAbsent(it.name.toLowerCase(), () => <_MediaItem>[]).add(it);
   }
   await srsRunPooled(byFolded.values.toList(), kSrsSync2Concurrency, (
-    List<String> names,
+    List<_MediaItem> group,
   ) async {
-    for (final String name in names) {
-      await syncOne(name);
+    for (final _MediaItem it in group) {
+      await syncOne(it);
     }
   });
-  if (!archive) {
+  if (prune) {
     // 只删有正面证据的：被「删除已满保留期」的笔记引用、且不被任何存活引用。本机不认识的文件一律不删——
     // 它可能是别的设备新笔记的媒体，而本机还没收到那条笔记。
-    final Set<String> live = <String>{
-      for (final String n in await srsLiveMediaReferences(store))
-        n.toLowerCase(),
+    final List<String> live = (await srsLiveMediaReferences(store)).toList();
+    final Set<String> liveFolded = <String>{
+      for (final String n in live) n.toLowerCase(),
     };
-    final Set<String> expired = <String>{
+    final List<String> expired = <String>[
       for (final String n in await store.expiredNoteMediaRefs(
         store.now().$1 - kSrsMediaRetention.inMilliseconds,
       ))
-        n.toLowerCase(),
-    };
-    final List<String> doomed = <String>[
-      for (final String name in present)
-        if (expired.contains(name.toLowerCase()) &&
-            !live.contains(name.toLowerCase()))
-          name,
+        if (!liveFolded.contains(n.toLowerCase())) n,
     ];
-    await srsRunPooled(doomed, kSrsSync2Concurrency, (String name) async {
-      await location.delete('$folder/$name');
-      onDeleted(name);
-      report.deleted++;
-    });
+    if (expired.isNotEmpty) {
+      // 内容：只删过期名字绑定、且不被任何存活名字绑定的那几份（内核按绑定算，`media_doomed`）。
+      final List<String> doomed = <String>[
+        for (final Object? s
+            in (await store.sync2Command(<String, Object?>{
+                  'op': 'media_doomed',
+                  'expired': expired,
+                  'live': live,
+                })).map['sha']!
+                as List<Object?>)
+          if (content.present.contains(s)) s! as String,
+      ];
+      await srsRunPooled(doomed, kSrsSync2Concurrency, (String sha) async {
+        await location.delete(srsMediaContentPath(folder, sha));
+        content.markAbsent(sha);
+        report.deleted++;
+      });
+      // 旧的按名字目录里同名的过期文件也清掉（只删，不再往那里写）。
+      final Set<String> expiredFolded = <String>{
+        for (final String n in expired) n.toLowerCase(),
+      };
+      final List<String> oldDoomed = <String>[
+        for (final String n in byName.present)
+          if (expiredFolded.contains(n.toLowerCase())) n,
+      ];
+      await srsRunPooled(oldDoomed, kSrsSync2Concurrency, (String n) async {
+        await location.delete('$folder/$n');
+        byName.markAbsent(n);
+        report.deleted++;
+      });
+    }
   }
   report.completed = true;
-}
-
-/// 本机媒体目录的一次性文件名索引（一轮媒体同步开头异步列一次目录）。
-///
-/// 名字原样命中就算有；只差大小写命中时（不分大小写的文件系统上可能是同一个文件，分大小写的上不是）对这一个文件
-/// 异步 `exists()` 复核，与原先逐个 stat 的结果相同。
-class _SrsLocalMediaIndex {
-  _SrsLocalMediaIndex._(this._names, this._folded);
-
-  final Set<String> _names;
-  final Set<String> _folded;
-
-  static Future<_SrsLocalMediaIndex> scan(Directory root) async {
-    final Set<String> names = <String>{};
-    if (await root.exists()) {
-      await for (final FileSystemEntity e in root.list(followLinks: false)) {
-        if (e is! Directory) names.add(p.basename(e.path));
-      }
-    }
-    return _SrsLocalMediaIndex._(names, <String>{
-      for (final String n in names) n.toLowerCase(),
-    });
-  }
-
-  /// 名字原样在本机（不需要复核，同步判定）。
-  bool hasExact(String name) => _names.contains(name);
-
-  Future<bool> has(File local, String name) async {
-    if (_names.contains(name)) return true;
-    if (!_folded.contains(name.toLowerCase())) return false;
-    return local.exists();
-  }
-
-  void add(String name) {
-    _names.add(name);
-    _folded.add(name.toLowerCase());
-  }
 }

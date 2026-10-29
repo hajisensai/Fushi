@@ -120,7 +120,12 @@ void main() {
     );
     expect(File(p.join(root.path, 'meta.json')).existsSync(), isTrue);
     expect(
-      File(p.join(root.path, kSrsMediaFolder, 'cat.png')).existsSync(),
+      File(
+        p.join(
+          root.path,
+          srsMediaContentPath(kSrsMediaFolder, srsMediaSha256(<int>[1, 2])),
+        ),
+      ).existsSync(),
       isTrue,
     );
     // 本机按 `folder:<id>` 记传到了哪。
@@ -188,8 +193,7 @@ void main() {
       File(
         p.join(
           srsFolderCollectionRoot(archive, kProfile).path,
-          kSrsMediaFolder,
-          'only.png',
+          srsMediaContentPath(kSrsMediaFolder, srsMediaSha256(<int>[1])),
         ),
       ).existsSync(),
       isTrue,

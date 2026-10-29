@@ -272,4 +272,15 @@ CREATE TABLE IF NOT EXISTS sync2_relay_out (
   gen INTEGER NOT NULL,
   PRIMARY KEY (profile_uid, location, device, name)
 ) WITHOUT ROWID;
+-- 本机媒体文件的内容（store/sync2/media.rs，只在本机、不进日志）：(size, mtime) 没变就不重算 sha256；`synced` = 本机上次与
+-- 绑定对齐时这个文件的内容（区分「本机改了文件」与「别的设备把这个名字绑到了别的内容」）。
+CREATE TABLE IF NOT EXISTS sync2_media_local (
+  profile_uid TEXT NOT NULL,
+  name TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  mtime INTEGER NOT NULL,
+  sha256 BLOB NOT NULL,
+  synced BLOB NULL,
+  PRIMARY KEY (profile_uid, name)
+) WITHOUT ROWID;
 "#;

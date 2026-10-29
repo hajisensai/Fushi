@@ -121,7 +121,8 @@ class SrsSync2Report {
 /// [kSrsSync2NeedsKey] / [kSrsSync2WrongKey]；本机开过加密而位置上的 `kdf` 不见了 → [kSrsSync2EncryptionMissing]，
 /// 绝不降级成明文；本机刚开加密 → 这一轮把 `kdf` 写进 `meta.json`）；[archive] = 归档位置：只写不删（不清本机
 /// 的旧 head，设计 §10.3）。[onFetchProgress] 报下载 + 收进本机的段数（开拉前一次 `(0, 总数)`，之后每批一次）；
-/// [onUploadStart] 在开始发件时调一次；[shouldStop] 每批收完后问一次，为真就以 [kSrsSync2Stopped] 收手（已收的
+/// [onUploadStart] 在开始发件时调一次；[beforeUpload] 在发件之前调一次（参数 = 这个位置的密钥，明文位置为 null），
+/// 用来先传媒体；[shouldStop] 每批收完后问一次，为真就以 [kSrsSync2Stopped] 收手（已收的
 /// 批次都已提交）；发件的每批确认后也问一次（已确认的批次水位已持久化）。[ingestBudgetBytes] 见
 /// [kSrsSync2IngestBudgetBytes]；[fetchConcurrency] = 拉段时同时在途的下载数；[outboxBudgetBytes] = 发件一批的
 /// 字节预算（null = 内核默认 `OUTBOX_BATCH_BYTES`，测试用小值逼出多批）。
@@ -134,6 +135,7 @@ Future<SrsSync2Report> srsSync2Round({
   bool archive = false,
   void Function(int done, int total)? onFetchProgress,
   void Function()? onUploadStart,
+  Future<void> Function(String? keyHex)? beforeUpload,
   bool Function()? shouldStop,
   int ingestBudgetBytes = kSrsSync2IngestBudgetBytes,
   int fetchConcurrency = kSrsSync2Concurrency,
@@ -258,6 +260,9 @@ Future<SrsSync2Report> srsSync2Round({
   // `OUTBOX_BATCH_BYTES`）：一批全部写成后 `outbox_ack` 持久化水位，再取下一批——内存里同一时刻只有一批，
   // 上传中途断网 / 被杀只丢在途那一批，下一轮从水位接着发（以前一次取全部积压，断一次整份重来，反馈
   // XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）。head 仍在全部批次写完后才写，读者看到的永远是一致前缀。
+  // 媒体先于引用它的段（设计 §6.1 写入纪律 3，审查 S-10）：本机新绑定的媒体此刻先传上去（绑定本身是操作，随下面
+  // 的段一起发），读到这些段的设备就拿得到它们引用的内容。媒体失败由调用方处理，不打断操作同步。
+  if (beforeUpload != null) await beforeUpload(keyHex);
   onUploadStart?.call();
   int upto = 0;
   while (true) {

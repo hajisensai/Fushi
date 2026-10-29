@@ -175,13 +175,18 @@ void main() {
       cipher: SrsMediaCipher(a, ka.keyHex),
     );
     final Uint8List sealed =
-        loc.written['${SrsMediaCipher(a, ka.keyHex).folder}/pic.png']!;
+        loc.written[srsMediaContentPath(
+          SrsMediaCipher(a, ka.keyHex).folder,
+          srsMediaSha256(picture),
+        )]!;
     expect(_contains(sealed, picture), isFalse);
     expect(
       loc.written.keys.where((String k) => k.startsWith('media/')),
       isEmpty,
     );
 
+    // 名字 → 内容的绑定是操作：A 再发一轮，B 才知道 pic.png 是哪份内容。
+    await round(a, loc, key: ka.enabled());
     await round(b, loc, key: ka.enabled());
     final SrsMediaSyncReport rb = await srsSyncMedia(
       location: loc,

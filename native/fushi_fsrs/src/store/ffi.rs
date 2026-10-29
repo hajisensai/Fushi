@@ -901,6 +901,38 @@ fn sync2_command(
             };
             c.sync2_media_record(profile, s("location")?, &names("present"), &names("absent"), req["seeded"] == Value::Bool(true), i("now")?)?
         }
+        // 内容寻址媒体（store/sync2/media.rs，审查 S-3）：本机文件 → 内容 / 该下载什么；下载落地后对齐；清理哪些内容。
+        "media_hash" | "media_scan" => {
+            let names: Vec<String> =
+                req.get("names").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
+            if op == "media_hash" {
+                c.sync2_media_hash(profile, s("root")?, &names)?
+            } else {
+                let mut files = std::collections::HashMap::new();
+                for f in req.get("files").and_then(Value::as_array).into_iter().flatten() {
+                    let name = f.get("name").and_then(Value::as_str).ok_or("media_scan: missing name")?;
+                    let sha = f.get("sha").and_then(Value::as_str).and_then(super::sync2::media::unhex32).ok_or("media_scan: bad sha")?;
+                    let n = |k: &str| f.get(k).and_then(Value::as_i64).ok_or(format!("media_scan: missing {k}"));
+                    files.insert(name.to_owned(), (n("size")?, n("mtime")?, sha));
+                }
+                c.sync2_media_scan(profile, &names, &files, i("now")?)?
+            }
+        }
+        "media_landed" => {
+            let mut items = Vec::new();
+            for it in req.get("items").and_then(Value::as_array).into_iter().flatten() {
+                let name = it.get("name").and_then(Value::as_str).ok_or("media_landed: missing name")?;
+                let sha = it.get("sha").and_then(Value::as_str).and_then(super::sync2::media::unhex32).ok_or("media_landed: bad sha")?;
+                items.push((name.to_owned(), sha));
+            }
+            c.sync2_media_landed(profile, s("root")?, &items, i("now")?)?
+        }
+        "media_doomed" => {
+            let names = |k: &str| -> Vec<String> {
+                req.get(k).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default()
+            };
+            c.sync2_media_doomed(profile, &names("expired"), &names("live"))?
+        }
         // 删 profile 的级联清理（store/profile_data.rs）：确认框的规模、一个事务里删光本机数据。
         "profile_footprint" => c.profile_footprint(profile)?,
         "profile_purge" => c.profile_purge(profile)?,

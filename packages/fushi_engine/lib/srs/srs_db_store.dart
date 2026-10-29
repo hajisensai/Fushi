@@ -989,7 +989,8 @@ class SrsDbStore implements SrsSync2Host {
   /// 不进写锁的 v2 命令（见 [sync2Command]）。判据：结果不依赖写连接上还没提交的行，也不在别的写入的
   /// 中途改本机状态。
   /// - 纯计算（`derive_key` / `seal` / `open`）：不碰库；Argon2 派生要上百毫秒。
-  /// - 只走读连接（WAL 快照，只见已提交的行）：`status` / `media_known` / `conflicts` / `checkpoints` / `history`。
+  /// - 只走读连接（WAL 快照，只见已提交的行）：`status` / `media_known` / `conflicts` / `checkpoints` / `history`；
+  ///   `media_hash`（本机媒体文件的 sha256，首次对账要把几万个文件各读一遍；结论交给进写锁的 `media_scan`）。
   /// - `digest`：扫描在内核自己的扫描会话里（已提交快照），只在末尾往写连接记一行摘要缓存（`srs_meta`）；
   ///   恰好落进另一笔写事务而那笔回滚，丢的只是这行缓存，下一轮按间隔重算。
   @visibleForTesting
@@ -999,6 +1000,7 @@ class SrsDbStore implements SrsSync2Host {
     'open',
     'status',
     'media_known',
+    'media_hash',
     'conflicts',
     'checkpoints',
     'history',
