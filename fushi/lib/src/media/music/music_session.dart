@@ -11,8 +11,10 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/music/music_history.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -30,6 +32,7 @@ String musicPlaybackFailureText(MusicBackendFailed failure) =>
       MusicPlaybackFailure.cdOtherDisc => t.music_cd_play_other_disc(
         device: failure.device ?? '',
       ),
+      MusicPlaybackFailure.trackUnavailable ||
       null => t.music_play_failed(error: failure.message),
     };
 
@@ -40,6 +43,7 @@ class MusicSession extends ChangeNotifier {
     required AudiobookSession audiobook,
     required FushiDatabase? Function() database,
     required bool Function() showMediaNotification,
+    this.favorites,
   }) : _audio = audio,
        _audiobook = audiobook,
        _database = database,
@@ -64,6 +68,7 @@ class MusicSession extends ChangeNotifier {
       ..onTrackStarted = _onTrackStarted
       ..addListener(_onEngineChanged);
     _audiobook.addListener(_onAudiobookChanged);
+    favorites?.addListener(notifyListeners);
     _subs.addAll(<StreamSubscription<Object?>>[
       _audio
           .streamFor(_audio.playIntentStream, MediaSessionOwner.music)
@@ -97,6 +102,27 @@ class MusicSession extends ChangeNotifier {
   final bool Function() _showMediaNotification;
   final List<StreamSubscription<Object?>> _subs =
       <StreamSubscription<Object?>>[];
+
+  /// 歌曲收藏 = 在线平台账号的「喜欢」（插件 `like` 能力）；没有插件音源的平台为 null。
+  /// 收藏状态变化时本会话也 [notifyListeners]；只关心收藏的界面可以直接听它。
+  final MusicPluginFavorites? favorites;
+
+  /// 这一首能不能收藏：插件曲目且该插件声明了 `like`；本地 / 服务器曲目为 false。
+  bool canFavorite(MusicPlayItem item) => favorites?.canFavorite(item) ?? false;
+
+  /// 这一首是否已在平台上喜欢（同步读内存缓存，首次读时后台拉取喜欢集合）。
+  bool isFavorite(MusicPlayItem item) => favorites?.isFavorite(item) ?? false;
+
+  /// 喜欢 ↔ 取消喜欢（调插件；成功后更新缓存并通知）。失败抛出让 UI 提示：
+  /// [MusicFavoriteUnsupported]（不能收藏）、[MusicFavoriteLoginRequired]（引导登录）、
+  /// `MusicPluginException`（插件 / 平台报错）。
+  Future<void> toggleFavorite(MusicPlayItem item) {
+    final MusicPluginFavorites? f = favorites;
+    if (f == null) {
+      return Future<void>.error(const MusicFavoriteUnsupported());
+    }
+    return f.toggle(item);
+  }
 
   bool _audioSessionSubscribed = false;
   bool _resumeAfterInterruption = false;
@@ -218,7 +244,25 @@ class MusicSession extends ChangeNotifier {
     _playEventId = await db.startMusicPlayEvent(
       trackUid: next.trackUid,
       startedAt: DateTime.now().millisecondsSinceEpoch,
+      snapshot: musicPlayEventSnapshotOf(next, source: engine.source),
     );
+  }
+
+  /// 最近播放的曲目（按曲目去重，新的在前；含在线插件 / 服务器曲目）。没有数据库时为空。
+  Future<List<MusicRecentTrack>> recentTracks({int limit = 20}) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return const <MusicRecentTrack>[];
+    return loadRecentMusicTracks(db, limit: limit);
+  }
+
+  /// 最近播放的来源（专辑 / 歌单 …，按来源去重，新的在前）。没有数据库时为空。
+  Future<List<MusicRecentPlaySource>> recentSources({
+    int limit = 20,
+    Set<MusicPlaySourceKind>? kinds,
+  }) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return const <MusicRecentPlaySource>[];
+    return loadRecentMusicSources(db, limit: limit, kinds: kinds);
   }
 
   Future<void> _finishPlayEvent(FushiDatabase db) async {
@@ -301,6 +345,8 @@ class MusicSession extends ChangeNotifier {
       unawaited(s.cancel());
     }
     _audiobook.removeListener(_onAudiobookChanged);
+    favorites?.removeListener(notifyListeners);
+    favorites?.dispose();
     engine.removeListener(_onEngineChanged);
     engine.dispose();
     super.dispose();

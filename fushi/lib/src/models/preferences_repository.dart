@@ -4686,6 +4686,46 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 歌词页流体背景是否动态流动（false = 静态，只渲染一次），默认 true。
+  bool get musicLyricsBackdropAnimate =>
+      getPref('music_lyrics_backdrop_animate', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsBackdropAnimate(bool value) async {
+    await setPref('music_lyrics_backdrop_animate', value);
+    notifyListeners();
+  }
+
+  /// 歌词页流体背景算法（`pixi` / `mesh` / `classic`），默认 `mesh`。
+  String get musicLyricsBackdropStyle =>
+      (getPref('music_lyrics_backdrop_style', defaultValue: 'mesh')
+          as String?) ??
+      'mesh';
+
+  Future<void> setMusicLyricsBackdropStyle(String value) async {
+    await setPref('music_lyrics_backdrop_style', value);
+    notifyListeners();
+  }
+
+  /// 歌词页流体背景饱和度倍数（0.5–2.0），默认 1.0。
+  double get musicLyricsBackdropSaturation =>
+      (getPref('music_lyrics_backdrop_saturation', defaultValue: 1.0) as num)
+          .toDouble();
+
+  Future<void> setMusicLyricsBackdropSaturation(double value) async {
+    await setPref('music_lyrics_backdrop_saturation', value);
+    notifyListeners();
+  }
+
+  /// 歌词页布局（`split` / `stage` / `disc`），默认 `split`。
+  String get musicLyricsLayout =>
+      (getPref('music_lyrics_layout', defaultValue: 'split') as String?) ??
+      'split';
+
+  Future<void> setMusicLyricsLayout(String value) async {
+    await setPref('music_lyrics_layout', value);
+    notifyListeners();
+  }
+
   /// ReplayGain 预放大（dB，-15…+15，设计 §7.3）。默认 0。
   double get musicReplayGainPreampDb =>
       (getPref('music_replaygain_preamp_db', defaultValue: 0.0) as num)

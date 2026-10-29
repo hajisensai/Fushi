@@ -16,9 +16,10 @@ import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
+    show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
-import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
     show musicAlbumDetailCover, kMusicAlbumDetailCoverSize;
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
@@ -80,6 +81,13 @@ class MusicAlbumPage extends ConsumerStatefulWidget {
 
 class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
   late MusicAlbumRow album = widget.album;
+
+  /// 播放来源（最近播放按它归组，推荐页「最近播放」点回这张专辑）。
+  MusicPlaySource get _source => MusicPlaySource.album(
+    album.albumUid,
+    title: album.title,
+    cover: album.coverPath,
+  );
   late List<MusicTrackRow> tracks = widget.tracks;
   late MusicDiscSourceRow? disc = widget.disc;
   StreamSubscription<Set<TableUpdate>>? _dbSub;
@@ -235,6 +243,7 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
                               engine.playQueue(
                                 _items(),
                                 context: MusicQueueContext.album,
+                                source: _source,
                               ),
                             ),
                       icon: const FushiIcon(FushiIcons.play),
@@ -251,6 +260,7 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
                                 _items(),
                                 context: MusicQueueContext.album,
                                 shuffle: true,
+                                source: _source,
                               ),
                             ),
                       icon: const FushiIcon(FushiIcons.repeat),
@@ -330,47 +340,48 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
       ],
     ];
 
-    return FushiPageScaffold(
-      title: album.title,
-      bottomNavigationBar: const MusicNowPlayingBar(),
-      header: apple
-          ? null
-          : Padding(
-              padding: EdgeInsets.fromLTRB(
+    return MusicFloatingBarHost(
+      child: FushiPageScaffold(
+        title: album.title,
+        header: apple
+            ? null
+            : Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  tokens.spacing.gap,
+                  tokens.spacing.page,
+                  tokens.spacing.gap,
+                ),
+                child: FushiFloatingTopBar(
+                  title: album.title,
+                  leading: <FushiToolbarItem>[
+                    if (navigator != null && navigator.canPop())
+                      FushiToolbarItem(
+                        icon: FushiIcons.back,
+                        label: MaterialLocalizations.of(
+                          context,
+                        ).backButtonTooltip,
+                        onPressed: () => unawaited(navigator.maybePop()),
+                      ),
+                  ],
+                ),
+              ),
+        body: FushiEntranceScope(
+          child: ListView.separated(
+            padding: withBottomSafeInset(
+              context,
+              EdgeInsets.fromLTRB(
                 tokens.spacing.page,
                 tokens.spacing.gap,
                 tokens.spacing.page,
-                tokens.spacing.gap,
-              ),
-              child: FushiFloatingTopBar(
-                title: album.title,
-                leading: <FushiToolbarItem>[
-                  if (navigator != null && navigator.canPop())
-                    FushiToolbarItem(
-                      icon: FushiIcons.back,
-                      label: MaterialLocalizations.of(
-                        context,
-                      ).backButtonTooltip,
-                      onPressed: () => unawaited(navigator.maybePop()),
-                    ),
-                ],
+                tokens.spacing.section,
               ),
             ),
-      body: FushiEntranceScope(
-        child: ListView.separated(
-          padding: withBottomSafeInset(
-            context,
-            EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              tokens.spacing.gap,
-              tokens.spacing.page,
-              tokens.spacing.section,
+            itemCount: children.length,
+            separatorBuilder: (_, _) => SizedBox(height: tokens.spacing.gap),
+            itemBuilder: fushiStaggeredItemBuilder(
+              (BuildContext context, int i) => children[i],
             ),
-          ),
-          itemCount: children.length,
-          separatorBuilder: (_, _) => SizedBox(height: tokens.spacing.gap),
-          itemBuilder: fushiStaggeredItemBuilder(
-            (BuildContext context, int i) => children[i],
           ),
         ),
       ),
@@ -411,6 +422,11 @@ class _AlbumDiscList extends ConsumerWidget {
                   ],
                   startIndex: allTracks.indexOf(tracks[i]),
                   context: MusicQueueContext.album,
+                  source: MusicPlaySource.album(
+                    album.albumUid,
+                    title: album.title,
+                    cover: album.coverPath,
+                  ),
                 ),
               ),
               child: FushiListItem(

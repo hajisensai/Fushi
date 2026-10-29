@@ -998,6 +998,18 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 单曲循环：Symbols `repeat_one`（取代 Icons.repeat_one / Icons.repeat_one）
+  static const IconData repeatOne = IconData(
+    0xe041,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 随机播放：Symbols `shuffle`（取代 Icons.shuffle / Icons.shuffle）
+  static const IconData shuffle = IconData(
+    0xe043,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 音量：Symbols `volume_up`（取代 Icons.volume_up_outlined / Icons.volume_up）
   static const IconData volumeUp = IconData(
     0xe050,
@@ -1859,6 +1871,8 @@ abstract final class FushiIcons {
     'fastRewind': fastRewind,
     'replay': replay,
     'repeat': repeat,
+    'repeatOne': repeatOne,
+    'shuffle': shuffle,
     'volumeUp': volumeUp,
     'volumeOff': volumeOff,
     'audio': audio,
@@ -1995,7 +2009,9 @@ abstract final class FushiIcons {
     0xe037: IconData(0xe037, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe03c: IconData(0xe03c, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe040: IconData(0xe040, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe041: IconData(0xe041, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe042: IconData(0xe042, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe043: IconData(0xe043, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe044: IconData(0xe044, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe045: IconData(0xe045, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe047: IconData(0xe047, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2364,7 +2380,9 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.plus_rectangle_on_rectangle,
   ),
   0xe040: (CupertinoIcons.repeat, CupertinoIcons.repeat),
+  0xe041: (CupertinoIcons.repeat_1, CupertinoIcons.repeat_1),
   0xe042: (CupertinoIcons.gobackward, CupertinoIcons.gobackward),
+  0xe043: (CupertinoIcons.shuffle, CupertinoIcons.shuffle),
   0xe044: (CupertinoIcons.forward_end, CupertinoIcons.forward_end_fill),
   0xe045: (CupertinoIcons.backward_end, CupertinoIcons.backward_end_fill),
   0xe047: (CupertinoIcons.stop_fill, CupertinoIcons.stop_fill),

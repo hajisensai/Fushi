@@ -11,6 +11,16 @@ abstract final class MusicLyricsSource {
   static const String embedded = 'embedded';
   static const String lrclib = 'provider:lrclib';
 
+  /// 在线音源插件自带的歌词：`provider:plugin:<插件 id>`（插件曲目才有，排在 LRCLIB 前）。
+  static const String _pluginPrefix = 'provider:plugin:';
+
+  static String plugin(String pluginId) => '$_pluginPrefix$pluginId';
+
+  static bool isPlugin(String source) => source.startsWith(_pluginPrefix);
+
+  static String? pluginIdOf(String source) =>
+      isPlugin(source) ? source.substring(_pluginPrefix.length) : null;
+
   /// 自动来源的优先级（高 → 低），不含 [user]。
   static const List<String> automaticPriority = <String>[
     sidecar,

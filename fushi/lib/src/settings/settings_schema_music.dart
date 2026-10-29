@@ -11,6 +11,9 @@ import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
+import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
+import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -317,6 +320,29 @@ SettingsDestination buildMusicDestination() {
           ),
         ],
       ),
+      // 插件音源（docs/specs/2026-10-28-music-plugins.md）：iOS 整节不渲染（合规门，
+      // section 级 visible 同时管住分类正文 / 主从详情 / 设置搜索索引三条渲染路径）。
+      SettingsSection(
+        title: t.music_plugins_title,
+        visible: (_) => isMusicPluginSourcesAvailable,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'music.plugins',
+            title: t.music_plugins_title,
+            subtitle: t.music_plugins_hint,
+            icon: FushiIcons.browserExtension,
+            showIcon: true,
+            child: () => SettingsDestination(
+              id: SettingsDestinationId.music,
+              title: t.music_plugins_title,
+              icon: FushiIcons.browserExtension,
+              sections: const <SettingsSection>[],
+              body: (SettingsContext c) =>
+                  MusicPluginSettingsBody(appModel: c.appModel),
+            ),
+          ),
+        ],
+      ),
       // 歌词（P1，设计 §5.4 / §6.1）。
       SettingsSection(
         title: t.music_lyrics_title,
@@ -400,15 +426,91 @@ SettingsDestination buildMusicDestination() {
             subtitle: t.music_listening_study_hint,
             icon: FushiIcons.timer,
             defaultValue: false,
-            value: (SettingsContext c) => c.appModel.musicListeningCountsAsStudy,
+            value: (SettingsContext c) =>
+                c.appModel.musicListeningCountsAsStudy,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMusicListeningCountsAsStudy(value),
+          ),
+        ],
+      ),
+      // 歌词页流体背景（MusicLyricsBackdrop；参照 QPlayer「背景」组）。
+      SettingsSection(
+        title: t.music_lyrics_backdrop_title,
+        items: <SettingsItem>[
+          SettingsSegmentedItem<bool>(
+            id: 'music.lyrics_backdrop_animate',
+            title: t.music_lyrics_backdrop_motion_title,
+            icon: FushiIcons.lyrics,
+            options: <SettingsSegmentOption<bool>>[
+              SettingsSegmentOption<bool>(
+                value: true,
+                label: t.music_lyrics_backdrop_motion_dynamic,
+              ),
+              SettingsSegmentOption<bool>(
+                value: false,
+                label: t.music_lyrics_backdrop_motion_static,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicLyricsBackdropAnimate,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setMusicLyricsBackdropAnimate(value),
+            defaultValue: true,
+          ),
+          SettingsSegmentedItem<MusicLyricsBackdropStyle>(
+            id: 'music.lyrics_backdrop_style',
+            dropdown: true,
+            title: t.music_lyrics_backdrop_style_title,
+            subtitle: t.music_lyrics_backdrop_style_hint,
+            icon: FushiIcons.lyrics,
+            options: <SettingsSegmentOption<MusicLyricsBackdropStyle>>[
+              for (final MusicLyricsBackdropStyle style
+                  in MusicLyricsBackdropStyle.values)
+                SettingsSegmentOption<MusicLyricsBackdropStyle>(
+                  value: style,
+                  label: musicLyricsBackdropStyleLabel(style),
+                ),
+            ],
+            selected: (SettingsContext c) => MusicLyricsBackdropStyle.fromPref(
+              c.appModel.prefsRepo.musicLyricsBackdropStyle,
+            ),
+            onChanged: (SettingsContext c, MusicLyricsBackdropStyle value) => c
+                .appModel
+                .prefsRepo
+                .setMusicLyricsBackdropStyle(value.prefValue),
+            defaultValue: MusicLyricsBackdropStyle.meshGradient,
+          ),
+          SettingsSliderItem(
+            id: 'music.lyrics_backdrop_saturation',
+            title: t.music_lyrics_backdrop_saturation_title,
+            subtitle: t.music_lyrics_backdrop_saturation_hint,
+            icon: FushiIcons.lyrics,
+            min: kMusicLyricsBackdropSaturationMin * 100,
+            max: kMusicLyricsBackdropSaturationMax * 100,
+            divisions: 15,
+            defaultValue: kMusicLyricsBackdropSaturationDefault * 100,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) => '${v.round()}%',
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicLyricsBackdropSaturation * 100,
+            onChanged: (SettingsContext c, double v) => c.appModel.prefsRepo
+                .setMusicLyricsBackdropSaturation((v / 10).round() / 10),
           ),
         ],
       ),
     ],
   );
 }
+
+/// 流体样式的显示名（设置页下拉）。
+String musicLyricsBackdropStyleLabel(MusicLyricsBackdropStyle style) =>
+    switch (style) {
+      MusicLyricsBackdropStyle.pixi => t.music_lyrics_backdrop_style_pixi,
+      MusicLyricsBackdropStyle.meshGradient =>
+        t.music_lyrics_backdrop_style_mesh,
+      MusicLyricsBackdropStyle.classic => t.music_lyrics_backdrop_style_classic,
+    };
 
 /// 均衡器子页：开关 + 每段一个 ±12 dB 滑块 + 复位。改动立即经引擎重新下发（`af`）。
 SettingsDestination _equalizerDestination() => SettingsDestination(

@@ -259,4 +259,38 @@ class MusicPlayEvents extends Table {
   /// 实际听了多久（毫秒，暂停 / 拖动不计）。
   IntColumn get listenedMs => integer().withDefault(const Constant(0))();
   BoolColumn get completed => boolean().withDefault(const Constant(false))();
+
+  // ── 播放项快照（自 v139 起）──
+  //
+  // 在线插件曲目（`fushi-music-plugin://…`）与服务器曲目不进 `music_tracks`，最近播放
+  // 只能靠这份快照显示与重播；本地曲目以曲库行为准，快照兜底（曲目被删 / 重扫换 uid）。
+  // 存量行全部 NULL = 没有快照（只能靠 join 曲库）。
+
+  /// 播放路径（本地文件绝对路径 / `fushi-music-plugin://<插件>/<曲目>` / 服务器流地址）。
+  TextColumn get path => text().nullable()();
+
+  /// CUE 虚拟曲目在整轨里的起止（毫秒，偏移量）。
+  IntColumn get cueStartMs => integer().nullable()();
+  IntColumn get cueEndMs => integer().nullable()();
+  TextColumn get title => text().nullable()();
+  TextColumn get artist => text().nullable()();
+  TextColumn get album => text().nullable()();
+  TextColumn get albumUid => text().nullable()();
+  IntColumn get durationMs => integer().nullable()();
+
+  /// 封面：在线 http(s) 地址或本地文件路径（同 `MusicPlayItem.coverPath`）。
+  TextColumn get coverPath => text().nullable()();
+
+  // ── 播放来源（自 v139 起）：这次播放所在的队列是从哪张专辑 / 哪个歌单点开的 ──
+
+  /// 来源种类 wire 值（`album` / `playlist` / `plugin_album` / `plugin_playlist` /
+  /// `server_album` / `server_playlist` / `artist` / `other`）；NULL = 不知道。
+  TextColumn get sourceKind => text().nullable()();
+
+  /// 来源在该种类下的身份（不透明串，编码由 app 侧 `MusicPlaySource` 定）。
+  TextColumn get sourceId => text().nullable()();
+  TextColumn get sourceTitle => text().nullable()();
+
+  /// 来源封面（http(s) 地址或本地文件路径）。
+  TextColumn get sourceCover => text().nullable()();
 }

@@ -254,6 +254,10 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  shaders:
+    # 歌词页 Pixi 流体背景（music_lyrics_backdrop.dart）。
+    - shaders/music_backdrop_pixi.frag
+
   assets:
     # TMDB 官方 logo（合约署名素材）。逐文件登记而非整目录，是为了只打包实际渲染
     # 的 PNG，把同目录的矢量原图 blue_square_1.svg（provenance 真相源）与 README.md

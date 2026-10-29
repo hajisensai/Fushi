@@ -20,7 +20,8 @@ import 'package:fushi/src/media/people/person_entry_sections.dart'
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
+    show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_scrape_sections.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -195,35 +196,37 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
             final MusicTrackRow? track = snap.data?.track;
             final MusicAlbumRow? album = snap.data?.album;
             final String title = track?.title ?? '';
-            return FushiPageScaffold(
-              title: title,
-              bottomNavigationBar: const MusicNowPlayingBar(),
-              header: apple
-                  ? null
-                  : Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        tokens.spacing.page,
-                        tokens.spacing.gap,
-                        tokens.spacing.page,
-                        tokens.spacing.gap,
+            return MusicFloatingBarHost(
+              child: FushiPageScaffold(
+                title: title,
+                header: apple
+                    ? null
+                    : Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          tokens.spacing.page,
+                          tokens.spacing.gap,
+                          tokens.spacing.page,
+                          tokens.spacing.gap,
+                        ),
+                        child: FushiFloatingTopBar(
+                          title: title,
+                          leading: <FushiToolbarItem>[
+                            if (navigator != null && navigator.canPop())
+                              FushiToolbarItem(
+                                icon: FushiIcons.back,
+                                label: MaterialLocalizations.of(
+                                  context,
+                                ).backButtonTooltip,
+                                onPressed: () =>
+                                    unawaited(navigator.maybePop()),
+                              ),
+                          ],
+                        ),
                       ),
-                      child: FushiFloatingTopBar(
-                        title: title,
-                        leading: <FushiToolbarItem>[
-                          if (navigator != null && navigator.canPop())
-                            FushiToolbarItem(
-                              icon: FushiIcons.back,
-                              label: MaterialLocalizations.of(
-                                context,
-                              ).backButtonTooltip,
-                              onPressed: () => unawaited(navigator.maybePop()),
-                            ),
-                        ],
-                      ),
-                    ),
-              body: track == null
-                  ? const SizedBox.shrink()
-                  : _body(context, tokens, track, album, snap.data?.cover),
+                body: track == null
+                    ? const SizedBox.shrink()
+                    : _body(context, tokens, track, album, snap.data?.cover),
+              ),
             );
           },
     );
@@ -243,11 +246,14 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
         runSpacing: tokens.spacing.gap,
         crossAxisAlignment: WrapCrossAlignment.end,
         children: <Widget>[
-          MusicCover(
-            coverPath: album?.coverPath,
-            embeddedFromPath: embeddedCover ?? track.path,
+          musicMaterialCover(
+            MusicCover(
+              coverPath: album?.coverPath,
+              embeddedFromPath: embeddedCover ?? track.path,
+              size: 160,
+            ),
             size: 160,
-            borderRadius: tokens.radii.groupRadius,
+            tilt: true,
           ),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
@@ -497,6 +503,7 @@ class _EpisodeChip extends StatelessWidget {
     return FushiTooltip(
       message: tooltip,
       child: FushiHoverLift(
+        scale: kMusicHoverLiftScale,
         builder: (BuildContext context, bool hovering) => FushiPressScale(
           child: Material(
             color: cs.secondaryContainer,

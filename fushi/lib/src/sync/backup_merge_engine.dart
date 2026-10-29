@@ -1864,10 +1864,34 @@ class BackupMergeEngine {
       );
     }
     if (await _srcTableExists('music_play_events')) {
+      // v139 起事件带播放项快照与来源（在线曲目的最近播放全靠它）；备份已迁到当前
+      // schema，列检查只防手工拼出的旧库。
+      const List<String> snapshotColumns = <String>[
+        'path',
+        'cue_start_ms',
+        'cue_end_ms',
+        'title',
+        'artist',
+        'album',
+        'album_uid',
+        'duration_ms',
+        'cover_path',
+        'source_kind',
+        'source_id',
+        'source_title',
+        'source_cover',
+      ];
+      final bool srcHasSnapshot =
+          await _srcColumnExists('music_play_events', 'source_cover');
+      final String extraCols =
+          srcHasSnapshot ? ', ${snapshotColumns.join(', ')}' : '';
+      final String extraSel = srcHasSnapshot
+          ? ', ${snapshotColumns.map((String c) => 's.$c').join(', ')}'
+          : '';
       await _db.customStatement(
         'INSERT INTO music_play_events '
-        '(track_uid, started_at, listened_ms, completed) '
-        'SELECT s.track_uid, s.started_at, s.listened_ms, s.completed '
+        '(track_uid, started_at, listened_ms, completed$extraCols) '
+        'SELECT s.track_uid, s.started_at, s.listened_ms, s.completed$extraSel '
         'FROM $_srcAlias.music_play_events AS s '
         'WHERE NOT EXISTS (SELECT 1 FROM music_play_events AS t '
         'WHERE t.track_uid = s.track_uid AND t.started_at = s.started_at)',

@@ -12077,6 +12077,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// （解析/连接超时、网络错误、视频不可用/受限）各给出可指导的说明；无法归类时回退
   /// 通用文案。纯字符串判据（异常类型 + 消息关键词），best-effort、绝不抛。
   String _describeLoadFailure(Object? error) {
+    // 来源已给出用户可读的原因（音乐插件 MV「需要会员」等）：原样显示。
+    if (error is RemoteVideoStreamRefusedException) return error.message;
     if (error is TimeoutException) return t.video_load_failed_timeout;
     // YouTube 兜底链每个 client 都死在传输层（连不上 / 超时）：出口问题（没走代理、
     // DNS 被污染），不是视频不可用。消息里的「manifest failed」不能再被下面的子串

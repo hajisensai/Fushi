@@ -1,3 +1,7 @@
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -76,13 +80,23 @@ class FushiHoverLift extends StatefulWidget {
           .dependOnInheritedWidgetOfExactType<_FushiHoverLiftScope>()
           ?.lifted ??
       false;
+
+  /// 最近一层 [FushiHoverLift] 的指针位置（卡片内归一化到 -1..1，中心为 0）；
+  /// 不在倾斜态时为 null。notifier 本身恒定，取它不建立依赖、不触发重建。
+  static ValueListenable<Offset?>? tiltOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_FushiHoverLiftScope>()?.tilt;
 }
 
 /// [FushiHoverLift.liftedOf] 的载体。
 class _FushiHoverLiftScope extends InheritedWidget {
-  const _FushiHoverLiftScope({required this.lifted, required super.child});
+  const _FushiHoverLiftScope({
+    required this.lifted,
+    required this.tilt,
+    required super.child,
+  });
 
   final bool lifted;
+  final ValueListenable<Offset?> tilt;
 
   @override
   bool updateShouldNotify(_FushiHoverLiftScope oldWidget) =>
@@ -163,6 +177,12 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   late final AnimationController _lift;
   late final CurvedAnimation _curved;
 
+  /// 3D 倾斜视差的指针位置（-1..1）。鼠标：悬停抬升期间跟随指针；触屏：按住
+  /// 期间跟随手指（触屏没有 hover）。滚动、退出、抬起都落回 null。
+  final ValueNotifier<Offset?> _tilt = ValueNotifier<Offset?>(null);
+  Offset? _pointer;
+  bool _touching = false;
+
   @override
   void initState() {
     super.initState();
@@ -190,9 +210,52 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
       _lift.value = target;
       return;
     }
+    _syncTilt();
     if (_lift.value == target && !_lift.isAnimating) return;
     // 曲线由 [_curved] 施加，这里给 controller 线性推进即可。
     _lift.animateTo(target);
+  }
+
+  void _syncTilt() {
+    final bool on =
+        widget.enabled &&
+        _animate &&
+        !_moved &&
+        (_touching || (_pointerOver && _lifted));
+    _tilt.value = on ? _pointer : null;
+  }
+
+  /// 把卡片内的局部坐标归一化到 -1..1。
+  void _trackPointer(Offset local) {
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    final Size size = box.size;
+    if (size.isEmpty) return;
+    _pointer = Offset(
+      (local.dx / size.width * 2 - 1).clamp(-1.0, 1.0),
+      (local.dy / size.height * 2 - 1).clamp(-1.0, 1.0),
+    );
+    _syncTilt();
+  }
+
+  void _onPointerDown(PointerDownEvent e) {
+    if (e.kind == PointerDeviceKind.mouse) return;
+    _touching = true;
+    _trackPointer(e.localPosition);
+  }
+
+  void _onPointerMove(PointerMoveEvent e) {
+    if (e.kind == PointerDeviceKind.mouse) {
+      _trackPointer(e.localPosition);
+      return;
+    }
+    if (_touching) _trackPointer(e.localPosition);
+  }
+
+  void _onPointerEnd(PointerEvent e) {
+    if (e.kind == PointerDeviceKind.mouse || !_touching) return;
+    _touching = false;
+    _syncTilt();
   }
 
   void _setHover(bool value) {
@@ -207,6 +270,11 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     //
     // 只认 ScrollUpdate：它是「真的滚了」的唯一可靠信号，且不依赖任何配对通知。
     if (notification is! ScrollUpdateNotification) return;
+    // 触屏按住后拖动 = 在滚列表，不是在掰卡片。
+    if (_touching) {
+      _touching = false;
+      _syncTilt();
+    }
     // 本帧位只在正悬停时才置：没悬停的卡抬升本来就是 0，这一位对它毫无意义，
     // 而置了却不重建就会一直挂着。
     if (!_pointerOver || _moved) return;
@@ -263,6 +331,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   void dispose() {
     _scrollObserver?.removeListener(_onScrollNotification);
     _scrollObserver = null;
+    _tilt.dispose();
     _curved.dispose();
     _lift.dispose();
     super.dispose();
@@ -279,6 +348,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
       }
       return _FushiHoverLiftScope(
         lifted: false,
+        tilt: _tilt,
         child: widget.builder(context, false),
       );
     }
@@ -288,6 +358,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     final Widget content = FushiPressScale(
       child: _FushiHoverLiftScope(
         lifted: _lifted,
+        tilt: _tilt,
         child: widget.builder(context, _lifted),
       ),
     );
@@ -310,8 +381,117 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   }
 
   Widget _wrapHover(Widget child) => MouseRegion(
-    onEnter: (_) => _setHover(true),
-    onExit: (_) => _setHover(false),
-    child: child,
+    onEnter: (PointerEnterEvent e) {
+      _trackPointer(e.localPosition);
+      _setHover(true);
+    },
+    onHover: (PointerHoverEvent e) => _trackPointer(e.localPosition),
+    onExit: (_) {
+      _pointer = null;
+      _setHover(false);
+      _syncTilt();
+    },
+    child: Listener(
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerEnd,
+      onPointerCancel: _onPointerEnd,
+      child: child,
+    ),
   );
+}
+
+/// 3D 倾斜视差的最大偏转角（度）。
+const double kFushiTiltMaxDegrees = 9;
+
+/// 倾斜跟随指针的缓动时长。
+const Duration kFushiTiltFollowDuration = Duration(milliseconds: 160);
+
+/// 3D 倾斜视差（2026-10-29 用户：「全部媒体选中都要网上那种 3D 斜视差，PC 跟
+/// 鼠标位置」）：读最近一层 [FushiHoverLift] 的指针位置，把 [child] 朝指针一侧
+/// 按下去（指针下那一边远离观察者），平滑跟随，离开时缓回平面。
+///
+/// 树结构恒定：没有 [FushiHoverLift] 祖先时原样返回 [child]；有祖先时不在倾斜态
+/// 也照样包着（单位变换）。墨水屏 / 减弱动态效果下 [FushiHoverLift] 不发指针
+/// 位置，这里自然不动。
+class FushiTilt extends StatelessWidget {
+  const FushiTilt({required this.child, this.enabled = true, super.key});
+
+  final Widget child;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final ValueListenable<Offset?>? tilt = enabled
+        ? FushiHoverLift.tiltOf(context)
+        : null;
+    if (tilt == null) return child;
+    return ValueListenableBuilder<Offset?>(
+      valueListenable: tilt,
+      child: child,
+      builder: (BuildContext context, Offset? p, Widget? child) =>
+          TweenAnimationBuilder<Offset>(
+            tween: Tween<Offset>(end: p ?? Offset.zero),
+            duration: kFushiTiltFollowDuration,
+            curve: Curves.easeOutCubic,
+            child: child,
+            builder: (BuildContext context, Offset v, Widget? child) {
+              const double a = kFushiTiltMaxDegrees * math.pi / 180;
+              return Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, 0.0012)
+                  ..rotateX(v.dy * a)
+                  ..rotateY(-v.dx * a),
+                child: child,
+              );
+            },
+          ),
+    );
+  }
+}
+
+/// 倾斜时跟着指针走的镜面高光：一团径向柔光落在指针位置，越靠边越亮一点，
+/// 读作「光面封面在灯下转动」。画在封面裁切区内、点击穿透。
+class FushiTiltGlare extends StatelessWidget {
+  const FushiTiltGlare({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final ValueListenable<Offset?>? tilt = FushiHoverLift.tiltOf(context);
+    if (tilt == null) return const SizedBox.shrink();
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
+    return IgnorePointer(
+      child: ValueListenableBuilder<Offset?>(
+        valueListenable: tilt,
+        builder: (BuildContext context, Offset? p, Widget? _) =>
+            TweenAnimationBuilder<Offset>(
+              tween: Tween<Offset>(end: p ?? Offset.zero),
+              duration: kFushiTiltFollowDuration,
+              curve: Curves.easeOutCubic,
+              builder: (BuildContext context, Offset v, Widget? _) =>
+                  AnimatedOpacity(
+                    opacity: p == null ? 0 : 1,
+                    duration: kFushiTiltFollowDuration,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          center: Alignment(v.dx, v.dy),
+                          radius: 1.1,
+                          colors: <Color>[
+                            Colors.white.withValues(
+                              alpha:
+                                  (dark ? 0.16 : 0.22) +
+                                  0.06 * v.distance.clamp(0.0, 1.0),
+                            ),
+                            Colors.white.withValues(alpha: 0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+            ),
+      ),
+    );
+  }
 }

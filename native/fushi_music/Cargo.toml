@@ -26,6 +26,38 @@ quick-xml = "0.42"
 flate2 = "1"
 data-encoding = "2"
 
+# 在线音源插件运行时（plugin 特性，默认开；iOS 伞形库关掉——App Store 不收「下载可执行代码」的
+# 宿主，见 docs/specs/2026-10-28-music-plugins.md）。QuickJS（MIT）经 rquickjs（MIT）嵌入；
+# 0.9 在 CPU 预算中断后释放运行时会触发 QuickJS 引用计数断言（实测），至少 0.14。
+# 其余为 MIT OR Apache-2.0：serde / serde_json、zip（只开 deflate）、RustCrypto 系
+# （sha2 / md-5 / hmac / aes / cbc / ecb）、num-bigint（RSA 裸模幂）、ed25519-dalek（插件签名）、
+# getrandom（randomBytes）、url（授权核对的 URL 解析）。
+rquickjs = { version = "0.14", default-features = false, features = ["parallel"], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+zip = { version = "2", default-features = false, features = ["deflate"], optional = true }
+sha2 = { version = "0.10", optional = true }
+md-5 = { version = "0.10", optional = true }
+hmac = { version = "0.12", optional = true }
+aes = { version = "0.8", optional = true }
+cbc = { version = "0.1", features = ["alloc"], optional = true }
+ecb = { version = "0.1", features = ["alloc"], optional = true }
+num-bigint = { version = "0.4", optional = true }
+ed25519-dalek = { version = "2", default-features = false, features = ["std"], optional = true }
+getrandom = { version = "0.2", optional = true }
+url = { version = "2", optional = true }
+# fushi.credentials 加密（MIT OR Apache-2.0）。
+aes-gcm = { version = "0.10", optional = true }
+
+# Windows：DPAPI 保护凭据保险库的数据密钥（MIT OR Apache-2.0）。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"], optional = true }
+
+[features]
+default = ["plugin"]
+plugin = ["dep:rquickjs", "dep:serde", "dep:serde_json", "dep:zip", "dep:sha2", "dep:md-5", "dep:hmac",
+  "dep:aes", "dep:cbc", "dep:ecb", "dep:num-bigint", "dep:ed25519-dalek", "dep:getrandom", "dep:url", "dep:aes-gcm", "dep:windows-sys"]
+
 [profile.release]
 opt-level = 3
 lto = true

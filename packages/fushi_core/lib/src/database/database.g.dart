@@ -67773,6 +67773,141 @@ class $MusicPlayEventsTable extends MusicPlayEvents
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+    'path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _cueStartMsMeta = const VerificationMeta(
+    'cueStartMs',
+  );
+  @override
+  late final GeneratedColumn<int> cueStartMs = GeneratedColumn<int>(
+    'cue_start_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _cueEndMsMeta = const VerificationMeta(
+    'cueEndMs',
+  );
+  @override
+  late final GeneratedColumn<int> cueEndMs = GeneratedColumn<int>(
+    'cue_end_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _artistMeta = const VerificationMeta('artist');
+  @override
+  late final GeneratedColumn<String> artist = GeneratedColumn<String>(
+    'artist',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _albumMeta = const VerificationMeta('album');
+  @override
+  late final GeneratedColumn<String> album = GeneratedColumn<String>(
+    'album',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _albumUidMeta = const VerificationMeta(
+    'albumUid',
+  );
+  @override
+  late final GeneratedColumn<String> albumUid = GeneratedColumn<String>(
+    'album_uid',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _durationMsMeta = const VerificationMeta(
+    'durationMs',
+  );
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+    'duration_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _coverPathMeta = const VerificationMeta(
+    'coverPath',
+  );
+  @override
+  late final GeneratedColumn<String> coverPath = GeneratedColumn<String>(
+    'cover_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceKindMeta = const VerificationMeta(
+    'sourceKind',
+  );
+  @override
+  late final GeneratedColumn<String> sourceKind = GeneratedColumn<String>(
+    'source_kind',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceIdMeta = const VerificationMeta(
+    'sourceId',
+  );
+  @override
+  late final GeneratedColumn<String> sourceId = GeneratedColumn<String>(
+    'source_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceTitleMeta = const VerificationMeta(
+    'sourceTitle',
+  );
+  @override
+  late final GeneratedColumn<String> sourceTitle = GeneratedColumn<String>(
+    'source_title',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceCoverMeta = const VerificationMeta(
+    'sourceCover',
+  );
+  @override
+  late final GeneratedColumn<String> sourceCover = GeneratedColumn<String>(
+    'source_cover',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -67780,6 +67915,19 @@ class $MusicPlayEventsTable extends MusicPlayEvents
     startedAt,
     listenedMs,
     completed,
+    path,
+    cueStartMs,
+    cueEndMs,
+    title,
+    artist,
+    album,
+    albumUid,
+    durationMs,
+    coverPath,
+    sourceKind,
+    sourceId,
+    sourceTitle,
+    sourceCover,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -67824,6 +67972,93 @@ class $MusicPlayEventsTable extends MusicPlayEvents
         completed.isAcceptableOrUnknown(data['completed']!, _completedMeta),
       );
     }
+    if (data.containsKey('path')) {
+      context.handle(
+        _pathMeta,
+        path.isAcceptableOrUnknown(data['path']!, _pathMeta),
+      );
+    }
+    if (data.containsKey('cue_start_ms')) {
+      context.handle(
+        _cueStartMsMeta,
+        cueStartMs.isAcceptableOrUnknown(
+          data['cue_start_ms']!,
+          _cueStartMsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('cue_end_ms')) {
+      context.handle(
+        _cueEndMsMeta,
+        cueEndMs.isAcceptableOrUnknown(data['cue_end_ms']!, _cueEndMsMeta),
+      );
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    }
+    if (data.containsKey('artist')) {
+      context.handle(
+        _artistMeta,
+        artist.isAcceptableOrUnknown(data['artist']!, _artistMeta),
+      );
+    }
+    if (data.containsKey('album')) {
+      context.handle(
+        _albumMeta,
+        album.isAcceptableOrUnknown(data['album']!, _albumMeta),
+      );
+    }
+    if (data.containsKey('album_uid')) {
+      context.handle(
+        _albumUidMeta,
+        albumUid.isAcceptableOrUnknown(data['album_uid']!, _albumUidMeta),
+      );
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+        _durationMsMeta,
+        durationMs.isAcceptableOrUnknown(data['duration_ms']!, _durationMsMeta),
+      );
+    }
+    if (data.containsKey('cover_path')) {
+      context.handle(
+        _coverPathMeta,
+        coverPath.isAcceptableOrUnknown(data['cover_path']!, _coverPathMeta),
+      );
+    }
+    if (data.containsKey('source_kind')) {
+      context.handle(
+        _sourceKindMeta,
+        sourceKind.isAcceptableOrUnknown(data['source_kind']!, _sourceKindMeta),
+      );
+    }
+    if (data.containsKey('source_id')) {
+      context.handle(
+        _sourceIdMeta,
+        sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta),
+      );
+    }
+    if (data.containsKey('source_title')) {
+      context.handle(
+        _sourceTitleMeta,
+        sourceTitle.isAcceptableOrUnknown(
+          data['source_title']!,
+          _sourceTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('source_cover')) {
+      context.handle(
+        _sourceCoverMeta,
+        sourceCover.isAcceptableOrUnknown(
+          data['source_cover']!,
+          _sourceCoverMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -67853,6 +68088,58 @@ class $MusicPlayEventsTable extends MusicPlayEvents
         DriftSqlType.bool,
         data['${effectivePrefix}completed'],
       )!,
+      path: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}path'],
+      ),
+      cueStartMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cue_start_ms'],
+      ),
+      cueEndMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cue_end_ms'],
+      ),
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      ),
+      artist: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}artist'],
+      ),
+      album: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}album'],
+      ),
+      albumUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}album_uid'],
+      ),
+      durationMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_ms'],
+      ),
+      coverPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cover_path'],
+      ),
+      sourceKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_kind'],
+      ),
+      sourceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_id'],
+      ),
+      sourceTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_title'],
+      ),
+      sourceCover: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_cover'],
+      ),
     );
   }
 
@@ -67871,12 +68158,51 @@ class MusicPlayEventRow extends DataClass
   /// 实际听了多久（毫秒，暂停 / 拖动不计）。
   final int listenedMs;
   final bool completed;
+
+  /// 播放路径（本地文件绝对路径 / `fushi-music-plugin://<插件>/<曲目>` / 服务器流地址）。
+  final String? path;
+
+  /// CUE 虚拟曲目在整轨里的起止（毫秒，偏移量）。
+  final int? cueStartMs;
+  final int? cueEndMs;
+  final String? title;
+  final String? artist;
+  final String? album;
+  final String? albumUid;
+  final int? durationMs;
+
+  /// 封面：在线 http(s) 地址或本地文件路径（同 `MusicPlayItem.coverPath`）。
+  final String? coverPath;
+
+  /// 来源种类 wire 值（`album` / `playlist` / `plugin_album` / `plugin_playlist` /
+  /// `server_album` / `server_playlist` / `artist` / `other`）；NULL = 不知道。
+  final String? sourceKind;
+
+  /// 来源在该种类下的身份（不透明串，编码由 app 侧 `MusicPlaySource` 定）。
+  final String? sourceId;
+  final String? sourceTitle;
+
+  /// 来源封面（http(s) 地址或本地文件路径）。
+  final String? sourceCover;
   const MusicPlayEventRow({
     required this.id,
     required this.trackUid,
     required this.startedAt,
     required this.listenedMs,
     required this.completed,
+    this.path,
+    this.cueStartMs,
+    this.cueEndMs,
+    this.title,
+    this.artist,
+    this.album,
+    this.albumUid,
+    this.durationMs,
+    this.coverPath,
+    this.sourceKind,
+    this.sourceId,
+    this.sourceTitle,
+    this.sourceCover,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -67886,6 +68212,45 @@ class MusicPlayEventRow extends DataClass
     map['started_at'] = Variable<int>(startedAt);
     map['listened_ms'] = Variable<int>(listenedMs);
     map['completed'] = Variable<bool>(completed);
+    if (!nullToAbsent || path != null) {
+      map['path'] = Variable<String>(path);
+    }
+    if (!nullToAbsent || cueStartMs != null) {
+      map['cue_start_ms'] = Variable<int>(cueStartMs);
+    }
+    if (!nullToAbsent || cueEndMs != null) {
+      map['cue_end_ms'] = Variable<int>(cueEndMs);
+    }
+    if (!nullToAbsent || title != null) {
+      map['title'] = Variable<String>(title);
+    }
+    if (!nullToAbsent || artist != null) {
+      map['artist'] = Variable<String>(artist);
+    }
+    if (!nullToAbsent || album != null) {
+      map['album'] = Variable<String>(album);
+    }
+    if (!nullToAbsent || albumUid != null) {
+      map['album_uid'] = Variable<String>(albumUid);
+    }
+    if (!nullToAbsent || durationMs != null) {
+      map['duration_ms'] = Variable<int>(durationMs);
+    }
+    if (!nullToAbsent || coverPath != null) {
+      map['cover_path'] = Variable<String>(coverPath);
+    }
+    if (!nullToAbsent || sourceKind != null) {
+      map['source_kind'] = Variable<String>(sourceKind);
+    }
+    if (!nullToAbsent || sourceId != null) {
+      map['source_id'] = Variable<String>(sourceId);
+    }
+    if (!nullToAbsent || sourceTitle != null) {
+      map['source_title'] = Variable<String>(sourceTitle);
+    }
+    if (!nullToAbsent || sourceCover != null) {
+      map['source_cover'] = Variable<String>(sourceCover);
+    }
     return map;
   }
 
@@ -67896,6 +68261,43 @@ class MusicPlayEventRow extends DataClass
       startedAt: Value(startedAt),
       listenedMs: Value(listenedMs),
       completed: Value(completed),
+      path: path == null && nullToAbsent ? const Value.absent() : Value(path),
+      cueStartMs: cueStartMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cueStartMs),
+      cueEndMs: cueEndMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cueEndMs),
+      title: title == null && nullToAbsent
+          ? const Value.absent()
+          : Value(title),
+      artist: artist == null && nullToAbsent
+          ? const Value.absent()
+          : Value(artist),
+      album: album == null && nullToAbsent
+          ? const Value.absent()
+          : Value(album),
+      albumUid: albumUid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(albumUid),
+      durationMs: durationMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(durationMs),
+      coverPath: coverPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverPath),
+      sourceKind: sourceKind == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceKind),
+      sourceId: sourceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceId),
+      sourceTitle: sourceTitle == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceTitle),
+      sourceCover: sourceCover == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceCover),
     );
   }
 
@@ -67910,6 +68312,19 @@ class MusicPlayEventRow extends DataClass
       startedAt: serializer.fromJson<int>(json['startedAt']),
       listenedMs: serializer.fromJson<int>(json['listenedMs']),
       completed: serializer.fromJson<bool>(json['completed']),
+      path: serializer.fromJson<String?>(json['path']),
+      cueStartMs: serializer.fromJson<int?>(json['cueStartMs']),
+      cueEndMs: serializer.fromJson<int?>(json['cueEndMs']),
+      title: serializer.fromJson<String?>(json['title']),
+      artist: serializer.fromJson<String?>(json['artist']),
+      album: serializer.fromJson<String?>(json['album']),
+      albumUid: serializer.fromJson<String?>(json['albumUid']),
+      durationMs: serializer.fromJson<int?>(json['durationMs']),
+      coverPath: serializer.fromJson<String?>(json['coverPath']),
+      sourceKind: serializer.fromJson<String?>(json['sourceKind']),
+      sourceId: serializer.fromJson<String?>(json['sourceId']),
+      sourceTitle: serializer.fromJson<String?>(json['sourceTitle']),
+      sourceCover: serializer.fromJson<String?>(json['sourceCover']),
     );
   }
   @override
@@ -67921,6 +68336,19 @@ class MusicPlayEventRow extends DataClass
       'startedAt': serializer.toJson<int>(startedAt),
       'listenedMs': serializer.toJson<int>(listenedMs),
       'completed': serializer.toJson<bool>(completed),
+      'path': serializer.toJson<String?>(path),
+      'cueStartMs': serializer.toJson<int?>(cueStartMs),
+      'cueEndMs': serializer.toJson<int?>(cueEndMs),
+      'title': serializer.toJson<String?>(title),
+      'artist': serializer.toJson<String?>(artist),
+      'album': serializer.toJson<String?>(album),
+      'albumUid': serializer.toJson<String?>(albumUid),
+      'durationMs': serializer.toJson<int?>(durationMs),
+      'coverPath': serializer.toJson<String?>(coverPath),
+      'sourceKind': serializer.toJson<String?>(sourceKind),
+      'sourceId': serializer.toJson<String?>(sourceId),
+      'sourceTitle': serializer.toJson<String?>(sourceTitle),
+      'sourceCover': serializer.toJson<String?>(sourceCover),
     };
   }
 
@@ -67930,12 +68358,38 @@ class MusicPlayEventRow extends DataClass
     int? startedAt,
     int? listenedMs,
     bool? completed,
+    Value<String?> path = const Value.absent(),
+    Value<int?> cueStartMs = const Value.absent(),
+    Value<int?> cueEndMs = const Value.absent(),
+    Value<String?> title = const Value.absent(),
+    Value<String?> artist = const Value.absent(),
+    Value<String?> album = const Value.absent(),
+    Value<String?> albumUid = const Value.absent(),
+    Value<int?> durationMs = const Value.absent(),
+    Value<String?> coverPath = const Value.absent(),
+    Value<String?> sourceKind = const Value.absent(),
+    Value<String?> sourceId = const Value.absent(),
+    Value<String?> sourceTitle = const Value.absent(),
+    Value<String?> sourceCover = const Value.absent(),
   }) => MusicPlayEventRow(
     id: id ?? this.id,
     trackUid: trackUid ?? this.trackUid,
     startedAt: startedAt ?? this.startedAt,
     listenedMs: listenedMs ?? this.listenedMs,
     completed: completed ?? this.completed,
+    path: path.present ? path.value : this.path,
+    cueStartMs: cueStartMs.present ? cueStartMs.value : this.cueStartMs,
+    cueEndMs: cueEndMs.present ? cueEndMs.value : this.cueEndMs,
+    title: title.present ? title.value : this.title,
+    artist: artist.present ? artist.value : this.artist,
+    album: album.present ? album.value : this.album,
+    albumUid: albumUid.present ? albumUid.value : this.albumUid,
+    durationMs: durationMs.present ? durationMs.value : this.durationMs,
+    coverPath: coverPath.present ? coverPath.value : this.coverPath,
+    sourceKind: sourceKind.present ? sourceKind.value : this.sourceKind,
+    sourceId: sourceId.present ? sourceId.value : this.sourceId,
+    sourceTitle: sourceTitle.present ? sourceTitle.value : this.sourceTitle,
+    sourceCover: sourceCover.present ? sourceCover.value : this.sourceCover,
   );
   MusicPlayEventRow copyWithCompanion(MusicPlayEventsCompanion data) {
     return MusicPlayEventRow(
@@ -67946,6 +68400,29 @@ class MusicPlayEventRow extends DataClass
           ? data.listenedMs.value
           : this.listenedMs,
       completed: data.completed.present ? data.completed.value : this.completed,
+      path: data.path.present ? data.path.value : this.path,
+      cueStartMs: data.cueStartMs.present
+          ? data.cueStartMs.value
+          : this.cueStartMs,
+      cueEndMs: data.cueEndMs.present ? data.cueEndMs.value : this.cueEndMs,
+      title: data.title.present ? data.title.value : this.title,
+      artist: data.artist.present ? data.artist.value : this.artist,
+      album: data.album.present ? data.album.value : this.album,
+      albumUid: data.albumUid.present ? data.albumUid.value : this.albumUid,
+      durationMs: data.durationMs.present
+          ? data.durationMs.value
+          : this.durationMs,
+      coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
+      sourceKind: data.sourceKind.present
+          ? data.sourceKind.value
+          : this.sourceKind,
+      sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      sourceTitle: data.sourceTitle.present
+          ? data.sourceTitle.value
+          : this.sourceTitle,
+      sourceCover: data.sourceCover.present
+          ? data.sourceCover.value
+          : this.sourceCover,
     );
   }
 
@@ -67956,14 +68433,45 @@ class MusicPlayEventRow extends DataClass
           ..write('trackUid: $trackUid, ')
           ..write('startedAt: $startedAt, ')
           ..write('listenedMs: $listenedMs, ')
-          ..write('completed: $completed')
+          ..write('completed: $completed, ')
+          ..write('path: $path, ')
+          ..write('cueStartMs: $cueStartMs, ')
+          ..write('cueEndMs: $cueEndMs, ')
+          ..write('title: $title, ')
+          ..write('artist: $artist, ')
+          ..write('album: $album, ')
+          ..write('albumUid: $albumUid, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('sourceKind: $sourceKind, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('sourceTitle: $sourceTitle, ')
+          ..write('sourceCover: $sourceCover')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, trackUid, startedAt, listenedMs, completed);
+  int get hashCode => Object.hash(
+    id,
+    trackUid,
+    startedAt,
+    listenedMs,
+    completed,
+    path,
+    cueStartMs,
+    cueEndMs,
+    title,
+    artist,
+    album,
+    albumUid,
+    durationMs,
+    coverPath,
+    sourceKind,
+    sourceId,
+    sourceTitle,
+    sourceCover,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -67972,7 +68480,20 @@ class MusicPlayEventRow extends DataClass
           other.trackUid == this.trackUid &&
           other.startedAt == this.startedAt &&
           other.listenedMs == this.listenedMs &&
-          other.completed == this.completed);
+          other.completed == this.completed &&
+          other.path == this.path &&
+          other.cueStartMs == this.cueStartMs &&
+          other.cueEndMs == this.cueEndMs &&
+          other.title == this.title &&
+          other.artist == this.artist &&
+          other.album == this.album &&
+          other.albumUid == this.albumUid &&
+          other.durationMs == this.durationMs &&
+          other.coverPath == this.coverPath &&
+          other.sourceKind == this.sourceKind &&
+          other.sourceId == this.sourceId &&
+          other.sourceTitle == this.sourceTitle &&
+          other.sourceCover == this.sourceCover);
 }
 
 class MusicPlayEventsCompanion extends UpdateCompanion<MusicPlayEventRow> {
@@ -67981,12 +68502,38 @@ class MusicPlayEventsCompanion extends UpdateCompanion<MusicPlayEventRow> {
   final Value<int> startedAt;
   final Value<int> listenedMs;
   final Value<bool> completed;
+  final Value<String?> path;
+  final Value<int?> cueStartMs;
+  final Value<int?> cueEndMs;
+  final Value<String?> title;
+  final Value<String?> artist;
+  final Value<String?> album;
+  final Value<String?> albumUid;
+  final Value<int?> durationMs;
+  final Value<String?> coverPath;
+  final Value<String?> sourceKind;
+  final Value<String?> sourceId;
+  final Value<String?> sourceTitle;
+  final Value<String?> sourceCover;
   const MusicPlayEventsCompanion({
     this.id = const Value.absent(),
     this.trackUid = const Value.absent(),
     this.startedAt = const Value.absent(),
     this.listenedMs = const Value.absent(),
     this.completed = const Value.absent(),
+    this.path = const Value.absent(),
+    this.cueStartMs = const Value.absent(),
+    this.cueEndMs = const Value.absent(),
+    this.title = const Value.absent(),
+    this.artist = const Value.absent(),
+    this.album = const Value.absent(),
+    this.albumUid = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.coverPath = const Value.absent(),
+    this.sourceKind = const Value.absent(),
+    this.sourceId = const Value.absent(),
+    this.sourceTitle = const Value.absent(),
+    this.sourceCover = const Value.absent(),
   });
   MusicPlayEventsCompanion.insert({
     this.id = const Value.absent(),
@@ -67994,6 +68541,19 @@ class MusicPlayEventsCompanion extends UpdateCompanion<MusicPlayEventRow> {
     required int startedAt,
     this.listenedMs = const Value.absent(),
     this.completed = const Value.absent(),
+    this.path = const Value.absent(),
+    this.cueStartMs = const Value.absent(),
+    this.cueEndMs = const Value.absent(),
+    this.title = const Value.absent(),
+    this.artist = const Value.absent(),
+    this.album = const Value.absent(),
+    this.albumUid = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.coverPath = const Value.absent(),
+    this.sourceKind = const Value.absent(),
+    this.sourceId = const Value.absent(),
+    this.sourceTitle = const Value.absent(),
+    this.sourceCover = const Value.absent(),
   }) : trackUid = Value(trackUid),
        startedAt = Value(startedAt);
   static Insertable<MusicPlayEventRow> custom({
@@ -68002,6 +68562,19 @@ class MusicPlayEventsCompanion extends UpdateCompanion<MusicPlayEventRow> {
     Expression<int>? startedAt,
     Expression<int>? listenedMs,
     Expression<bool>? completed,
+    Expression<String>? path,
+    Expression<int>? cueStartMs,
+    Expression<int>? cueEndMs,
+    Expression<String>? title,
+    Expression<String>? artist,
+    Expression<String>? album,
+    Expression<String>? albumUid,
+    Expression<int>? durationMs,
+    Expression<String>? coverPath,
+    Expression<String>? sourceKind,
+    Expression<String>? sourceId,
+    Expression<String>? sourceTitle,
+    Expression<String>? sourceCover,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -68009,6 +68582,19 @@ class MusicPlayEventsCompanion extends UpdateCompanion<MusicPlayEventRow> {
       if (startedAt != null) 'started_at': startedAt,
       if (listenedMs != null) 'listened_ms': listenedMs,
       if (completed != null) 'completed': completed,
+      if (path != null) 'path': path,
+      if (cueStartMs != null) 'cue_start_ms': cueStartMs,
+      if (cueEndMs != null) 'cue_end_ms': cueEndMs,
+      if (title != null) 'title': title,
+      if (artist != null) 'artist': artist,
+      if (album != null) 'album': album,
+      if (albumUid != null) 'album_uid': albumUid,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (coverPath != null) 'cover_path': coverPath,
+      if (sourceKind != null) 'source_kind': sourceKind,
+      if (sourceId != null) 'source_id': sourceId,
+      if (sourceTitle != null) 'source_title': sourceTitle,
+      if (sourceCover != null) 'source_cover': sourceCover,
     });
   }
 
@@ -68018,6 +68604,19 @@ class MusicPlayEventsCompanion extends UpdateCompanion<MusicPlayEventRow> {
     Value<int>? startedAt,
     Value<int>? listenedMs,
     Value<bool>? completed,
+    Value<String?>? path,
+    Value<int?>? cueStartMs,
+    Value<int?>? cueEndMs,
+    Value<String?>? title,
+    Value<String?>? artist,
+    Value<String?>? album,
+    Value<String?>? albumUid,
+    Value<int?>? durationMs,
+    Value<String?>? coverPath,
+    Value<String?>? sourceKind,
+    Value<String?>? sourceId,
+    Value<String?>? sourceTitle,
+    Value<String?>? sourceCover,
   }) {
     return MusicPlayEventsCompanion(
       id: id ?? this.id,
@@ -68025,6 +68624,19 @@ class MusicPlayEventsCompanion extends UpdateCompanion<MusicPlayEventRow> {
       startedAt: startedAt ?? this.startedAt,
       listenedMs: listenedMs ?? this.listenedMs,
       completed: completed ?? this.completed,
+      path: path ?? this.path,
+      cueStartMs: cueStartMs ?? this.cueStartMs,
+      cueEndMs: cueEndMs ?? this.cueEndMs,
+      title: title ?? this.title,
+      artist: artist ?? this.artist,
+      album: album ?? this.album,
+      albumUid: albumUid ?? this.albumUid,
+      durationMs: durationMs ?? this.durationMs,
+      coverPath: coverPath ?? this.coverPath,
+      sourceKind: sourceKind ?? this.sourceKind,
+      sourceId: sourceId ?? this.sourceId,
+      sourceTitle: sourceTitle ?? this.sourceTitle,
+      sourceCover: sourceCover ?? this.sourceCover,
     );
   }
 
@@ -68046,6 +68658,45 @@ class MusicPlayEventsCompanion extends UpdateCompanion<MusicPlayEventRow> {
     if (completed.present) {
       map['completed'] = Variable<bool>(completed.value);
     }
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (cueStartMs.present) {
+      map['cue_start_ms'] = Variable<int>(cueStartMs.value);
+    }
+    if (cueEndMs.present) {
+      map['cue_end_ms'] = Variable<int>(cueEndMs.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (artist.present) {
+      map['artist'] = Variable<String>(artist.value);
+    }
+    if (album.present) {
+      map['album'] = Variable<String>(album.value);
+    }
+    if (albumUid.present) {
+      map['album_uid'] = Variable<String>(albumUid.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (coverPath.present) {
+      map['cover_path'] = Variable<String>(coverPath.value);
+    }
+    if (sourceKind.present) {
+      map['source_kind'] = Variable<String>(sourceKind.value);
+    }
+    if (sourceId.present) {
+      map['source_id'] = Variable<String>(sourceId.value);
+    }
+    if (sourceTitle.present) {
+      map['source_title'] = Variable<String>(sourceTitle.value);
+    }
+    if (sourceCover.present) {
+      map['source_cover'] = Variable<String>(sourceCover.value);
+    }
     return map;
   }
 
@@ -68056,7 +68707,20 @@ class MusicPlayEventsCompanion extends UpdateCompanion<MusicPlayEventRow> {
           ..write('trackUid: $trackUid, ')
           ..write('startedAt: $startedAt, ')
           ..write('listenedMs: $listenedMs, ')
-          ..write('completed: $completed')
+          ..write('completed: $completed, ')
+          ..write('path: $path, ')
+          ..write('cueStartMs: $cueStartMs, ')
+          ..write('cueEndMs: $cueEndMs, ')
+          ..write('title: $title, ')
+          ..write('artist: $artist, ')
+          ..write('album: $album, ')
+          ..write('albumUid: $albumUid, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('sourceKind: $sourceKind, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('sourceTitle: $sourceTitle, ')
+          ..write('sourceCover: $sourceCover')
           ..write(')'))
         .toString();
   }
@@ -122108,6 +122772,19 @@ typedef $$MusicPlayEventsTableCreateCompanionBuilder =
       required int startedAt,
       Value<int> listenedMs,
       Value<bool> completed,
+      Value<String?> path,
+      Value<int?> cueStartMs,
+      Value<int?> cueEndMs,
+      Value<String?> title,
+      Value<String?> artist,
+      Value<String?> album,
+      Value<String?> albumUid,
+      Value<int?> durationMs,
+      Value<String?> coverPath,
+      Value<String?> sourceKind,
+      Value<String?> sourceId,
+      Value<String?> sourceTitle,
+      Value<String?> sourceCover,
     });
 typedef $$MusicPlayEventsTableUpdateCompanionBuilder =
     MusicPlayEventsCompanion Function({
@@ -122116,6 +122793,19 @@ typedef $$MusicPlayEventsTableUpdateCompanionBuilder =
       Value<int> startedAt,
       Value<int> listenedMs,
       Value<bool> completed,
+      Value<String?> path,
+      Value<int?> cueStartMs,
+      Value<int?> cueEndMs,
+      Value<String?> title,
+      Value<String?> artist,
+      Value<String?> album,
+      Value<String?> albumUid,
+      Value<int?> durationMs,
+      Value<String?> coverPath,
+      Value<String?> sourceKind,
+      Value<String?> sourceId,
+      Value<String?> sourceTitle,
+      Value<String?> sourceCover,
     });
 
 class $$MusicPlayEventsTableFilterComposer
@@ -122149,6 +122839,71 @@ class $$MusicPlayEventsTableFilterComposer
 
   ColumnFilters<bool> get completed => $composableBuilder(
     column: $table.completed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get cueStartMs => $composableBuilder(
+    column: $table.cueStartMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get cueEndMs => $composableBuilder(
+    column: $table.cueEndMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get artist => $composableBuilder(
+    column: $table.artist,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get album => $composableBuilder(
+    column: $table.album,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get albumUid => $composableBuilder(
+    column: $table.albumUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get coverPath => $composableBuilder(
+    column: $table.coverPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceKind => $composableBuilder(
+    column: $table.sourceKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceId => $composableBuilder(
+    column: $table.sourceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceTitle => $composableBuilder(
+    column: $table.sourceTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceCover => $composableBuilder(
+    column: $table.sourceCover,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -122186,6 +122941,71 @@ class $$MusicPlayEventsTableOrderingComposer
     column: $table.completed,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get cueStartMs => $composableBuilder(
+    column: $table.cueStartMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get cueEndMs => $composableBuilder(
+    column: $table.cueEndMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get artist => $composableBuilder(
+    column: $table.artist,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get album => $composableBuilder(
+    column: $table.album,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get albumUid => $composableBuilder(
+    column: $table.albumUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get coverPath => $composableBuilder(
+    column: $table.coverPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceKind => $composableBuilder(
+    column: $table.sourceKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceId => $composableBuilder(
+    column: $table.sourceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceTitle => $composableBuilder(
+    column: $table.sourceTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceCover => $composableBuilder(
+    column: $table.sourceCover,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MusicPlayEventsTableAnnotationComposer
@@ -122213,6 +123033,55 @@ class $$MusicPlayEventsTableAnnotationComposer
 
   GeneratedColumn<bool> get completed =>
       $composableBuilder(column: $table.completed, builder: (column) => column);
+
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<int> get cueStartMs => $composableBuilder(
+    column: $table.cueStartMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get cueEndMs =>
+      $composableBuilder(column: $table.cueEndMs, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get artist =>
+      $composableBuilder(column: $table.artist, builder: (column) => column);
+
+  GeneratedColumn<String> get album =>
+      $composableBuilder(column: $table.album, builder: (column) => column);
+
+  GeneratedColumn<String> get albumUid =>
+      $composableBuilder(column: $table.albumUid, builder: (column) => column);
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get coverPath =>
+      $composableBuilder(column: $table.coverPath, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceKind => $composableBuilder(
+    column: $table.sourceKind,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sourceId =>
+      $composableBuilder(column: $table.sourceId, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceTitle => $composableBuilder(
+    column: $table.sourceTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sourceCover => $composableBuilder(
+    column: $table.sourceCover,
+    builder: (column) => column,
+  );
 }
 
 class $$MusicPlayEventsTableTableManager
@@ -122257,12 +123126,38 @@ class $$MusicPlayEventsTableTableManager
                 Value<int> startedAt = const Value.absent(),
                 Value<int> listenedMs = const Value.absent(),
                 Value<bool> completed = const Value.absent(),
+                Value<String?> path = const Value.absent(),
+                Value<int?> cueStartMs = const Value.absent(),
+                Value<int?> cueEndMs = const Value.absent(),
+                Value<String?> title = const Value.absent(),
+                Value<String?> artist = const Value.absent(),
+                Value<String?> album = const Value.absent(),
+                Value<String?> albumUid = const Value.absent(),
+                Value<int?> durationMs = const Value.absent(),
+                Value<String?> coverPath = const Value.absent(),
+                Value<String?> sourceKind = const Value.absent(),
+                Value<String?> sourceId = const Value.absent(),
+                Value<String?> sourceTitle = const Value.absent(),
+                Value<String?> sourceCover = const Value.absent(),
               }) => MusicPlayEventsCompanion(
                 id: id,
                 trackUid: trackUid,
                 startedAt: startedAt,
                 listenedMs: listenedMs,
                 completed: completed,
+                path: path,
+                cueStartMs: cueStartMs,
+                cueEndMs: cueEndMs,
+                title: title,
+                artist: artist,
+                album: album,
+                albumUid: albumUid,
+                durationMs: durationMs,
+                coverPath: coverPath,
+                sourceKind: sourceKind,
+                sourceId: sourceId,
+                sourceTitle: sourceTitle,
+                sourceCover: sourceCover,
               ),
           createCompanionCallback:
               ({
@@ -122271,12 +123166,38 @@ class $$MusicPlayEventsTableTableManager
                 required int startedAt,
                 Value<int> listenedMs = const Value.absent(),
                 Value<bool> completed = const Value.absent(),
+                Value<String?> path = const Value.absent(),
+                Value<int?> cueStartMs = const Value.absent(),
+                Value<int?> cueEndMs = const Value.absent(),
+                Value<String?> title = const Value.absent(),
+                Value<String?> artist = const Value.absent(),
+                Value<String?> album = const Value.absent(),
+                Value<String?> albumUid = const Value.absent(),
+                Value<int?> durationMs = const Value.absent(),
+                Value<String?> coverPath = const Value.absent(),
+                Value<String?> sourceKind = const Value.absent(),
+                Value<String?> sourceId = const Value.absent(),
+                Value<String?> sourceTitle = const Value.absent(),
+                Value<String?> sourceCover = const Value.absent(),
               }) => MusicPlayEventsCompanion.insert(
                 id: id,
                 trackUid: trackUid,
                 startedAt: startedAt,
                 listenedMs: listenedMs,
                 completed: completed,
+                path: path,
+                cueStartMs: cueStartMs,
+                cueEndMs: cueEndMs,
+                title: title,
+                artist: artist,
+                album: album,
+                albumUid: albumUid,
+                durationMs: durationMs,
+                coverPath: coverPath,
+                sourceKind: sourceKind,
+                sourceId: sourceId,
+                sourceTitle: sourceTitle,
+                sourceCover: sourceCover,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
